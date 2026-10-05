@@ -1,0 +1,81 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "hb-api-staging",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-03",
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "APP_ORIGIN": "https://staging.meme.442224.xyz",
+    "APP_ENV": "staging",
+    "LDC_NETWORK_MODE": "disabled",
+    "LDC_ACCEPTANCE_ID": "",
+    "CLAIM_ATTEMPTS_PER_MINUTE": "10",
+    "GLOBAL_REDEMPTIONS_PER_MINUTE": "10",
+    "LDC_STOP_NEW_OPENINGS": "true",
+    "LDC_STOP_NEW_CLAIMS": "true",
+    "LDC_STOP_SENDS": "true"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "hb-staging",
+      "database_id": "05d0a65c-013c-4d56-84fe-72b004d3d787",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ACTIVITY_DO",
+        "class_name": "ActivityDO"
+      },
+      {
+        "name": "MERCHANT_DO",
+        "class_name": "MerchantDO"
+      }
+    ]
+  },
+  "exports": {
+    "ActivityDO": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    },
+    "MerchantDO": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    }
+  },
+  "queues": {
+    "producers": [
+      {
+        "binding": "PAYMENT_QUEUE",
+        "queue": "hb-payments-staging"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "hb-payments-staging",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 5,
+        "dead_letter_queue": "hb-payments-staging-dlq"
+      }
+    ]
+  },
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
+  "observability": {
+    "enabled": true,
+    "redact_query_string": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": false
+    },
+    "traces": {
+      "enabled": false
+    }
+  },
+  "account_id": "fd9563d3d06aeeca5665fcdec5efbb80"
+}

@@ -1,0 +1,3 @@
+CREATE INDEX `activities_square_opened_idx` ON `activities` (`join_square`,"opened_at" DESC,"id" DESC) WHERE "activities"."archived_at" IS NULL AND "activities"."opened_at" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX `activities_topic_opened_idx` ON `activities` (`topic_id`,"opened_at" DESC,"id" DESC) WHERE "activities"."archived_at" IS NULL AND "activities"."opened_at" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX `payment_tasks_merchant_active_order_idx` ON `payment_tasks` (`merchant_id`,`created_at`,`id`) WHERE "payment_tasks"."status" IN ('pending','waiting','reconciling','sending');

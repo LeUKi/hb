@@ -1,0 +1,1 @@
+ALTER TABLE `payment_attempts` ADD `http_status` integer;

@@ -1,0 +1,153 @@
+import type {
+  CredentialVerificationStatus,
+  MerchantPaymentDetail,
+} from "@hb/contracts";
+
+export const verificationLabels: Record<CredentialVerificationStatus, string> =
+  {
+    unverified: "未验证",
+    checking: "检查中",
+    passed: "凭证通过",
+    rejected: "认证未通过",
+    unavailable: "暂时无法验证",
+  };
+
+export function verificationReason(reason: string | null) {
+  if (!reason || reason === "not_found_after_auth") return null;
+  if (reason === "credentials") return "认证未通过，请检查商户 ID 和密钥。";
+  if (reason === "interrupted") return "上次检查中断，可以再次检查。";
+  return "暂时无法验证，请稍后重试。";
+}
+
+export function publicationReason(reason: string | null | undefined) {
+  if (!reason) return null;
+  const labels: Record<string, string> = {
+    REAL_LDC_NOT_ENABLED: "当前环境尚未启用真实 LDC 活动开放。",
+    MERCHANT_LEGACY: "活动关联的是历史商户，请明确改用当前商户后再开放。",
+    MERCHANT_CREDENTIALS_UNVERIFIED:
+      "当前凭证需要在最近 10 分钟内通过检查，才能开放新的 LDC 活动。",
+    MERCHANT_CREDENTIALS_CHECKING:
+      "当前凭证正在检查，活动可保存为准备中，检查通过后再开放。",
+    MERCHANT_CREDENTIALS_REJECTED:
+      "当前凭证认证未通过，请更新商户 ID 对应的密钥并重新检查。",
+    MERCHANT_CREDENTIALS_UNAVAILABLE:
+      "当前凭证暂时无法验证，请重新检查后再开放。",
+  };
+  return labels[reason] ?? "暂不能开放新的 LDC 活动，请查看商户状态。";
+}
+
+export function paymentAttemptOutcome(outcome: string) {
+  const labels: Record<string, string> = {
+    started: "进行中",
+    succeeded: "已收到有效响应",
+    rejected: "请求未通过",
+    unknown: "结果尚未明确",
+  };
+  return labels[outcome] ?? "等待核对";
+}
+
+export function paymentReason(reason: string | null) {
+  if (!reason) return null;
+  const labels: Record<string, string> = {
+    unknown: "付款结果尚未明确，正在核对原订单。",
+    funds: "商户资金不足，等待补足后恢复。",
+    quota: "每日发放额度不足，等待可用额度。",
+    credentials: "商户凭证失效，等待作者更新。",
+    conflict: "订单信息冲突，需要检查原订单。",
+    query_unavailable: "查单暂不可用，系统会继续核对。",
+    query_delayed: "订单查询有延迟，系统会继续核对。",
+    checking_not_found: "暂未查到原订单，系统会继续安全核对。",
+    interrupted: "处理过程已中断，系统会继续核对原订单。",
+    network: "网络连接失败，尚未取得可确认的结果，将继续核对原订单。",
+    timeout: "请求超时，尚未取得可确认的结果，将继续核对原订单。",
+    http: "上游返回非成功 HTTP 状态，付款结果仍需核对原订单。",
+    redirect: "上游返回重定向，系统未继续请求，将保留原订单核对。",
+    invalid_response: "上游响应格式无法识别，付款结果仍需核对原订单。",
+    recipient: "上游未找到指定收款人，发送已暂停。",
+    self_payment: "上游拒绝向同一付款账号发放，发送已暂停。",
+    configuration: "上游付款配置不可用，发送已暂停。",
+    validation: "上游拒绝订单参数，发送已暂停。",
+    throttled: "上游暂时限流，将按允许的时间继续处理。",
+    upstream_pending: "已查到订单，但上游尚未确认完成；继续查单。",
+    duplicate_order: "上游已观察到相同业务号的订单；继续核对原订单。",
+    retry_not_authorized: "当前任务没有可用的原单恢复授权。",
+    retry_expired: "原单恢复授权已到期，只保留安全核对。",
+    retry_revoked: "原单恢复授权已撤销，只保留安全核对。",
+    retry_exhausted: "原单恢复授权次数已用尽，只保留安全核对。",
+    order_observed: "已观察到原订单，停止恢复发送并继续核对。",
+    query_required: "需要先核对原业务号，再决定后续处理。",
+    send_blocked: "订单存在发送限制，系统仅继续安全核对。",
+    not_due: "尚未到既定发送时间。",
+    unsupported: "此任务不支持当前恢复操作。",
+    probe_query_required: "重复请求已返回原订单，继续核对后台交易记录。",
+    probe_protocol_unverified: "原订单查单已确认，重复请求的协议响应仍需核实。",
+    probe_backend_evidence_required: "协议核对已完成，等待后台交易记录核验。",
+    probe_duplicate: "重复请求已识别到原业务号，等待独立查单核对。",
+    probe_receipt: "重复请求已返回订单响应，等待独立查单核对。",
+    probe_inconclusive: "重复请求验证证据不足，保留原订单信息。",
+    probe_timeout: "重复请求验证未在规定时间内取得完整证据。",
+    disabled: "当前运行环境未启用此真实付款操作。",
+    real_disabled: "当前运行环境未启用真实付款。",
+    credential_unverified:
+      "当前凭证尚未通过检查，奖励已锁定，等待检查后恢复付款。",
+    credential_checking: "当前凭证正在检查，奖励已锁定，等待检查后恢复付款。",
+    credential_rejected: "当前凭证认证未通过，奖励已锁定，等待作者更新密钥。",
+    credential_unavailable: "当前凭证暂时无法验证，奖励已锁定，等待恢复付款。",
+  };
+  return labels[reason] ?? "付款任务正在等待处理，请查看商户状态。";
+}
+
+export function paymentNextAction(action: MerchantPaymentDetail["nextAction"]) {
+  return { query: "核对原订单", send: "等待按计划发送", none: "无待执行操作" }[
+    action
+  ];
+}
+
+export function paymentOrderEvidence(
+  evidence: MerchantPaymentDetail["orderEvidence"],
+) {
+  if (!evidence) return "尚未观察到订单";
+  return {
+    receipt: "分发响应已返回订单",
+    query: "查单已返回订单",
+    duplicate: "上游已返回相同业务号订单",
+  }[evidence];
+}
+
+export function duplicateProbeLabel(
+  status: NonNullable<MerchantPaymentDetail["duplicateProbe"]>["status"],
+) {
+  return {
+    pending: "待验证",
+    sending: "发送验证中",
+    reconciling: "核对验证订单",
+    awaiting_evidence: "等待后台交易记录核验",
+    passed: "验证通过",
+    inconclusive: "证据不足",
+    conflict: "订单冲突",
+  }[status];
+}
+
+export function duplicateProbeActive(
+  probe: MerchantPaymentDetail["duplicateProbe"],
+) {
+  return (
+    probe !== null &&
+    ["pending", "sending", "reconciling", "awaiting_evidence"].includes(
+      probe.status,
+    )
+  );
+}
+
+export function canWakePaymentQuery(payment: MerchantPaymentDetail) {
+  return (
+    (payment.source === "claim" &&
+      payment.status !== "confirmed" &&
+      payment.nextAction === "send") ||
+    (payment.status !== "confirmed" && payment.nextAction === "query") ||
+    (payment.duplicateProbe !== null &&
+      (payment.duplicateProbe.status === "reconciling" ||
+        (payment.duplicateProbe.status === "awaiting_evidence" &&
+          payment.duplicateProbe.protocolVerifiedAt === null)))
+  );
+}

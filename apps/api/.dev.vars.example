@@ -1,0 +1,24 @@
+# Public browser origin for same-origin checks and OAuth redirect URI.
+# HTTP is accepted only for loopback origins.
+APP_ORIGIN="http://127.0.0.1:5173"
+
+# Linux DO Connect OAuth client credentials.
+CONNECT_CLIENT_ID=""
+CONNECT_CLIENT_SECRET=""
+
+# JSON object mapping key version to base64-encoded 32-byte AES-GCM keys.
+# Single quotes keep the JSON double quotes intact in dotenv parsers.
+ENCRYPTION_KEYS='{"v1":""}'
+ENCRYPTION_KEY_VERSION="v1"
+
+# Base64-encoded random HMAC key, at least 32 bytes.
+PASSWORD_DIGEST_KEY=""
+# 每账号、每活动滚动 60 秒内的有效提交上限；省略或无效时为 10。
+CLAIM_ATTEMPTS_PER_MINUTE=10
+# 全站新匹配的独立账号限流，滚动 60 秒；重试原请求不重复计数。
+GLOBAL_REDEMPTIONS_PER_MINUTE=10
+
+# Real network is disabled by default. verify enables credential checks and existing order reconciliation only.
+APP_ENV="local"
+LDC_NETWORK_MODE="disabled"
+LDC_ACCEPTANCE_ID=""

@@ -1,0 +1,1 @@
+ALTER TABLE `merchants` ADD `recovery_scanned_at` integer DEFAULT 0 NOT NULL;

@@ -1,0 +1,35 @@
+{
+  "name": "@hb/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./dist-types/types.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist-types/types.d.ts",
+      "default": "./dist-types/types.d.ts"
+    },
+    "./types": {
+      "types": "./dist-types/types.d.ts",
+      "default": "./dist-types/types.d.ts"
+    }
+  },
+  "scripts": {
+    "dev": "X_LOCAL_OBSERVABILITY=false wrangler dev --ip 127.0.0.1 --port 8787 --persist-to ../../.wrangler/state",
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.tooling.json",
+    "test": "vitest run",
+    "cf:typegen": "wrangler types src/worker-configuration.d.ts --env-interface CloudflareEnv",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply hb-local --local --persist-to ../../.wrangler/state"
+  },
+  "dependencies": {
+    "drizzle-orm": "0.45.3",
+    "hono": "4.13.12",
+    "@hb/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "drizzle-kit": "0.31.11"
+  }
+}

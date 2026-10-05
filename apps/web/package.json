@@ -1,0 +1,42 @@
+{
+  "name": "@hb/web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
+    "build": "vite build",
+    "typecheck": "vite build --mode typecheck && tsc -b tsconfig.json",
+    "cf:typegen": "wrangler types worker-configuration.d.ts --env-interface CloudflareEnv"
+  },
+  "dependencies": {
+    "@hb/api": "workspace:*",
+    "@radix-ui/react-slot": "1.3.3",
+    "@tanstack/react-form": "1.33.5",
+    "@tanstack/react-query": "5.104.1",
+    "@tanstack/react-router": "1.170.41",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "hono": "4.13.12",
+    "jotai": "3.0.1",
+    "lucide-react": "1.51.0",
+    "motion": "14.0.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "tailwind-merge": "3.7.0",
+    "tailwindcss": "4.3.3",
+    "zod": "4.6.5",
+    "@hb/contracts": "workspace:*",
+    "react-markdown": "10.1.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.62.5",
+    "@tailwindcss/vite": "4.3.3",
+    "@tanstack/router-plugin": "1.168.42",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "typescript": "7.0.2",
+    "vite": "8.3.2",
+    "wrangler": "4.147.0"
+  }
+}

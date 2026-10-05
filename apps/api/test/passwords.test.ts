@@ -1,0 +1,913 @@
+import { env, evictDurableObject } from "cloudflare:test";
+import {
+  type ActivityInput,
+  type ActivityPasswords,
+  type ActivityStatistics,
+  ARCHIVE_DELAY_MS,
+  CLAIM_WINDOW_MS,
+  type ClaimResult,
+  emptyActivityInput,
+  type ManagedActivity,
+  type SolveResult,
+  type TextActivityInput,
+} from "@hb/contracts";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  attemptAssociatedData,
+  completeClaimSubmission,
+  findSubmission,
+  prepareClaimSubmission,
+  resumePendingActivityClaims,
+} from "../src/activities/claim-service";
+import { solveActivityPassword } from "../src/activities/password-service";
+import { app } from "../src/app";
+import { createDb } from "../src/db/client";
+import { sessions, users } from "../src/db/schema";
+import type { ApiBindings } from "../src/env";
+import { createMerchant } from "../src/payments/merchants";
+import {
+  decryptString,
+  digestPassword,
+  sha256Hex,
+} from "../src/security/crypto";
+
+const origin = "https://hb.example.com";
+const bindings: ApiBindings = { ...env, APP_ORIGIN: origin };
+const validPasswords = [
+  "claim123",
+  "secret456",
+  "other789",
+  "lastword1",
+  "hidden999",
+];
+type Actor = { id: string; cookie: string; csrf: string };
+let owner: Actor;
+let alice: Actor;
+let bob: Actor;
+
+function required<T>(value: T | null | undefined): T {
+  if (value === null || value === undefined)
+    throw new Error("Missing fixture value");
+  return value;
+}
+
+async function actor(username: string): Promise<Actor> {
+  const id = crypto.randomUUID();
+  const token = crypto.randomUUID().replaceAll("-", "");
+  const csrf = crypto.randomUUID();
+  const now = new Date();
+  const db = createDb(env.DB);
+  await db.insert(users).values({
+    id,
+    externalId: username,
+    username,
+    displayName: `${username} 昵称`,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await db.insert(sessions).values({
+    tokenHash: await sha256Hex(`hb.session-token.v1:${token}`),
+    userId: id,
+    csrfToken: csrf,
+    createdAt: now,
+    lastSeenAt: now,
+    expiresAt: new Date(now.getTime() + 3600000),
+  });
+  return { id, cookie: `hb_session=${token}`, csrf };
+}
+
+function request(
+  path: string,
+  user?: Actor,
+  method = "GET",
+  body?: unknown,
+  extraHeaders: Record<string, string> = {},
+) {
+  return app.request(
+    `${origin}${path}`,
+    {
+      method,
+      headers: {
+        ...(user ? { Cookie: user.cookie } : {}),
+        ...(method !== "GET"
+          ? {
+              Origin: origin,
+              "Content-Type": "application/json",
+              "X-CSRF-Token": user?.csrf ?? "",
+            }
+          : {}),
+        ...extraHeaders,
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    },
+    bindings,
+  );
+}
+
+function textConfig(
+  overrides: Partial<TextActivityInput> = {},
+): TextActivityInput {
+  return {
+    ...emptyActivityInput(),
+    title: "口令验证测试",
+    passwords: validPasswords,
+    rewards: Array.from({ length: 4 }, (_, index) => ({
+      id: crypto.randomUUID(),
+      text: `PRIVATE-REWARD-${index}`,
+    })),
+    afterClaimInfo: "PRIVATE-AFTER-CLAIM",
+    ...overrides,
+  };
+}
+
+async function create(activity: ActivityInput = textConfig(), open = true) {
+  const response = await request("/api/activities", owner, "POST", {
+    requestId: crypto.randomUUID(),
+    activity,
+  });
+  expect(response.status).toBe(200);
+  const saved = ((await response.json()) as { activity: ManagedActivity })
+    .activity;
+  if (!open) return saved;
+  const opened = await request(
+    `/api/me/activities/${saved.id}/open`,
+    owner,
+    "POST",
+    { version: saved.version },
+  );
+  expect(opened.status).toBe(200);
+  return ((await opened.json()) as { activity: ManagedActivity }).activity;
+}
+
+function submitClaim(
+  id: string,
+  user = alice,
+  password = "claim123",
+  submissionId = crypto.randomUUID(),
+) {
+  return request(`/api/activities/${id}/claim`, user, "POST", {
+    password,
+    submissionId,
+  });
+}
+
+async function claim(
+  id: string,
+  user = alice,
+  password = "claim123",
+  submissionId = crypto.randomUUID(),
+) {
+  const response = await submitClaim(id, user, password, submissionId);
+  expect(response.status).toBe(200);
+  const result = (await response.json()) as ClaimResult;
+  if (result.result !== "claimed") throw new Error("Expected a new reward");
+  return result;
+}
+
+function submitSolve(
+  id: string,
+  user = alice,
+  password = "secret456",
+  submissionId = crypto.randomUUID(),
+) {
+  return request(`/api/activities/${id}/password-solves`, user, "POST", {
+    password,
+    submissionId,
+  });
+}
+
+async function solve(
+  id: string,
+  user = alice,
+  password = "secret456",
+  submissionId = crypto.randomUUID(),
+) {
+  const response = await submitSolve(id, user, password, submissionId);
+  expect(response.status).toBe(200);
+  return (await response.json()) as SolveResult;
+}
+
+async function passwords(id: string, user?: Actor) {
+  const response = await request(`/api/activities/${id}/passwords`, user);
+  expect(response.status).toBe(200);
+  expect(response.headers.get("cache-control")).toBe("no-store");
+  return (await response.json()) as ActivityPasswords;
+}
+
+async function counts(id: string) {
+  return required(
+    await env.DB.prepare(`SELECT claimed_count AS assigned, version,
+      (SELECT COUNT(*) FROM claims WHERE activity_id=a.id) AS claims,
+      (SELECT COUNT(*) FROM attempt_events WHERE activity_id=a.id) AS attempts,
+      (SELECT COUNT(*) FROM redemption_submissions WHERE activity_id=a.id AND validated_at IS NOT NULL) AS validations,
+      (SELECT COUNT(*) FROM payment_tasks p JOIN claims c ON c.id=p.claim_id WHERE c.activity_id=a.id) AS payments,
+      (SELECT COUNT(*) FROM payment_outbox o JOIN payment_tasks p ON p.id=o.task_id JOIN claims c ON c.id=p.claim_id WHERE c.activity_id=a.id) AS outbox
+      FROM activities a WHERE a.id=?`)
+      .bind(id)
+      .first(),
+  );
+}
+
+beforeEach(async () => {
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM payment_outbox"),
+    env.DB.prepare("DELETE FROM payment_attempts"),
+    env.DB.prepare("DELETE FROM payment_tasks"),
+    env.DB.prepare("DELETE FROM simulation_orders"),
+    env.DB.prepare("DELETE FROM simulation_controls"),
+    env.DB.prepare("DELETE FROM merchant_credentials"),
+    env.DB.prepare("DELETE FROM global_redemptions"),
+    env.DB.prepare("DELETE FROM attempt_events"),
+    env.DB.prepare("DELETE FROM redemption_submissions"),
+    env.DB.prepare("DELETE FROM claims"),
+    env.DB.prepare("DELETE FROM reward_inventory"),
+    env.DB.prepare("DELETE FROM activity_passwords"),
+    env.DB.prepare("DELETE FROM activities"),
+    env.DB.prepare("DELETE FROM merchants"),
+    env.DB.prepare("DELETE FROM sessions"),
+    env.DB.prepare("DELETE FROM oauth_attempts"),
+    env.DB.prepare("DELETE FROM users"),
+  ]);
+  owner = await actor("owner");
+  alice = await actor("alice");
+  bob = await actor("bob");
+});
+afterEach(() => vi.restoreAllMocks());
+
+describe("dedicated-page password visibility", () => {
+  it("reveals draft answers only to the author without personal badges", async () => {
+    const activity = await create(textConfig(), false);
+    expect(await passwords(activity.id, owner)).toEqual({
+      passwords: validPasswords.map((text) => ({
+        text,
+        isClaimPassword: false,
+        isSolved: false,
+      })),
+      hiddenCount: 0,
+      canSolve: false,
+    });
+    for (const viewer of [undefined, alice])
+      expect(
+        (await request(`/api/activities/${activity.id}/passwords`, viewer))
+          .status,
+      ).toBe(404);
+  });
+
+  it("reveals only the viewer's own award and solved answers while active", async () => {
+    const activity = await create();
+    await claim(activity.id, alice, "claim123");
+    await claim(activity.id, bob, "other789");
+    expect(await passwords(activity.id)).toEqual({
+      passwords: [],
+      hiddenCount: 5,
+      canSolve: false,
+    });
+    expect(await passwords(activity.id, alice)).toEqual({
+      passwords: [{ text: "claim123", isClaimPassword: true, isSolved: false }],
+      hiddenCount: 4,
+      canSolve: true,
+    });
+    expect(await solve(activity.id)).toEqual({ outcome: "solved" });
+    expect(await passwords(activity.id, alice)).toEqual({
+      passwords: [
+        { text: "claim123", isClaimPassword: true, isSolved: false },
+        { text: "secret456", isClaimPassword: false, isSolved: true },
+      ],
+      hiddenCount: 3,
+      canSolve: true,
+    });
+    expect(await passwords(activity.id, bob)).toEqual({
+      passwords: [{ text: "other789", isClaimPassword: true, isSolved: false }],
+      hiddenCount: 4,
+      canSolve: true,
+    });
+    expect(await passwords(activity.id, owner)).toEqual({
+      passwords: validPasswords.map((text) => ({
+        text,
+        isClaimPassword: false,
+        isSolved: false,
+      })),
+      hiddenCount: 0,
+      canSolve: false,
+    });
+    const publicDetail = await (
+      await request(`/api/activities/${activity.id}`, alice)
+    ).json();
+    for (const text of validPasswords)
+      expect(JSON.stringify(publicDetail)).not.toContain(text);
+    expect(JSON.stringify(publicDetail)).not.toContain("PRIVATE-REWARD-");
+  });
+
+  it("gives an author who claimed text only their own personal flags", async () => {
+    const activity = await create();
+    await claim(activity.id, alice, "claim123");
+    await solve(activity.id, alice, "secret456");
+    await claim(activity.id, owner, "other789");
+    await solve(activity.id, owner, "lastword1");
+    const answers = await passwords(activity.id, owner);
+    expect(answers.canSolve).toBe(true);
+    expect(answers.passwords).toEqual([
+      { text: "claim123", isClaimPassword: false, isSolved: false },
+      { text: "secret456", isClaimPassword: false, isSolved: false },
+      { text: "other789", isClaimPassword: true, isSolved: false },
+      { text: "lastword1", isClaimPassword: false, isSolved: true },
+      { text: "hidden999", isClaimPassword: false, isSolved: false },
+    ]);
+  });
+
+  it("does not decrypt unauthorized password ciphertext", async () => {
+    const activity = await create();
+    await claim(activity.id);
+    await env.DB.prepare(
+      "UPDATE activity_passwords SET ciphertext='INVALID-PRIVATE-CIPHERTEXT' WHERE activity_id=? AND position=4",
+    )
+      .bind(activity.id)
+      .run();
+    expect((await passwords(activity.id)).passwords).toEqual([]);
+    expect((await passwords(activity.id, alice)).passwords).toEqual([
+      { text: "claim123", isClaimPassword: true, isSolved: false },
+    ]);
+  });
+
+  it.each(["ended", "archived"] as const)(
+    "publishes all answers at the actual %s time before lifecycle persistence",
+    async (status) => {
+      const activity = await create(textConfig({ forceDedicated: true }));
+      await claim(activity.id);
+      await solve(activity.id);
+      const before = await counts(activity.id);
+      await env.DB.prepare("UPDATE activities SET deadline=? WHERE id=?")
+        .bind(
+          Date.now() - (status === "archived" ? ARCHIVE_DELAY_MS : 0) - 1000,
+          activity.id,
+        )
+        .run();
+      expect(
+        await env.DB.prepare(
+          "SELECT ended_at, archived_at FROM activities WHERE id=?",
+        )
+          .bind(activity.id)
+          .first(),
+      ).toEqual({ ended_at: null, archived_at: null });
+      expect(await passwords(activity.id)).toEqual({
+        passwords: validPasswords.map((text) => ({
+          text,
+          isClaimPassword: false,
+          isSolved: false,
+        })),
+        hiddenCount: 0,
+        canSolve: false,
+      });
+      const own = await passwords(activity.id, alice);
+      expect(own.canSolve).toBe(false);
+      expect(own.hiddenCount).toBe(0);
+      expect(own.passwords[0]).toMatchObject({ isClaimPassword: true });
+      expect(own.passwords[1]).toMatchObject({ isSolved: true });
+      expect(await solve(activity.id, alice, "hidden999")).toEqual({
+        outcome: status,
+      });
+      expect((await submitSolve(activity.id, bob)).status).toBe(403);
+      expect(await counts(activity.id)).toEqual(before);
+      const endedRow = await env.DB.prepare(
+        "SELECT validated_at,matched_password_id,claim_id FROM redemption_submissions WHERE purpose='solve' AND outcome=?",
+      )
+        .bind(status)
+        .first();
+      expect(endedRow).toEqual({
+        validated_at: null,
+        matched_password_id: null,
+        claim_id: null,
+      });
+    },
+  );
+
+  it("publishes all answers when inventory is exhausted, including before end metadata repair", async () => {
+    const activity = await create(
+      textConfig({
+        rewards: [{ id: crypto.randomUUID(), text: "only reward" }],
+      }),
+    );
+    await claim(activity.id);
+    await env.DB.prepare(
+      "UPDATE activities SET ended_at=NULL,end_reason=NULL WHERE id=?",
+    )
+      .bind(activity.id)
+      .run();
+    expect(await passwords(activity.id)).toEqual({
+      passwords: validPasswords.map((text) => ({
+        text,
+        isClaimPassword: false,
+        isSolved: false,
+      })),
+      hiddenCount: 0,
+      canSolve: false,
+    });
+    const before = await counts(activity.id);
+    expect(await solve(activity.id)).toEqual({ outcome: "ended" });
+    expect(await counts(activity.id)).toEqual(before);
+  });
+});
+
+describe("terminal password validation without reward allocation", () => {
+  it("requires a previous claim, authentication, CSRF and a valid password", async () => {
+    const activity = await create(textConfig({ forceDedicated: true }));
+    const payload = {
+      submissionId: crypto.randomUUID(),
+      password: "secret456",
+    };
+    expect(
+      (
+        await request(
+          `/api/activities/${activity.id}/password-solves`,
+          undefined,
+          "POST",
+          payload,
+        )
+      ).status,
+    ).toBe(401);
+    expect((await submitSolve(activity.id)).status).toBe(403);
+    const draft = await create(textConfig(), false);
+    expect((await submitSolve(draft.id)).status).toBe(404);
+    expect((await submitSolve(draft.id, owner)).status).toBe(400);
+    await claim(activity.id);
+    const before = await counts(activity.id);
+    expect(
+      (
+        await request(
+          `/api/activities/${activity.id}/password-solves`,
+          alice,
+          "POST",
+          payload,
+          { "X-CSRF-Token": "wrong" },
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await request(
+          `/api/activities/${activity.id}/password-solves`,
+          alice,
+          "POST",
+          payload,
+          { Origin: "https://untrusted.example" },
+        )
+      ).status,
+    ).toBe(403);
+    expect((await submitSolve(activity.id, alice, "bad!")).status).toBe(400);
+    expect(await counts(activity.id)).toEqual(before);
+  });
+
+  it("keeps forced attempts encrypted and increments validations without increasing claim statistics", async () => {
+    const activity = await create(textConfig({ forceDedicated: true }));
+    const award = await claim(activity.id);
+    expect(await solve(activity.id)).toEqual({ outcome: "solved" });
+    expect(await solve(activity.id, alice, "wrong123")).toEqual({
+      outcome: "incorrect",
+    });
+    expect(await counts(activity.id)).toMatchObject({
+      claims: 1,
+      assigned: 1,
+      version: activity.version,
+      attempts: 3,
+      validations: 3,
+      payments: 0,
+      outbox: 0,
+    });
+    const stats = (await (
+      await request(`/api/me/activities/${activity.id}/statistics`, owner)
+    ).json()) as ActivityStatistics;
+    expect(stats).toMatchObject({
+      totalAttempts: 3,
+      uniqueUsers: 1,
+      successfulClaims: 1,
+    });
+    expect(
+      stats.items.find((item) => item.password === "secret456"),
+    ).toMatchObject({
+      matchedAttempts: 1,
+      unmatchedAttempts: 0,
+      successfulClaims: 0,
+    });
+    const attempts = await env.DB.prepare(
+      "SELECT e.ciphertext,e.submission_row_id,e.claim_id FROM attempt_events e JOIN redemption_submissions s ON s.id=e.submission_row_id WHERE s.purpose='solve'",
+    ).all<{
+      ciphertext: string;
+      submission_row_id: string;
+      claim_id: string | null;
+    }>();
+    expect(attempts.results).toHaveLength(2);
+    expect(attempts.results.every((row) => row.claim_id === null)).toBe(true);
+    expect(JSON.stringify(attempts)).not.toContain("wrong123");
+    const decrypted = await Promise.all(
+      attempts.results.map((row) =>
+        decryptString(
+          row.ciphertext,
+          bindings,
+          attemptAssociatedData(activity.id, row.submission_row_id),
+        ),
+      ),
+    );
+    expect(decrypted.sort()).toEqual(["secret456", "wrong123"]);
+    expect(
+      await (await request(`/api/me/claims/${award.claim.id}`, alice)).json(),
+    ).toEqual({ claim: award.claim });
+  });
+
+  it("never saves failed raw input for ordinary activities", async () => {
+    const activity = await create();
+    await claim(activity.id);
+    expect(await solve(activity.id, alice, "wrong123")).toEqual({
+      outcome: "incorrect",
+    });
+    expect(await counts(activity.id)).toMatchObject({
+      attempts: 0,
+      validations: 2,
+    });
+    const row = await env.DB.prepare(
+      "SELECT * FROM redemption_submissions WHERE purpose='solve'",
+    ).first();
+    expect(JSON.stringify(row)).not.toContain("wrong123");
+    expect((await passwords(activity.id, alice)).hiddenCount).toBe(4);
+  });
+
+  it("replays normalized lost-response submissions across DO eviction and binds their purpose and content", async () => {
+    const activity = await create(textConfig({ forceDedicated: true }));
+    const awardKey = crypto.randomUUID();
+    await claim(activity.id, alice, "claim123", awardKey);
+    const key = crypto.randomUUID();
+    expect(await solve(activity.id, alice, " secret456 ", key)).toEqual({
+      outcome: "solved",
+    });
+    const stub = env.ACTIVITY_DO.get(env.ACTIVITY_DO.idFromName(activity.id));
+    await evictDurableObject(stub);
+    expect(await solve(activity.id, alice, "secret456", key)).toEqual({
+      outcome: "solved",
+    });
+    expect(
+      (await submitSolve(activity.id, alice, "other789", key)).status,
+    ).toBe(409);
+    expect(
+      (await submitClaim(activity.id, alice, "secret456", key)).status,
+    ).toBe(409);
+    expect(
+      (await submitSolve(activity.id, alice, "claim123", awardKey)).status,
+    ).toBe(409);
+    const different = await create();
+    expect(
+      (await submitSolve(different.id, alice, "secret456", key)).status,
+    ).toBe(409);
+    expect(await counts(activity.id)).toMatchObject({
+      claims: 1,
+      attempts: 2,
+      validations: 2,
+    });
+    const saved = required(await findSubmission(bindings, alice.id, key));
+    await expect(
+      completeClaimSubmission(bindings, saved),
+    ).rejects.toMatchObject({
+      status: 409,
+    });
+    expect(await resumePendingActivityClaims(bindings, activity.id)).toBe(0);
+  });
+
+  it("preserves old claim fingerprints and default purpose for legacy requests", async () => {
+    const activity = await create();
+    const key = crypto.randomUUID();
+    await env.DB.prepare(`INSERT INTO redemption_submissions
+      (id,activity_id,user_id,submission_id,fingerprint,outcome,created_at,validated_at,finished_at)
+      VALUES (?,?,?,?,?,'incorrect',?,?,?)`)
+      .bind(
+        crypto.randomUUID(),
+        activity.id,
+        alice.id,
+        key,
+        await digestPassword(
+          `claim-request:${activity.id}:wrong123`,
+          bindings.PASSWORD_DIGEST_KEY,
+        ),
+        Date.now(),
+        Date.now(),
+        Date.now(),
+      )
+      .run();
+    const response = await submitClaim(activity.id, alice, "wrong123", key);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ result: "incorrect" });
+    expect(
+      (await submitSolve(activity.id, alice, "wrong123", key)).status,
+    ).toBe(409);
+    expect((await findSubmission(bindings, alice.id, key))?.purpose).toBe(
+      "claim",
+    );
+    expect(await counts(activity.id)).toMatchObject({
+      claims: 0,
+      validations: 1,
+    });
+  });
+
+  it("shares the persistent rolling quota across claim and solve and does not count replays", async () => {
+    const activity = await create(textConfig({ forceDedicated: true }));
+    const awardKey = crypto.randomUUID();
+    await claim(activity.id, alice, "claim123", awardKey);
+    const solveKey = crypto.randomUUID();
+    await solve(activity.id, alice, "secret456", solveKey);
+    for (let index = 0; index < 8; index++)
+      expect(await solve(activity.id, alice, "wrong123")).toEqual({
+        outcome: "incorrect",
+      });
+    const stub = env.ACTIVITY_DO.get(env.ACTIVITY_DO.idFromName(activity.id));
+    await evictDurableObject(stub);
+    const limited = await submitSolve(activity.id);
+    expect(limited.status).toBe(429);
+    expect(Number(limited.headers.get("Retry-After"))).toBeGreaterThan(0);
+    expect(await solve(activity.id, alice, "secret456", solveKey)).toEqual({
+      outcome: "solved",
+    });
+    expect(
+      (await submitClaim(activity.id, alice, "claim123", awardKey)).status,
+    ).toBe(200);
+    expect((await submitSolve(activity.id, alice, "bad!")).status).toBe(400);
+    expect(await counts(activity.id)).toMatchObject({
+      claims: 1,
+      attempts: 10,
+      validations: 10,
+    });
+    await env.DB.prepare(
+      "UPDATE redemption_submissions SET validated_at=? WHERE activity_id=?",
+    )
+      .bind(Date.now() - CLAIM_WINDOW_MS - 1000, activity.id)
+      .run();
+    expect(await solve(activity.id, alice, "other789")).toEqual({
+      outcome: "solved",
+    });
+    expect(await counts(activity.id)).toMatchObject({
+      attempts: 11,
+      validations: 11,
+    });
+  });
+
+  it("keeps an incorrect result immutable when the author adds that password", async () => {
+    const activity = await create(
+      textConfig({
+        passwords: validPasswords.slice(0, 4),
+        forceDedicated: true,
+      }),
+    );
+    await claim(activity.id);
+    const key = crypto.randomUUID();
+    expect(await solve(activity.id, alice, "hidden999", key)).toEqual({
+      outcome: "incorrect",
+    });
+    const updated = await request(
+      `/api/me/activities/${activity.id}`,
+      owner,
+      "PATCH",
+      {
+        version: activity.version,
+        activity: { ...activity.config, passwords: validPasswords },
+      },
+    );
+    expect(updated.status).toBe(200);
+    expect(await solve(activity.id, alice, "hidden999", key)).toEqual({
+      outcome: "incorrect",
+    });
+    expect((await passwords(activity.id, alice)).passwords).not.toContainEqual({
+      text: "hidden999",
+      isClaimPassword: false,
+      isSolved: true,
+    });
+    expect(await solve(activity.id, alice, "hidden999")).toEqual({
+      outcome: "solved",
+    });
+    const stats = (await (
+      await request(`/api/me/activities/${activity.id}/statistics`, owner)
+    ).json()) as ActivityStatistics;
+    expect(
+      stats.items.find((item) => item.password === "hidden999"),
+    ).toMatchObject({
+      attempts: 2,
+      matchedAttempts: 1,
+      unmatchedAttempts: 1,
+      successfulClaims: 0,
+    });
+  });
+
+  it("enforces the last shared validation slot atomically even without DO request serialization", async () => {
+    const activity = await create(textConfig({ forceDedicated: true }));
+    await claim(activity.id);
+    for (let index = 0; index < 8; index++)
+      await solve(activity.id, alice, "wrong123");
+    const outcomes = await Promise.allSettled(
+      ["secret456", "other789"].map((password) =>
+        solveActivityPassword(bindings, activity.id, alice.id, {
+          submissionId: crypto.randomUUID(),
+          password,
+        }),
+      ),
+    );
+    const successes = outcomes.filter(
+      (result) => result.status === "fulfilled",
+    );
+    const failures = outcomes.filter((result) => result.status === "rejected");
+    expect(successes).toHaveLength(1);
+    expect(successes[0]).toMatchObject({ value: { outcome: "solved" } });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({ reason: { status: 429 } });
+    expect(await counts(activity.id)).toMatchObject({
+      claims: 1,
+      assigned: 1,
+      attempts: 10,
+      validations: 10,
+    });
+  });
+
+  it("rolls back failed solve persistence atomically and permits a same-key retry", async () => {
+    const activity = await create(textConfig({ forceDedicated: true }));
+    await claim(activity.id);
+    const key = crypto.randomUUID();
+    const before = await counts(activity.id);
+    await env.DB.prepare(
+      "CREATE TRIGGER fail_password_attempt BEFORE INSERT ON attempt_events BEGIN SELECT RAISE(ABORT,'injected attempt failure'); END",
+    ).run();
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      expect(
+        (await submitSolve(activity.id, alice, "secret456", key)).status,
+      ).toBe(500);
+      expect(await counts(activity.id)).toEqual(before);
+      expect(await findSubmission(bindings, alice.id, key)).toBeUndefined();
+      expect((await passwords(activity.id, alice)).hiddenCount).toBe(4);
+    } finally {
+      await env.DB.prepare("DROP TRIGGER fail_password_attempt").run();
+    }
+    expect(await solve(activity.id, alice, "secret456", key)).toEqual({
+      outcome: "solved",
+    });
+    expect(await counts(activity.id)).toMatchObject({
+      claims: 1,
+      attempts: 2,
+      validations: 2,
+    });
+  });
+
+  it("deduplicates concurrent UUIDs and independently records concurrent solutions without allocating", async () => {
+    const activity = await create(textConfig({ forceDedicated: true }));
+    await claim(activity.id);
+    const key = crypto.randomUUID();
+    const same = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        solve(activity.id, alice, "secret456", key),
+      ),
+    );
+    expect(same).toEqual(
+      Array.from({ length: 4 }, () => ({ outcome: "solved" })),
+    );
+    expect(
+      await Promise.all([
+        solve(activity.id, alice, "other789"),
+        solve(activity.id, alice, "lastword1"),
+      ]),
+    ).toEqual([{ outcome: "solved" }, { outcome: "solved" }]);
+    expect(await counts(activity.id)).toMatchObject({
+      claims: 1,
+      assigned: 1,
+      version: activity.version,
+      attempts: 4,
+      validations: 4,
+      payments: 0,
+      outbox: 0,
+    });
+    expect((await passwords(activity.id, alice)).hiddenCount).toBe(1);
+  });
+
+  it("leaves the original simulated LDC task, reward and outbox unchanged", async () => {
+    const merchant = await createMerchant(bindings, owner.id, {
+      requestId: crypto.randomUUID(),
+      clientId: "password_test_simulation",
+      label: "口令测试模拟商户",
+      secret: "local-fake-secret",
+    });
+    const {
+      rewards: _rewards,
+      rewardType: _type,
+      ...base
+    } = textConfig({ forceDedicated: true });
+    const activity = await create({
+      ...base,
+      rewardType: "ldc",
+      merchantId: merchant.id,
+      money: { mode: "fixed", totalAmount: "1.00", count: 4 },
+    });
+    const award = await claim(activity.id);
+    const taskBefore = await env.DB.prepare(
+      "SELECT * FROM payment_tasks",
+    ).first();
+    const outboxBefore = await env.DB.prepare(
+      "SELECT id,task_id,created_at FROM payment_outbox",
+    ).first();
+    expect(await solve(activity.id)).toEqual({ outcome: "solved" });
+    expect(await solve(activity.id, alice, "other789")).toEqual({
+      outcome: "solved",
+    });
+    expect(await env.DB.prepare("SELECT * FROM payment_tasks").first()).toEqual(
+      taskBefore,
+    );
+    expect(
+      await env.DB.prepare(
+        "SELECT id,task_id,created_at FROM payment_outbox",
+      ).first(),
+    ).toEqual(outboxBefore);
+    expect(await counts(activity.id)).toMatchObject({
+      claims: 1,
+      assigned: 1,
+      payments: 1,
+      outbox: 1,
+    });
+    expect(
+      await (await request(`/api/me/claims/${award.claim.id}`, alice)).json(),
+    ).toEqual({ claim: award.claim });
+    expect((await submitSolve(activity.id, owner)).status).toBe(403);
+  });
+});
+
+describe("deleted activity exclusion", () => {
+  it("rejects replay and reads after draft deletion", async () => {
+    const activity = await create(textConfig(), false);
+    const input = { submissionId: crypto.randomUUID(), password: "claim123" };
+    const admitted = await prepareClaimSubmission(
+      bindings,
+      activity.id,
+      owner.id,
+      input,
+    );
+    expect(admitted.outcome).toBe("draft");
+    expect(
+      (
+        await request(`/api/me/activities/${activity.id}`, owner, "DELETE", {
+          version: activity.version,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await submitClaim(
+          activity.id,
+          owner,
+          input.password,
+          input.submissionId,
+        )
+      ).status,
+    ).toBe(404);
+    expect((await submitSolve(activity.id, owner)).status).toBe(404);
+    expect(
+      (await request(`/api/activities/${activity.id}/passwords`, owner)).status,
+    ).toBe(404);
+    expect(
+      (await request(`/api/activities/${activity.id}/recipients`, owner))
+        .status,
+    ).toBe(404);
+    await expect(
+      completeClaimSubmission(bindings, admitted),
+    ).rejects.toMatchObject({ status: 404 });
+    expect(await resumePendingActivityClaims(bindings, activity.id)).toBe(0);
+  });
+
+  it("excludes an old malformed pending record on a tombstoned draft from recovery", async () => {
+    const activity = await create(textConfig(), false);
+    const input = { submissionId: crypto.randomUUID(), password: "claim123" };
+    await env.DB.prepare(`INSERT INTO redemption_submissions
+      (id,activity_id,user_id,submission_id,fingerprint,outcome,created_at)
+      VALUES (?,?,?,?,?,'pending',?)`)
+      .bind(
+        crypto.randomUUID(),
+        activity.id,
+        owner.id,
+        input.submissionId,
+        await digestPassword(
+          `claim-request:${activity.id}:claim123`,
+          bindings.PASSWORD_DIGEST_KEY,
+        ),
+        Date.now(),
+      )
+      .run();
+    const pending = required(
+      await findSubmission(bindings, owner.id, input.submissionId),
+    );
+    await env.DB.prepare("UPDATE activities SET deleted_at=? WHERE id=?")
+      .bind(Date.now(), activity.id)
+      .run();
+    expect(await resumePendingActivityClaims(bindings, activity.id)).toBe(0);
+    await expect(
+      completeClaimSubmission(bindings, pending),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      solveActivityPassword(bindings, activity.id, owner.id, {
+        ...input,
+        submissionId: crypto.randomUUID(),
+      }),
+    ).rejects.toMatchObject({ status: 404 });
+    expect(
+      await env.DB.prepare("SELECT COUNT(*) FROM claims").first("COUNT(*)"),
+    ).toBe(0);
+  });
+});

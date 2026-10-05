@@ -1,0 +1,1 @@
+ALTER TABLE `payment_tasks` ADD `unknown_outcome` integer DEFAULT false NOT NULL;
