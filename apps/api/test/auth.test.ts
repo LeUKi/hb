@@ -2,9 +2,11 @@ import { env } from "cloudflare:test";
 import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { app } from "../src/app";
+import { emailAssociatedData } from "../src/auth/oauth";
 import { requireAuth, requireOwner } from "../src/auth/session";
 import type { ApiBindings, ApiContext } from "../src/env";
 import { cleanupExpiredIdentityRows } from "../src/scheduled";
+import { decryptString } from "../src/security/crypto";
 
 const origin = "https://hb.example.com";
 const bindings: ApiBindings = {
@@ -36,6 +38,7 @@ async function begin(returnTo = "/account") {
   expect(location.searchParams.get("redirect_uri")).toBe(
     `${origin}/api/auth/callback`,
   );
+  expect(location.searchParams.get("scope")).toBe("profile email");
   const state = location.searchParams.get("state");
   expect(state).toBeTruthy();
   return { response, state, cookie: cookies(response) };
@@ -96,7 +99,13 @@ async function login(profile?: unknown) {
     cookie,
     response,
     me: (await me.json()) as {
-      user: { id: string; username: string; displayName: string };
+      user: {
+        id: string;
+        username: string;
+        displayName: string;
+        avatarUrl: string | null;
+        email: string | null;
+      };
       csrfToken: string;
     },
   };
@@ -159,7 +168,12 @@ describe("Connect authorization and sessions", () => {
     const cookie = cookies(response);
     const me = await request("/api/me", { headers: { Cookie: cookie } });
     expect(await me.json()).toMatchObject({
-      user: { username: "alice", displayName: "Alice" },
+      user: {
+        username: "alice",
+        displayName: "Alice",
+        avatarUrl: null,
+        email: null,
+      },
       csrfToken: expect.any(String),
     });
     expect(me.headers.get("cache-control")).toContain("no-store");
@@ -427,18 +441,143 @@ describe("Connect authorization and sessions", () => {
     expect(JSON.stringify(log.mock.calls)).not.toContain("private");
   });
 
-  it("updates mutable profile without changing identity or conflating reused usernames", async () => {
-    const first = await login();
+  it("updates mutable profile fields for the same stable ID and clears absent optional fields", async () => {
+    const first = await login({
+      id: 12345,
+      username: "alice",
+      name: "Alice",
+      email: "alice-private@example.com",
+      avatar_url: "https://cdn.example.com/avatar-old.png",
+      active: true,
+    });
     const second = await login({
       id: 12345,
       username: "renamed",
       name: "New Name",
+      email: "new-private@example.com",
+      avatar_url: "https://cdn.example.com/avatar-new.png",
       active: true,
     });
     expect(second.me.user.id).toBe(first.me.user.id);
-    expect(second.me.user.username).toBe("renamed");
+    expect(second.me.user).toMatchObject({
+      username: "renamed",
+      displayName: "New Name",
+      email: "new-private@example.com",
+      avatarUrl: "https://cdn.example.com/avatar-new.png",
+    });
+    const cleared = await login({
+      id: 12345,
+      username: "renamed-again",
+      active: true,
+    });
+    expect(cleared.me.user.id).toBe(first.me.user.id);
+    expect(cleared.me.user.email).toBeNull();
+    expect(cleared.me.user.avatarUrl).toBeNull();
     const third = await login({ id: 67890, username: "renamed", active: true });
     expect(third.me.user.id).not.toBe(first.me.user.id);
+  });
+
+  it("stores optional Connect email encrypted and publishes only the safe avatar", async () => {
+    const signed = await login({
+      id: 12345,
+      username: "alice",
+      name: "Alice",
+      email: "alice-private@example.com",
+      avatar_url: "https://cdn.example.com/avatar.png?size=128",
+      active: true,
+    });
+    expect(signed.me.user).toMatchObject({
+      username: "alice",
+      displayName: "Alice",
+      email: "alice-private@example.com",
+      avatarUrl: "https://cdn.example.com/avatar.png?size=128",
+    });
+    const row = await env.DB.prepare(
+      "SELECT provider,external_id,email_ciphertext,avatar_url FROM users WHERE id=?",
+    )
+      .bind(signed.me.user.id)
+      .first<{
+        provider: string;
+        external_id: string;
+        email_ciphertext: string;
+        avatar_url: string;
+      }>();
+    expect(row?.avatar_url).toBe("https://cdn.example.com/avatar.png?size=128");
+    expect(row?.email_ciphertext).not.toContain("alice-private");
+    expect(
+      await decryptString(
+        row?.email_ciphertext ?? "",
+        bindings,
+        emailAssociatedData(row?.provider ?? "", row?.external_id ?? ""),
+      ),
+    ).toBe("alice-private@example.com");
+  });
+
+  it("treats missing or unsafe optional Connect profile fields as absent", async () => {
+    const signed = await login({
+      id: 12345,
+      username: "alice",
+      name: "Alice",
+      email: "a@x..com",
+      avatar_url: "https://user:pass@example.com/avatar.png",
+      active: true,
+    });
+    expect(signed.me.user.email).toBeNull();
+    expect(signed.me.user.avatarUrl).toBeNull();
+    expect(
+      await env.DB.prepare(
+        "SELECT email_ciphertext,avatar_url FROM users WHERE id=?",
+      )
+        .bind(signed.me.user.id)
+        .first(),
+    ).toEqual({ email_ciphertext: null, avatar_url: null });
+  });
+
+  it("keeps private email account-scoped and avoids decrypting it for ordinary auth", async () => {
+    const alice = await login({
+      id: 12345,
+      username: "alice",
+      email: "alice-private@example.com",
+      active: true,
+    });
+    const bob = await login({
+      id: 67890,
+      username: "bob",
+      email: "bob-private@example.com",
+      active: true,
+    });
+    expect(alice.me.user.email).toBe("alice-private@example.com");
+    expect(bob.me.user.email).toBe("bob-private@example.com");
+    expect(JSON.stringify(alice.me)).not.toContain("bob-private");
+    expect(await (await request("/api/me")).json()).toEqual({
+      user: null,
+      csrfToken: null,
+    });
+
+    const protectedApp = new Hono<ApiContext>().get("/private", async (c) => {
+      const session = await requireAuth(c);
+      return c.json({ user: session.user });
+    });
+    const brokenEncryptionBindings = {
+      ...bindings,
+      ENCRYPTION_KEYS: JSON.stringify({
+        other: "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+      }),
+    };
+    const response = await protectedApp.request(
+      `${origin}/private`,
+      { headers: { Cookie: alice.cookie } },
+      brokenEncryptionBindings,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      user: {
+        id: alice.me.user.id,
+        username: "alice",
+        displayName: "alice",
+        avatarUrl: null,
+      },
+    });
   });
 
   it("rejects callbacks on a different origin without consuming their state", async () => {

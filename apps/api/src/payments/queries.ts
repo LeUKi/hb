@@ -41,6 +41,9 @@ type PaymentSqlRow = {
   order_evidence: MerchantPaymentDetail["orderEvidence"];
   recovery_policy: MerchantPaymentDetail["recoveryPolicy"];
   first_send_at: number | null;
+  recipient_username_current: string | null;
+  recipient_display_name_current: string | null;
+  recipient_avatar_url: string | null;
 };
 type AttemptSqlRow = {
   id: string;
@@ -138,7 +141,14 @@ export async function merchantPaymentDetail(
   cursor?: string,
 ): Promise<MerchantPaymentDetail> {
   const row = await env.DB.prepare(
-    "SELECT p.*,c.activity_id FROM payment_tasks p LEFT JOIN claims c ON c.id=p.claim_id WHERE p.id=? AND p.merchant_id=?",
+    `SELECT p.*,c.activity_id,
+      u.username AS recipient_username_current,
+      u.display_name AS recipient_display_name_current,
+      u.avatar_url AS recipient_avatar_url
+      FROM payment_tasks p
+      LEFT JOIN claims c ON c.id=p.claim_id
+      LEFT JOIN users u ON u.id=c.user_id
+      WHERE p.id=? AND p.merchant_id=?`,
   )
     .bind(taskId, merchantId)
     .first<PaymentSqlRow>();
@@ -185,6 +195,14 @@ export async function merchantPaymentDetail(
   );
   return {
     ...paymentView(row),
+    recipientProfile:
+      row.recipient_username_current && row.recipient_display_name_current
+        ? {
+            username: row.recipient_username_current,
+            displayName: row.recipient_display_name_current,
+            avatarUrl: row.recipient_avatar_url,
+          }
+        : null,
     usernameCorrection: correction
       ? {
           originalUsername: correction.original_username,

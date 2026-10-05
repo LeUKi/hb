@@ -1,22 +1,29 @@
 import {
   ACTIVITY_LIMITS,
   amountToMinor,
+  DEFAULT_DRAW_COUNTDOWN_SECONDS,
   formatAmount,
-  type LdcActivityInput,
   moneySchema,
   type PaymentMode,
+  type TimedDrawMoney,
 } from "@hb/contracts";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useMerchant, useMerchants } from "../../lib/merchants";
 import { publicationReason } from "../../lib/payment-display";
+import {
+  formatCountdownSeconds,
+  isTimedDrawMoney,
+  timedDrawSummary,
+  type WebLdcMoney,
+} from "../../lib/timed-draw";
 import { Button } from "../ui/button";
 import { ActivityErrorView } from "./activity-error";
 import { RandomMoneySummary } from "./random-money-summary";
 import { RealPaymentNotice } from "./real-payment-notice";
 import { SimulationNotice } from "./simulation-notice";
 
-function fixedUnitAmount(money: LdcActivityInput["money"]) {
+function fixedUnitAmount(money: WebLdcMoney) {
   const amounts = money.mode === "custom" ? money.amounts : [money.totalAmount];
   const count = money.mode === "custom" ? money.amounts.length : money.count;
   if (
@@ -61,50 +68,72 @@ export function LdcFields({
 }: {
   userId: string;
   merchantId: string;
-  money: LdcActivityInput["money"];
-  allocation: LdcActivityInput["allocation"];
+  money: WebLdcMoney;
+  allocation: "sequential" | "random";
   disabled: boolean;
   paymentMode?: PaymentMode;
   lockedPaymentMode?: PaymentMode;
   autoBindCurrent: boolean;
   onMerchant: (id: string) => void;
-  onMoney: (money: LdcActivityInput["money"]) => void;
-  onAllocation: (allocation: LdcActivityInput["allocation"]) => void;
+  onMoney: (money: WebLdcMoney) => void;
+  onAllocation: (allocation: "sequential" | "random") => void;
 }) {
   const [unitAmount, setUnitAmount] = useState(() => fixedUnitAmount(money));
   const [fixedNeedsAmount] = useState(
     () => money.mode !== "fixed" && !fixedUnitAmount(money),
   );
+  const initialSeed =
+    money.mode === "custom"
+      ? { totalAmount: "", count: Math.max(1, money.amounts.length) }
+      : { totalAmount: money.totalAmount, count: money.count };
   const drafts = useRef({
     fixedUnit: fixedUnitAmount(money),
     fixedCount: money.mode === "custom" ? money.amounts.length : money.count,
-    random: {
-      double_mean_v1:
-        money.mode === "random" && money.algorithm === "double_mean_v1"
-          ? { totalAmount: money.totalAmount, count: money.count }
-          : null,
-      bounded_mean_v1:
-        money.mode === "random" && money.algorithm === "bounded_mean_v1"
-          ? { totalAmount: money.totalAmount, count: money.count }
-          : null,
-    } as Record<
-      "double_mean_v1" | "bounded_mean_v1",
-      { totalAmount: string; count: number } | null
-    >,
+    randomVisited: money.mode === "random",
+    random:
+      money.mode === "random"
+        ? {
+            algorithm: money.algorithm,
+            totalAmount: money.totalAmount,
+            count: money.count,
+          }
+        : {
+            algorithm: "double_mean_v1" as const,
+            ...initialSeed,
+          },
+    customAllocation: money.mode === "custom" ? allocation : "sequential",
     amounts: money.mode === "custom" ? money.amounts : [""],
+    timedDrawVisited: isTimedDrawMoney(money),
+    timedDraw: isTimedDrawMoney(money)
+      ? money
+      : ({
+          mode: "timed_draw",
+          algorithm: "double_mean_v1",
+          totalAmount: initialSeed.totalAmount,
+          count: initialSeed.count,
+          participantLimit: initialSeed.count,
+          countdownSeconds: DEFAULT_DRAW_COUNTDOWN_SECONDS,
+          distributeFullPool: true,
+        } satisfies TimedDrawMoney),
   });
-  const plan =
-    money.mode === "fixed"
+  const plan = isTimedDrawMoney(money)
+    ? "timed_draw"
+    : money.mode === "fixed"
       ? "fixed"
       : money.mode === "random"
-        ? money.algorithm
-        : allocation === "random"
-          ? "custom_random"
-          : "custom_sequential";
-  function choosePlan(next: string) {
-    if (money.mode === "custom") drafts.current.amounts = money.amounts;
-    else if (money.mode === "random") {
-      drafts.current.random[money.algorithm] = {
+        ? "random"
+        : "custom";
+  function rememberCurrentPlan() {
+    if (money.mode === "custom") {
+      drafts.current.amounts = money.amounts;
+      drafts.current.customAllocation = allocation;
+    } else if (isTimedDrawMoney(money)) {
+      drafts.current.timedDraw = money;
+      drafts.current.timedDrawVisited = true;
+    } else if (money.mode === "random") {
+      drafts.current.randomVisited = true;
+      drafts.current.random = {
+        algorithm: money.algorithm,
         totalAmount: money.totalAmount,
         count: money.count,
       };
@@ -112,21 +141,54 @@ export function LdcFields({
       drafts.current.fixedUnit = unitAmount;
       drafts.current.fixedCount = money.count;
     }
-    if (next === "custom_random" || next === "custom_sequential") {
-      const nextAllocation = next === "custom_random" ? "random" : "sequential";
+  }
+  function choosePlan(next: string) {
+    rememberCurrentPlan();
+    if (next === "timed_draw") {
+      const seedCount =
+        money.mode === "custom"
+          ? Math.max(1, money.amounts.length)
+          : money.count;
+      const seedAmount =
+        money.mode === "custom"
+          ? drafts.current.timedDraw.totalAmount
+          : money.totalAmount;
+      const draft = drafts.current.timedDrawVisited
+        ? drafts.current.timedDraw
+        : ({
+            ...drafts.current.timedDraw,
+            totalAmount: seedAmount,
+            count: seedCount,
+            participantLimit: seedCount,
+          } satisfies TimedDrawMoney);
+      drafts.current.timedDraw = draft;
+      drafts.current.timedDrawVisited = true;
+      onMoney(draft);
+      onAllocation("random");
+    } else if (next === "custom") {
       onMoney({ mode: "custom", amounts: drafts.current.amounts });
-      onAllocation(nextAllocation);
-    } else if (next === "double_mean_v1" || next === "bounded_mean_v1") {
-      const draft =
-        drafts.current.random[next] ??
-        (money.mode === "custom"
-          ? { totalAmount: "", count: Math.max(1, money.amounts.length) }
-          : { totalAmount: money.totalAmount, count: money.count });
-      drafts.current.random[next] = draft;
+      onAllocation(drafts.current.customAllocation);
+    } else if (next === "random") {
+      const draft = drafts.current.randomVisited
+        ? drafts.current.random
+        : {
+            ...drafts.current.random,
+            totalAmount:
+              money.mode === "custom"
+                ? drafts.current.random.totalAmount
+                : money.totalAmount,
+            count:
+              money.mode === "custom"
+                ? Math.max(1, money.amounts.length)
+                : money.count,
+          };
+      drafts.current.random = draft;
+      drafts.current.randomVisited = true;
       onMoney({
         mode: "random",
-        algorithm: next,
-        ...draft,
+        algorithm: draft.algorithm,
+        totalAmount: draft.totalAmount,
+        count: draft.count,
       });
       onAllocation("random");
     } else {
@@ -141,6 +203,22 @@ export function LdcFields({
       });
       onAllocation("sequential");
     }
+  }
+  function chooseRandomAlgorithm(
+    algorithm: "double_mean_v1" | "bounded_mean_v1",
+  ) {
+    rememberCurrentPlan();
+    const totalAmount =
+      money.mode === "random"
+        ? money.totalAmount
+        : drafts.current.random.totalAmount;
+    const count =
+      money.mode === "random" ? money.count : drafts.current.random.count;
+    const draft = { algorithm, totalAmount, count };
+    drafts.current.random = draft;
+    drafts.current.randomVisited = true;
+    onMoney({ mode: "random", ...draft });
+    onAllocation("random");
   }
   const merchants = useMerchants(userId);
   const currentId = merchants.data?.currentMerchantId ?? "";
@@ -280,17 +358,63 @@ export function LdcFields({
           disabled={disabled}
           onChange={(event) => choosePlan(event.target.value)}
         >
-          <option value="fixed">固定金额，平均分配</option>
-          <option value="double_mean_v1">随机金额，二倍均值法</option>
-          <option value="bounded_mean_v1">随机金额，波动均值法</option>
-          <option value="custom_sequential">自定义金额，按顺序领取</option>
-          <option value="custom_random">自定义金额，随机领取</option>
+          <option value="fixed">固定均分</option>
+          <option value="random">即时随机</option>
+          <option value="custom">自定义金额</option>
+          <option value="timed_draw">限时开奖</option>
         </select>
       </label>
-      {money.mode !== "custom" ? (
+      {money.mode === "random" ? (
+        <label className="activity-label" htmlFor="ldc-random-algorithm">
+          随机算法
+          <select
+            id="ldc-random-algorithm"
+            className="activity-input"
+            value={money.algorithm}
+            disabled={disabled}
+            onChange={(event) =>
+              chooseRandomAlgorithm(
+                event.target.value === "bounded_mean_v1"
+                  ? "bounded_mean_v1"
+                  : "double_mean_v1",
+              )
+            }
+          >
+            <option value="double_mean_v1">二倍均值法</option>
+            <option value="bounded_mean_v1">均值上下 50%</option>
+          </select>
+        </label>
+      ) : null}
+      {money.mode === "custom" ? (
+        <label className="activity-label" htmlFor="ldc-custom-allocation">
+          发放顺序
+          <select
+            id="ldc-custom-allocation"
+            className="activity-input"
+            value={allocation}
+            disabled={disabled}
+            onChange={(event) => {
+              const next =
+                event.target.value === "random" ? "random" : "sequential";
+              drafts.current.customAllocation = next;
+              onAllocation(next);
+            }}
+          >
+            <option value="sequential">按顺序领取</option>
+            <option value="random">随机领取，不放回</option>
+          </select>
+        </label>
+      ) : null}
+      {isTimedDrawMoney(money) ? (
+        <TimedDrawFields
+          money={money}
+          disabled={disabled}
+          onMoney={(next) => onMoney(next)}
+        />
+      ) : money.mode !== "custom" ? (
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="activity-label" htmlFor="ldc-total">
-            {money.mode === "fixed" ? "每份金额（LDC）" : "总发放金额（LDC）"}
+            {money.mode === "fixed" ? "每份金额（LDC）" : "总奖池（LDC）"}
             <input
               id="ldc-total"
               className="activity-input"
@@ -352,10 +476,17 @@ export function LdcFields({
           />
         </label>
       )}
-      {money.mode === "random" ? (
+      {isTimedDrawMoney(money) ? (
+        <p className="rounded-md border border-neutral-200 bg-neutral-50 p-3 text-sm leading-6 text-neutral-600">
+          {timedDrawSummary(money)}
+        </p>
+      ) : money.mode === "random" ? (
         <RandomMoneySummary money={money} opened={disabled} />
       ) : null}
-      {money.mode === "fixed" && fixedNeedsAmount && !unitAmount ? (
+      {!isTimedDrawMoney(money) &&
+      money.mode === "fixed" &&
+      fixedNeedsAmount &&
+      !unitAmount ? (
         <p className="text-sm text-amber-800">
           原总额无法按份数精确均分为两位小数，请填写每份金额。
         </p>
@@ -365,12 +496,148 @@ export function LdcFields({
         LDC，金额最多两位小数。填写的是发放金额，领取者承担自己一侧手续费。作者不能领取自己的
         LDC 活动。
       </p>
-      {amountLabel ? (
+      {amountLabel && !isTimedDrawMoney(money) ? (
         <p className="text-sm">
           总发放金额：{amountLabel} LDC ·{" "}
           {money.mode === "custom" ? money.amounts.length : money.count} 份
         </p>
       ) : null}
+    </div>
+  );
+}
+
+function TimedDrawFields({
+  money,
+  disabled,
+  onMoney,
+}: {
+  money: TimedDrawMoney;
+  disabled: boolean;
+  onMoney: (money: TimedDrawMoney) => void;
+}) {
+  const participantLimit = money.participantLimit ?? "";
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="activity-label" htmlFor="timed-total">
+          总奖池（LDC）
+          <input
+            id="timed-total"
+            className="activity-input"
+            inputMode="decimal"
+            value={money.totalAmount}
+            disabled={disabled}
+            onChange={(event) =>
+              onMoney({ ...money, totalAmount: event.target.value })
+            }
+          />
+        </label>
+        <label className="activity-label" htmlFor="timed-count">
+          获奖名额
+          <input
+            id="timed-count"
+            className="activity-input"
+            type="number"
+            min={1}
+            max={ACTIVITY_LIMITS.rewards}
+            step={1}
+            value={money.count || ""}
+            disabled={disabled}
+            onChange={(event) => {
+              const count = Number(event.target.value);
+              onMoney({
+                ...money,
+                count,
+                participantLimit: money.participantLimit,
+              });
+            }}
+          />
+        </label>
+        <label className="activity-label" htmlFor="timed-participant-limit">
+          报名上限
+          <input
+            id="timed-participant-limit"
+            className="activity-input"
+            type="number"
+            min={1}
+            step={1}
+            placeholder="不限制"
+            value={participantLimit}
+            disabled={disabled}
+            onChange={(event) =>
+              onMoney({
+                ...money,
+                participantLimit: event.target.value
+                  ? Number(event.target.value)
+                  : null,
+              })
+            }
+          />
+          <span className="text-xs font-normal text-neutral-500">
+            首次进入默认等于获奖名额；留空表示不限制报名人数。
+          </span>
+        </label>
+        <label className="activity-label" htmlFor="timed-countdown">
+          最晚开奖倒计时（秒）
+          <input
+            id="timed-countdown"
+            className="activity-input"
+            type="number"
+            min={1}
+            step={1}
+            value={money.countdownSeconds || ""}
+            disabled={disabled}
+            onChange={(event) =>
+              onMoney({
+                ...money,
+                countdownSeconds: Number(event.target.value),
+              })
+            }
+          />
+          <span className="text-xs font-normal text-neutral-500">
+            默认 86400 秒；当前设置：
+            {formatCountdownSeconds(money.countdownSeconds)}。
+          </span>
+        </label>
+      </div>
+      <label className="activity-label" htmlFor="timed-algorithm">
+        抽奖金额算法
+        <select
+          id="timed-algorithm"
+          className="activity-input"
+          value={money.algorithm}
+          disabled={disabled}
+          onChange={(event) =>
+            onMoney({
+              ...money,
+              algorithm:
+                event.target.value === "bounded_mean_v1"
+                  ? "bounded_mean_v1"
+                  : "double_mean_v1",
+            })
+          }
+        >
+          <option value="double_mean_v1">二倍均值法</option>
+          <option value="bounded_mean_v1">均值上下 50%</option>
+        </select>
+      </label>
+      <label className="flex items-start gap-3 text-sm">
+        <input
+          type="checkbox"
+          className="mt-1 size-4"
+          checked={money.distributeFullPool}
+          disabled={disabled}
+          onChange={(event) =>
+            onMoney({ ...money, distributeFullPool: event.target.checked })
+          }
+        />
+        <span>
+          <span className="font-medium">人数不足时发完奖池</span>
+          <span className="mt-1 block text-xs leading-5 text-neutral-500">
+            默认开启。关闭后仍按原获奖名额生成奖池，再从中随机抽取实际中奖人数对应的份数发放。
+          </span>
+        </span>
+      </label>
     </div>
   );
 }

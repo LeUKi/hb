@@ -12,6 +12,7 @@ import { SimulationNotice } from "../components/activities/simulation-notice";
 import { CredentialVerificationPanel } from "../components/merchants/credential-verification";
 import { PaymentCheckButton } from "../components/merchants/payment-check-button";
 import { Button } from "../components/ui/button";
+import { UserIdentity } from "../components/user-identity";
 import { formatTime } from "../lib/activities";
 import {
   useMerchant,
@@ -108,6 +109,11 @@ function PaymentDetails({
   const canCheck = canWakePaymentQuery(payment);
   const sendingUsername =
     payment.usernameCorrection?.correctedUsername ?? payment.recipientUsername;
+  const recipientSnapshot = {
+    username: sendingUsername ?? payment.recipientId,
+    displayName: sendingUsername ?? payment.recipientId,
+    avatarUrl: null,
+  };
   async function verify() {
     if (!merchant.capabilities.canVerify) return;
     try {
@@ -234,6 +240,17 @@ function PaymentDetails({
             发送限制：{paymentReason(payment.sendBlockReason)}
           </p>
         ) : null}
+        {payment.recipientProfile ? (
+          <div className="rounded-md border border-neutral-200 bg-neutral-50 p-3 text-sm">
+            <p className="mb-2 text-neutral-500">当前领取账号资料</p>
+            <UserIdentity profile={payment.recipientProfile} />
+          </div>
+        ) : (
+          <div className="rounded-md border border-neutral-200 bg-neutral-50 p-3 text-sm">
+            <p className="mb-2 text-neutral-500">收款用户名快照</p>
+            <UserIdentity profile={recipientSnapshot} />
+          </div>
+        )}
         <dl className="grid gap-4 text-sm sm:grid-cols-2">
           {facts.map((fact) => (
             <div key={fact.label} className="min-w-0 space-y-1">

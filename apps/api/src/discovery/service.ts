@@ -11,13 +11,16 @@ import {
 } from "@hb/contracts";
 import { and, desc, eq, lt, or, type SQL, sql } from "drizzle-orm";
 import { getClaimDetail } from "../activities/claim-queries";
+import { registrationStatus } from "../activities/draw-storage";
 import { ActivityError, activityConflict } from "../activities/errors";
 import { databaseNow } from "../activities/lifecycle";
+import { getRegistrationDetail } from "../activities/registration-queries";
 import { projectPublicActivity } from "../activities/service";
 import type { ActivityRow } from "../activities/storage";
 import { createDb } from "../db/client";
 import {
   activities,
+  activityRegistrations,
   claims,
   globalRedemptions,
   paymentTasks,
@@ -89,9 +92,11 @@ async function list(
         id: users.id,
         username: users.username,
         displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
       },
       claimId: claims.id,
       paymentState: paymentTasks.status,
+      registrationId: activityRegistrations.id,
     })
     .from(activities)
     .innerJoin(users, eq(users.id, activities.authorId))
@@ -102,6 +107,15 @@ async function list(
         : sql`0`,
     )
     .leftJoin(paymentTasks, eq(paymentTasks.claimId, claims.id))
+    .leftJoin(
+      activityRegistrations,
+      viewerId
+        ? and(
+            eq(activityRegistrations.activityId, activities.id),
+            eq(activityRegistrations.userId, viewerId),
+          )
+        : sql`0`,
+    )
     .where(
       and(
         discoverable(Date.now()),
@@ -122,19 +136,31 @@ async function list(
   const page = rows.slice(0, PAGE_SIZE);
   const last = page.at(-1)?.activity;
   return {
-    items: page.map(({ activity, author, claimId, paymentState }) =>
-      card(
-        activity,
-        author,
-        claimId
+    items: page.map(
+      ({ activity, author, claimId, paymentState, registrationId }) => ({
+        ...card(
+          activity,
+          author,
+          claimId
+            ? {
+                id: claimId,
+                ...(activity.rewardType === "ldc" && paymentState
+                  ? { paymentState }
+                  : {}),
+              }
+            : null,
+        ),
+        ...(activity.drawState
           ? {
-              id: claimId,
-              ...(activity.rewardType === "ldc" && paymentState
-                ? { paymentState }
-                : {}),
+              myRegistration: registrationId
+                ? {
+                    id: registrationId,
+                    status: registrationStatus(activity, Boolean(claimId)),
+                  }
+                : null,
             }
-          : null,
-      ),
+          : {}),
+      }),
     ),
     nextCursor:
       rows.length > PAGE_SIZE && last
@@ -307,7 +333,10 @@ async function savedClaimResult(
     )
     .get();
   if (!submission || submission.outcome === "pending") return undefined;
-  if (submission.purpose !== "claim" || submission.outcome === "solved")
+  if (
+    (submission.purpose !== "claim" && submission.purpose !== "register") ||
+    submission.outcome === "solved"
+  )
     throw new Error("Global redemption has an invalid claim submission");
   if (
     submission.outcome === "claimed" ||
@@ -318,6 +347,21 @@ async function savedClaimResult(
     return {
       result: submission.outcome,
       claim: await getClaimDetail(env, submission.claimId, row.userId),
+    };
+  }
+  if (
+    submission.outcome === "registered" ||
+    submission.outcome === "already_registered"
+  ) {
+    if (!submission.registrationId)
+      throw new Error("Completed registration has no entry");
+    return {
+      result: submission.outcome,
+      registration: await getRegistrationDetail(
+        env,
+        submission.registrationId,
+        row.userId,
+      ),
     };
   }
   return { result: submission.outcome };

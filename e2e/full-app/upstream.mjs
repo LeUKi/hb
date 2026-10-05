@@ -4,12 +4,40 @@ export const profiles = {
     id: "730001",
     username: "FullAppAuthor",
     name: "完整应用作者",
+    email: "author-private@example.test",
+    avatar_url: "https://avatars.example.test/author.png",
     active: true,
   },
   recipient: {
     id: "730002",
     username: "FullAppRecipient",
     name: "完整应用领取者",
+    email: "recipient-private@example.test",
+    avatar_url: "https://avatars.example.test/recipient.png",
+    active: true,
+  },
+  recipient2: {
+    id: "730003",
+    username: "FullAppSecond",
+    name: "完整应用第二参与者",
+    email: "second-private@example.test",
+    avatar_url: "https://avatars.example.test/second.png",
+    active: true,
+  },
+  recipient3: {
+    id: "730004",
+    username: "FullAppThird",
+    name: "完整应用第三参与者",
+    email: "third-private@example.test",
+    avatar_url: "https://avatars.example.test/third.png",
+    active: true,
+  },
+  recipientRenamed: {
+    id: "730002",
+    username: "FullAppRenamed",
+    name: "完整应用改名参与者",
+    email: "recipient-private@example.test",
+    avatar_url: "https://avatars.example.test/recipient.png",
     active: true,
   },
 };
@@ -24,6 +52,7 @@ export function createTestUpstream(Response, origin) {
     blockedRequests: 0,
   };
   const orders = new Map();
+  const latestProfiles = new Map();
   function json(body, status = 200) {
     return new Response(JSON.stringify(body), {
       status,
@@ -62,6 +91,7 @@ export function createTestUpstream(Response, origin) {
             .get("authorization")
             ?.replace(/^Bearer full-app-token-/, "");
           const profile = profiles[role];
+          if (profile) latestProfiles.set(profile.id, profile);
           return profile ? json(profile) : json({ error: "unauthorized" }, 401);
         }
         return blocked();
@@ -98,10 +128,18 @@ export function createTestUpstream(Response, origin) {
         const text = await request.text();
         const body = JSON.parse(text);
         const recipientId = /"user_id":([0-9]+)/.exec(text)?.[1];
+        const recipient = latestProfiles.get(recipientId);
+        const amountMinor =
+          typeof body.amount === "string" &&
+          /^(?:0|[1-9][0-9]{0,2})\.[0-9]{2}$/.test(body.amount)
+            ? Math.round(Number(body.amount) * 100)
+            : 0;
         if (
-          recipientId !== profiles.recipient.id ||
-          body.username !== profiles.recipient.username ||
-          body.amount !== "0.10" ||
+          !recipient ||
+          recipient.id === profiles.author.id ||
+          body.username !== recipient.username ||
+          amountMinor < 1 ||
+          amountMinor > 10_000 ||
           !/^hb_[0-9a-f]{32}$/.test(body.out_trade_no)
         )
           return json({ error_msg: "参数错误" }, 400);

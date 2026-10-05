@@ -409,3 +409,29 @@ Cron 只唤醒既有 ActivityDO 命名空间中的 `maintenance:v1` 对象。该
 作者解密全部，已领取者解密自己的claim.password_id及成功solve指向的去重集合，结束后解密全部；未授权答案不下发文本、摘要或逐条身份。所有口令响应no-store，查询键包含当前账号，退出和身份变化立即清除。公开名单仅总开关，开启返回用户名、时间和LDC整数面额，文本内容永不进入名单。
 
 本批规则于2026-10-05完成本地回归、预发布文本验收及生产更新；完整检查为27运维、20契约、480 Worker、105页面和3完整应用测试通过。0017保留既有金融事实，生产已恢复正常控制；具体发布版本、迁移/备份、Chrome及数据一致性证据见一期实施记录。升级前CPU预算样本及真实金融后续验收范围不因本批更新或套餐升级通知而直接改变。
+
+## Connect 可选资料及公共投影（0018）
+
+Connect 的[线上公开元数据](https://connect.linux.do/.well-known/openid-configuration)声明 `userinfo_endpoint=https://connect.linux.do/api/user`，支持 `email`、`avatar_url`、`name`、`username` 等字段和 `profile`、`email` 权限。[官方 Credit 授权配置](https://github.com/linux-do/credit/blob/fafddd147f3ac24f18156b95158aa18ea8b11b72/internal/apps/oauth/config.go#L49-L60)同样请求 `profile email`。本项目保留授权码流程，不新增 OIDC 或长期保存外部令牌；没有官方依据时不把邮箱字段存在等同于中转送达保证。
+
+`0018_abnormal_thunderball.sql` 仅向 users 增加可空的 `email_ciphertext`、`avatar_url`，不重建表或改变现有 ID、会话及业务关系。邮箱复用版本化 AES-GCM，AAD 为 `user:<provider>:<externalId>:email`；成功登录时同步最新可选资料，缺失值保存为空。头像统一校验 HTTPS、长度、控制字符及认证信息，不假设固定 CDN，不代理任意图片。
+
+`AuthenticatedUser` 带可公开头像但不带邮箱；普通 requireAuth 不解密联系方式。`GET /api/me` 在当前会话范围内单独读取和解密邮箱，保持 no-store。共享 `PublicUserProfile` 只有 username、displayName、avatarUrl；活动作者、发现与名单均明确选择这些字段，不能把完整 users 行或私有会话响应直接扩展到公共响应。公开名单 id 仍为领取记录 ID。付款详情只通过 claim 关联查询当前 recipientProfile，原 recipientUsername、尝试、金额和付款摘要保持不可变。
+
+前端通过同一用户组件渲染头像、昵称和可交互资料卡，不增加逐用户请求。头像无 Referer，失效时本地回退；主页固定 Linux DO 主机并编码用户名。邮箱仅本人账号页显示，身份变化时清除私有查询；外部头像及 OAuth 均在自动化中测试注入，不允许测试意外发送真实业务请求。本地测试及 Stage 迁移、真实 Connect 登录、资料显示和退出清理证据见实施记录；生产已于2026-10-06应用0018/0019并通过正常登录资料检查。
+
+## 限时开奖与报名持久化
+
+共享money联合增加timed_draw：algorithm、totalAmount、count、participantLimit、countdownSeconds、distributeFullPool。count表示最大中奖人数；participantLimit为空表示仅时间截止。内部allocation固定random、deadline保持duration，实际deadline在正式开放时按数据库时间和countdownSeconds写入，拒绝溢出的时间。
+
+报名使用activity_registrations，与原claims分离。activity/user及activity/ordinal分别唯一，序号和registered_count在同一事务推进。redemption_submissions新增register用途与独立终态，旧pending只属于立即领取补偿。错误提交、幂等键冲突、持久限流和强制专属尝试统计继续遵循原规则。报名记录绑定稳定账号身份和本次正确口令；不能以零金额库存或假claim占位。
+
+ActivityDO按活动串行协调，D1条件和约束承担跨重启正确性。报名达到上限原子关闭；到期由Alarm、请求与Cron共用入口补偿。开奖分为关闭报名、保存不可变方案、事务发布三个阶段。连续序号抽样最多1000名中奖者，不全表随机排序；固定中奖者、库存ID、金额、领取及任务ID后不重抽。批量JSON SQL事务发布库存、领取、付款任务、Outbox、尝试关联和完成事实，发布失败全回滚，任务只在发布完成后可发送。
+
+收款稳定ID取报名绑定的Connect身份；用户名采用开奖发布时数据库最近一次成功登录同步值，并固定到付款任务。读取与提交之间改名导致数据库保护失败时，保留中奖者和金额，仅重读尚未提交的付款身份快照/摘要。付款任务形成后沿用claim_same_order_v1，不改商户、业务号、身份、金额或恢复策略。停止新报名不停止已接纳结果结算，停止发送继续保留查询责任。
+
+GET /api/activities/:id/registration返回本人报名状态；GET /api/me/participations合并普通领取及开奖报名且去重；GET /api/me/activities/:id/registrations为作者分页查询。旧claim接口与ID含义保留，POST claim根据活动类型返回registered/already_registered或原领取结果。draw投影不公开持久方案，模糊数量隐藏人数和上限，名单关闭不返回报名者资料。报名口令与邮箱等私有数据保持no-store与身份切换清理。
+
+LDC_TIMED_DRAW_ENABLED仅控制新限时活动开放；关闭不丢弃已经接纳的报名、开奖方案或付款。Stage保持此开关false及真实资金关闭，本地完整运行器使用隔离数据库和测试上游。具体迁移、容量故障测试与部署证据见实施记录。
+
+2026-10-06发布完成：两环境均20项迁移，生产timed开关为true、三个stop=false、持久控制version6许可为1，Stage仍disabled。生产关闭兼容基线及最终启用候选的运行源码相同，仅生产四项环境开关不同；候选和准确产物已归档。后续代码回退必须识别register及开奖方案，具体版本见部署准备和实施记录。

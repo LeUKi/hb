@@ -20,6 +20,7 @@ export type AuthenticatedUser = {
   id: string;
   username: string;
   displayName: string;
+  avatarUrl: string | null;
 };
 
 export type AuthenticatedSession = {
@@ -82,6 +83,7 @@ export async function getOptionalSession(c: Context<ApiContext>) {
       userId: users.id,
       username: users.username,
       displayName: users.displayName,
+      avatarUrl: users.avatarUrl,
       active: users.active,
     })
     .from(sessions)
@@ -112,6 +114,7 @@ export async function getOptionalSession(c: Context<ApiContext>) {
       id: row.userId,
       username: row.username,
       displayName: row.displayName,
+      avatarUrl: row.avatarUrl,
     },
   } satisfies AuthenticatedSession;
 }

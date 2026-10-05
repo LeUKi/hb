@@ -14,7 +14,8 @@
     "GLOBAL_REDEMPTIONS_PER_MINUTE": "10",
     "LDC_STOP_NEW_OPENINGS": "true",
     "LDC_STOP_NEW_CLAIMS": "true",
-    "LDC_STOP_SENDS": "true"
+    "LDC_STOP_SENDS": "true",
+    "LDC_TIMED_DRAW_ENABLED": "false"
   },
   "d1_databases": [
     {

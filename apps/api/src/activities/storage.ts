@@ -205,6 +205,7 @@ export function prepareLdcInventory(
   existing: InventoryRow[],
   now: number,
 ): InventoryRow[] {
+  if (input.money.mode === "timed_draw") return [];
   const amounts =
     input.money.mode === "random"
       ? generateRandomAmounts(input.money)

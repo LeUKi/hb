@@ -22,3 +22,6 @@ GLOBAL_REDEMPTIONS_PER_MINUTE=10
 APP_ENV="local"
 LDC_NETWORK_MODE="disabled"
 LDC_ACCEPTANCE_ID=""
+
+# Only controls new timed-draw openings; existing registrations still settle.
+LDC_TIMED_DRAW_ENABLED="true"

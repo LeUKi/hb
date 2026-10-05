@@ -7,12 +7,14 @@ import {
   passwordAssociatedData,
   rewardAssociatedData,
 } from "../src/activities/storage";
+import { app } from "../src/app";
 import type { ApiBindings } from "../src/env";
 import { runMerchantCycle } from "../src/payments/scheduler";
 import {
   decryptString,
   digestPassword,
   encryptString,
+  sha256Hex,
 } from "../src/security/crypto";
 
 async function resetLegacyDb(db: D1Database) {
@@ -246,6 +248,11 @@ it("upgrades a populated step-3 database without changing IDs, encrypted content
       payment_mode: null,
       post_number: 1,
       deleted_at: null,
+      registered_count: 0,
+      draw_state: null,
+      draw_reason: null,
+      draw_closed_at: null,
+      draw_published_at: null,
       version: Number(row.version) + 1,
       config: JSON.stringify({
         ...oldConfig,
@@ -265,7 +272,11 @@ it("upgrades a populated step-3 database without changing IDs, encrypted content
   );
   expect(upgraded[3]?.results).toEqual(snapshots[3]?.results);
   expect(upgraded[4]?.results).toEqual(
-    snapshots[4]?.results.map((row) => ({ ...row, purpose: "claim" })),
+    snapshots[4]?.results.map((row) => ({
+      ...row,
+      purpose: "claim",
+      registration_id: null,
+    })),
   );
   expect(upgraded[5]?.results).toEqual(snapshots[5]?.results);
   expect((await db.prepare("PRAGMA foreign_key_check").all()).results).toEqual(
@@ -549,6 +560,11 @@ it("upgrades populated simulated LDC payment data from 0008 through acceptance m
       payment_mode: "simulation",
       post_number: 1,
       deleted_at: null,
+      registered_count: 0,
+      draw_state: null,
+      draw_reason: null,
+      draw_closed_at: null,
+      draw_published_at: null,
       version: Number(row.version) + 1,
       config: JSON.stringify({
         ...JSON.parse(String(row.config)),
@@ -1104,4 +1120,80 @@ it("migrates historical display choices with typed booleans, reply defaults and 
   expect((await db.prepare("PRAGMA foreign_key_check").all()).results).toEqual(
     [],
   );
+});
+
+it("adds optional Connect profile fields without invalidating existing accounts or sessions", async () => {
+  const testEnv = env as typeof env & {
+    TEST_LEGACY_DB: D1Database;
+    TEST_MIGRATIONS: D1Migration[];
+  };
+  const db = testEnv.TEST_LEGACY_DB;
+  await resetLegacyDb(db);
+  await applyD1Migrations(
+    db,
+    testEnv.TEST_MIGRATIONS.filter((migration) => migration.name < "0018"),
+  );
+  const userId = crypto.randomUUID();
+  const token = "profile-migration-existing-session-token";
+  const tokenHash = await sha256Hex(`hb.session-token.v1:${token}`);
+  const csrfToken = "profile-migration-csrf-token";
+  const now = Date.now();
+  await db.batch([
+    db
+      .prepare(
+        "INSERT INTO users(id,provider,external_id,username,display_name,created_at,updated_at,last_login_at) VALUES(?,'linux_do','740001','OldProfile','原有昵称',?,?,?)",
+      )
+      .bind(userId, now, now, now),
+    db
+      .prepare(
+        "INSERT INTO sessions(token_hash,user_id,csrf_token,created_at,expires_at,last_seen_at) VALUES(?,?,?,?,?,?)",
+      )
+      .bind(tokenHash, userId, csrfToken, now, now + 60000, now),
+  ]);
+  const oldUser = await db
+    .prepare("SELECT * FROM users WHERE id=?")
+    .bind(userId)
+    .first();
+  const oldSession = await db
+    .prepare("SELECT * FROM sessions WHERE token_hash=?")
+    .bind(tokenHash)
+    .first();
+  await applyD1Migrations(db, testEnv.TEST_MIGRATIONS);
+  expect(
+    await db.prepare("SELECT * FROM users WHERE id=?").bind(userId).first(),
+  ).toEqual({
+    ...oldUser,
+    email_ciphertext: null,
+    avatar_url: null,
+  });
+  const response = await app.request(
+    "https://hb.example.com/api/me",
+    { headers: { Cookie: `hb_session=${token}` } },
+    { ...env, DB: db },
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("cache-control")).toBe("no-store");
+  expect(await response.json()).toEqual({
+    user: {
+      id: userId,
+      username: "OldProfile",
+      displayName: "原有昵称",
+      avatarUrl: null,
+      email: null,
+    },
+    csrfToken,
+  });
+  expect(
+    await db
+      .prepare("SELECT * FROM sessions WHERE token_hash=?")
+      .bind(tokenHash)
+      .first(),
+  ).toEqual(oldSession);
+  expect((await db.prepare("PRAGMA foreign_key_check").all()).results).toEqual(
+    [],
+  );
+  await applyD1Migrations(db, testEnv.TEST_MIGRATIONS);
+  expect(
+    await db.prepare("SELECT COUNT(*) AS count FROM users").first("count"),
+  ).toBe(1);
 });

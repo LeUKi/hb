@@ -48,6 +48,7 @@ export async function publicationEligibility(
 }
 
 export const publicationMessages = {
+  TIMED_DRAW_NOT_ENABLED: "限时开奖尚未启用，草稿已保存。",
   REAL_LDC_NOT_ENABLED:
     "平台暂未开放真实 LDC 活动发布，仍可保存草稿或创建文本活动。",
   MERCHANT_LEGACY: "此活动关联历史商户，请在准备中明确重新绑定当前商户。",

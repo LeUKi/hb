@@ -65,6 +65,9 @@ export function PasswordPanel({
                   {password.isClaimPassword ? (
                     <span className="text-neutral-600">我的领奖口令</span>
                   ) : null}
+                  {password.isRegistrationPassword ? (
+                    <span className="text-neutral-600">我的报名口令</span>
+                  ) : null}
                   {password.isSolved ? (
                     <span className="text-neutral-600">我已解出</span>
                   ) : null}
@@ -203,7 +206,7 @@ function SolveForm({
         />
       </label>
       <p className="text-xs text-neutral-500">
-        已领取后可以继续解出其他口令，不会额外分配奖励。
+        已领取或已报名后可以继续解出其他口令，不会额外分配奖励或增加抽奖机会。
         {activity.forceDedicated ? "提交内容会进入作者的尝试统计。" : ""}
       </p>
       {message ? (

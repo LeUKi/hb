@@ -122,6 +122,7 @@ async function main() {
             LDC_STOP_NEW_OPENINGS: "false",
             LDC_STOP_NEW_CLAIMS: "false",
             LDC_STOP_SENDS: "false",
+            LDC_TIMED_DRAW_ENABLED: "true",
             CONNECT_CLIENT_ID: "hb_full_app_connect",
             CONNECT_CLIENT_SECRET: "full-app-connect-secret",
             ENCRYPTION_KEYS: JSON.stringify({
@@ -178,11 +179,17 @@ async function main() {
         body = {
           migrations: migrations.length,
           users: await rows(
-            "SELECT id,external_id,username,provider FROM users ORDER BY external_id",
+            "SELECT id,external_id,username,provider,avatar_url,email_ciphertext IS NOT NULL AS has_email_ciphertext,email_ciphertext LIKE '%@%' AS email_ciphertext_contains_plaintext FROM users ORDER BY external_id",
           ),
           sessions: await rows("SELECT user_id,token_hash FROM sessions"),
           activities: await rows(
-            "SELECT id,reward_type,payment_mode,opened_at,claimed_count,total_count FROM activities ORDER BY created_at",
+            "SELECT id,reward_type,payment_mode,opened_at,deadline,claimed_count,total_count,registered_count,draw_state,draw_closed_at,draw_reason,draw_published_at FROM activities ORDER BY created_at",
+          ),
+          registrations: await rows(
+            "SELECT id,activity_id,user_id,password_id,ordinal,recipient_id,registered_at FROM activity_registrations ORDER BY activity_id,ordinal",
+          ),
+          drawPlans: await rows(
+            "SELECT activity_id,participant_count,payload,created_at FROM activity_draw_plans ORDER BY activity_id",
           ),
           claims: await rows(
             "SELECT id,activity_id,user_id,inventory_id FROM claims",

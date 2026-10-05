@@ -1,10 +1,16 @@
+import { normalizeAvatarUrl, normalizeConnectEmail } from "@hb/contracts";
 import { and, eq, gt } from "drizzle-orm";
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { createDb } from "../db/client";
 import { oauthAttempts, users } from "../db/schema";
 import type { ApiBindings, ApiContext } from "../env";
-import { randomToken, sha256Hex } from "../security/crypto";
+import {
+  decryptString,
+  encryptString,
+  randomToken,
+  sha256Hex,
+} from "../security/crypto";
 import {
   assertRequestUrlOrigin,
   configuredAppOrigin,
@@ -89,7 +95,7 @@ export const authRoutes = new Hono<ApiContext>()
       "redirect_uri",
       callbackUrl(config.appOrigin),
     );
-    authorizeUrl.searchParams.set("scope", "profile");
+    authorizeUrl.searchParams.set("scope", "profile email");
     authorizeUrl.searchParams.set("state", state);
 
     return c.redirect(authorizeUrl.toString(), 302);
@@ -127,7 +133,7 @@ export const authRoutes = new Hono<ApiContext>()
     try {
       const token = await exchangeCodeForToken(config, code);
       const profile = await fetchLinuxDoUser(token.accessToken);
-      const userId = await upsertUser(c.env.DB, profile);
+      const userId = await upsertUser(c.env, profile);
       try {
         await createSession(c, userId);
       } catch {
@@ -151,7 +157,28 @@ export const authRoutes = new Hono<ApiContext>()
       return c.json({ user: null, csrfToken: null });
     }
 
-    return c.json({ user: session.user, csrfToken: session.csrfToken });
+    const privateProfile = await createDb(c.env.DB)
+      .select({
+        provider: users.provider,
+        externalId: users.externalId,
+        emailCiphertext: users.emailCiphertext,
+      })
+      .from(users)
+      .where(eq(users.id, session.user.id))
+      .get();
+    const email = privateProfile?.emailCiphertext
+      ? await decryptEmail(
+          c.env,
+          privateProfile.emailCiphertext,
+          privateProfile.provider,
+          privateProfile.externalId,
+        )
+      : null;
+
+    return c.json({
+      user: { ...session.user, email },
+      csrfToken: session.csrfToken,
+    });
   });
 
 export function oauthConfig(env: ApiBindings) {
@@ -246,6 +273,8 @@ export type LinuxDoProfile = {
   externalId: string;
   username: string;
   displayName: string;
+  email: string | null;
+  avatarUrl: string | null;
   active: true;
 };
 
@@ -257,6 +286,8 @@ export function parseLinuxDoUser(body: unknown): LinuxDoProfile {
   const externalId = stableExternalId(body.id, body.sub);
   const username = safeProfileString(body.username, 100);
   const name = safeProfileString(body.name, 200);
+  const email = normalizeConnectEmail(body.email);
+  const avatarUrl = normalizeAvatarUrl(body.avatar_url);
 
   if (!externalId || !username || body.active !== true) {
     throw new AuthFlowError("profile", "invalid_response");
@@ -266,13 +297,22 @@ export function parseLinuxDoUser(body: unknown): LinuxDoProfile {
     externalId,
     username,
     displayName: name || username,
+    email,
+    avatarUrl,
     active: true,
   };
 }
 
-async function upsertUser(database: D1Database, profile: LinuxDoProfile) {
+async function upsertUser(env: ApiBindings, profile: LinuxDoProfile) {
   const now = new Date();
-  const db = createDb(database);
+  const db = createDb(env.DB);
+  const emailCiphertext = profile.email
+    ? await encryptString(
+        profile.email,
+        env,
+        emailAssociatedData(OAUTH_PROVIDER, profile.externalId),
+      )
+    : null;
   const [row] = await db
     .insert(users)
     .values({
@@ -281,6 +321,8 @@ async function upsertUser(database: D1Database, profile: LinuxDoProfile) {
       externalId: profile.externalId,
       username: profile.username,
       displayName: profile.displayName,
+      emailCiphertext,
+      avatarUrl: profile.avatarUrl,
       active: profile.active,
       createdAt: now,
       updatedAt: now,
@@ -291,6 +333,8 @@ async function upsertUser(database: D1Database, profile: LinuxDoProfile) {
       set: {
         username: profile.username,
         displayName: profile.displayName,
+        emailCiphertext,
+        avatarUrl: profile.avatarUrl,
         updatedAt: now,
         lastLoginAt: now,
       },
@@ -303,6 +347,27 @@ async function upsertUser(database: D1Database, profile: LinuxDoProfile) {
   }
 
   return row.id;
+}
+
+export function emailAssociatedData(provider: string, externalId: string) {
+  return `user:${provider}:${externalId}:email`;
+}
+
+async function decryptEmail(
+  env: ApiBindings,
+  ciphertext: string,
+  provider: string,
+  externalId: string,
+) {
+  try {
+    return await decryptString(
+      ciphertext,
+      env,
+      emailAssociatedData(provider, externalId),
+    );
+  } catch {
+    return null;
+  }
 }
 
 async function fetchJsonWithTimeout(

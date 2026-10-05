@@ -10,7 +10,12 @@ import {
 
 const id = "b674025a-0879-4569-8774-1a4bfc9e2328";
 const rewardId = "daef3bf5-a2c7-4f9f-b425-5e80d9b76a24";
-const author = { id: "creator-1", username: "ada", displayName: "Ada" };
+const author = {
+  id: "creator-1",
+  username: "ada",
+  displayName: "Ada",
+  avatarUrl: null,
+};
 
 function fixture(): ManagedActivity {
   const config = {

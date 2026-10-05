@@ -65,6 +65,18 @@ async function actor(username: string): Promise<Actor> {
   return { id, cookie: `hb_session=${token}`, csrf };
 }
 
+async function storePrivateProfile(user: Actor, username: string) {
+  await env.DB.prepare(
+    "UPDATE users SET email_ciphertext=?, avatar_url=? WHERE id=?",
+  )
+    .bind(
+      `EMAIL-CIPHERTEXT-SECRET-${username}`,
+      `https://cdn.example.com/avatars/${username}.png`,
+      user.id,
+    )
+    .run();
+}
+
 function request(
   path: string,
   user?: Actor,
@@ -955,6 +967,11 @@ describe("lifecycle and public recipients", () => {
   });
 
   it("uses the single public-list toggle and keeps private rewards and cursor contents hidden", async () => {
+    await Promise.all([
+      storePrivateProfile(owner, "owner"),
+      storePrivateProfile(alice, "alice"),
+      storePrivateProfile(bob, "bob"),
+    ]);
     const activity = await create({
       rewards: Array.from({ length: 21 }, (_, index) => ({
         id: crypto.randomUUID(),
@@ -965,9 +982,28 @@ describe("lifecycle and public recipients", () => {
     const actors = await Promise.all(
       Array.from({ length: 21 }, (_, index) => actor(`recipient-${index}`)),
     );
+    await Promise.all(
+      actors.map((user, index) =>
+        storePrivateProfile(user, `recipient-${index}`),
+      ),
+    );
     for (const user of actors) await claim(activity.id, user);
     const response = await request(`/api/activities/${activity.id}/recipients`);
     expect(response.headers.get("cache-control")).toBe("no-store");
+    const publicDetail = await (
+      await request(`/api/activities/${activity.id}`)
+    ).json();
+    expect(publicDetail).toMatchObject({
+      activity: {
+        author: {
+          username: "owner",
+          avatarUrl: "https://cdn.example.com/avatars/owner.png",
+        },
+      },
+    });
+    expect(JSON.stringify(publicDetail)).not.toMatch(
+      /EMAIL-CIPHERTEXT-SECRET|email_ciphertext|emailCiphertext/,
+    );
     const first = (await response.json()) as PublicRecipientList;
     expect(first.items).toHaveLength(20);
     expect(
@@ -975,16 +1011,24 @@ describe("lifecycle and public recipients", () => {
         (item) =>
           typeof item.username === "string" &&
           typeof item.displayName === "string" &&
+          typeof item.avatarUrl === "string" &&
           typeof item.claimedAt === "string" &&
           !Object.hasOwn(item, "text") &&
+          !Object.hasOwn(item, "email") &&
           !Object.hasOwn(item, "amount"),
       ),
     ).toBe(true);
+    expect(first.items[0]?.avatarUrl).toMatch(
+      /^https:\/\/cdn\.example\.com\/avatars\/recipient-\d+\.png$/,
+    );
     const cursorEnvelope = JSON.parse(atob(required(first.nextCursor))) as {
       ciphertext: string;
     };
     expect(cursorEnvelope.ciphertext).toBeTypeOf("string");
     expect(atob(required(first.nextCursor))).not.toContain("claimedAt");
+    expect(JSON.stringify(first)).not.toMatch(
+      /EMAIL-CIPHERTEXT-SECRET|email_ciphertext|emailCiphertext|PRIVATE-/,
+    );
     const second = (await (
       await request(
         `/api/activities/${activity.id}/recipients?cursor=${encodeURIComponent(required(first.nextCursor))}`,
@@ -995,6 +1039,14 @@ describe("lifecycle and public recipients", () => {
       await request(`/api/me/activities/${activity.id}/claims`, owner)
     ).json()) as AuthorClaimList;
     expect(author.items).toHaveLength(20);
+    expect(author.items[0]?.claimant).toMatchObject({
+      avatarUrl: expect.stringMatching(
+        /^https:\/\/cdn\.example\.com\/avatars\/recipient-\d+\.png$/,
+      ),
+    });
+    expect(JSON.stringify(author)).not.toMatch(
+      /EMAIL-CIPHERTEXT-SECRET|email_ciphertext|emailCiphertext/,
+    );
     const ownerSecond = (await (
       await request(
         `/api/me/activities/${activity.id}/claims?cursor=${encodeURIComponent(required(author.nextCursor))}`,
@@ -1029,9 +1081,12 @@ describe("lifecycle and public recipients", () => {
     expect(visible.items[0]).toMatchObject({
       username: expect.any(String),
       displayName: expect.any(String),
+      avatarUrl: expect.any(String),
       claimedAt: expect.any(String),
     });
-    expect(JSON.stringify(visible)).not.toContain("PRIVATE-");
+    expect(JSON.stringify(visible)).not.toMatch(
+      /PRIVATE-|EMAIL-CIPHERTEXT-SECRET|email_ciphertext|emailCiphertext/,
+    );
     const latest = await managed(activity.id);
     await request(`/api/me/activities/${activity.id}`, owner, "PATCH", {
       version: latest.version,

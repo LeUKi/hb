@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { PublicUserProfile } from "./profile";
 
 export const paymentModeSchema = z.enum(["simulation", "real"]);
 export type PaymentMode = z.infer<typeof paymentModeSchema>;
@@ -99,6 +100,7 @@ export type Merchant = {
 } & ({ mode: "simulation"; scenario: SimulationScenario } | { mode: "real" });
 export type LdcOpeningBlockedReason =
   | "REAL_LDC_NOT_ENABLED"
+  | "TIMED_DRAW_NOT_ENABLED"
   | "MERCHANT_LEGACY"
   | "MERCHANT_CREDENTIALS_UNVERIFIED"
   | "MERCHANT_CREDENTIALS_CHECKING"
@@ -152,6 +154,7 @@ export type PaymentAttemptView = {
   finishedAt: string | null;
 };
 export type MerchantPaymentDetail = MerchantPayment & {
+  recipientProfile: PublicUserProfile | null;
   recoveryPolicy: "claim_same_order_v1" | null;
   firstSendAt: string | null;
   usernameCorrection: {

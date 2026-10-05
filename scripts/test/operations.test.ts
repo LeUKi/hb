@@ -154,6 +154,28 @@ describe("release environment guards", () => {
     ).toThrow("authorization");
   });
 
+  it("requires a timed draw opening switch and keeps Stage closed", () => {
+    const { web, api } = configs();
+    if (api.vars) delete api.vars.LDC_TIMED_DRAW_ENABLED;
+    expect(() => validateEnvironment("staging", web, api)).toThrow(
+      "timed draw opening switch",
+    );
+    api.vars = { ...api.vars, LDC_TIMED_DRAW_ENABLED: "true" };
+    expect(() => validateEnvironment("staging", web, api)).toThrow(
+      "staging cannot enable timed draw",
+    );
+    const production = configs("production");
+    production.api.vars = {
+      ...production.api.vars,
+      LDC_TIMED_DRAW_ENABLED: "true",
+    };
+    expect(() =>
+      validateEnvironment("production", production.web, production.api, {
+        allowLive: true,
+      }),
+    ).not.toThrow();
+  });
+
   it("rejects mismatched producer/consumer and conflicting DO lifecycle mechanisms", () => {
     const { web, api } = configs();
     if (api.queues?.consumers?.[0])

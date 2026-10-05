@@ -7,12 +7,7 @@ import {
   type CreateActivityInput,
   emptyActivityInput,
   formatAmount,
-  type LdcActivityInput,
-  ldcMoneySchema,
-  ldcRewardCount,
-  ldcTotalMinor,
   type ManagedActivity,
-  newActivityInputSchema,
   type TextActivityInput,
 } from "@hb/contracts";
 import { useForm, useStore } from "@tanstack/react-form";
@@ -22,6 +17,13 @@ import { useEffect, useRef, useState } from "react";
 import { ActivityRequestError, useActivityWrites } from "../../lib/activities";
 import { useActivityOpening } from "../../lib/activity-opening";
 import { useMerchant } from "../../lib/merchants";
+import {
+  isTimedDrawMoney,
+  timedDrawSummary,
+  type WebLdcMoney,
+  webLdcRewardCount,
+  webLdcTotalMinor,
+} from "../../lib/timed-draw";
 import { Button } from "../ui/button";
 import { LdcFields } from "./ldc-fields";
 import { MarkdownField } from "./markdown";
@@ -29,7 +31,7 @@ import { MarkdownField } from "./markdown";
 type ActivityFormValues = Omit<TextActivityInput, "rewardType"> & {
   rewardType: "text" | "ldc";
   merchantId: string;
-  money: LdcActivityInput["money"];
+  money: WebLdcMoney;
 };
 
 function formValues(input?: ActivityInput): ActivityFormValues {
@@ -56,9 +58,25 @@ function activityValues(input: ActivityFormValues): ActivityInput {
         rewardType,
         merchantId,
         money,
-        allocation: money.mode === "random" ? "random" : shared.allocation,
+        allocation:
+          money.mode === "random" || isTimedDrawMoney(money)
+            ? "random"
+            : shared.allocation,
       }
     : { ...shared, rewardType, rewards };
+}
+
+function parseActivityForm(value: ActivityFormValues) {
+  const result = activityInputSchema.safeParse(activityValues(value));
+  return result.success
+    ? { success: true as const, data: result.data }
+    : {
+        success: false as const,
+        issues: result.error.issues.map((issue) => ({
+          path: issue.path.join("."),
+          message: issue.message,
+        })),
+      };
 }
 
 function localDateTime(iso: string) {
@@ -243,30 +261,18 @@ export function ActivityForm({
     defaultValues,
     validators: {
       onSubmit: ({ value }) => {
-        const result = (
-          persisted ? activityInputSchema : newActivityInputSchema
-        ).safeParse(activityValues(value));
+        const result = parseActivityForm(value);
         return result.success
           ? undefined
-          : result.error.issues.map((issue) => issue.message).join("；");
+          : result.issues.map((issue) => issue.message).join("；");
       },
     },
     onSubmitInvalid: ({ value }) => {
-      const result = (
-        persisted ? activityInputSchema : newActivityInputSchema
-      ).safeParse(activityValues(value));
-      if (!result.success)
-        showIssues(
-          result.error.issues.map((issue) => ({
-            path: issue.path.join("."),
-            message: issue.message,
-          })),
-        );
+      const result = parseActivityForm(value);
+      if (!result.success) showIssues(result.issues);
     },
     onSubmit: async ({ value }) => {
-      const result = (
-        persisted ? activityInputSchema : newActivityInputSchema
-      ).safeParse(activityValues(value));
+      const result = parseActivityForm(value);
       if (result.success) await save(result.data, submitIntent.current);
     },
   });
@@ -279,14 +285,17 @@ export function ActivityForm({
   const paymentMode =
     persisted?.paymentMode ?? selectedMerchant.data?.merchant.mode;
   const input = activityValues(values);
-  const checkedMoney =
-    values.rewardType === "ldc" ? ldcMoneySchema.safeParse(values.money) : null;
-  const totalLdc =
-    input.rewardType === "ldc" && checkedMoney?.success
-      ? formatAmount(ldcTotalMinor({ ...input, money: checkedMoney.data }))
-      : null;
+  const totalMinor =
+    input.rewardType === "ldc" ? webLdcTotalMinor(input) : null;
+  const totalLdc = totalMinor === null ? null : formatAmount(totalMinor);
   const rewardCount =
-    input.rewardType === "text" ? input.rewards.length : ldcRewardCount(input);
+    input.rewardType === "text"
+      ? input.rewards.length
+      : webLdcRewardCount(input);
+  const timedDraw =
+    values.rewardType === "ldc" && isTimedDrawMoney(values.money)
+      ? values.money
+      : null;
   const dirty = isDirty || Boolean(bulkText) || Boolean(uncertainRequest);
   useBlocker({
     shouldBlockFn: () =>
@@ -498,7 +507,14 @@ export function ActivityForm({
               allocation={values.allocation}
               disabled={opened || values.rewardType !== "ldc"}
               onMerchant={(value) => form.setFieldValue("merchantId", value)}
-              onMoney={(value) => form.setFieldValue("money", value)}
+              onMoney={(value) => {
+                form.setFieldValue("money", value);
+                if (
+                  isTimedDrawMoney(value) &&
+                  values.deadline.mode !== "duration"
+                )
+                  form.setFieldValue("deadline", { mode: "duration" });
+              }}
               onAllocation={(value) => form.setFieldValue("allocation", value)}
             />
           </div>
@@ -745,30 +761,36 @@ export function ActivityForm({
               </span>
             </span>
           </label>
-          <label className="activity-label" htmlFor="activity-deadline">
-            活动期限
-            <select
-              id="activity-deadline"
-              className="activity-input"
-              value={values.deadline.mode}
-              disabled={opened}
-              onChange={(event) =>
-                form.setFieldValue(
-                  "deadline",
-                  event.target.value === "duration"
-                    ? { mode: "duration" }
-                    : {
-                        mode: "at",
-                        at: new Date(Date.now() + 86_400_000).toISOString(),
-                      },
-                )
-              }
-            >
-              <option value="duration">正式开放后 24 小时</option>
-              <option value="at">指定截止时间</option>
-            </select>
-          </label>
-          {values.deadline.mode === "at" || opened ? (
+          {timedDraw ? (
+            <p className="rounded-md border border-neutral-200 bg-neutral-50 p-3 text-sm leading-6 text-neutral-600">
+              限时开奖活动不单独设置领取截止时间；开放后按开奖倒计时进入等待开奖，开奖参数冻结。
+            </p>
+          ) : (
+            <label className="activity-label" htmlFor="activity-deadline">
+              活动期限
+              <select
+                id="activity-deadline"
+                className="activity-input"
+                value={values.deadline.mode}
+                disabled={opened}
+                onChange={(event) =>
+                  form.setFieldValue(
+                    "deadline",
+                    event.target.value === "duration"
+                      ? { mode: "duration" }
+                      : {
+                          mode: "at",
+                          at: new Date(Date.now() + 86_400_000).toISOString(),
+                        },
+                  )
+                }
+              >
+                <option value="duration">正式开放后 24 小时</option>
+                <option value="at">指定截止时间</option>
+              </select>
+            </label>
+          )}
+          {!timedDraw && (values.deadline.mode === "at" || opened) ? (
             <label className="activity-label" htmlFor="activity-deadline-at">
               截止时间
               <input
@@ -817,13 +839,16 @@ export function ActivityForm({
 
       <section className="activity-panel space-y-4" aria-label="活动摘要">
         <p className="text-sm">
-          {rewardCount} 份{input.rewardType === "ldc" ? " LDC" : "文本奖励"}
-          {totalLdc ? ` · 总发放金额 ${totalLdc} LDC` : ""}
+          {timedDraw
+            ? timedDrawSummary(timedDraw)
+            : `${rewardCount} 份${input.rewardType === "ldc" ? " LDC" : "文本奖励"}${totalLdc ? ` · 总发放金额 ${totalLdc} LDC` : ""}`}
         </p>
         <p className="text-xs text-neutral-600">
-          {values.deadline.mode === "duration"
-            ? "开放后 24 小时截止"
-            : "按指定截止时间结束"}{" "}
+          {timedDraw
+            ? `最晚开奖倒计时 ${timedDraw.countdownSeconds} 秒`
+            : values.deadline.mode === "duration"
+              ? "开放后 24 小时截止"
+              : "按指定截止时间结束"}{" "}
           ·{" "}
           {values.quantityVisibility === "exact"
             ? "精确数量"

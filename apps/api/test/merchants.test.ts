@@ -649,6 +649,17 @@ describe("owner payment diagnostics", () => {
     const merchant = await create();
     const f = await fixture(merchant);
     const taskId = f.taskIds[0];
+    await env.DB.prepare(
+      "UPDATE users SET username=?,display_name=?,email_ciphertext=?,avatar_url=? WHERE id=?",
+    )
+      .bind(
+        "other_current",
+        "Other Current",
+        "PAYMENT-EMAIL-CIPHERTEXT-other",
+        "https://cdn.example.com/payments/other.png",
+        other.id,
+      )
+      .run();
     const path = `/api/me/merchants/${merchant.id}/payments/${taskId}`;
     expect((await request(path)).status).toBe(401);
     expect((await request(path, other)).status).toBe(404);
@@ -662,13 +673,19 @@ describe("owner payment diagnostics", () => {
         source: "claim",
         acceptanceId: null,
         amount: "3.00",
+        recipientUsername: "other",
+        recipientProfile: {
+          username: "other_current",
+          displayName: "Other Current",
+          avatarUrl: "https://cdn.example.com/payments/other.png",
+        },
         attemptCount: 1,
         nextAction: "none",
         attempts: [{ operation: "send", credentialVersion: 1 }],
       },
     });
     expect(JSON.stringify(result)).not.toMatch(
-      /ORIGINAL-PRIVATE-SECRET|ciphertext|lease_token|\bAuthorization\b/,
+      /ORIGINAL-PRIVATE-SECRET|PAYMENT-EMAIL-CIPHERTEXT|ciphertext|lease_token|\bAuthorization\b/,
     );
     expect((await request(`${path}?cursor=invalid`, owner)).status).toBe(400);
   });

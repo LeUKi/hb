@@ -1,10 +1,13 @@
 import type {
   AuthorClaimList,
+  AuthorRegistrationList,
   ClaimActivityInput,
   ClaimDetail,
   ClaimList,
   ClaimResult,
+  ParticipationList,
   PublicRecipientList,
+  RegistrationDetail,
 } from "@hb/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
@@ -13,10 +16,14 @@ import { sessionQueryKey } from "./auth";
 
 export const claimKeys = {
   mine: (userId: string) => ["claim-private", userId] as const,
+  participations: (userId: string) =>
+    ["participation-private", userId] as const,
   current: (userId: string, activityId: string) =>
     ["claim-private", userId, "activity", activityId] as const,
   detail: (userId: string, id: string) =>
     ["claim-private", userId, "detail", id] as const,
+  registration: (userId: string, activityId: string) =>
+    ["registration-private", userId, "activity", activityId] as const,
 };
 
 function claimRefresh(claim?: ClaimDetail | null) {
@@ -54,6 +61,23 @@ export function useMyClaims(userId: string, cursor: string | null) {
   });
 }
 
+export function useMyParticipations(userId: string, cursor: string | null) {
+  return useQuery({
+    queryKey: [...claimKeys.participations(userId), "list", cursor],
+    queryFn: async ({ signal }) =>
+      readResponse<ParticipationList>(
+        await fetch(
+          `/api/me/participations${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
+          {
+            signal,
+            cache: "no-store",
+          },
+        ),
+      ),
+    retry: false,
+  });
+}
+
 export function useClaim(userId: string, id: string) {
   return useQuery({
     queryKey: claimKeys.detail(userId, id),
@@ -69,6 +93,35 @@ export function useClaim(userId: string, id: string) {
   });
 }
 
+export function useCurrentRegistration(
+  userId: string,
+  activityId: string,
+  enabled: boolean,
+  poll: boolean,
+) {
+  return useQuery({
+    queryKey: claimKeys.registration(userId, activityId),
+    queryFn: async ({ signal }) =>
+      readResponse<{ registration: RegistrationDetail | null }>(
+        await fetch(
+          `/api/activities/${encodeURIComponent(activityId)}/registration`,
+          {
+            signal,
+            cache: "no-store",
+          },
+        ),
+      ),
+    enabled,
+    retry: false,
+    refetchInterval: (query) => {
+      const status = query.state.data?.registration?.status;
+      if (status === "won" || status === "not_won") return false;
+      if (status === "registered" || status === "drawing") return 15_000;
+      return poll ? 15_000 : false;
+    },
+  });
+}
+
 export function useAuthorClaims(
   userId: string,
   id: string,
@@ -81,6 +134,25 @@ export function useAuthorClaims(
         await api.api.me.activities[":id"].claims.$get(
           { param: { id }, query: cursor ? { cursor } : {} },
           { init: { signal, cache: "no-store" } },
+        ),
+      ),
+    retry: false,
+    refetchInterval: 15_000,
+  });
+}
+
+export function useAuthorRegistrations(
+  userId: string,
+  id: string,
+  cursor: string | null,
+) {
+  return useQuery({
+    queryKey: [...claimKeys.mine(userId), "author-registrations", id, cursor],
+    queryFn: async ({ signal }) =>
+      readResponse<AuthorRegistrationList>(
+        await fetch(
+          `/api/me/activities/${encodeURIComponent(id)}/registrations${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
+          { signal, cache: "no-store" },
         ),
       ),
     retry: false,
@@ -136,6 +208,16 @@ export function useClaimReward(userId: string, csrfToken: string, id: string) {
         });
         await queryClient.invalidateQueries({
           queryKey: claimKeys.mine(userId),
+        });
+        await queryClient.invalidateQueries({
+          queryKey: claimKeys.participations(userId),
+        });
+      } else if ("registration" in result) {
+        queryClient.setQueryData(claimKeys.registration(userId, id), {
+          registration: result.registration,
+        });
+        await queryClient.invalidateQueries({
+          queryKey: claimKeys.participations(userId),
         });
       }
       await queryClient.invalidateQueries({

@@ -27,6 +27,7 @@ import {
   prepareActivityOpening,
   updateActivity,
 } from "./activities/service";
+import { findActivity } from "./activities/storage";
 import { createDb } from "./db/client";
 import { merchants } from "./db/schema";
 import {
@@ -96,6 +97,45 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     }
   }
 
+  private async scheduleDraw(activityId: string) {
+    const row = await findActivity(this.env, activityId);
+    if (
+      !row ||
+      row.openedAt === null ||
+      (row.drawState !== "waiting" && row.drawState !== "settling")
+    )
+      return;
+    await this.ctx.storage.put("drawActivityId", activityId);
+    const due =
+      row.drawState === "settling"
+        ? Date.now() + 100
+        : Math.max(
+            Date.now() + 100,
+            Math.min(row.deadline ?? Date.now(), Date.now() + 86_400_000),
+          );
+    await this.ctx.storage.transaction(async (txn) => {
+      const current = await txn.getAlarm();
+      if (current === null || due < current) await txn.setAlarm(due);
+    });
+  }
+
+  async alarm() {
+    const id = await this.ctx.storage.get<string>("drawActivityId");
+    if (!id) return;
+    await this.serialize(async () => {
+      try {
+        await refreshActivityLifecycle(this.env, id);
+        await resumePendingActivityClaims(this.env, id);
+        await flushPaymentOutbox(this.env);
+      } catch {
+        console.error("activity_draw_recovery_failed", { activityId: id });
+        await this.ctx.storage.setAlarm(Date.now() + 5_000);
+        return;
+      }
+      await this.scheduleDraw(id);
+    });
+  }
+
   async fetch(request: Request) {
     const url = new URL(request.url);
 
@@ -156,6 +196,14 @@ export class ActivityDO extends DurableObject<ApiBindings> {
           if (operation === "refresh") {
             await refreshActivityLifecycle(this.env, id);
             await resumePendingActivityClaims(this.env, id);
+            await this.scheduleDraw(id);
+            this.ctx.waitUntil(
+              flushPaymentOutbox(this.env).catch(() => {
+                console.error("activity_draw_outbox_wake_failed", {
+                  activityId: id,
+                });
+              }),
+            );
             return Response.json({ status: "ok" });
           }
           let body: unknown;
@@ -284,6 +332,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
               userId,
               parsed.data,
             );
+            if ("registration" in result) await this.scheduleDraw(id);
             if ("claim" in result && result.claim.rewardType === "ldc") {
               this.ctx.waitUntil(
                 flushPaymentOutbox(this.env, result.claim.payment.id).catch(
@@ -315,6 +364,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
           }
           let activity: ManagedActivity;
           if (operation === "manage") {
+            await refreshActivityLifecycle(this.env, id);
             activity = await getManagedActivity(this.env, id, authorId);
           } else if (operation === "end") {
             const parsed = endActivitySchema.safeParse(input);
@@ -341,6 +391,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
               parsed.data,
             );
           }
+          await this.scheduleDraw(id);
           return Response.json(
             { activity },
             { headers: { "Cache-Control": "no-store" } },

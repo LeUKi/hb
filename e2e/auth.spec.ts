@@ -2,7 +2,13 @@ import { expect, type Page, test } from "@playwright/test";
 
 const anonymousSession = { user: null, csrfToken: null };
 const signedInSession = {
-  user: { id: "u_123", username: "ada", displayName: "Ada" },
+  user: {
+    id: "u_123",
+    username: "ada",
+    displayName: "Ada",
+    avatarUrl: null,
+    email: "ada-private@example.test",
+  },
   csrfToken: "csrf-token-1",
 };
 
@@ -116,8 +122,23 @@ test("已登录用户可查看账号并通过 CSRF 退出", async ({ page }) => 
   await page.goto("/account");
 
   const account = page.getByRole("main");
-  await expect(account.getByText("Ada", { exact: true })).toBeVisible();
-  await expect(account.getByText("@ada", { exact: true })).toBeVisible();
+  await expect(
+    account.locator("dd").filter({ hasText: /^Ada$/ }),
+  ).toBeVisible();
+  await expect(
+    account.locator("dd").filter({ hasText: /^@ada$/ }),
+  ).toBeVisible();
+  await expect(
+    account.getByText("ada-private@example.test", { exact: true }),
+  ).toBeVisible();
+  const userButton = page.getByRole("button", { name: "Ada" });
+  await userButton.click();
+  await expect(page.getByRole("dialog")).toContainText("@ada");
+  await expect(
+    page.getByRole("link", { name: "查看 Linux DO 主页" }),
+  ).toHaveAttribute("href", "https://linux.do/u/ada");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: "退出" }).click();
   await expect(page.getByText("请先使用 Linux DO 账号登录。")).toBeVisible();
   expect(csrfHeader).toBe("csrf-token-1");
@@ -148,7 +169,7 @@ test("已有账号缓存时，身份刷新失败不会继续显示私有账号�
   });
 
   await page.goto("/account");
-  await expect(page.getByText("@ada", { exact: true })).toBeVisible();
+  await expect(page.getByRole("definition").getByText("@ada")).toBeVisible();
 
   simulateFailure = true;
   await refocusAfterSessionStale(page);
@@ -156,6 +177,7 @@ test("已有账号缓存时，身份刷新失败不会继续显示私有账号�
 
   await expect(page.getByText("身份检查失败：HTTP 503")).toBeVisible();
   await expect(page.getByText("@ada", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("ada-private@example.test")).toHaveCount(0);
 });
 
 test("退出登录会取消并清除私有会话缓存，避免延迟响应重新填回账号", async ({
@@ -201,7 +223,7 @@ test("退出登录会取消并清除私有会话缓存，避免延迟响应重�
   );
 
   await page.goto("/account");
-  await expect(page.getByText("@ada", { exact: true })).toBeVisible();
+  await expect(page.getByRole("definition").getByText("@ada")).toBeVisible();
 
   const baselineMeCalls = meCalls;
   delaySession = true;
@@ -213,6 +235,7 @@ test("退出登录会取消并清除私有会话缓存，避免延迟响应重�
   releaseDelayedSession?.();
 
   await expect(page.getByText("@ada", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("ada-private@example.test")).toHaveCount(0);
   await expect(page.getByText("请先使用 Linux DO 账号登录。")).toBeVisible();
 });
 
@@ -258,7 +281,7 @@ test("窄屏账号导航不产生横向溢出", async ({ page }) => {
 
   await page.goto("/account");
 
-  await expect(page.getByRole("link", { name: "Ada" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Ada" })).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,

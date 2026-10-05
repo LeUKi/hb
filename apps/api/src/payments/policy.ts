@@ -169,7 +169,13 @@ export function claimPaymentIdentitySql(alias: "p" | "payment_tasks") {
         AND a.merchant_id=${alias}.merchant_id AND m.author_id=a.author_id
         AND m.mode='real' AND m.client_id=${alias}.client_id
         AND r.kind='ldc' AND r.amount_minor=${alias}.amount_minor
-        AND u.provider='linux_do' AND u.external_id=${alias}.recipient_id)`;
+        AND u.provider='linux_do' AND u.external_id=${alias}.recipient_id
+        AND (json_extract(a.config,'$.money.mode') IS NOT 'timed_draw' OR (
+          a.draw_state='completed' AND a.draw_published_at IS NOT NULL
+          AND EXISTS(SELECT 1 FROM activity_draw_plans d JOIN json_each(d.payload,'$.winners') w
+            WHERE d.activity_id=a.id AND json_extract(w.value,'$.claimId')=c.id
+            AND json_extract(w.value,'$.userId')=c.user_id AND json_extract(w.value,'$.recipientId')=${alias}.recipient_id
+            AND json_extract(w.value,'$.amountMinor')=${alias}.amount_minor))))`;
 }
 
 async function claimMatchesTask(env: ApiBindings, task: PaymentTaskRow) {

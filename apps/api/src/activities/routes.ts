@@ -26,6 +26,11 @@ import {
   listUserClaims,
 } from "./claim-queries";
 import { ActivityError } from "./errors";
+import {
+  getCurrentRegistration,
+  listAuthorRegistrations,
+  listParticipations,
+} from "./registration-queries";
 import { getPublicActivity, listActivities } from "./service";
 
 function validated<T>(
@@ -134,6 +139,39 @@ export const activityRoutes = new Hono<ApiContext>()
     return c.json(
       await listActivities(c.env, session.user.id, c.req.valid("query").cursor),
     );
+  })
+  .get("/me/participations", cursorQuery, async (c) => {
+    const session = await requireAuth(c);
+    return c.json(
+      await listParticipations(
+        c.env,
+        session.user.id,
+        c.req.valid("query").cursor,
+      ),
+    );
+  })
+  .get("/me/activities/:id/registrations", cursorQuery, async (c) => {
+    const session = await requireAuth(c);
+    return c.json(
+      await listAuthorRegistrations(
+        c.env,
+        c.req.param("id"),
+        session.user.id,
+        c.req.valid("query").cursor,
+      ),
+    );
+  })
+  .get("/activities/:id/registration", async (c) => {
+    const session = await requireAuth(c);
+    const id = c.req.param("id");
+    const object = c.env.ACTIVITY_DO.get(c.env.ACTIVITY_DO.idFromName(id));
+    await object.fetch(
+      `https://activity.internal/internal/activities/${id}/refresh`,
+      { method: "POST" },
+    );
+    return c.json({
+      registration: await getCurrentRegistration(c.env, id, session.user.id),
+    });
   })
   .get("/me/activities/:id", async (c) => {
     const session = await requireAuth(c);

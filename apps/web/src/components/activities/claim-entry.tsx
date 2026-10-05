@@ -5,11 +5,16 @@ import {
 } from "@hb/contracts";
 import { useEffect, useRef, useState } from "react";
 import { ActivityRequestError } from "../../lib/activities";
-import { useClaimReward, useCurrentClaim } from "../../lib/claims";
+import {
+  useClaimReward,
+  useCurrentClaim,
+  useCurrentRegistration,
+} from "../../lib/claims";
 import { Button } from "../ui/button";
 import { ActivityErrorView } from "./activity-error";
 import { ClaimContent } from "./claim-content";
 import { PasswordField } from "./password-field";
+import { RegistrationContent } from "./registration-content";
 
 export function ClaimEntry({
   activity,
@@ -22,8 +27,18 @@ export function ClaimEntry({
   csrfToken: string;
   initialPassword?: string;
 }) {
+  const timedDraw = Boolean(activity.draw);
+  const registrationShouldPoll =
+    activity.draw?.state === "waiting" || activity.draw?.state === "settling";
   const current = useCurrentClaim(userId, activity.id);
-  if (current.isPending) return <p role="status">正在查询你的领取记录…</p>;
+  const registration = useCurrentRegistration(
+    userId,
+    activity.id,
+    timedDraw,
+    registrationShouldPoll,
+  );
+  if (current.isPending || (timedDraw && registration.isPending))
+    return <p role="status">正在查询你的参与记录…</p>;
   if (current.isError)
     return (
       <ActivityErrorView
@@ -31,15 +46,31 @@ export function ClaimEntry({
         retry={() => current.refetch()}
       />
     );
+  if (timedDraw && registration.isError)
+    return (
+      <ActivityErrorView
+        error={registration.error}
+        retry={() => registration.refetch()}
+      />
+    );
   if (current.data.claim)
     return (
       <ClaimContent key={current.data.claim.id} claim={current.data.claim} />
+    );
+  if (timedDraw && registration.data?.registration)
+    return (
+      <RegistrationContent
+        key={registration.data.registration.id}
+        registration={registration.data.registration}
+      />
     );
   if (activity.status !== "active") return null;
   if (activity.rewardType === "ldc" && activity.author.id === userId)
     return (
       <p className="text-sm text-neutral-600">
-        作者不能领取自己创建的 LDC 活动。
+        {timedDraw
+          ? "作者不能报名或领取自己创建的 LDC 活动。"
+          : "作者不能领取自己创建的 LDC 活动。"}
       </p>
     );
   return (
@@ -107,9 +138,16 @@ function ClaimForm({
       setPendingSubmission(null);
       setRetryAt(null);
       if (result.result === "incorrect") setMessage("口令不正确，请重新尝试。");
-      else if (result.result === "draft") setMessage("活动尚未开放领取。");
+      else if (result.result === "draft")
+        setMessage(activity.draw ? "活动尚未开放报名。" : "活动尚未开放领取。");
       else if (result.result === "ended" || result.result === "archived")
-        setMessage("活动已结束，无法领取。");
+        setMessage(
+          activity.draw ? "活动已结束，无法报名。" : "活动已结束，无法领取。",
+        );
+      else if (result.result === "registered")
+        setMessage("报名成功，等待开奖。");
+      else if (result.result === "already_registered")
+        setMessage("你已经报名过本活动。再次提交不会增加中奖机会。");
       else
         setMessage(
           result.result === "claimed" ? "领取成功。" : "你已经领取过本活动。",
@@ -127,7 +165,11 @@ function ClaimForm({
         error.status >= 500
       ) {
         setPendingSubmission(submission);
-        setMessage("尚未确认领取结果，请重试原提交以确认结果。");
+        setMessage(
+          activity.draw
+            ? "尚未确认报名结果，请重试原提交以确认结果。"
+            : "尚未确认领取结果，请重试原提交以确认结果。",
+        );
       } else {
         setPendingSubmission(null);
         setMessage(error.message);
@@ -145,7 +187,9 @@ function ClaimForm({
         void submit();
       }}
     >
-      <h2 className="text-lg font-semibold">口令兑奖</h2>
+      <h2 className="text-lg font-semibold">
+        {activity.draw ? "口令报名" : "口令兑奖"}
+      </h2>
       <PasswordField
         value={password}
         onChange={setPassword}
@@ -170,7 +214,9 @@ function ClaimForm({
           ? "正在确认…"
           : pendingSubmission
             ? "重试原提交"
-            : "领取"}
+            : activity.draw
+              ? "报名"
+              : "领取"}
       </Button>
     </form>
   );

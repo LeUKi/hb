@@ -23,6 +23,7 @@ export function publicationReason(reason: string | null | undefined) {
   if (!reason) return null;
   const labels: Record<string, string> = {
     REAL_LDC_NOT_ENABLED: "当前环境尚未启用真实 LDC 活动开放。",
+    TIMED_DRAW_NOT_ENABLED: "当前环境尚未启用限时开奖活动开放。",
     MERCHANT_LEGACY: "活动关联的是历史商户，请明确改用当前商户后再开放。",
     MERCHANT_CREDENTIALS_UNVERIFIED:
       "当前凭证需要在最近 10 分钟内通过检查，才能开放新的 LDC 活动。",

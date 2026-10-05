@@ -22,6 +22,7 @@ import {
   findSubmission,
   type SubmissionRow,
 } from "./claim-service";
+import { findRegistration } from "./draw-storage";
 import { ActivityError, activityNotFound } from "./errors";
 import { databaseNow } from "./lifecycle";
 import { activityStatus } from "./service";
@@ -40,14 +41,17 @@ export async function getActivityPasswords(
   const [answers, metadata] = await env.DB.batch([
     env.DB.prepare(`SELECT p.id, p.ciphertext,
         CASE WHEN c.password_id = p.id THEN 1 ELSE 0 END AS isClaimPassword,
+        CASE WHEN r.password_id = p.id THEN 1 ELSE 0 END AS isRegistrationPassword,
         CASE WHEN ${solved} THEN 1 ELSE 0 END AS isSolved
       FROM activity_passwords p JOIN activities a ON a.id = p.activity_id
       LEFT JOIN claims c ON c.activity_id = a.id AND c.user_id = ?
+      LEFT JOIN activity_registrations r ON r.activity_id = a.id AND r.user_id = ?
       WHERE a.id = ? AND a.deleted_at IS NULL AND (a.opened_at IS NOT NULL OR a.author_id = ?)
       AND (a.author_id = ? OR (a.opened_at IS NOT NULL AND
         (a.ended_at IS NOT NULL OR a.archived_at IS NOT NULL OR a.claimed_count >= a.total_count OR a.deadline <= ${databaseNow}))
-        OR (c.id IS NOT NULL AND (c.password_id = p.id OR ${solved})))
+        OR ((c.id IS NOT NULL OR r.id IS NOT NULL) AND (c.password_id = p.id OR r.password_id = p.id OR ${solved})))
       ORDER BY p.position`).bind(
+      viewer,
       viewer,
       viewer,
       activityId,
@@ -57,25 +61,29 @@ export async function getActivityPasswords(
     ),
     env.DB.prepare(`SELECT
         (SELECT COUNT(*) FROM activity_passwords WHERE activity_id = a.id) AS total,
+        CASE WHEN json_extract(a.config,'$.money.mode')='timed_draw' THEN 1 ELSE 0 END AS timed,
         CASE WHEN a.opened_at IS NOT NULL AND a.ended_at IS NULL AND a.archived_at IS NULL
           AND a.claimed_count < a.total_count AND a.deadline > ${databaseNow}
-          AND EXISTS (SELECT 1 FROM claims WHERE activity_id = a.id AND user_id = ?)
+          AND (EXISTS (SELECT 1 FROM claims WHERE activity_id = a.id AND user_id = ?)
+            OR EXISTS (SELECT 1 FROM activity_registrations WHERE activity_id=a.id AND user_id=?))
           THEN 1 ELSE 0 END AS canSolve
       FROM activities a WHERE a.id = ? AND a.deleted_at IS NULL
         AND (a.opened_at IS NOT NULL OR a.author_id = ?)`).bind(
+      viewer,
       viewer,
       activityId,
       viewer,
     ),
   ]);
   const state = metadata?.results[0] as
-    | { total: number; canSolve: number }
+    | { total: number; canSolve: number; timed: number }
     | undefined;
   if (!state || !answers) activityNotFound();
   const rows = answers.results as {
     id: string;
     ciphertext: string;
     isClaimPassword: number;
+    isRegistrationPassword: number;
     isSolved: number;
   }[];
   return {
@@ -88,6 +96,9 @@ export async function getActivityPasswords(
         ),
         isClaimPassword: row.isClaimPassword === 1,
         isSolved: row.isSolved === 1,
+        ...(state.timed === 1
+          ? { isRegistrationPassword: row.isRegistrationPassword === 1 }
+          : {}),
       })),
     ),
     hiddenCount: Math.max(0, state.total - rows.length),
@@ -173,11 +184,14 @@ export async function solveActivityPassword(
     const status = activityStatus(activity);
     if (status === "draft")
       throw new ActivityError(400, "ACTIVITY_NOT_OPEN", "活动尚未开放");
-    if (!(await findUserClaim(env, activityId, userId)))
+    if (
+      !(await findUserClaim(env, activityId, userId)) &&
+      !(await findRegistration(env, activityId, userId))
+    )
       throw new ActivityError(
         403,
         "CLAIM_REQUIRED",
-        "领取本活动奖励后才可继续验证其他口令",
+        "领取奖励或成功报名后才可继续验证其他口令",
       );
     if (status === "ended" || status === "archived")
       return registerEndedSolve(
@@ -212,11 +226,14 @@ export async function solveActivityPassword(
       env.DB.prepare(`UPDATE activities SET version = CASE WHEN version = ? AND deleted_at IS NULL
           AND opened_at IS NOT NULL AND ended_at IS NULL AND archived_at IS NULL
           AND claimed_count < total_count AND deadline > ${databaseNow}
-          AND EXISTS (SELECT 1 FROM claims WHERE activity_id = ? AND user_id = ?)
+          AND (EXISTS (SELECT 1 FROM claims WHERE activity_id = ? AND user_id = ?)
+            OR EXISTS (SELECT 1 FROM activity_registrations WHERE activity_id=? AND user_id=?))
           AND (SELECT COUNT(*) FROM redemption_submissions WHERE activity_id = ? AND user_id = ?
             AND validated_at > ${databaseNow} - ?) < ?
           THEN version ELSE NULL END WHERE id = ?`).bind(
         activity.version,
+        activityId,
+        userId,
         activityId,
         userId,
         activityId,
@@ -265,7 +282,8 @@ export async function solveActivityPassword(
       if (
         current.version !== activity.version ||
         activityStatus(current) !== "active" ||
-        !(await findUserClaim(env, activityId, userId))
+        (!(await findUserClaim(env, activityId, userId)) &&
+          !(await findRegistration(env, activityId, userId)))
       )
         continue;
       await assertClaimRateLimit(env, activityId, userId);

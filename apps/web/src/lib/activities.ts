@@ -159,7 +159,7 @@ export function useActivityWrites(
     create: useMutation({
       mutationFn: async (json: CreateActivityInput) =>
         readResponse<{ activity: ManagedActivity }>(
-          await api.api.activities.$post({ json }, options),
+          await api.api.activities.$post({ json: json as never }, options),
         ),
       onSuccess,
       onError,
@@ -169,7 +169,7 @@ export function useActivityWrites(
         if (!id) throw new Error("缺少活动标识");
         return readResponse<{ activity: ManagedActivity }>(
           await api.api.me.activities[":id"].$patch(
-            { param: { id }, json },
+            { param: { id }, json: json as never },
             options,
           ),
         );
@@ -182,7 +182,7 @@ export function useActivityWrites(
         if (!id) throw new Error("缺少活动标识");
         return readResponse<{ activity: ManagedActivity }>(
           await api.api.me.activities[":id"].open.$post(
-            { param: { id }, json },
+            { param: { id }, json: json as never },
             options,
           ),
         );
@@ -195,7 +195,7 @@ export function useActivityWrites(
         if (!id) throw new Error("缺少活动标识");
         return readResponse<{ activity: ManagedActivity }>(
           await api.api.me.activities[":id"].end.$post(
-            { param: { id }, json },
+            { param: { id }, json: json as never },
             options,
           ),
         );
@@ -213,7 +213,7 @@ export function useActivityWrites(
           version: number;
         }>(
           await api.api.me.activities[":id"].$delete(
-            { param: { id }, json },
+            { param: { id }, json: json as never },
             options,
           ),
         );

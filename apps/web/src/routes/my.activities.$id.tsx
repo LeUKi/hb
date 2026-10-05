@@ -13,9 +13,13 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { ActivityErrorView } from "../components/activities/activity-error";
 import { ActivityForm } from "../components/activities/activity-form";
+import { DrawSummaryPanel } from "../components/activities/draw-summary";
 import { RandomMoneySummary } from "../components/activities/random-money-summary";
 import { RealPaymentNotice } from "../components/activities/real-payment-notice";
-import { AuthorClaims } from "../components/activities/recipient-lists";
+import {
+  AuthorClaims,
+  AuthorRegistrations,
+} from "../components/activities/recipient-lists";
 import { RequireAccount } from "../components/activities/require-account";
 import { Button } from "../components/ui/button";
 import {
@@ -238,6 +242,7 @@ function ManageActivity({
             <dd className="mt-1">{formatTime(activity.deadlineAt)}</dd>
           </div>
         </dl>
+        {activity.draw ? <DrawSummaryPanel draw={activity.draw} /> : null}
         {activity.rewardType === "ldc" && activity.paymentMode === "real" ? (
           <RealPaymentNotice draft={activity.status === "draft"} />
         ) : null}
@@ -360,8 +365,15 @@ function ManageActivity({
           }}
         />
       ) : null}
+      {activity.draw ? (
+        <AuthorRegistrations
+          key={`registrations-${userId}-${activity.id}`}
+          userId={userId}
+          id={activity.id}
+        />
+      ) : null}
       <AuthorClaims
-        key={`${userId}-${activity.id}`}
+        key={`claims-${userId}-${activity.id}`}
         userId={userId}
         id={activity.id}
       />

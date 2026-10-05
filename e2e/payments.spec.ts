@@ -23,11 +23,13 @@ const user = {
   id: "payment-tester",
   username: "tester",
   displayName: "测试用户",
+  avatarUrl: null,
 };
 const author = {
   id: "payment-author",
   username: "author",
   displayName: "奖励作者",
+  avatarUrl: null,
 };
 
 async function mockPayments(page: Page, mode: PaymentMode = "simulation") {
@@ -221,6 +223,9 @@ async function mockPayments(page: Page, mode: PaymentMode = "simulation") {
             ? [
                 {
                   id: claimId,
+                  username: user.username,
+                  displayName: user.displayName,
+                  avatarUrl: user.avatarUrl,
                   ...(state.recipientAmount === undefined
                     ? {}
                     : { amount: state.recipientAmount }),
@@ -596,6 +601,7 @@ function acceptancePayment(): MerchantPaymentDetail {
     status: "reconciling",
     reason: "checking_not_found",
     confirmedAt: null,
+    recipientProfile: null,
     recipientId: "100001",
     recipientUsername: "tester7369",
     usernameCorrection: null,
@@ -1343,8 +1349,9 @@ test("真实随机活动可保存编辑及预览，不能开放或切换到模�
   await expect(page.getByText(/真实 LDC 活动先保存为准备中/)).toBeVisible();
   await page
     .getByRole("combobox", { name: "奖励方式", exact: true })
-    .selectOption("bounded_mean_v1");
-  await page.getByLabel("总发放金额（LDC）", { exact: true }).fill("0.10");
+    .selectOption("random");
+  await page.locator("#ldc-random-algorithm").selectOption("bounded_mean_v1");
+  await page.getByLabel("总奖池（LDC）", { exact: true }).fill("0.10");
   await page.getByLabel("奖励份数", { exact: true }).fill("4");
   await expect(page.getByText(/4 份 LDC/)).toBeVisible();
   await page.getByRole("button", { name: "保存草稿", exact: true }).click();
@@ -1585,13 +1592,11 @@ test("自定义金额逐份保留并支持随机抽取，金额公开开关独�
   await ldcWizard(page);
   await page
     .getByRole("combobox", { name: "奖励方式", exact: true })
-    .selectOption("custom_sequential");
+    .selectOption("custom");
   await page
     .getByLabel("每份金额（每行一个）", { exact: true })
     .fill("1.11\n2.22\n1.11");
-  await page
-    .getByRole("combobox", { name: "奖励方式", exact: true })
-    .selectOption("custom_random");
+  await page.locator("#ldc-custom-allocation").selectOption("random");
 
   await page.getByLabel("展示领取名单", { exact: true }).check();
 
@@ -1617,17 +1622,19 @@ for (const algorithm of ["double_mean_v1", "bounded_mean_v1"] as const) {
     await ldcWizard(page);
     await page
       .getByRole("combobox", { name: "奖励方式", exact: true })
-      .selectOption(algorithm);
-    await expect(page.locator("#activity-money")).toHaveValue(algorithm);
+      .selectOption("random");
+    await page.locator("#ldc-random-algorithm").selectOption(algorithm);
+    await expect(page.locator("#activity-money")).toHaveValue("random");
+    await expect(page.locator("#ldc-random-algorithm")).toHaveValue(algorithm);
     await expect(page.locator("#activity-allocation")).toHaveCount(0);
-    await page.getByLabel("总发放金额（LDC）", { exact: true }).fill("0.02");
+    await page.getByLabel("总奖池（LDC）", { exact: true }).fill("0.02");
     await page.getByLabel("奖励份数", { exact: true }).fill("3");
     await page.getByRole("button", { name: "保存草稿", exact: true }).click();
     await expect(
       page.getByText("总金额不足，每份至少需要 0.01 LDC", { exact: true }),
     ).toBeVisible();
     expect(state.activityCreates).toHaveLength(0);
-    await page.getByLabel("总发放金额（LDC）", { exact: true }).fill("10.00");
+    await page.getByLabel("总奖池（LDC）", { exact: true }).fill("10.00");
     if (algorithm === "bounded_mean_v1")
       await expect(
         page.getByText("每份金额范围：1.66–5.00 LDC", { exact: true }),
@@ -1655,8 +1662,9 @@ for (const algorithm of ["double_mean_v1", "bounded_mean_v1"] as const) {
 
     await expect(
       page.getByRole("combobox", { name: "奖励方式", exact: true }),
-    ).toHaveValue(algorithm);
-    await page.getByLabel("总发放金额（LDC）", { exact: true }).fill("21.00");
+    ).toHaveValue("random");
+    await expect(page.locator("#ldc-random-algorithm")).toHaveValue(algorithm);
+    await page.getByLabel("总奖池（LDC）", { exact: true }).fill("21.00");
     await page.getByLabel("奖励份数", { exact: true }).fill("7");
     await page.getByRole("button", { name: "保存草稿", exact: true }).click();
     await expect(
@@ -1694,28 +1702,142 @@ for (const algorithm of ["double_mean_v1", "bounded_mean_v1"] as const) {
   });
 }
 
-test("固定和两种随机各自保留临时输入，自定义顺序与随机共享金额列表", async ({
+test("限时草稿尚未开始报名，开放后才显示报名中", async ({ page }) => {
+  const { state } = await mockPayments(page);
+  state.activity.config = {
+    ...state.activity.config,
+    rewardType: "ldc",
+    merchantId,
+    allocation: "random",
+    money: {
+      mode: "timed_draw",
+      algorithm: "double_mean_v1",
+      totalAmount: "10.00",
+      count: 2,
+      participantLimit: 3,
+      countdownSeconds: 90,
+      distributeFullPool: true,
+    },
+  };
+  state.activity.status = "draft";
+  state.activity.openedAt = null;
+  state.activity.deadlineAt = null;
+  state.activity.draw = {
+    state: "waiting",
+    deadlineAt: null,
+    closedAt: null,
+    reason: null,
+    registeredCount: 0,
+    winnerCount: null,
+    participantLimit: 3,
+  };
+  await page.route(
+    `**/api/me/activities/${activityId}/registrations*`,
+    (route) => route.fulfill({ json: { items: [], nextCursor: null } }),
+  );
+  await page.goto(`/my/activities/${activityId}`);
+  await expect(
+    page.getByText("准备中，开放后开始报名和倒计时", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("报名中，等待开奖", { exact: true })).toHaveCount(
+    0,
+  );
+  const deadlineAt = new Date(Date.now() + 90_000).toISOString();
+  state.activity.status = "active";
+  state.activity.openedAt = new Date().toISOString();
+  state.activity.deadlineAt = deadlineAt;
+  state.activity.draw.deadlineAt = deadlineAt;
+  await page.getByRole("button", { name: "刷新最新版本", exact: true }).click();
+  await expect(
+    page.getByText("报名中，等待开奖", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("准备中，开放后开始报名和倒计时", { exact: true }),
+  ).toHaveCount(0);
+});
+
+test("限时开奖方案保存名额、报名上限、短倒计时和算法，允许报名上限小于名额", async ({
+  page,
+}) => {
+  const { state } = await mockPayments(page);
+  await ldcWizard(page);
+  const choice = page.getByRole("combobox", { name: "奖励方式", exact: true });
+  await page.locator("summary").filter({ hasText: "更多设置" }).click();
+  await page.locator("#activity-deadline").selectOption("at");
+  await expect(page.locator("#activity-deadline")).toHaveValue("at");
+  await choice.selectOption("timed_draw");
+  await expect(page.locator("#activity-money")).toHaveValue("timed_draw");
+  await page.locator("#timed-total").fill("0.50");
+  await page.locator("#timed-count").fill("5");
+  await page.locator("#timed-participant-limit").fill("3");
+  await page.locator("#timed-countdown").fill("90");
+  await page.locator("#timed-algorithm").selectOption("bounded_mean_v1");
+  await page.getByLabel(/人数不足时发完奖池/).uncheck();
+  await expect(page.getByText(/3 人报名/).first()).toBeVisible();
+  await expect(page.getByRole("region", { name: "活动摘要" })).toContainText(
+    "最多 5 人获奖",
+  );
+  await expect(page.getByRole("region", { name: "活动摘要" })).toContainText(
+    "最多 3 人报名，满员提前开奖",
+  );
+  await expect(page.getByRole("region", { name: "活动摘要" })).toContainText(
+    "剩余不发",
+  );
+  await expect(
+    page
+      .getByRole("region", { name: "活动摘要" })
+      .getByText(/总奖池 0.50 LDC.*最晚在开放后 90 秒/),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+  await expect(page).toHaveURL(`/my/activities/${activityId}`);
+  expect(state.activityCreates[0]?.activity).toMatchObject({
+    rewardType: "ldc",
+    allocation: "random",
+    deadline: { mode: "duration" },
+    money: {
+      mode: "timed_draw",
+      algorithm: "bounded_mean_v1",
+      totalAmount: "0.50",
+      count: 5,
+      participantLimit: 3,
+      countdownSeconds: 90,
+      distributeFullPool: false,
+    },
+  });
+  await page.getByRole("button", { name: "编辑活动", exact: true }).click();
+  await expect(page.locator("#timed-participant-limit")).toHaveValue("3");
+  await expect(page.locator("#timed-countdown")).toHaveValue("90");
+});
+
+test("四类 LDC 方案保留临时输入，算法和发放顺序是独立子选项", async ({
   page,
 }) => {
   await mockPayments(page);
   await ldcWizard(page);
   const choice = page.getByRole("combobox", { name: "奖励方式", exact: true });
+  await expect(choice.locator("option")).toHaveCount(4);
+  await expect(choice.locator("option")).toHaveText([
+    "固定均分",
+    "即时随机",
+    "自定义金额",
+    "限时开奖",
+  ]);
   await page.getByLabel("每份金额（LDC）", { exact: true }).fill("4.00");
   await page.getByLabel("奖励份数", { exact: true }).fill("3");
-  await choice.selectOption("double_mean_v1");
-  await expect(
-    page.getByLabel("总发放金额（LDC）", { exact: true }),
-  ).toHaveValue("12.00");
-  await page.getByLabel("总发放金额（LDC）", { exact: true }).fill("10.00");
+  await choice.selectOption("random");
+  await expect(page.getByLabel("总奖池（LDC）", { exact: true })).toHaveValue(
+    "12.00",
+  );
+  await page.getByLabel("总奖池（LDC）", { exact: true }).fill("10.00");
   await page.getByLabel("奖励份数", { exact: true }).fill("4");
-  await choice.selectOption("bounded_mean_v1");
-  await page.getByLabel("总发放金额（LDC）", { exact: true }).fill("20.00");
+  await page.locator("#ldc-random-algorithm").selectOption("bounded_mean_v1");
+  await page.getByLabel("总奖池（LDC）", { exact: true }).fill("20.00");
   await page.getByLabel("奖励份数", { exact: true }).fill("3");
-  await choice.selectOption("custom_sequential");
+  await choice.selectOption("custom");
   await page
     .getByLabel("每份金额（每行一个）", { exact: true })
     .fill("1.00\n2.00");
-  await choice.selectOption("custom_random");
+  await page.locator("#ldc-custom-allocation").selectOption("random");
   await expect(
     page.getByLabel("每份金额（每行一个）", { exact: true }),
   ).toHaveValue("1.00\n2.00");
@@ -1727,26 +1849,35 @@ test("固定和两种随机各自保留临时输入，自定义顺序与随机�
     "4.00",
   );
   await expect(page.getByLabel("奖励份数", { exact: true })).toHaveValue("3");
-  await choice.selectOption("double_mean_v1");
-  await expect(
-    page.getByLabel("总发放金额（LDC）", { exact: true }),
-  ).toHaveValue("10.00");
-  await expect(page.getByLabel("奖励份数", { exact: true })).toHaveValue("4");
-  await choice.selectOption("bounded_mean_v1");
-  await expect(
-    page.getByLabel("总发放金额（LDC）", { exact: true }),
-  ).toHaveValue("20.00");
+  await choice.selectOption("random");
+  await expect(page.locator("#ldc-random-algorithm")).toHaveValue(
+    "bounded_mean_v1",
+  );
+  await expect(page.getByLabel("总奖池（LDC）", { exact: true })).toHaveValue(
+    "20.00",
+  );
   await expect(page.getByLabel("奖励份数", { exact: true })).toHaveValue("3");
-  await choice.selectOption("custom_sequential");
+  await page.locator("#ldc-random-algorithm").selectOption("double_mean_v1");
+  await expect(page.getByLabel("总奖池（LDC）", { exact: true })).toHaveValue(
+    "20.00",
+  );
+  await expect(page.getByLabel("奖励份数", { exact: true })).toHaveValue("3");
+  await choice.selectOption("custom");
   await expect(
     page.getByLabel("每份金额（每行一个）", { exact: true }),
   ).toHaveValue("3.00\n4.00");
-  await choice.selectOption("custom_random");
-  await expect(
-    page.getByLabel("每份金额（每行一个）", { exact: true }),
-  ).toHaveValue("3.00\n4.00");
-  await choice.selectOption("bounded_mean_v1");
-  await page.getByLabel("总发放金额（LDC）", { exact: true }).fill("0.03");
+  await expect(page.locator("#ldc-custom-allocation")).toHaveValue("random");
+  await choice.selectOption("timed_draw");
+  await expect(page.locator("#timed-count")).toHaveValue("2");
+  await expect(page.locator("#timed-participant-limit")).toHaveValue("2");
+  await page.locator("#timed-participant-limit").clear();
+  await expect(page.locator("#timed-participant-limit")).toHaveValue("");
+  await choice.selectOption("fixed");
+  await choice.selectOption("timed_draw");
+  await expect(page.locator("#timed-participant-limit")).toHaveValue("");
+  await choice.selectOption("random");
+  await page.locator("#ldc-random-algorithm").selectOption("bounded_mean_v1");
+  await page.getByLabel("总奖池（LDC）", { exact: true }).fill("0.03");
   await page.getByLabel("奖励份数", { exact: true }).fill("3");
   await expect(
     page.getByText("每份金额范围：0.01–0.01 LDC", { exact: true }),
@@ -1826,7 +1957,9 @@ test("公开名单金额开关关闭时不展示金额，开启后仅展示服�
   state.signedIn = false;
   state.showRecipients = true;
   await page.goto(`/activities/${activityId}`);
-  await expect(page.getByText("已领取", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: user.displayName }),
+  ).toBeVisible();
   await expect(page.getByText("5.00 LDC", { exact: true })).toHaveCount(0);
   state.recipientAmount = "5.00";
   await page.reload();
@@ -2325,7 +2458,7 @@ test("非整数份数不会使表单崩溃，保存明确拒绝且不创建活�
   expect(state.activityCreates).toHaveLength(0);
   await page
     .getByRole("combobox", { name: "奖励方式", exact: true })
-    .selectOption("double_mean_v1");
+    .selectOption("random");
   await expect(page.getByLabel("奖励份数", { exact: true })).toHaveValue("1.5");
   expect(errors).toEqual([]);
 });
@@ -2367,8 +2500,9 @@ test("奖励类型切换保留文本、批量输入与各金额方案的页面�
   const choice = page.getByRole("combobox", { name: "奖励方式", exact: true });
   await page.getByLabel("每份金额（LDC）", { exact: true }).fill("0.50");
   await page.getByLabel("奖励份数", { exact: true }).fill("3");
-  await choice.selectOption("bounded_mean_v1");
-  await page.getByLabel("总发放金额（LDC）", { exact: true }).fill("10.00");
+  await choice.selectOption("random");
+  await page.locator("#ldc-random-algorithm").selectOption("bounded_mean_v1");
+  await page.getByLabel("总奖池（LDC）", { exact: true }).fill("10.00");
   await page.getByLabel("奖励份数", { exact: true }).fill("4");
   await type.selectOption("text");
   await page.getByLabel("奖励 1", { exact: true }).fill("仅页面保留的文本");
@@ -2377,10 +2511,13 @@ test("奖励类型切换保留文本、批量输入与各金额方案的页面�
     .getByLabel("批量添加：每行一份", { exact: true })
     .fill("还未添加的一份");
   await type.selectOption("ldc");
-  await expect(choice).toHaveValue("bounded_mean_v1");
-  await expect(
-    page.getByLabel("总发放金额（LDC）", { exact: true }),
-  ).toHaveValue("10.00");
+  await expect(choice).toHaveValue("random");
+  await expect(page.locator("#ldc-random-algorithm")).toHaveValue(
+    "bounded_mean_v1",
+  );
+  await expect(page.getByLabel("总奖池（LDC）", { exact: true })).toHaveValue(
+    "10.00",
+  );
   await choice.selectOption("fixed");
   await expect(page.getByLabel("每份金额（LDC）", { exact: true })).toHaveValue(
     "0.50",

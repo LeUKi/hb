@@ -59,7 +59,10 @@ function beforeCursor(cursor?: Cursor) {
     : undefined;
 }
 
-function summary(claim: ClaimRow, activity: ActivityRow): ClaimSummary {
+export function projectClaimSummary(
+  claim: ClaimRow,
+  activity: ActivityRow,
+): ClaimSummary {
   return {
     id: claim.id,
     activity: {
@@ -112,7 +115,7 @@ export async function getClaimDetail(
   if (!row) activityNotFound();
   const config = JSON.parse(row.activity.config) as ActivityInput;
   return {
-    ...summary(row.claim, row.activity),
+    ...projectClaimSummary(row.claim, row.activity),
     afterClaimInfo: config.afterClaimInfo,
     ...(await rewardDetail(env, row.claim, row.activity)),
   };
@@ -207,7 +210,9 @@ export async function listUserClaims(
   const page = rows.slice(0, 20);
   const last = page.at(-1);
   return {
-    items: page.map(({ claim, activity }) => summary(claim, activity)),
+    items: page.map(({ claim, activity }) =>
+      projectClaimSummary(claim, activity),
+    ),
     nextCursor: rows.length > 20 && last ? encodeCursor(last.claim) : null,
   };
 }
@@ -226,6 +231,7 @@ export async function listAuthorClaims(
         id: users.id,
         username: users.username,
         displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
       },
     })
     .from(claims)
@@ -240,7 +246,7 @@ export async function listAuthorClaims(
   return {
     items: await Promise.all(
       page.map(async ({ claim, claimant }) => ({
-        ...summary(claim, activity),
+        ...projectClaimSummary(claim, activity),
         claimant,
         ...(await rewardDetail(env, claim, activity)),
       })),
@@ -279,6 +285,7 @@ export async function listPublicRecipients(
       claim: claims,
       username: users.username,
       displayName: users.displayName,
+      avatarUrl: users.avatarUrl,
       amountMinor: paymentTasks.amountMinor,
     })
     .from(claims)
@@ -291,15 +298,18 @@ export async function listPublicRecipients(
   const last = page.at(-1);
   return {
     enabled: true,
-    items: page.map(({ claim, username, displayName, amountMinor }) => ({
-      id: claim.id,
-      username,
-      displayName,
-      ...(activity.rewardType === "ldc" && amountMinor !== null
-        ? { amount: formatAmount(amountMinor) }
-        : {}),
-      claimedAt: new Date(claim.claimedAt).toISOString(),
-    })),
+    items: page.map(
+      ({ claim, username, displayName, avatarUrl, amountMinor }) => ({
+        id: claim.id,
+        username,
+        displayName,
+        avatarUrl,
+        ...(activity.rewardType === "ldc" && amountMinor !== null
+          ? { amount: formatAmount(amountMinor) }
+          : {}),
+        claimedAt: new Date(claim.claimedAt).toISOString(),
+      }),
+    ),
     nextCursor:
       rows.length > 20 && last
         ? btoa(

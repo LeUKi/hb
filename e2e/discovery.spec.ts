@@ -10,14 +10,24 @@ const ids = [
   "084cfc63-5e47-4c92-a5c9-b14e12b0a798",
 ];
 const requestId = "4d95d1e9-a564-4ba0-9c6c-92a9e9d5eb0b";
-const user = { id: "viewer-1", username: "ada", displayName: "Ada" };
+const user = {
+  id: "viewer-1",
+  username: "ada",
+  displayName: "Ada",
+  avatarUrl: null,
+};
 function card(index: number): DiscoveryCard {
   return {
     id: ids[index] ?? (ids[0] as string),
     title: `同口令活动${index + 1}`,
     rewardType: "text",
     status: index === 0 ? "active" : "ended",
-    author: { id: "author", username: "maker", displayName: "作者" },
+    author: {
+      id: "author",
+      username: "maker",
+      displayName: "作者",
+      avatarUrl: null,
+    },
     forceDedicated: false,
     topicUrl: "https://linux.do/t/123",
     openedAt: new Date().toISOString(),

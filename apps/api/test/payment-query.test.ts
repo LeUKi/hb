@@ -224,6 +224,7 @@ describe("owner recovery diagnostics", () => {
     const data = (await response.json()) as { payment: MerchantPaymentDetail };
     expect(data.payment).toMatchObject({
       source: "acceptance",
+      recipientProfile: null,
       usernameCorrection: null,
       nextAction: "query",
       nextSendAt: new Date(now + 120_000).toISOString(),

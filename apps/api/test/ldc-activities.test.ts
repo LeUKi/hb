@@ -402,6 +402,7 @@ describe("LDC activity allocation and durable payment responsibility", () => {
         id: claimId,
         username: "alice",
         displayName: "alice",
+        avatarUrl: null,
         claimedAt: won.claim.claimedAt,
         amount: "5.00",
       },
@@ -413,6 +414,7 @@ describe("LDC activity allocation and durable payment responsibility", () => {
       activity: { rewardType: "ldc", paymentMode: "simulation" },
     });
     expect(JSON.stringify(publicDetail)).not.toContain("5.00");
+    expect(JSON.stringify(publicDetail)).not.toContain("email");
     await request(`/api/me/activities/${activity.id}`, owner, "PATCH", {
       version: activity.version,
       activity: { ...activity.config, showRecipientAmount: true },

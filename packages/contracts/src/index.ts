@@ -6,8 +6,10 @@ import {
   type PaymentMode,
   type PaymentView,
 } from "./payments";
+import type { PublicUserProfile } from "./profile";
 
 export * from "./payments";
+export * from "./profile";
 
 export const ACTIVITY_LIMITS = {
   titleCharacters: 100,
@@ -20,6 +22,10 @@ export const ACTIVITY_LIMITS = {
 } as const;
 
 export const DEFAULT_DURATION_MS = 24 * 60 * 60 * 1000;
+export const DEFAULT_DRAW_COUNTDOWN_SECONDS = DEFAULT_DURATION_MS / 1000;
+// Keep countdown arithmetic within the JavaScript Date range. Opening checks
+// the sum against the actual database opening time as well.
+export const MAX_DRAW_COUNTDOWN_SECONDS = 8_000_000_000_000;
 export const ARCHIVE_DELAY_MS = 72 * 60 * 60 * 1000;
 
 export function characterCount(value: string) {
@@ -230,9 +236,38 @@ export const ldcMoneySchema = z.discriminatedUnion("mode", [
           message: "总金额不足，每份至少需要 0.01 LDC",
         });
     }),
+  z
+    .strictObject({
+      mode: z.literal("timed_draw"),
+      algorithm: z.enum(["double_mean_v1", "bounded_mean_v1"]),
+      totalAmount: moneySchema,
+      count: z.number().int().min(1).max(ACTIVITY_LIMITS.rewards),
+      participantLimit: z
+        .number()
+        .int()
+        .positive()
+        .max(Number.MAX_SAFE_INTEGER)
+        .nullable(),
+      countdownSeconds: z
+        .number()
+        .int()
+        .positive()
+        .max(MAX_DRAW_COUNTDOWN_SECONDS),
+      distributeFullPool: z.boolean(),
+    })
+    .superRefine((value, ctx) => {
+      if (!moneySchema.safeParse(value.totalAmount).success) return;
+      if (amountToMinor(value.totalAmount) < value.count)
+        ctx.addIssue({
+          code: "custom",
+          path: ["totalAmount"],
+          message: "总奖池不足，每个获奖名额至少需要 0.01 LDC",
+        });
+    }),
 ]);
 export type LdcMoney = z.infer<typeof ldcMoneySchema>;
 export type RandomLdcMoney = Extract<LdcMoney, { mode: "random" }>;
+export type TimedDrawMoney = Extract<LdcMoney, { mode: "timed_draw" }>;
 const ldcActivitySchema = baseActivitySchema
   .omit({ rewards: true, rewardType: true })
   .extend({
@@ -251,13 +286,24 @@ function validateActivity(
 ) {
   if (
     activity.rewardType === "ldc" &&
-    activity.money.mode === "random" &&
+    (activity.money.mode === "random" ||
+      activity.money.mode === "timed_draw") &&
     activity.allocation !== "random"
   )
     context.addIssue({
       code: "custom",
       path: ["allocation"],
       message: "随机金额模式须采用不放回随机领取",
+    });
+  if (
+    activity.rewardType === "ldc" &&
+    activity.money.mode === "timed_draw" &&
+    activity.deadline.mode !== "duration"
+  )
+    context.addIssue({
+      code: "custom",
+      path: ["deadline"],
+      message: "限时开奖仅使用最晚开奖倒计时，不另设活动期限",
     });
   if (activity.joinSquare && !activity.topicUrl)
     context.addIssue({
@@ -343,7 +389,7 @@ export type ActivityInput = z.infer<typeof activityInputSchema>;
 export type TextActivityInput = Extract<ActivityInput, { rewardType: "text" }>;
 export type LdcActivityInput = Extract<ActivityInput, { rewardType: "ldc" }>;
 export function ldcAmounts(input: LdcActivityInput): number[] {
-  if (input.money.mode === "random")
+  if (input.money.mode === "random" || input.money.mode === "timed_draw")
     throw new Error("Random amounts must come from saved server inventory");
   return input.money.mode === "fixed"
     ? Array<number>(input.money.count).fill(
@@ -386,7 +432,13 @@ export function sameLdcMoney(left: LdcMoney, right: LdcMoney): boolean {
     left.count === right.count &&
     amountToMinor(left.totalAmount) === amountToMinor(right.totalAmount) &&
     (left.mode !== "random" ||
-      (right.mode === "random" && left.algorithm === right.algorithm))
+      (right.mode === "random" && left.algorithm === right.algorithm)) &&
+    (left.mode !== "timed_draw" ||
+      (right.mode === "timed_draw" &&
+        left.algorithm === right.algorithm &&
+        left.participantLimit === right.participantLimit &&
+        left.countdownSeconds === right.countdownSeconds &&
+        left.distributeFullPool === right.distributeFullPool))
   );
 }
 
@@ -457,10 +509,19 @@ export type UpdateActivityInput = z.infer<typeof updateActivitySchema>;
 export type OpenActivityInput = z.infer<typeof openActivitySchema>;
 export type ActivityStatus = "draft" | "active" | "ended" | "archived";
 
-export type ActivityAuthor = {
+export type ActivityAuthor = PublicUserProfile & {
   id: string;
-  username: string;
-  displayName: string;
+};
+
+/** Counts are null (and the limit omitted) in public fuzzy projections. */
+export type DrawSummary = {
+  state: "waiting" | "settling" | "completed" | "empty";
+  deadlineAt: string | null;
+  closedAt: string | null;
+  reason: "full" | "deadline" | "manual" | null;
+  registeredCount: number | null;
+  winnerCount: number | null;
+  participantLimit?: number | null;
 };
 
 export type ActivitySummary = {
@@ -476,6 +537,7 @@ export type ActivitySummary = {
   totalCount: number;
   claimedCount: number;
   paymentMode?: PaymentMode;
+  draw?: DrawSummary;
 };
 
 export type ManagedActivity = ActivitySummary & {
@@ -509,6 +571,7 @@ export type PublicActivity = {
   paymentMode?: PaymentMode;
   openingBlockedReason?: LdcOpeningBlockedReason;
   showRecipientAmount?: boolean;
+  draw?: DrawSummary;
 };
 
 export type ActivityList = {
@@ -534,7 +597,12 @@ export type ClaimActivityInput = z.infer<typeof claimActivitySchema>;
 export type EndActivityInput = z.infer<typeof endActivitySchema>;
 
 export type ActivityPasswords = {
-  passwords: { text: string; isClaimPassword: boolean; isSolved: boolean }[];
+  passwords: {
+    text: string;
+    isClaimPassword: boolean;
+    isSolved: boolean;
+    isRegistrationPassword?: boolean;
+  }[];
   hiddenCount: number;
   canSolve: boolean;
 };
@@ -556,8 +624,35 @@ export type ClaimDetail = Omit<ClaimSummary, "rewardType"> & {
   );
 export type ClaimResult =
   | { result: "claimed" | "already_claimed"; claim: ClaimDetail }
+  | {
+      result: "registered" | "already_registered";
+      registration: RegistrationDetail;
+    }
   | { result: "incorrect" | "draft" | "ended" | "archived" };
 export type ClaimList = { items: ClaimSummary[]; nextCursor: string | null };
+export type RegistrationStatus = "registered" | "drawing" | "won" | "not_won";
+export type RegistrationDetail = {
+  id: string;
+  activity: { id: string; title: string; status: ActivityStatus };
+  registeredAt: string;
+  status: RegistrationStatus;
+  drawAt: string | null;
+  claim: ClaimDetail | null;
+};
+export type Participation =
+  | { kind: "claim"; claim: ClaimSummary }
+  | { kind: "registration"; registration: RegistrationDetail };
+export type ParticipationList = {
+  items: Participation[];
+  nextCursor: string | null;
+};
+export type AuthorRegistration = RegistrationDetail & {
+  participant: ActivityAuthor;
+};
+export type AuthorRegistrationList = {
+  items: AuthorRegistration[];
+  nextCursor: string | null;
+};
 export type AuthorClaim = Omit<ClaimDetail, "afterClaimInfo"> & {
   claimant: ActivityAuthor;
 } & (
@@ -568,10 +663,8 @@ export type AuthorClaimList = {
   items: AuthorClaim[];
   nextCursor: string | null;
 };
-export type PublicRecipient = {
+export type PublicRecipient = PublicUserProfile & {
   id: string;
-  username?: string;
-  displayName?: string;
   claimedAt?: string;
   amount?: string;
 };
@@ -586,6 +679,7 @@ export type DiscoveryCard = Omit<
   "beforeInfo" | "afterEndInfo"
 > & {
   myClaim: { id: string; paymentState?: string } | null;
+  myRegistration?: { id: string; status: RegistrationStatus } | null;
 };
 export type DiscoveryList = {
   items: DiscoveryCard[];
@@ -611,6 +705,7 @@ export type ActivityStatistics = {
   totalAttempts: number;
   uniqueUsers: number;
   successfulClaims: number;
+  registeredParticipants?: number;
   items: AttemptStatisticsRow[];
   validPasswords: { password: string; successfulClaims: number }[];
   nextCursor: string | null;

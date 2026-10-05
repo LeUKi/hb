@@ -127,6 +127,20 @@
       "when": 1791190001367,
       "tag": "0017_violet_shinko_yamashiro",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1791200379306,
+      "tag": "0018_abnormal_thunderball",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1791209001558,
+      "tag": "0019_absurd_captain_marvel",
+      "breakpoints": true
     }
   ]
 }

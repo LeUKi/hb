@@ -54,6 +54,18 @@ async function actor(username: string): Promise<Actor> {
   return { id, cookie: `hb_session=${token}`, csrf };
 }
 
+async function storePrivateProfile(user: Actor, username: string) {
+  await env.DB.prepare(
+    "UPDATE users SET email_ciphertext=?, avatar_url=? WHERE id=?",
+  )
+    .bind(
+      `DISCOVERY-EMAIL-CIPHERTEXT-${username}`,
+      `https://cdn.example.com/discovery/${username}.png`,
+      user.id,
+    )
+    .run();
+}
+
 function request(path: string, user?: Actor, method = "GET", body?: unknown) {
   return app.request(
     `${origin}${path}`,
@@ -528,6 +540,32 @@ describe("persistent global redemption", () => {
 });
 
 describe("square and topic discovery", () => {
+  it("returns public author avatars in discovery cards without exposing contact fields", async () => {
+    await storePrivateProfile(owner, "owner");
+    const activity = await create({
+      joinSquare: true,
+      topicUrl: "https://linux.do/t/example/12345/8",
+    });
+    const square = (await (
+      await request("/api/discovery/activities")
+    ).json()) as DiscoveryList;
+    const topic = (await (
+      await request("/api/topics/12345/activities?postNumber=8")
+    ).json()) as DiscoveryList;
+    for (const list of [square, topic]) {
+      expect(list.items[0]).toMatchObject({
+        id: activity.id,
+        author: {
+          username: "owner",
+          avatarUrl: "https://cdn.example.com/discovery/owner.png",
+        },
+      });
+      expect(JSON.stringify(list)).not.toMatch(
+        /DISCOVERY-EMAIL-CIPHERTEXT|email_ciphertext|emailCiphertext|email/,
+      );
+    }
+  });
+
   it("loads twenty claimed LDC cards with bounded queries and never joins another account's claims", async () => {
     const merchant = await createMerchant(bindings, owner.id, {
       requestId: crypto.randomUUID(),

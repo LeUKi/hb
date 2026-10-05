@@ -6,9 +6,11 @@ import {
   type ActivitySummary,
   ARCHIVE_DELAY_MS,
   activityInputSchema,
+  amountToMinor,
   boundedMeanLimits,
   type CreateActivityInput,
   DEFAULT_DURATION_MS,
+  formatAmount,
   type LdcActivityInput,
   type LdcOpeningBlockedReason,
   ldcAmounts,
@@ -39,6 +41,7 @@ import {
 } from "../payments/verification";
 import { isLocalSimulation } from "../runtime/controls";
 import { digestPassword } from "../security/crypto";
+import { drawSummary, timedDrawMoney } from "./draw-storage";
 import {
   ActivityError,
   activityConflict,
@@ -81,6 +84,14 @@ function storedConfig(input: ActivityInput): StoredConfig {
   const topic = normalizeTopicLink(config.topicUrl);
   return {
     ...config,
+    ...(config.rewardType === "ldc" && config.money.mode === "timed_draw"
+      ? {
+          money: {
+            ...config.money,
+            totalAmount: formatAmount(amountToMinor(config.money.totalAmount)),
+          },
+        }
+      : {}),
     topicUrl: topic?.topicUrl ?? "",
     showRecipientUsername: config.showRecipientList,
     showRecipientTime: config.showRecipientList,
@@ -124,7 +135,11 @@ export function activityStatus(
     (row.deadline !== null && row.deadline <= now ? row.deadline : null);
   if (end === null)
     return row.claimedCount >= row.totalCount ? "ended" : "active";
-  return now >= end + ARCHIVE_DELAY_MS ? "archived" : "ended";
+  return now >= end + ARCHIVE_DELAY_MS &&
+    row.drawState !== "waiting" &&
+    row.drawState !== "settling"
+    ? "archived"
+    : "ended";
 }
 
 function summary(row: ActivityRow): ActivitySummary {
@@ -141,6 +156,7 @@ function summary(row: ActivityRow): ActivitySummary {
     totalCount: row.totalCount,
     claimedCount: row.claimedCount,
     ...(row.paymentMode ? { paymentMode: row.paymentMode } : {}),
+    ...(drawSummary(row) ? { draw: drawSummary(row) } : {}),
   };
 }
 
@@ -150,6 +166,8 @@ async function openingBlockedReason(
 ): Promise<LdcOpeningBlockedReason | undefined> {
   if (row.openedAt !== null || row.rewardType !== "ldc" || !row.merchantId)
     return undefined;
+  if (timedDrawMoney(row) && env.LDC_TIMED_DRAW_ENABLED !== "true")
+    return "TIMED_DRAW_NOT_ENABLED";
   const merchant = await ownedMerchant(env, row.merchantId, row.authorId);
   return (await publicationEligibility(env, merchant)).reason ?? undefined;
 }
@@ -161,6 +179,7 @@ export async function prepareActivityOpening(
   authorId: string,
 ) {
   const row = await ownedActivity(env, id, authorId);
+  if (timedDrawMoney(row) && env.LDC_TIMED_DRAW_ENABLED !== "true") return null;
   if (row.openedAt !== null || row.paymentMode !== "real" || !row.merchantId)
     return null;
   const merchant = await ownedMerchant(env, row.merchantId, authorId);
@@ -190,6 +209,7 @@ async function author(env: ApiBindings, authorId: string) {
       id: users.id,
       username: users.username,
       displayName: users.displayName,
+      avatarUrl: users.avatarUrl,
     })
     .from(users)
     .where(eq(users.id, authorId))
@@ -298,6 +318,9 @@ export function projectPublicActivity(
     beforeInfo: config.beforeInfo,
     ...(status === "ended" || status === "archived"
       ? { afterEndInfo: config.afterEndInfo }
+      : {}),
+    ...(drawSummary(row, config.quantityVisibility !== "fuzzy")
+      ? { draw: drawSummary(row, config.quantityVisibility !== "fuzzy") }
       : {}),
   };
 }
@@ -418,8 +441,8 @@ export async function createActivity(
   try {
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO activities
-        (id, author_id, creation_request_id, creation_digest, title, reward_type, merchant_id, payment_mode, force_dedicated, join_square, topic_id, post_number, allocation, config, total_count, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+        (id, author_id, creation_request_id, creation_digest, title, reward_type, merchant_id, payment_mode, force_dedicated, join_square, topic_id, post_number, allocation, config, total_count, draw_state, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
         id,
         authorId,
         input.requestId,
@@ -434,7 +457,13 @@ export async function createActivity(
         normalizeTopicLink(config.topicUrl)?.postNumber ?? 1,
         config.allocation,
         JSON.stringify(config),
-        inventory.length,
+        input.activity.rewardType === "ldc"
+          ? ldcRewardCount(input.activity)
+          : inventory.length,
+        input.activity.rewardType === "ldc" &&
+          input.activity.money.mode === "timed_draw"
+          ? "waiting"
+          : null,
         now,
         now,
       ),
@@ -544,14 +573,24 @@ export async function updateActivity(
       )
     )
       invalidActivity("开放后不能删除已有口令");
-    if (config.deadline.mode !== "at")
-      invalidActivity("开放后仅可延长具体截止时间");
-    deadline = Date.parse(config.deadline.at);
-    deadlineChanged = deadline !== row.deadline;
+    if (timedDrawMoney(row)) {
+      if (
+        config.deadline.mode === "at" &&
+        Date.parse(config.deadline.at) !== row.deadline
+      )
+        invalidActivity("限时开奖开放后不能修改开奖时间");
+      config.deadline = { mode: "duration" };
+    } else {
+      if (config.deadline.mode !== "at")
+        invalidActivity("开放后仅可延长具体截止时间");
+      deadline = Date.parse(config.deadline.at);
+      deadlineChanged = deadline !== row.deadline;
+    }
     if (
       deadlineChanged &&
       (activityStatus(row) !== "active" ||
         row.deadline === null ||
+        deadline === null ||
         deadline < row.deadline)
     ) {
       invalidActivity("仅进行中的活动可以延长截止时间，不能缩短或重新开放");
@@ -587,7 +626,7 @@ export async function updateActivity(
     activityWriteGuard(env.DB, id, authorId, input.version),
     env.DB.prepare(`UPDATE activities SET
       version = CASE WHEN version = ? AND author_id = ? AND deleted_at IS NULL AND (? = 0 OR (ended_at IS NULL AND deadline > ${databaseNow})) THEN version + 1 ELSE NULL END,
-      title = ?, reward_type = ?, merchant_id = ?, payment_mode = ?, join_square = ?, topic_id = ?, post_number = ?, allocation = ?, config = ?, total_count = ?, updated_at = ?, deadline = ?
+      title = ?, reward_type = ?, merchant_id = ?, payment_mode = ?, join_square = ?, topic_id = ?, post_number = ?, allocation = ?, config = ?, total_count = ?, draw_state = ?, updated_at = ?, deadline = ?
       WHERE id = ?`).bind(
       input.version,
       authorId,
@@ -604,6 +643,12 @@ export async function updateActivity(
       input.activity.rewardType === "text"
         ? input.activity.rewards.length
         : ldcRewardCount(input.activity),
+      row.openedAt === null
+        ? input.activity.rewardType === "ldc" &&
+          input.activity.money.mode === "timed_draw"
+          ? "waiting"
+          : null
+        : row.drawState,
       now,
       deadline,
       id,
@@ -660,6 +705,12 @@ export async function openActivity(
 ) {
   const row = await ownedActivity(env, id, authorId);
   if (row.openedAt !== null) return managed(env, row);
+  if (timedDrawMoney(row) && env.LDC_TIMED_DRAW_ENABLED !== "true")
+    throw new ActivityError(
+      409,
+      "TIMED_DRAW_NOT_ENABLED",
+      "限时开奖尚未启用，草稿已保存。",
+    );
   if (row.version !== version) activityConflict();
   if (
     openingExpectation?.merchantId &&
@@ -701,7 +752,18 @@ export async function openActivity(
   });
   if (!checked.success) invalidActivity("活动配置不完整，无法开放");
   const inventory = (await privateRows(env, id)).inventory;
-  if (inventory.length !== row.totalCount)
+  const timed =
+    checked.data.rewardType === "ldc" &&
+    checked.data.money.mode === "timed_draw";
+  if (
+    timed &&
+    (checked.data.rewardType !== "ldc" ||
+      ldcRewardCount(checked.data) !== row.totalCount ||
+      row.drawState !== "waiting" ||
+      row.registeredCount !== 0)
+  )
+    invalidActivity("限时开奖配置与报名状态不一致，无法开放");
+  if (inventory.length !== (timed ? 0 : row.totalCount))
     invalidActivity("活动库存不完整，无法开放");
   if (checked.data.rewardType === "ldc") {
     const merchant = await ownedMerchant(
@@ -712,18 +774,19 @@ export async function openActivity(
     if (row.paymentMode !== merchant.mode)
       invalidActivity("活动付款模式与商户配置不一致，无法开放");
     if (
-      ldcRewardCount(checked.data) !== row.totalCount ||
-      inventory.some(
-        (item, index) =>
-          item.kind !== "ldc" ||
-          item.position !== index ||
-          !Number.isSafeInteger(item.amountMinor) ||
-          (item.amountMinor ?? 0) <= 0,
-      ) ||
-      inventory.reduce(
-        (sum, item) => sum + BigInt(item.amountMinor ?? 0),
-        0n,
-      ) !== BigInt(ldcTotalMinor(checked.data))
+      !timed &&
+      (ldcRewardCount(checked.data) !== row.totalCount ||
+        inventory.some(
+          (item, index) =>
+            item.kind !== "ldc" ||
+            item.position !== index ||
+            !Number.isSafeInteger(item.amountMinor) ||
+            (item.amountMinor ?? 0) <= 0,
+        ) ||
+        inventory.reduce(
+          (sum, item) => sum + BigInt(item.amountMinor ?? 0),
+          0n,
+        ) !== BigInt(ldcTotalMinor(checked.data)))
     )
       invalidActivity("活动金额与库存不一致，无法开放");
     if (checked.data.money.mode === "random") {
@@ -759,7 +822,7 @@ export async function openActivity(
         )
           invalidActivity("活动金额超出随机算法范围，无法开放");
       }
-    } else {
+    } else if (!timed) {
       const amounts = ldcAmounts(checked.data);
       if (inventory.some((item, index) => item.amountMinor !== amounts[index]))
         invalidActivity("活动金额与库存不一致，无法开放");
@@ -768,13 +831,20 @@ export async function openActivity(
     invalidActivity("活动文本库存不完整，无法开放");
   const now = Date.now();
   const deadline =
-    checked.data.deadline.mode === "duration"
-      ? now + DEFAULT_DURATION_MS
-      : Date.parse(checked.data.deadline.at);
+    checked.data.rewardType === "ldc" &&
+    checked.data.money.mode === "timed_draw"
+      ? now + checked.data.money.countdownSeconds * 1000
+      : checked.data.deadline.mode === "duration"
+        ? now + DEFAULT_DURATION_MS
+        : Date.parse(checked.data.deadline.at);
+  if (!Number.isSafeInteger(deadline) || deadline > 8_640_000_000_000_000)
+    invalidActivity("开奖时间超出有效范围");
   if (deadline <= now) invalidActivity("截止时间必须晚于正式开放时间");
   const config = {
     ...storedConfig(checked.data),
-    deadline: { mode: "at", at: new Date(deadline).toISOString() },
+    deadline: timed
+      ? { mode: "duration" }
+      : { mode: "at", at: new Date(deadline).toISOString() },
   };
   try {
     await env.DB.batch([
@@ -787,7 +857,8 @@ export async function openActivity(
         AND EXISTS(SELECT 1 FROM merchants m JOIN merchant_credentials c ON c.merchant_id=m.id AND c.version=m.credential_version
           WHERE m.id=activities.merchant_id AND c.version=? AND c.verification_status='passed' AND c.verification_checked_at>=${databaseNow}-600000)))
       THEN version + 1 ELSE NULL END,
-      config = ?, opened_at = ?, updated_at = ?, deadline = ? WHERE id = ?`).bind(
+      config = ?, opened_at = CASE WHEN json_extract(config,'$.money.mode')='timed_draw' THEN ${databaseNow} ELSE ? END,
+      updated_at = ?, deadline = CASE WHEN json_extract(config,'$.money.mode')='timed_draw' THEN ${databaseNow}+? ELSE ? END WHERE id = ?`).bind(
         version,
         authorId,
         expectedMerchantId,
@@ -797,6 +868,10 @@ export async function openActivity(
         JSON.stringify(config),
         now,
         now,
+        checked.data.rewardType === "ldc" &&
+          checked.data.money.mode === "timed_draw"
+          ? checked.data.money.countdownSeconds * 1000
+          : 0,
         deadline,
         id,
       ),
@@ -807,7 +882,13 @@ export async function openActivity(
     if (current.version !== version) activityConflict();
     const blocked = await openingBlockedReason(env, current);
     if (blocked)
-      throw new ActivityError(409, blocked, publicationMessages[blocked]);
+      throw new ActivityError(
+        409,
+        blocked,
+        blocked === "TIMED_DRAW_NOT_ENABLED"
+          ? "限时开奖尚未启用，草稿已保存。"
+          : publicationMessages[blocked],
+      );
     if (publicationMerchant) {
       const latestMerchant = await ownedMerchant(
         env,

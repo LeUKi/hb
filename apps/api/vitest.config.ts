@@ -15,6 +15,7 @@ export default defineConfig({
           APP_ENV: "local",
           LDC_NETWORK_MODE: "disabled",
           LDC_ACCEPTANCE_ID: "",
+          LDC_TIMED_DRAW_ENABLED: "true",
           CONNECT_CLIENT_ID: "",
           CONNECT_CLIENT_SECRET: "",
           ENCRYPTION_KEYS: JSON.stringify({
@@ -28,6 +29,9 @@ export default defineConfig({
     }),
   ],
   test: {
+    // Each file starts an isolated Workers runtime and applies every migration.
+    // Keep concurrent fixtures bounded as the integration suite grows.
+    maxWorkers: 4,
     include: ["test/**/*.test.ts"],
     setupFiles: ["./test/setup.ts"],
   },

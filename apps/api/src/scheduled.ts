@@ -1,10 +1,11 @@
 import { sweepActivityLifecycle } from "./activities/lifecycle";
+import type { ApiBindings } from "./env";
 import { sweepPayments } from "./payments/scheduler";
 import { recoverCredentialChecks } from "./payments/verification";
 
 export async function runScheduled(
   event: ScheduledController,
-  env: CloudflareEnv,
+  env: ApiBindings,
   _ctx: ExecutionContext,
 ) {
   console.log("scheduled", {
@@ -27,7 +28,7 @@ export async function runScheduled(
 
 // Cron only wakes this DO. Its independent job observations and D1 conditions
 // remain the source of truth, including retries of the same scheduled event.
-export async function runMaintenance(env: CloudflareEnv, scheduledAt: number) {
+export async function runMaintenance(env: ApiBindings, scheduledAt: number) {
   return runScheduledJobs(env.DB, scheduledAt, [
     {
       name: "identity",

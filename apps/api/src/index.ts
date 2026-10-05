@@ -1,4 +1,5 @@
 import { app } from "./app";
+import type { ApiBindings } from "./env";
 
 export { ActivityDO, MerchantDO } from "./durable-objects";
 
@@ -17,4 +18,4 @@ export default {
   async scheduled(event, env, ctx) {
     await runScheduled(event, env, ctx);
   },
-} satisfies ExportedHandler<CloudflareEnv, unknown>;
+} satisfies ExportedHandler<ApiBindings, unknown>;

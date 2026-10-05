@@ -18,6 +18,8 @@ export const users = sqliteTable(
     externalId: text("external_id").notNull(),
     username: text("username").notNull(),
     displayName: text("display_name").notNull(),
+    emailCiphertext: text("email_ciphertext"),
+    avatarUrl: text("avatar_url"),
     active: integer("active", { mode: "boolean" }).notNull().default(true),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
@@ -102,6 +104,13 @@ export const activities = sqliteTable(
     config: text("config").notNull(),
     totalCount: integer("total_count").notNull(),
     claimedCount: integer("claimed_count").notNull().default(0),
+    registeredCount: integer("registered_count").notNull().default(0),
+    drawState: text("draw_state", {
+      enum: ["waiting", "settling", "completed", "empty"],
+    }),
+    drawClosedAt: integer("draw_closed_at"),
+    drawReason: text("draw_reason", { enum: ["full", "deadline", "manual"] }),
+    drawPublishedAt: integer("draw_published_at"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
     openedAt: integer("opened_at"),
@@ -285,15 +294,20 @@ export const redemptionSubmissions = sqliteTable(
         "claimed",
         "already_claimed",
         "solved",
+        "registered",
+        "already_registered",
       ],
     }).notNull(),
-    purpose: text("purpose", { enum: ["claim", "solve"] })
+    purpose: text("purpose", { enum: ["claim", "solve", "register"] })
       .notNull()
       .default("claim"),
     matchedPasswordId: text("matched_password_id").references(
       () => activityPasswords.id,
     ),
     claimId: text("claim_id").references(() => claims.id),
+    registrationId: text("registration_id").references(
+      () => activityRegistrations.id,
+    ),
     createdAt: integer("created_at").notNull(),
     validatedAt: integer("validated_at"),
     finishedAt: integer("finished_at"),
@@ -320,6 +334,64 @@ export const redemptionSubmissions = sqliteTable(
       table.purpose,
       table.outcome,
       table.matchedPasswordId,
+    ),
+  ],
+);
+
+/** Participation is not a claim: losing entries never require a reward or payment. */
+export const activityRegistrations = sqliteTable(
+  "activity_registrations",
+  {
+    id: text("id").primaryKey(),
+    activityId: text("activity_id")
+      .notNull()
+      .references(() => activities.id),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    passwordId: text("password_id")
+      .notNull()
+      .references(() => activityPasswords.id),
+    ordinal: integer("ordinal").notNull(),
+    recipientId: text("recipient_id").notNull(),
+    registeredAt: integer("registered_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("activity_registrations_user_unique").on(
+      table.activityId,
+      table.userId,
+    ),
+    uniqueIndex("activity_registrations_ordinal_unique").on(
+      table.activityId,
+      table.ordinal,
+    ),
+    index("activity_registrations_user_time_idx").on(
+      table.userId,
+      table.registeredAt,
+      table.id,
+    ),
+    check(
+      "activity_registrations_ordinal_positive",
+      sql`typeof(${table.ordinal})='integer' AND ${table.ordinal}>0 AND ${table.ordinal}<=9007199254740991`,
+    ),
+  ],
+);
+
+/** A saved plan survives restarts and cannot be redrawn after publication failures. */
+export const activityDrawPlans = sqliteTable(
+  "activity_draw_plans",
+  {
+    activityId: text("activity_id")
+      .primaryKey()
+      .references(() => activities.id),
+    participantCount: integer("participant_count").notNull(),
+    payload: text("payload").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    check(
+      "activity_draw_plans_count_valid",
+      sql`typeof(${table.participantCount})='integer' AND ${table.participantCount}>=0 AND ${table.participantCount}<=9007199254740991`,
     ),
   ],
 );

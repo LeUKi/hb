@@ -32,7 +32,10 @@ import { activityStatus } from "./service";
 import { findActivity } from "./storage";
 
 export type SubmissionRow = typeof redemptionSubmissions.$inferSelect;
-type FinishedOutcome = Exclude<SubmissionRow["outcome"], "pending" | "solved">;
+type FinishedOutcome = Exclude<
+  SubmissionRow["outcome"],
+  "pending" | "solved" | "registered" | "already_registered"
+>;
 
 export function claimAttemptLimit(env: ApiBindings) {
   const value = Number(env.CLAIM_ATTEMPTS_PER_MINUTE);
@@ -72,7 +75,7 @@ export async function findSubmission(
 export function bindFingerprint(
   row: SubmissionRow,
   fingerprint: string,
-  purpose: "claim" | "solve" = "claim",
+  purpose: "claim" | "solve" | "register" = "claim",
 ) {
   if (row.purpose !== purpose || row.fingerprint !== fingerprint)
     activityConflict("同一提交标识不能更换操作、活动或口令");
@@ -332,6 +335,11 @@ async function resultOfSubmission(
   if (submission.purpose !== "claim" || submission.outcome === "solved")
     activityConflict("解出口令提交不能用于领取奖励");
   if (
+    submission.outcome === "registered" ||
+    submission.outcome === "already_registered"
+  )
+    activityConflict("报名提交不能用于即时领取奖励");
+  if (
     submission.outcome === "claimed" ||
     submission.outcome === "already_claimed"
   ) {
@@ -379,7 +387,7 @@ function randomIndex(length: number) {
   return (bytes[0] ?? 0) % length;
 }
 
-async function paymentRecipient(
+export async function paymentRecipient(
   env: ApiBindings,
   userId: string,
   mode: "simulation" | "real",
@@ -661,6 +669,14 @@ export async function claimActivity(
   executionPolicy?: ActivityExecutionPolicy,
 ) {
   await refreshActivityLifecycle(env, activityId);
+  const activity = await findActivity(env, activityId);
+  if (
+    activity?.rewardType === "ldc" &&
+    JSON.parse(activity.config).money?.mode === "timed_draw"
+  ) {
+    const { registerForDraw } = await import("./registration-service");
+    return registerForDraw(env, activityId, userId, input, executionPolicy);
+  }
   const submission = await prepareClaimSubmission(
     env,
     activityId,

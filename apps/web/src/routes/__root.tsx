@@ -10,11 +10,11 @@ import {
   LogIn,
   LogOut,
   Plus,
-  User,
   WalletCards,
 } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { Button } from "../components/ui/button";
+import { UserIdentity } from "../components/user-identity";
 import {
   getLoginHref,
   isAuthUnavailable,
@@ -154,7 +154,7 @@ function RootLayout() {
               className="inline-flex h-10 items-center gap-2 rounded-md px-3 text-sm font-medium text-neutral-700 hover:bg-neutral-100 [&.active]:bg-neutral-950 [&.active]:text-white"
             >
               <Gift className="size-4" />
-              我的领取
+              我的参与
             </Link>
             <Link
               to="/my/merchants"
@@ -181,12 +181,14 @@ function RootLayout() {
               </>
             ) : user ? (
               <>
-                <Button asChild size="sm" variant="secondary">
-                  <Link to="/account">
-                    <User className="size-4" />
-                    {user.displayName}
-                  </Link>
-                </Button>
+                <UserIdentity
+                  profile={{
+                    username: user.username,
+                    displayName: user.displayName,
+                    avatarUrl: user.avatarUrl,
+                  }}
+                  selfActions
+                />
                 <Button
                   type="button"
                   size="sm"

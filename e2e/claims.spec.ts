@@ -6,12 +6,18 @@ import {
   type ManagedActivity,
   type PublicActivity,
   type PublicRecipientList,
+  type RegistrationDetail,
 } from "../packages/contracts/src";
 
 const activityId = "aa638a03-2050-4a18-9f83-802407d9e0b2";
 const claimId = "f081c139-b839-4a1d-8a78-4648994977a4";
 const inventoryId = "52261908-ab47-4c8a-9e27-c2881bf03579";
-const user = { id: "claimant-1", username: "ada", displayName: "Ada" };
+const user = {
+  id: "claimant-1",
+  username: "ada",
+  displayName: "Ada",
+  avatarUrl: null,
+};
 const reward = "<b>PRIVATE-REWARD</b>\n**必须原样显示**\n第二行";
 
 async function mockClaims(page: Page) {
@@ -232,6 +238,27 @@ async function mockClaims(page: Page) {
         },
       });
     }
+    if (path === "/api/me/participations") {
+      state.privateReads++;
+      return route.fulfill({
+        json: {
+          items: state.claim
+            ? [
+                {
+                  kind: "claim",
+                  claim: {
+                    id: claimId,
+                    activity: state.claim.activity,
+                    claimedAt: state.claim.claimedAt,
+                    rewardType: "text",
+                  },
+                },
+              ]
+            : [],
+          nextCursor: null,
+        },
+      });
+    }
     if (path === `/api/me/claims/${claimId}`) {
       state.privateReads++;
       return route.fulfill({ json: { claim: state.claim } });
@@ -300,7 +327,7 @@ test("错误后主动重试生成新提交，成功展示原文并可从历史�
     page.getByRole("button", { name: "领取", exact: true }),
   ).toHaveCount(0);
   await page
-    .getByRole("link", { name: "我的领取", exact: true })
+    .getByRole("link", { name: "我的参与", exact: true })
     .first()
     .click();
   await expect(page).toHaveURL("/my/claims");
@@ -411,19 +438,27 @@ test("作者提前结束需明确确认，已领取活动不显示此操作", as
   ).toHaveCount(0);
 });
 
-test("公共名单关闭身份和时间时仅展示匿名条目", async ({ page }) => {
+test("公共名单开启后展示领取者资料", async ({ page }) => {
   const { state } = await mockClaims(page);
   state.signedIn = false;
   state.recipients = {
     enabled: true,
-    items: [{ id: claimId }],
+    items: [
+      {
+        id: claimId,
+        username: user.username,
+        displayName: user.displayName,
+        avatarUrl: user.avatarUrl,
+        claimedAt: new Date().toISOString(),
+      },
+    ],
     nextCursor: null,
   };
   await page.goto(`/activities/${activityId}`);
   await expect(
     page.getByRole("heading", { name: /领取名单|领取记录/ }),
   ).toBeVisible();
-  await expect(page.getByText(/匿名.*领取|已领取/).first()).toBeVisible();
+  await expect(page.getByText("Ada", { exact: true }).first()).toBeVisible();
   await expect(page.getByText(reward, { exact: true })).toHaveCount(0);
   await expect(page.getByText(/共.*份|剩余.*份/)).toHaveCount(0);
   expect(state.privateReads).toBe(0);
@@ -573,4 +608,259 @@ test("作者可看活动全部口令，退出后迟到的私有口令响应不�
     panel.getByText("还有 2 个口令未解锁。", { exact: true }),
   ).toBeVisible();
   await expect(panel.locator("code")).toHaveCount(0);
+});
+
+test("限时开奖 public 已完成时仍轮询本人非终态报名直到未中奖终态", async ({
+  page,
+}) => {
+  await page.clock.install();
+  const drawActivityId = "2e0fda0c-12ad-4d8b-9d72-e4f096595d64";
+  const registrationId = "a3c6e5dc-2227-4d1a-9cf7-a39fdab22f6c";
+  const drawAt = new Date(Date.now() - 5_000).toISOString();
+  const activity: PublicActivity = {
+    id: drawActivityId,
+    author: {
+      id: "author-1",
+      username: "author",
+      displayName: "作者",
+      avatarUrl: null,
+    },
+    title: "已开奖但私有结果延迟",
+    rewardType: "ldc",
+    status: "active",
+    forceDedicated: true,
+    topicUrl: null,
+    openedAt: new Date(Date.now() - 60_000).toISOString(),
+    deadlineAt: drawAt,
+    quantity: { mode: "exact", total: 5, claimed: 0, remaining: 5 },
+    showRecipientList: true,
+    showRecipientUsername: true,
+    showRecipientTime: true,
+    showRecipientAmount: true,
+    beforeInfo: "等待私有开奖结果",
+    paymentMode: "simulation",
+    draw: {
+      state: "completed",
+      deadlineAt: drawAt,
+      closedAt: drawAt,
+      reason: "deadline",
+      registeredCount: 1,
+      winnerCount: 0,
+      participantLimit: 3,
+    },
+  };
+  let registrationReads = 0;
+  let releaseFinalRegistration = false;
+  const baseRegistration = {
+    id: registrationId,
+    activity: { id: drawActivityId, title: activity.title, status: "active" },
+    registeredAt: new Date(Date.now() - 45_000).toISOString(),
+    drawAt,
+    claim: null,
+  } satisfies Omit<RegistrationDetail, "status">;
+  await page.route("**/api/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path === "/api/me")
+      return route.fulfill({ json: { user, csrfToken: "draw-csrf" } });
+    if (path === `/api/activities/${drawActivityId}`)
+      return route.fulfill({ json: { activity } });
+    if (path === `/api/activities/${drawActivityId}/claim`)
+      return route.fulfill({ json: { claim: null } });
+    if (path === `/api/activities/${drawActivityId}/registration`) {
+      registrationReads += 1;
+      return route.fulfill({
+        json: {
+          registration: {
+            ...baseRegistration,
+            status: releaseFinalRegistration ? "not_won" : "registered",
+          },
+        },
+      });
+    }
+    if (path === `/api/activities/${drawActivityId}/passwords`)
+      return route.fulfill({
+        json: { passwords: [], hiddenCount: 0, canSolve: false },
+      });
+    if (path === `/api/activities/${drawActivityId}/recipients`)
+      return route.fulfill({
+        json: { enabled: true, items: [], nextCursor: null },
+      });
+    return route.fallback();
+  });
+
+  await page.goto(`/activities/${drawActivityId}`);
+  await expect(
+    page.getByText("已报名，等待开奖", { exact: true }),
+  ).toBeVisible();
+  const readsAfterInitial = registrationReads;
+  releaseFinalRegistration = true;
+  await page.clock.runFor(15_100);
+  await expect(page.getByText("未中奖", { exact: true })).toBeVisible();
+  expect(registrationReads).toBeGreaterThan(readsAfterInitial);
+  const readsAfterFinal = registrationReads;
+  await page.clock.runFor(31_000);
+  expect(registrationReads).toBe(readsAfterFinal);
+});
+
+test("限时开奖报名、报名口令、继续解口令与我的参与列表", async ({ page }) => {
+  const drawActivityId = "f4d9d4d1-d7fb-4c67-a3b3-45fe78a70122";
+  const registrationId = "6a7fe2f6-7afe-41d5-9ef9-854657bb1adc";
+  const drawAt = new Date(Date.now() + 90_000).toISOString();
+  const activity = {
+    id: drawActivityId,
+    author: {
+      id: "author-1",
+      username: "author",
+      displayName: "作者",
+      avatarUrl: null,
+    },
+    title: "限时开奖活动",
+    rewardType: "ldc" as const,
+    status: "active" as const,
+    forceDedicated: true,
+    topicUrl: null,
+    openedAt: new Date().toISOString(),
+    deadlineAt: drawAt,
+    quantity: { mode: "exact" as const, total: 5, claimed: 0, remaining: 5 },
+    showRecipientList: true,
+    showRecipientUsername: true,
+    showRecipientTime: true,
+    showRecipientAmount: true,
+    beforeInfo: "输入口令报名抽奖",
+    paymentMode: "simulation" as const,
+    draw: {
+      state: "waiting" as const,
+      deadlineAt: drawAt,
+      closedAt: null,
+      reason: null,
+      registeredCount: 0,
+      winnerCount: null,
+      participantLimit: 3,
+    },
+  };
+  const state = {
+    claim: null as ClaimDetail | null,
+    registration: null as null | {
+      id: string;
+      activity: { id: string; title: string; status: "active" };
+      registeredAt: string;
+      status: "registered";
+      drawAt: string;
+      claim: null;
+    },
+    requests: [] as ClaimActivityInput[],
+    solveRequests: [] as ClaimActivityInput[],
+    solved: [] as string[],
+  };
+  await page.route("**/api/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path === "/api/me")
+      return route.fulfill({ json: { user, csrfToken: "draw-csrf" } });
+    if (path === `/api/activities/${drawActivityId}`)
+      return route.fulfill({ json: { activity } });
+    if (path === `/api/activities/${drawActivityId}/claim`) {
+      if (request.method() === "GET")
+        return route.fulfill({ json: { claim: state.claim } });
+      const body = request.postDataJSON() as ClaimActivityInput;
+      state.requests.push(body);
+      if (body.password !== "Answer123")
+        return route.fulfill({ json: { result: "incorrect" } });
+      state.registration ??= {
+        id: registrationId,
+        activity: {
+          id: drawActivityId,
+          title: activity.title,
+          status: "active",
+        },
+        registeredAt: new Date().toISOString(),
+        status: "registered",
+        drawAt,
+        claim: null,
+      };
+      activity.draw.registeredCount = 1;
+      return route.fulfill({
+        json: { result: "registered", registration: state.registration },
+      });
+    }
+    if (path === `/api/activities/${drawActivityId}/registration`)
+      return route.fulfill({ json: { registration: state.registration } });
+    if (path === `/api/activities/${drawActivityId}/passwords`) {
+      return route.fulfill({
+        json: {
+          passwords: state.registration
+            ? [
+                {
+                  text: "Answer123",
+                  isClaimPassword: false,
+                  isRegistrationPassword: true,
+                  isSolved: false,
+                },
+                ...state.solved.map((text) => ({
+                  text,
+                  isClaimPassword: false,
+                  isRegistrationPassword: false,
+                  isSolved: true,
+                })),
+              ]
+            : [],
+          hiddenCount: state.registration ? 1 - state.solved.length : 2,
+          canSolve: Boolean(state.registration),
+        },
+      });
+    }
+    if (path === `/api/activities/${drawActivityId}/password-solves`) {
+      const body = request.postDataJSON() as ClaimActivityInput;
+      state.solveRequests.push(body);
+      if (
+        body.password === "Second456" &&
+        !state.solved.includes(body.password)
+      )
+        state.solved.push(body.password);
+      return route.fulfill({
+        json: {
+          outcome: body.password === "Second456" ? "solved" : "incorrect",
+        },
+      });
+    }
+    if (path === `/api/activities/${drawActivityId}/recipients`)
+      return route.fulfill({
+        json: { enabled: true, items: [], nextCursor: null },
+      });
+    if (path === "/api/me/participations")
+      return route.fulfill({
+        json: {
+          items: state.registration
+            ? [{ kind: "registration", registration: state.registration }]
+            : [],
+          nextCursor: null,
+        },
+      });
+    return route.fallback();
+  });
+
+  await page.goto(`/activities/${drawActivityId}`);
+  await expect(
+    page.getByText("报名中，等待开奖", { exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("兑换口令", { exact: true }).fill("Answer123");
+  await page.getByRole("button", { name: "报名", exact: true }).click();
+  await expect(
+    page.getByText("已报名，等待开奖", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("我的报名口令", { exact: true })).toBeVisible();
+  await page.getByLabel("继续解口令", { exact: true }).fill("Second456");
+  await page.getByRole("button", { name: "解锁口令", exact: true }).click();
+  await expect(page.getByText("我已解出", { exact: true })).toBeVisible();
+  expect(state.requests).toHaveLength(1);
+  expect(state.solveRequests).toHaveLength(1);
+
+  await page.getByRole("link", { name: "我的参与", exact: true }).click();
+  await expect(page).toHaveURL("/my/claims");
+  await expect(page.getByRole("heading", { name: "我的参与" })).toBeVisible();
+  await expect(page.getByText("限时开奖 · 已报名")).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "查看活动", exact: true }),
+  ).toBeVisible();
 });

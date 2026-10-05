@@ -63,5 +63,8 @@
     "traces": {
       "enabled": false
     }
+  },
+  "vars": {
+    "LDC_TIMED_DRAW_ENABLED": "true"
   }
 }

@@ -180,6 +180,17 @@ export async function collectQueueDiagnostics(
 export function diagnosticQueries(now: number) {
   return [
     {
+      name: "draws",
+      tables: ["activities", "activity_draw_plans", "activity_registrations"],
+      sql: `SELECT a.payment_mode,a.draw_state,COUNT(*) AS activities,
+      SUM(a.registered_count) AS registrations,
+      SUM(CASE WHEN a.draw_state='waiting' AND a.deadline<=${now} THEN 1 ELSE 0 END) AS overdue,
+      MAX(CASE WHEN a.draw_state IN ('waiting','settling') THEN MAX(0,CAST((${now}-COALESCE(a.draw_closed_at,a.deadline))/1000 AS INTEGER)) ELSE 0 END) AS oldest_wait_seconds,
+      SUM(CASE WHEN a.draw_state='settling' AND EXISTS(SELECT 1 FROM activity_draw_plans p WHERE p.activity_id=a.id) THEN 1 ELSE 0 END) AS unpublished_plans
+      FROM activities a WHERE a.deleted_at IS NULL AND a.draw_state IS NOT NULL
+      GROUP BY a.payment_mode,a.draw_state`,
+    },
+    {
       name: "pendingByModeStatusReason",
       tables: ["payment_tasks"],
       sql: `SELECT mode,status,COALESCE(reason,'') AS reason,COUNT(*) AS tasks,
@@ -261,6 +272,14 @@ export function diagnosticWarnings(
   queues?: QueueDiagnostics,
 ) {
   const warnings: string[] = [];
+  if (
+    data.draws?.some(
+      (row) =>
+        ["waiting", "settling"].includes(String(row.draw_state)) &&
+        Number(row.oldest_wait_seconds) > 600,
+    )
+  )
+    warnings.push("DRAW_SETTLEMENT_WAIT_OVER_TEN_MINUTES");
   if (data.protection?.some((row) => Number(row.tasks) > 0))
     warnings.push("PAYMENT_PROTECTION_ACTIVE");
   if (

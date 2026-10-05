@@ -1,4 +1,4 @@
-export type ApiBindings = CloudflareEnv & {
+export type ApiBindings = Omit<CloudflareEnv, "LDC_TIMED_DRAW_ENABLED"> & {
   APP_ORIGIN?: string;
   CONNECT_CLIENT_ID?: string;
   CONNECT_CLIENT_SECRET?: string;
@@ -13,6 +13,7 @@ export type ApiBindings = CloudflareEnv & {
   LDC_STOP_NEW_OPENINGS?: string;
   LDC_STOP_NEW_CLAIMS?: string;
   LDC_STOP_SENDS?: string;
+  LDC_TIMED_DRAW_ENABLED?: string;
 };
 
 export type ApiVariables = {

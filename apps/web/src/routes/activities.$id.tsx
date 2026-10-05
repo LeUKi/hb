@@ -2,12 +2,14 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useAtom } from "jotai";
 import { ActivityErrorView } from "../components/activities/activity-error";
 import { ClaimEntry } from "../components/activities/claim-entry";
+import { DrawSummaryPanel } from "../components/activities/draw-summary";
 import { ExchangeScope } from "../components/activities/exchange-scope";
 import { SafeMarkdown } from "../components/activities/markdown";
 import { PasswordPanel } from "../components/activities/password-panel";
 import { RealPaymentNotice } from "../components/activities/real-payment-notice";
 import { PublicRecipients } from "../components/activities/recipient-lists";
 import { Button } from "../components/ui/button";
+import { UserIdentity } from "../components/user-identity";
 import {
   formatTime,
   quantityText,
@@ -67,15 +69,18 @@ function PublicActivityPage() {
               {statusLabels[activity.status]}
             </span>
           </div>
-          <p className="text-sm text-neutral-600">
-            发放者：{activity.author.displayName}（@{activity.author.username}）
-            ·{" "}
-            {activity.rewardType === "ldc"
-              ? activity.paymentMode === "real"
-                ? "LDC（真实）"
-                : "LDC（本地模拟）"
-              : "文本奖励"}
-          </p>
+          <div className="flex flex-wrap items-center gap-2 text-sm text-neutral-600">
+            <span>发放者：</span>
+            <UserIdentity profile={activity.author} />
+            <span>·</span>
+            <span>
+              {activity.rewardType === "ldc"
+                ? activity.paymentMode === "real"
+                  ? "LDC（真实）"
+                  : "LDC（本地模拟）"
+                : "文本奖励"}
+            </span>
+          </div>
           {activity.status === "draft" ? (
             <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
               准备中预览，仅作者可见。
@@ -85,6 +90,7 @@ function PublicActivityPage() {
             截止：{formatTime(activity.deadlineAt)}
           </p>
           {quantity ? <p className="text-sm">{quantity}</p> : null}
+          {activity.draw ? <DrawSummaryPanel draw={activity.draw} /> : null}
           {activity.forceDedicated ? (
             <p className="text-sm text-neutral-600">本活动仅支持专属页兑换。</p>
           ) : null}

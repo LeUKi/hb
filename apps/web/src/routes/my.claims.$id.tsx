@@ -28,7 +28,7 @@ function ClaimDetail({ userId, id }: { userId: string; id: string }) {
       <ActivityErrorView
         error={query.error}
         retry={() => query.refetch()}
-        notFoundMessage="未找到领取记录，或你无权查看此奖励。"
+        notFoundMessage="未找到参与记录，或你无权查看此奖励。"
       />
     );
   const { claim } = query.data;
@@ -37,7 +37,7 @@ function ClaimDetail({ userId, id }: { userId: string; id: string }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">领取详情</h1>
         <Link to="/my/claims" className="text-sm underline underline-offset-4">
-          我的领取
+          我的参与
         </Link>
       </div>
       <article className="activity-panel space-y-6">

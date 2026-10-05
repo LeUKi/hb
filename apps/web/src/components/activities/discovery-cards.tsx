@@ -6,6 +6,7 @@ import {
 import { Link } from "@tanstack/react-router";
 import { formatTime, quantityText, statusLabels } from "../../lib/activities";
 import { Button } from "../ui/button";
+import { UserIdentity } from "../user-identity";
 
 export function DiscoveryCards({
   items,
@@ -28,14 +29,17 @@ export function DiscoveryCards({
                 {statusLabels[activity.status]}
               </span>
             </div>
-            <p className="text-sm text-neutral-600">
-              {activity.author.displayName}（@{activity.author.username}） ·
-              {activity.rewardType === "ldc"
-                ? activity.paymentMode === "real"
-                  ? "LDC（真实）"
-                  : "LDC（本地模拟）"
-                : "文本奖励"}
-            </p>
+            <div className="flex flex-wrap items-center gap-2 text-sm text-neutral-600">
+              <UserIdentity profile={activity.author} />
+              <span>·</span>
+              <span>
+                {activity.rewardType === "ldc"
+                  ? activity.paymentMode === "real"
+                    ? "LDC（真实）"
+                    : "LDC（本地模拟）"
+                  : "文本奖励"}
+              </span>
+            </div>
             <p className="text-xs text-neutral-500">
               截止：{formatTime(activity.deadlineAt)}
             </p>

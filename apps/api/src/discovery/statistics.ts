@@ -92,6 +92,9 @@ export async function getStatistics(
   >;
   return {
     ...summary,
+    ...(activity.drawState
+      ? { registeredParticipants: activity.registeredCount }
+      : {}),
     items: await Promise.all(
       page.map(
         async ({

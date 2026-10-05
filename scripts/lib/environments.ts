@@ -197,6 +197,10 @@ export function validateEnvironment(
       stopFlags.some((flag) => vars[flag] !== "true" && vars[flag] !== "false")
     )
       fail("explicit stop switches required");
+    if (!["true", "false"].includes(vars.LDC_TIMED_DRAW_ENABLED ?? ""))
+      fail("explicit timed draw opening switch required");
+    if (environment === "staging" && vars.LDC_TIMED_DRAW_ENABLED !== "false")
+      fail("staging cannot enable timed draw openings");
     const live =
       vars.LDC_NETWORK_MODE === "live" ||
       stopFlags.some((flag) => vars[flag] === "false");
