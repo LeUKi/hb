@@ -27,6 +27,7 @@ import type { ApiBindings } from "../src/env";
 import { createMerchant } from "../src/payments/merchants";
 import { runMerchantCycle } from "../src/payments/scheduler";
 import { sha256Hex } from "../src/security/crypto";
+import { advanceAttemptCooldown } from "./advance-attempt-cooldown";
 
 const origin = "https://hb.example.com";
 const bindings: ApiBindings = {
@@ -43,6 +44,7 @@ async function actor(): Promise<Actor> {
   const now = new Date();
   const db = createDb(env.DB);
   await db.insert(users).values({
+    officialConnectVerified: true,
     id,
     externalId: id,
     username: `recovery_${id.replaceAll("-", "")}`,
@@ -341,6 +343,7 @@ describe("persisted timed-draw recovery and participation pagination", () => {
         rewards: [{ id: crypto.randomUUID(), text: `PRIVATE-TEXT-${index}` }],
         afterClaimInfo: "PRIVATE-ORDINARY-INFORMATION",
       });
+      await advanceAttemptCooldown(env.DB, f.reader.id);
       const result = await claimActivity(bindings, ordinary.id, f.reader.id, {
         submissionId: crypto.randomUUID(),
         password,
@@ -398,6 +401,7 @@ describe("persisted timed-draw recovery and participation pagination", () => {
       money: { mode: "fixed", totalAmount: "1.00", count: 1 },
       afterClaimInfo: "PRIVATE-LDC-INFORMATION",
     });
+    await advanceAttemptCooldown(env.DB, f.reader.id);
     const result = await claimActivity(bindings, ordinaryLdc.id, f.reader.id, {
       submissionId: crypto.randomUUID(),
       password,
@@ -431,6 +435,7 @@ describe("persisted timed-draw recovery and participation pagination", () => {
     expect(JSON.parse(atob(first.nextCursor))).toEqual({
       time,
       id: last.kind === "claim" ? last.claim.id : last.registration.id,
+      scope: `participations:${f.reader.id}:all:all`,
     });
     const second = await history(f.reader, first.nextCursor);
     expect(second.items).toHaveLength(6);
@@ -452,15 +457,26 @@ describe("persisted timed-draw recovery and participation pagination", () => {
     for (const claim of ordinaryClaims) {
       expect(Object.keys(claim).sort()).toEqual([
         "activity",
+        ...(claim.rewardType === "ldc" ? ["amount"] : []),
         "claimedAt",
         "id",
+        ...(claim.rewardType === "ldc" ? ["payment"] : []),
         "rewardType",
+        "sourcePassword",
       ]);
       expect(Object.keys(claim.activity).sort()).toEqual([
+        "author",
+        "createdAt",
+        "deadlineAt",
         "id",
+        "participationMode",
+        "reward",
         "status",
         "title",
       ]);
+      expect(claim.sourcePassword).toBe(password);
+      expect(claim).not.toHaveProperty("text");
+      expect(claim).not.toHaveProperty("afterClaimInfo");
       expect(claim.claimedAt).toBe(new Date(time).toISOString());
       expect(winnerClaimIds.has(claim.id)).toBe(false);
     }

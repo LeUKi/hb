@@ -20,6 +20,7 @@ import {
 import type { ApiBindings } from "../src/env";
 import worker from "../src/index";
 import type { AdapterResult, PaymentAdapter } from "../src/payments/adapter";
+import { readMerchantImpact } from "../src/payments/configuration";
 import { createMerchant, updateMerchant } from "../src/payments/merchants";
 import {
   effectivePaymentTask,
@@ -54,6 +55,7 @@ afterEach(async () => {
 async function fixture(history = true) {
   const owner = crypto.randomUUID();
   await createDb(env.DB).insert(users).values({
+    officialConnectVerified: true,
     id: owner,
     externalId: owner,
     username: owner,
@@ -792,6 +794,8 @@ describe("durable same-business-number recovery", () => {
     await cycle(f, a);
     const before = await task(f);
     const rotated = await updateMerchant(f.bindings, f.merchant.id, f.owner, {
+      confirmationToken: (await readMerchantImpact(f.bindings, f.merchant))
+        .confirmationToken,
       version: f.merchant.version,
       label: f.merchant.label,
       secret: "new-test-secret",
@@ -820,6 +824,8 @@ describe("durable same-business-number recovery", () => {
     await cycle(f, a);
     expect((await task(f)).nextAction).toBe("send");
     await updateMerchant(f.bindings, f.merchant.id, f.owner, {
+      confirmationToken: (await readMerchantImpact(f.bindings, f.merchant))
+        .confirmationToken,
       version: f.merchant.version,
       label: f.merchant.label,
       secret: "new-unverified-test-secret",
@@ -829,6 +835,7 @@ describe("durable same-business-number recovery", () => {
     expect(a.send).not.toHaveBeenCalled();
     expect(a.query).toHaveBeenCalledTimes(2);
     expect(a.query).toHaveBeenLastCalledWith(expect.anything(), {
+      clientId: f.merchant.clientId,
       credentialVersion: 1,
       clientSecret: "test-only-secret",
     });

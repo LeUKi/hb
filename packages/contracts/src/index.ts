@@ -2,14 +2,18 @@ import { z } from "zod";
 import {
   amountToMinor,
   type LdcOpeningBlockedReason,
+  type MerchantPayment,
   moneySchema,
   type PaymentMode,
   type PaymentView,
 } from "./payments";
 import type { PublicUserProfile } from "./profile";
+import type { AttemptCooldown } from "./rate-limits";
 
+export * from "./login-settings";
 export * from "./payments";
 export * from "./profile";
+export * from "./rate-limits";
 
 export const ACTIVITY_LIMITS = {
   titleCharacters: 100,
@@ -22,7 +26,7 @@ export const ACTIVITY_LIMITS = {
 } as const;
 
 export const DEFAULT_DURATION_MS = 24 * 60 * 60 * 1000;
-export const DEFAULT_DRAW_COUNTDOWN_SECONDS = DEFAULT_DURATION_MS / 1000;
+export const DEFAULT_DRAW_COUNTDOWN_SECONDS = 600;
 // Keep countdown arithmetic within the JavaScript Date range. Opening checks
 // the sum against the actual database opening time as well.
 export const MAX_DRAW_COUNTDOWN_SECONDS = 8_000_000_000_000;
@@ -89,8 +93,13 @@ export const passwordSchema = z
     "口令须为 6–18 个字符，仅限汉字、英文字母和数字",
   );
 
-export const deadlineSchema = z.discriminatedUnion("mode", [
+export const deadlineSchema = z.union([
   z.strictObject({ mode: z.literal("duration") }),
+  z.strictObject({
+    mode: z.literal("duration"),
+    value: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    unit: z.enum(["minutes", "hours", "days"]),
+  }),
   z.strictObject({
     mode: z.literal("at"),
     at: z.iso.datetime({ offset: true }),
@@ -133,6 +142,9 @@ function acceptsHistoricalTopicLink(value: string): boolean {
   }
 }
 
+export const participationModeSchema = z.enum(["password", "direct"]);
+export type ParticipationMode = z.infer<typeof participationModeSchema>;
+
 const baseActivitySchema = z.strictObject({
   title: z
     .string()
@@ -153,7 +165,6 @@ const baseActivitySchema = z.strictObject({
   allocation: z.enum(["sequential", "random"]),
   passwords: z
     .array(passwordSchema)
-    .min(1, "至少填写一个口令")
     .max(ACTIVITY_LIMITS.historicalPasswords, "历史活动最多 100 个口令"),
   rewards: z
     .array(
@@ -178,6 +189,8 @@ const baseActivitySchema = z.strictObject({
   beforeInfo: infoSchema,
   afterClaimInfo: infoSchema,
   afterEndInfo: infoSchema,
+  // Preserve the parsed shape of legacy creation requests for idempotency.
+  participationMode: participationModeSchema.optional(),
 });
 
 export const ldcMoneySchema = z.discriminatedUnion("mode", [
@@ -252,7 +265,8 @@ export const ldcMoneySchema = z.discriminatedUnion("mode", [
         .number()
         .int()
         .positive()
-        .max(MAX_DRAW_COUNTDOWN_SECONDS),
+        .max(MAX_DRAW_COUNTDOWN_SECONDS)
+        .optional(),
       distributeFullPool: z.boolean(),
     })
     .superRefine((value, ctx) => {
@@ -284,6 +298,25 @@ function validateActivity(
   activity: z.infer<typeof activityVariants>,
   context: z.RefinementCtx,
 ) {
+  if (activity.participationMode === "direct") {
+    if (activity.passwords.length > 0)
+      context.addIssue({
+        code: "custom",
+        path: ["passwords"],
+        message: "直接参与活动不能设置口令",
+      });
+    if (activity.forceDedicated)
+      context.addIssue({
+        code: "custom",
+        path: ["forceDedicated"],
+        message: "直接参与活动不能开启口令尝试统计",
+      });
+  } else if (activity.passwords.length === 0)
+    context.addIssue({
+      code: "custom",
+      path: ["passwords"],
+      message: "至少填写一个口令",
+    });
   if (
     activity.rewardType === "ldc" &&
     (activity.money.mode === "random" ||
@@ -295,22 +328,26 @@ function validateActivity(
       path: ["allocation"],
       message: "随机金额模式须采用不放回随机领取",
     });
-  if (
-    activity.rewardType === "ldc" &&
-    activity.money.mode === "timed_draw" &&
-    activity.deadline.mode !== "duration"
-  )
-    context.addIssue({
-      code: "custom",
-      path: ["deadline"],
-      message: "限时开奖仅使用最晚开奖倒计时，不另设活动期限",
-    });
-  if (activity.joinSquare && !activity.topicUrl)
-    context.addIssue({
-      code: "custom",
-      path: ["topicUrl"],
-      message: "加入广场前请关联 Linux DO 帖子",
-    });
+  if (activity.rewardType === "ldc" && activity.money.mode === "timed_draw") {
+    if (
+      activity.deadline.mode === "duration" &&
+      activity.money.countdownSeconds === undefined
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["money", "countdownSeconds"],
+        message: "请填写最晚开奖倒计时（秒）",
+      });
+    if (
+      activity.deadline.mode === "at" &&
+      activity.money.countdownSeconds !== undefined
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["money", "countdownSeconds"],
+        message: "指定开奖时间不能同时设置倒计时",
+      });
+  }
   const passwords = new Set<string>();
   activity.passwords.forEach((password, index) => {
     if (passwords.has(password))
@@ -508,6 +545,37 @@ export type CreateActivityInput = z.infer<typeof createActivitySchema>;
 export type UpdateActivityInput = z.infer<typeof updateActivitySchema>;
 export type OpenActivityInput = z.infer<typeof openActivitySchema>;
 export type ActivityStatus = "draft" | "active" | "ended" | "archived";
+export const activityRewardFilterSchema = z.enum([
+  "all",
+  "text",
+  "ldc",
+  "fixed",
+  "custom",
+  "random",
+  "timed_draw",
+]);
+export type ActivityRewardFilter = z.infer<typeof activityRewardFilterSchema>;
+export type ActivityStatusCounts = Record<ActivityStatus | "all", number>;
+export type ActivityHistoryFilters = {
+  type?: ActivityRewardFilter;
+  status?: ActivityStatus | "all";
+};
+/** A public projection never contains private text rewards or a custom amount list. */
+export type ActivityRewardSummary =
+  | { mode: "text" }
+  | {
+      mode: LdcMoney["mode"];
+      totalAmount?: string;
+      unitAmount?: string;
+      count?: number;
+      algorithm?: RandomLdcMoney["algorithm"];
+      participantLimit?: number | null;
+      distributeFullPool?: boolean;
+    };
+export type AccountHistorySummary = {
+  initiatedCount: number;
+  participatedCount: number;
+};
 
 export type ActivityAuthor = PublicUserProfile & {
   id: string;
@@ -525,9 +593,11 @@ export type DrawSummary = {
 };
 
 export type ActivitySummary = {
+  participationMode?: ParticipationMode;
   id: string;
   title: string;
   rewardType: "text" | "ldc";
+  forceDedicated: boolean;
   status: ActivityStatus;
   version: number;
   createdAt: string;
@@ -536,6 +606,7 @@ export type ActivitySummary = {
   topicUrl: string | null;
   totalCount: number;
   claimedCount: number;
+  reward?: ActivityRewardSummary;
   paymentMode?: PaymentMode;
   draw?: DrawSummary;
 };
@@ -553,6 +624,7 @@ export type PublicQuantity =
   | { mode: "fuzzy"; level: "plenty" | "limited" | "low" | "empty" };
 
 export type PublicActivity = {
+  participationMode?: ParticipationMode;
   id: string;
   title: string;
   rewardType: "text" | "ldc";
@@ -563,6 +635,7 @@ export type PublicActivity = {
   openedAt: string | null;
   deadlineAt: string | null;
   quantity: PublicQuantity;
+  reward?: ActivityRewardSummary;
   showRecipientList: boolean;
   showRecipientUsername: boolean;
   showRecipientTime: boolean;
@@ -577,19 +650,62 @@ export type PublicActivity = {
 export type ActivityList = {
   items: ActivitySummary[];
   nextCursor: string | null;
+  total?: number;
+  statusCounts?: ActivityStatusCounts;
+};
+export type ActivityPaymentSummary = {
+  pendingAmount: string;
+  confirmedAmount: string;
+  totalAmount: string;
+  pendingCount: number;
+  confirmedCount: number;
+  totalCount: number;
+};
+export type ActivityPaymentActivity = ActivitySummary & {
+  merchantId: string;
+};
+export type ActivityPaymentList = {
+  items: ActivityPaymentActivity[];
+  total: number;
+  nextCursor: string | null;
+};
+export type ActivityPaymentTarget = Extract<
+  MerchantPayment,
+  { source: "claim" }
+> & {
+  recipientProfile: PublicUserProfile;
+};
+export type ActivityPaymentTargetList = {
+  activityId: string;
+  merchantId: string;
+  items: ActivityPaymentTarget[];
+  total: number;
+  summary: ActivityPaymentSummary;
+  nextCursor: string | null;
 };
 export type ActivityIssue = { path: string; message: string };
 export type ActivityError = {
   error: { code: string; message: string; issues?: ActivityIssue[] };
+  attemptCooldown?: AttemptCooldown;
 };
 
 export const DEFAULT_CLAIM_LIMIT = 10;
 export const CLAIM_WINDOW_MS = 60_000;
 
-export const claimActivitySchema = z.strictObject({
+export const passwordSolveSchema = z.strictObject({
   submissionId: z.uuid(),
   password: passwordSchema,
+  discoveryId: z.uuid().optional(),
+  participationMode: z.literal("password").optional(),
 });
+export type PasswordClaimInput = z.infer<typeof passwordSolveSchema>;
+export const claimActivitySchema = z.union([
+  passwordSolveSchema,
+  z.strictObject({
+    submissionId: z.uuid(),
+    participationMode: z.literal("direct"),
+  }),
+]);
 export const endActivitySchema = z.strictObject({
   version: z.number().int().positive(),
 });
@@ -608,13 +724,29 @@ export type ActivityPasswords = {
 };
 export type SolveResult = {
   outcome: "solved" | "incorrect" | "ended" | "archived";
+  passwordMatched?: boolean | null;
+  attemptCooldown?: AttemptCooldown;
 };
 
 export type ClaimSummary = {
   id: string;
-  activity: { id: string; title: string; status: ActivityStatus };
+  activity: ParticipationActivity;
   rewardType: "text" | "ldc";
   claimedAt: string;
+  sourcePassword?: string;
+  amount?: string;
+  payment?: PaymentView;
+};
+export type ParticipationActivity = {
+  participationMode?: ParticipationMode;
+  id: string;
+  title: string;
+  status: ActivityStatus;
+  deadlineAt?: string | null;
+  createdAt?: string;
+  author?: ActivityAuthor;
+  reward?: ActivityRewardSummary;
+  draw?: DrawSummary;
 };
 export type ClaimDetail = Omit<ClaimSummary, "rewardType"> & {
   afterClaimInfo: string;
@@ -622,22 +754,28 @@ export type ClaimDetail = Omit<ClaimSummary, "rewardType"> & {
     | { rewardType: "text"; text: string }
     | { rewardType: "ldc"; amount: string; payment: PaymentView }
   );
-export type ClaimResult =
+export type ClaimResult = (
   | { result: "claimed" | "already_claimed"; claim: ClaimDetail }
   | {
       result: "registered" | "already_registered";
       registration: RegistrationDetail;
     }
-  | { result: "incorrect" | "draft" | "ended" | "archived" };
+  | { result: "incorrect" | "draft" | "ended" | "archived" }
+) & { attemptCooldown?: AttemptCooldown; passwordMatched?: boolean | null };
 export type ClaimList = { items: ClaimSummary[]; nextCursor: string | null };
 export type RegistrationStatus = "registered" | "drawing" | "won" | "not_won";
 export type RegistrationDetail = {
   id: string;
-  activity: { id: string; title: string; status: ActivityStatus };
+  activity: ParticipationActivity;
   registeredAt: string;
   status: RegistrationStatus;
   drawAt: string | null;
   claim: ClaimDetail | null;
+  sourcePassword?: string;
+};
+export type ActivityParticipationResponse = {
+  claim: ClaimDetail | null;
+  registration: RegistrationDetail | null;
 };
 export type Participation =
   | { kind: "claim"; claim: ClaimSummary }
@@ -645,6 +783,8 @@ export type Participation =
 export type ParticipationList = {
   items: Participation[];
   nextCursor: string | null;
+  total?: number;
+  statusCounts?: ActivityStatusCounts;
 };
 export type AuthorRegistration = RegistrationDetail & {
   participant: ActivityAuthor;
@@ -667,10 +807,21 @@ export type PublicRecipient = PublicUserProfile & {
   id: string;
   claimedAt?: string;
   amount?: string;
+  title?: "highest" | "lowest";
 };
 export type PublicRecipientList = {
   enabled: boolean;
   items: PublicRecipient[];
+  nextCursor: string | null;
+  titles?: { highestClaimIds: string[]; lowestClaimIds: string[] };
+};
+export type PublicRegistration = PublicUserProfile & {
+  id: string;
+  registeredAt?: string;
+};
+export type PublicRegistrationList = {
+  enabled: boolean;
+  items: PublicRegistration[];
   nextCursor: string | null;
 };
 
@@ -684,15 +835,26 @@ export type DiscoveryCard = Omit<
 export type DiscoveryList = {
   items: DiscoveryCard[];
   nextCursor: string | null;
+  total?: number;
 };
-export const globalRedemptionSchema = claimActivitySchema;
-export type GlobalRedemptionInput = ClaimActivityInput;
+export const globalRedemptionSchema = z.strictObject({
+  submissionId: z.uuid(),
+  password: passwordSchema,
+});
+export type GlobalRedemptionInput = z.infer<typeof globalRedemptionSchema>;
 export type GlobalRedemptionResult = DiscoveryList & {
   id: string;
+  claimSubmissionId: string;
+  attemptCooldown?: AttemptCooldown;
   result: "none" | "single" | "multiple";
   selectedActivityId?: string;
   claimResult?: ClaimResult;
 };
+export const globalRedemptionDiscoverySchema = globalRedemptionSchema;
+export type GlobalRedemptionDiscoveryResult = Omit<
+  GlobalRedemptionResult,
+  "claimResult"
+>;
 export type AttemptStatisticsRow = {
   password: string;
   attempts: number;

@@ -1,0 +1,120 @@
+.work-create-page {
+  --form-motion-duration: 200ms;
+}
+
+.work-form-field-error {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 20px;
+  margin: -6px 0 12px;
+  color: var(--red);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.work-create-page .field:has([aria-invalid="true"]) :where(input, textarea),
+.work-duration-field:has([aria-invalid="true"]) {
+  border-color: #d8a29a;
+}
+
+.work-duration-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+}
+
+.work-duration-field:focus-within {
+  border-color: var(--red);
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+.work-editor .field .work-duration-field input {
+  width: auto;
+  min-height: 42px;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  background: transparent;
+}
+
+.work-editor .field .work-duration-field input:focus {
+  border-color: transparent;
+  outline: 0;
+}
+
+.work-duration-unit {
+  flex: 0 0 88px;
+  border-left: 1px solid var(--line);
+}
+
+.work-duration-unit .action-menu-trigger {
+  width: 100%;
+  min-height: 42px;
+  border: 0;
+  border-radius: 0 5px 5px 0;
+  background: transparent;
+  color: var(--ink);
+}
+
+.work-duration-unit .action-menu-trigger:hover:enabled,
+.work-duration-unit .action-menu-trigger[aria-expanded="true"] {
+  background: var(--surface-hover);
+}
+
+.work-duration-unit .action-menu-trigger:focus-visible {
+  outline-offset: -2px;
+}
+
+.work-duration-unit .action-menu-trigger:disabled {
+  opacity: 0.6;
+}
+
+.work-duration-unit .action-menu-panel {
+  min-width: 86px;
+  color: var(--ink);
+  background: var(--paper);
+}
+
+.work-animated-block {
+  overflow: clip;
+}
+
+.work-animated-section {
+  overflow: clip;
+}
+
+.work-password-row {
+  position: relative;
+}
+
+.work-password-row .pw-input__field-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.work-password-row .pw-input__action > .work-remove-password {
+  width: 44px;
+  height: 100%;
+}
+
+.work-password-row-motion {
+  overflow: clip;
+}
+
+.work-more-settings .work-more-content {
+  overflow: visible;
+}
+
+.work-field-error-motion {
+  overflow: clip;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .work-create-page {
+    --form-motion-duration: 1ms;
+  }
+}

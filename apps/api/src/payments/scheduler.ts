@@ -15,6 +15,10 @@ import {
   type PaymentTaskRow,
 } from "./adapter";
 import {
+  merchantOwnsClientId,
+  synchronizeMerchantPaymentIdentities,
+} from "./identity";
+import {
   realQueryDecision,
   realSendDecision,
   runtimeRealPolicy,
@@ -228,7 +232,7 @@ export async function runMerchantCycle(
     return { processed: false, nextRunAt: await nextDue(env, merchantId) };
   if (
     task.merchantId !== merchantId ||
-    task.clientId !== merchant.clientId ||
+    !(await merchantOwnsClientId(env, merchantId, task.clientId)) ||
     task.mode !== merchantMode ||
     (task.mode === "simulation" && !task.recipientId.startsWith("simulation:"))
   )
@@ -268,8 +272,16 @@ export async function runMerchantCycle(
         task.id,
       ),
       env.DB.prepare(
-        `INSERT INTO payment_attempts (id,task_id,token,operation,outcome,credential_version,started_at) VALUES (?,?,?,?,'started',?,?)`,
-      ).bind(attemptId, task.id, token, operation, credentialVersion, now),
+        `INSERT INTO payment_attempts (id,task_id,token,operation,outcome,credential_version,started_at,client_id,identity_correction_version) VALUES (?,?,?,?,'started',?,?,?,0)`,
+      ).bind(
+        attemptId,
+        task.id,
+        token,
+        operation,
+        credentialVersion,
+        now,
+        task.clientId,
+      ),
     ];
     await env.DB.batch(statements);
   } catch (error) {
@@ -428,7 +440,7 @@ export async function runMerchantCycle(
 }
 
 export async function wakePayment(env: ApiBindings, taskId: string) {
-  const task = await loadTask(env, taskId);
+  let task = await loadTask(env, taskId);
   if (!task) return;
   if (task.mode === "simulation" && !isLocalSimulation(env)) return;
   if (task.status === "confirmed") {
@@ -440,6 +452,18 @@ export async function wakePayment(env: ApiBindings, taskId: string) {
     if (!probe) return;
   }
   if (task.mode === "real") {
+    if (task.source === "claim") {
+      const merchant = await createDb(env.DB)
+        .select()
+        .from(merchants)
+        .where(eq(merchants.id, task.merchantId))
+        .get();
+      if (merchant) {
+        await synchronizeMerchantPaymentIdentities(env, merchant);
+        task = await loadTask(env, taskId);
+        if (!task) return;
+      }
+    }
     const decision = needsRealQuery(task)
       ? await realQueryDecision(env, task)
       : await realSendDecision(env, task);

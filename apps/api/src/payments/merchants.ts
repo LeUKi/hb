@@ -2,10 +2,15 @@ import type {
   CreateMerchantInput,
   Merchant,
   MerchantList,
+  RepairPaymentCredentialInput,
   UpdateMerchantInput,
 } from "@hb/contracts";
 import { and, desc, eq, lt, or } from "drizzle-orm";
 import { ActivityError, activityNotFound } from "../activities/errors";
+import {
+  hasOfficialConnect,
+  requireOfficialConnect,
+} from "../auth/eligibility";
 import { createDb } from "../db/client";
 import { merchants, simulationControls } from "../db/schema";
 import type { ApiBindings } from "../env";
@@ -15,6 +20,12 @@ import {
   readPlatformControls,
 } from "../runtime/controls";
 import { digestPassword, encryptString } from "../security/crypto";
+import {
+  hasMerchantImpact,
+  MerchantChangeConfirmationError,
+  merchantImpactSql,
+  readMerchantImpact,
+} from "./configuration";
 import { publicationEligibility } from "./publication";
 import {
   canVerifyCredentials,
@@ -64,6 +75,7 @@ export async function merchantView(
     row.credentialVersion,
   );
   const eligibility = await publicationEligibility(env, row, verification);
+  const official = await hasOfficialConnect(env, row.authorId);
   const base = {
     credentialVerification: verification,
     usageStatus: row.usageStatus,
@@ -87,11 +99,12 @@ export async function merchantView(
       mode: "real",
       capabilities: {
         canExecutePayments:
+          official &&
           allowsRealSending(env, await readPlatformControls(env)) &&
           verification.status === "passed",
-        canCheck: canVerifyCredentials(env),
+        canCheck: official && canVerifyCredentials(env),
         canSimulate: false,
-        canVerify: canVerifyCredentials(env),
+        canVerify: official && canVerifyCredentials(env),
       },
     };
   const control = await createDb(env.DB)
@@ -103,9 +116,9 @@ export async function merchantView(
     ...base,
     mode: "simulation",
     capabilities: {
-      canExecutePayments: isLocalSimulation(env),
-      canCheck: isLocalSimulation(env),
-      canSimulate: isLocalSimulation(env),
+      canExecutePayments: official && isLocalSimulation(env),
+      canCheck: official && isLocalSimulation(env),
+      canSimulate: official && isLocalSimulation(env),
       canVerify: false,
     },
     scenario: control?.scenario ?? "normal",
@@ -169,10 +182,11 @@ export async function listMerchants(
   const items = rows.slice(0, 20);
   const last = items.at(-1);
   const current = await dbCurrentMerchant(env, authorId);
+  const official = await hasOfficialConnect(env, authorId);
   return {
     currentMerchantId: current?.id ?? null,
-    canCreate: !current,
-    canSimulate: isLocalSimulation(env),
+    canCreate: official && !current,
+    canSimulate: official && isLocalSimulation(env),
     items: await Promise.all(items.map((row) => merchantView(env, row))),
     nextCursor: rows.length > 20 && last ? encodeTimeCursor(last) : null,
   };
@@ -230,6 +244,7 @@ export async function createMerchant(
   };
   const old = await checkPrevious();
   if (old) return old;
+  await requireOfficialConnect(env, authorId);
   if (mode === "simulation" && !isLocalSimulation(env))
     throw new ActivityError(
       400,
@@ -247,9 +262,10 @@ export async function createMerchant(
   try {
     await env.DB.batch([
       env.DB.prepare(
-        `INSERT INTO merchants (id,author_id,request_id,request_digest,client_id,label,mode,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO merchants (id,author_id,request_id,request_digest,client_id,label,mode,created_at,updated_at) VALUES (?,CASE WHEN EXISTS(SELECT 1 FROM users WHERE id=? AND official_connect_verified=1 AND active=1) THEN ? ELSE NULL END,?,?,?,?,?,?,?)`,
       ).bind(
         id,
+        authorId,
         authorId,
         input.requestId,
         fingerprint,
@@ -260,8 +276,8 @@ export async function createMerchant(
         now,
       ),
       env.DB.prepare(
-        `INSERT INTO merchant_credentials (id,merchant_id,version,ciphertext,created_at) VALUES (?,?,1,?,?)`,
-      ).bind(crypto.randomUUID(), id, ciphertext, now),
+        `INSERT INTO merchant_credentials (id,merchant_id,version,ciphertext,client_id,created_at) VALUES (?,?,1,?,?,?)`,
+      ).bind(crypto.randomUUID(), id, ciphertext, input.clientId, now),
       ...(mode === "simulation"
         ? [
             env.DB.prepare(
@@ -273,18 +289,40 @@ export async function createMerchant(
   } catch (error) {
     const winner = await checkPrevious();
     if (winner) return winner;
+    await requireOfficialConnect(env, authorId);
     if (await dbCurrentMerchant(env, authorId)) currentMerchantExists();
     if (
-      await db
-        .select({ id: merchants.id })
-        .from(merchants)
-        .where(eq(merchants.clientId, input.clientId))
-        .get()
+      await env.DB.prepare(
+        "SELECT merchant_id FROM merchant_client_ids WHERE client_id=?",
+      )
+        .bind(input.clientId)
+        .first()
     )
       merchantConflict("此商户应用已配置，请使用原配置维护");
     throw error;
   }
   return getMerchant(env, id, authorId);
+}
+
+async function previousChange(
+  env: ApiBindings,
+  id: string,
+  requestId: string,
+  digest: string,
+) {
+  const previous = await env.DB.prepare(
+    "SELECT request_digest,result_version,credential_version,client_id FROM merchant_config_changes WHERE merchant_id=? AND request_id=?",
+  )
+    .bind(id, requestId)
+    .first<{
+      request_digest: string;
+      result_version: number;
+      credential_version: number;
+      client_id: string;
+    }>();
+  if (previous && previous.request_digest !== digest)
+    merchantConflict("同一保存请求不能更换配置内容");
+  return previous;
 }
 
 export async function updateMerchant(
@@ -294,45 +332,250 @@ export async function updateMerchant(
   input: UpdateMerchantInput,
 ) {
   const row = await ownedMerchant(env, id, authorId);
+  const digest = await digestPassword(
+    `merchant-update:${JSON.stringify({ version: input.version, label: input.label, clientId: input.clientId ?? null, secret: input.secret ?? null })}`,
+    env.PASSWORD_DIGEST_KEY,
+  );
+  const requestId = input.requestId ?? `legacy:${input.version}:${digest}`;
+  const result = async () => {
+    const change = await previousChange(env, id, requestId, digest);
+    if (!change) throw new Error("Configuration result missing");
+    return {
+      ...(await getMerchant(env, id, authorId)),
+      appliedChange: {
+        requestId,
+        resultVersion: change.result_version,
+        clientId: change.client_id,
+        credentialVersion: change.credential_version,
+      },
+    };
+  };
+  if (await previousChange(env, id, requestId, digest)) return result();
+  await requireOfficialConnect(env, authorId);
   if (row.version !== input.version) merchantConflict();
-  const credentialVersion =
-    row.credentialVersion + (input.secret === undefined ? 0 : 1);
+  const clientId = input.clientId ?? row.clientId;
+  if (clientId !== row.clientId && !input.secret)
+    throw new ActivityError(
+      400,
+      "MERCHANT_SECRET_REQUIRED",
+      "更换 Client ID 时必须填写对应密钥。",
+    );
+  const credentialsChanged =
+    input.secret !== undefined || clientId !== row.clientId;
+  const impact = credentialsChanged ? await readMerchantImpact(env, row) : null;
+  if (
+    impact &&
+    hasMerchantImpact(impact.impact) &&
+    input.confirmationToken !== impact.confirmationToken
+  )
+    throw new MerchantChangeConfirmationError(impact);
+  const registration = await env.DB.prepare(
+    "SELECT merchant_id FROM merchant_client_ids WHERE client_id=?",
+  )
+    .bind(clientId)
+    .first<{ merchant_id: string }>();
+  if (registration && registration.merchant_id !== id)
+    merchantConflict("此 Client ID 已属于其他商户配置。");
   const now = Date.now();
-  const statements = [
+  const nextCredential =
+    input.secret === undefined
+      ? row.credentialVersion
+      : await nextCredentialVersion(env, id);
+  const statements: D1PreparedStatement[] = [];
+  if (!registration)
+    statements.push(
+      env.DB.prepare(
+        "INSERT INTO merchant_client_ids(client_id,merchant_id,created_at) VALUES(?,?,?)",
+      ).bind(clientId, id, now),
+    );
+  statements.push(
     env.DB.prepare(
-      `UPDATE merchants SET version=CASE WHEN version=? AND author_id=? THEN version+1 ELSE NULL END,label=?,credential_version=?,updated_at=? WHERE id=?`,
-    ).bind(input.version, authorId, input.label, credentialVersion, now, id),
-  ];
+      `UPDATE merchants SET version=CASE WHEN version=? AND author_id=? AND EXISTS(SELECT 1 FROM users WHERE id=merchants.author_id AND official_connect_verified=1 AND active=1) ${impact ? `AND (${merchantImpactSql})=?` : ""} THEN version+1 ELSE NULL END,label=?,client_id=?,credential_version=?,updated_at=? WHERE id=?`,
+    ).bind(
+      input.version,
+      authorId,
+      ...(impact ? [id, id, impact.snapshot] : []),
+      input.label,
+      clientId,
+      nextCredential,
+      now,
+      id,
+    ),
+  );
   if (input.secret !== undefined)
     statements.push(
       env.DB.prepare(
-        `INSERT INTO merchant_credentials (id,merchant_id,version,ciphertext,created_at) VALUES (?,?,?,?,?)`,
+        "INSERT INTO merchant_credentials(id,merchant_id,version,ciphertext,client_id,created_at) VALUES(?,?,?,?,?,?)",
       ).bind(
         crypto.randomUUID(),
         id,
-        credentialVersion,
+        nextCredential,
         await encryptString(
           input.secret,
           env,
-          `merchant:${id}:credential:${credentialVersion}`,
+          `merchant:${id}:credential:${nextCredential}`,
         ),
+        clientId,
         now,
       ),
     );
+  statements.push(
+    env.DB.prepare(
+      "INSERT INTO merchant_config_changes(id,merchant_id,request_id,request_digest,result_version,credential_version,client_id,purpose,created_at) VALUES(?,?,?,?,?,?,?,'current',?)",
+    ).bind(
+      crypto.randomUUID(),
+      id,
+      requestId,
+      digest,
+      input.version + 1,
+      nextCredential,
+      clientId,
+      now,
+    ),
+  );
   try {
     await env.DB.batch(statements);
   } catch (error) {
-    const current = await ownedMerchant(env, id, authorId);
-    if (current.version !== input.version) merchantConflict();
+    if (await previousChange(env, id, requestId, digest)) return result();
+    await requireOfficialConnect(env, authorId);
+    const latest = await ownedMerchant(env, id, authorId);
+    if (latest.version !== input.version) merchantConflict();
+    const owner = await env.DB.prepare(
+      "SELECT merchant_id FROM merchant_client_ids WHERE client_id=?",
+    )
+      .bind(clientId)
+      .first<{ merchant_id: string }>();
+    if (owner && owner.merchant_id !== id)
+      merchantConflict("此 Client ID 已属于其他商户配置。");
+    if (impact) {
+      const changed = await readMerchantImpact(env, latest);
+      if (changed.snapshot !== impact.snapshot)
+        throw new MerchantChangeConfirmationError(changed);
+    }
     throw error;
   }
-  // Real credential rotation stays unverified until the independent check passes.
-  // Its wake must preserve send backoff and the upstream query Retry-After.
   if (input.secret !== undefined && row.mode === "simulation")
     await env.DB.prepare(
-      `UPDATE payment_tasks SET next_run_at=? WHERE merchant_id=? AND status IN ('waiting','reconciling')`,
+      "UPDATE payment_tasks SET next_run_at=? WHERE merchant_id=? AND status IN ('waiting','reconciling')",
     )
       .bind(now, id)
       .run();
-  return getMerchant(env, id, authorId);
+  return result();
+}
+
+/** Repair a bound application key without changing the merchant's current application. */
+export async function repairPaymentCredential(
+  env: ApiBindings,
+  id: string,
+  authorId: string,
+  taskId: string,
+  input: RepairPaymentCredentialInput,
+) {
+  const merchant = await ownedMerchant(env, id, authorId);
+  await requireOfficialConnect(env, authorId);
+  const task = await env.DB.prepare(
+    `SELECT p.status,p.mode,COALESCE((SELECT corrected_client_id FROM payment_identity_corrections WHERE task_id=p.id ORDER BY version DESC LIMIT 1),p.client_id) AS client_id FROM payment_tasks p WHERE p.id=? AND p.merchant_id=?`,
+  )
+    .bind(taskId, id)
+    .first<{ status: string; mode: string; client_id: string }>();
+  if (!task) activityNotFound();
+  const digest = await digestPassword(
+    `merchant-repair:${JSON.stringify({ taskId, version: input.version, secret: input.secret })}`,
+    env.PASSWORD_DIGEST_KEY,
+  );
+  const old = await previousChange(env, id, input.requestId, digest);
+  if (old)
+    return {
+      credentialVersion: old.credential_version,
+      merchant: await getMerchant(env, id, authorId),
+    };
+  if (merchant.version !== input.version) merchantConflict();
+  const repairable = await env.DB.prepare(
+    "SELECT verification_status,verification_reason FROM merchant_credentials WHERE merchant_id=? AND client_id=? ORDER BY version DESC LIMIT 1",
+  )
+    .bind(id, task.client_id)
+    .first<{
+      verification_status: string;
+      verification_reason: string | null;
+    }>();
+  if (
+    task.mode !== "real" ||
+    task.status === "confirmed" ||
+    task.client_id === merchant.clientId ||
+    repairable?.verification_status !== "rejected" ||
+    repairable.verification_reason !== "credentials"
+  )
+    throw new ActivityError(
+      400,
+      "PAYMENT_CREDENTIAL_REPAIR_NOT_ALLOWED",
+      "此付款无需修复核对凭证。",
+    );
+  const next = await nextCredentialVersion(env, id);
+  const now = Date.now();
+  try {
+    await env.DB.batch([
+      env.DB.prepare(
+        `UPDATE merchants SET version=CASE WHEN version=? AND client_id!=? AND EXISTS(SELECT 1 FROM users WHERE id=merchants.author_id AND official_connect_verified=1 AND active=1) AND EXISTS(SELECT 1 FROM merchant_credentials c WHERE c.merchant_id=merchants.id AND c.client_id=? AND c.verification_status='rejected' AND c.verification_reason='credentials' AND c.version=(SELECT MAX(version) FROM merchant_credentials WHERE merchant_id=c.merchant_id AND client_id=c.client_id)) AND EXISTS(SELECT 1 FROM payment_tasks p WHERE p.id=? AND p.merchant_id=merchants.id AND p.status!='confirmed' AND COALESCE((SELECT corrected_client_id FROM payment_identity_corrections WHERE task_id=p.id ORDER BY version DESC LIMIT 1),p.client_id)=?) THEN version+1 ELSE NULL END,updated_at=? WHERE id=?`,
+      ).bind(
+        input.version,
+        task.client_id,
+        task.client_id,
+        taskId,
+        task.client_id,
+        now,
+        id,
+      ),
+      env.DB.prepare(
+        "INSERT INTO merchant_credentials(id,merchant_id,version,ciphertext,client_id,created_at) VALUES(?,?,?,?,?,?)",
+      ).bind(
+        crypto.randomUUID(),
+        id,
+        next,
+        await encryptString(
+          input.secret,
+          env,
+          `merchant:${id}:credential:${next}`,
+        ),
+        task.client_id,
+        now,
+      ),
+      env.DB.prepare(
+        "INSERT INTO merchant_config_changes(id,merchant_id,request_id,request_digest,result_version,credential_version,client_id,purpose,task_id,created_at) VALUES(?,?,?,?,?,?,?,'repair',?,?)",
+      ).bind(
+        crypto.randomUUID(),
+        id,
+        input.requestId,
+        digest,
+        input.version + 1,
+        next,
+        task.client_id,
+        taskId,
+        now,
+      ),
+    ]);
+  } catch {
+    const previous = await previousChange(env, id, input.requestId, digest);
+    if (previous)
+      return {
+        credentialVersion: previous.credential_version,
+        merchant: await getMerchant(env, id, authorId),
+      };
+    await requireOfficialConnect(env, authorId);
+    merchantConflict("付款或商户配置已更新，请刷新后重试。");
+  }
+  return {
+    credentialVersion: next,
+    merchant: await getMerchant(env, id, authorId),
+  };
+}
+
+async function nextCredentialVersion(env: ApiBindings, id: string) {
+  const row = await env.DB.prepare(
+    "SELECT COALESCE(MAX(version),0)+1 AS version FROM merchant_credentials WHERE merchant_id=?",
+  )
+    .bind(id)
+    .first<{ version: number }>();
+  if (!row || !Number.isSafeInteger(row.version))
+    throw new Error("Credential version unavailable");
+  return row.version;
 }

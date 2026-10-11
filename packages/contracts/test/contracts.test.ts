@@ -9,6 +9,7 @@ import {
   newActivityInputSchema,
   normalizeTopicLink,
   passwordSchema,
+  passwordSolveSchema,
   updateActivitySchema,
 } from "../src/index";
 
@@ -24,6 +25,77 @@ function validActivity() {
 }
 
 describe("shared activity contracts", () => {
+  it("keeps legacy password requests unchanged and accepts explicit direct participation only", () => {
+    const legacy = { submissionId: itemId, password: "ABC123" };
+    expect(JSON.stringify(claimActivitySchema.parse(legacy))).toBe(
+      JSON.stringify(legacy),
+    );
+    const direct = { submissionId: itemId, participationMode: "direct" };
+    expect(claimActivitySchema.parse(direct)).toEqual(direct);
+    expect(passwordSolveSchema.safeParse(direct).success).toBe(false);
+    for (const value of [
+      { ...direct, password: "ABC123" },
+      { ...direct, discoveryId: otherId },
+      { submissionId: itemId },
+      { submissionId: itemId, participationMode: "password" },
+    ])
+      expect(claimActivitySchema.safeParse(value).success).toBe(false);
+    expect(
+      passwordSolveSchema.parse({ ...legacy, participationMode: "password" }),
+    ).toEqual({ ...legacy, participationMode: "password" });
+  });
+
+  it("requires genuine passwords only in password mode and excludes hidden direct configuration", () => {
+    const legacy = activityInputSchema.parse(validActivity());
+    expect(Object.hasOwn(legacy, "participationMode")).toBe(false);
+    const direct = {
+      ...validActivity(),
+      participationMode: "direct",
+      passwords: [],
+      forceDedicated: false,
+    };
+    expect(newActivityInputSchema.parse(direct)).toMatchObject(direct);
+    for (const invalid of [
+      { ...direct, passwords: ["ABC123"] },
+      { ...direct, forceDedicated: true },
+      { ...direct, participationMode: "password" },
+      { ...direct, participationMode: undefined },
+    ])
+      expect(newActivityInputSchema.safeParse(invalid).success).toBe(false);
+    const { rewards: _rewards, ...base } = direct;
+    for (const money of [
+      { mode: "fixed", totalAmount: "2.00", count: 2 },
+      {
+        mode: "random",
+        totalAmount: "2.00",
+        count: 2,
+        algorithm: "double_mean_v1",
+      },
+      { mode: "custom", amounts: ["1.00", "2.00"] },
+      {
+        mode: "timed_draw",
+        totalAmount: "2.00",
+        count: 2,
+        algorithm: "double_mean_v1",
+        countdownSeconds: 600,
+        participantLimit: null,
+        distributeFullPool: true,
+      },
+    ])
+      expect(
+        newActivityInputSchema.safeParse({
+          ...base,
+          rewardType: "ldc",
+          merchantId: otherId,
+          money,
+          allocation:
+            money.mode === "random" || money.mode === "timed_draw"
+              ? "random"
+              : "sequential",
+        }).success,
+      ).toBe(true);
+  });
+
   it("binds claims to an explicit UUID and the same normalized password rules", () => {
     expect(
       claimActivitySchema.parse({ submissionId: itemId, password: " ABC123 " }),
@@ -105,6 +177,30 @@ describe("shared activity contracts", () => {
         deadline: { mode: "at", at: "2026-10-03T20:00" },
       }).success,
     ).toBe(false);
+    for (const deadline of [
+      { mode: "duration", value: 0, unit: "hours" },
+      { mode: "duration", value: 1.5, unit: "hours" },
+      { mode: "duration", value: 1, unit: "weeks" },
+      { mode: "duration", value: 1 },
+      { mode: "duration", unit: "hours" },
+    ]) {
+      expect(
+        activityInputSchema.safeParse({ ...validActivity(), deadline }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("accepts legacy and explicit duration units", () => {
+    for (const deadline of [
+      { mode: "duration" },
+      { mode: "duration", value: 30, unit: "minutes" },
+      { mode: "duration", value: 12, unit: "hours" },
+      { mode: "duration", value: 7, unit: "days" },
+    ]) {
+      expect(
+        activityInputSchema.safeParse({ ...validActivity(), deadline }).success,
+      ).toBe(true);
+    }
   });
 
   it("limits new passwords and quantity choices without invalidating historical input", () => {

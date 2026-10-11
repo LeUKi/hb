@@ -14,6 +14,7 @@ import { sanitizeUpstreamMessage } from "./real-protocol";
 
 type PaymentSqlRow = {
   id: string;
+  client_id: string;
   source: "claim" | "acceptance";
   claim_id: string | null;
   activity_id: string | null;
@@ -44,8 +45,12 @@ type PaymentSqlRow = {
   recipient_username_current: string | null;
   recipient_display_name_current: string | null;
   recipient_avatar_url: string | null;
+  recipient_official_connect_verified: number | null;
 };
 type AttemptSqlRow = {
+  client_id: string | null;
+  identity_correction_version: number;
+  no_order_evidence: string | null;
   id: string;
   operation: PaymentAttemptView["operation"];
   purpose: PaymentAttemptView["purpose"];
@@ -144,7 +149,8 @@ export async function merchantPaymentDetail(
     `SELECT p.*,c.activity_id,
       u.username AS recipient_username_current,
       u.display_name AS recipient_display_name_current,
-      u.avatar_url AS recipient_avatar_url
+      u.avatar_url AS recipient_avatar_url,
+      u.official_connect_verified AS recipient_official_connect_verified
       FROM payment_tasks p
       LEFT JOIN claims c ON c.id=p.claim_id
       LEFT JOIN users u ON u.id=c.user_id
@@ -156,7 +162,7 @@ export async function merchantPaymentDetail(
   const before = decodeTimeCursor(cursor);
   const [rows, grant, probe, correction] = await Promise.all([
     env.DB.prepare(
-      `SELECT id,operation,purpose,diagnostic_ciphertext,recipient_username,outcome,reason,credential_version,started_at,finished_at,http_status FROM payment_attempts WHERE task_id=? ${before ? "AND (started_at<? OR (started_at=? AND id<?))" : ""} ORDER BY started_at DESC,id DESC LIMIT 21`,
+      `SELECT id,operation,purpose,diagnostic_ciphertext,recipient_username,outcome,reason,credential_version,started_at,finished_at,http_status,client_id,identity_correction_version,no_order_evidence FROM payment_attempts WHERE task_id=? ${before ? "AND (started_at<? OR (started_at=? AND id<?))" : ""} ORDER BY started_at DESC,id DESC LIMIT 21`,
     )
       .bind(taskId, ...(before ? [before.time, before.time, before.id] : []))
       .all<AttemptSqlRow>(),
@@ -181,6 +187,9 @@ export async function merchantPaymentDetail(
   const attempts: PaymentAttemptView[] = await Promise.all(
     page.map(async (a) => ({
       id: a.id,
+      clientId: a.client_id,
+      identityCorrectionVersion: a.identity_correction_version,
+      noOrderEvidence: a.no_order_evidence,
       httpStatus: a.http_status,
       operation: a.operation,
       recipientUsername: a.recipient_username,
@@ -193,14 +202,60 @@ export async function merchantPaymentDetail(
       finishedAt: iso(a.finished_at),
     })),
   );
+  const identities = await env.DB.prepare(
+    "SELECT version,original_client_id,corrected_client_id,evidence,created_at FROM payment_identity_corrections WHERE task_id=? ORDER BY version",
+  )
+    .bind(taskId)
+    .all<{
+      version: number;
+      original_client_id: string;
+      corrected_client_id: string;
+      evidence: "never_sent" | "rejected_no_order";
+      created_at: number;
+    }>();
+  const identity = identities.results.at(-1);
+  const effectiveClientId = identity?.corrected_client_id ?? row.client_id;
+  const credential = await env.DB.prepare(
+    "SELECT c.version,c.verification_status,c.verification_reason,m.client_id AS current_client_id FROM merchant_credentials c JOIN merchants m ON m.id=c.merchant_id WHERE c.merchant_id=? AND c.client_id=? ORDER BY c.version DESC LIMIT 1",
+  )
+    .bind(merchantId, effectiveClientId)
+    .first<{
+      version: number;
+      current_client_id: string;
+      verification_status: string;
+      verification_reason: string | null;
+    }>();
   return {
     ...paymentView(row),
+    config: {
+      originalClientId: row.client_id,
+      effectiveClientId,
+      credentialVersion: credential?.version ?? 0,
+      identityCorrectionVersion: identity?.version ?? 0,
+      canRepairCredentials:
+        row.mode === "real" &&
+        row.status !== "confirmed" &&
+        effectiveClientId !== credential?.current_client_id &&
+        credential?.verification_status === "rejected" &&
+        credential.verification_reason === "credentials",
+    },
+    identityCorrections: identities.results.map((i) => ({
+      version: i.version,
+      originalClientId: i.original_client_id,
+      correctedClientId: i.corrected_client_id,
+      evidence: i.evidence,
+      createdAt: new Date(i.created_at).toISOString(),
+    })),
     recipientProfile:
       row.recipient_username_current && row.recipient_display_name_current
         ? {
             username: row.recipient_username_current,
             displayName: row.recipient_display_name_current,
             avatarUrl: row.recipient_avatar_url,
+            accountTier:
+              row.recipient_official_connect_verified === 1
+                ? "standard"
+                : "lite",
           }
         : null,
     usernameCorrection: correction

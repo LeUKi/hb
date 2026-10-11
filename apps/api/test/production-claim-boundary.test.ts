@@ -23,6 +23,7 @@ async function actor() {
   await createDb(env.DB)
     .insert(users)
     .values({
+      officialConnectVerified: true,
       id,
       externalId: BigInt(`0x${id.replaceAll("-", "").slice(0, 15)}`).toString(),
       username: `User_${id.slice(0, 8)}`,

@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { requireOfficialConnect } from "../auth/eligibility";
 import { createDb } from "../db/client";
 import { merchants, paymentDuplicateProbes, paymentTasks } from "../db/schema";
 import type { ApiBindings } from "../env";
@@ -15,6 +16,13 @@ import {
   credentialRejectionStatement,
   loadMerchantSecret,
 } from "./credentials";
+import {
+  type EffectivePaymentTaskRow,
+  effectiveClaimPaymentTask,
+  merchantOwnsClientId,
+  paymentIdentitySnapshotGuard,
+  synchronizeMerchantPaymentIdentities,
+} from "./identity";
 import {
   claimPaymentIdentitySql,
   claimPaymentParameterDigest,
@@ -98,13 +106,18 @@ async function credentialPassed(
   env: ApiBindings,
   merchantId: string,
   version: number,
+  clientId?: string,
 ) {
   return (
     (
       await env.DB.prepare(
-        "SELECT verification_status FROM merchant_credentials WHERE merchant_id=? AND version=?",
+        `SELECT verification_status FROM merchant_credentials WHERE merchant_id=? AND version=? ${clientId === undefined ? "" : "AND client_id=?"}`,
       )
-        .bind(merchantId, version)
+        .bind(
+          merchantId,
+          version,
+          ...(clientId === undefined ? [] : [clientId]),
+        )
         .first<{ verification_status: string }>()
     )?.verification_status === "passed"
   );
@@ -113,13 +126,15 @@ async function credentialPassed(
 async function attemptCredential(
   env: ApiBindings,
   taskId: string,
+  clientId: string,
   operation?: Operation,
 ) {
   return (
     await env.DB.prepare(
-      `SELECT credential_version FROM payment_attempts WHERE task_id=? AND purpose='recovery' ${operation ? "AND operation=?" : ""} ORDER BY started_at DESC,id DESC LIMIT 1`,
+      `SELECT a.credential_version FROM payment_attempts a JOIN merchant_credentials c ON c.merchant_id=(SELECT merchant_id FROM payment_tasks WHERE id=a.task_id) AND c.version=a.credential_version
+       WHERE a.task_id=? AND a.purpose='recovery' AND c.client_id=? ${operation ? "AND a.operation=?" : ""} ORDER BY a.started_at DESC,a.id DESC LIMIT 1`,
     )
-      .bind(taskId, ...(operation ? [operation] : []))
+      .bind(taskId, clientId, ...(operation ? [operation] : []))
       .first<{ credential_version: number }>()
   )?.credential_version;
 }
@@ -130,13 +145,30 @@ async function context(
   task: PaymentTaskRow,
   operation: Operation,
 ) {
-  let credentialVersion = merchant.credentialVersion;
+  let credentialVersion =
+    task.clientId === merchant.clientId
+      ? merchant.credentialVersion
+      : (
+          await env.DB.prepare(
+            "SELECT version FROM merchant_credentials WHERE merchant_id=? AND client_id=? ORDER BY version DESC LIMIT 1",
+          )
+            .bind(merchant.id, task.clientId)
+            .first<{ version: number }>()
+        )?.version;
+  if (credentialVersion === undefined)
+    throw new Error("Payment credential identity missing");
   if (
     operation === "query" &&
-    !(await credentialPassed(env, merchant.id, credentialVersion))
+    !(await credentialPassed(
+      env,
+      merchant.id,
+      credentialVersion,
+      task.clientId,
+    ))
   ) {
     credentialVersion =
-      (await attemptCredential(env, task.id)) ?? credentialVersion;
+      (await attemptCredential(env, task.id, task.clientId)) ??
+      credentialVersion;
   }
   let clientSecret: string | undefined;
   try {
@@ -144,11 +176,12 @@ async function context(
       env,
       merchant.id,
       credentialVersion,
+      task.clientId,
     );
   } catch {
     clientSecret = undefined;
   }
-  return { credentialVersion, clientSecret };
+  return { credentialVersion, clientSecret, clientId: task.clientId };
 }
 
 async function diagnostic(
@@ -212,9 +245,16 @@ async function permitsRecoverySend(
   now: number,
 ) {
   if (task.source === "claim") {
+    const effective = await effectiveClaimPaymentTask(env, task);
+    const current = await env.DB.prepare(
+      "SELECT client_id FROM merchants WHERE id=?",
+    )
+      .bind(task.merchantId)
+      .first<{ client_id: string }>();
     return (
       task.recoveryPolicy === "claim_same_order_v1" &&
       task.firstSendAt !== null &&
+      current?.client_id === effective.clientId &&
       (await realQueryDecision(env, task)).allowed &&
       allowsRealSending(env, await readPlatformControls(env))
     );
@@ -372,8 +412,9 @@ async function recoverExpiredLease(
   )
     return;
   await env.DB.batch([
-    env.DB.prepare(`UPDATE payment_tasks SET status='reconciling',unknown_outcome=1,reason='interrupted',next_action='query',next_query_at=MAX(?,COALESCE(next_query_at,0),COALESCE(query_retry_after_at,0)),next_run_at=MAX(?,COALESCE(next_query_at,0),COALESCE(query_retry_after_at,0)),queried_recovery_version=NULL,recovery_version=recovery_version+1,updated_at=?
+    env.DB.prepare(`UPDATE payment_tasks SET status='reconciling',unknown_outcome=MAX(unknown_outcome,EXISTS(SELECT 1 FROM payment_attempts x WHERE x.task_id=payment_tasks.id AND x.token=? AND x.operation='send' AND x.outcome='started')),reason='interrupted',next_action='query',next_query_at=MAX(?,COALESCE(next_query_at,0),COALESCE(query_retry_after_at,0)),next_run_at=MAX(?,COALESCE(next_query_at,0),COALESCE(query_retry_after_at,0)),queried_recovery_version=NULL,recovery_version=recovery_version+1,updated_at=?
       WHERE id=? AND status IN ('sending','reconciling') AND EXISTS(SELECT 1 FROM merchants WHERE id=? AND lease_token=? AND lease_until<=?)`).bind(
+      merchant.leaseToken,
       now,
       now,
       now,
@@ -467,7 +508,7 @@ async function beginAttempt(
   credentialVersion: number,
   now: number,
   correction: PaymentUsernameCorrectionRow | null,
-  sendTask: PaymentTaskRow,
+  sendTask: EffectivePaymentTaskRow,
 ) {
   const decision =
     operation === "send"
@@ -479,7 +520,12 @@ async function beginAttempt(
   }
   if (
     operation === "send" &&
-    !(await credentialPassed(env, merchant.id, credentialVersion))
+    !(await credentialPassed(
+      env,
+      merchant.id,
+      credentialVersion,
+      sendTask.clientId,
+    ))
   ) {
     if (task.source === "claim") return false;
     throw new Error("REAL_LDC_CREDENTIALS_NOT_VERIFIED");
@@ -528,13 +574,17 @@ async function beginAttempt(
     guardValues.push(now);
   }
   if (operation === "send") {
-    sendGuard +=
-      " AND EXISTS(SELECT 1 FROM merchants m JOIN merchant_credentials c ON c.merchant_id=m.id AND c.version=m.credential_version WHERE m.id=payment_tasks.merchant_id AND m.credential_version=? AND c.verification_status='passed')";
-    guardValues.push(credentialVersion);
+    sendGuard += ` AND EXISTS(SELECT 1 FROM merchants m JOIN merchant_credentials c ON c.merchant_id=m.id
+        WHERE m.id=payment_tasks.merchant_id AND c.version=? AND c.client_id=? AND c.verification_status='passed'
+        ${task.source === "claim" ? "AND m.client_id=c.client_id AND m.credential_version=c.version" : ""})`;
+    guardValues.push(credentialVersion, sendTask.clientId);
     const snapshot = correctionSnapshotGuard(task.id, correction);
     sendGuard += ` ${snapshot.sql}`;
     guardValues.push(...snapshot.values);
   }
+  const identitySnapshot = paymentIdentitySnapshotGuard(task.id, sendTask);
+  sendGuard += ` ${identitySnapshot.sql}`;
+  guardValues.push(...identitySnapshot.values);
   statements.push(
     env.DB.prepare(`UPDATE payment_tasks SET amount_minor=CASE WHEN status=? AND recovery_version=? AND attempt_count=? AND reconciliation_count=? ${sendGuard} THEN amount_minor ELSE NULL END,
       status=?,first_send_at=CASE WHEN source='claim' AND ?=1 THEN COALESCE(first_send_at,?) ELSE first_send_at END,next_action='query',recovery_version=recovery_version+1,attempt_count=attempt_count+?,reconciliation_count=reconciliation_count+?,send_backoff_count=send_backoff_count+?,next_send_at=CASE WHEN ?=1 THEN ? ELSE next_send_at END,query_backoff_count=query_backoff_count+?,next_query_at=MAX(?,COALESCE(query_retry_after_at,0)),updated_at=? WHERE id=?`).bind(
@@ -557,7 +607,7 @@ async function beginAttempt(
       task.id,
     ),
     env.DB.prepare(
-      "INSERT INTO payment_attempts(id,task_id,token,operation,purpose,outcome,credential_version,started_at,recipient_username,parameter_digest) VALUES(?,?,?,?,'recovery','started',?,?,?,?)",
+      "INSERT INTO payment_attempts(id,task_id,token,operation,purpose,outcome,credential_version,started_at,recipient_username,parameter_digest,client_id,identity_correction_version) VALUES(?,?,?,?,'recovery','started',?,?,?,?,?,?)",
     ).bind(
       attemptId,
       task.id,
@@ -566,11 +616,11 @@ async function beginAttempt(
       credentialVersion,
       now,
       operation === "send" ? sendTask.recipientUsername : null,
-      operation === "send"
-        ? task.source === "claim"
-          ? await claimPaymentParameterDigest(sendTask)
-          : await paymentParameterDigest(sendTask)
-        : null,
+      task.source === "claim"
+        ? await claimPaymentParameterDigest(sendTask)
+        : await paymentParameterDigest(sendTask),
+      sendTask.clientId,
+      sendTask.identityCorrectionVersion ?? 0,
     ),
   );
   try {
@@ -598,7 +648,13 @@ async function beginAttempt(
         (decision.source === "claim" &&
           currentDecision.controlsVersion !== decision.controlsVersion) ||
         currentMerchant?.credentialVersion !== credentialVersion ||
-        !(await credentialPassed(env, merchant.id, credentialVersion))
+        currentMerchant?.clientId !== sendTask.clientId ||
+        !(await credentialPassed(
+          env,
+          merchant.id,
+          credentialVersion,
+          sendTask.clientId,
+        ))
       )
         return false;
     }
@@ -616,6 +672,7 @@ async function finishAttempt(
   credentialVersion: number,
   attemptStartedAt: number,
   result: AdapterResult,
+  requestTask: PaymentTaskRow,
 ) {
   const now = Date.now();
   let status: PaymentTaskRow["status"] = "reconciling";
@@ -634,12 +691,18 @@ async function finishAttempt(
   let outcome = "unknown";
   let sendBackoff = task.sendBackoffCount;
   let queryBackoff = task.queryBackoffCount;
+  const noOrderEvidence =
+    operation === "send" &&
+    result.noOrderEvidence === "protocol_rejection_v1" &&
+    (result.kind === "waiting" || result.kind === "rejected")
+      ? result.noOrderEvidence
+      : null;
   if (operation === "send") {
     sendBackoff++;
     nextSend = now + backoff(sendBackoff, "send");
     if (
       result.kind === "sent" &&
-      ensureEvidenceMatchesTask(task, result.evidence, "send")
+      ensureEvidenceMatchesTask(requestTask, result.evidence, "send")
     ) {
       observedAt ??= now;
       orderEvidence ??= "receipt";
@@ -658,6 +721,7 @@ async function finishAttempt(
       unknown = task.unknownOutcome;
       status = unknown ? "reconciling" : "waiting";
       sendBlock = result.reason;
+      if (noOrderEvidence) outcome = "rejected";
       nextSend =
         result.reason === "funds"
           ? now + Math.max(300_000, backoff(sendBackoff, "send"))
@@ -696,7 +760,7 @@ async function finishAttempt(
     queryBackoff++;
     if (
       result.kind === "confirmed" &&
-      ensureEvidenceMatchesTask(task, result.evidence, "query")
+      ensureEvidenceMatchesTask(requestTask, result.evidence, "query")
     ) {
       status = "confirmed";
       reason = "";
@@ -713,7 +777,7 @@ async function finishAttempt(
       outcome = "succeeded";
     } else if (
       result.kind === "unconfirmed" &&
-      ensureQueryEvidenceMatchesTask(task, result.evidence)
+      ensureQueryEvidenceMatchesTask(requestTask, result.evidence)
     ) {
       unknown = true;
       observedAt ??= now;
@@ -850,12 +914,13 @@ async function finishAttempt(
         ]
       : []),
     env.DB.prepare(
-      "UPDATE payment_attempts SET outcome=?,reason=?,http_status=?,diagnostic_ciphertext=?,finished_at=? WHERE id=? AND EXISTS(SELECT 1 FROM merchants WHERE id=? AND lease_token=?)",
+      "UPDATE payment_attempts SET outcome=?,reason=?,http_status=?,diagnostic_ciphertext=?,no_order_evidence=?,finished_at=? WHERE id=? AND EXISTS(SELECT 1 FROM merchants WHERE id=? AND lease_token=?)",
     ).bind(
       outcome,
       reason || null,
       result.httpStatus ?? null,
       cipher,
+      noOrderEvidence,
       now,
       attemptId,
       merchant.id,
@@ -970,7 +1035,7 @@ async function runProbe(
         task.id,
       ),
       env.DB.prepare(
-        "INSERT INTO payment_attempts(id,task_id,token,operation,purpose,outcome,credential_version,started_at,recipient_username,parameter_digest) VALUES(?,?,?,?,'probe','started',?,?,?,?)",
+        "INSERT INTO payment_attempts(id,task_id,token,operation,purpose,outcome,credential_version,started_at,recipient_username,parameter_digest,client_id,identity_correction_version) VALUES(?,?,?,?,'probe','started',?,?,?,?,?,0)",
       ).bind(
         attemptId,
         task.id,
@@ -980,6 +1045,7 @@ async function runProbe(
         now,
         operation === "send" ? sendTask.recipientUsername : null,
         operation === "send" ? probe.parameterDigest : null,
+        task.clientId,
       ),
     ]);
   } catch (error) {
@@ -1159,11 +1225,12 @@ export async function runRealMerchantCycle(
     .where(eq(merchants.id, merchantId))
     .get();
   if (!merchant) return { processed: false, nextRunAt: null };
+  await synchronizeMerchantPaymentIdentities(env, merchant);
   const task = await selectTask(env, merchant);
   if (!task) return { processed: false, nextRunAt: null };
   if (
     task.merchantId !== merchantId ||
-    task.clientId !== merchant.clientId ||
+    !(await merchantOwnsClientId(env, merchantId, task.clientId)) ||
     task.mode !== "real"
   )
     throw new Error("Payment identity mismatch");
@@ -1211,7 +1278,7 @@ export async function runRealMerchantCycle(
       };
     }
   }
-  const ctx = await context(env, merchant, task, selected.operation);
+  const effective = await effectiveClaimPaymentTask(env, task);
   const correction =
     selected.operation === "send"
       ? await loadPaymentUsernameCorrection(env, task.id)
@@ -1219,7 +1286,8 @@ export async function runRealMerchantCycle(
   const sendTask =
     selected.operation === "send"
       ? await effectivePaymentTask(env, task, correction)
-      : task;
+      : effective;
+  const ctx = await context(env, merchant, sendTask, selected.operation);
   const token = crypto.randomUUID();
   const attemptId = crypto.randomUUID();
   if (
@@ -1242,10 +1310,7 @@ export async function runRealMerchantCycle(
     };
   let result: AdapterResult;
   try {
-    result = await adapter[selected.operation](
-      selected.operation === "send" ? sendTask : task,
-      ctx,
-    );
+    result = await adapter[selected.operation](sendTask, ctx);
   } catch {
     result = { kind: "unknown", reason: "network" };
   }
@@ -1259,6 +1324,7 @@ export async function runRealMerchantCycle(
     ctx.credentialVersion,
     now,
     result,
+    sendTask,
   );
   return {
     processed: true,
@@ -1271,13 +1337,20 @@ export async function requestMerchantCheck(
   env: ApiBindings,
   merchantId: string,
 ): Promise<{ accepted: boolean; retryAfterSeconds: number | null }> {
+  const owner = await env.DB.prepare(
+    "SELECT author_id FROM merchants WHERE id=?",
+  )
+    .bind(merchantId)
+    .first<{ author_id: string }>();
+  if (owner) await requireOfficialConnect(env, owner.author_id);
   const now = Date.now();
   const admission = await env.DB.prepare(
-    "UPDATE merchants SET manual_check_at=? WHERE id=? AND (manual_check_at IS NULL OR manual_check_at<=?)",
+    "UPDATE merchants SET manual_check_at=? WHERE id=? AND EXISTS(SELECT 1 FROM users WHERE id=merchants.author_id AND official_connect_verified=1 AND active=1) AND (manual_check_at IS NULL OR manual_check_at<=?)",
   )
     .bind(now, merchantId, now - MANUAL_CHECK_MS)
     .run();
   if (!admission.meta.changes) {
+    if (owner) await requireOfficialConnect(env, owner.author_id);
     const row = await env.DB.prepare(
       "SELECT manual_check_at FROM merchants WHERE id=?",
     )
@@ -1294,6 +1367,12 @@ export async function requestMerchantCheck(
             ),
     };
   }
+  const merchant = await createDb(env.DB)
+    .select()
+    .from(merchants)
+    .where(eq(merchants.id, merchantId))
+    .get();
+  if (merchant) await synchronizeMerchantPaymentIdentities(env, merchant);
   await env.DB.batch([
     env.DB.prepare(
       `UPDATE payment_tasks SET next_run_at=?,updated_at=? WHERE merchant_id=? AND source='claim' AND mode='real' AND status='waiting' AND reason='credentials' AND first_send_at IS NULL AND attempt_count=0

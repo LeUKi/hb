@@ -2,9 +2,15 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "composite": true,
+    "allowImportingTsExtensions": true,
     "lib": ["ES2022"],
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["vite.config.ts", "vite.full-app.config.ts"]
+  "include": [
+    "vite.config.ts",
+    "vite.full-app.config.ts",
+    "build-time.ts",
+    "asset-cache.ts"
+  ]
 }

@@ -1,0 +1,125 @@
+.attempt-statistics-page {
+  max-width: 960px;
+}
+
+.attempt-statistics-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.attempt-statistics-heading .work-page-heading {
+  flex: 1;
+}
+
+.attempt-statistics-activity {
+  margin: -10px 0 0;
+}
+
+.attempt-statistics-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+}
+
+.attempt-statistics-summary > div,
+.attempt-statistics-panel {
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.1));
+  border-radius: 10px;
+  background: var(--panel, rgba(255, 255, 255, 0.03));
+}
+
+.attempt-statistics-summary > div {
+  padding: 12px 14px;
+}
+
+.attempt-statistics-summary dt {
+  color: var(--muted, #a7a7a7);
+  font-size: 12px;
+}
+
+.attempt-statistics-summary dd {
+  margin: 4px 0 0;
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.attempt-statistics-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 16px;
+}
+
+.attempt-statistics-panel h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.attempt-statistics-panel > .muted {
+  margin: 0;
+  font-size: 12px;
+}
+
+.attempt-statistics-table-wrap {
+  overflow-x: auto;
+}
+
+.attempt-statistics-table {
+  width: 100%;
+  min-width: 600px;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+}
+
+.attempt-statistics-table th,
+.attempt-statistics-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+}
+
+.attempt-statistics-table th {
+  color: var(--muted, #a7a7a7);
+  font-weight: 500;
+}
+
+.attempt-statistics-table td:not(:first-child),
+.attempt-statistics-table th:not(:first-child) {
+  width: 90px;
+  font-variant-numeric: tabular-nums;
+}
+
+.attempt-statistics-valid-passwords {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attempt-statistics-valid-passwords li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .attempt-statistics-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .attempt-statistics-heading .button {
+    align-self: flex-start;
+  }
+
+  .attempt-statistics-summary {
+    grid-template-columns: 1fr;
+  }
+}

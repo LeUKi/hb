@@ -31,15 +31,15 @@ export function ClaimContent({ claim }: { claim: ClaimDetail }) {
             </Button>
           ) : null}
         </div>
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-subtle">
           领取时间：{formatTime(claim.claimedAt)}
         </p>
         {claim.rewardType === "text" ? (
-          <pre className="whitespace-pre-wrap break-words rounded-md border border-neutral-200 bg-neutral-50 p-4 text-sm leading-7 [overflow-wrap:anywhere]">
+          <pre className="whitespace-pre-wrap break-words rounded-md border border-separator bg-panel p-4 text-sm leading-7 [overflow-wrap:anywhere]">
             {claim.text}
           </pre>
         ) : (
-          <div className="space-y-3 rounded-md border border-amber-200 bg-amber-50 p-4">
+          <div className="space-y-3 rounded-md border border-warning/40 bg-warning/10 p-4">
             <p className="text-xl font-semibold">{claim.amount} LDC</p>
             <p className="text-sm font-medium">
               {paymentLabel(claim.payment.mode, claim.payment.status)}
@@ -50,11 +50,11 @@ export function ClaimContent({ claim }: { claim: ClaimDetail }) {
               </p>
             ) : null}
             {claim.payment.mode === "simulation" ? (
-              <p className="text-sm text-amber-900">
+              <p className="text-sm text-warning">
                 本地模拟付款，不会产生真实 LDC 转账。
               </p>
             ) : null}
-            <p className="text-xs text-neutral-600">
+            <p className="text-xs text-muted">
               金额为发放金额；收款手续费由领取者承担。
             </p>
             {claim.payment.reason ? (
@@ -63,14 +63,14 @@ export function ClaimContent({ claim }: { claim: ClaimDetail }) {
           </div>
         )}
         {copyStatus ? (
-          <p role="status" className="text-sm text-neutral-600">
+          <p role="status" className="text-sm text-muted">
             {copyStatus}
           </p>
         ) : null}
       </div>
       {claim.afterClaimInfo ? (
-        <section className="space-y-3 border-t border-neutral-200 pt-4">
-          <h2 className="font-semibold">领取后说明</h2>
+        <section className="space-y-3 border-t border-separator pt-4">
+          <h2 className="font-semibold">奖励附言</h2>
           <SafeMarkdown>{claim.afterClaimInfo}</SafeMarkdown>
         </section>
       ) : null}

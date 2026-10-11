@@ -1,5 +1,7 @@
 import {
   ACTIVITY_LIMITS,
+  type ActivityRewardFilter,
+  activityRewardFilterSchema,
   type GlobalRedemptionResult,
   globalRedemptionSchema,
 } from "@hb/contracts";
@@ -43,6 +45,50 @@ export const discoveryRoutes = new Hono<ApiContext>()
     c.header("Cache-Control", "no-store");
     await next();
   })
+  .post(
+    "/redemptions/discover",
+    bodyLimit({
+      maxSize: ACTIVITY_LIMITS.requestBytes,
+      onError: () => {
+        throw new ActivityError(
+          413,
+          "PAYLOAD_TOO_LARGE",
+          "提交内容不能超过 1 MiB",
+        );
+      },
+    }),
+    validator("json", (value) => {
+      const checked = globalRedemptionSchema.safeParse(value);
+      if (!checked.success)
+        throw new ActivityValidationError(
+          checked.error.issues.map((issue) => ({
+            path: issue.path.join("."),
+            message: issue.message,
+          })),
+        );
+      return checked.data;
+    }),
+    async (c) => {
+      const session = await requireProtectedMutation(c);
+      const stub = c.env.ACTIVITY_DO.get(
+        c.env.ACTIVITY_DO.idFromName(`global-redemption:${session.user.id}`),
+      );
+      const response = await stub.fetch(
+        "https://activity.internal/internal/redemptions/discover",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: session.user.id,
+            ...c.req.valid("json"),
+          }),
+        },
+      );
+      if (!response.ok) return response;
+      return response as Response &
+        TypedResponse<Omit<GlobalRedemptionResult, "claimResult">, 200, "json">;
+    },
+  )
   .post(
     "/redemptions",
     bodyLimit({
@@ -112,20 +158,35 @@ export const discoveryRoutes = new Hono<ApiContext>()
     "/discovery/activities",
     validator(
       "query",
-      (value): { status: "all" | "active" | "ended"; cursor?: string } => {
+      (
+        value,
+      ): {
+        status: "all" | "active" | "ended";
+        type: ActivityRewardFilter;
+        cursor?: string;
+      } => {
         const status = value.status ?? "all";
         if (status !== "all" && status !== "active" && status !== "ended")
           throw new ActivityError(400, "INVALID_STATUS", "活动状态无效");
         if (value.cursor !== undefined && typeof value.cursor !== "string")
           throw new ActivityError(400, "INVALID_CURSOR", "分页标识无效");
-        return { status, cursor: value.cursor };
+        const type = activityRewardFilterSchema.safeParse(value.type ?? "all");
+        if (!type.success)
+          throw new ActivityError(400, "INVALID_TYPE", "奖励类型无效");
+        return { status, type: type.data, cursor: value.cursor };
       },
     ),
     async (c) => {
       const session = await getOptionalSession(c);
       const query = c.req.valid("query");
       return c.json(
-        await listSquare(c.env, query.status, session?.user.id, query.cursor),
+        await listSquare(
+          c.env,
+          query.status,
+          session?.user.id,
+          query.cursor,
+          query.type,
+        ),
       );
     },
   )

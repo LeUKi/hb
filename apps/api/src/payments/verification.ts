@@ -56,6 +56,7 @@ export async function beginCredentialVerification(
   env: ApiBindings,
   merchantId: string,
   options?: RealProtocolOptions,
+  requestedVersion?: number,
 ): Promise<(() => Promise<void>) | null> {
   if (!canVerifyCredentials(env)) return null;
   const now = Date.now();
@@ -63,19 +64,23 @@ export async function beginCredentialVerification(
   const token = crypto.randomUUID();
   const row =
     await env.DB.prepare(`UPDATE merchant_credentials SET verification_status='checking', verification_token=?, verification_started_at=?, verification_next_at=?, verification_reason=NULL
-    WHERE merchant_id=? AND version=(SELECT credential_version FROM merchants WHERE id=? AND mode='real')
+    WHERE merchant_id=? AND version=COALESCE(?,(SELECT credential_version FROM merchants WHERE id=? AND mode='real'))
+    AND EXISTS(SELECT 1 FROM merchants m WHERE m.id=merchant_credentials.merchant_id AND m.mode='real')
+    AND NOT EXISTS(SELECT 1 FROM merchant_credentials newer WHERE newer.merchant_id=merchant_credentials.merchant_id AND newer.client_id=merchant_credentials.client_id AND newer.version>merchant_credentials.version)
     AND verification_status!='checking' AND (verification_next_at IS NULL OR verification_next_at<=?)
-    RETURNING version,ciphertext`)
-      .bind(token, now, now + COOLDOWN_MS, merchantId, merchantId, now)
-      .first<{ version: number; ciphertext: string }>();
+    RETURNING version,ciphertext,client_id`)
+      .bind(
+        token,
+        now,
+        now + COOLDOWN_MS,
+        merchantId,
+        requestedVersion ?? null,
+        merchantId,
+        now,
+      )
+      .first<{ version: number; ciphertext: string; client_id: string }>();
   if (!row) return null;
   return async () => {
-    const merchant = await env.DB.prepare(
-      "SELECT client_id FROM merchants WHERE id=?",
-    )
-      .bind(merchantId)
-      .first<{ client_id: string }>();
-    if (!merchant) return;
     let result: {
       status: "passed" | "rejected" | "unavailable";
       reason: string;
@@ -88,7 +93,7 @@ export async function beginCredentialVerification(
         `merchant:${merchantId}:credential:${row.version}`,
       );
       result = await verifyRealCredentials(
-        { clientId: merchant.client_id, clientSecret },
+        { clientId: row.client_id, clientSecret },
         options ?? { fetch: (input, init) => fetch(input, init) },
       );
     } catch {
@@ -97,7 +102,7 @@ export async function beginCredentialVerification(
     const saved =
       await env.DB.prepare(`UPDATE merchant_credentials SET verification_status=?,verification_reason=?,verification_http_status=?,verification_checked_at=?,verification_token=NULL
       WHERE merchant_id=? AND version=? AND verification_token=? AND verification_status='checking'
-      AND version=(SELECT credential_version FROM merchants WHERE id=?)`)
+      AND NOT EXISTS(SELECT 1 FROM merchant_credentials newer WHERE newer.merchant_id=merchant_credentials.merchant_id AND newer.client_id=merchant_credentials.client_id AND newer.version>merchant_credentials.version)`)
         .bind(
           result.status,
           result.reason,
@@ -106,7 +111,6 @@ export async function beginCredentialVerification(
           merchantId,
           row.version,
           token,
-          merchantId,
         )
         .run();
     if (saved.meta.changes)

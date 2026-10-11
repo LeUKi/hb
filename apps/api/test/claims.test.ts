@@ -3,7 +3,6 @@ import {
   type TextActivityInput as ActivityInput,
   ARCHIVE_DELAY_MS,
   type AuthorClaimList,
-  CLAIM_WINDOW_MS,
   type ClaimDetail,
   type ClaimList,
   type ClaimResult,
@@ -21,11 +20,17 @@ import {
   refreshActivityLifecycle,
   sweepActivityLifecycle,
 } from "../src/activities/lifecycle";
+import {
+  insertPasswordRows,
+  preparePasswords,
+} from "../src/activities/storage";
 import { app } from "../src/app";
 import { createDb } from "../src/db/client";
 import { sessions, users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
 import { decryptString, sha256Hex } from "../src/security/crypto";
+import { advanceAttemptCooldown } from "./advance-attempt-cooldown";
+import { resetMerchantHistory } from "./reset-merchant-history";
 
 const origin = "https://hb.example.com";
 const bindings: ApiBindings = { ...env, APP_ORIGIN: origin };
@@ -47,6 +52,7 @@ async function actor(username: string): Promise<Actor> {
   const now = new Date();
   const db = createDb(env.DB);
   await db.insert(users).values({
+    officialConnectVerified: true,
     id,
     externalId: username,
     username,
@@ -153,9 +159,12 @@ async function claim(
   password = "正确口令123",
   submissionId = crypto.randomUUID(),
 ) {
+  await advanceAttemptCooldown(env.DB, user.id, submissionId);
   const response = await submit(activityId, user, password, submissionId);
   expect(response.status).toBe(200);
-  return (await response.json()) as ClaimResult;
+  const result = (await response.json()) as ClaimResult;
+  delete result.attemptCooldown;
+  return result;
 }
 
 async function stats(activityId: string) {
@@ -188,6 +197,10 @@ async function managed(id: string) {
 }
 
 beforeEach(async () => {
+  await resetMerchantHistory(env.DB);
+  await env.DB.prepare(
+    "INSERT INTO attempt_rate_limits (id,version,home_interval_seconds,activity_interval_seconds,updated_at) VALUES ('global',1,5,2,0) ON CONFLICT(id) DO UPDATE SET home_interval_seconds=5,activity_interval_seconds=2",
+  ).run();
   await env.DB.batch([
     env.DB.prepare("DELETE FROM payment_outbox"),
     env.DB.prepare("DELETE FROM payment_attempts"),
@@ -214,6 +227,64 @@ beforeEach(async () => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("text claiming and private history", () => {
+  it("reports the submitted password match separately from reward recovery", async () => {
+    const activity = await create();
+    const key = crypto.randomUUID();
+    const first = await claim(activity.id, alice, "正确口令123", key);
+    expect(first).toMatchObject({ result: "claimed", passwordMatched: true });
+    expect(await claim(activity.id, alice, "正确口令123", key)).toEqual(first);
+    // Existing reward recovery never checks this new input.
+    expect(await claim(activity.id, alice, "wrong123")).toMatchObject({
+      result: "already_claimed",
+      passwordMatched: null,
+    });
+  });
+  it("returns the current activity participation without creating extra facts", async () => {
+    const activity = await create({ forceDedicated: true });
+    expect(
+      (await request(`/api/activities/${activity.id}/participation`)).status,
+    ).toBe(401);
+    const empty = await request(
+      `/api/activities/${activity.id}/participation`,
+      alice,
+    );
+    expect(empty.status).toBe(200);
+    expect(await empty.json()).toEqual({ claim: null, registration: null });
+    const result = await claim(activity.id, alice);
+    expect(result.result).toBe("claimed");
+    await env.DB.prepare("UPDATE activities SET deadline=? WHERE id=?")
+      .bind(Date.now() - 1000, activity.id)
+      .run();
+    const beforeRefresh = await stats(activity.id);
+    const current = await request(
+      `/api/activities/${activity.id}/participation`,
+      alice,
+    );
+    expect(current.status).toBe(200);
+    expect(await current.json()).toMatchObject({
+      claim: { text: "PRIVATE-TEXT-A", afterClaimInfo: "AFTER-CLAIM" },
+      registration: null,
+    });
+    expect(await stats(activity.id)).toMatchObject({
+      claimed: 1,
+      claims: 1,
+      attempts: 1,
+      validations: 1,
+      endedAt: beforeRefresh.endedAt,
+      version: beforeRefresh.version,
+    });
+
+    const draft = await create({}, false);
+    expect(
+      (await request(`/api/activities/${draft.id}/participation`, owner))
+        .status,
+    ).toBe(200);
+    expect(
+      (await request(`/api/activities/${draft.id}/participation`, alice))
+        .status,
+    ).toBe(404);
+  });
+
   it("allocates sequentially, permits text authors to claim, and retains one immutable reward per account", async () => {
     const activity = await create();
     const first = await claim(activity.id);
@@ -243,7 +314,10 @@ describe("text claiming and private history", () => {
       version: activity.version + 1,
       endReason: "exhausted",
     });
-    expect(await claim(activity.id, bob)).toEqual({ result: "ended" });
+    expect(await claim(activity.id, bob)).toEqual({
+      result: "ended",
+      passwordMatched: null,
+    });
   });
 
   it("supports random allocation without replacement and identical text entries remain separate rewards", async () => {
@@ -349,7 +423,10 @@ describe("text claiming and private history", () => {
     ).toBe(403);
     expect((await submit(activity.id, alice, "bad!")).status).toBe(400);
     const draft = await create({ forceDedicated: true }, false);
-    expect(await claim(draft.id, owner)).toEqual({ result: "draft" });
+    expect(await claim(draft.id, owner)).toEqual({
+      result: "draft",
+      passwordMatched: null,
+    });
     expect((await submit(draft.id, alice)).status).toBe(404);
     expect(await stats(activity.id)).toMatchObject({
       claims: 0,
@@ -415,7 +492,10 @@ describe("text claiming and private history", () => {
       claimant: { id: alice.id },
     });
     expect((await claim(activity.id)).result).toBe("already_claimed");
-    expect(await claim(activity.id, bob)).toEqual({ result: "archived" });
+    expect(await claim(activity.id, bob)).toEqual({
+      result: "archived",
+      passwordMatched: null,
+    });
   });
 });
 
@@ -427,9 +507,11 @@ describe("durable validation, statistics and recovery", () => {
     for (const key of [firstKey, crypto.randomUUID(), crypto.randomUUID()])
       expect(await claim(activity.id, alice, password, key)).toEqual({
         result: "incorrect",
+        passwordMatched: false,
       });
     expect(await claim(activity.id, alice, password, firstKey)).toEqual({
       result: "incorrect",
+      passwordMatched: false,
     });
     expect(await stats(activity.id)).toMatchObject({
       attempts: 3,
@@ -452,19 +534,24 @@ describe("durable validation, statistics and recovery", () => {
         ),
       ),
     ).toBe(password);
-    expect(
-      (
-        await request(`/api/me/activities/${activity.id}`, owner, "PATCH", {
-          version: activity.version,
-          activity: {
-            ...activity.config,
-            passwords: [...activity.config.passwords, password],
-          },
-        })
-      ).status,
-    ).toBe(200);
+    const [laterPassword] = await preparePasswords(
+      bindings,
+      activity.id,
+      [password],
+      [],
+      Date.now(),
+    );
+    await env.DB.batch([
+      insertPasswordRows(env.DB, [
+        {
+          ...required(laterPassword),
+          position: activity.config.passwords.length,
+        },
+      ]),
+    ]);
     expect(await claim(activity.id, alice, password, firstKey)).toEqual({
       result: "incorrect",
+      passwordMatched: false,
     });
     expect((await claim(activity.id, alice, password)).result).toBe("claimed");
     const aggregate = await env.DB.prepare(
@@ -522,6 +609,7 @@ describe("durable validation, statistics and recovery", () => {
       .run();
     expect(await completeClaimSubmission(bindings, pending)).toEqual({
       result: "ended",
+      passwordMatched: true,
     });
     expect(await stats(expired.id)).toMatchObject({
       attempts: 1,
@@ -539,6 +627,7 @@ describe("durable validation, statistics and recovery", () => {
       forceDedicated: true,
       rewards: [{ id: crypto.randomUUID(), text: "one" }],
     });
+    await advanceAttemptCooldown(env.DB, alice.id);
     const losing = await prepareClaimSubmission(
       bindings,
       exhausted.id,
@@ -548,6 +637,7 @@ describe("durable validation, statistics and recovery", () => {
     expect((await claim(exhausted.id, bob)).result).toBe("claimed");
     expect(await completeClaimSubmission(bindings, losing)).toEqual({
       result: "ended",
+      passwordMatched: true,
     });
     expect(await stats(exhausted.id)).toMatchObject({ attempts: 2, claims: 1 });
   });
@@ -718,68 +808,112 @@ describe("durable validation, statistics and recovery", () => {
     });
   });
 
-  it("enforces persistent rolling limits, bypasses them for replays, and keeps limits scoped to account and activity", async () => {
+  it("persists a shared account cooldown across activities and object eviction while saved replays bypass it", async () => {
     const activity = await create({ forceDedicated: true });
     const firstKey = crypto.randomUUID();
-    expect(await claim(activity.id, alice, "wrong123", firstKey)).toEqual({
+    const first = await submit(activity.id, alice, "wrong123", firstKey);
+    expect(first.status).toBe(200);
+    const accepted = (await first.json()) as ClaimResult;
+    expect(accepted).toMatchObject({
       result: "incorrect",
+      attemptCooldown: { revision: 1 },
     });
-    for (let index = 1; index < 10; index += 1)
-      expect(await claim(activity.id, alice, "wrong123")).toEqual({
-        result: "incorrect",
-      });
     const stub = env.ACTIVITY_DO.get(env.ACTIVITY_DO.idFromName(activity.id));
     await evictDurableObject(stub);
     const blocked = await submit(activity.id, alice, "wrong123");
     expect(blocked.status).toBe(429);
     expect(Number(blocked.headers.get("retry-after"))).toBeGreaterThan(0);
-    expect(Number(blocked.headers.get("retry-after"))).toBeLessThanOrEqual(60);
-    expect(await claim(activity.id, alice, "wrong123", firstKey)).toEqual({
+    expect(Number(blocked.headers.get("retry-after"))).toBeLessThanOrEqual(2);
+    const replay = await submit(activity.id, alice, "wrong123", firstKey);
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toMatchObject({
       result: "incorrect",
+      attemptCooldown: {
+        revision: 1,
+        nextAllowedAt: accepted.attemptCooldown?.nextAllowedAt,
+      },
     });
     expect(await stats(activity.id)).toMatchObject({
-      attempts: 10,
-      validations: 10,
+      attempts: 1,
+      validations: 1,
     });
-    expect(await claim(activity.id, bob, "wrong123")).toEqual({
-      result: "incorrect",
-    });
+    expect((await submit(activity.id, bob, "wrong123")).status).toBe(200);
     const another = await create();
-    expect(await claim(another.id, alice, "wrong123")).toEqual({
-      result: "incorrect",
-    });
-    await env.DB.prepare(
-      "UPDATE redemption_submissions SET validated_at = ? WHERE activity_id = ? AND user_id = ?",
-    )
-      .bind(Date.now() - CLAIM_WINDOW_MS - 1, activity.id, alice.id)
-      .run();
-    expect(await claim(activity.id, alice, "wrong123")).toEqual({
-      result: "incorrect",
-    });
-    expect((await stats(activity.id)).attempts).toBe(12);
+    expect((await submit(another.id, alice, "wrong123")).status).toBe(429);
+    await advanceAttemptCooldown(env.DB, alice.id);
+    expect((await submit(another.id, alice, "wrong123")).status).toBe(200);
+    expect((await submit(activity.id, alice, "wrong123")).status).toBe(429);
+    await advanceAttemptCooldown(env.DB, alice.id);
+    expect((await submit(activity.id, alice, "wrong123")).status).toBe(200);
+    expect((await stats(activity.id)).attempts).toBe(3);
   });
 
-  it("uses configurable limits with the same SQL guard and invalid configuration falls back safely", async () => {
+  it("uses database cooldown settings for future accepted attempts and falls back when settings are absent", async () => {
     const activity = await create();
-    const config = { ...bindings, CLAIM_ATTEMPTS_PER_MINUTE: "1" };
-    await prepareClaimSubmission(config, activity.id, alice.id, {
+    await env.DB.prepare(
+      "UPDATE attempt_rate_limits SET activity_interval_seconds=7 WHERE id='global'",
+    ).run();
+    await prepareClaimSubmission(bindings, activity.id, alice.id, {
       submissionId: crypto.randomUUID(),
       password: "wrong123",
     });
+    const initial = await env.DB.prepare(
+      "SELECT revision,accepted_at,next_allowed_at FROM account_attempt_cooldowns WHERE user_id=?",
+    )
+      .bind(alice.id)
+      .first<{
+        revision: number;
+        accepted_at: number;
+        next_allowed_at: number;
+      }>();
+    expect(
+      required(initial).next_allowed_at - required(initial).accepted_at,
+    ).toBe(7000);
+    await env.DB.prepare(
+      "UPDATE attempt_rate_limits SET activity_interval_seconds=3 WHERE id='global'",
+    ).run();
     await expect(
-      prepareClaimSubmission(config, activity.id, alice.id, {
+      prepareClaimSubmission(bindings, activity.id, alice.id, {
         submissionId: crypto.randomUUID(),
         password: "wrong123",
       }),
     ).rejects.toMatchObject({ status: 429 });
+    expect(
+      await env.DB.prepare(
+        "SELECT revision,accepted_at,next_allowed_at FROM account_attempt_cooldowns WHERE user_id=?",
+      )
+        .bind(alice.id)
+        .first(),
+    ).toEqual(initial);
+    await advanceAttemptCooldown(env.DB, alice.id);
     await expect(
-      prepareClaimSubmission(
-        { ...config, CLAIM_ATTEMPTS_PER_MINUTE: "invalid" },
-        activity.id,
-        alice.id,
-        { submissionId: crypto.randomUUID(), password: "wrong123" },
-      ),
+      prepareClaimSubmission(bindings, activity.id, alice.id, {
+        submissionId: crypto.randomUUID(),
+        password: "wrong123",
+      }),
     ).resolves.toMatchObject({ outcome: "incorrect" });
+    expect(
+      await env.DB.prepare(
+        "SELECT revision,next_allowed_at-accepted_at AS duration FROM account_attempt_cooldowns WHERE user_id=?",
+      )
+        .bind(alice.id)
+        .first(),
+    ).toEqual({ revision: 2, duration: 3000 });
+    await env.DB.prepare(
+      "DELETE FROM attempt_rate_limits WHERE id='global'",
+    ).run();
+    await advanceAttemptCooldown(env.DB, alice.id);
+    await prepareClaimSubmission(bindings, activity.id, alice.id, {
+      submissionId: crypto.randomUUID(),
+      password: "wrong123",
+    });
+    expect(
+      await env.DB.prepare(
+        "SELECT revision,next_allowed_at-accepted_at AS duration FROM account_attempt_cooldowns WHERE user_id=?",
+      )
+        .bind(alice.id)
+        .first(),
+    ).toEqual({ revision: 3, duration: 2000 });
   });
 
   it("enforces SQL uniqueness even when pending allocations bypass the DO in a concurrent recovery test", async () => {
@@ -790,6 +924,7 @@ describe("durable validation, statistics and recovery", () => {
       alice.id,
       { submissionId: crypto.randomUUID(), password: "正确口令123" },
     );
+    await advanceAttemptCooldown(env.DB, alice.id);
     const second = await prepareClaimSubmission(
       bindings,
       activity.id,
@@ -849,7 +984,10 @@ describe("lifecycle and public recipients", () => {
       ).status,
     ).toBe(200);
     expect((await stats(activity.id)).endedAt).toBe(first.endedAt);
-    expect(await claim(activity.id)).toEqual({ result: "ended" });
+    expect(await claim(activity.id)).toEqual({
+      result: "ended",
+      passwordMatched: null,
+    });
     const claimed = await create();
     await claim(claimed.id);
     expect(
@@ -883,7 +1021,7 @@ describe("lifecycle and public recipients", () => {
     }
   });
 
-  it("rechecks extended deadlines, persists the actual deadline as end time, and archives exactly once", async () => {
+  it("rejects extended deadlines, persists the actual deadline as end time, and archives exactly once", async () => {
     const activity = await create();
     const later = new Date(
       Date.parse(required(activity.deadlineAt)) + 3600000,
@@ -895,15 +1033,18 @@ describe("lifecycle and public recipients", () => {
           activity: { ...activity.config, deadline: { mode: "at", at: later } },
         })
       ).status,
-    ).toBe(200);
-    // This refresh represents an old scan result; it may not overwrite the new deadline.
+    ).toBe(400);
+    // This refresh represents an old scan result; it may not end an activity before its real deadline.
     await refreshActivityLifecycle(bindings, activity.id);
     expect((await stats(activity.id)).endedAt).toBeNull();
     const deadline = Date.now() - ARCHIVE_DELAY_MS - 1000;
     await env.DB.prepare("UPDATE activities SET deadline = ? WHERE id = ?")
       .bind(deadline, activity.id)
       .run();
-    expect(await claim(activity.id)).toEqual({ result: "archived" });
+    expect(await claim(activity.id)).toEqual({
+      result: "archived",
+      passwordMatched: null,
+    });
     const row = await stats(activity.id);
     expect(row).toMatchObject({
       endedAt: deadline,

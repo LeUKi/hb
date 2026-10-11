@@ -33,6 +33,7 @@ async function user(externalId?: string, username = "test-recipient") {
   await createDb(env.DB)
     .insert(users)
     .values({
+      officialConnectVerified: true,
       id,
       externalId:
         externalId ??

@@ -1,5 +1,43 @@
 import { expect, test } from "@playwright/test";
 
+test("解meme标题和秒级构建标记在切页、滚动、窄屏与刷新后保持一致", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page).toHaveTitle("解meme");
+  await expect(
+    page.getByRole("link", { name: "解meme 首页", exact: true }),
+  ).toBeVisible();
+  const stamp = page.locator("#build-stamp");
+  await expect(stamp).toHaveText(/^build @ [1-9]\d*$/);
+  const value = await stamp.getAttribute("data-build-unix-seconds");
+  const text = await stamp.textContent();
+  expect(Number(value)).toBeLessThanOrEqual(Math.floor(Date.now() / 1_000));
+  expect(text).toBe(`build @ ${value}`);
+  await page
+    .getByRole("navigation", { name: "主导航", exact: true })
+    .getByRole("link", { name: "活动广场", exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/square(?:\?|$)/);
+  await expect(stamp).toHaveText(text ?? "");
+  await page.setViewportSize({ width: 375, height: 160 });
+  const before = await stamp.boundingBox();
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  expect(await stamp.boundingBox()).toEqual(before);
+  expect(
+    await stamp.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        position: style.position,
+        fontSize: style.fontSize,
+        pointerEvents: style.pointerEvents,
+      };
+    }),
+  ).toEqual({ position: "fixed", fontSize: "9px", pointerEvents: "none" });
+  await page.reload();
+  await expect(stamp).toHaveText(text ?? "");
+});
+
 test("同域健康检查经过网关，并保持 API 错误响应", async ({ request }) => {
   const health = await request.get("/api/health");
   expect(health.status()).toBe(200);
@@ -14,12 +52,25 @@ test("同域健康检查经过网关，并保持 API 错误响应", async ({ req
   }
 });
 
-test("首页导航和状态页直接刷新均可连接 API", async ({ page }) => {
+test("首页主导航和旧状态页直接刷新均可连接 API", async ({ page }) => {
   await page.goto("/");
+  await expect(page.getByLabel("口令", { exact: true })).toBeVisible();
+  const nav = page.getByRole("navigation", { name: "主导航", exact: true });
+  for (const name of ["兑奖", "活动广场", "活动历史", "我的"])
+    await expect(nav.getByRole("link", { name, exact: true })).toBeVisible();
   await expect(
-    page.getByText("当前兑换范围：全站兑换", { exact: true }),
+    nav.getByRole("link", { name: "运行状态", exact: true }),
+  ).toHaveCount(0);
+  await nav.getByRole("link", { name: "我的", exact: true }).click();
+  await expect(page).toHaveURL(/\/account$/);
+  await expect(
+    page.getByRole("region", { name: "登录解meme", exact: true }),
   ).toBeVisible();
-  await page.getByRole("link", { name: "运行状态", exact: true }).click();
+  await page.goto("/square");
+  await expect(
+    page.getByRole("heading", { name: "活动广场", exact: true }),
+  ).toBeVisible();
+  await page.goto("/status");
   await expect(page).toHaveURL(/\/status$/);
   await page.reload();
   await expect(page.getByTestId("health-status")).toHaveText("连接正常");

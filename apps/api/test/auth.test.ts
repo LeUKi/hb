@@ -7,6 +7,7 @@ import { requireAuth, requireOwner } from "../src/auth/session";
 import type { ApiBindings, ApiContext } from "../src/env";
 import { cleanupExpiredIdentityRows } from "../src/scheduled";
 import { decryptString } from "../src/security/crypto";
+import { resetMerchantHistory } from "./reset-merchant-history";
 
 const origin = "https://hb.example.com";
 const bindings: ApiBindings = {
@@ -112,6 +113,7 @@ async function login(profile?: unknown) {
 }
 
 beforeEach(async () => {
+  await resetMerchantHistory(env.DB);
   await env.DB.batch([
     env.DB.prepare("DELETE FROM payment_outbox"),
     env.DB.prepare("DELETE FROM payment_attempts"),
@@ -139,6 +141,15 @@ describe("Connect authorization and sessions", () => {
     const response = await request("/api/me", undefined, { ...env });
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ user: null, csrfToken: null });
+    const session = await request("/api/session", undefined, { ...env });
+    expect(session.status).toBe(200);
+    expect(await session.json()).toEqual({
+      user: null,
+      csrfToken: null,
+      attemptCooldown: null,
+      loginOptions: { liteauthEnabled: true },
+    });
+    expect(session.headers.get("cache-control")).toContain("no-store");
     expect(
       (await request("/api/auth/login", undefined, { ...env })).status,
     ).toBe(503);
@@ -176,7 +187,27 @@ describe("Connect authorization and sessions", () => {
       },
       csrfToken: expect.any(String),
     });
+    const lightSession = await request("/api/session", {
+      headers: { Cookie: cookie },
+    });
+    expect(await lightSession.json()).toMatchObject({
+      user: {
+        username: "alice",
+        displayName: "Alice",
+        avatarUrl: null,
+        loginProvider: "connect",
+      },
+      csrfToken: expect.any(String),
+    });
+    expect(
+      JSON.stringify(
+        await (
+          await request("/api/session", { headers: { Cookie: cookie } })
+        ).json(),
+      ),
+    ).not.toContain("email");
     expect(me.headers.get("cache-control")).toContain("no-store");
+    expect(lightSession.headers.get("cache-control")).toContain("no-store");
     expect(response.headers.get("set-cookie")).toContain("HttpOnly");
     const sessionCookie = response.headers
       .getSetCookie()
@@ -576,6 +607,9 @@ describe("Connect authorization and sessions", () => {
         username: "alice",
         displayName: "alice",
         avatarUrl: null,
+        accountTier: "standard",
+        canUseLdc: true,
+        isAdmin: false,
       },
     });
   });

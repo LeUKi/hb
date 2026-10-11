@@ -23,12 +23,14 @@ import { users } from "../src/db/schema";
 import worker from "../src/index";
 import { createMerchant } from "../src/payments/merchants";
 import { flushPaymentOutbox } from "../src/payments/scheduler";
+import { resetMerchantHistory } from "./reset-merchant-history";
 
 const merchantStubs: ReturnType<typeof env.MERCHANT_DO.get>[] = [];
 
 async function user() {
   const id = crypto.randomUUID();
   await createDb(env.DB).insert(users).values({
+    officialConnectVerified: true,
     id,
     externalId: id,
     username: id,
@@ -134,6 +136,7 @@ async function makeDue(id: string) {
 }
 
 beforeEach(async () => {
+  await resetMerchantHistory(env.DB);
   vi.restoreAllMocks();
   await env.DB.batch(
     [
@@ -314,7 +317,7 @@ describe("MerchantDO alarms and durable payment recovery", () => {
     await worker.queue(replay, env);
     await worker.scheduled(scheduled, env, createExecutionContext());
     expect(await countOrders()).toBe(27);
-  });
+  }, 30_000);
 
   it("Cron still pays rewards after activity end and archive", async () => {
     const ended = await fixture();

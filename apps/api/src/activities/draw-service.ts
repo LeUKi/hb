@@ -14,7 +14,7 @@ import { type ActivityRow, findActivity, type InventoryRow } from "./storage";
 type Winner = {
   registrationId: string;
   userId: string;
-  passwordId: string;
+  passwordId: string | null;
   ordinal: number;
   recipientId: string;
   claimId: string;
@@ -121,7 +121,7 @@ export async function saveDrawPlan(env: ApiBindings, activityId: string) {
       .all<{
         id: string;
         user_id: string;
-        password_id: string;
+        password_id: string | null;
         ordinal: number;
         recipient_id: string;
       }>();
@@ -224,9 +224,17 @@ function validatePlan(
       (reward.amountMinor ?? 0) <= 0
     )
       throw new Error("Invalid saved drawing reward");
-  for (const winner of plan.winners)
+  for (const winner of plan.winners) {
+    if (
+      activity.participationMode === "direct"
+        ? winner.passwordId !== null
+        : typeof winner.passwordId !== "string" ||
+          winner.passwordId.length === 0
+    )
+      throw new Error("Invalid saved drawing password source");
     if (rewards.get(winner.inventoryId)?.amountMinor !== winner.amountMinor)
       throw new Error("Invalid saved drawing amount");
+  }
 }
 
 /** Bounded JSON bulk writes preserve the entire prize/payment/outbox publication in one D1 transaction. */
@@ -241,10 +249,10 @@ export async function publishDrawPlan(env: ApiBindings, activityId: string) {
     if (!activity.merchantId || !activity.paymentMode)
       throw new Error("Drawing merchant is missing");
     const merchant = await env.DB.prepare(
-      "SELECT client_id FROM merchants WHERE id=? AND author_id=? AND mode=?",
+      "SELECT client_id,version FROM merchants WHERE id=? AND author_id=? AND mode=?",
     )
       .bind(activity.merchantId, activity.authorId, activity.paymentMode)
-      .first<{ client_id: string }>();
+      .first<{ client_id: string; version: number }>();
     if (!merchant) throw new Error("Drawing merchant is inconsistent");
     const profiles =
       await env.DB.prepare(`SELECT u.id,u.username,u.external_id FROM users u
@@ -307,7 +315,7 @@ export async function publishDrawPlan(env: ApiBindings, activityId: string) {
         AND (SELECT COUNT(*) FROM json_each(?) w JOIN users u ON u.id=json_extract(w.value,'$.userId')
           JOIN activity_registrations r ON r.id=json_extract(w.value,'$.registrationId')
           WHERE u.username=json_extract(w.value,'$.recipientUsername') AND r.activity_id=?
-          AND r.user_id=u.id AND r.recipient_id=json_extract(w.value,'$.recipientId') AND r.password_id=json_extract(w.value,'$.passwordId'))=?
+          AND r.user_id=u.id AND r.recipient_id=json_extract(w.value,'$.recipientId') AND r.password_id IS json_extract(w.value,'$.passwordId'))=?
         THEN '{}' ELSE '' END) AS draw_publication_guard`).bind(
         activityId,
         saved.payload,
@@ -325,13 +333,14 @@ export async function publishDrawPlan(env: ApiBindings, activityId: string) {
         FROM json_each(?)`).bind(activityId, payload),
       env.DB.prepare(`INSERT INTO payment_tasks(id,claim_id,source,acceptance_id,merchant_id,client_id,business_no,recipient_id,recipient_username,amount_minor,mode,status,next_run_at,created_at,updated_at,recovery_policy,parameter_digest)
         SELECT json_extract(value,'$.taskId'),json_extract(value,'$.claimId'),'claim',NULL,?,
-        (SELECT client_id FROM merchants WHERE id=? AND author_id=? AND mode=?),
+        (SELECT client_id FROM merchants WHERE id=? AND author_id=? AND mode=? AND version=?),
         json_extract(value,'$.businessNo'),json_extract(value,'$.recipientId'),json_extract(value,'$.recipientUsername'),json_extract(value,'$.amountMinor'),?,
         'pending',${databaseNow},${databaseNow},${databaseNow},json_extract(value,'$.recoveryPolicy'),json_extract(value,'$.parameterDigest') FROM json_each(?)`).bind(
         activity.merchantId,
         activity.merchantId,
         activity.authorId,
         activity.paymentMode,
+        merchant.version,
         activity.paymentMode,
         payload,
       ),
@@ -368,6 +377,13 @@ export async function publishDrawPlan(env: ApiBindings, activityId: string) {
         .bind(payload)
         .first<{ count: number }>();
       if (changed?.count) continue;
+      const latestMerchant = await env.DB.prepare(
+        "SELECT version FROM merchants WHERE id=?",
+      )
+        .bind(activity.merchantId)
+        .first<{ version: number }>();
+      if (latestMerchant && latestMerchant.version !== merchant.version)
+        continue;
       throw error;
     }
   }

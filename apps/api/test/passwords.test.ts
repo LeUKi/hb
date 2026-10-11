@@ -4,7 +4,6 @@ import {
   type ActivityPasswords,
   type ActivityStatistics,
   ARCHIVE_DELAY_MS,
-  CLAIM_WINDOW_MS,
   type ClaimResult,
   emptyActivityInput,
   type ManagedActivity,
@@ -20,6 +19,10 @@ import {
   resumePendingActivityClaims,
 } from "../src/activities/claim-service";
 import { solveActivityPassword } from "../src/activities/password-service";
+import {
+  insertPasswordRows,
+  preparePasswords,
+} from "../src/activities/storage";
 import { app } from "../src/app";
 import { createDb } from "../src/db/client";
 import { sessions, users } from "../src/db/schema";
@@ -30,6 +33,8 @@ import {
   digestPassword,
   sha256Hex,
 } from "../src/security/crypto";
+import { advanceAttemptCooldown } from "./advance-attempt-cooldown";
+import { resetMerchantHistory } from "./reset-merchant-history";
 
 const origin = "https://hb.example.com";
 const bindings: ApiBindings = { ...env, APP_ORIGIN: origin };
@@ -58,6 +63,7 @@ async function actor(username: string): Promise<Actor> {
   const now = new Date();
   const db = createDb(env.DB);
   await db.insert(users).values({
+    officialConnectVerified: true,
     id,
     externalId: username,
     username,
@@ -157,6 +163,7 @@ async function claim(
   password = "claim123",
   submissionId = crypto.randomUUID(),
 ) {
+  await advanceAttemptCooldown(env.DB, user.id, submissionId);
   const response = await submitClaim(id, user, password, submissionId);
   expect(response.status).toBe(200);
   const result = (await response.json()) as ClaimResult;
@@ -182,9 +189,12 @@ async function solve(
   password = "secret456",
   submissionId = crypto.randomUUID(),
 ) {
+  await advanceAttemptCooldown(env.DB, user.id, submissionId);
   const response = await submitSolve(id, user, password, submissionId);
   expect(response.status).toBe(200);
-  return (await response.json()) as SolveResult;
+  const result = (await response.json()) as SolveResult;
+  delete result.attemptCooldown;
+  return result;
 }
 
 async function passwords(id: string, user?: Actor) {
@@ -209,6 +219,10 @@ async function counts(id: string) {
 }
 
 beforeEach(async () => {
+  await resetMerchantHistory(env.DB);
+  await env.DB.prepare(
+    "INSERT INTO attempt_rate_limits (id,version,home_interval_seconds,activity_interval_seconds,updated_at) VALUES ('global',1,5,2,0) ON CONFLICT(id) DO UPDATE SET home_interval_seconds=5,activity_interval_seconds=2",
+  ).run();
   await env.DB.batch([
     env.DB.prepare("DELETE FROM payment_outbox"),
     env.DB.prepare("DELETE FROM payment_attempts"),
@@ -267,7 +281,10 @@ describe("dedicated-page password visibility", () => {
       hiddenCount: 4,
       canSolve: true,
     });
-    expect(await solve(activity.id)).toEqual({ outcome: "solved" });
+    expect(await solve(activity.id)).toEqual({
+      outcome: "solved",
+      passwordMatched: true,
+    });
     expect(await passwords(activity.id, alice)).toEqual({
       passwords: [
         { text: "claim123", isClaimPassword: true, isSolved: false },
@@ -365,6 +382,7 @@ describe("dedicated-page password visibility", () => {
       expect(own.passwords[1]).toMatchObject({ isSolved: true });
       expect(await solve(activity.id, alice, "hidden999")).toEqual({
         outcome: status,
+        passwordMatched: null,
       });
       expect((await submitSolve(activity.id, bob)).status).toBe(403);
       expect(await counts(activity.id)).toEqual(before);
@@ -403,7 +421,10 @@ describe("dedicated-page password visibility", () => {
       canSolve: false,
     });
     const before = await counts(activity.id);
-    expect(await solve(activity.id)).toEqual({ outcome: "ended" });
+    expect(await solve(activity.id)).toEqual({
+      outcome: "ended",
+      passwordMatched: null,
+    });
     expect(await counts(activity.id)).toEqual(before);
   });
 });
@@ -460,9 +481,13 @@ describe("terminal password validation without reward allocation", () => {
   it("keeps forced attempts encrypted and increments validations without increasing claim statistics", async () => {
     const activity = await create(textConfig({ forceDedicated: true }));
     const award = await claim(activity.id);
-    expect(await solve(activity.id)).toEqual({ outcome: "solved" });
+    expect(await solve(activity.id)).toEqual({
+      outcome: "solved",
+      passwordMatched: true,
+    });
     expect(await solve(activity.id, alice, "wrong123")).toEqual({
       outcome: "incorrect",
+      passwordMatched: false,
     });
     expect(await counts(activity.id)).toMatchObject({
       claims: 1,
@@ -518,6 +543,7 @@ describe("terminal password validation without reward allocation", () => {
     await claim(activity.id);
     expect(await solve(activity.id, alice, "wrong123")).toEqual({
       outcome: "incorrect",
+      passwordMatched: false,
     });
     expect(await counts(activity.id)).toMatchObject({
       attempts: 0,
@@ -537,11 +563,13 @@ describe("terminal password validation without reward allocation", () => {
     const key = crypto.randomUUID();
     expect(await solve(activity.id, alice, " secret456 ", key)).toEqual({
       outcome: "solved",
+      passwordMatched: true,
     });
     const stub = env.ACTIVITY_DO.get(env.ACTIVITY_DO.idFromName(activity.id));
     await evictDurableObject(stub);
     expect(await solve(activity.id, alice, "secret456", key)).toEqual({
       outcome: "solved",
+      passwordMatched: true,
     });
     expect(
       (await submitSolve(activity.id, alice, "other789", key)).status,
@@ -592,7 +620,7 @@ describe("terminal password validation without reward allocation", () => {
       .run();
     const response = await submitClaim(activity.id, alice, "wrong123", key);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ result: "incorrect" });
+    expect(await response.json()).toMatchObject({ result: "incorrect" });
     expect(
       (await submitSolve(activity.id, alice, "wrong123", key)).status,
     ).toBe(409);
@@ -605,23 +633,48 @@ describe("terminal password validation without reward allocation", () => {
     });
   });
 
-  it("shares the persistent rolling quota across claim and solve and does not count replays", async () => {
+  it("shares the persistent cooldown across claim and solve and does not advance it for saved replays", async () => {
     const activity = await create(textConfig({ forceDedicated: true }));
     const awardKey = crypto.randomUUID();
     await claim(activity.id, alice, "claim123", awardKey);
     const solveKey = crypto.randomUUID();
-    await solve(activity.id, alice, "secret456", solveKey);
-    for (let index = 0; index < 8; index++)
-      expect(await solve(activity.id, alice, "wrong123")).toEqual({
-        outcome: "incorrect",
-      });
+    const firstRejected = await submitSolve(
+      activity.id,
+      alice,
+      "secret456",
+      solveKey,
+    );
+    expect(firstRejected.status).toBe(429);
+    expect(await firstRejected.json()).toMatchObject({
+      error: { code: "CLAIM_RATE_LIMITED" },
+    });
+    await advanceAttemptCooldown(env.DB, alice.id);
+    const admitted = await submitSolve(
+      activity.id,
+      alice,
+      "secret456",
+      solveKey,
+    );
+    expect(admitted.status).toBe(200);
+    const accepted = (await admitted.json()) as SolveResult;
+    expect(accepted).toMatchObject({
+      outcome: "solved",
+      attemptCooldown: { revision: 2 },
+    });
     const stub = env.ACTIVITY_DO.get(env.ACTIVITY_DO.idFromName(activity.id));
     await evictDurableObject(stub);
     const limited = await submitSolve(activity.id);
     expect(limited.status).toBe(429);
     expect(Number(limited.headers.get("Retry-After"))).toBeGreaterThan(0);
-    expect(await solve(activity.id, alice, "secret456", solveKey)).toEqual({
+    expect(Number(limited.headers.get("Retry-After"))).toBeLessThanOrEqual(2);
+    const replay = await submitSolve(activity.id, alice, "secret456", solveKey);
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toMatchObject({
       outcome: "solved",
+      attemptCooldown: {
+        revision: 2,
+        nextAllowedAt: accepted.attemptCooldown?.nextAllowedAt,
+      },
     });
     expect(
       (await submitClaim(activity.id, alice, "claim123", awardKey)).status,
@@ -629,24 +682,23 @@ describe("terminal password validation without reward allocation", () => {
     expect((await submitSolve(activity.id, alice, "bad!")).status).toBe(400);
     expect(await counts(activity.id)).toMatchObject({
       claims: 1,
-      attempts: 10,
-      validations: 10,
+      attempts: 2,
+      validations: 2,
     });
-    await env.DB.prepare(
-      "UPDATE redemption_submissions SET validated_at=? WHERE activity_id=?",
-    )
-      .bind(Date.now() - CLAIM_WINDOW_MS - 1000, activity.id)
-      .run();
-    expect(await solve(activity.id, alice, "other789")).toEqual({
+    await advanceAttemptCooldown(env.DB, alice.id);
+    const next = await submitSolve(activity.id, alice, "other789");
+    expect(next.status).toBe(200);
+    expect(await next.json()).toMatchObject({
       outcome: "solved",
+      attemptCooldown: { revision: 3 },
     });
     expect(await counts(activity.id)).toMatchObject({
-      attempts: 11,
-      validations: 11,
+      attempts: 3,
+      validations: 3,
     });
   });
 
-  it("keeps an incorrect result immutable when the author adds that password", async () => {
+  it("keeps an incorrect result immutable when legacy data gains that password", async () => {
     const activity = await create(
       textConfig({
         passwords: validPasswords.slice(0, 4),
@@ -657,19 +709,25 @@ describe("terminal password validation without reward allocation", () => {
     const key = crypto.randomUUID();
     expect(await solve(activity.id, alice, "hidden999", key)).toEqual({
       outcome: "incorrect",
+      passwordMatched: false,
     });
-    const updated = await request(
-      `/api/me/activities/${activity.id}`,
-      owner,
-      "PATCH",
-      {
-        version: activity.version,
-        activity: { ...activity.config, passwords: validPasswords },
-      },
+    // Preserve compatibility with historical additions, now forbidden by author edits.
+    const [later] = await preparePasswords(
+      bindings,
+      activity.id,
+      ["hidden999"],
+      [],
+      Date.now(),
     );
-    expect(updated.status).toBe(200);
+    if (!later) throw new Error("Missing legacy password fixture");
+    await env.DB.batch([
+      insertPasswordRows(env.DB, [
+        { ...later, position: activity.config.passwords.length },
+      ]),
+    ]);
     expect(await solve(activity.id, alice, "hidden999", key)).toEqual({
       outcome: "incorrect",
+      passwordMatched: false,
     });
     expect((await passwords(activity.id, alice)).passwords).not.toContainEqual({
       text: "hidden999",
@@ -678,6 +736,7 @@ describe("terminal password validation without reward allocation", () => {
     });
     expect(await solve(activity.id, alice, "hidden999")).toEqual({
       outcome: "solved",
+      passwordMatched: true,
     });
     const stats = (await (
       await request(`/api/me/activities/${activity.id}/statistics`, owner)
@@ -692,11 +751,10 @@ describe("terminal password validation without reward allocation", () => {
     });
   });
 
-  it("enforces the last shared validation slot atomically even without DO request serialization", async () => {
+  it("atomically enforces the shared cooldown even without DO request serialization", async () => {
     const activity = await create(textConfig({ forceDedicated: true }));
     await claim(activity.id);
-    for (let index = 0; index < 8; index++)
-      await solve(activity.id, alice, "wrong123");
+    await advanceAttemptCooldown(env.DB, alice.id);
     const outcomes = await Promise.allSettled(
       ["secret456", "other789"].map((password) =>
         solveActivityPassword(bindings, activity.id, alice.id, {
@@ -716,8 +774,8 @@ describe("terminal password validation without reward allocation", () => {
     expect(await counts(activity.id)).toMatchObject({
       claims: 1,
       assigned: 1,
-      attempts: 10,
-      validations: 10,
+      attempts: 2,
+      validations: 2,
     });
   });
 
@@ -726,6 +784,7 @@ describe("terminal password validation without reward allocation", () => {
     await claim(activity.id);
     const key = crypto.randomUUID();
     const before = await counts(activity.id);
+    await advanceAttemptCooldown(env.DB, alice.id);
     await env.DB.prepare(
       "CREATE TRIGGER fail_password_attempt BEFORE INSERT ON attempt_events BEGIN SELECT RAISE(ABORT,'injected attempt failure'); END",
     ).run();
@@ -742,6 +801,7 @@ describe("terminal password validation without reward allocation", () => {
     }
     expect(await solve(activity.id, alice, "secret456", key)).toEqual({
       outcome: "solved",
+      passwordMatched: true,
     });
     expect(await counts(activity.id)).toMatchObject({
       claims: 1,
@@ -750,34 +810,44 @@ describe("terminal password validation without reward allocation", () => {
     });
   });
 
-  it("deduplicates concurrent UUIDs and independently records concurrent solutions without allocating", async () => {
+  it("deduplicates concurrent UUIDs and admits only one concurrent new solution without allocating", async () => {
     const activity = await create(textConfig({ forceDedicated: true }));
     await claim(activity.id);
     const key = crypto.randomUUID();
+    await advanceAttemptCooldown(env.DB, alice.id);
     const same = await Promise.all(
       Array.from({ length: 4 }, () =>
-        solve(activity.id, alice, "secret456", key),
+        submitSolve(activity.id, alice, "secret456", key),
       ),
     );
-    expect(same).toEqual(
-      Array.from({ length: 4 }, () => ({ outcome: "solved" })),
-    );
-    expect(
-      await Promise.all([
-        solve(activity.id, alice, "other789"),
-        solve(activity.id, alice, "lastword1"),
-      ]),
-    ).toEqual([{ outcome: "solved" }, { outcome: "solved" }]);
+    for (const response of same) {
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ outcome: "solved" });
+    }
+    await advanceAttemptCooldown(env.DB, alice.id);
+    const distinct = await Promise.all([
+      submitSolve(activity.id, alice, "other789"),
+      submitSolve(activity.id, alice, "lastword1"),
+    ]);
+    expect(distinct.map((response) => response.status).sort()).toEqual([
+      200, 429,
+    ]);
+    for (const response of distinct)
+      expect(await response.json()).toMatchObject(
+        response.status === 200
+          ? { outcome: "solved" }
+          : { error: { code: "CLAIM_RATE_LIMITED" } },
+      );
     expect(await counts(activity.id)).toMatchObject({
       claims: 1,
       assigned: 1,
       version: activity.version,
-      attempts: 4,
-      validations: 4,
+      attempts: 3,
+      validations: 3,
       payments: 0,
       outbox: 0,
     });
-    expect((await passwords(activity.id, alice)).hiddenCount).toBe(1);
+    expect((await passwords(activity.id, alice)).hiddenCount).toBe(2);
   });
 
   it("leaves the original simulated LDC task, reward and outbox unchanged", async () => {
@@ -805,9 +875,13 @@ describe("terminal password validation without reward allocation", () => {
     const outboxBefore = await env.DB.prepare(
       "SELECT id,task_id,created_at FROM payment_outbox",
     ).first();
-    expect(await solve(activity.id)).toEqual({ outcome: "solved" });
+    expect(await solve(activity.id)).toEqual({
+      outcome: "solved",
+      passwordMatched: true,
+    });
     expect(await solve(activity.id, alice, "other789")).toEqual({
       outcome: "solved",
+      passwordMatched: true,
     });
     expect(await env.DB.prepare("SELECT * FROM payment_tasks").first()).toEqual(
       taskBefore,

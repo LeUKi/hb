@@ -1,4 +1,6 @@
 import type {
+  AccountTier,
+  ActivityRewardFilter,
   ActivityStatistics,
   DiscoveryList,
   GlobalRedemptionInput,
@@ -8,12 +10,26 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { atom } from "jotai";
 import { api } from "../api";
 import { ActivityRequestError, readResponse } from "./activities";
-import { sessionQueryKey } from "./auth";
+import { activityToolsEnabled } from "./activity-tools-release";
+import {
+  applyAttemptCooldown,
+  applyRetryAfterCooldown,
+} from "./attempt-cooldown";
+import {
+  beginAttempt,
+  bindAttemptOperation,
+  getAttemptTicket,
+  settleAttempt,
+} from "./attempt-history";
+import { sessionQueryKey, useAccountSession } from "./auth";
+import { syncParticipationResult } from "./participation-cache";
 
 export type ExchangeContext = {
   userId: string;
+  accountTier: AccountTier;
   password: string;
   submission: GlobalRedemptionInput;
+  claimSubmissionId: string | null;
   resultId: string | null;
   state: "unconfirmed" | "resolved";
   selectedActivityId: string | null;
@@ -23,45 +39,78 @@ export const exchangeContextAtom = atom<ExchangeContext | null>(null);
 export const redemptionKey = (userId: string, id: string) =>
   ["redemption-private", userId, id] as const;
 
-export function useGlobalRedemption(userId: string, csrfToken: string) {
+export function useGlobalRedemptionDiscovery(
+  userId: string,
+  csrfToken: string,
+) {
   const queryClient = useQueryClient();
+  const account = useAccountSession(userId);
   return useMutation({
+    gcTime: 0,
+    onMutate: async (input) => ({
+      identity: account.captureIdentity(),
+      ticket: activityToolsEnabled
+        ? await beginAttempt(userId, input.password, input.submissionId)
+        : null,
+    }),
     mutationFn: async (json: GlobalRedemptionInput) =>
       readResponse<GlobalRedemptionResult>(
-        await api.api.redemptions.$post(
-          { json },
-          { headers: { "X-CSRF-Token": csrfToken } },
-        ),
+        await fetch("/api/redemptions/discover", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-Token": csrfToken,
+          },
+          body: JSON.stringify(json),
+        }),
       ),
-    onSuccess: async (result) => {
-      if (
-        queryClient.getQueryState(sessionQueryKey)?.status !== "success" ||
-        queryClient.getQueryData<{ user: { id: string } | null }>(
-          sessionQueryKey,
-        )?.user?.id !== userId
-      )
-        return;
-      queryClient.setQueryData(
-        [...redemptionKey(userId, result.id), null],
-        result,
-      );
-      if (result.claimResult && "claim" in result.claimResult) {
-        await queryClient.invalidateQueries({
-          queryKey: ["claim-private", userId],
-        });
-        await queryClient.invalidateQueries({ queryKey: ["activity-public"] });
-        await queryClient.invalidateQueries({
+    onSuccess: async (result, _variables, context) => {
+      const identity = context?.identity;
+      if (!account.isCurrentIdentity(identity)) return;
+      if (context?.ticket) {
+        bindAttemptOperation(context.ticket, result.id);
+        bindAttemptOperation(context.ticket, result.claimSubmissionId);
+        void settleAttempt(context.ticket, result.result !== "none", [
+          ...result.items.map((item) => item.id),
+          ...(result.selectedActivityId ? [result.selectedActivityId] : []),
+        ]);
+      }
+      const resultKey = [...redemptionKey(userId, result.id), null] as const;
+      await queryClient.cancelQueries({ queryKey: resultKey, exact: true });
+      if (!account.isCurrentIdentity(identity)) return;
+      queryClient.setQueryData(resultKey, result);
+      applyAttemptCooldown(userId, result.attemptCooldown ?? null);
+      if (result.claimResult) {
+        const completed = result.claimResult;
+        const id = result.selectedActivityId ?? result.items[0]?.id;
+        if (
+          id &&
+          !(await syncParticipationResult(
+            queryClient,
+            userId,
+            id,
+            completed,
+            () => account.isCurrentIdentity(identity),
+          ))
+        )
+          return;
+        void queryClient.invalidateQueries({ queryKey: ["activity-public"] });
+        void queryClient.invalidateQueries({
           queryKey: ["activity-private", userId],
         });
+        void queryClient.invalidateQueries({ queryKey: ["discovery"] });
+        void queryClient.invalidateQueries({ queryKey: ["topic-activities"] });
       }
     },
-    onError: (error) => {
-      if (
-        queryClient.getQueryData<{ user: { id: string } | null }>(
-          sessionQueryKey,
-        )?.user?.id !== userId
-      )
-        return;
+    onError: (error, _variables, context) => {
+      const identity = context?.identity;
+      if (!account.isCurrentIdentity(identity)) return;
+      if (context?.ticket) void settleAttempt(context.ticket, null);
+      if (error instanceof ActivityRequestError && error.status === 429) {
+        if (error.attemptCooldown)
+          applyAttemptCooldown(userId, error.attemptCooldown);
+        else applyRetryAfterCooldown(userId, error.retryAfterSeconds);
+      }
       if (error instanceof ActivityRequestError && error.status === 401) {
         queryClient.setQueryData(sessionQueryKey, {
           user: null,
@@ -77,15 +126,27 @@ export function useRedemptionResult(
   id: string | null,
   cursor: string | null,
 ) {
+  const account = useAccountSession(userId);
   return useQuery({
     queryKey: [...redemptionKey(userId, id ?? ""), cursor],
-    queryFn: async ({ signal }) =>
-      readResponse<GlobalRedemptionResult>(
+    queryFn: async ({ signal }) => {
+      const identity = account.captureIdentity();
+      const result = await readResponse<GlobalRedemptionResult>(
         await api.api.redemptions[":id"].$get(
           { param: { id: id ?? "" }, query: cursor ? { cursor } : {} },
           { init: { signal, cache: "no-store" } },
         ),
-      ),
+      );
+      if (signal.aborted || !account.isCurrentIdentity(identity))
+        throw new DOMException("请求已失效", "AbortError");
+      const ticket = id ? getAttemptTicket(userId, id) : undefined;
+      if (ticket)
+        void settleAttempt(ticket, result.result !== "none", [
+          ...result.items.map((item) => item.id),
+          ...(result.selectedActivityId ? [result.selectedActivityId] : []),
+        ]);
+      return result;
+    },
     enabled: id !== null,
     retry: false,
     refetchInterval: 15_000,
@@ -96,13 +157,16 @@ export function useDiscovery(
   status: "all" | "active" | "ended",
   cursor: string | null,
   userId: string | null,
+  type: ActivityRewardFilter = "all",
+  enabled = true,
 ) {
   return useQuery({
-    queryKey: ["discovery", userId, status, cursor],
+    queryKey: ["discovery", userId, status, type, cursor],
+    enabled,
     queryFn: async ({ signal }) =>
       readResponse<DiscoveryList>(
         await api.api.discovery.activities.$get(
-          { query: { status, ...(cursor ? { cursor } : {}) } },
+          { query: { status, type, ...(cursor ? { cursor } : {}) } },
           { init: { signal, cache: "no-store" } },
         ),
       ),
@@ -116,9 +180,11 @@ export function useTopicActivities(
   postNumber: number,
   cursor: string | null,
   userId: string | null,
+  enabled = true,
 ) {
   return useQuery({
     queryKey: ["topic-activities", topicId, postNumber, userId, cursor],
+    enabled,
     queryFn: async ({ signal }) =>
       readResponse<DiscoveryList>(
         await api.api.topics[":topicId"].activities.$get(

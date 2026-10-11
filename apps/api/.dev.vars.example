@@ -6,6 +6,11 @@ APP_ORIGIN="http://127.0.0.1:5173"
 CONNECT_CLIENT_ID=""
 CONNECT_CLIENT_SECRET=""
 
+# Optional second login provider. Confidential app, Lite-only, minimum level 0,
+# PKCE S256 enabled; callback APP_ORIGIN + /api/auth/liteauth/callback.
+LITEAUTH_CLIENT_ID=""
+LITEAUTH_CLIENT_SECRET=""
+
 # JSON object mapping key version to base64-encoded 32-byte AES-GCM keys.
 # Single quotes keep the JSON double quotes intact in dotenv parsers.
 ENCRYPTION_KEYS='{"v1":""}'
@@ -25,3 +30,6 @@ LDC_ACCEPTANCE_ID=""
 
 # Only controls new timed-draw openings; existing registrations still settle.
 LDC_TIMED_DRAW_ENABLED="true"
+
+# Comma-separated immutable Linux DO IDs; empty grants no administrator access.
+ADMIN_LINUX_DO_IDS=

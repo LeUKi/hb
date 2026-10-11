@@ -43,7 +43,7 @@ export function PaymentCheckButton({
         {label}
       </Button>
       {cooldown > 0 ? (
-        <span className="text-sm text-neutral-500">
+        <span className="text-sm text-subtle">
           {cooldown} 秒后可再次检查恢复条件
         </span>
       ) : null}

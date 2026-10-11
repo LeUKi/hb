@@ -10,6 +10,11 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join, relative, resolve } from "node:path";
+import { assetCacheHeaders } from "../apps/web/asset-cache";
+import {
+  buildTimeUnixSeconds,
+  readBuildTimeUnixSeconds,
+} from "../apps/web/build-time";
 import {
   configPath,
   type Environment,
@@ -29,6 +34,7 @@ type FileDigest = { path: string; sha256: string; bytes: number };
 export type ReleaseManifest = {
   formatVersion: 1;
   releaseId: string;
+  buildUnixSeconds: number;
   environment: Environment;
   origin: string;
   readyForRemote: boolean;
@@ -106,7 +112,15 @@ export function sourceSnapshot() {
         throw new Error("RELEASE_SOURCE_SYMLINK_NOT_ALLOWED");
       return entry.isDirectory() ? visit(path) : [path];
     });
-  const roots = ["apps", "packages", "scripts", "e2e", ".github", "docs"];
+  const roots = [
+    "apps",
+    "packages",
+    "scripts",
+    "e2e",
+    "tests",
+    ".github",
+    "docs",
+  ];
   const individual = [
     "package.json",
     "bun.lock",
@@ -115,11 +129,13 @@ export function sourceSnapshot() {
     "tsconfig.json",
     "playwright.config.ts",
     "playwright.full-app.config.ts",
+    "playwright.prototype.config.ts",
     ".bun-version",
     ".node-version",
     ".gitignore",
     ".editorconfig",
     "README.md",
+    "DESIGN.md",
   ];
   const paths = [
     ...roots.flatMap((name) =>
@@ -166,7 +182,7 @@ export function inspectBrowserBundle(directory: string) {
   for (const path of filesWithin(join(directory, "client"))) {
     if (!/\.(?:js|mjs|html|map)$/.test(path)) continue;
     if (
-      /CONNECT_CLIENT_SECRET|ENCRYPTION_KEYS|PASSWORD_DIGEST_KEY|credit\.linux\.do\/(?:lpay\/distribute|epay\/api\.php)|class ActivityDO/.test(
+      /CONNECT_CLIENT_SECRET|LITEAUTH_CLIENT_SECRET|ENCRYPTION_KEYS|PASSWORD_DIGEST_KEY|credit\.linux\.do\/(?:lpay\/distribute|epay\/api\.php)|class ActivityDO/.test(
         readFileSync(path, "utf8"),
       )
     ) {
@@ -175,6 +191,25 @@ export function inspectBrowserBundle(directory: string) {
       );
     }
   }
+}
+
+export function inspectBuildTime(directory: string, expected?: number) {
+  const seconds = readBuildTimeUnixSeconds(
+    readFileSync(join(directory, "client/index.html"), "utf8"),
+  );
+  if (expected !== undefined && seconds !== expected)
+    throw new Error("RELEASE_BUILD_TIMESTAMP_MISMATCH");
+  return seconds;
+}
+
+export function inspectAssetCache(directory: string) {
+  const client = join(directory, "client");
+  const expected = assetCacheHeaders(
+    filesWithin(client).map((path) => relative(client, path)),
+  );
+  const path = join(client, "_headers");
+  if (!existsSync(path) || readFileSync(path, "utf8") !== expected)
+    throw new Error("RELEASE_ASSET_CACHE_POLICY_MISMATCH");
 }
 
 export function createManifest(
@@ -206,6 +241,8 @@ export function createManifest(
   if (assetDirectory !== join(directory, "client"))
     throw new Error("ARTIFACT_ASSET_DIRECTORY_MISMATCH");
   inspectBrowserBundle(directory);
+  inspectAssetCache(directory);
+  const buildUnixSeconds = inspectBuildTime(directory);
   if (
     filesWithin(directory).some((path) =>
       /^(?:\.dev\.vars|\.env)(?:\.|$)/.test(path.split("/").at(-1) ?? ""),
@@ -216,6 +253,7 @@ export function createManifest(
   const manifest: ReleaseManifest = {
     formatVersion: 1,
     releaseId: `hb-${environment}-${new Date().toISOString().replaceAll(/[:.]/g, "-")}`,
+    buildUnixSeconds,
     environment,
     origin: origins[environment],
     readyForRemote:
@@ -335,6 +373,10 @@ export function verifyCandidate(
   )
     throw new Error("RELEASE_MANIFEST_RESOURCES_MISMATCH");
   inspectBrowserBundle(directory);
+  inspectAssetCache(directory);
+  inspectBuildTime(directory, manifest.buildUnixSeconds);
+  if (!Number.isSafeInteger(manifest.buildUnixSeconds))
+    throw new Error("RELEASE_BUILD_TIMESTAMP_MISSING");
   return manifest;
 }
 
@@ -365,6 +407,7 @@ async function main() {
       options,
     );
     if (!options.allowPlaceholders) target(environment);
+    const buildUnixSeconds = buildTimeUnixSeconds();
     const before = sourceSnapshot();
     for (const command of [
       ["run", "contracts:build"],
@@ -378,6 +421,7 @@ async function main() {
         env: {
           ...process.env,
           HB_DEPLOY_ENV: environment,
+          HB_BUILD_UNIX_SECONDS: String(buildUnixSeconds),
           X_LOCAL_OBSERVABILITY: "false",
           WRANGLER_WRITE_LOGS: "false",
           WRANGLER_LOG_SANITIZE: "true",
@@ -388,10 +432,13 @@ async function main() {
     if (sourceSnapshot().sourceSha256 !== before.sourceSha256)
       throw new Error("SOURCE_CHANGED_DURING_BUILD");
     const manifest = createManifest(environment, options);
+    if (manifest.buildUnixSeconds !== buildUnixSeconds)
+      throw new Error("RELEASE_BUILD_TIMESTAMP_MISMATCH");
     console.log(
       JSON.stringify(
         {
           releaseId: manifest.releaseId,
+          buildUnixSeconds: manifest.buildUnixSeconds,
           environment,
           sourceSha256: manifest.sourceSha256,
           readyForRemote: manifest.readyForRemote,
@@ -447,6 +494,7 @@ async function main() {
       JSON.stringify(
         {
           releaseId: manifest.releaseId,
+          buildUnixSeconds: manifest.buildUnixSeconds,
           environment,
           readyForRemote: manifest.readyForRemote,
           action,

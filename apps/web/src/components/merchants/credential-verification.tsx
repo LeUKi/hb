@@ -43,25 +43,22 @@ export function CredentialVerificationPanel({
         <h2 id="credential-heading" className="text-lg font-semibold">
           凭证检查
         </h2>
-        <span
-          className="rounded-md bg-neutral-100 px-3 py-1 text-sm"
-          role="status"
-        >
+        <span className="rounded-md bg-surface px-3 py-1 text-sm" role="status">
           {verificationLabels[verification.status]}
         </span>
       </div>
-      <p className="text-sm text-neutral-600">
+      <p className="text-sm text-muted">
         当前凭证版本：{verification.credentialVersion}
         {verification.checkedAt
           ? ` · 最近检查：${formatTime(verification.checkedAt)}`
           : ""}
       </p>
-      {reason ? <p className="text-sm text-amber-800">{reason}</p> : null}
-      <p className="text-sm text-neutral-600">
+      {reason ? <p className="text-sm text-warning">{reason}</p> : null}
+      <p className="text-sm text-muted">
         检查通过仅证明接口接受当前凭证；商户归属、余额及分发能力仍需分别核实。
       </p>
       {merchant.usageStatus === "current" ? (
-        <p className="text-sm text-neutral-600">
+        <p className="text-sm text-muted">
           开放新的 LDC 活动时须使用最近 10 分钟内通过检查的当前凭证。
           已开放活动仍可领取并锁定奖励，凭证恢复后继续付款。
         </p>
@@ -78,9 +75,7 @@ export function CredentialVerificationPanel({
           {checking ? "正在检查凭证…" : "检查凭证"}
         </Button>
         {cooldown > 0 && !checking ? (
-          <span className="text-sm text-neutral-500">
-            {cooldown} 秒后可再次检查
-          </span>
+          <span className="text-sm text-subtle">{cooldown} 秒后可再次检查</span>
         ) : null}
         <a
           href="https://credit.linux.do"
@@ -92,7 +87,7 @@ export function CredentialVerificationPanel({
         </a>
       </div>
       {!merchant.capabilities.canVerify ? (
-        <p className="text-xs text-neutral-500">当前环境尚未启用凭证检查。</p>
+        <p className="text-xs text-subtle">当前环境尚未启用凭证检查。</p>
       ) : null}
     </section>
   );

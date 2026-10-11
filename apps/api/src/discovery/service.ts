@@ -1,8 +1,7 @@
 import {
+  type ActivityRewardFilter,
   ARCHIVE_DELAY_MS,
-  CLAIM_WINDOW_MS,
   type ClaimResult,
-  DEFAULT_CLAIM_LIMIT,
   type DiscoveryCard,
   type DiscoveryList,
   type GlobalRedemptionInput,
@@ -11,8 +10,14 @@ import {
 } from "@hb/contracts";
 import { and, desc, eq, lt, or, type SQL, sql } from "drizzle-orm";
 import { getClaimDetail } from "../activities/claim-queries";
+import { submissionPasswordMatched } from "../activities/claim-service";
 import { registrationStatus } from "../activities/draw-storage";
 import { ActivityError, activityConflict } from "../activities/errors";
+import {
+  activityListFields,
+  activityListStatusSql,
+  rewardFilterSql,
+} from "../activities/history-query";
 import { databaseNow } from "../activities/lifecycle";
 import { getRegistrationDetail } from "../activities/registration-queries";
 import { projectPublicActivity } from "../activities/service";
@@ -28,6 +33,12 @@ import {
   users,
 } from "../db/schema";
 import type { ApiBindings } from "../env";
+import {
+  AttemptCooldownError,
+  assertAttemptAllowed,
+  attemptWriteStatements,
+  readAttemptCooldown,
+} from "../runtime/attempt-cooldown";
 import { digestPassword } from "../security/crypto";
 
 type GlobalRow = typeof globalRedemptions.$inferSelect;
@@ -60,7 +71,8 @@ function discoverable(now: number) {
   return sql`${activities.openedAt} IS NOT NULL
     AND ${activities.deletedAt} IS NULL
     AND ${activities.archivedAt} IS NULL
-    AND (COALESCE(${activities.endedAt}, ${activities.deadline}) IS NULL
+    AND (${activities.drawState} IN ('waiting', 'settling')
+      OR COALESCE(${activities.endedAt}, ${activities.deadline}) IS NULL
       OR COALESCE(${activities.endedAt}, ${activities.deadline}) > ${now - ARCHIVE_DELAY_MS})`;
 }
 
@@ -74,7 +86,11 @@ function card(
     afterEndInfo: _afterEndInfo,
     ...fields
   } = projectPublicActivity(row, activityAuthor);
-  return { ...fields, myClaim };
+  return {
+    ...fields,
+    ...activityListFields(row, fields.status, fields.quantity.mode === "exact"),
+    myClaim,
+  };
 }
 
 async function list(
@@ -85,7 +101,14 @@ async function list(
   cursorValue?: string,
 ): Promise<DiscoveryList> {
   const cursor = parseCursor(cursorValue, scope);
-  const rows = await createDb(env.DB)
+  const db = createDb(env.DB);
+  const base = and(discoverable(Date.now()), filter);
+  const count = await db
+    .select({ total: sql<number>`COUNT(*)` })
+    .from(activities)
+    .where(base)
+    .get();
+  const rows = await db
     .select({
       activity: activities,
       author: {
@@ -93,6 +116,9 @@ async function list(
         username: users.username,
         displayName: users.displayName,
         avatarUrl: users.avatarUrl,
+        accountTier: sql<
+          "standard" | "lite"
+        >`CASE WHEN ${users.officialConnectVerified}=1 THEN 'standard' ELSE 'lite' END`,
       },
       claimId: claims.id,
       paymentState: paymentTasks.status,
@@ -118,8 +144,7 @@ async function list(
     )
     .where(
       and(
-        discoverable(Date.now()),
-        filter,
+        base,
         cursor
           ? or(
               lt(activities.openedAt, cursor.time),
@@ -136,6 +161,7 @@ async function list(
   const page = rows.slice(0, PAGE_SIZE);
   const last = page.at(-1)?.activity;
   return {
+    total: Number(count?.total ?? 0),
     items: page.map(
       ({ activity, author, claimId, paymentState, registrationId }) => ({
         ...card(
@@ -174,18 +200,14 @@ export function listSquare(
   status: "all" | "active" | "ended",
   viewerId?: string,
   cursor?: string,
+  type: ActivityRewardFilter = "all",
 ) {
-  const now = Date.now();
   const state =
-    status === "all"
-      ? sql`1 = 1`
-      : status === "active"
-        ? sql`${activities.endedAt} IS NULL AND ${activities.deadline} > ${now} AND ${activities.claimedCount} < ${activities.totalCount}`
-        : sql`(${activities.endedAt} IS NOT NULL OR ${activities.deadline} <= ${now} OR ${activities.claimedCount} >= ${activities.totalCount})`;
+    status === "all" ? sql`1 = 1` : sql`${activityListStatusSql()} = ${status}`;
   return list(
     env,
-    sql`${activities.joinSquare} = 1 AND ${state}`,
-    `square:${status}`,
+    sql`${activities.joinSquare} = 1 AND ${state} AND ${rewardFilterSql(type)}`,
+    type === "all" ? `square:${status}` : `square:${status}:${type}`,
     viewerId,
     cursor,
   );
@@ -210,34 +232,6 @@ export function listTopic(
     viewerId,
     cursor,
   );
-}
-
-function globalLimit(env: ApiBindings) {
-  const value = Number(env.GLOBAL_REDEMPTIONS_PER_MINUTE);
-  return Number.isSafeInteger(value) && value > 0 ? value : DEFAULT_CLAIM_LIMIT;
-}
-
-export class GlobalRateLimitError extends ActivityError {
-  constructor(public readonly retryAfter: number) {
-    super(429, "GLOBAL_REDEMPTION_RATE_LIMITED", "提交过于频繁，请稍后重试");
-  }
-}
-
-async function assertRateLimit(env: ApiBindings, userId: string) {
-  const row =
-    await env.DB.prepare(`SELECT COUNT(*) AS count, MIN(created_at) AS oldest
-    FROM global_redemptions WHERE user_id = ? AND created_at > ${databaseNow} - ?`)
-      .bind(userId, CLAIM_WINDOW_MS)
-      .first<{ count: number; oldest: number | null }>();
-  if (row && row.count >= globalLimit(env))
-    throw new GlobalRateLimitError(
-      Math.max(
-        1,
-        Math.ceil(
-          ((row.oldest ?? Date.now()) + CLAIM_WINDOW_MS - Date.now()) / 1000,
-        ),
-      ),
-    );
 }
 
 async function findSubmission(
@@ -277,40 +271,35 @@ async function prepare(
   ]);
   const previous = await findSubmission(env, userId, input.submissionId);
   if (previous) return verifyFingerprint(previous, fingerprint);
-  await assertRateLimit(env, userId);
+  await assertAttemptAllowed(env, userId, "home");
+  const rowId = crypto.randomUUID();
   try {
-    // Snapshot selection and the rate guard share one write statement. A failed
-    // NOT NULL guard aborts, including under concurrent submissions from Workers.
-    await env.DB.prepare(`INSERT INTO global_redemptions
+    await env.DB.batch([
+      ...attemptWriteStatements(env, userId, "home", rowId),
+      env.DB.prepare(`INSERT INTO global_redemptions
       (id, user_id, submission_id, fingerprint, password_digest, candidate_ids, claim_submission_id, created_at)
-      SELECT ?, ?, ?, CASE WHEN (
-        SELECT COUNT(*) FROM global_redemptions WHERE user_id = ? AND created_at > ${databaseNow} - ?
-      ) < ? THEN ? ELSE NULL END, ?, (
+      SELECT ?, ?, ?, ?, ?, (
         SELECT json_group_array(id) FROM (
           SELECT a.id FROM activity_passwords p JOIN activities a ON a.id = p.activity_id
-          WHERE p.digest = ? AND a.deleted_at IS NULL AND a.opened_at IS NOT NULL AND a.force_dedicated = 0 AND a.archived_at IS NULL
+          WHERE p.digest = ? AND a.participation_mode='password' AND a.deleted_at IS NULL AND a.opened_at IS NOT NULL AND a.force_dedicated = 0 AND a.archived_at IS NULL
             AND (COALESCE(a.ended_at, a.deadline) IS NULL OR COALESCE(a.ended_at, a.deadline) > ${databaseNow} - ?)
           ORDER BY a.opened_at DESC, a.id DESC
         )
-      ), ?, ${databaseNow}`)
-      .bind(
-        crypto.randomUUID(),
+      ), ?, ${databaseNow}`).bind(
+        rowId,
         userId,
         input.submissionId,
-        userId,
-        CLAIM_WINDOW_MS,
-        globalLimit(env),
         fingerprint,
         passwordDigest,
         passwordDigest,
         ARCHIVE_DELAY_MS,
         crypto.randomUUID(),
-      )
-      .run();
+      ),
+    ]);
   } catch (error) {
     const winner = await findSubmission(env, userId, input.submissionId);
     if (winner) return verifyFingerprint(winner, fingerprint);
-    await assertRateLimit(env, userId);
+    await assertAttemptAllowed(env, userId, "home");
     throw error;
   }
   const row = await findSubmission(env, userId, input.submissionId);
@@ -346,6 +335,7 @@ async function savedClaimResult(
       throw new Error("Completed submission has no claim");
     return {
       result: submission.outcome,
+      passwordMatched: submissionPasswordMatched(submission),
       claim: await getClaimDetail(env, submission.claimId, row.userId),
     };
   }
@@ -357,6 +347,7 @@ async function savedClaimResult(
       throw new Error("Completed registration has no entry");
     return {
       result: submission.outcome,
+      passwordMatched: submissionPasswordMatched(submission),
       registration: await getRegistrationDetail(
         env,
         submission.registrationId,
@@ -364,7 +355,10 @@ async function savedClaimResult(
       ),
     };
   }
-  return { result: submission.outcome };
+  return {
+    result: submission.outcome,
+    passwordMatched: submissionPasswordMatched(submission),
+  };
 }
 
 async function result(
@@ -381,14 +375,20 @@ async function result(
     cursor,
   );
   const claimResult =
-    ids.length === 1 ? await savedClaimResult(env, row) : undefined;
+    ids.length === 1 || row.selectedActivityId
+      ? await savedClaimResult(env, row)
+      : undefined;
+  const selectedActivityId =
+    row.selectedActivityId ?? (ids.length === 1 ? ids[0] : undefined);
   return {
     id: row.id,
+    claimSubmissionId: row.claimSubmissionId,
+    attemptCooldown: await readAttemptCooldown(env, row.userId),
     // The original decision never changes when a refreshed list shrinks.
     result:
       ids.length === 0 ? "none" : ids.length === 1 ? "single" : "multiple",
     ...page,
-    ...(ids.length === 1 ? { selectedActivityId: ids[0] } : {}),
+    ...(selectedActivityId ? { selectedActivityId } : {}),
     ...(claimResult ? { claimResult } : {}),
   };
 }
@@ -413,16 +413,19 @@ export async function redeemGlobally(
           userId,
           submissionId: row.claimSubmissionId,
           password: input.password,
+          discoveryId: row.id,
         }),
       },
     );
     if (!response.ok) {
       const failure = (await response.json()) as {
         error: { code: string; message: string };
+        attemptCooldown?: import("@hb/contracts").AttemptCooldown;
       };
       if (response.status === 429)
-        throw new GlobalRateLimitError(
-          Number(response.headers.get("Retry-After")) || 60,
+        throw new AttemptCooldownError(
+          failure.attemptCooldown ?? (await readAttemptCooldown(env, userId)),
+          "home",
         );
       throw new ActivityError(
         response.status === 403
@@ -442,6 +445,16 @@ export async function redeemGlobally(
     return { ...(await result(env, row)), claimResult };
   }
   return result(env, row);
+}
+
+export async function discoverGlobalRedemption(
+  env: ApiBindings,
+  userId: string,
+  input: GlobalRedemptionInput,
+): Promise<Omit<GlobalRedemptionResult, "claimResult">> {
+  const row = await prepare(env, userId, input);
+  const { claimResult: _claimResult, ...discovery } = await result(env, row);
+  return discovery;
 }
 
 export async function refreshGlobalResult(

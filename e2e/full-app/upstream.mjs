@@ -1,4 +1,6 @@
 // Test-only transport. Never imported by either application Worker.
+import { createHash } from "node:crypto";
+
 export const profiles = {
   author: {
     id: "730001",
@@ -40,12 +42,52 @@ export const profiles = {
     avatar_url: "https://avatars.example.test/recipient.png",
     active: true,
   },
+  lite: {
+    id: "730005",
+    username: "FullAppLite",
+    name: "完整应用青春版",
+    avatar_url: "https://avatars.example.test/lite.png",
+    active: true,
+    auth_source: "linuxdo",
+    login_method: "lite_self_app",
+    sub: "internal-liteauth-user-one",
+    liteauth_user_id: "internal-liteauth-user-one",
+  },
+  liteOfficial: {
+    id: "730005",
+    username: "FullAppLite",
+    name: "完整应用青春版",
+    email: "lite-connect-private@example.test",
+    avatar_url: "https://avatars.example.test/lite.png",
+    active: true,
+  },
+  liteParticipant: {
+    id: "730006",
+    username: "FullAppLiteParticipant",
+    name: "完整应用青春版参与者",
+    avatar_url: "https://avatars.example.test/lite-participant.png",
+    active: true,
+    auth_source: "linuxdo",
+    login_method: "lite_self_app",
+    sub: "internal-liteauth-user-two",
+    liteauth_user_id: "internal-liteauth-user-two",
+  },
+  liteParticipantOfficial: {
+    id: "730006",
+    username: "FullAppLiteParticipant",
+    name: "完整应用青春版参与者",
+    email: "lite-participant-connect-private@example.test",
+    avatar_url: "https://avatars.example.test/lite-participant.png",
+    active: true,
+  },
 };
 
-export function createTestUpstream(Response, origin) {
+export function createTestUpstream(Response, origin, options = {}) {
   const counters = {
     oauthTokenRequests: 0,
     oauthProfileRequests: 0,
+    liteauthTokenRequests: 0,
+    liteauthProfileRequests: 0,
     credentialChecks: 0,
     distributeRequests: 0,
     orderQueries: 0,
@@ -53,6 +95,15 @@ export function createTestUpstream(Response, origin) {
   };
   const orders = new Map();
   const latestProfiles = new Map();
+  const consumedLiteCodes = new Set();
+  function publicProfile(role) {
+    const profile = profiles[role];
+    if (!profile) return profile;
+    if (typeof options.avatarUrl === "function") {
+      return { ...profile, avatar_url: options.avatarUrl(role) };
+    }
+    return profile;
+  }
   function json(body, status = 200) {
     return new Response(JSON.stringify(body), {
       status,
@@ -63,10 +114,77 @@ export function createTestUpstream(Response, origin) {
     counters.blockedRequests++;
     return json({ error: "FULL_APP_OUTBOUND_BLOCKED" }, 502);
   }
+  function validMerchantClientId(value) {
+    return /^hb_full_app_merchant(?:_[0-9a-f]{8})?$/.test(value ?? "");
+  }
+  function merchantCredentialsFromBasic(value) {
+    if (!value?.startsWith("Basic ")) return null;
+    try {
+      const decoded = Buffer.from(value.slice(6), "base64").toString("utf8");
+      const separator = decoded.indexOf(":");
+      if (separator <= 0) return null;
+      return {
+        clientId: decoded.slice(0, separator),
+        secret: decoded.slice(separator + 1),
+      };
+    } catch {
+      return null;
+    }
+  }
   return {
     snapshot: () => ({ ...counters, orders: [...orders.values()] }),
     async fetch(request) {
       const url = new URL(request.url);
+      if (url.origin === "https://liteauth.442224.xyz") {
+        if (
+          url.pathname === "/api/auth/oauth2/token" &&
+          request.method === "POST"
+        ) {
+          counters.liteauthTokenRequests++;
+          const params = new URLSearchParams(await request.text());
+          const code = params.get("code") ?? "";
+          const match =
+            /^full-app-liteauth-code:([A-Za-z0-9_]+):([A-Za-z0-9_-]{43})$/.exec(
+              code,
+            );
+          const role = match?.[1];
+          const verifier = params.get("code_verifier") ?? "";
+          if (
+            !role ||
+            !Object.hasOwn(profiles, role) ||
+            profiles[role].login_method !== "lite_self_app" ||
+            params.get("grant_type") !== "authorization_code" ||
+            params.get("redirect_uri") !==
+              `${origin}/api/auth/liteauth/callback` ||
+            params.get("client_id") !== "hb_full_app_liteauth" ||
+            params.get("client_secret") !== "full-app-liteauth-secret" ||
+            request.headers.has("authorization") ||
+            !/^[A-Za-z0-9_-]{43}$/.test(verifier) ||
+            createHash("sha256").update(verifier).digest("base64url") !==
+              match?.[2] ||
+            consumedLiteCodes.has(code)
+          )
+            return json({ error: "invalid_grant" }, 400);
+          consumedLiteCodes.add(code);
+          return json({
+            access_token: `full-app-liteauth-token-${role}`,
+            token_type: "bearer",
+          });
+        }
+        if (url.pathname === "/api/user" && request.method === "GET") {
+          counters.liteauthProfileRequests++;
+          const role = request.headers
+            .get("authorization")
+            ?.replace(/^Bearer full-app-liteauth-token-/, "");
+          const profile = publicProfile(role);
+          if (profile?.login_method !== "lite_self_app") {
+            return json({ error: "unauthorized" }, 401);
+          }
+          latestProfiles.set(profile.id, profile);
+          return json(profile);
+        }
+        return blocked();
+      }
       if (url.origin === "https://connect.linux.do") {
         if (url.pathname === "/oauth2/token" && request.method === "POST") {
           counters.oauthTokenRequests++;
@@ -90,7 +208,7 @@ export function createTestUpstream(Response, origin) {
           const role = request.headers
             .get("authorization")
             ?.replace(/^Bearer full-app-token-/, "");
-          const profile = profiles[role];
+          const profile = publicProfile(role);
           if (profile) latestProfiles.set(profile.id, profile);
           return profile ? json(profile) : json({ error: "unauthorized" }, 401);
         }
@@ -99,7 +217,7 @@ export function createTestUpstream(Response, origin) {
       if (url.origin !== "https://credit.linux.do") return blocked();
       if (url.pathname === "/epay/api.php" && request.method === "GET") {
         if (
-          url.searchParams.get("pid") !== "hb_full_app_merchant" ||
+          !validMerchantClientId(url.searchParams.get("pid")) ||
           url.searchParams.get("key") !== "full-app-merchant-secret"
         )
           return json({ code: -1, msg: "商户信息不存在" }, 400);
@@ -120,9 +238,13 @@ export function createTestUpstream(Response, origin) {
       }
       if (url.pathname === "/lpay/distribute" && request.method === "POST") {
         counters.distributeRequests++;
+        const credentials = merchantCredentialsFromBasic(
+          request.headers.get("authorization"),
+        );
         if (
-          request.headers.get("authorization") !==
-          `Basic ${Buffer.from("hb_full_app_merchant:full-app-merchant-secret").toString("base64")}`
+          !credentials ||
+          !validMerchantClientId(credentials.clientId) ||
+          credentials.secret !== "full-app-merchant-secret"
         )
           return json({ error_msg: "商户信息不存在" }, 401);
         const text = await request.text();
@@ -146,7 +268,7 @@ export function createTestUpstream(Response, origin) {
         if (orders.has(body.out_trade_no))
           return json({ error_msg: "订单号已存在" }, 400);
         const order = {
-          clientId: "hb_full_app_merchant",
+          clientId: credentials.clientId,
           businessNo: body.out_trade_no,
           recipientId,
           recipientUsername: body.username,

@@ -10,31 +10,31 @@ const stateLabels: Record<DrawSummary["state"], string> = {
 
 const reasonLabels: Record<NonNullable<DrawSummary["reason"]>, string> = {
   full: "报名人数已满",
-  deadline: "倒计时结束",
+  deadline: "到达最晚开奖时间",
   manual: "作者提前结束",
 };
 
 export function DrawSummaryPanel({ draw }: { draw: DrawSummary }) {
   return (
-    <section className="rounded-md border border-neutral-200 bg-neutral-50 p-4 text-sm leading-6">
-      <h2 className="font-semibold text-neutral-950">限时开奖</h2>
-      <p className="mt-1 font-medium text-neutral-800">
+    <section className="rounded-md border border-separator bg-panel p-4 text-sm leading-6">
+      <h2 className="font-semibold text-ink">限时开奖</h2>
+      <p className="mt-1 font-medium text-ink">
         {draw.state === "waiting" && draw.deadlineAt === null
-          ? "准备中，开放后开始报名和倒计时"
+          ? "准备中，开放后开始报名"
           : stateLabels[draw.state]}
       </p>
       <dl className="mt-2 grid gap-2 sm:grid-cols-2">
         <div>
-          <dt className="text-neutral-500">最晚开奖</dt>
+          <dt className="text-subtle">最晚开奖</dt>
           <dd>{formatTime(draw.deadlineAt)}</dd>
         </div>
         <div>
-          <dt className="text-neutral-500">实际结束</dt>
+          <dt className="text-subtle">实际结束</dt>
           <dd>{formatTime(draw.closedAt)}</dd>
         </div>
         {draw.registeredCount !== null ? (
           <div>
-            <dt className="text-neutral-500">报名人数</dt>
+            <dt className="text-subtle">报名人数</dt>
             <dd>
               {draw.registeredCount}
               {draw.participantLimit !== undefined &&
@@ -46,13 +46,13 @@ export function DrawSummaryPanel({ draw }: { draw: DrawSummary }) {
         ) : null}
         {draw.winnerCount !== null ? (
           <div>
-            <dt className="text-neutral-500">中奖人数</dt>
+            <dt className="text-subtle">中奖人数</dt>
             <dd>{draw.winnerCount}</dd>
           </div>
         ) : null}
         {draw.reason ? (
           <div>
-            <dt className="text-neutral-500">结束原因</dt>
+            <dt className="text-subtle">结束原因</dt>
             <dd>{reasonLabels[draw.reason]}</dd>
           </div>
         ) : null}

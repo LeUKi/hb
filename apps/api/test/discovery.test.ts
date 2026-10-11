@@ -3,7 +3,6 @@ import {
   type TextActivityInput as ActivityInput,
   type ActivityStatistics,
   ARCHIVE_DELAY_MS,
-  CLAIM_WINDOW_MS,
   type DiscoveryList,
   emptyActivityInput,
   type GlobalRedemptionResult,
@@ -11,18 +10,24 @@ import {
   type PaymentState,
 } from "@hb/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { passwordAssociatedData } from "../src/activities/storage";
 import { app } from "../src/app";
 import { createDb } from "../src/db/client";
 import { sessions, users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
 import { createMerchant } from "../src/payments/merchants";
-import { sha256Hex } from "../src/security/crypto";
+import {
+  digestPassword,
+  encryptString,
+  sha256Hex,
+} from "../src/security/crypto";
+import { advanceAttemptCooldown } from "./advance-attempt-cooldown";
+import { resetMerchantHistory } from "./reset-merchant-history";
 
 const origin = "https://hb.example.com";
 const bindings: ApiBindings = {
   ...env,
   APP_ORIGIN: origin,
-  GLOBAL_REDEMPTIONS_PER_MINUTE: "10",
 };
 type Actor = { id: string; cookie: string; csrf: string };
 let owner: Actor;
@@ -36,6 +41,7 @@ async function actor(username: string): Promise<Actor> {
   const now = new Date();
   const db = createDb(env.DB);
   await db.insert(users).values({
+    officialConnectVerified: true,
     id,
     externalId: username,
     username,
@@ -122,6 +128,77 @@ async function create(
   return ((await opened.json()) as { activity: ManagedActivity }).activity;
 }
 
+async function createTimedDraw() {
+  const merchant = await createMerchant(bindings, owner.id, {
+    requestId: crypto.randomUUID(),
+    clientId: `discovery_timed_${crypto.randomUUID()}`,
+    label: "本地模拟",
+    secret: "virtual-only-secret",
+  });
+  const {
+    rewards: _rewards,
+    rewardType: _rewardType,
+    ...base
+  } = emptyActivityInput();
+  const response = await request("/api/activities", owner, "POST", {
+    requestId: crypto.randomUUID(),
+    activity: {
+      ...base,
+      title: "发现开奖",
+      passwords: ["drawkey1"],
+      forceDedicated: false,
+      rewardType: "ldc",
+      merchantId: merchant.id,
+      allocation: "random",
+      money: {
+        mode: "timed_draw",
+        algorithm: "double_mean_v1",
+        totalAmount: "1.00",
+        count: 2,
+        participantLimit: null,
+        countdownSeconds: 600,
+        distributeFullPool: true,
+      },
+    },
+  });
+  expect(response.status).toBe(200);
+  const saved = ((await response.json()) as { activity: ManagedActivity })
+    .activity;
+  const opened = await request(
+    `/api/me/activities/${saved.id}/open`,
+    owner,
+    "POST",
+    { version: saved.version },
+  );
+  expect(opened.status).toBe(200);
+  return ((await opened.json()) as { activity: ManagedActivity }).activity;
+}
+
+async function seedLegacyPassword(
+  activityId: string,
+  password: string,
+  position: number,
+) {
+  const id = crypto.randomUUID();
+  await env.DB.prepare(`INSERT INTO activity_passwords
+    (id, activity_id, digest, ciphertext, position, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)`)
+    .bind(
+      id,
+      activityId,
+      await digestPassword(password, bindings.PASSWORD_DIGEST_KEY),
+      await encryptString(
+        password,
+        bindings,
+        passwordAssociatedData(activityId, id),
+      ),
+      position,
+      Date.now(),
+    )
+    .run();
+  return id;
+}
+
 function submit(
   password = "correct123",
   submissionId = crypto.randomUUID(),
@@ -130,22 +207,38 @@ function submit(
   return request("/api/redemptions", user, "POST", { password, submissionId });
 }
 
+function discover(
+  password = "correct123",
+  submissionId = crypto.randomUUID(),
+  user = alice,
+) {
+  return request("/api/redemptions/discover", user, "POST", {
+    password,
+    submissionId,
+  });
+}
+
 async function redeem(
   password = "correct123",
   submissionId = crypto.randomUUID(),
   user = alice,
 ) {
+  await advanceAttemptCooldown(env.DB, user.id, submissionId);
   const response = await submit(password, submissionId, user);
   expect(response.status).toBe(200);
-  return (await response.json()) as GlobalRedemptionResult;
+  const result = (await response.json()) as GlobalRedemptionResult;
+  delete result.attemptCooldown;
+  if (result.claimResult) delete result.claimResult.attemptCooldown;
+  return result;
 }
 
-function claim(
+async function claim(
   id: string,
   password = "correct123",
   user = alice,
   submissionId = crypto.randomUUID(),
 ) {
+  await advanceAttemptCooldown(env.DB, user.id, submissionId);
   return request(`/api/activities/${id}/claim`, user, "POST", {
     password,
     submissionId,
@@ -160,6 +253,10 @@ async function count(table: string) {
 }
 
 beforeEach(async () => {
+  await resetMerchantHistory(env.DB);
+  await env.DB.prepare(
+    "INSERT INTO attempt_rate_limits (id,version,home_interval_seconds,activity_interval_seconds,updated_at) VALUES ('global',1,5,2,0) ON CONFLICT(id) DO UPDATE SET home_interval_seconds=5,activity_interval_seconds=2",
+  ).run();
   await env.DB.batch([
     env.DB.prepare("DELETE FROM payment_outbox"),
     env.DB.prepare("DELETE FROM payment_attempts"),
@@ -171,6 +268,7 @@ beforeEach(async () => {
     env.DB.prepare("DELETE FROM attempt_events"),
     env.DB.prepare("DELETE FROM redemption_submissions"),
     env.DB.prepare("DELETE FROM claims"),
+    env.DB.prepare("DELETE FROM activity_registrations"),
     env.DB.prepare("DELETE FROM reward_inventory"),
     env.DB.prepare("DELETE FROM activity_passwords"),
     env.DB.prepare("DELETE FROM activities"),
@@ -221,6 +319,10 @@ describe("persistent global redemption", () => {
     );
     for (const [operation, input] of [
       ["submit", { password: "missing123", submissionId: crypto.randomUUID() }],
+      [
+        "discover",
+        { password: "missing123", submissionId: crypto.randomUUID() },
+      ],
       ["refresh", { id: crypto.randomUUID() }],
     ] as const) {
       const response = await coordinator.fetch(
@@ -242,11 +344,97 @@ describe("persistent global redemption", () => {
     expect(await count("claims")).toBe(0);
   });
 
-  it("retains a persisted single target when its claim is rate-limited and new matching activities appear", async () => {
+  it("discovers a single target without creating claim, registration, or attempt facts", async () => {
+    const activity = await create();
+    const submissionId = crypto.randomUUID();
+    const response = await discover("correct123", submissionId);
+    expect(response.status).toBe(200);
+    const found = (await response.json()) as GlobalRedemptionResult;
+    expect(found).toMatchObject({
+      result: "single",
+      selectedActivityId: activity.id,
+    });
+    expect(found.claimResult).toBeUndefined();
+    expect(found.items.map((item) => item.id)).toEqual([activity.id]);
+    expect(await count("global_redemptions")).toBe(1);
+    expect(await count("redemption_submissions")).toBe(0);
+    expect(await count("attempt_events")).toBe(0);
+    expect(await count("claims")).toBe(0);
+
+    const claimed = await claim(activity.id, "correct123", alice, submissionId);
+    expect(claimed.status).toBe(200);
+    expect(await claimed.json()).toMatchObject({
+      result: "claimed",
+      claim: { activity: { id: activity.id } },
+    });
+    expect(await count("redemption_submissions")).toBe(1);
+    expect(await count("claims")).toBe(1);
+  });
+
+  it("discovers a timed draw target without registering or recording attempts", async () => {
+    const activity = await createTimedDraw();
+    const submissionId = crypto.randomUUID();
+    const response = await discover("drawkey1", submissionId);
+    expect(response.status).toBe(200);
+    const found = (await response.json()) as GlobalRedemptionResult;
+    expect(found).toMatchObject({
+      result: "single",
+      selectedActivityId: activity.id,
+    });
+    expect(found.claimResult).toBeUndefined();
+    expect(await count("global_redemptions")).toBe(1);
+    expect(await count("redemption_submissions")).toBe(0);
+    expect(await count("attempt_events")).toBe(0);
+    expect(await count("activity_registrations")).toBe(0);
+    expect(await count("claims")).toBe(0);
+
+    const registered = await claim(
+      activity.id,
+      "drawkey1",
+      alice,
+      submissionId,
+    );
+    expect(registered.status).toBe(200);
+    expect(await registered.json()).toMatchObject({ result: "registered" });
+    expect(await count("redemption_submissions")).toBe(1);
+    expect(await count("activity_registrations")).toBe(1);
+    expect(await count("claims")).toBe(0);
+  });
+
+  it("legacy global single-result timed draw uses the persisted claim submission for registration recovery", async () => {
+    const activity = await createTimedDraw();
+    const submissionId = crypto.randomUUID();
+    const first = await redeem("drawkey1", submissionId);
+    expect(first).toMatchObject({
+      result: "single",
+      selectedActivityId: activity.id,
+      claimResult: { result: "registered" },
+    });
+    expect(await count("activity_registrations")).toBe(1);
+
+    const replay = await redeem("drawkey1", submissionId);
+    expect(replay).toMatchObject({
+      result: "single",
+      selectedActivityId: activity.id,
+      claimResult: { result: "registered" },
+    });
+    expect(await count("activity_registrations")).toBe(1);
+
+    const already = await redeem("drawkey1", crypto.randomUUID());
+    expect(already).toMatchObject({
+      result: "single",
+      selectedActivityId: activity.id,
+      claimResult: { result: "already_registered" },
+    });
+    expect(await count("activity_registrations")).toBe(1);
+  });
+
+  it("retains a persisted single target when a later accepted attempt invalidates its continuation and imposes cooldown", async () => {
     const original = await create();
-    for (let attempt = 0; attempt < 10; attempt += 1)
-      expect((await claim(original.id, "wrong123")).status).toBe(200);
     const key = crypto.randomUUID();
+    expect((await discover("correct123", key)).status).toBe(200);
+    await advanceAttemptCooldown(env.DB, alice.id);
+    expect((await claim(original.id, "wrong123")).status).toBe(200);
     const limited = await submit("correct123", key);
     expect(limited.status).toBe(429);
     expect(limited.headers.get("Retry-After")).toBeTruthy();
@@ -261,7 +449,7 @@ describe("persistent global redemption", () => {
       }>();
     if (!snapshot)
       throw new Error(
-        "Expected the durable candidate snapshot before claim limiting",
+        "Expected the durable candidate snapshot before the newer attempt",
       );
     expect(JSON.parse(snapshot.candidate_ids)).toEqual([original.id]);
     expect(await count("claims")).toBe(0);
@@ -276,11 +464,7 @@ describe("persistent global redemption", () => {
     expect(refreshed.items.map((item) => item.id)).toEqual([original.id]);
     expect(refreshed.claimResult).toBeUndefined();
     expect(await count("claims")).toBe(0);
-    await env.DB.prepare(
-      "UPDATE redemption_submissions SET validated_at=validated_at-? WHERE activity_id=? AND user_id=?",
-    )
-      .bind(CLAIM_WINDOW_MS + 1000, original.id, alice.id)
-      .run();
+    await advanceAttemptCooldown(env.DB, alice.id);
     const retried = await redeem("correct123", key);
     expect(retried).toMatchObject({
       id: snapshot.id,
@@ -434,38 +618,39 @@ describe("persistent global redemption", () => {
     expect(await count("claims")).toBe(0);
   });
 
-  it("enforces a persistent atomic limit including misses; replays remain usable and no rejected record persists", async () => {
+  it("enforces a persistent atomic home cooldown including misses; saved replays remain usable and rejection persists no attempt", async () => {
     const firstKey = crypto.randomUUID();
     await redeem("missing123", firstKey);
     const attempts = await Promise.all(
       Array.from({ length: 15 }, () => submit("missing123")),
     );
     expect(attempts.filter((response) => response.status === 200)).toHaveLength(
-      9,
+      0,
     );
     expect(attempts.filter((response) => response.status === 429)).toHaveLength(
-      6,
+      15,
     );
     for (const response of attempts.filter((item) => item.status === 429)) {
       const retryAfter = response.headers.get("Retry-After");
       expect(retryAfter).toMatch(/^[1-9][0-9]*$/);
-      expect(Number(retryAfter)).toBeLessThanOrEqual(60);
+      expect(Number(retryAfter)).toBeLessThanOrEqual(5);
       expect(response.headers.get("cache-control")).toBe("no-store");
       expect(await response.json()).toMatchObject({
         error: { code: "GLOBAL_REDEMPTION_RATE_LIMITED" },
       });
     }
-    expect(await count("global_redemptions")).toBe(10);
+    expect(await count("global_redemptions")).toBe(1);
     expect((await submit("missing123", firstKey)).status).toBe(200);
-    expect(await count("global_redemptions")).toBe(10);
+    expect(await count("global_redemptions")).toBe(1);
     expect(await count("redemption_submissions")).toBe(0);
     expect(await count("claims")).toBe(0);
-    await env.DB.prepare(
-      "UPDATE global_redemptions SET created_at = created_at - ?",
-    )
-      .bind(CLAIM_WINDOW_MS + 1000)
-      .run();
-    expect((await submit("missing123")).status).toBe(200);
+    await advanceAttemptCooldown(env.DB, alice.id);
+    const next = await Promise.all(
+      Array.from({ length: 15 }, () => submit("missing123")),
+    );
+    expect(next.filter((response) => response.status === 200)).toHaveLength(1);
+    expect(next.filter((response) => response.status === 429)).toHaveLength(14);
+    expect(await count("global_redemptions")).toBe(2);
     expect(await count("attempt_events")).toBe(0);
   });
 
@@ -698,7 +883,9 @@ describe("square and topic discovery", () => {
       const publicPage = (await (
         await request("/api/discovery/activities")
       ).json()) as DiscoveryList;
-      expect(querySpy.mock.calls.length).toBeLessThanOrEqual(1);
+      // One page query and one full-filter count; neither grows with card count.
+      expect(querySpy.mock.calls.length).toBeLessThanOrEqual(2);
+      expect(publicPage.total).toBe(20);
       expect(publicPage.items).toHaveLength(20);
       expect(publicPage.items.every((item) => item.myClaim === null)).toBe(
         true,
@@ -843,6 +1030,37 @@ describe("square and topic discovery", () => {
       await request("/api/discovery/activities")
     ).json()) as DiscoveryList;
     expect(square.items.map((item) => item.id)).toEqual([original.id]);
+    const cleared = await request(
+      `/api/me/activities/${original.id}`,
+      owner,
+      "PATCH",
+      {
+        version: updated.version,
+        activity: { ...updated.config, topicUrl: "" },
+      },
+    );
+    expect(cleared.status).toBe(200);
+    expect(
+      ((await cleared.json()) as { activity: ManagedActivity }).activity,
+    ).toMatchObject({
+      openedAt: original.openedAt,
+      topicUrl: null,
+      config: { joinSquare: true },
+    });
+    expect(
+      (
+        (await (
+          await request("/api/topics/54321/activities?postNumber=2")
+        ).json()) as DiscoveryList
+      ).items,
+    ).toEqual([]);
+    expect(
+      (
+        (await (
+          await request("/api/discovery/activities")
+        ).json()) as DiscoveryList
+      ).items.map((item) => item.id),
+    ).toEqual([original.id]);
   });
 
   it("keeps deleted drafts out of all discovery and global matching responses", async () => {
@@ -871,7 +1089,7 @@ describe("square and topic discovery", () => {
     ).toBe(404);
   });
 
-  it("requires a linked topic, persists the irreversible switch, and filters active and ended", async () => {
+  it("keeps square independent from topic, persists the irreversible switch, and filters active and ended", async () => {
     const activity = await create({ topicUrl: "https://linux.do/t/12345" });
     const changed = await request(
       `/api/me/activities/${activity.id}`,
@@ -922,11 +1140,23 @@ describe("square and topic discovery", () => {
       requestId: crypto.randomUUID(),
       activity: { ...activity.config, joinSquare: true, topicUrl: "" },
     });
-    expect(noTopic.status).toBe(400);
+    expect(noTopic.status).toBe(200);
+    const independent = (
+      (await noTopic.json()) as { activity: ManagedActivity }
+    ).activity;
+    expect(independent.config.joinSquare).toBe(true);
+    expect(independent.topicUrl).toBeNull();
   });
 });
 
 describe("author attempt statistics", () => {
+  it("does not expose attempt statistics for an unopened dedicated draft", async () => {
+    const draft = await create({ forceDedicated: true }, false);
+    expect(
+      (await request(`/api/me/activities/${draft.id}/statistics`, owner))
+        .status,
+    ).toBe(404);
+  });
   it("preserves historical matched results after adding a password and counts unique accounts and successful claims", async () => {
     const activity = await create({ forceDedicated: true });
     const key = crypto.randomUUID();
@@ -934,16 +1164,7 @@ describe("author attempt statistics", () => {
       expect((await claim(activity.id, "later123", alice)).status).toBe(200);
     await claim(activity.id, "later123", bob, key);
     await claim(activity.id, "later123", bob, key);
-    const updated = await request(
-      `/api/me/activities/${activity.id}`,
-      owner,
-      "PATCH",
-      {
-        version: activity.version,
-        activity: { ...activity.config, passwords: ["correct123", "later123"] },
-      },
-    );
-    expect(updated.status).toBe(200);
+    await seedLegacyPassword(activity.id, "later123", 1);
     await claim(activity.id, "later123", bob);
     await claim(activity.id, "correct123", alice);
     const response = await request(

@@ -85,11 +85,14 @@ export type AdapterResult = (
   retryAfterMs?: number;
   /** Already sanitized and limited to 512 characters. Persist only after encryption. */
   upstreamMessage?: string;
+  /** Exact documented pre-creation or rolled-back business rejection; never inferred from HTTP alone. */
+  noOrderEvidence?: "protocol_rejection_v1";
 };
 
 export type PaymentAttemptContext = {
   credentialVersion: number;
   clientSecret?: string;
+  clientId?: string;
 };
 
 export type PaymentAdapter = {

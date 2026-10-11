@@ -90,6 +90,26 @@ describe("release environment guards", () => {
     ).not.toEqual(sourceResources);
   });
 
+  it("requires public fetch routing for both remote API environments", () => {
+    for (const environment of ["staging", "production"] as const) {
+      const { web, api } = configs(environment);
+      expect(() =>
+        validateEnvironment(environment, web, api, { allowLive: true }),
+      ).not.toThrow();
+      const flags = api.compatibility_flags;
+      delete api.compatibility_flags;
+      expect(() =>
+        validateEnvironment(environment, web, api, { allowLive: true }),
+      ).toThrow("public fetch routing compatibility flag");
+      api.compatibility_flags = (flags ?? []).filter(
+        (flag) => flag !== "global_fetch_strictly_public",
+      );
+      expect(() =>
+        validateEnvironment(environment, web, api, { allowLive: true }),
+      ).toThrow("public fetch routing compatibility flag");
+    }
+  });
+
   it("rejects a cross-environment service binding and API public routes", () => {
     const { web, api } = configs();
     web.services = [{ binding: "API", service: "hb-api-production" }];
@@ -216,6 +236,11 @@ describe("release environment guards", () => {
       "const leak='CONNECT_CLIENT_SECRET';",
     );
     expect(() => inspectBrowserBundle(path)).toThrow("SERVER_MATERIAL");
+    writeFileSync(
+      join(path, "client/app.js"),
+      "const leak='LITEAUTH_CLIENT_SECRET';",
+    );
+    expect(() => inspectBrowserBundle(path)).toThrow("SERVER_MATERIAL");
   });
 
   it("removes only generated secrets and normalizes empty DO migration defaults", () => {
@@ -253,6 +278,8 @@ describe("release environment guards", () => {
   it("records source and tests without including local secrets or generated products", () => {
     const snapshot = sourceSnapshot();
     expect(snapshot.sourceSha256).toMatch(/^[a-f0-9]{64}$/);
+    for (const path of ["DESIGN.md", "playwright.prototype.config.ts"])
+      expect(snapshot.sources.some((file) => file.path === path)).toBe(true);
     expect(
       snapshot.sources.some(
         (file) => file.path === "scripts/test/operations.test.ts",

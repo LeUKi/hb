@@ -1,60 +1,438 @@
 @import "tailwindcss";
 
-:root {
-  color-scheme: light;
-  font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
-  background: #fafafa;
+@theme inline {
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-panel: var(--bg-elevated);
+  --color-surface: var(--paper);
+  --color-surface-hover: var(--surface-hover);
+  --color-line: var(--line);
+  --color-separator: var(--separator);
+  --color-warning: var(--warning);
+  --color-danger: var(--red);
+  --color-success: var(--success);
 }
 
-body {
+/* Additional tokens used only by existing business/recovery surfaces. */
+:root {
+  --bg-elevated: #1a1d21;
+  --subtle: #9aa2ad;
+  --warning: #efc06a;
+  --success: #69d084;
+  --accent: #ff897b;
+  --primary: #b33e32;
+}
+.build-stamp {
+  position: fixed;
+  right: max(8px, env(safe-area-inset-right));
+  bottom: max(6px, env(safe-area-inset-bottom));
+  z-index: 10;
+  color: #7d8591;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.2;
+  pointer-events: none;
+  user-select: none;
+}
+
+.app-muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.app-error-text,
+.field-error {
+  color: #ff9b91;
+}
+
+.app-link {
+  color: #ffc2ba;
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.page-shell {
+  display: grid;
+  gap: 18px;
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.page-shell--narrow {
+  max-width: 760px;
+}
+
+.page-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.page-heading__copy {
+  min-width: 0;
+}
+
+.page-heading h1 {
+  margin: 0;
+  color: var(--ink);
+  font-size: clamp(24px, 4vw, 32px);
+  line-height: 1.2;
+}
+
+.page-eyebrow,
+.page-description,
+.field-error {
   margin: 0;
 }
 
-button,
-a {
-  -webkit-tap-highlight-color: transparent;
+.page-eyebrow {
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
 }
 
-@layer components {
+.page-description {
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.page-heading__action {
+  flex: 0 0 auto;
+}
+
+.app-surface,
+.activity-panel {
+  min-width: 0;
+  border: 1px solid var(--separator);
+  border-radius: 14px;
+  background: var(--bg-elevated);
+  color: var(--ink);
+  box-shadow: 0 14px 32px rgb(0 0 0 / 18%);
+}
+
+.app-surface {
+  padding: 18px;
+}
+
+.activity-panel {
+  padding: 18px;
+}
+
+/* Route-entry focus anchors reading order without outlining the whole page. */
+.activity-page[tabindex="-1"]:focus {
+  outline: none;
+}
+
+.activity-label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.activity-input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  outline: none;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 14px;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
+}
+
+.activity-input:focus-visible {
+  border-color: var(--red);
+  box-shadow: 0 0 0 3px rgb(255 118 104 / 14%);
+}
+
+.activity-input:disabled,
+.activity-input[readonly] {
+  background: #1a1d22;
+  color: var(--subtle);
+}
+
+textarea.activity-input {
+  min-height: 112px;
+  resize: vertical;
+}
+
+.field-error {
+  min-height: 18px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.payment-detail-layout {
+  display: grid;
+  grid-template-columns: 312px minmax(0, 1fr);
+  gap: 20px;
+  min-height: min(760px, calc(100dvh - 170px));
+}
+
+.payment-detail-list,
+.payment-detail-main {
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+.payment-detail-list {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.payment-record-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+}
+
+.payment-record-card.is-active {
+  border-color: rgb(255 118 104 / 55%);
+}
+
+.payment-record-card strong {
+  color: #7ee294;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.payment-record-card span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.payment-record-card__status {
+  width: fit-content;
+  border-radius: 5px;
+  background: var(--selected);
+  padding: 2px 6px;
+  color: var(--ink);
+}
+
+.payment-detail-list__hint,
+.payment-detail-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.payment-detail-main {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.payment-detail-section {
+  display: grid;
+  gap: 12px;
+}
+
+.payment-detail-section--hero {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.payment-detail-section h2 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.payment-detail-section--hero h2 {
+  color: #7ee294;
+  font-size: 30px;
+  font-variant-numeric: tabular-nums;
+}
+
+.payment-detail-kicker {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.payment-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.payment-detail-alert {
+  grid-column: 1 / -1;
+  margin: 0;
+  border: 1px solid rgb(239 192 106 / 45%);
+  border-radius: 8px;
+  background: rgb(239 192 106 / 10%);
+  padding: 8px 10px;
+  color: #ffd99b;
+  font-size: 13px;
+}
+
+.payment-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.payment-detail-section dl {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.payment-detail-section dl > div {
+  min-width: 0;
+}
+
+.payment-detail-section dt {
+  color: var(--subtle);
+  font-size: 12px;
+}
+
+.payment-detail-section dd {
+  margin: 3px 0 0;
+  color: var(--ink);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.payment-recipient-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--separator);
+  border-radius: 10px;
+  background: var(--paper);
+  padding: 10px;
+}
+
+.payment-recipient-card :where(p) {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.payment-event-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.payment-event-list li {
+  display: grid;
+  gap: 6px;
+  padding: 12px 0;
+  border-top: 1px solid var(--separator);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.payment-event-list li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.payment-event-list__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--ink);
+}
+
+@media (max-width: 960px) {
+  .payment-detail-layout {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+  .payment-detail-list {
+    overflow: visible;
+  }
+  .payment-detail-grid,
+  .payment-detail-section--hero {
+    grid-template-columns: 1fr;
+  }
+  .payment-detail-actions {
+    justify-content: flex-start;
+  }
+}
+@media (max-width: 640px) {
+  .page-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .app-surface,
   .activity-panel {
-    @apply min-w-0 rounded-md border border-neutral-200 bg-white p-4 sm:p-6;
+    border-radius: 12px;
+    padding: 14px;
   }
+}
+/* The prototype toolbar is a development-only row. */
+.tool-shell.tool-shell--formal {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.tool-shell--formal.tool-shell--guest-login {
+  grid-template-rows: minmax(0, 1fr);
+}
+.work-account-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
 
-  .activity-input {
-    @apply block w-full min-w-0 rounded-md border border-neutral-300 bg-white px-3 py-2 text-base text-neutral-950 focus-visible:outline-2 focus-visible:outline-neutral-600 disabled:bg-neutral-100 disabled:text-neutral-500;
-  }
-
-  .activity-label {
-    @apply flex flex-col gap-2 text-sm font-medium;
-  }
-
-  .activity-markdown {
-    @apply text-sm leading-7;
-  }
-  .activity-markdown p + p {
-    @apply mt-3;
-  }
-  .activity-markdown a {
-    @apply text-blue-700 underline underline-offset-2;
-  }
-  .activity-markdown :is(h1, h2, h3, h4) {
-    @apply my-3 text-lg font-semibold;
-  }
-  .activity-markdown ul {
-    @apply my-2 list-disc pl-6;
-  }
-  .activity-markdown ol {
-    @apply my-2 list-decimal pl-6;
-  }
-  .activity-markdown blockquote {
-    @apply my-3 border-l-2 border-neutral-300 pl-3 text-neutral-600;
-  }
-  .activity-markdown pre {
-    @apply my-3 overflow-x-auto rounded bg-neutral-100 p-3;
-  }
-  .activity-markdown code {
-    @apply break-all rounded bg-neutral-100 px-1;
+.work-rate-limits {
+  max-width: 720px;
+}
+.work-rate-limit-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.work-rate-limit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.work-rate-limit-changes {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.work-rate-limit-changes li {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.work-rate-limit-changes li:last-child {
+  border-bottom: 0;
+}
+.work-rate-limit-changes p {
+  margin: 0 0 4px;
+}
+@media (max-width: 480px) {
+  .work-rate-limit-fields {
+    grid-template-columns: 1fr;
   }
 }

@@ -1,21 +1,36 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import { Provider as JotaiProvider } from "jotai";
+import { MotionConfig } from "motion/react";
 import { StrictMode } from "react";
 import ReactDOM from "react-dom/client";
+import { PageLoadError, PageLoading } from "./components/page-loading";
+import { navigationVisit } from "./lib/navigation-state";
+import { createAppQueryClient } from "./lib/query-cache";
 import { routeTree } from "./routeTree.gen";
 import "./styles.css";
+import "./prototype-ui/index.css";
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      refetchOnWindowFocus: false,
-      retry: 1,
-    },
-  },
+const queryClient = createAppQueryClient();
+
+const router = createRouter({
+  routeTree,
+  scrollRestoration: true,
+  getScrollRestorationKey: navigationVisit,
+  scrollToTopSelectors: [
+    "#main",
+    ".list-panel__scroll",
+    ".work-payment-targets .list-panel__scroll",
+    ".work-payment-detail-body",
+    ".recipient-list",
+    ".attempt-statistics-dialog__body",
+  ],
+  defaultPreload: "intent",
+  defaultPendingComponent: PageLoading,
+  defaultErrorComponent: PageLoadError,
+  defaultPendingMs: 200,
+  defaultPendingMinMs: 0,
 });
-
-const router = createRouter({ routeTree });
 
 declare module "@tanstack/react-router" {
   interface Register {
@@ -25,10 +40,12 @@ declare module "@tanstack/react-router" {
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <StrictMode>
-    <JotaiProvider>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>
-    </JotaiProvider>
+    <MotionConfig reducedMotion="user">
+      <JotaiProvider>
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      </JotaiProvider>
+    </MotionConfig>
   </StrictMode>,
 );

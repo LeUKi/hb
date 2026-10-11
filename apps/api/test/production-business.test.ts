@@ -10,6 +10,7 @@ import {
 import { createDb } from "../src/db/client";
 import { users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
+import { readMerchantImpact } from "../src/payments/configuration";
 import {
   createMerchant,
   getMerchant,
@@ -29,6 +30,7 @@ async function actor() {
   await createDb(env.DB)
     .insert(users)
     .values({
+      officialConnectVerified: true,
       id,
       externalId: BigInt(`0x${id.replaceAll("-", "").slice(0, 15)}`).toString(),
       username: `User_${id.slice(0, 8)}`,
@@ -152,6 +154,8 @@ describe("production business authorization without activity test bypass", () =>
     const opened = await openActivity(runtime, f.activity.id, f.author, 1);
     expect(opened.status).toBe("active");
     await updateMerchant(runtime, f.merchant.id, f.author, {
+      confirmationToken: (await readMerchantImpact(runtime, f.merchant))
+        .confirmationToken,
       version: f.merchant.version,
       label: "Rotated",
       secret: "NEW-FAKE-SECRET",
@@ -169,6 +173,8 @@ describe("production business authorization without activity test bypass", () =>
     await verified(f.merchant.id);
     await openActivity(runtime, f.activity.id, f.author, 1);
     await updateMerchant(runtime, f.merchant.id, f.author, {
+      confirmationToken: (await readMerchantImpact(runtime, f.merchant))
+        .confirmationToken,
       version: 1,
       label: "Rotated",
       secret: "NEW-FAKE-SECRET",
@@ -272,6 +278,8 @@ describe("production business authorization without activity test bypass", () =>
     vi.spyOn(env.DB, "batch").mockImplementationOnce(async (statements) => {
       const result = await batch(statements);
       await updateMerchant(runtime, f.merchant.id, f.author, {
+        confirmationToken: (await readMerchantImpact(runtime, f.merchant))
+          .confirmationToken,
         version: 1,
         label: "Rechecked during opening",
         secret: "REPLACEMENT-TEST-SECRET",

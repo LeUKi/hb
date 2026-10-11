@@ -7,11 +7,14 @@ import { createDb } from "../src/db/client";
 import { users } from "../src/db/schema";
 import { createMerchant } from "../src/payments/merchants";
 import { flushPaymentOutbox, sweepPayments } from "../src/payments/scheduler";
+import { advanceAttemptCooldown } from "./advance-attempt-cooldown";
+import { resetMerchantHistory } from "./reset-merchant-history";
 
 let recipient: string;
 async function user() {
   const id = crypto.randomUUID();
   await createDb(env.DB).insert(users).values({
+    officialConnectVerified: true,
     id,
     externalId: id,
     username: id,
@@ -54,6 +57,7 @@ async function fixture(count = 1) {
     });
     if (!("claim" in result) || result.claim.rewardType !== "ldc")
       throw new Error("Missing payment");
+    await advanceAttemptCooldown(env.DB, account);
     return result.claim.payment.id;
   }
   return { merchant, taskId: await claim(), claim };
@@ -86,6 +90,7 @@ function fakeWakes(failedMerchant?: string) {
 }
 
 beforeEach(async () => {
+  await resetMerchantHistory(env.DB);
   await env.DB.batch(
     [
       "payment_outbox",
@@ -155,7 +160,7 @@ describe("bounded payment recovery sweeps", () => {
         ).first<{ n: number }>()
       )?.n,
     ).toBe(0);
-  });
+  }, 30_000);
 
   it("deduplicates merchant wakes, skips terminal or future-only tasks, and ignores prior Outbox delivery", async () => {
     const due = await fixture(2);

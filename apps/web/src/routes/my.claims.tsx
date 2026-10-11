@@ -1,18 +1,65 @@
-import type { Participation } from "@hb/contracts";
-import {
-  createFileRoute,
-  Link,
-  Outlet,
-  useMatchRoute,
-} from "@tanstack/react-router";
-import { useState } from "react";
+import type {
+  ActivityAuthor,
+  ActivityRewardFilter,
+  ActivityStatus,
+  Participation,
+} from "@hb/contracts";
+import { createFileRoute, Outlet, useMatchRoute } from "@tanstack/react-router";
+import { type SetStateAction, useCallback, useEffect } from "react";
 import { ActivityErrorView } from "../components/activities/activity-error";
 import { RequireAccount } from "../components/activities/require-account";
-import { Button } from "../components/ui/button";
-import { formatTime, statusLabels } from "../lib/activities";
+import {
+  ActivityReward,
+  ActivityRowTitle,
+  CompactActivityTable,
+  HistoryStats,
+  HistoryTabs,
+  type RowAction,
+  RowActions,
+  registrationLabel,
+  rewardKindLabel,
+  rewardMainText,
+} from "../components/presentation/activity-list";
+import {
+  ListPanel,
+  ListRefreshButton,
+  Pagination,
+  SegmentedControl,
+} from "../components/presentation/list-controls";
+import { RefreshNotice } from "../components/presentation/loading";
+import { UserIdentity } from "../components/user-identity";
+import {
+  activityRewardFilters,
+  formatTime,
+  normalizeActivityRewardFilter,
+  rewardFilterLabels,
+  useHistorySummary,
+} from "../lib/activities";
 import { useMyParticipations } from "../lib/claims";
+import {
+  useCursorRecovery,
+  useEntryNavigate,
+  useViewState,
+} from "../lib/navigation-state";
+import { listQueryState } from "../lib/query-view";
 
-export const Route = createFileRoute("/my/claims")({ component: MyClaimsPage });
+type Search = { type?: ActivityRewardFilter };
+type ScopedCursors = { scope: string; cursors: Array<string | null> };
+
+const participationColumns = [
+  { key: "activity", label: "活动", width: "36%" },
+  { key: "author", label: "发布者", width: "15%" },
+  { key: "reward", label: "我的奖励", width: "20%" },
+  { key: "time", label: "参与时间", width: "17%" },
+  { key: "actions", label: "操作", width: "12%" },
+];
+
+export const Route = createFileRoute("/my/claims")({
+  validateSearch: (search): Search => ({
+    type: normalizeActivityRewardFilter(search.type),
+  }),
+  component: MyClaimsPage,
+});
 
 function MyClaimsPage() {
   const matchRoute = useMatchRoute();
@@ -25,52 +72,129 @@ function MyClaimsPage() {
 }
 
 function MyParticipations({ userId }: { userId: string }) {
-  const [cursors, setCursors] = useState<Array<string | null>>([null]);
-  const query = useMyParticipations(userId, cursors.at(-1) ?? null);
+  const { type = "all" } = Route.useSearch();
+  const navigate = useEntryNavigate();
+  const summary = useHistorySummary(userId);
+  const cursorScope = `${userId}:${type}`;
+  const [pager, setPager] = useViewState<ScopedCursors>("participated-pager", {
+    scope: cursorScope,
+    cursors: [null],
+  });
+  const cursors = pager.scope === cursorScope ? pager.cursors : [null];
+  const setCursors = useCallback(
+    (value: SetStateAction<Array<string | null>>) => {
+      setPager((current) => {
+        const currentCursors =
+          current.scope === cursorScope ? current.cursors : [null];
+        const cursors =
+          typeof value === "function" ? value(currentCursors) : value;
+        return { scope: cursorScope, cursors };
+      });
+    },
+    [cursorScope, setPager],
+  );
+  const cursor = cursors.at(-1) ?? null;
+  const query = useMyParticipations(userId, cursor, {
+    type,
+  });
+  useEffect(() => {
+    setPager((current) =>
+      current.scope === cursorScope
+        ? current
+        : { scope: cursorScope, cursors: [null] },
+    );
+  }, [cursorScope, setPager]);
+  const cursorNotice = useCursorRecovery(query.error, cursors, setCursors);
+  const listState = listQueryState(query);
   return (
-    <div className="space-y-5">
-      <h1 className="text-2xl font-semibold">我的参与</h1>
-      {query.isPending ? (
-        <p role="status">正在读取参与记录…</p>
-      ) : query.isError ? (
-        <ActivityErrorView error={query.error} retry={() => query.refetch()} />
-      ) : (
-        <>
-          {query.data.items.length ? (
-            <div className="grid gap-4 sm:grid-cols-2">
-              {query.data.items.map((item) => (
-                <ParticipationCard key={participationKey(item)} item={item} />
-              ))}
-            </div>
-          ) : (
-            <p className="activity-panel text-neutral-600">还没有参与记录。</p>
-          )}
-          <div className="flex items-center justify-between gap-3">
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={cursors.length === 1}
-              onClick={() => setCursors((current) => current.slice(0, -1))}
-            >
-              上一页
-            </Button>
-            <span className="text-sm text-neutral-500">
-              第 {cursors.length} 页
-            </span>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={!query.data.nextCursor}
-              onClick={() => {
-                if (query.data.nextCursor)
-                  setCursors((current) => [...current, query.data.nextCursor]);
+    <div className="route-frame">
+      <div className="history-heading">
+        <div className="history-heading-main">
+          <h1>活动历史</h1>
+          <HistoryTabs active="claims" />
+        </div>
+        <HistoryStats
+          summary={{
+            started: summary.data?.initiatedCount ?? null,
+            participated: summary.data?.participatedCount ?? null,
+          }}
+        />
+      </div>
+      <section className="participations-page work-page work-list-page list-page">
+        <div className="activity-list-toolbar">
+          <SegmentedControl
+            label="奖励类型"
+            value={type}
+            options={activityRewardFilters.map((value) => ({
+              value,
+              label: rewardFilterLabels[value],
+            }))}
+            onChange={(value) => {
+              setCursors([null]);
+              void navigate({
+                to: "/my/claims",
+                search: { type: value },
+                replace: true,
+                resetScroll: false,
+              });
+            }}
+          />
+          <ListRefreshButton
+            label="刷新参与记录"
+            busy={query.isFetching || summary.isFetching}
+            onRefresh={() => {
+              void query.refetch();
+              void summary.refetch();
+            }}
+          />
+        </div>
+        {cursorNotice}
+        <ListPanel
+          restorationId="participated"
+          keepContent
+          state={listState}
+          emptyText="还没有符合条件的参与记录。"
+          onRetry={query.isError ? () => query.refetch() : undefined}
+          refreshNotice={<RefreshNotice query={query} />}
+          resetKey={`${cursorScope}:${cursors.length}`}
+          footer={
+            <Pagination
+              label="参与记录分页"
+              page={cursors.length}
+              hasNext={Boolean(query.data?.nextCursor)}
+              onPageChange={(page) => {
+                if (page < cursors.length) setCursors(cursors.slice(0, -1));
+                else if (query.data?.nextCursor)
+                  setCursors([...cursors, query.data.nextCursor]);
               }}
+              busy={query.isPending}
+            />
+          }
+        >
+          <div className="activity-rows" data-context="history">
+            <CompactActivityTable
+              label="我参与的活动"
+              variant="participation"
+              columns={participationColumns}
+              state={listState}
+              emptyText="还没有符合条件的参与记录。"
+              errorContent={
+                query.isError ? (
+                  <ActivityErrorView
+                    error={query.error}
+                    retry={() => query.refetch()}
+                  />
+                ) : undefined
+              }
+              onRetry={query.isError ? () => query.refetch() : undefined}
             >
-              下一页
-            </Button>
+              {query.data?.items.map((item) => (
+                <ParticipationRow key={participationKey(item)} item={item} />
+              ))}
+            </CompactActivityTable>
           </div>
-        </>
-      )}
+        </ListPanel>
+      </section>
     </div>
   );
 }
@@ -81,68 +205,112 @@ function participationKey(item: Participation) {
     : `registration-${item.registration.id}`;
 }
 
-function ParticipationCard({ item }: { item: Participation }) {
-  if (item.kind === "claim") {
-    const claim = item.claim;
-    return (
-      <article className="activity-panel space-y-3">
-        <div className="flex items-start justify-between gap-2">
-          <h2 className="min-w-0 break-words font-semibold">
-            {claim.activity.title}
-          </h2>
-          <span className="shrink-0 rounded bg-neutral-100 px-2 py-1 text-xs">
-            {statusLabels[claim.activity.status]}
-          </span>
-        </div>
-        <p className="text-sm text-neutral-600">
-          已领取 · {claim.rewardType === "ldc" ? "LDC" : "文本奖励"} ·{" "}
-          {formatTime(claim.claimedAt)}
-        </p>
-        <Button asChild variant="secondary">
-          <Link to="/my/claims/$id" params={{ id: claim.id }}>
-            查看奖励
-          </Link>
-        </Button>
-      </article>
+type ParticipationActivityWithExtras = {
+  participationMode?: "password" | "direct";
+  id: string;
+  title: string;
+  status: ActivityStatus;
+  deadlineAt?: string | null;
+  reward?: Parameters<typeof rewardMainText>[1];
+  author?: ActivityAuthor;
+  createdAt?: string;
+  draw?: { state?: string } | null;
+};
+
+function ParticipationRow({ item }: { item: Participation }) {
+  const activity = (
+    item.kind === "claim" ? item.claim.activity : item.registration.activity
+  ) as ParticipationActivityWithExtras;
+  const source =
+    item.kind === "claim"
+      ? item.claim.sourcePassword
+      : item.registration.sourcePassword;
+  const action = item.kind === "claim" ? "兑换" : "报名";
+  const meta =
+    activity.participationMode === "direct" ? (
+      <span>
+        {item.kind === "registration" || activity.draw
+          ? "直接报名"
+          : "直接领取"}
+      </span>
+    ) : (
+      <span>
+        通过口令{" "}
+        <span className="activity-inline-code">{source || "未记录"}</span>{" "}
+        {action}
+      </span>
     );
-  }
-  const registration = item.registration;
-  const label = {
-    registered: "已报名",
-    drawing: "开奖处理中",
-    won: "已中奖",
-    not_won: "未中奖",
-  }[registration.status];
+  const claim = item.kind === "claim" ? item.claim : item.registration.claim;
+  const rewardType =
+    claim?.rewardType ?? (activity.reward?.mode === "text" ? "text" : "ldc");
+  const result =
+    item.kind === "claim"
+      ? "已领取"
+      : registrationLabel(item.registration.status);
+  const time =
+    item.kind === "claim"
+      ? item.claim.claimedAt
+      : item.registration.registeredAt;
+  const actions: RowAction[] = [{ label: "查看活动", activityId: activity.id }];
   return (
-    <article className="activity-panel space-y-3">
-      <div className="flex items-start justify-between gap-2">
-        <h2 className="min-w-0 break-words font-semibold">
-          {registration.activity.title}
-        </h2>
-        <span className="shrink-0 rounded bg-neutral-100 px-2 py-1 text-xs">
-          {statusLabels[registration.activity.status]}
+    <tr
+      className="activity-rows-row compact-activity-row"
+      data-activity-id={activity.id}
+      data-lifecycle={activity.status}
+      data-participation={result}
+      data-draw={activity.draw?.state ?? undefined}
+    >
+      <td className="activity-table-activity" data-label="活动">
+        <ActivityRowTitle
+          title={activity.title}
+          status={activity.status}
+          href={`/activities/${activity.id}`}
+          deadlineAt={activity.deadlineAt}
+          draw={activity.draw}
+          buttonClassName="activity-rows-open"
+        >
+          <div className="activity-rows-source">{meta}</div>
+        </ActivityRowTitle>
+      </td>
+      <td
+        className="activity-table-author activity-rows-author"
+        data-label="发布者"
+      >
+        {activity.author ? (
+          <UserIdentity profile={activity.author} />
+        ) : (
+          <span className="activity-subtle">未记录</span>
+        )}
+      </td>
+      <td
+        className="activity-table-reward activity-rows-reward"
+        data-label="我的奖励"
+      >
+        <ActivityReward
+          label={rewardKindLabel(rewardType, activity.reward)}
+          amount={claim?.amount}
+          summary={
+            !claim?.amount && item.kind === "claim" && rewardType !== "text"
+              ? rewardMainText(rewardType, activity.reward)
+              : undefined
+          }
+          status={
+            item.kind === "registration" || rewardType === "text"
+              ? result
+              : undefined
+          }
+          paymentStatus={claim?.payment?.status}
+          confirmedAt={claim?.payment?.confirmedAt}
+        />
+      </td>
+      <td className="activity-table-date" data-label="参与时间">
+        <span className="activity-rows-quantity activity-rows-time">
+          {formatTime(time)}
         </span>
-      </div>
-      <p className="text-sm text-neutral-600">
-        限时开奖 · {label} · {formatTime(registration.registeredAt)}
-      </p>
-      <p className="text-sm text-neutral-600">
-        开奖时间：{formatTime(registration.drawAt)}
-      </p>
-      <div className="flex flex-wrap gap-2">
-        <Button asChild variant="secondary">
-          <Link to="/activities/$id" params={{ id: registration.activity.id }}>
-            查看活动
-          </Link>
-        </Button>
-        {registration.claim ? (
-          <Button asChild variant="secondary">
-            <Link to="/my/claims/$id" params={{ id: registration.claim.id }}>
-              查看奖励
-            </Link>
-          </Button>
-        ) : null}
-      </div>
-    </article>
+      </td>
+      <td className="activity-table-actions" data-label="操作">
+        <RowActions label={activity.title || "未命名活动"} actions={actions} />
+      </td>
+    </tr>
   );
 }

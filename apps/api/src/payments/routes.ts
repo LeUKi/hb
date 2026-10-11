@@ -1,5 +1,6 @@
 import {
   createMerchantSchema,
+  repairPaymentCredentialSchema,
   simulationScenarioSchema,
   updateMerchantSchema,
 } from "@hb/contracts";
@@ -8,14 +9,17 @@ import { bodyLimit } from "hono/body-limit";
 import { validator } from "hono/validator";
 import { z } from "zod";
 import { ActivityError } from "../activities/errors";
+import { requireOfficialConnect } from "../auth/eligibility";
 import { requireAuth, requireProtectedMutation } from "../auth/session";
 import type { ApiContext } from "../env";
 import { isLocalSimulation } from "../runtime/controls";
+import { readMerchantImpact } from "./configuration";
 import {
   createMerchant,
   getMerchant,
   listMerchants,
   ownedMerchant,
+  repairPaymentCredential,
   updateMerchant,
 } from "./merchants";
 import { listMerchantPayments, merchantPaymentDetail } from "./queries";
@@ -56,6 +60,7 @@ export const merchantRoutes = new Hono<ApiContext>()
     validator("json", (value) => valid(createMerchantSchema.safeParse(value))),
     async (c) => {
       const session = await requireProtectedMutation(c);
+      await requireOfficialConnect(c.env, session.user.id);
       const merchant = await createMerchant(
         c.env,
         session.user.id,
@@ -79,12 +84,53 @@ export const merchantRoutes = new Hono<ApiContext>()
       merchant: await getMerchant(c.env, c.req.param("id"), session.user.id),
     });
   })
+  .get("/me/merchants/:id/change-impact", async (c) => {
+    const session = await requireAuth(c);
+    const row = await ownedMerchant(c.env, c.req.param("id"), session.user.id);
+    const { impact, confirmationToken } = await readMerchantImpact(c.env, row);
+    return c.json({ impact, confirmationToken });
+  })
+  .post(
+    "/me/merchants/:id/payments/:taskId/credentials",
+    body,
+    validator("json", (value) =>
+      valid(repairPaymentCredentialSchema.safeParse(value)),
+    ),
+    async (c) => {
+      const session = await requireProtectedMutation(c);
+      await requireOfficialConnect(c.env, session.user.id);
+      const id = c.req.param("id"),
+        taskId = c.req.param("taskId");
+      const result = await repairPaymentCredential(
+        c.env,
+        id,
+        session.user.id,
+        taskId,
+        c.req.valid("json"),
+      );
+      const job = await beginCredentialVerification(
+        c.env,
+        id,
+        undefined,
+        result.credentialVersion,
+      );
+      if (job)
+        c.executionCtx.waitUntil(
+          job().then(() => wakeMerchant(c.env, result.merchant)),
+        );
+      return c.json({
+        merchant: await getMerchant(c.env, id, session.user.id),
+        payment: await merchantPaymentDetail(c.env, id, taskId),
+      });
+    },
+  )
   .patch(
     "/me/merchants/:id",
     body,
     validator("json", (value) => valid(updateMerchantSchema.safeParse(value))),
     async (c) => {
       const session = await requireProtectedMutation(c);
+      await requireOfficialConnect(c.env, session.user.id);
       const id = c.req.param("id");
       const merchant = await updateMerchant(
         c.env,
@@ -94,7 +140,12 @@ export const merchantRoutes = new Hono<ApiContext>()
       );
       if (c.req.valid("json").secret !== undefined) {
         if (merchant.mode === "real") {
-          const job = await beginCredentialVerification(c.env, id);
+          const job = await beginCredentialVerification(
+            c.env,
+            id,
+            undefined,
+            merchant.appliedChange.credentialVersion,
+          );
           if (job)
             c.executionCtx.waitUntil(
               job().then(() => wakeMerchant(c.env, merchant)),
@@ -102,7 +153,10 @@ export const merchantRoutes = new Hono<ApiContext>()
         } else c.executionCtx.waitUntil(wakeMerchant(c.env, merchant));
       }
       return c.json({
-        merchant: await getMerchant(c.env, id, session.user.id),
+        merchant: {
+          ...(await getMerchant(c.env, id, session.user.id)),
+          appliedChange: merchant.appliedChange,
+        },
       });
     },
   )
@@ -110,6 +164,7 @@ export const merchantRoutes = new Hono<ApiContext>()
     const session = await requireProtectedMutation(c);
     const id = c.req.param("id");
     const row = await ownedMerchant(c.env, id, session.user.id);
+    await requireOfficialConnect(c.env, session.user.id);
     if (row.mode !== "real")
       throw new ActivityError(
         400,
@@ -128,6 +183,7 @@ export const merchantRoutes = new Hono<ApiContext>()
     const session = await requireProtectedMutation(c);
     const id = c.req.param("id");
     const row = await ownedMerchant(c.env, id, session.user.id);
+    await requireOfficialConnect(c.env, session.user.id);
     const merchant = await getMerchant(c.env, id, session.user.id);
     if (!merchant.capabilities.canCheck) return c.json({ merchant });
     const result = await requestMerchantCheck(c.env, id);
@@ -153,6 +209,7 @@ export const merchantRoutes = new Hono<ApiContext>()
         throw new ActivityError(404, "NOT_FOUND", "未找到此功能");
       const id = c.req.param("id");
       const row = await ownedMerchant(c.env, id, session.user.id);
+      await requireOfficialConnect(c.env, session.user.id);
       if (row.mode !== "simulation")
         throw new ActivityError(400, "NOT_SIMULATION", "此商户不是模拟配置");
       await c.env.DB.prepare(

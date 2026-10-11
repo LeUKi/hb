@@ -20,6 +20,11 @@ export const users = sqliteTable(
     displayName: text("display_name").notNull(),
     emailCiphertext: text("email_ciphertext"),
     avatarUrl: text("avatar_url"),
+    officialConnectVerified: integer("official_connect_verified", {
+      mode: "boolean",
+    })
+      .notNull()
+      .default(false),
     active: integer("active", { mode: "boolean" }).notNull().default(true),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
@@ -34,6 +39,79 @@ export const users = sqliteTable(
   ],
 );
 
+export const loginSettings = sqliteTable("login_settings", {
+  id: text("id").primaryKey(),
+  version: integer("version").notNull(),
+  liteauthEnabled: integer("liteauth_enabled", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  updatedAt: integer("updated_at").notNull(),
+  updatedByUserId: text("updated_by_user_id"),
+});
+
+export const loginSettingChanges = sqliteTable(
+  "login_setting_changes",
+  {
+    id: text("id").primaryKey(),
+    actorUserId: text("actor_user_id").notNull(),
+    previousVersion: integer("previous_version").notNull(),
+    nextVersion: integer("next_version").notNull(),
+    previousLiteauthEnabled: integer("previous_liteauth_enabled", {
+      mode: "boolean",
+    }).notNull(),
+    liteauthEnabled: integer("liteauth_enabled", { mode: "boolean" }).notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("login_setting_changes_version_unique").on(table.nextVersion),
+  ],
+);
+
+export const attemptRateLimits = sqliteTable("attempt_rate_limits", {
+  id: text("id").primaryKey(),
+  version: integer("version").notNull(),
+  homeIntervalSeconds: integer("home_interval_seconds").notNull(),
+  activityIntervalSeconds: integer("activity_interval_seconds").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+  updatedByUserId: text("updated_by_user_id"),
+});
+
+export const attemptRateLimitChanges = sqliteTable(
+  "attempt_rate_limit_changes",
+  {
+    id: text("id").primaryKey(),
+    actorUserId: text("actor_user_id").notNull(),
+    previousVersion: integer("previous_version").notNull(),
+    nextVersion: integer("next_version").notNull(),
+    previousHomeIntervalSeconds: integer(
+      "previous_home_interval_seconds",
+    ).notNull(),
+    homeIntervalSeconds: integer("home_interval_seconds").notNull(),
+    previousActivityIntervalSeconds: integer(
+      "previous_activity_interval_seconds",
+    ).notNull(),
+    activityIntervalSeconds: integer("activity_interval_seconds").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    index("attempt_rate_limit_changes_time_idx").on(table.createdAt, table.id),
+  ],
+);
+
+export const accountAttemptCooldowns = sqliteTable(
+  "account_attempt_cooldowns",
+  {
+    userId: text("user_id")
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    revision: integer("revision").notNull(),
+    origin: text("origin", { enum: ["home", "activity"] }).notNull(),
+    attemptId: text("attempt_id").notNull(),
+    acceptedAt: integer("accepted_at").notNull(),
+    nextAllowedAt: integer("next_allowed_at").notNull(),
+  },
+);
+
 export const sessions = sqliteTable(
   "sessions",
   {
@@ -42,6 +120,9 @@ export const sessions = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     csrfToken: text("csrf_token").notNull(),
+    loginProvider: text("login_provider", { enum: ["connect", "liteauth"] })
+      .notNull()
+      .default("connect"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
     lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }).notNull(),
@@ -58,6 +139,11 @@ export const oauthAttempts = sqliteTable(
     stateHash: text("state_hash").primaryKey(),
     cookieHash: text("cookie_hash").notNull(),
     returnTo: text("return_to").notNull(),
+    loginProvider: text("login_provider", { enum: ["connect", "liteauth"] })
+      .notNull()
+      .default("connect"),
+    pkceVerifierCiphertext: text("pkce_verifier_ciphertext"),
+    expectedUserId: text("expected_user_id"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
   },
@@ -92,6 +178,11 @@ export const activities = sqliteTable(
       .notNull()
       .default("text"),
     forceDedicated: integer("force_dedicated", { mode: "boolean" }).notNull(),
+    participationMode: text("participation_mode", {
+      enum: ["password", "direct"],
+    })
+      .notNull()
+      .default("password"),
     joinSquare: integer("join_square", { mode: "boolean" })
       .notNull()
       .default(false),
@@ -174,6 +265,7 @@ export const globalRedemptions = sqliteTable(
     passwordDigest: text("password_digest").notNull(),
     candidateIds: text("candidate_ids").notNull(),
     claimSubmissionId: text("claim_submission_id").notNull(),
+    selectedActivityId: text("selected_activity_id"),
     createdAt: integer("created_at").notNull(),
   },
   (table) => [
@@ -245,9 +337,7 @@ export const claims = sqliteTable(
       .notNull()
       .references(() => users.id),
     inventoryId: text("inventory_id").notNull(),
-    passwordId: text("password_id")
-      .notNull()
-      .references(() => activityPasswords.id),
+    passwordId: text("password_id").references(() => activityPasswords.id),
     claimedAt: integer("claimed_at").notNull(),
   },
   (table) => [
@@ -284,6 +374,11 @@ export const redemptionSubmissions = sqliteTable(
       .references(() => users.id),
     submissionId: text("submission_id").notNull(),
     fingerprint: text("fingerprint").notNull(),
+    participationMode: text("participation_mode", {
+      enum: ["password", "direct"],
+    })
+      .notNull()
+      .default("password"),
     outcome: text("outcome", {
       enum: [
         "pending",
@@ -349,9 +444,7 @@ export const activityRegistrations = sqliteTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id),
-    passwordId: text("password_id")
-      .notNull()
-      .references(() => activityPasswords.id),
+    passwordId: text("password_id").references(() => activityPasswords.id),
     ordinal: integer("ordinal").notNull(),
     recipientId: text("recipient_id").notNull(),
     registeredAt: integer("registered_at").notNull(),
@@ -489,6 +582,7 @@ export const merchantCredentials = sqliteTable(
     merchantId: text("merchant_id")
       .notNull()
       .references(() => merchants.id),
+    clientId: text("client_id").notNull().default(""),
     version: integer("version").notNull(),
     ciphertext: text("ciphertext").notNull(),
     verificationStatus: text("verification_status", {
@@ -651,6 +745,13 @@ export const paymentAttempts = sqliteTable(
       enum: ["started", "succeeded", "rejected", "unknown"],
     }).notNull(),
     reason: text("reason"),
+    clientId: text("client_id"),
+    identityCorrectionVersion: integer("identity_correction_version")
+      .notNull()
+      .default(0),
+    noOrderEvidence: text("no_order_evidence", {
+      enum: ["protocol_rejection_v1"],
+    }),
     credentialVersion: integer("credential_version").notNull(),
     startedAt: integer("started_at").notNull(),
     finishedAt: integer("finished_at"),
@@ -873,6 +974,69 @@ export const maintenanceRuns = sqliteTable(
     check(
       "maintenance_runs_status",
       sql`${table.status} IN ('running','succeeded','failed')`,
+    ),
+  ],
+);
+
+export const merchantClientIds = sqliteTable(
+  "merchant_client_ids",
+  {
+    clientId: text("client_id").primaryKey(),
+    merchantId: text("merchant_id")
+      .notNull()
+      .references(() => merchants.id),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [index("merchant_client_ids_merchant_idx").on(table.merchantId)],
+);
+
+export const merchantConfigChanges = sqliteTable(
+  "merchant_config_changes",
+  {
+    id: text("id").primaryKey(),
+    merchantId: text("merchant_id")
+      .notNull()
+      .references(() => merchants.id),
+    requestId: text("request_id").notNull(),
+    requestDigest: text("request_digest").notNull(),
+    resultVersion: integer("result_version").notNull(),
+    credentialVersion: integer("credential_version").notNull(),
+    clientId: text("client_id").notNull(),
+    purpose: text("purpose", { enum: ["current", "repair"] }).notNull(),
+    taskId: text("task_id").references(() => paymentTasks.id),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("merchant_config_changes_request_unique").on(
+      table.merchantId,
+      table.requestId,
+    ),
+  ],
+);
+
+export const paymentIdentityCorrections = sqliteTable(
+  "payment_identity_corrections",
+  {
+    id: text("id").primaryKey(),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => paymentTasks.id),
+    version: integer("version").notNull(),
+    originalClientId: text("original_client_id").notNull(),
+    correctedClientId: text("corrected_client_id").notNull(),
+    originalParameterDigest: text("original_parameter_digest").notNull(),
+    correctedParameterDigest: text("corrected_parameter_digest").notNull(),
+    merchantVersion: integer("merchant_version").notNull(),
+    credentialVersion: integer("credential_version").notNull(),
+    evidence: text("evidence", {
+      enum: ["never_sent", "rejected_no_order"],
+    }).notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("payment_identity_corrections_version_unique").on(
+      table.taskId,
+      table.version,
     ),
   ],
 );

@@ -1,0 +1,290 @@
+.compact-activity-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  color: var(--ink);
+  background: var(--paper);
+  font-size: 13px;
+}
+
+.compact-activity-table th {
+  height: 38px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.compact-activity-table .compact-activity-row {
+  display: table-row;
+  border-bottom: 1px solid var(--separator);
+}
+
+.compact-activity-table td {
+  min-width: 0;
+  height: 54px;
+  padding: 5px 10px;
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}
+
+.compact-activity-row:has(.activity-table-open:hover),
+.compact-activity-row:has(.activity-table-open:focus-visible) {
+  background: var(--surface-hover);
+}
+
+.activity-table-title-cell {
+  min-width: 0;
+}
+
+.activity-row-title {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  gap: 3px;
+}
+
+.activity-row-title-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.activity-row-title-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.activity-row-title-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
+  gap: 4px 6px;
+}
+
+.activity-row-title-meta .status-badge {
+  flex: 0 0 auto;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.25;
+  padding: 2px 6px;
+}
+
+.activity-row-title .activity-row-countdown {
+  gap: 0;
+  color: inherit;
+  font-size: 11px;
+}
+
+.activity-row-title .activity-row-countdown > span:first-child {
+  display: none;
+}
+
+.activity-table-open {
+  max-width: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 3px;
+  color: var(--ink);
+  background: transparent;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.25;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.activity-table-open:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 3px;
+}
+
+.activity-reward {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.activity-reward-label,
+.activity-reward-status,
+.activity-table-created {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.activity-reward-primary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.activity-reward-amount {
+  color: #a1e6b6;
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+}
+
+.activity-reward-amount > span {
+  font-size: 12px;
+}
+
+.activity-reward-summary {
+  color: var(--ink);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+}
+
+.compact-activity-table .activity-table-actions {
+  min-width: 0;
+  text-align: right;
+}
+
+.view-activity-action {
+  max-width: 100%;
+  box-sizing: border-box;
+  white-space: normal;
+}
+
+.compact-activity-table .row-actions,
+.compact-activity-table .row-actions-inline {
+  min-width: 0;
+}
+
+.compact-activity-table .row-actions {
+  justify-content: flex-end;
+}
+
+@media (max-width: 1000px) and (min-width: 761px) {
+  .compact-activity-table--managed .row-actions {
+    flex-wrap: wrap;
+  }
+
+  .compact-activity-table--managed .row-actions-inline {
+    gap: 0;
+  }
+
+  .compact-activity-table--managed .row-action,
+  .compact-activity-table--public .view-activity-action,
+  .compact-activity-table--participation .view-activity-action {
+    min-height: 32px;
+    padding: 4px;
+    font-size: 12px;
+  }
+
+  .compact-activity-table--public .activity-table-actions,
+  .compact-activity-table--participation .activity-table-actions {
+    padding-inline: 4px;
+  }
+}
+
+@media (max-width: 760px) {
+  .compact-activity-table,
+  .compact-activity-table tbody {
+    display: block;
+  }
+
+  .compact-activity-table colgroup {
+    display: none;
+  }
+
+  .compact-activity-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .compact-activity-table .compact-activity-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 6px 10px;
+    padding: 8px 10px;
+  }
+
+  .compact-activity-table--participation .compact-activity-row {
+    grid-template-areas:
+      "activity activity"
+      "author reward"
+      "date actions";
+  }
+
+  .compact-activity-table--managed .compact-activity-row {
+    grid-template-areas: "activity activity" "reward progress" "date actions";
+  }
+
+  .compact-activity-table--public .compact-activity-row {
+    grid-template-areas:
+      "activity activity"
+      "author reward"
+      "author quantity"
+      "author actions";
+  }
+
+  .compact-activity-table td {
+    display: block;
+    height: auto;
+    padding: 0;
+  }
+
+  .compact-activity-table .activity-table-activity {
+    grid-area: activity;
+  }
+  .compact-activity-table .activity-table-author {
+    grid-area: author;
+  }
+  .compact-activity-table .activity-table-reward {
+    grid-area: reward;
+  }
+  .compact-activity-table .activity-table-progress {
+    grid-area: progress;
+  }
+  .compact-activity-table .activity-table-date {
+    grid-area: date;
+  }
+  .compact-activity-table .activity-table-actions {
+    grid-area: actions;
+    justify-content: flex-end;
+  }
+
+  .compact-activity-table .activity-table-quantity {
+    grid-area: quantity;
+  }
+
+  .activity-row-title {
+    gap: 3px;
+  }
+
+  .activity-table-open {
+    min-height: 0;
+    font-size: 13px;
+  }
+
+  .compact-activity-table--managed .work-managed-progress {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    margin: 0;
+  }
+}

@@ -10,6 +10,7 @@ import {
   type LdcActivityInput,
   type ManagedActivity,
   type Merchant,
+  type PublicActivity,
   type PublicRecipientList,
   type RandomLdcMoney,
 } from "@hb/contracts";
@@ -21,6 +22,8 @@ import type { ApiBindings } from "../src/env";
 import { createMerchant } from "../src/payments/merchants";
 import { runMerchantCycle } from "../src/payments/scheduler";
 import { sha256Hex } from "../src/security/crypto";
+import { advanceAttemptCooldown } from "./advance-attempt-cooldown";
+import { resetMerchantHistory } from "./reset-merchant-history";
 
 const origin = "https://hb.example.com";
 const bindings: ApiBindings = { ...env, APP_ORIGIN: origin };
@@ -36,6 +39,7 @@ async function actor(username: string): Promise<Actor> {
   const now = new Date();
   const db = createDb(env.DB);
   await db.insert(users).values({
+    officialConnectVerified: true,
     id,
     externalId: username,
     username,
@@ -121,7 +125,9 @@ async function claim(
 ) {
   const response = await submit(id, user, submissionId);
   expect(response.status).toBe(200);
-  return (await response.json()) as ClaimResult;
+  const result = (await response.json()) as ClaimResult;
+  await advanceAttemptCooldown(env.DB, user.id);
+  return result;
 }
 async function counts() {
   return await env.DB.prepare(`SELECT (SELECT COUNT(*) FROM claims) AS claims,
@@ -129,6 +135,7 @@ async function counts() {
     (SELECT COALESCE(SUM(claimed_count),0) FROM activities) AS assigned`).first();
 }
 beforeEach(async () => {
+  await resetMerchantHistory(env.DB);
   await env.DB.batch([
     env.DB.prepare("DELETE FROM payment_outbox"),
     env.DB.prepare("DELETE FROM payment_attempts"),
@@ -317,6 +324,14 @@ describe("LDC activity allocation and durable payment responsibility", () => {
           },
         })
       ).status,
+    ).toBe(400);
+    expect(
+      (
+        await request(`/api/me/activities/${activity.id}`, owner, "PATCH", {
+          version: activity.version,
+          activity: { ...initial, beforeInfo: "新说明" },
+        })
+      ).status,
     ).toBe(200);
     expect(await claim(activity.id)).toMatchObject({
       claim: { amount: "1.25" },
@@ -403,17 +418,24 @@ describe("LDC activity allocation and durable payment responsibility", () => {
         username: "alice",
         displayName: "alice",
         avatarUrl: null,
+        accountTier: "standard",
         claimedAt: won.claim.claimedAt,
         amount: "5.00",
       },
     ]);
-    const publicDetail = await (
+    const publicDetail = (await (
       await request(`/api/activities/${activity.id}`)
-    ).json();
+    ).json()) as { activity: PublicActivity };
     expect(publicDetail).toMatchObject({
       activity: { rewardType: "ldc", paymentMode: "simulation" },
     });
-    expect(JSON.stringify(publicDetail)).not.toContain("5.00");
+    expect(publicDetail.activity.reward).toMatchObject({
+      mode: "fixed",
+      unitAmount: "5.00",
+    });
+    expect(publicDetail.activity).not.toHaveProperty("claim");
+    expect(publicDetail.activity).not.toHaveProperty("afterClaimInfo");
+    expect(JSON.stringify(publicDetail)).not.toContain("correct123");
     expect(JSON.stringify(publicDetail)).not.toContain("email");
     await request(`/api/me/activities/${activity.id}`, owner, "PATCH", {
       version: activity.version,

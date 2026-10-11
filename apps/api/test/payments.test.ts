@@ -18,6 +18,7 @@ import { createDb } from "../src/db/client";
 import { merchants, paymentTasks, users } from "../src/db/schema";
 import worker from "../src/index";
 import type { PaymentAdapter } from "../src/payments/adapter";
+import { readMerchantImpact } from "../src/payments/configuration";
 import { loadMerchantSecret } from "../src/payments/credentials";
 import { createMerchant, updateMerchant } from "../src/payments/merchants";
 import {
@@ -25,10 +26,12 @@ import {
   runMerchantCycle,
   sweepPayments,
 } from "../src/payments/scheduler";
+import { resetMerchantHistory } from "./reset-merchant-history";
 
 async function user() {
   const id = crypto.randomUUID();
   await createDb(env.DB).insert(users).values({
+    officialConnectVerified: true,
     id,
     externalId: id,
     username: id,
@@ -185,6 +188,7 @@ async function realPaymentFixture() {
   };
 }
 beforeEach(async () => {
+  await resetMerchantHistory(env.DB);
   vi.restoreAllMocks();
   await clear();
 });
@@ -323,6 +327,8 @@ describe("durable simulated payments", () => {
     await runMerchantCycle(env, f.merchant.id);
     expect((await task(f.taskId)).status).toBe("attention");
     await updateMerchant(env, f.merchant.id, f.owner, {
+      confirmationToken: (await readMerchantImpact(env, f.merchant))
+        .confirmationToken,
       version: f.merchant.version,
       label: "updated",
       secret: "rotated-dummy",
@@ -360,6 +366,8 @@ describe("durable simulated payments", () => {
     const f = await fixture(1, "response_lost");
     await runMerchantCycle(env, f.merchant.id);
     await updateMerchant(env, f.merchant.id, f.owner, {
+      confirmationToken: (await readMerchantImpact(env, f.merchant))
+        .confirmationToken,
       version: f.merchant.version,
       label: "rotated",
       secret: "new-private-secret",
@@ -379,6 +387,8 @@ describe("durable simulated payments", () => {
   it("can read a fixed credential version after rotation without exposing ciphertext", async () => {
     const f = await fixture();
     await updateMerchant(env, f.merchant.id, f.owner, {
+      confirmationToken: (await readMerchantImpact(env, f.merchant))
+        .confirmationToken,
       version: f.merchant.version,
       label: "rotated",
       secret: "new-private-secret",

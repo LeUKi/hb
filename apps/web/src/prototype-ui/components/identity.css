@@ -1,0 +1,66 @@
+.identity-popover.identity-detail {
+  width: min(280px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: visible;
+  gap: 4px;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 12px 32px #0006;
+}
+
+.identity-detail__body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-height: 0;
+  max-height: calc(100dvh - 66px);
+  overflow-y: auto;
+}
+
+.identity-popover.identity-detail--right::before,
+.identity-popover.identity-detail--left::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 9px;
+}
+
+.identity-popover.identity-detail--right::before {
+  left: -9px;
+}
+
+.identity-popover.identity-detail--left::before {
+  right: -9px;
+}
+
+.identity-popover.identity-detail .avatar-large {
+  flex: 0 0 auto;
+}
+
+.identity-popover.identity-detail a {
+  flex: 0 0 auto;
+  min-height: 44px;
+  overflow-wrap: anywhere;
+}
+
+.identity-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 79;
+  background: #0007;
+}
+
+.identity-popover.identity-detail--sheet {
+  width: min(360px, calc(100vw - 24px));
+  max-height: min(70dvh, calc(100dvh - 24px));
+  inset: auto 0 calc(12px + env(safe-area-inset-bottom)) 0;
+  margin-inline: auto;
+  padding-top: 24px;
+}
+
+.identity-detail--sheet .identity-detail__body {
+  max-height: calc(70dvh - 46px);
+}

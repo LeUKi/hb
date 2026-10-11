@@ -1,0 +1,126 @@
+/* Loading replaces records only; it never adds an entrance animation. */
+.list-panel__content {
+  min-width: 0;
+}
+.compact-activity-table__skeleton-row td {
+  height: 54px;
+  padding: 8px;
+}
+.compact-activity-table__skeleton-row [data-skeleton-row] {
+  display: block;
+  width: 100%;
+  height: 36px;
+  border-radius: 4px;
+  background: var(--surface-hover, #34383f);
+}
+.attempt-statistics-table [data-skeleton-row] {
+  display: block;
+  width: 100%;
+  height: 28px;
+  border-radius: 4px;
+  background: var(--surface-hover, #34383f);
+}
+.compact-activity-table__state-row td {
+  padding: 0;
+}
+.page-skeleton {
+  display: grid;
+  align-content: start;
+  gap: 24px;
+  min-width: 0;
+  padding-block: 12px;
+}
+.page-skeleton h1 {
+  margin: 0;
+  font-size: 24px;
+}
+.activity-heading-skeleton {
+  display: inline-block;
+  flex: 0 1 auto;
+  border-radius: 4px;
+  background: var(--surface-hover, #34383f);
+}
+.activity-heading-skeleton--title {
+  width: min(360px, 62vw);
+  height: 32px;
+}
+.activity-heading-skeleton--meta {
+  width: 96px;
+  height: 24px;
+}
+.activity-heading-skeleton--meta-short {
+  width: 64px;
+  height: 24px;
+}
+.activity-action-skeleton {
+  display: inline-block;
+  width: 104px;
+  height: 34px;
+  border-radius: 6px;
+  background: var(--surface-hover, #34383f);
+}
+.page-skeleton--form .list-panel__skeleton span {
+  min-height: 72px;
+}
+.page-skeleton--payments .list-panel__skeleton {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.page-skeleton--payments .list-panel__skeleton span {
+  min-height: 100px;
+}
+.refresh-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.refresh-notice button {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.activity-selection-list[aria-busy="true"] {
+  overflow: hidden;
+}
+.loading-count {
+  display: inline-block;
+  min-width: 3ch;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 760px) {
+  .compact-activity-table .compact-activity-table__skeleton-row,
+  .compact-activity-table .compact-activity-table__state-row {
+    display: block;
+  }
+  .compact-activity-table .compact-activity-table__skeleton-row td,
+  .compact-activity-table .compact-activity-table__state-row td {
+    display: block;
+    width: 100%;
+  }
+  .page-skeleton--payments .list-panel__skeleton {
+    grid-template-columns: 1fr;
+  }
+}
+/* A short viewport needs document flow, so fixed mobile navigation cannot cover
+   the pager when headings/controls grow with text size. */
+@media (max-height: 680px) {
+  .site-main:has(.list-page) {
+    overflow-y: auto;
+    padding-bottom: 24px;
+  }
+  .route-frame:has(.list-page),
+  .work-list-page {
+    height: auto;
+  }
+  .list-page > .list-panel {
+    flex: none;
+    height: auto;
+    overflow: visible;
+  }
+  .list-page > .list-panel > .list-panel__scroll {
+    overflow: visible;
+  }
+}

@@ -4,6 +4,10 @@ import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import { assetCachePlugin } from "./asset-cache.ts";
+import { buildTimePlugin, buildTimeUnixSeconds } from "./build-time.ts";
+
+const builtAtUnixSeconds = buildTimeUnixSeconds();
 
 // This browser-only build has no Worker config, secrets or deployment output.
 export default defineConfig(() => {
@@ -17,6 +21,12 @@ export default defineConfig(() => {
     resolve: {
       alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
     },
-    plugins: [tanstackRouter({ target: "react" }), react(), tailwindcss()],
+    plugins: [
+      buildTimePlugin(builtAtUnixSeconds),
+      assetCachePlugin(),
+      tanstackRouter({ target: "react", autoCodeSplitting: true }),
+      react(),
+      tailwindcss(),
+    ],
   };
 });

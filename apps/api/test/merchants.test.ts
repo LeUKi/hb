@@ -21,6 +21,7 @@ import { sessions, users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
 import { runMerchantCycle } from "../src/payments/scheduler";
 import { decryptString, sha256Hex } from "../src/security/crypto";
+import { resetMerchantHistory } from "./reset-merchant-history";
 
 const origin = "https://hb.example.com";
 const bindings: ApiBindings = { ...env, APP_ORIGIN: origin };
@@ -37,6 +38,7 @@ async function actor(username: string): Promise<Actor> {
   const now = new Date();
   const db = createDb(env.DB);
   await db.insert(users).values({
+    officialConnectVerified: true,
     id,
     externalId: username,
     username,
@@ -154,6 +156,7 @@ async function storedTask(id: string) {
 }
 
 beforeEach(async () => {
+  await resetMerchantHistory(env.DB);
   activeClients.clear();
   await env.DB.batch(
     [
@@ -513,7 +516,7 @@ describe("merchant API security and idempotency", () => {
     expect((await rotated.text()).includes("REAL-ROTATED-SECRET")).toBe(false);
   });
 
-  it("rejects client ID mutation and invalid simulation scenarios at the API boundary", async () => {
+  it("requires a matching secret on client ID changes and rejects invalid simulation scenarios at the API boundary", async () => {
     const merchant = await create();
     expect(
       (
@@ -624,6 +627,14 @@ describe("merchant API security and idempotency", () => {
           version: merchant.version,
           label: merchant.label,
           secret: "ROTATED-CONFLICT-SECRET",
+          confirmationToken: (
+            (await (
+              await request(
+                `/api/me/merchants/${merchant.id}/change-impact`,
+                owner,
+              )
+            ).json()) as { confirmationToken: string }
+          ).confirmationToken,
         })
       ).status,
     ).toBe(200);
@@ -716,5 +727,201 @@ describe("owner payment diagnostics", () => {
         capabilities: { canVerify: false },
       },
     });
+  });
+});
+
+describe("merchant application configuration revisions", () => {
+  it("keeps one merchant, pins credential identities, retries one save and reserves every used client", async () => {
+    const merchant = await create();
+    const path = `/api/me/merchants/${merchant.id}`;
+    const payload = {
+      requestId: crypto.randomUUID(),
+      version: merchant.version,
+      label: "修正应用",
+      clientId: `corrected_${crypto.randomUUID()}`,
+      secret: "CORRECTED-TEST-SECRET",
+    };
+    const replies = await Promise.all([
+      request(path, owner, "PATCH", payload),
+      request(path, owner, "PATCH", payload),
+    ]);
+    for (const reply of replies) expect(reply.status).toBe(200);
+    const firstReply = replies[0];
+    if (!firstReply) throw new Error("Missing update response");
+    const changed = ((await firstReply.json()) as { merchant: Merchant })
+      .merchant;
+    activeClients.add(changed.clientId);
+    expect(changed).toMatchObject({
+      id: merchant.id,
+      version: 2,
+      credentialVersion: 2,
+      clientId: payload.clientId,
+    });
+    expect(
+      (
+        await env.DB.prepare(
+          "SELECT client_id,version FROM merchant_credentials WHERE merchant_id=? ORDER BY version",
+        )
+          .bind(merchant.id)
+          .all()
+      ).results,
+    ).toEqual([
+      { client_id: merchant.clientId, version: 1 },
+      { client_id: payload.clientId, version: 2 },
+    ]);
+    expect(
+      (
+        await request(path, owner, "PATCH", {
+          ...payload,
+          label: "不能改变同一请求",
+        })
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await request(
+          "/api/me/merchants",
+          other,
+          "POST",
+          input({ clientId: merchant.clientId }),
+        )
+      ).status,
+    ).toBe(409);
+    const restored = await request(path, owner, "PATCH", {
+      requestId: crypto.randomUUID(),
+      version: changed.version,
+      label: changed.label,
+      clientId: merchant.clientId,
+      secret: "RESTORED-TEST-SECRET",
+    });
+    expect(restored.status).toBe(200);
+    expect(
+      ((await restored.json()) as { merchant: Merchant }).merchant,
+    ).toMatchObject({
+      id: merchant.id,
+      clientId: merchant.clientId,
+      credentialVersion: 3,
+      version: 3,
+    });
+    const replay = await request(path, owner, "PATCH", payload);
+    expect(replay.status).toBe(200);
+    expect(
+      ((await replay.json()) as { merchant: Merchant }).merchant,
+    ).toMatchObject({
+      clientId: merchant.clientId,
+      version: 3,
+      appliedChange: {
+        requestId: payload.requestId,
+        resultVersion: 2,
+        clientId: payload.clientId,
+        credentialVersion: 2,
+      },
+    });
+    expect(
+      (await request(path, other, "PATCH", { ...payload, version: 3 })).status,
+    ).toBe(404);
+    expect(
+      await env.DB.prepare("SELECT COUNT(*) AS count FROM merchants").first(),
+    ).toEqual({ count: 1 });
+    expect(
+      await env.DB.prepare(
+        "SELECT COUNT(*) AS count FROM merchant_config_changes",
+      ).first(),
+    ).toEqual({ count: 2 });
+    await expect(
+      env.DB.prepare(
+        "UPDATE merchant_client_ids SET merchant_id=? WHERE client_id=?",
+      )
+        .bind(other.id, merchant.clientId)
+        .run(),
+    ).rejects.toThrow();
+    await expect(
+      env.DB.prepare(
+        "UPDATE merchant_credentials SET client_id=? WHERE merchant_id=? AND version=1",
+      )
+        .bind(payload.clientId, merchant.id)
+        .run(),
+    ).rejects.toThrow();
+  });
+
+  it("requires fresh risk confirmation, preserves inputs and payment facts, while label edits need no confirmation", async () => {
+    const merchant = await create();
+    const path = `/api/me/merchants/${merchant.id}`;
+    const { taskIds } = await fixture(merchant);
+    const original = await Promise.all(taskIds.map(storedTask));
+    const previewResponse = await request(`${path}/change-impact`, owner);
+    expect(previewResponse.headers.get("Cache-Control")).toBe("no-store");
+    const preview = (await previewResponse.json()) as {
+      impact: unknown;
+      confirmationToken: string;
+    };
+    expect(preview.impact).toMatchObject({ pendingPayments: 2 });
+    const payload = {
+      requestId: crypto.randomUUID(),
+      version: merchant.version,
+      label: merchant.label,
+      secret: "RISK-TEST-SECRET",
+    };
+    const denied = await request(path, owner, "PATCH", payload);
+    expect(denied.status).toBe(409);
+    expect(await denied.json()).toMatchObject({
+      error: {
+        code: "MERCHANT_CHANGE_REQUIRES_CONFIRMATION",
+        impact: { pendingPayments: 2 },
+      },
+    });
+    expect(
+      await env.DB.prepare(
+        "SELECT COUNT(*) AS count FROM merchant_config_changes",
+      ).first(),
+    ).toEqual({ count: 0 });
+    await env.DB.prepare(
+      "UPDATE payment_tasks SET status='reconciling',recovery_version=recovery_version+1 WHERE id=?",
+    )
+      .bind(taskIds[0])
+      .run();
+    const renewed = await request(path, owner, "PATCH", {
+      ...payload,
+      confirmationToken: preview.confirmationToken,
+    });
+    expect(renewed.status).toBe(409);
+    const fresh = (await renewed.json()) as {
+      error: { confirmationToken: string; impact: unknown };
+    };
+    expect(fresh.error.impact).toMatchObject({
+      pendingPayments: 1,
+      reconcilingPayments: 1,
+    });
+    const accepted = await request(path, owner, "PATCH", {
+      ...payload,
+      confirmationToken: fresh.error.confirmationToken,
+    });
+    expect(accepted.status).toBe(200);
+    expect(
+      (
+        await request(path, owner, "PATCH", {
+          ...payload,
+          confirmationToken: fresh.error.confirmationToken,
+        })
+      ).status,
+    ).toBe(200);
+    const saved = ((await accepted.json()) as { merchant: Merchant }).merchant;
+    expect(
+      (
+        await request(path, owner, "PATCH", {
+          requestId: crypto.randomUUID(),
+          version: saved.version,
+          label: "只改名称",
+        })
+      ).status,
+    ).toBe(200);
+    for (let i = 0; i < taskIds.length; i++)
+      expect(await storedTask(taskIds[i] as string)).toMatchObject({
+        client_id: original[i]?.client_id,
+        business_no: original[i]?.business_no,
+        amount_minor: original[i]?.amount_minor,
+        recipient_id: original[i]?.recipient_id,
+      });
+    expect((await request(`${path}/change-impact`, other)).status).toBe(404);
   });
 });

@@ -1,0 +1,116 @@
+.action-menu {
+  display: inline-flex;
+  min-width: 0;
+}
+
+.action-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  min-height: var(--control-height, 32px);
+  padding: 4px 10px;
+  border: 1px solid var(--line, #818995);
+  border-radius: 6px;
+  background: var(--paper, #25282d);
+  color: var(--ink, #f5f6f8);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  cursor: pointer;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease;
+}
+
+.action-menu-trigger span,
+.action-menu-item span {
+  min-width: 0;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.action-menu-trigger svg,
+.action-menu-item svg {
+  flex: 0 0 auto;
+  pointer-events: none;
+}
+
+.action-menu-trigger > svg {
+  transition: transform 180ms ease;
+}
+
+.action-menu-trigger[aria-expanded="true"] > svg {
+  transform: rotate(180deg);
+}
+
+.action-menu-trigger:hover:enabled,
+.action-menu-trigger[aria-expanded="true"],
+.action-menu-item:hover:enabled {
+  background: var(--surface-hover, #34383f);
+}
+
+.action-menu-trigger:focus-visible,
+.action-menu-item:focus-visible,
+.action-menu-panel:focus-visible {
+  outline: 2px solid var(--red, #ff897b);
+  outline-offset: 2px;
+}
+
+.action-menu-trigger:disabled,
+.action-menu-item:disabled {
+  color: var(--muted, #c2c7cf);
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.action-menu-panel {
+  position: fixed;
+  z-index: 150;
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  min-width: min(172px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 24px);
+  padding: 5px;
+  border: 1px solid var(--line, #818995);
+  border-radius: 7px;
+  background: var(--paper, #25282d);
+  box-shadow: 0 8px 24px #0006;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.action-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+  gap: 16px;
+  min-width: 0;
+  min-height: var(--control-height, 32px);
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink, #f5f6f8);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.action-menu-item[aria-checked="true"] {
+  background: var(--selected, #4b515b);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action-menu-trigger,
+  .action-menu-trigger > svg,
+  .action-menu-item {
+    transition: none;
+  }
+}

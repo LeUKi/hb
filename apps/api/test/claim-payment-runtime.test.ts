@@ -29,9 +29,11 @@ import {
   wakePayment,
 } from "../src/payments/scheduler";
 import { encryptString } from "../src/security/crypto";
+import { resetMerchantHistory } from "./reset-merchant-history";
 
 let now: number;
 beforeEach(async () => {
+  await resetMerchantHistory(env.DB);
   vi.restoreAllMocks();
   now = Date.now();
   vi.spyOn(Date, "now").mockImplementation(() => now);
@@ -77,6 +79,7 @@ async function fixture(
   const username = `Receiver_${recipient.slice(0, 8)}`;
   await db.insert(users).values(
     [owner, recipient].map((id) => ({
+      officialConnectVerified: true,
       id,
       externalId: id === recipient ? recipientId : owner,
       username: id === recipient ? username : owner,

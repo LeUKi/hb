@@ -1,7 +1,9 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { ActivityRequestError } from "../../lib/activities";
-import { getLoginHref, sessionQueryKey } from "../../lib/auth";
+import { sessionQueryKey } from "../../lib/auth";
+import { LoginOptions } from "../auth/login-options";
+import { OfficialConnectRequired } from "../auth/official-connect-required";
 import { Button } from "../ui/button";
 
 export function ActivityErrorView({
@@ -18,6 +20,9 @@ export function ActivityErrorView({
     error instanceof ActivityRequestError && error.status === 401;
   const notFound =
     error instanceof ActivityRequestError && error.status === 404;
+  const officialRequired =
+    error instanceof ActivityRequestError &&
+    error.code === "OFFICIAL_CONNECT_REQUIRED";
   useEffect(() => {
     if (unauthorized) {
       queryClient.setQueryData(sessionQueryKey, {
@@ -40,9 +45,9 @@ export function ActivityErrorView({
             : error.message}
       </p>
       {unauthorized ? (
-        <Button asChild>
-          <a href={getLoginHref(window.location.pathname)}>重新登录</a>
-        </Button>
+        <LoginOptions returnTo={window.location.pathname} />
+      ) : officialRequired ? (
+        <OfficialConnectRequired />
       ) : notFound ? null : (
         <Button type="button" variant="secondary" onClick={() => retry()}>
           重试

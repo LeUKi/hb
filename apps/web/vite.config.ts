@@ -4,12 +4,15 @@ import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import { assetCachePlugin } from "./asset-cache.ts";
+import { buildTimePlugin, buildTimeUnixSeconds } from "./build-time.ts";
 
 // LDC query URLs carry credentials; local automatic traces ignore Wrangler redaction.
 // Keep application structured console logs, but never collect these request spans.
 process.env.X_LOCAL_OBSERVABILITY = "false";
 
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
+const builtAtUnixSeconds = buildTimeUnixSeconds();
 
 export default defineConfig(({ mode }) => {
   const environment =
@@ -28,6 +31,8 @@ export default defineConfig(({ mode }) => {
       },
     },
     plugins: [
+      buildTimePlugin(builtAtUnixSeconds),
+      assetCachePlugin(),
       tanstackRouter({
         target: "react",
         autoCodeSplitting: true,

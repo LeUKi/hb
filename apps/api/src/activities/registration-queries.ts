@@ -1,16 +1,25 @@
 import type {
+  AccountHistorySummary,
+  ActivityHistoryFilters,
+  ActivityInput,
+  ActivityParticipationResponse,
+  ActivityStatus,
   AuthorRegistrationList,
+  ClaimDetail,
   ParticipationList,
+  PublicRegistrationList,
   RegistrationDetail,
 } from "@hb/contracts";
-import { and, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { createDb } from "../db/client";
 import { activities, activityRegistrations, claims, users } from "../db/schema";
 import type { ApiBindings } from "../env";
+import { decryptString, encryptString } from "../security/crypto";
 import {
+  claimDetailsBatch,
+  claimSummariesBatch,
   findUserClaim,
-  getClaimDetail,
-  projectClaimSummary,
+  sourcePasswordsBatch,
 } from "./claim-queries";
 import {
   findRegistration,
@@ -18,17 +27,26 @@ import {
   registrationStatus,
 } from "./draw-storage";
 import { activityNotFound, invalidActivity } from "./errors";
-import { activityStatus } from "./service";
+import {
+  activityListFields,
+  activityListStatusSql,
+  historyStatusCounts,
+  rewardFilterSql,
+} from "./history-query";
+import { activityStatus, rewardSummary } from "./service";
 import { type ActivityRow, findActivity, ownedActivity } from "./storage";
 
-type Cursor = { time: number; id: string };
-function cursor(value?: string): Cursor | undefined {
+type Cursor = { time: number; id: string; scope?: string };
+function cursor(value?: string, scope?: string): Cursor | undefined {
   if (!value) return undefined;
   try {
     const parsed = JSON.parse(atob(value)) as Cursor;
     if (
       !Number.isSafeInteger(parsed.time) ||
       typeof parsed.id !== "string" ||
+      (scope !== undefined &&
+        parsed.scope !== undefined &&
+        parsed.scope !== scope) ||
       !/^[a-f0-9-]{36}$/i.test(parsed.id)
     )
       invalidActivity("分页标识无效");
@@ -43,27 +61,100 @@ async function detail(
   entry: RegistrationRow,
   activity: ActivityRow,
 ): Promise<RegistrationDetail> {
-  const claim =
-    activity.drawState === "completed"
-      ? await findUserClaim(env, activity.id, entry.userId)
-      : undefined;
-  return {
-    id: entry.id,
-    activity: {
-      id: activity.id,
-      title: activity.title,
-      status: activityStatus(activity),
-    },
-    registeredAt: new Date(entry.registeredAt).toISOString(),
-    status: registrationStatus(activity, Boolean(claim)),
-    drawAt:
-      activity.drawClosedAt === null
-        ? activity.deadline === null
-          ? null
-          : new Date(activity.deadline).toISOString()
-        : new Date(activity.drawClosedAt).toISOString(),
-    claim: claim ? await getClaimDetail(env, claim.id, entry.userId) : null,
-  };
+  return (
+    (await registrationDetailsBatch(env, [{ entry, activity }])).get(
+      entry.id,
+    ) ?? activityNotFound()
+  );
+}
+
+async function registrationDetailsBatch(
+  env: ApiBindings,
+  rows: { entry: RegistrationRow; activity: ActivityRow }[],
+  knownClaimsByParticipation: Map<string, ClaimDetail | null> = new Map(),
+): Promise<Map<string, RegistrationDetail>> {
+  if (!rows.length) return new Map();
+  const completed = rows.filter(
+    ({ entry, activity }) =>
+      activity.drawState === "completed" &&
+      !knownClaimsByParticipation.has(`${entry.activityId}:${entry.userId}`),
+  );
+  const [sources, winnings] = await Promise.all([
+    sourcePasswordsBatch(
+      env,
+      rows.map(({ entry }) => entry),
+    ),
+    completed.length
+      ? createDb(env.DB)
+          .select({ claim: claims, activity: activities })
+          .from(claims)
+          .innerJoin(activities, eq(activities.id, claims.activityId))
+          .where(
+            and(
+              isNull(activities.deletedAt),
+              or(
+                ...completed.map(({ entry }) =>
+                  and(
+                    eq(claims.activityId, entry.activityId),
+                    eq(claims.userId, entry.userId),
+                  ),
+                ),
+              ),
+            ),
+          )
+      : Promise.resolve([]),
+  ]);
+  const details = await claimDetailsBatch(env, winnings);
+  const byParticipation = new Map<string, ClaimDetail | null | undefined>(
+    knownClaimsByParticipation,
+  );
+  for (const { claim } of winnings) {
+    byParticipation.set(
+      `${claim.activityId}:${claim.userId}`,
+      details.get(claim.id),
+    );
+  }
+  return new Map(
+    rows.map(({ entry, activity }) => {
+      const participationKey = `${activity.id}:${entry.userId}`;
+      const claim = byParticipation.has(participationKey)
+        ? (byParticipation.get(participationKey) ?? null)
+        : null;
+      const sourcePassword =
+        entry.passwordId === null ? undefined : sources.get(entry.passwordId);
+      return [
+        entry.id,
+        {
+          id: entry.id,
+          activity: {
+            id: activity.id,
+            title: activity.title,
+            participationMode: activity.participationMode,
+            status: activityStatus(activity),
+            deadlineAt:
+              activity.deadline === null
+                ? null
+                : new Date(activity.deadline).toISOString(),
+            reward: rewardSummary(
+              activity,
+              (JSON.parse(activity.config) as ActivityInput)
+                .quantityVisibility === "exact",
+            ),
+          },
+          registeredAt: new Date(entry.registeredAt).toISOString(),
+          status: registrationStatus(activity, Boolean(claim)),
+          drawAt:
+            activity.drawClosedAt === null
+              ? activity.deadline === null
+                ? null
+                : new Date(activity.deadline).toISOString()
+              : new Date(activity.drawClosedAt).toISOString(),
+          claim,
+          ...(sourcePassword === undefined ? {} : { sourcePassword }),
+        },
+      ];
+    }),
+  );
 }
 
 export async function getRegistrationDetail(
@@ -98,6 +189,51 @@ export async function getCurrentRegistration(
   return entry ? detail(env, entry, activity) : null;
 }
 
+export async function getCurrentParticipationForActivity(
+  env: ApiBindings,
+  activity: ActivityRow,
+  userId: string,
+): Promise<ActivityParticipationResponse> {
+  const [claim, registration] = await Promise.all([
+    findUserClaim(env, activity.id, userId),
+    findRegistration(env, activity.id, userId),
+  ]);
+  const claimDetails = claim
+    ? await claimDetailsBatch(env, [{ claim, activity }])
+    : new Map<string, ClaimDetail>();
+  const knownClaimsByParticipation = new Map<string, ClaimDetail | null>();
+  const claimDetail = claim
+    ? (claimDetails.get(claim.id) ?? activityNotFound())
+    : null;
+  if (activity.drawState === "completed")
+    knownClaimsByParticipation.set(`${activity.id}:${userId}`, claimDetail);
+  const registrationDetails = registration
+    ? await registrationDetailsBatch(
+        env,
+        [{ entry: registration, activity }],
+        knownClaimsByParticipation,
+      )
+    : new Map<string, RegistrationDetail>();
+
+  return {
+    claim: claimDetail,
+    registration: registration
+      ? (registrationDetails.get(registration.id) ?? activityNotFound())
+      : null,
+  };
+}
+
+export async function getCurrentParticipation(
+  env: ApiBindings,
+  activityId: string,
+  userId: string,
+): Promise<ActivityParticipationResponse> {
+  const activity = await findActivity(env, activityId);
+  if (!activity || (activity.openedAt === null && activity.authorId !== userId))
+    activityNotFound();
+  return getCurrentParticipationForActivity(env, activity, userId);
+}
+
 export async function listAuthorRegistrations(
   env: ApiBindings,
   activityId: string,
@@ -114,6 +250,9 @@ export async function listAuthorRegistrations(
         username: users.username,
         displayName: users.displayName,
         avatarUrl: users.avatarUrl,
+        accountTier: sql<
+          "standard" | "lite"
+        >`CASE WHEN ${users.officialConnectVerified}=1 THEN 'standard' ELSE 'lite' END`,
       },
     })
     .from(activityRegistrations)
@@ -139,13 +278,15 @@ export async function listAuthorRegistrations(
     .limit(21);
   const page = rows.slice(0, 20);
   const last = page.at(-1)?.entry;
+  const details = await registrationDetailsBatch(
+    env,
+    page.map(({ entry }) => ({ entry, activity })),
+  );
   return {
-    items: await Promise.all(
-      page.map(async ({ entry, participant }) => ({
-        ...(await detail(env, entry, activity)),
-        participant,
-      })),
-    ),
+    items: page.map(({ entry, participant }) => ({
+      ...(details.get(entry.id) ?? activityNotFound()),
+      participant,
+    })),
     nextCursor:
       rows.length > 20 && last
         ? btoa(JSON.stringify({ time: last.registeredAt, id: last.id }))
@@ -158,24 +299,33 @@ export async function listParticipations(
   env: ApiBindings,
   userId: string,
   cursorValue?: string,
+  filters: ActivityHistoryFilters = {},
 ): Promise<ParticipationList> {
-  const before = cursor(cursorValue);
-  const rows = await env.DB.prepare(`SELECT kind,id,time FROM (
-    SELECT 'registration' AS kind,r.id,r.registered_at AS time FROM activity_registrations r JOIN activities a ON a.id=r.activity_id WHERE r.user_id=? AND a.deleted_at IS NULL
+  const db = createDb(env.DB);
+  const state = activityListStatusSql();
+  const type = filters.type ?? "all";
+  const status = filters.status ?? "all";
+  const scope = `participations:${userId}:${type}:${status}`;
+  const before = cursor(cursorValue, scope);
+  const history = sql`(
+    SELECT 'registration' AS kind,r.id,r.activity_id,r.registered_at AS time FROM activity_registrations r WHERE r.user_id=${userId}
     UNION ALL
-    SELECT 'claim' AS kind,c.id,c.claimed_at AS time FROM claims c JOIN activities a ON a.id=c.activity_id WHERE c.user_id=? AND a.deleted_at IS NULL
+    SELECT 'claim' AS kind,c.id,c.activity_id,c.claimed_at AS time FROM claims c WHERE c.user_id=${userId}
       AND NOT EXISTS(SELECT 1 FROM activity_registrations r WHERE r.activity_id=c.activity_id AND r.user_id=c.user_id)
-    ) WHERE ? IS NULL OR time<? OR (time=? AND id<?) ORDER BY time DESC,id DESC LIMIT 21`)
-    .bind(
-      userId,
-      userId,
-      before?.time ?? null,
-      before?.time ?? null,
-      before?.time ?? null,
-      before?.id ?? "",
-    )
-    .all<{ kind: "claim" | "registration"; id: string; time: number }>();
-  const page = rows.results.slice(0, 20);
+    ) h JOIN ${activities} ON ${activities.id}=h.activity_id`;
+  const base = and(isNull(activities.deletedAt), rewardFilterSql(type));
+  const counts = await db.all<{ status: ActivityStatus; count: number }>(
+    sql`SELECT ${state} AS status,COUNT(*) AS count FROM ${history} WHERE ${base} GROUP BY ${state}`,
+  );
+  const statusCounts = historyStatusCounts(counts);
+  const rows = await db.all<{
+    kind: "claim" | "registration";
+    id: string;
+    time: number;
+  }>(
+    sql`SELECT h.kind,h.id,h.time FROM ${history} WHERE ${and(base, status === "all" ? undefined : sql`${state}=${status}`, before ? sql`(h.time<${before.time} OR (h.time=${before.time} AND h.id<${before.id}))` : undefined)} ORDER BY h.time DESC,h.id DESC LIMIT 21`,
+  );
+  const page = rows.slice(0, 20);
   const last = page.at(-1);
   const claimIds = page
     .filter((row) => row.kind === "claim")
@@ -193,29 +343,203 @@ export async function listParticipations(
           ),
         )
     : [];
-  const summaries = new Map(
-    ordinaryClaims.map(({ claim, activity }) => [
-      claim.id,
-      projectClaimSummary(claim, activity),
-    ]),
-  );
+  const registrationIds = page
+    .filter((row) => row.kind === "registration")
+    .map((row) => row.id);
+  const registrations = registrationIds.length
+    ? await db
+        .select({ entry: activityRegistrations, activity: activities })
+        .from(activityRegistrations)
+        .innerJoin(
+          activities,
+          eq(activities.id, activityRegistrations.activityId),
+        )
+        .where(
+          and(
+            inArray(activityRegistrations.id, registrationIds),
+            eq(activityRegistrations.userId, userId),
+            isNull(activities.deletedAt),
+          ),
+        )
+    : [];
+  const [summaries, registrationDetails] = await Promise.all([
+    claimSummariesBatch(env, ordinaryClaims),
+    registrationDetailsBatch(env, registrations),
+  ]);
+  const historyActivities = new Map([
+    ...ordinaryClaims.map(
+      ({ claim, activity }) => [claim.id, activity] as const,
+    ),
+    ...registrations.map(
+      ({ entry, activity }) => [entry.id, activity] as const,
+    ),
+  ]);
+  const authorIds = [
+    ...new Set(
+      [...historyActivities.values()].map((activity) => activity.authorId),
+    ),
+  ];
+  const authors = authorIds.length
+    ? await db
+        .select({
+          id: users.id,
+          username: users.username,
+          displayName: users.displayName,
+          avatarUrl: users.avatarUrl,
+          accountTier: sql<
+            "standard" | "lite"
+          >`CASE WHEN ${users.officialConnectVerified}=1 THEN 'standard' ELSE 'lite' END`,
+        })
+        .from(users)
+        .where(inArray(users.id, authorIds))
+    : [];
+  const byAuthor = new Map(authors.map((author) => [author.id, author]));
   return {
-    items: await Promise.all(
-      page.map(async (row) =>
-        row.kind === "registration"
-          ? {
-              kind: "registration" as const,
-              registration: await getRegistrationDetail(env, row.id, userId),
-            }
-          : {
-              kind: "claim" as const,
-              claim: summaries.get(row.id) ?? activityNotFound(),
+    total: statusCounts[status],
+    statusCounts,
+    items: page.map((row) => {
+      const activity = historyActivities.get(row.id) ?? activityNotFound();
+      const exact =
+        (JSON.parse(activity.config) as ActivityInput).quantityVisibility ===
+        "exact";
+      const activityFields = {
+        ...activityListFields(activity, activityStatus(activity), exact),
+        createdAt: new Date(activity.createdAt).toISOString(),
+        author: byAuthor.get(activity.authorId) ?? activityNotFound(),
+      };
+      if (row.kind === "registration") {
+        const registration =
+          registrationDetails.get(row.id) ?? activityNotFound();
+        return {
+          kind: "registration" as const,
+          registration: {
+            ...registration,
+            activity: {
+              ...registration.activity,
+              ...activityFields,
             },
+          },
+        };
+      }
+      const claim = summaries.get(row.id) ?? activityNotFound();
+      return {
+        kind: "claim" as const,
+        claim: {
+          ...claim,
+          activity: {
+            ...claim.activity,
+            ...activityFields,
+          },
+        },
+      };
+    }),
+    nextCursor:
+      rows.length > 20 && last
+        ? btoa(JSON.stringify({ time: last.time, id: last.id, scope }))
+        : null,
+  };
+}
+
+export async function accountHistorySummary(
+  env: ApiBindings,
+  userId: string,
+): Promise<AccountHistorySummary> {
+  const result = await env.DB.prepare(`SELECT
+    (SELECT COUNT(*) FROM activities WHERE author_id=? AND deleted_at IS NULL) AS initiatedCount,
+    (SELECT COUNT(*) FROM activities a WHERE a.deleted_at IS NULL AND (
+      EXISTS(SELECT 1 FROM claims c WHERE c.activity_id=a.id AND c.user_id=?)
+      OR EXISTS(SELECT 1 FROM activity_registrations r WHERE r.activity_id=a.id AND r.user_id=?)
+    )) AS participatedCount`)
+    .bind(userId, userId, userId)
+    .first<AccountHistorySummary>();
+  return result ?? { initiatedCount: 0, participatedCount: 0 };
+}
+
+export async function listPublicRegistrations(
+  env: ApiBindings,
+  activityId: string,
+  viewerId?: string,
+  cursorValue?: string,
+): Promise<PublicRegistrationList> {
+  const activity = await findActivity(env, activityId);
+  if (
+    !activity ||
+    (activity.openedAt === null && activity.authorId !== viewerId)
+  )
+    activityNotFound();
+  const config = JSON.parse(activity.config) as ActivityInput;
+  if (!config.showRecipientList)
+    return { enabled: false, items: [], nextCursor: null };
+  let before: Cursor | undefined;
+  if (cursorValue) {
+    try {
+      before = cursor(
+        await decryptString(
+          atob(cursorValue),
+          env,
+          `registrations:${activityId}`,
+        ),
+      );
+    } catch {
+      invalidActivity("分页标识无效");
+    }
+  }
+  const rows = await createDb(env.DB)
+    .select({
+      entry: activityRegistrations,
+      username: users.username,
+      displayName: users.displayName,
+      avatarUrl: users.avatarUrl,
+      accountTier: sql<
+        "standard" | "lite"
+      >`CASE WHEN ${users.officialConnectVerified}=1 THEN 'standard' ELSE 'lite' END`,
+    })
+    .from(activityRegistrations)
+    .innerJoin(users, eq(users.id, activityRegistrations.userId))
+    .where(
+      and(
+        eq(activityRegistrations.activityId, activityId),
+        before
+          ? or(
+              lt(activityRegistrations.registeredAt, before.time),
+              and(
+                eq(activityRegistrations.registeredAt, before.time),
+                lt(activityRegistrations.id, before.id),
+              ),
+            )
+          : undefined,
       ),
+    )
+    .orderBy(
+      desc(activityRegistrations.registeredAt),
+      desc(activityRegistrations.id),
+    )
+    .limit(21);
+  const page = rows.slice(0, 20);
+  const last = page.at(-1)?.entry;
+  return {
+    enabled: true,
+    items: page.map(
+      ({ entry, username, displayName, avatarUrl, accountTier }) => ({
+        id: entry.id,
+        username: config.showRecipientUsername ? username : "",
+        displayName: config.showRecipientUsername ? displayName : "匿名用户",
+        avatarUrl: config.showRecipientUsername ? avatarUrl : null,
+        accountTier: config.showRecipientUsername ? accountTier : null,
+        ...(config.showRecipientTime
+          ? { registeredAt: new Date(entry.registeredAt).toISOString() }
+          : {}),
+      }),
     ),
     nextCursor:
-      rows.results.length > 20 && last
-        ? btoa(JSON.stringify({ time: last.time, id: last.id }))
+      rows.length > 20 && last
+        ? btoa(
+            await encryptString(
+              btoa(JSON.stringify({ time: last.registeredAt, id: last.id })),
+              env,
+              `registrations:${activityId}`,
+            ),
+          )
         : null,
   };
 }

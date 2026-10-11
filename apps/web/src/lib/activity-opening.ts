@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { ActivityRequestError, activityKeys, readResponse } from "./activities";
-import { sessionQueryKey } from "./auth";
+import { type SessionResponse, sessionIdentity, sessionQueryKey } from "./auth";
 
 export type OpeningPhase = "idle" | "checking" | "opening";
 
@@ -34,9 +34,16 @@ export function useActivityOpening(userId: string, csrfToken: string) {
     const operation = new AbortController();
     controller.current = operation;
     const { signal } = operation;
+    const initialUser =
+      queryClient.getQueryData<SessionResponse>(sessionQueryKey)?.user;
+    const initialIdentity = sessionIdentity(initialUser ?? null);
     const sessionMatches = () =>
-      queryClient.getQueryData<{ user: { id: string } | null }>(sessionQueryKey)
-        ?.user?.id === userId;
+      queryClient.getQueryData<SessionResponse>(sessionQueryKey)?.user?.id ===
+        userId &&
+      sessionIdentity(
+        queryClient.getQueryData<SessionResponse>(sessionQueryKey)?.user ??
+          null,
+      ) === initialIdentity;
     function assertActive() {
       if (signal.aborted || !sessionMatches()) {
         operation.abort();
@@ -79,14 +86,14 @@ export function useActivityOpening(userId: string, csrfToken: string) {
           activity.config.rewardType === "ldc" &&
           current.config.merchantId !== activity.config.merchantId)
       )
-        throw new Error("活动已修改，请检查最新配置后重新开放。");
+        throw new Error("活动已修改，请检查活动配置后重新开放。");
       if (current.openedAt) {
         if (current.version !== activity.version + 1)
-          throw new Error("活动已修改，请检查最新配置后重新开放。");
+          throw new Error("活动已修改，请检查活动配置后重新开放。");
         return current;
       }
       if (current.version !== activity.version)
-        throw new Error("活动已修改，请检查最新配置后重新开放。");
+        throw new Error("活动已修改，请检查活动配置后重新开放。");
       return current;
     };
     async function remember(opened: ManagedActivity) {
@@ -105,6 +112,14 @@ export function useActivityOpening(userId: string, csrfToken: string) {
     }
     try {
       assertActive();
+      if (activity.rewardType === "ldc" && !initialUser?.canUseLdc)
+        throw new ActivityRequestError(
+          "LDC活动需要使用官方Connect升级。",
+          403,
+          [],
+          undefined,
+          "OFFICIAL_CONNECT_REQUIRED",
+        );
       setPhase("opening");
       const merchant = await readMerchant();
       const credentialVersion = merchant?.credentialVersion;
@@ -154,7 +169,7 @@ export function useActivityOpening(userId: string, csrfToken: string) {
           if (current.openedAt) return await remember(current);
           const checked = await readMerchant();
           if (checked?.credentialVersion !== credentialVersion)
-            throw new Error("商户凭证已更新，请检查最新配置后重新开放。");
+            throw new Error("商户凭证已更新，请检查商户配置后重新开放。");
           if (checked?.credentialVerification.status === "checking") continue;
           if (checked?.credentialVerification.status !== "passed")
             throw new Error(
@@ -179,7 +194,7 @@ export function useActivityOpening(userId: string, csrfToken: string) {
     } finally {
       if (controller.current === operation) {
         controller.current = null;
-        if (!signal.aborted) setPhase("idle");
+        setPhase("idle");
       }
     }
   }

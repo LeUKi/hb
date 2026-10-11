@@ -1,16 +1,26 @@
 import {
   type ClaimActivityInput,
+  type ClaimDetail,
   type PublicActivity,
   passwordSchema,
+  type RegistrationDetail,
 } from "@hb/contracts";
+import { useAtom, useSetAtom } from "jotai";
+import { ArrowRight, Gift, LoaderCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ActivityRequestError } from "../../lib/activities";
+import { useAttemptCooldown } from "../../lib/attempt-cooldown";
+import { useAccountSession } from "../../lib/auth";
+import { useClaimReward } from "../../lib/claims";
+import { isDirectParticipation } from "../../lib/direct-participation";
 import {
-  useClaimReward,
-  useCurrentClaim,
-  useCurrentRegistration,
-} from "../../lib/claims";
-import { Button } from "../ui/button";
+  type RedemptionIntentOperation,
+  redemptionIntentAtom,
+  rewardAnimationAtom,
+} from "../../lib/redemption-intent";
+import { OfficialConnectRequired } from "../auth/official-connect-required";
+import { SkeletonRows } from "../presentation/loading";
+import { RedemptionAction } from "../presentation/redemption-transition";
 import { ActivityErrorView } from "./activity-error";
 import { ClaimContent } from "./claim-content";
 import { PasswordField } from "./password-field";
@@ -19,55 +29,89 @@ import { RegistrationContent } from "./registration-content";
 export function ClaimEntry({
   activity,
   userId,
+  accountTier,
   csrfToken,
+  canUseLdc,
   initialPassword = "",
+  hideResult = false,
+  knownClaim: claim,
+  knownRegistration: registrationRecord,
+  participationPending = false,
+  participationError = null,
+  onParticipationRetry,
 }: {
   activity: PublicActivity;
   userId: string;
+  accountTier: string;
   csrfToken: string;
+  canUseLdc: boolean;
   initialPassword?: string;
+  hideResult?: boolean;
+  knownClaim: ClaimDetail | null | undefined;
+  knownRegistration: RegistrationDetail | null;
+  participationPending?: boolean;
+  participationError?: Error | null;
+  onParticipationRetry?: () => void;
 }) {
   const timedDraw = Boolean(activity.draw);
-  const registrationShouldPoll =
-    activity.draw?.state === "waiting" || activity.draw?.state === "settling";
-  const current = useCurrentClaim(userId, activity.id);
-  const registration = useCurrentRegistration(
-    userId,
-    activity.id,
-    timedDraw,
-    registrationShouldPoll,
-  );
-  if (current.isPending || (timedDraw && registration.isPending))
-    return <p role="status">正在查询你的参与记录…</p>;
-  if (current.isError)
+  const direct = isDirectParticipation(activity);
+  const setIntent = useSetAtom(redemptionIntentAtom);
+  const alreadyParticipated = Boolean(claim || registrationRecord);
+  useEffect(() => {
+    if (!alreadyParticipated && !direct) return;
+    setIntent((intent) =>
+      intent?.userId === userId && intent.activityId === activity.id
+        ? null
+        : intent,
+    );
+  }, [alreadyParticipated, direct, userId, activity.id, setIntent]);
+  if (participationPending)
+    return (
+      <div aria-busy="true">
+        <SkeletonRows rows={2} />
+      </div>
+    );
+  if (participationError)
     return (
       <ActivityErrorView
-        error={current.error}
-        retry={() => current.refetch()}
+        error={participationError}
+        retry={onParticipationRetry ?? (() => {})}
       />
     );
-  if (timedDraw && registration.isError)
-    return (
-      <ActivityErrorView
-        error={registration.error}
-        retry={() => registration.refetch()}
-      />
-    );
-  if (current.data.claim)
-    return (
-      <ClaimContent key={current.data.claim.id} claim={current.data.claim} />
-    );
-  if (timedDraw && registration.data?.registration)
-    return (
+  if (claim)
+    return hideResult ? null : <ClaimContent key={claim.id} claim={claim} />;
+  if (timedDraw && registrationRecord)
+    return hideResult ? null : (
       <RegistrationContent
-        key={registration.data.registration.id}
-        registration={registration.data.registration}
+        key={registrationRecord.id}
+        registration={registrationRecord}
       />
     );
   if (activity.status !== "active") return null;
+  if (activity.deadlineAt && Date.parse(activity.deadlineAt) <= Date.now())
+    return (
+      <p className="eligibility-note">
+        {activity.draw ? "报名已截止。" : "活动已截止，不能继续兑换。"}
+      </p>
+    );
+  if (activity.rewardType === "ldc" && !canUseLdc)
+    return (
+      <OfficialConnectRequired
+        returnTo={`/activities/${activity.id}`}
+        message={
+          timedDraw
+            ? direct
+              ? "青春版可以浏览这个LDC活动，报名需要使用官方Connect升级。升级后请主动点击报名。"
+              : "青春版可以浏览这个LDC活动，报名需要使用官方Connect升级。升级后请主动提交口令报名。"
+            : direct
+              ? "青春版可以浏览这个LDC活动，领取需要使用官方Connect升级。升级后请主动点击领取奖励。"
+              : "青春版可以浏览这个LDC活动，领取需要使用官方Connect升级。升级后请主动提交口令领取。"
+        }
+      />
+    );
   if (activity.rewardType === "ldc" && activity.author.id === userId)
     return (
-      <p className="text-sm text-neutral-600">
+      <p className="eligibility-note">
         {timedDraw
           ? "作者不能报名或领取自己创建的 LDC 活动。"
           : "作者不能领取自己创建的 LDC 活动。"}
@@ -75,9 +119,10 @@ export function ClaimEntry({
     );
   return (
     <ClaimForm
-      key={`${userId}-${activity.id}`}
+      key={`${userId}-${accountTier}-${activity.id}-${activity.participationMode ?? "password"}`}
       activity={activity}
       userId={userId}
+      accountTier={accountTier}
       csrfToken={csrfToken}
       initialPassword={initialPassword}
     />
@@ -87,25 +132,47 @@ export function ClaimEntry({
 function ClaimForm({
   activity,
   userId,
+  accountTier,
   csrfToken,
   initialPassword,
 }: {
   activity: PublicActivity;
   userId: string;
+  accountTier: string;
   csrfToken: string;
   initialPassword: string;
 }) {
   const [password, setPassword] = useState(initialPassword);
+  const direct = isDirectParticipation(activity);
+  const [intent, setIntent] = useAtom(redemptionIntentAtom);
+  const setAnimation = useSetAtom(rewardAnimationAtom);
+  const automaticSubmit = useRef<
+    (operation: RedemptionIntentOperation) => Promise<void>
+  >(async () => {});
+  useEffect(() => {
+    if (
+      direct ||
+      !intent ||
+      intent.userId !== userId ||
+      intent.accountTier !== accountTier ||
+      intent.activityId !== activity.id
+    )
+      return;
+    setIntent(null);
+    setPassword(intent.operation.password);
+    void automaticSubmit.current(intent.operation);
+  }, [intent, direct, userId, accountTier, activity.id, setIntent]);
   const [message, setMessage] = useState<string | null>(null);
+  const [officialRequired, setOfficialRequired] = useState(false);
   const [pendingSubmission, setPendingSubmission] =
     useState<ClaimActivityInput | null>(null);
-  const [retryAt, setRetryAt] = useState<number | null>(null);
-  const [now, setNow] = useState(Date.now);
   const alive = useRef(true);
   const inFlight = useRef(false);
   const mutation = useClaimReward(userId, csrfToken, activity.id);
-  const remainingSeconds =
-    retryAt === null ? 0 : Math.max(0, Math.ceil((retryAt - now) / 1000));
+  const account = useAccountSession(userId);
+  const cooldown = useAttemptCooldown(userId);
+  const blockedByCooldown = !pendingSubmission && cooldown.active;
+  const remainingSeconds = blockedByCooldown ? cooldown.seconds : 0;
 
   useEffect(() => {
     alive.current = true;
@@ -113,30 +180,36 @@ function ClaimForm({
       alive.current = false;
     };
   }, []);
-  useEffect(() => {
-    if (retryAt === null) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 250);
-    return () => window.clearInterval(timer);
-  }, [retryAt]);
-
-  async function submit() {
-    if (inFlight.current || remainingSeconds > 0) return;
-    const parsed = passwordSchema.safeParse(password);
-    if (!pendingSubmission && !parsed.success) {
+  async function submit(automatic?: RedemptionIntentOperation) {
+    if (
+      inFlight.current ||
+      (direct && Boolean(automatic)) ||
+      (!automatic && !pendingSubmission && blockedByCooldown)
+    )
+      return;
+    const parsed = passwordSchema.safeParse(automatic?.password ?? password);
+    if (!pendingSubmission && !direct && !parsed.success) {
       setMessage(parsed.error.issues[0]?.message ?? "请检查兑换口令。");
       return;
     }
-    const submission = pendingSubmission ?? {
-      submissionId: crypto.randomUUID(),
-      password: parsed.success ? parsed.data : password,
-    };
+    const submission: ClaimActivityInput =
+      automatic ??
+      pendingSubmission ??
+      (direct
+        ? { participationMode: "direct", submissionId: crypto.randomUUID() }
+        : {
+            submissionId: crypto.randomUUID(),
+            password: parsed.success ? parsed.data : password,
+          });
     setMessage(null);
+    setOfficialRequired(false);
+    const identity = account.captureIdentity();
     inFlight.current = true;
+    setAnimation({ activityId: activity.id, token: submission.submissionId });
     try {
       const result = await mutation.mutateAsync(submission);
-      if (!alive.current) return;
+      if (!alive.current || !account.isCurrentIdentity(identity)) return;
       setPendingSubmission(null);
-      setRetryAt(null);
       if (result.result === "incorrect") setMessage("口令不正确，请重新尝试。");
       else if (result.result === "draft")
         setMessage(activity.draw ? "活动尚未开放报名。" : "活动尚未开放领取。");
@@ -153,11 +226,8 @@ function ClaimForm({
           result.result === "claimed" ? "领取成功。" : "你已经领取过本活动。",
         );
     } catch (error) {
-      if (!alive.current) return;
+      if (!alive.current || !account.isCurrentIdentity(identity)) return;
       if (error instanceof ActivityRequestError && error.status === 429) {
-        const until = Date.now() + (error.retryAfterSeconds ?? 60) * 1000;
-        setRetryAt(until);
-        setNow(Date.now());
         setPendingSubmission(null);
         setMessage("尝试过于频繁，请稍后重试。");
       } else if (
@@ -172,52 +242,74 @@ function ClaimForm({
         );
       } else {
         setPendingSubmission(null);
-        setMessage(error.message);
+        if (error.code === "OFFICIAL_CONNECT_REQUIRED")
+          setOfficialRequired(true);
+        else setMessage(error.message);
       }
     } finally {
       inFlight.current = false;
     }
   }
 
+  automaticSubmit.current = submit;
+
   return (
     <form
-      className="space-y-4"
+      className="claim-form"
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
       }}
     >
-      <h2 className="text-lg font-semibold">
-        {activity.draw ? "口令报名" : "口令兑奖"}
-      </h2>
-      <PasswordField
-        value={password}
-        onChange={setPassword}
-        disabled={mutation.isPending || Boolean(pendingSubmission)}
-        dedicatedStatistics={activity.forceDedicated}
-      />
+      {!direct && (
+        <PasswordField
+          value={password}
+          onChange={setPassword}
+          disabled={mutation.isPending || Boolean(pendingSubmission)}
+          dedicatedStatistics={activity.forceDedicated}
+          onSubmit={() => void submit()}
+        />
+      )}
       {message ? (
-        <p role="status" className="text-sm text-amber-800">
+        <p role="status" className="form-message">
           {message}
         </p>
       ) : null}
+      {officialRequired ? (
+        <OfficialConnectRequired returnTo={`/activities/${activity.id}`} />
+      ) : null}
       {remainingSeconds > 0 ? (
-        <p role="timer" className="text-sm text-neutral-600">
+        <p role="timer" className="form-message">
           {remainingSeconds} 秒后可重试
         </p>
       ) : null}
-      <Button
+      <RedemptionAction
+        className="button claim-button"
         type="submit"
         disabled={mutation.isPending || remainingSeconds > 0}
       >
+        {mutation.isPending ? (
+          <LoaderCircle size={18} className="spin" aria-hidden="true" />
+        ) : (
+          <Gift size={18} aria-hidden="true" />
+        )}
         {mutation.isPending
           ? "正在确认…"
           : pendingSubmission
             ? "重试原提交"
-            : activity.draw
-              ? "报名"
-              : "领取"}
-      </Button>
+            : remainingSeconds > 0
+              ? `还需等待 ${remainingSeconds} 秒`
+              : direct
+                ? activity.draw
+                  ? "立即报名"
+                  : "领取奖励"
+                : activity.draw
+                  ? "报名"
+                  : activity.rewardType === "text"
+                    ? "领取奖励"
+                    : "领取红包"}
+        <ArrowRight size={17} aria-hidden="true" />
+      </RedemptionAction>
     </form>
   );
 }

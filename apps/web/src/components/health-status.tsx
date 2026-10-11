@@ -31,21 +31,21 @@ export function HealthStatus() {
 
   return (
     <motion.section
-      className="w-full max-w-3xl rounded-md border border-neutral-200 bg-white p-5 shadow-sm"
+      className="w-full max-w-3xl rounded-md border border-separator bg-surface p-5 shadow-sm"
       initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
       animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
       transition={{ duration: 0.18 }}
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-sm text-neutral-500">API 健康检查</p>
+          <p className="text-sm text-subtle">API 健康检查</p>
           <h2
-            className="mt-1 text-2xl font-semibold tracking-normal text-neutral-950"
+            className="mt-1 text-2xl font-semibold tracking-normal text-ink"
             data-testid="health-status"
           >
             {statusText}
           </h2>
-          <p className="mt-2 text-sm leading-6 text-neutral-600">
+          <p className="mt-2 text-sm leading-6 text-muted">
             {connected
               ? "前端已通过同域网关连接到 Hono 后端。"
               : health.isError

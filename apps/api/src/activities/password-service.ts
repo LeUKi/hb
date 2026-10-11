@@ -1,13 +1,16 @@
 import type {
   ActivityPasswords,
-  ClaimActivityInput,
+  PasswordClaimInput,
   SolveResult,
 } from "@hb/contracts";
-import { CLAIM_WINDOW_MS } from "@hb/contracts";
 import { and, eq } from "drizzle-orm";
 import { createDb } from "../db/client";
 import { activityPasswords } from "../db/schema";
 import type { ApiBindings } from "../env";
+import {
+  assertAttemptAllowed,
+  attemptWriteStatements,
+} from "../runtime/attempt-cooldown";
 import {
   decryptString,
   digestPassword,
@@ -15,16 +18,16 @@ import {
 } from "../security/crypto";
 import { findUserClaim } from "./claim-queries";
 import {
-  assertClaimRateLimit,
   attemptAssociatedData,
   bindFingerprint,
-  claimAttemptLimit,
   findSubmission,
   type SubmissionRow,
+  submissionPasswordMatched,
 } from "./claim-service";
 import { findRegistration } from "./draw-storage";
 import { ActivityError, activityNotFound } from "./errors";
 import { databaseNow } from "./lifecycle";
+import { assertParticipationMode } from "./participation";
 import { activityStatus } from "./service";
 import { findActivity, passwordAssociatedData } from "./storage";
 
@@ -62,7 +65,7 @@ export async function getActivityPasswords(
     env.DB.prepare(`SELECT
         (SELECT COUNT(*) FROM activity_passwords WHERE activity_id = a.id) AS total,
         CASE WHEN json_extract(a.config,'$.money.mode')='timed_draw' THEN 1 ELSE 0 END AS timed,
-        CASE WHEN a.opened_at IS NOT NULL AND a.ended_at IS NULL AND a.archived_at IS NULL
+        CASE WHEN a.participation_mode='password' AND a.opened_at IS NOT NULL AND a.ended_at IS NULL AND a.archived_at IS NULL
           AND a.claimed_count < a.total_count AND a.deadline > ${databaseNow}
           AND (EXISTS (SELECT 1 FROM claims WHERE activity_id = a.id AND user_id = ?)
             OR EXISTS (SELECT 1 FROM activity_registrations WHERE activity_id=a.id AND user_id=?))
@@ -114,6 +117,7 @@ function solveResult(submission: SubmissionRow): SolveResult {
     throw new Error("Invalid completed password solve");
   return {
     outcome: submission.outcome as SolveResult["outcome"],
+    passwordMatched: submissionPasswordMatched(submission),
   };
 }
 
@@ -121,7 +125,7 @@ async function registerEndedSolve(
   env: ApiBindings,
   activityId: string,
   userId: string,
-  input: ClaimActivityInput,
+  input: PasswordClaimInput,
   fingerprint: string,
   outcome: "ended" | "archived",
 ) {
@@ -158,7 +162,7 @@ export async function solveActivityPassword(
   env: ApiBindings,
   activityId: string,
   userId: string,
-  input: ClaimActivityInput,
+  input: PasswordClaimInput,
 ): Promise<SolveResult> {
   const fingerprint = await digestPassword(
     `solve-request:${activityId}:${input.password}`,
@@ -181,6 +185,7 @@ export async function solveActivityPassword(
       (activity.openedAt === null && activity.authorId !== userId)
     )
       activityNotFound();
+    assertParticipationMode(activity, "password");
     const status = activityStatus(activity);
     if (status === "draft")
       throw new ActivityError(400, "ACTIVITY_NOT_OPEN", "活动尚未开放");
@@ -202,7 +207,7 @@ export async function solveActivityPassword(
         fingerprint,
         status,
       );
-    await assertClaimRateLimit(env, activityId, userId);
+    await assertAttemptAllowed(env, userId, "activity");
     const password = await createDb(env.DB)
       .select({ id: activityPasswords.id })
       .from(activityPasswords)
@@ -223,23 +228,18 @@ export async function solveActivityPassword(
         )
       : null;
     const statements = [
-      env.DB.prepare(`UPDATE activities SET version = CASE WHEN version = ? AND deleted_at IS NULL
+      ...attemptWriteStatements(env, userId, "activity", rowId),
+      env.DB.prepare(`UPDATE activities SET version = CASE WHEN version = ? AND participation_mode='password' AND deleted_at IS NULL
           AND opened_at IS NOT NULL AND ended_at IS NULL AND archived_at IS NULL
           AND claimed_count < total_count AND deadline > ${databaseNow}
           AND (EXISTS (SELECT 1 FROM claims WHERE activity_id = ? AND user_id = ?)
             OR EXISTS (SELECT 1 FROM activity_registrations WHERE activity_id=? AND user_id=?))
-          AND (SELECT COUNT(*) FROM redemption_submissions WHERE activity_id = ? AND user_id = ?
-            AND validated_at > ${databaseNow} - ?) < ?
           THEN version ELSE NULL END WHERE id = ?`).bind(
         activity.version,
         activityId,
         userId,
         activityId,
         userId,
-        activityId,
-        userId,
-        CLAIM_WINDOW_MS,
-        claimAttemptLimit(env),
         activityId,
       ),
       env.DB.prepare(`INSERT INTO redemption_submissions
@@ -286,7 +286,7 @@ export async function solveActivityPassword(
           !(await findRegistration(env, activityId, userId)))
       )
         continue;
-      await assertClaimRateLimit(env, activityId, userId);
+      await assertAttemptAllowed(env, userId, "activity");
       throw error;
     }
   }

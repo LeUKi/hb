@@ -25,6 +25,9 @@ async function resetLegacyDb(db: D1Database) {
     .all<{ type: "table" | "view" | "trigger"; name: string }>();
   await db.prepare("PRAGMA foreign_keys=OFF").run();
   const tableOrder = [
+    "merchant_config_changes",
+    "payment_identity_corrections",
+    "merchant_client_ids",
     "payment_duplicate_probes",
     "payment_username_corrections",
     "payment_retry_grants",
@@ -246,6 +249,7 @@ it("upgrades a populated step-3 database without changing IDs, encrypted content
       join_square: 0,
       merchant_id: null,
       payment_mode: null,
+      participation_mode: "password",
       post_number: 1,
       deleted_at: null,
       registered_count: 0,
@@ -275,6 +279,7 @@ it("upgrades a populated step-3 database without changing IDs, encrypted content
     snapshots[4]?.results.map((row) => ({
       ...row,
       purpose: "claim",
+      participation_mode: "password",
       registration_id: null,
     })),
   );
@@ -545,6 +550,7 @@ it("upgrades populated simulated LDC payment data from 0008 through acceptance m
   expect(after[1]?.results).toEqual(
     before[1]?.results.map((row) => ({
       ...(row as Record<string, unknown>),
+      client_id: String(before[0]?.results[0]?.client_id),
       verification_status: "unverified",
       verification_token: null,
       verification_started_at: null,
@@ -558,6 +564,7 @@ it("upgrades populated simulated LDC payment data from 0008 through acceptance m
     before[2]?.results.map((row) => ({
       ...(row as Record<string, unknown>),
       payment_mode: "simulation",
+      participation_mode: "password",
       post_number: 1,
       deleted_at: null,
       registered_count: 0,
@@ -606,6 +613,9 @@ it("upgrades populated simulated LDC payment data from 0008 through acceptance m
     before[6]?.results.map((row) => ({
       ...(row as Record<string, unknown>),
       http_status: null,
+      client_id: String(before[0]?.results[0]?.client_id),
+      identity_correction_version: 0,
+      no_order_evidence: null,
       purpose: "recovery",
       diagnostic_ciphertext: null,
       recipient_username: null,
@@ -951,7 +961,14 @@ it("selects one preferred current merchant while preserving legacy credentials a
       usage_status: current.has(String(row.id)) ? "current" : "legacy",
     })),
   );
-  expect(after[1]?.results).toEqual(before[1]?.results);
+  expect(after[1]?.results).toEqual(
+    before[1]?.results.map((row) => ({
+      ...row,
+      client_id: before[0]?.results.find(
+        (merchant) => merchant.id === row.merchant_id,
+      )?.client_id,
+    })),
+  );
   expect(after[2]?.results).toEqual(before[2]?.results);
   expect(after[3]?.results).toEqual(
     before[3]?.results.map((row) => ({
@@ -1165,6 +1182,7 @@ it("adds optional Connect profile fields without invalidating existing accounts 
     ...oldUser,
     email_ciphertext: null,
     avatar_url: null,
+    official_connect_verified: 1,
   });
   const response = await app.request(
     "https://hb.example.com/api/me",
@@ -1177,6 +1195,9 @@ it("adds optional Connect profile fields without invalidating existing accounts 
     user: {
       id: userId,
       username: "OldProfile",
+      accountTier: "standard",
+      canUseLdc: true,
+      loginProvider: "connect",
       displayName: "原有昵称",
       avatarUrl: null,
       email: null,
@@ -1188,7 +1209,7 @@ it("adds optional Connect profile fields without invalidating existing accounts 
       .prepare("SELECT * FROM sessions WHERE token_hash=?")
       .bind(tokenHash)
       .first(),
-  ).toEqual(oldSession);
+  ).toEqual({ ...oldSession, login_provider: "connect" });
   expect((await db.prepare("PRAGMA foreign_key_check").all()).results).toEqual(
     [],
   );
@@ -1196,4 +1217,108 @@ it("adds optional Connect profile fields without invalidating existing accounts 
   expect(
     await db.prepare("SELECT COUNT(*) AS count FROM users").first("count"),
   ).toBe(1);
+});
+
+it("migrates official eligibility once and cannot downgrade after upgrade", async () => {
+  const testEnv = env as typeof env & {
+    TEST_LEGACY_DB: D1Database;
+    TEST_MIGRATIONS: D1Migration[];
+  };
+  const db = testEnv.TEST_LEGACY_DB;
+  await resetLegacyDb(db);
+  await applyD1Migrations(
+    db,
+    testEnv.TEST_MIGRATIONS.filter((migration) => migration.name < "0021"),
+  );
+  const id = crypto.randomUUID();
+  await db
+    .prepare(
+      "INSERT INTO users(id,external_id,username,display_name,created_at,updated_at) VALUES(?,?,'OldOfficial','Old official',1,1)",
+    )
+    .bind(id, id)
+    .run();
+  await applyD1Migrations(db, testEnv.TEST_MIGRATIONS);
+  expect(
+    await db
+      .prepare("SELECT official_connect_verified FROM users WHERE id=?")
+      .bind(id)
+      .first("official_connect_verified"),
+  ).toBe(1);
+  await expect(
+    db
+      .prepare("UPDATE users SET official_connect_verified=0 WHERE id=?")
+      .bind(id)
+      .run(),
+  ).rejects.toThrow("OFFICIAL_CONNECT_CANNOT_DOWNGRADE");
+  const lite = crypto.randomUUID();
+  await db
+    .prepare(
+      "INSERT INTO users(id,external_id,username,display_name,created_at,updated_at) VALUES(?,?,'NewLite','New lite',1,1)",
+    )
+    .bind(lite, lite)
+    .run();
+  expect(
+    await db
+      .prepare("SELECT official_connect_verified FROM users WHERE id=?")
+      .bind(lite)
+      .first("official_connect_verified"),
+  ).toBe(0);
+  await db
+    .prepare("UPDATE users SET official_connect_verified=1 WHERE id=?")
+    .bind(lite)
+    .run();
+  await expect(
+    db
+      .prepare("UPDATE users SET official_connect_verified=0 WHERE id=?")
+      .bind(lite)
+      .run(),
+  ).rejects.toThrow("OFFICIAL_CONNECT_CANNOT_DOWNGRADE");
+});
+
+it("preserves official logins during rolling deployment without upgrading LiteAuth sessions", async () => {
+  const testEnv = env as typeof env & {
+    TEST_LEGACY_DB: D1Database;
+    TEST_MIGRATIONS: D1Migration[];
+  };
+  const db = testEnv.TEST_LEGACY_DB;
+  await resetLegacyDb(db);
+  await applyD1Migrations(
+    db,
+    testEnv.TEST_MIGRATIONS.filter((migration) => migration.name < "0022"),
+  );
+  for (const id of ["old-callback", "lite-only", "late-callback", "new-lite"]) {
+    await db
+      .prepare(
+        "INSERT INTO users(id,external_id,username,display_name,created_at,updated_at) VALUES(?,?,?,? ,1,1)",
+      )
+      .bind(id, id, id, id)
+      .run();
+  }
+  const insertSession = async (id: string, provider?: string) => {
+    await db
+      .prepare(
+        provider
+          ? "INSERT INTO sessions(token_hash,user_id,csrf_token,created_at,expires_at,last_seen_at,login_provider) VALUES(?,?,?,1,2,1,?)"
+          : "INSERT INTO sessions(token_hash,user_id,csrf_token,created_at,expires_at,last_seen_at) VALUES(?,?,?,1,2,1)",
+      )
+      .bind(id, id, id, ...(provider ? [provider] : []))
+      .run();
+  };
+  await insertSession("old-callback");
+  await insertSession("lite-only", "liteauth");
+  await applyD1Migrations(db, testEnv.TEST_MIGRATIONS);
+  await insertSession("late-callback");
+  await insertSession("new-lite", "liteauth");
+  expect(
+    (
+      await db
+        .prepare("SELECT id,official_connect_verified FROM users ORDER BY id")
+        .all()
+    ).results,
+  ).toEqual([
+    { id: "late-callback", official_connect_verified: 1 },
+    { id: "lite-only", official_connect_verified: 0 },
+    { id: "new-lite", official_connect_verified: 0 },
+    { id: "old-callback", official_connect_verified: 1 },
+  ]);
 });

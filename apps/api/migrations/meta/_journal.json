@@ -141,6 +141,48 @@
       "when": 1791209001558,
       "tag": "0019_absurd_captain_marvel",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1791220273102,
+      "tag": "0020_lyrical_scorpion",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1791256661193,
+      "tag": "0021_gifted_black_tom",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1791258378438,
+      "tag": "0022_official_session_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1791610639202,
+      "tag": "0023_account_attempt_cooldown",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1791614411763,
+      "tag": "0024_login_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1791644681521,
+      "tag": "0025_direct_participation",
+      "breakpoints": true
     }
   ]
 }

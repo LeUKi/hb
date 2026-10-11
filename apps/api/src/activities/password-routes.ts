@@ -1,6 +1,6 @@
 import {
   ACTIVITY_LIMITS,
-  claimActivitySchema,
+  passwordSolveSchema,
   type SolveResult,
 } from "@hb/contracts";
 import { Hono } from "hono";
@@ -36,7 +36,7 @@ export const passwordRoutes = new Hono<ApiContext>()
       },
     }),
     validator("json", (value) => {
-      const parsed = claimActivitySchema.safeParse(value);
+      const parsed = passwordSolveSchema.safeParse(value);
       if (!parsed.success)
         throw new ActivityValidationError(
           parsed.error.issues.map((issue) => ({

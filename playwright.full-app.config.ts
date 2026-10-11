@@ -13,7 +13,7 @@ export default defineConfig({
   use: {
     baseURL: "http://127.0.0.1:4193",
     trace: "off",
-    screenshot: "only-on-failure",
+    screenshot: "off",
     actionTimeout: 15_000,
     navigationTimeout: 15_000,
     launchOptions: {

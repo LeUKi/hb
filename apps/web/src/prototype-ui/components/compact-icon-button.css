@@ -1,0 +1,57 @@
+.compact-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  min-height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted, #aaaab2);
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    color 150ms ease,
+    background 150ms ease;
+}
+
+.compact-icon-button:hover:enabled:not([aria-disabled="true"]),
+.compact-icon-button[aria-expanded="true"],
+.compact-icon-button[aria-pressed="true"] {
+  color: var(--ink, #ededf0);
+  background: var(--surface-hover, #222226);
+}
+
+.compact-icon-button:disabled,
+.compact-icon-button[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+.compact-icon-button:focus-visible {
+  outline: 2px solid var(--red, #e05849);
+  outline-offset: 2px;
+}
+
+.compact-icon-button svg {
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+}
+
+@media (pointer: coarse) {
+  .compact-icon-button {
+    width: 24px;
+    min-width: 24px;
+    height: 24px;
+    min-height: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .compact-icon-button {
+    transition: none;
+  }
+}

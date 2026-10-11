@@ -45,11 +45,15 @@ export async function getStatistics(
   cursor?: string,
 ): Promise<ActivityStatistics> {
   const activity = await ownedActivity(env, activityId, authorId);
-  if (!activity.forceDedicated)
+  if (
+    activity.participationMode !== "password" ||
+    !activity.forceDedicated ||
+    activity.openedAt === null
+  )
     throw new ActivityError(
       404,
       "STATISTICS_UNAVAILABLE",
-      "仅强制专属页活动提供尝试统计",
+      "仅限活动页兑换的活动提供尝试统计",
     );
   const after = parseCursor(cursor, activityId);
   const [totals, groups, passwords] = await env.DB.batch([

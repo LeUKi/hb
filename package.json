@@ -12,6 +12,7 @@
   ],
   "scripts": {
     "dev": "bun run contracts:build && bun run --filter @hb/web dev",
+    "dev:full-app": "node scripts/full-app-local-experience.mjs",
     "build": "bun run contracts:build && bun run cf:typegen && bun run --filter @hb/api typecheck && bun run --filter @hb/api build && bun run --filter @hb/web build",
     "typecheck": "bun run contracts:build && bun run cf:typegen && bun run --filter @hb/api typecheck && bun run --filter @hb/web typecheck && tsc -p tsconfig.json",
     "lint": "biome check .",
@@ -39,7 +40,11 @@
     "deployment:probe": "bun scripts/deployment-probe.ts",
     "platform:controls": "bun scripts/platform-controls.ts",
     "payment:backup:remote": "bun scripts/payment-backup.ts --remote-export",
-    "payment:restore:staging": "bun scripts/payment-backup.ts --remote-rehearsal --env staging"
+    "payment:restore:staging": "bun scripts/payment-backup.ts --remote-rehearsal --env staging",
+    "prototype:dev": "bun run --filter @hb/web prototype:dev",
+    "prototype:build": "bun run --filter @hb/web prototype:build",
+    "prototype:typecheck": "bun run --filter @hb/web prototype:typecheck",
+    "prototype:test": "playwright test --config playwright.prototype.config.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",

@@ -1,10 +1,10 @@
-import {
-  CLAIM_WINDOW_MS,
-  type ClaimActivityInput,
-  type ClaimResult,
-  DEFAULT_CLAIM_LIMIT,
+import type {
+  ClaimActivityInput,
+  ClaimResult,
+  ParticipationMode,
 } from "@hb/contracts";
 import { and, eq, isNull } from "drizzle-orm";
+import { requireOfficialConnect } from "../auth/eligibility";
 import { createDb } from "../db/client";
 import {
   activities,
@@ -16,11 +16,18 @@ import type { ApiBindings } from "../env";
 import { claimPaymentParameterDigest } from "../payments/policy";
 import { assertUint64Decimal } from "../payments/real-protocol";
 import {
+  type ActivityAttempt,
+  assertAttemptAllowed,
+  attemptWriteStatements,
+  bindDiscoveryStatement,
+  discoveryBindingGuard,
+} from "../runtime/attempt-cooldown";
+import {
   allowsRealClaim,
   isLocalSimulation,
   readPlatformControls,
 } from "../runtime/controls";
-import { digestPassword, encryptString } from "../security/crypto";
+import { encryptString } from "../security/crypto";
 import { findUserClaim, getClaimDetail } from "./claim-queries";
 import { ActivityError, activityConflict, activityNotFound } from "./errors";
 import {
@@ -28,25 +35,27 @@ import {
   permitsRealActivity,
 } from "./execution-policy";
 import { databaseNow, refreshActivityLifecycle } from "./lifecycle";
+import { assertParticipationMode, participationRequest } from "./participation";
 import { activityStatus } from "./service";
 import { findActivity } from "./storage";
 
 export type SubmissionRow = typeof redemptionSubmissions.$inferSelect;
+
+/** A terminal business outcome alone does not prove the input was checked. */
+export function submissionPasswordMatched(
+  submission: Pick<
+    SubmissionRow,
+    "matchedPasswordId" | "validatedAt" | "participationMode"
+  >,
+): boolean | null {
+  if (submission.participationMode === "direct") return null;
+  if (submission.matchedPasswordId !== null) return true;
+  return submission.validatedAt !== null ? false : null;
+}
 type FinishedOutcome = Exclude<
   SubmissionRow["outcome"],
   "pending" | "solved" | "registered" | "already_registered"
 >;
-
-export function claimAttemptLimit(env: ApiBindings) {
-  const value = Number(env.CLAIM_ATTEMPTS_PER_MINUTE);
-  return Number.isSafeInteger(value) && value > 0 ? value : DEFAULT_CLAIM_LIMIT;
-}
-
-export class ClaimRateLimitError extends ActivityError {
-  constructor(public readonly retryAfter: number) {
-    super(429, "CLAIM_RATE_LIMITED", "提交过于频繁，请稍后重试");
-  }
-}
 
 export function attemptAssociatedData(
   activityId: string,
@@ -88,29 +97,44 @@ async function registerFinished(
   userId: string,
   submissionId: string,
   fingerprint: string,
+  mode: ParticipationMode,
   outcome: FinishedOutcome,
   claimId: string | null = null,
+  continuation?: ActivityAttempt,
 ) {
+  await assertAttemptAllowed(env, userId, "activity", continuation, {
+    checkCooldown: false,
+  });
+  const guard = discoveryBindingGuard(userId, continuation);
   try {
-    await env.DB.prepare(`INSERT INTO redemption_submissions
-      (id, activity_id, user_id, submission_id, fingerprint, purpose, outcome, claim_id, created_at, finished_at)
-      SELECT ?, ?, ?, ?, ?, 'claim', ?, ?, ${databaseNow}, ${databaseNow}
-      WHERE EXISTS (SELECT 1 FROM activities WHERE id = ? AND deleted_at IS NULL)`)
-      .bind(
+    await env.DB.batch([
+      ...(continuation
+        ? [bindDiscoveryStatement(env, userId, continuation)]
+        : []),
+      env.DB.prepare(`INSERT INTO redemption_submissions
+        (id, activity_id, user_id, submission_id, fingerprint, purpose, participation_mode, outcome, claim_id, created_at, finished_at)
+        SELECT ?, ?, ?, ?, CASE WHEN ${guard.sql} THEN ? ELSE NULL END, 'claim', ?, ?, ?, ${databaseNow}, ${databaseNow}
+        WHERE EXISTS (SELECT 1 FROM activities WHERE id = ? AND participation_mode = ? AND deleted_at IS NULL)`).bind(
         crypto.randomUUID(),
         activityId,
         userId,
         submissionId,
+        ...guard.bindings,
         fingerprint,
+        mode,
         outcome,
         claimId,
         activityId,
-      )
-      .run();
+        mode,
+      ),
+    ]);
   } catch (error) {
     const winner = await findSubmission(env, userId, submissionId);
-    if (!winner) throw error;
-    return bindFingerprint(winner, fingerprint);
+    if (winner) return bindFingerprint(winner, fingerprint);
+    await assertAttemptAllowed(env, userId, "activity", continuation, {
+      checkCooldown: false,
+    });
+    throw error;
   }
   const row = await findSubmission(env, userId, submissionId);
   if (!row) {
@@ -118,28 +142,6 @@ async function registerFinished(
     throw new Error("Submission was not persisted");
   }
   return row;
-}
-
-export async function assertClaimRateLimit(
-  env: ApiBindings,
-  activityId: string,
-  userId: string,
-) {
-  const rate =
-    await env.DB.prepare(`SELECT COUNT(*) AS count, MIN(validated_at) AS oldest FROM redemption_submissions
-    WHERE activity_id = ? AND user_id = ? AND validated_at > ${databaseNow} - ?`)
-      .bind(activityId, userId, CLAIM_WINDOW_MS)
-      .first<{ count: number; oldest: number | null }>();
-  if (rate && rate.count >= claimAttemptLimit(env)) {
-    throw new ClaimRateLimitError(
-      Math.max(
-        1,
-        Math.ceil(
-          ((rate.oldest ?? Date.now()) + CLAIM_WINDOW_MS - Date.now()) / 1000,
-        ),
-      ),
-    );
-  }
 }
 
 /** Durable validation is separate from allocation, so a process interruption cannot erase an attempt. */
@@ -150,14 +152,8 @@ export async function prepareClaimSubmission(
   input: ClaimActivityInput,
   executionPolicy?: ActivityExecutionPolicy,
 ): Promise<SubmissionRow> {
-  const fingerprint = await digestPassword(
-    `claim-request:${activityId}:${input.password}`,
-    env.PASSWORD_DIGEST_KEY,
-  );
-  const passwordDigest = await digestPassword(
-    input.password,
-    env.PASSWORD_DIGEST_KEY,
-  );
+  const { mode, fingerprint, passwordDigest, continuation } =
+    await participationRequest(env, activityId, input, "claim");
   for (let retry = 0; retry < 4; retry += 1) {
     const previous = await findSubmission(env, userId, input.submissionId);
     if (previous) {
@@ -171,6 +167,7 @@ export async function prepareClaimSubmission(
       (activity.openedAt === null && activity.authorId !== userId)
     )
       activityNotFound();
+    assertParticipationMode(activity, mode);
     if (activity.rewardType === "ldc" && activity.authorId === userId)
       throw new ActivityError(
         403,
@@ -185,8 +182,10 @@ export async function prepareClaimSubmission(
         userId,
         input.submissionId,
         fingerprint,
+        mode,
         "already_claimed",
         existingClaim.id,
+        continuation,
       );
     const status = activityStatus(activity);
     if (status !== "active")
@@ -196,8 +195,13 @@ export async function prepareClaimSubmission(
         userId,
         input.submissionId,
         fingerprint,
+        mode,
         status,
+        null,
+        continuation,
       );
+    if (activity.rewardType === "ldc")
+      await requireOfficialConnect(env, userId);
     if (
       activity.rewardType === "ldc" &&
       activity.paymentMode === "simulation" &&
@@ -225,35 +229,41 @@ export async function prepareClaimSubmission(
           : "REAL_LDC_NOT_ENABLED",
         "真实 LDC 新领取暂时关闭，已领取奖励仍可从记录查看。",
       );
-    await assertClaimRateLimit(env, activityId, userId);
-    const password = await createDb(env.DB)
-      .select()
-      .from(activityPasswords)
-      .where(
-        and(
-          eq(activityPasswords.activityId, activityId),
-          eq(activityPasswords.digest, passwordDigest),
-        ),
-      )
-      .get();
+    await assertAttemptAllowed(env, userId, "activity", continuation);
+    const password =
+      passwordDigest === null
+        ? undefined
+        : await createDb(env.DB)
+            .select()
+            .from(activityPasswords)
+            .where(
+              and(
+                eq(activityPasswords.activityId, activityId),
+                eq(activityPasswords.digest, passwordDigest),
+              ),
+            )
+            .get();
     const rowId = crypto.randomUUID();
-    const ciphertext = activity.forceDedicated
-      ? await encryptString(
-          input.password,
-          env,
-          attemptAssociatedData(activityId, rowId),
-        )
-      : null;
-    const outcome = password ? "pending" : "incorrect";
+    const ciphertext =
+      activity.forceDedicated && "password" in input
+        ? await encryptString(
+            input.password,
+            env,
+            attemptAssociatedData(activityId, rowId),
+          )
+        : null;
+    const outcome = mode === "direct" || password ? "pending" : "incorrect";
     const statements = [
+      ...attemptWriteStatements(env, userId, "activity", rowId, continuation),
       // A failed precondition must roll back the submission AND the event together.
-      env.DB.prepare(`UPDATE activities SET version = CASE WHEN version = ? AND deleted_at IS NULL AND opened_at IS NOT NULL AND ended_at IS NULL
+      env.DB.prepare(`UPDATE activities SET version = CASE WHEN version = ? AND participation_mode = ? AND deleted_at IS NULL AND opened_at IS NOT NULL AND ended_at IS NULL
         AND archived_at IS NULL AND deadline > ${databaseNow} AND claimed_count < total_count
-        AND (reward_type != 'ldc' OR (author_id != ? AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))))
+        AND (reward_type != 'ldc' OR (EXISTS(SELECT 1 FROM users WHERE id=? AND official_connect_verified=1 AND active=1) AND author_id != ? AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))))
         AND NOT EXISTS (SELECT 1 FROM claims WHERE activity_id = ? AND user_id = ?)
-        AND (SELECT COUNT(*) FROM redemption_submissions WHERE activity_id = ? AND user_id = ? AND validated_at > ${databaseNow} - ?) < ?
         THEN version ELSE NULL END WHERE id = ?`).bind(
         activity.version,
+        mode,
+        userId,
         userId,
         Number(isLocalSimulation(env)),
         Number(realActivityPermitted),
@@ -261,19 +271,16 @@ export async function prepareClaimSubmission(
         activityId,
         userId,
         activityId,
-        userId,
-        CLAIM_WINDOW_MS,
-        claimAttemptLimit(env),
-        activityId,
       ),
       env.DB.prepare(`INSERT INTO redemption_submissions
-        (id, activity_id, user_id, submission_id, fingerprint, purpose, outcome, matched_password_id, created_at, validated_at, finished_at)
-        VALUES (?, ?, ?, ?, ?, 'claim', ?, ?, ${databaseNow}, ${databaseNow}, CASE WHEN ? = 'incorrect' THEN ${databaseNow} ELSE NULL END)`).bind(
+        (id, activity_id, user_id, submission_id, fingerprint, purpose, participation_mode, outcome, matched_password_id, created_at, validated_at, finished_at)
+        VALUES (?, ?, ?, ?, ?, 'claim', ?, ?, ?, ${databaseNow}, ${databaseNow}, CASE WHEN ? = 'incorrect' THEN ${databaseNow} ELSE NULL END)`).bind(
         rowId,
         activityId,
         userId,
         input.submissionId,
         fingerprint,
+        mode,
         outcome,
         password?.id ?? null,
         outcome,
@@ -301,6 +308,8 @@ export async function prepareClaimSubmission(
       if (winner) return bindFingerprint(winner, fingerprint);
       const current = await findActivity(env, activityId);
       if (!current) activityNotFound();
+      if (current.rewardType === "ldc")
+        await requireOfficialConnect(env, userId);
       if (
         current.version !== activity.version ||
         activityStatus(current) !== "active" ||
@@ -317,7 +326,7 @@ export async function prepareClaimSubmission(
           "REAL_LDC_CLAIMS_PAUSED",
           "新领取暂时关闭，请保留原提交稍后重试。",
         );
-      await assertClaimRateLimit(env, activityId, userId);
+      await assertAttemptAllowed(env, userId, "activity", continuation);
       throw error;
     }
   }
@@ -347,12 +356,16 @@ async function resultOfSubmission(
       throw new Error("Completed submission has no claim");
     return {
       result: submission.outcome,
+      passwordMatched: submissionPasswordMatched(submission),
       claim: await getClaimDetail(env, submission.claimId, submission.userId),
     };
   }
   if (submission.outcome === "pending")
     throw new Error("Submission still requires allocation");
-  return { result: submission.outcome };
+  return {
+    result: submission.outcome,
+    passwordMatched: submissionPasswordMatched(submission),
+  };
 }
 
 async function finishWithoutAllocation(
@@ -425,6 +438,7 @@ export async function completeClaimSubmission(
   admitted: SubmissionRow,
   executionPolicy?: ActivityExecutionPolicy,
 ): Promise<ClaimResult> {
+  let selectedInventoryId: string | null = null;
   for (let retry = 0; retry < 5; retry += 1) {
     const submission = await findSubmission(
       env,
@@ -453,6 +467,8 @@ export async function completeClaimSubmission(
     const status = activityStatus(activity);
     if (status !== "active")
       return finishWithoutAllocation(env, submission, status);
+    if (activity.rewardType === "ldc")
+      await requireOfficialConnect(env, submission.userId);
     if (
       activity.rewardType === "ldc" &&
       activity.paymentMode === "simulation" &&
@@ -470,6 +486,7 @@ export async function completeClaimSubmission(
         .bind(activity.id)
         .all<{ id: string; amount_minor: number | null }>();
     const reward =
+      available.results.find((item) => item.id === selectedInventoryId) ??
       available.results[
         activity.allocation === "random"
           ? randomIndex(available.results.length || 1)
@@ -481,6 +498,7 @@ export async function completeClaimSubmission(
         "INVENTORY_INCONSISTENT",
         "奖励库存暂时不可用，请使用原提交重试",
       );
+    selectedInventoryId = reward.id;
     if (
       activity.rewardType === "ldc" &&
       activity.authorId === submission.userId
@@ -512,10 +530,15 @@ export async function completeClaimSubmission(
     const statements = [
       env.DB.prepare(`UPDATE activities SET version = CASE WHEN deleted_at IS NULL AND opened_at IS NOT NULL AND ended_at IS NULL AND archived_at IS NULL
           AND deadline > ${databaseNow} AND claimed_count < total_count
-          AND (reward_type != 'ldc' OR (author_id != ? AND merchant_id IS NOT NULL AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))))
+          AND (reward_type != 'ldc' OR (EXISTS(SELECT 1 FROM users WHERE id=? AND official_connect_verified=1 AND active=1) AND author_id != ? AND merchant_id IS NOT NULL AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))))
           AND NOT EXISTS (SELECT 1 FROM claims WHERE activity_id = ? AND user_id = ?)
-          AND EXISTS (SELECT 1 FROM redemption_submissions WHERE id = ? AND purpose = 'claim' AND outcome = 'pending' AND matched_password_id IS NOT NULL)
+          AND EXISTS (SELECT 1 FROM redemption_submissions s WHERE s.id = ? AND s.activity_id=activities.id
+            AND s.user_id=? AND s.purpose = 'claim' AND s.outcome = 'pending'
+            AND s.participation_mode=activities.participation_mode AND s.validated_at IS NOT NULL
+            AND ((s.participation_mode='password' AND s.matched_password_id IS NOT NULL)
+              OR (s.participation_mode='direct' AND s.matched_password_id IS NULL)))
           THEN version ELSE NULL END WHERE id = ?`).bind(
+        submission.userId,
         submission.userId,
         Number(isLocalSimulation(env)),
         Number(realActivityPermitted),
@@ -523,6 +546,7 @@ export async function completeClaimSubmission(
         activity.id,
         submission.userId,
         submission.id,
+        submission.userId,
         activity.id,
       ),
       env.DB.prepare(
@@ -549,6 +573,7 @@ export async function completeClaimSubmission(
         "UPDATE attempt_events SET claim_id = ? WHERE submission_row_id = ? AND matched = 1",
       ).bind(claimId, submission.id),
     ];
+    let paymentMerchantVersion: number | null = null;
     if (activity.rewardType === "ldc") {
       if (!activity.paymentMode)
         throw new Error("LDC activity has no payment mode");
@@ -558,12 +583,13 @@ export async function completeClaimSubmission(
         activity.paymentMode,
       );
       const merchant = await env.DB.prepare(
-        "SELECT client_id FROM merchants WHERE id=? AND author_id=? AND mode=?",
+        "SELECT client_id,version FROM merchants WHERE id=? AND author_id=? AND mode=?",
       )
         .bind(activity.merchantId, activity.authorId, activity.paymentMode)
-        .first<{ client_id: string }>();
+        .first<{ client_id: string; version: number }>();
       if (!merchant || reward.amount_minor === null || !activity.merchantId)
         throw new Error("LDC claim identity is incomplete");
+      paymentMerchantVersion = merchant.version;
       const businessNo = `hb_${claimId.replaceAll("-", "")}`;
       const recoveryPolicy =
         activity.paymentMode === "real"
@@ -592,7 +618,7 @@ export async function completeClaimSubmission(
         env.DB.prepare(`INSERT INTO payment_tasks
           (id, claim_id, source, acceptance_id, merchant_id, client_id, business_no, recipient_id, recipient_username, amount_minor, mode, status, next_run_at, created_at, updated_at, recovery_policy, parameter_digest)
           VALUES (?, ?, 'claim', NULL, ?,
-            (SELECT client_id FROM merchants WHERE id = ? AND author_id = ? AND mode = ?), ?, ?, ?,
+            (SELECT client_id FROM merchants WHERE id = ? AND author_id = ? AND mode = ? AND version = ?), ?, ?, ?,
             (SELECT amount_minor FROM reward_inventory WHERE activity_id = ? AND id = ? AND kind = 'ldc'),
             ?, 'pending', ${databaseNow}, ${databaseNow}, ${databaseNow}, ?, ?)`).bind(
           taskId,
@@ -601,6 +627,7 @@ export async function completeClaimSubmission(
           activity.merchantId,
           activity.authorId,
           activity.paymentMode,
+          merchant.version,
           businessNo,
           recipient.id,
           recipient.username,
@@ -627,6 +654,8 @@ export async function completeClaimSubmission(
         return resultOfSubmission(env, current);
       const latest = await findActivity(env, activity.id);
       if (!latest) activityNotFound();
+      if (latest.rewardType === "ldc")
+        await requireOfficialConnect(env, submission.userId);
       if (
         latest.paymentMode === "real" &&
         !testPermission &&
@@ -642,6 +671,15 @@ export async function completeClaimSubmission(
         (await findUserClaim(env, activity.id, submission.userId))
       )
         continue;
+      if (paymentMerchantVersion !== null) {
+        const latestMerchant = await env.DB.prepare(
+          "SELECT version FROM merchants WHERE id=?",
+        )
+          .bind(activity.merchantId)
+          .first<{ version: number }>();
+        if (latestMerchant && latestMerchant.version !== paymentMerchantVersion)
+          continue;
+      }
       const taken = await env.DB.prepare(
         "SELECT 1 FROM claims WHERE activity_id = ? AND inventory_id = ?",
       )
@@ -670,9 +708,12 @@ export async function claimActivity(
 ) {
   await refreshActivityLifecycle(env, activityId);
   const activity = await findActivity(env, activityId);
+  const previous = await findSubmission(env, userId, input.submissionId);
   if (
-    activity?.rewardType === "ldc" &&
-    JSON.parse(activity.config).money?.mode === "timed_draw"
+    previous?.purpose === "register" ||
+    (!previous &&
+      activity?.rewardType === "ldc" &&
+      JSON.parse(activity.config).money?.mode === "timed_draw")
   ) {
     const { registerForDraw } = await import("./registration-service");
     return registerForDraw(env, activityId, userId, input, executionPolicy);

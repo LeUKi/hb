@@ -34,19 +34,26 @@ describe("payment channel contracts", () => {
       createMerchantSchema.safeParse({ ...merchant, mode: "other" }).success,
     ).toBe(false);
   });
-  it("does not accept changes to the merchant payment channel or client ID", () => {
-    for (const change of [{ mode: "real" }, { clientId: "replacement" }]) {
+  it("keeps the payment channel fixed and accepts versioned client updates", () => {
+    expect(
+      updateMerchantSchema.safeParse({
+        version: 1,
+        label: "名称",
+        requestId: merchant.requestId,
+        clientId: "replacement",
+        secret: "virtual-replacement",
+      }).success,
+    ).toBe(true);
+    for (const change of [{ mode: "real" }, { clientId: "" }]) {
       expect(
         updateMerchantSchema.safeParse({ version: 1, label: "名称", ...change })
           .success,
       ).toBe(false);
     }
   });
-  it("distinguishes simulation confirmation from LDC settlement availability", () => {
+  it("uses a compact confirmed label and distinguishes simulation", () => {
     expect(paymentLabel("simulation", "confirmed")).toBe("模拟发放已确认");
-    expect(paymentLabel("real", "confirmed")).toBe(
-      "LDC 已确认发放，实际可用时间以 LDC 为准",
-    );
+    expect(paymentLabel("real", "confirmed")).toBe("已发放");
     expect(paymentLabel("real", "reconciling")).toBe("核对中");
   });
 });

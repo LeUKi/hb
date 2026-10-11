@@ -1,160 +1,345 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { Copy, RefreshCw } from "lucide-react";
-import { useState } from "react";
-import { Button } from "../components/ui/button";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import {
+  ArrowDownLeft,
+  ArrowRight,
+  CheckCircle2,
+  ChevronRight,
+  Copy,
+  FileText,
+  Gift,
+  KeyRound,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { LoginOptions } from "../components/auth/login-options";
+import { useAppLogout } from "../components/auth/session-actions";
+import { Help } from "../components/presentation/context-help";
+import {
+  PageSkeleton,
+  RefreshNotice,
+} from "../components/presentation/loading";
 import { UserAvatar } from "../components/user-identity";
+import { useAccountProfile } from "../lib/account-profile";
 import {
   getAuthErrorMessage,
   getLoginHref,
+  getUpgradeHref,
   isAuthUnavailable,
+  sessionIdentity,
   useSession,
 } from "../lib/auth";
-
+import { isBlockingQueryError } from "../lib/query-view";
+import { Dialog, PageTitle } from "../prototype-ui/workbench-ui";
 export const Route = createFileRoute("/account")({
+  validateSearch: (search): { returnTo?: string; authError?: string } => ({
+    returnTo: typeof search.returnTo === "string" ? search.returnTo : undefined,
+    authError:
+      typeof search.authError === "string" ? search.authError : undefined,
+  }),
   component: AccountPage,
 });
-
 function AccountPage() {
+  const { returnTo = "/account" } = Route.useSearch();
   const session = useSession();
-  const [copyMessage, setCopyMessage] = useState<string | null>(null);
+  const logout = useAppLogout();
+  const [upgrade, setUpgrade] = useState(false);
+  const [emailCopyFeedback, setEmailCopyFeedback] = useState<
+    "copied" | "failed" | null
+  >(null);
   const authErrorCode = new URLSearchParams(window.location.search).get(
     "authError",
   );
   const authError = getAuthErrorMessage(authErrorCode);
-  const loginUnavailable = isAuthUnavailable(authErrorCode);
-  const user = session.error ? null : (session.data?.user ?? null);
+  const user = session.error ? null : session.data?.user;
+  const liteauthEnabled = session.data?.loginOptions?.liteauthEnabled === true;
+  const profile = useAccountProfile(user ?? null);
+  const identity = sessionIdentity(user ?? null);
+  const activeIdentity = useRef(identity);
+  activeIdentity.current = identity;
+  useEffect(() => {
+    if (identity !== null) setEmailCopyFeedback(null);
+  }, [identity]);
+  if (session.isPending) return <PageSkeleton title="账号" />;
+  if (session.isError)
+    return (
+      <div className="work-page">
+        <p className="work-form-error" role="alert">
+          {session.error.message}
+        </p>
+        <button
+          className="button secondary"
+          type="button"
+          onClick={() => session.refetch()}
+        >
+          重新检查
+        </button>
+      </div>
+    );
+  if (!user)
+    return (
+      <div className="work-page work-guest-prompt work-login-page">
+        <LoginOptions returnTo={returnTo} notice={authError} />
+      </div>
+    );
+  const lite = user.accountTier === "lite";
+  const profileError = isBlockingQueryError(profile);
+  const connectEmail = profileError ? undefined : profile.data?.user?.email;
 
   return (
-    <section className="w-full max-w-3xl rounded-md border border-neutral-200 bg-white p-5 shadow-sm">
-      <p className="text-sm font-medium text-neutral-500">账号</p>
-      <h1 className="mt-2 text-3xl font-semibold tracking-normal text-neutral-950">
-        登录状态
-      </h1>
-      {authError ? (
-        <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+    <div className="work-page work-account-page">
+      <PageTitle title="账号信息" />
+      <div className="work-account-hero">
+        <div className="work-account-avatar">
+          <UserAvatar profile={user} size="lg" />
+        </div>
+        <div className="work-account-name">
+          <h2>{user.displayName || user.username}</h2>
+          <p>
+            @{user.username}{" "}
+            <span className={`work-identity-label ${lite ? "is-lite" : ""}`}>
+              {lite ? "青春版" : "普通账号"}
+            </span>
+          </p>
+        </div>
+        {(user.loginProvider !== "liteauth" || liteauthEnabled) && (
+          <button
+            className="button secondary"
+            type="button"
+            disabled={isAuthUnavailable(authErrorCode, user.loginProvider)}
+            onClick={() =>
+              window.location.assign(
+                getLoginHref("/account", user.loginProvider),
+              )
+            }
+          >
+            刷新资料
+          </button>
+        )}
+      </div>
+      {authError && (
+        <p className="work-form-error" role="alert">
           {authError}
         </p>
-      ) : null}
-
-      {session.isPending ? (
-        <p className="mt-5 text-sm leading-6 text-neutral-600" role="status">
-          正在确认当前浏览器会话。
-        </p>
-      ) : session.error ? (
-        <div className="mt-5 flex flex-col items-start gap-3">
-          <p className="text-sm leading-6 text-red-700">
-            {session.error.message}
-          </p>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => session.refetch()}
-          >
-            <RefreshCw className="size-4" />
-            重新检查
-          </Button>
-        </div>
-      ) : user ? (
-        <div className="mt-5 space-y-5">
-          <div className="flex flex-wrap items-center gap-4">
-            <UserAvatar
-              profile={{
-                username: user.username,
-                displayName: user.displayName,
-                avatarUrl: user.avatarUrl,
-              }}
-              size="lg"
-            />
-            <div className="min-w-0">
-              <p className="truncate text-xl font-semibold text-neutral-950">
-                {user.displayName || user.username}
-              </p>
-              <p className="truncate text-sm text-neutral-500">
-                @{user.username}
-              </p>
-            </div>
-          </div>
-          <dl className="grid gap-4 text-sm sm:grid-cols-3">
+      )}
+      <div className="work-account-layout">
+        <section
+          className="work-account-details"
+          aria-labelledby="work-account-info"
+        >
+          <h2 id="work-account-info">账号资料</h2>
+          <dl className="work-account-rows">
             <div>
-              <dt className="text-neutral-500">显示名称</dt>
-              <dd className="mt-1 font-medium text-neutral-950">
-                {user.displayName}
+              <dt>昵称</dt>
+              <dd>{user.displayName || user.username}</dd>
+            </div>
+            <div>
+              <dt>论坛用户名</dt>
+              <dd>@{user.username}</dd>
+            </div>
+            <div>
+              <dt>本账号 ID</dt>
+              <dd>{user.id}</dd>
+            </div>
+            <div>
+              <dt>本次登录来源</dt>
+              <dd>
+                {user.loginProvider === "liteauth"
+                  ? "LiteAuth 青春版"
+                  : "官方 Connect"}
               </dd>
             </div>
             <div>
-              <dt className="text-neutral-500">用户名</dt>
-              <dd className="mt-1 font-medium text-neutral-950">
-                @{user.username}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-neutral-500">账号 ID</dt>
-              <dd className="mt-1 break-all font-medium text-neutral-950">
-                {user.id}
-              </dd>
-            </div>
-            <div className="sm:col-span-3">
-              <dt className="text-neutral-500">Connect 邮箱</dt>
-              <dd className="mt-1 flex min-w-0 flex-wrap items-center gap-3 font-medium text-neutral-950">
-                {user.email ? (
-                  <>
-                    <span className="break-all">{user.email}</span>
-                    <Button
+              <dt className="work-account-field-heading">
+                Connect 邮箱
+                <Help label="Connect 邮箱">
+                  邮箱由认证服务提供，本站不可编辑，暂未接入邮件通知。
+                </Help>
+              </dt>
+              <dd
+                aria-busy={profile.isPending}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  minWidth: 0,
+                }}
+              >
+                {profile.isPending ? (
+                  <span role="status">正在读取邮箱…</span>
+                ) : profileError ? (
+                  <span className="work-form-error" role="alert">
+                    邮箱读取失败。
+                    <button
+                      className="work-text-link"
                       type="button"
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => {
-                        if (!navigator.clipboard) {
-                          setCopyMessage("复制失败，请手动选择。");
-                          return;
+                      onClick={() => void profile.refetch()}
+                    >
+                      重试
+                    </button>
+                  </span>
+                ) : !connectEmail ? (
+                  user.loginProvider === "liteauth" ? (
+                    "LiteAuth 尚未提供邮箱"
+                  ) : (
+                    "Connect 尚未提供邮箱"
+                  )
+                ) : (
+                  <>
+                    <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>
+                      {connectEmail}
+                    </span>
+                    <button
+                      className="button ghost"
+                      type="button"
+                      aria-label="复制 Connect 邮箱"
+                      style={{
+                        width: 44,
+                        minWidth: 44,
+                        height: 44,
+                        minHeight: 44,
+                        padding: 0,
+                        flexShrink: 0,
+                      }}
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(connectEmail);
+                          if (activeIdentity.current === identity)
+                            setEmailCopyFeedback("copied");
+                        } catch {
+                          if (activeIdentity.current === identity)
+                            setEmailCopyFeedback("failed");
                         }
-                        void navigator.clipboard
-                          .writeText(user.email ?? "")
-                          .then(() => setCopyMessage("邮箱已复制。"))
-                          .catch(() =>
-                            setCopyMessage("复制失败，请手动选择。"),
-                          );
                       }}
                     >
-                      <Copy className="size-4" />
-                      复制
-                    </Button>
+                      <Copy size={16} aria-hidden="true" />
+                    </button>
                   </>
-                ) : (
-                  <span className="text-neutral-600">Connect 尚未提供邮箱</span>
                 )}
               </dd>
             </div>
+            <div>
+              <dt className="work-account-field-heading">
+                账号资格
+                <Help label="账号资格">
+                  {lite
+                    ? "青春版仅可参与和创建文本 / CDK 活动。通过官方 Connect 登录可获得普通资格。"
+                    : "普通资格可参与和创建文本 / CDK 与 LDC 活动；后续使用 LiteAuth 登录不会降级。"}
+                </Help>
+              </dt>
+              <dd>
+                <span className={`work-qualification ${lite ? "is-lite" : ""}`}>
+                  {lite ? "青春版账号" : "普通账号"}
+                </span>
+              </dd>
+            </div>
           </dl>
-          {copyMessage ? (
-            <p role="status" className="text-sm text-neutral-600">
-              {copyMessage}
+          <RefreshNotice query={profile} />
+          {!lite && emailCopyFeedback && (
+            <p
+              className={
+                emailCopyFeedback === "copied"
+                  ? "work-inline-success"
+                  : "work-form-error"
+              }
+              style={
+                emailCopyFeedback === "copied"
+                  ? { margin: "12px 0 0" }
+                  : undefined
+              }
+              role="status"
+            >
+              {emailCopyFeedback === "copied" && (
+                <CheckCircle2 size={16} aria-hidden="true" />
+              )}
+              {emailCopyFeedback === "copied"
+                ? "Connect 邮箱已复制。"
+                : "复制失败，请手动选择并复制上方邮箱。"}
             </p>
-          ) : null}
-          <div className="space-y-3 rounded-md border border-neutral-200 bg-neutral-50 p-4 text-sm leading-6 text-neutral-600">
-            <p>
-              邮箱地址来自
-              Connect，本站暂未接入邮件通知；后续接入邮件服务时会单独核实送达规则。
-            </p>
-            {loginUnavailable ? null : (
-              <Button asChild variant="secondary">
-                <a href={getLoginHref("/account")}>重新登录以更新资料</a>
-              </Button>
+          )}
+          <div className="work-account-permissions">
+            {lite && (
+              <p className="work-setting-notice">
+                LDC 奖励需官方 Connect 资格。
+              </p>
+            )}
+            {lite && (
+              <button
+                className="work-text-link"
+                type="button"
+                onClick={() => setUpgrade(true)}
+              >
+                通过官方 Connect 升级 <ArrowRight size={15} />
+              </button>
             )}
           </div>
-        </div>
-      ) : (
-        <div className="mt-5 flex flex-col items-start gap-4">
-          <p className="text-sm leading-6 text-neutral-600">
-            请先使用 Linux DO 账号登录。登录后，这里会显示当前账号信息。
-          </p>
-          {loginUnavailable ? null : (
-            <Button asChild>
-              <a href={getLoginHref("/account")}>登录 Linux DO 账号</a>
-            </Button>
-          )}
-        </div>
+        </section>
+        <aside className="work-account-nav">
+          <h2>账号管理</h2>
+          <Link to="/my/claims">
+            <span>
+              <Gift size={19} /> 我的参与
+            </span>
+            <ChevronRight size={18} />
+          </Link>
+          <Link to="/my/activities">
+            <span>
+              <FileText size={19} /> 我的活动
+            </span>
+            <ChevronRight size={18} />
+          </Link>
+          <Link to="/my/merchants">
+            <span>
+              <KeyRound size={19} /> 商户配置
+            </span>
+            <ChevronRight size={18} />
+          </Link>
+          <Link to="/my/payments">
+            <span>
+              <ArrowDownLeft size={19} /> 付款记录
+            </span>
+            <ChevronRight size={18} />
+          </Link>
+        </aside>
+      </div>
+
+      <button
+        className="work-text-link work-account-signout"
+        type="button"
+        disabled={logout.isPending}
+        onClick={() => {
+          logout.mutate();
+        }}
+      >
+        退出登录
+      </button>
+      {upgrade && (
+        <Dialog
+          title="升级为普通账号"
+          onClose={() => setUpgrade(false)}
+          footer={
+            <>
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => setUpgrade(false)}
+              >
+                暂不升级
+              </button>
+              <button
+                className="button"
+                type="button"
+                onClick={() => {
+                  window.location.assign(getUpgradeHref("/account"));
+                }}
+              >
+                通过官方 Connect 升级 <ArrowRight size={16} />
+              </button>
+            </>
+          }
+        >
+          <p>通过本站官方 Connect 成功登录后，即可使用 LDC 奖励与限时开奖。</p>
+          <p className="muted">升级保留当前账号的活动和领取记录。</p>
+        </Dialog>
       )}
-    </section>
+    </div>
   );
 }

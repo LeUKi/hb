@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -8,10 +8,28 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { readD1Migrations } from "@cloudflare/vitest-plugin";
 import { createTestUpstream } from "../e2e/full-app/upstream.mjs";
+import {
+  createLocalAvatarResponse,
+  createLocalExperienceHome,
+  createLocalLoginResponse,
+  createLocalOAuthAuthorizeResponse,
+  localAvatarUrl,
+  localExperienceConfigFromEnv,
+  nodeHeadersFromWebResponse,
+  rewriteOAuthAuthorizeLocation,
+} from "./full-app-local-tools.mjs";
+import { applyLocalMigrations } from "./full-app-migrations.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const origin = "http://127.0.0.1:4193";
-const controlPort = 4194;
+const localExperience = localExperienceConfigFromEnv();
+const origin = localExperience.enabled
+  ? localExperience.publicOrigin
+  : "http://127.0.0.1:4193";
+const appPort = localExperience.enabled ? localExperience.internalPort : 4193;
+const controlPort = localExperience.enabled
+  ? localExperience.controlPort
+  : 4194;
+const localStateRoot = join(root, ".wrangler", "full-app-local-experience");
 const wranglerRequire = createRequire(
   await realpath(join(root, "node_modules/wrangler/package.json")),
 );
@@ -26,12 +44,15 @@ const temporary = await mkdtemp(join(tmpdir(), "hb-full-app-"));
 const execute = promisify(execFile);
 let runtime;
 let control;
+let proxy;
+let webWorker;
 let disposed = false;
 
 async function dispose() {
   if (disposed) return;
   disposed = true;
   if (control) await new Promise((resolve) => control.close(resolve));
+  if (proxy) await new Promise((resolve) => proxy.close(resolve));
   if (runtime) await runtime.dispose();
   await rm(temporary, { recursive: true, force: true });
 }
@@ -82,16 +103,25 @@ async function main() {
       outfile: join(temporary, "web.mjs"),
     }),
   ]);
-  const upstream = createTestUpstream(Response, origin);
+  if (localExperience.enabled) await mkdir(localStateRoot, { recursive: true });
+  const upstream = createTestUpstream(Response, origin, {
+    avatarUrl: localExperience.enabled
+      ? (role) => localAvatarUrl(origin, role)
+      : undefined,
+  });
   // All runtime bindings are supplied here; existing secrets/resources are never read.
   runtime = new Miniflare(
     convertV4MiniflareOptions({
       rootPath: temporary,
       host: "127.0.0.1",
-      port: 4193,
+      port: appPort,
       logRequests: false,
-      resourcePersistencePath: join(temporary, "state"),
-      resourceTmpPath: join(temporary, "runtime"),
+      resourcePersistencePath: localExperience.enabled
+        ? join(localStateRoot, "state")
+        : join(temporary, "state"),
+      resourceTmpPath: localExperience.enabled
+        ? join(localStateRoot, "runtime")
+        : join(temporary, "runtime"),
       workers: [
         {
           name: "hb-full-app-web",
@@ -125,6 +155,8 @@ async function main() {
             LDC_TIMED_DRAW_ENABLED: "true",
             CONNECT_CLIENT_ID: "hb_full_app_connect",
             CONNECT_CLIENT_SECRET: "full-app-connect-secret",
+            LITEAUTH_CLIENT_ID: "hb_full_app_liteauth",
+            LITEAUTH_CLIENT_SECRET: "full-app-liteauth-secret",
             ENCRYPTION_KEYS: JSON.stringify({
               full_app: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
             }),
@@ -132,6 +164,7 @@ async function main() {
             PASSWORD_DIGEST_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
             CLAIM_ATTEMPTS_PER_MINUTE: "10",
             GLOBAL_REDEMPTIONS_PER_MINUTE: "10",
+            ADMIN_LINUX_DO_IDS: "730001",
           },
           d1Databases: { DB: "hb-full-app-isolated" },
           durableObjects: {
@@ -152,12 +185,11 @@ async function main() {
     }),
   );
   await runtime.ready;
+  if (localExperience.enabled)
+    webWorker = await runtime.getWorker("hb-full-app-web");
   const database = await runtime.getD1Database("DB", "hb-full-app-api");
   const migrations = await readD1Migrations(join(root, "apps/api/migrations"));
-  for (const migration of migrations)
-    await database.batch(
-      migration.queries.map((query) => database.prepare(query)),
-    );
+  await applyLocalMigrations(database, migrations);
   await database
     .prepare(
       "UPDATE platform_controls SET version=version+1,allow_real_open=1,allow_real_claim=1,allow_real_send=1,updated_at=? WHERE id='global'",
@@ -166,6 +198,18 @@ async function main() {
     .run();
   async function rows(query) {
     return (await database.prepare(query).all()).results;
+  }
+  if (localExperience.enabled) {
+    proxy = createServer((request, response) => {
+      void handleLocalProxy(request, response).catch(() => {
+        if (!response.headersSent) response.writeHead(502);
+        response.end("FULL_APP_LOCAL_PROXY_FAILED");
+      });
+    });
+    await new Promise((resolve, reject) => {
+      proxy.once("error", reject);
+      proxy.listen(localExperience.publicPort, "127.0.0.1", resolve);
+    });
   }
   control = createServer(async (request, response) => {
     if (request.method !== "GET") {
@@ -179,9 +223,11 @@ async function main() {
         body = {
           migrations: migrations.length,
           users: await rows(
-            "SELECT id,external_id,username,provider,avatar_url,email_ciphertext IS NOT NULL AS has_email_ciphertext,email_ciphertext LIKE '%@%' AS email_ciphertext_contains_plaintext FROM users ORDER BY external_id",
+            "SELECT id,external_id,username,provider,official_connect_verified,avatar_url,email_ciphertext IS NOT NULL AS has_email_ciphertext,email_ciphertext LIKE '%@%' AS email_ciphertext_contains_plaintext FROM users ORDER BY external_id",
           ),
-          sessions: await rows("SELECT user_id,token_hash FROM sessions"),
+          sessions: await rows(
+            "SELECT user_id,token_hash,login_provider FROM sessions",
+          ),
           activities: await rows(
             "SELECT id,reward_type,payment_mode,opened_at,deadline,claimed_count,total_count,registered_count,draw_state,draw_closed_at,draw_reason,draw_published_at FROM activities ORDER BY created_at",
           ),
@@ -202,6 +248,14 @@ async function main() {
           ),
           outbox: await rows("SELECT task_id,delivered_at FROM payment_outbox"),
           upstream: upstream.snapshot(),
+          localExperience: localExperience.enabled
+            ? {
+                origin,
+                appPort,
+                controlPort,
+                statePath: localStateRoot,
+              }
+            : null,
         };
       } else {
         response.writeHead(404).end();
@@ -221,8 +275,92 @@ async function main() {
     control.listen(controlPort, "127.0.0.1", resolve);
   });
   console.info(
-    "Full-app test runtime ready; only test upstream transport is enabled.",
+    localExperience.enabled
+      ? `Full-app local experience ready at ${origin}; control http://127.0.0.1:${controlPort}`
+      : "Full-app test runtime ready; only test upstream transport is enabled.",
   );
+}
+
+async function handleLocalProxy(request, response) {
+  const publicUrl = new URL(request.url ?? "/", origin);
+  if (publicUrl.pathname === "/__local/full-app") {
+    response.writeHead(200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+    });
+    response.end(createLocalExperienceHome(origin));
+    return;
+  }
+  if (publicUrl.pathname === "/__local/full-app/login") {
+    await writeWebResponse(
+      response,
+      createLocalLoginResponse(
+        publicUrl.toString(),
+        origin,
+        globalThis.Response,
+      ),
+    );
+    return;
+  }
+  if (publicUrl.pathname.startsWith("/__local/full-app/oauth/")) {
+    await writeWebResponse(
+      response,
+      createLocalOAuthAuthorizeResponse(
+        publicUrl.toString(),
+        origin,
+        request.headers.cookie ?? "",
+        globalThis.Response,
+      ),
+    );
+    return;
+  }
+  if (publicUrl.pathname.startsWith("/__local/full-app/avatar/")) {
+    await writeWebResponse(
+      response,
+      createLocalAvatarResponse(
+        publicUrl.toString(),
+        origin,
+        globalThis.Response,
+      ),
+    );
+    return;
+  }
+  if (!webWorker) throw new Error("FULL_APP_LOCAL_WORKER_NOT_READY");
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(request.headers)) {
+    if (typeof value === "string") headers.set(name, value);
+  }
+  const proxied = await webWorker.fetch(publicUrl.toString(), {
+    method: request.method,
+    headers,
+    body:
+      request.method === "GET" || request.method === "HEAD"
+        ? undefined
+        : await readIncomingBody(request),
+    redirect: "manual",
+  });
+  const location = proxied.headers.get("location");
+  const rewritten = rewriteOAuthAuthorizeLocation(location, origin);
+  await writeWebResponse(response, proxied, rewritten);
+}
+
+async function readIncomingBody(request) {
+  const chunks = [];
+  for await (const chunk of request) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks);
+}
+
+async function writeWebResponse(response, webResponse, rewrittenLocation) {
+  response.writeHead(
+    webResponse.status,
+    nodeHeadersFromWebResponse(webResponse.headers, rewrittenLocation),
+  );
+  if (webResponse.body) {
+    const arrayBuffer = await webResponse.arrayBuffer();
+    response.end(Buffer.from(arrayBuffer));
+  } else {
+    response.end();
+  }
 }
 
 main().catch(async (error) => {

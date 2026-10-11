@@ -10,7 +10,7 @@ export default defineConfig({
         d1Databases: { TEST_LEGACY_DB: "hb-test-legacy-migration" },
         bindings: {
           TEST_MIGRATIONS: await readD1Migrations("./migrations"),
-          // Tests must never inherit real Connect credentials from .dev.vars.
+          // Tests must never inherit real OAuth credentials from .dev.vars.
           APP_ORIGIN: "",
           APP_ENV: "local",
           LDC_NETWORK_MODE: "disabled",
@@ -18,6 +18,8 @@ export default defineConfig({
           LDC_TIMED_DRAW_ENABLED: "true",
           CONNECT_CLIENT_ID: "",
           CONNECT_CLIENT_SECRET: "",
+          LITEAUTH_CLIENT_ID: "",
+          LITEAUTH_CLIENT_SECRET: "",
           ENCRYPTION_KEYS: JSON.stringify({
             test: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
           }),

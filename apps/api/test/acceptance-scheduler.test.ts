@@ -14,6 +14,7 @@ import { paymentTasks, users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
 import worker from "../src/index";
 import type { PaymentAdapter } from "../src/payments/adapter";
+import { readMerchantImpact } from "../src/payments/configuration";
 import { createMerchant, updateMerchant } from "../src/payments/merchants";
 import { runtimeRealPolicy } from "../src/payments/policy";
 import { createRealPaymentAdapter } from "../src/payments/real-protocol";
@@ -24,6 +25,7 @@ const merchantStubs: ReturnType<typeof env.MERCHANT_DO.get>[] = [];
 async function user() {
   const id = crypto.randomUUID();
   await createDb(env.DB).insert(users).values({
+    officialConnectVerified: true,
     id,
     externalId: id,
     username: id,
@@ -401,6 +403,8 @@ describe("real LDC acceptance scheduler gate", () => {
       adapterFactory: () => adapter,
     });
     const rotated = await updateMerchant(env, f.merchant.id, f.owner, {
+      confirmationToken: (await readMerchantImpact(env, f.merchant))
+        .confirmationToken,
       version: f.merchant.version,
       label: f.merchant.label,
       secret: "rotated-secret",
@@ -416,7 +420,11 @@ describe("real LDC acceptance scheduler gate", () => {
         recipientUsername: "tester7369",
         amountMinor: 10,
       }),
-      { credentialVersion: 1, clientSecret: "secret-value" },
+      {
+        clientId: f.merchant.clientId,
+        credentialVersion: 1,
+        clientSecret: "secret-value",
+      },
     );
     await env.DB.prepare(
       "UPDATE merchant_credentials SET verification_status='passed' WHERE merchant_id=? AND version=?",
@@ -428,6 +436,7 @@ describe("real LDC acceptance scheduler gate", () => {
       adapterFactory: () => adapter,
     });
     expect(adapter.query).toHaveBeenLastCalledWith(expect.anything(), {
+      clientId: f.merchant.clientId,
       credentialVersion: 2,
       clientSecret: "rotated-secret",
     });

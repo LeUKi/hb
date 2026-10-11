@@ -1,10 +1,13 @@
 import { z } from "zod";
 
+export type AccountTier = "standard" | "lite";
+
 /** Public identity only. Contact information belongs to the private account response. */
 export type PublicUserProfile = {
   username: string;
   displayName: string;
   avatarUrl: string | null;
+  accountTier: AccountTier | null;
 };
 
 export function normalizeAvatarUrl(value: unknown): string | null {

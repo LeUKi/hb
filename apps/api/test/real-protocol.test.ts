@@ -532,6 +532,9 @@ describe("real LDC exact errors and sanitized diagnostics", () => {
         reason,
         httpStatus: status,
         upstreamMessage: message,
+        ...(kind === "waiting" || kind === "rejected"
+          ? { noOrderEvidence: "protocol_rejection_v1" }
+          : {}),
       });
     },
   );

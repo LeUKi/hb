@@ -1,26 +1,28 @@
-import {
-  CLAIM_WINDOW_MS,
-  type ClaimActivityInput,
-  type ClaimResult,
-} from "@hb/contracts";
+import type { ClaimActivityInput, ClaimResult } from "@hb/contracts";
 import { and, eq } from "drizzle-orm";
+import { requireOfficialConnect } from "../auth/eligibility";
 import { createDb } from "../db/client";
 import { activityPasswords } from "../db/schema";
 import type { ApiBindings } from "../env";
+import {
+  assertAttemptAllowed,
+  attemptWriteStatements,
+  bindDiscoveryStatement,
+  discoveryBindingGuard,
+} from "../runtime/attempt-cooldown";
 import {
   allowsRealClaim,
   isLocalSimulation,
   readPlatformControls,
 } from "../runtime/controls";
-import { digestPassword, encryptString } from "../security/crypto";
+import { encryptString } from "../security/crypto";
 import {
-  assertClaimRateLimit,
   attemptAssociatedData,
   bindFingerprint,
-  claimAttemptLimit,
   findSubmission,
   paymentRecipient,
   type SubmissionRow,
+  submissionPasswordMatched,
 } from "./claim-service";
 import { findRegistration, timedDrawMoney } from "./draw-storage";
 import { ActivityError, activityNotFound } from "./errors";
@@ -29,6 +31,7 @@ import {
   permitsRealActivity,
 } from "./execution-policy";
 import { databaseNow } from "./lifecycle";
+import { assertParticipationMode, participationRequest } from "./participation";
 import { getRegistrationDetail } from "./registration-queries";
 import { activityStatus } from "./service";
 import { findActivity } from "./storage";
@@ -44,6 +47,7 @@ async function result(
       throw new Error("Registration submission has no entry");
     return {
       result: row.outcome,
+      passwordMatched: submissionPasswordMatched(row),
       registration: await getRegistrationDetail(
         env,
         row.registrationId,
@@ -54,6 +58,7 @@ async function result(
   if (["incorrect", "draft", "ended", "archived"].includes(row.outcome))
     return {
       result: row.outcome as "incorrect" | "draft" | "ended" | "archived",
+      passwordMatched: submissionPasswordMatched(row),
     };
   throw new Error("Invalid terminal registration submission");
 }
@@ -66,14 +71,8 @@ export async function registerForDraw(
   input: ClaimActivityInput,
   executionPolicy?: ActivityExecutionPolicy,
 ): Promise<ClaimResult> {
-  const fingerprint = await digestPassword(
-    `register-request:${activityId}:${input.password}`,
-    env.PASSWORD_DIGEST_KEY,
-  );
-  const passwordDigest = await digestPassword(
-    input.password,
-    env.PASSWORD_DIGEST_KEY,
-  );
+  const { mode, fingerprint, passwordDigest, continuation } =
+    await participationRequest(env, activityId, input, "register");
   for (let retry = 0; retry < 5; retry++) {
     const previous = await findSubmission(env, userId, input.submissionId);
     if (previous)
@@ -84,6 +83,7 @@ export async function registerForDraw(
       (activity.openedAt === null && activity.authorId !== userId)
     )
       activityNotFound();
+    assertParticipationMode(activity, mode);
     const money = timedDrawMoney(activity);
     if (!money) throw new Error("Activity is not a timed draw");
     if (activity.authorId === userId)
@@ -95,29 +95,43 @@ export async function registerForDraw(
     const existing = await findRegistration(env, activityId, userId);
     const status = activityStatus(activity);
     if (existing || status !== "active") {
+      await assertAttemptAllowed(env, userId, "activity", continuation, {
+        checkCooldown: false,
+      });
+      const guard = discoveryBindingGuard(userId, continuation);
       try {
-        await env.DB.prepare(`INSERT INTO redemption_submissions
-          (id,activity_id,user_id,submission_id,fingerprint,purpose,outcome,registration_id,created_at,finished_at)
-          VALUES (?,?,?,?,?,'register',?,?,${databaseNow},${databaseNow})`)
-          .bind(
+        await env.DB.batch([
+          ...(continuation
+            ? [bindDiscoveryStatement(env, userId, continuation)]
+            : []),
+          env.DB.prepare(`INSERT INTO redemption_submissions
+            (id,activity_id,user_id,submission_id,fingerprint,purpose,participation_mode,outcome,registration_id,created_at,finished_at)
+            VALUES (?,?,?,?,CASE WHEN ${guard.sql} THEN ? ELSE NULL END,'register',?,?,?,${databaseNow},${databaseNow})`).bind(
             crypto.randomUUID(),
             activityId,
             userId,
             input.submissionId,
+            ...guard.bindings,
             fingerprint,
+            mode,
             existing ? "already_registered" : status,
             existing?.id ?? null,
-          )
-          .run();
+          ),
+        ]);
       } catch (error) {
         const winner = await findSubmission(env, userId, input.submissionId);
-        if (!winner) throw error;
-        return result(env, bindFingerprint(winner, fingerprint, "register"));
+        if (winner)
+          return result(env, bindFingerprint(winner, fingerprint, "register"));
+        await assertAttemptAllowed(env, userId, "activity", continuation, {
+          checkCooldown: false,
+        });
+        throw error;
       }
       const saved = await findSubmission(env, userId, input.submissionId);
       if (!saved) throw new Error("Registration outcome was not saved");
       return result(env, saved);
     }
+    await requireOfficialConnect(env, userId);
     if (activity.paymentMode === "simulation" && !isLocalSimulation(env))
       throw new ActivityError(
         400,
@@ -135,80 +149,107 @@ export async function registerForDraw(
         "REAL_LDC_CLAIMS_PAUSED",
         "真实 LDC 新报名暂时关闭，已有报名仍会正常开奖。",
       );
-    await assertClaimRateLimit(env, activityId, userId);
-    const password = await createDb(env.DB)
-      .select()
-      .from(activityPasswords)
-      .where(
-        and(
-          eq(activityPasswords.activityId, activityId),
-          eq(activityPasswords.digest, passwordDigest),
-        ),
-      )
-      .get();
+    await assertAttemptAllowed(env, userId, "activity", continuation);
+    const password =
+      passwordDigest === null
+        ? undefined
+        : await createDb(env.DB)
+            .select()
+            .from(activityPasswords)
+            .where(
+              and(
+                eq(activityPasswords.activityId, activityId),
+                eq(activityPasswords.digest, passwordDigest),
+              ),
+            )
+            .get();
     const rowId = crypto.randomUUID();
-    const registrationId = password ? crypto.randomUUID() : null;
+    const registrationId =
+      mode === "direct" || password ? crypto.randomUUID() : null;
     const recipient =
-      password && activity.paymentMode
+      registrationId && activity.paymentMode
         ? await paymentRecipient(env, userId, activity.paymentMode)
         : null;
-    const ciphertext = activity.forceDedicated
-      ? await encryptString(
-          input.password,
-          env,
-          attemptAssociatedData(activityId, rowId),
-        )
-      : null;
+    const ciphertext =
+      activity.forceDedicated && "password" in input
+        ? await encryptString(
+            input.password,
+            env,
+            attemptAssociatedData(activityId, rowId),
+          )
+        : null;
     const statements = [
-      env.DB.prepare(`UPDATE activities SET version = CASE WHEN version=? AND deleted_at IS NULL
+      ...attemptWriteStatements(env, userId, "activity", rowId, continuation),
+      env.DB.prepare(`UPDATE activities SET version = CASE WHEN version=? AND participation_mode=? AND deleted_at IS NULL
       AND opened_at IS NOT NULL AND ended_at IS NULL AND archived_at IS NULL AND draw_state='waiting'
       AND deadline>${databaseNow} AND registered_count<9007199254740991
       AND (json_extract(config,'$.money.participantLimit') IS NULL OR registered_count<json_extract(config,'$.money.participantLimit'))
       AND author_id!=? AND ((payment_mode='simulation' AND ?=1) OR (payment_mode='real' AND ?=1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
+      AND EXISTS(SELECT 1 FROM users WHERE id=? AND official_connect_verified=1 AND active=1)
       AND NOT EXISTS(SELECT 1 FROM activity_registrations WHERE activity_id=? AND user_id=?)
-      AND (SELECT COUNT(*) FROM redemption_submissions WHERE activity_id=? AND user_id=? AND validated_at>${databaseNow}-?)<?
       THEN version ELSE NULL END WHERE id=?`).bind(
         activity.version,
+        mode,
         userId,
         Number(isLocalSimulation(env)),
         Number(realPermitted),
         Number(testPermission),
-        activityId,
         userId,
         activityId,
         userId,
-        CLAIM_WINDOW_MS,
-        claimAttemptLimit(env),
         activityId,
       ),
     ];
-    if (registrationId && password && recipient) {
+    if (mode === "direct")
+      statements.push(
+        env.DB.prepare(`INSERT INTO redemption_submissions
+          (id,activity_id,user_id,submission_id,fingerprint,purpose,participation_mode,outcome,created_at,validated_at)
+          VALUES (?,?,?,?,?,'register','direct','pending',${databaseNow},${databaseNow})`).bind(
+          rowId,
+          activityId,
+          userId,
+          input.submissionId,
+          fingerprint,
+        ),
+      );
+    if (registrationId && recipient) {
       statements.push(
         env.DB.prepare(`INSERT INTO activity_registrations
         (id,activity_id,user_id,password_id,ordinal,recipient_id,registered_at)
         SELECT ?,id,?,?,registered_count+1,?,${databaseNow} FROM activities WHERE id=?`).bind(
           registrationId,
           userId,
-          password.id,
+          password?.id ?? null,
           recipient.id,
           activityId,
         ),
       );
     }
-    statements.push(
-      env.DB.prepare(`INSERT INTO redemption_submissions
-      (id,activity_id,user_id,submission_id,fingerprint,purpose,outcome,matched_password_id,registration_id,created_at,validated_at,finished_at)
-      VALUES (?,?,?,?,?,'register',?,?,?,${databaseNow},${databaseNow},${databaseNow})`).bind(
-        rowId,
-        activityId,
-        userId,
-        input.submissionId,
-        fingerprint,
-        password ? "registered" : "incorrect",
-        password?.id ?? null,
-        registrationId,
-      ),
-    );
+    if (mode === "direct")
+      statements.push(
+        env.DB.prepare(`UPDATE redemption_submissions SET outcome='registered',
+          registration_id=?,finished_at=${databaseNow}
+          WHERE id=? AND purpose='register' AND participation_mode='direct' AND outcome='pending'`).bind(
+          registrationId,
+          rowId,
+        ),
+      );
+    else
+      statements.push(
+        env.DB.prepare(`INSERT INTO redemption_submissions
+      (id,activity_id,user_id,submission_id,fingerprint,purpose,participation_mode,outcome,matched_password_id,registration_id,created_at,validated_at,finished_at)
+      VALUES (?,?,?,?,?,'register',?,?,?,?,${databaseNow},${databaseNow},${databaseNow})`).bind(
+          rowId,
+          activityId,
+          userId,
+          input.submissionId,
+          fingerprint,
+          mode,
+          registrationId ? "registered" : "incorrect",
+          password?.id ?? null,
+          registrationId,
+        ),
+      );
     if (ciphertext !== null)
       statements.push(
         env.DB.prepare(`INSERT INTO attempt_events
@@ -242,6 +283,7 @@ export async function registerForDraw(
         return result(env, bindFingerprint(winner, fingerprint, "register"));
       const current = await findActivity(env, activityId);
       if (!current) activityNotFound();
+      await requireOfficialConnect(env, userId);
       if (
         current.version !== activity.version ||
         activityStatus(current) !== "active" ||
@@ -258,7 +300,7 @@ export async function registerForDraw(
           "REAL_LDC_CLAIMS_PAUSED",
           "新报名暂时关闭，请保留原提交稍后重试。",
         );
-      await assertClaimRateLimit(env, activityId, userId);
+      await assertAttemptAllowed(env, userId, "activity", continuation);
       throw error;
     }
   }

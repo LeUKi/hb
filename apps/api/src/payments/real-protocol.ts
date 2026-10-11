@@ -277,24 +277,56 @@ function distributeError(
       "认证失败",
     ].includes(message)
   )
-    return { kind: "waiting", reason: "credentials" };
+    return {
+      kind: "waiting",
+      reason: "credentials",
+      noOrderEvidence: "protocol_rejection_v1",
+    };
   if (status !== 400) return null;
   switch (message) {
     case "余额不足":
-      return { kind: "waiting", reason: "funds" };
+      return {
+        kind: "waiting",
+        reason: "funds",
+        noOrderEvidence: "protocol_rejection_v1",
+      };
     case "已超过每日限额":
-      return { kind: "waiting", reason: "quota" };
+      return {
+        kind: "waiting",
+        reason: "quota",
+        noOrderEvidence: "protocol_rejection_v1",
+      };
     case "商户信息不存在":
-      return { kind: "waiting", reason: "credentials" };
+      return {
+        kind: "waiting",
+        reason: "credentials",
+        noOrderEvidence: "protocol_rejection_v1",
+      };
     case "收款人不存在":
-      return { kind: "rejected", reason: "recipient" };
+      return {
+        kind: "rejected",
+        reason: "recipient",
+        noOrderEvidence: "protocol_rejection_v1",
+      };
     case "不能转账给自己":
-      return { kind: "rejected", reason: "self_payment" };
+      return {
+        kind: "rejected",
+        reason: "self_payment",
+        noOrderEvidence: "protocol_rejection_v1",
+      };
     case "支付配置不存在":
-      return { kind: "rejected", reason: "configuration" };
+      return {
+        kind: "rejected",
+        reason: "configuration",
+        noOrderEvidence: "protocol_rejection_v1",
+      };
     case "金额必须大于0":
     case "金额小数位数不能超过2位":
-      return { kind: "rejected", reason: "validation" };
+      return {
+        kind: "rejected",
+        reason: "validation",
+        noOrderEvidence: "protocol_rejection_v1",
+      };
     case "同一业务订单号的订单信息不一致":
       return { kind: "conflict", reason: "conflict" };
     case 'ERROR: duplicate key value violates unique constraint "idx_orders_client_merchant_order" (SQLSTATE 23505)':
@@ -390,6 +422,8 @@ export async function sendRealDistribute(
   context: PaymentAttemptContext,
   options: RealProtocolOptions,
 ): Promise<AdapterResult> {
+  if (context.clientId !== undefined && context.clientId !== task.clientId)
+    throw new Error("Payment credential identity mismatch");
   if (!context.clientSecret) return { kind: "unknown", reason: "credentials" };
   const username = assertRealTask(task);
   const baseUrl = normalizeBaseUrl(options.baseUrl);
@@ -488,6 +522,8 @@ export async function queryRealOrder(
   context: PaymentAttemptContext,
   options: RealProtocolOptions,
 ): Promise<AdapterResult> {
+  if (context.clientId !== undefined && context.clientId !== task.clientId)
+    throw new Error("Payment credential identity mismatch");
   if (!context.clientSecret) return { kind: "unknown", reason: "credentials" };
   assertRealTask(task);
   const baseUrl = normalizeBaseUrl(options.baseUrl);

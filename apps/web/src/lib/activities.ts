@@ -1,8 +1,12 @@
 import type {
+  AccountHistorySummary,
   ActivityError,
+  ActivityHistoryFilters,
   ActivityIssue,
   ActivityList,
+  ActivityRewardFilter,
   ActivityStatus,
+  AttemptCooldown,
   CreateActivityInput,
   DeleteActivityInput,
   EndActivityInput,
@@ -13,8 +17,9 @@ import type {
   UpdateActivityInput,
 } from "@hb/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect } from "react";
 import { api } from "../api";
-import { sessionQueryKey } from "./auth";
+import { sessionQueryKey, useAccountSession } from "./auth";
 
 export class ActivityRequestError extends Error {
   constructor(
@@ -23,6 +28,7 @@ export class ActivityRequestError extends Error {
     public readonly issues: ActivityIssue[] = [],
     public readonly retryAfterSeconds?: number,
     public readonly code?: string,
+    public readonly attemptCooldown?: AttemptCooldown | null,
   ) {
     super(message);
   }
@@ -39,12 +45,14 @@ export async function readResponse<T>(response: Response): Promise<T> {
     throw new ActivityRequestError(
       response.status === 409 &&
         body?.error?.code === "ACTIVITY_VERSION_CONFLICT"
-        ? "活动已在其他页面修改。当前输入已保留，请先刷新最新版本。"
+        ? "活动内容已发生变化，请刷新后再试。"
         : (body?.error?.message ?? `请求失败：HTTP ${response.status}`),
       response.status,
       body?.error?.issues,
       retryAfter(response.headers.get("Retry-After")),
       body?.error?.code,
+      (body as { attemptCooldown?: AttemptCooldown | null } | undefined)
+        ?.attemptCooldown ?? null,
     );
   }
   return (await response.json()) as T;
@@ -60,6 +68,62 @@ function retryAfter(value: string | null) {
     : undefined;
 }
 
+export const historyListRefreshOptions = {
+  refetchInterval: 15_000,
+  refetchIntervalInBackground: false,
+  refetchOnWindowFocus: false,
+} as const;
+
+type PageFocusRefetch = () => unknown;
+
+const mountedPageFocusRefreshes = new Set<PageFocusRefetch>();
+let pageFocusRefreshTimer: number | undefined;
+let pageFocusRefreshListening = false;
+
+function flushPageFocusRefreshes() {
+  pageFocusRefreshTimer = undefined;
+  if (document.visibilityState === "hidden") return;
+  for (const refresh of Array.from(mountedPageFocusRefreshes)) void refresh();
+}
+
+function schedulePageFocusRefresh() {
+  if (document.visibilityState === "hidden") return;
+  if (pageFocusRefreshTimer !== undefined) return;
+  pageFocusRefreshTimer = window.setTimeout(flushPageFocusRefreshes, 100);
+}
+
+function ensurePageFocusRefreshListeners() {
+  if (pageFocusRefreshListening) return;
+  window.addEventListener("focus", schedulePageFocusRefresh);
+  document.addEventListener("visibilitychange", schedulePageFocusRefresh);
+  pageFocusRefreshListening = true;
+}
+
+function cleanupPageFocusRefreshListeners() {
+  if (!pageFocusRefreshListening || mountedPageFocusRefreshes.size > 0) return;
+  window.removeEventListener("focus", schedulePageFocusRefresh);
+  document.removeEventListener("visibilitychange", schedulePageFocusRefresh);
+  if (pageFocusRefreshTimer !== undefined) {
+    window.clearTimeout(pageFocusRefreshTimer);
+    pageFocusRefreshTimer = undefined;
+  }
+  pageFocusRefreshListening = false;
+}
+
+export function useMountedPageFocusRefresh(
+  refetch: (options?: { cancelRefetch?: boolean }) => unknown,
+) {
+  useEffect(() => {
+    const refresh = () => refetch({ cancelRefetch: false });
+    mountedPageFocusRefreshes.add(refresh);
+    ensurePageFocusRefreshListeners();
+    return () => {
+      mountedPageFocusRefreshes.delete(refresh);
+      cleanupPageFocusRefreshListeners();
+    };
+  }, [refetch]);
+}
+
 export const activityKeys = {
   mine: (userId: string) => ["activity-private", userId] as const,
   detail: (userId: string, id: string) =>
@@ -68,23 +132,74 @@ export const activityKeys = {
     ["activity-public", id, userId] as const,
 };
 
-export function useMyActivities(userId: string, cursor: string | null) {
-  return useQuery({
-    queryKey: [...activityKeys.mine(userId), "list", cursor],
+export function useMyActivities(
+  userId: string,
+  cursor: string | null,
+  filters: ActivityHistoryFilters = {},
+) {
+  const type = filters.type ?? "all";
+  const status = filters.status ?? "all";
+  const query = useQuery({
+    queryKey: [...activityKeys.mine(userId), "list", type, status, cursor],
     queryFn: async ({ signal }) =>
       readResponse<ActivityList>(
         await api.api.me.activities.$get(
-          { query: cursor ? { cursor } : {} },
+          { query: { type, status, ...(cursor ? { cursor } : {}) } },
           { init: { signal, cache: "no-store" } },
         ),
       ),
     retry: false,
+    ...historyListRefreshOptions,
   });
+  useMountedPageFocusRefresh(query.refetch);
+  return query;
 }
 
-export function useManagedActivity(userId: string, id: string) {
+export function useHistorySummary(userId: string) {
+  const query = useQuery({
+    queryKey: ["history-private", userId, "summary"],
+    queryFn: async ({ signal }) =>
+      readResponse<AccountHistorySummary>(
+        await fetch("/api/me/history-summary", { signal, cache: "no-store" }),
+      ),
+    retry: false,
+    ...historyListRefreshOptions,
+  });
+  useMountedPageFocusRefresh(query.refetch);
+  return query;
+}
+
+export const rewardFilterLabels: Record<ActivityRewardFilter, string> = {
+  all: "全部",
+  text: "文本 / CDK",
+  ldc: "LDC",
+  fixed: "固定均分",
+  custom: "自定义金额",
+  random: "随机金额",
+  timed_draw: "限时开奖",
+};
+
+export const activityRewardFilters = ["all", "text", "ldc"] as const;
+
+export function normalizeActivityRewardFilter(
+  value: unknown,
+): (typeof activityRewardFilters)[number] {
+  if (value === "text") return "text";
+  if (
+    value === "ldc" ||
+    value === "fixed" ||
+    value === "custom" ||
+    value === "random" ||
+    value === "timed_draw"
+  )
+    return "ldc";
+  return "all";
+}
+
+export function useManagedActivity(userId: string, id: string, enabled = true) {
   return useQuery({
     queryKey: activityKeys.detail(userId, id),
+    enabled,
     queryFn: async ({ signal }) =>
       readResponse<{ activity: ManagedActivity }>(
         await api.api.me.activities[":id"].$get(
@@ -93,8 +208,22 @@ export function useManagedActivity(userId: string, id: string) {
         ),
       ),
     retry: false,
-    refetchInterval: 15_000,
+    refetchInterval: enabled ? 15_000 : false,
   });
+}
+
+export type PublicActivityDetail = {
+  activity: PublicActivity;
+  readGeneration: number;
+};
+
+let publicActivityReadGeneration = 0;
+
+/** Cache writes retain this source marker; only actual detail reads advance it. */
+export function nextPublicActivityReadGeneration(previous = 0) {
+  publicActivityReadGeneration =
+    Math.max(publicActivityReadGeneration, previous) + 1;
+  return publicActivityReadGeneration;
 }
 
 export function usePublicActivity(
@@ -102,19 +231,47 @@ export function usePublicActivity(
   userId: string | null,
   enabled: boolean,
 ) {
-  return useQuery({
+  const client = useQueryClient();
+  const query = useQuery({
     queryKey: activityKeys.public(id, userId),
-    queryFn: async ({ signal }) =>
-      readResponse<{ activity: PublicActivity }>(
+    queryFn: async ({ signal }): Promise<PublicActivityDetail> => {
+      const result = await readResponse<{ activity: PublicActivity }>(
         await api.api.activities[":id"].$get(
           { param: { id } },
           { init: { signal, cache: "no-store" } },
         ),
-      ),
+      );
+      signal.throwIfAborted();
+      return {
+        ...result,
+        readGeneration: nextPublicActivityReadGeneration(
+          client.getQueryData<PublicActivityDetail>(
+            activityKeys.public(id, userId),
+          )?.readGeneration ?? 0,
+        ),
+      };
+    },
     enabled,
     retry: false,
-    refetchInterval: 15_000,
+    refetchInterval: enabled ? 5_000 : false,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
   });
+  const refetch = useCallback(
+    () => query.refetch({ cancelRefetch: false }),
+    [query.refetch],
+  );
+  useMountedPageFocusRefresh(
+    useCallback(() => (enabled ? refetch() : undefined), [enabled, refetch]),
+  );
+  useEffect(() => {
+    if (!enabled)
+      void client.cancelQueries({
+        queryKey: activityKeys.public(id, userId),
+        exact: true,
+      });
+  }, [client, id, userId, enabled]);
+  return { ...query, refetch };
 }
 
 export function useActivityWrites(
@@ -124,12 +281,13 @@ export function useActivityWrites(
 ) {
   const queryClient = useQueryClient();
   const options = { headers: { "X-CSRF-Token": csrfToken } };
-  const onError = (error: Error) => {
-    if (
-      queryClient.getQueryData<{ user: { id: string } | null }>(sessionQueryKey)
-        ?.user?.id !== userId
-    )
-      return;
+  const account = useAccountSession(userId);
+  const onError = (
+    error: Error,
+    _variables: unknown,
+    identity: string | null | undefined,
+  ) => {
+    if (!account.isCurrentIdentity(identity)) return;
     if (error instanceof ActivityRequestError && error.status === 401) {
       queryClient.setQueryData(sessionQueryKey, {
         user: null,
@@ -138,25 +296,47 @@ export function useActivityWrites(
       queryClient.removeQueries({ queryKey: activityKeys.mine(userId) });
     }
   };
-  const onSuccess = async ({ activity }: { activity: ManagedActivity }) => {
-    if (
-      queryClient.getQueryState(sessionQueryKey)?.status !== "success" ||
-      queryClient.getQueryData<{ user: { id: string } | null }>(sessionQueryKey)
-        ?.user?.id !== userId
-    )
-      return;
-    queryClient.setQueryData(activityKeys.detail(userId, activity.id), {
+  const onSuccess = async (
+    { activity }: { activity: ManagedActivity },
+    _variables: unknown,
+    identity: string | null | undefined,
+  ) => {
+    if (!account.isCurrentIdentity(identity)) return;
+    const detailKey = activityKeys.detail(userId, activity.id);
+    // An older poll must not replace the configuration just confirmed by PATCH.
+    await queryClient.cancelQueries({ queryKey: detailKey });
+    if (!account.isCurrentIdentity(identity)) return;
+    queryClient.setQueryData(detailKey, {
       activity,
     });
-    await queryClient.invalidateQueries({
-      queryKey: activityKeys.mine(userId),
+    void queryClient.invalidateQueries({
+      queryKey: [...detailKey, "records"],
     });
-    await queryClient.invalidateQueries({
+    // Saving is complete. Refresh dependent projections without holding the form.
+    void queryClient.invalidateQueries({
+      queryKey: activityKeys.mine(userId),
+      predicate: (query) =>
+        query.queryKey[2] !== "detail" || query.queryKey[3] !== activity.id,
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ["history-private", userId],
+    });
+    void queryClient.invalidateQueries({
       queryKey: ["activity-public", activity.id],
+    });
+    void queryClient.invalidateQueries({ queryKey: ["discovery"] });
+    void queryClient.invalidateQueries({ queryKey: ["topic-activities"] });
+    void queryClient.invalidateQueries({
+      queryKey: ["password-private", userId, activity.id],
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ["activity-roster", activity.id],
     });
   };
   return {
+    isCurrentSession: account.isCurrentSession,
     create: useMutation({
+      onMutate: account.captureIdentity,
       mutationFn: async (json: CreateActivityInput) =>
         readResponse<{ activity: ManagedActivity }>(
           await api.api.activities.$post({ json: json as never }, options),
@@ -165,6 +345,7 @@ export function useActivityWrites(
       onError,
     }),
     update: useMutation({
+      onMutate: account.captureIdentity,
       mutationFn: async (json: UpdateActivityInput) => {
         if (!id) throw new Error("缺少活动标识");
         return readResponse<{ activity: ManagedActivity }>(
@@ -178,6 +359,7 @@ export function useActivityWrites(
       onError,
     }),
     open: useMutation({
+      onMutate: account.captureIdentity,
       mutationFn: async (json: OpenActivityInput) => {
         if (!id) throw new Error("缺少活动标识");
         return readResponse<{ activity: ManagedActivity }>(
@@ -191,6 +373,7 @@ export function useActivityWrites(
       onError,
     }),
     end: useMutation({
+      onMutate: account.captureIdentity,
       mutationFn: async (json: EndActivityInput) => {
         if (!id) throw new Error("缺少活动标识");
         return readResponse<{ activity: ManagedActivity }>(
@@ -204,6 +387,7 @@ export function useActivityWrites(
       onError,
     }),
     remove: useMutation({
+      onMutate: account.captureIdentity,
       mutationFn: async (json: DeleteActivityInput) => {
         if (!id) throw new Error("缺少活动标识");
         return readResponse<{
@@ -218,13 +402,8 @@ export function useActivityWrites(
           ),
         );
       },
-      onSuccess: async (result) => {
-        if (
-          queryClient.getQueryData<{ user: { id: string } | null }>(
-            sessionQueryKey,
-          )?.user?.id !== userId
-        )
-          return;
+      onSuccess: (result, _variables, identity) => {
+        if (!account.isCurrentIdentity(identity)) return;
         queryClient.removeQueries({
           queryKey: activityKeys.detail(userId, result.id),
         });
@@ -232,8 +411,11 @@ export function useActivityWrites(
         queryClient.removeQueries({
           queryKey: ["password-private", userId, result.id],
         });
-        await queryClient.invalidateQueries({
+        void queryClient.invalidateQueries({
           queryKey: activityKeys.mine(userId),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ["history-private", userId],
         });
       },
       onError,
@@ -254,12 +436,19 @@ export function formatTime(time: string | null) {
     : "开放后确定";
 }
 
-export function quantityText(quantity: PublicQuantity) {
+export function quantityText(
+  quantity: PublicQuantity,
+  kind: "draw" | "instant" = "instant",
+) {
+  if (kind === "draw")
+    return quantity.mode === "exact"
+      ? `最多 ${quantity.total} 人获奖`
+      : "名额不公开";
   switch (quantity.mode) {
     case "hidden":
       return null;
     case "exact":
-      return `共 ${quantity.total} 份 · 已领取 ${quantity.claimed} 份 · 剩余 ${quantity.remaining} 份`;
+      return `已领取 ${quantity.claimed} / ${quantity.total} 份`;
     case "availability":
       return quantity.available ? "还有奖励" : "没有剩余奖励";
     case "fuzzy":

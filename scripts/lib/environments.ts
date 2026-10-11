@@ -20,6 +20,7 @@ export const origins: Record<Environment, string> = {
 export type WorkerConfig = {
   name: string;
   main: string;
+  compatibility_flags?: string[];
   account_id?: string;
   workers_dev?: boolean;
   preview_urls?: boolean;
@@ -144,6 +145,8 @@ export function validateEnvironment(
   )
     fail("sensitive request logging");
   if (environment !== "local") {
+    if (!api.compatibility_flags?.includes("global_fetch_strictly_public"))
+      fail("public fetch routing compatibility flag required");
     const vars = api.vars ?? {};
     if (
       !api.account_id ||

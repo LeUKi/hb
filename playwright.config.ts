@@ -9,7 +9,7 @@ export default defineConfig({
   use: {
     baseURL: "http://127.0.0.1:5173",
     trace: "off",
-    screenshot: "only-on-failure",
+    screenshot: "off",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {

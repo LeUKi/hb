@@ -10,17 +10,30 @@ function CreateActivityPage() {
   const navigate = useNavigate();
   return (
     <RequireAccount>
-      {({ userId, csrfToken }) => (
-        <div className="space-y-6">
-          <h1 className="text-2xl font-semibold">创建奖励活动</h1>
+      {({ userId, csrfToken, canUseLdc }) => (
+        <div className="work-page work-create-page">
+          <div className="work-page-heading">
+            <div className="work-title-group">
+              <h1>发起活动</h1>
+            </div>
+          </div>
           <ActivityForm
             key={userId}
             userId={userId}
             csrfToken={csrfToken}
-            onSaved={(activity) => {
+            canUseLdc={canUseLdc}
+            onSaved={(activity, notice) => {
               void navigate({
                 to: "/my/activities/$id",
                 params: { id: activity.id },
+                state: notice
+                  ? (state) => ({
+                      ...state,
+                      activityEditorNotice: notice,
+                      activityEditorNoticeActivityId: activity.id,
+                      activityEditorNoticeUserId: userId,
+                    })
+                  : undefined,
               });
             }}
           />

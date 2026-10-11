@@ -3,15 +3,20 @@ import { HTTPException } from "hono/http-exception";
 import { ActivityError } from "./activities/errors";
 import { passwordRoutes } from "./activities/password-routes";
 import { ActivityValidationError, activityRoutes } from "./activities/routes";
+import { loginSettingsAdminRoutes } from "./admin/login-settings";
+import { adminRoutes } from "./admin/routes";
 import { authRoutes } from "./auth/oauth";
 import { discoveryRoutes } from "./discovery/routes";
-import { GlobalRateLimitError } from "./discovery/service";
 import type { ApiContext } from "./env";
+import { MerchantChangeConfirmationError } from "./payments/configuration";
 import { merchantRoutes } from "./payments/routes";
+import { AttemptCooldownError } from "./runtime/attempt-cooldown";
 
 export const app = new Hono<ApiContext>()
   .get("/api/health", (c) => c.json({ status: "ok" as const }))
   .route("/api", authRoutes)
+  .route("/api", adminRoutes)
+  .route("/api", loginSettingsAdminRoutes)
   .route("/api", activityRoutes)
   .route("/api", passwordRoutes)
   .route("/api", discoveryRoutes)
@@ -29,13 +34,22 @@ export const app = new Hono<ApiContext>()
   )
   .onError((error, c) => {
     if (error instanceof ActivityError) {
-      if (error instanceof GlobalRateLimitError)
+      if (error instanceof AttemptCooldownError)
         c.header("Retry-After", String(error.retryAfter));
       return c.json(
         {
+          ...(error instanceof AttemptCooldownError
+            ? { attemptCooldown: error.attemptCooldown }
+            : {}),
           error: {
             code: error.code,
             message: error.message,
+            ...(error instanceof MerchantChangeConfirmationError
+              ? {
+                  impact: error.preview.impact,
+                  confirmationToken: error.preview.confirmationToken,
+                }
+              : {}),
             ...(error instanceof ActivityValidationError
               ? { issues: error.issues }
               : {}),

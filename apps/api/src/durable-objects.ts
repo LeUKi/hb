@@ -8,11 +8,11 @@ import {
   globalRedemptionSchema,
   type ManagedActivity,
   openActivitySchema,
+  passwordSolveSchema,
   updateActivitySchema,
 } from "@hb/contracts";
 import { eq } from "drizzle-orm";
 import {
-  ClaimRateLimitError,
   claimActivity,
   resumePendingActivityClaims,
 } from "./activities/claim-service";
@@ -31,12 +31,16 @@ import { findActivity } from "./activities/storage";
 import { createDb } from "./db/client";
 import { merchants } from "./db/schema";
 import {
-  GlobalRateLimitError,
+  discoverGlobalRedemption,
   redeemGlobally,
   refreshGlobalResult,
 } from "./discovery/service";
 import type { ApiBindings } from "./env";
 import { flushPaymentOutbox, runMerchantCycle } from "./payments/scheduler";
+import {
+  AttemptCooldownError,
+  readAttemptCooldown,
+} from "./runtime/attempt-cooldown";
 import { runMaintenance } from "./scheduled";
 
 type HealthResponse = {
@@ -170,6 +174,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     const isCreation = url.pathname === "/internal/activities/create";
     const isGlobalRedemption =
       url.pathname === "/internal/redemptions/submit" ||
+      url.pathname === "/internal/redemptions/discover" ||
       url.pathname === "/internal/redemptions/refresh";
     const route =
       /^\/internal\/activities\/([a-f0-9-]{36})\/(manage|update|open|claim|solve|delete|end|refresh)$/i.exec(
@@ -300,6 +305,13 @@ export class ActivityDO extends DurableObject<ApiBindings> {
             const parsed = globalRedemptionSchema.safeParse(input);
             if (!parsed.success)
               throw new ActivityError(400, "INVALID_ACTIVITY", "兑换请求无效");
+            if (url.pathname === "/internal/redemptions/discover")
+              return Response.json(
+                await discoverGlobalRedemption(this.env, userId, parsed.data),
+                {
+                  headers: { "Cache-Control": "no-store" },
+                },
+              );
             return Response.json(
               await redeemGlobally(this.env, userId, parsed.data),
               {
@@ -308,7 +320,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
             );
           }
           if (operation === "solve") {
-            const parsed = claimActivitySchema.safeParse(input);
+            const parsed = passwordSolveSchema.safeParse(input);
             if (!parsed.success || typeof userId !== "string")
               throw new ActivityError(
                 400,
@@ -316,7 +328,15 @@ export class ActivityDO extends DurableObject<ApiBindings> {
                 "口令验证请求无效",
               );
             return Response.json(
-              await solveActivityPassword(this.env, id, userId, parsed.data),
+              {
+                ...(await solveActivityPassword(
+                  this.env,
+                  id,
+                  userId,
+                  parsed.data,
+                )),
+                attemptCooldown: await readAttemptCooldown(this.env, userId),
+              },
               {
                 headers: { "Cache-Control": "no-store" },
               },
@@ -345,9 +365,15 @@ export class ActivityDO extends DurableObject<ApiBindings> {
                 ),
               );
             }
-            return Response.json(result, {
-              headers: { "Cache-Control": "no-store" },
-            });
+            return Response.json(
+              {
+                ...result,
+                attemptCooldown: await readAttemptCooldown(this.env, userId),
+              },
+              {
+                headers: { "Cache-Control": "no-store" },
+              },
+            );
           }
           if (typeof authorId !== "string")
             throw new ActivityError(400, "INVALID_ACTIVITY", "活动作者无效");
@@ -399,13 +425,17 @@ export class ActivityDO extends DurableObject<ApiBindings> {
         } catch (error) {
           if (error instanceof ActivityError) {
             return Response.json(
-              { error: { code: error.code, message: error.message } },
+              {
+                error: { code: error.code, message: error.message },
+                ...(error instanceof AttemptCooldownError
+                  ? { attemptCooldown: error.attemptCooldown }
+                  : {}),
+              },
               {
                 status: error.status,
                 headers: {
                   "Cache-Control": "no-store",
-                  ...(error instanceof ClaimRateLimitError ||
-                  error instanceof GlobalRateLimitError
+                  ...(error instanceof AttemptCooldownError
                     ? { "Retry-After": String(error.retryAfter) }
                     : {}),
                 },
@@ -474,9 +504,18 @@ export class MerchantDO extends DurableObject<ApiBindings> {
         .from(merchants)
         .where(eq(merchants.id, merchantId))
         .get();
+      const aliases = row
+        ? await this.env.DB.prepare(
+            "SELECT client_id FROM merchant_client_ids WHERE merchant_id=?",
+          )
+            .bind(merchantId)
+            .all<{ client_id: string }>()
+        : null;
       if (
         !row ||
-        !this.ctx.id.equals(this.env.MERCHANT_DO.idFromName(row.clientId))
+        !aliases?.results.some((alias) =>
+          this.ctx.id.equals(this.env.MERCHANT_DO.idFromName(alias.client_id)),
+        )
       )
         return Response.json(
           { error: "Merchant identity mismatch" },

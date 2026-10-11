@@ -55,10 +55,32 @@ export const createMerchantSchema = z.strictObject({
   secret: z.string().min(1).max(4096),
 });
 export const updateMerchantSchema = z.strictObject({
+  requestId: z.uuid().optional(),
+  clientId: createMerchantSchema.shape.clientId.optional(),
+  confirmationToken: z.string().max(512).optional(),
   version: z.number().int().positive(),
   label: z.string().trim().min(1).max(100),
   secret: z.string().min(1).max(4096).optional(),
 });
+export const repairPaymentCredentialSchema = z.strictObject({
+  requestId: z.uuid(),
+  version: z.number().int().positive(),
+  secret: z.string().min(1).max(4096),
+});
+export type RepairPaymentCredentialInput = z.infer<
+  typeof repairPaymentCredentialSchema
+>;
+export type MerchantChangeImpact = {
+  activeActivities: number;
+  unfinishedDraws: number;
+  pendingPayments: number;
+  sendingPayments: number;
+  reconcilingPayments: number;
+};
+export type MerchantChangePreview = {
+  impact: MerchantChangeImpact;
+  confirmationToken: string;
+};
 export type CreateMerchantInput = z.input<typeof createMerchantSchema>;
 export type UpdateMerchantInput = z.infer<typeof updateMerchantSchema>;
 export type CredentialVerificationStatus =
@@ -75,6 +97,12 @@ export type CredentialVerification = {
   reason: string | null;
 };
 export type Merchant = {
+  appliedChange?: {
+    requestId: string;
+    resultVersion: number;
+    clientId: string;
+    credentialVersion: number;
+  };
   id: string;
   label: string;
   usageStatus: "current" | "legacy";
@@ -99,6 +127,7 @@ export type Merchant = {
   };
 } & ({ mode: "simulation"; scenario: SimulationScenario } | { mode: "real" });
 export type LdcOpeningBlockedReason =
+  | "OFFICIAL_CONNECT_REQUIRED"
   | "REAL_LDC_NOT_ENABLED"
   | "TIMED_DRAW_NOT_ENABLED"
   | "MERCHANT_LEGACY"
@@ -141,6 +170,9 @@ export type MerchantPayment = PaymentView & {
       }
   );
 export type PaymentAttemptView = {
+  clientId?: string | null;
+  identityCorrectionVersion?: number;
+  noOrderEvidence?: string | null;
   recipientUsername: string | null;
   purpose: "recovery" | "probe";
   diagnosticSummary: string | null;
@@ -154,6 +186,20 @@ export type PaymentAttemptView = {
   finishedAt: string | null;
 };
 export type MerchantPaymentDetail = MerchantPayment & {
+  config?: {
+    originalClientId: string;
+    effectiveClientId: string;
+    credentialVersion: number;
+    identityCorrectionVersion: number;
+    canRepairCredentials: boolean;
+  };
+  identityCorrections?: {
+    version: number;
+    originalClientId: string;
+    correctedClientId: string;
+    evidence: "never_sent" | "rejected_no_order";
+    createdAt: string;
+  }[];
   recipientProfile: PublicUserProfile | null;
   recoveryPolicy: "claim_same_order_v1" | null;
   firstSendAt: string | null;
@@ -210,15 +256,13 @@ export const PAYMENT_LABELS: Record<PaymentState, string> = {
   sending: "发送中",
   reconciling: "核对中",
   waiting: "等待恢复",
-  confirmed: "已确认发放",
+  confirmed: "已发放",
   attention: "异常待处理",
 };
 
 export function paymentLabel(mode: PaymentMode, status: PaymentState): string {
   if (status === "confirmed") {
-    return mode === "simulation"
-      ? "模拟发放已确认"
-      : "LDC 已确认发放，实际可用时间以 LDC 为准";
+    return mode === "simulation" ? "模拟发放已确认" : "已发放";
   }
   return PAYMENT_LABELS[status];
 }

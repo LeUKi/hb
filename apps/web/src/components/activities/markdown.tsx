@@ -1,6 +1,8 @@
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import Markdown from "react-markdown";
-import { Button } from "../ui/button";
+import remarkGfm from "remark-gfm";
+import { resolveEmojiPath } from "../../lib/emoji-links";
 
 function safeLink(url: string) {
   const candidate = url.trim();
@@ -21,16 +23,68 @@ function safeLink(url: string) {
   }
 }
 
-export function SafeMarkdown({ children }: { children: string }) {
+export function SafeMarkdown({
+  children,
+  className = "activity-note",
+  stage,
+}: {
+  children: string;
+  className?: string;
+  stage?: "before" | "after" | "ended";
+}) {
   return (
-    <div className="activity-markdown min-w-0 break-words">
+    <div className={className} data-note-stage={stage}>
       <Markdown
+        remarkPlugins={[remarkGfm]}
         skipHtml
         disallowedElements={["img"]}
         urlTransform={safeLink}
         components={{
-          a: ({ href, children }) =>
-            href ? (
+          table: ({ children }) => (
+            <section
+              className="markdown-table-scroll"
+              aria-label="Markdown 表格"
+              // biome-ignore lint/a11y/noNoninteractiveTabindex: Overflowing Markdown tables must be keyboard scrollable.
+              tabIndex={0}
+            >
+              <table>{children}</table>
+            </section>
+          ),
+          a: ({ href, children }) => {
+            if (!href) return <span>{children}</span>;
+            const url = new URL(href, window.location.href);
+            const sameOrigin = url.origin === window.location.origin;
+            const emojiActivityId =
+              sameOrigin && !url.username && !url.password
+                ? resolveEmojiPath(url.pathname)
+                : null;
+            if (emojiActivityId)
+              return (
+                <Link
+                  to="/activities/$id"
+                  params={{ id: emojiActivityId }}
+                  search={{}}
+                  hash=""
+                >
+                  {children}
+                </Link>
+              );
+            if (
+              sameOrigin &&
+              /^\/(?:$|square\/?$|account\/?$|status\/?$|activities\/(?:new|[^/.]+)\/?$|topics\/[^/.]+\/?$|my\/(?:payments|claims(?:\/[^/.]+)?|activities(?:\/[^/.]+(?:\/statistics)?)?|merchants(?:\/[^/.]+(?:\/payments\/[^/.]+)?)?)\/?$)/.test(
+                url.pathname,
+              )
+            )
+              return (
+                <Link
+                  to={url.pathname}
+                  search={Object.fromEntries(url.searchParams)}
+                  hash={url.hash.slice(1)}
+                >
+                  {children}
+                </Link>
+              );
+            return (
               <a
                 href={href}
                 rel="noopener noreferrer"
@@ -38,9 +92,8 @@ export function SafeMarkdown({ children }: { children: string }) {
               >
                 {children}
               </a>
-            ) : (
-              <span>{children}</span>
-            ),
+            );
+          },
         }}
       >
         {children}
@@ -49,49 +102,89 @@ export function SafeMarkdown({ children }: { children: string }) {
   );
 }
 
+export type MarkdownMode = "split" | "raw" | "markdown";
+
 export function MarkdownField({
   id,
   label,
   value,
   onChange,
+  mode,
+  error,
+  onBlur,
+  helper,
 }: {
   id: string;
   label: string;
   value: string;
   onChange: (value: string) => void;
+  mode: MarkdownMode;
+  error?: string;
+  onBlur?: () => void;
+  helper?: string;
 }) {
-  const [preview, setPreview] = useState(false);
+  const [composing, setComposing] = useState(false);
+  const errorId = `${id}-error`;
+  const helperId = `${id}-helper`;
+  const showError = Boolean(error) && !composing;
+  const noteMode =
+    mode === "raw" ? "source" : mode === "markdown" ? "preview" : "split";
+  const stage = id.includes("afterClaim")
+    ? "after"
+    : id.includes("afterEnd")
+      ? "ended"
+      : "before";
+  const editor = (
+    <div className="work-note-editor-source">
+      <textarea
+        id={id}
+        rows={5}
+        value={value}
+        aria-labelledby={`${id}-label`}
+        aria-invalid={showError}
+        aria-describedby={
+          [helper ? helperId : undefined, showError ? errorId : undefined]
+            .filter(Boolean)
+            .join(" ") || undefined
+        }
+        onBlur={onBlur}
+        onCompositionStart={() => setComposing(true)}
+        onCompositionEnd={() => setComposing(false)}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </div>
+  );
+  const preview = (
+    <div className="work-note-editor-rendered">
+      <div className="work-note-preview" aria-live="polite">
+        {value ? <SafeMarkdown stage={stage}>{value}</SafeMarkdown> : null}
+      </div>
+    </div>
+  );
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-3">
-        <label htmlFor={id} className="font-medium">
+    <section
+      className="field work-note-editor"
+      data-note-mode={noteMode}
+      aria-labelledby={`${id}-label`}
+    >
+      <div className="work-field-label">
+        <label id={`${id}-label`} htmlFor={id}>
           {label}
         </label>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          aria-pressed={preview}
-          onClick={() => setPreview(!preview)}
-        >
-          {preview ? "继续编辑" : "预览"}
-        </Button>
       </div>
-      {preview ? (
-        <div className="min-h-28 rounded-md border border-neutral-200 p-3">
-          {value ? <SafeMarkdown>{value}</SafeMarkdown> : <p>暂无内容</p>}
-        </div>
-      ) : (
-        <textarea
-          id={id}
-          className="activity-input min-h-28"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-        />
-      )}
-      <p className="text-xs text-neutral-500">
+      <p id={helperId} className="work-field-hint">
+        {helper ? `${helper} ` : null}
         选填，最多 10,000 字符。支持 Markdown；不支持图片及 HTML。
       </p>
-    </div>
+      <div className="work-note-editor-body">
+        {mode !== "markdown" ? editor : null}
+        {mode !== "raw" ? preview : null}
+      </div>
+      {showError ? (
+        <p id={errorId} className="work-field-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </section>
   );
 }

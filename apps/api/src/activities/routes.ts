@@ -1,5 +1,7 @@
 import {
   ACTIVITY_LIMITS,
+  type ActivityHistoryFilters,
+  activityRewardFilterSchema,
   type ClaimResult,
   type CreateActivityInput,
   claimActivitySchema,
@@ -19,19 +21,28 @@ import {
 } from "../auth/session";
 import type { ApiContext } from "../env";
 import {
+  listActivityPayments,
+  listPaymentActivities,
+} from "../payments/activity-queries";
+import {
   getClaimDetail,
   getCurrentClaim,
   listAuthorClaims,
   listPublicRecipients,
   listUserClaims,
 } from "./claim-queries";
-import { ActivityError } from "./errors";
+import { ActivityError, activityNotFound } from "./errors";
 import {
+  accountHistorySummary,
+  getCurrentParticipation,
+  getCurrentParticipationForActivity,
   getCurrentRegistration,
   listAuthorRegistrations,
   listParticipations,
+  listPublicRegistrations,
 } from "./registration-queries";
 import { getPublicActivity, listActivities } from "./service";
+import { findActivity } from "./storage";
 
 function validated<T>(
   result:
@@ -96,6 +107,64 @@ const cursorQuery = validator("query", (value): { cursor?: string } => {
     throw new ActivityError(400, "INVALID_CURSOR", "分页标识无效");
   return { cursor: value.cursor };
 });
+const historyQuery = validator(
+  "query",
+  (value): ActivityHistoryFilters & { cursor?: string } => {
+    const type = activityRewardFilterSchema.safeParse(value.type ?? "all");
+    if (!type.success)
+      throw new ActivityError(400, "INVALID_TYPE", "奖励类型无效");
+    const status = value.status ?? "all";
+    if (
+      status !== "all" &&
+      status !== "draft" &&
+      status !== "active" &&
+      status !== "ended" &&
+      status !== "archived"
+    )
+      throw new ActivityError(400, "INVALID_STATUS", "活动状态无效");
+    if (value.cursor !== undefined && typeof value.cursor !== "string")
+      throw new ActivityError(400, "INVALID_CURSOR", "分页标识无效");
+    return { type: type.data, status, cursor: value.cursor };
+  },
+);
+const paymentActivityQuery = validator(
+  "query",
+  (
+    value,
+  ): { status: "all" | "active" | "ended" | "archived"; cursor?: string } => {
+    const status = value.status ?? "all";
+    if (
+      status !== "all" &&
+      status !== "active" &&
+      status !== "ended" &&
+      status !== "archived"
+    )
+      throw new ActivityError(400, "INVALID_STATUS", "活动状态无效");
+    if (value.cursor !== undefined && typeof value.cursor !== "string")
+      throw new ActivityError(400, "INVALID_CURSOR", "分页标识无效");
+    return { status, cursor: value.cursor };
+  },
+);
+const paymentTargetQuery = validator(
+  "query",
+  (value): { status: "all" | "pending" | "confirmed"; cursor?: string } => {
+    const status = value.status ?? "all";
+    if (status !== "all" && status !== "pending" && status !== "confirmed")
+      throw new ActivityError(400, "INVALID_STATUS", "付款状态无效");
+    if (value.cursor !== undefined && typeof value.cursor !== "string")
+      throw new ActivityError(400, "INVALID_CURSOR", "分页标识无效");
+    return { status, cursor: value.cursor };
+  },
+);
+const participationQuery = validator("query", (value): { refresh: boolean } => {
+  if (
+    value.refresh !== undefined &&
+    value.refresh !== "0" &&
+    value.refresh !== "1"
+  )
+    throw new ActivityError(400, "INVALID_REFRESH", "刷新参数无效");
+  return { refresh: value.refresh !== "0" };
+});
 
 function managedResponse(response: Response) {
   if (!response.ok) return response;
@@ -134,18 +203,56 @@ export const activityRoutes = new Hono<ApiContext>()
       return managedResponse(response);
     },
   )
-  .get("/me/activities", cursorQuery, async (c) => {
+  .get("/me/activities", historyQuery, async (c) => {
     const session = await requireAuth(c);
+    const query = c.req.valid("query");
     return c.json(
-      await listActivities(c.env, session.user.id, c.req.valid("query").cursor),
+      await listActivities(c.env, session.user.id, query.cursor, query),
     );
   })
-  .get("/me/participations", cursorQuery, async (c) => {
+  .get("/me/participations", historyQuery, async (c) => {
     const session = await requireAuth(c);
+    const query = c.req.valid("query");
     return c.json(
-      await listParticipations(
+      await listParticipations(c.env, session.user.id, query.cursor, query),
+    );
+  })
+  .get("/me/history-summary", async (c) => {
+    const session = await requireAuth(c);
+    return c.json(await accountHistorySummary(c.env, session.user.id));
+  })
+  .get("/me/payment-activities", paymentActivityQuery, async (c) => {
+    const session = await requireAuth(c);
+    const query = c.req.valid("query");
+    return c.json(
+      await listPaymentActivities(
         c.env,
         session.user.id,
+        query.status,
+        query.cursor,
+      ),
+    );
+  })
+  .get("/me/activities/:id/payments", paymentTargetQuery, async (c) => {
+    const session = await requireAuth(c);
+    const query = c.req.valid("query");
+    return c.json(
+      await listActivityPayments(
+        c.env,
+        c.req.param("id"),
+        session.user.id,
+        query.status,
+        query.cursor,
+      ),
+    );
+  })
+  .get("/activities/:id/registrations", cursorQuery, async (c) => {
+    const session = await getOptionalSession(c);
+    return c.json(
+      await listPublicRegistrations(
+        c.env,
+        c.req.param("id"),
+        session?.user.id,
         c.req.valid("query").cursor,
       ),
     );
@@ -172,6 +279,34 @@ export const activityRoutes = new Hono<ApiContext>()
     return c.json({
       registration: await getCurrentRegistration(c.env, id, session.user.id),
     });
+  })
+  .get("/activities/:id/participation", participationQuery, async (c) => {
+    const session = await requireAuth(c);
+    const id = c.req.param("id");
+    const activity = await findActivity(c.env, id);
+    if (
+      !activity ||
+      (activity.openedAt === null && activity.authorId !== session.user.id)
+    )
+      activityNotFound();
+
+    if (activity.drawState && c.req.valid("query").refresh) {
+      const object = c.env.ACTIVITY_DO.get(c.env.ACTIVITY_DO.idFromName(id));
+      const response = await object.fetch(
+        `https://activity.internal/internal/activities/${encodeURIComponent(id)}/refresh`,
+        { method: "POST" },
+      );
+      if (!response.ok) return response;
+      return c.json(await getCurrentParticipation(c.env, id, session.user.id));
+    }
+
+    return c.json(
+      await getCurrentParticipationForActivity(
+        c.env,
+        activity,
+        session.user.id,
+      ),
+    );
   })
   .get("/me/activities/:id", async (c) => {
     const session = await requireAuth(c);

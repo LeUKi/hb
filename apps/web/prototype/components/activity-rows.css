@@ -1,0 +1,112 @@
+.activity-rows {
+  width: 100%;
+  min-width: 0;
+  color: var(--ink);
+  background: var(--paper);
+}
+
+.activity-rows[data-context="public"] .activity-rows-topic-link {
+  position: relative;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 36px;
+  min-width: 36px;
+  height: 24px;
+  border: 1px solid var(--separator);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.activity-rows[data-context="public"] .activity-rows-topic-link:hover {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+
+.activity-rows[data-context="public"] .activity-rows-topic-link:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+.activity-rows-participation,
+.activity-rows[data-context="public"] .activity-rows-quantity {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.activity-rows[data-context="public"] .activity-rows-quantity {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-rows[data-context="public"] .activity-rows-empty {
+  margin: 0;
+  padding: 24px 16px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.activity-rows .activity-rows-author .user-identity {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  justify-content: flex-start;
+  font-size: 12px;
+}
+
+.activity-rows .activity-rows-author .avatar {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+}
+
+.activity-rows .activity-rows-author .user-identity > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-rows-source {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.activity-rows-source b {
+  display: inline;
+  user-select: text;
+  margin: 0 3px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg);
+  color: #cbd8df;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.activity-rows[data-context="history"] .activity-rows-time {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.6;
+}
+
+@media (max-width: 760px), (pointer: coarse) {
+  .activity-rows[data-context="public"] .activity-rows-topic-link {
+    width: 40px;
+    min-width: 40px;
+    height: 28px;
+  }
+}

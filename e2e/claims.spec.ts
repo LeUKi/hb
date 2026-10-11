@@ -1,9 +1,9 @@
 import { expect, type Page, test } from "@playwright/test";
 import {
-  type ClaimActivityInput,
   type ClaimDetail,
   emptyActivityInput,
   type ManagedActivity,
+  type PasswordClaimInput,
   type PublicActivity,
   type PublicRecipientList,
   type RegistrationDetail,
@@ -17,6 +17,9 @@ const user = {
   username: "ada",
   displayName: "Ada",
   avatarUrl: null,
+  accountTier: "standard" as const,
+  canUseLdc: true,
+  loginProvider: "connect" as const,
 };
 const reward = "<b>PRIVATE-REWARD</b>\n**必须原样显示**\n第二行";
 
@@ -26,6 +29,7 @@ async function mockClaims(page: Page) {
     author: user,
     title: "文本领取测试",
     rewardType: "text",
+    forceDedicated: true,
     status: "active",
     version: 2,
     createdAt: new Date().toISOString(),
@@ -49,16 +53,17 @@ async function mockClaims(page: Page) {
     activity,
     signedIn: true,
     claim: null as ClaimDetail | null,
-    requests: [] as ClaimActivityInput[],
+    requests: [] as PasswordClaimInput[],
     csrf: [] as (string | undefined)[],
     failFirstResponse: false,
     lookupFailure: false,
     throttle: false,
     privateReads: 0,
     endRequests: 0,
+    endVersions: [] as number[],
     viewerIsAuthor: false,
     solved: [] as string[],
-    solveRequests: [] as ClaimActivityInput[],
+    solveRequests: [] as PasswordClaimInput[],
     failFirstSolveResponse: false,
     delayPasswords: false,
     releasePasswords: undefined as (() => void) | undefined,
@@ -87,10 +92,10 @@ async function mockClaims(page: Page) {
   const unavailable = {
     error: { code: "UNAVAILABLE", message: "暂时无法读取领取记录" },
   };
-  await page.route("**/api/**", async (route) => {
+  await page.context().route("**/api/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
-    if (path === "/api/me")
+    if (path === "/api/session" || path === "/api/me")
       return route.fulfill({
         json: state.signedIn
           ? { user, csrfToken: "claim-csrf" }
@@ -165,7 +170,7 @@ async function mockClaims(page: Page) {
         json: { error: { code: "HTTP_401", message: "请先登录" } },
       });
     if (path === `/api/activities/${activityId}/password-solves`) {
-      const body = request.postDataJSON() as ClaimActivityInput;
+      const body = request.postDataJSON() as PasswordClaimInput;
       state.solveRequests.push(body);
       state.csrf.push(request.headers()["x-csrf-token"]);
       const correct = state.activity.config.passwords.includes(body.password);
@@ -177,6 +182,14 @@ async function mockClaims(page: Page) {
         json: { outcome: correct ? "solved" : "incorrect" },
       });
     }
+    if (path === `/api/activities/${activityId}/participation`) {
+      state.privateReads++;
+      if (state.lookupFailure)
+        return route.fulfill({ status: 503, json: unavailable });
+      return route.fulfill({
+        json: { claim: state.claim, registration: null },
+      });
+    }
     if (path === `/api/activities/${activityId}/claim`) {
       if (request.method() === "GET") {
         state.privateReads++;
@@ -184,7 +197,7 @@ async function mockClaims(page: Page) {
           return route.fulfill({ status: 503, json: unavailable });
         return route.fulfill({ json: { claim: state.claim } });
       }
-      const body = request.postDataJSON() as ClaimActivityInput;
+      const body = request.postDataJSON() as PasswordClaimInput;
       state.requests.push(body);
       state.csrf.push(request.headers()["x-csrf-token"]);
       if (state.throttle)
@@ -273,6 +286,7 @@ async function mockClaims(page: Page) {
     }
     if (path === `/api/me/activities/${activityId}/end`) {
       state.endRequests++;
+      state.endVersions.push(request.postDataJSON().version);
       state.csrf.push(request.headers()["x-csrf-token"]);
       state.activity.status = "ended";
       state.activity.version++;
@@ -287,17 +301,28 @@ async function mockClaims(page: Page) {
 
 async function submit(page: Page, password = "Answer123") {
   await page.getByLabel("兑换口令", { exact: true }).fill(password);
-  await page.getByRole("button", { name: "领取", exact: true }).click();
+  await page.getByRole("button", { name: "领取奖励", exact: true }).click();
 }
 
-test("匿名专属页要求登录，不读取本人奖励；普通活动不显示统计告知", async ({
+async function logoutViaAccount(page: Page) {
+  await page
+    .locator("header")
+    .first()
+    .getByRole("link", { name: /我的账号/ })
+    .click();
+  await page.getByRole("button", { name: "退出登录", exact: true }).click();
+}
+
+test("匿名活动页要求登录，不读取本人奖励；普通活动不显示统计告知", async ({
   page,
 }) => {
   const { state } = await mockClaims(page);
   state.signedIn = false;
   state.activity.config.forceDedicated = false;
   await page.goto(`/activities/${activityId}`);
-  await expect(page.getByRole("link", { name: /登录 Linux DO/ })).toBeVisible();
+  await expect(
+    page.getByRole("main").getByRole("link", { name: "登录领取" }),
+  ).toBeVisible();
   await expect(page.getByLabel("兑换口令", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/提交的口令将供活动作者查看/)).toHaveCount(0);
   expect(state.privateReads).toBe(0);
@@ -324,18 +349,28 @@ test("错误后主动重试生成新提交，成功展示原文并可从历史�
   await page.reload();
   await expect(page.getByText(reward, { exact: true })).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "领取", exact: true }),
+    page.getByRole("button", { name: "领取奖励", exact: true }),
   ).toHaveCount(0);
-  await page
-    .getByRole("link", { name: "我的参与", exact: true })
-    .first()
-    .click();
-  await expect(page).toHaveURL("/my/claims");
-  await page
-    .getByRole("link", { name: /文本领取测试|查看奖励/ })
-    .first()
-    .click();
-  await expect(page).toHaveURL(`/my/claims/${claimId}`);
+  await page.goto("/my/claims");
+  await expect(page).toHaveURL(/\/my\/claims(?:\?|$)/);
+  await expect(page.getByRole("button", { name: /查看奖励/ })).toHaveCount(0);
+  const viewActivity = page.getByRole("link", { name: /查看活动/ }).first();
+  await expect(viewActivity).toHaveAttribute(
+    "href",
+    `/activities/${activityId}`,
+  );
+  await expect(viewActivity).not.toHaveAttribute("target", "_blank");
+  await viewActivity.click();
+  await expect(page).toHaveURL(
+    new RegExp(`/activities/${activityId}(?:\\?|$)`),
+  );
+  await expect(page.getByText(reward, { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "返回上一页", exact: true }).click();
+  await expect(page).toHaveURL(/\/my\/claims(?:\?|$)/);
+  await page.goto(`/my/claims/${claimId}`);
+  await expect(page).toHaveURL(
+    new RegExp(`/activities/${activityId}(?:\\?|$)`),
+  );
   await expect(page.getByText(reward, { exact: true })).toBeVisible();
   expect(state.requests).toHaveLength(2);
   expect(
@@ -365,7 +400,7 @@ test("领取查询失败时不能盲目提交，恢复查询后才能领取", as
   await page.goto(`/activities/${activityId}`);
   await expect(page.getByText(/暂时无法读取领取记录/)).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "领取", exact: true }),
+    page.getByRole("button", { name: "领取奖励", exact: true }),
   ).toHaveCount(0);
   state.lookupFailure = false;
   await page
@@ -383,11 +418,11 @@ test("限流显示等待，倒计时结束后允许再次主动提交", async ({
   await submit(page);
   await expect(page.getByText(/尝试过于频繁|提交过于频繁/)).toBeVisible();
   await expect(
-    page.getByRole("button", { name: /领取|等待|秒/ }).last(),
+    page.getByRole("button", { name: /领取奖励|等待|秒/ }).last(),
   ).toBeDisabled();
   state.throttle = false;
   await expect(
-    page.getByRole("button", { name: "领取", exact: true }),
+    page.getByRole("button", { name: "领取奖励", exact: true }),
   ).toBeEnabled({ timeout: 6000 });
   await submit(page);
   await expect(page.getByText(reward, { exact: true })).toBeVisible();
@@ -406,7 +441,7 @@ test("结束和归档后仍能读取本人奖励，未领取者不能领取", as
   await expect(page.getByText(reward, { exact: true })).toBeVisible();
   await expect(page.getByText("活动结束说明", { exact: true })).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "领取", exact: true }),
+    page.getByRole("button", { name: "领取奖励", exact: true }),
   ).toHaveCount(0);
   state.claim = null;
   state.activity.status = "ended";
@@ -418,24 +453,34 @@ test("结束和归档后仍能读取本人奖励，未领取者不能领取", as
 
 test("作者提前结束需明确确认，已领取活动不显示此操作", async ({ page }) => {
   const { state, detail } = await mockClaims(page);
-  await page.goto(`/my/activities/${activityId}`);
+  await page.goto(`/activities/${activityId}`);
+  await page.getByRole("button", { name: "管理活动", exact: true }).click();
   page.once("dialog", (dialog) => dialog.dismiss());
-  await page.getByRole("button", { name: "提前结束", exact: true }).click();
+  await page.getByRole("menuitem", { name: "提前结束", exact: true }).click();
   expect(state.endRequests).toBe(0);
+  await page.getByRole("button", { name: "管理活动", exact: true }).click();
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "提前结束", exact: true }).click();
+  await page.getByRole("menuitem", { name: "提前结束", exact: true }).click();
   await expect(page.getByText("已结束", { exact: true }).first()).toBeVisible();
   expect(state.endRequests).toBe(1);
+  expect(state.endVersions).toEqual([2]);
   expect(state.csrf).toEqual(["claim-csrf"]);
   state.activity.status = "active";
   state.activity.claimedCount = 1;
   state.claim = detail();
   await page.reload();
-  await page.getByText("查看已分配文本", { exact: true }).click();
-  await expect(page.getByText(reward, { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "管理活动", exact: true }).click();
   await expect(
-    page.getByRole("button", { name: "提前结束", exact: true }),
+    page.getByRole("menuitem", { name: "提前结束", exact: true }),
   ).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "查看领取名单", exact: true }).click();
+  const roster = page.getByRole("dialog", {
+    name: state.activity.title,
+    exact: true,
+  });
+  await roster.getByText("查看已分配文本", { exact: true }).click();
+  await expect(roster.getByText(reward, { exact: true })).toBeVisible();
 });
 
 test("公共名单开启后展示领取者资料", async ({ page }) => {
@@ -449,18 +494,18 @@ test("公共名单开启后展示领取者资料", async ({ page }) => {
         username: user.username,
         displayName: user.displayName,
         avatarUrl: user.avatarUrl,
+        accountTier: user.accountTier,
         claimedAt: new Date().toISOString(),
       },
     ],
     nextCursor: null,
   };
   await page.goto(`/activities/${activityId}`);
-  await expect(
-    page.getByRole("heading", { name: /领取名单|领取记录/ }),
-  ).toBeVisible();
+  await page.getByRole("button", { name: "查看领取名单", exact: true }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.getByText("Ada", { exact: true }).first()).toBeVisible();
   await expect(page.getByText(reward, { exact: true })).toHaveCount(0);
-  await expect(page.getByText(/共.*份|剩余.*份/)).toHaveCount(0);
+  await expect(page.getByText(/共.*份|剩余.*份|已领取.*份/)).toHaveCount(0);
   expect(state.privateReads).toBe(0);
 });
 
@@ -470,8 +515,10 @@ test("退出时隐藏私有奖励，晚到的领取响应不能重新展示", as
   await page.goto(`/activities/${activityId}`);
   await submit(page);
   await expect.poll(() => Boolean(state.releaseClaim)).toBe(true);
-  await page.getByRole("button", { name: "退出", exact: true }).click();
-  await expect(page.getByRole("link", { name: /登录 Linux DO/ })).toBeVisible();
+  await logoutViaAccount(page);
+  await expect(
+    page.getByRole("main").getByRole("link", { name: "通过LINUX DO登录" }),
+  ).toBeVisible();
   state.releaseClaim?.();
   await expect(page.getByText(reward, { exact: true })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "领取后内容" })).toHaveCount(
@@ -514,27 +561,28 @@ test("未领取仅返回未解锁数量，领取后只显示我的口令，解�
 }) => {
   const { state } = await mockClaims(page);
   state.activity.config.passwords.push("Second456");
+  state.solved.push("Answer123");
   await page.goto(`/activities/${activityId}`);
   const panel = page.getByRole("region", { name: "活动口令" });
-  await expect(
-    panel.getByText("还有 2 个口令未解锁。", { exact: true }),
-  ).toBeVisible();
+  await expect(panel.getByText("未解出", { exact: true })).toHaveCount(2);
   await expect(panel.locator("code")).toHaveCount(0);
   await page.getByLabel("兑换口令", { exact: true }).fill("Answer123");
-  await page.getByRole("button", { name: "领取", exact: true }).click();
-  await expect(panel.getByText("我的领奖口令", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "领取奖励", exact: true }).click();
   await expect(
-    panel.getByText("还有 1 个口令未解锁。", { exact: true }),
+    panel.getByText("已用此口令兑换", { exact: true }),
   ).toBeVisible();
-  await page.getByLabel("继续解口令", { exact: true }).fill("Second456");
-  await page.getByRole("button", { name: "解锁口令", exact: true }).click();
-  await expect(panel.getByText("我已解出", { exact: true })).toBeVisible();
+  await expect(panel.getByText("剩余 1 个", { exact: true })).toBeVisible();
+  await page.getByLabel("验证其他口令", { exact: true }).fill("Second456");
+  await page.getByRole("button", { name: "验证口令", exact: true }).click();
+  await expect(panel.getByText("已解出", { exact: true })).toBeVisible();
   await expect(panel.getByText("Second456", { exact: true })).toBeVisible();
   expect(state.requests).toHaveLength(1);
   expect(state.solveRequests).toHaveLength(1);
   await page.reload();
-  await expect(panel.getByText("我的领奖口令", { exact: true })).toBeVisible();
-  await expect(panel.getByText("我已解出", { exact: true })).toBeVisible();
+  await expect(
+    panel.getByText("已用此口令兑换", { exact: true }),
+  ).toBeVisible();
+  await expect(panel.getByText("已解出", { exact: true })).toBeVisible();
 });
 
 test("解口令响应丢失时只重试原UUID和原输入，不重复领取", async ({ page }) => {
@@ -543,14 +591,14 @@ test("解口令响应丢失时只重试原UUID和原输入，不重复领取", a
   state.activity.config.passwords.push("Second456");
   state.failFirstSolveResponse = true;
   await page.goto(`/activities/${activityId}`);
-  await page.getByLabel("继续解口令", { exact: true }).fill("Second456");
-  await page.getByRole("button", { name: "解锁口令", exact: true }).click();
+  await page.getByLabel("验证其他口令", { exact: true }).fill("Second456");
+  await page.getByRole("button", { name: "验证口令", exact: true }).click();
   await expect(
     page.getByText("尚未确认解锁结果，请重试原提交。", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByLabel("继续解口令", { exact: true })).toBeDisabled();
+  await expect(page.getByLabel("验证其他口令", { exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "重试原提交", exact: true }).click();
-  await expect(page.getByText("我已解出", { exact: true })).toBeVisible();
+  await expect(page.getByText("已解出", { exact: true })).toBeVisible();
   expect(state.solveRequests).toHaveLength(2);
   expect(state.solveRequests[1]).toEqual(state.solveRequests[0]);
   expect(state.requests).toHaveLength(0);
@@ -570,21 +618,15 @@ for (const status of ["ended", "archived"] as const) {
     const panel = page.getByRole("region", { name: "活动口令" });
     await expect(panel.getByText("Answer123", { exact: true })).toBeVisible();
     await expect(panel.getByText("Second456", { exact: true })).toBeVisible();
-    await expect(panel.getByText(/未解锁|我的领奖口令|我已解出/)).toHaveCount(
+    await expect(panel.getByText(/未解锁|已用此口令兑换|已解出/)).toHaveCount(
       0,
     );
-    await expect(panel.getByLabel("继续解口令", { exact: true })).toHaveCount(
+    await expect(panel.getByLabel("验证其他口令", { exact: true })).toHaveCount(
       0,
     );
-    await panel
-      .getByRole("button", { name: "复制口令 Second456", exact: true })
-      .click();
     await expect(
-      panel.getByText("口令已复制。", { exact: true }),
+      panel.getByRole("button", { name: "隐藏内容", exact: true }).last(),
     ).toBeVisible();
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
-      "Second456",
-    );
   });
 }
 
@@ -602,15 +644,15 @@ test("作者可看活动全部口令，退出后迟到的私有口令响应不�
   await expect.poll(() => Boolean(state.releasePasswords)).toBe(true);
   const release = state.releasePasswords;
   state.delayPasswords = false;
-  await page.getByRole("button", { name: "退出", exact: true }).click();
+  await logoutViaAccount(page);
   release?.();
   await expect(
-    panel.getByText("还有 2 个口令未解锁。", { exact: true }),
+    page.getByRole("main").getByRole("link", { name: "通过LINUX DO登录" }),
   ).toBeVisible();
-  await expect(panel.locator("code")).toHaveCount(0);
+  await expect(page.getByText("Second456", { exact: true })).toHaveCount(0);
 });
 
-test("限时开奖 public 已完成时仍轮询本人非终态报名直到未中奖终态", async ({
+test("限时开奖 public 已完成时仍刷新本人报名，未中奖终态后只读取轻量快照", async ({
   page,
 }) => {
   await page.clock.install();
@@ -624,6 +666,7 @@ test("限时开奖 public 已完成时仍轮询本人非终态报名直到未中
       username: "author",
       displayName: "作者",
       avatarUrl: null,
+      accountTier: "standard" as const,
     },
     title: "已开奖但私有结果延迟",
     rewardType: "ldc",
@@ -650,6 +693,7 @@ test("限时开奖 public 已完成时仍轮询本人非终态报名直到未中
     },
   };
   let registrationReads = 0;
+  let snapshotReads = 0;
   let releaseFinalRegistration = false;
   const baseRegistration = {
     id: registrationId,
@@ -661,16 +705,22 @@ test("限时开奖 public 已完成时仍轮询本人非终态报名直到未中
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
-    if (path === "/api/me")
+    if (path === "/api/session" || path === "/api/me")
       return route.fulfill({ json: { user, csrfToken: "draw-csrf" } });
     if (path === `/api/activities/${drawActivityId}`)
       return route.fulfill({ json: { activity } });
     if (path === `/api/activities/${drawActivityId}/claim`)
       return route.fulfill({ json: { claim: null } });
-    if (path === `/api/activities/${drawActivityId}/registration`) {
-      registrationReads += 1;
+    if (
+      path === `/api/activities/${drawActivityId}/registration` ||
+      path === `/api/activities/${drawActivityId}/participation`
+    ) {
+      snapshotReads += 1;
+      if (new URL(request.url()).searchParams.get("refresh") !== "0")
+        registrationReads += 1;
       return route.fulfill({
         json: {
+          claim: null,
           registration: {
             ...baseRegistration,
             status: releaseFinalRegistration ? "not_won" : "registered",
@@ -691,16 +741,18 @@ test("限时开奖 public 已完成时仍轮询本人非终态报名直到未中
 
   await page.goto(`/activities/${drawActivityId}`);
   await expect(
-    page.getByText("已报名，等待开奖", { exact: true }),
+    page.getByText("报名已确认，等待开奖。", { exact: true }),
   ).toBeVisible();
   const readsAfterInitial = registrationReads;
   releaseFinalRegistration = true;
   await page.clock.runFor(15_100);
-  await expect(page.getByText("未中奖", { exact: true })).toBeVisible();
+  await expect(page.getByText("本次未中奖。", { exact: true })).toBeVisible();
   expect(registrationReads).toBeGreaterThan(readsAfterInitial);
   const readsAfterFinal = registrationReads;
+  const snapshotsAfterFinal = snapshotReads;
   await page.clock.runFor(31_000);
   expect(registrationReads).toBe(readsAfterFinal);
+  expect(snapshotReads).toBeGreaterThan(snapshotsAfterFinal);
 });
 
 test("限时开奖报名、报名口令、继续解口令与我的参与列表", async ({ page }) => {
@@ -714,6 +766,7 @@ test("限时开奖报名、报名口令、继续解口令与我的参与列表",
       username: "author",
       displayName: "作者",
       avatarUrl: null,
+      accountTier: "standard" as const,
     },
     title: "限时开奖活动",
     rewardType: "ldc" as const,
@@ -749,21 +802,21 @@ test("限时开奖报名、报名口令、继续解口令与我的参与列表",
       drawAt: string;
       claim: null;
     },
-    requests: [] as ClaimActivityInput[],
-    solveRequests: [] as ClaimActivityInput[],
+    requests: [] as PasswordClaimInput[],
+    solveRequests: [] as PasswordClaimInput[],
     solved: [] as string[],
   };
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
-    if (path === "/api/me")
+    if (path === "/api/session" || path === "/api/me")
       return route.fulfill({ json: { user, csrfToken: "draw-csrf" } });
     if (path === `/api/activities/${drawActivityId}`)
       return route.fulfill({ json: { activity } });
     if (path === `/api/activities/${drawActivityId}/claim`) {
       if (request.method() === "GET")
         return route.fulfill({ json: { claim: state.claim } });
-      const body = request.postDataJSON() as ClaimActivityInput;
+      const body = request.postDataJSON() as PasswordClaimInput;
       state.requests.push(body);
       if (body.password !== "Answer123")
         return route.fulfill({ json: { result: "incorrect" } });
@@ -786,6 +839,10 @@ test("限时开奖报名、报名口令、继续解口令与我的参与列表",
     }
     if (path === `/api/activities/${drawActivityId}/registration`)
       return route.fulfill({ json: { registration: state.registration } });
+    if (path === `/api/activities/${drawActivityId}/participation`)
+      return route.fulfill({
+        json: { claim: state.claim, registration: state.registration },
+      });
     if (path === `/api/activities/${drawActivityId}/passwords`) {
       return route.fulfill({
         json: {
@@ -811,7 +868,7 @@ test("限时开奖报名、报名口令、继续解口令与我的参与列表",
       });
     }
     if (path === `/api/activities/${drawActivityId}/password-solves`) {
-      const body = request.postDataJSON() as ClaimActivityInput;
+      const body = request.postDataJSON() as PasswordClaimInput;
       state.solveRequests.push(body);
       if (
         body.password === "Second456" &&
@@ -842,25 +899,23 @@ test("限时开奖报名、报名口令、继续解口令与我的参与列表",
 
   await page.goto(`/activities/${drawActivityId}`);
   await expect(
-    page.getByText("报名中，等待开奖", { exact: true }),
+    page.getByText("输入口令，报名参与开奖。", { exact: true }),
   ).toBeVisible();
   await page.getByLabel("兑换口令", { exact: true }).fill("Answer123");
   await page.getByRole("button", { name: "报名", exact: true }).click();
   await expect(
-    page.getByText("已报名，等待开奖", { exact: true }),
+    page.getByText("报名已确认，等待开奖。", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("我的报名口令", { exact: true })).toBeVisible();
-  await page.getByLabel("继续解口令", { exact: true }).fill("Second456");
-  await page.getByRole("button", { name: "解锁口令", exact: true }).click();
-  await expect(page.getByText("我已解出", { exact: true })).toBeVisible();
+  await expect(page.getByText("已用此口令报名", { exact: true })).toBeVisible();
+  await page.getByLabel("验证其他口令", { exact: true }).fill("Second456");
+  await page.getByRole("button", { name: "验证口令", exact: true }).click();
+  await expect(page.getByText("已解出", { exact: true })).toBeVisible();
   expect(state.requests).toHaveLength(1);
   expect(state.solveRequests).toHaveLength(1);
 
-  await page.getByRole("link", { name: "我的参与", exact: true }).click();
-  await expect(page).toHaveURL("/my/claims");
-  await expect(page.getByRole("heading", { name: "我的参与" })).toBeVisible();
-  await expect(page.getByText("限时开奖 · 已报名")).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: "查看活动", exact: true }),
-  ).toBeVisible();
+  await page.goto("/my/claims");
+  await expect(page).toHaveURL(/\/my\/claims(?:\?|$)/);
+  await expect(page.getByRole("heading", { name: "活动历史" })).toBeVisible();
+  await expect(page.getByText("已报名", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: /查看活动/ })).toBeVisible();
 });

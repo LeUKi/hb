@@ -1,12 +1,6 @@
 import { normalizeAvatarUrl, type PublicUserProfile } from "@hb/contracts";
-import { Link } from "@tanstack/react-router";
-import { ExternalLink, User } from "lucide-react";
+import { ArrowUpRight, X } from "lucide-react";
 import {
-  type FocusEvent,
-  forwardRef,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type ReactNode,
-  type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useId,
@@ -16,253 +10,414 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "../lib/utils";
+import { portalPosition, usePortalTarget } from "./presentation/portal-target";
 
-type UserIdentityProps = {
-  profile: PublicUserProfile;
-  className?: string;
-  selfActions?: boolean;
-};
-
-type PopupPosition = {
+type ProfilePosition = {
   top: number;
   left: number;
+  side: "right" | "left" | "sheet";
 };
 
-const popupWidth = 300;
-const tabbableSelector =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+let activeProfile: { id: string; close: () => void } | null = null;
+const screenInset = 12;
+const profileGap = 8;
 
-function isVisible(element: HTMLElement) {
-  const rect = element.getBoundingClientRect();
-  return rect.width > 0 && rect.height > 0;
+export function Avatar({
+  name,
+  color = "sage",
+  large = false,
+  avatarUrl,
+}: {
+  name: string;
+  color?: string;
+  large?: boolean;
+  avatarUrl?: string | null;
+}) {
+  const [failed, setFailed] = useState<string | null>(null);
+  const safeAvatar = normalizeAvatarUrl(avatarUrl ?? null);
+  return (
+    <span
+      className={`avatar avatar-${color} ${large ? "avatar-large" : ""}`}
+      aria-hidden="true"
+    >
+      {safeAvatar && failed !== safeAvatar ? (
+        <img
+          src={safeAvatar}
+          alt=""
+          referrerPolicy="no-referrer"
+          onError={() => setFailed(safeAvatar)}
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            borderRadius: "inherit",
+          }}
+        />
+      ) : (
+        <span>{Array.from(name)[0]}</span>
+      )}
+    </span>
+  );
 }
 
 export function UserIdentity({
   profile,
   className,
-  selfActions = false,
-}: UserIdentityProps) {
+}: {
+  profile: PublicUserProfile;
+  className?: string;
+}) {
+  const name = profile.displayName || profile.username;
+  const username = profile.username;
+  const color = "sage";
   const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState<PopupPosition | null>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const popupRef = useRef<HTMLDivElement>(null);
-  const closeTimer = useRef<number | null>(null);
-  const skipNextFocusOpen = useRef(false);
-  const clickOpenRef = useRef(false);
-  const lastTriggerPointerType = useRef<string | null>(null);
-  const triggerWasOpenOnPointerDown = useRef(false);
-  const popupId = useId();
-  const label = profile.displayName || profile.username;
-
-  const clearCloseTimer = useCallback(() => {
-    if (closeTimer.current !== null) {
-      window.clearTimeout(closeTimer.current);
-      closeTimer.current = null;
-    }
+  const [position, setPosition] = useState<ProfilePosition | null>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const portalTarget = usePortalTarget(button);
+  const popup = useRef<HTMLDivElement>(null);
+  const openingScroll = useRef(
+    new Map<EventTarget, { top: number; left: number }>(),
+  );
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const returningFocus = useRef(false);
+  const openedWithKeyboard = useRef(false);
+  const openReason = useRef<"hover" | "focus" | "press">("hover");
+  const id = useId();
+  const cancelClose = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
   }, []);
-
-  const closePopup = useCallback(() => {
-    clickOpenRef.current = false;
-    setPosition(null);
+  const hide = useCallback(() => {
+    cancelClose();
     setOpen(false);
-  }, []);
-
-  const scheduleClose = useCallback(() => {
-    clearCloseTimer();
-    closeTimer.current = window.setTimeout(closePopup, 120);
-  }, [clearCloseTimer, closePopup]);
-
-  const updatePosition = useCallback(() => {
-    const rect = triggerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const width = Math.min(popupWidth, window.innerWidth - 24);
-    const left = Math.min(
-      Math.max(12, rect.left),
-      Math.max(12, window.innerWidth - width - 12),
-    );
-    const preferredTop = rect.bottom + 8;
-    const popupHeight = popupRef.current?.getBoundingClientRect().height ?? 190;
-    const candidateTop =
-      preferredTop + popupHeight > window.innerHeight
-        ? rect.top - popupHeight - 8
-        : preferredTop;
-    const maxTop = Math.max(12, window.innerHeight - popupHeight - 12);
-    const top = Math.min(Math.max(12, candidateTop), maxTop);
-    setPosition({ top, left });
-  }, []);
-
-  const focusNextAfterTrigger = useCallback(() => {
-    const trigger = triggerRef.current;
-    if (!trigger) return;
-    const elements = Array.from(
-      document.querySelectorAll<HTMLElement>(tabbableSelector),
-    ).filter(
-      (element) => isVisible(element) && !popupRef.current?.contains(element),
-    );
-    const index = elements.indexOf(trigger);
-    elements[index + 1]?.focus();
-  }, []);
+    if (activeProfile?.id === id) activeProfile = null;
+  }, [cancelClose, id]);
+  function show(reason: "hover" | "focus" | "press") {
+    cancelClose();
+    if (reason === "hover") openedWithKeyboard.current = false;
+    if (activeProfile?.id !== id) {
+      activeProfile?.close();
+      activeProfile = { id, close: hide };
+    }
+    openReason.current = reason;
+    if (!open) setPosition(null);
+    setOpen(true);
+  }
+  function closeLater() {
+    cancelClose();
+    if (position?.side === "sheet") return;
+    timer.current = setTimeout(() => {
+      if (
+        popup.current?.contains(document.activeElement) ||
+        (openedWithKeyboard.current &&
+          document.activeElement === button.current)
+      )
+        return;
+      hide();
+    }, 150);
+  }
+  const closeAndReturn = useCallback(() => {
+    hide();
+    if (document.activeElement !== button.current) {
+      returningFocus.current = true;
+      button.current?.focus({ preventScroll: true });
+    }
+  }, [hide]);
 
   useLayoutEffect(() => {
-    if (!open || !popupRef.current) return;
-    updatePosition();
-    const observer = new ResizeObserver(updatePosition);
-    observer.observe(popupRef.current);
-    return () => observer.disconnect();
-  }, [open, updatePosition]);
+    if (!open) return;
+    const trigger = button.current;
+    const panel = popup.current;
+    if (!trigger || !panel) return;
+    openingScroll.current.clear();
+    for (
+      let parent = trigger.parentElement;
+      parent;
+      parent = parent.parentElement
+    )
+      openingScroll.current.set(parent, {
+        top: parent.scrollTop,
+        left: parent.scrollLeft,
+      });
+    openingScroll.current.set(document, {
+      top: window.scrollY,
+      left: window.scrollX,
+    });
+    const anchor = trigger.getBoundingClientRect();
+    const dimensions = panel.getBoundingClientRect();
+    const fitsRight =
+      anchor.right + profileGap + dimensions.width <=
+      window.innerWidth - screenInset;
+    const fitsLeft = anchor.left - profileGap - dimensions.width >= screenInset;
+    const side = fitsRight ? "right" : fitsLeft ? "left" : "sheet";
+
+    if (side === "sheet" && openReason.current === "hover") {
+      setOpen(false);
+      if (activeProfile?.id === id) activeProfile = null;
+      return;
+    }
+
+    function align(height: number) {
+      const top = Math.max(
+        screenInset,
+        Math.min(
+          anchor.top + anchor.height / 2 - height / 2,
+          window.innerHeight - screenInset - height,
+        ),
+      );
+      const left =
+        side === "right"
+          ? anchor.right + profileGap
+          : side === "left"
+            ? anchor.left - profileGap - dimensions.width
+            : screenInset;
+      setPosition((current) =>
+        current?.top === top && current.left === left && current.side === side
+          ? current
+          : { top, left, side },
+      );
+    }
+
+    align(dimensions.height);
+    const resize = new ResizeObserver(() => {
+      align(panel.getBoundingClientRect().height);
+    });
+    resize.observe(panel);
+    return () => resize.disconnect();
+  }, [open, id]);
 
   useEffect(() => {
     if (!open) return;
-    updatePosition();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        closePopup();
-        const focusIsAlreadyOnTrigger =
-          document.activeElement instanceof Node &&
-          triggerRef.current?.contains(document.activeElement);
-        skipNextFocusOpen.current = !focusIsAlreadyOnTrigger;
-        triggerRef.current?.focus({ preventScroll: true });
-      }
-    };
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target;
-      if (!(target instanceof Node)) return;
+    function close(event: PointerEvent) {
       if (
-        triggerRef.current?.contains(target) ||
-        popupRef.current?.contains(target)
+        !button.current?.contains(event.target as Node) &&
+        !popup.current?.contains(event.target as Node)
       )
+        if (position?.side === "sheet") closeAndReturn();
+        else hide();
+    }
+    function key(event: KeyboardEvent) {
+      if (!event.defaultPrevented && event.key === "Escape") {
+        event.preventDefault();
+        if (popup.current?.contains(document.activeElement)) closeAndReturn();
+        else hide();
+      }
+    }
+    function scroll(event: Event) {
+      const target = event.target;
+      if (popup.current?.contains(target as Node)) return;
+      const before = target ? openingScroll.current.get(target) : undefined;
+      const after =
+        target === document
+          ? { top: window.scrollY, left: window.scrollX }
+          : target instanceof Element
+            ? { top: target.scrollTop, left: target.scrollLeft }
+            : null;
+      // Focus may open after scrolling completes but before its event is delivered.
+      if (before && after?.top === before.top && after.left === before.left)
         return;
-      setOpen(false);
-      clickOpenRef.current = false;
-    };
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    document.addEventListener("keydown", onKeyDown);
-    document.addEventListener("pointerdown", onPointerDown);
+      hide();
+    }
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", key);
+    document.addEventListener("scroll", scroll, true);
+    window.addEventListener("resize", hide);
     return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-      document.removeEventListener("keydown", onKeyDown);
-      document.removeEventListener("pointerdown", onPointerDown);
+      cancelClose();
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", key);
+      document.removeEventListener("scroll", scroll, true);
+      window.removeEventListener("resize", hide);
     };
-  }, [open, updatePosition, closePopup]);
+  }, [open, position?.side, cancelClose, closeAndReturn, hide]);
 
-  useEffect(() => () => clearCloseTimer(), [clearCloseTimer]);
+  useEffect(
+    () => () => {
+      cancelClose();
+      if (activeProfile?.id === id) activeProfile = null;
+    },
+    [id, cancelClose],
+  );
 
   return (
     <>
       <button
-        ref={triggerRef}
+        ref={button}
         type="button"
-        className={cn(
-          "inline-flex max-w-64 min-w-0 items-center gap-2 rounded-md px-1 py-0.5 text-left align-middle text-sm font-medium text-neutral-800 hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-neutral-600",
-          className,
-        )}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-controls={open ? popupId : undefined}
+        className={cn("user-identity", className)}
+        title={name}
         onPointerEnter={(event) => {
-          if (event.pointerType !== "mouse") return;
-          clearCloseTimer();
-          clickOpenRef.current = false;
-          setOpen(true);
-        }}
-        onPointerDown={(event) => {
-          lastTriggerPointerType.current = event.pointerType;
-          triggerWasOpenOnPointerDown.current = open;
+          if (event.pointerType === "mouse") show("hover");
         }}
         onPointerLeave={(event) => {
-          if (event.pointerType === "mouse") scheduleClose();
+          if (event.pointerType === "mouse") closeLater();
         }}
-        onFocus={() => {
-          if (skipNextFocusOpen.current) {
-            skipNextFocusOpen.current = false;
+        onFocus={(event) => {
+          if (returningFocus.current) {
+            returningFocus.current = false;
             return;
           }
-          clearCloseTimer();
-          clickOpenRef.current = false;
-          setOpen(true);
+          if (event.currentTarget.matches(":focus-visible")) {
+            openedWithKeyboard.current = true;
+            show("focus");
+          }
         }}
         onBlur={(event) => {
-          if (!event.relatedTarget) return;
-          if (!popupRef.current?.contains(event.relatedTarget as Node | null))
-            scheduleClose();
-        }}
-        onClick={() => {
-          clearCloseTimer();
           if (
-            open &&
-            (clickOpenRef.current ||
-              (lastTriggerPointerType.current !== "mouse" &&
-                triggerWasOpenOnPointerDown.current))
-          ) {
-            closePopup();
-            return;
-          }
-          clickOpenRef.current = true;
-          setOpen(true);
+            event.relatedTarget &&
+            !popup.current?.contains(event.relatedTarget as Node)
+          )
+            closeLater();
+        }}
+        onClick={(event) => {
+          button.current?.focus({ preventScroll: true });
+          openedWithKeyboard.current = event.detail === 0;
+          show("press");
+          if (event.detail === 0)
+            requestAnimationFrame(() =>
+              popup.current?.querySelector<HTMLAnchorElement>("a")?.focus(),
+            );
         }}
         onKeyDown={(event) => {
-          if (event.key === "Tab" && !event.shiftKey && open) {
-            const firstLink =
-              popupRef.current?.querySelector<HTMLElement>("a[href]");
-            if (firstLink) {
-              event.preventDefault();
-              firstLink.focus();
-            }
+          if (open && event.key === "Tab" && !event.shiftKey) {
+            event.preventDefault();
+            popup.current?.querySelector<HTMLButtonElement>("button")?.focus();
           }
         }}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        aria-controls={open ? id : undefined}
       >
-        <UserAvatar profile={profile} size="sm" />
-        <span className="min-w-0 truncate">{label}</span>
+        <Avatar name={name} color={color} avatarUrl={profile.avatarUrl} />
+        <span>{name}</span>
+        <AccountTierBadge accountTier={profile.accountTier} />
       </button>
-      {open
-        ? createPortal(
-            <UserCardPopup
-              id={popupId}
-              ref={popupRef}
-              profile={profile}
-              top={position?.top ?? 0}
-              left={position?.left ?? 0}
-              positioned={Boolean(position)}
-              selfActions={selfActions}
-              onPointerEnter={clearCloseTimer}
+      {open &&
+        createPortal(
+          <>
+            {position?.side === "sheet" && (
+              <div className="identity-sheet-backdrop" aria-hidden="true" />
+            )}
+            <div
+              ref={popup}
+              role="dialog"
+              aria-label={`${name}的资料`}
+              aria-modal={position?.side === "sheet" || undefined}
+              id={id}
+              className={`identity-popover identity-detail identity-detail--${position?.side ?? "right"}`}
+              data-side={position?.side}
+              style={
+                position
+                  ? position.side === "sheet"
+                    ? undefined
+                    : portalPosition(
+                        portalTarget,
+                        { top: position.top, left: position.left },
+                        popup.current,
+                      )
+                  : { visibility: "hidden" }
+              }
+              onPointerEnter={cancelClose}
               onPointerLeave={(event) => {
-                if (event.pointerType === "mouse") scheduleClose();
+                if (event.pointerType === "mouse") closeLater();
               }}
-              onFocus={clearCloseTimer}
+              onFocus={cancelClose}
               onBlur={(event) => {
-                if (!event.relatedTarget) return;
                 if (
-                  !triggerRef.current?.contains(
-                    event.relatedTarget as Node | null,
-                  )
+                  event.relatedTarget &&
+                  !event.currentTarget.contains(event.relatedTarget as Node)
                 )
-                  scheduleClose();
+                  closeLater();
               }}
               onKeyDown={(event) => {
-                if (event.key !== "Tab") return;
-                const links = Array.from(
-                  popupRef.current?.querySelectorAll<HTMLElement>("a[href]") ??
-                    [],
-                );
-                const firstLink = links.at(0);
-                const lastLink = links.at(-1);
-                if (event.shiftKey && document.activeElement === firstLink) {
+                if (event.key === "Escape") {
                   event.preventDefault();
-                  triggerRef.current?.focus();
+                  event.stopPropagation();
+                  closeAndReturn();
                   return;
                 }
-                if (!event.shiftKey && document.activeElement === lastLink) {
+                if (event.key !== "Tab") return;
+                if (position?.side !== "sheet") {
+                  const last = event.currentTarget.querySelector("a[href]");
+                  if (!event.shiftKey && document.activeElement === last) {
+                    const controls = Array.from(
+                      document.querySelectorAll<HTMLElement>(
+                        'a[href], button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), summary, [tabindex="0"]',
+                      ),
+                    ).filter(
+                      (element) =>
+                        !popup.current?.contains(element) &&
+                        element.getClientRects().length > 0,
+                    );
+                    const next =
+                      controls[
+                        controls.indexOf(button.current as HTMLButtonElement) +
+                          1
+                      ];
+                    if (next) {
+                      event.preventDefault();
+                      hide();
+                      next.focus();
+                    }
+                  }
+                  return;
+                }
+                const controls =
+                  event.currentTarget.querySelectorAll<HTMLElement>(
+                    "button, a[href]",
+                  );
+                const first = controls[0];
+                const last = controls[controls.length - 1];
+                if (event.shiftKey && document.activeElement === first) {
                   event.preventDefault();
-                  closePopup();
-                  focusNextAfterTrigger();
+                  last?.focus();
+                } else if (!event.shiftKey && document.activeElement === last) {
+                  event.preventDefault();
+                  first?.focus();
                 }
               }}
-            />,
-            document.body,
-          )
-        : null}
+            >
+              <button
+                type="button"
+                className="icon-button popover-close"
+                aria-label="关闭资料"
+                onClick={closeAndReturn}
+                onKeyDown={(event) => {
+                  if (
+                    position?.side !== "sheet" &&
+                    event.key === "Tab" &&
+                    event.shiftKey
+                  ) {
+                    event.preventDefault();
+                    button.current?.focus();
+                  }
+                }}
+              >
+                <X size={16} />
+              </button>
+              <div className="identity-detail__body">
+                <Avatar
+                  name={name}
+                  color={color}
+                  large
+                  avatarUrl={profile.avatarUrl}
+                />
+                <p>
+                  <strong>{name}</strong>
+                </p>
+                <span className="muted">@{username}</span>
+                <a
+                  href={`https://linux.do/u/${encodeURIComponent(username)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  查看 Linux DO 主页 <ArrowUpRight size={15} />
+                </a>
+              </div>
+            </div>
+          </>,
+          portalTarget,
+        )}
     </>
   );
 }
@@ -274,119 +429,20 @@ export function UserAvatar({
   profile: Pick<PublicUserProfile, "displayName" | "username" | "avatarUrl">;
   size?: "sm" | "lg";
 }) {
-  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
-  const label = profile.displayName || profile.username;
-  const classes = size === "lg" ? "size-16 text-xl" : "size-7 text-xs";
-  const avatarUrl = normalizeAvatarUrl(profile.avatarUrl);
-  if (avatarUrl && failedAvatarUrl !== avatarUrl)
-    return (
-      <img
-        src={avatarUrl}
-        alt=""
-        referrerPolicy="no-referrer"
-        className={cn(
-          classes,
-          "shrink-0 rounded-full bg-neutral-100 object-cover",
-        )}
-        onError={() => setFailedAvatarUrl(avatarUrl)}
-      />
-    );
   return (
-    <span
-      className={cn(
-        classes,
-        "inline-flex shrink-0 items-center justify-center rounded-full bg-neutral-200 font-semibold text-neutral-600",
-      )}
-      aria-hidden="true"
-      title={label}
-    >
-      {label ? label.slice(0, 1).toUpperCase() : <User className="size-4" />}
-    </span>
+    <Avatar
+      name={profile.displayName || profile.username}
+      avatarUrl={profile.avatarUrl}
+      large={size === "lg"}
+    />
   );
 }
-
-const UserCardPopup = forwardRef<
-  HTMLDivElement,
-  {
-    id: string;
-    profile: PublicUserProfile;
-    top: number;
-    left: number;
-    positioned: boolean;
-    selfActions: boolean;
-    onPointerEnter: () => void;
-    onPointerLeave: (event: ReactPointerEvent<HTMLDivElement>) => void;
-    onFocus: () => void;
-    onBlur: (event: FocusEvent<HTMLDivElement>) => void;
-    onKeyDown: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
-  }
->(function UserCardPopup(
-  {
-    id,
-    profile,
-    top,
-    left,
-    positioned,
-    selfActions,
-    onPointerEnter,
-    onPointerLeave,
-    onFocus,
-    onBlur,
-    onKeyDown,
-  },
-  ref,
-) {
-  const label = profile.displayName || profile.username;
-  const linuxDoProfile = `https://linux.do/u/${encodeURIComponent(
-    profile.username,
-  )}`;
-  return (
-    <div
-      id={id}
-      ref={ref}
-      role="dialog"
-      className="fixed z-50 max-h-[calc(100vh-24px)] w-[min(300px,calc(100vw-24px))] overflow-y-auto rounded-md border border-neutral-200 bg-white p-4 text-sm shadow-lg"
-      style={{ top, left, visibility: positioned ? "visible" : "hidden" }}
-      onPointerEnter={onPointerEnter}
-      onPointerLeave={onPointerLeave}
-      onFocus={onFocus}
-      onBlur={onBlur}
-      onKeyDown={onKeyDown}
-    >
-      <div className="flex min-w-0 gap-3">
-        <UserAvatar profile={profile} size="lg" />
-        <div className="min-w-0 space-y-1">
-          <p className="break-words font-semibold text-neutral-950">{label}</p>
-          <p className="break-all text-neutral-600">@{profile.username}</p>
-        </div>
-      </div>
-      <div className="mt-4 flex flex-wrap gap-3">
-        <PopupLink href={linuxDoProfile}>
-          <ExternalLink className="size-4" />
-          查看 Linux DO 主页
-        </PopupLink>
-        {selfActions ? (
-          <Link
-            to="/account"
-            className="inline-flex items-center gap-2 text-sm underline underline-offset-4"
-          >
-            账号信息
-          </Link>
-        ) : null}
-      </div>
-    </div>
-  );
-});
-
-function PopupLink({ href, children }: { href: string; children: ReactNode }) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="inline-flex items-center gap-2 text-sm underline underline-offset-4"
-    >
-      {children}
-    </a>
-  );
+export function AccountTierBadge({
+  accountTier,
+}: {
+  accountTier: PublicUserProfile["accountTier"] | undefined;
+}) {
+  return accountTier === "lite" ? (
+    <span className="lite-badge">青春版</span>
+  ) : null;
 }

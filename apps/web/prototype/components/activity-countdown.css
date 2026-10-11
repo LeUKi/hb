@@ -1,0 +1,13 @@
+.activity-countdown {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.activity-countdown__value {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}

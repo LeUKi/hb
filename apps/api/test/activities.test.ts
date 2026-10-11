@@ -7,6 +7,7 @@ import {
   activityInputSchema,
   DEFAULT_DURATION_MS,
   emptyActivityInput,
+  type GlobalRedemptionResult,
   type PublicActivity,
   type ManagedActivity as SharedManagedActivity,
 } from "@hb/contracts";
@@ -24,6 +25,7 @@ import { createDb } from "../src/db/client";
 import { sessions, users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
 import { digestPassword, sha256Hex } from "../src/security/crypto";
+import { resetMerchantHistory } from "./reset-merchant-history";
 
 type ManagedActivity = Omit<SharedManagedActivity, "config"> & {
   config: ActivityInput;
@@ -48,6 +50,7 @@ async function actor(username: string): Promise<Actor> {
   const now = new Date();
   const db = createDb(env.DB);
   await db.insert(users).values({
+    officialConnectVerified: true,
     id,
     externalId: username,
     username,
@@ -137,6 +140,7 @@ async function publicView(id: string, user?: Actor) {
 }
 
 beforeEach(async () => {
+  await resetMerchantHistory(env.DB);
   await env.DB.batch([
     env.DB.prepare("DELETE FROM payment_outbox"),
     env.DB.prepare("DELETE FROM payment_attempts"),
@@ -1158,16 +1162,8 @@ describe("text activity management", () => {
     });
   });
 
-  it("updates draft inventory and order while keeping IDs, and locks dedicated mode immediately", async () => {
+  it("updates draft inventory and order while keeping IDs", async () => {
     const activity = await create(input({ forceDedicated: true }));
-    expect(
-      (
-        await request(`/api/me/activities/${activity.id}`, owner, "PATCH", {
-          version: 1,
-          activity: { ...activity.config, forceDedicated: false },
-        })
-      ).status,
-    ).toBe(400);
     const updated = {
       ...activity.config,
       title: "更新后的活动",
@@ -1198,6 +1194,124 @@ describe("text activity management", () => {
       },
     });
   });
+
+  it.each([false, true])(
+    "updates draft dedicated mode from %s and synchronizes projection, discovery and statistics",
+    async (initialDedicated) => {
+      const draft = await create(input({ forceDedicated: initialDedicated }));
+      const forceDedicated = !initialDedicated;
+      const response = await request(
+        `/api/me/activities/${draft.id}`,
+        owner,
+        "PATCH",
+        {
+          version: draft.version,
+          activity: { ...draft.config, forceDedicated },
+        },
+      );
+      expect(response.status).toBe(200);
+      const updated = ((await response.json()) as { activity: ManagedActivity })
+        .activity;
+      expect(updated).toMatchObject({
+        forceDedicated,
+        version: draft.version + 1,
+        config: { forceDedicated },
+      });
+      expect(
+        await env.DB.prepare(
+          "SELECT force_dedicated AS dedicated, json_extract(config,'$.forceDedicated') AS configured FROM activities WHERE id=?",
+        )
+          .bind(draft.id)
+          .first(),
+      ).toEqual({
+        dedicated: Number(forceDedicated),
+        configured: Number(forceDedicated),
+      });
+      expect((await publicView(draft.id, owner)).forceDedicated).toBe(
+        forceDedicated,
+      );
+      expect(
+        (await request(`/api/me/activities/${draft.id}/statistics`, owner))
+          .status,
+      ).toBe(404);
+      const opened = await open(updated);
+      expect(opened).toMatchObject({
+        forceDedicated,
+        config: { forceDedicated },
+      });
+      expect((await publicView(draft.id)).forceDedicated).toBe(forceDedicated);
+      const history = await request(
+        "/api/me/activities?status=all&type=all",
+        owner,
+      );
+      expect(history.status).toBe(200);
+      const list = (await history.json()) as ActivityList;
+      expect(
+        list.items.find((activity) => activity.id === draft.id),
+      ).toMatchObject({ forceDedicated });
+      const discovery = await request(
+        "/api/redemptions/discover",
+        other,
+        "POST",
+        {
+          submissionId: crypto.randomUUID(),
+          password: draft.config.passwords[0],
+        },
+      );
+      expect(discovery.status).toBe(200);
+      const found = (await discovery.json()) as GlobalRedemptionResult;
+      expect(found.result).toBe(forceDedicated ? "none" : "single");
+      expect(found.items.map((activity) => activity.id)).toEqual(
+        forceDedicated ? [] : [draft.id],
+      );
+      expect(
+        (await request(`/api/me/activities/${draft.id}/statistics`, owner))
+          .status,
+      ).toBe(forceDedicated ? 200 : 404);
+      expect(
+        await env.DB.prepare("SELECT count(*) FROM claims WHERE activity_id=?")
+          .bind(draft.id)
+          .first("count(*)"),
+      ).toBe(0);
+    },
+  );
+
+  it.each([false, true])(
+    "locks opened dedicated mode at %s without changing either stored value",
+    async (forceDedicated) => {
+      const opened = await open(await create(input({ forceDedicated })));
+      const response = await request(
+        `/api/me/activities/${opened.id}`,
+        owner,
+        "PATCH",
+        {
+          version: opened.version,
+          activity: { ...opened.config, forceDedicated: !forceDedicated },
+        },
+      );
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: {
+          code: "INVALID_ACTIVITY",
+          message: "开放后不能修改口令尝试统计设置",
+        },
+      });
+      const reread = await request(`/api/me/activities/${opened.id}`, owner);
+      const current = (await reread.json()) as { activity: ManagedActivity };
+      expect(current.activity).toEqual(opened);
+      expect((await publicView(opened.id)).forceDedicated).toBe(forceDedicated);
+      expect(
+        await env.DB.prepare(
+          "SELECT force_dedicated AS dedicated, json_extract(config,'$.forceDedicated') AS configured FROM activities WHERE id=?",
+        )
+          .bind(opened.id)
+          .first(),
+      ).toEqual({
+        dedicated: Number(forceDedicated),
+        configured: Number(forceDedicated),
+      });
+    },
+  );
 
   it("rolls back activity, passwords and inventory together if a child insert fails", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -1231,6 +1345,7 @@ describe("text activity management", () => {
           activity: {
             ...activity.config,
             title: "must roll back",
+            forceDedicated: !activity.config.forceDedicated,
             passwords: ["newPass123"],
             rewards: [{ id: failedId, text: "fail" }],
           },
@@ -1249,7 +1364,7 @@ describe("text activity management", () => {
   it("allows only one concurrent version update and does not let the losing inventory leak into the winner", async () => {
     const activity = await create();
     const updates = [
-      input({ title: "winner A" }),
+      input({ title: "winner A", forceDedicated: true }),
       input({ title: "winner B" }),
     ];
     const results = await Promise.all(
@@ -1271,16 +1386,20 @@ describe("text activity management", () => {
     const winning = updates.find((config) => config.title === final.title);
     expect(final.version).toBe(2);
     expect(final.config.rewards).toEqual(winning?.rewards);
+    expect(final.forceDedicated).toBe(winning?.forceDedicated);
+    expect(final.config.forceDedicated).toBe(winning?.forceDedicated);
   });
 
-  it("opens at the requested moment with 24 hours duration and repeated open never resets it", async () => {
-    const draft = await create();
+  it("opens at the requested moment with configured duration and repeated open never resets it", async () => {
+    const draft = await create(
+      input({ deadline: { mode: "duration", value: 90, unit: "minutes" } }),
+    );
     const opened = await open(draft);
     expect(opened.status).toBe("active");
     expect(
       Date.parse(required(opened.deadlineAt)) -
         Date.parse(required(opened.openedAt)),
-    ).toBe(DEFAULT_DURATION_MS);
+    ).toBe(90 * 60 * 1000);
     expect(opened.config.deadline).toEqual({
       mode: "at",
       at: opened.deadlineAt,
@@ -1291,6 +1410,27 @@ describe("text activity management", () => {
     expect(repeated.version).toBe(opened.version);
     expect((await publicView(opened.id)).status).toBe("active");
   });
+
+  it.each([
+    [{ mode: "duration" as const }, DEFAULT_DURATION_MS],
+    [
+      { mode: "duration" as const, value: 2, unit: "hours" as const },
+      7_200_000,
+    ],
+    [
+      { mode: "duration" as const, value: 1, unit: "days" as const },
+      86_400_000,
+    ],
+  ])(
+    "calculates supported duration shape %# at opening",
+    async (deadline, ms) => {
+      const opened = await open(await create(input({ deadline })));
+      expect(
+        Date.parse(required(opened.deadlineAt)) -
+          Date.parse(required(opened.openedAt)),
+      ).toBe(ms);
+    },
+  );
 
   it("rejects an expired configured deadline at opening", async () => {
     const draft = await create(
@@ -1308,35 +1448,66 @@ describe("text activity management", () => {
     expect((await publicView(draft.id, owner)).status).toBe("draft");
   });
 
-  it("does not let a concurrent stale draft write modify opened inventory", async () => {
-    const draft = await create();
-    const different = {
-      ...draft.config,
-      rewards: [{ id: crypto.randomUUID(), text: "changed" }],
-    };
-    const responses = await Promise.all([
-      request(`/api/me/activities/${draft.id}/open`, owner, "POST", {
-        version: 1,
+  it("rejects duration deadlines that overflow the JavaScript date range", async () => {
+    const draft = await create(
+      input({
+        deadline: {
+          mode: "duration",
+          value: Number.MAX_SAFE_INTEGER,
+          unit: "days",
+        },
       }),
-      request(`/api/me/activities/${draft.id}`, owner, "PATCH", {
-        version: 1,
-        activity: different,
-      }),
-    ]);
-    expect(responses.map((response) => response.status).sort()).toEqual([
-      200, 409,
-    ]);
-    const final = (
-      (await (
-        await request(`/api/me/activities/${draft.id}`, owner)
-      ).json()) as { activity: ManagedActivity }
-    ).activity;
-    expect(final.config.rewards).toEqual(
-      final.status === "active" ? draft.config.rewards : different.rewards,
     );
+    expect(
+      (
+        await request(`/api/me/activities/${draft.id}/open`, owner, "POST", {
+          version: draft.version,
+        })
+      ).status,
+    ).toBe(400);
+    expect((await publicView(draft.id, owner)).status).toBe("draft");
   });
 
-  it("freezes opened rewards while allowing additional passwords, association edits and longer deadlines", async () => {
+  it.each([false, true])(
+    "does not let a concurrent stale draft write modify opened inventory or dedicated mode %s",
+    async (initialDedicated) => {
+      const draft = await create(input({ forceDedicated: initialDedicated }));
+      const different = {
+        ...draft.config,
+        forceDedicated: !initialDedicated,
+        rewards: [{ id: crypto.randomUUID(), text: "changed" }],
+      };
+      const responses = await Promise.all([
+        request(`/api/me/activities/${draft.id}/open`, owner, "POST", {
+          version: 1,
+        }),
+        request(`/api/me/activities/${draft.id}`, owner, "PATCH", {
+          version: 1,
+          activity: different,
+        }),
+      ]);
+      expect(responses.map((response) => response.status).sort()).toEqual([
+        200, 409,
+      ]);
+      const final = (
+        (await (
+          await request(`/api/me/activities/${draft.id}`, owner)
+        ).json()) as { activity: ManagedActivity }
+      ).activity;
+      expect(final.config.rewards).toEqual(
+        final.status === "active" ? draft.config.rewards : different.rewards,
+      );
+      const forceDedicated =
+        final.status === "active" ? initialDedicated : different.forceDedicated;
+      expect(final.forceDedicated).toBe(forceDedicated);
+      expect(final.config.forceDedicated).toBe(forceDedicated);
+      expect((await publicView(draft.id, owner)).forceDedicated).toBe(
+        forceDedicated,
+      );
+    },
+  );
+
+  it("freezes opened rewards, passwords and deadlines while allowing association and display edits", async () => {
     const activity = await open(
       await create(input({ topicUrl: "https://linux.do/t/12345" })),
     );
@@ -1344,12 +1515,21 @@ describe("text activity management", () => {
       { allocation: "random" as const },
       { rewards: [...activity.config.rewards].reverse() },
       { passwords: ["replacement123"] },
+      { passwords: [...activity.config.passwords, "newPass123"] },
       { forceDedicated: true },
       {
         deadline: {
           mode: "at" as const,
           at: new Date(
             Date.parse(required(activity.deadlineAt)) - 1000,
+          ).toISOString(),
+        },
+      },
+      {
+        deadline: {
+          mode: "at" as const,
+          at: new Date(
+            Date.parse(required(activity.deadlineAt)) + 1000,
           ).toISOString(),
         },
       },
@@ -1365,15 +1545,11 @@ describe("text activity management", () => {
     }
     const config = {
       ...activity.config,
-      passwords: [...activity.config.passwords, "newPass123"],
       beforeInfo: "updated",
+      afterClaimInfo: "updated after claim",
+      afterEndInfo: "updated after end",
       topicUrl: "https://linux.do/t/23456/8",
-      deadline: {
-        mode: "at" as const,
-        at: new Date(
-          Date.parse(required(activity.deadlineAt)) + 1000,
-        ).toISOString(),
-      },
+      quantityVisibility: "fuzzy" as const,
     };
     expect(
       (
@@ -1388,9 +1564,15 @@ describe("text activity management", () => {
         await request(`/api/me/activities/${activity.id}`, owner)
       ).json()) as { activity: ManagedActivity }
     ).activity;
-    expect(read.config.passwords).toContain("newPass123");
+    expect(read.config.passwords).toEqual(activity.config.passwords);
     expect(read.topicUrl).toBe("https://linux.do/t/23456/8");
     expect(read.config.rewards).toEqual(activity.config.rewards);
+    expect(read.config).toMatchObject({
+      beforeInfo: "updated",
+      afterClaimInfo: "updated after claim",
+      afterEndInfo: "updated after end",
+      quantityVisibility: "fuzzy",
+    });
   });
 
   it("projects the supported quantity modes without exposing private text, passwords or unearned information to the author", async () => {

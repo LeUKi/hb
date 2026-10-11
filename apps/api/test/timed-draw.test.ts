@@ -4,7 +4,7 @@ import {
   type LdcActivityInput,
   type TimedDrawMoney,
 } from "@hb/contracts";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   claimActivity,
   resumePendingActivityClaims,
@@ -30,6 +30,10 @@ import {
   openActivity,
   updateActivity,
 } from "../src/activities/service";
+import {
+  insertPasswordRows,
+  preparePasswords,
+} from "../src/activities/storage";
 import { app } from "../src/app";
 import { createDb } from "../src/db/client";
 import { sessions, users } from "../src/db/schema";
@@ -38,6 +42,8 @@ import { getStatistics } from "../src/discovery/statistics";
 import type { ApiBindings } from "../src/env";
 import { createMerchant } from "../src/payments/merchants";
 import { sha256Hex } from "../src/security/crypto";
+import { advanceAttemptCooldown } from "./advance-attempt-cooldown";
+import { resetMerchantHistory } from "./reset-merchant-history";
 
 const origin = "https://hb.example.com";
 const bindings: ApiBindings = {
@@ -57,6 +63,7 @@ async function actor(index: number): Promise<Actor> {
   const now = new Date();
   const db = createDb(env.DB);
   await db.insert(users).values({
+    officialConnectVerified: true,
     id,
     externalId: String(9000 + index),
     username: `Participant${index}`,
@@ -125,6 +132,33 @@ const submission = (
 ) => ({ submissionId, password });
 const register = (id: string, index = 0, value = submission()) =>
   registerForDraw(bindings, id, entrants[index]?.id ?? "", value);
+const participation = (id: string, user: Actor, refresh?: "0" | "1") =>
+  app.request(
+    `${origin}/api/activities/${id}/participation${refresh === undefined ? "" : `?refresh=${refresh}`}`,
+    { headers: { Cookie: user.cookie } },
+    bindings,
+  );
+async function participationJson(id: string, user: Actor, refresh?: "0" | "1") {
+  const response = await participation(id, user, refresh);
+  expect(response.status).toBe(200);
+  return (await response.json()) as {
+    claim: null | { id: string; amount?: string; afterClaimInfo?: string };
+    registration: null | {
+      status: "registered" | "drawing" | "won" | "not_won";
+      claim: null | { id: string; amount?: string; afterClaimInfo?: string };
+    };
+  };
+}
+async function waitUntilDrawDue() {
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+}
+async function drawState(id: string) {
+  return env.DB.prepare(
+    "SELECT draw_state AS drawState, claimed_count AS claimedCount FROM activities WHERE id=?",
+  )
+    .bind(id)
+    .first<{ drawState: string | null; claimedCount: number }>();
+}
 async function totals(id: string) {
   return env.DB.prepare(`SELECT (SELECT COUNT(*) FROM activity_registrations WHERE activity_id=?) AS registrations,
     (SELECT COUNT(*) FROM claims WHERE activity_id=?) AS claims,
@@ -135,6 +169,7 @@ async function totals(id: string) {
     .first();
 }
 beforeEach(async () => {
+  await resetMerchantHistory(env.DB);
   await env.DB.batch(
     [
       "payment_outbox",
@@ -171,6 +206,135 @@ beforeEach(async () => {
 });
 
 describe("timed LDC registration and draw lifecycle", () => {
+  it("preserves an absolute draw time through saving, editing and opening", async () => {
+    const at = new Date(Date.now() + 3_600_000).toISOString();
+    const request = {
+      requestId: crypto.randomUUID(),
+      activity: input(
+        { countdownSeconds: undefined, participantLimit: 2 },
+        { deadline: { mode: "at", at } },
+      ),
+    };
+    const saved = await createActivity(bindings, owner.id, request);
+    expect(saved.config.deadline).toEqual({ mode: "at", at });
+    if (saved.config.rewardType !== "ldc") throw new Error("Expected LDC");
+    expect(saved.config.money).not.toHaveProperty("countdownSeconds");
+    const edited = await updateActivity(bindings, saved.id, owner.id, {
+      version: saved.version,
+      activity: { ...saved.config, title: "指定时间已修改" },
+    });
+    const opened = await openActivity(
+      bindings,
+      edited.id,
+      owner.id,
+      edited.version,
+    );
+    expect(opened.config.deadline).toEqual({ mode: "at", at });
+    expect(opened.deadlineAt).toBe(at);
+    expect((await createActivity(bindings, owner.id, request)).id).toBe(
+      saved.id,
+    );
+    await expect(
+      updateActivity(bindings, opened.id, owner.id, {
+        version: opened.version,
+        activity: {
+          ...opened.config,
+          deadline: {
+            mode: "at",
+            at: new Date(Date.parse(at) + 60_000).toISOString(),
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_ACTIVITY",
+      message: "限时开奖开放后不能修改开奖时间",
+    });
+    await register(opened.id, 0);
+    await register(opened.id, 1);
+    await refreshTimedDraw(bindings, opened.id);
+    expect(
+      await getManagedActivity(bindings, opened.id, owner.id),
+    ).toMatchObject({
+      deadlineAt: at,
+      draw: { state: "completed", reason: "full", winnerCount: 2 },
+    });
+  });
+
+  it("checks an absolute deadline again in the winning database batch", async () => {
+    const at = new Date(Date.now() + 2_000).toISOString();
+    const saved = await create(
+      { countdownSeconds: undefined },
+      { deadline: { mode: "at", at } },
+      false,
+    );
+    const batch = bindings.DB.batch.bind(bindings.DB);
+    const delayed = vi
+      .spyOn(bindings.DB, "batch")
+      .mockImplementationOnce(async (statements) => {
+        await new Promise((resolve) => setTimeout(resolve, 2_100));
+        return batch(statements);
+      });
+    try {
+      await expect(
+        openActivity(bindings, saved.id, owner.id, saved.version),
+      ).rejects.toMatchObject({
+        code: "INVALID_ACTIVITY",
+        message: "截止时间必须晚于正式开放时间",
+      });
+    } finally {
+      delayed.mockRestore();
+    }
+    expect(
+      await getManagedActivity(bindings, saved.id, owner.id),
+    ).toMatchObject({
+      status: "draft",
+      version: saved.version,
+      openedAt: null,
+      deadlineAt: null,
+      config: { deadline: { mode: "at", at } },
+    });
+    const expired = await create(
+      { countdownSeconds: undefined },
+      { deadline: { mode: "at", at: "2000-01-01T00:00:00Z" } },
+      false,
+    );
+    await expect(
+      openActivity(bindings, expired.id, owner.id, expired.version),
+    ).rejects.toMatchObject({ code: "INVALID_ACTIVITY" });
+  });
+
+  it("starts a short countdown at transaction time even after an opening delay", async () => {
+    const request = {
+      requestId: crypto.randomUUID(),
+      activity: input({ countdownSeconds: 1 }),
+    };
+    const saved = await createActivity(bindings, owner.id, request);
+    const beforeOpen = Date.now();
+    const batch = bindings.DB.batch.bind(bindings.DB);
+    const delayed = vi
+      .spyOn(bindings.DB, "batch")
+      .mockImplementationOnce(async (statements) => {
+        await new Promise((resolve) => setTimeout(resolve, 1_200));
+        return batch(statements);
+      });
+    let opened: Awaited<ReturnType<typeof openActivity>>;
+    try {
+      opened = await openActivity(bindings, saved.id, owner.id, saved.version);
+    } finally {
+      delayed.mockRestore();
+    }
+    expect(Date.parse(opened.openedAt ?? "")).toBeGreaterThanOrEqual(
+      beforeOpen + 1_000,
+    );
+    expect(
+      Date.parse(opened.deadlineAt ?? "") - Date.parse(opened.openedAt ?? ""),
+    ).toBe(1_000);
+    expect(opened.config.deadline).toEqual({ mode: "duration" });
+    expect((await createActivity(bindings, owner.id, request)).id).toBe(
+      saved.id,
+    );
+  });
+
   it("saves an empty draft, freezes timed settings and opens with transaction-time countdown", async () => {
     const draft = await create({}, {}, false);
     expect(await totals(draft.id)).toEqual({
@@ -259,6 +423,7 @@ describe("timed LDC registration and draw lifecycle", () => {
     await expect(
       register(activity.id, 0, { ...key, password: "secondkey" }),
     ).rejects.toMatchObject({ code: "ACTIVITY_CONFLICT" });
+    await advanceAttemptCooldown(env.DB, entrants[0]?.id ?? "");
     expect(
       await solveActivityPassword(
         bindings,
@@ -266,7 +431,7 @@ describe("timed LDC registration and draw lifecycle", () => {
         entrants[0]?.id ?? "",
         submission("secondkey"),
       ),
-    ).toEqual({ outcome: "solved" });
+    ).toEqual({ outcome: "solved", passwordMatched: true });
     expect(
       await getActivityPasswords(bindings, activity.id, entrants[0]?.id),
     ).toMatchObject({
@@ -299,6 +464,92 @@ describe("timed LDC registration and draw lifecycle", () => {
     });
   });
 
+  it("participation endpoint refreshes timed draws by default and refresh=0 returns a snapshot", async () => {
+    const activity = await create({ count: 1, countdownSeconds: 1 });
+    await register(activity.id, 0);
+    await waitUntilDrawDue();
+
+    const snapshot = await participationJson(
+      activity.id,
+      entrants[0] as Actor,
+      "0",
+    );
+    expect(snapshot).toMatchObject({
+      claim: null,
+      registration: { status: "drawing", claim: null },
+    });
+    expect(await drawState(activity.id)).toMatchObject({
+      drawState: "waiting",
+      claimedCount: 0,
+    });
+
+    const refreshed = await participationJson(
+      activity.id,
+      entrants[0] as Actor,
+    );
+    expect(refreshed.registration).toMatchObject({
+      status: "won",
+      claim: { amount: "1.00", afterClaimInfo: "仅中奖后可见" },
+    });
+    expect(refreshed.claim).toMatchObject(refreshed.registration?.claim ?? {});
+    expect(await drawState(activity.id)).toMatchObject({
+      drawState: "completed",
+      claimedCount: 1,
+    });
+  });
+
+  it("participation endpoint preserves terminal won and not-won projections", async () => {
+    const activity = await create({ count: 1, countdownSeconds: 1 });
+    await register(activity.id, 0);
+    await register(activity.id, 1);
+    await waitUntilDrawDue();
+    await refreshTimedDraw(bindings, activity.id);
+
+    const first = await participationJson(
+      activity.id,
+      entrants[0] as Actor,
+      "0",
+    );
+    const second = await participationJson(
+      activity.id,
+      entrants[1] as Actor,
+      "0",
+    );
+    const results = [first, second];
+    const winners = results.filter(
+      (item) => item.registration?.status === "won",
+    );
+    const notWinners = results.filter(
+      (item) => item.registration?.status === "not_won",
+    );
+    expect(winners).toHaveLength(1);
+    expect(notWinners).toHaveLength(1);
+    expect(winners[0]?.claim).toMatchObject({ amount: "1.00" });
+    expect(winners[0]?.registration?.claim).toEqual(winners[0]?.claim);
+    expect(notWinners[0]).toMatchObject({
+      claim: null,
+      registration: { status: "not_won", claim: null },
+    });
+  });
+
+  it("participation endpoint surfaces failed timed refresh instead of returning stale data", async () => {
+    const activity = await create({ count: 1, countdownSeconds: 1 });
+    await register(activity.id, 0);
+    await env.DB.prepare(`CREATE TRIGGER fixture_participation_refresh_failure BEFORE INSERT ON payment_outbox
+      WHEN EXISTS(SELECT 1 FROM payment_tasks p JOIN claims c ON c.id=p.claim_id WHERE p.id=NEW.task_id AND c.activity_id='${activity.id}')
+      BEGIN SELECT RAISE(ABORT,'fixture participation refresh failure'); END`).run();
+    await waitUntilDrawDue();
+
+    const response = await participation(activity.id, entrants[0] as Actor);
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "活动保存失败，请重试",
+      },
+    });
+  });
+
   it.each([
     { count: 2, limit: 2, winners: 2 },
     { count: 2, limit: 3, winners: 2 },
@@ -320,7 +571,10 @@ describe("timed LDC registration and draw lifecycle", () => {
         payments: 0,
         outbox: 0,
       });
-      expect(await register(activity.id, 3)).toEqual({ result: "ended" });
+      expect(await register(activity.id, 3)).toEqual({
+        result: "ended",
+        passwordMatched: null,
+      });
       await refreshTimedDraw(
         {
           ...bindings,
@@ -393,7 +647,10 @@ describe("timed LDC registration and draw lifecycle", () => {
     expect(sums?.pool).toBe(100);
     expect(sums?.paid).toBeLessThan(100);
     expect(sums?.paid).toBeGreaterThan(0);
-    expect(await register(activity.id, 2)).toEqual({ result: "ended" });
+    expect(await register(activity.id, 2)).toEqual({
+      result: "ended",
+      passwordMatched: null,
+    });
     const plan = await env.DB.prepare(
       "SELECT payload FROM activity_draw_plans WHERE activity_id=?",
     )
@@ -441,28 +698,37 @@ describe("timed LDC registration and draw lifecycle", () => {
     });
   });
 
-  it("does not reinterpret a terminal wrong attempt when an author adds that password later", async () => {
+  it("does not reinterpret a terminal wrong attempt when a legacy activity later contains that password", async () => {
     const activity = await create();
     const key = submission("futurekey");
     expect(await register(activity.id, 0, key)).toEqual({
       result: "incorrect",
+      passwordMatched: false,
     });
-    const current = await getManagedActivity(bindings, activity.id, owner.id);
-    await updateActivity(bindings, activity.id, owner.id, {
-      version: current.version,
-      activity: {
-        ...current.config,
-        passwords: [...current.config.passwords, "futurekey"],
-      },
-    });
+    // Model a legacy appended password without reopening the newly locked API.
+    const [later] = await preparePasswords(
+      bindings,
+      activity.id,
+      ["futurekey"],
+      [],
+      Date.now(),
+    );
+    if (!later) throw new Error("Missing legacy password fixture");
+    await env.DB.batch([
+      insertPasswordRows(env.DB, [
+        { ...later, position: activity.config.passwords.length },
+      ]),
+    ]);
     expect(await register(activity.id, 0, key)).toEqual({
       result: "incorrect",
+      passwordMatched: false,
     });
     expect(await totals(activity.id)).toMatchObject({
       registrations: 0,
       claims: 0,
       payments: 0,
     });
+    await advanceAttemptCooldown(env.DB, entrants[0]?.id ?? "");
     expect(
       await register(activity.id, 0, submission("futurekey")),
     ).toMatchObject({ result: "registered" });
@@ -494,7 +760,10 @@ describe("timed LDC registration and draw lifecycle", () => {
       claims: 1,
       payments: 1,
     });
-    expect(await register(activity.id, 1)).toEqual({ result: "ended" });
+    expect(await register(activity.id, 1)).toEqual({
+      result: "ended",
+      passwordMatched: null,
+    });
     const empty = await create({ countdownSeconds: 1 });
     await new Promise((resolve) => setTimeout(resolve, 1200));
     await refreshActivityLifecycle(bindings, empty.id);
@@ -530,13 +799,23 @@ describe("timed LDC registration and draw lifecycle", () => {
     await expect(
       solveActivityPassword(bindings, activity.id, entrants[0]?.id ?? "", key),
     ).rejects.toMatchObject({ code: "ACTIVITY_CONFLICT" });
-    for (let index = 0; index < 9; index++)
+    await expect(
+      solveActivityPassword(
+        bindings,
+        activity.id,
+        entrants[0]?.id ?? "",
+        submission("wrong00"),
+      ),
+    ).rejects.toMatchObject({ code: "CLAIM_RATE_LIMITED" });
+    await advanceAttemptCooldown(env.DB, entrants[0]?.id ?? "");
+    expect(
       await solveActivityPassword(
         bindings,
         activity.id,
         entrants[0]?.id ?? "",
-        submission(`wrong${index}`),
-      );
+        submission("wrong00"),
+      ),
+    ).toMatchObject({ outcome: "incorrect", passwordMatched: false });
     await expect(
       solveActivityPassword(
         bindings,
@@ -648,18 +927,25 @@ describe("timed LDC registration and draw lifecycle", () => {
       owner.id,
       ldcDraft.version,
     );
+    await advanceAttemptCooldown(env.DB, recipient.id);
     expect(
       await claimActivity(bindings, ldc.id, recipient.id, submission()),
     ).toMatchObject({ result: "claimed" });
     const timed = await create({ count: 1, participantLimit: 1 });
+    await advanceAttemptCooldown(env.DB, recipient.id);
     await register(timed.id);
     await refreshTimedDraw(bindings, timed.id);
 
-    // Invalid keys prove the summary route does not attempt text reward decryption.
+    // Corrupt only the text reward: source passwords still require valid decryption keys.
+    await env.DB.prepare(
+      "UPDATE reward_inventory SET ciphertext='invalid-private-reward' WHERE activity_id=?",
+    )
+      .bind(text.id)
+      .run();
     const response = await app.request(
       `${origin}/api/me/participations`,
       { headers: { Cookie: recipient.cookie } },
-      { ...bindings, ENCRYPTION_KEYS: "{}" },
+      bindings,
     );
     expect(response.status).toBe(200);
     const history = (await response.json()) as {
@@ -673,17 +959,19 @@ describe("timed LDC registration and draw lifecycle", () => {
     const ordinary = history.items.filter((item) => item.kind === "claim");
     expect(ordinary).toHaveLength(2);
     for (const item of ordinary) {
-      expect(Object.keys(item.claim ?? {}).sort()).toEqual([
-        "activity",
-        "claimedAt",
-        "id",
-        "rewardType",
-      ]);
+      expect(item.claim).toHaveProperty("sourcePassword");
       expect(item.claim).not.toHaveProperty("text");
       expect(item.claim).not.toHaveProperty("afterClaimInfo");
-      expect(item.claim).not.toHaveProperty("payment");
-      expect(item.claim).not.toHaveProperty("amount");
     }
+    expect(
+      ordinary.find((item) => item.claim?.rewardType === "ldc")?.claim,
+    ).toMatchObject({
+      amount: "0.01",
+      payment: { mode: "simulation", confirmedAt: null },
+    });
+    expect(
+      ordinary.find((item) => item.claim?.rewardType === "text")?.claim,
+    ).not.toHaveProperty("amount");
     const winner = history.items.find((item) => item.kind === "registration");
     expect(winner?.registration?.claim).toMatchObject({
       amount: "1.00",

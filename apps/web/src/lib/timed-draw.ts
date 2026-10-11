@@ -1,4 +1,5 @@
 import {
+  type ActivityInput,
   amountToMinor,
   formatAmount,
   type LdcActivityInput,
@@ -53,7 +54,36 @@ export function webLdcTotalMinor(activity: { money: WebLdcMoney }) {
   return ldcTotalMinor(activity as LdcActivityInput);
 }
 
-export function timedDrawSummary(money: TimedDrawMoney) {
+export function timedDrawTimeLabel(
+  money: TimedDrawMoney,
+  deadline: ActivityInput["deadline"],
+) {
+  if (deadline.mode === "duration")
+    return `开放后 ${formatCountdownSeconds(money.countdownSeconds)}`;
+  const date = new Date(deadline.at);
+  return Number.isNaN(date.getTime())
+    ? "待设置"
+    : date.toLocaleString(undefined, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+}
+
+export function localDateTime(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const two = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}T${two(date.getHours())}:${two(date.getMinutes())}`;
+}
+
+export function timedDrawSummary(
+  money: TimedDrawMoney,
+  deadline: ActivityInput["deadline"],
+) {
   const total = timedDrawTotalMinor(money);
   const parts = [
     `最多 ${money.count || 0} 人获奖`,
@@ -61,7 +91,7 @@ export function timedDrawSummary(money: TimedDrawMoney) {
     money.participantLimit === null
       ? "不限报名人数，仅到时开奖"
       : `最多 ${money.participantLimit} 人报名，满员提前开奖`,
-    `最晚在开放后 ${formatCountdownSeconds(money.countdownSeconds)} 开奖`,
+    `最晚在${deadline.mode === "at" ? " " : ""}${timedDrawTimeLabel(money, deadline)} 开奖`,
     money.algorithm === "bounded_mean_v1" ? "均值上下 50%" : "二倍均值法",
     money.distributeFullPool
       ? "人数不足时发完奖池"
@@ -70,8 +100,9 @@ export function timedDrawSummary(money: TimedDrawMoney) {
   return parts.join(" · ");
 }
 
-export function formatCountdownSeconds(value: number) {
-  if (!Number.isFinite(value) || value <= 0) return "待设置";
+export function formatCountdownSeconds(value: number | undefined) {
+  if (value === undefined || !Number.isFinite(value) || value <= 0)
+    return "待设置";
   if (value % 86_400 === 0) return `${value / 86_400} 天`;
   if (value % 3_600 === 0) return `${value / 3_600} 小时`;
   if (value % 60 === 0) return `${value / 60} 分钟`;

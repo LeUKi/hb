@@ -1,0 +1,17 @@
+Ecoji V2
+Author: Keith Turner and the keith-turner/ecoji contributors.
+Upstream: https://github.com/keith-turner/ecoji
+Pinned version: v2.0.2
+License: Apache License, Version 2.0 (see LICENSE).
+
+The alphabet preserves the ordinal order of emojisV2.txt without modification.
+Its representation was changed from hexadecimal code points to a frozen
+TypeScript array. The UUID codec adapts the upstream Ecoji V2 bit packing for
+fixed 16-byte identifiers and adds strict canonical validation and optional
+single U+FE0F variation-selector normalization.
+
+Sources:
+https://github.com/keith-turner/ecoji/blob/v2.0.2/emojisV2.txt
+https://github.com/keith-turner/ecoji/blob/v2.0.2/v2/encode.go
+https://github.com/keith-turner/ecoji/blob/v2.0.2/v2/decode.go
+https://github.com/keith-turner/ecoji/blob/v2.0.2/LICENSE

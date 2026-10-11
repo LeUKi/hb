@@ -10,6 +10,7 @@ import { app } from "../src/app";
 import { createDb } from "../src/db/client";
 import { sessions, users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
+import { readMerchantImpact } from "../src/payments/configuration";
 import { createMerchant, updateMerchant } from "../src/payments/merchants";
 import { sha256Hex } from "../src/security/crypto";
 
@@ -34,6 +35,7 @@ async function fixture(mode: PaymentMode = "real") {
   const csrfToken = crypto.randomUUID();
   const db = createDb(env.DB);
   await db.insert(users).values({
+    officialConnectVerified: true,
     id: authorId,
     externalId: BigInt(
       `0x${authorId.replaceAll("-", "").slice(0, 15)}`,
@@ -90,6 +92,8 @@ async function verified(merchantId: string) {
 
 async function rotate(f: Awaited<ReturnType<typeof fixture>>) {
   const merchant = await updateMerchant(f.runtime, f.merchant.id, f.authorId, {
+    confirmationToken: (await readMerchantImpact(f.runtime, f.merchant))
+      .confirmationToken,
     version: f.merchant.version,
     label: f.merchant.label,
     secret: "TEST-ONLY-ROTATED-OPENING-CREDENTIAL",

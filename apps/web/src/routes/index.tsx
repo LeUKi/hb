@@ -1,72 +1,41 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { ActivityErrorView } from "../components/activities/activity-error";
-import { ActivityLocator } from "../components/activities/activity-locator";
-import { ExchangeScope } from "../components/activities/exchange-scope";
-import { GlobalExchange } from "../components/activities/global-exchange";
-import { Button } from "../components/ui/button";
+import { createFileRoute } from "@tanstack/react-router";
+import { useRef } from "react";
+import { AttemptHistory } from "../components/activities/attempt-history";
 import {
-  getAuthErrorMessage,
-  getLoginHref,
-  isAuthUnavailable,
-  useSession,
-} from "../lib/auth";
-
-export const Route = createFileRoute("/")({
-  component: IndexPage,
-});
-
+  GlobalExchange,
+  type GlobalExchangeHandle,
+} from "../components/activities/global-exchange";
+import { Envelope } from "../components/presentation/envelope";
+import { activityToolsEnabled } from "../lib/activity-tools-release";
+import { getAuthErrorMessage, useSession } from "../lib/auth";
+export const Route = createFileRoute("/")({ component: IndexPage });
 function IndexPage() {
+  const exchange = useRef<GlobalExchangeHandle>(null);
   const session = useSession();
-  const authErrorCode = new URLSearchParams(window.location.search).get(
-    "authError",
+  const user = session.error ? null : session.data?.user;
+  const authError = getAuthErrorMessage(
+    new URLSearchParams(window.location.search).get("authError"),
   );
-  const authError = getAuthErrorMessage(authErrorCode);
-  const loginUnavailable = isAuthUnavailable(authErrorCode);
-  const user = session.error ? null : (session.data?.user ?? null);
-
   return (
-    <>
-      <ExchangeScope>
-        <Link to="/square" className="underline underline-offset-4">
-          浏览活动广场
-        </Link>
-      </ExchangeScope>
-      <section>
-        {authError ? (
-          <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            {authError}
-          </p>
-        ) : null}
-        {session.isPending ? (
-          <p role="status">正在确认身份…</p>
-        ) : session.isError ? (
-          <ActivityErrorView
-            error={session.error}
-            retry={() => session.refetch()}
-          />
-        ) : user && session.data?.csrfToken ? (
-          <GlobalExchange
-            key={user.id}
-            userId={user.id}
-            csrfToken={session.data.csrfToken}
-          />
-        ) : (
-          <div className="activity-panel space-y-4">
-            <h1 className="text-2xl font-semibold">口令兑奖</h1>
-            <p className="text-sm text-neutral-600">
-              登录 Linux DO 账号后可提交口令兑换奖励。
+    <div className="home-page">
+      <section className="home-hero" aria-label="口令兑奖">
+        <Envelope size="small" open={false} />
+        <div className="home-exchange">
+          {authError && (
+            <p role="alert" className="form-message">
+              {authError}
             </p>
-            {loginUnavailable ? (
-              <p className="text-sm text-neutral-500">登录暂不可用</p>
-            ) : (
-              <Button asChild>
-                <a href={getLoginHref("/")}>登录 Linux DO 账号</a>
-              </Button>
-            )}
-          </div>
-        )}
+          )}
+          <GlobalExchange ref={exchange} />
+        </div>
       </section>
-      <ActivityLocator />
-    </>
+      {activityToolsEnabled && user && !session.isError && (
+        <AttemptHistory
+          key={user.id}
+          userId={user.id}
+          onFill={(password) => exchange.current?.fillPassword(password)}
+        />
+      )}
+    </div>
   );
 }

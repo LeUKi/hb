@@ -3,6 +3,7 @@
   "name": "hb-api-production",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-03",
+  "compatibility_flags": ["global_fetch_strictly_public"],
   "workers_dev": false,
   "preview_urls": false,
   "vars": {
@@ -12,6 +13,7 @@
     "LDC_ACCEPTANCE_ID": "",
     "CLAIM_ATTEMPTS_PER_MINUTE": "10",
     "GLOBAL_REDEMPTIONS_PER_MINUTE": "10",
+    "ADMIN_LINUX_DO_IDS": "332940",
     "LDC_STOP_NEW_OPENINGS": "false",
     "LDC_STOP_NEW_CLAIMS": "false",
     "LDC_STOP_SENDS": "false",

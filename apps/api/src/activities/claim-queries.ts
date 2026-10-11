@@ -7,10 +7,11 @@ import {
   formatAmount,
   type PublicRecipientList,
 } from "@hb/contracts";
-import { and, desc, eq, isNull, lt, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { createDb } from "../db/client";
 import {
   activities,
+  activityPasswords,
   claims,
   paymentTasks,
   rewardInventory,
@@ -19,15 +20,17 @@ import {
 import type { ApiBindings } from "../env";
 import { decryptString, encryptString } from "../security/crypto";
 import { activityNotFound, invalidActivity } from "./errors";
-import { activityStatus } from "./service";
+import { activityStatus, rewardSummary } from "./service";
 import {
   type ActivityRow,
   findActivity,
   ownedActivity,
+  passwordAssociatedData,
   rewardAssociatedData,
 } from "./storage";
 
-type ClaimRow = typeof claims.$inferSelect;
+export type ClaimRow = typeof claims.$inferSelect;
+type ClaimActivityRow = { claim: ClaimRow; activity: ActivityRow };
 type Cursor = { time: number; id: string };
 
 function parseCursor(value?: string): Cursor | undefined {
@@ -68,7 +71,17 @@ export function projectClaimSummary(
     activity: {
       id: activity.id,
       title: activity.title,
+      participationMode: activity.participationMode,
       status: activityStatus(activity),
+      deadlineAt:
+        activity.deadline === null
+          ? null
+          : new Date(activity.deadline).toISOString(),
+      reward: rewardSummary(
+        activity,
+        (JSON.parse(activity.config) as ActivityInput).quantityVisibility ===
+          "exact",
+      ),
     },
     rewardType: activity.rewardType,
     claimedAt: new Date(claim.claimedAt).toISOString(),
@@ -113,68 +126,170 @@ export async function getClaimDetail(
     )
     .get();
   if (!row) activityNotFound();
-  const config = JSON.parse(row.activity.config) as ActivityInput;
-  return {
-    ...projectClaimSummary(row.claim, row.activity),
-    afterClaimInfo: config.afterClaimInfo,
-    ...(await rewardDetail(env, row.claim, row.activity)),
-  };
+  return (
+    (await claimDetailsBatch(env, [row])).get(row.claim.id) ??
+    activityNotFound()
+  );
 }
 
-type RewardDetail =
-  | Pick<Extract<ClaimDetail, { rewardType: "text" }>, "rewardType" | "text">
-  | Pick<
-      Extract<ClaimDetail, { rewardType: "ldc" }>,
-      "rewardType" | "amount" | "payment"
-    >;
-
-async function rewardDetail(
+/** Only decrypt the persisted successful password IDs, never the configured first password. */
+export async function sourcePasswordsBatch(
   env: ApiBindings,
-  claim: ClaimRow,
-  activity: ActivityRow,
-): Promise<RewardDetail> {
-  if (activity.rewardType === "ldc") {
-    const payment = await createDb(env.DB)
-      .select()
-      .from(paymentTasks)
-      .where(eq(paymentTasks.claimId, claim.id))
-      .get();
-    if (!payment) throw new Error("LDC claim has no payment task");
-    return {
-      rewardType: "ldc",
-      amount: formatAmount(payment.amountMinor),
-      payment: {
-        id: payment.id,
-        mode: payment.mode,
-        status: payment.status,
-        reason: payment.reason,
-        confirmedAt:
-          payment.confirmedAt === null
-            ? null
-            : new Date(payment.confirmedAt).toISOString(),
-      },
-    };
-  }
-  const inventory = await createDb(env.DB)
-    .select()
-    .from(rewardInventory)
-    .where(
-      and(
-        eq(rewardInventory.activityId, activity.id),
-        eq(rewardInventory.id, claim.inventoryId),
-      ),
-    )
-    .get();
-  if (!inventory?.ciphertext || inventory.kind !== "text")
-    throw new Error("Text claim has no private content");
-  return {
-    rewardType: "text",
-    text: await decryptString(
-      inventory.ciphertext,
-      env,
-      rewardAssociatedData(activity.id, claim.inventoryId),
+  entries: { activityId: string; passwordId: string | null }[],
+): Promise<Map<string, string>> {
+  const ids = [
+    ...new Set(
+      entries
+        .map((entry) => entry.passwordId)
+        .filter((id): id is string => id !== null),
     ),
-  };
+  ];
+  if (!ids.length) return new Map();
+  const rows = await createDb(env.DB)
+    .select()
+    .from(activityPasswords)
+    .where(inArray(activityPasswords.id, ids));
+  const allowed = new Set(
+    entries.map((entry) => `${entry.activityId}:${entry.passwordId}`),
+  );
+  const values = await Promise.all(
+    rows
+      .filter((row) => allowed.has(`${row.activityId}:${row.id}`))
+      .map(
+        async (row) =>
+          [
+            row.id,
+            await decryptString(
+              row.ciphertext,
+              env,
+              passwordAssociatedData(row.activityId, row.id),
+            ),
+          ] as const,
+      ),
+  );
+  return new Map(values);
+}
+
+export async function claimSummariesBatch(
+  env: ApiBindings,
+  rows: ClaimActivityRow[],
+): Promise<Map<string, ClaimSummary>> {
+  if (!rows.length) return new Map();
+  const ids = rows
+    .filter((row) => row.activity.rewardType === "ldc")
+    .map((row) => row.claim.id);
+  const [sources, payments] = await Promise.all([
+    sourcePasswordsBatch(
+      env,
+      rows.map(({ claim }) => claim),
+    ),
+    ids.length
+      ? createDb(env.DB)
+          .select()
+          .from(paymentTasks)
+          .where(inArray(paymentTasks.claimId, ids))
+      : Promise.resolve([]),
+  ]);
+  const byClaim = new Map(
+    payments.map((payment) => [payment.claimId, payment]),
+  );
+  return new Map(
+    rows.map(({ claim, activity }) => {
+      const payment = byClaim.get(claim.id);
+      if (activity.rewardType === "ldc" && !payment)
+        throw new Error("LDC claim has no payment task");
+      const sourcePassword =
+        claim.passwordId === null ? undefined : sources.get(claim.passwordId);
+      return [
+        claim.id,
+        {
+          ...projectClaimSummary(claim, activity),
+          ...(sourcePassword === undefined ? {} : { sourcePassword }),
+          ...(payment
+            ? {
+                amount: formatAmount(payment.amountMinor),
+                payment: {
+                  id: payment.id,
+                  mode: payment.mode,
+                  status: payment.status,
+                  reason: payment.reason,
+                  confirmedAt:
+                    payment.confirmedAt === null
+                      ? null
+                      : new Date(payment.confirmedAt).toISOString(),
+                },
+              }
+            : {}),
+        },
+      ];
+    }),
+  );
+}
+
+export async function claimDetailsBatch(
+  env: ApiBindings,
+  rows: ClaimActivityRow[],
+): Promise<Map<string, ClaimDetail>> {
+  const summaries = await claimSummariesBatch(env, rows);
+  const textRows = rows.filter((row) => row.activity.rewardType === "text");
+  const inventory = textRows.length
+    ? await createDb(env.DB)
+        .select()
+        .from(rewardInventory)
+        .where(
+          or(
+            ...textRows.map(({ claim, activity }) =>
+              and(
+                eq(rewardInventory.activityId, activity.id),
+                eq(rewardInventory.id, claim.inventoryId),
+              ),
+            ),
+          ),
+        )
+    : [];
+  const byInventory = new Map(
+    inventory.map((entry) => [`${entry.activityId}:${entry.id}`, entry]),
+  );
+  const entries = await Promise.all(
+    rows.map(
+      async ({ claim, activity }): Promise<readonly [string, ClaimDetail]> => {
+        const base = summaries.get(claim.id) ?? activityNotFound();
+        const afterClaimInfo = (JSON.parse(activity.config) as ActivityInput)
+          .afterClaimInfo;
+        if (activity.rewardType === "ldc") {
+          if (!base.payment || base.amount === undefined)
+            throw new Error("LDC claim has no payment task");
+          return [
+            claim.id,
+            {
+              ...base,
+              afterClaimInfo,
+              rewardType: "ldc",
+              amount: base.amount,
+              payment: base.payment,
+            },
+          ];
+        }
+        const entry = byInventory.get(`${activity.id}:${claim.inventoryId}`);
+        if (!entry?.ciphertext || entry.kind !== "text")
+          throw new Error("Text claim has no private content");
+        return [
+          claim.id,
+          {
+            ...base,
+            afterClaimInfo,
+            rewardType: "text",
+            text: await decryptString(
+              entry.ciphertext,
+              env,
+              rewardAssociatedData(activity.id, claim.inventoryId),
+            ),
+          },
+        ];
+      },
+    ),
+  );
+  return new Map(entries);
 }
 
 export async function getCurrentClaim(
@@ -209,9 +324,10 @@ export async function listUserClaims(
     .limit(21);
   const page = rows.slice(0, 20);
   const last = page.at(-1);
+  const summaries = await claimSummariesBatch(env, page);
   return {
-    items: page.map(({ claim, activity }) =>
-      projectClaimSummary(claim, activity),
+    items: page.map(
+      ({ claim }) => summaries.get(claim.id) ?? activityNotFound(),
     ),
     nextCursor: rows.length > 20 && last ? encodeCursor(last.claim) : null,
   };
@@ -232,6 +348,9 @@ export async function listAuthorClaims(
         username: users.username,
         displayName: users.displayName,
         avatarUrl: users.avatarUrl,
+        accountTier: sql<
+          "standard" | "lite"
+        >`CASE WHEN ${users.officialConnectVerified}=1 THEN 'standard' ELSE 'lite' END`,
       },
     })
     .from(claims)
@@ -243,14 +362,16 @@ export async function listAuthorClaims(
     .limit(21);
   const page = rows.slice(0, 20);
   const last = page.at(-1);
+  const details = await claimDetailsBatch(
+    env,
+    page.map(({ claim }) => ({ claim, activity })),
+  );
   return {
-    items: await Promise.all(
-      page.map(async ({ claim, claimant }) => ({
-        ...projectClaimSummary(claim, activity),
-        claimant,
-        ...(await rewardDetail(env, claim, activity)),
-      })),
-    ),
+    items: page.map(({ claim, claimant }) => {
+      const { afterClaimInfo: _privateNote, ...detail } =
+        details.get(claim.id) ?? activityNotFound();
+      return { ...detail, claimant };
+    }),
     nextCursor: rows.length > 20 && last ? encodeCursor(last.claim) : null,
   };
 }
@@ -270,6 +391,19 @@ export async function listPublicRecipients(
   const config = JSON.parse(activity.config) as ActivityInput;
   if (!config.showRecipientList)
     return { enabled: false, items: [], nextCursor: null };
+  // Claims can be allocated while a timed draw settles; publish only its completed results.
+  if (
+    activity.drawState &&
+    activity.drawState !== "completed" &&
+    activity.drawState !== "empty"
+  )
+    return {
+      enabled: true,
+      items: [],
+      nextCursor: null,
+      titles: { highestClaimIds: [], lowestClaimIds: [] },
+    };
+  const titles = await publicRecipientTitles(env, activity, config);
   let before: Cursor | undefined;
   if (cursor) {
     try {
@@ -286,6 +420,9 @@ export async function listPublicRecipients(
       username: users.username,
       displayName: users.displayName,
       avatarUrl: users.avatarUrl,
+      accountTier: sql<
+        "standard" | "lite"
+      >`CASE WHEN ${users.officialConnectVerified}=1 THEN 'standard' ELSE 'lite' END`,
       amountMinor: paymentTasks.amountMinor,
     })
     .from(claims)
@@ -298,16 +435,34 @@ export async function listPublicRecipients(
   const last = page.at(-1);
   return {
     enabled: true,
+    titles,
     items: page.map(
-      ({ claim, username, displayName, avatarUrl, amountMinor }) => ({
-        id: claim.id,
+      ({
+        claim,
         username,
         displayName,
         avatarUrl,
-        ...(activity.rewardType === "ldc" && amountMinor !== null
+        accountTier,
+        amountMinor,
+      }) => ({
+        id: claim.id,
+        username: config.showRecipientUsername ? username : "",
+        displayName: config.showRecipientUsername ? displayName : "匿名用户",
+        avatarUrl: config.showRecipientUsername ? avatarUrl : null,
+        accountTier: config.showRecipientUsername ? accountTier : null,
+        ...(activity.rewardType === "ldc" &&
+        config.showRecipientAmount &&
+        amountMinor !== null
           ? { amount: formatAmount(amountMinor) }
           : {}),
-        claimedAt: new Date(claim.claimedAt).toISOString(),
+        ...(config.showRecipientTime
+          ? { claimedAt: new Date(claim.claimedAt).toISOString() }
+          : {}),
+        ...(titles.highestClaimIds.includes(claim.id)
+          ? { title: "highest" as const }
+          : titles.lowestClaimIds.includes(claim.id)
+            ? { title: "lowest" as const }
+            : {}),
       }),
     ),
     nextCursor:
@@ -320,5 +475,63 @@ export async function listPublicRecipients(
             ),
           )
         : null,
+  };
+}
+
+async function publicRecipientTitles(
+  env: ApiBindings,
+  activity: ActivityRow,
+  config: ActivityInput,
+): Promise<NonNullable<PublicRecipientList["titles"]>> {
+  const empty = {
+    highestClaimIds: [] as string[],
+    lowestClaimIds: [] as string[],
+  };
+  if (
+    activity.rewardType !== "ldc" ||
+    !config.showRecipientList ||
+    !config.showRecipientAmount
+  )
+    return empty;
+  const bounds =
+    await env.DB.prepare(`SELECT COUNT(*) AS count,MIN(p.amount_minor) AS minimum,MAX(p.amount_minor) AS maximum
+    FROM claims c JOIN payment_tasks p ON p.claim_id=c.id AND p.source='claim' WHERE c.activity_id=?`)
+      .bind(activity.id)
+      .first<{
+        count: number;
+        minimum: number | null;
+        maximum: number | null;
+      }>();
+  if (
+    !bounds ||
+    bounds.count < 2 ||
+    bounds.minimum === null ||
+    bounds.maximum === null ||
+    bounds.minimum === bounds.maximum
+  )
+    return empty;
+  const [highest, lowest] = await env.DB.batch<{ id: string }>([
+    env.DB.prepare(`SELECT c.id FROM claims c JOIN payment_tasks p ON p.claim_id=c.id AND p.source='claim'
+      WHERE c.activity_id=? AND p.amount_minor=? ORDER BY c.id LIMIT 3`).bind(
+      activity.id,
+      bounds.maximum,
+    ),
+    env.DB.prepare(`SELECT c.id FROM claims c JOIN payment_tasks p ON p.claim_id=c.id AND p.source='claim'
+      WHERE c.activity_id=? AND p.amount_minor=? ORDER BY c.id LIMIT 3`).bind(
+      activity.id,
+      bounds.minimum,
+    ),
+  ]);
+  if (!highest || !lowest)
+    throw new Error("Missing public recipient title query results");
+  return {
+    highestClaimIds:
+      highest.results.length < 3
+        ? highest.results.map((row) => String(row.id))
+        : [],
+    lowestClaimIds:
+      lowest.results.length < 3
+        ? lowest.results.map((row) => String(row.id))
+        : [],
   };
 }

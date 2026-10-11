@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  activityInputSchema,
   DEFAULT_DRAW_COUNTDOWN_SECONDS,
   emptyActivityInput,
+  historicalActivityInputSchema,
   type LdcActivityInput,
   ldcAmounts,
   ldcMoneySchema,
@@ -80,7 +82,7 @@ describe("timed draw contracts", () => {
     ).toBe("90071992547409.91");
   });
 
-  it("rejects sequential timed allocation and a second deadline", () => {
+  it("accepts exactly one timed deadline source and validates the selected mode", () => {
     expect(
       newActivityInputSchema.safeParse({
         ...activity(),
@@ -93,7 +95,45 @@ describe("timed draw contracts", () => {
         deadline: { mode: "at", at: "2099-01-01T00:00:00Z" },
       }).success,
     ).toBe(false);
+    const { countdownSeconds: _countdownSeconds, ...atMoney } = money;
+    const absolute = {
+      ...activity(),
+      deadline: { mode: "at", at: "2099-01-01T00:00:00+08:00" },
+      money: atMoney,
+    };
+    const parsed = newActivityInputSchema.parse(absolute);
+    expect(parsed.deadline).toEqual(absolute.deadline);
+    expect(parsed.money).not.toHaveProperty("countdownSeconds");
+    expect(
+      newActivityInputSchema.safeParse({
+        ...activity(),
+        money: atMoney,
+      }).success,
+    ).toBe(false);
+    for (const at of ["", "not-a-date", "2099-02-30T00:00:00Z"]) {
+      expect(
+        newActivityInputSchema.safeParse({
+          ...absolute,
+          deadline: { mode: "at", at },
+        }).success,
+      ).toBe(false);
+    }
     expect(newActivityInputSchema.safeParse(activity()).success).toBe(true);
+  });
+
+  it("keeps legacy countdown serialization and digest inputs unchanged", () => {
+    for (const deadline of [
+      { mode: "duration" as const },
+      { mode: "duration" as const, value: 24, unit: "hours" as const },
+    ]) {
+      const input = { ...activity(), deadline };
+      const parsed = activityInputSchema.parse(input);
+      expect(JSON.stringify(parsed.money)).toBe(JSON.stringify(money));
+      expect(JSON.stringify(parsed.deadline)).toBe(JSON.stringify(deadline));
+      expect(JSON.stringify(historicalActivityInputSchema.parse(input))).toBe(
+        JSON.stringify(parsed),
+      );
+    }
   });
 
   it("calculates configuration totals without generating authoritative inventory", () => {

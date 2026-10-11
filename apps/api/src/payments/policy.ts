@@ -1,6 +1,15 @@
 import type { ApiBindings } from "../env";
 import { allowsRealSending, readPlatformControls } from "../runtime/controls";
 import type { PaymentTaskRow } from "./adapter";
+import {
+  claimPaymentParameterDigest,
+  effectiveClaimPaymentTask,
+} from "./identity";
+
+export {
+  type ClaimPaymentDigestInput,
+  claimPaymentParameterDigest,
+} from "./identity";
 
 export type LdcNetworkMode = "disabled" | "verify" | "acceptance" | "live";
 export type AppEnvironment = "local" | "staging" | "production";
@@ -110,49 +119,6 @@ export async function paymentParameterDigest(
   ).join("");
 }
 
-export type ClaimPaymentDigestInput = Pick<
-  PaymentTaskRow,
-  | "id"
-  | "source"
-  | "claimId"
-  | "acceptanceId"
-  | "merchantId"
-  | "clientId"
-  | "businessNo"
-  | "recipientId"
-  | "recipientUsername"
-  | "amountMinor"
-  | "mode"
-  | "recoveryPolicy"
->;
-
-/** Normal claim authorization is separate from the historical local acceptance grants. */
-export async function claimPaymentParameterDigest(
-  task: ClaimPaymentDigestInput,
-): Promise<string> {
-  const canonical = JSON.stringify({
-    policy: task.recoveryPolicy,
-    taskId: task.id,
-    source: task.source,
-    claimId: task.claimId,
-    acceptanceId: task.acceptanceId,
-    merchantId: task.merchantId,
-    clientId: task.clientId,
-    businessNo: task.businessNo,
-    recipientId: task.recipientId,
-    recipientUsername: task.recipientUsername,
-    amountMinor: task.amountMinor,
-    mode: task.mode,
-  });
-  const hash = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(canonical),
-  );
-  return Array.from(new Uint8Array(hash), (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("");
-}
-
 /** Rechecked in the send-intent batch; ending an activity never cancels its debts. */
 export function claimPaymentIdentitySql(alias: "p" | "payment_tasks") {
   return `${alias}.source='claim' AND ${alias}.mode='real'
@@ -167,7 +133,7 @@ export function claimPaymentIdentitySql(alias: "p" | "payment_tasks") {
       WHERE c.id=${alias}.claim_id AND a.reward_type='ldc' AND a.payment_mode='real'
         AND a.opened_at IS NOT NULL AND a.author_id!=c.user_id
         AND a.merchant_id=${alias}.merchant_id AND m.author_id=a.author_id
-        AND m.mode='real' AND m.client_id=${alias}.client_id
+        AND m.mode='real' AND EXISTS(SELECT 1 FROM merchant_client_ids x WHERE x.merchant_id=m.id AND x.client_id=${alias}.client_id)
         AND r.kind='ldc' AND r.amount_minor=${alias}.amount_minor
         AND u.provider='linux_do' AND u.external_id=${alias}.recipient_id
         AND (json_extract(a.config,'$.money.mode') IS NOT 'timed_draw' OR (
@@ -261,6 +227,7 @@ export async function effectivePaymentTask(
   task: PaymentTaskRow,
   snapshot?: PaymentUsernameCorrectionRow | null,
 ): Promise<PaymentTaskRow> {
+  if (task.source === "claim") return effectiveClaimPaymentTask(env, task);
   const correction =
     snapshot === undefined
       ? await loadPaymentUsernameCorrection(env, task.id)
@@ -411,6 +378,16 @@ export async function realSendDecision(
       return { allowed: false, reason: "disabled" };
     if (!(await claimMatchesTask(env, task)))
       return { allowed: false, reason: "claim_mismatch" };
+    const effective = await effectiveClaimPaymentTask(env, task);
+    const merchant = await env.DB.prepare(
+      "SELECT client_id FROM merchants WHERE id=?",
+    )
+      .bind(task.merchantId)
+      .first<{ client_id: string }>();
+    // A historical unknown order is queried under its pinned identity, never
+    // resent under a newly selected merchant application.
+    if (merchant?.client_id !== effective.clientId)
+      return { allowed: false, reason: "send_blocked" };
     if (task.firstSendAt === null) {
       if (
         task.attemptCount > 0 ||
