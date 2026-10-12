@@ -4,9 +4,9 @@
 
 ## 本地正式迁移与原型参照
 
-正式迁移已接入正式会话、持久化、兑奖、报名、开奖和付款恢复；本轮是 LDC-only 本地清理候选，完整状态以[迁移台账](docs/prototype-migration.md)为准。运行 `bun run dev:full-app`，从[本地账号选择](http://127.0.0.1:4195/__local/full-app)进入；OAuth/LDC使用隔离本地协议替身，业务API、D1、DO与Queue实际运行，不访问真实外部业务。
+正式迁移已接入正式会话、持久化、兑奖、报名、开奖和付款恢复；LDC-only 收敛已于2026-10-12提交并发布到预发布和生产，当前版本及旧数据保持证据见[LDC 收敛记录](docs/ldc-only-retirement.md#授权提交与部署2026-10-12发布后补录)。完整迁移状态以[迁移台账](docs/prototype-migration.md)为准。运行 `bun run dev:full-app`，从[本地账号选择](http://127.0.0.1:4195/__local/full-app)进入；OAuth/LDC使用隔离本地协议替身，业务API、D1、DO与Queue实际运行，不访问真实外部业务。
 
-原型继续运行于4177，仅作设计参照：`bun run prototype:dev`。它的虚拟身份和内存记录不导入正式应用。当前有效规范见[DESIGN.md](DESIGN.md)，历史原型体验见[原型指南](docs/visual-prototype.md)。本次没有部署或提交Git；下文远程版本和发布数字均为此前批次的历史证据。
+原型继续运行于4177，仅作设计参照：`bun run prototype:dev`。它的虚拟身份和内存记录不导入正式应用。当前有效规范见[DESIGN.md](DESIGN.md)，历史原型体验见[原型指南](docs/visual-prototype.md)。下文带日期的旧远程版本和发布数字继续作为历史证据；本次提交与部署以LDC收敛记录为准。
 
 ## 项目文档
 
