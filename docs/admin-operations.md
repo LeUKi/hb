@@ -94,4 +94,4 @@ bunx playwright test --project=chromium --workers=2 \
 
 应用内浏览器确认两环境新版 build 与非管理员拒绝，生产旧 `/admin/rate-limits` 实际进入 `/admin/settings`，生产页没有控制台错误。现有浏览器会话为非管理员 LiteAUTH 账号，因此本次没有在线打开真实管理员的数据页面或保存设置；管理员身份下的完整交互由本地正式浏览器／API／完整应用回归覆盖。没有为验收更改账号资格、动态授权、伪造会话或写入业务记录。
 
-完整发布证据为 `.wrangler/verification/admin-release-20261012/release-summary.json` 及同目录原始记录。本轮未 Git 提交或推送，未执行真实领取、报名、付款、合成队列投递、远程数据库恢复或截图。补录文档后的未来发布须重新构建候选，不能复用补录前来源摘要。
+完整发布证据为 `.wrangler/verification/admin-release-20261012/release-summary.json` 及同目录原始记录。部署时尚未 Git 提交或推送，后续提交以 Git 历史为准。本轮未执行真实领取、报名、付款、合成队列投递、远程数据库恢复或截图。补录文档后的未来发布须重新构建候选，不能复用补录前来源摘要。
