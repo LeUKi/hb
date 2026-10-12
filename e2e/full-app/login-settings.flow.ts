@@ -5,6 +5,13 @@ const origin = "http://127.0.0.1:4193";
 const connectAuthorizer = /^https:\/\/connect\.linux\.do\/oauth2\/authorize\?/;
 const liteAuthorizer =
   /^https:\/\/liteauth\.442224\.xyz\/api\/auth\/oauth2\/authorize\?/;
+const settingsLiteExternalId = "730007";
+const settingsLiteParticipantExternalId = "730008";
+type LoginRole =
+  | "author"
+  | "recipient"
+  | "settingsLite"
+  | "settingsLiteParticipant";
 type SignedInSession = {
   user: {
     id: string;
@@ -74,11 +81,8 @@ async function beginLogin(context: BrowserContext, lite: boolean) {
   return new URL(location);
 }
 
-async function signIn(
-  page: Page,
-  role: "author" | "recipient" | "lite" | "liteParticipant",
-) {
-  const lite = role === "lite" || role === "liteParticipant";
+async function signIn(page: Page, role: LoginRole) {
+  const lite = role === "settingsLite" || role === "settingsLiteParticipant";
   const context = page.context();
   // Only the upstream authorization page is substituted. All internal APIs,
   // callback, token exchange, D1 account and persisted session remain real.
@@ -94,7 +98,7 @@ async function signIn(
   );
   await page.goto((await beginLogin(context, lite)).href);
   await expect(
-    page.getByRole("button", { name: "兑奖", exact: true }),
+    page.getByRole("textbox", { name: "口令", exact: true }),
   ).toBeVisible();
   const response = await context.request.get("/api/session");
   expect(response.status()).toBe(200);
@@ -130,7 +134,7 @@ test("正式登录开关持久化：旧青春会话保留，新登录及在途�
     const adminPage = await owner.newPage();
     const litePage = await existingLite.newPage();
     const admin = await signIn(adminPage, "author");
-    const lite = await signIn(litePage, "lite");
+    const lite = await signIn(litePage, "settingsLite");
     expect(admin.user.isAdmin).toBe(true);
     expect(lite.user).toMatchObject({
       accountTier: "lite",
@@ -140,7 +144,7 @@ test("正式登录开关持久化：旧青春会话保留，新登录及在途�
     const pendingAuthorization = await beginLogin(pendingLite, true);
     const pendingCallback = callbackUrl(
       pendingAuthorization,
-      "liteParticipant",
+      "settingsLiteParticipant",
       true,
     );
     const read = await owner.request.get("/api/admin/login-settings");
@@ -290,7 +294,7 @@ test("正式登录开关持久化：旧青春会话保留，新登录及在途�
     await toggle.check();
     await card.getByRole("button", { name: "保存配置", exact: true }).click();
     await expect(card.getByRole("status")).toHaveText("已保存登录方式配置。");
-    await expect(card).toContainText(`版本 ${saved.config.version + 1}`);
+    await expect(card).toContainText("更新于");
     const enabled = (await (
       await owner.request.get("/api/admin/login-settings")
     ).json()) as LoginSettingsResponse;
@@ -304,7 +308,7 @@ test("正式登录开关持久化：旧青春会话保留，新登录及在途�
       liteauthEnabled: true,
     });
     const newLitePage = await freshLite.newPage();
-    const newcomer = await signIn(newLitePage, "liteParticipant");
+    const newcomer = await signIn(newLitePage, "settingsLiteParticipant");
     expect(newcomer.loginOptions.liteauthEnabled).toBe(true);
     expect(newcomer.user).toMatchObject({
       accountTier: "lite",
@@ -320,13 +324,15 @@ test("正式登录开关持久化：旧青春会话保留，新登录及在途�
     expect(final.upstream).toMatchObject({
       liteauthTokenRequests: beforeDenied.liteauthTokenRequests + 1,
       liteauthProfileRequests: beforeDenied.liteauthProfileRequests + 1,
-      distributeRequests: 0,
-      blockedRequests: 0,
+      distributeRequests: beforeDenied.distributeRequests,
+      blockedRequests: beforeDenied.blockedRequests,
     });
     expect(final.users).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ external_id: "730005" }),
-        expect.objectContaining({ external_id: "730006" }),
+        expect.objectContaining({ external_id: settingsLiteExternalId }),
+        expect.objectContaining({
+          external_id: settingsLiteParticipantExternalId,
+        }),
       ]),
     );
     expect(external.flat()).toEqual([]);

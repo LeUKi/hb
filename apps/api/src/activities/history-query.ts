@@ -9,24 +9,52 @@ import { activities } from "../db/schema";
 import { drawSummary } from "./draw-storage";
 import type { ActivityRow } from "./storage";
 
+function lifecycleColumn(alias: string, name: string) {
+  return `${alias}."${name}"`;
+}
+
 /** Keep query-time lifecycle classification aligned with activityStatus, even before a sweep. */
-export function activityStatusSql(now = Date.now()): SQL<ActivityStatus> {
-  const end = sql`COALESCE(${activities.endedAt}, CASE WHEN ${activities.deadline} <= ${now} THEN ${activities.deadline} END)`;
-  return sql`CASE
-    WHEN ${activities.openedAt} IS NULL THEN 'draft'
-    WHEN ${activities.archivedAt} IS NOT NULL THEN 'archived'
+export function activityStatusCaseSql(
+  now = Date.now(),
+  alias = '"activities"',
+) {
+  const openedAt = lifecycleColumn(alias, "opened_at");
+  const archivedAt = lifecycleColumn(alias, "archived_at");
+  const endedAt = lifecycleColumn(alias, "ended_at");
+  const deadline = lifecycleColumn(alias, "deadline");
+  const drawState = lifecycleColumn(alias, "draw_state");
+  const claimedCount = lifecycleColumn(alias, "claimed_count");
+  const totalCount = lifecycleColumn(alias, "total_count");
+  const end = `COALESCE(${endedAt}, CASE WHEN ${deadline} <= ${now} THEN ${deadline} END)`;
+  return `CASE
+    WHEN ${openedAt} IS NULL THEN 'draft'
+    WHEN ${archivedAt} IS NOT NULL THEN 'archived'
     WHEN ${end} IS NOT NULL AND ${now} >= ${end} + ${ARCHIVE_DELAY_MS}
-      AND COALESCE(${activities.drawState}, '') NOT IN ('waiting', 'settling') THEN 'archived'
-    WHEN ${end} IS NOT NULL OR ${activities.claimedCount} >= ${activities.totalCount} THEN 'ended'
+      AND COALESCE(${drawState}, '') NOT IN ('waiting', 'settling') THEN 'archived'
+    WHEN ${end} IS NOT NULL OR ${claimedCount} >= ${totalCount} THEN 'ended'
     ELSE 'active' END`;
 }
 
+export function activityStatusSql(now = Date.now()): SQL<ActivityStatus> {
+  return sql.raw(activityStatusCaseSql(now)) as SQL<ActivityStatus>;
+}
+
 /** An open draw stays in the active list until its results are published. */
+export function activityListStatusCaseSql(
+  now = Date.now(),
+  alias = '"activities"',
+) {
+  const openedAt = lifecycleColumn(alias, "opened_at");
+  const archivedAt = lifecycleColumn(alias, "archived_at");
+  const drawState = lifecycleColumn(alias, "draw_state");
+  return `CASE
+    WHEN ${openedAt} IS NOT NULL AND ${archivedAt} IS NULL
+      AND ${drawState} IN ('waiting', 'settling') THEN 'active'
+    ELSE ${activityStatusCaseSql(now, alias)} END`;
+}
+
 export function activityListStatusSql(now = Date.now()): SQL<ActivityStatus> {
-  return sql`CASE
-    WHEN ${activities.openedAt} IS NOT NULL AND ${activities.archivedAt} IS NULL
-      AND ${activities.drawState} IN ('waiting', 'settling') THEN 'active'
-    ELSE ${activityStatusSql(now)} END`;
+  return sql.raw(activityListStatusCaseSql(now)) as SQL<ActivityStatus>;
 }
 
 /** List rows reflect the saved draw state; the countdown never invents settlement. */

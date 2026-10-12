@@ -10,6 +10,8 @@ import {
 import type { PublicUserProfile } from "./profile";
 import type { AttemptCooldown } from "./rate-limits";
 
+export * from "./admin";
+export * from "./ecoji-v2";
 export * from "./login-settings";
 export * from "./payments";
 export * from "./profile";

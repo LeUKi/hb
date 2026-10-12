@@ -431,8 +431,227 @@ textarea.activity-input {
 .work-rate-limit-changes p {
   margin: 0 0 4px;
 }
+.admin-page {
+  gap: 18px;
+}
+.admin-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.admin-tab {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 14px;
+  text-decoration: none;
+}
+.admin-tab[aria-current="page"] {
+  border-color: var(--red);
+  color: var(--red);
+}
+.admin-stack {
+  display: grid;
+  gap: 16px;
+}
+.admin-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.admin-toolbar h2,
+.admin-toolbar h3 {
+  margin: 0;
+}
+.admin-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.admin-metric {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--separator);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  color: var(--ink);
+  text-decoration: none;
+}
+.admin-metric strong {
+  font-size: 26px;
+}
+.admin-overview-grid,
+.admin-list-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 16px;
+  align-items: start;
+}
+.admin-list-panel,
+.admin-detail-panel {
+  max-width: none;
+}
+.admin-detail-panel {
+  position: sticky;
+  top: 18px;
+}
+.admin-filters {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) repeat(3, max-content);
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.admin-filters select {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.admin-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink);
+  font-size: 14px;
+}
+.admin-date-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.admin-date-filter span {
+  flex-shrink: 0;
+}
+.admin-date-filter input {
+  min-width: 0;
+}
+.admin-table-wrap {
+  overflow-x: auto;
+}
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.admin-table th,
+.admin-table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+.admin-table th {
+  color: var(--muted);
+  font-weight: 600;
+}
+.admin-muted-id {
+  display: block;
+  max-width: 260px;
+  overflow: hidden;
+  color: var(--subtle);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.admin-pager {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+}
+.admin-detail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.admin-detail-heading h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.admin-detail-heading .button {
+  flex-shrink: 0;
+}
+.admin-detail-list {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 14px;
+}
+.activity-panel .admin-detail-list > div {
+  display: grid;
+  gap: 4px;
+}
+.admin-detail-list dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+.admin-detail-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.admin-warning-list {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.admin-warning-list li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.admin-warning-list .is-warning {
+  color: var(--red);
+}
 @media (max-width: 480px) {
   .work-rate-limit-fields {
     grid-template-columns: 1fr;
   }
+  .admin-metric-grid,
+  .admin-overview-grid,
+  .admin-list-layout,
+  .admin-filters {
+    grid-template-columns: 1fr;
+  }
+  .admin-detail-panel {
+    position: static;
+  }
+  .admin-detail-panel[role="dialog"] {
+    position: fixed;
+    z-index: 30;
+    inset: 16px;
+    overflow: auto;
+    box-shadow: 0 20px 60px rgb(0 0 0 / 24%);
+  }
+  .admin-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+.admin-detail-dialog {
+  width: min(92vw, 560px);
+  max-height: min(82dvh, 720px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.admin-detail-dialog::backdrop {
+  background: rgb(5 7 10 / 64%);
 }

@@ -23,6 +23,10 @@ function cooldownTimer(page: Page) {
   return page.getByRole("timer").filter({ hasText: "秒后可重试" });
 }
 
+function claimCooldownButton(page: Page) {
+  return page.getByRole("button", { name: /^还需等待 \d+ 秒$/ });
+}
+
 async function guardExternal(context: BrowserContext) {
   const unexpected: string[] = [];
   await context.route("**/*", async (route) => {
@@ -66,7 +70,7 @@ async function signIn(page: Page, role: "author" | "recipient") {
   if (!authorizationUrl) throw new Error("登录未返回授权地址");
   await page.goto(authorizationUrl);
   await expect(
-    page.getByRole("button", { name: "兑奖", exact: true }),
+    page.getByRole("textbox", { name: "口令", exact: true }),
   ).toBeVisible();
   const response = await context.request.get("/api/session");
   expect(response.ok()).toBe(true);
@@ -88,6 +92,12 @@ test("正式账号冷却跨页面和刷新，发现后以服务端编号自动�
     const page = await recipient.newPage();
     const owner = await signIn(authorPage, "author");
     const viewer = await signIn(page, "recipient");
+    const initial = await request.get("http://127.0.0.1:4194/state");
+    expect(initial.ok()).toBe(true);
+    const initialUpstream = (await initial.json()).upstream as {
+      blockedRequests: number;
+      distributeRequests: number;
+    };
     expect(owner.user.isAdmin).toBe(true);
     expect(viewer.user.isAdmin).toBe(false);
     const configRead = await author.request.get("/api/admin/rate-limits");
@@ -195,14 +205,17 @@ test("正式账号冷却跨页面和刷新，发现后以服务端编号自动�
       .getByRole("link", { name: "查看活动", exact: true })
       .click();
     await expect(page).toHaveURL(`/activities/${activity.id}`);
+    await expect(cooldownTimer(page)).toBeVisible();
     await expect(
       page.getByRole("button", { name: "领取奖励", exact: true }),
-    ).toBeDisabled();
+    ).toHaveCount(0);
+    await expect(claimCooldownButton(page)).toBeDisabled();
     await page.reload();
     await expect(cooldownTimer(page)).toBeVisible();
     await expect(
       page.getByRole("button", { name: "领取奖励", exact: true }),
-    ).toBeDisabled();
+    ).toHaveCount(0);
+    await expect(claimCooldownButton(page)).toBeDisabled();
     const reloadedSession = await recipient.request.get("/api/session");
     expect(await reloadedSession.json()).toMatchObject({
       attemptCooldown: {
@@ -210,9 +223,10 @@ test("正式账号冷却跨页面和刷新，发现后以服务端编号自动�
         nextAllowedAt: first.attemptCooldown?.nextAllowedAt,
       },
     });
+    await expect(cooldownTimer(page)).toHaveCount(0, { timeout: 7_000 });
     await expect(
       page.getByRole("button", { name: "领取奖励", exact: true }),
-    ).toBeEnabled({ timeout: 7_000 });
+    ).toBeEnabled();
     await page
       .locator(".desktop-nav")
       .getByRole("link", { name: "兑奖", exact: true })
@@ -298,8 +312,12 @@ test("正式账号冷却跨页面和刷新，发现后以服务端编号自动�
           claim.activity_id === activity.id && claim.user_id === viewer.user.id,
       ),
     ).toHaveLength(1);
-    expect(state.upstream.blockedRequests).toBe(0);
-    expect(state.upstream.distributeRequests).toBe(0);
+    expect(state.upstream.blockedRequests).toBe(
+      initialUpstream.blockedRequests,
+    );
+    expect(state.upstream.distributeRequests).toBe(
+      initialUpstream.distributeRequests,
+    );
     expect(external.flat()).toEqual([]);
   } finally {
     await Promise.allSettled([author.close(), recipient.close()]);

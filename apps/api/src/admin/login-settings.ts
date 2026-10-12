@@ -105,7 +105,7 @@ export const loginSettingsAdminRoutes = new Hono<ApiContext>()
         throw new ActivityError(
           409,
           "LOGIN_SETTINGS_CONFLICT",
-          "登录配置已在其他页面修改。当前输入已保留，请重新读取最新配置。",
+          "网站设置已发生变化，请刷新后再试。当前输入已保留。",
         );
       throw error;
     }

@@ -2,9 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   ACTIVITY_LIMITS,
   activityInputSchema,
+  adminActivitiesQuerySchema,
+  adminAuditQuerySchema,
+  adminCursorSchema,
+  adminPaymentsQuerySchema,
   claimActivitySchema,
   createActivitySchema,
+  decodeActivityEmoji,
   emptyActivityInput,
+  encodeActivityEmoji,
   historicalActivityInputSchema,
   newActivityInputSchema,
   normalizeTopicLink,
@@ -353,5 +359,87 @@ describe("shared activity contracts", () => {
           activity: { ...validActivity(), topicUrl },
         }).success,
       ).toBe(false);
+  });
+});
+
+describe("admin read-only contracts", () => {
+  const cursor = `1700000000000:${itemId}`;
+  const auditCursor = `1700000000000:login_settings:${itemId}`;
+
+  it("validates admin cursor formats used by list and audit endpoints", () => {
+    expect(adminCursorSchema.parse(cursor)).toBe(cursor);
+    expect(adminAuditQuerySchema.parse({ cursor: auditCursor }).cursor).toBe(
+      auditCursor,
+    );
+    for (const invalid of [
+      "",
+      "abc:id",
+      "1700000000000",
+      "1700000000000:",
+      "9007199254740992:item",
+      "1700000000000:bad/type:id",
+      `1700000000000:unknown:${itemId}`,
+      `1700000000000:LOGIN_SETTINGS:${itemId}`,
+    ]) {
+      expect(adminCursorSchema.safeParse(invalid).success).toBe(false);
+      expect(adminAuditQuerySchema.safeParse({ cursor: invalid }).success).toBe(
+        false,
+      );
+    }
+  });
+
+  it("accepts and rejects admin search filters at the shared contract boundary", () => {
+    const longEmojiLink = `https://redemption.example.test/e/${encodeURIComponent(encodeActivityEmoji(itemId))}?utm_source=admin-history`;
+    expect(longEmojiLink.length).toBeGreaterThan(200);
+    expect(adminActivitiesQuerySchema.parse({ q: longEmojiLink }).q).toBe(
+      longEmojiLink,
+    );
+    expect(adminPaymentsQuerySchema.parse({ q: longEmojiLink }).q).toBe(
+      longEmojiLink,
+    );
+    expect(
+      adminActivitiesQuerySchema.parse({
+        q: "  活动名  ",
+        rewardType: "ldc",
+        status: "active",
+        drawException: "1",
+        cursor,
+      }),
+    ).toMatchObject({ q: "活动名", rewardType: "ldc", status: "active" });
+    expect(
+      adminPaymentsQuerySchema.parse({
+        q: "business-1",
+        activityId: itemId,
+        merchantId: otherId,
+        mode: "real",
+        status: "attention",
+        anomaly: "undelivered",
+        exception: "0",
+        cursor,
+      }),
+    ).toMatchObject({ activityId: itemId, merchantId: otherId });
+    for (const invalid of [
+      { rewardType: "money" },
+      { status: "running" },
+      { drawException: "true" },
+      { unexpected: "value" },
+    ])
+      expect(adminActivitiesQuerySchema.safeParse(invalid).success).toBe(false);
+    for (const invalid of [
+      { activityId: "not-uuid" },
+      { mode: "live" },
+      { status: "failed" },
+      { anomaly: "stuck" },
+      { exception: "true" },
+    ])
+      expect(adminPaymentsQuerySchema.safeParse(invalid).success).toBe(false);
+  });
+
+  it("uses the shared canonical Ecoji activity code decoder", () => {
+    const code = encodeActivityEmoji(itemId);
+    expect(Array.from(code)).toHaveLength(14);
+    expect(decodeActivityEmoji(code)).toBe(itemId);
+    expect(decodeActivityEmoji(code.slice(0, -1))).toBeNull();
+    expect(decodeActivityEmoji(`${code.slice(0, -1)}😀`)).toBeNull();
   });
 });

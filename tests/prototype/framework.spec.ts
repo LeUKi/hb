@@ -144,7 +144,7 @@ for (const viewport of [
     const create = header.getByRole("link", { name: "发起活动", exact: true });
     const account = header.getByRole("link", { name: "我的账号", exact: true });
     await expect(navigation).toBeVisible();
-    await expect(navigation.getByRole("link")).toHaveCount(4);
+    await expect(navigation.getByRole("link")).toHaveCount(5);
 
     for (const { label, route } of navigationItems) {
       const link = navigation.getByRole("link", { name: label, exact: true });

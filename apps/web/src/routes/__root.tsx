@@ -179,6 +179,22 @@ function RootLayout() {
       .then(() => queryClient.removeQueries({ queryKey: ["admin-private"] }));
   }, [queryClient, session.isPending, user?.isAdmin]);
 
+  useEffect(() => {
+    const refreshSession = () => {
+      if (document.visibilityState === "hidden") return;
+      void queryClient.invalidateQueries(
+        { queryKey: sessionQueryKey },
+        { cancelRefetch: false },
+      );
+    };
+    window.addEventListener("focus", refreshSession);
+    document.addEventListener("visibilitychange", refreshSession);
+    return () => {
+      window.removeEventListener("focus", refreshSession);
+      document.removeEventListener("visibilitychange", refreshSession);
+    };
+  }, [queryClient]);
+
   const nav = [
     {
       to: "/" as const,
@@ -214,10 +230,10 @@ function RootLayout() {
     ...(user?.isAdmin
       ? [
           {
-            to: "/admin/rate-limits" as const,
+            to: "/admin" as const,
             label: "管理",
             icon: Settings2,
-            active: pathname.startsWith("/admin/"),
+            active: pathname === "/admin" || pathname.startsWith("/admin/"),
           },
         ]
       : []),

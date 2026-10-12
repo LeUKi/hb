@@ -141,6 +141,9 @@ for (const intent of ["hover", "focus", "touch"] as const)
     page.on("request", (request) => {
       if (squareApi(request.url())) squareRequests++;
     });
+    // A previous test can leave the browser pointer over this new page's link.
+    // Start away from navigation so only the chosen intent preloads the chunk.
+    await page.mouse.move(0, 0);
     await page.goto("/");
     const chunkLoaded = page.waitForResponse(squareChunk);
     const link = page.getByRole("link", { name: "活动广场", exact: true });

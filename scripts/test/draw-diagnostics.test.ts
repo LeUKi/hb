@@ -3,6 +3,55 @@ import { describe, expect, it } from "vitest";
 import { diagnosticQueries, diagnosticWarnings } from "../payment-diagnostics";
 
 describe("draw operation diagnostics", () => {
+  it("uses millisecond precision at the payment, draw and outbox wait thresholds", () => {
+    const now = 4_000_000;
+    const names = ["draws", "pendingByModeStatusReason", "outbox"];
+    const queries = names.map(
+      (name) =>
+        diagnosticQueries(now).find((query) => query.name === name)?.sql,
+    );
+    const [atThreshold, aboveThreshold] = JSON.parse(
+      execFileSync(
+        "python3",
+        [
+          "-c",
+          `
+import json,sqlite3,sys
+c=sqlite3.connect(':memory:');c.row_factory=sqlite3.Row
+c.executescript('''
+CREATE TABLE activities(id,payment_mode,draw_state,registered_count,deadline,draw_closed_at,deleted_at);
+CREATE TABLE activity_draw_plans(activity_id);
+CREATE TABLE payment_tasks(mode,status,reason,created_at);
+CREATE TABLE payment_outbox(delivered_at,created_at);
+INSERT INTO activities VALUES ('due','real','settling',1,3400000,3400000,NULL);
+INSERT INTO payment_tasks VALUES ('real','waiting','funds',400000);
+INSERT INTO payment_outbox VALUES (NULL,3400000);
+''')
+def read():
+  return [[dict(row) for row in c.execute(sql)] for sql in sys.argv[1:]]
+exact=read()
+c.executescript('''
+UPDATE activities SET draw_closed_at=draw_closed_at-1;
+UPDATE payment_tasks SET created_at=created_at-1;
+UPDATE payment_outbox SET created_at=created_at-1;
+''')
+print(json.dumps([exact,read()]))
+`,
+          ...queries.map((sql) => sql ?? ""),
+        ],
+        { encoding: "utf8" },
+      ),
+    );
+    const asData = (rows: Array<Array<Record<string, unknown>>>) =>
+      Object.fromEntries(names.map((name, index) => [name, rows[index] ?? []]));
+    expect(diagnosticWarnings(asData(atThreshold))).toEqual([]);
+    expect(diagnosticWarnings(asData(aboveThreshold))).toEqual([
+      "DRAW_SETTLEMENT_WAIT_OVER_TEN_MINUTES",
+      "PAYMENT_WAIT_OVER_ONE_HOUR",
+      "OUTBOX_WAIT_OVER_TEN_MINUTES",
+    ]);
+  });
+
   it("reports overdue closure and saved unpublished plans without reading private payloads", () => {
     const query = diagnosticQueries(2_000_000).find(
       (item) => item.name === "draws",

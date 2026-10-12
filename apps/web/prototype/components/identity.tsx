@@ -60,6 +60,7 @@ export function UserIdentity({
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const returningFocus = useRef(false);
   const openedWithKeyboard = useRef(false);
+  const pointerDownInsidePopup = useRef(false);
   const openReason = useRef<"hover" | "focus" | "press">("hover");
   const id = useId();
   const cancelClose = useCallback(() => {
@@ -68,6 +69,7 @@ export function UserIdentity({
   }, []);
   const hide = useCallback(() => {
     cancelClose();
+    pointerDownInsidePopup.current = false;
     setOpen(false);
     if (activeProfile?.id === id) activeProfile = null;
   }, [cancelClose, id]);
@@ -178,6 +180,8 @@ export function UserIdentity({
   useEffect(() => {
     if (!open) return;
     function close(event: PointerEvent) {
+      if (!popup.current?.contains(event.target as Node))
+        pointerDownInsidePopup.current = false;
       if (
         !button.current?.contains(event.target as Node) &&
         !popup.current?.contains(event.target as Node)
@@ -186,6 +190,7 @@ export function UserIdentity({
         else hide();
     }
     function key(event: KeyboardEvent) {
+      pointerDownInsidePopup.current = false;
       if (event.key === "Escape") {
         event.preventDefault();
         if (popup.current?.contains(document.activeElement)) closeAndReturn();
@@ -196,6 +201,7 @@ export function UserIdentity({
       const target = event.target;
       if (popup.current?.contains(target as Node)) return;
       const before = target ? openingScroll.current.get(target) : undefined;
+      if (!before) return;
       const after =
         target === document
           ? { top: window.scrollY, left: window.scrollX }
@@ -249,6 +255,11 @@ export function UserIdentity({
           }
         }}
         onBlur={(event) => {
+          if (pointerDownInsidePopup.current) {
+            pointerDownInsidePopup.current = false;
+            cancelClose();
+            return;
+          }
           if (!popup.current?.contains(event.relatedTarget as Node))
             closeLater();
         }}
@@ -299,6 +310,13 @@ export function UserIdentity({
                   : { visibility: "hidden" }
               }
               onPointerEnter={cancelClose}
+              onPointerDown={() => {
+                pointerDownInsidePopup.current = true;
+                cancelClose();
+              }}
+              onPointerCancel={() => {
+                pointerDownInsidePopup.current = false;
+              }}
               onPointerLeave={closeLater}
               onFocus={cancelClose}
               onBlur={(event) => {
@@ -306,7 +324,16 @@ export function UserIdentity({
                   closeLater();
               }}
               onKeyDown={(event) => {
-                if (position?.side !== "sheet" || event.key !== "Tab") return;
+                if (event.key !== "Tab") return;
+                if (position?.side !== "sheet") {
+                  const last = event.currentTarget.querySelector("a[href]");
+                  if (!event.shiftKey && document.activeElement === last) {
+                    event.preventDefault();
+                    hide();
+                    document.querySelector<HTMLElement>("main")?.focus();
+                  }
+                  return;
+                }
                 const controls =
                   event.currentTarget.querySelectorAll<HTMLElement>(
                     "button, a[href]",

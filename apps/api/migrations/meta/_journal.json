@@ -183,6 +183,13 @@
       "when": 1791644681521,
       "tag": "0025_direct_participation",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1791781200000,
+      "tag": "0026_admin_read_indexes",
+      "breakpoints": true
     }
   ]
 }

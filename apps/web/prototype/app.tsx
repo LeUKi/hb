@@ -170,6 +170,11 @@ const Workbench = lazy(() =>
     },
   })),
 );
+const AdminPrototype = lazy(() =>
+  import("./pages/admin").then((module) => ({
+    default: module.AdminPrototype,
+  })),
+);
 const first = activities[0] as Activity;
 const pages = new Set<Page>([
   "home",
@@ -182,6 +187,7 @@ const pages = new Set<Page>([
   "merchant",
   "payment",
   "statistics",
+  "admin",
 ]);
 function pageFromHash() {
   const value = window.location.hash.slice(1).split("?")[0] as Page;
@@ -1209,6 +1215,9 @@ export function App() {
     { page: "square" as Page, label: "活动广场", icon: Compass },
     { page: "participations" as Page, label: "活动历史", icon: Gift },
     { page: "account" as Page, label: "我的", icon: UserRound },
+    ...(identity === "standard"
+      ? [{ page: "admin" as Page, label: "管理", icon: Settings2 }]
+      : []),
   ];
   const navIsActive = (target: Page) =>
     target === page ||
@@ -1442,6 +1451,9 @@ export function App() {
           >
             <AnimatePresence initial={false} mode="popLayout">
               <RedemptionRouteFrame routeKey={routeKey} key={routeKey}>
+                {page === "admin" && (
+                  <AdminPrototype key={identity} identity={identity} />
+                )}
                 {page === "home" && (
                   <div className="home-page">
                     <section className="home-hero" aria-label="口令兑奖">

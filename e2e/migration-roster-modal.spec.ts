@@ -51,7 +51,19 @@ async function mockRoster(page: Page) {
       return route.fulfill({ json: { activity } });
     if (url.pathname === `/api/activities/${activityId}/recipients`)
       return route.fulfill({
-        json: { enabled: true, items: [recipient], nextCursor: null },
+        json: {
+          enabled: true,
+          items: [
+            recipient,
+            ...Array.from({ length: 24 }, (_, index) => ({
+              ...recipient,
+              id: `recipient-extra-${index}`,
+              username: `extra-${index}`,
+              displayName: `补充领取者 ${index + 1}`,
+            })),
+          ],
+          nextCursor: null,
+        },
       });
     if (url.pathname === `/api/activities/${activityId}/passwords`)
       return route.fulfill({
@@ -111,6 +123,23 @@ test("公开名单内的资料浮层可键盘访问，Esc 先关闭浮层再关�
   await expect(profileLink).toBeFocused();
   await expect(profileLink).toHaveAttribute("href", "https://linux.do/u/ada");
   await expect(profileLink).toHaveAttribute("target", "_blank");
+
+  await page.evaluate(() => {
+    document
+      .querySelector<HTMLElement>("main")
+      ?.dispatchEvent(new Event("scroll", { bubbles: false }));
+  });
+  await expect(profile).toBeVisible();
+  await roster.locator(".recipient-list").evaluate((element) => {
+    element.scrollTop = 40;
+    element.dispatchEvent(new Event("scroll", { bubbles: false }));
+  });
+  await expect(profile).toHaveCount(0);
+  await trigger.click();
+  await expect(profile).toBeVisible();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await expect(profileLink).toBeFocused();
 
   await page.keyboard.press("Escape");
   await expect(profile).toHaveCount(0);

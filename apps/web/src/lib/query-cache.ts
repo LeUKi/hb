@@ -1,4 +1,7 @@
 import { QueryCache, QueryClient } from "@tanstack/react-query";
+import { ActivityRequestError } from "./activities";
+import { adminIdentity } from "./admin-identity";
+import { type SessionResponse, sessionQueryKey } from "./auth";
 import { accessQueryScope, isAccessQueryError } from "./query-view";
 
 function privateActivityAccess(
@@ -39,6 +42,42 @@ export function createAppQueryClient() {
     onError: (error, query) => {
       // A later transport failure must never resurrect data denied by the server.
       if (!isAccessQueryError(error)) return;
+      if (
+        query.queryKey[0] === "admin-private" &&
+        error instanceof ActivityRequestError &&
+        [401, 403].includes(error.status)
+      ) {
+        const status = error.status;
+        const session = queryCache.find({ queryKey: sessionQueryKey });
+        const data = session?.state.data as SessionResponse | undefined;
+        if (session && data) {
+          session.setState({
+            data: {
+              ...data,
+              user:
+                status === 401
+                  ? null
+                  : data.user
+                    ? { ...data.user, isAdmin: false }
+                    : null,
+              csrfToken: status === 401 ? null : data.csrfToken,
+            },
+          });
+        }
+        for (const related of queryCache.findAll({
+          queryKey: ["admin-private"],
+        })) {
+          void related.cancel({ revert: false, silent: true });
+          related.setState({
+            data: undefined,
+            dataUpdatedAt: 0,
+            status: "error",
+            fetchStatus: "idle",
+            error,
+          });
+        }
+        return;
+      }
       const privateAccess = privateActivityAccess(query.queryKey);
       const relatedQueries = privateAccess
         ? queryCache.findAll({
@@ -59,7 +98,7 @@ export function createAppQueryClient() {
       }
     },
   });
-  return new QueryClient({
+  const queryClient = new QueryClient({
     queryCache,
     defaultOptions: {
       queries: {
@@ -72,4 +111,23 @@ export function createAppQueryClient() {
       },
     },
   });
+  queryCache.subscribe((event) => {
+    if (
+      event.type !== "updated" ||
+      event.query.queryKey[0] !== sessionQueryKey[0] ||
+      event.query.queryKey[1] !== sessionQueryKey[1]
+    )
+      return;
+    const session = event.query.state.data as SessionResponse | undefined;
+    const identity =
+      event.query.state.status === "success" && session?.user?.isAdmin
+        ? adminIdentity(session)
+        : null;
+    for (const query of queryCache.findAll({ queryKey: ["admin-private"] })) {
+      if (query.queryKey[1] === identity) continue;
+      void query.cancel({ revert: false, silent: true });
+      queryCache.remove(query);
+    }
+  });
+  return queryClient;
 }

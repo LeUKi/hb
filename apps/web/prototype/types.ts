@@ -8,7 +8,8 @@ export type Page =
   | "account"
   | "merchant"
   | "payment"
-  | "statistics";
+  | "statistics"
+  | "admin";
 export type Identity = "standard" | "lite" | "guest";
 export type Scenario =
   | "ready"

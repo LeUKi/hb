@@ -62,7 +62,12 @@ async function guardExternal(context: BrowserContext) {
 
 async function signIn(
   page: Page,
-  role: "author" | "recipient" | "recipient2" | "recipient3",
+  role:
+    | "directAuthor"
+    | "directDrawAuthor"
+    | "recipient"
+    | "recipient2"
+    | "recipient3",
 ) {
   const context = page.context();
   await context.route(authorizer, async (route) => {
@@ -88,7 +93,7 @@ async function signIn(
   if (!location) throw new Error("登录未返回授权地址");
   await page.goto(location);
   await expect(
-    page.getByRole("button", { name: "兑奖", exact: true }),
+    page.getByRole("textbox", { name: "口令", exact: true }),
   ).toBeVisible();
   const session = await context.request.get("/api/session");
   expect(session.status()).toBe(200);
@@ -221,7 +226,7 @@ test("direct 表单保存后重新编辑清空口令，开放后参与方式锁�
   const external = await guardExternal(authorContext);
   try {
     const page = await authorContext.newPage();
-    const author = await signIn(page, "author");
+    const author = await signIn(page, "directAuthor");
     const title = `direct 表单完整 ${randomUUID().slice(0, 8)}`;
     await page.goto("/activities/new");
     await page.locator("#activity-title").fill(title);
@@ -296,7 +301,7 @@ test("direct 文本和本地模拟 LDC 只在活动页主动点击后参与，�
   try {
     const authorPage = await authorContext.newPage();
     const viewerPage = await viewerContext.newPage();
-    const author = await signIn(authorPage, "author");
+    const author = await signIn(authorPage, "directAuthor");
     const textInput: TextActivityInput & {
       participationMode: "direct";
       forceDedicated: false;
@@ -406,7 +411,7 @@ test("direct 限时开奖报名可无 password_id，开奖发布和付款链路�
     const ownerPage = await ownerContext.newPage();
     const firstPage = await firstContext.newPage();
     const secondPage = await secondContext.newPage();
-    const owner = await signIn(ownerPage, "author");
+    const owner = await signIn(ownerPage, "directDrawAuthor");
     const first = await signIn(firstPage, "recipient");
     const second = await signIn(secondPage, "recipient2");
     expect(first.user.id).not.toBe(second.user.id);

@@ -160,8 +160,7 @@ async function mockSettings(
           json: {
             error: {
               code: "LOGIN_SETTINGS_CONFLICT",
-              message:
-                "登录方式已在其他页面修改。当前输入已保留，请重新读取最新配置。",
+              message: "活动内容已发生变化，请刷新后再试。当前输入已保留。",
             },
           },
         });
@@ -397,7 +396,7 @@ test("登录与限流配置独立保存，冲突及重新读取保留规则，�
   page,
 }) => {
   const state = await mockSettings(page, admin);
-  await page.goto("/admin/rate-limits");
+  await page.goto("/admin/settings");
   const card = loginCard(page);
   const toggle = card.getByRole("checkbox", {
     name: "允许 LiteAUTH 登录",
@@ -405,8 +404,8 @@ test("登录与限流配置独立保存，冲突及重新读取保留规则，�
   });
   const save = card.getByRole("button", { name: "保存配置", exact: true });
   await expect(
-    page.getByRole("heading", { name: "网站管理", exact: true }),
-  ).toBeVisible();
+    page.getByRole("link", { name: "网站设置", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
   await expect(card.getByText(description, { exact: true })).toBeVisible();
   await expect(toggle).toBeChecked();
   await page.getByLabel("首页尝试间隔（秒）", { exact: true }).fill("5");
@@ -420,7 +419,7 @@ test("登录与限流配置独立保存，冲突及重新读取保留规则，�
   await expect(
     page.getByLabel("首页尝试间隔（秒）", { exact: true }),
   ).toHaveValue("5");
-  await expect(card).toContainText(admin.displayName);
+  await expect(card).toContainText(admin.id);
   await toggle.click();
   page.once("dialog", async (dialog) => {
     expect(dialog.message()).toMatch(/未保存/);
@@ -430,14 +429,14 @@ test("登录与限流配置独立保存，冲突及重新读取保留规则，�
     .locator(".desktop-nav")
     .getByRole("link", { name: "我的", exact: true })
     .click();
-  await expect(page).toHaveURL("/admin/rate-limits");
+  await expect(page).toHaveURL("/admin/settings");
   await expect(toggle).toBeChecked();
   state.settings.config.version = 3;
   await save.click();
-  await expect(card.getByText(/已在其他页面修改/)).toBeVisible();
+  await expect(card.getByText(/网站设置已发生变化/)).toBeVisible();
   await expect(toggle).toBeChecked();
   const reload = card.getByRole("button", {
-    name: "重新读取最新配置",
+    name: "刷新",
     exact: true,
   });
   page.once("dialog", (dialog) => dialog.dismiss());
@@ -446,7 +445,8 @@ test("登录与限流配置独立保存，冲突及重新读取保留规则，�
   page.once("dialog", (dialog) => dialog.accept());
   await reload.click();
   await expect(toggle).not.toBeChecked();
-  await expect(card).toContainText("版本 3");
+  await expect(card.getByText(/更新于/)).toBeVisible();
+  await expect(save).toBeDisabled();
   await expect(
     page.getByLabel("首页尝试间隔（秒）", { exact: true }),
   ).toHaveValue("5");
@@ -488,7 +488,7 @@ test("保存途中换账号不回填管理内容，403 后清除配置与输入"
   state.saveDelay = gate();
   const card = loginCard(page);
   try {
-    await page.goto("/admin/rate-limits");
+    await page.goto("/admin/settings");
     await card
       .getByRole("checkbox", { name: "允许 LiteAUTH 登录", exact: true })
       .click();
@@ -500,16 +500,17 @@ test("保存途中换账号不回填管理内容，403 后清除配置与输入"
       displayName: "普通账号",
       isAdmin: false,
     };
+    const canceledSave = page.waitForEvent("requestfailed", {
+      predicate: (request) =>
+        new URL(request.url()).pathname === "/api/admin/login-settings" &&
+        request.method() === "PATCH",
+    });
     await refocus(page);
     await expect(card).toHaveCount(0);
     await expect(page.getByRole("alert")).toHaveText("此页面仅限管理员访问");
-    const savedResponse = page.waitForResponse(
-      (response) =>
-        new URL(response.url()).pathname === "/api/admin/login-settings" &&
-        response.request().method() === "PATCH",
-    );
     state.saveDelay.release();
-    await savedResponse;
+    const canceled = await canceledSave;
+    expect(canceled.failure()?.errorText).toBe("net::ERR_ABORTED");
     await expect(card).toHaveCount(0);
     await expect(
       page.getByRole("link", { name: "管理", exact: true }),

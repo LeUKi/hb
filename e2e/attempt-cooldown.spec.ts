@@ -422,8 +422,7 @@ test("管理员桌面及手机入口可保存 5/2，版本冲突保留输入，4
           json: {
             error: {
               code: "RATE_LIMIT_CONFIG_CONFLICT",
-              message:
-                "配置已在其他页面修改。当前输入已保留，请重新读取最新配置。",
+              message: "活动内容已发生变化，请刷新后再试。当前输入已保留。",
             },
           },
         });
@@ -469,7 +468,9 @@ test("管理员桌面及手机入口可保存 5/2，版本冲突保留输入，4
     .locator(".desktop-nav")
     .getByRole("link", { name: "管理", exact: true })
     .click();
-  await expect(page).toHaveURL("/admin/rate-limits");
+  await expect(page).toHaveURL("/admin");
+  await page.getByRole("link", { name: "网站设置", exact: true }).click();
+  await expect(page).toHaveURL("/admin/settings");
   await expect(
     page.getByRole("heading", { name: "网站管理", exact: true }),
   ).toBeVisible();
@@ -481,17 +482,13 @@ test("管理员桌面及手机入口可保存 5/2，版本冲突保留输入，4
   await limitForm
     .getByRole("button", { name: "保存配置", exact: true })
     .click();
-  await expect(
-    page.getByText("已保存，将用于下一次获准的尝试。", { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByText("已保存。", { exact: true })).toBeVisible();
   expect(writes[0]).toEqual({
     expectedVersion: 1,
     homeIntervalSeconds: 5,
     activityIntervalSeconds: 2,
   });
-  await expect(
-    page.getByText("首页 60 → 5 秒；活动页 60 → 2 秒", { exact: true }),
-  ).toBeVisible();
+  await expect(limitForm.getByText(/更新于/)).toBeVisible();
   await page.setViewportSize({ width: 375, height: 812 });
   await page
     .locator(".mobile-nav")
@@ -501,6 +498,7 @@ test("管理员桌面及手机入口可保存 5/2，版本冲突保留输入，4
     .locator(".mobile-nav")
     .getByRole("link", { name: "管理", exact: true })
     .click();
+  await page.getByRole("link", { name: "网站设置", exact: true }).click();
   await expect(
     page.getByLabel("首页尝试间隔（秒）", { exact: true }),
   ).toHaveValue("5");
@@ -514,7 +512,7 @@ test("管理员桌面及手机入口可保存 5/2，版本冲突保留输入，4
   await limitForm
     .getByRole("button", { name: "保存配置", exact: true })
     .click();
-  await expect(page.getByText(/配置已在其他页面修改/)).toBeVisible();
+  await expect(page.getByText(/网站设置已发生变化/)).toBeVisible();
   await expect(
     page.getByLabel("首页尝试间隔（秒）", { exact: true }),
   ).toHaveValue("6");

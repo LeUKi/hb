@@ -559,3 +559,12 @@ VITE_ACTIVITY_TOOLS_RECOVERY=1构建兼容恢复Web：保留新日期配置读�
 直接领取／报名复用ActivityDO、账号冷却与D1事务。报名同批先写正式pending提交，再写报名，最后绑定registration并完成；数据库检查账号冷却、提交身份／活动／模式／用途和报名一致性。直接领取的库存分配须证明pending已校验提交；直接结果无口令事件。开奖计划允许NULL passwordId，发布和中奖领取使用空值安全比较，沿用timed_draw_v1、既有计划和付款Outbox。
 
 发布顺序为每环境迁移→兼容API及DO→Web。已有直接数据后禁止回退旧API/schema；恢复Web设置 `VITE_DIRECT_PARTICIPATION_RECOVERY=1`，仅阻止UI新增直接活动，继续服务既有直接活动与Ecoji地址。此标记不是服务端全局禁用开关。不改变业务许可，原生Wrangler迁移须核对冻结SQL、资源身份、仅0025待迁移、备份及演练记录。
+
+
+## 管理员观测接口与网站设置（2026-10-12）
+
+当前完整实施范围以 [管理员后台一期](admin-operations.md) 为准。六入口默认 `/admin`，旧 `/admin/rate-limits` Web 路由 replace 到 `/admin/settings`，原 API 保持。GET `/api/admin/overview`、`activities`、`activities/:id`、`users`、`users/:id`、`payments`、`payments/:id`、`audit` 均在数据读取前 requireAdmin 并 no-store；独立白名单 D1 投影，不能复用带业务恢复的详情读取或付款诊断解密。使用绑定参数、固定游标排序和批量关联；软删除活动在全部活动查询与统计排除。
+
+0026 仅新增读取索引，不改业务字段；同时间游标以 ID 稳定排序，操作记录额外以来源类型隔离。每来源最多读取 21 条再归并。不新增审计表，操作记录范围仅为已存在的登录设置和尝试间隔。完整会话身份隔离内存缓存，401/403、退出和切换立即撤下、取消、清理并拒绝迟到响应。
+
+观测不产生 DO/Queue 唤醒、开奖、查单、付款或恢复；Cloudflare 队列指标显示未接入。设置保留 CSRF/CAS，关闭 LiteAUTH 仍清理未消费授权；未保存保护、同版本刷新重置和未知响应核对沿已确认交互执行。仅本地验收，部署另行授权。

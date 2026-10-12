@@ -36,6 +36,10 @@ export const users = sqliteTable(
       table.externalId,
     ),
     index("users_username_idx").on(table.username),
+    index("users_created_idx").on(
+      sql`${table.createdAt} DESC`,
+      sql`${table.id} DESC`,
+    ),
   ],
 );
 
@@ -64,6 +68,10 @@ export const loginSettingChanges = sqliteTable(
   },
   (table) => [
     uniqueIndex("login_setting_changes_version_unique").on(table.nextVersion),
+    index("login_setting_changes_time_idx").on(
+      sql`${table.createdAt} DESC`,
+      sql`${table.id} DESC`,
+    ),
   ],
 );
 
@@ -222,6 +230,9 @@ export const activities = sqliteTable(
     ),
     index("activities_deadline_idx").on(table.deadline),
     index("activities_topic_idx").on(table.topicId),
+    index("activities_admin_created_idx")
+      .on(sql`${table.createdAt} DESC`, sql`${table.id} DESC`)
+      .where(sql`${table.deletedAt} IS NULL`),
     index("activities_reply_opened_idx")
       .on(
         table.topicId,
@@ -716,6 +727,21 @@ export const paymentTasks = sqliteTable(
       table.merchantId,
       table.createdAt,
       table.id,
+    ),
+    index("payment_tasks_admin_time_idx").on(
+      sql`${table.createdAt} DESC`,
+      sql`${table.id} DESC`,
+    ),
+    index("payment_tasks_admin_status_time_idx").on(
+      table.status,
+      sql`${table.createdAt} DESC`,
+      sql`${table.id} DESC`,
+    ),
+    index("payment_tasks_admin_mode_status_time_idx").on(
+      table.mode,
+      table.status,
+      sql`${table.createdAt} DESC`,
+      sql`${table.id} DESC`,
     ),
     check(
       "payment_tasks_mode_valid",

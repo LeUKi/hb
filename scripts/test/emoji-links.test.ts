@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ECOJI_V2_ALPHABET } from "../../apps/web/src/lib/ecoji-v2/alphabet";
 import {
   activityShareUrl,
   decodeActivityEmoji,
@@ -8,6 +7,7 @@ import {
   parseActivityLink,
   resolveEmojiPath,
 } from "../../apps/web/src/lib/emoji-links";
+import { ECOJI_V2_ALPHABET } from "../../packages/contracts/src/ecoji-v2/alphabet";
 
 const ID = "cecef876-ddbb-4ed5-93ce-9b311e3df3ea";
 const CODE = "🚷🎼📯😨😸🎺🐵🦄🪁🚍🤽📄🥘☕";

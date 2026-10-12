@@ -56,6 +56,17 @@ test("身份确认后详情、口令与参与并行开始，慢详情不阻塞�
   const identity = gate();
   const detail = gate();
   const reads: string[] = [];
+  // Development StrictMode can abort its speculative identity request.
+  // Count active/completed reads rather than that canceled mount.
+  page.on("requestfailed", (request) => {
+    if (
+      new URL(request.url()).pathname === "/api/session" &&
+      request.failure()?.errorText === "net::ERR_ABORTED"
+    ) {
+      const index = reads.indexOf("/api/session");
+      if (index >= 0) reads.splice(index, 1);
+    }
+  });
   await mockLocal(page, async (route, url) => {
     reads.push(url.pathname);
     if (url.pathname === "/api/session") {
@@ -75,7 +86,7 @@ test("身份确认后详情、口令与参与并行开始，慢详情不阻塞�
     return route.fulfill({ status: 404, json: {} });
   });
   await page.goto(`/activities/${id}`);
-  await expect.poll(() => reads.length).toBe(1);
+  await expect.poll(() => reads).toEqual(["/api/session"]);
   identity.release();
   await expect
     .poll(() => reads.filter((path) => path.startsWith("/api/activities/")))

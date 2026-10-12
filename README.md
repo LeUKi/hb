@@ -16,6 +16,7 @@
 - [本地模拟付款与故障恢复](docs/local-payment-operations.md)：虚拟数据、故障场景、状态含义、补偿命令及真实接入检查表。
 - [LDC 接入证据](docs/ldc-integration-evidence.md)：固定版本源码事实、线上验证边界与真实接入前的核实项。
 - [付款运维](docs/payment-operations.md)：凭证轮换、只读诊断、单笔验收、备份恢复及防重复要求。
+- [管理员后台一期](docs/admin-operations.md)：六入口、只读查询、隐私范围、网站设置与本地验收。
 - [部署准备](docs/deployment-readiness.md)：环境模板、Secrets、绑定、CI 和尚未完成的发布验收。
 
 一期提供作者商户直发和文本奖励，以及活动、兑奖、发现入口和统计功能。平台收款、平台代发、余额、提现、资金占用、结余释放及费率功能留待后续阶段。
