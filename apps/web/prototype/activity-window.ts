@@ -12,7 +12,7 @@ import type {
 } from "./types";
 
 export type ActivityWindowSnapshot = {
-  version: 1;
+  version: 2;
   createdAt: number;
   activityId: string;
   identity: Identity;
@@ -39,7 +39,7 @@ type WireMessage =
   | { type: "snapshot"; token: string; snapshot: ActivityWindowSnapshot }
   | { type: "received"; token: string };
 
-const CHANNEL_PREFIX = "hb-prototype-activity-window";
+const CHANNEL_PREFIX = "hb-prototype-activity-window-v2";
 const VIEW_PARAM = "view";
 const TIMEOUT_MS = 30_000;
 let snapshotProvider: ((activityId: string) => ActivityWindowSnapshot) | null =
@@ -152,7 +152,13 @@ export function bootstrapActivityWindow(): Promise<ActivityWindowBootstrapResult
       window.clearTimeout(timeout);
       channel.postMessage({ type: "received", token });
       channel.close();
-      if (Date.now() - event.data.snapshot.createdAt > TIMEOUT_MS)
+      if (
+        event.data.snapshot.version !== 2 ||
+        (event.data.snapshot.active &&
+          event.data.snapshot.active.type !== "ldc" &&
+          event.data.snapshot.active.type !== "draw") ||
+        Date.now() - event.data.snapshot.createdAt > TIMEOUT_MS
+      )
         resolve({ ok: false, retry: () => window.location.reload() });
       else {
         removeCurrentHashParam(VIEW_PARAM);

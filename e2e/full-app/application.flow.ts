@@ -21,6 +21,8 @@ import type {
   TimedDrawMoney,
 } from "../../packages/contracts/src";
 
+import { fullAppMerchant } from "./ldc-fixture";
+
 const origin = "http://127.0.0.1:4193";
 const authorizer = /^https:\/\/connect\.linux\.do\/oauth2\/authorize\?/;
 const liteAuthorizer =
@@ -435,7 +437,7 @@ async function createActivity(
   page: Page,
   settings: {
     title: string;
-    type: "text" | "ldc";
+    count?: number;
     password: string;
     openAfter?: boolean;
     timedDraw?: TimedDrawMoney;
@@ -444,15 +446,8 @@ async function createActivity(
     durationMinutes?: number;
   },
 ) {
+  await ensureFullAppMerchant(page);
   await page.goto("/activities/new");
-  const rewardType = page
-    .getByRole("group", { name: "奖励类型", exact: true })
-    .getByRole("button", {
-      name: settings.type === "text" ? "文本 / CDK" : "LDC 奖励",
-      exact: true,
-    });
-  await rewardType.click();
-  await expect(rewardType).toHaveAttribute("aria-pressed", "true");
   await page.locator("#activity-title").fill(settings.title);
   await page.locator("summary").filter({ hasText: "更多设置" }).click();
   await page
@@ -470,59 +465,47 @@ async function createActivity(
       .click();
   }
   await page.getByLabel("口令 1", { exact: true }).fill(settings.password);
-  if (settings.type === "text") {
-    await page.getByRole("button", { name: "添加口令", exact: true }).click();
-    await page.getByLabel("口令 2", { exact: true }).fill("OtherAnswer123");
+  await expect(page.getByLabel("发放商户", { exact: true })).toHaveValue(
+    /当前商户/,
+  );
+  if (settings.timedDraw) {
+    const money = settings.timedDraw;
     await page
-      .getByLabel("文本 / CDK · 每行一份", { exact: true })
-      .fill(`${textReward}\n未分配的另一份文本`);
+      .getByRole("group", { name: "奖励方式", exact: true })
+      .getByRole("button", { name: "限时开奖", exact: true })
+      .click();
+    await expect(page.locator("#timed-participant-limit")).toHaveValue("");
+    await expect(page.locator("#timed-countdown")).toHaveValue("600");
+    await page.locator("#timed-total").fill(money.totalAmount);
+    await page.locator("#timed-count").fill(String(money.count));
+    await page
+      .locator("#timed-participant-limit")
+      .fill(
+        money.participantLimit === null ? "" : String(money.participantLimit),
+      );
+    await page.locator("#timed-countdown").fill(String(money.countdownSeconds));
+    await page
+      .getByRole("group", { name: "抽奖算法", exact: true })
+      .getByRole("button", {
+        name:
+          money.algorithm === "double_mean_v1" ? "二倍均值法" : "均值上下 50%",
+        exact: true,
+      })
+      .click();
+    await page
+      .getByLabel(/人数不足时发完奖池/)
+      .setChecked(money.distributeFullPool);
   } else {
-    await expect(page.getByLabel("发放商户", { exact: true })).toHaveValue(
-      /当前商户/,
-    );
-    if (settings.timedDraw) {
-      const money = settings.timedDraw;
-      await page
-        .getByRole("group", { name: "奖励方式", exact: true })
-        .getByRole("button", { name: "限时开奖", exact: true })
-        .click();
-      await expect(page.locator("#timed-participant-limit")).toHaveValue("");
-      await expect(page.locator("#timed-countdown")).toHaveValue("600");
-      await page.locator("#timed-total").fill(money.totalAmount);
-      await page.locator("#timed-count").fill(String(money.count));
-      await page
-        .locator("#timed-participant-limit")
-        .fill(
-          money.participantLimit === null ? "" : String(money.participantLimit),
-        );
-      await page
-        .locator("#timed-countdown")
-        .fill(String(money.countdownSeconds));
-      await page
-        .getByRole("group", { name: "抽奖算法", exact: true })
-        .getByRole("button", {
-          name:
-            money.algorithm === "double_mean_v1"
-              ? "二倍均值法"
-              : "均值上下 50%",
-          exact: true,
-        })
-        .click();
-      await page
-        .getByLabel(/人数不足时发完奖池/)
-        .setChecked(money.distributeFullPool);
-      if (settings.extraPassword) {
-        await page
-          .getByRole("button", { name: "添加口令", exact: true })
-          .click();
-        await page
-          .getByLabel("口令 2", { exact: true })
-          .fill(settings.extraPassword);
-      }
-    } else {
-      await page.getByLabel("每份金额（LDC）", { exact: true }).fill("0.10");
-      await page.getByLabel("奖励份数", { exact: true }).fill("5");
-    }
+    await page.getByLabel("每份金额（LDC）", { exact: true }).fill("0.10");
+    await page
+      .getByLabel("奖励份数", { exact: true })
+      .fill(String(settings.count ?? 5));
+  }
+  if (settings.extraPassword) {
+    await page.getByRole("button", { name: "添加口令", exact: true }).click();
+    await page
+      .getByLabel("口令 2", { exact: true })
+      .fill(settings.extraPassword);
   }
   const quantityVisibility = page.getByRole("group", {
     name: "数量展示",
@@ -615,21 +598,15 @@ async function assertDenied(
   expect(response.headers()["content-type"]).toContain("application/json");
 }
 
-const textReward = "<b>FULL-APP-PRIVATE-TEXT</b> **保留原文** 第二行";
-
-async function expectTextRewardVisible(page: Page) {
-  await expect(page.locator("pre").filter({ hasText: textReward })).toHaveText(
-    textReward,
-  );
-  await expect(
-    page.locator("b").filter({ hasText: "FULL-APP-PRIVATE-TEXT" }),
-  ).toHaveCount(0);
+async function expectLdcRewardVisible(page: Page) {
+  await expect(page.locator(".slip-amount")).toHaveText("+0.10");
 }
 
-async function expectTextRewardHidden(page: Page) {
-  await expect(page.locator("body")).not.toContainText("FULL-APP-PRIVATE-TEXT");
-  await expect(page.locator("body")).not.toContainText("保留原文");
-  await expect(page.locator("body")).not.toContainText("第二行");
+async function expectPrivateRewardHidden(page: Page) {
+  await expect(
+    page.getByRole("region", { name: "奖励附言", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.locator(".slip-amount")).toHaveCount(0);
 }
 
 const beforeInfo = "## 完整应用活动说明\n\n公开说明。";
@@ -698,26 +675,11 @@ async function waitForMerchantReady(
 }
 
 async function ensureFullAppMerchant(page: Page) {
-  const response = await page.context().request.get("/api/me/merchants");
-  expect(response.status()).toBe(200);
-  const merchants = await response.json();
-  if (merchants.currentMerchantId) return merchants.currentMerchantId as string;
-  await page.goto("/my/merchants");
-  await page
-    .getByLabel("Client ID", { exact: true })
-    .fill("hb_full_app_merchant");
-  await page
-    .getByLabel("商户密钥", { exact: true })
-    .fill("full-app-merchant-secret");
-  await page.getByRole("button", { name: "保存配置", exact: true }).click();
-  await expect(page).toHaveURL(/\/my\/merchants$/);
-  const refreshed = await page.context().request.get("/api/me/merchants");
-  expect(refreshed.status()).toBe(200);
-  const merchantId = ((await refreshed.json()).currentMerchantId ??
-    "") as string;
-  expect(merchantId).toMatch(/^[0-9a-f-]{36}$/);
-  await waitForMerchantReady(page.context(), merchantId);
-  return merchantId;
+  const session = await readApi<Session>(
+    page.context().request,
+    "/api/session",
+  );
+  return (await fullAppMerchant(page.context(), session.csrfToken)).id;
 }
 
 async function createDrawActors(browser: Browser, roles: ParticipantRole[]) {
@@ -1079,15 +1041,18 @@ test("真实网关登录、会话与 CSRF；OAuth 只模拟外部授权页和上
   expect(externalRequests).toEqual([]);
 });
 
-test("真实 D1／ActivityDO 文本创建、开放、兑奖、记录与权限", async ({
+test("真实 D1／ActivityDO LDC创建、开放、兑奖、记录与权限", async ({
   browser,
   request,
 }) => {
   const author = await browser.newContext({ baseURL: origin });
   const recipient = await browser.newContext({ baseURL: origin });
   const visitor = await browser.newContext({ baseURL: origin });
+  const secondRecipient = await browser.newContext({ baseURL: origin });
   const externalRequests = await Promise.all(
-    [author, recipient, visitor].map(guardExternalBrowserRequests),
+    [author, recipient, visitor, secondRecipient].map(
+      guardExternalBrowserRequests,
+    ),
   );
   try {
     const authorPage = await author.newPage();
@@ -1103,9 +1068,10 @@ test("真实 D1／ActivityDO 文本创建、开放、兑奖、记录与权限", 
       "/api/me/history-summary",
     );
     const id = await createActivity(authorPage, {
-      title: "完整应用文本闭环",
-      type: "text",
-      password: "TextAnswer123",
+      title: "完整应用 LDC 闭环",
+      password: "FullClaim123",
+      count: 2,
+      extraPassword: "OtherAnswer123",
     });
     expect(
       await readApi<AccountHistorySummary>(
@@ -1143,9 +1109,9 @@ test("真实 D1／ActivityDO 文本创建、开放、兑奖、记录与权限", 
       claimed: 0,
       remaining: 2,
     });
-    expect(JSON.stringify(publicActivity)).not.toContain("TextAnswer123");
+    expect(JSON.stringify(publicActivity)).not.toContain("FullClaim123");
     expect(JSON.stringify(publicActivity)).not.toContain(
-      "FULL-APP-PRIVATE-TEXT",
+      "私有说明应在兑奖后解锁",
     );
     expect(JSON.stringify(publicActivity)).not.toContain(accounts.author.email);
     expect(publicActivity.author.avatarUrl).toBe(accounts.author.avatarUrl);
@@ -1165,8 +1131,8 @@ test("真实 D1／ActivityDO 文本创建、开放、兑奖、记录与权限", 
     await expect(
       recipientPage.getByText("口令不正确，请重新尝试。", { exact: true }),
     ).toBeVisible();
-    await submit(recipientPage, "  TextAnswer123  ");
-    await expectTextRewardVisible(recipientPage);
+    await submit(recipientPage, "  FullClaim123  ");
+    await expectLdcRewardVisible(recipientPage);
     await expect(
       recipientPage.getByRole("heading", { name: "完整应用奖励附言" }),
     ).toBeVisible();
@@ -1207,22 +1173,24 @@ test("真实 D1／ActivityDO 文本创建、开放、兑奖、记录与权限", 
     );
     expect(claimResponse.headers()["cache-control"]).toBe("no-store");
     const claim = (await claimResponse.json()).claim;
-    expect(claim.text).toBe(textReward);
+    expect(claim).toMatchObject({ rewardType: "ldc", amount: "0.10" });
     expect(claim.afterClaimInfo).toBe(afterClaimInfo);
     const recipientHistory = await readApi<ParticipationList>(
       recipient.request,
       "/api/me/participations?status=all",
     );
-    const textHistory = recipientHistory.items.filter(
+    const claimHistory = recipientHistory.items.filter(
       (item) => item.kind === "claim" && item.claim.activity.id === id,
     );
-    expect(textHistory).toHaveLength(1);
-    expect(textHistory[0]).toMatchObject({
+    expect(claimHistory).toHaveLength(1);
+    expect(claimHistory[0]).toMatchObject({
       kind: "claim",
-      claim: { id: claim.id, sourcePassword: "TextAnswer123" },
+      claim: { id: claim.id, sourcePassword: "FullClaim123" },
     });
-    expect(JSON.stringify(textHistory)).not.toContain(textReward);
-    expect(JSON.stringify(textHistory)).not.toContain("afterClaimInfo");
+    expect(JSON.stringify(claimHistory)).not.toContain(
+      "私有说明应在兑奖后解锁",
+    );
+    expect(JSON.stringify(claimHistory)).not.toContain("afterClaimInfo");
     const recipientSummary = await readApi<AccountHistorySummary>(
       recipient.request,
       "/api/me/history-summary",
@@ -1269,6 +1237,18 @@ test("真实 D1／ActivityDO 文本创建、开放、兑奖、记录与权限", 
     expect(JSON.stringify(creatorClaimItems)).not.toContain(
       accounts.recipient.email,
     );
+    await expect
+      .poll(
+        async () =>
+          (
+            await readApi<{ claim: { payment: { status: string } } }>(
+              recipient.request,
+              `/api/activities/${id}/claim`,
+            )
+          ).claim.payment.status,
+        { timeout: 45_000, intervals: [100, 250, 500, 1_000] },
+      )
+      .toBe("confirmed");
     const state = await readState(request);
     expect(
       state.claims.filter((value) => value.activity_id === id),
@@ -1290,7 +1270,7 @@ test("真实 D1／ActivityDO 文本创建、开放、兑奖、记录与权限", 
     expect(passwordBefore.headers()["cache-control"]).toBe("no-store");
     expect(await passwordBefore.json()).toMatchObject({
       passwords: [
-        { text: "TextAnswer123", isClaimPassword: true, isSolved: false },
+        { text: "FullClaim123", isClaimPassword: true, isSolved: false },
       ],
       hiddenCount: 1,
       canSolve: true,
@@ -1345,13 +1325,17 @@ test("真实 D1／ActivityDO 文本创建、开放、兑奖、记录与权限", 
     expect(
       afterSolve.attempts.find((value) => value.activity_id === id)?.count,
     ).toBe(3);
-    // Exhaust the remaining text item through a real claim; answers become public immediately.
-    const finalClaim = await author.request.post(
+    // A second recipient exhausts the pool; authors cannot receive their own LDC.
+    const secondLogin = await signIn(
+      await secondRecipient.newPage(),
+      "recipient2",
+    );
+    const finalClaim = await secondRecipient.request.post(
       `/api/activities/${id}/claim`,
       {
         headers: {
           Origin: origin,
-          "X-CSRF-Token": authorLogin.session.csrfToken,
+          "X-CSRF-Token": secondLogin.session.csrfToken,
         },
         data: { submissionId: crypto.randomUUID(), password: "OtherAnswer123" },
       },
@@ -1363,7 +1347,7 @@ test("真实 D1／ActivityDO 文本创建、开放、兑奖、记录与权限", 
     );
     expect(authorSummary).toEqual({
       initiatedCount: authorHistoryBefore.initiatedCount + 1,
-      participatedCount: authorHistoryBefore.participatedCount + 1,
+      participatedCount: authorHistoryBefore.participatedCount,
     });
     const endedActivity = await readApi<{ activity: Record<string, unknown> }>(
       visitor.request,
@@ -1387,7 +1371,7 @@ test("真实 D1／ActivityDO 文本创建、开放、兑奖、记录与权限", 
     );
     expect(await endedAnswers.json()).toEqual({
       passwords: [
-        { text: "TextAnswer123", isClaimPassword: false, isSolved: false },
+        { text: "FullClaim123", isClaimPassword: false, isSolved: false },
         { text: "OtherAnswer123", isClaimPassword: false, isSolved: false },
       ],
       hiddenCount: 0,
@@ -1397,34 +1381,34 @@ test("真实 D1／ActivityDO 文本创建、开放、兑奖、记录与权限", 
     await recipientPage.goto("/my/claims");
     const card = recipientPage
       .getByRole("row")
-      .filter({ hasText: "完整应用文本闭环" });
+      .filter({ hasText: "完整应用 LDC 闭环" });
     await expect(recipientPage.getByRole("table")).toBeVisible();
-    await expect(card).toContainText("TextAnswer123");
+    await expect(card).toContainText("FullClaim123");
     await expect(card.getByRole("button", { name: /查看奖励/ })).toHaveCount(0);
     const viewActivity = card.getByRole("link", { name: /查看活动/ });
     await expect(viewActivity).toHaveAttribute("href", `/activities/${id}`);
     await viewActivity.click();
     await expect(recipientPage).toHaveURL(`${origin}/activities/${id}`);
-    await expectTextRewardVisible(recipientPage);
+    await expectLdcRewardVisible(recipientPage);
     await recipientPage
       .getByRole("button", { name: "返回上一页", exact: true })
       .click();
     await expect(recipientPage).toHaveURL(/\/my\/claims(?:\?|$)/);
-    await expect(card).toContainText("TextAnswer123");
+    await expect(card).toContainText("FullClaim123");
     await recipientPage.goto(`/my/claims/${claim.id}`);
     await expect(recipientPage).toHaveURL(`${origin}/activities/${id}`);
     await recipientPage.reload();
-    await expectTextRewardVisible(recipientPage);
+    await expectLdcRewardVisible(recipientPage);
     await signOut(recipientPage);
-    await expectTextRewardHidden(recipientPage);
+    await expectPrivateRewardHidden(recipientPage);
     const relogin = await signIn(
       recipientPage,
       "recipient",
       `/my/claims/${claim.id}`,
     );
     expect(relogin.session.user.id).toBe(recipientLogin.session.user.id);
-    await expectTextRewardVisible(recipientPage);
-    await recipientPage.setViewportSize({ width: 390, height: 844 });
+    await expectLdcRewardVisible(recipientPage);
+    await recipientPage.setViewportSize({ width: 375, height: 844 });
     expect(
       await recipientPage.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -1436,6 +1420,7 @@ test("真实 D1／ActivityDO 文本创建、开放、兑奖、记录与权限", 
       author.close(),
       recipient.close(),
       visitor.close(),
+      secondRecipient.close(),
     ]);
   }
 });
@@ -1492,19 +1477,16 @@ test("普通真实模式活动走正常领取、Outbox、Queue 与 MerchantDO；
     );
     const id = await createActivity(authorPage, {
       title: "完整应用真实模式普通活动",
-      type: "ldc",
       password: "LdcAnswer123",
       openAfter: true,
     });
     const zeroTargetId = await createActivity(authorPage, {
       title: "完整应用尚无发放目标",
-      type: "ldc",
       password: "ZeroTarget123",
       openAfter: true,
     });
     const draftId = await createActivity(authorPage, {
       title: "完整应用付款列表排除草稿",
-      type: "ldc",
       password: "DraftTarget123",
     });
     const paymentActivities = await readApi<ActivityPaymentList>(
@@ -1563,6 +1545,7 @@ test("普通真实模式活动走正常领取、Outbox、Queue 与 MerchantDO；
       data: { submissionId: crypto.randomUUID(), password: "LdcAnswer123" },
     });
     expect(selfClaim.status()).toBe(403);
+    const paymentBaseline = (await readState(request)).upstream;
     const submissions: Array<{ submissionId: string; password: string }> = [];
     recipientPage.on("request", (outgoing) => {
       if (
@@ -1613,11 +1596,21 @@ test("普通真实模式活动走正常领取、Outbox、Queue 与 MerchantDO；
     });
     expect(task?.first_send_at).toEqual(expect.any(Number));
     expect(task?.reconciliation_count).toBeGreaterThanOrEqual(1);
-    expect(state.upstream.distributeRequests).toBe(1);
-    expect(state.upstream.orders).toHaveLength(1);
-    expect(state.upstream.orderQueries).toBeGreaterThanOrEqual(1);
+    expect(state.upstream.distributeRequests).toBe(
+      paymentBaseline.distributeRequests + 1,
+    );
+    expect(state.upstream.orders).toHaveLength(
+      paymentBaseline.orders.length + 1,
+    );
+    expect(state.upstream.orderQueries).toBeGreaterThan(
+      paymentBaseline.orderQueries,
+    );
     expect(state.upstream.blockedRequests).toBe(0);
-    expect(state.upstream.orders[0]).toMatchObject({
+    expect(
+      state.upstream.orders.find(
+        (order) => order.businessNo === task?.business_no,
+      ),
+    ).toMatchObject({
       businessNo: task?.business_no,
       recipientId: accounts.recipient.externalId,
       recipientUsername: accounts.recipient.username,
@@ -1642,7 +1635,9 @@ test("普通真实模式活动走正常领取、Outbox、Queue 与 MerchantDO；
     );
     expect(duplicate.status()).toBe(200);
     expect((await duplicate.json()).claim.id).toBe(claim.id);
-    expect((await readState(request)).upstream.distributeRequests).toBe(1);
+    expect((await readState(request)).upstream.distributeRequests).toBe(
+      paymentBaseline.distributeRequests + 1,
+    );
     const paymentDetail = await author.request.get(
       `/api/me/merchants/${merchantId}/payments/${task?.id}`,
     );
@@ -1715,7 +1710,9 @@ test("普通真实模式活动走正常领取、Outbox、Queue 与 MerchantDO；
     expect(afterPaymentQueries.payments).toEqual(state.payments);
     expect(afterPaymentQueries.outbox).toEqual(state.outbox);
     expect(afterPaymentQueries.upstream.orders).toEqual(state.upstream.orders);
-    expect(afterPaymentQueries.upstream.distributeRequests).toBe(1);
+    expect(afterPaymentQueries.upstream.distributeRequests).toBe(
+      paymentBaseline.distributeRequests + 1,
+    );
     await authorPage.goto(`/my/payments?activityId=${id}`);
     await expect(
       authorPage.getByRole("heading", { name: "付款记录", exact: true }),
@@ -1902,7 +1899,6 @@ test("定时抽奖 M>N：只报名、继续解题与重放不加机会；满员�
     };
     const id = await createActivity(fixture.author.page, {
       title,
-      type: "ldc",
       password: "DrawAnswer123",
       extraPassword: "DrawOther123",
       timedDraw: money,
@@ -2314,7 +2310,6 @@ for (const scenario of [
       };
       const id = await createActivity(fixture.author.page, {
         title,
-        type: "ldc",
         password: "CappedDraw123",
         timedDraw: money,
         openAfter: true,
@@ -2384,7 +2379,6 @@ test("不限报名人数时，仅真实 DO 倒计时开奖；人数不足 N 仍�
     };
     const id = await createActivity(fixture.author.page, {
       title,
-      type: "ldc",
       password: "DeadlineDraw123",
       timedDraw: money,
       openAfter: true,
@@ -2430,7 +2424,6 @@ for (const timeMode of ["duration", "at"] as const) {
     try {
       const id = await createActivity(fixture.author.page, {
         title: "完整应用无人报名定时抽奖",
-        type: "ldc",
         password: "EmptyDraw123",
         timedDraw: {
           mode: "timed_draw",
@@ -2534,30 +2527,11 @@ test("LiteAuth 真实网关登录、官方同号升级和再次 LiteAuth 登录�
     (entry) => entry.name === "hb_session",
   );
   await page.goto("/activities/new");
-  const rewardTypes = page.getByRole("group", {
-    name: "奖励类型",
-    exact: true,
-  });
   await expect(
-    rewardTypes.getByRole("button", { name: "文本 / CDK", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
-  await expect(
-    rewardTypes.getByRole("button", { name: "LDC（需升级）", exact: true }),
-  ).toBeDisabled();
-  const textId = await createActivity(page, {
-    title: "青春版创建并开放文本",
-    type: "text",
-    password: "LiteCreator123",
-    openAfter: true,
-  });
-  const publicText = (
-    await (await request.get(`/api/activities/${textId}`)).json()
-  ).activity;
-  expect(publicText.author).toMatchObject({
-    id: signed.session.user.id,
-    accountTier: "lite",
-  });
-  expect(JSON.stringify(publicText)).not.toContain("private@example.test");
+    page.getByRole("link", { name: "使用官方 Connect 升级", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator("#activity-title")).toHaveCount(0);
+  expect((await readState(request)).activities).toEqual(before.activities);
   const upgraded = await signIn(
     page,
     "liteOfficial",
@@ -2584,12 +2558,10 @@ test("LiteAuth 真实网关登录、官方同号升级和再次 LiteAuth 登录�
   await expect(page).toHaveURL("/account");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.goto("/activities/new");
+  await expect(page.locator("#activity-title")).toBeVisible();
   await expect(
-    rewardTypes.getByRole("button", { name: "LDC 奖励", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
-  await expect(
-    rewardTypes.getByRole("button", { name: "LDC 奖励", exact: true }),
-  ).toBeEnabled();
+    page.getByRole("group", { name: "奖励类型", exact: true }),
+  ).toHaveCount(0);
   await page.goto("/account");
   await expect(
     page.getByText(accounts.liteOfficial.email ?? "", { exact: true }),
@@ -2631,14 +2603,10 @@ test("LiteAuth 真实网关登录、官方同号升级和再次 LiteAuth 登录�
   expect(after.upstream.distributeRequests).toBe(
     before.upstream.distributeRequests,
   );
-  expect(
-    (await (await request.get(`/api/activities/${textId}`)).json()).activity
-      .author.accountTier,
-  ).toBe("standard");
   expect(external).toEqual([]);
 });
 
-test("青春版经真实 Web／D1／DO 领取和解出文本，LDC 被拒绝；官方升级后主动领取才付款", async ({
+test("青春版可浏览跳转但不可兑奖或报名；官方升级后主动领取才付款", async ({
   browser,
   request,
 }) => {
@@ -2660,21 +2628,13 @@ test("青春版经真实 Web／D1／DO 领取和解出文本，LDC 被拒绝；�
       "liteauth",
     );
     expect(signed.session.user.accountTier).toBe("lite");
-    const textId = await createActivity(authorPage, {
-      title: "青春版文本领奖与解题",
-      type: "text",
-      password: "LiteTextAnswer123",
-      openAfter: true,
-    });
     const ldcId = await createActivity(authorPage, {
       title: "青春版可见但不可抢 LDC",
-      type: "ldc",
       password: "LiteLdcAnswer123",
       openAfter: true,
     });
     const drawId = await createActivity(authorPage, {
       title: "青春版可见但不可报名",
-      type: "ldc",
       password: "LiteDrawAnswer123",
       openAfter: true,
       timedDraw: {
@@ -2753,75 +2713,27 @@ test("青春版经真实 Web／D1／DO 领取和解出文本，LDC 被拒绝；�
     expect((await draftAttempt.json()).error.code).toBe(
       "OFFICIAL_CONNECT_REQUIRED",
     );
-    await recipientPage.goto(`/activities/${textId}`);
-    await submit(recipientPage, "LiteTextAnswer123");
-    await expectTextRewardVisible(recipientPage);
-    const textClaim = (
-      await (
-        await recipient.request.get(`/api/activities/${textId}/claim`)
-      ).json()
-    ).claim;
-    await recipientPage.locator("#solve-password").fill("OtherAnswer123");
-    const [solve] = await Promise.all([
-      recipientPage.waitForResponse(
-        (response) =>
-          response.request().method() === "POST" &&
-          response.url() ===
-            `${origin}/api/activities/${textId}/password-solves`,
-      ),
-      recipientPage
-        .getByRole("button", { name: "验证口令", exact: true })
-        .click(),
-    ]);
-    expect(await solve.json()).toMatchObject({ outcome: "solved" });
-    await expect(
-      recipientPage.getByText("已解出", { exact: true }),
-    ).toBeVisible();
-    const afterText = await readState(request);
-    expect(afterText.payments).toEqual(initial.payments);
-    expect(afterText.outbox).toEqual(initial.outbox);
-    expect(
-      afterText.registrations.filter((entry) => entry.activity_id === drawId),
-    ).toHaveLength(0);
-    expect(
-      afterText.activities.find((entry) => entry.id === ldcId)?.claimed_count,
-    ).toBe(0);
-    expect(
-      afterText.activities.find((entry) => entry.id === drawId)
-        ?.registered_count,
-    ).toBe(0);
-    const recipients = (
-      await (await request.get(`/api/activities/${textId}/recipients`)).json()
-    ).items;
-    expect(recipients).toContainEqual(
-      expect.objectContaining({
-        id: textClaim.id,
-        accountTier: "lite",
-        username: accounts.liteParticipant.username,
-      }),
-    );
-    await authorPage.goto(`/activities/${textId}`);
-    await authorPage
-      .getByRole("button", { name: "查看领取名单", exact: true })
+    await recipientPage.goto("/");
+    await recipientPage.getByLabel("口令", { exact: true }).fill(ldcId);
+    await recipientPage
+      .getByRole("button", { name: "跳转活动", exact: true })
       .click();
-    await authorPage
-      .getByRole("button", {
-        name: new RegExp(accounts.liteParticipant.displayName),
-      })
-      .hover();
-    const participantProfile = authorPage.getByRole("dialog", {
-      name: `${accounts.liteParticipant.displayName}的资料`,
-    });
-    await expect(participantProfile).toContainText("青春版");
+    await expect(recipientPage).toHaveURL(`/activities/${ldcId}`);
+    await recipientPage.goto("/");
+    await submit(recipientPage, "LiteLdcAnswer123");
     await expect(
-      participantProfile.getByRole("link", {
-        name: "查看 Linux DO 主页",
+      recipientPage.getByRole("link", {
+        name: "使用官方 Connect 升级",
         exact: true,
       }),
-    ).toHaveAttribute(
-      "href",
-      `https://linux.do/u/${accounts.liteParticipant.username}`,
-    );
+    ).toBeVisible();
+    const deniedState = await readState(request);
+    expect(deniedState.claims).toEqual(initial.claims);
+    expect(deniedState.attempts).toEqual(initial.attempts);
+    expect(deniedState.payments).toEqual(initial.payments);
+    expect(deniedState.outbox).toEqual(initial.outbox);
+    expect(deniedState.registrations).toEqual(initial.registrations);
+    expect(deniedState.activities).toEqual(initial.activities);
     const upgraded = await signIn(
       recipientPage,
       "liteParticipantOfficial",
@@ -2896,17 +2808,10 @@ test("青春版经真实 Web／D1／DO 领取和解出文本，LDC 被拒绝；�
         ).json()
       ).claim.id,
     ).toBe(paid.id);
-    expect(
-      (
-        await (
-          await recipient.request.get(`/api/activities/${textId}/claim`)
-        ).json()
-      ).claim.id,
-    ).toBe(textClaim.id);
     expect((await readState(request)).upstream.distributeRequests).toBe(
       settled.upstream.distributeRequests,
     );
-    await recipientPage.setViewportSize({ width: 390, height: 844 });
+    await recipientPage.setViewportSize({ width: 375, height: 844 });
     expect(
       await recipientPage.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -2927,7 +2832,6 @@ test("真实应用商户配置：修改前确认未开奖风险，同一商户�
     const merchantId = await ensureFullAppMerchant(fixture.author.page);
     await createActivity(fixture.author.page, {
       title: "配置影响范围验收",
-      type: "ldc",
       password: "Configuration123",
       timedDraw: {
         mode: "timed_draw",
@@ -3007,7 +2911,6 @@ test("发布修复：原编辑请求丢失响应后恢复开放，真实历史�
     const { session } = await signIn(recipientPage, "recipient");
     const id = await createActivity(authorPage, {
       title: "发布修复草稿",
-      type: "text",
       password: "ReleaseSave123",
       durationMinutes: 7,
     });
@@ -3094,11 +2997,11 @@ test("发布修复：原编辑请求丢失响应后恢复开放，真实历史�
       recipientPage.getByRole("row").filter({ hasText: "发布修复已保存" }),
     ).toContainText("ReleaseSave123", { timeout: 22_000 });
     await listUpdate;
-    await expect(authorPage).toHaveURL(/\/my\/activities\?type=all$/);
+    await expect(authorPage).toHaveURL(/\/my\/activities$/);
     await ownerRow
       .getByRole("button", { name: "发布修复已保存：尝试统计", exact: true })
       .click();
-    await expect(authorPage).toHaveURL(/\/my\/activities\?type=all$/);
+    await expect(authorPage).toHaveURL(/\/my\/activities$/);
     const statisticsDialog = authorPage.getByRole("dialog", {
       name: "兑换尝试统计",
       exact: true,
@@ -3132,7 +3035,6 @@ test("发布修复：正式首页先发现后导航，活动页自动兑奖且�
     await signIn(page, "recipient");
     const id = await createActivity(authorPage, {
       title: "发布修复导航兑奖",
-      type: "text",
       password: "ReleaseNav123",
       forceDedicated: false,
       openAfter: true,
@@ -3151,15 +3053,15 @@ test("发布修复：正式首页先发现后导航，活动页自动兑奖且�
     await page.getByLabel("口令", { exact: true }).fill("ReleaseNav123");
     await page.getByRole("button", { name: "兑奖", exact: true }).click();
     await expect(page).toHaveURL(`/activities/${id}`);
-    await expectTextRewardVisible(page);
+    await expectLdcRewardVisible(page);
     expect(phases).toEqual(["discover", "claim"]);
     await page.reload();
-    await expectTextRewardVisible(page);
+    await expectLdcRewardVisible(page);
     expect(phases).toEqual(["discover", "claim"]);
     await page.getByRole("button", { name: "返回上一页", exact: true }).click();
     await expect(page).toHaveURL(`${origin}/`);
     await page.goForward();
-    await expectTextRewardVisible(page);
+    await expectLdcRewardVisible(page);
     expect(phases).toEqual(["discover", "claim"]);
     const state = await readState(request);
     expect(

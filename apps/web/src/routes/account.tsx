@@ -221,8 +221,8 @@ function AccountPage() {
                 账号资格
                 <Help label="账号资格">
                   {lite
-                    ? "青春版仅可参与和创建文本 / CDK 活动。通过官方 Connect 登录可获得普通资格。"
-                    : "普通资格可参与和创建文本 / CDK 与 LDC 活动；后续使用 LiteAuth 登录不会降级。"}
+                    ? "青春版可登录浏览活动。通过官方 Connect 登录可获得创建、兑奖和报名资格。"
+                    : "普通资格可创建、兑奖和报名 LDC 活动；后续使用 LiteAuth 登录不会降级。"}
                 </Help>
               </dt>
               <dd>

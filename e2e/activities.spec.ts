@@ -1,15 +1,18 @@
 import { expect, type Page, test } from "@playwright/test";
 import {
+  type ActivityInput,
   type CreateActivityInput,
   emptyActivityInput,
+  type LdcActivityInput,
+  ldcRewardCount,
   type ManagedActivity,
+  type Merchant,
   type PublicActivity,
-  type TextActivityInput,
   type UpdateActivityInput,
 } from "../packages/contracts/src";
 
 const id = "b674025a-0879-4569-8774-1a4bfc9e2328";
-const rewardId = "daef3bf5-a2c7-4f9f-b425-5e80d9b76a24";
+const merchantId = "11111111-1111-4111-8111-111111111111";
 const author = {
   id: "creator-1",
   username: "ada",
@@ -21,11 +24,13 @@ const author = {
 };
 
 function fixture(): ManagedActivity {
-  const config = {
-    ...emptyActivityInput(),
-    title: "待开放文本活动",
+  const base = emptyActivityInput();
+  const config: LdcActivityInput = {
+    ...base,
+    title: "待开放 LDC 活动",
     passwords: ["私人口令ABC"],
-    rewards: [{ id: rewardId, text: "PRIVATE-CODE-123\n第二行" }],
+    merchantId,
+    money: { mode: "fixed", totalAmount: "1.00", count: 1 },
     beforeInfo: "**欢迎参与**",
     afterClaimInfo: "领取后秘密",
     afterEndInfo: "结束后秘密",
@@ -35,7 +40,8 @@ function fixture(): ManagedActivity {
     author,
     config,
     title: config.title,
-    rewardType: "text",
+    rewardType: "ldc",
+    paymentMode: "simulation",
     forceDedicated: config.forceDedicated,
     status: "draft",
     version: 1,
@@ -43,14 +49,45 @@ function fixture(): ManagedActivity {
     openedAt: null,
     deadlineAt: null,
     topicUrl: null,
-    totalCount: 1,
+    totalCount: ldcRewardCount(config),
     claimedCount: 0,
   };
 }
 
-function textConfig(config: ManagedActivity["config"]): TextActivityInput {
-  if (config.rewardType !== "text") throw new Error("Expected text activity");
-  return config;
+function merchantFixture(): Merchant {
+  const now = new Date().toISOString();
+  return {
+    id: merchantId,
+    label: "本地测试商户",
+    clientId: "local_merchant",
+    mode: "simulation",
+    scenario: "normal",
+    version: 1,
+    credentialVersion: 1,
+    usageStatus: "current",
+    publicationEligibility: {
+      allowed: true,
+      reason: null,
+      credentialVersion: 1,
+    },
+    credentialVerification: {
+      status: "unverified",
+      credentialVersion: 1,
+      checkedAt: null,
+      nextCheckAt: null,
+      reason: null,
+    },
+    capabilities: {
+      canExecutePayments: true,
+      canCheck: true,
+      canSimulate: true,
+      canVerify: false,
+    },
+    pausedReason: null,
+    paymentCheckNextAt: null,
+    createdAt: now,
+    updatedAt: now,
+  };
 }
 
 async function expectPathname(page: Page, pathname: string) {
@@ -66,24 +103,6 @@ async function logoutViaAccount(page: Page) {
   await page.getByRole("button", { name: "退出登录", exact: true }).click();
 }
 
-async function chooseSegmented(
-  page: Page,
-  groupName: string,
-  optionName: string | RegExp,
-) {
-  await page
-    .getByRole("group", { name: groupName, exact: true })
-    .getByRole("button", {
-      name: optionName,
-      exact: typeof optionName === "string",
-    })
-    .click();
-}
-
-function textRewardInput(page: Page) {
-  return page.locator("#activity-text-rewards");
-}
-
 function segmentedOption(page: Page, groupName: string, optionName: string) {
   return page
     .getByRole("group", { name: groupName, exact: true })
@@ -95,7 +114,7 @@ function publicView(activity: ManagedActivity): PublicActivity {
     id,
     author,
     title: activity.title,
-    rewardType: "text",
+    rewardType: "ldc",
     status: activity.status,
     forceDedicated: activity.config.forceDedicated,
     topicUrl: activity.topicUrl,
@@ -130,8 +149,8 @@ async function mockActivities(page: Page) {
     failFirstOpenResponse: false,
     delayCreate: false,
     releaseCreate: undefined as (() => void) | undefined,
-    creates: [] as (CreateActivityInput & { activity: TextActivityInput })[],
-    updates: [] as (UpdateActivityInput & { activity: TextActivityInput })[],
+    creates: [] as (CreateActivityInput & { activity: ActivityInput })[],
+    updates: [] as (UpdateActivityInput & { activity: ActivityInput })[],
     csrf: [] as (string | undefined)[],
     privateReads: 0,
     detailReads: 0,
@@ -151,9 +170,19 @@ async function mockActivities(page: Page) {
     state.signedIn = false;
     return route.fulfill({ json: { ok: true } });
   });
-  await page.route("**/api/me/merchants", (route) =>
-    route.fulfill({ json: { items: [] } }),
-  );
+  const merchant = merchantFixture();
+  await page.route("**/api/me/merchants**", (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === `/api/me/merchants/${merchantId}`)
+      return route.fulfill({ json: { merchant } });
+    return route.fulfill({
+      json: {
+        items: [merchant],
+        currentMerchantId: merchant.id,
+        nextCursor: null,
+      },
+    });
+  });
   await page.route("**/api/me/activities**", async (route) => {
     const request = route.request();
     const pathname = new URL(request.url()).pathname;
@@ -228,7 +257,7 @@ async function mockActivities(page: Page) {
       });
     } else if (request.method() === "PATCH") {
       const body = request.postDataJSON() as UpdateActivityInput & {
-        activity: TextActivityInput;
+        activity: ActivityInput;
       };
       state.updates.push(body);
       if (state.conflict)
@@ -256,7 +285,7 @@ async function mockActivities(page: Page) {
         config: body.activity,
         title: body.activity.title,
         version: state.activity.version + 1,
-        totalCount: body.activity.rewards.length,
+        totalCount: ldcRewardCount(body.activity),
       };
       if (state.failFirstUpdateResponse && state.updates.length === 1)
         return route.abort("failed");
@@ -302,7 +331,7 @@ async function mockActivities(page: Page) {
     }
     if (request.method() === "POST") {
       const body = request.postDataJSON() as CreateActivityInput & {
-        activity: TextActivityInput;
+        activity: ActivityInput;
       };
       state.creates.push(body);
       state.csrf.push(request.headers()["x-csrf-token"]);
@@ -310,7 +339,7 @@ async function mockActivities(page: Page) {
         ...fixture(),
         config: body.activity,
         title: body.activity.title,
-        totalCount: body.activity.rewards.length,
+        totalCount: ldcRewardCount(body.activity),
       };
       if (state.failFirstCreate && state.creates.length === 1)
         return route.abort("failed");
@@ -337,26 +366,11 @@ async function mockActivities(page: Page) {
 
 async function enterMinimalActivity(page: Page) {
   await page.goto("/activities/new");
-  await chooseSegmented(page, "奖励类型", "文本 / CDK");
-  await page.locator("#activity-title").fill("新文本活动");
+  await page.locator("#activity-title").fill("新 LDC 活动");
+  await page.locator("#ldc-total").fill("1.00");
+  await page.getByLabel("奖励份数", { exact: true }).fill("1");
   await page.getByLabel("口令 1", { exact: true }).fill("Answer123");
-  await textRewardInput(page).fill("私有奖励\n第二行");
 }
-
-test("文本活动保存和开放不检查商户凭证", async ({ page }) => {
-  const state = await mockActivities(page);
-  let merchantRequests = 0;
-  await page.route("**/api/me/merchants**", async (route) => {
-    if (route.request().method() !== "GET") merchantRequests++;
-    await route.abort("failed");
-  });
-  await enterMinimalActivity(page);
-  await page.getByRole("button", { name: "保存并开放", exact: true }).click();
-  await expectPathname(page, `/my/activities/${id}`);
-  await expect(page.getByText("进行中", { exact: true })).toBeVisible();
-  expect(state.activity.status).toBe("active");
-  expect(merchantRequests).toBe(0);
-});
 
 for (const search of ["", "?edit=true", "?edit=false"]) {
   test(`作者旧链接直接显示编辑表单 ${search || "默认地址"}`, async ({
@@ -376,7 +390,9 @@ for (const search of ["", "?edit=true", "?edit=false"]) {
     await expect(
       page.getByRole("heading", { name: "编辑活动", exact: true }),
     ).toBeVisible();
-    await expect(page.locator("#activity-title")).toHaveValue("待开放文本活动");
+    await expect(page.locator("#activity-title")).toHaveValue(
+      "待开放 LDC 活动",
+    );
     await expect(
       page.getByRole("heading", { name: "管理活动", exact: true }),
     ).toHaveCount(0);
@@ -412,7 +428,7 @@ test("刷新可取消，失败保留输入，同版本成功刷新也重置未�
   expect(state.activity.version).toBe(1);
   page.once("dialog", (dialog) => dialog.accept());
   await refresh.click();
-  await expect(title).toHaveValue("待开放文本活动");
+  await expect(title).toHaveValue("待开放 LDC 活动");
   expect(state.activity.version).toBe(1);
   expect(state.updates).toEqual([]);
   await page.getByRole("link", { name: "兑奖", exact: true }).click();
@@ -441,112 +457,6 @@ test("保存后继续编辑仍确认未保存离开，取消保留输入且确�
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("link", { name: "兑奖", exact: true }).click();
   await expectPathname(page, "/");
-});
-
-test("文本奖励初始不显示空值错误，失焦后校验且输入后清除", async ({ page }) => {
-  await mockActivities(page);
-  await page.goto("/activities/new");
-  await chooseSegmented(page, "奖励类型", "文本 / CDK");
-  const input = textRewardInput(page);
-  await expect(input).not.toHaveAttribute("aria-invalid", "true");
-  await expect(page.getByText("奖励文本不能为空", { exact: true })).toHaveCount(
-    0,
-  );
-
-  await input.focus();
-  await page.locator("#activity-title").focus();
-  await expect(input).toHaveAttribute("aria-invalid", "true");
-  await expect(
-    page.getByText("奖励文本不能为空", { exact: true }),
-  ).toBeVisible();
-
-  await input.fill("可领取文本");
-  await expect(input).not.toHaveAttribute("aria-invalid", "true");
-  await expect(page.getByText("奖励文本不能为空", { exact: true })).toHaveCount(
-    0,
-  );
-});
-
-test("旧版单份文本奖励初始不显示空值错误，失焦后校验且输入后清除", async ({
-  page,
-}) => {
-  const state = await mockActivities(page);
-  const config = textConfig(state.activity.config);
-  state.activity = {
-    ...state.activity,
-    totalCount: 2,
-    config: {
-      ...config,
-      rewards: [
-        { id: rewardId, text: "" },
-        { id: "4ff9d5f4-f6a8-46e9-8d5d-5ff7a4a4ad95", text: "旧版\n多行" },
-      ],
-    },
-  };
-
-  await page.goto(`/my/activities/${id}`);
-  await expect(
-    page.getByRole("heading", { name: "编辑活动", exact: true }),
-  ).toBeVisible();
-  const input = page.locator("#activity-text-reward-1");
-  await expect(input).not.toHaveAttribute("aria-invalid", "true");
-  await expect(page.getByText("奖励文本不能为空", { exact: true })).toHaveCount(
-    0,
-  );
-
-  await input.focus();
-  await page.locator("#activity-title").focus();
-  await expect(input).toHaveAttribute("aria-invalid", "true");
-  await expect(
-    page.getByText("奖励文本不能为空", { exact: true }),
-  ).toBeVisible();
-
-  await input.fill("补齐旧版文本");
-  await expect(input).not.toHaveAttribute("aria-invalid", "true");
-  await expect(page.getByText("奖励文本不能为空", { exact: true })).toHaveCount(
-    0,
-  );
-});
-
-test("单页只在提交时保存，重复文本保留为独立库存，开放后显示公共详情", async ({
-  page,
-}) => {
-  const state = await mockActivities(page);
-  await enterMinimalActivity(page);
-  await expect(
-    page.getByRole("button", { name: "下一步", exact: true }),
-  ).toHaveCount(0);
-  await expect(page.locator("#activity-beforeInfo")).not.toBeVisible();
-  await expect(page.getByText("批量添加奖励", { exact: true })).toHaveCount(0);
-  await expect(page.locator("#activity-bulk-rewards")).toHaveCount(0);
-  await textRewardInput(page).fill("私有奖励\n第二行\n重复奖励\n重复奖励");
-  await page.locator("summary").filter({ hasText: "更多设置" }).click();
-  await page
-    .locator("#activity-beforeInfo")
-    .fill("## 可见说明\n\n[论坛](https://linux.do)");
-  await page.locator("#activity-afterClaimInfo").fill("PRIVATE-AFTER");
-  await page.locator("#activity-afterEndInfo").fill("PRIVATE-END");
-  expect(state.creates).toHaveLength(0);
-  await page.getByRole("button", { name: "保存草稿" }).click();
-  await expectPathname(page, `/my/activities/${id}`);
-  await expect(page.getByText("准备中", { exact: true })).toBeVisible();
-  expect(state.creates).toHaveLength(1);
-  expect(
-    state.creates[0]?.activity.rewards.map((reward) => reward.text),
-  ).toEqual(["私有奖励", "第二行", "重复奖励", "重复奖励"]);
-  expect(
-    new Set(state.creates[0]?.activity.rewards.map((reward) => reward.id)).size,
-  ).toBe(4);
-  expect(state.csrf).toEqual(["test-csrf"]);
-  await page.getByRole("button", { name: "保存并开放", exact: true }).click();
-  await expect(page.getByText("进行中", { exact: true })).toBeVisible();
-  await page.getByRole("link", { name: "查看活动页" }).click();
-  await expect(page.getByRole("heading", { name: "可见说明" })).toBeVisible();
-  await expect(page.getByText("PRIVATE-AFTER")).toHaveCount(0);
-  await expect(page.getByText("PRIVATE-END")).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: "领取奖励", exact: true }),
-  ).toBeVisible();
 });
 
 test("保存响应丢失后重试使用原请求标识和原内容", async ({ page }) => {
@@ -622,54 +532,6 @@ test("编辑响应丢失后账号失效不会把迟到恢复写回表单", async
   ).toBeVisible();
 });
 
-test("旧版多行文本库存编辑时不按换行拆份或重配ID", async ({ page }) => {
-  const state = await mockActivities(page);
-  const secondRewardId = "4ff9d5f4-f6a8-46e9-8d5d-5ff7a4a4ad95";
-  const config = textConfig(state.activity.config);
-  state.activity = {
-    ...state.activity,
-    totalCount: 2,
-    config: {
-      ...config,
-      rewards: [
-        { id: rewardId, text: "PRIVATE-CODE-123\n第二行" },
-        { id: secondRewardId, text: "SINGLE-CODE-456" },
-      ],
-    },
-  };
-
-  await page.goto(`/my/activities/${id}`);
-  await expect(
-    page.getByRole("heading", { name: "编辑活动", exact: true }),
-  ).toBeVisible();
-
-  await expect(page.locator("#activity-text-rewards")).toHaveCount(0);
-  await expect(page.getByText(/为避免静默改变库存/)).toBeVisible();
-  await expect(page.locator("#activity-text-reward-1")).toHaveValue(
-    "PRIVATE-CODE-123\n第二行",
-  );
-  await expect(page.locator("#activity-text-reward-2")).toHaveValue(
-    "SINGLE-CODE-456",
-  );
-
-  await page
-    .locator("#activity-text-reward-1")
-    .fill("PRIVATE-CODE-123\n第二行已修改");
-  await page.getByRole("button", { name: "添加一份奖励", exact: true }).click();
-  await page.locator("#activity-text-reward-3").fill("新增奖励\n仍是同一份");
-  await page.getByRole("button", { name: "保存草稿", exact: true }).click();
-  await expect(page.getByText("草稿已保存。", { exact: true })).toBeVisible();
-
-  const rewards = textConfig(state.activity.config).rewards;
-  expect(rewards.slice(0, 2)).toEqual([
-    { id: rewardId, text: "PRIVATE-CODE-123\n第二行已修改" },
-    { id: secondRewardId, text: "SINGLE-CODE-456" },
-  ]);
-  expect(rewards[2]).toMatchObject({ text: "新增奖励\n仍是同一份" });
-  expect(new Set(rewards.map((reward) => reward.id)).size).toBe(3);
-  expect(state.activity.totalCount).toBe(3);
-});
-
 test("准备中可修改口令尝试统计，冲突核对期间锁定表单并保留输入", async ({
   page,
 }) => {
@@ -738,14 +600,9 @@ test("开放后配置冻结且不能追加口令", async ({ page }) => {
   await expect(page.locator("#activity-topicUrl")).toBeEnabled();
   await expect(page.locator("#activity-forceDedicated")).toBeDisabled();
   await expect(page.getByLabel("口令 1", { exact: true })).toBeDisabled();
-  await expect(page.locator("#activity-text-reward-1")).toBeDisabled();
-  await expect(segmentedOption(page, "发放顺序", "按顺序")).toBeDisabled();
-  await expect(segmentedOption(page, "奖励类型", "文本 / CDK")).toBeDisabled();
-  await expect(segmentedOption(page, "奖励类型", "LDC 奖励")).toBeDisabled();
+  await expect(page.locator("#ldc-total")).toBeDisabled();
+  await expect(segmentedOption(page, "奖励方式", "固定均分")).toBeDisabled();
   await expect(page.getByRole("button", { name: "添加口令" })).toBeDisabled();
-  await expect(
-    page.getByRole("button", { name: "添加一份奖励", exact: true }),
-  ).toHaveCount(0);
   await page.locator("#activity-title").fill("开放后只改标题");
   await page.getByRole("button", { name: "保存修改" }).click();
   await expect(page.getByText("修改已保存。", { exact: true })).toBeVisible();
@@ -874,7 +731,6 @@ test("公共说明支持安全Markdown，模糊数量且不加载图片或执行
   expect(imageRequests.filter((url) => url.includes("tracker.png"))).toEqual(
     [],
   );
-  await expect(page.getByText("PRIVATE-CODE-123")).toHaveCount(0);
 });
 
 test("未保存导航可取消，刷新清空表单且不持久化私有输入", async ({ page }) => {
@@ -883,12 +739,12 @@ test("未保存导航可取消，刷新清空表单且不持久化私有输入",
   page.once("dialog", (dialog) => dialog.dismiss());
   await page.getByRole("link", { name: "兑奖", exact: true }).click();
   await expectPathname(page, "/activities/new");
-  await expect(textRewardInput(page)).toHaveValue("私有奖励\n第二行");
+  await expect(page.locator("#activity-title")).toHaveValue("新 LDC 活动");
   expect(
     await page.evaluate(() =>
       JSON.stringify({ ...localStorage, ...sessionStorage }),
     ),
-  ).not.toMatch(/Answer123|私有奖励/);
+  ).not.toMatch(/Answer123|新 LDC 活动/);
   page.once("dialog", (dialog) => dialog.accept());
   await page.reload();
   await expect(page.locator("#activity-title")).toHaveValue("");
@@ -900,9 +756,7 @@ test("退出时卸载私有编辑器并清除可见奖励", async ({ page }) => 
   await expect(
     page.getByRole("heading", { name: "编辑活动", exact: true }),
   ).toBeVisible();
-  await expect(page.locator("#activity-text-reward-1")).toHaveValue(
-    "PRIVATE-CODE-123\n第二行",
-  );
+  await expect(page.locator("#ldc-total")).toHaveValue("1.00");
   await logoutViaAccount(page);
   await expect(
     page.getByRole("main").getByRole("link", {
@@ -911,11 +765,7 @@ test("退出时卸载私有编辑器并清除可见奖励", async ({ page }) => 
     }),
   ).toBeVisible();
   await expectPathname(page, "/account");
-  await expect(textRewardInput(page)).toHaveCount(0);
-  await expect(page.locator("#activity-text-reward-1")).toHaveCount(0);
-  await expect(
-    page.getByText("PRIVATE-CODE-123", { exact: false }),
-  ).toHaveCount(0);
+  await expect(page.locator("#ldc-total")).toHaveCount(0);
 });
 
 test("窄屏单页表单与公开长文本不产生横向溢出", async ({ page }) => {
@@ -1139,7 +989,5 @@ test("保存并开放请求未完成时退出，迟到保存响应不导航或�
   ).toBeVisible();
   await expectPathname(page, "/account");
   expect(state.opens).toHaveLength(0);
-  await expect(textRewardInput(page)).toHaveCount(0);
-  await expect(page.locator("#activity-text-reward-1")).toHaveCount(0);
-  await expect(page.getByText("私有奖励", { exact: false })).toHaveCount(0);
+  await expect(page.locator("#ldc-total")).toHaveCount(0);
 });

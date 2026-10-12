@@ -11,7 +11,6 @@ import {
 
 const activityId = "aa638a03-2050-4a18-9f83-802407d9e0b2";
 const claimId = "f081c139-b839-4a1d-8a78-4648994977a4";
-const inventoryId = "52261908-ab47-4c8a-9e27-c2881bf03579";
 const user = {
   id: "claimant-1",
   username: "ada",
@@ -21,14 +20,25 @@ const user = {
   canUseLdc: true,
   loginProvider: "connect" as const,
 };
-const reward = "<b>PRIVATE-REWARD</b>\n**必须原样显示**\n第二行";
+
+const author = {
+  id: "claim-author-1",
+  username: "author",
+  displayName: "作者",
+  avatarUrl: null,
+  accountTier: "standard" as const,
+  canUseLdc: true,
+  loginProvider: "connect" as const,
+};
+const rewardAmount = "1.00";
+const rewardDisplay = `${rewardAmount} LDC`;
 
 async function mockClaims(page: Page) {
   const activity: ManagedActivity = {
     id: activityId,
-    author: user,
-    title: "文本领取测试",
-    rewardType: "text",
+    author,
+    title: "LDC 领取测试",
+    rewardType: "ldc",
     forceDedicated: true,
     status: "active",
     version: 2,
@@ -40,10 +50,11 @@ async function mockClaims(page: Page) {
     claimedCount: 0,
     config: {
       ...emptyActivityInput(),
-      title: "文本领取测试",
+      title: "LDC 领取测试",
       forceDedicated: true,
+      merchantId: "11111111-1111-4111-8111-111111111111",
       passwords: ["Answer123"],
-      rewards: [{ id: inventoryId, text: reward }],
+      money: { mode: "fixed", totalAmount: "2.00", count: 2 },
       beforeInfo: "领取前公开信息",
       afterClaimInfo: "## 领取后内容\n\n[后续活动](/activities/next)",
       afterEndInfo: "活动结束说明",
@@ -75,7 +86,7 @@ async function mockClaims(page: Page) {
       nextCursor: null,
     } as PublicRecipientList,
   };
-  function detail(): Extract<ClaimDetail, { rewardType: "text" }> {
+  function detail(): ClaimDetail {
     return {
       id: claimId,
       activity: {
@@ -83,9 +94,16 @@ async function mockClaims(page: Page) {
         title: state.activity.title,
         status: state.activity.status,
       },
-      rewardType: "text",
+      rewardType: "ldc",
       claimedAt: new Date().toISOString(),
-      text: reward,
+      amount: rewardAmount,
+      payment: {
+        id: "claim-payment",
+        mode: "simulation",
+        status: "confirmed",
+        reason: null,
+        confirmedAt: new Date().toISOString(),
+      },
       afterClaimInfo: state.activity.config.afterClaimInfo,
     };
   }
@@ -108,9 +126,9 @@ async function mockClaims(page: Page) {
     if (path === `/api/activities/${activityId}`) {
       const publicActivity: PublicActivity = {
         id: activityId,
-        author: user,
+        author: state.viewerIsAuthor ? user : author,
         title: state.activity.title,
-        rewardType: "text",
+        rewardType: "ldc",
         status: state.activity.status,
         forceDedicated: state.activity.config.forceDedicated,
         topicUrl: null,
@@ -118,7 +136,7 @@ async function mockClaims(page: Page) {
         deadlineAt: state.activity.deadlineAt,
         quantity: { mode: "fuzzy", level: "limited" },
         showRecipientList: state.recipients.enabled,
-        showRecipientUsername: false,
+        showRecipientUsername: state.recipients.enabled,
         showRecipientTime: false,
         beforeInfo: state.activity.config.beforeInfo,
         ...(state.activity.status === "ended" ||
@@ -243,7 +261,9 @@ async function mockClaims(page: Page) {
                   id: claimId,
                   activity: state.claim.activity,
                   claimedAt: state.claim.claimedAt,
-                  rewardType: "text",
+                  rewardType: "ldc",
+                  amount: state.claim.amount,
+                  payment: state.claim.payment,
                 },
               ]
             : [],
@@ -263,7 +283,7 @@ async function mockClaims(page: Page) {
                     id: claimId,
                     activity: state.claim.activity,
                     claimedAt: state.claim.claimedAt,
-                    rewardType: "text",
+                    rewardType: "ldc",
                   },
                 },
               ]
@@ -290,10 +310,24 @@ async function mockClaims(page: Page) {
       state.csrf.push(request.headers()["x-csrf-token"]);
       state.activity.status = "ended";
       state.activity.version++;
-      return route.fulfill({ json: { activity: state.activity } });
+      return route.fulfill({
+        json: {
+          activity: {
+            ...state.activity,
+            author: state.viewerIsAuthor ? user : author,
+          },
+        },
+      });
     }
     if (path === `/api/me/activities/${activityId}`)
-      return route.fulfill({ json: { activity: state.activity } });
+      return route.fulfill({
+        json: {
+          activity: {
+            ...state.activity,
+            author: state.viewerIsAuthor ? user : author,
+          },
+        },
+      });
     return route.fallback();
   });
   return { state, detail };
@@ -301,7 +335,13 @@ async function mockClaims(page: Page) {
 
 async function submit(page: Page, password = "Answer123") {
   await page.getByLabel("兑换口令", { exact: true }).fill(password);
-  await page.getByRole("button", { name: "领取奖励", exact: true }).click();
+  await page.getByRole("button", { name: "领取红包", exact: true }).click();
+}
+
+async function expectLdcReward(page: Page, amount = rewardAmount) {
+  const main = page.locator("main");
+  await expect(main).toContainText(amount);
+  await expect(main).toContainText("LDC");
 }
 
 async function logoutViaAccount(page: Page) {
@@ -328,7 +368,7 @@ test("匿名活动页要求登录，不读取本人奖励；普通活动不显�
   expect(state.privateReads).toBe(0);
 });
 
-test("错误后主动重试生成新提交，成功展示原文并可从历史再次查看", async ({
+test("错误后主动重试生成新提交，成功展示 LDC 金额并可从历史再次查看", async ({
   page,
 }) => {
   const { state } = await mockClaims(page);
@@ -337,8 +377,7 @@ test("错误后主动重试生成新提交，成功展示原文并可从历史�
   await submit(page, "Wrong123");
   await expect(page.getByText(/口令不正确|口令错误|口令未匹配/)).toBeVisible();
   await submit(page, "  Answer123  ");
-  await expect(page.getByText(reward, { exact: true })).toBeVisible();
-  await expect(page.locator("main b")).toHaveCount(0);
+  await expectLdcReward(page);
   await expect(page.getByRole("heading", { name: "领取后内容" })).toBeVisible();
   expect(state.requests).toHaveLength(2);
   expect(state.requests[0]?.submissionId).not.toBe(
@@ -347,9 +386,9 @@ test("错误后主动重试生成新提交，成功展示原文并可从历史�
   expect(state.requests[1]?.password).toBe("Answer123");
   expect(state.csrf).toEqual(["claim-csrf", "claim-csrf"]);
   await page.reload();
-  await expect(page.getByText(reward, { exact: true })).toBeVisible();
+  await expectLdcReward(page);
   await expect(
-    page.getByRole("button", { name: "领取奖励", exact: true }),
+    page.getByRole("button", { name: "领取红包", exact: true }),
   ).toHaveCount(0);
   await page.goto("/my/claims");
   await expect(page).toHaveURL(/\/my\/claims(?:\?|$)/);
@@ -364,20 +403,20 @@ test("错误后主动重试生成新提交，成功展示原文并可从历史�
   await expect(page).toHaveURL(
     new RegExp(`/activities/${activityId}(?:\\?|$)`),
   );
-  await expect(page.getByText(reward, { exact: true })).toBeVisible();
+  await expectLdcReward(page);
   await page.getByRole("button", { name: "返回上一页", exact: true }).click();
   await expect(page).toHaveURL(/\/my\/claims(?:\?|$)/);
   await page.goto(`/my/claims/${claimId}`);
   await expect(page).toHaveURL(
     new RegExp(`/activities/${activityId}(?:\\?|$)`),
   );
-  await expect(page.getByText(reward, { exact: true })).toBeVisible();
+  await expectLdcReward(page);
   expect(state.requests).toHaveLength(2);
   expect(
     await page.evaluate(() =>
       JSON.stringify({ ...localStorage, ...sessionStorage }),
     ),
-  ).not.toMatch(/Answer123|PRIVATE-REWARD/);
+  ).not.toMatch(/Answer123|1\.00 LDC/);
 });
 
 test("响应丢失后重试原提交，不生成新标识或丢失原奖励", async ({ page }) => {
@@ -389,7 +428,7 @@ test("响应丢失后重试原提交，不生成新标识或丢失原奖励", as
     page.getByRole("button", { name: "重试原提交", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "重试原提交", exact: true }).click();
-  await expect(page.getByText(reward, { exact: true })).toBeVisible();
+  await expectLdcReward(page);
   expect(state.requests).toHaveLength(2);
   expect(state.requests[1]).toEqual(state.requests[0]);
 });
@@ -400,7 +439,7 @@ test("领取查询失败时不能盲目提交，恢复查询后才能领取", as
   await page.goto(`/activities/${activityId}`);
   await expect(page.getByText(/暂时无法读取领取记录/)).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "领取奖励", exact: true }),
+    page.getByRole("button", { name: "领取红包", exact: true }),
   ).toHaveCount(0);
   state.lookupFailure = false;
   await page
@@ -418,14 +457,14 @@ test("限流显示等待，倒计时结束后允许再次主动提交", async ({
   await submit(page);
   await expect(page.getByText(/尝试过于频繁|提交过于频繁/)).toBeVisible();
   await expect(
-    page.getByRole("button", { name: /领取奖励|等待|秒/ }).last(),
+    page.getByRole("button", { name: /领取红包|等待|秒/ }).last(),
   ).toBeDisabled();
   state.throttle = false;
   await expect(
-    page.getByRole("button", { name: "领取奖励", exact: true }),
+    page.getByRole("button", { name: "领取红包", exact: true }),
   ).toBeEnabled({ timeout: 6000 });
   await submit(page);
-  await expect(page.getByText(reward, { exact: true })).toBeVisible();
+  await expectLdcReward(page);
   expect(state.requests).toHaveLength(2);
   expect(state.requests[0]?.submissionId).not.toBe(
     state.requests[1]?.submissionId,
@@ -438,21 +477,21 @@ test("结束和归档后仍能读取本人奖励，未领取者不能领取", as
   state.claim = detail();
   await page.goto(`/activities/${activityId}`);
   await expect(page.getByText("已归档", { exact: true })).toBeVisible();
-  await expect(page.getByText(reward, { exact: true })).toBeVisible();
+  await expectLdcReward(page);
   await expect(page.getByText("活动结束说明", { exact: true })).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "领取奖励", exact: true }),
+    page.getByRole("button", { name: "领取红包", exact: true }),
   ).toHaveCount(0);
   state.claim = null;
   state.activity.status = "ended";
   await page.reload();
   await expect(page.getByText("已结束", { exact: true }).first()).toBeVisible();
   await expect(page.getByLabel("兑换口令", { exact: true })).toHaveCount(0);
-  await expect(page.getByText(reward, { exact: true })).toHaveCount(0);
 });
 
 test("作者提前结束需明确确认，已领取活动不显示此操作", async ({ page }) => {
   const { state, detail } = await mockClaims(page);
+  state.viewerIsAuthor = true;
   await page.goto(`/activities/${activityId}`);
   await page.getByRole("button", { name: "管理活动", exact: true }).click();
   page.once("dialog", (dialog) => dialog.dismiss());
@@ -479,8 +518,10 @@ test("作者提前结束需明确确认，已领取活动不显示此操作", as
     name: state.activity.title,
     exact: true,
   });
-  await roster.getByText("查看已分配文本", { exact: true }).click();
-  await expect(roster.getByText(reward, { exact: true })).toBeVisible();
+  await expect(
+    roster.getByText(rewardDisplay, { exact: true }).first(),
+  ).toBeVisible();
+  await expect(roster.getByText(/模拟/).first()).toBeVisible();
 });
 
 test("公共名单开启后展示领取者资料", async ({ page }) => {
@@ -504,7 +545,6 @@ test("公共名单开启后展示领取者资料", async ({ page }) => {
   await page.getByRole("button", { name: "查看领取名单", exact: true }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.getByText("Ada", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText(reward, { exact: true })).toHaveCount(0);
   await expect(page.getByText(/共.*份|剩余.*份|已领取.*份/)).toHaveCount(0);
   expect(state.privateReads).toBe(0);
 });
@@ -520,35 +560,30 @@ test("退出时隐藏私有奖励，晚到的领取响应不能重新展示", as
     page.getByRole("main").getByRole("link", { name: "通过LINUX DO登录" }),
   ).toBeVisible();
   state.releaseClaim?.();
-  await expect(page.getByText(reward, { exact: true })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "领取后内容" })).toHaveCount(
     0,
   );
 });
 
-test("窄屏长奖励不溢出，复制按钮交付原始文本", async ({ page }) => {
+test("窄屏 LDC 奖励内容不溢出且不提供文本复制", async ({ page }) => {
   const { state, detail } = await mockClaims(page);
-  const longText = `${"LONG-CODE".repeat(100)}\n**literal**`;
-  state.claim = { ...detail(), text: longText };
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: {
-        writeText: async (value: string) => {
-          document.documentElement.dataset.copiedReward = value;
-        },
-      },
-    });
-  });
+  state.claim = {
+    ...detail(),
+    amount: "999999999999.99",
+    payment: {
+      ...detail().payment,
+      id: "claim-payment-long",
+      status: "pending",
+      reason: "SENDING",
+      confirmedAt: null,
+    },
+  };
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto(`/activities/${activityId}`);
-  await expect(page.getByText(longText, { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "复制奖励", exact: true }).click();
-  await expect
-    .poll(() =>
-      page.evaluate(() => document.documentElement.dataset.copiedReward),
-    )
-    .toBe(longText);
+  await expectLdcReward(page, "999999999999.99");
+  await expect(
+    page.getByRole("button", { name: "复制奖励", exact: true }),
+  ).toHaveCount(0);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -567,7 +602,7 @@ test("未领取仅返回未解锁数量，领取后只显示我的口令，解�
   await expect(panel.getByText("未解出", { exact: true })).toHaveCount(2);
   await expect(panel.locator("code")).toHaveCount(0);
   await page.getByLabel("兑换口令", { exact: true }).fill("Answer123");
-  await page.getByRole("button", { name: "领取奖励", exact: true }).click();
+  await page.getByRole("button", { name: "领取红包", exact: true }).click();
   await expect(
     panel.getByText("已用此口令兑换", { exact: true }),
   ).toBeVisible();

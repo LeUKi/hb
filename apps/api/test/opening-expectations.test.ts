@@ -61,11 +61,7 @@ async function fixture(mode: PaymentMode = "real") {
     mode,
     secret: "TEST-ONLY-OPENING-CREDENTIAL",
   });
-  const {
-    rewards: _rewards,
-    rewardType: _rewardType,
-    ...base
-  } = emptyActivityInput();
+  const base = emptyActivityInput();
   const input: LdcActivityInput = {
     ...base,
     rewardType: "ldc",

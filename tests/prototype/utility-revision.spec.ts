@@ -1,4 +1,3 @@
-import { mkdir } from "node:fs/promises";
 import { test as base, expect, type Page } from "@playwright/test";
 
 const origin = "http://127.0.0.1:4177";
@@ -73,7 +72,7 @@ test("all routes and activity states use functional copy with no decorative icon
   await page.goto("/#activity");
   for (const state of [
     "ready",
-    "text",
+    "random",
     "pending",
     "registered",
     "drawing",
@@ -105,13 +104,8 @@ for (const width of [1920, 1440, 768, 375]) {
       "open",
     );
     if (width === 1440 || width === 375) {
-      await mkdir(".wrangler/verification/prototype", { recursive: true });
       await page.locator("main h1").click();
       await page.mouse.move(0, 0);
-      await page.screenshot({
-        path: `.wrangler/verification/prototype/utility-result-${width}.png`,
-        animations: "disabled",
-      });
     }
     const dialog = await openRoster(page);
     await expect(dialog.locator(".recipient-title.title-highest")).toHaveText(
@@ -139,10 +133,6 @@ for (const width of [1920, 1440, 768, 375]) {
     expect(overflow.main).toBeLessThanOrEqual(overflow.width + 1);
     if (width === 1440 || width === 375) {
       await page.mouse.move(0, 0);
-      await page.screenshot({
-        path: `.wrangler/verification/prototype/utility-roster-${width}.png`,
-        animations: "disabled",
-      });
     }
   });
 }
@@ -185,8 +175,8 @@ test("title visibility follows publication and roster privacy rather than paymen
   await expect(dialog.locator(".recipient-title")).toHaveCount(2);
   await expect(dialog.locator(".section-heading > span")).toHaveCount(0);
   await dialog.press("Escape");
-  await setScenario(page, "text");
+  await page.goto("/#activity?sample=reading-ldc");
   dialog = await openRoster(page);
   await expect(dialog.locator(".recipient-title")).toHaveCount(0);
-  await expect(dialog.locator(".recipient-award")).toHaveCount(0);
+  await expect(dialog.locator(".recipient-award")).toHaveCount(4);
 });

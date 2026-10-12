@@ -1,6 +1,11 @@
-import type { AdminActivityStatus, AdminRewardType } from "@hb/contracts";
+import type { AdminActivityStatus } from "@hb/contracts";
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Link,
+  useNavigate,
+  useRouterState,
+} from "@tanstack/react-router";
 import { RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { SkeletonRows } from "../components/presentation/loading";
@@ -18,7 +23,6 @@ import {
 type Search = {
   q?: string;
   status?: AdminActivityStatus;
-  rewardType?: AdminRewardType;
   drawException?: 1;
   authorId?: string;
   cursor?: string;
@@ -32,9 +36,6 @@ export const Route = createFileRoute("/admin/activities")({
       String(search.status),
     )
       ? (search.status as AdminActivityStatus)
-      : "all",
-    rewardType: ["text", "ldc"].includes(String(search.rewardType))
-      ? (search.rewardType as AdminRewardType)
       : "all",
     drawException:
       search.drawException === "1" || search.drawException === 1
@@ -61,6 +62,12 @@ function AdminActivitiesPage() {
 
 function Activities({ identity }: { identity: string }) {
   const search = Route.useSearch();
+  const legacyRewardFilter = useRouterState({
+    select: (state) =>
+      new URL(state.location.href, "http://local").searchParams.has(
+        "rewardType",
+      ),
+  });
   const navigate = useNavigate({ from: "/admin/activities" });
   const [q, setQ] = useState(search.q ?? "");
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -70,10 +77,9 @@ function Activities({ identity }: { identity: string }) {
   const params = {
     q: search.q,
     status: search.status,
-    rewardType: search.rewardType,
     drawException: search.drawException ? "1" : undefined,
     authorId: search.authorId,
-    cursor: search.cursor,
+    cursor: legacyRewardFilter ? undefined : search.cursor,
   };
   const query = useQuery({
     queryKey: adminKey(identity, "activities", params),
@@ -101,6 +107,14 @@ function Activities({ identity }: { identity: string }) {
     window.requestAnimationFrame(() => focusTarget?.focus());
   }
   useEffect(() => setQ(search.q ?? ""), [search.q]);
+  useEffect(() => {
+    if (legacyRewardFilter) {
+      void navigate({
+        replace: true,
+        search: cleanSearch({ ...search, cursor: undefined }),
+      });
+    }
+  }, [legacyRewardFilter, navigate, search]);
   return (
     <div className="admin-list-layout">
       <section className="activity-panel admin-list-panel">
@@ -145,17 +159,6 @@ function Activities({ identity }: { identity: string }) {
             <option value="ended">已结束</option>
             <option value="archived">已归档</option>
           </select>
-          <select
-            aria-label="奖励类型"
-            value={search.rewardType}
-            onChange={(event) =>
-              update({ rewardType: event.target.value as AdminRewardType })
-            }
-          >
-            <option value="all">全部奖励</option>
-            <option value="text">文本</option>
-            <option value="ldc">LDC</option>
-          </select>
           <label className="admin-checkbox">
             <input
               type="checkbox"
@@ -190,7 +193,6 @@ function Activities({ identity }: { identity: string }) {
                     <th>活动</th>
                     <th>作者</th>
                     <th>状态</th>
-                    <th>奖励</th>
                     <th>参与</th>
                     <th>创建</th>
                   </tr>
@@ -204,7 +206,6 @@ function Activities({ identity }: { identity: string }) {
                           search={{
                             q: search.q,
                             status: search.status,
-                            rewardType: search.rewardType,
                             drawException: search.drawException ? 1 : undefined,
                             authorId: search.authorId,
                             cursor: search.cursor,
@@ -223,7 +224,6 @@ function Activities({ identity }: { identity: string }) {
                       </td>
                       <td>{item.authorDisplayName}</td>
                       <td>{lifecycleLabel(item.lifecycle)}</td>
-                      <td>{item.rewardType === "ldc" ? "LDC" : "文本"}</td>
                       <td>
                         {item.claimedCount || item.registeredCount}/
                         {item.totalCount}
@@ -347,10 +347,6 @@ function ActivityDetail({
           label="参与方式"
           value={activity.participationMode === "direct" ? "直接参与" : "口令"}
         />
-        <Row
-          label="奖励类型"
-          value={activity.rewardType === "ldc" ? "LDC" : "文本"}
-        />
         <Row label="总份数" value={String(activity.totalCount)} />
         <Row label="已领取" value={String(activity.claimedCount)} />
         <Row
@@ -400,7 +396,6 @@ function cleanSearch(search: Partial<Search>): Partial<Search> {
   return {
     q: search.q || undefined,
     status: search.status === "all" ? undefined : search.status,
-    rewardType: search.rewardType === "all" ? undefined : search.rewardType,
     drawException: search.drawException ? 1 : undefined,
     authorId: search.authorId || undefined,
     cursor: search.cursor || undefined,

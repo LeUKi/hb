@@ -33,7 +33,6 @@ export function ActivityCard({
     ? viewState.lifecycle === "ended" || viewState.lifecycle === "archived"
     : activity.ended;
   const payoutWaiting =
-    activity.type !== "text" &&
     (mine === "claimed" || mine === "won") &&
     viewState?.paymentProgress &&
     viewState.paymentProgress !== "confirmed";
@@ -60,9 +59,7 @@ export function ActivityCard({
     <article className={`activity-card card-${activity.type}`}>
       <div className="card-top">
         <span className={`badge ${ended ? "neutral" : ""}`}>{status}</span>
-        {activity.type !== "text" && (
-          <span className="muted">{rewardLabel}</span>
-        )}
+        <span className="muted">{rewardLabel}</span>
       </div>
       <button type="button" className="card-title" onClick={onOpen}>
         {activity.title}

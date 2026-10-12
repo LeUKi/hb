@@ -108,10 +108,10 @@ const authorActivities = [
     id: `a-author-long-${index}`,
     title:
       index === 0
-        ? "我发起的文本奖励活动"
+        ? "我发起的固定金额活动"
         : `我发起的超长活动标题用于验证列表内滚动和操作按钮 ${index + 1}`,
-    rewardType: index === 0 ? "text" : authorBaseActivity.rewardType,
-    reward: index === 0 ? { mode: "text" } : authorBaseActivity.reward,
+    rewardType: authorBaseActivity.rewardType,
+    reward: authorBaseActivity.reward,
     createdAt: "2026-10-06T00:00:00Z",
   })),
 ];
@@ -247,19 +247,12 @@ const participations = [
         deadlineAt: "2026-10-08T00:00:00Z",
         author,
         createdAt: "2026-10-03T00:00:00Z",
-        reward:
-          index === 0
-            ? { mode: "text" }
-            : {
-                mode: "fixed",
-                unitAmount: "0.01",
-                totalAmount: "0.24",
-              },
+        reward: { mode: "fixed", unitAmount: "0.01", totalAmount: "0.24" },
       },
-      rewardType: index === 0 ? "text" : "ldc",
+      rewardType: "ldc",
       claimedAt: "2026-10-07T01:00:00Z",
       sourcePassword: `extra-pass-${index}`,
-      amount: index === 0 ? undefined : "0.01",
+      amount: "0.01",
       payment: {
         id: `pay-long-${index}`,
         mode: "simulation",
@@ -926,7 +919,7 @@ test("历史列表在页面重新聚焦后刷新列表和账号统计", async ({
   }
 });
 
-test("历史筛选和后退不会沿用上一页游标", async ({ page }) => {
+test("旧奖励筛选地址替换清理且不沿用上一页游标", async ({ page }) => {
   const requested = await setup(page);
 
   await page.goto("/my/activities");
@@ -936,28 +929,18 @@ test("历史筛选和后退不会沿用上一页游标", async ({ page }) => {
   ).toBeVisible();
   const beforeActivityFilter = requested.length;
   await page.evaluate(() => {
-    window.history.pushState({}, "", "/my/activities?type=text");
+    window.history.pushState(history.state, "", "/my/activities?type=text");
     window.dispatchEvent(new PopStateEvent("popstate"));
   });
-  await expect
-    .poll(() =>
-      matchingApiRequests(
-        requested,
-        beforeActivityFilter,
-        "/api/me/activities",
-      ).some((url) => url.searchParams.get("type") === "text"),
-    )
-    .toBe(true);
+  await expect(page).toHaveURL(/\/my\/activities$/);
+  await expect(page.getByText("第 1 页")).toBeVisible();
+  await expect(page.getByText("我发起的活动", { exact: true })).toBeVisible();
   expect(
     matchingApiRequests(
       requested,
       beforeActivityFilter,
       "/api/me/activities",
-    ).some(
-      (url) =>
-        url.searchParams.get("type") === "text" &&
-        url.searchParams.get("cursor") === "author-page-2",
-    ),
+    ).some((url) => url.searchParams.get("cursor") === "author-page-2"),
   ).toBe(false);
 
   await page.goto("/my/claims");
@@ -967,39 +950,26 @@ test("历史筛选和后退不会沿用上一页游标", async ({ page }) => {
   ).toBeVisible();
   const beforeClaimFilter = requested.length;
   await page.evaluate(() => {
-    window.history.pushState({}, "", "/my/claims?type=text");
+    window.history.pushState(history.state, "", "/my/claims?type=text");
     window.dispatchEvent(new PopStateEvent("popstate"));
   });
-  await expect
-    .poll(() =>
-      matchingApiRequests(
-        requested,
-        beforeClaimFilter,
-        "/api/me/participations",
-      ).some((url) => url.searchParams.get("type") === "text"),
-    )
-    .toBe(true);
+  await expect(page).toHaveURL(/\/my\/claims$/);
+  await expect(page.getByText("第 1 页")).toBeVisible();
+  await expect(page.getByText("参与活动", { exact: true })).toBeVisible();
   expect(
     matchingApiRequests(
       requested,
       beforeClaimFilter,
       "/api/me/participations",
-    ).some(
-      (url) =>
-        url.searchParams.get("type") === "text" &&
-        url.searchParams.get("cursor") === "claims-page-2",
-    ),
+    ).some((url) => url.searchParams.get("cursor") === "claims-page-2"),
   ).toBe(false);
 });
 
-test("历史导航恢复筛选分页滚动并在刷新后保留列表状态", async ({ page }) => {
+test("历史导航恢复分页滚动并在刷新后保留列表状态", async ({ page }) => {
   await setup(page);
   await page.goto("/my/activities");
-  await page
-    .getByRole("group", { name: "奖励类型" })
-    .getByRole("button", { name: "LDC" })
-    .click();
-  await expect(page).toHaveURL(/\/my\/activities\?type=ldc$/);
+  await expect(page.getByRole("group", { name: "奖励类型" })).toHaveCount(0);
+  await expect(page).toHaveURL(/\/my\/activities$/);
   await page.getByRole("button", { name: "下一页" }).click();
   await expect(
     page.getByText("我发起的超长活动标题用于验证列表内滚动和操作按钮 20"),
@@ -1023,7 +993,7 @@ test("历史导航恢复筛选分页滚动并在刷新后保留列表状态", as
   ).toBeVisible();
 
   await page.goBack();
-  await expect(page).toHaveURL(/\/my\/activities\?type=ldc$/);
+  await expect(page).toHaveURL(/\/my\/activities$/);
   await expect(
     page.getByText("我发起的超长活动标题用于验证列表内滚动和操作按钮 20"),
   ).toBeVisible();
@@ -1036,12 +1006,8 @@ test("历史导航恢复筛选分页滚动并在刷新后保留列表状态", as
   await expect(page).toHaveURL(/\/activities\/a-author-long-19$/);
   await page.goBack();
   await page.reload();
-  await expect(page).toHaveURL(/\/my\/activities\?type=ldc$/);
-  await expect(
-    page
-      .getByRole("group", { name: "奖励类型" })
-      .getByRole("button", { name: "LDC" }),
-  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page).toHaveURL(/\/my\/activities$/);
+  await expect(page.getByRole("group", { name: "奖励类型" })).toHaveCount(0);
   await expect(
     page.getByText("我发起的超长活动标题用于验证列表内滚动和操作按钮 20"),
   ).toBeVisible();
@@ -1057,24 +1023,24 @@ test("广场和参与历史从详情返回保留筛选分页滚动", async ({ pa
   for (const scenario of [
     {
       path: "/square?status=ended&type=ldc",
-      expectedUrl: /\/square\?status=ended&type=ldc$/,
+      expectedUrl: /\/square\?status=ended$/,
       table: "公开活动",
       pagination: "活动广场分页",
       rowName: /第二页公开活动用于验证翻页后滚动复位 1/,
       detailUrl: /\/activities\/a-next-0$/,
       heading: "第二页公开活动用于验证翻页后滚动复位 1",
-      filter: { group: "奖励筛选", button: "LDC" },
+
       statusButtonText: "状态：已结束",
     },
     {
       path: "/my/claims?type=ldc",
-      expectedUrl: /\/my\/claims\?type=ldc$/,
+      expectedUrl: /\/my\/claims$/,
       table: "我参与的活动",
       pagination: "参与记录分页",
       rowName: /我参与的超长活动标题用于验证移动端操作按钮 18/,
       detailUrl: /\/activities\/a-claim-long-17$/,
       heading: "我参与的超长活动标题用于验证移动端操作按钮 18",
-      filter: { group: "奖励类型", button: "LDC" },
+
       statusButtonText: null,
     },
   ] as const) {
@@ -1111,10 +1077,8 @@ test("广场和参与历史从详情返回保留筛选分页滚动", async ({ pa
     ).toBeVisible();
     await expect(page.getByText("第 2 页")).toBeVisible();
     await expect(
-      page
-        .getByRole("group", { name: scenario.filter.group })
-        .getByRole("button", { name: scenario.filter.button }),
-    ).toHaveAttribute("aria-pressed", "true");
+      page.getByRole("group", { name: /奖励筛选|奖励类型/ }),
+    ).toHaveCount(0);
     if (scenario.statusButtonText) {
       await expect(
         page.getByRole("button", { name: "活动状态筛选" }),
@@ -1134,55 +1098,40 @@ test("默认列表重置在窄屏和平板宽度保持默认筛选", async ({ pa
 
     await page.goto("/square?status=ended&type=text");
     await page.getByRole("link", { name: "活动广场" }).click();
-    await expect(page).toHaveURL("/square?status=all&type=all");
-    await expect(
-      page
-        .getByRole("group", { name: "奖励筛选" })
-        .getByRole("button", { name: "全部" }),
-    ).toHaveAttribute("aria-pressed", "true");
+    await expect(page).toHaveURL("/square?status=all");
+    await expect(page.getByRole("group", { name: "奖励筛选" })).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "活动状态筛选" }),
     ).toContainText("状态：全部");
 
     await page.goto("/my/claims?type=text");
     await page.getByRole("link", { name: "活动历史" }).click();
-    await expect(page).toHaveURL("/my/activities?type=all");
+    await expect(page).toHaveURL("/my/activities");
     await page.getByRole("tab", { name: "我参与的" }).click();
-    await expect(page).toHaveURL("/my/claims?type=all");
-    await expect(
-      page
-        .getByRole("group", { name: "奖励类型" })
-        .getByRole("button", { name: "全部" }),
-    ).toHaveAttribute("aria-pressed", "true");
+    await expect(page).toHaveURL("/my/claims");
+    await expect(page.getByRole("group", { name: "奖励类型" })).toHaveCount(0);
   }
 });
 
 test("主导航重置历史页默认状态且当前项重复点击不新增历史", async ({ page }) => {
   await setup(page);
   await page.goto("/my/activities?type=text");
-  await expect(
-    page
-      .getByRole("group", { name: "奖励类型" })
-      .getByRole("button", { name: "文本 / CDK" }),
-  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page).toHaveURL(/\/my\/activities$/);
+  await expect(page.getByRole("group", { name: "奖励类型" })).toHaveCount(0);
   const activityHistoryNav = page
     .getByRole("navigation", { name: "主导航" })
     .getByRole("link", { name: "活动历史" });
   const beforeReset = await page.evaluate(() => window.history.length);
   await activityHistoryNav.click();
-  await expect(page).toHaveURL("/my/activities?type=all");
-  await expect(
-    page
-      .getByRole("group", { name: "奖励类型" })
-      .getByRole("button", { name: "全部" }),
-  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page).toHaveURL("/my/activities");
+  await expect(page.getByRole("group", { name: "奖励类型" })).toHaveCount(0);
   await expect
     .poll(() => page.evaluate(() => window.history.length))
     .toBe(beforeReset);
 
   const beforeActiveReset = await page.evaluate(() => window.history.length);
   await activityHistoryNav.click();
-  await expect(page).toHaveURL("/my/activities?type=all");
+  await expect(page).toHaveURL("/my/activities");
   await expect
     .poll(() => page.evaluate(() => window.history.length))
     .toBe(beforeActiveReset);
@@ -1190,7 +1139,7 @@ test("主导航重置历史页默认状态且当前项重复点击不新增历�
 
 test("统计弹窗使用浏览器后退关闭并可前进重开", async ({ page }) => {
   await setup(page);
-  await page.goto("/my/activities?type=all");
+  await page.goto("/my/activities");
   await page
     .getByRole("button", { name: "我发起的活动：尝试统计", exact: true })
     .click();
@@ -1201,51 +1150,41 @@ test("统计弹窗使用浏览器后退关闭并可前进重开", async ({ page 
   await expect(statisticsDialog).toBeVisible();
   await page.goBack();
   await expect(statisticsDialog).toHaveCount(0);
-  await expect(page).toHaveURL("/my/activities?type=all");
+  await expect(page).toHaveURL("/my/activities");
   await page.goForward();
   await expect(statisticsDialog).toBeVisible();
-  await expect(page).toHaveURL("/my/activities?type=all");
+  await expect(page).toHaveURL("/my/activities");
 });
 
-test("旧奖励类型 URL 会归并到 LDC 且类型筛选只保留三项", async ({ page }) => {
+test("旧奖励筛选 URL replace 清理，保留合法条件并重置分页", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
   await setup(page);
-  for (const path of [
-    "/square?status=all&type=fixed",
-    "/square?status=all&type=custom",
-    "/square?status=all&type=random",
-    "/square?status=all&type=timed_draw",
+  for (const kind of [
+    "all",
+    "text",
+    "ldc",
+    "fixed",
+    "custom",
+    "random",
+    "timed_draw",
   ]) {
-    await page.goto(path);
-    await expect(page).toHaveURL(/\/square\?status=all&type=ldc$/);
-    const filters = page.getByRole("group", {
-      name: "奖励筛选",
-      exact: true,
-    });
-    await expect(filters.getByRole("button")).toHaveText([
-      "全部",
-      "文本 / CDK",
-      "LDC",
-    ]);
-    await expect(filters.getByRole("button", { name: "LDC" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-  }
-
-  for (const path of [
-    "/my/activities?type=fixed",
-    "/my/activities?type=custom",
-    "/my/activities?type=random",
-    "/my/activities?type=timed_draw",
-    "/my/claims?type=timed_draw",
-  ]) {
-    await page.goto(path);
-    await expect(page).toHaveURL(/\/my\/(?:activities|claims)\?type=ldc$/);
+    await page.goto(`/square?status=ended&type=${kind}&cursor=retired&page=3`);
+    await expect(page).toHaveURL(/\/square\?status=ended$/);
+    await expect(page.getByRole("group", { name: "奖励筛选" })).toHaveCount(0);
     await expect(
-      page
-        .getByRole("group", { name: "奖励类型", exact: true })
-        .getByRole("button"),
-    ).toHaveText(["全部", "文本 / CDK", "LDC"]);
+      page.getByRole("button", { name: "活动状态筛选" }),
+    ).toContainText("状态：已结束");
+    await expect(page.getByText("第 1 页")).toBeVisible();
+    for (const route of ["activities", "claims"]) {
+      await page.goto(`/my/${route}?type=${kind}&cursor=retired&page=3`);
+      await expect(page).toHaveURL(new RegExp(`/my/${route}$`));
+      await expect(page.getByRole("group", { name: "奖励类型" })).toHaveCount(
+        0,
+      );
+      await expect(page.getByText("第 1 页")).toBeVisible();
+    }
   }
 });
 
@@ -1282,16 +1221,7 @@ test("广场默认全部且本人状态不混入付款状态", async ({ page }) 
         .evaluate((node) => getComputedStyle(node).color),
     )
     .toBe("rgb(245, 246, 248)");
-  await expect
-    .poll(() =>
-      page
-        .locator(
-          ".gallery-toolbar .segmented-control__button[aria-pressed='true'] .segmented-control__selection",
-        )
-        .first()
-        .evaluate((node) => getComputedStyle(node).backgroundColor),
-    )
-    .toBe("rgb(75, 81, 91)");
+  await expect(page.getByRole("group", { name: "奖励筛选" })).toHaveCount(0);
   const squareStats = page.locator(".history-statistics", {
     hasText: "公开活动",
   });
@@ -1341,7 +1271,9 @@ test("广场默认全部且本人状态不混入付款状态", async ({ page }) 
   expect(requested.some((path) => path.includes("status=all"))).toBe(true);
 });
 
-test("历史只保留类型筛选，账号总数与真实来源口令正确", async ({ page }) => {
+test("历史不含类型或生命周期筛选，账号总数与真实来源口令正确", async ({
+  page,
+}) => {
   const requested = await setup(page);
   await page.goto("/my/claims?status=ended");
   await expect(
@@ -1364,12 +1296,7 @@ test("历史只保留类型筛选，账号总数与真实来源口令正确", as
     name: "奖励类型",
     exact: true,
   });
-  await expect(participationTypeFilters).toBeVisible();
-  await expect(participationTypeFilters.getByRole("button")).toHaveText([
-    "全部",
-    "文本 / CDK",
-    "LDC",
-  ]);
+  await expect(participationTypeFilters).toHaveCount(0);
   await expect(page.getByRole("cell", { name: /作者/ }).first()).toBeVisible();
   await expect(page.getByText("2026/10/7 09:00:00").first()).toBeVisible();
   await expect(page.getByText("+0.88 LDC")).toBeVisible();
@@ -1384,15 +1311,9 @@ test("历史只保留类型筛选，账号总数与真实来源口令正确", as
   await expect(page.getByText("通过口令 draw-pass 报名")).toBeVisible();
   await expect(page.getByText("ok-pass", { exact: true })).toBeVisible();
   await expect(
-    page
-      .locator("td[data-label='我的奖励']", { hasText: "文本 / CDK" })
-      .first(),
-  ).toHaveText(/文本 \/ CDK\s*已领取/);
-  await expect(
-    page
-      .locator("td[data-label='我的奖励']", { hasText: "文本 / CDK" })
-      .first(),
-  ).not.toHaveText(/文本 \/ CDK\s*文本 \/ CDK/);
+    page.locator("td[data-label='我的奖励']", { hasText: "+0.01 LDC" }).first(),
+  ).toBeVisible();
+  await expect(page.getByText("文本 / CDK", { exact: true })).toHaveCount(0);
 
   await page.getByRole("tab", { name: "我发起的" }).click();
   await expect(
@@ -1402,18 +1323,9 @@ test("历史只保留类型筛选，账号总数与真实来源口令正确", as
     name: "奖励类型",
     exact: true,
   });
-  await expect(initiatedTypeFilters).toBeVisible();
-  await expect(initiatedTypeFilters.getByRole("button")).toHaveText([
-    "全部",
-    "文本 / CDK",
-    "LDC",
-  ]);
+  await expect(initiatedTypeFilters).toHaveCount(0);
   await expect(page.getByText("26.40 LDC 总额").first()).toBeVisible();
-  await expect(
-    page
-      .locator("td[data-label='奖励配置']", { hasText: "文本 / CDK" })
-      .first(),
-  ).toHaveText("文本 / CDK");
+  await expect(page.getByText("文本 / CDK", { exact: true })).toHaveCount(0);
   await expect(page.getByText("已领取 10 / 30 份").first()).toBeVisible();
   await expect(page.getByText("2026/10/7 08:00:00").first()).toBeVisible();
   for (const path of [
@@ -1427,17 +1339,11 @@ test("历史只保留类型筛选，账号总数与真实来源口令正确", as
         name: "奖励类型",
         exact: true,
       });
-      await expect(filters).toBeVisible();
+      await expect(filters).toHaveCount(0);
       await expect(
         page.getByRole("tablist", { name: "活动状态", exact: true }),
       ).toHaveCount(0);
-      const filterBox = await filters.boundingBox();
-      const listBox = await page.locator(".list-panel").boundingBox();
-      expect(filterBox).not.toBeNull();
-      expect(listBox).not.toBeNull();
-      expect(
-        (listBox?.y ?? 0) - ((filterBox?.y ?? 0) + (filterBox?.height ?? 0)),
-      ).toBeCloseTo(12, 0);
+      await expect(page.locator(".list-panel")).toBeVisible();
       await expectNoHorizontalDocumentScroll(page);
       await expect(
         page.getByRole("navigation", { name: /活动分页|参与记录分页/ }),
@@ -1623,7 +1529,7 @@ test("付款活动、目标和详情按三列/手机逐级联动", async ({ page
 test("统计页移动端保留真实列名文本", async ({ page }) => {
   await setup(page);
   await page.setViewportSize({ width: 375, height: 900 });
-  await page.goto("/my/activities?type=all");
+  await page.goto("/my/activities");
   const actionTrigger = page.getByRole("button", {
     name: "我发起的活动操作",
     exact: true,
@@ -1635,7 +1541,7 @@ test("统计页移动端保留真实列名文本", async ({ page }) => {
     exact: true,
   });
   await expect(statisticsDialog).toBeVisible();
-  await expect(page).toHaveURL("/my/activities?type=all");
+  await expect(page).toHaveURL("/my/activities");
   await expect(
     statisticsDialog.locator(".activity-mobile-label", {
       hasText: "命中 / 未命中",
@@ -1660,7 +1566,7 @@ test("损坏的浏览快照与失效游标局部回到第一页", async ({ page 
     if (sessionStorage.getItem("nav-corrupted")) return;
     sessionStorage.setItem("nav-corrupted", "true");
     for (const key of Object.keys(sessionStorage)) {
-      if (!key.startsWith("hb-navigation-v1:")) continue;
+      if (!key.startsWith("hb-navigation-v2:")) continue;
       const snapshot = JSON.parse(sessionStorage.getItem(key) ?? "{}");
       if (snapshot.path !== "/my/activities") continue;
       snapshot.values["authored-pager:"] = "broken";

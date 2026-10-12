@@ -1,4 +1,3 @@
-import { mkdir } from "node:fs/promises";
 import {
   test as base,
   expect,
@@ -275,13 +274,15 @@ async function scrollMainTo(page: Page, selector: string) {
   await page.evaluate(() => document.fonts.ready);
 }
 
-test("captures compact layout screenshots", async ({ page }) => {
-  // Capture settled geometry; normal Motion transitions are exercised above.
+test("compact layouts retain usable controls and settled geometry", async ({
+  page,
+}) => {
+  // Check settled geometry; normal Motion transitions are exercised above.
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await mkdir(".wrangler/verification/prototype", { recursive: true });
-  for (const [suffix, viewport] of [
-    ["1440", { width: 1440, height: 950 }],
-    ["375", { width: 375, height: 900 }],
+
+  for (const viewport of [
+    { width: 1440, height: 950 },
+    { width: 375, height: 900 },
   ] as const) {
     await page.setViewportSize(viewport);
     for (const [name, path, selector] of [
@@ -304,11 +305,8 @@ test("captures compact layout screenshots", async ({ page }) => {
           .click();
         await expect(page.locator(selector)).toBeVisible();
       } else await scrollMainTo(page, selector);
-      await page.screenshot({
-        path: `.wrangler/verification/prototype/${name}-${suffix}.png`,
-        animations: "disabled",
-        fullPage: false,
-      });
+      await expect(page.locator(selector)).toBeVisible();
+      await expectNoHorizontalOverflow(page);
     }
   }
 });

@@ -239,14 +239,14 @@ test("data: registration notifications clean up and non-draw activities are excl
   unsubscribe();
   store.setDrawScenario(draw, "won");
   expect(notifications).toBe(1);
-  const text = activity({ id: "text", type: "text" });
-  expect(store.getDrawRoster(text)).toEqual({
+  const instant = activity({ id: "ldc", type: "ldc" });
+  expect(store.getDrawRoster(instant)).toEqual({
     progress: null,
     registrations: [],
     winners: [],
   });
   expect(
-    store.recordDrawRegistration(text, {
+    store.recordDrawRegistration(instant, {
       name: "林间",
       username: "linjian",
       color: "sage",
@@ -456,9 +456,7 @@ test("managed draw summaries use the same registrations and published winners as
   await expect(row.locator(".status-badge")).toHaveText("已结束");
   await expect(row.locator(".work-managed-progress")).toContainText("3 / 10");
   await expect(row.locator(".work-managed-progress")).toContainText("已中奖");
-  await expect(page.getByRole("group", { name: "奖励筛选" })).toContainText(
-    "LDC",
-  );
+  await expect(page.getByRole("group", { name: "奖励筛选" })).toHaveCount(0);
   await page.goto(`/#activity?sample=${id}`);
   await openPublicRoster(page);
   await expect(roster).toContainText("3 人中奖");

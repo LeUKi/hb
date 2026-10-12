@@ -414,7 +414,7 @@ export function LdcFields({
             </p>
           ) : null
         ) : merchants.isSuccess ? (
-          <p>请先配置当前商户，再保存 LDC 活动。文本活动不需要商户。</p>
+          <p>请先配置当前商户，再保存 LDC 活动。</p>
         ) : null}
       </div>
       {!disabled ? (

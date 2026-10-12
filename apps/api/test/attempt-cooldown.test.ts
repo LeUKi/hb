@@ -1,12 +1,11 @@
 import { env } from "cloudflare:test";
-import {
-  type ActivityInput,
-  type AttemptCooldown,
-  type ClaimResult,
-  emptyActivityInput,
-  type GlobalRedemptionResult,
-  type ManagedActivity,
-  type SolveResult,
+import type {
+  AttemptCooldown,
+  ClaimResult,
+  GlobalRedemptionResult,
+  LdcActivityInput,
+  ManagedActivity,
+  SolveResult,
 } from "@hb/contracts";
 import { beforeEach, describe, expect, it } from "vitest";
 import { prepareClaimSubmission } from "../src/activities/claim-service";
@@ -21,6 +20,7 @@ import {
   readAttemptCooldown,
 } from "../src/runtime/attempt-cooldown";
 import { digestPassword, sha256Hex } from "../src/security/crypto";
+import { ldcInput } from "./activity-fixtures";
 
 const origin = "https://hb.example.com";
 const bindings: ApiBindings = { ...env, APP_ORIGIN: origin };
@@ -28,6 +28,7 @@ type Actor = { id: string; cookie: string; csrf: string };
 let owner: Actor;
 let alice: Actor;
 let bob: Actor;
+let merchantId: string;
 
 async function actor(label: string): Promise<Actor> {
   const id = crypto.randomUUID();
@@ -82,17 +83,15 @@ async function success<T>(response: Response): Promise<T> {
   return body as T;
 }
 
-async function create(activity?: ActivityInput) {
-  const config = activity ?? {
-    ...emptyActivityInput(),
+async function create(activity?: Partial<LdcActivityInput>) {
+  const config = ldcInput({
+    merchantId,
     title: "账户冷却",
     forceDedicated: false,
     passwords: ["password123", "secret456"],
-    rewards: Array.from({ length: 4 }, () => ({
-      id: crypto.randomUUID(),
-      text: "reward",
-    })),
-  };
+    money: { mode: "fixed", totalAmount: "4.00", count: 4 },
+    ...activity,
+  });
   const created = await success<{ activity: ManagedActivity }>(
     await request("/api/activities", owner, {
       requestId: crypto.randomUUID(),
@@ -108,24 +107,11 @@ async function create(activity?: ActivityInput) {
 }
 
 async function ldc(mode: "fixed" | "timed_draw") {
-  const merchant = await createMerchant(bindings, owner.id, {
-    requestId: crypto.randomUUID(),
-    clientId: `attempt_${crypto.randomUUID().replaceAll("-", "")}`,
-    label: "本地模拟",
-    secret: "fake-only-secret",
-  });
-  const {
-    rewards: _rewards,
-    rewardType: _type,
-    ...base
-  } = emptyActivityInput();
   return create({
-    ...base,
     title: "LDC账户冷却",
     forceDedicated: false,
     passwords: ["password123", "secret456"],
-    rewardType: "ldc",
-    merchantId: merchant.id,
+    merchantId,
     allocation: "random",
     money:
       mode === "fixed"
@@ -207,6 +193,14 @@ beforeEach(async () => {
     actor("alice"),
     actor("bob"),
   ]);
+  merchantId = (
+    await createMerchant(bindings, owner.id, {
+      requestId: crypto.randomUUID(),
+      clientId: `attempt_${crypto.randomUUID().replaceAll("-", "")}`,
+      label: "本地模拟",
+      secret: "fake-only-secret",
+    })
+  ).id;
 });
 
 describe("atomic account password cooldown", () => {
@@ -601,11 +595,10 @@ describe("atomic account password cooldown", () => {
   it("freezes user, password, and candidates and never trusts a claimed source", async () => {
     const candidate = await create();
     const other = await create({
-      ...emptyActivityInput(),
       title: "不匹配",
       forceDedicated: false,
       passwords: ["different123"],
-      rewards: [{ id: crypto.randomUUID(), text: "other" }],
+      money: { mode: "fixed", totalAmount: "1.00", count: 1 },
     });
     const found = await success<GlobalRedemptionResult>(await discover());
     const initial = await state();

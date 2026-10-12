@@ -27,14 +27,7 @@ import { SegmentedControl, StatusBadge } from "./list-controls";
 import { PaymentConfirmation } from "./payment-confirmation";
 import { portalPosition, usePortalTarget } from "./portal-target";
 
-export const TEXT_REWARD_DISPLAY = "文本 / CDK";
-
-export function rewardKindLabel(
-  rewardType: "text" | "ldc",
-  reward?: ActivityRewardSummary,
-) {
-  if (rewardType === "text" || reward?.mode === "text")
-    return TEXT_REWARD_DISPLAY;
+export function rewardKindLabel(reward?: ActivityRewardSummary) {
   if (!reward) return "LDC";
   if (reward.mode === "fixed") return "固定均分";
   if (reward.mode === "custom") return "自定义金额";
@@ -43,12 +36,7 @@ export function rewardKindLabel(
   return "LDC";
 }
 
-export function rewardMainText(
-  rewardType: "text" | "ldc",
-  reward?: ActivityRewardSummary,
-) {
-  if (rewardType === "text" || reward?.mode === "text")
-    return TEXT_REWARD_DISPLAY;
+export function rewardMainText(reward?: ActivityRewardSummary) {
   if (reward?.mode === "fixed" && reward.unitAmount)
     return `${reward.unitAmount} LDC / 份`;
   if (reward?.totalAmount) return `${reward.totalAmount} LDC 奖池`;

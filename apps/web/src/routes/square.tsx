@@ -1,5 +1,4 @@
-import type { ActivityRewardFilter } from "@hb/contracts";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useRouterState } from "@tanstack/react-router";
 import { X } from "lucide-react";
 import { type SetStateAction, useCallback, useEffect } from "react";
 import { ActivityErrorView } from "../components/activities/activity-error";
@@ -10,14 +9,8 @@ import {
   ListPanel,
   ListRefreshButton,
   Pagination,
-  SegmentedControl,
 } from "../components/presentation/list-controls";
 import { RefreshNotice } from "../components/presentation/loading";
-import {
-  activityRewardFilters,
-  normalizeActivityRewardFilter,
-  rewardFilterLabels,
-} from "../lib/activities";
 import { useSession } from "../lib/auth";
 import { useDiscovery } from "../lib/discovery";
 import {
@@ -28,7 +21,7 @@ import {
 import { listQueryState } from "../lib/query-view";
 
 type SquareStatus = "all" | "active" | "ended";
-type SquareSearch = { status?: SquareStatus; type?: ActivityRewardFilter };
+type SquareSearch = { status?: SquareStatus };
 type ScopedCursors = { scope: string; cursors: Array<string | null> };
 
 export const Route = createFileRoute("/square")({
@@ -37,15 +30,27 @@ export const Route = createFileRoute("/square")({
       search.status === "active" || search.status === "ended"
         ? search.status
         : "all",
-    type: normalizeActivityRewardFilter(search.type),
   }),
   component: SquarePage,
 });
 
 function SquarePage() {
   const session = useSession();
-  const { status = "all", type = "all" } = Route.useSearch();
+  const { status = "all" } = Route.useSearch();
+  const legacyRewardFilter = useRouterState({
+    select: (state) =>
+      new URL(state.location.href, "http://local").searchParams.has("type"),
+  });
   const navigate = useEntryNavigate();
+  useEffect(() => {
+    if (!legacyRewardFilter) return;
+    void navigate({
+      to: "/square",
+      replace: true,
+      resetScroll: false,
+      search: { status },
+    });
+  }, [legacyRewardFilter, navigate, status]);
   if (session.isError)
     return (
       <ActivityErrorView
@@ -56,26 +61,18 @@ function SquarePage() {
   return (
     <SquareResults
       status={status}
-      type={type}
       userId={session.data?.user?.id ?? null}
       identityKey={
         session.isPending ? "pending" : (session.data.user?.id ?? "guest")
       }
       sessionPending={session.isPending}
+      resetLegacyPager={legacyRewardFilter}
       onStatusChange={(value) =>
         void navigate({
           to: "/square",
           replace: true,
           resetScroll: false,
-          search: { status: value, type },
-        })
-      }
-      onTypeChange={(value) =>
-        void navigate({
-          to: "/square",
-          replace: true,
-          resetScroll: false,
-          search: { status, type: value },
+          search: { status: value },
         })
       }
     />
@@ -84,22 +81,20 @@ function SquarePage() {
 
 function SquareResults({
   status,
-  type,
   userId,
   identityKey,
   sessionPending,
+  resetLegacyPager,
   onStatusChange,
-  onTypeChange,
 }: {
   status: SquareStatus;
-  type: ActivityRewardFilter;
   userId: string | null;
   identityKey: string;
   sessionPending: boolean;
+  resetLegacyPager: boolean;
   onStatusChange: (value: SquareStatus) => void;
-  onTypeChange: (value: ActivityRewardFilter) => void;
 }) {
-  const cursorScope = `${identityKey}:${status}:${type}`;
+  const cursorScope = `${identityKey}:${status}`;
   const [pager, setPager] = useViewState<ScopedCursors>("square-pager", {
     scope: cursorScope,
     cursors: [null],
@@ -119,16 +114,16 @@ function SquareResults({
   );
   useEffect(() => {
     setPager((current) =>
-      current.scope === cursorScope
+      current.scope === cursorScope && !resetLegacyPager
         ? current
         : { scope: cursorScope, cursors: [null] },
     );
-  }, [cursorScope, setPager]);
+  }, [cursorScope, resetLegacyPager, setPager]);
   const query = useDiscovery(
     status,
-    cursors.at(-1) ?? null,
+    resetLegacyPager ? null : (cursors.at(-1) ?? null),
     userId,
-    type,
+    "all",
     !sessionPending,
   );
   const cursorNotice = useCursorRecovery(query.error, cursors, setCursors);
@@ -152,15 +147,6 @@ function SquareResults({
           </section>
         </div>
         <div className="gallery-toolbar">
-          <SegmentedControl
-            label="奖励筛选"
-            value={type}
-            onChange={onTypeChange}
-            options={activityRewardFilters.map((value) => ({
-              value,
-              label: rewardFilterLabels[value],
-            }))}
-          />
           <div className="gallery-status-filter">
             <ActionMenu
               label={`状态：${status === "all" ? "全部" : status === "active" ? "进行中" : "已结束"}`}
@@ -205,7 +191,7 @@ function SquareResults({
           emptyText="暂无符合条件的活动。"
           onRetry={query.isError ? () => query.refetch() : undefined}
           refreshNotice={<RefreshNotice query={query} />}
-          resetKey={`${type}:${status}:${cursors.length}`}
+          resetKey={`${status}:${cursors.length}`}
           footer={
             <Pagination
               label="活动广场分页"

@@ -6,7 +6,6 @@ import {
   useReducedMotion,
 } from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import { TEXT_REWARD_LABEL } from "../activity-metadata";
 import type { PaymentProgress } from "../types";
 import { Avatar, UserIdentity } from "./identity";
 import { PaymentConfirmation } from "./payment-confirmation";
@@ -15,7 +14,6 @@ import "./envelope.css";
 
 export type EnvelopeReward =
   | { kind: "ldc"; amount: string }
-  | { kind: "text" }
   | { kind: "missed" | "not-won" | "ended" };
 export type EnvelopePhase = "closed" | "opening" | "open" | "closing";
 
@@ -67,7 +65,7 @@ export function Envelope({
     isPresent,
     moveDuration,
   } = useRedemptionTransition();
-  const successfulReward = reward?.kind === "ldc" || reward?.kind === "text";
+  const successfulReward = reward?.kind === "ldc";
   const navigationIntent =
     reward &&
     shared &&
@@ -326,14 +324,7 @@ export function Envelope({
               inert={phase !== "open" || !isPresent || undefined}
               aria-hidden={phase !== "open" || !isPresent || undefined}
             >
-              {shownReward?.kind === "text" ? (
-                <>
-                  <strong className="slip-text-title">
-                    {TEXT_REWARD_LABEL}
-                  </strong>
-                  <span className="slip-unit">已领取</span>
-                </>
-              ) : shownReward?.kind === "ldc" ? (
+              {shownReward?.kind === "ldc" ? (
                 <>
                   <div className="slip-value">
                     <strong className="slip-amount">

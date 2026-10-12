@@ -3,10 +3,7 @@ import { expect, it } from "vitest";
 import { getClaimDetail } from "../src/activities/claim-queries";
 import { attemptAssociatedData } from "../src/activities/claim-service";
 import { getManagedActivity } from "../src/activities/service";
-import {
-  passwordAssociatedData,
-  rewardAssociatedData,
-} from "../src/activities/storage";
+import { passwordAssociatedData } from "../src/activities/storage";
 import { app } from "../src/app";
 import type { ApiBindings } from "../src/env";
 import { runMerchantCycle } from "../src/payments/scheduler";
@@ -107,7 +104,7 @@ it("upgrades a populated step-3 database without changing IDs, encrypted content
   const rewardCiphertext = await encryptString(
     rewardText,
     bindings,
-    rewardAssociatedData(activityId, inventoryId),
+    `activity:${activityId}:reward:${inventoryId}`,
   );
   const passwordCiphertext = await encryptString(
     passwordText,
@@ -294,22 +291,22 @@ it("upgrades a populated step-3 database without changing IDs, encrypted content
       )
       .first(),
   ).toBeNull();
-  const claim = await getClaimDetail(bindings, claimId, recipientId);
-  expect(claim).toMatchObject({
-    id: claimId,
-    rewardType: "text",
-    text: rewardText,
-    afterClaimInfo: "旧领取后说明",
-    activity: { id: activityId, status: "ended" },
+  // Historical bytes remain intact, but retired resources have no runtime view.
+  await expect(
+    getClaimDetail(bindings, claimId, recipientId),
+  ).rejects.toMatchObject({
+    status: 404,
   });
-  const managed = await getManagedActivity(bindings, activityId, authorId);
-  expect(managed.config).toMatchObject({
-    rewardType: "text",
-    joinSquare: false,
-    showRecipientAmount: false,
-    passwords: [passwordText],
-    rewards: [{ id: inventoryId, text: rewardText }],
+  await expect(
+    getManagedActivity(bindings, activityId, authorId),
+  ).rejects.toMatchObject({
+    status: 404,
   });
+  const retainedReward = await db
+    .prepare("SELECT ciphertext FROM reward_inventory WHERE id=?")
+    .bind(inventoryId)
+    .first<{ ciphertext: string }>();
+  expect(retainedReward?.ciphertext).toBe(rewardCiphertext);
   expect(
     await decryptString(
       attemptCiphertext,

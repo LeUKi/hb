@@ -66,7 +66,7 @@ async function fixture(money: LdcActivityInput["money"]) {
       "UPDATE platform_controls SET version=version+1,allow_real_open=1,allow_real_claim=1,allow_real_send=0 WHERE id='global'",
     ),
   ]);
-  const { rewards: _rewards, ...base } = emptyActivityInput();
+  const base = emptyActivityInput();
   const input: LdcActivityInput = {
     ...base,
     title: "付款创建竞争测试",

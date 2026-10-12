@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import {
   ACTIVITY_LIMITS,
-  type TextActivityInput as ActivityInput,
+  type LdcActivityInput as ActivityInput,
   type ActivityList,
   ARCHIVE_DELAY_MS,
   activityInputSchema,
@@ -24,6 +24,7 @@ import { app } from "../src/app";
 import { createDb } from "../src/db/client";
 import { sessions, users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
+import { createMerchant } from "../src/payments/merchants";
 import { digestPassword, sha256Hex } from "../src/security/crypto";
 import { resetMerchantHistory } from "./reset-merchant-history";
 
@@ -36,6 +37,7 @@ const bindings: ApiBindings = { ...env, APP_ORIGIN: origin };
 type Actor = { id: string; cookie: string; csrf: string };
 let owner: Actor;
 let other: Actor;
+let merchantId: string;
 
 function required<T>(value: T | null | undefined): T {
   if (value === null || value === undefined)
@@ -100,12 +102,11 @@ function request(
 function input(overrides: Partial<ActivityInput> = {}): ActivityInput {
   return {
     ...emptyActivityInput(),
-    title: "测试文本活动",
+    title: "测试 LDC 活动",
     passwords: ["口令ABC123", "第二个口令123"],
-    rewards: [
-      { id: crypto.randomUUID(), text: "private reward\n第一份" },
-      { id: crypto.randomUUID(), text: "private reward 第二份" },
-    ],
+    rewardType: "ldc",
+    merchantId,
+    money: { mode: "fixed", totalAmount: "2.00", count: 2 },
     beforeInfo: "领取前说明",
     afterClaimInfo: "only-after-claim",
     afterEndInfo: "only-after-end",
@@ -114,9 +115,19 @@ function input(overrides: Partial<ActivityInput> = {}): ActivityInput {
 }
 
 async function create(config = input(), user = owner) {
+  let activityInput = config;
+  if (user.id !== owner.id && activityInput.merchantId === merchantId) {
+    const merchant = await createMerchant(bindings, user.id, {
+      requestId: crypto.randomUUID(),
+      clientId: `activities_${crypto.randomUUID().replaceAll("-", "")}`,
+      label: "本地模拟",
+      secret: "virtual-only-secret",
+    });
+    activityInput = { ...activityInput, merchantId: merchant.id };
+  }
   const response = await request("/api/activities", user, "POST", {
     requestId: crypto.randomUUID(),
-    activity: config,
+    activity: activityInput,
   });
   expect(response.status).toBe(200);
   return ((await response.json()) as { activity: ManagedActivity }).activity;
@@ -162,6 +173,14 @@ beforeEach(async () => {
   ]);
   owner = await actor("owner");
   other = await actor("other");
+  merchantId = (
+    await createMerchant(bindings, owner.id, {
+      requestId: crypto.randomUUID(),
+      clientId: `activities_${crypto.randomUUID().replaceAll("-", "")}`,
+      label: "本地模拟",
+      secret: "virtual-only-secret",
+    })
+  ).id;
 });
 
 describe("historical passwords and draft deletion", () => {
@@ -273,12 +292,10 @@ describe("historical passwords and draft deletion", () => {
         title: historical.title,
         topicUrl,
         forceDedicated: historical.forceDedicated,
-        rewardType: historical.rewardType,
         joinSquare: historical.joinSquare,
         deadline: historical.deadline,
         allocation: historical.allocation,
         passwords: historical.passwords,
-        rewards: historical.rewards,
         quantityVisibility: historical.quantityVisibility,
         showRecipientList: historical.showRecipientList,
         showRecipientUsername: historical.showRecipientUsername,
@@ -287,6 +304,9 @@ describe("historical passwords and draft deletion", () => {
         beforeInfo: historical.beforeInfo,
         afterClaimInfo: historical.afterClaimInfo,
         afterEndInfo: historical.afterEndInfo,
+        rewardType: historical.rewardType,
+        merchantId: historical.merchantId,
+        money: historical.money,
       };
       await env.DB.prepare("UPDATE activities SET creation_digest=? WHERE id=?")
         .bind(
@@ -302,13 +322,11 @@ describe("historical passwords and draft deletion", () => {
         activity: historical,
       });
       expect(replay.status).toBe(200);
-      expect(await replay.json()).toMatchObject({
-        activity: {
-          id: draft.id,
-          version: draft.version,
-          topicUrl: "https://linux.do/t/12345/1",
-        },
-      });
+      const replayed = ((await replay.json()) as { activity: ManagedActivity })
+        .activity;
+      expect(replayed.id).toBe(draft.id);
+      expect(replayed.version).toBe(draft.version);
+      expect(replayed.topicUrl).toBe(draft.topicUrl);
       const newCreate = await request("/api/activities", owner, "POST", {
         requestId: crypto.randomUUID(),
         activity: historical,
@@ -333,7 +351,13 @@ describe("historical passwords and draft deletion", () => {
         await env.DB.prepare(
           "SELECT COUNT(*) AS n FROM reward_inventory",
         ).first("n"),
-      ).toBe(historical.rewards.length);
+      ).toBe(
+        historical.money.mode === "custom"
+          ? historical.money.amounts.length
+          : historical.money.mode === "timed_draw"
+            ? 0
+            : historical.money.count,
+      );
       expect(
         await env.DB.prepare("SELECT version FROM activities WHERE id=?")
           .bind(draft.id)
@@ -392,23 +416,22 @@ describe("historical passwords and draft deletion", () => {
     expect(creation.status).toBe(200);
     const draft = ((await creation.json()) as { activity: ManagedActivity })
       .activity;
-    const submissionId = crypto.randomUUID();
-    const submitted = await request(
-      `/api/activities/${draft.id}/claim`,
-      owner,
-      "POST",
-      {
-        submissionId,
-        password: "口令ABC123",
-      },
-    );
-    expect(submitted.status).toBe(200);
-    expect(await submitted.json()).toMatchObject({ result: "draft" });
-    const fingerprint = await env.DB.prepare(
-      "SELECT fingerprint FROM redemption_submissions WHERE activity_id=?",
+    const fingerprint = "terminal:fingerprint";
+    await env.DB.prepare(
+      `INSERT INTO redemption_submissions
+        (id, activity_id, user_id, submission_id, fingerprint, purpose, participation_mode, outcome, created_at, finished_at)
+       VALUES (?, ?, ?, ?, ?, 'claim', 'password', 'draft', ?, ?)`,
     )
-      .bind(draft.id)
-      .first("fingerprint");
+      .bind(
+        crypto.randomUUID(),
+        draft.id,
+        other.id,
+        crypto.randomUUID(),
+        fingerprint,
+        Date.now(),
+        Date.now(),
+      )
+      .run();
     const deletion = await request(
       `/api/me/activities/${draft.id}`,
       owner,
@@ -462,6 +485,7 @@ describe("historical passwords and draft deletion", () => {
     );
     expect(repeated.status).toBe(200);
     expect(await repeated.json()).toEqual(result);
+    const blockedSubmissionId = crypto.randomUUID();
     const createReplay = await request(
       "/api/activities",
       owner,
@@ -496,7 +520,7 @@ describe("historical passwords and draft deletion", () => {
       [
         `/api/activities/${draft.id}/claim`,
         "POST",
-        { submissionId, password: "口令ABC123" },
+        { submissionId: blockedSubmissionId, password: "口令ABC123" },
       ],
       [
         `/api/activities/${draft.id}/claim`,
@@ -669,16 +693,12 @@ describe("historical passwords and draft deletion", () => {
 });
 afterEach(() => vi.restoreAllMocks());
 
-describe("text activity management", () => {
-  it("creates a draft with encrypted passwords and stable encrypted inventory, preserving duplicate texts", async () => {
+describe("LDC activity management", () => {
+  it("creates a draft with encrypted passwords and stable LDC inventory", async () => {
     const config = input({
       passwords: ["  口令ABC123  "],
       topicUrl: "https://linux.do/t/topic/12345/6?u=owner",
     });
-    config.rewards = config.rewards.map((reward) => ({
-      ...reward,
-      text: "private reward duplicate",
-    }));
     const activity = await create(config);
     expect(activity).toMatchObject({
       status: "draft",
@@ -689,18 +709,19 @@ describe("text activity management", () => {
       topicUrl: "https://linux.do/t/12345/6",
     });
     expect(activity.config.passwords).toEqual(["口令ABC123"]);
-    expect(activity.config.rewards).toEqual(config.rewards);
+    expect(activity.config.money).toEqual(config.money);
     const passwords = await env.DB.prepare(
       "SELECT digest, ciphertext FROM activity_passwords",
     ).all();
     const inventory = await env.DB.prepare(
-      "SELECT ciphertext FROM reward_inventory",
+      "SELECT ciphertext, kind, amount_minor FROM reward_inventory",
     ).all();
     expect(JSON.stringify(passwords)).not.toContain("口令ABC123");
     expect(JSON.stringify(inventory)).not.toContain("private reward");
+    expect(JSON.stringify(inventory)).toContain('"kind":"ldc"');
     const another = await create(config);
     expect(another.id).not.toBe(activity.id);
-    expect(another.config.rewards).toEqual(config.rewards);
+    expect(another.config.money).toEqual(config.money);
   });
 
   it("requires login, exact origin and CSRF for writes", async () => {
@@ -752,12 +773,7 @@ describe("text activity management", () => {
     const preview = await publicView(activity.id, owner);
     const serialized = JSON.stringify(preview);
     expect(preview.status).toBe("draft");
-    for (const secret of [
-      "private reward",
-      "口令ABC123",
-      "only-after-claim",
-      "only-after-end",
-    ])
+    for (const secret of ["口令ABC123", "only-after-claim", "only-after-end"])
       expect(serialized).not.toContain(secret);
     const managed = await request(`/api/me/activities/${activity.id}`, owner);
     expect(managed.headers.get("cache-control")).toBe("no-store");
@@ -796,6 +812,20 @@ describe("text activity management", () => {
     });
     expect(
       (await request("/api/activities", other, "POST", payload)).status,
+    ).toBe(404);
+    const otherMerchant = await createMerchant(bindings, other.id, {
+      requestId: crypto.randomUUID(),
+      clientId: `activities_${crypto.randomUUID().replaceAll("-", "")}`,
+      label: "另一个商户",
+      secret: "virtual-only-secret",
+    });
+    expect(
+      (
+        await request("/api/activities", other, "POST", {
+          ...payload,
+          activity: { ...payload.activity, merchantId: otherMerchant.id },
+        })
+      ).status,
     ).toBe(200);
   });
 
@@ -813,10 +843,8 @@ describe("text activity management", () => {
     expect(JSON.stringify(error)).not.toContain("秘密😃密码");
     for (const activity of [
       input({ passwords: ["口令ABC123", " 口令ABC123 "] }),
-      input({ rewards: [] }),
-      input({
-        rewards: [{ id: crypto.randomUUID(), text: "字".repeat(6000) }],
-      }),
+      input({ passwords: ["口令ABC123", " 口令ABC123 "] }),
+      input({ money: { mode: "fixed", totalAmount: "0.00", count: 1 } }),
     ]) {
       expect(
         (
@@ -827,32 +855,34 @@ describe("text activity management", () => {
         ).status,
       ).toBe(400);
     }
-    const tooLarge = input({
-      rewards: Array.from({ length: 100 }, () => ({
-        id: crypto.randomUUID(),
-        text: "a".repeat(ACTIVITY_LIMITS.rewardBytes),
-      })),
-    });
-    expect(
-      (
-        await request("/api/activities", owner, "POST", {
+    const tooLarge = await app.request(
+      `${origin}/api/activities`,
+      {
+        method: "POST",
+        headers: {
+          Cookie: owner.cookie,
+          Origin: origin,
+          "Content-Type": "application/json",
+          "X-CSRF-Token": owner.csrf,
+        },
+        body: JSON.stringify({
           requestId: crypto.randomUUID(),
-          activity: tooLarge,
-        })
-      ).status,
-    ).toBe(413);
+          activity: input(),
+          note: "a".repeat(ACTIVITY_LIMITS.requestBytes + 1),
+        }),
+      },
+      bindings,
+    );
+    expect(tooLarge.status).toBe(413);
   });
 
   it("writes 1,000 inventory rows within D1 statement limits", async () => {
     const config = input({
-      rewards: Array.from({ length: 1000 }, (_, index) => ({
-        id: crypto.randomUUID(),
-        text: `reward ${index}`,
-      })),
+      money: { mode: "fixed", totalAmount: "1000.00", count: 1000 },
     });
     const activity = await create(config);
     expect(activity.totalCount).toBe(1000);
-    expect(activity.config.rewards).toEqual(config.rewards);
+    expect(activity.config.money).toEqual(config.money);
     const detail = await request(`/api/me/activities/${activity.id}`, owner);
     expect(detail.status).toBe(200);
     expect(detail.headers.get("cache-control")).toBe("no-store");
@@ -866,7 +896,7 @@ describe("text activity management", () => {
     const invalid = input({
       title: "",
       passwords: ["秘密😃密码"],
-      rewards: [{ id: "invalid-private-inventory-id", text: "" }],
+      money: { mode: "fixed", totalAmount: "0.00", count: 0 },
       afterClaimInfo: "PRIVATE-AFTER-CLAIM".repeat(1000),
     });
     const response = await request("/api/activities", owner, "POST", {
@@ -883,17 +913,13 @@ describe("text activity management", () => {
       expect.arrayContaining([
         "activity.title",
         "activity.passwords.0",
-        "activity.rewards.0.id",
-        "activity.rewards.0.text",
+        "activity.money.totalAmount",
+        "activity.money.count",
         "activity.afterClaimInfo",
       ]),
     );
     const encoded = JSON.stringify(result);
-    for (const value of [
-      "秘密😃密码",
-      "invalid-private-inventory-id",
-      "PRIVATE-AFTER-CLAIM",
-    ])
+    for (const value of ["秘密😃密码", "PRIVATE-AFTER-CLAIM"])
       expect(encoded).not.toContain(value);
     for (const table of [
       "activities",
@@ -1133,7 +1159,7 @@ describe("text activity management", () => {
     expect(accepted.status).toBe(200);
     const saved = ((await accepted.json()) as { activity: ManagedActivity })
       .activity;
-    expect(saved.config.rewards).toEqual(payload.activity.rewards);
+    expect(saved.config.money).toEqual(payload.activity.money);
     const edit = {
       version: saved.version,
       activity: { ...saved.config, title: "多字节修改标题" },
@@ -1167,7 +1193,7 @@ describe("text activity management", () => {
     const updated = {
       ...activity.config,
       title: "更新后的活动",
-      rewards: [...activity.config.rewards].reverse(),
+      money: { mode: "fixed", totalAmount: "3.00", count: 3 },
     };
     const response = await request(
       `/api/me/activities/${activity.id}`,
@@ -1179,7 +1205,7 @@ describe("text activity management", () => {
     const result = ((await response.json()) as { activity: ManagedActivity })
       .activity;
     expect(result.version).toBe(2);
-    expect(result.config.rewards).toEqual(updated.rewards);
+    expect(result.config.money).toEqual(updated.money);
     const staleUpdate = await request(
       `/api/me/activities/${activity.id}`,
       owner,
@@ -1315,15 +1341,14 @@ describe("text activity management", () => {
 
   it("rolls back activity, passwords and inventory together if a child insert fails", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const failedId = crypto.randomUUID();
     await env.DB.prepare(
-      `CREATE TRIGGER fail_inventory BEFORE INSERT ON reward_inventory WHEN NEW.id = '${failedId}' BEGIN SELECT RAISE(ABORT, 'test constraint'); END`,
+      `CREATE TRIGGER fail_inventory BEFORE INSERT ON reward_inventory WHEN NEW.position = 0 BEGIN SELECT RAISE(ABORT, 'test constraint'); END`,
     ).run();
     try {
       const response = await request("/api/activities", owner, "POST", {
         requestId: crypto.randomUUID(),
         activity: input({
-          rewards: [{ id: failedId, text: "will not persist" }],
+          money: { mode: "fixed", totalAmount: "1.00", count: 1 },
         }),
       });
       expect(response.status).toBe(500);
@@ -1335,7 +1360,11 @@ describe("text activity management", () => {
           "SELECT count(*) AS n FROM activity_passwords",
         ).first("n"),
       ).toBe(0);
+      await env.DB.prepare("DROP TRIGGER fail_inventory").run();
       const activity = await create();
+      await env.DB.prepare(
+        `CREATE TRIGGER fail_inventory BEFORE INSERT ON reward_inventory WHEN NEW.position = 0 BEGIN SELECT RAISE(ABORT, 'test constraint'); END`,
+      ).run();
       const update = await request(
         `/api/me/activities/${activity.id}`,
         owner,
@@ -1347,7 +1376,7 @@ describe("text activity management", () => {
             title: "must roll back",
             forceDedicated: !activity.config.forceDedicated,
             passwords: ["newPass123"],
-            rewards: [{ id: failedId, text: "fail" }],
+            money: { mode: "fixed", totalAmount: "3.00", count: 3 },
           },
         },
       );
@@ -1385,7 +1414,7 @@ describe("text activity management", () => {
     ).activity;
     const winning = updates.find((config) => config.title === final.title);
     expect(final.version).toBe(2);
-    expect(final.config.rewards).toEqual(winning?.rewards);
+    expect(final.config.money).toEqual(winning?.money);
     expect(final.forceDedicated).toBe(winning?.forceDedicated);
     expect(final.config.forceDedicated).toBe(winning?.forceDedicated);
   });
@@ -1475,7 +1504,7 @@ describe("text activity management", () => {
       const different = {
         ...draft.config,
         forceDedicated: !initialDedicated,
-        rewards: [{ id: crypto.randomUUID(), text: "changed" }],
+        money: { mode: "fixed", totalAmount: "3.00", count: 3 },
       };
       const responses = await Promise.all([
         request(`/api/me/activities/${draft.id}/open`, owner, "POST", {
@@ -1494,8 +1523,8 @@ describe("text activity management", () => {
           await request(`/api/me/activities/${draft.id}`, owner)
         ).json()) as { activity: ManagedActivity }
       ).activity;
-      expect(final.config.rewards).toEqual(
-        final.status === "active" ? draft.config.rewards : different.rewards,
+      expect(final.config.money).toEqual(
+        final.status === "active" ? draft.config.money : different.money,
       );
       const forceDedicated =
         final.status === "active" ? initialDedicated : different.forceDedicated;
@@ -1513,7 +1542,7 @@ describe("text activity management", () => {
     );
     for (const change of [
       { allocation: "random" as const },
-      { rewards: [...activity.config.rewards].reverse() },
+      { money: { mode: "fixed" as const, totalAmount: "3.00", count: 3 } },
       { passwords: ["replacement123"] },
       { passwords: [...activity.config.passwords, "newPass123"] },
       { forceDedicated: true },
@@ -1566,7 +1595,7 @@ describe("text activity management", () => {
     ).activity;
     expect(read.config.passwords).toEqual(activity.config.passwords);
     expect(read.topicUrl).toBe("https://linux.do/t/23456/8");
-    expect(read.config.rewards).toEqual(activity.config.rewards);
+    expect(read.config.money).toEqual(activity.config.money);
     expect(read.config).toMatchObject({
       beforeInfo: "updated",
       afterClaimInfo: "updated after claim",
@@ -1582,7 +1611,6 @@ describe("text activity management", () => {
       const serialized = JSON.stringify(projection);
       expect(projection.quantity.mode).toBe(quantityVisibility);
       for (const secret of [
-        "private reward",
         "口令ABC123",
         "only-after-claim",
         "only-after-end",
@@ -1678,7 +1706,7 @@ describe("text activity management", () => {
     )
       .bind(
         endedAt,
-        JSON.stringify({ ...config, passwords: undefined, rewards: undefined }),
+        JSON.stringify({ ...config, passwords: undefined }),
         activity.id,
       )
       .run();

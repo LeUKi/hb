@@ -9,7 +9,6 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { quantityText } from "../../lib/activities";
 import { useRestoredScroll } from "../../lib/navigation-state";
 import {
   ActivityRowTitle,
@@ -202,14 +201,8 @@ export function ActivitySelection({
                   <UserIdentity profile={activity.author} />
                 </ActivityRowTitle>
                 <div className="activity-selection-reward">
-                  <span>
-                    {rewardKindLabel(activity.rewardType, activity.reward)}
-                  </span>
-                  <strong>
-                    {activity.rewardType === "text"
-                      ? quantityText(activity.quantity)
-                      : rewardMainText(activity.rewardType, activity.reward)}
-                  </strong>
+                  <span>{rewardKindLabel(activity.reward)}</span>
+                  <strong>{rewardMainText(activity.reward)}</strong>
                 </div>
               </li>
             ))}

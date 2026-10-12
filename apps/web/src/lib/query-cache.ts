@@ -37,6 +37,80 @@ function samePrivateActivity(
   );
 }
 
+function cachedActivityId(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const record = data as {
+    activity?: { id?: unknown };
+    claim?: { activityId?: unknown; activity?: { id?: unknown } };
+    registration?: { activityId?: unknown; activity?: { id?: unknown } };
+  };
+  if (typeof record.activity?.id === "string") return record.activity.id;
+  if (typeof record.claim?.activityId === "string")
+    return record.claim.activityId;
+  if (typeof record.claim?.activity?.id === "string")
+    return record.claim.activity.id;
+  if (typeof record.registration?.activityId === "string")
+    return record.registration.activityId;
+  if (typeof record.registration?.activity?.id === "string")
+    return record.registration.activity.id;
+  return null;
+}
+
+function activityAccess(
+  key: readonly unknown[],
+): { activityId: string } | null {
+  if (key[0] === "activity-public" && typeof key[1] === "string")
+    return { activityId: key[1] };
+  if (
+    key[0] === "activity-private" &&
+    typeof key[3] === "string" &&
+    ["detail", "statistics", "author", "author-registrations"].includes(
+      String(key[2]),
+    )
+  )
+    return { activityId: key[3] };
+  if (key[0] === "activity-roster" && typeof key[1] === "string")
+    return { activityId: key[1] };
+  if (key[0] === "password-private" && typeof key[2] === "string")
+    return { activityId: key[2] };
+  if (
+    key[0] === "claim-private" &&
+    key[2] === "participation" &&
+    typeof key[3] === "string"
+  )
+    return { activityId: key[3] };
+  return null;
+}
+
+function isActivityListQuery(key: readonly unknown[]) {
+  return key[0] === "discovery" || key[0] === "topic-activities";
+}
+
+function removeActivityFromListData(
+  data: unknown,
+  activityId: string,
+): unknown {
+  if (!data || typeof data !== "object" || !("items" in data)) return data;
+  const list = data as { items?: unknown[]; total?: unknown };
+  if (!Array.isArray(list.items)) return data;
+  const items = list.items.filter(
+    (item) =>
+      !item ||
+      typeof item !== "object" ||
+      !("id" in item) ||
+      (item as { id?: unknown }).id !== activityId,
+  );
+  if (items.length === list.items.length) return data;
+  return {
+    ...data,
+    items,
+    total:
+      typeof list.total === "number"
+        ? Math.max(0, list.total - (list.items.length - items.length))
+        : list.total,
+  };
+}
+
 export function createAppQueryClient() {
   const queryCache = new QueryCache({
     onError: (error, query) => {
@@ -68,6 +142,50 @@ export function createAppQueryClient() {
           queryKey: ["admin-private"],
         })) {
           void related.cancel({ revert: false, silent: true });
+          related.setState({
+            data: undefined,
+            dataUpdatedAt: 0,
+            status: "error",
+            fetchStatus: "idle",
+            error,
+          });
+        }
+        return;
+      }
+      const access = activityAccess(query.queryKey);
+      if (
+        access &&
+        error instanceof ActivityRequestError &&
+        error.status === 404
+      ) {
+        for (const related of queryCache.findAll({
+          predicate: (candidate) => {
+            const candidateAccess = activityAccess(candidate.queryKey);
+            if (candidateAccess?.activityId === access.activityId) return true;
+            const cached = cachedActivityId(candidate.state.data);
+            if (cached === access.activityId) return true;
+            if (!isActivityListQuery(candidate.queryKey)) return false;
+            return (
+              removeActivityFromListData(
+                candidate.state.data,
+                access.activityId,
+              ) !== candidate.state.data
+            );
+          },
+        })) {
+          void related.cancel({ revert: false, silent: true });
+          if (isActivityListQuery(related.queryKey)) {
+            related.setState({
+              data: removeActivityFromListData(
+                related.state.data,
+                access.activityId,
+              ),
+              fetchStatus: "idle",
+              status: "success",
+              error: null,
+            });
+            continue;
+          }
           related.setState({
             data: undefined,
             dataUpdatedAt: 0,

@@ -24,7 +24,6 @@ import {
   type PublicActivity,
   type PublicQuantity,
   sameLdcMoney,
-  type TextActivityInput,
   type UpdateActivityInput,
 } from "@hb/contracts";
 import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
@@ -71,7 +70,6 @@ import {
   insertInventoryRows,
   insertPasswordRows,
   ownedActivity,
-  prepareInventory,
   prepareLdcInventory,
   preparePasswords,
   privateRows,
@@ -81,23 +79,17 @@ import {
 
 export { deleteActivity } from "./deletion";
 
-type StoredConfig =
-  | Omit<TextActivityInput, "passwords" | "rewards">
-  | Omit<LdcActivityInput, "passwords">;
+type StoredConfig = Omit<LdcActivityInput, "passwords">;
 const databaseNow =
   "CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)";
 
 function storedConfig(input: ActivityInput): StoredConfig {
-  const { passwords: _passwords, ...withRewards } = input;
-  const config =
-    "rewards" in withRewards
-      ? (({ rewards: _rewards, ...rest }) => rest)(withRewards)
-      : withRewards;
+  const { passwords: _passwords, ...config } = input;
   const topic = normalizeTopicLink(config.topicUrl);
   return {
     ...config,
     participationMode: config.participationMode ?? "password",
-    ...(config.rewardType === "ldc" && config.money.mode === "timed_draw"
+    ...(config.money.mode === "timed_draw"
       ? {
           money: {
             ...config.money,
@@ -122,7 +114,7 @@ function configuration(row: ActivityRow): StoredConfig {
   const saved = JSON.parse(row.config) as StoredConfig;
   return {
     ...saved,
-    rewardType: row.rewardType,
+    rewardType: "ldc",
     participationMode: row.participationMode,
     topicUrl: activityTopicUrl(row) ?? "",
     quantityVisibility:
@@ -181,7 +173,6 @@ export function rewardSummary(
   row: ActivityRow,
   exact = true,
 ): ActivityRewardSummary {
-  if (row.rewardType === "text") return { mode: "text" };
   const config = JSON.parse(row.config) as LdcActivityInput;
   const money = config.money;
   const total = ldcTotalMinor(config);
@@ -209,7 +200,7 @@ export function projectActivitySummary(row: ActivityRow): ActivitySummary {
   return {
     id: row.id,
     title: row.title,
-    rewardType: row.rewardType,
+    rewardType: "ldc",
     participationMode: row.participationMode,
     forceDedicated: row.forceDedicated,
     status: activityStatus(row),
@@ -305,9 +296,6 @@ async function managed(
     config: activityInputSchema.parse({
       ...configuration(snapshot.row),
       passwords: snapshot.content.passwords,
-      ...(snapshot.row.rewardType === "text"
-        ? { rewards: snapshot.content.rewards }
-        : {}),
     }),
     openingBlockedReason: await openingBlockedReason(env, snapshot.row),
   };
@@ -371,7 +359,7 @@ export function projectPublicActivity(
   return {
     id: row.id,
     title: row.title,
-    rewardType: row.rewardType,
+    rewardType: "ldc",
     participationMode: row.participationMode,
     status,
     author: activityAuthor,
@@ -495,6 +483,7 @@ export async function createActivity(
         and(
           eq(activities.authorId, authorId),
           eq(activities.creationRequestId, input.requestId),
+          eq(activities.rewardType, "ldc"),
         ),
       )
       .get();
@@ -513,12 +502,12 @@ export async function createActivity(
   const checked = newActivityInputSchema.safeParse(input.activity);
   if (!checked.success)
     invalidActivity(checked.error.issues[0]?.message ?? "请检查新活动配置");
-  if (input.activity.rewardType === "ldc")
-    await requireOfficialConnect(env, authorId);
-  const merchant =
-    input.activity.rewardType === "ldc"
-      ? await ownedMerchant(env, input.activity.merchantId, authorId)
-      : null;
+  await requireOfficialConnect(env, authorId);
+  const merchant = await ownedMerchant(
+    env,
+    input.activity.merchantId,
+    authorId,
+  );
   if (merchant?.usageStatus === "legacy")
     throw new ActivityError(
       409,
@@ -536,9 +525,7 @@ export async function createActivity(
   const config = storedConfig(input.activity);
   const [passwords, inventory] = await Promise.all([
     preparePasswords(env, id, input.activity.passwords, [], now),
-    input.activity.rewardType === "text"
-      ? prepareInventory(env, id, input.activity.rewards, [], now)
-      : prepareLdcInventory(id, input.activity, [], now),
+    prepareLdcInventory(id, input.activity, [], now),
   ]);
   try {
     await env.DB.batch([
@@ -546,7 +533,7 @@ export async function createActivity(
         (id, author_id, creation_request_id, creation_digest, title, reward_type, participation_mode, merchant_id, payment_mode, force_dedicated, join_square, topic_id, post_number, allocation, config, total_count, draw_state, created_at, updated_at)
         VALUES (?, CASE WHEN ?=0 OR EXISTS(SELECT 1 FROM users WHERE id=? AND official_connect_verified=1 AND active=1) THEN ? ELSE NULL END, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
         id,
-        Number(input.activity.rewardType === "ldc"),
+        1,
         authorId,
         authorId,
         input.requestId,
@@ -554,7 +541,7 @@ export async function createActivity(
         config.title,
         input.activity.rewardType,
         config.participationMode ?? "password",
-        input.activity.rewardType === "ldc" ? input.activity.merchantId : null,
+        input.activity.merchantId,
         merchant?.mode ?? null,
         Number(config.forceDedicated),
         Number(config.joinSquare),
@@ -562,13 +549,8 @@ export async function createActivity(
         normalizeTopicLink(config.topicUrl)?.postNumber ?? 1,
         config.allocation,
         JSON.stringify(config),
-        input.activity.rewardType === "ldc"
-          ? ldcRewardCount(input.activity)
-          : inventory.length,
-        input.activity.rewardType === "ldc" &&
-          input.activity.money.mode === "timed_draw"
-          ? "waiting"
-          : null,
+        ldcRewardCount(input.activity),
+        input.activity.money.mode === "timed_draw" ? "waiting" : null,
         now,
         now,
       ),
@@ -579,8 +561,7 @@ export async function createActivity(
     // A parallel retry may have won the unique (author, request) constraint.
     const winner = await previous();
     if (!winner) {
-      if (input.activity.rewardType === "ldc")
-        await requireOfficialConnect(env, authorId);
+      await requireOfficialConnect(env, authorId);
       throw error;
     }
     if (winner.creationDigest !== requestDigest)
@@ -618,18 +599,18 @@ export async function updateActivity(
     (input.activity.participationMode ?? "password") !== row.participationMode
   )
     invalidActivity("开放后不能修改参与方式");
-  if (input.activity.rewardType === "ldc" && row.openedAt === null)
-    await requireOfficialConnect(env, authorId);
+  if (row.openedAt === null) await requireOfficialConnect(env, authorId);
   if (
     input.activity.quantityVisibility !== "exact" &&
     input.activity.quantityVisibility !== "fuzzy"
   )
     invalidActivity("数量展示仅支持精确或模糊");
   const config = storedConfig(input.activity);
-  const merchant =
-    input.activity.rewardType === "ldc"
-      ? await ownedMerchant(env, input.activity.merchantId, authorId)
-      : null;
+  const merchant = await ownedMerchant(
+    env,
+    input.activity.merchantId,
+    authorId,
+  );
   if (merchant?.usageStatus === "legacy" && merchant.id !== row.merchantId)
     throw new ActivityError(
       409,
@@ -681,12 +662,9 @@ export async function updateActivity(
     if (
       input.activity.rewardType !== row.rewardType ||
       config.allocation !== row.allocation ||
-      (input.activity.rewardType === "text"
-        ? JSON.stringify(input.activity.rewards) !==
-          JSON.stringify(oldContent.rewards)
-        : oldConfig.rewardType !== "ldc" ||
-          input.activity.merchantId !== row.merchantId ||
-          !sameLdcMoney(input.activity.money, oldConfig.money))
+      oldConfig.rewardType !== "ldc" ||
+      input.activity.merchantId !== row.merchantId ||
+      !sameLdcMoney(input.activity.money, oldConfig.money)
     ) {
       invalidActivity(
         "开放后不能修改奖励类型、付款商户、奖励内容、顺序或分配方式",
@@ -720,20 +698,11 @@ export async function updateActivity(
         )
       : [];
   const preserveLdcInventory =
-    input.activity.rewardType === "ldc" &&
     oldConfig.rewardType === "ldc" &&
     sameLdcMoney(input.activity.money, oldConfig.money);
   const inventory =
     row.openedAt === null && !preserveLdcInventory
-      ? input.activity.rewardType === "text"
-        ? await prepareInventory(
-            env,
-            id,
-            input.activity.rewards,
-            old.inventory,
-            now,
-          )
-        : prepareLdcInventory(id, input.activity, old.inventory, now)
+      ? prepareLdcInventory(id, input.activity, old.inventory, now)
       : [];
   // Setting a NOT NULL column to NULL makes a failed CAS abort the entire batch.
   const statements = [
@@ -750,7 +719,7 @@ export async function updateActivity(
       config.title,
       input.activity.rewardType,
       config.participationMode ?? "password",
-      input.activity.rewardType === "ldc" ? input.activity.merchantId : null,
+      input.activity.merchantId,
       nextPaymentMode ?? null,
       Number(config.forceDedicated),
       Number(config.joinSquare),
@@ -758,12 +727,9 @@ export async function updateActivity(
       normalizeTopicLink(config.topicUrl)?.postNumber ?? 1,
       config.allocation,
       JSON.stringify(config),
-      input.activity.rewardType === "text"
-        ? input.activity.rewards.length
-        : ldcRewardCount(input.activity),
+      ldcRewardCount(input.activity),
       row.openedAt === null
-        ? input.activity.rewardType === "ldc" &&
-          input.activity.money.mode === "timed_draw"
+        ? input.activity.money.mode === "timed_draw"
           ? "waiting"
           : null
         : row.drawState,
@@ -792,8 +758,7 @@ export async function updateActivity(
     await env.DB.batch(statements);
   } catch (error) {
     const current = await ownedActivity(env, id, authorId);
-    if (input.activity.rewardType === "ldc" && current.openedAt === null)
-      await requireOfficialConnect(env, authorId);
+    if (current.openedAt === null) await requireOfficialConnect(env, authorId);
     if (current.version !== input.version) activityConflict();
     throw error;
   }
@@ -854,92 +819,80 @@ export async function openActivity(
   const checked = activityInputSchema.safeParse({
     ...configuration(row),
     passwords: privateContent.passwords,
-    ...(row.rewardType === "text" ? { rewards: privateContent.rewards } : {}),
   });
   if (!checked.success) invalidActivity("活动配置不完整，无法开放");
   const inventory = (await privateRows(env, id)).inventory;
-  const timed =
-    checked.data.rewardType === "ldc" &&
-    checked.data.money.mode === "timed_draw";
+  const timed = checked.data.money.mode === "timed_draw";
   if (
     timed &&
-    (checked.data.rewardType !== "ldc" ||
-      ldcRewardCount(checked.data) !== row.totalCount ||
+    (ldcRewardCount(checked.data) !== row.totalCount ||
       row.drawState !== "waiting" ||
       row.registeredCount !== 0)
   )
     invalidActivity("限时开奖配置与报名状态不一致，无法开放");
   if (inventory.length !== (timed ? 0 : row.totalCount))
     invalidActivity("活动库存不完整，无法开放");
-  if (checked.data.rewardType === "ldc") {
-    const merchant = await ownedMerchant(
-      env,
-      checked.data.merchantId,
-      authorId,
-    );
-    if (row.paymentMode !== merchant.mode)
-      invalidActivity("活动付款模式与商户配置不一致，无法开放");
-    if (
-      !timed &&
-      (ldcRewardCount(checked.data) !== row.totalCount ||
-        inventory.some(
-          (item, index) =>
-            item.kind !== "ldc" ||
-            item.position !== index ||
-            !Number.isSafeInteger(item.amountMinor) ||
-            (item.amountMinor ?? 0) <= 0,
-        ) ||
-        inventory.reduce(
-          (sum, item) => sum + BigInt(item.amountMinor ?? 0),
-          0n,
-        ) !== BigInt(ldcTotalMinor(checked.data)))
-    )
-      invalidActivity("活动金额与库存不一致，无法开放");
-    if (checked.data.money.mode === "random") {
-      if (checked.data.money.algorithm === "double_mean_v1") {
-        let remaining = BigInt(ldcTotalMinor(checked.data));
-        let count = BigInt(inventory.length);
-        for (const item of inventory) {
-          const amount = BigInt(item.amountMinor ?? 0);
-          const reservingMinimum = remaining - count + 1n;
-          const twiceMean = (2n * remaining) / count;
-          const maximum =
-            count === 1n
-              ? remaining
-              : reservingMinimum < twiceMean
-                ? reservingMinimum
-                : twiceMean;
-          if (amount > maximum || (count === 1n && amount !== remaining))
-            invalidActivity("活动金额超出随机算法范围，无法开放");
-          remaining -= amount;
-          count--;
-        }
-      } else if (checked.data.money.algorithm === "bounded_mean_v1") {
-        const limits = boundedMeanLimits(
-          ldcTotalMinor(checked.data),
-          ldcRewardCount(checked.data),
-        );
-        if (
-          inventory.some(
-            (item) =>
-              (item.amountMinor ?? 0) < limits.min ||
-              (item.amountMinor ?? 0) > limits.max,
-          )
-        )
+  const merchant = await ownedMerchant(env, checked.data.merchantId, authorId);
+  if (row.paymentMode !== merchant.mode)
+    invalidActivity("活动付款模式与商户配置不一致，无法开放");
+  if (
+    !timed &&
+    (ldcRewardCount(checked.data) !== row.totalCount ||
+      inventory.some(
+        (item, index) =>
+          item.kind !== "ldc" ||
+          item.position !== index ||
+          !Number.isSafeInteger(item.amountMinor) ||
+          (item.amountMinor ?? 0) <= 0,
+      ) ||
+      inventory.reduce(
+        (sum, item) => sum + BigInt(item.amountMinor ?? 0),
+        0n,
+      ) !== BigInt(ldcTotalMinor(checked.data)))
+  )
+    invalidActivity("活动金额与库存不一致，无法开放");
+  if (checked.data.money.mode === "random") {
+    if (checked.data.money.algorithm === "double_mean_v1") {
+      let remaining = BigInt(ldcTotalMinor(checked.data));
+      let count = BigInt(inventory.length);
+      for (const item of inventory) {
+        const amount = BigInt(item.amountMinor ?? 0);
+        const reservingMinimum = remaining - count + 1n;
+        const twiceMean = (2n * remaining) / count;
+        const maximum =
+          count === 1n
+            ? remaining
+            : reservingMinimum < twiceMean
+              ? reservingMinimum
+              : twiceMean;
+        if (amount > maximum || (count === 1n && amount !== remaining))
           invalidActivity("活动金额超出随机算法范围，无法开放");
+        remaining -= amount;
+        count--;
       }
-    } else if (!timed) {
-      const amounts = ldcAmounts(checked.data);
-      if (inventory.some((item, index) => item.amountMinor !== amounts[index]))
-        invalidActivity("活动金额与库存不一致，无法开放");
+    } else if (checked.data.money.algorithm === "bounded_mean_v1") {
+      const limits = boundedMeanLimits(
+        ldcTotalMinor(checked.data),
+        ldcRewardCount(checked.data),
+      );
+      if (
+        inventory.some(
+          (item) =>
+            (item.amountMinor ?? 0) < limits.min ||
+            (item.amountMinor ?? 0) > limits.max,
+        )
+      )
+        invalidActivity("活动金额超出随机算法范围，无法开放");
     }
-  } else if (privateContent.rewards.length !== row.totalCount)
-    invalidActivity("活动文本库存不完整，无法开放");
+  } else if (!timed) {
+    const amounts = ldcAmounts(checked.data);
+    if (inventory.some((item, index) => item.amountMinor !== amounts[index]))
+      invalidActivity("活动金额与库存不一致，无法开放");
+  }
   const now = Date.now();
   const durationMs = deadlineDurationMs(checked.data.deadline);
   const timedCountdown = timed && checked.data.deadline.mode === "duration";
   const countdownMs =
-    checked.data.rewardType === "ldc" &&
     checked.data.money.mode === "timed_draw" &&
     checked.data.money.countdownSeconds !== undefined
       ? checked.data.money.countdownSeconds * 1000
@@ -970,8 +923,9 @@ export async function openActivity(
       activityWriteGuard(env.DB, id, authorId, version),
       env.DB.prepare(`UPDATE activities SET
       version = CASE WHEN version = ? AND author_id = ? AND deleted_at IS NULL AND opened_at IS NULL AND merchant_id IS ? AND ${openingDeadlineSql} > ${databaseNow} AND ${openingDeadlineSql} <= 8640000000000000
-      AND (reward_type!='ldc' OR EXISTS(SELECT 1 FROM merchants m WHERE m.id=activities.merchant_id AND m.author_id=activities.author_id AND m.usage_status='current'))
-      AND (reward_type!='ldc' OR EXISTS(SELECT 1 FROM users WHERE id=activities.author_id AND official_connect_verified=1 AND active=1))
+      AND reward_type='ldc'
+      AND EXISTS(SELECT 1 FROM merchants m WHERE m.id=activities.merchant_id AND m.author_id=activities.author_id AND m.usage_status='current')
+      AND EXISTS(SELECT 1 FROM users WHERE id=activities.author_id AND official_connect_verified=1 AND active=1)
       AND (payment_mode IS NOT 'real' OR ?=1 OR (
         EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_open=1)
         AND EXISTS(SELECT 1 FROM merchants m JOIN merchant_credentials c ON c.merchant_id=m.id AND c.version=m.credential_version

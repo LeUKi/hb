@@ -130,7 +130,7 @@ export function bindDiscoveryStatement(
     WHERE user_id = ? AND selected_activity_id IS NULL AND password_digest = ?
       AND EXISTS (SELECT 1 FROM json_each(candidate_ids) WHERE value = ?)
       AND (? IS NULL OR id = ?)
-      AND EXISTS (SELECT 1 FROM activities WHERE id = ? AND deleted_at IS NULL)
+      AND EXISTS (SELECT 1 FROM activities WHERE id = ? AND reward_type='ldc' AND deleted_at IS NULL)
       AND EXISTS (SELECT 1 FROM account_attempt_cooldowns c
         WHERE c.user_id = global_redemptions.user_id AND c.origin = 'home'
           AND c.attempt_id = global_redemptions.id)`).bind(

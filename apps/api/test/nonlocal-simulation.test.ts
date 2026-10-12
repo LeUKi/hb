@@ -47,11 +47,7 @@ async function fixture(open = true) {
     label: "isolated simulation",
     secret: "test-only",
   });
-  const {
-    rewards: _rewards,
-    rewardType: _type,
-    ...base
-  } = emptyActivityInput();
+  const { rewardType: _type, ...base } = emptyActivityInput();
   const input: LdcActivityInput = {
     ...base,
     title: "historical simulation",
@@ -191,24 +187,19 @@ describe("nonlocal historical simulation isolation", () => {
       expect(
         await getManagedActivity(runtime, f.activity.id, f.owner),
       ).toMatchObject({ version: f.activity.version, title: f.input.title });
-      const text = await createActivity(local, f.owner, {
+      const second = await createActivity(local, f.owner, {
         requestId: crypto.randomUUID(),
-        activity: {
-          ...emptyActivityInput(),
-          title: "text draft",
-          passwords: ["Correct123"],
-          rewards: [{ id: crypto.randomUUID(), text: "text" }],
-        },
+        activity: { ...f.input, title: "second LDC draft" },
       });
       await expect(
-        updateActivity(runtime, text.id, f.owner, {
-          version: text.version,
+        updateActivity(runtime, second.id, f.owner, {
+          version: second.version,
           activity: f.input,
         }),
       ).rejects.toMatchObject({ code: "SIMULATION_NOT_AVAILABLE" });
-      expect(await getManagedActivity(runtime, text.id, f.owner)).toMatchObject(
-        { version: text.version, rewardType: "text" },
-      );
+      expect(
+        await getManagedActivity(runtime, second.id, f.owner),
+      ).toMatchObject({ version: second.version, rewardType: "ldc" });
     },
   );
 });

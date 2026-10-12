@@ -701,10 +701,6 @@ summary::-webkit-details-marker {
   transform: rotate(-7deg);
   box-shadow: 0 4px 8px #7e3e2110;
 }
-.card-text .mini-envelope {
-  background: #83947d;
-  color: #f6f0da;
-}
 .card-draw .mini-envelope {
   background: #b7955e;
   color: #fff1ca;
@@ -1017,29 +1013,6 @@ summary::-webkit-details-marker {
   align-items: center;
   gap: 6px;
   color: #59734c;
-  font-size: 12px;
-}
-.text-reward {
-  margin-top: 18px;
-  padding: 18px;
-  background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  min-width: 0;
-}
-.text-reward > span {
-  font-size: 11px;
-  color: var(--muted);
-}
-.text-reward pre {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-size: 12px;
-  line-height: 1.9;
-  margin: 11px 0 15px;
-}
-.text-reward .button {
-  min-height: 44px;
   font-size: 12px;
 }
 .password-section {

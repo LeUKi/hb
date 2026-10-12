@@ -125,7 +125,7 @@ const author = {
 };
 
 async function mockPayments(page: Page, mode: PaymentMode = "simulation") {
-  const { rewards: _rewards, ...base } = emptyActivityInput();
+  const base = emptyActivityInput();
   const config: LdcActivityInput = {
     ...base,
     rewardType: "ldc",
@@ -599,10 +599,7 @@ async function mockPayments(page: Page, mode: PaymentMode = "simulation") {
         title: body.activity.title,
         config: body.activity,
         rewardType: body.activity.rewardType,
-        totalCount:
-          body.activity.rewardType === "ldc"
-            ? ldcRewardCount(body.activity)
-            : body.activity.rewards.length,
+        totalCount: ldcRewardCount(body.activity),
         status: "draft",
         openedAt: null,
         deadlineAt: null,
@@ -650,10 +647,7 @@ async function mockPayments(page: Page, mode: PaymentMode = "simulation") {
           title: body.activity.title,
           config: body.activity,
           version: state.activity.version + 1,
-          totalCount:
-            body.activity.rewardType === "ldc"
-              ? ldcRewardCount(body.activity)
-              : body.activity.rewards.length,
+          totalCount: ldcRewardCount(body.activity),
         };
       }
       return route.fulfill({ json: { activity: state.activity } });
@@ -690,7 +684,6 @@ async function mockPayments(page: Page, mode: PaymentMode = "simulation") {
 
 async function ldcWizard(page: Page) {
   await page.goto("/activities/new");
-  await chooseSegmented(page, "奖励类型", "LDC 奖励");
   await page.locator("#activity-title").fill("新 LDC 活动");
 
   await page.getByLabel("口令 1", { exact: true }).fill("Answer123");
@@ -1999,13 +1992,11 @@ test("四类 LDC 方案保留临时输入，算法和发放顺序是独立子选
   await page.getByLabel("每份金额（LDC）", { exact: true }).fill("4.00");
   await page.getByLabel("奖励份数", { exact: true }).fill("3");
   await chooseRewardPlan(page, "random");
-  await expect(page.getByLabel("总奖池（LDC）", { exact: true })).toHaveValue(
-    "12.00",
-  );
-  await page.getByLabel("总奖池（LDC）", { exact: true }).fill("10.00");
+  await expect(page.locator("#ldc-total").last()).toHaveValue("12.00");
+  await page.locator("#ldc-total").last().fill("10.00");
   await page.getByLabel("奖励份数", { exact: true }).fill("4");
   await chooseAlgorithm(page, "抽奖算法", "bounded_mean_v1");
-  await page.getByLabel("总奖池（LDC）", { exact: true }).fill("20.00");
+  await page.locator("#ldc-total").last().fill("20.00");
   await page.getByLabel("奖励份数", { exact: true }).fill("3");
   await chooseRewardPlan(page, "custom");
   await page
@@ -2025,14 +2016,10 @@ test("四类 LDC 方案保留临时输入，算法和发放顺序是独立子选
   await expect(page.getByLabel("奖励份数", { exact: true })).toHaveValue("3");
   await chooseRewardPlan(page, "random");
   await expectAlgorithm(page, "抽奖算法", "bounded_mean_v1");
-  await expect(page.getByLabel("总奖池（LDC）", { exact: true })).toHaveValue(
-    "20.00",
-  );
+  await expect(page.locator("#ldc-total").last()).toHaveValue("20.00");
   await expect(page.getByLabel("奖励份数", { exact: true })).toHaveValue("3");
   await chooseAlgorithm(page, "抽奖算法", "double_mean_v1");
-  await expect(page.getByLabel("总奖池（LDC）", { exact: true })).toHaveValue(
-    "20.00",
-  );
+  await expect(page.locator("#ldc-total").last()).toHaveValue("20.00");
   await expect(page.getByLabel("奖励份数", { exact: true })).toHaveValue("3");
   await chooseRewardPlan(page, "custom");
   await expect(
@@ -2053,7 +2040,7 @@ test("四类 LDC 方案保留临时输入，算法和发放顺序是独立子选
   await expect(page.locator("#timed-participant-limit")).toHaveValue("");
   await chooseRewardPlan(page, "random");
   await chooseAlgorithm(page, "抽奖算法", "bounded_mean_v1");
-  await page.getByLabel("总奖池（LDC）", { exact: true }).fill("0.03");
+  await page.locator("#ldc-total").last().fill("0.03");
   await page.getByLabel("奖励份数", { exact: true }).fill("3");
   await expect(
     page.getByText("每份金额范围：0.01–0.01 LDC", { exact: true }),
@@ -2684,44 +2671,33 @@ test("草稿随机模式首次切固定复用可精确均分的单价和份数",
   await expect(page.getByLabel("奖励份数", { exact: true })).toHaveValue("4");
 });
 
-test("奖励类型切换保留主文本框与各金额方案的页面内存", async ({ page }) => {
+test("LDC 奖励方式切换保留各金额方案的页面内存", async ({ page }) => {
   await mockPayments(page);
   await ldcWizard(page);
 
   await page.getByLabel("每份金额（LDC）", { exact: true }).fill("0.50");
-  await expect(page.getByLabel("每份金额（LDC）", { exact: true })).toHaveValue(
-    "0.50",
-  );
   await page.getByLabel("奖励份数", { exact: true }).fill("3");
-  await expect(page.getByLabel("奖励份数", { exact: true })).toHaveValue("3");
   await chooseRewardPlan(page, "random");
   await chooseAlgorithm(page, "抽奖算法", "bounded_mean_v1");
   await page.getByLabel("总奖池（LDC）", { exact: true }).fill("10.00");
   await page.getByLabel("奖励份数", { exact: true }).fill("4");
-  await chooseSegmented(page, "奖励类型", "文本 / CDK");
-  await page
-    .getByLabel("文本 / CDK · 每行一份", { exact: true })
-    .fill("仅页面保留的文本\n还未提交的第二份");
-  await chooseSegmented(page, "奖励类型", "LDC 奖励");
-  await expectRewardPlan(page, "random");
-  await expectAlgorithm(page, "抽奖算法", "bounded_mean_v1");
-  await expect(page.getByLabel("总奖池（LDC）", { exact: true })).toHaveValue(
-    "10.00",
-  );
   await chooseRewardPlan(page, "fixed");
   await expect(page.getByLabel("每份金额（LDC）", { exact: true })).toHaveValue(
     "0.50",
   );
   await expect(page.getByLabel("奖励份数", { exact: true })).toHaveValue("3");
-  await chooseSegmented(page, "奖励类型", "文本 / CDK");
-  await expect(
-    page.getByLabel("文本 / CDK · 每行一份", { exact: true }),
-  ).toHaveValue("仅页面保留的文本\n还未提交的第二份");
+  await chooseRewardPlan(page, "random");
+  await expectRewardPlan(page, "random");
+  await expectAlgorithm(page, "抽奖算法", "bounded_mean_v1");
+  await expect(page.getByLabel("总奖池（LDC）", { exact: true })).toHaveValue(
+    "10.00",
+  );
+  await expect(page.getByLabel("奖励份数", { exact: true })).toHaveValue("4");
   expect(
     await page.evaluate(() =>
       JSON.stringify({ ...localStorage, ...sessionStorage }),
     ),
-  ).not.toMatch(/仅页面保留|还未提交|Answer123/);
+  ).not.toMatch(/Answer123/);
 });
 
 test("保存并开放失败保留已保存LDC草稿和输入，下次点击只更新原草稿", async ({
@@ -2741,10 +2717,6 @@ test("保存并开放失败保留已保存LDC草稿和输入，下次点击只�
       hasText: "草稿已保存。真实 LDC 接入待验，暂不能开放领取。",
     }),
   ).toBeVisible();
-  await expect(segmentedButton(page, "奖励类型", "LDC 奖励")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
   await expect(page.getByLabel("每份金额（LDC）", { exact: true })).toHaveValue(
     "0.10",
   );

@@ -1,5 +1,10 @@
-import type { ActivityRewardFilter, ActivitySummary } from "@hb/contracts";
-import { createFileRoute, Outlet, useMatchRoute } from "@tanstack/react-router";
+import type { ActivitySummary } from "@hb/contracts";
+import {
+  createFileRoute,
+  Outlet,
+  useMatchRoute,
+  useRouterState,
+} from "@tanstack/react-router";
 import { type SetStateAction, useCallback, useEffect, useState } from "react";
 import { ActivityErrorView } from "../components/activities/activity-error";
 import { AttemptStatisticsDialog } from "../components/activities/attempt-statistics-dialog";
@@ -18,14 +23,10 @@ import {
   ListPanel,
   ListRefreshButton,
   Pagination,
-  SegmentedControl,
 } from "../components/presentation/list-controls";
 import { RefreshNotice } from "../components/presentation/loading";
 import {
-  activityRewardFilters,
   formatTime,
-  normalizeActivityRewardFilter,
-  rewardFilterLabels,
   useHistorySummary,
   useMyActivities,
 } from "../lib/activities";
@@ -38,7 +39,6 @@ import {
 import { listQueryState } from "../lib/query-view";
 
 type Search = {
-  type?: ActivityRewardFilter;
   statistics?: string;
 };
 type ScopedCursors = { scope: string; cursors: Array<string | null> };
@@ -53,7 +53,6 @@ const managedColumns = [
 
 export const Route = createFileRoute("/my/activities")({
   validateSearch: (search): Search => ({
-    type: normalizeActivityRewardFilter(search.type),
     statistics:
       typeof search.statistics === "string" && search.statistics
         ? search.statistics
@@ -73,7 +72,11 @@ function MyActivitiesPage() {
 }
 
 function ActivityList({ userId }: { userId: string }) {
-  const { type = "all", statistics } = Route.useSearch();
+  const { statistics } = Route.useSearch();
+  const legacyRewardFilter = useRouterState({
+    select: (state) =>
+      new URL(state.location.href, "http://local").searchParams.has("type"),
+  });
   const navigate = useEntryNavigate();
   const statisticsOverlay = useHistoryOverlay("statistics");
   const [statisticsTarget, setStatisticsTarget] = useState<{
@@ -83,7 +86,16 @@ function ActivityList({ userId }: { userId: string }) {
   } | null>(null);
   const statisticsId = statisticsOverlay.overlay?.id ?? statistics;
   const summary = useHistorySummary(userId);
-  const cursorScope = `${userId}:${type}`;
+  useEffect(() => {
+    if (!legacyRewardFilter) return;
+    void navigate({
+      to: "/my/activities",
+      search: statistics ? { statistics } : {},
+      replace: true,
+      resetScroll: false,
+    });
+  }, [legacyRewardFilter, navigate, statistics]);
+  const cursorScope = userId;
   const [pager, setPager] = useViewState<ScopedCursors>("authored-pager", {
     scope: cursorScope,
     cursors: [null],
@@ -101,17 +113,15 @@ function ActivityList({ userId }: { userId: string }) {
     },
     [cursorScope, setPager],
   );
-  const cursor = cursors.at(-1) ?? null;
-  const query = useMyActivities(userId, cursor, {
-    type,
-  });
+  const cursor = legacyRewardFilter ? null : (cursors.at(-1) ?? null);
+  const query = useMyActivities(userId, cursor);
   useEffect(() => {
     setPager((current) =>
-      current.scope === cursorScope
+      current.scope === cursorScope && !legacyRewardFilter
         ? current
         : { scope: cursorScope, cursors: [null] },
     );
-  }, [cursorScope, setPager]);
+  }, [cursorScope, legacyRewardFilter, setPager]);
   const cursorNotice = useCursorRecovery(query.error, cursors, setCursors);
   const listState = listQueryState(query);
   return (
@@ -130,23 +140,6 @@ function ActivityList({ userId }: { userId: string }) {
       </div>
       <div className="work-page work-list-page list-page">
         <div className="activity-list-toolbar">
-          <SegmentedControl
-            label="奖励类型"
-            value={type}
-            options={activityRewardFilters.map((value) => ({
-              value,
-              label: rewardFilterLabels[value],
-            }))}
-            onChange={(value) => {
-              setCursors([null]);
-              void navigate({
-                to: "/my/activities",
-                search: { type: value },
-                replace: true,
-                resetScroll: false,
-              });
-            }}
-          />
           <ListRefreshButton
             busy={query.isFetching || summary.isFetching}
             onRefresh={() => {
@@ -227,7 +220,7 @@ function ActivityList({ userId }: { userId: string }) {
             if (statistics)
               void navigate({
                 to: "/my/activities",
-                search: { type },
+                search: {},
                 replace: true,
               });
           }}
@@ -238,11 +231,9 @@ function ActivityList({ userId }: { userId: string }) {
 }
 
 function authorRewardMain(activity: ActivitySummary) {
-  if (activity.rewardType === "text" || activity.reward?.mode === "text")
-    return undefined;
   if (activity.reward?.totalAmount)
     return `${activity.reward.totalAmount} LDC 总额`;
-  return rewardMainText(activity.rewardType, activity.reward);
+  return rewardMainText(activity.reward);
 }
 
 function participationText(activity: ActivitySummary) {
@@ -271,7 +262,7 @@ function ActivityRow({
     label: activity.status === "draft" ? "编辑草稿" : "编辑配置",
     href: `/my/activities/${activity.id}`,
   });
-  if (activity.rewardType === "ldc" && activity.status !== "draft")
+  if (activity.status !== "draft")
     actions.push({
       label: "付款记录",
       href: `/my/payments?activityId=${encodeURIComponent(activity.id)}`,
@@ -303,10 +294,7 @@ function ActivityRow({
         />
       </td>
       <td className="activity-table-reward" data-label="奖励配置">
-        <ActivityReward
-          label={activity.rewardType === "text" ? "文本 / CDK" : "LDC"}
-          summary={authorRewardMain(activity)}
-        />
+        <ActivityReward label="LDC" summary={authorRewardMain(activity)} />
       </td>
       <td className="activity-table-progress" data-label="参与情况">
         <div className="work-managed-progress">

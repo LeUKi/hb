@@ -6,13 +6,13 @@ import {
   type ClaimActivityInput,
   emptyActivityInput,
   type GlobalRedemptionResult,
+  type LdcActivityInput,
   type ManagedActivity,
-  type TextActivityInput,
 } from "../../packages/contracts/src";
+import { fullAppMerchant } from "./ldc-fixture";
 
 const origin = "http://127.0.0.1:4193";
 const authorizer = /^https:\/\/connect\.linux\.do\/oauth2\/authorize\?/;
-const reward = "FULL-APP-COOLDOWN-REWARD";
 type Session = {
   user: { id: string; isAdmin: boolean };
   csrfToken: string;
@@ -131,11 +131,13 @@ test("正式账号冷却跨页面和刷新，发现后以服务端编号自动�
     ).toBe(403);
     const password = `Cool${randomUUID().replaceAll("-", "").slice(0, 12)}`;
     const title = `完整应用共享冷却 ${randomUUID().slice(0, 8)}`;
-    const input: TextActivityInput = {
+    const merchant = await fullAppMerchant(author, owner.csrfToken);
+    const input: LdcActivityInput = {
       ...emptyActivityInput(),
       title,
       passwords: [password],
-      rewards: [{ id: randomUUID(), text: reward }],
+      merchantId: merchant.id,
+      money: { mode: "fixed", totalAmount: "0.01", count: 1 },
       joinSquare: true,
       showRecipientList: false,
     };
@@ -152,7 +154,11 @@ test("正式账号冷却跨页面和刷新，发现后以服务端编号自动�
       `/api/me/activities/${activity.id}/open`,
       {
         headers,
-        data: { version: activity.version },
+        data: {
+          version: activity.version,
+          merchantId: merchant.id,
+          credentialVersion: merchant.credentialVersion,
+        },
       },
     );
     expect(opened.ok()).toBe(true);
@@ -207,13 +213,13 @@ test("正式账号冷却跨页面和刷新，发现后以服务端编号自动�
     await expect(page).toHaveURL(`/activities/${activity.id}`);
     await expect(cooldownTimer(page)).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "领取奖励", exact: true }),
+      page.getByRole("button", { name: /^(领取奖励|领取红包)$/ }),
     ).toHaveCount(0);
     await expect(claimCooldownButton(page)).toBeDisabled();
     await page.reload();
     await expect(cooldownTimer(page)).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "领取奖励", exact: true }),
+      page.getByRole("button", { name: /^(领取奖励|领取红包)$/ }),
     ).toHaveCount(0);
     await expect(claimCooldownButton(page)).toBeDisabled();
     const reloadedSession = await recipient.request.get("/api/session");
@@ -225,7 +231,7 @@ test("正式账号冷却跨页面和刷新，发现后以服务端编号自动�
     });
     await expect(cooldownTimer(page)).toHaveCount(0, { timeout: 7_000 });
     await expect(
-      page.getByRole("button", { name: "领取奖励", exact: true }),
+      page.getByRole("button", { name: /^(领取奖励|领取红包)$/ }),
     ).toBeEnabled();
     await page
       .locator(".desktop-nav")
@@ -259,9 +265,7 @@ test("正式账号冷却跨页面和刷新，发现后以服务端编号自动�
     expect(matched.result).toBe("single");
     expect(matched.claimSubmissionId).toMatch(/^[a-f0-9-]{36}$/i);
     await expect(page).toHaveURL(`/activities/${activity.id}`);
-    await expect(page.locator("pre").filter({ hasText: reward })).toHaveText(
-      reward,
-    );
+    await expect(page.locator(".slip-amount")).toHaveText("+0.01");
     expect(claimRequests).toEqual([
       {
         submissionId: matched.claimSubmissionId,
@@ -270,9 +274,7 @@ test("正式账号冷却跨页面和刷新，发现后以服务端编号自动�
       },
     ]);
     await page.reload();
-    await expect(page.locator("pre").filter({ hasText: reward })).toHaveText(
-      reward,
-    );
+    await expect(page.locator(".slip-amount")).toHaveText("+0.01");
     await page.getByRole("button", { name: "返回上一页", exact: true }).click();
     await expect(page).toHaveURL(`${origin}/`);
     const localHistory = page.getByRole("region", { name: "尝试历史" });
@@ -291,9 +293,7 @@ test("正式账号冷却跨页面和刷新，发现后以服务端编号自动�
       password,
     );
     await page.goForward();
-    await expect(page.locator("pre").filter({ hasText: reward })).toHaveText(
-      reward,
-    );
+    await expect(page.locator(".slip-amount")).toHaveText("+0.01");
     expect(claimRequests).toHaveLength(1);
     await page.getByRole("button", { name: "分享活动", exact: true }).click();
     await expect(
@@ -316,7 +316,7 @@ test("正式账号冷却跨页面和刷新，发现后以服务端编号自动�
       initialUpstream.blockedRequests,
     );
     expect(state.upstream.distributeRequests).toBe(
-      initialUpstream.distributeRequests,
+      initialUpstream.distributeRequests + 1,
     );
     expect(external.flat()).toEqual([]);
   } finally {

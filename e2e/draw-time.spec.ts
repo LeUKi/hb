@@ -57,7 +57,7 @@ async function mockDraw(page: Page) {
     createdAt: now,
     updatedAt: now,
   };
-  const { rewards: _rewards, ...base } = emptyActivityInput();
+  const base = emptyActivityInput();
   const config: LdcActivityInput = {
     ...base,
     title: "开奖时间双模式",

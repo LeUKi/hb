@@ -31,7 +31,7 @@ function activity(activityId = id): PublicActivity {
   return {
     id: activityId,
     title: activityId === id ? title : "站内链接说明",
-    rewardType: "text",
+    rewardType: "ldc",
     status: "active",
     author: {
       id: "emoji-author",
@@ -52,7 +52,7 @@ function activity(activityId = id): PublicActivity {
       activityId === sourceId
         ? `[表情活动链接](${shortPath})\n\n[原始活动链接](${longPath})`
         : "活动的公开说明。",
-    reward: { mode: "text" },
+    reward: { mode: "fixed", totalAmount: "4.00", count: 4 },
   };
 }
 
@@ -368,8 +368,12 @@ for (const reducedMotion of [false, true]) {
       await session.opened;
       await expect(page).toHaveURL(longPath);
       await expect(page.locator(".home-page")).toHaveCount(0);
-      await expect(page.locator(".redemption-envelope")).toHaveCount(1);
-      const shell = await page.locator(".redemption-envelope").elementHandle();
+      // Router pending UI has its own envelope; capture the live data-loading shell.
+      const liveShell = page.locator(
+        '.activity-page[data-entry-ready="false"] .redemption-envelope',
+      );
+      await expect(liveShell).toHaveCount(1);
+      const shell = await liveShell.elementHandle();
       session.release();
       await detail.opened;
       await expect(page.locator(".claim-art")).toBeVisible();

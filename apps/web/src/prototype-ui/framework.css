@@ -1005,14 +1005,6 @@ h2 {
 .ending-letter > span:last-child {
   margin-top: 10px;
 }
-.text-reward {
-  margin-top: 10px;
-  padding: 12px;
-}
-.text-reward pre {
-  font-size: 0.875rem;
-  line-height: 1.6;
-}
 @media (max-width: 760px) {
   .claim-layout {
     grid-template-columns: 1fr;

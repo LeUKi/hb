@@ -55,6 +55,29 @@ async function navigate(page: Page, hash: string) {
   await page.evaluate((next) => {
     window.location.hash = next;
   }, hash);
+  const [route, query = ""] = hash.split("?");
+  const params = new URLSearchParams(query);
+  const key =
+    route === "activity"
+      ? `activity:${params.get("sample")}`
+      : `${route}:${params.get("edit") ?? ""}:${params.get("activity") ?? ""}`;
+  await expect(page.locator('[data-route-presence="present"]')).toHaveAttribute(
+    "data-route-key",
+    key,
+  );
+}
+
+async function openMoreSettings(page: Page) {
+  const summary = page
+    .locator('[data-route-presence="present"]')
+    .locator(".work-more-settings > summary");
+  await expect(summary).toBeVisible();
+  if ((await summary.getAttribute("aria-expanded")) !== "true")
+    await summary.click();
+  await expect(summary).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    page.locator('[data-route-presence="present"] #work-after-note'),
+  ).toBeVisible();
 }
 
 const sampleCases = [
@@ -223,20 +246,17 @@ test("disclosure choices survive ticks, reset with identity or phase, and deadli
 });
 
 for (const width of [1440, 375]) {
-  test(`author save, edit, allocation and end use the actual notes at ${width}px`, async ({
+  test(`author save, edit, eligibility and end use the actual notes at ${width}px`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/#create");
-    await page
-      .getByRole("group", { name: "奖励类型" })
-      .getByRole("button", { name: "文本 / CDK", exact: true })
-      .click();
     await page.locator("#work-title").fill("说明链路验证");
-    await page.locator("#work-text-rewards").fill("NOTE-CDK-A\nNOTE-CDK-B");
+    await page.getByRole("button", { name: "自定义金额", exact: true }).click();
+    await page.locator("#work-custom-amounts").fill("0.50\n0.88");
     await page.locator("#work-password-1").fill("说明链路口令");
-    await page.locator(".work-more-settings > summary").click();
+    await openMoreSettings(page);
     await expect(page.locator("#work-before-note")).toHaveValue("");
     await page
       .locator("#work-before-note")
@@ -261,7 +281,7 @@ for (const width of [1440, 375]) {
     await row
       .getByRole("button", { name: "说明链路验证：编辑草稿", exact: true })
       .click();
-    await page.locator(".work-more-settings > summary").click();
+    await openMoreSettings(page);
     await expect(page.locator("#work-after-note")).toHaveValue(
       "**本人的奖励附言**\n\n第一版",
     );
@@ -281,7 +301,7 @@ for (const width of [1440, 375]) {
     await expect(region(page, "after")).toHaveCount(0);
     const beforeOrder = await page.evaluate(() => {
       const note = document.querySelector('[data-note-region="before"]');
-      const input = document.querySelector("#activity-password");
+      const input = document.querySelector(".eligibility-note");
       return Boolean(
         note &&
           input &&
@@ -290,34 +310,20 @@ for (const width of [1440, 375]) {
       );
     });
     expect(beforeOrder).toBe(true);
-    if (width === 1440) {
-      await identity(page, "lite");
-      await expect(region(page, "after")).toHaveCount(0);
-      await page.locator("#activity-password").fill("说明链路口令");
-      await page
-        .locator(".claim-form")
-        .getByRole("button", { name: "领取奖励", exact: true })
-        .click();
-      await expect(content(page, "after")).toContainText("保存编辑后的正文");
-      await navigate(page, "participations");
-      await expect(
-        page.getByRole("button", { name: "说明链路验证", exact: true }),
-      ).toBeVisible();
-      await navigate(page, `activity?sample=${id}`);
-      await identity(page, "standard");
-      await expect(region(page, "after")).toHaveCount(0);
-    }
-    await page.locator("#activity-password").fill("说明链路口令");
-    await page
-      .locator(".claim-form")
-      .getByRole("button", { name: "领取奖励", exact: true })
-      .click();
-    await expect(content(page, "after")).toContainText("保存编辑后的正文");
-    await expect(region(page, "before").locator("summary")).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
-    await expect(page.locator(".text-reward")).toBeVisible();
+    await expect(
+      page.getByText("不能领取自己发起的 LDC 活动", { exact: true }),
+    ).toBeVisible();
+    await identity(page, "lite");
+    await expect(region(page, "after")).toHaveCount(0);
+    await expect(page.locator("#activity-password")).toHaveCount(0);
+    await expect(
+      page.getByText("不能领取自己发起的 LDC 活动", { exact: true }),
+    ).toBeVisible();
+    await navigate(page, "participations");
+    await expect(
+      page.getByRole("button", { name: "说明链路验证", exact: true }),
+    ).toHaveCount(0);
+    await identity(page, "standard");
     await navigate(page, "manage");
     // Closing an activity is a fixture transition; the list no longer exposes
     // the removed early-end action.
@@ -339,7 +345,7 @@ for (const width of [1440, 375]) {
       page.getByRole("menuitem", { name: "提前结束", exact: true }),
     ).toHaveCount(0);
     await navigate(page, `activity?sample=${id}`);
-    await expect(content(page, "after")).toContainText("保存编辑后的正文");
+    await expect(region(page, "after")).toHaveCount(0);
     const widths = await page.evaluate(() => ({
       doc: document.documentElement.scrollWidth,
       main: document.querySelector("main")?.scrollWidth,
@@ -348,14 +354,16 @@ for (const width of [1440, 375]) {
     expect(widths.main).toBeLessThanOrEqual(width);
     await identity(page, "guest");
     await expect(region(page, "after")).toHaveCount(0);
-    await expect(page.locator(".text-reward")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "复制奖励", exact: true }),
+    ).toHaveCount(0);
     await expect(content(page, "before")).toBeVisible();
     await expect(content(page, "ended")).toBeVisible();
     if (width === 1440) {
       await identity(page, "standard");
       for (const allEmpty of [false, true]) {
         await navigate(page, `create?edit=${id}`);
-        await page.locator(".work-more-settings > summary").click();
+        await openMoreSettings(page);
         await page.locator("#work-after-note").fill("");
         await page.locator("#work-ended-note").fill("   ");
         if (allEmpty) await page.locator("#work-before-note").fill("");
@@ -389,7 +397,7 @@ test("system status copy keeps allocated rewards ahead of lifecycle and separate
     overrides: Partial<ActivityViewState> = {},
     expired = false,
   ) => activityStatusSentence({ type }, { ...state, ...overrides }, expired);
-  expect(copy("text")).toBe("输入口令，兑换本次奖励。");
+  expect(copy("ldc")).toBe("输入口令，兑换本次奖励。");
   expect(copy("draw", { drawProgress: "waiting" })).toBe(
     "输入口令，报名参与开奖。",
   );

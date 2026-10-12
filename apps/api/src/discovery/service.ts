@@ -21,7 +21,8 @@ import {
 import { databaseNow } from "../activities/lifecycle";
 import { getRegistrationDetail } from "../activities/registration-queries";
 import { projectPublicActivity } from "../activities/service";
-import type { ActivityRow } from "../activities/storage";
+import { type ActivityRow, findActivity } from "../activities/storage";
+import { requireOfficialConnect } from "../auth/eligibility";
 import { createDb } from "../db/client";
 import {
   activities,
@@ -68,7 +69,8 @@ function parseCursor(value: string | undefined, scope: string) {
 
 // A delayed lifecycle sweep must not keep expired archives discoverable.
 function discoverable(now: number) {
-  return sql`${activities.openedAt} IS NOT NULL
+  return sql`${activities.rewardType} = 'ldc'
+    AND ${activities.openedAt} IS NOT NULL
     AND ${activities.deletedAt} IS NULL
     AND ${activities.archivedAt} IS NULL
     AND (${activities.drawState} IN ('waiting', 'settling')
@@ -271,6 +273,7 @@ async function prepare(
   ]);
   const previous = await findSubmission(env, userId, input.submissionId);
   if (previous) return verifyFingerprint(previous, fingerprint);
+  await requireOfficialConnect(env, userId);
   await assertAttemptAllowed(env, userId, "home");
   const rowId = crypto.randomUUID();
   try {
@@ -281,7 +284,7 @@ async function prepare(
       SELECT ?, ?, ?, ?, ?, (
         SELECT json_group_array(id) FROM (
           SELECT a.id FROM activity_passwords p JOIN activities a ON a.id = p.activity_id
-          WHERE p.digest = ? AND a.participation_mode='password' AND a.deleted_at IS NULL AND a.opened_at IS NOT NULL AND a.force_dedicated = 0 AND a.archived_at IS NULL
+          WHERE p.digest = ? AND a.reward_type='ldc' AND a.participation_mode='password' AND a.deleted_at IS NULL AND a.opened_at IS NOT NULL AND a.force_dedicated = 0 AND a.archived_at IS NULL
             AND (COALESCE(a.ended_at, a.deadline) IS NULL OR COALESCE(a.ended_at, a.deadline) > ${databaseNow} - ?)
           ORDER BY a.opened_at DESC, a.id DESC
         )
@@ -374,12 +377,16 @@ async function result(
     row.userId,
     cursor,
   );
-  const claimResult =
-    ids.length === 1 || row.selectedActivityId
-      ? await savedClaimResult(env, row)
-      : undefined;
-  const selectedActivityId =
+  const selectedCandidateId =
     row.selectedActivityId ?? (ids.length === 1 ? ids[0] : undefined);
+  const selectedLdcId = selectedCandidateId
+    ? (await findActivity(env, selectedCandidateId))?.id
+    : undefined;
+  if (row.selectedActivityId && !selectedLdcId)
+    throw new ActivityError(404, "ACTIVITY_NOT_FOUND", "活动不存在或已结束");
+  const claimResult = selectedLdcId
+    ? await savedClaimResult(env, row)
+    : undefined;
   return {
     id: row.id,
     claimSubmissionId: row.claimSubmissionId,
@@ -388,7 +395,7 @@ async function result(
     result:
       ids.length === 0 ? "none" : ids.length === 1 ? "single" : "multiple",
     ...page,
-    ...(selectedActivityId ? { selectedActivityId } : {}),
+    ...(selectedLdcId ? { selectedActivityId: selectedLdcId } : {}),
     ...(claimResult ? { claimResult } : {}),
   };
 }
@@ -403,6 +410,8 @@ export async function redeemGlobally(
   if (ids.length === 1) {
     const id = ids[0];
     if (!id) throw new Error("Missing persisted candidate");
+    if (!(await findActivity(env, id)))
+      throw new ActivityError(404, "ACTIVITY_NOT_FOUND", "活动不存在或已结束");
     const stub = env.ACTIVITY_DO.get(env.ACTIVITY_DO.idFromName(id));
     const response = await stub.fetch(
       `https://activity.internal/internal/activities/${encodeURIComponent(id)}/claim`,

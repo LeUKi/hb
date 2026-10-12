@@ -8,8 +8,8 @@ import type {
 import { paymentLabel } from "@hb/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { useAtomValue } from "jotai";
-import { ArrowLeft, ArrowRight, Copy } from "lucide-react";
+import { useAtomValue, useSetAtom } from "jotai";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import { LayoutGroup, motion, useReducedMotion } from "motion/react";
 import {
   type Dispatch,
@@ -47,6 +47,7 @@ import {
 import { useActivityEntryToken } from "../components/presentation/redemption-transition";
 import { UserIdentity } from "../components/user-identity";
 import {
+  ActivityRequestError,
   activityKeys,
   quantityText,
   statusLabels,
@@ -95,6 +96,8 @@ function PublicActivityPage() {
   const authenticated =
     identityReady && Boolean(user && session.data?.csrfToken);
   const rosterOverlay = useHistoryOverlay("roster");
+  const setExchangeContext = useSetAtom(exchangeContextAtom);
+  const setRedemptionIntent = useSetAtom(redemptionIntentAtom);
   const roster = rosterOverlay.overlay?.id === id;
   const cachedDetail = client.getQueryData<{ activity: PublicActivity }>(
     activityKeys.public(id, user?.id ?? null),
@@ -175,7 +178,7 @@ function PublicActivityPage() {
   const current = useCurrentParticipation(
     user?.id ?? "",
     id,
-    authenticated,
+    authenticated && Boolean(baseActivity),
     activity?.draw?.state,
   );
   const passwords = useActivityPasswords(
@@ -196,6 +199,24 @@ function PublicActivityPage() {
       : (current.data?.claim ?? current.data?.registration?.claim ?? null);
   const error =
     session.error ?? (isBlockingQueryError(query) ? query.error : null);
+  useEffect(() => {
+    if (!(error instanceof ActivityRequestError) || error.status !== 404)
+      return;
+    setExchangeContext((context) =>
+      context?.selectedActivityId === id ? null : context,
+    );
+    setRedemptionIntent((intent) =>
+      intent?.activityId === id ? null : intent,
+    );
+    if (rosterOverlay.overlay?.id === id) rosterOverlay.discard();
+  }, [
+    error,
+    id,
+    rosterOverlay.overlay,
+    rosterOverlay.discard,
+    setExchangeContext,
+    setRedemptionIntent,
+  ]);
   return (
     <ActivityPageBody
       key={id}
@@ -298,7 +319,6 @@ function ActivityPageBody({
   const router = useRouter();
   const roster = rosterOverlay.overlay?.id === id;
   const rosterReturnFocus = useRef<Element | null>(null);
-  const [copyStatus, setCopyStatus] = useState("");
   const [shareStatus, setShareStatus] = useState<{
     identity: string | null;
     message: string;
@@ -343,9 +363,7 @@ function ActivityPageBody({
   const reward: EnvelopeReward | undefined = !activity
     ? undefined
     : claim
-      ? claim.rewardType === "ldc"
-        ? { kind: "ldc", amount: claim.amount }
-        : { kind: "text" }
+      ? { kind: "ldc", amount: claim.amount }
       : registration?.status === "not_won"
         ? { kind: "not-won" }
         : ended && !participationUnavailable
@@ -401,15 +419,6 @@ function ActivityPageBody({
   useEffect(() => {
     main.current?.focus({ preventScroll: true });
   }, []);
-  async function copyReward() {
-    if (claim?.rewardType !== "text") return;
-    try {
-      await navigator.clipboard.writeText(claim.text);
-      setCopyStatus("奖励已复制。");
-    } catch {
-      setCopyStatus("复制失败，请手动选择奖励文本。");
-    }
-  }
   return (
     <LayoutGroup id={`activity:${id}`}>
       <article
@@ -469,11 +478,7 @@ function ActivityPageBody({
                   className="user-identity"
                 />
                 <span className="activity-reward-kind">
-                  {activity.rewardType === "text"
-                    ? "文本 / CDK"
-                    : activity.draw
-                      ? "限时开奖"
-                      : "LDC"}
+                  {activity.draw ? "限时开奖" : "LDC"}
                 </span>
                 {rewardSummaryText(activity.reward) && (
                   <span>{rewardSummaryText(activity.reward)}</span>
@@ -577,7 +582,7 @@ function ActivityPageBody({
               animationToken={
                 animation?.activityId === id ? animation.token : null
               }
-              payment={claim?.rewardType === "ldc" ? claim.payment : undefined}
+              payment={claim?.payment}
               onOpenRoster={canOpenRoster ? openRoster : undefined}
               rosterLabel={rosterLabel}
             />
@@ -605,29 +610,7 @@ function ActivityPageBody({
                   />
                 )}
                 {claim ? (
-                  claim.rewardType === "text" ? (
-                    <div className="text-reward">
-                      <span>奖励内容</span>
-                      <pre>{claim.text}</pre>
-                      <button
-                        type="button"
-                        className="button secondary"
-                        onClick={() => {
-                          void copyReward();
-                        }}
-                      >
-                        <Copy size={16} aria-hidden="true" />
-                        复制奖励
-                      </button>
-                      {copyStatus && (
-                        <p role="status" className="form-message">
-                          {copyStatus}
-                        </p>
-                      )}
-                    </div>
-                  ) : ["waiting", "attention"].includes(
-                      claim.payment.status,
-                    ) ? (
+                  ["waiting", "attention"].includes(claim.payment.status) ? (
                     <p className="eligibility-note">
                       {claim.payment.reason
                         ? paymentReason(claim.payment.reason)
@@ -755,7 +738,7 @@ function ActivityPageBody({
 }
 
 function rewardSummaryText(reward: ActivityRewardSummary | undefined) {
-  if (!reward || reward.mode === "text") return null;
+  if (!reward) return null;
   if (reward.unitAmount) return `${reward.unitAmount} LDC / 份`;
   if (reward.totalAmount) return `${reward.totalAmount} LDC 奖池`;
   return null;

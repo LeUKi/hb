@@ -1,4 +1,3 @@
-import { mkdir } from "node:fs/promises";
 import {
   test as base,
   expect,
@@ -249,6 +248,9 @@ for (const width of [1440, 375]) {
     await expect(
       solve.getByRole("heading", { name: "验证其他口令" }),
     ).toBeVisible();
+    // The reveal toggle restores its own focus; scroll the solve controls back
+    // into view before checking their viewport geometry.
+    await solve.scrollIntoViewIfNeeded();
     await expect(input).toBeInViewport();
     await expect(
       solve.getByRole("button", { name: "验证口令", exact: true }),
@@ -307,12 +309,6 @@ for (const width of [1440, 375]) {
         "Mobile navigation remains at the viewport bottom",
       ).toBeCloseTo(scroll.viewportHeight, 0);
     }
-    const artifacts = ".wrangler/verification/prototype";
-    await mkdir(artifacts, { recursive: true });
-    await page.screenshot({
-      path: `${artifacts}/utility-passwords-${width}.png`,
-      animations: "disabled",
-    });
   });
 }
 

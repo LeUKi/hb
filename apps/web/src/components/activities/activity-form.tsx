@@ -8,15 +8,14 @@ import {
   type CreateActivityInput,
   emptyActivityInput,
   formatAmount,
+  type LdcActivityInput,
   type ManagedActivity,
   normalizeTopicLink,
-  type TextActivityInput,
   type UpdateActivityInput,
 } from "@hb/contracts";
 import { useForm, useStore } from "@tanstack/react-form";
 import { Link, useBlocker } from "@tanstack/react-router";
 import { ArrowRight, ChevronDown, Plus, RefreshCw, Trash2 } from "lucide-react";
-import { AnimatePresence } from "motion/react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { api } from "../../api";
 import {
@@ -49,11 +48,7 @@ import { TopicLinkInput } from "../presentation/topic-link-input";
 import { createLdcDrafts, LdcFields } from "./ldc-fields";
 import { MarkdownField, type MarkdownMode } from "./markdown";
 
-type ActivityFormValues = Omit<TextActivityInput, "rewardType"> & {
-  rewardType: "text" | "ldc";
-  merchantId: string;
-  money: WebLdcMoney;
-};
+type ActivityFormValues = LdcActivityInput & { money: WebLdcMoney };
 
 type DurationUnit = "minutes" | "hours" | "days";
 
@@ -157,16 +152,12 @@ function DurationUnitMenu({
   );
 }
 
-function formValues(
-  input?: ActivityInput,
-  canUseLdc = true,
-): ActivityFormValues {
+function formValues(input?: ActivityInput): ActivityFormValues {
   return {
     ...emptyActivityInput(),
-    rewards: [{ id: crypto.randomUUID(), text: "" }],
     merchantId: "",
     money: { mode: "fixed", totalAmount: "", count: 0 },
-    rewardType: canUseLdc ? "ldc" : "text",
+    rewardType: "ldc",
     ...input,
     participationMode: input?.participationMode ?? "password",
     passwords: input?.passwords.length ? [...input.passwords] : [""],
@@ -179,22 +170,20 @@ function formValues(
 }
 
 function activityValues(input: ActivityFormValues): ActivityInput {
-  const { merchantId, money, rewards, rewardType, ...shared } = input;
+  const { merchantId, money, rewardType, ...shared } = input;
   const participation = isDirectParticipation(input)
     ? { ...shared, passwords: [], forceDedicated: false }
     : shared;
-  return rewardType === "ldc"
-    ? {
-        ...participation,
-        rewardType,
-        merchantId,
-        money,
-        allocation:
-          money.mode === "random" || isTimedDrawMoney(money)
-            ? "random"
-            : shared.allocation,
-      }
-    : { ...participation, rewardType, rewards };
+  return {
+    ...participation,
+    rewardType,
+    merchantId,
+    money,
+    allocation:
+      money.mode === "random" || isTimedDrawMoney(money)
+        ? "random"
+        : shared.allocation,
+  };
 }
 
 function parseActivityForm(value: ActivityFormValues) {
@@ -303,28 +292,8 @@ export function ActivityForm({
 }) {
   const [persisted, setPersisted] = useState(initial);
   const [defaultValues, setDefaultValues] = useState(() =>
-    formValues(initial?.config, canUseLdc),
+    formValues(initial?.config),
   );
-  const [ldcVisited, setLdcVisited] = useState(
-    defaultValues.rewardType === "ldc",
-  );
-  const [legacyMultilineTextRewards] = useState(
-    () =>
-      initial?.config.rewardType === "text" &&
-      initial.config.rewards.some((reward) => /\r|\n/.test(reward.text)),
-  );
-  const rewardAllocations = useRef<
-    Record<"text" | "ldc", TextActivityInput["allocation"]>
-  >({
-    text:
-      defaultValues.rewardType === "text"
-        ? defaultValues.allocation
-        : "sequential",
-    ldc:
-      defaultValues.rewardType === "ldc"
-        ? defaultValues.allocation
-        : "sequential",
-  });
   const ldcDrafts = useRef(
     createLdcDrafts(
       defaultValues.money,
@@ -462,7 +431,7 @@ export function ActivityForm({
     retry?: PendingSaveRequest,
   ) {
     if (inFlight.current) return;
-    if (values.rewardType === "ldc" && !canUseLdc) {
+    if (!canUseLdc) {
       setMessage("青春版暂不支持保存或开放LDC活动，请使用官方Connect升级。");
       return;
     }
@@ -639,31 +608,22 @@ export function ActivityForm({
   const openingBlocked =
     Boolean(initial) &&
     !opened &&
-    values.rewardType === "ldc" &&
     (persisted?.openingBlockedReason === "REAL_LDC_NOT_ENABLED" ||
       (persisted?.openingBlockedReason === "MERCHANT_LEGACY" &&
-        persisted.config.rewardType === "ldc" &&
         values.merchantId === persisted.config.merchantId));
   const direct = isDirectParticipation(values);
   const isDirty = useStore(form.store, (state) => state.isDirty);
   const selectedMerchant = useMerchant(
     canUseLdc ? userId : "",
-    values.rewardType === "ldc" ? values.merchantId : "",
+    values.merchantId,
   );
   const paymentMode =
     persisted?.paymentMode ?? selectedMerchant.data?.merchant.mode;
   const input = activityValues(values);
-  const totalMinor =
-    input.rewardType === "ldc" ? webLdcTotalMinor(input) : null;
+  const totalMinor = webLdcTotalMinor(input);
   const totalLdc = totalMinor === null ? null : formatAmount(totalMinor);
-  const rewardCount =
-    input.rewardType === "text"
-      ? input.rewards.length
-      : webLdcRewardCount(input);
-  const timedDraw =
-    values.rewardType === "ldc" && isTimedDrawMoney(values.money)
-      ? values.money
-      : null;
+  const rewardCount = webLdcRewardCount(input);
+  const timedDraw = isTimedDrawMoney(values.money) ? values.money : null;
   const dirty = isDirty || Boolean(uncertainRequest);
   useEffect(() => {
     if (dirty) savedNavigation.current = false;
@@ -730,10 +690,7 @@ export function ActivityForm({
     form.setFieldValue("showRecipientList", visible);
     form.setFieldValue("showRecipientUsername", visible);
     form.setFieldValue("showRecipientTime", visible);
-    form.setFieldValue(
-      "showRecipientAmount",
-      visible && values.rewardType === "ldc",
-    );
+    form.setFieldValue("showRecipientAmount", visible);
   }
 
   function submitCurrent(openAfter: boolean) {
@@ -754,24 +711,18 @@ export function ActivityForm({
       : opening.isPending
         ? "正在开放…"
         : "正在保存…";
-  const textRewardsText = values.rewards
-    .map((reward) => reward.text)
-    .join("\n");
   const deadlineLabel = timedDraw
     ? timedDrawTimeLabel(timedDraw, values.deadline)
     : values.deadline.mode === "duration"
       ? durationLabel(values.deadline)
       : "指定时间";
-  const summaryRewardKind =
-    input.rewardType === "ldc"
-      ? timedDraw
-        ? "限时开奖"
-        : values.money.mode === "fixed"
-          ? "固定均分"
-          : values.money.mode === "random"
-            ? "即时随机"
-            : "自定义金额"
-      : "文本 / CDK";
+  const summaryRewardKind = timedDraw
+    ? "限时开奖"
+    : values.money.mode === "fixed"
+      ? "固定均分"
+      : values.money.mode === "random"
+        ? "即时随机"
+        : "自定义金额";
   return (
     <form
       className="work-create-layout"
@@ -866,232 +817,32 @@ export function ActivityForm({
             disabled={busy || Boolean(uncertainRequest)}
             className="work-reward-frozen"
           >
-            <div className="work-reward-kind-row">
-              <SegmentedControl
-                className="work-reward-kind"
-                label="奖励类型"
-                value={values.rewardType}
-                onChange={(rewardType) => {
-                  if (opened) return;
-                  rewardAllocations.current[values.rewardType] =
-                    values.allocation;
-                  form.setFieldValue("rewardType", rewardType);
-                  form.setFieldValue(
-                    "allocation",
-                    rewardAllocations.current[rewardType],
-                  );
-                  if (rewardType === "ldc") setLdcVisited(true);
-                  if (!persisted && values.showRecipientList)
-                    form.setFieldValue(
-                      "showRecipientAmount",
-                      rewardType === "ldc",
-                    );
-                }}
-                options={[
-                  {
-                    value: "ldc",
-                    label: canUseLdc ? "LDC 奖励" : "LDC（需升级）",
-                    disabled: !canUseLdc || opened,
-                  },
-                  { value: "text", label: "文本 / CDK", disabled: opened },
-                ]}
-              />
-              <span className="work-field-note">奖励类型开放后不可修改</span>
-            </div>
             {!canUseLdc ? <OfficialConnectRequired /> : null}
-            <AnimatePresence initial={false} mode="popLayout">
-              {values.rewardType === "ldc" && ldcVisited ? (
-                <AnimatedRegion key="ldc" className="work-animated-section">
-                  <div className="work-reward-panel">
-                    <LdcFields
-                      userId={canUseLdc ? userId : ""}
-                      paymentMode={paymentMode}
-                      lockedPaymentMode={persisted?.paymentMode}
-                      autoBindCurrent={persisted?.config.rewardType !== "ldc"}
-                      merchantId={values.merchantId}
-                      money={values.money}
-                      deadline={values.deadline}
-                      deadlineAt={persisted?.deadlineAt ?? undefined}
-                      allocation={values.allocation}
-                      disabled={
-                        opened || values.rewardType !== "ldc" || !canUseLdc
-                      }
-                      onMerchant={(value) =>
-                        form.setFieldValue("merchantId", value)
-                      }
-                      onMoney={(value) => form.setFieldValue("money", value)}
-                      onDeadline={(value) =>
-                        form.setFieldValue("deadline", value)
-                      }
-                      onAllocation={(value) =>
-                        form.setFieldValue("allocation", value)
-                      }
-                      drafts={ldcDrafts}
-                    />
-                  </div>
-                </AnimatedRegion>
-              ) : (
-                <AnimatedRegion key="text" className="work-animated-section">
-                  <div className="work-reward-panel">
-                    {legacyMultilineTextRewards ? (
-                      <div className="field">
-                        <div className="work-field-label">
-                          <span>文本 / CDK · 旧版多行库存</span>
-                          <Help label="旧版多行库存">
-                            此活动包含旧版多行文本奖励。每个输入框对应一份真实库存；编辑文字不会按换行拆分。
-                          </Help>
-                        </div>
-                        <p className="work-field-hint">
-                          为避免静默改变库存，每份旧奖励单独编辑。保留原奖励
-                          ID、换行和份数。
-                        </p>
-                        <div className="work-password-list">
-                          {values.rewards.map((reward, index) => {
-                            const inputId = `activity-text-reward-${index + 1}`;
-                            return (
-                              <label
-                                key={reward.id ?? index}
-                                className="field"
-                                htmlFor={inputId}
-                              >
-                                文本 / CDK {index + 1}
-                                <textarea
-                                  id={inputId}
-                                  rows={Math.max(
-                                    3,
-                                    reward.text.split(/\r?\n/).length,
-                                  )}
-                                  value={reward.text}
-                                  disabled={opened}
-                                  aria-invalid={Boolean(
-                                    touchedFields.has("rewards") &&
-                                      issueFor("rewards"),
-                                  )}
-                                  aria-describedby={describedBy(
-                                    "activity-text-reward-1",
-                                    touchedFields.has("rewards")
-                                      ? issueFor("rewards")
-                                      : undefined,
-                                  )}
-                                  onBlur={() => markTouched("rewards")}
-                                  onChange={(event) =>
-                                    form.setFieldValue(
-                                      "rewards",
-                                      values.rewards.map((item, current) =>
-                                        current === index
-                                          ? {
-                                              ...item,
-                                              text: event.target.value,
-                                            }
-                                          : item,
-                                      ),
-                                    )
-                                  }
-                                />
-                              </label>
-                            );
-                          })}
-                        </div>
-                        <WorkFieldError id="activity-text-reward-1-error">
-                          {touchedFields.has("rewards")
-                            ? issueFor("rewards")
-                            : undefined}
-                        </WorkFieldError>
-                        {!opened ? (
-                          <button
-                            type="button"
-                            className="button ghost"
-                            disabled={
-                              values.rewards.length >= ACTIVITY_LIMITS.rewards
-                            }
-                            onClick={() =>
-                              form.setFieldValue("rewards", [
-                                ...values.rewards,
-                                { id: crypto.randomUUID(), text: "" },
-                              ])
-                            }
-                          >
-                            <Plus size={16} aria-hidden="true" /> 添加一份奖励
-                          </button>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <div className="field">
-                        <div className="work-field-label">
-                          <label htmlFor="activity-text-rewards">
-                            文本 / CDK · 每行一份
-                          </label>
-                          <Help label="文本 / CDK">
-                            每行一份；仅向成功领取该份奖励的账号展示原文。
-                          </Help>
-                        </div>
-                        <textarea
-                          id="activity-text-rewards"
-                          rows={5}
-                          value={textRewardsText}
-                          disabled={opened}
-                          placeholder="填写兑换码或交付内容，每行一份"
-                          aria-invalid={Boolean(
-                            touchedFields.has("rewards") && issueFor("rewards"),
-                          )}
-                          aria-describedby={describedBy(
-                            "activity-text-rewards",
-                            touchedFields.has("rewards")
-                              ? issueFor("rewards")
-                              : undefined,
-                          )}
-                          onBlur={() => markTouched("rewards")}
-                          onChange={(event) =>
-                            form.setFieldValue(
-                              "rewards",
-                              (event.target.value ? event.target.value : "")
-                                .split(/\r?\n/)
-                                .map((text, index) => ({
-                                  id:
-                                    values.rewards[index]?.id ??
-                                    crypto.randomUUID(),
-                                  text,
-                                })),
-                            )
-                          }
-                        />
-                        <WorkFieldError id="activity-text-rewards-error">
-                          {touchedFields.has("rewards")
-                            ? issueFor("rewards")
-                            : undefined}
-                        </WorkFieldError>
-                      </div>
-                    )}
-                    <div className="work-inline-meta">
-                      <span>{values.rewards.length} 份奖励</span>
-                    </div>
-                    <div className="field">
-                      <div className="work-field-label">
-                        <span>发放顺序</span>
-                        <Help label="发放顺序">
-                          按文本列表顺序或随机抽取发放；已发放的份额不会再次使用。
-                        </Help>
-                      </div>
-                      <SegmentedControl
-                        label="发放顺序"
-                        value={values.allocation}
-                        onChange={(allocation) =>
-                          form.setFieldValue("allocation", allocation)
-                        }
-                        options={[
-                          {
-                            value: "sequential",
-                            label: "按顺序",
-                            disabled: opened,
-                          },
-                          { value: "random", label: "随机", disabled: opened },
-                        ]}
-                      />
-                    </div>
-                  </div>
-                </AnimatedRegion>
-              )}
-            </AnimatePresence>
+            <AnimatedRegion key="ldc" className="work-animated-section">
+              <div className="work-reward-panel">
+                <LdcFields
+                  userId={canUseLdc ? userId : ""}
+                  paymentMode={paymentMode}
+                  lockedPaymentMode={persisted?.paymentMode}
+                  autoBindCurrent={!persisted}
+                  merchantId={values.merchantId}
+                  money={values.money}
+                  deadline={values.deadline}
+                  deadlineAt={persisted?.deadlineAt ?? undefined}
+                  allocation={values.allocation}
+                  disabled={opened || !canUseLdc}
+                  onMerchant={(value) =>
+                    form.setFieldValue("merchantId", value)
+                  }
+                  onMoney={(value) => form.setFieldValue("money", value)}
+                  onDeadline={(value) => form.setFieldValue("deadline", value)}
+                  onAllocation={(value) =>
+                    form.setFieldValue("allocation", value)
+                  }
+                  drafts={ldcDrafts}
+                />
+              </div>
+            </AnimatedRegion>
             <div className="work-password-heading">
               <div className="work-title-group">
                 <h3>参与方式</h3>
@@ -1498,7 +1249,7 @@ export function ActivityForm({
               checked={values.showRecipientList}
               onChange={toggleRecipients}
               title="展示领取名单"
-              description="公开昵称、领取时间和 LDC 金额；文本内容始终私有。限时开奖仅在结果发布后展示中奖者。"
+              description="公开昵称、领取时间和 LDC 金额；限时开奖仅在结果发布后展示中奖者。"
               notice="可随时修改；已公开的信息会随设置隐藏或展示。"
             />
           </fieldset>
@@ -1507,23 +1258,12 @@ export function ActivityForm({
       <aside className="work-summary" aria-label="活动摘要">
         <h2>{values.title.trim() || "未命名活动"}</h2>
         <div className="work-summary-amount">
-          {input.rewardType === "ldc" ? (
-            <>
-              {totalLdc ?? "—"}
-              <span>LDC</span>
-            </>
-          ) : (
-            <>
-              {rewardCount}
-              <span>份 文本 / CDK</span>
-            </>
-          )}
+          {totalLdc ?? "—"}
+          <span>LDC</span>
         </div>
         <p className="work-summary-plan">
           {summaryRewardKind}
-          {input.rewardType === "ldc"
-            ? ` · ${rewardCount || "—"} ${timedDraw ? "个获奖名额" : "份奖励"}`
-            : ""}
+          {` · ${rewardCount || "—"} ${timedDraw ? "个获奖名额" : "份奖励"}`}
         </p>
         <dl className="work-summary-details">
           <div>
@@ -1594,11 +1334,7 @@ export function ActivityForm({
               className="button"
               type="submit"
               value="open"
-              disabled={
-                busy ||
-                openingBlocked ||
-                (values.rewardType === "ldc" && !canUseLdc)
-              }
+              disabled={busy || openingBlocked || !canUseLdc}
               onClick={(event) => {
                 event.preventDefault();
                 submitCurrent(!opened);
@@ -1611,7 +1347,7 @@ export function ActivityForm({
               <button
                 className="button secondary"
                 type="button"
-                disabled={busy || (values.rewardType === "ldc" && !canUseLdc)}
+                disabled={busy || !canUseLdc}
                 onClick={() => submitCurrent(false)}
               >
                 保存草稿

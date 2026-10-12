@@ -2,7 +2,6 @@ import {
   fixedPoolAmount,
   prototypeDeadlineAt,
   prototypeStartedAt,
-  TEXT_REWARD_LABEL,
 } from "./activity-metadata";
 import type {
   Activity,
@@ -40,22 +39,24 @@ export const activities: Activity[] = [
     passwords: ["公共口令2026", "开奖口令2026", "周末口令2026"],
   },
   {
-    id: "reading",
-    title: "电子书兑换码",
+    id: "reading-ldc",
+    title: "电子书阅读红包",
     author: "白桃",
     username: "whitepeach",
     color: "peach",
-    type: "text",
-    description: "领取后可查看电子书兑换码和使用说明。",
+    type: "ldc",
+    description: "12 份 LDC 红包，每份 0.50 LDC。",
     topicUrl: "https://linux.do/t/topic/2964597/1216",
     beforeInfo:
-      "**电子书兑换**\n\n每个账号可领取一份兑换码，奖励正文只向成功兑换的本人显示。",
+      "**电子书阅读红包**\n\n每个账号可领取一份 LDC 奖励，请在活动结束前提交口令。",
     afterClaimInfo:
-      "电子书兑换码已分配。\n\n请使用奖励区的完整兑换码，并保留兑换记录以便后续查询。",
+      "电子书阅读红包已领取。\n\n请在活动历史中核对本次奖励，发放状态与兑换结果分别保留。",
     afterEndInfo:
-      "本期电子书兑换已经结束。\n\n已领取的兑换码和本次使用说明仍可查看。",
-    amount: "",
-    deadlineAt: prototypeDeadlineAt("text"),
+      "本期电子书阅读红包已经结束。\n\n已有奖励继续保留，可继续查看活动记录。",
+    amount: "0.50",
+    rewardMode: "fixed",
+    poolAmount: "6.00",
+    deadlineAt: prototypeDeadlineAt("ldc"),
     count: 12,
     remaining: 8,
     passwords: ["公共口令2026", "图书口令2026"],
@@ -133,8 +134,6 @@ export const activities: Activity[] = [
       "本活动报名已经结束，正在开奖。\n\n结束说明已公开，中奖结果仍以活动后续发布为准。",
   },
 ];
-export const demoTextReward =
-  "BOOK-MEME-2026\n这是一本虚拟电子书的兑换码，仅用于体验页面。\n请在兑换页面输入完整兑换码。";
 export const longNote = [
   "本活动包含 LDC 奖励。输入有效口令后，可以领取一份奖励。",
   "请先阅读**活动规则**。每个账号只能领取一次，同一活动的多个口令共享奖励库存。",
@@ -146,7 +145,7 @@ export const longNote = [
 export const forumLookupFixture = {
   topicId: "2964597",
   replyNumber: "1216",
-  activityIds: ["weekend", "reading"],
+  activityIds: ["weekend", "reading-ldc"],
 };
 
 export type RecipientExample = {
@@ -348,9 +347,11 @@ const historySpecifications: HistorySpecification[] = [
     payment: "confirmed",
   },
   {
-    id: "history-text-active",
-    title: "命令速查表兑换码",
-    type: "text",
+    id: "history-fixed-reading",
+    title: "命令速查表红包",
+    type: "ldc",
+    rewardMode: "fixed",
+    amount: "0.50",
     participation: "claimed",
     lifecycle: "active",
   },
@@ -403,9 +404,11 @@ const historySpecifications: HistorySpecification[] = [
     payment: "confirmed",
   },
   {
-    id: "history-text-archived",
-    title: "开发手册兑换 · 已归档",
-    type: "text",
+    id: "history-fixed-handbook-archived",
+    title: "开发手册红包 · 已归档",
+    type: "ldc",
+    rewardMode: "fixed",
+    amount: "0.50",
     participation: "claimed",
     lifecycle: "archived",
   },
@@ -429,9 +432,11 @@ const historySpecifications: HistorySpecification[] = [
     payment: "waiting",
   },
   {
-    id: "history-text-utility",
-    title: "工具箱试用兑换码",
-    type: "text",
+    id: "history-fixed-utility",
+    title: "工具箱试用红包",
+    type: "ldc",
+    rewardMode: "fixed",
+    amount: "0.50",
     participation: "claimed",
     lifecycle: "ended",
   },
@@ -464,9 +469,11 @@ const historySpecifications: HistorySpecification[] = [
     rosterCase: "tie-two",
   },
   {
-    id: "history-text-design",
-    title: "图标素材兑换码",
-    type: "text",
+    id: "history-fixed-design",
+    title: "图标素材红包",
+    type: "ldc",
+    rewardMode: "fixed",
+    amount: "0.50",
     participation: "claimed",
     lifecycle: "active",
   },
@@ -499,9 +506,11 @@ const historySpecifications: HistorySpecification[] = [
     payment: "confirmed",
   },
   {
-    id: "history-text-material",
-    title: "部署清单资料兑换",
-    type: "text",
+    id: "history-fixed-material",
+    title: "部署清单资料红包",
+    type: "ldc",
+    rewardMode: "fixed",
+    amount: "0.50",
     participation: "claimed",
     lifecycle: "ended",
   },
@@ -526,9 +535,11 @@ const historySpecifications: HistorySpecification[] = [
     payment: "reconciling",
   },
   {
-    id: "history-text-handbook",
-    title: "Linux 操作手册兑换码",
-    type: "text",
+    id: "history-fixed-handbook",
+    title: "Linux 操作手册红包",
+    type: "ldc",
+    rewardMode: "fixed",
+    amount: "0.50",
     participation: "claimed",
     lifecycle: "ended",
   },
@@ -542,9 +553,7 @@ export const historySamples: Activity[] = historySpecifications.map(
         ? 10
         : random && specification.lifecycle === "active"
           ? 30
-          : specification.type === "text"
-            ? 12
-            : 20;
+          : 20;
     const remaining =
       specification.lifecycle === "active"
         ? random
@@ -553,20 +562,17 @@ export const historySamples: Activity[] = historySpecifications.map(
             ? 10
             : 8
         : 0;
-    const amount =
-      specification.type === "text" || random
-        ? ""
-        : specification.type === "draw"
-          ? "20.00"
-          : (specification.amount ?? "0.50");
+    const amount = random
+      ? ""
+      : specification.type === "draw"
+        ? "20.00"
+        : (specification.amount ?? "0.50");
     const poolAmount =
       specification.type === "draw"
         ? "20.00"
         : random
           ? ldcAmount(count * 100)
-          : specification.type === "ldc"
-            ? (fixedPoolAmount(amount, count) ?? undefined)
-            : undefined;
+          : (fixedPoolAmount(amount, count) ?? undefined);
     const profile = recipientExamples[index % recipientExamples.length];
     return {
       id: specification.id,
@@ -600,23 +606,15 @@ export const historySamples: Activity[] = historySpecifications.map(
         specification.lifecycle === "ended" ||
         specification.lifecycle === "archived",
       description:
-        specification.type === "text"
-          ? "领取后查看兑换码和使用说明。"
-          : random || specification.type === "draw"
-            ? `奖池 ${poolAmount} LDC，共 ${count} ${specification.type === "draw" ? "个获奖名额" : "份奖励"}。`
-            : `每份 ${amount} LDC，共 ${count} 份。`,
+        random || specification.type === "draw"
+          ? `奖池 ${poolAmount} LDC，共 ${count} ${specification.type === "draw" ? "个获奖名额" : "份奖励"}。`
+          : `每份 ${amount} LDC，共 ${count} 份。`,
       beforeInfo: `**${specification.title}**\n\n${
         specification.type === "draw"
           ? "每个账号只能报名一次，报名后等待活动公布中奖结果。"
-          : specification.type === "text"
-            ? `每个账号可兑换一份${TEXT_REWARD_LABEL}，奖励正文仅本人可见。`
-            : "每个账号可兑换一份 LDC 奖励，实际金额以本人记录为准。"
+          : "每个账号可兑换一份 LDC 奖励，实际金额以本人记录为准。"
       }`,
-      afterClaimInfo: `你已获得“${specification.title}”的奖励。\n\n${
-        specification.type === "text"
-          ? "请保留完整兑换码，并按奖励正文中的说明使用。"
-          : "本次分配结果已保存；付款确认状态另行显示，不影响查看这段附言。"
-      }`,
+      afterClaimInfo: `你已获得“${specification.title}”的奖励。\n\n${"本次分配结果已保存；付款确认状态另行显示，不影响查看这段附言。"}`,
       afterEndInfo: `“${specification.title}”已结束。\n\n${
         specification.participation === "drawing"
           ? "报名已经停止，中奖结果仍在处理中。此说明不代表开奖完成。"
@@ -647,10 +645,7 @@ function sampleResult(activity: Activity, index: number): ParticipationResult {
     prototypeStartedAt - (index + 1) * 18 * 60000,
     Number.isFinite(deadline) ? deadline - 18 * 60000 : Infinity,
   );
-  const payment =
-    reward && activity.type !== "text"
-      ? (specification?.payment ?? "confirmed")
-      : null;
+  const payment = reward ? (specification?.payment ?? "confirmed") : null;
   return {
     participation,
     participatedAt: new Date(participatedAt).toISOString(),
@@ -665,7 +660,7 @@ function sampleResult(activity: Activity, index: number): ParticipationResult {
             ),
           ).toISOString()
         : null,
-    ...(reward && activity.type !== "text"
+    ...(reward
       ? {
           rewardAmount:
             activity.rewardMode === "instant_random"
@@ -673,11 +668,6 @@ function sampleResult(activity: Activity, index: number): ParticipationResult {
               : activity.type === "draw"
                 ? (drawWinnerExamples[0]?.amount ?? "2.18")
                 : activity.amount,
-        }
-      : {}),
-    ...(reward && activity.type === "text"
-      ? {
-          rewardText: `CDK-2026-${String(index + 1).padStart(4, "0")}\n请在对应兑换页面输入完整兑换码。`,
         }
       : {}),
     password: activity.passwords[0],
@@ -719,11 +709,7 @@ export function getSampleResult(
 
 export function createParticipationSeed(identity: Identity) {
   const entries = historySamples
-    .filter(
-      (activity) =>
-        identity === "standard" ||
-        (identity === "lite" && activity.type === "text"),
-    )
+    .filter(() => identity === "standard")
     .map((activity) => [activity.id, getSampleResult(activity.id)] as const)
     .filter((entry): entry is readonly [string, ParticipationResult] =>
       Boolean(entry[1]),
@@ -772,10 +758,6 @@ export function getSampleRecipients(
           time: getSampleResult(activityId)?.participatedAt ?? entry.time,
         }
       : entry),
-    ...(activity.type === "text"
-      ? {}
-      : {
-          amount: amounts ? ldcAmount(amounts[index] ?? 100) : activity.amount,
-        }),
+    amount: amounts ? ldcAmount(amounts[index] ?? 100) : activity.amount,
   }));
 }

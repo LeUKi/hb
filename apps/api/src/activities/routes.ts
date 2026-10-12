@@ -166,6 +166,35 @@ const participationQuery = validator("query", (value): { refresh: boolean } => {
   return { refresh: value.refresh !== "0" };
 });
 
+async function requireLdcActivity(env: ApiContext["Bindings"], id: string) {
+  const activity = await findActivity(env, id);
+  if (!activity) activityNotFound();
+  return activity;
+}
+
+async function requireOwnedLdcActivity(
+  env: ApiContext["Bindings"],
+  id: string,
+  userId: string,
+) {
+  const activity = await requireLdcActivity(env, id);
+  if (activity.authorId !== userId) activityNotFound();
+  return activity;
+}
+
+async function requireOwnedLdcActivityForDelete(
+  env: ApiContext["Bindings"],
+  id: string,
+  userId: string,
+) {
+  const row = await env.DB.prepare(
+    "SELECT author_id FROM activities WHERE id = ? AND reward_type = 'ldc'",
+  )
+    .bind(id)
+    .first<{ author_id: string }>();
+  if (!row || row.author_id !== userId) activityNotFound();
+}
+
 function managedResponse(response: Response) {
   if (!response.ok) return response;
   // ActivityDO returns this contract after ownership checks. Forward the body
@@ -271,6 +300,12 @@ export const activityRoutes = new Hono<ApiContext>()
   .get("/activities/:id/registration", async (c) => {
     const session = await requireAuth(c);
     const id = c.req.param("id");
+    const activity = await findActivity(c.env, id);
+    if (
+      !activity ||
+      (activity.openedAt === null && activity.authorId !== session.user.id)
+    )
+      activityNotFound();
     const object = c.env.ACTIVITY_DO.get(c.env.ACTIVITY_DO.idFromName(id));
     await object.fetch(
       `https://activity.internal/internal/activities/${id}/refresh`,
@@ -311,6 +346,7 @@ export const activityRoutes = new Hono<ApiContext>()
   .get("/me/activities/:id", async (c) => {
     const session = await requireAuth(c);
     const id = c.req.param("id");
+    await requireOwnedLdcActivity(c.env, id, session.user.id);
     const stub = c.env.ACTIVITY_DO.get(c.env.ACTIVITY_DO.idFromName(id));
     const response = await stub.fetch(
       `https://activity.internal/internal/activities/${encodeURIComponent(id)}/manage`,
@@ -328,6 +364,7 @@ export const activityRoutes = new Hono<ApiContext>()
     async (c) => {
       const session = await requireProtectedMutation(c);
       const id = c.req.param("id");
+      await requireOwnedLdcActivity(c.env, id, session.user.id);
       const stub = c.env.ACTIVITY_DO.get(c.env.ACTIVITY_DO.idFromName(id));
       const response = await stub.fetch(
         `https://activity.internal/internal/activities/${encodeURIComponent(id)}/update`,
@@ -352,6 +389,7 @@ export const activityRoutes = new Hono<ApiContext>()
     async (c) => {
       const session = await requireProtectedMutation(c);
       const id = c.req.param("id");
+      await requireOwnedLdcActivity(c.env, id, session.user.id);
       const stub = c.env.ACTIVITY_DO.get(c.env.ACTIVITY_DO.idFromName(id));
       const response = await stub.fetch(
         `https://activity.internal/internal/activities/${encodeURIComponent(id)}/open`,
@@ -376,6 +414,7 @@ export const activityRoutes = new Hono<ApiContext>()
     async (c) => {
       const session = await requireProtectedMutation(c);
       const id = c.req.param("id");
+      await requireOwnedLdcActivityForDelete(c.env, id, session.user.id);
       const stub = c.env.ACTIVITY_DO.get(c.env.ACTIVITY_DO.idFromName(id));
       return stub.fetch(
         `https://activity.internal/internal/activities/${encodeURIComponent(id)}/delete`,
@@ -409,6 +448,7 @@ export const activityRoutes = new Hono<ApiContext>()
     async (c) => {
       const session = await requireProtectedMutation(c);
       const id = c.req.param("id");
+      await requireLdcActivity(c.env, id);
       const stub = c.env.ACTIVITY_DO.get(c.env.ACTIVITY_DO.idFromName(id));
       const response = await stub.fetch(
         `https://activity.internal/internal/activities/${encodeURIComponent(id)}/claim`,
@@ -472,6 +512,7 @@ export const activityRoutes = new Hono<ApiContext>()
     async (c) => {
       const session = await requireProtectedMutation(c);
       const id = c.req.param("id");
+      await requireOwnedLdcActivity(c.env, id, session.user.id);
       const stub = c.env.ACTIVITY_DO.get(c.env.ACTIVITY_DO.idFromName(id));
       const response = await stub.fetch(
         `https://activity.internal/internal/activities/${encodeURIComponent(id)}/end`,

@@ -4,6 +4,7 @@ import {
   emptyActivityInput,
   type ManagedActivity,
 } from "../../packages/contracts/src";
+import { fullAppMerchant } from "./ldc-fixture";
 
 const origin = "http://127.0.0.1:4193";
 const authorizer = /^https:\/\/connect\.linux\.do\/oauth2\/authorize\?/;
@@ -113,6 +114,7 @@ test("真实应用表情入口经本地 OAuth 回到 UUID 并复制表情链接�
     expect(sessionResponse.ok()).toBe(true);
     const session = (await sessionResponse.json()) as { csrfToken: string };
     const headers = { Origin: origin, "X-CSRF-Token": session.csrfToken };
+    const merchant = await fullAppMerchant(authorContext, session.csrfToken);
     const title = "完整应用表情链接验收";
     const create = await authorContext.request.post("/api/activities", {
       headers,
@@ -124,7 +126,8 @@ test("真实应用表情入口经本地 OAuth 回到 UUID 并复制表情链接�
           forceDedicated: true,
           deadline: { mode: "duration", value: 1, unit: "hours" },
           passwords: ["EmojiFlowPass123"],
-          rewards: [{ id: randomUUID(), text: "PRIVATE-EMOJI-REWARD" }],
+          merchantId: merchant.id,
+          money: { mode: "fixed", totalAmount: "0.01", count: 1 },
         },
       },
     });
@@ -136,7 +139,11 @@ test("真实应用表情入口经本地 OAuth 回到 UUID 并复制表情链接�
       `/api/me/activities/${id}/open`,
       {
         headers,
-        data: { version: created.activity.version },
+        data: {
+          version: created.activity.version,
+          merchantId: merchant.id,
+          credentialVersion: merchant.credentialVersion,
+        },
       },
     );
     expect(open.ok(), await open.text()).toBe(true);

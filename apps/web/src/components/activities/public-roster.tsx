@@ -73,12 +73,7 @@ const registrationLabels: Record<RegistrationStatus, string> = {
 };
 
 function AuthorClaimDetail({ row }: { row: AuthorClaim }) {
-  return row.rewardType === "text" ? (
-    <details className="recipient-private">
-      <summary>查看已分配文本</summary>
-      <pre>{row.text}</pre>
-    </details>
-  ) : (
+  return (
     <div className="recipient-private recipient-private--inline">
       <span>{row.amount} LDC</span>
       <span>{paymentLabel(row.payment.mode, row.payment.status)}</span>
@@ -96,11 +91,7 @@ function AuthorRegistrationDetail({ row }: { row: AuthorRegistration }) {
           开奖 <ShortTime value={row.drawAt} full />
         </span>
       )}
-      {row.claim && (
-        <span>
-          奖励 {row.claim.rewardType === "ldc" ? "LDC" : "文本 / CDK"}
-        </span>
-      )}
+      {row.claim && <span>奖励 LDC</span>}
     </div>
   );
 }

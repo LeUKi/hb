@@ -26,9 +26,8 @@ const money: TimedDrawMoney = {
 };
 
 function activity(): LdcActivityInput {
-  const { rewards: _rewards, ...base } = emptyActivityInput();
   return {
-    ...base,
+    ...emptyActivityInput(),
     title: "限时开奖",
     rewardType: "ldc",
     allocation: "random",

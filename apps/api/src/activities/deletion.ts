@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { createDb } from "../db/client";
 import { activities } from "../db/schema";
 import type { ApiBindings } from "../env";
@@ -28,7 +28,7 @@ export async function deleteActivity(
     createDb(env.DB)
       .select()
       .from(activities)
-      .where(eq(activities.id, id))
+      .where(and(eq(activities.id, id), eq(activities.rewardType, "ldc")))
       .get();
   const row = await read();
   if (!row || row.authorId !== authorId) activityNotFound();
@@ -44,7 +44,7 @@ export async function deleteActivity(
     await env.DB.batch([
       activityWriteGuard(env.DB, id, authorId, version),
       env.DB.prepare(`UPDATE activities SET
-        version = CASE WHEN author_id = ? AND version = ? AND deleted_at IS NULL
+        version = CASE WHEN author_id = ? AND version = ? AND reward_type = 'ldc' AND deleted_at IS NULL
           AND opened_at IS NULL AND claimed_count = 0
           AND NOT EXISTS (SELECT 1 FROM claims WHERE activity_id = activities.id)
           AND NOT EXISTS (SELECT 1 FROM payment_tasks p JOIN claims c ON c.id = p.claim_id WHERE c.activity_id = activities.id)

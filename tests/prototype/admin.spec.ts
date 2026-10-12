@@ -18,7 +18,7 @@ test("管理员六入口、分页和详情在 URL 中恢复", async ({ page }) =
   ).toContainText("库存");
   await expect(
     page.getByRole("complementary", { name: "记录详情" }),
-  ).toContainText("奖励类型");
+  ).not.toContainText("奖励类型");
   await expect(
     page.getByRole("complementary", { name: "记录详情" }),
   ).toContainText("生命周期");

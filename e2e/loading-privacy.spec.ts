@@ -91,9 +91,7 @@ test("统计分页保留摘要、框架和高度，权限撤销后500及返回�
   });
   await page.clock.install();
   await page.goto("/my/activities/statistics-test/statistics");
-  await expect(page).toHaveURL(
-    /\/my\/activities\?type=all&statistics=statistics-test$/,
-  );
+  await expect(page).toHaveURL(/\/my\/activities\?statistics=statistics-test$/);
   const statisticsDialog = page.getByRole("dialog", {
     name: "兑换尝试统计",
     exact: true,

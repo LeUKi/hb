@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  ACTIVITY_LIMITS,
   activityInputSchema,
   adminActivitiesQuerySchema,
   adminAuditQuerySchema,
@@ -24,9 +23,9 @@ const otherId = "3423508c-4d81-44c5-86c2-0fba29ab868c";
 function validActivity() {
   return {
     ...emptyActivityInput(),
-    title: "文本活动",
+    title: "LDC 活动",
     passwords: ["ABC123"],
-    rewards: [{ id: itemId, text: "  CODE\n第二行  " }],
+    merchantId: otherId,
   };
 }
 
@@ -68,7 +67,6 @@ describe("shared activity contracts", () => {
       { ...direct, participationMode: undefined },
     ])
       expect(newActivityInputSchema.safeParse(invalid).success).toBe(false);
-    const { rewards: _rewards, ...base } = direct;
     for (const money of [
       { mode: "fixed", totalAmount: "2.00", count: 2 },
       {
@@ -90,7 +88,7 @@ describe("shared activity contracts", () => {
     ])
       expect(
         newActivityInputSchema.safeParse({
-          ...base,
+          ...direct,
           rewardType: "ldc",
           merchantId: otherId,
           money,
@@ -135,24 +133,22 @@ describe("shared activity contracts", () => {
     ).toBe(false);
   });
 
-  it("preserves reward whitespace, multiline content and duplicate text as separate items", () => {
-    const input = validActivity();
-    input.rewards.push({ id: otherId, text: input.rewards[0]?.text ?? "" });
-    expect(activityInputSchema.parse(input).rewards).toEqual(input.rewards);
-    input.rewards[1] = { id: itemId, text: "different" };
-    expect(activityInputSchema.safeParse(input).success).toBe(false);
-  });
-
-  it("measures reward limits in UTF-8 bytes without silently truncating", () => {
-    const input = validActivity();
-    input.rewards = [
-      { id: itemId, text: "a".repeat(ACTIVITY_LIMITS.rewardBytes) },
-    ];
-    expect(activityInputSchema.safeParse(input).success).toBe(true);
-    input.rewards[0] = { id: itemId, text: "汉".repeat(5462) };
-    expect(activityInputSchema.safeParse(input).success).toBe(false);
-    input.rewards[0] = { id: itemId, text: "\n \t" };
-    expect(activityInputSchema.safeParse(input).success).toBe(false);
+  it("rejects retired text reward requests and missing reward type", () => {
+    const retired = {
+      ...validActivity(),
+      rewardType: "text",
+      rewards: [{ id: itemId, text: "PRIVATE-TEXT" }],
+    };
+    const missing = { ...validActivity() };
+    delete (missing as Partial<typeof missing>).rewardType;
+    for (const schema of [
+      activityInputSchema,
+      historicalActivityInputSchema,
+      newActivityInputSchema,
+    ]) {
+      expect(schema.safeParse(retired).success).toBe(false);
+      expect(schema.safeParse(missing).success).toBe(false);
+    }
   });
 
   it("rejects incomplete configurations, overlong descriptions and unknown input keys", () => {
@@ -278,21 +274,19 @@ describe("shared activity contracts", () => {
     (topicUrl) => {
       const input = {
         ...validActivity(),
-        title: " 文本活动 ",
+        title: " LDC 活动 ",
         topicUrl: ` ${topicUrl} `,
         passwords: [" ABC123 "],
       };
       const parsed = historicalActivityInputSchema.parse(input);
-      const legacyValue = {
-        title: "文本活动",
+      const historicalValue = {
+        title: "LDC 活动",
         topicUrl,
         forceDedicated: false,
-        rewardType: "text",
         joinSquare: false,
         deadline: { mode: "duration" },
         allocation: "sequential",
         passwords: ["ABC123"],
-        rewards: input.rewards,
         quantityVisibility: "exact",
         showRecipientList: true,
         showRecipientUsername: true,
@@ -301,8 +295,11 @@ describe("shared activity contracts", () => {
         beforeInfo: "",
         afterClaimInfo: "",
         afterEndInfo: "",
+        rewardType: "ldc",
+        merchantId: otherId,
+        money: { mode: "fixed", totalAmount: "1.00", count: 1 },
       };
-      expect(JSON.stringify(parsed)).toBe(JSON.stringify(legacyValue));
+      expect(JSON.stringify(parsed)).toBe(JSON.stringify(historicalValue));
       expect(
         createActivitySchema.parse({ requestId: itemId, activity: input })
           .activity,
@@ -312,16 +309,7 @@ describe("shared activity contracts", () => {
       expect(
         updateActivitySchema.safeParse({ version: 1, activity: input }).success,
       ).toBe(false);
-      const { rewards: _rewards, ...withoutRewards } = input;
-      const ldcInput = {
-        ...withoutRewards,
-        rewardType: "ldc",
-        merchantId: otherId,
-        money: { mode: "fixed", totalAmount: "1.00", count: 1 },
-      };
-      const parsedLdc = historicalActivityInputSchema.parse(ldcInput);
-      expect(parsedLdc.topicUrl).toBe(topicUrl);
-      expect(Object.keys(parsedLdc)).toEqual([
+      expect(Object.keys(parsed)).toEqual([
         "title",
         "topicUrl",
         "forceDedicated",
@@ -341,7 +329,6 @@ describe("shared activity contracts", () => {
         "merchantId",
         "money",
       ]);
-      expect(newActivityInputSchema.safeParse(ldcInput).success).toBe(false);
     },
   );
 

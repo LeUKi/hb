@@ -101,14 +101,17 @@ async function mockRoster(
     draw?: boolean;
     author?: boolean;
     motion?: boolean;
-    privateText?: string;
+    longName?: string;
   } = {},
 ) {
   const state = {
     user: options.author ? owner : viewer,
-    rows: Array.from({ length: options.count ?? 1 }, (_, index) =>
-      recipient(index + 1),
-    ),
+    rows: Array.from({ length: options.count ?? 1 }, (_, index) => ({
+      ...recipient(index + 1),
+      ...(index === 0 && options.longName
+        ? { displayName: options.longName }
+        : {}),
+    })),
     claimRows: options.draw ? ([] as PublicRecipient[]) : null,
     allowed: true,
     publicGate: null as ReturnType<typeof gate> | null,
@@ -130,8 +133,9 @@ async function mockRoster(
     return {
       id: activityId,
       title,
-      rewardType: draw ? "ldc" : "text",
+      rewardType: "ldc",
       status: "active",
+      paymentMode: "simulation",
       author: owner,
       forceDedicated: true,
       topicUrl: null,
@@ -154,7 +158,7 @@ async function mockRoster(
             count: 3,
             participantLimit: 100,
           }
-        : { mode: "text" },
+        : { mode: "fixed", unitAmount: "0.10", count: 100 },
       ...(draw
         ? {
             draw: {
@@ -226,9 +230,16 @@ async function mockRoster(
   const paper: ClaimDetail = {
     id: "roster-paper-result",
     activity: { id: activityId, title, status: "active" },
-    rewardType: "text",
+    rewardType: "ldc",
     claimedAt: new Date().toISOString(),
-    text: "ROSTER-REFRESH-CDK",
+    amount: "0.19",
+    payment: {
+      id: "roster-paper-payment",
+      mode: "simulation",
+      status: "confirmed",
+      reason: null,
+      confirmedAt: deadline,
+    },
     afterClaimInfo: "名单刷新不会再次开封。",
   };
   await page.route("**/*", async (route) => {
@@ -313,25 +324,15 @@ async function mockRoster(
         claimant: row,
         activity: { id: activityId, title, status: "active" },
         claimedAt: row.claimedAt ?? deadline,
-        ...(draw
-          ? {
-              rewardType: "ldc" as const,
-              amount: "0.10",
-              payment: {
-                id: `payment-${row.id}`,
-                mode: "simulation" as const,
-                status: "confirmed" as const,
-                reason: null,
-                confirmedAt: deadline,
-              },
-            }
-          : {
-              rewardType: "text" as const,
-              text:
-                row.id === "user-001" && options.privateText
-                  ? options.privateText
-                  : `PRIVATE-${row.id}-CDK`,
-            }),
+        rewardType: "ldc",
+        amount: "0.10",
+        payment: {
+          id: `payment-${row.id}`,
+          mode: "simulation",
+          status: "confirmed",
+          reason: null,
+          confirmedAt: deadline,
+        },
       }));
       await state.claimsGate?.wait();
       if (state.failClaims > 0) {
@@ -625,12 +626,25 @@ test("公共整轮失败保留旧人数与记录，权限关闭立即清除，�
     name: "查看领取名单",
     exact: true,
   });
+  const reopenedRecipients = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      url.pathname === `/api/activities/${activityId}/recipients` &&
+      response.status() === 200
+    );
+  });
   await opener.click();
-  await expect(dialog.locator(".recipient")).toHaveCount(2);
+  await reopenedRecipients;
+  const reopenedDialog = page.getByRole("dialog", { name: title, exact: true });
+  await expect(reopenedDialog.locator(".recipient")).toHaveCount(2);
+  const reopenedRefresh = reopenedDialog.getByRole("button", {
+    name: "刷新领取名单",
+    exact: true,
+  });
   const late = gate();
   state.listGate = late;
   try {
-    await refresh.click();
+    await reopenedRefresh.click();
     await late.started;
     const sessionResponse = page.waitForResponse(
       (response) => new URL(response.url()).pathname === "/api/session",
@@ -654,7 +668,7 @@ test("公共整轮失败保留旧人数与记录，权限关闭立即清除，�
       0,
     );
     await expect(
-      page.getByText("ROSTER-REFRESH-CDK", { exact: true }),
+      page.locator(".slip-amount", { hasText: "+0.19" }),
     ).toHaveCount(0);
     expect(state.writes).toEqual([]);
     expect(state.external).toEqual([]);
@@ -742,14 +756,14 @@ test("作者在活动页名单中同步刷新人数与私有记录，合并在�
   }
 });
 
-test("关闭公开名单后作者仍使用唯一入口查看私有文本，分页刷新保留全部记录且403清除", async ({
+test("关闭公开名单后作者仍使用唯一入口查看付款明细，长名称和分页刷新保留全部记录且403清除", async ({
   page,
 }) => {
-  const privateText = `PRIVATE-user-001-CDK\n${"LONG-PRIVATE-CODE".repeat(20)}\n第二行交付内容`;
+  const longName = `很长的领取者名称${"长昵称".repeat(40)}`;
   const state = await mockRoster(page, {
     author: true,
     count: 25,
-    privateText,
+    longName,
   });
   state.allowed = false;
   await page.setViewportSize({ width: 375, height: 812 });
@@ -767,8 +781,13 @@ test("关闭公开名单后作者仍使用唯一入口查看私有文本，分�
   await opener.click();
   const dialog = page.getByRole("dialog", { name: title, exact: true });
   await expect(dialog.locator(".recipient")).toHaveCount(20);
-  await dialog.getByText("查看已分配文本", { exact: true }).first().click();
-  await expect(dialog.getByText(privateText, { exact: true })).toBeVisible();
+  await expect(dialog.getByText(longName, { exact: true })).toBeVisible();
+  await expect(dialog.locator(".recipient-private").first()).toContainText(
+    "0.10 LDC",
+  );
+  await expect(dialog.locator(".recipient-private").first()).toContainText(
+    "模拟发放已确认",
+  );
   const layout = await dialog
     .locator(".recipient")
     .first()
@@ -793,8 +812,7 @@ test("关闭公开名单后作者仍使用唯一入口查看私有文本，分�
         profile: bounds(".user-identity"),
         time: bounds(".recipient-time"),
         details: bounds(".recipient-private"),
-        summary: bounds(".recipient-private summary"),
-        text: bounds(".recipient-private pre"),
+        amount: bounds(".recipient-private span"),
         list: { left: listBounds.left, right: listBounds.right },
         modal: { left: modalBounds.left, right: modalBounds.right },
         listOverflows: list.scrollWidth > list.clientWidth,
@@ -803,9 +821,8 @@ test("关闭公开名单后作者仍使用唯一入口查看私有文本，分�
     });
   expect(layout.details.top).toBeGreaterThanOrEqual(layout.profile.bottom);
   expect(layout.details.top).toBeGreaterThanOrEqual(layout.time.bottom);
-  expect(layout.text.top).toBeGreaterThanOrEqual(layout.summary.bottom);
-  expect(layout.text.left).toBeGreaterThanOrEqual(layout.list.left);
-  expect(layout.text.right).toBeLessThanOrEqual(layout.list.right);
+  expect(layout.amount.left).toBeGreaterThanOrEqual(layout.list.left);
+  expect(layout.amount.right).toBeLessThanOrEqual(layout.list.right);
   expect(layout.modal.left).toBeGreaterThanOrEqual(0);
   expect(layout.modal.right).toBeLessThanOrEqual(375);
   expect(layout.listOverflows).toBe(false);
@@ -840,7 +857,7 @@ test("关闭公开名单后作者仍使用唯一入口查看私有文本，分�
   await expect(
     page.locator(".public-roster-dialog .recipient-private"),
   ).toHaveCount(0);
-  await expect(page.getByText(privateText, { exact: true })).toHaveCount(0);
+  await expect(page.getByText(longName, { exact: true })).toHaveCount(0);
   await expect(opener).toHaveCount(0);
   expect(state.writes).toEqual([]);
   expect(state.external).toEqual([]);
@@ -904,16 +921,15 @@ test("普通用户保持公开名单权限且不读取作者配置或私有记�
   ).toHaveCount(0);
 });
 
-test("换账号后关闭作者名单，迟到私有文本响应不能恢复记录或入口", async ({
+test("换账号后关闭作者名单，迟到付款明细响应不能恢复记录或入口", async ({
   page,
 }) => {
   const state = await mockRoster(page, { author: true });
   state.allowed = false;
   const dialog = await openPublic(page);
-  await dialog.getByText("查看已分配文本", { exact: true }).click();
-  await expect(
-    dialog.getByText("PRIVATE-user-001-CDK", { exact: true }),
-  ).toBeVisible();
+  await expect(dialog.locator(".recipient-private")).toContainText(
+    "模拟发放已确认",
+  );
   const late = gate();
   state.claimsGate = late;
   try {
@@ -931,7 +947,7 @@ test("换账号后关闭作者名单，迟到私有文本响应不能恢复记�
     late.release();
     state.claimsGate = null;
     await expect(
-      page.getByText("PRIVATE-user-001-CDK", { exact: true }),
+      page.locator(".public-roster-dialog .recipient-private"),
     ).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "查看领取名单", exact: true }),

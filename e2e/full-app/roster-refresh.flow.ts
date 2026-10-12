@@ -194,7 +194,7 @@ test("真实本地报名与领取后，已挂载公共人数/名单及作者记�
     const beforeResponse = await request.get("http://127.0.0.1:4194/state");
     expect(beforeResponse.status()).toBe(200);
     const before = await beforeResponse.json();
-    const { rewards: _rewards, ...base } = emptyActivityInput();
+    const base = emptyActivityInput();
     const drawInput: LdcActivityInput = {
       ...base,
       rewardType: "ldc",
@@ -218,16 +218,19 @@ test("真实本地报名与领取后，已挂载公共人数/名单及作者记�
       drawInput,
       merchant,
     );
-    const textTitle = `本地领取同步刷新 ${randomUUID().slice(0, 8)}`;
-    const textId = await createAndOpen(owner, authorSession, {
-      ...emptyActivityInput(),
-      title: textTitle,
-      passwords: ["RosterClaim123"],
-      rewards: [
-        { id: randomUUID(), text: "LOCAL-ROSTER-FIRST-CDK" },
-        { id: randomUUID(), text: "LOCAL-ROSTER-SECOND-CDK" },
-      ],
-    });
+    const claimTitle = `本地领取同步刷新 ${randomUUID().slice(0, 8)}`;
+    const claimId = await createAndOpen(
+      owner,
+      authorSession,
+      {
+        ...emptyActivityInput(),
+        title: claimTitle,
+        passwords: ["RosterClaim123"],
+        merchantId: merchant.id,
+        money: { mode: "fixed", totalAmount: "0.02", count: 2 },
+      },
+      merchant,
+    );
     const authorDraw = await owner.newPage();
     await authorDraw.goto(`/activities/${drawId}`);
     await authorDraw
@@ -309,75 +312,78 @@ test("真实本地报名与领取后，已挂载公共人数/名单及作者记�
       drawOpeningCount ?? "0",
     );
 
-    const authorText = await owner.newPage();
-    await authorText.goto(`/activities/${textId}`);
-    await authorText
+    const authorClaim = await owner.newPage();
+    await authorClaim.goto(`/activities/${claimId}`);
+    await authorClaim
       .getByRole("button", { name: "查看领取名单", exact: true })
       .click();
-    const authorClaims = authorText.getByRole("dialog", {
-      name: textTitle,
+    const authorClaims = authorClaim.getByRole("dialog", {
+      name: claimTitle,
       exact: true,
     });
     await expect(
       authorClaims.getByText("暂无领取记录。", { exact: true }),
     ).toBeVisible();
-    const publicText = await registrant.newPage();
-    await publicText.goto(`/activities/${textId}`);
+    const publicClaim = await registrant.newPage();
+    await publicClaim.goto(`/activities/${claimId}`);
     await expect(
-      publicText.getByText("已领取 0 / 2 份", { exact: true }),
+      publicClaim.getByText("已领取 0 / 2 份", { exact: true }),
     ).toBeVisible();
-    await publicText
+    await publicClaim
       .getByRole("button", { name: "查看领取名单", exact: true })
       .click();
-    const publicClaims = publicText.getByRole("dialog", {
-      name: textTitle,
+    const publicClaims = publicClaim.getByRole("dialog", {
+      name: claimTitle,
       exact: true,
     });
     await expect(
       publicClaims.getByText("暂无领取记录。", { exact: true }),
     ).toBeVisible();
-    await claimPage.goto(`/activities/${textId}`);
+    await claimPage.goto(`/activities/${claimId}`);
     await claimPage
       .getByLabel("兑换口令", { exact: true })
       .fill("RosterClaim123");
     const claimResponse = claimPage.waitForResponse(
       (response) =>
         response.request().method() === "POST" &&
-        new URL(response.url()).pathname === `/api/activities/${textId}/claim`,
+        new URL(response.url()).pathname === `/api/activities/${claimId}/claim`,
     );
     await claimPage
-      .getByRole("button", { name: "领取奖励", exact: true })
+      .getByRole("button", { name: /^(领取奖励|领取红包)$/ })
       .click();
     const claimed = await claimResponse;
     expect(claimed.status()).toBe(200);
     expect(await claimed.json()).toMatchObject({
       result: "claimed",
-      claim: { activity: { id: textId }, text: "LOCAL-ROSTER-FIRST-CDK" },
+      claim: { activity: { id: claimId }, rewardType: "ldc", amount: "0.01" },
     });
-    await authorText.bringToFront();
+    await authorClaim.bringToFront();
     await expect(
       authorClaims.getByText(claimSession.user.displayName, { exact: true }),
     ).toBeVisible({ timeout: 7_000 });
-    await authorClaims.getByText("查看已分配文本", { exact: true }).click();
-    await expect(
-      authorClaims.getByText("LOCAL-ROSTER-FIRST-CDK", { exact: true }),
-    ).toBeVisible();
-    await publicText.bringToFront();
+    await expect(authorClaims).toContainText("0.01");
+    await expect(authorClaims).toContainText(/已发放|等待|发送/);
+    await publicClaim.bringToFront();
     await expect(
       publicClaims.getByText(claimSession.user.displayName, { exact: true }),
     ).toBeVisible({ timeout: 7_000 });
+    await expect(publicClaims).toContainText("0.01 LDC");
+    await expect(publicClaims).not.toContainText(/已发放|等待发放|正在发送/);
+    const publicRosterResponse = await registrant.request.get(
+      `/api/activities/${claimId}/recipients`,
+    );
+    expect(publicRosterResponse.status()).toBe(200);
+    const publicRoster = await publicRosterResponse.json();
+    expect(publicRoster.items).toHaveLength(1);
+    expect(publicRoster.items[0]).not.toHaveProperty("payment");
+    expect(publicRoster.items[0]).not.toHaveProperty("afterClaimInfo");
+    expect(publicRoster.items[0]).not.toHaveProperty("sourcePassword");
     await expect(
-      publicClaims.getByText("查看已分配文本", { exact: true }),
-    ).toHaveCount(0);
-    await expect(
-      publicClaims.getByText("LOCAL-ROSTER-FIRST-CDK", { exact: true }),
-    ).toHaveCount(0);
-    await expect(
-      publicText.getByText("已领取 1 / 2 份", { exact: true }),
+      publicClaim.getByText("已领取 1 / 2 份", { exact: true }),
     ).toBeVisible();
     expect(businessPosts).toEqual([
       `/api/activities/${drawId}/claim`,
-      `/api/activities/${textId}/claim`,
+      `/api/activities/${claimId}/claim`,
     ]);
     const stateResponse = await request.get("http://127.0.0.1:4194/state");
     expect(stateResponse.status()).toBe(200);
@@ -393,7 +399,7 @@ test("真实本地报名与领取后，已挂载公共人数/名单及作者记�
     });
     expect(
       state.activities.find(
-        (activity: { id: string }) => activity.id === textId,
+        (activity: { id: string }) => activity.id === claimId,
       ),
     ).toMatchObject({ claimed_count: 1 });
     expect(
@@ -403,23 +409,29 @@ test("真实本地报名与领取后，已挂载公共人数/名单及作者记�
     ).toHaveLength(1);
     expect(
       state.claims.filter(
-        (entry: { activity_id: string }) => entry.activity_id === textId,
+        (entry: { activity_id: string }) => entry.activity_id === claimId,
       ),
     ).toHaveLength(1);
-    expect(
-      state.payments.map((payment: { id: string }) => payment.id).sort(),
-    ).toEqual(
-      before.payments.map((payment: { id: string }) => payment.id).sort(),
+    const claimIds = new Set(
+      state.claims
+        .filter(
+          (entry: { activity_id: string }) => entry.activity_id === claimId,
+        )
+        .map((entry: { id: string }) => entry.id),
+    );
+    const tasks = state.payments.filter((payment: { claim_id: string }) =>
+      claimIds.has(payment.claim_id),
+    );
+    expect(tasks).toHaveLength(1);
+    expect(state.payments.map((payment: { id: string }) => payment.id)).toEqual(
+      expect.arrayContaining(
+        before.payments.map((payment: { id: string }) => payment.id),
+      ),
     );
     expect(
-      state.outbox.map((entry: { task_id: string }) => entry.task_id).sort(),
-    ).toEqual(
-      before.outbox.map((entry: { task_id: string }) => entry.task_id).sort(),
-    );
-    expect(state.upstream).toMatchObject({
-      distributeRequests: before.upstream.distributeRequests,
-      blockedRequests: 0,
-    });
+      state.outbox.map((entry: { task_id: string }) => entry.task_id),
+    ).toContain(tasks[0].id);
+    expect(state.upstream.blockedRequests).toBe(0);
     expect(state.upstream.credentialChecks).toBeGreaterThan(0);
     expect(external.flat()).toEqual([]);
   } finally {

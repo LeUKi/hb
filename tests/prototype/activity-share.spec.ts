@@ -73,17 +73,19 @@ test("random, custom and draw summaries use the configured public pool, never a 
   }
 });
 
-test("text summaries expose inventory only and do not include reward content", () => {
+test("custom LDC share text uses the configured pool and excludes private allocation", () => {
   const activity: Activity = {
     ...base,
-    type: "text",
-    amount: "PRIVATE-CDK-REWARD",
+    type: "ldc",
+    rewardMode: "custom",
+    poolAmount: "12.34",
+    amount: "9.87",
   };
   const text = buildActivityShareText(activity, { url });
-  expect(text).toContain("文本 / CDK · 5 份");
-  expect(text).not.toContain("总奖池");
-  expect(text).not.toContain("PRIVATE-CDK-REWARD");
-  expect(buildActivityShareText(activity, { url, fuzzy: true })).toContain(
-    "文本 / CDK · 份数不公开",
+  expect(text).toContain("LDC · 自定义金额");
+  expect(text).toContain("12.34 LDC");
+  expect(text).not.toContain("9.87");
+  expect(buildActivityShareText(activity, { url, fuzzy: true })).not.toContain(
+    "5 份",
   );
 });

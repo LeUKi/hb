@@ -22,10 +22,7 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  isActivityDeadlineReached,
-  TEXT_REWARD_LABEL,
-} from "../activity-metadata";
+import { isActivityDeadlineReached } from "../activity-metadata";
 import { ActionMenu } from "../components/action-menu";
 import { ActivityNote } from "../components/activity-note";
 import { AnimatedRegion } from "../components/animated-disclosure";
@@ -58,7 +55,6 @@ import {
   deleteWorkbenchActivity,
   findWorkbenchActivity,
   type ManagedActivity,
-  type RewardKind,
   type RewardPlan,
   saveWorkbenchActivity,
   toPrototypeActivity,
@@ -272,14 +268,11 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
   );
   const frozen = Boolean(existing && existing.status !== "draft");
   const [title, setTitle] = useState(initial.title);
-  const [rewardKind, setRewardKind] = useState<RewardKind>(initial.rewardKind);
   const [plan, setPlan] = useState<RewardPlan>(initial.plan);
   const [fixed, setFixed] = useState(initial.fixed);
   const [random, setRandom] = useState(initial.random);
   const [custom, setCustom] = useState(initial.custom);
   const [draw, setDraw] = useState(initial.draw);
-  const [textRewards, setTextRewards] = useState(initial.textRewards);
-  const [textOrder, setTextOrder] = useState(initial.textOrder);
   const [passwords, setPasswords] = useState(initial.passwords);
   const [topic, setTopic] = useState(displayTopic(initial.topic));
   const [listed, setListed] = useState(initial.listed);
@@ -322,14 +315,11 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
         : defaultActivityConfig(identity),
     );
     setTitle(config.title);
-    setRewardKind(config.rewardKind);
     setPlan(config.plan);
     setFixed(config.fixed);
     setRandom(config.random);
     setCustom(config.custom);
     setDraw(config.draw);
-    setTextRewards(config.textRewards);
-    setTextOrder(config.textOrder);
     setPasswords(config.passwords);
     setTopic(displayTopic(config.topic));
     setListed(config.listed);
@@ -356,14 +346,12 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
 
   const currentConfig: ActivityConfig = {
     title,
-    rewardKind,
+    rewardKind: "ldc",
     plan,
     fixed,
     random,
     custom,
     draw,
-    textRewards,
-    textOrder,
     passwords,
     topic,
     listed,
@@ -455,14 +443,11 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
 
   function applyConfig(config: ActivityConfig) {
     setTitle(config.title);
-    setRewardKind(config.rewardKind);
     setPlan(config.plan);
     setFixed(config.fixed);
     setRandom(config.random);
     setCustom(config.custom);
     setDraw(config.draw);
-    setTextRewards(config.textRewards);
-    setTextOrder(config.textOrder);
     setPasswords(config.passwords);
     setTopic(displayTopic(config.topic));
     setListed(config.listed);
@@ -574,15 +559,11 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
-  const textLines = textRewards
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
   const amountList = customLines.map(cents);
   const customTotal = amountList.every((amount) => amount !== null)
     ? amountList.reduce<number>((total, amount) => total + (amount ?? 0), 0)
     : null;
-  let rewardCount: number | null = textLines.length;
+  let rewardCount: number | null = null;
   let rewardTotal: number | null = null;
   const planNames: Record<RewardPlan, string> = {
     fixed: "固定均分",
@@ -591,21 +572,19 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
     draw: "限时开奖",
   };
 
-  if (rewardKind === "ldc") {
-    if (plan === "fixed") {
-      rewardCount = positiveInteger(fixed.count);
-      const amount = cents(fixed.amount);
-      rewardTotal = rewardCount && amount ? rewardCount * amount : null;
-    } else if (plan === "random") {
-      rewardCount = positiveInteger(random.count);
-      rewardTotal = cents(random.amount);
-    } else if (plan === "custom") {
-      rewardCount = customLines.length;
-      rewardTotal = customTotal;
-    } else {
-      rewardCount = positiveInteger(draw.winners);
-      rewardTotal = cents(draw.amount);
-    }
+  if (plan === "fixed") {
+    rewardCount = positiveInteger(fixed.count);
+    const amount = cents(fixed.amount);
+    rewardTotal = rewardCount && amount ? rewardCount * amount : null;
+  } else if (plan === "random") {
+    rewardCount = positiveInteger(random.count);
+    rewardTotal = cents(random.amount);
+  } else if (plan === "custom") {
+    rewardCount = customLines.length;
+    rewardTotal = customTotal;
+  } else {
+    rewardCount = positiveInteger(draw.winners);
+    rewardTotal = cents(draw.amount);
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -613,6 +592,10 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
     setError("");
     if (identity === "guest") {
       setError("请先登录账号，再保存或开放活动。");
+      return;
+    }
+    if (identity === "lite") {
+      setError("请先通过官方 Connect 升级，再保存或开放活动。");
       return;
     }
     if (!validation.ok) {
@@ -645,19 +628,17 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
                           ? "work-draw-seconds"
                           : first === "draw.limit"
                             ? "work-draw-limit"
-                            : first === "textRewards"
-                              ? "work-text-rewards"
-                              : first === "topic"
-                                ? "work-topic"
-                                : first === "duration"
-                                  ? "work-duration"
-                                  : first === "notes.before"
-                                    ? "work-before-note"
-                                    : first === "notes.after"
-                                      ? "work-after-note"
-                                      : first === "notes.ended"
-                                        ? "work-ended-note"
-                                        : undefined;
+                            : first === "topic"
+                              ? "work-topic"
+                              : first === "duration"
+                                ? "work-duration"
+                                : first === "notes.before"
+                                  ? "work-before-note"
+                                  : first === "notes.after"
+                                    ? "work-after-note"
+                                    : first === "notes.ended"
+                                      ? "work-ended-note"
+                                      : undefined;
       if (targetId)
         window.requestAnimationFrame(() =>
           document.getElementById(targetId)?.focus(),
@@ -685,6 +666,25 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
     setConfirmation(frozen ? "updated" : opening ? "open" : "draft");
   }
 
+  if (identity !== "standard")
+    return (
+      <div className="work-page">
+        <PageTitle title="发起活动" />
+        <Notice>
+          {identity === "lite"
+            ? "青春版账号可浏览活动；创建、领取和报名需通过官方 Connect 升级。"
+            : "请先通过官方 Connect 登录，再创建活动。"}
+          <button
+            className="button"
+            type="button"
+            onClick={() => navigate("account")}
+          >
+            {identity === "lite" ? "使用官方 Connect" : "前往登录"}
+            <ArrowRight size={16} />
+          </button>
+        </Notice>
+      </div>
+    );
   if (editId && !existing)
     return (
       <div className="work-page">
@@ -706,18 +706,6 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
         <p className="work-setting-notice work-frozen-notice">
           奖励配置和兑换入口已固定，可修改标题、帖子及展示资料。
         </p>
-      )}
-      {identity === "guest" && (
-        <Notice>
-          登录后即可保存和开放活动。
-          <button
-            className="work-text-link"
-            type="button"
-            onClick={() => navigate("account")}
-          >
-            前往账号 <ArrowRight size={14} />
-          </button>
-        </Notice>
       )}
       <form className="work-create-layout" onSubmit={handleSubmit}>
         <div className="work-editor">
@@ -782,485 +770,378 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
               disabled={frozen}
               aria-label="奖励配置"
             >
-              <SegmentedControl
-                className="work-reward-kind"
-                label="奖励类型"
-                value={rewardKind}
-                onChange={setRewardKind}
-                options={[
-                  {
-                    value: "ldc",
-                    label: "LDC 奖励",
-                    disabled: identity === "lite",
-                  },
-                  { value: "text", label: TEXT_REWARD_LABEL },
-                ]}
-              />
-              {identity === "lite" && (
-                <p className="work-field-hint">
-                  青春版仅可创建文本 / CDK 活动。LDC 奖励需官方 Connect 资格。
-                </p>
-              )}
-              <AnimatePresence initial={false} mode="popLayout">
-                {rewardKind === "ldc" ? (
-                  <AnimatedRegion key="ldc" className="work-animated-section">
-                    <div className="work-reward-panel">
-                      <div className="work-title-group work-reward-heading">
-                        <h3>奖励方式</h3>
-                        <Help label={planNames[plan]}>
-                          {plan === "fixed"
-                            ? "每份金额相同。"
-                            : plan === "random"
-                              ? "随机分配总奖池，不放回抽取。"
-                              : plan === "custom"
-                                ? "逐份设置金额，按顺序或随机发放。"
-                                : "报名达到上限或倒计时结束后开奖，最多产生配置数量的中奖者。"}
-                        </Help>
+              <div className="work-reward-panel">
+                <div className="work-title-group work-reward-heading">
+                  <h3>奖励方式</h3>
+                  <Help label={planNames[plan]}>
+                    {plan === "fixed"
+                      ? "每份金额相同。"
+                      : plan === "random"
+                        ? "随机分配总奖池，不放回抽取。"
+                        : plan === "custom"
+                          ? "逐份设置金额，按顺序或随机发放。"
+                          : "报名达到上限或倒计时结束后开奖，最多产生配置数量的中奖者。"}
+                  </Help>
+                </div>
+                <SegmentedControl
+                  className="work-plan-switch"
+                  label="LDC 奖励方式"
+                  value={plan}
+                  onChange={setPlan}
+                  options={(["fixed", "random", "custom", "draw"] as const).map(
+                    (value) => ({ value, label: planNames[value] }),
+                  )}
+                />
+                <AnimatePresence initial={false} mode="popLayout">
+                  {plan === "fixed" && (
+                    <AnimatedRegion
+                      key="fixed"
+                      className="work-animated-section"
+                    >
+                      <div className="work-field-grid">
+                        <div className="field">
+                          <div className="work-field-label">
+                            <label htmlFor="work-fixed-amount">
+                              每份金额 · LDC
+                            </label>
+                          </div>
+                          <input
+                            id="work-fixed-amount"
+                            inputMode="decimal"
+                            value={fixed.amount}
+                            {...fieldProps("fixed.amount", "work-fixed-amount")}
+                            onChange={(event) => {
+                              editText(
+                                "fixed.amount",
+                                event.target.value,
+                                (value) =>
+                                  setFixed({ ...fixed, amount: value }),
+                              );
+                            }}
+                          />
+                          <FieldError
+                            id={fieldErrorId("work-fixed-amount")}
+                            message={errorFor("fixed.amount")}
+                          />
+                        </div>
+                        <div className="field">
+                          <div className="work-field-label">
+                            <label htmlFor="work-fixed-count">奖励份数</label>
+                          </div>
+                          <input
+                            id="work-fixed-count"
+                            inputMode="numeric"
+                            value={fixed.count}
+                            {...fieldProps("fixed.count", "work-fixed-count")}
+                            onChange={(event) => {
+                              editText(
+                                "fixed.count",
+                                event.target.value,
+                                (value) => setFixed({ ...fixed, count: value }),
+                              );
+                            }}
+                          />
+                          <FieldError
+                            id={fieldErrorId("work-fixed-count")}
+                            message={errorFor("fixed.count")}
+                          />
+                        </div>
                       </div>
-                      <SegmentedControl
-                        className="work-plan-switch"
-                        label="LDC 奖励方式"
-                        value={plan}
-                        onChange={setPlan}
-                        options={(
-                          ["fixed", "random", "custom", "draw"] as const
-                        ).map((value) => ({ value, label: planNames[value] }))}
-                      />
-                      <AnimatePresence initial={false} mode="popLayout">
-                        {plan === "fixed" && (
-                          <AnimatedRegion
-                            key="fixed"
-                            className="work-animated-section"
-                          >
-                            <div className="work-field-grid">
-                              <div className="field">
-                                <div className="work-field-label">
-                                  <label htmlFor="work-fixed-amount">
-                                    每份金额 · LDC
-                                  </label>
-                                </div>
-                                <input
-                                  id="work-fixed-amount"
-                                  inputMode="decimal"
-                                  value={fixed.amount}
-                                  {...fieldProps(
-                                    "fixed.amount",
-                                    "work-fixed-amount",
-                                  )}
-                                  onChange={(event) => {
-                                    editText(
-                                      "fixed.amount",
-                                      event.target.value,
-                                      (value) =>
-                                        setFixed({ ...fixed, amount: value }),
-                                    );
-                                  }}
-                                />
-                                <FieldError
-                                  id={fieldErrorId("work-fixed-amount")}
-                                  message={errorFor("fixed.amount")}
-                                />
-                              </div>
-                              <div className="field">
-                                <div className="work-field-label">
-                                  <label htmlFor="work-fixed-count">
-                                    奖励份数
-                                  </label>
-                                </div>
-                                <input
-                                  id="work-fixed-count"
-                                  inputMode="numeric"
-                                  value={fixed.count}
-                                  {...fieldProps(
-                                    "fixed.count",
-                                    "work-fixed-count",
-                                  )}
-                                  onChange={(event) => {
-                                    editText(
-                                      "fixed.count",
-                                      event.target.value,
-                                      (value) =>
-                                        setFixed({ ...fixed, count: value }),
-                                    );
-                                  }}
-                                />
-                                <FieldError
-                                  id={fieldErrorId("work-fixed-count")}
-                                  message={errorFor("fixed.count")}
-                                />
-                              </div>
-                            </div>
-                          </AnimatedRegion>
-                        )}
-                        {plan === "random" && (
-                          <AnimatedRegion
-                            key="random"
-                            className="work-animated-section"
-                          >
-                            <div className="work-field-grid">
-                              <div className="field">
-                                <div className="work-field-label">
-                                  <label htmlFor="work-random-amount">
-                                    总金额 · LDC
-                                  </label>
-                                </div>
-                                <input
-                                  id="work-random-amount"
-                                  inputMode="decimal"
-                                  value={random.amount}
-                                  {...fieldProps(
-                                    "random.amount",
-                                    "work-random-amount",
-                                    ["random.count"],
-                                  )}
-                                  onChange={(event) => {
-                                    editText(
-                                      "random.amount",
-                                      event.target.value,
-                                      (value) =>
-                                        setRandom({
-                                          ...random,
-                                          amount: value,
-                                        }),
-                                    );
-                                  }}
-                                />
-                                <FieldError
-                                  id={fieldErrorId("work-random-amount")}
-                                  message={errorFor("random.amount")}
-                                />
-                              </div>
-                              <div className="field">
-                                <div className="work-field-label">
-                                  <label htmlFor="work-random-count">
-                                    奖励份数
-                                  </label>
-                                </div>
-                                <input
-                                  id="work-random-count"
-                                  inputMode="numeric"
-                                  value={random.count}
-                                  {...fieldProps(
-                                    "random.count",
-                                    "work-random-count",
-                                    ["random.amount"],
-                                  )}
-                                  onChange={(event) => {
-                                    editText(
-                                      "random.count",
-                                      event.target.value,
-                                      (value) =>
-                                        setRandom({
-                                          ...random,
-                                          count: value,
-                                        }),
-                                    );
-                                  }}
-                                />
-                                <FieldError
-                                  id={fieldErrorId("work-random-count")}
-                                  message={errorFor("random.count")}
-                                />
-                              </div>
-                              <AlgorithmField
-                                id="work-random-algorithm"
-                                value={random.algorithm}
-                                onChange={(algorithm) =>
-                                  setRandom({ ...random, algorithm })
-                                }
-                              />
-                            </div>
-                          </AnimatedRegion>
-                        )}
-                        {plan === "custom" && (
-                          <AnimatedRegion
-                            key="custom"
-                            className="work-animated-section"
-                          >
-                            <div className="field">
-                              <div className="work-field-label">
-                                <label htmlFor="work-custom-amounts">
-                                  金额列表 · 每行一份 LDC
-                                </label>
-                              </div>
-                              <textarea
-                                id="work-custom-amounts"
-                                rows={5}
-                                value={custom.amounts}
-                                {...fieldProps(
-                                  "custom.amounts",
-                                  "work-custom-amounts",
-                                )}
-                                onChange={(event) => {
-                                  editText(
-                                    "custom.amounts",
-                                    event.target.value,
-                                    (value) =>
-                                      setCustom({
-                                        ...custom,
-                                        amounts: value,
-                                      }),
-                                  );
-                                }}
-                              />
-                              <FieldError
-                                id={fieldErrorId("work-custom-amounts")}
-                                message={errorFor("custom.amounts")}
-                              />
-                            </div>
-                            <div className="work-inline-meta">
-                              <span>{customLines.length} 份奖励</span>
-                              <span>
-                                共{" "}
-                                {customTotal === null
-                                  ? "—"
-                                  : money(customTotal)}{" "}
-                                LDC
-                              </span>
-                            </div>
-                            <div className="field">
-                              <div className="work-field-label">
-                                <span>发放顺序</span>
-                                <Help label="发放顺序">
-                                  按金额列表顺序或随机抽取发放；已发放的份额不会再次使用。
-                                </Help>
-                              </div>
-                              <SegmentedControl
-                                label="发放顺序"
-                                value={custom.order}
-                                onChange={(order) =>
-                                  setCustom({ ...custom, order })
-                                }
-                                options={[
-                                  { value: "sequential", label: "按顺序" },
-                                  { value: "random", label: "随机" },
-                                ]}
-                              />
-                            </div>
-                          </AnimatedRegion>
-                        )}
-                        {plan === "draw" && (
-                          <AnimatedRegion
-                            key="draw"
-                            className="work-animated-section"
-                          >
-                            <div className="work-field-grid">
-                              <div className="field">
-                                <div className="work-field-label">
-                                  <label htmlFor="work-draw-amount">
-                                    总奖池 · LDC
-                                  </label>
-                                  <Help label="总奖池">
-                                    拟发放的 LDC 总面额，至少满足每个获奖名额
-                                    0.01 LDC；本站不托管资金。
-                                  </Help>
-                                </div>
-                                <input
-                                  id="work-draw-amount"
-                                  inputMode="decimal"
-                                  value={draw.amount}
-                                  {...fieldProps(
-                                    "draw.amount",
-                                    "work-draw-amount",
-                                    ["draw.winners"],
-                                  )}
-                                  onChange={(event) => {
-                                    editText(
-                                      "draw.amount",
-                                      event.target.value,
-                                      (value) =>
-                                        setDraw({
-                                          ...draw,
-                                          amount: value,
-                                        }),
-                                    );
-                                  }}
-                                />
-                                <FieldError
-                                  id={fieldErrorId("work-draw-amount")}
-                                  message={errorFor("draw.amount")}
-                                />
-                              </div>
-                              <div className="field">
-                                <div className="work-field-label">
-                                  <label htmlFor="work-draw-winners">
-                                    获奖名额
-                                  </label>
-                                  <Help label="获奖名额">
-                                    最多获奖人数，1–1000
-                                    人；报名人数少于名额时全部获奖。
-                                  </Help>
-                                </div>
-                                <input
-                                  id="work-draw-winners"
-                                  inputMode="numeric"
-                                  value={draw.winners}
-                                  {...fieldProps(
-                                    "draw.winners",
-                                    "work-draw-winners",
-                                    ["draw.amount"],
-                                  )}
-                                  onChange={(event) => {
-                                    editText(
-                                      "draw.winners",
-                                      event.target.value,
-                                      (value) =>
-                                        setDraw({
-                                          ...draw,
-                                          winners: value,
-                                        }),
-                                    );
-                                  }}
-                                />
-                                <FieldError
-                                  id={fieldErrorId("work-draw-winners")}
-                                  message={errorFor("draw.winners")}
-                                />
-                              </div>
-                              <div className="field">
-                                <div className="work-field-label">
-                                  <label htmlFor="work-draw-seconds">
-                                    开奖倒计时 · 秒
-                                  </label>
-                                  <Help label="开奖倒计时">
-                                    从正式开放成功时开始计时，达到报名上限可提前开奖。
-                                  </Help>
-                                </div>
-                                <input
-                                  id="work-draw-seconds"
-                                  inputMode="numeric"
-                                  value={draw.seconds}
-                                  {...fieldProps(
-                                    "draw.seconds",
-                                    "work-draw-seconds",
-                                  )}
-                                  onChange={(event) => {
-                                    editText(
-                                      "draw.seconds",
-                                      event.target.value,
-                                      (value) =>
-                                        setDraw({
-                                          ...draw,
-                                          seconds: value,
-                                        }),
-                                    );
-                                  }}
-                                />
-                                <FieldError
-                                  id={fieldErrorId("work-draw-seconds")}
-                                  message={errorFor("draw.seconds")}
-                                />
-                              </div>
-                              <div className="field">
-                                <div className="work-field-label">
-                                  <label htmlFor="work-draw-limit">
-                                    报名上限 <em>选填</em>
-                                  </label>
-                                  <Help label="报名上限">
-                                    留空则不限报名人数；填写时，达到该人数立即开奖。上限与获奖名额独立。
-                                  </Help>
-                                </div>
-                                <input
-                                  id="work-draw-limit"
-                                  inputMode="numeric"
-                                  value={draw.limit}
-                                  {...fieldProps(
-                                    "draw.limit",
-                                    "work-draw-limit",
-                                  )}
-                                  onChange={(event) => {
-                                    editText(
-                                      "draw.limit",
-                                      event.target.value,
-                                      (value) =>
-                                        setDraw({ ...draw, limit: value }),
-                                    );
-                                  }}
-                                  placeholder="留空，仅按时间开奖"
-                                />
-                                <FieldError
-                                  id={fieldErrorId("work-draw-limit")}
-                                  message={errorFor("draw.limit")}
-                                />
-                              </div>
-                              <AlgorithmField
-                                id="work-draw-algorithm"
-                                value={draw.algorithm}
-                                onChange={(algorithm) =>
-                                  setDraw({ ...draw, algorithm })
-                                }
-                              />
-                            </div>
-                            <Toggle
-                              id="work-draw-full-pool"
-                              checked={draw.fullPool}
-                              onChange={(fullPool) =>
-                                setDraw({ ...draw, fullPool })
-                              }
-                              title="人数不足时发完奖池"
-                              description="人数不足时，开启则按实际获奖人数分配全部奖池；关闭则按配置名额生成金额池，仅发放其中的中奖份额。"
-                              notice="开放前可修改；开奖按开放时设置结算。"
-                            />
-                          </AnimatedRegion>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  </AnimatedRegion>
-                ) : (
-                  <AnimatedRegion key="text" className="work-animated-section">
-                    <div className="work-reward-panel">
+                    </AnimatedRegion>
+                  )}
+                  {plan === "random" && (
+                    <AnimatedRegion
+                      key="random"
+                      className="work-animated-section"
+                    >
+                      <div className="work-field-grid">
+                        <div className="field">
+                          <div className="work-field-label">
+                            <label htmlFor="work-random-amount">
+                              总金额 · LDC
+                            </label>
+                          </div>
+                          <input
+                            id="work-random-amount"
+                            inputMode="decimal"
+                            value={random.amount}
+                            {...fieldProps(
+                              "random.amount",
+                              "work-random-amount",
+                              ["random.count"],
+                            )}
+                            onChange={(event) => {
+                              editText(
+                                "random.amount",
+                                event.target.value,
+                                (value) =>
+                                  setRandom({
+                                    ...random,
+                                    amount: value,
+                                  }),
+                              );
+                            }}
+                          />
+                          <FieldError
+                            id={fieldErrorId("work-random-amount")}
+                            message={errorFor("random.amount")}
+                          />
+                        </div>
+                        <div className="field">
+                          <div className="work-field-label">
+                            <label htmlFor="work-random-count">奖励份数</label>
+                          </div>
+                          <input
+                            id="work-random-count"
+                            inputMode="numeric"
+                            value={random.count}
+                            {...fieldProps(
+                              "random.count",
+                              "work-random-count",
+                              ["random.amount"],
+                            )}
+                            onChange={(event) => {
+                              editText(
+                                "random.count",
+                                event.target.value,
+                                (value) =>
+                                  setRandom({
+                                    ...random,
+                                    count: value,
+                                  }),
+                              );
+                            }}
+                          />
+                          <FieldError
+                            id={fieldErrorId("work-random-count")}
+                            message={errorFor("random.count")}
+                          />
+                        </div>
+                        <AlgorithmField
+                          id="work-random-algorithm"
+                          value={random.algorithm}
+                          onChange={(algorithm) =>
+                            setRandom({ ...random, algorithm })
+                          }
+                        />
+                      </div>
+                    </AnimatedRegion>
+                  )}
+                  {plan === "custom" && (
+                    <AnimatedRegion
+                      key="custom"
+                      className="work-animated-section"
+                    >
                       <div className="field">
                         <div className="work-field-label">
-                          <label htmlFor="work-text-rewards">
-                            {TEXT_REWARD_LABEL} · 每行一份
+                          <label htmlFor="work-custom-amounts">
+                            金额列表 · 每行一份 LDC
                           </label>
-                          <Help label={TEXT_REWARD_LABEL}>
-                            每行一份；仅向成功领取该份奖励的账号展示原文。
-                          </Help>
                         </div>
                         <textarea
-                          id="work-text-rewards"
+                          id="work-custom-amounts"
                           rows={5}
-                          value={textRewards}
-                          {...fieldProps("textRewards", "work-text-rewards")}
+                          value={custom.amounts}
+                          {...fieldProps(
+                            "custom.amounts",
+                            "work-custom-amounts",
+                          )}
                           onChange={(event) => {
                             editText(
-                              "textRewards",
+                              "custom.amounts",
                               event.target.value,
-                              setTextRewards,
+                              (value) =>
+                                setCustom({
+                                  ...custom,
+                                  amounts: value,
+                                }),
                             );
                           }}
-                          placeholder="填写兑换码或交付内容，每行一份"
                         />
                         <FieldError
-                          id={fieldErrorId("work-text-rewards")}
-                          message={errorFor("textRewards")}
+                          id={fieldErrorId("work-custom-amounts")}
+                          message={errorFor("custom.amounts")}
                         />
                       </div>
                       <div className="work-inline-meta">
-                        <span>{textLines.length} 份奖励</span>
+                        <span>{customLines.length} 份奖励</span>
+                        <span>
+                          共 {customTotal === null ? "—" : money(customTotal)}{" "}
+                          LDC
+                        </span>
                       </div>
                       <div className="field">
                         <div className="work-field-label">
                           <span>发放顺序</span>
                           <Help label="发放顺序">
-                            按文本列表顺序或随机抽取发放；已发放的份额不会再次使用。
+                            按金额列表顺序或随机抽取发放；已发放的份额不会再次使用。
                           </Help>
                         </div>
                         <SegmentedControl
                           label="发放顺序"
-                          value={textOrder}
-                          onChange={setTextOrder}
+                          value={custom.order}
+                          onChange={(order) => setCustom({ ...custom, order })}
                           options={[
                             { value: "sequential", label: "按顺序" },
                             { value: "random", label: "随机" },
                           ]}
                         />
                       </div>
-                    </div>
-                  </AnimatedRegion>
-                )}
-              </AnimatePresence>
+                    </AnimatedRegion>
+                  )}
+                  {plan === "draw" && (
+                    <AnimatedRegion
+                      key="draw"
+                      className="work-animated-section"
+                    >
+                      <div className="work-field-grid">
+                        <div className="field">
+                          <div className="work-field-label">
+                            <label htmlFor="work-draw-amount">
+                              总奖池 · LDC
+                            </label>
+                            <Help label="总奖池">
+                              拟发放的 LDC 总面额，至少满足每个获奖名额 0.01
+                              LDC；本站不托管资金。
+                            </Help>
+                          </div>
+                          <input
+                            id="work-draw-amount"
+                            inputMode="decimal"
+                            value={draw.amount}
+                            {...fieldProps("draw.amount", "work-draw-amount", [
+                              "draw.winners",
+                            ])}
+                            onChange={(event) => {
+                              editText(
+                                "draw.amount",
+                                event.target.value,
+                                (value) =>
+                                  setDraw({
+                                    ...draw,
+                                    amount: value,
+                                  }),
+                              );
+                            }}
+                          />
+                          <FieldError
+                            id={fieldErrorId("work-draw-amount")}
+                            message={errorFor("draw.amount")}
+                          />
+                        </div>
+                        <div className="field">
+                          <div className="work-field-label">
+                            <label htmlFor="work-draw-winners">获奖名额</label>
+                            <Help label="获奖名额">
+                              最多获奖人数，1–1000
+                              人；报名人数少于名额时全部获奖。
+                            </Help>
+                          </div>
+                          <input
+                            id="work-draw-winners"
+                            inputMode="numeric"
+                            value={draw.winners}
+                            {...fieldProps(
+                              "draw.winners",
+                              "work-draw-winners",
+                              ["draw.amount"],
+                            )}
+                            onChange={(event) => {
+                              editText(
+                                "draw.winners",
+                                event.target.value,
+                                (value) =>
+                                  setDraw({
+                                    ...draw,
+                                    winners: value,
+                                  }),
+                              );
+                            }}
+                          />
+                          <FieldError
+                            id={fieldErrorId("work-draw-winners")}
+                            message={errorFor("draw.winners")}
+                          />
+                        </div>
+                        <div className="field">
+                          <div className="work-field-label">
+                            <label htmlFor="work-draw-seconds">
+                              开奖倒计时 · 秒
+                            </label>
+                            <Help label="开奖倒计时">
+                              从正式开放成功时开始计时，达到报名上限可提前开奖。
+                            </Help>
+                          </div>
+                          <input
+                            id="work-draw-seconds"
+                            inputMode="numeric"
+                            value={draw.seconds}
+                            {...fieldProps("draw.seconds", "work-draw-seconds")}
+                            onChange={(event) => {
+                              editText(
+                                "draw.seconds",
+                                event.target.value,
+                                (value) =>
+                                  setDraw({
+                                    ...draw,
+                                    seconds: value,
+                                  }),
+                              );
+                            }}
+                          />
+                          <FieldError
+                            id={fieldErrorId("work-draw-seconds")}
+                            message={errorFor("draw.seconds")}
+                          />
+                        </div>
+                        <div className="field">
+                          <div className="work-field-label">
+                            <label htmlFor="work-draw-limit">
+                              报名上限 <em>选填</em>
+                            </label>
+                            <Help label="报名上限">
+                              留空则不限报名人数；填写时，达到该人数立即开奖。上限与获奖名额独立。
+                            </Help>
+                          </div>
+                          <input
+                            id="work-draw-limit"
+                            inputMode="numeric"
+                            value={draw.limit}
+                            {...fieldProps("draw.limit", "work-draw-limit")}
+                            onChange={(event) => {
+                              editText(
+                                "draw.limit",
+                                event.target.value,
+                                (value) => setDraw({ ...draw, limit: value }),
+                              );
+                            }}
+                            placeholder="留空，仅按时间开奖"
+                          />
+                          <FieldError
+                            id={fieldErrorId("work-draw-limit")}
+                            message={errorFor("draw.limit")}
+                          />
+                        </div>
+                        <AlgorithmField
+                          id="work-draw-algorithm"
+                          value={draw.algorithm}
+                          onChange={(algorithm) =>
+                            setDraw({ ...draw, algorithm })
+                          }
+                        />
+                      </div>
+                      <Toggle
+                        id="work-draw-full-pool"
+                        checked={draw.fullPool}
+                        onChange={(fullPool) => setDraw({ ...draw, fullPool })}
+                        title="人数不足时发完奖池"
+                        description="人数不足时，开启则按实际获奖人数分配全部奖池；关闭则按配置名额生成金额池，仅发放其中的中奖份额。"
+                        notice="开放前可修改；开奖按开放时设置结算。"
+                      />
+                    </AnimatedRegion>
+                  )}
+                </AnimatePresence>
+              </div>
               <div className="work-password-heading">
                 <div className="work-title-group">
                   <h3>兑换口令</h3>
@@ -1496,7 +1377,7 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
                           ]}
                         />
                       </div>
-                      {!(rewardKind === "ldc" && plan === "draw") && (
+                      {plan !== "draw" && (
                         <div className="field">
                           <div className="work-field-label">
                             <label htmlFor="work-duration">开放时长</label>
@@ -1543,7 +1424,7 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
                       checked={showRecipients}
                       onChange={setShowRecipients}
                       title="展示领取名单"
-                      description="公开昵称、领取时间和 LDC 金额；文本内容始终私有。限时开奖仅在结果发布后展示中奖者。"
+                      description="公开昵称、领取时间和 LDC 金额。限时开奖仅在结果发布后展示中奖者。"
                       notice="可随时修改；已公开的信息会随设置隐藏或展示。"
                     />
                   </div>
@@ -1565,22 +1446,12 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
         <aside className="work-summary" aria-label="活动摘要">
           <h2>{title.trim() || "未命名活动"}</h2>
           <div className="work-summary-amount">
-            {rewardKind === "ldc" ? (
-              <>
-                {rewardTotal === null ? "—" : money(rewardTotal)}
-                <span>LDC</span>
-              </>
-            ) : (
-              <>
-                {textLines.length}
-                <span>份 {TEXT_REWARD_LABEL}</span>
-              </>
-            )}
+            {rewardTotal === null ? "—" : money(rewardTotal)}
+            <span>LDC</span>
           </div>
           <p className="work-summary-plan">
-            {rewardKind === "ldc" ? planNames[plan] : TEXT_REWARD_LABEL}
-            {rewardKind === "ldc" &&
-              ` · ${rewardCount ?? "—"} ${plan === "draw" ? "个获奖名额" : "份奖励"}`}
+            {planNames[plan]} · {rewardCount ?? "—"}{" "}
+            {plan === "draw" ? "个获奖名额" : "份奖励"}
           </p>
           <dl className="work-summary-details">
             <div>
@@ -1600,18 +1471,14 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
               <dd>{topic.trim() ? "已填写" : "未关联"}</dd>
             </div>
             <div>
-              <dt>
-                {rewardKind === "ldc" && plan === "draw"
-                  ? "开奖倒计时"
-                  : "开放时长"}
-              </dt>
+              <dt>{plan === "draw" ? "开奖倒计时" : "开放时长"}</dt>
               <dd>
-                {rewardKind === "ldc" && plan === "draw"
+                {plan === "draw"
                   ? `${draw.seconds || "—"} 秒`
                   : `${hours || "—"} ${durationUnitLabels[durationUnit]}`}
               </dd>
             </div>
-            {rewardKind === "ldc" && plan === "draw" && (
+            {plan === "draw" && (
               <div>
                 <dt>报名上限</dt>
                 <dd>{draw.limit ? `${draw.limit} 人` : "不限"}</dd>
@@ -1737,26 +1604,6 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
   );
 }
 
-type ManagedRewardFilter = "all" | "text" | "ldc";
-
-const managedRewardFilterOptions: Array<{
-  value: ManagedRewardFilter;
-  label: string;
-}> = [
-  { value: "all", label: "全部" },
-  { value: "text", label: TEXT_REWARD_LABEL },
-  { value: "ldc", label: "LDC" },
-];
-
-function managedRewardFilterMatches(
-  item: ManagedActivity,
-  filter: ManagedRewardFilter,
-) {
-  if (filter === "all") return true;
-  if (filter === "text") return item.config.rewardKind === "text";
-  return item.config.rewardKind === "ldc";
-}
-
 export function ManagePage({
   navigate,
   identity,
@@ -1794,19 +1641,15 @@ export function ManagePage({
       listViewState: state,
     };
   });
-  const [rewardFilter, setRewardFilter] = useState<ManagedRewardFilter>("all");
   const [confirmation, setConfirmation] = useState<{
     id: string;
     kind: "delete";
   } | null>(null);
   const [error, setError] = useState("");
-  const visibleItems =
-    listState === "empty"
-      ? []
-      : items.filter((item) => managedRewardFilterMatches(item, rewardFilter));
+  const visibleItems = listState === "empty" ? [] : items;
   const { page, pageItems, hasNext, setPage } = usePagination(
     visibleItems,
-    `${identity}:${rewardFilter}`,
+    `${identity}`,
   );
   const confirmedItem = confirmation
     ? items.find((item) => item.id === confirmation.id)
@@ -1843,23 +1686,16 @@ export function ManagePage({
         label: "尝试统计",
         onSelect: () => navigate("statistics", { activityId: item.id }),
       });
-    if (item.config.rewardKind === "ldc")
-      result.push({
-        label: "付款记录",
-        onSelect: () => navigate("payment", { activityId: item.id }),
-      });
+    result.push({
+      label: "付款记录",
+      onSelect: () => navigate("payment", { activityId: item.id }),
+    });
     return result;
   }
 
   return (
     <div className="work-page work-list-page list-page">
       <div className="activity-list-toolbar">
-        <SegmentedControl
-          label="奖励筛选"
-          value={rewardFilter}
-          onChange={setRewardFilter}
-          options={managedRewardFilterOptions}
-        />
         <button
           type="button"
           className="compact-icon-button list-refresh-button"
@@ -1876,7 +1712,7 @@ export function ManagePage({
         }
         onRetry={onRetry}
         emptyText="暂无活动"
-        resetKey={`${rewardFilter}:${page}`}
+        resetKey={`${page}`}
         footer={
           <Pagination
             label="作者活动分页"
@@ -1924,11 +1760,7 @@ export function ManagePage({
               <td className="activity-table-reward">
                 <ActivityReward
                   label={item.kind}
-                  summary={
-                    item.config.rewardKind === "text"
-                      ? item.amount
-                      : `${toPrototypeActivity(item).poolAmount ?? "—"} LDC 奖池`
-                  }
+                  summary={`${toPrototypeActivity(item).poolAmount ?? "—"} LDC 奖池`}
                 />
               </td>
               <td className="activity-table-progress">
@@ -2101,8 +1933,8 @@ export function AccountPage({
                     className="work-login-lite-panel"
                   >
                     <p>
-                      青春版账号可参与和创建文本 / CDK 活动，LDC 奖励需通过LINUX
-                      DO登录。
+                      青春版账号可浏览活动；创建、领取和报名需通过官方 Connect
+                      升级。
                     </p>
                     <button
                       className="button secondary work-login-secondary"
@@ -2235,8 +2067,8 @@ export function AccountPage({
                 账号资格
                 <Help label="账号资格">
                   {lite
-                    ? "青春版仅可参与和创建文本 / CDK 活动。通过官方 Connect 登录可获得普通资格。"
-                    : "普通资格可参与和创建文本 / CDK 与 LDC 活动；后续使用 LiteAuth 登录不会降级。"}
+                    ? "青春版可浏览活动。通过官方 Connect 升级后可创建、领取和报名 LDC 活动。"
+                    : "普通资格可参与和创建 LDC 活动；后续使用 LiteAuth 登录不会降级。"}
                 </Help>
               </dt>
               <dd>

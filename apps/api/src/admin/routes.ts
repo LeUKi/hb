@@ -253,7 +253,7 @@ async function overview(env: ApiBindings): Promise<AdminOverview> {
   ] = await env.DB.batch([
     env.DB.prepare(`SELECT
       (SELECT COUNT(*) FROM users) AS users,
-      (SELECT COUNT(*) FROM activities WHERE deleted_at IS NULL) AS activities,
+      (SELECT COUNT(*) FROM activities WHERE reward_type='ldc' AND deleted_at IS NULL) AS activities,
       (SELECT COUNT(*) FROM payment_tasks) AS payments,
       (SELECT COUNT(*) FROM payment_tasks WHERE status!='confirmed') AS unconfirmedPayments`),
     env.DB.prepare(
@@ -266,7 +266,7 @@ async function overview(env: ApiBindings): Promise<AdminOverview> {
       "SELECT COUNT(*) AS count FROM payment_tasks WHERE status='attention'",
     ),
     env.DB.prepare(`SELECT COUNT(*) AS count FROM activities
-      WHERE deleted_at IS NULL AND draw_state IN ('waiting','settling')
+      WHERE reward_type='ldc' AND deleted_at IS NULL AND draw_state IN ('waiting','settling')
         AND COALESCE(draw_closed_at,deadline,created_at)<=?`).bind(
       now - ADMIN_DIAGNOSTIC_THRESHOLDS.drawWaitMs - 1,
     ),
@@ -407,15 +407,11 @@ async function listActivities(
     query.status ?? "all",
     "status",
   );
-  const rewardType = parseFilter(
-    adminRewardTypeSchema,
-    query.rewardType ?? "all",
-    "rewardType",
-  );
+  parseFilter(adminRewardTypeSchema, query.rewardType ?? "all", "rewardType");
   const drawException = query.drawException === "1";
   const cursor = parseCursor(query.cursor);
   const values: BindValue[] = [];
-  const where = ["a.deleted_at IS NULL"];
+  const where = ["a.reward_type='ldc'", "a.deleted_at IS NULL"];
   const lifecycleSql = activityListStatusCaseSql(Date.now(), "a");
   const search = parseActivitySearch(query.q ?? "", env.APP_ORIGIN);
   if (search.kind === "activity") {
@@ -432,10 +428,6 @@ async function listActivities(
   if (authorId) {
     where.push("a.author_id=?");
     values.push(authorId);
-  }
-  if (rewardType !== "all") {
-    where.push("a.reward_type=?");
-    values.push(rewardType);
   }
   if (status !== "all") {
     where.push(`(${lifecycleSql})=?`);
@@ -464,7 +456,7 @@ async function listActivities(
     authorId: String(row.author_id),
     authorDisplayName: String(row.authorDisplayName),
     participationMode: row.participation_mode as "password" | "direct",
-    rewardType: row.reward_type as "text" | "ldc",
+    rewardType: row.reward_type as AdminActivityListItem["rewardType"],
     paymentMode: row.payment_mode as "simulation" | "real" | null,
     lifecycle: row.lifecycle as AdminActivityListItem["lifecycle"],
     totalCount: asInt(row.total_count),
@@ -497,7 +489,7 @@ async function activityDetail(
       a.ended_at,a.end_reason,a.archived_at,a.draw_closed_at,a.draw_published_at,
       ${lifecycleSql} AS lifecycle
       FROM activities a JOIN users u ON u.id=a.author_id
-      WHERE a.id=? AND a.deleted_at IS NULL`).bind(id),
+      WHERE a.id=? AND a.reward_type='ldc' AND a.deleted_at IS NULL`).bind(id),
     env.DB.prepare(`SELECT COUNT(*) AS total,
       SUM(CASE WHEN status!='confirmed' THEN 1 ELSE 0 END) AS pending,
       SUM(CASE WHEN status='confirmed' THEN 1 ELSE 0 END) AS confirmed,
@@ -518,7 +510,7 @@ async function activityDetail(
       authorId: String(row.author_id),
       authorDisplayName: String(row.authorDisplayName),
       participationMode: row.participation_mode as "password" | "direct",
-      rewardType: row.reward_type as "text" | "ldc",
+      rewardType: row.reward_type as AdminActivityDetail["rewardType"],
       paymentMode: row.payment_mode as "simulation" | "real" | null,
       lifecycle: row.lifecycle as AdminActivityListItem["lifecycle"],
       totalCount: asInt(row.total_count),
@@ -617,9 +609,9 @@ async function userDetail(
       id,
     ),
     env.DB.prepare(`SELECT
-      (SELECT COUNT(*) FROM activities WHERE author_id=? AND deleted_at IS NULL) AS authoredActivities,
-      (SELECT COUNT(*) FROM claims WHERE user_id=?) AS claims,
-      (SELECT COUNT(*) FROM activity_registrations WHERE user_id=?) AS registrations,
+      (SELECT COUNT(*) FROM activities WHERE author_id=? AND reward_type='ldc' AND deleted_at IS NULL) AS authoredActivities,
+      (SELECT COUNT(*) FROM claims c JOIN activities a ON a.id=c.activity_id AND a.reward_type='ldc' AND a.deleted_at IS NULL WHERE c.user_id=?) AS claims,
+      (SELECT COUNT(*) FROM activity_registrations r JOIN activities a ON a.id=r.activity_id AND a.reward_type='ldc' AND a.deleted_at IS NULL WHERE r.user_id=?) AS registrations,
       (SELECT COUNT(*) FROM merchants WHERE author_id=?) AS merchants,
       (SELECT COUNT(*) FROM payment_tasks WHERE recipient_id IN (
         SELECT external_id FROM users WHERE id=? UNION ALL
@@ -768,7 +760,7 @@ async function listPayments(
     FROM payment_tasks p
     LEFT JOIN merchants m ON m.id=p.merchant_id
     LEFT JOIN claims c ON c.id=p.claim_id
-    LEFT JOIN activities a ON a.id=c.activity_id AND a.deleted_at IS NULL
+    LEFT JOIN activities a ON a.id=c.activity_id AND a.reward_type='ldc' AND a.deleted_at IS NULL
     LEFT JOIN users u ON u.provider='linux_do' AND u.external_id=CASE
       WHEN p.mode='simulation' AND p.recipient_id LIKE 'simulation:%'
         THEN substr(p.recipient_id,12) ELSE p.recipient_id END
@@ -800,7 +792,7 @@ async function paymentDetail(
       FROM payment_tasks p
       LEFT JOIN merchants m ON m.id=p.merchant_id
       LEFT JOIN claims c ON c.id=p.claim_id
-      LEFT JOIN activities a ON a.id=c.activity_id AND a.deleted_at IS NULL
+      LEFT JOIN activities a ON a.id=c.activity_id AND a.reward_type='ldc' AND a.deleted_at IS NULL
       LEFT JOIN users u ON u.provider='linux_do' AND u.external_id=CASE
         WHEN p.mode='simulation' AND p.recipient_id LIKE 'simulation:%'
           THEN substr(p.recipient_id,12) ELSE p.recipient_id END

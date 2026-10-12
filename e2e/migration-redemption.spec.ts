@@ -26,7 +26,6 @@ async function setup(page: Page) {
     fail: false,
     author: false,
     managedMissing: false,
-    rewardType: "text" as "text" | "ldc",
     forceDedicated: true,
     ended: false,
     draw: false,
@@ -36,8 +35,12 @@ async function setup(page: Page) {
   const activity = () => ({
     id,
     title: "迁移活动",
-    rewardType: state.rewardType,
+    rewardType: "ldc",
     status: state.ended ? "ended" : "active",
+    paymentMode: "simulation",
+    reward: state.draw
+      ? { mode: "timed_draw", totalAmount: "2.64", count: 3 }
+      : { mode: "fixed", unitAmount: "0.88", count: 3 },
     author,
     forceDedicated: state.forceDedicated,
     topicUrl: null,
@@ -71,8 +74,15 @@ async function setup(page: Page) {
   const claim = () => ({
     id: "reward-id",
     activity: { id, title: "迁移活动", status: "active" },
-    rewardType: "text",
-    text: "PRIVATE-CDK",
+    rewardType: "ldc",
+    amount: "0.88",
+    payment: {
+      id: "migration-payment",
+      mode: "simulation",
+      status: "confirmed",
+      reason: null,
+      confirmedAt: "2026-10-07T00:00:00Z",
+    },
     afterClaimInfo: "作者私有附言",
     claimedAt: "2026-10-07T00:00:00Z",
   });
@@ -107,7 +117,14 @@ async function setup(page: Page) {
         },
       });
     }
-    if (p === "/api/redemptions")
+    if (p === "/api/redemptions") {
+      if (state.mode === "single") {
+        state.claimed = true;
+        state.claims.push({
+          submissionId: "33333333-3333-4333-8333-333333333333",
+          password: route.request().postDataJSON().password,
+        });
+      }
       return route.fulfill({
         json: {
           id: "result",
@@ -126,6 +143,7 @@ async function setup(page: Page) {
             : {}),
         },
       });
+    }
     if (p === "/api/redemptions/result" || p === "/api/topics/123/activities")
       return route.fulfill({
         json: {
@@ -245,7 +263,7 @@ async function setup(page: Page) {
               ...emptyActivityInput(),
               title: "迁移活动",
               forceDedicated: state.forceDedicated,
-              rewardType: state.rewardType,
+              rewardType: "ldc",
               passwords: ["Answer123"],
               beforeInfo: "作者公开说明",
             },
@@ -271,7 +289,9 @@ for (const width of [1440, 375]) {
     await dialog.getByRole("button", { name: /迁移活动/ }).click();
     await expect(page).toHaveURL(new RegExp(`/activities/${id}$`));
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    await expect(page.getByText("PRIVATE-CDK", { exact: true })).toBeVisible();
+    await expect(
+      page.locator(".slip-amount", { hasText: "+0.88" }),
+    ).toBeVisible();
     expect(state.claims).toHaveLength(1);
     await expect(page.locator('[data-note-region="after"]')).toContainText(
       "作者私有附言",
@@ -329,7 +349,9 @@ test("单匹配进入活动页后自动提交，取消弹窗回焦且定位不�
   state.mode = "single";
   await page.getByLabel("口令", { exact: true }).fill("Answer123");
   await page.getByRole("button", { name: "兑奖", exact: true }).click();
-  await expect(page.getByText("PRIVATE-CDK", { exact: true })).toBeVisible();
+  await expect(
+    page.locator(".slip-amount", { hasText: "+0.88" }),
+  ).toBeVisible();
   await expect(page.locator(".activity-quantity")).toHaveText(
     "已领取 2 / 3 份",
   );
@@ -347,7 +369,9 @@ test("未知自动提交在目标页重试原编号", async ({ page }) => {
     .getByRole("button", { name: /迁移活动/ })
     .click();
   await page.getByRole("button", { name: "重试原提交" }).click();
-  await expect(page.getByText("PRIVATE-CDK", { exact: true })).toBeVisible();
+  await expect(
+    page.locator(".slip-amount", { hasText: "+0.88" }),
+  ).toBeVisible();
   expect(state.claims).toHaveLength(2);
   expect(state.claims[0]?.submissionId).toBe(state.claims[1]?.submissionId);
 });
@@ -395,7 +419,7 @@ test("作者分享和管理独立，管理项路由按配置显示", async ({ pa
   await expect(
     page.getByRole("menuitem", { name: "兑换尝试统计" }),
   ).toBeVisible();
-  await expect(page.getByRole("menuitem", { name: "付款记录" })).toHaveCount(0);
+  await expect(page.getByRole("menuitem", { name: "付款记录" })).toBeVisible();
   await page.getByRole("menuitem", { name: "兑换尝试统计" }).click();
   const statisticsDialog = page.getByRole("dialog", {
     name: "兑换尝试统计",
@@ -419,7 +443,6 @@ test("作者分享和管理独立，管理项路由按配置显示", async ({ pa
   await expect(page.locator("#activity-title")).toHaveValue("迁移活动");
   expect(new URL(page.url()).searchParams.has("edit")).toBe(false);
 
-  state.rewardType = "ldc";
   await page.goto(`/activities/${id}`);
   await page.getByRole("button", { name: "管理活动", exact: true }).click();
   await page.getByRole("menuitem", { name: "付款记录" }).click();
@@ -591,7 +614,9 @@ test("口令 Enter 提交与 IME 隔离，定位后的唯一输入实际共享�
   expect(state.claims).toHaveLength(0);
   await page.getByLabel("兑换口令", { exact: true }).fill("Answer123");
   await page.getByLabel("兑换口令", { exact: true }).press("Enter");
-  await expect(page.getByText("PRIVATE-CDK", { exact: true })).toBeVisible();
+  await expect(
+    page.locator(".slip-amount", { hasText: "+0.88" }),
+  ).toBeVisible();
   expect(state.claims).toHaveLength(1);
 });
 

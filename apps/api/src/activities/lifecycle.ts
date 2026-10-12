@@ -16,11 +16,11 @@ export async function refreshActivityLifecycle(
   await refreshTimedDraw(env, activityId);
   await env.DB.batch([
     env.DB.prepare(`UPDATE activities SET ended_at = deadline, end_reason = 'expired', version = version + 1, updated_at = ${databaseNow}
-      WHERE id = ? AND deleted_at IS NULL AND opened_at IS NOT NULL AND ended_at IS NULL AND draw_state IS NULL AND deadline <= ${databaseNow}`).bind(
+      WHERE id = ? AND reward_type = 'ldc' AND deleted_at IS NULL AND opened_at IS NOT NULL AND ended_at IS NULL AND draw_state IS NULL AND deadline <= ${databaseNow}`).bind(
       activityId,
     ),
     env.DB.prepare(`UPDATE activities SET archived_at = ended_at + ?, version = version + 1, updated_at = ${databaseNow}
-      WHERE id = ? AND deleted_at IS NULL AND ended_at IS NOT NULL AND archived_at IS NULL AND (draw_state IS NULL OR draw_state IN ('completed','empty')) AND ended_at + ? <= ${databaseNow}`).bind(
+      WHERE id = ? AND reward_type = 'ldc' AND deleted_at IS NULL AND ended_at IS NOT NULL AND archived_at IS NULL AND (draw_state IS NULL OR draw_state IN ('completed','empty')) AND ended_at + ? <= ${databaseNow}`).bind(
       ARCHIVE_DELAY_MS,
       activityId,
       ARCHIVE_DELAY_MS,
@@ -48,7 +48,7 @@ export async function endActivity(
     await env.DB.batch([
       activityWriteGuard(env.DB, activityId, authorId, version),
       env.DB.prepare(`UPDATE activities SET
-      version = CASE WHEN author_id = ? AND version = ? AND deleted_at IS NULL AND claimed_count = 0 AND registered_count = 0 AND opened_at IS NOT NULL AND ended_at IS NULL AND deadline > ${databaseNow}
+      version = CASE WHEN author_id = ? AND version = ? AND reward_type = 'ldc' AND deleted_at IS NULL AND claimed_count = 0 AND registered_count = 0 AND opened_at IS NOT NULL AND ended_at IS NULL AND deadline > ${databaseNow}
         THEN version + 1 ELSE NULL END,
       ended_at = ${databaseNow}, end_reason = 'manual', updated_at = ${databaseNow}
       WHERE id = ?`).bind(authorId, version, activityId),
@@ -73,7 +73,7 @@ export async function sweepActivityLifecycle(env: ApiBindings) {
   let processed = 0;
   for (;;) {
     const page =
-      await env.DB.prepare(`SELECT id FROM activities WHERE id > ? AND deleted_at IS NULL AND opened_at IS NOT NULL AND
+      await env.DB.prepare(`SELECT id FROM activities WHERE id > ? AND reward_type = 'ldc' AND deleted_at IS NULL AND opened_at IS NOT NULL AND
       ((ended_at IS NULL AND deadline <= ${databaseNow}) OR (ended_at IS NOT NULL AND archived_at IS NULL AND ended_at + ? <= ${databaseNow})
         OR draw_state='settling'
         OR EXISTS (SELECT 1 FROM redemption_submissions WHERE activity_id = activities.id AND purpose='claim' AND outcome = 'pending'))

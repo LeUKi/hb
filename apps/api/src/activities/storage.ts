@@ -1,5 +1,5 @@
 import { type LdcActivityInput, ldcAmounts } from "@hb/contracts";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { createDb } from "../db/client";
 import { activities, activityPasswords, rewardInventory } from "../db/schema";
 import type { ApiBindings } from "../env";
@@ -8,7 +8,7 @@ import {
   digestPassword,
   encryptString,
 } from "../security/crypto";
-import { activityNotFound, invalidActivity } from "./errors";
+import { activityNotFound } from "./errors";
 import { generateRandomAmounts } from "./random-money";
 
 export type ActivityRow = typeof activities.$inferSelect;
@@ -19,7 +19,13 @@ export async function findActivity(env: ApiBindings, id: string) {
   return createDb(env.DB)
     .select()
     .from(activities)
-    .where(and(eq(activities.id, id), isNull(activities.deletedAt)))
+    .where(
+      and(
+        eq(activities.id, id),
+        eq(activities.rewardType, "ldc"),
+        isNull(activities.deletedAt),
+      ),
+    )
     .get();
 }
 
@@ -33,7 +39,7 @@ export function activityWriteGuard(
   return database
     .prepare(`SELECT json(CASE WHEN EXISTS (
       SELECT 1 FROM activities WHERE id = ? AND author_id = ?
-        AND version = ? AND deleted_at IS NULL
+        AND version = ? AND reward_type = 'ldc' AND deleted_at IS NULL
     ) THEN '{}' ELSE '' END) AS activity_write_guard`)
     .bind(id, authorId, version);
 }
@@ -50,16 +56,32 @@ export async function ownedActivity(
 
 export async function privateRows(env: ApiBindings, activityId: string) {
   const db = createDb(env.DB);
+  const ldcActivity = and(
+    eq(activities.id, activityId),
+    eq(activities.rewardType, "ldc"),
+    isNull(activities.deletedAt),
+  );
   const [passwords, inventory] = await db.batch([
     db
       .select()
       .from(activityPasswords)
-      .where(eq(activityPasswords.activityId, activityId))
+      .where(
+        and(
+          eq(activityPasswords.activityId, activityId),
+          sql`EXISTS ${db.select({ one: sql`1` }).from(activities).where(ldcActivity)}`,
+        ),
+      )
       .orderBy(activityPasswords.position),
     db
       .select()
       .from(rewardInventory)
-      .where(eq(rewardInventory.activityId, activityId))
+      .where(
+        and(
+          eq(rewardInventory.activityId, activityId),
+          eq(rewardInventory.kind, "ldc"),
+          sql`EXISTS ${db.select({ one: sql`1` }).from(activities).where(ldcActivity)}`,
+        ),
+      )
       .orderBy(rewardInventory.position),
   ]);
   return { passwords, inventory };
@@ -69,38 +91,29 @@ export function passwordAssociatedData(activityId: string, passwordId: string) {
   return `activity:${activityId}:password:${passwordId}`;
 }
 
-export function rewardAssociatedData(activityId: string, inventoryId: string) {
-  return `activity:${activityId}:reward:${inventoryId}`;
-}
-
 export async function readPrivateContent(env: ApiBindings, activityId: string) {
-  const { passwords, inventory } = await privateRows(env, activityId);
-  return decryptRows(env, activityId, passwords, inventory);
+  const { passwords } = await privateRows(env, activityId);
+  return decryptRows(env, activityId, passwords);
 }
 
 export async function privateSnapshot(env: ApiBindings, activityId: string) {
   const db = createDb(env.DB);
-  const [rows, passwords, inventory] = await db.batch([
-    db
-      .select()
-      .from(activities)
-      .where(and(eq(activities.id, activityId), isNull(activities.deletedAt))),
-    db
-      .select()
-      .from(activityPasswords)
-      .where(eq(activityPasswords.activityId, activityId))
-      .orderBy(activityPasswords.position),
-    db
-      .select()
-      .from(rewardInventory)
-      .where(eq(rewardInventory.activityId, activityId))
-      .orderBy(rewardInventory.position),
-  ]);
-  const row = rows[0];
+  const row = await db
+    .select()
+    .from(activities)
+    .where(
+      and(
+        eq(activities.id, activityId),
+        eq(activities.rewardType, "ldc"),
+        isNull(activities.deletedAt),
+      ),
+    )
+    .get();
   if (!row) activityNotFound();
+  const { passwords } = await privateRows(env, activityId);
   return {
     row,
-    content: await decryptRows(env, activityId, passwords, inventory),
+    content: await decryptRows(env, activityId, passwords),
   };
 }
 
@@ -108,32 +121,17 @@ async function decryptRows(
   env: ApiBindings,
   activityId: string,
   passwords: PasswordRow[],
-  inventory: InventoryRow[],
 ) {
-  const [passwordValues, rewards] = await Promise.all([
-    Promise.all(
-      passwords.map((row) =>
-        decryptString(
-          row.ciphertext,
-          env,
-          passwordAssociatedData(activityId, row.id),
-        ),
+  const passwordValues = await Promise.all(
+    passwords.map((row) =>
+      decryptString(
+        row.ciphertext,
+        env,
+        passwordAssociatedData(activityId, row.id),
       ),
     ),
-    Promise.all(
-      inventory
-        .filter((row) => row.kind === "text")
-        .map(async (row) => ({
-          id: row.id,
-          text: await decryptString(
-            row.ciphertext ?? "",
-            env,
-            rewardAssociatedData(activityId, row.id),
-          ),
-        })),
-    ),
-  ]);
-  return { passwords: passwordValues, rewards };
+  );
+  return { passwords: passwordValues };
 }
 
 export async function preparePasswords(
@@ -160,39 +158,6 @@ export async function preparePasswords(
           value,
           env,
           passwordAssociatedData(activityId, id),
-        ),
-      };
-    }),
-  );
-}
-
-export async function prepareInventory(
-  env: ApiBindings,
-  activityId: string,
-  values: { id: string; text: string }[],
-  existing: InventoryRow[],
-  now: number,
-) {
-  const byId = new Map(existing.map((row) => [row.id, row]));
-  const ids = new Set<string>();
-  return Promise.all(
-    values.map(async (value, position): Promise<InventoryRow> => {
-      if (ids.has(value.id)) {
-        invalidActivity("奖励条目标识无效或重复");
-      }
-      const id = value.id;
-      ids.add(id);
-      return {
-        id,
-        activityId,
-        position,
-        createdAt: byId.get(id)?.createdAt ?? now,
-        kind: "text",
-        amountMinor: null,
-        ciphertext: await encryptString(
-          value.text,
-          env,
-          rewardAssociatedData(activityId, id),
         ),
       };
     }),

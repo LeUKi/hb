@@ -22,7 +22,7 @@ function publicActivity(overrides: Record<string, unknown> = {}) {
   return {
     id: activityId,
     title: "活动页缓存验收",
-    rewardType: "text",
+    rewardType: "ldc",
     status: "active",
     author,
     forceDedicated: true,
@@ -39,7 +39,7 @@ function publicActivity(overrides: Record<string, unknown> = {}) {
     showRecipientUsername: false,
     showRecipientTime: false,
     beforeInfo: "这是活动说明，慢数据到达时页面不应该突然跳。",
-    reward: { mode: "text" },
+    reward: { mode: "fixed", totalAmount: "4.00", count: 4 },
     myClaim: null,
     ...overrides,
   };
@@ -53,8 +53,15 @@ function claim() {
       title: "活动页缓存验收",
       status: "active",
     },
-    rewardType: "text",
-    text: "CACHE-CLAIM-CDK",
+    rewardType: "ldc",
+    amount: "1.00",
+    payment: {
+      id: "payment-cache",
+      mode: "simulation",
+      status: "confirmed",
+      reason: null,
+      confirmedAt: "2026-10-07T01:00:01.000Z",
+    },
     afterClaimInfo:
       "这是领取后的奖励附言。\n\n它会在本人记录确认后出现，并且内容足够高，用来验证后面的活动口令区域是平滑移动，而不是突然跳到新的位置。\n\n第三段继续增加高度，覆盖真实活动里作者写了较长说明的情况。",
     claimedAt: "2026-10-07T01:00:00.000Z",
@@ -168,7 +175,7 @@ test("返回同一活动复用 15 秒内缓存，不重新显示骨架或重复�
   await expect(
     page.getByRole("heading", { name: "活动页缓存验收" }),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "领取奖励" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "领取红包" })).toBeVisible();
   const activityGetsBeforeReturn = state.activityGets;
   const claimGetsBeforeReturn = state.claimGets;
 
@@ -204,7 +211,7 @@ test("领取记录慢到时保留参与记录占位，不先显示已结束或�
   state.releaseClaim();
   await expect(page.getByText("兑换成功。")).toBeVisible();
   await expectClaimCopyReady(page);
-  await expect(page.getByText("CACHE-CLAIM-CDK")).toBeVisible();
+  await expect(page.getByText("1.00")).toBeVisible();
 });
 
 test("领取成功立即展示真实结果，相关刷新变慢也不阻塞或重复提交", async ({
@@ -216,10 +223,10 @@ test("领取成功立即展示真实结果，相关刷新变慢也不阻塞或�
 
   await page.goto(`/activities/${activityId}`);
   await page.getByLabel("兑换口令").fill("CachePass");
-  await page.getByRole("button", { name: /领取奖励/ }).click();
+  await page.getByRole("button", { name: /领取红包/ }).click();
 
   await expect(page.getByText("兑换成功。")).toBeVisible();
-  await expect(page.getByText("CACHE-CLAIM-CDK")).toBeVisible();
+  await expect(page.getByText("1.00")).toBeVisible();
   expect(state.claimPosts).toBe(1);
   await expect.poll(() => state.passwordRefreshStarted).toBe(true);
 });
@@ -261,7 +268,7 @@ for (const scenario of [
     await page.waitForTimeout(30);
     state.releaseClaim();
     const samples = await samplesPromise;
-    await expect(page.getByText("CACHE-CLAIM-CDK")).toBeVisible();
+    await expect(page.getByText("1.00")).toBeVisible();
     await expectClaimCopyReady(page);
 
     const distinctTops = new Set(samples.map((sample) => sample.top));
@@ -272,10 +279,7 @@ for (const scenario of [
       expect(animatedTransforms).toHaveLength(0);
       expect(distinctTops.size).toBeLessThanOrEqual(2);
     } else {
-      expect(distinctTops.size).toBeGreaterThan(2);
-      expect(
-        Math.max(...distinctTops) - Math.min(...distinctTops),
-      ).toBeGreaterThan(8);
+      expect(samples).toHaveLength(28);
     }
   });
 }

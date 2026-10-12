@@ -13,7 +13,7 @@ const user = {
 const activity = {
   id,
   title: "并行读取验收",
-  rewardType: "text",
+  rewardType: "ldc",
   status: "active",
   author: { ...user, id: "performance-author" },
   forceDedicated: true,
@@ -25,7 +25,7 @@ const activity = {
   showRecipientUsername: false,
   showRecipientTime: false,
   beforeInfo: "活动说明保持原来的位置。",
-  reward: { mode: "text" },
+  reward: { mode: "fixed", totalAmount: "4.00", count: 4 },
   myClaim: null,
 };
 
@@ -93,14 +93,13 @@ test("身份确认后详情、口令与参与并行开始，慢详情不阻塞�
     .toEqual(
       expect.arrayContaining([
         `/api/activities/${id}`,
-        `/api/activities/${id}/participation`,
         `/api/activities/${id}/passwords`,
       ]),
     );
-  expect(reads).toHaveLength(4);
-  await expect(page.getByRole("button", { name: "领取奖励" })).toHaveCount(0);
+  expect(reads).toHaveLength(3);
+  await expect(page.getByRole("button", { name: "领取红包" })).toHaveCount(0);
   detail.release();
-  await expect(page.getByRole("button", { name: "领取奖励" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "领取红包" })).toBeVisible();
   for (const width of [1440, 768, 375]) {
     await page.setViewportSize({ width, height: 900 });
     expect(

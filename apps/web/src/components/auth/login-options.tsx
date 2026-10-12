@@ -106,8 +106,8 @@ export function LoginOptions({
               >
                 <div id={panelId} className="work-login-lite-panel">
                   <p>
-                    青春版账号可参与和创建文本 / CDK 活动，LDC 奖励需通过LINUX
-                    DO登录。
+                    青春版账号可登录浏览，创建、兑奖和报名需通过 LINUX DO
+                    登录升级。
                   </p>
                   {liteUnavailable ? (
                     <p className="muted">LiteAuth 青春版暂不可用</p>

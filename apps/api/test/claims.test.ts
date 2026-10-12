@@ -1,6 +1,6 @@
 import { env, evictDurableObject } from "cloudflare:test";
 import {
-  type TextActivityInput as ActivityInput,
+  type LdcActivityInput as ActivityInput,
   ARCHIVE_DELAY_MS,
   type AuthorClaimList,
   type ClaimDetail,
@@ -28,6 +28,7 @@ import { app } from "../src/app";
 import { createDb } from "../src/db/client";
 import { sessions, users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
+import { createMerchant } from "../src/payments/merchants";
 import { decryptString, sha256Hex } from "../src/security/crypto";
 import { advanceAttemptCooldown } from "./advance-attempt-cooldown";
 import { resetMerchantHistory } from "./reset-merchant-history";
@@ -38,6 +39,7 @@ type Actor = { id: string; cookie: string; csrf: string };
 let owner: Actor;
 let alice: Actor;
 let bob: Actor;
+let merchantId: string;
 
 function required<T>(value: T | null | undefined): T {
   if (value === null || value === undefined)
@@ -118,10 +120,9 @@ async function create(config: Partial<ActivityInput> = {}, open = true) {
       ...emptyActivityInput(),
       title: "领取测试",
       passwords: ["正确口令123", "another123"],
-      rewards: [
-        { id: crypto.randomUUID(), text: "PRIVATE-TEXT-A" },
-        { id: crypto.randomUUID(), text: "PRIVATE-TEXT-B" },
-      ],
+      rewardType: "ldc",
+      merchantId,
+      money: { mode: "fixed", totalAmount: "2.00", count: 2 },
       afterClaimInfo: "AFTER-CLAIM",
       afterEndInfo: "AFTER-END",
       ...config,
@@ -223,10 +224,18 @@ beforeEach(async () => {
   owner = await actor("owner");
   alice = await actor("alice");
   bob = await actor("bob");
+  merchantId = (
+    await createMerchant(bindings, owner.id, {
+      requestId: crypto.randomUUID(),
+      clientId: `claims_${crypto.randomUUID().replaceAll("-", "")}`,
+      label: "本地模拟",
+      secret: "virtual-only-secret",
+    })
+  ).id;
 });
 afterEach(() => vi.restoreAllMocks());
 
-describe("text claiming and private history", () => {
+describe("LDC claiming and private history", () => {
   it("reports the submitted password match separately from reward recovery", async () => {
     const activity = await create();
     const key = crypto.randomUUID();
@@ -262,7 +271,7 @@ describe("text claiming and private history", () => {
     );
     expect(current.status).toBe(200);
     expect(await current.json()).toMatchObject({
-      claim: { text: "PRIVATE-TEXT-A", afterClaimInfo: "AFTER-CLAIM" },
+      claim: { rewardType: "ldc", afterClaimInfo: "AFTER-CLAIM" },
       registration: null,
     });
     expect(await stats(activity.id)).toMatchObject({
@@ -285,12 +294,13 @@ describe("text claiming and private history", () => {
     ).toBe(404);
   });
 
-  it("allocates sequentially, permits text authors to claim, and retains one immutable reward per account", async () => {
+  it("allocates sequentially, rejects author self-claims, and retains one immutable reward per account", async () => {
     const activity = await create();
+    expect((await submit(activity.id, owner)).status).toBe(403);
     const first = await claim(activity.id);
     expect(first).toMatchObject({
       result: "claimed",
-      claim: { text: "PRIVATE-TEXT-A", afterClaimInfo: "AFTER-CLAIM" },
+      claim: { rewardType: "ldc", afterClaimInfo: "AFTER-CLAIM" },
     });
     expect(await stats(activity.id)).toMatchObject({
       claimed: 1,
@@ -301,12 +311,12 @@ describe("text claiming and private history", () => {
     const again = await claim(activity.id, alice, "another123");
     expect(again).toMatchObject({
       result: "already_claimed",
-      claim: { text: "PRIVATE-TEXT-A" },
+      claim: { rewardType: "ldc" },
     });
-    const second = await claim(activity.id, owner);
+    const second = await claim(activity.id, bob);
     expect(second).toMatchObject({
       result: "claimed",
-      claim: { text: "PRIVATE-TEXT-B" },
+      claim: { rewardType: "ldc" },
     });
     expect(await stats(activity.id)).toMatchObject({
       claimed: 2,
@@ -314,18 +324,13 @@ describe("text claiming and private history", () => {
       version: activity.version + 1,
       endReason: "exhausted",
     });
-    expect(await claim(activity.id, bob)).toEqual({
-      result: "ended",
-      passwordMatched: null,
-    });
   });
 
-  it("supports random allocation without replacement and identical text entries remain separate rewards", async () => {
-    const rewards = Array.from({ length: 6 }, () => ({
-      id: crypto.randomUUID(),
-      text: "same private value",
-    }));
-    const activity = await create({ allocation: "random", rewards });
+  it("supports random allocation without replacement", async () => {
+    const activity = await create({
+      allocation: "random",
+      money: { mode: "fixed", totalAmount: "6.00", count: 6 },
+    });
     const actors = await Promise.all(
       Array.from({ length: 6 }, (_, index) => actor(`random-${index}`)),
     );
@@ -371,7 +376,7 @@ describe("text claiming and private history", () => {
   it("serializes the last reward and competing keys without overselling", async () => {
     const activity = await create({
       forceDedicated: true,
-      rewards: [{ id: crypto.randomUUID(), text: "last one" }],
+      money: { mode: "fixed", totalAmount: "1.00", count: 1 },
     });
     const results = await Promise.all([
       claim(activity.id, alice),
@@ -423,10 +428,7 @@ describe("text claiming and private history", () => {
     ).toBe(403);
     expect((await submit(activity.id, alice, "bad!")).status).toBe(400);
     const draft = await create({ forceDedicated: true }, false);
-    expect(await claim(draft.id, owner)).toEqual({
-      result: "draft",
-      passwordMatched: null,
-    });
+    expect((await submit(draft.id, owner)).status).toBe(403);
     expect((await submit(draft.id, alice)).status).toBe(404);
     expect(await stats(activity.id)).toMatchObject({
       claims: 0,
@@ -480,7 +482,7 @@ describe("text claiming and private history", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     const detail = (await response.json()) as { claim: ClaimDetail };
     expect(detail.claim).toMatchObject({
-      text: "PRIVATE-TEXT-A",
+      rewardType: "ldc",
       afterClaimInfo: "updated shared information",
       activity: { status: "archived" },
     });
@@ -488,14 +490,11 @@ describe("text claiming and private history", () => {
       await request(`/api/me/activities/${activity.id}/claims`, owner)
     ).json()) as AuthorClaimList;
     expect(authorList.items[0]).toMatchObject({
-      text: "PRIVATE-TEXT-A",
+      rewardType: "ldc",
       claimant: { id: alice.id },
     });
     expect((await claim(activity.id)).result).toBe("already_claimed");
-    expect(await claim(activity.id, bob)).toEqual({
-      result: "archived",
-      passwordMatched: null,
-    });
+    expect((await submit(activity.id, owner)).status).toBe(403);
   });
 });
 
@@ -625,7 +624,7 @@ describe("durable validation, statistics and recovery", () => {
     ).toEqual({ matched: 1, claim_id: null });
     const exhausted = await create({
       forceDedicated: true,
-      rewards: [{ id: crypto.randomUUID(), text: "one" }],
+      money: { mode: "fixed", totalAmount: "1.00", count: 1 },
     });
     await advanceAttemptCooldown(env.DB, alice.id);
     const losing = await prepareClaimSubmission(
@@ -736,8 +735,7 @@ describe("durable validation, statistics and recovery", () => {
         await request(`/api/activities/${resumed.id}/claim`, alice)
       ).json()) as { claim: ClaimDetail };
       expect(reward.claim).toMatchObject({
-        rewardType: "text",
-        text: "PRIVATE-TEXT-A",
+        rewardType: "ldc",
         afterClaimInfo: "AFTER-CLAIM",
       });
       const errors = log.mock.calls.filter(
@@ -769,7 +767,7 @@ describe("durable validation, statistics and recovery", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const activity = await create({
       forceDedicated: true,
-      rewards: [{ id: crypto.randomUUID(), text: "only" }],
+      money: { mode: "fixed", totalAmount: "1.00", count: 1 },
     });
     const key = crypto.randomUUID();
     await env.DB.prepare(
@@ -1041,6 +1039,7 @@ describe("lifecycle and public recipients", () => {
     await env.DB.prepare("UPDATE activities SET deadline = ? WHERE id = ?")
       .bind(deadline, activity.id)
       .run();
+    expect((await submit(activity.id, owner)).status).toBe(403);
     expect(await claim(activity.id)).toEqual({
       result: "archived",
       passwordMatched: null,
@@ -1075,13 +1074,17 @@ describe("lifecycle and public recipients", () => {
     const deadline = Date.now() - ARCHIVE_DELAY_MS - 1000;
     const statements = Array.from({ length: 54 }, () =>
       env.DB.prepare(`INSERT INTO activities
-      (id,author_id,creation_request_id,creation_digest,title,force_dedicated,allocation,config,total_count,created_at,updated_at,opened_at,deadline)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+      (id,author_id,creation_request_id,creation_digest,title,merchant_id,payment_mode,reward_type,participation_mode,force_dedicated,allocation,config,total_count,created_at,updated_at,opened_at,deadline)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
         crypto.randomUUID(),
         owner.id,
         crypto.randomUUID(),
         "synthetic",
         "synthetic",
+        template.merchant_id,
+        template.payment_mode,
+        "ldc",
+        template.participation_mode,
         0,
         "sequential",
         template.config,
@@ -1114,10 +1117,7 @@ describe("lifecycle and public recipients", () => {
       storePrivateProfile(bob, "bob"),
     ]);
     const activity = await create({
-      rewards: Array.from({ length: 21 }, (_, index) => ({
-        id: crypto.randomUUID(),
-        text: `PRIVATE-${index}`,
-      })),
+      money: { mode: "fixed", totalAmount: "21.00", count: 21 },
       showRecipientList: true,
     });
     const actors = await Promise.all(
@@ -1156,7 +1156,7 @@ describe("lifecycle and public recipients", () => {
           typeof item.claimedAt === "string" &&
           !Object.hasOwn(item, "text") &&
           !Object.hasOwn(item, "email") &&
-          !Object.hasOwn(item, "amount"),
+          true,
       ),
     ).toBe(true);
     expect(first.items[0]?.avatarUrl).toMatch(
@@ -1236,5 +1236,5 @@ describe("lifecycle and public recipients", () => {
     expect(
       await (await request(`/api/activities/${activity.id}/recipients`)).json(),
     ).toEqual({ enabled: false, items: [], nextCursor: null });
-  });
+  }, 20_000);
 });

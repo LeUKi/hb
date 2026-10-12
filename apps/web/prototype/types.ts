@@ -15,7 +15,6 @@ export type Scenario =
   | "ready"
   | "random"
   | "random-ended"
-  | "text"
   | "pending"
   | "registered"
   | "drawing"
@@ -59,7 +58,6 @@ export type ParticipationResult = {
   /** Time this local sample confirmed upstream delivery, never an arrival time. */
   confirmedAt?: string | null;
   rewardAmount?: string;
-  rewardText?: string;
   password?: string;
   viewState: ActivityViewStateOverrides;
 };
@@ -69,7 +67,7 @@ export type Activity = {
   author: string;
   username: string;
   color: string;
-  type: "ldc" | "text" | "draw";
+  type: "ldc" | "draw";
   description: string;
   topicUrl?: string;
   /** Local configuration source; authorize phase notes before rendering. */

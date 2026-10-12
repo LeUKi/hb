@@ -37,13 +37,11 @@ export function publicClaimRoster(
         .map((row, index) => ({
           ...row,
           amount:
-            activity.type === "text"
+            activity.publishedRecipientAmounts?.[index] ??
+            (activity.rewardMode === "instant_random" ||
+            activity.rewardMode === "custom"
               ? undefined
-              : (activity.publishedRecipientAmounts?.[index] ??
-                (activity.rewardMode === "instant_random" ||
-                activity.rewardMode === "custom"
-                  ? undefined
-                  : activity.amount)),
+              : activity.amount),
         }));
   const rows = new Map(
     seeded.map((row) => [

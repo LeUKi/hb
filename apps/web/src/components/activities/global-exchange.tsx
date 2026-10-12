@@ -100,6 +100,8 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
   const blockedByCooldown =
     hasInput && !uncertain && !locating && cooldown.active;
   const seconds = blockedByCooldown ? cooldown.seconds : 0;
+  const redemptionItems =
+    resultQuery.data?.items.filter((item) => item.rewardType === "ldc") ?? [];
   const activeTopic =
     topic ??
     (!suppressLocatorOverlay.current && restoredTopic
@@ -199,6 +201,29 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
       alive.current = false;
     };
   }, []);
+  useEffect(() => {
+    if (
+      !selectionOpen ||
+      resultQuery.isPending ||
+      isBlockingQueryError(resultQuery) ||
+      !resultQuery.data ||
+      redemptionItems.length > 0
+    )
+      return;
+    selectionOverlay.discard();
+    setContext(null);
+    setIntent(null);
+    setMessage("未匹配到活动。");
+  }, [
+    redemptionItems.length,
+    resultQuery,
+    resultQuery.data,
+    resultQuery.isPending,
+    selectionOpen,
+    selectionOverlay.discard,
+    setContext,
+    setIntent,
+  ]);
   async function submit() {
     if (inFlight.current || composing) return;
     if (!hasInput && !uncertain) return;
@@ -222,6 +247,10 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
       return;
     }
     if (!account.isCurrentSession()) return;
+    if (!user.canUseLdc) {
+      setOfficialRequired(true);
+      return;
+    }
     invalidateLocation();
     const submission = uncertain
       ? ownContext.submission
@@ -250,9 +279,8 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
       const result = await mutation.mutateAsync(submission);
       if (!alive.current || !account.isCurrentIdentity(identity)) return;
       const selected =
-        result.result === "single"
-          ? (result.selectedActivityId ?? result.items[0]?.id ?? null)
-          : null;
+        result.selectedActivityId ??
+        (result.result === "single" ? (result.items[0]?.id ?? null) : null);
       setContext({
         userId,
         accountTier,
@@ -350,7 +378,7 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
         {officialRequired ? (
           <OfficialConnectRequired
             returnTo="/"
-            message="这个匹配结果包含LDC奖励，青春版需要使用官方Connect升级后重新提交口令。文本 / CDK 仍可正常兑换。"
+            message="青春版可以跳转查看活动；兑奖需要使用官方 Connect 升级后重新提交口令。"
           />
         ) : null}
         {uncertain && !mutation.isPending && !message ? (
@@ -432,7 +460,7 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
           title="选择要兑奖的活动"
           refreshNotice={<RefreshNotice query={resultQuery} />}
           restoreFocus={trigger.current}
-          items={resultQuery.data?.items ?? []}
+          items={redemptionItems}
           pending={resultQuery.isPending}
           error={isBlockingQueryError(resultQuery) ? resultQuery.error : null}
           retry={() => {

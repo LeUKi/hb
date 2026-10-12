@@ -66,7 +66,7 @@ async function fixture(prizes: number, population = prizes) {
       "UPDATE platform_controls SET version=version+1,allow_real_open=1,allow_real_claim=1,allow_real_send=1 WHERE id='global'",
     ),
   ]);
-  const { rewards: _rewards, ...common } = emptyActivityInput();
+  const common = emptyActivityInput();
   const config: LdcActivityInput = {
     ...common,
     rewardType: "ldc",

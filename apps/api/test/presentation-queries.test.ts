@@ -83,7 +83,7 @@ function ldc(
   money: LdcMoney,
   extra: Partial<LdcActivityInput> = {},
 ): LdcActivityInput {
-  const { rewards: _r, rewardType: _t, ...base } = emptyActivityInput();
+  const { rewardType: _t, ...base } = emptyActivityInput();
   return {
     ...base,
     title: `LDC ${money.mode}`,
@@ -108,22 +108,26 @@ const draw: LdcMoney = {
   distributeFullPool: true,
 };
 async function create(
-  config: ActivityInput = {
-    ...emptyActivityInput(),
-    title: "Text",
-    passwords: ["FirstPassword", "ActualSource"],
-    rewards: [
-      { id: crypto.randomUUID(), text: "PRIVATE_TEXT_REWARD" },
-      { id: crypto.randomUUID(), text: "SECOND_PRIVATE_TEXT" },
-    ],
-    afterClaimInfo: "PRIVATE_CLAIM_NOTE",
-  },
+  config: ActivityInput = ldc(
+    { mode: "fixed", totalAmount: "2.00", count: 2 },
+    { title: "LDC fixed", afterClaimInfo: "PRIVATE_CLAIM_NOTE" },
+  ),
   open = true,
   author = owner,
 ) {
+  let input = config;
+  if (author.id !== owner.id && input.merchantId === merchantId) {
+    const merchant = await createMerchant(bindings, author.id, {
+      requestId: crypto.randomUUID(),
+      clientId: `presentation_${crypto.randomUUID().replaceAll("-", "")}`,
+      label: "本地模拟",
+      secret: "virtual-only-secret",
+    });
+    input = { ...input, merchantId: merchant.id };
+  }
   const saved = await createActivity(bindings, author.id, {
     requestId: crypto.randomUUID(),
-    activity: config,
+    activity: input,
   });
   return open
     ? openActivity(bindings, saved.id, author.id, saved.version)
@@ -188,19 +192,21 @@ afterEach(() => vi.restoreAllMocks());
 
 describe("production presentation queries", () => {
   it("filters the square before its 20-row page and reports its complete matching total", async () => {
-    const text = await create({
-      ...emptyActivityInput(),
-      title: "Text square",
-      passwords: ["ActualSource"],
-      rewards: [{ id: crypto.randomUUID(), text: "PRIVATE" }],
-      joinSquare: true,
-    });
+    const retiredText = await create(
+      ldc(
+        { mode: "fixed", totalAmount: "1.00", count: 1 },
+        { title: "LDC square", passwords: ["ActualSource"], joinSquare: true },
+      ),
+    );
     const stored = await createDb(env.DB)
       .select()
       .from(activities)
-      .where(eq(activities.id, text.id))
+      .where(eq(activities.id, retiredText.id))
       .get();
     if (!stored) throw new Error("Missing fixture");
+    await env.DB.prepare("UPDATE activities SET reward_type='text' WHERE id=?")
+      .bind(retiredText.id)
+      .run();
     for (let index = 0; index < 22; index++)
       await createDb(env.DB)
         .insert(activities)
@@ -210,6 +216,7 @@ describe("production presentation queries", () => {
           creationRequestId: crypto.randomUUID(),
           createdAt: stored.createdAt + index,
           openedAt: (stored.openedAt ?? 0) + index,
+          rewardType: "text",
         });
     const fixed = await create(
       ldc(
@@ -230,25 +237,12 @@ describe("production presentation queries", () => {
     expect(JSON.stringify(fixedPage)).not.toMatch(
       /FirstPassword|ActualSource|PRIVATE|afterClaimInfo/,
     );
-    const first = await data<DiscoveryList>("/discovery/activities?type=text");
-    expect(first.total).toBe(23);
-    expect(first.items).toHaveLength(20);
-    expect(first.nextCursor).not.toBeNull();
-    const second = await data<DiscoveryList>(
-      `/discovery/activities?type=text&cursor=${encodeURIComponent(first.nextCursor ?? "")}`,
+    const square = await data<DiscoveryList>(
+      "/discovery/activities?status=active",
     );
-    expect(second.total).toBe(23);
-    expect(second.items).toHaveLength(3);
-    expect(
-      new Set([...first.items, ...second.items].map((row) => row.id)).size,
-    ).toBe(23);
-    expect(
-      (
-        await get(
-          `/discovery/activities?type=fixed&cursor=${encodeURIComponent(first.nextCursor ?? "")}`,
-        )
-      ).status,
-    ).toBe(400);
+    expect(square.total).toBe(1);
+    expect(square.items.map((row) => row.id)).toEqual([fixed.id]);
+    expect((await get("/discovery/activities?type=text")).status).toBe(400);
     expect((await get("/discovery/activities?type=unknown")).status).toBe(400);
   });
 
@@ -567,16 +561,16 @@ describe("production presentation queries", () => {
     const other = await create(undefined, true, outsider);
     expect(other.id).toBeTruthy();
     const mine = await data<ActivityList>(
-      "/me/activities?type=text&status=active",
+      "/me/activities?type=ldc&status=active",
       owner,
     );
     expect(mine.items.map((row) => row.id)).toEqual([active.id]);
     expect(mine.total).toBe(1);
     expect(mine.statusCounts).toEqual({
-      all: 4,
+      all: 5,
       draft: 1,
       active: 1,
-      ended: 1,
+      ended: 2,
       archived: 1,
     });
     expect(await data("/me/history-summary", owner)).toEqual({
@@ -661,11 +655,7 @@ describe("production presentation queries", () => {
       ),
     );
     await redeem(money.id);
-    await env.DB.prepare(
-      "UPDATE reward_inventory SET ciphertext='corrupt-private-reward' WHERE activity_id=?",
-    )
-      .bind(text.id)
-      .run();
+
     const history = await data<ParticipationList>(
       "/me/participations",
       participant,
@@ -682,7 +672,6 @@ describe("production presentation queries", () => {
           amount: "1.00",
           payment: { status: "pending", confirmedAt: null },
         });
-        expect(item.claim.activity.reward).not.toHaveProperty("totalAmount");
       }
     }
     expect(JSON.stringify(history)).not.toMatch(
@@ -701,7 +690,7 @@ describe("production presentation queries", () => {
       ldc({ mode: "fixed", totalAmount: "2.00", count: 2 }),
     );
     await create(ldc({ mode: "fixed", totalAmount: "1.00", count: 1 }), false);
-    await create();
+    await create(undefined, true, outsider);
     const entrants = await Promise.all(Array.from({ length: 23 }, actor));
     for (const user of entrants) await redeem(selected.id, user);
     await env.DB.prepare(

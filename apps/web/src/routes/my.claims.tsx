@@ -1,10 +1,14 @@
 import type {
   ActivityAuthor,
-  ActivityRewardFilter,
   ActivityStatus,
   Participation,
 } from "@hb/contracts";
-import { createFileRoute, Outlet, useMatchRoute } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Outlet,
+  useMatchRoute,
+  useRouterState,
+} from "@tanstack/react-router";
 import { type SetStateAction, useCallback, useEffect } from "react";
 import { ActivityErrorView } from "../components/activities/activity-error";
 import { RequireAccount } from "../components/activities/require-account";
@@ -24,17 +28,10 @@ import {
   ListPanel,
   ListRefreshButton,
   Pagination,
-  SegmentedControl,
 } from "../components/presentation/list-controls";
 import { RefreshNotice } from "../components/presentation/loading";
 import { UserIdentity } from "../components/user-identity";
-import {
-  activityRewardFilters,
-  formatTime,
-  normalizeActivityRewardFilter,
-  rewardFilterLabels,
-  useHistorySummary,
-} from "../lib/activities";
+import { formatTime, useHistorySummary } from "../lib/activities";
 import { useMyParticipations } from "../lib/claims";
 import {
   useCursorRecovery,
@@ -43,7 +40,7 @@ import {
 } from "../lib/navigation-state";
 import { listQueryState } from "../lib/query-view";
 
-type Search = { type?: ActivityRewardFilter };
+type Search = Record<string, never>;
 type ScopedCursors = { scope: string; cursors: Array<string | null> };
 
 const participationColumns = [
@@ -55,9 +52,7 @@ const participationColumns = [
 ];
 
 export const Route = createFileRoute("/my/claims")({
-  validateSearch: (search): Search => ({
-    type: normalizeActivityRewardFilter(search.type),
-  }),
+  validateSearch: (): Search => ({}),
   component: MyClaimsPage,
 });
 
@@ -72,10 +67,22 @@ function MyClaimsPage() {
 }
 
 function MyParticipations({ userId }: { userId: string }) {
-  const { type = "all" } = Route.useSearch();
   const navigate = useEntryNavigate();
+  const legacyRewardFilter = useRouterState({
+    select: (state) =>
+      new URL(state.location.href, "http://local").searchParams.has("type"),
+  });
   const summary = useHistorySummary(userId);
-  const cursorScope = `${userId}:${type}`;
+  useEffect(() => {
+    if (!legacyRewardFilter) return;
+    void navigate({
+      to: "/my/claims",
+      search: {},
+      replace: true,
+      resetScroll: false,
+    });
+  }, [legacyRewardFilter, navigate]);
+  const cursorScope = userId;
   const [pager, setPager] = useViewState<ScopedCursors>("participated-pager", {
     scope: cursorScope,
     cursors: [null],
@@ -93,17 +100,15 @@ function MyParticipations({ userId }: { userId: string }) {
     },
     [cursorScope, setPager],
   );
-  const cursor = cursors.at(-1) ?? null;
-  const query = useMyParticipations(userId, cursor, {
-    type,
-  });
+  const cursor = legacyRewardFilter ? null : (cursors.at(-1) ?? null);
+  const query = useMyParticipations(userId, cursor);
   useEffect(() => {
     setPager((current) =>
-      current.scope === cursorScope
+      current.scope === cursorScope && !legacyRewardFilter
         ? current
         : { scope: cursorScope, cursors: [null] },
     );
-  }, [cursorScope, setPager]);
+  }, [cursorScope, legacyRewardFilter, setPager]);
   const cursorNotice = useCursorRecovery(query.error, cursors, setCursors);
   const listState = listQueryState(query);
   return (
@@ -122,23 +127,6 @@ function MyParticipations({ userId }: { userId: string }) {
       </div>
       <section className="participations-page work-page work-list-page list-page">
         <div className="activity-list-toolbar">
-          <SegmentedControl
-            label="奖励类型"
-            value={type}
-            options={activityRewardFilters.map((value) => ({
-              value,
-              label: rewardFilterLabels[value],
-            }))}
-            onChange={(value) => {
-              setCursors([null]);
-              void navigate({
-                to: "/my/claims",
-                search: { type: value },
-                replace: true,
-                resetScroll: false,
-              });
-            }}
-          />
           <ListRefreshButton
             label="刷新参与记录"
             busy={query.isFetching || summary.isFetching}
@@ -211,7 +199,7 @@ type ParticipationActivityWithExtras = {
   title: string;
   status: ActivityStatus;
   deadlineAt?: string | null;
-  reward?: Parameters<typeof rewardMainText>[1];
+  reward?: Parameters<typeof rewardMainText>[0];
   author?: ActivityAuthor;
   createdAt?: string;
   draw?: { state?: string } | null;
@@ -241,8 +229,6 @@ function ParticipationRow({ item }: { item: Participation }) {
       </span>
     );
   const claim = item.kind === "claim" ? item.claim : item.registration.claim;
-  const rewardType =
-    claim?.rewardType ?? (activity.reward?.mode === "text" ? "text" : "ldc");
   const result =
     item.kind === "claim"
       ? "已领取"
@@ -287,18 +273,14 @@ function ParticipationRow({ item }: { item: Participation }) {
         data-label="我的奖励"
       >
         <ActivityReward
-          label={rewardKindLabel(rewardType, activity.reward)}
+          label={rewardKindLabel(activity.reward)}
           amount={claim?.amount}
           summary={
-            !claim?.amount && item.kind === "claim" && rewardType !== "text"
-              ? rewardMainText(rewardType, activity.reward)
+            !claim?.amount && item.kind === "claim"
+              ? rewardMainText(activity.reward)
               : undefined
           }
-          status={
-            item.kind === "registration" || rewardType === "text"
-              ? result
-              : undefined
-          }
+          status={item.kind === "registration" ? result : undefined}
           paymentStatus={claim?.payment?.status}
           confirmedAt={claim?.payment?.confirmedAt}
         />

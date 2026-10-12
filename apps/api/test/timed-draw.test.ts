@@ -86,11 +86,7 @@ function input(
   money: Partial<TimedDrawMoney> = {},
   extra: Partial<LdcActivityInput> = {},
 ): LdcActivityInput {
-  const {
-    rewards: _rewards,
-    rewardType: _rewardType,
-    ...base
-  } = emptyActivityInput();
+  const { rewardType: _rewardType, ...base } = emptyActivityInput();
   return {
     ...base,
     title: "限时开奖",
@@ -884,33 +880,33 @@ describe("timed LDC registration and draw lifecycle", () => {
 
   it("returns only ordinary claim summaries without decrypting private rewards, while keeping timed winner detail", async () => {
     const recipient = entrants[0] as Actor;
-    const textDraft = await createActivity(bindings, owner.id, {
+    const ordinaryDraft = await createActivity(bindings, owner.id, {
       requestId: crypto.randomUUID(),
       activity: {
         ...emptyActivityInput(),
-        title: "文本摘要",
+        title: "普通 LDC 摘要",
+        rewardType: "ldc",
+        merchantId,
         passwords: ["textkey"],
-        rewards: [
-          { id: crypto.randomUUID(), text: "PRIVATE_TEXT_REWARD_DO_NOT_LIST" },
-        ],
+        money: { mode: "fixed", totalAmount: "1.00", count: 1 },
         afterClaimInfo: "PRIVATE_AFTER_CLAIM_DO_NOT_LIST",
       },
     });
-    const text = await openActivity(
+    const ordinaryActivity = await openActivity(
       bindings,
-      textDraft.id,
+      ordinaryDraft.id,
       owner.id,
-      textDraft.version,
+      ordinaryDraft.version,
     );
-    const textResult = await claimActivity(
+    const ordinaryResult = await claimActivity(
       bindings,
-      text.id,
+      ordinaryActivity.id,
       recipient.id,
       submission("textkey"),
     );
-    expect(textResult).toMatchObject({
+    expect(ordinaryResult).toMatchObject({
       result: "claimed",
-      claim: { text: "PRIVATE_TEXT_REWARD_DO_NOT_LIST" },
+      claim: { rewardType: "ldc" },
     });
     const ldcDraft = await createActivity(bindings, owner.id, {
       requestId: crypto.randomUUID(),
@@ -936,12 +932,6 @@ describe("timed LDC registration and draw lifecycle", () => {
     await register(timed.id);
     await refreshTimedDraw(bindings, timed.id);
 
-    // Corrupt only the text reward: source passwords still require valid decryption keys.
-    await env.DB.prepare(
-      "UPDATE reward_inventory SET ciphertext='invalid-private-reward' WHERE activity_id=?",
-    )
-      .bind(text.id)
-      .run();
     const response = await app.request(
       `${origin}/api/me/participations`,
       { headers: { Cookie: recipient.cookie } },
@@ -964,14 +954,27 @@ describe("timed LDC registration and draw lifecycle", () => {
       expect(item.claim).not.toHaveProperty("afterClaimInfo");
     }
     expect(
-      ordinary.find((item) => item.claim?.rewardType === "ldc")?.claim,
-    ).toMatchObject({
-      amount: "0.01",
-      payment: { mode: "simulation", confirmedAt: null },
-    });
-    expect(
-      ordinary.find((item) => item.claim?.rewardType === "text")?.claim,
-    ).not.toHaveProperty("amount");
+      ordinary
+        .map((item) => item.claim)
+        .filter((claim) => claim?.rewardType === "ldc"),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          amount: "0.01",
+          payment: expect.objectContaining({
+            mode: "simulation",
+            confirmedAt: null,
+          }),
+        }),
+        expect.objectContaining({
+          amount: "1.00",
+          payment: expect.objectContaining({
+            mode: "simulation",
+            confirmedAt: null,
+          }),
+        }),
+      ]),
+    );
     const winner = history.items.find((item) => item.kind === "registration");
     expect(winner?.registration?.claim).toMatchObject({
       amount: "1.00",

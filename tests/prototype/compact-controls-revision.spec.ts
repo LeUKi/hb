@@ -8,7 +8,6 @@ for (const width of [1440, 375]) {
     await page.goto("/#square");
     const expected = width === 375 ? 36 : 32;
     const controls = [
-      page.locator(".gallery-toolbar .segmented-control__scroll"),
       page.locator(".gallery-status-filter .action-menu-trigger"),
       page.locator(".create-link"),
       page.getByRole("button", { name: "下一页", exact: true }),

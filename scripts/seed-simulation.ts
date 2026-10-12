@@ -176,11 +176,7 @@ async function main() {
   for (const definition of definitions) {
     const activityId = id(definition.name);
     const passwordId = id(`${definition.name}-password`);
-    const {
-      rewards: _rewards,
-      rewardType: _type,
-      ...base
-    } = emptyActivityInput();
+    const base = emptyActivityInput();
     const activity = activityInputSchema.parse({
       ...base,
       rewardType: "ldc",

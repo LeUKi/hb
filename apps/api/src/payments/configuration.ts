@@ -10,7 +10,7 @@ import { digestPassword } from "../security/crypto";
 export const merchantImpactSql = `SELECT json_object(
  'activities',json(COALESCE((SELECT json_group_array(json(value)) FROM (
    SELECT json_object('id',id,'version',version,'active',CASE WHEN ended_at IS NULL AND deadline>CAST(unixepoch('subsec')*1000 AS INTEGER) AND claimed_count<total_count THEN 1 ELSE 0 END,'drawing',CASE WHEN draw_state IN ('waiting','settling') THEN 1 ELSE 0 END) AS value
-   FROM activities WHERE merchant_id=? AND deleted_at IS NULL AND opened_at IS NOT NULL
+   FROM activities WHERE merchant_id=? AND reward_type='ldc' AND deleted_at IS NULL AND opened_at IS NOT NULL
      AND ((ended_at IS NULL AND deadline>CAST(unixepoch('subsec')*1000 AS INTEGER) AND claimed_count<total_count) OR draw_state IN ('waiting','settling')) ORDER BY id)), '[]')),
  'payments',json(COALESCE((SELECT json_group_array(json(value)) FROM (
    SELECT json_object('id',id,'version',recovery_version,'status',status) AS value FROM payment_tasks

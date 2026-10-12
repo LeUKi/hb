@@ -78,11 +78,7 @@ function request(path: string, user?: Actor, method = "GET", body?: unknown) {
   );
 }
 function config(overrides: Partial<LdcActivityInput> = {}): LdcActivityInput {
-  const {
-    rewards: _rewards,
-    rewardType: _type,
-    ...base
-  } = emptyActivityInput();
+  const { rewardType: _type, ...base } = emptyActivityInput();
   return {
     ...base,
     title: "LDC 奖励",
@@ -301,7 +297,9 @@ describe("LDC activity allocation and durable payment responsibility", () => {
         title: initial.title,
         passwords: initial.passwords,
         deadline: initial.deadline,
-        rewards: [{ id: crypto.randomUUID(), text: "changed" }],
+        rewardType: "ldc",
+        merchantId: initial.merchantId,
+        money: { mode: "fixed", totalAmount: "3.00", count: 3 },
       },
     ];
     for (const input of candidates)

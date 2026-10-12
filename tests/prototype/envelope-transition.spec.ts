@@ -26,7 +26,7 @@ async function mountEnvelopeHarness(
   options: {
     reward?:
       | { kind: "ldc"; amount: string }
-      | { kind: "text" | "missed" | "not-won" | "ended" };
+      | { kind: "missed" | "not-won" | "ended" };
     author?: { name: string; username: string; color?: string };
     payment?: { status: string; confirmedAt?: string };
     rosterLabel?: string;

@@ -32,11 +32,7 @@ async function fixture(count = 1) {
     label: "模拟商户",
     secret: "dummy-secret",
   });
-  const {
-    rewards: _rewards,
-    rewardType: _rewardType,
-    ...base
-  } = emptyActivityInput();
+  const base = emptyActivityInput();
   const config: LdcActivityInput = {
     ...base,
     rewardType: "ldc",

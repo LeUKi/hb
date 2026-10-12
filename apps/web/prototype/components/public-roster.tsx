@@ -167,8 +167,7 @@ function RosterRows({
   const scroll = useRef<HTMLElement>(null);
   const end = useRef<HTMLDivElement>(null);
   const list = useCursorRoster(records, pendingResult ? "ready" : listState);
-  const titles =
-    type !== "text" && !registrationTab ? recipientTitles(fullRecipients) : {};
+  const titles = !registrationTab ? recipientTitles(fullRecipients) : {};
 
   useEffect(() => {
     if (list.status !== "ready" || !list.hasMore) return;
@@ -220,7 +219,7 @@ function RosterRows({
               color={record.color}
             />
           )}
-          {type !== "text" && !registrationTab && record.amount && (
+          {!registrationTab && record.amount && (
             <div className="recipient-award">
               {titles[record.username] && (
                 <span
@@ -239,8 +238,6 @@ function RosterRows({
               <summary>作者明细</summary>
               {registrationTab ? (
                 <p>报名已记录；开奖后与中奖记录关联。</p>
-              ) : type === "text" ? (
-                <p>已分配文本/CDK：演示奖励内容仅作者可见。</p>
               ) : (
                 <p>
                   LDC 金额 {record.amount ?? "待分配"}；付款状态：

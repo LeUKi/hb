@@ -24,7 +24,7 @@ const user = {
 const activity = {
   id,
   title: "账号共享冷却活动",
-  rewardType: "text" as const,
+  rewardType: "ldc" as const,
   status: "active" as const,
   author: { ...user, id: "cooldown-author" },
   forceDedicated: false,
@@ -36,7 +36,7 @@ const activity = {
   showRecipientUsername: false,
   showRecipientTime: false,
   beforeInfo: "",
-  reward: { mode: "text" },
+  reward: { mode: "fixed", totalAmount: "4.00", count: 4 },
   myClaim: null,
 };
 const discovery = {
@@ -153,7 +153,7 @@ test("获准尝试的账号冷却跨首页、活动页及刷新连续，过期�
   await page.getByRole("link", { name: "查看活动", exact: true }).click();
   await expect(page).toHaveURL(`/activities/${id}`);
   await expect(cooldownTimer(page)).toContainText("10 秒");
-  await expect(page.getByRole("button", { name: "领取奖励" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "领取红包" })).toHaveCount(0);
   await page.getByLabel("兑换口令", { exact: true }).fill("StillWrong123");
   await expect(
     page.getByRole("button", { name: "还需等待 10 秒", exact: true }),
@@ -162,7 +162,7 @@ test("获准尝试的账号冷却跨首页、活动页及刷新连续，过期�
   await page.clock.setFixedTime(new Date(serverNow));
   await page.reload();
   await expect(cooldownTimer(page)).toContainText("8 秒");
-  await expect(page.getByRole("button", { name: "领取奖励" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "领取红包" })).toHaveCount(0);
   await page.getByLabel("兑换口令", { exact: true }).fill("StillWrong123");
   await expect(
     page.getByRole("button", { name: "还需等待 8 秒", exact: true }),
@@ -170,7 +170,7 @@ test("获准尝试的账号冷却跨首页、活动页及刷新连续，过期�
   serverNow += 8_100;
   await page.clock.setFixedTime(new Date(serverNow));
   await expect(cooldownTimer(page)).toHaveCount(0);
-  await page.getByRole("button", { name: "领取奖励" }).click();
+  await page.getByRole("button", { name: "领取红包" }).click();
   await expect(
     page.getByText("口令不正确，请重新尝试。", { exact: true }),
   ).toBeVisible();
@@ -233,8 +233,15 @@ test("未知响应沿原编号重试，发现结果携带服务端编号且自�
         claim = {
           id: "cooldown-claim",
           activity: { id, title: activity.title, status: "active" },
-          rewardType: "text",
-          text: "CooldownRealResult123",
+          rewardType: "ldc",
+          amount: "1.00",
+          payment: {
+            id: "payment-cooldown",
+            mode: "simulation",
+            status: "confirmed",
+            reason: null,
+            confirmedAt: new Date().toISOString(),
+          },
           claimedAt: "2026-10-10T00:00:07Z",
           afterClaimInfo: "",
           sourcePassword: "Matched123",

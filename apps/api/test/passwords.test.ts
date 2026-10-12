@@ -4,11 +4,11 @@ import {
   type ActivityPasswords,
   type ActivityStatistics,
   ARCHIVE_DELAY_MS,
+  type ClaimDetail,
   type ClaimResult,
   emptyActivityInput,
   type ManagedActivity,
   type SolveResult,
-  type TextActivityInput,
 } from "@hb/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -49,6 +49,7 @@ type Actor = { id: string; cookie: string; csrf: string };
 let owner: Actor;
 let alice: Actor;
 let bob: Actor;
+let merchantId: string;
 
 function required<T>(value: T | null | undefined): T {
   if (value === null || value === undefined)
@@ -110,26 +111,24 @@ function request(
   );
 }
 
-function textConfig(
-  overrides: Partial<TextActivityInput> = {},
-): TextActivityInput {
+function ldcConfig(overrides: Partial<ActivityInput> = {}): ActivityInput {
   return {
     ...emptyActivityInput(),
     title: "口令验证测试",
     passwords: validPasswords,
-    rewards: Array.from({ length: 4 }, (_, index) => ({
-      id: crypto.randomUUID(),
-      text: `PRIVATE-REWARD-${index}`,
-    })),
+    rewardType: "ldc",
+    merchantId,
+    money: { mode: "fixed", totalAmount: "4.00", count: 4 },
     afterClaimInfo: "PRIVATE-AFTER-CLAIM",
     ...overrides,
   };
 }
 
-async function create(activity: ActivityInput = textConfig(), open = true) {
+async function create(activity: ActivityInput = ldcConfig(), open = true) {
+  const input = activity;
   const response = await request("/api/activities", owner, "POST", {
     requestId: crypto.randomUUID(),
-    activity,
+    activity: input,
   });
   expect(response.status).toBe(200);
   const saved = ((await response.json()) as { activity: ManagedActivity })
@@ -245,12 +244,20 @@ beforeEach(async () => {
   owner = await actor("owner");
   alice = await actor("alice");
   bob = await actor("bob");
+  merchantId = (
+    await createMerchant(bindings, owner.id, {
+      requestId: crypto.randomUUID(),
+      clientId: `passwords_${crypto.randomUUID().replaceAll("-", "")}`,
+      label: "本地模拟",
+      secret: "virtual-only-secret",
+    })
+  ).id;
 });
 afterEach(() => vi.restoreAllMocks());
 
 describe("dedicated-page password visibility", () => {
   it("reveals draft answers only to the author without personal badges", async () => {
-    const activity = await create(textConfig(), false);
+    const activity = await create(ldcConfig(), false);
     expect(await passwords(activity.id, owner)).toEqual({
       passwords: validPasswords.map((text) => ({
         text,
@@ -315,20 +322,17 @@ describe("dedicated-page password visibility", () => {
     expect(JSON.stringify(publicDetail)).not.toContain("PRIVATE-REWARD-");
   });
 
-  it("gives an author who claimed text only their own personal flags", async () => {
+  it("gives a claimant only their own personal flags", async () => {
     const activity = await create();
     await claim(activity.id, alice, "claim123");
     await solve(activity.id, alice, "secret456");
-    await claim(activity.id, owner, "other789");
-    await solve(activity.id, owner, "lastword1");
-    const answers = await passwords(activity.id, owner);
+    await claim(activity.id, bob, "other789");
+    await solve(activity.id, bob, "lastword1");
+    const answers = await passwords(activity.id, bob);
     expect(answers.canSolve).toBe(true);
     expect(answers.passwords).toEqual([
-      { text: "claim123", isClaimPassword: false, isSolved: false },
-      { text: "secret456", isClaimPassword: false, isSolved: false },
       { text: "other789", isClaimPassword: true, isSolved: false },
       { text: "lastword1", isClaimPassword: false, isSolved: true },
-      { text: "hidden999", isClaimPassword: false, isSolved: false },
     ]);
   });
 
@@ -349,7 +353,7 @@ describe("dedicated-page password visibility", () => {
   it.each(["ended", "archived"] as const)(
     "publishes all answers at the actual %s time before lifecycle persistence",
     async (status) => {
-      const activity = await create(textConfig({ forceDedicated: true }));
+      const activity = await create(ldcConfig({ forceDedicated: true }));
       await claim(activity.id);
       await solve(activity.id);
       const before = await counts(activity.id);
@@ -401,8 +405,8 @@ describe("dedicated-page password visibility", () => {
 
   it("publishes all answers when inventory is exhausted, including before end metadata repair", async () => {
     const activity = await create(
-      textConfig({
-        rewards: [{ id: crypto.randomUUID(), text: "only reward" }],
+      ldcConfig({
+        money: { mode: "fixed", totalAmount: "1.00", count: 1 },
       }),
     );
     await claim(activity.id);
@@ -431,7 +435,7 @@ describe("dedicated-page password visibility", () => {
 
 describe("terminal password validation without reward allocation", () => {
   it("requires a previous claim, authentication, CSRF and a valid password", async () => {
-    const activity = await create(textConfig({ forceDedicated: true }));
+    const activity = await create(ldcConfig({ forceDedicated: true }));
     const payload = {
       submissionId: crypto.randomUUID(),
       password: "secret456",
@@ -447,7 +451,7 @@ describe("terminal password validation without reward allocation", () => {
       ).status,
     ).toBe(401);
     expect((await submitSolve(activity.id)).status).toBe(403);
-    const draft = await create(textConfig(), false);
+    const draft = await create(ldcConfig(), false);
     expect((await submitSolve(draft.id)).status).toBe(404);
     expect((await submitSolve(draft.id, owner)).status).toBe(400);
     await claim(activity.id);
@@ -479,7 +483,7 @@ describe("terminal password validation without reward allocation", () => {
   });
 
   it("keeps forced attempts encrypted and increments validations without increasing claim statistics", async () => {
-    const activity = await create(textConfig({ forceDedicated: true }));
+    const activity = await create(ldcConfig({ forceDedicated: true }));
     const award = await claim(activity.id);
     expect(await solve(activity.id)).toEqual({
       outcome: "solved",
@@ -495,8 +499,8 @@ describe("terminal password validation without reward allocation", () => {
       version: activity.version,
       attempts: 3,
       validations: 3,
-      payments: 0,
-      outbox: 0,
+      payments: 1,
+      outbox: 1,
     });
     const stats = (await (
       await request(`/api/me/activities/${activity.id}/statistics`, owner)
@@ -533,9 +537,20 @@ describe("terminal password validation without reward allocation", () => {
       ),
     );
     expect(decrypted.sort()).toEqual(["secret456", "wrong123"]);
-    expect(
-      await (await request(`/api/me/claims/${award.claim.id}`, alice)).json(),
-    ).toEqual({ claim: award.claim });
+    const claimDetail = (await (
+      await request(`/api/me/claims/${award.claim.id}`, alice)
+    ).json()) as { claim: ClaimDetail };
+    expect(claimDetail.claim).toMatchObject({
+      id: award.claim.id,
+      rewardType: "ldc",
+      amount: award.claim.amount,
+      sourcePassword: award.claim.sourcePassword,
+      afterClaimInfo: award.claim.afterClaimInfo,
+      payment: {
+        id: award.claim.payment?.id,
+        mode: award.claim.payment?.mode,
+      },
+    });
   });
 
   it("never saves failed raw input for ordinary activities", async () => {
@@ -557,7 +572,7 @@ describe("terminal password validation without reward allocation", () => {
   });
 
   it("replays normalized lost-response submissions across DO eviction and binds their purpose and content", async () => {
-    const activity = await create(textConfig({ forceDedicated: true }));
+    const activity = await create(ldcConfig({ forceDedicated: true }));
     const awardKey = crypto.randomUUID();
     await claim(activity.id, alice, "claim123", awardKey);
     const key = crypto.randomUUID();
@@ -634,7 +649,7 @@ describe("terminal password validation without reward allocation", () => {
   });
 
   it("shares the persistent cooldown across claim and solve and does not advance it for saved replays", async () => {
-    const activity = await create(textConfig({ forceDedicated: true }));
+    const activity = await create(ldcConfig({ forceDedicated: true }));
     const awardKey = crypto.randomUUID();
     await claim(activity.id, alice, "claim123", awardKey);
     const solveKey = crypto.randomUUID();
@@ -700,7 +715,7 @@ describe("terminal password validation without reward allocation", () => {
 
   it("keeps an incorrect result immutable when legacy data gains that password", async () => {
     const activity = await create(
-      textConfig({
+      ldcConfig({
         passwords: validPasswords.slice(0, 4),
         forceDedicated: true,
       }),
@@ -752,7 +767,7 @@ describe("terminal password validation without reward allocation", () => {
   });
 
   it("atomically enforces the shared cooldown even without DO request serialization", async () => {
-    const activity = await create(textConfig({ forceDedicated: true }));
+    const activity = await create(ldcConfig({ forceDedicated: true }));
     await claim(activity.id);
     await advanceAttemptCooldown(env.DB, alice.id);
     const outcomes = await Promise.allSettled(
@@ -780,7 +795,7 @@ describe("terminal password validation without reward allocation", () => {
   });
 
   it("rolls back failed solve persistence atomically and permits a same-key retry", async () => {
-    const activity = await create(textConfig({ forceDedicated: true }));
+    const activity = await create(ldcConfig({ forceDedicated: true }));
     await claim(activity.id);
     const key = crypto.randomUUID();
     const before = await counts(activity.id);
@@ -811,7 +826,7 @@ describe("terminal password validation without reward allocation", () => {
   });
 
   it("deduplicates concurrent UUIDs and admits only one concurrent new solution without allocating", async () => {
-    const activity = await create(textConfig({ forceDedicated: true }));
+    const activity = await create(ldcConfig({ forceDedicated: true }));
     await claim(activity.id);
     const key = crypto.randomUUID();
     await advanceAttemptCooldown(env.DB, alice.id);
@@ -844,24 +859,15 @@ describe("terminal password validation without reward allocation", () => {
       version: activity.version,
       attempts: 3,
       validations: 3,
-      payments: 0,
-      outbox: 0,
+      payments: 1,
+      outbox: 1,
     });
     expect((await passwords(activity.id, alice)).hiddenCount).toBe(2);
   });
 
   it("leaves the original simulated LDC task, reward and outbox unchanged", async () => {
-    const merchant = await createMerchant(bindings, owner.id, {
-      requestId: crypto.randomUUID(),
-      clientId: "password_test_simulation",
-      label: "口令测试模拟商户",
-      secret: "local-fake-secret",
-    });
-    const {
-      rewards: _rewards,
-      rewardType: _type,
-      ...base
-    } = textConfig({ forceDedicated: true });
+    const merchant = { id: merchantId };
+    const { rewardType: _type, ...base } = ldcConfig({ forceDedicated: true });
     const activity = await create({
       ...base,
       rewardType: "ldc",
@@ -906,15 +912,11 @@ describe("terminal password validation without reward allocation", () => {
 
 describe("deleted activity exclusion", () => {
   it("rejects replay and reads after draft deletion", async () => {
-    const activity = await create(textConfig(), false);
+    const activity = await create(ldcConfig(), false);
     const input = { submissionId: crypto.randomUUID(), password: "claim123" };
-    const admitted = await prepareClaimSubmission(
-      bindings,
-      activity.id,
-      owner.id,
-      input,
-    );
-    expect(admitted.outcome).toBe("draft");
+    await expect(
+      prepareClaimSubmission(bindings, activity.id, alice.id, input),
+    ).rejects.toMatchObject({ status: 404 });
     expect(
       (
         await request(`/api/me/activities/${activity.id}`, owner, "DELETE", {
@@ -926,7 +928,7 @@ describe("deleted activity exclusion", () => {
       (
         await submitClaim(
           activity.id,
-          owner,
+          alice,
           input.password,
           input.submissionId,
         )
@@ -941,13 +943,13 @@ describe("deleted activity exclusion", () => {
         .status,
     ).toBe(404);
     await expect(
-      completeClaimSubmission(bindings, admitted),
+      prepareClaimSubmission(bindings, activity.id, alice.id, input),
     ).rejects.toMatchObject({ status: 404 });
     expect(await resumePendingActivityClaims(bindings, activity.id)).toBe(0);
   });
 
   it("excludes an old malformed pending record on a tombstoned draft from recovery", async () => {
-    const activity = await create(textConfig(), false);
+    const activity = await create(ldcConfig(), false);
     const input = { submissionId: crypto.randomUUID(), password: "claim123" };
     await env.DB.prepare(`INSERT INTO redemption_submissions
       (id,activity_id,user_id,submission_id,fingerprint,outcome,created_at)

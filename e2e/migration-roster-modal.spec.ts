@@ -12,11 +12,14 @@ const recipient: PublicRecipient = {
   avatarUrl: null,
   accountTier: "standard",
   claimedAt: "2026-10-07T00:00:00.000Z",
+  amount: "0.50",
 };
 const activity: PublicActivity = {
   id: activityId,
   title: "模态名单的资料浮层",
-  rewardType: "text",
+  rewardType: "ldc",
+  reward: { mode: "fixed", totalAmount: "12.50", count: 25 },
+  paymentMode: "simulation",
   status: "ended",
   author: {
     id: "author-1",
@@ -29,10 +32,11 @@ const activity: PublicActivity = {
   topicUrl: null,
   openedAt: "2026-10-01T00:00:00.000Z",
   deadlineAt: "2026-10-02T00:00:00.000Z",
-  quantity: { mode: "exact", total: 1, claimed: 1, remaining: 0 },
+  quantity: { mode: "exact", total: 25, claimed: 25, remaining: 0 },
   showRecipientList: true,
   showRecipientUsername: true,
   showRecipientTime: true,
+  showRecipientAmount: false,
   beforeInfo: "",
 };
 
@@ -95,6 +99,7 @@ test("公开名单内的资料浮层可键盘访问，Esc 先关闭浮层再关�
   });
   await expect(roster).toBeVisible();
   await expect(roster).toHaveJSProperty("open", true);
+  await expect(roster.locator(".recipient-award")).toHaveCount(0);
 
   const trigger = roster.getByRole("button", {
     name: recipient.displayName,
@@ -177,6 +182,7 @@ test("名单历史返回关闭、前进及刷新恢复，缓存复用不重复�
   await expect(
     dialog.getByText(recipient.displayName, { exact: true }),
   ).toBeVisible();
+  await expect(dialog.locator(".recipient-award")).toHaveCount(0);
   const initialReads = reads;
   await page.goBack();
   await expect(dialog).toHaveCount(0);

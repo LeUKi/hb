@@ -15,6 +15,13 @@ const liteUser = {
   canUseLdc: false,
   loginProvider: "liteauth" as const,
 };
+const standardUser = {
+  ...liteUser,
+  id: "standard-user-1",
+  accountTier: "standard" as const,
+  canUseLdc: true,
+  loginProvider: "connect" as const,
+};
 
 type FormUser = Omit<typeof liteUser, "accountTier" | "loginProvider"> & {
   accountTier: "lite" | "standard";
@@ -82,7 +89,7 @@ test("账号页访客登录卡在常用视口居中，LiteAuth 默认折叠且�
 test("活动说明共享一个 Markdown 视图切换，提交错误会从 Markdown 切回分栏并聚焦字段", async ({
   page,
 }) => {
-  await mockSession(page, liteUser);
+  await mockSession(page, standardUser);
   await page.goto("/activities/new");
   await page.locator("summary", { hasText: "更多设置" }).click();
 
@@ -100,11 +107,6 @@ test("活动说明共享一个 Markdown 视图切换，提交错误会从 Markdo
 
   await page.locator("#activity-title").fill("说明校验活动");
   await page.locator("#activity-password-1").fill("口令ABC123");
-  await page
-    .getByRole("group", { name: "奖励类型", exact: true })
-    .getByRole("button", { name: "文本 / CDK", exact: true })
-    .click();
-  await page.locator("#activity-text-rewards").fill("TEXT-CODE-1");
   await viewSwitch.getByRole("button", { name: "分栏" }).click();
   await page.locator("textarea#activity-beforeInfo").fill("x".repeat(10_001));
   await page.locator("textarea#activity-beforeInfo").blur();
@@ -124,7 +126,7 @@ test("活动说明共享一个 Markdown 视图切换，提交错误会从 Markdo
 });
 
 test("表单离开取消保留输入，确认后返回只恢复浏览设置", async ({ page }) => {
-  await mockSession(page, liteUser);
+  await mockSession(page, standardUser);
   await page.goto("/account");
   await page.getByRole("link", { name: "发起活动", exact: true }).click();
   await page.locator("#activity-title").fill("未保存标题");
@@ -171,8 +173,8 @@ test("表单集中展示锁定说明，奖励方式帮助完整且口令删除�
     page.getByRole("heading", { name: "活动与奖励", exact: true }),
   ).toHaveCount(0);
   await expect(
-    page.locator(".work-reward-kind-row .work-field-note"),
-  ).toHaveText("奖励类型开放后不可修改");
+    page.getByText("参与方式开放后不可修改", { exact: true }),
+  ).toBeVisible();
   await expect(page.locator("#activity-forceDedicated")).toBeEnabled();
   await expect(page.locator("#activity-forceDedicated")).toHaveAccessibleName(
     "开启口令尝试统计（口令仅在活动页兑换）",
@@ -212,10 +214,6 @@ test("表单集中展示锁定说明，奖励方式帮助完整且口令删除�
     await expect(help).toBeFocused();
   }
 
-  await page
-    .getByRole("group", { name: "奖励类型", exact: true })
-    .getByRole("button", { name: "文本 / CDK", exact: true })
-    .click();
   await page.getByRole("button", { name: "添加口令", exact: true }).click();
   await page.getByLabel("口令 1", { exact: true }).fill("Valid123");
   await page.getByLabel("口令 2", { exact: true }).fill("bad!xx");

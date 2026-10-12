@@ -49,7 +49,7 @@ export async function getActivityPasswords(
       FROM activity_passwords p JOIN activities a ON a.id = p.activity_id
       LEFT JOIN claims c ON c.activity_id = a.id AND c.user_id = ?
       LEFT JOIN activity_registrations r ON r.activity_id = a.id AND r.user_id = ?
-      WHERE a.id = ? AND a.deleted_at IS NULL AND (a.opened_at IS NOT NULL OR a.author_id = ?)
+      WHERE a.id = ? AND a.reward_type = 'ldc' AND a.deleted_at IS NULL AND (a.opened_at IS NOT NULL OR a.author_id = ?)
       AND (a.author_id = ? OR (a.opened_at IS NOT NULL AND
         (a.ended_at IS NOT NULL OR a.archived_at IS NOT NULL OR a.claimed_count >= a.total_count OR a.deadline <= ${databaseNow}))
         OR ((c.id IS NOT NULL OR r.id IS NOT NULL) AND (c.password_id = p.id OR r.password_id = p.id OR ${solved})))
@@ -70,7 +70,7 @@ export async function getActivityPasswords(
           AND (EXISTS (SELECT 1 FROM claims WHERE activity_id = a.id AND user_id = ?)
             OR EXISTS (SELECT 1 FROM activity_registrations WHERE activity_id=a.id AND user_id=?))
           THEN 1 ELSE 0 END AS canSolve
-      FROM activities a WHERE a.id = ? AND a.deleted_at IS NULL
+      FROM activities a WHERE a.id = ? AND a.reward_type = 'ldc' AND a.deleted_at IS NULL
         AND (a.opened_at IS NOT NULL OR a.author_id = ?)`).bind(
       viewer,
       viewer,
@@ -133,7 +133,7 @@ async function registerEndedSolve(
     await env.DB.prepare(`INSERT INTO redemption_submissions
       (id, activity_id, user_id, submission_id, fingerprint, purpose, outcome, created_at, finished_at)
       SELECT ?, ?, ?, ?, ?, 'solve', ?, ${databaseNow}, ${databaseNow}
-      WHERE EXISTS (SELECT 1 FROM activities WHERE id = ? AND deleted_at IS NULL)`)
+      WHERE EXISTS (SELECT 1 FROM activities WHERE id = ? AND reward_type = 'ldc' AND deleted_at IS NULL)`)
       .bind(
         crypto.randomUUID(),
         activityId,
@@ -229,7 +229,7 @@ export async function solveActivityPassword(
       : null;
     const statements = [
       ...attemptWriteStatements(env, userId, "activity", rowId),
-      env.DB.prepare(`UPDATE activities SET version = CASE WHEN version = ? AND participation_mode='password' AND deleted_at IS NULL
+      env.DB.prepare(`UPDATE activities SET version = CASE WHEN version = ? AND reward_type = 'ldc' AND participation_mode='password' AND deleted_at IS NULL
           AND opened_at IS NOT NULL AND ended_at IS NULL AND archived_at IS NULL
           AND claimed_count < total_count AND deadline > ${databaseNow}
           AND (EXISTS (SELECT 1 FROM claims WHERE activity_id = ? AND user_id = ?)

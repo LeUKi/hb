@@ -19,11 +19,11 @@ describe("draw operation diagnostics", () => {
 import json,sqlite3,sys
 c=sqlite3.connect(':memory:');c.row_factory=sqlite3.Row
 c.executescript('''
-CREATE TABLE activities(id,payment_mode,draw_state,registered_count,deadline,draw_closed_at,deleted_at);
+CREATE TABLE activities(id,payment_mode,draw_state,registered_count,deadline,draw_closed_at,deleted_at,reward_type);
 CREATE TABLE activity_draw_plans(activity_id);
 CREATE TABLE payment_tasks(mode,status,reason,created_at);
 CREATE TABLE payment_outbox(delivered_at,created_at);
-INSERT INTO activities VALUES ('due','real','settling',1,3400000,3400000,NULL);
+INSERT INTO activities VALUES ('due','real','settling',1,3400000,3400000,NULL,'ldc');
 INSERT INTO payment_tasks VALUES ('real','waiting','funds',400000);
 INSERT INTO payment_outbox VALUES (NULL,3400000);
 ''')
@@ -66,13 +66,15 @@ print(json.dumps([exact,read()]))
 import json,sqlite3,sys
 c=sqlite3.connect(':memory:');c.row_factory=sqlite3.Row
 c.executescript('''
-CREATE TABLE activities(id,payment_mode,draw_state,registered_count,deadline,draw_closed_at,deleted_at);
+CREATE TABLE activities(id,payment_mode,draw_state,registered_count,deadline,draw_closed_at,deleted_at,reward_type);
 CREATE TABLE activity_draw_plans(activity_id,payload);
-INSERT INTO activities VALUES ('due','real','waiting',7,1000000,NULL,NULL);
-INSERT INTO activities VALUES ('planned','real','settling',3,1000000,1100000,NULL);
-INSERT INTO activities VALUES ('future','simulation','waiting',1,3000000,NULL,NULL);
-INSERT INTO activities VALUES ('done','real','completed',4,500000,500000,NULL);
-INSERT INTO activities VALUES ('deleted','real','waiting',8,1,NULL,1);
+INSERT INTO activities VALUES ('due','real','waiting',7,1000000,NULL,NULL,'ldc');
+INSERT INTO activities VALUES ('planned','real','settling',3,1000000,1100000,NULL,'ldc');
+INSERT INTO activities VALUES ('future','simulation','waiting',1,3000000,NULL,NULL,'ldc');
+INSERT INTO activities VALUES ('done','real','completed',4,500000,500000,NULL,'ldc');
+INSERT INTO activities VALUES ('deleted','real','waiting',8,1,NULL,1,'ldc');
+INSERT INTO activities VALUES ('retired','real','settling',99,1,1,NULL,'text');
+INSERT INTO activity_draw_plans VALUES ('retired','retired ciphertext must not appear');
 INSERT INTO activity_draw_plans VALUES ('planned','private plan must not appear');
 ''')
 print(json.dumps([dict(r) for r in c.execute(sys.argv[1])]))
@@ -106,7 +108,8 @@ print(json.dumps([dict(r) for r in c.execute(sys.argv[1])]))
         }),
       ]),
     );
-    expect(JSON.stringify(rows)).not.toContain("private plan");
+    expect(rows).toHaveLength(4);
+    expect(JSON.stringify(rows)).not.toMatch(/private plan|retired ciphertext/);
     expect(diagnosticWarnings({ draws: rows })).toContain(
       "DRAW_SETTLEMENT_WAIT_OVER_TEN_MINUTES",
     );

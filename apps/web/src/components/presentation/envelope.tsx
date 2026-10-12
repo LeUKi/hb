@@ -1,3 +1,4 @@
+import type { PaymentState, PublicUserProfile } from "@hb/contracts";
 import { Gift, Hourglass } from "lucide-react";
 import {
   animate as animateValue,
@@ -6,10 +7,6 @@ import {
   useReducedMotion,
 } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-
-const TEXT_REWARD_LABEL = "文本 / CDK";
-
-import type { PaymentState, PublicUserProfile } from "@hb/contracts";
 import { afterNavigationLayout } from "../../lib/navigation-state";
 import { UserAvatar, UserIdentity } from "../user-identity";
 import { PaymentConfirmation } from "./payment-confirmation";
@@ -21,7 +18,6 @@ import {
 
 export type EnvelopeReward =
   | { kind: "ldc"; amount: string }
-  | { kind: "text" }
   | { kind: "missed" | "not-won" | "ended" };
 export type EnvelopePhase = "closed" | "opening" | "open" | "closing";
 
@@ -428,14 +424,7 @@ export function Envelope({
                 inert={phase !== "open" || !isPresent || undefined}
                 aria-hidden={phase !== "open" || !isPresent || undefined}
               >
-                {shownReward?.kind === "text" ? (
-                  <>
-                    <strong className="slip-text-title">
-                      {TEXT_REWARD_LABEL}
-                    </strong>
-                    <span className="slip-unit">已领取</span>
-                  </>
-                ) : shownReward?.kind === "ldc" ? (
+                {shownReward?.kind === "ldc" ? (
                   <>
                     <div className="slip-value">
                       <strong className="slip-amount">

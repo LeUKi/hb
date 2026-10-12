@@ -86,11 +86,13 @@ test("list controls remain usable with enlarged text and reduced motion", async 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/#manage");
   await page.addStyleTag({ content: "html { font-size: 200% !important; }" });
-  const filter = page.getByRole("group", { name: "奖励筛选" });
-  const last = filter.getByRole("button", { name: "LDC", exact: true });
-  await filter.getByRole("button", { name: "全部", exact: true }).press("End");
-  await expect(last).toBeFocused();
-  await expect(last).toBeInViewport();
+  await expect(page.getByRole("group", { name: "奖励筛选" })).toHaveCount(0);
+  const next = page
+    .getByRole("navigation", { name: "作者活动分页" })
+    .getByRole("button", { name: "下一页", exact: true });
+  await next.focus();
+  await expect(next).toBeFocused();
+  await expect(next).toBeInViewport();
   await expect(page.locator(".list-pagination")).toBeInViewport();
   const widths = await page.evaluate(() => ({
     full: document.documentElement.scrollWidth,
@@ -133,19 +135,16 @@ test("dark text, controls and focus indicators meet the chosen contrast threshol
       surface = css(".activity-rows"),
       text = css(".activity-rows-open"),
       muted = css(".activity-rows-type");
-    const group = css(".segmented-control__scroll"),
-      active = css(".segmented-control__selection"),
-      button = css('.segmented-control__button[aria-pressed="true"]');
+    const button = css(".gallery-status-filter .action-menu-trigger");
     const next = css(".list-pagination__button:last-child");
     return {
       bodyText: text.color,
       muted: muted.color,
       surface: surface.backgroundColor,
       row: row.backgroundColor,
-      group: group.backgroundColor,
-      border: group.borderTopColor,
-      selected: active.backgroundColor,
-      selectedText: button.color,
+      control: button.backgroundColor,
+      border: button.borderTopColor,
+      controlText: button.color,
       next: next.color,
       nextBg: next.backgroundColor,
       nextBorder: next.borderTopColor,
@@ -153,17 +152,17 @@ test("dark text, controls and focus indicators meet the chosen contrast threshol
   });
   expect(contrast(colors.bodyText, colors.surface)).toBeGreaterThanOrEqual(4.5);
   expect(contrast(colors.muted, colors.surface)).toBeGreaterThanOrEqual(4.5);
-  expect(contrast(colors.selectedText, colors.selected)).toBeGreaterThanOrEqual(
+  expect(contrast(colors.controlText, colors.control)).toBeGreaterThanOrEqual(
     4.5,
   );
-  expect(contrast(colors.border, colors.group)).toBeGreaterThanOrEqual(3);
+  expect(contrast(colors.border, colors.control)).toBeGreaterThanOrEqual(3);
   expect(contrast(colors.next, colors.nextBg)).toBeGreaterThanOrEqual(4.5);
   expect(contrast(colors.nextBorder, colors.nextBg)).toBeGreaterThanOrEqual(3);
-  const chosen = page.getByRole("button", { name: "LDC", exact: true });
+  const chosen = page.locator(".gallery-status-filter .action-menu-trigger");
   await chosen.focus();
   const focus = await chosen.evaluate((node) => ({
     outline: getComputedStyle(node).outlineColor,
-    bg: getComputedStyle(node.parentElement as Element).backgroundColor,
+    bg: getComputedStyle(node).backgroundColor,
   }));
   expect(contrast(focus.outline, focus.bg)).toBeGreaterThanOrEqual(3);
 });

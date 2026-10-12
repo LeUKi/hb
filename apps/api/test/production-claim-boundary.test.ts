@@ -58,11 +58,7 @@ async function fixture() {
   )
     .bind(Date.now(), merchant.id)
     .run();
-  const {
-    rewards: _rewards,
-    rewardType: _rewardType,
-    ...base
-  } = emptyActivityInput();
+  const base = emptyActivityInput();
   const input: LdcActivityInput = {
     ...base,
     title: "validation pause race",

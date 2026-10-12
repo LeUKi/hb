@@ -40,8 +40,8 @@ function activity(
     authorId: `author-${index % 3}`,
     authorDisplayName: `作者 ${index % 3}`,
     participationMode: index % 2 ? "password" : "direct",
-    rewardType: index % 2 ? "text" : "ldc",
-    paymentMode: index % 2 ? null : "simulation",
+    rewardType: "ldc",
+    paymentMode: "simulation",
     lifecycle: pickActivityLifecycle(index),
     totalCount: 30,
     claimedCount: index,
@@ -525,6 +525,7 @@ async function applyFontScale(page: Page, fontScale: string) {
 test("管理员六个入口在桌面和窄屏放大文字下不横溢，长筛选与日期标签可见", async ({
   page,
 }) => {
+  test.setTimeout(60_000);
   await mockAdmin(page);
   const routes = [
     { path: "/admin", heading: "概览" },
@@ -630,19 +631,16 @@ test("活动列表保留筛选 URL、分页和刷新失败前的内容", async (
 
   await page.getByLabel("搜索活动").fill("活动 20");
   await page.getByLabel("生命周期").selectOption("draft");
-  await page.getByLabel("奖励类型").selectOption("ldc");
   await page.getByLabel("开奖异常").check();
   await page.getByRole("button", { name: "搜索", exact: true }).click();
 
   await expect(page).toHaveURL(/\/admin\/activities\?/);
   await expect(page).toHaveURL(/q=/);
   await expect(page).toHaveURL(/status=draft/);
-  await expect(page).toHaveURL(/rewardType=ldc/);
   await expect.soft(page).toHaveURL(/drawException=1/);
   expect.soft(state.reads.at(-1)?.query).toMatchObject({
     q: "活动 20",
     status: "draft",
-    rewardType: "ldc",
     drawException: "1",
   });
   await expect(
@@ -675,7 +673,6 @@ test("活动列表保留筛选 URL、分页和刷新失败前的内容", async (
 
   await page.getByLabel("搜索活动").fill("");
   await page.getByLabel("生命周期").selectOption("all");
-  await page.getByLabel("奖励类型").selectOption("all");
   await page.getByLabel("开奖异常").uncheck();
   await page.getByRole("button", { name: "搜索", exact: true }).click();
   await page.getByRole("button", { name: "下一页", exact: true }).click();

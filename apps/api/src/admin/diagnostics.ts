@@ -53,7 +53,7 @@ export function adminDiagnosticQueries(now: number) {
       SUM(CASE WHEN a.draw_state='waiting' AND a.deadline<=${now} THEN 1 ELSE 0 END) AS overdue,
       MAX(CASE WHEN a.draw_state IN ('waiting','settling') THEN MAX(0,(${now}-COALESCE(a.draw_closed_at,a.deadline))/1000.0) ELSE 0 END) AS oldest_wait_seconds,
       SUM(CASE WHEN a.draw_state='settling' AND EXISTS(SELECT 1 FROM activity_draw_plans p WHERE p.activity_id=a.id) THEN 1 ELSE 0 END) AS unpublished_plans
-      FROM activities a WHERE a.deleted_at IS NULL AND a.draw_state IS NOT NULL
+      FROM activities a WHERE a.reward_type='ldc' AND a.deleted_at IS NULL AND a.draw_state IS NOT NULL
       GROUP BY a.payment_mode,a.draw_state`,
     },
     {

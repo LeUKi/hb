@@ -39,7 +39,7 @@ function directActivity(id = activityId, draw = false) {
     id,
     title: draw ? "直接报名开奖活动" : title,
     participationMode: "direct",
-    rewardType: draw ? "ldc" : "text",
+    rewardType: "ldc",
     status: "active",
     author,
     forceDedicated: false,
@@ -53,7 +53,7 @@ function directActivity(id = activityId, draw = false) {
     beforeInfo: "无需口令，进入活动页后主动参与。",
     reward: draw
       ? { mode: "timed_draw", totalAmount: "0.30", count: 2 }
-      : { mode: "text" },
+      : { mode: "fixed", unitAmount: "1.00", totalAmount: "3.00" },
     ...(draw
       ? {
           draw: {
@@ -88,8 +88,15 @@ async function mockDirectApp(page: Page) {
       claim: {
         id: "direct-claim",
         activity: { id: activityId, title, status: "active" },
-        rewardType: "text",
-        text: "DIRECT-TEXT-REWARD",
+        rewardType: "ldc",
+        amount: "1.00",
+        payment: {
+          id: "direct-payment",
+          mode: "simulation",
+          status: "confirmed",
+          reason: null,
+          confirmedAt: new Date().toISOString(),
+        },
         claimedAt: new Date().toISOString(),
         afterClaimInfo: "",
         source: "直接领取",
@@ -211,15 +218,53 @@ async function mockCreateForm(page: Page) {
       return route.fulfill({
         json: { user: state.user, csrfToken: "csrf-direct-author" },
       });
-    if (url.pathname === "/api/me/merchants")
+    if (url.pathname.startsWith("/api/me/merchants")) {
+      const now = new Date().toISOString();
+      const merchant = {
+        id: "11111111-1111-4111-8111-111111111111",
+        label: "本地测试商户",
+        clientId: "local_merchant",
+        mode: "simulation",
+        scenario: "normal",
+        version: 1,
+        credentialVersion: 1,
+        usageStatus: "current",
+        publicationEligibility: {
+          allowed: true,
+          reason: null,
+          credentialVersion: 1,
+        },
+        credentialVerification: {
+          status: "unverified",
+          credentialVersion: 1,
+          checkedAt: null,
+          nextCheckAt: null,
+          reason: null,
+        },
+        capabilities: {
+          canExecutePayments: true,
+          canCheck: true,
+          canSimulate: true,
+          canVerify: false,
+        },
+        pausedReason: null,
+        paymentCheckNextAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      if (url.pathname === `/api/me/merchants/${merchant.id}`) {
+        return route.fulfill({ json: { merchant } });
+      }
       return route.fulfill({
         json: {
-          items: [],
-          currentMerchantId: null,
+          items: [merchant],
+          currentMerchantId: merchant.id,
           canCreate: false,
           canSimulate: true,
+          nextCursor: null,
         },
       });
+    }
     if (url.pathname === "/api/activities" && request.method() === "POST") {
       const body = request.postDataJSON();
       state.saved.push(body);
@@ -229,7 +274,7 @@ async function mockCreateForm(page: Page) {
             id: activityId,
             title: body.activity.title,
             participationMode: body.activity.participationMode,
-            rewardType: body.activity.rewardType ?? "text",
+            rewardType: "ldc",
             status: "draft",
             author: state.user,
             forceDedicated: body.activity.forceDedicated,
@@ -241,7 +286,7 @@ async function mockCreateForm(page: Page) {
             showRecipientUsername: false,
             showRecipientTime: false,
             beforeInfo: "",
-            reward: { mode: "text" },
+            reward: { mode: "fixed", unitAmount: "1.00", totalAmount: "1.00" },
             createdAt: new Date().toISOString(),
             totalCount: 1,
             claimedCount: 0,
@@ -312,11 +357,6 @@ test("发起表单默认口令模式，direct 草稿切换暂存口令，保存�
     await expect(page.getByLabel("口令 1", { exact: true })).toBeVisible();
     await page.locator("#activity-title").fill(`direct 表单 ${viewport.width}`);
     await page.getByLabel("口令 1", { exact: true }).fill("KeepPass123");
-    await page
-      .getByRole("group", { name: "奖励类型", exact: true })
-      .getByRole("button", { name: "文本 / CDK", exact: true })
-      .click();
-    await page.locator("#activity-text-rewards").fill("DIRECT-CODE-1");
     await chooseDirectMode(page);
     await expect(page.getByLabel("口令 1", { exact: true })).toHaveCount(0);
     await expect(page.locator("#activity-forceDedicated")).toHaveCount(0);
@@ -325,6 +365,8 @@ test("发起表单默认口令模式，direct 草稿切换暂存口令，保存�
       "KeepPass123",
     );
     await chooseDirectMode(page);
+    await page.locator("#ldc-total").fill("1.00");
+    await page.getByLabel("奖励份数", { exact: true }).fill("1");
     await page.getByRole("button", { name: "保存草稿", exact: true }).click();
     await expect
       .poll(() => state.saved.length, { message: "direct 草稿应完成保存" })
@@ -334,12 +376,15 @@ test("发起表单默认口令模式，direct 草稿切换暂存口令，保存�
         participationMode?: string;
         passwords?: string[];
         forceDedicated?: boolean;
+        rewardType?: string;
+        reward?: unknown;
       };
     };
     expect(saved.activity).toMatchObject({
       participationMode: "direct",
       passwords: [],
       forceDedicated: false,
+      rewardType: "ldc",
     });
   }
   expect(state.opened).toBe(false);
@@ -365,9 +410,7 @@ test("direct 活动页刷新、定位和登录返回不自动参与；点击后�
   const claimButton = page.getByRole("button", { name: /领取奖励|直接领取/ });
   await claimButton.focus();
   await page.keyboard.press("Enter");
-  await expect(
-    page.locator("pre").filter({ hasText: "DIRECT-TEXT-REWARD" }),
-  ).toBeVisible();
+  await expect(page.locator(".slip-amount")).toContainText("+1.00");
   expect(state.claimPosts).toHaveLength(1);
   expect(state.claimPosts[0]).toMatchObject({
     participationMode: "direct",
@@ -399,8 +442,15 @@ test("direct 未知结果按原 submissionId 重试，429 只显示冷却且不�
     claim: {
       id: "direct-claim-retry",
       activity: { id: activityId, title, status: "active" },
-      rewardType: "text",
-      text: "DIRECT-RETRY-REWARD",
+      rewardType: "ldc",
+      amount: "1.00",
+      payment: {
+        id: "direct-payment-retry",
+        mode: "simulation",
+        status: "confirmed",
+        reason: null,
+        confirmedAt: new Date().toISOString(),
+      },
       claimedAt: new Date().toISOString(),
       afterClaimInfo: "",
       source: "直接领取",
@@ -437,6 +487,5 @@ test("direct 未知结果按原 submissionId 重试，429 只显示冷却且不�
       databases,
     });
   });
-  expect(storageDump).not.toContain("DIRECT-RETRY-REWARD");
   expect(storageDump).not.toContain("KeepPass123");
 });

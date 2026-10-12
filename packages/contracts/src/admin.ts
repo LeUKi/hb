@@ -14,7 +14,7 @@ export type AdminActivityStatus = z.infer<typeof adminActivityStatusSchema>;
 export const adminLifecycleSchema = adminActivityStatusSchema.exclude(["all"]);
 export type AdminLifecycle = z.infer<typeof adminLifecycleSchema>;
 
-export const adminRewardTypeSchema = z.enum(["all", "text", "ldc"]);
+export const adminRewardTypeSchema = z.enum(["all", "ldc"]);
 export type AdminRewardType = z.infer<typeof adminRewardTypeSchema>;
 export const adminActivityRewardTypeSchema = adminRewardTypeSchema.exclude([
   "all",
@@ -140,7 +140,7 @@ export type AdminActivityListItem = {
   authorId: string;
   authorDisplayName: string;
   participationMode: "password" | "direct";
-  rewardType: "text" | "ldc";
+  rewardType: "ldc";
   paymentMode: "simulation" | "real" | null;
   lifecycle: AdminLifecycle;
   totalCount: number;

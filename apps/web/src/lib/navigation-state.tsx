@@ -20,7 +20,14 @@ import {
   useSyncExternalStore,
 } from "react";
 
-type Overlay = { kind: string; id?: string; parent: string; owner: string };
+const overlaySchemaVersion = 2;
+type Overlay = {
+  kind: string;
+  id?: string;
+  parent: string;
+  owner: string;
+  version: typeof overlaySchemaVersion;
+};
 declare module "@tanstack/react-router" {
   interface HistoryState {
     hbVisit?: string;
@@ -29,7 +36,7 @@ declare module "@tanstack/react-router" {
   }
 }
 
-const prefix = "hb-navigation-v1:";
+const prefix = "hb-navigation-v2:";
 type Snapshot = {
   owner: string;
   path: string;
@@ -332,7 +339,11 @@ export function useHistoryOverlay(kind: string) {
   const opening = useRef(false);
   const candidate = location.state.hbOverlay;
   const overlay =
-    candidate?.kind === kind && candidate.owner === owner ? candidate : null;
+    candidate?.kind === kind &&
+    candidate.owner === owner &&
+    candidate.version === overlaySchemaVersion
+      ? candidate
+      : null;
   const open = (id?: string) => {
     if (opening.current || (overlay?.id === id && overlay)) return;
     opening.current = true;
@@ -350,7 +361,13 @@ export function useHistoryOverlay(kind: string) {
       state: {
         hbVisit: nextVisit,
         hbReset: location.state.hbReset,
-        hbOverlay: { kind, id, parent: visit, owner },
+        hbOverlay: {
+          kind,
+          id,
+          parent: visit,
+          owner,
+          version: overlaySchemaVersion,
+        },
       },
     }).finally(() => {
       opening.current = false;

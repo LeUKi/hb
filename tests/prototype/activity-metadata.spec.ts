@@ -25,7 +25,7 @@ function required(activity: Activity | undefined): Activity {
   return activity;
 }
 
-test("public metadata uses integer-cent pools and distinguishes all five reward types", () => {
+test("public metadata uses integer-cent pools and distinguishes all four LDC reward modes", () => {
   const fixed = required(activities.find((item) => item.id === "weekend"));
   expect(fixedPoolAmount("0.29", 100)).toBe("29.00");
   expect(fixedPoolAmount("0.01", 1000)).toBe("10.00");
@@ -52,9 +52,9 @@ test("public metadata uses integer-cent pools and distinguishes all five reward 
     countLabel: "10 个获奖名额",
   });
   expect(getActivityPublicMetadata(required(activities[1]))).toMatchObject({
-    rewardLabel: "文本 / CDK",
-    poolAmount: null,
-    poolLabel: null,
+    rewardLabel: "LDC · 固定均分",
+    poolAmount: "6.00",
+    poolLabel: "6.00 LDC",
   });
   const custom = findWorkbenchActivity(
     "standard",
@@ -113,15 +113,11 @@ test("every public fixture retains a fixed deadline and a consistent configured 
     const offset = Date.parse(activity.deadlineAt ?? "") - prototypeStartedAt;
     if (ended) expect(offset).toBeLessThan(0);
     else expect(offset).toBe(activity.type === "draw" ? 600000 : 8315000);
-    if (activity.type === "text") {
-      expect(metadata.poolAmount).toBeNull();
-    } else {
-      expect(metadata.poolAmount).toBe(activity.poolAmount);
-      if (activity.type === "ldc" && activity.rewardMode !== "instant_random")
-        expect(metadata.poolAmount).toBe(
-          fixedPoolAmount(activity.amount, activity.count),
-        );
-    }
+    expect(metadata.poolAmount).toBe(activity.poolAmount);
+    if (activity.type === "ldc" && activity.rewardMode !== "instant_random")
+      expect(metadata.poolAmount).toBe(
+        fixedPoolAmount(activity.amount, activity.count),
+      );
   }
   const author = findWorkbenchActivity(
     "standard",

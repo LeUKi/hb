@@ -114,7 +114,7 @@ async function registerFinished(
       env.DB.prepare(`INSERT INTO redemption_submissions
         (id, activity_id, user_id, submission_id, fingerprint, purpose, participation_mode, outcome, claim_id, created_at, finished_at)
         SELECT ?, ?, ?, ?, CASE WHEN ${guard.sql} THEN ? ELSE NULL END, 'claim', ?, ?, ?, ${databaseNow}, ${databaseNow}
-        WHERE EXISTS (SELECT 1 FROM activities WHERE id = ? AND participation_mode = ? AND deleted_at IS NULL)`).bind(
+        WHERE EXISTS (SELECT 1 FROM activities WHERE id = ? AND participation_mode = ? AND reward_type = 'ldc' AND deleted_at IS NULL)`).bind(
         crypto.randomUUID(),
         activityId,
         userId,
@@ -258,7 +258,7 @@ export async function prepareClaimSubmission(
       // A failed precondition must roll back the submission AND the event together.
       env.DB.prepare(`UPDATE activities SET version = CASE WHEN version = ? AND participation_mode = ? AND deleted_at IS NULL AND opened_at IS NOT NULL AND ended_at IS NULL
         AND archived_at IS NULL AND deadline > ${databaseNow} AND claimed_count < total_count
-        AND (reward_type != 'ldc' OR (EXISTS(SELECT 1 FROM users WHERE id=? AND official_connect_verified=1 AND active=1) AND author_id != ? AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))))
+        AND reward_type = 'ldc' AND EXISTS(SELECT 1 FROM users WHERE id=? AND official_connect_verified=1 AND active=1) AND author_id != ? AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
         AND NOT EXISTS (SELECT 1 FROM claims WHERE activity_id = ? AND user_id = ?)
         THEN version ELSE NULL END WHERE id = ?`).bind(
         activity.version,
@@ -377,7 +377,7 @@ async function finishWithoutAllocation(
   await env.DB.prepare(
     `UPDATE redemption_submissions SET outcome = ?, claim_id = ?, finished_at = ${databaseNow}
       WHERE id = ? AND purpose = 'claim' AND outcome = 'pending'
-      AND EXISTS (SELECT 1 FROM activities WHERE activities.id = redemption_submissions.activity_id AND deleted_at IS NULL)`,
+      AND EXISTS (SELECT 1 FROM activities WHERE activities.id = redemption_submissions.activity_id AND reward_type = 'ldc' AND deleted_at IS NULL)`,
   )
     .bind(outcome, claimId, submission.id)
     .run();
@@ -481,7 +481,7 @@ export async function completeClaimSubmission(
       );
     const available =
       await env.DB.prepare(`SELECT inventory.id, inventory.amount_minor FROM reward_inventory inventory
-      WHERE inventory.activity_id = ? AND NOT EXISTS (SELECT 1 FROM claims WHERE claims.activity_id = inventory.activity_id AND claims.inventory_id = inventory.id)
+      WHERE inventory.activity_id = ? AND inventory.kind = 'ldc' AND NOT EXISTS (SELECT 1 FROM claims WHERE claims.activity_id = inventory.activity_id AND claims.inventory_id = inventory.id)
       ORDER BY inventory.position`)
         .bind(activity.id)
         .all<{ id: string; amount_minor: number | null }>();
@@ -530,7 +530,7 @@ export async function completeClaimSubmission(
     const statements = [
       env.DB.prepare(`UPDATE activities SET version = CASE WHEN deleted_at IS NULL AND opened_at IS NOT NULL AND ended_at IS NULL AND archived_at IS NULL
           AND deadline > ${databaseNow} AND claimed_count < total_count
-          AND (reward_type != 'ldc' OR (EXISTS(SELECT 1 FROM users WHERE id=? AND official_connect_verified=1 AND active=1) AND author_id != ? AND merchant_id IS NOT NULL AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))))
+          AND reward_type = 'ldc' AND EXISTS(SELECT 1 FROM users WHERE id=? AND official_connect_verified=1 AND active=1) AND author_id != ? AND merchant_id IS NOT NULL AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
           AND NOT EXISTS (SELECT 1 FROM claims WHERE activity_id = ? AND user_id = ?)
           AND EXISTS (SELECT 1 FROM redemption_submissions s WHERE s.id = ? AND s.activity_id=activities.id
             AND s.user_id=? AND s.purpose = 'claim' AND s.outcome = 'pending'
@@ -741,6 +741,7 @@ export async function resumePendingActivityClaims(
         eq(redemptionSubmissions.activityId, activityId),
         eq(redemptionSubmissions.outcome, "pending"),
         eq(redemptionSubmissions.purpose, "claim"),
+        eq(activities.rewardType, "ldc"),
         isNull(activities.deletedAt),
       ),
     )

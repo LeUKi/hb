@@ -78,7 +78,7 @@ export function SafeMarkdown({
               return (
                 <Link
                   to={url.pathname}
-                  search={Object.fromEntries(url.searchParams)}
+                  search={Object.fromEntries(url.searchParams) as never}
                   hash={url.hash.slice(1)}
                 >
                   {children}

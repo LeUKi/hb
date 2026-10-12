@@ -78,7 +78,7 @@ function timedInput(
   merchantId: string,
   money: Partial<TimedDrawMoney> = {},
 ): LdcActivityInput {
-  const { rewards: _rewards, ...base } = emptyActivityInput();
+  const base = emptyActivityInput();
   return {
     ...base,
     title: "恢复与历史回归测试",
@@ -339,8 +339,10 @@ describe("persisted timed-draw recovery and participation pagination", () => {
       const ordinary = await createOpened(f.owner, {
         ...emptyActivityInput(),
         title: `普通领取 ${index}`,
+        rewardType: "ldc",
+        merchantId: f.merchant.id,
         passwords: [password],
-        rewards: [{ id: crypto.randomUUID(), text: `PRIVATE-TEXT-${index}` }],
+        money: { mode: "fixed", totalAmount: "1.00", count: 1 },
         afterClaimInfo: "PRIVATE-ORDINARY-INFORMATION",
       });
       await advanceAttemptCooldown(env.DB, f.reader.id);
@@ -348,9 +350,9 @@ describe("persisted timed-draw recovery and participation pagination", () => {
         submissionId: crypto.randomUUID(),
         password,
       });
-      if (!("claim" in result)) throw new Error("Missing ordinary text claim");
+      if (!("claim" in result)) throw new Error("Missing ordinary LDC claim");
       expect(result.claim).toMatchObject({
-        text: `PRIVATE-TEXT-${index}`,
+        rewardType: "ldc",
         afterClaimInfo: "PRIVATE-ORDINARY-INFORMATION",
       });
       expected.push({ kind: "claim", id: result.claim.id });
@@ -453,7 +455,7 @@ describe("persisted timed-draw recovery and participation pagination", () => {
     expect(ordinaryClaims).toHaveLength(13);
     expect(
       ordinaryClaims.filter((claim) => claim.rewardType === "ldc"),
-    ).toHaveLength(1);
+    ).toHaveLength(13);
     for (const claim of ordinaryClaims) {
       expect(Object.keys(claim).sort()).toEqual([
         "activity",

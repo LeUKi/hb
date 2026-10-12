@@ -48,7 +48,9 @@ async function mockSession(
         activity: {
           id: "profile-activity",
           title: "用户卡片交互测试",
-          rewardType: "text",
+          rewardType: "ldc",
+          paymentMode: "simulation",
+          reward: { mode: "fixed", unitAmount: "0.10", count: 1 },
           status: "ended",
           author: {
             id: "profile-author",

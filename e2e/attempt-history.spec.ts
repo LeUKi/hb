@@ -16,7 +16,7 @@ const user = {
 const activity = {
   id: activityId,
   title: "不应出现在本地历史的活动标题",
-  rewardType: "text",
+  rewardType: "ldc",
   status: "active",
   author: {
     id: "author",
@@ -33,7 +33,7 @@ const activity = {
   showRecipientUsername: false,
   showRecipientTime: false,
   beforeInfo: "",
-  reward: { mode: "text" },
+  reward: { mode: "fixed", totalAmount: "4.00", count: 4 },
   myClaim: null,
 };
 
@@ -116,7 +116,7 @@ async function tryPassword(
     .fill(password);
   await page
     .getByRole("button", {
-      name: onActivityPage ? "领取奖励" : "兑奖",
+      name: onActivityPage ? "领取红包" : "兑奖",
       exact: true,
     })
     .click();

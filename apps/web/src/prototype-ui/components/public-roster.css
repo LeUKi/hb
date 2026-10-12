@@ -145,19 +145,6 @@
   overflow-wrap: anywhere;
 }
 
-.public-roster .recipient-private summary {
-  width: fit-content;
-  cursor: pointer;
-}
-
-.public-roster .recipient-private pre {
-  max-width: 100%;
-  margin: 8px 0 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font: inherit;
-}
-
 .public-roster .recipient-private--inline {
   display: flex;
   flex-wrap: wrap;

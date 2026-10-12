@@ -56,11 +56,7 @@ async function fixture(options: { recipientId?: string; open?: boolean } = {}) {
     secret: "mock-transport-secret",
     mode: "real",
   });
-  const {
-    rewards: _rewards,
-    rewardType: _rewardType,
-    ...base
-  } = emptyActivityInput();
+  const base = emptyActivityInput();
   const input: LdcActivityInput = {
     ...base,
     title: "真实分支本地验证",

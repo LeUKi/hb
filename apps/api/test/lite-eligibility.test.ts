@@ -1,11 +1,9 @@
 import { env } from "cloudflare:test";
 import {
   emptyActivityInput,
-  type GlobalRedemptionResult,
   type LdcActivityInput,
   type ManagedActivity,
   type PasswordClaimInput,
-  type TextActivityInput,
 } from "@hb/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -15,14 +13,11 @@ import {
   prepareClaimSubmission,
   resumePendingActivityClaims,
 } from "../src/activities/claim-service";
-import { solveActivityPassword } from "../src/activities/password-service";
 import { registerForDraw } from "../src/activities/registration-service";
 import {
   createActivity,
-  getManagedActivity,
   openActivity,
   prepareActivityOpening,
-  updateActivity,
 } from "../src/activities/service";
 import { app } from "../src/app";
 import { createDb } from "../src/db/client";
@@ -110,7 +105,7 @@ function submission(value = password): PasswordClaimInput {
 }
 
 function ldc(timed = false): LdcActivityInput {
-  const { rewards: _rewards, ...base } = emptyActivityInput();
+  const base = emptyActivityInput();
   return {
     ...base,
     title: "账号资格 LDC 测试",
@@ -133,22 +128,20 @@ function ldc(timed = false): LdcActivityInput {
   };
 }
 
-function text(): TextActivityInput {
+function fixedLdc(): LdcActivityInput {
   return {
     ...emptyActivityInput(),
-    title: "账号资格文本测试",
-    rewardType: "text",
+    title: "账号资格 LDC 测试",
+    rewardType: "ldc",
     passwords: [password, "SecondLite123"],
+    merchantId,
     forceDedicated: false,
-    rewards: [
-      { id: crypto.randomUUID(), text: "PRIVATE-TEXT-ONE" },
-      { id: crypto.randomUUID(), text: "PRIVATE-TEXT-TWO" },
-    ],
+    money: { mode: "fixed", totalAmount: "1.00", count: 2 },
   };
 }
 
 async function activity(
-  input: LdcActivityInput | TextActivityInput = ldc(),
+  input: LdcActivityInput = ldc(),
   author = owner,
   open = true,
 ): Promise<ManagedActivity> {
@@ -328,23 +321,15 @@ describe("permanent Connect qualification across LDC business boundaries", () =>
     });
   });
 
-  it("rejects changing a youth-owned text draft to LDC while preserving its inventory", async () => {
-    const draft = await activity(text(), lite, false);
-    await expect(
-      updateActivity(bindings, draft.id, lite.id, {
-        version: draft.version,
-        activity: ldc(),
-      }),
-    ).rejects.toMatchObject(denied);
-    await forbidHttp(
-      await request(`/api/me/activities/${draft.id}`, lite, "PATCH", {
-        version: draft.version,
-        activity: ldc(),
-      }),
+  it("rejects youth-owned LDC draft creation before any editable activity exists", async () => {
+    await expect(activity(fixedLdc(), lite, false)).rejects.toMatchObject(
+      denied,
     );
-    const after = await getManagedActivity(bindings, draft.id, lite.id);
-    expect(after.version).toBe(draft.version);
-    expect(after.config).toEqual(draft.config);
+    const response = await request("/api/activities", lite, "POST", {
+      requestId: crypto.randomUUID(),
+      activity: fixedLdc(),
+    });
+    await forbidHttp(response);
   });
 
   it("blocks LDC publication and credential-check admission independently of the draft creation route", async () => {
@@ -452,85 +437,49 @@ describe("permanent Connect qualification across LDC business boundaries", () =>
     ).toEqual({ outcome: "pending" });
   });
 
-  it("allows youth text publishing, self-claim, solving and idempotent replay without creating a payment", async () => {
-    const saved = await activity(text(), lite);
-    const input = submission();
-    const claimed = await claimActivity(bindings, saved.id, lite.id, input);
-    expect(claimed).toMatchObject({
-      result: "claimed",
-      claim: { rewardType: "text", text: "PRIVATE-TEXT-ONE" },
-    });
-    expect(await claimActivity(bindings, saved.id, lite.id, input)).toEqual(
-      claimed,
-    );
-    await env.DB.prepare(
-      "UPDATE account_attempt_cooldowns SET next_allowed_at=0 WHERE user_id=?",
-    )
-      .bind(lite.id)
-      .run();
-    expect(
-      await solveActivityPassword(
-        bindings,
-        saved.id,
-        lite.id,
-        submission("SecondLite123"),
-      ),
-    ).toEqual({ outcome: "solved", passwordMatched: true });
+  it("keeps LDC-only eligibility checks on the retired text path", async () => {
+    await expect(activity(fixedLdc(), lite)).rejects.toMatchObject(denied);
+    const saved = await activity(fixedLdc(), owner);
+    await expect(
+      claimActivity(bindings, saved.id, lite.id, submission()),
+    ).rejects.toMatchObject(denied);
     expect(await counts(saved.id)).toMatchObject({
-      claims: 1,
+      claims: 0,
       payments: 0,
       outbox: 0,
-      claimed_count: 1,
+      claimed_count: 0,
     });
   });
 
-  it("keeps every global match visible and leaves selection explicit when text and LDC share a password", async () => {
+  it("blocks youth global redemption before creating attempts or cooldown", async () => {
     const money = await activity();
-    const textActivity = await activity(text());
+    const secondActivity = await activity(fixedLdc(), owner);
     const response = await request(
       "/api/redemptions",
       lite,
       "POST",
       submission(),
     );
-    expect(response.status).toBe(200);
-    const result = (await response.json()) as GlobalRedemptionResult;
-    expect(result.result).toBe("multiple");
-    expect(result.items.map((item) => item.id).sort()).toEqual(
-      [money.id, textActivity.id].sort(),
-    );
-    expect(result.claimResult).toBeUndefined();
+    await forbidHttp(response);
     expect(await counts(money.id)).toMatchObject({
       claims: 0,
       submissions: 0,
       payments: 0,
     });
-    expect(await counts(textActivity.id)).toMatchObject({
+    expect(await counts(secondActivity.id)).toMatchObject({
       claims: 0,
       submissions: 0,
     });
-    await forbidHttp(
-      await request(
-        `/api/activities/${money.id}/claim`,
-        lite,
-        "POST",
-        submission(),
-      ),
-    );
-    const claimed = await request(
-      `/api/activities/${textActivity.id}/claim`,
-      lite,
-      "POST",
-      submission(),
-    );
-    expect(claimed.status).toBe(200);
-    expect(await claimed.json()).toMatchObject({
-      result: "claimed",
-      claim: { rewardType: "text" },
-    });
+    expect(
+      await env.DB.prepare(
+        "SELECT COUNT(*) AS n FROM global_redemptions WHERE user_id=?",
+      )
+        .bind(lite.id)
+        .first("n"),
+    ).toBe(0);
   });
 
-  it("preserves a single global candidate across rejection, account upgrade and a newly matching text activity", async () => {
+  it("requires an active resubmit after youth global redemption is denied and upgraded", async () => {
     const money = await activity();
     const input = submission();
     await forbidHttp(await request("/api/redemptions", lite, "POST", input));
@@ -539,8 +488,8 @@ describe("permanent Connect qualification across LDC business boundaries", () =>
     )
       .bind(lite.id, input.submissionId)
       .first<{ id: string; candidate_ids: string }>();
-    expect(snapshot?.candidate_ids).toBe(JSON.stringify([money.id]));
-    const textActivity = await activity(text());
+    expect(snapshot).toBeNull();
+    const secondActivity = await activity(fixedLdc(), owner);
     await env.DB.prepare(
       "UPDATE users SET official_connect_verified=1 WHERE id=?",
     )
@@ -549,34 +498,34 @@ describe("permanent Connect qualification across LDC business boundaries", () =>
     const retry = await request("/api/redemptions", lite, "POST", input);
     expect(retry.status).toBe(200);
     expect(await retry.json()).toMatchObject({
-      id: snapshot?.id,
-      result: "single",
-      selectedActivityId: money.id,
-      claimResult: { result: "claimed", claim: { rewardType: "ldc" } },
+      result: "multiple",
     });
-    expect(await counts(textActivity.id)).toMatchObject({
+    expect(await counts(money.id)).toMatchObject({ claims: 0, submissions: 0 });
+    expect(await counts(secondActivity.id)).toMatchObject({
       claims: 0,
       submissions: 0,
     });
   });
 
-  it("returns a completed claim unchanged across account upgrade", async () => {
-    const saved = await activity(text());
+  it("allows a youth account to claim only after explicit upgrade and active submit", async () => {
+    const saved = await activity(fixedLdc(), owner);
     const input = submission();
-    const first = await claimActivity(bindings, saved.id, lite.id, input);
+    await expect(
+      claimActivity(bindings, saved.id, lite.id, input),
+    ).rejects.toMatchObject(denied);
     await env.DB.prepare(
       "UPDATE users SET official_connect_verified=1 WHERE id=?",
     )
       .bind(lite.id)
       .run();
+    const first = await claimActivity(bindings, saved.id, lite.id, input);
+    expect(first).toMatchObject({
+      result: "claimed",
+      claim: { rewardType: "ldc" },
+    });
     expect(await claimActivity(bindings, saved.id, lite.id, input)).toEqual(
       first,
     );
-    expect(await counts(saved.id)).toMatchObject({
-      claims: 1,
-      submissions: 1,
-      payments: 0,
-    });
   });
 
   it("blocks merchant creation through the service and HTTP", async () => {

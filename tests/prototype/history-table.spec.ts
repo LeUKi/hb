@@ -45,7 +45,7 @@ async function setIdentity(
   await page.getByRole("button", { name: "场景与身份" }).click();
 }
 
-test("both history views retain account totals through filtering, pagination, and identity changes", async ({
+test("both history views retain account totals through pagination and identity changes", async ({
   page,
 }) => {
   await page.goto("/#participations");
@@ -70,13 +70,9 @@ test("both history views retain account totals through filtering, pagination, an
   await expect(
     page.getByRole("button", { name: "刷新活动列表", exact: true }),
   ).toBeVisible();
-  const filters = page.getByRole("group", { name: "奖励筛选" });
-  await filters
-    .getByRole("button", { name: "文本 / CDK", exact: true })
-    .click();
-  await expect(page.getByTestId("managed-activity")).toHaveCount(14);
+  await expect(page.getByRole("group", { name: "奖励筛选" })).toHaveCount(0);
+  await expect(page.getByTestId("managed-activity")).toHaveCount(20);
   await expectHistoryTotals(page, 24, 24);
-  await filters.getByRole("button", { name: "全部", exact: true }).click();
   await page
     .getByRole("navigation", { name: "作者活动分页" })
     .getByRole("button", { name: "下一页" })
@@ -85,15 +81,15 @@ test("both history views retain account totals through filtering, pagination, an
   await expectHistoryTotals(page, 24, 24);
 
   await setIdentity(page, "lite");
-  await expectHistoryTotals(page, 24, 6);
+  await expectHistoryTotals(page, 0, 0);
   await page
     .getByRole("tablist", { name: "活动历史分类" })
     .getByRole("tab", { name: "我参与的", exact: true })
     .click();
-  await expectHistoryTotals(page, 24, 6);
+  await expectHistoryTotals(page, 0, 0);
   await expect(
     page.locator('.activity-rows[data-context="history"] tr[data-activity-id]'),
-  ).toHaveCount(6);
+  ).toHaveCount(0);
   await setIdentity(page, "guest");
   await expect(page.getByRole("region", { name: "活动历史统计" })).toHaveCount(
     0,
@@ -114,7 +110,7 @@ test("creating and deleting drafts update the complete initiated total", async (
     '[data-activity-id="20000000-0000-4000-8000-000000000002"]',
   );
   await deleting
-    .getByRole("button", { name: "CDK 兑换码 · 12 份：删除草稿" })
+    .getByRole("button", { name: "固定红包 · 12 份：删除草稿" })
     .click();
   await page
     .getByRole("dialog", { name: "确认删除草稿" })
@@ -126,12 +122,9 @@ test("creating and deleting drafts update the complete initiated total", async (
     .locator(".site-header")
     .getByRole("link", { name: "发起活动", exact: true })
     .click();
-  await page
-    .getByRole("group", { name: "奖励类型" })
-    .getByRole("button", { name: "文本 / CDK", exact: true })
-    .click();
   await page.locator("#work-title").fill("统计新增草稿");
-  await page.locator("#work-text-rewards").fill("LOCAL-TOTALS-CDK");
+  await page.getByRole("button", { name: "自定义金额", exact: true }).click();
+  await page.locator("#work-custom-amounts").fill("0.50");
   await page.locator("#work-password-1").fill("统计测试口令");
   await page.getByRole("button", { name: "保存草稿", exact: true }).click();
   await page
@@ -313,13 +306,10 @@ test("author history shares the table style, keeps creation timestamps, and refr
     "datetime",
     created ?? "",
   );
-  await page
-    .getByRole("group", { name: "奖励筛选" })
-    .getByRole("button", { name: "LDC", exact: true })
-    .click();
-  await expect(page.getByTestId("managed-activity")).toHaveCount(10);
+  await expect(page.getByRole("group", { name: "奖励筛选" })).toHaveCount(0);
+  await expect(page.getByTestId("managed-activity")).toHaveCount(20);
   await page.clock.fastForward("03:00:00");
-  await expect(page.getByTestId("managed-activity")).toHaveCount(10);
+  await expect(page.getByTestId("managed-activity")).toHaveCount(20);
   await expect(
     table.locator(".status-badge").filter({ hasText: "正在开奖" }),
   ).toHaveCount(1);

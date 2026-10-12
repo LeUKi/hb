@@ -1019,29 +1019,6 @@ summary::-webkit-details-marker {
   color: #59734c;
   font-size: 12px;
 }
-.text-reward {
-  margin-top: 18px;
-  padding: 18px;
-  background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  min-width: 0;
-}
-.text-reward > span {
-  font-size: 11px;
-  color: var(--muted);
-}
-.text-reward pre {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-size: 12px;
-  line-height: 1.9;
-  margin: 11px 0 15px;
-}
-.text-reward .button {
-  min-height: 44px;
-  font-size: 12px;
-}
 .password-section {
   border-top: 1px solid var(--line);
   padding: 36px 0;

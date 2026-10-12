@@ -1,6 +1,6 @@
 import { env } from "cloudflare:test";
 import {
-  type TextActivityInput as ActivityInput,
+  type LdcActivityInput as ActivityInput,
   type ActivityStatistics,
   ARCHIVE_DELAY_MS,
   type DiscoveryList,
@@ -33,6 +33,8 @@ type Actor = { id: string; cookie: string; csrf: string };
 let owner: Actor;
 let alice: Actor;
 let bob: Actor;
+let ownerMerchantId: string;
+let ownerMerchantClientId: string;
 
 async function actor(username: string): Promise<Actor> {
   const id = crypto.randomUUID();
@@ -98,16 +100,26 @@ async function create(
   open = true,
   author = owner,
 ) {
+  let merchantId = ownerMerchantId;
+  if (author.id !== owner.id) {
+    merchantId = (
+      await createMerchant(bindings, author.id, {
+        requestId: crypto.randomUUID(),
+        clientId: `discovery_${crypto.randomUUID().replaceAll("-", "")}`,
+        label: "本地模拟",
+        secret: "virtual-only-secret",
+      })
+    ).id;
+  }
   const response = await request("/api/activities", author, "POST", {
     requestId: crypto.randomUUID(),
     activity: {
       ...emptyActivityInput(),
       title: "发现测试",
       passwords: ["correct123"],
-      rewards: [
-        { id: crypto.randomUUID(), text: "PRIVATE-REWARD-A" },
-        { id: crypto.randomUUID(), text: "PRIVATE-REWARD-B" },
-      ],
+      rewardType: "ldc",
+      merchantId,
+      money: { mode: "fixed", totalAmount: "2.00", count: 2 },
       beforeInfo: "BEFORE-INFO",
       afterClaimInfo: "PRIVATE-AFTER-CLAIM",
       afterEndInfo: "AFTER-END",
@@ -129,17 +141,7 @@ async function create(
 }
 
 async function createTimedDraw() {
-  const merchant = await createMerchant(bindings, owner.id, {
-    requestId: crypto.randomUUID(),
-    clientId: `discovery_timed_${crypto.randomUUID()}`,
-    label: "本地模拟",
-    secret: "virtual-only-secret",
-  });
-  const {
-    rewards: _rewards,
-    rewardType: _rewardType,
-    ...base
-  } = emptyActivityInput();
+  const { rewardType: _rewardType, ...base } = emptyActivityInput();
   const response = await request("/api/activities", owner, "POST", {
     requestId: crypto.randomUUID(),
     activity: {
@@ -148,7 +150,7 @@ async function createTimedDraw() {
       passwords: ["drawkey1"],
       forceDedicated: false,
       rewardType: "ldc",
-      merchantId: merchant.id,
+      merchantId: ownerMerchantId,
       allocation: "random",
       money: {
         mode: "timed_draw",
@@ -280,6 +282,14 @@ beforeEach(async () => {
   owner = await actor("owner");
   alice = await actor("alice");
   bob = await actor("bob");
+  const ownerMerchant = await createMerchant(bindings, owner.id, {
+    requestId: crypto.randomUUID(),
+    clientId: `discovery_${crypto.randomUUID().replaceAll("-", "")}`,
+    label: "本地模拟",
+    secret: "virtual-only-secret",
+  });
+  ownerMerchantId = ownerMerchant.id;
+  ownerMerchantClientId = ownerMerchant.clientId;
 });
 
 describe("persistent global redemption", () => {
@@ -520,7 +530,7 @@ describe("persistent global redemption", () => {
         result: "single",
         claimResult: {
           result: "claimed",
-          claim: { activity: { id: activity.id }, text: "PRIVATE-REWARD-A" },
+          claim: { activity: { id: activity.id }, rewardType: "ldc" },
         },
       });
     await create();
@@ -668,7 +678,7 @@ describe("persistent global redemption", () => {
       selectedActivityId: activity.id,
       claimResult: {
         result: "already_claimed",
-        claim: { id: claimId, text: "PRIVATE-REWARD-A" },
+        claim: { id: claimId, rewardType: "ldc" },
       },
     });
     expect(await redeem("correct123", key)).toEqual(alreadyClaimed);
@@ -752,17 +762,7 @@ describe("square and topic discovery", () => {
   });
 
   it("loads twenty claimed LDC cards with bounded queries and never joins another account's claims", async () => {
-    const merchant = await createMerchant(bindings, owner.id, {
-      requestId: crypto.randomUUID(),
-      clientId: "discovery_query_budget",
-      label: "本地模拟",
-      secret: "virtual-only-secret",
-    });
-    const {
-      rewards: _rewards,
-      rewardType: _rewardType,
-      ...base
-    } = emptyActivityInput();
+    const base = emptyActivityInput();
     const expected = new Map<
       string,
       { id: string; paymentState: PaymentState }
@@ -775,7 +775,7 @@ describe("square and topic discovery", () => {
           ...base,
           title: `LDC 卡片 ${index}`,
           rewardType: "ldc",
-          merchantId: merchant.id,
+          merchantId: ownerMerchantId,
           money: { mode: "fixed", totalAmount: "3.00", count: 3 },
           passwords: ["correct123"],
           topicUrl: "https://linux.do/t/123456",
@@ -824,8 +824,8 @@ describe("square and topic discovery", () => {
             VALUES (?,?,?,?,?,? ,100,'simulation',?,?,?,?)`).bind(
             crypto.randomUUID(),
             claimId,
-            merchant.id,
-            merchant.clientId,
+            ownerMerchantId,
+            ownerMerchantClientId,
             `query_${claimId}`,
             `simulation:${user.id}`,
             paymentState,
@@ -1214,9 +1214,9 @@ describe("author attempt statistics", () => {
 
   it("paginates distinct attempt values without returning per-user trajectories", async () => {
     const activity = await create({ forceDedicated: true });
-    const people = [owner, alice, bob];
+    const people = [alice, bob];
     for (let index = 0; index < 21; index += 1) {
-      const person = people[index % 3];
+      const person = people[index % people.length];
       if (!person) throw new Error("Missing fixture actor");
       expect(
         (
@@ -1231,7 +1231,7 @@ describe("author attempt statistics", () => {
     // Unequal counts must sort ahead of the stable digest order across pages.
     await claim(activity.id, "wrong020", alice);
     await claim(activity.id, "wrong020", bob);
-    await claim(activity.id, "wrong019", owner);
+    await claim(activity.id, "wrong019", alice);
     const first = (await (
       await request(`/api/me/activities/${activity.id}/statistics`, owner)
     ).json()) as ActivityStatistics;
@@ -1257,7 +1257,7 @@ describe("author attempt statistics", () => {
     ).toBe(21);
     expect(first).toMatchObject({
       totalAttempts: 24,
-      uniqueUsers: 3,
+      uniqueUsers: 2,
       successfulClaims: 0,
     });
     expect(JSON.stringify(first.items)).not.toContain("userId");

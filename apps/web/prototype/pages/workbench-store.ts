@@ -4,19 +4,17 @@ import {
   fixedPoolAmount,
   prototypeDeadlineAt,
   prototypeStartedAt,
-  TEXT_REWARD_LABEL,
 } from "../activity-metadata";
 import { recipientExamples } from "../fixtures";
 import { normalizePrototypeTopicLink } from "../topic-link";
 import type { Activity, ActivityLifecycle, Identity } from "../types";
 
 export type RewardPlan = "fixed" | "random" | "custom" | "draw";
-export type RewardKind = "ldc" | "text";
 export type Algorithm = "double" | "balanced";
 export type DurationUnit = "minutes" | "hours" | "days";
 export type ActivityConfig = {
   title: string;
-  rewardKind: RewardKind;
+  rewardKind: "ldc";
   plan: RewardPlan;
   fixed: { amount: string; count: string };
   random: { amount: string; count: string; algorithm: Algorithm };
@@ -29,8 +27,6 @@ export type ActivityConfig = {
     algorithm: Algorithm;
     fullPool: boolean;
   };
-  textRewards: string;
-  textOrder: string;
   passwords: { id: number; value: string }[];
   topic: string;
   listed: boolean;
@@ -101,10 +97,6 @@ function characters(value: string) {
   return Array.from(value).length;
 }
 
-function bytes(value: string) {
-  return new TextEncoder().encode(value).byteLength;
-}
-
 function inspectPasswordValue(value: string) {
   const length = characters(value);
   return (
@@ -132,7 +124,6 @@ function formatAmount(cents: bigint) {
 }
 
 function createAmountInventory(config: ActivityConfig): string[] | undefined {
-  if (config.rewardKind !== "ldc") return undefined;
   if (config.plan === "custom") {
     const amounts = config.custom.amounts
       .split(/\r?\n/u)
@@ -187,8 +178,6 @@ function createAmountInventory(config: ActivityConfig): string[] | undefined {
 }
 
 function sameAmountInventory(left: ActivityConfig, right: ActivityConfig) {
-  if (left.rewardKind !== right.rewardKind || left.plan !== right.plan)
-    return false;
   if (left.plan === "random")
     return (
       left.random.amount === right.random.amount &&
@@ -214,8 +203,7 @@ function customPool(config: ActivityConfig) {
   return (total / 100).toFixed(2);
 }
 
-function rewardSummary(config: ActivityConfig, count: number) {
-  if (config.rewardKind === "text") return `${count} 份 ${TEXT_REWARD_LABEL}`;
+function rewardSummary(config: ActivityConfig) {
   if (config.plan === "fixed") return `${config.fixed.amount} LDC / 份`;
   const pool =
     config.plan === "draw"
@@ -228,7 +216,7 @@ function rewardSummary(config: ActivityConfig, count: number) {
 
 function deadlineForConfig(config: ActivityConfig, openedAt: number) {
   const seconds =
-    config.rewardKind === "ldc" && config.plan === "draw"
+    config.plan === "draw"
       ? Number(config.draw.seconds)
       : durationSeconds(config);
   if (seconds === null) return null;
@@ -244,9 +232,10 @@ function deadlineForConfig(config: ActivityConfig, openedAt: number) {
 }
 
 export function defaultActivityConfig(identity: Identity): ActivityConfig {
+  void identity;
   return {
     title: "",
-    rewardKind: identity === "lite" ? "text" : "ldc",
+    rewardKind: "ldc",
     plan: "fixed",
     fixed: { amount: "", count: "" },
     random: { amount: "", count: "", algorithm: "double" },
@@ -259,8 +248,6 @@ export function defaultActivityConfig(identity: Identity): ActivityConfig {
       algorithm: "double",
       fullPool: true,
     },
-    textRewards: "",
-    textOrder: "sequential",
     passwords: [{ id: 1, value: "" }],
     topic: "",
     listed: false,
@@ -289,7 +276,6 @@ export function fixtureActivityConfig(identity: Identity): ActivityConfig {
       algorithm: "double",
       fullPool: true,
     },
-    textRewards: "BOOK-2026-001\nBOOK-2026-002\nBOOK-2026-003",
     passwords: [{ id: 1, value: "公共口令2026" }],
   };
 }
@@ -346,25 +332,7 @@ export function validateActivityConfig(
       addError(errors, `notes.${key}`, "说明不能超过 10,000 个字符。");
   }
 
-  if (config.rewardKind === "text") {
-    const lines = config.textRewards
-      .split(/\r?\n/u)
-      .map((line) => line.trim())
-      .filter(Boolean);
-    if (!lines.length)
-      addError(errors, "textRewards", `请填写至少 1 份${TEXT_REWARD_LABEL}。`);
-    if (lines.length > ACTIVITY_LIMITS.rewards)
-      addError(errors, "textRewards", `${TEXT_REWARD_LABEL}最多 1000 份。`);
-    const tooLarge = lines.find(
-      (line) => bytes(line) > ACTIVITY_LIMITS.rewardBytes,
-    );
-    if (tooLarge)
-      addError(
-        errors,
-        "textRewards",
-        `每份${TEXT_REWARD_LABEL}不能超过 16 KiB。`,
-      );
-  } else if (config.plan === "fixed") {
+  if (config.plan === "fixed") {
     const amount = amountCents(config.fixed.amount);
     const count = Number(config.fixed.count);
     if (amount === null)
@@ -450,7 +418,7 @@ export function validateActivityConfig(
       );
   }
 
-  if (!(config.rewardKind === "ldc" && config.plan === "draw")) {
+  if (config.plan !== "draw") {
     const seconds = durationSeconds(config);
     if (seconds === null)
       addError(errors, "duration", "开放时长需要填写正整数。");
@@ -468,49 +436,38 @@ function fixtureActivities(identity: Identity): ManagedActivity[] {
   const statuses = ["active", "draft", "ended", "archived"] as const;
   const titles = [
     "周末红包 · 20 份",
-    "CDK 兑换码 · 12 份",
+    "社区固定红包 · 12 份",
     "十月第一期红包",
-    "文档兑换码 · 第三期",
+    "文档整理红包 · 第三期",
     "月度随机红包",
     "十分钟限时开奖草稿",
-    "项目文档访问码",
-    "社区资料包兑换码",
+    "项目资料整理红包",
+    "社区资料包红包",
   ];
   return Array.from({ length: 24 }, (_, index) => {
     const config = fixtureActivityConfig(identity);
     const status = statuses[index % statuses.length] ?? "draft";
-    const text =
-      identity === "lite" ||
-      index % 4 === 1 ||
-      index % 4 === 3 ||
-      index % 8 === 6;
-    config.rewardKind = text ? "text" : "ldc";
+    config.rewardKind = "ldc";
     config.title = `${titles[index % titles.length]}${index >= 8 ? ` · 第 ${Math.floor(index / 8) + 1} 期` : ""}`;
-    if (identity === "lite" && index % 4 !== 1 && index % 4 !== 3)
-      config.title = `CDK 兑换活动 · ${index + 1}`;
-    if (!text && index % 8 === 4) config.plan = "random";
-    if (!text && index % 8 === 2) config.plan = "custom";
-    if ((index === 5 || index === 8) && identity !== "lite") {
-      config.rewardKind = "ldc";
+    if (index % 8 === 4) config.plan = "random";
+    if (index % 8 === 2) config.plan = "custom";
+    if (index === 5 || index === 8) {
       config.plan = "draw";
       if (index === 8) config.title = "限时开奖 · 10 个获奖名额";
     }
     const count =
       index === 1 ? 12 : index % 4 === 0 ? 20 : index % 4 === 2 ? 30 : 8;
     const issue = index >= 8 ? ` · 第 ${Math.floor(index / 8) + 1} 期` : "";
-    if (index % 8 === 1) config.title = `CDK 兑换码 · ${count} 份${issue}`;
-    if (index % 8 === 5 && config.rewardKind === "text")
-      config.title = `CDK 兑换草稿 · ${count} 份${issue}`;
+    if (index % 8 === 1) config.title = `固定红包 · ${count} 份${issue}`;
+    if (index % 8 === 5 && index !== 5)
+      config.title = `固定红包草稿 · ${count} 份${issue}`;
     config.fixed.count = String(count);
     config.fixed.amount = index % 4 === 2 ? "0.50" : "0.88";
     config.random.count = String(count);
+    config.random.amount = index % 4 === 0 ? "20.00" : "12.00";
     config.custom.amounts = Array.from(
       { length: count },
       (_, reward) => ["0.50", "0.88", "1.20"][reward % 3],
-    ).join("\n");
-    config.textRewards = Array.from(
-      { length: count },
-      (_, reward) => `DEMO-${index + 1}-${String(reward + 1).padStart(3, "0")}`,
     ).join("\n");
     config.passwords = [
       {
@@ -523,14 +480,12 @@ function fixtureActivities(identity: Identity): ManagedActivity[] {
     ];
     config.topic = index === 1 ? "https://linux.do/t/topic/2964597/1216" : "";
     config.notes = {
-      description: `第 ${index + 1} 期活动介绍。`,
+      description: `第 ${index + 1} 期 LDC 活动介绍。`,
       before: `**${config.title}**\n\n每个账号可参与一次，成功兑换或中奖后查看奖励附言。`,
       after: `你已获得“${config.title}”的奖励。\n\n请在活动历史中核对本次结果；此附言随奖励分配解锁。`,
       ended: `“${config.title}”已结束。\n\n已有参与和奖励记录保留，可继续查看活动口令和允许公开的名单。`,
     };
     config.listed = status !== "draft";
-    // Keep a couple of local author fixtures available for the private
-    // redemption-attempt statistics view. Drafts remain excluded by status.
     config.dedicated = identity !== "lite" && index === 0;
     const id = `${identity === "lite" ? "21000000" : "20000000"}-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
     const claimed =
@@ -539,16 +494,17 @@ function fixtureActivities(identity: Identity): ManagedActivity[] {
         : status === "active"
           ? 8
           : count;
+    const deadlineAt = prototypeDeadlineAt(
+      config.plan === "draw" ? "draw" : "ldc",
+      status,
+    );
     return {
       id,
       fixtureId: id,
       title: config.title,
-      kind:
-        config.rewardKind === "text"
-          ? TEXT_REWARD_LABEL
-          : planNames[config.plan],
+      kind: planNames[config.plan],
       status,
-      amount: rewardSummary(config, count),
+      amount: rewardSummary(config),
       count: config.plan === "draw" ? 10 : count,
       claimed,
       rewardAmountInventory: createAmountInventory(config),
@@ -561,28 +517,14 @@ function fixtureActivities(identity: Identity): ManagedActivity[] {
               ? 27 * 60 * 60_000
               : 0),
       ),
-      deadlineAt: prototypeDeadlineAt(
-        config.rewardKind === "text"
-          ? "text"
-          : config.plan === "draw"
-            ? "draw"
-            : "ldc",
-        status,
-      ),
+      deadlineAt,
       date:
         status === "draft"
           ? fixtureDate(-45 * 60_000)
           : status === "active"
-            ? (prototypeDeadlineAt(
-                config.rewardKind === "text"
-                  ? "text"
-                  : config.plan === "draw"
-                    ? "draw"
-                    : "ldc",
-                status,
-              ) ?? fixtureDate(0))
+            ? (deadlineAt ?? fixtureDate(0))
             : status === "ended"
-              ? fixtureDate(-26 * 60 * 60_000)
+              ? fixtureDate(-90 * 60_000)
               : fixtureDate(-8 * 24 * 60 * 60_000),
       config,
     };
@@ -592,7 +534,6 @@ function fixtureActivities(identity: Identity): ManagedActivity[] {
 function fixturePayments(items: ManagedActivity[]): PaymentExample[] {
   const eligible = items.filter(
     (item) =>
-      item.config.rewardKind === "ldc" &&
       item.status !== "draft" &&
       !(item.config.plan === "draw" && item.status === "active"),
   );
@@ -689,10 +630,56 @@ type StoreSnapshot = {
 export type WorkbenchStoresSnapshot = [Identity, StoreSnapshot][];
 const stores = new Map<Identity, StoreSnapshot>();
 const listeners = new Set<() => void>();
+function normalizeActivityConfig(config: ActivityConfig): ActivityConfig {
+  return {
+    title: config.title,
+    rewardKind: "ldc",
+    plan: config.plan,
+    fixed: config.fixed,
+    random: config.random,
+    custom: config.custom,
+    draw: config.draw,
+    passwords: config.passwords,
+    topic: config.topic,
+    listed: config.listed,
+    dedicated: config.dedicated,
+    quantity: config.quantity,
+    showRecipients: config.showRecipients,
+    hours: config.hours,
+    durationUnit: config.durationUnit,
+    notes: config.notes,
+  };
+}
+
+function isLdcConfig(config: unknown): config is ActivityConfig {
+  return (
+    config !== null &&
+    typeof config === "object" &&
+    Reflect.get(config, "rewardKind") === "ldc" &&
+    ["fixed", "random", "custom", "draw"].includes(Reflect.get(config, "plan"))
+  );
+}
+
+function normalizeStoreSnapshot(store: StoreSnapshot): StoreSnapshot {
+  const activities = store.activities
+    .filter((activity) => isLdcConfig(activity.config))
+    .map((activity) => ({
+      ...activity,
+      config: normalizeActivityConfig(activity.config),
+    }));
+  const activityIds = new Set(activities.map((activity) => activity.id));
+  return {
+    activities,
+    payments: store.payments.filter((payment) =>
+      payment.activityId === null ? true : activityIds.has(payment.activityId),
+    ),
+  };
+}
+
 function snapshot(identity: Identity): StoreSnapshot {
   const current = stores.get(identity);
   if (current) return current;
-  const activities = identity === "guest" ? [] : fixtureActivities(identity);
+  const activities = identity === "standard" ? fixtureActivities(identity) : [];
   const initial = { activities, payments: fixturePayments(activities) };
   stores.set(identity, initial);
   return initial;
@@ -709,8 +696,13 @@ export function importWorkbenchStoresSnapshot(
 ) {
   if (!snapshot) return;
   stores.clear();
-  for (const [identity, store] of structuredClone(snapshot))
-    stores.set(identity, store);
+  for (const [identity, store] of snapshot)
+    stores.set(
+      identity,
+      identity === "standard"
+        ? structuredClone(normalizeStoreSnapshot(store))
+        : { activities: [], payments: [] },
+    );
   for (const listener of listeners) listener();
 }
 function subscribe(listener: () => void) {
@@ -760,12 +752,7 @@ export function toPrototypeActivity(
     author: "林间",
     username: "linjian",
     color: "sage",
-    type:
-      item.config.rewardKind === "text"
-        ? "text"
-        : item.config.plan === "draw"
-          ? "draw"
-          : "ldc",
+    type: item.config.plan === "draw" ? "draw" : "ldc",
     rewardMode:
       item.config.plan === "draw"
         ? "timed_draw"
@@ -775,16 +762,14 @@ export function toPrototypeActivity(
             ? "custom"
             : "fixed",
     poolAmount:
-      item.config.rewardKind === "text"
-        ? undefined
-        : item.config.plan === "draw"
-          ? item.config.draw.amount
-          : item.config.plan === "random"
-            ? item.config.random.amount
-            : item.config.plan === "custom"
-              ? customPool(item.config)
-              : (fixedPoolAmount(item.config.fixed.amount, item.count) ??
-                undefined),
+      item.config.plan === "draw"
+        ? item.config.draw.amount
+        : item.config.plan === "random"
+          ? item.config.random.amount
+          : item.config.plan === "custom"
+            ? customPool(item.config)
+            : (fixedPoolAmount(item.config.fixed.amount, item.count) ??
+              undefined),
     deadlineAt: item.deadlineAt,
     description: item.config.notes.description,
     topicUrl: item.config.topic || undefined,
@@ -861,16 +846,12 @@ export function saveWorkbenchActivity(
   status: "draft" | "active",
   id?: string,
 ) {
+  if (identity !== "standard" || !isLdcConfig(config)) return null;
   const current = snapshot(identity);
   const previous = id
     ? current.activities.find((item) => item.id === id)
     : undefined;
   if (id && !previous) return null;
-  if (
-    identity === "guest" ||
-    (identity === "lite" && config.rewardKind === "ldc")
-  )
-    return null;
   const nextConfig = structuredClone(
     previous && previous.status !== "draft"
       ? {
@@ -883,7 +864,7 @@ export function saveWorkbenchActivity(
           notes: config.notes,
         }
       : {
-          ...config,
+          ...normalizeActivityConfig(config),
           dedicated: previous ? previous.config.dedicated : config.dedicated,
           listed: previous
             ? previous.config.listed || config.listed
@@ -894,21 +875,16 @@ export function saveWorkbenchActivity(
   if (!validation.ok) return null;
   nextConfig.topic = validation.canonicalTopic;
   const count =
-    nextConfig.rewardKind === "text"
-      ? nextConfig.textRewards
-          .split(/\r?\n/u)
-          .map((line) => line.trim())
-          .filter(Boolean).length
-      : nextConfig.plan === "draw"
-        ? Number(nextConfig.draw.winners)
-        : nextConfig.plan === "random"
-          ? Number(nextConfig.random.count)
-          : nextConfig.plan === "custom"
-            ? nextConfig.custom.amounts
-                .split(/\r?\n/u)
-                .map((line) => line.trim())
-                .filter(Boolean).length
-            : Number(nextConfig.fixed.count);
+    nextConfig.plan === "draw"
+      ? Number(nextConfig.draw.winners)
+      : nextConfig.plan === "random"
+        ? Number(nextConfig.random.count)
+        : nextConfig.plan === "custom"
+          ? nextConfig.custom.amounts
+              .split(/\r?\n/u)
+              .map((line) => line.trim())
+              .filter(Boolean).length
+          : Number(nextConfig.fixed.count);
   const deadlineAt =
     previous && previous.status !== "draft"
       ? previous.deadlineAt
@@ -925,12 +901,9 @@ export function saveWorkbenchActivity(
     id: previous?.id ?? crypto.randomUUID(),
     fixtureId: previous?.fixtureId ?? "",
     title: nextConfig.title,
-    kind:
-      nextConfig.rewardKind === "text"
-        ? TEXT_REWARD_LABEL
-        : planNames[nextConfig.plan],
+    kind: planNames[nextConfig.plan],
     status: previous && previous.status !== "draft" ? previous.status : status,
-    amount: rewardSummary(nextConfig, count),
+    amount: rewardSummary(nextConfig),
     count,
     claimed: previous?.claimed ?? 0,
     rewardAmountInventory:

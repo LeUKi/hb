@@ -1,4 +1,3 @@
-import { mkdir } from "node:fs/promises";
 import { test as base, expect, type Page } from "@playwright/test";
 import { historySamples } from "../../apps/web/prototype/fixtures";
 
@@ -116,7 +115,7 @@ for (const width of [1920, 1440, 768, 375]) {
   test(`revised history, paper and roster fit ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 });
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await mkdir(".wrangler/verification/prototype", { recursive: true });
+
     for (const [name, hash] of [
       ["participations", "participations"],
       ["manage", "manage"],
@@ -142,10 +141,6 @@ for (const width of [1920, 1440, 768, 375]) {
           () => document.documentElement.scrollWidth > innerWidth,
         ),
       ).toBe(false);
-      if (width === 1440 || width === 375)
-        await page.screenshot({
-          path: `.wrangler/verification/prototype/history-paper-${name}-${width}.png`,
-        });
     }
     await page
       .getByRole("button", { name: "查看领取名单", exact: true })
@@ -156,10 +151,6 @@ for (const width of [1920, 1440, 768, 375]) {
         .getByRole("dialog")
         .evaluate((node) => node.getBoundingClientRect().width),
     ).toBeLessThanOrEqual(Math.min(440, width - 24));
-    if (width === 1440 || width === 375)
-      await page.screenshot({
-        path: `.wrangler/verification/prototype/history-paper-roster-${width}.png`,
-      });
   });
 }
 

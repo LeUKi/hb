@@ -236,10 +236,7 @@ export function PaymentPage({
   const restoreActivityPosition = useRef(false);
 
   const paymentActivities = activities
-    .filter(
-      (activity) =>
-        activity.config.rewardKind === "ldc" && activity.status !== "draft",
-    )
+    .filter((activity) => activity.status !== "draft")
     .map((activity) => ({
       ...activity,
       tableState: paymentActivityState(activity),

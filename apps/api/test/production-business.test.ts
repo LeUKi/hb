@@ -51,11 +51,7 @@ async function fixture() {
     secret: "TEST-ONLY-NOT-A-REAL-CREDENTIAL",
   };
   const merchant = await createMerchant(runtime, author, payload);
-  const {
-    rewards: _rewards,
-    rewardType: _rewardType,
-    ...base
-  } = emptyActivityInput();
+  const base = emptyActivityInput();
   const input: LdcActivityInput = {
     ...base,
     rewardType: "ldc",

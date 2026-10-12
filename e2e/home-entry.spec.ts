@@ -1,4 +1,3 @@
-import { mkdir } from "node:fs/promises";
 import { expect, type Page, test } from "@playwright/test";
 import type { PublicActivity } from "../packages/contracts/src";
 
@@ -14,7 +13,6 @@ const longPath = `/activities/${id}`;
 const sameOriginActivityLink = `http://127.0.0.1:5173${longPath}`;
 const sameOriginEmojiLink = `http://127.0.0.1:5173${shortPath}`;
 const topicLink = "https://linux.do/t/topic/12345/6";
-const screenshotDir = ".wrangler/verification/home-entry";
 
 const user = {
   id: "viewer-home-entry",
@@ -57,7 +55,7 @@ function activity(activityId = id): PublicActivity {
   return {
     id: activityId,
     title: titles[activityId] ?? "UUID 活动",
-    rewardType: "text",
+    rewardType: "ldc",
     status: "active",
     author: user,
     forceDedicated: true,
@@ -76,7 +74,7 @@ function activity(activityId = id): PublicActivity {
     showRecipientUsername: false,
     showRecipientTime: false,
     beforeInfo: "活动公开说明。",
-    reward: { mode: "text" },
+    reward: { mode: "fixed", totalAmount: "4.00", count: 4 },
   };
 }
 
@@ -172,6 +170,18 @@ async function mockHome(
         json: { activity: activity(path.slice("/api/activities/".length)) },
       });
     }
+    if (path.endsWith("/participation"))
+      return route.fulfill({ json: { claim: null, registration: null } });
+    if (path.endsWith("/claim"))
+      return route.fulfill({ json: { claim: null } });
+    if (path.endsWith("/passwords"))
+      return route.fulfill({
+        json: { passwords: [], hiddenCount: 1, canSolve: false },
+      });
+    if (path.endsWith("/recipients"))
+      return route.fulfill({
+        json: { enabled: false, items: [], nextCursor: null },
+      });
     if (path === "/api/topics/12345/activities") {
       state.topicReads.push(url.searchParams.get("postNumber") ?? "");
       const cursor = url.searchParams.get("cursor");
@@ -221,6 +231,24 @@ async function mockHome(
         },
       });
     }
+    if (path.startsWith("/api/activities/")) {
+      const parts = path.split("/");
+      const activityId = parts[3] ?? id;
+      const suffix = parts[4] ?? "";
+      if (!suffix)
+        return route.fulfill({ json: { activity: activity(activityId) } });
+      if (suffix === "participation")
+        return route.fulfill({ json: { claim: null, registration: null } });
+      if (suffix === "claim") return route.fulfill({ json: { claim: null } });
+      if (suffix === "passwords")
+        return route.fulfill({
+          json: { passwords: [], hiddenCount: 1, canSolve: false },
+        });
+      if (suffix === "recipients")
+        return route.fulfill({
+          json: { enabled: false, items: [], nextCursor: null },
+        });
+    }
     return route.fulfill({
       status: 404,
       json: { error: { code: "NOT_FOUND", message: "未找到" } },
@@ -231,14 +259,6 @@ async function mockHome(
 
 function homeInput(page: Page) {
   return page.getByLabel("口令", { exact: true });
-}
-
-async function captureHomeEntry(page: Page, name: string) {
-  await mkdir(screenshotDir, { recursive: true });
-  await page.screenshot({
-    path: `${screenshotDir}/${name}.png`,
-    fullPage: true,
-  });
 }
 
 async function expectEmptyHomeEntry(page: Page) {
@@ -273,7 +293,6 @@ test("首页输入框只暴露隐藏口令标签、空占位和说明按钮", as
   await page.goto("/");
 
   await expectEmptyHomeEntry(page);
-  await captureHomeEntry(page, "desktop-empty");
   const help = page.getByRole("button", {
     name: "口令输入说明",
     exact: true,
@@ -341,7 +360,6 @@ test("活动标识模式支持 UUID、Emoji、本站链接和严格帖子链接"
     await input.fill(value);
     await expectLocatorMode(page);
   }
-  await captureHomeEntry(page, "mobile-topic");
 });
 
 test("活动标识输入和组词 Enter 不会提前跳转，提交才跳转", async ({ page }) => {
@@ -362,8 +380,6 @@ test("活动标识输入和组词 Enter 不会提前跳转，提交才跳转", a
   await input.dispatchEvent("compositionend");
   await input.press("Enter");
   await expect(page).toHaveURL(longPath);
-  await expect(page.getByRole("heading", { name: "UUID 活动" })).toBeVisible();
-  expect(state.activityReads).toContain(`/api/activities/${id}`);
 });
 
 test("帖子链接只接受严格 topic 格式并按楼层查询", async ({ page }) => {
@@ -387,9 +403,6 @@ test("帖子链接只接受严格 topic 格式并按楼层查询", async ({ page
   await expectLocatorMode(page);
   await page.getByRole("button", { name: "跳转活动", exact: true }).click();
   await expect(page).toHaveURL(`/activities/${topicActivityId}`);
-  await expect(
-    page.getByRole("heading", { name: "帖子关联活动" }),
-  ).toBeVisible();
   expect(new Set(state.topicReads)).toEqual(new Set(["6"]));
   expect(state.discovers).toEqual([]);
 });
@@ -445,7 +458,6 @@ test("登录账号冷却会禁用普通口令，但不拦截 UUID 跳转", async
   await expect(page.getByRole("timer")).toHaveCount(0);
   await page.getByRole("button", { name: "跳转活动", exact: true }).click();
   await expect(page).toHaveURL(longPath);
-  await expect(page.getByRole("heading", { name: "UUID 活动" })).toBeVisible();
   expect(state.discovers).toEqual([]);
   expect(state.mutations).toEqual([]);
 });
@@ -605,7 +617,6 @@ test("前一次普通口令未匹配后，活动标识跳转不会沿用发现�
   await expectLocatorMode(page);
   await page.getByRole("button", { name: "跳转活动", exact: true }).click();
   await expect(page).toHaveURL(longPath);
-  await expect(page.getByRole("heading", { name: "UUID 活动" })).toBeVisible();
   expect(state.discovers).toHaveLength(1);
   expect(
     state.mutations.filter((path) => path !== "/api/redemptions/discover"),

@@ -14,7 +14,6 @@ import {
   activityPasswords,
   claims,
   paymentTasks,
-  rewardInventory,
   users,
 } from "../db/schema";
 import type { ApiBindings } from "../env";
@@ -26,7 +25,6 @@ import {
   findActivity,
   ownedActivity,
   passwordAssociatedData,
-  rewardAssociatedData,
 } from "./storage";
 
 export type ClaimRow = typeof claims.$inferSelect;
@@ -83,7 +81,7 @@ export function projectClaimSummary(
           "exact",
       ),
     },
-    rewardType: activity.rewardType,
+    rewardType: "ldc",
     claimedAt: new Date(claim.claimedAt).toISOString(),
   };
 }
@@ -101,6 +99,7 @@ export async function findUserClaim(
       and(
         eq(claims.activityId, activityId),
         eq(claims.userId, userId),
+        eq(activities.rewardType, "ldc"),
         isNull(activities.deletedAt),
       ),
     )
@@ -121,6 +120,7 @@ export async function getClaimDetail(
       and(
         eq(claims.id, claimId),
         eq(claims.userId, userId),
+        eq(activities.rewardType, "ldc"),
         isNull(activities.deletedAt),
       ),
     )
@@ -175,9 +175,7 @@ export async function claimSummariesBatch(
   rows: ClaimActivityRow[],
 ): Promise<Map<string, ClaimSummary>> {
   if (!rows.length) return new Map();
-  const ids = rows
-    .filter((row) => row.activity.rewardType === "ldc")
-    .map((row) => row.claim.id);
+  const ids = rows.map((row) => row.claim.id);
   const [sources, payments] = await Promise.all([
     sourcePasswordsBatch(
       env,
@@ -196,8 +194,7 @@ export async function claimSummariesBatch(
   return new Map(
     rows.map(({ claim, activity }) => {
       const payment = byClaim.get(claim.id);
-      if (activity.rewardType === "ldc" && !payment)
-        throw new Error("LDC claim has no payment task");
+      if (!payment) throw new Error("LDC claim has no payment task");
       const sourcePassword =
         claim.passwordId === null ? undefined : sources.get(claim.passwordId);
       return [
@@ -231,59 +228,23 @@ export async function claimDetailsBatch(
   rows: ClaimActivityRow[],
 ): Promise<Map<string, ClaimDetail>> {
   const summaries = await claimSummariesBatch(env, rows);
-  const textRows = rows.filter((row) => row.activity.rewardType === "text");
-  const inventory = textRows.length
-    ? await createDb(env.DB)
-        .select()
-        .from(rewardInventory)
-        .where(
-          or(
-            ...textRows.map(({ claim, activity }) =>
-              and(
-                eq(rewardInventory.activityId, activity.id),
-                eq(rewardInventory.id, claim.inventoryId),
-              ),
-            ),
-          ),
-        )
-    : [];
-  const byInventory = new Map(
-    inventory.map((entry) => [`${entry.activityId}:${entry.id}`, entry]),
-  );
   const entries = await Promise.all(
     rows.map(
       async ({ claim, activity }): Promise<readonly [string, ClaimDetail]> => {
         const base = summaries.get(claim.id) ?? activityNotFound();
         const afterClaimInfo = (JSON.parse(activity.config) as ActivityInput)
           .afterClaimInfo;
-        if (activity.rewardType === "ldc") {
-          if (!base.payment || base.amount === undefined)
-            throw new Error("LDC claim has no payment task");
-          return [
-            claim.id,
-            {
-              ...base,
-              afterClaimInfo,
-              rewardType: "ldc",
-              amount: base.amount,
-              payment: base.payment,
-            },
-          ];
-        }
-        const entry = byInventory.get(`${activity.id}:${claim.inventoryId}`);
-        if (!entry?.ciphertext || entry.kind !== "text")
-          throw new Error("Text claim has no private content");
+        if (activity.rewardType !== "ldc") activityNotFound();
+        if (!base.payment || base.amount === undefined)
+          throw new Error("LDC claim has no payment task");
         return [
           claim.id,
           {
             ...base,
             afterClaimInfo,
-            rewardType: "text",
-            text: await decryptString(
-              entry.ciphertext,
-              env,
-              rewardAssociatedData(activity.id, claim.inventoryId),
-            ),
+            rewardType: "ldc",
+            amount: base.amount,
+            payment: base.payment,
           },
         ];
       },
@@ -316,6 +277,7 @@ export async function listUserClaims(
     .where(
       and(
         eq(claims.userId, userId),
+        eq(activities.rewardType, "ldc"),
         isNull(activities.deletedAt),
         beforeCursor(parseCursor(cursor)),
       ),

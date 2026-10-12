@@ -15,7 +15,7 @@ function card(id: string, title: string): DiscoveryCard {
   return {
     id,
     title,
-    rewardType: "text",
+    rewardType: "ldc",
     status: "active",
     author: {
       id: "author",
@@ -29,6 +29,7 @@ function card(id: string, title: string): DiscoveryCard {
     openedAt: "2026-10-07T00:00:00.000Z",
     deadlineAt: "2026-10-08T00:00:00.000Z",
     quantity: { mode: "fuzzy", level: "limited" },
+    reward: { mode: "fixed", unitAmount: "1.00", totalAmount: "1.00" },
     showRecipientList: false,
     showRecipientUsername: false,
     showRecipientTime: false,
@@ -80,9 +81,6 @@ test("筛选慢请求只替换记录区并保留列表框架", async ({ page }) 
   await page.getByRole("menuitemradio", { name: "已结束" }).click();
 
   await expect(page.getByRole("heading", { name: "活动广场" })).toBeVisible();
-  await expect(
-    page.getByRole("group", { name: "奖励筛选", exact: true }),
-  ).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "活动" })).toBeVisible();
   await expect(
     page.getByRole("navigation", { name: "活动广场分页" }),
@@ -237,11 +235,6 @@ test("手动刷新广场保留当前内容和筛选，完成后更新记录", as
   await page.goto("/square?status=all&type=ldc");
   await expect(page.getByRole("link", { name: "刷新前的活动" })).toBeVisible();
   await expect(
-    page
-      .getByRole("group", { name: "奖励筛选", exact: true })
-      .getByRole("button", { name: "LDC", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
-  await expect(
     page.getByRole("button", { name: "活动状态筛选" }),
   ).toContainText("状态：全部");
 
@@ -249,7 +242,7 @@ test("手动刷新广场保留当前内容和筛选，完成后更新记录", as
   await page.getByRole("button", { name: "刷新活动列表" }).click();
   await expect(page.getByRole("link", { name: "刷新前的活动" })).toBeVisible();
   await expect(page.getByText("第 1 页")).toBeVisible();
-  expect(new URL(page.url()).searchParams.get("type")).toBe("ldc");
+  expect(new URL(page.url()).searchParams.get("type")).toBeNull();
   expect(new URL(page.url()).searchParams.get("status")).toBe("all");
   releaseRefresh();
   await expect(page.getByRole("link", { name: "刷新后的活动" })).toBeVisible();
@@ -349,18 +342,13 @@ test("手动刷新我发起的保留当前内容筛选和分页，完成后更�
   await expect(
     page.locator(".history-statistics", { hasText: "已发起" }),
   ).toContainText("7场");
-  expect(new URL(page.url()).searchParams.get("type")).toBe("ldc");
+  expect(new URL(page.url()).searchParams.get("type")).toBeNull();
 
   isManualHistoryRefresh = true;
   await page.getByRole("button", { name: "刷新活动列表" }).click();
   await expect(page.getByText("刷新前的我发起活动")).toBeVisible();
   await expect(page.getByText("第 2 页")).toBeVisible();
-  await expect(
-    page
-      .getByRole("group", { name: "奖励类型", exact: true })
-      .getByRole("button", { name: "LDC", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
-  expect(new URL(page.url()).searchParams.get("type")).toBe("ldc");
+  expect(new URL(page.url()).searchParams.get("type")).toBeNull();
 
   releaseSummary();
   releaseActivities();

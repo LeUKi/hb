@@ -1,7 +1,5 @@
 import type { Activity, ActivityLifecycle } from "./types";
 
-export const TEXT_REWARD_LABEL = "文本 / CDK";
-
 // One clock anchor per local experience; projections and navigation reuse it.
 export const prototypeStartedAt = Date.now();
 
@@ -55,16 +53,15 @@ export function getActivityPublicMetadata(
   activity: Activity,
   { fuzzy = false }: { fuzzy?: boolean } = {},
 ): PublicActivityMetadata {
-  const text = activity.type === "text";
   const draw = activity.type === "draw" || activity.rewardMode === "timed_draw";
   const random = activity.rewardMode === "instant_random";
   const custom = activity.rewardMode === "custom";
-  const fixed = !text && !draw && !random && !custom;
+  const fixed = !draw && !random && !custom;
   const configuredPool = activity.poolAmount
     ? integerCents(activity.poolAmount)
     : null;
   const poolAmount =
-    text || (fuzzy && fixed)
+    fuzzy && fixed
       ? null
       : fixed
         ? fixedPoolAmount(activity.amount, activity.count)
@@ -72,15 +69,13 @@ export function getActivityPublicMetadata(
           ? null
           : formatCents(configuredPool);
   return {
-    rewardLabel: text
-      ? TEXT_REWARD_LABEL
-      : draw
-        ? "LDC · 限时开奖"
-        : random
-          ? "LDC · 即时随机（拼手气）"
-          : custom
-            ? "LDC · 自定义金额"
-            : "LDC · 固定均分",
+    rewardLabel: draw
+      ? "LDC · 限时开奖"
+      : random
+        ? "LDC · 即时随机（拼手气）"
+        : custom
+          ? "LDC · 自定义金额"
+          : "LDC · 固定均分",
     poolAmount,
     poolLabel: poolAmount === null ? null : `${poolAmount} LDC`,
     countLabel: fuzzy

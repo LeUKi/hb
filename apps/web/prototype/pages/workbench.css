@@ -137,7 +137,6 @@
   color: var(--muted);
 }
 
-.work-reward-kind,
 .work-plan-switch {
   display: flex;
   gap: 8px;
@@ -146,11 +145,6 @@
   border: 0;
 }
 
-.work-reward-kind {
-  margin: 20px 0 16px;
-}
-
-.work-reward-kind button,
 .work-plan-switch button {
   display: flex;
   align-items: center;
@@ -168,16 +162,10 @@
   cursor: pointer;
 }
 
-.work-reward-kind button.is-active,
 .work-plan-switch button.is-active {
   border-color: var(--red);
   background: var(--surface-hover, #222226);
   color: var(--red);
-}
-
-.work-reward-kind button:disabled {
-  cursor: not-allowed;
-  opacity: 0.65;
 }
 
 .work-mini-tag {

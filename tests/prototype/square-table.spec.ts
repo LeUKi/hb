@@ -305,10 +305,11 @@ const cases: Array<{
   {
     activity: {
       ...baseActivity,
-      id: "public-text",
-      type: "text",
-      rewardMode: undefined,
-      amount: "",
+      id: "public-fixed-ended",
+      type: "ldc",
+      rewardMode: "fixed",
+      amount: "0.50",
+      poolAmount: "6.00",
       count: 12,
       remaining: 0,
       ended: true,
@@ -350,7 +351,6 @@ async function mountPublicRows(page: Page) {
           participatedAt: "2026-10-07T04:00:00.000Z",
           confirmedAt: "2026-10-07T04:00:01.000Z",
           rewardAmount: "9876.54",
-          rewardText: "PRIVATE-CDK-CONTENT",
           password: "PRIVATE-SOURCE-PASSWORD",
           viewState: { participation: "claimed", paymentProgress: "confirmed" },
         },
@@ -466,6 +466,7 @@ test("public participation and reward summaries ignore private allocations and e
       "20.00 LDC 奖池",
       "20.00 LDC 奖池",
       "30.00 LDC 奖池",
+      "0.50 LDC / 份",
     ]);
     await expect(
       rows.locator(
@@ -482,11 +483,11 @@ test("public participation and reward summaries ignore private allocations and e
     publicRow(page, "public-drawing").locator(".status-badge"),
   ).toHaveText("正在开奖");
   await expect(
-    publicRow(page, "public-text").locator(".activity-reward-label"),
-  ).toHaveText("文本 / CDK");
+    publicRow(page, "public-fixed-ended").locator(".activity-reward-label"),
+  ).toHaveText("固定均分");
   await expect(
-    publicRow(page, "public-text").locator(".activity-reward-summary"),
-  ).toHaveCount(0);
+    publicRow(page, "public-fixed-ended").locator(".activity-reward-summary"),
+  ).toHaveText("0.50 LDC / 份");
 });
 
 test("fuzzy public quantities hide exact counts without changing participation or pool summaries", async ({
@@ -527,7 +528,7 @@ test("fuzzy public quantities hide exact counts without changing participation o
   );
 });
 
-test("square pagination and public quantities survive account switching and an empty reward filter", async ({
+test("square pagination and public quantities survive account switching and an empty list", async ({
   page,
 }) => {
   await openSquare(page);
@@ -578,24 +579,30 @@ test("square pagination and public quantities survive account switching and an e
   expect(new Set(ids).size).toBe(total);
   await expect(next).toBeDisabled();
   while (await previous.isEnabled()) await previous.click();
-  await square(page).getByRole("button", { name: "LDC", exact: true }).click();
+  async function findRandomPage() {
+    while (
+      (await publicRow(page, "history-random-active").count()) === 0 &&
+      (await next.isEnabled())
+    )
+      await next.click();
+    await expect(publicRow(page, "history-random-active")).toHaveCount(1);
+  }
+  await findRandomPage();
   const random = publicRow(page, "history-random-active");
   await expect(random.locator(".activity-rows-participation")).toHaveText(
     "已领取",
   );
   const quantity = await random.locator(".activity-rows-quantity").innerText();
   const reward = await random.locator(".activity-reward-summary").innerText();
-  const filteredTotal = (await totalLabel.innerText()).replace(/\s+/gu, "");
+  const publicTotal = (await totalLabel.innerText()).replace(/\s+/gu, "");
   for (const identity of ["lite", "guest", "standard"]) {
     await page.getByRole("button", { name: "场景与身份" }).click();
     await page
       .getByRole("combobox", { name: "体验身份", exact: true })
       .selectOption(identity);
     await page.getByRole("button", { name: "场景与身份" }).click();
-    // Identity changes remount the page and reset its local filters.
-    await square(page)
-      .getByRole("button", { name: "LDC", exact: true })
-      .click();
+    // Identity changes remount the page and reset pagination.
+    await findRandomPage();
     await expect(random).toHaveCount(1);
     if (identity === "standard")
       await expect(random.locator(".activity-rows-participation")).toHaveText(
@@ -609,7 +616,7 @@ test("square pagination and public quantities survive account switching and an e
       quantity,
     );
     await expect(random.locator(".activity-reward-summary")).toHaveText(reward);
-    await expect(totalLabel).toHaveText(filteredTotal);
+    await expect(totalLabel).toHaveText(publicTotal);
     await expect(
       rows.locator(".activity-rows-amount, .payment-confirmation"),
     ).toHaveCount(0);

@@ -5,7 +5,6 @@ import {
   Check,
   ChevronDown,
   Compass,
-  Copy,
   Gift,
   Home,
   LoaderCircle,
@@ -39,7 +38,6 @@ import {
 import {
   getActivityPublicMetadata,
   isActivityDeadlineReached,
-  TEXT_REWARD_LABEL,
 } from "./activity-metadata";
 import { projectActivityNotes } from "./activity-notes";
 import { buildActivityShareText } from "./activity-share";
@@ -96,7 +94,6 @@ import { envelopePresentation } from "./envelope-presentation";
 import {
   activities,
   createParticipationSeed,
-  demoTextReward,
   drawWinnerExamples,
   getSampleResult,
   longNote,
@@ -190,8 +187,29 @@ const pages = new Set<Page>([
   "admin",
 ]);
 function pageFromHash() {
+  clearRetiredRewardFilters();
   const value = window.location.hash.slice(1).split("?")[0] as Page;
   return pages.has(value) ? value : "home";
+}
+function clearRetiredRewardFilters() {
+  const [page = "home", query = ""] = window.location.hash.slice(1).split("?");
+  if (!["square", "manage", "participations"].includes(page)) return;
+  const params = new URLSearchParams(query);
+  let changed = false;
+  for (const key of ["rewardType", "reward", "type", "rewardFilter"])
+    if (params.has(key)) {
+      params.delete(key);
+      changed = true;
+    }
+  if (!changed) return;
+  params.delete("cursor");
+  params.delete("page");
+  const search = params.toString();
+  window.history.replaceState(
+    null,
+    "",
+    `#${page}${search ? `?${search}` : ""}`,
+  );
 }
 function activityFromHash(
   identity: Identity = "standard",
@@ -224,7 +242,6 @@ const scenarioOptions: [Scenario, string][] = [
   ["ready", "即时 LDC"],
   ["random", "即时随机 · 拼手气"],
   ["random-ended", "拼手气 · 已结束"],
-  ["text", TEXT_REWARD_LABEL],
   ["pending", "等待发放"],
   ["registered", "已报名"],
   ["drawing", "正在开奖"],
@@ -239,20 +256,6 @@ const scenarioOptions: [Scenario, string][] = [
   ["slow", "慢请求"],
   ["failure", "请求结果待确认"],
 ];
-
-type RewardFilter = "all" | "text" | "ldc";
-
-const rewardFilterOptions: Array<{ value: RewardFilter; label: string }> = [
-  { value: "all", label: "全部" },
-  { value: "text", label: TEXT_REWARD_LABEL },
-  { value: "ldc", label: "LDC" },
-];
-
-function rewardFilterMatches(activity: Activity, filter: RewardFilter) {
-  if (filter === "all") return true;
-  if (filter === "text") return activity.type === "text";
-  return activity.type !== "text";
-}
 
 export function App() {
   const [bootstrap] = useState(getBootstrappedActivityWindowSnapshot);
@@ -368,7 +371,7 @@ export function App() {
   );
   const [workbenchContext, setWorkbenchContext] = useState(workbenchRoute);
   const windowSnapshot = useRef((activityId: string) => ({
-    version: 1 as const,
+    version: 2 as const,
     createdAt: Date.now(),
     activityId,
     identity,
@@ -390,7 +393,7 @@ export function App() {
         : availableActivities.find((item) => item.id === activityId);
     if (target?.type === "draw") getDrawRoster(target);
     return {
-      version: 1 as const,
+      version: 2 as const,
       createdAt: Date.now(),
       activityId,
       identity,
@@ -497,10 +500,7 @@ export function App() {
       )
         state.lifecycle = "ended";
     }
-    if (
-      current.identity === "guest" ||
-      (current.identity === "lite" && current.active.type !== "text")
-    )
+    if (current.identity === "guest" || current.identity === "lite")
       state.participation = "none";
     const amount = own?.rewardAmount ?? result?.rewardAmount;
     setTransition({
@@ -728,25 +728,22 @@ export function App() {
               author: "负责维护开源工具与活动资料的佬友",
               beforeInfo: longNote,
             }
-          : next === "text"
-            ? (activities[1] as Activity)
-            : [
-                  "registered",
-                  "drawing",
-                  "won",
-                  "not-won",
-                  "draw-empty",
-                  "draw-no-winners",
-                ].includes(next)
-              ? (activities[2] as Activity)
-              : next === "ended"
-                ? (activities[3] as Activity)
-                : first;
+          : [
+                "registered",
+                "drawing",
+                "won",
+                "not-won",
+                "draw-empty",
+                "draw-no-winners",
+              ].includes(next)
+            ? (activities[2] as Activity)
+            : next === "ended"
+              ? (activities[3] as Activity)
+              : first;
     setActive(item);
     if (item.type === "draw")
       setDrawScenario(item, next === "notes-drawing-ended" ? "settling" : next);
-    const eligible =
-      identity === "standard" || (identity === "lite" && item.type === "text");
+    const eligible = identity === "standard";
     const state: Participation = !eligible
       ? "none"
       : next === "pending" || next === "multiple" || next === "random-ended"
@@ -770,20 +767,15 @@ export function App() {
           participation: state,
           participatedAt: new Date().toISOString(),
           confirmedAt:
-            reward &&
-            item.type !== "text" &&
-            scenarioViewState(next).paymentProgress === "confirmed"
+            reward && scenarioViewState(next).paymentProgress === "confirmed"
               ? new Date().toISOString()
               : null,
           password: item.passwords[0],
-          rewardAmount:
-            reward && item.type !== "text"
-              ? state === "won"
-                ? "2.18"
-                : item.amount
-              : undefined,
-          rewardText:
-            reward && item.type === "text" ? demoTextReward : undefined,
+          rewardAmount: reward
+            ? state === "won"
+              ? "2.18"
+              : item.amount
+            : undefined,
           viewState: scenarioViewState(next),
         };
       } else delete updated[item.id];
@@ -840,7 +832,6 @@ export function App() {
         confirmedAt: item.type === "ldc" ? new Date().toISOString() : null,
         password: submitted,
         rewardAmount: allocatedAmount,
-        rewardText: item.type === "text" ? demoTextReward : undefined,
         viewState: {
           participation: next,
           paymentProgress: item.type === "ldc" ? "confirmed" : null,
@@ -888,6 +879,10 @@ export function App() {
       setMessage("请先登录。");
       return;
     }
+    if (identity === "lite") {
+      setMessage("创建、领取和报名需通过官方 Connect 升级。");
+      return;
+    }
     if (!inspectPassword(submitted).valid) {
       setMessage("口令不正确，请重新输入。");
       return;
@@ -896,12 +891,8 @@ export function App() {
       setMessage("活动尚未开放。");
       return;
     }
-    if (target.username === "linjian" && target.type !== "text") {
+    if (target.username === "linjian") {
       setMessage("不能领取自己发起的 LDC 活动。");
-      return;
-    }
-    if (identity === "lite" && target.type !== "text") {
-      setMessage("这个红包需要使用官方 Connect 登录后领取。");
       return;
     }
     const targetView = projectActivityViewState(
@@ -1073,6 +1064,10 @@ export function App() {
     }
     if (identity === "guest") {
       setMessage("请先登录。");
+      return;
+    }
+    if (identity === "lite") {
+      setMessage("创建、领取和报名需通过官方 Connect 升级。");
       return;
     }
     const found = fromHome
@@ -1504,6 +1499,15 @@ export function App() {
                             {message}
                           </p>
                         )}
+                        {message && identity === "lite" && !homeLocatorMode && (
+                          <button
+                            className="button secondary"
+                            type="button"
+                            onClick={() => navigate("account")}
+                          >
+                            使用官方 Connect <ArrowUpRight size={16} />
+                          </button>
+                        )}
                       </div>
                     </section>
                     {matches && (
@@ -1770,7 +1774,6 @@ function ActivityPage({
     (activity.type === "draw" && identity === "standard"
       ? resolveDrawParticipation(activity, "linjian").rewardAmount
       : undefined) ?? ownResult?.rewardAmount;
-  const ownRewardText = ownResult?.rewardText ?? demoTextReward;
   const paper = envelopePresentation({
     activity,
     state: { ...viewState, drawProgress },
@@ -1926,17 +1929,13 @@ function ActivityPage({
                     onSelect: () =>
                       navigate("create", { editId: managedActivity.id }),
                   },
-                  ...(managedActivity.config.rewardKind === "ldc"
-                    ? [
-                        {
-                          label: "付款记录",
-                          onSelect: () =>
-                            navigate("payment", {
-                              activityId: managedActivity.id,
-                            }),
-                        },
-                      ]
-                    : []),
+                  {
+                    label: "付款记录",
+                    onSelect: () =>
+                      navigate("payment", {
+                        activityId: managedActivity.id,
+                      }),
+                  },
                   ...(managedActivity.config.dedicated
                     ? [
                         {
@@ -2066,22 +2065,9 @@ function ActivityPage({
             />
           )}
           {hasReward ? (
-            activity.type === "text" ? (
-              <div className="text-reward">
-                <span>奖励内容</span>
-                <pre>{ownRewardText}</pre>
-                <button
-                  type="button"
-                  className="button secondary"
-                  onClick={() => void copy(ownRewardText, "奖励")}
-                >
-                  <Copy size={16} />
-                  复制奖励
-                </button>
-              </div>
-            ) : ["waiting", "attention"].includes(
-                viewState.paymentProgress ?? "",
-              ) ? (
+            ["waiting", "attention"].includes(
+              viewState.paymentProgress ?? "",
+            ) ? (
               <p className="eligibility-note">
                 {viewState.paymentProgress === "waiting"
                   ? "奖励已保留，等待作者恢复发放。"
@@ -2120,7 +2106,7 @@ function ActivityPage({
             paper ||
             admissionClosed ||
             viewState.lifecycle === "draft" ? null : activity.username ===
-              "linjian" && activity.type !== "text" ? (
+            "linjian" ? (
             <p className="eligibility-note">不能领取自己发起的 LDC 活动</p>
           ) : identity === "guest" ? (
             <div className="eligibility-note">
@@ -2134,7 +2120,7 @@ function ActivityPage({
                 <ArrowRight size={17} />
               </button>
             </div>
-          ) : identity === "lite" && activity.type !== "text" ? (
+          ) : identity === "lite" ? (
             <div className="eligibility-note">
               <span className="lite-badge">青春版</span>
               <p>LDC 奖励需使用官方 Connect 登录。</p>
@@ -2180,9 +2166,7 @@ function ActivityPage({
                     ? "再次确认"
                     : activity.type === "draw"
                       ? "报名"
-                      : activity.type === "text"
-                        ? "领取奖励"
-                        : "领取红包"}
+                      : "领取红包"}
                 <ArrowRight size={17} />
               </RedemptionAction>
               {message && (
@@ -2301,7 +2285,6 @@ function Gallery({
   listState: ListState;
   onRetry: () => void;
 }) {
-  const [filter, setFilter] = useState<RewardFilter>("all");
   const [statusFilter, setStatusFilter] = useState("all");
   useClockSelector((now) =>
     gallerySamples
@@ -2343,11 +2326,10 @@ function Gallery({
               (!item.lifecycle ||
                 item.lifecycle === "active" ||
                 item.lifecycle === "ended") &&
-              rewardFilterMatches(item, filter) &&
               (statusFilter === "all" ||
                 publicStates[item.id]?.lifecycle === statusFilter),
           );
-  const paging = usePagination(items, `${filter}:${statusFilter}:${listState}`);
+  const paging = usePagination(items, `${statusFilter}:${listState}`);
   return (
     <section className="gallery-page list-page">
       <div className="page-title">
@@ -2363,12 +2345,6 @@ function Gallery({
         </section>
       </div>
       <div className="gallery-toolbar">
-        <SegmentedControl
-          label="奖励筛选"
-          value={filter}
-          onChange={setFilter}
-          options={rewardFilterOptions}
-        />
         <div className="gallery-status-filter">
           <ActionMenu
             label={`状态：${statusFilter === "all" ? "全部" : statusFilter === "active" ? "进行中" : "已结束"}`}
@@ -2412,7 +2388,7 @@ function Gallery({
       <ListPanel
         state={listState === "ready" && !items.length ? "empty" : listState}
         onRetry={onRetry}
-        resetKey={`${filter}:${statusFilter}:${paging.page}:${listState}`}
+        resetKey={`${statusFilter}:${paging.page}:${listState}`}
         footer={
           <Pagination
             label="活动广场分页"
@@ -2483,17 +2459,8 @@ function Participations({
   listState: ListState;
   onRetry: () => void;
 }) {
-  const [rewardFilter, setRewardFilter] = useState<RewardFilter>("all");
-  const items =
-    listState === "empty"
-      ? []
-      : activities.filter((activity) =>
-          rewardFilterMatches(activity, rewardFilter),
-        );
-  const paging = usePagination(
-    items,
-    `${identity}:${rewardFilter}:${listState}`,
-  );
+  const items = listState === "empty" ? [] : activities;
+  const paging = usePagination(items, `${identity}:${listState}`);
   if (identity === "guest")
     return (
       <section className="empty-state">
@@ -2510,12 +2477,6 @@ function Participations({
   return (
     <section className="participations-page work-page work-list-page list-page">
       <div className="activity-list-toolbar">
-        <SegmentedControl
-          label="奖励筛选"
-          value={rewardFilter}
-          onChange={setRewardFilter}
-          options={rewardFilterOptions}
-        />
         <CompactIconButton
           className="list-refresh-button"
           aria-label="刷新参与记录"
@@ -2529,7 +2490,7 @@ function Participations({
         state={listState === "ready" && !items.length ? "empty" : listState}
         emptyText="暂无参与记录"
         onRetry={onRetry}
-        resetKey={`${rewardFilter}:${paging.page}:${listState}`}
+        resetKey={`${paging.page}:${listState}`}
         footer={
           <Pagination
             label="参与记录分页"

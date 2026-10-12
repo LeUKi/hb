@@ -113,9 +113,9 @@ async function seedAdminObservation(now = Date.now()) {
     env.DB.prepare(`INSERT INTO activities
       (id,author_id,creation_request_id,creation_digest,title,force_dedicated,
        participation_mode,join_square,deleted_at,allocation,config,total_count,
-       claimed_count,registered_count,reward_type,created_at,updated_at)
+       claimed_count,registered_count,reward_type,payment_mode,created_at,updated_at)
       VALUES (?,?,?,'digest','Admin deleted activity',0,'password',0,?,'sequential','{}',
-        1,0,0,'text',?,?)`).bind(
+        1,0,0,'ldc','simulation',?,?)`).bind(
       deletedId,
       admin.id,
       `request-${deletedId}`,
@@ -204,9 +204,9 @@ async function seedSameTimeActivities(
       env.DB.prepare(`INSERT INTO activities
         (id,author_id,creation_request_id,creation_digest,title,force_dedicated,
          participation_mode,join_square,deleted_at,allocation,config,total_count,
-         claimed_count,registered_count,reward_type,created_at,updated_at)
+         claimed_count,registered_count,reward_type,payment_mode,created_at,updated_at)
         VALUES (?,?,?,'digest',?,0,'password',0,NULL,'sequential','{}',
-          1,0,0,'text',?,?)`).bind(
+          1,0,0,'ldc','simulation',?,?)`).bind(
         id,
         admin.id,
         `admin-page-activity-${id}`,
@@ -386,8 +386,8 @@ describe("administrator observation APIs", () => {
         env.DB.prepare(`INSERT INTO activities
           (id,author_id,creation_request_id,creation_digest,title,force_dedicated,
            participation_mode,join_square,deleted_at,allocation,config,total_count,claimed_count,
-           registered_count,reward_type,created_at,updated_at,opened_at,deadline)
-          VALUES (?,?,?,'digest','Expired unswept',0,'password',0,NULL,'sequential','{"participationMode":"password"}',2,0,0,'text',?,?,?,?)`).bind(
+           registered_count,reward_type,payment_mode,created_at,updated_at,opened_at,deadline)
+          VALUES (?,?,?,'digest','Expired unswept',0,'password',0,NULL,'sequential','{"participationMode":"password"}',2,0,0,'ldc','simulation',?,?,?,?)`).bind(
           expiredId,
           admin.id,
           `request-${expiredId}`,
@@ -399,8 +399,8 @@ describe("administrator observation APIs", () => {
         env.DB.prepare(`INSERT INTO activities
           (id,author_id,creation_request_id,creation_digest,title,force_dedicated,
            participation_mode,join_square,deleted_at,allocation,config,total_count,claimed_count,
-           registered_count,reward_type,created_at,updated_at,opened_at,deadline)
-          VALUES (?,?,?,'digest','Full unswept',0,'password',0,NULL,'sequential','{"participationMode":"password"}',1,1,0,'text',?,?,?,?)`).bind(
+           registered_count,reward_type,payment_mode,created_at,updated_at,opened_at,deadline)
+          VALUES (?,?,?,'digest','Full unswept',0,'password',0,NULL,'sequential','{"participationMode":"password"}',1,1,0,'ldc','simulation',?,?,?,?)`).bind(
           fullId,
           admin.id,
           `request-${fullId}`,
@@ -412,8 +412,8 @@ describe("administrator observation APIs", () => {
         env.DB.prepare(`INSERT INTO activities
           (id,author_id,creation_request_id,creation_digest,title,force_dedicated,
            participation_mode,join_square,deleted_at,allocation,config,total_count,claimed_count,
-           registered_count,reward_type,created_at,updated_at,opened_at,deadline,ended_at)
-          VALUES (?,?,?,'digest','Archive unswept',0,'password',0,NULL,'sequential','{"participationMode":"password"}',1,0,0,'text',?,?,?,?,?)`).bind(
+           registered_count,reward_type,payment_mode,created_at,updated_at,opened_at,deadline,ended_at)
+          VALUES (?,?,?,'digest','Archive unswept',0,'password',0,NULL,'sequential','{"participationMode":"password"}',1,0,0,'ldc','simulation',?,?,?,?,?)`).bind(
           archivedId,
           admin.id,
           `request-${archivedId}`,
@@ -657,9 +657,9 @@ describe("administrator observation APIs", () => {
       env.DB.prepare(`INSERT INTO activities
         (id,author_id,creation_request_id,creation_digest,title,force_dedicated,
          participation_mode,join_square,deleted_at,allocation,config,total_count,
-         claimed_count,registered_count,reward_type,created_at,updated_at)
+         claimed_count,registered_count,reward_type,payment_mode,created_at,updated_at)
         VALUES (?,?,?,'digest','Literal 100%_match',0,'password',0,NULL,'sequential','{}',
-          1,0,0,'text',?,?)`).bind(
+          1,0,0,'ldc','simulation',?,?)`).bind(
         literalId,
         admin.id,
         `request-${literalId}`,
@@ -669,9 +669,9 @@ describe("administrator observation APIs", () => {
       env.DB.prepare(`INSERT INTO activities
         (id,author_id,creation_request_id,creation_digest,title,force_dedicated,
          participation_mode,join_square,deleted_at,allocation,config,total_count,
-         claimed_count,registered_count,reward_type,created_at,updated_at)
+         claimed_count,registered_count,reward_type,payment_mode,created_at,updated_at)
         VALUES (?,?,?,'digest','Literal 100XAmatch',0,'password',0,NULL,'sequential','{}',
-          1,0,0,'text',?,?)`).bind(
+          1,0,0,'ldc','simulation',?,?)`).bind(
         wildcardDecoyId,
         admin.id,
         `request-${wildcardDecoyId}`,

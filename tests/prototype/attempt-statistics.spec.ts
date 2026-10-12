@@ -48,7 +48,7 @@ test("ordinary and draft activities do not expose statistics", async ({
   await expect(
     page
       .locator("[data-testid=managed-activity]")
-      .filter({ hasText: "CDK 兑换码 · 12 份" })
+      .filter({ hasText: "固定红包 · 12 份" })
       .getByText("尝试统计"),
   ).toHaveCount(0);
   await expect(
@@ -111,13 +111,13 @@ test("author management menu exposes edit and payment routes", async ({
   );
 });
 
-test("management actions follow reward type and remain available after ending", async ({
+test("LDC management actions remain available after ending", async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   for (const [suffix, expected] of [
     ["003", ["编辑配置", "付款记录"]],
-    ["004", ["编辑配置"]],
+    ["004", ["编辑配置", "付款记录"]],
     ["009", ["编辑配置", "付款记录"]],
   ] as const) {
     await page.goto(
@@ -184,9 +184,10 @@ test("management requires the current account record and excludes drafts", async
     window.location.hash =
       "activity?sample=21000000-0000-4000-8000-000000000001";
   });
-  await page.getByRole("button", { name: "管理活动" }).click();
-  await expect(page.getByRole("menuitem")).toHaveText(["编辑配置"]);
-  await page.keyboard.press("Escape");
+  await expect(
+    page.getByRole("heading", { name: "活动不存在", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "管理活动" })).toHaveCount(0);
 
   await page.evaluate(async () => {
     const moduleUrl = performance

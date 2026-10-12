@@ -42,12 +42,15 @@ test("真实拆包慢导航显示目标页面骨架，保留顶栏与构建标�
   });
   await page.goto("/");
   const stamp = await page.locator("#build-stamp").textContent();
-  await page
+  const pendingImmediately = await page
     .getByRole("link", { name: "活动广场", exact: true })
-    .evaluate((link: HTMLAnchorElement) => link.click());
+    .evaluate((link: HTMLAnchorElement) => {
+      link.click();
+      return Boolean(document.querySelector("[data-route-pending='true']"));
+    });
+  expect(pendingImmediately).toBe(false);
   await chunkStarted;
   await expect(page).toHaveURL(/\/square(?:\?|$)/);
-  await expect(page.locator("[data-route-pending='true']")).toHaveCount(0);
   await page.waitForTimeout(220);
   await expect(
     page.locator("[data-route-pending='true'] [data-loading-region='page']"),

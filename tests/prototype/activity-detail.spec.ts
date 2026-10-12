@@ -1,4 +1,3 @@
-import { mkdir } from "node:fs/promises";
 import { test as base, expect, type Page } from "@playwright/test";
 
 const origin = "http://127.0.0.1:4177";
@@ -48,9 +47,11 @@ test("detail header separates type, configured pool and personal reward", async 
     "总奖池 30.00 LDC",
   );
   await expect(page.locator(".slip-amount")).toContainText("0.98");
-  await page.goto("/#activity?sample=reading");
-  await expect(page.locator(".activity-heading")).toContainText("文本 / CDK");
-  await expect(page.locator(".activity-heading")).not.toContainText("总奖池");
+  await page.goto("/#activity?sample=reading-ldc");
+  await expect(page.locator(".activity-heading")).toContainText("LDC");
+  await expect(page.locator(".activity-heading")).toContainText(
+    "总奖池 6.00 LDC",
+  );
 });
 
 test("fuzzy fixed quantities do not leak a calculable pool in the header", async ({
@@ -298,21 +299,13 @@ for (const width of [1920, 1440, 768, 375]) {
     ).toBeLessThanOrEqual(width);
     await page.goto("/#activity?sample=history-random-active");
     await expect(page.locator(".slip-amount")).toContainText("0.98");
-    await mkdir(".wrangler/verification/prototype", { recursive: true });
+
     if (width === 1440 || width === 375) {
-      await page.screenshot({
-        path: `.wrangler/verification/prototype/detail-result-${width}.png`,
-      });
       await page.locator(".password-section").scrollIntoViewIfNeeded();
-      await page.screenshot({
-        path: `.wrangler/verification/prototype/detail-passwords-${width}.png`,
-      });
+
       await page
         .getByRole("button", { name: "查看领取名单", exact: true })
         .click();
-      await page.screenshot({
-        path: `.wrangler/verification/prototype/detail-roster-${width}.png`,
-      });
     }
   });
 }

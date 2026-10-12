@@ -58,11 +58,7 @@ async function fixture(
   )
     .bind(scenario, merchant.id)
     .run();
-  const {
-    rewards: _rewards,
-    rewardType: _type,
-    ...common
-  } = emptyActivityInput();
+  const common = emptyActivityInput();
   const input: LdcActivityInput = {
     ...common,
     title: "Alarm 付款活动",

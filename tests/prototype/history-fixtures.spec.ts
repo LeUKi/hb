@@ -39,7 +39,7 @@ test("history seeds preserve identity boundaries and leave new claim examples un
   const guest = createParticipationSeed("guest");
   expect(historySamples).toHaveLength(24);
   expect(Object.keys(standard.records)).toHaveLength(24);
-  expect(Object.keys(lite.records)).toHaveLength(6);
+  expect(lite).toEqual({ records: {}, results: {}, viewStates: {} });
   expect(guest).toEqual({ records: {}, results: {}, viewStates: {} });
   expect(new Set(gallerySamples.map((activity) => activity.id)).size).toBe(
     gallerySamples.length,
@@ -53,7 +53,7 @@ test("history seeds preserve identity boundaries and leave new claim examples un
     expect(standard.viewStates[id]).toEqual(standard.results[id]?.viewState);
   }
   for (const id of Object.keys(lite.records))
-    expect(byId.get(id)?.type).toBe("text");
+    expect(byId.get(id)?.type).toBe("ldc");
   for (const activity of [...activities, ...randomActivities]) {
     expect(standard.records[activity.id]).toBeUndefined();
     expect(lite.records[activity.id]).toBeUndefined();
@@ -95,7 +95,6 @@ test("history fixtures cover participation, settlement and independent payment p
       result.participation === "not-won"
     ) {
       expect(result.rewardAmount).toBeUndefined();
-      expect(result.rewardText).toBeUndefined();
       expect(result.viewState.paymentProgress).toBeNull();
     }
   }
@@ -178,7 +177,7 @@ for (const [rosterCase, titlesPerExtreme, ownAmount] of rosterCases) {
   });
 }
 
-test("unpublished draws have no winner list and text rosters reveal no reward content", () => {
+test("unpublished draws have no winner list and instant rosters retain assigned amounts", () => {
   expect(getSampleRecipients("history-draw-registered")).toEqual([]);
   expect(getSampleRecipients("history-draw-settling")).toEqual([]);
   expect(
@@ -193,12 +192,13 @@ test("unpublished draws have no winner list and text rosters reveal no reward co
     getSampleResult("history-draw-won")?.rewardAmount,
   );
   for (const activity of historySamples.filter(
-    (entry) => entry.type === "text",
+    (entry) => entry.type === "ldc",
   )) {
     const rows = getSampleRecipients(activity.id);
     expect(rows?.length).toBeGreaterThan(0);
-    expect(rows?.every((row) => row.amount === undefined)).toBe(true);
-    expect(JSON.stringify(rows)).not.toContain("CDK-");
+    expect(rows?.every((row) => /^\d+\.\d{2}$/u.test(row.amount ?? ""))).toBe(
+      true,
+    );
   }
   expect(getSampleRecipients("unknown")).toBeUndefined();
   expect(getSampleResult("unknown")).toBeUndefined();
@@ -238,15 +238,17 @@ test("public reward labels distinguish fixed shares from a random or draw pool",
   const fixed = activities.find((activity) => activity.id === "weekend");
   const random = randomActivities.find((activity) => activity.id === "random");
   const draw = activities.find((activity) => activity.id === "evening");
-  const text = activities.find((activity) => activity.id === "reading");
-  if (!fixed || !random || !draw || !text)
+  const otherFixed = activities.find(
+    (activity) => activity.id === "reading-ldc",
+  );
+  if (!fixed || !random || !draw || !otherFixed)
     throw new Error("Missing reward examples");
   expect(activityRewardLabel(fixed)).toBe("固定均分");
   expect(activityRewardSummary(fixed)).toBe("0.88 LDC / 份");
   expect(activityRewardLabel(random)).toBe("即时随机");
   expect(activityRewardSummary(random)).toBe("30.00 LDC 奖池");
   expect(activityRewardSummary(draw)).toBe("20.00 LDC 奖池");
-  expect(activityRewardSummary(text)).toBeNull();
+  expect(activityRewardSummary(otherFixed)).toBe("0.50 LDC / 份");
   expect(
     activityRewardSummary({ ...random, poolAmount: undefined }),
   ).toBeNull();
@@ -362,7 +364,7 @@ browserTest(
 );
 
 browserTest(
-  "history switches to text-only Lite records and clears private results for guests",
+  "history clears private participation for Lite and guest identities",
   async ({ page }) => {
     await page.goto("/#participations");
     await page.getByRole("button", { name: "场景与身份" }).click();
@@ -373,13 +375,8 @@ browserTest(
     const rows = page.locator(
       '.activity-rows[data-context="history"] .activity-rows-row',
     );
-    await expect(rows).toHaveCount(6);
-    await expect(rows.locator(".activity-rows-type")).toHaveText(
-      Array<string>(6).fill("文本 / CDK"),
-    );
-    await expect(
-      page.locator('.activity-rows[data-context="history"]'),
-    ).not.toContainText("LDC");
+    await expect(rows).toHaveCount(0);
+    await expect(page.getByRole("status")).toContainText("暂无参与记录");
     await page.getByRole("button", { name: "场景与身份" }).click();
     await page
       .getByRole("combobox", { name: "体验身份", exact: true })
@@ -539,9 +536,7 @@ for (const identity of ["guest", "lite"] as const) {
           "data-payment-progress",
           "none",
         );
-        await expect(
-          page.locator(".slip-amount, .slip-text-title"),
-        ).toHaveCount(0);
+        await expect(page.locator(".slip-amount")).toHaveCount(0);
         await expect(page.locator('[data-testid="envelope"]')).toHaveAttribute(
           "data-animate",
           "false",
@@ -565,11 +560,7 @@ for (const identity of ["guest", "lite"] as const) {
       const rows = page.locator(
         '.activity-rows[data-context="history"] .activity-rows-row',
       );
-      await expect(rows).toHaveCount(identity === "guest" ? 0 : 6);
-      if (identity === "lite")
-        await expect(rows.locator(".activity-rows-type")).toHaveText(
-          Array<string>(6).fill("文本 / CDK"),
-        );
+      await expect(rows).toHaveCount(0);
     },
   );
 }

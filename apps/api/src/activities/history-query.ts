@@ -79,9 +79,8 @@ export function activityListFields(
 }
 
 export function rewardFilterSql(type: ActivityRewardFilter = "all") {
-  if (type === "all") return sql`1 = 1`;
-  if (type === "text" || type === "ldc")
-    return sql`${activities.rewardType} = ${type}`;
+  if (type === "all" || type === "ldc")
+    return sql`${activities.rewardType} = 'ldc'`;
   return sql`${activities.rewardType} = 'ldc' AND json_extract(${activities.config}, '$.money.mode') = ${type}`;
 }
 

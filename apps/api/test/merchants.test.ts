@@ -111,11 +111,7 @@ async function create(payload = input(), author = owner) {
 }
 
 async function fixture(merchant: Merchant) {
-  const {
-    rewards: _rewards,
-    rewardType: _rewardType,
-    ...base
-  } = emptyActivityInput();
+  const base = emptyActivityInput();
   const activityInput: LdcActivityInput = {
     ...base,
     title: "商户路由测试",

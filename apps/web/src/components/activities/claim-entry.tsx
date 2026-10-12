@@ -305,9 +305,7 @@ function ClaimForm({
                   : "领取奖励"
                 : activity.draw
                   ? "报名"
-                  : activity.rewardType === "text"
-                    ? "领取奖励"
-                    : "领取红包"}
+                  : "领取红包"}
         <ArrowRight size={17} aria-hidden="true" />
       </RedemptionAction>
     </form>

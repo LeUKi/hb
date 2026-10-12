@@ -6,7 +6,6 @@ import {
   type ClaimResult,
   emptyActivityInput,
   type LdcActivityInput,
-  type TextActivityInput,
 } from "@hb/contracts";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
@@ -60,6 +59,7 @@ type Actor = { id: string; cookie: string; csrf: string };
 let owner: Actor;
 let alice: Actor;
 let bob: Actor;
+let merchantId: string;
 let actorNumber = 50_000;
 
 async function actor(official = true): Promise<Actor> {
@@ -111,16 +111,14 @@ function request(path: string, user?: Actor, method = "GET", body?: unknown) {
   );
 }
 
-function textInput(extra: Partial<TextActivityInput> = {}): TextActivityInput {
+function directInput(extra: Partial<LdcActivityInput> = {}): LdcActivityInput {
   return {
     ...emptyActivityInput(),
     title: "无需口令的活动",
     participationMode: "direct",
     passwords: [],
-    rewards: [
-      { id: crypto.randomUUID(), text: "DIRECT-REWARD-A" },
-      { id: crypto.randomUUID(), text: "DIRECT-REWARD-B" },
-    ],
+    merchantId,
+    money: { mode: "fixed", totalAmount: "1.00", count: 2 },
     ...extra,
   };
 }
@@ -135,23 +133,11 @@ async function save(input: ActivityInput, open = true) {
     : draft;
 }
 
-async function ldcInput(
-  money: LdcActivityInput["money"],
-): Promise<LdcActivityInput> {
-  const merchant = await createMerchant(bindings, owner.id, {
-    requestId: crypto.randomUUID(),
-    clientId: `direct_${owner.id.replaceAll("-", "")}`,
-    label: "本地模拟商户",
-    secret: "LOCAL-ONLY",
-  });
-  const { rewards: _rewards, rewardType: _rewardType, ...base } = textInput();
-  return {
-    ...base,
-    rewardType: "ldc",
-    merchantId: merchant.id,
+function ldcInput(money: LdcActivityInput["money"]): LdcActivityInput {
+  return directInput({
     allocation: money.mode === "fixed" ? "sequential" : "random",
     money,
-  };
+  });
 }
 
 function direct(submissionId = crypto.randomUUID()): ClaimActivityInput {
@@ -173,13 +159,20 @@ async function counts(id: string) {
 
 beforeEach(async () => {
   [owner, alice, bob] = await Promise.all([actor(), actor(), actor()]);
+  const merchant = await createMerchant(bindings, owner.id, {
+    requestId: crypto.randomUUID(),
+    clientId: `direct_${owner.id.replaceAll("-", "")}`,
+    label: "本地模拟商户",
+    secret: "LOCAL-ONLY",
+  });
+  merchantId = merchant.id;
   await env.DB.prepare(`UPDATE attempt_rate_limits SET home_interval_seconds=5,
     activity_interval_seconds=2 WHERE id='global'`).run();
 });
 
 describe("direct participation", () => {
-  it("claims text through the protected endpoint and reads nullable sources", async () => {
-    const activity = await save(textInput());
+  it("claims LDC through the protected endpoint and reads nullable sources", async () => {
+    const activity = await save(directInput());
     const response = await request(
       `/api/activities/${activity.id}/claim`,
       alice,
@@ -216,7 +209,7 @@ describe("direct participation", () => {
   });
 
   it("does not participate when a guest or member only reads the activity", async () => {
-    const activity = await save(textInput());
+    const activity = await save(directInput());
     expect((await request(`/api/activities/${activity.id}`)).status).toBe(200);
     expect(
       (await request(`/api/activities/${activity.id}`, alice)).status,
@@ -247,12 +240,12 @@ describe("direct participation", () => {
 
   it("rejects mode mismatch and malformed direct payloads before charging cooldown", async () => {
     const passwordActivity = await save(
-      textInput({
+      directInput({
         participationMode: "password",
         passwords: ["Secret123"],
       }),
     );
-    const activity = await save(textInput());
+    const activity = await save(directInput());
     for (const [id, body] of [
       [passwordActivity.id, direct()],
       [
@@ -278,7 +271,7 @@ describe("direct participation", () => {
   });
 
   it("recovers a durable direct claim without a second charge or reward", async () => {
-    const activity = await save(textInput());
+    const activity = await save(directInput());
     const input = direct();
     const pending = await prepareClaimSubmission(
       bindings,
@@ -314,8 +307,8 @@ describe("direct participation", () => {
   });
 
   it("shares the activity interval across concurrent direct activities", async () => {
-    const first = await save(textInput());
-    const second = await save(textInput());
+    const first = await save(directInput());
+    const second = await save(directInput());
     const results = await Promise.allSettled([
       claimActivity(bindings, first.id, alice.id, direct()),
       claimActivity(bindings, second.id, alice.id, direct()),
@@ -345,7 +338,7 @@ describe("direct participation", () => {
   });
 
   it("honors a home cooldown and never treats direct participation as discovery continuation", async () => {
-    const activity = await save(textInput({ joinSquare: true }));
+    const activity = await save(directInput({ joinSquare: true }));
     const discovery = await discoverGlobalRedemption(bindings, alice.id, {
       submissionId: crypto.randomUUID(),
       password: `NoMatch${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`,
@@ -363,7 +356,7 @@ describe("direct participation", () => {
   });
 
   it("rolls back cooldown and submission when direct allocation admission fails", async () => {
-    const activity = await save(textInput());
+    const activity = await save(directInput());
     await env.DB.prepare(`CREATE TRIGGER fixture_direct_submission_failure
       BEFORE INSERT ON redemption_submissions WHEN NEW.activity_id='${activity.id}'
       BEGIN SELECT RAISE(ABORT,'fixture direct admission failure'); END`).run();
@@ -385,7 +378,7 @@ describe("direct participation", () => {
 
   it("keeps the last reward unique under different-account concurrency", async () => {
     const activity = await save(
-      textInput({ rewards: [{ id: crypto.randomUUID(), text: "LAST" }] }),
+      directInput({ money: { mode: "fixed", totalAmount: "0.01", count: 1 } }),
     );
     const results = await Promise.all([
       claimActivity(bindings, activity.id, alice.id, direct()),
@@ -402,7 +395,7 @@ describe("direct participation", () => {
 
   it("switches drafts both ways while rejecting old edits and locking open activity modes", async () => {
     const draft = await save(
-      textInput({ participationMode: "password", passwords: ["Secret123"] }),
+      directInput({ participationMode: "password", passwords: ["Secret123"] }),
       false,
     );
     const changed = await updateActivity(bindings, draft.id, owner.id, {
@@ -446,7 +439,7 @@ describe("direct participation", () => {
         },
       }),
     ).rejects.toMatchObject({ code: "INVALID_ACTIVITY" });
-    const activeDirect = await save(textInput());
+    const activeDirect = await save(directInput());
     await expect(
       updateActivity(bindings, activeDirect.id, owner.id, {
         version: activeDirect.version,
@@ -461,7 +454,7 @@ describe("direct participation", () => {
 
   it("preserves old create and claim fingerprints and original draft outcome after switching mode", async () => {
     const activity = activityInputSchema.parse(
-      textInput({ participationMode: undefined, passwords: ["Secret123"] }),
+      directInput({ participationMode: undefined, passwords: ["Secret123"] }),
     );
     const requestId = crypto.randomUUID();
     const draft = await createActivity(bindings, owner.id, {
@@ -480,6 +473,24 @@ describe("direct participation", () => {
       ),
     );
     const input = { submissionId: crypto.randomUUID(), password: "Secret123" };
+    // Persist a pre-existing LDC terminal submission to verify its old digest and replay.
+    // New author submissions are rejected by the current self-claim rule.
+    await env.DB.prepare(`INSERT INTO redemption_submissions
+      (id,activity_id,user_id,submission_id,fingerprint,purpose,participation_mode,outcome,created_at,finished_at)
+      VALUES (?,?,?,?,?,'claim','password','draft',?,?)`)
+      .bind(
+        crypto.randomUUID(),
+        draft.id,
+        owner.id,
+        input.submissionId,
+        await digestPassword(
+          `claim-request:${draft.id}:${input.password}`,
+          bindings.PASSWORD_DIGEST_KEY,
+        ),
+        Date.now(),
+        Date.now(),
+      )
+      .run();
     expect(
       (await claimActivity(bindings, draft.id, owner.id, input)).result,
     ).toBe("draft");
@@ -512,7 +523,7 @@ describe("direct participation", () => {
       (_, index) => `LegacyPass${index}`,
     );
     const draft = await save(
-      textInput({
+      directInput({
         participationMode: "password",
         passwords: passwords.slice(0, 5),
       }),
@@ -547,9 +558,7 @@ describe("direct participation", () => {
       participationMode: "direct",
       passwords: [],
     });
-    expect("rewards" in changed.config && changed.config.rewards).toEqual(
-      "rewards" in historical.config && historical.config.rewards,
-    );
+    expect(changed.config.money).toEqual(historical.config.money);
     expect(await counts(draft.id)).toMatchObject({
       passwords: 0,
       submissions: 0,
@@ -579,7 +588,7 @@ describe("direct participation", () => {
   });
 
   it("does not offer password solving or statistics for direct activities", async () => {
-    const activity = await save(textInput());
+    const activity = await save(directInput());
     await claimActivity(bindings, activity.id, alice.id, direct());
     const cooldown = await readAttemptCooldown(bindings, alice.id);
     await expect(
@@ -620,7 +629,7 @@ describe("direct participation", () => {
                 algorithm: "double_mean_v1",
               }
             : { mode, amounts: ["0.40", "0.60"] };
-      const activity = await save(await ldcInput(money));
+      const activity = await save(ldcInput(money));
       const result = await claimActivity(
         bindings,
         activity.id,
@@ -649,7 +658,7 @@ describe("direct participation", () => {
 
   it("preserves LDC eligibility and author restrictions without consuming cooldown", async () => {
     const activity = await save(
-      await ldcInput({ mode: "fixed", totalAmount: "1.00", count: 2 }),
+      ldcInput({ mode: "fixed", totalAmount: "1.00", count: 2 }),
     );
     const lite = await actor(false);
     await expect(
@@ -664,7 +673,7 @@ describe("direct participation", () => {
 
   it("admits direct registration durably, closes a full draw and publishes nullable winners", async () => {
     const activity = await save(
-      await ldcInput({
+      ldcInput({
         mode: "timed_draw",
         algorithm: "double_mean_v1",
         totalAmount: "1.00",
@@ -733,7 +742,7 @@ describe("direct participation", () => {
 
   it("requires admission for direct registrations and rolls back a failed finalization", async () => {
     const activity = await save(
-      await ldcInput({
+      ldcInput({
         mode: "timed_draw",
         algorithm: "double_mean_v1",
         totalAmount: "1.00",
@@ -779,7 +788,7 @@ describe("direct participation", () => {
 
   it("rejects a direct draw plan with a missing password source without redrawing or publishing", async () => {
     const activity = await save(
-      await ldcInput({
+      ldcInput({
         mode: "timed_draw",
         algorithm: "double_mean_v1",
         totalAmount: "1.00",

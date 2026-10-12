@@ -92,6 +92,7 @@ async function registrationDetailsBatch(
           .where(
             and(
               isNull(activities.deletedAt),
+              eq(activities.rewardType, "ldc"),
               or(
                 ...completed.map(({ entry }) =>
                   and(
@@ -170,10 +171,12 @@ export async function getRegistrationDetail(
       and(
         eq(activityRegistrations.id, id),
         eq(activityRegistrations.userId, userId),
+        eq(activities.rewardType, "ldc"),
+        isNull(activities.deletedAt),
       ),
     )
     .get();
-  if (!row || row.activity.deletedAt !== null) activityNotFound();
+  if (!row) activityNotFound();
   return detail(env, row.entry, row.activity);
 }
 
@@ -339,6 +342,7 @@ export async function listParticipations(
           and(
             inArray(claims.id, claimIds),
             eq(claims.userId, userId),
+            eq(activities.rewardType, "ldc"),
             isNull(activities.deletedAt),
           ),
         )
@@ -358,6 +362,7 @@ export async function listParticipations(
           and(
             inArray(activityRegistrations.id, registrationIds),
             eq(activityRegistrations.userId, userId),
+            eq(activities.rewardType, "ldc"),
             isNull(activities.deletedAt),
           ),
         )
@@ -445,8 +450,8 @@ export async function accountHistorySummary(
   userId: string,
 ): Promise<AccountHistorySummary> {
   const result = await env.DB.prepare(`SELECT
-    (SELECT COUNT(*) FROM activities WHERE author_id=? AND deleted_at IS NULL) AS initiatedCount,
-    (SELECT COUNT(*) FROM activities a WHERE a.deleted_at IS NULL AND (
+    (SELECT COUNT(*) FROM activities WHERE author_id=? AND reward_type='ldc' AND deleted_at IS NULL) AS initiatedCount,
+    (SELECT COUNT(*) FROM activities a WHERE a.reward_type='ldc' AND a.deleted_at IS NULL AND (
       EXISTS(SELECT 1 FROM claims c WHERE c.activity_id=a.id AND c.user_id=?)
       OR EXISTS(SELECT 1 FROM activity_registrations r WHERE r.activity_id=a.id AND r.user_id=?)
     )) AS participatedCount`)

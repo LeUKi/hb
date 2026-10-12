@@ -4,7 +4,6 @@ import {
   emptyActivityInput,
   type LdcActivityInput,
   type ManagedActivity,
-  type TextActivityInput,
 } from "../../packages/contracts/src";
 
 const origin = "http://127.0.0.1:4193";
@@ -227,15 +226,13 @@ test("direct 表单保存后重新编辑清空口令，开放后参与方式锁�
   try {
     const page = await authorContext.newPage();
     const author = await signIn(page, "directAuthor");
+    const merchant = await createMerchant(authorContext, author);
     const title = `direct 表单完整 ${randomUUID().slice(0, 8)}`;
     await page.goto("/activities/new");
     await page.locator("#activity-title").fill(title);
-    await page
-      .getByRole("group", { name: "奖励类型", exact: true })
-      .getByRole("button", { name: "文本 / CDK", exact: true })
-      .click();
     await page.getByLabel("口令 1", { exact: true }).fill("KeepFullPass123");
-    await page.locator("#activity-text-rewards").fill("DIRECT-FORM-FULL");
+    await page.getByLabel("每份金额（LDC）", { exact: true }).fill("0.01");
+    await page.getByLabel("奖励份数", { exact: true }).fill("1");
     await chooseDirectMode(page);
     await expect(page.getByLabel("口令 1", { exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "保存草稿", exact: true }).click();
@@ -265,7 +262,11 @@ test("direct 表单保存后重新编辑清空口令，开放后参与方式锁�
       `/api/me/activities/${activityId}/open`,
       {
         headers: { "X-CSRF-Token": author.csrfToken, Origin: origin },
-        data: { version: current.activity.version },
+        data: {
+          version: current.activity.version,
+          merchantId: merchant.id,
+          credentialVersion: merchant.credentialVersion,
+        },
       },
     );
     expect(opened.status(), await opened.text()).toBe(200);
@@ -288,7 +289,7 @@ test("direct 表单保存后重新编辑清空口令，开放后参与方式锁�
   }
 });
 
-test("direct 文本和本地模拟 LDC 只在活动页主动点击后参与，登录返回与刷新不自动提交", async ({
+test("direct 本地 LDC 只在活动页主动点击后参与，登录返回与刷新不自动提交", async ({
   browser,
   request,
 }) => {
@@ -302,94 +303,63 @@ test("direct 文本和本地模拟 LDC 只在活动页主动点击后参与，�
     const authorPage = await authorContext.newPage();
     const viewerPage = await viewerContext.newPage();
     const author = await signIn(authorPage, "directAuthor");
-    const textInput: TextActivityInput & {
+    const merchant = await createMerchant(authorContext, author);
+    const input: LdcActivityInput & {
       participationMode: "direct";
       forceDedicated: false;
       passwords: [];
     } = {
       ...emptyActivityInput(),
-      title: `direct 文本 ${randomUUID().slice(0, 8)}`,
+      title: `direct 本地LDC ${randomUUID().slice(0, 8)}`,
       participationMode: "direct",
       passwords: [],
       forceDedicated: false,
-      rewards: [{ id: randomUUID(), text: "DIRECT-FULL-TEXT" }],
+      merchantId: merchant.id,
+      money: { mode: "fixed", totalAmount: "0.01", count: 1 },
     };
-    const textId = await createAndOpen(authorContext, author, textInput);
-    await viewerPage.goto(`/activities/${textId}`);
+    const id = await createAndOpen(authorContext, author, input, merchant);
+    await viewerPage.goto(`/activities/${id}`);
     await expect(
-      viewerPage.getByRole("heading", { name: textInput.title }),
+      viewerPage.getByRole("heading", { name: input.title }),
     ).toBeVisible();
     await expect(
       viewerPage.getByRole("link", { name: "登录领取", exact: true }),
     ).toBeVisible();
     const beforeLogin = await readState(request);
-    expect(
-      beforeLogin.claims.filter((row) => row.activity_id === textId),
-    ).toEqual([]);
+    expect(beforeLogin.claims.filter((row) => row.activity_id === id)).toEqual(
+      [],
+    );
     await signIn(viewerPage, "recipient");
-    await viewerPage.goto(`/activities/${textId}`);
+    await viewerPage.goto(`/activities/${id}`);
     await viewerPage.reload();
     const afterReturn = await readState(request);
-    expect(
-      afterReturn.claims.filter((row) => row.activity_id === textId),
-    ).toEqual([]);
-    await expect(
-      viewerPage.getByRole("button", { name: /领取奖励|直接领取/ }),
-    ).toBeEnabled();
-    await viewerPage.getByRole("button", { name: /领取奖励|直接领取/ }).click();
-    await expect(
-      viewerPage.locator("pre").filter({ hasText: "DIRECT-FULL-TEXT" }),
-    ).toBeVisible();
+    expect(afterReturn.claims.filter((row) => row.activity_id === id)).toEqual(
+      [],
+    );
+    expect(afterReturn.upstream.distributeRequests).toBe(
+      beforeLogin.upstream.distributeRequests,
+    );
+    const claim = viewerPage.getByRole("button", {
+      name: /领取奖励|领取红包|直接领取/,
+    });
+    await expect(claim).toBeEnabled();
+    await claim.click();
+    await expect(viewerPage.locator(".slip-amount")).toHaveText("+0.01");
+    await expect
+      .poll(async () => (await readState(request)).upstream.distributeRequests)
+      .toBe(beforeLogin.upstream.distributeRequests + 1);
     const afterClaim = await readState(request);
     expect(
-      afterClaim.claims.filter((row) => row.activity_id === textId),
+      afterClaim.claims.filter((row) => row.activity_id === id),
     ).toHaveLength(1);
     expect(
-      afterClaim.attempts.find((row) => row.activity_id === textId)?.count,
+      afterClaim.attempts.find((row) => row.activity_id === id)?.count,
     ).toBeUndefined();
-    expect(afterClaim.payments).toEqual(beforeLogin.payments);
-    expect(afterClaim.outbox).toEqual(beforeLogin.outbox);
-
-    const simulationMerchant = await createMerchant(authorContext, author);
-    const {
-      rewards: _ldcRewards,
-      rewardType: _ldcRewardType,
-      ...ldcBase
-    } = emptyActivityInput();
-    const ldcInput: LdcActivityInput & {
-      participationMode: "direct";
-      forceDedicated: false;
-      passwords: [];
-    } = {
-      ...ldcBase,
-      title: `direct 模拟LDC ${randomUUID().slice(0, 8)}`,
-      participationMode: "direct",
-      passwords: [],
-      forceDedicated: false,
-      rewardType: "ldc",
-      merchantId: simulationMerchant.id,
-      money: {
-        mode: "fixed",
-        totalAmount: "0.01",
-        count: 1,
-      },
-    };
-    const ldcId = await createAndOpen(
-      authorContext,
-      author,
-      ldcInput,
-      simulationMerchant,
-    );
-    await viewerPage.goto(`/activities/${ldcId}`);
-    await viewerPage.getByRole("button", { name: /领取奖励|直接领取/ }).click();
-    await expect(viewerPage.getByText("LDC", { exact: true })).toBeVisible();
-    const afterLdc = await readState(request);
+    await viewerPage.reload();
+    await expect(viewerPage.locator(".slip-amount")).toHaveText("+0.01");
     expect(
-      afterLdc.claims.filter((row) => row.activity_id === ldcId),
+      (await readState(request)).claims.filter((row) => row.activity_id === id),
     ).toHaveLength(1);
-    expect(afterLdc.upstream.distributeRequests).toBe(
-      afterClaim.upstream.distributeRequests + 1,
-    );
     expect(external.flat()).toEqual([]);
   } finally {
     await authorContext.close();
@@ -416,11 +386,7 @@ test("direct 限时开奖报名可无 password_id，开奖发布和付款链路�
     const second = await signIn(secondPage, "recipient2");
     expect(first.user.id).not.toBe(second.user.id);
     const merchant = await createMerchant(ownerContext, owner);
-    const {
-      rewards: _drawRewards,
-      rewardType: _drawRewardType,
-      ...drawBase
-    } = emptyActivityInput();
+    const { rewardType: _drawRewardType, ...drawBase } = emptyActivityInput();
     const drawInput: LdcActivityInput & {
       participationMode: "direct";
       forceDedicated: false;

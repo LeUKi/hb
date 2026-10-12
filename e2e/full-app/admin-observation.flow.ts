@@ -4,6 +4,7 @@ import {
   emptyActivityInput,
   type ManagedActivity,
 } from "../../packages/contracts/src";
+import { fullAppMerchant } from "./ldc-fixture";
 
 const origin = "http://127.0.0.1:4193";
 async function login(page: Page, role: "author" | "recipient") {
@@ -70,12 +71,15 @@ test("真实本地后台：管理员观察无业务副作用，草稿与软删�
     const otherPage = await other.newPage();
     await login(otherPage, "recipient");
     const title = `后台检索草稿-${randomUUID()}`;
+    const merchant = await fullAppMerchant(owner, admin.csrfToken);
     const activity = {
       ...emptyActivityInput(),
       title,
       passwords: ["admin123"],
-      rewards: [{ id: randomUUID(), text: "SENSITIVE-ADMIN-REWARD" }],
+      merchantId: merchant.id,
+      money: { mode: "fixed" as const, totalAmount: "0.01", count: 1 },
       beforeInfo: "SENSITIVE-ADMIN-NOTE",
+      afterClaimInfo: "SENSITIVE-ADMIN-REWARD-NOTE",
       topicUrl: "https://linux.do/t/topic/992342/2",
     };
     const saved = await owner.request.post("/api/activities", {
@@ -105,7 +109,7 @@ test("真实本地后台：管理员观察无业务副作用，草稿与软删�
       const body = await response.text();
       for (const sentinel of [
         "admin123",
-        "SENSITIVE-ADMIN-REWARD",
+        "SENSITIVE-ADMIN-REWARD-NOTE",
         "SENSITIVE-ADMIN-NOTE",
         "author-private@example.test",
         "full-app-connect-secret",

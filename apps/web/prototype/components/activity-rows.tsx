@@ -36,11 +36,10 @@ const participationLabels: Record<Exclude<Participation, "none">, string> = {
   claimed: "已领取",
 };
 
-function rewardStatus(state: ActivityViewState, text: boolean) {
+function rewardStatus(state: ActivityViewState) {
   if (state.participation === "not-won") return "未中奖";
   if (state.participation === "drawing") return "正在开奖";
   if (state.participation === "registered") return "等待开奖";
-  if (text && state.participation === "claimed") return "已领取";
   return undefined;
 }
 
@@ -129,7 +128,7 @@ export function ActivityRows({
               viewState.participation === "claimed" ||
               viewState.participation === "won";
             const registration = activity.type === "draw";
-            const status = rewardStatus(viewState, activity.type === "text");
+            const status = rewardStatus(viewState);
             return (
               <tr
                 key={activity.id}
@@ -172,23 +171,11 @@ export function ActivityRows({
                 <td className="activity-table-reward activity-rows-reward">
                   <ActivityReward
                     label={activityRewardLabel(activity)}
-                    amount={
-                      hasReward && activity.type !== "text"
-                        ? result?.rewardAmount
-                        : undefined
-                    }
+                    amount={hasReward ? result?.rewardAmount : undefined}
                     status={
-                      hasReward &&
-                      activity.type !== "text" &&
-                      !result?.rewardAmount
-                        ? "金额待确认"
-                        : status
+                      hasReward && !result?.rewardAmount ? "金额待确认" : status
                     }
-                    paymentStatus={
-                      hasReward && activity.type !== "text"
-                        ? viewState.paymentProgress
-                        : null
-                    }
+                    paymentStatus={hasReward ? viewState.paymentProgress : null}
                     confirmedAt={result?.confirmedAt}
                   />
                 </td>

@@ -55,7 +55,7 @@ async function fixture(count = 2, scenario: SimulationScenario = "normal") {
   )
     .bind(scenario, merchant.id)
     .run();
-  const { rewards: _r, rewardType: _t, ...base } = emptyActivityInput();
+  const base = emptyActivityInput();
   const config: LdcActivityInput = {
     ...base,
     rewardType: "ldc",

@@ -31,8 +31,15 @@ const activity = {
 const claim: ClaimDetail = {
   id: "claim",
   activity,
-  rewardType: "text",
-  text: "REWARD",
+  rewardType: "ldc",
+  amount: "1.00",
+  payment: {
+    id: "payment",
+    mode: "simulation",
+    status: "confirmed",
+    reason: null,
+    confirmedAt: "2026-10-10T00:00:00.000Z",
+  },
   afterClaimInfo: "奖励附言",
   claimedAt: "2026-10-10T00:00:00.000Z",
 };
@@ -154,7 +161,9 @@ describe("activity participation boundaries", () => {
         "completed",
       ),
     ).toBe(false);
-    expect(participationRefresh({ claim, registration: null })).toBe(15_000);
+    expect(
+      participationRefresh({ claim: ldcClaim(false), registration: null }),
+    ).toBe(15_000);
     expect(
       participationRefresh({ claim: ldcClaim(true), registration: null }),
     ).toBe(false);

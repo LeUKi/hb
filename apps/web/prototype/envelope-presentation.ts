@@ -14,9 +14,7 @@ export function envelopePresentation({
   amount?: string;
 }): EnvelopeReward | undefined {
   if (state.participation === "claimed" || state.participation === "won")
-    return activity.type === "text"
-      ? { kind: "text" }
-      : { kind: "ldc", amount: amount ?? "—" };
+    return { kind: "ldc", amount: amount ?? "—" };
   if (
     activity.type === "draw" &&
     state.drawProgress !== "completed" &&

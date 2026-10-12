@@ -16,7 +16,7 @@ import {
   claimActivity,
   resumePendingActivityClaims,
 } from "./activities/claim-service";
-import { ActivityError } from "./activities/errors";
+import { ActivityError, activityNotFound } from "./activities/errors";
 import { endActivity, refreshActivityLifecycle } from "./activities/lifecycle";
 import { solveActivityPassword } from "./activities/password-service";
 import {
@@ -127,6 +127,12 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     const id = await this.ctx.storage.get<string>("drawActivityId");
     if (!id) return;
     await this.serialize(async () => {
+      const activity = await findActivity(this.env, id);
+      if (!activity) {
+        await this.ctx.storage.delete("drawActivityId");
+        await this.ctx.storage.deleteAlarm();
+        return;
+      }
       try {
         await refreshActivityLifecycle(this.env, id);
         await resumePendingActivityClaims(this.env, id);
@@ -199,6 +205,8 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       return this.serialize(async () => {
         try {
           if (operation === "refresh") {
+            const activity = await findActivity(this.env, id);
+            if (!activity) activityNotFound();
             await refreshActivityLifecycle(this.env, id);
             await resumePendingActivityClaims(this.env, id);
             await this.scheduleDraw(id);

@@ -173,7 +173,6 @@
   min-height: calc(var(--envelope-width) * 0.095);
 }
 
-.envelope-stage.redemption-envelope .slip-text-title,
 .envelope-stage.redemption-envelope .slip-result-title {
   font-size: calc(var(--envelope-width) * 0.0857);
   line-height: 1.4;

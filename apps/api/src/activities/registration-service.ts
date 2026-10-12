@@ -180,7 +180,7 @@ export async function registerForDraw(
         : null;
     const statements = [
       ...attemptWriteStatements(env, userId, "activity", rowId, continuation),
-      env.DB.prepare(`UPDATE activities SET version = CASE WHEN version=? AND participation_mode=? AND deleted_at IS NULL
+      env.DB.prepare(`UPDATE activities SET version = CASE WHEN version=? AND reward_type='ldc' AND participation_mode=? AND deleted_at IS NULL
       AND opened_at IS NOT NULL AND ended_at IS NULL AND archived_at IS NULL AND draw_state='waiting'
       AND deadline>${databaseNow} AND registered_count<9007199254740991
       AND (json_extract(config,'$.money.participantLimit') IS NULL OR registered_count<json_extract(config,'$.money.participantLimit'))
@@ -216,7 +216,7 @@ export async function registerForDraw(
       statements.push(
         env.DB.prepare(`INSERT INTO activity_registrations
         (id,activity_id,user_id,password_id,ordinal,recipient_id,registered_at)
-        SELECT ?,id,?,?,registered_count+1,?,${databaseNow} FROM activities WHERE id=?`).bind(
+        SELECT ?,id,?,?,registered_count+1,?,${databaseNow} FROM activities WHERE id=? AND reward_type='ldc'`).bind(
           registrationId,
           userId,
           password?.id ?? null,

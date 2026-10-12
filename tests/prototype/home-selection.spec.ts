@@ -184,7 +184,7 @@ test("lookup handles empty, missing, UUID, link and forum choices without redeem
   ).toBeVisible();
   await lookup(page, "https://linux.do/t/topic/2964597/1216");
   await dialog
-    .getByRole("button", { name: "电子书兑换码", exact: true })
+    .getByRole("button", { name: "电子书阅读红包", exact: true })
     .click();
   await expect(current(page).locator(".activity-page")).toHaveAttribute(
     "data-participation",
@@ -303,8 +303,8 @@ test("multi-match modal paginates internally, traps focus and fits enlarged mobi
     return Array.from({ length: 21 }, (_, index) => {
       const config = store.defaultActivityConfig("standard");
       config.title = `分页活动 ${index + 1} · 较长名称测试`;
-      config.rewardKind = "text";
-      config.textRewards = "LOCAL-CDK";
+      config.rewardKind = "ldc";
+      config.fixed = { amount: "0.50", count: "1" };
       config.passwords = [{ id: 1, value: "分页匹配口令" }];
       if (index === 0) config.topic = "https://linux.do/t/topic/12345/7";
       const saved = store.saveWorkbenchActivity("standard", config, "active");
@@ -415,10 +415,11 @@ test("changing identity cancels automatic confirmation and restricted targets st
     .getByRole("button", { name: "返回兑奖", exact: true })
     .click();
   await submit(page, "公共口令2026");
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "周末红包 · 20 份", exact: true })
-    .click();
+  await expect(current(page).locator(".form-message")).toContainText(
+    "官方 Connect 升级",
+  );
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await lookup(page, `${origin}/#activity?sample=weekend`);
   await expect(
     current(page).getByRole("button", {
       name: "使用官方 Connect",
@@ -433,7 +434,7 @@ test("changing identity cancels automatic confirmation and restricted targets st
   await current(page)
     .getByRole("button", { name: "返回兑奖", exact: true })
     .click();
-  await submit(page, "十月口令2026");
+  await lookup(page, `${origin}/#activity?sample=thanks`);
   await expect(current(page).locator(".activity-page")).toHaveAttribute(
     "data-lifecycle",
     "ended",

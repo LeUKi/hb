@@ -454,13 +454,10 @@ test("new-tab viewing carries a locally published activity and its notes", async
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/#create");
-  await page
-    .getByRole("group", { name: "奖励类型" })
-    .getByRole("button", { name: "文本 / CDK", exact: true })
-    .click();
   const title = "新窗口本地活动验证";
   await page.locator("#work-title").fill(title);
-  await page.locator("#work-text-rewards").fill("POPUP-CDK-A\nPOPUP-CDK-B");
+  await page.getByRole("button", { name: "自定义金额", exact: true }).click();
+  await page.locator("#work-custom-amounts").fill("0.50\n0.88");
   await page.locator("#work-password-1").fill("新窗口验证口令");
   await page.locator(".work-more-settings > summary").click();
   await page
@@ -495,8 +492,13 @@ test("new-tab viewing carries a locally published activity and its notes", async
   await expect(popup.locator(".activity-quantity .sr-only")).toHaveText(
     "已领取 0 份，共 2 份",
   );
-  await expect(popup.locator("#activity-password")).toBeVisible();
-  await expect(popup.locator(".text-reward")).toHaveCount(0);
+  await expect(popup.locator("#activity-password")).toHaveCount(0);
+  await expect(
+    popup.getByText("不能领取自己发起的 LDC 活动", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    popup.getByRole("button", { name: "复制奖励", exact: true }),
+  ).toHaveCount(0);
   await expect(page).toHaveURL(/#manage$/u);
   await popup.close();
 });

@@ -1,4 +1,3 @@
-import { mkdir } from "node:fs/promises";
 import { test as base, expect, type Page } from "@playwright/test";
 import { activities, historySamples } from "../../apps/web/prototype/fixtures";
 
@@ -256,7 +255,7 @@ test("public winners survive viewer changes and registration remains separately 
   await expect(page.locator(".recipient")).toHaveCount(20);
 });
 
-test("square combines type and status, clear affects only status, drawing stays active", async ({
+test("square uses status-only filtering and clearing keeps drawings active", async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -268,7 +267,6 @@ test("square combines type and status, clear affects only status, drawing stays 
     .click();
   await page.getByRole("button", { name: "活动状态筛选" }).click();
   await page.getByRole("menuitemradio", { name: "进行中" }).click();
-  await page.getByRole("button", { name: "LDC", exact: true }).click();
   await expect(
     page.locator(".activity-rows-row").filter({ hasText: "十分钟限时开奖" }),
   ).toContainText("正在开奖");
@@ -279,9 +277,7 @@ test("square combines type and status, clear affects only status, drawing stays 
   ).toHaveCount(0);
   await page.getByRole("button", { name: "清空状态筛选" }).click();
   await expect(page.getByRole("menu")).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: "LDC", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("group", { name: "奖励筛选" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "清空状态筛选" })).toHaveCount(
     0,
   );
@@ -327,14 +323,7 @@ for (const width of [1920, 1440, 768, 375]) {
       "visible",
     );
     if (width === 1440 || width === 375) {
-      await mkdir(".wrangler/verification/prototype", { recursive: true });
-      await page.screenshot({
-        path: `.wrangler/verification/prototype/detail-revision-result-${width}.png`,
-      });
       await page.locator(".password-section").scrollIntoViewIfNeeded();
-      await page.screenshot({
-        path: `.wrangler/verification/prototype/detail-revision-passwords-${width}.png`,
-      });
     }
     await page.getByRole("button", { name: "返回兑奖" }).click();
     const homeArt = await page.locator(".envelope").boundingBox();
@@ -342,10 +331,6 @@ for (const width of [1920, 1440, 768, 375]) {
       (geometry.art?.width ?? 0) / (geometry.art?.height ?? 1),
       2,
     );
-    if (width === 1440 || width === 375)
-      await page.screenshot({
-        path: `.wrangler/verification/prototype/detail-revision-home-${width}.png`,
-      });
   });
 }
 
@@ -355,7 +340,7 @@ for (const width of [1440, 375]) {
   }) => {
     await page.setViewportSize({ width, height: 1000 });
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await mkdir(".wrangler/verification/prototype", { recursive: true });
+
     await page.goto("/#activity?sample=evening");
     await expect(
       page.locator('[data-note-region="before"] .activity-note'),
@@ -363,9 +348,7 @@ for (const width of [1440, 375]) {
     await page
       .getByRole("button", { name: "查看报名名单", exact: true })
       .click();
-    await page.screenshot({
-      path: `.wrangler/verification/prototype/detail-revision-registrations-${width}.png`,
-    });
+
     await scenario(page, "won");
     await expect(
       page.locator('[data-note-region="after"] .activity-note'),
@@ -373,24 +356,17 @@ for (const width of [1440, 375]) {
     await page
       .getByRole("button", { name: "查看中奖名单", exact: true })
       .click();
-    await page.screenshot({
-      path: `.wrangler/verification/prototype/detail-revision-winners-${width}.png`,
-    });
+
     await page.goto("/#square");
     await page.getByRole("button", { name: "活动状态筛选" }).click();
     await page.getByRole("menuitemradio", { name: "已结束" }).click();
     await page.getByRole("button", { name: "活动状态筛选" }).click();
     await expect(page.getByRole("menu")).toBeVisible();
-    await page.screenshot({
-      path: `.wrangler/verification/prototype/detail-revision-square-${width}.png`,
-    });
+
     await page.getByRole("menu").press("Escape");
     await page.goto("/#activity?sample=20000000-0000-4000-8000-000000000005");
     await page.getByRole("button", { name: "复制领取文案" }).click();
     await expect(page.getByRole("menu")).toBeVisible();
-    await page.screenshot({
-      path: `.wrangler/verification/prototype/detail-revision-author-${width}.png`,
-    });
   });
 }
 

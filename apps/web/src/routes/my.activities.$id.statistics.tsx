@@ -6,11 +6,5 @@ export const Route = createFileRoute("/my/activities/$id/statistics")({
 
 function LegacyStatisticsRedirect() {
   const { id } = Route.useParams();
-  return (
-    <Navigate
-      to="/my/activities"
-      search={{ type: "all", statistics: id }}
-      replace
-    />
-  );
+  return <Navigate to="/my/activities" search={{ statistics: id }} replace />;
 }

@@ -56,7 +56,7 @@ async function mountRoster(page: Page) {
         color: "blue",
         time: new Date(baseTime - Math.floor(index / 5) * 60_000).toISOString(),
         amount: index === 0 ? "0.01" : index === 44 ? "4.99" : "1.00",
-        privateReward: "PRIVATE-CDK-DO-NOT-RENDER",
+        privateReward: "PRIVATE-LDC-DO-NOT-RENDER",
       }));
       let props = {
         open: false,
@@ -505,17 +505,20 @@ test("author detail rows share the mobile roster dialog without horizontal overf
   ).toBe(true);
 });
 
-test("hidden lists, text rewards and fuzzy counts do not reveal private or unauthorized content", async ({
+test("hidden LDC lists and fuzzy counts do not reveal private or unauthorized content", async ({
   page,
 }) => {
   await mountRoster(page);
-  await patchRoster(page, { type: "text", fuzzy: true });
+  await patchRoster(page, { type: "ldc", fuzzy: true });
   const roster = await openRoster(page);
-  await expect(roster.locator(".recipient-award")).toHaveCount(0);
+  await expect(roster.locator(".recipient-award")).toHaveCount(20);
+  await expect(
+    roster.locator('[data-record-id="record-001"] .recipient-award'),
+  ).toContainText("0.01");
   await expect(roster.locator(".public-roster__summary")).not.toContainText(
     "45 人",
   );
-  await expect(roster).not.toContainText("PRIVATE-CDK-DO-NOT-RENDER");
+  await expect(roster).not.toContainText("PRIVATE-LDC-DO-NOT-RENDER");
   await patchRoster(page, { showRecipients: false });
   await expect(roster).toHaveCount(0);
   await expect(page.locator(".recipient")).toHaveCount(0);

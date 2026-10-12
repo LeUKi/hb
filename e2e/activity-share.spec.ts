@@ -80,7 +80,8 @@ async function mockShare(page: Page) {
     return {
       id,
       title: state.title,
-      rewardType: state.draw ? "ldc" : "text",
+      rewardType: "ldc",
+      paymentMode: "simulation",
       status: state.ended ? "ended" : "active",
       author: owner,
       forceDedicated: true,
@@ -94,7 +95,7 @@ async function mockShare(page: Page) {
       beforeInfo: state.beforeInfo,
       reward: state.draw
         ? { mode: "timed_draw", totalAmount: "0.30", count: 3 }
-        : { mode: "text" },
+        : { mode: "fixed", unitAmount: "0.10", count: 3 },
       ...(state.draw
         ? {
             draw: {
@@ -294,6 +295,7 @@ test("参与者仅分享其可见口令，权限失败撤下旧选项而保留�
     .poll(() => copied(page))
     .toBe(`【周末红包】\n活动链接：${link(page)}\n兑换口令：MyVisiblePass123`);
   expect(state.managedReads).toBe(0);
+  const passwordReadsBeforePoll = state.passwordReads;
   state.passwordStatus = 403;
   await page.clock.runFor(15_001);
   await expect(
@@ -306,7 +308,7 @@ test("参与者仅分享其可见口令，权限失败撤下旧选项而保留�
   ]);
   await page.getByRole("menuitem", { name: "复制链接", exact: true }).click();
   await expect.poll(() => copied(page)).toBe(link(page));
-  expect(state.passwordReads).toBe(2);
+  expect(state.passwordReads).toBe(passwordReadsBeforePoll + 1);
   expect(state.writes).toEqual([]);
 });
 

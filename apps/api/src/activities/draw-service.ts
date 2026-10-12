@@ -87,7 +87,11 @@ export function drawAmounts(money: TimedDrawMoney, participantCount: number) {
 
 async function loadPlan(env: ApiBindings, activityId: string) {
   return env.DB.prepare(
-    "SELECT participant_count,payload,created_at FROM activity_draw_plans WHERE activity_id=?",
+    `SELECT participant_count,payload,created_at FROM activity_draw_plans
+      WHERE activity_id=? AND EXISTS (
+        SELECT 1 FROM activities WHERE id=activity_draw_plans.activity_id
+          AND reward_type='ldc' AND deleted_at IS NULL
+      )`,
   )
     .bind(activityId)
     .first<PlanRow>();
@@ -99,7 +103,7 @@ export async function closeDueDraw(env: ApiBindings, activityId: string) {
     draw_closed_at=COALESCE(ended_at,deadline), draw_reason=CASE WHEN end_reason='manual' THEN 'manual' ELSE 'deadline' END,
     ended_at=COALESCE(ended_at,deadline),end_reason=COALESCE(end_reason,'expired'),
     version=version+1,updated_at=${databaseNow}
-    WHERE id=? AND deleted_at IS NULL AND opened_at IS NOT NULL AND draw_state='waiting'
+    WHERE id=? AND reward_type='ldc' AND deleted_at IS NULL AND opened_at IS NOT NULL AND draw_state='waiting'
       AND (deadline<=${databaseNow} OR ended_at IS NOT NULL)`)
     .bind(activityId)
     .run();
@@ -164,7 +168,7 @@ export async function saveDrawPlan(env: ApiBindings, activityId: string) {
   };
   try {
     await env.DB.prepare(`INSERT INTO activity_draw_plans(activity_id,participant_count,payload,created_at)
-      SELECT id,registered_count,?,${databaseNow} FROM activities WHERE id=? AND draw_state='settling' AND registered_count=?`)
+      SELECT id,registered_count,?,${databaseNow} FROM activities WHERE id=? AND reward_type='ldc' AND draw_state='settling' AND registered_count=?`)
       .bind(JSON.stringify(plan), activityId, activity.registeredCount)
       .run();
   } catch (error) {
@@ -309,7 +313,7 @@ export async function publishDrawPlan(env: ApiBindings, activityId: string) {
     const payload = JSON.stringify(winners);
     const statements = [
       env.DB.prepare(`SELECT json(CASE WHEN EXISTS(SELECT 1 FROM activities a JOIN activity_draw_plans d ON d.activity_id=a.id
-        WHERE a.id=? AND a.draw_state='settling' AND a.deleted_at IS NULL AND a.registered_count=d.participant_count AND d.payload=?
+        WHERE a.id=? AND a.reward_type='ldc' AND a.draw_state='settling' AND a.deleted_at IS NULL AND a.registered_count=d.participant_count AND d.payload=?
         AND a.merchant_id=? AND a.payment_mode=? AND a.claimed_count=0
         AND NOT EXISTS(SELECT 1 FROM reward_inventory WHERE activity_id=a.id))
         AND (SELECT COUNT(*) FROM json_each(?) w JOIN users u ON u.id=json_extract(w.value,'$.userId')
@@ -358,7 +362,7 @@ export async function publishDrawPlan(env: ApiBindings, activityId: string) {
         payload,
       ),
       env.DB.prepare(`UPDATE activities SET claimed_count=?,draw_state=?,draw_published_at=${databaseNow},
-        version=version+1,updated_at=${databaseNow} WHERE id=? AND draw_state='settling'`).bind(
+        version=version+1,updated_at=${databaseNow} WHERE id=? AND reward_type='ldc' AND draw_state='settling'`).bind(
         winners.length,
         winners.length ? "completed" : "empty",
         activityId,

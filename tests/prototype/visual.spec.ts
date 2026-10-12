@@ -1,4 +1,3 @@
-import { mkdir } from "node:fs/promises";
 import { test as base, expect, type Page } from "@playwright/test";
 import { activities } from "../../apps/web/prototype/fixtures";
 import type { Activity } from "../../apps/web/prototype/types";
@@ -396,12 +395,14 @@ test("published winnings and pending payment remain distinct from animation and 
   ).toHaveText(activities[0]?.afterClaimInfo ?? "", { useInnerText: true });
 });
 
-test("a lite identity cannot claim LDC but can claim and create text rewards", async ({
+test("a lite identity can browse but must upgrade before creating or participating", async ({
   page,
 }) => {
   await page.goto("/#activity");
   const controls = await openControls(page);
   await controls.getByLabel("体验身份").selectOption("lite");
+  await controls.getByLabel("活动状态").selectOption("ready");
+  await page.getByRole("button", { name: "场景与身份" }).click();
   await expect(
     page.getByRole("button", { name: "使用官方 Connect", exact: true }),
   ).toBeVisible();
@@ -410,23 +411,32 @@ test("a lite identity cannot claim LDC but can claim and create text rewards", a
     "data-open",
     "false",
   );
-  await scenario(page, "text");
-  await page.getByLabel("兑换口令", { exact: true }).fill("图书口令2026");
-  await page.getByRole("button", { name: /领取红包|领取奖励/u }).click();
-  await expect(page.locator(".text-reward pre")).toContainText(
-    "BOOK-MEME-2026",
-  );
-  await expect(currentRoute(page).getByTestId("envelope")).toHaveAttribute(
-    "data-open",
-    "true",
-  );
-  await expect(page.locator(".payout-summary")).toHaveCount(0);
   await page.getByRole("link", { name: "发起活动", exact: true }).click();
-  const kinds = page.getByRole("group", { name: "奖励类型", exact: true });
+  await expect(page.locator("#work-title")).toHaveCount(0);
   await expect(
-    kinds.getByRole("button", { name: "文本 / CDK", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
-  await expect(kinds.getByRole("button", { name: /LDC 奖励/u })).toBeDisabled();
+    page.getByRole("button", { name: "保存并开放", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "使用官方 Connect", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("navigation", { name: "主导航", exact: true })
+    .getByRole("link", { name: "兑奖", exact: true })
+    .click();
+  await page.getByLabel("口令", { exact: true }).fill(firstPassword);
+  await page.getByRole("button", { name: "兑奖", exact: true }).click();
+  await expect(page.locator(".form-message")).toContainText(
+    "官方 Connect 升级",
+  );
+  await expect(
+    page.getByRole("dialog", { name: "选择要兑奖的活动" }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "使用官方 Connect", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "通过官方 Connect 升级" }),
+  ).toBeVisible();
 });
 
 test("slow responses keep the envelope closed and prevent duplicate submissions", async ({
@@ -603,15 +613,15 @@ test("create defaults use 600 seconds and no registration limit while preserving
   await plans.getByRole("button", { name: "即时随机", exact: true }).click();
   await expect(page.locator("#work-random-amount")).toHaveValue("33.33");
   await expect(page.locator("#work-random-count")).toHaveValue("4");
-  const kinds = page.getByRole("group", { name: "奖励类型", exact: true });
-  await kinds.getByRole("button", { name: "文本 / CDK", exact: true }).click();
-  await page.locator("#work-text-rewards").fill("DEMO-A\nDEMO-B");
-  await kinds.getByRole("button", { name: "LDC 奖励", exact: true }).click();
+  await plans.getByRole("button", { name: "自定义金额", exact: true }).click();
+  await page.locator("#work-custom-amounts").fill("0.50\n0.88");
+  await plans.getByRole("button", { name: "即时随机", exact: true }).click();
   await expect(page.locator("#work-random-amount")).toHaveValue("33.33");
-  await kinds.getByRole("button", { name: "文本 / CDK", exact: true }).click();
-  await expect(page.locator("#work-text-rewards")).toHaveValue(
-    "DEMO-A\nDEMO-B",
-  );
+  await plans.getByRole("button", { name: "自定义金额", exact: true }).click();
+  await expect(page.locator("#work-custom-amounts")).toHaveValue("0.50\n0.88");
+  await expect(
+    page.getByRole("group", { name: "奖励类型", exact: true }),
+  ).toHaveCount(0);
 });
 
 test("multiple matches preserve the password and require confirmation of the selected activity", async ({
@@ -628,7 +638,7 @@ test("multiple matches preserve the password and require confirmation of the sel
     "false",
   );
   await matches
-    .getByRole("button", { name: "电子书兑换码", exact: true })
+    .getByRole("button", { name: "电子书阅读红包", exact: true })
     .click();
   await expect(page.getByLabel("兑换口令", { exact: true })).toHaveValue(
     firstPassword,
@@ -637,20 +647,21 @@ test("multiple matches preserve the password and require confirmation of the sel
     "data-open",
     "false",
   );
-  await expect(page.locator(".text-reward")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "复制奖励", exact: true }),
+  ).toHaveCount(0);
   await expect(page.locator('[data-note-region="after"]')).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: /领取红包|领取奖励/u, exact: true }),
   ).toHaveCount(0);
-  await expect(page.locator(".text-reward pre")).toContainText(
-    "BOOK-MEME-2026",
+  await expect(page.locator(".slip-amount")).toHaveText("+0.50");
+  await expect(currentRoute(page).getByTestId("envelope")).toHaveAttribute(
+    "data-open",
+    "true",
   );
-  const reward = await page.locator(".text-reward pre").textContent();
-  expect(reward).toContain("\n");
-  await page.getByRole("button", { name: "复制奖励", exact: true }).click();
   expect(
     await page.evaluate(() => Reflect.get(window, "prototypeCopies")),
-  ).toEqual([reward]);
+  ).toEqual([]);
 });
 
 test("Markdown notes preserve formatting and respect before, after, and ended visibility", async ({
@@ -731,12 +742,12 @@ test("strict topic lookup returns shared cards and selects without automatically
     "false",
   );
   await results
-    .getByRole("button", { name: "电子书兑换码", exact: true })
+    .getByRole("button", { name: "电子书阅读红包", exact: true })
     .click();
   await expect(
     page.getByRole("heading", {
       level: 1,
-      name: "电子书兑换码",
+      name: "电子书阅读红包",
       exact: true,
     }),
   ).toBeVisible();
@@ -746,7 +757,9 @@ test("strict topic lookup returns shared cards and selects without automatically
     "false",
   );
   await expect(page.locator(".reward-slip")).toHaveCount(0);
-  await expect(page.locator(".text-reward")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "复制奖励", exact: true }),
+  ).toHaveCount(0);
   await expect(page.locator('[data-note-region="after"]')).toHaveCount(0);
 });
 
@@ -762,7 +775,9 @@ test("pending payment survives activity changes and unrelated input is cleared",
   );
   await expect(page.locator(".payment-confirmation")).toHaveCount(0);
   await navigation.getByRole("link", { name: "活动广场", exact: true }).click();
-  await page.getByRole("button", { name: "电子书兑换码", exact: true }).click();
+  await page
+    .getByRole("button", { name: "电子书阅读红包", exact: true })
+    .click();
   const input = page.getByLabel("兑换口令", { exact: true });
   await expect(input).toHaveValue("");
   await input.fill("私有Ab123");
@@ -791,7 +806,9 @@ test("pending payment survives activity changes and unrelated input is cleared",
   await expect(page.locator(".payment-confirmation")).toHaveCount(0);
   await expect(page.locator(".payout-summary")).toHaveCount(0);
   await navigation.getByRole("link", { name: "活动广场", exact: true }).click();
-  await page.getByRole("button", { name: "电子书兑换码", exact: true }).click();
+  await page
+    .getByRole("button", { name: "电子书阅读红包", exact: true })
+    .click();
   await expect(input).toHaveValue("");
   await expect(currentRoute(page).getByTestId("envelope")).toHaveAttribute(
     "data-open",
@@ -851,11 +868,9 @@ for (const viewport of [
   { name: "desktop", width: 1440, height: 1000 },
   { name: "mobile", width: 375, height: 850 },
 ] as const) {
-  test(`captures isolated ${viewport.name} screenshot evidence`, async ({
+  test(`settled ${viewport.name} layouts retain accessible controls`, async ({
     page,
   }) => {
-    const artifacts = ".wrangler/verification/prototype";
-    await mkdir(artifacts, { recursive: true });
     await page.setViewportSize({
       width: viewport.width,
       height: viewport.height,
@@ -867,10 +882,6 @@ for (const viewport of [
     ).toBeVisible();
     await page.evaluate(() => document.fonts.ready);
     await page.mouse.move(0, 0);
-    await page.screenshot({
-      path: `${artifacts}/home-${viewport.name}.png`,
-      animations: "disabled",
-    });
 
     await page.goto("/#activity");
     await page.getByLabel("兑换口令", { exact: true }).fill(uniquePassword);
@@ -907,7 +918,7 @@ for (const viewport of [
           return stableSamples >= 3;
         },
         {
-          message: "The opened reward must settle before capture",
+          message: "The opened reward must retain stable geometry",
           intervals: [100],
         },
       )
@@ -929,11 +940,6 @@ for (const viewport of [
     await expect(page.locator(".skip-link")).not.toBeFocused();
     await expect(page.locator(".skip-link")).toHaveCSS("top", "-80px");
     await page.mouse.move(0, 0);
-    await page.screenshot({
-      path: `${artifacts}/result-${viewport.name}.png`,
-      fullPage: true,
-      animations: "disabled",
-    });
 
     await page.goto("/#create");
     const plans = page.getByRole("group", {
@@ -945,10 +951,5 @@ for (const viewport of [
     await expect(page.locator("#work-draw-limit")).toHaveValue("");
     await page.mouse.move(0, 0);
     await page.keyboard.press("Escape");
-    await page.screenshot({
-      path: `${artifacts}/create-${viewport.name}.png`,
-      fullPage: true,
-      animations: "disabled",
-    });
   });
 }

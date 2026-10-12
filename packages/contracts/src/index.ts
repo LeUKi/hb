@@ -22,7 +22,6 @@ export const ACTIVITY_LIMITS = {
   passwords: 5,
   historicalPasswords: 100,
   rewards: 1000,
-  rewardBytes: 16 * 1024,
   infoCharacters: 10000,
   requestBytes: 1024 * 1024,
 } as const;
@@ -161,28 +160,12 @@ const baseActivitySchema = z.strictObject({
     "请填写有效的 Linux DO 帖子链接",
   ),
   forceDedicated: z.boolean(),
-  rewardType: z.literal("text").default("text"),
   joinSquare: z.boolean().default(false),
   deadline: deadlineSchema,
   allocation: z.enum(["sequential", "random"]),
   passwords: z
     .array(passwordSchema)
     .max(ACTIVITY_LIMITS.historicalPasswords, "历史活动最多 100 个口令"),
-  rewards: z
-    .array(
-      z.strictObject({
-        id: z.uuid(),
-        text: z
-          .string()
-          .refine((value) => value.trim().length > 0, "奖励文本不能为空")
-          .refine(
-            (value) => byteLength(value) <= ACTIVITY_LIMITS.rewardBytes,
-            "每份奖励不能超过 16 KiB",
-          ),
-      }),
-    )
-    .min(1, "至少填写一份奖励")
-    .max(ACTIVITY_LIMITS.rewards, "最多 1,000 份奖励"),
   quantityVisibility: z.enum(["exact", "fuzzy", "availability", "hidden"]),
   showRecipientList: z.boolean(),
   showRecipientUsername: z.boolean(),
@@ -284,20 +267,14 @@ export const ldcMoneySchema = z.discriminatedUnion("mode", [
 export type LdcMoney = z.infer<typeof ldcMoneySchema>;
 export type RandomLdcMoney = Extract<LdcMoney, { mode: "random" }>;
 export type TimedDrawMoney = Extract<LdcMoney, { mode: "timed_draw" }>;
-const ldcActivitySchema = baseActivitySchema
-  .omit({ rewards: true, rewardType: true })
-  .extend({
-    rewardType: z.literal("ldc"),
-    merchantId: z.uuid(),
-    money: ldcMoneySchema,
-  });
-const activityVariants = z.discriminatedUnion("rewardType", [
-  baseActivitySchema,
-  ldcActivitySchema,
-]);
+const ldcActivitySchema = baseActivitySchema.extend({
+  rewardType: z.literal("ldc"),
+  merchantId: z.uuid(),
+  money: ldcMoneySchema,
+});
 
 function validateActivity(
-  activity: z.infer<typeof activityVariants>,
+  activity: z.infer<typeof ldcActivitySchema>,
   context: z.RefinementCtx,
 ) {
   if (activity.participationMode === "direct") {
@@ -320,7 +297,6 @@ function validateActivity(
       message: "至少填写一个口令",
     });
   if (
-    activity.rewardType === "ldc" &&
     (activity.money.mode === "random" ||
       activity.money.mode === "timed_draw") &&
     activity.allocation !== "random"
@@ -330,7 +306,7 @@ function validateActivity(
       path: ["allocation"],
       message: "随机金额模式须采用不放回随机领取",
     });
-  if (activity.rewardType === "ldc" && activity.money.mode === "timed_draw") {
+  if (activity.money.mode === "timed_draw") {
     if (
       activity.deadline.mode === "duration" &&
       activity.money.countdownSeconds === undefined
@@ -360,50 +336,19 @@ function validateActivity(
       });
     passwords.add(password);
   });
-  if (activity.rewardType === "text") {
-    const ids = new Set<string>();
-    activity.rewards.forEach((reward, index) => {
-      if (ids.has(reward.id))
-        context.addIssue({
-          code: "custom",
-          path: ["rewards", index, "id"],
-          message: "奖励条目标识重复",
-        });
-      ids.add(reward.id);
-    });
-  }
 }
 
-function withDefaultRewardType(value: unknown) {
-  if (value && typeof value === "object" && !("rewardType" in value))
-    return { ...value, rewardType: "text" };
-  return value;
-}
-
-export const activityInputSchema = z.preprocess(
-  withDefaultRewardType,
-  activityVariants.superRefine(validateActivity),
-);
+export const activityInputSchema =
+  ldcActivitySchema.superRefine(validateActivity);
 /** Only the creation envelope accepts old links before the idempotency lookup. */
-export const historicalActivityInputSchema = z.preprocess(
-  withDefaultRewardType,
-  z
-    .discriminatedUnion("rewardType", [
-      baseActivitySchema.extend({
-        topicUrl: topicUrlSchema.refine(
-          acceptsHistoricalTopicLink,
-          "请填写有效的 Linux DO 帖子链接",
-        ),
-      }),
-      ldcActivitySchema.extend({
-        topicUrl: topicUrlSchema.refine(
-          acceptsHistoricalTopicLink,
-          "请填写有效的 Linux DO 帖子链接",
-        ),
-      }),
-    ])
-    .superRefine(validateActivity),
-);
+export const historicalActivityInputSchema = ldcActivitySchema
+  .extend({
+    topicUrl: topicUrlSchema.refine(
+      acceptsHistoricalTopicLink,
+      "请填写有效的 Linux DO 帖子链接",
+    ),
+  })
+  .superRefine(validateActivity);
 /** Apply only after resolving a new create request's idempotency key. */
 export const newActivityInputSchema = activityInputSchema.superRefine(
   (value, context) => {
@@ -425,8 +370,7 @@ export const newActivityInputSchema = activityInputSchema.superRefine(
   },
 );
 export type ActivityInput = z.infer<typeof activityInputSchema>;
-export type TextActivityInput = Extract<ActivityInput, { rewardType: "text" }>;
-export type LdcActivityInput = Extract<ActivityInput, { rewardType: "ldc" }>;
+export type LdcActivityInput = ActivityInput;
 export function ldcAmounts(input: LdcActivityInput): number[] {
   if (input.money.mode === "random" || input.money.mode === "timed_draw")
     throw new Error("Random amounts must come from saved server inventory");
@@ -503,9 +447,8 @@ export function boundedMeanLimits(totalMinor: number, count: number) {
   };
 }
 
-export function emptyActivityInput(): TextActivityInput {
+export function emptyActivityInput(): LdcActivityInput {
   return {
-    rewardType: "text",
     title: "",
     topicUrl: "",
     forceDedicated: false,
@@ -513,7 +456,6 @@ export function emptyActivityInput(): TextActivityInput {
     deadline: { mode: "duration" },
     allocation: "sequential",
     passwords: [],
-    rewards: [],
     quantityVisibility: "exact",
     showRecipientList: true,
     showRecipientUsername: true,
@@ -522,6 +464,9 @@ export function emptyActivityInput(): TextActivityInput {
     beforeInfo: "",
     afterClaimInfo: "",
     afterEndInfo: "",
+    rewardType: "ldc",
+    merchantId: "",
+    money: { mode: "fixed", totalAmount: "1.00", count: 1 },
   };
 }
 
@@ -549,7 +494,6 @@ export type OpenActivityInput = z.infer<typeof openActivitySchema>;
 export type ActivityStatus = "draft" | "active" | "ended" | "archived";
 export const activityRewardFilterSchema = z.enum([
   "all",
-  "text",
   "ldc",
   "fixed",
   "custom",
@@ -562,18 +506,16 @@ export type ActivityHistoryFilters = {
   type?: ActivityRewardFilter;
   status?: ActivityStatus | "all";
 };
-/** A public projection never contains private text rewards or a custom amount list. */
-export type ActivityRewardSummary =
-  | { mode: "text" }
-  | {
-      mode: LdcMoney["mode"];
-      totalAmount?: string;
-      unitAmount?: string;
-      count?: number;
-      algorithm?: RandomLdcMoney["algorithm"];
-      participantLimit?: number | null;
-      distributeFullPool?: boolean;
-    };
+/** A public projection summarizes LDC amounts without exposing custom amount arrays. */
+export type ActivityRewardSummary = {
+  mode: LdcMoney["mode"];
+  totalAmount?: string;
+  unitAmount?: string;
+  count?: number;
+  algorithm?: RandomLdcMoney["algorithm"];
+  participantLimit?: number | null;
+  distributeFullPool?: boolean;
+};
 export type AccountHistorySummary = {
   initiatedCount: number;
   participatedCount: number;
@@ -598,7 +540,7 @@ export type ActivitySummary = {
   participationMode?: ParticipationMode;
   id: string;
   title: string;
-  rewardType: "text" | "ldc";
+  rewardType: "ldc";
   forceDedicated: boolean;
   status: ActivityStatus;
   version: number;
@@ -629,7 +571,7 @@ export type PublicActivity = {
   participationMode?: ParticipationMode;
   id: string;
   title: string;
-  rewardType: "text" | "ldc";
+  rewardType: "ldc";
   status: ActivityStatus;
   author: ActivityAuthor;
   forceDedicated: boolean;
@@ -733,7 +675,7 @@ export type SolveResult = {
 export type ClaimSummary = {
   id: string;
   activity: ParticipationActivity;
-  rewardType: "text" | "ldc";
+  rewardType: "ldc";
   claimedAt: string;
   sourcePassword?: string;
   amount?: string;
@@ -752,10 +694,7 @@ export type ParticipationActivity = {
 };
 export type ClaimDetail = Omit<ClaimSummary, "rewardType"> & {
   afterClaimInfo: string;
-} & (
-    | { rewardType: "text"; text: string }
-    | { rewardType: "ldc"; amount: string; payment: PaymentView }
-  );
+} & { rewardType: "ldc"; amount: string; payment: PaymentView };
 export type ClaimResult = (
   | { result: "claimed" | "already_claimed"; claim: ClaimDetail }
   | {
@@ -797,10 +736,7 @@ export type AuthorRegistrationList = {
 };
 export type AuthorClaim = Omit<ClaimDetail, "afterClaimInfo"> & {
   claimant: ActivityAuthor;
-} & (
-    | { rewardType: "text"; text: string }
-    | { rewardType: "ldc"; amount: string; payment: PaymentView }
-  );
+} & { rewardType: "ldc"; amount: string; payment: PaymentView };
 export type AuthorClaimList = {
   items: AuthorClaim[];
   nextCursor: string | null;

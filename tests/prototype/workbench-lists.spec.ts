@@ -39,16 +39,11 @@ async function setIdentity(page: Page, identity: "standard" | "lite") {
   await page.getByRole("button", { name: "场景与身份" }).click();
 }
 
-test("author activities paginate 24 records, retain a fixed footer, and reset filters to page one", async ({
+test("author activities paginate 24 records and retain a fixed footer without reward filters", async ({
   page,
 }) => {
   await page.goto("/#manage");
-  const filter = page.getByRole("group", { name: "奖励筛选" });
-  await expect(filter.getByRole("button")).toHaveText([
-    "全部",
-    "文本 / CDK",
-    "LDC",
-  ]);
+  await expect(page.getByRole("group", { name: "奖励筛选" })).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "刷新活动列表", exact: true }),
   ).toBeVisible();
@@ -69,18 +64,13 @@ test("author activities paginate 24 records, retain a fixed footer, and reset fi
   await expect(paging.getByRole("button", { name: "下一页" })).toBeDisabled();
   await expect(managed(page, 21)).toBeVisible();
   await expect(managed(page, 22)).toContainText(
-    "CDK 兑换草稿 · 8 份 · 第 3 期",
+    "固定红包草稿 · 8 份 · 第 3 期",
   );
-  await filter.getByRole("button", { name: "文本 / CDK", exact: true }).click();
-  await expect(paging).toContainText("第 1 页");
-  await expect(page.getByTestId("managed-activity")).toHaveCount(14);
-  await expect(paging.getByRole("button", { name: "下一页" })).toBeDisabled();
-  await expect(
-    page.getByTestId("managed-activity").locator(".activity-reward-label"),
-  ).toHaveText(Array(14).fill("文本 / CDK"));
-  await filter.getByRole("button", { name: "全部", exact: true }).click();
+  await paging.getByRole("button", { name: "上一页" }).click();
   await expect(page.getByTestId("managed-activity")).toHaveCount(20);
   await expect(paging).toContainText("第 1 页");
+  await page.getByRole("button", { name: "刷新活动列表", exact: true }).click();
+  await expect(page.getByTestId("managed-activity")).toHaveCount(20);
 });
 
 test("draft deletion requires confirmation, survives route unmounts, and cannot revive through edit or payment links", async ({
@@ -88,28 +78,24 @@ test("draft deletion requires confirmation, survives route unmounts, and cannot 
 }) => {
   await page.goto("/#manage");
   const deleting = managed(page, 2).getByRole("button", {
-    name: "CDK 兑换码 · 12 份：删除草稿",
+    name: "固定红包 · 12 份：删除草稿",
   });
   await deleting.click();
   const dialog = page.getByRole("dialog", { name: "确认删除草稿" });
-  await expect(dialog).toContainText("CDK 兑换码 · 12 份");
+  await expect(dialog).toContainText("固定红包 · 12 份");
   await dialog.getByRole("button", { name: "取消", exact: true }).click();
   await expect(managed(page, 2)).toBeVisible();
   await deleting.click();
   await dialog.getByRole("button", { name: "删除草稿", exact: true }).click();
   await expect(managed(page, 2)).toHaveCount(0);
-  await expect(page.getByRole("group", { name: "奖励筛选" })).toContainText(
-    "全部",
-  );
+  await expect(page.getByRole("group", { name: "奖励筛选" })).toHaveCount(0);
   await changeHash(page, "account");
   await expect(
     page.getByRole("heading", { name: "账号信息", exact: true }),
   ).toBeVisible();
   await changeHash(page, "manage");
   await expect(managed(page, 2)).toHaveCount(0);
-  await expect(page.getByRole("group", { name: "奖励筛选" })).toContainText(
-    "全部",
-  );
+  await expect(page.getByRole("group", { name: "奖励筛选" })).toHaveCount(0);
   await changeHash(page, `create?edit=${id(2)}`);
   await expect(page.getByRole("heading", { name: "活动不存在" })).toBeVisible();
   await expect(page.locator("#work-title")).toHaveCount(0);
@@ -123,16 +109,12 @@ test("editing the selected draft loads its complete data and updates the same re
 }) => {
   await page.goto("/#manage");
   await managed(page, 2)
-    .getByRole("button", { name: "CDK 兑换码 · 12 份：编辑草稿" })
+    .getByRole("button", { name: "固定红包 · 12 份：编辑草稿" })
     .click();
   await expect(page).toHaveURL(new RegExp(`edit=${id(2)}$`, "u"));
-  await expect(page.locator("#work-title")).toHaveValue("CDK 兑换码 · 12 份");
-  await expect(page.locator("#work-text-rewards")).toHaveValue(
-    Array.from(
-      { length: 12 },
-      (_, item) => `DEMO-2-${String(item + 1).padStart(3, "0")}`,
-    ).join("\n"),
-  );
+  await expect(page.locator("#work-title")).toHaveValue("固定红包 · 12 份");
+  await expect(page.locator("#work-fixed-amount")).toHaveValue("0.88");
+  await expect(page.locator("#work-fixed-count")).toHaveValue("12");
   await expect(page.locator("#work-password-1")).toHaveValue("兑换口令2026");
   await expect(page.locator("#work-topic")).toHaveValue(
     "https://linux.do/t/topic/2964597/1216",
@@ -148,9 +130,7 @@ test("editing the selected draft loads its complete data and updates the same re
     .getByRole("button", { name: "查看我的活动" })
     .click();
   await expect(managed(page, 2)).toContainText("资料兑换 · 修订版");
-  await expect(page.getByRole("group", { name: "奖励筛选" })).toContainText(
-    "全部",
-  );
+  await expect(page.getByRole("group", { name: "奖励筛选" })).toHaveCount(0);
   await managed(page, 2)
     .getByRole("button", { name: "资料兑换 · 修订版：编辑草稿" })
     .click();
@@ -221,7 +201,7 @@ test("author fixtures include four LDC modes and protect an open draw with accep
     "即时随机",
     "自定义金额",
     "限时开奖",
-    "文本 / CDK",
+    "LDC",
   ]) {
     await expect(page.locator(".work-managed-list")).toContainText(label);
   }
@@ -230,17 +210,17 @@ test("author fixtures include four LDC modes and protect an open draw with accep
     [3, "25.80 LDC 奖池"],
     [5, "20.00 LDC 奖池"],
     [9, "20.00 LDC 奖池"],
-    [2, "12 份 文本 / CDK"],
+    [2, "10.56 LDC 奖池"],
   ] as const) {
     await expect(
       managed(page, number).locator(".activity-reward-summary"),
     ).toHaveText(summary);
   }
-  await expect(managed(page, 10)).toContainText("CDK 兑换码 · 8 份 · 第 2 期");
+  await expect(managed(page, 10)).toContainText("固定红包 · 8 份 · 第 2 期");
   await expect(managed(page, 14)).toContainText(
-    "CDK 兑换草稿 · 8 份 · 第 2 期",
+    "固定红包草稿 · 8 份 · 第 2 期",
   );
-  await expect(managed(page, 18)).toContainText("CDK 兑换码 · 8 份 · 第 3 期");
+  await expect(managed(page, 18)).toContainText("固定红包 · 8 份 · 第 3 期");
   await expect(managed(page, 9)).toContainText("30 人");
   await expect(managed(page, 9)).toContainText("已报名");
   await expect(
@@ -374,14 +354,14 @@ test("mobile row actions escape the list, support keyboard navigation, and retur
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto("/#manage");
   const trigger = managed(page, 2).getByRole("button", {
-    name: "CDK 兑换码 · 12 份操作",
+    name: "固定红包 · 12 份操作",
   });
   const bounds = await trigger.boundingBox();
   expect(bounds?.width).toBeGreaterThanOrEqual(36);
   expect(bounds?.height).toBeGreaterThanOrEqual(36);
   await expect(managed(page, 2).locator(".row-actions-inline")).toBeHidden();
   await trigger.click();
-  const menu = page.getByRole("menu", { name: "CDK 兑换码 · 12 份操作" });
+  const menu = page.getByRole("menu", { name: "固定红包 · 12 份操作" });
   await expect(menu).toBeVisible();
   expect(
     await menu.evaluate((element) =>
@@ -423,9 +403,9 @@ test("mobile row actions escape the list, support keyboard navigation, and retur
   await page.getByRole("heading", { name: "活动历史", exact: true }).click();
   await expect(menu).toHaveCount(0);
   await managed(page, 2)
-    .getByRole("button", { name: "CDK 兑换码 · 12 份：编辑草稿" })
+    .getByRole("button", { name: "固定红包 · 12 份：编辑草稿" })
     .click();
-  await expect(page.locator("#work-title")).toHaveValue("CDK 兑换码 · 12 份");
+  await expect(page.locator("#work-title")).toHaveValue("固定红包 · 12 份");
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(375);
@@ -510,7 +490,7 @@ test("author records are isolated by identity and reset only after a browser ref
 }) => {
   await page.goto("/#manage");
   await managed(page, 2)
-    .getByRole("button", { name: "CDK 兑换码 · 12 份：删除草稿" })
+    .getByRole("button", { name: "固定红包 · 12 份：删除草稿" })
     .click();
   await page
     .getByRole("dialog", { name: "确认删除草稿" })
@@ -518,18 +498,14 @@ test("author records are isolated by identity and reset only after a browser ref
     .click();
   await expect(managed(page, 2)).toHaveCount(0);
   await setIdentity(page, "lite");
-  await expect(
-    page.locator('[data-activity-id="21000000-0000-4000-8000-000000000002"]'),
-  ).toBeVisible();
+  await expect(page.getByTestId("managed-activity")).toHaveCount(0);
+  await expect(page.getByRole("status")).toContainText("暂无活动");
   await expect(managed(page, 2)).toHaveCount(0);
-  await expect(page.locator(".work-managed-list")).not.toContainText("LDC");
   await setIdentity(page, "standard");
   await expect(managed(page, 2)).toHaveCount(0);
   await page.reload();
   await expect(managed(page, 2)).toBeVisible();
-  await expect(page.getByRole("group", { name: "奖励筛选" })).toContainText(
-    "全部",
-  );
+  await expect(page.getByRole("group", { name: "奖励筛选" })).toHaveCount(0);
 });
 
 test("form segmented controls retain plan inputs and fit a 375px screen", async ({
@@ -566,10 +542,6 @@ test("form segmented controls retain plan inputs and fit a 375px screen", async 
       .getByRole("group", { name: "发放顺序" })
       .getByRole("button", { name: "随机", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
-  await page
-    .getByRole("group", { name: "奖励类型" })
-    .getByRole("button", { name: "文本 / CDK", exact: true })
-    .click();
   await page.locator(".work-more-settings > summary").click();
   await page
     .getByRole("group", { name: "数量展示" })
@@ -596,34 +568,29 @@ test("repeated draft saves reuse one record and opening publishes the edited inv
   page,
 }) => {
   await page.goto("/#create");
-  await page
-    .getByRole("group", { name: "奖励类型" })
-    .getByRole("button", { name: "文本 / CDK", exact: true })
-    .click();
-  await page.locator("#work-title").fill("本地文本活动");
-  await page.locator("#work-text-rewards").fill("FIRST-CDK\n    \nSECOND-CDK");
-  await page.locator("#work-password-1").fill("本地文本口令");
+  await page.locator("#work-title").fill("本地金额活动");
+  await page.getByRole("button", { name: "自定义金额", exact: true }).click();
+  await page.locator("#work-custom-amounts").fill("0.50\n    \n0.88");
+  await page.locator("#work-password-1").fill("本地金额口令");
   await page.getByRole("button", { name: "保存草稿", exact: true }).click();
   const confirmation = page.getByRole("dialog", { name: "演示草稿已保存" });
   await confirmation
     .getByRole("button", { name: "继续编辑", exact: true })
     .click();
-  await page.locator("#work-title").fill("本地文本活动 · 更新");
+  await page.locator("#work-title").fill("本地金额活动 · 更新");
   await page.getByRole("button", { name: "保存草稿", exact: true }).click();
   await confirmation.getByRole("button", { name: "查看我的活动" }).click();
-  await expect(page.getByRole("group", { name: "奖励筛选" })).toContainText(
-    "全部",
-  );
+  await expect(page.getByRole("group", { name: "奖励筛选" })).toHaveCount(0);
   const saved = page.getByTestId("managed-activity").first();
-  await expect(saved).toContainText("本地文本活动 · 更新");
-  await expect(saved).toContainText("2 份 文本 / CDK");
+  await expect(saved).toContainText("本地金额活动 · 更新");
+  await expect(saved).toContainText("1.38 LDC 奖池");
   const savedId = await saved.getAttribute("data-activity-id");
   expect(savedId).toMatch(/^[0-9a-f-]{36}$/u);
   await saved
-    .getByRole("button", { name: "本地文本活动 · 更新：编辑草稿" })
+    .getByRole("button", { name: "本地金额活动 · 更新：编辑草稿" })
     .click();
-  await expect(page.locator("#work-text-rewards")).toHaveValue(
-    "FIRST-CDK\n    \nSECOND-CDK",
+  await expect(page.locator("#work-custom-amounts")).toHaveValue(
+    "0.50\n    \n0.88",
   );
   await page.getByRole("button", { name: "保存并开放", exact: true }).click();
   await page
@@ -632,16 +599,14 @@ test("repeated draft saves reuse one record and opening publishes the edited inv
     .click();
   await expect(page).toHaveURL(new RegExp(`sample=${savedId}$`, "u"));
   await expect(
-    page.getByRole("heading", { name: "本地文本活动 · 更新", exact: true }),
+    page.getByRole("heading", { name: "本地金额活动 · 更新", exact: true }),
   ).toBeVisible();
   await changeHash(page, "manage");
-  await expect(page.getByRole("group", { name: "奖励筛选" })).toContainText(
-    "全部",
-  );
+  await expect(page.getByRole("group", { name: "奖励筛选" })).toHaveCount(0);
   await expect(page.locator(`[data-activity-id="${savedId}"]`)).toContainText(
     "进行中",
   );
   await expect(page.locator(`[data-activity-id="${savedId}"]`)).toContainText(
-    "2 份 文本 / CDK",
+    "1.38 LDC 奖池",
   );
 });

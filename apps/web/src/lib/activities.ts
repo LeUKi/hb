@@ -4,7 +4,6 @@ import type {
   ActivityHistoryFilters,
   ActivityIssue,
   ActivityList,
-  ActivityRewardFilter,
   ActivityStatus,
   AttemptCooldown,
   CreateActivityInput,
@@ -167,33 +166,6 @@ export function useHistorySummary(userId: string) {
   });
   useMountedPageFocusRefresh(query.refetch);
   return query;
-}
-
-export const rewardFilterLabels: Record<ActivityRewardFilter, string> = {
-  all: "全部",
-  text: "文本 / CDK",
-  ldc: "LDC",
-  fixed: "固定均分",
-  custom: "自定义金额",
-  random: "随机金额",
-  timed_draw: "限时开奖",
-};
-
-export const activityRewardFilters = ["all", "text", "ldc"] as const;
-
-export function normalizeActivityRewardFilter(
-  value: unknown,
-): (typeof activityRewardFilters)[number] {
-  if (value === "text") return "text";
-  if (
-    value === "ldc" ||
-    value === "fixed" ||
-    value === "custom" ||
-    value === "random" ||
-    value === "timed_draw"
-  )
-    return "ldc";
-  return "all";
 }
 
 export function useManagedActivity(userId: string, id: string, enabled = true) {

@@ -122,9 +122,8 @@ describe("random reward configuration", () => {
     totalAmount: "1",
     count: 3,
   };
-  const { rewards: _rewards, ...base } = emptyActivityInput();
   const input: LdcActivityInput = {
-    ...base,
+    ...emptyActivityInput(),
     title: "随机活动",
     passwords: ["Random123"],
     rewardType: "ldc",

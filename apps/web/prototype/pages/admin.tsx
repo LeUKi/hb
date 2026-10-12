@@ -96,10 +96,11 @@ const records: Record<
     const id = activityIdAt(i);
     const emojiCode = encodeActivityEmoji(id);
     const topic = topicSamples[i % topicSamples.length] ?? topicSamples[0];
-    const drawAnomaly = i % 8 === 0 ? "结算等待超过十分钟" : "";
+    const draw = i % 3 === 2;
+    const drawAnomaly = draw && i % 8 === 0 ? "结算等待超过十分钟" : "";
     const authorUsername = `demo${i % 6}`;
     const status = ["草稿", "进行中", "已结束", "归档"][i % 4] ?? "草稿";
-    const type = ["LDC", "文本 / CDK", "限时开奖"][i % 3] ?? "LDC";
+    const type = "LDC";
     return {
       id,
       name: `活动样例 ${i + 1}`,
@@ -109,23 +110,15 @@ const records: Record<
       fields: [
         ["活动 UUID", id],
         ["作者", `${authorUsername} · Linux DO ${332940 + (i % 6)}`],
-        ["奖励类型", type],
+        ["奖励方式", draw ? "限时开奖" : i % 3 === 1 ? "即时随机" : "固定均分"],
         ["生命周期", status],
         ["参与方式", i % 2 ? "口令参与" : "直接参与"],
         ["库存", "20 份，已领取 3 份"],
         ["报名人数", String(12 + (i % 5))],
-        [
-          "开奖状态",
-          drawAnomaly || (type === "限时开奖" ? "等待开奖" : "不适用"),
-        ],
+        ["开奖状态", drawAnomaly || (draw ? "等待开奖" : "不适用")],
         ["Emoji 活动码", emojiCode],
         ["关联帖子", `https://linux.do/t/topic/${topic[0]}/${topic[1]}`],
-        [
-          "关联付款",
-          type === "文本 / CDK"
-            ? "无付款任务"
-            : `${(i % 4) + 1} 笔；未确认 ${i % 2} 笔`,
-        ],
+        ["关联付款", `${(i % 4) + 1} 笔；未确认 ${i % 2} 笔`],
       ],
       meta: {
         activityId: id,
@@ -255,6 +248,12 @@ function formatReadTime(time: number) {
 
 function readRoute() {
   const q = new URLSearchParams(window.location.hash.split("?")[1] ?? "");
+  if (q.get("section") === "activities" && q.has("type")) {
+    q.delete("type");
+    q.delete("page");
+    q.delete("cursor");
+    window.history.replaceState(null, "", `#admin?${q}`);
+  }
   return {
     section: (q.get("section") ?? "overview") as Section,
     q: q.get("q") ?? "",
@@ -662,20 +661,22 @@ export function AdminPrototype({ identity }: { identity: Identity }) {
             <button className="button secondary" type="submit">
               搜索
             </button>
-            <label className="field">
-              类型
-              <select
-                value={route.type}
-                onChange={(e) =>
-                  update({ type: e.target.value, page: 1, detail: "" })
-                }
-              >
-                <option value="">全部</option>
-                {types.map((type) => (
-                  <option key={type}>{type}</option>
-                ))}
-              </select>
-            </label>
+            {section !== "activities" && (
+              <label className="field">
+                类型
+                <select
+                  value={route.type}
+                  onChange={(e) =>
+                    update({ type: e.target.value, page: 1, detail: "" })
+                  }
+                >
+                  <option value="">全部</option>
+                  {types.map((type) => (
+                    <option key={type}>{type}</option>
+                  ))}
+                </select>
+              </label>
+            )}
             {section !== "audit" && (
               <label className="field">
                 状态

@@ -16,9 +16,7 @@ export function projectActivityNotes(
   state: ActivityViewState,
   identity: Identity,
 ): VisibleActivityNotes {
-  const eligible =
-    identity === "standard" ||
-    (identity === "lite" && activity.type === "text");
+  const eligible = identity === "standard";
   const hasReward =
     state.participation === "claimed" || state.participation === "won";
   const ended = state.lifecycle === "ended" || state.lifecycle === "archived";

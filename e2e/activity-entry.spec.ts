@@ -54,7 +54,7 @@ function activity(overrides: Record<string, unknown> = {}) {
   return {
     id: activityId,
     title: "活动页进入连续性验收",
-    rewardType: "text",
+    rewardType: "ldc",
     status: "active",
     author,
     forceDedicated: true,
@@ -69,7 +69,7 @@ function activity(overrides: Record<string, unknown> = {}) {
       "活动说明第一段。\n\n慢数据到达时，口令区域和结束说明应该跟随布局动画移动，而不是突然跳动。",
     afterEndInfo:
       "结束说明用于验证活动页底部区域在上方内容异步变化时保持连续。",
-    reward: { mode: "text" },
+    reward: { mode: "fixed", totalAmount: "4.00", count: 4 },
     myClaim: null,
     ...overrides,
   };
@@ -83,8 +83,15 @@ function claim() {
       title: "活动页进入连续性验收",
       status: "active",
     },
-    rewardType: "text",
-    text: "ENTRY-CDK",
+    rewardType: "ldc",
+    amount: "1.00",
+    payment: {
+      id: "payment-entry",
+      mode: "simulation",
+      status: "confirmed",
+      reason: null,
+      confirmedAt: "2026-10-07T01:00:01.000Z",
+    },
     afterClaimInfo:
       "奖励附言第一段。\n\n这里故意较长，用来观察领取结果出现后，活动口令和结束说明是否平滑移动。\n\n奖励附言第三段。",
     claimedAt: "2026-10-07T01:00:00.000Z",
@@ -274,8 +281,8 @@ async function setupActivityEntry(
             claimedCount: state.claimed ? 1 : 0,
             config: {
               title: "活动页进入连续性验收",
-              rewardType: "text",
-              rewardTexts: ["ENTRY-CDK"],
+              rewardType: "ldc",
+              rewardTexts: ["1.00"],
               passwords: ["EntryPass"],
               beforeInfo: activity().beforeInfo,
               afterEndInfo: activity().afterEndInfo,
@@ -430,7 +437,7 @@ async function sampleRegions(
   return page.evaluate(
     async ({ regionSelectors, count }) => {
       const samples: LayoutRegionSample[] = [];
-      for (let index = 0; index < count; index += 1) {
+      for (let index = 0; index < count + 120; index += 1) {
         const regions = Object.fromEntries(
           Object.entries(regionSelectors).map(([name, selector]) => {
             const element = document.querySelector(selector);
@@ -446,9 +453,29 @@ async function sampleRegions(
           }),
         );
         samples.push({ time: performance.now(), regions });
+        if (
+          samples.length >= count &&
+          document.querySelector('.activity-page[data-entry-ready="true"]') &&
+          !document.querySelector('[data-layout-settling="true"]')
+        ) {
+          const tail = samples.slice(-3);
+          const settled = Object.keys(regionSelectors).every((name) => {
+            const boxes = tail.map((sample) => sample.regions[name]);
+            return (
+              boxes.every((box) => Boolean(box)) &&
+              (["top", "height"] as const).every((metric) => {
+                const values = boxes.map((box) => box?.[metric] ?? 0);
+                return Math.max(...values) - Math.min(...values) <= 0.2;
+              })
+            );
+          });
+          if (settled) return samples;
+        }
         await new Promise((resolve) => requestAnimationFrame(resolve));
       }
-      return samples;
+      throw new Error(
+        "Activity layout did not settle within the sampling window",
+      );
     },
     { regionSelectors: selectors, count: frames },
   );
@@ -605,7 +632,7 @@ test("冷刷新时会话和活动数据分段返回仍保留稳定外框并平�
   await expect(
     page.getByRole("heading", { name: "活动页进入连续性验收" }),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: /领取奖励/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /领取红包/ })).toBeVisible();
   const samples = await samplesPromise;
 
   for (const { name, selector, handle } of handles) {
@@ -655,7 +682,7 @@ test("本人领取和口令分阶段返回时，活动页外壳持续存在且�
   claimGate.release();
   await expect(page.getByText("兑换成功。")).toBeVisible();
   await expectClaimCopyReady(page);
-  await expect(page.getByText("ENTRY-CDK")).toBeVisible();
+  await expect(page.getByText("1.00")).toBeVisible();
   await passwordGate.waitStarted();
   await expect(
     page.locator('[data-layout-region="password-panel"]'),
@@ -695,7 +722,7 @@ test("提交领取后红包完整播放一次 800ms 展开，背景刷新不重�
 
   await page.goto(`/activities/${activityId}`);
   await page.getByLabel("兑换口令", { exact: true }).fill("EntryPass");
-  await page.getByRole("button", { name: /领取奖励/ }).click();
+  await page.getByRole("button", { name: /领取红包/ }).click();
 
   const envelope = page.locator('[data-testid="envelope"]');
   await expect(envelope).toHaveAttribute("data-entry-token", /.+/);
@@ -861,7 +888,7 @@ for (const viewport of [
     claimGate.release();
     const samples = await samplesPromise;
 
-    await expect(page.getByRole("button", { name: /领取奖励/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /领取红包/ })).toBeVisible();
     await expect(page.locator(".claim-art")).toBeVisible();
     await expect(page.locator(".claim-copy")).toBeVisible();
     await expect(page.locator('[data-note-region="ended"]')).toBeVisible();
@@ -892,7 +919,7 @@ test("减少动态效果下异步内容即时稳定替换，不产生多帧布�
   claimGate.release();
   const samples = await samplesPromise;
 
-  await expect(page.getByText("ENTRY-CDK")).toBeVisible();
+  await expect(page.getByText("1.00")).toBeVisible();
   expect(samples.filter((sample) => sample.transform !== "none")).toHaveLength(
     0,
   );

@@ -1,7 +1,4 @@
-import {
-  isActivityDeadlineReached,
-  TEXT_REWARD_LABEL,
-} from "./activity-metadata";
+import { isActivityDeadlineReached } from "./activity-metadata";
 import type {
   Activity,
   ActivityLifecycle,
@@ -59,7 +56,6 @@ export function activityStatusSentence(
 }
 
 export function activityRewardLabel(activity: Activity): string {
-  if (activity.type === "text") return TEXT_REWARD_LABEL;
   if (activity.type === "draw") return "限时开奖";
   if (activity.rewardMode === "instant_random") return "即时随机";
   if (activity.rewardMode === "custom") return "自定义金额";
@@ -68,7 +64,6 @@ export function activityRewardLabel(activity: Activity): string {
 
 /** Public reward configuration, never a participant's allocated amount. */
 export function activityRewardSummary(activity: Activity): string | null {
-  if (activity.type === "text") return null;
   if (activity.type === "draw" || activity.rewardMode === "instant_random") {
     const pool =
       activity.poolAmount ?? (activity.type === "draw" ? activity.amount : "");
@@ -149,7 +144,6 @@ const scenarioStates: Record<Scenario, ActivityViewState> = {
     drawProgress: null,
     paymentProgress: "confirmed",
   },
-  text: readyState,
   pending: {
     ...readyState,
     participation: "claimed",

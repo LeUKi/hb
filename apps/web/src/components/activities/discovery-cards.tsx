@@ -14,9 +14,7 @@ import {
 import { UserIdentity } from "../user-identity";
 
 function rewardSummary(activity: DiscoveryCard) {
-  return activity.rewardType === "text" || activity.reward?.mode === "text"
-    ? undefined
-    : rewardMainText(activity.rewardType, activity.reward);
+  return rewardMainText(activity.reward);
 }
 
 function myState(activity: DiscoveryCard) {
@@ -98,7 +96,7 @@ export function DiscoveryCards({
               data-label="奖励"
             >
               <ActivityReward
-                label={rewardKindLabel(activity.rewardType, activity.reward)}
+                label={rewardKindLabel(activity.reward)}
                 summary={rewardSummary(activity)}
               />
             </td>

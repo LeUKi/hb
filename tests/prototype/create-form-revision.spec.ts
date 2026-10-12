@@ -256,16 +256,16 @@ test("amount and count relation errors appear when the related edited field chan
   ).toHaveCount(0);
 });
 
-test("reward type switching keeps the exiting panel inert while the new fields appear", async ({
+test("LDC reward plan switching keeps the exiting panel inert while the new fields appear", async ({
   page,
 }) => {
   await page.goto("/#create");
   await page
-    .getByRole("group", { name: "奖励类型" })
-    .getByRole("button", { name: "文本 / CDK", exact: true })
+    .getByRole("group", { name: "LDC 奖励方式" })
+    .getByRole("button", { name: "自定义金额", exact: true })
     .click();
 
-  await expect(page.locator("#work-text-rewards")).toBeVisible();
+  await expect(page.locator("#work-custom-amounts")).toBeVisible();
   const exitingFixed = page.locator('[aria-hidden="true"] #work-fixed-amount');
   await expect(exitingFixed).toHaveCount(1);
   await expect(exitingFixed).toHaveCount(0);
