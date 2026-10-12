@@ -305,7 +305,7 @@ test("未知及关闭状态不闪现青春版入口，开启后展开，关闭�
     ),
   ).toBe(true);
   expect(state.paths.every((path) => path === "/api/session")).toBe(true);
-  await page.goto("/square");
+  await page.goto("/");
   const headerLogin = page
     .locator(".header-actions")
     .getByRole("link", { name: "登录", exact: true });

@@ -1,4 +1,8 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
+
+function publicActivitiesDialog(page: Page) {
+  return page.getByRole("dialog", { name: "活动广场", exact: true });
+}
 
 test("解meme标题和秒级构建标记在切页、滚动、窄屏与刷新后保持一致", async ({
   page,
@@ -14,11 +18,13 @@ test("解meme标题和秒级构建标记在切页、滚动、窄屏与刷新后�
   const text = await stamp.textContent();
   expect(Number(value)).toBeLessThanOrEqual(Math.floor(Date.now() / 1_000));
   expect(text).toBe(`build @ ${value}`);
-  await page
-    .getByRole("navigation", { name: "主导航", exact: true })
-    .getByRole("link", { name: "活动广场", exact: true })
-    .click();
-  await expect(page).toHaveURL(/\/square(?:\?|$)/);
+  await expect(
+    page
+      .getByRole("navigation", { name: "主导航", exact: true })
+      .getByRole("link", { name: "活动广场", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "已公开的活动", exact: true }).click();
+  await expect(publicActivitiesDialog(page)).toBeVisible();
   await expect(stamp).toHaveText(text ?? "");
   await page.setViewportSize({ width: 375, height: 160 });
   const before = await stamp.boundingBox();
@@ -56,8 +62,17 @@ test("首页主导航和旧状态页直接刷新均可连接 API", async ({ page
   await page.goto("/");
   await expect(page.getByLabel("口令", { exact: true })).toBeVisible();
   const nav = page.getByRole("navigation", { name: "主导航", exact: true });
-  for (const name of ["兑奖", "活动广场", "活动历史", "我的"])
+  for (const name of ["兑奖", "活动历史", "我的"])
     await expect(nav.getByRole("link", { name, exact: true })).toBeVisible();
+  await expect(
+    nav.getByRole("link", { name: "活动广场", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "活动广场", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "已公开的活动", exact: true }),
+  ).toBeVisible();
   await expect(
     nav.getByRole("link", { name: "运行状态", exact: true }),
   ).toHaveCount(0);
@@ -67,9 +82,8 @@ test("首页主导航和旧状态页直接刷新均可连接 API", async ({ page
     page.getByRole("region", { name: "登录解meme", exact: true }),
   ).toBeVisible();
   await page.goto("/square");
-  await expect(
-    page.getByRole("heading", { name: "活动广场", exact: true }),
-  ).toBeVisible();
+  await expect(page).toHaveURL("/");
+  await expect(publicActivitiesDialog(page)).toBeVisible();
   await page.goto("/status");
   await expect(page).toHaveURL(/\/status$/);
   await page.reload();

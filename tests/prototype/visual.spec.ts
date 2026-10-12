@@ -510,7 +510,11 @@ for (const viewport of [
       "payment",
     ]) {
       await page.goto(`/#${name}`);
-      if (name === "home")
+      if (name === "square")
+        await expect(
+          page.getByRole("dialog", { name: "活动广场", exact: true }),
+        ).toBeVisible();
+      else if (name === "home")
         await expect(
           currentRoute(page).getByRole("region", { name: "口令兑奖" }),
         ).toBeVisible();
@@ -774,7 +778,8 @@ test("pending payment survives activity changes and unrelated input is cleared",
     "pending",
   );
   await expect(page.locator(".payment-confirmation")).toHaveCount(0);
-  await navigation.getByRole("link", { name: "活动广场", exact: true }).click();
+  await navigation.getByRole("link", { name: "兑奖", exact: true }).click();
+  await page.getByRole("button", { name: "已公开的活动", exact: true }).click();
   await page
     .getByRole("button", { name: "电子书阅读红包", exact: true })
     .click();
@@ -805,7 +810,8 @@ test("pending payment survives activity changes and unrelated input is cleared",
   await expect(page.locator(".slip-amount")).toHaveText("+0.88");
   await expect(page.locator(".payment-confirmation")).toHaveCount(0);
   await expect(page.locator(".payout-summary")).toHaveCount(0);
-  await navigation.getByRole("link", { name: "活动广场", exact: true }).click();
+  await navigation.getByRole("link", { name: "兑奖", exact: true }).click();
+  await page.getByRole("button", { name: "已公开的活动", exact: true }).click();
   await page
     .getByRole("button", { name: "电子书阅读红包", exact: true })
     .click();

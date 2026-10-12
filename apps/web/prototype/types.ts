@@ -1,7 +1,6 @@
 export type Page =
   | "home"
   | "activity"
-  | "square"
   | "participations"
   | "create"
   | "manage"

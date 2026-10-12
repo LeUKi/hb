@@ -40,7 +40,10 @@ import { ActivityErrorView } from "./activity-error";
 import { TopicMatches } from "./activity-locator";
 import { ActivitySelection } from "./activity-selection";
 
-export type GlobalExchangeHandle = { fillPassword: (password: string) => void };
+export type GlobalExchangeHandle = {
+  fillPassword: (password: string) => void;
+  openPublicActivities: () => void;
+};
 
 export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
   const session = useSession();
@@ -133,6 +136,9 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
     });
   }
   useImperativeHandle(ref, () => ({
+    openPublicActivities() {
+      invalidateLocation();
+    },
     fillPassword(value) {
       if (!account.isCurrentSession()) return;
       if (inFlight.current) {
@@ -252,6 +258,7 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
       return;
     }
     invalidateLocation();
+    const navigationRequest = locationRequest.current;
     const submission = uncertain
       ? ownContext.submission
       : {
@@ -278,6 +285,9 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
     try {
       const result = await mutation.mutateAsync(submission);
       if (!alive.current || !account.isCurrentIdentity(identity)) return;
+      // Browsing the public list supersedes automatic navigation, while the
+      // unconfirmed context keeps the original submission available to retry.
+      if (navigationRequest !== locationRequest.current) return;
       const selected =
         result.selectedActivityId ??
         (result.result === "single" ? (result.items[0]?.id ?? null) : null);

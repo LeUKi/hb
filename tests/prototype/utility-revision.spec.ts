@@ -57,7 +57,11 @@ test("all routes and activity states use functional copy with no decorative icon
     "payment",
   ]) {
     await page.goto(`/#${route}`);
-    if (route === "home")
+    if (route === "square")
+      await expect(
+        page.getByRole("dialog", { name: "活动广场", exact: true }),
+      ).toBeVisible();
+    else if (route === "home")
       await expect(
         page.locator(`${presentRoute} #home-password`),
       ).toBeVisible();
@@ -91,7 +95,7 @@ for (const width of [1920, 1440, 768, 375]) {
   test(`centered bounds and compact roster at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/#square");
-    const route = await page.locator(".route-frame").boundingBox();
+    const route = await page.locator(".public-square-dialog").boundingBox();
     expect(route).not.toBeNull();
     if (!route) throw new Error("Missing page bounds");
     expect(route.width).toBeLessThanOrEqual(1120);

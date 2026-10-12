@@ -7,7 +7,7 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { useAtom, useSetAtom } from "jotai";
-import { Compass, Gift, Home, Plus, Settings2, UserRound } from "lucide-react";
+import { Gift, Home, Plus, Settings2, UserRound } from "lucide-react";
 import { LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef } from "react";
 import { SessionActionsContext } from "../components/auth/session-actions";
@@ -203,12 +203,6 @@ function RootLayout() {
       active:
         pathname === "/" ||
         (pathname.startsWith("/activities/") && pathname !== "/activities/new"),
-    },
-    {
-      to: "/square" as const,
-      label: "活动广场",
-      icon: Compass,
-      active: pathname === "/square",
     },
     {
       to: "/my/activities" as const,

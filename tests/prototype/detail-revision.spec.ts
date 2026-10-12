@@ -263,8 +263,9 @@ test("square uses status-only filtering and clearing keeps drawings active", asy
   await scenario(page, "drawing");
   await page
     .getByRole("navigation", { name: "主导航", exact: true })
-    .getByRole("link", { name: "活动广场", exact: true })
+    .getByRole("link", { name: "兑奖", exact: true })
     .click();
+  await page.getByRole("button", { name: "已公开的活动", exact: true }).click();
   await page.getByRole("button", { name: "活动状态筛选" }).click();
   await page.getByRole("menuitemradio", { name: "进行中" }).click();
   await expect(

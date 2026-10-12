@@ -470,32 +470,6 @@
   font-size: 13px;
 }
 
-.work-summary-details {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin: 0 0 16px;
-  padding: 16px 0;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  font-size: 13px;
-}
-
-.work-summary-details > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.work-summary-details dt {
-  color: var(--muted);
-}
-
-.work-summary-details dd {
-  margin: 0;
-  text-align: right;
-}
-
 .work-summary-actions {
   display: flex;
   flex-direction: column;

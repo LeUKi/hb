@@ -1453,45 +1453,6 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
             {planNames[plan]} · {rewardCount ?? "—"}{" "}
             {plan === "draw" ? "个获奖名额" : "份奖励"}
           </p>
-          <dl className="work-summary-details">
-            <div>
-              <dt>兑换口令</dt>
-              <dd>{passwords.length} 个</dd>
-            </div>
-            <div>
-              <dt>兑换入口</dt>
-              <dd>{dedicated ? "仅活动页" : "全站及活动页"}</dd>
-            </div>
-            <div>
-              <dt>活动广场</dt>
-              <dd>{listed ? "加入" : "不加入"}</dd>
-            </div>
-            <div>
-              <dt>关联帖子</dt>
-              <dd>{topic.trim() ? "已填写" : "未关联"}</dd>
-            </div>
-            <div>
-              <dt>{plan === "draw" ? "开奖倒计时" : "开放时长"}</dt>
-              <dd>
-                {plan === "draw"
-                  ? `${draw.seconds || "—"} 秒`
-                  : `${hours || "—"} ${durationUnitLabels[durationUnit]}`}
-              </dd>
-            </div>
-            {plan === "draw" && (
-              <div>
-                <dt>报名上限</dt>
-                <dd>{draw.limit ? `${draw.limit} 人` : "不限"}</dd>
-              </div>
-            )}
-            <div>
-              <dt>数量 / 名单</dt>
-              <dd>
-                {quantity === "exact" ? "精确" : "模糊"} /{" "}
-                {showRecipients ? "展示" : "不展示"}
-              </dd>
-            </div>
-          </dl>
           <div className="work-summary-actions">
             {!frozen && (
               <button className="button" type="submit" value="open">

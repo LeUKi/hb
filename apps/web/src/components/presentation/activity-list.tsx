@@ -262,6 +262,16 @@ export function ActivityRowTitle({
               to={href}
               className={`activity-table-open ${buttonClassName}`.trim()}
               title={title || "未命名活动"}
+              onClick={(event) => {
+                if (
+                  event.button === 0 &&
+                  !event.metaKey &&
+                  !event.ctrlKey &&
+                  !event.shiftKey &&
+                  !event.altKey
+                )
+                  onOpen?.();
+              }}
             >
               {title || "未命名活动"}
             </Link>
@@ -423,7 +433,16 @@ export function ViewActivityAction({
       params={{ id }}
       aria-label={ariaLabel ?? "查看活动"}
       role={role}
-      onClick={onClick}
+      onClick={(event) => {
+        if (
+          event.button === 0 &&
+          !event.metaKey &&
+          !event.ctrlKey &&
+          !event.shiftKey &&
+          !event.altKey
+        )
+          onClick?.();
+      }}
     >
       查看活动
     </Link>

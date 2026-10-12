@@ -4,7 +4,6 @@ import {
   ArrowUpRight,
   Check,
   ChevronDown,
-  Compass,
   Gift,
   Home,
   LoaderCircle,
@@ -23,6 +22,8 @@ import {
 } from "motion/react";
 import {
   lazy,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
   Suspense,
   useCallback,
   useEffect,
@@ -30,6 +31,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   classifyHomeEntry,
   HOME_ENTRY_HELP,
@@ -75,7 +77,9 @@ import {
 } from "./components/list-controls";
 import { inspectPassword, PasswordInput } from "./components/password-input";
 import { PasswordList } from "./components/password-list";
+import { PortalTargetProvider } from "./components/portal-target";
 import { PublicRoster } from "./components/public-roster";
+import "./components/public-square-dialog.css";
 import {
   RedemptionAction,
   RedemptionRouteFrame,
@@ -176,7 +180,6 @@ const first = activities[0] as Activity;
 const pages = new Set<Page>([
   "home",
   "activity",
-  "square",
   "participations",
   "create",
   "manage",
@@ -188,12 +191,13 @@ const pages = new Set<Page>([
 ]);
 function pageFromHash() {
   clearRetiredRewardFilters();
+  normalizePublicSquareHash();
   const value = window.location.hash.slice(1).split("?")[0] as Page;
   return pages.has(value) ? value : "home";
 }
 function clearRetiredRewardFilters() {
   const [page = "home", query = ""] = window.location.hash.slice(1).split("?");
-  if (!["square", "manage", "participations"].includes(page)) return;
+  if (!["home", "square", "manage", "participations"].includes(page)) return;
   const params = new URLSearchParams(query);
   let changed = false;
   for (const key of ["rewardType", "reward", "type", "rewardFilter"])
@@ -210,6 +214,56 @@ function clearRetiredRewardFilters() {
     "",
     `#${page}${search ? `?${search}` : ""}`,
   );
+}
+type PublicSquareState = {
+  open: boolean;
+  status: "all" | "active" | "ended";
+  page: number;
+  scrollTop: number;
+};
+function publicSquareHash(state: Pick<PublicSquareState, "status" | "page">) {
+  const query = new URLSearchParams({ dialog: "square" });
+  if (state.status !== "all") query.set("status", state.status);
+  if (state.page > 1) query.set("page", String(state.page));
+  return `#home?${query}`;
+}
+function normalizePublicSquareHash() {
+  const [page = "home", query = ""] = window.location.hash.slice(1).split("?");
+  const params = new URLSearchParams(query);
+  const legacy = page === "square";
+  if (!legacy && (page !== "home" || params.get("dialog") !== "square")) return;
+  const metadata = window.history.state?.prototypePublicSquare;
+  if (!legacy && metadata?.version === 1) return;
+  const status = params.get("status");
+  const rawPage = Number(params.get("page"));
+  const state = {
+    status: status === "active" || status === "ended" ? status : "all",
+    page: Number.isSafeInteger(rawPage) && rawPage > 0 ? rawPage : 1,
+  } as const;
+  // Direct and legacy links get a home entry so one browser Back closes the
+  // native modal. Reload retains the already-created modal entry.
+  window.history.replaceState(null, "", "#home");
+  window.history.pushState(
+    { prototypePublicSquare: { version: 1, scrollTop: 0 } },
+    "",
+    publicSquareHash(state),
+  );
+}
+function publicSquareFromHash(): PublicSquareState {
+  const [page = "home", query = ""] = window.location.hash.slice(1).split("?");
+  const params = new URLSearchParams(query);
+  const status = params.get("status");
+  const rawPage = Number(params.get("page"));
+  const scrollTop = window.history.state?.prototypePublicSquare?.scrollTop;
+  return {
+    open: page === "home" && params.get("dialog") === "square",
+    status: status === "active" || status === "ended" ? status : "all",
+    page: Number.isSafeInteger(rawPage) && rawPage > 0 ? rawPage : 1,
+    scrollTop:
+      typeof scrollTop === "number" && Number.isFinite(scrollTop)
+        ? Math.max(0, scrollTop)
+        : 0,
+  };
 }
 function activityFromHash(
   identity: Identity = "standard",
@@ -261,6 +315,9 @@ export function App() {
   const [bootstrap] = useState(getBootstrappedActivityWindowSnapshot);
   const initialIdentity = bootstrap?.identity ?? "standard";
   const [page, setPage] = useState<Page>(pageFromHash);
+  const [publicSquare, setPublicSquare] = useState(publicSquareFromHash);
+  const publicSquareEntry = useRef<HTMLButtonElement>(null);
+  const lastReadHash = useRef(window.location.hash);
   const [identity, setIdentity] = useState<Identity>(initialIdentity);
   const [scenario, setScenario] = useState<Scenario>("ready");
   const [active, setActive] = useState<Activity>(
@@ -531,21 +588,25 @@ export function App() {
   useEffect(() => {
     const read = () => {
       if (window.location.hash === "#main") return;
+      if (window.location.hash === lastReadHash.current) return;
+      const nextPage = pageFromHash();
+      lastReadHash.current = window.location.hash;
+      setPublicSquare(publicSquareFromHash());
+      // Opening, updating or closing the public list leaves the home input
+      // and any pending redemption untouched.
+      if (nextPage === "home" && currentRoute.current.page === "home") return;
       revision.current++;
       if (timer.current) clearTimeout(timer.current);
       timer.current = null;
       setBusy(false);
       setAutoClaim(null);
       setUncertain(false);
-      beginTransition(
-        pageFromHash(),
-        activityFromHash(identity, bootstrap?.active),
-      );
-      setPage(pageFromHash());
+      beginTransition(nextPage, activityFromHash(identity, bootstrap?.active));
+      setPage(nextPage);
       document
         .getElementById("main")
         ?.scrollTo({ top: 0, behavior: "instant" });
-      if (pageFromHash() === "activity") {
+      if (nextPage === "activity") {
         const found = activityFromHash(identity, bootstrap?.active);
         setMissingActivity(!found);
         if (found) setActive(found);
@@ -558,12 +619,46 @@ export function App() {
       setAnimateId(null);
     };
     window.addEventListener("hashchange", read);
+    window.addEventListener("popstate", read);
     return () => {
       window.removeEventListener("hashchange", read);
+      window.removeEventListener("popstate", read);
       if (timer.current) clearTimeout(timer.current);
       timer.current = null;
     };
   }, [identity, beginTransition, bootstrap?.active]);
+  function openPublicSquare() {
+    setPanel(false);
+    const next = { open: true, status: "all" as const, page: 1, scrollTop: 0 };
+    window.history.pushState(
+      { prototypePublicSquare: { version: 1, scrollTop: 0 } },
+      "",
+      publicSquareHash(next),
+    );
+    lastReadHash.current = window.location.hash;
+    setPublicSquare(next);
+  }
+  function closePublicSquare() {
+    if (window.history.state?.prototypePublicSquare?.version === 1) {
+      window.history.back();
+      return;
+    }
+    window.history.replaceState(null, "", "#home");
+    lastReadHash.current = window.location.hash;
+    setPublicSquare((current) => ({ ...current, open: false }));
+  }
+  function updatePublicSquare(
+    next: Pick<PublicSquareState, "status" | "page">,
+  ) {
+    const updated = { ...next, open: true, scrollTop: 0 };
+    window.history.replaceState(
+      { prototypePublicSquare: { version: 1, scrollTop: 0 } },
+      "",
+      publicSquareHash(updated),
+    );
+    lastReadHash.current = window.location.hash;
+    setPublicSquare(updated);
+  }
   useEffect(() => {
     if (!panel) return;
     function closeOnEscape(event: KeyboardEvent) {
@@ -624,6 +719,7 @@ export function App() {
     setMatches(null);
     setLocatorMatches(null);
     setAnimateId(null);
+    setPublicSquare((current) => ({ ...current, open: false }));
     setPage(next);
     if (options.activity) setActive(options.activity);
     setMissingActivity(
@@ -642,6 +738,7 @@ export function App() {
           : activityHash(options.activity ?? active)
         : `#${next}${options.editId ? `?edit=${encodeURIComponent(options.editId)}` : options.activityId ? `?activity=${encodeURIComponent(options.activityId)}` : ""}`,
     );
+    lastReadHash.current = window.location.hash;
     document.getElementById("main")?.scrollTo({ top: 0, behavior: "instant" });
   }
   function openActivity(activity: Activity, retainedPassword = "") {
@@ -1207,7 +1304,6 @@ export function App() {
 
   const nav = [
     { page: "home" as Page, label: "兑奖", icon: Home },
-    { page: "square" as Page, label: "活动广场", icon: Compass },
     { page: "participations" as Page, label: "活动历史", icon: Gift },
     { page: "account" as Page, label: "我的", icon: UserRound },
     ...(identity === "standard"
@@ -1454,6 +1550,17 @@ export function App() {
                     <section className="home-hero" aria-label="口令兑奖">
                       <Envelope open={false} size="small" />
                       <div className="home-exchange">
+                        <button
+                          ref={publicSquareEntry}
+                          type="button"
+                          className="public-square-entry"
+                          aria-haspopup="dialog"
+                          aria-expanded={publicSquare.open}
+                          onClick={openPublicSquare}
+                        >
+                          <span>已公开的活动</span>
+                          <ArrowRight size={14} aria-hidden="true" />
+                        </button>
                         <PasswordInput
                           sharedFrame
                           id="home-password"
@@ -1534,6 +1641,20 @@ export function App() {
                         restoreFocus={homeActionRef.current}
                       />
                     )}
+                    {publicSquare.open && (
+                      <PublicSquareDialog
+                        onClose={closePublicSquare}
+                        onOpen={openActivity}
+                        restoreFocus={publicSquareEntry.current}
+                        records={projectedRecords}
+                        states={projectedStates}
+                        fuzzy={fuzzy}
+                        listState={listState}
+                        onRetry={() => setListState("ready")}
+                        selection={publicSquare}
+                        onSelectionChange={updatePublicSquare}
+                      />
+                    )}
                   </div>
                 )}
                 {page === "activity" && missingActivity && (
@@ -1581,16 +1702,6 @@ export function App() {
                     result={results[active.id]}
                     listState={listState}
                     onActivityUpdate={(next) => setActive(next)}
-                  />
-                )}
-                {page === "square" && (
-                  <Gallery
-                    onOpen={openActivity}
-                    records={projectedRecords}
-                    states={projectedStates}
-                    fuzzy={fuzzy}
-                    listState={listState}
-                    onRetry={() => setListState("ready")}
                   />
                 )}
                 {["participations", "manage"].includes(page) && (
@@ -2270,6 +2381,120 @@ function ActivityPage({
 
 type ListState = "ready" | "empty" | "loading" | "error";
 
+type PublicSquareProps = {
+  onOpen: (activity: Activity) => void;
+  records: Record<string, Participation>;
+  states: Record<string, ActivityViewStateOverrides>;
+  fuzzy: boolean;
+  listState: ListState;
+  onRetry: () => void;
+  selection: PublicSquareState;
+  onSelectionChange: (
+    state: Pick<PublicSquareState, "status" | "page">,
+  ) => void;
+};
+
+function PublicSquareDialog({
+  onClose,
+  onOpen,
+  restoreFocus,
+  ...props
+}: PublicSquareProps & {
+  onClose: () => void;
+  restoreFocus: HTMLElement | null;
+}) {
+  const [dialog, setDialog] = useState<HTMLDialogElement | null>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const backdropPress = useRef(false);
+  const selected = useRef(false);
+  const opener = useRef(restoreFocus);
+  const present = useIsPresent();
+
+  useLayoutEffect(() => {
+    if (!dialog || !present) return;
+    opener.current ??= document.querySelector<HTMLElement>(
+      ".public-square-entry",
+    );
+    dialog.showModal();
+    closeButton.current?.focus({ preventScroll: true });
+    return () => {
+      dialog.close();
+      if (
+        !selected.current &&
+        opener.current?.isConnected &&
+        window.location.hash.split("?")[0] === "#home" &&
+        !document.querySelector("dialog[open]")
+      )
+        opener.current.focus({ preventScroll: true });
+    };
+  }, [dialog, present]);
+
+  useLayoutEffect(() => {
+    const scroll = dialog?.querySelector<HTMLElement>(".list-panel__scroll");
+    if (scroll) scroll.scrollTop = props.selection.scrollTop;
+  }, [dialog, props.selection.scrollTop]);
+
+  function isBackdrop(event: ReactPointerEvent<HTMLDialogElement>) {
+    if (event.target !== event.currentTarget) return false;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    return (
+      event.clientX < bounds.left ||
+      event.clientX > bounds.right ||
+      event.clientY < bounds.top ||
+      event.clientY > bounds.bottom
+    );
+  }
+
+  if (!present) return null;
+  return createPortal(
+    <dialog
+      ref={setDialog}
+      className="public-square-dialog"
+      aria-label="活动广场"
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onPointerDown={(event) => {
+        backdropPress.current = isBackdrop(event);
+      }}
+      onPointerUp={(event) => {
+        if (backdropPress.current && isBackdrop(event)) onClose();
+        backdropPress.current = false;
+      }}
+      onScrollCapture={(event) => {
+        if (!present || !dialog?.open || !publicSquareFromHash().open) return;
+        if (!(event.target instanceof HTMLElement)) return;
+        if (!event.target.matches(".list-panel__scroll")) return;
+        window.history.replaceState(
+          {
+            ...window.history.state,
+            prototypePublicSquare: {
+              version: 1,
+              scrollTop: event.target.scrollTop,
+            },
+          },
+          "",
+        );
+      }}
+    >
+      <PortalTargetProvider target={dialog}>
+        <Gallery
+          {...props}
+          onClose={onClose}
+          closeButton={closeButton}
+          onOpen={(activity) => {
+            selected.current = true;
+            dialog?.close();
+            onOpen(activity);
+          }}
+        />
+      </PortalTargetProvider>
+    </dialog>,
+    document.body,
+  );
+}
+
 function Gallery({
   onOpen,
   records,
@@ -2277,15 +2502,17 @@ function Gallery({
   fuzzy,
   listState,
   onRetry,
-}: {
-  onOpen: (activity: Activity) => void;
-  records: Record<string, Participation>;
-  states: Record<string, ActivityViewStateOverrides>;
-  fuzzy: boolean;
-  listState: ListState;
-  onRetry: () => void;
+  selection,
+  onSelectionChange,
+  onClose,
+  closeButton,
+}: PublicSquareProps & {
+  onClose: () => void;
+  closeButton: RefObject<HTMLButtonElement | null>;
 }) {
-  const [statusFilter, setStatusFilter] = useState("all");
+  const statusFilter = selection.status;
+  const setStatusFilter = (status: PublicSquareState["status"]) =>
+    onSelectionChange({ status, page: 1 });
   useClockSelector((now) =>
     gallerySamples
       .map((item) => (isActivityDeadlineReached(item, now) ? "1" : "0"))
@@ -2329,11 +2556,16 @@ function Gallery({
               (statusFilter === "all" ||
                 publicStates[item.id]?.lifecycle === statusFilter),
           );
-  const paging = usePagination(items, `${statusFilter}:${listState}`);
+  const lastPage = Math.max(1, Math.ceil(items.length / 20));
+  const currentPage =
+    listState === "ready" || listState === "empty"
+      ? Math.min(selection.page, lastPage)
+      : selection.page;
+  const pageItems = items.slice((currentPage - 1) * 20, currentPage * 20);
   return (
     <section className="gallery-page list-page">
-      <div className="page-title">
-        <h1>活动广场</h1>
+      <header className="page-title public-square-header">
+        <h2>活动广场</h2>
         <section className="history-statistics" aria-label="活动广场统计">
           <div data-statistic="public">
             <span>公开活动</span>
@@ -2343,7 +2575,14 @@ function Gallery({
             </span>
           </div>
         </section>
-      </div>
+        <CompactIconButton
+          ref={closeButton}
+          aria-label="关闭活动广场"
+          onClick={onClose}
+        >
+          <X size={16} aria-hidden="true" />
+        </CompactIconButton>
+      </header>
       <div className="gallery-toolbar">
         <div className="gallery-status-filter">
           <ActionMenu
@@ -2388,19 +2627,21 @@ function Gallery({
       <ListPanel
         state={listState === "ready" && !items.length ? "empty" : listState}
         onRetry={onRetry}
-        resetKey={`${statusFilter}:${paging.page}:${listState}`}
+        resetKey={`${statusFilter}:${currentPage}`}
         footer={
           <Pagination
             label="活动广场分页"
-            page={paging.page}
-            hasNext={listState === "ready" && paging.hasNext}
-            onPageChange={paging.setPage}
+            page={currentPage}
+            hasNext={listState === "ready" && currentPage < lastPage}
+            onPageChange={(page) =>
+              onSelectionChange({ status: statusFilter, page })
+            }
             busy={listState === "loading"}
           />
         }
       >
         <ActivityRows
-          activities={paging.pageItems}
+          activities={pageItems}
           onOpen={onOpen}
           records={records}
           states={publicStates}

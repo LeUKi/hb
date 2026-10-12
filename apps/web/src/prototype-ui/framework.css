@@ -1278,3 +1278,105 @@ h2 {
   padding: 24px;
   overflow-y: auto;
 }
+
+.public-activities-link {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  min-height: 32px;
+  width: fit-content;
+  gap: 5px;
+  padding: 0;
+  margin: 0 0 5px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.public-activities-link > .public-activities-label {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.public-activities-link:hover {
+  color: var(--ink);
+}
+.public-activities-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 5px;
+}
+.public-activities-dialog {
+  width: min(1120px, calc(100vw - 24px));
+  height: min(760px, calc(100dvh - 40px));
+  max-width: none;
+  max-height: none;
+  margin: auto;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  overflow: hidden;
+}
+.public-activities-dialog::backdrop {
+  background: rgb(0 0 0 / 65%);
+}
+.public-activities-list {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  gap: 16px;
+}
+.public-activities-list > .page-title {
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+}
+.public-activities-list > .page-title h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+.public-activities-list .history-statistics {
+  margin-left: auto;
+}
+.public-activities-list > .list-panel {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+.public-activities-list .list-panel__scroll {
+  overscroll-behavior-y: contain;
+}
+@media (max-width: 760px) {
+  .public-activities-link {
+    min-height: 40px;
+  }
+  .public-activities-dialog {
+    width: calc(100vw - 24px);
+    height: calc(100dvh - 24px);
+    padding: 12px;
+  }
+  .public-activities-list {
+    gap: 12px;
+  }
+}
+
+@media (max-height: 400px) {
+  .public-activities-dialog {
+    overflow-y: auto;
+  }
+  .public-activities-list {
+    height: auto;
+    min-height: 100%;
+  }
+  .public-activities-list > .list-panel {
+    flex: none;
+    height: 220px;
+  }
+  .public-activities-list .list-panel__scroll {
+    overscroll-behavior-y: auto;
+  }
+}

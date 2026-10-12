@@ -202,10 +202,10 @@ test("正式账号冷却跨页面和刷新，发现后以服务端编号自动�
       },
     });
     await page
-      .locator(".desktop-nav")
-      .getByRole("link", { name: "活动广场" })
+      .getByRole("button", { name: "已公开的活动", exact: true })
       .click();
     await page
+      .getByRole("dialog", { name: "活动广场", exact: true })
       .getByRole("row")
       .filter({ hasText: title })
       .getByRole("link", { name: "查看活动", exact: true })

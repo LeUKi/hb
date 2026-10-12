@@ -351,7 +351,10 @@ browserTest(
     );
     await page
       .locator(".desktop-nav")
-      .getByRole("link", { name: "活动广场", exact: true })
+      .getByRole("link", { name: "兑奖", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "已公开的活动", exact: true })
       .click();
     const publicRandom = page
       .locator('.activity-rows[data-context="public"] .activity-rows-row')

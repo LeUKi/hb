@@ -298,6 +298,7 @@ test("指定时间开放后保持实际时刻并锁定两种时间设置", async
     "2035-05-06T13:45",
   );
   await page.getByRole("button", { name: "保存并开放", exact: true }).click();
+  await expect(page.getByText("进行中", { exact: true })).toBeVisible();
   await expect
     .poll(() => new URL(page.url()).pathname)
     .toBe(`/my/activities/${id}`);

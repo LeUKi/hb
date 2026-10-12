@@ -21,6 +21,18 @@ const author = {
   accountTier: "standard",
 };
 
+function publicActivitiesDialog(page: Page) {
+  return page.getByRole("dialog", { name: "活动广场", exact: true });
+}
+
+async function openPublicActivities(page: Page, path = "/square") {
+  await page.goto(path);
+  await expect(page).toHaveURL("/");
+  const dialog = publicActivitiesDialog(page);
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
 type Gate = {
   release: () => void;
   waitStarted: () => Promise<void>;
@@ -809,8 +821,8 @@ test("直接访问和刷新每次进入都完整播放展示性展开，但不�
 test("从列表进入、后退再前进会重新展示开封，但不重交业务", async ({ page }) => {
   const state = await setupActivityEntry(page, { claimed: true });
 
-  await page.goto("/square");
-  await page.getByRole("link", { name: "查看活动" }).first().click();
+  const dialog = await openPublicActivities(page);
+  await dialog.getByRole("link", { name: "查看活动" }).first().click();
   await expect(page).toHaveURL(new RegExp(`/activities/${activityId}$`));
   const envelope = page.locator('[data-testid="envelope"]');
   await expect(envelope).toHaveAttribute("data-entry-token", /.+/);
@@ -822,7 +834,8 @@ test("从列表进入、后退再前进会重新展示开封，但不重交业�
   const before = await regionMetrics(page);
 
   await page.goBack();
-  await expect(page.getByRole("heading", { name: "活动广场" })).toBeVisible();
+  await expect(page).toHaveURL("/");
+  await expect(publicActivitiesDialog(page)).toBeVisible();
   await page.goForward();
   await expect(page.getByText("兑换成功。")).toBeVisible();
   await expect(envelope).toHaveAttribute("data-entry-token", /.+/);

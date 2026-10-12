@@ -37,6 +37,10 @@ function gate() {
   return { wait, release };
 }
 
+function publicActivitiesDialog(page: Page) {
+  return page.getByRole("dialog", { name: "活动广场", exact: true });
+}
+
 async function mockLocal(
   page: Page,
   handle: (route: Route, url: URL) => Promise<unknown>,
@@ -117,11 +121,21 @@ test("广场等待确定身份只读一次，历史焦点信号合并并复用�
   page,
 }) => {
   const identity = gate();
+  const square = gate();
   const refresh = gate();
   let squareReads = 0;
   let listReads = 0;
   let summaryReads = 0;
   let holdRefresh = false;
+  // StrictMode can cancel the modal's speculative first mount. The active
+  // request and completed response must still represent a single list read.
+  page.on("requestfailed", (request) => {
+    if (
+      new URL(request.url()).pathname === "/api/discovery/activities" &&
+      request.failure()?.errorText === "net::ERR_ABORTED"
+    )
+      squareReads--;
+  });
   await mockLocal(page, async (route, url) => {
     if (url.pathname === "/api/session") {
       await identity.wait;
@@ -129,6 +143,7 @@ test("广场等待确定身份只读一次，历史焦点信号合并并复用�
     }
     if (url.pathname === "/api/discovery/activities") {
       squareReads++;
+      await square.wait;
       return route.fulfill({ json: { items: [], nextCursor: null, total: 0 } });
     }
     if (url.pathname === "/api/me/activities") {
@@ -146,10 +161,25 @@ test("广场等待确定身份只读一次，历史焦点信号合并并复用�
     return route.fulfill({ status: 404, json: {} });
   });
   await page.goto("/square");
-  await expect(page.locator('[data-loading-region="records"]')).toBeVisible();
+  await expect(page).toHaveURL("/");
+  await expect(
+    page.getByRole("button", { name: "已公开的活动", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("正在确认登录状态…")).toBeVisible();
   expect(squareReads).toBe(0);
   identity.release();
   await expect.poll(() => squareReads).toBe(1);
+  await expect(publicActivitiesDialog(page)).toBeVisible();
+  await expect(page.locator('[data-loading-region="records"]')).toBeVisible();
+  square.release();
+  await expect(
+    publicActivitiesDialog(page).getByText("暂无符合条件的活动。"),
+  ).toBeVisible();
+  expect(squareReads).toBe(1);
+  await publicActivitiesDialog(page)
+    .getByRole("button", { name: "关闭活动广场", exact: true })
+    .click();
+  await expect(publicActivitiesDialog(page)).toBeHidden();
   await page
     .locator(".desktop-nav")
     .getByRole("link", { name: "活动历史" })

@@ -273,8 +273,8 @@ async function overscroll(locator: Locator) {
 test("普通列表滚到边界后继续滚动会链到主内容", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await installRoutes(page);
-  await page.goto("/square");
-  await expect(page.getByRole("heading", { name: "活动广场" })).toBeVisible();
+  await page.goto("/my/activities");
+  await expect(page.getByRole("heading", { name: "活动历史" })).toBeVisible();
   await createScrollStress(page);
 
   const main = page.locator(".site-main");
@@ -283,7 +283,7 @@ test("普通列表滚到边界后继续滚动会链到主内容", async ({ page 
   await expectScrollable(main);
   await setScrollTop(main, 0);
   const directPoint = await center(
-    page.getByRole("heading", { name: "活动广场" }),
+    page.getByRole("heading", { name: "活动历史" }),
   );
   await page.mouse.move(directPoint.x, directPoint.y);
   await page.mouse.wheel(0, 300);
@@ -301,32 +301,38 @@ test("普通列表滚到边界后继续滚动会链到主内容", async ({ page 
   await expect(overscroll(records)).resolves.toEqual({ x: "auto", y: "auto" });
 });
 
-test("非模态筛选菜单边界继续向主内容传播滚动", async ({ page }) => {
+test("公开活动模态内筛选菜单与列表边界不滚动背景，横向保留默认", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await installRoutes(page);
   await page.goto("/square");
-  await expect(page.getByRole("heading", { name: "活动广场" })).toBeVisible();
+  const dialog = page.getByRole("dialog", { name: "活动广场", exact: true });
+  await expect(dialog).toBeVisible();
   await createScrollStress(page);
-
   const main = page.locator(".site-main");
   await expectScrollable(main);
   await setScrollTop(main, 0);
-  const directPoint = await center(
-    page.getByRole("heading", { name: "活动广场" }),
-  );
-  await page.mouse.move(directPoint.x, directPoint.y);
-  await page.mouse.wheel(0, 300);
-  await expect.poll(() => scrollTop(main)).toBeGreaterThan(0);
-  await setScrollTop(main, 0);
-  await page.getByRole("button", { name: "活动状态筛选" }).click();
-  const menu = page.getByRole("menu", { name: "活动状态筛选" });
+  await dialog.getByRole("button", { name: "活动状态筛选" }).click();
+  const menu = dialog.getByRole("menu", { name: "活动状态筛选" });
   await expect(menu).toBeVisible();
   await expect(overscroll(menu)).resolves.toEqual({ x: "auto", y: "auto" });
-  const before = await scrollTop(main);
   const point = await center(menu);
   await page.mouse.move(point.x, point.y);
   await page.mouse.wheel(0, 600);
-  await expect.poll(() => scrollTop(main)).toBeGreaterThan(before);
+  await expect.poll(() => scrollTop(main)).toBe(0);
+  await page.keyboard.press("Escape");
+  const records = dialog.locator(".list-panel__scroll");
+  await expectScrollable(records);
+  await setScrollTop(records, "max");
+  const recordPoint = await center(records);
+  await page.mouse.move(recordPoint.x, recordPoint.y);
+  await page.mouse.wheel(0, 900);
+  await expect.poll(() => scrollTop(main)).toBe(0);
+  await expect(overscroll(records)).resolves.toEqual({
+    x: "auto",
+    y: "contain",
+  });
 });
 
 test("真正模态只隔离纵向背景滚动，横向 overscroll 保持浏览器默认", async ({
@@ -366,7 +372,7 @@ test("代表页面的普通滚动容器不设置横向 overscroll containment", 
   });
   await expect(
     overscroll(page.locator(".list-panel__scroll").first()),
-  ).resolves.toEqual({ x: "auto", y: "auto" });
+  ).resolves.toEqual({ x: "auto", y: "contain" });
 
   await page.goto("/my/payments?activityId=payment-a-0");
   await expect(page.getByRole("heading", { name: "付款记录" })).toBeVisible();

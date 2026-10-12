@@ -246,6 +246,8 @@ test.describe("narrow touch layouts", () => {
     await page.goto("/#square");
     await authors(page).first().hover();
     await expect(profile(page)).toHaveCount(0);
+    await page.getByRole("button", { name: "关闭活动广场" }).click();
+    await expect(page.locator(".public-square-dialog")).toHaveCount(0);
     const account = page
       .locator(".site-header")
       .getByRole("link", { name: "我的账号", exact: true });

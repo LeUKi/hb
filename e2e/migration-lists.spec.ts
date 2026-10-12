@@ -17,6 +17,26 @@ const author = {
   avatarUrl: null,
 };
 
+function publicActivitiesDialog(page: Page) {
+  return page.getByRole("dialog", { name: "活动广场", exact: true });
+}
+
+async function openPublicActivities(page: Page, path = "/square") {
+  await page.goto(path);
+  await expect(page).toHaveURL("/");
+  const dialog = publicActivitiesDialog(page);
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+async function openPublicActivitiesFromHome(page: Page) {
+  await page.goto("/");
+  await page.getByRole("button", { name: "已公开的活动", exact: true }).click();
+  const dialog = publicActivitiesDialog(page);
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
 function activity(id: string, title: string, status = "active") {
   return {
     id,
@@ -735,7 +755,7 @@ function detailActivityRequests(requested: string[], from: number) {
 
 test("正式列表在表格内滚动、固定分页并保留操作列", async ({ page }) => {
   await setup(page);
-  await page.goto("/square");
+  await openPublicActivities(page);
   await expectFixedListScroll(page);
 
   const table = page.locator(".list-panel__scroll").first();
@@ -755,7 +775,8 @@ test("正式列表在表格内滚动、固定分页并保留操作列", async ({
     }),
   ).toBeVisible();
   await page.goBack();
-  await expect(page).toHaveURL(/\/square(?:\?|$)/);
+  await expect(page).toHaveURL("/");
+  await expect(publicActivitiesDialog(page)).toBeVisible();
   await expect(viewLink).toBeFocused();
   await expect
     .poll(() => table.evaluate((node) => node.scrollTop))
@@ -783,7 +804,7 @@ test("正式列表在表格内滚动、固定分页并保留操作列", async ({
   }
 
   await page.setViewportSize({ width: 375, height: 900 });
-  await page.goto("/square");
+  await openPublicActivities(page);
   await expectFixedListScroll(page);
   await expect(
     page.getByRole("link", { name: "查看活动" }).first(),
@@ -798,7 +819,7 @@ test("正式列表在表格内滚动、固定分页并保留操作列", async ({
 test("短视口和放大文字下列表退回页面滚动且分页不裁切", async ({ page }) => {
   await setup(page);
   await page.setViewportSize({ width: 375, height: 500 });
-  await page.goto("/square");
+  await openPublicActivities(page);
   await expect(page.getByRole("table", { name: "公开活动" })).toBeVisible();
   await expect(
     page.getByRole("navigation", { name: "活动广场分页" }),
@@ -1023,8 +1044,9 @@ test("广场和参与历史从详情返回保留筛选分页滚动", async ({ pa
   for (const scenario of [
     {
       path: "/square?status=ended&type=ldc",
-      expectedUrl: /\/square\?status=ended$/,
+      expectedUrl: /\/$/,
       table: "公开活动",
+      isPublicActivities: true,
       pagination: "活动广场分页",
       rowName: /第二页公开活动用于验证翻页后滚动复位 1/,
       detailUrl: /\/activities\/a-next-0$/,
@@ -1036,6 +1058,7 @@ test("广场和参与历史从详情返回保留筛选分页滚动", async ({ pa
       path: "/my/claims?type=ldc",
       expectedUrl: /\/my\/claims$/,
       table: "我参与的活动",
+      isPublicActivities: false,
       pagination: "参与记录分页",
       rowName: /我参与的超长活动标题用于验证移动端操作按钮 18/,
       detailUrl: /\/activities\/a-claim-long-17$/,
@@ -1044,7 +1067,9 @@ test("广场和参与历史从详情返回保留筛选分页滚动", async ({ pa
       statusButtonText: null,
     },
   ] as const) {
-    await page.goto(scenario.path);
+    if (scenario.isPublicActivities)
+      await openPublicActivities(page, scenario.path);
+    else await page.goto(scenario.path);
     await expect(page).toHaveURL(scenario.expectedUrl);
     await page
       .getByRole("navigation", { name: scenario.pagination })
@@ -1069,6 +1094,9 @@ test("广场和参与历史从详情返回保留筛选分页滚动", async ({ pa
 
     await page.goBack();
     await expect(page).toHaveURL(scenario.expectedUrl);
+    if (scenario.isPublicActivities) {
+      await expect(publicActivitiesDialog(page)).toBeVisible();
+    }
     await expect(
       page.getByRole("table", { name: scenario.table }),
     ).toBeVisible();
@@ -1096,13 +1124,15 @@ test("默认列表重置在窄屏和平板宽度保持默认筛选", async ({ pa
   for (const width of [375, 768] as const) {
     await page.setViewportSize({ width, height: 900 });
 
-    await page.goto("/square?status=ended&type=text");
-    await page.getByRole("link", { name: "活动广场" }).click();
-    await expect(page).toHaveURL("/square?status=all");
+    await openPublicActivities(page, "/square?status=ended&type=text");
+    await page.keyboard.press("Escape");
+    await expect(publicActivitiesDialog(page)).toHaveCount(0);
+    await openPublicActivitiesFromHome(page);
+    await expect(page).toHaveURL("/");
     await expect(page.getByRole("group", { name: "奖励筛选" })).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "活动状态筛选" }),
-    ).toContainText("状态：全部");
+    ).toContainText("状态：已结束");
 
     await page.goto("/my/claims?type=text");
     await page.getByRole("link", { name: "活动历史" }).click();
@@ -1170,8 +1200,10 @@ test("旧奖励筛选 URL replace 清理，保留合法条件并重置分页", a
     "random",
     "timed_draw",
   ]) {
-    await page.goto(`/square?status=ended&type=${kind}&cursor=retired&page=3`);
-    await expect(page).toHaveURL(/\/square\?status=ended$/);
+    await openPublicActivities(
+      page,
+      `/square?status=ended&type=${kind}&cursor=retired&page=3`,
+    );
     await expect(page.getByRole("group", { name: "奖励筛选" })).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "活动状态筛选" }),
@@ -1190,7 +1222,7 @@ test("旧奖励筛选 URL replace 清理，保留合法条件并重置分页", a
 
 test("广场默认全部且本人状态不混入付款状态", async ({ page }) => {
   const requested = await setup(page);
-  await page.goto("/square");
+  await openPublicActivities(page);
   const statusMenu = page.getByRole("button", { name: "活动状态筛选" });
   await expect(statusMenu).toContainText("状态：全部");
   await statusMenu.focus();

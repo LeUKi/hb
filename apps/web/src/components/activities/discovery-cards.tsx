@@ -30,12 +30,14 @@ export function DiscoveryCards({
   emptyText = "暂无可展示的活动。",
   errorContent,
   onRetry,
+  onNavigate,
 }: {
   items: DiscoveryCard[];
   state?: "ready" | "empty" | "loading" | "error";
   emptyText?: string;
   errorContent?: ReactNode;
   onRetry?: () => void;
+  onNavigate?: () => void;
 }) {
   const columns = [
     { key: "activity", label: "活动", width: "40%" },
@@ -71,6 +73,7 @@ export function DiscoveryCards({
                 deadlineAt={activity.deadlineAt}
                 draw={activity.draw}
                 href={`/activities/${activity.id}`}
+                onOpen={onNavigate}
                 buttonClassName="activity-rows-open"
                 titleActions={
                   activity.topicUrl ? (
@@ -109,7 +112,7 @@ export function DiscoveryCards({
               </span>
             </td>
             <td className="activity-table-actions" data-label="操作">
-              <ViewActivityAction id={activity.id} />
+              <ViewActivityAction id={activity.id} onClick={onNavigate} />
             </td>
           </tr>
         ))}

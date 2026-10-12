@@ -22,6 +22,19 @@ const user = {
   canUseLdc: true,
   loginProvider: "connect" as const,
 };
+
+function publicActivitiesDialog(page: Page) {
+  return page.getByRole("dialog", { name: "活动广场", exact: true });
+}
+
+async function openPublicActivities(page: Page, path = "/square") {
+  await page.goto(path);
+  await expect(page).toHaveURL("/");
+  const dialog = publicActivitiesDialog(page);
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
 function card(index: number): DiscoveryCard {
   return {
     id: ids[index] ?? (ids[0] as string),
@@ -512,14 +525,17 @@ test("无匹配可重新输入，匿名不能全站兑换但可浏览广场", as
   await expect(page.getByText(/未匹配到活动/)).toBeVisible();
   state.signedIn = false;
   state.cards = [card(0)];
-  await page.goto("/square");
+  await openPublicActivities(page);
   await expect(page.getByText("同口令活动1", { exact: true })).toBeVisible();
   await page.goto("/");
   await expect(
     page.getByRole("button", { name: "兑奖", exact: true }),
   ).toHaveCount(0);
-  await redeem(page);
-  await expect(page.getByText("请先登录。", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("口令", { exact: true })).toBeVisible();
+  await page.getByLabel("口令", { exact: true }).fill("GuestTry123");
+  await expect(
+    page.getByRole("button", { name: "兑奖", exact: true }),
+  ).toHaveCount(0);
   expect(state.posts).toHaveLength(1);
 });
 
@@ -570,7 +586,7 @@ test("统计呈现同口令的历史命中与未命中，窄屏列表不溢出",
     .click();
   await expect(statisticsDialog).toHaveCount(0);
   await expect(page).toHaveURL(/\/my\/activities$/);
-  await page.goto("/square");
+  await openPublicActivities(page);
   await expect(page.getByText("同口令活动1", { exact: true })).toBeVisible();
   expect(
     await page.evaluate(
@@ -581,7 +597,7 @@ test("统计呈现同口令的历史命中与未命中，窄屏列表不溢出",
   for (const width of [375, 768, 1440]) {
     for (const textScale of [1, 2]) {
       await page.setViewportSize({ width, height: 900 });
-      await page.goto("/square");
+      await openPublicActivities(page);
       await expect(
         page.getByRole("group", { name: "奖励筛选", exact: true }),
       ).toHaveCount(0);
@@ -668,7 +684,7 @@ test("统计呈现同口令的历史命中与未命中，窄屏列表不溢出",
       await page.keyboard.press("Enter");
       await page.getByRole("menuitemradio", { name: "已结束" }).click();
       await expect(statusFilter).toContainText("状态：已结束");
-      expect(new URL(page.url()).searchParams.get("status")).toBe("ended");
+      expect(new URL(page.url()).searchParams.get("status")).toBeNull();
       expect(
         await page.evaluate(
           () => document.documentElement.scrollWidth <= innerWidth,

@@ -21,6 +21,19 @@ const user = {
   loginProvider: "connect",
   isAdmin: false,
 };
+
+function publicActivitiesDialog(page: Page) {
+  return page.getByRole("dialog", { name: "活动广场", exact: true });
+}
+
+async function openPublicActivitiesFromHome(page: Page) {
+  await page.goto("/");
+  await page.getByRole("button", { name: "已公开的活动", exact: true }).click();
+  const dialog = publicActivitiesDialog(page);
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
 const activity = {
   id,
   title: "账号共享冷却活动",
@@ -146,11 +159,8 @@ test("获准尝试的账号冷却跨首页、活动页及刷新连续，过期�
   await expect(
     page.getByRole("button", { name: "兑奖", exact: true }),
   ).toBeDisabled();
-  await page
-    .locator(".desktop-nav")
-    .getByRole("link", { name: "活动广场" })
-    .click();
-  await page.getByRole("link", { name: "查看活动", exact: true }).click();
+  const dialog = await openPublicActivitiesFromHome(page);
+  await dialog.getByRole("link", { name: "查看活动", exact: true }).click();
   await expect(page).toHaveURL(`/activities/${id}`);
   await expect(cooldownTimer(page)).toContainText("10 秒");
   await expect(page.getByRole("button", { name: "领取红包" })).toHaveCount(0);

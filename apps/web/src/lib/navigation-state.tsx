@@ -33,6 +33,7 @@ declare module "@tanstack/react-router" {
     hbVisit?: string;
     hbReset?: string;
     hbOverlay?: Overlay;
+    hbOpenPublicActivities?: "all" | "active" | "ended";
   }
 }
 
@@ -436,7 +437,13 @@ export function useRestoredScroll(
       node.dataset.navigationRestoring = "true";
     let cancelled = false;
     const save = () => {
-      if (restoring) return;
+      // Closing a native modal releases its top layer before route navigation.
+      // Hidden geometry must not overwrite the last visible reading position.
+      if (
+        restoring ||
+        (node.closest("dialog") && !node.closest("dialog")?.open)
+      )
+        return;
       const bounds = node.getBoundingClientRect();
       const anchor = anchorNodes(node).find(
         (row) => row.getBoundingClientRect().bottom > bounds.top,

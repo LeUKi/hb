@@ -13,6 +13,18 @@ const claimId = "0adf5526-bf82-4f47-a9c3-425bdf27b657";
 const resultId = "82e185b3-2a69-4a2c-b720-2bf8e62d39c3";
 const merchantId = "3837e3f5-8d5c-40aa-8b61-c6496df6ca18";
 
+function publicActivitiesDialog(page: Page) {
+  return page.getByRole("dialog", { name: "活动广场", exact: true });
+}
+
+async function openPublicActivities(page: Page, path = "/square") {
+  await page.goto(path);
+  await expect(page).toHaveURL("/");
+  const dialog = publicActivitiesDialog(page);
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
 async function expectPathname(page: Page, pathname: string) {
   await expect.poll(() => new URL(page.url()).pathname).toBe(pathname);
 }
@@ -463,9 +475,9 @@ for (const draw of [false, true]) {
     page,
   }) => {
     const state = await mockLite(page, { draw });
-    await page.goto("/square");
+    const dialog = await openPublicActivities(page);
     await expect(
-      page.getByRole("row", { name: /青春版参与测试/ }),
+      dialog.getByRole("row", { name: /青春版参与测试/ }),
     ).toBeVisible();
     await page.goto(`/activities/${activityId}`);
     await expect(

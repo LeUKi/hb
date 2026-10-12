@@ -210,7 +210,9 @@ test("duration unit selector keeps the number and validates near the field", asy
   await page.getByRole("button", { name: "开放时长单位" }).click();
   await page.locator(".action-menu-item", { hasText: "天" }).click();
   await expect(page.locator("#work-duration")).toHaveValue("24");
-  await expect(page.locator(".work-summary-details")).toContainText("24 天");
+  await expect(page.getByRole("button", { name: "开放时长单位" })).toHaveText(
+    "天",
+  );
   await page.getByRole("button", { name: "开放时长单位" }).click();
   await expect(page.getByRole("menu", { name: "开放时长单位" })).toHaveCSS(
     "background-color",

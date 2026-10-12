@@ -218,7 +218,7 @@ test("desktop and mobile navigation use independent red underlines", async ({
     await page.goto("/#home");
     const nav = page.getByRole("navigation", { name: viewport.nav });
     await expect(nav).toBeVisible();
-    const links = ["兑奖", "活动广场", "活动历史", "我的"];
+    const links = ["兑奖", "活动历史", "我的"];
     for (const label of links) {
       await nav.getByRole("link", { name: label, exact: true }).click();
       await expect(
@@ -242,7 +242,7 @@ test("reduced motion positions navigation underline without sliding", async ({
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/#home");
   const nav = page.getByRole("navigation", { name: "主导航" });
-  for (const label of ["活动广场", "活动历史", "我的", "兑奖"]) {
+  for (const label of ["活动历史", "我的", "兑奖"]) {
     await nav.getByRole("link", { name: label, exact: true }).click();
   }
   const active = nav.getByRole("link", { name: "兑奖", exact: true });

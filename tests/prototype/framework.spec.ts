@@ -8,7 +8,6 @@ import {
 const origin = "http://127.0.0.1:4177";
 const navigationItems = [
   { label: "兑奖", route: "home" },
-  { label: "活动广场", route: "square" },
   { label: "活动历史", route: "participations" },
   { label: "我的", route: "account" },
 ] as const;
@@ -144,7 +143,7 @@ for (const viewport of [
     const create = header.getByRole("link", { name: "发起活动", exact: true });
     const account = header.getByRole("link", { name: "我的账号", exact: true });
     await expect(navigation).toBeVisible();
-    await expect(navigation.getByRole("link")).toHaveCount(5);
+    await expect(navigation.getByRole("link")).toHaveCount(4);
 
     for (const { label, route } of navigationItems) {
       const link = navigation.getByRole("link", { name: label, exact: true });
@@ -160,7 +159,7 @@ for (const viewport of [
       await assertTapTarget(create, viewport.width);
       await assertTapTarget(account, viewport.width);
       await assertViewportShell(page);
-      if (route === "home" || route === "square") {
+      if (route === "home") {
         await expect(page.locator(".tool-shell")).not.toContainText(oldSlogans);
         await expect(page.getByText("运行状态", { exact: true })).toHaveCount(
           0,
@@ -210,8 +209,9 @@ for (const viewport of [
       navigation.getByRole("link", { name: "我的", exact: true }),
     ).toHaveAttribute("aria-current", "page");
 
-    await navigation
-      .getByRole("link", { name: "活动广场", exact: true })
+    await navigation.getByRole("link", { name: "兑奖", exact: true }).click();
+    await page
+      .getByRole("button", { name: "已公开的活动", exact: true })
       .click();
     const rows = page.locator(".activity-rows-row");
     await expect(rows).toHaveCount(20);

@@ -30,6 +30,18 @@ const confirmedPayment = {
   confirmedAt: "2026-10-12T00:00:00Z",
 } satisfies ClaimDetail["payment"];
 
+function publicActivitiesDialog(page: Page) {
+  return page.getByRole("dialog", { name: "活动广场", exact: true });
+}
+
+async function openPublicActivities(page: Page, path = "/square") {
+  await page.goto(path);
+  await expect(page).toHaveURL("/");
+  const dialog = publicActivitiesDialog(page);
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
 function ldcActivity(id = activityId) {
   return {
     id,
@@ -203,11 +215,13 @@ test("旧奖励类型 URL 会 replace 移除废弃参数并保留合法筛选", 
 }) => {
   await installBaseMock(page);
 
-  await page.goto("/square?status=ended&type=text");
-  await expect(page).toHaveURL(/\/square\?status=ended$/);
+  await openPublicActivities(page, "/square?status=ended&type=text");
   await expect(
     page.getByRole("group", { name: "奖励筛选", exact: true }),
   ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "活动状态筛选" }),
+  ).toContainText("状态：已结束");
 
   await page.goto("/my/claims?type=text");
   await expect(page).toHaveURL(/\/my\/claims$/);
@@ -287,7 +301,7 @@ test("旧活动 404 只清理相关缓存，不撤下其他 LDC 列表内容", a
     discoveryItems: [other],
   });
 
-  await page.goto("/square");
+  await openPublicActivities(page);
   await expect(
     page.getByText("仍可展示的 LDC 活动", { exact: true }),
   ).toBeVisible();
@@ -298,7 +312,7 @@ test("旧活动 404 只清理相关缓存，不撤下其他 LDC 列表内容", a
   });
   await expect(page.getByRole("alert")).toContainText("未找到活动");
 
-  await page.goto("/square");
+  await openPublicActivities(page);
   await expect(
     page.getByText("仍可展示的 LDC 活动", { exact: true }),
   ).toBeVisible();

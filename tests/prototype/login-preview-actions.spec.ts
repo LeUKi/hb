@@ -42,6 +42,15 @@ test.use({ reducedMotion: "reduce" });
 type ViewerIdentity = "guest" | "lite" | "standard";
 
 async function chooseIdentity(page: Page, identity: ViewerIdentity) {
+  const publicList = page.getByRole("dialog", {
+    name: "活动广场",
+    exact: true,
+  });
+  const restoreList = await publicList.isVisible();
+  if (restoreList) {
+    await publicList.getByRole("button", { name: "关闭活动广场" }).click();
+    await expect(publicList).toHaveCount(0);
+  }
   const trigger = page.getByRole("button", { name: "场景与身份" });
   if ((await trigger.getAttribute("aria-expanded")) !== "true")
     await trigger.click();
@@ -58,6 +67,10 @@ async function chooseIdentity(page: Page, identity: ViewerIdentity) {
   if ((await trigger.getAttribute("aria-expanded")) === "true")
     await trigger.click();
   await expect(page.locator(".scenario-panel")).toHaveCount(0);
+  if (restoreList) {
+    await page.goForward();
+    await expect(publicList).toBeVisible();
+  }
 }
 
 async function expectLoginGeometry(page: Page, expanded: boolean) {
@@ -444,7 +457,9 @@ test("square defaults to all and real view links preserve viewer identity in a n
       ).toBeVisible();
       await expect(popup.locator("#activity-password")).toHaveCount(0);
     } else await expect(popup.locator("#activity-password")).toBeVisible();
-    await expect(page).toHaveURL(/#square$/u);
+    await expect(page).toHaveURL(
+      /#home\?dialog=square(?:&status=(?:active|ended))?$/u,
+    );
     await popup.close();
   }
 });

@@ -33,7 +33,6 @@ import { useViewState } from "../../lib/navigation-state";
 import {
   isTimedDrawMoney,
   localDateTime,
-  timedDrawTimeLabel,
   type WebLdcMoney,
   webLdcRewardCount,
   webLdcTotalMinor,
@@ -93,11 +92,6 @@ function durationDeadline(
     value: /^\d+$/u.test(value) && Number.isSafeInteger(number) ? number : 0,
     unit,
   };
-}
-
-function durationLabel(deadline: ActivityInput["deadline"]) {
-  if (deadline.mode !== "duration") return "指定时间";
-  return `${durationValue(deadline) || "—"} ${durationUnitLabels[durationUnit(deadline)]}`;
 }
 
 function comparableActivity(input: ActivityInput): ActivityInput {
@@ -711,11 +705,6 @@ export function ActivityForm({
       : opening.isPending
         ? "正在开放…"
         : "正在保存…";
-  const deadlineLabel = timedDraw
-    ? timedDrawTimeLabel(timedDraw, values.deadline)
-    : values.deadline.mode === "duration"
-      ? durationLabel(values.deadline)
-      : "指定时间";
   const summaryRewardKind = timedDraw
     ? "限时开奖"
     : values.money.mode === "fixed"
@@ -1265,43 +1254,6 @@ export function ActivityForm({
           {summaryRewardKind}
           {` · ${rewardCount || "—"} ${timedDraw ? "个获奖名额" : "份奖励"}`}
         </p>
-        <dl className="work-summary-details">
-          <div>
-            <dt>参与方式</dt>
-            <dd>{direct ? "直接参与" : "口令参与"}</dd>
-          </div>
-          {!direct && (
-            <>
-              <div>
-                <dt>兑换口令</dt>
-                <dd>{values.passwords.length} 个</dd>
-              </div>
-              <div>
-                <dt>兑换入口</dt>
-                <dd>{values.forceDedicated ? "仅活动页" : "全站及活动页"}</dd>
-              </div>
-            </>
-          )}
-          <div>
-            <dt>活动广场</dt>
-            <dd>{values.joinSquare ? "加入" : "不加入"}</dd>
-          </div>
-          <div>
-            <dt>关联帖子</dt>
-            <dd>{values.topicUrl.trim() ? "已填写" : "未关联"}</dd>
-          </div>
-          <div>
-            <dt>{timedDraw ? "最晚开奖时间" : "开放期限"}</dt>
-            <dd>{deadlineLabel}</dd>
-          </div>
-          <div>
-            <dt>数量 / 名单</dt>
-            <dd>
-              {values.quantityVisibility === "exact" ? "精确" : "模糊"} /{" "}
-              {values.showRecipientList ? "展示" : "不展示"}
-            </dd>
-          </div>
-        </dl>
         {persisted && !initial ? (
           <Link
             to="/my/activities/$id"

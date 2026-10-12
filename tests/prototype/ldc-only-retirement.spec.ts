@@ -88,7 +88,12 @@ for (const width of [1440, 375]) {
     await expect(page.locator("#work-password-1")).toHaveValue("完整口令2026");
     for (const route of ["square", "participations", "manage"]) {
       await page.goto(`/#${route}?rewardType=text&cursor=retired&page=3`);
-      await expect(page).toHaveURL(new RegExp(`#${route}$`, "u"));
+      await expect(page).toHaveURL(
+        new RegExp(
+          route === "square" ? "#home\\?dialog=square$" : `#${route}$`,
+          "u",
+        ),
+      );
       await expect(page.getByRole("group", { name: "奖励筛选" })).toHaveCount(
         0,
       );

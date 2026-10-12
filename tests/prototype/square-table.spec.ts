@@ -184,7 +184,9 @@ for (const width of [1440, 375]) {
     const popup = await popupPromise;
     await expect.poll(() => forumRequests).toEqual([topicUrl]);
     await popup.close();
-    await expect(page).toHaveURL(/#square$/u);
+    await expect(page).toHaveURL(
+      /#home\?dialog=square(?:&status=(?:active|ended))?$/u,
+    );
     await title.focus();
     await page.keyboard.press("Tab");
     await expect(link).toBeFocused();
@@ -596,12 +598,16 @@ test("square pagination and public quantities survive account switching and an e
   const reward = await random.locator(".activity-reward-summary").innerText();
   const publicTotal = (await totalLabel.innerText()).replace(/\s+/gu, "");
   for (const identity of ["lite", "guest", "standard"]) {
+    await page.getByRole("button", { name: "关闭活动广场" }).click();
+    await expect(square(page)).toHaveCount(0);
     await page.getByRole("button", { name: "场景与身份" }).click();
     await page
       .getByRole("combobox", { name: "体验身份", exact: true })
       .selectOption(identity);
     await page.getByRole("button", { name: "场景与身份" }).click();
-    // Identity changes remount the page and reset pagination.
+    await page.goForward();
+    await expect(square(page)).toBeVisible();
+    // The public list restores its page while projecting the new identity.
     await findRandomPage();
     await expect(random).toHaveCount(1);
     if (identity === "standard")
@@ -622,11 +628,15 @@ test("square pagination and public quantities survive account switching and an e
     ).toHaveCount(0);
   }
 
+  await page.getByRole("button", { name: "关闭活动广场" }).click();
+  await expect(square(page)).toHaveCount(0);
   await page.getByRole("button", { name: "场景与身份" }).click();
   await page
     .getByRole("combobox", { name: "列表场景", exact: true })
     .selectOption("empty");
   await page.getByRole("button", { name: "场景与身份" }).click();
+  await page.goForward();
+  await expect(square(page)).toBeVisible();
   await expect(totalLabel).toHaveText("公开活动0场");
   await expect(square(page).locator(".list-panel")).toHaveAttribute(
     "data-state",

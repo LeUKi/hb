@@ -11,19 +11,17 @@ export function PageLoading() {
   )
     return <ActivityPageSkeleton />;
   const title =
-    path === "/square"
-      ? "活动广场"
-      : path === "/my/activities" || path === "/my/claims"
-        ? "活动历史"
-        : path.endsWith("/statistics")
-          ? "兑换尝试统计"
-          : path === "/my/payments"
-            ? "付款记录"
-            : path === "/activities/new"
-              ? "发起活动"
-              : path === "/account"
-                ? "账号"
-                : undefined;
+    path === "/my/activities" || path === "/my/claims"
+      ? "活动历史"
+      : path.endsWith("/statistics")
+        ? "兑换尝试统计"
+        : path === "/my/payments"
+          ? "付款记录"
+          : path === "/activities/new"
+            ? "发起活动"
+            : path === "/account"
+              ? "账号"
+              : undefined;
   return (
     <div className="route-frame" data-route-pending="true">
       <PageSkeleton

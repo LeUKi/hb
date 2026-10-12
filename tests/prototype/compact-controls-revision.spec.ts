@@ -17,6 +17,7 @@ for (const width of [1440, 375]) {
       const box = await control.boundingBox();
       expect(box?.height).toBeCloseTo(expected, 0);
     }
+    await page.getByRole("button", { name: "关闭活动广场" }).click();
     await page.locator(".create-link").click();
     await expect(page).toHaveURL(/#create$/u);
     await expect(

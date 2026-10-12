@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import type { DiscoveryCard } from "../packages/contracts/src";
 
 const user = {
@@ -10,6 +10,18 @@ const user = {
   canUseLdc: true,
   loginProvider: "connect" as const,
 };
+
+function publicActivitiesDialog(page: Page) {
+  return page.getByRole("dialog", { name: "活动广场", exact: true });
+}
+
+async function openPublicActivities(page: Page, path = "/square") {
+  await page.goto(path);
+  await expect(page).toHaveURL("/");
+  const dialog = publicActivitiesDialog(page);
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
 
 function card(id: string, title: string): DiscoveryCard {
   return {
@@ -73,14 +85,13 @@ test("筛选慢请求只替换记录区并保留列表框架", async ({ page }) 
     return route.fulfill({ json: {} });
   });
 
-  await page.goto("/square");
-  await expect(page.getByRole("heading", { name: "活动广场" })).toBeVisible();
+  const dialog = await openPublicActivities(page);
   await expect(page.getByRole("link", { name: "进行中的活动" })).toBeVisible();
 
   await page.getByRole("button", { name: "活动状态筛选" }).click();
   await page.getByRole("menuitemradio", { name: "已结束" }).click();
 
-  await expect(page.getByRole("heading", { name: "活动广场" })).toBeVisible();
+  await expect(dialog).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "活动" })).toBeVisible();
   await expect(
     page.getByRole("navigation", { name: "活动广场分页" }),
@@ -140,7 +151,7 @@ test("连续筛选以最新条件为准，迟到响应不会覆盖当前列表",
     return route.fulfill({ json: {} });
   });
 
-  await page.goto("/square");
+  await openPublicActivities(page);
   await expect(
     page.getByRole("link", { name: "最新的全部活动" }),
   ).toBeVisible();
@@ -186,7 +197,7 @@ test("后台刷新失败保留当前内容并显示局部刷新提示", async ({
     return route.fulfill({ json: {} });
   });
 
-  await page.goto("/square");
+  await openPublicActivities(page);
   await expect(
     page.getByRole("link", { name: "刷新前已经显示的活动" }),
   ).toBeVisible();
@@ -232,7 +243,7 @@ test("手动刷新广场保留当前内容和筛选，完成后更新记录", as
     return route.fulfill({ json: {} });
   });
 
-  await page.goto("/square?status=all&type=ldc");
+  await openPublicActivities(page, "/square?status=all&type=ldc");
   await expect(page.getByRole("link", { name: "刷新前的活动" })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "活动状态筛选" }),
@@ -243,7 +254,7 @@ test("手动刷新广场保留当前内容和筛选，完成后更新记录", as
   await expect(page.getByRole("link", { name: "刷新前的活动" })).toBeVisible();
   await expect(page.getByText("第 1 页")).toBeVisible();
   expect(new URL(page.url()).searchParams.get("type")).toBeNull();
-  expect(new URL(page.url()).searchParams.get("status")).toBe("all");
+  expect(new URL(page.url()).searchParams.get("status")).toBeNull();
   releaseRefresh();
   await expect(page.getByRole("link", { name: "刷新后的活动" })).toBeVisible();
 });

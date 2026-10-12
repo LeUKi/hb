@@ -184,8 +184,9 @@ test("draw countdown does not restart on navigation or publish a result at zero"
   );
   await page
     .locator(".desktop-nav")
-    .getByRole("link", { name: "活动广场", exact: true })
+    .getByRole("link", { name: "兑奖", exact: true })
     .click();
+  await page.getByRole("button", { name: "已公开的活动", exact: true }).click();
   await page.evaluate(() => {
     location.hash = "activity?sample=evening";
   });
