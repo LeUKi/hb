@@ -23,17 +23,16 @@ async function checkTimeRows(page: Page, enlarged = false) {
   const rows = page.locator(".public-roster .recipient-time");
   await expect(rows.first()).toBeVisible();
   const geometry = await rows.evaluateAll((nodes) =>
-    nodes.slice(0, 5).map((node) => {
+    nodes.map((node) => {
       const absolute = node.querySelector<HTMLTimeElement>(
         ".recipient-time__absolute",
       );
       const relative = node.querySelector<HTMLElement>(
         ".recipient-time__relative, .recipient-time__speed",
       );
-      if (!absolute || !relative)
-        throw new Error("Missing roster timestamp or duration");
+      if (!absolute) throw new Error("Missing roster timestamp");
       const full = absolute.getBoundingClientRect();
-      const short = relative.getBoundingClientRect();
+      const short = relative?.getBoundingClientRect() ?? null;
       const parent = node.getBoundingClientRect();
       const style = getComputedStyle(absolute);
       const range = document.createRange();
@@ -41,29 +40,43 @@ async function checkTimeRows(page: Page, enlarged = false) {
       return {
         fullText: absolute.textContent,
         firstClass: absolute.className,
-        secondClass: relative.className,
+        secondClass: relative?.className ?? null,
         sameDate:
-          relative.tagName === "TIME"
+          relative?.tagName === "TIME"
             ? absolute.dateTime === relative.getAttribute("datetime")
             : null,
-        secondaryText: relative.textContent,
+        secondaryText: relative?.textContent ?? null,
         font: style.fontFamily,
         digits: style.fontVariantNumeric,
         basis: Number.parseFloat(style.flexBasis),
         left: full.left,
         width: full.width,
-        relativeLeft: short.left,
-        gap: short.left - full.right,
-        wrapped: short.top > full.top + 1,
+        relativeLeft: short?.left ?? null,
+        gap: short ? short.left - full.right : null,
+        wrapped: short ? short.top > full.top + 1 : null,
         textFits: range.getBoundingClientRect().width <= full.width + 1,
-        fits: full.right <= parent.right + 1 && short.right <= parent.right + 1,
+        fits:
+          full.right <= parent.right + 1 &&
+          (short ? short.right <= parent.right + 1 : true),
       };
     }),
   );
   expect(geometry.length).toBeGreaterThan(1);
-  for (const row of geometry) {
+  const absoluteRows = geometry.slice(0, 5);
+  const secondaryRows = geometry.filter((row) => row.secondClass !== null);
+  expect(secondaryRows.length).toBeGreaterThan(0);
+  for (const row of absoluteRows) {
     expect(row.fullText).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u);
     expect(row.firstClass).toBe("recipient-time__absolute");
+    expect(row.font).toContain("monospace");
+    expect(row.digits).toContain("tabular-nums");
+    expect(row.basis).toBeCloseTo(row.width, 1);
+    expect(row.width).toBeCloseTo(absoluteRows[0].width, 1);
+    expect(row.left).toBeCloseTo(absoluteRows[0].left, 1);
+    expect(row.textFits).toBe(true);
+    expect(row.fits).toBe(true);
+  }
+  for (const row of secondaryRows.slice(0, 5)) {
     if (row.secondClass === "recipient-time__speed") {
       expect(row.secondaryText).toMatch(/^\d+(?:\.\d{1,3})?秒$/u);
       expect(row.sameDate).toBeNull();
@@ -71,14 +84,8 @@ async function checkTimeRows(page: Page, enlarged = false) {
       expect(row.secondClass).toBe("recipient-time__relative");
       expect(row.sameDate).toBe(true);
     }
-    expect(row.font).toContain("monospace");
-    expect(row.digits).toContain("tabular-nums");
-    expect(row.basis).toBeCloseTo(row.width, 1);
-    expect(row.width).toBeCloseTo(geometry[0].width, 1);
-    expect(row.left).toBeCloseTo(geometry[0].left, 1);
-    expect(row.relativeLeft).toBeCloseTo(geometry[0].relativeLeft, 1);
-    expect(row.textFits).toBe(true);
-    expect(row.fits).toBe(true);
+    expect(row.relativeLeft).not.toBeNull();
+    expect(row.relativeLeft).toBeCloseTo(secondaryRows[0].relativeLeft ?? 0, 1);
     if (enlarged) {
       expect(row.wrapped).toBe(true);
       expect(row.relativeLeft).toBeCloseTo(row.left, 1);
@@ -133,7 +140,10 @@ test("instantaneous claim seconds and the complete timestamp stay fixed as the c
   await page.clock.install({ time: new Date("2026-10-07T04:00:00.000Z") });
   await page.goto("/#activity?sample=history-random-active");
   await page.getByRole("button", { name: "查看领取名单", exact: true }).click();
-  const row = page.locator(".public-roster .recipient-time").first();
+  const row = page
+    .locator(".public-roster .recipient-time")
+    .filter({ has: page.locator(".recipient-time__speed") })
+    .first();
   const absolute = row.locator(".recipient-time__absolute");
   const speed = row.locator(".recipient-time__speed");
   const original = await absolute.textContent();
@@ -166,6 +176,18 @@ test("speed and luck badges sit left of the amount at desktop and mobile widths 
     await expect(recipient.locator(".recipient-time__speed")).toHaveText(
       "8.25秒",
     );
+    const slowRecipient = page.locator(
+      '.public-roster .recipient[data-username="qingning"]',
+    );
+    await expect(slowRecipient.locator(".recipient-time__absolute")).toHaveText(
+      /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u,
+    );
+    await expect(slowRecipient.locator(".recipient-time__speed")).toHaveCount(
+      0,
+    );
+    await expect(
+      slowRecipient.locator(".recipient-time__relative"),
+    ).toHaveCount(0);
     const geometry = await recipient.evaluate((row) => {
       const amount = row.querySelector(".recipient-award-amount");
       const time = row.querySelector(".recipient-time");

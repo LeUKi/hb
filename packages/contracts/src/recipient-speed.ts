@@ -1,5 +1,7 @@
 export type RecipientSpeedTitle = "fastest" | "flash";
 
+export const MAX_VISIBLE_CLAIM_SECONDS_MS = 120_000;
+
 export function claimElapsedMs(
   openedAt: string | null | undefined,
   claimedAt: string | null | undefined,
@@ -14,6 +16,10 @@ export function claimElapsedMs(
 
 export function formatClaimSeconds(ms: number): string {
   return `${(ms / 1000).toFixed(3).replace(/\.?0+$/, "")}秒`;
+}
+
+export function shouldShowClaimSeconds(ms: number): boolean {
+  return ms <= MAX_VISIBLE_CLAIM_SECONDS_MS;
 }
 
 export function claimSpeedTitle(ms: number): RecipientSpeedTitle {

@@ -28,7 +28,6 @@ import {
 import { CopyButton } from "../../src/components/ui/copy-button";
 import { isActivityDeadlineReached } from "../activity-metadata";
 import { ActionMenu } from "../components/action-menu";
-import { PrototypeActivityImageSettings } from "../components/activity-image-settings";
 import { ActivityNote } from "../components/activity-note";
 import { AnimatedRegion } from "../components/animated-disclosure";
 import {
@@ -2092,7 +2091,6 @@ export function AccountPage({
         </aside>
       </div>
 
-      <PrototypeActivityImageSettings />
       <button
         className="work-text-link work-account-signout"
         type="button"

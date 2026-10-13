@@ -18,6 +18,7 @@ import {
   normalizeTopicLink,
   passwordSchema,
   passwordSolveSchema,
+  shouldShowClaimSeconds,
   updateActivitySchema,
 } from "../src/index";
 
@@ -47,6 +48,10 @@ describe("shared activity contracts", () => {
     expect(formatClaimSeconds(1_200)).toBe("1.2秒");
     expect(formatClaimSeconds(9_999)).toBe("9.999秒");
     expect(formatClaimSeconds(10_001)).toBe("10.001秒");
+    expect(formatClaimSeconds(86_401_001)).toBe("86401.001秒");
+    expect(shouldShowClaimSeconds(120_000)).toBe(true);
+    expect(shouldShowClaimSeconds(120_001)).toBe(false);
+    expect(shouldShowClaimSeconds(86_401_001)).toBe(false);
     expect(claimSpeedTitle(9_999)).toBe("flash");
     expect(claimSpeedTitle(10_000)).toBe("flash");
     expect(claimSpeedTitle(10_001)).toBe("fastest");

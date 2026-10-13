@@ -1,6 +1,8 @@
 import { expect, type Page, test } from "@playwright/test";
 import {
   type ActivityPasswords,
+  activityImageUrl,
+  createActivityImageEmbed,
   emptyActivityInput,
   type ManagedActivity,
   type PublicActivity,
@@ -350,12 +352,24 @@ test("图片内嵌代码使用公开后备图，后退关闭并恢复焦点", as
   await page.getByRole("menuitem", { name: "内嵌代码", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "内嵌代码", exact: true });
   await expect(dialog).toBeVisible();
+  const bounds = await dialog.boundingBox();
+  const viewport = page.viewportSize();
+  if (!bounds || !viewport)
+    throw new Error("Missing dialog or viewport bounds");
+  expect(
+    Math.abs(bounds.x + bounds.width / 2 - viewport.width / 2),
+  ).toBeLessThan(1);
+  expect(
+    Math.abs(bounds.y + bounds.height / 2 - viewport.height / 2),
+  ).toBeLessThan(1);
+  await expect(dialog.locator("p.muted")).toHaveCount(0);
   const code = await dialog
     .getByLabel("内嵌代码", { exact: true })
     .inputValue();
   expect(code).toContain("<picture>");
   expect(code).toContain("prefers-reduced-motion: reduce");
-  expect(code).toContain(`/e/${encodeURIComponent(emoji)}/live.svg`);
+  expect(code).toContain(`/e/${emoji}/live.svg`);
+  expect(code).not.toContain(encodeURIComponent(emoji));
   expect(code).toMatch(/<img[^>]+src="[^"]+fallback=public/);
   expect(code).not.toMatch(/ManagedOnlyNeverShared|csrf|image_session/);
   const copyEmbed = dialog
@@ -377,6 +391,54 @@ test("图片内嵌代码使用公开后备图，后退关闭并恢复焦点", as
   await expect(dialog).not.toBeVisible();
   expect(state.writes).toEqual([]);
 });
+for (const variant of ["normal", "reduced", "fallback"] as const) {
+  test(`内嵌图片 ${variant} 只请求一个候选地址`, async ({ page, baseURL }) => {
+    if (!baseURL) throw new Error("Missing test origin");
+    const origin = baseURL;
+    const normal = activityImageUrl(id, origin);
+    const reduced = activityImageUrl(id, origin, { reducedMotion: true });
+    const fallback = activityImageUrl(id, origin, { fallback: true });
+    let code = createActivityImageEmbed({
+      activityHref: `${origin}/e/${emoji}`,
+      imageHref: normal,
+      reducedImageHref: reduced,
+      fallbackImageHref: fallback,
+      title: "图片候选验证",
+      sender: "本地测试",
+    });
+    if (variant === "fallback") code = code.replace(/<source[^>]+>/g, "");
+    await page.emulateMedia({
+      reducedMotion: variant === "reduced" ? "reduce" : "no-preference",
+    });
+    const requested: string[] = [];
+    await page.route("**/live.svg*", async (route) => {
+      requested.push(route.request().url());
+      await route.fulfill({
+        contentType: "image/svg+xml",
+        body: '<svg xmlns="http://www.w3.org/2000/svg" width="420" height="560"><rect width="420" height="560" fill="red"/></svg>',
+      });
+    });
+    await page.route("**/__embed-selection", (route) =>
+      route.fulfill({
+        contentType: "text/html; charset=utf-8",
+        body: `<!doctype html><html><head><meta charset="utf-8"></head><body>${code}</body></html>`,
+      }),
+    );
+    await page.goto("/__embed-selection");
+    await page.waitForLoadState("networkidle");
+    const expected = new URL(
+      variant === "reduced"
+        ? reduced
+        : variant === "fallback"
+          ? fallback
+          : normal,
+    ).href;
+    expect(requested).toEqual([expected]);
+    await expect(page.locator("img")).toHaveJSProperty("currentSrc", expected);
+    await expect(page.locator("img")).toHaveJSProperty("naturalWidth", 420);
+  });
+}
+
 const copied = (page: Page) =>
   page.evaluate(() => document.documentElement.dataset.activityShared);
 const link = (page: Page) => `${new URL(page.url()).origin}/e/${emoji}`;

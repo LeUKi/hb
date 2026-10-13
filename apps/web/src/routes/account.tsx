@@ -9,7 +9,6 @@ import {
   KeyRound,
 } from "lucide-react";
 import { useState } from "react";
-import { ActivityImageSettings } from "../components/activities/activity-image-settings";
 import { LoginOptions } from "../components/auth/login-options";
 import { useAppLogout } from "../components/auth/session-actions";
 import { Help } from "../components/presentation/context-help";
@@ -232,7 +231,6 @@ function AccountPage() {
               </button>
             )}
           </div>
-          {session.data && <ActivityImageSettings session={session.data} />}
         </section>
         <aside className="work-account-nav">
           <h2>账号管理</h2>

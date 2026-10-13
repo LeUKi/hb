@@ -124,13 +124,6 @@ export function ActivityImageDialog({
               canCopy={() => active.current && canCopy()}
             />
           </div>
-          <p className="muted">
-            图片显示请求时的活动状态。浏览器允许跨站 Cookie
-            时，可显示查看者本人的领取结果；否则显示公开状态。点击图片进入活动页。
-          </p>
-          <p className="muted">
-            此处预览仅展示公开状态。论坛可能处理外部图片；图片不会自行更新。
-          </p>
         </div>
       </div>
     </dialog>

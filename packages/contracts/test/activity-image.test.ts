@@ -235,12 +235,13 @@ describe("activity image renderer", () => {
     ).toBe(
       `https://hb.example.com/e/${encodeActivityEmoji("550e8400-e29b-41d4-a716-446655440000")}/live.svg?motion=reduced&fallback=public&tz=UTC`,
     );
+    const emoji = encodeActivityEmoji("550e8400-e29b-41d4-a716-446655440000");
+    const href = `https://hb.example.com/e/${emoji}`;
     const embed = createActivityImageEmbed({
-      activityHref: "https://hb.example.com/e/demo",
-      imageHref: "https://hb.example.com/e/demo/live.svg",
-      reducedImageHref: "https://hb.example.com/e/demo/live.svg?motion=reduced",
-      fallbackImageHref:
-        "https://hb.example.com/e/demo/live.svg?fallback=public",
+      activityHref: new URL(href).href,
+      imageHref: `${href}/live.svg`,
+      reducedImageHref: `${href}/live.svg?motion=reduced`,
+      fallbackImageHref: `${href}/live.svg?fallback=public`,
       title: "红包",
       sender: "Alice",
     });
@@ -250,5 +251,29 @@ describe("activity image renderer", () => {
     expect(embed).toContain(" 1x");
     expect(embed).toContain("<img src=");
     expect(embed).toContain('alt="Alice 的活动红包：红包"');
+    expect(embed).toContain(`<a href="${href}">`);
+    expect(embed).toContain(`srcset="${href}/live.svg 1x"`);
+    expect(embed).not.toContain(encodeURIComponent(emoji));
+  });
+
+  it("keeps reserved URL escapes and HTML attributes safe in readable embeds", () => {
+    const href = `https://hb.example.com/e/${encodeActivityEmoji("550e8400-e29b-41d4-a716-446655440000")}`;
+    const input = {
+      activityHref: `${href}?x=%26%2F%22%20&next=1`,
+      imageHref: `${href}/live.svg?tz=Etc%2FGMT%2B8&motion=reduced`,
+      reducedImageHref: `${href}/live.svg?motion=reduced`,
+      fallbackImageHref: `${href}/live.svg?fallback=public`,
+      title: '"><script>alert(1)</script>',
+      sender: 'Alice & "Bob"',
+    };
+    const embed = createActivityImageEmbed(input);
+    expect(embed).toContain('?x=%26%2F%22%20&amp;next=1"');
+    expect(embed).toContain("?tz=Etc%2FGMT%2B8&amp;motion=reduced 1x");
+    expect(embed).not.toContain("<script>");
+    expect(embed).toContain("&quot;&gt;&lt;script&gt;");
+    expect(embed).toContain("Alice &amp; &quot;Bob&quot;");
+    expect(() =>
+      createActivityImageEmbed({ ...input, imageHref: "javascript:alert(1)" }),
+    ).toThrow(TypeError);
   });
 });

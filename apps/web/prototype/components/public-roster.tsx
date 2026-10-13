@@ -1,4 +1,8 @@
-import { claimElapsedMs, formatClaimSeconds } from "@hb/contracts";
+import {
+  claimElapsedMs,
+  formatClaimSeconds,
+  shouldShowClaimSeconds,
+} from "@hb/contracts";
 import { X } from "lucide-react";
 import {
   type PointerEvent,
@@ -281,7 +285,8 @@ function RosterRows({
                 className="recipient-time__absolute"
               />
               {type === "ldc" ? (
-                elapsed !== null && (
+                elapsed !== null &&
+                shouldShowClaimSeconds(elapsed) && (
                   <span className="recipient-time__speed">
                     {formatClaimSeconds(elapsed)}
                   </span>

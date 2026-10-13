@@ -1,56 +1,10 @@
-.image-settings {
-  border-top: 1px solid var(--line);
-  margin-top: 24px;
-  padding-top: 20px;
-  min-width: 0;
-}
-.image-settings-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.image-settings-heading h2 {
-  margin: 0;
-}
-.image-settings-timezone {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin: 16px 0 22px;
-}
-.image-settings-timezone select {
-  min-width: 0;
-  max-width: 100%;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--paper);
-  color: var(--ink);
-  padding: 8px;
-  font: inherit;
-}
-.image-settings h3 {
-  margin: 0 0 10px;
-  font-size: 14px;
-  font-weight: 600;
-}
-.image-request-record {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  font-size: 14px;
-}
-.image-settings-note {
-  font-size: 12px;
-  line-height: 1.7;
-  margin: 12px 0 0;
-}
 .activity-image-dialog {
+  position: fixed;
+  inset: 0;
   width: min(760px, calc(100vw - 24px));
   max-width: calc(100vw - 24px);
   max-height: 85dvh;
+  margin: auto;
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -108,11 +62,6 @@
     monospace;
   color: var(--ink);
   background: var(--paper);
-}
-.activity-image-code p {
-  font-size: 12px;
-  line-height: 1.7;
-  margin: 0;
 }
 .activity-image-copy-actions {
   display: flex;

@@ -10,6 +10,7 @@ import {
   claimElapsedMs,
   formatClaimSeconds,
   paymentLabel,
+  shouldShowClaimSeconds,
 } from "@hb/contracts";
 import { X } from "lucide-react";
 import {
@@ -368,7 +369,8 @@ export function PublicRoster({
                               className="recipient-time__absolute"
                             />
                             {instantClaim ? (
-                              elapsed !== null && (
+                              elapsed !== null &&
+                              shouldShowClaimSeconds(elapsed) && (
                                 <span className="recipient-time__speed">
                                   {formatClaimSeconds(elapsed)}
                                 </span>

@@ -980,6 +980,33 @@ for (const width of [1440, 375]) {
         title: "highest",
         speedTitle: "flash",
       },
+      {
+        ...recipient(2),
+        id: "boundary-exact",
+        displayName: "一百二十秒边界领取者",
+        claimedAt: new Date(Date.parse(state.openedAt) + 120_000).toISOString(),
+        amount: "0.20",
+        speedTitle: "fastest",
+      },
+      {
+        ...recipient(3),
+        id: "boundary-over",
+        displayName: "超过一百二十秒领取者",
+        claimedAt: new Date(Date.parse(state.openedAt) + 120_001).toISOString(),
+        amount: "0.10",
+        title: "lowest",
+        speedTitle: "fastest",
+      },
+      {
+        ...recipient(4),
+        id: "over-day",
+        displayName: "超过一天领取者",
+        claimedAt: new Date(
+          Date.parse(state.openedAt) + 86_401_001,
+        ).toISOString(),
+        amount: "0.30",
+        speedTitle: "fastest",
+      },
     ];
     const dialog = await openPublic(page);
     const row = dialog.locator(".recipient").first();
@@ -989,6 +1016,21 @@ for (const width of [1440, 375]) {
       "手气王",
       "我焯有桂！",
     ]);
+    const exactBoundary = dialog.locator('[data-record-id="boundary-exact"]');
+    const overBoundary = dialog.locator('[data-record-id="boundary-over"]');
+    const overDay = dialog.locator('[data-record-id="over-day"]');
+    await expect(exactBoundary.locator(".recipient-time__speed")).toHaveText(
+      "120秒",
+    );
+    await expect(exactBoundary.locator(".title-speed")).toHaveText("手速王");
+    await expect(overBoundary.locator(".recipient-time__absolute")).toHaveText(
+      /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u,
+    );
+    await expect(overBoundary.locator(".recipient-time__speed")).toHaveCount(0);
+    await expect(overBoundary.locator(".title-speed")).toHaveText("手速王");
+    await expect(overBoundary.locator(".title-lowest")).toHaveText("手气亡");
+    await expect(overDay.locator(".recipient-time__speed")).toHaveCount(0);
+    await expect(overDay.locator(".title-speed")).toHaveText("手速王");
     const geometry = await row.evaluate((node) => {
       const [luck, speed] = [...node.querySelectorAll(".recipient-title")];
       if (!luck || !speed) throw new Error("Missing luck or speed title");

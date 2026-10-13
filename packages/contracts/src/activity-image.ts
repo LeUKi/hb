@@ -1,5 +1,5 @@
 import type { PaymentState, PublicActivity } from ".";
-import { encodeActivityEmoji } from "./ecoji-v2";
+import { decodeActivityEmoji, encodeActivityEmoji } from "./ecoji-v2";
 
 export const ACTIVITY_IMAGE_WIDTH = 420;
 export const ACTIVITY_IMAGE_HEIGHT = 560;
@@ -717,8 +717,16 @@ function paymentStatusText(status: ActivityImagePaymentStatus) {
 function safeGeneratedUrl(value: string) {
   try {
     const url = new URL(value);
-    if (url.protocol === "https:" || url.protocol === "http:")
+    if (url.protocol === "https:" || url.protocol === "http:") {
+      const match = /^\/e\/([^/]+)(\/live\.svg)?$/.exec(url.pathname);
+      if (match?.[1]) {
+        const emoji = decodeURIComponent(match[1]);
+        // Only decode a validated activity code; URL delimiters stay encoded.
+        if (decodeActivityEmoji(emoji))
+          return `${url.origin}/e/${emoji}${match[2] ?? ""}${url.search}${url.hash}`;
+      }
       return url.toString();
+    }
   } catch {
     // fall through
   }

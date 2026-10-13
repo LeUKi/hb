@@ -184,11 +184,6 @@ test("跨站 HTTPS 图片验证真实 Cookie 策略、公开降级、撤销和�
       await page.context().request.get("/api/me/activity-images")
     ).json();
     expect(retained.recentRequest.activityId).toBe(activity.id);
-    await expect(
-      page
-        .getByRole("region", { name: "本浏览器图片设置" })
-        .getByRole("link", { name: "查看活动" }),
-    ).toBeVisible();
     testInfo.annotations.push({
       type: "cookie-policy",
       description: `${testInfo.project.name}: cross-site image credential ${cookieAllowed ? "sent" : "blocked"}`,
