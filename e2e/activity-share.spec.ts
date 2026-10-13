@@ -345,7 +345,9 @@ test("迟到的复制结果不会在账号切换后的菜单显示", async ({ pa
   await expect(page.getByText("复制失败", { exact: true })).toHaveCount(0);
 });
 
-test("图片内嵌代码使用公开后备图，后退关闭并恢复焦点", async ({ page }) => {
+test("图片内嵌代码只在 source 提供地址，后退关闭并恢复焦点", async ({
+  page,
+}) => {
   await page.clock.install();
   const state = await mockShare(page);
   await page.goto(`/activities/${id}`);
@@ -375,7 +377,8 @@ test("图片内嵌代码使用公开后备图，后退关闭并恢复焦点", as
   expect(code.match(/<source /g)).toHaveLength(1);
   expect(code).toContain(`/e/${emoji}/live.svg`);
   expect(code).not.toContain(encodeURIComponent(emoji));
-  expect(code).toMatch(/<img[^>]+src="[^"]+fallback=public/);
+  expect(code).not.toMatch(/<img\b[^>]*\bsrc(?:set)?\s*=/);
+  expect(code).not.toContain("fallback=public");
   expect(code).not.toMatch(/ManagedOnlyNeverShared|csrf|image_session/);
   const copyEmbed = dialog
     .locator(".activity-image-copy-actions button")
@@ -396,19 +399,20 @@ test("图片内嵌代码使用公开后备图，后退关闭并恢复焦点", as
   await expect(dialog).not.toBeVisible();
   expect(state.writes).toEqual([]);
 });
-for (const variant of ["normal", "reduced", "fallback"] as const) {
-  test(`内嵌图片 ${variant} 只请求一个候选地址`, async ({ page, baseURL }) => {
+for (const variant of ["normal", "reduced", "source-removed"] as const) {
+  test(`无 img src 的内嵌图片 ${variant} 仅由 source 决定请求`, async ({
+    page,
+    baseURL,
+  }) => {
     if (!baseURL) throw new Error("Missing test origin");
     const origin = baseURL;
     const normal = activityImageUrl(id, origin);
-    const fallback = activityImageUrl(id, origin, { fallback: true });
     let code = createActivityImageEmbed({
       imageHref: normal,
-      fallbackImageHref: fallback,
       title: "图片候选验证",
       sender: "本地测试",
     });
-    if (variant === "fallback") code = code.replace(/<source[^>]+>/g, "");
+    if (variant === "source-removed") code = code.replace(/<source[^>]+>/g, "");
     await page.emulateMedia({
       reducedMotion: variant === "reduced" ? "reduce" : "no-preference",
     });
@@ -428,12 +432,17 @@ for (const variant of ["normal", "reduced", "fallback"] as const) {
     );
     await page.goto("/__embed-selection");
     await page.waitForLoadState("networkidle");
-    const expected = new URL(variant === "fallback" ? fallback : normal).href;
-    expect(requested).toEqual([expected]);
+    const expected = variant === "source-removed" ? "" : new URL(normal).href;
+    expect(requested).toEqual(expected ? [expected] : []);
     await expect(page.locator("center > picture")).toHaveCount(1);
     await expect(page.locator("a")).toHaveCount(0);
+    expect(await page.locator("img").getAttribute("src")).toBeNull();
+    expect(await page.locator("img").getAttribute("srcset")).toBeNull();
     await expect(page.locator("img")).toHaveJSProperty("currentSrc", expected);
-    await expect(page.locator("img")).toHaveJSProperty("naturalWidth", 420);
+    await expect(page.locator("img")).toHaveJSProperty(
+      "naturalWidth",
+      expected ? 420 : 0,
+    );
   });
 }
 

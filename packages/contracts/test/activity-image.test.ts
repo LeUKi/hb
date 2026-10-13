@@ -240,7 +240,6 @@ describe("activity image renderer", () => {
     const href = `https://hb.example.com/e/${emoji}`;
     const embed = createActivityImageEmbed({
       imageHref: new URL(`${href}/live.svg`).href,
-      fallbackImageHref: `${href}/live.svg?fallback=public`,
       title: "红包",
       sender: "Alice",
     });
@@ -250,7 +249,11 @@ describe("activity image renderer", () => {
     expect(embed).not.toContain("motion=reduced");
     expect(embed.match(/<source /g)).toHaveLength(1);
     expect(embed).toContain(" 1x");
-    expect(embed).toContain("<img src=");
+    expect(embed).toContain(
+      '<img width="420" height="560" alt="Alice 的活动红包：红包">',
+    );
+    expect(embed).not.toMatch(/<img\b[^>]*\bsrc(?:set)?\s*=/);
+    expect(embed).not.toContain("fallback=public");
     expect(embed).toContain('alt="Alice 的活动红包：红包"');
     expect(embed).toMatch(/^<center>\n {2}<picture>/);
     expect(embed).toMatch(/<\/picture>\n<\/center>$/);
@@ -263,7 +266,6 @@ describe("activity image renderer", () => {
     const href = `https://hb.example.com/e/${encodeActivityEmoji("550e8400-e29b-41d4-a716-446655440000")}`;
     const input = {
       imageHref: `${href}/live.svg?tz=Etc%2FGMT%2B8&x=%26%2F%22%20`,
-      fallbackImageHref: `${href}/live.svg?fallback=public`,
       title: '"><script>alert(1)</script>',
       sender: 'Alice & "Bob"',
     };

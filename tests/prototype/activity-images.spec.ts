@@ -45,7 +45,8 @@ test("原型公开图片分享弹窗在手机支持历史关闭和回焦", async
   expect(activityHref).toMatch(/\p{Extended_Pictographic}/u);
   expect(activityHref).not.toContain("%");
   expect(code).toContain(`srcset="${activityHref}/live.svg 1x"`);
-  expect(code).toContain(`src="${activityHref}/live.svg?fallback=public"`);
+  expect(code).not.toMatch(/<img\b[^>]*\bsrc(?:set)?\s*=/);
+  expect(code).not.toContain("fallback=public");
   await expect(dialog.locator(".activity-image-preview svg")).toHaveCount(1);
   const bounds = await dialog.boundingBox();
   expect(bounds?.width).toBeLessThanOrEqual(351);

@@ -59,7 +59,6 @@ export type ActivityImageViewerState =
 
 export type ActivityImageEmbedInput = {
   imageHref: string;
-  fallbackImageHref: string;
   title: string;
   sender: string;
 };
@@ -126,7 +125,6 @@ export function activityImageUrl(
 
 export function createActivityImageEmbed(input: ActivityImageEmbedInput) {
   const imageHref = safeGeneratedUrl(input.imageHref);
-  const fallbackImageHref = safeGeneratedUrl(input.fallbackImageHref);
   const alt = `${normalizeText(input.sender, "活动发起人")} 的活动红包：${normalizeText(
     input.title,
     "未命名活动",
@@ -135,7 +133,7 @@ export function createActivityImageEmbed(input: ActivityImageEmbedInput) {
     "<center>",
     "  <picture>",
     `    <source type="image/svg+xml" srcset="${escapeXml(imageHref)} 1x">`,
-    `    <img src="${escapeXml(fallbackImageHref)}" width="${ACTIVITY_IMAGE_WIDTH}" height="${ACTIVITY_IMAGE_HEIGHT}" alt="${escapeXml(
+    `    <img width="${ACTIVITY_IMAGE_WIDTH}" height="${ACTIVITY_IMAGE_HEIGHT}" alt="${escapeXml(
       alt,
     )}">`,
     "  </picture>",

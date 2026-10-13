@@ -28,9 +28,6 @@ export function ActivityImageDialog({
   const imageHref = activityImageUrl(activityId, window.location.origin);
   const code = createActivityImageEmbed({
     imageHref,
-    fallbackImageHref: activityImageUrl(activityId, window.location.origin, {
-      fallback: true,
-    }),
     title: preview.title,
     sender: preview.sender,
   });
