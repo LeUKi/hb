@@ -58,9 +58,7 @@ export type ActivityImageViewerState =
   | { kind: "loading" | "pending" | "error" | "unavailable" };
 
 export type ActivityImageEmbedInput = {
-  activityHref: string;
   imageHref: string;
-  reducedImageHref: string;
   fallbackImageHref: string;
   title: string;
   sender: string;
@@ -114,14 +112,12 @@ export function activityImageUrl(
   activityId: string,
   origin: string,
   options: {
-    reducedMotion?: boolean;
     timeZone?: string;
     fallback?: boolean;
   } = {},
 ) {
   const path = `/e/${encodeActivityEmoji(activityId)}/live.svg`;
   const url = new URL(path, origin);
-  if (options.reducedMotion) url.searchParams.set("motion", "reduced");
   if (options.fallback) url.searchParams.set("fallback", "public");
   if (options.timeZone && isImageTimeZone(options.timeZone))
     url.searchParams.set("tz", options.timeZone);
@@ -129,24 +125,21 @@ export function activityImageUrl(
 }
 
 export function createActivityImageEmbed(input: ActivityImageEmbedInput) {
-  const activityHref = safeGeneratedUrl(input.activityHref);
   const imageHref = safeGeneratedUrl(input.imageHref);
-  const reducedImageHref = safeGeneratedUrl(input.reducedImageHref);
   const fallbackImageHref = safeGeneratedUrl(input.fallbackImageHref);
   const alt = `${normalizeText(input.sender, "活动发起人")} 的活动红包：${normalizeText(
     input.title,
     "未命名活动",
   )}`;
   return [
-    `<a href="${escapeXml(activityHref)}">`,
+    "<center>",
     "  <picture>",
-    `    <source type="image/svg+xml" srcset="${escapeXml(reducedImageHref)} 1x" media="(prefers-reduced-motion: reduce)">`,
     `    <source type="image/svg+xml" srcset="${escapeXml(imageHref)} 1x">`,
     `    <img src="${escapeXml(fallbackImageHref)}" width="${ACTIVITY_IMAGE_WIDTH}" height="${ACTIVITY_IMAGE_HEIGHT}" alt="${escapeXml(
       alt,
     )}">`,
     "  </picture>",
-    "</a>",
+    "</center>",
   ].join("\n");
 }
 
@@ -599,7 +592,6 @@ function renderActiveStyles(
     @keyframes ${scope}-seal-wear{0%,16.666667%{opacity:0}50%{opacity:.4}100%{opacity:.6}}
     @keyframes ${scope}-warning{from{opacity:1}to{opacity:0}}
     @keyframes ${scope}-stale{from{opacity:1}to{opacity:1}}
-    @media (prefers-reduced-motion: reduce){${root} .packet,${root} .sender,${root} .title-line,${root} .seal,${root} .data-row,${root} .snapshot-time{animation:none;opacity:1}${root} .gold-particle{animation:none;display:none}}
   </style>`;
 }
 
@@ -614,7 +606,6 @@ function renderClaimedStyles(scope: string) {
     @keyframes ${scope}-lower-open{from{transform:translateY(0)}to{transform:translateY(300px)}}
     @keyframes ${scope}-header-open{from{transform:translate(210px,var(--source-y)) scale(1)}to{transform:translate(210px,var(--final-y)) scale(.7)}}
     @keyframes ${scope}-prize-reveal{from{opacity:0}to{opacity:1}}
-    @media (prefers-reduced-motion: reduce){${root} .open-upper,${root} .open-lower,${root} .claimed-header-item,${root} .claimed-result{animation:none}${root} .open-lower{display:none}}
   </style>`;
 }
 

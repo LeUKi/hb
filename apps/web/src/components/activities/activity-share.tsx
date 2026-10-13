@@ -166,7 +166,6 @@ export function ActivityShare({
         !isAccessQueryError(detailState?.error) && (
           <ActivityImageDialog
             activityId={activity.id}
-            activityHref={activityShareUrl(activity.id, window.location.origin)}
             preview={preview}
             onClose={imageOverlay.close}
             copyScope={`${identity ?? "guest"}:${activity.id}`}

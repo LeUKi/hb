@@ -119,6 +119,7 @@ for (const viewport of [
     await page.goBack();
     await expect(page).toHaveURL(new RegExp(`sample=${knownActivity}`));
     await expect(envelope(page)).toHaveAttribute("data-phase", "closed");
+    await expect(envelope(page)).toHaveAttribute("data-entry-token", /.+/u);
     await page.clock.runFor(320);
     await expect(envelope(page)).toHaveAttribute("data-phase", "opening");
     await page.clock.runFor(1850);
@@ -168,10 +169,68 @@ test("a single home match confirms one reward and consumes one opening event", a
   await currentRoute(page)
     .getByRole("button", { name: newTitle, exact: true })
     .click();
+  const entryToken = await envelope(page).getAttribute("data-entry-token");
+  expect(entryToken).toBeTruthy();
+  await expect(envelope(page)).toHaveAttribute("data-phase", "opening");
+  await expect(envelope(page)).toHaveAttribute("data-opening-count", "1");
+  await expect(envelope(page).locator(".claimed-result")).toHaveCSS(
+    "opacity",
+    "0",
+  );
+  const openingAnimation = await envelope(page)
+    .locator(".open-upper")
+    .evaluate((node) => getComputedStyle(node).animationName);
+  expect(openingAnimation).toMatch(/upper-open/u);
+  await page.clock.runFor(1_850);
   await expect(envelope(page)).toHaveAttribute("data-phase", "open");
-  await expect(envelope(page)).toHaveAttribute("data-animate", "false");
-  await expect(envelope(page)).toHaveAttribute("data-opening-count", "0");
+  await expect(envelope(page)).toHaveAttribute("data-opening-count", "1");
+  await expect(envelope(page)).toHaveAttribute(
+    "data-entry-token",
+    entryToken ?? "",
+  );
   await expectRecipientCount(page, 9);
+});
+
+test("reloading claimed activity opens a new visit while dialog history keeps the current reveal", async ({
+  page,
+}) => {
+  await page.goto(`/#activity?sample=${knownActivity}`);
+  await expect(envelope(page)).toHaveAttribute("data-phase", "opening");
+  const firstEntry = await envelope(page).getAttribute("data-entry-token");
+  expect(firstEntry).toBeTruthy();
+  await expect(envelope(page)).toHaveAttribute("data-phase", "open");
+
+  await page.reload();
+  await expect(envelope(page)).toHaveAttribute("data-phase", "opening");
+  const nextEntry = await envelope(page).getAttribute("data-entry-token");
+  expect(nextEntry).toBeTruthy();
+  expect(nextEntry).not.toBe(firstEntry);
+  await expect(envelope(page)).toHaveAttribute("data-phase", "open");
+  const amount = await envelope(page).locator(".prize").textContent();
+  const claimedAt = await envelope(page).locator(".claimed-time").textContent();
+
+  await currentRoute(page)
+    .getByRole("button", { name: "分享活动", exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: "内嵌代码" }).click();
+  const dialog = page.getByRole("dialog", { name: "内嵌代码" });
+  await expect(dialog).toBeVisible();
+  await page.goBack();
+  await expect(dialog).not.toBeVisible();
+  await page.goForward();
+  await expect(dialog).toBeVisible();
+  await dialog.press("Escape");
+  await expect(dialog).not.toBeVisible();
+  await expect(envelope(page)).toHaveAttribute(
+    "data-entry-token",
+    nextEntry ?? "",
+  );
+  await expect(envelope(page)).toHaveAttribute("data-phase", "open");
+  await expect(envelope(page)).toHaveAttribute("data-opening-count", "1");
+  await expect(envelope(page).locator(".prize")).toHaveText(amount ?? "");
+  await expect(envelope(page).locator(".claimed-time")).toHaveText(
+    claimedAt ?? "",
+  );
 });
 
 test("shared input transitions leave only the destination editor and no exited plaintext", async ({

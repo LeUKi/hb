@@ -35,6 +35,22 @@ export interface RedemptionTransition {
 }
 
 const TransitionContext = createContext<RedemptionTransition | null>(null);
+const activityDocumentId =
+  globalThis.crypto?.randomUUID?.() ??
+  `prototype-entry-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+let nextActivityEntryId = 0;
+
+/** A display visit, independent of submissions and same-page dialog history. */
+export function useActivityEntryToken(activityId: string) {
+  const visit = useRef<{ activityId: string; token: string } | null>(null);
+  if (visit.current?.activityId !== activityId)
+    visit.current = {
+      activityId,
+      token: `${activityDocumentId}:${++nextActivityEntryId}`,
+    };
+  return visit.current.token;
+}
+
 type EnvelopeSnapshot = {
   presentation?: ActivityImagePresentation;
   identity?: string;

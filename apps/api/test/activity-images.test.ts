@@ -443,7 +443,16 @@ describe("activity image APIs", () => {
     const privateBody = await privateImage.text();
     expect(privateBody).toContain("1.00 LDC");
     expect(privateBody).toContain("付款处理中");
+    expect(privateBody).toContain("upper-open 1200ms");
     expect(cookieValue(privateImage, "__Host-hb_image_session")).toBeNull();
+
+    const legacyReduced = await request(
+      `/api/activity-images/${activity.id}.svg?motion=reduced`,
+      { actor: alice },
+    );
+    const legacyReducedBody = await legacyReduced.text();
+    expect(legacyReducedBody).toContain("1.00 LDC");
+    expect(legacyReducedBody).toContain("upper-open 1200ms");
 
     const privateAlias = await request(alias, { actor: alice });
     expect(privateAlias.status).toBe(200);

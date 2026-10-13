@@ -30,15 +30,17 @@ test("原型公开图片分享弹窗在手机支持历史关闭和回焦", async
   const dialog = page.getByRole("dialog", { name: "内嵌代码" });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByLabel("内嵌代码", { exact: true })).toHaveValue(
-    /<picture>/,
-  );
-  await expect(dialog.getByLabel("内嵌代码", { exact: true })).toHaveValue(
-    /<a href="http:\/\/127\.0\.0\.1:4177\/e\//,
+    /^<center>\n {2}<picture>/,
   );
   const code = await dialog
     .getByLabel("内嵌代码", { exact: true })
     .inputValue();
-  const activityHref = code.match(/<a href="([^"]+)"/)?.[1];
+  expect(code).toMatch(/<\/picture>\n<\/center>$/);
+  expect(code).not.toMatch(/<\/?a(?:\s|>)/);
+  expect(code).not.toContain("prefers-reduced-motion");
+  expect(code).not.toContain("motion=reduced");
+  expect(code.match(/<source /g)).toHaveLength(1);
+  const activityHref = code.match(/srcset="([^"]+)\/live\.svg 1x"/)?.[1];
   expect(activityHref).toBeTruthy();
   expect(activityHref).toMatch(/\p{Extended_Pictographic}/u);
   expect(activityHref).not.toContain("%");

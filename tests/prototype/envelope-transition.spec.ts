@@ -33,6 +33,7 @@ async function mountEnvelopeHarness(
     withInput?: boolean;
     timestampedNavigation?: boolean;
     reserveResultSpace?: boolean;
+    entryToken?: boolean;
   } = {},
 ) {
   const [entryResponse, envelopeResponse, htmlResponse] = await Promise.all([
@@ -71,14 +72,24 @@ async function mountEnvelopeHarness(
       const { AnimatePresence, MotionConfig } = await import(modules.motion);
       const { Envelope } = await import("/components/envelope.tsx");
       const { PasswordInput } = await import("/components/password-input.tsx");
-      const { RedemptionTransitionProvider, RedemptionRouteFrame } =
-        await import(modules.transitionModule);
+      const {
+        RedemptionTransitionProvider,
+        RedemptionRouteFrame,
+        useActivityEntryToken,
+      } = await import(modules.transitionModule);
       const target = document.getElementById("root");
       if (!target) throw new Error("Prototype root missing");
       target.style.cssText =
         "display:block;position:fixed;inset:20px;overflow:auto";
       const h = React.createElement;
       const reward = modules.options.reward ?? { kind: "ldc", amount: "3.28" };
+      function ActivityEnvelope(props) {
+        const entryToken = useActivityEntryToken("fixture-activity");
+        return h(Envelope, {
+          ...props,
+          entryToken: modules.options.entryToken ? entryToken : null,
+        });
+      }
       let revision = 0;
       function Harness() {
         const [route, setRoute] = React.useState(modules.initial);
@@ -203,7 +214,7 @@ async function mountEnvelopeHarness(
                     },
                   },
                   route !== "participations" &&
-                    h(Envelope, {
+                    h(route === "activity" ? ActivityEnvelope : Envelope, {
                       key: identity,
                       open: route === "activity" && open,
                       reward:
@@ -423,10 +434,12 @@ for (const { width, confirmationDelay } of [
   });
 }
 
-test("rapid navigation cancels late opening callbacks and direct history stays static", async ({
+test("rapid navigation cancels late opening callbacks and direct claimed history opens once per entry", async ({
   page,
 }) => {
-  const envelope = await mountEnvelopeHarness(page, "home", true);
+  const envelope = await mountEnvelopeHarness(page, "home", true, {
+    entryToken: true,
+  });
   await page.getByRole("button", { name: "活动页", exact: true }).click();
   await page.clock.runFor(100);
   await page.getByRole("button", { name: "首页", exact: true }).click();
@@ -434,11 +447,26 @@ test("rapid navigation cancels late opening callbacks and direct history stays s
   await expect(envelope).toHaveAttribute("data-phase", "closed");
   await expect(envelope).toHaveAttribute("data-opening-count", "0");
   await expect(page.locator('[data-route-presence="exiting"]')).toHaveCount(0);
+
   await page.getByRole("button", { name: "直接查看", exact: true }).click();
-  await page.clock.runFor(200);
+  const entryToken = await envelope.getAttribute("data-entry-token");
+  expect(entryToken).toBeTruthy();
+  await expect(envelope).toHaveAttribute("data-phase", "opening");
+  await expect(envelope).toHaveAttribute("data-opening-count", "1");
+  await expect(envelope.locator(".claimed-result")).toHaveCSS("opacity", "0");
+  const openingAnimation = await envelope
+    .locator(".open-upper")
+    .evaluate((node) => getComputedStyle(node).animationName);
+  expect(openingAnimation).toMatch(/upper-open/u);
+
+  await page.getByRole("button", { name: "更新事实", exact: true }).click();
+  await page.getByRole("button", { name: "重渲染", exact: true }).click();
+  await page.clock.runFor(1_850);
   await expect(envelope).toHaveAttribute("data-phase", "open");
-  await expect(envelope).toHaveAttribute("data-animate", "false");
-  await expect(envelope).toHaveAttribute("data-opening-count", "0");
+  await expect(envelope).toHaveAttribute("data-opening-count", "1");
+  await expect(envelope).toHaveAttribute("data-entry-token", entryToken ?? "");
+  await expect(envelope.locator(".prize")).toHaveText("+4.56 LDC");
+
   await page.getByRole("button", { name: "清理账号", exact: true }).click();
   await page.clock.runFor(320);
   await expect(envelope).toHaveAttribute("data-phase", "closed");
@@ -534,7 +562,16 @@ for (const width of [1440, 375]) {
     const envelope = page.locator(
       '[data-route-presence="present"] [data-testid="envelope"]',
     );
-    await expect(envelope).toHaveAttribute("data-phase", "open");
+    await expect(envelope).toHaveAttribute("data-entry-token", /.+/u);
+    await expect(envelope).toHaveAttribute("data-phase", "opening");
+    await expect(envelope.locator(".claimed-result")).toHaveCSS("opacity", "0");
+    const openingAnimation = await envelope
+      .locator(".open-upper")
+      .evaluate((node) => getComputedStyle(node).animationName);
+    expect(openingAnimation).toMatch(/upper-open/u);
+    await expect(envelope).toHaveAttribute("data-phase", "open", {
+      timeout: 3_000,
+    });
     const samplesPromise = page.evaluate(() => {
       type Frame = {
         time: number;

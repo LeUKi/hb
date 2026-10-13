@@ -106,6 +106,7 @@ import {
   RedemptionRouteFrame,
   type RedemptionTransition,
   RedemptionTransitionProvider,
+  useActivityEntryToken,
 } from "./components/redemption-transition";
 import {
   exportDrawRostersSnapshot,
@@ -1985,6 +1986,7 @@ function ActivityPage({
   const [rosterOpen, setRosterOpen] = useState(false);
   const isPresent = useIsPresent();
   const draw = useDrawRoster(activity);
+  const entryToken = useActivityEntryToken(activity.id);
   const deadlineExpired = useDeadlineExpired({
     deadlineAt: activity.deadlineAt ?? null,
     active: viewState.lifecycle === "active",
@@ -2163,10 +2165,6 @@ function ActivityPage({
               activity={activity}
               identity={identity}
               fuzzy={fuzzy}
-              activityHref={buildPrototypeActivityShareUrl(
-                activity.id,
-                window.location.origin,
-              )}
               visiblePasswords={passwords.known}
               getCopyText={shareText}
             />
@@ -2292,6 +2290,7 @@ function ActivityPage({
             onOpenRoster={canViewRoster ? () => setRosterOpen(true) : undefined}
             rosterLabel={rosterLabel}
             animationToken={animate ? activity.id : null}
+            entryToken={entryToken}
             size="detail"
             reserveResultSpace={reserveResultSpace && activity.type !== "draw"}
           />

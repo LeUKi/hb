@@ -57,6 +57,7 @@ describe("activity image renderer", () => {
       }),
     );
     expect(active).toContain('data-state="active"');
+    expect(active).not.toContain("prefers-reduced-motion");
     expect(active).toContain("剩余 2 份");
     expect(active).toContain(">开<");
     expect(active).not.toContain("未登录");
@@ -104,6 +105,7 @@ describe("activity image renderer", () => {
     expect(claimed).toContain("+1.00 LDC");
     expect(claimed).toContain("正在核对原订单");
     expect(claimed).toContain("1200ms cubic-bezier(.2,.75,.2,1) 250ms");
+    expect(claimed).not.toContain("prefers-reduced-motion");
     expect(claimed).toContain("650ms ease-out 1150ms");
     expect(claimed).toContain("领取于");
     expect(claimed).toContain(
@@ -227,31 +229,32 @@ describe("activity image renderer", () => {
         "550e8400-e29b-41d4-a716-446655440000",
         "https://hb.example.com",
         {
-          reducedMotion: true,
           timeZone: "UTC",
           fallback: true,
         },
       ),
     ).toBe(
-      `https://hb.example.com/e/${encodeActivityEmoji("550e8400-e29b-41d4-a716-446655440000")}/live.svg?motion=reduced&fallback=public&tz=UTC`,
+      `https://hb.example.com/e/${encodeActivityEmoji("550e8400-e29b-41d4-a716-446655440000")}/live.svg?fallback=public&tz=UTC`,
     );
     const emoji = encodeActivityEmoji("550e8400-e29b-41d4-a716-446655440000");
     const href = `https://hb.example.com/e/${emoji}`;
     const embed = createActivityImageEmbed({
-      activityHref: new URL(href).href,
-      imageHref: `${href}/live.svg`,
-      reducedImageHref: `${href}/live.svg?motion=reduced`,
+      imageHref: new URL(`${href}/live.svg`).href,
       fallbackImageHref: `${href}/live.svg?fallback=public`,
       title: "红包",
       sender: "Alice",
     });
     expect(embed).toContain("<picture>");
     expect(embed).toContain('type="image/svg+xml"');
-    expect(embed).toContain("prefers-reduced-motion: reduce");
+    expect(embed).not.toContain("prefers-reduced-motion");
+    expect(embed).not.toContain("motion=reduced");
+    expect(embed.match(/<source /g)).toHaveLength(1);
     expect(embed).toContain(" 1x");
     expect(embed).toContain("<img src=");
     expect(embed).toContain('alt="Alice 的活动红包：红包"');
-    expect(embed).toContain(`<a href="${href}">`);
+    expect(embed).toMatch(/^<center>\n {2}<picture>/);
+    expect(embed).toMatch(/<\/picture>\n<\/center>$/);
+    expect(embed).not.toMatch(/<\/?a(?:\s|>)/);
     expect(embed).toContain(`srcset="${href}/live.svg 1x"`);
     expect(embed).not.toContain(encodeURIComponent(emoji));
   });
@@ -259,16 +262,13 @@ describe("activity image renderer", () => {
   it("keeps reserved URL escapes and HTML attributes safe in readable embeds", () => {
     const href = `https://hb.example.com/e/${encodeActivityEmoji("550e8400-e29b-41d4-a716-446655440000")}`;
     const input = {
-      activityHref: `${href}?x=%26%2F%22%20&next=1`,
-      imageHref: `${href}/live.svg?tz=Etc%2FGMT%2B8&motion=reduced`,
-      reducedImageHref: `${href}/live.svg?motion=reduced`,
+      imageHref: `${href}/live.svg?tz=Etc%2FGMT%2B8&x=%26%2F%22%20`,
       fallbackImageHref: `${href}/live.svg?fallback=public`,
       title: '"><script>alert(1)</script>',
       sender: 'Alice & "Bob"',
     };
     const embed = createActivityImageEmbed(input);
-    expect(embed).toContain('?x=%26%2F%22%20&amp;next=1"');
-    expect(embed).toContain("?tz=Etc%2FGMT%2B8&amp;motion=reduced 1x");
+    expect(embed).toContain("?tz=Etc%2FGMT%2B8&amp;x=%26%2F%22%20 1x");
     expect(embed).not.toContain("<script>");
     expect(embed).toContain("&quot;&gt;&lt;script&gt;");
     expect(embed).toContain("Alice &amp; &quot;Bob&quot;");

@@ -13,14 +13,12 @@ export function PrototypeActivityImageShare({
   activity,
   identity,
   fuzzy,
-  activityHref,
   visiblePasswords,
   getCopyText,
 }: {
   activity: Activity;
   identity: Identity;
   fuzzy: boolean;
-  activityHref: string;
   visiblePasswords: readonly { text: string }[];
   getCopyText: (
     kind: "link" | "text" | "password",
@@ -119,7 +117,6 @@ export function PrototypeActivityImageShare({
       {open && activity.lifecycle !== "draft" && (
         <ActivityImageDialog
           activityId={prototypeActivityUuid(activity.id)}
-          activityHref={activityHref}
           preview={preview}
           onClose={() => window.history.back()}
           copyScope={`${identity}:${activity.id}`}

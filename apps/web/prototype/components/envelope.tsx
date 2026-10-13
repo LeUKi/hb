@@ -29,6 +29,8 @@ export interface EnvelopeProps {
   reserveResultSpace?: boolean;
   /** A confirmed result event. Re-rendering with the same token never replays it. */
   animationToken?: string | number | null;
+  /** A page visit. Once its successful LDC paper arrives, show one full reveal. */
+  entryToken?: string | number | null;
   shared?: boolean;
   author?: { name: string; username: string; color?: string };
   payment?: {
@@ -52,6 +54,7 @@ export function Envelope({
   size = "detail",
   reserveResultSpace = false,
   animationToken = null,
+  entryToken = null,
   shared = true,
   author,
   payment,
@@ -86,7 +89,13 @@ export function Envelope({
     successfulReward && animationToken !== null
       ? `result:${animationToken}`
       : null;
+  const entryIntent =
+    successfulReward && entryToken !== null ? `entry:${entryToken}` : null;
   const navigatedOpen = navigationIntent !== null && sharedNavigation;
+  // A page visit and the result that arrives during it share one display event.
+  // Query updates, dialogs, and same-page re-renders must not restart it.
+  const openingIntent =
+    entryIntent ?? (navigatedOpen ? navigationIntent : resultIntent);
   const closingReward =
     shared &&
     sharedNavigation &&
@@ -107,7 +116,7 @@ export function Envelope({
         : open
           ? "open"
           : "closed"
-      : resultIntent !== null || navigatedOpen
+      : openingIntent !== null
         ? "closed"
         : "open";
   const [phase, setPhase] = useState<EnvelopePhase>(initialPhase);
@@ -156,7 +165,7 @@ export function Envelope({
     if (reduced) {
       update(open && isPresent ? "open" : "closed");
       setAnimated(false);
-      const skippedIntent = navigationIntent ?? resultIntent;
+      const skippedIntent = openingIntent;
       if (skippedIntent)
         consumedIntent.current = {
           key: skippedIntent,
@@ -181,9 +190,9 @@ export function Envelope({
         close();
       else update("closed");
     } else {
-      // Navigation opens any factual paper; only a successful reward can
-      // supply a newly confirmed result event.
-      const intent = navigatedOpen ? navigationIntent : resultIntent;
+      // Navigation opens any factual paper from home; successful LDC visits
+      // also reveal on direct entry, reload, and history traversal.
+      const intent = openingIntent;
       if (intent) {
         if (consumedIntent.current?.key !== intent) {
           const now = Date.now();
@@ -237,10 +246,9 @@ export function Envelope({
     isPresent,
     moveDuration,
     navigatedOpen,
-    navigationIntent,
+    openingIntent,
     open,
     reduced,
-    resultIntent,
     returningHome,
     // These are event identities; reward updates should not restart a timeline.
     transition?.from,
@@ -277,7 +285,7 @@ export function Envelope({
     updatedAt: new Date(0),
   };
   const frozenSvg = useRef<{ key: string; markup: string } | null>(null);
-  const revealKey = `${presentationIdentity ?? ""}:${(navigatedOpen ? navigationIntent : resultIntent) ?? ""}`;
+  const revealKey = `${presentationIdentity ?? ""}:${openingIntent ?? ""}`;
   const incomingSvg = renderActivityImage({
     ...image,
     state: !hasPaper && image.state === "claimed" ? "active" : image.state,
@@ -304,6 +312,7 @@ export function Envelope({
       data-phase={phase}
       data-animate={animated && !reduced && open && isPresent}
       data-opening-count={openingCount}
+      data-entry-token={entryToken ?? undefined}
       aria-hidden={!isPresent || size === "small" || undefined}
       inert={!isPresent || size === "small" || undefined}
     >

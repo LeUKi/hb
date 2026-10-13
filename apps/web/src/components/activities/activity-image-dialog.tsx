@@ -11,14 +11,12 @@ import "./activity-images.css";
 
 export function ActivityImageDialog({
   activityId,
-  activityHref,
   preview,
   onClose,
   copyScope = activityId,
   canCopy = () => true,
 }: {
   activityId: string;
-  activityHref: string;
   preview: ActivityImagePresentation;
   onClose: () => void;
   copyScope?: string | null;
@@ -29,11 +27,7 @@ export function ActivityImageDialog({
   const active = useRef(true);
   const imageHref = activityImageUrl(activityId, window.location.origin);
   const code = createActivityImageEmbed({
-    activityHref,
     imageHref,
-    reducedImageHref: activityImageUrl(activityId, window.location.origin, {
-      reducedMotion: true,
-    }),
     fallbackImageHref: activityImageUrl(activityId, window.location.origin, {
       fallback: true,
     }),

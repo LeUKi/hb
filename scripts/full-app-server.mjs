@@ -267,7 +267,7 @@ async function main() {
           "Cache-Control": "no-store",
         });
         response.end(
-          `<!doctype html><meta charset="utf-8"><title>Cross-site image fixture</title><a href="${origin}/activities/${id}"><picture><source media="(prefers-reduced-motion: reduce)" type="image/svg+xml" srcset="${image}?motion=reduced 1x"><source type="image/svg+xml" srcset="${image} 1x"><img src="${image}?fallback=public" width="420" height="560" alt="活动红包"></picture></a>`,
+          `<!doctype html><meta charset="utf-8"><title>Cross-site image fixture</title><center><picture><source type="image/svg+xml" srcset="${image} 1x"><img src="${image}?fallback=public" width="420" height="560" alt="活动红包"></picture></center>`,
         );
       });
       await new Promise((resolve, reject) => {

@@ -191,7 +191,6 @@ async function renderImage(
     );
 
   const publicFallback = context.req.query("fallback") === "public";
-  const animated = context.req.query("motion") !== "reduced";
   const urlTimeZone = context.req.query("tz");
   const requestStartedAt = new Date();
   let timeZone = DEFAULT_ACTIVITY_IMAGE_TIME_ZONE;
@@ -231,7 +230,7 @@ async function renderImage(
         updatedAt: completedReadAt,
         now: completedReadAt,
         timeZone,
-        animated,
+        animated: true,
         instanceId: `api-${id}`,
         publicFallback,
       }),

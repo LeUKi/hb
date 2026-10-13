@@ -6,6 +6,7 @@ import {
   emptyActivityInput,
   type ManagedActivity,
   type PublicActivity,
+  renderActivityImage,
 } from "../packages/contracts/src";
 
 const id = "cecef876-ddbb-4ed5-93ce-9b311e3df3ea";
@@ -366,8 +367,12 @@ test("图片内嵌代码使用公开后备图，后退关闭并恢复焦点", as
   const code = await dialog
     .getByLabel("内嵌代码", { exact: true })
     .inputValue();
-  expect(code).toContain("<picture>");
-  expect(code).toContain("prefers-reduced-motion: reduce");
+  expect(code).toMatch(/^<center>\n {2}<picture>/);
+  expect(code).toMatch(/<\/picture>\n<\/center>$/);
+  expect(code).not.toMatch(/<\/?a(?:\s|>)/);
+  expect(code).not.toContain("prefers-reduced-motion");
+  expect(code).not.toContain("motion=reduced");
+  expect(code.match(/<source /g)).toHaveLength(1);
   expect(code).toContain(`/e/${emoji}/live.svg`);
   expect(code).not.toContain(encodeURIComponent(emoji));
   expect(code).toMatch(/<img[^>]+src="[^"]+fallback=public/);
@@ -396,12 +401,9 @@ for (const variant of ["normal", "reduced", "fallback"] as const) {
     if (!baseURL) throw new Error("Missing test origin");
     const origin = baseURL;
     const normal = activityImageUrl(id, origin);
-    const reduced = activityImageUrl(id, origin, { reducedMotion: true });
     const fallback = activityImageUrl(id, origin, { fallback: true });
     let code = createActivityImageEmbed({
-      activityHref: `${origin}/e/${emoji}`,
       imageHref: normal,
-      reducedImageHref: reduced,
       fallbackImageHref: fallback,
       title: "图片候选验证",
       sender: "本地测试",
@@ -426,16 +428,42 @@ for (const variant of ["normal", "reduced", "fallback"] as const) {
     );
     await page.goto("/__embed-selection");
     await page.waitForLoadState("networkidle");
-    const expected = new URL(
-      variant === "reduced"
-        ? reduced
-        : variant === "fallback"
-          ? fallback
-          : normal,
-    ).href;
+    const expected = new URL(variant === "fallback" ? fallback : normal).href;
     expect(requested).toEqual([expected]);
+    await expect(page.locator("center > picture")).toHaveCount(1);
+    await expect(page.locator("a")).toHaveCount(0);
     await expect(page.locator("img")).toHaveJSProperty("currentSrc", expected);
     await expect(page.locator("img")).toHaveJSProperty("naturalWidth", 420);
+  });
+}
+
+for (const state of ["active", "claimed"] as const) {
+  test(`系统减少动态效果不会关闭 ${state} SVG 的默认动画`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.route("**/__svg-motion", (route) =>
+      route.fulfill({
+        contentType: "image/svg+xml",
+        body: renderActivityImage({
+          title: "图片动画验证",
+          sender: "本地测试",
+          state,
+          sealLabel: "查看",
+          amount: state === "claimed" ? "1.00 LDC" : null,
+          updatedAt: new Date(),
+          instanceId: "motion-test",
+        }),
+      }),
+    );
+    await page.goto("/__svg-motion");
+    const animated = page.locator(
+      state === "claimed" ? ".open-upper" : ".packet",
+    );
+    await expect(animated).toHaveCSS(
+      "animation-name",
+      state === "claimed"
+        ? "rp-motion-test-upper-open"
+        : "rp-motion-test-fade-in",
+    );
   });
 }
 

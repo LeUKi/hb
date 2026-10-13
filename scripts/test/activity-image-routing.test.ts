@@ -73,7 +73,7 @@ async function route(path: string, init: RequestInit = {}) {
 
 describe("web worker activity image routing", () => {
   it("forwards emoji live image GET and HEAD requests to the API binding", async () => {
-    const path = `/e/${ENCODED_EMOJI}/live.svg?motion=reduced&fallback=public`;
+    const path = `/e/${ENCODED_EMOJI}/live.svg?fallback=public`;
     const headers = {
       Accept: "image/svg+xml,*/*",
       Cookie: "hb_session=abc; pref=1",
@@ -91,9 +91,7 @@ describe("web worker activity image routing", () => {
     expect(new URL(getRequest?.url ?? "").pathname).toBe(
       `/api/e/${ENCODED_EMOJI}/live.svg`,
     );
-    expect(new URL(getRequest?.url ?? "").search).toBe(
-      "?motion=reduced&fallback=public",
-    );
+    expect(new URL(getRequest?.url ?? "").search).toBe("?fallback=public");
     expect(getRequest?.headers.get("cookie")).toBe("hb_session=abc; pref=1");
     expect(getRequest?.headers.get("accept")).toBe("image/svg+xml,*/*");
     expect(getRequest?.headers.get("sec-fetch-dest")).toBe("image");
@@ -108,7 +106,7 @@ describe("web worker activity image routing", () => {
       `/api/e/${ENCODED_EMOJI}/live.svg`,
     );
     expect(new URL(head.api[0]?.request.url ?? "").search).toBe(
-      "?motion=reduced&fallback=public",
+      "?fallback=public",
     );
   });
 
