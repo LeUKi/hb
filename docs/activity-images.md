@@ -137,3 +137,16 @@ linux.do 当前清洗、图片下载/代理和 CSP 行为尚未完成实际论�
 未执行迁移，两环境仍为27条既有迁移；预发布许可0/0/0、生产1/1/1及控制版本保持。生产诊断无告警，付款队列与死信队列积压均为0，四类维护任务最近运行成功。未发起真实领取、报名或付款测试。没有配置 Git remote，因此未推送。
 
 两环境来源和产物已归档至 `.wrangler/releases/hb-staging-2026-10-13T12-11-23-453Z/`、`.wrangler/releases/hb-production-2026-10-13T12-12-53-515Z/`；完整回执为 `.wrangler/verification/svg-motion-release-20261013/release-summary.json`。
+
+## 内嵌代码移除 img.src 发布（2026-10-13，发布后补录）
+
+源码提交 `ca7536c4f2ef146befd4252e051e204a4ea5b56d` 已发布至预发布和生产，来源 SHA-256 为 `18e63545eb1cce174fa1178f2142af27db2a78548ff912a0745fce67fe80e3f8`。内嵌图片地址仅由 source.srcset 提供，img 只保留 width、height、alt。本节为发布后记录，不属于冻结候选。
+
+| 环境 | API 版本（100%） | Web 版本（100%） | build Unix 秒 |
+| --- | --- | --- | --- |
+| 预发布 | `07c5e108-3b38-4198-bc71-137c6af3b3ae` | `5394de06-567c-44ff-8263-e63988d798e3` | `1791894926` |
+| 生产 | `8ebacd39-7404-4baa-af26-cd5928df3b10` | `be01e71b-b75f-4e1a-9106-fa856737c4b9` | `1791894987` |
+
+按用户要求沿用本次修改已通过的69项契约、15项正式分享、7项原型回归及类型/lint/构建结果，发布阶段未重复运行测试套件。仅执行分环境构建和候选校验，并核对两个环境的页面构建标记、健康接口、内嵌代码所在产物摘要及100%版本流量。生产浏览器确认用户提供的活动弹窗输出符合无 img.src 的结构，临时标签已关闭，无截图或 trace。命令行首次读取超时，改用 curl 完成核对；没有重部署。
+
+未执行迁移、修改运行配置或发起业务测试；未配置 Git remote，因此未推送。两环境产物分别归档至 `.wrangler/releases/hb-staging-2026-10-13T12-35-34-723Z/`、`.wrangler/releases/hb-production-2026-10-13T12-36-38-355Z/`；回执为 `.wrangler/verification/embed-source-only-release-20261013/release-summary.json`。
