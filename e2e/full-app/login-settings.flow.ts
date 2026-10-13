@@ -169,7 +169,9 @@ test("正式登录开关持久化：旧青春会话保留，新登录及在途�
     ).toBeVisible();
     await toggle.uncheck();
     await card.getByRole("button", { name: "保存配置", exact: true }).click();
-    await expect(card.getByRole("status")).toHaveText("已保存登录方式配置。");
+    await expect(
+      card.getByRole("button", { name: "保存配置，已保存", exact: true }),
+    ).toBeVisible();
     const savedResponse = await owner.request.get("/api/admin/login-settings");
     const saved = (await savedResponse.json()) as LoginSettingsResponse;
     expect(saved.config).toMatchObject({
@@ -293,7 +295,9 @@ test("正式登录开关持久化：旧青春会话保留，新登录及在途�
 
     await toggle.check();
     await card.getByRole("button", { name: "保存配置", exact: true }).click();
-    await expect(card.getByRole("status")).toHaveText("已保存登录方式配置。");
+    await expect(
+      card.getByRole("button", { name: "保存配置，已保存", exact: true }),
+    ).toBeVisible();
     await expect(card).toContainText("更新于");
     const enabled = (await (
       await owner.request.get("/api/admin/login-settings")

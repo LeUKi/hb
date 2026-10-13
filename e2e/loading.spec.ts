@@ -204,14 +204,13 @@ test("后台刷新失败保留当前内容并显示局部刷新提示", async ({
 
   failDiscovery = true;
   await page.clock.fastForward(15_000);
-  await expect(page.getByText("刷新失败，当前内容已保留。")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "刷新活动列表", exact: true }),
+  ).toHaveAttribute("title", "读取失败，当前内容已保留。刷新失败");
   await expect(
     page.getByRole("link", { name: "刷新前已经显示的活动" }),
   ).toBeVisible();
-  await expect(page.locator("[data-loading-region='records']")).toHaveAttribute(
-    "aria-busy",
-    "false",
-  );
+  await expect(page.locator("[data-skeleton-row='true']")).toHaveCount(0);
 });
 
 test("手动刷新广场保留当前内容和筛选，完成后更新记录", async ({ page }) => {

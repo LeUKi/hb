@@ -433,7 +433,12 @@ test("登录与限流配置独立保存，冲突及重新读取保留规则，�
   await expect(toggle).toBeChecked();
   state.settings.config.version = 3;
   await save.click();
-  await expect(card.getByText(/网站设置已发生变化/)).toBeVisible();
+  await expect(
+    card.getByRole("button", { name: "保存配置，已变化", exact: true }),
+  ).toHaveAttribute(
+    "title",
+    "网站设置已发生变化，请刷新后再试。当前输入已保留。",
+  );
   await expect(toggle).toBeChecked();
   const reload = card.getByRole("button", {
     name: "刷新",

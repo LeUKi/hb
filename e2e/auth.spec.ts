@@ -71,8 +71,8 @@ test("匿名用户看到登录入口，登录链接只带相对 returnTo", async
   await page.getByLabel("口令", { exact: true }).fill("GuestPassword");
   await page.getByRole("button", { name: "兑奖", exact: true }).click();
   await expect(
-    page.getByRole("status").filter({ hasText: "请先登录。" }),
-  ).toBeVisible();
+    page.getByRole("button", { name: "兑奖，请先登录", exact: true }),
+  ).toHaveAttribute("title", "请先登录。");
   expect(submissions).toBe(0);
   await page
     .locator("header")
@@ -431,7 +431,9 @@ test("退出失败后恢复原会话并显示失败提示", async ({ page }) => 
 
   await expect.poll(() => logoutCalls).toBe(1);
   await expect.poll(() => meCalls).toBeGreaterThan(baselineMeCalls);
-  await expect(page.getByText("退出失败，请重试")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "退出登录，退出失败", exact: true }),
+  ).toHaveAttribute("title", "退出登录失败：HTTP 500");
   await expect(page.getByRole("definition").getByText("@ada")).toBeVisible();
   await expect(page.getByText("ada-private@example.test")).toBeVisible();
   await expect(page.getByText("登录解meme")).toHaveCount(0);

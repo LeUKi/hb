@@ -455,10 +455,10 @@ test("限流显示等待，倒计时结束后允许再次主动提交", async ({
   state.throttle = true;
   await page.goto(`/activities/${activityId}`);
   await submit(page);
-  await expect(page.getByText(/尝试过于频繁|提交过于频繁/)).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: /领取红包|等待|秒/ }).last(),
-  ).toBeDisabled();
+  const throttled = page
+    .getByRole("button", { name: /还需等待 \d+ 秒/ })
+    .last();
+  await expect(throttled).toBeDisabled();
   state.throttle = false;
   await expect(
     page.getByRole("button", { name: "领取红包", exact: true }),
@@ -497,9 +497,13 @@ test("作者提前结束需明确确认，已领取活动不显示此操作", as
   page.once("dialog", (dialog) => dialog.dismiss());
   await page.getByRole("menuitem", { name: "提前结束", exact: true }).click();
   expect(state.endRequests).toBe(0);
-  await page.getByRole("button", { name: "管理活动", exact: true }).click();
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("menuitem", { name: "提前结束", exact: true }).click();
+  const endItem = page.getByRole("menuitem", {
+    name: "提前结束",
+    exact: true,
+  });
+  await expect(endItem).toBeVisible();
+  await endItem.click();
   await expect(page.getByText("已结束", { exact: true }).first()).toBeVisible();
   expect(state.endRequests).toBe(1);
   expect(state.endVersions).toEqual([2]);
@@ -629,8 +633,8 @@ test("解口令响应丢失时只重试原UUID和原输入，不重复领取", a
   await page.getByLabel("验证其他口令", { exact: true }).fill("Second456");
   await page.getByRole("button", { name: "验证口令", exact: true }).click();
   await expect(
-    page.getByText("尚未确认解锁结果，请重试原提交。", { exact: true }),
-  ).toBeVisible();
+    page.getByRole("button", { name: "重试原提交，待确认", exact: true }),
+  ).toHaveAttribute("title", "尚未确认解锁结果，请重试原提交。");
   await expect(page.getByLabel("验证其他口令", { exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "重试原提交", exact: true }).click();
   await expect(page.getByText("已解出", { exact: true })).toBeVisible();
