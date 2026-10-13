@@ -1,3 +1,4 @@
+import { claimElapsedMs, formatClaimSeconds } from "@hb/contracts";
 import { X } from "lucide-react";
 import {
   type PointerEvent,
@@ -11,7 +12,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import type { RecipientExample } from "../fixtures";
-import { recipientTitles } from "../recipient-titles";
+import { recipientSpeedTitles, recipientTitles } from "../recipient-titles";
 import {
   appendRosterRows,
   type RosterBatch,
@@ -62,6 +63,7 @@ export type PublicRosterProps = {
   activityTitle: string;
   author: { name: string; username: string; color?: string };
   type: Activity["type"];
+  openedAt?: string | null;
   registrations?: readonly Readonly<RecipientExample>[];
   recipients: readonly Readonly<RecipientExample>[];
   drawProgress?: DrawProgress | null;
@@ -145,6 +147,7 @@ function RosterRows({
   records,
   fullRecipients,
   type,
+  openedAt,
   registrationTab,
   pendingResult,
   emptyText,
@@ -156,6 +159,7 @@ function RosterRows({
   records: readonly RosterRecord[];
   fullRecipients: readonly RosterRecord[];
   type: Activity["type"];
+  openedAt: string | null | undefined;
   registrationTab: boolean;
   pendingResult: boolean;
   emptyText: string;
@@ -168,6 +172,8 @@ function RosterRows({
   const end = useRef<HTMLDivElement>(null);
   const list = useCursorRoster(records, pendingResult ? "ready" : listState);
   const titles = !registrationTab ? recipientTitles(fullRecipients) : {};
+  const speedTitles =
+    type === "ldc" ? recipientSpeedTitles(fullRecipients, openedAt) : {};
 
   useEffect(() => {
     if (list.status !== "ready" || !list.hasMore) return;
@@ -195,70 +201,101 @@ function RosterRows({
       aria-busy={list.status === "loading" || pendingResult}
       tabIndex={0}
     >
-      {list.rows.map((record) => (
-        <div
-          key={record.id}
-          className={`recipient${registrationTab ? " recipient--registration" : ""}`}
-          data-record-id={record.id}
-          data-title={titles[record.username] ?? undefined}
-          data-username={record.username}
-        >
-          {identity !== "guest" && record.username === "linjian" ? (
-            <button
-              className="user-identity"
-              type="button"
-              onClick={onOwnProfile}
-            >
-              <Avatar name={record.name} color={record.color} />
-              <span>{record.name}</span>
-            </button>
-          ) : (
-            <UserIdentity
-              name={record.name}
-              username={record.username}
-              color={record.color}
-            />
-          )}
-          {!registrationTab && record.amount && (
-            <div className="recipient-award">
-              {titles[record.username] && (
-                <span
-                  className={`recipient-title title-${titles[record.username]}`}
-                >
-                  {titles[record.username] === "highest" ? "手气王" : "手气亡"}
-                </span>
+      {list.rows.map((record) => {
+        const elapsed =
+          type === "ldc" ? claimElapsedMs(openedAt, record.time) : null;
+        return (
+          <div
+            key={record.id}
+            className={`recipient${registrationTab ? " recipient--registration" : ""}`}
+            data-record-id={record.id}
+            data-title={titles[record.username] ?? undefined}
+            data-speed-title={speedTitles[record.id] ?? undefined}
+            data-username={record.username}
+          >
+            {identity !== "guest" && record.username === "linjian" ? (
+              <button
+                className="user-identity"
+                type="button"
+                onClick={onOwnProfile}
+              >
+                <Avatar name={record.name} color={record.color} />
+                <span>{record.name}</span>
+              </button>
+            ) : (
+              <UserIdentity
+                name={record.name}
+                username={record.username}
+                color={record.color}
+              />
+            )}
+            {!registrationTab &&
+              (record.amount ||
+                titles[record.username] ||
+                speedTitles[record.id]) && (
+                <div className="recipient-award">
+                  {(titles[record.username] || speedTitles[record.id]) && (
+                    <div className="recipient-titles">
+                      {titles[record.username] && (
+                        <span
+                          className={`recipient-title title-${titles[record.username]}`}
+                        >
+                          {titles[record.username] === "highest"
+                            ? "手气王"
+                            : "手气亡"}
+                        </span>
+                      )}
+                      {speedTitles[record.id] && (
+                        <span className="recipient-title title-speed">
+                          {speedTitles[record.id] === "flash"
+                            ? "我焯有桂！"
+                            : "手速王"}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {record.amount && (
+                    <strong className="recipient-award-amount">
+                      {record.amount} <small>LDC</small>
+                    </strong>
+                  )}
+                </div>
               )}
-              <strong className="recipient-award-amount">
-                {record.amount} <small>LDC</small>
-              </strong>
-            </div>
-          )}
-          {authorView && (
-            <details className="recipient-author-detail">
-              <summary>作者明细</summary>
-              {registrationTab ? (
-                <p>报名已记录；开奖后与中奖记录关联。</p>
+            {authorView && (
+              <details className="recipient-author-detail">
+                <summary>作者明细</summary>
+                {registrationTab ? (
+                  <p>报名已记录；开奖后与中奖记录关联。</p>
+                ) : (
+                  <p>
+                    LDC 金额 {record.amount ?? "待分配"}；付款状态：
+                    {record.amount ? "已确认" : "待确认"}。
+                  </p>
+                )}
+              </details>
+            )}
+            <div className="recipient-time">
+              <ShortTime
+                value={record.time}
+                full
+                className="recipient-time__absolute"
+              />
+              {type === "ldc" ? (
+                elapsed !== null && (
+                  <span className="recipient-time__speed">
+                    {formatClaimSeconds(elapsed)}
+                  </span>
+                )
               ) : (
-                <p>
-                  LDC 金额 {record.amount ?? "待分配"}；付款状态：
-                  {record.amount ? "已确认" : "待确认"}。
-                </p>
+                <RelativeTime
+                  value={record.time}
+                  className="recipient-time__relative"
+                />
               )}
-            </details>
-          )}
-          <div className="recipient-time">
-            <ShortTime
-              value={record.time}
-              full
-              className="recipient-time__absolute"
-            />
-            <RelativeTime
-              value={record.time}
-              className="recipient-time__relative"
-            />
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
       <div ref={end} className="public-roster__load-state">
         {list.status === "loading" ? (
           <p role="status">加载中…</p>
@@ -297,6 +334,7 @@ function RosterDialog({
   activityTitle,
   author: _author,
   type,
+  openedAt,
   registrations = noRecords,
   recipients,
   drawProgress = null,
@@ -468,6 +506,7 @@ function RosterDialog({
             records={records}
             fullRecipients={fullRecipients}
             type={type}
+            openedAt={openedAt}
             registrationTab={registrationTab}
             pendingResult={pendingResult}
             emptyText={emptyText}

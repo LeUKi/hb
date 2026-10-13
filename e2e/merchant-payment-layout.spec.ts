@@ -115,11 +115,20 @@ test("付款表分页、阅读位置和原记录焦点在返回与刷新后恢�
     .poll(() => scroll.evaluate((node) => node.scrollTop))
     .toBe(position);
   failList = true;
-  await list.getByRole("button", { name: "刷新", exact: true }).click();
-  await expect(list.getByRole("status")).toContainText("刷新失败");
+  const refresh = list.locator(
+    ".merchant-payment-dialog__header .list-refresh-button",
+  );
+  const before = await refresh.boundingBox();
+  await refresh.click();
+  await expect(refresh).toContainText("刷新失败");
+  await expect(refresh).toHaveAttribute("title", "读取失败，请重试。");
+  const during = await refresh.boundingBox();
+  expect(Math.abs((during?.width ?? 0) - (before?.width ?? 0))).toBeLessThan(1);
+  await expect(list.locator(".refresh-notice")).toHaveCount(0);
   await expect(list.getByText("page-two-12", { exact: true })).toBeVisible();
   failList = false;
   await list.getByRole("button", { name: "刷新", exact: true }).click();
+  await expect(refresh).toContainText("已刷新");
   await expect(list.getByText("page-two-12", { exact: true })).toBeVisible();
   expect(reads.at(-1)).toBe("second-page");
   expect(state.retiredRequests).toEqual([]);

@@ -78,7 +78,7 @@ for (const width of [1440, 375]) {
     await page.goto("/#activity?sample=20000000-0000-4000-8000-000000000005");
     const header = page.locator(".activity-heading");
     await expect(
-      header.getByRole("button", { name: "复制领取文案" }),
+      header.getByRole("button", { name: "分享活动" }),
     ).toBeVisible();
     await expect(page.locator(".activity-title-row .action-menu")).toHaveCount(
       2,

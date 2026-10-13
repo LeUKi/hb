@@ -19,10 +19,6 @@ type Session = {
   attemptCooldown: AttemptCooldown | null;
 };
 
-function cooldownTimer(page: Page) {
-  return page.getByRole("timer").filter({ hasText: "秒后可重试" });
-}
-
 function claimCooldownButton(page: Page) {
   return page.getByRole("button", { name: /^还需等待 \d+ 秒$/ });
 }
@@ -178,7 +174,7 @@ test("正式账号冷却跨页面和刷新，发现后以服务端编号自动�
       (first.attemptCooldown?.nextAllowedAt ?? 0) -
         (first.attemptCooldown?.serverTime ?? 0),
     ).toBeLessThanOrEqual(5_000);
-    await expect(cooldownTimer(page)).toContainText(/\d+ 秒后可重试/);
+    await expect(claimCooldownButton(page)).toBeDisabled();
 
     // A second real internal request is rejected before activity validation;
     // changing pages cannot create another independent allowance.
@@ -211,13 +207,13 @@ test("正式账号冷却跨页面和刷新，发现后以服务端编号自动�
       .getByRole("link", { name: "查看活动", exact: true })
       .click();
     await expect(page).toHaveURL(`/activities/${activity.id}`);
-    await expect(cooldownTimer(page)).toBeVisible();
+    await expect(claimCooldownButton(page)).toBeDisabled();
     await expect(
       page.getByRole("button", { name: /^(领取奖励|领取红包)$/ }),
     ).toHaveCount(0);
     await expect(claimCooldownButton(page)).toBeDisabled();
     await page.reload();
-    await expect(cooldownTimer(page)).toBeVisible();
+    await expect(claimCooldownButton(page)).toBeDisabled();
     await expect(
       page.getByRole("button", { name: /^(领取奖励|领取红包)$/ }),
     ).toHaveCount(0);
@@ -229,7 +225,7 @@ test("正式账号冷却跨页面和刷新，发现后以服务端编号自动�
         nextAllowedAt: first.attemptCooldown?.nextAllowedAt,
       },
     });
-    await expect(cooldownTimer(page)).toHaveCount(0, { timeout: 7_000 });
+    await expect(claimCooldownButton(page)).toHaveCount(0, { timeout: 7_000 });
     await expect(
       page.getByRole("button", { name: /^(领取奖励|领取红包)$/ }),
     ).toBeEnabled();
@@ -265,7 +261,7 @@ test("正式账号冷却跨页面和刷新，发现后以服务端编号自动�
     expect(matched.result).toBe("single");
     expect(matched.claimSubmissionId).toMatch(/^[a-f0-9-]{36}$/i);
     await expect(page).toHaveURL(`/activities/${activity.id}`);
-    await expect(page.locator(".slip-amount")).toHaveText("+0.01");
+    await expect(page.locator(".envelope-svg .prize")).toHaveText("+0.01 LDC");
     expect(claimRequests).toEqual([
       {
         submissionId: matched.claimSubmissionId,
@@ -274,7 +270,7 @@ test("正式账号冷却跨页面和刷新，发现后以服务端编号自动�
       },
     ]);
     await page.reload();
-    await expect(page.locator(".slip-amount")).toHaveText("+0.01");
+    await expect(page.locator(".envelope-svg .prize")).toHaveText("+0.01 LDC");
     await page.getByRole("button", { name: "返回上一页", exact: true }).click();
     await expect(page).toHaveURL(`${origin}/`);
     const localHistory = page.getByRole("region", { name: "尝试历史" });
@@ -293,7 +289,7 @@ test("正式账号冷却跨页面和刷新，发现后以服务端编号自动�
       password,
     );
     await page.goForward();
-    await expect(page.locator(".slip-amount")).toHaveText("+0.01");
+    await expect(page.locator(".envelope-svg .prize")).toHaveText("+0.01 LDC");
     expect(claimRequests).toHaveLength(1);
     await page.getByRole("button", { name: "分享活动", exact: true }).click();
     await expect(

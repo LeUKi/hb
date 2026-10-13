@@ -1,5 +1,9 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import type { AdminOverview } from "../packages/contracts/src";
+
+function feedbackLabel(button: Locator) {
+  return button.locator('[aria-live="polite"]').last();
+}
 
 const overview: AdminOverview = {
   readAt: Date.now(),
@@ -112,12 +116,18 @@ test("概览可见轮询及读取失败保留成功内容，手机不溢出", as
   await page.clock.fastForward(30_000);
   await expect.poll(() => state.reads).toBeGreaterThan(initialReads);
   state.fail = true;
-  await page.getByRole("button", { name: "刷新", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("读取失败");
+  const refresh = page.getByRole("button", { name: /^刷新(?:，|$)/ });
+  await refresh.click();
+  await expect(feedbackLabel(refresh)).toHaveText("刷新失败");
+  await expect(refresh).toHaveAccessibleName("刷新，刷新失败");
+  await expect(refresh).toHaveAttribute("title", "读取失败");
+  await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(
     page.getByRole("link", { name: "付款结果未知 1" }),
   ).toBeVisible();
-  await expect(page.getByText(/上次读取：/)).toBeVisible();
+  await expect(
+    page.getByText(/上次读取：.*读取失败，请重试。当前内容已保留。/),
+  ).toBeVisible();
   await page.setViewportSize({ width: 375, height: 812 });
   expect(
     await page.evaluate(

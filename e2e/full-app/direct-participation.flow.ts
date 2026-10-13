@@ -344,7 +344,9 @@ test("direct 本地 LDC 只在活动页主动点击后参与，登录返回与�
     });
     await expect(claim).toBeEnabled();
     await claim.click();
-    await expect(viewerPage.locator(".slip-amount")).toHaveText("+0.01");
+    await expect(viewerPage.locator(".envelope-svg .prize")).toHaveText(
+      "+0.01 LDC",
+    );
     await expect
       .poll(async () => (await readState(request)).upstream.distributeRequests)
       .toBe(beforeLogin.upstream.distributeRequests + 1);
@@ -356,7 +358,9 @@ test("direct 本地 LDC 只在活动页主动点击后参与，登录返回与�
       afterClaim.attempts.find((row) => row.activity_id === id)?.count,
     ).toBeUndefined();
     await viewerPage.reload();
-    await expect(viewerPage.locator(".slip-amount")).toHaveText("+0.01");
+    await expect(viewerPage.locator(".envelope-svg .prize")).toHaveText(
+      "+0.01 LDC",
+    );
     expect(
       (await readState(request)).claims.filter((row) => row.activity_id === id),
     ).toHaveLength(1);
@@ -420,7 +424,9 @@ test("direct 限时开奖报名可无 password_id，开奖发布和付款链路�
       await page.goto(`/activities/${drawId}`);
       await page.getByRole("button", { name: "立即报名", exact: true }).click();
       await expect(
-        page.getByText(/报名已确认|已中奖|本次未中奖|未中奖/),
+        page.getByText(
+          /^(报名已确认，等待开奖。|已中奖。|本次未中奖。|未中奖)$/,
+        ),
       ).toBeVisible();
     }
     await expect

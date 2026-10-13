@@ -1,4 +1,7 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Locator, test } from "@playwright/test";
+
+const feedbackLabel = (button: Locator) =>
+  button.locator('[aria-live="polite"]').last();
 
 const activityId = "20000000-0000-4000-8000-000000000007";
 
@@ -130,34 +133,45 @@ test("管理员读取失败保留列表和详情旧内容", async ({ page }) => 
   await expect(detail).toContainText("关联付款");
 
   await page.getByRole("combobox", { name: "读取演示" }).selectOption("error");
-  await page.getByRole("button", { name: "刷新", exact: true }).click();
+  const refresh = page.getByRole("button", { name: /^刷新(?:，|$)/ });
+  await refresh.click();
+  await expect(feedbackLabel(refresh)).toHaveText("刷新失败");
+  await expect(refresh).toHaveAccessibleName("刷新，刷新失败");
+  await expect(refresh).toHaveAttribute("title", "读取失败，请重试。");
+  await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(
-    page
-      .getByRole("alert")
-      .filter({ hasText: "读取失败，请重试。上次成功读取：" }),
+    page.getByText(/上次成功读取：.*读取失败，请重试。当前内容已保留。/),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "活动样例 1", exact: true }),
   ).toBeVisible();
   await expect(detail).toContainText("活动样例 1");
 
-  await detail.getByRole("button", { name: "刷新详情" }).click();
+  const detailRefresh = detail.getByRole("button", { name: "刷新详情" });
+  await detailRefresh.click();
+  await expect(feedbackLabel(detailRefresh)).toHaveText("刷新失败");
+  await expect(detailRefresh).toHaveAccessibleName("刷新详情，刷新失败");
+  await expect(detailRefresh).toHaveAttribute(
+    "title",
+    "详情读取失败，请重试。",
+  );
+  await expect(detail.getByRole("alert")).toHaveCount(0);
   await expect(
-    detail
-      .getByRole("alert")
-      .filter({ hasText: "详情读取失败，请重试。上次成功读取：" }),
+    detail.getByText(
+      /详情上次成功读取：.*详情读取失败，请重试。当前内容已保留。/,
+    ),
   ).toBeVisible();
   await expect(detail).toContainText("活动样例 1");
   await expect(detail).toContainText("关联付款");
 
   await page.getByRole("combobox", { name: "读取演示" }).selectOption("ready");
-  await detail.getByRole("button", { name: "刷新详情" }).click();
+  await detailRefresh.click();
+  await expect(feedbackLabel(detailRefresh)).toHaveText("已刷新");
   await expect(
-    detail
-      .getByRole("alert")
-      .filter({ hasText: "详情读取失败，请重试。上次成功读取：" }),
+    detail.getByText(/详情读取失败，请重试。当前内容已保留。/),
   ).toHaveCount(0);
-  await page.getByRole("button", { name: "刷新", exact: true }).click();
+  await refresh.click();
+  await expect(feedbackLabel(refresh)).toHaveText("已刷新");
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
 
@@ -205,6 +219,39 @@ test("手机详情是模态，搜索需显式执行，页面不横向溢出", as
   ).toBe(true);
 });
 
+test("网站设置保存反馈留在原按钮且不显示外置状态", async ({ page }) => {
+  await page.clock.install();
+  await page.goto("/#admin?section=settings");
+  await page.getByRole("checkbox", { name: /允许 LiteAUTH 登录/ }).uncheck();
+  const loginSave = page
+    .getByRole("button", { name: /^保存配置(?:，|$)/ })
+    .first();
+  await page.clock.pauseAt(Date.now() + 1_000);
+  await loginSave.click();
+  await expect(feedbackLabel(loginSave)).toHaveText("已保存");
+  await expect(loginSave).toHaveAccessibleName("保存配置，已保存");
+  await expect(page.getByRole("status")).toHaveCount(0);
+  await page.clock.runFor(2_999);
+  await expect(feedbackLabel(loginSave)).toHaveText("已保存");
+  await page.clock.runFor(1);
+  await expect(feedbackLabel(loginSave)).toHaveText("保存配置");
+
+  const home = page.getByRole("spinbutton", {
+    name: "首页尝试间隔（秒）",
+    exact: true,
+  });
+  await home.fill("0");
+  const rateSave = page
+    .getByRole("button", { name: /^保存配置(?:，|$)/ })
+    .nth(1);
+  await rateSave.click();
+  await expect(feedbackLabel(rateSave)).toHaveText("校验失败");
+  await expect(rateSave).toHaveAccessibleName("保存配置，校验失败");
+  await expect(rateSave).toHaveAttribute("title", "请填写 1–3600 秒的整数。");
+  await expect(page.getByRole("status")).toHaveCount(0);
+  await expect(home).toHaveValue("0");
+});
+
 test("网站设置刷新确认保留或重置本地输入", async ({ page }) => {
   await page.goto("/#admin?section=settings");
   const input = page.getByRole("spinbutton", {
@@ -217,11 +264,14 @@ test("网站设置刷新确认保留或重置本地输入", async ({ page }) => 
     expect(dialog.message()).toBe("刷新会放弃未保存的修改，是否继续？");
     await dialog.dismiss();
   });
-  await page.getByRole("button", { name: "刷新", exact: true }).click();
+  await page.getByRole("button", { name: /^刷新(?:，|$)/ }).click();
   await expect(input).toHaveValue("30");
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "刷新", exact: true }).click();
+  const refresh = page.getByRole("button", { name: /^刷新(?:，|$)/ });
+  await refresh.click();
   await expect(input).toHaveValue(initial);
+  await expect(feedbackLabel(refresh)).toHaveText("已刷新");
+  await expect(page.getByRole("status")).toHaveCount(0);
   await page
     .getByRole("navigation", { name: "管理模块" })
     .getByRole("link", { name: "概览", exact: true })

@@ -20,6 +20,7 @@ import { Help } from "../presentation/context-help";
 import { RefreshNotice, SkeletonRows } from "../presentation/loading";
 import { PasswordInput } from "../presentation/password-input";
 import { PasswordReveal } from "../presentation/password-reveal";
+import { ActionButton, useActionFeedback } from "../ui/action-feedback";
 import { ActivityErrorView } from "./activity-error";
 
 type KnownPasswordItem = {
@@ -287,7 +288,25 @@ function SolveForm({
   hiddenCount: number;
 }) {
   const [password, setPassword] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
+  const solveFeedback = useActionFeedback(
+    `${userId}:${csrfToken}:${activity.id}`,
+  );
+  function setMessage(message: string | null) {
+    if (!message) {
+      solveFeedback.clear();
+      return;
+    }
+    solveFeedback.show(
+      message.startsWith("口令已解锁")
+        ? "已解锁"
+        : message.startsWith("口令不正确")
+          ? "口令不正确"
+          : message.includes("尚未确认")
+            ? "待确认"
+            : "验证失败",
+      message,
+    );
+  }
   const [pending, setPending] = useState<PasswordClaimInput | null>(null);
   const mutation = useSolvePassword(userId, csrfToken, activity.id);
   const account = useAccountSession(userId);
@@ -372,29 +391,25 @@ function SolveForm({
           disabled={mutation.isPending || Boolean(pending)}
           onSubmit={() => void submit()}
           action={
-            <button
+            <ActionButton
               type="submit"
               className="button secondary"
               disabled={mutation.isPending || seconds > 0}
-            >
-              {mutation.isPending
-                ? "正在确认…"
-                : pending
-                  ? "重试原提交"
-                  : "验证口令"}
-            </button>
+              label={
+                mutation.isPending
+                  ? "正在确认…"
+                  : pending
+                    ? "重试原提交"
+                    : seconds > 0
+                      ? `${seconds}秒后重试`
+                      : "验证口令"
+              }
+              feedback={mutation.isPending ? null : solveFeedback.feedback}
+              reserve={["正在确认…", "口令不正确", "重试原提交"]}
+              title={pending ? "尚未确认解锁结果，请重试原提交。" : undefined}
+            />
           }
         />
-        {message ? (
-          <p role="status" className="form-message">
-            {message}
-          </p>
-        ) : null}
-        {seconds > 0 ? (
-          <p role="timer" className="form-message">
-            {seconds} 秒后可重试
-          </p>
-        ) : null}
       </form>
     </div>
   );

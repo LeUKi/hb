@@ -11,29 +11,61 @@ import {
 } from "react";
 import { useListRefreshAnchor } from "../../lib/list-refresh-anchor";
 import { useRestoredScroll } from "../../lib/navigation-state";
+import { ActionFeedbackLabel, useActionFeedback } from "../ui/action-feedback";
 import { CompactIconButton } from "./compact-icon-button";
+
+type RefreshResult = { isError: boolean; error?: Error | null };
 
 export function ListRefreshButton({
   busy,
   label = "刷新活动列表",
+  scope = label,
+  error,
   onRefresh,
 }: {
   busy: boolean;
   label?: string;
-  onRefresh: () => void;
+  scope?: string;
+  error?: Error | null;
+  onRefresh: () => Promise<RefreshResult | RefreshResult[]>;
 }) {
+  const feedback = useActionFeedback(scope);
+  const detail =
+    feedback.feedback?.detail ??
+    (error ? `读取失败，当前内容已保留。${error.message}` : undefined);
   return (
     <CompactIconButton
-      className="list-refresh-button"
-      aria-label={label}
-      title={label}
+      className="list-refresh-button action-refresh-button"
+      aria-label={
+        feedback.feedback ? `${label}，${feedback.feedback.label}` : label
+      }
+      title={detail ?? label}
+      aria-description={detail}
       aria-busy={busy}
       aria-disabled={busy}
-      onClick={() => {
-        if (!busy) onRefresh();
+      onClick={async () => {
+        if (busy) return;
+        feedback.clear();
+        try {
+          const result = await onRefresh();
+          const failed = (Array.isArray(result) ? result : [result]).find(
+            (item) => item?.isError,
+          );
+          if (failed) throw failed.error ?? new Error("读取失败，请重试。");
+          feedback.show("已刷新");
+        } catch (error) {
+          feedback.show(
+            "刷新失败",
+            error instanceof Error ? error.message : "读取失败，请重试。",
+          );
+        }
       }}
     >
-      <RefreshCw size={16} />
+      <ActionFeedbackLabel
+        label={<RefreshCw size={16} />}
+        feedback={feedback.feedback}
+        reserve={["已刷新", "刷新失败"]}
+      />
     </CompactIconButton>
   );
 }

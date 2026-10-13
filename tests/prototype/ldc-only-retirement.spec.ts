@@ -113,7 +113,9 @@ for (const width of [1440, 375]) {
       await expect(
         page.getByRole("heading", { name: "活动不存在", exact: true }),
       ).toBeVisible();
-      await expect(page.locator(".activity-page, .slip-amount")).toHaveCount(0);
+      await expect(
+        page.locator(".activity-page, .envelope-svg .prize"),
+      ).toHaveCount(0);
     }
   });
 }
@@ -155,5 +157,5 @@ test("cross-window bootstrap rejects the previous snapshot version before restor
     return result?.ok;
   }, moduleUrl);
   expect(accepted).toBe(false);
-  await expect(page.locator(".slip-amount")).toHaveCount(0);
+  await expect(page.locator(".envelope-svg .prize")).toHaveCount(0);
 });

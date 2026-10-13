@@ -89,14 +89,18 @@ test("同版本刷新成功才重置配置，失败保留输入", async ({ page 
   await expect(name).toHaveValue("未保存修改");
   state.failRead = true;
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "刷新", exact: true }).click();
-  await expect(
-    page.getByText("刷新失败，请重试。", { exact: true }),
-  ).toBeVisible();
+  const refresh = page.locator(".work-merchant-heading button").last();
+  const before = await refresh.boundingBox();
+  await refresh.click();
+  await expect(refresh).toContainText("刷新失败");
+  await expect(refresh).toHaveAttribute("title", "刷新失败，请重试。");
+  const during = await refresh.boundingBox();
+  expect(Math.abs((during?.width ?? 0) - (before?.width ?? 0))).toBeLessThan(1);
   await expect(name).toHaveValue("未保存修改");
   state.failRead = false;
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "刷新", exact: true }).click();
+  await expect(refresh).toContainText("已刷新");
   await expect(name).toHaveValue(state.merchant.label);
   await expect(
     page.getByRole("button", { name: "保存配置", exact: true }),
@@ -110,12 +114,10 @@ test("保存后的新修改重新启用保存与离开保护，后台读取不�
   const state = await mockMerchantConfig(page);
   await page.goto("/my/merchants");
   const name = page.getByLabel("商户名称", { exact: true });
-  const save = page.getByRole("button", { name: "保存配置", exact: true });
+  const save = page.locator(".work-merchant-actions button[type='submit']");
   await name.fill("第一次保存");
   await save.click();
-  await expect(
-    page.getByText("商户配置已保存。", { exact: true }),
-  ).toBeVisible();
+  await expect(save).toHaveAccessibleName(/已保存/u);
   await expect(save).toBeDisabled();
   await name.fill("再次修改");
   state.merchant = {

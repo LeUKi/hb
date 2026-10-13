@@ -26,6 +26,10 @@ import { LoadMerchant } from "../components/merchants/load-merchant";
 import { MerchantPaymentDialog } from "../components/merchants/merchant-payment-dialog";
 import { Help } from "../components/presentation/context-help";
 import { SkeletonRows } from "../components/presentation/loading";
+import {
+  ActionButton,
+  useActionFeedback,
+} from "../components/ui/action-feedback";
 import { ActivityRequestError } from "../lib/activities";
 import {
   isMerchantResourceId,
@@ -288,7 +292,7 @@ function CreateMerchant({
   const [mode, setMode] = useState<PaymentMode>(
     canSimulate ? "simulation" : "real",
   );
-  const [message, setMessage] = useState<string | null>(null);
+  const createFeedback = useActionFeedback(`merchant-create:${userId}`);
   const [pending, setPending] = useState<CreateMerchantInput | null>(null);
   const leavingAfterSave = useRef(false);
   const alive = useRef(true);
@@ -328,7 +332,7 @@ function CreateMerchant({
     );
     if (!checked.success) return;
     setPending(checked.data);
-    setMessage(null);
+    createFeedback.clear();
     try {
       const result = await writes.create.mutateAsync(checked.data);
       if (!alive.current || !writes.isCurrentSession()) return;
@@ -339,10 +343,10 @@ function CreateMerchant({
     } catch (error) {
       if (!alive.current || !writes.isCurrentSession()) return;
       if (!(error instanceof ActivityRequestError) || error.status >= 500)
-        setMessage("尚未确认保存结果，请重试原提交。");
+        createFeedback.show("重试原提交", "尚未确认保存结果，请重试原提交。");
       else {
         setPending(null);
-        setMessage(error.message);
+        createFeedback.show("保存失败", error.message);
       }
     }
   }
@@ -414,24 +418,22 @@ function CreateMerchant({
                 autoComplete="new-password"
               />
             </div>
-            {message ? (
-              <p className="work-form-error" role="status">
-                {message}
-              </p>
-            ) : null}
             <div className="work-merchant-actions">
-              <button
+              <ActionButton
                 className="button"
                 type="submit"
+                label={
+                  writes.create.isPending
+                    ? "正在保存…"
+                    : pending
+                      ? "重试原提交"
+                      : "保存配置"
+                }
+                feedback={createFeedback.feedback}
+                reserve={["正在保存…", "重试原提交", "保存配置", "保存失败"]}
+                icon={<Check size={17} />}
                 disabled={writes.create.isPending || (!pending && !valid)}
-              >
-                {writes.create.isPending
-                  ? "正在保存…"
-                  : pending
-                    ? "重试原提交"
-                    : "保存配置"}
-                <Check size={17} />
-              </button>
+              />
             </div>
           </form>
         </div>

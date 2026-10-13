@@ -40,6 +40,7 @@ export type PublicRosterSnapshot = {
   activity: PublicActivity;
   managedActivity?: ManagedActivity;
   readGeneration: number;
+  readAt?: number;
   pages: RosterPage[];
   pageParams: Array<string | null>;
 };
@@ -77,6 +78,7 @@ function redactPages(
       if (!activity.showRecipientTime) {
         if ("claimedAt" in safe) delete safe.claimedAt;
         if ("registeredAt" in safe) delete safe.registeredAt;
+        if ("speedTitle" in safe) delete safe.speedTitle;
       }
       if (activity.showRecipientAmount === false) {
         if ("amount" in safe) delete safe.amount;
@@ -225,6 +227,7 @@ export function usePublicRoster({
       const publishDetail = (
         activity: PublicActivity,
         readGeneration: number,
+        readAt: number,
       ) => {
         const detailKey = activityKeys.public(activityId, userId);
         const cached = client.getQueryData<PublicActivityDetail>(detailKey);
@@ -232,6 +235,7 @@ export function usePublicRoster({
           client.setQueryData(detailKey, {
             activity,
             readGeneration,
+            readAt,
           });
       };
       const publishManaged = (activity: ManagedActivity) => {
@@ -270,6 +274,7 @@ export function usePublicRoster({
             activity,
             managedActivity: previous.managedActivity,
             readGeneration: previous.readGeneration ?? 0,
+            readAt: previous.readAt,
             pages:
               view === "author"
                 ? [...previous.pages, page]
@@ -306,6 +311,7 @@ export function usePublicRoster({
           }),
         );
         assertCurrent();
+        const readAt = Date.now();
         const readGeneration = nextPublicActivityReadGeneration(
           Math.max(
             previous?.readGeneration ?? 0,
@@ -320,7 +326,7 @@ export function usePublicRoster({
           client.setQueryData(queryKey, restricted, {
             updatedAt: client.getQueryState(queryKey)?.dataUpdatedAt,
           });
-          publishDetail(fresh, readGeneration);
+          publishDetail(fresh, readGeneration, readAt);
         }
         const pageCount = Math.max(
           1,
@@ -361,6 +367,7 @@ export function usePublicRoster({
           activity,
           managedActivity: managed?.activity ?? previous?.managedActivity,
           readGeneration,
+          readAt,
           pages: view === "author" ? pages : redactPages(pages, activity),
           pageParams,
         };
@@ -426,6 +433,7 @@ export function usePublicRoster({
       client.setQueryData(detailKey, {
         activity: data.activity,
         readGeneration: data.readGeneration,
+        readAt: data.readAt,
       });
     if (query.isError)
       client.getQueryCache().find({ queryKey, exact: true })?.setState({

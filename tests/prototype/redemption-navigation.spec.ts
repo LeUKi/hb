@@ -95,27 +95,33 @@ for (const viewport of [
     await page.clock.runFor(60);
     await expect(envelope(page)).toHaveAttribute("data-phase", "opening");
     await expect(envelope(page)).toHaveAttribute("data-opening-count", "1");
-    await page.clock.runFor(850);
+    await page.clock.runFor(1850);
     await expect(envelope(page)).toHaveAttribute("data-phase", "open");
-    await expect(currentRoute(page).locator(".slip-amount")).toHaveText(
-      "+0.98",
+    await expect(currentRoute(page).locator(".envelope-svg .prize")).toHaveText(
+      "+0.98 LDC",
     );
     await currentRoute(page)
       .getByRole("button", { name: "返回兑奖", exact: true })
       .click();
     await expect(envelope(page)).toHaveAttribute("data-size", "small");
     await expect(envelope(page)).toHaveAttribute("data-phase", "closing");
-    await expect(envelope(page).locator(".slip-amount")).toHaveText("+0.98");
+    await expect(envelope(page).locator(".envelope-svg .prize")).toHaveText(
+      "+0.98 LDC",
+    );
     await page.clock.runFor(320);
     await expect(envelope(page)).toHaveAttribute("data-phase", "closed");
-    await expect(envelope(page).locator(".reward-slip")).toHaveCount(0);
+    await expect(
+      envelope(page).locator(
+        ".envelope-svg :is(.claimed-result, .ended-stamp)",
+      ),
+    ).toHaveCount(0);
 
     await page.goBack();
     await expect(page).toHaveURL(new RegExp(`sample=${knownActivity}`));
     await expect(envelope(page)).toHaveAttribute("data-phase", "closed");
     await page.clock.runFor(320);
     await expect(envelope(page)).toHaveAttribute("data-phase", "opening");
-    await page.clock.runFor(850);
+    await page.clock.runFor(1850);
     await expect(envelope(page)).toHaveAttribute("data-phase", "open");
     await expect(envelope(page)).toHaveAttribute("data-opening-count", "1");
     await page.goForward();
@@ -148,7 +154,7 @@ test("a single home match confirms one reward and consumes one opening event", a
   );
   await expect(envelope(page)).toHaveAttribute("data-phase", "opening");
   await expect(envelope(page)).toHaveAttribute("data-opening-count", "1");
-  await page.clock.runFor(1_200);
+  await page.clock.runFor(1_850);
   await expect(envelope(page)).toHaveAttribute("data-phase", "open");
   await expect(envelope(page)).toHaveAttribute("data-opening-count", "1");
   await expectRecipientCount(page, 9);
@@ -226,7 +232,9 @@ test("a slow submission and rapid navigation cannot publish a late result", asyn
     .click();
   await page.clock.runFor(3_500);
   await expect(envelope(page)).toHaveAttribute("data-phase", "closed");
-  await expect(envelope(page).locator(".reward-slip")).toHaveCount(0);
+  await expect(
+    envelope(page).locator(".envelope-svg :is(.claimed-result, .ended-stamp)"),
+  ).toHaveCount(0);
   await openLocator(page, "weekend", newTitle);
   await expect(envelope(page)).toHaveAttribute("data-open", "false");
   await expect(currentRoute(page).locator(".claim-form")).toBeVisible();
@@ -243,7 +251,9 @@ test("a slow submission and rapid navigation cannot publish a late result", asyn
   await page.clock.runFor(1_300);
   await expect(envelope(page)).toHaveAttribute("data-phase", "closed");
   await expect(envelope(page)).toHaveAttribute("data-opening-count", "0");
-  await expect(envelope(page).locator(".reward-slip")).toHaveCount(0);
+  await expect(
+    envelope(page).locator(".envelope-svg :is(.claimed-result, .ended-stamp)"),
+  ).toHaveCount(0);
   await expect(page.locator('[data-route-presence="exiting"]')).toHaveCount(0);
 });
 
@@ -259,17 +269,23 @@ for (const identity of ["guest", "lite"]) {
     await page.getByRole("button", { name: "场景与身份", exact: true }).click();
     await expect(envelope(page)).toHaveAttribute("data-open", "true");
     await expect(envelope(page)).toHaveAttribute("data-opening-count", "0");
-    await expect(envelope(page).locator(".slip-amount")).toHaveCount(0);
-    await expect(envelope(page).locator(".reward-slip")).toContainText(
-      /已结束|错过了/u,
-    );
+    await expect(envelope(page).locator(".envelope-svg .prize")).toHaveCount(0);
+    await expect(
+      envelope(page).locator(
+        ".envelope-svg :is(.claimed-result, .ended-stamp)",
+      ),
+    ).toContainText(/已结束|错过了/u);
     await currentRoute(page)
       .getByRole("button", { name: "返回兑奖", exact: true })
       .click();
-    await expect(envelope(page).locator(".slip-amount")).toHaveCount(0);
+    await expect(envelope(page).locator(".envelope-svg .prize")).toHaveCount(0);
     await page.clock.runFor(400);
     await expect(envelope(page)).toHaveAttribute("data-phase", "closed");
-    await expect(envelope(page).locator(".reward-slip")).toHaveCount(0);
+    await expect(
+      envelope(page).locator(
+        ".envelope-svg :is(.claimed-result, .ended-stamp)",
+      ),
+    ).toHaveCount(0);
   });
 }
 
@@ -286,5 +302,7 @@ test("reduced-motion app navigation shows historical rewards immediately", async
     .getByRole("button", { name: "返回兑奖", exact: true })
     .click();
   await expect(envelope(page)).toHaveAttribute("data-phase", "closed");
-  await expect(envelope(page).locator(".reward-slip")).toHaveCount(0);
+  await expect(
+    envelope(page).locator(".envelope-svg :is(.claimed-result, .ended-stamp)"),
+  ).toHaveCount(0);
 });

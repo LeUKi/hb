@@ -1,3 +1,4 @@
+import type { ActivityImagePresentation } from "@hb/contracts";
 import {
   type HTMLMotionProps,
   LayoutGroup,
@@ -12,7 +13,9 @@ import {
   type ReactNode,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
 } from "react";
 import type { Page } from "../types";
 import type { EnvelopeReward } from "./envelope";
@@ -27,9 +30,23 @@ export interface RedemptionTransition {
   /** False when either visual source is unavailable or outside the viewport. */
   shared?: boolean;
   closingReward?: EnvelopeReward;
+  closingPresentation?: ActivityImagePresentation;
+  closingIdentity?: string;
 }
 
 const TransitionContext = createContext<RedemptionTransition | null>(null);
+type EnvelopeSnapshot = {
+  presentation?: ActivityImagePresentation;
+  identity?: string;
+};
+const SnapshotContext = createContext<
+  (value: EnvelopeSnapshot | undefined) => void
+>(() => {});
+
+export function useEnvelopeSnapshot(snapshot: EnvelopeSnapshot | undefined) {
+  const save = useContext(SnapshotContext);
+  useLayoutEffect(() => save(snapshot), [save, snapshot]);
+}
 
 export function RedemptionTransitionProvider({
   transition,
@@ -38,10 +55,35 @@ export function RedemptionTransitionProvider({
   transition: RedemptionTransition | null;
   children: ReactNode;
 }) {
+  const snapshot = useRef<EnvelopeSnapshot | undefined>(undefined);
+  const captured = useRef<RedemptionTransition | null>(null);
+  if (!transition) captured.current = null;
+  else if (captured.current?.id !== transition.id)
+    captured.current = {
+      ...transition,
+      closingPresentation:
+        transition.from === "activity" && transition.to === "home"
+          ? snapshot.current?.presentation
+          : undefined,
+      closingIdentity:
+        transition.from === "activity" && transition.to === "home"
+          ? snapshot.current?.identity
+          : undefined,
+    };
+  const save = useMemo(
+    () => (value: EnvelopeSnapshot | undefined) => {
+      snapshot.current = value;
+    },
+    [],
+  );
   return (
-    <TransitionContext.Provider value={transition}>
-      <LayoutGroup id="prototype-redemption-transition">{children}</LayoutGroup>
-    </TransitionContext.Provider>
+    <SnapshotContext.Provider value={save}>
+      <TransitionContext.Provider value={captured.current}>
+        <LayoutGroup id="prototype-redemption-transition">
+          {children}
+        </LayoutGroup>
+      </TransitionContext.Provider>
+    </SnapshotContext.Provider>
   );
 }
 

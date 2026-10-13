@@ -182,7 +182,7 @@ test("participation history keeps five aligned columns and displays the actual r
   await expect(view).toHaveAttribute("rel", "noopener noreferrer");
   await expect(view).toBeVisible();
   await row.locator(".activity-rows-open").click();
-  await expect(page.locator(".slip-amount")).toHaveText("+0.98");
+  await expect(page.locator(".envelope-svg .prize")).toHaveText("+0.98 LDC");
   await expect(page.locator('[data-testid="envelope"]')).toHaveAttribute(
     "data-animate",
     "false",

@@ -7,6 +7,7 @@ import { useAdminSettings } from "../lib/admin-settings";
 import { type SessionResponse, sessionQueryKey } from "../lib/auth";
 import { ActivityErrorView } from "./activities/activity-error";
 import { SkeletonRows } from "./presentation/loading";
+import { ActionButton } from "./ui/action-feedback";
 
 export function AdminLoginSettings({
   identity,
@@ -40,7 +41,6 @@ export function AdminLoginSettings({
     valuesOf: (result) => ({ liteauthEnabled: result.config.liteauthEnabled }),
     equal: (left, right) => left.liteauthEnabled === right.liteauthEnabled,
     validate: () => null,
-    savedMessage: "已保存登录方式配置。",
     onUnsavedChange,
     applied: (result) => {
       queryClient.setQueryData<SessionResponse>(sessionQueryKey, (previous) =>
@@ -77,6 +77,7 @@ export function AdminLoginSettings({
       ) : (
         <form
           className="work-merchant-form work-rate-limits"
+          noValidate
           onSubmit={(event) => {
             event.preventDefault();
             void form.submit();
@@ -103,31 +104,47 @@ export function AdminLoginSettings({
             登录；已登录用户不受影响。
           </p>
           <div className="work-rate-limit-actions">
-            <button className="button" type="submit" disabled={!form.canSubmit}>
-              {form.submitLabel}
-            </button>
-            <button
+            <ActionButton
+              className="button"
+              type="submit"
+              disabled={!form.canSubmit}
+              label={form.submitLabel}
+              feedback={form.submitFeedback}
+              reserve={[
+                "保存配置",
+                "处理中…",
+                "核对保存结果",
+                "重试原提交",
+                "已保存",
+                "已核对",
+                "需重试",
+                "核对失败",
+                "已变化",
+                "保存失败",
+                "校验失败",
+              ]}
+            />
+            <ActionButton
               className="button secondary"
               type="button"
               disabled={form.locked || form.query.isFetching}
               aria-busy={form.busy}
+              title={
+                form.query.isError && form.query.data
+                  ? `读取失败，请重试。上次读取：${fmtTime(form.query.dataUpdatedAt)}`
+                  : "刷新"
+              }
               onClick={() => void form.refresh()}
-            >
-              刷新
-            </button>
+              label="刷新"
+              feedback={form.refreshFeedback}
+              reserve={["已刷新", "刷新失败"]}
+            />
           </div>
-          {form.message && (
-            <p className="form-message" role="status">
-              {form.message}
-            </p>
-          )}
-          {form.query.isError && (
-            <p role="alert">
-              读取失败，请重试。上次读取：{fmtTime(form.query.dataUpdatedAt)}
-            </p>
-          )}
           <p className="text-sm text-subtle">
             更新于 {fmtTime(form.config.updatedAt)}
+            {form.query.isError
+              ? ` · 读取失败，请重试。上次读取：${fmtTime(form.query.dataUpdatedAt)}`
+              : ""}
             {form.config.updatedByUserId
               ? ` · 操作者 ${form.config.updatedByUserId}`
               : ""}

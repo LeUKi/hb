@@ -83,14 +83,15 @@ function claimDetail(index: number, id = "claimed-1"): ClaimDetail {
   };
 }
 async function expectLdcReward(page: Page) {
-  await expect(page.locator("main .slip-amount")).toHaveText(
-    `+${rewardAmount}`,
+  await expect(page.locator("main .envelope-svg .prize")).toHaveText(
+    `+${rewardAmount} LDC`,
   );
-  await expect(page.locator("main .slip-unit")).toContainText("LDC");
 }
 async function mock(page: Page) {
   const state = {
     signedIn: true,
+    csrfToken: "csrf",
+    sessionReads: 0,
     posts: [] as GlobalRedemptionInput[],
     claims: [] as PasswordClaimInput[],
     refreshes: 0,
@@ -111,12 +112,14 @@ async function mock(page: Page) {
   await page.route("**/api/**", async (route) => {
     const req = route.request();
     const path = new URL(req.url()).pathname;
-    if (path === "/api/session" || path === "/api/me")
+    if (path === "/api/session" || path === "/api/me") {
+      state.sessionReads += 1;
       return route.fulfill({
         json: state.signedIn
-          ? { user, csrfToken: "csrf" }
+          ? { user, csrfToken: state.csrfToken }
           : { user: null, csrfToken: null },
       });
+    }
     if (path === "/api/me/history-summary")
       return route.fulfill({
         json: { initiatedCount: 0, participatedCount: 0 },
@@ -343,12 +346,74 @@ test("全站未知结果保留原请求，安全重试使用同一标识", async
   state.failFirst = true;
   await page.goto("/");
   await redeem(page);
+  const reads = state.sessionReads;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect.poll(() => state.sessionReads).toBeGreaterThan(reads);
   await page.getByRole("button", { name: "再次确认", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "选择要兑奖的活动", exact: true }),
   ).toBeVisible();
   expect(state.posts).toHaveLength(2);
   expect(state.posts[0]).toEqual(state.posts[1]);
+});
+
+test("同账号会话轮换撤下首页原提交，迟到兑奖结果不导航或写入新会话", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const state = await mock(page);
+  let release = () => {};
+  let started = () => {};
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const submitted = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  await page.route("**/api/redemptions/discover", async (route) => {
+    state.posts.push(route.request().postDataJSON());
+    const result = {
+      id: requestId,
+      claimSubmissionId: state.claimSubmissionId,
+      result: "single",
+      items: [card(0)],
+      nextCursor: null,
+      selectedActivityId: ids[0],
+      claimResult: { result: "claimed", claim: claimDetail(0) },
+    };
+    started();
+    await pending;
+    await route.fulfill({ json: result });
+  });
+  try {
+    await page.goto("/");
+    await redeem(page);
+    await submitted;
+    const reads = state.sessionReads;
+    state.csrfToken = "csrf-rotated";
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect.poll(() => state.sessionReads).toBeGreaterThan(reads);
+    await expect(page.getByLabel("口令", { exact: true })).toHaveValue("");
+    await expect(
+      page.getByRole("button", { name: "再次确认", exact: true }),
+    ).toHaveCount(0);
+    const response = page.waitForResponse("**/api/redemptions/discover");
+    release();
+    await response;
+    await expect(page).toHaveURL("/");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    // Stay in this QueryClient: a document reload would hide a late cache write.
+    await page.getByLabel("口令", { exact: true }).fill(ids[0] as string);
+    await page.getByRole("button", { name: "跳转活动", exact: true }).click();
+    await expect(page).toHaveURL(`/activities/${ids[0]}`);
+    await expect(page.getByRole("button", { name: /领取红包/ })).toBeVisible();
+    await expect(page.locator(".envelope-svg .prize")).toHaveCount(0);
+    expect(state.posts).toHaveLength(1);
+    expect(state.claims).toHaveLength(0);
+  } finally {
+    release();
+  }
 });
 
 test("活动页自动提交未知结果重试保持同一活动提交标识", async ({ page }) => {
@@ -359,9 +424,7 @@ test("活动页自动提交未知结果重试保持同一活动提交标识", as
   const dialog = page.getByRole("dialog", { name: "选择要兑奖的活动" });
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: /同口令活动1/ }).click();
-  await expect(
-    page.getByText("尚未确认领取结果，请重试原提交以确认结果。"),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: /重试原提交/ })).toBeVisible();
   await page.getByRole("button", { name: "重试原提交" }).click();
   await expectLdcReward(page);
   expect(state.posts).toHaveLength(1);
@@ -402,9 +465,7 @@ test("新口令重新发现会生成新的活动提交标识", async ({ page }) 
   let dialog = page.getByRole("dialog", { name: "选择要兑奖的活动" });
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: /同口令活动1/ }).click();
-  await expect(
-    page.getByText("尚未确认领取结果，请重试原提交以确认结果。"),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: /重试原提交/ })).toBeVisible();
   expect(state.claims).toHaveLength(1);
   const firstSubmissionId = state.claims[0]?.submissionId;
 
@@ -428,7 +489,7 @@ test("明确限流后允许编辑口令，冷却结束可重新提交", async ({
   state.result = "single";
   await page.goto("/");
   await redeem(page);
-  await expect(page.getByRole("timer")).toBeVisible();
+  await expect(page.locator("[data-redemption-action]")).toBeDisabled();
   await expect(page.getByLabel("口令", { exact: true })).toBeEnabled();
   const retry = page.getByRole("button", { name: "兑奖", exact: true });
   await expect(retry).toBeEnabled();
@@ -522,7 +583,10 @@ test("无匹配可重新输入，匿名不能全站兑换但可浏览广场", as
   state.cards = [];
   await page.goto("/");
   await redeem(page);
-  await expect(page.getByText(/未匹配到活动/)).toBeVisible();
+  await expect(page.locator("[data-redemption-action]")).toHaveAttribute(
+    "title",
+    "未匹配到活动。",
+  );
   state.signedIn = false;
   state.cards = [card(0)];
   await openPublicActivities(page);

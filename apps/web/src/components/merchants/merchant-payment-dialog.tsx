@@ -6,7 +6,7 @@ import {
   repairPaymentCredentialSchema,
 } from "@hb/contracts";
 import { Link, useBlocker, useRouter } from "@tanstack/react-router";
-import { ArrowLeft, X } from "lucide-react";
+import { ArrowLeft, RefreshCw, X } from "lucide-react";
 import {
   type MouseEvent,
   type PointerEvent,
@@ -47,9 +47,13 @@ import { isAccessQueryError, isBlockingQueryError } from "../../lib/query-view";
 import { ActivityErrorView } from "../activities/activity-error";
 import { ListPagination } from "../activities/list-pagination";
 import { CompactIconButton } from "../presentation/compact-icon-button";
-import { ListRefreshButton } from "../presentation/list-controls";
-import { RefreshNotice, SkeletonRows } from "../presentation/loading";
+import { SkeletonRows } from "../presentation/loading";
 import { PortalTargetProvider } from "../presentation/portal-target";
+import {
+  ActionButton,
+  ActionFeedbackLabel,
+  useActionFeedback,
+} from "../ui/action-feedback";
 import { UserIdentity } from "../user-identity";
 
 type PaymentDialogProps = {
@@ -64,6 +68,51 @@ type PaymentDialogProps = {
   onNavigate?: () => void;
   origin?: "merchant" | "workbench";
 };
+
+const refreshButtonStyle = {
+  width: "auto",
+  minWidth: "max-content",
+  paddingInline: 8,
+} as const;
+
+const refreshContentStyle = {
+  display: "inline-grid",
+  alignItems: "center",
+  justifyItems: "center",
+} as const;
+
+const refreshSlotStyle = {
+  gridArea: "1 / 1",
+} as const;
+
+function RefreshFeedbackContent({
+  feedback,
+}: {
+  feedback?: { label: string; detail?: string } | null;
+}) {
+  return (
+    <span style={refreshContentStyle}>
+      <span style={{ ...refreshSlotStyle, visibility: "hidden" }}>
+        <ActionFeedbackLabel
+          label="刷新"
+          feedback={feedback}
+          reserve={["刷新", "已刷新", "刷新失败"]}
+        />
+      </span>
+      <span style={refreshSlotStyle}>
+        {feedback ? (
+          <ActionFeedbackLabel
+            label="刷新"
+            feedback={feedback}
+            reserve={["刷新", "已刷新", "刷新失败"]}
+          />
+        ) : (
+          <RefreshCw size={16} />
+        )}
+      </span>
+    </span>
+  );
+}
 
 /** One native top layer for the merchant table and the shared workbench detail. */
 export function MerchantPaymentDialog(props: PaymentDialogProps) {
@@ -259,6 +308,9 @@ function MerchantPaymentTable({
     `${scope}:${merchantId}`,
   );
   const query = useMerchantPayments(userId, merchantId, cursors.at(-1) ?? null);
+  const refreshFeedback = useActionFeedback(
+    `merchant-payments:${scope}:${merchantId}:refresh`,
+  );
   const cursorRecovery = useCursorRecovery(
     query.error,
     cursors,
@@ -281,6 +333,10 @@ function MerchantPaymentTable({
     control?.focus({ preventScroll: true });
   }, [savedFocus, query.data]);
   const blocking = isBlockingQueryError(query);
+  const staleRefreshError =
+    query.isError && query.data !== undefined && !blocking
+      ? "刷新失败，当前内容已保留。"
+      : null;
   function select(event: MouseEvent<HTMLAnchorElement>, taskId: string) {
     if (
       event.button !== 0 ||
@@ -295,20 +351,44 @@ function MerchantPaymentTable({
     setSavedFocus(taskId);
     onSelectPayment(taskId);
   }
+  async function refreshPayments() {
+    if (query.isFetching) return;
+    refreshFeedback.clear();
+    const result = await query.refetch();
+    if (result.isError) {
+      refreshFeedback.show("刷新失败", "读取失败，请重试。");
+      return;
+    }
+    refreshFeedback.show("已刷新");
+  }
   return (
     <>
       <header className="merchant-payment-dialog__header">
         <h2>付款记录</h2>
-        <ListRefreshButton
-          label="刷新"
-          busy={query.isFetching}
-          onRefresh={() => void query.refetch()}
-        />
+        <CompactIconButton
+          className="list-refresh-button"
+          aria-label={
+            refreshFeedback.feedback
+              ? `刷新，${refreshFeedback.feedback.label}`
+              : "刷新"
+          }
+          title={
+            refreshFeedback.feedback?.detail ?? staleRefreshError ?? "刷新"
+          }
+          aria-description={
+            refreshFeedback.feedback?.detail ?? staleRefreshError ?? undefined
+          }
+          aria-busy={query.isFetching}
+          aria-disabled={query.isFetching}
+          style={refreshButtonStyle}
+          onClick={() => void refreshPayments()}
+        >
+          <RefreshFeedbackContent feedback={refreshFeedback.feedback} />
+        </CompactIconButton>
         {actions}
       </header>
       <div className="merchant-payment-dialog__body" ref={scroll}>
         {cursorRecovery}
-        <RefreshNotice query={query} />
         {blocking ? (
           <ActivityErrorView
             error={query.error ?? new Error("读取失败")}
@@ -469,11 +549,32 @@ function PaymentDetailReader({
   }, [accessError, query.data]);
   const payment = query.data?.payment ?? snapshot;
   const merchant = merchantQuery.data?.merchant;
+  const detailRefreshFeedback = useActionFeedback(
+    `merchant-payment:${scope}:${merchantId}:${taskId}:refresh`,
+  );
+  const staleRefreshError =
+    (query.isError && query.data !== undefined) ||
+    (merchantQuery.isError && merchantQuery.data !== undefined)
+      ? "读取失败，当前内容已保留。"
+      : null;
   async function refreshMerchant() {
     const result = await merchantQuery.refetch();
     if (result.isError || !result.data)
       throw result.error ?? new Error("读取失败");
     return result.data.merchant;
+  }
+  async function refreshDetail() {
+    if (query.isFetching || merchantQuery.isFetching || repairLocked) return;
+    detailRefreshFeedback.clear();
+    const [paymentResult, merchantResult] = await Promise.all([
+      query.refetch(),
+      merchantQuery.refetch(),
+    ]);
+    if (paymentResult.isError || merchantResult.isError) {
+      detailRefreshFeedback.show("刷新失败", "读取失败，请重试。");
+      return;
+    }
+    detailRefreshFeedback.show("已刷新");
   }
   return (
     <>
@@ -489,14 +590,34 @@ function PaymentDetailReader({
           </button>
         ) : null}
         <h2>付款详情</h2>
-        <ListRefreshButton
-          label="刷新"
-          busy={query.isFetching || merchantQuery.isFetching || repairLocked}
-          onRefresh={() => {
-            void query.refetch();
-            void merchantQuery.refetch();
-          }}
-        />
+        <CompactIconButton
+          className="list-refresh-button"
+          aria-label={
+            detailRefreshFeedback.feedback
+              ? `刷新，${detailRefreshFeedback.feedback.label}`
+              : "刷新"
+          }
+          title={
+            detailRefreshFeedback.feedback?.detail ??
+            staleRefreshError ??
+            "刷新"
+          }
+          aria-description={
+            detailRefreshFeedback.feedback?.detail ??
+            staleRefreshError ??
+            undefined
+          }
+          aria-busy={
+            query.isFetching || merchantQuery.isFetching || repairLocked
+          }
+          aria-disabled={
+            query.isFetching || merchantQuery.isFetching || repairLocked
+          }
+          style={refreshButtonStyle}
+          onClick={() => void refreshDetail()}
+        >
+          <RefreshFeedbackContent feedback={detailRefreshFeedback.feedback} />
+        </CompactIconButton>
         {actions}
       </header>
       <div className="merchant-payment-dialog__body" ref={scroll}>
@@ -523,8 +644,6 @@ function PaymentDetailReader({
           </div>
         ) : (
           <>
-            <RefreshNotice query={query} />
-            <RefreshNotice query={merchantQuery} />
             <PaymentDetails
               merchant={merchant}
               payment={payment}
@@ -809,7 +928,12 @@ function OriginalOrderCredentialRepair({
   const [secret, setSecret] = useState("");
   const [version, setVersion] = useState(merchant.version);
   const [refreshing, setRefreshing] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const repairFeedback = useActionFeedback(
+    `merchant-payment:${payment.id}:repair`,
+  );
+  const refreshFeedback = useActionFeedback(
+    `merchant-payment:${payment.id}:merchant-refresh`,
+  );
   const [pending, setPending] = useState<RepairPaymentCredentialInput | null>(
     null,
   );
@@ -843,7 +967,7 @@ function OriginalOrderCredentialRepair({
     );
     if (!checked.success) return;
     setPending(checked.data);
-    setMessage(null);
+    repairFeedback.clear();
     try {
       const result = await writes.repairPaymentCredentials.mutateAsync({
         taskId: payment.id,
@@ -853,28 +977,30 @@ function OriginalOrderCredentialRepair({
       setPending(null);
       setSecret("");
       setVersion(result.merchant.version);
-      setMessage("原订单凭证已保存，系统将继续安全核对原订单。");
+      repairFeedback.show("已保存");
       writes.repairPaymentCredentials.reset();
     } catch (error) {
       if (!currentOperation()) return;
       if (!(error instanceof ActivityRequestError) || error.status >= 500)
-        setMessage("尚未确认保存结果，请重试原提交。");
+        repairFeedback.show("重试原提交", "尚未确认保存结果，请重试原提交。");
       else {
         setPending(null);
-        setMessage(error.message);
+        repairFeedback.show("保存失败", error.message);
       }
     }
   }
   async function refresh() {
     if (locked) return;
     setRefreshing(true);
+    refreshFeedback.clear();
     try {
       const result = await refreshMerchant();
       if (!currentOperation()) return;
       setVersion(result.version);
-      setMessage("商户配置已刷新，密钥输入已保留。");
+      refreshFeedback.show("已刷新");
     } catch {
-      if (currentOperation()) setMessage("刷新失败，请重试。");
+      if (currentOperation())
+        refreshFeedback.show("刷新失败", "刷新失败，请重试。");
     } finally {
       if (currentOperation()) setRefreshing(false);
     }
@@ -921,27 +1047,36 @@ function OriginalOrderCredentialRepair({
               value={secret}
               onChange={(event) => {
                 setSecret(event.target.value);
-                setMessage(null);
+                repairFeedback.clear();
               }}
             />
           </label>
-          {message ? <p role="status">{message}</p> : null}
           <div className="merchant-payment-repair__actions">
-            <button
+            <ActionButton
               className="button"
               type="submit"
+              label={
+                busy ? "保存中…" : pending ? "重试原提交" : "保存原订单凭证"
+              }
+              feedback={repairFeedback.feedback}
+              reserve={[
+                "保存中…",
+                "重试原提交",
+                "保存原订单凭证",
+                "保存失败",
+                "已保存",
+              ]}
               disabled={busy || (!pending && !secret)}
-            >
-              {busy ? "保存中…" : pending ? "重试原提交" : "保存原订单凭证"}
-            </button>
-            <button
+            />
+            <ActionButton
               className="button ghost"
               type="button"
+              label="刷新"
+              feedback={refreshFeedback.feedback}
+              reserve={["刷新", "已刷新", "刷新失败"]}
               disabled={locked}
               onClick={() => void refresh()}
-            >
-              刷新
-            </button>
+            />
           </div>
         </form>
       )}

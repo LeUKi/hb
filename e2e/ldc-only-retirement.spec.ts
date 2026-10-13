@@ -285,7 +285,9 @@ test("旧全站兑奖结果只展示 LDC 候选，全文本候选不可继续恢
   await page.reload();
   await page.getByLabel("口令", { exact: true }).fill("另一个口令123");
   await page.getByRole("button", { name: "兑奖", exact: true }).click();
-  await expect(page.getByText("未匹配到活动。", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "兑奖，未匹配", exact: true }),
+  ).toHaveAttribute("title", "未匹配到活动。");
   await expect(
     page.getByRole("dialog", { name: "选择要兑奖的活动" }),
   ).toHaveCount(0);

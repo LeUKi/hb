@@ -17,12 +17,24 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import {
+  type ActionFeedback,
+  ActionFeedbackLabel,
+} from "../../src/components/ui/action-feedback";
+import {
+  type CopyAction,
+  CopyButton,
+} from "../../src/components/ui/copy-button";
 import { portalPosition, usePortalTarget } from "./portal-target";
 import "./action-menu.css";
 
 export type ActionMenuItem = {
   label: string;
-  onSelect: () => void;
+  copy?: CopyAction;
+  feedback?: ActionFeedback | null;
+  keepOpen?: boolean;
+  reserve?: readonly string[];
+  onSelect?: () => void;
   selected?: boolean;
   disabled?: boolean;
 };
@@ -307,26 +319,55 @@ function ActionMenuPanel({
       onClick={(event) => event.stopPropagation()}
       onKeyDown={keyboard}
     >
-      {items.map((item) => (
-        <button
-          key={item.label}
-          type="button"
-          {...(typeof item.selected === "boolean"
-            ? { role: "menuitemradio", "aria-checked": item.selected }
-            : { role: "menuitem" })}
-          data-selected={item.selected}
-          className="action-menu-item"
-          tabIndex={-1}
-          disabled={item.disabled}
-          onClick={() => {
-            close(true);
-            item.onSelect();
-          }}
-        >
-          <span>{item.label}</span>
-          {item.selected && <Check size={16} aria-hidden="true" />}
-        </button>
-      ))}
+      {items.map((item) =>
+        item.copy ? (
+          <CopyButton
+            key={item.label}
+            label={item.label}
+            getText={item.copy.getText}
+            scope={item.copy.scope}
+            canCopy={() => present && item.copy?.canCopy?.() !== false}
+            role="menuitem"
+            className="action-menu-item"
+            tabIndex={-1}
+            disabled={item.disabled}
+          />
+        ) : (
+          <button
+            key={item.label}
+            type="button"
+            {...(typeof item.selected === "boolean"
+              ? { role: "menuitemradio", "aria-checked": item.selected }
+              : { role: "menuitem" })}
+            data-selected={item.selected}
+            className="action-menu-item"
+            aria-label={
+              item.feedback
+                ? `${item.label}，${item.feedback.label}`
+                : undefined
+            }
+            title={item.feedback?.detail}
+            aria-description={item.feedback?.detail}
+            tabIndex={-1}
+            disabled={item.disabled}
+            onClick={() => {
+              if (!item.keepOpen) close(true);
+              item.onSelect?.();
+            }}
+          >
+            {"feedback" in item ? (
+              <ActionFeedbackLabel
+                label={item.label}
+                feedback={item.feedback}
+                reserve={item.reserve}
+              />
+            ) : (
+              <span>{item.label}</span>
+            )}
+            {item.selected && <Check size={16} aria-hidden="true" />}
+          </button>
+        ),
+      )}
     </motion.div>
   );
 }

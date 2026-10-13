@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { useActionFeedback } from "../components/ui/action-feedback";
 import { ActivityRequestError } from "./activities";
 import {
   adminKey,
@@ -24,7 +25,6 @@ export function useAdminSettings<V, R extends { config: VersionedConfig }>({
   equal,
   validate,
   applied,
-  savedMessage,
   onUnsavedChange,
 }: {
   identity: string;
@@ -35,7 +35,6 @@ export function useAdminSettings<V, R extends { config: VersionedConfig }>({
   equal: (left: V, right: V) => boolean;
   validate: (values: V) => string | null;
   applied?: (response: R) => void;
-  savedMessage: string;
   onUnsavedChange: (protectedInput: boolean) => void;
 }) {
   const queryClient = useQueryClient();
@@ -48,7 +47,8 @@ export function useAdminSettings<V, R extends { config: VersionedConfig }>({
     input: Submission<V>;
     retryReady: boolean;
   } | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const submitFeedback = useActionFeedback(`${identity}:${module}:submit`);
+  const refreshFeedback = useActionFeedback(`${identity}:${module}:refresh`);
   const query = useQuery({
     queryKey,
     queryFn: async ({ signal }) => {
@@ -78,14 +78,15 @@ export function useAdminSettings<V, R extends { config: VersionedConfig }>({
     return () => onUnsavedChange(false);
   }, [onUnsavedChange, protectedInput]);
 
-  function accept(result: R, feedback: string) {
+  function accept(result: R, action: "submit" | "refresh") {
     if (!current() || controller.current.signal.aborted) return;
     queryClient.setQueryData(queryKey, result);
     setBaseline(result);
     setDraft(null);
     setPending(null);
     applied?.(result);
-    setMessage(feedback);
+    if (action === "refresh") refreshFeedback.show("已刷新");
+    else submitFeedback.show("已保存");
   }
 
   function denied(error: unknown) {
@@ -102,18 +103,28 @@ export function useAdminSettings<V, R extends { config: VersionedConfig }>({
         result.config.version > input.expectedVersion &&
         equal(valuesOf(result), input)
       ) {
-        accept(result, "已核对，配置已生效。");
+        accept(result, "submit");
+        submitFeedback.show("已核对", "配置已生效。");
       } else if (result.config.version === input.expectedVersion) {
         setPending({ input, retryReady: true });
-        setMessage("已核对，未发现本次保存。可以重试原提交。");
+        submitFeedback.show(
+          "需重试",
+          "已核对，未发现本次保存。可以重试原提交。",
+        );
       } else {
         setPending(null);
-        setMessage("网站设置已发生变化，请刷新后再试。当前输入已保留。");
+        submitFeedback.show(
+          "已变化",
+          "网站设置已发生变化，请刷新后再试。当前输入已保留。",
+        );
       }
     } catch (error) {
       if (!denied(error)) {
         setPending({ input, retryReady: false });
-        setMessage("保存结果尚未确认，核对失败，请重试核对。当前输入已保留。");
+        submitFeedback.show(
+          "核对失败",
+          "保存结果尚未确认，核对失败，请重试核对。当前输入已保留。",
+        );
       }
     }
   }
@@ -128,7 +139,7 @@ export function useAdminSettings<V, R extends { config: VersionedConfig }>({
     }
     const validationError = validate(values);
     if (validationError) {
-      setMessage(validationError);
+      submitFeedback.show("校验失败", validationError);
       return;
     }
     const input = pending?.input ?? {
@@ -136,23 +147,29 @@ export function useAdminSettings<V, R extends { config: VersionedConfig }>({
       expectedVersion: baseline.config.version,
     };
     setBusy(true);
-    setMessage(null);
+    submitFeedback.clear();
     try {
       await queryClient.cancelQueries({ queryKey });
       if (!current()) return;
-      accept(await write(input, controller.current.signal), savedMessage);
+      await write(input, controller.current.signal).then((result) =>
+        accept(result, "submit"),
+      );
     } catch (error) {
       if (denied(error)) return;
       if (error instanceof ActivityRequestError && error.status < 500) {
         setPending(null);
-        setMessage(
+        submitFeedback.show(
+          error.status === 409 ? "已变化" : "保存失败",
           error.status === 409
             ? "网站设置已发生变化，请刷新后再试。当前输入已保留。"
             : `${error.message} 当前输入已保留。`,
         );
       } else {
         setPending({ input, retryReady: false });
-        setMessage("保存结果尚未确认，正在核对。当前输入已保留。");
+        submitFeedback.show(
+          "核对中",
+          "保存结果尚未确认，正在核对。当前输入已保留。",
+        );
         await reconcile(input);
       }
     } finally {
@@ -166,9 +183,12 @@ export function useAdminSettings<V, R extends { config: VersionedConfig }>({
     setBusy(true);
     try {
       await queryClient.cancelQueries({ queryKey });
-      accept(await read(controller.current.signal), "配置已刷新。");
+      await read(controller.current.signal).then((result) =>
+        accept(result, "refresh"),
+      );
     } catch (error) {
-      if (!denied(error)) setMessage("刷新失败，请重试。");
+      if (!denied(error))
+        refreshFeedback.show("刷新失败", "刷新失败，请重试。");
     } finally {
       setBusy(false);
     }
@@ -182,7 +202,8 @@ export function useAdminSettings<V, R extends { config: VersionedConfig }>({
     dirty,
     busy,
     locked: busy || Boolean(pending),
-    message,
+    submitFeedback: submitFeedback.feedback,
+    refreshFeedback: refreshFeedback.feedback,
     submit,
     refresh,
     submitLabel: busy

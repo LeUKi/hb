@@ -7,6 +7,11 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  ActionButton,
+  ActionFeedbackLabel,
+  useActionFeedback,
+} from "../../src/components/ui/action-feedback";
 import { Pagination, StatusBadge } from "../components/list-controls";
 import {
   allowPrototypeNavigation,
@@ -41,6 +46,51 @@ type PaymentHistory = {
   scrollTop?: number;
   focusedPayment?: string;
 };
+
+const refreshButtonStyle = {
+  width: "auto",
+  minWidth: "max-content",
+  paddingInline: 8,
+} as const;
+
+const refreshContentStyle = {
+  display: "inline-grid",
+  alignItems: "center",
+  justifyItems: "center",
+} as const;
+
+const refreshSlotStyle = {
+  gridArea: "1 / 1",
+} as const;
+
+function RefreshFeedbackContent({
+  feedback,
+}: {
+  feedback?: { label: string; detail?: string } | null;
+}) {
+  return (
+    <span style={refreshContentStyle}>
+      <span style={{ ...refreshSlotStyle, visibility: "hidden" }}>
+        <ActionFeedbackLabel
+          label="刷新"
+          feedback={feedback}
+          reserve={["刷新", "已刷新", "刷新失败"]}
+        />
+      </span>
+      <span style={refreshSlotStyle}>
+        {feedback ? (
+          <ActionFeedbackLabel
+            label="刷新"
+            feedback={feedback}
+            reserve={["刷新", "已刷新", "刷新失败"]}
+          />
+        ) : (
+          <RefreshCw size={16} aria-hidden="true" />
+        )}
+      </span>
+    </span>
+  );
+}
 
 function pageNumber(value: string | null) {
   if (!value || !/^[1-9]\d*$/u.test(value)) return 1;
@@ -258,11 +308,15 @@ export function MerchantPaymentsDialog({
   const content = useRef<HTMLDivElement>(null);
   const backdropPress = useRef(false);
   const leaving = useRef(false);
-  const [notice, setNotice] = useState("");
   const [secret, setSecret] = useState("");
   const secretValue = useRef(secret);
   secretValue.current = secret;
-  const [repairNotice, setRepairNotice] = useState("");
+  const refreshFeedback = useActionFeedback(
+    `prototype-merchant-payments:${view.paymentId ?? "list"}:refresh`,
+  );
+  const repairFeedback = useActionFeedback(
+    `prototype-merchant-payments:${view.paymentId ?? "list"}:repair`,
+  );
   const payment = payments.find((item) => item.id === view.paymentId);
   const totalPages = Math.max(1, Math.ceil(payments.length / 20));
   const page = Math.min(view.page, totalPages);
@@ -310,7 +364,8 @@ export function MerchantPaymentsDialog({
   useLayoutEffect(() => {
     secretValue.current = "";
     setSecret("");
-    setRepairNotice("");
+    refreshFeedback.clear();
+    repairFeedback.clear();
     const history = window.history.state?.prototypeMerchantPayments as
       | PaymentHistory
       | undefined;
@@ -331,7 +386,7 @@ export function MerchantPaymentsDialog({
         row?.querySelector<HTMLButtonElement>("button") ?? closeButton.current
       )?.focus({ preventScroll: true });
     });
-  }, [view.paymentId]);
+  }, [view.paymentId, refreshFeedback.clear, repairFeedback.clear]);
 
   function isBackdrop(event: PointerEvent<HTMLDialogElement>) {
     if (event.target !== event.currentTarget) return false;
@@ -396,11 +451,17 @@ export function MerchantPaymentsDialog({
           <button
             className="merchant-icon-button"
             type="button"
-            aria-label="刷新"
-            title="刷新"
-            onClick={() => setNotice("演示付款记录已刷新。")}
+            aria-label={
+              refreshFeedback.feedback
+                ? `刷新，${refreshFeedback.feedback.label}`
+                : "刷新"
+            }
+            title={refreshFeedback.feedback?.detail ?? "刷新"}
+            aria-description={refreshFeedback.feedback?.detail}
+            style={refreshButtonStyle}
+            onClick={() => refreshFeedback.show("已刷新")}
           >
-            <RefreshCw size={16} aria-hidden="true" />
+            <RefreshFeedbackContent feedback={refreshFeedback.feedback} />
           </button>
           <button
             ref={closeButton}
@@ -413,11 +474,6 @@ export function MerchantPaymentsDialog({
           </button>
         </div>
       </header>
-      {notice && (
-        <p className="merchant-payment-feedback" role="status">
-          {notice}
-        </p>
-      )}
       <div
         ref={content}
         className="merchant-payments-content"
@@ -639,7 +695,7 @@ export function MerchantPaymentsDialog({
                   event.preventDefault();
                   if (!secret.trim()) return;
                   setSecret("");
-                  setRepairNotice("演示原订单凭证已保存。");
+                  repairFeedback.show("已保存");
                 }}
               >
                 <h3>更新原订单密钥</h3>
@@ -663,18 +719,18 @@ export function MerchantPaymentsDialog({
                     autoComplete="new-password"
                     onChange={(event) => {
                       setSecret(event.target.value);
-                      setRepairNotice("");
+                      repairFeedback.clear();
                     }}
                   />
                 </label>
-                {repairNotice && <p role="status">{repairNotice}</p>}
-                <button
+                <ActionButton
                   className="button"
                   type="submit"
+                  label="保存原订单凭证"
+                  feedback={repairFeedback.feedback}
+                  reserve={["保存原订单凭证", "已保存"]}
                   disabled={!secret.trim()}
-                >
-                  保存原订单凭证
-                </button>
+                />
               </form>
             )}
           </div>

@@ -1,12 +1,12 @@
 import type { AdminAuditType } from "@hb/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { SkeletonRows } from "../components/presentation/loading";
 import {
   AdminGuard,
   AdminQueryError,
+  AdminRefreshButton,
   AdminShell,
   adminKey,
   fetchAdminAudit,
@@ -82,16 +82,12 @@ function Audit({ identity }: { identity: string }) {
     <section className="activity-panel admin-list-panel">
       <div className="admin-toolbar">
         <h2>操作记录</h2>
-        <button
+        <AdminRefreshButton
           className="button secondary"
-          type="button"
-          disabled={query.isFetching}
-          aria-busy={query.isFetching}
-          onClick={() => query.refetch()}
-        >
-          <RefreshCw size={16} aria-hidden="true" />
-          刷新
-        </button>
+          scope={`admin-audit:${identity}:list-refresh:${JSON.stringify(params)}`}
+          busy={query.isFetching}
+          onRefresh={() => query.refetch()}
+        />
       </div>
       <form
         className="admin-filters"
@@ -184,11 +180,6 @@ function Audit({ identity }: { identity: string }) {
               </tbody>
             </table>
           </div>
-          {query.isError && (
-            <p role="alert">
-              读取失败，请重试。上次读取：{fmtTime(query.dataUpdatedAt)}
-            </p>
-          )}
           {!query.data.items.length && <p>暂无操作记录。</p>}
           <div className="admin-pager">
             <button

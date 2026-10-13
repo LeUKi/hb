@@ -4,8 +4,10 @@ import {
   type ClaimDetail,
   type ClaimList,
   type ClaimSummary,
+  claimSpeedTitle,
   formatAmount,
   type PublicRecipientList,
+  type RecipientSpeedTitle,
 } from "@hb/contracts";
 import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { createDb } from "../db/client";
@@ -30,6 +32,7 @@ import {
 export type ClaimRow = typeof claims.$inferSelect;
 type ClaimActivityRow = { claim: ClaimRow; activity: ActivityRow };
 type Cursor = { time: number; id: string };
+type ClaimSpeedTitles = Map<string, RecipientSpeedTitle>;
 
 function parseCursor(value?: string): Cursor | undefined {
   if (!value) return undefined;
@@ -328,11 +331,17 @@ export async function listAuthorClaims(
     env,
     page.map(({ claim }) => ({ claim, activity })),
   );
+  const speedTitles = await recipientSpeedTitles(env, activity);
   return {
     items: page.map(({ claim, claimant }) => {
       const { afterClaimInfo: _privateNote, ...detail } =
         details.get(claim.id) ?? activityNotFound();
-      return { ...detail, claimant };
+      const speedTitle = speedTitles.get(claim.id);
+      return {
+        ...detail,
+        claimant,
+        ...(speedTitle === undefined ? {} : { speedTitle }),
+      };
     }),
     nextCursor: rows.length > 20 && last ? encodeCursor(last.claim) : null,
   };
@@ -366,6 +375,9 @@ export async function listPublicRecipients(
       titles: { highestClaimIds: [], lowestClaimIds: [] },
     };
   const titles = await publicRecipientTitles(env, activity, config);
+  const speedTitles = config.showRecipientTime
+    ? await recipientSpeedTitles(env, activity)
+    : new Map<string, RecipientSpeedTitle>();
   let before: Cursor | undefined;
   if (cursor) {
     try {
@@ -420,6 +432,9 @@ export async function listPublicRecipients(
         ...(config.showRecipientTime
           ? { claimedAt: new Date(claim.claimedAt).toISOString() }
           : {}),
+        ...(config.showRecipientTime && speedTitles.has(claim.id)
+          ? { speedTitle: speedTitles.get(claim.id) }
+          : {}),
         ...(titles.highestClaimIds.includes(claim.id)
           ? { title: "highest" as const }
           : titles.lowestClaimIds.includes(claim.id)
@@ -438,6 +453,34 @@ export async function listPublicRecipients(
           )
         : null,
   };
+}
+
+async function recipientSpeedTitles(
+  env: ApiBindings,
+  activity: ActivityRow,
+): Promise<ClaimSpeedTitles> {
+  if (
+    activity.rewardType !== "ldc" ||
+    activity.openedAt === null ||
+    activity.drawState
+  )
+    return new Map();
+  const fastest = await env.DB.prepare(
+    `SELECT MIN(claimed_at) AS claimedAt FROM claims WHERE activity_id=? AND claimed_at>=?`,
+  )
+    .bind(activity.id, activity.openedAt)
+    .first<{ claimedAt: number | null }>();
+  if (fastest?.claimedAt === null || fastest?.claimedAt === undefined)
+    return new Map();
+  const elapsed = fastest.claimedAt - activity.openedAt;
+  if (elapsed < 0) return new Map();
+  const title = claimSpeedTitle(elapsed);
+  const rows = await env.DB.prepare(
+    `SELECT id FROM claims WHERE activity_id=? AND claimed_at=? ORDER BY id`,
+  )
+    .bind(activity.id, fastest.claimedAt)
+    .all<{ id: string }>();
+  return new Map(rows.results.map((row) => [String(row.id), title] as const));
 }
 
 async function publicRecipientTitles(

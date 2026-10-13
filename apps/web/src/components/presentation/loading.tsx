@@ -1,6 +1,7 @@
 import type { UseQueryResult } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { type ReactNode, useId } from "react";
 import { isBlockingQueryError } from "../../lib/query-view";
+import { ActionButton, useActionFeedback } from "../ui/action-feedback";
 
 export function SkeletonRows({ rows = 3 }: { rows?: number }) {
   return (
@@ -47,14 +48,27 @@ export function RefreshNotice({
     "data" | "error" | "isError" | "refetch"
   >;
 }) {
+  const id = useId();
+  const feedback = useActionFeedback(id);
   if (!query.isError || query.data === undefined || isBlockingQueryError(query))
     return null;
   return (
     <div className="refresh-notice" role="status">
       <span>刷新失败，当前内容已保留。</span>
-      <button type="button" onClick={() => void query.refetch()}>
-        重试
-      </button>
+      <ActionButton
+        label="重试"
+        feedback={feedback.feedback}
+        reserve={["重试失败"]}
+        onClick={async () => {
+          feedback.clear();
+          const result = await query.refetch();
+          if (result.isError)
+            feedback.show(
+              "重试失败",
+              result.error?.message ?? "读取失败，请重试。",
+            );
+        }}
+      />
     </div>
   );
 }

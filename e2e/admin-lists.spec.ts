@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import type {
   AdminActivityDetail,
   AdminActivityListItem,
@@ -29,6 +29,10 @@ function pickPaymentStatus(index: number) {
 
 type ListKind = "activities" | "users" | "payments" | "audit";
 type DetailKind = "activityDetail" | "userDetail" | "paymentDetail";
+
+function feedbackLabel(button: Locator) {
+  return button.locator('[aria-live="polite"]').last();
+}
 
 function activity(
   index: number,
@@ -658,13 +662,23 @@ test("活动列表保留筛选 URL、分页和刷新失败前的内容", async (
   ).toBeVisible();
   await expect(activityPanel.getByText("总份数")).toBeVisible();
   await expect(activityPanel.getByText("报名人数")).toBeVisible();
-  await activityPanel.getByRole("button", { name: "刷新" }).click();
+  const activityDetailRefresh = activityPanel.getByRole("button", {
+    name: "刷新",
+  });
+  await activityDetailRefresh.click();
+  await expect(feedbackLabel(activityDetailRefresh)).toHaveText("已刷新");
   await expect(
     activityPanel.getByRole("heading", { name: "活动 20（已刷新）" }),
   ).toBeVisible();
   state.failNext.add("activityDetail");
-  await activityPanel.getByRole("button", { name: "刷新" }).click();
-  await expect(activityPanel.getByRole("alert")).toContainText("读取失败");
+  await activityDetailRefresh.click();
+  await expect(feedbackLabel(activityDetailRefresh)).toHaveText("刷新失败");
+  await expect(activityDetailRefresh).toHaveAccessibleName("刷新，刷新失败");
+  await expect(activityDetailRefresh).toHaveAttribute(
+    "title",
+    "读取失败，请重试。",
+  );
+  await expect(activityPanel.getByRole("alert")).toHaveCount(0);
   await expect(
     activityPanel.getByRole("heading", { name: "活动 20（已刷新）" }),
   ).toBeVisible();
@@ -689,9 +703,17 @@ test("活动列表保留筛选 URL、分页和刷新失败前的内容", async (
   ).toBeVisible();
 
   state.failNext.add("activities");
-  await page.getByRole("button", { name: "刷新", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("读取失败");
-  await expect(page.getByRole("alert")).toContainText("上次读取");
+  const activityListRefresh = page.getByRole("button", {
+    name: /^刷新(?:，|$)/,
+  });
+  await activityListRefresh.click();
+  await expect(feedbackLabel(activityListRefresh)).toHaveText("刷新失败");
+  await expect(activityListRefresh).toHaveAccessibleName("刷新，刷新失败");
+  await expect(activityListRefresh).toHaveAttribute(
+    "title",
+    "读取失败，请重试。",
+  );
+  await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(
     page.getByRole("link", { name: "活动 21", exact: true }),
   ).toBeVisible();
@@ -718,14 +740,21 @@ test("用户详情在桌面侧栏展示，关闭后回焦搜索入口，详情�
   await expect(panel.getByText("可用")).toBeVisible();
   await expect(panel.getByText("注册时间")).toBeVisible();
   await expect(panel.getByText("最近登录")).toBeVisible();
-  await panel.getByRole("button", { name: "刷新" }).click();
+  const userDetailRefresh = panel.getByRole("button", { name: "刷新" });
+  await userDetailRefresh.click();
+  await expect(feedbackLabel(userDetailRefresh)).toHaveText("已刷新");
   await expect(
     panel.getByRole("heading", { name: "用户 3（已刷新）" }),
   ).toBeVisible();
   state.failNext.add("userDetail");
-  await panel.getByRole("button", { name: "刷新" }).click();
-  await expect(panel.getByRole("alert")).toContainText("读取失败");
-  await expect(panel.getByRole("alert")).toContainText("上次读取");
+  await userDetailRefresh.click();
+  await expect(feedbackLabel(userDetailRefresh)).toHaveText("刷新失败");
+  await expect(userDetailRefresh).toHaveAccessibleName("刷新，刷新失败");
+  await expect(userDetailRefresh).toHaveAttribute(
+    "title",
+    "读取失败，请重试。",
+  );
+  await expect(panel.getByRole("alert")).toHaveCount(0);
   await expect(
     panel.getByRole("heading", { name: "用户 3（已刷新）" }),
   ).toBeVisible();
@@ -762,12 +791,14 @@ test("用户详情在桌面侧栏展示，关闭后回焦搜索入口，详情�
     }),
   ).toBeVisible();
   state.failNext.add("users");
-  await page
+  const userListRefresh = page
     .locator(".admin-list-panel")
-    .getByRole("button", { name: "刷新", exact: true })
-    .click();
-  await expect(page.getByRole("alert")).toContainText("读取失败");
-  await expect(page.getByRole("alert")).toContainText("上次读取");
+    .getByRole("button", { name: /^刷新(?:，|$)/ });
+  await userListRefresh.click();
+  await expect(feedbackLabel(userListRefresh)).toHaveText("刷新失败");
+  await expect(userListRefresh).toHaveAccessibleName("刷新，刷新失败");
+  await expect(userListRefresh).toHaveAttribute("title", "读取失败，请重试。");
+  await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(
     page.getByRole("link", { name: "用户 5", exact: true }),
   ).toBeVisible();
@@ -815,16 +846,33 @@ test("付款列表支持关联筛选、详情刷新失败保留内容并分页�
   await expect(panel.getByText(/结果尚未明确/)).toHaveCount(3);
   await expect(page).toHaveURL(/attemptsCursor=attempt/);
 
+  const paymentDetailRefresh = panel.getByRole("button", { name: "刷新详情" });
   state.failNext.add("paymentDetail");
-  await panel.getByRole("button", { name: "刷新详情" }).click();
-  await expect(panel.getByRole("alert")).toContainText("读取失败");
+  await paymentDetailRefresh.click();
+  await expect(feedbackLabel(paymentDetailRefresh)).toHaveText("刷新失败");
+  await expect(paymentDetailRefresh).toHaveAccessibleName("刷新详情，刷新失败");
+  await expect(paymentDetailRefresh).toHaveAttribute(
+    "title",
+    "读取失败，请重试。",
+  );
+  await expect(panel.getByRole("alert")).toHaveCount(0);
   await expect(panel.getByText(/结果尚未明确/)).toHaveCount(3);
-  await panel.getByRole("button", { name: "刷新详情" }).click();
+  await paymentDetailRefresh.click();
+  await expect(feedbackLabel(paymentDetailRefresh)).toHaveText("已刷新");
   await expect(panel.getByRole("alert")).toHaveCount(0);
 
   state.failNext.add("payments");
-  await page.getByRole("button", { name: "刷新", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("读取失败");
+  const paymentListRefresh = page.getByRole("button", {
+    name: /^刷新(?:，|$)/,
+  });
+  await paymentListRefresh.click();
+  await expect(feedbackLabel(paymentListRefresh)).toHaveText("刷新失败");
+  await expect(paymentListRefresh).toHaveAccessibleName("刷新，刷新失败");
+  await expect(paymentListRefresh).toHaveAttribute(
+    "title",
+    "读取失败，请重试。",
+  );
+  await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(
     page.getByRole("link", { name: target.businessNo }),
   ).toBeVisible();
@@ -895,7 +943,11 @@ test.describe("操作记录本地日期恢复", () => {
     await page.reload();
     await expect(page.getByLabel("开始日期")).toHaveValue("2026-10-12");
     await expect(page.getByLabel("结束日期")).toHaveValue("2026-10-12");
-    await page.getByRole("button", { name: "刷新", exact: true }).click();
+    const auditRefresh = page.getByRole("button", {
+      name: /^刷新(?:，|$)/,
+    });
+    await auditRefresh.click();
+    await expect(feedbackLabel(auditRefresh)).toHaveText("已刷新");
     await expect(page.getByLabel("开始日期")).toHaveValue("2026-10-12");
     await expect(page.getByLabel("结束日期")).toHaveValue("2026-10-12");
 

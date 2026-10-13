@@ -33,6 +33,7 @@ export const activities: Activity[] = [
     amount: "0.88",
     rewardMode: "fixed",
     poolAmount: "17.60",
+    openedAt: isoAt(-24 * 60 * 60_000),
     deadlineAt: prototypeDeadlineAt("ldc"),
     count: 20,
     remaining: 12,
@@ -56,6 +57,7 @@ export const activities: Activity[] = [
     amount: "0.50",
     rewardMode: "fixed",
     poolAmount: "6.00",
+    openedAt: isoAt(-24 * 60 * 60_000),
     deadlineAt: prototypeDeadlineAt("ldc"),
     count: 12,
     remaining: 8,
@@ -79,6 +81,7 @@ export const activities: Activity[] = [
     rewardMode: "timed_draw",
     drawProgress: "waiting",
     poolAmount: "20.00",
+    openedAt: isoAt(-24 * 60 * 60_000),
     deadlineAt: prototypeDeadlineAt("draw"),
     count: 10,
     remaining: 10,
@@ -101,6 +104,7 @@ export const activities: Activity[] = [
     amount: "0.50",
     rewardMode: "fixed",
     poolAmount: "15.00",
+    openedAt: isoAt(-24 * 60 * 60_000),
     deadlineAt: prototypeDeadlineAt("ldc", "ended"),
     count: 30,
     remaining: 0,
@@ -120,6 +124,7 @@ export const activities: Activity[] = [
     count: 10,
     remaining: 10,
     registrationCount: 30,
+    openedAt: isoAt(-24 * 60 * 60_000),
     deadlineAt: prototypeDeadlineAt("draw", "ended"),
     lifecycle: "ended",
     ended: true,
@@ -159,6 +164,13 @@ export type RecipientExample = {
 
 function isoAt(offsetMs: number) {
   return new Date(prototypeStartedAt + offsetMs).toISOString();
+}
+
+// A fixed history example exposes a fastest claim that is also the highest award.
+const historyRandomOpenedAt = "2026-10-06T12:00:00.000Z";
+function historyRandomClaimTime(index: number) {
+  const elapsedMs = index === 0 ? 8_250 : 10_000 + index * 15_000;
+  return new Date(Date.parse(historyRandomOpenedAt) + elapsedMs).toISOString();
 }
 
 const recipientProfiles = [
@@ -274,6 +286,7 @@ export const randomActivities: Activity[] = [
     type: "ldc",
     rewardMode: "instant_random",
     poolAmount: "30.00",
+    openedAt: isoAt(-24 * 60 * 60_000),
     deadlineAt: prototypeDeadlineAt("ldc"),
     amount: "",
     count: 30,
@@ -297,6 +310,7 @@ export const randomActivities: Activity[] = [
     type: "ldc",
     rewardMode: "instant_random",
     poolAmount: "20.00",
+    openedAt: isoAt(-24 * 60 * 60_000),
     deadlineAt: prototypeDeadlineAt("ldc", "ended"),
     amount: "",
     count: 20,
@@ -584,6 +598,12 @@ export const historySamples: Activity[] = historySpecifications.map(
       rewardMode:
         specification.type === "draw" ? "timed_draw" : specification.rewardMode,
       poolAmount,
+      openedAt:
+        specification.id === "history-random-active"
+          ? historyRandomOpenedAt
+          : isoAt(
+              -(specification.lifecycle === "archived" ? 72 : 24) * 60 * 60_000,
+            ),
       deadlineAt: prototypeDeadlineAt(
         specification.type,
         specification.lifecycle,
@@ -641,10 +661,13 @@ function sampleResult(activity: Activity, index: number): ParticipationResult {
   const reward = participation === "claimed" || participation === "won";
   const rosterCase = specification?.rosterCase ?? "unique";
   const deadline = Date.parse(activity.deadlineAt ?? "");
-  const participatedAt = Math.min(
-    prototypeStartedAt - (index + 1) * 18 * 60000,
-    Number.isFinite(deadline) ? deadline - 18 * 60000 : Infinity,
-  );
+  const participatedAt =
+    activity.id === "history-random-active"
+      ? Date.parse(historyRandomClaimTime(2))
+      : Math.min(
+          prototypeStartedAt - (index + 1) * 18 * 60000,
+          Number.isFinite(deadline) ? deadline - 18 * 60000 : Infinity,
+        );
   const payment = reward ? (specification?.payment ?? "confirmed") : null;
   return {
     participation,
@@ -758,6 +781,9 @@ export function getSampleRecipients(
           time: getSampleResult(activityId)?.participatedAt ?? entry.time,
         }
       : entry),
+    ...(activityId === "history-random-active"
+      ? { time: historyRandomClaimTime(index) }
+      : {}),
     amount: amounts ? ldcAmount(amounts[index] ?? 100) : activity.amount,
   }));
 }

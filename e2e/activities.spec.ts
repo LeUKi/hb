@@ -407,7 +407,7 @@ test("刷新可取消，失败保留输入，同版本成功刷新也重置未�
   const state = await mockActivities(page);
   await page.goto(`/my/activities/${id}`);
   const title = page.locator("#activity-title");
-  const refresh = page.getByRole("button", { name: "刷新", exact: true });
+  const refresh = page.getByRole("button", { name: /^刷新(?:，|$)/u });
   await expect(title).toHaveValue(state.activity.title);
   await title.fill("同版本未保存内容");
   const reads = state.detailReads;
@@ -418,14 +418,23 @@ test("刷新可取消，失败保留输入，同版本成功刷新也重置未�
   state.failDetailReads = 1;
   page.once("dialog", (dialog) => dialog.accept());
   await refresh.click();
+  await expect(refresh).toContainText("刷新失败");
   await expect(
-    page.getByText("刷新失败，请重试。", { exact: true }),
-  ).toBeVisible();
+    page.locator(".work-form-error, .work-setting-notice", {
+      hasText: "刷新失败，请重试。",
+    }),
+  ).toHaveCount(0);
   await expect(title).toHaveValue("同版本未保存内容");
   expect(state.activity.version).toBe(1);
   page.once("dialog", (dialog) => dialog.accept());
   await refresh.click();
   await expect(title).toHaveValue("待开放 LDC 活动");
+  await expect(refresh).toContainText("已刷新");
+  await expect(
+    page.locator(".work-form-error, .work-setting-notice", {
+      hasText: "活动内容已刷新。",
+    }),
+  ).toHaveCount(0);
   expect(state.activity.version).toBe(1);
   expect(state.updates).toEqual([]);
   await page.getByRole("link", { name: "兑奖", exact: true }).click();
@@ -438,8 +447,14 @@ test("保存后继续编辑仍确认未保存离开，取消保留输入且确�
   const state = await mockActivities(page);
   await page.goto(`/my/activities/${id}`);
   await page.locator("#activity-title").fill("第一次已保存");
-  await page.getByRole("button", { name: "保存草稿", exact: true }).click();
-  await expect(page.getByText("草稿已保存。", { exact: true })).toBeVisible();
+  const saveDraft = page.getByRole("button", { name: /^保存草稿(?:，|$)/u });
+  await saveDraft.click();
+  await expect(saveDraft).toContainText("已保存");
+  await expect(
+    page.locator(".work-form-error, .work-setting-notice", {
+      hasText: "草稿已保存。",
+    }),
+  ).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: "编辑活动", exact: true }),
   ).toBeVisible();
@@ -460,9 +475,11 @@ test("保存响应丢失后重试使用原请求标识和原内容", async ({ pa
   const state = await mockActivities(page);
   state.failFirstCreate = true;
   await enterMinimalActivity(page);
-  await page.getByRole("button", { name: "保存草稿" }).click();
-  await expect(page.getByText(/尚未确认保存结果/)).toBeVisible();
-  await page.getByRole("button", { name: "重试原提交" }).click();
+  await page.getByRole("button", { name: /^保存草稿(?:，|$)/u }).click();
+  const retry = page.getByRole("button", { name: /重试原提交/u });
+  await expect(retry).toContainText("结果未知");
+  await expect(page.getByText(/尚未确认保存结果/)).toHaveCount(0);
+  await retry.click();
   await expectPathname(page, `/my/activities/${id}`);
   expect(state.creates).toHaveLength(2);
   expect(state.creates[1]).toEqual(state.creates[0]);
@@ -476,16 +493,21 @@ test("编辑保存响应丢失后用原版本恢复已生效配置", async ({ pa
     page.getByRole("heading", { name: "编辑活动", exact: true }),
   ).toBeVisible();
   await page.locator("#activity-title").fill("响应丢失但已保存");
-  await page.getByRole("button", { name: "保存草稿", exact: true }).click();
-  await expect(page.getByText(/尚未确认保存结果/)).toBeVisible();
+  await page.getByRole("button", { name: /^保存草稿(?:，|$)/u }).click();
+  const retry = page.getByRole("button", { name: /重试原提交/u });
+  await expect(retry).toContainText("结果未知");
+  await expect(page.getByText(/尚未确认保存结果/)).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "刷新", exact: true }),
+    page.getByRole("button", { name: /^刷新(?:，|$)/u }),
   ).toBeDisabled();
   await expect(
-    page.getByRole("button", { name: "删除草稿", exact: true }),
+    page.getByRole("button", { name: /^删除草稿(?:，|$)/u }),
   ).toBeDisabled();
-  await page.getByRole("button", { name: "重试原提交" }).click();
-  await expect(page.getByText("草稿已保存。", { exact: true })).toBeVisible();
+  await retry.click();
+  await expect(
+    page.getByRole("button", { name: /^保存草稿(?:，|$)/u }),
+  ).toContainText("已保存");
+  await expect(page.getByText("草稿已保存。", { exact: true })).toHaveCount(0);
   await expect(page.locator("#activity-title")).toHaveValue("响应丢失但已保存");
   expect(state.updates).toHaveLength(2);
   expect(state.updates[1]).toEqual(state.updates[0]);
@@ -500,9 +522,11 @@ test("编辑保存并开放响应丢失后恢复配置并继续开放", async ({
     page.getByRole("heading", { name: "编辑活动", exact: true }),
   ).toBeVisible();
   await page.locator("#activity-title").fill("恢复后继续开放");
-  await page.getByRole("button", { name: "保存并开放", exact: true }).click();
-  await expect(page.getByText(/尚未确认保存结果/)).toBeVisible();
-  await page.getByRole("button", { name: "重试原提交" }).click();
+  await page.getByRole("button", { name: /^保存并开放(?:，|$)/u }).click();
+  const retry = page.getByRole("button", { name: /重试原提交/u });
+  await expect(retry).toContainText("结果未知");
+  await expect(page.getByText(/尚未确认保存结果/)).toHaveCount(0);
+  await retry.click();
   await expect(page.getByText("进行中", { exact: true })).toBeVisible();
   expect(state.updates).toHaveLength(2);
   expect(state.updates[1]).toEqual(state.updates[0]);
@@ -519,10 +543,13 @@ test("编辑响应丢失后账号失效不会把迟到恢复写回表单", async
     page.getByRole("heading", { name: "编辑活动", exact: true }),
   ).toBeVisible();
   await page.locator("#activity-title").fill("账号切换前的保存");
-  await page.getByRole("button", { name: "保存草稿", exact: true }).click();
-  await expect(page.getByText(/尚未确认保存结果/)).toBeVisible();
+  await page.getByRole("button", { name: /^保存草稿(?:，|$)/u }).click();
+  await expect(page.getByRole("button", { name: /重试原提交/u })).toContainText(
+    "结果未知",
+  );
+  await expect(page.getByText(/尚未确认保存结果/)).toHaveCount(0);
   state.signedIn = false;
-  await page.getByRole("button", { name: "重试原提交" }).click();
+  await page.getByRole("button", { name: /^重试原提交(?:，|$)/u }).click();
   await expect(page.getByText("草稿已保存。", { exact: true })).toHaveCount(0);
   await expect(
     page.getByRole("main").getByRole("link", { name: "前往登录", exact: true }),
@@ -557,24 +584,26 @@ test("准备中可修改口令尝试统计，冲突核对期间锁定表单并�
     return route.fulfill({ json: { activity: state.activity } });
   });
   try {
-    await page.getByRole("button", { name: "保存草稿" }).click();
+    await page.getByRole("button", { name: /^保存草稿(?:，|$)/u }).click();
     await readStarted;
     await expect(page.locator("#activity-title")).toBeDisabled();
     await expect(
-      page.getByRole("button", { name: "刷新", exact: true }),
+      page.getByRole("button", { name: /^刷新(?:，|$)/u }),
     ).toBeDisabled();
     await expect(
-      page.getByRole("button", { name: "删除草稿", exact: true }),
+      page.getByRole("button", { name: /^删除草稿(?:，|$)/u }),
     ).toBeDisabled();
   } finally {
     releaseRead();
   }
+  const saveDraft = page.getByRole("button", { name: /^保存草稿(?:，|$)/u });
+  await expect(saveDraft).toContainText("保存失败");
   await expect(
     page.getByText(/活动内容已发生变化，请刷新后再试。/),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(page.locator("#activity-title")).toBeEnabled();
   await expect(
-    page.getByRole("button", { name: "刷新", exact: true }),
+    page.getByRole("button", { name: /^刷新(?:，|$)/u }),
   ).toBeEnabled();
   await expect(page.locator("#activity-title")).toHaveValue("尚未保存的改动");
   await expect(page.locator("#activity-forceDedicated")).toBeChecked();
@@ -601,8 +630,10 @@ test("开放后配置冻结且不能追加口令", async ({ page }) => {
   await expect(segmentedOption(page, "奖励方式", "固定均分")).toBeDisabled();
   await expect(page.getByRole("button", { name: "添加口令" })).toBeDisabled();
   await page.locator("#activity-title").fill("开放后只改标题");
-  await page.getByRole("button", { name: "保存修改" }).click();
-  await expect(page.getByText("修改已保存。", { exact: true })).toBeVisible();
+  const save = page.getByRole("button", { name: /^保存修改(?:，|$)/u });
+  await save.click();
+  await expect(save).toContainText("已保存");
+  await expect(page.getByText("修改已保存。", { exact: true })).toHaveCount(0);
   expect(state.activity.title).toBe("开放后只改标题");
   expect(state.activity.config.passwords).toEqual(["私人口令ABC"]);
 });
@@ -620,7 +651,7 @@ test("强制活动草稿不显示尝试统计，开放后显示", async ({ page 
     page.getByRole("button", { name: "查看尝试统计", exact: true }),
   ).toHaveCount(0);
 
-  await page.getByRole("button", { name: "保存并开放", exact: true }).click();
+  await page.getByRole("button", { name: /^保存并开放(?:，|$)/u }).click();
   await expect(page.getByText("进行中", { exact: true })).toBeVisible();
   await page.getByRole("link", { name: "查看活动页", exact: true }).click();
   await page.getByRole("button", { name: "管理活动", exact: true }).click();
@@ -814,7 +845,7 @@ test("新活动仅五个口令、精确数量与完整名单默认开启，更�
     page.getByRole("button", { name: "添加口令", exact: true }),
   ).toBeDisabled();
   await expect(page.getByLabel("口令 6", { exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+  await page.getByRole("button", { name: /^保存草稿(?:，|$)/u }).click();
   await expectPathname(page, `/my/activities/${id}`);
   expect(state.creates[0]?.activity).toMatchObject({
     quantityVisibility: "exact",
@@ -834,7 +865,7 @@ for (const joinSquare of [false, true])
       await page.locator("#activity-topicUrl").fill(topicUrl);
       await page.locator("#activity-joinSquare").setChecked(joinSquare);
       await page.locator("#activity-forceDedicated").check();
-      await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+      await page.getByRole("button", { name: /^保存草稿(?:，|$)/u }).click();
       await expectPathname(page, `/my/activities/${id}`);
       expect(state.creates[0]?.activity).toMatchObject({
         joinSquare,
@@ -854,8 +885,10 @@ test("已加入广场可以清空关联帖子，广场设置仍锁定", async ({
   await expect(page.locator("#activity-joinSquare")).toBeChecked();
   await expect(page.locator("#activity-joinSquare")).toBeDisabled();
   await page.locator("#activity-topicUrl").fill("");
-  await page.getByRole("button", { name: "保存草稿", exact: true }).click();
-  await expect(page.getByText("草稿已保存。", { exact: true })).toBeVisible();
+  const save = page.getByRole("button", { name: /^保存草稿(?:，|$)/u });
+  await save.click();
+  await expect(save).toContainText("已保存");
+  await expect(page.getByText("草稿已保存。", { exact: true })).toHaveCount(0);
   expect(state.activity.config).toMatchObject({
     joinSquare: true,
     topicUrl: "",
@@ -880,7 +913,7 @@ test("更多设置的校验错误即使不是首个也会展开并定位错误",
       },
     }),
   );
-  await page.getByRole("button", { name: "保存草稿", exact: true }).click();
+  await page.getByRole("button", { name: /^保存草稿(?:，|$)/u }).click();
   await expect(page.locator("#activity-afterEndInfo")).toBeVisible();
   await expect(page.locator("#activity-errors")).toBeFocused();
   await expect(page.locator("#activity-errors")).toContainText(
@@ -912,8 +945,10 @@ test("历史超过五个口令仍可查看且整体锁定，旧数量模式归�
     "true",
   );
   await page.locator("#activity-title").fill("历史配置只改标题");
-  await page.getByRole("button", { name: "保存草稿", exact: true }).click();
-  await expect(page.getByText("草稿已保存。", { exact: true })).toBeVisible();
+  const save = page.getByRole("button", { name: /^保存草稿(?:，|$)/u });
+  await save.click();
+  await expect(save).toContainText("已保存");
+  await expect(page.getByText("草稿已保存。", { exact: true })).toHaveCount(0);
   expect(state.activity.config.passwords).toHaveLength(6);
 });
 
@@ -923,10 +958,10 @@ test("删除草稿须确认并携带版本，删除后列表与原详情不再�
   const state = await mockActivities(page);
   await page.goto(`/my/activities/${id}`);
   page.once("dialog", (dialog) => dialog.dismiss());
-  await page.getByRole("button", { name: "删除草稿", exact: true }).click();
+  await page.getByRole("button", { name: /^删除草稿(?:，|$)/u }).click();
   expect(state.deletes).toBe(0);
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "删除草稿", exact: true }).click();
+  await page.getByRole("button", { name: /^删除草稿(?:，|$)/u }).click();
   await expectPathname(page, "/my/activities");
   expect(state.deletes).toBe(1);
   await expect(
@@ -941,16 +976,18 @@ test("陈旧删除保留草稿，已开放活动不显示删除", async ({ page 
   state.conflict = true;
   await page.goto(`/my/activities/${id}`);
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "删除草稿", exact: true }).click();
+  const remove = page.getByRole("button", { name: /^删除草稿(?:，|$)/u });
+  await remove.click();
+  await expect(remove).toContainText("删除失败");
   await expect(
     page.getByText(/活动内容已发生变化，请刷新后再试。/),
-  ).toBeVisible();
+  ).toHaveCount(0);
   expect(state.deleted).toBe(false);
   state.activity.status = "active";
   state.activity.openedAt = new Date().toISOString();
   await page.reload();
   await expect(
-    page.getByRole("button", { name: "删除草稿", exact: true }),
+    page.getByRole("button", { name: /^删除草稿(?:，|$)/u }),
   ).toHaveCount(0);
 });
 
@@ -960,7 +997,7 @@ test("保存并开放的开放响应丢失后只读恢复结果，不重复保�
   const state = await mockActivities(page);
   state.failFirstOpenResponse = true;
   await enterMinimalActivity(page);
-  await page.getByRole("button", { name: "保存并开放", exact: true }).click();
+  await page.getByRole("button", { name: /^保存并开放(?:，|$)/u }).click();
   await expectPathname(page, `/my/activities/${id}`);
   await expect(page.getByText("进行中", { exact: true }).first()).toBeVisible();
   expect(state.creates).toHaveLength(1);
@@ -973,7 +1010,7 @@ test("保存并开放请求未完成时退出，迟到保存响应不导航或�
   const state = await mockActivities(page);
   state.delayCreate = true;
   await enterMinimalActivity(page);
-  await page.getByRole("button", { name: "保存并开放", exact: true }).click();
+  await page.getByRole("button", { name: /^保存并开放(?:，|$)/u }).click();
   await expect.poll(() => Boolean(state.releaseCreate)).toBe(true);
   page.once("dialog", (dialog) => dialog.accept());
   await logoutViaAccount(page);

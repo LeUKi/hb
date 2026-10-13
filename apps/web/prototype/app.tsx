@@ -2,7 +2,6 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUpRight,
-  Check,
   ChevronDown,
   Gift,
   Home,
@@ -33,13 +32,25 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
+  ActionButton,
+  type ActionFeedback,
+  ActionFeedbackLabel,
+  useActionFeedback,
+} from "../src/components/ui/action-feedback";
+import { resolveEmojiPath } from "../src/lib/emoji-links";
+import {
   classifyHomeEntry,
   HOME_ENTRY_HELP,
   HOME_ENTRY_LABEL,
 } from "../src/lib/home-entry";
 import {
+  buildPrototypeActivityShareUrl,
+  resolvePrototypeActivityId,
+} from "./activity-links";
+import {
   getActivityPublicMetadata,
   isActivityDeadlineReached,
+  prototypeStartedAt,
 } from "./activity-metadata";
 import { projectActivityNotes } from "./activity-notes";
 import { buildActivityShareText } from "./activity-share";
@@ -59,6 +70,7 @@ import {
   ActivityCountdown,
   useDeadlineExpired,
 } from "./components/activity-countdown";
+import { PrototypeActivityImageShare } from "./components/activity-image-share";
 import {
   ActivityNoteSection,
   ActivityNotes,
@@ -103,7 +115,10 @@ import {
   setDrawScenario,
   useDrawRoster,
 } from "./draw-rosters";
-import { envelopePresentation } from "./envelope-presentation";
+import {
+  envelopeImagePresentation,
+  envelopePresentation,
+} from "./envelope-presentation";
 import {
   activities,
   createParticipationSeed,
@@ -185,6 +200,11 @@ const AdminPrototype = lazy(() =>
     default: module.AdminPrototype,
   })),
 );
+const SvgGallery = lazy(() =>
+  import("./pages/svg-gallery").then((module) => ({
+    default: module.SvgGallery,
+  })),
+);
 const first = activities[0] as Activity;
 const pages = new Set<Page>([
   "home",
@@ -197,8 +217,15 @@ const pages = new Set<Page>([
   "payment",
   "statistics",
   "admin",
+  "svg-gallery",
 ]);
 function pageFromHash() {
+  const emojiId = resolveEmojiPath(window.location.pathname);
+  if (emojiId)
+    replacePrototypeHistory(
+      window.history.state,
+      `/#activity?sample=${encodeURIComponent(resolvePrototypeActivityId(emojiId))}`,
+    );
   clearRetiredRewardFilters();
   normalizePublicSquareHash();
   const value = window.location.hash.slice(1).split("?")[0] as Page;
@@ -273,9 +300,10 @@ function activityFromHash(
   identity: Identity = "standard",
   bootstrappedActivity?: Activity,
 ) {
-  const sample = new URLSearchParams(
+  const rawSample = new URLSearchParams(
     window.location.hash.split("?")[1] ?? "",
   ).get("sample");
+  const sample = rawSample ? resolvePrototypeActivityId(rawSample) : null;
   if (sample && bootstrappedActivity?.id === sample)
     return bootstrappedActivity;
   const managed = sample ? findWorkbenchActivity(identity, sample) : undefined;
@@ -377,7 +405,32 @@ export function App() {
   } | null>(null);
   const consumedAutoClaim = useRef<number | null>(null);
   const pendingAttempt = useRef<string | null>(null);
-  const [message, setMessage] = useState("");
+  const operationFeedback = useActionFeedback(
+    `${identity}:${active.id}:${page}`,
+  );
+  const message = operationFeedback.feedback?.detail ?? "";
+  const setMessage = useCallback(
+    (message: string) => {
+      if (!message) {
+        operationFeedback.clear();
+        return;
+      }
+      operationFeedback.show(
+        message.startsWith("口令不正确")
+          ? "口令不正确"
+          : message === "未匹配到活动。"
+            ? "未匹配"
+            : message.includes("暂未确认")
+              ? "待确认"
+              : message === "请先登录。"
+                ? "请先登录"
+                : "操作失败",
+        message,
+      );
+    },
+    [operationFeedback.clear, operationFeedback.show],
+  );
+
   const [busy, setBusy] = useState(false);
   const [uncertain, setUncertain] = useState(false);
   const [homeComposing, setHomeComposing] = useState(false);
@@ -658,7 +711,7 @@ export function App() {
       if (timer.current) clearTimeout(timer.current);
       timer.current = null;
     };
-  }, [identity, beginTransition, bootstrap?.active]);
+  }, [identity, beginTransition, bootstrap?.active, setMessage]);
   function openPublicSquare() {
     setPanel(false);
     const next = { open: true, status: "all" as const, page: 1, scrollTop: 0 };
@@ -1137,7 +1190,8 @@ export function App() {
     if (!prototypeId) return classified;
     return { kind: "activity" as const, id: prototypeId };
   }
-  function openHomeActivityId(id: string) {
+  function openHomeActivityId(inputId: string) {
+    const id = resolvePrototypeActivityId(inputId);
     const target = publicHomeActivities().find((item) => item.id === id);
     navigate("activity", target ? { activity: target } : { activityId: id });
   }
@@ -1372,15 +1426,23 @@ export function App() {
             <span className="review-dot" /> 原型 · 第 1 批
             <span className="review-sub">界面修订 / 虚拟数据</span>
           </span>
-          <button
-            type="button"
-            onClick={() => setPanel(!panel)}
-            aria-expanded={panel}
-          >
-            <Settings2 size={13} />
-            场景与身份
-            <ChevronDown size={13} />
-          </button>
+          <div className="prototype-review-actions">
+            <a
+              href="#svg-gallery"
+              aria-current={page === "svg-gallery" ? "page" : undefined}
+            >
+              SVG 红包总览
+            </a>
+            <button
+              type="button"
+              onClick={() => setPanel(!panel)}
+              aria-expanded={panel}
+            >
+              <Settings2 size={13} />
+              场景与身份
+              <ChevronDown size={13} />
+            </button>
+          </div>
         </div>
       )}
       {!guestLogin && panel && (
@@ -1577,13 +1639,18 @@ export function App() {
           >
             <AnimatePresence initial={false} mode="popLayout">
               <RedemptionRouteFrame routeKey={routeKey} key={routeKey}>
+                {page === "svg-gallery" && <SvgGallery />}
                 {page === "admin" && (
                   <AdminPrototype key={identity} identity={identity} />
                 )}
                 {page === "home" && (
                   <div className="home-page">
                     <section className="home-hero" aria-label="口令兑奖">
-                      <Envelope open={false} size="small" />
+                      <Envelope
+                        open={false}
+                        size="small"
+                        presentationIdentity={identity}
+                      />
                       <div className="home-exchange">
                         <button
                           ref={publicSquareEntry}
@@ -1622,24 +1689,36 @@ export function App() {
                             type="button"
                             className="button claim-button"
                             disabled={busy || homeComposing}
+                            title={operationFeedback.feedback?.detail}
+                            aria-description={
+                              operationFeedback.feedback?.detail
+                            }
+                            aria-label={
+                              operationFeedback.feedback
+                                ? `${uncertain ? "再次确认" : homeLocatorMode ? "跳转活动" : "兑奖"}，${operationFeedback.feedback.label}`
+                                : undefined
+                            }
                             onClick={submitHomeEntry}
                           >
                             {busy && (
                               <LoaderCircle className="spin" size={18} />
                             )}
-                            {busy
-                              ? "正在确认…"
-                              : uncertain
-                                ? "再次确认"
-                                : homeLocatorMode
-                                  ? "跳转活动"
-                                  : "兑奖"}
+                            <ActionFeedbackLabel
+                              label={
+                                busy
+                                  ? "正在确认…"
+                                  : uncertain
+                                    ? "再次确认"
+                                    : homeLocatorMode
+                                      ? "跳转活动"
+                                      : "兑奖"
+                              }
+                              feedback={
+                                busy ? null : operationFeedback.feedback
+                              }
+                              reserve={["正在确认…", "口令不正确"]}
+                            />
                           </RedemptionAction>
-                        )}
-                        {message && (
-                          <p role="status" className="form-message">
-                            {message}
-                          </p>
                         )}
                         {message && identity === "lite" && !homeLocatorMode && (
                           <button
@@ -1719,7 +1798,7 @@ export function App() {
                     busy={busy}
                     reserveResultSpace={Boolean(autoClaim) || busy || uncertain}
                     uncertain={uncertain}
-                    message={message}
+                    feedback={operationFeedback.feedback}
                     onClaim={() => claim()}
                     navigate={navigate}
                     solved={solved[active.id] ?? []}
@@ -1841,7 +1920,7 @@ function ActivityPage({
   busy,
   reserveResultSpace,
   uncertain,
-  message,
+  feedback,
   onClaim,
   navigate,
   solved,
@@ -1862,7 +1941,7 @@ function ActivityPage({
   busy: boolean;
   reserveResultSpace: boolean;
   uncertain: boolean;
-  message: string;
+  feedback: ActionFeedback | null;
   onClaim: () => void;
   navigate: (
     page: Page,
@@ -1885,8 +1964,24 @@ function ActivityPage({
   const ended =
     viewState.lifecycle === "ended" || viewState.lifecycle === "archived";
   const [solve, setSolve] = useState("");
-  const [solveMessage, setSolveMessage] = useState("");
-  const [toast, setToast] = useState("");
+  const solveFeedback = useActionFeedback(`${identity}:${activity.id}`);
+  function setSolveMessage(message: string) {
+    if (!message) {
+      solveFeedback.clear();
+      return;
+    }
+    solveFeedback.show(
+      message === "口令验证成功。"
+        ? "已解锁"
+        : message === "该口令已解出。"
+          ? "已解出"
+          : message === "口令不正确。"
+            ? "口令不正确"
+            : "验证失败",
+      message,
+    );
+  }
+  const endFeedback = useActionFeedback(`${identity}:${activity.id}`);
   const [rosterOpen, setRosterOpen] = useState(false);
   const isPresent = useIsPresent();
   const draw = useDrawRoster(activity);
@@ -1925,6 +2020,22 @@ function ActivityPage({
     state: { ...viewState, drawProgress },
     identity,
     amount: ownAmount,
+  });
+  const image = envelopeImagePresentation({
+    activity,
+    state: { ...viewState, drawProgress },
+    identity,
+    amount: ownAmount,
+    claimedAt:
+      activity.type === "draw"
+        ? draw.winners.find((winner) => winner.username === "linjian")?.time
+        : ownResult?.participatedAt,
+    updatedAt: new Date(prototypeStartedAt),
+    quantityText: fuzzy
+      ? null
+      : activity.type === "draw"
+        ? `${activity.count} 个获奖名额`
+        : `剩余 ${publicRemainingCount} 份`,
   });
   const rosterLabel =
     activity.type === "draw"
@@ -1977,13 +2088,24 @@ function ActivityPage({
     (activity.type === "draw"
       ? draw.registrations.length === 0
       : publicRecipients.length === 0);
-  async function copy(text: string, label: string) {
-    try {
-      await navigator.clipboard.writeText(text);
-      setToast(`${label}已复制`);
-    } catch {
-      setToast("复制失败，请重试。");
-    }
+  function shareText(kind: "link" | "text" | "password", password?: string) {
+    if (
+      kind === "password" &&
+      !passwords.known.some((item) => item.text === password)
+    )
+      return null;
+    const url = buildPrototypeActivityShareUrl(
+      activity.id,
+      window.location.origin,
+    );
+    return kind === "link"
+      ? url
+      : [
+          buildActivityShareText(activity, { fuzzy, url }),
+          ...(kind === "password"
+            ? [`${activity.type === "draw" ? "报名" : "兑换"}口令：${password}`]
+            : []),
+        ].join("\n");
   }
   function submitSolve() {
     if (
@@ -2010,13 +2132,13 @@ function ActivityPage({
     const ended = endWorkbenchActivity(identity, managedActivity.id);
     const latest = findWorkbenchActivity(identity, managedActivity.id);
     if (!ended || !latest) {
-      setToast("活动状态已变化，无法提前结束。");
+      endFeedback.show("结束失败", "活动状态已变化，无法提前结束。");
       if (latest) onActivityUpdate(toPrototypeActivity(latest));
       return;
     }
     const next = toPrototypeActivity(latest);
     onActivityUpdate(next);
-    setToast("活动已提前结束。");
+    endFeedback.show("已结束");
   }
   return (
     <div
@@ -2036,37 +2158,19 @@ function ActivityPage({
             <ArrowLeft size={16} aria-hidden="true" />
           </CompactIconButton>
           <h1>{activity.title}</h1>
-          {canManageActivity && managedActivity && (
-            <div className="activity-title-actions">
-              <ActionMenu
-                label="复制领取文案"
-                items={[
-                  {
-                    label: "不含口令",
-                    onSelect: () =>
-                      void copy(
-                        buildActivityShareText(activity, {
-                          fuzzy,
-                          includePasswords: false,
-                          url: `${window.location.origin}/${activityHash(activity)}`,
-                        }),
-                        "领取文案",
-                      ),
-                  },
-                  {
-                    label: "包含全部口令",
-                    onSelect: () =>
-                      void copy(
-                        buildActivityShareText(activity, {
-                          fuzzy,
-                          includePasswords: true,
-                          url: `${window.location.origin}/${activityHash(activity)}`,
-                        }),
-                        "领取文案",
-                      ),
-                  },
-                ]}
-              />
+          <div className="activity-title-actions">
+            <PrototypeActivityImageShare
+              activity={activity}
+              identity={identity}
+              fuzzy={fuzzy}
+              activityHref={buildPrototypeActivityShareUrl(
+                activity.id,
+                window.location.origin,
+              )}
+              visiblePasswords={passwords.known}
+              getCopyText={shareText}
+            />
+            {canManageActivity && managedActivity && (
               <ActionMenu
                 label="管理活动"
                 items={[
@@ -2093,25 +2197,23 @@ function ActivityPage({
                         },
                       ]
                     : []),
-                  ...(canEndEarly
+                  ...(canEndEarly || endFeedback.feedback
                     ? [
                         {
                           label: "提前结束",
+                          feedback: endFeedback.feedback,
+                          keepOpen: true,
+                          disabled: !canEndEarly,
+                          reserve: ["结束失败"],
                           onSelect: endEarly,
                         },
                       ]
                     : []),
                 ]}
               />
-            </div>
-          )}
+            )}
+          </div>
         </div>
-        {toast && (
-          <p role="status" className="copy-toast">
-            <Check size={14} />
-            {toast}
-          </p>
-        )}
         <div className="activity-meta">
           <UserIdentity
             name={activity.author}
@@ -2172,9 +2274,12 @@ function ActivityPage({
       <section className={`claim-layout ${hasReward ? "has-reward" : ""}`}>
         <div className="claim-art">
           <Envelope
+            key={identity}
             open={Boolean(paper)}
             waiting={registered || drawing}
             reward={paper}
+            presentation={image}
+            presentationIdentity={identity}
             author={{
               name: activity.author,
               username: activity.username,
@@ -2300,26 +2405,34 @@ function ActivityPage({
                 type="submit"
                 className="button claim-button"
                 disabled={busy}
+                title={feedback?.detail}
+                aria-description={feedback?.detail}
+                aria-label={
+                  feedback && !busy
+                    ? `${uncertain ? "再次确认" : activity.type === "draw" ? "报名" : "领取红包"}，${feedback.label}`
+                    : undefined
+                }
               >
                 {busy ? (
                   <LoaderCircle size={18} className="spin" />
                 ) : (
                   <Gift size={18} />
                 )}{" "}
-                {busy
-                  ? "正在确认…"
-                  : uncertain
-                    ? "再次确认"
-                    : activity.type === "draw"
-                      ? "报名"
-                      : "领取红包"}
+                <ActionFeedbackLabel
+                  label={
+                    busy
+                      ? "正在确认…"
+                      : uncertain
+                        ? "再次确认"
+                        : activity.type === "draw"
+                          ? "报名"
+                          : "领取红包"
+                  }
+                  feedback={busy ? null : feedback}
+                  reserve={["正在确认…", "口令不正确"]}
+                />
                 <ArrowRight size={17} />
               </RedemptionAction>
-              {message && (
-                <p role="status" className="form-message">
-                  {message}
-                </p>
-              )}
             </form>
           )}
           {hasReward && (
@@ -2366,16 +2479,15 @@ function ActivityPage({
                 compact
                 onSubmit={submitSolve}
                 action={
-                  <button type="submit" className="button secondary">
-                    验证口令
-                  </button>
+                  <ActionButton
+                    type="submit"
+                    className="button secondary"
+                    label="验证口令"
+                    feedback={solveFeedback.feedback}
+                    reserve={["口令不正确", "验证失败"]}
+                  />
                 }
               />
-              {solveMessage && (
-                <p role="status" className="form-message">
-                  {solveMessage}
-                </p>
-              )}
             </form>
           </div>
         )}
@@ -2392,6 +2504,7 @@ function ActivityPage({
         listState={listState === "empty" ? "ready" : listState}
         activityId={activity.id}
         type={activity.type}
+        openedAt={activity.openedAt}
         drawProgress={drawProgress}
         registrations={listState === "empty" ? [] : draw.registrations}
         recipients={listState === "empty" ? [] : publicRecipients}

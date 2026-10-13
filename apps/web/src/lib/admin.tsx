@@ -11,10 +11,22 @@ import type {
 } from "@hb/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
+import { RefreshCw } from "lucide-react";
+import {
+  type ButtonHTMLAttributes,
+  Fragment,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { api } from "../api";
 import { ActivityErrorView } from "../components/activities/activity-error";
 import { RequireAccount } from "../components/activities/require-account";
+import {
+  ActionButton,
+  useActionFeedback,
+} from "../components/ui/action-feedback";
 import { ActivityRequestError, readResponse } from "./activities";
 import { adminIdentity } from "./admin-identity";
 import { type SessionResponse, sessionQueryKey, useSession } from "./auth";
@@ -285,6 +297,63 @@ export function fmtTime(value: number | null | undefined) {
 
 export function boolText(value: boolean) {
   return value ? "开启" : "关闭";
+}
+
+function readErrorDetail(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+type AdminRefreshResult = { isError?: boolean; error?: unknown } | undefined;
+
+export function AdminRefreshButton({
+  scope,
+  label = "刷新",
+  busy,
+  onRefresh,
+  failureDetail = "读取失败，请重试。",
+  reserve = ["已刷新", "刷新失败"],
+  icon = <RefreshCw size={16} aria-hidden="true" />,
+  disabled,
+  ...props
+}: Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children" | "onClick"> & {
+  scope: string | null;
+  label?: string;
+  busy?: boolean;
+  onRefresh: () => AdminRefreshResult | Promise<AdminRefreshResult>;
+  failureDetail?: string;
+  reserve?: readonly string[];
+  icon?: ReactNode;
+}) {
+  const refreshFeedback = useActionFeedback(scope);
+  async function refresh() {
+    refreshFeedback.clear();
+    try {
+      const result = await onRefresh();
+      if (result && typeof result === "object" && result.isError) {
+        refreshFeedback.show(
+          "刷新失败",
+          readErrorDetail(result.error, failureDetail),
+        );
+        return;
+      }
+      refreshFeedback.show("已刷新");
+    } catch (error) {
+      refreshFeedback.show("刷新失败", readErrorDetail(error, failureDetail));
+    }
+  }
+  return (
+    <ActionButton
+      {...props}
+      label={label}
+      feedback={refreshFeedback.feedback}
+      reserve={reserve}
+      icon={icon}
+      title={props.title ?? label}
+      disabled={disabled || busy}
+      aria-busy={busy}
+      onClick={() => void refresh()}
+    />
+  );
 }
 
 export function AdminQueryError({

@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 
 async function mockSettings(page: Page) {
   const state = {
@@ -112,6 +112,31 @@ function card(page: Page, module: "login" | "rate") {
     exact: true,
   });
 }
+
+type Box = { height: number; width: number; x: number; y: number };
+
+async function box(
+  name: string,
+  locator: { boundingBox: () => Promise<Box | null> },
+) {
+  const value = await locator.boundingBox();
+  if (!value) throw new Error(`Expected ${name} to have a layout box.`);
+  return value;
+}
+
+async function expectStableBox(actual: Box | null, expected: Box) {
+  if (!actual) throw new Error("Expected element to have a layout box.");
+  for (const key of ["x", "y", "width", "height"] as const) {
+    expect(Math.abs(actual[key] - expected[key])).toBeLessThan(1);
+  }
+}
+
+async function freezeClock(page: Page) {
+  await page.clock.pauseAt(Date.now() + 1_000);
+}
+
+const feedbackLabel = (button: Locator) =>
+  button.locator('[aria-live="polite"]').last();
 async function change(page: Page, module: "login" | "rate") {
   if (module === "login")
     await card(page, module).getByRole("checkbox").uncheck();
@@ -134,6 +159,67 @@ async function refocus(page: Page) {
     window.dispatchEvent(new Event("visibilitychange"));
   });
 }
+
+test("设置操作反馈留在触发按钮且三秒复原", async ({ page }) => {
+  await page.clock.install();
+  const state = await mockSettings(page);
+  await page.goto("/admin/settings");
+
+  await change(page, "login");
+  const login = card(page, "login");
+  const saveLogin = login.getByRole("button", {
+    name: /^保存配置(?:，|$)/,
+  });
+  const loginBox = await box("login save button", saveLogin);
+  await freezeClock(page);
+  await saveLogin.click();
+  await expect(feedbackLabel(saveLogin)).toHaveText("已保存");
+  await expect(saveLogin).toHaveAccessibleName("保存配置，已保存");
+  await expect(login.getByRole("status")).toHaveCount(0);
+  await expectStableBox(await saveLogin.boundingBox(), loginBox);
+  await page.clock.runFor(2_999);
+  await expect(feedbackLabel(saveLogin)).toHaveText("已保存");
+  await page.clock.runFor(1);
+  await expect(feedbackLabel(saveLogin)).toHaveText("保存配置");
+
+  const rate = card(page, "rate");
+  const refresh = rate.getByRole("button", { name: /^刷新(?:，|$)/ });
+  const refreshBox = await box("rate refresh button", refresh);
+  state.failRead = true;
+  await refresh.click();
+  await expect(feedbackLabel(refresh)).toHaveText("刷新失败");
+  await expect(refresh).toHaveAccessibleName("刷新，刷新失败");
+  await expect(refresh).toHaveAttribute("title", "刷新失败，请重试。");
+  await expect(rate.getByRole("status")).toHaveCount(0);
+  await expectStableBox(await refresh.boundingBox(), refreshBox);
+  state.failRead = false;
+  await refresh.click();
+  await expect(feedbackLabel(refresh)).toHaveText("已刷新");
+  await expect(refresh).toHaveAccessibleName("刷新，已刷新");
+  await expect(rate.getByRole("status")).toHaveCount(0);
+  await page.clock.runFor(2_999);
+  await expect(feedbackLabel(refresh)).toHaveText("已刷新");
+  await page.clock.runFor(1);
+  await expect(feedbackLabel(refresh)).toHaveText("刷新");
+});
+
+test("设置字段校验反馈留在保存按钮且保留输入", async ({ page }) => {
+  await page.clock.install();
+  await mockSettings(page);
+  await page.goto("/admin/settings");
+  const panel = card(page, "rate");
+  const home = panel.getByLabel("首页尝试间隔（秒）", { exact: true });
+  await home.fill("0");
+  const save = panel.getByRole("button", { name: /^保存配置(?:，|$)/ });
+  await freezeClock(page);
+  await save.click();
+  await expect(feedbackLabel(save)).toHaveText("校验失败");
+  await expect(save).toHaveAccessibleName("保存配置，校验失败");
+  await expect(save).toHaveAttribute("title", "请填写 1–3600 秒的整数。");
+  await expect(panel.getByRole("status")).toHaveCount(0);
+  await expect(home).toHaveValue("0");
+});
+
 for (const module of ["login", "rate"] as const) {
   test(`${module} 保存响应丢失先读取核对，已生效不重复提交`, async ({
     page,
@@ -143,11 +229,11 @@ for (const module of ["login", "rate"] as const) {
     await change(page, module);
     state.saveMode = "commit-lost";
     await card(page, module)
-      .getByRole("button", { name: "保存配置", exact: true })
+      .getByRole("button", { name: /^保存配置(?:，|$)/ })
       .click();
-    await expect(card(page, module).getByRole("status")).toHaveText(
-      "已核对，配置已生效。",
-    );
+    await expect(
+      feedbackLabel(card(page, module).getByRole("button", { name: /已核对/ })),
+    ).toHaveText("已核对");
     expect(state.writes).toHaveLength(1);
     expect(
       state.reads.filter(
@@ -156,13 +242,12 @@ for (const module of ["login", "rate"] as const) {
       ).length,
     ).toBeGreaterThan(1);
     await expect(
-      card(page, module).getByRole("button", { name: "保存配置", exact: true }),
+      card(page, module).getByRole("button", { name: /^保存配置(?:，|$)/ }),
     ).toBeDisabled();
     await change(page, module === "login" ? "rate" : "login");
     await expect(
       card(page, module === "login" ? "rate" : "login").getByRole("button", {
-        name: "保存配置",
-        exact: true,
+        name: /^保存配置(?:，|$)/,
       }),
     ).toBeEnabled();
   });
@@ -173,28 +258,28 @@ test("核对失败锁定原输入与刷新，核对后原版本原内容重试",
   await change(page, "rate");
   state.saveMode = "lost-unreadable";
   const panel = card(page, "rate");
-  await panel.getByRole("button", { name: "保存配置", exact: true }).click();
+  await panel.getByRole("button", { name: /^保存配置(?:，|$)/ }).click();
   await expect(
-    panel.getByRole("button", { name: "核对保存结果", exact: true }),
+    panel.getByRole("button", { name: /^核对保存结果(?:，|$)/ }),
   ).toBeEnabled();
   await expect(
     panel.getByLabel("首页尝试间隔（秒）", { exact: true }),
   ).toBeDisabled();
   await expect(
-    panel.getByRole("button", { name: "刷新", exact: true }),
+    panel.getByRole("button", { name: /^刷新(?:，|$)/ }),
   ).toBeDisabled();
   expect(state.writes).toHaveLength(1);
   state.failRead = false;
-  await panel
-    .getByRole("button", { name: "核对保存结果", exact: true })
-    .click();
+  await panel.getByRole("button", { name: /^核对保存结果(?:，|$)/ }).click();
   await expect(
-    panel.getByRole("button", { name: "重试原提交", exact: true }),
+    panel.getByRole("button", { name: /^重试原提交(?:，|$)/ }),
   ).toBeEnabled();
   expect(state.writes).toHaveLength(1);
   state.saveMode = "success";
-  await panel.getByRole("button", { name: "重试原提交", exact: true }).click();
-  await expect(panel.getByRole("status")).toHaveText("已保存。");
+  await panel.getByRole("button", { name: /^重试原提交(?:，|$)/ }).click();
+  await expect(
+    feedbackLabel(panel.getByRole("button", { name: /已保存/ })),
+  ).toHaveText("已保存");
   expect(state.writes).toHaveLength(2);
   expect(state.writes[1]).toEqual(state.writes[0]);
   await expect(
@@ -217,13 +302,16 @@ test("后台读取保留基线和脏输入，刷新取消及失败保留，同�
   await expect.poll(() => state.reads.length).toBeGreaterThan(initialReads);
   await expect(home).toHaveValue("5");
   await expect(
-    panel.getByRole("button", { name: "保存配置", exact: true }),
+    panel.getByRole("button", { name: /^保存配置(?:，|$)/ }),
   ).toBeEnabled();
   state.saveMode = "conflict";
-  await panel.getByRole("button", { name: "保存配置", exact: true }).click();
+  await panel.getByRole("button", { name: /^保存配置(?:，|$)/ }).click();
   expect(state.writes[0]?.input.expectedVersion).toBe(1);
-  await expect(panel.getByRole("status")).toContainText("当前输入已保留");
-  const refresh = panel.getByRole("button", { name: "刷新", exact: true });
+  await expect(panel.getByRole("button", { name: /已变化/ })).toHaveAttribute(
+    "title",
+    "网站设置已发生变化，请刷新后再试。当前输入已保留。",
+  );
+  const refresh = panel.getByRole("button", { name: /^刷新(?:，|$)/ });
   page.once("dialog", async (dialog) => {
     expect(dialog.message()).toBe("刷新会放弃未保存的修改，是否继续？");
     await dialog.dismiss();
@@ -233,13 +321,15 @@ test("后台读取保留基线和脏输入，刷新取消及失败保留，同�
   state.failRead = true;
   page.once("dialog", (dialog) => dialog.accept());
   await refresh.click();
-  await expect(panel.getByRole("status")).toHaveText("刷新失败，请重试。");
+  await expect(
+    feedbackLabel(panel.getByRole("button", { name: /刷新失败/ })),
+  ).toHaveText("刷新失败");
   await expect(home).toHaveValue("5");
   state.failRead = false;
   page.once("dialog", (dialog) => dialog.accept());
   await refresh.click();
   await expect(
-    panel.getByRole("button", { name: "保存配置", exact: true }),
+    panel.getByRole("button", { name: /^保存配置(?:，|$)/ }),
   ).toBeDisabled();
   await home.fill("7");
   page.once("dialog", (dialog) => dialog.accept());
@@ -247,8 +337,10 @@ test("后台读取保留基线和脏输入，刷新取消及失败保留，同�
   await expect(home).toHaveValue("5"); // Same server version must reset local draft.
   state.saveMode = "success";
   await home.fill("8");
-  await panel.getByRole("button", { name: "保存配置", exact: true }).click();
-  await expect(panel.getByRole("status")).toHaveText("已保存。");
+  await panel.getByRole("button", { name: /^保存配置(?:，|$)/ }).click();
+  await expect(
+    feedbackLabel(panel.getByRole("button", { name: /已保存/ })),
+  ).toHaveText("已保存");
   await home.fill("9");
   page.once("dialog", (dialog) => dialog.dismiss());
   await page
@@ -314,7 +406,7 @@ test("同账号新会话撤下旧基线和输入，取消在途刷新，迟到�
   try {
     page.once("dialog", (dialog) => dialog.accept());
     await card(page, "rate")
-      .getByRole("button", { name: "刷新", exact: true })
+      .getByRole("button", { name: /^刷新(?:，|$)/ })
       .click();
     await expect.poll(() => state.reads.length).toBeGreaterThan(before);
     const canceled = page.waitForEvent("requestfailed", {
@@ -329,7 +421,7 @@ test("同账号新会话撤下旧基线和输入，取消在途刷新，迟到�
     release();
     await expect(home).toHaveValue("20");
     await expect(
-      card(page, "rate").getByRole("button", { name: "保存配置", exact: true }),
+      card(page, "rate").getByRole("button", { name: /^保存配置(?:，|$)/ }),
     ).toBeDisabled();
   } finally {
     release();

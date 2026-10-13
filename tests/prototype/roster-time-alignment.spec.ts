@@ -24,7 +24,14 @@ async function checkTimeRows(page: Page, enlarged = false) {
   await expect(rows.first()).toBeVisible();
   const geometry = await rows.evaluateAll((nodes) =>
     nodes.slice(0, 5).map((node) => {
-      const [absolute, relative] = [...node.querySelectorAll("time")];
+      const absolute = node.querySelector<HTMLTimeElement>(
+        ".recipient-time__absolute",
+      );
+      const relative = node.querySelector<HTMLElement>(
+        ".recipient-time__relative, .recipient-time__speed",
+      );
+      if (!absolute || !relative)
+        throw new Error("Missing roster timestamp or duration");
       const full = absolute.getBoundingClientRect();
       const short = relative.getBoundingClientRect();
       const parent = node.getBoundingClientRect();
@@ -35,7 +42,11 @@ async function checkTimeRows(page: Page, enlarged = false) {
         fullText: absolute.textContent,
         firstClass: absolute.className,
         secondClass: relative.className,
-        sameDate: absolute.dateTime === relative.dateTime,
+        sameDate:
+          relative.tagName === "TIME"
+            ? absolute.dateTime === relative.getAttribute("datetime")
+            : null,
+        secondaryText: relative.textContent,
         font: style.fontFamily,
         digits: style.fontVariantNumeric,
         basis: Number.parseFloat(style.flexBasis),
@@ -53,8 +64,13 @@ async function checkTimeRows(page: Page, enlarged = false) {
   for (const row of geometry) {
     expect(row.fullText).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u);
     expect(row.firstClass).toBe("recipient-time__absolute");
-    expect(row.secondClass).toBe("recipient-time__relative");
-    expect(row.sameDate).toBe(true);
+    if (row.secondClass === "recipient-time__speed") {
+      expect(row.secondaryText).toMatch(/^\d+(?:\.\d{1,3})?秒$/u);
+      expect(row.sameDate).toBeNull();
+    } else {
+      expect(row.secondClass).toBe("recipient-time__relative");
+      expect(row.sameDate).toBe(true);
+    }
     expect(row.font).toContain("monospace");
     expect(row.digits).toContain("tabular-nums");
     expect(row.basis).toBeCloseTo(row.width, 1);
@@ -110,7 +126,7 @@ for (const width of [1440, 375]) {
   });
 }
 
-test("relative roster time advances while the complete timestamp stays fixed", async ({
+test("instantaneous claim seconds and the complete timestamp stay fixed as the clock advances", async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -119,10 +135,91 @@ test("relative roster time advances while the complete timestamp stays fixed", a
   await page.getByRole("button", { name: "查看领取名单", exact: true }).click();
   const row = page.locator(".public-roster .recipient-time").first();
   const absolute = row.locator(".recipient-time__absolute");
-  const relative = row.locator(".recipient-time__relative");
+  const speed = row.locator(".recipient-time__speed");
   const original = await absolute.textContent();
-  const before = await relative.textContent();
+  const before = await speed.textContent();
+  await expect(speed).toHaveText(/^\d+(?:\.\d{1,3})?秒$/u);
   await page.clock.fastForward(2 * 24 * 60 * 60 * 1000);
   await expect(absolute).toHaveText(original ?? "");
-  await expect(relative).not.toHaveText(before ?? "");
+  await expect(speed).toHaveText(before ?? "");
+  await expect(row.locator(".recipient-time__relative")).toHaveCount(0);
+});
+
+test("speed and luck badges sit left of the amount at desktop and mobile widths while draw rosters keep relative time", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const width of [1440, 375]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/#activity?sample=history-random-active");
+    await page
+      .getByRole("button", { name: "查看领取名单", exact: true })
+      .click();
+    const recipient = page.locator(
+      '.public-roster .recipient[data-username="nanfeng"]',
+    );
+    await recipient.scrollIntoViewIfNeeded();
+    await expect(
+      recipient.locator(".recipient-award .recipient-title"),
+    ).toHaveText(["手气王", "我焯有桂！"]);
+    await expect(recipient.locator(".recipient-title")).toHaveCount(2);
+    await expect(recipient.locator(".recipient-time__speed")).toHaveText(
+      "8.25秒",
+    );
+    const geometry = await recipient.evaluate((row) => {
+      const amount = row.querySelector(".recipient-award-amount");
+      const time = row.querySelector(".recipient-time");
+      const list = row.closest(".recipient-list");
+      if (!amount || !time || !list)
+        throw new Error("Missing roster amount, time or list");
+      const amountRect = amount.getBoundingClientRect();
+      return {
+        amount: {
+          left: amountRect.left,
+          top: amountRect.top,
+          bottom: amountRect.bottom,
+        },
+        badges: [
+          ...row.querySelectorAll(".recipient-award .recipient-title"),
+        ].map((badge) => {
+          const rect = badge.getBoundingClientRect();
+          return {
+            left: rect.left,
+            right: rect.right,
+            top: rect.top,
+            bottom: rect.bottom,
+          };
+        }),
+        timeRow: getComputedStyle(time).gridRowStart,
+        listOverflows: list.scrollWidth > list.clientWidth,
+        pageOverflows: document.documentElement.scrollWidth > window.innerWidth,
+      };
+    });
+    for (const badge of geometry.badges) {
+      expect(badge.right).toBeLessThanOrEqual(geometry.amount.left + 1);
+      expect(badge.top).toBeLessThan(geometry.amount.bottom);
+      expect(badge.bottom).toBeGreaterThan(geometry.amount.top);
+    }
+    expect(geometry.badges[0].right).toBeLessThanOrEqual(
+      geometry.badges[1].left + 1,
+    );
+    expect(geometry.timeRow).toBe("2");
+    expect(geometry.listOverflows).toBe(false);
+    expect(geometry.pageOverflows).toBe(false);
+    await page.getByRole("dialog").press("Escape");
+  }
+  await page.goto("/#activity?sample=history-draw-won");
+  await page.getByRole("button", { name: "查看中奖名单", exact: true }).click();
+  const roster = page.locator(".public-roster");
+  await expect(roster.locator(".title-speed")).toHaveCount(0);
+  await expect(roster.locator(".recipient-time__speed")).toHaveCount(0);
+  await expect(
+    roster.locator(".recipient-time__relative").first(),
+  ).toBeVisible();
+  await roster.getByRole("tab", { name: "报名名单", exact: true }).click();
+  await expect(roster.locator(".title-speed")).toHaveCount(0);
+  await expect(roster.locator(".recipient-time__speed")).toHaveCount(0);
+  await expect(
+    roster.locator(".recipient-time__relative").first(),
+  ).toBeVisible();
 });

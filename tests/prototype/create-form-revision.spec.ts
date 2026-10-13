@@ -311,3 +311,26 @@ test("draft save uses canonical topic, and frozen edits disable duration", async
   await expect(page.locator("#work-duration")).toBeDisabled();
   await expect(page.getByLabel("开放时长单位")).toBeDisabled();
 });
+
+test("activity refresh feedback stays inside the refresh button", async ({
+  page,
+}) => {
+  await page.goto("/#manage");
+  await page
+    .getByTestId("managed-activity")
+    .filter({ hasText: "固定红包 · 12 份" })
+    .first()
+    .getByRole("button", { name: /编辑草稿/u })
+    .click();
+
+  await page.locator("#work-title").fill("刷新会丢弃的标题");
+  page.once("dialog", (dialog) => dialog.accept());
+  const refresh = page.getByRole("button", { name: /^刷新(?:，|$)/u });
+  await refresh.click();
+
+  await expect(refresh).toContainText("已刷新");
+  await expect(
+    page.locator(".work-setting-notice", { hasText: "活动内容已刷新。" }),
+  ).toHaveCount(0);
+  await expect(page.locator("#work-title")).toHaveValue("固定红包 · 12 份");
+});

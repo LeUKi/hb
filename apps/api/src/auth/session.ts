@@ -8,7 +8,12 @@ import { isAdministrator } from "../admin/authorization";
 import { createDb } from "../db/client";
 import { accountAttemptCooldowns, sessions, users } from "../db/schema";
 import type { ApiContext } from "../env";
-import { randomToken, sha256Hex } from "../security/crypto";
+import {
+  decryptString,
+  encryptString,
+  randomToken,
+  sha256Hex,
+} from "../security/crypto";
 import {
   assertExactOrigin,
   requireAppOrigin,
@@ -17,6 +22,7 @@ import {
 import { liteAuthLoginGuard, requireLiteAuthLogin } from "./login-settings";
 
 export const SESSION_COOKIE = "hb_session";
+export const IMAGE_SESSION_COOKIE = "__Host-hb_image_session";
 export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
 const SESSION_TOUCH_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -116,8 +122,77 @@ export async function createSession(
     path: "/",
     maxAge: SESSION_TTL_SECONDS,
   });
+  await setImageSessionCookie(c, { tokenHash, expiresAt });
 
   return { csrfToken, expiresAt };
+}
+
+export async function setImageSessionCookie(
+  c: Context<ApiContext>,
+  session: Pick<AuthenticatedSession, "tokenHash" | "expiresAt">,
+) {
+  const appOrigin = requireAppOrigin(c.env);
+  const now = Date.now();
+  const maxAge = Math.max(
+    0,
+    Math.floor((session.expiresAt.getTime() - now) / 1000),
+  );
+  if (maxAge <= 0) {
+    clearImageSessionCookie(c);
+    return;
+  }
+  const value = await encryptStringCookie(
+    JSON.stringify({
+      v: 1,
+      tokenHash: session.tokenHash,
+      expiresAt: session.expiresAt.getTime(),
+    }),
+    c.env,
+    imageSessionAssociatedData(appOrigin),
+  );
+  setCookie(c, IMAGE_SESSION_COOKIE, value, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "None",
+    path: "/",
+    maxAge: Math.min(maxAge, SESSION_TTL_SECONDS),
+  });
+}
+
+export async function getReadOnlyImageSession(c: Context<ApiContext>) {
+  const appOrigin = requireAppOrigin(c.env);
+  const mainToken = getCookie(c, SESSION_COOKIE);
+  if (mainToken !== undefined) {
+    if (!isCookieToken(mainToken)) return null;
+    return readOnlyImageSessionByHash(c, await hashSessionToken(mainToken));
+  }
+  const imageCookie = getCookie(c, IMAGE_SESSION_COOKIE);
+  if (!imageCookie) return null;
+  let payload: { v?: unknown; tokenHash?: unknown; expiresAt?: unknown };
+  try {
+    payload = JSON.parse(
+      await decryptStringCookie(
+        imageCookie,
+        c.env,
+        imageSessionAssociatedData(appOrigin),
+      ),
+    ) as typeof payload;
+  } catch {
+    return null;
+  }
+  if (
+    payload.v !== 1 ||
+    typeof payload.tokenHash !== "string" ||
+    typeof payload.expiresAt !== "number" ||
+    !Number.isSafeInteger(payload.expiresAt) ||
+    payload.expiresAt <= Date.now()
+  ) {
+    return null;
+  }
+  const session = await readOnlyImageSessionByHash(c, payload.tokenHash);
+  if (!session || session.expiresAt.getTime() !== payload.expiresAt)
+    return null;
+  return session;
 }
 
 export async function getOptionalSession(c: Context<ApiContext>) {
@@ -251,16 +326,106 @@ export async function logout(c: Context<ApiContext>) {
       .where(eq(sessions.tokenHash, session.tokenHash));
   }
   clearSessionCookie(c);
+  clearImageSessionCookie(c);
 }
 
 export function clearSessionCookie(c: Context<ApiContext>) {
   deleteCookie(c, SESSION_COOKIE, { path: "/" });
 }
 
-async function hashSessionToken(token: string) {
+export function clearImageSessionCookie(c: Context<ApiContext>) {
+  deleteCookie(c, IMAGE_SESSION_COOKIE, {
+    path: "/",
+    secure: true,
+    sameSite: "None",
+  });
+}
+
+export async function hashSessionToken(token: string) {
   return sha256Hex(`hb.session-token.v1:${token}`);
 }
 
 function isCookieToken(value: string) {
   return /^[A-Za-z0-9_-]{32,256}$/.test(value);
+}
+
+async function readOnlyImageSessionByHash(
+  c: Context<ApiContext>,
+  tokenHash: string,
+): Promise<
+  | (Pick<AuthenticatedSession, "tokenHash" | "expiresAt"> & {
+      user: Pick<AuthenticatedUser, "id" | "canUseLdc">;
+    })
+  | null
+> {
+  const now = new Date();
+  const row = await createDb(c.env.DB)
+    .select({
+      tokenHash: sessions.tokenHash,
+      expiresAt: sessions.expiresAt,
+      userId: users.id,
+      active: users.active,
+      officialConnectVerified: users.officialConnectVerified,
+    })
+    .from(sessions)
+    .innerJoin(users, eq(sessions.userId, users.id))
+    .where(and(eq(sessions.tokenHash, tokenHash), gt(sessions.expiresAt, now)))
+    .get();
+  if (!row?.active) return null;
+  return {
+    tokenHash: row.tokenHash,
+    expiresAt: row.expiresAt,
+    user: {
+      id: row.userId,
+      canUseLdc: row.officialConnectVerified,
+    },
+  };
+}
+
+function imageSessionAssociatedData(appOrigin: string) {
+  return `image-session:${appOrigin}`;
+}
+
+async function encryptStringCookie(
+  plaintext: string,
+  env: { ENCRYPTION_KEYS?: string; ENCRYPTION_KEY_VERSION?: string },
+  associatedData: string,
+) {
+  return base64UrlEncode(
+    new TextEncoder().encode(
+      await encryptString(plaintext, env, associatedData),
+    ),
+  );
+}
+
+async function decryptStringCookie(
+  value: string,
+  env: { ENCRYPTION_KEYS?: string },
+  associatedData: string,
+) {
+  return decryptString(
+    new TextDecoder().decode(base64UrlDecode(value)),
+    env,
+    associatedData,
+  );
+}
+
+function base64UrlEncode(bytes: Uint8Array) {
+  return btoa(String.fromCharCode(...bytes))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll("=", "");
+}
+
+function base64UrlDecode(value: string) {
+  const padded = value
+    .replaceAll("-", "+")
+    .replaceAll("_", "/")
+    .padEnd(Math.ceil(value.length / 4) * 4, "=");
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
 }

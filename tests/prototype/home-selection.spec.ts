@@ -105,9 +105,11 @@ for (const width of [1440, 375]) {
     // Confirmation arrived after the shared move: do not wait another 300ms.
     await expect(envelope).toHaveAttribute("data-phase", "opening");
     await expect(envelope).toHaveAttribute("data-opening-count", "1");
-    await page.clock.runFor(850);
+    await page.clock.runFor(1850);
     await expect(envelope).toHaveAttribute("data-phase", "open");
-    await expect(current(page).locator(".slip-amount")).toHaveText("+0.88");
+    await expect(current(page).locator(".envelope-svg .prize")).toHaveText(
+      "+0.88 LDC",
+    );
     await expect(current(page).locator(".activity-quantity")).toContainText(
       "已领取 9 / 20 份",
     );
@@ -119,7 +121,7 @@ for (const width of [1440, 375]) {
       .click();
     await page.clock.runFor(320);
     await submit(page, "周末口令2026");
-    await page.clock.runFor(1200);
+    await page.clock.runFor(2200);
     await expect(current(page).locator(".activity-quantity")).toContainText(
       "已领取 9 / 20 份",
     );
@@ -168,7 +170,10 @@ test("lookup handles empty, missing, UUID, link and forum choices without redeem
   await current(page)
     .getByRole("button", { name: "跳转活动", exact: true })
     .click();
-  await expect(page.locator(".form-message")).toContainText("未匹配到活动。");
+  await expect(page.locator("[data-redemption-action]")).toHaveAttribute(
+    "title",
+    "未匹配到活动。",
+  );
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await lookup(page, "https://linux.do/t/topic/2964597/1216");
   const dialog = page.getByRole("dialog", { name: "选择活动", exact: true });
@@ -255,12 +260,12 @@ test("automatic confirmation failures retry on detail and leaving cancels a slow
     .click();
   await submit(page, "周末口令2026");
   await page.clock.runFor(600);
-  await expect(current(page).locator(".form-message")).toContainText(
-    "结果暂未确认",
-  );
+  await expect(
+    current(page).locator("[data-redemption-action]"),
+  ).toHaveAttribute("title", /结果暂未确认/);
   await expect(page).toHaveURL(/sample=weekend$/u);
   await current(page)
-    .getByRole("button", { name: "再次确认", exact: true })
+    .getByRole("button", { name: /再次确认/ })
     .click();
   await page.clock.runFor(600);
   await expect(current(page).locator(".activity-page")).toHaveAttribute(
@@ -410,14 +415,14 @@ test("changing identity cancels automatic confirmation and restricted targets st
     "data-participation",
     "none",
   );
-  await expect(current(page).locator(".slip-amount")).toHaveCount(0);
+  await expect(current(page).locator(".envelope-svg .prize")).toHaveCount(0);
   await current(page)
     .getByRole("button", { name: "返回兑奖", exact: true })
     .click();
   await submit(page, "公共口令2026");
-  await expect(current(page).locator(".form-message")).toContainText(
-    "官方 Connect 升级",
-  );
+  await expect(
+    current(page).locator("[data-redemption-action]"),
+  ).toHaveAttribute("title", /官方 Connect 升级/);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await lookup(page, `${origin}/#activity?sample=weekend`);
   await expect(

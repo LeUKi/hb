@@ -5,6 +5,16 @@ import {
   paymentId,
 } from "./fixtures/merchant-config";
 
+function merchantSaveButton(page: import("@playwright/test").Page) {
+  return page.locator(".work-merchant-actions button[type='submit']");
+}
+
+function originalOrderSaveButton(page: import("@playwright/test").Page) {
+  return page.locator(
+    ".merchant-payment-repair__actions button[type='submit']",
+  );
+}
+
 test("同一商户 Client ID 可编辑，改应用必须同时填写对应密钥", async ({
   page,
 }) => {
@@ -19,9 +29,7 @@ test("同一商户 Client ID 可编辑，改应用必须同时填写对应密钥
   expect(state.previewReads).toBe(0);
   await page.getByLabel("商户密钥", { exact: true }).fill("VIRTUAL-NEW-ID");
   await page.getByRole("button", { name: "保存配置", exact: true }).click();
-  await expect(
-    page.getByText("商户配置已保存。", { exact: true }),
-  ).toBeVisible();
+  await expect(merchantSaveButton(page)).toHaveAccessibleName(/已保存/u);
   expect(state.updates[0]).toMatchObject({
     clientId: "corrected_client",
     secret: "VIRTUAL-NEW-ID",
@@ -32,6 +40,24 @@ test("同一商户 Client ID 可编辑，改应用必须同时填写对应密钥
   await expect(page.getByLabel("商户密钥", { exact: true })).toHaveValue("");
   await expect(page.getByRole("button", { name: /删除商户/ })).toHaveCount(0);
   expect(state.csrf).toEqual(["merchant-config-csrf"]);
+});
+
+test("保存反馈显示在原按钮内，三秒恢复且不改变按钮宽度", async ({ page }) => {
+  await page.clock.install();
+  await mockMerchantConfig(page);
+  await page.goto(`/my/merchants?merchantId=${merchantId}`);
+  const save = merchantSaveButton(page);
+  const before = await save.boundingBox();
+  await page.getByLabel("商户名称", { exact: true }).fill("按钮内反馈");
+  await save.click();
+  await expect(save).toHaveAccessibleName(/已保存/u);
+  await expect(page.getByText("商户配置已保存。", { exact: true })).toHaveCount(
+    0,
+  );
+  const during = await save.boundingBox();
+  expect(Math.abs((during?.width ?? 0) - (before?.width ?? 0))).toBeLessThan(1);
+  await page.clock.runFor(3000);
+  await expect(save).toHaveAccessibleName("保存配置");
 });
 
 test("配置修改有活动和付款风险时先提醒，取消不保存且保留输入", async ({
@@ -65,9 +91,7 @@ test("配置修改有活动和付款风险时先提醒，取消不保存且保�
     .getByRole("dialog")
     .getByRole("button", { name: "确认更换" })
     .click();
-  await expect(
-    page.getByText("商户配置已保存。", { exact: true }),
-  ).toBeVisible();
+  await expect(merchantSaveButton(page)).toHaveAccessibleName(/已保存/u);
   expect(state.updates).toHaveLength(1);
   expect(state.updates[0]?.confirmationToken).toBe("preview-token-2");
   expect(
@@ -81,9 +105,7 @@ test("仅改名称不触发凭证风险提醒，密钥留空保留配置", async
   await page.goto(`/my/merchants?merchantId=${merchantId}`);
   await page.getByLabel("商户名称", { exact: true }).fill("修改后的名称");
   await page.getByRole("button", { name: "保存配置", exact: true }).click();
-  await expect(
-    page.getByText("商户配置已保存。", { exact: true }),
-  ).toBeVisible();
+  await expect(merchantSaveButton(page)).toHaveAccessibleName(/已保存/u);
   expect(state.previewReads).toBe(0);
   expect(state.updates[0]).not.toHaveProperty("secret");
   expect(state.updates[0]).not.toHaveProperty("clientId");
@@ -100,9 +122,7 @@ for (const status of ["rejected", "unavailable"] as const) {
     const secret = page.getByLabel("商户密钥", { exact: true });
     await secret.fill("VIRTUAL-AUTO-CHECK");
     await page.getByRole("button", { name: "保存配置", exact: true }).click();
-    await expect(
-      page.getByText("商户配置已保存。", { exact: true }),
-    ).toBeVisible();
+    await expect(merchantSaveButton(page)).toHaveAccessibleName(/已保存/u);
     expect(state.merchant.credentialVerification.status).toBe("checking");
     const problem = page.locator("#merchant-credential-error");
     await expect(problem).toHaveCount(0);
@@ -161,15 +181,13 @@ test("保存时新增付款风险返回最新提醒，重新确认沿用提交�
     .getByRole("button", { name: "确认更换" })
     .click();
   await expect(page.getByRole("dialog")).toContainText("发送中任务1");
-  await expect(page.getByRole("dialog")).toContainText("重新确认");
+  await expect(page.getByRole("dialog")).not.toContainText("重新确认");
   expect(state.updates).toHaveLength(1);
   await page
     .getByRole("dialog")
     .getByRole("button", { name: "确认更换" })
     .click();
-  await expect(
-    page.getByText("商户配置已保存。", { exact: true }),
-  ).toBeVisible();
+  await expect(merchantSaveButton(page)).toHaveAccessibleName(/已保存/u);
   expect(state.updates).toHaveLength(2);
   expect(state.updates[1]?.requestId).toBe(state.updates[0]?.requestId);
   expect(state.updates[1]?.confirmationToken).toBe(
@@ -191,9 +209,7 @@ test("保存响应丢失后重试完全相同请求，不重新生成凭证版�
     "VIRTUAL-LOST",
   );
   await page.getByRole("button", { name: "重试原提交", exact: true }).click();
-  await expect(
-    page.getByText("商户配置已保存。", { exact: true }),
-  ).toBeVisible();
+  await expect(merchantSaveButton(page)).toHaveAccessibleName(/已保存/u);
   expect(state.updates).toHaveLength(2);
   expect(state.updates[1]).toEqual(state.updates[0]);
   expect(state.previewReads).toBe(1);
@@ -209,6 +225,7 @@ test("保存响应丢失后重试完全相同请求，不重新生成凭证版�
 test("付款详情保留历史身份并只修复固定原订单凭证，网络重试沿用同键", async ({
   page,
 }) => {
+  await page.clock.install();
   const state = await mockMerchantConfig(page);
   state.merchant.clientId = "current_client";
   state.failRepairResponse = true;
@@ -226,16 +243,21 @@ test("付款详情保留历史身份并只修复固定原订单凭证，网络�
   await page
     .getByLabel("原订单商户密钥", { exact: true })
     .fill("VIRTUAL-ORIGINAL");
-  await page
-    .getByRole("button", { name: "保存原订单凭证", exact: true })
-    .click();
+  const repair = originalOrderSaveButton(page);
+  const before = await repair.boundingBox();
+  await repair.click();
   await expect(
     page.getByRole("button", { name: "重试原提交", exact: true }),
   ).toBeEnabled();
-  await page.getByRole("button", { name: "重试原提交", exact: true }).click();
   await expect(
-    page.getByText("原订单凭证已保存，系统将继续安全核对原订单。"),
-  ).toBeVisible();
+    page.getByLabel("原订单商户密钥", { exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "重试原提交", exact: true }).click();
+  await expect(repair).toHaveAccessibleName(/已保存/u);
+  const during = await repair.boundingBox();
+  expect(Math.abs((during?.width ?? 0) - (before?.width ?? 0))).toBeLessThan(1);
+  await page.clock.runFor(3000);
+  await expect(repair).toHaveAccessibleName("保存原订单凭证");
   expect(state.repairs).toHaveLength(2);
   expect(state.repairs[1]).toEqual(state.repairs[0]);
   expect(state.repairs[0]).toEqual({

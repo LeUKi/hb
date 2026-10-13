@@ -419,6 +419,7 @@ describe("LDC activity allocation and durable payment responsibility", () => {
         accountTier: "standard",
         claimedAt: won.claim.claimedAt,
         amount: "5.00",
+        speedTitle: "flash",
       },
     ]);
     const publicDetail = (await (

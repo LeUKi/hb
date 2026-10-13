@@ -27,6 +27,7 @@ import { syncParticipationResult } from "./participation-cache";
 export type ExchangeContext = {
   userId: string;
   accountTier: AccountTier;
+  sessionScope: string;
   password: string;
   submission: GlobalRedemptionInput;
   claimSubmissionId: string | null;
@@ -44,7 +45,7 @@ export function useGlobalRedemptionDiscovery(
   csrfToken: string,
 ) {
   const queryClient = useQueryClient();
-  const account = useAccountSession(userId);
+  const account = useAccountSession(userId, "session");
   return useMutation({
     gcTime: 0,
     onMutate: async (input) => ({
@@ -75,7 +76,11 @@ export function useGlobalRedemptionDiscovery(
           ...(result.selectedActivityId ? [result.selectedActivityId] : []),
         ]);
       }
-      const resultKey = [...redemptionKey(userId, result.id), null] as const;
+      const resultKey = [
+        ...redemptionKey(userId, result.id),
+        identity,
+        null,
+      ] as const;
       await queryClient.cancelQueries({ queryKey: resultKey, exact: true });
       if (!account.isCurrentIdentity(identity)) return;
       queryClient.setQueryData(resultKey, result);
@@ -126,18 +131,23 @@ export function useRedemptionResult(
   id: string | null,
   cursor: string | null,
 ) {
-  const account = useAccountSession(userId);
+  const account = useAccountSession(userId, "session");
+  const identity = account.captureIdentity();
   return useQuery({
-    queryKey: [...redemptionKey(userId, id ?? ""), cursor],
+    queryKey: [...redemptionKey(userId, id ?? ""), identity, cursor],
     queryFn: async ({ signal }) => {
-      const identity = account.captureIdentity();
+      const requestIdentity = account.captureIdentity();
       const result = await readResponse<GlobalRedemptionResult>(
         await api.api.redemptions[":id"].$get(
           { param: { id: id ?? "" }, query: cursor ? { cursor } : {} },
           { init: { signal, cache: "no-store" } },
         ),
       );
-      if (signal.aborted || !account.isCurrentIdentity(identity))
+      if (
+        signal.aborted ||
+        requestIdentity !== identity ||
+        !account.isCurrentIdentity(requestIdentity)
+      )
         throw new DOMException("请求已失效", "AbortError");
       const ticket = id ? getAttemptTicket(userId, id) : undefined;
       if (ticket)
@@ -147,7 +157,7 @@ export function useRedemptionResult(
         ]);
       return result;
     },
-    enabled: id !== null,
+    enabled: id !== null && Boolean(identity),
     retry: false,
     refetchInterval: 15_000,
   });

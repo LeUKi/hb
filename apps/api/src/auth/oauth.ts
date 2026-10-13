@@ -31,6 +31,7 @@ import {
   type LoginProvider,
   logout,
   type SessionUser,
+  setImageSessionCookie,
 } from "./session";
 
 const PROVIDERS = {
@@ -73,7 +74,9 @@ class AuthFlowError extends Error {
 export const authRoutes = new Hono<ApiContext>()
   .use("*", async (c, next) => {
     await next();
-    c.header("Cache-Control", "no-store");
+    const cacheControl = c.res.headers.get("Cache-Control") ?? "";
+    if (!/(?:^|,)\s*no-store\s*(?:,|$)/i.test(cacheControl))
+      c.header("Cache-Control", "no-store");
   })
   .get("/auth/login", (c) => beginAuthorization(c, "connect"))
   .get("/auth/callback", (c) => completeAuthorization(c, "connect"))
@@ -96,6 +99,7 @@ export const authRoutes = new Hono<ApiContext>()
         loginOptions,
       });
     }
+    if (isFirstPartySessionRead(c)) await setImageSessionCookie(c, session);
 
     return c.json({
       user: { ...session.user, loginProvider: session.loginProvider },
@@ -134,6 +138,14 @@ export const authRoutes = new Hono<ApiContext>()
       csrfToken: session.csrfToken,
     });
   });
+
+function isFirstPartySessionRead(c: import("hono").Context<ApiContext>) {
+  const site = c.req.header("Sec-Fetch-Site");
+  if (site && site !== "same-origin" && site !== "same-site" && site !== "none")
+    return false;
+  const origin = c.req.header("Origin");
+  return !origin || origin === c.env.APP_ORIGIN;
+}
 
 async function beginAuthorization(
   c: Context<ApiContext>,

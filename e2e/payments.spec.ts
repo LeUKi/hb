@@ -35,6 +35,18 @@ function segmentedButton(page: Page, groupName: string, name: string | RegExp) {
     .getByRole("button", { name, exact: typeof name === "string" });
 }
 
+function merchantSaveButton(page: Page) {
+  return page.locator(".work-merchant-actions button[type='submit']");
+}
+
+function activityOpenButton(page: Page) {
+  return page.locator(".work-summary-actions button").first();
+}
+
+function activityDraftButton(page: Page) {
+  return page.locator(".work-summary-actions button").nth(1);
+}
+
 async function chooseSegmented(
   page: Page,
   groupName: string,
@@ -789,9 +801,7 @@ test("保存真实凭证后自动检查并加快读取，不出现手动检查�
   await page.goto("/my/merchants");
   await page.getByLabel("商户密钥", { exact: true }).fill("VIRTUAL-AUTO-CHECK");
   await page.getByRole("button", { name: "保存配置", exact: true }).click();
-  await expect(
-    page.getByText("商户配置已保存。", { exact: true }),
-  ).toBeVisible();
+  await expect(merchantSaveButton(page)).toHaveAccessibleName(/已保存/u);
   expect(state.merchant.credentialVerification.status).toBe("checking");
   const reads = state.merchantReads;
   state.merchant = {
@@ -835,9 +845,7 @@ test("后台凭证诊断不常驻展示，保存新密钥不沿用旧检查状�
     .getByLabel("商户密钥", { exact: true })
     .fill("VIRTUAL-NEW-VERSION");
   await page.getByRole("button", { name: "保存配置", exact: true }).click();
-  await expect(
-    page.getByText("商户配置已保存。", { exact: true }),
-  ).toBeVisible();
+  await expect(merchantSaveButton(page)).toHaveAccessibleName(/已保存/u);
   expect(state.merchant.credentialVerification.status).toBe("checking");
   expect(state.merchant.credentialVersion).toBe(2);
   await expect(page.getByText(/凭证版本|凭证通过/)).toHaveCount(0);
@@ -1389,9 +1397,7 @@ test("真实商户保存后自动检查当前凭证，模式锁定、密钥不�
   expect(await page.content()).not.toContain("VIRTUAL-REAL-SECRET");
   await page.getByLabel("商户密钥", { exact: true }).fill("VIRTUAL-ROTATED");
   await page.getByRole("button", { name: "保存配置", exact: true }).click();
-  await expect(
-    page.getByText("商户配置已保存。", { exact: true }),
-  ).toBeVisible();
+  await expect(merchantSaveButton(page)).toHaveAccessibleName(/已保存/u);
   await expect(page.getByLabel("商户密钥", { exact: true })).toHaveValue("");
   expect(state.checks).toBe(0);
   expect(state.scenarios).toHaveLength(0);
@@ -1457,7 +1463,7 @@ test("真实随机活动可保存编辑及预览，不能开放或切换到模�
     page.getByRole("button", { name: "改用当前商户", exact: true }),
   ).toHaveCount(0);
   await page.getByRole("button", { name: "保存草稿", exact: true }).click();
-  await expect(page.getByText("草稿已保存。", { exact: true })).toBeVisible();
+  await expect(activityDraftButton(page)).toHaveAccessibleName(/已保存/u);
   await expect(
     page.getByRole("button", { name: "保存并开放", exact: true }),
   ).toBeDisabled();
@@ -1485,11 +1491,11 @@ test("后端拒绝真实开放时显示原因并保留草稿", async ({ page }) 
   delete state.activity.openingBlockedReason;
   await page.goto(`/my/activities/${activityId}`);
   await page.getByRole("button", { name: "保存并开放", exact: true }).click();
-  await expect(
-    page.getByRole("status").filter({
-      hasText: "真实 LDC 接入待验，暂不能开放领取。",
-    }),
-  ).toBeVisible();
+  await expect(activityOpenButton(page)).toHaveAccessibleName(/开放失败/u);
+  await expect(activityOpenButton(page)).toHaveAttribute(
+    "title",
+    /真实 LDC 接入待验，暂不能开放领取。/u,
+  );
   expect(state.activity.status).toBe("draft");
   expect(state.activity.openedAt).toBeNull();
 });
@@ -1516,9 +1522,7 @@ test("创建模拟商户后不回显密钥，轮换保持client_id，模拟操�
   expect(await page.content()).not.toContain("VIRTUAL-SECRET-1");
   await page.getByLabel("商户密钥", { exact: true }).fill("VIRTUAL-SECRET-2");
   await page.getByRole("button", { name: "保存配置", exact: true }).click();
-  await expect(
-    page.getByText("商户配置已保存。", { exact: true }),
-  ).toBeVisible();
+  await expect(merchantSaveButton(page)).toHaveAccessibleName(/已保存/u);
   await expect(page.getByLabel("商户密钥", { exact: true })).toHaveValue("");
   expect(state.merchant.clientId).toBe("mock_new");
   expect(state.merchant.credentialVersion).toBe(2);
@@ -1527,10 +1531,10 @@ test("创建模拟商户后不回显密钥，轮换保持client_id，模拟操�
   await page
     .getByRole("combobox", { name: "付款情形", exact: true })
     .selectOption("response_lost");
-  await page.getByRole("button", { name: "应用模拟情形", exact: true }).click();
-  await expect(
-    page.getByText("模拟情形已设置。", { exact: true }),
-  ).toBeVisible();
+  const simulate = page.locator(".work-more-content button").first();
+  await expect(simulate).toContainText("应用模拟情形");
+  await simulate.click();
+  await expect(simulate).toContainText("已应用");
   expect(state.scenarios).toEqual(["response_lost"]);
   expect(state.checks).toBe(0);
   expect(state.csrf).toEqual(Array(3).fill("payment-csrf"));
@@ -1554,10 +1558,12 @@ test("商户重复应用和原请求冲突展示具体原因，并保留可修�
   await page.goto("/my/merchants");
   await page.getByLabel("Client ID", { exact: true }).fill("mock_client");
   await page.getByLabel("商户密钥", { exact: true }).fill("VIRTUAL-CONFLICT");
-  await page.getByRole("button", { name: "保存配置", exact: true }).click();
-  await expect(
-    page.getByText(state.createError.message, { exact: true }),
-  ).toBeVisible();
+  await merchantSaveButton(page).click();
+  await expect(merchantSaveButton(page)).toHaveAccessibleName(/保存失败/u);
+  await expect(merchantSaveButton(page)).toHaveAttribute(
+    "title",
+    state.createError.message,
+  );
   await expect(page.getByLabel("Client ID", { exact: true })).toBeEnabled();
   await expect(page.getByLabel("商户密钥", { exact: true })).toHaveValue(
     "VIRTUAL-CONFLICT",
@@ -1567,10 +1573,12 @@ test("商户重复应用和原请求冲突展示具体原因，并保留可修�
     code: "MERCHANT_CONFLICT",
     message: "同一创建请求不能更换商户配置",
   };
-  await page.getByRole("button", { name: "保存配置", exact: true }).click();
-  await expect(
-    page.getByText(state.createError.message, { exact: true }),
-  ).toBeVisible();
+  await merchantSaveButton(page).click();
+  await expect(merchantSaveButton(page)).toHaveAccessibleName(/保存失败/u);
+  await expect(merchantSaveButton(page)).toHaveAttribute(
+    "title",
+    state.createError.message,
+  );
 });
 
 test("商户版本冲突提示刷新商户配置且保留未保存名称和密钥", async ({ page }) => {
@@ -1580,7 +1588,9 @@ test("商户版本冲突提示刷新商户配置且保留未保存名称和密�
   await page.getByLabel("商户名称", { exact: true }).fill("未保存的商户改动");
   await page.getByLabel("商户密钥", { exact: true }).fill("VIRTUAL-PENDING");
   await page.getByRole("button", { name: "保存配置", exact: true }).click();
-  await expect(page.getByText(/请先刷新商户配置后重试/)).toBeVisible();
+  const save = merchantSaveButton(page);
+  await expect(save).toHaveAccessibleName(/保存失败/u);
+  await expect(save).toHaveAttribute("title", /请先刷新商户配置后重试/u);
   await expect(page.getByLabel("商户名称", { exact: true })).toHaveValue(
     "未保存的商户改动",
   );
@@ -1612,12 +1622,14 @@ for (const action of ["应用模拟情形"] as const) {
     await page
       .getByRole("combobox", { name: "付款情形", exact: true })
       .selectOption("response_lost");
-    await page.getByRole("button", { name: action, exact: true }).click();
-    await expect(
-      page.getByText("模拟情形已设置。", { exact: true }),
-    ).toBeVisible();
+    const simulate = page.locator(".work-more-content button").first();
+    await expect(simulate).toContainText(action);
+    await simulate.click();
+    await expect(simulate).toContainText("已应用");
     await page.getByRole("button", { name: "保存配置", exact: true }).click();
-    await expect(page.getByText(/请先刷新商户配置后重试/)).toBeVisible();
+    const save = merchantSaveButton(page);
+    await expect(save).toHaveAccessibleName(/保存失败/u);
+    await expect(save).toHaveAttribute("title", /请先刷新商户配置后重试/u);
     expect(state.updates).toEqual([
       expect.objectContaining({
         version: 1,
@@ -1761,7 +1773,7 @@ for (const algorithm of ["double_mean_v1", "bounded_mean_v1"] as const) {
       money: { mode: "random", algorithm, totalAmount: "21.00", count: 7 },
     });
     await page.getByRole("button", { name: "保存并开放", exact: true }).click();
-    await expect(page.getByText("活动已开放。", { exact: true })).toBeVisible();
+    await expect(activityOpenButton(page)).toHaveAccessibleName(/已开放/u);
     await expect(
       page.getByText("金额已固定，领取和付款重试不会重新生成。", {
         exact: true,
@@ -2004,7 +2016,7 @@ test("LDC领取锁定金额并解锁说明，确认模拟发放后停止付款�
   await page.goto(`/activities/${activityId}`);
   await page.getByLabel("兑换口令", { exact: true }).fill("Answer123");
   await claimLdcReward(page);
-  await expect(page.getByText("+5.00", { exact: true })).toBeVisible();
+  await expect(page.locator(".envelope-svg .prize")).toHaveText("+5.00 LDC");
   await expectPaymentReason(page, "每日发放额度不足，等待可用额度。");
   await expect(
     page.getByRole("heading", { name: "领取后已解锁" }),
@@ -2025,7 +2037,7 @@ test("LDC领取锁定金额并解锁说明，确认模拟发放后停止付款�
   ).toBeVisible();
   const reads = state.claimReads;
   await page.clock.fastForward(46_000);
-  await expect(page.getByText("+5.00", { exact: true })).toBeVisible();
+  await expect(page.locator(".envelope-svg .prize")).toHaveText("+5.00 LDC");
   expect(state.claimReads).toBe(reads);
   expect(state.claimPosts).toBe(1);
 });
@@ -2200,7 +2212,7 @@ test("历史商户随机草稿无关编辑保留原绑定，明确同模式重�
   );
   await expect(page.getByText(/草稿保留原商户，不会自动切换/)).toBeVisible();
   await page.getByRole("button", { name: "保存草稿", exact: true }).click();
-  await expect(page.getByText("草稿已保存。", { exact: true })).toBeVisible();
+  await expect(activityDraftButton(page)).toHaveAccessibleName(/已保存/u);
   expect(state.activityUpdates[0]?.activity).toMatchObject({
     merchantId,
     money,
@@ -2214,7 +2226,7 @@ test("历史商户随机草稿无关编辑保留原绑定，明确同模式重�
     /当前真实商户.*当前商户/,
   );
   await page.getByRole("button", { name: "保存草稿", exact: true }).click();
-  await expect(page.getByText("草稿已保存。", { exact: true })).toBeVisible();
+  await expect(activityDraftButton(page)).toHaveAccessibleName(/已保存/u);
   expect(state.activityUpdates[1]?.activity).toMatchObject({
     merchantId: currentId,
     money,
@@ -2345,7 +2357,7 @@ test("一次点击等待凭证检查并续接开放，所有请求固定初始�
   expect(state.activityOpens).toBe(1);
   expect(state.activity.status).toBe("draft");
   passed();
-  await expect(page.getByText("活动已开放。", { exact: true })).toBeVisible();
+  await expect(activityOpenButton(page)).toHaveAccessibleName(/已开放/u);
   expect(state.activityOpens).toBe(2);
   expect(state.openRequests).toEqual([
     { version: 3, merchantId, credentialVersion: 1 },
@@ -2371,11 +2383,10 @@ for (const change of ["activity", "credentials", "merchant"] as const) {
         merchantId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       };
     passed();
-    await expect(
-      page.getByText(
-        /活动已修改，请检查活动配置后重新开放。|商户凭证已更新，请检查商户配置后重新开放。/,
-      ),
-    ).toBeVisible();
+    await expect(activityOpenButton(page)).toHaveAttribute(
+      "title",
+      /活动已修改，请检查活动配置后重新开放。|商户凭证已更新，请检查商户配置后重新开放。/,
+    );
     expect(state.activityOpens).toBe(1);
     expect(state.activity.status).toBe("draft");
   });
@@ -2433,7 +2444,7 @@ test("当前凭证允许时真实活动可开放，旧的付款能力字段不�
   };
   await page.goto(`/my/activities/${activityId}`);
   await page.getByRole("button", { name: "保存并开放", exact: true }).click();
-  await expect(page.getByText("活动已开放。", { exact: true })).toBeVisible();
+  await expect(activityOpenButton(page)).toHaveAccessibleName(/已开放/u);
   expect(state.activityOpens).toBe(1);
   expect(state.merchant.capabilities.canExecutePayments).toBe(false);
   state.merchant.credentialVerification = {
@@ -2448,13 +2459,13 @@ test("当前凭证允许时真实活动可开放，旧的付款能力字段不�
   await page.getByRole("link", { name: "查看活动页", exact: true }).click();
   await page.getByLabel("兑换口令", { exact: true }).fill("Answer123");
   await claimLdcReward(page);
-  await expect(page.getByText("+0.10", { exact: true })).toBeVisible();
+  await expect(page.locator(".envelope-svg .prize")).toHaveText("+0.10 LDC");
   await expectPaymentReason(page, "商户凭证失效，等待作者更新。");
   await expect(
     page.getByRole("heading", { name: "领取后已解锁", exact: true }),
   ).toBeVisible();
   await page.reload();
-  await expect(page.getByText("+0.10", { exact: true })).toBeVisible();
+  await expect(page.locator(".envelope-svg .prize")).toHaveText("+0.10 LDC");
   expect(state.claimPosts).toBe(1);
 });
 
@@ -2626,11 +2637,11 @@ test("保存并开放失败保留已保存LDC草稿和输入，下次点击只�
   await expect(
     page.getByRole("heading", { name: "编辑活动", exact: true }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("status").filter({
-      hasText: "草稿已保存。真实 LDC 接入待验，暂不能开放领取。",
-    }),
-  ).toBeVisible();
+  await expect(activityOpenButton(page)).toHaveAccessibleName(/开放失败/u);
+  await expect(activityOpenButton(page)).toHaveAttribute(
+    "title",
+    "草稿已保存。真实 LDC 接入待验，暂不能开放领取。",
+  );
   await expect(page.getByLabel("每份金额（LDC）", { exact: true })).toHaveValue(
     "0.10",
   );
@@ -2647,9 +2658,9 @@ test("保存并开放失败保留已保存LDC草稿和输入，下次点击只�
   };
   state.activity.openingBlockedReason = undefined;
   await page.getByRole("button", { name: "刷新", exact: true }).click();
-  await page.getByRole("button", { name: "保存并开放", exact: true }).click();
+  await activityOpenButton(page).click();
   await expectPathname(page, `/my/activities/${activityId}`);
-  await expect(page.getByText("活动已开放。", { exact: true })).toBeVisible();
+  await expect(activityOpenButton(page)).toHaveAccessibleName(/已开放/u);
   expect(state.activityCreates).toHaveLength(1);
   expect(state.activityUpdates).toHaveLength(1);
   expect(state.activity.status).toBe("active");

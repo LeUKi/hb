@@ -1169,7 +1169,7 @@ h2 {
   max-width: 640px;
   margin-inline: auto;
 }
-.activity-heading .copy-toast {
+.activity-heading .activity-notice {
   margin: 0 0 8px;
   font-size: 0.8125rem;
 }

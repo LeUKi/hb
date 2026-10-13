@@ -8,7 +8,8 @@ export type Page =
   | "merchant"
   | "payment"
   | "statistics"
-  | "admin";
+  | "admin"
+  | "svg-gallery";
 export type Identity = "standard" | "lite" | "guest";
 export type Scenario =
   | "ready"
@@ -78,6 +79,7 @@ export type Activity = {
   poolAmount?: string;
   publishedRecipientAmounts?: string[];
   registrationCount?: number;
+  openedAt?: string | null;
   deadlineAt?: string | null;
   count: number;
   remaining: number;

@@ -1,7 +1,11 @@
-import type { ActivityPasswords, PublicActivity } from "@hb/contracts";
+import {
+  type ActivityPasswords,
+  activityImagePresentation,
+  type PublicActivity,
+} from "@hb/contracts";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
-import { activityKeys } from "../../lib/activities";
+import { useEffect, useMemo, useRef } from "react";
+import { activityKeys, type PublicActivityDetail } from "../../lib/activities";
 import {
   passwordKey,
   type useActivityPasswords,
@@ -14,23 +18,38 @@ import {
 } from "../../lib/auth";
 import { isDirectParticipation } from "../../lib/direct-participation";
 import { activityShareUrl } from "../../lib/emoji-links";
+import { useHistoryOverlay } from "../../lib/navigation-state";
 import { isAccessQueryError } from "../../lib/query-view";
 import { ActionMenu } from "../presentation/action-menu";
+import { ActivityImageDialog } from "./activity-image-dialog";
 
 export function ActivityShare({
   activity,
   identity,
   userId,
   passwords,
-  onNotice,
 }: {
   activity: PublicActivity;
   identity: string | null;
   userId: string | null;
   passwords: ReturnType<typeof useActivityPasswords>;
-  onNotice: (message: string) => void;
 }) {
   const client = useQueryClient();
+  const imageOverlay = useHistoryOverlay("activity-image-share");
+  const detailState = client.getQueryState<PublicActivityDetail>(
+    activityKeys.public(activity.id, userId),
+  );
+  const updatedAt =
+    detailState?.data?.readAt ?? detailState?.dataUpdatedAt ?? 0;
+  const preview = useMemo(
+    () =>
+      activityImagePresentation({
+        activity,
+        updatedAt: new Date(updatedAt),
+        animated: false,
+      }),
+    [activity, updatedAt],
+  );
   const active = useRef(true);
   useEffect(() => {
     active.current = true;
@@ -53,22 +72,20 @@ export function ActivityShare({
     );
   }
 
-  async function copy(kind: "link" | "text" | "password", password?: string) {
-    if (!currentIdentity()) return;
+  function getShareText(kind: "link" | "text" | "password", password?: string) {
+    if (!currentIdentity()) return null;
     const detail = client.getQueryState<{ activity: PublicActivity }>(
       activityKeys.public(activity.id, userId),
     );
     if (isAccessQueryError(detail?.error)) {
-      onNotice("活动访问权限已变化，请刷新后重试。");
-      return;
+      return null;
     }
     if (kind === "password") {
       if (
         isDirectParticipation(activity) ||
         isDirectParticipation(detail?.data?.activity)
       ) {
-        onNotice("活动已使用直接参与，无需分享口令。");
-        return;
+        return null;
       }
       const current = client.getQueryState<ActivityPasswords>(
         passwordKey(userId, activity.id),
@@ -77,8 +94,7 @@ export function ActivityShare({
         current?.status !== "success" ||
         !current.data?.passwords.some((item) => item.text === password)
       ) {
-        onNotice("口令可见范围已变化，请刷新后重试。");
-        return;
+        return null;
       }
     }
     const url = activityShareUrl(activity.id, window.location.origin);
@@ -95,26 +111,74 @@ export function ActivityShare({
                 ]
               : []),
           ].join("\n");
-    try {
-      await navigator.clipboard.writeText(text);
-      if (currentIdentity())
-        onNotice(kind === "link" ? "活动链接已复制。" : "分享文案已复制。");
-    } catch {
-      if (currentIdentity()) onNotice("复制失败，请重试。");
-    }
+    return text;
   }
 
   return (
-    <ActionMenu
-      label="分享活动"
-      items={[
-        { label: "复制链接", onSelect: () => void copy("link") },
-        { label: "复制分享文案", onSelect: () => void copy("text") },
-        ...visiblePasswords.map((password, index) => ({
-          label: `复制口令${index + 1}`,
-          onSelect: () => void copy("password", password.text),
-        })),
-      ]}
-    />
+    <>
+      <ActionMenu
+        label="分享活动"
+        items={[
+          {
+            label: "复制链接",
+            copy: {
+              getText: () => getShareText("link"),
+              scope: `${identity ?? "guest"}:${activity.id}:link`,
+              canCopy: () => getShareText("link") !== null,
+            },
+          },
+          {
+            label: "复制分享文案",
+            copy: {
+              getText: () => getShareText("text"),
+              scope: `${identity ?? "guest"}:${activity.id}:text`,
+              canCopy: () => getShareText("text") !== null,
+            },
+          },
+          ...(activity.openedAt && activity.status !== "draft"
+            ? [
+                {
+                  label: "内嵌代码",
+                  onSelect: () => {
+                    if (
+                      currentIdentity() &&
+                      !isAccessQueryError(detailState?.error)
+                    )
+                      imageOverlay.open(activity.id);
+                  },
+                },
+              ]
+            : []),
+          ...visiblePasswords.map((password, index) => ({
+            label: `复制口令${index + 1}`,
+            copy: {
+              getText: () => getShareText("password", password.text),
+              scope: `${identity ?? "guest"}:${activity.id}:password:${index}:${password.text}`,
+              canCopy: () => getShareText("password", password.text) !== null,
+            },
+          })),
+        ]}
+      />
+      {imageOverlay.overlay?.id === activity.id &&
+        activity.openedAt &&
+        activity.status !== "draft" &&
+        currentIdentity() &&
+        !isAccessQueryError(detailState?.error) && (
+          <ActivityImageDialog
+            activityId={activity.id}
+            activityHref={activityShareUrl(activity.id, window.location.origin)}
+            preview={preview}
+            onClose={imageOverlay.close}
+            copyScope={`${identity ?? "guest"}:${activity.id}`}
+            canCopy={() =>
+              currentIdentity() &&
+              !isAccessQueryError(
+                client.getQueryState(activityKeys.public(activity.id, userId))
+                  ?.error,
+              )
+            }
+          />
+        )}
+    </>
   );
 }

@@ -24,7 +24,6 @@ import {
   ListRefreshButton,
   Pagination,
 } from "../presentation/list-controls";
-import { RefreshNotice } from "../presentation/loading";
 import { PortalTargetProvider } from "../presentation/portal-target";
 import { ActivityErrorView } from "./activity-error";
 import { DiscoveryCards } from "./discovery-cards";
@@ -295,7 +294,9 @@ function PublicActivityResults({
         </div>
         <ListRefreshButton
           busy={sessionPending || query.isFetching}
-          onRefresh={() => void query.refetch()}
+          scope={`${status}:${cursors.length}`}
+          error={query.error}
+          onRefresh={() => query.refetch()}
         />
       </div>
       {cursorNotice}
@@ -310,7 +311,6 @@ function PublicActivityResults({
         state={state}
         emptyText="暂无符合条件的活动。"
         onRetry={query.isError ? () => query.refetch() : undefined}
-        refreshNotice={<RefreshNotice query={query} />}
         resetKey={`${status}:${cursors.length}`}
         footer={
           <Pagination

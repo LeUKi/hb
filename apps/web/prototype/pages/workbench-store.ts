@@ -50,6 +50,7 @@ export type ManagedActivity = {
   rewardAmountInventory?: string[];
   registrations: number;
   createdAt: string;
+  openedAt: string | null;
   date: string;
   deadlineAt: string | null;
   config: ActivityConfig;
@@ -511,6 +512,13 @@ function fixtureActivities(identity: Identity): ManagedActivity[] {
       config.plan === "draw" ? "draw" : "ldc",
       status,
     );
+    const createdOffsetMs =
+      -(index + 1) * 37 * 60_000 -
+      (status === "archived"
+        ? 9 * 24 * 60 * 60_000
+        : status === "ended"
+          ? 27 * 60 * 60_000
+          : 0);
     return {
       id,
       fixtureId: id,
@@ -522,14 +530,9 @@ function fixtureActivities(identity: Identity): ManagedActivity[] {
       claimed,
       rewardAmountInventory: createAmountInventory(config),
       registrations: config.plan === "draw" && status === "active" ? 30 : 0,
-      createdAt: fixtureDate(
-        -(index + 1) * 37 * 60_000 -
-          (status === "archived"
-            ? 9 * 24 * 60 * 60_000
-            : status === "ended"
-              ? 27 * 60 * 60_000
-              : 0),
-      ),
+      createdAt: fixtureDate(createdOffsetMs),
+      openedAt:
+        status === "draft" ? null : fixtureDate(createdOffsetMs + 60_000),
       deadlineAt,
       date:
         status === "draft"
@@ -830,6 +833,7 @@ export function toPrototypeActivity(
             : (fixedPoolAmount(item.config.fixed.amount, item.count) ??
               undefined),
     deadlineAt: item.deadlineAt,
+    openedAt: item.openedAt,
     description: item.config.notes.description,
     topicUrl: item.config.topic || undefined,
     beforeInfo: item.config.notes.before,
@@ -944,12 +948,19 @@ export function saveWorkbenchActivity(
               .map((line) => line.trim())
               .filter(Boolean).length
           : Number(nextConfig.fixed.count);
+  const now = Date.now();
+  const openedAt =
+    previous && previous.status !== "draft"
+      ? previous.openedAt
+      : status === "draft"
+        ? null
+        : new Date(now).toISOString();
   const deadlineAt =
     previous && previous.status !== "draft"
       ? previous.deadlineAt
       : status === "draft"
         ? null
-        : deadlineForConfig(nextConfig, Date.now());
+        : deadlineForConfig(nextConfig, now);
   if (
     status === "active" &&
     (!previous || previous.status === "draft") &&
@@ -970,7 +981,8 @@ export function saveWorkbenchActivity(
         ? previous.rewardAmountInventory
         : createAmountInventory(nextConfig),
     registrations: previous?.registrations ?? 0,
-    createdAt: previous?.createdAt ?? new Date().toISOString(),
+    createdAt: previous?.createdAt ?? new Date(now).toISOString(),
+    openedAt,
     deadlineAt,
     date:
       previous && previous.status !== "draft"

@@ -6,7 +6,11 @@ import type {
   PublicRegistration,
   RegistrationStatus,
 } from "@hb/contracts";
-import { paymentLabel } from "@hb/contracts";
+import {
+  claimElapsedMs,
+  formatClaimSeconds,
+  paymentLabel,
+} from "@hb/contracts";
 import { X } from "lucide-react";
 import {
   type Dispatch,
@@ -28,7 +32,7 @@ import {
   ListRefreshButton,
   SegmentedControl,
 } from "../presentation/list-controls";
-import { RefreshNotice, SkeletonRows } from "../presentation/loading";
+import { SkeletonRows } from "../presentation/loading";
 import { PortalTargetProvider } from "../presentation/portal-target";
 import { UserIdentity } from "../user-identity";
 
@@ -215,9 +219,9 @@ export function PublicRoster({
                       ? "刷新中奖名单"
                       : "刷新领取名单"
                 }
-                onRefresh={() => {
-                  void query.refetch();
-                }}
+                scope={`${activity.id}:${tab}`}
+                error={query.isFetchNextPageError ? null : query.error}
+                onRefresh={() => query.refetch()}
               />
               <CompactIconButton
                 data-roster-close
@@ -299,59 +303,91 @@ export function PublicRoster({
               </div>
             ) : (
               <>
-                {!query.isFetchNextPageError && <RefreshNotice query={query} />}
                 {rows.length ? (
-                  rows.map((row) => (
-                    <div
-                      className="recipient"
-                      key={rowId(row)}
-                      data-record-id={rowId(row)}
-                    >
-                      <UserIdentity
-                        profile={rowProfile(row)}
-                        className="user-identity"
-                      />
-                      {"amount" in row && row.amount !== undefined && (
-                        <div className="recipient-award">
-                          {"title" in row && row.title && (
-                            <span
-                              className={`recipient-title title-${row.title === "highest" ? "highest" : "lowest"}`}
-                            >
-                              {row.title === "highest" ? "手气王" : "手气亡"}
-                            </span>
-                          )}
-                          <strong className="recipient-award-amount">
-                            {row.amount} <small>LDC</small>
-                          </strong>
-                        </div>
-                      )}
-                      {("claimedAt" in row || "registeredAt" in row) && (
-                        <div className="recipient-time roster-time">
-                          <ShortTime
-                            value={
-                              "claimant" in row || "participant" in row
-                                ? authorRowTime(row)
-                                : rowTime(row)
-                            }
-                            full
-                            className="recipient-time__absolute"
-                          />
-                          <RelativeTime
-                            value={
-                              "claimant" in row || "participant" in row
-                                ? authorRowTime(row)
-                                : rowTime(row)
-                            }
-                            className="recipient-time__relative"
-                          />
-                        </div>
-                      )}
-                      {"claimant" in row && <AuthorClaimDetail row={row} />}
-                      {"participant" in row && (
-                        <AuthorRegistrationDetail row={row} />
-                      )}
-                    </div>
-                  ))
+                  rows.map((row) => {
+                    const time =
+                      "claimant" in row || "participant" in row
+                        ? authorRowTime(row)
+                        : rowTime(row);
+                    const instantClaim = tab === "recipients" && !activity.draw;
+                    const elapsed =
+                      instantClaim && (authorView || activity.showRecipientTime)
+                        ? claimElapsedMs(activity.openedAt, time)
+                        : null;
+                    const speedTitle =
+                      elapsed !== null && "speedTitle" in row
+                        ? row.speedTitle
+                        : undefined;
+                    const luckTitle = "title" in row ? row.title : undefined;
+                    return (
+                      <div
+                        className="recipient"
+                        key={rowId(row)}
+                        data-record-id={rowId(row)}
+                      >
+                        <UserIdentity
+                          profile={rowProfile(row)}
+                          className="user-identity"
+                        />
+                        {(("amount" in row && row.amount !== undefined) ||
+                          luckTitle ||
+                          speedTitle) && (
+                          <div className="recipient-award">
+                            {(luckTitle || speedTitle) && (
+                              <div className="recipient-titles">
+                                {luckTitle && (
+                                  <span
+                                    className={`recipient-title title-${luckTitle}`}
+                                  >
+                                    {luckTitle === "highest"
+                                      ? "手气王"
+                                      : "手气亡"}
+                                  </span>
+                                )}
+                                {speedTitle && (
+                                  <span className="recipient-title title-speed">
+                                    {speedTitle === "flash"
+                                      ? "我焯有桂！"
+                                      : "手速王"}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            {"amount" in row && row.amount !== undefined && (
+                              <strong className="recipient-award-amount">
+                                {row.amount} <small>LDC</small>
+                              </strong>
+                            )}
+                          </div>
+                        )}
+                        {("claimedAt" in row || "registeredAt" in row) && (
+                          <div className="recipient-time roster-time">
+                            <ShortTime
+                              value={time}
+                              full
+                              className="recipient-time__absolute"
+                            />
+                            {instantClaim ? (
+                              elapsed !== null && (
+                                <span className="recipient-time__speed">
+                                  {formatClaimSeconds(elapsed)}
+                                </span>
+                              )
+                            ) : (
+                              <RelativeTime
+                                value={time}
+                                className="recipient-time__relative"
+                              />
+                            )}
+                          </div>
+                        )}
+                        {"claimant" in row && <AuthorClaimDetail row={row} />}
+                        {"participant" in row && (
+                          <AuthorRegistrationDetail row={row} />
+                        )}
+                      </div>
+                    );
+                  })
                 ) : (
                   <div className="public-roster__load-state">
                     <p>暂无{tab === "registrations" ? "报名" : "领取"}记录。</p>

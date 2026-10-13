@@ -61,7 +61,7 @@ test("known passwords start visible and explicit hiding survives new solves and 
   ).toHaveCount(0);
 });
 
-test("completed nonparticipants see a neutral open paper and public roster entry", async ({
+test("completed nonparticipants see the static ended packet and public roster entry", async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -70,7 +70,9 @@ test("completed nonparticipants see a neutral open paper and public roster entry
     "data-open",
     "true",
   );
-  await expect(page.locator(".reward-slip")).toContainText("错过了");
+  await expect(
+    page.locator(".envelope-svg :is(.claimed-result, .ended-stamp)"),
+  ).toContainText("已结束");
   await expect(page.getByTestId("envelope")).toHaveAttribute(
     "data-opening-count",
     "0",
@@ -104,7 +106,9 @@ test("draw pending and losing results use different envelope facts", async ({
     "data-open",
     "true",
   );
-  await expect(page.locator(".reward-slip")).toContainText("未中奖");
+  await expect(
+    page.locator(".envelope-svg :is(.claimed-result, .ended-stamp)"),
+  ).toContainText("未中奖");
   await expect(page.getByTestId("envelope")).toHaveAttribute(
     "data-opening-count",
     "0",
@@ -167,7 +171,7 @@ test("new random claims stay newest, deduplicated and consistent across fixture 
     .getByRole("textbox", { name: "兑换口令", exact: true })
     .fill("随机口令2026");
   await page.getByRole("button", { name: "领取红包", exact: true }).click();
-  await expect(page.locator(".slip-amount")).toHaveText("+0.98");
+  await expect(page.locator(".envelope-svg .prize")).toHaveText("+0.98 LDC");
   await expect(page.locator(".activity-quantity")).toContainText(
     "已领取 20 / 30 份",
   );
@@ -208,7 +212,7 @@ test("new random claims stay newest, deduplicated and consistent across fixture 
     .getByRole("combobox", { name: "拼手气称号样例", exact: true })
     .selectOption("tie-two");
   await page.getByRole("button", { name: "场景与身份" }).click();
-  await expect(page.locator(".slip-amount")).toHaveText("+0.20");
+  await expect(page.locator(".envelope-svg .prize")).toHaveText("+0.20 LDC");
   dialog = await openRoster();
   await expect(own).toContainText("0.20");
   const publicRows = await dialog.locator(".recipient").evaluateAll((rows) =>
@@ -236,12 +240,14 @@ test("new random claims stay newest, deduplicated and consistent across fixture 
     ).toHaveValue("tie-two");
     await page.getByRole("button", { name: "场景与身份" }).click();
     if (identity === "guest") {
-      await expect(page.locator(".slip-amount")).toHaveCount(0);
+      await expect(page.locator(".envelope-svg .prize")).toHaveCount(0);
       await expect(
         page.getByText("已用此口令兑换", { exact: true }),
       ).toHaveCount(0);
     } else {
-      await expect(page.locator(".slip-amount")).toHaveText("+0.20");
+      await expect(page.locator(".envelope-svg .prize")).toHaveText(
+        "+0.20 LDC",
+      );
       expect(await readConfirmation()).toBe(originalConfirmation);
       await expect(
         page.locator('.password-section [data-password-state="known"]').first(),
@@ -281,5 +287,5 @@ test("a published archived draw retains its lifecycle in history and detail", as
     "data-lifecycle",
     "archived",
   );
-  await expect(page.locator(".slip-amount")).toHaveText("+2.18");
+  await expect(page.locator(".envelope-svg .prize")).toHaveText("+2.18 LDC");
 });

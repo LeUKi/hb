@@ -110,7 +110,10 @@ test("preserves mixed raw input and pasted newlines while marking invalid charac
     "data-open",
     "false",
   );
-  await expect(page.locator(".form-message")).toContainText("请先检查口令");
+  await expect(page.locator("[data-redemption-action]")).toHaveAttribute(
+    "title",
+    /请先检查口令/,
+  );
 });
 
 test("explicit optimization converts fullwidth ASCII before removing invalid characters", async ({
@@ -256,8 +259,12 @@ test("a new confirmed claim opens automatically once and history does not replay
   await expect(envelope).toHaveAttribute("data-open", "false");
   await expect(envelope).toHaveAttribute("data-open", "true");
   await expect(envelope).toHaveAttribute("data-animate", "true");
-  await expect(page.locator(".reward-slip")).toHaveCount(1);
-  await expect(page.locator(".reward-slip")).toHaveCSS("opacity", "1");
+  await expect(
+    page.locator(".envelope-svg :is(.claimed-result, .ended-stamp)"),
+  ).toHaveCount(1);
+  await expect(
+    page.locator(".envelope-svg :is(.claimed-result, .ended-stamp)"),
+  ).toHaveCSS("opacity", "1");
   await expect(envelope).toHaveAttribute("data-phase", "open");
   await expect(envelope).toHaveAttribute("data-opening-count", "1");
   const roster = await openRoster(page);
@@ -274,7 +281,9 @@ test("a new confirmed claim opens automatically once and history does not replay
     Reflect.set(
       window,
       "prototypeSlip",
-      document.querySelector(".reward-slip"),
+      document.querySelector(
+        ".envelope-svg :is(.claimed-result, .ended-stamp)",
+      ),
     );
   });
   await openControls(page);
@@ -283,7 +292,9 @@ test("a new confirmed claim opens automatically once and history does not replay
     await page.evaluate(
       () =>
         Reflect.get(window, "prototypeSlip") ===
-        document.querySelector(".reward-slip"),
+        document.querySelector(
+          ".envelope-svg :is(.claimed-result, .ended-stamp)",
+        ),
     ),
   ).toBe(true);
   await page
@@ -295,7 +306,9 @@ test("a new confirmed claim opens automatically once and history does not replay
   await expect(envelope).toHaveAttribute("data-open", "true");
   await expect(envelope).toHaveAttribute("data-animate", "false");
   await expect(envelope).toHaveAttribute("data-opening-count", "0");
-  await expect(page.locator(".reward-slip")).toHaveCount(1);
+  await expect(
+    page.locator(".envelope-svg :is(.claimed-result, .ended-stamp)"),
+  ).toHaveCount(1);
 });
 
 for (const [value, statusCopy, publicRecipients] of [
@@ -313,7 +326,9 @@ for (const [value, statusCopy, publicRecipients] of [
       value,
     );
     if (value === "not-won")
-      await expect(page.locator(".reward-slip")).toContainText(statusCopy);
+      await expect(
+        page.locator(".envelope-svg :is(.claimed-result, .ended-stamp)"),
+      ).toContainText(statusCopy);
     else
       await expect(currentRoute(page).locator(".claim-copy")).toContainText(
         statusCopy,
@@ -326,10 +341,10 @@ for (const [value, statusCopy, publicRecipients] of [
       "data-animate",
       "false",
     );
-    await expect(page.locator(".reward-slip")).toHaveCount(
-      value === "not-won" ? 1 : 0,
-    );
-    await expect(page.locator(".slip-amount")).toHaveCount(0);
+    await expect(
+      page.locator(".envelope-svg :is(.claimed-result, .ended-stamp)"),
+    ).toHaveCount(value === "not-won" ? 1 : 0);
+    await expect(page.locator(".envelope-svg .prize")).toHaveCount(0);
     await expect(page.locator(".payout-summary")).toHaveCount(0);
     const roster = await openRoster(page);
     await expect(roster.locator(".recipient")).toHaveCount(publicRecipients);
@@ -368,7 +383,7 @@ test("published winnings and pending payment remain distinct from animation and 
     "data-animate",
     "false",
   );
-  await expect(page.locator(".slip-amount")).toHaveText("+2.18");
+  await expect(page.locator(".envelope-svg .prize")).toHaveText("+2.18 LDC");
   await page.getByRole("button", { name: "已发放说明", exact: true }).click();
   await expect(
     page.getByRole("dialog", { name: "已发放说明", exact: true }),
@@ -387,7 +402,7 @@ test("published winnings and pending payment remain distinct from animation and 
     "data-payment-progress",
     "pending",
   );
-  await expect(page.locator(".slip-amount")).toHaveText("+0.88");
+  await expect(page.locator(".envelope-svg .prize")).toHaveText("+0.88 LDC");
   await expect(page.locator(".payment-confirmation")).toHaveCount(0);
   await expect(page.locator(".payout-summary")).toHaveCount(0);
   await expect(
@@ -425,8 +440,9 @@ test("a lite identity can browse but must upgrade before creating or participati
     .click();
   await page.getByLabel("口令", { exact: true }).fill(firstPassword);
   await page.getByRole("button", { name: "兑奖", exact: true }).click();
-  await expect(page.locator(".form-message")).toContainText(
-    "官方 Connect 升级",
+  await expect(page.locator("[data-redemption-action]")).toHaveAttribute(
+    "title",
+    /官方 Connect 升级/,
   );
   await expect(
     page.getByRole("dialog", { name: "选择要兑奖的活动" }),
@@ -460,7 +476,9 @@ test("slow responses keep the envelope closed and prevent duplicate submissions"
     "true",
     { timeout: 6_000 },
   );
-  await expect(page.locator(".reward-slip")).toHaveCount(1);
+  await expect(
+    page.locator(".envelope-svg :is(.claimed-result, .ended-stamp)"),
+  ).toHaveCount(1);
 });
 
 test("an uncertain response preserves the original submission until explicit reconfirmation", async ({
@@ -471,20 +489,27 @@ test("an uncertain response preserves the original submission until explicit rec
   const input = page.getByLabel("兑换口令", { exact: true });
   await input.fill(uniquePassword);
   await page.getByRole("button", { name: /领取红包|领取奖励/u }).click();
-  await expect(page.locator(".form-message")).toContainText("结果暂未确认");
+  await expect(page.locator("[data-redemption-action]")).toHaveAttribute(
+    "title",
+    /结果暂未确认/,
+  );
   await expect(input).toHaveValue(uniquePassword);
   await expect(input).toBeDisabled();
   await expect(currentRoute(page).getByTestId("envelope")).toHaveAttribute(
     "data-open",
     "false",
   );
-  await expect(page.locator(".reward-slip")).toHaveCount(0);
-  await page.getByRole("button", { name: "再次确认", exact: true }).click();
+  await expect(
+    page.locator(".envelope-svg :is(.claimed-result, .ended-stamp)"),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: /再次确认/ }).click();
   await expect(currentRoute(page).getByTestId("envelope")).toHaveAttribute(
     "data-open",
     "true",
   );
-  await expect(page.locator(".reward-slip")).toHaveCount(1);
+  await expect(
+    page.locator(".envelope-svg :is(.claimed-result, .ended-stamp)"),
+  ).toHaveCount(1);
 });
 
 for (const viewport of [
@@ -564,7 +589,9 @@ test("reduced motion reveals the confirmed result without the opening animation"
     "data-animate",
     "false",
   );
-  await expect(page.locator(".reward-slip")).toHaveCSS("opacity", "1");
+  await expect(
+    page.locator(".envelope-svg :is(.claimed-result, .ended-stamp)"),
+  ).toHaveCSS("opacity", "1");
   await expect(
     page.locator('[data-note-region="after"] .activity-note'),
   ).toHaveText(activities[0]?.afterClaimInfo ?? "", { useInnerText: true });
@@ -658,7 +685,7 @@ test("multiple matches preserve the password and require confirmation of the sel
   await expect(
     page.getByRole("button", { name: /领取红包|领取奖励/u, exact: true }),
   ).toHaveCount(0);
-  await expect(page.locator(".slip-amount")).toHaveText("+0.50");
+  await expect(page.locator(".envelope-svg .prize")).toHaveText("+0.50 LDC");
   await expect(currentRoute(page).getByTestId("envelope")).toHaveAttribute(
     "data-open",
     "true",
@@ -735,7 +762,10 @@ test("strict topic lookup returns shared cards and selects without automatically
   ).toBeVisible();
   await input.fill("https://linux.do/t/topic/999999999/1");
   await page.getByRole("button", { name: "跳转活动", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("未匹配到活动。");
+  await expect(page.locator("[data-redemption-action]")).toHaveAttribute(
+    "title",
+    "未匹配到活动。",
+  );
   await expect(page.locator(".activity-page")).toHaveCount(0);
   await input.fill("https://linux.do/t/topic/2964597/1216");
   await page.getByRole("button", { name: "跳转活动", exact: true }).click();
@@ -760,7 +790,9 @@ test("strict topic lookup returns shared cards and selects without automatically
     "data-open",
     "false",
   );
-  await expect(page.locator(".reward-slip")).toHaveCount(0);
+  await expect(
+    page.locator(".envelope-svg :is(.claimed-result, .ended-stamp)"),
+  ).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "复制奖励", exact: true }),
   ).toHaveCount(0);
@@ -807,7 +839,7 @@ test("pending payment survives activity changes and unrelated input is cleared",
     "data-payment-progress",
     "pending",
   );
-  await expect(page.locator(".slip-amount")).toHaveText("+0.88");
+  await expect(page.locator(".envelope-svg .prize")).toHaveText("+0.88 LDC");
   await expect(page.locator(".payment-confirmation")).toHaveCount(0);
   await expect(page.locator(".payout-summary")).toHaveCount(0);
   await navigation.getByRole("link", { name: "兑奖", exact: true }).click();
@@ -898,12 +930,14 @@ for (const viewport of [
       "data-open",
       "true",
     );
-    const slip = page.locator(".reward-slip");
+    const slip = page.locator(
+      ".envelope-svg :is(.claimed-result, .ended-stamp)",
+    );
     await expect(slip).toHaveCSS("opacity", "1");
     await expect(
       page.getByRole("button", { name: "已发放说明", exact: true }),
     ).toBeVisible();
-    await expect(page.locator(".slip-amount")).toHaveText("+0.88");
+    await expect(page.locator(".envelope-svg .prize")).toHaveText("+0.88 LDC");
     await expect(
       page.locator('[data-note-region="after"] .activity-note'),
     ).toHaveText(activities[0]?.afterClaimInfo ?? "", { useInnerText: true });

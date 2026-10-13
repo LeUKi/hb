@@ -599,14 +599,14 @@ async function assertDenied(
 }
 
 async function expectLdcRewardVisible(page: Page) {
-  await expect(page.locator(".slip-amount")).toHaveText("+0.10");
+  await expect(page.locator(".envelope-svg .prize")).toHaveText("+0.10 LDC");
 }
 
 async function expectPrivateRewardHidden(page: Page) {
   await expect(
     page.getByRole("region", { name: "奖励附言", exact: true }),
   ).toHaveCount(0);
-  await expect(page.locator(".slip-amount")).toHaveCount(0);
+  await expect(page.locator(".envelope-svg .prize")).toHaveCount(0);
 }
 
 const beforeInfo = "## 完整应用活动说明\n\n公开说明。";
@@ -1094,12 +1094,11 @@ test("真实 D1／ActivityDO LDC创建、开放、兑奖、记录与权限", asy
     await assertDenied(visitor, `/api/activities/${id}`, 404);
     await assertDenied(recipient, `/api/activities/${id}`, 404);
     await assertDenied(recipient, `/api/me/activities/${id}`, 404);
-    await authorPage
-      .getByRole("button", { name: "保存并开放", exact: true })
-      .click();
-    await expect(
-      authorPage.getByText("活动已开放。", { exact: true }),
-    ).toBeVisible();
+    const openButton = authorPage.getByRole("button", {
+      name: /^保存(?:并开放|修改)(?:，|$)/u,
+    });
+    await openButton.click();
+    await expect(openButton).toContainText("已开放");
     const publicResponse = await visitor.request.get(`/api/activities/${id}`);
     const publicActivity = (await publicResponse.json()).activity;
     expect(publicActivity.status).toBe("active");
@@ -1128,9 +1127,14 @@ test("真实 D1／ActivityDO LDC创建、开放、兑奖、记录与权限", asy
     });
     await recipientPage.goto(`/activities/${id}`);
     await submit(recipientPage, "WrongAnswer123");
-    await expect(
-      recipientPage.getByText("口令不正确，请重新尝试。", { exact: true }),
-    ).toBeVisible();
+    const wrongPasswordButton = recipientPage.getByRole("button", {
+      name: /^(领取奖励|领取红包|报名|还需等待 \d+ 秒)，口令不正确$/u,
+    });
+    await expect(wrongPasswordButton).toContainText("口令不正确");
+    await expect(wrongPasswordButton).toHaveAttribute(
+      "title",
+      "口令不正确，请重新尝试。",
+    );
     await submit(recipientPage, "  FullClaim123  ");
     await expectLdcRewardVisible(recipientPage);
     await expect(
@@ -1451,7 +1455,7 @@ test("普通真实模式活动走正常领取、Outbox、Queue 与 MerchantDO；
       .getByLabel("商户密钥", { exact: true })
       .fill("full-app-merchant-secret");
     await authorPage
-      .getByRole("button", { name: "保存配置", exact: true })
+      .getByRole("button", { name: /^保存配置(?:，|$)/u })
       .click();
     await expect(authorPage).toHaveURL(
       (url) =>
@@ -1559,7 +1563,9 @@ test("普通真实模式活动走正常领取、Outbox、Queue 与 MerchantDO；
     });
     await recipientPage.goto(`/activities/${id}`);
     await submit(recipientPage, "LdcAnswer123");
-    await expect(recipientPage.locator(".slip-amount")).toHaveText("+0.10");
+    await expect(recipientPage.locator(".envelope-svg .prize")).toHaveText(
+      "+0.10 LDC",
+    );
     await expect(
       recipientPage.getByRole("heading", { name: "完整应用奖励附言" }),
     ).toBeVisible();
@@ -2885,7 +2891,7 @@ test("真实应用商户配置：修改前确认未开奖风险，同一商户�
     const before = await readState(request);
     const page = fixture.author.page;
     await page.goto(`/my/merchants?merchantId=${merchantId}`);
-    const save = page.getByRole("button", { name: "保存配置", exact: true });
+    const save = page.getByRole("button", { name: /^保存配置(?:，|$)/u });
     await expect(save).toBeDisabled();
     await page
       .locator("#merchant-edit-client-id")
@@ -2916,9 +2922,7 @@ test("真实应用商户配置：修改前确认未开奖风险，同一商户�
     );
     await save.click();
     await dialog.getByRole("button", { name: "确认更换" }).click();
-    await expect(
-      page.getByText("商户配置已保存。", { exact: true }),
-    ).toBeVisible();
+    await expect(save).toContainText("已保存");
     await expect(page).toHaveURL(
       `${origin}/my/merchants?merchantId=${merchantId}`,
     );
@@ -2989,17 +2993,20 @@ test("发布修复：原编辑请求丢失响应后恢复开放，真实历史�
       await route.abort("connectionreset");
     });
     await authorPage
-      .getByRole("button", { name: "保存并开放", exact: true })
+      .getByRole("button", { name: /^保存并开放(?:，|$)/u })
       .click();
     await expect(
-      authorPage.getByRole("button", { name: "重试原提交", exact: true }),
+      authorPage.getByRole("button", { name: /^重试原提交(?:，|$)/u }),
     ).toBeVisible();
-    await authorPage
-      .getByRole("button", { name: "重试原提交", exact: true })
-      .click();
+    const retryButton = authorPage.getByRole("button", {
+      name: /^重试原提交(?:，|$)/u,
+    });
+    await retryButton.click();
     await expect(
-      authorPage.getByText("活动已开放。", { exact: true }),
-    ).toBeVisible();
+      authorPage.getByRole("button", {
+        name: /^保存(?:并开放|修改)，已开放$/u,
+      }),
+    ).toContainText("已开放");
     await expect(
       authorPage.getByRole("heading", { name: "编辑活动", exact: true }),
     ).toBeVisible();

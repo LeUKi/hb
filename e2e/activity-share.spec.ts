@@ -66,10 +66,45 @@ async function mockShare(page: Page) {
   };
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.addInitScript(() => {
+    type PendingClipboardWrite = {
+      reject: (error: Error) => void;
+      resolve: () => void;
+      value: string;
+    };
+    const globals = window as typeof window & {
+      __hbClipboardHold?: boolean;
+      __hbClipboardPending?: PendingClipboardWrite[];
+      __hbClipboardReject?: boolean;
+      __hbClipboardPendingCount?: () => number;
+      __hbClipboardRelease?: (succeed?: boolean) => void;
+    };
+    globals.__hbClipboardHold = false;
+    globals.__hbClipboardPending = [];
+    globals.__hbClipboardReject = false;
+    globals.__hbClipboardPendingCount = () =>
+      globals.__hbClipboardPending?.length ?? 0;
+    globals.__hbClipboardRelease = (succeed = true) => {
+      const pending = globals.__hbClipboardPending?.shift();
+      if (!pending) return;
+      if (!succeed) {
+        pending.reject(new Error("clipboard release failed"));
+        return;
+      }
+      document.documentElement.dataset.activityShared = pending.value;
+      pending.resolve();
+    };
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: {
         writeText: async (value: string) => {
+          if (globals.__hbClipboardReject) {
+            throw new Error("clipboard write failed");
+          }
+          if (globals.__hbClipboardHold) {
+            return new Promise<void>((resolve, reject) => {
+              globals.__hbClipboardPending?.push({ reject, resolve, value });
+            });
+          }
           document.documentElement.dataset.activityShared = value;
         },
       },
@@ -189,6 +224,159 @@ async function mockShare(page: Page) {
 
 const share = (page: Page) =>
   page.getByRole("button", { name: "分享活动", exact: true });
+
+const shareMenu = (page: Page) => page.getByRole("menu", { name: "分享活动" });
+
+const copyMenuItem = (page: Page, name: RegExp | string) =>
+  page.getByRole("menuitem", { name });
+
+type LocatorBox = NonNullable<
+  Awaited<ReturnType<ReturnType<typeof share>["boundingBox"]>>
+>;
+
+async function expectStableBox(
+  actualBox: LocatorBox | null,
+  expectedBox: LocatorBox,
+) {
+  if (!actualBox) {
+    throw new Error("Expected element to have a stable bounding box.");
+  }
+  for (const key of ["x", "y", "width", "height"] as const) {
+    expect(Math.abs(actualBox[key] - expectedBox[key])).toBeLessThan(1);
+  }
+}
+
+async function freezeClock(page: Page) {
+  await page.clock.pauseAt(Date.now() + 1_000);
+}
+
+test("复制项在菜单内显示三秒反馈且不移动布局", async ({ page }) => {
+  await page.clock.install();
+  await mockShare(page);
+  await page.goto(`/activities/${id}`);
+
+  await share(page).click();
+  const menu = shareMenu(page);
+  const linkItem = copyMenuItem(page, /^复制链接/);
+  await expect(menu).toBeVisible();
+  await expect(linkItem).toHaveAccessibleName("复制链接");
+  const menuBefore = await menu.boundingBox();
+  const itemBefore = await linkItem.boundingBox();
+  if (!menuBefore || !itemBefore) {
+    throw new Error("Expected share menu and copy item to have layout boxes.");
+  }
+  await freezeClock(page);
+
+  await linkItem.click();
+
+  await expect(menu).toBeVisible();
+  await expect(linkItem).toHaveText("已复制");
+  await expect(linkItem).toHaveAccessibleName("复制链接，已复制");
+  await expect.poll(() => copied(page)).toBe(link(page));
+  await expectStableBox(await menu.boundingBox(), menuBefore);
+  await expectStableBox(await linkItem.boundingBox(), itemBefore);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+
+  await page.clock.runFor(1_500);
+  await linkItem.click();
+  await expect(linkItem).toHaveText("已复制");
+  await page.clock.runFor(2_999);
+  await expect(linkItem).toHaveText("已复制");
+  await page.clock.runFor(1);
+  await expect(linkItem).toHaveText("复制链接");
+  await expect(linkItem).toHaveAccessibleName("复制链接");
+});
+
+test("复制失败在原菜单项内反馈且可重试成功", async ({ page }) => {
+  await page.clock.install();
+  await mockShare(page);
+  await page.goto(`/activities/${id}`);
+
+  await openShareMenu(page);
+  const linkItem = copyMenuItem(page, /^复制链接/);
+  await freezeClock(page);
+  await setClipboardReject(page, true);
+  await linkItem.click();
+
+  await expect(shareMenu(page)).toBeVisible();
+  await expect(linkItem).toHaveText("复制失败");
+  await expect(linkItem).toHaveAccessibleName("复制链接，复制失败");
+  await expect.poll(() => copied(page)).toBeUndefined();
+
+  await setClipboardReject(page, false);
+  await linkItem.click();
+  await expect(linkItem).toHaveText("已复制");
+  await expect(linkItem).toHaveAccessibleName("复制链接，已复制");
+  await expect.poll(() => copied(page)).toBe(link(page));
+
+  await page.clock.runFor(2_999);
+  await expect(linkItem).toHaveText("已复制");
+  await page.clock.runFor(1);
+  await expect(linkItem).toHaveText("复制链接");
+});
+
+test("迟到的复制结果不会在账号切换后的菜单显示", async ({ page }) => {
+  const state = await mockShare(page);
+  state.user = owner;
+  await page.goto(`/activities/${id}`);
+  await holdClipboardWrites(page, true);
+
+  await openShareMenu(page);
+  const linkItem = copyMenuItem(page, /^复制链接/);
+  await linkItem.click();
+  await expect.poll(() => pendingClipboardWrites(page)).toBe(1);
+
+  state.user = viewer;
+  await restoreFocus(page);
+  await expect(shareMenu(page)).toHaveCount(0);
+  await releaseClipboardWrite(page);
+  await expect.poll(() => copied(page)).toBe(link(page));
+
+  await openShareMenu(page);
+  await expect(copyMenuItem(page, /^复制链接/)).toHaveText("复制链接");
+  await expect(page.getByText("已复制", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("复制失败", { exact: true })).toHaveCount(0);
+});
+
+test("图片内嵌代码使用公开后备图，后退关闭并恢复焦点", async ({ page }) => {
+  await page.clock.install();
+  const state = await mockShare(page);
+  await page.goto(`/activities/${id}`);
+  await share(page).click();
+  await page.getByRole("menuitem", { name: "内嵌代码", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "内嵌代码", exact: true });
+  await expect(dialog).toBeVisible();
+  const code = await dialog
+    .getByLabel("内嵌代码", { exact: true })
+    .inputValue();
+  expect(code).toContain("<picture>");
+  expect(code).toContain("prefers-reduced-motion: reduce");
+  expect(code).toContain(`/e/${encodeURIComponent(emoji)}/live.svg`);
+  expect(code).toMatch(/<img[^>]+src="[^"]+fallback=public/);
+  expect(code).not.toMatch(/ManagedOnlyNeverShared|csrf|image_session/);
+  const copyEmbed = dialog
+    .locator(".activity-image-copy-actions button")
+    .first();
+  await expect(copyEmbed).toHaveAccessibleName("复制内嵌代码");
+  await copyEmbed.click();
+  await expect.poll(() => copied(page)).toBe(code);
+  await expect(copyEmbed).toHaveText("已复制");
+  await expect(copyEmbed).toHaveAccessibleName("复制内嵌代码，已复制");
+  await page.clock.runFor(3_000);
+  await expect(copyEmbed).toHaveText("复制内嵌代码");
+  await page.goBack();
+  await expect(dialog).not.toBeVisible();
+  await expect(share(page)).toBeFocused();
+  await page.goForward();
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+  expect(state.writes).toEqual([]);
+});
 const copied = (page: Page) =>
   page.evaluate(() => document.documentElement.dataset.activityShared);
 const link = (page: Page) => `${new URL(page.url()).origin}/e/${emoji}`;
@@ -217,9 +405,56 @@ async function restoreFocus(page: Page) {
   });
 }
 
+async function openShareMenu(page: Page) {
+  const menu = shareMenu(page);
+  if ((await menu.count()) === 0 || !(await menu.isVisible())) {
+    await share(page).click();
+  }
+  await expect(menu).toBeVisible();
+}
+
 async function copyOption(page: Page, name: string) {
-  await share(page).click();
-  await page.getByRole("menuitem", { name, exact: true }).click();
+  await openShareMenu(page);
+  const item = copyMenuItem(page, new RegExp(`^${name}`));
+  await item.click();
+  return item;
+}
+
+async function setClipboardReject(page: Page, reject: boolean) {
+  await page.evaluate((value) => {
+    (
+      window as typeof window & { __hbClipboardReject?: boolean }
+    ).__hbClipboardReject = value;
+  }, reject);
+}
+
+async function holdClipboardWrites(page: Page, hold: boolean) {
+  await page.evaluate((value) => {
+    (
+      window as typeof window & { __hbClipboardHold?: boolean }
+    ).__hbClipboardHold = value;
+  }, hold);
+}
+
+async function releaseClipboardWrite(page: Page, succeed = true) {
+  await page.evaluate((value) => {
+    (
+      window as typeof window & {
+        __hbClipboardRelease?: (succeed?: boolean) => void;
+      }
+    ).__hbClipboardRelease?.(value);
+  }, succeed);
+}
+
+async function pendingClipboardWrites(page: Page) {
+  return page.evaluate(
+    () =>
+      (
+        window as typeof window & {
+          __hbClipboardPendingCount?: () => number;
+        }
+      ).__hbClipboardPendingCount?.() ?? 0,
+  );
 }
 
 test("游客分享可见表情链接和文案，口令未确认时不暴露选项", async ({ page }) => {
@@ -231,16 +466,17 @@ test("游客分享可见表情链接和文案，口令未确认时不暴露选�
   await expect(page.getByRole("menuitem")).toHaveText([
     "复制链接",
     "复制分享文案",
+    "内嵌代码",
   ]);
-  await page.getByRole("menuitem", { name: "复制链接", exact: true }).click();
+  const linkItem = copyMenuItem(page, /^复制链接/);
+  await linkItem.click();
   await expect.poll(() => copied(page)).toBe(link(page));
-  await copyOption(page, "复制分享文案");
+  await expect(linkItem).toHaveText("已复制");
+  const textItem = await copyOption(page, "复制分享文案");
   await expect
     .poll(() => copied(page))
     .toBe(`【周末红包】\n活动链接：${link(page)}`);
-  await expect(
-    page.getByText("分享文案已复制。", { exact: true }),
-  ).toBeVisible();
+  await expect(textItem).toHaveText("已复制");
   pending.release();
   await expect(page.locator(".password-list")).toBeVisible();
   expect(state.passwordReads).toBe(1);
@@ -262,13 +498,15 @@ test("作者逐条分享可见口令，管理慢响应不阻塞分享且无重�
   await expect(page.getByRole("menuitem")).toHaveText([
     "复制链接",
     "复制分享文案",
+    "内嵌代码",
     "复制口令1",
     "复制口令2",
   ]);
   const managedReadsBeforeCopy = state.managedReads;
   await expect(page.getByRole("menu")).not.toContainText("FirstCase123");
   await expect(page.getByRole("menu")).not.toContainText("SecondCase456");
-  await page.getByRole("menuitem", { name: "复制口令2", exact: true }).click();
+  const passwordItem = copyMenuItem(page, /^复制口令2/);
+  await passwordItem.click();
   await expect
     .poll(() => copied(page))
     .toBe(`【周末红包】\n活动链接：${link(page)}\n兑换口令：SecondCase456`);
@@ -301,12 +539,13 @@ test("参与者仅分享其可见口令，权限失败撤下旧选项而保留�
   await expect(
     page.getByText("口令暂不可读取。", { exact: true }),
   ).toBeVisible();
-  await share(page).click();
+  await openShareMenu(page);
   await expect(page.getByRole("menuitem")).toHaveText([
     "复制链接",
     "复制分享文案",
+    "内嵌代码",
   ]);
-  await page.getByRole("menuitem", { name: "复制链接", exact: true }).click();
+  await copyMenuItem(page, /^复制链接/).click();
   await expect.poll(() => copied(page)).toBe(link(page));
   expect(state.passwordReads).toBe(passwordReadsBeforePoll + 1);
   expect(state.writes).toEqual([]);
@@ -333,14 +572,13 @@ test("账号切换关闭旧菜单，旧账号迟到口令不能恢复分享选�
   await expect(page.getByRole("menuitem")).toHaveText([
     "复制链接",
     "复制分享文案",
+    "内嵌代码",
   ]);
   pending.release();
   await expect(page.getByRole("menuitem", { name: "复制口令1" })).toHaveCount(
     0,
   );
-  await page
-    .getByRole("menuitem", { name: "复制分享文案", exact: true })
-    .click();
+  await copyMenuItem(page, /^复制分享文案/).click();
   await expect
     .poll(() => copied(page))
     .toBe(`【周末红包】\n活动链接：${link(page)}`);
@@ -370,6 +608,9 @@ test("已结束开奖活动支持游客分享，手机键盘菜单使用报名�
   await expect
     .poll(() => copied(page))
     .toBe(`【未命名活动】\n活动链接：${link(page)}\n报名口令：DrawPass123`);
+  await expect(copyMenuItem(page, /^复制口令1/)).toBeFocused();
+  await expect(copyMenuItem(page, /^复制口令1/)).toHaveText("已复制");
+  await page.keyboard.press("Escape");
   await expect(share(page)).toBeFocused();
   for (const width of [375, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
@@ -429,7 +670,7 @@ test("主区域轻微滚动后分享菜单仍可点击，触发入口离开视�
       );
     })
     .toBe(true);
-  await page.getByRole("menuitem", { name: "复制链接", exact: true }).click();
+  await copyMenuItem(page, /^复制链接/).click();
   await expect.poll(() => copied(page)).toBe(link(page));
 
   await share(page).click();

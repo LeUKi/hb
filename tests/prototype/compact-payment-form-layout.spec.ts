@@ -89,7 +89,7 @@ for (const width of [1920, 1440, 768, 375]) {
     await checkOverflow(page);
 
     await page.goto("/#activity?sample=history-random-active");
-    await expect(page.locator(".slip-amount")).toHaveText("+0.98");
+    await expect(page.locator(".envelope-svg .prize")).toHaveText("+0.98 LDC");
     await expect(
       page.locator('[data-note-region="after"] .activity-note'),
     ).toHaveText(

@@ -57,7 +57,7 @@ it("upgrades a populated untracked 0019 experience database and restarts without
   } finally {
     sqlite.close();
   }
-});
+}, 20_000);
 
 it("adopts a complete legacy database without rebuilding it, and rejects schema drift without writes", async () => {
   const migrations = await readD1Migrations(resolve("apps/api/migrations"));

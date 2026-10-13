@@ -187,6 +187,8 @@ export function useManagedActivity(userId: string, id: string, enabled = true) {
 export type PublicActivityDetail = {
   activity: PublicActivity;
   readGeneration: number;
+  /** Actual successful activity read, preserved across cache projections. */
+  readAt?: number;
 };
 
 let publicActivityReadGeneration = 0;
@@ -216,6 +218,7 @@ export function usePublicActivity(
       signal.throwIfAborted();
       return {
         ...result,
+        readAt: Date.now(),
         readGeneration: nextPublicActivityReadGeneration(
           client.getQueryData<PublicActivityDetail>(
             activityKeys.public(id, userId),

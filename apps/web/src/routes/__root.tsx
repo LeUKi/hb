@@ -12,6 +12,7 @@ import { LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef } from "react";
 import { SessionActionsContext } from "../components/auth/session-actions";
 import { RedemptionNavigation } from "../components/presentation/redemption-transition";
+import { useActionFeedback } from "../components/ui/action-feedback";
 import { UserAvatar } from "../components/user-identity";
 import { clearAttemptOperations } from "../lib/attempt-history";
 import {
@@ -44,6 +45,18 @@ function RootLayout() {
   const setRewardAnimation = useSetAtom(rewardAnimationAtom);
   const logout = useLogout(session.data?.csrfToken);
   const user = session.error ? null : (session.data?.user ?? null);
+  const logoutFeedback = useActionFeedback(
+    `${user?.id}:${session.data?.csrfToken}`,
+  );
+  useEffect(() => {
+    if (!logout.isError || !user) return;
+    logoutFeedback.show(
+      "退出失败",
+      logout.error?.message ?? "退出失败，请重试。",
+    );
+    logout.reset();
+  }, [logout.isError, logout.error, logout.reset, logoutFeedback.show, user]);
+
   // The first identity result fills the loading shell; only a later account
   // change rebuilds the private subtree.
   const navigationIdentity = useRef<{ confirmed?: string; generation: number }>(
@@ -320,12 +333,9 @@ function RootLayout() {
           </header>
         )}
         <motion.main layoutScroll id="main" className="site-main" tabIndex={-1}>
-          {logout.isError && (
-            <p className="form-message" role="alert">
-              退出失败，请重试
-            </p>
-          )}
-          <SessionActionsContext.Provider value={logout}>
+          <SessionActionsContext.Provider
+            value={{ ...logout, feedback: logoutFeedback.feedback }}
+          >
             <RedemptionNavigation key={navigationIdentity.current.generation}>
               <NavigationViewport>
                 <Outlet />

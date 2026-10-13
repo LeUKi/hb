@@ -1,4 +1,10 @@
-import { expect, type Page, type Route, test } from "@playwright/test";
+import {
+  expect,
+  type Locator,
+  type Page,
+  type Route,
+  test,
+} from "@playwright/test";
 import type {
   AttemptCooldown,
   AttemptRateLimitsResponse,
@@ -21,6 +27,10 @@ const user = {
   loginProvider: "connect",
   isAdmin: false,
 };
+
+function feedbackLabel(button: Locator) {
+  return button.locator('[aria-live="polite"]').last();
+}
 
 function publicActivitiesDialog(page: Page) {
   return page.getByRole("dialog", { name: "活动广场", exact: true });
@@ -62,7 +72,7 @@ const discovery = {
 };
 
 function cooldownTimer(page: Page) {
-  return page.getByRole("timer").filter({ hasText: "秒后可重试" });
+  return page.getByRole("button", { name: /还需等待 \d+ 秒/ });
 }
 
 function gate() {
@@ -155,14 +165,12 @@ test("获准尝试的账号冷却跨首页、活动页及刷新连续，过期�
   await page.goto("/");
   await page.getByLabel("口令", { exact: true }).fill("NoMatch123");
   await page.getByRole("button", { name: "兑奖", exact: true }).click();
-  await expect(cooldownTimer(page)).toContainText("10 秒");
-  await expect(
-    page.getByRole("button", { name: "兑奖", exact: true }),
-  ).toBeDisabled();
+  await expect(cooldownTimer(page)).toHaveAccessibleName(/10 秒/);
+  await expect(cooldownTimer(page)).toBeDisabled();
   const dialog = await openPublicActivitiesFromHome(page);
   await dialog.getByRole("link", { name: "查看活动", exact: true }).click();
   await expect(page).toHaveURL(`/activities/${id}`);
-  await expect(cooldownTimer(page)).toContainText("10 秒");
+  await expect(cooldownTimer(page)).toHaveAccessibleName(/10 秒/);
   await expect(page.getByRole("button", { name: "领取红包" })).toHaveCount(0);
   await page.getByLabel("兑换口令", { exact: true }).fill("StillWrong123");
   await expect(
@@ -171,7 +179,7 @@ test("获准尝试的账号冷却跨首页、活动页及刷新连续，过期�
   serverNow += 2_100;
   await page.clock.setFixedTime(new Date(serverNow));
   await page.reload();
-  await expect(cooldownTimer(page)).toContainText("8 秒");
+  await expect(cooldownTimer(page)).toHaveAccessibleName(/8 秒/);
   await expect(page.getByRole("button", { name: "领取红包" })).toHaveCount(0);
   await page.getByLabel("兑换口令", { exact: true }).fill("StillWrong123");
   await expect(
@@ -181,19 +189,18 @@ test("获准尝试的账号冷却跨首页、活动页及刷新连续，过期�
   await page.clock.setFixedTime(new Date(serverNow));
   await expect(cooldownTimer(page)).toHaveCount(0);
   await page.getByRole("button", { name: "领取红包" }).click();
-  await expect(
-    page.getByText("口令不正确，请重新尝试。", { exact: true }),
-  ).toBeVisible();
-  await expect(cooldownTimer(page)).toContainText("2 秒");
+  await expect(page.locator("[data-redemption-action]")).toHaveAttribute(
+    "title",
+    "口令不正确，请重新尝试。",
+  );
+  await expect(cooldownTimer(page)).toHaveAccessibleName(/2 秒/);
   await page
     .locator(".desktop-nav")
     .getByRole("link", { name: "兑奖", exact: true })
     .click();
   await page.getByLabel("口令", { exact: true }).fill("NextTry123");
-  await expect(cooldownTimer(page)).toContainText("2 秒");
-  await expect(
-    page.getByRole("button", { name: "兑奖", exact: true }),
-  ).toBeDisabled();
+  await expect(cooldownTimer(page)).toHaveAccessibleName(/2 秒/);
+  await expect(cooldownTimer(page)).toBeDisabled();
   expect(discoveries).toBe(1);
   expect(claims).toBe(1);
 });
@@ -269,10 +276,15 @@ test("未知响应沿原编号重试，发现结果携带服务端编号且自�
   await page.goto("/");
   await page.getByLabel("口令", { exact: true }).fill("Matched123");
   await page.getByRole("button", { name: "兑奖", exact: true }).click();
-  await expect(page.getByText(/尚未确认兑换结果/)).toBeVisible();
-  await page.getByRole("button", { name: "再次确认", exact: true }).click();
+  await expect(page.getByRole("button", { name: /再次确认/ })).toHaveAttribute(
+    "title",
+    /尚未确认兑换结果/,
+  );
+  await page.getByRole("button", { name: /再次确认/ }).click();
   await expect(page).toHaveURL(`/activities/${id}`);
-  await expect(page.getByText(/尚未确认领取结果/)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /重试原提交/ }),
+  ).toHaveAttribute("title", /尚未确认领取结果/);
   expect(discoveryRequests).toHaveLength(2);
   expect(discoveryRequests[1]).toEqual(discoveryRequests[0]);
   expect(claimRequests).toHaveLength(1);
@@ -281,15 +293,11 @@ test("未知响应沿原编号重试，发现结果携带服务端编号且自�
     password: "Matched123",
     discoveryId,
   });
-  await expect(
-    page.getByRole("button", { name: "重试原提交", exact: true }),
-  ).toBeEnabled();
-  await page.getByRole("button", { name: "重试原提交", exact: true }).click();
+  await expect(page.getByRole("button", { name: /重试原提交/ })).toBeEnabled();
+  await page.getByRole("button", { name: /重试原提交/ }).click();
   await expect.poll(() => claimRequests.length).toBe(2);
   expect(claimRequests[1]).toEqual(claimRequests[0]);
-  await expect(
-    page.getByRole("button", { name: "重试原提交", exact: true }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /重试原提交/ })).toHaveCount(0);
   await page.reload();
   await expect(
     page.getByRole("heading", { name: activity.title, exact: true }),
@@ -496,10 +504,12 @@ test("管理员桌面及手机入口可保存 5/2，版本冲突保留输入，4
   });
   await page.getByLabel("首页尝试间隔（秒）", { exact: true }).fill("5");
   await page.getByLabel("活动页尝试间隔（秒）", { exact: true }).fill("2");
-  await limitForm
-    .getByRole("button", { name: "保存配置", exact: true })
-    .click();
-  await expect(page.getByText("已保存。", { exact: true })).toBeVisible();
+  const saveSettings = limitForm.getByRole("button", {
+    name: /^保存配置(?:，|$)/,
+  });
+  await saveSettings.click();
+  await expect(feedbackLabel(saveSettings)).toHaveText("已保存");
+  await expect(saveSettings).toHaveAccessibleName("保存配置，已保存");
   expect(writes[0]).toEqual({
     expectedVersion: 1,
     homeIntervalSeconds: 5,
@@ -526,10 +536,12 @@ test("管理员桌面及手机入口可保存 5/2，版本冲突保留输入，4
   ).toBe(true);
   mode = "conflict";
   await page.getByLabel("首页尝试间隔（秒）", { exact: true }).fill("6");
-  await limitForm
-    .getByRole("button", { name: "保存配置", exact: true })
-    .click();
-  await expect(page.getByText(/网站设置已发生变化/)).toBeVisible();
+  await saveSettings.click();
+  await expect(feedbackLabel(saveSettings)).toHaveText("已变化");
+  await expect(saveSettings).toHaveAttribute(
+    "title",
+    "网站设置已发生变化，请刷新后再试。当前输入已保留。",
+  );
   await expect(
     page.getByLabel("首页尝试间隔（秒）", { exact: true }),
   ).toHaveValue("6");
@@ -539,9 +551,7 @@ test("管理员桌面及手机入口可保存 5/2，版本冲突保留输入，4
     activityIntervalSeconds: 2,
   });
   mode = "denied";
-  await limitForm
-    .getByRole("button", { name: "保存配置", exact: true })
-    .click();
+  await saveSettings.click();
   await expect(page.getByRole("alert")).toHaveText("此页面仅限管理员访问");
   await expect(
     page.getByLabel("首页尝试间隔（秒）", { exact: true }),

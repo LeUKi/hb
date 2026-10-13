@@ -407,7 +407,7 @@ test("direct 活动页刷新、定位和登录返回不自动参与；点击后�
   const claimButton = page.getByRole("button", { name: /领取奖励|直接领取/ });
   await claimButton.focus();
   await page.keyboard.press("Enter");
-  await expect(page.locator(".slip-amount")).toContainText("+1.00");
+  await expect(page.locator(".envelope-svg .prize")).toContainText("+1.00");
   expect(state.claimPosts).toHaveLength(1);
   expect(state.claimPosts[0]).toMatchObject({
     participationMode: "direct",
@@ -428,7 +428,9 @@ test("direct 未知结果按原 submissionId 重试，429 只显示冷却且不�
   state.claimJson = { error: { code: "UNKNOWN_RESULT", message: "结果未知" } };
   await page.goto(`/activities/${activityId}`);
   await page.getByRole("button", { name: /领取奖励|直接领取/ }).click();
-  await expect(page.getByText(/尚未确认|结果未知/)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /重试原提交/ }),
+  ).toHaveAttribute("title", /尚未确认|结果未知/);
   expect(state.claimPosts).toHaveLength(1);
   const first = state.claimPosts[0] as { submissionId: string };
   state.claimStatus = 200;
@@ -472,8 +474,9 @@ test("direct 未知结果按原 submissionId 重试，429 只显示冷却且不�
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto(`/activities/${drawActivityId}`);
   await page.getByRole("button", { name: "立即报名", exact: true }).click();
-  await expect(page.locator("p.form-message[role=timer]")).toContainText(
-    "秒后可重试",
+  await expect(page.locator("[data-redemption-action]")).toBeDisabled();
+  await expect(page.locator("[data-redemption-action]")).toHaveAccessibleName(
+    /还需等待 2 秒/,
   );
   const storageDump = await page.evaluate(async () => {
     const databases =

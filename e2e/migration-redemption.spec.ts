@@ -290,7 +290,7 @@ for (const width of [1440, 375]) {
     await expect(page).toHaveURL(new RegExp(`/activities/${id}$`));
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(
-      page.locator(".slip-amount", { hasText: "+0.88" }),
+      page.locator(".envelope-svg .prize", { hasText: "+0.88" }),
     ).toBeVisible();
     expect(state.claims).toHaveLength(1);
     await expect(page.locator('[data-note-region="after"]')).toContainText(
@@ -350,7 +350,7 @@ test("单匹配进入活动页后自动提交，取消弹窗回焦且定位不�
   await page.getByLabel("口令", { exact: true }).fill("Answer123");
   await page.getByRole("button", { name: "兑奖", exact: true }).click();
   await expect(
-    page.locator(".slip-amount", { hasText: "+0.88" }),
+    page.locator(".envelope-svg .prize", { hasText: "+0.88" }),
   ).toBeVisible();
   await expect(page.locator(".activity-quantity")).toHaveText(
     "已领取 2 / 3 份",
@@ -370,7 +370,7 @@ test("未知自动提交在目标页重试原编号", async ({ page }) => {
     .click();
   await page.getByRole("button", { name: "重试原提交" }).click();
   await expect(
-    page.locator(".slip-amount", { hasText: "+0.88" }),
+    page.locator(".envelope-svg .prize", { hasText: "+0.88" }),
   ).toBeVisible();
   expect(state.claims).toHaveLength(2);
   expect(state.claims[0]?.submissionId).toBe(state.claims[1]?.submissionId);
@@ -615,7 +615,7 @@ test("口令 Enter 提交与 IME 隔离，定位后的唯一输入实际共享�
   await page.getByLabel("兑换口令", { exact: true }).fill("Answer123");
   await page.getByLabel("兑换口令", { exact: true }).press("Enter");
   await expect(
-    page.locator(".slip-amount", { hasText: "+0.88" }),
+    page.locator(".envelope-svg .prize", { hasText: "+0.88" }),
   ).toBeVisible();
   expect(state.claims).toHaveLength(1);
 });

@@ -1,7 +1,6 @@
 import type { AdminPaymentMode, AdminPaymentStatus } from "@hb/contracts";
-import { useQuery } from "@tanstack/react-query";
+import { type QueryObserverResult, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { RefreshCw } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { PaymentStatusText } from "../components/presentation/activity-list";
 import { SkeletonRows } from "../components/presentation/loading";
@@ -9,6 +8,7 @@ import {
   AdminDetailSurface,
   AdminGuard,
   AdminQueryError,
+  AdminRefreshButton,
   AdminShell,
   adminKey,
   fetchAdminPayment,
@@ -160,16 +160,17 @@ function Payments({ identity }: { identity: string }) {
       <section className="activity-panel admin-list-panel">
         <div className="admin-toolbar">
           <h2>付款</h2>
-          <button
+          <AdminRefreshButton
             className="button secondary"
-            type="button"
-            disabled={query.isFetching}
-            aria-busy={query.isFetching}
-            onClick={() => query.refetch()}
-          >
-            <RefreshCw size={16} aria-hidden="true" />
-            刷新
-          </button>
+            scope={`admin-payments:${identity}:list-refresh:${JSON.stringify(params)}`}
+            busy={query.isFetching}
+            title={
+              query.isError && query.data
+                ? `读取失败，请重试。上次读取：${fmtTime(query.dataUpdatedAt)}`
+                : "刷新"
+            }
+            onRefresh={() => query.refetch()}
+          />
         </div>
         <form
           className="admin-filters"
@@ -343,11 +344,6 @@ function Payments({ identity }: { identity: string }) {
                 </tbody>
               </table>
             </div>
-            {query.isError && (
-              <p role="alert">
-                读取失败，请重试。上次读取：{fmtTime(query.dataUpdatedAt)}
-              </p>
-            )}
             {!query.data.items.length && <p>没有匹配的付款。</p>}
             <div className="admin-pager">
               <button
@@ -389,7 +385,10 @@ function Payments({ identity }: { identity: string }) {
           <PaymentDetail
             payment={detail.data.payment}
             refreshing={detail.isFetching}
-            onRefresh={() => void detail.refetch({ cancelRefetch: false })}
+            refreshScope={`admin-payments:${identity}:${detail.data.payment.id}:refresh`}
+            stale={detail.isError}
+            staleReadAt={fmtTime(detail.dataUpdatedAt)}
+            onRefresh={() => detail.refetch({ cancelRefetch: false })}
             onFirst={
               search.attemptsCursor
                 ? () =>
@@ -415,11 +414,6 @@ function Payments({ identity }: { identity: string }) {
         ) : (
           <SkeletonRows />
         )}
-        {detail.data && detail.isError && (
-          <p role="alert">
-            读取失败，请重试。上次读取：{fmtTime(detail.dataUpdatedAt)}
-          </p>
-        )}
       </AdminDetailSurface>
     </div>
   );
@@ -429,12 +423,20 @@ function PaymentDetail({
   payment,
   onRefresh,
   refreshing,
+  refreshScope,
+  stale,
+  staleReadAt,
   onFirst,
   onMore,
 }: {
   payment: Awaited<ReturnType<typeof fetchAdminPayment>>["payment"];
-  onRefresh: () => void;
+  onRefresh: () => Promise<
+    QueryObserverResult<Awaited<ReturnType<typeof fetchAdminPayment>>, Error>
+  >;
   refreshing: boolean;
+  refreshScope: string;
+  stale: boolean;
+  staleReadAt: string;
   onFirst?: () => void;
   onMore: (cursor: string) => void;
 }) {
@@ -442,15 +444,17 @@ function PaymentDetail({
     <div>
       <div className="admin-detail-heading">
         <h2>{payment.businessNo}</h2>
-        <button
+        <AdminRefreshButton
           className="button secondary"
-          type="button"
-          disabled={refreshing}
-          aria-busy={refreshing}
-          onClick={onRefresh}
-        >
-          刷新详情
-        </button>
+          scope={refreshScope}
+          label="刷新详情"
+          busy={refreshing}
+          title={
+            stale ? `读取失败，请重试。上次读取：${staleReadAt}` : "刷新详情"
+          }
+          icon={null}
+          onRefresh={onRefresh}
+        />
       </div>
       <dl className="admin-detail-list">
         <Row label="任务 ID" value={payment.id} />

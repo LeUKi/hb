@@ -89,7 +89,7 @@
 }
 
 .public-roster .recipient {
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(64px, 1fr) minmax(0, auto);
   grid-template-rows: auto auto;
   gap: 0 10px;
   min-height: 58px;
@@ -146,7 +146,8 @@
   overflow-wrap: normal;
 }
 
-.public-roster .recipient-time__relative {
+.public-roster .recipient-time__relative,
+.public-roster .recipient-time__speed {
   flex: 0 0 auto;
   max-width: 100%;
   min-width: 0;
@@ -158,14 +159,39 @@
   grid-row: 1;
   display: inline-flex;
   flex-direction: row;
-  flex-wrap: wrap;
-  align-items: flex-end;
+  flex-wrap: nowrap;
+  align-items: center;
   justify-content: flex-end;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
 }
 
+.public-roster .recipient-titles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px 6px;
+  min-width: 0;
+}
+
+.public-roster .recipient-title {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.public-roster .title-speed {
+  color: #91df68;
+  background: #183222;
+  box-shadow: inset 0 0 0 1px #70bb4833;
+  text-shadow: 0 0 8px #80e75226;
+}
+
 .public-roster .recipient-award-amount {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
   color: var(--ink);
   font-size: 1.125rem;
   font-variant-numeric: tabular-nums;

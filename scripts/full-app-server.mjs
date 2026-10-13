@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { createServer } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -22,10 +23,17 @@ import { applyLocalMigrations } from "./full-app-migrations.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const localExperience = localExperienceConfigFromEnv();
-const origin = localExperience.enabled
-  ? localExperience.publicOrigin
-  : "http://127.0.0.1:4193";
-const appPort = localExperience.enabled ? localExperience.internalPort : 4193;
+const imageHttps = process.env.HB_FULL_APP_IMAGE_HTTPS === "1";
+const origin = imageHttps
+  ? "https://localhost:4199"
+  : localExperience.enabled
+    ? localExperience.publicOrigin
+    : "http://127.0.0.1:4193";
+const appPort = imageHttps
+  ? 4198
+  : localExperience.enabled
+    ? localExperience.internalPort
+    : 4193;
 const controlPort = localExperience.enabled
   ? localExperience.controlPort
   : 4194;
@@ -45,6 +53,7 @@ const execute = promisify(execFile);
 let runtime;
 let control;
 let proxy;
+let forum;
 let webWorker;
 let disposed = false;
 
@@ -53,6 +62,7 @@ async function dispose() {
   disposed = true;
   if (control) await new Promise((resolve) => control.close(resolve));
   if (proxy) await new Promise((resolve) => proxy.close(resolve));
+  if (forum) await new Promise((resolve) => forum.close(resolve));
   if (runtime) await runtime.dispose();
   await rm(temporary, { recursive: true, force: true });
 }
@@ -61,6 +71,15 @@ for (const signal of ["SIGINT", "SIGTERM"])
   process.once(signal, () => void dispose().finally(() => process.exit(0)));
 
 async function main() {
+  const imageModule = join(temporary, "activity-image.mjs");
+  await build({
+    entryPoints: [join(root, "packages/contracts/src/activity-image.ts")],
+    outfile: imageModule,
+    bundle: true,
+    format: "esm",
+    platform: "node",
+  });
+  const { activityImageUrl } = await import(pathToFileURL(imageModule).href);
   // Dedicated browser build: no .env/.dev.vars, Cloudflare plugin or deployment config.
   const vite = join(
     dirname(webRequire.resolve("vite/package.json")),
@@ -105,9 +124,10 @@ async function main() {
   ]);
   if (localExperience.enabled) await mkdir(localStateRoot, { recursive: true });
   const upstream = createTestUpstream(Response, origin, {
-    avatarUrl: localExperience.enabled
-      ? (role) => localAvatarUrl(origin, role)
-      : undefined,
+    avatarUrl:
+      localExperience.enabled || imageHttps
+        ? (role) => localAvatarUrl(origin, role)
+        : undefined,
   });
   // All runtime bindings are supplied here; existing secrets/resources are never read.
   runtime = new Miniflare(
@@ -135,7 +155,7 @@ async function main() {
             directory: join(temporary, "client"),
             binding: "ASSETS",
             routerConfig: { has_user_worker: true },
-            run_worker_first: ["/api", "/api/*"],
+            run_worker_first: ["/api", "/api/*", "/e/*"],
             assetConfig: { not_found_handling: "single-page-application" },
           },
         },
@@ -185,7 +205,7 @@ async function main() {
     }),
   );
   await runtime.ready;
-  if (localExperience.enabled)
+  if (localExperience.enabled || imageHttps)
     webWorker = await runtime.getWorker("hb-full-app-web");
   const database = await runtime.getD1Database("DB", "hb-full-app-api");
   const migrations = await readD1Migrations(join(root, "apps/api/migrations"));
@@ -199,16 +219,69 @@ async function main() {
   async function rows(query) {
     return (await database.prepare(query).all()).results;
   }
-  if (localExperience.enabled) {
-    proxy = createServer((request, response) => {
+  if (localExperience.enabled || imageHttps) {
+    const handle = (request, response) => {
       void handleLocalProxy(request, response).catch(() => {
         if (!response.headersSent) response.writeHead(502);
         response.end("FULL_APP_LOCAL_PROXY_FAILED");
       });
-    });
+    };
+    if (imageHttps) {
+      const certPath = join(temporary, "image-test-cert.pem");
+      const keyPath = join(temporary, "image-test-key.pem");
+      await execute("openssl", [
+        "req",
+        "-x509",
+        "-newkey",
+        "rsa:2048",
+        "-nodes",
+        "-days",
+        "1",
+        "-subj",
+        "/CN=localhost",
+        "-addext",
+        "subjectAltName=DNS:localhost,IP:127.0.0.1",
+        "-keyout",
+        keyPath,
+        "-out",
+        certPath,
+      ]);
+      const tls = {
+        key: await readFile(keyPath),
+        cert: await readFile(certPath),
+      };
+      proxy = createHttpsServer(tls, handle);
+      forum = createHttpsServer(tls, (request, response) => {
+        const id =
+          new URL(
+            request.url ?? "/",
+            "https://127.0.0.1:4200",
+          ).searchParams.get("id") ?? "";
+        if (!/^[a-f0-9-]{36}$/.test(id)) {
+          response.writeHead(400).end();
+          return;
+        }
+        const image = new URL(activityImageUrl(id, origin)).toString();
+        response.writeHead(200, {
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-store",
+        });
+        response.end(
+          `<!doctype html><meta charset="utf-8"><title>Cross-site image fixture</title><a href="${origin}/activities/${id}"><picture><source media="(prefers-reduced-motion: reduce)" type="image/svg+xml" srcset="${image}?motion=reduced 1x"><source type="image/svg+xml" srcset="${image} 1x"><img src="${image}?fallback=public" width="420" height="560" alt="活动红包"></picture></a>`,
+        );
+      });
+      await new Promise((resolve, reject) => {
+        forum.once("error", reject);
+        forum.listen(4200, "127.0.0.1", resolve);
+      });
+    } else proxy = createServer(handle);
     await new Promise((resolve, reject) => {
       proxy.once("error", reject);
-      proxy.listen(localExperience.publicPort, "127.0.0.1", resolve);
+      proxy.listen(
+        imageHttps ? 4199 : localExperience.publicPort,
+        "127.0.0.1",
+        resolve,
+      );
     });
   }
   control = createServer(async (request, response) => {

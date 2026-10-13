@@ -183,18 +183,17 @@ test("旧地址回首页弹窗，保留合法筛选并支持分页、刷新与�
     .poll(() => scroll.evaluate((element) => element.scrollTop))
     .toBeGreaterThan(100);
   state.fail = true;
-  await popup(page).getByRole("button", { name: "刷新活动列表" }).click();
-  await expect(
-    popup(page).getByRole("button", { name: "重试", exact: true }),
-  ).toBeVisible();
+  const refresh = popup(page).getByRole("button", {
+    name: /^刷新活动列表/,
+  });
+  await refresh.click();
+  await expect(refresh).toHaveAccessibleName("刷新活动列表，刷新失败");
   await expect(
     popup(page).getByText("公开活动 21", { exact: true }),
   ).toBeAttached();
   state.fail = false;
-  await popup(page).getByRole("button", { name: "重试", exact: true }).click();
-  await expect(
-    popup(page).getByRole("button", { name: "重试", exact: true }),
-  ).toHaveCount(0);
+  await refresh.click();
+  await expect(refresh).toHaveAccessibleName("刷新活动列表，已刷新");
   await page.goBack();
   await expect(popup(page)).toHaveCount(0);
   await expect(trigger(page)).toBeFocused();

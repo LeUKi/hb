@@ -571,9 +571,9 @@ test("home clear removes the current input feedback without submitting", async (
   const input = page.getByLabel("口令", { exact: true });
   await input.fill("坏!");
   await page.getByRole("button", { name: "兑奖", exact: true }).click();
-  await expect(page.locator(".home-exchange .form-message")).toContainText(
-    "请先检查",
-  );
+  await expect(
+    page.locator(".home-exchange [data-redemption-action]"),
+  ).toHaveAttribute("title", /请先检查/);
   await page.getByRole("button", { name: "清空输入" }).click();
   await expect(input).toHaveValue("");
   await expect(input).toBeFocused();

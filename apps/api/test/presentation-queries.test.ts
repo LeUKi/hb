@@ -5,6 +5,7 @@ import {
   type ActivityPaymentList,
   type ActivityPaymentTargetList,
   ARCHIVE_DELAY_MS,
+  type AuthorClaimList,
   type DiscoveryList,
   emptyActivityInput,
   type LdcActivityInput,
@@ -825,6 +826,132 @@ describe("production presentation queries", () => {
       showRecipientTime: false,
       showRecipientAmount: false,
     });
+  });
+
+  it("computes speed titles globally before pagination and keeps them behind time visibility", async () => {
+    const activity = await create(
+      ldc(
+        { mode: "fixed", totalAmount: "22.00", count: 22 },
+        { showRecipientList: true, showRecipientTime: true },
+      ),
+    );
+    if (activity.openedAt === null) throw new Error("Expected opened activity");
+    const openedAt = new Date(activity.openedAt).getTime();
+    const entrants = await Promise.all(Array.from({ length: 22 }, actor));
+    const claimIds: string[] = [];
+    for (const user of entrants) {
+      const result = await redeem(activity.id, user);
+      if (!("claim" in result)) throw new Error("Expected claim");
+      claimIds.push(result.claim.id);
+    }
+    const times = claimIds.map((id, index) => ({
+      id,
+      time: openedAt + (index < 2 ? 10_000 : 20_000 + index),
+    }));
+    await env.DB.batch(
+      times.map(({ id, time }) =>
+        env.DB.prepare("UPDATE claims SET claimed_at=? WHERE id=?").bind(
+          time,
+          id,
+        ),
+      ),
+    );
+
+    const first = await data<PublicRecipientList>(
+      `/activities/${activity.id}/recipients`,
+    );
+    expect(first.items).toHaveLength(20);
+    expect(first.items.every((row) => row.speedTitle === undefined)).toBe(true);
+    const second = await data<PublicRecipientList>(
+      `/activities/${activity.id}/recipients?cursor=${encodeURIComponent(first.nextCursor ?? "")}`,
+    );
+    expect(second.items.map((row) => row.speedTitle)).toEqual([
+      "flash",
+      "flash",
+    ]);
+
+    await env.DB.batch(
+      claimIds
+        .slice(0, 2)
+        .map((id) =>
+          env.DB.prepare("UPDATE claims SET claimed_at=? WHERE id=?").bind(
+            openedAt + 10_001,
+            id,
+          ),
+        ),
+    );
+    const afterThreshold = await data<PublicRecipientList>(
+      `/activities/${activity.id}/recipients?cursor=${encodeURIComponent(first.nextCursor ?? "")}`,
+    );
+    expect(afterThreshold.items.map((row) => row.speedTitle)).toEqual([
+      "fastest",
+      "fastest",
+    ]);
+
+    await env.DB.prepare(
+      "UPDATE activities SET config=json_set(config,'$.showRecipientAmount',json('false')) WHERE id=?",
+    )
+      .bind(activity.id)
+      .run();
+    const hiddenAmount = await data<PublicRecipientList>(
+      `/activities/${activity.id}/recipients?cursor=${encodeURIComponent(first.nextCursor ?? "")}`,
+    );
+    expect(hiddenAmount.items.map((row) => row.speedTitle)).toEqual([
+      "fastest",
+      "fastest",
+    ]);
+    for (const row of hiddenAmount.items) {
+      expect(row).not.toHaveProperty("amount");
+      expect(row).not.toHaveProperty("title");
+    }
+
+    await env.DB.prepare(
+      "UPDATE activities SET config=json_set(config,'$.showRecipientTime',json('false')) WHERE id=?",
+    )
+      .bind(activity.id)
+      .run();
+    const hiddenTime = await data<PublicRecipientList>(
+      `/activities/${activity.id}/recipients?cursor=${encodeURIComponent(first.nextCursor ?? "")}`,
+    );
+    for (const row of hiddenTime.items) {
+      expect(row).not.toHaveProperty("claimedAt");
+      expect(row).not.toHaveProperty("speedTitle");
+    }
+    const authorFirst = await data<AuthorClaimList>(
+      `/me/activities/${activity.id}/claims`,
+      owner,
+    );
+    const author = await data<AuthorClaimList>(
+      `/me/activities/${activity.id}/claims?cursor=${encodeURIComponent(authorFirst.nextCursor ?? "")}`,
+      owner,
+    );
+    expect(author.items.map((row) => row.speedTitle)).toEqual([
+      "fastest",
+      "fastest",
+    ]);
+
+    await env.DB.prepare("UPDATE claims SET claimed_at=? WHERE id=?")
+      .bind(openedAt - 1, claimIds[0])
+      .run();
+    const preopenIgnored = await data<AuthorClaimList>(
+      `/me/activities/${activity.id}/claims?cursor=${encodeURIComponent(authorFirst.nextCursor ?? "")}`,
+      owner,
+    );
+    expect(preopenIgnored.items.map((row) => row.speedTitle)).toEqual([
+      "fastest",
+      undefined,
+    ]);
+  });
+
+  it("does not assign speed titles to automated draw winners", async () => {
+    const timed = await create(ldc({ ...draw, participantLimit: 1 }));
+    await register(timed.id, await actor());
+    await refreshTimedDraw(bindings, timed.id);
+    const recipients = await data<PublicRecipientList>(
+      `/activities/${timed.id}/recipients`,
+    );
+    expect(recipients.items).toHaveLength(1);
+    expect(recipients.items[0]).not.toHaveProperty("speedTitle");
   });
 
   it("offers a separate public registration roster with 20-row protected cursors", async () => {

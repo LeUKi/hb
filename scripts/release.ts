@@ -129,6 +129,7 @@ export function sourceSnapshot() {
     "tsconfig.json",
     "playwright.config.ts",
     "playwright.full-app.config.ts",
+    "playwright.activity-images.config.ts",
     "playwright.prototype.config.ts",
     ".bun-version",
     ".node-version",

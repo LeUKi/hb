@@ -188,6 +188,7 @@ describe("shared submission cache synchronization", () => {
       const data = cache.getQueryData<ParticipationCache>(key);
       expect(isCompleteParticipation(data)).toBe(true);
       expect(hasParticipation(data)).toBe(true);
+      expect(data?.readAt).toBe(Date.now());
       expect(cache.getQueryState(key)?.isInvalidated).toBe(false);
       await cache.fetchQuery(options);
       expect(request).toHaveBeenCalledTimes(1);
@@ -207,7 +208,10 @@ describe("shared submission cache synchronization", () => {
       { result: "registered", registration },
       () => true,
     );
-    expect(cache.getQueryData(key)).toEqual({ registration });
+    expect(cache.getQueryData(key)).toEqual({
+      registration,
+      readAt: Date.now(),
+    });
     expect(hasParticipation(cache.getQueryData(key))).toBe(true);
     expect(isCompleteParticipation(cache.getQueryData(key))).toBe(false);
     const request = vi.fn(async () => ({ claim: null, registration }));
@@ -228,7 +232,11 @@ describe("shared submission cache synchronization", () => {
       { result: "registered", registration },
       () => true,
     );
-    expect(cache.getQueryData(key)).toEqual({ claim, registration });
+    expect(cache.getQueryData(key)).toEqual({
+      claim,
+      registration,
+      readAt: Date.now(),
+    });
   });
 
   it("updates both the participation claim and detail cache from positive registration winnings", async () => {
@@ -246,6 +254,7 @@ describe("shared submission cache synchronization", () => {
     expect(cache.getQueryData(key)).toEqual({
       claim: winning,
       registration: won,
+      readAt: Date.now(),
     });
     expect(cache.getQueryData(claimDetailKey(userId, winning.id))).toEqual({
       claim: winning,
@@ -272,7 +281,11 @@ describe("shared submission cache synchronization", () => {
     );
     release(empty);
     await inFlight;
-    expect(cache.getQueryData(key)).toEqual({ claim, registration: null });
+    expect(cache.getQueryData(key)).toEqual({
+      claim,
+      registration: null,
+      readAt: Date.now(),
+    });
   });
 
   it("checks the account again after cancellation before writing any private result", async () => {
@@ -303,5 +316,60 @@ describe("shared submission cache synchronization", () => {
       () => true,
     );
     expect(cache.getQueryData(key)).toBeUndefined();
+  });
+
+  it("does not backfill a legacy cache timestamp from reuse or an incorrect submission", async () => {
+    const cache = client();
+    cache.setQueryData(key, { claim, registration: null });
+    const previous = cache.getQueryData<ParticipationCache>(key);
+    vi.setSystemTime(new Date("2026-10-10T00:01:00.000Z"));
+    const get = vi.fn(async () => ({ claim, registration: null }));
+    await cache.fetchQuery({
+      queryKey: key,
+      queryFn: get,
+      staleTime: Infinity,
+    });
+    await syncParticipationResult(
+      cache,
+      userId,
+      activityId,
+      { result: "incorrect" },
+      () => true,
+    );
+    expect(get).not.toHaveBeenCalled();
+    expect(cache.getQueryData(key)).toBe(previous);
+    expect(cache.getQueryData<ParticipationCache>(key)?.readAt).toBeUndefined();
+  });
+
+  it("advances personal fact time only after a successful merge and preserves it on rejected writes", async () => {
+    const cache = client();
+    const readAt = Date.now();
+    cache.setQueryData(key, {
+      claim: ldcClaim(false),
+      registration: null,
+      readAt,
+    });
+    vi.setSystemTime(new Date("2026-10-10T00:00:30.000Z"));
+    await syncParticipationResult(
+      cache,
+      userId,
+      activityId,
+      { result: "already_claimed", claim },
+      () => true,
+    );
+    const confirmed = cache.getQueryData<ParticipationCache>(key);
+    expect(confirmed?.claim?.payment.status).toBe("confirmed");
+    expect(confirmed?.readAt).toBe(Date.now());
+    expect(confirmed?.readAt).toBeGreaterThan(readAt);
+    vi.setSystemTime(new Date("2026-10-10T00:01:00.000Z"));
+    await syncParticipationResult(
+      cache,
+      userId,
+      activityId,
+      { result: "claimed", claim: ldcClaim(false) },
+      () => false,
+    );
+    expect(cache.getQueryData(key)).toBe(confirmed);
+    expect(confirmed?.readAt).toBe(Date.parse("2026-10-10T00:00:30.000Z"));
   });
 });

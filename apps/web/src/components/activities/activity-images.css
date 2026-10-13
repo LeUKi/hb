@@ -1,0 +1,134 @@
+.image-settings {
+  border-top: 1px solid var(--line);
+  margin-top: 24px;
+  padding-top: 20px;
+  min-width: 0;
+}
+.image-settings-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.image-settings-heading h2 {
+  margin: 0;
+}
+.image-settings-timezone {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 16px 0 22px;
+}
+.image-settings-timezone select {
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  padding: 8px;
+  font: inherit;
+}
+.image-settings h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.image-request-record {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 14px;
+}
+.image-settings-note {
+  font-size: 12px;
+  line-height: 1.7;
+  margin: 12px 0 0;
+}
+.activity-image-dialog {
+  width: min(760px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+  max-height: 85dvh;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.activity-image-dialog::backdrop {
+  background: rgb(32 27 22 / 35%);
+}
+.activity-image-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.activity-image-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.activity-image-dialog h2 {
+  font-size: 18px;
+  margin: 0;
+}
+.activity-image-dialog-body {
+  overflow: auto;
+  padding: 20px;
+  display: grid;
+  grid-template-columns: minmax(0, 240px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.activity-image-preview svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.activity-image-code {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+}
+.activity-image-code textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 230px;
+  max-height: 45dvh;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px;
+  font:
+    12px / 1.6 ui-monospace,
+    monospace;
+  color: var(--ink);
+  background: var(--paper);
+}
+.activity-image-code p {
+  font-size: 12px;
+  line-height: 1.7;
+  margin: 0;
+}
+.activity-image-copy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+@media (max-width: 600px) {
+  .activity-image-dialog-body {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 16px;
+  }
+  .activity-image-preview {
+    width: 180px;
+    margin: 0 auto;
+  }
+  .activity-image-code textarea {
+    min-height: 150px;
+  }
+}

@@ -1,5 +1,6 @@
 import { test as base, expect, type Page } from "@playwright/test";
 import { activities, historySamples } from "../../apps/web/prototype/fixtures";
+import { decodeActivityEmoji } from "../../packages/contracts/src";
 
 const test = base.extend<{ localOnly: undefined }>({
   localOnly: [
@@ -38,6 +39,18 @@ async function scenario(page: Page, value: string) {
   await toggle.click();
 }
 
+async function copyShareOption(page: Page, name: string) {
+  const toggle = page.getByRole("button", { name: "分享活动", exact: true });
+  if ((await toggle.getAttribute("aria-expanded")) !== "true")
+    await toggle.click();
+  const menu = page.getByRole("menu", { name: "分享活动", exact: true });
+  await menu.getByRole("menuitem", { name, exact: true }).click();
+  await expect(menu).toBeVisible();
+  await expect(
+    menu.getByRole("menuitem", { name: `${name}，已复制`, exact: true }),
+  ).toHaveText("已复制");
+}
+
 test("ended passwords are initially visible and explicit hiding survives clock ticks", async ({
   page,
 }) => {
@@ -57,20 +70,11 @@ test("ended passwords are initially visible and explicit hiding survives clock t
   );
 });
 
-test("only a published activity author can copy selected invitation content", async ({
+test("share menu keeps Emoji links and only the current viewer's visible passwords", async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto("/#activity?sample=history-random-active");
-  await expect(page.getByRole("button", { name: "复制活动链接" })).toHaveCount(
-    0,
-  );
-  await expect(page.getByRole("button", { name: "复制领取文案" })).toHaveCount(
-    0,
-  );
-  await expect(page.getByRole("button", { name: "管理活动" })).toHaveCount(0);
-  await page.goto("/#activity?sample=20000000-0000-4000-8000-000000000005");
-  await page.evaluate(() => {
+  await page.addInitScript(() => {
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: {
@@ -80,25 +84,69 @@ test("only a published activity author can copy selected invitation content", as
       },
     });
   });
-  await page.getByRole("button", { name: "复制领取文案" }).click();
-  await page.getByRole("menuitem", { name: "不含口令", exact: true }).click();
+  await page.goto("/#activity?sample=history-random-active");
+  await page.getByRole("button", { name: "分享活动" }).click();
+  const menu = page.getByRole("menu", { name: "分享活动" });
+  await expect(menu.getByRole("menuitem")).toHaveText([
+    "复制链接",
+    "复制分享文案",
+    "内嵌代码",
+    "复制口令1",
+  ]);
+  await expect(menu).not.toContainText("历史口令02");
+  await copyShareOption(page, "复制口令1");
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-copied",
+    /兑换口令：历史口令02/,
+  );
+  const sample = historySamples.find(
+    (activity) => activity.id === "history-random-active",
+  );
+  if (!sample) throw new Error("Missing share fixture");
+  const knownCopy = await page.locator("html").getAttribute("data-copied");
+  for (const password of sample.passwords.filter(
+    (value) => value !== "历史口令02",
+  ))
+    expect(knownCopy).not.toContain(password);
+  await copyShareOption(page, "复制链接");
+  const href = await page.locator("html").getAttribute("data-copied");
+  if (!href) throw new Error("Missing copied Emoji link");
+  expect(href).toContain("http://127.0.0.1:4177/e/");
+  const emoji = decodeURIComponent(new URL(href).pathname.slice(3));
+  expect(decodeActivityEmoji(emoji)).not.toBeNull();
+  await page.goto(href);
+  await expect(page).toHaveURL(/\/#activity\?sample=history-random-active$/u);
   await expect(
-    page.getByRole("status").filter({ hasText: "领取文案已复制" }),
+    page.getByRole("heading", { name: sample.title, exact: true }),
   ).toBeVisible();
+  for (const input of [href, emoji]) {
+    await page.goto("/#home");
+    await page.getByRole("textbox", { name: "口令", exact: true }).fill(input);
+    await page.getByRole("button", { name: "跳转活动", exact: true }).click();
+    await expect(page).toHaveURL(/#activity\?sample=history-random-active$/u);
+  }
+  await page.goto("/#activity?sample=20000000-0000-4000-8000-000000000005");
+  await copyShareOption(page, "复制分享文案");
+  await expect(page.locator(".copy-toast")).toHaveCount(0);
   const without = await page.locator("html").getAttribute("data-copied");
   const passwords = await page.locator(".pw-reveal__value").allTextContents();
-  expect(without).toContain("#activity?sample=20000000");
+  expect(without).toContain("http://127.0.0.1:4177/e/");
   for (const password of passwords) expect(without).not.toContain(password);
-  await page.getByRole("button", { name: "复制领取文案" }).click();
-  await page.getByRole("menuitem", { name: "包含全部口令" }).click();
-  const withPasswords = await page.locator("html").getAttribute("data-copied");
-  for (const password of passwords) expect(withPasswords).toContain(password);
+  for (const [index, password] of passwords.entries()) {
+    await copyShareOption(page, `复制口令${index + 1}`);
+    const withPassword = await page.locator("html").getAttribute("data-copied");
+    expect(withPassword).toContain(password);
+    for (const other of passwords.filter((value) => value !== password))
+      expect(withPassword).not.toContain(other);
+  }
   await page.getByRole("button", { name: "场景与身份" }).click();
   await page.getByRole("combobox", { name: "体验身份" }).selectOption("guest");
   await page.getByRole("button", { name: "场景与身份" }).click();
-  await expect(page.getByRole("button", { name: "复制领取文案" })).toHaveCount(
-    0,
-  );
+  await page.getByRole("button", { name: "分享活动" }).click();
+  await expect(
+    page.getByRole("menu", { name: "分享活动" }).getByRole("menuitem"),
+  ).toHaveText(["复制链接", "复制分享文案", "内嵌代码"]);
+  await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "管理活动" })).toHaveCount(0);
 });
 
@@ -109,7 +157,7 @@ for (const width of [1440, 375]) {
     await page.setViewportSize({ width, height: 950 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/#activity?sample=20000000-0000-4000-8000-000000000001");
-    const copy = page.getByRole("button", { name: "复制领取文案" });
+    const copy = page.getByRole("button", { name: "分享活动" });
     const manage = page.getByRole("button", { name: "管理活动" });
     const title = page.locator(".activity-title-row h1");
     const copyBox = await copy.boundingBox();
@@ -158,13 +206,9 @@ for (const width of [1440, 375]) {
       expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(width);
     }
     await copy.click();
-    await expect(
-      page.getByRole("menu", { name: "复制领取文案" }),
-    ).toBeVisible();
+    await expect(page.getByRole("menu", { name: "分享活动" })).toBeVisible();
     await manage.click();
-    await expect(page.getByRole("menu", { name: "复制领取文案" })).toHaveCount(
-      0,
-    );
+    await expect(page.getByRole("menu", { name: "分享活动" })).toHaveCount(0);
     await expect(page.getByRole("menu", { name: "管理活动" })).toBeVisible();
     await title.click();
     await expect(page.getByRole("menu")).toHaveCount(0);
@@ -366,7 +410,7 @@ for (const width of [1440, 375]) {
 
     await page.getByRole("menu").press("Escape");
     await page.goto("/#activity?sample=20000000-0000-4000-8000-000000000005");
-    await page.getByRole("button", { name: "复制领取文案" }).click();
+    await page.getByRole("button", { name: "分享活动" }).click();
     await expect(page.getByRole("menu")).toBeVisible();
   });
 }

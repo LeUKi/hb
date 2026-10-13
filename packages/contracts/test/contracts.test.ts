@@ -6,10 +6,13 @@ import {
   adminCursorSchema,
   adminPaymentsQuerySchema,
   claimActivitySchema,
+  claimElapsedMs,
+  claimSpeedTitle,
   createActivitySchema,
   decodeActivityEmoji,
   emptyActivityInput,
   encodeActivityEmoji,
+  formatClaimSeconds,
   historicalActivityInputSchema,
   newActivityInputSchema,
   normalizeTopicLink,
@@ -30,6 +33,25 @@ function validActivity() {
 }
 
 describe("shared activity contracts", () => {
+  it("formats recipient speed titles from valid post-open claim times only", () => {
+    expect(
+      claimElapsedMs("2026-10-13T00:00:00.000Z", "2026-10-13T00:00:10.001Z"),
+    ).toBe(10_001);
+    expect(
+      claimElapsedMs("2026-10-13T00:00:00.000Z", "2026-10-12T23:59:59.999Z"),
+    ).toBeNull();
+    expect(claimElapsedMs("invalid", "2026-10-13T00:00:00.000Z")).toBeNull();
+    expect(claimElapsedMs(null, "2026-10-13T00:00:00.000Z")).toBeNull();
+    expect(formatClaimSeconds(0)).toBe("0秒");
+    expect(formatClaimSeconds(1)).toBe("0.001秒");
+    expect(formatClaimSeconds(1_200)).toBe("1.2秒");
+    expect(formatClaimSeconds(9_999)).toBe("9.999秒");
+    expect(formatClaimSeconds(10_001)).toBe("10.001秒");
+    expect(claimSpeedTitle(9_999)).toBe("flash");
+    expect(claimSpeedTitle(10_000)).toBe("flash");
+    expect(claimSpeedTitle(10_001)).toBe("fastest");
+  });
+
   it("keeps legacy password requests unchanged and accepts explicit direct participation only", () => {
     const legacy = { submissionId: itemId, password: "ABC123" };
     expect(JSON.stringify(claimActivitySchema.parse(legacy))).toBe(

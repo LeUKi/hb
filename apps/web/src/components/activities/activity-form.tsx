@@ -44,6 +44,7 @@ import { Help } from "../presentation/context-help";
 import { SegmentedControl } from "../presentation/list-controls";
 import { PasswordInput } from "../presentation/password-input";
 import { TopicLinkInput } from "../presentation/topic-link-input";
+import { ActionButton, useActionFeedback } from "../ui/action-feedback";
 import { createLdcDrafts, LdcFields } from "./ldc-fields";
 import { MarkdownField, type MarkdownMode } from "./markdown";
 
@@ -274,6 +275,7 @@ export function ActivityForm({
   reload,
   onRefreshed,
   onDeleted,
+  initialFeedback,
 }: {
   userId: string;
   csrfToken: string;
@@ -283,6 +285,7 @@ export function ActivityForm({
   reload?: () => Promise<ManagedActivity>;
   onRefreshed?: (activity: ManagedActivity) => void;
   onDeleted?: () => void | Promise<void>;
+  initialFeedback?: string | null;
 }) {
   const [persisted, setPersisted] = useState(initial);
   const [defaultValues, setDefaultValues] = useState(() =>
@@ -302,7 +305,6 @@ export function ActivityForm({
   const [touchedFields, setTouchedFields] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
-  const [message, setMessage] = useState<string | null>(null);
   const [uncertainRequest, setUncertainRequest] =
     useState<PendingSaveRequest | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -322,7 +324,27 @@ export function ActivityForm({
   const savedNavigation = useRef(false);
   const writes = useActivityWrites(userId, csrfToken, persisted?.id);
   const opening = useActivityOpening(userId, csrfToken);
+  const openFeedback = useActionFeedback(
+    `activity-open:${userId}:${csrfToken}:${persisted?.id ?? "new"}`,
+  );
+  const draftFeedback = useActionFeedback(
+    `activity-draft:${userId}:${csrfToken}:${persisted?.id ?? "new"}`,
+  );
+  const retryFeedback = useActionFeedback(
+    `activity-retry:${userId}:${csrfToken}:${persisted?.id ?? "new"}`,
+  );
+  const refreshFeedback = useActionFeedback(
+    persisted
+      ? `activity-refresh:${userId}:${csrfToken}:${persisted.id}`
+      : null,
+  );
+  const deleteFeedback = useActionFeedback(
+    persisted ? `activity-delete:${userId}:${csrfToken}:${persisted.id}` : null,
+  );
   const opened = persisted !== undefined && persisted.status !== "draft";
+  const showOpenFeedback = openFeedback.show;
+  const showDraftFeedback = draftFeedback.show;
+  const showRefreshFeedback = refreshFeedback.show;
   const ended =
     persisted?.status === "ended" || persisted?.status === "archived";
   const historicalPasswords = (persisted?.config.passwords.length ?? 0) > 5;
@@ -342,6 +364,27 @@ export function ActivityForm({
       active.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!initialFeedback) return;
+    if (initialFeedback.includes("刷新"))
+      showRefreshFeedback("已刷新", initialFeedback);
+    else if (initialFeedback === "活动已开放。")
+      showOpenFeedback("已开放", initialFeedback);
+    else if (
+      initialFeedback.startsWith("草稿已保存。") &&
+      initialFeedback !== "草稿已保存。"
+    )
+      showOpenFeedback("开放失败", initialFeedback);
+    else if (opened) showOpenFeedback("已保存", initialFeedback);
+    else showDraftFeedback("已保存", initialFeedback);
+  }, [
+    initialFeedback,
+    opened,
+    showDraftFeedback,
+    showOpenFeedback,
+    showRefreshFeedback,
+  ]);
 
   function markTouched(path: string) {
     setTouchedFields((current) => new Set(current).add(path));
@@ -425,11 +468,19 @@ export function ActivityForm({
     retry?: PendingSaveRequest,
   ) {
     if (inFlight.current) return;
+    const feedback = retry
+      ? retryFeedback
+      : openAfter || opened
+        ? openFeedback
+        : draftFeedback;
     if (!canUseLdc) {
-      setMessage("青春版暂不支持保存或开放LDC活动，请使用官方Connect升级。");
+      feedback.show(
+        "无法保存",
+        "青春版暂不支持保存或开放LDC活动，请使用官方Connect升级。",
+      );
       return;
     }
-    setMessage(null);
+    feedback.clear();
     setIssues([]);
     const pending =
       retry ??
@@ -451,7 +502,10 @@ export function ActivityForm({
     if (
       byteLength(JSON.stringify(pending.request)) > ACTIVITY_LIMITS.requestBytes
     ) {
-      setMessage("提交内容超过 1 MiB，请减少奖励或说明的内容后再保存。");
+      feedback.show(
+        "保存失败",
+        "提交内容超过 1 MiB，请减少奖励或说明的内容后再保存。",
+      );
       return;
     }
     inFlight.current = true;
@@ -493,7 +547,7 @@ export function ActivityForm({
         const notice =
           "草稿已保存。" +
           (error instanceof Error ? error.message : "开放未完成，请重试。");
-        setMessage(notice);
+        openFeedback.show("开放失败", notice);
         onSaved(savedActivity, notice);
       } else if (
         pending.kind === "update" &&
@@ -511,7 +565,10 @@ export function ActivityForm({
         } catch {
           if (!active.current || !writes.isCurrentSession()) return;
           setUncertainRequest(pending);
-          setMessage("尚未确认保存结果，请重试原提交，避免重复提交。");
+          retryFeedback.show(
+            "结果未知",
+            "尚未确认保存结果，请重试原提交，避免重复提交。",
+          );
           return;
         }
         if (!active.current || !writes.isCurrentSession()) return;
@@ -538,19 +595,20 @@ export function ActivityForm({
                 (openError instanceof Error
                   ? openError.message
                   : "开放未完成，请重试。");
-              setMessage(notice);
+              openFeedback.show("开放失败", notice);
               onSaved(current.activity, notice);
             }
           } else {
             savedNavigation.current = true;
-            setMessage("修改已保存。");
+            feedback.show("已保存");
             onSaved(current.activity);
           }
         } else {
           setPersisted(current.activity);
           setUncertainRequest(null);
           setDefaultValues(formValues(current.activity.config));
-          setMessage(
+          feedback.show(
+            "保存失败",
             "当前输入已保留。" +
               (error instanceof Error
                 ? error.message
@@ -564,10 +622,14 @@ export function ActivityForm({
         error.status >= 500
       ) {
         setUncertainRequest(pending);
-        setMessage("尚未确认保存结果，请重试原提交，避免重复提交。");
+        retryFeedback.show(
+          "结果未知",
+          "尚未确认保存结果，请重试原提交，避免重复提交。",
+        );
       } else {
         setUncertainRequest(null);
-        setMessage(
+        feedback.show(
+          "保存失败",
           error instanceof Error ? error.message : "保存失败，请稍后重试。",
         );
         if (error instanceof ActivityRequestError && error.issues.length)
@@ -637,14 +699,15 @@ export function ActivityForm({
       return;
     inFlight.current = true;
     setRefreshing(true);
-    setMessage(null);
+    refreshFeedback.clear();
     try {
       const activity = await reload();
       if (!active.current || !writes.isCurrentSession()) return;
+      refreshFeedback.show("已刷新");
       onRefreshed(activity);
     } catch {
       if (active.current && writes.isCurrentSession())
-        setMessage("刷新失败，请重试。");
+        refreshFeedback.show("刷新失败", "刷新失败，请重试。");
     } finally {
       inFlight.current = false;
       if (active.current) setRefreshing(false);
@@ -662,7 +725,7 @@ export function ActivityForm({
       return;
     if (!window.confirm("确定删除这个准备中的活动吗？删除后不能恢复。")) return;
     inFlight.current = true;
-    setMessage(null);
+    deleteFeedback.clear();
     try {
       await writes.remove.mutateAsync({ version: persisted.version });
       if (!active.current || !writes.isCurrentSession()) return;
@@ -670,7 +733,8 @@ export function ActivityForm({
       await onDeleted();
     } catch (error) {
       if (active.current && writes.isCurrentSession())
-        setMessage(
+        deleteFeedback.show(
+          "删除失败",
           error instanceof Error
             ? error.message
             : "删除失败，请刷新活动内容后重试。",
@@ -732,34 +796,31 @@ export function ActivityForm({
               {persisted.status === "draft" ? "预览活动页" : "查看活动页"}
             </Link>
             {reload && onRefreshed ? (
-              <button
+              <ActionButton
                 type="button"
-                className="compact-icon-button list-refresh-button"
-                aria-label="刷新"
+                className="compact-icon-button list-refresh-button action-refresh-button"
+                label="刷新"
                 title="刷新"
+                feedback={refreshFeedback.feedback}
+                icon={<RefreshCw size={16} aria-hidden="true" />}
+                reserve={["已刷新", "刷新失败"]}
                 aria-busy={refreshing}
                 disabled={busy || Boolean(uncertainRequest)}
                 onClick={() => void refresh()}
-              >
-                <RefreshCw size={16} aria-hidden="true" />
-              </button>
+              />
             ) : null}
             {persisted.status === "draft" && onDeleted ? (
-              <button
+              <ActionButton
                 type="button"
                 className="button secondary"
+                label={writes.remove.isPending ? "正在删除…" : "删除草稿"}
+                feedback={deleteFeedback.feedback}
+                reserve={["删除失败", "正在删除…"]}
                 disabled={busy || Boolean(uncertainRequest)}
                 onClick={() => void removeDraft()}
-              >
-                {writes.remove.isPending ? "正在删除…" : "删除草稿"}
-              </button>
+              />
             ) : null}
           </div>
-        ) : null}
-        {message ? (
-          <p role="alert" className="work-form-error">
-            {message}
-          </p>
         ) : null}
         {issues.length ? (
           <div
@@ -1265,9 +1326,19 @@ export function ActivityForm({
         ) : null}
         {uncertainRequest ? (
           <div className="work-summary-actions">
-            <button
+            <ActionButton
               type="button"
               className="button"
+              label={busy ? pendingLabel : "重试原提交"}
+              feedback={retryFeedback.feedback}
+              reserve={[
+                "重试原提交",
+                "结果未知",
+                "已保存",
+                "保存失败",
+                "开放失败",
+                pendingLabel,
+              ]}
               disabled={busy}
               onClick={() =>
                 void save(
@@ -1276,34 +1347,41 @@ export function ActivityForm({
                   uncertainRequest,
                 )
               }
-            >
-              {busy ? pendingLabel : "重试原提交"}
-            </button>
+            />
           </div>
         ) : (
           <div className="work-summary-actions">
-            <button
+            <ActionButton
               className="button"
               type="submit"
               value="open"
+              label={busy ? pendingLabel : opened ? "保存修改" : "保存并开放"}
+              feedback={openFeedback.feedback}
+              icon={<ArrowRight size={17} aria-hidden="true" />}
+              reserve={[
+                "保存修改",
+                "保存并开放",
+                "已保存",
+                "保存失败",
+                "开放失败",
+                pendingLabel,
+              ]}
               disabled={busy || openingBlocked || !canUseLdc}
               onClick={(event) => {
                 event.preventDefault();
                 submitCurrent(!opened);
               }}
-            >
-              {busy ? pendingLabel : opened ? "保存修改" : "保存并开放"}{" "}
-              <ArrowRight size={17} />
-            </button>
+            />
             {!opened ? (
-              <button
+              <ActionButton
                 className="button secondary"
                 type="button"
+                label="保存草稿"
+                feedback={draftFeedback.feedback}
+                reserve={["已保存", "保存失败", pendingLabel]}
                 disabled={busy || !canUseLdc}
                 onClick={() => submitCurrent(false)}
-              >
-                保存草稿
-              </button>
+              />
             ) : null}
           </div>
         )}

@@ -77,7 +77,7 @@ async function mockSession(
 
 function publicUserButton(page: Page, name = "Ada") {
   return page
-    .getByTestId("envelope")
+    .locator(".activity-meta")
     .getByRole("button", { name, exact: true });
 }
 
@@ -121,9 +121,7 @@ test.describe("触屏用户卡片", () => {
 
     await trigger.tap();
     await expect(dialog).toBeVisible();
-    await page
-      .getByRole("heading", { name: "用户卡片交互测试", exact: true })
-      .tap();
+    await page.locator(".site-header").tap({ position: { x: 4, y: 4 } });
     await expect(dialog).toHaveCount(0);
   });
 });

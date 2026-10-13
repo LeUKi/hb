@@ -63,11 +63,15 @@ test("author management menu links to the same statistics view", async ({
   page,
 }) => {
   await page.goto(`/#activity?sample=${dedicatedId}`);
-  await page.getByRole("button", { name: "复制领取文案" }).click();
-  const copyMenu = page.getByRole("menu", { name: "复制领取文案" });
+  await page.getByRole("button", { name: "分享活动" }).click();
+  const copyMenu = page.getByRole("menu", { name: "分享活动" });
   await expect(copyMenu.getByRole("menuitem")).toHaveText([
-    "不含口令",
-    "包含全部口令",
+    "复制链接",
+    "复制分享文案",
+    "内嵌代码",
+    ...(await page
+      .locator(".pw-reveal__value")
+      .evaluateAll((rows) => rows.map((_, index) => `复制口令${index + 1}`))),
   ]);
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "管理活动" }).click();

@@ -18,10 +18,19 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import {
+  type ActionFeedback,
+  ActionFeedbackLabel,
+} from "../ui/action-feedback";
+import { type CopyAction, CopyButton } from "../ui/copy-button";
 import { portalPosition, usePortalTarget } from "./portal-target";
 
 export type ActionMenuItem = {
   label: string;
+  copy?: CopyAction;
+  feedback?: ActionFeedback | null;
+  keepOpen?: boolean;
+  reserve?: readonly string[];
   onSelect?: () => void;
   href?: string;
   selected?: boolean;
@@ -352,7 +361,19 @@ function ActionMenuPanel({
       onKeyDown={keyboard}
     >
       {items.map((item) =>
-        item.href && !item.disabled ? (
+        item.copy ? (
+          <CopyButton
+            key={item.label}
+            label={item.label}
+            getText={item.copy.getText}
+            scope={item.copy.scope}
+            canCopy={() => present && item.copy?.canCopy?.() !== false}
+            role="menuitem"
+            className="action-menu-item"
+            tabIndex={-1}
+            disabled={item.disabled}
+          />
+        ) : item.href && !item.disabled ? (
           <Link
             key={item.label}
             to={item.href}
@@ -360,7 +381,7 @@ function ActionMenuPanel({
             className="action-menu-item"
             tabIndex={-1}
             onClick={() => {
-              close(true);
+              if (!item.keepOpen) close(true);
               item.onSelect?.();
             }}
           >
@@ -375,14 +396,29 @@ function ActionMenuPanel({
               : { role: "menuitem" })}
             data-selected={item.selected}
             className="action-menu-item"
+            aria-label={
+              item.feedback
+                ? `${item.label}，${item.feedback.label}`
+                : undefined
+            }
+            title={item.feedback?.detail}
+            aria-description={item.feedback?.detail}
             tabIndex={-1}
             disabled={item.disabled}
             onClick={() => {
-              close(true);
+              if (!item.keepOpen) close(true);
               item.onSelect?.();
             }}
           >
-            <span>{item.label}</span>
+            {"feedback" in item ? (
+              <ActionFeedbackLabel
+                label={item.label}
+                feedback={item.feedback}
+                reserve={item.reserve}
+              />
+            ) : (
+              <span>{item.label}</span>
+            )}
             {item.selected && <Check size={16} aria-hidden="true" />}
           </button>
         ),

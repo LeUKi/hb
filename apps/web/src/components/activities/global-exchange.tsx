@@ -3,6 +3,7 @@ import { useAtom, useSetAtom } from "jotai";
 import { ArrowRight, LoaderCircle } from "lucide-react";
 import {
   type Ref,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -12,7 +13,7 @@ import { flushSync } from "react-dom";
 import { ActivityRequestError } from "../../lib/activities";
 import { useAttemptCooldown } from "../../lib/attempt-cooldown";
 import { getAttemptTicket, settleAttempt } from "../../lib/attempt-history";
-import { useAccountSession, useSession } from "../../lib/auth";
+import { sessionScope, useAccountSession, useSession } from "../../lib/auth";
 import {
   exchangeContextAtom,
   useGlobalRedemptionDiscovery,
@@ -36,6 +37,7 @@ import { Help } from "../presentation/context-help";
 import { RefreshNotice } from "../presentation/loading";
 import { PasswordInput } from "../presentation/password-input";
 import { RedemptionAction } from "../presentation/redemption-transition";
+import { ActionFeedbackLabel, useActionFeedback } from "../ui/action-feedback";
 import { ActivityErrorView } from "./activity-error";
 import { TopicMatches } from "./activity-locator";
 import { ActivitySelection } from "./activity-selection";
@@ -51,7 +53,7 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
   const userId = user?.id ?? "";
   const accountTier = user?.accountTier ?? "standard";
   const csrfToken = session.data?.csrfToken ?? "";
-  const identity = session.isSuccess ? `${userId}:${accountTier}` : null;
+  const identity = session.isSuccess ? sessionScope(session.data) : null;
   const previousIdentity = useRef<string | null>(null);
   const selectionOverlay = useHistoryOverlay("redemption-selection");
   const locatorOverlay = useHistoryOverlay("locator-selection");
@@ -59,7 +61,10 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
   const setIntent = useSetAtom(redemptionIntentAtom);
   const [context, setContext] = useAtom(exchangeContextAtom);
   const ownContext =
-    user && context?.userId === userId && context.accountTier === accountTier
+    user &&
+    context?.sessionScope === identity &&
+    context.userId === userId &&
+    context.accountTier === accountTier
       ? context
       : null;
   const suppressLocatorOverlay = useRef(false);
@@ -71,7 +76,28 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
   const [password, setPassword] = useState(
     ownContext?.password ?? restoredTopic?.topicUrl ?? "",
   );
-  const [message, setMessage] = useState<string | null>(null);
+  const submitFeedback = useActionFeedback(identity);
+  const setMessage = useCallback(
+    (message: string | null) => {
+      if (!message) {
+        submitFeedback.clear();
+        return;
+      }
+      const label =
+        message === "未匹配到活动。"
+          ? "未匹配"
+          : message === "请先登录。"
+            ? "请先登录"
+            : message.includes("尚未确认")
+              ? "待确认"
+              : message.includes("过于频繁")
+                ? "请稍后重试"
+                : "操作失败";
+      submitFeedback.show(label, message);
+    },
+    [submitFeedback.clear, submitFeedback.show],
+  );
+
   const [officialRequired, setOfficialRequired] = useState(false);
   const [composing, setComposing] = useState(false);
   const [topic, setTopic] = useState<
@@ -88,7 +114,7 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
   const alive = useRef(true);
   const inFlight = useRef(false);
   const mutation = useGlobalRedemptionDiscovery(userId, csrfToken);
-  const account = useAccountSession(userId);
+  const account = useAccountSession(userId, "session");
   const cooldown = useAttemptCooldown(userId);
   const resultQuery = useRedemptionResult(
     userId,
@@ -188,6 +214,7 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
     locatorOverlay.discard,
     setContext,
     setIntent,
+    setMessage,
   ]);
   useEffect(() => {
     const open = Boolean(locatorOverlay.overlay);
@@ -229,6 +256,7 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
     selectionOverlay.discard,
     setContext,
     setIntent,
+    setMessage,
   ]);
   async function submit() {
     if (inFlight.current || composing) return;
@@ -270,9 +298,11 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
     if (selectionOverlay.overlay) selectionOverlay.close();
     setOfficialRequired(false);
     const identity = account.captureIdentity();
+    if (!identity) return;
     setContext({
       userId,
       accountTier,
+      sessionScope: identity,
       password: submission.password,
       submission,
       claimSubmissionId: uncertain ? ownContext.claimSubmissionId : null,
@@ -294,6 +324,7 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
       setContext({
         userId,
         accountTier,
+        sessionScope: identity,
         password: submission.password,
         submission,
         claimSubmissionId: result.claimSubmissionId,
@@ -305,6 +336,7 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
         setContext({
           userId,
           accountTier,
+          sessionScope: identity,
           password: submission.password,
           submission,
           claimSubmissionId: result.claimSubmissionId,
@@ -348,6 +380,16 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
     }
   }
 
+  const actionLabel = mutation.isPending
+    ? "正在确认…"
+    : uncertain
+      ? "再次确认"
+      : blockedByCooldown
+        ? `还需等待 ${seconds} 秒`
+        : locating
+          ? "跳转活动"
+          : "兑奖";
+
   return (
     <>
       <form
@@ -380,30 +422,25 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
             void submit();
           }}
         />
-        {message ? (
-          <p role="status" className="form-message">
-            {message}
-          </p>
-        ) : null}
         {officialRequired ? (
           <OfficialConnectRequired
             returnTo="/"
             message="青春版可以跳转查看活动；兑奖需要使用官方 Connect 升级后重新提交口令。"
           />
         ) : null}
-        {uncertain && !mutation.isPending && !message ? (
-          <p role="status" className="form-message">
-            上次提交结果尚未确认，请重试原提交。
-          </p>
-        ) : null}
-        {seconds > 0 ? (
-          <p role="timer" className="form-message">
-            {seconds} 秒后可重试
-          </p>
-        ) : null}
         {(hasInput || uncertain || mutation.isPending) && (
           <RedemptionAction
             className="button claim-button"
+            title={
+              submitFeedback.feedback?.detail ??
+              (uncertain ? "上次提交结果尚未确认，请重试原提交。" : undefined)
+            }
+            aria-description={submitFeedback.feedback?.detail}
+            aria-label={
+              submitFeedback.feedback && !mutation.isPending
+                ? `${actionLabel}，${submitFeedback.feedback.label}`
+                : actionLabel
+            }
             type="submit"
             disabled={
               mutation.isPending ||
@@ -415,13 +452,11 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
             {mutation.isPending && (
               <LoaderCircle size={18} className="spin" aria-hidden="true" />
             )}
-            {mutation.isPending
-              ? "正在确认…"
-              : uncertain
-                ? "再次确认"
-                : locating
-                  ? "跳转活动"
-                  : "兑奖"}
+            <ActionFeedbackLabel
+              label={actionLabel}
+              feedback={mutation.isPending ? null : submitFeedback.feedback}
+              reserve={["正在确认…", "操作失败", "请稍后重试"]}
+            />
             <ArrowRight size={17} aria-hidden="true" />
           </RedemptionAction>
         )}

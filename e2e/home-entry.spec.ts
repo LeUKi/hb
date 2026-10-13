@@ -449,9 +449,9 @@ test("登录账号冷却会禁用普通口令，但不拦截 UUID 跳转", async
 
   await input.fill("abcdef");
   await expect(
-    page.getByRole("button", { name: "兑奖", exact: true }),
+    page.getByRole("button", { name: /^还需等待 \d+ 秒$/ }),
   ).toBeDisabled();
-  await expect(page.getByRole("timer")).toContainText("秒后可重试");
+  await expect(page.getByRole("timer")).toHaveCount(0);
 
   await input.fill(id);
   await expectLocatorMode(page);
@@ -610,7 +610,9 @@ test("前一次普通口令未匹配后，活动标识跳转不会沿用发现�
 
   await input.fill("abcdef");
   await page.getByRole("button", { name: "兑奖", exact: true }).click();
-  await expect(page.locator(".form-message")).toContainText("未匹配到活动。");
+  await expect(
+    page.getByRole("button", { name: "兑奖，未匹配", exact: true }),
+  ).toHaveAttribute("title", "未匹配到活动。");
   expect(state.discovers).toHaveLength(1);
 
   await input.fill(id);

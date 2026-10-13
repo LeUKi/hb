@@ -29,7 +29,12 @@ import { PageTitle } from "../../prototype-ui/workbench-ui";
 import { ActivityErrorView } from "../activities/activity-error";
 import { CompactIconButton } from "../presentation/compact-icon-button";
 import { Help } from "../presentation/context-help";
-import { RefreshNotice, SkeletonRows } from "../presentation/loading";
+import { SkeletonRows } from "../presentation/loading";
+import {
+  ActionButton,
+  ActionFeedbackLabel,
+  useActionFeedback,
+} from "../ui/action-feedback";
 import {
   hasMerchantChangeImpact,
   MerchantConfigChangeDialog,
@@ -56,6 +61,51 @@ const credentialFailureReasons: Record<string, string> = {
   redirect: "凭证验证返回了重定向，暂时无法确认结果。",
   invalid_response: "上游响应格式无法识别，暂时无法验证凭证。",
 };
+
+const refreshButtonStyle = {
+  width: "auto",
+  minWidth: "max-content",
+  paddingInline: 8,
+} as const;
+
+const refreshContentStyle = {
+  display: "inline-grid",
+  alignItems: "center",
+  justifyItems: "center",
+} as const;
+
+const refreshSlotStyle = {
+  gridArea: "1 / 1",
+} as const;
+
+function RefreshFeedbackContent({
+  feedback,
+}: {
+  feedback?: { label: string; detail?: string } | null;
+}) {
+  return (
+    <span style={refreshContentStyle}>
+      <span style={{ ...refreshSlotStyle, visibility: "hidden" }}>
+        <ActionFeedbackLabel
+          label="刷新"
+          feedback={feedback}
+          reserve={["刷新", "已刷新", "刷新失败"]}
+        />
+      </span>
+      <span style={refreshSlotStyle}>
+        {feedback ? (
+          <ActionFeedbackLabel
+            label="刷新"
+            feedback={feedback}
+            reserve={["刷新", "已刷新", "刷新失败"]}
+          />
+        ) : (
+          <RefreshCw size={16} />
+        )}
+      </span>
+    </span>
+  );
+}
 
 export function LoadMerchant({
   id,
@@ -103,7 +153,11 @@ export function LoadMerchant({
       csrfToken={csrfToken}
       selection={selection}
       onOpenPayments={onOpenPayments}
-      refreshNotice={<RefreshNotice query={query} />}
+      staleRefreshError={
+        query.isError && query.data !== undefined
+          ? "刷新失败，当前内容已保留。"
+          : null
+      }
       refresh={async () => {
         const result = await query.refetch();
         if (result.isError || !result.data)
@@ -120,7 +174,7 @@ function MerchantConfiguration({
   csrfToken,
   selection,
   onOpenPayments,
-  refreshNotice,
+  staleRefreshError,
   refresh,
 }: {
   merchant: Merchant;
@@ -128,7 +182,7 @@ function MerchantConfiguration({
   csrfToken: string;
   selection?: ReactNode;
   onOpenPayments: (event: MouseEvent<HTMLAnchorElement>) => void;
-  refreshNotice: ReactNode;
+  staleRefreshError?: string | null;
   refresh: () => Promise<Merchant>;
 }) {
   const [baseline, setBaseline] = useState(merchant);
@@ -138,7 +192,11 @@ function MerchantConfiguration({
   const [scenario, setScenario] = useState<SimulationScenario>(
     merchant.mode === "simulation" ? merchant.scenario : "normal",
   );
-  const [message, setMessage] = useState<string | null>(null);
+  const saveFeedback = useActionFeedback(`merchant:${merchant.id}:save`);
+  const refreshFeedback = useActionFeedback(`merchant:${merchant.id}:refresh`);
+  const simulateFeedback = useActionFeedback(
+    `merchant:${merchant.id}:simulate`,
+  );
   const [refreshing, setRefreshing] = useState(false);
   const [pending, setPending] = useState<UpdateMerchantInput | null>(null);
   const [warning, setWarning] = useState<{
@@ -196,7 +254,7 @@ function MerchantConfiguration({
   }
   function edited() {
     requestId.current = null;
-    setMessage(null);
+    saveFeedback.clear();
   }
   function reset(latest: Merchant) {
     setBaseline(latest);
@@ -210,12 +268,12 @@ function MerchantConfiguration({
   }
   async function performSave(submission: UpdateMerchantInput) {
     setPending(submission);
-    setMessage(null);
+    saveFeedback.clear();
     try {
       const result = await writes.update.mutateAsync(submission);
       if (!currentOperation()) return;
       reset(result.merchant);
-      setMessage("商户配置已保存。");
+      saveFeedback.show("已保存");
       writes.update.reset();
     } catch (error) {
       if (!currentOperation()) return;
@@ -228,17 +286,17 @@ function MerchantConfiguration({
           },
           change: error.change,
         });
-        setMessage(error.message);
+        saveFeedback.show("需要确认", error.message);
       } else if (
         !(error instanceof ActivityRequestError) ||
         error.status >= 500
       ) {
-        setMessage("尚未确认保存结果，请重试原提交。");
+        saveFeedback.show("重试原提交", "尚未确认保存结果，请重试原提交。");
       } else {
         setPending(null);
         setWarning(null);
         requestId.current = null;
-        setMessage(error.message);
+        saveFeedback.show("保存失败", error.message);
       }
     }
   }
@@ -254,7 +312,7 @@ function MerchantConfiguration({
       requestId: requestId.current,
     });
     if (!checked.success) return;
-    setMessage(null);
+    saveFeedback.clear();
     try {
       if (secret || clientChanged) {
         const change = await writes.changeImpact.mutateAsync();
@@ -271,7 +329,8 @@ function MerchantConfiguration({
       } else await performSave(checked.data);
     } catch (error) {
       if (currentOperation())
-        setMessage(
+        saveFeedback.show(
+          "保存失败",
           error instanceof Error ? error.message : "保存失败，请重试。",
         );
     }
@@ -281,14 +340,15 @@ function MerchantConfiguration({
     if (changed && !window.confirm("刷新会放弃未保存的修改，是否继续？"))
       return;
     setRefreshing(true);
-    setMessage(null);
+    refreshFeedback.clear();
     try {
       const latest = await refresh();
       if (!currentOperation()) return;
       reset(latest);
-      setMessage("商户配置已刷新。");
+      refreshFeedback.show("已刷新");
     } catch {
-      if (currentOperation()) setMessage("刷新失败，请重试。");
+      if (currentOperation())
+        refreshFeedback.show("刷新失败", "刷新失败，请重试。");
     } finally {
       if (currentOperation()) setRefreshing(false);
     }
@@ -301,18 +361,21 @@ function MerchantConfiguration({
     )
       return;
     try {
+      simulateFeedback.clear();
       await writes.simulate.mutateAsync(scenario);
-      if (currentOperation()) setMessage("模拟情形已设置。");
+      if (currentOperation()) simulateFeedback.show("已应用");
     } catch (error) {
       if (currentOperation())
-        setMessage(error instanceof Error ? error.message : "设置失败。");
+        simulateFeedback.show(
+          "设置失败",
+          error instanceof Error ? error.message : "设置失败。",
+        );
     }
   }
   return (
     <div className="work-page">
       <PageTitle title="商户配置" />
       {selection}
-      {refreshNotice}
       <div className="work-merchant-layout">
         <form
           className="work-merchant-form"
@@ -324,13 +387,25 @@ function MerchantConfiguration({
           <div className="work-merchant-heading">
             <h2>{baseline.label}</h2>
             <CompactIconButton
-              aria-label="刷新"
-              title="刷新"
+              aria-label={
+                refreshFeedback.feedback
+                  ? `刷新，${refreshFeedback.feedback.label}`
+                  : "刷新"
+              }
+              title={
+                refreshFeedback.feedback?.detail ?? staleRefreshError ?? "刷新"
+              }
+              aria-description={
+                refreshFeedback.feedback?.detail ??
+                staleRefreshError ??
+                undefined
+              }
               aria-busy={refreshing}
               disabled={locked}
+              style={refreshButtonStyle}
               onClick={() => void reload()}
             >
-              <RefreshCw size={16} />
+              <RefreshFeedbackContent feedback={refreshFeedback.feedback} />
             </CompactIconButton>
           </div>
           <div className="field">
@@ -405,22 +480,25 @@ function MerchantConfiguration({
               修改 Client ID 时，请同时填写该应用对应的商户密钥。
             </p>
           ) : null}
-          {message ? (
-            <p className="work-form-error" role="status">
-              {message}
-            </p>
-          ) : null}
           <div className="work-merchant-actions">
-            <button
+            <ActionButton
               className="button"
               type="submit"
+              label={busy ? "正在保存…" : pending ? "重试原提交" : "保存配置"}
+              feedback={saveFeedback.feedback}
+              reserve={[
+                "正在保存…",
+                "重试原提交",
+                "保存配置",
+                "保存失败",
+                "需要确认",
+                "已保存",
+              ]}
+              icon={<Check size={17} />}
               disabled={
                 busy || Boolean(warning) || (!pending && (!changed || !valid))
               }
-            >
-              {busy ? "正在保存…" : pending ? "重试原提交" : "保存配置"}
-              <Check size={17} />
-            </button>
+            />
             <a
               id="merchant-payments-trigger"
               className="button ghost"
@@ -457,14 +535,15 @@ function MerchantConfiguration({
                 ))}
               </select>
             </label>
-            <button
+            <ActionButton
               className="button ghost"
               type="button"
+              label="应用模拟情形"
+              feedback={simulateFeedback.feedback}
+              reserve={["应用模拟情形", "已应用", "设置失败"]}
               disabled={locked}
               onClick={() => void simulate()}
-            >
-              应用模拟情形
-            </button>
+            />
           </div>
         </details>
       ) : null}
@@ -472,7 +551,6 @@ function MerchantConfiguration({
         <MerchantConfigChangeDialog
           impact={warning.change.impact}
           busy={writes.update.isPending}
-          notice={message}
           confirm={() => void performSave(warning.input)}
           cancel={() => {
             setWarning(null);

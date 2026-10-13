@@ -123,6 +123,18 @@ h2 {
 .review-sub {
   color: #96969f;
 }
+
+.prototype-review-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+.prototype-review-actions > a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
 .site-header {
   background: var(--paper);
   min-width: 0;
@@ -1112,7 +1124,7 @@ h2 {
   max-width: 640px;
   margin-inline: auto;
 }
-.activity-heading .copy-toast {
+.activity-heading .activity-notice {
   margin: 0 0 8px;
   font-size: 0.8125rem;
 }

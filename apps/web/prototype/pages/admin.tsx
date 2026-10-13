@@ -7,6 +7,10 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  ActionButton,
+  useActionFeedback,
+} from "../../src/components/ui/action-feedback";
 import { encodeActivityEmoji } from "../../src/lib/ecoji-v2";
 import { parseActivityLink } from "../../src/lib/emoji-links";
 import { CompactIconButton } from "../components/compact-icon-button";
@@ -363,7 +367,9 @@ export function AdminPrototype({ identity }: { identity: Identity }) {
   const [readMode, setReadMode] = useState<ReadMode>("ready");
   const [listRead, setListRead] = useState(() => readState());
   const [draft, setDraft] = useState(savedSettings);
-  const [message, setMessage] = useState("");
+  const listFeedback = useActionFeedback(
+    `prototype-admin:${route.section}:${route.q}:${route.page}:${route.type}:${route.status}:${route.anomaly}:${route.activity}:${route.merchant}:${route.recipient}:${route.operator}:${route.from}:${route.to}:refresh`,
+  );
   const searchRef = useRef<HTMLInputElement>(null);
   const opener = useRef<HTMLElement | null>(null);
   const readModeRef = useRef(readMode);
@@ -448,17 +454,16 @@ export function AdminPrototype({ identity }: { identity: Identity }) {
             busy: false,
             error: "读取失败，请重试。",
           }));
+          if (source === "manual")
+            listFeedback.show("刷新失败", "读取失败，请重试。");
           return;
         }
         const successAt = Date.now();
         setListRead({ busy: false, error: "", lastSuccessAt: successAt });
-        if (source === "manual")
-          setMessage(
-            route.section === "settings" ? "设置内容已刷新。" : "内容已刷新。",
-          );
+        if (source === "manual") listFeedback.show("已刷新");
       }, 180);
     },
-    [dirty, route.section],
+    [dirty, listFeedback.show, route.section],
   );
 
   useEffect(() => {
@@ -553,27 +558,35 @@ export function AdminPrototype({ identity }: { identity: Identity }) {
               <option value="error">读取失败</option>
             </select>
           </label>
-          <CompactIconButton
+          <ActionButton
+            className="compact-icon-button action-refresh-button"
+            type="button"
             aria-label="刷新"
-            title="刷新"
+            label="刷新"
+            feedback={listFeedback.feedback}
+            reserve={["已刷新", "刷新失败"]}
+            icon={
+              <RefreshCw
+                size={16}
+                className={listRead.busy ? "spin" : undefined}
+              />
+            }
             disabled={listRead.busy}
+            title={
+              listRead.error
+                ? `${listRead.error}上次成功读取：${formatReadTime(
+                    listRead.lastSuccessAt,
+                  )}`
+                : "刷新"
+            }
             onClick={() => refresh()}
-          >
-            <RefreshCw
-              size={16}
-              className={listRead.busy ? "spin" : undefined}
-            />
-          </CompactIconButton>
+          />
         </div>
       </header>
       <p className="text-sm text-subtle">
         上次成功读取：{formatReadTime(listRead.lastSuccessAt)} · 本地样例
+        {listRead.error ? ` · ${listRead.error}当前内容已保留。` : ""}
       </p>
-      {listRead.error ? (
-        <p className="prototype-admin-read-error" role="alert">
-          {listRead.error}上次成功读取：{formatReadTime(listRead.lastSuccessAt)}
-        </p>
-      ) : null}
       {section === "overview" ? (
         <>
           <div className="prototype-admin-metrics">
@@ -635,11 +648,7 @@ export function AdminPrototype({ identity }: { identity: Identity }) {
           </section>
         </>
       ) : section === "settings" ? (
-        <SettingsPanel
-          draft={draft}
-          setDraft={setDraft}
-          setMessage={setMessage}
-        />
+        <SettingsPanel draft={draft} setDraft={setDraft} />
       ) : (
         <>
           {section === "audit" && (
@@ -885,7 +894,6 @@ export function AdminPrototype({ identity }: { identity: Identity }) {
           </div>
         </>
       )}
-      {message && <p role="status">{message}</p>}
     </section>
   );
 }
@@ -893,12 +901,12 @@ export function AdminPrototype({ identity }: { identity: Identity }) {
 function SettingsPanel({
   draft,
   setDraft,
-  setMessage,
 }: {
   draft: typeof savedSettings;
   setDraft: (value: typeof savedSettings) => void;
-  setMessage: (value: string) => void;
 }) {
+  const loginFeedback = useActionFeedback("prototype-admin-settings-login");
+  const rateFeedback = useActionFeedback("prototype-admin-settings-rate");
   return (
     <>
       <section className="activity-panel">
@@ -915,10 +923,13 @@ function SettingsPanel({
           关闭后隐藏青春版登录入口，并阻止新的 LiteAUTH
           登录；已登录用户不受影响。
         </p>
-        <button
+        <ActionButton
           className="button"
           type="button"
           disabled={draft.lite === savedSettings.lite}
+          label="保存配置"
+          feedback={loginFeedback.feedback}
+          reserve={["已保存", "保存失败", "校验失败"]}
           onClick={() => {
             savedSettings = {
               ...savedSettings,
@@ -926,11 +937,9 @@ function SettingsPanel({
               updatedAt: Date.now(),
             };
             setDraft({ ...draft, updatedAt: savedSettings.updatedAt });
-            setMessage("登录方式已保存。");
+            loginFeedback.show("已保存");
           }}
-        >
-          保存配置
-        </button>
+        />
       </section>
       <section className="activity-panel">
         <h3>参与尝试限流</h3>
@@ -951,13 +960,16 @@ function SettingsPanel({
             />
           </label>
         ))}
-        <button
+        <ActionButton
           className="button"
           type="button"
           disabled={
             draft.home === savedSettings.home &&
             draft.activity === savedSettings.activity
           }
+          label="保存配置"
+          feedback={rateFeedback.feedback}
+          reserve={["已保存", "保存失败", "校验失败"]}
           onClick={() => {
             if (
               ![draft.home, draft.activity].every(
@@ -967,7 +979,7 @@ function SettingsPanel({
                   Number(value) <= 3600,
               )
             ) {
-              setMessage("请填写 1–3600 秒的整数。");
+              rateFeedback.show("校验失败", "请填写 1–3600 秒的整数。");
               return;
             }
             savedSettings = {
@@ -977,11 +989,9 @@ function SettingsPanel({
               updatedAt: Date.now(),
             };
             setDraft({ ...draft, updatedAt: savedSettings.updatedAt });
-            setMessage("已保存，将用于下一次获准的尝试。");
+            rateFeedback.show("已保存");
           }}
-        >
-          保存配置
-        </button>
+        />
       </section>
     </>
   );
@@ -1001,6 +1011,9 @@ function PrototypeDetail({
   onNavigate: (next: Partial<Route>) => void;
 }) {
   const [detailRead, setDetailRead] = useState(() => readState());
+  const detailFeedback = useActionFeedback(
+    row ? `prototype-admin:${section}:${row.id}:detail` : null,
+  );
   const [mobile, setMobile] = useState(
     () => window.matchMedia("(max-width: 700px)").matches,
   );
@@ -1078,9 +1091,11 @@ function PrototypeDetail({
           busy: false,
           error: "详情读取失败，请重试。",
         }));
+        detailFeedback.show("刷新失败", "详情读取失败，请重试。");
         return;
       }
       setDetailRead(readState());
+      detailFeedback.show("已刷新");
     }, 180);
   }
 
@@ -1089,17 +1104,29 @@ function PrototypeDetail({
       <header className="prototype-admin-heading">
         <h3>记录详情</h3>
         <div className="prototype-admin-toolbar">
-          <CompactIconButton
+          <ActionButton
+            className="compact-icon-button action-refresh-button"
+            type="button"
             aria-label="刷新详情"
-            title="刷新详情"
+            label="刷新详情"
+            feedback={detailFeedback.feedback}
+            reserve={["已刷新", "刷新失败"]}
+            icon={
+              <RefreshCw
+                size={16}
+                className={detailRead.busy ? "spin" : undefined}
+              />
+            }
             disabled={detailRead.busy || !row}
+            title={
+              detailRead.error
+                ? `${detailRead.error}上次成功读取：${formatReadTime(
+                    detailRead.lastSuccessAt,
+                  )}`
+                : "刷新详情"
+            }
             onClick={refreshDetail}
-          >
-            <RefreshCw
-              size={16}
-              className={detailRead.busy ? "spin" : undefined}
-            />
-          </CompactIconButton>
+          />
           <CompactIconButton aria-label="关闭详情" onClick={onClose}>
             <X size={16} />
           </CompactIconButton>
@@ -1107,13 +1134,8 @@ function PrototypeDetail({
       </header>
       <p className="text-sm text-subtle">
         详情上次成功读取：{formatReadTime(detailRead.lastSuccessAt)}
+        {detailRead.error ? ` · ${detailRead.error}当前内容已保留。` : ""}
       </p>
-      {detailRead.error ? (
-        <p className="prototype-admin-read-error" role="alert">
-          {detailRead.error}上次成功读取：
-          {formatReadTime(detailRead.lastSuccessAt)}
-        </p>
-      ) : null}
       {row ? (
         <>
           <h4>{row.name}</h4>

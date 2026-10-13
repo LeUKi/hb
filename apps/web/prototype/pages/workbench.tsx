@@ -2,7 +2,6 @@ import {
   ArrowDownLeft,
   ArrowRight,
   Check,
-  CheckCircle2,
   ChevronDown,
   ChevronRight,
   Copy,
@@ -22,8 +21,14 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  ActionButton,
+  useActionFeedback,
+} from "../../src/components/ui/action-feedback";
+import { CopyButton } from "../../src/components/ui/copy-button";
 import { isActivityDeadlineReached } from "../activity-metadata";
 import { ActionMenu } from "../components/action-menu";
+import { PrototypeActivityImageSettings } from "../components/activity-image-settings";
 import { ActivityNote } from "../components/activity-note";
 import { AnimatedRegion } from "../components/animated-disclosure";
 import {
@@ -292,7 +297,6 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
     initial.durationUnit ?? "hours",
   );
   const [notes, setNotes] = useState(initial.notes);
-  const [error, setError] = useState("");
   const [, setEditedFields] = useState<ReadonlySet<string>>(() => new Set());
   const editedFieldsRef = useRef<Set<string>>(new Set());
   const [liveErrorFields, setLiveErrorFields] = useState<ReadonlySet<string>>(
@@ -310,9 +314,20 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
     "draft" | "open" | "updated" | null
   >(null);
   const [deleteEditorDraft, setDeleteEditorDraft] = useState(false);
-  const [formNotice, setFormNotice] = useState("");
   const [baseline, setBaseline] = useState(() =>
     editorConfigSignature(initial),
+  );
+  const refreshFeedback = useActionFeedback(
+    `prototype-activity-refresh:${identity}:${editId ?? savedId ?? "new"}`,
+  );
+  const openFeedback = useActionFeedback(
+    `prototype-activity-open:${identity}:${editId ?? savedId ?? "new"}`,
+  );
+  const draftFeedback = useActionFeedback(
+    `prototype-activity-draft:${identity}:${editId ?? savedId ?? "new"}`,
+  );
+  const deleteFeedback = useActionFeedback(
+    `prototype-activity-delete:${identity}:${editId ?? savedId ?? "new"}`,
   );
 
   useEffect(() => {
@@ -338,7 +353,6 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
     setDurationUnit(config.durationUnit ?? "hours");
     setNotes(config.notes);
     setSavedId(null);
-    setError("");
     setEditedFields(new Set());
     editedFieldsRef.current = new Set();
     setLiveErrorFields(new Set());
@@ -348,7 +362,6 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
     setNotePreviewMode("split");
     setConfirmation(null);
     setDeleteEditorDraft(false);
-    setFormNotice("");
     setBaseline(editorConfigSignature(config));
   }, [identity, editId]);
 
@@ -386,9 +399,10 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
     ),
   );
   const markEdited = (...keys: string[]) => {
-    setError("");
-    setFormNotice("");
     setConfirmation(null);
+    openFeedback.clear();
+    draftFeedback.clear();
+    refreshFeedback.clear();
     setEditedFields((current) => {
       const next = new Set(current);
       for (const key of keys) next.add(key);
@@ -485,17 +499,15 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
     const source = editId ?? savedId;
     const fresh = source ? findWorkbenchActivity(identity, source) : undefined;
     if (source && !fresh) {
-      setError("刷新失败，请重试。");
-      setFormNotice("");
+      refreshFeedback.show("刷新失败", "刷新失败，请重试。");
       return;
     }
     const config = editorConfigFromStored(
       fresh?.config ?? defaultActivityConfig(identity),
     );
     applyConfig(config);
-    setError("");
     setConfirmation(null);
-    setFormNotice("活动内容已刷新。");
+    refreshFeedback.show("已刷新", "活动内容已刷新。");
   }
 
   function noteEditor({
@@ -597,13 +609,19 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setError("");
+    const submitter = (event.nativeEvent as SubmitEvent)
+      .submitter as HTMLButtonElement | null;
+    const opening = submitter?.value === "open";
+    const feedback = frozen || opening ? openFeedback : draftFeedback;
     if (identity === "guest") {
-      setError("请先登录账号，再保存或开放活动。");
+      feedback.show("无法保存", "请先登录账号，再保存或开放活动。");
       return;
     }
     if (identity === "lite") {
-      setError("请先通过官方 Connect 升级，再保存或开放活动。");
+      feedback.show(
+        "无法保存",
+        "请先通过官方 Connect 升级，再保存或开放活动。",
+      );
       return;
     }
     if (!validation.ok) {
@@ -653,9 +671,6 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
         );
       return;
     }
-    const submitter = (event.nativeEvent as SubmitEvent)
-      .submitter as HTMLButtonElement | null;
-    const opening = submitter?.value === "open";
     const saved = saveWorkbenchActivity(
       identity,
       { ...currentConfig, topic: validation.canonicalTopic },
@@ -663,14 +678,14 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
       existing?.id,
     );
     if (!saved) {
-      setError("活动保存失败，请检查账号资格或重新打开活动。");
+      feedback.show("保存失败", "活动保存失败，请检查账号资格或重新打开活动。");
       return;
     }
     setSavedId(saved.id);
     setBaseline(editorConfigSignature(editorConfigFromStored(saved.config)));
     setEditedFields(new Set());
     editedFieldsRef.current = new Set();
-    setFormNotice("");
+    feedback.show(frozen ? "已保存" : opening ? "已开放" : "已保存");
     setConfirmation(frozen ? "updated" : opening ? "open" : "draft");
   }
 
@@ -738,15 +753,16 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
                 预览活动 <ArrowRight size={16} />
               </button>
             )}
-            <button
+            <ActionButton
               type="button"
-              className="compact-icon-button list-refresh-button"
-              aria-label="刷新"
+              className="compact-icon-button list-refresh-button action-refresh-button"
+              label="刷新"
               title="刷新"
+              feedback={refreshFeedback.feedback}
+              icon={<RefreshCw size={16} aria-hidden="true" />}
+              reserve={["已刷新", "刷新失败"]}
               onClick={refreshEditor}
-            >
-              <RefreshCw size={16} />
-            </button>
+            />
           </div>
           <section
             className="work-form-section"
@@ -1440,16 +1456,6 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
               )}
             </AnimatePresence>
           </details>
-          {error && (
-            <p className="work-form-error" role="alert">
-              {error}
-            </p>
-          )}
-          {formNotice && (
-            <p className="work-setting-notice" role="status">
-              {formNotice}
-            </p>
-          )}
         </div>
         <aside className="work-summary" aria-label="活动摘要">
           <h2>{title.trim() || "未命名活动"}</h2>
@@ -1463,25 +1469,33 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
           </p>
           <div className="work-summary-actions">
             {!frozen && (
-              <button className="button" type="submit" value="open">
-                保存并开放 <ArrowRight size={17} />
-              </button>
+              <ActionButton
+                className="button"
+                type="submit"
+                value="open"
+                label="保存并开放"
+                feedback={openFeedback.feedback}
+                icon={<ArrowRight size={17} aria-hidden="true" />}
+                reserve={["已开放", "已保存", "保存失败", "无法保存"]}
+              />
             )}
-            <button
+            <ActionButton
               className={`button ${frozen ? "" : "secondary"}`}
               type="submit"
               value="draft"
-            >
-              {frozen ? "保存修改" : "保存草稿"}
-            </button>
+              label={frozen ? "保存修改" : "保存草稿"}
+              feedback={frozen ? openFeedback.feedback : draftFeedback.feedback}
+              reserve={["已保存", "保存失败", "无法保存"]}
+            />
             {existing?.status === "draft" && (
-              <button
+              <ActionButton
                 className="button secondary"
                 type="button"
+                label="删除草稿"
+                feedback={deleteFeedback.feedback}
+                reserve={["删除失败"]}
                 onClick={() => setDeleteEditorDraft(true)}
-              >
-                删除草稿
-              </button>
+              />
             )}
           </div>
         </aside>
@@ -1499,13 +1513,17 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
               >
                 取消
               </button>
-              <button
+              <ActionButton
                 className="button"
                 type="button"
+                label="删除草稿"
+                feedback={deleteFeedback.feedback}
+                reserve={["删除失败"]}
                 onClick={() => {
                   const result = deleteWorkbenchActivity(identity, existing.id);
                   if (!result) {
-                    setError(
+                    deleteFeedback.show(
+                      "删除失败",
                       "活动状态已变化，请重新查看。删除仅限从未开放且没有领取或付款的草稿。",
                     );
                     setDeleteEditorDraft(false);
@@ -1514,9 +1532,7 @@ export function CreatePage({ navigate, identity, editId }: WorkbenchPageProps) {
                   setDeleteEditorDraft(false);
                   navigate("manage");
                 }}
-              >
-                删除草稿
-              </button>
+              />
             </>
           }
         >
@@ -1614,7 +1630,9 @@ export function ManagePage({
     id: string;
     kind: "delete";
   } | null>(null);
-  const [error, setError] = useState("");
+  const deleteFeedback = useActionFeedback(
+    `prototype-managed-delete:${identity}:${confirmation?.id ?? "none"}`,
+  );
   const visibleItems = listState === "empty" ? [] : items;
   const { page, pageItems, hasNext, setPage } = usePagination(
     visibleItems,
@@ -1638,7 +1656,7 @@ export function ManagePage({
           label: "删除草稿",
           danger: true,
           onSelect: () => {
-            setError("");
+            deleteFeedback.clear();
             setConfirmation({ id: item.id, kind: "delete" });
           },
         },
@@ -1790,35 +1808,32 @@ export function ManagePage({
               >
                 取消
               </button>
-              <button
+              <ActionButton
                 className="button"
                 type="button"
+                label="删除草稿"
+                feedback={deleteFeedback.feedback}
+                reserve={["删除失败"]}
                 onClick={() => {
                   const result = deleteWorkbenchActivity(
                     identity,
                     confirmation.id,
                   );
                   if (!result) {
-                    setError(
+                    deleteFeedback.show(
+                      "删除失败",
                       "活动状态已变化，请重新查看。删除仅限从未开放且没有领取或付款的草稿。",
                     );
                     return;
                   }
                   setConfirmation(null);
                 }}
-              >
-                删除草稿
-              </button>
+              />
             </>
           }
         >
           <p>「{confirmedItem.title}」</p>
           <p>删除后无法继续编辑或开放该草稿。</p>
-          {error && (
-            <p className="work-form-error" role="alert">
-              {error}
-            </p>
-          )}
         </Dialog>
       )}
     </div>
@@ -1830,16 +1845,13 @@ export function AccountPage({
   identity,
   onIdentityChange,
 }: PageProps) {
-  const [refreshed, setRefreshed] = useState(false);
   const [upgrade, setUpgrade] = useState(false);
   const [liteLoginOpen, setLiteLoginOpen] = useState(false);
   const liteLoginTrigger = useRef<HTMLButtonElement>(null);
+  const refreshFeedback = useActionFeedback(`prototype-account:${identity}`);
   useEffect(() => {
     if (identity !== "guest") setLiteLoginOpen(false);
   }, [identity]);
-  const [emailCopyFeedback, setEmailCopyFeedback] = useState<
-    "copied" | "failed" | null
-  >(null);
   useEffect(() => {
     if (!liteLoginOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -1946,19 +1958,15 @@ export function AccountPage({
             </span>
           </p>
         </div>
-        <button
+        <ActionButton
           className="button secondary"
           type="button"
-          onClick={() => setRefreshed(true)}
-        >
-          刷新资料
-        </button>
+          label="刷新资料"
+          feedback={refreshFeedback.feedback}
+          reserve={["已刷新"]}
+          onClick={() => refreshFeedback.show("已刷新", "演示资料已刷新。")}
+        />
       </div>
-      {refreshed && (
-        <p className="work-inline-success" role="status">
-          <CheckCircle2 size={16} /> 演示资料已刷新。
-        </p>
-      )}
       <div className="work-account-layout">
         <section
           className="work-account-details"
@@ -2004,29 +2012,20 @@ export function AccountPage({
                     <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>
                       {connectEmail}
                     </span>
-                    <button
+                    <CopyButton
                       className="button ghost"
-                      type="button"
+                      label="复制"
                       aria-label="复制 Connect 邮箱"
+                      icon={<Copy size={16} aria-hidden="true" />}
+                      getText={() => connectEmail}
+                      scope={`${identity}:${connectEmail}`}
                       style={{
-                        width: 44,
-                        minWidth: 44,
                         height: 44,
                         minHeight: 44,
-                        padding: 0,
+                        paddingInline: 10,
                         flexShrink: 0,
                       }}
-                      onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(connectEmail);
-                          setEmailCopyFeedback("copied");
-                        } catch {
-                          setEmailCopyFeedback("failed");
-                        }
-                      }}
-                    >
-                      <Copy size={16} aria-hidden="true" />
-                    </button>
+                    />
                   </>
                 )}
               </dd>
@@ -2047,28 +2046,6 @@ export function AccountPage({
               </dd>
             </div>
           </dl>
-          {!lite && emailCopyFeedback && (
-            <p
-              className={
-                emailCopyFeedback === "copied"
-                  ? "work-inline-success"
-                  : "work-form-error"
-              }
-              style={
-                emailCopyFeedback === "copied"
-                  ? { margin: "12px 0 0" }
-                  : undefined
-              }
-              role="status"
-            >
-              {emailCopyFeedback === "copied" && (
-                <CheckCircle2 size={16} aria-hidden="true" />
-              )}
-              {emailCopyFeedback === "copied"
-                ? "Connect 邮箱已复制。"
-                : "复制失败，请手动选择并复制上方邮箱。"}
-            </p>
-          )}
           <div className="work-account-permissions">
             {lite && (
               <p className="work-setting-notice">
@@ -2115,6 +2092,7 @@ export function AccountPage({
         </aside>
       </div>
 
+      <PrototypeActivityImageSettings />
       <button
         className="work-text-link work-account-signout"
         type="button"
@@ -2172,9 +2150,13 @@ export function MerchantPage({ navigate, identity }: WorkbenchPageProps) {
   });
   const [secret, setSecret] = useState("");
   const [error, setError] = useState("");
-  const [saved, setSaved] = useState(false);
   const [confirm, setConfirm] = useState(false);
-  const [refreshed, setRefreshed] = useState(false);
+  const saveFeedback = useActionFeedback(
+    `prototype-merchant-save:${identity}:${creating ? "new" : "existing"}`,
+  );
+  const refreshFeedback = useActionFeedback(
+    `prototype-merchant-refresh:${identity}:${creating ? "new" : "existing"}`,
+  );
   const overlay = useMerchantPaymentOverlay(identity);
   const { payments, activities } = useWorkbenchStore(identity);
   const clientChanged = clientId.trim() !== baseline.clientId;
@@ -2215,15 +2197,14 @@ export function MerchantPage({ navigate, identity }: WorkbenchPageProps) {
     setClientId(next.clientId);
     setConfigured(true);
     setSecret("");
-    setSaved(true);
+    saveFeedback.show("已保存", "演示配置已保存。");
     setConfirm(false);
-    setRefreshed(false);
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
-    setSaved(false);
+    saveFeedback.clear();
     if (!canSave) return;
     if (configured && (clientChanged || secret.trim())) setConfirm(true);
     else save();
@@ -2234,8 +2215,7 @@ export function MerchantPage({ navigate, identity }: WorkbenchPageProps) {
     setClientId(baseline.clientId);
     setSecret("");
     setError("");
-    setSaved(false);
-    setRefreshed(true);
+    refreshFeedback.show("已刷新", "商户内容已刷新。");
   }
 
   if (identity === "guest") return <GuestAccountPrompt navigate={navigate} />;
@@ -2274,8 +2254,8 @@ export function MerchantPage({ navigate, identity }: WorkbenchPageProps) {
               disabled={identity === "lite"}
               onChange={(event) => {
                 setLabel(event.target.value);
-                setSaved(false);
-                setRefreshed(false);
+                saveFeedback.clear();
+                refreshFeedback.clear();
               }}
               autoComplete="off"
             />
@@ -2293,7 +2273,7 @@ export function MerchantPage({ navigate, identity }: WorkbenchPageProps) {
               disabled={identity === "lite"}
               onChange={(event) => {
                 setClientId(event.target.value);
-                setSaved(false);
+                saveFeedback.clear();
               }}
               autoComplete="off"
             />
@@ -2313,7 +2293,7 @@ export function MerchantPage({ navigate, identity }: WorkbenchPageProps) {
               disabled={identity === "lite"}
               onChange={(event) => {
                 setSecret(event.target.value);
-                setSaved(false);
+                saveFeedback.clear();
               }}
               placeholder="已保存；留空沿用现有密钥"
               autoComplete="new-password"
@@ -2324,24 +2304,16 @@ export function MerchantPage({ navigate, identity }: WorkbenchPageProps) {
               {error || "更改 Client ID 时，请同时填写对应的商户密钥。"}
             </p>
           )}
-          {saved && (
-            <p className="work-inline-success" role="status">
-              <CheckCircle2 size={16} /> 演示配置已保存。
-            </p>
-          )}
-          {refreshed && (
-            <p className="work-inline-success" role="status">
-              商户内容已刷新。
-            </p>
-          )}
           <div className="work-merchant-actions">
-            <button
+            <ActionButton
               className="button"
               type="submit"
+              label="保存配置"
+              feedback={saveFeedback.feedback}
+              icon={<Check size={17} aria-hidden="true" />}
+              reserve={["已保存"]}
               disabled={!canSave || confirm}
-            >
-              保存配置 <Check size={17} />
-            </button>
+            />
             <button
               className="button ghost"
               type="button"
@@ -2350,15 +2322,16 @@ export function MerchantPage({ navigate, identity }: WorkbenchPageProps) {
             >
               付款记录 <ArrowRight size={16} />
             </button>
-            <button
-              className="merchant-icon-button"
+            <ActionButton
+              className="merchant-icon-button action-refresh-button"
               type="button"
-              aria-label="刷新"
+              label="刷新"
               title="刷新"
+              feedback={refreshFeedback.feedback}
+              icon={<RefreshCw size={16} aria-hidden="true" />}
+              reserve={["已刷新"]}
               onClick={refresh}
-            >
-              <RefreshCw size={16} aria-hidden="true" />
-            </button>
+            />
           </div>
         </form>
       </div>
@@ -2383,9 +2356,14 @@ export function MerchantPage({ navigate, identity }: WorkbenchPageProps) {
               >
                 返回修改
               </button>
-              <button className="button" type="button" onClick={save}>
-                确认并保存
-              </button>
+              <ActionButton
+                className="button"
+                type="button"
+                label="确认并保存"
+                feedback={saveFeedback.feedback}
+                reserve={["已保存"]}
+                onClick={save}
+              />
             </>
           }
         >

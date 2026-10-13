@@ -503,7 +503,7 @@ test("青春版只能浏览LDC活动和作者资料，不能提交口令或解�
   const state = await mockLite(page, { authorTier: "lite" });
   await page.goto(`/activities/${activityId}`);
   const author = page
-    .getByTestId("envelope")
+    .locator(".activity-meta")
     .getByRole("button", { name: "活动作者 青春版" });
   await expect(author.getByText("青春版", { exact: true })).toBeVisible();
   await author.hover();
@@ -609,7 +609,7 @@ test("同ID升级后不会自动领取，用户主动提交后才发送LDC领取
   expect(state.claims).toHaveLength(0);
   await page.getByLabel("兑换口令", { exact: true }).fill("Answer123");
   await page.getByRole("button", { name: /领取奖励|领取红包/ }).click();
-  await expect(page.locator(".slip-amount")).toContainText("+1.00");
+  await expect(page.locator(".envelope-svg .prize")).toContainText("+1.00");
   expect(state.claims).toHaveLength(1);
 });
 

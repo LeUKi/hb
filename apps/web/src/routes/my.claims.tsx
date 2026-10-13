@@ -29,7 +29,6 @@ import {
   ListRefreshButton,
   Pagination,
 } from "../components/presentation/list-controls";
-import { RefreshNotice } from "../components/presentation/loading";
 import { UserIdentity } from "../components/user-identity";
 import { formatTime, useHistorySummary } from "../lib/activities";
 import { useMyParticipations } from "../lib/claims";
@@ -130,10 +129,9 @@ function MyParticipations({ userId }: { userId: string }) {
           <ListRefreshButton
             label="刷新参与记录"
             busy={query.isFetching || summary.isFetching}
-            onRefresh={() => {
-              void query.refetch();
-              void summary.refetch();
-            }}
+            scope={`${userId}:${cursor ?? ""}`}
+            error={query.error ?? summary.error}
+            onRefresh={() => Promise.all([query.refetch(), summary.refetch()])}
           />
         </div>
         {cursorNotice}
@@ -143,7 +141,6 @@ function MyParticipations({ userId }: { userId: string }) {
           state={listState}
           emptyText="还没有符合条件的参与记录。"
           onRetry={query.isError ? () => query.refetch() : undefined}
-          refreshNotice={<RefreshNotice query={query} />}
           resetKey={`${cursorScope}:${cursors.length}`}
           footer={
             <Pagination

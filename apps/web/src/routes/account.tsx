@@ -2,14 +2,14 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   ArrowDownLeft,
   ArrowRight,
-  CheckCircle2,
   ChevronRight,
   Copy,
   FileText,
   Gift,
   KeyRound,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
+import { ActivityImageSettings } from "../components/activities/activity-image-settings";
 import { LoginOptions } from "../components/auth/login-options";
 import { useAppLogout } from "../components/auth/session-actions";
 import { Help } from "../components/presentation/context-help";
@@ -17,6 +17,8 @@ import {
   PageSkeleton,
   RefreshNotice,
 } from "../components/presentation/loading";
+import { ActionButton } from "../components/ui/action-feedback";
+import { CopyButton } from "../components/ui/copy-button";
 import { UserAvatar } from "../components/user-identity";
 import { useAccountProfile } from "../lib/account-profile";
 import {
@@ -42,9 +44,6 @@ function AccountPage() {
   const session = useSession();
   const logout = useAppLogout();
   const [upgrade, setUpgrade] = useState(false);
-  const [emailCopyFeedback, setEmailCopyFeedback] = useState<
-    "copied" | "failed" | null
-  >(null);
   const authErrorCode = new URLSearchParams(window.location.search).get(
     "authError",
   );
@@ -53,11 +52,6 @@ function AccountPage() {
   const liteauthEnabled = session.data?.loginOptions?.liteauthEnabled === true;
   const profile = useAccountProfile(user ?? null);
   const identity = sessionIdentity(user ?? null);
-  const activeIdentity = useRef(identity);
-  activeIdentity.current = identity;
-  useEffect(() => {
-    if (identity !== null) setEmailCopyFeedback(null);
-  }, [identity]);
   if (session.isPending) return <PageSkeleton title="账号" />;
   if (session.isError)
     return (
@@ -187,31 +181,20 @@ function AccountPage() {
                     <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>
                       {connectEmail}
                     </span>
-                    <button
+                    <CopyButton
                       className="button ghost"
-                      type="button"
+                      label="复制"
                       aria-label="复制 Connect 邮箱"
+                      icon={<Copy size={16} aria-hidden="true" />}
+                      getText={() => connectEmail}
+                      scope={`${identity ?? "guest"}:${connectEmail}`}
                       style={{
-                        width: 44,
-                        minWidth: 44,
                         height: 44,
                         minHeight: 44,
-                        padding: 0,
+                        paddingInline: 10,
                         flexShrink: 0,
                       }}
-                      onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(connectEmail);
-                          if (activeIdentity.current === identity)
-                            setEmailCopyFeedback("copied");
-                        } catch {
-                          if (activeIdentity.current === identity)
-                            setEmailCopyFeedback("failed");
-                        }
-                      }}
-                    >
-                      <Copy size={16} aria-hidden="true" />
-                    </button>
+                    />
                   </>
                 )}
               </dd>
@@ -233,28 +216,6 @@ function AccountPage() {
             </div>
           </dl>
           <RefreshNotice query={profile} />
-          {!lite && emailCopyFeedback && (
-            <p
-              className={
-                emailCopyFeedback === "copied"
-                  ? "work-inline-success"
-                  : "work-form-error"
-              }
-              style={
-                emailCopyFeedback === "copied"
-                  ? { margin: "12px 0 0" }
-                  : undefined
-              }
-              role="status"
-            >
-              {emailCopyFeedback === "copied" && (
-                <CheckCircle2 size={16} aria-hidden="true" />
-              )}
-              {emailCopyFeedback === "copied"
-                ? "Connect 邮箱已复制。"
-                : "复制失败，请手动选择并复制上方邮箱。"}
-            </p>
-          )}
           <div className="work-account-permissions">
             {lite && (
               <p className="work-setting-notice">
@@ -271,6 +232,7 @@ function AccountPage() {
               </button>
             )}
           </div>
+          {session.data && <ActivityImageSettings session={session.data} />}
         </section>
         <aside className="work-account-nav">
           <h2>账号管理</h2>
@@ -301,16 +263,16 @@ function AccountPage() {
         </aside>
       </div>
 
-      <button
+      <ActionButton
         className="work-text-link work-account-signout"
-        type="button"
+        label="退出登录"
+        feedback={logout.feedback}
+        reserve={["退出失败"]}
         disabled={logout.isPending}
         onClick={() => {
           logout.mutate();
         }}
-      >
-        退出登录
-      </button>
+      />
       {upgrade && (
         <Dialog
           title="升级为普通账号"

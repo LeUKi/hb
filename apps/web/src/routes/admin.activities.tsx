@@ -1,18 +1,18 @@
 import type { AdminActivityStatus } from "@hb/contracts";
-import { useQuery } from "@tanstack/react-query";
+import { type QueryObserverResult, useQuery } from "@tanstack/react-query";
 import {
   createFileRoute,
   Link,
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
-import { RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { SkeletonRows } from "../components/presentation/loading";
 import {
   AdminDetailSurface,
   AdminGuard,
   AdminQueryError,
+  AdminRefreshButton,
   AdminShell,
   adminKey,
   fetchAdminActivities,
@@ -120,16 +120,17 @@ function Activities({ identity }: { identity: string }) {
       <section className="activity-panel admin-list-panel">
         <div className="admin-toolbar">
           <h2>活动</h2>
-          <button
+          <AdminRefreshButton
             className="button secondary"
-            type="button"
-            disabled={query.isFetching}
-            aria-busy={query.isFetching}
-            onClick={() => query.refetch()}
-          >
-            <RefreshCw size={16} aria-hidden="true" />
-            刷新
-          </button>
+            scope={`admin-activities:${identity}:list-refresh:${JSON.stringify(params)}`}
+            busy={query.isFetching}
+            title={
+              query.isError && query.data
+                ? `读取失败，请重试。上次读取：${fmtTime(query.dataUpdatedAt)}`
+                : "刷新"
+            }
+            onRefresh={() => query.refetch()}
+          />
         </div>
         <form
           className="admin-filters"
@@ -234,11 +235,6 @@ function Activities({ identity }: { identity: string }) {
                 </tbody>
               </table>
             </div>
-            {query.isError && (
-              <p role="alert">
-                读取失败，请重试。上次读取：{fmtTime(query.dataUpdatedAt)}
-              </p>
-            )}
             {!query.data.items.length && <p>没有匹配的活动。</p>}
             <div className="admin-pager">
               <button
@@ -277,18 +273,14 @@ function Activities({ identity }: { identity: string }) {
         onClose={closeDetail}
       >
         {detail.data ? (
-          <>
-            <ActivityDetail
-              activity={detail.data.activity}
-              busy={detail.isFetching}
-              onRefresh={() => void detail.refetch()}
-            />
-            {detail.isError && (
-              <p role="alert">
-                读取失败，请重试。上次读取：{fmtTime(detail.dataUpdatedAt)}
-              </p>
-            )}
-          </>
+          <ActivityDetail
+            activity={detail.data.activity}
+            busy={detail.isFetching}
+            refreshScope={`admin-activities:${identity}:${detail.data.activity.id}:refresh`}
+            stale={detail.isError}
+            staleReadAt={fmtTime(detail.dataUpdatedAt)}
+            onRefresh={() => detail.refetch()}
+          />
         ) : detail.isError ? (
           <AdminQueryError
             error={detail.error}
@@ -316,26 +308,31 @@ function lifecycleLabel(value: string) {
 function ActivityDetail({
   activity,
   busy,
+  refreshScope,
+  stale,
+  staleReadAt,
   onRefresh,
 }: {
   activity: Awaited<ReturnType<typeof fetchAdminActivity>>["activity"];
   busy: boolean;
-  onRefresh: () => void;
+  refreshScope: string;
+  stale: boolean;
+  staleReadAt: string;
+  onRefresh: () => Promise<
+    QueryObserverResult<Awaited<ReturnType<typeof fetchAdminActivity>>, Error>
+  >;
 }) {
   return (
     <div>
       <div className="admin-detail-heading">
         <h2>{activity.title}</h2>
-        <button
+        <AdminRefreshButton
           className="button secondary"
-          type="button"
-          disabled={busy}
-          aria-busy={busy}
-          onClick={onRefresh}
-        >
-          <RefreshCw size={16} aria-hidden="true" />
-          刷新
-        </button>
+          scope={refreshScope}
+          busy={busy}
+          title={stale ? `读取失败，请重试。上次读取：${staleReadAt}` : "刷新"}
+          onRefresh={onRefresh}
+        />
       </div>
       <dl className="admin-detail-list">
         <Row label="活动 ID" value={activity.id} />

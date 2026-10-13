@@ -1,3 +1,9 @@
+import {
+  claimElapsedMs,
+  claimSpeedTitle,
+  type RecipientSpeedTitle,
+} from "@hb/contracts";
+
 export type RecipientTitle = "highest" | "lowest";
 
 function amountCents(value: string | undefined): number | null {
@@ -39,4 +45,22 @@ export function recipientTitles(
     }
   }
   return result;
+}
+
+/** Exact claim times from the complete activity determine every tied fastest row. */
+export function recipientSpeedTitles(
+  records: readonly { id: string; time?: string }[],
+  openedAt: string | null | undefined,
+): Record<string, RecipientSpeedTitle> {
+  const elapsed = records.map((record) =>
+    claimElapsedMs(openedAt, record.time),
+  );
+  const valid = elapsed.filter((value): value is number => value !== null);
+  if (!valid.length) return {};
+  const fastest = Math.min(...valid);
+  return Object.fromEntries(
+    records
+      .filter((_, index) => elapsed[index] === fastest)
+      .map((record) => [record.id, claimSpeedTitle(fastest)]),
+  );
 }

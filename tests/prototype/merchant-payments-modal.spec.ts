@@ -22,8 +22,9 @@ const test = base.extend<{ localOnly: undefined }>({
 });
 
 test("商户保存仅在有效修改后启用，保存和刷新更新基线", async ({ page }) => {
+  await page.clock.install();
   await page.goto("/#merchant");
-  const save = page.getByRole("button", { name: "保存配置", exact: true });
+  const save = page.locator(".work-merchant-actions button[type='submit']");
   await expect(save).toBeDisabled();
   const name = page.getByLabel("商户名称", { exact: true });
   await name.fill("演示新名称");
@@ -31,10 +32,19 @@ test("商户保存仅在有效修改后启用，保存和刷新更新基线", as
   await name.fill("默认商户");
   await expect(save).toBeDisabled();
   await name.fill("演示新名称");
+  const saveWidth = await save.boundingBox();
   await save.click();
+  await expect(save).toContainText("已保存");
+  expect(
+    Math.abs(
+      ((await save.boundingBox())?.width ?? 0) - (saveWidth?.width ?? 0),
+    ),
+  ).toBeLessThan(1);
   await expect(
-    page.getByText("演示配置已保存。", { exact: true }),
-  ).toBeVisible();
+    page.locator(".work-inline-success", { hasText: "演示配置已保存。" }),
+  ).toHaveCount(0);
+  await page.clock.runFor(3000);
+  await expect(save).toHaveAccessibleName("保存配置");
   await expect(save).toBeDisabled();
   const client = page.getByLabel("Client ID", { exact: true });
   await client.fill("NEW-DEMO-CLIENT");
@@ -47,17 +57,28 @@ test("商户保存仅在有效修改后启用，保存和刷新更新基线", as
   await expect(page.getByLabel("商户密钥", { exact: true })).toHaveValue("");
   await name.fill("刷新丢弃的名称");
   page.once("dialog", (dialog) => dialog.dismiss());
-  await page.getByRole("button", { name: "刷新", exact: true }).click();
+  await page.getByRole("button", { name: /^刷新(?:，|$)/u }).click();
   await expect(name).toHaveValue("刷新丢弃的名称");
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "刷新", exact: true }).click();
+  const refresh = page.locator(".work-merchant-actions .merchant-icon-button");
+  const refreshWidth = await refresh.boundingBox();
+  await refresh.click();
+  await expect(refresh).toContainText("已刷新");
+  expect(
+    Math.abs(
+      ((await refresh.boundingBox())?.width ?? 0) - (refreshWidth?.width ?? 0),
+    ),
+  ).toBeLessThan(1);
+  await expect(
+    page.locator(".work-inline-success", { hasText: "商户内容已刷新。" }),
+  ).toHaveCount(0);
   await expect(name).toHaveValue("演示新名称");
   await expect(save).toBeDisabled();
 });
 
 test("未配置商户只有完整输入才可创建，创建后禁用保存", async ({ page }) => {
   await page.goto("/#merchant?newMerchant=1");
-  const save = page.getByRole("button", { name: "保存配置", exact: true });
+  const save = page.getByRole("button", { name: /^保存配置(?:，|$)/u });
   await expect(save).toBeDisabled();
   await page.getByLabel("商户名称", { exact: true }).fill("新商户");
   await page.getByLabel("Client ID", { exact: true }).fill("LOCAL-NEW");
@@ -69,11 +90,35 @@ test("未配置商户只有完整输入才可创建，创建后禁用保存", as
   await expect(page.getByLabel("商户密钥", { exact: true })).toHaveValue("");
 });
 
+test("account refresh feedback stays inside the refresh button", async ({
+  page,
+}) => {
+  await page.goto("/#account");
+  const refresh = page.getByRole("button", { name: /^刷新资料(?:，|$)/u });
+  await refresh.click();
+  await expect(refresh).toContainText("已刷新");
+  await expect(
+    page.locator(".work-inline-success", { hasText: "演示资料已刷新。" }),
+  ).toHaveCount(0);
+});
+
 test("付款表分页及阅读位置刷新恢复，详情直链关闭留在配置", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 600 });
   await page.goto("/#merchant");
   await page.getByRole("button", { name: "付款记录", exact: true }).click();
   const list = page.getByRole("dialog", { name: "付款记录", exact: true });
+  const listRefresh = list
+    .locator(".merchant-payments-tools .merchant-icon-button")
+    .first();
+  const listRefreshWidth = await listRefresh.boundingBox();
+  await listRefresh.click();
+  await expect(listRefresh).toContainText("已刷新");
+  expect(
+    Math.abs(
+      ((await listRefresh.boundingBox())?.width ?? 0) -
+        (listRefreshWidth?.width ?? 0),
+    ),
+  ).toBeLessThan(1);
   await list
     .getByRole("navigation", { name: "商户付款记录分页" })
     .getByRole("button", { name: "下一页" })
@@ -404,10 +449,9 @@ for (const width of [1440, 375]) {
     await expect(
       detail.getByRole("list", { name: "付款时间线" }).locator("li > span"),
     ).toHaveText(["创建付款", "首次发送"]);
-    const repair = detail.getByRole("button", {
-      name: "保存原订单凭证",
-      exact: true,
-    });
+    const repair = detail.locator(
+      ".merchant-original-repair button[type='submit']",
+    );
     await expect(repair).toBeDisabled();
     await detail
       .getByLabel("原订单商户密钥", { exact: true })
@@ -417,9 +461,10 @@ for (const width of [1440, 375]) {
     await expect(
       detail.getByLabel("原订单商户密钥", { exact: true }),
     ).toHaveValue("");
+    await expect(repair).toContainText("已保存");
     await expect(
       detail.getByText("演示原订单凭证已保存。", { exact: true }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     await detail
       .getByRole("button", { name: "返回付款记录", exact: true })
       .click();

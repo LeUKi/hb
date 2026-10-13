@@ -106,6 +106,8 @@ async function mockRoster(
 ) {
   const state = {
     user: options.author ? owner : viewer,
+    openedAt: new Date(Date.now() - 3_600_000).toISOString(),
+    showTime: true,
     rows: Array.from({ length: options.count ?? 1 }, (_, index) => ({
       ...recipient(index + 1),
       ...(index === 0 && options.longName
@@ -139,7 +141,7 @@ async function mockRoster(
       author: owner,
       forceDedicated: true,
       topicUrl: null,
-      openedAt: new Date(Date.now() - 3_600_000).toISOString(),
+      openedAt: state.openedAt,
       deadlineAt: deadline,
       quantity: {
         mode: "exact",
@@ -149,7 +151,7 @@ async function mockRoster(
       },
       showRecipientList: state.allowed,
       showRecipientUsername: true,
-      showRecipientTime: true,
+      showRecipientTime: state.showTime,
       beforeInfo: "名单和人数必须在同一刷新轮次完成后一起更新。",
       reward: draw
         ? {
@@ -324,6 +326,7 @@ async function mockRoster(
         claimant: row,
         activity: { id: activityId, title, status: "active" },
         claimedAt: row.claimedAt ?? deadline,
+        ...(row.speedTitle ? { speedTitle: row.speedTitle } : {}),
         rewardType: "ldc",
         amount: "0.10",
         payment: {
@@ -414,8 +417,7 @@ test("公共人数与名单同轮公布，手动/焦点合并慢请求，五秒�
   await expect(envelope).toHaveAttribute("data-phase", "open");
   await expect(envelope).toHaveAttribute("data-opening-count", "1");
   const refresh = dialog.getByRole("button", {
-    name: "刷新领取名单",
-    exact: true,
+    name: /^刷新领取名单/,
   });
   const before = {
     public: reads(state, ""),
@@ -536,9 +538,7 @@ test("手机已加载两页从新头部重建游标，保留行锚点和焦点�
     recipient(4, "new"),
     ...state.rows,
   ];
-  await dialog
-    .getByRole("button", { name: "刷新领取名单", exact: true })
-    .click();
+  await dialog.getByRole("button", { name: /^刷新领取名单/ }).click();
   await expect
     .poll(() => listedIds(dialog))
     .toEqual(state.rows.slice(0, 40).map((row) => row.id));
@@ -592,15 +592,13 @@ test("公共整轮失败保留旧人数与记录，权限关闭立即清除，�
   const state = await mockRoster(page);
   const dialog = await openPublic(page);
   const refresh = dialog.getByRole("button", {
-    name: "刷新领取名单",
-    exact: true,
+    name: /^刷新领取名单/,
   });
   state.rows = [recipient(1, "new"), ...state.rows];
   state.failList = 1;
   await refresh.click();
-  await expect(
-    dialog.getByText("刷新失败，当前内容已保留。", { exact: true }),
-  ).toBeVisible();
+  await expect(refresh).toHaveText("刷新失败");
+  await expect(dialog.locator(".refresh-notice")).toHaveCount(0);
   await expect(
     page.getByText("已领取 1 / 100 份", { exact: true }),
   ).toBeVisible();
@@ -608,7 +606,7 @@ test("公共整轮失败保留旧人数与记录，权限关闭立即清除，�
   await expect(dialog.getByText("新增参与者 1", { exact: true })).toHaveCount(
     0,
   );
-  await dialog.getByRole("button", { name: "重试", exact: true }).click();
+  await refresh.click();
   await expect(dialog.locator(".recipient")).toHaveCount(2);
   await expect(
     page.getByText("已领取 2 / 100 份", { exact: true }),
@@ -638,8 +636,7 @@ test("公共整轮失败保留旧人数与记录，权限关闭立即清除，�
   const reopenedDialog = page.getByRole("dialog", { name: title, exact: true });
   await expect(reopenedDialog.locator(".recipient")).toHaveCount(2);
   const reopenedRefresh = reopenedDialog.getByRole("button", {
-    name: "刷新领取名单",
-    exact: true,
+    name: /^刷新领取名单/,
   });
   const late = gate();
   state.listGate = late;
@@ -668,7 +665,7 @@ test("公共整轮失败保留旧人数与记录，权限关闭立即清除，�
       0,
     );
     await expect(
-      page.locator(".slip-amount", { hasText: "+0.19" }),
+      page.locator(".envelope-svg .prize", { hasText: "+0.19" }),
     ).toHaveCount(0);
     expect(state.writes).toEqual([]);
     expect(state.external).toEqual([]);
@@ -689,8 +686,7 @@ test("作者在活动页名单中同步刷新人数与私有记录，合并在�
     registrations.getByText("名单参与者 1", { exact: true }),
   ).toBeVisible();
   const refresh = registrations.getByRole("button", {
-    name: "刷新报名名单",
-    exact: true,
+    name: /^刷新报名名单/,
   });
   const before = state.requests.length;
   state.rows = [recipient(1, "new"), ...state.rows];
@@ -734,16 +730,12 @@ test("作者在活动页名单中同步刷新人数与私有记录，合并在�
     state.rows = [recipient(3, "new"), ...state.rows];
     state.failList = 1;
     await refresh.click();
-    await expect(
-      registrations.getByText("刷新失败，当前内容已保留。", { exact: true }),
-    ).toBeVisible();
+    await expect(refresh).toHaveText("刷新失败");
     await expect(count).toContainText("报名 3 人");
     await expect(
       registrations.getByText("新增参与者 3", { exact: true }),
     ).toHaveCount(0);
-    await registrations
-      .getByRole("button", { name: "重试", exact: true })
-      .click();
+    await refresh.click();
     await expect(count).toContainText("报名 4 人");
     await expect(
       registrations.getByText("新增参与者 3", { exact: true }),
@@ -840,8 +832,7 @@ test("关闭公开名单后作者仍使用唯一入口查看付款明细，长�
   ).toBe(true);
   state.rows = [recipient(1, "new"), ...state.rows];
   const refresh = dialog.getByRole("button", {
-    name: "刷新领取名单",
-    exact: true,
+    name: /^刷新领取名单/,
   });
   await refresh.click();
   await expect(dialog.locator(".recipient")).toHaveCount(26);
@@ -933,9 +924,7 @@ test("换账号后关闭作者名单，迟到付款明细响应不能恢复记�
   const late = gate();
   state.claimsGate = late;
   try {
-    await dialog
-      .getByRole("button", { name: "刷新领取名单", exact: true })
-      .click();
+    await dialog.getByRole("button", { name: /^刷新领取名单/ }).click();
     await late.started;
     const sessionResponse = page.waitForResponse(
       (response) => new URL(response.url()).pathname === "/api/session",
@@ -972,5 +961,82 @@ for (const registered of [0, 1]) {
     await expect(
       page.getByRole("menuitem", { name: "付款记录", exact: true }),
     ).toHaveAttribute("href", `/my/payments?activityId=${activityId}`);
+  });
+}
+
+for (const width of [1440, 375]) {
+  test(`领取手速秒数固定且与手气称号并列，时间撤销不残留手速 ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 812 });
+    await page.clock.install();
+    const state = await mockRoster(page);
+    state.rows = [
+      {
+        ...recipient(1),
+        displayName: "很长的手气与手速双称号领取者名字",
+        claimedAt: new Date(Date.parse(state.openedAt) + 9125).toISOString(),
+        amount: "1.80",
+        title: "highest",
+        speedTitle: "flash",
+      },
+    ];
+    const dialog = await openPublic(page);
+    const row = dialog.locator(".recipient").first();
+    await expect(row.locator(".recipient-time__speed")).toHaveText("9.125秒");
+    await expect(row.locator(".recipient-time__relative")).toHaveCount(0);
+    await expect(row.locator(".recipient-title")).toHaveText([
+      "手气王",
+      "我焯有桂！",
+    ]);
+    const geometry = await row.evaluate((node) => {
+      const [luck, speed] = [...node.querySelectorAll(".recipient-title")];
+      if (!luck || !speed) throw new Error("Missing luck or speed title");
+      const a = luck.getBoundingClientRect();
+      const b = speed.getBoundingClientRect();
+      const amount = node
+        .querySelector(".recipient-award-amount")
+        ?.getBoundingClientRect();
+      const time = node
+        .querySelector(".recipient-time")
+        ?.getBoundingClientRect();
+      if (!amount || !time) throw new Error("Missing recipient amount or time");
+      const bounds = node.getBoundingClientRect();
+      return {
+        sameLine: Math.abs(a.top - b.top) < 1,
+        gap: b.left - a.right,
+        badgesBeforeAmount: Math.max(a.right, b.right) + 6 <= amount.left,
+        timeAfterAward: time.top >= Math.max(a.bottom, b.bottom, amount.bottom),
+        fits: b.right <= bounds.right && a.left >= bounds.left,
+        color: getComputedStyle(speed).color,
+      };
+    });
+    expect(geometry).toMatchObject({
+      sameLine: true,
+      gap: 6,
+      badgesBeforeAmount: true,
+      timeAfterAward: true,
+      fits: true,
+      color: "rgb(145, 223, 104)",
+    });
+    await page.clock.fastForward(120_000);
+    await expect(row.locator(".recipient-time__speed")).toHaveText("9.125秒");
+    if (width === 375) {
+      await page.addStyleTag({
+        content: "html { font-size: 200% !important; }",
+      });
+      expect(
+        await dialog
+          .locator(".recipient-list")
+          .evaluate((node) => node.scrollWidth <= node.clientWidth),
+      ).toBe(true);
+    }
+    state.showTime = false;
+    state.failList = 1;
+    await dialog.getByRole("button", { name: /^刷新领取名单/ }).click();
+    await expect(dialog.locator(".recipient-time__speed")).toHaveCount(0);
+    await expect(dialog.locator(".title-speed")).toHaveCount(0);
+    await expect(dialog.locator(".title-highest")).toHaveText("手气王");
+    expect(state.writes).toEqual([]);
   });
 }

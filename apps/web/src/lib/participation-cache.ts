@@ -5,9 +5,15 @@ import type {
   DrawSummary,
 } from "@hb/contracts";
 import type { QueryClient } from "@tanstack/react-query";
+import { type SessionResponse, sessionQueryKey, sessionScope } from "./auth";
 
 /** Missing fields are unknown; only a complete GET can confirm an empty record. */
-export type ParticipationCache = Partial<ActivityParticipationResponse>;
+export type ParticipationCache = Partial<ActivityParticipationResponse> & {
+  /** Internal proof that these personal facts were read in this session. */
+  readSessionScope?: string;
+  /** Successful personal GET or confirmed submission; cache reuse never renews it. */
+  readAt?: number;
+};
 
 export const participationKey = (userId: string, activityId: string) =>
   ["claim-private", userId, "participation", activityId] as const;
@@ -110,8 +116,11 @@ export async function syncParticipationResult(
   if (!isCurrentIdentity()) return false;
 
   const previous = client.getQueryData<ParticipationCache>(key);
+  const session = client.getQueryData<SessionResponse>(sessionQueryKey);
   const next: ParticipationCache = {
     ...previous,
+    ...(session ? { readSessionScope: sessionScope(session) } : {}),
+    readAt: Date.now(),
     ...(claim ? { claim } : {}),
     ...("registration" in result ? { registration: result.registration } : {}),
   };

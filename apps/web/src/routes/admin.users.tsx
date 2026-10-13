@@ -1,13 +1,13 @@
 import type { AdminUserState, AdminUserTier } from "@hb/contracts";
-import { useQuery } from "@tanstack/react-query";
+import { type QueryObserverResult, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { SkeletonRows } from "../components/presentation/loading";
 import {
   AdminDetailSurface,
   AdminGuard,
   AdminQueryError,
+  AdminRefreshButton,
   AdminShell,
   adminKey,
   fetchAdminUser,
@@ -95,16 +95,17 @@ function Users({ identity }: { identity: string }) {
       <section className="activity-panel admin-list-panel">
         <div className="admin-toolbar">
           <h2>用户</h2>
-          <button
+          <AdminRefreshButton
             className="button secondary"
-            type="button"
-            disabled={query.isFetching}
-            aria-busy={query.isFetching}
-            onClick={() => query.refetch()}
-          >
-            <RefreshCw size={16} aria-hidden="true" />
-            刷新
-          </button>
+            scope={`admin-users:${identity}:list-refresh:${JSON.stringify(params)}`}
+            busy={query.isFetching}
+            title={
+              query.isError && query.data
+                ? `读取失败，请重试。上次读取：${fmtTime(query.dataUpdatedAt)}`
+                : "刷新"
+            }
+            onRefresh={() => query.refetch()}
+          />
         </div>
         <form
           className="admin-filters"
@@ -200,11 +201,6 @@ function Users({ identity }: { identity: string }) {
                 </tbody>
               </table>
             </div>
-            {query.isError && (
-              <p role="alert">
-                读取失败，请重试。上次读取：{fmtTime(query.dataUpdatedAt)}
-              </p>
-            )}
             {!query.data.items.length && <p>没有匹配的用户。</p>}
             <div className="admin-pager">
               <button
@@ -243,18 +239,14 @@ function Users({ identity }: { identity: string }) {
         onClose={closeDetail}
       >
         {detail.data ? (
-          <>
-            <UserDetail
-              user={detail.data.user}
-              busy={detail.isFetching}
-              onRefresh={() => void detail.refetch()}
-            />
-            {detail.isError && (
-              <p role="alert">
-                读取失败，请重试。上次读取：{fmtTime(detail.dataUpdatedAt)}
-              </p>
-            )}
-          </>
+          <UserDetail
+            user={detail.data.user}
+            busy={detail.isFetching}
+            refreshScope={`admin-users:${identity}:${detail.data.user.id}:refresh`}
+            stale={detail.isError}
+            staleReadAt={fmtTime(detail.dataUpdatedAt)}
+            onRefresh={() => detail.refetch()}
+          />
         ) : detail.isError ? (
           <AdminQueryError
             error={detail.error}
@@ -271,26 +263,31 @@ function Users({ identity }: { identity: string }) {
 function UserDetail({
   user,
   busy,
+  refreshScope,
+  stale,
+  staleReadAt,
   onRefresh,
 }: {
   user: Awaited<ReturnType<typeof fetchAdminUser>>["user"];
   busy: boolean;
-  onRefresh: () => void;
+  refreshScope: string;
+  stale: boolean;
+  staleReadAt: string;
+  onRefresh: () => Promise<
+    QueryObserverResult<Awaited<ReturnType<typeof fetchAdminUser>>, Error>
+  >;
 }) {
   return (
     <div>
       <div className="admin-detail-heading">
         <h2>{user.displayName}</h2>
-        <button
+        <AdminRefreshButton
           className="button secondary"
-          type="button"
-          disabled={busy}
-          aria-busy={busy}
-          onClick={onRefresh}
-        >
-          <RefreshCw size={16} aria-hidden="true" />
-          刷新
-        </button>
+          scope={refreshScope}
+          busy={busy}
+          title={stale ? `读取失败，请重试。上次读取：${staleReadAt}` : "刷新"}
+          onRefresh={onRefresh}
+        />
       </div>
       <dl className="admin-detail-list">
         <Row label="本站用户 ID" value={user.id} />

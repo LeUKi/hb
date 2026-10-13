@@ -21,6 +21,7 @@ import {
 import { OfficialConnectRequired } from "../auth/official-connect-required";
 import { SkeletonRows } from "../presentation/loading";
 import { RedemptionAction } from "../presentation/redemption-transition";
+import { ActionFeedbackLabel, useActionFeedback } from "../ui/action-feedback";
 import { ActivityErrorView } from "./activity-error";
 import { ClaimContent } from "./claim-content";
 import { PasswordField } from "./password-field";
@@ -162,7 +163,27 @@ function ClaimForm({
     setPassword(intent.operation.password);
     void automaticSubmit.current(intent.operation);
   }, [intent, direct, userId, accountTier, activity.id, setIntent]);
-  const [message, setMessage] = useState<string | null>(null);
+  const submitFeedback = useActionFeedback(
+    `${userId}:${csrfToken}:${activity.id}`,
+  );
+  function setMessage(message: string | null) {
+    if (!message) {
+      submitFeedback.clear();
+      return;
+    }
+    submitFeedback.show(
+      message.startsWith("口令不正确")
+        ? "口令不正确"
+        : message.startsWith("报名成功") || message.startsWith("你已经报名")
+          ? "已报名"
+          : message === "领取成功。" || message.startsWith("你已经领取")
+            ? "已领取"
+            : message.includes("尚未确认")
+              ? "待确认"
+              : "操作失败",
+      message,
+    );
+  }
   const [officialRequired, setOfficialRequired] = useState(false);
   const [pendingSubmission, setPendingSubmission] =
     useState<ClaimActivityInput | null>(null);
@@ -252,6 +273,19 @@ function ClaimForm({
   }
 
   automaticSubmit.current = submit;
+  const actionLabel = mutation.isPending
+    ? "正在确认…"
+    : pendingSubmission
+      ? "重试原提交"
+      : remainingSeconds > 0
+        ? `还需等待 ${remainingSeconds} 秒`
+        : direct
+          ? activity.draw
+            ? "立即报名"
+            : "领取奖励"
+          : activity.draw
+            ? "报名"
+            : "领取红包";
 
   return (
     <form
@@ -270,21 +304,21 @@ function ClaimForm({
           onSubmit={() => void submit()}
         />
       )}
-      {message ? (
-        <p role="status" className="form-message">
-          {message}
-        </p>
-      ) : null}
       {officialRequired ? (
         <OfficialConnectRequired returnTo={`/activities/${activity.id}`} />
       ) : null}
-      {remainingSeconds > 0 ? (
-        <p role="timer" className="form-message">
-          {remainingSeconds} 秒后可重试
-        </p>
-      ) : null}
       <RedemptionAction
         className="button claim-button"
+        title={
+          submitFeedback.feedback?.detail ??
+          (pendingSubmission ? "结果尚未确认，请重试原提交。" : undefined)
+        }
+        aria-description={submitFeedback.feedback?.detail}
+        aria-label={
+          submitFeedback.feedback && !mutation.isPending
+            ? `${actionLabel}，${submitFeedback.feedback.label}`
+            : actionLabel
+        }
         type="submit"
         disabled={mutation.isPending || remainingSeconds > 0}
       >
@@ -293,19 +327,11 @@ function ClaimForm({
         ) : (
           <Gift size={18} aria-hidden="true" />
         )}
-        {mutation.isPending
-          ? "正在确认…"
-          : pendingSubmission
-            ? "重试原提交"
-            : remainingSeconds > 0
-              ? `还需等待 ${remainingSeconds} 秒`
-              : direct
-                ? activity.draw
-                  ? "立即报名"
-                  : "领取奖励"
-                : activity.draw
-                  ? "报名"
-                  : "领取红包"}
+        <ActionFeedbackLabel
+          label={actionLabel}
+          feedback={mutation.isPending ? null : submitFeedback.feedback}
+          reserve={["正在确认…", "重试原提交", "口令不正确"]}
+        />
         <ArrowRight size={17} aria-hidden="true" />
       </RedemptionAction>
     </form>

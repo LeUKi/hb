@@ -3,13 +3,13 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { RefreshCw } from "lucide-react";
 import {
+  AdminRefreshButton,
   adminKey,
   fetchAdminOverview,
   fmtTime,
   useCurrentAdmin,
 } from "../lib/admin";
 import { isBlockingQueryError } from "../lib/query-view";
-import { CompactIconButton } from "./presentation/compact-icon-button";
 import { SkeletonRows } from "./presentation/loading";
 import "./admin-overview.css";
 
@@ -77,32 +77,40 @@ export function AdminOverviewPanel({ identity }: { identity: string }) {
     refetchOnWindowFocus: true,
   });
   const data = isBlockingQueryError(query) ? undefined : query.data;
-  const refresh = () => {
-    void query.refetch({ cancelRefetch: false });
-  };
   return (
     <div className="admin-overview">
       <header className="admin-section-heading">
         <h2>概览</h2>
-        <CompactIconButton
-          aria-label="刷新"
-          title="刷新"
-          aria-busy={query.isFetching}
-          disabled={query.isFetching}
-          onClick={refresh}
-        >
-          <RefreshCw
-            size={16}
-            className={query.isFetching ? "spin" : undefined}
-          />
-        </CompactIconButton>
+        <AdminRefreshButton
+          className="compact-icon-button list-refresh-button action-refresh-button"
+          scope={`admin-overview:${identity}:refresh`}
+          label="刷新"
+          busy={query.isFetching}
+          title={
+            query.isError && data
+              ? `读取失败，请重试。上次读取：${fmtTime(query.dataUpdatedAt)}`
+              : "刷新"
+          }
+          onRefresh={() => query.refetch({ cancelRefetch: false })}
+          icon={
+            <RefreshCw
+              size={16}
+              aria-hidden="true"
+              className={query.isFetching ? "spin" : undefined}
+            />
+          }
+        />
       </header>
-      {query.isError && (
+      {query.isError && !data && (
         <p role="alert">
           读取失败，请重试。
-          <button className="button secondary" type="button" onClick={refresh}>
-            重试
-          </button>
+          <AdminRefreshButton
+            className="button secondary"
+            scope={`admin-overview:${identity}:retry`}
+            label="重试"
+            busy={query.isFetching}
+            onRefresh={() => query.refetch({ cancelRefetch: false })}
+          />
         </p>
       )}
       {!data ? (
@@ -116,6 +124,7 @@ export function AdminOverviewPanel({ identity }: { identity: string }) {
           <p className="text-sm text-subtle">
             上次读取：{fmtTime(query.dataUpdatedAt)} · 环境：
             {data.runtime.environment}
+            {query.isError ? " · 读取失败，请重试。当前内容已保留。" : ""}
           </p>
           <div className="admin-overview-cards">
             <Link

@@ -138,7 +138,8 @@ async function setupActivityEntry(
     registrationGate?: Gate;
     passwordGate?: Gate;
     claimGetFailures?: number;
-    status?: "active" | "ended";
+    status?: "draft" | "active" | "ended";
+    viewer?: typeof user | null;
   } = {},
 ) {
   await page.clock.setFixedTime(new Date("2026-10-09T00:00:00.000Z"));
@@ -151,6 +152,11 @@ async function setupActivityEntry(
     claimGets: 0,
     passwordGets: 0,
     recipientGets: 0,
+    viewer: options.viewer === undefined ? user : options.viewer,
+    csrfToken: "csrf",
+    activityNotFound: false,
+    participationGate: null as Gate | null,
+    claimPostGate: null as Gate | null,
   };
 
   let claimGetFailures = options.claimGetFailures ?? 0;
@@ -164,7 +170,12 @@ async function setupActivityEntry(
     const path = url.pathname;
     if (path === "/api/session" || path === "/api/me") {
       if (options.sessionGate) await options.sessionGate.wait();
-      return route.fulfill({ json: { user, csrfToken: "csrf" } });
+      return route.fulfill({
+        json: {
+          user: state.viewer,
+          csrfToken: state.viewer ? state.csrfToken : null,
+        },
+      });
     }
     if (path === "/api/discovery/activities")
       return route.fulfill({
@@ -180,6 +191,8 @@ async function setupActivityEntry(
     if (path === `/api/activities/${activityId}`) {
       state.activityGets += 1;
       if (options.publicGate) await options.publicGate.wait();
+      if (state.activityNotFound)
+        return route.fulfill({ status: 404, json: { error: "活动未找到" } });
       return route.fulfill({
         json: {
           activity: activity({
@@ -206,6 +219,11 @@ async function setupActivityEntry(
     }
     if (path === `/api/activities/${activityId}/participation`) {
       state.claimGets += 1;
+      const requestedClaim = state.claimed ? claim() : null;
+      const requestedRegistration = state.registered ? registration() : null;
+      const participationGate = state.participationGate;
+      state.participationGate = null;
+      if (participationGate) await participationGate.wait();
       if (options.claimGate) await options.claimGate.wait();
       if (options.registrationGate) await options.registrationGate.wait();
       if (claimGetFailures > 0) {
@@ -217,14 +235,15 @@ async function setupActivityEntry(
       }
       return route.fulfill({
         json: {
-          claim: state.claimed ? claim() : null,
-          registration: state.registered ? registration() : null,
+          claim: requestedClaim,
+          registration: requestedRegistration,
         },
       });
     }
     if (path === `/api/activities/${activityId}/claim`) {
       state.claimPosts += 1;
       state.claimed = true;
+      if (state.claimPostGate) await state.claimPostGate.wait();
       return route.fulfill({ json: { result: "claimed", claim: claim() } });
     }
     if (path === `/api/activities/${activityId}/passwords`) {
@@ -694,7 +713,7 @@ test("本人领取和口令分阶段返回时，活动页外壳持续存在且�
   claimGate.release();
   await expect(page.getByText("兑换成功。")).toBeVisible();
   await expectClaimCopyReady(page);
-  await expect(page.getByText("1.00")).toBeVisible();
+  await expect(page.locator(".envelope-svg .prize")).toHaveText("+1.00 LDC");
   await passwordGate.waitStarted();
   await expect(
     page.locator('[data-layout-region="password-panel"]'),
@@ -727,7 +746,7 @@ test("本人报名分阶段返回时保留报名外壳，并在口令到达后�
   await expect(page.getByText("已用此口令报名")).toBeVisible();
 });
 
-test("提交领取后红包完整播放一次 800ms 展开，背景刷新不重复播放", async ({
+test("提交领取后红包完整播放一次 1800ms 展开，背景刷新不重复播放", async ({
   page,
 }) => {
   const state = await setupActivityEntry(page);
@@ -742,7 +761,7 @@ test("提交领取后红包完整播放一次 800ms 展开，背景刷新不重�
   await expectClaimCopyReady(page);
   await expect(envelope).toHaveAttribute("data-phase", "opening");
   await expect(envelope).toHaveAttribute("data-opening-count", "1");
-  await page.waitForTimeout(850);
+  await page.waitForTimeout(1850);
   await expect(envelope).toHaveAttribute("data-phase", "open");
   await expect(envelope).toHaveAttribute("data-opening-count", "1");
   expect(state.claimPosts).toBe(1);
@@ -767,12 +786,12 @@ test("参与记录初读失败后重试只触发一次已领取红包开封", as
   const envelope = page.locator('[data-testid="envelope"]');
   await expect(envelope).toHaveAttribute("data-phase", "opening");
   await expect(envelope).toHaveAttribute("data-opening-count", "1");
-  await page.waitForTimeout(850);
+  await page.waitForTimeout(1850);
   await expect(envelope).toHaveAttribute("data-phase", "open");
   await expect(envelope).toHaveAttribute("data-opening-count", "1");
 });
 
-test("慢领取记录到达后仍完整播放 800ms 开封动画", async ({ page }) => {
+test("慢领取记录到达后仍完整播放 1800ms 开封动画", async ({ page }) => {
   const claimGate = gate();
   await setupActivityEntry(page, { claimed: true, claimGate });
 
@@ -788,7 +807,7 @@ test("慢领取记录到达后仍完整播放 800ms 开封动画", async ({ page
   await page.waitForTimeout(400);
   await expect(envelope).toHaveAttribute("data-phase", "opening");
   await expect(envelope).toHaveAttribute("data-opening-count", "1");
-  await page.waitForTimeout(450);
+  await page.waitForTimeout(1450);
   await expect(envelope).toHaveAttribute("data-phase", "open");
   await expect(envelope).toHaveAttribute("data-opening-count", "1");
 });
@@ -804,7 +823,7 @@ test("直接访问和刷新每次进入都完整播放展示性展开，但不�
   const firstToken = await envelope.getAttribute("data-entry-token");
   await expect(envelope).toHaveAttribute("data-phase", "opening");
   await expect(envelope).toHaveAttribute("data-opening-count", "1");
-  await page.waitForTimeout(850);
+  await page.waitForTimeout(1850);
   await expect(envelope).toHaveAttribute("data-phase", "open");
 
   await page.reload();
@@ -813,7 +832,7 @@ test("直接访问和刷新每次进入都完整播放展示性展开，但不�
   expect(reloadToken).not.toBe(firstToken);
   await expect(envelope).toHaveAttribute("data-phase", "opening");
   await expect(envelope).toHaveAttribute("data-opening-count", "1");
-  await page.waitForTimeout(850);
+  await page.waitForTimeout(1850);
   await expect(envelope).toHaveAttribute("data-phase", "open");
   expect(state.claimPosts).toBe(0);
 });
@@ -829,7 +848,7 @@ test("从列表进入、后退再前进会重新展示开封，但不重交业�
   const firstToken = await envelope.getAttribute("data-entry-token");
   await expect(envelope).toHaveAttribute("data-phase", "opening");
   await expect(envelope).toHaveAttribute("data-opening-count", "1");
-  await page.waitForTimeout(850);
+  await page.waitForTimeout(1850);
   await expect(envelope).toHaveAttribute("data-phase", "open");
   const before = await regionMetrics(page);
 
@@ -843,7 +862,7 @@ test("从列表进入、后退再前进会重新展示开封，但不重交业�
   expect(forwardToken).not.toBe(firstToken);
   await expect(envelope).toHaveAttribute("data-phase", "opening");
   await expect(envelope).toHaveAttribute("data-opening-count", "1");
-  await page.waitForTimeout(850);
+  await page.waitForTimeout(1850);
   await expect(envelope).toHaveAttribute("data-phase", "open");
   expect(state.claimPosts).toBe(0);
   expect((await regionMetrics(page)).art?.height).toBe(before.art?.height);
@@ -855,7 +874,7 @@ test("名单弹窗和后台刷新不会触发红包重新展开", async ({ page 
   await page.goto(`/activities/${activityId}`);
   const envelope = page.locator('[data-testid="envelope"]');
   await expect(envelope).toHaveAttribute("data-opening-count", "1");
-  await page.waitForTimeout(850);
+  await page.waitForTimeout(1850);
   await expect(envelope).toHaveAttribute("data-phase", "open");
   const entryToken = await envelope.getAttribute("data-entry-token");
   await page.getByRole("button", { name: "查看领取名单" }).click();
@@ -868,6 +887,132 @@ test("名单弹窗和后台刷新不会触发红包重新展开", async ({ page 
   await page.getByRole("button", { name: "关闭" }).click();
   await expect(envelope).toHaveAttribute("data-opening-count", "1");
   await expect(envelope).toHaveAttribute("data-entry-token", entryToken ?? "");
+});
+
+for (const viewer of [
+  { name: "可参与用户", user, seal: "开" },
+  { name: "作者", user: { ...user, ...author }, seal: "查看" },
+  { name: "无资金资格用户", user: { ...user, canUseLdc: false }, seal: "查看" },
+  { name: "游客", user: null, seal: "查看" },
+]) {
+  test(`活动图片按${viewer.name}的实际参与能力显示印章`, async ({ page }) => {
+    await setupActivityEntry(page, { viewer: viewer.user });
+    await page.goto(`/activities/${activityId}`);
+    const image = page.locator('.envelope-svg svg[data-state="active"]');
+    await expect(image.locator(".seal-text")).toHaveText(viewer.seal);
+    await expect(image.locator(".sender")).toHaveText(author.displayName);
+    await expect(image.locator(".prize")).toHaveCount(0);
+  });
+}
+
+test("草稿图片显示预览印章，不提供参与或虚构领取结果", async ({ page }) => {
+  await setupActivityEntry(page, {
+    status: "draft",
+    viewer: { ...user, ...author },
+  });
+  await page.goto(`/activities/${activityId}`);
+  const image = page.locator('.envelope-svg svg[data-state="unavailable"]');
+  await expect(image.locator(".ended-stamp-text")).toHaveText("预览");
+  await expect(image.locator(".prize")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /领取红包/ })).toHaveCount(0);
+});
+
+test("同账号会话轮换立即撤下旧结果，迟到参与读取不能回填", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const state = await setupActivityEntry(page, { claimed: true });
+  await page.goto(`/activities/${activityId}`);
+  await expect(page.locator(".envelope-svg .prize")).toHaveText("+1.00 LDC");
+
+  await page
+    .locator(".desktop-nav")
+    .getByRole("link", { name: "兑奖", exact: true })
+    .click();
+  await expect(page.getByLabel("口令", { exact: true })).toBeVisible();
+
+  const oldRead = gate();
+  state.participationGate = oldRead;
+  await page.clock.setFixedTime(new Date("2026-10-09T00:00:16.000Z"));
+  await page.goBack();
+  await oldRead.waitStarted();
+
+  const newRead = gate();
+  state.csrfToken = "csrf-rotated";
+  state.claimed = false;
+  state.participationGate = newRead;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await newRead.waitStarted();
+  await expect(page.locator(".envelope-svg .prize")).toHaveCount(0);
+  await expect(page.locator(".envelope-svg .claimed-time")).toHaveCount(0);
+  await expect(
+    page.locator(".envelope-actions .payment-confirmation"),
+  ).toHaveCount(0);
+
+  oldRead.release();
+  await expect(page.locator(".envelope-svg .prize")).toHaveCount(0);
+  newRead.release();
+  await expect(page.getByRole("button", { name: /领取红包/ })).toBeVisible();
+  await expect(
+    page.locator('.envelope-svg svg[data-state="active"]'),
+  ).toBeVisible();
+  await expect(page.locator(".envelope-svg .prize")).toHaveCount(0);
+  expect(state.claimPosts).toBe(0);
+});
+
+test("同账号会话轮换后迟到领取提交不能写入新会话的展示缓存", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const state = await setupActivityEntry(page);
+  await page.goto(`/activities/${activityId}`);
+  const oldSubmission = gate();
+  state.claimPostGate = oldSubmission;
+  await page.getByLabel("兑换口令", { exact: true }).fill("EntryPass");
+  await page.getByRole("button", { name: /领取红包/ }).click();
+  await oldSubmission.waitStarted();
+
+  const newRead = gate();
+  state.csrfToken = "csrf-rotated";
+  state.claimed = false;
+  state.participationGate = newRead;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await newRead.waitStarted();
+  await expect(page.locator(".envelope-svg .prize")).toHaveCount(0);
+  const oldResponse = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname ===
+      `/api/activities/${activityId}/claim`,
+  );
+  oldSubmission.release();
+  await oldResponse;
+  await expect(page.locator(".envelope-svg .prize")).toHaveCount(0);
+  newRead.release();
+  await expect(page.getByRole("button", { name: /领取红包/ })).toBeVisible();
+  await expect(page.locator(".envelope-svg .prize")).toHaveCount(0);
+  expect(state.claimPosts).toBe(1);
+});
+
+test("活动读取返回未找到时立即撤下个人金额、领取时间和付款控制", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const state = await setupActivityEntry(page, { claimed: true });
+  await page.goto(`/activities/${activityId}`);
+  await expect(page.locator(".envelope-svg .prize")).toHaveText("+1.00 LDC");
+  await expect(page.locator(".envelope-svg .claimed-time")).toBeVisible();
+  await expect(
+    page.locator(".envelope-actions .payment-confirmation"),
+  ).toBeVisible();
+
+  state.activityNotFound = true;
+  await page.clock.setFixedTime(new Date("2026-10-09T00:00:16.000Z"));
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(page.getByRole("alert")).toContainText("未找到活动");
+  await expect(page.locator(".envelope-svg .prize")).toHaveCount(0);
+  await expect(page.locator(".envelope-svg .claimed-time")).toHaveCount(0);
+  await expect(
+    page.locator(".envelope-actions .payment-confirmation"),
+  ).toHaveCount(0);
+  expect(state.claimPosts).toBe(0);
 });
 
 for (const viewport of [
@@ -905,7 +1050,7 @@ for (const viewport of [
     await expect(page.locator(".claim-art")).toBeVisible();
     await expect(page.locator(".claim-copy")).toBeVisible();
     await expect(page.locator('[data-note-region="ended"]')).toBeVisible();
-    await expectEnvelopeHeight(page, viewport.width <= 760 ? 250 : 280);
+    await expectEnvelopeHeight(page, 280);
     if (viewport.width === 768) {
       await expectNoHorizontalOverflow(page);
       await expectTabReachesVisibleControl(page);
@@ -932,7 +1077,7 @@ test("减少动态效果下异步内容即时稳定替换，不产生多帧布�
   claimGate.release();
   const samples = await samplesPromise;
 
-  await expect(page.getByText("1.00")).toBeVisible();
+  await expect(page.locator(".envelope-svg .prize")).toHaveText("+1.00 LDC");
   expect(samples.filter((sample) => sample.transform !== "none")).toHaveLength(
     0,
   );

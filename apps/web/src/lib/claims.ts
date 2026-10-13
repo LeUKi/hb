@@ -24,7 +24,12 @@ import {
 } from "./attempt-cooldown";
 import { beginAttempt, settleAttempt } from "./attempt-history";
 import { passwordMatchResult } from "./attempt-history-result";
-import { sessionQueryKey, useAccountSession } from "./auth";
+import {
+  type SessionResponse,
+  sessionQueryKey,
+  sessionScope,
+  useAccountSession,
+} from "./auth";
 import {
   canSkipDrawRefresh,
   claimDetailKey,
@@ -52,9 +57,12 @@ export function useCurrentParticipation(
   drawState?: DrawSummary["state"],
 ) {
   const client = useQueryClient();
-  const account = useAccountSession(userId);
+  const account = useAccountSession(userId, "session");
   const key = participationKey(userId, activityId);
-  const scope = JSON.stringify([userId, activityId, enabled]);
+  const identity = sessionScope(
+    client.getQueryData<SessionResponse>(sessionQueryKey),
+  );
+  const scope = JSON.stringify([userId, activityId, enabled, identity]);
   const cached = client.getQueryState<ParticipationCache>(key);
   const refresh = useRef({
     scope,
@@ -64,7 +72,7 @@ export function useCurrentParticipation(
       cached?.isInvalidated,
     ),
     drawState,
-    request: null as { full: boolean } | null,
+    request: null as { full: boolean; scope: string } | null,
   });
   if (refresh.current.scope !== scope)
     refresh.current = {
@@ -80,16 +88,21 @@ export function useCurrentParticipation(
   const query = useQuery<ParticipationCache>({
     queryKey: key,
     queryFn: async ({ signal }) => {
-      const identity = account.captureIdentity();
+      const accountIdentity = account.captureIdentity();
+      const requestScope = sessionScope(
+        client.getQueryData<SessionResponse>(sessionQueryKey),
+      );
       const state = refresh.current;
       const full =
         state.fullReadRequested ||
+        client.getQueryData<ParticipationCache>(key)?.readSessionScope !==
+          requestScope ||
         !canSkipDrawRefresh(
           client.getQueryData<ParticipationCache>(key),
           drawState,
         );
       state.fullReadRequested = false;
-      const request = { full };
+      const request = { full, scope: requestScope };
       state.request = request;
       try {
         const result = await readResponse<ActivityParticipationResponse>(
@@ -98,9 +111,18 @@ export function useCurrentParticipation(
             { signal, cache: "no-store" },
           ),
         );
-        if (signal.aborted || !account.isCurrentIdentity(identity))
+        if (
+          signal.aborted ||
+          !account.isCurrentIdentity(accountIdentity) ||
+          requestScope !==
+            sessionScope(client.getQueryData<SessionResponse>(sessionQueryKey))
+        )
           throw new DOMException("请求已失效", "AbortError");
-        return result;
+        return {
+          ...result,
+          readSessionScope: requestScope,
+          readAt: Date.now(),
+        };
       } finally {
         if (state.request === request) state.request = null;
       }
@@ -119,6 +141,48 @@ export function useCurrentParticipation(
     refresh.current.fullReadRequested = true;
     return query.refetch();
   }, [query.refetch]);
+  const checkedSession = useRef<string | null>(null);
+  useEffect(() => {
+    if (!enabled || query.data?.readSessionScope === identity) return;
+    if (query.isFetching && refresh.current.request?.scope === identity) {
+      checkedSession.current = scope;
+      return;
+    }
+    const cancelled =
+      query.error instanceof DOMException && query.error.name === "AbortError";
+    if (checkedSession.current === scope && query.error && !cancelled) return;
+    checkedSession.current = scope;
+    let active = true;
+    void client
+      .cancelQueries({
+        queryKey: participationKey(userId, activityId),
+        exact: true,
+      })
+      .then(() => {
+        if (
+          !active ||
+          identity !==
+            sessionScope(client.getQueryData<SessionResponse>(sessionQueryKey))
+        )
+          return;
+        refresh.current.fullReadRequested = true;
+        void query.refetch();
+      });
+    return () => {
+      active = false;
+    };
+  }, [
+    client,
+    enabled,
+    identity,
+    scope,
+    query.data?.readSessionScope,
+    query.isFetching,
+    query.error,
+    query.refetch,
+    userId,
+    activityId,
+  ]);
   useEffect(() => {
     const previous = refresh.current.drawState;
     refresh.current.drawState = drawState;
@@ -131,7 +195,11 @@ export function useCurrentParticipation(
     )
       void refetch();
   }, [enabled, drawState, refetch]);
-  return { ...query, refetch };
+  return {
+    ...query,
+    data: query.data?.readSessionScope === identity ? query.data : undefined,
+    refetch,
+  };
 }
 
 export function useMyClaims(userId: string, cursor: string | null) {
@@ -196,7 +264,7 @@ export function useClaim(userId: string, id: string) {
 
 export function useClaimReward(userId: string, csrfToken: string, id: string) {
   const queryClient = useQueryClient();
-  const account = useAccountSession(userId);
+  const account = useAccountSession(userId, "session");
   return useMutation({
     gcTime: 0,
     onMutate: async (input) => ({

@@ -9,13 +9,16 @@ import {
 } from "./payments";
 import type { PublicUserProfile } from "./profile";
 import type { AttemptCooldown } from "./rate-limits";
+import type { RecipientSpeedTitle } from "./recipient-speed";
 
+export * from "./activity-image";
 export * from "./admin";
 export * from "./ecoji-v2";
 export * from "./login-settings";
 export * from "./payments";
 export * from "./profile";
 export * from "./rate-limits";
+export * from "./recipient-speed";
 
 export const ACTIVITY_LIMITS = {
   titleCharacters: 100,
@@ -736,6 +739,7 @@ export type AuthorRegistrationList = {
 };
 export type AuthorClaim = Omit<ClaimDetail, "afterClaimInfo"> & {
   claimant: ActivityAuthor;
+  speedTitle?: RecipientSpeedTitle;
 } & { rewardType: "ldc"; amount: string; payment: PaymentView };
 export type AuthorClaimList = {
   items: AuthorClaim[];
@@ -746,6 +750,7 @@ export type PublicRecipient = PublicUserProfile & {
   claimedAt?: string;
   amount?: string;
   title?: "highest" | "lowest";
+  speedTitle?: RecipientSpeedTitle;
 };
 export type PublicRecipientList = {
   enabled: boolean;

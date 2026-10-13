@@ -6,6 +6,7 @@ import type { Merchant, MerchantList } from "../../packages/contracts/src";
 export async function fullAppMerchant(
   context: BrowserContext,
   csrfToken: string,
+  origin = "http://127.0.0.1:4193",
 ) {
   const response = await context.request.get("/api/me/merchants");
   expect(response.status()).toBe(200);
@@ -14,7 +15,7 @@ export async function fullAppMerchant(
   if (!merchant) {
     const saved = await context.request.post("/api/me/merchants", {
       headers: {
-        Origin: "http://127.0.0.1:4193",
+        Origin: origin,
         "X-CSRF-Token": csrfToken,
       },
       data: {
@@ -42,7 +43,7 @@ export async function fullAppMerchant(
       `/api/me/merchants/${merchant.id}`,
       {
         headers: {
-          Origin: "http://127.0.0.1:4193",
+          Origin: origin,
           "X-CSRF-Token": csrfToken,
         },
         data: {

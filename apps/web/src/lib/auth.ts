@@ -105,12 +105,32 @@ export function sessionIdentity(
   return user ? `${user.id}:${user.accountTier}` : null;
 }
 
-export function useAccountSession(userId: string) {
+/** Private presentation facts belong to one confirmed login session. */
+export function sessionScope(session: SessionResponse | undefined) {
+  const user = session?.user;
+  return JSON.stringify([
+    user?.id ?? null,
+    user?.accountTier ?? null,
+    user?.loginProvider ?? null,
+    session?.csrfToken ?? null,
+  ]);
+}
+
+export function useAccountSession(
+  userId: string,
+  identityScope: "account" | "session" = "account",
+) {
+  // Configuration submissions survive a provider/token refresh for the same
+  // account; personal participation facts explicitly require one login session.
   const queryClient = useQueryClient();
-  const captureIdentity = () =>
-    sessionIdentity(
-      queryClient.getQueryData<SessionResponse>(sessionQueryKey)?.user ?? null,
-    );
+  const captureIdentity = () => {
+    const session = queryClient.getQueryData<SessionResponse>(sessionQueryKey);
+    return session?.user
+      ? identityScope === "session"
+        ? sessionScope(session)
+        : sessionIdentity(session.user)
+      : null;
+  };
   const renderedIdentity = captureIdentity();
   const isCurrentIdentity = (identity: string | null | undefined) =>
     Boolean(identity) &&

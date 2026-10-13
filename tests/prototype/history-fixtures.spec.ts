@@ -344,7 +344,7 @@ browserTest(
       /\d{2}\/\d{2}\s+\d{2}:\d{2}/u,
     );
     await randomRow.locator(".activity-rows-open").click();
-    await expect(page.locator(".slip-amount")).toHaveText("+0.98");
+    await expect(page.locator(".envelope-svg .prize")).toHaveText("+0.98 LDC");
     await expect(page.locator('[data-testid="envelope"]')).toHaveAttribute(
       "data-animate",
       "false",
@@ -402,7 +402,9 @@ browserTest(
     ];
     for (const entry of cases) {
       await page.goto(`/#activity?sample=${entry.id}`);
-      await expect(page.locator(".slip-amount")).toHaveText(`+${entry.amount}`);
+      await expect(page.locator(".envelope-svg .prize")).toHaveText(
+        `+${entry.amount} LDC`,
+      );
       await page
         .getByRole("button", { name: "查看领取名单", exact: true })
         .click();
@@ -425,7 +427,9 @@ browserTest(
       await page
         .getByRole("button", { name: "查看领取名单", exact: true })
         .click();
-      await expect(page.locator(".slip-amount")).toHaveText(`+${entry.amount}`);
+      await expect(page.locator(".envelope-svg .prize")).toHaveText(
+        `+${entry.amount} LDC`,
+      );
       await expect(page.locator(".recipient-title.title-highest")).toHaveCount(
         entry.count,
       );
@@ -441,7 +445,9 @@ browserTest(
       await page
         .getByRole("button", { name: "查看领取名单", exact: true })
         .click();
-      await expect(page.locator(".slip-amount")).toHaveText(`+${entry.amount}`);
+      await expect(page.locator(".envelope-svg .prize")).toHaveText(
+        `+${entry.amount} LDC`,
+      );
       await expect(page.locator(".recipient-title.title-highest")).toHaveCount(
         entry.count,
       );
@@ -506,7 +512,7 @@ browserTest(
         .click();
       await expect(recipients).toHaveText(published);
       await page.getByRole("button", { name: "关闭名单", exact: true }).click();
-      await expect(page.locator(".slip-amount")).toHaveCount(0);
+      await expect(page.locator(".envelope-svg .prize")).toHaveCount(0);
       await expect(
         page.getByText("已用此口令报名", { exact: true }),
       ).toHaveCount(0);
@@ -539,7 +545,7 @@ for (const identity of ["guest", "lite"] as const) {
           "data-payment-progress",
           "none",
         );
-        await expect(page.locator(".slip-amount")).toHaveCount(0);
+        await expect(page.locator(".envelope-svg .prize")).toHaveCount(0);
         await expect(page.locator('[data-testid="envelope"]')).toHaveAttribute(
           "data-animate",
           "false",
@@ -578,7 +584,9 @@ browserTest(
       "data-participation",
       "registered",
     );
-    await expect(page.locator(".reward-slip")).toHaveCount(0);
+    await expect(
+      page.locator(".envelope-svg :is(.claimed-result, .ended-stamp)"),
+    ).toHaveCount(0);
     await page.getByRole("button", { name: "场景与身份" }).click();
     await page
       .getByRole("button", { name: "预览中奖变化", exact: true })
@@ -588,7 +596,7 @@ browserTest(
       "data-participation",
       "won",
     );
-    await expect(page.locator(".slip-amount")).toHaveText("+2.18");
+    await expect(page.locator(".envelope-svg .prize")).toHaveText("+2.18 LDC");
     await page
       .locator(".desktop-nav")
       .getByRole("link", { name: "活动历史", exact: true })
@@ -609,7 +617,7 @@ browserTest(
       ),
     ).toBe(false);
     await row.locator(".activity-rows-open").click();
-    await expect(page.locator(".slip-amount")).toHaveText("+2.18");
+    await expect(page.locator(".envelope-svg .prize")).toHaveText("+2.18 LDC");
     await expect(page.locator('[data-testid="envelope"]')).toHaveAttribute(
       "data-animate",
       "false",

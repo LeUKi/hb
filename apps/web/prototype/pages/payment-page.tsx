@@ -1,9 +1,4 @@
-import {
-  ArrowLeft,
-  ArrowRight,
-  CheckCircle2,
-  ChevronRight,
-} from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronRight } from "lucide-react";
 import {
   type ReactNode,
   useEffect,
@@ -11,6 +6,10 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  ActionButton,
+  useActionFeedback,
+} from "../../src/components/ui/action-feedback";
 import { isActivityDeadlineReached } from "../activity-metadata";
 import { projectActivityTableState } from "../activity-table-state";
 import {
@@ -239,7 +238,9 @@ export function PaymentPage({
   const [selectedPaymentId, setSelectedPaymentId] = useState<string | null>(
     null,
   );
-  const [refreshed, setRefreshed] = useState(false);
+  const refreshFeedback = useActionFeedback(
+    `prototype-payments:${identity}:refresh`,
+  );
   const [detailOpen, setDetailOpen] = useState(false);
   const processingOverlay = useMerchantPaymentOverlay(identity);
   const processingWasOpen = useRef(false);
@@ -381,11 +382,6 @@ export function PaymentPage({
       }`}
     >
       <PageTitle title="付款记录" />
-      {refreshed && (
-        <p className="work-inline-success" role="status">
-          <CheckCircle2 size={16} /> 演示记录已更新。
-        </p>
-      )}
       <div className="work-payment-layout">
         <section
           ref={activityColumnRef}
@@ -467,7 +463,7 @@ export function PaymentPage({
                         setDetailOpen(false);
                       }
                       setMobileTargetStep(true);
-                      setRefreshed(false);
+                      refreshFeedback.clear();
                     }}
                   >
                     <span className="work-payment-activity-copy">
@@ -523,13 +519,14 @@ export function PaymentPage({
                   <small>LDC</small>
                 </strong>
               </div>
-              <button
+              <ActionButton
                 className="button secondary work-payment-refresh"
                 type="button"
-                onClick={() => setRefreshed(true)}
-              >
-                刷新记录
-              </button>
+                label="刷新记录"
+                feedback={refreshFeedback.feedback}
+                reserve={["刷新记录", "已刷新"]}
+                onClick={() => refreshFeedback.show("已刷新")}
+              />
             </div>
           </div>
           {selectedActivity && (
@@ -590,7 +587,7 @@ export function PaymentPage({
                   title={payment.recipient.name}
                   onClick={() => {
                     setSelectedPaymentId(payment.id);
-                    setRefreshed(false);
+                    refreshFeedback.clear();
                     if (window.matchMedia("(max-width: 1119px)").matches)
                       setDetailOpen(true);
                   }}

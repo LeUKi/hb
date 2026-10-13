@@ -211,7 +211,7 @@ test("领取记录慢到时保留参与记录占位，不先显示已结束或�
   state.releaseClaim();
   await expect(page.getByText("兑换成功。")).toBeVisible();
   await expectClaimCopyReady(page);
-  await expect(page.getByText("1.00")).toBeVisible();
+  await expect(page.locator(".envelope-svg .prize")).toHaveText("+1.00 LDC");
 });
 
 test("领取成功立即展示真实结果，相关刷新变慢也不阻塞或重复提交", async ({
@@ -226,7 +226,7 @@ test("领取成功立即展示真实结果，相关刷新变慢也不阻塞或�
   await page.getByRole("button", { name: /领取红包/ }).click();
 
   await expect(page.getByText("兑换成功。")).toBeVisible();
-  await expect(page.getByText("1.00")).toBeVisible();
+  await expect(page.locator(".envelope-svg .prize")).toHaveText("+1.00 LDC");
   expect(state.claimPosts).toBe(1);
   await expect.poll(() => state.passwordRefreshStarted).toBe(true);
 });
@@ -268,7 +268,7 @@ for (const scenario of [
     await page.waitForTimeout(30);
     state.releaseClaim();
     const samples = await samplesPromise;
-    await expect(page.getByText("1.00")).toBeVisible();
+    await expect(page.locator(".envelope-svg .prize")).toHaveText("+1.00 LDC");
     await expectClaimCopyReady(page);
 
     const distinctTops = new Set(samples.map((sample) => sample.top));

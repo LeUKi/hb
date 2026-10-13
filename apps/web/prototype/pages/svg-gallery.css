@@ -1,0 +1,230 @@
+.svg-gallery-page {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  padding: 16px;
+  overflow: hidden;
+  color: var(--ink);
+}
+
+.svg-gallery-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.svg-gallery-heading h1 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.svg-gallery-heading p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.svg-gallery-replay {
+  min-height: var(--control-height, 32px);
+  padding: 4px 10px;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.svg-gallery-controls {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--paper);
+}
+
+.svg-gallery-controls .field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.svg-gallery-control-label {
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.svg-gallery-controls select {
+  min-height: var(--control-height, 32px);
+  max-width: 100%;
+  padding: 4px 28px 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: var(--control-font-size, 0.8125rem);
+}
+
+.svg-gallery-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: var(--control-height, 32px);
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  white-space: nowrap;
+}
+
+.svg-gallery-check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--red);
+}
+
+.svg-gallery-count {
+  margin-left: auto;
+  padding-bottom: 7px;
+  white-space: nowrap;
+}
+
+.svg-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+  padding: 2px 2px 12px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  scrollbar-color: var(--line) transparent;
+  scrollbar-width: thin;
+}
+
+.svg-gallery-card {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--paper);
+}
+
+.svg-gallery-card-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  min-width: 0;
+  min-height: 72px;
+}
+
+.svg-gallery-card-head h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 650;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.svg-gallery-card-head p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.svg-gallery-card-category {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 6px;
+  border: 1px solid var(--separator);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.svg-gallery-preview {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-width: 0;
+  aspect-ratio: 420 / 560;
+  overflow: hidden;
+  border: 1px solid var(--separator);
+  border-radius: 6px;
+  background: #151619;
+}
+
+.svg-gallery-preview svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.svg-gallery-card-actions {
+  display: flex;
+  justify-content: end;
+  min-width: 0;
+}
+
+.svg-gallery-card-replay {
+  min-height: 28px;
+  padding: 3px 8px;
+  gap: 5px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+/* Keep comparison samples at their initial age without changing shared SVGs. */
+.svg-gallery-page .svg-gallery-preview--snapshot svg .aging-layer,
+.svg-gallery-page .svg-gallery-preview--snapshot svg .freshness-warning,
+.svg-gallery-page .svg-gallery-preview--snapshot svg .stale-prompt {
+  animation-play-state: paused;
+}
+
+@media (max-width: 760px) {
+  .svg-gallery-page {
+    padding: 12px;
+  }
+
+  .svg-gallery-heading {
+    display: grid;
+  }
+
+  .svg-gallery-replay {
+    justify-self: start;
+  }
+
+  .svg-gallery-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .svg-gallery-count {
+    margin-left: 0;
+    padding-bottom: 0;
+  }
+
+  .svg-gallery-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

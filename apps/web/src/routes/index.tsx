@@ -12,7 +12,7 @@ import {
 } from "../components/activities/public-activities-dialog";
 import { Envelope } from "../components/presentation/envelope";
 import { activityToolsEnabled } from "../lib/activity-tools-release";
-import { getAuthErrorMessage, useSession } from "../lib/auth";
+import { getAuthErrorMessage, sessionScope, useSession } from "../lib/auth";
 import {
   useEntryNavigate,
   useHistoryOverlay,
@@ -22,6 +22,20 @@ export const Route = createFileRoute("/")({ component: IndexPage });
 function IndexPage() {
   const exchange = useRef<GlobalExchangeHandle>(null);
   const session = useSession();
+  const presentationIdentity = session.isSuccess
+    ? sessionScope(session.data)
+    : "unconfirmed";
+  const exchangeSession = useRef<{ confirmed?: string; generation: number }>({
+    generation: 0,
+  });
+  if (session.isSuccess) {
+    if (
+      exchangeSession.current.confirmed !== undefined &&
+      exchangeSession.current.confirmed !== presentationIdentity
+    )
+      exchangeSession.current.generation += 1;
+    exchangeSession.current.confirmed = presentationIdentity;
+  }
   const publicActivities = useHistoryOverlay("public-activities");
   const publicActivitiesTrigger = useRef<HTMLButtonElement>(null);
   const [requestedOpen, setRequestedOpen] = useState(false);
@@ -83,7 +97,11 @@ function IndexPage() {
   return (
     <div className="home-page">
       <section className="home-hero" aria-label="口令兑奖">
-        <Envelope size="small" open={false} />
+        <Envelope
+          size="small"
+          open={false}
+          presentationIdentity={presentationIdentity}
+        />
         <div className="home-exchange">
           {authError && (
             <p role="alert" className="form-message">
@@ -106,7 +124,10 @@ function IndexPage() {
             <span className="public-activities-label">已公开的活动</span>
             <ArrowRight size={14} aria-hidden="true" />
           </button>
-          <GlobalExchange ref={exchange} />
+          <GlobalExchange
+            key={exchangeSession.current.generation}
+            ref={exchange}
+          />
         </div>
       </section>
       {publicActivities.overlay && (

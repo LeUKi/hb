@@ -311,6 +311,10 @@ test("真实本地报名与领取后，已挂载公共人数/名单及作者记�
       "data-opening-count",
       drawOpeningCount ?? "0",
     );
+    await expect(publicRegistrations.locator(".title-speed")).toHaveCount(0);
+    await expect(
+      publicRegistrations.locator(".recipient-time__speed"),
+    ).toHaveCount(0);
 
     const authorClaim = await owner.newPage();
     await authorClaim.goto(`/activities/${claimId}`);
@@ -388,6 +392,24 @@ test("真实本地报名与领取后，已挂载公共人数/名单及作者记�
     const stateResponse = await request.get("http://127.0.0.1:4194/state");
     expect(stateResponse.status()).toBe(200);
     const state = await stateResponse.json();
+    const openedActivity = state.activities.find(
+      (activity: { id: string }) => activity.id === claimId,
+    );
+    const elapsedMs =
+      Date.parse(publicRoster.items[0].claimedAt) - openedActivity.opened_at;
+    expect(elapsedMs).toBeGreaterThanOrEqual(0);
+    const elapsedText = `${elapsedMs / 1_000}秒`;
+    const speedTitle = elapsedMs <= 10_000 ? "我焯有桂！" : "手速王";
+    for (const roster of [authorClaims, publicClaims]) {
+      await expect(roster.locator(".recipient-time__speed")).toHaveText(
+        elapsedText,
+      );
+      await expect(roster.locator(".title-speed")).toHaveText(speedTitle);
+      await expect(roster.locator(".recipient-time__relative")).toHaveCount(0);
+    }
+    expect(publicRoster.items[0].speedTitle).toBe(
+      elapsedMs <= 10_000 ? "flash" : "fastest",
+    );
     expect(
       state.activities.find(
         (activity: { id: string }) => activity.id === drawId,

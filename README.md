@@ -10,6 +10,8 @@
 
 ## 项目文档
 
+- [动态活动图片](docs/activity-images.md)：共享红包、论坛内嵌代码、只读图片 Cookie、浏览器记录与本地跨站验收。
+
 - [业务规格 v1](docs/business-spec-v1.md)：完整业务规则、一期与后续阶段边界，以及业务验收基线。
 - [一期技术方案](docs/technical-design-phase-1.md)：技术选型、部署与数据边界、兑奖一致性、自动付款恢复和接入验收要求。
 - [一期实施记录](docs/implementation-phase-1.md)：八步实施顺序、已完成内容、验证证据和外部联调条件。

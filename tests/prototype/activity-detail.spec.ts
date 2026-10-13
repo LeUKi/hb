@@ -46,7 +46,7 @@ test("detail header separates type, configured pool and personal reward", async 
   await expect(page.locator(".activity-heading")).toContainText(
     "总奖池 30.00 LDC",
   );
-  await expect(page.locator(".slip-amount")).toContainText("0.98");
+  await expect(page.locator(".envelope-svg .prize")).toContainText("0.98");
   await page.goto("/#activity?sample=reading-ldc");
   await expect(page.locator(".activity-heading")).toContainText("LDC");
   await expect(page.locator(".activity-heading")).toContainText(
@@ -211,7 +211,9 @@ test("draw countdown does not restart on navigation or publish a result at zero"
     "data-open",
     "false",
   );
-  await expect(page.locator(".reward-slip")).toHaveCount(0);
+  await expect(
+    page.locator(".envelope-svg :is(.claimed-result, .ended-stamp)"),
+  ).toHaveCount(0);
   await page.getByRole("button", { name: "查看报名名单", exact: true }).click();
   await expect(page.locator(".recipient")).toHaveCount(20);
   await expect(page.locator(".recipient-award, .recipient-title")).toHaveCount(
@@ -246,7 +248,9 @@ test("a request crossing the deadline cannot acquire a reward", async ({
     "false",
   );
   await expect(page.locator(".password-list .pw-locked")).toHaveCount(3);
-  await expect(page.locator(".reward-slip")).toHaveCount(0);
+  await expect(
+    page.locator(".envelope-svg :is(.claimed-result, .ended-stamp)"),
+  ).toHaveCount(0);
 });
 
 for (const width of [1920, 1440, 768, 375]) {
@@ -299,7 +303,7 @@ for (const width of [1920, 1440, 768, 375]) {
       await page.evaluate(() => document.documentElement.scrollWidth),
     ).toBeLessThanOrEqual(width);
     await page.goto("/#activity?sample=history-random-active");
-    await expect(page.locator(".slip-amount")).toContainText("0.98");
+    await expect(page.locator(".envelope-svg .prize")).toContainText("0.98");
 
     if (width === 1440 || width === 375) {
       await page.locator(".password-section").scrollIntoViewIfNeeded();

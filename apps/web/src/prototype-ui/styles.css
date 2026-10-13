@@ -1012,7 +1012,7 @@ summary::-webkit-details-marker {
   display: block;
   margin-top: 5px;
 }
-.copy-toast {
+.activity-notice {
   display: flex;
   align-items: center;
   gap: 6px;

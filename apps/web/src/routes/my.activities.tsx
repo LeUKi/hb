@@ -24,7 +24,6 @@ import {
   ListRefreshButton,
   Pagination,
 } from "../components/presentation/list-controls";
-import { RefreshNotice } from "../components/presentation/loading";
 import {
   formatTime,
   useHistorySummary,
@@ -142,10 +141,9 @@ function ActivityList({ userId }: { userId: string }) {
         <div className="activity-list-toolbar">
           <ListRefreshButton
             busy={query.isFetching || summary.isFetching}
-            onRefresh={() => {
-              void query.refetch();
-              void summary.refetch();
-            }}
+            scope={`${userId}:${cursor ?? ""}`}
+            error={query.error ?? summary.error}
+            onRefresh={() => Promise.all([query.refetch(), summary.refetch()])}
           />
         </div>
         {cursorNotice}
@@ -155,7 +153,6 @@ function ActivityList({ userId }: { userId: string }) {
           state={listState}
           emptyText="还没有符合条件的活动。"
           onRetry={query.isError ? () => query.refetch() : undefined}
-          refreshNotice={<RefreshNotice query={query} />}
           resetKey={`${cursorScope}:${cursors.length}`}
           footer={
             <Pagination

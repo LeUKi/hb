@@ -1,3 +1,4 @@
+import type { ActivityImagePresentation } from "@hb/contracts";
 import { useRouter } from "@tanstack/react-router";
 import { useSetAtom } from "jotai";
 import {
@@ -19,8 +20,13 @@ import {
   useRef,
   useState,
 } from "react";
+import { sessionScope, useSession } from "../../lib/auth";
+import { exchangeContextAtom } from "../../lib/discovery";
 import { afterNavigationLayout } from "../../lib/navigation-state";
-import { redemptionIntentAtom } from "../../lib/redemption-intent";
+import {
+  redemptionIntentAtom,
+  rewardAnimationAtom,
+} from "../../lib/redemption-intent";
 
 type Page = "home" | "activity" | "other";
 type SharedPart = "password" | "label" | "hint" | "action";
@@ -38,6 +44,8 @@ export interface RedemptionTransition {
   /** False when either visual source is unavailable or outside the viewport. */
   shared?: boolean;
   closingReward?: EnvelopeReward;
+  closingPresentation?: ActivityImagePresentation;
+  closingIdentity?: string;
   sourceRect?: { x: number; y: number; width: number; height: number };
   fields?: Partial<Record<SharedPart, Geometry>>;
 }
@@ -169,24 +177,38 @@ export const RedemptionRouteFrame = forwardRef<
   );
 });
 
+type EnvelopeSnapshot = {
+  reward?: EnvelopeReward;
+  presentation?: ActivityImagePresentation;
+  identity?: string;
+};
 const SnapshotContext = createContext<
-  (reward: EnvelopeReward | undefined) => void
+  (snapshot: EnvelopeSnapshot | undefined) => void
 >(() => {});
-export function useEnvelopeSnapshot(reward: EnvelopeReward | undefined) {
+export function useEnvelopeSnapshot(snapshot: EnvelopeSnapshot | undefined) {
   const save = useContext(SnapshotContext);
   useLayoutEffect(() => {
-    save(reward);
-  }, [save, reward]);
+    save(snapshot);
+  }, [save, snapshot]);
 }
 
 /** Observe real router transitions, including browser history; keep only visual facts. */
 export function RedemptionNavigation({ children }: { children: ReactNode }) {
   const router = useRouter();
+  const session = useSession();
+  const identity = session.isSuccess
+    ? sessionScope(session.data)
+    : "unconfirmed";
+  const currentIdentity = useRef(identity);
+  currentIdentity.current = identity;
   const setIntent = useSetAtom(redemptionIntentAtom);
+  const setExchangeContext = useSetAtom(exchangeContextAtom);
+  const setRewardAnimation = useSetAtom(rewardAnimationAtom);
+  const previousIdentity = useRef(identity);
   const [transition, setTransition] = useState<RedemptionTransition | null>(
     null,
   );
-  const snapshot = useRef<EnvelopeReward | undefined>(undefined);
+  const snapshot = useRef<EnvelopeSnapshot | undefined>(undefined);
   const movement = useRef<{ id: number; startedAt: number } | null>(null);
   const beginMovement = useMemo(
     () => (id: number) => {
@@ -201,11 +223,34 @@ export function RedemptionNavigation({ children }: { children: ReactNode }) {
     [],
   );
   const save = useMemo(
-    () => (reward: EnvelopeReward | undefined) => {
-      snapshot.current = reward;
+    () => (value: EnvelopeSnapshot | undefined) => {
+      snapshot.current = value;
     },
     [],
   );
+  useLayoutEffect(() => {
+    if (
+      previousIdentity.current !== "unconfirmed" &&
+      previousIdentity.current !== identity
+    ) {
+      setIntent(null);
+      setExchangeContext(null);
+      setRewardAnimation(null);
+    }
+    previousIdentity.current = identity;
+    if (snapshot.current?.identity !== identity) snapshot.current = undefined;
+    setTransition((current) =>
+      current?.closingIdentity !== undefined &&
+      current.closingIdentity !== identity
+        ? {
+            ...current,
+            closingReward: undefined,
+            closingPresentation: undefined,
+            closingIdentity: undefined,
+          }
+        : current,
+    );
+  }, [identity, setIntent, setExchangeContext, setRewardAnimation]);
   useEffect(
     () =>
       router.subscribe("onBeforeNavigate", (event) => {
@@ -218,6 +263,12 @@ export function RedemptionNavigation({ children }: { children: ReactNode }) {
               : "other";
         const from = page(event.fromLocation?.pathname ?? "");
         const to = page(event.toLocation.pathname);
+        const closing =
+          from === "activity" &&
+          to === "home" &&
+          snapshot.current?.identity === currentIdentity.current
+            ? snapshot.current
+            : undefined;
         setIntent((current) =>
           current &&
           event.toLocation.pathname === `/activities/${current.activityId}`
@@ -257,8 +308,9 @@ export function RedemptionNavigation({ children }: { children: ReactNode }) {
             to === "activity"
               ? event.toLocation.pathname.split("/").at(-1)
               : undefined,
-          closingReward:
-            from === "activity" && to === "home" ? snapshot.current : undefined,
+          closingReward: closing?.reward,
+          closingPresentation: closing?.presentation,
+          closingIdentity: closing?.identity,
         });
         snapshot.current = undefined;
       }),
