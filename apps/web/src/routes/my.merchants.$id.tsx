@@ -1,26 +1,12 @@
-import { createFileRoute, Outlet, useMatchRoute } from "@tanstack/react-router";
-import { RequireAccount } from "../components/activities/require-account";
-import { LoadMerchant } from "../components/merchants/load-merchant";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/my/merchants/$id")({
-  component: MerchantPage,
+  beforeLoad: ({ params, location }) => {
+    if (location.pathname.endsWith(`/merchants/${params.id}`))
+      throw redirect({
+        to: "/my/merchants",
+        search: { merchantId: params.id, dialog: "payments" },
+        replace: true,
+      });
+  },
 });
-
-function MerchantPage() {
-  const { id } = Route.useParams();
-  const matchRoute = useMatchRoute();
-  if (matchRoute({ to: "/my/merchants/$id/payments/$taskId", fuzzy: true }))
-    return <Outlet />;
-  return (
-    <RequireAccount requireLdc>
-      {({ userId, csrfToken }) => (
-        <LoadMerchant
-          key={`${userId}-${id}`}
-          id={id}
-          userId={userId}
-          csrfToken={csrfToken}
-        />
-      )}
-    </RequireAccount>
-  );
-}

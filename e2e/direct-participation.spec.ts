@@ -243,12 +243,9 @@ async function mockCreateForm(page: Page) {
         },
         capabilities: {
           canExecutePayments: true,
-          canCheck: true,
           canSimulate: true,
-          canVerify: false,
         },
         pausedReason: null,
-        paymentCheckNextAt: null,
         createdAt: now,
         updatedAt: now,
       };

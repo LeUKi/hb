@@ -118,12 +118,9 @@ export type Merchant = {
   createdAt: string;
   updatedAt: string;
   credentialVerification: CredentialVerification;
-  paymentCheckNextAt: string | null;
   capabilities: {
     canExecutePayments: boolean;
-    canCheck: boolean;
     canSimulate: boolean;
-    canVerify: boolean;
   };
 } & ({ mode: "simulation"; scenario: SimulationScenario } | { mode: "real" });
 export type LdcOpeningBlockedReason =

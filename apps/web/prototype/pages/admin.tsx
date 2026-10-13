@@ -10,6 +10,10 @@ import {
 import { encodeActivityEmoji } from "../../src/lib/ecoji-v2";
 import { parseActivityLink } from "../../src/lib/emoji-links";
 import { CompactIconButton } from "../components/compact-icon-button";
+import {
+  pushPrototypeHistory,
+  replacePrototypeHistory,
+} from "../navigation-guard";
 import { normalizePrototypeTopicLink } from "../topic-link";
 import type { Identity } from "../types";
 import { PageTitle } from "./workbench-ui";
@@ -252,7 +256,7 @@ function readRoute() {
     q.delete("type");
     q.delete("page");
     q.delete("cursor");
-    window.history.replaceState(null, "", `#admin?${q}`);
+    replacePrototypeHistory(window.history.state, `#admin?${q}`);
   }
   return {
     section: (q.get("section") ?? "overview") as Section,
@@ -418,7 +422,7 @@ export function AdminPrototype({ identity }: { identity: Identity }) {
     const q = new URLSearchParams();
     for (const [key, item] of Object.entries(value))
       if (item && !(key === "page" && item === 1)) q.set(key, String(item));
-    window.history.pushState(null, "", `#admin?${q}`);
+    pushPrototypeHistory(null, `#admin?${q}`);
     setRoute(value);
     setSearch(value.q);
   }

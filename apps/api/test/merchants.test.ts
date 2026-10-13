@@ -12,7 +12,7 @@ import {
   type MerchantList,
   type MerchantPaymentList,
 } from "@hb/contracts";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { claimActivity } from "../src/activities/claim-service";
 import { createActivity, openActivity } from "../src/activities/service";
 import { app } from "../src/app";
@@ -63,6 +63,7 @@ async function request(
   method = "GET",
   body?: unknown,
   headers: Record<string, string> = {},
+  runtime = bindings,
 ) {
   const context = createExecutionContext();
   const response = await app.request(
@@ -82,7 +83,7 @@ async function request(
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     },
-    bindings,
+    runtime,
     context,
   );
   await waitOnExecutionContext(context);
@@ -106,6 +107,9 @@ async function create(payload = input(), author = owner) {
   expect(response.status).toBe(200);
   expect(response.headers.get("Cache-Control")).toBe("no-store");
   const data = (await response.json()) as { merchant: Merchant };
+  expect(data.merchant).not.toHaveProperty("paymentCheckNextAt");
+  expect(data.merchant.capabilities).not.toHaveProperty("canCheck");
+  expect(data.merchant.capabilities).not.toHaveProperty("canVerify");
   activeClients.add(data.merchant.clientId);
   return data.merchant;
 }
@@ -186,6 +190,7 @@ afterEach(async () => {
       await state.storage.deleteAlarm();
     });
   }
+  vi.restoreAllMocks();
 });
 
 describe("merchant API security and idempotency", () => {
@@ -203,7 +208,15 @@ describe("merchant API security and idempotency", () => {
           secret: "OTHER-SECRET",
         },
       },
-      { path: `/api/me/merchants/${merchant.id}/check`, method: "POST" },
+      {
+        path: `/api/me/merchants/${merchant.id}/payments/${crypto.randomUUID()}/credentials`,
+        method: "POST",
+        body: {
+          requestId: crypto.randomUUID(),
+          version: merchant.version,
+          secret: "FORBIDDEN-REPAIR",
+        },
+      },
       {
         path: `/api/me/merchants/${merchant.id}/simulation`,
         method: "POST",
@@ -249,7 +262,7 @@ describe("merchant API security and idempotency", () => {
     ).toEqual({ count: 1 });
   });
 
-  it("checks CSRF and exact origin before merchant writes, checks and simulation changes", async () => {
+  it("checks CSRF and exact origin before merchant writes, credential repair and simulation changes", async () => {
     const merchant = await create();
     const writes = [
       { path: "/api/me/merchants", method: "POST", body: input() },
@@ -262,7 +275,15 @@ describe("merchant API security and idempotency", () => {
           secret: "BLOCKED-SECRET",
         },
       },
-      { path: `/api/me/merchants/${merchant.id}/check`, method: "POST" },
+      {
+        path: `/api/me/merchants/${merchant.id}/payments/${crypto.randomUUID()}/credentials`,
+        method: "POST",
+        body: {
+          requestId: crypto.randomUUID(),
+          version: merchant.version,
+          secret: "FORBIDDEN-REPAIR",
+        },
+      },
       {
         path: `/api/me/merchants/${merchant.id}/simulation`,
         method: "POST",
@@ -439,17 +460,7 @@ describe("merchant API security and idempotency", () => {
     const payments = await (
       await request(`/api/me/merchants/${merchant.id}/payments`, owner)
     ).json();
-    const checked = await (
-      await request(`/api/me/merchants/${merchant.id}/check`, owner, "POST")
-    ).json();
-    for (const response of [
-      merchant,
-      rotated,
-      list,
-      detail,
-      payments,
-      checked,
-    ]) {
+    for (const response of [merchant, rotated, list, detail, payments]) {
       const serialized = JSON.stringify(response);
       for (const privateValue of [
         "ORIGINAL-PRIVATE-SECRET",
@@ -462,7 +473,7 @@ describe("merchant API security and idempotency", () => {
     }
   });
 
-  it("saves real merchants while keeping live checks and simulation controls disabled", async () => {
+  it("saves real merchants while keeping live payments and simulation controls disabled", async () => {
     const response = await request("/api/me/merchants", owner, "POST", {
       ...input({ clientId: `real_${crypto.randomUUID()}` }),
       mode: "real",
@@ -473,7 +484,6 @@ describe("merchant API security and idempotency", () => {
       mode: "real",
       capabilities: {
         canExecutePayments: false,
-        canCheck: false,
         canSimulate: false,
       },
     });
@@ -481,13 +491,6 @@ describe("merchant API security and idempotency", () => {
     expect(
       await env.DB.prepare("SELECT COUNT(*) AS count FROM merchants").first(),
     ).toEqual({ count: 1 });
-    const checked = await request(
-      `/api/me/merchants/${real.id}/check`,
-      owner,
-      "POST",
-    );
-    expect(checked.status).toBe(200);
-    expect(await checked.json()).toEqual({ merchant: real });
     expect(
       (
         await request(
@@ -538,7 +541,7 @@ describe("merchant API security and idempotency", () => {
     ).toEqual({ merchant });
   });
 
-  it("manual checking preserves unresolved-order protection and never sends a later task", async () => {
+  it("natural reconciliation preserves unresolved-order protection and never sends a later task", async () => {
     const merchant = await create();
     const { taskIds } = await fixture(merchant);
     const [firstId, secondId] = taskIds;
@@ -553,23 +556,18 @@ describe("merchant API security and idempotency", () => {
         )
       ).status,
     ).toBe(200);
-    await runMerchantCycle(bindings, merchant.id);
+    const scheduled = await runMerchantCycle(bindings, merchant.id);
     const initial = await storedTask(firstId);
     expect(initial).toMatchObject({
       status: "reconciling",
       unknown_outcome: 1,
     });
-    expect(
-      (await request(`/api/me/merchants/${merchant.id}/check`, other, "POST"))
-        .status,
-    ).toBe(404);
+    await runMerchantCycle(bindings, merchant.id);
     expect(await storedTask(firstId)).toEqual(initial);
-    const checked = await request(
-      `/api/me/merchants/${merchant.id}/check`,
-      owner,
-      "POST",
-    );
-    expect(checked.status).toBe(200);
+    expect(scheduled.nextRunAt).not.toBeNull();
+    const due = Math.max(Date.now(), scheduled.nextRunAt ?? 0) + 1;
+    vi.spyOn(Date, "now").mockReturnValue(due);
+    await runMerchantCycle(bindings, merchant.id);
     expect(await storedTask(firstId)).toMatchObject({
       ...initial,
       next_run_at: expect.any(Number),
@@ -599,7 +597,7 @@ describe("merchant API security and idempotency", () => {
     expect(JSON.stringify(list)).not.toContain("ORIGINAL-PRIVATE-SECRET");
   });
 
-  it("cannot clear an attention conflict via manual checking or credential rotation", async () => {
+  it("cannot clear an attention conflict via natural cycles or credential rotation", async () => {
     const merchant = await create();
     const { taskIds } = await fixture(merchant);
     const [firstId, secondId] = taskIds;
@@ -613,10 +611,7 @@ describe("merchant API security and idempotency", () => {
     await runMerchantCycle(bindings, merchant.id);
     const initial = await storedTask(firstId);
     expect(initial).toMatchObject({ status: "attention", unknown_outcome: 1 });
-    expect(
-      (await request(`/api/me/merchants/${merchant.id}/check`, owner, "POST"))
-        .status,
-    ).toBe(200);
+    await runMerchantCycle(bindings, merchant.id);
     expect(
       (
         await request(`/api/me/merchants/${merchant.id}`, owner, "PATCH", {
@@ -652,6 +647,107 @@ describe("merchant API security and idempotency", () => {
 });
 
 describe("owner payment diagnostics", () => {
+  it("automatically verifies newly saved real keys, deduplicates original saves and never verifies a label-only edit", async () => {
+    const fetcher = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async () =>
+        Response.json({ code: -1, msg: "订单不存在或已完成" }, { status: 404 }),
+      );
+    const wake = vi.fn(async () => Response.json({}));
+    const runtime: ApiBindings = {
+      ...bindings,
+      LDC_NETWORK_MODE: "verify",
+      MERCHANT_DO: {
+        idFromName: env.MERCHANT_DO.idFromName.bind(env.MERCHANT_DO),
+        get: () => ({ fetch: wake }),
+      } as unknown as ApiBindings["MERCHANT_DO"],
+    };
+    const payload = input({ mode: "real" });
+    const created = await request(
+      "/api/me/merchants",
+      owner,
+      "POST",
+      payload,
+      {},
+      runtime,
+    );
+    expect(created.status).toBe(200);
+    const first = ((await created.json()) as { merchant: Merchant }).merchant;
+    const path = `/api/me/merchants/${first.id}`;
+    expect(
+      await (await request(path, owner, "GET", undefined, {}, runtime)).json(),
+    ).toMatchObject({
+      merchant: {
+        credentialVerification: { status: "passed", credentialVersion: 1 },
+      },
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(
+      (await request("/api/me/merchants", owner, "POST", payload, {}, runtime))
+        .status,
+    ).toBe(200);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    const rotatedInput = {
+      requestId: crypto.randomUUID(),
+      version: first.version,
+      label: first.label,
+      secret: "AUTO-ROTATED-TEST-SECRET",
+    };
+    const rotated = await request(
+      path,
+      owner,
+      "PATCH",
+      rotatedInput,
+      {},
+      runtime,
+    );
+    expect(rotated.status).toBe(200);
+    const current = ((await rotated.json()) as { merchant: Merchant }).merchant;
+    expect(
+      await (await request(path, owner, "GET", undefined, {}, runtime)).json(),
+    ).toMatchObject({
+      merchant: {
+        credentialVerification: { status: "passed", credentialVersion: 2 },
+      },
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(wake).toHaveBeenCalledTimes(1);
+    expect(
+      (await request(path, owner, "PATCH", rotatedInput, {}, runtime)).status,
+    ).toBe(200);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    const relabeled = await request(
+      path,
+      owner,
+      "PATCH",
+      {
+        requestId: crypto.randomUUID(),
+        version: current.version,
+        label: "只改名称",
+      },
+      {},
+      runtime,
+    );
+    expect(relabeled.status).toBe(200);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    for (const [requestUrl, init] of fetcher.mock.calls) {
+      expect(init?.method).toBe("GET");
+      expect(
+        new URL(String(requestUrl)).searchParams.get("out_trade_no"),
+      ).toMatch(/^hb_credential_check_/);
+    }
+    expect(
+      await env.DB.prepare(
+        "SELECT COUNT(*) AS count FROM payment_tasks",
+      ).first(),
+    ).toEqual({ count: 0 });
+    expect(
+      await env.DB.prepare(
+        "SELECT COUNT(*) AS count FROM payment_attempts",
+      ).first(),
+    ).toEqual({ count: 0 });
+  });
+
   it("returns only owner task evidence and pages attempts without credentials", async () => {
     const merchant = await create();
     const f = await fixture(merchant);
@@ -695,34 +791,6 @@ describe("owner payment diagnostics", () => {
       /ORIGINAL-PRIVATE-SECRET|PAYMENT-EMAIL-CIPHERTEXT|ciphertext|lease_token|\bAuthorization\b/,
     );
     expect((await request(`${path}?cursor=invalid`, owner)).status).toBe(400);
-  });
-  it("credential verification enforces owner, origin and CSRF, and disabled runtime stays unverified", async () => {
-    const merchant = await create(input({ mode: "real" }));
-    const path = `/api/me/merchants/${merchant.id}/verify`;
-    expect((await request(path, undefined, "POST")).status).toBe(401);
-    expect((await request(path, other, "POST")).status).toBe(404);
-    expect(
-      (
-        await request(path, owner, "POST", undefined, {
-          "X-CSRF-Token": "wrong",
-        })
-      ).status,
-    ).toBe(403);
-    expect(
-      (
-        await request(path, owner, "POST", undefined, {
-          Origin: "https://evil.example",
-        })
-      ).status,
-    ).toBe(403);
-    const response = await request(path, owner, "POST");
-    expect(response.status).toBe(202);
-    expect(await response.json()).toMatchObject({
-      merchant: {
-        credentialVerification: { status: "unverified" },
-        capabilities: { canVerify: false },
-      },
-    });
   });
 });
 

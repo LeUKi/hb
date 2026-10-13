@@ -43,10 +43,18 @@ import { PasswordInput } from "../components/password-input";
 import { type RowAction, RowActions } from "../components/row-actions";
 import { TopicLinkInput } from "../components/topic-link-input";
 import { getDrawRoster, useDrawRosterRevision } from "../draw-rosters";
+import {
+  BEFORE_PROTOTYPE_NAVIGATION,
+  type PrototypeNavigationDetail,
+} from "../navigation-guard";
 import { ShortTime, useClockSelector } from "../time";
 import { normalizePrototypeTopicLink } from "../topic-link";
 import type { Page, PageProps } from "../types";
 import { projectActivityViewState } from "../view-state";
+import {
+  MerchantPaymentsDialog,
+  useMerchantPaymentOverlay,
+} from "./merchant-payments-dialog";
 import {
   type ActivityConfig,
   type Algorithm,
@@ -73,7 +81,7 @@ export type WorkbenchPageProps = Omit<PageProps, "navigate"> & {
   navigate: (
     page: Page,
     options?: { activityId?: string; editId?: string },
-  ) => void;
+  ) => boolean;
   editId?: string;
   activityId?: string;
   listState?: "ready" | "empty" | "loading" | "error";
@@ -2151,35 +2159,83 @@ export function AccountPage({
   );
 }
 
-export function MerchantPage({ navigate, identity }: PageProps) {
-  const [clientId, setClientId] = useState("LJ-DEMO-2026");
-  const [savedClientId, setSavedClientId] = useState("LJ-DEMO-2026");
+export function MerchantPage({ navigate, identity }: WorkbenchPageProps) {
+  const creating = new URLSearchParams(window.location.hash.split("?")[1]).has(
+    "newMerchant",
+  );
+  const [configured, setConfigured] = useState(!creating);
+  const [label, setLabel] = useState(creating ? "" : "默认商户");
+  const [clientId, setClientId] = useState(creating ? "" : "LJ-DEMO-2026");
+  const [baseline, setBaseline] = useState({
+    label: creating ? "" : "默认商户",
+    clientId: creating ? "" : "LJ-DEMO-2026",
+  });
   const [secret, setSecret] = useState("");
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  const [refreshed, setRefreshed] = useState(false);
+  const overlay = useMerchantPaymentOverlay(identity);
+  const { payments, activities } = useWorkbenchStore(identity);
+  const clientChanged = clientId.trim() !== baseline.clientId;
+  const dirty =
+    label.trim() !== baseline.label || clientChanged || Boolean(secret.trim());
+  const valid =
+    Boolean(label.trim() && clientId.trim()) &&
+    (!configured || clientChanged ? Boolean(secret.trim()) : true);
+  const canSave =
+    identity === "standard" && valid && (configured ? dirty : true);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const unload = (event: BeforeUnloadEvent) => event.preventDefault();
+    const guard = (event: Event) => {
+      if (event.defaultPrevented) return;
+      const target = (event as CustomEvent<PrototypeNavigationDetail>).detail
+        .page;
+      if (
+        target !== "merchant" &&
+        !window.confirm("还有未保存的商户配置，确定离开吗？")
+      )
+        event.preventDefault();
+    };
+    window.addEventListener("beforeunload", unload);
+    window.addEventListener(BEFORE_PROTOTYPE_NAVIGATION, guard);
+    return () => {
+      window.removeEventListener("beforeunload", unload);
+      window.removeEventListener(BEFORE_PROTOTYPE_NAVIGATION, guard);
+    };
+  }, [dirty]);
 
   function save() {
-    setSavedClientId(clientId.trim());
+    if (!canSave) return;
+    const next = { label: label.trim(), clientId: clientId.trim() };
+    setBaseline(next);
+    setLabel(next.label);
+    setClientId(next.clientId);
+    setConfigured(true);
     setSecret("");
     setSaved(true);
     setConfirm(false);
+    setRefreshed(false);
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
     setSaved(false);
-    if (!clientId.trim()) {
-      setError("请填写 Client ID。");
-      return;
-    }
-    if (clientId.trim() !== savedClientId && !secret.trim()) {
-      setError("更改 Client ID 时，请同时填写对应的商户密钥。");
-      return;
-    }
-    if (clientId.trim() !== savedClientId || secret.trim()) setConfirm(true);
+    if (!canSave) return;
+    if (configured && (clientChanged || secret.trim())) setConfirm(true);
     else save();
+  }
+  function refresh() {
+    if (dirty && !window.confirm("刷新会放弃未保存的修改，是否继续？")) return;
+    setLabel(baseline.label);
+    setClientId(baseline.clientId);
+    setSecret("");
+    setError("");
+    setSaved(false);
+    setRefreshed(true);
   }
 
   if (identity === "guest") return <GuestAccountPrompt navigate={navigate} />;
@@ -2203,12 +2259,26 @@ export function MerchantPage({ navigate, identity }: PageProps) {
         <form className="work-merchant-form" onSubmit={handleSubmit}>
           <div className="work-merchant-heading">
             <div>
-              <h2>默认商户</h2>
+              <h2>{configured ? baseline.label : "新商户"}</h2>
             </div>
             <span className="work-status-label is-active">
               <i />
-              已配置 · 演示
+              {configured ? "已配置 · 演示" : "未配置"}
             </span>
+          </div>
+          <div className="field">
+            <label htmlFor="work-merchant-name">商户名称</label>
+            <input
+              id="work-merchant-name"
+              value={label}
+              disabled={identity === "lite"}
+              onChange={(event) => {
+                setLabel(event.target.value);
+                setSaved(false);
+                setRefreshed(false);
+              }}
+              autoComplete="off"
+            />
           </div>
           <div className="field">
             <div className="work-field-label">
@@ -2233,7 +2303,7 @@ export function MerchantPage({ navigate, identity }: PageProps) {
               <label htmlFor="work-merchant-secret">商户密钥</label>
               <Help label="商户密钥">
                 Client ID 未变时，留空保留现有密钥；修改 Client ID
-                时必须填写对应密钥。新凭证检查通过后才可发送付款。
+                时必须填写对应密钥。
               </Help>
             </div>
             <input
@@ -2249,9 +2319,9 @@ export function MerchantPage({ navigate, identity }: PageProps) {
               autoComplete="new-password"
             />
           </div>
-          {error && (
+          {(error || (clientChanged && !secret.trim())) && (
             <p className="work-form-error" role="alert">
-              {error}
+              {error || "更改 Client ID 时，请同时填写对应的商户密钥。"}
             </p>
           )}
           {saved && (
@@ -2259,24 +2329,47 @@ export function MerchantPage({ navigate, identity }: PageProps) {
               <CheckCircle2 size={16} /> 演示配置已保存。
             </p>
           )}
+          {refreshed && (
+            <p className="work-inline-success" role="status">
+              商户内容已刷新。
+            </p>
+          )}
           <div className="work-merchant-actions">
             <button
               className="button"
               type="submit"
-              disabled={identity === "lite"}
+              disabled={!canSave || confirm}
             >
               保存配置 <Check size={17} />
             </button>
             <button
               className="button ghost"
               type="button"
-              onClick={() => navigate("payment")}
+              id="merchant-payments-trigger"
+              onClick={() => overlay.open()}
             >
-              查看付款记录 <ArrowRight size={16} />
+              付款记录 <ArrowRight size={16} />
+            </button>
+            <button
+              className="merchant-icon-button"
+              type="button"
+              aria-label="刷新"
+              title="刷新"
+              onClick={refresh}
+            >
+              <RefreshCw size={16} aria-hidden="true" />
             </button>
           </div>
         </form>
       </div>
+      {overlay.view.open && identity === "standard" && (
+        <MerchantPaymentsDialog
+          overlay={overlay}
+          payments={payments}
+          activities={activities}
+          navigate={navigate}
+        />
+      )}
       {confirm && (
         <Dialog
           title="确认更换商户配置"

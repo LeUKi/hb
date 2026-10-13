@@ -29,7 +29,6 @@ import {
   repairPaymentCredential,
   updateMerchant,
 } from "../src/payments/merchants";
-import { requestMerchantCheck } from "../src/payments/recovery";
 import {
   digestPassword,
   encryptString,
@@ -548,7 +547,7 @@ describe("permanent Connect qualification across LDC business boundaries", () =>
     ).toEqual({ count: 0 });
   });
 
-  it("blocks merchant changes, credential repair, verification, simulation controls and manual checks independently of creation", async () => {
+  it("blocks merchant changes, credential repair and simulation controls independently of creation", async () => {
     const merchant = await syntheticLiteMerchant();
     const input = {
       requestId: crypto.randomUUID(),
@@ -561,9 +560,6 @@ describe("permanent Connect qualification across LDC business boundaries", () =>
       updateMerchant(bindings, merchant.id, lite.id, input),
     ).rejects.toMatchObject(denied);
     await expect(
-      requestMerchantCheck(bindings, merchant.id),
-    ).rejects.toMatchObject(denied);
-    await expect(
       repairPaymentCredential(
         bindings,
         merchant.id,
@@ -572,15 +568,24 @@ describe("permanent Connect qualification across LDC business boundaries", () =>
         { requestId: crypto.randomUUID(), version: 1, secret: "FAKE-REPAIR" },
       ),
     ).rejects.toMatchObject(denied);
-    for (const path of ["check", "verify", "simulation"])
-      await forbidHttp(
-        await request(
-          `/api/me/merchants/${merchant.id}/${path}`,
-          lite,
-          "POST",
-          path === "simulation" ? { scenario: "normal" } : undefined,
-        ),
-      );
+    await forbidHttp(
+      await request(
+        `/api/me/merchants/${merchant.id}/simulation`,
+        lite,
+        "POST",
+        { scenario: "normal" },
+      ),
+    );
+    for (const operation of ["check", "verify"])
+      expect(
+        (
+          await request(
+            `/api/me/merchants/${merchant.id}/${operation}`,
+            lite,
+            "POST",
+          )
+        ).status,
+      ).toBe(404);
     await forbidHttp(
       await request(`/api/me/merchants/${merchant.id}`, lite, "PATCH", input),
     );
@@ -589,9 +594,7 @@ describe("permanent Connect qualification across LDC business boundaries", () =>
       publicationEligibility: { allowed: false, reason: denied.code },
       capabilities: {
         canExecutePayments: false,
-        canCheck: false,
         canSimulate: false,
-        canVerify: false,
       },
     });
     expect(

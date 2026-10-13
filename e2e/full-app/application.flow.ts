@@ -1453,7 +1453,10 @@ test("普通真实模式活动走正常领取、Outbox、Queue 与 MerchantDO；
     await authorPage
       .getByRole("button", { name: "保存配置", exact: true })
       .click();
-    await expect(authorPage).toHaveURL(/\/my\/merchants$/);
+    await expect(authorPage).toHaveURL(
+      (url) =>
+        url.pathname === "/my/merchants" && !url.searchParams.has("dialog"),
+    );
     const merchantIdResponse = await author.request.get("/api/me/merchants");
     expect(merchantIdResponse.status()).toBe(200);
     const merchantId = ((await merchantIdResponse.json()).currentMerchantId ??
@@ -1786,18 +1789,30 @@ test("普通真实模式活动走正常领取、Outbox、Queue 与 MerchantDO；
     await expect(paymentDialog).toContainText(
       task?.business_no ?? "FULL_APP_TASK_MISSING",
     );
+    const processingSource = authorPage.url();
     await paymentDialog
       .getByRole("link", { name: "查看处理详情", exact: true })
       .click();
-    await expect(authorPage).toHaveURL(
-      `${origin}/my/merchants/${merchantId}/payments/${task?.id}`,
-    );
-    await authorPage
-      .getByRole("button", { name: "返回上一页", exact: true })
-      .click();
+    await expect(authorPage).toHaveURL(processingSource);
+    await expect(authorPage.getByRole("dialog")).toHaveCount(1);
+    await expect(
+      paymentDialog.getByRole("table", { name: "付款处理记录", exact: true }),
+    ).toBeVisible();
+    await authorPage.goBack();
     await expect(paymentDialog).toContainText(
       task?.business_no ?? "FULL_APP_TASK_MISSING",
     );
+    await expect(
+      paymentDialog.getByRole("link", { name: "查看处理详情", exact: true }),
+    ).toBeFocused();
+    await authorPage.goForward();
+    await expect(authorPage.getByRole("dialog")).toHaveCount(1);
+    await expect(
+      paymentDialog.getByRole("table", { name: "付款处理记录", exact: true }),
+    ).toBeVisible();
+    await paymentDialog
+      .getByRole("button", { name: "返回付款摘要", exact: true })
+      .click();
     await paymentDialog
       .getByRole("button", { name: "关闭", exact: true })
       .click();
@@ -1838,17 +1853,40 @@ test("普通真实模式活动走正常领取、Outbox、Queue 与 MerchantDO；
     ).toBe(true);
     await authorPage.setViewportSize({ width: 1280, height: 720 });
     await authorPage.goto(`/my/merchants/${merchantId}/payments/${task?.id}`);
+    await expect(authorPage).toHaveURL(
+      (url) =>
+        url.pathname === "/my/merchants" &&
+        url.searchParams.get("merchantId") === merchantId &&
+        url.searchParams.get("dialog") === "payment" &&
+        url.searchParams.get("taskId") === task?.id,
+    );
+    const processingDialog = authorPage.getByRole("dialog", {
+      name: "付款详情",
+      exact: true,
+    });
     await expect(
-      authorPage.getByRole("heading", { name: "付款详情", exact: true }),
+      processingDialog.getByRole("heading", { name: "付款详情", exact: true }),
     ).toBeVisible();
     await expect(
-      authorPage
+      processingDialog
         .getByText(accounts.recipient.displayName, { exact: true })
         .first(),
     ).toBeVisible();
     await expect(
-      authorPage.getByText("0.10 LDC", { exact: true }).first(),
+      processingDialog.getByText("0.10 LDC", { exact: true }),
     ).toBeVisible();
+    await expect(
+      processingDialog.getByRole("table", {
+        name: "付款处理记录",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      processingDialog.getByRole("list", { name: "付款时间线", exact: true }),
+    ).toBeVisible();
+    await expect(
+      processingDialog.getByText(/付款凭证版本|身份更正版本|立即检查恢复条件/),
+    ).toHaveCount(0);
     expect(paymentJson.payment.recoveryPolicy).toBe("claim_same_order_v1");
     expect(paymentJson.payment.firstSendAt).toEqual(expect.any(String));
     expect(paymentJson.payment.confirmedAt).toEqual(expect.any(String));
@@ -2846,14 +2884,17 @@ test("真实应用商户配置：修改前确认未开奖风险，同一商户�
     });
     const before = await readState(request);
     const page = fixture.author.page;
-    await page.goto(`/my/merchants/${merchantId}`);
+    await page.goto(`/my/merchants?merchantId=${merchantId}`);
+    const save = page.getByRole("button", { name: "保存配置", exact: true });
+    await expect(save).toBeDisabled();
     await page
       .locator("#merchant-edit-client-id")
       .fill("full_app_corrected_identity");
     await page
       .locator("#merchant-edit-secret")
       .fill("full-app-corrected-virtual-secret");
-    await page.getByRole("button", { name: "保存修改", exact: true }).click();
+    await expect(save).toBeEnabled();
+    await save.click();
     const dialog = page.getByRole("dialog", { name: "谨慎更换商户配置" });
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText("未完成开奖");
@@ -2867,12 +2908,22 @@ test("真实应用商户配置：修改前确认未开奖风险，同一商户�
         ).json()
       ).merchant.clientId,
     ).toBe("hb_full_app_merchant");
-    await page.getByRole("button", { name: "保存修改", exact: true }).click();
+    await expect(page.locator("#merchant-edit-client-id")).toHaveValue(
+      "full_app_corrected_identity",
+    );
+    await expect(page.locator("#merchant-edit-secret")).toHaveValue(
+      "full-app-corrected-virtual-secret",
+    );
+    await save.click();
     await dialog.getByRole("button", { name: "确认更换" }).click();
     await expect(
       page.getByText("商户配置已保存。", { exact: true }),
     ).toBeVisible();
-    await expect(page).toHaveURL(`${origin}/my/merchants/${merchantId}`);
+    await expect(page).toHaveURL(
+      `${origin}/my/merchants?merchantId=${merchantId}`,
+    );
+    await expect(save).toBeDisabled();
+    await expect(page.locator("#merchant-edit-secret")).toHaveValue("");
     const saved = await fixture.author.context.request.get(
       `/api/me/merchants/${merchantId}`,
     );

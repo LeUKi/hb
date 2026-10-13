@@ -154,7 +154,6 @@ async function mockPayments(page: Page, mode: PaymentMode = "simulation") {
       reason: null,
     },
     pausedReason: null,
-    paymentCheckNextAt: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -166,9 +165,7 @@ async function mockPayments(page: Page, mode: PaymentMode = "simulation") {
           scenario: "normal",
           capabilities: {
             canExecutePayments: true,
-            canCheck: true,
             canSimulate: true,
-            canVerify: false,
           },
         }
       : {
@@ -176,9 +173,7 @@ async function mockPayments(page: Page, mode: PaymentMode = "simulation") {
           mode,
           capabilities: {
             canExecutePayments: false,
-            canCheck: false,
             canSimulate: false,
-            canVerify: true,
           },
         };
   const activity: ManagedActivity = {
@@ -385,9 +380,7 @@ async function mockPayments(page: Page, mode: PaymentMode = "simulation") {
               mode: "real",
               capabilities: {
                 canExecutePayments: false,
-                canCheck: false,
                 canSimulate: false,
-                canVerify: true,
               },
               credentialVerification: {
                 status: "checking",
@@ -408,9 +401,7 @@ async function mockPayments(page: Page, mode: PaymentMode = "simulation") {
               scenario: "normal",
               capabilities: {
                 canExecutePayments: true,
-                canCheck: true,
                 canSimulate: true,
-                canVerify: false,
               },
             };
       state.merchants = [state.merchant];
@@ -487,40 +478,16 @@ async function mockPayments(page: Page, mode: PaymentMode = "simulation") {
         return;
       }
     }
-    if (path === `/api/me/merchants/${merchantId}/check`) {
-      state.checks++;
-      state.csrf.push(request.headers()["x-csrf-token"]);
-      state.merchant = {
-        ...state.merchant,
-        paymentCheckNextAt: new Date(Date.now() + 30_000).toISOString(),
-      };
+    if (
+      path === `/api/me/merchants/${merchantId}/check` ||
+      path === `/api/me/merchants/${merchantId}/verify`
+    ) {
+      if (path.endsWith("/check")) state.checks++;
+      else state.verifies++;
       return route.fulfill({
-        json: {
-          merchant: state.merchant,
-          accepted: true,
-          retryAfterSeconds: null,
-        },
+        status: 404,
+        json: { error: { code: "NOT_FOUND", message: "未找到" } },
       });
-    }
-    if (path === `/api/me/merchants/${merchantId}/verify`) {
-      state.verifies++;
-      state.csrf.push(request.headers()["x-csrf-token"]);
-      state.merchant = {
-        ...state.merchant,
-        credentialVerification: {
-          status: "checking",
-          credentialVersion: state.merchant.credentialVersion,
-          checkedAt: null,
-          nextCheckAt: new Date(Date.now() + 30_000).toISOString(),
-          reason: null,
-        },
-        publicationEligibility: {
-          allowed: false,
-          reason: "MERCHANT_CREDENTIALS_CHECKING",
-          credentialVersion: state.merchant.credentialVersion,
-        },
-      };
-      return route.fulfill({ status: 202, json: { merchant: state.merchant } });
     }
     if (path === `/api/me/merchants/${merchantId}/simulation`) {
       const { scenario } = request.postDataJSON() as {
@@ -814,176 +781,134 @@ function acceptancePayment(): MerchantPaymentDetail {
   };
 }
 
-test("凭证检查独立于付款恢复，检查中加快轮询且检查后遵守冷却", async ({
+test("保存真实凭证后自动检查并加快读取，不出现手动检查组件", async ({
   page,
 }) => {
   const { state } = await mockPayments(page, "real");
   await page.clock.install();
-  await page.goto(`/my/merchants/${merchantId}`);
-  await expect(page.getByText("未验证", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "检查凭证", exact: true }).click();
-  await expect(page.getByText("检查中", { exact: true })).toBeVisible();
+  await page.goto("/my/merchants");
+  await page.getByLabel("商户密钥", { exact: true }).fill("VIRTUAL-AUTO-CHECK");
+  await page.getByRole("button", { name: "保存配置", exact: true }).click();
   await expect(
-    page.getByRole("button", { name: "正在检查凭证…", exact: true }),
-  ).toBeDisabled();
-  expect(state.verifies).toBe(1);
-  expect(state.checks).toBe(0);
-  const checkingReads = state.merchantReads;
+    page.getByText("商户配置已保存。", { exact: true }),
+  ).toBeVisible();
+  expect(state.merchant.credentialVerification.status).toBe("checking");
+  const reads = state.merchantReads;
   state.merchant = {
     ...state.merchant,
     credentialVerification: {
       ...state.merchant.credentialVerification,
       status: "passed",
-      reason: "not_found_after_auth",
+      reason: null,
       checkedAt: new Date().toISOString(),
     },
   };
   await page.clock.runFor(2_100);
-  await expect(page.getByText("凭证通过", { exact: true })).toBeVisible();
-  expect(state.merchantReads).toBeGreaterThan(checkingReads);
+  await expect.poll(() => state.merchantReads).toBeGreaterThan(reads);
   await expect(
-    page.getByRole("button", { name: "检查凭证", exact: true }),
-  ).toBeDisabled();
-  await expect(
-    page.getByRole("link", { name: "前往 LDC 查看余额", exact: true }),
-  ).toHaveAttribute("href", "https://credit.linux.do");
-  await expect(page.getByText(/检查通过仅证明接口接受当前凭证/)).toBeVisible();
-  await page.clock.runFor(30_000);
-  await expect(
-    page.getByRole("button", { name: "检查凭证", exact: true }),
-  ).toBeEnabled();
-  await page.getByRole("button", { name: "检查凭证", exact: true }).click();
-  await expect(page.getByText("检查中", { exact: true })).toBeVisible();
-  state.merchant = {
-    ...state.merchant,
-    credentialVerification: {
-      ...state.merchant.credentialVerification,
-      status: "rejected",
-      reason: "credentials",
-      checkedAt: new Date().toISOString(),
-    },
-  };
-  await page.clock.runFor(2_100);
-  await expect(page.getByText("认证未通过", { exact: true })).toBeVisible();
-  await expect(
-    page.getByText("认证未通过，请检查商户 ID 和密钥。", { exact: true }),
-  ).toBeVisible();
-  expect(state.verifies).toBe(2);
-  expect(state.csrf).toEqual(["payment-csrf", "payment-csrf"]);
+    page.getByRole("button", { name: /检查凭证|检查恢复条件/ }),
+  ).toHaveCount(0);
+  await expect(page.getByText(/凭证版本|开放资格|恢复条件/)).toHaveCount(0);
+  expect(state.checks).toBe(0);
+  expect(state.verifies).toBe(0);
+  expect(state.updates[0]?.secret).toBe("VIRTUAL-AUTO-CHECK");
 });
 
-test("凭证异常仅显示安全提示，轮换立即显示新版本检查而不沿用旧通过结果", async ({
+test("后台凭证诊断不常驻展示，保存新密钥不沿用旧检查状态或回显密钥", async ({
   page,
 }) => {
   const { state } = await mockPayments(page, "real");
-  state.merchant = {
-    ...state.merchant,
-    credentialVerification: {
-      ...state.merchant.credentialVerification,
-      status: "unavailable",
-      reason: "RAW-RESPONSE-MUST-NOT-RENDER",
-    },
+  state.merchant.credentialVerification = {
+    ...state.merchant.credentialVerification,
+    status: "unavailable",
+    reason: "RAW-RESPONSE-MUST-NOT-RENDER",
   };
-  await page.goto(`/my/merchants/${merchantId}`);
-  await expect(page.getByText("暂时无法验证", { exact: true })).toBeVisible();
-  await expect(
-    page.getByText("暂时无法验证，请稍后重试。", { exact: true }),
-  ).toBeVisible();
+  await page.goto("/my/merchants");
   expect(await page.content()).not.toContain("RAW-RESPONSE-MUST-NOT-RENDER");
-  state.merchant = {
-    ...state.merchant,
-    credentialVerification: {
-      ...state.merchant.credentialVerification,
-      status: "passed",
-      reason: "not_found_after_auth",
-    },
+  state.merchant.credentialVerification = {
+    ...state.merchant.credentialVerification,
+    status: "passed",
+    reason: "not_found_after_auth",
   };
   await page.reload();
-  await expect(page.getByText("凭证通过", { exact: true })).toBeVisible();
   await page
-    .getByLabel("更换商户密钥", { exact: true })
+    .getByLabel("商户密钥", { exact: true })
     .fill("VIRTUAL-NEW-VERSION");
-  await page.getByRole("button", { name: "保存修改", exact: true }).click();
-  await expect(page.getByText("检查中", { exact: true })).toBeVisible();
-  await expect(page.getByText(/当前凭证版本：2/)).toBeVisible();
-  await expect(page.getByText("凭证通过", { exact: true })).toHaveCount(0);
-  await expect(page.getByLabel("更换商户密钥", { exact: true })).toHaveValue(
-    "",
-  );
+  await page.getByRole("button", { name: "保存配置", exact: true }).click();
+  await expect(
+    page.getByText("商户配置已保存。", { exact: true }),
+  ).toBeVisible();
+  expect(state.merchant.credentialVerification.status).toBe("checking");
+  expect(state.merchant.credentialVersion).toBe(2);
+  await expect(page.getByText(/凭证版本|凭证通过/)).toHaveCount(0);
+  await expect(page.getByLabel("商户密钥", { exact: true })).toHaveValue("");
   expect(await page.content()).not.toContain("VIRTUAL-NEW-VERSION");
   expect(state.verifies).toBe(0);
 });
 
-test("接入验收付款独立展示详情，记录凭证版本、安全核对和尝试分页且窄屏可用", async ({
+test("接入验收在同一表格弹窗展示详情、原单核对和处理记录分页", async ({
   page,
 }) => {
   const { state } = await mockPayments(page, "real");
-  state.merchant = {
-    ...state.merchant,
-    pausedReason: "unknown",
-    capabilities: { ...state.merchant.capabilities, canCheck: true },
-  };
+  state.merchant.pausedReason = "unknown";
   const payment = acceptancePayment();
   state.payments = [payment];
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto(`/my/merchants/${merchantId}`);
-  await expect(page.getByText("来源：接入验收", { exact: true })).toBeVisible();
+  const list = page.getByRole("dialog", { name: "付款记录", exact: true });
+  await expect(list.getByRole("table", { name: "商户付款记录" })).toBeVisible();
   await expect(
-    page.getByRole("link", { name: "查看活动", exact: true }),
+    list.getByRole("cell", { name: "接入验收", exact: true }),
+  ).toBeVisible();
+  await expect(
+    list.getByRole("link", { name: "查看活动", exact: true }),
   ).toHaveCount(0);
-  await page.getByRole("link", { name: "查看付款详情", exact: true }).click();
+  await list.getByRole("link", { name: "查看详情", exact: true }).click();
+  const detail = page.getByRole("dialog", { name: "付款详情", exact: true });
   await expect(page).toHaveURL(
-    `/my/merchants/${merchantId}/payments/${payment.id}`,
+    new RegExp(`merchantId=${merchantId}&dialog=payment&taskId=${payment.id}$`),
   );
+  await expect(detail.getByText("0.10 LDC", { exact: true })).toHaveCount(1);
+  await expect(detail.getByText("100001", { exact: true })).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "付款详情", exact: true }),
+    detail.getByText(payment.businessNo, { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "0.10 LDC", exact: true }),
+    detail.getByText(payment.externalOrderId ?? "", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("100001", { exact: true })).toBeVisible();
-  await expect(page.getByText("@tester7369", { exact: true })).toBeVisible();
+  const attempts = detail.getByRole("table", { name: "付款处理记录" });
+  await expect(attempts.getByText("HTTP 404", { exact: true })).toBeVisible();
+  await expect(attempts.getByText("HTTP 200", { exact: true })).toBeVisible();
   await expect(
-    page.getByText(payment.businessNo, { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByText(payment.externalOrderId ?? "", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByText("凭证版本：2 · HTTP 404", { exact: true }),
-  ).toBeVisible();
-  await expect(page.getByText("凭证版本：1", { exact: true })).toBeVisible();
-  await expect(
-    page.getByText("凭证版本：1 · HTTP 200", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByText("请求超时，尚未取得可确认的结果，将继续核对原订单。", {
+    attempts.getByText("请求超时，尚未取得可确认的结果，将继续核对原订单。", {
       exact: true,
     }),
   ).toBeVisible();
+  await expect(detail.getByText(/凭证版本|身份更正版本/)).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: /强制重发|标记付款成功|清除未知/ }),
+    detail.getByRole("button", {
+      name: /强制重发|标记付款成功|清除未知|检查恢复条件/,
+    }),
   ).toHaveCount(0);
-  await page.getByRole("button", { name: "检查恢复条件", exact: true }).click();
+  await detail.getByRole("button", { name: "下一页", exact: true }).click();
   await expect(
-    page.getByText("已请求检查恢复条件。", { exact: true }),
+    detail.getByText("暂无处理记录。", { exact: true }),
   ).toBeVisible();
-  expect(state.checks).toBe(1);
-  expect(state.csrf).toEqual(["payment-csrf"]);
-  await page.getByRole("button", { name: "下一页", exact: true }).click();
-  await expect(page.getByText("暂无尝试记录。", { exact: true })).toBeVisible();
   expect(state.paymentCursors).toContain("attempt-page-2");
-  await page.getByRole("button", { name: "上一页", exact: true }).click();
-  await expect(page.getByText("分发请求", { exact: true })).toBeVisible();
+  await detail.getByRole("button", { name: "上一页", exact: true }).click();
+  await expect(
+    attempts.getByRole("cell", { name: "分发请求", exact: true }),
+  ).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
   await page.reload();
-  await expect(
-    page.getByRole("heading", { name: "付款详情", exact: true }),
-  ).toBeVisible();
+  await expect(detail).toBeVisible();
+  expect(state.checks).toBe(0);
+  expect(state.verifies).toBe(0);
+  expect(state.csrf).toEqual([]);
 });
 
 test("用户名大小写更正保留原始快照，每次发送展示实际用户名，查单不展示发送用户名", async ({
@@ -1017,20 +942,28 @@ test("用户名大小写更正保留原始快照，每次发送展示实际用�
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto(`/my/merchants/${merchantId}/payments/${payment.id}`);
   await expect(page.getByText("100001", { exact: true })).toBeVisible();
-  await expect(page.getByText("当前发送用户名", { exact: true })).toBeVisible();
-  await expect(page.getByText("@Tester7369", { exact: true })).toBeVisible();
-  await expect(page.getByText("原始用户名快照", { exact: true })).toBeVisible();
+  await expect(page.getByText("更正后用户名", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("definition").filter({ hasText: /^@Tester7369$/ }),
+  ).toBeVisible();
+  await expect(page.getByText("订单用户名", { exact: true })).toBeVisible();
   await expect(page.getByText("@tester7369", { exact: true })).toBeVisible();
-  await expect(page.getByText("用户名更正时间", { exact: true })).toBeVisible();
+  await page.getByText("更多处理信息", { exact: true }).click();
+  await expect(
+    page.getByText(/用户名更正：@tester7369 → @Tester7369/),
+  ).toBeVisible();
   await expect(
     page.getByText("发送时用户名：@Tester7369", { exact: true }),
   ).toBeVisible();
   await expect(
     page.getByText("发送时用户名：@tester7369", { exact: true }),
   ).toBeVisible();
-  const queryAttempts = page.getByRole("listitem").filter({
-    has: page.getByText("订单查询", { exact: true }),
-  });
+  const queryAttempts = page
+    .getByRole("table", { name: "付款处理记录" })
+    .getByRole("row")
+    .filter({
+      has: page.getByText("订单查询", { exact: true }),
+    });
   await expect(queryAttempts).toHaveCount(2);
   await expect(queryAttempts.getByText(/发送时用户名/)).toHaveCount(0);
   expect(
@@ -1047,7 +980,6 @@ test("付款核对确认后停止该任务轮询且关闭唤醒操作", async ({
   state.payments = [payment];
   state.merchant = {
     ...state.merchant,
-    capabilities: { ...state.merchant.capabilities, canCheck: true },
   };
   await page.clock.install();
   await page.goto(`/my/merchants/${merchantId}/payments/${payment.id}`);
@@ -1065,7 +997,7 @@ test("付款核对确认后停止该任务轮询且关闭唤醒操作", async ({
   await expect(page.getByText("已发放", { exact: true }).first()).toBeVisible();
   await expect(
     page.getByRole("button", { name: "检查恢复条件", exact: true }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   const reads = state.paymentReads;
   await page.clock.runFor(31_000);
   expect(state.paymentReads).toBe(reads);
@@ -1104,17 +1036,31 @@ test("发送与查单时间独立展示，原单恢复次数、业务限制和�
   ];
   state.merchant = {
     ...state.merchant,
-    capabilities: { ...state.merchant.capabilities, canCheck: true },
   };
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto(`/my/merchants/${merchantId}/payments/${payment.id}`);
-  await expect(page.getByText("发送尝试次数", { exact: true })).toBeVisible();
-  await expect(page.getByText("下次发送", { exact: true })).toBeVisible();
-  await expect(page.getByText("下次查单", { exact: true })).toBeVisible();
-  await expect(page.getByText("等待按计划发送", { exact: true })).toBeVisible();
-  await expect(page.getByText("查单已返回订单", { exact: true })).toBeVisible();
+  await page.getByText("更多处理信息", { exact: true }).click();
   await expect(
-    page.getByText("发送限制：每日发放额度不足，等待可用额度。", {
+    page.getByText(
+      `发送 ${payment.attemptCount} 次 · 查单 ${payment.reconciliationCount} 次`,
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText("订单证据：查单已返回订单", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByRole("list", { name: "付款时间线" })
+      .getByText("查到订单", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByRole("list", { name: "付款时间线" })
+      .getByText(/下次发送|下次查单/),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("每日发放额度不足，等待可用额度。", {
       exact: true,
     }),
   ).toBeVisible();
@@ -1129,7 +1075,7 @@ test("发送与查单时间独立展示，原单恢复次数、业务限制和�
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "检查恢复条件", exact: true }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   expect(state.checks).toBe(0);
   expect(
     await page.evaluate(
@@ -1160,6 +1106,7 @@ for (const authorizationState of ["expired", "exhausted", "revoked"] as const)
       },
     ];
     await page.goto(`/my/merchants/${merchantId}/payments/${payment.id}`);
+    await page.getByText("更多处理信息", { exact: true }).click();
     const label = {
       expired: "已到期",
       exhausted: "次数已用尽",
@@ -1206,10 +1153,10 @@ test("订单已确认后仍轮询进行中的重复业务号验证，验证结�
   ];
   state.merchant = {
     ...state.merchant,
-    capabilities: { ...state.merchant.capabilities, canCheck: true },
   };
   await page.clock.install();
   await page.goto(`/my/merchants/${merchantId}/payments/${payment.id}`);
+  await page.getByText("更多处理信息", { exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "重复业务号验证", exact: true }),
   ).toBeVisible();
@@ -1217,7 +1164,7 @@ test("订单已确认后仍轮询进行中的重复业务号验证，验证结�
   await expect(page.getByText("重复请求验证", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "检查恢复条件", exact: true }),
-  ).toBeEnabled();
+  ).toHaveCount(0);
   const activeReads = state.paymentReads;
   await page.clock.runFor(15_100);
   await expect.poll(() => state.paymentReads).toBeGreaterThan(activeReads);
@@ -1239,7 +1186,7 @@ test("订单已确认后仍轮询进行中的重复业务号验证，验证结�
   await expect(page.getByText("验证通过", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "检查恢复条件", exact: true }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   const stoppedReads = state.paymentReads;
   await page.clock.runFor(31_000);
   expect(state.paymentReads).toBe(stoppedReads);
@@ -1270,6 +1217,7 @@ test("已确认付款停止轮询后，恢复授权在页面内到期仍及时�
     },
   ];
   await page.goto(`/my/merchants/${merchantId}/payments/${payment.id}`);
+  await page.getByText("更多处理信息", { exact: true }).click();
   await expect(page.getByText("授权状态：有效", { exact: true })).toBeVisible();
   const reads = state.paymentReads;
   await page.clock.runFor(10_100);
@@ -1308,22 +1256,22 @@ test("协议核对完成后等待后台证据，继续状态刷新但不再唤�
   state.payments = [confirmedPayment];
   state.merchant = {
     ...state.merchant,
-    capabilities: { ...state.merchant.capabilities, canCheck: true },
   };
   await page.clock.install();
   await page.goto(`/my/merchants/${merchantId}/payments/${payment.id}`);
+  await page.getByText("更多处理信息", { exact: true }).click();
   await expect(
     page.getByText("等待后台交易记录核验", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText("等待后台交易记录证据", { exact: true }),
+    page.getByText("后台证据：尚未核实", { exact: true }),
   ).toBeVisible();
   await expect(
     page.getByText("协议核对已完成，等待后台交易记录核验。", { exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "检查恢复条件", exact: true }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   const reads = state.paymentReads;
   await page.clock.runFor(15_100);
   await expect.poll(() => state.paymentReads).toBeGreaterThan(reads);
@@ -1346,37 +1294,28 @@ test("协议核对完成后等待后台证据，继续状态刷新但不再唤�
   expect(state.paymentReads).toBe(finalReads);
 });
 
-test("商户安全核对冷却在详情与管理页共享，刷新保留且期满才可再次操作", async ({
+test("商户表格和付款详情刷新只读取记录，不触发退役检查接口", async ({
   page,
 }) => {
   const { state } = await mockPayments(page, "real");
   const payment = acceptancePayment();
   state.payments = [payment];
-  state.merchant = {
-    ...state.merchant,
-    capabilities: { ...state.merchant.capabilities, canCheck: true },
-  };
-  await page.clock.install();
   await page.goto(`/my/merchants/${merchantId}`);
-  await page.getByRole("link", { name: "查看付款详情", exact: true }).click();
-  const check = page.getByRole("button", {
-    name: "检查恢复条件",
-    exact: true,
-  });
-  await check.click();
-  await expect(check).toBeDisabled();
-  await expect(page.getByText(/\d+ 秒后可再次检查恢复条件/)).toBeVisible();
-  await page.getByRole("button", { name: "返回上一页", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "立即检查恢复条件", exact: true }),
-  ).toBeDisabled();
+  const list = page.getByRole("dialog", { name: "付款记录", exact: true });
+  await expect(list.getByRole("table")).toBeVisible();
+  await list.getByRole("link", { name: "查看详情", exact: true }).click();
+  const detail = page.getByRole("dialog", { name: "付款详情", exact: true });
+  await expect(detail).toBeVisible();
+  const before = state.paymentReads;
+  await detail.getByRole("button", { name: "刷新", exact: true }).click();
+  await expect.poll(() => state.paymentReads).toBeGreaterThan(before);
   await page.reload();
-  await expect(page.getByText(/\d+ 秒后可再次检查恢复条件/)).toBeVisible();
-  await page.clock.runFor(31_000);
+  await expect(detail).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "立即检查恢复条件", exact: true }),
-  ).toBeEnabled();
-  expect(state.checks).toBe(1);
+    page.getByRole("button", { name: /检查恢复条件|检查凭证/ }),
+  ).toHaveCount(0);
+  expect(state.checks).toBe(0);
+  expect(state.verifies).toBe(0);
 });
 
 test("付款详情越权不展示数据，退出后迟到详情响应不会恢复私有内容", async ({
@@ -1397,6 +1336,7 @@ test("付款详情越权不展示数据，退出后迟到详情响应不会恢�
   state.delayPaymentRead = true;
   await page.reload();
   await expect.poll(() => Boolean(state.releasePaymentRead)).toBe(true);
+  await page.keyboard.press("Escape");
   await logoutFromCurrentPage(page);
   state.releasePaymentRead?.();
   await expect(page.getByText(payment.businessNo, { exact: true })).toHaveCount(
@@ -1432,34 +1372,27 @@ test("真实商户保存后自动检查当前凭证，模式锁定、密钥不�
     state.merchant.clientId,
   );
   await expect(page.getByLabel("商户密钥", { exact: true })).toHaveValue("");
-  await page.getByRole("link", { name: "凭证检查与异常恢复" }).click();
-  await expect(page).toHaveURL(`/my/merchants/${merchantId}`);
+  await expect.poll(() => new URL(page.url()).pathname).toBe("/my/merchants");
   expect(state.creates[0]?.mode).toBe("real");
   await expect(
     page.getByRole("button", { name: "立即检查恢复条件", exact: true }),
-  ).toBeDisabled();
-  await expect(page.getByText("检查中", { exact: true })).toBeVisible();
+  ).toHaveCount(0);
+  expect(state.merchant.credentialVerification.status).toBe("checking");
   await expect(
     page.getByRole("button", { name: "正在检查凭证…", exact: true }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: "模拟故障", exact: true }),
   ).toHaveCount(0);
   await expect(page.getByLabel("付款模式（保存后不可修改）")).toHaveCount(0);
-  await expect(page.getByLabel("更换商户密钥", { exact: true })).toHaveValue(
-    "",
-  );
+  await expect(page.getByLabel("商户密钥", { exact: true })).toHaveValue("");
   expect(await page.content()).not.toContain("VIRTUAL-REAL-SECRET");
-  await page
-    .getByLabel("更换商户密钥", { exact: true })
-    .fill("VIRTUAL-ROTATED");
-  await page.getByRole("button", { name: "保存修改", exact: true }).click();
+  await page.getByLabel("商户密钥", { exact: true }).fill("VIRTUAL-ROTATED");
+  await page.getByRole("button", { name: "保存配置", exact: true }).click();
   await expect(
     page.getByText("商户配置已保存。", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByLabel("更换商户密钥", { exact: true })).toHaveValue(
-    "",
-  );
+  await expect(page.getByLabel("商户密钥", { exact: true })).toHaveValue("");
   expect(state.checks).toBe(0);
   expect(state.scenarios).toHaveLength(0);
   expect(state.merchant.mode).toBe("real");
@@ -1486,9 +1419,7 @@ test("真实随机活动可保存编辑及预览，不能开放或切换到模�
     label: "另一个模拟商户",
     capabilities: {
       canExecutePayments: true,
-      canCheck: true,
       canSimulate: true,
-      canVerify: false,
     },
   });
   await page.setViewportSize({ width: 375, height: 812 });
@@ -1563,7 +1494,7 @@ test("后端拒绝真实开放时显示原因并保留草稿", async ({ page }) 
   expect(state.activity.openedAt).toBeNull();
 });
 
-test("创建模拟商户后不回显密钥，轮换保持client_id，故障和重新检查带CSRF", async ({
+test("创建模拟商户后不回显密钥，轮换保持client_id，模拟操作带CSRF", async ({
   page,
 }) => {
   const { state } = await mockPayments(page);
@@ -1580,25 +1511,19 @@ test("创建模拟商户后不回显密钥，轮换保持client_id，故障和�
     state.merchant.clientId,
   );
   await expect(page.getByLabel("商户密钥", { exact: true })).toHaveValue("");
-  await page.getByRole("link", { name: "凭证检查与异常恢复" }).click();
-  await expect(page).toHaveURL(`/my/merchants/${merchantId}`);
-  await expect(page.getByLabel("更换模拟密钥", { exact: true })).toHaveValue(
-    "",
-  );
+  await expect.poll(() => new URL(page.url()).pathname).toBe("/my/merchants");
+  await expect(page.getByLabel("商户密钥", { exact: true })).toHaveValue("");
   expect(await page.content()).not.toContain("VIRTUAL-SECRET-1");
-  await page
-    .getByLabel("更换模拟密钥", { exact: true })
-    .fill("VIRTUAL-SECRET-2");
-  await page.getByRole("button", { name: "保存修改", exact: true }).click();
+  await page.getByLabel("商户密钥", { exact: true }).fill("VIRTUAL-SECRET-2");
+  await page.getByRole("button", { name: "保存配置", exact: true }).click();
   await expect(
     page.getByText("商户配置已保存。", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByLabel("更换模拟密钥", { exact: true })).toHaveValue(
-    "",
-  );
+  await expect(page.getByLabel("商户密钥", { exact: true })).toHaveValue("");
   expect(state.merchant.clientId).toBe("mock_new");
   expect(state.merchant.credentialVersion).toBe(2);
   expect(state.updates[0]?.secret).toBe("VIRTUAL-SECRET-2");
+  await page.getByText("本地模拟设置", { exact: true }).click();
   await page
     .getByRole("combobox", { name: "付款情形", exact: true })
     .selectOption("response_lost");
@@ -1606,15 +1531,9 @@ test("创建模拟商户后不回显密钥，轮换保持client_id，故障和�
   await expect(
     page.getByText("模拟情形已设置。", { exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "立即检查恢复条件", exact: true })
-    .click();
-  await expect(
-    page.getByText("已请求检查恢复条件。", { exact: true }),
-  ).toBeVisible();
   expect(state.scenarios).toEqual(["response_lost"]);
-  expect(state.checks).toBe(1);
-  expect(state.csrf).toEqual(Array(4).fill("payment-csrf"));
+  expect(state.checks).toBe(0);
+  expect(state.csrf).toEqual(Array(3).fill("payment-csrf"));
   expect(
     await page.evaluate(() =>
       JSON.stringify({ ...localStorage, ...sessionStorage }),
@@ -1636,7 +1555,9 @@ test("商户重复应用和原请求冲突展示具体原因，并保留可修�
   await page.getByLabel("Client ID", { exact: true }).fill("mock_client");
   await page.getByLabel("商户密钥", { exact: true }).fill("VIRTUAL-CONFLICT");
   await page.getByRole("button", { name: "保存配置", exact: true }).click();
-  await expect(page.getByRole("alert")).toHaveText(state.createError.message);
+  await expect(
+    page.getByText(state.createError.message, { exact: true }),
+  ).toBeVisible();
   await expect(page.getByLabel("Client ID", { exact: true })).toBeEnabled();
   await expect(page.getByLabel("商户密钥", { exact: true })).toHaveValue(
     "VIRTUAL-CONFLICT",
@@ -1647,60 +1568,55 @@ test("商户重复应用和原请求冲突展示具体原因，并保留可修�
     message: "同一创建请求不能更换商户配置",
   };
   await page.getByRole("button", { name: "保存配置", exact: true }).click();
-  await expect(page.getByRole("alert")).toHaveText(state.createError.message);
+  await expect(
+    page.getByText(state.createError.message, { exact: true }),
+  ).toBeVisible();
 });
 
 test("商户版本冲突提示刷新商户配置且保留未保存名称和密钥", async ({ page }) => {
   const { state } = await mockPayments(page);
   state.updateConflict = true;
-  await page.goto(`/my/merchants/${merchantId}`);
+  await page.goto("/my/merchants");
   await page.getByLabel("商户名称", { exact: true }).fill("未保存的商户改动");
-  await page
-    .getByLabel("更换模拟密钥", { exact: true })
-    .fill("VIRTUAL-PENDING");
-  await page.getByRole("button", { name: "保存修改", exact: true }).click();
+  await page.getByLabel("商户密钥", { exact: true }).fill("VIRTUAL-PENDING");
+  await page.getByRole("button", { name: "保存配置", exact: true }).click();
   await expect(page.getByText(/请先刷新商户配置后重试/)).toBeVisible();
   await expect(page.getByLabel("商户名称", { exact: true })).toHaveValue(
     "未保存的商户改动",
   );
-  await expect(page.getByLabel("更换模拟密钥", { exact: true })).toHaveValue(
+  await expect(page.getByLabel("商户密钥", { exact: true })).toHaveValue(
     "VIRTUAL-PENDING",
   );
   await expect(page.getByText(/活动已在其他页面修改/)).toHaveCount(0);
 });
 
-for (const action of ["立即检查恢复条件", "应用模拟情形"] as const) {
+for (const action of ["应用模拟情形"] as const) {
   test(`${action}不会提升未刷新的商户表单版本或覆盖另一页面的修改`, async ({
     page,
   }) => {
     const { state } = await mockPayments(page);
-    await page.goto(`/my/merchants/${merchantId}`);
+    await page.goto("/my/merchants");
     await expect(page.getByLabel("商户名称", { exact: true })).toHaveValue(
       "测试商户",
     );
     await page
       .getByLabel("商户名称", { exact: true })
       .fill("页面 A 未保存改动");
-    await page.getByLabel("更换模拟密钥", { exact: true }).fill("VIRTUAL-A");
+    await page.getByLabel("商户密钥", { exact: true }).fill("VIRTUAL-A");
     state.merchant = {
       ...state.merchant,
       label: "页面 B 已保存名称",
       version: 2,
     };
-    if (action === "应用模拟情形")
-      await page
-        .getByRole("combobox", { name: "付款情形", exact: true })
-        .selectOption("response_lost");
+    await page.getByText("本地模拟设置", { exact: true }).click();
+    await page
+      .getByRole("combobox", { name: "付款情形", exact: true })
+      .selectOption("response_lost");
     await page.getByRole("button", { name: action, exact: true }).click();
     await expect(
-      page.getByText(
-        action === "立即检查恢复条件"
-          ? "已请求检查恢复条件。"
-          : "模拟情形已设置。",
-        { exact: true },
-      ),
+      page.getByText("模拟情形已设置。", { exact: true }),
     ).toBeVisible();
-    await page.getByRole("button", { name: "保存修改", exact: true }).click();
+    await page.getByRole("button", { name: "保存配置", exact: true }).click();
     await expect(page.getByText(/请先刷新商户配置后重试/)).toBeVisible();
     expect(state.updates).toEqual([
       expect.objectContaining({
@@ -1716,7 +1632,7 @@ for (const action of ["立即检查恢复条件", "应用模拟情形"] as const
     await expect(page.getByLabel("商户名称", { exact: true })).toHaveValue(
       "页面 A 未保存改动",
     );
-    await expect(page.getByLabel("更换模拟密钥", { exact: true })).toHaveValue(
+    await expect(page.getByLabel("商户密钥", { exact: true })).toHaveValue(
       "VIRTUAL-A",
     );
   });
@@ -2163,11 +2079,12 @@ test("退出后清除商户密钥输入，迟到的创建响应不能恢复页�
   expect(await page.content()).not.toContain("DO-NOT-RETAIN");
 });
 
-test("已有当前商户只能维护，历史商户保留查看入口", async ({ page }) => {
+test("当前和历史商户都在唯一配置页维护，不提供二级管理页", async ({ page }) => {
   const { state } = await mockPayments(page, "real");
+  const legacyId = "8c9473a5-e887-4290-9e20-9cc51681fca0";
   state.merchants.push({
     ...state.merchant,
-    id: "8c9473a5-e887-4290-9e20-9cc51681fca0",
+    id: legacyId,
     label: "历史发放商户",
     usageStatus: "legacy",
     publicationEligibility: {
@@ -2179,20 +2096,19 @@ test("已有当前商户只能维护，历史商户保留查看入口", async ({
   await page.goto("/my/merchants");
   await expect(
     page.getByRole("link", { name: "凭证检查与异常恢复" }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(page.getByLabel("Client ID", { exact: true })).toHaveValue(
     state.merchant.clientId,
   );
+  const select = page.getByRole("combobox", { name: "商户", exact: true });
+  await select.selectOption(legacyId);
+  await expect(page.getByLabel("商户名称", { exact: true })).toHaveValue(
+    "历史发放商户",
+  );
+  await expect.poll(() => new URL(page.url()).pathname).toBe("/my/merchants");
   await expect(
     page.getByRole("button", { name: "保存配置", exact: true }),
-  ).toHaveCount(1);
-  await page.getByText("历史商户与恢复", { exact: true }).click();
-  await expect(
-    page.getByRole("link", { name: "历史发放商户 · 管理商户" }),
-  ).toHaveAttribute(
-    "href",
-    "/my/merchants/8c9473a5-e887-4290-9e20-9cc51681fca0",
-  );
+  ).toBeDisabled();
   expect(state.creates).toHaveLength(0);
 });
 
@@ -2217,8 +2133,7 @@ test("非本地环境只提供真实商户配置，模拟选项不可见", async
     state.merchant.clientId,
   );
   await expect(page.getByLabel("商户密钥", { exact: true })).toHaveValue("");
-  await page.getByRole("link", { name: "凭证检查与异常恢复" }).click();
-  await expect(page).toHaveURL(`/my/merchants/${merchantId}`);
+  await expect.poll(() => new URL(page.url()).pathname).toBe("/my/merchants");
   expect(state.creates[0]?.mode).toBe("real");
   await expect(
     page.getByRole("heading", { name: "模拟故障", exact: true }),
@@ -2582,11 +2497,10 @@ test("已开放真实活动轮换检查中继续领取，作者自领仍被拦�
   expect(state.claimPosts).toBe(1);
 });
 
-test("普通活动付款展示自动恢复与安全唤醒，不显示验收许可或重复验证", async ({
+test("普通活动付款仅展示当前异常及自然处理状态，没有手动唤醒或验收卡片", async ({
   page,
 }) => {
   const { state } = await mockPayments(page, "real");
-  state.merchant.capabilities.canCheck = true;
   const payment: MerchantPaymentDetail = {
     ...acceptancePayment(),
     source: "claim",
@@ -2604,23 +2518,23 @@ test("普通活动付款展示自动恢复与安全唤醒，不显示验收许�
   state.payments = [payment];
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto(`/my/merchants/${merchantId}/payments/${payment.id}`);
+  const detail = page.getByRole("dialog", { name: "付款详情", exact: true });
   await expect(
-    page.getByRole("definition").filter({ hasText: "活动领取" }),
+    detail.getByText("商户资金不足，等待补足后恢复。", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "自动付款恢复", exact: true }),
-  ).toBeVisible();
+    detail.getByRole("link", { name: "查看活动", exact: true }),
+  ).toHaveAttribute("href", `/activities/${activityId}`);
   await expect(
-    page.getByRole("heading", { name: "原单恢复授权", exact: true }),
+    page.getByRole("heading", {
+      name: /自动付款恢复|原单恢复授权|重复业务号验证/,
+    }),
   ).toHaveCount(0);
   await expect(
-    page.getByRole("heading", { name: "重复业务号验证", exact: true }),
+    page.getByRole("button", { name: /检查恢复条件|强制重发|标记付款成功/ }),
   ).toHaveCount(0);
-  await page.getByRole("button", { name: "检查恢复条件", exact: true }).click();
-  await expect(
-    page.getByText("已请求检查恢复条件。", { exact: true }),
-  ).toBeVisible();
-  expect(state.checks).toBe(1);
+  expect(state.checks).toBe(0);
+  expect(state.verifies).toBe(0);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,

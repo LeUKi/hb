@@ -1,5 +1,4 @@
 import { eq } from "drizzle-orm";
-import { requireOfficialConnect } from "../auth/eligibility";
 import { createDb } from "../db/client";
 import { merchants, paymentDuplicateProbes, paymentTasks } from "../db/schema";
 import type { ApiBindings } from "../env";
@@ -42,7 +41,6 @@ type ProbeRow = typeof paymentDuplicateProbes.$inferSelect;
 type Operation = "send" | "query";
 const LEASE_MS = 30_000;
 const PROBE_WINDOW_MS = 10 * 60_000;
-const MANUAL_CHECK_MS = 30_000;
 
 function backoff(count: number, operation: Operation = "query") {
   const steps =
@@ -1330,70 +1328,4 @@ export async function runRealMerchantCycle(
     processed: true,
     nextRunAt: await realMerchantNextDue(env, merchantId),
   };
-}
-
-/** A UI wake may advance a query, never a send, and never an upstream Retry-After. */
-export async function requestMerchantCheck(
-  env: ApiBindings,
-  merchantId: string,
-): Promise<{ accepted: boolean; retryAfterSeconds: number | null }> {
-  const owner = await env.DB.prepare(
-    "SELECT author_id FROM merchants WHERE id=?",
-  )
-    .bind(merchantId)
-    .first<{ author_id: string }>();
-  if (owner) await requireOfficialConnect(env, owner.author_id);
-  const now = Date.now();
-  const admission = await env.DB.prepare(
-    "UPDATE merchants SET manual_check_at=? WHERE id=? AND EXISTS(SELECT 1 FROM users WHERE id=merchants.author_id AND official_connect_verified=1 AND active=1) AND (manual_check_at IS NULL OR manual_check_at<=?)",
-  )
-    .bind(now, merchantId, now - MANUAL_CHECK_MS)
-    .run();
-  if (!admission.meta.changes) {
-    if (owner) await requireOfficialConnect(env, owner.author_id);
-    const row = await env.DB.prepare(
-      "SELECT manual_check_at FROM merchants WHERE id=?",
-    )
-      .bind(merchantId)
-      .first<{ manual_check_at: number | null }>();
-    return {
-      accepted: false,
-      retryAfterSeconds:
-        row?.manual_check_at === null || !row
-          ? null
-          : Math.max(
-              1,
-              Math.ceil((row.manual_check_at + MANUAL_CHECK_MS - now) / 1_000),
-            ),
-    };
-  }
-  const merchant = await createDb(env.DB)
-    .select()
-    .from(merchants)
-    .where(eq(merchants.id, merchantId))
-    .get();
-  if (merchant) await synchronizeMerchantPaymentIdentities(env, merchant);
-  await env.DB.batch([
-    env.DB.prepare(
-      `UPDATE payment_tasks SET next_run_at=?,updated_at=? WHERE merchant_id=? AND source='claim' AND mode='real' AND status='waiting' AND reason='credentials' AND first_send_at IS NULL AND attempt_count=0
-       AND EXISTS(SELECT 1 FROM merchants m JOIN merchant_credentials c ON c.merchant_id=m.id AND c.version=m.credential_version WHERE m.id=? AND m.manual_check_at=? AND m.lease_token IS NULL AND c.verification_status='passed')`,
-    ).bind(now, now, merchantId, merchantId, now),
-    env.DB.prepare(`UPDATE payment_tasks SET next_query_at=MAX(?,COALESCE(query_retry_after_at,0)),next_action='query',queried_recovery_version=NULL,next_run_at=MAX(?,COALESCE(query_retry_after_at,0)),updated_at=?
-      WHERE merchant_id=? AND status IN ('pending','waiting','reconciling') AND mode='real' AND attempt_count>0
-      AND EXISTS(SELECT 1 FROM merchants WHERE id=? AND manual_check_at=? AND lease_token IS NULL)`).bind(
-      now,
-      now,
-      now,
-      merchantId,
-      merchantId,
-      now,
-    ),
-    env.DB.prepare(
-      `UPDATE payment_tasks SET next_run_at=? WHERE merchant_id=? AND mode='simulation' AND status='reconciling' AND EXISTS(SELECT 1 FROM merchants WHERE id=? AND manual_check_at=? AND lease_token IS NULL)`,
-    ).bind(now, merchantId, merchantId, now),
-    env.DB.prepare(
-      `UPDATE payment_duplicate_probes SET next_run_at=MAX(?,COALESCE((SELECT query_retry_after_at FROM payment_tasks WHERE id=task_id),0)),updated_at=? WHERE task_id IN(SELECT id FROM payment_tasks WHERE merchant_id=?) AND permit_consumed_at IS NOT NULL AND (status='reconciling' OR (status='awaiting_evidence' AND protocol_verified_at IS NULL)) AND EXISTS(SELECT 1 FROM merchants WHERE id=? AND manual_check_at=? AND lease_token IS NULL)`,
-    ).bind(now, now, merchantId, merchantId, now),
-  ]);
-  return { accepted: true, retryAfterSeconds: null };
 }

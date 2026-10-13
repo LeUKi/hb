@@ -1,6 +1,7 @@
 import type { ClaimRosterSnapshot } from "./claim-rosters";
 import type { DrawRostersSnapshot } from "./draw-rosters";
 import type { RandomRosterCase } from "./fixtures";
+import { replacePrototypeHistory } from "./navigation-guard";
 import type { WorkbenchStoresSnapshot } from "./pages/workbench-store";
 import type {
   Activity,
@@ -81,9 +82,8 @@ function removeCurrentHashParam(key: string) {
   if (!params.has(key)) return;
   params.delete(key);
   const next = params.toString();
-  history.replaceState(
-    null,
-    "",
+  replacePrototypeHistory(
+    window.history.state,
     `${window.location.pathname}${window.location.search}#${page}${next ? `?${next}` : ""}`,
   );
 }

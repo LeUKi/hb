@@ -2,6 +2,7 @@ import { QueryCache, QueryClient } from "@tanstack/react-query";
 import { ActivityRequestError } from "./activities";
 import { adminIdentity } from "./admin-identity";
 import { type SessionResponse, sessionQueryKey } from "./auth";
+import { merchantSessionIdentity } from "./merchants";
 import { accessQueryScope, isAccessQueryError } from "./query-view";
 
 function privateActivityAccess(
@@ -116,6 +117,71 @@ export function createAppQueryClient() {
     onError: (error, query) => {
       // A later transport failure must never resurrect data denied by the server.
       if (!isAccessQueryError(error)) return;
+      if (
+        query.queryKey[0] === "merchant-private" &&
+        error instanceof ActivityRequestError
+      ) {
+        const key = query.queryKey;
+        const identity = key[1];
+        const deniedMerchant = ["detail", "payments"].includes(String(key[2]))
+          ? key[3]
+          : null;
+        const deniedTask = key[2] === "payment" ? key[4] : null;
+        if (error.status === 401) {
+          const session = queryCache.find({ queryKey: sessionQueryKey });
+          const data = session?.state.data as SessionResponse | undefined;
+          if (session && data && merchantSessionIdentity(data) === identity)
+            session.setState({
+              data: { ...data, user: null, csrfToken: null },
+            });
+        }
+        const resourceScope = accessQueryScope(key);
+        for (const related of queryCache.findAll({
+          predicate: (candidate) => {
+            const other = candidate.queryKey;
+            if (other[0] !== "merchant-private" || other[1] !== identity)
+              return false;
+            if (error.status === 401) return true;
+            if (resourceScope.every((value, index) => other[index] === value))
+              return true;
+            if (
+              deniedMerchant &&
+              ["detail", "payments", "payment"].includes(String(other[2])) &&
+              other[3] === deniedMerchant
+            )
+              return true;
+            const data = candidate.state.data as
+              | { merchantId?: string; items?: Array<{ id: string }> }
+              | undefined;
+            if (deniedMerchant && data?.merchantId === deniedMerchant)
+              return true;
+            if (
+              other[2] === "payments" &&
+              deniedTask &&
+              other[3] === key[3] &&
+              !data
+            )
+              return true;
+            return Boolean(
+              data?.items?.some((item) =>
+                other[2] === "list"
+                  ? item.id === deniedMerchant
+                  : item.id === deniedTask,
+              ),
+            );
+          },
+        })) {
+          void related.cancel({ revert: false, silent: true });
+          related.setState({
+            data: undefined,
+            dataUpdatedAt: 0,
+            status: "error",
+            fetchStatus: "idle",
+            error,
+          });
+        }
+        return;
+      }
       if (
         query.queryKey[0] === "admin-private" &&
         error instanceof ActivityRequestError &&
@@ -243,6 +309,17 @@ export function createAppQueryClient() {
         : null;
     for (const query of queryCache.findAll({ queryKey: ["admin-private"] })) {
       if (query.queryKey[1] === identity) continue;
+      void query.cancel({ revert: false, silent: true });
+      queryCache.remove(query);
+    }
+    const merchantIdentity =
+      event.query.state.status === "success"
+        ? merchantSessionIdentity(session)
+        : null;
+    for (const query of queryCache.findAll({
+      queryKey: ["merchant-private"],
+    })) {
+      if (query.queryKey[1] === merchantIdentity) continue;
       void query.cancel({ revert: false, silent: true });
       queryCache.remove(query);
     }

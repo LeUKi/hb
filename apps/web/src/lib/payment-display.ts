@@ -1,23 +1,4 @@
-import type {
-  CredentialVerificationStatus,
-  MerchantPaymentDetail,
-} from "@hb/contracts";
-
-export const verificationLabels: Record<CredentialVerificationStatus, string> =
-  {
-    unverified: "未验证",
-    checking: "检查中",
-    passed: "凭证通过",
-    rejected: "认证未通过",
-    unavailable: "暂时无法验证",
-  };
-
-export function verificationReason(reason: string | null) {
-  if (!reason || reason === "not_found_after_auth") return null;
-  if (reason === "credentials") return "认证未通过，请检查商户 ID 和密钥。";
-  if (reason === "interrupted") return "上次检查中断，可以再次检查。";
-  return "暂时无法验证，请稍后重试。";
-}
+import type { MerchantPaymentDetail } from "@hb/contracts";
 
 export function publicationReason(reason: string | null | undefined) {
   if (!reason) return null;
@@ -25,16 +6,14 @@ export function publicationReason(reason: string | null | undefined) {
     REAL_LDC_NOT_ENABLED: "当前环境尚未启用真实 LDC 活动开放。",
     TIMED_DRAW_NOT_ENABLED: "当前环境尚未启用限时开奖活动开放。",
     MERCHANT_LEGACY: "活动关联的是历史商户，请明确改用当前商户后再开放。",
-    MERCHANT_CREDENTIALS_UNVERIFIED:
-      "当前凭证需要在最近 10 分钟内通过检查，才能开放新的 LDC 活动。",
-    MERCHANT_CREDENTIALS_CHECKING:
-      "当前凭证正在检查，活动可保存为准备中，检查通过后再开放。",
+    MERCHANT_CREDENTIALS_UNVERIFIED: "开放活动时将自动核验商户凭证。",
+    MERCHANT_CREDENTIALS_CHECKING: "正在自动核验商户凭证，活动仍可保存为草稿。",
     MERCHANT_CREDENTIALS_REJECTED:
-      "当前凭证认证未通过，请更新商户 ID 对应的密钥并重新检查。",
+      "商户凭证未通过认证，请更新 Client ID 对应的密钥。",
     MERCHANT_CREDENTIALS_UNAVAILABLE:
-      "当前凭证暂时无法验证，请重新检查后再开放。",
+      "暂时无法核验商户凭证，请稍后再尝试开放。",
   };
-  return labels[reason] ?? "暂不能开放新的 LDC 活动，请查看商户状态。";
+  return labels[reason] ?? "暂不能开放活动，请检查商户配置。";
 }
 
 export function paymentAttemptOutcome(outcome: string) {
@@ -137,18 +116,5 @@ export function duplicateProbeActive(
     ["pending", "sending", "reconciling", "awaiting_evidence"].includes(
       probe.status,
     )
-  );
-}
-
-export function canWakePaymentQuery(payment: MerchantPaymentDetail) {
-  return (
-    (payment.source === "claim" &&
-      payment.status !== "confirmed" &&
-      payment.nextAction === "send") ||
-    (payment.status !== "confirmed" && payment.nextAction === "query") ||
-    (payment.duplicateProbe !== null &&
-      (payment.duplicateProbe.status === "reconciling" ||
-        (payment.duplicateProbe.status === "awaiting_evidence" &&
-          payment.duplicateProbe.protocolVerifiedAt === null)))
   );
 }

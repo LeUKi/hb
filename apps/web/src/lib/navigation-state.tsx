@@ -333,15 +333,16 @@ export function FreshLink({
   );
 }
 
-export function useHistoryOverlay(kind: string) {
+export function useHistoryOverlay(kind: string, scope = "") {
   const router = useRouter();
   const navigate = useNavigate();
   const { owner, location, visit, key } = useEntry();
+  const overlayOwner = scope ? `${owner}:${scope}` : owner;
   const opening = useRef(false);
   const candidate = location.state.hbOverlay;
   const overlay =
     candidate?.kind === kind &&
-    candidate.owner === owner &&
+    candidate.owner === overlayOwner &&
     candidate.version === overlaySchemaVersion
       ? candidate
       : null;
@@ -366,7 +367,7 @@ export function useHistoryOverlay(kind: string) {
           kind,
           id,
           parent: visit,
-          owner,
+          owner: overlayOwner,
           version: overlaySchemaVersion,
         },
       },

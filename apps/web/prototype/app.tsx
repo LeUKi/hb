@@ -79,6 +79,15 @@ import { inspectPassword, PasswordInput } from "./components/password-input";
 import { PasswordList } from "./components/password-list";
 import { PortalTargetProvider } from "./components/portal-target";
 import { PublicRoster } from "./components/public-roster";
+import {
+  allowPrototypeNavigation,
+  type HistoryOrigin,
+  historyEntryIndex,
+  isPrototypeHistoryRestoring,
+  PROTOTYPE_HISTORY_CHANGED,
+  pushPrototypeHistory,
+  replacePrototypeHistory,
+} from "./navigation-guard";
 import "./components/public-square-dialog.css";
 import {
   RedemptionAction,
@@ -147,7 +156,7 @@ const Workbench = lazy(() =>
       navigate: (
         page: Page,
         options?: { activityId?: string; editId?: string },
-      ) => void;
+      ) => boolean;
       identity: Identity;
       onIdentityChange?: (identity: Identity) => void;
       editId?: string;
@@ -209,11 +218,7 @@ function clearRetiredRewardFilters() {
   params.delete("cursor");
   params.delete("page");
   const search = params.toString();
-  window.history.replaceState(
-    null,
-    "",
-    `#${page}${search ? `?${search}` : ""}`,
-  );
+  replacePrototypeHistory(null, `#${page}${search ? `?${search}` : ""}`);
 }
 type PublicSquareState = {
   open: boolean;
@@ -242,10 +247,9 @@ function normalizePublicSquareHash() {
   } as const;
   // Direct and legacy links get a home entry so one browser Back closes the
   // native modal. Reload retains the already-created modal entry.
-  window.history.replaceState(null, "", "#home");
-  window.history.pushState(
+  replacePrototypeHistory(null, "#home");
+  pushPrototypeHistory(
     { prototypePublicSquare: { version: 1, scrollTop: 0 } },
-    "",
     publicSquareHash(state),
   );
 }
@@ -318,6 +322,7 @@ export function App() {
   const [publicSquare, setPublicSquare] = useState(publicSquareFromHash);
   const publicSquareEntry = useRef<HTMLButtonElement>(null);
   const lastReadHash = useRef(window.location.hash);
+  const lastReadIndex = useRef(historyEntryIndex());
   const [identity, setIdentity] = useState<Identity>(initialIdentity);
   const [scenario, setScenario] = useState<Scenario>("ready");
   const [active, setActive] = useState<Activity>(
@@ -586,15 +591,40 @@ export function App() {
   }, [routeKey, identity]);
 
   useEffect(() => {
-    const read = () => {
+    const syncOrigin = (event: Event) => {
+      const origin = (event as CustomEvent<HistoryOrigin>).detail;
+      lastReadHash.current = origin.hash;
+      lastReadIndex.current = origin.index;
+    };
+    const read = (event: PopStateEvent | HashChangeEvent) => {
+      if (isPrototypeHistoryRestoring(event)) return;
       if (window.location.hash === "#main") return;
       if (window.location.hash === lastReadHash.current) return;
-      const nextPage = pageFromHash();
+      const rawPage = window.location.hash.slice(1).split("?")[0] as Page;
+      const nextPage = pages.has(rawPage) ? rawPage : "home";
+      if (
+        !allowPrototypeNavigation(nextPage, event, {
+          hash: lastReadHash.current,
+          index: lastReadIndex.current,
+        })
+      ) {
+        return;
+      }
+      pageFromHash();
       lastReadHash.current = window.location.hash;
+      lastReadIndex.current = historyEntryIndex();
       setPublicSquare(publicSquareFromHash());
       // Opening, updating or closing the public list leaves the home input
       // and any pending redemption untouched.
       if (nextPage === "home" && currentRoute.current.page === "home") return;
+      // Merchant/payment modal history changes the view, not the page or inputs.
+      if (
+        ["merchant", "payment"].includes(nextPage) &&
+        nextPage === currentRoute.current.page
+      ) {
+        setWorkbenchContext(workbenchRoute());
+        return;
+      }
       revision.current++;
       if (timer.current) clearTimeout(timer.current);
       timer.current = null;
@@ -620,9 +650,11 @@ export function App() {
     };
     window.addEventListener("hashchange", read);
     window.addEventListener("popstate", read);
+    window.addEventListener(PROTOTYPE_HISTORY_CHANGED, syncOrigin);
     return () => {
       window.removeEventListener("hashchange", read);
       window.removeEventListener("popstate", read);
+      window.removeEventListener(PROTOTYPE_HISTORY_CHANGED, syncOrigin);
       if (timer.current) clearTimeout(timer.current);
       timer.current = null;
     };
@@ -630,12 +662,12 @@ export function App() {
   function openPublicSquare() {
     setPanel(false);
     const next = { open: true, status: "all" as const, page: 1, scrollTop: 0 };
-    window.history.pushState(
+    pushPrototypeHistory(
       { prototypePublicSquare: { version: 1, scrollTop: 0 } },
-      "",
       publicSquareHash(next),
     );
     lastReadHash.current = window.location.hash;
+    lastReadIndex.current = historyEntryIndex();
     setPublicSquare(next);
   }
   function closePublicSquare() {
@@ -643,20 +675,21 @@ export function App() {
       window.history.back();
       return;
     }
-    window.history.replaceState(null, "", "#home");
+    replacePrototypeHistory(null, "#home");
     lastReadHash.current = window.location.hash;
+    lastReadIndex.current = historyEntryIndex();
     setPublicSquare((current) => ({ ...current, open: false }));
   }
   function updatePublicSquare(
     next: Pick<PublicSquareState, "status" | "page">,
   ) {
     const updated = { ...next, open: true, scrollTop: 0 };
-    window.history.replaceState(
+    replacePrototypeHistory(
       { prototypePublicSquare: { version: 1, scrollTop: 0 } },
-      "",
       publicSquareHash(updated),
     );
     lastReadHash.current = window.location.hash;
+    lastReadIndex.current = historyEntryIndex();
     setPublicSquare(updated);
   }
   useEffect(() => {
@@ -689,6 +722,7 @@ export function App() {
       autoClaimPassword?: string;
     } = {},
   ) {
+    if (!allowPrototypeNavigation(next)) return false;
     if (options.activityId && next === "activity") {
       const managed = findWorkbenchActivity(identity, options.activityId);
       options.activity = managed
@@ -729,9 +763,8 @@ export function App() {
       editId: options.editId,
       activityId: options.activityId,
     });
-    window.history.pushState(
+    pushPrototypeHistory(
       null,
-      "",
       next === "activity"
         ? options.activityId && !options.activity
           ? `#activity?sample=${encodeURIComponent(options.activityId)}`
@@ -739,7 +772,9 @@ export function App() {
         : `#${next}${options.editId ? `?edit=${encodeURIComponent(options.editId)}` : options.activityId ? `?activity=${encodeURIComponent(options.activityId)}` : ""}`,
     );
     lastReadHash.current = window.location.hash;
+    lastReadIndex.current = historyEntryIndex();
     document.getElementById("main")?.scrollTo({ top: 0, behavior: "instant" });
+    return true;
   }
   function openActivity(activity: Activity, retainedPassword = "") {
     setActive(activity);
@@ -2466,16 +2501,13 @@ function PublicSquareDialog({
         if (!present || !dialog?.open || !publicSquareFromHash().open) return;
         if (!(event.target instanceof HTMLElement)) return;
         if (!event.target.matches(".list-panel__scroll")) return;
-        window.history.replaceState(
-          {
-            ...window.history.state,
-            prototypePublicSquare: {
-              version: 1,
-              scrollTop: event.target.scrollTop,
-            },
+        replacePrototypeHistory({
+          ...window.history.state,
+          prototypePublicSquare: {
+            version: 1,
+            scrollTop: event.target.scrollTop,
           },
-          "",
-        );
+        });
       }}
     >
       <PortalTargetProvider target={dialog}>

@@ -24,6 +24,10 @@ import { getDrawRoster, useDrawRosterRevision } from "../draw-rosters";
 import { ShortTime, useClockSelector } from "../time";
 import type { ActivityLifecycle, ActivityViewState } from "../types";
 import { projectActivityViewState } from "../view-state";
+import {
+  MerchantPaymentsDialog,
+  useMerchantPaymentOverlay,
+} from "./merchant-payments-dialog";
 import type { WorkbenchPageProps } from "./workbench";
 import {
   type ManagedActivity,
@@ -115,10 +119,12 @@ function PaymentDetail({
   payment,
   activity,
   navigate,
+  onProcessingDetail,
 }: {
   payment: PaymentExample;
   activity?: ManagedActivity;
   navigate: WorkbenchPageProps["navigate"];
+  onProcessingDetail: () => void;
 }) {
   const sentUsername =
     payment.sentUsername && payment.sentUsername !== payment.recipient.username
@@ -178,6 +184,13 @@ function PaymentDetail({
       </section>
 
       <div className="work-payment-detail-actions">
+        <button
+          className="button secondary work-payment-processing-trigger"
+          type="button"
+          onClick={onProcessingDetail}
+        >
+          查看处理详情
+        </button>
         {payment.status === "waiting" && (
           <button
             className="button secondary"
@@ -228,6 +241,20 @@ export function PaymentPage({
   );
   const [refreshed, setRefreshed] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  const processingOverlay = useMerchantPaymentOverlay(identity);
+  const processingWasOpen = useRef(false);
+  useEffect(() => {
+    const wasOpen = processingWasOpen.current;
+    processingWasOpen.current = processingOverlay.view.open;
+    if (!wasOpen || processingOverlay.view.open || !detailOpen) return;
+    window.requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLButtonElement>(
+          ".work-dialog[open] .work-payment-processing-trigger",
+        )
+        ?.focus({ preventScroll: true });
+    });
+  }, [processingOverlay.view.open, detailOpen]);
   const [mobileTargetStep, setMobileTargetStep] = useState(Boolean(activityId));
   const activityColumnRef = useRef<HTMLElement>(null);
   const activityScrollTop = useRef(0);
@@ -600,11 +627,14 @@ export function PaymentPage({
               payment={selectedPayment}
               activity={selectedActivity ?? undefined}
               navigate={navigate}
+              onProcessingDetail={() =>
+                processingOverlay.open(selectedPayment.id)
+              }
             />
           </aside>
         )}
       </div>
-      {detailOpen && selectedPayment && (
+      {detailOpen && selectedPayment && !processingOverlay.view.open && (
         <Dialog
           title="付款详情"
           onClose={() => setDetailOpen(false)}
@@ -624,9 +654,20 @@ export function PaymentPage({
               payment={selectedPayment}
               activity={selectedActivity ?? undefined}
               navigate={navigate}
+              onProcessingDetail={() =>
+                processingOverlay.open(selectedPayment.id)
+              }
             />
           </div>
         </Dialog>
+      )}
+      {processingOverlay.view.open && (
+        <MerchantPaymentsDialog
+          overlay={processingOverlay}
+          payments={payments}
+          activities={activities}
+          navigate={navigate}
+        />
       )}
     </div>
   );

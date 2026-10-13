@@ -13,9 +13,10 @@ import type {
   UpdateMerchantInput,
 } from "@hb/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { ActivityRequestError, activityKeys, readResponse } from "./activities";
-import { sessionQueryKey, useAccountSession } from "./auth";
+import { type SessionResponse, sessionQueryKey, useSession } from "./auth";
 import { duplicateProbeActive } from "./payment-display";
 
 export class MerchantChangeConfirmationError extends ActivityRequestError {
@@ -82,12 +83,86 @@ export const merchantKeys = {
     ["merchant-private", userId, "detail", id] as const,
 };
 
+export function merchantSessionIdentity(session: SessionResponse | undefined) {
+  return session?.user && session.csrfToken
+    ? JSON.stringify([
+        session.user.id,
+        session.user.accountTier,
+        session.user.loginProvider,
+        session.csrfToken,
+      ])
+    : null;
+}
+
+const restorationScopes = new Map<string, string>();
+
+/** Restoration stores a one-way session fingerprint, never the CSRF token. */
+export function useMerchantViewScope(userId: string) {
+  const session = useMerchantIdentity(userId);
+  const fallback = useRef(crypto.randomUUID());
+  const [, update] = useState(0);
+  const identity = session.identity;
+  useEffect(() => {
+    if (!identity || restorationScopes.has(identity)) return;
+    let active = true;
+    void crypto.subtle
+      .digest("SHA-256", new TextEncoder().encode(identity))
+      .then((buffer) => {
+        if (!active) return;
+        restorationScopes.set(
+          identity,
+          Array.from(new Uint8Array(buffer), (byte) =>
+            byte.toString(16).padStart(2, "0"),
+          ).join(""),
+        );
+        update((value) => value + 1);
+      });
+    return () => {
+      active = false;
+    };
+  }, [identity]);
+  return restorationScopes.get(identity) ?? `pending-${fallback.current}`;
+}
+
+function useMerchantIdentity(userId: string) {
+  const session = useSession();
+  const queryClient = useQueryClient();
+  const captureIdentity = () =>
+    merchantSessionIdentity(
+      queryClient.getQueryData<SessionResponse>(sessionQueryKey),
+    );
+  const identity =
+    session.isSuccess && session.data.user?.id === userId
+      ? merchantSessionIdentity(session.data)
+      : null;
+  const isCurrentIdentity = (candidate: string | null | undefined) =>
+    Boolean(candidate) &&
+    queryClient.getQueryState(sessionQueryKey)?.status === "success" &&
+    queryClient.getQueryData<SessionResponse>(sessionQueryKey)?.user?.id ===
+      userId &&
+    captureIdentity() === candidate;
+  return {
+    identity: identity ?? "",
+    enabled: Boolean(identity),
+    captureIdentity,
+    isCurrentIdentity,
+    isCurrentSession: () => isCurrentIdentity(identity),
+    async read<T>(response: Response) {
+      const result = await readResponse<T>(response);
+      if (!isCurrentIdentity(identity))
+        throw new DOMException("身份已变化", "AbortError");
+      return result;
+    },
+  };
+}
+
 export function useMerchants(userId: string, cursor: string | null = null) {
+  const session = useMerchantIdentity(userId);
   return useQuery({
-    queryKey: [...merchantKeys.mine(userId), "list", cursor],
-    enabled: Boolean(userId),
+    queryKey: [...merchantKeys.mine(session.identity), "list", cursor],
+    enabled: session.enabled,
     queryFn: async ({ signal }) =>
-      readResponse<MerchantList>(
+      session.read<MerchantList>(
         await api.api.me.merchants.$get(
           { query: cursor ? { cursor } : {} },
           { init: { signal, cache: "no-store" } },
@@ -104,11 +179,12 @@ export function useMerchants(userId: string, cursor: string | null = null) {
 }
 
 export function useMerchant(userId: string, id: string) {
+  const session = useMerchantIdentity(userId);
   return useQuery({
-    queryKey: merchantKeys.detail(userId, id),
-    enabled: Boolean(userId && id),
+    queryKey: merchantKeys.detail(session.identity, id),
+    enabled: session.enabled && Boolean(id),
     queryFn: async ({ signal }) =>
-      readResponse<{ merchant: Merchant }>(
+      session.read<{ merchant: Merchant }>(
         await api.api.me.merchants[":id"].$get(
           { param: { id } },
           { init: { signal, cache: "no-store" } },
@@ -127,10 +203,12 @@ export function useMerchantPayments(
   id: string,
   cursor: string | null,
 ) {
+  const session = useMerchantIdentity(userId);
   return useQuery({
-    queryKey: [...merchantKeys.mine(userId), "payments", id, cursor],
+    enabled: session.enabled && Boolean(id),
+    queryKey: [...merchantKeys.mine(session.identity), "payments", id, cursor],
     queryFn: async ({ signal }) =>
-      readResponse<MerchantPaymentList>(
+      session.read<MerchantPaymentList>(
         await api.api.me.merchants[":id"].payments.$get(
           { param: { id }, query: cursor ? { cursor } : {} },
           { init: { signal, cache: "no-store" } },
@@ -146,17 +224,19 @@ export function usePaymentActivities(
   status: "all" | "active" | "ended" | "archived",
   cursor: string | null,
 ) {
+  const session = useMerchantIdentity(userId);
   const query = new URLSearchParams({ status });
   if (cursor) query.set("cursor", cursor);
   return useQuery({
+    enabled: session.enabled,
     queryKey: [
-      ...merchantKeys.mine(userId),
+      ...merchantKeys.mine(session.identity),
       "payment-activities",
       status,
       cursor,
     ],
     queryFn: async ({ signal }) =>
-      readResponse<ActivityPaymentList>(
+      session.read<ActivityPaymentList>(
         await fetch(`/api/me/payment-activities?${query.toString()}`, {
           signal,
           cache: "no-store",
@@ -173,20 +253,21 @@ export function useActivityPayments(
   status: "all" | "pending" | "confirmed",
   cursor: string | null,
 ) {
+  const session = useMerchantIdentity(userId);
   const query = new URLSearchParams({ status });
   if (cursor) query.set("cursor", cursor);
   return useQuery({
     queryKey: [
-      ...merchantKeys.mine(userId),
+      ...merchantKeys.mine(session.identity),
       "activity-payments",
       activityId,
       status,
       cursor,
     ],
-    enabled: Boolean(activityId),
+    enabled: session.enabled && Boolean(activityId),
     queryFn: async ({ signal }) => {
       if (!activityId) throw new Error("缺少活动标识");
-      return readResponse<ActivityPaymentTargetList>(
+      return session.read<ActivityPaymentTargetList>(
         await fetch(
           `/api/me/activities/${encodeURIComponent(activityId)}/payments?${query.toString()}`,
           { signal, cache: "no-store" },
@@ -205,18 +286,18 @@ export function useMerchantWrites(
 ) {
   const queryClient = useQueryClient();
   const options = { headers: { "X-CSRF-Token": csrfToken } };
-  const account = useAccountSession(userId);
+  const account = useMerchantIdentity(userId);
   const onSuccess = async (
     { merchant }: { merchant: Merchant },
     _variables: unknown,
     identity: string | null | undefined,
   ) => {
     if (!account.isCurrentIdentity(identity)) return;
-    queryClient.setQueryData(merchantKeys.detail(userId, merchant.id), {
+    queryClient.setQueryData(merchantKeys.detail(identity ?? "", merchant.id), {
       merchant,
     });
     await queryClient.invalidateQueries({
-      queryKey: merchantKeys.mine(userId),
+      queryKey: merchantKeys.mine(identity ?? ""),
     });
     await queryClient.invalidateQueries({
       queryKey: activityKeys.mine(userId),
@@ -228,14 +309,31 @@ export function useMerchantWrites(
     identity: string | null | undefined,
   ) => {
     if (
-      account.isCurrentIdentity(identity) &&
-      error instanceof ActivityRequestError &&
-      error.status === 401
+      !account.isCurrentIdentity(identity) ||
+      !(error instanceof ActivityRequestError)
     )
+      return;
+    if (error.status === 401)
       queryClient.setQueryData(sessionQueryKey, {
         user: null,
         csrfToken: null,
       });
+    if (id && [401, 403, 404].includes(error.status)) {
+      const related = queryClient.getQueryCache().findAll({
+        queryKey: merchantKeys.mine(identity ?? ""),
+        predicate: (query) => query.queryKey[3] === id,
+      });
+      for (const query of related) {
+        void query.cancel({ revert: false, silent: true });
+        query.setState({
+          data: undefined,
+          dataUpdatedAt: 0,
+          status: "error",
+          fetchStatus: "idle",
+          error,
+        });
+      }
+    }
   };
   function merchantId() {
     if (!id) throw new Error("缺少商户标识");
@@ -308,34 +406,6 @@ export function useMerchantWrites(
       onSuccess,
       onError,
     }),
-    check: useMutation({
-      onMutate: account.captureIdentity,
-      mutationFn: async () =>
-        readResponse<{
-          merchant: Merchant;
-          accepted?: boolean;
-          retryAfterSeconds?: number | null;
-        }>(
-          await api.api.me.merchants[":id"].check.$post(
-            { param: { id: merchantId() } },
-            options,
-          ),
-        ),
-      onSuccess,
-      onError,
-    }),
-    verify: useMutation({
-      onMutate: account.captureIdentity,
-      mutationFn: async () =>
-        readResponse<{ merchant: Merchant }>(
-          await api.api.me.merchants[":id"].verify.$post(
-            { param: { id: merchantId() } },
-            options,
-          ),
-        ),
-      onSuccess,
-      onError,
-    }),
     simulate: useMutation({
       onMutate: account.captureIdentity,
       mutationFn: async (scenario: SimulationScenario) =>
@@ -358,11 +428,18 @@ export function useMerchantPayment(
   cursor: string | null,
   enabled = true,
 ) {
+  const session = useMerchantIdentity(userId);
   return useQuery({
-    enabled,
-    queryKey: [...merchantKeys.mine(userId), "payment", id, taskId, cursor],
+    enabled: enabled && session.enabled && Boolean(id && taskId),
+    queryKey: [
+      ...merchantKeys.mine(session.identity),
+      "payment",
+      id,
+      taskId,
+      cursor,
+    ],
     queryFn: async ({ signal }) =>
-      readResponse<{ payment: MerchantPaymentDetail }>(
+      session.read<{ payment: MerchantPaymentDetail }>(
         await api.api.me.merchants[":id"].payments[":taskId"].$get(
           { param: { id, taskId }, query: cursor ? { cursor } : {} },
           { init: { signal, cache: "no-store" } },

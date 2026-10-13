@@ -5,7 +5,7 @@ import {
 } from "cloudflare:test";
 import type { MerchantPaymentDetail } from "@hb/contracts";
 import { eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { app } from "../src/app";
 import { createDb } from "../src/db/client";
 import {
@@ -192,6 +192,7 @@ beforeEach(async () => {
   owner = await actor();
   other = await actor();
 });
+afterEach(() => vi.restoreAllMocks());
 
 describe("owner recovery diagnostics", () => {
   it("returns scheduling and authorization evidence only to the owner, re-redacts decrypted summaries", async () => {
@@ -409,76 +410,64 @@ describe("owner recovery diagnostics", () => {
     expect((await request(`${path}?cursor=invalid`, owner)).status).toBe(400);
   });
 
-  it("persists manual cooldown without changing send time, business block or upstream query deadline", async () => {
-    const { merchant, taskId, task, now } = await fixture();
-    const wake = vi.fn(
-      async () =>
-        new Response("{}", { headers: { "Content-Type": "application/json" } }),
-    );
-    // This endpoint test cannot reach a real DO or a real upstream transport.
-    const runtime: ApiBindings = {
-      ...bindings,
-      LDC_NETWORK_MODE: "verify",
-      MERCHANT_DO: {
-        idFromName: env.MERCHANT_DO.idFromName.bind(env.MERCHANT_DO),
-        get: () => ({ fetch: wake }),
-      } as unknown as ApiBindings["MERCHANT_DO"],
-    };
-    const path = `/api/me/merchants/${merchant.id}/check`;
-    expect((await request(path, other, "POST", runtime)).status).toBe(404);
-    expect(
-      (
-        await request(path, owner, "POST", runtime, {
-          "X-CSRF-Token": "incorrect",
-        })
-      ).status,
-    ).toBe(403);
-    expect(
-      (
-        await request(path, owner, "POST", runtime, {
-          Origin: "https://attacker.example",
-        })
-      ).status,
-    ).toBe(403);
-    const first = await request(path, owner, "POST", runtime);
-    expect(first.status).toBe(200);
-    expect(first.headers.get("Cache-Control")).toBe("no-store");
-    const admitted = (await first.json()) as {
-      accepted: boolean;
-      merchant: { paymentCheckNextAt: string };
-    };
-    expect(admitted.accepted).toBe(true);
-    expect(Date.parse(admitted.merchant.paymentCheckNextAt)).toBeGreaterThan(
-      Date.now(),
-    );
-    const second = await request(path, owner, "POST", runtime);
-    expect(second.status).toBe(200);
-    expect(Number(second.headers.get("Retry-After"))).toBeGreaterThan(0);
-    expect(await second.json()).toMatchObject({
-      accepted: false,
-      merchant: { paymentCheckNextAt: admitted.merchant.paymentCheckNextAt },
-    });
-    expect(wake).toHaveBeenCalledTimes(1);
-    const stored = await createDb(env.DB)
-      .select()
-      .from(paymentTasks)
-      .where(eq(paymentTasks.id, taskId))
-      .get();
-    expect(stored).toMatchObject({
-      nextSendAt: task.nextSendAt,
-      sendBlockReason: "quota",
-      queryRetryAfterAt: now + 45_000,
-      nextQueryAt: now + 45_000,
-      nextRunAt: now + 45_000,
-    });
-    const refreshed = await request(
-      `/api/me/merchants/${merchant.id}`,
-      owner,
-      "GET",
-      runtime,
-    );
-    expect(await refreshed.json()).toMatchObject({
-      merchant: { paymentCheckNextAt: admitted.merchant.paymentCheckNextAt },
-    });
-  });
+  it.each(["check", "verify"])(
+    "retires the manual %s endpoint with no writes, network request or merchant wake",
+    async (operation) => {
+      const { merchant } = await fixture();
+      const wake = vi.fn(
+        async () =>
+          new Response("{}", {
+            headers: { "Content-Type": "application/json" },
+          }),
+      );
+      const fetcher = vi.spyOn(globalThis, "fetch");
+      // A retired route must not schedule a credential check or reach a DO.
+      const runtime: ApiBindings = {
+        ...bindings,
+        LDC_NETWORK_MODE: "verify",
+        MERCHANT_DO: {
+          idFromName: env.MERCHANT_DO.idFromName.bind(env.MERCHANT_DO),
+          get: () => ({ fetch: wake }),
+        } as unknown as ApiBindings["MERCHANT_DO"],
+      };
+      const snapshot = () =>
+        env.DB.batch(
+          [
+            "merchants",
+            "merchant_credentials",
+            "payment_tasks",
+            "payment_attempts",
+            "payment_outbox",
+            "payment_duplicate_probes",
+            "payment_acceptances",
+            "payment_retry_grants",
+            "payment_identity_corrections",
+          ].map((table) =>
+            env.DB.prepare(`SELECT * FROM ${table} ORDER BY rowid`),
+          ),
+        ).then((results) => results.map((result) => result.results));
+      const before = await snapshot();
+      const path = `/api/me/merchants/${merchant.id}/${operation}`;
+      for (const user of [undefined, other, owner]) {
+        const response = await request(path, user, "POST", runtime);
+        expect(response.status).toBe(404);
+        expect(response.headers.get("Cache-Control")).toBe("no-store");
+        expect(response.headers.get("Retry-After")).toBeNull();
+        expect(await response.json()).toMatchObject({
+          error: { code: "NOT_FOUND" },
+        });
+      }
+      expect(
+        (
+          await request(path, owner, "POST", runtime, {
+            "X-CSRF-Token": "incorrect",
+            Origin: "https://attacker.example",
+          })
+        ).status,
+      ).toBe(404);
+      expect(await snapshot()).toEqual(before);
+      expect(wake).not.toHaveBeenCalled();
+      expect(fetcher).not.toHaveBeenCalled();
+    },
+  );
 });

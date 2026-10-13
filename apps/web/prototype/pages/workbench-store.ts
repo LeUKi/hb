@@ -71,6 +71,19 @@ export type PaymentExample = {
   source: string;
   createdAt: string;
   confirmedAt: string | null;
+  firstSendAt?: string | null;
+  sendAcknowledgedAt?: string | null;
+  orderObservedAt?: string | null;
+  orderEvidence?: "send" | "query";
+  canRepairCredentials?: boolean;
+  attempts?: Array<{
+    id: string;
+    operation: "send" | "query";
+    outcome: string;
+    startedAt: string;
+    finishedAt: string | null;
+    note: string | null;
+  }>;
   issue: string | null;
   recovery: string;
 };
@@ -605,6 +618,52 @@ function fixturePayments(items: ManagedActivity[]): PaymentExample[] {
         source: `关联活动：${item.title}`,
         createdAt,
         confirmedAt,
+        firstSendAt:
+          kind.status === "pending"
+            ? null
+            : new Date(Date.parse(createdAt) + 1_000).toISOString(),
+        sendAcknowledgedAt:
+          kind.status === "confirmed"
+            ? new Date(Date.parse(createdAt) + 2_000).toISOString()
+            : null,
+        orderObservedAt:
+          kind.status === "confirmed"
+            ? new Date(Date.parse(createdAt) + 4_000).toISOString()
+            : null,
+        orderEvidence: "query" as const,
+        canRepairCredentials: kind.status === "waiting",
+        attempts:
+          kind.status === "pending"
+            ? []
+            : [
+                {
+                  id: `send-${serial}`,
+                  operation: "send" as const,
+                  outcome:
+                    kind.status === "confirmed" ? "请求已接收" : "凭证不可用",
+                  startedAt: new Date(
+                    Date.parse(createdAt) + 1_000,
+                  ).toISOString(),
+                  finishedAt: new Date(
+                    Date.parse(createdAt) + 2_000,
+                  ).toISOString(),
+                  note:
+                    kind.status === "waiting"
+                      ? "原订单需要有效密钥才能继续核对。"
+                      : null,
+                },
+                {
+                  id: `query-${serial}`,
+                  operation: "query" as const,
+                  outcome:
+                    kind.status === "confirmed" ? "已确认发放" : "等待核对",
+                  startedAt: new Date(
+                    Date.parse(createdAt) + 3_000,
+                  ).toISOString(),
+                  finishedAt: kind.status === "confirmed" ? confirmedAt : null,
+                  note: null,
+                },
+              ],
         issue:
           kind.status === "waiting"
             ? "当前商户凭证需要恢复后继续发送。"

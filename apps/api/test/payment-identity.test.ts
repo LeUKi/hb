@@ -32,8 +32,8 @@ import {
   basicAuthorization,
   createRealPaymentAdapter,
 } from "../src/payments/real-protocol";
-import { requestMerchantCheck } from "../src/payments/recovery";
 import { runMerchantCycle, wakePayment } from "../src/payments/scheduler";
+import { beginCredentialVerification } from "../src/payments/verification";
 import { encryptString } from "../src/security/crypto";
 
 let now: number;
@@ -418,12 +418,22 @@ describe("merchant configuration correction and pinned payment identities", () =
       loadMerchantSecret(f.bindings, f.merchantId, 1, changed.clientId),
     ).rejects.toThrow("identity mismatch");
     now++;
-    await env.DB.prepare(
-      "UPDATE merchant_credentials SET verification_status='passed',verification_checked_at=? WHERE merchant_id=? AND version=?",
-    )
-      .bind(now, f.merchantId, changed.version)
-      .run();
-    await requestMerchantCheck(f.bindings, f.merchantId);
+    const verify = await beginCredentialVerification(
+      f.bindings,
+      f.merchantId,
+      {
+        fetch: vi.fn(async () =>
+          Response.json(
+            { code: -1, msg: "订单不存在或已完成" },
+            { status: 404 },
+          ),
+        ),
+      },
+      changed.version,
+    );
+    expect(verify).not.toBeNull();
+    await verify?.();
+    await due(f);
     await cycle(f, adapter);
     expect(adapter.send).toHaveBeenCalledOnce();
     expect(vi.mocked(adapter.send).mock.calls[0]?.[1]).toMatchObject({
@@ -568,7 +578,7 @@ describe("merchant configuration correction and pinned payment identities", () =
     );
     await cycle(f, adapter);
     await replaceClient(f);
-    await requestMerchantCheck(f.bindings, f.merchantId);
+    await due(f);
     await cycle(f, adapter);
     expect(await task(f)).toMatchObject({
       status: "attention",

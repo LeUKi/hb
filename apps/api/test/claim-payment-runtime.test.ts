@@ -22,12 +22,12 @@ import {
   realSendDecision,
 } from "../src/payments/policy";
 import { merchantPaymentDetail } from "../src/payments/queries";
-import { requestMerchantCheck } from "../src/payments/recovery";
 import {
   runMerchantCycle,
   sweepPayments,
   wakePayment,
 } from "../src/payments/scheduler";
+import { beginCredentialVerification } from "../src/payments/verification";
 import { encryptString } from "../src/security/crypto";
 import { resetMerchantHistory } from "./reset-merchant-history";
 
@@ -360,7 +360,7 @@ describe("ordinary real claim payments", () => {
     expect((await task(f)).status).toBe("confirmed");
   });
 
-  it("waits before first send for current credentials and wakes after verification without consuming intent", async () => {
+  it("waits before first send and naturally resumes after automatic credential verification without consuming another intent", async () => {
     const f = await fixture({ passed: false }),
       a = adapter();
     await cycle(f, a);
@@ -372,12 +372,16 @@ describe("ordinary real claim payments", () => {
     });
     expect((await task(f)).nextRunAt).toBe(now + 300_000);
     expect(a.send).not.toHaveBeenCalled();
-    await env.DB.prepare(
-      "UPDATE merchant_credentials SET verification_status='passed',verification_checked_at=? WHERE merchant_id=? AND version=1",
-    )
-      .bind(now, f.merchantId)
-      .run();
-    await requestMerchantCheck(f.bindings, f.merchantId);
+    const verify = await beginCredentialVerification(f.bindings, f.merchantId, {
+      fetch: vi.fn(async () =>
+        Response.json({ code: -1, msg: "订单不存在或已完成" }, { status: 404 }),
+      ),
+    });
+    expect(verify).not.toBeNull();
+    await verify?.();
+    await cycle(f, a);
+    expect(a.send).not.toHaveBeenCalled();
+    await due(f);
     await cycle(f, a);
     expect(a.send).toHaveBeenCalledOnce();
     expect((await task(f)).firstSendAt).toBe(now);
@@ -670,12 +674,14 @@ describe("ordinary real claim payments", () => {
     await cycle(f, a);
     expect(a.send).toHaveBeenCalledOnce();
     now += 30_000;
-    await env.DB.prepare(
-      "UPDATE merchant_credentials SET verification_status='passed',verification_checked_at=? WHERE merchant_id=? AND version=1",
-    )
-      .bind(now, f.merchantId)
-      .run();
-    await requestMerchantCheck(f.bindings, f.merchantId);
+    const verify = await beginCredentialVerification(f.bindings, f.merchantId, {
+      fetch: vi.fn(async () =>
+        Response.json({ code: -1, msg: "订单不存在或已完成" }, { status: 404 }),
+      ),
+    });
+    expect(verify).not.toBeNull();
+    await verify?.();
+    await due(f);
     await cycle(f, a);
     await due(f);
     vi.mocked(a.send).mockResolvedValueOnce(receipt(f));

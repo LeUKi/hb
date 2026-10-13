@@ -123,12 +123,14 @@ test("merchant errors and credential-change confirmation remain directly visible
 }) => {
   await page.goto("/#merchant");
   await page.getByLabel("Client ID", { exact: true }).fill("TEST-REVISED");
-  await page.getByRole("button", { name: "保存配置", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "保存配置", exact: true }),
+  ).toBeDisabled();
   await expect(page.getByRole("alert")).toContainText("同时填写对应");
   await page.getByRole("button", { name: "商户密钥说明", exact: true }).click();
   await expect(
     page.getByRole("dialog", { name: "商户密钥说明" }),
-  ).toContainText("新凭证检查通过");
+  ).toContainText("留空保留现有密钥");
   await page
     .getByLabel("商户密钥", { exact: true })
     .fill("prototype-only-secret");

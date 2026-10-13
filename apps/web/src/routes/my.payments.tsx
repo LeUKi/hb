@@ -15,6 +15,7 @@ import {
   useState,
 } from "react";
 import { RequireAccount } from "../components/activities/require-account";
+import { MerchantPaymentDialog } from "../components/merchants/merchant-payment-dialog";
 import { PaymentStatusText } from "../components/presentation/activity-list";
 import {
   ListPanel,
@@ -29,9 +30,11 @@ import {
 } from "../components/presentation/loading";
 import { UserAvatar } from "../components/user-identity";
 import { formatTime, useManagedActivity } from "../lib/activities";
+import { merchantPaymentHref } from "../lib/merchant-navigation";
 import {
   useActivityPayments,
   useMerchantPayment,
+  useMerchantViewScope,
   usePaymentActivities,
 } from "../lib/merchants";
 import {
@@ -103,7 +106,13 @@ export const Route = createFileRoute("/my/payments")({
 function PaymentsPage() {
   return (
     <RequireAccount requireLdc>
-      {({ userId }) => <Payments key={userId} userId={userId} />}
+      {({ userId, csrfToken }) => (
+        <Payments
+          key={`${userId}:${csrfToken}`}
+          userId={userId}
+          csrfToken={csrfToken}
+        />
+      )}
     </RequireAccount>
   );
 }
@@ -159,14 +168,33 @@ function activityStatusLabel(status: ContractActivityStatus) {
   return activityLabels[status as ActivityStatus] ?? status;
 }
 
-function Payments({ userId }: { userId: string }) {
+function Payments({
+  userId,
+  csrfToken,
+}: {
+  userId: string;
+  csrfToken: string;
+}) {
   const search = Route.useSearch();
   const navigate = useEntryNavigate();
   const router = useRouter();
-  const detailOverlay = useHistoryOverlay("payment-detail");
+  const viewScope = useMerchantViewScope(userId);
+  const detailOverlay = useHistoryOverlay("payment-detail", viewScope);
+  const processingOverlay = useHistoryOverlay("payment-processing", viewScope);
+  const processingOpen = Boolean(processingOverlay.overlay);
+  const [processingMerchantId, processingTaskId] = (
+    processingOverlay.overlay?.id ?? ""
+  ).split(":");
+  const processingTrigger = useRef<HTMLElement | null>(null);
+  const lastProcessingTask = useRef<string | null>(null);
+  const [processingParent, setProcessingParent] = useViewState(
+    "payments.processingParent",
+    "workspace",
+    viewScope,
+  );
   const activityStatus = search.activityStatus ?? "all";
   const paymentStatus = search.paymentStatus ?? "all";
-  const activityCursorScope = `${userId}:${activityStatus}`;
+  const activityCursorScope = `${userId}:${viewScope}:${activityStatus}`;
   const activityColumnRef = useRef<HTMLElement>(null);
   const activityScrollTop = useRef(0);
   const activityReturnContext = useRef<string | null>(null);
@@ -175,19 +203,24 @@ function Payments({ userId }: { userId: string }) {
   const [activityPager, setActivityPager] = useViewState<ScopedCursors>(
     "payments.activityPager",
     {
-      scope: `${userId}:all`,
+      scope: `${userId}:${viewScope}:all`,
       cursors: [null],
     },
+    viewScope,
   );
   const [selectedActivityState, setSelectedActivity] =
-    useViewState<DefaultActivity>("payments.selectedActivity", {
-      scope: activityCursorScope,
-      id: search.activityId ?? null,
-    });
+    useViewState<DefaultActivity>(
+      "payments.selectedActivity",
+      {
+        scope: activityCursorScope,
+        id: search.activityId ?? null,
+      },
+      viewScope,
+    );
   const [selectedTargetId, setSelectedTargetId] = useViewState<string | null>(
     "payments.selectedTargetId",
     null,
-    search.activityId ?? selectedActivityState.id ?? "none",
+    `${viewScope}:${search.activityId ?? selectedActivityState.id ?? "none"}`,
   );
   const [targetSnapshot, setTargetSnapshot] = useState<TargetSnapshot | null>(
     null,
@@ -196,20 +229,64 @@ function Payments({ userId }: { userId: string }) {
   const [targetPager, setTargetPager] = useViewState<ScopedCursors>(
     "payments.targetPager",
     {
-      scope: `${userId}:${search.activityId ?? "none"}:${paymentStatus}`,
+      scope: `${userId}:${viewScope}:${search.activityId ?? "none"}:${paymentStatus}`,
       cursors: [null],
     },
+    viewScope,
   );
   const detailOpen = detailOverlay.overlay?.kind === "payment-detail";
-  const detailTargetId = detailOpen
-    ? (detailOverlay.overlay?.id ?? selectedTargetId)
-    : selectedTargetId;
+  const detailTargetId =
+    processingOpen && processingTaskId
+      ? processingTaskId
+      : detailOpen
+        ? (detailOverlay.overlay?.id ?? selectedTargetId)
+        : selectedTargetId;
+
+  useEffect(() => {
+    if (processingOpen) {
+      lastProcessingTask.current = processingTaskId ?? null;
+      return;
+    }
+    const taskId = lastProcessingTask.current;
+    if (!taskId) return;
+    lastProcessingTask.current = null;
+    const frame = requestAnimationFrame(() => {
+      const modal = document.querySelector<HTMLDialogElement>("dialog[open]");
+      const root = modal ?? document;
+      const target =
+        Array.from(
+          root.querySelectorAll<HTMLElement>("[data-processing-task-id]"),
+        ).find(
+          (node) =>
+            node.dataset.processingTaskId === taskId &&
+            node.offsetParent !== null,
+        ) ??
+        Array.from(
+          root.querySelectorAll<HTMLElement>("[data-payment-id]"),
+        ).find(
+          (node) =>
+            node.dataset.paymentId === taskId && node.offsetParent !== null,
+        );
+      target?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [processingOpen, processingTaskId]);
+
+  function openProcessing(
+    merchantId: string,
+    taskId: string,
+    trigger: HTMLElement,
+  ) {
+    processingTrigger.current = trigger;
+    setProcessingParent(detailOpen ? "summary" : "workspace");
+    processingOverlay.open(`${merchantId}:${taskId}`);
+  }
   const initialActivityPager = useMemo<ScopedCursors>(
     () => ({
-      scope: `${userId}:all`,
+      scope: `${userId}:${viewScope}:all`,
       cursors: [null],
     }),
-    [userId],
+    [userId, viewScope],
   );
   const activityCursors =
     activityPager.scope === activityCursorScope
@@ -282,7 +359,7 @@ function Payments({ userId }: { userId: string }) {
     selectedActivityId ?? "",
     Boolean(selectedActivityId && !visibleIds.includes(selectedActivityId)),
   );
-  const targetCursorScope = `${userId}:${selectedActivityId ?? "none"}:${paymentStatus}`;
+  const targetCursorScope = `${userId}:${viewScope}:${selectedActivityId ?? "none"}:${paymentStatus}`;
   const targetCursors =
     targetPager.scope === targetCursorScope ? targetPager.cursors : [null];
   const setTargetCursors = useCallback(
@@ -477,7 +554,7 @@ function Payments({ userId }: { userId: string }) {
   function changeActivityStatus(value: ActivityStatus) {
     setActivityCursors([null]);
     setTargetCursors([null]);
-    setSelectedActivity({ scope: `${userId}:${value}`, id: null });
+    setSelectedActivity({ scope: `${userId}:${viewScope}:${value}`, id: null });
     setSelectedTargetId(null);
     void navigate({
       to: "/my/payments",
@@ -681,6 +758,7 @@ function Payments({ userId }: { userId: string }) {
                 target={selectedTarget}
                 activityId={selectedActivityId}
                 merchantId={targetMerchantId}
+                openProcessing={openProcessing}
               />
             </>
           ) : (
@@ -698,7 +776,7 @@ function Payments({ userId }: { userId: string }) {
           )}
         </aside>
       </div>
-      {detailOpen ? (
+      {detailOpen && !processingOpen ? (
         <Dialog
           title="付款详情"
           onClose={() => router.history.back()}
@@ -718,6 +796,7 @@ function Payments({ userId }: { userId: string }) {
                 target={selectedTarget}
                 activityId={selectedActivityId}
                 merchantId={targetMerchantId}
+                openProcessing={openProcessing}
               />
             ) : (needsSelectedRead && selectedRead.isPending) ||
               (selectedActivityId && targets.isPending) ? (
@@ -727,6 +806,20 @@ function Payments({ userId }: { userId: string }) {
             )}
           </div>
         </Dialog>
+      ) : null}
+      {processingOpen && processingMerchantId && processingTaskId ? (
+        <MerchantPaymentDialog
+          userId={userId}
+          csrfToken={csrfToken}
+          merchantId={processingMerchantId}
+          taskId={processingTaskId}
+          origin="workbench"
+          restoreFocus={processingTrigger.current}
+          onBack={() => router.history.back()}
+          onClose={() =>
+            router.history.go(processingParent === "summary" ? -2 : -1)
+          }
+        />
       ) : null}
     </div>
   );
@@ -851,10 +944,16 @@ function PaymentDetail({
   target,
   activityId,
   merchantId,
+  openProcessing,
 }: {
   target: ActivityPaymentTarget;
   activityId: string | null;
   merchantId: string | null;
+  openProcessing: (
+    merchantId: string,
+    taskId: string,
+    trigger: HTMLElement,
+  ) => void;
 }) {
   const detailRef = useRef<HTMLDivElement>(null);
   useRestoredScroll(detailRef, `payment-detail:${activityId}:${target.id}`);
@@ -913,13 +1012,26 @@ function PaymentDetail({
 
       <div className="work-payment-detail-actions">
         {merchantId ? (
-          <Link
+          <a
             className="button secondary"
-            to="/my/merchants/$id/payments/$taskId"
-            params={{ id: merchantId, taskId: target.id }}
+            href={merchantPaymentHref(merchantId, target.id)}
+            data-processing-task-id={target.id}
+            onClick={(event) => {
+              if (
+                event.defaultPrevented ||
+                event.button !== 0 ||
+                event.ctrlKey ||
+                event.metaKey ||
+                event.shiftKey ||
+                event.altKey
+              )
+                return;
+              event.preventDefault();
+              openProcessing(merchantId, target.id, event.currentTarget);
+            }}
           >
             查看处理详情
-          </Link>
+          </a>
         ) : null}
         {activityId ? (
           <Link

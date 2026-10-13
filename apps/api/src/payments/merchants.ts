@@ -28,7 +28,6 @@ import {
 } from "./configuration";
 import { publicationEligibility } from "./publication";
 import {
-  canVerifyCredentials,
   credentialVerificationView,
   recoverCredentialChecks,
 } from "./verification";
@@ -86,10 +85,6 @@ export async function merchantView(
     version: row.version,
     credentialVersion: row.credentialVersion,
     pausedReason: row.pausedReason,
-    paymentCheckNextAt:
-      row.manualCheckAt === null
-        ? null
-        : new Date(row.manualCheckAt + 30_000).toISOString(),
     createdAt: new Date(row.createdAt).toISOString(),
     updatedAt: new Date(row.updatedAt).toISOString(),
   };
@@ -102,9 +97,7 @@ export async function merchantView(
           official &&
           allowsRealSending(env, await readPlatformControls(env)) &&
           verification.status === "passed",
-        canCheck: official && canVerifyCredentials(env),
         canSimulate: false,
-        canVerify: official && canVerifyCredentials(env),
       },
     };
   const control = await createDb(env.DB)
@@ -117,9 +110,7 @@ export async function merchantView(
     mode: "simulation",
     capabilities: {
       canExecutePayments: official && isLocalSimulation(env),
-      canCheck: official && isLocalSimulation(env),
       canSimulate: official && isLocalSimulation(env),
-      canVerify: false,
     },
     scenario: control?.scenario ?? "normal",
   };

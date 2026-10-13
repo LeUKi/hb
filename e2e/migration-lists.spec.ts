@@ -308,12 +308,9 @@ async function setup(page: Page) {
     },
     capabilities: {
       canExecutePayments: true,
-      canCheck: true,
       canSimulate: true,
-      canVerify: false,
     },
     pausedReason: null,
-    paymentCheckNextAt: null,
     createdAt: "2026-10-07T00:00:00Z",
     updatedAt: "2026-10-07T00:00:00Z",
   };

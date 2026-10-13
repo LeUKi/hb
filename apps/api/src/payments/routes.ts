@@ -23,7 +23,6 @@ import {
   updateMerchant,
 } from "./merchants";
 import { listMerchantPayments, merchantPaymentDetail } from "./queries";
-import { requestMerchantCheck } from "./recovery";
 import { beginCredentialVerification } from "./verification";
 
 function valid<T>(result: z.ZodSafeParseResult<T>): T {
@@ -160,41 +159,6 @@ export const merchantRoutes = new Hono<ApiContext>()
       });
     },
   )
-  .post("/me/merchants/:id/verify", async (c) => {
-    const session = await requireProtectedMutation(c);
-    const id = c.req.param("id");
-    const row = await ownedMerchant(c.env, id, session.user.id);
-    await requireOfficialConnect(c.env, session.user.id);
-    if (row.mode !== "real")
-      throw new ActivityError(
-        400,
-        "NOT_REAL_MERCHANT",
-        "模拟商户无需检查真实凭证",
-      );
-    const job = await beginCredentialVerification(c.env, id);
-    if (job)
-      c.executionCtx.waitUntil(job().then(() => wakeMerchant(c.env, row)));
-    return c.json(
-      { merchant: await getMerchant(c.env, id, session.user.id) },
-      202,
-    );
-  })
-  .post("/me/merchants/:id/check", async (c) => {
-    const session = await requireProtectedMutation(c);
-    const id = c.req.param("id");
-    const row = await ownedMerchant(c.env, id, session.user.id);
-    await requireOfficialConnect(c.env, session.user.id);
-    const merchant = await getMerchant(c.env, id, session.user.id);
-    if (!merchant.capabilities.canCheck) return c.json({ merchant });
-    const result = await requestMerchantCheck(c.env, id);
-    if (result.retryAfterSeconds !== null)
-      c.header("Retry-After", String(result.retryAfterSeconds));
-    if (result.accepted) await wakeMerchant(c.env, row);
-    return c.json({
-      merchant: await getMerchant(c.env, id, session.user.id),
-      ...result,
-    });
-  })
   .post(
     "/me/merchants/:id/simulation",
     body,
@@ -260,6 +224,6 @@ async function wakeMerchant(
     throw new ActivityError(
       503,
       "MERCHANT_BUSY",
-      "重新检查暂未完成，系统会自动继续",
+      "付款处理暂未完成，系统会自动继续",
     );
 }

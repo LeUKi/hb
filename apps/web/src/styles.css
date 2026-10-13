@@ -179,203 +179,282 @@ textarea.activity-input {
   line-height: 1.5;
 }
 
-.payment-detail-layout {
-  display: grid;
-  grid-template-columns: 312px minmax(0, 1fr);
-  gap: 20px;
-  min-height: min(760px, calc(100dvh - 170px));
-}
-
-.payment-detail-list,
-.payment-detail-main {
-  min-height: 0;
-  overflow: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--line) transparent;
-}
-
-.payment-detail-list {
-  display: grid;
-  align-content: start;
-  gap: 10px;
-}
-
-.payment-record-card {
-  display: grid;
-  gap: 6px;
-  padding: 14px;
-}
-
-.payment-record-card.is-active {
-  border-color: rgb(255 118 104 / 55%);
-}
-
-.payment-record-card strong {
-  color: #7ee294;
-  font-size: 20px;
-  line-height: 1.2;
-}
-
-.payment-record-card span {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.payment-record-card__status {
-  width: fit-content;
-  border-radius: 5px;
-  background: var(--selected);
-  padding: 2px 6px;
+/* A single compact merchant table/detail surface, also shared by the workbench. */
+.merchant-payment-dialog {
+  position: fixed;
+  inset: 0;
+  width: min(960px, calc(100% - 24px));
+  max-width: calc(100% - 24px);
+  max-height: 85dvh;
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
   color: var(--ink);
+  overflow: hidden;
+  box-shadow: 0 24px 72px rgb(0 0 0 / 24%);
 }
-
-.payment-detail-list__hint,
-.payment-detail-note {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.7;
+.merchant-payment-dialog[open] {
+  display: flex;
+  flex-direction: column;
 }
-
-.payment-detail-main {
-  display: grid;
-  align-content: start;
-  gap: 14px;
+.merchant-payment-dialog::backdrop {
+  background: rgb(0 0 0 / 44%);
 }
-
-.payment-detail-section {
-  display: grid;
-  gap: 12px;
+.merchant-payment-dialog__header {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+  padding: 12px 16px;
 }
-
-.payment-detail-section--hero {
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-}
-
-.payment-detail-section h2 {
+.merchant-payment-dialog__header h2 {
+  flex: 1 1 auto;
   margin: 0;
   font-size: 16px;
-  line-height: 1.35;
+  font-weight: 600;
 }
-
-.payment-detail-section--hero h2 {
-  color: #7ee294;
-  font-size: 30px;
-  font-variant-numeric: tabular-nums;
-}
-
-.payment-detail-kicker {
-  margin: 0 0 4px;
-  color: var(--muted);
+.merchant-payment-dialog__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 12px;
 }
-
-.payment-detail-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.payment-detail-alert {
-  grid-column: 1 / -1;
-  margin: 0;
-  border: 1px solid rgb(239 192 106 / 45%);
-  border-radius: 8px;
-  background: rgb(239 192 106 / 10%);
-  padding: 8px 10px;
-  color: #ffd99b;
-  font-size: 13px;
-}
-
-.payment-detail-grid {
+.merchant-payment-dialog__body {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  min-height: 0;
+  align-content: start;
+  gap: 16px;
+  padding: 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: thin;
 }
-
-.payment-detail-section dl {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-}
-
-.payment-detail-section dl > div {
+.merchant-payment-table-scroll {
+  width: 100%;
   min-width: 0;
+  overflow-x: auto;
 }
-
-.payment-detail-section dt {
-  color: var(--subtle);
+.merchant-payment-table {
+  width: 100%;
+  min-width: 700px;
+  border-collapse: collapse;
   font-size: 12px;
+  line-height: 1.45;
 }
-
-.payment-detail-section dd {
-  margin: 3px 0 0;
-  color: var(--ink);
-  font-size: 13px;
+.merchant-payment-table th {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  text-align: left;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.merchant-payment-table td {
+  height: 46px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+.merchant-payment-table tbody tr:nth-child(even) {
+  background: var(--selected);
+}
+.merchant-payment-table td:not(.merchant-payment-table__description) {
+  white-space: nowrap;
+}
+.merchant-payment-table__amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.merchant-payment-table__order {
+  display: block;
+  max-width: 250px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.merchant-payment-table__actions > a + a {
+  margin-left: 10px;
+}
+.merchant-payment-table__empty {
+  color: var(--muted);
+  text-align: center;
+}
+.merchant-payment-table--attempts {
+  min-width: 600px;
+}
+.merchant-payment-table--attempts td {
+  padding: 8px 10px;
+}
+.merchant-payment-table__secondary {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+.merchant-payment-table__description {
+  min-width: 220px;
+  max-width: 420px;
   overflow-wrap: anywhere;
 }
-
-.payment-recipient-card {
-  display: grid;
-  gap: 8px;
-  border: 1px solid var(--separator);
-  border-radius: 10px;
-  background: var(--paper);
-  padding: 10px;
+.merchant-payment-table__description > span {
+  display: block;
 }
-
-.payment-recipient-card :where(p) {
+.merchant-payment-section {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+  font-size: 13px;
+}
+.merchant-payment-section + .merchant-payment-section {
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.merchant-payment-section h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.merchant-payment-summary__amount {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.merchant-payment-summary__amount strong {
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+.merchant-payment-summary__amount span {
+  color: var(--muted);
+}
+.merchant-payment-notice {
   margin: 0;
   color: var(--muted);
   font-size: 12px;
 }
-
-.payment-event-list {
+.merchant-payment-facts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+.merchant-payment-facts > div {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+}
+.merchant-payment-facts dt {
+  color: var(--muted);
+}
+.merchant-payment-facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.merchant-payment-timeline {
   display: grid;
   gap: 0;
-  margin: 0;
+  margin: 0 0 0 5px;
   padding: 0;
   list-style: none;
 }
-
-.payment-event-list li {
-  display: grid;
-  gap: 6px;
-  padding: 12px 0;
-  border-top: 1px solid var(--separator);
+.merchant-payment-timeline li {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+  border-left: 1px solid var(--line);
+  padding: 0 0 14px 18px;
+}
+.merchant-payment-timeline li::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: -4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.merchant-payment-timeline li:last-child {
+  border-left-color: transparent;
+  padding-bottom: 0;
+}
+.merchant-payment-timeline time {
   color: var(--muted);
+  font-size: 12px;
+}
+.merchant-payment-repair {
+  display: grid;
+  max-width: 520px;
+  gap: 12px;
+}
+.merchant-payment-repair__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.merchant-payment-more {
+  min-width: 0;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+  font-size: 12px;
+}
+.merchant-payment-more summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--muted);
+}
+.merchant-payment-more__content {
+  display: grid;
+  gap: 12px;
+  padding-top: 12px;
+  overflow-wrap: anywhere;
+}
+.merchant-payment-more__content h3 {
   font-size: 13px;
 }
-
-.payment-event-list li:first-child {
-  border-top: 0;
-  padding-top: 0;
+.merchant-payment-more__content p {
+  margin: 4px 0;
 }
-
-.payment-event-list__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.merchant-payment-more__content ul {
+  display: grid;
   gap: 10px;
-  color: var(--ink);
+  padding: 0;
+  list-style: none;
 }
-
-@media (max-width: 960px) {
-  .payment-detail-layout {
-    grid-template-columns: 1fr;
-    min-height: 0;
+.merchant-selection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  max-width: 560px;
+  font-size: 13px;
+}
+.merchant-selection select {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  padding: 7px 9px;
+}
+@media (max-width: 640px) {
+  .merchant-payment-dialog__header {
+    padding: 10px 12px;
   }
-  .payment-detail-list {
-    overflow: visible;
+  .merchant-payment-dialog__body {
+    padding: 12px;
   }
-  .payment-detail-grid,
-  .payment-detail-section--hero {
-    grid-template-columns: 1fr;
+  .merchant-payment-dialog__back {
+    flex-basis: 100%;
   }
-  .payment-detail-actions {
-    justify-content: flex-start;
+  .merchant-payment-facts > div {
+    grid-template-columns: 86px minmax(0, 1fr);
   }
 }
 @media (max-width: 640px) {

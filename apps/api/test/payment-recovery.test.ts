@@ -27,7 +27,6 @@ import {
   paymentParameterDigest,
   realSendDecision,
 } from "../src/payments/policy";
-import { requestMerchantCheck } from "../src/payments/recovery";
 import {
   runMerchantCycle,
   sweepPayments,
@@ -613,7 +612,7 @@ describe("durable same-business-number recovery", () => {
     expect((await task(f)).queryBackoffCount).toBe(7);
   });
 
-  it("a temporary 5xx query Retry-After delays both recovery sends and manual query wake-ups", async () => {
+  it("a temporary 5xx query Retry-After delays both recovery sends and natural query wake-ups", async () => {
     const f = await fixture();
     await grant(f);
     const a = adapter();
@@ -628,19 +627,20 @@ describe("durable same-business-number recovery", () => {
     expect((await task(f)).queryRetryAfterAt).toBe(due);
     expect((await task(f)).nextSendAt).toBeGreaterThanOrEqual(due);
     now += 31_000;
-    await requestMerchantCheck(f.bindings, f.merchant.id);
     await cycle(f, a);
     expect(a.query).toHaveBeenCalledOnce();
     expect(a.send).not.toHaveBeenCalled();
     expect(await used(f)).toBe(0);
     now = due + 1;
     await cycle(f, a);
+    expect(a.send).toHaveBeenCalledOnce();
+    now = Math.max(now, (await task(f)).nextQueryAt ?? 0) + 1;
     await cycle(f, a);
     expect(a.query).toHaveBeenCalledTimes(2);
     expect(a.send).toHaveBeenCalledOnce();
   });
 
-  it("a temporary 5xx send Retry-After survives a manual reconciliation request", async () => {
+  it("a temporary 5xx send Retry-After remains authoritative during natural reconciliation", async () => {
     const f = await fixture(false);
     const a = adapter(
       { kind: "not_found" },
@@ -657,7 +657,6 @@ describe("durable same-business-number recovery", () => {
     expect((await task(f)).nextSendAt).toBeGreaterThanOrEqual(due);
     expect((await task(f)).unknownOutcome).toBe(true);
     now += 31_000;
-    await requestMerchantCheck(f.bindings, f.merchant.id);
     await cycle(f, a);
     expect(a.query).not.toHaveBeenCalled();
     now = due + 1;
@@ -757,7 +756,7 @@ describe("durable same-business-number recovery", () => {
     expect(a.send).toHaveBeenCalledOnce();
   });
 
-  it("manual checks merge concurrent callers and respect independent send due and upstream query Retry-After", async () => {
+  it("concurrent natural cycles respect independent send due and upstream query Retry-After", async () => {
     const f = await fixture();
     await grant(f);
     const a = adapter({
@@ -767,18 +766,19 @@ describe("durable same-business-number recovery", () => {
     });
     await cycle(f, a);
     const before = await task(f);
-    const responses = await Promise.all([
-      requestMerchantCheck(f.bindings, f.merchant.id),
-      requestMerchantCheck(f.bindings, f.merchant.id),
-    ]);
-    expect(responses.filter((r) => r.accepted)).toHaveLength(1);
-    expect(responses.find((r) => !r.accepted)?.retryAfterSeconds).toBe(30);
+    const early = await Promise.all([cycle(f, a), cycle(f, a)]);
+    expect(early.every((result) => !result.processed)).toBe(true);
     const current = await task(f);
     expect(current.nextSendAt).toBe(before.nextSendAt);
     expect(current.nextQueryAt).toBe(now + 60_000);
     now += 31_000;
     await cycle(f, a);
     expect(a.query).toHaveBeenCalledOnce();
+    expect(a.send).not.toHaveBeenCalled();
+    now = (before.queryRetryAfterAt ?? now) + 1;
+    const due = await Promise.all([cycle(f, a), cycle(f, a)]);
+    expect(due.filter((result) => result.processed)).toHaveLength(1);
+    expect(a.query).toHaveBeenCalledTimes(2);
     expect(a.send).not.toHaveBeenCalled();
   });
 
@@ -1097,7 +1097,6 @@ describe("audited recipient username case correction", () => {
       updatedAt: now,
     });
     await cycle(f, a);
-    await requestMerchantCheck(f.bindings, f.merchant.id);
     now += 31_000;
     await cycle(f, a);
     expect(a.send).not.toHaveBeenCalled();
@@ -1288,7 +1287,7 @@ describe("one-shot duplicate probe after confirmed payment", () => {
     expect((await task(f)).status).toBe("confirmed");
   });
 
-  it("manual checks never shorten a probe query Retry-After", async () => {
+  it("natural cycles never shorten a probe query Retry-After", async () => {
     const f = await probeFixture();
     const a = adapter(
       { kind: "throttled", reason: "throttled", retryAfterMs: 60_000 },
@@ -1297,7 +1296,6 @@ describe("one-shot duplicate probe after confirmed payment", () => {
     await cycle(f, a);
     now += 5_000;
     await cycle(f, a);
-    await requestMerchantCheck(f.bindings, f.merchant.id);
     expect((await probe(f)).nextRunAt).toBe(now + 60_000);
     now += 20_000;
     await cycle(f, a);
@@ -1305,7 +1303,7 @@ describe("one-shot duplicate probe after confirmed payment", () => {
   });
 
   it.each(["send", "query"] as const)(
-    "a temporary 5xx probe %s Retry-After remains authoritative during manual checks",
+    "a temporary 5xx probe %s Retry-After remains authoritative during natural cycles",
     async (operation) => {
       const f = await probeFixture();
       const unavailable: AdapterResult = {
@@ -1329,7 +1327,6 @@ describe("one-shot duplicate probe after confirmed payment", () => {
       const queryCount = vi.mocked(a.query).mock.calls.length;
       const due = now + 60_000;
       expect((await task(f)).queryRetryAfterAt).toBe(due);
-      await requestMerchantCheck(f.bindings, f.merchant.id);
       expect((await probe(f)).nextRunAt).toBe(due);
       now += 31_000;
       await cycle(f, a);

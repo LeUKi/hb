@@ -542,8 +542,7 @@ function PaymentDetail({
                   {paymentAttemptOutcome(attempt.outcome)} ·{" "}
                   {paymentReason(attempt.reason) ?? "无原因"} ·{" "}
                   {attempt.purpose === "probe" ? "探测" : "恢复"} · HTTP{" "}
-                  {attempt.httpStatus ?? "—"} · 凭证版本{" "}
-                  {attempt.credentialVersion}
+                  {attempt.httpStatus ?? "—"}
                 </p>
                 <time className="text-sm text-subtle">
                   {fmtTime(attempt.startedAt)}

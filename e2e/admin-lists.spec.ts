@@ -808,6 +808,7 @@ test("付款列表支持关联筛选、详情刷新失败保留内容并分页�
     panel.getByText(target.externalOrderId ?? "", { exact: true }),
   ).toBeVisible();
   await expect(panel.getByText(/已收到有效响应/)).toHaveCount(20);
+  await expect(panel.getByText(/凭证版本|身份更正版本/)).toHaveCount(0);
   const nextAttempts = panel.getByRole("button", { name: "下一页尝试记录" });
   await expect(nextAttempts).toBeVisible();
   await nextAttempts.click();
