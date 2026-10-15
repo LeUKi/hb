@@ -8,6 +8,11 @@ declare module "@tanstack/history" {
     omnibox?: "expanded";
     /** A panel is open over the window: 用户卡片, 名单弹窗, 说明弹窗 or 更多设置. */
     panel?: Panel;
+    /**
+     * The 红包 a 名单弹窗 opened from a list is about (红包记录); on the
+     * 红包 page it is the page's own.
+     */
+    panelFor?: string;
     /** History index of the entry the overlay was opened from. */
     overlayBase?: number;
   }
@@ -15,13 +20,21 @@ declare module "@tanstack/history" {
 
 export type Panel = "account" | "roster" | "note" | "settings";
 
-type Overlay = { omnibox?: "expanded"; panel?: Panel };
+type Overlay = { omnibox?: "expanded"; panel?: Panel; panelFor?: string };
 
 /** Push an overlay as its own history entry so system back closes it. */
 export function openOverlay(router: Router, overlay: Overlay) {
   const { href, state } = router.history.location;
-  const { __TSR_index, __TSR_key, key, omnibox, panel, overlayBase, ...rest } =
-    state;
+  const {
+    __TSR_index,
+    __TSR_key,
+    key,
+    omnibox,
+    panel,
+    panelFor,
+    overlayBase,
+    ...rest
+  } = state;
   router.history.push(href, {
     ...rest,
     ...overlay,
@@ -36,8 +49,16 @@ export function openOverlay(router: Router, overlay: Overlay) {
  */
 export function closeOverlay(router: Router) {
   const { href, state } = router.history.location;
-  const { __TSR_index, __TSR_key, key, omnibox, panel, overlayBase, ...rest } =
-    state;
+  const {
+    __TSR_index,
+    __TSR_key,
+    key,
+    omnibox,
+    panel,
+    panelFor,
+    overlayBase,
+    ...rest
+  } = state;
   if (!omnibox && !panel) return;
   if (overlayBase !== undefined && __TSR_index === overlayBase + 1) {
     router.history.back();
@@ -49,8 +70,16 @@ export function closeOverlay(router: Router) {
 /** Replace the open overlay with another one, keeping its base entry. */
 export function switchOverlay(router: Router, overlay: Overlay) {
   const { href, state } = router.history.location;
-  const { __TSR_index, __TSR_key, key, omnibox, panel, overlayBase, ...rest } =
-    state;
+  const {
+    __TSR_index,
+    __TSR_key,
+    key,
+    omnibox,
+    panel,
+    panelFor,
+    overlayBase,
+    ...rest
+  } = state;
   if (!omnibox && !panel) {
     openOverlay(router, overlay);
     return;

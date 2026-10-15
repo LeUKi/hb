@@ -103,6 +103,22 @@ test("在发红包的四步里开放，领取后付款记录里有这一笔", as
     author.page.getByRole("heading", { name: "付给 完整应用第三参与者" }),
   ).toBeVisible();
   await expect(author.page.getByText("已发放").first()).toBeVisible();
+
+  // 红包记录 → 我发的: the row's 名单 opens the 名单弹窗 right there.
+  await author.page.goto("/history");
+  await waitForBoot(author.page);
+  const rosterButton = author.page.getByRole("button", {
+    name: `名单「${title}」`,
+  });
+  await rosterButton.click();
+  const roster = author.page.getByRole("dialog", { name: /领取名单/ });
+  await expect(roster.getByText("完整应用第三参与者")).toBeVisible();
+  expect(decodeURIComponent(new URL(author.page.url()).pathname)).toBe(
+    "/history",
+  );
+  await author.page.keyboard.press("Escape");
+  await expect(roster).toHaveCount(0);
+  await expect(rosterButton).toBeFocused();
   await author.context.close();
   await recipient.context.close();
 });

@@ -14,6 +14,8 @@ import { useWindowInfo } from "./window-info";
  * like the 用户卡片 — back, Esc or the 压暗层 close it, and focus returns to
  * the control that opened it. Centred on a wide window; on a phone a sheet
  * floating 8px above the bottom. Keeps the last 红包 while animating out.
+ * The 红包 is the page's, or the one a list row opened it for (`panelFor`,
+ * whose control is `${triggerId}-${id}`).
  */
 export function PanelDialog({
   panel,
@@ -32,11 +34,18 @@ export function PanelDialog({
   const open = useLocation({
     select: (location) => location.state.panel === panel,
   });
-  const currentId = useCurrentActivityId();
+  const forId = useLocation({
+    select: (location) => location.state.panelFor ?? null,
+  });
+  const pageId = useCurrentActivityId();
+  const currentId = forId ?? pageId;
   const router = useRouter();
   const { compact } = useWindowInfo();
   const reduced = useReducedMotionPref();
-  const { panelRef, onExitComplete } = useOverlayFocus(open, triggerId);
+  // Where focus goes back to: read while open (the entry is gone by then).
+  const trigger = useRef(triggerId);
+  if (open) trigger.current = forId ? `${triggerId}-${forId}` : triggerId;
+  const { panelRef, onExitComplete } = useOverlayFocus(open, trigger.current);
   // Keep showing the last 红包 while the dialog animates out.
   const lastId = useRef<string | null>(null);
   if (open && currentId) lastId.current = currentId;

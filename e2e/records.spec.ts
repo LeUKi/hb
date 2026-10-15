@@ -281,6 +281,13 @@ test.describe("红包记录", () => {
       page.getByText("已发 3 个，发出 11.00 LDC · 参与过 2 个，领到 3.54 LDC"),
     ).toBeVisible();
     await expect(page.getByText("还没开放，只有你能看到")).toBeVisible();
+    // Each opened 红包 has its 名单 (opened in place); a draft has nobody yet.
+    await expect(
+      page.getByRole("button", { name: "名单「周末红包」" }),
+    ).toHaveAttribute("aria-haspopup", "dialog");
+    await expect(
+      page.getByRole("button", { name: "名单「还在写的」" }),
+    ).toHaveCount(0);
     const filter = page.getByRole("group", { name: "状态筛选" });
     await expect(
       filter.getByRole("button", { name: /已结束\s*1/ }),

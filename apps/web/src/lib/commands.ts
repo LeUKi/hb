@@ -1,11 +1,11 @@
 import type { LucideIcon } from "lucide-react";
 import {
   CircleHelp,
-  CreditCard,
   History,
   LayoutGrid,
   LogIn,
   Plus,
+  ReceiptText,
   Settings2,
   Store,
   UserRound,
@@ -190,7 +190,7 @@ export const commands: Command[] = [
     path: "/payments",
     name: "payments",
     title: "付款记录",
-    icon: CreditCard,
+    icon: ReceiptText,
     requires: "standard",
     visibleTo: (role) => role !== "guest",
     keys: [

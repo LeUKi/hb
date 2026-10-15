@@ -94,14 +94,14 @@ function SentRow({ record }: { record: SentRecord }) {
           </span>
         </button>
       </Squircle>
-      {/* Narrow windows: labelled, in a line under the 红包. */}
+      {/* Narrow windows: labelled, in a line (or two) under the 红包. */}
       <span
         className={cn(
           "flex shrink-0 items-center gap-0.5",
-          compact && "basis-full gap-1 pb-2 pl-[4.25rem]",
+          compact && "basis-full flex-wrap gap-1 pb-2 pl-[4.25rem]",
         )}
       >
-        <SenderLinks activity={activity} iconsOnly={!compact} />
+        <SenderLinks activity={activity} iconsOnly={!compact} inList />
       </span>
     </li>
   );
