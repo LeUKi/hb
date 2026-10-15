@@ -1,6 +1,12 @@
 import { Link, useMatches } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
-import { CircleUserRound, Plus, RotateCw, ShieldAlert } from "lucide-react";
+import {
+  CircleUserRound,
+  History,
+  Plus,
+  RotateCw,
+  ShieldAlert,
+} from "lucide-react";
 import { cn } from "../../lib/cn";
 import { commandById } from "../../lib/commands";
 import { useIdentity } from "../../lib/session";
@@ -94,22 +100,24 @@ function IdentityButton({ compact }: { compact: boolean }) {
 }
 
 /**
- * The 顶栏, laid over the 内容区: home icon, the dock slot, create and account.
+ * The 顶栏, laid over the 内容区: home icon, the dock slot, create, records
+ * and account.
  * Clear while nothing is beneath it; frosted once a page bleeds under it or
  * content scrolls under it, with a hairline for the latter.
  */
 export function WindowBar() {
   const homeShape = useButtonShape(buttonRadius.icon, buttonHeight.icon);
   const { compact } = useWindowInfo();
-  const size = compact ? "icon-bar" : "bar";
-  const shape = useButtonShape(buttonRadius[size], buttonHeight[size]);
+  // 40px tall either way: with words or without, the same squircle.
+  const barShape = useButtonShape(
+    buttonRadius["icon-bar"],
+    buttonHeight["icon-bar"],
+  );
   const edge = useAtomValue(viewEdgeAtom);
   const dockSlot = useSlot("dock");
   const { goHome } = useOmniboxController();
   const metrics = omniboxMetrics(compact);
-  const onNew = useMatches({
-    select: (matches) => matches.at(-1)?.routeId === "/new",
-  });
+  const page = useMatches({ select: (matches) => matches.at(-1)?.routeId });
 
   return (
     <WindowClip top>
@@ -156,17 +164,36 @@ export function WindowBar() {
           />
         </div>
         <div className="flex min-w-0 items-center justify-end gap-2">
+          {/* 发红包 has its words only where all three fit beside the
+              address bar (66rem); 红包记录 is only ever its icon. */}
           <CommandLink
             command={commandById("new")}
-            aria-current={onNew ? "page" : undefined}
+            aria-current={page === "/new" ? "page" : undefined}
             aria-label="发红包"
             title="发红包 · /new"
-            className={buttonVariants({ variant: "secondary", size })}
-            style={shape}
+            className={cn(
+              buttonVariants({ variant: "secondary", size: "icon-bar" }),
+              "text-sm @min-[66rem]/window:w-auto @min-[66rem]/window:px-3.5 @min-[66rem]/window:[&_svg]:size-[18px]",
+            )}
+            style={barShape}
           >
-            <SquircleFill radius={buttonRadius[size]} />
-            <Plus className="size-[18px]" aria-hidden="true" />
-            {!compact && "发红包"}
+            <SquircleFill radius={buttonRadius["icon-bar"]} />
+            <Plus aria-hidden="true" />
+            <span className="hidden @min-[66rem]/window:inline">发红包</span>
+          </CommandLink>
+          <CommandLink
+            command={commandById("history")}
+            aria-current={page === "/history" ? "page" : undefined}
+            aria-label="红包记录"
+            title="红包记录 · /history"
+            className={cn(
+              buttonVariants({ variant: "secondary", size: "icon-bar" }),
+              "@min-[66rem]/window:[&_svg]:size-[18px]",
+            )}
+            style={barShape}
+          >
+            <SquircleFill radius={buttonRadius["icon-bar"]} />
+            <History aria-hidden="true" />
           </CommandLink>
           <IdentityButton compact={compact} />
         </div>

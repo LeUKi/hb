@@ -8,7 +8,13 @@ import {
   encodeActivityEmoji,
   type ParticipationList,
 } from "../packages/contracts/src";
-import { expectPath, mockSession, openApp, viewer } from "./support/app";
+import {
+  expectPath,
+  identityButton,
+  mockSession,
+  openApp,
+  viewer,
+} from "./support/app";
 
 // 红包广场, 红包记录 and 账号资料 (migration phase 3) against a mocked API.
 
@@ -249,6 +255,24 @@ test.describe("红包广场", () => {
 });
 
 test.describe("红包记录", () => {
+  test("顶栏里的入口：发红包右边、头像左边，只有图标", async ({ page }) => {
+    await mockSession(page, viewer);
+    await mockHistory(page);
+    await openApp(page);
+    const bar = page.getByRole("banner");
+    const create = bar.getByRole("link", { name: "发红包" });
+    const records = bar.getByRole("link", { name: "红包记录" });
+    await expect(records).toHaveAttribute("href", "/history");
+    await expect(records).toHaveText("");
+    const x = async (locator: typeof records) =>
+      (await locator.boundingBox())?.x ?? Number.NaN;
+    expect(await x(create)).toBeLessThan(await x(records));
+    expect(await x(records)).toBeLessThan(await x(identityButton(page)));
+    await records.click();
+    await expectPath(page, "/history");
+    await expect(records).toHaveAttribute("aria-current", "page");
+  });
+
   test("我发的：合计、状态筛选（已结束含已归档）和行", async ({ page }) => {
     await mockSession(page, viewer);
     const statuses = await mockHistory(page);

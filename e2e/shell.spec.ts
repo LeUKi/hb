@@ -90,7 +90,17 @@ test.describe("外壳", () => {
       page.getByRole("option", { name: /红包记录.*需登录/ }),
     ).toBeVisible();
     await page.keyboard.press("Enter");
-    await expect(page.getByRole("dialog", { name: "登录" })).toBeVisible();
+    const login = page.getByRole("dialog", { name: "登录" });
+    await expect(login).toBeVisible();
+    await expectPath(page, "/");
+    // The 顶栏's 红包记录 icon asks the same way.
+    await page.keyboard.press("Escape");
+    await expect(login).toHaveCount(0);
+    await page
+      .getByRole("banner")
+      .getByRole("link", { name: "红包记录" })
+      .click();
+    await expect(login).toBeVisible();
     await expectPath(page, "/");
 
     await openApp(page, "/history");
