@@ -57,6 +57,8 @@ import {
   activityListFields,
   activityListStatusSql,
   historyStatusCounts,
+  historyStatusFilterSql,
+  historyStatusTotal,
   rewardFilterSql,
 } from "./history-query";
 import {
@@ -418,7 +420,7 @@ export async function listActivities(
     .where(
       and(
         base,
-        status === "all" ? undefined : sql`${state} = ${status}`,
+        historyStatusFilterSql(state, status),
         before
           ? or(
               lt(activities.createdAt, before.createdAt),
@@ -439,7 +441,7 @@ export async function listActivities(
       const summary = projectActivitySummary(row);
       return { ...summary, ...activityListFields(row, summary.status) };
     }),
-    total: statusCounts[status],
+    total: historyStatusTotal(statusCounts, status),
     statusCounts,
     nextCursor:
       rows.length > 20 && last

@@ -10,13 +10,16 @@ import { durations, ease, useReducedMotionPref } from "../../lib/motion";
 import { topicAddress } from "../../lib/results";
 import { pageTitleAtom, viewEdgeAtom } from "../../lib/store";
 import { HelpView } from "../views/help-view";
+import { HistoryView } from "../views/history-view";
 import { HongbaoView } from "../views/hongbao-view";
+import { MeView } from "../views/me-view";
 import {
   CommandPageView,
   MessageView,
   MigratingView,
 } from "../views/message-view";
 import { ResultsView } from "../views/results-view";
+import { SquareView } from "../views/square-view";
 import { StartView } from "../views/start-view";
 import { StatusView } from "../views/status-view";
 import { WindowClip } from "./window-clip";
@@ -26,9 +29,9 @@ type Leaf = ReturnType<typeof useLeaf>;
 /** The command pages (帮助 has its own view; 登录 is not a page). */
 const commandPages: Record<Exclude<CommandId, "help" | "login">, ReactNode> = {
   new: <MigratingView title="发红包" />,
-  square: <MigratingView title="红包广场" />,
-  history: <MigratingView title="红包记录" />,
-  me: <MigratingView title="账号资料" />,
+  square: <SquareView />,
+  history: <HistoryView />,
+  me: <MeView />,
   merchant: <MigratingView title="LDC 商户配置" />,
   payments: <MigratingView title="付款记录" />,
   admin: <MigratingView title="网站管理" />,

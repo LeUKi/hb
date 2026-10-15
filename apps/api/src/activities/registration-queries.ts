@@ -1,14 +1,15 @@
-import type {
-  AccountHistorySummary,
-  ActivityHistoryFilters,
-  ActivityInput,
-  ActivityParticipationResponse,
-  ActivityStatus,
-  AuthorRegistrationList,
-  ClaimDetail,
-  ParticipationList,
-  PublicRegistrationList,
-  RegistrationDetail,
+import {
+  type AccountHistorySummary,
+  type ActivityHistoryFilters,
+  type ActivityInput,
+  type ActivityParticipationResponse,
+  type ActivityStatus,
+  type AuthorRegistrationList,
+  type ClaimDetail,
+  formatAmount,
+  type ParticipationList,
+  type PublicRegistrationList,
+  type RegistrationDetail,
 } from "@hb/contracts";
 import { and, asc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { createDb } from "../db/client";
@@ -31,6 +32,8 @@ import {
   activityListFields,
   activityListStatusSql,
   historyStatusCounts,
+  historyStatusFilterSql,
+  historyStatusTotal,
   rewardFilterSql,
 } from "./history-query";
 import { activityStatus, rewardSummary } from "./service";
@@ -324,7 +327,7 @@ export async function listParticipations(
     id: string;
     time: number;
   }>(
-    sql`SELECT h.kind,h.id,h.time FROM ${history} WHERE ${and(base, status === "all" ? undefined : sql`${state}=${status}`, before ? sql`(h.time<${before.time} OR (h.time=${before.time} AND h.id<${before.id}))` : undefined)} ORDER BY h.time DESC,h.id DESC LIMIT 21`,
+    sql`SELECT h.kind,h.id,h.time FROM ${history} WHERE ${and(base, historyStatusFilterSql(state, status), before ? sql`(h.time<${before.time} OR (h.time=${before.time} AND h.id<${before.id}))` : undefined)} ORDER BY h.time DESC,h.id DESC LIMIT 21`,
   );
   const page = rows.slice(0, 20);
   const last = page.at(-1);
@@ -395,7 +398,7 @@ export async function listParticipations(
     : [];
   const byAuthor = new Map(authors.map((author) => [author.id, author]));
   return {
-    total: statusCounts[status],
+    total: historyStatusTotal(statusCounts, status),
     statusCounts,
     items: page.map((row) => {
       const activity = historyActivities.get(row.id) ?? activityNotFound();
@@ -444,15 +447,35 @@ export async function accountHistorySummary(
   env: ApiBindings,
   userId: string,
 ): Promise<AccountHistorySummary> {
+  // Amounts are every claim (a draw's prizes are claims too), summed in
+  // cents whatever the payment's progress (redesign 06 §9).
+  const claimAmount = `COALESCE(p.amount_minor, i.amount_minor, 0)`;
+  const claimJoins = `FROM claims c JOIN activities a ON a.id=c.activity_id
+      LEFT JOIN payment_tasks p ON p.claim_id=c.id AND p.source='claim'
+      LEFT JOIN reward_inventory i ON i.activity_id=c.activity_id AND i.id=c.inventory_id AND i.kind='ldc'`;
   const result = await env.DB.prepare(`SELECT
     (SELECT COUNT(*) FROM activities WHERE author_id=? AND reward_type='ldc' AND deleted_at IS NULL) AS initiatedCount,
     (SELECT COUNT(*) FROM activities a WHERE a.reward_type='ldc' AND a.deleted_at IS NULL AND (
       EXISTS(SELECT 1 FROM claims c WHERE c.activity_id=a.id AND c.user_id=?)
       OR EXISTS(SELECT 1 FROM activity_registrations r WHERE r.activity_id=a.id AND r.user_id=?)
-    )) AS participatedCount`)
-    .bind(userId, userId, userId)
-    .first<AccountHistorySummary>();
-  return result ?? { initiatedCount: 0, participatedCount: 0 };
+    )) AS participatedCount,
+    (SELECT COALESCE(SUM(${claimAmount}),0) ${claimJoins}
+      WHERE a.author_id=? AND a.reward_type='ldc' AND a.deleted_at IS NULL) AS sentMinor,
+    (SELECT COALESCE(SUM(${claimAmount}),0) ${claimJoins}
+      WHERE c.user_id=? AND a.reward_type='ldc' AND a.deleted_at IS NULL) AS receivedMinor`)
+    .bind(userId, userId, userId, userId, userId)
+    .first<{
+      initiatedCount: number;
+      participatedCount: number;
+      sentMinor: number;
+      receivedMinor: number;
+    }>();
+  return {
+    initiatedCount: result?.initiatedCount ?? 0,
+    participatedCount: result?.participatedCount ?? 0,
+    sentAmount: formatAmount(result?.sentMinor ?? 0),
+    receivedAmount: formatAmount(result?.receivedMinor ?? 0),
+  };
 }
 
 export async function listPublicRegistrations(

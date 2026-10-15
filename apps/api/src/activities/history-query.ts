@@ -100,3 +100,23 @@ export function historyStatusCounts(
   }
   return counts;
 }
+
+/** A history list's status filter, over the list status (finished: ended or archived). */
+export function historyStatusFilterSql(
+  state: SQL<ActivityStatus>,
+  status: ActivityStatus | "all" | "finished",
+) {
+  if (status === "all") return undefined;
+  if (status === "finished") return sql`${state} IN ('ended','archived')`;
+  return sql`${state} = ${status}`;
+}
+
+/** How many rows a history list's status filter keeps. */
+export function historyStatusTotal(
+  counts: ActivityStatusCounts,
+  status: ActivityStatus | "all" | "finished",
+) {
+  return status === "finished"
+    ? counts.ended + counts.archived
+    : counts[status];
+}

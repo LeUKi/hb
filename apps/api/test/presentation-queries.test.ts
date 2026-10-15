@@ -573,13 +573,28 @@ describe("production presentation queries", () => {
       ended: 2,
       archived: 1,
     });
+    // 已结束 includes 已归档 (redesign 07 §3).
+    const finished = await data<ActivityList>(
+      "/me/activities?status=finished",
+      owner,
+    );
+    expect(finished.total).toBe(3);
+    expect(new Set(finished.items.map((row) => row.id))).toEqual(
+      new Set([ended.id, archived.id, timed.id]),
+    );
+    // Amounts count every claim and prize, paid or not: two claims and the
+    // drawn prize, 1.00 each.
     expect(await data("/me/history-summary", owner)).toEqual({
       initiatedCount: 5,
       participatedCount: 0,
+      sentAmount: "3.00",
+      receivedAmount: "0.00",
     });
     expect(await data("/me/history-summary", participant)).toEqual({
       initiatedCount: 0,
       participatedCount: 3,
+      sentAmount: "0.00",
+      receivedAmount: "3.00",
     });
     const history = await data<ParticipationList>(
       "/me/participations",

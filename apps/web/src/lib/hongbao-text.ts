@@ -70,7 +70,7 @@ export function statusOf(facts: StatusFacts, now = Date.now()) {
   if (!facts.draw && soldOut(facts)) return ended("已领完");
   if (facts.deadlineAt && Date.parse(facts.deadlineAt) <= now)
     return ended("已过期");
-  return ended("已结束");
+  return ended("已提前结束");
 }
 
 /** The viewer's own part in it: 已领取 / 已报名 / 开奖中 / 已中奖 / 未中奖. */

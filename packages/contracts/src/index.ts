@@ -504,7 +504,8 @@ export type ActivityRewardFilter = z.infer<typeof activityRewardFilterSchema>;
 export type ActivityStatusCounts = Record<ActivityStatus | "all", number>;
 export type ActivityHistoryFilters = {
   type?: ActivityRewardFilter;
-  status?: ActivityStatus | "all";
+  /** finished: ended or archived (已结束 includes 已归档). */
+  status?: ActivityStatus | "all" | "finished";
 };
 /** A public projection summarizes LDC amounts without exposing custom amount arrays. */
 export type ActivityRewardSummary = {
@@ -519,6 +520,10 @@ export type ActivityRewardSummary = {
 export type AccountHistorySummary = {
   initiatedCount: number;
   participatedCount: number;
+  /** What everyone took from this account's 红包: claims and prizes. */
+  sentAmount: string;
+  /** What this account took: its claims and prizes. */
+  receivedAmount: string;
 };
 
 export type ActivityAuthor = PublicUserProfile & {

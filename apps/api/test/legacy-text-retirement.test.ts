@@ -484,7 +484,12 @@ describe("retired text reward data", () => {
     for (const user of [owner, viewer]) {
       expect(
         await (await request("/api/me/history-summary", user)).json(),
-      ).toEqual({ initiatedCount: 0, participatedCount: 0 });
+      ).toEqual({
+        initiatedCount: 0,
+        participatedCount: 0,
+        sentAmount: "0.00",
+        receivedAmount: "0.00",
+      });
     }
     expect(
       (

@@ -119,7 +119,8 @@ const historyQuery = validator(
       status !== "draft" &&
       status !== "active" &&
       status !== "ended" &&
-      status !== "archived"
+      status !== "archived" &&
+      status !== "finished"
     )
       throw new ActivityError(400, "INVALID_STATUS", "红包状态无效");
     if (value.cursor !== undefined && typeof value.cursor !== "string")
