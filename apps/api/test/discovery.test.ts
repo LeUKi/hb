@@ -1088,6 +1088,24 @@ describe("square and topic discovery", () => {
     ).toBe(404);
   });
 
+  it("lets a draft leave the square again; only an opened 红包 keeps it", async () => {
+    const draft = await create({ joinSquare: true }, false);
+    const left = await request(
+      `/api/me/activities/${draft.id}`,
+      owner,
+      "PATCH",
+      {
+        version: draft.version,
+        activity: { ...draft.config, joinSquare: false },
+      },
+    );
+    expect(left.status).toBe(200);
+    expect(
+      ((await left.json()) as { activity: ManagedActivity }).activity.config
+        .joinSquare,
+    ).toBe(false);
+  });
+
   it("keeps square independent from topic, persists the irreversible switch, and filters active and ended", async () => {
     const activity = await create({ topicUrl: "https://linux.do/t/12345" });
     const changed = await request(

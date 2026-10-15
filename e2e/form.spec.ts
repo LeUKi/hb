@@ -1,0 +1,209 @@
+import { expect, type Page, test } from "@playwright/test";
+import {
+  type CreateActivityInput,
+  encodeActivityEmoji,
+  type ManagedActivity,
+  type Merchant,
+  type MerchantList,
+} from "../packages/contracts/src";
+import { expectPath, mockSession, openApp, shown, viewer } from "./support/app";
+
+// 发红包 (migration phase 3) against a mocked API: the four steps, what is
+// sent, a lost answer sent again as it was, and a missing merchant.
+
+const merchantId = "cccccccc-1111-4222-8333-444444444444";
+const createdId = "dddddddd-1111-4222-8333-444444444444";
+
+const merchant = {
+  id: merchantId,
+  label: "默认商户",
+  usageStatus: "current",
+  publicationEligibility: { allowed: true, reason: null, credentialVersion: 1 },
+  clientId: "my_client_2026",
+  version: 1,
+  credentialVersion: 1,
+  pausedReason: null,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+  credentialVerification: {
+    status: "passed",
+    credentialVersion: 1,
+    checkedAt: new Date().toISOString(),
+    nextCheckAt: null,
+    reason: null,
+  },
+  capabilities: { canExecutePayments: true, canSimulate: false },
+  mode: "real",
+} as Merchant;
+
+async function mockMerchants(page: Page, items: Merchant[]) {
+  await page.route("**/api/me/merchants", (route) =>
+    route.fulfill({
+      json: {
+        items,
+        nextCursor: null,
+        currentMerchantId: items[0]?.id ?? null,
+        canCreate: true,
+        canSimulate: false,
+      } satisfies MerchantList,
+    }),
+  );
+}
+
+/** What the server keeps of a create: the saved draft, as 📝 reads it. */
+function managed(input: CreateActivityInput["activity"]): ManagedActivity {
+  const now = new Date().toISOString();
+  return {
+    id: createdId,
+    title: input.title,
+    rewardType: "ldc",
+    participationMode: input.participationMode ?? "password",
+    forceDedicated: input.forceDedicated,
+    status: "draft",
+    version: 1,
+    createdAt: now,
+    openedAt: null,
+    deadlineAt: null,
+    topicUrl: null,
+    totalCount:
+      input.money.mode === "custom"
+        ? input.money.amounts.length
+        : input.money.count,
+    claimedCount: 0,
+    author: {
+      id: viewer.id,
+      username: viewer.username,
+      displayName: viewer.displayName,
+      avatarUrl: null,
+    },
+    config: input,
+  };
+}
+
+/** Answers creates (the first `fail` of them with a 503); records them. */
+async function mockCreate(page: Page, fail = 0) {
+  const sent: CreateActivityInput[] = [];
+  let saved: ManagedActivity | null = null;
+  await page.route("**/api/activities", (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    const body = route.request().postDataJSON() as CreateActivityInput;
+    sent.push(body);
+    if (sent.length <= fail)
+      return route.fulfill({
+        status: 503,
+        json: { error: { code: "HTTP_503", message: "" } },
+      });
+    saved = managed(body.activity);
+    return route.fulfill({ json: { activity: saved } });
+  });
+  await page.route(`**/api/me/activities/${createdId}`, (route) =>
+    route.fulfill({ json: { activity: saved } }),
+  );
+  await page.route(`**/api/activities/${createdId}`, (route) =>
+    saved
+      ? route.fulfill({
+          json: {
+            activity: {
+              id: createdId,
+              title: saved.title,
+              rewardType: "ldc",
+              participationMode: "password",
+              status: "draft",
+              author: saved.author,
+              forceDedicated: false,
+              topicUrl: null,
+              openedAt: null,
+              deadlineAt: null,
+              quantity: { mode: "exact", total: 3, claimed: 0, remaining: 3 },
+              beforeInfo: "",
+            },
+          },
+        })
+      : route.fulfill({ status: 404, json: { error: {} } }),
+  );
+  return sent;
+}
+
+/** 拼手气, 0.30 LDC in 3 shares, one 口令: the four steps of /new. */
+async function fillRandom(page: Page) {
+  await page
+    .getByRole("button", { name: /拼手气/ })
+    .first()
+    .click();
+  // Picking a 玩法 moves on by itself, to 发多少.
+  await expect(page.locator("#hb-random-total")).toBeVisible();
+  // Enter is 下一步 (the step's own button; the last card's is leaving).
+  await page.locator("#hb-random-total").press("Enter");
+  await expect(shown(page, "总额要大于 0，最多两位小数")).toBeVisible();
+  await page.locator("#hb-random-total").fill("0.30");
+  await page.locator("#hb-random-count").fill("3");
+  await page.keyboard.press("Enter");
+  await page.getByLabel("口令 1").fill("表单口令2026");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#hb-title")).toBeVisible();
+}
+
+test.describe("发红包", () => {
+  test("四步填完存草稿：发出去的就是生产要的输入", async ({ page }) => {
+    await mockSession(page, viewer);
+    await mockMerchants(page, [merchant]);
+    const sent = await mockCreate(page);
+    await openApp(page, "/new");
+    await fillRandom(page);
+    await page.getByRole("button", { name: "存草稿" }).first().click();
+    await expectPath(page, `/🧧/${encodeActivityEmoji(createdId)}/📝`);
+    await expect(
+      shown(page, "草稿已保存。开放前只有你能看到它。").first(),
+    ).toBeVisible();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.activity).toMatchObject({
+      title: "拼手气红包 · 3 份",
+      participationMode: "password",
+      passwords: ["表单口令2026"],
+      allocation: "random",
+      deadline: { mode: "duration", value: 24, unit: "hours" },
+      merchantId,
+      money: {
+        mode: "random",
+        algorithm: "double_mean_v1",
+        totalAmount: "0.30",
+        count: 3,
+      },
+    });
+  });
+
+  test("没收到保存结果：重试原提交，发的是同一个请求", async ({ page }) => {
+    await mockSession(page, viewer);
+    await mockMerchants(page, [merchant]);
+    const sent = await mockCreate(page, 1);
+    await openApp(page, "/new");
+    await fillRandom(page);
+    await page.getByRole("button", { name: "存草稿" }).first().click();
+    await expect(
+      shown(page, "尚未确认保存结果，请重试原提交，避免重复提交。").first(),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "重试原提交" }).first().click();
+    await expectPath(page, `/🧧/${encodeActivityEmoji(createdId)}/📝`);
+    expect(sent).toHaveLength(2);
+    expect(sent[1]?.requestId).toBe(sent[0]?.requestId);
+  });
+
+  test("还没有商户：提示去配置，保存不会发出", async ({ page }) => {
+    await mockSession(page, viewer);
+    await mockMerchants(page, []);
+    const sent = await mockCreate(page);
+    await openApp(page, "/new");
+    await expect(
+      page.getByText("还没有配置 LDC 商户：配置好才能保存和开放红包。"),
+    ).toBeVisible();
+    await fillRandom(page);
+    await page.getByRole("button", { name: "存草稿" }).first().click();
+    await expect(
+      shown(
+        page,
+        "还没有配置商户，不能保存。先到 LDC 商户配置填好商户。",
+      ).first(),
+    ).toBeVisible();
+    expect(sent).toHaveLength(0);
+  });
+});

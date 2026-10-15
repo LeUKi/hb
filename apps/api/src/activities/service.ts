@@ -616,7 +616,8 @@ export async function updateActivity(
     invalidActivity("红包付款模式已固定，不能更换为不同模式的商户");
   if (row.openedAt !== null && config.forceDedicated !== row.forceDedicated)
     invalidActivity("开放后不能修改口令尝试统计设置");
-  if (row.joinSquare && !config.joinSquare)
+  // A draft is on no list yet: only an opened 红包 keeps 加入广场 (06 §9).
+  if (row.openedAt !== null && row.joinSquare && !config.joinSquare)
     invalidActivity("加入广场后不能撤回");
   const oldConfig = configuration(row);
   const old = await privateRows(env, id);

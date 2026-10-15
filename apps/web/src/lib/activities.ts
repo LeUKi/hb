@@ -15,7 +15,12 @@ import type {
   PublicQuantity,
   UpdateActivityInput,
 } from "@hb/contracts";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useCallback, useEffect } from "react";
 import { api } from "../api";
 import { sessionQueryKey, useAccountSession } from "./auth";
@@ -249,6 +254,21 @@ export function usePublicActivity(
   return { ...query, refetch };
 }
 
+/** A deleted draft leaves every cache (its page, its 口令, the lists). */
+export function forgetDeletedActivity(
+  queryClient: QueryClient,
+  userId: string,
+  id: string,
+) {
+  queryClient.removeQueries({ queryKey: activityKeys.detail(userId, id) });
+  queryClient.removeQueries({ queryKey: ["activity-public", id] });
+  queryClient.removeQueries({ queryKey: ["password-private", userId, id] });
+  void queryClient.invalidateQueries({ queryKey: activityKeys.mine(userId) });
+  void queryClient.invalidateQueries({
+    queryKey: ["history-private", userId],
+  });
+}
+
 export function useActivityWrites(
   userId: string,
   csrfToken: string,
@@ -379,19 +399,7 @@ export function useActivityWrites(
       },
       onSuccess: (result, _variables, identity) => {
         if (!account.isCurrentIdentity(identity)) return;
-        queryClient.removeQueries({
-          queryKey: activityKeys.detail(userId, result.id),
-        });
-        queryClient.removeQueries({ queryKey: ["activity-public", result.id] });
-        queryClient.removeQueries({
-          queryKey: ["password-private", userId, result.id],
-        });
-        void queryClient.invalidateQueries({
-          queryKey: activityKeys.mine(userId),
-        });
-        void queryClient.invalidateQueries({
-          queryKey: ["history-private", userId],
-        });
+        forgetDeletedActivity(queryClient, userId, result.id);
       },
       onError,
     }),

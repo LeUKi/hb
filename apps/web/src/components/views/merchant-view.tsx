@@ -120,11 +120,20 @@ function CredentialLine({ merchant }: { merchant: Merchant }) {
 function MerchantSummary({
   merchant,
   user,
+  focusNext,
 }: {
   merchant: Merchant;
   user: SessionUser;
+  focusNext?: { current: boolean };
 }) {
   const usage = useMerchantUsage(user.id, merchant.id).data;
+  // Just configured: the form gave way to this panel; focus its name.
+  const titleRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!focusNext?.current) return;
+    focusNext.current = false;
+    titleRef.current?.focus({ preventScroll: true });
+  }, [focusNext]);
   const { leaveTo } = useOmniboxController();
   const current = merchant.usageStatus === "current";
   const verification = merchant.credentialVerification;
@@ -142,7 +151,7 @@ function MerchantSummary({
         <div className="grid min-w-0 flex-1 gap-1.5">
           <p className="flex min-w-0 items-center gap-2">
             <span
-              data-merchant-title
+              ref={titleRef}
               tabIndex={-1}
               className="truncate text-lg font-semibold text-ink outline-none"
             >
@@ -512,14 +521,16 @@ function MerchantDetail({
   merchant,
   user,
   csrfToken,
+  focusNext,
 }: {
   merchant: Merchant;
   user: SessionUser;
   csrfToken: string;
+  focusNext?: { current: boolean };
 }) {
   return (
     <>
-      <MerchantSummary merchant={merchant} user={user} />
+      <MerchantSummary merchant={merchant} user={user} focusNext={focusNext} />
       <PageSection
         title="配置"
         description="改名称不影响付款；换 Client ID 或密钥后，要检查通过才能继续付款和开放新红包。"
@@ -600,12 +611,15 @@ function LegacyList({ items, user }: { items: Merchant[]; user: SessionUser }) {
 function CreateMerchant({
   user,
   csrfToken,
-  onCreated,
+  focusNext,
 }: {
   user: SessionUser;
   csrfToken: string;
-  /** Configured: the page shows it, its check running. */
-  onCreated: () => void;
+  /**
+   * Set while saving: the merchant panel that replaces this form focuses
+   * its name (this form is gone by then, with its callbacks).
+   */
+  focusNext: { current: boolean };
 }) {
   const writes = useMerchantWrites(user.id, csrfToken);
   const [label, setLabel] = useState("默认商户");
@@ -621,8 +635,8 @@ function CreateMerchant({
     event.preventDefault();
     if (!valid || busy) return;
     setError(null);
-    // Sent is sent: the merchant is configured even if the page is left
-    // (the callbacks below then do not run).
+    // Sent is sent: the merchant is configured even if the page is left.
+    focusNext.current = true;
     writes.create.mutate(
       {
         requestId: crypto.randomUUID(),
@@ -632,11 +646,10 @@ function CreateMerchant({
         secret,
       },
       {
-        onSuccess: () => {
-          setSecret("");
-          onCreated();
+        onError: (failure) => {
+          focusNext.current = false;
+          setError(saveError(failure, "商户还没有配置"));
         },
-        onError: (failure) => setError(saveError(failure, "商户还没有配置")),
       },
     );
   };
@@ -781,6 +794,7 @@ function Merchants({
     (merchant) => merchant.id === query.data?.currentMerchantId,
   );
   const legacy = items.filter((merchant) => merchant.usageStatus === "legacy");
+  const focusNext = useRef(false);
   return (
     <PageLoad load={queryLoad(query)}>
       <Page>
@@ -791,19 +805,13 @@ function Merchants({
             merchant={current}
             user={user}
             csrfToken={csrfToken}
+            focusNext={focusNext}
           />
         ) : (
           <CreateMerchant
             user={user}
             csrfToken={csrfToken}
-            onCreated={() =>
-              // The form gives way to the new merchant: focus its name.
-              requestAnimationFrame(() =>
-                document
-                  .querySelector<HTMLElement>("[data-merchant-title]")
-                  ?.focus({ preventScroll: true }),
-              )
-            }
+            focusNext={focusNext}
           />
         )}
         {legacy.length > 0 && <LegacyList items={legacy} user={user} />}

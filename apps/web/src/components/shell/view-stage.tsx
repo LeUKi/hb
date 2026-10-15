@@ -19,6 +19,7 @@ import {
   MessageView,
   MigratingView,
 } from "../views/message-view";
+import { NewView } from "../views/new-view";
 import { PaymentView } from "../views/payment-view";
 import { PaymentsView } from "../views/payments-view";
 import { ResultsView } from "../views/results-view";
@@ -32,7 +33,7 @@ type Leaf = ReturnType<typeof useLeaf>;
 
 /** The command pages (帮助 has its own view; 登录 is not a page). */
 const commandPages: Record<Exclude<CommandId, "help" | "login">, ReactNode> = {
-  new: <MigratingView title="发红包" />,
+  new: <NewView />,
   square: <SquareView />,
   history: <HistoryView />,
   me: <MeView />,

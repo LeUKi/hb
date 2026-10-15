@@ -174,6 +174,17 @@ export function useMerchants(userId: string, cursor: string | null = null) {
   });
 }
 
+/** The account's current merchant (it pays what opens now), once known. */
+export function useCurrentMerchant(userId: string) {
+  const query = useMerchants(userId);
+  const data = query.data;
+  return {
+    merchant:
+      data?.items.find((item) => item.id === data.currentMerchantId) ?? null,
+    loaded: data !== undefined,
+  };
+}
+
 export function useMerchant(userId: string, id: string) {
   const session = useMerchantIdentity(userId);
   return useQuery({

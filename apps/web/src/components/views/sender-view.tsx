@@ -7,13 +7,14 @@ import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { LoadError, PageSkeleton } from "../page/page-state";
 import { Button } from "../ui/button";
 import { HongbaoIcon } from "../ui/hongbao-icon";
-import { IdentityFailedView, MessageView, MigratingView } from "./message-view";
+import { EditView } from "./edit-view";
+import { IdentityFailedView, MessageView } from "./message-view";
 import { PaymentsView } from "./payments-view";
 import { StatsView } from "./stats-view";
 
 /** Each sender page. */
 const pages: Record<SenderPage, (id: string, userId: string) => ReactNode> = {
-  edit: () => <MigratingView title={senderPages.edit.title} />,
+  edit: (id) => <EditView id={id} />,
   stats: (id, userId) => <StatsView id={id} userId={userId} />,
   payments: (id) => <PaymentsView activityId={id} />,
 };

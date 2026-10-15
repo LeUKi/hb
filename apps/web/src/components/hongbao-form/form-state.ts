@@ -1,0 +1,652 @@
+import {
+  type ActivityInput,
+  amountToMinor,
+  boundedMeanLimits,
+  type LdcMoney,
+  type ManagedActivity,
+  normalizeTopicLink,
+  sameLdcMoney,
+} from "@hb/contracts";
+import { inspectPassword } from "../../lib/password-rules";
+
+// The 发红包 flow (/new) and the sender's 📝 编辑: one state shape, its
+// checks, and the conversion to and from production's ActivityInput. Limits
+// follow production's contracts (ACTIVITY_LIMITS, LDC amounts);
+// docs/redesign/07 §5 has the reasoning.
+
+export const LIMITS = {
+  title: 100,
+  passwords: 5,
+  shares: 1000,
+  info: 10_000,
+} as const;
+
+export type RewardMode = LdcMoney["mode"];
+export type Algorithm = "double_mean" | "bounded_mean";
+export type TimeUnit = "minutes" | "hours" | "days";
+
+export type FormState = {
+  title: string;
+  mode: RewardMode;
+  fixed: { unit: string; count: string };
+  random: { total: string; count: string; algorithm: Algorithm };
+  custom: { lines: string; order: "sequential" | "random" };
+  draw: {
+    pool: string;
+    winners: string;
+    /** 报名上限; empty = no limit. */
+    limit: string;
+    algorithm: Algorithm;
+    /** 人数不足时发完奖池. */
+    fillPool: boolean;
+  };
+  participation: "password" | "direct";
+  passwords: string[];
+  /** 口令尝试统计: passwords only on the 红包 page, attempts recorded. */
+  statistics: boolean;
+  /** When it closes (or, for a timed draw, the latest draw time). */
+  timing: {
+    kind: "duration" | "at";
+    value: string;
+    unit: TimeUnit;
+    /** datetime-local value. */
+    at: string;
+  };
+  beforeInfo: string;
+  afterClaimInfo: string;
+  afterEndInfo: string;
+  topic: string;
+  listed: boolean;
+  quantity: "exact" | "fuzzy";
+};
+
+export const modeLabels: Record<RewardMode, string> = {
+  fixed: "固定均分",
+  random: "拼手气",
+  custom: "自定义金额",
+  timed_draw: "限时开奖",
+};
+
+export const unitLabels: Record<TimeUnit, string> = {
+  minutes: "分钟",
+  hours: "小时",
+  days: "天",
+};
+
+const unitMs: Record<TimeUnit, number> = {
+  minutes: 60_000,
+  hours: 3_600_000,
+  days: 86_400_000,
+};
+
+function localInput(at: number) {
+  const date = new Date(at - new Date(at).getTimezoneOffset() * 60_000);
+  return date.toISOString().slice(0, 16);
+}
+
+/** A new 红包: 拼手气, empty amounts, one empty 口令, open for 24 hours. */
+export function emptyForm(now = Date.now()): FormState {
+  return {
+    title: "",
+    mode: "random",
+    fixed: { unit: "", count: "" },
+    random: { total: "", count: "", algorithm: "double_mean" },
+    custom: { lines: "", order: "sequential" },
+    draw: {
+      pool: "",
+      winners: "",
+      limit: "",
+      algorithm: "double_mean",
+      fillPool: true,
+    },
+    participation: "password",
+    passwords: [""],
+    statistics: false,
+    timing: {
+      kind: "duration",
+      value: "24",
+      unit: "hours",
+      at: localInput(now + unitMs.days),
+    },
+    beforeInfo: "",
+    afterClaimInfo: "",
+    afterEndInfo: "",
+    topic: "",
+    listed: false,
+    quantity: "exact",
+  };
+}
+
+/** A timed draw's default: the latest draw 10 minutes after opening. */
+export function drawTiming(form: FormState): FormState["timing"] {
+  return { ...form.timing, kind: "duration", value: "10", unit: "minutes" };
+}
+
+/** Another 玩法: a timed draw counts to its draw time, the others to a deadline. */
+export function withMode(form: FormState, mode: RewardMode): FormState {
+  if (mode === form.mode) return form;
+  return {
+    ...form,
+    mode,
+    timing:
+      mode === "timed_draw"
+        ? drawTiming(form)
+        : form.mode === "timed_draw"
+          ? emptyForm().timing
+          : form.timing,
+  };
+}
+
+// ── Amounts ───────────────────────────────────────────────────────────
+
+const amountPattern = /^(0|[1-9]\d{0,13})(\.\d{1,2})?$/;
+
+/** An LDC amount in cents, or null when it is not a valid positive amount. */
+export function cents(value: string): number | null {
+  const text = value.trim();
+  if (!amountPattern.test(text)) return null;
+  const [whole = "0", fraction = ""] = text.split(".");
+  const result = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+  return result > 0 && Number.isSafeInteger(result) ? result : null;
+}
+
+export const ldc = (value: number) => (value / 100).toFixed(2);
+
+/** 报名上限: any positive whole number (contracts set no other cap). */
+function positiveInteger(value: string) {
+  const text = value.trim();
+  return (
+    /^\d+$/.test(text) &&
+    Number(text) >= 1 &&
+    Number.isSafeInteger(Number(text))
+  );
+}
+
+function count(value: string) {
+  const text = value.trim();
+  if (!/^\d+$/.test(text)) return null;
+  const result = Number(text);
+  return result >= 1 && result <= LIMITS.shares ? result : null;
+}
+
+export function customLines(form: FormState) {
+  return form.custom.lines
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+/** The pool and the number of shares (or winners), when they are valid. */
+export function plan(form: FormState) {
+  switch (form.mode) {
+    case "fixed": {
+      const unit = cents(form.fixed.unit);
+      const shares = count(form.fixed.count);
+      return {
+        total: unit !== null && shares !== null ? unit * shares : null,
+        shares,
+        unit,
+      };
+    }
+    case "random":
+      return {
+        total: cents(form.random.total),
+        shares: count(form.random.count),
+        unit: null,
+      };
+    case "custom": {
+      const lines = customLines(form).map(cents);
+      const valid = lines.length > 0 && lines.every((line) => line !== null);
+      return {
+        total: valid
+          ? lines.reduce<number>((sum, line) => sum + (line ?? 0), 0)
+          : null,
+        shares: lines.length || null,
+        unit: null,
+      };
+    }
+    case "timed_draw":
+      return {
+        total: cents(form.draw.pool),
+        shares: count(form.draw.winners),
+        unit: null,
+      };
+  }
+}
+
+/**
+ * The range one 拼手气 share can take, in cents, as production states it:
+ * fixed only for 均值上下 50% (contracts' boundedMeanLimits). 二倍均值
+ * draws each share from what is left, so it has no fixed range — except
+ * a single share, which is the whole amount.
+ */
+export function randomRange(
+  total: number,
+  shares: number,
+  algorithm: Algorithm,
+): [number, number] | null {
+  if (shares === 1) return [total, total];
+  if (algorithm !== "bounded_mean") return null;
+  const { min, max } = boundedMeanLimits(total, shares);
+  return [min, max];
+}
+
+// ── Title ─────────────────────────────────────────────────────────────
+
+/**
+ * The title a 红包 gets when none is typed: what it is and how many. Not
+ * "<name>的红包": the cover says that already, above the title.
+ */
+export function defaultTitle(form: FormState) {
+  const { shares } = plan(form);
+  switch (form.mode) {
+    case "random":
+      return shares ? `拼手气红包 · ${shares} 份` : "拼手气红包";
+    case "fixed":
+      return shares ? `均分红包 · ${shares} 份` : "均分红包";
+    case "custom":
+      return shares ? `红包 · ${shares} 份` : "红包";
+    case "timed_draw":
+      return shares ? `限时开奖 · ${shares} 个名额` : "限时开奖";
+  }
+}
+
+/** The form as it is sent: an empty title becomes the default one. */
+export function withDefaultTitle(form: FormState): FormState {
+  return form.title.trim() ? form : { ...form, title: defaultTitle(form) };
+}
+
+// ── Topic links ───────────────────────────────────────────────────────
+
+/**
+ * A LINUX DO topic or reply link, by production's rules (with or without a
+ * slug, reply number optional), as https://linux.do/t/<topic>/<post>.
+ */
+export function normalizeTopic(raw: string) {
+  const text = raw.trim();
+  if (!text) return { ok: true as const, value: "" };
+  const link = normalizeTopicLink(
+    /^https?:\/\//iu.test(text) ? text : `https://${text}`,
+  );
+  if (!link) return { ok: false as const, value: text };
+  return {
+    ok: true as const,
+    value: link.topicUrl,
+    topicId: link.topicId,
+    postNumber: link.postNumber,
+  };
+}
+
+// ── Checks ────────────────────────────────────────────────────────────
+
+export type Issue = { field: string; message: string };
+
+/** Every problem, in form order. `field` is the id of the control. */
+/**
+ * A 口令's problem as the form says it. The form has no red marks: its fix
+ * for unusable characters is the 优化 button beside the field.
+ */
+function passwordProblem({
+  invalidCount,
+  length,
+}: ReturnType<typeof inspectPassword>) {
+  if (invalidCount > 0)
+    return `有 ${invalidCount} 个不能用的字符，点「优化」去掉`;
+  if (length < 6) return `还差 ${6 - length} 个字，至少 6 个字`;
+  return `现在有 ${length} 个字，最多 18 个字`;
+}
+
+export function issuesOf(form: FormState, now = Date.now()): Issue[] {
+  const issues: Issue[] = [];
+  const add = (field: string, message: string) =>
+    issues.push({ field, message });
+  const title = form.title.trim();
+  if (!title) add("hb-title", "请填写红包标题");
+  else if (Array.from(title).length > LIMITS.title)
+    add("hb-title", `标题最多 ${LIMITS.title} 个字`);
+
+  const { total, shares } = plan(form);
+  switch (form.mode) {
+    case "fixed":
+      if (cents(form.fixed.unit) === null)
+        add("hb-fixed-unit", "每份金额要大于 0，最多两位小数");
+      if (count(form.fixed.count) === null)
+        add(
+          "hb-fixed-count",
+          `份数要在 1 到 ${LIMITS.shares.toLocaleString("en")} 之间`,
+        );
+      break;
+    case "random":
+      if (cents(form.random.total) === null)
+        add("hb-random-total", "总额要大于 0，最多两位小数");
+      if (count(form.random.count) === null)
+        add(
+          "hb-random-count",
+          `份数要在 1 到 ${LIMITS.shares.toLocaleString("en")} 之间`,
+        );
+      else if (total !== null && shares !== null && total < shares)
+        add("hb-random-total", "总额不够分：每份至少 0.01 LDC");
+      break;
+    case "custom": {
+      const lines = customLines(form);
+      if (lines.length === 0) add("hb-custom-lines", "至少填写一份金额");
+      else if (lines.length > LIMITS.shares)
+        add("hb-custom-lines", `最多 ${LIMITS.shares.toLocaleString("en")} 份`);
+      else {
+        const bad = lines.findIndex((line) => cents(line) === null);
+        if (bad >= 0)
+          add(
+            "hb-custom-lines",
+            `第 ${bad + 1} 行不是有效金额（大于 0，最多两位小数）`,
+          );
+      }
+      break;
+    }
+    case "timed_draw":
+      if (cents(form.draw.pool) === null)
+        add("hb-draw-pool", "奖池要大于 0，最多两位小数");
+      if (count(form.draw.winners) === null)
+        add(
+          "hb-draw-winners",
+          `获奖名额要在 1 到 ${LIMITS.shares.toLocaleString("en")} 之间`,
+        );
+      else if (total !== null && shares !== null && total < shares)
+        add("hb-draw-pool", "奖池不够分：每个名额至少 0.01 LDC");
+      if (form.draw.limit.trim() && !positiveInteger(form.draw.limit))
+        add("hb-draw-limit", "报名上限要是正整数，或者留空不限");
+      break;
+  }
+
+  if (form.participation === "password") {
+    const filled = form.passwords.map((item) => item.trim());
+    if (filled.every((item) => !item)) add("hb-password-0", "至少填写一个口令");
+    filled.forEach((item, index) => {
+      if (!item) return;
+      const inspection = inspectPassword(item);
+      if (!inspection.valid)
+        add(
+          `hb-password-${index}`,
+          `口令 ${index + 1}：${passwordProblem(inspection)}`,
+        );
+      else if (filled.indexOf(item) !== index)
+        add(`hb-password-${index}`, `口令 ${index + 1} 和前面的重复了`);
+    });
+  }
+
+  if (form.timing.kind === "duration") {
+    const value = Number(form.timing.value);
+    if (!/^\d+$/.test(form.timing.value.trim()) || value < 1)
+      add("hb-timing-value", "时长要是正整数");
+  } else {
+    const at = new Date(form.timing.at).getTime();
+    if (!Number.isFinite(at) || at <= now)
+      add(
+        "hb-timing-at",
+        form.mode === "timed_draw"
+          ? "开奖时间要晚于现在"
+          : "截止时间要晚于现在",
+      );
+  }
+
+  for (const [field, label, text] of [
+    ["hb-before-info", "红包说明", form.beforeInfo],
+    ["hb-after-claim-info", "领取后附言", form.afterClaimInfo],
+    ["hb-after-end-info", "结束说明", form.afterEndInfo],
+  ] as const)
+    if (Array.from(text).length > LIMITS.info)
+      add(field, `${label}最多 ${LIMITS.info.toLocaleString("en")} 个字`);
+
+  if (!normalizeTopic(form.topic).ok)
+    add("hb-topic", "请填写 LINUX DO 帖子或回复的链接");
+  return issues;
+}
+
+/** How long it stays open, in ms from the moment it opens. */
+export function durationMs(form: FormState, now = Date.now()) {
+  if (form.timing.kind === "at")
+    return new Date(form.timing.at).getTime() - now;
+  return Number(form.timing.value) * unitMs[form.timing.unit];
+}
+
+/** "24 小时后截止" / "10月16日 20:00 截止" for the summary. */
+export function timingLine(form: FormState) {
+  const draw = form.mode === "timed_draw";
+  if (form.timing.kind === "at") {
+    const at = new Date(form.timing.at);
+    if (Number.isNaN(at.getTime()))
+      return draw ? "开奖时间未定" : "截止时间未定";
+    const pad = (value: number) => String(value).padStart(2, "0");
+    return `${at.getMonth() + 1}月${at.getDate()}日 ${pad(at.getHours())}:${pad(at.getMinutes())} ${draw ? "最晚开奖" : "截止"}`;
+  }
+  const value = form.timing.value.trim() || "?";
+  return `开放后 ${value} ${unitLabels[form.timing.unit]}${draw ? "内开奖" : "截止"}`;
+}
+
+/** One line for lists: "固定均分 · 1.00 LDC / 份", "限时开奖 · 5.00 LDC 奖池". */
+export function rewardSummaryOf(form: FormState) {
+  const { total, unit } = plan(form);
+  if (form.mode === "fixed")
+    return `固定均分 · ${unit !== null ? ldc(unit) : "—"} LDC / 份`;
+  return `${modeLabels[form.mode]} · ${total !== null ? ldc(total) : "—"} LDC 奖池`;
+}
+
+// ── Production ────────────────────────────────────────────────────────
+
+const unitSeconds: Record<TimeUnit, number> = {
+  minutes: 60,
+  hours: 3_600,
+  days: 86_400,
+};
+
+/** A length of time in the largest whole unit (a timed draw's countdown). */
+function timingOfSeconds(seconds: number, base: FormState["timing"]) {
+  const unit: TimeUnit =
+    seconds % unitSeconds.days === 0
+      ? "days"
+      : seconds % unitSeconds.hours === 0
+        ? "hours"
+        : "minutes";
+  return {
+    ...base,
+    kind: "duration" as const,
+    value: String(Math.max(1, Math.round(seconds / unitSeconds[unit]))),
+    unit,
+  };
+}
+
+const algorithmOf = (value: "double_mean_v1" | "bounded_mean_v1"): Algorithm =>
+  value === "bounded_mean_v1" ? "bounded_mean" : "double_mean";
+
+/** A saved 红包 back into the form (📝 编辑). */
+export function formOf(activity: ManagedActivity, now = Date.now()): FormState {
+  const base = emptyForm(now);
+  const config = activity.config;
+  const money = config.money;
+  const deadline = config.deadline;
+  const timing: FormState["timing"] =
+    deadline.mode === "at"
+      ? { ...base.timing, kind: "at", at: localInput(Date.parse(deadline.at)) }
+      : "value" in deadline
+        ? {
+            ...base.timing,
+            kind: "duration",
+            value: String(deadline.value),
+            unit: deadline.unit,
+          }
+        : money.mode === "timed_draw" && money.countdownSeconds
+          ? timingOfSeconds(money.countdownSeconds, base.timing)
+          : money.mode === "timed_draw"
+            ? drawTiming(base)
+            : base.timing;
+  const unit =
+    money.mode === "fixed"
+      ? ldc(amountToMinor(money.totalAmount) / money.count)
+      : "";
+  return {
+    ...base,
+    title: config.title,
+    mode: money.mode,
+    fixed:
+      money.mode === "fixed"
+        ? { unit, count: String(money.count) }
+        : base.fixed,
+    random:
+      money.mode === "random"
+        ? {
+            total: money.totalAmount,
+            count: String(money.count),
+            algorithm: algorithmOf(money.algorithm),
+          }
+        : base.random,
+    custom:
+      money.mode === "custom"
+        ? {
+            lines: money.amounts.join("\n"),
+            order: config.allocation,
+          }
+        : base.custom,
+    draw:
+      money.mode === "timed_draw"
+        ? {
+            pool: money.totalAmount,
+            winners: String(money.count),
+            limit: money.participantLimit ? String(money.participantLimit) : "",
+            algorithm: algorithmOf(money.algorithm),
+            fillPool: money.distributeFullPool,
+          }
+        : base.draw,
+    participation:
+      activity.participationMode ?? config.participationMode ?? "password",
+    passwords: config.passwords.length > 0 ? [...config.passwords] : [""],
+    statistics: config.forceDedicated,
+    timing,
+    beforeInfo: config.beforeInfo,
+    afterClaimInfo: config.afterClaimInfo,
+    afterEndInfo: config.afterEndInfo,
+    topic: config.topicUrl,
+    listed: config.joinSquare,
+    quantity: config.quantityVisibility === "fuzzy" ? "fuzzy" : "exact",
+  };
+}
+
+/** The form as production saves it, paid by `merchantId`. Checked first. */
+export function inputOf(form: FormState, merchantId: string): ActivityInput {
+  const { total, shares, unit } = plan(form);
+  const pool = ldc(total ?? 0);
+  const count = shares ?? 1;
+  const algorithm = (value: Algorithm) =>
+    value === "bounded_mean" ? "bounded_mean_v1" : "double_mean_v1";
+  const draw = form.mode === "timed_draw";
+  // A timed draw counts down to its latest draw time; the others close.
+  const countdown =
+    draw && form.timing.kind === "duration"
+      ? Number(form.timing.value) * unitSeconds[form.timing.unit]
+      : undefined;
+  const money: LdcMoney =
+    form.mode === "fixed"
+      ? { mode: "fixed", totalAmount: ldc((unit ?? 0) * count), count }
+      : form.mode === "random"
+        ? {
+            mode: "random",
+            algorithm: algorithm(form.random.algorithm),
+            totalAmount: pool,
+            count,
+          }
+        : form.mode === "custom"
+          ? {
+              mode: "custom",
+              amounts: customLines(form).map((line) => ldc(cents(line) ?? 0)),
+            }
+          : {
+              mode: "timed_draw",
+              algorithm: algorithm(form.draw.algorithm),
+              totalAmount: pool,
+              count,
+              participantLimit: form.draw.limit.trim()
+                ? Number(form.draw.limit)
+                : null,
+              distributeFullPool: form.draw.fillPool,
+              ...(countdown ? { countdownSeconds: countdown } : {}),
+            };
+  const deadline: ActivityInput["deadline"] =
+    form.timing.kind === "at"
+      ? { mode: "at", at: new Date(form.timing.at).toISOString() }
+      : draw
+        ? { mode: "duration" }
+        : {
+            mode: "duration",
+            value: Number(form.timing.value),
+            unit: form.timing.unit,
+          };
+  const password = form.participation === "password";
+  return {
+    title: form.title.trim(),
+    topicUrl: normalizeTopic(form.topic).value,
+    forceDedicated: password && form.statistics,
+    joinSquare: form.listed,
+    deadline,
+    allocation:
+      form.mode === "random" || draw
+        ? "random"
+        : form.mode === "custom"
+          ? form.custom.order
+          : "sequential",
+    passwords: password
+      ? form.passwords.map((item) => item.trim()).filter(Boolean)
+      : [],
+    quantityVisibility: form.quantity,
+    beforeInfo: form.beforeInfo,
+    afterClaimInfo: form.afterClaimInfo,
+    afterEndInfo: form.afterEndInfo,
+    participationMode: form.participation,
+    rewardType: "ldc",
+    merchantId,
+    money,
+  };
+}
+
+/**
+ * An opened 红包's input with this form's edits: after opening only its
+ * words, the post link, 加入广场 and how quantities show may change, so
+ * everything else is sent back as it was saved.
+ */
+export function openedInputOf(
+  activity: ManagedActivity,
+  form: FormState,
+): ActivityInput {
+  return {
+    ...activity.config,
+    title: form.title.trim(),
+    topicUrl: normalizeTopic(form.topic).value,
+    joinSquare: form.listed,
+    quantityVisibility: form.quantity,
+    beforeInfo: form.beforeInfo,
+    afterClaimInfo: form.afterClaimInfo,
+    afterEndInfo: form.afterEndInfo,
+  };
+}
+
+/** Whether a saved 红包 holds what was sent (a 409 after a lost answer). */
+export function sameInput(saved: ActivityInput, sent: ActivityInput) {
+  const { money: savedMoney, ...savedRest } = saved;
+  const { money: sentMoney, ...sentRest } = sent;
+  const comparable = (input: Omit<ActivityInput, "money">) =>
+    JSON.stringify({
+      title: input.title.trim(),
+      topicUrl: input.topicUrl,
+      forceDedicated: input.forceDedicated,
+      joinSquare: input.joinSquare,
+      deadline: input.deadline,
+      allocation: input.allocation,
+      passwords: input.passwords,
+      quantityVisibility: input.quantityVisibility,
+      beforeInfo: input.beforeInfo,
+      afterClaimInfo: input.afterClaimInfo,
+      afterEndInfo: input.afterEndInfo,
+      merchantId: input.merchantId,
+    });
+  return (
+    comparable(savedRest) === comparable(sentRest) &&
+    sameLdcMoney(savedMoney, sentMoney)
+  );
+}
