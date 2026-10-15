@@ -7,7 +7,7 @@
   "workers_dev": false,
   "preview_urls": false,
   "vars": {
-    "APP_ORIGIN": "https://staging.meme.442224.xyz",
+    "APP_ORIGIN": "https://staging.hb.lafi.sh",
     "APP_ENV": "staging",
     "LDC_NETWORK_MODE": "disabled",
     "LDC_ACCEPTANCE_ID": "",

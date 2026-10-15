@@ -8,7 +8,7 @@
   "preview_urls": false,
   "routes": [
     {
-      "pattern": "staging.meme.442224.xyz",
+      "pattern": "staging.hb.lafi.sh",
       "custom_domain": true
     }
   ],

@@ -13,7 +13,7 @@ export const wranglerPath = join(
 export type Environment = "local" | "staging" | "production";
 export const origins: Record<Environment, string> = {
   local: "http://127.0.0.1:5173",
-  staging: "https://staging.meme.442224.xyz",
+  staging: "https://staging.hb.lafi.sh",
   production: "https://meme.442224.xyz",
 };
 
