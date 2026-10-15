@@ -1,3 +1,5 @@
+import { movedLocation } from "./lib/site-move";
+
 const apiPattern = /^\/api(?:\/|$)/;
 // The forum image, /🧧/<code>/🖼️.svg or /🧧/<code>/🖼️ (with or without
 // U+FE0F), as the percent-encoded path a request carries. The API reads the
@@ -8,6 +10,9 @@ const activityImagePattern =
 const worker: ExportedHandler<CloudflareEnv> = {
   async fetch(request, env) {
     const url = new URL(request.url);
+    // The site moved: what reaches the Worker on the old host goes there.
+    const moved = movedLocation(url);
+    if (moved) return Response.redirect(moved, 301);
 
     if (activityImagePattern.test(url.pathname)) {
       url.pathname = `/api${url.pathname}`;

@@ -6,7 +6,7 @@
   "workers_dev": false,
   "preview_urls": false,
   "vars": {
-    "APP_ORIGIN": "https://meme.442224.xyz",
+    "APP_ORIGIN": "https://hb.lafi.sh",
     "APP_ENV": "production",
     "LDC_NETWORK_MODE": "live",
     "LDC_ACCEPTANCE_ID": "",

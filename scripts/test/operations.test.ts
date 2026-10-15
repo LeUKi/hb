@@ -154,6 +154,33 @@ describe("release environment guards", () => {
     ).toThrow("authorization");
   });
 
+  it("keeps production on hb.lafi.sh, with the old domain only to redirect", () => {
+    const { web, api } = configs("production");
+    expect(web.routes?.map((route) => route.pattern)).toEqual([
+      "hb.lafi.sh",
+      "meme.442224.xyz",
+    ]);
+    expect(api.vars?.APP_ORIGIN).toBe("https://hb.lafi.sh");
+    const check = () =>
+      validateEnvironment("production", web, api, {
+        allowPlaceholders: true,
+        allowLive: true,
+      });
+    expect(check).not.toThrow();
+    // Another domain is not one the site moved from.
+    web.routes = [
+      ...(web.routes ?? []),
+      { pattern: "other.example.com", custom_domain: true },
+    ];
+    expect(check).toThrow("custom domain");
+    // The site's own domain comes first.
+    web.routes = [
+      { pattern: "meme.442224.xyz", custom_domain: true },
+      { pattern: "hb.lafi.sh", custom_domain: true },
+    ];
+    expect(check).toThrow("custom domain");
+  });
+
   it("requires a timed draw opening switch and keeps Stage closed", () => {
     const { web, api } = configs();
     if (api.vars) delete api.vars.LDC_TIMED_DRAW_ENABLED;

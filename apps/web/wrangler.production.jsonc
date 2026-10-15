@@ -8,6 +8,10 @@
   "preview_urls": false,
   "routes": [
     {
+      "pattern": "hb.lafi.sh",
+      "custom_domain": true
+    },
+    {
       "pattern": "meme.442224.xyz",
       "custom_domain": true
     }

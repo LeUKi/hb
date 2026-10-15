@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { movedHosts } from "../../apps/web/src/lib/site-move";
 
 export const repositoryRoot = dirname(
   dirname(dirname(fileURLToPath(import.meta.url))),
@@ -14,7 +15,7 @@ export type Environment = "local" | "staging" | "production";
 export const origins: Record<Environment, string> = {
   local: "http://127.0.0.1:5173",
   staging: "https://staging.hb.lafi.sh",
-  production: "https://meme.442224.xyz",
+  production: "https://hb.lafi.sh",
 };
 
 export type WorkerConfig = {
@@ -152,12 +153,17 @@ export function validateEnvironment(
       !/^[a-f0-9]{32}$/.test(api.account_id)
     )
       fail("account binding");
+    const routes = web.routes ?? [];
     if (
       web.workers_dev !== false ||
       web.preview_urls !== false ||
-      web.routes?.length !== 1 ||
-      web.routes[0]?.custom_domain !== true ||
-      web.routes[0]?.pattern !== new URL(origins[environment]).host
+      routes[0]?.pattern !== new URL(origins[environment]).host ||
+      routes.some((route) => route.custom_domain !== true) ||
+      // Any other domain is one the site moved from, kept only to redirect
+      // here (apps/web/src/lib/site-move.ts).
+      routes
+        .slice(1)
+        .some((route) => movedHosts[route.pattern] !== origins[environment])
     )
       fail("custom domain");
     if (

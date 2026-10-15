@@ -157,3 +157,61 @@ describe("web worker activity image routing", () => {
     expect(forwarded?.headers.get("cookie")).toBe("hb_session=direct");
   });
 });
+
+describe("the move to hb.lafi.sh", () => {
+  async function routeOn(origin: string, path: string) {
+    const api = binding("api");
+    const assets = binding("assets");
+    const worker = await loadWorker();
+    const response = await worker.fetch(
+      new Request(`${origin}${path}`),
+      { API: api.fetcher, ASSETS: assets.fetcher },
+      context(),
+    );
+    return { response, upstream: api.calls.length + assets.calls.length };
+  }
+
+  it("sends what reaches the Worker on the old host to the same path there", async () => {
+    for (const path of ["/api/session?x=1", imagePath()]) {
+      const { response, upstream } = await routeOn(
+        "https://meme.442224.xyz",
+        path,
+      );
+      expect(response.status).toBe(301);
+      expect(response.headers.get("Location")).toBe(
+        `https://hb.lafi.sh${path}`,
+      );
+      expect(upstream).toBe(0);
+    }
+  });
+
+  it("serves the new host and any other host as before", async () => {
+    for (const origin of ["https://hb.lafi.sh", "https://staging.hb.lafi.sh"]) {
+      const { response, upstream } = await routeOn(origin, "/api/session");
+      expect(response.status).toBe(200);
+      expect(upstream).toBe(1);
+    }
+  });
+
+  it("moves pages too, before anything else loads (index.html's script)", async () => {
+    const { siteMoveScript } = await import("../../apps/web/src/lib/site-move");
+    const code =
+      /<script>([\s\S]*)<\/script>/.exec(siteMoveScript())?.[1] ?? "";
+    const visit = (href: string) => {
+      const url = new URL(href);
+      const replaced: string[] = [];
+      new Function("location", code)({
+        hostname: url.hostname,
+        pathname: url.pathname,
+        search: url.search,
+        hash: url.hash,
+        replace: (to: string) => replaced.push(to),
+      });
+      return replaced;
+    };
+    expect(visit("https://meme.442224.xyz/history?tab=joined#top")).toEqual([
+      "https://hb.lafi.sh/history?tab=joined#top",
+    ]);
+    expect(visit("https://hb.lafi.sh/history")).toEqual([]);
+  });
+});
