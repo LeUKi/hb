@@ -12,7 +12,8 @@ import { ActivityError } from "../activities/errors";
 import { requireAuth, requireProtectedMutation } from "../auth/session";
 import type { ApiContext } from "../env";
 import { isLocalSimulation } from "../runtime/controls";
-import { readMerchantImpact } from "./configuration";
+import { accountPaymentDetail, listAccountPayments } from "./account-queries";
+import { readMerchantImpact, readMerchantUsage } from "./configuration";
 import {
   createMerchant,
   getMerchant,
@@ -34,6 +35,30 @@ const cursorQuery = validator("query", (value): { cursor?: string } => {
     throw new ActivityError(400, "INVALID_CURSOR", "分页标识无效");
   return { cursor: value.cursor };
 });
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const accountPaymentQuery = validator(
+  "query",
+  (
+    value,
+  ): {
+    status: "all" | "open" | "confirmed";
+    activity?: string;
+    cursor?: string;
+  } => {
+    const status = value.status ?? "all";
+    if (status !== "all" && status !== "open" && status !== "confirmed")
+      throw new ActivityError(400, "INVALID_STATUS", "付款状态无效");
+    if (
+      value.activity !== undefined &&
+      (typeof value.activity !== "string" || !uuidPattern.test(value.activity))
+    )
+      throw new ActivityError(400, "INVALID_ACTIVITY", "红包标识无效");
+    if (value.cursor !== undefined && typeof value.cursor !== "string")
+      throw new ActivityError(400, "INVALID_CURSOR", "分页标识无效");
+    return { status, activity: value.activity, cursor: value.cursor };
+  },
+);
 const body = bodyLimit({
   maxSize: 16 * 1024,
   onError: () => {
@@ -80,6 +105,11 @@ export const merchantRoutes = new Hono<ApiContext>()
     return c.json({
       merchant: await getMerchant(c.env, c.req.param("id"), session.user.id),
     });
+  })
+  .get("/me/merchants/:id/usage", async (c) => {
+    const session = await requireAuth(c);
+    const row = await ownedMerchant(c.env, c.req.param("id"), session.user.id);
+    return c.json(await readMerchantUsage(c.env, row.id));
   })
   .get("/me/merchants/:id/change-impact", async (c) => {
     const session = await requireAuth(c);
@@ -181,6 +211,31 @@ export const merchantRoutes = new Hono<ApiContext>()
       });
     },
   )
+  // Every payment of the account's 红包, grouped by 红包 (/payments, 🧾).
+  .get("/me/payments", accountPaymentQuery, async (c) => {
+    const session = await requireAuth(c);
+    const query = c.req.valid("query");
+    return c.json(
+      await listAccountPayments(
+        c.env,
+        session.user.id,
+        query.status,
+        query.activity,
+        query.cursor,
+      ),
+    );
+  })
+  .get("/me/payments/:taskId", cursorQuery, async (c) => {
+    const session = await requireAuth(c);
+    return c.json(
+      await accountPaymentDetail(
+        c.env,
+        session.user.id,
+        c.req.param("taskId"),
+        c.req.valid("query").cursor,
+      ),
+    );
+  })
   .get("/me/merchants/:id/payments", cursorQuery, async (c) => {
     const session = await requireAuth(c);
     const id = c.req.param("id");

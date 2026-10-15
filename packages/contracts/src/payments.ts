@@ -81,6 +81,16 @@ export type MerchantChangePreview = {
   impact: MerchantChangeImpact;
   confirmationToken: string;
 };
+/** What a merchant pays for: its 红包 and their payments (商户页). */
+export type MerchantUsage = {
+  activities: number;
+  /** Still running, or a draw still to settle. */
+  activeActivities: number;
+  payments: number;
+  openPayments: number;
+  openAmount: string;
+  confirmedAmount: string;
+};
 export type CreateMerchantInput = z.input<typeof createMerchantSchema>;
 export type UpdateMerchantInput = z.infer<typeof updateMerchantSchema>;
 export type CredentialVerificationStatus =

@@ -1,4 +1,5 @@
 import { env } from "cloudflare:test";
+import { emptyActivityInput } from "@hb/contracts";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDb } from "../src/db/client";
@@ -15,6 +16,7 @@ import {
   users,
 } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
+import { listAccountPayments } from "../src/payments/account-queries";
 import type { AdapterResult, PaymentAdapter } from "../src/payments/adapter";
 import { loadMerchantSecret } from "../src/payments/credentials";
 import {
@@ -28,6 +30,7 @@ import {
   realQueryDecision,
   realSendDecision,
 } from "../src/payments/policy";
+import { merchantPaymentDetail } from "../src/payments/queries";
 import {
   basicAuthorization,
   createRealPaymentAdapter,
@@ -823,6 +826,40 @@ describe("merchant configuration correction and pinned payment identities", () =
     expect(await loadPaymentIdentityCorrections(f.bindings, f.taskId)).toEqual(
       [],
     );
+  });
+
+  it("counts a payment waiting for its original order's key on /payments, as its detail does", async () => {
+    const f = await fixture({ history: true });
+    // The list heads each group with its 红包, so it needs a real config.
+    await env.DB.prepare("UPDATE activities SET config=? WHERE id=?")
+      .bind(
+        JSON.stringify({
+          ...emptyActivityInput(),
+          merchantId: f.merchantId,
+          money: { mode: "fixed", totalAmount: "0.20", count: 2 },
+        }),
+        f.activityId,
+      )
+      .run();
+    expect(
+      (await listAccountPayments(f.bindings, f.owner, "all")).summary,
+    ).toMatchObject({ repairableCount: 0, firstRepairableId: null });
+    await replaceClient(f);
+    // The application the order was made with: its key was rejected.
+    await env.DB.prepare(
+      "UPDATE merchant_credentials SET client_id=?,verification_status='rejected',verification_reason='credentials' WHERE merchant_id=? AND version=1",
+    )
+      .bind(f.clientId, f.merchantId)
+      .run();
+    const detail = await merchantPaymentDetail(
+      f.bindings,
+      f.merchantId,
+      f.taskId,
+    );
+    expect(detail.config?.canRepairCredentials).toBe(true);
+    expect(
+      (await listAccountPayments(f.bindings, f.owner, "all")).summary,
+    ).toMatchObject({ repairableCount: 1, firstRepairableId: f.taskId });
   });
 
   it("repairs only the original order's credential, keeps current application settings, and does not let late failures reject newer keys", async () => {

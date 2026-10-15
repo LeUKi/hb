@@ -8,13 +8,14 @@ import { LoadError, PageSkeleton } from "../page/page-state";
 import { Button } from "../ui/button";
 import { HongbaoIcon } from "../ui/hongbao-icon";
 import { IdentityFailedView, MessageView, MigratingView } from "./message-view";
+import { PaymentsView } from "./payments-view";
 import { StatsView } from "./stats-view";
 
 /** Each sender page. */
 const pages: Record<SenderPage, (id: string, userId: string) => ReactNode> = {
   edit: () => <MigratingView title={senderPages.edit.title} />,
   stats: (id, userId) => <StatsView id={id} userId={userId} />,
-  payments: () => <MigratingView title={senderPages.payments.title} />,
+  payments: (id) => <PaymentsView activityId={id} />,
 };
 
 /**

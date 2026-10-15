@@ -1,6 +1,8 @@
-import type {
-  MerchantChangeImpact,
-  MerchantChangePreview,
+import {
+  formatAmount,
+  type MerchantChangeImpact,
+  type MerchantChangePreview,
+  type MerchantUsage,
 } from "@hb/contracts";
 import { ActivityError } from "../activities/errors";
 import type { ApiBindings } from "../env";
@@ -59,4 +61,38 @@ export async function readMerchantImpact(
 }
 export function hasMerchantImpact(impact: MerchantChangeImpact) {
   return Object.values(impact).some((count) => count > 0);
+}
+
+/** A merchant's 红包 and payments, for its page (claims only, not acceptance). */
+export async function readMerchantUsage(
+  env: ApiBindings,
+  merchantId: string,
+): Promise<MerchantUsage> {
+  const opened = `merchant_id=?1 AND reward_type='ldc' AND deleted_at IS NULL AND opened_at IS NOT NULL`;
+  const row = await env.DB.prepare(`SELECT
+      (SELECT COUNT(*) FROM activities WHERE ${opened}) AS activities,
+      (SELECT COUNT(*) FROM activities WHERE ${opened}
+        AND ((ended_at IS NULL AND deadline>CAST(unixepoch('subsec')*1000 AS INTEGER) AND claimed_count<total_count)
+          OR draw_state IN ('waiting','settling'))) AS activeActivities,
+      (SELECT COUNT(*) FROM payment_tasks WHERE merchant_id=?1 AND source='claim') AS payments,
+      (SELECT COUNT(*) FROM payment_tasks WHERE merchant_id=?1 AND source='claim' AND status<>'confirmed') AS openPayments,
+      (SELECT COALESCE(SUM(amount_minor),0) FROM payment_tasks WHERE merchant_id=?1 AND source='claim' AND status<>'confirmed') AS openMinor,
+      (SELECT COALESCE(SUM(amount_minor),0) FROM payment_tasks WHERE merchant_id=?1 AND source='claim' AND status='confirmed') AS confirmedMinor`)
+    .bind(merchantId)
+    .first<{
+      activities: number;
+      activeActivities: number;
+      payments: number;
+      openPayments: number;
+      openMinor: number;
+      confirmedMinor: number;
+    }>();
+  return {
+    activities: Number(row?.activities ?? 0),
+    activeActivities: Number(row?.activeActivities ?? 0),
+    payments: Number(row?.payments ?? 0),
+    openPayments: Number(row?.openPayments ?? 0),
+    openAmount: formatAmount(Number(row?.openMinor ?? 0)),
+    confirmedAmount: formatAmount(Number(row?.confirmedMinor ?? 0)),
+  };
 }

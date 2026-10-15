@@ -118,3 +118,38 @@ export function duplicateProbeActive(
     )
   );
 }
+
+/** Why a merchant's 密钥 check did not pass. */
+export function credentialReason(reason: string | null) {
+  const labels: Record<string, string> = {
+    credentials: "凭证认证未通过，请核对 Client ID 和密钥。",
+    configuration: "商户配置无法用于验证，请核对 Client ID 和密钥。",
+    interrupted: "凭证验证已中断，暂时无法确认结果。",
+    network: "网络连接失败，暂时无法验证凭证。",
+    timeout: "验证请求超时，暂时无法确认凭证。",
+    http: "上游暂时无法完成凭证验证。",
+    redirect: "凭证验证返回了重定向，暂时无法确认结果。",
+    invalid_response: "上游响应格式无法识别，暂时无法验证凭证。",
+  };
+  return (reason && labels[reason]) || "凭证暂时无法确认，请稍后再查看。";
+}
+
+/** A merchant's sending is paused: why, briefly, and what happens next. */
+export function merchantPause(reason: string) {
+  const short: Record<string, string> = {
+    funds: "商户资金不足",
+    quota: "每日发放额度不足",
+    credentials: "商户凭证失效",
+    credential_rejected: "商户凭证失效",
+    unknown: "付款结果尚未明确",
+  };
+  return {
+    title: `付款已暂停：${short[reason] ?? (paymentReason(reason) ?? "").replace(/。$/u, "")}`,
+    text:
+      reason === "funds"
+        ? "在 LDC 补足资金后自动继续，不需要在这里操作。领取不受影响。"
+        : reason === "quota"
+          ? "额度恢复后自动继续，不需要在这里操作。领取不受影响。"
+          : "条件满足后自动继续，不需要在这里操作。领取不受影响。",
+  };
+}

@@ -13,11 +13,14 @@ import { HelpView } from "../views/help-view";
 import { HistoryView } from "../views/history-view";
 import { HongbaoView } from "../views/hongbao-view";
 import { MeView } from "../views/me-view";
+import { MerchantView } from "../views/merchant-view";
 import {
   CommandPageView,
   MessageView,
   MigratingView,
 } from "../views/message-view";
+import { PaymentView } from "../views/payment-view";
+import { PaymentsView } from "../views/payments-view";
 import { ResultsView } from "../views/results-view";
 import { SenderView } from "../views/sender-view";
 import { SquareView } from "../views/square-view";
@@ -33,8 +36,8 @@ const commandPages: Record<Exclude<CommandId, "help" | "login">, ReactNode> = {
   square: <SquareView />,
   history: <HistoryView />,
   me: <MeView />,
-  merchant: <MigratingView title="LDC 商户配置" />,
-  payments: <MigratingView title="付款记录" />,
+  merchant: <MerchantView />,
+  payments: <PaymentsView />,
   admin: <MigratingView title="网站管理" />,
 };
 
@@ -80,14 +83,14 @@ function renderView(leaf: NonNullable<Leaf>): ReactNode {
       return (
         <CommandPageView
           id="merchant"
-          page={<MigratingView title="商户详情" />}
+          page={<MerchantView merchantId={params.merchantId ?? ""} />}
         />
       );
     case "/payments/$paymentId":
       return (
         <CommandPageView
           id="payments"
-          page={<MigratingView title="付款详情" />}
+          page={<PaymentView id={params.paymentId ?? ""} />}
         />
       );
     case "/status":

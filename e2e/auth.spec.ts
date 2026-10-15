@@ -101,6 +101,27 @@ test.describe("登录与身份", () => {
             },
           }),
     );
+    // The page itself, once the identity is known: an empty account.
+    await page.route("**/api/me/history-summary", (route) =>
+      route.fulfill({
+        json: {
+          initiatedCount: 0,
+          participatedCount: 0,
+          sentAmount: "0.00",
+          receivedAmount: "0.00",
+        },
+      }),
+    );
+    await page.route(/\/api\/me\/(activities|participations)\?/, (route) =>
+      route.fulfill({
+        json: {
+          items: [],
+          nextCursor: null,
+          total: 0,
+          statusCounts: { all: 0, draft: 0, active: 0, ended: 0, archived: 0 },
+        },
+      }),
+    );
     await openApp(page, "/history");
     await expect(identityButton(page)).toHaveAccessibleName(
       "身份检查失败，重试",
@@ -114,6 +135,9 @@ test.describe("登录与身份", () => {
       `${viewer.displayName}，打开用户卡片`,
     );
     await expectPath(page, "/history");
-    await expect(page.getByText("这一页正在迁移到新界面")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "红包记录", level: 1 }),
+    ).toBeVisible();
+    await expect(page.getByText("还没有发过红包")).toBeVisible();
   });
 });

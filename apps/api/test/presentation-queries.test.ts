@@ -1,5 +1,7 @@
 import { env } from "cloudflare:test";
 import {
+  type AccountPaymentDetail,
+  type AccountPaymentList,
   type ActivityInput,
   type ActivityList,
   type ActivityPaymentList,
@@ -688,6 +690,122 @@ describe("production presentation queries", () => {
     expect(JSON.stringify(history)).not.toMatch(
       /PRIVATE_TEXT_REWARD|PRIVATE_CLAIM_NOTE|FirstPassword/,
     );
+  });
+
+  it("lists the account's payments grouped by 红包, latest first, across pages and filters", async () => {
+    const earlier = await create(
+      ldc({ mode: "fixed", totalAmount: "4.00", count: 4 }),
+    );
+    const later = await create(
+      ldc({ mode: "fixed", totalAmount: "22.00", count: 22 }),
+    );
+    const entrants = await Promise.all(Array.from({ length: 22 }, actor));
+    for (const user of entrants.slice(0, 4)) await redeem(earlier.id, user);
+    for (const user of entrants) await redeem(later.id, user);
+    await create(undefined, true, outsider);
+    // One confirmed and one paused payment in the earlier 红包.
+    await env.DB.prepare(
+      `UPDATE payment_tasks SET status=CASE WHEN id=(SELECT MIN(p.id) FROM payment_tasks p JOIN claims c ON c.id=p.claim_id WHERE c.activity_id=?1) THEN 'confirmed' ELSE 'attention' END,
+        confirmed_at=CASE WHEN id=(SELECT MIN(p.id) FROM payment_tasks p JOIN claims c ON c.id=p.claim_id WHERE c.activity_id=?1) THEN created_at+100 END
+        WHERE id IN (SELECT p.id FROM payment_tasks p JOIN claims c ON c.id=p.claim_id WHERE c.activity_id=?1 ORDER BY p.id LIMIT 2)`,
+    )
+      .bind(earlier.id)
+      .run();
+
+    const first = await data<AccountPaymentList>("/me/payments", owner);
+    expect(first.total).toBe(26);
+    expect(first.summary).toEqual({
+      confirmedAmount: "1.00",
+      confirmedCount: 1,
+      openAmount: "25.00",
+      openCount: 25,
+      attentionCount: 1,
+      repairableCount: 0,
+      firstRepairableId: null,
+    });
+    expect(first.items).toHaveLength(20);
+    // The 红包 paid most recently comes first, its payments together.
+    expect(first.items.every((item) => item.activityId === later.id)).toBe(
+      true,
+    );
+    expect(first.items[0]?.recipientProfile.username).toBeTruthy();
+    expect(Object.keys(first.activities)).toEqual([later.id]);
+    const second = await data<AccountPaymentList>(
+      `/me/payments?cursor=${encodeURIComponent(first.nextCursor ?? "")}`,
+      owner,
+    );
+    expect(second.items.map((item) => item.activityId)).toEqual([
+      later.id,
+      later.id,
+      ...Array<string>(4).fill(earlier.id),
+    ]);
+    expect(second.nextCursor).toBeNull();
+    expect(
+      new Set([...first.items, ...second.items].map((item) => item.id)).size,
+    ).toBe(26);
+    expect(second.activities[earlier.id]).toMatchObject({
+      id: earlier.id,
+      confirmedAmount: "1.00",
+      claimedCount: 4,
+    });
+
+    const confirmed = await data<AccountPaymentList>(
+      "/me/payments?status=confirmed",
+      owner,
+    );
+    expect(confirmed.total).toBe(1);
+    expect(confirmed.items.map((item) => item.status)).toEqual(["confirmed"]);
+    const one = await data<AccountPaymentList>(
+      `/me/payments?activity=${earlier.id}&status=open`,
+      owner,
+    );
+    expect(one.total).toBe(3);
+    expect(one.summary).toMatchObject({ confirmedCount: 1, openCount: 3 });
+    expect(
+      (await data<AccountPaymentList>("/me/payments", outsider)).total,
+    ).toBe(0);
+    expect((await get("/me/payments?status=pending", owner)).status).toBe(400);
+    expect(
+      (
+        await get(
+          `/me/payments?cursor=${encodeURIComponent(first.nextCursor ?? "")}&status=open`,
+          owner,
+        )
+      ).status,
+    ).toBe(400);
+
+    // The merchant page's numbers: both 红包 are sold out, so none runs.
+    expect(await data(`/me/merchants/${merchantId}/usage`, owner)).toEqual({
+      activities: 2,
+      activeActivities: 0,
+      payments: 26,
+      openPayments: 25,
+      openAmount: "25.00",
+      confirmedAmount: "1.00",
+    });
+    expect(
+      (await get(`/me/merchants/${merchantId}/usage`, outsider)).status,
+    ).toBe(404);
+
+    const paused = one.items.find((item) => item.status === "attention");
+    const detail = await data<AccountPaymentDetail>(
+      `/me/payments/${paused?.id}`,
+      owner,
+    );
+    expect(detail.payment).toMatchObject({
+      id: paused?.id,
+      status: "attention",
+    });
+    expect(detail.merchant.id).toBe(paused?.merchantId);
+    expect(detail.activity).toEqual({
+      id: earlier.id,
+      title: earlier.title,
+      draw: false,
+    });
+    expect((await get(`/me/payments/${paused?.id}`, outsider)).status).toBe(
+      404,
+    );
+    expect((await get(`/me/payments/${paused?.id}`)).status).toBe(401);
   });
 
   it("keeps zero-target activities and whole-activity totals across filtered target pages", async () => {

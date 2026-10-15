@@ -8,6 +8,7 @@ import type {
   MerchantList,
   MerchantPaymentDetail,
   MerchantPaymentList,
+  MerchantUsage,
   RepairPaymentCredentialInput,
   SimulationScenario,
   UpdateMerchantInput,
@@ -190,6 +191,24 @@ export function useMerchant(userId: string, id: string) {
       query.state.data?.merchant.credentialVerification.status === "checking"
         ? 2_000
         : 15_000,
+  });
+}
+
+/** What a merchant pays for: its 红包 and their payments. */
+export function useMerchantUsage(userId: string, id: string) {
+  const session = useMerchantIdentity(userId);
+  return useQuery({
+    queryKey: [...merchantKeys.mine(session.identity), "usage", id],
+    enabled: session.enabled && Boolean(id),
+    queryFn: async ({ signal }) =>
+      session.read<MerchantUsage>(
+        await fetch(`/api/me/merchants/${encodeURIComponent(id)}/usage`, {
+          signal,
+          cache: "no-store",
+        }),
+      ),
+    retry: false,
+    refetchInterval: 15_000,
   });
 }
 
