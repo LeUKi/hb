@@ -24,7 +24,7 @@ import {
 import { ActivityRequestError } from "../../lib/activities";
 import { cn } from "../../lib/cn";
 import { paymentTone } from "../../lib/hongbao-text";
-import { useMerchantWrites } from "../../lib/merchants";
+import { useMerchantIdentity, useMerchantWrites } from "../../lib/merchants";
 import { scrollBehavior } from "../../lib/motion";
 import { paymentReason } from "../../lib/payment-display";
 import {
@@ -384,6 +384,7 @@ function Payment({
   csrfToken: string;
 }) {
   const queryClient = useQueryClient();
+  const { identity } = useMerchantIdentity(user.id);
   const query = useAccountPayment(user.id, id);
   // After 保存原订单密钥 its section is gone: focus (and reading) moves to
   // the payment's new state.
@@ -415,7 +416,7 @@ function Payment({
                 onRepaired={() => {
                   void queryClient
                     .invalidateQueries({
-                      queryKey: paymentKeys.detail(user.id, id),
+                      queryKey: paymentKeys.detail(identity, id),
                     })
                     .then(() => {
                       // Not from a page that is already leaving.
@@ -427,7 +428,7 @@ function Payment({
                       });
                     });
                   void queryClient.invalidateQueries({
-                    queryKey: paymentKeys.list(user.id),
+                    queryKey: paymentKeys.list(identity),
                   });
                 }}
               />

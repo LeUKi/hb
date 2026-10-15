@@ -84,7 +84,12 @@ export function merchantSessionIdentity(session: SessionResponse | undefined) {
     : null;
 }
 
-function useMerchantIdentity(userId: string) {
+/**
+ * Who the "merchant-private" queries belong to: the account and this
+ * sign-in. The query cache drops every one keyed otherwise whenever the
+ * session is read, so keys must use this, not the bare user id.
+ */
+export function useMerchantIdentity(userId: string) {
   const session = useSession();
   const queryClient = useQueryClient();
   const captureIdentity = () =>

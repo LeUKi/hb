@@ -215,6 +215,65 @@ test.describe("付款记录", () => {
     await expect.poll(() => filters).toContain("open");
   });
 
+  test("切走再回到标签页：列表和详情都不闪骨架屏", async ({ page }) => {
+    await mockSession(page, viewer);
+    await mockPayments(page);
+    const id = "11111111-2222-4333-8444-555555555551";
+    await page.route(`**/api/me/payments/${id}`, (route) =>
+      route.fulfill({ json: detail(false) }),
+    );
+    let sessionReads = 0;
+    await page.route("**/api/session", (route) => {
+      sessionReads += 1;
+      return route.fallback();
+    });
+    // Away and back (coming back reads the session again): the page must
+    // stay as it is, never going back to its skeleton.
+    const awayAndBack = async () => {
+      await page.evaluate(() => {
+        const flag = window as unknown as { sawSkeleton?: boolean };
+        flag.sawSkeleton = false;
+        new MutationObserver(() => {
+          for (const node of document.querySelectorAll("[role=status]"))
+            if (node.textContent === "正在读取…") flag.sawSkeleton = true;
+        }).observe(document.body, {
+          subtree: true,
+          childList: true,
+          characterData: true,
+        });
+      });
+      const before = sessionReads;
+      await page.evaluate(() => {
+        const show = (state: "hidden" | "visible") => {
+          Object.defineProperty(document, "visibilityState", {
+            configurable: true,
+            get: () => state,
+          });
+          document.dispatchEvent(new Event("visibilitychange"));
+        };
+        show("hidden");
+        show("visible");
+      });
+      await expect.poll(() => sessionReads).toBeGreaterThan(before);
+      await page.waitForTimeout(1000);
+      return page.evaluate(
+        () => (window as unknown as { sawSkeleton?: boolean }).sawSkeleton,
+      );
+    };
+
+    await openApp(page, "/payments");
+    const list = page.getByRole("heading", { name: "付款记录", level: 1 });
+    await expect(list).toBeVisible();
+    expect(await awayAndBack()).toBe(false);
+    await expect(list).toBeVisible();
+
+    await openApp(page, `/payments/${id}`);
+    const one = page.getByRole("heading", { name: "付给 林间" });
+    await expect(one).toBeVisible();
+    expect(await awayAndBack()).toBe(false);
+    await expect(one).toBeVisible();
+  });
+
   test("付款详情：更新原订单密钥后转为核对中", async ({ page }) => {
     await mockSession(page, viewer);
     let repaired = false;

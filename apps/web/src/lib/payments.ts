@@ -6,7 +6,7 @@ import type {
   PaymentAttemptView,
 } from "@hb/contracts";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { readResponse } from "./activities";
+import { useMerchantIdentity } from "./merchants";
 import {
   duplicateProbeActive,
   paymentAttemptOutcome,
@@ -16,11 +16,14 @@ import {
 // 付款记录 (/payments, 🧾) and 付款详情 (/payments/<编号>): the account's
 // payments across its merchants, and how one of them got where it is.
 
+// Keyed by the sign-in (`useMerchantIdentity`), like the merchants: the
+// cache keeps them while the session is read again, and drops them when it
+// changes.
 export const paymentKeys = {
-  list: (userId: string) =>
-    ["merchant-private", userId, "account-payments"] as const,
-  detail: (userId: string, id: string) =>
-    ["merchant-private", userId, "account-payment", id] as const,
+  list: (identity: string) =>
+    ["merchant-private", identity, "account-payments"] as const,
+  detail: (identity: string, id: string) =>
+    ["merchant-private", identity, "account-payment", id] as const,
 };
 
 /** The account's payments grouped by 红包 (or one 红包's), 20 at a time. */
@@ -29,14 +32,20 @@ export function useAccountPaymentPages(
   filter: AccountPaymentFilter,
   activityId?: string,
 ) {
+  const session = useMerchantIdentity(userId);
   return useInfiniteQuery({
-    queryKey: [...paymentKeys.list(userId), activityId ?? "*", filter],
+    queryKey: [
+      ...paymentKeys.list(session.identity),
+      activityId ?? "*",
+      filter,
+    ],
+    enabled: session.enabled,
     initialPageParam: null as string | null,
     queryFn: async ({ pageParam, signal }) => {
       const query = new URLSearchParams({ status: filter });
       if (activityId) query.set("activity", activityId);
       if (pageParam) query.set("cursor", pageParam);
-      return readResponse<AccountPaymentList>(
+      return session.read<AccountPaymentList>(
         await fetch(`/api/me/payments?${query.toString()}`, {
           signal,
           cache: "no-store",
@@ -52,10 +61,12 @@ export function useAccountPaymentPages(
 
 /** One payment; read again while it may still move on. */
 export function useAccountPayment(userId: string, id: string) {
+  const session = useMerchantIdentity(userId);
   return useQuery({
-    queryKey: paymentKeys.detail(userId, id),
+    queryKey: paymentKeys.detail(session.identity, id),
+    enabled: session.enabled,
     queryFn: async ({ signal }) =>
-      readResponse<AccountPaymentDetail>(
+      session.read<AccountPaymentDetail>(
         await fetch(`/api/me/payments/${encodeURIComponent(id)}`, {
           signal,
           cache: "no-store",
