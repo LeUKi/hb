@@ -409,7 +409,6 @@ function ActivityPageBody({
     !direct &&
     exchange?.sessionScope === presentationIdentity &&
     exchange?.userId === user?.id &&
-    exchange?.accountTier === user?.accountTier &&
     exchange?.selectedActivityId === id;
   const awaiting =
     (!direct && intent?.activityId === id) ||
@@ -437,10 +436,7 @@ function ActivityPageBody({
                   ? { kind: "unavailable" }
                   : awaiting
                     ? { kind: "pending" }
-                    : user?.accountTier === "standard" &&
-                        user.canUseLdc &&
-                        user.id !== activity?.author.id &&
-                        csrfToken
+                    : user && user.id !== activity?.author.id && csrfToken
                       ? {
                           kind: "eligible",
                           action: activity?.draw ? "register" : "claim",
@@ -713,9 +709,7 @@ function ActivityPageBody({
                     key={`${user.id}:${id}`}
                     activity={activity}
                     userId={user.id}
-                    accountTier={user.accountTier}
                     csrfToken={csrfToken}
-                    canUseLdc={user.canUseLdc}
                     initialPassword={
                       fromMatching ? exchange?.password : undefined
                     }

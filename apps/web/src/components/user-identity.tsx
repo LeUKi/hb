@@ -301,7 +301,6 @@ export function UserIdentity({
       >
         <Avatar name={name} color={color} avatarUrl={profile.avatarUrl} />
         <span>{name}</span>
-        <AccountTierBadge accountTier={profile.accountTier} />
       </button>
       {open &&
         createPortal(
@@ -458,13 +457,4 @@ export function UserAvatar({
       large={size === "lg"}
     />
   );
-}
-export function AccountTierBadge({
-  accountTier,
-}: {
-  accountTier: PublicUserProfile["accountTier"] | undefined;
-}) {
-  return accountTier === "lite" ? (
-    <span className="lite-badge">青春版</span>
-  ) : null;
 }

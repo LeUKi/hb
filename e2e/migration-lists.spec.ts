@@ -6,9 +6,6 @@ const user = {
   username: "viewer",
   displayName: "查看者",
   avatarUrl: null,
-  accountTier: "standard",
-  canUseLdc: true,
-  loginProvider: "connect",
 };
 const author = {
   id: "author-1",
@@ -649,7 +646,6 @@ async function setup(page: Page) {
                       username: "recipient",
                       displayName: "收款人",
                       avatarUrl: null,
-                      accountTier: "standard",
                     },
                   },
                 ],
@@ -682,7 +678,6 @@ async function setup(page: Page) {
               username: "recipient",
               displayName: "收款人",
               avatarUrl: null,
-              accountTier: "standard",
             },
           },
         },

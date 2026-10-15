@@ -52,7 +52,6 @@ async function actor(username: string): Promise<Actor> {
   const now = new Date();
   const db = createDb(env.DB);
   await db.insert(users).values({
-    officialConnectVerified: true,
     id,
     externalId: username,
     username,

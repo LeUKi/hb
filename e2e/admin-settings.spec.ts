@@ -7,18 +7,9 @@ async function mockSettings(page: Page) {
       username: "admin",
       displayName: "管理员",
       avatarUrl: null,
-      accountTier: "standard",
-      loginProvider: "connect",
-      canUseLdc: true,
       isAdmin: true,
     },
     csrfToken: "session-a",
-    login: {
-      version: 1,
-      liteauthEnabled: true,
-      updatedAt: Date.now(),
-      updatedByUserId: null as string | null,
-    },
     rate: {
       version: 1,
       homeIntervalSeconds: 60,
@@ -26,10 +17,12 @@ async function mockSettings(page: Page) {
       updatedAt: Date.now(),
       updatedByUserId: null as string | null,
     },
-    writes: [] as { module: string; input: Record<string, unknown> }[],
-    reads: [] as string[],
+    writes: [] as Record<string, unknown>[],
+    reads: 0,
     failRead: false,
     readDelay: null as { session: string; wait: Promise<void> } | null,
+    saveDelay: null as Promise<void> | null,
+    denySave: false,
     saveMode: "success" as
       | "success"
       | "commit-lost"
@@ -46,15 +39,13 @@ async function mockSettings(page: Page) {
           user: state.user,
           csrfToken: state.csrfToken,
           attemptCooldown: null,
-          loginOptions: { liteauthEnabled: state.login.liteauthEnabled },
         },
       });
-    const module = path.split("/").at(-1);
-    if (module !== "login-settings" && module !== "rate-limits")
+    if (path !== "/api/admin/rate-limits")
       return route.fulfill({ json: { items: [], nextCursor: null } });
-    const config = module === "login-settings" ? state.login : state.rate;
+    const config = state.rate;
     if (route.request().method() === "GET") {
-      state.reads.push(module);
+      state.reads++;
       const observed = structuredClone(config);
       if (state.readDelay?.session === state.csrfToken)
         await state.readDelay.wait;
@@ -66,8 +57,17 @@ async function mockSettings(page: Page) {
       return route.fulfill({ json: { config: observed, recentChanges: [] } });
     }
     const input = route.request().postDataJSON() as Record<string, unknown>;
-    state.writes.push({ module, input });
+    state.writes.push(input);
     expect(route.request().headers()["x-csrf-token"]).toBe(state.csrfToken);
+    if (state.denySave) {
+      state.user = { ...state.user, isAdmin: false };
+      return route.fulfill({
+        status: 403,
+        json: {
+          error: { code: "ADMIN_REQUIRED", message: "此页面仅限管理员访问" },
+        },
+      });
+    }
     if (
       state.saveMode === "conflict" ||
       input.expectedVersion !== config.version
@@ -81,36 +81,22 @@ async function mockSettings(page: Page) {
       state.failRead = true;
       return route.abort("failed");
     }
-    if (module === "login-settings")
-      state.login = {
-        ...state.login,
-        version: config.version + 1,
-        liteauthEnabled: Boolean(input.liteauthEnabled),
-        updatedByUserId: state.user.id,
-      };
-    else
-      state.rate = {
-        ...state.rate,
-        version: config.version + 1,
-        homeIntervalSeconds: Number(input.homeIntervalSeconds),
-        activityIntervalSeconds: Number(input.activityIntervalSeconds),
-        updatedByUserId: state.user.id,
-      };
+    state.rate = {
+      ...state.rate,
+      version: config.version + 1,
+      homeIntervalSeconds: Number(input.homeIntervalSeconds),
+      activityIntervalSeconds: Number(input.activityIntervalSeconds),
+      updatedByUserId: state.user.id,
+    };
     if (state.saveMode === "commit-lost") return route.abort("failed");
-    return route.fulfill({
-      json: {
-        config: module === "login-settings" ? state.login : state.rate,
-        recentChanges: [],
-      },
-    });
+    const saved = { config: state.rate, recentChanges: [] };
+    await state.saveDelay;
+    return route.fulfill({ json: saved });
   });
   return state;
 }
-function card(page: Page, module: "login" | "rate") {
-  return page.getByRole("region", {
-    name: module === "login" ? "登录方式" : "参与尝试限流",
-    exact: true,
-  });
+function card(page: Page) {
+  return page.getByRole("region", { name: "参与尝试限流", exact: true });
 }
 
 type Box = { height: number; width: number; x: number; y: number };
@@ -137,13 +123,8 @@ async function freezeClock(page: Page) {
 
 const feedbackLabel = (button: Locator) =>
   button.locator('[aria-live="polite"]').last();
-async function change(page: Page, module: "login" | "rate") {
-  if (module === "login")
-    await card(page, module).getByRole("checkbox").uncheck();
-  else
-    await card(page, module)
-      .getByLabel("首页尝试间隔（秒）", { exact: true })
-      .fill("5");
+async function change(page: Page) {
+  await card(page).getByLabel("首页尝试间隔（秒）", { exact: true }).fill("5");
 }
 async function refocus(page: Page) {
   await page.evaluate(() => {
@@ -165,24 +146,21 @@ test("设置操作反馈留在触发按钮且三秒复原", async ({ page }) => 
   const state = await mockSettings(page);
   await page.goto("/admin/settings");
 
-  await change(page, "login");
-  const login = card(page, "login");
-  const saveLogin = login.getByRole("button", {
-    name: /^保存配置(?:，|$)/,
-  });
-  const loginBox = await box("login save button", saveLogin);
+  await change(page);
+  const rate = card(page);
+  const save = rate.getByRole("button", { name: /^保存配置(?:，|$)/ });
+  const saveBox = await box("rate save button", save);
   await freezeClock(page);
-  await saveLogin.click();
-  await expect(feedbackLabel(saveLogin)).toHaveText("已保存");
-  await expect(saveLogin).toHaveAccessibleName("保存配置，已保存");
-  await expect(login.getByRole("status")).toHaveCount(0);
-  await expectStableBox(await saveLogin.boundingBox(), loginBox);
+  await save.click();
+  await expect(feedbackLabel(save)).toHaveText("已保存");
+  await expect(save).toHaveAccessibleName("保存配置，已保存");
+  await expect(rate.getByRole("status")).toHaveCount(0);
+  await expectStableBox(await save.boundingBox(), saveBox);
   await page.clock.runFor(2_999);
-  await expect(feedbackLabel(saveLogin)).toHaveText("已保存");
+  await expect(feedbackLabel(save)).toHaveText("已保存");
   await page.clock.runFor(1);
-  await expect(feedbackLabel(saveLogin)).toHaveText("保存配置");
+  await expect(feedbackLabel(save)).toHaveText("保存配置");
 
-  const rate = card(page, "rate");
   const refresh = rate.getByRole("button", { name: /^刷新(?:，|$)/ });
   const refreshBox = await box("rate refresh button", refresh);
   state.failRead = true;
@@ -207,7 +185,7 @@ test("设置字段校验反馈留在保存按钮且保留输入", async ({ page 
   await page.clock.install();
   await mockSettings(page);
   await page.goto("/admin/settings");
-  const panel = card(page, "rate");
+  const panel = card(page);
   const home = panel.getByLabel("首页尝试间隔（秒）", { exact: true });
   await home.fill("0");
   const save = panel.getByRole("button", { name: /^保存配置(?:，|$)/ });
@@ -220,44 +198,29 @@ test("设置字段校验反馈留在保存按钮且保留输入", async ({ page 
   await expect(home).toHaveValue("0");
 });
 
-for (const module of ["login", "rate"] as const) {
-  test(`${module} 保存响应丢失先读取核对，已生效不重复提交`, async ({
-    page,
-  }) => {
-    const state = await mockSettings(page);
-    await page.goto("/admin/settings");
-    await change(page, module);
-    state.saveMode = "commit-lost";
-    await card(page, module)
-      .getByRole("button", { name: /^保存配置(?:，|$)/ })
-      .click();
-    await expect(
-      feedbackLabel(card(page, module).getByRole("button", { name: /已核对/ })),
-    ).toHaveText("已核对");
-    expect(state.writes).toHaveLength(1);
-    expect(
-      state.reads.filter(
-        (value) =>
-          value === (module === "login" ? "login-settings" : "rate-limits"),
-      ).length,
-    ).toBeGreaterThan(1);
-    await expect(
-      card(page, module).getByRole("button", { name: /^保存配置(?:，|$)/ }),
-    ).toBeDisabled();
-    await change(page, module === "login" ? "rate" : "login");
-    await expect(
-      card(page, module === "login" ? "rate" : "login").getByRole("button", {
-        name: /^保存配置(?:，|$)/,
-      }),
-    ).toBeEnabled();
-  });
-}
+test("保存响应丢失先读取核对，已生效不重复提交", async ({ page }) => {
+  const state = await mockSettings(page);
+  await page.goto("/admin/settings");
+  await change(page);
+  state.saveMode = "commit-lost";
+  await card(page)
+    .getByRole("button", { name: /^保存配置(?:，|$)/ })
+    .click();
+  await expect(
+    feedbackLabel(card(page).getByRole("button", { name: /已核对/ })),
+  ).toHaveText("已核对");
+  expect(state.writes).toHaveLength(1);
+  expect(state.reads).toBeGreaterThan(1);
+  await expect(
+    card(page).getByRole("button", { name: /^保存配置(?:，|$)/ }),
+  ).toBeDisabled();
+});
 test("核对失败锁定原输入与刷新，核对后原版本原内容重试", async ({ page }) => {
   const state = await mockSettings(page);
   await page.goto("/admin/settings");
-  await change(page, "rate");
+  await change(page);
   state.saveMode = "lost-unreadable";
-  const panel = card(page, "rate");
+  const panel = card(page);
   await panel.getByRole("button", { name: /^保存配置(?:，|$)/ }).click();
   await expect(
     panel.getByRole("button", { name: /^核对保存结果(?:，|$)/ }),
@@ -291,22 +254,22 @@ test("后台读取保留基线和脏输入，刷新取消及失败保留，同�
 }) => {
   const state = await mockSettings(page);
   await page.goto("/admin/settings");
-  const panel = card(page, "rate");
+  const panel = card(page);
   const home = panel.getByLabel("首页尝试间隔（秒）", { exact: true });
   await home.fill("5");
   state.rate = { ...state.rate, version: 2, homeIntervalSeconds: 5 };
-  const initialReads = state.reads.length;
+  const initialReads = state.reads;
   await page.clock.install();
   await page.clock.fastForward(16_000);
   await refocus(page);
-  await expect.poll(() => state.reads.length).toBeGreaterThan(initialReads);
+  await expect.poll(() => state.reads).toBeGreaterThan(initialReads);
   await expect(home).toHaveValue("5");
   await expect(
     panel.getByRole("button", { name: /^保存配置(?:，|$)/ }),
   ).toBeEnabled();
   state.saveMode = "conflict";
   await panel.getByRole("button", { name: /^保存配置(?:，|$)/ }).click();
-  expect(state.writes[0]?.input.expectedVersion).toBe(1);
+  expect(state.writes[0]?.expectedVersion).toBe(1);
   await expect(panel.getByRole("button", { name: /已变化/ })).toHaveAttribute(
     "title",
     "网站设置已发生变化，请刷新后再试。当前输入已保留。",
@@ -351,11 +314,10 @@ test("后台读取保留基线和脏输入，刷新取消及失败保留，同�
   await expect(home).toHaveValue("9");
 });
 
-test("双表单脏输入离开只确认一次，取消保留，确认后放弃", async ({ page }) => {
+test("脏输入离开只确认一次，取消保留，确认后放弃", async ({ page }) => {
   await mockSettings(page);
   await page.goto("/admin/settings");
-  await change(page, "login");
-  await change(page, "rate");
+  await change(page);
   let confirms = 0;
   let accept = false;
   page.on("dialog", async (dialog) => {
@@ -370,9 +332,8 @@ test("双表单脏输入离开只确认一次，取消保留，确认后放弃",
   await destination.click();
   await expect(page).toHaveURL(/\/admin\/settings$/);
   expect(confirms).toBe(1);
-  await expect(card(page, "login").getByRole("checkbox")).not.toBeChecked();
   await expect(
-    card(page, "rate").getByLabel("首页尝试间隔（秒）", { exact: true }),
+    card(page).getByLabel("首页尝试间隔（秒）", { exact: true }),
   ).toHaveValue("5");
   accept = true;
   await destination.click();
@@ -382,9 +343,8 @@ test("双表单脏输入离开只确认一次，取消保留，确认后放弃",
     .getByRole("navigation", { name: "管理入口" })
     .getByRole("link", { name: "网站设置", exact: true })
     .click();
-  await expect(card(page, "login").getByRole("checkbox")).toBeChecked();
   await expect(
-    card(page, "rate").getByLabel("首页尝试间隔（秒）", { exact: true }),
+    card(page).getByLabel("首页尝试间隔（秒）", { exact: true }),
   ).toHaveValue("60");
 });
 
@@ -393,22 +353,20 @@ test("同账号新会话撤下旧基线和输入，取消在途刷新，迟到�
 }) => {
   const state = await mockSettings(page);
   await page.goto("/admin/settings");
-  const home = card(page, "rate").getByLabel("首页尝试间隔（秒）", {
-    exact: true,
-  });
+  const home = card(page).getByLabel("首页尝试间隔（秒）", { exact: true });
   await home.fill("5");
   let release = () => {};
   const wait = new Promise<void>((resolve) => {
     release = resolve;
   });
   state.readDelay = { session: "session-a", wait };
-  const before = state.reads.length;
+  const before = state.reads;
   try {
     page.once("dialog", (dialog) => dialog.accept());
-    await card(page, "rate")
+    await card(page)
       .getByRole("button", { name: /^刷新(?:，|$)/ })
       .click();
-    await expect.poll(() => state.reads.length).toBeGreaterThan(before);
+    await expect.poll(() => state.reads).toBeGreaterThan(before);
     const canceled = page.waitForEvent("requestfailed", {
       predicate: (request) =>
         new URL(request.url()).pathname === "/api/admin/rate-limits",
@@ -421,8 +379,70 @@ test("同账号新会话撤下旧基线和输入，取消在途刷新，迟到�
     release();
     await expect(home).toHaveValue("20");
     await expect(
-      card(page, "rate").getByRole("button", { name: /^保存配置(?:，|$)/ }),
+      card(page).getByRole("button", { name: /^保存配置(?:，|$)/ }),
     ).toBeDisabled();
+  } finally {
+    release();
+  }
+});
+
+test("保存途中换账号不回填管理内容，403 后清除配置与输入", async ({ page }) => {
+  const state = await mockSettings(page);
+  let release = () => {};
+  state.saveDelay = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  try {
+    await page.goto("/admin/settings");
+    await change(page);
+    await card(page)
+      .getByRole("button", { name: /^保存配置(?:，|$)/ })
+      .click();
+    await expect.poll(() => state.writes.length).toBe(1);
+    state.user = {
+      ...state.user,
+      id: "ordinary-account",
+      displayName: "普通用户",
+      isAdmin: false,
+    };
+    const canceledSave = page.waitForEvent("requestfailed", {
+      predicate: (request) =>
+        new URL(request.url()).pathname === "/api/admin/rate-limits" &&
+        request.method() === "PATCH",
+    });
+    await refocus(page);
+    await expect(card(page)).toHaveCount(0);
+    await expect(page.getByRole("alert")).toHaveText("此页面仅限管理员访问");
+    release();
+    const canceled = await canceledSave;
+    expect(canceled.failure()?.errorText).toBe("net::ERR_ABORTED");
+    await expect(card(page)).toHaveCount(0);
+    await expect(
+      page.getByRole("link", { name: "管理", exact: true }),
+    ).toHaveCount(0);
+    state.saveDelay = null;
+    state.user = {
+      ...state.user,
+      id: "next-admin",
+      displayName: "新管理员",
+      isAdmin: true,
+    };
+    await refocus(page);
+    const home = card(page).getByLabel("首页尝试间隔（秒）", { exact: true });
+    await expect(home).toHaveValue("5");
+    await home.fill("7");
+    state.denySave = true;
+    await card(page)
+      .getByRole("button", { name: /^保存配置(?:，|$)/ })
+      .click();
+    await expect(home).toHaveCount(0);
+    await expect(card(page).getByText(/更新于/)).toHaveCount(0);
+    await expect(page.getByRole("alert").first()).toHaveText(
+      "此页面仅限管理员访问",
+    );
+    await expect(
+      page.getByRole("button", { name: /^保存配置(?:，|$)/ }),
+    ).toHaveCount(0);
   } finally {
     release();
   }

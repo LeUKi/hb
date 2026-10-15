@@ -62,7 +62,7 @@ let bob: Actor;
 let merchantId: string;
 let actorNumber = 50_000;
 
-async function actor(official = true): Promise<Actor> {
+async function actor(): Promise<Actor> {
   const id = crypto.randomUUID();
   const token = crypto.randomUUID();
   const csrf = crypto.randomUUID();
@@ -74,7 +74,6 @@ async function actor(official = true): Promise<Actor> {
     externalId: String(number),
     username: `Direct${number}`,
     displayName: `参与者 ${number}`,
-    officialConnectVerified: official,
     createdAt: now,
     updatedAt: now,
   });
@@ -82,7 +81,6 @@ async function actor(official = true): Promise<Actor> {
     tokenHash: await sha256Hex(`hb.session-token.v1:${token}`),
     userId: id,
     csrfToken: csrf,
-    loginProvider: official ? "connect" : "liteauth",
     createdAt: now,
     lastSeenAt: now,
     expiresAt: new Date(now.getTime() + 3_600_000),
@@ -656,18 +654,13 @@ describe("direct participation", () => {
     },
   );
 
-  it("preserves LDC eligibility and author restrictions without consuming cooldown", async () => {
+  it("preserves author restrictions without consuming cooldown", async () => {
     const activity = await save(
       ldcInput({ mode: "fixed", totalAmount: "1.00", count: 2 }),
     );
-    const lite = await actor(false);
-    await expect(
-      claimActivity(bindings, activity.id, lite.id, direct()),
-    ).rejects.toMatchObject({ code: "OFFICIAL_CONNECT_REQUIRED" });
     await expect(
       claimActivity(bindings, activity.id, owner.id, direct()),
     ).rejects.toMatchObject({ code: "SELF_CLAIM_FORBIDDEN" });
-    expect((await readAttemptCooldown(bindings, lite.id)).revision).toBe(0);
     expect((await readAttemptCooldown(bindings, owner.id)).revision).toBe(0);
   });
 

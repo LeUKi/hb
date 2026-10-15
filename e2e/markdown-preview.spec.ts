@@ -6,9 +6,6 @@ const user = {
   displayName: "Markdown 作者",
   avatarUrl: null,
   email: null,
-  accountTier: "standard" as const,
-  canUseLdc: true,
-  loginProvider: "connect" as const,
 };
 
 async function mockFormSession(page: Page) {

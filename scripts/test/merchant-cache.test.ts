@@ -10,11 +10,7 @@ import { createAppQueryClient } from "../../apps/web/src/lib/query-cache";
 vi.mock("../../apps/web/src/api", () => ({ api: {} }));
 
 const session = {
-  user: {
-    id: "merchant-owner",
-    accountTier: "standard",
-    loginProvider: "connect",
-  },
+  user: { id: "merchant-owner" },
   csrfToken: "first-session",
 } as SessionResponse;
 

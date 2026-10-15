@@ -9,9 +9,6 @@ const user = {
   username: "viewer",
   displayName: "参与者",
   avatarUrl: null,
-  accountTier: "standard",
-  canUseLdc: true,
-  loginProvider: "connect",
 };
 const activity = {
   id: activityId,
@@ -58,7 +55,6 @@ async function mock(context: BrowserContext) {
           user: state.user,
           csrfToken: state.user ? "csrf" : null,
           attemptCooldown: null,
-          loginOptions: { liteauthEnabled: true },
         },
       });
     const discovery = {

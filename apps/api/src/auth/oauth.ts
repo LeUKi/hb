@@ -1,5 +1,5 @@
 import { normalizeAvatarUrl, normalizeConnectEmail } from "@hb/contracts";
-import { and, eq, gt, sql } from "drizzle-orm";
+import { and, eq, gt } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { createDb } from "../db/client";
@@ -19,40 +19,20 @@ import {
   secureCookiesForOrigin,
 } from "../security/http";
 import {
-  LiteAuthLoginDisabledError,
-  liteAuthLoginGuard,
-  readLoginOptions,
-  requireLiteAuthLogin,
-} from "./login-settings";
-import {
-  type AuthenticatedSession,
   createSession,
   getOptionalSession,
-  type LoginProvider,
   logout,
-  type SessionUser,
   setImageSessionCookie,
 } from "./session";
 
-const PROVIDERS = {
-  connect: {
-    authorizeUrl: "https://connect.linux.do/oauth2/authorize",
-    tokenUrl: "https://connect.linux.do/oauth2/token",
-    userUrl: "https://connect.linux.do/api/user",
-    cookieName: "hb_oauth_state",
-    callbackPath: "/api/auth/callback",
-    scope: "profile email",
-  },
-  liteauth: {
-    authorizeUrl: "https://liteauth.442224.xyz/api/auth/oauth2/authorize",
-    tokenUrl: "https://liteauth.442224.xyz/api/auth/oauth2/token",
-    userUrl: "https://liteauth.442224.xyz/api/user",
-    cookieName: "hb_liteauth_state",
-    callbackPath: "/api/auth/liteauth/callback",
-    scope: "profile",
-  },
+const CONNECT = {
+  authorizeUrl: "https://connect.linux.do/oauth2/authorize",
+  tokenUrl: "https://connect.linux.do/oauth2/token",
+  userUrl: "https://connect.linux.do/api/user",
+  cookieName: "hb_oauth_state",
+  callbackPath: "/api/auth/callback",
+  scope: "profile email",
 } as const;
-const LITEAUTH_ISSUER = "https://liteauth.442224.xyz/api/auth";
 const OAUTH_STATE_TTL_SECONDS = 60 * 10;
 const OAUTH_PROVIDER = "linux_do";
 const FETCH_TIMEOUT_MS = 20000;
@@ -78,34 +58,23 @@ export const authRoutes = new Hono<ApiContext>()
     if (!/(?:^|,)\s*no-store\s*(?:,|$)/i.test(cacheControl))
       c.header("Cache-Control", "no-store");
   })
-  .get("/auth/login", (c) => beginAuthorization(c, "connect"))
-  .get("/auth/callback", (c) => completeAuthorization(c, "connect"))
-  .get("/auth/liteauth/login", (c) => beginAuthorization(c, "liteauth"))
-  .get("/auth/liteauth/callback", (c) => completeAuthorization(c, "liteauth"))
+  .get("/auth/login", (c) => beginAuthorization(c))
+  .get("/auth/callback", (c) => completeAuthorization(c))
   .post("/auth/logout", async (c) => {
     await logout(c);
     return c.json({ ok: true });
   })
   .get("/session", async (c) => {
-    const [session, loginOptions] = await Promise.all([
-      getOptionalSession(c),
-      readLoginOptions(c.env),
-    ]);
+    const session = await getOptionalSession(c);
     if (!session) {
-      return c.json({
-        user: null,
-        csrfToken: null,
-        attemptCooldown: null,
-        loginOptions,
-      });
+      return c.json({ user: null, csrfToken: null, attemptCooldown: null });
     }
     if (isFirstPartySessionRead(c)) await setImageSessionCookie(c, session);
 
     return c.json({
-      user: { ...session.user, loginProvider: session.loginProvider },
+      user: session.user,
       csrfToken: session.csrfToken,
       attemptCooldown: session.attemptCooldown,
-      loginOptions,
     });
   })
   .get("/me", async (c) => {
@@ -134,7 +103,7 @@ export const authRoutes = new Hono<ApiContext>()
 
     const { isAdmin: _isAdmin, ...profileUser } = session.user;
     return c.json({
-      user: { ...profileUser, email, loginProvider: session.loginProvider },
+      user: { ...profileUser, email },
       csrfToken: session.csrfToken,
     });
   });
@@ -147,33 +116,17 @@ function isFirstPartySessionRead(c: import("hono").Context<ApiContext>) {
   return !origin || origin === c.env.APP_ORIGIN;
 }
 
-async function beginAuthorization(
-  c: Context<ApiContext>,
-  loginProvider: LoginProvider,
-) {
-  let liteAuthVersion: number | undefined;
-  if (loginProvider === "liteauth") {
-    try {
-      liteAuthVersion = await requireLiteAuthLogin(c.env);
-    } catch (error) {
-      if (error instanceof LiteAuthLoginDisabledError)
-        return liteAuthLoginDisabled(c);
-      throw error;
-    }
-  }
-  const config = oauthConfig(c.env, loginProvider);
+async function beginAuthorization(c: Context<ApiContext>) {
+  const config = oauthConfig(c.env);
   if (!config) {
     if (c.req.header("Accept")?.includes("text/html")) {
-      return redirectWithAuthError(c, providerNotConfigured(loginProvider));
+      return redirectWithAuthError(c, "auth_not_configured");
     }
     return c.json(
       {
         error: {
           code: "AUTH_NOT_CONFIGURED",
-          message:
-            loginProvider === "connect"
-              ? "Linux DO Connect is not configured"
-              : "LiteAuth is not configured",
+          message: "Linux DO Connect is not configured",
         },
       },
       503,
@@ -181,112 +134,45 @@ async function beginAuthorization(
   }
   assertRequestUrlOrigin(c);
 
-  const upgrade = c.req.query("intent") === "upgrade";
-  const session = upgrade ? await getOptionalSession(c) : null;
-  if (upgrade && (loginProvider !== "connect" || !session)) {
-    return redirectWithAuthError(c, "upgrade_session_required");
-  }
-
   const returnTo = safeRelativeReturnTo(c.req.query("returnTo"));
   const state = await randomToken(32);
   const stateCookie = await randomToken(32);
-  const stateHash = await hashOAuthValue(state);
-  const pkceVerifier =
-    loginProvider === "liteauth" ? await randomToken(32) : null;
   const now = new Date();
-  const attempt = {
-    stateHash,
-    cookieHash: await hashOAuthValue(stateCookie),
-    loginProvider,
-    expectedUserId: session?.user.id ?? null,
-    pkceVerifierCiphertext: pkceVerifier
-      ? await encryptString(pkceVerifier, c.env, pkceAssociatedData(stateHash))
-      : null,
-    returnTo,
-    createdAt: now,
-    expiresAt: new Date(now.getTime() + OAUTH_STATE_TTL_SECONDS * 1000),
-  };
-  if (liteAuthVersion !== undefined) {
-    try {
-      await c.env.DB.batch([
-        liteAuthLoginGuard(c.env, liteAuthVersion),
-        c.env.DB.prepare(`INSERT INTO oauth_attempts
-          (state_hash,cookie_hash,login_provider,expected_user_id,pkce_verifier_ciphertext,return_to,created_at,expires_at)
-          VALUES (?,?,?,?,?,?,?,?)`).bind(
-          attempt.stateHash,
-          attempt.cookieHash,
-          attempt.loginProvider,
-          attempt.expectedUserId,
-          attempt.pkceVerifierCiphertext,
-          attempt.returnTo,
-          attempt.createdAt.getTime(),
-          attempt.expiresAt.getTime(),
-        ),
-      ]);
-    } catch (error) {
-      try {
-        await requireLiteAuthLogin(c.env, liteAuthVersion);
-      } catch (settingsError) {
-        if (settingsError instanceof LiteAuthLoginDisabledError)
-          return liteAuthLoginDisabled(c);
-        throw settingsError;
-      }
-      throw error;
-    }
-  } else {
-    await createDb(c.env.DB).insert(oauthAttempts).values(attempt);
-  }
+  await createDb(c.env.DB)
+    .insert(oauthAttempts)
+    .values({
+      stateHash: await hashOAuthValue(state),
+      cookieHash: await hashOAuthValue(stateCookie),
+      returnTo,
+      createdAt: now,
+      expiresAt: new Date(now.getTime() + OAUTH_STATE_TTL_SECONDS * 1000),
+    });
 
-  const provider = PROVIDERS[loginProvider];
-  setCookie(c, provider.cookieName, stateCookie, {
+  setCookie(c, CONNECT.cookieName, stateCookie, {
     httpOnly: true,
     secure: secureCookiesForOrigin(config.appOrigin),
     sameSite: "Lax",
-    path: provider.callbackPath,
+    path: CONNECT.callbackPath,
     maxAge: OAUTH_STATE_TTL_SECONDS,
   });
 
-  const authorizeUrl = new URL(provider.authorizeUrl);
+  const authorizeUrl = new URL(CONNECT.authorizeUrl);
   authorizeUrl.searchParams.set("response_type", "code");
   authorizeUrl.searchParams.set("client_id", config.clientId);
-  authorizeUrl.searchParams.set(
-    "redirect_uri",
-    callbackUrl(config.appOrigin, loginProvider),
-  );
-  authorizeUrl.searchParams.set("scope", provider.scope);
+  authorizeUrl.searchParams.set("redirect_uri", callbackUrl(config.appOrigin));
+  authorizeUrl.searchParams.set("scope", CONNECT.scope);
   authorizeUrl.searchParams.set("state", state);
-  if (pkceVerifier) {
-    authorizeUrl.searchParams.set(
-      "code_challenge",
-      await pkceChallenge(pkceVerifier),
-    );
-    authorizeUrl.searchParams.set("code_challenge_method", "S256");
-  }
 
   return c.redirect(authorizeUrl.toString(), 302);
 }
 
-async function completeAuthorization(
-  c: Context<ApiContext>,
-  loginProvider: LoginProvider,
-) {
+async function completeAuthorization(c: Context<ApiContext>) {
   const state = c.req.query("state");
-  const provider = PROVIDERS[loginProvider];
-  const stateCookie = getCookie(c, provider.cookieName);
-  deleteCookie(c, provider.cookieName, { path: provider.callbackPath });
-  let liteAuthVersion: number | undefined;
-  let liteAuthDisabled = false;
-  if (loginProvider === "liteauth") {
-    try {
-      liteAuthVersion = await requireLiteAuthLogin(c.env);
-    } catch (error) {
-      if (!(error instanceof LiteAuthLoginDisabledError)) throw error;
-      liteAuthDisabled = true;
-    }
-  }
-  const config = oauthConfig(c.env, loginProvider);
-  if (!config && !liteAuthDisabled) {
-    return redirectWithAuthError(c, providerNotConfigured(loginProvider));
+  const stateCookie = getCookie(c, CONNECT.cookieName);
+  deleteCookie(c, CONNECT.cookieName, { path: CONNECT.callbackPath });
+  const config = oauthConfig(c.env);
+  if (!config) {
+    return redirectWithAuthError(c, "auth_not_configured");
   }
   try {
     assertRequestUrlOrigin(c);
@@ -294,172 +180,60 @@ async function completeAuthorization(
     return redirectWithAuthError(c, "invalid_origin");
   }
   if (!state || !stateCookie) {
-    if (liteAuthDisabled) return liteAuthLoginDisabled(c);
     return redirectWithAuthError(c, "invalid_state");
   }
 
-  const attempt = await consumeOAuthAttempt(
-    c.env.DB,
-    state,
-    stateCookie,
-    loginProvider,
-  );
-  if (liteAuthDisabled) return liteAuthLoginDisabled(c);
+  const attempt = await consumeOAuthAttempt(c.env.DB, state, stateCookie);
   if (!attempt) {
     return redirectWithAuthError(c, "invalid_state");
   }
-  if (!config)
-    return redirectWithAuthError(c, providerNotConfigured(loginProvider));
 
   const code = c.req.query("code");
   const providerError = safeProviderError(c.req.query("error"));
   if (providerError || !code) {
     return redirectWithAuthError(
       c,
-      providerError === "access_denied"
-        ? providerError
-        : providerFailed(loginProvider),
+      providerError === "access_denied" ? providerError : "auth_failed",
     );
-  }
-  if (
-    loginProvider === "liteauth" &&
-    (c.req.query("iss") !== LITEAUTH_ISSUER ||
-      new URL(c.req.url).searchParams.getAll("iss").length !== 1 ||
-      !attempt.pkceVerifierCiphertext ||
-      attempt.expectedUserId)
-  ) {
-    return redirectWithAuthError(c, providerFailed(loginProvider));
-  }
-  let upgradeSession: AuthenticatedSession | null = null;
-  if (attempt.expectedUserId) {
-    const session = await getOptionalSession(c);
-    if (session?.user.id !== attempt.expectedUserId) {
-      return redirectWithAuthError(c, "upgrade_session_changed");
-    }
-    upgradeSession = session;
   }
 
   try {
-    const pkceVerifier = attempt.pkceVerifierCiphertext
-      ? await decryptString(
-          attempt.pkceVerifierCiphertext,
-          c.env,
-          pkceAssociatedData(attempt.stateHash),
-        )
-      : null;
-    if (pkceVerifier && !isOAuthToken(pkceVerifier)) {
-      throw new AuthFlowError("token", "invalid_response");
-    }
-    if (liteAuthVersion !== undefined)
-      await requireLiteAuthLogin(c.env, liteAuthVersion);
-    const token = await exchangeCodeForToken(config, code, pkceVerifier);
-    if (liteAuthVersion !== undefined)
-      await requireLiteAuthLogin(c.env, liteAuthVersion);
-    const profile = await fetchLinuxDoUser(token.accessToken, loginProvider);
-    if (liteAuthVersion !== undefined)
-      await requireLiteAuthLogin(c.env, liteAuthVersion);
-    if (attempt.expectedUserId) {
-      // The original session can be revoked while token/profile requests are
-      // in flight. Do not overwrite a logout or account switch when it returns.
-      const session = await getOptionalSession(c);
-      if (session?.user.id !== attempt.expectedUserId) {
-        return redirectWithAuthError(c, "upgrade_session_changed");
-      }
-      upgradeSession = session;
-      const expected = await createDb(c.env.DB)
-        .select({ provider: users.provider, externalId: users.externalId })
-        .from(users)
-        .where(eq(users.id, attempt.expectedUserId))
-        .get();
-      if (
-        expected?.provider !== OAUTH_PROVIDER ||
-        expected.externalId !== profile.externalId
-      ) {
-        return redirectWithAuthError(c, "identity_mismatch");
-      }
-    }
-    if (upgradeSession) {
-      if (!(await upgradeUserAndSession(c.env, profile, upgradeSession))) {
-        return redirectWithAuthError(c, "upgrade_session_changed");
-      }
-    } else {
-      const sessionUser: SessionUser =
-        loginProvider === "liteauth"
-          ? {
-              provider: OAUTH_PROVIDER,
-              externalId: profile.externalId,
-              statement: await prepareUserUpsert(c.env, profile, loginProvider),
-            }
-          : await upsertUser(c.env, profile, loginProvider);
-      try {
-        await createSession(c, sessionUser, loginProvider, liteAuthVersion);
-      } catch (error) {
-        if (error instanceof LiteAuthLoginDisabledError) throw error;
-        throw new AuthFlowError("session", "invalid_response");
-      }
+    const token = await exchangeCodeForToken(config, code);
+    const profile = await fetchLinuxDoUser(token.accessToken);
+    const userId = await upsertUser(c.env, profile);
+    try {
+      await createSession(c, userId);
+    } catch {
+      throw new AuthFlowError("session", "invalid_response");
     }
 
     c.header("Referrer-Policy", "no-referrer");
     return c.redirect(attempt.returnTo, 302);
   } catch (error) {
-    if (error instanceof LiteAuthLoginDisabledError)
-      return liteAuthLoginDisabled(c);
-    logSensitiveSafeAuthFailure(
-      error,
-      loginProvider === "connect" ? "oauth_callback" : "liteauth_callback",
-    );
-    return redirectWithAuthError(c, providerFailed(loginProvider));
+    logSensitiveSafeAuthFailure(error, "oauth_callback");
+    return redirectWithAuthError(c, "auth_failed");
   }
 }
 
-function liteAuthLoginDisabled(c: Context<ApiContext>) {
-  if (c.req.header("Accept")?.includes("text/html"))
-    return redirectWithAuthError(c, "liteauth_disabled");
-  return c.json(
-    {
-      error: {
-        code: "LITEAUTH_LOGIN_DISABLED",
-        message: "LiteAUTH 登录暂时关闭，请使用 Linux DO Connect 登录。",
-      },
-    },
-    403,
-  );
-}
-
-export function oauthConfig(
-  env: ApiBindings,
-  loginProvider: LoginProvider = "connect",
-) {
+export function oauthConfig(env: ApiBindings) {
   const appOrigin = configuredAppOrigin(env);
   if (!appOrigin) {
     return null;
   }
 
-  const clientId =
-    loginProvider === "connect"
-      ? env.CONNECT_CLIENT_ID
-      : env.LITEAUTH_CLIENT_ID;
-  const clientSecret =
-    loginProvider === "connect"
-      ? env.CONNECT_CLIENT_SECRET
-      : env.LITEAUTH_CLIENT_SECRET;
+  const clientId = env.CONNECT_CLIENT_ID;
+  const clientSecret = env.CONNECT_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
     return null;
   }
 
-  return {
-    appOrigin,
-    clientId,
-    clientSecret,
-    loginProvider,
-  };
+  return { appOrigin, clientId, clientSecret };
 }
 
 async function consumeOAuthAttempt(
   database: D1Database,
   state: string,
   stateCookie: string,
-  loginProvider: LoginProvider,
 ) {
   if (!isOAuthToken(state) || !isOAuthToken(stateCookie)) {
     return null;
@@ -472,16 +246,10 @@ async function consumeOAuthAttempt(
       and(
         eq(oauthAttempts.stateHash, await hashOAuthValue(state)),
         eq(oauthAttempts.cookieHash, await hashOAuthValue(stateCookie)),
-        eq(oauthAttempts.loginProvider, loginProvider),
         gt(oauthAttempts.expiresAt, now),
       ),
     )
-    .returning({
-      returnTo: oauthAttempts.returnTo,
-      stateHash: oauthAttempts.stateHash,
-      pkceVerifierCiphertext: oauthAttempts.pkceVerifierCiphertext,
-      expectedUserId: oauthAttempts.expectedUserId,
-    });
+    .returning({ returnTo: oauthAttempts.returnTo });
 
   return attempt ?? null;
 }
@@ -489,32 +257,19 @@ async function consumeOAuthAttempt(
 async function exchangeCodeForToken(
   config: NonNullable<ReturnType<typeof oauthConfig>>,
   code: string,
-  pkceVerifier: string | null,
 ) {
-  const provider = PROVIDERS[config.loginProvider];
-  const body = await fetchJsonWithTimeout("token", provider.tokenUrl, {
+  const body = await fetchJsonWithTimeout("token", CONNECT.tokenUrl, {
     method: "POST",
     redirect: "manual",
     headers: {
-      ...(config.loginProvider === "connect"
-        ? {
-            Authorization: `Basic ${btoa(`${config.clientId}:${config.clientSecret}`)}`,
-          }
-        : {}),
+      Authorization: `Basic ${btoa(`${config.clientId}:${config.clientSecret}`)}`,
       "Content-Type": "application/x-www-form-urlencoded",
       Accept: "application/json",
     },
     body: new URLSearchParams({
       grant_type: "authorization_code",
       code,
-      redirect_uri: callbackUrl(config.appOrigin, config.loginProvider),
-      ...(config.loginProvider === "liteauth" && pkceVerifier
-        ? {
-            client_id: config.clientId,
-            client_secret: config.clientSecret,
-            code_verifier: pkceVerifier,
-          }
-        : {}),
+      redirect_uri: callbackUrl(config.appOrigin),
     }),
   });
 
@@ -534,25 +289,16 @@ async function exchangeCodeForToken(
   return { accessToken: body.access_token };
 }
 
-async function fetchLinuxDoUser(
-  accessToken: string,
-  loginProvider: LoginProvider,
-) {
-  const body = await fetchJsonWithTimeout(
-    "profile",
-    PROVIDERS[loginProvider].userUrl,
-    {
-      redirect: "manual",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: "application/json",
-      },
+async function fetchLinuxDoUser(accessToken: string) {
+  const body = await fetchJsonWithTimeout("profile", CONNECT.userUrl, {
+    redirect: "manual",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: "application/json",
     },
-  );
+  });
 
-  return loginProvider === "connect"
-    ? parseLinuxDoUser(body)
-    : parseLiteAuthUser(body);
+  return parseLinuxDoUser(body);
 }
 
 export type LinuxDoProfile = {
@@ -589,46 +335,16 @@ export function parseLinuxDoUser(body: unknown): LinuxDoProfile {
   };
 }
 
-export function parseLiteAuthUser(body: unknown): LinuxDoProfile {
-  if (
-    !isRecord(body) ||
-    body.auth_source !== "linuxdo" ||
-    body.login_method !== "lite_self_app"
-  ) {
-    throw new AuthFlowError("profile", "invalid_response");
-  }
-  // LiteAuth's sub and liteauth_user_id identify its own account, not Linux DO.
-  return { ...parseLinuxDoUser(body), email: null };
-}
-
-async function upsertUser(
-  env: ApiBindings,
-  profile: LinuxDoProfile,
-  loginProvider: LoginProvider,
-) {
-  const statement = await prepareUserUpsert(env, profile, loginProvider);
-  const { results } = await statement.all<{ id: string }>();
-  const row = results[0];
-  if (!row) throw new AuthFlowError("persistence", "invalid_response");
-  return row.id;
-}
-
-async function prepareUserUpsert(
-  env: ApiBindings,
-  profile: LinuxDoProfile,
-  loginProvider: LoginProvider,
-) {
+async function upsertUser(env: ApiBindings, profile: LinuxDoProfile) {
   const now = new Date();
-  const db = createDb(env.DB);
-  const emailCiphertext =
-    loginProvider === "connect" && profile.email
-      ? await encryptString(
-          profile.email,
-          env,
-          emailAssociatedData(OAUTH_PROVIDER, profile.externalId),
-        )
-      : null;
-  const query = db
+  const emailCiphertext = profile.email
+    ? await encryptString(
+        profile.email,
+        env,
+        emailAssociatedData(OAUTH_PROVIDER, profile.externalId),
+      )
+    : null;
+  const [row] = await createDb(env.DB)
     .insert(users)
     .values({
       id: crypto.randomUUID(),
@@ -638,7 +354,6 @@ async function prepareUserUpsert(
       displayName: profile.displayName,
       emailCiphertext,
       avatarUrl: profile.avatarUrl,
-      officialConnectVerified: loginProvider === "connect",
       active: profile.active,
       createdAt: now,
       updatedAt: now,
@@ -649,77 +364,16 @@ async function prepareUserUpsert(
       set: {
         username: profile.username,
         displayName: profile.displayName,
-        ...(loginProvider === "connect" ? { emailCiphertext } : {}),
-        avatarUrl:
-          loginProvider === "connect"
-            ? profile.avatarUrl
-            : sql`COALESCE(${profile.avatarUrl},${users.avatarUrl})`,
-        // Only successful official Connect authentication can add this fact.
-        // LiteAuth never clears it, including a callback that arrives late.
-        officialConnectVerified:
-          loginProvider === "connect" ? true : users.officialConnectVerified,
+        emailCiphertext,
+        avatarUrl: profile.avatarUrl,
         updatedAt: now,
         lastLoginAt: now,
       },
       setWhere: eq(users.active, true),
     })
     .returning({ id: users.id });
-  const { sql: statementSql, params } = query.toSQL();
-  return env.DB.prepare(statementSql).bind(...params);
-}
-
-async function upgradeUserAndSession(
-  env: ApiBindings,
-  profile: LinuxDoProfile,
-  session: AuthenticatedSession,
-) {
-  const now = new Date();
-  const emailCiphertext = profile.email
-    ? await encryptString(
-        profile.email,
-        env,
-        emailAssociatedData(OAUTH_PROVIDER, profile.externalId),
-      )
-    : null;
-  const eligibility = `SELECT 1 FROM sessions s JOIN users u ON u.id=s.user_id
-    WHERE s.token_hash=? AND s.user_id=? AND s.expires_at>CAST(unixepoch('subsec')*1000 AS INTEGER)
-    AND u.provider=? AND u.external_id=? AND u.active=1`;
-  const guardValues = [
-    session.tokenHash,
-    session.user.id,
-    OAUTH_PROVIDER,
-    profile.externalId,
-  ];
-  try {
-    await env.DB.batch([
-      env.DB.prepare(
-        `SELECT json(CASE WHEN EXISTS(${eligibility}) THEN '{}' ELSE '' END) AS upgrade_session_guard`,
-      ).bind(...guardValues),
-      env.DB.prepare(`UPDATE users SET username=?,display_name=?,email_ciphertext=?,avatar_url=?,
-        official_connect_verified=1,updated_at=?,last_login_at=? WHERE id=?`).bind(
-        profile.username,
-        profile.displayName,
-        emailCiphertext,
-        profile.avatarUrl,
-        now.getTime(),
-        now.getTime(),
-        session.user.id,
-      ),
-      env.DB.prepare(
-        "UPDATE sessions SET login_provider='connect' WHERE token_hash=? AND user_id=?",
-      ).bind(session.tokenHash, session.user.id),
-    ]);
-  } catch (error) {
-    const eligible = await env.DB.prepare(eligibility)
-      .bind(...guardValues)
-      .first();
-    if (!eligible) return false;
-    throw error;
-  }
-  // Preserve the original token: a logout before this batch makes its guard
-  // fail; a logout after it still deletes that same token. No late Set-Cookie
-  // or newly inserted session can revive the account after logout.
-  return true;
+  if (!row) throw new AuthFlowError("persistence", "invalid_response");
+  return row.id;
 }
 
 export function emailAssociatedData(provider: string, externalId: string) {
@@ -780,33 +434,8 @@ async function fetchJsonWithTimeout(
   }
 }
 
-function callbackUrl(appOrigin: string, loginProvider: LoginProvider) {
-  return `${appOrigin}${PROVIDERS[loginProvider].callbackPath}`;
-}
-
-function providerNotConfigured(loginProvider: LoginProvider) {
-  return loginProvider === "connect"
-    ? "auth_not_configured"
-    : "liteauth_not_configured";
-}
-
-function providerFailed(loginProvider: LoginProvider) {
-  return loginProvider === "connect" ? "auth_failed" : "liteauth_failed";
-}
-
-export function pkceAssociatedData(stateHash: string) {
-  return `oauth:liteauth:${LITEAUTH_ISSUER}:${stateHash}:pkce`;
-}
-
-async function pkceChallenge(verifier: string) {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(verifier),
-  );
-  return btoa(String.fromCharCode(...new Uint8Array(digest)))
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replaceAll("=", "");
+function callbackUrl(appOrigin: string) {
+  return `${appOrigin}${CONNECT.callbackPath}`;
 }
 
 async function hashOAuthValue(value: string) {

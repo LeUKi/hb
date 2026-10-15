@@ -47,8 +47,8 @@ async function fixture(prizes: number, population = prizes) {
     externalId: `a_${suffix}`,
     username: `owner_${suffix}`,
   };
-  await env.DB.prepare(`INSERT INTO users(id,provider,external_id,username,display_name,created_at,updated_at,official_connect_verified)
-    SELECT json_extract(value,'$.id'),'linux_do',json_extract(value,'$.externalId'),json_extract(value,'$.username'),json_extract(value,'$.username'),${nowSql},${nowSql},1 FROM json_each(?)`)
+  await env.DB.prepare(`INSERT INTO users(id,provider,external_id,username,display_name,created_at,updated_at)
+    SELECT json_extract(value,'$.id'),'linux_do',json_extract(value,'$.externalId'),json_extract(value,'$.username'),json_extract(value,'$.username'),${nowSql},${nowSql} FROM json_each(?)`)
     .bind(JSON.stringify([author, ...people]))
     .run();
   const merchant = await createMerchant(env, authorId, {

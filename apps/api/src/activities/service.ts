@@ -27,10 +27,6 @@ import {
   type UpdateActivityInput,
 } from "@hb/contracts";
 import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
-import {
-  hasOfficialConnect,
-  requireOfficialConnect,
-} from "../auth/eligibility";
 import { createDb } from "../db/client";
 import { activities, users } from "../db/schema";
 import type { ApiBindings } from "../env";
@@ -223,8 +219,6 @@ async function openingBlockedReason(
 ): Promise<LdcOpeningBlockedReason | undefined> {
   if (row.openedAt !== null || row.rewardType !== "ldc" || !row.merchantId)
     return undefined;
-  if (!(await hasOfficialConnect(env, row.authorId)))
-    return "OFFICIAL_CONNECT_REQUIRED";
   if (timedDrawMoney(row) && env.LDC_TIMED_DRAW_ENABLED !== "true")
     return "TIMED_DRAW_NOT_ENABLED";
   const merchant = await ownedMerchant(env, row.merchantId, row.authorId);
@@ -238,8 +232,6 @@ export async function prepareActivityOpening(
   authorId: string,
 ) {
   const row = await ownedActivity(env, id, authorId);
-  if (row.openedAt === null && row.rewardType === "ldc")
-    await requireOfficialConnect(env, authorId);
   if (timedDrawMoney(row) && env.LDC_TIMED_DRAW_ENABLED !== "true") return null;
   if (row.openedAt !== null || row.paymentMode !== "real" || !row.merchantId)
     return null;
@@ -271,9 +263,6 @@ async function author(env: ApiBindings, authorId: string) {
       username: users.username,
       displayName: users.displayName,
       avatarUrl: users.avatarUrl,
-      accountTier: sql<
-        "standard" | "lite"
-      >`CASE WHEN ${users.officialConnectVerified}=1 THEN 'standard' ELSE 'lite' END`,
     })
     .from(users)
     .where(eq(users.id, authorId))
@@ -502,7 +491,6 @@ export async function createActivity(
   const checked = newActivityInputSchema.safeParse(input.activity);
   if (!checked.success)
     invalidActivity(checked.error.issues[0]?.message ?? "请检查新活动配置");
-  await requireOfficialConnect(env, authorId);
   const merchant = await ownedMerchant(
     env,
     input.activity.merchantId,
@@ -531,7 +519,7 @@ export async function createActivity(
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO activities
         (id, author_id, creation_request_id, creation_digest, title, reward_type, participation_mode, merchant_id, payment_mode, force_dedicated, join_square, topic_id, post_number, allocation, config, total_count, draw_state, created_at, updated_at)
-        VALUES (?, CASE WHEN ?=0 OR EXISTS(SELECT 1 FROM users WHERE id=? AND official_connect_verified=1 AND active=1) THEN ? ELSE NULL END, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+        VALUES (?, CASE WHEN ?=0 OR EXISTS(SELECT 1 FROM users WHERE id=? AND active=1) THEN ? ELSE NULL END, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
         id,
         1,
         authorId,
@@ -561,7 +549,6 @@ export async function createActivity(
     // A parallel retry may have won the unique (author, request) constraint.
     const winner = await previous();
     if (!winner) {
-      await requireOfficialConnect(env, authorId);
       throw error;
     }
     if (winner.creationDigest !== requestDigest)
@@ -599,7 +586,6 @@ export async function updateActivity(
     (input.activity.participationMode ?? "password") !== row.participationMode
   )
     invalidActivity("开放后不能修改参与方式");
-  if (row.openedAt === null) await requireOfficialConnect(env, authorId);
   if (
     input.activity.quantityVisibility !== "exact" &&
     input.activity.quantityVisibility !== "fuzzy"
@@ -709,7 +695,7 @@ export async function updateActivity(
     activityWriteGuard(env.DB, id, authorId, input.version),
     env.DB.prepare(`UPDATE activities SET
       version = CASE WHEN version = ? AND author_id = ? AND deleted_at IS NULL
-      AND (?=0 OR EXISTS(SELECT 1 FROM users WHERE id=activities.author_id AND official_connect_verified=1 AND active=1))
+      AND (?=0 OR EXISTS(SELECT 1 FROM users WHERE id=activities.author_id AND active=1))
       THEN version + 1 ELSE NULL END,
       title = ?, reward_type = ?, participation_mode = ?, merchant_id = ?, payment_mode = ?, force_dedicated = ?, join_square = ?, topic_id = ?, post_number = ?, allocation = ?, config = ?, total_count = ?, draw_state = ?, updated_at = ?, deadline = ?
       WHERE id = ?`).bind(
@@ -758,7 +744,6 @@ export async function updateActivity(
     await env.DB.batch(statements);
   } catch (error) {
     const current = await ownedActivity(env, id, authorId);
-    if (current.openedAt === null) await requireOfficialConnect(env, authorId);
     if (current.version !== input.version) activityConflict();
     throw error;
   }
@@ -775,7 +760,6 @@ export async function openActivity(
 ) {
   const row = await ownedActivity(env, id, authorId);
   if (row.openedAt !== null) return managed(env, row);
-  if (row.rewardType === "ldc") await requireOfficialConnect(env, authorId);
   if (timedDrawMoney(row) && env.LDC_TIMED_DRAW_ENABLED !== "true")
     throw new ActivityError(
       409,
@@ -925,7 +909,7 @@ export async function openActivity(
       version = CASE WHEN version = ? AND author_id = ? AND deleted_at IS NULL AND opened_at IS NULL AND merchant_id IS ? AND ${openingDeadlineSql} > ${databaseNow} AND ${openingDeadlineSql} <= 8640000000000000
       AND reward_type='ldc'
       AND EXISTS(SELECT 1 FROM merchants m WHERE m.id=activities.merchant_id AND m.author_id=activities.author_id AND m.usage_status='current')
-      AND EXISTS(SELECT 1 FROM users WHERE id=activities.author_id AND official_connect_verified=1 AND active=1)
+      AND EXISTS(SELECT 1 FROM users WHERE id=activities.author_id AND active=1)
       AND (payment_mode IS NOT 'real' OR ?=1 OR (
         EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_open=1)
         AND EXISTS(SELECT 1 FROM merchants m JOIN merchant_credentials c ON c.merchant_id=m.id AND c.version=m.credential_version
@@ -950,8 +934,6 @@ export async function openActivity(
   } catch (error) {
     const current = await ownedActivity(env, id, authorId);
     if (current.openedAt !== null) return managed(env, current);
-    if (current.rewardType === "ldc")
-      await requireOfficialConnect(env, authorId);
     if (current.version !== version) activityConflict();
     const blocked = await openingBlockedReason(env, current);
     if (blocked)

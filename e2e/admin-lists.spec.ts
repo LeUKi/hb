@@ -68,9 +68,7 @@ function user(index: number, overrides: Partial<AdminUserListItem> = {}) {
     username: `user_${index}`,
     displayName: `用户 ${index}`,
     avatarUrl: null,
-    accountTier: index % 2 ? "standard" : "lite",
     active: index % 4 !== 0,
-    officialConnectVerified: index % 2 === 1,
     createdAt: baseTime - Math.floor(index / 3) * 1000,
     lastLoginAt: index % 3 ? baseTime - index * 5000 : null,
     ...overrides,
@@ -107,14 +105,14 @@ function payment(index: number, overrides: Partial<AdminPaymentListItem> = {}) {
 function audit(index: number, overrides: Partial<AdminAuditEntry> = {}) {
   return {
     id: `audit-${index}`,
-    type: index % 2 ? "login_settings" : "attempt_rate_limits",
+    type: "attempt_rate_limits",
     actorUserId: `admin-${index % 2}`,
     actorDisplayName: `管理员 ${index % 2}`,
     createdAt: baseTime - Math.floor(index / 3) * 1000,
     previousVersion: index,
     nextVersion: index + 1,
-    before: index % 2 ? { liteauthEnabled: true } : { homeIntervalSeconds: 60 },
-    after: index % 2 ? { liteauthEnabled: false } : { homeIntervalSeconds: 30 },
+    before: { homeIntervalSeconds: 60 },
+    after: { homeIntervalSeconds: 30 },
     ...overrides,
   } satisfies AdminAuditEntry;
 }
@@ -136,14 +134,10 @@ async function mockAdmin(page: Page) {
         username: "admin",
         displayName: "管理员",
         avatarUrl: null,
-        accountTier: "standard",
-        loginProvider: "connect",
-        canUseLdc: true,
         isAdmin: true,
       },
       csrfToken: "csrf-a",
       attemptCooldown: null,
-      loginOptions: { liteauthEnabled: true },
     },
     reads: [] as { kind: ListKind; query: Record<string, string> }[],
     failNext: new Set<ListKind | DetailKind>(),
@@ -189,18 +183,6 @@ async function mockAdmin(page: Page) {
           },
           paymentsByMode: [],
           maintenance: [],
-        },
-      });
-    if (path === "/api/admin/login-settings")
-      return route.fulfill({
-        json: {
-          config: {
-            version: 1,
-            liteauthEnabled: true,
-            updatedAt: baseTime,
-            updatedByUserId: "admin-user",
-          },
-          recentChanges: [],
         },
       });
     if (path === "/api/admin/rate-limits")
@@ -388,8 +370,6 @@ function filterUsers(query: Record<string, string>) {
       )
     )
       return false;
-    if (query.tier && query.tier !== "all" && item.accountTier !== query.tier)
-      return false;
     if (query.state === "active" && !item.active) return false;
     if (query.state === "disabled" && item.active) return false;
     return true;
@@ -536,7 +516,7 @@ test("管理员六个入口在桌面和窄屏放大文字下不横溢，长筛�
     { path: "/admin/activities", heading: "活动" },
     { path: "/admin/users", heading: "用户" },
     { path: "/admin/payments", heading: "付款" },
-    { path: "/admin/settings", heading: "登录方式" },
+    { path: "/admin/settings", heading: "参与尝试限流" },
     { path: "/admin/audit", heading: "操作记录" },
   ];
 
@@ -734,8 +714,6 @@ test("用户详情在桌面侧栏展示，关闭后回焦搜索入口，详情�
     ),
   ).toBe(true);
   await expect(panel.getByRole("heading", { name: "用户 3" })).toBeVisible();
-  await expect(panel.getByText("永久账号资格")).toBeVisible();
-  await expect(panel.getByText("已获得")).toBeVisible();
   await expect(panel.getByText("账号状态")).toBeVisible();
   await expect(panel.getByText("可用")).toBeVisible();
   await expect(panel.getByText("注册时间")).toBeVisible();
@@ -885,18 +863,18 @@ test("操作记录保留类型、操作者、日期筛选和游标分页", async
   await page.getByLabel("搜索操作者").fill("管理员 1");
   await page.getByLabel("开始日期").fill("2026-10-12");
   await page.getByLabel("结束日期").fill("2026-10-12");
-  await page.getByLabel("记录类型").selectOption("login_settings");
+  await page.getByLabel("记录类型").selectOption("attempt_rate_limits");
   await page.getByRole("button", { name: "搜索", exact: true }).click();
 
   await expect(page).toHaveURL(/\/admin\/audit\?/);
-  await expect(page).toHaveURL(/type=login_settings/);
+  await expect(page).toHaveURL(/type=attempt_rate_limits/);
   await expect(page).toHaveURL(/actor=/);
   expect(state.reads.at(-1)?.query).toMatchObject({
-    type: "login_settings",
+    type: "attempt_rate_limits",
     actor: "管理员 1",
   });
   await expect(
-    page.getByRole("cell", { name: "登录方式" }).first(),
+    page.getByRole("cell", { name: "尝试间隔" }).first(),
   ).toBeVisible();
   await expect(
     page.getByRole("cell", { name: "管理员 1" }).first(),

@@ -33,15 +33,13 @@
 
 本轮 LiteAuth 双登录、永久账号资格和本人账号入口调整已完成，最新 `bun run check` 的837项测试通过（工具33、契约56、API584、页面146、完整应用18）。[Stage](https://staging.meme.442224.xyz)为 `build @ 1791262134`，[生产](https://meme.442224.xyz)为 `build @ 1791263153`，两环境使用同一源码候选、独立应用及Secrets。真实K.lafish分别经LiteAuth登录两环境，青春版资格、头像、缺少邮箱及LDC能力关闭均已核对；Stage另外完成文本创建、领取、继续解口令、刷新／重登录幂等、公开标签及商户限制。生产只验证登录与既有记录，没有新增活动或付款；原lafish官方账号及邮箱、原12笔已确认付款保持。生产控制version10、三项许可1，实际live、timed=true、三项环境停止开关false；最终诊断无警告，发布后备份及本地隔离恢复通过，没有恢复生产数据库。真实跨来源升级与不降级的完整矩阵以本地测试为证据，不将两个不同账号的登录写成同账号升级。准确版本、备份及兼容回退记录见[实施记录](docs/implementation-phase-1.md)。
 
-## LiteAuth 双登录与账号资格
+## 取消青春版（2026-10-15）
 
-登录入口提供“官方 Connect”和“LiteAuth 青春版”，两者用 Linux DO 稳定用户 ID 合并为同一个本站账号，不按用户名、邮箱或 LiteAuth 内部 ID 合并。曾通过本站官方 Connect 登录的账号永久保持普通资格；新 LiteAuth-only 账号为青春版，官方登录后升级，后续 LiteAuth 登录不会降级。当前会话来源和账号资格分别展示。
-
-新建表单直接配置 LDC 固定、自定义、随机金额或限时开奖，不再提供奖励类型切换。青春版继续登录、浏览和账号管理，创建、兑奖、报名及商户配置要求官方 Connect 升级；首页 UUID、Emoji、本站活动链接和严格帖子定位仍可跳转。拒绝发生在生成提交、尝试记录、冷却、分配及报名之前。升级必须核对同一 Linux DO ID，成功回到原页，用户主动提交。
+青春版与 LiteAuth 登录已取消（[决定与范围](docs/redesign/06-production.md#1-取消青春版2c-决定)）：只保留官方 Connect 登录，所有账号都是普通账号，不再有账号类型、升级入口或 `OFFICIAL_CONNECT_REQUIRED` 限制。迁移 `0027_retire_lite_accounts.sql` 删除 LiteAuth 会话和未完成的 LiteAuth／升级授权，这些用户改用 Connect 重新登录，原账号和记录不变；它必须在新 Worker 部署**之前**执行。`users.official_connect_verified`、会话来源等旧列和登录设置表保留一个版本以便回滚，之后的迁移删除。目前只在 `redesign` 分支和预发布环境，生产仍是 LiteAuth 双登录版本。
 
 文本 / CDK 功能已从运行时退役；旧数据原样保留但不读取、解密、展示或后台恢复，旧资源按未找到处理。数据库结构和历史迁移保留，无数据迁移。清理范围与本地验收见 [LDC 收敛记录](docs/ldc-only-retirement.md)。
 
-用户资料增加公开的“青春版”标签，普通账号不显示该标签；邮箱和当前登录来源仍仅本人可见。右上角本人头像和昵称直接进入 `/account`，不打开资料弹层；其他用户保留头像、昵称及详细卡片。LiteAuth 更新有效昵称、用户名和头像，不清空已有 Connect 邮箱，缺失或无效头像保留已有值。活动、商户、付款仍按本站记录 ID 关联，付款的上游 Client ID 和原用户名快照保持原意。
+邮箱仅本人可见。右上角本人头像和昵称直接进入 `/account`，不打开资料弹层；其他用户保留头像、昵称及详细卡片。活动、商户、付款仍按本站记录 ID 关联，付款的上游 Client ID 和原用户名快照保持原意。
 
 本轮不接入邮件、零钱或挂账，不新增真实资金测试，不自动提交或推送 Git。迁移、应用设置及兼容回退要求见[部署说明](docs/deployment-readiness.md)。
 
@@ -93,21 +91,19 @@ bun run dev
 
 打开 <http://127.0.0.1:5173>。开发命令同时启动 Web Worker 与辅助 API Worker，前端通过同域 `/api/health` 检查后端；`/status` 可直接访问和刷新。
 
-匿名浏览和健康检查无需 Cloudflare 登录、OAuth 或 LDC 凭证，绑定均使用本地资源。登录需要在 `apps/api/.dev.vars` 中配置对应提供方，参考 [API 环境变量示例](apps/api/.dev.vars.example)。开发服务启动后修改配置需要重启；未配置一个提供方不影响另一个已配置入口。
+匿名浏览和健康检查无需 Cloudflare 登录、OAuth 或 LDC 凭证，绑定均使用本地资源。登录需要在 `apps/api/.dev.vars` 中配置 Connect，参考 [API 环境变量示例](apps/api/.dev.vars.example)。开发服务启动后修改配置需要重启。
 
-## 双登录本地接入
+## 登录本地接入
 
 将 `apps/api/.dev.vars.example` 复制为 `apps/api/.dev.vars`，设置 `APP_ORIGIN`、`CONNECT_CLIENT_ID` 和 `CONNECT_CLIENT_SECRET`。本地默认 origin 为 `http://127.0.0.1:5173`，在 Connect 中登记的回调必须为该 origin 加 `/api/auth/callback`。如果 Connect 要求 HTTPS，应使用已配置的开发域名并同步 origin，不能绕过证书验证。
 
-LiteAuth 使用独立的 `LITEAUTH_CLIENT_ID`、`LITEAUTH_CLIENT_SECRET`，回调为同一 origin 加 `/api/auth/liteauth/callback`。应用设为服务端 confidential、`lite_only=true`、最低信任等级0、启用 PKCE，本站请求 `profile`，令牌交换使用 `client_secret_post` 和 PKCE S256。固定 issuer 为 `https://liteauth.442224.xyz/api/auth`。缺少其凭证时仅 LiteAuth 入口不可用，浏览器得到 `liteauth_not_configured` 提示；不要用官方 Connect 凭证代替。环境独立应用、远程回调及发布步骤见[部署说明](docs/deployment-readiness.md)。
+环境独立应用、远程回调及发布步骤见[部署说明](docs/deployment-readiness.md)。
 
-远程API需保留 `global_fetch_strictly_public` 兼容标志，使同zone的固定LiteAuth公网请求匹配其API Route；仅更新兼容日期不能替代此标志。发布预检拒绝缺失标志，实际Stage授权已经证明token请求不再命中Web Worker的404。官方Connect入口、OAuth地址、PKCE及issuer校验保持。
-
-会话 Cookie 为不透明随机令牌，数据库仅保存摘要，有效期七天；HTTPS 使用 `Secure`，本地 loopback HTTP 仅为开发放宽。OAuth state 有效期十分钟，绑定提供方和发起登录的浏览器，单次消费；PKCE verifier 加密保存。官方未配置时登录接口返回 `AUTH_NOT_CONFIGURED`，不会提供本地模拟登录旁路。迁移0021–0022保留旧账号普通资格和原会话，新LiteAuth会话使用单独来源记录；0022依据官方会话创建事实保护迁移后旧API仍处理Connect回调的过渡窗口，不升级仅有LiteAuth会话的账号。
+会话 Cookie 为不透明随机令牌，数据库仅保存摘要，有效期七天；HTTPS 使用 `Secure`，本地 loopback HTTP 仅为开发放宽。OAuth state 有效期十分钟，绑定发起登录的浏览器，单次消费。未配置时登录接口返回 `AUTH_NOT_CONFIGURED`，不会提供本地模拟登录旁路。
 
 `ENCRYPTION_KEYS` 是版本到 Base64 编码的 32 字节随机 AES 密钥的 JSON 对象，dotenv 文件中使用外层单引号保留 JSON 双引号（参照示例）；`ENCRYPTION_KEY_VERSION` 指定当前写入版本。`PASSWORD_DIGEST_KEY` 使用独立的至少 32 字节随机密钥（Base64）。这些密钥用于活动口令、商户凭证、OAuth 及付款诊断；不能使用示例值或复用 Connect 密钥。轮换 AES 密钥时保留旧版本以读取已有数据；口令摘要密钥变更需要重建摘要索引。生产密钥使用 Workers Secrets，真实配置不纳入 Git。
 
-自动化协议测试只使用模拟 Connect／LiteAuth／LDC 响应，不访问真实账号或执行付款。页面测试保留模拟接口场景，完整应用测试另外经过真实 Web Worker、Service Binding、API、D1、DO 与 Queue；外部 OAuth 和 LDC 只在隔离测试运行时注入。
+自动化协议测试只使用模拟 Connect／LDC 响应，不访问真实账号或执行付款。页面测试保留模拟接口场景，完整应用测试另外经过真实 Web Worker、Service Binding、API、D1、DO 与 Queue；外部 OAuth 和 LDC 只在隔离测试运行时注入。
 
 排查真实登录时，后端 `auth_failure` 日志仅记录阶段、预定义原因和可用的 HTTP 状态码。`stage=token, reason=network` 表示令牌请求阶段抛出异常、未取得 HTTP 响应，不能单凭这一分类区分网络故障和运行时参数错误。浏览器可以打开授权页并不能证明本地 Worker 的请求可用。Cloudflare Worker 请求使用 `redirect: "manual"` 并拒绝非 2xx 响应，以兼容运行时且避免向重定向目标发送凭证。授权状态只能消费一次，排除故障后应从登录入口重新发起授权。
 

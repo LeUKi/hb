@@ -9,7 +9,6 @@ import { bodyLimit } from "hono/body-limit";
 import { validator } from "hono/validator";
 import { z } from "zod";
 import { ActivityError } from "../activities/errors";
-import { requireOfficialConnect } from "../auth/eligibility";
 import { requireAuth, requireProtectedMutation } from "../auth/session";
 import type { ApiContext } from "../env";
 import { isLocalSimulation } from "../runtime/controls";
@@ -59,7 +58,6 @@ export const merchantRoutes = new Hono<ApiContext>()
     validator("json", (value) => valid(createMerchantSchema.safeParse(value))),
     async (c) => {
       const session = await requireProtectedMutation(c);
-      await requireOfficialConnect(c.env, session.user.id);
       const merchant = await createMerchant(
         c.env,
         session.user.id,
@@ -97,7 +95,6 @@ export const merchantRoutes = new Hono<ApiContext>()
     ),
     async (c) => {
       const session = await requireProtectedMutation(c);
-      await requireOfficialConnect(c.env, session.user.id);
       const id = c.req.param("id"),
         taskId = c.req.param("taskId");
       const result = await repairPaymentCredential(
@@ -129,7 +126,6 @@ export const merchantRoutes = new Hono<ApiContext>()
     validator("json", (value) => valid(updateMerchantSchema.safeParse(value))),
     async (c) => {
       const session = await requireProtectedMutation(c);
-      await requireOfficialConnect(c.env, session.user.id);
       const id = c.req.param("id");
       const merchant = await updateMerchant(
         c.env,
@@ -173,7 +169,6 @@ export const merchantRoutes = new Hono<ApiContext>()
         throw new ActivityError(404, "NOT_FOUND", "未找到此功能");
       const id = c.req.param("id");
       const row = await ownedMerchant(c.env, id, session.user.id);
-      await requireOfficialConnect(c.env, session.user.id);
       if (row.mode !== "simulation")
         throw new ActivityError(400, "NOT_SIMULATION", "此商户不是模拟配置");
       await c.env.DB.prepare(

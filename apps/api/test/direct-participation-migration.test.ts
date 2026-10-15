@@ -31,7 +31,7 @@ it("atomically rebuilds populated participation tables, preserving legacy facts 
   await db.batch([
     db
       .prepare(
-        "INSERT INTO users(id,external_id,username,display_name,created_at,updated_at,official_connect_verified) VALUES ('author','100','Author','Author',?,?,1),('entrant','101','Entrant','Entrant',?,?,1)",
+        "INSERT INTO users(id,external_id,username,display_name,created_at,updated_at) VALUES ('author','100','Author','Author',?,?),('entrant','101','Entrant','Entrant',?,?)",
       )
       .bind(now, now, now, now),
     db

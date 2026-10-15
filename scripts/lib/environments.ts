@@ -145,8 +145,6 @@ export function validateEnvironment(
   )
     fail("sensitive request logging");
   if (environment !== "local") {
-    if (!api.compatibility_flags?.includes("global_fetch_strictly_public"))
-      fail("public fetch routing compatibility flag required");
     const vars = api.vars ?? {};
     if (
       !api.account_id ||

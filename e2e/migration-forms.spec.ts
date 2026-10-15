@@ -3,32 +3,16 @@ import { expect, type Page, test } from "@playwright/test";
 const anonymousSession = {
   user: null,
   csrfToken: null,
-  loginOptions: { liteauthEnabled: true },
 };
-const liteUser = {
-  id: "lite-user-1",
-  username: "liteada",
-  displayName: "Lite Ada",
+const formUser = {
+  id: "form-user-1",
+  username: "ada",
+  displayName: "Ada",
   avatarUrl: null,
   email: null,
-  accountTier: "lite" as const,
-  canUseLdc: false,
-  loginProvider: "liteauth" as const,
-};
-const standardUser = {
-  ...liteUser,
-  id: "standard-user-1",
-  accountTier: "standard" as const,
-  canUseLdc: true,
-  loginProvider: "connect" as const,
 };
 
-type FormUser = Omit<typeof liteUser, "accountTier" | "loginProvider"> & {
-  accountTier: "lite" | "standard";
-  loginProvider: "liteauth" | "connect";
-};
-
-async function mockSession(page: Page, user: FormUser | null) {
+async function mockSession(page: Page, user: typeof formUser | null) {
   await page.route(/\/api\/(?:session|me)$/, (route) =>
     route.fulfill({
       json: user ? { user, csrfToken: "csrf-1" } : anonymousSession,
@@ -46,9 +30,7 @@ async function mockSession(page: Page, user: FormUser | null) {
   );
 }
 
-test("账号页访客登录卡在常用视口居中，LiteAuth 默认折叠且可 Esc 收起", async ({
-  page,
-}) => {
+test("账号页访客登录卡在常用视口居中", async ({ page }) => {
   await mockSession(page, null);
   for (const viewport of [
     { width: 1440, height: 900 },
@@ -70,26 +52,13 @@ test("账号页访客登录卡在常用视口居中，LiteAuth 默认折叠且�
     await expect(
       page.getByRole("link", { name: "通过LINUX DO登录", exact: true }),
     ).toHaveAttribute("href", "/api/auth/login?returnTo=%2Faccount");
-    const liteTrigger = page.getByRole("button", { name: "青春版登录" });
-    await expect(
-      page.getByRole("link", { name: "通过 LiteAuth 登录" }),
-    ).toHaveCount(0);
-    await liteTrigger.click();
-    await expect(
-      page.getByRole("link", { name: "通过 LiteAuth 登录" }),
-    ).toHaveAttribute("href", "/api/auth/liteauth/login?returnTo=%2Faccount");
-    await page.keyboard.press("Escape");
-    await expect(
-      page.getByRole("link", { name: "通过 LiteAuth 登录" }),
-    ).toHaveCount(0);
-    await expect(liteTrigger).toBeFocused();
   }
 });
 
 test("活动说明共享一个 Markdown 视图切换，提交错误会从 Markdown 切回分栏并聚焦字段", async ({
   page,
 }) => {
-  await mockSession(page, standardUser);
+  await mockSession(page, formUser);
   await page.goto("/activities/new");
   await page.locator("summary", { hasText: "更多设置" }).click();
 
@@ -126,7 +95,7 @@ test("活动说明共享一个 Markdown 视图切换，提交错误会从 Markdo
 });
 
 test("表单离开取消保留输入，确认后返回只恢复浏览设置", async ({ page }) => {
-  await mockSession(page, standardUser);
+  await mockSession(page, formUser);
   await page.goto("/account");
   await page.getByRole("link", { name: "发起活动", exact: true }).click();
   await page.locator("#activity-title").fill("未保存标题");
@@ -158,12 +127,7 @@ test("表单集中展示锁定说明，奖励方式帮助完整且口令删除�
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await mockSession(page, {
-    ...liteUser,
-    accountTier: "standard",
-    loginProvider: "connect",
-    canUseLdc: true,
-  });
+  await mockSession(page, formUser);
   const writes: string[] = [];
   page.on("request", (request) => {
     if (request.method() !== "GET") writes.push(request.url());

@@ -6,9 +6,6 @@ const user = {
   username: "viewer",
   displayName: "加载验收",
   avatarUrl: null,
-  accountTier: "standard" as const,
-  canUseLdc: true,
-  loginProvider: "connect" as const,
 };
 
 function publicActivitiesDialog(page: Page) {
@@ -34,7 +31,6 @@ function card(id: string, title: string): DiscoveryCard {
       username: "author",
       displayName: "作者",
       avatarUrl: null,
-      accountTier: "standard",
     },
     forceDedicated: false,
     topicUrl: null,

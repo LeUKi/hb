@@ -10,7 +10,6 @@ const recipient: PublicRecipient = {
   username: "ada",
   displayName: "公开领取者 Ada",
   avatarUrl: null,
-  accountTier: "standard",
   claimedAt: "2026-10-07T00:00:00.000Z",
   amount: "0.50",
 };
@@ -26,7 +25,6 @@ const activity: PublicActivity = {
     username: "maker",
     displayName: "活动作者",
     avatarUrl: null,
-    accountTier: "standard",
   },
   forceDedicated: false,
   topicUrl: null,

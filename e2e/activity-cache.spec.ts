@@ -6,16 +6,12 @@ const user = {
   username: "viewer",
   displayName: "活动页缓存用户",
   avatarUrl: null,
-  accountTier: "standard",
-  canUseLdc: true,
-  loginProvider: "connect",
 };
 const author = {
   id: "activity-cache-author",
   username: "author",
   displayName: "活动作者",
   avatarUrl: null,
-  accountTier: "standard",
 };
 
 function publicActivity(overrides: Record<string, unknown> = {}) {

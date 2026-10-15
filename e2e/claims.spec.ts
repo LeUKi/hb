@@ -16,9 +16,6 @@ const user = {
   username: "ada",
   displayName: "Ada",
   avatarUrl: null,
-  accountTier: "standard" as const,
-  canUseLdc: true,
-  loginProvider: "connect" as const,
 };
 
 const author = {
@@ -26,9 +23,6 @@ const author = {
   username: "author",
   displayName: "作者",
   avatarUrl: null,
-  accountTier: "standard" as const,
-  canUseLdc: true,
-  loginProvider: "connect" as const,
 };
 const rewardAmount = "1.00";
 const rewardDisplay = `${rewardAmount} LDC`;
@@ -539,7 +533,6 @@ test("公共名单开启后展示领取者资料", async ({ page }) => {
         username: user.username,
         displayName: user.displayName,
         avatarUrl: user.avatarUrl,
-        accountTier: user.accountTier,
         claimedAt: new Date().toISOString(),
       },
     ],
@@ -705,7 +698,6 @@ test("限时开奖 public 已完成时仍刷新本人报名，未中奖终态后
       username: "author",
       displayName: "作者",
       avatarUrl: null,
-      accountTier: "standard" as const,
     },
     title: "已开奖但私有结果延迟",
     rewardType: "ldc",
@@ -805,7 +797,6 @@ test("限时开奖报名、报名口令、继续解口令与我的参与列表",
       username: "author",
       displayName: "作者",
       avatarUrl: null,
-      accountTier: "standard" as const,
     },
     title: "限时开奖活动",
     rewardType: "ldc" as const,

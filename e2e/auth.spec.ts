@@ -3,7 +3,6 @@ import { expect, type Page, test } from "@playwright/test";
 const anonymousSession = {
   user: null,
   csrfToken: null,
-  loginOptions: { liteauthEnabled: true },
 };
 const signedInSession = {
   user: {
@@ -12,12 +11,8 @@ const signedInSession = {
     displayName: "Ada",
     avatarUrl: null,
     email: "ada-private@example.test",
-    accountTier: "standard",
-    canUseLdc: true,
-    loginProvider: "connect",
   },
   csrfToken: "csrf-token-1",
-  loginOptions: { liteauthEnabled: true },
 };
 
 const otherSignedInSession = {
@@ -27,12 +22,8 @@ const otherSignedInSession = {
     displayName: "Lin",
     avatarUrl: null,
     email: "lin-private@example.test",
-    accountTier: "standard",
-    canUseLdc: true,
-    loginProvider: "connect",
   },
   csrfToken: "csrf-token-2",
-  loginOptions: { liteauthEnabled: true },
 };
 
 async function refocusAfterSessionStale(page: Page) {
@@ -81,10 +72,6 @@ test("匿名用户看到登录入口，登录链接只带相对 returnTo", async
   await expect(
     page.getByRole("link", { name: "通过LINUX DO登录", exact: true }),
   ).toHaveAttribute("href", "/api/auth/login?returnTo=%2F");
-  await page.getByRole("button", { name: "青春版登录" }).click();
-  await expect(
-    page.getByRole("link", { name: "通过 LiteAuth 登录", exact: true }),
-  ).toHaveAttribute("href", "/api/auth/liteauth/login?returnTo=%2F");
 });
 
 test("集中登录保留受保护页面和筛选，拒绝外部返回地址", async ({ page }) => {
@@ -98,13 +85,6 @@ test("集中登录保留受保护页面和筛选，拒绝外部返回地址", as
   await expect(
     page.getByRole("link", { name: "通过LINUX DO登录", exact: true }),
   ).toHaveAttribute("href", `/api/auth/login?returnTo=${encodedReturnTo}`);
-  await page.getByRole("button", { name: "青春版登录", exact: true }).click();
-  await expect(
-    page.getByRole("link", { name: "通过 LiteAuth 登录", exact: true }),
-  ).toHaveAttribute(
-    "href",
-    `/api/auth/liteauth/login?returnTo=${encodedReturnTo}`,
-  );
   for (const unsafe of [
     "https://example.invalid",
     "//example.invalid",
@@ -155,15 +135,6 @@ test("后端 authError 只展示安全文案", async ({ page }) => {
   await expect(
     page.getByRole("link", { name: "通过LINUX DO登录", exact: true }),
   ).toHaveCount(0);
-  await page
-    .getByRole("main")
-    .getByRole("button", { name: "青春版登录" })
-    .click();
-  await expect(
-    page
-      .getByRole("main")
-      .getByRole("link", { name: "通过 LiteAuth 登录", exact: true }),
-  ).toBeVisible();
 
   await page.goto("/account?authError=invalid_state");
   await expect(page.getByText("登录会话已失效，请重新登录。")).toBeVisible();
@@ -176,51 +147,6 @@ test("后端 authError 只展示安全文案", async ({ page }) => {
   await page.goto("/account?authError=access_denied");
   await expect(page.getByText("登录已取消，可以重新尝试。")).toBeVisible();
   await expect(page.getByText("access_denied")).toHaveCount(0);
-});
-
-test("LiteAuth暂不可用不影响官方登录，升级错误只显示固定文案", async ({
-  page,
-}) => {
-  await page.route(/\/api\/(?:session|me)$/, (route) =>
-    route.fulfill({ json: anonymousSession }),
-  );
-  await page.goto("/account?authError=liteauth_not_configured");
-  await expect(
-    page
-      .getByRole("main")
-      .getByRole("link", { name: "通过LINUX DO登录", exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: "通过 LiteAuth 登录", exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    page
-      .getByRole("main")
-      .getByText(
-        "LiteAuth青春版登录暂时不可用，可以使用官方Connect或稍后重试。",
-        { exact: true },
-      ),
-  ).toBeVisible();
-  for (const [code, message] of [
-    [
-      "identity_mismatch",
-      "官方Connect返回了不同账号，升级未完成，当前账号没有切换。请使用同一Linux DO账号重试。",
-    ],
-    ["upgrade_session_required", "请先登录当前账号，再使用官方Connect升级。"],
-    [
-      "upgrade_session_changed",
-      "升级期间当前账号已变化或登录失效，请重新确认账号后升级。",
-    ],
-    ["liteauth_failed", "登录没有完成，请重新尝试。"],
-  ]) {
-    await page.goto(`/account?authError=${code}`);
-    await expect(
-      page.getByRole("main").getByText(message as string, { exact: true }),
-    ).toBeVisible();
-    await expect(page.getByText(code as string, { exact: true })).toHaveCount(
-      0,
-    );
-  }
 });
 
 test("已登录用户可查看账号并通过 CSRF 退出", async ({ page }) => {

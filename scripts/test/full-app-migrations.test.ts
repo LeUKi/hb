@@ -46,9 +46,12 @@ it("upgrades a populated untracked 0019 experience database and restarts without
       applied: migrations.filter((value) => value.name >= "0020").length,
       total: migrations.length,
     });
-    expect(
-      sqlite.prepare("SELECT id,official_connect_verified FROM users").all(),
-    ).toEqual([{ id: "existing-author", official_connect_verified: 1 }]);
+    expect(sqlite.prepare("SELECT id FROM users").all()).toEqual([
+      { id: "existing-author" },
+    ]);
+    expect(sqlite.prepare("SELECT id FROM attempt_rate_limits").all()).toEqual([
+      { id: "global" },
+    ]);
     expect(await applyLocalMigrations(db, migrations)).toEqual({
       applied: 0,
       total: migrations.length,

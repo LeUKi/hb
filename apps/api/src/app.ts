@@ -4,7 +4,6 @@ import { ActivityError } from "./activities/errors";
 import { passwordRoutes } from "./activities/password-routes";
 import { ActivityValidationError, activityRoutes } from "./activities/routes";
 import { activityImageRoutes } from "./activity-images/routes";
-import { loginSettingsAdminRoutes } from "./admin/login-settings";
 import { adminRoutes } from "./admin/routes";
 import { authRoutes } from "./auth/oauth";
 import { discoveryRoutes } from "./discovery/routes";
@@ -17,7 +16,6 @@ export const app = new Hono<ApiContext>()
   .get("/api/health", (c) => c.json({ status: "ok" as const }))
   .route("/api", authRoutes)
   .route("/api", adminRoutes)
-  .route("/api", loginSettingsAdminRoutes)
   .route("/api", activityImageRoutes)
   .route("/api", activityRoutes)
   .route("/api", passwordRoutes)

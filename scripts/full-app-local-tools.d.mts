@@ -16,7 +16,6 @@ export function localRoleOptions(): Array<{
   role: string;
   name: string;
   username: string;
-  liteauth: boolean;
 }>;
 
 export function rewriteOAuthAuthorizeLocation(

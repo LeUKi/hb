@@ -54,7 +54,6 @@ afterEach(async () => {
 async function fixture(history = true) {
   const owner = crypto.randomUUID();
   await createDb(env.DB).insert(users).values({
-    officialConnectVerified: true,
     id: owner,
     externalId: owner,
     username: owner,

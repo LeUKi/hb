@@ -5,9 +5,6 @@ const user = {
   username: "scrolluser",
   displayName: "滚动验收",
   avatarUrl: null,
-  accountTier: "standard",
-  canUseLdc: true,
-  loginProvider: "connect",
 };
 
 const author = {
@@ -15,7 +12,6 @@ const author = {
   username: "author",
   displayName: "作者",
   avatarUrl: null,
-  accountTier: "standard",
 };
 
 function activity(id: string, index: number) {
@@ -77,7 +73,6 @@ function paymentTarget(id: string, index: number) {
       username: `recipient${index}`,
       displayName: `收款人 ${index}`,
       avatarUrl: null,
-      accountTier: "standard",
     },
   };
 }

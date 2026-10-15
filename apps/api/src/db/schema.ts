@@ -20,11 +20,6 @@ export const users = sqliteTable(
     displayName: text("display_name").notNull(),
     emailCiphertext: text("email_ciphertext"),
     avatarUrl: text("avatar_url"),
-    officialConnectVerified: integer("official_connect_verified", {
-      mode: "boolean",
-    })
-      .notNull()
-      .default(false),
     active: integer("active", { mode: "boolean" }).notNull().default(true),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
@@ -37,38 +32,6 @@ export const users = sqliteTable(
     ),
     index("users_username_idx").on(table.username),
     index("users_created_idx").on(
-      sql`${table.createdAt} DESC`,
-      sql`${table.id} DESC`,
-    ),
-  ],
-);
-
-export const loginSettings = sqliteTable("login_settings", {
-  id: text("id").primaryKey(),
-  version: integer("version").notNull(),
-  liteauthEnabled: integer("liteauth_enabled", { mode: "boolean" })
-    .notNull()
-    .default(true),
-  updatedAt: integer("updated_at").notNull(),
-  updatedByUserId: text("updated_by_user_id"),
-});
-
-export const loginSettingChanges = sqliteTable(
-  "login_setting_changes",
-  {
-    id: text("id").primaryKey(),
-    actorUserId: text("actor_user_id").notNull(),
-    previousVersion: integer("previous_version").notNull(),
-    nextVersion: integer("next_version").notNull(),
-    previousLiteauthEnabled: integer("previous_liteauth_enabled", {
-      mode: "boolean",
-    }).notNull(),
-    liteauthEnabled: integer("liteauth_enabled", { mode: "boolean" }).notNull(),
-    createdAt: integer("created_at").notNull(),
-  },
-  (table) => [
-    uniqueIndex("login_setting_changes_version_unique").on(table.nextVersion),
-    index("login_setting_changes_time_idx").on(
       sql`${table.createdAt} DESC`,
       sql`${table.id} DESC`,
     ),
@@ -128,9 +91,6 @@ export const sessions = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     csrfToken: text("csrf_token").notNull(),
-    loginProvider: text("login_provider", { enum: ["connect", "liteauth"] })
-      .notNull()
-      .default("connect"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
     lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }).notNull(),
@@ -147,11 +107,6 @@ export const oauthAttempts = sqliteTable(
     stateHash: text("state_hash").primaryKey(),
     cookieHash: text("cookie_hash").notNull(),
     returnTo: text("return_to").notNull(),
-    loginProvider: text("login_provider", { enum: ["connect", "liteauth"] })
-      .notNull()
-      .default("connect"),
-    pkceVerifierCiphertext: text("pkce_verifier_ciphertext"),
-    expectedUserId: text("expected_user_id"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
   },

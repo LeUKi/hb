@@ -85,12 +85,7 @@ export const merchantKeys = {
 
 export function merchantSessionIdentity(session: SessionResponse | undefined) {
   return session?.user && session.csrfToken
-    ? JSON.stringify([
-        session.user.id,
-        session.user.accountTier,
-        session.user.loginProvider,
-        session.csrfToken,
-      ])
+    ? JSON.stringify([session.user.id, session.csrfToken])
     : null;
 }
 

@@ -16,9 +16,6 @@ const owner = {
   username: "maker",
   displayName: "名单活动作者",
   avatarUrl: null,
-  accountTier: "standard" as const,
-  loginProvider: "connect" as const,
-  canUseLdc: true,
   isAdmin: false,
 };
 const viewer = {
@@ -54,7 +51,6 @@ function recipient(index: number, prefix = "user"): PublicRecipient {
     username: `${prefix}${index}`,
     displayName: `${prefix === "user" ? "名单参与者" : "新增参与者"} ${index}`,
     avatarUrl: null,
-    accountTier: "standard",
     claimedAt: new Date(Date.now() - index * 1_000).toISOString(),
   };
 }
@@ -261,7 +257,6 @@ async function mockRoster(
         json: {
           user: state.user,
           csrfToken: "csrf",
-          loginOptions: { liteauthEnabled: true },
           attemptCooldown: null,
         },
       });

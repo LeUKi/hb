@@ -26,12 +26,11 @@ function EditActivityPage() {
     return <Outlet />;
   return (
     <RequireAccount>
-      {({ userId, csrfToken, canUseLdc }) => (
+      {({ userId, csrfToken }) => (
         <LoadActivityEditor
           key={`${userId}-${id}`}
           userId={userId}
           csrfToken={csrfToken}
-          canUseLdc={canUseLdc}
           id={id}
         />
       )}
@@ -42,12 +41,10 @@ function EditActivityPage() {
 function LoadActivityEditor({
   userId,
   csrfToken,
-  canUseLdc,
   id,
 }: {
   userId: string;
   csrfToken: string;
-  canUseLdc: boolean;
   id: string;
 }) {
   const initialNotice = useRouterState({
@@ -83,7 +80,6 @@ function LoadActivityEditor({
     <ActivityEditor
       userId={userId}
       csrfToken={csrfToken}
-      canUseLdc={canUseLdc}
       initial={activity}
       initialNotice={initialNotice}
       reload={async () => {
@@ -99,14 +95,12 @@ function LoadActivityEditor({
 function ActivityEditor({
   userId,
   csrfToken,
-  canUseLdc,
   initial,
   initialNotice,
   reload,
 }: {
   userId: string;
   csrfToken: string;
-  canUseLdc: boolean;
   initial: ManagedActivity;
   initialNotice: string | null;
   reload: () => Promise<ManagedActivity>;
@@ -147,7 +141,6 @@ function ActivityEditor({
         key={`${editor.activity.id}-${editor.revision}`}
         userId={userId}
         csrfToken={csrfToken}
-        canUseLdc={canUseLdc}
         initial={editor.activity}
         initialFeedback={formFeedback}
         reload={reload}

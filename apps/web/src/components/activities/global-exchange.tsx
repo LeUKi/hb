@@ -32,7 +32,6 @@ import {
 } from "../../lib/navigation-state";
 import { isBlockingQueryError } from "../../lib/query-view";
 import { redemptionIntentAtom } from "../../lib/redemption-intent";
-import { OfficialConnectRequired } from "../auth/official-connect-required";
 import { Help } from "../presentation/context-help";
 import { RefreshNotice } from "../presentation/loading";
 import { PasswordInput } from "../presentation/password-input";
@@ -51,7 +50,6 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
   const session = useSession();
   const user = session.isSuccess ? session.data.user : null;
   const userId = user?.id ?? "";
-  const accountTier = user?.accountTier ?? "standard";
   const csrfToken = session.data?.csrfToken ?? "";
   const identity = session.isSuccess ? sessionScope(session.data) : null;
   const previousIdentity = useRef<string | null>(null);
@@ -61,10 +59,7 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
   const setIntent = useSetAtom(redemptionIntentAtom);
   const [context, setContext] = useAtom(exchangeContextAtom);
   const ownContext =
-    user &&
-    context?.sessionScope === identity &&
-    context.userId === userId &&
-    context.accountTier === accountTier
+    user && context?.sessionScope === identity && context.userId === userId
       ? context
       : null;
   const suppressLocatorOverlay = useRef(false);
@@ -98,7 +93,6 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
     [submitFeedback.clear, submitFeedback.show],
   );
 
-  const [officialRequired, setOfficialRequired] = useState(false);
   const [composing, setComposing] = useState(false);
   const [topic, setTopic] = useState<
     (Extract<HomeEntry, { kind: "topic" }> & { request: number }) | null
@@ -149,7 +143,6 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
     invalidateLocation();
     setPassword(value);
     setMessage(null);
-    setOfficialRequired(false);
   }
   function browse(id: string) {
     setIntent(null);
@@ -184,7 +177,6 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
         setIntent(null);
         setPassword(value);
         setMessage(null);
-        setOfficialRequired(false);
       });
       document.getElementById("claim-password")?.focus();
     },
@@ -199,7 +191,6 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
       setTopic(null);
       setPassword("");
       setMessage(null);
-      setOfficialRequired(false);
       setContext(null);
       setIntent(null);
       if (locatorOverlay.overlay) {
@@ -264,7 +255,6 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
     if (locating) {
       invalidateLocation();
       setMessage(null);
-      setOfficialRequired(false);
       if (entry.kind === "activity") browse(entry.id);
       else if (entry.kind === "topic")
         setTopic({ ...entry, request: locationRequest.current });
@@ -281,10 +271,6 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
       return;
     }
     if (!account.isCurrentSession()) return;
-    if (!user.canUseLdc) {
-      setOfficialRequired(true);
-      return;
-    }
     invalidateLocation();
     const navigationRequest = locationRequest.current;
     const submission = uncertain
@@ -296,12 +282,10 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
     setMessage(null);
     setIntent(null);
     if (selectionOverlay.overlay) selectionOverlay.close();
-    setOfficialRequired(false);
     const identity = account.captureIdentity();
     if (!identity) return;
     setContext({
       userId,
-      accountTier,
       sessionScope: identity,
       password: submission.password,
       submission,
@@ -323,7 +307,6 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
         (result.result === "single" ? (result.items[0]?.id ?? null) : null);
       setContext({
         userId,
-        accountTier,
         sessionScope: identity,
         password: submission.password,
         submission,
@@ -335,7 +318,6 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
       if (selected) {
         setContext({
           userId,
-          accountTier,
           sessionScope: identity,
           password: submission.password,
           submission,
@@ -347,7 +329,6 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
         if (!result.claimResult)
           setIntent({
             userId,
-            accountTier,
             activityId: selected,
             operation: {
               submissionId: result.claimSubmissionId,
@@ -371,9 +352,7 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
         setMessage("尚未确认兑换结果，请重试原提交，不会重新选择其他活动。");
       } else {
         setContext(null);
-        if (error.code === "OFFICIAL_CONNECT_REQUIRED")
-          setOfficialRequired(true);
-        else setMessage(error.message);
+        setMessage(error.message);
       }
     } finally {
       inFlight.current = false;
@@ -422,12 +401,6 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
             void submit();
           }}
         />
-        {officialRequired ? (
-          <OfficialConnectRequired
-            returnTo="/"
-            message="青春版可以跳转查看活动；兑奖需要使用官方 Connect 升级后重新提交口令。"
-          />
-        ) : null}
         {(hasInput || uncertain || mutation.isPending) && (
           <RedemptionAction
             className="button claim-button"
@@ -535,7 +508,6 @@ export function GlobalExchange({ ref }: { ref?: Ref<GlobalExchangeHandle> }) {
             );
             setIntent({
               userId,
-              accountTier,
               activityId: id,
               operation: {
                 submissionId: activitySubmissionId,

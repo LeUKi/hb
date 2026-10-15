@@ -6,9 +6,6 @@ const user = {
   username: "copyfeedback",
   displayName: "复制反馈用户",
   avatarUrl: null,
-  accountTier: "standard" as const,
-  loginProvider: "connect" as const,
-  canUseLdc: true,
   isAdmin: false,
   email,
 };
@@ -74,7 +71,6 @@ async function mockAccount(page: Page) {
           user,
           csrfToken: "copy-feedback-csrf",
           attemptCooldown: null,
-          loginOptions: { liteauthEnabled: true },
         },
       });
     }

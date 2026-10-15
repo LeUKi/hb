@@ -164,9 +164,6 @@ export async function listActivityPayments(
         username: users.username,
         displayName: users.displayName,
         avatarUrl: users.avatarUrl,
-        accountTier: sql<
-          "standard" | "lite"
-        >`CASE WHEN ${users.officialConnectVerified}=1 THEN 'standard' ELSE 'lite' END`,
       },
     })
     .from(paymentTasks)

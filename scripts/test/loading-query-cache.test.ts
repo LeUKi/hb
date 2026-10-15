@@ -88,7 +88,7 @@ describe("loading access boundaries", () => {
       const roster = [
         "activity-roster",
         "activity",
-        "owner:standard",
+        "owner",
         "author",
         "recipients",
       ];
@@ -98,13 +98,7 @@ describe("loading access boundaries", () => {
         ["activity-private", "owner", "detail", "other-activity"],
         ["activity-public", "activity", "owner"],
         ["activity-roster", "activity", null, "public", "recipients"],
-        [
-          "activity-roster",
-          "activity",
-          "other-owner:standard",
-          "author",
-          "recipients",
-        ],
+        ["activity-roster", "activity", "other-owner", "author", "recipients"],
       ];
       for (const key of Object.values(keys))
         client.setQueryData(key, "author private content");

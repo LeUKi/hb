@@ -9,7 +9,7 @@ import {
   type PublicRecipientList,
   type RecipientSpeedTitle,
 } from "@hb/contracts";
-import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
 import { createDb } from "../db/client";
 import {
   activities,
@@ -313,9 +313,6 @@ export async function listAuthorClaims(
         username: users.username,
         displayName: users.displayName,
         avatarUrl: users.avatarUrl,
-        accountTier: sql<
-          "standard" | "lite"
-        >`CASE WHEN ${users.officialConnectVerified}=1 THEN 'standard' ELSE 'lite' END`,
       },
     })
     .from(claims)
@@ -394,9 +391,6 @@ export async function listPublicRecipients(
       username: users.username,
       displayName: users.displayName,
       avatarUrl: users.avatarUrl,
-      accountTier: sql<
-        "standard" | "lite"
-      >`CASE WHEN ${users.officialConnectVerified}=1 THEN 'standard' ELSE 'lite' END`,
       amountMinor: paymentTasks.amountMinor,
     })
     .from(claims)
@@ -411,19 +405,11 @@ export async function listPublicRecipients(
     enabled: true,
     titles,
     items: page.map(
-      ({
-        claim,
-        username,
-        displayName,
-        avatarUrl,
-        accountTier,
-        amountMinor,
-      }) => ({
+      ({ claim, username, displayName, avatarUrl, amountMinor }) => ({
         id: claim.id,
         username: config.showRecipientUsername ? username : "",
         displayName: config.showRecipientUsername ? displayName : "匿名用户",
         avatarUrl: config.showRecipientUsername ? avatarUrl : null,
-        accountTier: config.showRecipientUsername ? accountTier : null,
         ...(activity.rewardType === "ldc" &&
         config.showRecipientAmount &&
         amountMinor !== null

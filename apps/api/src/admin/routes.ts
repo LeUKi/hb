@@ -24,7 +24,6 @@ import {
   adminRewardTypeSchema,
   adminUserStateSchema,
   adminUsersQuerySchema,
-  adminUserTierSchema,
   decodeActivityEmoji,
   formatAmount,
   normalizeActivityUuid,
@@ -96,7 +95,7 @@ function encodeAuditCursor(row: AuditCursor | undefined) {
 function parseAuditCursor(value: string | undefined): AuditCursor | null {
   if (!value) return null;
   const match =
-    /^(\d{1,16}):(login_settings|attempt_rate_limits):([A-Za-z0-9_-][A-Za-z0-9_-]{0,100}|[a-f0-9-]{36})$/.exec(
+    /^(\d{1,16}):(attempt_rate_limits):([A-Za-z0-9_-][A-Za-z0-9_-]{0,100}|[a-f0-9-]{36})$/.exec(
       value,
     );
   if (!match) throw new ActivityError(400, "INVALID_CURSOR", "分页游标无效。");
@@ -204,11 +203,6 @@ function nextCursor<T extends Cursor>(items: T[]) {
 
 function page<T>(items: T[]) {
   return items.slice(0, adminPageSize);
-}
-
-// Match SQLite's fixed BINARY order when merging two audit sources.
-function compareDescending(left: string, right: string) {
-  return left === right ? 0 : left > right ? -1 : 1;
 }
 
 function readConfig(env: ApiBindings): Promise<AttemptRateLimitsResponse> {
@@ -545,7 +539,6 @@ async function listUsers(
   env: ApiBindings,
   query: Record<string, string | undefined>,
 ): Promise<AdminCursorList<AdminUserListItem>> {
-  const tier = parseFilter(adminUserTierSchema, query.tier ?? "all", "tier");
   const state = parseFilter(
     adminUserStateSchema,
     query.state ?? "all",
@@ -561,14 +554,12 @@ async function listUsers(
     );
     values.push(q, q, like(q), like(q));
   }
-  if (tier === "standard") where.push("official_connect_verified=1");
-  if (tier === "lite") where.push("official_connect_verified=0");
   if (state === "active") where.push("active=1");
   if (state === "disabled") where.push("active=0");
   appendCursor(where, values, cursor);
   const rows =
     await env.DB.prepare(`SELECT id,external_id,username,display_name,avatar_url,
-    official_connect_verified,active,created_at,last_login_at FROM users
+    active,created_at,last_login_at FROM users
     ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
     ORDER BY created_at DESC,id DESC LIMIT ${adminPageSize + 1}`)
       .bind(...values)
@@ -582,18 +573,13 @@ async function listUsers(
 }
 
 function userListItem(row: Record<string, unknown>): AdminUserListItem {
-  const official =
-    row.official_connect_verified === 1 ||
-    row.official_connect_verified === true;
   return {
     id: String(row.id),
     externalId: String(row.external_id),
     username: String(row.username),
     displayName: String(row.display_name),
     avatarUrl: row.avatar_url === null ? null : String(row.avatar_url),
-    accountTier: official ? "standard" : "lite",
     active: row.active === 1 || row.active === true,
-    officialConnectVerified: official,
     createdAt: asInt(row.created_at),
     lastLoginAt: row.last_login_at === null ? null : asInt(row.last_login_at),
   };
@@ -605,9 +591,7 @@ async function userDetail(
 ): Promise<{ user: AdminUserDetail }> {
   const [user, counts] = await env.DB.batch([
     env.DB.prepare(`SELECT id,external_id,username,display_name,avatar_url,
-      official_connect_verified,active,created_at,last_login_at FROM users WHERE id=?`).bind(
-      id,
-    ),
+      active,created_at,last_login_at FROM users WHERE id=?`).bind(id),
     env.DB.prepare(`SELECT
       (SELECT COUNT(*) FROM activities WHERE author_id=? AND reward_type='ldc' AND deleted_at IS NULL) AS authoredActivities,
       (SELECT COUNT(*) FROM claims c JOIN activities a ON a.id=c.activity_id AND a.reward_type='ldc' AND a.deleted_at IS NULL WHERE c.user_id=?) AS claims,
@@ -860,7 +844,8 @@ async function audit(
   env: ApiBindings,
   query: z.infer<typeof adminAuditQuerySchema>,
 ): Promise<AdminCursorList<AdminAuditEntry>> {
-  const type = parseFilter(adminAuditTypeSchema, query.type ?? "all", "type");
+  // Only one kind of change is audited now; the filter still has to be valid.
+  parseFilter(adminAuditTypeSchema, query.type ?? "all", "type");
   const actor = (query.actorUserId ?? query.actor ?? "").trim();
   const cursor = parseAuditCursor(query.cursor);
   const actorWhere = actor
@@ -879,94 +864,42 @@ async function audit(
     ...(from === null ? [] : [from]),
     ...(to === null ? [] : [to]),
   ];
-  function cursorWhere(source: AdminAuditEntry["type"]) {
-    if (!cursor) return { sql: "", values: [] as BindValue[] };
-    return {
-      sql: `AND (c.created_at<? OR (c.created_at=? AND (? < ? OR (? = ? AND c.id<?))))`,
-      values: [
-        cursor.createdAt,
-        cursor.createdAt,
-        source,
-        cursor.type,
-        source,
-        cursor.type,
-        cursor.id,
-      ] satisfies BindValue[],
-    };
-  }
-  const loginCursor = cursorWhere("login_settings");
-  const rateCursor = cursorWhere("attempt_rate_limits");
-  const login =
-    type === "all" || type === "login_settings"
-      ? env.DB.prepare(`SELECT 'login_settings' AS type,c.id,c.actor_user_id,u.display_name AS actorDisplayName,
-        c.previous_version,c.next_version,c.previous_liteauth_enabled,c.liteauth_enabled,
-        NULL AS previous_home_interval_seconds,NULL AS home_interval_seconds,
-        NULL AS previous_activity_interval_seconds,NULL AS activity_interval_seconds,c.created_at
-        FROM login_setting_changes c LEFT JOIN users u ON u.id=c.actor_user_id
-        WHERE 1=1 ${dateWhere} ${actorWhere} ${loginCursor.sql}
-        ORDER BY c.created_at DESC,c.id DESC LIMIT ${adminPageSize + 1}`).bind(
-          ...dateValues,
-          ...actorValues,
-          ...loginCursor.values,
-        )
-      : null;
-  const rates =
-    type === "all" || type === "attempt_rate_limits"
-      ? env.DB.prepare(`SELECT 'attempt_rate_limits' AS type,c.id,c.actor_user_id,u.display_name AS actorDisplayName,
-        c.previous_version,c.next_version,NULL AS previous_liteauth_enabled,NULL AS liteauth_enabled,
-        c.previous_home_interval_seconds,c.home_interval_seconds,
-        c.previous_activity_interval_seconds,c.activity_interval_seconds,c.created_at
-        FROM attempt_rate_limit_changes c LEFT JOIN users u ON u.id=c.actor_user_id
-        WHERE 1=1 ${dateWhere} ${actorWhere} ${rateCursor.sql}
-        ORDER BY c.created_at DESC,c.id DESC LIMIT ${adminPageSize + 1}`).bind(
-          ...dateValues,
-          ...actorValues,
-          ...rateCursor.values,
-        )
-      : null;
-  const results = await Promise.all([
-    login?.all<Record<string, unknown>>(),
-    rates?.all<Record<string, unknown>>(),
-  ]);
-  const items = results
-    .flatMap((result) => result?.results ?? [])
-    .sort(
-      (a, b) =>
-        asInt(b.created_at) - asInt(a.created_at) ||
-        compareDescending(String(a.type), String(b.type)) ||
-        compareDescending(String(a.id), String(b.id)),
-    )
-    .map((row): AdminAuditEntry & Cursor => {
-      const auditType = row.type as "login_settings" | "attempt_rate_limits";
-      return {
-        id: String(row.id),
-        type: auditType,
-        actorUserId: String(row.actor_user_id),
-        actorDisplayName:
-          row.actorDisplayName === null
-            ? String(row.actor_user_id)
-            : String(row.actorDisplayName),
-        previousVersion: asInt(row.previous_version),
-        nextVersion: asInt(row.next_version),
-        before:
-          auditType === "login_settings"
-            ? { liteauthEnabled: row.previous_liteauth_enabled === 1 }
-            : {
-                homeIntervalSeconds: asInt(row.previous_home_interval_seconds),
-                activityIntervalSeconds: asInt(
-                  row.previous_activity_interval_seconds,
-                ),
-              },
-        after:
-          auditType === "login_settings"
-            ? { liteauthEnabled: row.liteauth_enabled === 1 }
-            : {
-                homeIntervalSeconds: asInt(row.home_interval_seconds),
-                activityIntervalSeconds: asInt(row.activity_interval_seconds),
-              },
-        createdAt: asInt(row.created_at),
-      };
-    });
+  const cursorSql = cursor
+    ? "AND (c.created_at<? OR (c.created_at=? AND c.id<?))"
+    : "";
+  const cursorValues: BindValue[] = cursor
+    ? [cursor.createdAt, cursor.createdAt, cursor.id]
+    : [];
+  const rows =
+    await env.DB.prepare(`SELECT c.id,c.actor_user_id,u.display_name AS actorDisplayName,
+    c.previous_version,c.next_version,
+    c.previous_home_interval_seconds,c.home_interval_seconds,
+    c.previous_activity_interval_seconds,c.activity_interval_seconds,c.created_at
+    FROM attempt_rate_limit_changes c LEFT JOIN users u ON u.id=c.actor_user_id
+    WHERE 1=1 ${dateWhere} ${actorWhere} ${cursorSql}
+    ORDER BY c.created_at DESC,c.id DESC LIMIT ${adminPageSize + 1}`)
+      .bind(...dateValues, ...actorValues, ...cursorValues)
+      .all<Record<string, unknown>>();
+  const items = rows.results.map((row): AdminAuditEntry & Cursor => ({
+    id: String(row.id),
+    type: "attempt_rate_limits",
+    actorUserId: String(row.actor_user_id),
+    actorDisplayName:
+      row.actorDisplayName === null
+        ? String(row.actor_user_id)
+        : String(row.actorDisplayName),
+    previousVersion: asInt(row.previous_version),
+    nextVersion: asInt(row.next_version),
+    before: {
+      homeIntervalSeconds: asInt(row.previous_home_interval_seconds),
+      activityIntervalSeconds: asInt(row.previous_activity_interval_seconds),
+    },
+    after: {
+      homeIntervalSeconds: asInt(row.home_interval_seconds),
+      activityIntervalSeconds: asInt(row.activity_interval_seconds),
+    },
+    createdAt: asInt(row.created_at),
+  }));
   const pageItems = page(items);
   const last = pageItems.at(-1);
   return {

@@ -35,7 +35,6 @@ async function fixture(mode: PaymentMode = "real") {
   const csrfToken = crypto.randomUUID();
   const db = createDb(env.DB);
   await db.insert(users).values({
-    officialConnectVerified: true,
     id: authorId,
     externalId: BigInt(
       `0x${authorId.replaceAll("-", "").slice(0, 15)}`,

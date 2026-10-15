@@ -18,7 +18,6 @@ import {
   redemptionIntentAtom,
   rewardAnimationAtom,
 } from "../../lib/redemption-intent";
-import { OfficialConnectRequired } from "../auth/official-connect-required";
 import { SkeletonRows } from "../presentation/loading";
 import { RedemptionAction } from "../presentation/redemption-transition";
 import { ActionFeedbackLabel, useActionFeedback } from "../ui/action-feedback";
@@ -30,9 +29,7 @@ import { RegistrationContent } from "./registration-content";
 export function ClaimEntry({
   activity,
   userId,
-  accountTier,
   csrfToken,
-  canUseLdc,
   initialPassword = "",
   hideResult = false,
   knownClaim: claim,
@@ -43,9 +40,7 @@ export function ClaimEntry({
 }: {
   activity: PublicActivity;
   userId: string;
-  accountTier: string;
   csrfToken: string;
-  canUseLdc: boolean;
   initialPassword?: string;
   hideResult?: boolean;
   knownClaim: ClaimDetail | null | undefined;
@@ -95,21 +90,6 @@ export function ClaimEntry({
         {activity.draw ? "报名已截止。" : "活动已截止，不能继续兑换。"}
       </p>
     );
-  if (activity.rewardType === "ldc" && !canUseLdc)
-    return (
-      <OfficialConnectRequired
-        returnTo={`/activities/${activity.id}`}
-        message={
-          timedDraw
-            ? direct
-              ? "青春版可以浏览这个LDC活动，报名需要使用官方Connect升级。升级后请主动点击报名。"
-              : "青春版可以浏览这个LDC活动，报名需要使用官方Connect升级。升级后请主动提交口令报名。"
-            : direct
-              ? "青春版可以浏览这个LDC活动，领取需要使用官方Connect升级。升级后请主动点击领取奖励。"
-              : "青春版可以浏览这个LDC活动，领取需要使用官方Connect升级。升级后请主动提交口令领取。"
-        }
-      />
-    );
   if (activity.rewardType === "ldc" && activity.author.id === userId)
     return (
       <p className="eligibility-note">
@@ -120,10 +100,9 @@ export function ClaimEntry({
     );
   return (
     <ClaimForm
-      key={`${userId}-${accountTier}-${activity.id}-${activity.participationMode ?? "password"}`}
+      key={`${userId}-${activity.id}-${activity.participationMode ?? "password"}`}
       activity={activity}
       userId={userId}
-      accountTier={accountTier}
       csrfToken={csrfToken}
       initialPassword={initialPassword}
     />
@@ -133,13 +112,11 @@ export function ClaimEntry({
 function ClaimForm({
   activity,
   userId,
-  accountTier,
   csrfToken,
   initialPassword,
 }: {
   activity: PublicActivity;
   userId: string;
-  accountTier: string;
   csrfToken: string;
   initialPassword: string;
 }) {
@@ -155,14 +132,13 @@ function ClaimForm({
       direct ||
       !intent ||
       intent.userId !== userId ||
-      intent.accountTier !== accountTier ||
       intent.activityId !== activity.id
     )
       return;
     setIntent(null);
     setPassword(intent.operation.password);
     void automaticSubmit.current(intent.operation);
-  }, [intent, direct, userId, accountTier, activity.id, setIntent]);
+  }, [intent, direct, userId, activity.id, setIntent]);
   const submitFeedback = useActionFeedback(
     `${userId}:${csrfToken}:${activity.id}`,
   );
@@ -184,7 +160,6 @@ function ClaimForm({
       message,
     );
   }
-  const [officialRequired, setOfficialRequired] = useState(false);
   const [pendingSubmission, setPendingSubmission] =
     useState<ClaimActivityInput | null>(null);
   const alive = useRef(true);
@@ -223,7 +198,6 @@ function ClaimForm({
             password: parsed.success ? parsed.data : password,
           });
     setMessage(null);
-    setOfficialRequired(false);
     const identity = account.captureIdentity();
     inFlight.current = true;
     setAnimation({ activityId: activity.id, token: submission.submissionId });
@@ -263,9 +237,7 @@ function ClaimForm({
         );
       } else {
         setPendingSubmission(null);
-        if (error.code === "OFFICIAL_CONNECT_REQUIRED")
-          setOfficialRequired(true);
-        else setMessage(error.message);
+        setMessage(error.message);
       }
     } finally {
       inFlight.current = false;
@@ -304,9 +276,6 @@ function ClaimForm({
           onSubmit={() => void submit()}
         />
       )}
-      {officialRequired ? (
-        <OfficialConnectRequired returnTo={`/activities/${activity.id}`} />
-      ) : null}
       <RedemptionAction
         className="button claim-button"
         title={

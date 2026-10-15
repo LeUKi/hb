@@ -5,9 +5,6 @@ const user = {
   username: "owner",
   displayName: "作者",
   avatarUrl: null,
-  accountTier: "standard",
-  canUseLdc: true,
-  loginProvider: "connect",
 };
 function statistics(password: string, nextCursor: string | null) {
   return {

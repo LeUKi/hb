@@ -14,7 +14,6 @@ import type { RecipientSpeedTitle } from "./recipient-speed";
 export * from "./activity-image";
 export * from "./admin";
 export * from "./ecoji-v2";
-export * from "./login-settings";
 export * from "./payments";
 export * from "./profile";
 export * from "./rate-limits";

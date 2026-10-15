@@ -90,26 +90,6 @@ describe("release environment guards", () => {
     ).not.toEqual(sourceResources);
   });
 
-  it("requires public fetch routing for both remote API environments", () => {
-    for (const environment of ["staging", "production"] as const) {
-      const { web, api } = configs(environment);
-      expect(() =>
-        validateEnvironment(environment, web, api, { allowLive: true }),
-      ).not.toThrow();
-      const flags = api.compatibility_flags;
-      delete api.compatibility_flags;
-      expect(() =>
-        validateEnvironment(environment, web, api, { allowLive: true }),
-      ).toThrow("public fetch routing compatibility flag");
-      api.compatibility_flags = (flags ?? []).filter(
-        (flag) => flag !== "global_fetch_strictly_public",
-      );
-      expect(() =>
-        validateEnvironment(environment, web, api, { allowLive: true }),
-      ).toThrow("public fetch routing compatibility flag");
-    }
-  });
-
   it("rejects a cross-environment service binding and API public routes", () => {
     const { web, api } = configs();
     web.services = [{ binding: "API", service: "hb-api-production" }];
@@ -234,11 +214,6 @@ describe("release environment guards", () => {
     writeFileSync(
       join(path, "client/app.js"),
       "const leak='CONNECT_CLIENT_SECRET';",
-    );
-    expect(() => inspectBrowserBundle(path)).toThrow("SERVER_MATERIAL");
-    writeFileSync(
-      join(path, "client/app.js"),
-      "const leak='LITEAUTH_CLIENT_SECRET';",
     );
     expect(() => inspectBrowserBundle(path)).toThrow("SERVER_MATERIAL");
   });

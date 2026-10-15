@@ -1,5 +1,4 @@
 import type { CredentialVerification, Merchant } from "@hb/contracts";
-import { hasOfficialConnect } from "../auth/eligibility";
 import type { merchants } from "../db/schema";
 import type { ApiBindings } from "../env";
 import {
@@ -21,8 +20,6 @@ export async function publicationEligibility(
     reason,
     credentialVersion: merchant.credentialVersion,
   });
-  if (!(await hasOfficialConnect(env, merchant.authorId)))
-    return result("OFFICIAL_CONNECT_REQUIRED");
   if (merchant.usageStatus !== "current") return result("MERCHANT_LEGACY");
   if (merchant.mode === "simulation")
     return result(isLocalSimulation(env) ? null : "REAL_LDC_NOT_ENABLED");
@@ -51,8 +48,6 @@ export async function publicationEligibility(
 }
 
 export const publicationMessages = {
-  OFFICIAL_CONNECT_REQUIRED:
-    "青春版账号暂不支持 LDC 奖励，请通过官方 Connect 登录升级当前账号。",
   TIMED_DRAW_NOT_ENABLED: "限时开奖尚未启用，草稿已保存。",
   REAL_LDC_NOT_ENABLED:
     "平台暂未开放真实 LDC 活动发布，仍可保存草稿或创建文本活动。",

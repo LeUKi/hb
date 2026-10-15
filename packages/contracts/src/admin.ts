@@ -31,8 +31,6 @@ export const adminPaymentStatusSchema = z.enum([
   "attention",
 ]);
 export type AdminPaymentStatus = z.infer<typeof adminPaymentStatusSchema>;
-export const adminUserTierSchema = z.enum(["all", "standard", "lite"]);
-export type AdminUserTier = z.infer<typeof adminUserTierSchema>;
 export const adminUserStateSchema = z.enum(["all", "active", "disabled"]);
 export type AdminUserState = z.infer<typeof adminUserStateSchema>;
 export const adminDrawAnomalySchema = z.enum(["overdue", "unpublished"]);
@@ -42,11 +40,7 @@ export const adminPaymentAnomalySchema = z.enum([
   "overdue",
   "undelivered",
 ]);
-export const adminAuditTypeSchema = z.enum([
-  "all",
-  "login_settings",
-  "attempt_rate_limits",
-]);
+export const adminAuditTypeSchema = z.enum(["all", "attempt_rate_limits"]);
 export type AdminAuditType = z.infer<typeof adminAuditTypeSchema>;
 
 export type AdminListResponse<T> = {
@@ -112,9 +106,7 @@ export type AdminUserListItem = {
   username: string;
   displayName: string;
   avatarUrl: string | null;
-  accountTier: "standard" | "lite";
   active: boolean;
-  officialConnectVerified: boolean;
   createdAt: number;
   lastLoginAt: number | null;
 };
@@ -246,7 +238,7 @@ const adminAuditCursorValueSchema = z
   .string()
   .max(512)
   .regex(
-    /^(\d{1,16}):(login_settings|attempt_rate_limits):([A-Za-z0-9_-][A-Za-z0-9_-]{0,100}|[a-f0-9-]{36})$/,
+    /^(\d{1,16}):(attempt_rate_limits):([A-Za-z0-9_-][A-Za-z0-9_-]{0,100}|[a-f0-9-]{36})$/,
   )
   .refine((value) => Number.isSafeInteger(Number(value.split(":", 1)[0])));
 
@@ -263,7 +255,6 @@ export const adminActivitiesQuerySchema = z.strictObject({
 export const adminUsersQuerySchema = z.strictObject({
   q: z.string().trim().max(200).optional(),
   cursor: adminCursorSchema,
-  tier: adminUserTierSchema.optional(),
   state: adminUserStateSchema.optional(),
 });
 export const adminPaymentsQuerySchema = z.strictObject({

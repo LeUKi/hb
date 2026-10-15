@@ -23,7 +23,6 @@ function activity(extra: Partial<PublicActivity> = {}): PublicActivity {
       username: "alice",
       displayName: "Alice & Bob",
       avatarUrl: null,
-      accountTier: "standard",
     },
     forceDedicated: false,
     topicUrl: null,

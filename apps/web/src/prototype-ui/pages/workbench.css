@@ -765,13 +765,6 @@
   font-size: 14px;
 }
 
-.work-identity-label {
-  padding: 3px 7px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  font-size: 12px;
-}
-
 .work-account-hero > .button {
   margin-left: auto;
 }
@@ -821,17 +814,6 @@
 
 .work-account-field-heading {
   flex-shrink: 0;
-}
-
-.work-qualification {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--muted);
-}
-
-.work-account-permissions {
-  margin-top: 16px;
 }
 
 .work-account-nav {
@@ -943,56 +925,16 @@
 }
 
 .work-login-heading p,
-.work-login-footnote,
-.work-login-lite-panel p {
+.work-login-footnote {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.6;
 }
 
-.work-login-primary,
-.work-login-secondary {
+.work-login-primary {
   width: 100%;
   justify-content: center;
-}
-
-.work-login-primary {
   min-height: 48px;
-}
-
-.work-login-lite {
-  border-top: 1px solid var(--line);
-  padding-top: 14px;
-}
-
-.work-login-lite-trigger {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  min-height: 36px;
-  padding: 4px 0;
-  color: var(--muted);
-  font-size: 13px;
-  text-align: left;
-}
-
-.work-login-page .work-login-card .work-login-lite-trigger svg {
-  transition: transform 180ms ease;
-}
-
-.work-login-page .work-login-card .work-login-lite-trigger svg.is-open {
-  transform: rotate(180deg);
-}
-
-.work-login-lite-region {
-  overflow: clip;
-}
-
-.work-login-lite-panel {
-  display: grid;
-  gap: 12px;
-  padding-top: 12px;
 }
 
 .work-guest-prompt > h1 {

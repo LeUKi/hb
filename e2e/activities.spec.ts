@@ -18,9 +18,6 @@ const author = {
   username: "ada",
   displayName: "Ada",
   avatarUrl: null,
-  accountTier: "standard" as const,
-  canUseLdc: true,
-  loginProvider: "connect" as const,
 };
 
 function fixture(): ManagedActivity {

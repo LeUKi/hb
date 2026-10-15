@@ -6,17 +6,6 @@ const user = {
   username: "ldc-user",
   displayName: "LDC 用户",
   avatarUrl: null,
-  accountTier: "standard" as const,
-  canUseLdc: true,
-  loginProvider: "connect" as const,
-};
-
-const liteUser = {
-  ...user,
-  id: "ldc-lite-user",
-  accountTier: "lite" as const,
-  canUseLdc: false,
-  loginProvider: "liteauth" as const,
 };
 
 const activityId = "11111111-1111-4111-8111-111111111111";
@@ -66,7 +55,7 @@ function ldcActivity(id = activityId) {
 async function installBaseMock(
   page: Page,
   options: {
-    currentUser?: typeof user | typeof liteUser | null;
+    currentUser?: typeof user | null;
     activityStatus?: number;
     discoveryItems?: unknown[];
     redemptionItems?: unknown[];
@@ -90,7 +79,6 @@ async function installBaseMock(
         json: {
           user: currentUser,
           csrfToken: currentUser ? "csrf" : null,
-          loginOptions: { liteauthEnabled: true },
           attemptCooldown: null,
         },
       });
@@ -170,16 +158,6 @@ async function installBaseMock(
       return route.fulfill({ json: { items: [], nextCursor: null, total: 0 } });
     if (path === "/api/redemptions/discover") {
       state.discovers.push(request.postDataJSON());
-      if (options.currentUser === liteUser)
-        return route.fulfill({
-          status: 403,
-          json: {
-            error: {
-              code: "OFFICIAL_CONNECT_REQUIRED",
-              message: "需要普通资格。",
-            },
-          },
-        });
       return route.fulfill({
         json: {
           id: resultId,
@@ -234,26 +212,6 @@ test("旧奖励类型 URL 会 replace 移除废弃参数并保留合法筛选", 
   await expect(
     page.getByRole("group", { name: "奖励类型", exact: true }),
   ).toHaveCount(0);
-});
-
-test("青春版首页先识别活动标识，普通口令才提示升级且不提交", async ({
-  page,
-}) => {
-  const state = await installBaseMock(page, { currentUser: liteUser });
-
-  await page.goto("/");
-  await page.getByLabel("口令", { exact: true }).fill(activityId);
-  await page.getByRole("button", { name: "跳转活动", exact: true }).click();
-  await expect(page).toHaveURL(`/activities/${activityId}`);
-  expect(state.discovers).toHaveLength(0);
-
-  await page.goto("/");
-  await page.getByLabel("口令", { exact: true }).fill("普通口令123");
-  await page.getByRole("button", { name: "兑奖", exact: true }).click();
-  await expect(
-    page.getByText("兑奖需要使用官方 Connect 升级后重新提交口令。"),
-  ).toBeVisible();
-  expect(state.discovers).toHaveLength(0);
 });
 
 test("旧全站兑奖结果只展示 LDC 候选，全文本候选不可继续恢复", async ({
@@ -433,7 +391,7 @@ test("活动资源 404 会撤下详情、名单 overlay 和本活动待消费意
           kind: "roster",
           id,
           parent: "legacy",
-          owner: "ldc-only-user:standard",
+          owner: "ldc-only-user",
           version: 2,
         },
       },

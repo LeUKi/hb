@@ -37,7 +37,6 @@ async function actor(username = "admin-read"): Promise<Actor> {
       tokenHash: await sha256Hex(`hb.session-token.v1:${token}`),
       userId: id,
       csrfToken: csrf,
-      loginProvider: "liteauth",
       createdAt: now,
       lastSeenAt: now,
       expiresAt: new Date(now.getTime() + 60_000),
@@ -225,19 +224,17 @@ async function seedSameTimeUsers(count: number, now: number) {
     externalId: linuxDoId(),
     username: `admin-page-user-${String(index).padStart(2, "0")}`,
     displayName: `Admin page user ${String(index).padStart(2, "0")}`,
-    official: index % 2 === 0 ? 1 : 0,
     active: index % 3 === 0 ? 0 : 1,
   }));
   await env.DB.batch(
     rows.map((row) =>
       env.DB.prepare(`INSERT INTO users
-        (id,external_id,username,display_name,official_connect_verified,active,created_at,updated_at)
-        VALUES (?,?,?,?,?,?,?,?)`).bind(
+        (id,external_id,username,display_name,active,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?)`).bind(
         row.id,
         row.externalId,
         row.username,
         row.displayName,
-        row.official,
         row.active,
         now,
         now,
@@ -318,9 +315,6 @@ beforeEach(async () => {
     env.DB.prepare("DELETE FROM reward_inventory"),
     env.DB.prepare("DELETE FROM activity_passwords"),
     env.DB.prepare("DELETE FROM activities"),
-    env.DB.prepare(
-      "DELETE FROM login_setting_changes WHERE id LIKE 'admin-audit-%'",
-    ),
     env.DB.prepare(
       "DELETE FROM attempt_rate_limit_changes WHERE id LIKE 'admin-audit-%'",
     ),
@@ -701,33 +695,33 @@ describe("administrator observation APIs", () => {
     expect(body.items.map((item) => item.id)).toEqual([literalId]);
   });
 
-  it("searches users by exact ids and names while applying tier and account state filters", async () => {
+  it("searches users by exact ids and names while applying the account state filter", async () => {
     const admin = await actor("admin-user-search-admin");
     const now = Date.now();
-    const standardActive = {
+    const activeUser = {
       id: crypto.randomUUID(),
       externalId: linuxDoId(),
     };
-    const liteDisabled = {
+    const disabledUser = {
       id: crypto.randomUUID(),
       externalId: linuxDoId(),
     };
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO users
-        (id,external_id,username,display_name,official_connect_verified,active,created_at,updated_at)
-        VALUES (?,?,?,?,1,1,?,?)`).bind(
-        standardActive.id,
-        standardActive.externalId,
+        (id,external_id,username,display_name,active,created_at,updated_at)
+        VALUES (?,?,?,?,1,?,?)`).bind(
+        activeUser.id,
+        activeUser.externalId,
         "admin_percent_user",
         "Admin 100%_Literal",
         now,
         now,
       ),
       env.DB.prepare(`INSERT INTO users
-        (id,external_id,username,display_name,official_connect_verified,active,created_at,updated_at)
-        VALUES (?,?,?,?,0,0,?,?)`).bind(
-        liteDisabled.id,
-        liteDisabled.externalId,
+        (id,external_id,username,display_name,active,created_at,updated_at)
+        VALUES (?,?,?,?,0,?,?)`).bind(
+        disabledUser.id,
+        disabledUser.externalId,
         "adminXpercentXuser",
         "Admin 100XALiteral",
         now - 1,
@@ -735,8 +729,8 @@ describe("administrator observation APIs", () => {
       ),
     ]);
     for (const query of [
-      standardActive.id,
-      standardActive.externalId,
+      activeUser.id,
+      activeUser.externalId,
       "admin_percent_user",
       "100%_Literal",
     ]) {
@@ -749,21 +743,10 @@ describe("administrator observation APIs", () => {
         `${query}: ${await response.clone().text()}`,
       ).toBe(200);
       const body = (await response.json()) as AdminCursorList<{ id: string }>;
-      expect(body.items.map((item) => item.id)).toEqual([standardActive.id]);
+      expect(body.items.map((item) => item.id)).toEqual([activeUser.id]);
     }
-    const standard = await request(
-      `/api/admin/users?q=${standardActive.id}&tier=standard`,
-      admin,
-    );
-    const standardIds = (
-      (await standard.json()) as AdminCursorList<{
-        id: string;
-      }>
-    ).items.map((item) => item.id);
-    expect(standardIds).toContain(standardActive.id);
-    expect(standardIds).not.toContain(liteDisabled.id);
     const disabled = await request(
-      `/api/admin/users?q=${liteDisabled.id}&state=disabled`,
+      `/api/admin/users?q=${disabledUser.id}&state=disabled`,
       admin,
     );
     const disabledIds = (
@@ -771,8 +754,8 @@ describe("administrator observation APIs", () => {
         id: string;
       }>
     ).items.map((item) => item.id);
-    expect(disabledIds).toContain(liteDisabled.id);
-    expect(disabledIds).not.toContain(standardActive.id);
+    expect(disabledIds).toContain(disabledUser.id);
+    expect(disabledIds).not.toContain(activeUser.id);
   });
 
   it("rejects invalid admin query filters before running list queries", async () => {
@@ -780,7 +763,7 @@ describe("administrator observation APIs", () => {
     expect(
       (await request("/api/admin/activities?status=running", admin)).status,
     ).toBe(400);
-    expect((await request("/api/admin/users?tier=vip", admin)).status).toBe(
+    expect((await request("/api/admin/users?state=vip", admin)).status).toBe(
       400,
     );
     expect(
@@ -793,14 +776,14 @@ describe("administrator observation APIs", () => {
     expect(
       (
         await request(
-          "/api/admin/audit?cursor=1700000000000:LOGIN_SETTINGS:id",
+          "/api/admin/audit?cursor=1700000000000:ATTEMPT_RATE_LIMITS:id",
           admin,
         )
       ).status,
     ).toBe(400);
   });
 
-  it("uses admin read indexes for default lists, common payment filters and audit sources", async () => {
+  it("uses admin read indexes for default lists, common payment filters and the audit source", async () => {
     await seedAdminObservation();
     async function plan(sql: string) {
       const result = await env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`).all<{
@@ -833,84 +816,64 @@ describe("administrator observation APIs", () => {
     ).resolves.toContain("payment_tasks_admin_time_idx");
     await expect(
       plan(
-        "SELECT id FROM login_setting_changes ORDER BY created_at DESC,id DESC LIMIT 21",
-      ),
-    ).resolves.toContain("login_setting_changes_time_idx");
-    await expect(
-      plan(
         "SELECT id FROM attempt_rate_limit_changes ORDER BY created_at DESC,id DESC LIMIT 21",
       ),
     ).resolves.toContain("attempt_rate_limit_changes_time_idx");
   });
 
-  it("paginates audit histories from both existing setting sources", async () => {
+  it("lists rate limit audit history newest first with before and after values", async () => {
     const { admin } = await seedAdminObservation();
     const base = Date.now();
-    await env.DB.batch([
-      env.DB.prepare(`INSERT INTO login_setting_changes
-        (id,actor_user_id,previous_version,next_version,previous_liteauth_enabled,liteauth_enabled,created_at)
-        VALUES ('admin-audit-login',?,1,2,1,0,?)`).bind(admin.id, base),
-      env.DB.prepare(`INSERT INTO attempt_rate_limit_changes
-        (id,actor_user_id,previous_version,next_version,previous_home_interval_seconds,
-         home_interval_seconds,previous_activity_interval_seconds,activity_interval_seconds,created_at)
-        VALUES ('admin-audit-rate',?,1,2,2,3,2,4,?)`).bind(admin.id, base - 1),
-    ]);
+    await env.DB.prepare(`INSERT INTO attempt_rate_limit_changes
+      (id,actor_user_id,previous_version,next_version,previous_home_interval_seconds,
+       home_interval_seconds,previous_activity_interval_seconds,activity_interval_seconds,created_at)
+      VALUES ('admin-audit-rate-old',?,1,2,2,3,2,4,?),('admin-audit-rate-new',?,2,3,3,5,4,6,?)`)
+      .bind(admin.id, base - 1, admin.id, base)
+      .run();
     const response = await request(`/api/admin/audit?actor=${admin.id}`, admin);
     expect(response.status).toBe(200);
     const body = (await response.json()) as AdminCursorList<unknown>;
     expect(body.items).toMatchObject([
-      { id: "admin-audit-login", type: "login_settings" },
-      { id: "admin-audit-rate", type: "attempt_rate_limits" },
+      {
+        id: "admin-audit-rate-new",
+        type: "attempt_rate_limits",
+        actorUserId: admin.id,
+        actorDisplayName: "admin-read-admin",
+        previousVersion: 2,
+        nextVersion: 3,
+        before: { homeIntervalSeconds: 3, activityIntervalSeconds: 4 },
+        after: { homeIntervalSeconds: 5, activityIntervalSeconds: 6 },
+        createdAt: base,
+      },
+      { id: "admin-audit-rate-old", type: "attempt_rate_limits" },
     ]);
   });
 
-  it("paginates dense same-time audit records across both sources without losing tied rows", async () => {
+  it("paginates dense same-time audit records without losing tied rows", async () => {
     const { admin } = await seedAdminObservation();
     const base = Date.now();
-    const statements: D1PreparedStatement[] = [];
-    for (let index = 0; index < 45; index++) {
-      statements.push(
-        env.DB.prepare(`INSERT INTO login_setting_changes
-          (id,actor_user_id,previous_version,next_version,previous_liteauth_enabled,liteauth_enabled,created_at)
-          VALUES (?,?,?, ?,1,0,?)`).bind(
-          `admin-audit-login-${String(index).padStart(2, "0")}`,
-          admin.id,
-          100 + index,
-          101 + index,
-          base,
-        ),
+    const ids = Array.from(
+      { length: 45 },
+      (_, index) => `admin-audit-rate-${String(index).padStart(2, "0")}`,
+    );
+    await env.DB.batch(
+      ids.map((id, index) =>
         env.DB.prepare(`INSERT INTO attempt_rate_limit_changes
           (id,actor_user_id,previous_version,next_version,previous_home_interval_seconds,
            home_interval_seconds,previous_activity_interval_seconds,activity_interval_seconds,created_at)
           VALUES (?,?,?, ?,2,3,2,4,?)`).bind(
-          `admin-audit-rate-${String(index).padStart(2, "0")}`,
+          id,
           admin.id,
           200 + index,
           201 + index,
           base,
         ),
-      );
-    }
-    await env.DB.batch(statements);
-    const seen = new Set<string>();
-    let cursor: string | null = null;
-    for (let page = 0; page < 5; page++) {
-      const response = await request(
-        `/api/admin/audit?actor=${admin.id}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
-        admin,
-      );
-      expect(response.status).toBe(200);
-      const body = (await response.json()) as AdminCursorList<{ id: string }>;
-      for (const item of body.items) seen.add(item.id);
-      cursor = body.nextCursor;
-      if (!cursor) break;
-    }
-    expect(seen.size).toBe(90);
-    expect(
-      [...seen].filter((id) => id.startsWith("admin-audit-login-")),
-    ).toHaveLength(45);
-    expect(
-      [...seen].filter((id) => id.startsWith("admin-audit-rate-")),
-    ).toHaveLength(45);
+      ),
+    );
+    const seen = await collectAdminListIds(
+      `/api/admin/audit?actor=${admin.id}`,
+      admin,
+    );
+    expect(seen).toEqual([...ids].reverse());
   });
 });

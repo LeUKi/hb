@@ -183,7 +183,7 @@ export function inspectBrowserBundle(directory: string) {
   for (const path of filesWithin(join(directory, "client"))) {
     if (!/\.(?:js|mjs|html|map)$/.test(path)) continue;
     if (
-      /CONNECT_CLIENT_SECRET|LITEAUTH_CLIENT_SECRET|ENCRYPTION_KEYS|PASSWORD_DIGEST_KEY|credit\.linux\.do\/(?:lpay\/distribute|epay\/api\.php)|class ActivityDO/.test(
+      /CONNECT_CLIENT_SECRET|ENCRYPTION_KEYS|PASSWORD_DIGEST_KEY|credit\.linux\.do\/(?:lpay\/distribute|epay\/api\.php)|class ActivityDO/.test(
         readFileSync(path, "utf8"),
       )
     ) {

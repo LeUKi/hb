@@ -4,7 +4,6 @@ import type {
   ParticipationMode,
 } from "@hb/contracts";
 import { and, eq, isNull } from "drizzle-orm";
-import { requireOfficialConnect } from "../auth/eligibility";
 import { createDb } from "../db/client";
 import {
   activities,
@@ -200,8 +199,6 @@ export async function prepareClaimSubmission(
         null,
         continuation,
       );
-    if (activity.rewardType === "ldc")
-      await requireOfficialConnect(env, userId);
     if (
       activity.rewardType === "ldc" &&
       activity.paymentMode === "simulation" &&
@@ -258,7 +255,7 @@ export async function prepareClaimSubmission(
       // A failed precondition must roll back the submission AND the event together.
       env.DB.prepare(`UPDATE activities SET version = CASE WHEN version = ? AND participation_mode = ? AND deleted_at IS NULL AND opened_at IS NOT NULL AND ended_at IS NULL
         AND archived_at IS NULL AND deadline > ${databaseNow} AND claimed_count < total_count
-        AND reward_type = 'ldc' AND EXISTS(SELECT 1 FROM users WHERE id=? AND official_connect_verified=1 AND active=1) AND author_id != ? AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
+        AND reward_type = 'ldc' AND EXISTS(SELECT 1 FROM users WHERE id=? AND active=1) AND author_id != ? AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
         AND NOT EXISTS (SELECT 1 FROM claims WHERE activity_id = ? AND user_id = ?)
         THEN version ELSE NULL END WHERE id = ?`).bind(
         activity.version,
@@ -308,8 +305,6 @@ export async function prepareClaimSubmission(
       if (winner) return bindFingerprint(winner, fingerprint);
       const current = await findActivity(env, activityId);
       if (!current) activityNotFound();
-      if (current.rewardType === "ldc")
-        await requireOfficialConnect(env, userId);
       if (
         current.version !== activity.version ||
         activityStatus(current) !== "active" ||
@@ -467,8 +462,6 @@ export async function completeClaimSubmission(
     const status = activityStatus(activity);
     if (status !== "active")
       return finishWithoutAllocation(env, submission, status);
-    if (activity.rewardType === "ldc")
-      await requireOfficialConnect(env, submission.userId);
     if (
       activity.rewardType === "ldc" &&
       activity.paymentMode === "simulation" &&
@@ -530,7 +523,7 @@ export async function completeClaimSubmission(
     const statements = [
       env.DB.prepare(`UPDATE activities SET version = CASE WHEN deleted_at IS NULL AND opened_at IS NOT NULL AND ended_at IS NULL AND archived_at IS NULL
           AND deadline > ${databaseNow} AND claimed_count < total_count
-          AND reward_type = 'ldc' AND EXISTS(SELECT 1 FROM users WHERE id=? AND official_connect_verified=1 AND active=1) AND author_id != ? AND merchant_id IS NOT NULL AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
+          AND reward_type = 'ldc' AND EXISTS(SELECT 1 FROM users WHERE id=? AND active=1) AND author_id != ? AND merchant_id IS NOT NULL AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
           AND NOT EXISTS (SELECT 1 FROM claims WHERE activity_id = ? AND user_id = ?)
           AND EXISTS (SELECT 1 FROM redemption_submissions s WHERE s.id = ? AND s.activity_id=activities.id
             AND s.user_id=? AND s.purpose = 'claim' AND s.outcome = 'pending'
@@ -654,8 +647,6 @@ export async function completeClaimSubmission(
         return resultOfSubmission(env, current);
       const latest = await findActivity(env, activity.id);
       if (!latest) activityNotFound();
-      if (latest.rewardType === "ldc")
-        await requireOfficialConnect(env, submission.userId);
       if (
         latest.paymentMode === "real" &&
         !testPermission &&

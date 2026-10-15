@@ -2,20 +2,13 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
 import type { ReactNode } from "react";
 import { useSession } from "../../lib/auth";
-import { OfficialConnectRequired } from "../auth/official-connect-required";
 import { PageLoading } from "../page-loading";
 import { Button } from "../ui/button";
 
 export function RequireAccount({
   children,
-  requireLdc = false,
 }: {
-  children: (account: {
-    userId: string;
-    csrfToken: string;
-    canUseLdc: boolean;
-  }) => ReactNode;
-  requireLdc?: boolean;
+  children: (account: { userId: string; csrfToken: string }) => ReactNode;
 }) {
   const session = useSession();
   const returnTo = useRouterState({ select: (state) => state.location.href });
@@ -38,17 +31,8 @@ export function RequireAccount({
       </div>
     );
   }
-  if (requireLdc && !session.data.user.canUseLdc) {
-    return (
-      <section className="work-page">
-        <h1 className="text-2xl font-semibold">商户配置</h1>
-        <OfficialConnectRequired message="青春版暂不支持商户配置。使用官方Connect升级后，可以配置LDC商户。" />
-      </section>
-    );
-  }
   return children({
     userId: session.data.user.id,
     csrfToken: session.data.csrfToken,
-    canUseLdc: session.data.user.canUseLdc,
   });
 }

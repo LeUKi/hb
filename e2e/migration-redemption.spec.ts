@@ -8,9 +8,6 @@ const user = {
   username: "viewer",
   displayName: "参与者",
   avatarUrl: null,
-  accountTier: "standard",
-  canUseLdc: true,
-  loginProvider: "connect",
 };
 const author = {
   ...user,

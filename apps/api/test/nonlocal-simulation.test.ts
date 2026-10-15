@@ -27,7 +27,6 @@ async function actor() {
   const id = crypto.randomUUID(),
     now = new Date();
   await createDb(env.DB).insert(users).values({
-    officialConnectVerified: true,
     id,
     externalId: id,
     username: id,

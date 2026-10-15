@@ -16,9 +16,6 @@ const owner = {
   username: "shareauthor",
   displayName: "分享作者",
   avatarUrl: null,
-  accountTier: "standard" as const,
-  loginProvider: "connect" as const,
-  canUseLdc: true,
   isAdmin: false,
 };
 const viewer = {
@@ -183,7 +180,6 @@ async function mockShare(page: Page) {
           user: state.user,
           csrfToken: state.user ? "csrf" : null,
           attemptCooldown: null,
-          loginOptions: { liteauthEnabled: true },
         },
       });
     if (path === `/api/activities/${id}`)

@@ -24,9 +24,6 @@ const user = {
   username: "tester",
   displayName: "测试用户",
   avatarUrl: null,
-  accountTier: "standard" as const,
-  canUseLdc: true,
-  loginProvider: "connect" as const,
 };
 
 function segmentedButton(page: Page, groupName: string, name: string | RegExp) {
@@ -131,9 +128,6 @@ const author = {
   username: "author",
   displayName: "奖励作者",
   avatarUrl: null,
-  accountTier: "standard" as const,
-  canUseLdc: true,
-  loginProvider: "connect" as const,
 };
 
 async function mockPayments(page: Page, mode: PaymentMode = "simulation") {

@@ -156,7 +156,7 @@ test("真实本地后台：管理员观察无业务副作用，草稿与软删�
     await adminPage.goto("/admin/rate-limits");
     await expect(adminPage).toHaveURL(`${origin}/admin/settings`);
     await expect(
-      adminPage.getByRole("region", { name: "登录方式", exact: true }),
+      adminPage.getByRole("region", { name: "参与尝试限流", exact: true }),
     ).toBeVisible();
     const deleted = await owner.request.delete(
       `/api/me/activities/${managed.id}`,

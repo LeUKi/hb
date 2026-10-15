@@ -147,7 +147,6 @@ describe("Connect authorization and sessions", () => {
       user: null,
       csrfToken: null,
       attemptCooldown: null,
-      loginOptions: { liteauthEnabled: true },
     });
     expect(session.headers.get("cache-control")).toContain("no-store");
     expect(
@@ -195,7 +194,6 @@ describe("Connect authorization and sessions", () => {
         username: "alice",
         displayName: "Alice",
         avatarUrl: null,
-        loginProvider: "connect",
       },
       csrfToken: expect.any(String),
     });
@@ -472,6 +470,47 @@ describe("Connect authorization and sessions", () => {
     expect(JSON.stringify(log.mock.calls)).not.toContain("private");
   });
 
+  it("keeps the previous session when a new session cannot be saved", async () => {
+    const signed = await login();
+    const previousSession = signed.cookie
+      .split("; ")
+      .filter((value) => value.startsWith("hb_session="))
+      .join("; ");
+    const start = await begin();
+    mockProvider();
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await env.DB.prepare(
+      "CREATE TRIGGER fail_session_insert BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT,'injected session insert failure'); END",
+    ).run();
+    try {
+      const response = await request(
+        `/api/auth/callback?state=${start.state}&code=test-code`,
+        { headers: { Cookie: `${start.cookie}; ${previousSession}` } },
+      );
+      expect(response.headers.get("location")).toBe("/?authError=auth_failed");
+      expect(
+        response.headers
+          .getSetCookie()
+          .some((value) => value.startsWith("hb_session=")),
+      ).toBe(false);
+    } finally {
+      await env.DB.prepare("DROP TRIGGER fail_session_insert").run();
+    }
+    expect(log).toHaveBeenCalledWith("auth_failure", {
+      location: "oauth_callback",
+      stage: "session",
+      reason: "invalid_response",
+    });
+    expect(
+      await env.DB.prepare("SELECT count(*) AS n FROM sessions").first("n"),
+    ).toBe(1);
+    expect(
+      await (
+        await request("/api/me", { headers: { Cookie: previousSession } })
+      ).json(),
+    ).toMatchObject({ user: { id: signed.me.user.id } });
+  });
+
   it("updates mutable profile fields for the same stable ID and clears absent optional fields", async () => {
     const first = await login({
       id: 12345,
@@ -506,6 +545,35 @@ describe("Connect authorization and sessions", () => {
     expect(cleared.me.user.avatarUrl).toBeNull();
     const third = await login({ id: 67890, username: "renamed", active: true });
     expect(third.me.user.id).not.toBe(first.me.user.id);
+  });
+
+  it("canonicalizes uint64 text IDs without rounding and never merges accounts by name", async () => {
+    const max = await login({
+      id: "18446744073709551615",
+      username: "alice",
+      active: true,
+    });
+    const padded = await login({
+      id: "0012345",
+      username: "alice",
+      active: true,
+    });
+    const numeric = await login({ id: 12345, username: "alice", active: true });
+    expect(padded.me.user.id).not.toBe(max.me.user.id);
+    expect(padded.me.user.id).toBe(numeric.me.user.id);
+    expect(
+      await env.DB.prepare("SELECT count(*) AS n FROM users").first("n"),
+    ).toBe(2);
+    expect(
+      (
+        await env.DB.prepare(
+          "SELECT id,external_id FROM users ORDER BY external_id",
+        ).all()
+      ).results,
+    ).toEqual([
+      { id: padded.me.user.id, external_id: "12345" },
+      { id: max.me.user.id, external_id: "18446744073709551615" },
+    ]);
   });
 
   it("stores optional Connect email encrypted and publishes only the safe avatar", async () => {
@@ -607,8 +675,6 @@ describe("Connect authorization and sessions", () => {
         username: "alice",
         displayName: "alice",
         avatarUrl: null,
-        accountTier: "standard",
-        canUseLdc: true,
         isAdmin: false,
       },
     });

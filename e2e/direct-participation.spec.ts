@@ -8,9 +8,6 @@ const viewer = {
   username: "directviewer",
   displayName: "直接参与者",
   avatarUrl: null,
-  accountTier: "standard" as const,
-  loginProvider: "connect" as const,
-  canUseLdc: true,
   isAdmin: false,
 };
 const author = { ...viewer, id: "direct-author", username: "directauthor" };
@@ -134,7 +131,6 @@ async function mockDirectApp(page: Page) {
           user: state.user,
           csrfToken: state.csrfToken,
           attemptCooldown: state.cooldown,
-          loginOptions: { liteauthEnabled: true },
         },
       });
     if (url.pathname === `/api/activities/${activityId}`)

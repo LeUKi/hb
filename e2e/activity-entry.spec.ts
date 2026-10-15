@@ -8,9 +8,6 @@ const user = {
   username: "entry-user",
   displayName: "活动页连续性用户",
   avatarUrl: null,
-  accountTier: "standard",
-  canUseLdc: true,
-  loginProvider: "connect",
 };
 
 const author = {
@@ -18,7 +15,6 @@ const author = {
   username: "entry-author",
   displayName: "活动作者",
   avatarUrl: null,
-  accountTier: "standard",
 };
 
 function publicActivitiesDialog(page: Page) {
@@ -892,7 +888,6 @@ test("名单弹窗和后台刷新不会触发红包重新展开", async ({ page 
 for (const viewer of [
   { name: "可参与用户", user, seal: "开" },
   { name: "作者", user: { ...user, ...author }, seal: "查看" },
-  { name: "无资金资格用户", user: { ...user, canUseLdc: false }, seal: "查看" },
   { name: "游客", user: null, seal: "查看" },
 ]) {
   test(`活动图片按${viewer.name}的实际参与能力显示印章`, async ({ page }) => {

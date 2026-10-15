@@ -14,7 +14,6 @@ async function setup(page: Page) {
     username: "Tester7369",
     displayName: "收款人",
     avatarUrl: null,
-    accountTier: "standard",
   };
   await page.route(`**/api/me/activities/${activityId}`, (route) =>
     route.fulfill({

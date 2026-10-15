@@ -16,9 +16,6 @@ const user = {
   username: "drawtime",
   displayName: "开奖时间测试",
   avatarUrl: null,
-  accountTier: "standard" as const,
-  canUseLdc: true,
-  loginProvider: "connect" as const,
 };
 
 test.use({ timezoneId: "Asia/Shanghai" });

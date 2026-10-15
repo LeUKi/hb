@@ -28,7 +28,6 @@ type Actor = { id: string; cookie: string; csrf: string; token: string };
 
 let owner: Actor;
 let alice: Actor;
-let lite: Actor;
 let merchantId: string;
 let actorNumber = 70_000;
 
@@ -45,7 +44,7 @@ function mergeCookies(...values: Array<string | null | undefined>) {
   return values.filter(Boolean).join("; ");
 }
 
-async function actor(official = true): Promise<Actor> {
+async function actor(): Promise<Actor> {
   const id = crypto.randomUUID();
   const token = crypto.randomUUID().replaceAll("-", "");
   const csrf = crypto.randomUUID();
@@ -57,7 +56,6 @@ async function actor(official = true): Promise<Actor> {
     externalId: String(number),
     username: `Image${number}`,
     displayName: `图片用户 ${number}`,
-    officialConnectVerified: official,
     createdAt: now,
     updatedAt: now,
   });
@@ -65,7 +63,6 @@ async function actor(official = true): Promise<Actor> {
     tokenHash: await sha256Hex(`hb.session-token.v1:${token}`),
     userId: id,
     csrfToken: csrf,
-    loginProvider: official ? "connect" : "liteauth",
     createdAt: now,
     lastSeenAt: now,
     expiresAt: new Date(now.getTime() + 7 * 24 * 3_600_000),
@@ -184,7 +181,7 @@ beforeEach(async () => {
     env.DB.prepare("DELETE FROM oauth_attempts"),
     env.DB.prepare("DELETE FROM users"),
   ]);
-  [owner, alice, lite] = await Promise.all([actor(), actor(), actor(false)]);
+  [owner, alice] = await Promise.all([actor(), actor()]);
   const merchant = await createMerchant(bindings, owner.id, {
     requestId: crypto.randomUUID(),
     clientId: `image_${merchantIdSeed(owner.id)}`,
@@ -340,9 +337,17 @@ describe("activity image APIs", () => {
       cookie: mergeCookies(alice.cookie, recentCookie, clearCookie),
     });
     expect(await oldAfterClear.json()).toMatchObject({ recentRequest: null });
-    const nextImage = await request(`/api/activity-images/${activity.id}.svg`, {
-      cookie: preferenceCookie ?? undefined,
-    });
+    // Only a request after the clear is shown. The Workers clock can still read
+    // the clear's millisecond here, so move it forward explicitly.
+    vi.useFakeTimers({ now: Date.now() + 1_000, toFake: ["Date"] });
+    let nextImage: Response;
+    try {
+      nextImage = await request(`/api/activity-images/${activity.id}.svg`, {
+        cookie: preferenceCookie ?? undefined,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
     const nextRecentCookie = cookieValue(nextImage, "__Host-hb_image_recent");
     const newAfterClear = await request("/api/me/activity-images", {
       actor: alice,
@@ -500,11 +505,6 @@ describe("activity image APIs", () => {
       },
     );
     expect(await authorMain.text()).not.toContain("1.00 LDC");
-
-    const liteImage = await request(`/api/activity-images/${activity.id}.svg`, {
-      actor: lite,
-    });
-    expect(await liteImage.text()).not.toContain("报名");
 
     expect(await counts(activity.id)).toEqual(before);
     const lastSeenAfter = await env.DB.prepare(

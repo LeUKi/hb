@@ -30,7 +30,6 @@ const merchantStubs: ReturnType<typeof env.MERCHANT_DO.get>[] = [];
 async function user() {
   const id = crypto.randomUUID();
   await createDb(env.DB).insert(users).values({
-    officialConnectVerified: true,
     id,
     externalId: id,
     username: id,

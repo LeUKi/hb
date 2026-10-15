@@ -31,7 +31,6 @@ async function actor() {
       tokenHash: await sha256Hex(`hb.session-token.v1:${token}`),
       userId: id,
       csrfToken: csrf,
-      loginProvider: "liteauth",
       createdAt: now,
       lastSeenAt: now,
       expiresAt: new Date(now.getTime() + 60_000),
@@ -127,11 +126,11 @@ describe("administrator rate limits", () => {
       account.externalId,
     );
     const body = (await session.json()) as {
-      user: { isAdmin: boolean; email?: string; accountTier: string };
+      user: { isAdmin: boolean; email?: string };
       attemptCooldown: { revision: number; nextAllowedAt: number };
     };
     expect(session.headers.get("Cache-Control")).toContain("no-store");
-    expect(body.user).toMatchObject({ isAdmin: true, accountTier: "lite" });
+    expect(body.user).toMatchObject({ isAdmin: true });
     expect(body.user).not.toHaveProperty("email");
     expect(body.attemptCooldown).toMatchObject({
       revision: 0,

@@ -790,7 +790,6 @@ function PaymentDetails({
       payment.recipientUsername ??
       payment.recipientId,
     avatarUrl: null,
-    accountTier: null,
   };
   const reasons = [
     ...new Set(

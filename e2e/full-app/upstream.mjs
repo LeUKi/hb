@@ -1,6 +1,4 @@
 // Test-only transport. Never imported by either application Worker.
-import { createHash } from "node:crypto";
-
 export const profiles = {
   author: {
     id: "730001",
@@ -42,66 +40,6 @@ export const profiles = {
     avatar_url: "https://avatars.example.test/recipient.png",
     active: true,
   },
-  lite: {
-    id: "730005",
-    username: "FullAppLite",
-    name: "完整应用青春版",
-    avatar_url: "https://avatars.example.test/lite.png",
-    active: true,
-    auth_source: "linuxdo",
-    login_method: "lite_self_app",
-    sub: "internal-liteauth-user-one",
-    liteauth_user_id: "internal-liteauth-user-one",
-  },
-  liteOfficial: {
-    id: "730005",
-    username: "FullAppLite",
-    name: "完整应用青春版",
-    email: "lite-connect-private@example.test",
-    avatar_url: "https://avatars.example.test/lite.png",
-    active: true,
-  },
-  liteParticipant: {
-    id: "730006",
-    username: "FullAppLiteParticipant",
-    name: "完整应用青春版参与者",
-    avatar_url: "https://avatars.example.test/lite-participant.png",
-    active: true,
-    auth_source: "linuxdo",
-    login_method: "lite_self_app",
-    sub: "internal-liteauth-user-two",
-    liteauth_user_id: "internal-liteauth-user-two",
-  },
-  liteParticipantOfficial: {
-    id: "730006",
-    username: "FullAppLiteParticipant",
-    name: "完整应用青春版参与者",
-    email: "lite-participant-connect-private@example.test",
-    avatar_url: "https://avatars.example.test/lite-participant.png",
-    active: true,
-  },
-  settingsLite: {
-    id: "730007",
-    username: "FullAppSettingsLite",
-    name: "完整应用设置青春版",
-    avatar_url: "https://avatars.example.test/settings-lite.png",
-    active: true,
-    auth_source: "linuxdo",
-    login_method: "lite_self_app",
-    sub: "internal-liteauth-settings-one",
-    liteauth_user_id: "internal-liteauth-settings-one",
-  },
-  settingsLiteParticipant: {
-    id: "730008",
-    username: "FullAppSettingsLiteParticipant",
-    name: "完整应用设置青春版参与者",
-    avatar_url: "https://avatars.example.test/settings-lite-participant.png",
-    active: true,
-    auth_source: "linuxdo",
-    login_method: "lite_self_app",
-    sub: "internal-liteauth-settings-two",
-    liteauth_user_id: "internal-liteauth-settings-two",
-  },
   directAuthor: {
     id: "730009",
     username: "FullAppDirectAuthor",
@@ -124,8 +62,6 @@ export function createTestUpstream(Response, origin, options = {}) {
   const counters = {
     oauthTokenRequests: 0,
     oauthProfileRequests: 0,
-    liteauthTokenRequests: 0,
-    liteauthProfileRequests: 0,
     credentialChecks: 0,
     distributeRequests: 0,
     orderQueries: 0,
@@ -133,7 +69,6 @@ export function createTestUpstream(Response, origin, options = {}) {
   };
   const orders = new Map();
   const latestProfiles = new Map();
-  const consumedLiteCodes = new Set();
   function publicProfile(role) {
     const profile = profiles[role];
     if (!profile) return profile;
@@ -173,56 +108,6 @@ export function createTestUpstream(Response, origin, options = {}) {
     snapshot: () => ({ ...counters, orders: [...orders.values()] }),
     async fetch(request) {
       const url = new URL(request.url);
-      if (url.origin === "https://liteauth.442224.xyz") {
-        if (
-          url.pathname === "/api/auth/oauth2/token" &&
-          request.method === "POST"
-        ) {
-          counters.liteauthTokenRequests++;
-          const params = new URLSearchParams(await request.text());
-          const code = params.get("code") ?? "";
-          const match =
-            /^full-app-liteauth-code:([A-Za-z0-9_]+):([A-Za-z0-9_-]{43})$/.exec(
-              code,
-            );
-          const role = match?.[1];
-          const verifier = params.get("code_verifier") ?? "";
-          if (
-            !role ||
-            !Object.hasOwn(profiles, role) ||
-            profiles[role].login_method !== "lite_self_app" ||
-            params.get("grant_type") !== "authorization_code" ||
-            params.get("redirect_uri") !==
-              `${origin}/api/auth/liteauth/callback` ||
-            params.get("client_id") !== "hb_full_app_liteauth" ||
-            params.get("client_secret") !== "full-app-liteauth-secret" ||
-            request.headers.has("authorization") ||
-            !/^[A-Za-z0-9_-]{43}$/.test(verifier) ||
-            createHash("sha256").update(verifier).digest("base64url") !==
-              match?.[2] ||
-            consumedLiteCodes.has(code)
-          )
-            return json({ error: "invalid_grant" }, 400);
-          consumedLiteCodes.add(code);
-          return json({
-            access_token: `full-app-liteauth-token-${role}`,
-            token_type: "bearer",
-          });
-        }
-        if (url.pathname === "/api/user" && request.method === "GET") {
-          counters.liteauthProfileRequests++;
-          const role = request.headers
-            .get("authorization")
-            ?.replace(/^Bearer full-app-liteauth-token-/, "");
-          const profile = publicProfile(role);
-          if (profile?.login_method !== "lite_self_app") {
-            return json({ error: "unauthorized" }, 401);
-          }
-          latestProfiles.set(profile.id, profile);
-          return json(profile);
-        }
-        return blocked();
-      }
       if (url.origin === "https://connect.linux.do") {
         if (url.pathname === "/oauth2/token" && request.method === "POST") {
           counters.oauthTokenRequests++;

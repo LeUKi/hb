@@ -22,7 +22,6 @@ function card(index: number, status = "active") {
       username: "maker",
       displayName: "发布者",
       avatarUrl: null,
-      accountTier: "standard",
     },
     forceDedicated: false,
     topicUrl: null,
@@ -52,7 +51,6 @@ async function mock(page: Page) {
         json: {
           user: null,
           csrfToken: null,
-          loginOptions: { liteauthEnabled: true },
         },
       });
     }
@@ -321,9 +319,6 @@ test("公开列表阻止旧兑奖自动导航，并保留原提交供主动再�
     username: "viewer",
     displayName: "参与者",
     avatarUrl: null,
-    accountTier: "standard",
-    canUseLdc: true,
-    loginProvider: "connect",
   };
   await page.route("**/api/session", (route) =>
     route.fulfill({ json: { user, csrfToken: "csrf" } }),

@@ -22,9 +22,6 @@ const user = {
   username: "viewer",
   displayName: "冷却验收用户",
   avatarUrl: null,
-  accountTier: "standard",
-  canUseLdc: true,
-  loginProvider: "connect",
   isAdmin: false,
 };
 
@@ -414,21 +411,6 @@ test("管理员桌面及手机入口可保存 5/2，版本冲突保留输入，4
           user: currentUser,
           csrfToken: currentUser ? "csrf" : null,
           attemptCooldown: null,
-          loginOptions: { liteauthEnabled: true },
-        },
-      });
-      return true;
-    }
-    if (url.pathname === "/api/admin/login-settings") {
-      await route.fulfill({
-        json: {
-          config: {
-            version: 1,
-            liteauthEnabled: true,
-            updatedAt: now,
-            updatedByUserId: null,
-          },
-          recentChanges: [],
         },
       });
       return true;

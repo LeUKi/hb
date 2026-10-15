@@ -14,9 +14,6 @@ const user = {
   username: "author",
   displayName: "配置作者",
   avatarUrl: null,
-  accountTier: "standard" as const,
-  canUseLdc: true,
-  loginProvider: "connect" as const,
 };
 
 export async function mockMerchantConfig(page: Page) {

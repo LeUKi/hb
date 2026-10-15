@@ -10,7 +10,7 @@ export function useAccountProfile(user: SessionResponse["user"]) {
   const queryClient = useQueryClient();
   const identity = sessionIdentity(user);
   return useQuery({
-    queryKey: ["profile-private", user?.id, user?.accountTier],
+    queryKey: ["profile-private", user?.id],
     enabled: Boolean(user),
     retry: false,
     queryFn: async ({ signal }) => {

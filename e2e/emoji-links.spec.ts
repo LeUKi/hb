@@ -38,7 +38,6 @@ function activity(activityId = id): PublicActivity {
       username: "emojimaker",
       displayName: "表情地址作者",
       avatarUrl: null,
-      accountTier: "standard",
     },
     forceDedicated: true,
     topicUrl: null,
@@ -107,7 +106,6 @@ async function mockEmojiLinks(
           user: null,
           csrfToken: null,
           attemptCooldown: null,
-          loginOptions: { liteauthEnabled: false },
         },
       });
     }
@@ -138,7 +136,6 @@ async function mockEmojiLinks(
               username: "emojiviewer",
               displayName: "公开名单参与者",
               avatarUrl: null,
-              accountTier: "standard",
               claimedAt: new Date().toISOString(),
             },
           ],

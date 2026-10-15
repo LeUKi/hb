@@ -37,7 +37,7 @@ const bindings: ApiBindings = {
 
 type Actor = { id: string; cookie: string; csrf: string };
 
-async function actor(username: string, officialConnectVerified = true) {
+async function actor(username: string) {
   const id = crypto.randomUUID();
   const token = crypto.randomUUID().replaceAll("-", "");
   const csrf = crypto.randomUUID();
@@ -47,7 +47,6 @@ async function actor(username: string, officialConnectVerified = true) {
     externalId: username,
     username,
     displayName: username,
-    officialConnectVerified,
     createdAt: now,
     updatedAt: now,
   });

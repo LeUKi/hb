@@ -41,7 +41,6 @@ async function actor(label: string): Promise<Actor> {
     externalId: id,
     username: `${label}_${id}`,
     displayName: label,
-    officialConnectVerified: true,
     createdAt: now,
     updatedAt: now,
   });

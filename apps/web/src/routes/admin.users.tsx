@@ -1,4 +1,4 @@
-import type { AdminUserState, AdminUserTier } from "@hb/contracts";
+import type { AdminUserState } from "@hb/contracts";
 import { type QueryObserverResult, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
@@ -17,7 +17,6 @@ import {
 
 type Search = {
   q?: string;
-  tier?: AdminUserTier;
   state?: AdminUserState;
   cursor?: string;
   detail?: string;
@@ -26,9 +25,6 @@ type Search = {
 export const Route = createFileRoute("/admin/users")({
   validateSearch: (search): Search => ({
     q: typeof search.q === "string" ? search.q : undefined,
-    tier: ["standard", "lite"].includes(String(search.tier))
-      ? (search.tier as AdminUserTier)
-      : "all",
     state: ["active", "disabled"].includes(String(search.state))
       ? (search.state as AdminUserState)
       : "all",
@@ -60,7 +56,6 @@ function Users({ identity }: { identity: string }) {
   );
   const params = {
     q: search.q,
-    tier: search.tier,
     state: search.state,
     cursor: search.cursor,
   };
@@ -123,17 +118,6 @@ function Users({ identity }: { identity: string }) {
             onChange={(event) => setQ(event.target.value)}
           />
           <select
-            aria-label="账号类型"
-            value={search.tier}
-            onChange={(event) =>
-              update({ tier: event.target.value as AdminUserTier })
-            }
-          >
-            <option value="all">全部账号</option>
-            <option value="standard">普通</option>
-            <option value="lite">青春版</option>
-          </select>
-          <select
             aria-label="账号状态"
             value={search.state}
             onChange={(event) =>
@@ -165,7 +149,6 @@ function Users({ identity }: { identity: string }) {
                   <tr>
                     <th>用户</th>
                     <th>Linux DO ID</th>
-                    <th>类型</th>
                     <th>状态</th>
                     <th>注册</th>
                     <th>最近登录</th>
@@ -190,9 +173,6 @@ function Users({ identity }: { identity: string }) {
                         <span className="admin-muted-id">{item.username}</span>
                       </td>
                       <td>{item.externalId}</td>
-                      <td>
-                        {item.accountTier === "standard" ? "普通" : "青春版"}
-                      </td>
                       <td>{item.active ? "可用" : "停用"}</td>
                       <td>{fmtTime(item.createdAt)}</td>
                       <td>{fmtTime(item.lastLoginAt)}</td>
@@ -293,14 +273,6 @@ function UserDetail({
         <Row label="本站用户 ID" value={user.id} />
         <Row label="Linux DO ID" value={user.externalId} />
         <Row label="用户名" value={user.username} />
-        <Row
-          label="账号类型"
-          value={user.accountTier === "standard" ? "普通" : "青春版"}
-        />
-        <Row
-          label="永久账号资格"
-          value={user.officialConnectVerified ? "已获得" : "未获得"}
-        />
         <Row label="账号状态" value={user.active ? "可用" : "停用"} />
         <Row label="注册时间" value={fmtTime(user.createdAt)} />
         <Row label="最近登录" value={fmtTime(user.lastLoginAt)} />
@@ -341,7 +313,6 @@ function Row({ label, value }: { label: string; value: string }) {
 function cleanSearch(search: Partial<Search>): Partial<Search> {
   return {
     q: search.q || undefined,
-    tier: search.tier === "all" ? undefined : search.tier,
     state: search.state === "all" ? undefined : search.state,
     cursor: search.cursor || undefined,
     detail: search.detail || undefined,

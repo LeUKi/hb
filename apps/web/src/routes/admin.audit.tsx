@@ -24,11 +24,7 @@ type Search = {
 
 export const Route = createFileRoute("/admin/audit")({
   validateSearch: (search): Search => ({
-    type: ["login_settings", "attempt_rate_limits"].includes(
-      String(search.type),
-    )
-      ? (search.type as AdminAuditType)
-      : "all",
+    type: search.type === "attempt_rate_limits" ? "attempt_rate_limits" : "all",
     actor: typeof search.actor === "string" ? search.actor : undefined,
     from: isSafeTimestamp(search.from) ? Number(search.from) : undefined,
     to: isSafeTimestamp(search.to) ? Number(search.to) : undefined,
@@ -135,7 +131,6 @@ function Audit({ identity }: { identity: string }) {
           }
         >
           <option value="all">全部类型</option>
-          <option value="login_settings">登录方式</option>
           <option value="attempt_rate_limits">尝试间隔</option>
         </select>
         <button className="button" type="submit">
@@ -166,9 +161,7 @@ function Audit({ identity }: { identity: string }) {
                 {query.data.items.map((item) => (
                   <tr key={`${item.type}:${item.id}`}>
                     <td>{fmtTime(item.createdAt)}</td>
-                    <td>
-                      {item.type === "login_settings" ? "登录方式" : "尝试间隔"}
-                    </td>
+                    <td>尝试间隔</td>
                     <td>{item.actorDisplayName}</td>
                     <td>
                       {item.previousVersion} → {item.nextVersion}

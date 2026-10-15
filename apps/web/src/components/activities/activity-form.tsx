@@ -37,7 +37,6 @@ import {
   webLdcRewardCount,
   webLdcTotalMinor,
 } from "../../lib/timed-draw";
-import { OfficialConnectRequired } from "../auth/official-connect-required";
 import { ActionMenu } from "../presentation/action-menu";
 import { AnimatedRegion } from "../presentation/animated-disclosure";
 import { Help } from "../presentation/context-help";
@@ -269,7 +268,6 @@ function Toggle({
 export function ActivityForm({
   userId,
   csrfToken,
-  canUseLdc,
   initial,
   onSaved,
   reload,
@@ -279,7 +277,6 @@ export function ActivityForm({
 }: {
   userId: string;
   csrfToken: string;
-  canUseLdc: boolean;
   initial?: ManagedActivity;
   onSaved: (activity: ManagedActivity, notice?: string) => void;
   reload?: () => Promise<ManagedActivity>;
@@ -473,13 +470,6 @@ export function ActivityForm({
       : openAfter || opened
         ? openFeedback
         : draftFeedback;
-    if (!canUseLdc) {
-      feedback.show(
-        "无法保存",
-        "青春版暂不支持保存或开放LDC活动，请使用官方Connect升级。",
-      );
-      return;
-    }
     feedback.clear();
     setIssues([]);
     const pending =
@@ -669,10 +659,7 @@ export function ActivityForm({
         values.merchantId === persisted.config.merchantId));
   const direct = isDirectParticipation(values);
   const isDirty = useStore(form.store, (state) => state.isDirty);
-  const selectedMerchant = useMerchant(
-    canUseLdc ? userId : "",
-    values.merchantId,
-  );
+  const selectedMerchant = useMerchant(userId, values.merchantId);
   const paymentMode =
     persisted?.paymentMode ?? selectedMerchant.data?.merchant.mode;
   const input = activityValues(values);
@@ -867,11 +854,10 @@ export function ActivityForm({
             disabled={busy || Boolean(uncertainRequest)}
             className="work-reward-frozen"
           >
-            {!canUseLdc ? <OfficialConnectRequired /> : null}
             <AnimatedRegion key="ldc" className="work-animated-section">
               <div className="work-reward-panel">
                 <LdcFields
-                  userId={canUseLdc ? userId : ""}
+                  userId={userId}
                   paymentMode={paymentMode}
                   lockedPaymentMode={persisted?.paymentMode}
                   autoBindCurrent={!persisted}
@@ -880,7 +866,7 @@ export function ActivityForm({
                   deadline={values.deadline}
                   deadlineAt={persisted?.deadlineAt ?? undefined}
                   allocation={values.allocation}
-                  disabled={opened || !canUseLdc}
+                  disabled={opened}
                   onMerchant={(value) =>
                     form.setFieldValue("merchantId", value)
                   }
@@ -1366,7 +1352,7 @@ export function ActivityForm({
                 "开放失败",
                 pendingLabel,
               ]}
-              disabled={busy || openingBlocked || !canUseLdc}
+              disabled={busy || openingBlocked}
               onClick={(event) => {
                 event.preventDefault();
                 submitCurrent(!opened);
@@ -1379,7 +1365,7 @@ export function ActivityForm({
                 label="保存草稿"
                 feedback={draftFeedback.feedback}
                 reserve={["已保存", "保存失败", pendingLabel]}
-                disabled={busy || !canUseLdc}
+                disabled={busy}
                 onClick={() => submitCurrent(false)}
               />
             ) : null}

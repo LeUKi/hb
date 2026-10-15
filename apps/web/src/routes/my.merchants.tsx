@@ -57,7 +57,7 @@ function MerchantsPage() {
   const matchRoute = useMatchRoute();
   if (matchRoute({ to: "/my/merchants/$id", fuzzy: true })) return <Outlet />;
   return (
-    <RequireAccount requireLdc>
+    <RequireAccount>
       {({ userId, csrfToken }) => (
         <Merchants
           key={`${userId}:${csrfToken}`}

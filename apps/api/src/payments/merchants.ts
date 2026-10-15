@@ -7,10 +7,6 @@ import type {
 } from "@hb/contracts";
 import { and, desc, eq, lt, or } from "drizzle-orm";
 import { ActivityError, activityNotFound } from "../activities/errors";
-import {
-  hasOfficialConnect,
-  requireOfficialConnect,
-} from "../auth/eligibility";
 import { createDb } from "../db/client";
 import { merchants, simulationControls } from "../db/schema";
 import type { ApiBindings } from "../env";
@@ -74,7 +70,6 @@ export async function merchantView(
     row.credentialVersion,
   );
   const eligibility = await publicationEligibility(env, row, verification);
-  const official = await hasOfficialConnect(env, row.authorId);
   const base = {
     credentialVerification: verification,
     usageStatus: row.usageStatus,
@@ -94,7 +89,6 @@ export async function merchantView(
       mode: "real",
       capabilities: {
         canExecutePayments:
-          official &&
           allowsRealSending(env, await readPlatformControls(env)) &&
           verification.status === "passed",
         canSimulate: false,
@@ -109,8 +103,8 @@ export async function merchantView(
     ...base,
     mode: "simulation",
     capabilities: {
-      canExecutePayments: official && isLocalSimulation(env),
-      canSimulate: official && isLocalSimulation(env),
+      canExecutePayments: isLocalSimulation(env),
+      canSimulate: isLocalSimulation(env),
     },
     scenario: control?.scenario ?? "normal",
   };
@@ -173,11 +167,10 @@ export async function listMerchants(
   const items = rows.slice(0, 20);
   const last = items.at(-1);
   const current = await dbCurrentMerchant(env, authorId);
-  const official = await hasOfficialConnect(env, authorId);
   return {
     currentMerchantId: current?.id ?? null,
-    canCreate: official && !current,
-    canSimulate: official && isLocalSimulation(env),
+    canCreate: !current,
+    canSimulate: isLocalSimulation(env),
     items: await Promise.all(items.map((row) => merchantView(env, row))),
     nextCursor: rows.length > 20 && last ? encodeTimeCursor(last) : null,
   };
@@ -235,7 +228,6 @@ export async function createMerchant(
   };
   const old = await checkPrevious();
   if (old) return old;
-  await requireOfficialConnect(env, authorId);
   if (mode === "simulation" && !isLocalSimulation(env))
     throw new ActivityError(
       400,
@@ -253,7 +245,7 @@ export async function createMerchant(
   try {
     await env.DB.batch([
       env.DB.prepare(
-        `INSERT INTO merchants (id,author_id,request_id,request_digest,client_id,label,mode,created_at,updated_at) VALUES (?,CASE WHEN EXISTS(SELECT 1 FROM users WHERE id=? AND official_connect_verified=1 AND active=1) THEN ? ELSE NULL END,?,?,?,?,?,?,?)`,
+        `INSERT INTO merchants (id,author_id,request_id,request_digest,client_id,label,mode,created_at,updated_at) VALUES (?,CASE WHEN EXISTS(SELECT 1 FROM users WHERE id=? AND active=1) THEN ? ELSE NULL END,?,?,?,?,?,?,?)`,
       ).bind(
         id,
         authorId,
@@ -280,7 +272,6 @@ export async function createMerchant(
   } catch (error) {
     const winner = await checkPrevious();
     if (winner) return winner;
-    await requireOfficialConnect(env, authorId);
     if (await dbCurrentMerchant(env, authorId)) currentMerchantExists();
     if (
       await env.DB.prepare(
@@ -342,7 +333,6 @@ export async function updateMerchant(
     };
   };
   if (await previousChange(env, id, requestId, digest)) return result();
-  await requireOfficialConnect(env, authorId);
   if (row.version !== input.version) merchantConflict();
   const clientId = input.clientId ?? row.clientId;
   if (clientId !== row.clientId && !input.secret)
@@ -381,7 +371,7 @@ export async function updateMerchant(
     );
   statements.push(
     env.DB.prepare(
-      `UPDATE merchants SET version=CASE WHEN version=? AND author_id=? AND EXISTS(SELECT 1 FROM users WHERE id=merchants.author_id AND official_connect_verified=1 AND active=1) ${impact ? `AND (${merchantImpactSql})=?` : ""} THEN version+1 ELSE NULL END,label=?,client_id=?,credential_version=?,updated_at=? WHERE id=?`,
+      `UPDATE merchants SET version=CASE WHEN version=? AND author_id=? AND EXISTS(SELECT 1 FROM users WHERE id=merchants.author_id AND active=1) ${impact ? `AND (${merchantImpactSql})=?` : ""} THEN version+1 ELSE NULL END,label=?,client_id=?,credential_version=?,updated_at=? WHERE id=?`,
     ).bind(
       input.version,
       authorId,
@@ -428,7 +418,6 @@ export async function updateMerchant(
     await env.DB.batch(statements);
   } catch (error) {
     if (await previousChange(env, id, requestId, digest)) return result();
-    await requireOfficialConnect(env, authorId);
     const latest = await ownedMerchant(env, id, authorId);
     if (latest.version !== input.version) merchantConflict();
     const owner = await env.DB.prepare(
@@ -463,7 +452,6 @@ export async function repairPaymentCredential(
   input: RepairPaymentCredentialInput,
 ) {
   const merchant = await ownedMerchant(env, id, authorId);
-  await requireOfficialConnect(env, authorId);
   const task = await env.DB.prepare(
     `SELECT p.status,p.mode,COALESCE((SELECT corrected_client_id FROM payment_identity_corrections WHERE task_id=p.id ORDER BY version DESC LIMIT 1),p.client_id) AS client_id FROM payment_tasks p WHERE p.id=? AND p.merchant_id=?`,
   )
@@ -506,7 +494,7 @@ export async function repairPaymentCredential(
   try {
     await env.DB.batch([
       env.DB.prepare(
-        `UPDATE merchants SET version=CASE WHEN version=? AND client_id!=? AND EXISTS(SELECT 1 FROM users WHERE id=merchants.author_id AND official_connect_verified=1 AND active=1) AND EXISTS(SELECT 1 FROM merchant_credentials c WHERE c.merchant_id=merchants.id AND c.client_id=? AND c.verification_status='rejected' AND c.verification_reason='credentials' AND c.version=(SELECT MAX(version) FROM merchant_credentials WHERE merchant_id=c.merchant_id AND client_id=c.client_id)) AND EXISTS(SELECT 1 FROM payment_tasks p WHERE p.id=? AND p.merchant_id=merchants.id AND p.status!='confirmed' AND COALESCE((SELECT corrected_client_id FROM payment_identity_corrections WHERE task_id=p.id ORDER BY version DESC LIMIT 1),p.client_id)=?) THEN version+1 ELSE NULL END,updated_at=? WHERE id=?`,
+        `UPDATE merchants SET version=CASE WHEN version=? AND client_id!=? AND EXISTS(SELECT 1 FROM users WHERE id=merchants.author_id AND active=1) AND EXISTS(SELECT 1 FROM merchant_credentials c WHERE c.merchant_id=merchants.id AND c.client_id=? AND c.verification_status='rejected' AND c.verification_reason='credentials' AND c.version=(SELECT MAX(version) FROM merchant_credentials WHERE merchant_id=c.merchant_id AND client_id=c.client_id)) AND EXISTS(SELECT 1 FROM payment_tasks p WHERE p.id=? AND p.merchant_id=merchants.id AND p.status!='confirmed' AND COALESCE((SELECT corrected_client_id FROM payment_identity_corrections WHERE task_id=p.id ORDER BY version DESC LIMIT 1),p.client_id)=?) THEN version+1 ELSE NULL END,updated_at=? WHERE id=?`,
       ).bind(
         input.version,
         task.client_id,
@@ -551,7 +539,6 @@ export async function repairPaymentCredential(
         credentialVersion: previous.credential_version,
         merchant: await getMerchant(env, id, authorId),
       };
-    await requireOfficialConnect(env, authorId);
     merchantConflict("付款或商户配置已更新，请刷新后重试。");
   }
   return {

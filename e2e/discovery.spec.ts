@@ -18,9 +18,6 @@ const user = {
   username: "ada",
   displayName: "Ada",
   avatarUrl: null,
-  accountTier: "standard" as const,
-  canUseLdc: true,
-  loginProvider: "connect" as const,
 };
 
 function publicActivitiesDialog(page: Page) {
@@ -48,7 +45,6 @@ function card(index: number): DiscoveryCard {
       username: "maker",
       displayName: "作者",
       avatarUrl: null,
-      accountTier: "standard" as const,
     },
     forceDedicated: false,
     topicUrl: "https://linux.do/t/123",

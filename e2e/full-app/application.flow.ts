@@ -25,8 +25,6 @@ import { fullAppMerchant } from "./ldc-fixture";
 
 const origin = "http://127.0.0.1:4193";
 const authorizer = /^https:\/\/connect\.linux\.do\/oauth2\/authorize\?/;
-const liteAuthorizer =
-  /^https:\/\/liteauth\.442224\.xyz\/api\/auth\/oauth2\/authorize\?/;
 const accounts = {
   author: {
     externalId: "730001",
@@ -63,34 +61,6 @@ const accounts = {
     email: "recipient-private@example.test",
     avatarUrl: "https://avatars.example.test/recipient.png",
   },
-  lite: {
-    externalId: "730005",
-    username: "FullAppLite",
-    displayName: "完整应用青春版",
-    email: null,
-    avatarUrl: "https://avatars.example.test/lite.png",
-  },
-  liteOfficial: {
-    externalId: "730005",
-    username: "FullAppLite",
-    displayName: "完整应用青春版",
-    email: "lite-connect-private@example.test",
-    avatarUrl: "https://avatars.example.test/lite.png",
-  },
-  liteParticipant: {
-    externalId: "730006",
-    username: "FullAppLiteParticipant",
-    displayName: "完整应用青春版参与者",
-    email: null,
-    avatarUrl: "https://avatars.example.test/lite-participant.png",
-  },
-  liteParticipantOfficial: {
-    externalId: "730006",
-    username: "FullAppLiteParticipant",
-    displayName: "完整应用青春版参与者",
-    email: "lite-participant-connect-private@example.test",
-    avatarUrl: "https://avatars.example.test/lite-participant.png",
-  },
 };
 type Session = {
   user: {
@@ -99,9 +69,6 @@ type Session = {
     displayName: string;
     avatarUrl: string | null;
     email: string | null;
-    accountTier: "standard" | "lite";
-    loginProvider: "connect" | "liteauth";
-    canUseLdc: boolean;
   };
   csrfToken: string;
   attemptCooldown?: AttemptCooldown | null;
@@ -113,7 +80,6 @@ type RuntimeState = {
     external_id: string;
     username: string;
     provider: string;
-    official_connect_verified: number;
     avatar_url: string | null;
     has_email_ciphertext: number;
     email_ciphertext_contains_plaintext: number;
@@ -121,7 +87,6 @@ type RuntimeState = {
   sessions: Array<{
     user_id: string;
     token_hash: string;
-    login_provider: "connect" | "liteauth";
   }>;
   activities: Array<{
     id: string;
@@ -179,8 +144,6 @@ type RuntimeState = {
   upstream: {
     oauthTokenRequests: number;
     oauthProfileRequests: number;
-    liteauthTokenRequests: number;
-    liteauthProfileRequests: number;
     credentialChecks: number;
     distributeRequests: number;
     orderQueries: number;
@@ -209,7 +172,6 @@ async function guardExternalBrowserRequests(context: BrowserContext) {
     if (
       url.origin !== origin &&
       !authorizer.test(url.href) &&
-      !liteAuthorizer.test(url.href) &&
       url.origin !== "https://avatars.example.test"
     )
       unexpected.push(`${url.origin}${url.pathname}`);
@@ -229,165 +191,42 @@ async function guardExternalBrowserRequests(context: BrowserContext) {
   return unexpected;
 }
 
-async function signIn(
-  page: Page,
-  role: keyof typeof accounts,
-  returnTo = "/",
-  loginProvider: "connect" | "liteauth" = "connect",
-  upgrade = false,
-) {
+async function signIn(page: Page, role: keyof typeof accounts, returnTo = "/") {
   let callback = "";
-  const providerAuthorizer =
-    loginProvider === "connect" ? authorizer : liteAuthorizer;
-  const callbackPath =
-    loginProvider === "connect"
-      ? "/api/auth/callback"
-      : "/api/auth/liteauth/callback";
-  await page.context().unroute(providerAuthorizer);
+  await page.context().unroute(authorizer);
   // Only the external authorization page is simulated. Callback, token/profile
   // exchange, state consumption, user persistence and session are real app code.
-  await page.context().route(providerAuthorizer, async (route) => {
+  await page.context().route(authorizer, async (route) => {
     const url = new URL(route.request().url());
-    expect(url.searchParams.get("client_id")).toBe(
-      loginProvider === "connect"
-        ? "hb_full_app_connect"
-        : "hb_full_app_liteauth",
-    );
+    expect(url.searchParams.get("client_id")).toBe("hb_full_app_connect");
     expect(url.searchParams.get("response_type")).toBe("code");
     expect(url.searchParams.get("redirect_uri")).toBe(
-      `${origin}${callbackPath}`,
+      `${origin}/api/auth/callback`,
     );
     const state = url.searchParams.get("state");
     expect(state).toMatch(/^[A-Za-z0-9_-]{32,256}$/);
-    const target = new URL(`${origin}${callbackPath}`);
+    const target = new URL(`${origin}/api/auth/callback`);
     target.searchParams.set("state", state ?? "");
-    if (loginProvider === "liteauth") {
-      expect(url.searchParams.get("scope")).toBe("profile");
-      expect(url.searchParams.get("code_challenge_method")).toBe("S256");
-      const challenge = url.searchParams.get("code_challenge");
-      expect(challenge).toMatch(/^[A-Za-z0-9_-]{43}$/);
-      target.searchParams.set(
-        "code",
-        `full-app-liteauth-code:${role}:${challenge}`,
-      );
-      target.searchParams.set("iss", "https://liteauth.442224.xyz/api/auth");
-    } else {
-      target.searchParams.set("code", `full-app-code-${role}`);
-    }
+    target.searchParams.set("code", `full-app-code-${role}`);
     callback = target.toString();
     await route.fulfill({ status: 302, headers: { Location: callback } });
   });
   await page.goto(returnTo);
-  if (!upgrade && loginProvider === "liteauth") {
-    let lite = page.getByRole("button", { name: "青春版登录", exact: true });
-    if ((await lite.count()) === 0) {
-      if (!new URL(page.url()).pathname.startsWith("/account")) {
-        await page
-          .locator("header")
-          .getByRole("link", { name: "登录", exact: true })
-          .click();
-        await expect(page).toHaveURL(/\/account(?:\?|$)/);
-      }
-      lite = page.getByRole("button", { name: "青春版登录", exact: true });
-    }
-    await expect(lite).toBeVisible();
-    await expect(lite).toHaveAttribute("aria-expanded", "false");
-    await expect(
-      page.getByRole("link", { name: "通过 LiteAuth 登录", exact: true }),
-    ).toHaveCount(0);
-    await lite.click();
-    await expect(lite).toHaveAttribute("aria-expanded", "true");
-    await expect(
-      page.getByRole("link", { name: "通过 LiteAuth 登录", exact: true }),
-    ).toBeVisible();
+  const accountLogin = page
+    .getByRole("link", { name: "通过LINUX DO登录", exact: true })
+    .first();
+  if (!new URL(page.url()).pathname.startsWith("/account")) {
     await page
-      .getByRole("link", { name: "通过 LiteAuth 登录", exact: true })
-      .focus();
-    await page.keyboard.press("Escape");
-    await expect(lite).toHaveAttribute("aria-expanded", "false");
-    await expect(lite).toBeFocused();
-    await expect(
-      page.getByRole("link", { name: "通过 LiteAuth 登录", exact: true }),
-    ).toHaveCount(0);
-    await lite.click();
-    await expect(lite).toHaveAttribute("aria-expanded", "true");
+      .locator("header")
+      .getByRole("link", { name: "登录", exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/account(?:\?|$)/);
   }
-  if (!upgrade && loginProvider === "connect") {
-    const accountLogin = page
-      .getByRole("link", { name: "通过LINUX DO登录", exact: true })
-      .first();
-    if (!new URL(page.url()).pathname.startsWith("/account")) {
-      await page
-        .locator("header")
-        .getByRole("link", { name: "登录", exact: true })
-        .click();
-      await expect(page).toHaveURL(/\/account(?:\?|$)/);
-    }
-    await expect(accountLogin).toBeVisible();
-  }
-  let loginHref: string | null = null;
-  if (upgrade) {
-    const upgradeLink = page
-      .getByRole("link", { name: /使用官方 Connect(?: 升级)?/ })
-      .first();
-    if ((await upgradeLink.count()) > 0) {
-      loginHref = await upgradeLink.getAttribute("href");
-    } else {
-      if (!new URL(page.url()).pathname.startsWith("/account")) {
-        await page
-          .locator("header")
-          .getByRole("link", { name: "我的账号", exact: true })
-          .click();
-        await expect(page).toHaveURL(/\/account(?:\?|$)/);
-      }
-      await page
-        .getByRole("button", { name: "通过官方 Connect 升级", exact: true })
-        .first()
-        .click();
-      const upgradeDialog = page.getByRole("dialog", {
-        name: "升级为普通账号",
-        exact: true,
-      });
-      await expect(upgradeDialog).toBeVisible();
-      const upgradeRequestPromise = page.waitForRequest(
-        (request) =>
-          request.isNavigationRequest() &&
-          request.url().startsWith(`${origin}/api/auth/login?`) &&
-          new URL(request.url()).searchParams.get("intent") === "upgrade",
-      );
-      await page.route("**/api/auth/login?**", async (route) => {
-        const requestUrl = new URL(route.request().url());
-        if (requestUrl.searchParams.get("intent") === "upgrade") {
-          loginHref = `${requestUrl.pathname}${requestUrl.search}`;
-          await route.abort();
-          return;
-        }
-        await route.fallback();
-      });
-      await upgradeDialog
-        .getByRole("button", { name: "通过官方 Connect 升级", exact: true })
-        .click()
-        .catch(() => undefined);
-      const upgradeRequest = await upgradeRequestPromise;
-      if (!loginHref) {
-        const requestUrl = new URL(upgradeRequest.url());
-        loginHref = `${requestUrl.pathname}${requestUrl.search}`;
-      }
-      await page.unroute("**/api/auth/login?**");
-    }
-  } else {
-    const loginLink =
-      loginProvider === "connect"
-        ? page.getByRole("link", { name: "通过LINUX DO登录", exact: true })
-        : page.getByRole("link", { name: "通过 LiteAuth 登录", exact: true });
-    loginHref = await loginLink.getAttribute("href");
-  }
-  expect(loginHref).toMatch(
-    loginProvider === "connect"
-      ? /^\/api\/auth\/login\?/
-      : /^\/api\/auth\/liteauth\/login\?/,
-  );
-  if (upgrade) expect(loginHref).toContain("intent=upgrade");
+  await expect(accountLogin).toBeVisible();
+  const loginHref = await page
+    .getByRole("link", { name: "通过LINUX DO登录", exact: true })
+    .getAttribute("href");
+  expect(loginHref).toMatch(/^\/api\/auth\/login\?/);
   // Playwright routes do not intercept a later hop in a redirect chain. Obtain
   // the actual login redirect without following it, then start the simulated
   // external page as a fresh browser navigation. The normal endpoint sets the
@@ -396,7 +235,7 @@ async function signIn(
     maxRedirects: 0,
   });
   expect(login.status()).toBe(302);
-  expect(login.headers().location).toMatch(providerAuthorizer);
+  expect(login.headers().location).toMatch(authorizer);
   await page.goto(login.headers().location ?? "");
   const response = await page.context().request.get("/api/me");
   expect(response.status()).toBe(200);
@@ -406,8 +245,7 @@ async function signIn(
     username: accounts[role].username,
     displayName: accounts[role].displayName,
     avatarUrl: accounts[role].avatarUrl,
-    ...(loginProvider === "connect" ? { email: accounts[role].email } : {}),
-    loginProvider,
+    email: accounts[role].email,
   });
   await expect(
     page.locator(`img[src="${accounts[role].avatarUrl}"]`).first(),
@@ -984,7 +822,6 @@ test("真实网关登录、会话与 CSRF；OAuth 只模拟外部授权页和上
     external_id: accounts.author.externalId,
     username: accounts.author.username,
     provider: "linux_do",
-    official_connect_verified: 1,
     avatar_url: accounts.author.avatarUrl,
     has_email_ciphertext: 1,
     email_ciphertext_contains_plaintext: 0,
@@ -998,7 +835,6 @@ test("真实网关登录、会话与 CSRF；OAuth 只模拟外部授权页和上
   expect(state.sessions).toContainEqual({
     user_id: session.user.id,
     token_hash: digest,
-    login_provider: "connect",
   });
   expect(
     state.upstream.oauthTokenRequests - before.upstream.oauthTokenRequests,
@@ -1689,7 +1525,6 @@ test("普通真实模式活动走正常领取、Outbox、Queue 与 MerchantDO；
         username: accounts.recipient.username,
         displayName: accounts.recipient.displayName,
         avatarUrl: accounts.recipient.avatarUrl,
-        accountTier: "standard",
       },
     });
     expect(JSON.stringify(targets)).not.toContain(accounts.recipient.email);
@@ -1983,7 +1818,6 @@ test("定时抽奖 M>N：只报名、继续解题与重放不加机会；满员�
           username: accounts.recipient.username,
           displayName: accounts.recipient.displayName,
           avatarUrl: accounts.recipient.avatarUrl,
-          accountTier: "standard",
           registeredAt: registered.registration.registeredAt,
         },
       ],
@@ -2191,7 +2025,6 @@ test("定时抽奖 M>N：只报名、继续解题与重放不加机会；满员�
     });
     for (const entry of completeRegistrations.items) {
       expect(Object.keys(entry).sort()).toEqual([
-        "accountTier",
         "avatarUrl",
         "displayName",
         "id",
@@ -2551,321 +2384,6 @@ for (const timeMode of ["duration", "at"] as const) {
     }
   });
 }
-
-test("LiteAuth 真实网关登录、官方同号升级和再次 LiteAuth 登录不降级", async ({
-  page,
-  request,
-}) => {
-  const external = await guardExternalBrowserRequests(page.context());
-  const before = await readState(request);
-  const signed = await signIn(page, "lite", "/account", "liteauth");
-  expect(signed.session.user).toMatchObject({
-    accountTier: "lite",
-    canUseLdc: false,
-    loginProvider: "liteauth",
-    email: null,
-  });
-  await expect(page.getByText("青春版", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("LiteAuth 尚未提供邮箱")).toBeVisible();
-  const cookieBefore = (await page.context().cookies(origin)).find(
-    (entry) => entry.name === "hb_session",
-  );
-  await page.goto("/activities/new");
-  await expect(
-    page.getByRole("link", { name: "使用官方 Connect 升级", exact: true }),
-  ).toBeVisible();
-  await expect(page.locator("#activity-title")).toHaveCount(0);
-  expect((await readState(request)).activities).toEqual(before.activities);
-  const upgraded = await signIn(
-    page,
-    "liteOfficial",
-    "/account",
-    "connect",
-    true,
-  );
-  expect(upgraded.session.user).toMatchObject({
-    id: signed.session.user.id,
-    accountTier: "standard",
-    canUseLdc: true,
-    loginProvider: "connect",
-    email: accounts.liteOfficial.email,
-  });
-  const cookieAfter = (await page.context().cookies(origin)).find(
-    (entry) => entry.name === "hb_session",
-  );
-  expect(cookieAfter?.value).toBe(cookieBefore?.value);
-  await expect(page.getByText("青春版", { exact: true })).toHaveCount(0);
-  await page
-    .locator("header")
-    .getByRole("link", { name: "我的账号", exact: true })
-    .click();
-  await expect(page).toHaveURL("/account");
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page.goto("/activities/new");
-  await expect(page.locator("#activity-title")).toBeVisible();
-  await expect(
-    page.getByRole("group", { name: "奖励类型", exact: true }),
-  ).toHaveCount(0);
-  await page.goto("/account");
-  await expect(
-    page.getByText(accounts.liteOfficial.email ?? "", { exact: true }),
-  ).toBeVisible();
-  await signOut(page);
-  await expect(
-    page.getByText(accounts.liteOfficial.email ?? "", { exact: true }),
-  ).toHaveCount(0);
-  const relogin = await signIn(page, "lite", "/account", "liteauth");
-  expect(relogin.session.user).toMatchObject({
-    id: signed.session.user.id,
-    accountTier: "standard",
-    canUseLdc: true,
-    loginProvider: "liteauth",
-    email: accounts.liteOfficial.email,
-  });
-  const after = await readState(request);
-  expect(
-    after.users.filter(
-      (entry) => entry.external_id === accounts.lite.externalId,
-    ),
-  ).toHaveLength(1);
-  expect(
-    after.users.find((entry) => entry.id === signed.session.user.id),
-  ).toMatchObject({
-    provider: "linux_do",
-    official_connect_verified: 1,
-    has_email_ciphertext: 1,
-    email_ciphertext_contains_plaintext: 0,
-  });
-  expect(
-    after.upstream.liteauthTokenRequests -
-      before.upstream.liteauthTokenRequests,
-  ).toBe(2);
-  expect(
-    after.upstream.liteauthProfileRequests -
-      before.upstream.liteauthProfileRequests,
-  ).toBe(2);
-  expect(after.upstream.distributeRequests).toBe(
-    before.upstream.distributeRequests,
-  );
-  expect(external).toEqual([]);
-});
-
-test("青春版可浏览跳转但不可兑奖或报名；官方升级后主动领取才付款", async ({
-  browser,
-  request,
-}) => {
-  test.setTimeout(180_000);
-  const author = await browser.newContext({ baseURL: origin });
-  const recipient = await browser.newContext({ baseURL: origin });
-  const external = await Promise.all(
-    [author, recipient].map(guardExternalBrowserRequests),
-  );
-  try {
-    const authorPage = await author.newPage();
-    const recipientPage = await recipient.newPage();
-    await signIn(authorPage, "author");
-    await ensureFullAppMerchant(authorPage);
-    const signed = await signIn(
-      recipientPage,
-      "liteParticipant",
-      "/account",
-      "liteauth",
-    );
-    expect(signed.session.user.accountTier).toBe("lite");
-    const ldcId = await createActivity(authorPage, {
-      title: "青春版可见但不可抢 LDC",
-      password: "LiteLdcAnswer123",
-      openAfter: true,
-    });
-    const drawId = await createActivity(authorPage, {
-      title: "青春版可见但不可报名",
-      password: "LiteDrawAnswer123",
-      openAfter: true,
-      timedDraw: {
-        mode: "timed_draw",
-        algorithm: "double_mean_v1",
-        totalAmount: "0.02",
-        count: 2,
-        participantLimit: null,
-        countdownSeconds: 600,
-        distributeFullPool: true,
-      },
-    });
-    const initial = await readState(request);
-    const headers = {
-      Origin: origin,
-      "X-CSRF-Token": signed.session.csrfToken,
-    };
-    for (const [id, password] of [
-      [ldcId, "LiteLdcAnswer123"],
-      [drawId, "LiteDrawAnswer123"],
-    ] as const) {
-      await recipientPage.goto(`/activities/${id}`);
-      await expect(
-        recipientPage.getByRole("link", {
-          name: "使用官方 Connect 升级",
-          exact: true,
-        }),
-      ).toBeVisible();
-      await expect(
-        recipientPage.getByLabel("兑换口令", { exact: true }),
-      ).toHaveCount(0);
-      const denied = await recipient.request.post(
-        `/api/activities/${id}/claim`,
-        { headers, data: { submissionId: crypto.randomUUID(), password } },
-      );
-      expect(denied.status()).toBe(403);
-      expect((await denied.json()).error.code).toBe(
-        "OFFICIAL_CONNECT_REQUIRED",
-      );
-    }
-    await recipientPage.goto("/my/merchants");
-    await expect(
-      recipientPage.getByRole("link", {
-        name: "使用官方 Connect 升级",
-        exact: true,
-      }),
-    ).toBeVisible();
-    await expect(
-      recipientPage.getByLabel("Client ID", { exact: true }),
-    ).toHaveCount(0);
-    const merchantAttempt = await recipient.request.post("/api/me/merchants", {
-      headers,
-      data: {
-        requestId: crypto.randomUUID(),
-        label: "不应创建",
-        clientId: "lite_must_not_create",
-        secret: "test-unused-secret",
-        mode: "real",
-      },
-    });
-    expect(merchantAttempt.status()).toBe(403);
-    expect((await merchantAttempt.json()).error.code).toBe(
-      "OFFICIAL_CONNECT_REQUIRED",
-    );
-    const ldcConfig = (
-      await (await author.request.get(`/api/me/activities/${ldcId}`)).json()
-    ).activity.config;
-    const draftAttempt = await recipient.request.post("/api/activities", {
-      headers,
-      data: {
-        requestId: crypto.randomUUID(),
-        activity: { ...ldcConfig, title: "不应创建 LDC 草稿" },
-      },
-    });
-    expect(draftAttempt.status()).toBe(403);
-    expect((await draftAttempt.json()).error.code).toBe(
-      "OFFICIAL_CONNECT_REQUIRED",
-    );
-    await recipientPage.goto("/");
-    await recipientPage.getByLabel("口令", { exact: true }).fill(ldcId);
-    await recipientPage
-      .getByRole("button", { name: "跳转活动", exact: true })
-      .click();
-    await expect(recipientPage).toHaveURL(`/activities/${ldcId}`);
-    await recipientPage.goto("/");
-    await submit(recipientPage, "LiteLdcAnswer123");
-    await expect(
-      recipientPage.getByRole("link", {
-        name: "使用官方 Connect 升级",
-        exact: true,
-      }),
-    ).toBeVisible();
-    const deniedState = await readState(request);
-    expect(deniedState.claims).toEqual(initial.claims);
-    expect(deniedState.attempts).toEqual(initial.attempts);
-    expect(deniedState.payments).toEqual(initial.payments);
-    expect(deniedState.outbox).toEqual(initial.outbox);
-    expect(deniedState.registrations).toEqual(initial.registrations);
-    expect(deniedState.activities).toEqual(initial.activities);
-    const upgraded = await signIn(
-      recipientPage,
-      "liteParticipantOfficial",
-      `/activities/${ldcId}`,
-      "connect",
-      true,
-    );
-    expect(upgraded.session.user).toMatchObject({
-      id: signed.session.user.id,
-      accountTier: "standard",
-      canUseLdc: true,
-    });
-    expect(
-      (await readState(request)).activities.find((entry) => entry.id === ldcId)
-        ?.claimed_count,
-    ).toBe(0);
-    await recipientPage.goto(`/activities/${ldcId}`);
-    await expect(
-      recipientPage.getByLabel("兑换口令", { exact: true }),
-    ).toBeVisible();
-    await submit(recipientPage, "LiteLdcAnswer123");
-    await expect
-      .poll(
-        async () =>
-          (
-            await (
-              await recipient.request.get(`/api/activities/${ldcId}/claim`)
-            ).json()
-          ).claim?.payment.status,
-        { timeout: 45_000, intervals: [100, 250, 500, 1_000] },
-      )
-      .toBe("confirmed");
-    const paid = (
-      await (
-        await recipient.request.get(`/api/activities/${ldcId}/claim`)
-      ).json()
-    ).claim;
-    const settled = await readState(request);
-    expect(
-      settled.payments.find((entry) => entry.claim_id === paid.id),
-    ).toMatchObject({
-      status: "confirmed",
-      recipient_id: accounts.liteParticipant.externalId,
-      recipient_username: accounts.liteParticipant.username,
-      amount_minor: 10,
-      attempt_count: 1,
-    });
-    expect(
-      settled.upstream.distributeRequests - initial.upstream.distributeRequests,
-    ).toBe(1);
-    expect(
-      settled.registrations.filter((entry) => entry.activity_id === drawId),
-    ).toHaveLength(0);
-    await signOut(recipientPage);
-    const relogin = await signIn(
-      recipientPage,
-      "liteParticipant",
-      `/activities/${ldcId}`,
-      "liteauth",
-    );
-    expect(relogin.session.user).toMatchObject({
-      id: signed.session.user.id,
-      accountTier: "standard",
-      canUseLdc: true,
-      loginProvider: "liteauth",
-      email: accounts.liteParticipantOfficial.email,
-    });
-    expect(
-      (
-        await (
-          await recipient.request.get(`/api/activities/${ldcId}/claim`)
-        ).json()
-      ).claim.id,
-    ).toBe(paid.id);
-    expect((await readState(request)).upstream.distributeRequests).toBe(
-      settled.upstream.distributeRequests,
-    );
-    await recipientPage.setViewportSize({ width: 375, height: 844 });
-    expect(
-      await recipientPage.evaluate(
-        () => document.documentElement.scrollWidth <= window.innerWidth,
-      ),
-    ).toBe(true);
-    expect(external.flat()).toEqual([]);
-  } finally {
-    await Promise.allSettled([author.close(), recipient.close()]);
-  }
-});
 
 test("真实应用商户配置：修改前确认未开奖风险，同一商户切换身份并保留已付任务", async ({
   browser,

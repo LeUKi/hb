@@ -23,7 +23,7 @@ function privateActivityAccess(
     typeof key[2] === "string" &&
     key[3] === "author"
   )
-    return { userId: key[2].split(":", 1)[0] ?? "", activityId: key[1] };
+    return { userId: key[2], activityId: key[1] };
   return null;
 }
 

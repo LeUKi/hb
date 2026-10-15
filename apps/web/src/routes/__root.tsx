@@ -80,34 +80,29 @@ function RootLayout() {
       setExchangeContext(null);
       setRedemptionIntent(null);
       setRewardAnimation(null);
-      const previousUserId = previous.split(":", 1)[0] ?? null;
-      const currentUserId = identity?.split(":", 1)[0] ?? null;
-      if (previousUserId) clearAttemptOperations(previousUserId);
-      if (previousUserId !== currentUserId) {
-        queryClient.getMutationCache().clear();
-        const containsUserData = (key: readonly unknown[]) =>
-          key[0] !== "api-health" && key[0] !== "auth";
-        void queryClient
-          .cancelQueries({
-            predicate: (query) => containsUserData(query.queryKey),
-          })
-          .then(async () => {
-            queryClient.removeQueries({
-              predicate: (query) =>
-                containsUserData(query.queryKey) &&
-                query.getObserversCount() === 0,
-            });
-            await queryClient.resetQueries({
-              predicate: (query) => containsUserData(query.queryKey),
-            });
+      clearAttemptOperations(previous);
+      queryClient.getMutationCache().clear();
+      const containsUserData = (key: readonly unknown[]) =>
+        key[0] !== "api-health" && key[0] !== "auth";
+      void queryClient
+        .cancelQueries({
+          predicate: (query) => containsUserData(query.queryKey),
+        })
+        .then(async () => {
+          queryClient.removeQueries({
+            predicate: (query) =>
+              containsUserData(query.queryKey) &&
+              query.getObserversCount() === 0,
           });
-      }
+          await queryClient.resetQueries({
+            predicate: (query) => containsUserData(query.queryKey),
+          });
+        });
     }
     if (
       !session.isPending &&
       exchangeContext &&
-      (exchangeContext.userId !== user?.id ||
-        exchangeContext.accountTier !== user?.accountTier)
+      exchangeContext.userId !== user?.id
     )
       setExchangeContext(null);
     if (!session.isPending && !user) {
@@ -170,7 +165,7 @@ function RootLayout() {
           (fromLocation?.pathname !== "/account" ||
             (token && !appliedResets.current.has(token)))
         ) {
-          // Confirm login options on entry, reusing the root's in-flight read.
+          // Confirm the login state on entry, reusing the root's in-flight read.
           void queryClient.invalidateQueries(
             { queryKey: sessionQueryKey },
             { cancelRefetch: false },
@@ -323,9 +318,6 @@ function RootLayout() {
                   >
                     <UserAvatar profile={user} />
                     <span>{user.displayName || user.username}</span>
-                    {user.accountTier === "lite" && (
-                      <span className="lite-badge">青春版</span>
-                    )}
                   </Link>
                 )}
               </div>

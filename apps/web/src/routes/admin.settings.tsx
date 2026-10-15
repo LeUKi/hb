@@ -3,7 +3,6 @@ import { createFileRoute, useBlocker } from "@tanstack/react-router";
 import { useState } from "react";
 import { api } from "../api";
 import { ActivityErrorView } from "../components/activities/activity-error";
-import { AdminLoginSettings } from "../components/admin-login-settings";
 import { SkeletonRows } from "../components/presentation/loading";
 import { ActionButton } from "../components/ui/action-feedback";
 import { readResponse } from "../lib/activities";
@@ -29,22 +28,15 @@ function SettingsForms({
   identity: string;
   csrfToken: string;
 }) {
-  const [loginProtected, setLoginProtected] = useState(false);
   const [rateProtected, setRateProtected] = useState(false);
   useBlocker({
     shouldBlockFn: () =>
-      (loginProtected || rateProtected) &&
-      !window.confirm("还有未保存的网站设置，确定离开吗？"),
-    enableBeforeUnload: () => loginProtected || rateProtected,
+      rateProtected && !window.confirm("还有未保存的网站设置，确定离开吗？"),
+    enableBeforeUnload: () => rateProtected,
   });
   return (
     <AdminShell active="/admin/settings">
       <div className="admin-stack">
-        <AdminLoginSettings
-          identity={identity}
-          csrfToken={csrfToken}
-          onUnsavedChange={setLoginProtected}
-        />
         <RateLimits
           identity={identity}
           csrfToken={csrfToken}

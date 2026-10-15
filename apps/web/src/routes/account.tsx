@@ -1,14 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   ArrowDownLeft,
-  ArrowRight,
   ChevronRight,
   Copy,
   FileText,
   Gift,
   KeyRound,
 } from "lucide-react";
-import { useState } from "react";
 import { LoginOptions } from "../components/auth/login-options";
 import { useAppLogout } from "../components/auth/session-actions";
 import { Help } from "../components/presentation/context-help";
@@ -23,13 +21,12 @@ import { useAccountProfile } from "../lib/account-profile";
 import {
   getAuthErrorMessage,
   getLoginHref,
-  getUpgradeHref,
   isAuthUnavailable,
   sessionIdentity,
   useSession,
 } from "../lib/auth";
 import { isBlockingQueryError } from "../lib/query-view";
-import { Dialog, PageTitle } from "../prototype-ui/workbench-ui";
+import { PageTitle } from "../prototype-ui/workbench-ui";
 export const Route = createFileRoute("/account")({
   validateSearch: (search): { returnTo?: string; authError?: string } => ({
     returnTo: typeof search.returnTo === "string" ? search.returnTo : undefined,
@@ -42,13 +39,11 @@ function AccountPage() {
   const { returnTo = "/account" } = Route.useSearch();
   const session = useSession();
   const logout = useAppLogout();
-  const [upgrade, setUpgrade] = useState(false);
   const authErrorCode = new URLSearchParams(window.location.search).get(
     "authError",
   );
   const authError = getAuthErrorMessage(authErrorCode);
   const user = session.error ? null : session.data?.user;
-  const liteauthEnabled = session.data?.loginOptions?.liteauthEnabled === true;
   const profile = useAccountProfile(user ?? null);
   const identity = sessionIdentity(user ?? null);
   if (session.isPending) return <PageSkeleton title="账号" />;
@@ -73,7 +68,6 @@ function AccountPage() {
         <LoginOptions returnTo={returnTo} notice={authError} />
       </div>
     );
-  const lite = user.accountTier === "lite";
   const profileError = isBlockingQueryError(profile);
   const connectEmail = profileError ? undefined : profile.data?.user?.email;
 
@@ -86,27 +80,16 @@ function AccountPage() {
         </div>
         <div className="work-account-name">
           <h2>{user.displayName || user.username}</h2>
-          <p>
-            @{user.username}{" "}
-            <span className={`work-identity-label ${lite ? "is-lite" : ""}`}>
-              {lite ? "青春版" : "普通账号"}
-            </span>
-          </p>
+          <p>@{user.username}</p>
         </div>
-        {(user.loginProvider !== "liteauth" || liteauthEnabled) && (
-          <button
-            className="button secondary"
-            type="button"
-            disabled={isAuthUnavailable(authErrorCode, user.loginProvider)}
-            onClick={() =>
-              window.location.assign(
-                getLoginHref("/account", user.loginProvider),
-              )
-            }
-          >
-            刷新资料
-          </button>
-        )}
+        <button
+          className="button secondary"
+          type="button"
+          disabled={isAuthUnavailable(authErrorCode)}
+          onClick={() => window.location.assign(getLoginHref("/account"))}
+        >
+          刷新资料
+        </button>
       </div>
       {authError && (
         <p className="work-form-error" role="alert">
@@ -131,14 +114,6 @@ function AccountPage() {
             <div>
               <dt>本账号 ID</dt>
               <dd>{user.id}</dd>
-            </div>
-            <div>
-              <dt>本次登录来源</dt>
-              <dd>
-                {user.loginProvider === "liteauth"
-                  ? "LiteAuth 青春版"
-                  : "官方 Connect"}
-              </dd>
             </div>
             <div>
               <dt className="work-account-field-heading">
@@ -170,11 +145,7 @@ function AccountPage() {
                     </button>
                   </span>
                 ) : !connectEmail ? (
-                  user.loginProvider === "liteauth" ? (
-                    "LiteAuth 尚未提供邮箱"
-                  ) : (
-                    "Connect 尚未提供邮箱"
-                  )
+                  "Connect 尚未提供邮箱"
                 ) : (
                   <>
                     <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>
@@ -198,39 +169,8 @@ function AccountPage() {
                 )}
               </dd>
             </div>
-            <div>
-              <dt className="work-account-field-heading">
-                账号资格
-                <Help label="账号资格">
-                  {lite
-                    ? "青春版可登录浏览活动。通过官方 Connect 登录可获得创建、兑奖和报名资格。"
-                    : "普通资格可创建、兑奖和报名 LDC 活动；后续使用 LiteAuth 登录不会降级。"}
-                </Help>
-              </dt>
-              <dd>
-                <span className={`work-qualification ${lite ? "is-lite" : ""}`}>
-                  {lite ? "青春版账号" : "普通账号"}
-                </span>
-              </dd>
-            </div>
           </dl>
           <RefreshNotice query={profile} />
-          <div className="work-account-permissions">
-            {lite && (
-              <p className="work-setting-notice">
-                LDC 奖励需官方 Connect 资格。
-              </p>
-            )}
-            {lite && (
-              <button
-                className="work-text-link"
-                type="button"
-                onClick={() => setUpgrade(true)}
-              >
-                通过官方 Connect 升级 <ArrowRight size={15} />
-              </button>
-            )}
-          </div>
         </section>
         <aside className="work-account-nav">
           <h2>账号管理</h2>
@@ -271,35 +211,6 @@ function AccountPage() {
           logout.mutate();
         }}
       />
-      {upgrade && (
-        <Dialog
-          title="升级为普通账号"
-          onClose={() => setUpgrade(false)}
-          footer={
-            <>
-              <button
-                className="button secondary"
-                type="button"
-                onClick={() => setUpgrade(false)}
-              >
-                暂不升级
-              </button>
-              <button
-                className="button"
-                type="button"
-                onClick={() => {
-                  window.location.assign(getUpgradeHref("/account"));
-                }}
-              >
-                通过官方 Connect 升级 <ArrowRight size={16} />
-              </button>
-            </>
-          }
-        >
-          <p>通过本站官方 Connect 成功登录后，即可使用 LDC 奖励与限时开奖。</p>
-          <p className="muted">升级保留当前账号的活动和领取记录。</p>
-        </Dialog>
-      )}
     </div>
   );
 }

@@ -14,15 +14,11 @@ test("账号页不再展示本浏览器图片设置", async ({ page }) => {
             username: "viewer",
             displayName: "读者",
             avatarUrl: null,
-            accountTier: "standard",
-            loginProvider: "connect",
-            canUseLdc: true,
             isAdmin: false,
             email: null,
           },
           csrfToken: "image-settings-csrf",
           attemptCooldown: null,
-          loginOptions: { liteauthEnabled: true },
         },
       });
     if (path.startsWith("/api/me/activity-images")) {

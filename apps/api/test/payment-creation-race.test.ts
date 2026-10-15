@@ -39,7 +39,6 @@ async function fixture(money: LdcActivityInput["money"]) {
   const people = Array.from({ length: 4 }, () => {
     const id = crypto.randomUUID();
     return {
-      officialConnectVerified: true,
       id,
       externalId: BigInt(`0x${id.replaceAll("-", "").slice(0, 16)}`).toString(),
       username: `Race_${id.slice(0, 8)}`,

@@ -68,7 +68,6 @@ async function fixture(
   const username = `Receiver_${recipient.slice(0, 8)}`;
   await db.insert(users).values(
     [owner, recipient].map((id) => ({
-      officialConnectVerified: true,
       id,
       externalId: id === recipient ? recipientId : owner,
       username: id === recipient ? username : owner,
@@ -1001,7 +1000,6 @@ describe("merchant configuration correction and pinned payment identities", () =
         `0x${userId.replaceAll("-", "").slice(0, 16)}`,
       ).toString();
       await db.insert(users).values({
-        officialConnectVerified: true,
         id: userId,
         externalId: recipientId,
         username: `Legacy_${index}_${userId.slice(0, 8)}`,

@@ -6,9 +6,6 @@ const user = {
   username: "viewer",
   displayName: "加载验收用户",
   avatarUrl: null,
-  accountTier: "standard",
-  canUseLdc: true,
-  loginProvider: "connect",
 };
 const activity = {
   id,

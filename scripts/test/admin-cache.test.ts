@@ -11,12 +11,7 @@ describe("administrator cache permission boundary", () => {
     const client = createAppQueryClient();
     const sessionKey = ["auth", "session"];
     const oldSession = {
-      user: {
-        id: "admin",
-        accountTier: "standard",
-        loginProvider: "connect",
-        isAdmin: true,
-      },
+      user: { id: "admin", isAdmin: true },
       csrfToken: "first-session",
     } as SessionResponse;
     client.setQueryData(sessionKey, oldSession);
@@ -49,7 +44,6 @@ describe("administrator cache permission boundary", () => {
       client.setQueryData(sessionKey, {
         user: { id: "admin", isAdmin: true },
         csrfToken: "old-session",
-        loginOptions: { liteauthEnabled: true },
       });
       const first = [
         "admin-private",

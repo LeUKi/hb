@@ -240,11 +240,6 @@ h2 {
 .icon-button:hover {
   background: var(--surface-hover);
 }
-.lite-badge {
-  background: #303036;
-  color: var(--ink);
-  border: 1px solid var(--line);
-}
 .site-main {
   width: 100%;
   min-width: 0;

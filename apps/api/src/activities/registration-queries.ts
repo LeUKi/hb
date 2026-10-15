@@ -253,9 +253,6 @@ export async function listAuthorRegistrations(
         username: users.username,
         displayName: users.displayName,
         avatarUrl: users.avatarUrl,
-        accountTier: sql<
-          "standard" | "lite"
-        >`CASE WHEN ${users.officialConnectVerified}=1 THEN 'standard' ELSE 'lite' END`,
       },
     })
     .from(activityRegistrations)
@@ -391,9 +388,6 @@ export async function listParticipations(
           username: users.username,
           displayName: users.displayName,
           avatarUrl: users.avatarUrl,
-          accountTier: sql<
-            "standard" | "lite"
-          >`CASE WHEN ${users.officialConnectVerified}=1 THEN 'standard' ELSE 'lite' END`,
         })
         .from(users)
         .where(inArray(users.id, authorIds))
@@ -495,9 +489,6 @@ export async function listPublicRegistrations(
       username: users.username,
       displayName: users.displayName,
       avatarUrl: users.avatarUrl,
-      accountTier: sql<
-        "standard" | "lite"
-      >`CASE WHEN ${users.officialConnectVerified}=1 THEN 'standard' ELSE 'lite' END`,
     })
     .from(activityRegistrations)
     .innerJoin(users, eq(users.id, activityRegistrations.userId))
@@ -524,18 +515,15 @@ export async function listPublicRegistrations(
   const last = page.at(-1)?.entry;
   return {
     enabled: true,
-    items: page.map(
-      ({ entry, username, displayName, avatarUrl, accountTier }) => ({
-        id: entry.id,
-        username: config.showRecipientUsername ? username : "",
-        displayName: config.showRecipientUsername ? displayName : "匿名用户",
-        avatarUrl: config.showRecipientUsername ? avatarUrl : null,
-        accountTier: config.showRecipientUsername ? accountTier : null,
-        ...(config.showRecipientTime
-          ? { registeredAt: new Date(entry.registeredAt).toISOString() }
-          : {}),
-      }),
-    ),
+    items: page.map(({ entry, username, displayName, avatarUrl }) => ({
+      id: entry.id,
+      username: config.showRecipientUsername ? username : "",
+      displayName: config.showRecipientUsername ? displayName : "匿名用户",
+      avatarUrl: config.showRecipientUsername ? avatarUrl : null,
+      ...(config.showRecipientTime
+        ? { registeredAt: new Date(entry.registeredAt).toISOString() }
+        : {}),
+    })),
     nextCursor:
       rows.length > 20 && last
         ? btoa(

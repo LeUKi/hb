@@ -124,7 +124,6 @@ export type Merchant = {
   };
 } & ({ mode: "simulation"; scenario: SimulationScenario } | { mode: "real" });
 export type LdcOpeningBlockedReason =
-  | "OFFICIAL_CONNECT_REQUIRED"
   | "REAL_LDC_NOT_ENABLED"
   | "TIMED_DRAW_NOT_ENABLED"
   | "MERCHANT_LEGACY"

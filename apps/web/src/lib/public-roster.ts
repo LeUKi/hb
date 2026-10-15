@@ -73,7 +73,6 @@ function redactPages(
         safe.username = "";
         safe.displayName = "匿名用户";
         safe.avatarUrl = null;
-        safe.accountTier = null;
       }
       if (!activity.showRecipientTime) {
         if ("claimedAt" in safe) delete safe.claimedAt;

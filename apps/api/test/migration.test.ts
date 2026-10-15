@@ -1192,9 +1192,6 @@ it("adds optional Connect profile fields without invalidating existing accounts 
     user: {
       id: userId,
       username: "OldProfile",
-      accountTier: "standard",
-      canUseLdc: true,
-      loginProvider: "connect",
       displayName: "原有昵称",
       avatarUrl: null,
       email: null,
@@ -1216,106 +1213,110 @@ it("adds optional Connect profile fields without invalidating existing accounts 
   ).toBe(1);
 });
 
-it("migrates official eligibility once and cannot downgrade after upgrade", async () => {
-  const testEnv = env as typeof env & {
-    TEST_LEGACY_DB: D1Database;
-    TEST_MIGRATIONS: D1Migration[];
-  };
-  const db = testEnv.TEST_LEGACY_DB;
-  await resetLegacyDb(db);
-  await applyD1Migrations(
-    db,
-    testEnv.TEST_MIGRATIONS.filter((migration) => migration.name < "0021"),
-  );
-  const id = crypto.randomUUID();
-  await db
-    .prepare(
-      "INSERT INTO users(id,external_id,username,display_name,created_at,updated_at) VALUES(?,?,'OldOfficial','Old official',1,1)",
-    )
-    .bind(id, id)
-    .run();
-  await applyD1Migrations(db, testEnv.TEST_MIGRATIONS);
-  expect(
-    await db
-      .prepare("SELECT official_connect_verified FROM users WHERE id=?")
-      .bind(id)
-      .first("official_connect_verified"),
-  ).toBe(1);
-  await expect(
-    db
-      .prepare("UPDATE users SET official_connect_verified=0 WHERE id=?")
-      .bind(id)
-      .run(),
-  ).rejects.toThrow("OFFICIAL_CONNECT_CANNOT_DOWNGRADE");
-  const lite = crypto.randomUUID();
-  await db
-    .prepare(
-      "INSERT INTO users(id,external_id,username,display_name,created_at,updated_at) VALUES(?,?,'NewLite','New lite',1,1)",
-    )
-    .bind(lite, lite)
-    .run();
-  expect(
-    await db
-      .prepare("SELECT official_connect_verified FROM users WHERE id=?")
-      .bind(lite)
-      .first("official_connect_verified"),
-  ).toBe(0);
-  await db
-    .prepare("UPDATE users SET official_connect_verified=1 WHERE id=?")
-    .bind(lite)
-    .run();
-  await expect(
-    db
-      .prepare("UPDATE users SET official_connect_verified=0 WHERE id=?")
-      .bind(lite)
-      .run(),
-  ).rejects.toThrow("OFFICIAL_CONNECT_CANNOT_DOWNGRADE");
-});
-
-it("preserves official logins during rolling deployment without upgrading LiteAuth sessions", async () => {
-  const testEnv = env as typeof env & {
-    TEST_LEGACY_DB: D1Database;
-    TEST_MIGRATIONS: D1Migration[];
-  };
-  const db = testEnv.TEST_LEGACY_DB;
-  await resetLegacyDb(db);
-  await applyD1Migrations(
-    db,
-    testEnv.TEST_MIGRATIONS.filter((migration) => migration.name < "0022"),
-  );
-  for (const id of ["old-callback", "lite-only", "late-callback", "new-lite"]) {
-    await db
-      .prepare(
-        "INSERT INTO users(id,external_id,username,display_name,created_at,updated_at) VALUES(?,?,?,? ,1,1)",
-      )
-      .bind(id, id, id, id)
-      .run();
-  }
-  const insertSession = async (id: string, provider?: string) => {
-    await db
-      .prepare(
-        provider
-          ? "INSERT INTO sessions(token_hash,user_id,csrf_token,created_at,expires_at,last_seen_at,login_provider) VALUES(?,?,?,1,2,1,?)"
-          : "INSERT INTO sessions(token_hash,user_id,csrf_token,created_at,expires_at,last_seen_at) VALUES(?,?,?,1,2,1)",
-      )
-      .bind(id, id, id, ...(provider ? [provider] : []))
-      .run();
-  };
-  await insertSession("old-callback");
-  await insertSession("lite-only", "liteauth");
-  await applyD1Migrations(db, testEnv.TEST_MIGRATIONS);
-  await insertSession("late-callback");
-  await insertSession("new-lite", "liteauth");
-  expect(
-    (
-      await db
-        .prepare("SELECT id,official_connect_verified FROM users ORDER BY id")
-        .all()
-    ).results,
-  ).toEqual([
-    { id: "late-callback", official_connect_verified: 1 },
-    { id: "lite-only", official_connect_verified: 0 },
-    { id: "new-lite", official_connect_verified: 0 },
-    { id: "old-callback", official_connect_verified: 1 },
-  ]);
-});
+it.each([true, false])(
+  "retires LiteAuth sessions and unfinished LiteAuth or upgrade logins, keeps accounts and drops the official Connect triggers, liteauthEnabled=%s",
+  async (liteauthEnabled) => {
+    const testEnv = env as typeof env & {
+      TEST_LEGACY_DB: D1Database;
+      TEST_MIGRATIONS: D1Migration[];
+    };
+    const db = testEnv.TEST_LEGACY_DB;
+    await resetLegacyDb(db);
+    await applyD1Migrations(
+      db,
+      testEnv.TEST_MIGRATIONS.filter((migration) => migration.name < "0027"),
+    );
+    const retiredTriggers = [
+      "sessions_record_official_connect",
+      "users_official_connect_insert_valid",
+      "users_official_connect_monotonic",
+      "users_official_connect_update_valid",
+    ];
+    const triggerNames = async () =>
+      (
+        await db
+          .prepare("SELECT name FROM sqlite_master WHERE type='trigger'")
+          .all<{ name: string }>()
+      ).results.map((row) => row.name);
+    expect(await triggerNames()).toEqual(
+      expect.arrayContaining(retiredTriggers),
+    );
+    const now = Date.now();
+    await db.batch([
+      db
+        .prepare(
+          "INSERT INTO users(id,external_id,username,display_name,official_connect_verified,created_at,updated_at) VALUES ('official','1001','Official','Official',1,?,?),('lite','1002','Lite','Lite',0,?,?)",
+        )
+        .bind(now, now, now, now),
+      db
+        .prepare(
+          `INSERT INTO sessions(token_hash,user_id,csrf_token,created_at,expires_at,last_seen_at,login_provider) VALUES
+          ('connect-session','official','csrf-connect',?,?,?,'connect'),
+          ('official-liteauth-session','official','csrf-official-liteauth',?,?,?,'liteauth'),
+          ('lite-session','lite','csrf-lite',?,?,?,'liteauth')`,
+        )
+        .bind(
+          now,
+          now + 60000,
+          now,
+          now,
+          now + 60000,
+          now,
+          now,
+          now + 60000,
+          now,
+        ),
+      db
+        .prepare(
+          `INSERT INTO oauth_attempts(state_hash,cookie_hash,return_to,created_at,expires_at,login_provider,pkce_verifier_ciphertext,expected_user_id) VALUES
+          ('connect-login','connect-cookie','/account',?,?,'connect',NULL,NULL),
+          ('liteauth-login','liteauth-cookie','/account',?,?,'liteauth','encrypted-verifier',NULL),
+          ('connect-upgrade','upgrade-cookie','/account',?,?,'connect',NULL,'lite')`,
+        )
+        .bind(now, now + 600000, now, now + 600000, now, now + 600000),
+      db
+        .prepare(
+          "UPDATE login_settings SET liteauth_enabled=?,version=7,updated_at=1,updated_by_user_id='official' WHERE id='global'",
+        )
+        .bind(Number(liteauthEnabled)),
+    ]);
+    const snapshot = () =>
+      db.batch<Record<string, unknown>>([
+        db.prepare("SELECT * FROM users ORDER BY id"),
+        db.prepare("SELECT * FROM sessions ORDER BY token_hash"),
+        db.prepare("SELECT * FROM oauth_attempts ORDER BY state_hash"),
+        db.prepare("SELECT * FROM login_settings"),
+      ]);
+    const before = await snapshot();
+    await applyD1Migrations(db, testEnv.TEST_MIGRATIONS);
+    const after = await snapshot();
+    expect(after[0]?.results).toEqual(before[0]?.results);
+    expect(after[1]?.results).toEqual(
+      before[1]?.results.filter((row) => row.token_hash === "connect-session"),
+    );
+    expect(after[2]?.results).toEqual(
+      before[2]?.results.filter((row) => row.state_hash === "connect-login"),
+    );
+    const [settingsBefore] = before[3]?.results ?? [];
+    const [settingsAfter] = after[3]?.results ?? [];
+    expect(settingsAfter).toEqual(
+      liteauthEnabled
+        ? {
+            ...settingsBefore,
+            version: 8,
+            liteauth_enabled: 0,
+            updated_at: expect.any(Number),
+            updated_by_user_id: null,
+          }
+        : settingsBefore,
+    );
+    if (liteauthEnabled)
+      expect(settingsAfter?.updated_at).toBeGreaterThanOrEqual(now - 60000);
+    const remainingTriggers = await triggerNames();
+    for (const name of retiredTriggers)
+      expect(remainingTriggers).not.toContain(name);
+    expect(
+      (await db.prepare("PRAGMA foreign_key_check").all()).results,
+    ).toEqual([]);
+  },
+);

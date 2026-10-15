@@ -267,12 +267,7 @@ export function clearAdminPrivateOnAccessDenied(
   queryClient.setQueryData<SessionResponse>(sessionQueryKey, (previous) => {
     if (!previous) return previous;
     if (error.status === 401)
-      return {
-        user: null,
-        csrfToken: null,
-        attemptCooldown: null,
-        loginOptions: previous.loginOptions,
-      };
+      return { user: null, csrfToken: null, attemptCooldown: null };
     if (!previous.user) return previous;
     return {
       ...previous,

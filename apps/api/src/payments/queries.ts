@@ -45,7 +45,6 @@ type PaymentSqlRow = {
   recipient_username_current: string | null;
   recipient_display_name_current: string | null;
   recipient_avatar_url: string | null;
-  recipient_official_connect_verified: number | null;
 };
 type AttemptSqlRow = {
   client_id: string | null;
@@ -149,8 +148,7 @@ export async function merchantPaymentDetail(
     `SELECT p.*,c.activity_id,
       u.username AS recipient_username_current,
       u.display_name AS recipient_display_name_current,
-      u.avatar_url AS recipient_avatar_url,
-      u.official_connect_verified AS recipient_official_connect_verified
+      u.avatar_url AS recipient_avatar_url
       FROM payment_tasks p
       LEFT JOIN claims c ON c.id=p.claim_id
       LEFT JOIN users u ON u.id=c.user_id
@@ -252,10 +250,6 @@ export async function merchantPaymentDetail(
             username: row.recipient_username_current,
             displayName: row.recipient_display_name_current,
             avatarUrl: row.recipient_avatar_url,
-            accountTier:
-              row.recipient_official_connect_verified === 1
-                ? "standard"
-                : "lite",
           }
         : null,
     usernameCorrection: correction

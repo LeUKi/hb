@@ -22,7 +22,6 @@ import { databaseNow } from "../activities/lifecycle";
 import { getRegistrationDetail } from "../activities/registration-queries";
 import { projectPublicActivity } from "../activities/service";
 import { type ActivityRow, findActivity } from "../activities/storage";
-import { requireOfficialConnect } from "../auth/eligibility";
 import { createDb } from "../db/client";
 import {
   activities,
@@ -118,9 +117,6 @@ async function list(
         username: users.username,
         displayName: users.displayName,
         avatarUrl: users.avatarUrl,
-        accountTier: sql<
-          "standard" | "lite"
-        >`CASE WHEN ${users.officialConnectVerified}=1 THEN 'standard' ELSE 'lite' END`,
       },
       claimId: claims.id,
       paymentState: paymentTasks.status,
@@ -273,7 +269,6 @@ async function prepare(
   ]);
   const previous = await findSubmission(env, userId, input.submissionId);
   if (previous) return verifyFingerprint(previous, fingerprint);
-  await requireOfficialConnect(env, userId);
   await assertAttemptAllowed(env, userId, "home");
   const rowId = crypto.randomUUID();
   try {

@@ -215,12 +215,7 @@ async function renderImage(
       ? null
       : await getReadOnlyImageSession(context);
     const viewer = session
-      ? await readViewerState(
-          context.env,
-          activity.row,
-          session.user.id,
-          session.user.canUseLdc,
-        )
+      ? await readViewerState(context.env, activity.row, session.user.id)
       : ({ kind: "public" } satisfies ActivityImageViewerState);
     const completedReadAt = new Date();
     const svg = renderActivityImage(
@@ -330,9 +325,6 @@ async function readPublicActivity(env: ApiContext["Bindings"], id: string) {
       username: users.username,
       displayName: users.displayName,
       avatarUrl: users.avatarUrl,
-      accountTier: sql<
-        "standard" | "lite"
-      >`CASE WHEN ${users.officialConnectVerified}=1 THEN 'standard' ELSE 'lite' END`,
     })
     .from(users)
     .where(eq(users.id, row.authorId))
@@ -437,9 +429,8 @@ async function readViewerState(
   env: ApiContext["Bindings"],
   activity: ActivityImageActivityRow,
   userId: string,
-  canUseLdc: boolean,
 ): Promise<ActivityImageViewerState> {
-  if (!canUseLdc || activity.authorId === userId) return { kind: "public" };
+  if (activity.authorId === userId) return { kind: "public" };
   const row = await env.DB.prepare(
     `SELECT c.id AS claim_id,c.claimed_at,p.amount_minor,i.amount_minor AS inventory_amount_minor,p.status AS payment_status,
       r.id AS registration_id,r.registered_at

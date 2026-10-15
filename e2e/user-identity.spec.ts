@@ -13,9 +13,6 @@ function session(displayName = "Ada", avatarUrl: string | null = null) {
       displayName,
       avatarUrl,
       email: "ada-private@example.test",
-      accountTier: "standard" as const,
-      canUseLdc: true,
-      loginProvider: "connect" as const,
     },
     csrfToken: "csrf-token-1",
   };
@@ -24,7 +21,6 @@ function session(displayName = "Ada", avatarUrl: string | null = null) {
 async function mockSession(
   page: Page,
   getSession = () => session(),
-  publicTier?: "standard" | "lite" | null,
   beforeInfo = "",
 ) {
   await page.route(/\/api\/(?:session|me)$/, (route) =>
@@ -57,8 +53,6 @@ async function mockSession(
             username: user.username,
             displayName: user.displayName,
             avatarUrl: user.avatarUrl,
-            accountTier:
-              publicTier === undefined ? user.accountTier : publicTier,
           },
           forceDedicated: false,
           topicUrl: "https://linux.do/t/topic/123/1",
@@ -127,7 +121,7 @@ test.describe("触屏用户卡片", () => {
 });
 
 test("Tab 从触发按钮进入弹层链接并能退出到后续操作", async ({ page }) => {
-  await mockSession(page, undefined, undefined, "后续公开说明。");
+  await mockSession(page, undefined, "后续公开说明。");
   await page.goto("/activities/profile-activity");
   const topicLink = page.getByRole("link", {
     name: "关联论坛帖子",
@@ -240,7 +234,7 @@ test("长昵称窄屏时弹层避让屏幕边缘", async ({ page }) => {
 
 test("窄屏资料卡避让短视口，列表滚动关闭资料卡", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 260 });
-  await mockSession(page, undefined, undefined, "公开说明。\n\n".repeat(40));
+  await mockSession(page, undefined, "公开说明。\n\n".repeat(40));
   await page.goto("/activities/profile-activity");
   const trigger = publicUserButton(page);
   await expect(trigger).toBeVisible();
@@ -287,14 +281,4 @@ test("头像加载失败后更新为新 URL 会重新加载图片", async ({ pag
   await refocusAfterSessionStale(page);
   await expect.poll(() => goodHits).toBeGreaterThan(0);
   await expect(trigger.locator("img")).toHaveAttribute("src", avatarUrl);
-});
-
-test("无本地资格关联的历史用户名不显示青春版标记", async ({ page }) => {
-  await mockSession(page, () => session(), null);
-  await page.goto("/activities/profile-activity");
-  const trigger = publicUserButton(page);
-  await expect(trigger).not.toContainText("青春版");
-  await trigger.hover();
-  await expect(page.getByRole("dialog")).not.toContainText("青春版");
-  await expect(page.getByRole("dialog")).toContainText("@ada");
 });

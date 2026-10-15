@@ -19,22 +19,17 @@ import {
   requireAppOrigin,
   secureCookiesForOrigin,
 } from "../security/http";
-import { liteAuthLoginGuard, requireLiteAuthLogin } from "./login-settings";
 
 export const SESSION_COOKIE = "hb_session";
 export const IMAGE_SESSION_COOKIE = "__Host-hb_image_session";
 export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
 const SESSION_TOUCH_INTERVAL_MS = 60 * 60 * 1000;
 
-export type LoginProvider = "connect" | "liteauth";
-
 export type AuthenticatedUser = {
   id: string;
   username: string;
   displayName: string;
   avatarUrl: string | null;
-  accountTier: "standard" | "lite";
-  canUseLdc: boolean;
   isAdmin: boolean;
 };
 
@@ -42,30 +37,12 @@ export type AuthenticatedSession = {
   tokenHash: string;
   csrfToken: string;
   expiresAt: Date;
-  loginProvider: LoginProvider;
   user: AuthenticatedUser;
   attemptCooldown: AttemptCooldown;
 };
 
-export type SessionUser =
-  | string
-  | {
-      provider: string;
-      externalId: string;
-      statement: D1PreparedStatement;
-    };
-
-export async function createSession(
-  c: Context<ApiContext>,
-  user: SessionUser,
-  loginProvider: LoginProvider = "connect",
-  liteAuthVersion?: number,
-) {
+export async function createSession(c: Context<ApiContext>, userId: string) {
   const appOrigin = requireAppOrigin(c.env);
-  const expectedVersion =
-    loginProvider === "liteauth"
-      ? (liteAuthVersion ?? (await requireLiteAuthLogin(c.env)))
-      : undefined;
   const currentToken = getCookie(c, SESSION_COOKIE);
   const previousTokenHash =
     currentToken && isCookieToken(currentToken)
@@ -77,24 +54,13 @@ export async function createSession(
   const csrfToken = await randomToken(32);
   const now = new Date();
   const expiresAt = new Date(now.getTime() + SESSION_TTL_SECONDS * 1000);
-  const userIdSql =
-    typeof user === "string"
-      ? "?"
-      : "(SELECT id FROM users WHERE provider=? AND external_id=? AND active=1)";
-  const userIdValues =
-    typeof user === "string" ? [user] : [user.provider, user.externalId];
 
   const statements = [
-    ...(expectedVersion === undefined
-      ? []
-      : [liteAuthLoginGuard(c.env, expectedVersion)]),
-    ...(typeof user === "string" ? [] : [user.statement]),
     c.env.DB.prepare(`INSERT INTO sessions
-      (token_hash,user_id,login_provider,csrf_token,created_at,expires_at,last_seen_at)
-      VALUES (?,${userIdSql},?,?,?,?,?)`).bind(
+      (token_hash,user_id,csrf_token,created_at,expires_at,last_seen_at)
+      VALUES (?,?,?,?,?,?)`).bind(
       tokenHash,
-      ...userIdValues,
-      loginProvider,
+      userId,
       csrfToken,
       now.getTime(),
       expiresAt.getTime(),
@@ -107,13 +73,7 @@ export async function createSession(
         previousTokenHash,
       ),
     );
-  try {
-    await c.env.DB.batch(statements);
-  } catch (error) {
-    if (expectedVersion !== undefined)
-      await requireLiteAuthLogin(c.env, expectedVersion);
-    throw error;
-  }
+  await c.env.DB.batch(statements);
 
   setCookie(c, SESSION_COOKIE, token, {
     httpOnly: true,
@@ -215,13 +175,11 @@ export async function getOptionalSession(c: Context<ApiContext>) {
       csrfToken: sessions.csrfToken,
       expiresAt: sessions.expiresAt,
       lastSeenAt: sessions.lastSeenAt,
-      loginProvider: sessions.loginProvider,
       userId: users.id,
       username: users.username,
       displayName: users.displayName,
       avatarUrl: users.avatarUrl,
       active: users.active,
-      officialConnectVerified: users.officialConnectVerified,
       provider: users.provider,
       externalId: users.externalId,
       cooldownRevision: accountAttemptCooldowns.revision,
@@ -256,14 +214,11 @@ export async function getOptionalSession(c: Context<ApiContext>) {
     tokenHash: row.tokenHash,
     csrfToken: row.csrfToken,
     expiresAt: row.expiresAt,
-    loginProvider: row.loginProvider,
     user: {
       id: row.userId,
       username: row.username,
       displayName: row.displayName,
       avatarUrl: row.avatarUrl,
-      accountTier: row.officialConnectVerified ? "standard" : "lite",
-      canUseLdc: row.officialConnectVerified,
       isAdmin: isAdministrator(c.env, row.provider, row.externalId),
     },
     attemptCooldown: {
@@ -354,7 +309,7 @@ async function readOnlyImageSessionByHash(
   tokenHash: string,
 ): Promise<
   | (Pick<AuthenticatedSession, "tokenHash" | "expiresAt"> & {
-      user: Pick<AuthenticatedUser, "id" | "canUseLdc">;
+      user: Pick<AuthenticatedUser, "id">;
     })
   | null
 > {
@@ -365,7 +320,6 @@ async function readOnlyImageSessionByHash(
       expiresAt: sessions.expiresAt,
       userId: users.id,
       active: users.active,
-      officialConnectVerified: users.officialConnectVerified,
     })
     .from(sessions)
     .innerJoin(users, eq(sessions.userId, users.id))
@@ -375,10 +329,7 @@ async function readOnlyImageSessionByHash(
   return {
     tokenHash: row.tokenHash,
     expiresAt: row.expiresAt,
-    user: {
-      id: row.userId,
-      canUseLdc: row.officialConnectVerified,
-    },
+    user: { id: row.userId },
   };
 }
 

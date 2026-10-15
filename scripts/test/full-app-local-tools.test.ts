@@ -9,7 +9,7 @@ import {
 const origin = "http://127.0.0.1:4195";
 
 describe("full-app local experience OAuth bridge", () => {
-  it("rewrites only known provider authorize redirects to the local bridge", () => {
+  it("rewrites only Connect authorize redirects to the local bridge", () => {
     const external =
       "https://connect.linux.do/oauth2/authorize?response_type=code&state=abc";
     expect(rewriteOAuthAuthorizeLocation(external, origin)).toBe(
@@ -22,13 +22,19 @@ describe("full-app local experience OAuth bridge", () => {
       ),
     ).toBeNull();
     expect(
+      rewriteOAuthAuthorizeLocation(
+        "https://liteauth.442224.xyz/api/auth/oauth2/authorize?state=abc",
+        origin,
+      ),
+    ).toBeNull();
+    expect(
       rewriteOAuthAuthorizeLocation("/api/auth/callback", origin),
     ).toBeNull();
   });
 
   it("creates a local login hop without directly setting the app session", () => {
     const response = createLocalLoginResponse(
-      `${origin}/__local/full-app/login?role=recipient&provider=connect&returnTo=%2Faccount`,
+      `${origin}/__local/full-app/login?role=recipient&returnTo=%2Faccount`,
       origin,
     );
     expect(response.status).toBe(302);
@@ -36,7 +42,7 @@ describe("full-app local experience OAuth bridge", () => {
       `${origin}/api/auth/login?returnTo=%2Faccount`,
     );
     expect(response.headers.get("set-cookie")).toContain(
-      "hb_full_app_local_oauth=connect%3Arecipient",
+      "hb_full_app_local_oauth=recipient;",
     );
     expect(response.headers.get("set-cookie")).not.toContain("hb_session");
   });
@@ -54,7 +60,7 @@ describe("full-app local experience OAuth bridge", () => {
     const response = createLocalOAuthAuthorizeResponse(
       authorize.toString(),
       origin,
-      "hb_full_app_local_oauth=connect%3Arecipient",
+      "hb_full_app_local_oauth=recipient",
     );
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe(
@@ -62,59 +68,24 @@ describe("full-app local experience OAuth bridge", () => {
     );
   });
 
-  it("defaults direct LiteAuth authorize clicks to the Lite local identity", () => {
-    const state = "D".repeat(32);
-    const challenge = "E".repeat(43);
+  it("defaults a direct authorize click without a selected role to the author", () => {
+    const state = "B".repeat(32);
     const authorize = new URL(
-      "/__local/full-app/oauth/liteauth/authorize",
+      "/__local/full-app/oauth/connect/authorize",
       origin,
     );
     authorize.searchParams.set("response_type", "code");
-    authorize.searchParams.set("client_id", "hb_full_app_liteauth");
-    authorize.searchParams.set(
-      "redirect_uri",
-      `${origin}/api/auth/liteauth/callback`,
-    );
-    authorize.searchParams.set("scope", "profile");
+    authorize.searchParams.set("client_id", "hb_full_app_connect");
+    authorize.searchParams.set("redirect_uri", `${origin}/api/auth/callback`);
     authorize.searchParams.set("state", state);
-    authorize.searchParams.set("code_challenge", challenge);
-    authorize.searchParams.set("code_challenge_method", "S256");
     const response = createLocalOAuthAuthorizeResponse(
       authorize.toString(),
       origin,
       "",
     );
     expect(response.status).toBe(302);
-    expect(response.headers.get("location")).toContain(
-      `code=full-app-liteauth-code%3Alite%3A${challenge}`,
-    );
-  });
-
-  it("preserves LiteAuth PKCE by embedding the real challenge in the test upstream code", () => {
-    const state = "B".repeat(32);
-    const challenge = "C".repeat(43);
-    const authorize = new URL(
-      "/__local/full-app/oauth/liteauth/authorize",
-      origin,
-    );
-    authorize.searchParams.set("response_type", "code");
-    authorize.searchParams.set("client_id", "hb_full_app_liteauth");
-    authorize.searchParams.set(
-      "redirect_uri",
-      `${origin}/api/auth/liteauth/callback`,
-    );
-    authorize.searchParams.set("scope", "profile");
-    authorize.searchParams.set("state", state);
-    authorize.searchParams.set("code_challenge", challenge);
-    authorize.searchParams.set("code_challenge_method", "S256");
-    const response = createLocalOAuthAuthorizeResponse(
-      authorize.toString(),
-      origin,
-      "hb_full_app_local_oauth=liteauth%3Alite",
-    );
-    expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe(
-      `${origin}/api/auth/liteauth/callback?state=${state}&code=full-app-liteauth-code%3Alite%3A${challenge}&iss=https%3A%2F%2Fliteauth.442224.xyz%2Fapi%2Fauth`,
+      `${origin}/api/auth/callback?state=${state}&code=full-app-code-author`,
     );
   });
 });

@@ -1,6 +1,5 @@
 import type { ClaimActivityInput, ClaimResult } from "@hb/contracts";
 import { and, eq } from "drizzle-orm";
-import { requireOfficialConnect } from "../auth/eligibility";
 import { createDb } from "../db/client";
 import { activityPasswords } from "../db/schema";
 import type { ApiBindings } from "../env";
@@ -131,7 +130,6 @@ export async function registerForDraw(
       if (!saved) throw new Error("Registration outcome was not saved");
       return result(env, saved);
     }
-    await requireOfficialConnect(env, userId);
     if (activity.paymentMode === "simulation" && !isLocalSimulation(env))
       throw new ActivityError(
         400,
@@ -185,7 +183,7 @@ export async function registerForDraw(
       AND deadline>${databaseNow} AND registered_count<9007199254740991
       AND (json_extract(config,'$.money.participantLimit') IS NULL OR registered_count<json_extract(config,'$.money.participantLimit'))
       AND author_id!=? AND ((payment_mode='simulation' AND ?=1) OR (payment_mode='real' AND ?=1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
-      AND EXISTS(SELECT 1 FROM users WHERE id=? AND official_connect_verified=1 AND active=1)
+      AND EXISTS(SELECT 1 FROM users WHERE id=? AND active=1)
       AND NOT EXISTS(SELECT 1 FROM activity_registrations WHERE activity_id=? AND user_id=?)
       THEN version ELSE NULL END WHERE id=?`).bind(
         activity.version,
@@ -283,7 +281,6 @@ export async function registerForDraw(
         return result(env, bindFingerprint(winner, fingerprint, "register"));
       const current = await findActivity(env, activityId);
       if (!current) activityNotFound();
-      await requireOfficialConnect(env, userId);
       if (
         current.version !== activity.version ||
         activityStatus(current) !== "active" ||

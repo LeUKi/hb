@@ -53,7 +53,6 @@ async function actor(): Promise<Actor> {
     username: `member_${id}`,
     displayName: `Member ${id}`,
     avatarUrl: `https://avatar.example.com/${id}.png`,
-    officialConnectVerified: true,
     createdAt: now,
     updatedAt: now,
   });
@@ -342,7 +341,7 @@ describe("production presentation queries", () => {
             status: "active",
             draw: { state },
             createdAt: timed.createdAt,
-            author: { id: owner.id, accountTier: "standard" },
+            author: { id: owner.id },
           },
         },
       });
@@ -627,12 +626,8 @@ describe("production presentation queries", () => {
       const saved = activity.id === first.id ? first : second;
       const authorId = activity.id === first.id ? owner.id : outsider.id;
       expect(activity.createdAt).toBe(saved.createdAt);
-      expect(activity.author).toMatchObject({
-        id: authorId,
-        accountTier: "standard",
-      });
+      expect(activity.author).toMatchObject({ id: authorId });
       expect(Object.keys(activity.author ?? {}).sort()).toEqual([
-        "accountTier",
         "avatarUrl",
         "displayName",
         "id",
@@ -725,7 +720,6 @@ describe("production presentation queries", () => {
     });
     expect(first.items[0]?.recipientProfile).toMatchObject({
       username: expect.stringMatching(/^member_/),
-      accountTier: "standard",
     });
     const second = await data<ActivityPaymentTargetList>(
       `/me/activities/${selected.id}/payments?status=pending&cursor=${encodeURIComponent(first.nextCursor ?? "")}`,
@@ -812,7 +806,6 @@ describe("production presentation queries", () => {
         username: "",
         displayName: "匿名用户",
         avatarUrl: null,
-        accountTier: null,
       });
       expect(row).not.toHaveProperty("amount");
       expect(row).not.toHaveProperty("claimedAt");

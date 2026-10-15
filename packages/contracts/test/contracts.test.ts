@@ -378,7 +378,7 @@ describe("shared activity contracts", () => {
 
 describe("admin read-only contracts", () => {
   const cursor = `1700000000000:${itemId}`;
-  const auditCursor = `1700000000000:login_settings:${itemId}`;
+  const auditCursor = `1700000000000:attempt_rate_limits:${itemId}`;
 
   it("validates admin cursor formats used by list and audit endpoints", () => {
     expect(adminCursorSchema.parse(cursor)).toBe(cursor);
@@ -393,7 +393,8 @@ describe("admin read-only contracts", () => {
       "9007199254740992:item",
       "1700000000000:bad/type:id",
       `1700000000000:unknown:${itemId}`,
-      `1700000000000:LOGIN_SETTINGS:${itemId}`,
+      `1700000000000:ATTEMPT_RATE_LIMITS:${itemId}`,
+      `1700000000000:login_settings:${itemId}`,
     ]) {
       expect(adminCursorSchema.safeParse(invalid).success).toBe(false);
       expect(adminAuditQuerySchema.safeParse({ cursor: invalid }).success).toBe(

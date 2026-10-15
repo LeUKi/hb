@@ -487,14 +487,6 @@ summary::-webkit-details-marker {
   background: var(--paper);
   color: #7a7167;
 }
-.lite-badge {
-  font-size: 10px;
-  white-space: nowrap;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: var(--paper);
-  color: #57694a;
-}
 .surface {
   background: var(--paper);
   border: 1px solid var(--line);
@@ -1819,7 +1811,7 @@ summary::-webkit-details-marker {
   .card-meta {
     font-size: 10px;
   }
-  .own-identity > span:not(.avatar):not(.lite-badge) {
+  .own-identity > span:not(.avatar) {
     display: none;
   }
   .header-actions {

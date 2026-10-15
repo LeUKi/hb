@@ -112,14 +112,6 @@ export function useActivityOpening(userId: string, csrfToken: string) {
     }
     try {
       assertActive();
-      if (activity.rewardType === "ldc" && !initialUser?.canUseLdc)
-        throw new ActivityRequestError(
-          "LDC活动需要使用官方Connect升级。",
-          403,
-          [],
-          undefined,
-          "OFFICIAL_CONNECT_REQUIRED",
-        );
       setPhase("opening");
       const merchant = await readMerchant();
       const credentialVersion = merchant?.credentialVersion;

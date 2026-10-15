@@ -19,9 +19,6 @@ const user = {
   username: "home-entry",
   displayName: "首页用户",
   avatarUrl: null,
-  accountTier: "standard" as const,
-  canUseLdc: true,
-  loginProvider: "connect" as const,
 };
 
 function gate() {
@@ -125,7 +122,6 @@ async function mockHome(
           user: options.session === "guest" ? null : user,
           csrfToken: options.session === "guest" ? null : "csrf",
           attemptCooldown: options.attemptCooldown ?? null,
-          loginOptions: { liteauthEnabled: false },
         },
       });
     }

@@ -18,8 +18,6 @@ export default defineConfig({
           LDC_TIMED_DRAW_ENABLED: "true",
           CONNECT_CLIENT_ID: "",
           CONNECT_CLIENT_SECRET: "",
-          LITEAUTH_CLIENT_ID: "",
-          LITEAUTH_CLIENT_SECRET: "",
           ENCRYPTION_KEYS: JSON.stringify({
             test: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
           }),

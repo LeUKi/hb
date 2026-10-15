@@ -1,5 +1,4 @@
 import type {
-  AccountTier,
   ActivityRewardFilter,
   ActivityStatistics,
   DiscoveryList,
@@ -26,7 +25,6 @@ import { syncParticipationResult } from "./participation-cache";
 
 export type ExchangeContext = {
   userId: string;
-  accountTier: AccountTier;
   sessionScope: string;
   password: string;
   submission: GlobalRedemptionInput;

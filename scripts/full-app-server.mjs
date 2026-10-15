@@ -175,8 +175,6 @@ async function main() {
             LDC_TIMED_DRAW_ENABLED: "true",
             CONNECT_CLIENT_ID: "hb_full_app_connect",
             CONNECT_CLIENT_SECRET: "full-app-connect-secret",
-            LITEAUTH_CLIENT_ID: "hb_full_app_liteauth",
-            LITEAUTH_CLIENT_SECRET: "full-app-liteauth-secret",
             ENCRYPTION_KEYS: JSON.stringify({
               full_app: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
             }),
@@ -296,11 +294,9 @@ async function main() {
         body = {
           migrations: migrations.length,
           users: await rows(
-            "SELECT id,external_id,username,provider,official_connect_verified,avatar_url,email_ciphertext IS NOT NULL AS has_email_ciphertext,email_ciphertext LIKE '%@%' AS email_ciphertext_contains_plaintext FROM users ORDER BY external_id",
+            "SELECT id,external_id,username,provider,avatar_url,email_ciphertext IS NOT NULL AS has_email_ciphertext,email_ciphertext LIKE '%@%' AS email_ciphertext_contains_plaintext FROM users ORDER BY external_id",
           ),
-          sessions: await rows(
-            "SELECT user_id,token_hash,login_provider FROM sessions",
-          ),
+          sessions: await rows("SELECT user_id,token_hash FROM sessions"),
           activities: await rows(
             "SELECT id,reward_type,payment_mode,opened_at,deadline,claimed_count,total_count,registered_count,draw_state,draw_closed_at,draw_reason,draw_published_at FROM activities ORDER BY created_at",
           ),

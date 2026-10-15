@@ -4,12 +4,6 @@ import type { SessionResponse } from "./auth";
 export function adminIdentity(session: SessionResponse) {
   const user = session.user;
   return user
-    ? JSON.stringify([
-        user.id,
-        user.accountTier,
-        user.loginProvider,
-        user.isAdmin,
-        session.csrfToken,
-      ])
+    ? JSON.stringify([user.id, user.isAdmin, session.csrfToken])
     : "anonymous";
 }

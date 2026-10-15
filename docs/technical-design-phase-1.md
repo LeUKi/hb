@@ -342,7 +342,7 @@ Outbox 投递任务 ID，重复消息由任务状态及模拟订单唯一约束�
 
 付款补偿每轮最多 20 项 Outbox 和 20 个商户，失败后仍按持久扫描时间轮转；验证单轮付款维护最多 23 次 D1 查询。MerchantDO 内部数据库操作由各自调用承担。该预算针对 [D1 单次调用限制](https://developers.cloudflare.com/d1/platform/limits/) 设计；不能把批量任务测试通过视为已验证所有生产规模。Alarm 更新采取只提前、不删除其他并发唤醒的规则，内部 DO 响应读完后释放。
 
-登录采用官方 Connect 和 LiteAuth 两个服务端授权码入口，不增加OIDC或依赖。浏览器使用不透明会话 Cookie，设置 `HttpOnly`、`Secure` 和适当的 `SameSite`；OAuth回调校验绑定提供方及浏览器的一次性 `state`，LiteAuth另校验issuer和PKCE S256，状态修改接口执行来源与CSRF防护。账号永久资格与当前会话来源分别持久化，不能用当前入口推断付款权限。
+登录只采用官方 Connect 服务端授权码入口（LiteAuth 已于2026-10-15取消），不增加OIDC或依赖。浏览器使用不透明会话 Cookie，设置 `HttpOnly`、`Secure` 和适当的 `SameSite`；OAuth回调校验绑定浏览器的一次性 `state`，状态修改接口执行来源与CSRF防护。
 
 首轮加载优化新增 `GET /api/session`，只返回既有会话中的用户ID、用户名、显示名、头像、账号资格、LDC资格、登录来源与CSRF；匿名响应仍为 `{ user: null, csrfToken: null }`，沿用过期、停用及会话触碰规则，响应禁止缓存。不再为全站身份确认额外查询、解密邮箱；`GET /api/me` 保持旧完整资料契约，仅账号页按身份独立读取，失败和重试限于资料区域。
 
@@ -432,7 +432,7 @@ Connect 的[线上公开元数据](https://connect.linux.do/.well-known/openid-c
 
 `0018_abnormal_thunderball.sql` 仅向 users 增加可空的 `email_ciphertext`、`avatar_url`，不重建表或改变现有 ID、会话及业务关系。邮箱复用版本化 AES-GCM，AAD 为 `user:<provider>:<externalId>:email`；成功登录时同步最新可选资料，缺失值保存为空。头像统一校验 HTTPS、长度、控制字符及认证信息，不假设固定 CDN，不代理任意图片。
 
-`AuthenticatedUser` 带可公开头像但不带邮箱；普通 requireAuth 不解密联系方式。`GET /api/me` 在当前会话范围内单独读取和解密邮箱，保持 no-store。0018共享 `PublicUserProfile` 定义username、displayName、avatarUrl，0021批次增加公开accountTier，仍不含邮箱或会话来源；活动作者、发现与名单均明确选择字段，不能把完整users行或私有会话响应直接扩展到公共响应。公开名单id仍为领取记录ID。付款详情只通过claim关联查询当前recipientProfile，原recipientUsername、尝试、金额和付款摘要保持不可变。
+`AuthenticatedUser` 带可公开头像但不带邮箱；普通 requireAuth 不解密联系方式。`GET /api/me` 在当前会话范围内单独读取和解密邮箱，保持 no-store。0018共享 `PublicUserProfile` 定义username、displayName、avatarUrl（0021批次加过的accountTier已随青春版取消），不含邮箱；活动作者、发现与名单均明确选择字段，不能把完整users行或私有会话响应直接扩展到公共响应。公开名单id仍为领取记录ID。付款详情只通过claim关联查询当前recipientProfile，原recipientUsername、尝试、金额和付款摘要保持不可变。
 
 前端通过同一用户组件渲染头像、昵称和可交互资料卡，不增加逐用户请求。头像无 Referer，失效时本地回退；主页固定 Linux DO 主机并编码用户名。邮箱仅本人账号页显示，身份变化时清除私有查询；外部头像及 OAuth 均在自动化中测试注入，不允许测试意外发送真实业务请求。本地测试及 Stage 迁移、真实 Connect 登录、资料显示和退出清理证据见实施记录；生产已于2026-10-06应用0018/0019并通过正常登录资料检查。
 
@@ -476,7 +476,7 @@ TanStack Router仍按路由拆包，根加载组件同步可用，pending等待�
 
 0020配置／更正记录产生后，回退候选必须理解归属、凭证快照、更正链和register／solve用途，不能复用0019旧调度器或恢复旧数据库撤销事实。本轮兼容关闭候选 `hb-production-2026-10-05T18-03-28-865Z` 已部署及核验，运行代码与最终候选兼容，仅三个stop环境开关为true；不会撤销既有核对或开奖。最终生产live、timed=true、三个stop=false，数据库CAS 7→8恢复三项许可；原商户／凭证、付款任务／尝试、开奖方案／报名的旧列保持，配置更正和伪造未建单证据均0。本批生产只读页面、37份资产、Queue消费、四项Cron、诊断及备份隔离恢复通过；短时Tail没有运行错误但不替代CPU／配额容量测量。发布后文档补录不修改已部署代码或归档来源，工作区摘要因此不再等于旧候选，重新发布须重建。
 
-## 双提供方登录、永久资格与0021–0022增量模型
+## 双提供方登录、永久资格与0021–0022增量模型（已于2026-10-15取消，见文末）
 
 依据[LiteAuth公开元数据](https://liteauth.442224.xyz/.well-known/openid-configuration)和[维护者源码](https://github.com/LeUKi/liteauth)，使用授权码、服务端confidential应用、`profile` scope、PKCE S256及 `client_secret_post`。固定授权／令牌路径分别为 `https://liteauth.442224.xyz/api/auth/oauth2/authorize` 和 `/api/auth/oauth2/token`，资料地址为 `https://liteauth.442224.xyz/api/user`，issuer严格等于 `https://liteauth.442224.xyz/api/auth`。官方Connect原scope `profile email`及端点保持。令牌只服务于服务端资料请求，不持久保存或返回浏览器；上游重定向仍拒绝，超时覆盖响应体读取。
 
@@ -531,7 +531,7 @@ Cloudflare _headers当前最多100条规则，构建超限明确失败；发布�
 `account_attempt_cooldowns`按user_id唯一，保存revision、origin、attempt_id、accepted_at与next_allowed_at；新提交读取配置并与持久提交同批写入。`global_redemptions.selected_activity_id`与claim_submission_id原子绑定一个延续，绑定时必须仍是latest attempt；solve不接受首页延续。旧全站接口和结果查询保留，新增字段为兼容扩展；数据库迁移不初始化历史冷却。
 
 
-## LiteAUTH 登录配置接口与一致性（0024）
+## LiteAUTH 登录配置接口与一致性（0024，已于2026-10-15取消）
 
 - `login_settings`为独立单例，迁移初始化`global / version=1 / liteauth_enabled=1`，`login_setting_changes`记录修改前后值、版本、操作者和时间。不改变已有会话或账号资格。
 - `GET /api/admin/login-settings`返回`{config:{version,liteauthEnabled,updatedAt,updatedByUserId},recentChanges}`；`PATCH`接收`{expectedVersion,liteauthEnabled}`，管理员与CSRF校验后执行CAS，冲突返回409 `LOGIN_SETTINGS_CONFLICT`。关闭时同批删除未消费的LiteAUTH OAuth attempts，不影响Connect attempts。
@@ -584,3 +584,10 @@ VITE_ACTIVITY_TOOLS_RECOVERY=1构建兼容恢复Web：保留新日期配置读�
 导航恢复版本升级覆盖 sessionStorage 及浏览器 history 弹窗；旧资源 404 清理该活动详情、参与结果、名单、红包和兑奖意图，取消旧请求并阻止迟到回填，不清除其他 LDC 未确认请求。通用本地尝试记录保留，退役关联不允许恢复意图。隔离负面样本包含非法配置和密文、已领取、待处理提交、过期数据，验证旧接口、原编号重试、Cron、refresh 和 alarm 前后行摘要一致。
 
 完整参与、开奖、付款和 Queue 闭环使用隔离本地上游替身。2026-10-12用户另行授权提交与部署，两环境同源码候选已发布；没有迁移、Git推送、远程模拟入口或新增真实资金验收。Stage保持资金关闭，远程本轮检查游客访问、既有草稿限制及运行策略；真实登录下的资格、草稿保存和开放拦截继续受同一资金关闭边界约束。当前清理与发布证据见 [LDC 收敛记录](ldc-only-retirement.md)，此前带日期的发布回执继续作为历史事实。
+
+## 取消青春版（0027，2026-10-15）
+
+- **接口**：删除 `/api/auth/liteauth/login`、`/api/auth/liteauth/callback`、`intent=upgrade` 升级流程、PKCE 和 `/api/admin/login-settings`；`requireOfficialConnect` 门槛与 `OFFICIAL_CONNECT_REQUIRED` 一并删除，原 SQL 守卫只保留 `active=1`。`/api/session` 返回 `{user,csrfToken,attemptCooldown}`，`user` 不再有 `accountTier`、`canUseLdc`、`loginProvider`，也不再返回 `loginOptions`；名单、报名、付款、发现、作者和内嵌图都不再输出 `accountTier`。后台用户列表去掉账号类型筛选，操作记录只剩尝试间隔一类。
+- **契约**：删除 `AccountTier`、`login-settings.ts`、`AdminUserTier`，`PublicUserProfile` 只剩 username、displayName、avatarUrl。
+- **数据**：`0027_retire_lite_accounts.sql` 删除 LiteAuth 会话与 LiteAuth／升级授权、关闭 `login_settings.liteauth_enabled`、删除四个资格触发器，须在新 Worker 部署前执行。旧列与两张登录设置表保留一个版本供回退，Drizzle schema 已不声明它们，下一次生成的迁移会把它们删掉。
+- **配置**：去掉 `LITEAUTH_*` Secrets、远程 API 的 `global_fetch_strictly_public` 兼容标志及其发布预检，浏览器包泄漏检查不再匹配 `LITEAUTH_CLIENT_SECRET`。

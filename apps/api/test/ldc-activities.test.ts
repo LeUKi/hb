@@ -39,7 +39,6 @@ async function actor(username: string): Promise<Actor> {
   const now = new Date();
   const db = createDb(env.DB);
   await db.insert(users).values({
-    officialConnectVerified: true,
     id,
     externalId: username,
     username,
@@ -416,7 +415,6 @@ describe("LDC activity allocation and durable payment responsibility", () => {
         username: "alice",
         displayName: "alice",
         avatarUrl: null,
-        accountTier: "standard",
         claimedAt: won.claim.claimedAt,
         amount: "5.00",
         speedTitle: "flash",

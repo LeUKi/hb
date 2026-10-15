@@ -53,14 +53,10 @@ async function mock(page: Page) {
             username: "admin",
             displayName: "管理员",
             avatarUrl: null,
-            accountTier: "standard",
-            loginProvider: "connect",
-            canUseLdc: true,
             isAdmin: true,
           },
           csrfToken: "overview-session",
           attemptCooldown: null,
-          loginOptions: { liteauthEnabled: true },
         },
       });
     if (path === "/api/admin/overview") {

@@ -105,7 +105,7 @@ export const Route = createFileRoute("/my/payments")({
 
 function PaymentsPage() {
   return (
-    <RequireAccount requireLdc>
+    <RequireAccount>
       {({ userId, csrfToken }) => (
         <Payments
           key={`${userId}:${csrfToken}`}

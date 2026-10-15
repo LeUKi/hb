@@ -8,7 +8,6 @@ export type RedemptionIntentOperation = PasswordClaimInput & {
 /** An explicit, one-shot user operation. It never enters URLs or persistence. */
 export const redemptionIntentAtom = atom<{
   userId: string;
-  accountTier: string;
   activityId: string;
   operation: RedemptionIntentOperation;
 } | null>(null);
