@@ -1,32 +1,10 @@
 import { ActivityRequestError } from "./activities";
 
-export type ListQueryState = "ready" | "empty" | "loading" | "error";
-type QueryView<T = unknown> = {
-  data?: T;
-  error: unknown;
-  isError: boolean;
-};
-
 export function isAccessQueryError(error: unknown) {
   return (
     error instanceof ActivityRequestError &&
     [401, 403, 404].includes(error.status)
   );
-}
-
-export function isBlockingQueryError(query: QueryView) {
-  if (!query.isError) return false;
-  if (query.data === undefined) return true;
-  return isAccessQueryError(query.error);
-}
-
-export function listQueryState<T extends { items?: readonly unknown[] }>(
-  query: QueryView<T> & { isPending: boolean },
-): ListQueryState {
-  if (isBlockingQueryError(query)) return "error";
-  if (query.data) return query.data.items?.length ? "ready" : "empty";
-  if (query.isPending) return "loading";
-  return "empty";
 }
 
 /** Ignore pagination/filter suffixes when clearing a denied resource's cache. */

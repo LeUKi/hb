@@ -6,15 +6,7 @@
     "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
     "build": "vite build",
     "typecheck": "vite build --mode typecheck && tsc -b tsconfig.json",
-    "cf:typegen": "wrangler types worker-configuration.d.ts --env-interface CloudflareEnv",
-    "prototype:dev": "vite --config vite.prototype.config.ts",
-    "prototype:build": "vite build --config vite.prototype.config.ts",
-    "prototype:typecheck": "tsc -p tsconfig.prototype.json",
-    "prototype:preview": "vite preview --config vite.prototype.config.ts",
-    "redesign:dev": "vite --config vite.redesign.config.ts",
-    "redesign:build": "vite build --config vite.redesign.config.ts",
-    "redesign:typecheck": "tsc -p tsconfig.redesign.json",
-    "redesign:preview": "vite preview --config vite.redesign.config.ts"
+    "cf:typegen": "wrangler types worker-configuration.d.ts --env-interface CloudflareEnv"
   },
   "dependencies": {
     "@hb/api": "workspace:*",

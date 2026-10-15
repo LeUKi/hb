@@ -1,10 +1,7 @@
 import type {
   AccountHistorySummary,
   ActivityError,
-  ActivityHistoryFilters,
   ActivityIssue,
-  ActivityList,
-  ActivityStatus,
   AttemptCooldown,
   CreateActivityInput,
   DeleteActivityInput,
@@ -12,7 +9,6 @@ import type {
   ManagedActivity,
   OpenActivityInput,
   PublicActivity,
-  PublicQuantity,
   UpdateActivityInput,
 } from "@hb/contracts";
 import {
@@ -135,29 +131,6 @@ export const activityKeys = {
   public: (id: string, userId: string | null) =>
     ["activity-public", id, userId] as const,
 };
-
-export function useMyActivities(
-  userId: string,
-  cursor: string | null,
-  filters: ActivityHistoryFilters = {},
-) {
-  const type = filters.type ?? "all";
-  const status = filters.status ?? "all";
-  const query = useQuery({
-    queryKey: [...activityKeys.mine(userId), "list", type, status, cursor],
-    queryFn: async ({ signal }) =>
-      readResponse<ActivityList>(
-        await api.api.me.activities.$get(
-          { query: { type, status, ...(cursor ? { cursor } : {}) } },
-          { init: { signal, cache: "no-store" } },
-        ),
-      ),
-    retry: false,
-    ...historyListRefreshOptions,
-  });
-  useMountedPageFocusRefresh(query.refetch);
-  return query;
-}
 
 export function useHistorySummary(userId: string) {
   const query = useQuery({
@@ -404,42 +377,4 @@ export function useActivityWrites(
       onError,
     }),
   };
-}
-
-export const statusLabels: Record<ActivityStatus, string> = {
-  draft: "准备中",
-  active: "进行中",
-  ended: "已结束",
-  archived: "已归档",
-};
-
-export function formatTime(time: string | null) {
-  return time
-    ? new Date(time).toLocaleString("zh-CN", { hour12: false })
-    : "开放后确定";
-}
-
-export function quantityText(
-  quantity: PublicQuantity,
-  kind: "draw" | "instant" = "instant",
-) {
-  if (kind === "draw")
-    return quantity.mode === "exact"
-      ? `最多 ${quantity.total} 人获奖`
-      : "名额不公开";
-  switch (quantity.mode) {
-    case "hidden":
-      return null;
-    case "exact":
-      return `已领取 ${quantity.claimed} / ${quantity.total} 份`;
-    case "availability":
-      return quantity.available ? "还有奖励" : "没有剩余奖励";
-    case "fuzzy":
-      return {
-        plenty: "奖励充足",
-        limited: "奖励有限",
-        low: "剩余少量奖励",
-        empty: "奖励已领完",
-      }[quantity.level];
-  }
 }

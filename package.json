@@ -40,14 +40,7 @@
     "deployment:probe": "bun scripts/deployment-probe.ts",
     "platform:controls": "bun scripts/platform-controls.ts",
     "payment:backup:remote": "bun scripts/payment-backup.ts --remote-export",
-    "payment:restore:staging": "bun scripts/payment-backup.ts --remote-rehearsal --env staging",
-    "prototype:dev": "bun run --filter @hb/web prototype:dev",
-    "prototype:build": "bun run --filter @hb/web prototype:build",
-    "prototype:typecheck": "bun run --filter @hb/web prototype:typecheck",
-    "prototype:test": "playwright test --config playwright.prototype.config.ts",
-    "redesign:dev": "bun run contracts:build && bun run --filter @hb/web redesign:dev",
-    "redesign:build": "bun run --filter @hb/web redesign:build",
-    "redesign:typecheck": "bun run contracts:build && bun run --filter @hb/web redesign:typecheck"
+    "payment:restore:staging": "bun scripts/payment-backup.ts --remote-rehearsal --env staging"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",

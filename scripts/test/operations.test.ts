@@ -280,7 +280,7 @@ describe("release environment guards", () => {
   it("records source and tests without including local secrets or generated products", () => {
     const snapshot = sourceSnapshot();
     expect(snapshot.sourceSha256).toMatch(/^[a-f0-9]{64}$/);
-    for (const path of ["DESIGN.md", "playwright.prototype.config.ts"])
+    for (const path of ["DESIGN.md", "playwright.full-app.config.ts"])
       expect(snapshot.sources.some((file) => file.path === path)).toBe(true);
     expect(
       snapshot.sources.some(

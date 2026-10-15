@@ -1,4 +1,4 @@
-import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { type SessionResponse, sessionQueryKey, useSession } from "./auth";
 
 export type SessionUser = NonNullable<SessionResponse["user"]>;
@@ -39,20 +39,4 @@ export function sessionUserOf(queryClient: QueryClient): SessionUser | null {
   return (
     queryClient.getQueryData<SessionResponse>(sessionQueryKey)?.user ?? null
   );
-}
-
-/** The CSRF token of the current session, outside rendering. */
-export function csrfTokenOf(queryClient: QueryClient) {
-  return (
-    queryClient.getQueryData<SessionResponse>(sessionQueryKey)?.csrfToken ??
-    null
-  );
-}
-
-export function useSessionReader() {
-  const queryClient = useQueryClient();
-  return {
-    user: () => sessionUserOf(queryClient),
-    csrfToken: () => csrfTokenOf(queryClient),
-  };
 }

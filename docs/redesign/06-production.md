@@ -82,7 +82,7 @@
 - **毛玻璃**：顶栏、压暗层的祖先上不能有 `clip-path`，窗口形状由各层自己裁切（原因见 [02](02-shell.md) 第 1 节）。
 - **安全区**：手机满屏时让开刘海、圆角和底部横条（`viewport-fit=cover` 加 `env(safe-area-inset-*)`），哪些层怎么让见 [02](02-shell.md) 第 11 节。
 - **手机上的搜索模式**（[02](02-shell.md) 第 6 节）：起始页的输入框在手机尺寸的窗口里点中就进入展开态；建议列表的高度用 `visualViewport` 算出屏幕键盘挡住的部分（`resize` 和 `scroll` 事件），iOS Safari 和 Android Chrome 默认都不因键盘缩小布局视口。
-- **`/status`**：保留，用来检查深链接、Service Binding 转发和接口报错。没有入口（不进命令表、不在任何菜单），按新外壳重画（原型 `components/views/status-view.tsx`），文案和 `health-status.tsx` 一样；e2e 的 scaffold 测试照旧。
+- **`/status`**：保留，用来检查深链接、Service Binding 转发和接口报错。没有入口（不进命令表、不在任何菜单），按新外壳重画（`apps/web/src/components/views/status-view.tsx`），文案和 `health-status.tsx` 一样；e2e 的 scaffold 测试照旧。
 
 ## 6 地址与用词
 
@@ -93,7 +93,7 @@
   - 内嵌图（地址见 [05](05-hongbao.md) 第 6 节）：接口的路由是 `/api/🧧/:code/:file`，`file` 只认四种写法；网页 Worker 按百分号编码后的路径（十六进制大小写都认）转发到 `/api` 下的同一路径；`run_worker_first` 也按编码后的路径匹配（Cloudflare 用编码后的 `pathname` 比对），加上 `/%F0%9F%A7%A7/*/%F0%9F%96%BC*` 和它的小写写法。在新标签页直接打开图片地址时跳到红包页。删掉 `/e/<码>/live.svg`、`/activity-images/<UUID>.svg` 两条接口路由（用户决定），已发出的旧帖子里的图会失效。
 - **用词**：全站文案与测试里的“活动”改为“红包”，“直接参与”改为“无需口令”，`/square` 叫红包广场（见 [05](05-hongbao.md) 第 1 节）。印章用简体“开 / 报 / 预 / 完”，红包页和内嵌图一样（用户决定）。
 - **组件**：`envelope.tsx`、`claim-entry.tsx`、`public-roster.tsx`、`password-panel.tsx`、`activity-share.tsx` 换成新组件。红包页不再有口令输入框，口令走带作用域的指令框（[02](02-shell.md) 第 4 节）。
-- **内嵌图重画**（见 [05](05-hongbao.md) 第 6 节）：信息分级沿用生产（`activityImageInput`，按图片 Cookie 认人），画法换成原型 `lib/hongbao-image.ts`，都在 `packages/contracts/src/activity-image.ts`：
+- **内嵌图重画**（见 [05](05-hongbao.md) 第 6 节）：信息分级沿用生产（`activityImageInput`，按图片 Cookie 认人），画法换成新设计，都在 `packages/contracts/src/activity-image.ts`：
   - 过期提示另起一行，不再替换“数据截至”，文案里的“活动”改为“红包”；
   - 打开的图播开包动画，取代原来的“一次性开封动画”；
   - 底部写表情码，不写品牌；去掉做旧效果；

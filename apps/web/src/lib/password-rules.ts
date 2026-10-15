@@ -1,7 +1,6 @@
-// Copied from apps/web/src/components/presentation/password-input.tsx
-// (inspectPassword / optimizePassword). Importing that file would pull the
-// production router, session and API client into the prototype. Extract both
-// into src/lib/password-rules.ts when the redesign is promoted.
+// 口令 rules as the 指令框 and the 发红包 form check them while typing (the
+// API checks again: passwordSchema in @hb/contracts), and 优化, which turns
+// a pasted 口令 into one that passes.
 
 export type PasswordInspection = {
   invalidCount: number;

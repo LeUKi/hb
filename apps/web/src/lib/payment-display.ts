@@ -1,21 +1,5 @@
 import type { MerchantPaymentDetail } from "@hb/contracts";
 
-export function publicationReason(reason: string | null | undefined) {
-  if (!reason) return null;
-  const labels: Record<string, string> = {
-    REAL_LDC_NOT_ENABLED: "当前环境尚未开放真实 LDC 红包。",
-    TIMED_DRAW_NOT_ENABLED: "当前环境尚未启用限时开奖。",
-    MERCHANT_LEGACY: "红包关联的是历史商户，请改用当前商户后再开放。",
-    MERCHANT_CREDENTIALS_UNVERIFIED: "开放红包时将自动核验商户凭证。",
-    MERCHANT_CREDENTIALS_CHECKING: "正在自动核验商户凭证，红包仍可保存为草稿。",
-    MERCHANT_CREDENTIALS_REJECTED:
-      "商户凭证未通过认证，请更新 Client ID 对应的密钥。",
-    MERCHANT_CREDENTIALS_UNAVAILABLE:
-      "暂时无法核验商户凭证，请稍后再尝试开放。",
-  };
-  return labels[reason] ?? "暂不能开放红包，请检查商户配置。";
-}
-
 export function paymentAttemptOutcome(outcome: string) {
   const labels: Record<string, string> = {
     started: "进行中",
@@ -92,20 +76,6 @@ export function paymentOrderEvidence(
     query: "查单已返回订单",
     duplicate: "上游已返回相同业务号订单",
   }[evidence];
-}
-
-export function duplicateProbeLabel(
-  status: NonNullable<MerchantPaymentDetail["duplicateProbe"]>["status"],
-) {
-  return {
-    pending: "待验证",
-    sending: "发送验证中",
-    reconciling: "核对验证订单",
-    awaiting_evidence: "等待后台交易记录核验",
-    passed: "验证通过",
-    inconclusive: "证据不足",
-    conflict: "订单冲突",
-  }[status];
 }
 
 export function duplicateProbeActive(

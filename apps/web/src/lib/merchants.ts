@@ -1,24 +1,18 @@
 import type {
-  ActivityPaymentList,
-  ActivityPaymentTargetList,
   CreateMerchantInput,
   Merchant,
   MerchantChangeImpact,
   MerchantChangePreview,
   MerchantList,
   MerchantPaymentDetail,
-  MerchantPaymentList,
   MerchantUsage,
   RepairPaymentCredentialInput,
-  SimulationScenario,
   UpdateMerchantInput,
 } from "@hb/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { ActivityRequestError, activityKeys, readResponse } from "./activities";
 import { type SessionResponse, sessionQueryKey, useSession } from "./auth";
-import { duplicateProbeActive } from "./payment-display";
 
 export class MerchantChangeConfirmationError extends ActivityRequestError {
   constructor(
@@ -88,36 +82,6 @@ export function merchantSessionIdentity(session: SessionResponse | undefined) {
   return session?.user && session.csrfToken
     ? JSON.stringify([session.user.id, session.csrfToken])
     : null;
-}
-
-const restorationScopes = new Map<string, string>();
-
-/** Restoration stores a one-way session fingerprint, never the CSRF token. */
-export function useMerchantViewScope(userId: string) {
-  const session = useMerchantIdentity(userId);
-  const fallback = useRef(crypto.randomUUID());
-  const [, update] = useState(0);
-  const identity = session.identity;
-  useEffect(() => {
-    if (!identity || restorationScopes.has(identity)) return;
-    let active = true;
-    void crypto.subtle
-      .digest("SHA-256", new TextEncoder().encode(identity))
-      .then((buffer) => {
-        if (!active) return;
-        restorationScopes.set(
-          identity,
-          Array.from(new Uint8Array(buffer), (byte) =>
-            byte.toString(16).padStart(2, "0"),
-          ).join(""),
-        );
-        update((value) => value + 1);
-      });
-    return () => {
-      active = false;
-    };
-  }, [identity]);
-  return restorationScopes.get(identity) ?? `pending-${fallback.current}`;
 }
 
 function useMerchantIdentity(userId: string) {
@@ -218,87 +182,6 @@ export function useMerchantUsage(userId: string, id: string) {
           cache: "no-store",
         }),
       ),
-    retry: false,
-    refetchInterval: 15_000,
-  });
-}
-
-export function useMerchantPayments(
-  userId: string,
-  id: string,
-  cursor: string | null,
-) {
-  const session = useMerchantIdentity(userId);
-  return useQuery({
-    enabled: session.enabled && Boolean(id),
-    queryKey: [...merchantKeys.mine(session.identity), "payments", id, cursor],
-    queryFn: async ({ signal }) =>
-      session.read<MerchantPaymentList>(
-        await api.api.me.merchants[":id"].payments.$get(
-          { param: { id }, query: cursor ? { cursor } : {} },
-          { init: { signal, cache: "no-store" } },
-        ),
-      ),
-    retry: false,
-    refetchInterval: 15_000,
-  });
-}
-
-export function usePaymentActivities(
-  userId: string,
-  status: "all" | "active" | "ended" | "archived",
-  cursor: string | null,
-) {
-  const session = useMerchantIdentity(userId);
-  const query = new URLSearchParams({ status });
-  if (cursor) query.set("cursor", cursor);
-  return useQuery({
-    enabled: session.enabled,
-    queryKey: [
-      ...merchantKeys.mine(session.identity),
-      "payment-activities",
-      status,
-      cursor,
-    ],
-    queryFn: async ({ signal }) =>
-      session.read<ActivityPaymentList>(
-        await fetch(`/api/me/payment-activities?${query.toString()}`, {
-          signal,
-          cache: "no-store",
-        }),
-      ),
-    retry: false,
-    refetchInterval: 15_000,
-  });
-}
-
-export function useActivityPayments(
-  userId: string,
-  activityId: string | null,
-  status: "all" | "pending" | "confirmed",
-  cursor: string | null,
-) {
-  const session = useMerchantIdentity(userId);
-  const query = new URLSearchParams({ status });
-  if (cursor) query.set("cursor", cursor);
-  return useQuery({
-    queryKey: [
-      ...merchantKeys.mine(session.identity),
-      "activity-payments",
-      activityId,
-      status,
-      cursor,
-    ],
-    enabled: session.enabled && Boolean(activityId),
-    queryFn: async ({ signal }) => {
-      if (!activityId) throw new Error("缺少红包标识");
-      return session.read<ActivityPaymentTargetList>(
-        await fetch(
-          `/api/me/activities/${encodeURIComponent(activityId)}/payments?${query.toString()}`,
-          { signal, cache: "no-store" },
-        ),
-      );
-    },
     retry: false,
     refetchInterval: 15_000,
   });
@@ -431,52 +314,5 @@ export function useMerchantWrites(
       onSuccess,
       onError,
     }),
-    simulate: useMutation({
-      onMutate: account.captureIdentity,
-      mutationFn: async (scenario: SimulationScenario) =>
-        readResponse<{ merchant: Merchant }>(
-          await api.api.me.merchants[":id"].simulation.$post(
-            { param: { id: merchantId() }, json: { scenario } },
-            options,
-          ),
-        ),
-      onSuccess,
-      onError,
-    }),
   };
-}
-
-export function useMerchantPayment(
-  userId: string,
-  id: string,
-  taskId: string,
-  cursor: string | null,
-  enabled = true,
-) {
-  const session = useMerchantIdentity(userId);
-  return useQuery({
-    enabled: enabled && session.enabled && Boolean(id && taskId),
-    queryKey: [
-      ...merchantKeys.mine(session.identity),
-      "payment",
-      id,
-      taskId,
-      cursor,
-    ],
-    queryFn: async ({ signal }) =>
-      session.read<{ payment: MerchantPaymentDetail }>(
-        await api.api.me.merchants[":id"].payments[":taskId"].$get(
-          { param: { id, taskId }, query: cursor ? { cursor } : {} },
-          { init: { signal, cache: "no-store" } },
-        ),
-      ),
-    retry: false,
-    refetchInterval: (query) => {
-      const payment = query.state.data?.payment;
-      return payment?.status === "confirmed" &&
-        !duplicateProbeActive(payment.duplicateProbe)
-        ? false
-        : 15_000;
-    },
-  });
 }

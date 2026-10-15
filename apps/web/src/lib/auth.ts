@@ -160,10 +160,6 @@ export function getAuthErrorMessage(authError: string | null) {
   return "登录没有完成，请重新尝试。";
 }
 
-export function isAuthUnavailable(authError: string | null) {
-  return authError === "auth_not_configured";
-}
-
 /**
  * 退出登录 holds the session until the server has ended it: a failure leaves
  * the account signed in and says so (02 §9). Once it has, reads started

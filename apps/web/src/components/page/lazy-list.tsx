@@ -1,21 +1,8 @@
-import { useLocation } from "@tanstack/react-router";
 import { RotateCw } from "lucide-react";
-import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "../../lib/cn";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/kbd";
-
-/** How many rows a batch adds (production reads 20 at a time). */
-export const PAGE_SIZE = 20;
-
-/** Rows shown per list and history entry, so Back finds the list as it was. */
-const loaded = new Map<string, number>();
 
 export type LazyList = {
   /** How many rows to render. */
@@ -77,69 +64,6 @@ export function useQueryLazyList(query: {
     state,
     retry: load,
     paged: query.pageCount > 1 || query.hasNextPage,
-  };
-}
-
-/**
- * A list whose rows are all here already, shown 20 more at a time as its
- * end comes near, in whatever scrolls it: the page, or a dialog's own list.
- * `id` names the list within its page and must change with its filter: a
- * new filter starts again at 20, and Back restores the count per history
- * entry.
- */
-export function useLazyList({
-  id,
-  total,
-  pageSize = PAGE_SIZE,
-}: {
-  id: string;
-  total: number;
-  pageSize?: number;
-}): LazyList {
-  // The entry this page was shown in: a filter written into the address
-  // replaces it on the same path (follow it); any other change is a
-  // navigation, and this page, leaving, keeps its own entry.
-  const liveKey = useLocation({
-    select: (current) =>
-      (current.state as { __TSR_key?: string }).__TSR_key ?? "",
-  });
-  const pathname = useLocation({ select: (current) => current.pathname });
-  const entry = useRef({ key: liveKey, pathname });
-  if (pathname === entry.current.pathname)
-    entry.current = { key: liveKey, pathname };
-  const key = `${entry.current.key}:${id}`;
-
-  const [list, setList] = useState(() => ({
-    key,
-    shown: Math.max(pageSize, loaded.get(key) ?? pageSize),
-  }));
-  // A new filter (or entry) starts again from what it remembers, or 20.
-  const shown =
-    list.key === key
-      ? list.shown
-      : Math.max(pageSize, loaded.get(key) ?? pageSize);
-  if (list.key !== key) setList({ key, shown });
-  useEffect(() => {
-    loaded.set(key, shown);
-  }, [key, shown]);
-
-  const [end, setEnd] = useState<HTMLElement | null>(null);
-  const more = shown < total;
-  const load = useCallback(
-    () =>
-      setList((current) => ({ ...current, shown: current.shown + pageSize })),
-    [pageSize],
-  );
-  // Observed again after every batch (a new `shown`): a short list whose
-  // end is still in reach keeps filling itself.
-  useNearEnd(end, more, load);
-
-  return {
-    shown: Math.min(shown, total),
-    endRef: setEnd,
-    state: more ? "more" : "done",
-    retry: load,
-    paged: total > pageSize,
   };
 }
 
@@ -222,29 +146,5 @@ export function LazyListEnd({
         </span>
       )}
     </div>
-  );
-}
-
-/**
- * A lazy list whose markup varies: renders the rows loaded so far through
- * `children`, then the end row.
- */
-export function LazyRows<T>({
-  id,
-  items,
-  done,
-  children,
-}: {
-  id: string;
-  items: T[];
-  done: string;
-  children: (visible: T[]) => ReactNode;
-}) {
-  const list = useLazyList({ id, total: items.length });
-  return (
-    <>
-      {children(items.slice(0, list.shown))}
-      <LazyListEnd list={list} done={done} />
-    </>
   );
 }

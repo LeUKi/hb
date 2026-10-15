@@ -1,17 +1,19 @@
-# 解meme
+# lafish的红包站
+
+原名“解meme”。
 
 为 Linux DO 社区提供口令兑奖与 LDC 分发服务。谜题、提示和讨论保留在论坛，平台负责兑奖与奖励交付。
 
-## 本地正式迁移与原型参照
+## 本地运行
 
 正式迁移已接入正式会话、持久化、兑奖、报名、开奖和付款恢复；LDC-only 收敛已于2026-10-12提交并发布到预发布和生产，当前版本及旧数据保持证据见[LDC 收敛记录](docs/ldc-only-retirement.md#授权提交与部署2026-10-12发布后补录)。完整迁移状态以[迁移台账](docs/prototype-migration.md)为准。运行 `bun run dev:full-app`，从[本地账号选择](http://127.0.0.1:4195/__local/full-app)进入；OAuth/LDC使用隔离本地协议替身，业务API、D1、DO与Queue实际运行，不访问真实外部业务。
 
-原型继续运行于4177，仅作设计参照：`bun run prototype:dev`。它的虚拟身份和内存记录不导入正式应用。当前有效规范见[DESIGN.md](DESIGN.md)，历史原型体验见[原型指南](docs/visual-prototype.md)。下文带日期的旧远程版本和发布数字继续作为历史证据；本次提交与部署以LDC收敛记录为准。
+新界面已于 2026-10-15 上线，设计原型随之删除（最后一版见提交 `f5d4a33`）。现行规范见[DESIGN.md](DESIGN.md)，旧原型的体验见[原型指南](docs/visual-prototype.md)。下文带日期的旧远程版本和发布数字继续作为历史证据；最新的发布记录见[部署准备](docs/deployment-readiness.md)。
 
 ## 项目文档
 
-- [动态活动图片](docs/activity-images.md)：共享红包、论坛内嵌代码、只读图片 Cookie、浏览器记录与本地跨站验收。
-- [外观重构](docs/redesign/README.md)：整体视觉与交互重构的功能清单、分步原型与设计提案（已定稿，正在迁移；迁移完成前仍以 DESIGN.md 为准）。
+- [动态活动图片](docs/activity-images.md)：旧版内嵌图的样式、只读图片 Cookie 与本地跨站验收（2026-10-15 起的画法和地址见 [05 红包页](docs/redesign/05-hongbao.md) 第 6 节）。
+- [外观重构](docs/redesign/README.md)：现行的界面与交互规范（2026-10-15 上线），以及重构的功能清单、分步原型和迁移记录。
 
 - [业务规格 v1](docs/business-spec-v1.md)：完整业务规则、一期与后续阶段边界，以及业务验收基线。
 - [一期技术方案](docs/technical-design-phase-1.md)：技术选型、部署与数据边界、兑奖一致性、自动付款恢复和接入验收要求。
@@ -35,7 +37,7 @@
 
 ## 取消青春版（2026-10-15）
 
-青春版与 LiteAuth 登录已取消（[决定与范围](docs/redesign/06-production.md#1-取消青春版2c-决定)）：只保留官方 Connect 登录，所有账号都是普通账号，不再有账号类型、升级入口或 `OFFICIAL_CONNECT_REQUIRED` 限制。迁移 `0027_retire_lite_accounts.sql` 删除 LiteAuth 会话和未完成的 LiteAuth／升级授权，这些用户改用 Connect 重新登录，原账号和记录不变；它必须在新 Worker 部署**之前**执行。`users.official_connect_verified`、会话来源等旧列和登录设置表保留一个版本以便回滚，之后的迁移删除。目前只在 `redesign` 分支和预发布环境，生产仍是 LiteAuth 双登录版本。
+青春版与 LiteAuth 登录已取消（[决定与范围](docs/redesign/06-production.md#1-取消青春版2c-决定)）：只保留官方 Connect 登录，所有账号都是普通账号，不再有账号类型、升级入口或 `OFFICIAL_CONNECT_REQUIRED` 限制。迁移 `0027_retire_lite_accounts.sql` 删除 LiteAuth 会话和未完成的 LiteAuth／升级授权，这些用户改用 Connect 重新登录，原账号和记录不变；它必须在新 Worker 部署**之前**执行。`users.official_connect_verified`、会话来源等旧列和登录设置表保留一个版本以便回滚，之后的迁移删除。2026-10-15 已随新界面发布到生产。
 
 文本 / CDK 功能已从运行时退役；旧数据原样保留但不读取、解密、展示或后台恢复，旧资源按未找到处理。数据库结构和历史迁移保留，无数据迁移。清理范围与本地验收见 [LDC 收敛记录](docs/ldc-only-retirement.md)。
 

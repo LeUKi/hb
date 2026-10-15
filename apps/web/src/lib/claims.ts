@@ -1,22 +1,13 @@
 import type {
-  ActivityHistoryFilters,
   ActivityParticipationResponse,
   ClaimActivityInput,
-  ClaimDetail,
-  ClaimList,
   ClaimResult,
   DrawSummary,
-  ParticipationList,
 } from "@hb/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef } from "react";
 import { api } from "../api";
-import {
-  ActivityRequestError,
-  historyListRefreshOptions,
-  readResponse,
-  useMountedPageFocusRefresh,
-} from "./activities";
+import { ActivityRequestError, readResponse } from "./activities";
 import { activityToolsEnabled } from "./activity-tools-release";
 import {
   applyAttemptCooldown,
@@ -33,7 +24,6 @@ import {
 import {
   canSkipDrawRefresh,
   claimDetailKey,
-  claimRefresh,
   isCompleteParticipation,
   type ParticipationCache,
   participationKey,
@@ -200,66 +190,6 @@ export function useCurrentParticipation(
     data: query.data?.readSessionScope === identity ? query.data : undefined,
     refetch,
   };
-}
-
-export function useMyClaims(userId: string, cursor: string | null) {
-  return useQuery({
-    queryKey: [...claimKeys.mine(userId), "list", cursor],
-    queryFn: async ({ signal }) =>
-      readResponse<ClaimList>(
-        await api.api.me.claims.$get(
-          { query: cursor ? { cursor } : {} },
-          { init: { signal, cache: "no-store" } },
-        ),
-      ),
-    retry: false,
-  });
-}
-
-export function useMyParticipations(
-  userId: string,
-  cursor: string | null,
-  filters: ActivityHistoryFilters = {},
-) {
-  const type = filters.type ?? "all";
-  const status = filters.status ?? "all";
-  const query = new URLSearchParams({ type, status });
-  if (cursor) query.set("cursor", cursor);
-  const result = useQuery({
-    queryKey: [
-      ...claimKeys.participations(userId),
-      "list",
-      type,
-      status,
-      cursor,
-    ],
-    queryFn: async ({ signal }) =>
-      readResponse<ParticipationList>(
-        await fetch(`/api/me/participations?${query.toString()}`, {
-          signal,
-          cache: "no-store",
-        }),
-      ),
-    retry: false,
-    ...historyListRefreshOptions,
-  });
-  useMountedPageFocusRefresh(result.refetch);
-  return result;
-}
-
-export function useClaim(userId: string, id: string) {
-  return useQuery({
-    queryKey: claimKeys.detail(userId, id),
-    queryFn: async ({ signal }) =>
-      readResponse<{ claim: ClaimDetail }>(
-        await api.api.me.claims[":id"].$get(
-          { param: { id } },
-          { init: { signal, cache: "no-store" } },
-        ),
-      ),
-    retry: false,
-    refetchInterval: (query) => claimRefresh(query.state.data?.claim),
-  });
 }
 
 /** Claim, or sign up for a timed draw, in one 红包 (the id travels with it). */

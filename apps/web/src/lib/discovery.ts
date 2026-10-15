@@ -1,5 +1,4 @@
 import type {
-  ActivityRewardFilter,
   ActivityStatistics,
   DiscoveryList,
   GlobalRedemptionInput,
@@ -8,7 +7,6 @@ import type {
 import {
   useInfiniteQuery,
   useMutation,
-  useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 import { atom } from "jotai";
@@ -129,43 +127,6 @@ export function useGlobalRedemptionDiscovery(
   });
 }
 
-export function useRedemptionResult(
-  userId: string,
-  id: string | null,
-  cursor: string | null,
-) {
-  const account = useAccountSession(userId, "session");
-  const identity = account.captureIdentity();
-  return useQuery({
-    queryKey: [...redemptionKey(userId, id ?? ""), identity, cursor],
-    queryFn: async ({ signal }) => {
-      const requestIdentity = account.captureIdentity();
-      const result = await readResponse<GlobalRedemptionResult>(
-        await api.api.redemptions[":id"].$get(
-          { param: { id: id ?? "" }, query: cursor ? { cursor } : {} },
-          { init: { signal, cache: "no-store" } },
-        ),
-      );
-      if (
-        signal.aborted ||
-        requestIdentity !== identity ||
-        !account.isCurrentIdentity(requestIdentity)
-      )
-        throw new DOMException("请求已失效", "AbortError");
-      const ticket = id ? getAttemptTicket(userId, id) : undefined;
-      if (ticket)
-        void settleAttempt(ticket, result.result !== "none", [
-          ...result.items.map((item) => item.id),
-          ...(result.selectedActivityId ? [result.selectedActivityId] : []),
-        ]);
-      return result;
-    },
-    enabled: id !== null && Boolean(identity),
-    retry: false,
-    refetchInterval: 15_000,
-  });
-}
-
 /**
  * A 口令's matches as pages (/🔑/<result>): the lookup's own first page from
  * the cache when it is there, then 20 more at a time.
@@ -240,28 +201,6 @@ export function useTopicActivityPages(
   });
 }
 
-export function useDiscovery(
-  status: "all" | "active" | "ended",
-  cursor: string | null,
-  userId: string | null,
-  type: ActivityRewardFilter = "all",
-  enabled = true,
-) {
-  return useQuery({
-    queryKey: ["discovery", userId, status, type, cursor],
-    enabled,
-    queryFn: async ({ signal }) =>
-      readResponse<DiscoveryList>(
-        await api.api.discovery.activities.$get(
-          { query: { status, type, ...(cursor ? { cursor } : {}) } },
-          { init: { signal, cache: "no-store" } },
-        ),
-      ),
-    retry: false,
-    refetchInterval: 15_000,
-  });
-}
-
 /** A post's 红包: one key and read for the 指令框 and the /💬/ page. */
 export function topicActivitiesQuery(
   topicId: string,
@@ -286,20 +225,6 @@ export function topicActivitiesQuery(
       ),
     retry: false,
   } as const;
-}
-
-export function useTopicActivities(
-  topicId: string,
-  postNumber: number,
-  cursor: string | null,
-  userId: string | null,
-  enabled = true,
-) {
-  return useQuery({
-    ...topicActivitiesQuery(topicId, postNumber, userId, cursor),
-    enabled,
-    refetchInterval: 15_000,
-  });
 }
 
 /** A 红包's 尝试统计 (its sender's), the most frequent text first, 20 at a time. */

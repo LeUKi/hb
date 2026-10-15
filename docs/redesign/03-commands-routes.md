@@ -1,6 +1,6 @@
 # 03 命令与地址
 
-状态：定稿。注册表在 `apps/web/redesign/lib/commands.ts`，路由在 `apps/web/redesign/router.tsx`。
+状态：定稿。注册表在 `apps/web/src/lib/commands.ts`，路由在 `apps/web/src/router.tsx`。
 
 ## 1 原则
 

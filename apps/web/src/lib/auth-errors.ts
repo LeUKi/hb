@@ -45,11 +45,3 @@ export function authErrorOf(code: string): AuthError {
     unavailable: false,
   };
 }
-
-/** The dev toolbar's sample callbacks. */
-export const sampleAuthErrors: [string, string][] = [
-  ["access_denied", "取消"],
-  ["invalid_state", "会话失效"],
-  ["service_unavailable", "服务不可用"],
-  ["auth_failed", "其他失败"],
-];
