@@ -4,6 +4,8 @@
 
 ## 1 取消青春版（2c 决定）
 
+**进度**：2026-10-15 在 `redesign` 分支完成（迁移 `0027_retire_lite_accounts.sql`），预发布已部署。旧列和 `login_settings` 两张表留一个版本便于回滚，之后再删（第 3–5 步）。
+
 **现状**：青春版不是独立账号。
 
 - 它只是 `users.official_connect_verified = 0` 这一个标记；`accountTier` 每次读取时由它算出。

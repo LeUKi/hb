@@ -11,6 +11,9 @@
     "vite.config.ts",
     "vite.full-app.config.ts",
     "build-time.ts",
-    "asset-cache.ts"
+    "asset-cache.ts",
+    "brand-html.ts",
+    "src/lib/brand.ts",
+    "src/lib/squircle-path.ts"
   ]
 }

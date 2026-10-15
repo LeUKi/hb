@@ -5,6 +5,7 @@ import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { assetCachePlugin } from "./asset-cache.ts";
+import { brandHtmlPlugin } from "./brand-html.ts";
 import { buildTimePlugin, buildTimeUnixSeconds } from "./build-time.ts";
 
 // LDC query URLs carry credentials; local automatic traces ignore Wrangler redaction.
@@ -24,6 +25,9 @@ export default defineConfig(({ mode }) => {
   return {
     build: {
       outDir: environment === "local" ? "dist" : `dist/${environment}`,
+      // One bundle is deliberate: the whole app loads up front behind the
+      // boot loader in index.html (docs/redesign/06-production.md §5).
+      chunkSizeWarningLimit: 1536,
     },
     resolve: {
       alias: {
@@ -31,12 +35,10 @@ export default defineConfig(({ mode }) => {
       },
     },
     plugins: [
+      brandHtmlPlugin(),
       buildTimePlugin(builtAtUnixSeconds),
       assetCachePlugin(),
-      tanstackRouter({
-        target: "react",
-        autoCodeSplitting: true,
-      }),
+      tanstackRouter({ target: "react", autoCodeSplitting: false }),
       react(),
       tailwindcss(),
       cloudflare({

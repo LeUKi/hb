@@ -21,6 +21,7 @@ import {
   useLogout,
   useSession,
 } from "../lib/auth";
+import { useBootMilestones } from "../lib/boot";
 import { exchangeContextAtom } from "../lib/discovery";
 import {
   FreshLink,
@@ -38,6 +39,7 @@ export const Route = createRootRoute({
 
 function RootLayout() {
   const session = useSession();
+  useBootMilestones(!session.isPending || session.failureCount > 0);
   const motionOff = useReducedMotion();
   const queryClient = useQueryClient();
   const [exchangeContext, setExchangeContext] = useAtom(exchangeContextAtom);

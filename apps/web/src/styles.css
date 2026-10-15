@@ -1,4 +1,5 @@
-@import "tailwindcss";
+/* Scan src/ only: apps/web/redesign and apps/web/prototype are separate apps. */
+@import "tailwindcss" source(".");
 
 @theme inline {
   --color-ink: var(--ink);

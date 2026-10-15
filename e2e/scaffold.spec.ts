@@ -4,11 +4,11 @@ function publicActivitiesDialog(page: Page) {
   return page.getByRole("dialog", { name: "活动广场", exact: true });
 }
 
-test("解meme标题和秒级构建标记在切页、滚动、窄屏与刷新后保持一致", async ({
+test("网站标题和秒级构建标记在切页、滚动、窄屏与刷新后保持一致", async ({
   page,
 }) => {
   await page.goto("/");
-  await expect(page).toHaveTitle("解meme");
+  await expect(page).toHaveTitle("lafish的红包站");
   await expect(
     page.getByRole("link", { name: "解meme 首页", exact: true }),
   ).toBeVisible();
