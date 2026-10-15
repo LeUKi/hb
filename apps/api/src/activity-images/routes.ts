@@ -1,7 +1,7 @@
 import {
   type ActivityImagePreferences,
   type ActivityImageViewerState,
-  activityImagePresentation,
+  activityImageInput,
   DEFAULT_ACTIVITY_IMAGE_TIME_ZONE,
   decodeActivityEmoji,
   encodeActivityEmoji,
@@ -10,6 +10,7 @@ import {
   type PublicActivity,
   type PublicQuantity,
   renderActivityImage,
+  renderUnavailableActivityImage,
 } from "@hb/contracts";
 import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { type Context, Hono } from "hono";
@@ -76,7 +77,6 @@ type ActivityImageRow = {
   inventory_amount_minor: number | null;
   payment_status: string | null;
   registration_id: string | null;
-  registered_at: number | null;
 };
 
 export const activityImageRoutes = new Hono<ApiContext>()
@@ -87,12 +87,10 @@ export const activityImageRoutes = new Hono<ApiContext>()
     c.header("X-Content-Type-Options", "nosniff");
     await next();
   })
-  .on("HEAD", "/e/:emoji/live.svg", (c) => handleEmojiImage(c, "HEAD"))
-  .get("/e/:emoji/live.svg", (c) =>
-    handleEmojiImage(c, c.req.method === "HEAD" ? "HEAD" : "GET"),
-  )
-  .on("HEAD", "/activity-images/:file", (c) => handleImage(c, "HEAD"))
-  .get("/activity-images/:file", (c) =>
+  // /🧧/<code>/🖼️.svg and /🧧/<code>/🖼️, with or without U+FE0F; the web
+  // Worker forwards them here (docs/redesign/05 §6).
+  .on("HEAD", "/🧧/:code/:file", (c) => handleImage(c, "HEAD"))
+  .get("/🧧/:code/:file", (c) =>
     handleImage(c, c.req.method === "HEAD" ? "HEAD" : "GET"),
   )
   .get("/me/activity-images", async (c) => {
@@ -122,59 +120,28 @@ export const activityImageRoutes = new Hono<ApiContext>()
     return c.json(await readPreferences(c, undefined, clearedAt));
   });
 
-async function handleEmojiImage(
-  context: Context<ApiContext>,
-  method: "GET" | "HEAD",
-) {
-  const emoji = context.req.param("emoji") ?? "";
-  const id = decodeActivityEmoji(emoji);
-  if (!id)
-    return unavailableImage(
-      context,
-      method,
-      emoji || "unknown",
-      "活动不可用",
-      new Date(),
-      DEFAULT_ACTIVITY_IMAGE_TIME_ZONE,
-      404,
-    );
-  return renderImage(
-    context,
-    method,
-    id,
-    `/e/${encodeURIComponent(encodeActivityEmoji(id))}`,
-  );
-}
+const imageFiles = new Set(["🖼️.svg", "🖼.svg", "🖼️", "🖼"]);
 
 async function handleImage(
   context: Context<ApiContext>,
   method: "GET" | "HEAD",
 ) {
-  const file = context.req.param("file") ?? "";
-  if (!file.endsWith(".svg"))
-    return unavailableImage(
+  if (!imageFiles.has(context.req.param("file") ?? ""))
+    return context.notFound();
+  const id = decodeActivityEmoji(context.req.param("code") ?? "");
+  if (!id)
+    return svgResponse(
       context,
       method,
-      file,
-      "活动不可用",
-      new Date(),
-      DEFAULT_ACTIVITY_IMAGE_TIME_ZONE,
       404,
+      renderUnavailableActivityImage("missing"),
     );
-  const id = file.replace(/\.svg$/i, "");
-  if (!UUID_RE.test(id)) {
-    return unavailableImage(
-      context,
-      method,
-      id || "unknown",
-      "活动不可用",
-      new Date(),
-      DEFAULT_ACTIVITY_IMAGE_TIME_ZONE,
-      404,
-    );
-  }
+  // Opened in a tab: the 红包's page.
   if (isDocumentNavigation(context))
-    return context.redirect(`/activities/${encodeURIComponent(id)}`, 302);
+    return context.redirect(
+      `/${encodeURIComponent("🧧")}/${encodeURIComponent(encodeActivityEmoji(id))}`,
+      302,
+    );
   return renderImage(context, method, id);
 }
 
@@ -182,55 +149,36 @@ async function renderImage(
   context: Context<ApiContext>,
   method: "GET" | "HEAD",
   id: string,
-  navigationLocation?: string,
 ) {
-  if (isDocumentNavigation(context))
-    return context.redirect(
-      navigationLocation ?? `/activities/${encodeURIComponent(id)}`,
-      302,
-    );
-
-  const publicFallback = context.req.query("fallback") === "public";
-  const urlTimeZone = context.req.query("tz");
   const requestStartedAt = new Date();
-  let timeZone = DEFAULT_ACTIVITY_IMAGE_TIME_ZONE;
-
   try {
-    const preferredTimeZone = await readPreferenceCookie(context);
-    timeZone = isImageTimeZone(preferredTimeZone)
-      ? preferredTimeZone
-      : isImageTimeZone(urlTimeZone)
+    const urlTimeZone = context.req.query("tz");
+    const timeZone =
+      (await readPreferenceCookie(context)) ??
+      (isImageTimeZone(urlTimeZone)
         ? urlTimeZone
-        : DEFAULT_ACTIVITY_IMAGE_TIME_ZONE;
+        : DEFAULT_ACTIVITY_IMAGE_TIME_ZONE);
     const activity = await readPublicActivity(context.env, id);
-    if (!activity || activity.row.openedAt === null) {
+    if (!activity || activity.row.openedAt === null)
       return svgResponse(
         context,
         method,
         404,
-        unavailableSvg(id, "活动不可用", requestStartedAt, timeZone),
+        renderUnavailableActivityImage("missing"),
       );
-    }
-    const session = publicFallback
-      ? null
-      : await getReadOnlyImageSession(context);
+    const session = await getReadOnlyImageSession(context);
     const viewer = session
       ? await readViewerState(context.env, activity.row, session.user.id)
       : ({ kind: "public" } satisfies ActivityImageViewerState);
-    const completedReadAt = new Date();
     const svg = renderActivityImage(
-      activityImagePresentation({
+      activityImageInput({
         activity: activity.activity,
         viewer,
-        updatedAt: completedReadAt,
-        now: completedReadAt,
+        renderedAt: new Date(),
         timeZone,
-        animated: true,
-        instanceId: `api-${id}`,
-        publicFallback,
       }),
     );
-    if (method === "GET" && !publicFallback)
+    if (method === "GET")
       await writeRecentRequestCookie(context, id, requestStartedAt.getTime());
     return svgResponse(context, method, 200, svg);
   } catch (error) {
@@ -241,7 +189,7 @@ async function renderImage(
       context,
       method,
       500,
-      unavailableSvg(id, "图片读取失败", requestStartedAt, timeZone, "error"),
+      renderUnavailableActivityImage("error"),
     );
   }
 }
@@ -253,24 +201,6 @@ function isDocumentNavigation(context: Context<ApiContext>) {
   return (
     (fetchDest === "document" && fetchMode === "navigate") ||
     /(?:^|,)\s*text\/html\s*(?:;|,|$)/i.test(accept)
-  );
-}
-
-function unavailableImage(
-  context: Context<ApiContext>,
-  method: "GET" | "HEAD",
-  id: string,
-  label: string,
-  now: Date,
-  timeZone: string,
-  status: 404 | 500,
-  state: "unavailable" | "error" = "unavailable",
-) {
-  return svgResponse(
-    context,
-    method,
-    status,
-    unavailableSvg(id, label, now, timeZone, state),
   );
 }
 
@@ -354,21 +284,15 @@ function imagePublicActivity(
     openedAt: iso(row.openedAt),
     deadlineAt: iso(row.deadline),
     quantity: imagePublicQuantity(row),
-    showRecipientList: false,
-    showRecipientUsername: false,
-    showRecipientTime: false,
-    showRecipientAmount: false,
     beforeInfo: "",
     ...(row.paymentMode ? { paymentMode: row.paymentMode } : {}),
     ...(imageDrawSummary(row) ? { draw: imageDrawSummary(row) } : {}),
   };
 }
 
+/** As the public read: fuzzy, or else exact (legacy settings read as exact). */
 function imagePublicQuantity(row: ActivityImageActivityRow): PublicQuantity {
   const remaining = Math.max(0, row.totalCount - row.claimedCount);
-  if (row.quantityVisibility === "hidden") return { mode: "hidden" };
-  if (row.quantityVisibility === "availability")
-    return { mode: "availability", available: remaining > 0 };
   if (row.quantityVisibility === "fuzzy")
     return {
       mode: "fuzzy",
@@ -433,7 +357,7 @@ async function readViewerState(
   if (activity.authorId === userId) return { kind: "public" };
   const row = await env.DB.prepare(
     `SELECT c.id AS claim_id,c.claimed_at,p.amount_minor,i.amount_minor AS inventory_amount_minor,p.status AS payment_status,
-      r.id AS registration_id,r.registered_at
+      r.id AS registration_id
      FROM activities a
      LEFT JOIN claims c ON c.activity_id=a.id AND c.user_id=?
      LEFT JOIN reward_inventory i ON i.activity_id=c.activity_id AND i.id=c.inventory_id AND i.kind='ldc'
@@ -461,10 +385,7 @@ async function readViewerState(
       (activity.deadline !== null && activity.deadline <= Date.now())
     )
       return { kind: "drawing" };
-    return {
-      kind: "registered",
-      registeredAt: new Date(row.registered_at ?? Date.now()).toISOString(),
-    };
+    return { kind: "registered" };
   }
   if (imageDrawSummary(activity)?.state === "settling")
     return { kind: "drawing" };
@@ -485,27 +406,6 @@ function paymentStatus(value: string | null) {
     value === "attention"
     ? value
     : null;
-}
-
-function unavailableSvg(
-  id: string,
-  label: string,
-  now: Date,
-  timeZone: string,
-  state: "unavailable" | "error" = "unavailable",
-) {
-  return renderActivityImage({
-    id,
-    title: label,
-    sender: "活动红包",
-    state,
-    sealLabel: label,
-    updatedAt: now,
-    now,
-    timeZone,
-    animated: false,
-    instanceId: `unavailable-${id}`,
-  });
 }
 
 function svgResponse(

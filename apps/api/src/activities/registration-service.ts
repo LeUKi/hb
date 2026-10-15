@@ -89,7 +89,7 @@ export async function registerForDraw(
       throw new ActivityError(
         403,
         "SELF_CLAIM_FORBIDDEN",
-        "作者不能报名自己的 LDC 活动",
+        "不能报名自己发的红包",
       );
     const existing = await findRegistration(env, activityId, userId);
     const status = activityStatus(activity);

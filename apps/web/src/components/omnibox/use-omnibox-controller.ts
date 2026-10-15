@@ -1,9 +1,18 @@
-import { passwordSchema } from "@hb/contracts";
+import {
+  type ActivityPasswords,
+  type ClaimActivityInput,
+  passwordSchema,
+} from "@hb/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate, useRouter } from "@tanstack/react-router";
 import { useSetAtom, useStore } from "jotai";
 import { useCallback } from "react";
-import { ActivityRequestError } from "../../lib/activities";
+import {
+  ActivityRequestError,
+  activityKeys,
+  type PublicActivityDetail,
+} from "../../lib/activities";
+import { passwordKey, useSolvePassword } from "../../lib/activity-passwords";
 import { activityCode } from "../../lib/activity-route";
 import {
   attemptCooldownRemainingMs,
@@ -14,6 +23,8 @@ import {
   sessionQueryKey,
   sessionScope,
 } from "../../lib/auth";
+import { useCachedQueryData } from "../../lib/cached-query";
+import { useClaimReward } from "../../lib/claims";
 import {
   type Command,
   type CommandPath,
@@ -27,21 +38,33 @@ import {
   useGlobalRedemptionDiscovery,
 } from "../../lib/discovery";
 import { closeOverlay, openOverlay, switchOverlay } from "../../lib/overlay";
+import {
+  type ParticipationCache,
+  participationKey,
+} from "../../lib/participation-cache";
 import { inspectPassword } from "../../lib/password-rules";
-import { redemptionIntentAtom } from "../../lib/redemption-intent";
+import {
+  type RedemptionIntentOperation,
+  redemptionIntentAtom,
+  rewardAnimationAtom,
+} from "../../lib/redemption-intent";
 import { detectScheme, type EntryScheme } from "../../lib/scheme";
 import { sessionUserOf, useSessionUser } from "../../lib/session";
+import { verifyNoticeAtom } from "../../lib/store";
+import { useBefore } from "../../lib/use-before";
 import { phoneLikeNow } from "../shell/window-info";
 import {
   editDraftAtom,
   messageAtom,
   mismatchAtom,
+  type OmniMessage,
   pendingAtom,
   type Scope,
   type ScopeOffer,
   scopeAtom,
   startDraftAtom,
   unconfirmedAtom,
+  withClaim,
 } from "./state";
 
 /** DOM handles shared by the single omnibox instance. */
@@ -78,13 +101,37 @@ export function useCooldownSeconds() {
  * What the viewer could do with a 口令 inside this 红包 right now: claim
  * into it (not taken part, still running), or verify more of its 口令
  * (took part, some still hidden; the 口令区's 验证其他口令 rule). Never on
- * the sender's own 红包, or on a draft that is not the viewer's.
- *
- * The 红包 page comes with migration phase 2; until then there is nothing
- * to offer.
+ * the sender's own 红包, or on a draft that is not the viewer's. Read from
+ * what the 红包 page has already loaded.
  */
-export function useScopeOffer(_activityId: string | null): ScopeOffer {
-  return null;
+export function useScopeOffer(activityId: string | null): ScopeOffer {
+  const user = useSessionUser();
+  const id = activityId ?? "";
+  const userId = user?.id ?? null;
+  const detail = useCachedQueryData<PublicActivityDetail>(
+    activityId ? activityKeys.public(id, userId) : null,
+  );
+  const participation = useCachedQueryData<ParticipationCache>(
+    activityId && userId ? participationKey(userId, id) : null,
+  );
+  const passwords = useCachedQueryData<ActivityPasswords>(
+    activityId && userId ? passwordKey(userId, id) : null,
+  );
+  const activity = detail?.activity;
+  const deadline = activity?.draw?.deadlineAt ?? activity?.deadlineAt;
+  // One re-render when it closes, which takes the offer away.
+  useBefore(deadline ? Date.parse(deadline) : 0);
+  if (!user || !activity || activity.status !== "active") return null;
+  if ((activity.participationMode ?? "password") !== "password") return null;
+  if (activity.author.id === user.id) return null;
+  const taken = Boolean(participation?.claim || participation?.registration);
+  if (!taken)
+    return deadline && Date.parse(deadline) <= Date.now()
+      ? null
+      : { id: activity.id, purpose: "claim" };
+  return passwords?.canSolve && passwords.hiddenCount > 0
+    ? { id: activity.id, purpose: "verify", hidden: passwords.hiddenCount }
+    : null;
 }
 
 /**
@@ -102,6 +149,8 @@ export function useOmniboxController() {
   const csrfToken =
     queryClient.getQueryData<SessionResponse>(sessionQueryKey)?.csrfToken ?? "";
   const discovery = useGlobalRedemptionDiscovery(user?.id ?? "", csrfToken);
+  const claim = useClaimReward(user?.id ?? "", csrfToken);
+  const solve = useSolvePassword(user?.id ?? "", csrfToken);
   const overlayOpen = useLocation({
     select: (location) =>
       Boolean(location.state.omnibox || location.state.panel),
@@ -421,21 +470,215 @@ export function useOmniboxController() {
     [leaveTo, queryClient, runCommand, runDiscover, runTopic, store],
   );
 
+  /** A timed draw is signed up for; anything else is claimed. */
+  const verbOf = useCallback(
+    (activityId: string) =>
+      queryClient.getQueryData<PublicActivityDetail>(
+        activityKeys.public(activityId, sessionUserOf(queryClient)?.id ?? null),
+      )?.activity.reward?.mode === "timed_draw"
+        ? "报名"
+        : "领取",
+    [queryClient],
+  );
+
   /**
-   * Claiming or signing up inside one 红包, and 验证其他口令: both run on the
-   * 红包 page, which comes with migration phase 2.
+   * 领取 or 报名 inside one 红包: with a 口令, or none for a 红包 that needs
+   * none. A submission whose answer was lost is sent again as it was (重试原
+   * 提交); a lookup's single match continues with the lookup's own
+   * submission. Only a new attempt waits for the cooldown.
    */
   const redeemIn = useCallback(
-    async (activityId: string, _password: string | null) => {
-      await leaveTo({ to: "activity", id: activityId });
+    async (
+      activityId: string,
+      password: string | null,
+      options: { operation?: RedemptionIntentOperation } = {},
+    ) => {
+      if (store.get(pendingAtom)) return;
+      if (password !== null && !inspectPassword(password).valid) return;
+      if (!guard()) return;
+      const account = sessionUserOf(queryClient);
+      if (!account) return;
+      const verb = verbOf(activityId);
+      const previous = store.get(unconfirmedAtom).claims[activityId];
+      const retrying = previous?.password === (password ?? "");
+      let input: ClaimActivityInput;
+      if (options.operation) input = options.operation;
+      else if (retrying && previous)
+        input =
+          password === null
+            ? {
+                participationMode: "direct",
+                submissionId: previous.submissionId,
+              }
+            : { submissionId: previous.submissionId, password };
+      else {
+        if (attemptCooldownRemainingMs(account.id) > 0) return;
+        if (password === null)
+          input = {
+            participationMode: "direct",
+            submissionId: crypto.randomUUID(),
+          };
+        else {
+          const checked = passwordSchema.safeParse(password);
+          if (!checked.success) return;
+          input = { submissionId: crypto.randomUUID(), password: checked.data };
+        }
+      }
+      const href = router.history.location.href;
+      const stale = () =>
+        router.history.location.href !== href ||
+        sessionUserOf(queryClient)?.id !== account.id;
+      store.set(pendingAtom, true);
+      store.set(messageAtom, null);
+      store.set(rewardAnimationAtom, {
+        activityId,
+        token: input.submissionId,
+      });
+      const say = (message: OmniMessage) =>
+        store.set(messageAtom, { activityId, ...message });
+      try {
+        const result = await claim.mutateAsync({ id: activityId, input });
+        store.set(
+          unconfirmedAtom,
+          withClaim(store.get(unconfirmedAtom), activityId, null),
+        );
+        if (stale()) return;
+        switch (result.result) {
+          case "claimed":
+          case "registered":
+            if (router.history.location.state.omnibox) collapse();
+            return;
+          case "already_claimed":
+            say({ tone: "neutral", text: "你已领过这个红包。" });
+            return;
+          case "already_registered":
+            say({
+              tone: "neutral",
+              text: "你已报名过这个红包，再次报名不会增加中奖机会。",
+            });
+            return;
+          case "incorrect":
+            say({ tone: "danger", text: "口令不正确。", action: "global" });
+            store.set(mismatchAtom, (count) => count + 1);
+            return;
+          case "draft":
+            say({ tone: "neutral", text: `红包还没开放，暂时不能${verb}。` });
+            return;
+          default:
+            say({ tone: "neutral", text: "红包已结束。" });
+        }
+      } catch (error) {
+        if (stale()) return;
+        if (error instanceof ActivityRequestError && error.status === 429) {
+          store.set(
+            unconfirmedAtom,
+            withClaim(store.get(unconfirmedAtom), activityId, null),
+          );
+          say({ tone: "warning", text: "尝试过于频繁，请稍后重试。" });
+          return;
+        }
+        if (error instanceof ActivityRequestError && error.status === 401) {
+          say({
+            tone: "warning",
+            text: "登录已失效，请重新登录。",
+            action: "login",
+          });
+          return;
+        }
+        // No answer, or the server failed: it may have gone through. Keep
+        // the submission, so 重试原提交 asks about exactly it.
+        if (!(error instanceof ActivityRequestError) || error.status >= 500) {
+          store.set(
+            unconfirmedAtom,
+            withClaim(store.get(unconfirmedAtom), activityId, {
+              password: password ?? "",
+              submissionId: input.submissionId,
+            }),
+          );
+          say({
+            tone: "warning",
+            text: `尚未确认${verb}结果，请重试原提交以确认结果。`,
+          });
+          return;
+        }
+        store.set(
+          unconfirmedAtom,
+          withClaim(store.get(unconfirmedAtom), activityId, null),
+        );
+        say({ tone: "warning", text: error.message });
+      } finally {
+        store.set(pendingAtom, false);
+      }
     },
-    [leaveTo],
+    [claim, collapse, guard, queryClient, router, store, verbOf],
   );
+
+  /**
+   * 验证其他口令: for someone who already took part. A correct 口令 is only
+   * revealed to them (已解出); it never claims again. Shares the cooldown
+   * with claiming, except for answers that need no check (06 §4).
+   */
   const verifyIn = useCallback(
-    async (activityId: string, _password: string) => {
-      await leaveTo({ to: "activity", id: activityId });
+    async (activityId: string, password: string) => {
+      if (store.get(pendingAtom)) return;
+      if (!inspectPassword(password).valid) return;
+      if (!guard()) return;
+      const account = sessionUserOf(queryClient);
+      if (!account) return;
+      const known = queryClient.getQueryData<ActivityPasswords>(
+        passwordKey(account.id, activityId),
+      );
+      if (known?.passwords.some((item) => item.text === password)) {
+        store.set(messageAtom, {
+          activityId,
+          tone: "neutral",
+          text: "你已经知道这个口令。",
+        });
+        return;
+      }
+      if (attemptCooldownRemainingMs(account.id) > 0) return;
+      const href = router.history.location.href;
+      store.set(pendingAtom, true);
+      store.set(messageAtom, null);
+      const say = (message: OmniMessage) =>
+        store.set(messageAtom, { activityId, ...message });
+      try {
+        const result = await solve.mutateAsync({
+          id: activityId,
+          input: { submissionId: crypto.randomUUID(), password },
+        });
+        if (
+          router.history.location.href !== href ||
+          sessionUserOf(queryClient)?.id !== account.id
+        )
+          return;
+        if (result.outcome === "solved") {
+          store.set(verifyNoticeAtom, {
+            activityId,
+            password,
+            token: Date.now(),
+          });
+          if (router.history.location.state.omnibox) collapse();
+          return;
+        }
+        if (result.outcome === "incorrect") {
+          say({ tone: "danger", text: "口令不正确，请重新尝试。" });
+          store.set(mismatchAtom, (count) => count + 1);
+          return;
+        }
+        say({ tone: "neutral", text: "红包已结束，口令已公开。" });
+      } catch (error) {
+        if (error instanceof ActivityRequestError && error.status === 429)
+          say({ tone: "warning", text: "尝试过于频繁，请稍后重试。" });
+        else if (error instanceof ActivityRequestError && error.status < 500)
+          say({ tone: "warning", text: error.message });
+        // Verifying changes nothing: a lost answer is simply tried again.
+        else say({ tone: "warning", text: "没有收到验证结果，请再试一次。" });
+      } finally {
+        store.set(pendingAtom, false);
+      }
     },
-    [leaveTo],
+    [collapse, guard, queryClient, router, solve, store],
   );
 
   const runMessageAction = useCallback(

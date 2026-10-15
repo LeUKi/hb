@@ -138,8 +138,38 @@ function direct(submissionId = crypto.randomUUID()): ClaimActivityInput {
   return { submissionId, participationMode: "direct" };
 }
 
-function liveImagePath(activityId: string) {
-  return `/api/e/${encodeURIComponent(encodeActivityEmoji(activityId))}/live.svg`;
+/** /api/🧧/<code>/🖼️.svg as a request carries it, or another spelling. */
+function imagePath(
+  activityId: string,
+  file: "🖼️.svg" | "🖼.svg" | "🖼️" | "🖼" = "🖼️.svg",
+) {
+  return `/api/${encodeURIComponent("🧧")}/${encodeURIComponent(encodeActivityEmoji(activityId))}/${encodeURIComponent(file)}`;
+}
+
+/** "18:21:05" in a zone, as the image writes 数据截至. */
+function clockIn(at: Date, timeZone: string) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(at)
+      .map(({ type, value }) => [type, value]),
+  );
+  return `${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
+/** A request made at a fixed instant (the image writes the time). */
+async function at<T>(instant: Date, run: () => Promise<T> | T) {
+  vi.useFakeTimers({ now: instant, toFake: ["Date"] });
+  try {
+    return await run();
+  } finally {
+    vi.useRealTimers();
+  }
 }
 
 async function counts(activityId: string) {
@@ -194,7 +224,7 @@ beforeEach(async () => {
 describe("activity image APIs", () => {
   it("serves opened LDC images as no-store SVG and records only successful GETs", async () => {
     const activity = await saveActivity();
-    const path = `/api/activity-images/${activity.id}.svg`;
+    const path = imagePath(activity.id);
 
     const head = await request(path, { method: "HEAD" });
     expect(head.status).toBe(200);
@@ -204,6 +234,7 @@ describe("activity image APIs", () => {
 
     const response = await request(path);
     expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("image/svg+xml");
     expect(response.headers.get("cache-control")).toBe(
       "private, no-store, max-age=0",
     );
@@ -212,7 +243,12 @@ describe("activity image APIs", () => {
     const body = await response.text();
     expect(body).toContain("<svg");
     expect(body).toContain("图片红包活动");
+    expect(body).toContain("的红包");
+    expect(body).toContain(encodeActivityEmoji(activity.id));
+    expect(body).toContain("查看");
+    expect(body).toContain("剩余 2 份");
     expect(body).not.toContain("领取后私密说明");
+    expect(body).not.toContain("公开说明");
     const recentCookie = cookieValue(response, "__Host-hb_image_recent");
     expect(recentCookie).toBeTruthy();
     expect(recentCookie).not.toContain(activity.id);
@@ -229,61 +265,62 @@ describe("activity image APIs", () => {
     expect(cookieValue(prefs, "__Host-hb_image_session")).toBeTruthy();
   });
 
-  it("serves emoji live aliases with the same readonly image contract", async () => {
+  it("answers every spelling of the address and sends a tab to the 红包", async () => {
     const activity = await saveActivity();
-    const path = liveImagePath(activity.id);
+    for (const file of ["🖼️.svg", "🖼.svg", "🖼️", "🖼"] as const) {
+      const response = await request(imagePath(activity.id, file));
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toContain("image/svg+xml");
+      expect(await response.text()).toContain("图片红包活动");
+    }
+    const lowercase = await request(imagePath(activity.id).toLowerCase());
+    expect(lowercase.status).toBe(200);
 
-    const head = await request(path, { method: "HEAD" });
-    expect(head.status).toBe(200);
-    expect(head.headers.get("content-type")).toContain("image/svg+xml");
-    expect(head.headers.get("cache-control")).toBe(
-      "private, no-store, max-age=0",
-    );
-    expect(head.headers.getSetCookie()).toEqual([]);
-    expect(await head.text()).toBe("");
-
-    const response = await request(path);
-    expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toContain("image/svg+xml");
-    expect(response.headers.get("cache-control")).toBe(
-      "private, no-store, max-age=0",
-    );
-    expect(response.headers.get("cdn-cache-control")).toBe("no-store");
-    expect(response.headers.get("vary")).toContain("Cookie");
-    expect(await response.text()).toContain("图片红包活动");
-    const recentCookie = cookieValue(response, "__Host-hb_image_recent");
-    expect(recentCookie).toBeTruthy();
-    expect(recentCookie).not.toContain(activity.id);
-
-    const nav = await request(path, {
+    const nav = await request(imagePath(activity.id), {
       headers: { "Sec-Fetch-Dest": "document", "Sec-Fetch-Mode": "navigate" },
     });
     expect(nav.status).toBe(302);
     expect(nav.headers.get("location")).toBe(
-      `/e/${encodeURIComponent(encodeActivityEmoji(activity.id))}`,
+      `/${encodeURIComponent("🧧")}/${encodeURIComponent(encodeActivityEmoji(activity.id))}`,
     );
     expect(cookieValue(nav, "__Host-hb_image_recent")).toBeNull();
 
     const invalid = await request(
-      `/api/e/${encodeURIComponent("not-valid")}/live.svg`,
+      `/api/${encodeURIComponent("🧧")}/not-valid/${encodeURIComponent("🖼️")}.svg`,
     );
     expect(invalid.status).toBe(404);
     expect(invalid.headers.get("content-type")).toContain("image/svg+xml");
     expect(cookieValue(invalid, "__Host-hb_image_recent")).toBeNull();
-    expect(await invalid.text()).toContain("活动不可用");
+    expect(await invalid.text()).toContain("红包不存在，或链接已经失效");
 
     const doubleEncoded = await request(
-      `/api/e/${encodeURIComponent(encodeURIComponent(encodeActivityEmoji(activity.id)))}/live.svg`,
+      `/api/${encodeURIComponent("🧧")}/${encodeURIComponent(encodeURIComponent(encodeActivityEmoji(activity.id)))}/${encodeURIComponent("🖼️")}.svg`,
     );
     expect(doubleEncoded.status).toBe(404);
     expect(cookieValue(doubleEncoded, "__Host-hb_image_recent")).toBeNull();
 
-    const extra = await request(`${path}/extra`);
-    expect(extra.status).toBe(404);
+    const otherFile = await request(
+      `/api/${encodeURIComponent("🧧")}/${encodeURIComponent(encodeActivityEmoji(activity.id))}/live.svg`,
+    );
+    expect(otherFile.status).toBe(404);
+    expect(otherFile.headers.get("content-type") ?? "").not.toContain("svg");
+    expect((await request(`${imagePath(activity.id)}/extra`)).status).toBe(404);
+    // The retired addresses are gone.
+    expect(
+      (
+        await request(
+          `/api/e/${encodeURIComponent(encodeActivityEmoji(activity.id))}/live.svg`,
+        )
+      ).status,
+    ).toBe(404);
+    expect(
+      (await request(`/api/activity-images/${activity.id}.svg`)).status,
+    ).toBe(404);
   });
 
   it("ignores forged preference and recent cookies, and supports CSRF-protected timezone and clearing", async () => {
     const activity = await saveActivity();
+    const path = imagePath(activity.id);
     const forged = mergeCookies(
       `__Host-hb_image_preferences=${btoa(JSON.stringify({ timeZone: "UTC" }))}`,
       `__Host-hb_image_recent=${btoa(JSON.stringify({ activityId: activity.id, requestedAt: Date.now() }))}`,
@@ -309,19 +346,27 @@ describe("activity image APIs", () => {
     expect(preferenceCookie).toBeTruthy();
     expect(preferenceCookie).not.toContain("UTC");
 
-    const image = await request(
-      `/api/activity-images/${activity.id}.svg?tz=America%2FNew_York`,
-      { cookie: preferenceCookie ?? undefined },
+    // Just past, so the clear below comes after this request (and the
+    // preference cookie, a moment older, is still in date).
+    const instant = new Date(Date.now() - 1_000);
+    const image = await at(instant, () =>
+      request(`${path}?tz=America%2FNew_York`, {
+        cookie: preferenceCookie ?? undefined,
+      }),
     );
-    expect(await image.text()).toContain('data-timezone="UTC"');
-    const urlZone = await request(
-      `/api/activity-images/${activity.id}.svg?tz=America%2FNew_York`,
+    expect(await image.text()).toContain(`数据截至 ${clockIn(instant, "UTC")}`);
+    const urlZone = await at(instant, () =>
+      request(`${path}?tz=America%2FNew_York`),
     );
-    expect(await urlZone.text()).toContain('data-timezone="America/New_York"');
-    const invalidZone = await request(
-      `/api/activity-images/${activity.id}.svg?tz=%2B08%3A00`,
+    expect(await urlZone.text()).toContain(
+      `数据截至 ${clockIn(instant, "America/New_York")}`,
     );
-    expect(await invalidZone.text()).toContain('data-timezone="Asia/Shanghai"');
+    const invalidZone = await at(instant, () =>
+      request(`${path}?tz=%2B08%3A00`),
+    );
+    expect(await invalidZone.text()).toContain(
+      `数据截至 ${clockIn(instant, "Asia/Shanghai")}`,
+    );
     const recentCookie = cookieValue(image, "__Host-hb_image_recent");
 
     const cleared = await request("/api/me/activity-images/recent-request", {
@@ -339,15 +384,9 @@ describe("activity image APIs", () => {
     expect(await oldAfterClear.json()).toMatchObject({ recentRequest: null });
     // Only a request after the clear is shown. The Workers clock can still read
     // the clear's millisecond here, so move it forward explicitly.
-    vi.useFakeTimers({ now: Date.now() + 1_000, toFake: ["Date"] });
-    let nextImage: Response;
-    try {
-      nextImage = await request(`/api/activity-images/${activity.id}.svg`, {
-        cookie: preferenceCookie ?? undefined,
-      });
-    } finally {
-      vi.useRealTimers();
-    }
+    const nextImage = await at(new Date(Date.now() + 1_000), () =>
+      request(path, { cookie: preferenceCookie ?? undefined }),
+    );
     const nextRecentCookie = cookieValue(nextImage, "__Host-hb_image_recent");
     const newAfterClear = await request("/api/me/activity-images", {
       actor: alice,
@@ -377,10 +416,10 @@ describe("activity image APIs", () => {
 
   it("excludes drafts and retired text activities without writing recent records", async () => {
     const draft = await saveActivity(directInput(), false);
-    const draftImage = await request(`/api/activity-images/${draft.id}.svg`);
+    const draftImage = await request(imagePath(draft.id));
     expect(draftImage.status).toBe(404);
     expect(cookieValue(draftImage, "__Host-hb_image_recent")).toBeNull();
-    expect(await draftImage.text()).toContain("活动不可用");
+    expect(await draftImage.text()).toContain("红包不存在，或链接已经失效");
 
     const legacyId = crypto.randomUUID();
     const now = Date.now();
@@ -408,14 +447,14 @@ describe("activity image APIs", () => {
         now,
       )
       .run();
-    const legacyImage = await request(`/api/activity-images/${legacyId}.svg`);
+    const legacyImage = await request(imagePath(legacyId));
     expect(legacyImage.status).toBe(404);
     expect(cookieValue(legacyImage, "__Host-hb_image_recent")).toBeNull();
   });
 
   it("uses main sessions ahead of image sessions and keeps image reads read-only", async () => {
     const activity = await saveActivity();
-    const alias = liveImagePath(activity.id);
+    const path = imagePath(activity.id);
     await claimActivity(bindings, activity.id, alice.id, direct());
     await env.DB.batch([
       env.DB.prepare("DELETE FROM payment_outbox"),
@@ -438,37 +477,21 @@ describe("activity image APIs", () => {
     );
     expect(imageSession).toBeTruthy();
 
-    const privateImage = await request(
-      `/api/activity-images/${activity.id}.svg`,
-      {
-        actor: alice,
-      },
-    );
+    const privateImage = await request(path, { actor: alice });
     expect(privateImage.status).toBe(200);
     const privateBody = await privateImage.text();
+    expect(privateBody).toContain("你已领取");
     expect(privateBody).toContain("1.00 LDC");
     expect(privateBody).toContain("付款处理中");
-    expect(privateBody).toContain("upper-open 1200ms");
+    expect(privateBody).toContain("领取于");
+    // The opening plays once as the image loads.
+    expect(privateBody).toContain('class="flap motion"');
     expect(cookieValue(privateImage, "__Host-hb_image_session")).toBeNull();
 
-    const legacyReduced = await request(
-      `/api/activity-images/${activity.id}.svg?motion=reduced`,
-      { actor: alice },
-    );
-    const legacyReducedBody = await legacyReduced.text();
-    expect(legacyReducedBody).toContain("1.00 LDC");
-    expect(legacyReducedBody).toContain("upper-open 1200ms");
-
-    const privateAlias = await request(alias, { actor: alice });
-    expect(privateAlias.status).toBe(200);
-    expect(await privateAlias.text()).toContain("1.00 LDC");
-    const fallbackAlias = await request(`${alias}?fallback=public`, {
-      actor: alice,
+    const imageOnly = await request(path, {
+      cookie: imageSession ?? undefined,
     });
-    expect(fallbackAlias.status).toBe(200);
-    expect(await fallbackAlias.text()).not.toContain("1.00 LDC");
-    expect(cookieValue(fallbackAlias, "__Host-hb_image_recent")).toBeNull();
-
+    expect(await imageOnly.text()).toContain("1.00 LDC");
     const imageOnlyMe = await request("/api/me/activity-images", {
       cookie: imageSession ?? undefined,
     });
@@ -484,26 +507,20 @@ describe("activity image APIs", () => {
     );
     expect(imageOnlyClaim.status).toBe(401);
 
-    const invalidMain = await request(
-      `/api/activity-images/${activity.id}.svg`,
-      {
-        cookie: mergeCookies("hb_session=invalid", imageSession),
-      },
-    );
+    const invalidMain = await request(path, {
+      cookie: mergeCookies("hb_session=invalid", imageSession),
+    });
     expect(invalidMain.status).toBe(200);
     const invalidMainBody = await invalidMain.text();
     expect(invalidMainBody).not.toContain("1.00 LDC");
     expect(invalidMainBody).toContain("查看");
-    const emptyMain = await request(`/api/activity-images/${activity.id}.svg`, {
+    const emptyMain = await request(path, {
       cookie: mergeCookies("hb_session=", imageSession),
     });
     expect(await emptyMain.text()).not.toContain("1.00 LDC");
-    const authorMain = await request(
-      `/api/activity-images/${activity.id}.svg`,
-      {
-        cookie: mergeCookies(owner.cookie, imageSession),
-      },
-    );
+    const authorMain = await request(path, {
+      cookie: mergeCookies(owner.cookie, imageSession),
+    });
     expect(await authorMain.text()).not.toContain("1.00 LDC");
 
     expect(await counts(activity.id)).toEqual(before);
@@ -517,13 +534,32 @@ describe("activity image APIs", () => {
     await env.DB.prepare("DELETE FROM sessions WHERE user_id=?")
       .bind(alice.id)
       .run();
-    const revoked = await request(`/api/activity-images/${activity.id}.svg`, {
+    const revoked = await request(path, {
       cookie: imageSession ?? undefined,
     });
     expect(await revoked.text()).not.toContain("1.00 LDC");
   });
 
-  it("does not record fallback or navigation requests and separates draw participants", async () => {
+  it("draws the end for everyone once it is over", async () => {
+    const activity = await saveActivity();
+    await claimActivity(bindings, activity.id, alice.id, direct());
+    const bob = await actor();
+    await claimActivity(bindings, activity.id, bob.id, direct());
+    const guest = await (await request(imagePath(activity.id))).text();
+    expect(guest).toContain("红包已领完");
+    expect(guest).toContain('filter="url(#muted)"');
+    expect(guest).not.toContain("数据可能过期");
+    const stranger = await (
+      await request(imagePath(activity.id), { actor: await actor() })
+    ).text();
+    expect(stranger).toContain("红包已领完");
+    const claimed = await (
+      await request(imagePath(activity.id), { actor: alice })
+    ).text();
+    expect(claimed).toContain("你已领取");
+  });
+
+  it("does not record navigation requests and separates draw participants", async () => {
     const activity = await saveActivity(
       directInput({
         allocation: "random",
@@ -539,58 +575,41 @@ describe("activity image APIs", () => {
         },
       }),
     );
+    const path = imagePath(activity.id);
     await registerForDraw(bindings, activity.id, alice.id, direct());
     const nonParticipant = await actor();
+    const waiting = await (await request(path, { actor: alice })).text();
+    expect(waiting).toContain("已报名，等待开奖");
+    const eligible = await (
+      await request(path, { actor: nonParticipant })
+    ).text();
+    expect(eligible).toContain("已报名 1 人");
+    expect(eligible).toMatch(/class="glyph"[^>]*>报</);
     vi.useFakeTimers({ now: Date.now() + 3_600_000 + 1_000 });
     try {
-      const registered = await request(
-        `/api/activity-images/${activity.id}.svg`,
-        {
-          actor: alice,
-        },
-      );
+      const registered = await request(path, { actor: alice });
       expect(await registered.text()).toContain("开奖中");
-      const stranger = await request(`/api/activity-images/${activity.id}.svg`);
-      expect(await stranger.text()).toContain("开奖中");
-      const signedInStranger = await request(
-        `/api/activity-images/${activity.id}.svg`,
-        { actor: nonParticipant },
-      );
+      const stranger = await request(path);
+      expect(await stranger.text()).toContain("正在开奖");
+      const signedInStranger = await request(path, { actor: nonParticipant });
       const signedInBody = await signedInStranger.text();
-      expect(signedInBody).toContain('data-state="drawing"');
-      expect(signedInBody).not.toContain("已结束");
+      expect(signedInBody).toContain("正在开奖");
+      expect(signedInBody).not.toContain('filter="url(#muted)"');
     } finally {
       vi.useRealTimers();
     }
 
-    const fallback = await request(
-      `/api/activity-images/${activity.id}.svg?fallback=public`,
-      { actor: alice },
-    );
-    expect(fallback.status).toBe(200);
-    expect(cookieValue(fallback, "__Host-hb_image_recent")).toBeNull();
-    const nav = await request(`/api/activity-images/${activity.id}.svg`, {
+    const nav = await request(path, {
       headers: { "Sec-Fetch-Dest": "document", "Sec-Fetch-Mode": "navigate" },
     });
     expect(nav.status).toBe(302);
     expect(cookieValue(nav, "__Host-hb_image_recent")).toBeNull();
-    const acceptNav = await request(`/api/activity-images/${activity.id}.svg`, {
+    const acceptNav = await request(path, {
       headers: { Accept: "text/html,application/xhtml+xml" },
     });
     expect(acceptNav.status).toBe(302);
-    const wildcard = await request(`/api/activity-images/${activity.id}.svg`, {
-      headers: { Accept: "*/*" },
-    });
+    const wildcard = await request(path, { headers: { Accept: "*/*" } });
     expect(wildcard.status).toBe(200);
     expect(wildcard.headers.get("content-type")).toContain("image/svg+xml");
-  });
-
-  it("redirects top-level document navigation to the matching activity", async () => {
-    const activity = await saveActivity();
-    const response = await request(`/api/activity-images/${activity.id}.svg`, {
-      headers: { "Sec-Fetch-Dest": "document", "Sec-Fetch-Mode": "navigate" },
-    });
-    expect(response.status).toBe(302);
-    expect(response.headers.get("location")).toBe(`/activities/${activity.id}`);
   });
 });

@@ -1,51 +1,32 @@
 import type { PaymentState, PublicActivity } from ".";
-import { decodeActivityEmoji, encodeActivityEmoji } from "./ecoji-v2";
+import { encodeActivityEmoji } from "./ecoji-v2";
+import { squirclePath } from "./squircle-path";
+
+// The forum image of a 红包 (内嵌图, docs/redesign/05 §6), served at
+// /🧧/<code>/🖼️.svg. It answers three things only: whose 红包 and what it is
+// called, whether it can still be taken, and — for a signed-in viewer who
+// took part — what they got. Everything else is on the page. Flat, light
+// and shadow; self-contained: system fonts, no scripts, no external
+// resources (so no avatars: there are only avatar URLs). No brand either:
+// the bottom line is the 红包's own 14-emoji code.
 
 export const ACTIVITY_IMAGE_WIDTH = 420;
 export const ACTIVITY_IMAGE_HEIGHT = 560;
 export const DEFAULT_ACTIVITY_IMAGE_TIME_ZONE = "Asia/Shanghai";
-
-export type ActivityImageRenderState =
-  | "neutral"
-  | "active"
-  | "registered"
-  | "drawing"
-  | "claimed"
-  | "ended"
-  | "not_won"
-  | "loading"
-  | "pending"
-  | "error"
-  | "unavailable";
 
 export type ActivityImagePaymentStatus = Extract<
   PaymentState,
   "pending" | "sending" | "reconciling" | "waiting" | "confirmed" | "attention"
 > | null;
 
-export type ActivityImagePresentation = {
-  id?: string;
-  title: string;
-  sender: string;
-  state: ActivityImageRenderState;
-  sealLabel: string;
-  quantityText?: string | null;
-  amount?: string | null;
-  statusText?: string | null;
-  claimedAt?: string | Date | null;
-  updatedAt: string | Date;
-  now?: string | Date;
-  timeZone?: string;
-  animated?: boolean;
-  revealPhase?: "closed" | "opening" | "open" | "closing";
-  instanceId?: string;
-  publicFallback?: boolean;
-};
-
+/**
+ * Who is looking, by the image cookie. No cookie (or a third-party cookie
+ * the browser blocked), and the sender themself, see the public image.
+ */
 export type ActivityImageViewerState =
-  | { kind: "public"; canParticipate?: false }
+  | { kind: "public" }
   | { kind: "eligible"; action: "claim" | "register" }
-  | { kind: "registered"; registeredAt: string | Date }
+  | { kind: "registered" }
   | { kind: "drawing" }
   | {
       kind: "claimed";
@@ -53,15 +34,10 @@ export type ActivityImageViewerState =
       claimedAt: string | Date;
       paymentStatus?: ActivityImagePaymentStatus;
     }
+  /** A claim whose amount is not settled yet. */
+  | { kind: "pending" }
   | { kind: "ended" }
-  | { kind: "not_won" }
-  | { kind: "loading" | "pending" | "error" | "unavailable" };
-
-export type ActivityImageEmbedInput = {
-  imageHref: string;
-  title: string;
-  sender: string;
-};
+  | { kind: "not_won" };
 
 export type ActivityImagePreferences = {
   timeZone: string;
@@ -72,11 +48,41 @@ export type ActivityImagePreferences = {
   };
 };
 
-const UPPER_COVER =
-  "M10 36c0-15.5 12.5-28 28-28h344c15.5 0 28 12.5 28 28v290c-72 40-138.6 60-200 60S82 366 10 326V36Z";
-const LOWER_COVER =
-  "M10 326c72 40 138.6 60 200 60s128-20 200-60v202c0 13.3-10.7 24-24 24H34c-13.3 0-24-10.7-24-24Z";
-const COVER_SEAM = "M10 326c72 40 138.6 60 200 60s128-20 200-60";
+export type ActivityImageTone = "success" | "warning" | "danger";
+
+/** What the image draws; `activityImageInput` picks it for a viewer. */
+export type ActivityImageInput = {
+  sender: string;
+  title: string;
+  /** The 红包's emoji code (14 emoji), printed on the bottom line. */
+  code: string;
+  /** Over, or not won: desaturated cover, pewter seal. */
+  muted: boolean;
+  /**
+   * The seal's words: 开 / 报 for a signed-in viewer, 查看 for a guest,
+   * 已报名 / 开奖中, 完 / 未中 when muted. Null: no seal (opened).
+   */
+  seal: string | null;
+  body:
+    | { kind: "line"; text: string }
+    | {
+        kind: "opened";
+        /** 你已领取 / 你中奖了 */
+        label: string;
+        amount: string;
+        status: { text: string; tone: ActivityImageTone };
+        /** When the share was taken (a winner's: when the draw ran). */
+        at: Date;
+        /** The seal that pops in the opening animation: 开 or 报. */
+        opens: string;
+      };
+  /** Counts, waiting or a payment on its way: warn once it may be stale. */
+  live: boolean;
+  renderedAt: Date;
+  /** Times are written in this zone (the viewer's preference, or Beijing). */
+  timeZone: string;
+};
+
 const VALID_TIME_ZONE_CACHE = new Map<string, boolean>();
 const IMAGE_TIME_ZONE_IDENTIFIER_RE =
   /^[A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+)*$/;
@@ -107,679 +113,485 @@ export function isImageTimeZone(
   }
 }
 
+function siteOrigin(origin: string) {
+  const url = new URL(origin);
+  if (
+    (url.protocol !== "https:" && url.protocol !== "http:") ||
+    url.username ||
+    url.password
+  )
+    throw new TypeError("Invalid site origin");
+  return url.origin;
+}
+
+/**
+ * The image's address to copy: /🧧/<code>/🖼️.svg with the emoji kept
+ * visible, like every link the site hands out. `/🧧/<code>/🖼️` works too,
+ * with or without U+FE0F (chat apps and forums often drop it).
+ */
 export function activityImageUrl(
   activityId: string,
   origin: string,
-  options: {
-    timeZone?: string;
-    fallback?: boolean;
-  } = {},
+  options: { timeZone?: string } = {},
 ) {
-  const path = `/e/${encodeActivityEmoji(activityId)}/live.svg`;
-  const url = new URL(path, origin);
-  if (options.fallback) url.searchParams.set("fallback", "public");
-  if (options.timeZone && isImageTimeZone(options.timeZone))
-    url.searchParams.set("tz", options.timeZone);
-  return `${url.origin}${path}${url.search}`;
+  const path = `/🧧/${encodeActivityEmoji(activityId)}/🖼️.svg`;
+  const zone =
+    options.timeZone && isImageTimeZone(options.timeZone)
+      ? `?tz=${encodeURIComponent(options.timeZone)}`
+      : "";
+  return `${siteOrigin(origin)}${path}${zone}`;
 }
 
-export function createActivityImageEmbed(input: ActivityImageEmbedInput) {
-  const imageHref = safeGeneratedUrl(input.imageHref);
-  const alt = `${normalizeText(input.sender, "活动发起人")} 的活动红包：${normalizeText(
-    input.title,
-    "未命名活动",
-  )}`;
-  return [
-    "<center>",
-    "  <picture>",
-    `    <source type="image/svg+xml" srcset="${escapeXml(imageHref)} 1x">`,
-    `    <img width="${ACTIVITY_IMAGE_WIDTH}" height="${ACTIVITY_IMAGE_HEIGHT}" alt="${escapeXml(
-      alt,
-    )}">`,
-    "  </picture>",
-    "</center>",
-  ].join("\n");
+/** The forum code (05 §5): one line, the image at its own size. */
+export function createActivityImageEmbed(input: {
+  activityId: string;
+  origin: string;
+  sender: string;
+  title: string;
+}) {
+  const href = activityImageUrl(input.activityId, input.origin);
+  const alt = `${normalizeText(input.sender, "发红包的人")}的红包：${normalizeText(input.title, "红包")}`;
+  return `<center><picture><source type="image/svg+xml" srcset="${escapeXml(href)} 1x"><img width="${ACTIVITY_IMAGE_WIDTH}" height="${ACTIVITY_IMAGE_HEIGHT}" alt="${escapeXml(alt)}"></picture></center>`;
 }
 
-export function activityImagePresentation(input: {
+/** Nothing left to take, by whatever the quantity setting shows. */
+function soldOut(activity: PublicActivity) {
+  const { quantity } = activity;
+  if (quantity.mode === "exact") return quantity.remaining <= 0;
+  if (quantity.mode === "fuzzy") return quantity.level === "empty";
+  if (quantity.mode === "availability") return !quantity.available;
+  return false;
+}
+
+const fuzzyWords = { plenty: "充足", limited: "有限", low: "少量" } as const;
+
+/** The one public line: what is left, as the quantity setting allows. */
+function remainingLine(activity: PublicActivity) {
+  const { draw, quantity } = activity;
+  if (draw)
+    return typeof draw.registeredCount === "number"
+      ? `已报名 ${draw.registeredCount} 人`
+      : "限时开奖";
+  if (quantity.mode === "exact") return `剩余 ${quantity.remaining} 份`;
+  if (quantity.mode === "fuzzy")
+    return quantity.level === "empty"
+      ? "已领完"
+      : `余量${fuzzyWords[quantity.level]}`;
+  return soldOut(activity) ? "已领完" : "进行中";
+}
+
+/** Why it is over, as under the page's seal. */
+function endLine(activity: PublicActivity, now: Date) {
+  if (activity.draw)
+    return activity.draw.state === "empty" ? "无人报名" : "已开奖";
+  if (soldOut(activity)) return "红包已领完";
+  if (activity.deadlineAt && Date.parse(activity.deadlineAt) <= now.getTime())
+    return "红包已过期";
+  return "红包已提前结束";
+}
+
+/** Production's four payment words. */
+function paymentWords(status: ActivityImagePaymentStatus): {
+  text: string;
+  tone: ActivityImageTone;
+} {
+  if (status === "confirmed") return { text: "已发放", tone: "success" };
+  if (status === "attention") return { text: "需要关注", tone: "danger" };
+  if (status === "reconciling")
+    return { text: "正在核对原订单", tone: "warning" };
+  return { text: "付款处理中", tone: "warning" };
+}
+
+/** What a viewer sees, by the same tiers as the page (05 §6). */
+export function activityImageInput(input: {
   activity: PublicActivity;
-  viewer?: ActivityImageViewerState;
-  updatedAt: string | Date;
-  now?: string | Date;
-  animated?: boolean;
-  timeZone?: string;
-  instanceId?: string;
-  publicFallback?: boolean;
-}): ActivityImagePresentation {
-  const viewer = input.publicFallback
-    ? { kind: "public" as const }
-    : input.viewer;
-  const sender =
-    input.activity.author.displayName ||
-    input.activity.author.username ||
-    "活动发起人";
-  if (!viewer || viewer.kind === "public") {
-    const publicDrawing =
-      !input.publicFallback && input.activity.draw?.state === "settling";
-    return {
-      id: input.activity.id,
-      title: input.activity.title || "未命名活动",
-      sender,
-      state: input.publicFallback
-        ? "neutral"
-        : publicDrawing
-          ? "drawing"
-          : input.activity.status === "active"
-            ? "active"
-            : "ended",
-      sealLabel: input.publicFallback
-        ? "查看活动"
-        : publicDrawing
-          ? "开奖中"
-          : input.activity.status === "active"
-            ? "查看"
-            : "已结束",
-      quantityText: input.publicFallback
-        ? null
-        : quantityDisplay(input.activity),
-      updatedAt: input.updatedAt,
-      now: input.now,
-      animated: input.animated,
-      timeZone: input.timeZone,
-      instanceId: input.instanceId,
-      publicFallback: input.publicFallback,
-    };
-  }
-  if (viewer.kind === "eligible") {
-    return {
-      id: input.activity.id,
-      title: input.activity.title || "未命名活动",
-      sender,
-      state: "active",
-      sealLabel: viewer.action === "register" ? "报名" : "开",
-      quantityText: quantityDisplay(input.activity),
-      updatedAt: input.updatedAt,
-      now: input.now,
-      animated: input.animated,
-      timeZone: input.timeZone,
-      instanceId: input.instanceId,
-    };
-  }
-  if (viewer.kind === "claimed") {
-    return {
-      id: input.activity.id,
-      title: input.activity.title || "未命名活动",
-      sender,
-      state: "claimed",
-      sealLabel: "开",
-      amount: `${viewer.amount} LDC`,
-      statusText: paymentStatusText(viewer.paymentStatus ?? null),
-      claimedAt: viewer.claimedAt,
-      updatedAt: input.updatedAt,
-      now: input.now,
-      animated: input.animated,
-      timeZone: input.timeZone,
-      instanceId: input.instanceId,
-    };
-  }
-  const state = viewer.kind;
-  return {
-    id: input.activity.id,
-    title: input.activity.title || "未命名活动",
-    sender,
-    state,
-    sealLabel:
-      state === "registered"
-        ? "已报名"
-        : state === "drawing"
-          ? "开奖中"
-          : state === "not_won"
-            ? "未中奖"
-            : state === "pending"
-              ? "处理中"
-              : state === "loading"
-                ? "读取中"
-                : state === "error"
-                  ? "读取失败"
-                  : state === "unavailable"
-                    ? "不可用"
-                    : "已结束",
-    statusText: state === "registered" ? "已报名，等待开奖" : undefined,
-    updatedAt: input.updatedAt,
-    now: input.now,
-    animated: input.animated,
-    timeZone: input.timeZone,
-    instanceId: input.instanceId,
+  viewer: ActivityImageViewerState;
+  renderedAt: Date;
+  timeZone?: string | null;
+}): ActivityImageInput {
+  const { activity, viewer, renderedAt } = input;
+  const isDraw = Boolean(activity.draw);
+  const base = {
+    sender:
+      activity.author.displayName || activity.author.username || "发红包的人",
+    title: activity.title || "红包",
+    code: encodeActivityEmoji(activity.id),
+    renderedAt,
+    timeZone: isImageTimeZone(input.timeZone)
+      ? input.timeZone
+      : DEFAULT_ACTIVITY_IMAGE_TIME_ZONE,
   };
+  const line = (text: string) => ({ kind: "line" as const, text });
+  const open = { ...base, muted: false };
+  const over = { ...base, muted: true, live: false };
+  switch (viewer.kind) {
+    case "claimed": {
+      const status = viewer.paymentStatus ?? null;
+      return {
+        ...open,
+        seal: null,
+        body: {
+          kind: "opened",
+          label: isDraw ? "你中奖了" : "你已领取",
+          amount: viewer.amount,
+          status: paymentWords(status),
+          at: new Date(viewer.claimedAt),
+          opens: isDraw ? "报" : "开",
+        },
+        // The payment may still move on; once sent, nothing will change.
+        live: status !== "confirmed",
+      };
+    }
+    case "pending":
+      return {
+        ...open,
+        seal: null,
+        body: line("你已领取，金额确认中"),
+        live: true,
+      };
+    case "registered":
+      return {
+        ...open,
+        seal: "已报名",
+        body: line("已报名，等待开奖"),
+        live: true,
+      };
+    case "drawing":
+      return { ...open, seal: "开奖中", body: line("正在开奖"), live: true };
+    case "not_won":
+      return { ...over, seal: "未中", body: line("本次未中奖") };
+    case "ended":
+      return { ...over, seal: "完", body: line(endLine(activity, renderedAt)) };
+    case "eligible":
+      return {
+        ...open,
+        seal: viewer.action === "register" ? "报" : "开",
+        body: line(remainingLine(activity)),
+        live: true,
+      };
+    default:
+      if (activity.draw?.state === "settling")
+        return { ...open, seal: "开奖中", body: line("正在开奖"), live: true };
+      if (activity.status !== "active")
+        return {
+          ...over,
+          seal: "完",
+          body: line(endLine(activity, renderedAt)),
+        };
+      // A guest may have taken part already: the seal only offers a look.
+      return {
+        ...open,
+        seal: "查看",
+        body: line(remainingLine(activity)),
+        live: true,
+      };
+  }
 }
 
-export function renderActivityImage(input: ActivityImagePresentation): string {
-  const now = safeDate(input.now, null) ?? new Date();
-  const updatedAt = safeDate(input.updatedAt, null) ?? now;
-  const timeZone = isImageTimeZone(input.timeZone)
-    ? input.timeZone
-    : DEFAULT_ACTIVITY_IMAGE_TIME_ZONE;
-  const scope = scopeId(input.instanceId ?? input.id ?? "activity");
-  const animated = input.animated !== false;
-  const state = input.state;
-  const neutralPlaceholder = state === "neutral" && !input.publicFallback;
-  const title = neutralPlaceholder
-    ? normalizeText(input.title, "")
-    : normalizeText(input.title, "未命名活动");
-  const sender = clampText(
-    neutralPlaceholder
-      ? normalizeText(input.sender, "")
-      : normalizeText(input.sender, "活动发起人"),
-    14,
-  );
-  const ageSeconds = Math.max(0, (now.getTime() - updatedAt.getTime()) / 1000);
-  const active =
-    state === "active" ||
-    state === "registered" ||
-    state === "drawing" ||
-    state === "loading" ||
-    state === "pending";
-  const desc = imageDescription({
-    ...input,
-    sender,
-    state,
-    timeZone,
-  });
+/** Rough advance widths for the system fonts the viewer will have. */
+function textWidth(text: string, size: number) {
+  let width = 0;
+  for (const character of text) {
+    const code = character.codePointAt(0) ?? 0;
+    if (code >= 0x2e80) width += size;
+    else if (character === " ") width += size * 0.3;
+    else if ("·/:.,".includes(character)) width += size * 0.42;
+    else if (/[A-Z0-9]/.test(character)) width += size * 0.62;
+    else width += size * 0.54;
+  }
+  return width;
+}
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${ACTIVITY_IMAGE_WIDTH}" height="${ACTIVITY_IMAGE_HEIGHT}" viewBox="0 0 ${ACTIVITY_IMAGE_WIDTH} ${ACTIVITY_IMAGE_HEIGHT}" role="img" aria-labelledby="${scope}-title ${scope}-desc" data-scope="${scope}" data-state="${escapeXml(state)}"${active ? dataAttributes(updatedAt, timeZone) : ""}>
-  <title id="${scope}-title">${escapeXml(title)}</title>
-  <desc id="${scope}-desc">${escapeXml(desc)}</desc>
-  ${renderDefs(scope)}
-  ${renderBody({ ...input, title, sender, state, timeZone, updatedAt, ageSeconds, animated, scope })}
-  ${renderSharedStyles(scope)}
+/** Up to `lines` lines within `max` px, the last one cut with "…". */
+function wrap(text: string, size: number, max: number, lines: number) {
+  const result: string[] = [];
+  let line = "";
+  const characters = Array.from(text.replace(/\s+/gu, " ").trim());
+  for (const character of characters) {
+    if (textWidth(line + character, size) <= max) {
+      line += character;
+      continue;
+    }
+    if (result.length === lines - 1) {
+      while (line && textWidth(`${line}…`, size) > max)
+        line = Array.from(line).slice(0, -1).join("");
+      result.push(`${line}…`);
+      return result;
+    }
+    result.push(line);
+    line = character;
+  }
+  if (line) result.push(line);
+  return result;
+}
+
+function timeParts(at: Date, timeZone: string) {
+  return Object.fromEntries(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone,
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(at)
+      .map(({ type, value }) => [type, value]),
+  ) as Record<string, string>;
+}
+
+function clock(at: Date, timeZone: string) {
+  const parts = timeParts(at, timeZone);
+  return `${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
+function dateTime(at: Date, timeZone: string) {
+  const parts = timeParts(at, timeZone);
+  return `${parts.month}月${parts.day}日 ${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
+const SANS =
+  '-apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif';
+const EMOJI =
+  '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif';
+
+// Geometry: the card leaves 10px for its shadow. Sealed, the cover's curved
+// edge runs from y 318 at the sides to 360 in the middle, where the seal
+// sits; opened, the edge has risen to 236–272 and the result takes the
+// paper. The sender and title keep their places, so opening only moves the
+// edge.
+const CARD = { x: 10, y: 10, width: 400, height: 540, radius: 34 };
+const SEALED = { side: 318, depth: 42 };
+const OPENED = { side: 236, depth: 36 };
+const SEAL = { cx: 210, cy: SEALED.side + SEALED.depth, r: 44 };
+/** The opened edge over the sealed one, measured from the card's top. */
+const RISE =
+  (OPENED.side + OPENED.depth - CARD.y) / (SEALED.side + SEALED.depth - CARD.y);
+
+const coverPath = (edge: { side: number; depth: number }) =>
+  `M${CARD.x} ${CARD.y}H${CARD.x + CARD.width}V${edge.side}A${CARD.width / 2} ${edge.depth} 0 0 1 ${CARD.x} ${edge.side}Z`;
+const rimPath = (edge: { side: number; depth: number }) =>
+  `M${CARD.x + CARD.width} ${edge.side}A${CARD.width / 2} ${edge.depth} 0 0 1 ${CARD.x} ${edge.side}`;
+
+const toneColors: Record<ActivityImageTone, { fill: string; text: string }> = {
+  success: { fill: "rgb(30 138 87 / .12)", text: "#1e8a57" },
+  warning: { fill: "rgb(196 122 18 / .14)", text: "#9a5b00" },
+  danger: { fill: "rgb(200 42 48 / .12)", text: "#b3262c" },
+};
+
+/** The seal's words get smaller as there are more of them. */
+const sealSize = (words: string) =>
+  ({ 1: 40, 2: 24 })[Array.from(words).length] ?? 19;
+
+/** The gold (or pewter) coin on the curved edge, with its words. */
+function sealMarkup(words: string, muted: boolean, className = "") {
+  return `<g class="${className}">
+    <g filter="url(#seal-shadow)"><circle cx="${SEAL.cx}" cy="${SEAL.cy}" r="${SEAL.r}" fill="url(#${muted ? "pewter" : "gold"})"/></g>
+    <circle cx="${SEAL.cx}" cy="${SEAL.cy}" r="${SEAL.r - 1}" fill="none" stroke="#fff" stroke-opacity=".55"/>
+    <circle cx="${SEAL.cx}" cy="${SEAL.cy}" r="${SEAL.r - 7}" fill="none" stroke="${muted ? "#7a6f6c" : "#9b1c23"}" stroke-opacity=".16"/>${
+      muted || className
+        ? ""
+        : `<g clip-path="url(#seal-clip)"><rect class="sheen" x="${SEAL.cx - 22}" y="${SEAL.cy - 60}" width="44" height="120" fill="url(#sheen)" transform="rotate(20 ${SEAL.cx} ${SEAL.cy})"/></g>`
+    }
+    <text x="${SEAL.cx}" y="${SEAL.cy + 1}" class="glyph${muted ? " muted" : ""}" style="font-size:${sealSize(words)}px">${escapeXml(words)}</text>
+  </g>`;
+}
+
+/** What a screen reader hears, and what a forum shows if SVG is blocked. */
+function describe(input: ActivityImageInput) {
+  const as = `数据截至 ${clock(input.renderedAt, input.timeZone)}`;
+  if (input.body.kind === "opened")
+    return `${input.body.label} ${input.body.amount} LDC，${input.body.status.text}；${as}`;
+  return `${input.body.text}；${as}`;
+}
+
+/** The 内嵌图 as an SVG document string. */
+export function renderActivityImage(input: ActivityImageInput) {
+  const opened = input.body.kind === "opened";
+  const card = squirclePath(
+    CARD.x,
+    CARD.y,
+    CARD.width,
+    CARD.height,
+    CARD.radius,
+  );
+  const edge = opened ? OPENED : SEALED;
+  const senderName = normalizeText(input.sender, "发红包的人");
+  const titleText = normalizeText(input.title, "红包");
+
+  // On the red: the sender, a short gold rule, the title (one or two lines).
+  const titleLines = wrap(titleText, 28, 340, 2);
+  const lineGap = 38;
+  const titleTop = 176 - ((titleLines.length - 1) * lineGap) / 2;
+  const title = titleLines
+    .map(
+      (line, index) =>
+        `<text x="210" y="${(titleTop + index * lineGap).toFixed(1)}" class="title">${escapeXml(line)}</text>`,
+    )
+    .join("");
+  const sender = wrap(`${senderName}的红包`, 15, 300, 1)[0] ?? "";
+
+  // Opened: the sealed cover lies over the opened one and folds up into it
+  // while its seal pops, as on the page; then the result rises in. The
+  // resting style is the end state, so reduced motion simply shows it.
+  const flap = opened
+    ? `<g class="flap motion">
+      <path d="${coverPath(SEALED)}" fill="url(#red)"/>
+      <path d="${coverPath(SEALED)}" fill="url(#warm)"/>
+      <path d="${rimPath(SEALED)}" fill="none" stroke="#e8c079" stroke-width="3"/>
+    </g>`
+    : "";
+  const lightSweep = opened
+    ? `<g clip-path="url(#cover-clip)"><rect class="sweep motion" x="-150" y="0" width="150" height="380" fill="url(#sweep)"/></g>`
+    : "";
+  const seal =
+    input.seal !== null
+      ? sealMarkup(input.seal, input.muted)
+      : input.body.kind === "opened"
+        ? `${sealMarkup(input.body.opens, false, "pop motion")}
+  <circle class="ring motion" cx="${SEAL.cx}" cy="${SEAL.cy}" r="${SEAL.r}" fill="none" stroke="#e8c079" stroke-width="3"/>`
+        : "";
+
+  // Below the edge: one line, or the viewer's own result. Then, always, the
+  // time the data is from; under it a warning once it may be stale.
+  let below = "";
+  let footY = 476;
+  if (input.body.kind === "line") {
+    below = `<text x="210" y="448" class="line">${escapeXml(input.body.text)}</text>`;
+  } else {
+    const { label, amount, status, at } = input.body;
+    const tone = toneColors[status.tone];
+    const pillWidth = textWidth(status.text, 13) + 24;
+    below = `<text x="210" y="318" class="label rise r1 motion">${escapeXml(label)}</text>
+  <text x="210" y="380" class="amount rise r2 motion"><tspan>+${escapeXml(amount)}</tspan><tspan class="unit" dx="6">LDC</tspan></text>
+  <g class="rise r3 motion">
+    <path d="${squirclePath(210 - pillWidth / 2, 400, pillWidth, 26, 9)}" fill="${tone.fill}"/>
+    <text x="210" y="417.5" class="pill" fill="${tone.text}">${escapeXml(status.text)}</text>
+  </g>
+  <text x="210" y="452" class="when rise r4 motion">${label === "你中奖了" ? "开奖于" : "领取于"} ${escapeXml(dateTime(at, input.timeZone))}</text>`;
+    footY = 474;
+  }
+  // "可能过期" after 10 s, "已过期" after 30 s: CSS delays only, as an image
+  // cannot run scripts.
+  const foot = `<text x="210" y="${footY}" class="foot${opened ? " rise r4 motion" : ""}">数据截至 ${clock(input.renderedAt, input.timeZone)}</text>${
+    input.live
+      ? `
+  <text x="210" y="${footY + 22}" class="stale soft">数据可能过期，打开红包查看最新</text>
+  <text x="210" y="${footY + 22}" class="stale hard">数据已过期，打开红包查看最新</text>`
+      : ""
+  }`;
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${ACTIVITY_IMAGE_WIDTH}" height="${ACTIVITY_IMAGE_HEIGHT}" viewBox="0 0 ${ACTIVITY_IMAGE_WIDTH} ${ACTIVITY_IMAGE_HEIGHT}" role="img" aria-labelledby="hb-title hb-desc">
+  <title id="hb-title">${escapeXml(`${senderName}的红包：${titleText}`)}</title>
+  <desc id="hb-desc">${escapeXml(describe(input))}</desc>
+  <defs>
+    <clipPath id="card"><path d="${card}"/></clipPath>
+    <clipPath id="cover-clip"><path d="${coverPath(OPENED)}"/></clipPath>
+    <clipPath id="seal-clip"><circle cx="${SEAL.cx}" cy="${SEAL.cy}" r="${SEAL.r}"/></clipPath>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fdf6f3"/><stop offset="1" stop-color="#f6e8e4"/>
+    </linearGradient>
+    <linearGradient id="red" gradientUnits="userSpaceOnUse" x1="0" y1="${CARD.y}" x2="0" y2="${SEAL.cy}">
+      <stop offset="0" stop-color="#d93c33"/><stop offset=".62" stop-color="#c82a30"/><stop offset="1" stop-color="#b9212c"/>
+    </linearGradient>
+    <radialGradient id="warm" gradientUnits="userSpaceOnUse" cx="74" cy="${CARD.y}" r="300">
+      <stop offset="0" stop-color="#ffa878" stop-opacity=".26"/><stop offset="1" stop-color="#ffa878" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="gold" cx="35%" cy="30%" r="75%">
+      <stop offset="0" stop-color="#fff7df"/><stop offset=".36" stop-color="#f7dc9a"/><stop offset=".7" stop-color="#e7b862"/><stop offset="1" stop-color="#cf9746"/>
+    </radialGradient>
+    <radialGradient id="pewter" cx="35%" cy="30%" r="75%">
+      <stop offset="0" stop-color="#f7f4f2"/><stop offset=".55" stop-color="#ddd6d2"/><stop offset="1" stop-color="#b9b0ab"/>
+    </radialGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".55"/><stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="sweep" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffecc8" stop-opacity="0"/><stop offset=".5" stop-color="#ffecc8" stop-opacity=".32"/><stop offset="1" stop-color="#ffecc8" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="lift" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="3" stdDeviation="3.5" flood-color="#5a0a14" flood-opacity=".18"/>
+    </filter>
+    <filter id="seal-shadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#5a0a14" flood-opacity=".32"/>
+    </filter>
+    <filter id="muted"><feColorMatrix type="saturate" values=".18"/><feComponentTransfer><feFuncR type="linear" slope=".92"/><feFuncG type="linear" slope=".92"/><feFuncB type="linear" slope=".92"/></feComponentTransfer></filter>
+  </defs>
+  <style>
+    text { font-family: ${SANS}; text-anchor: middle; }
+    .sender { font-size: 15px; fill: rgb(255 236 214 / .8); }
+    .title { font-size: 28px; font-weight: 700; fill: #fff3e2; letter-spacing: .01em; }
+    .glyph { font-weight: 700; fill: #9b1c23; dominant-baseline: central; }
+    .glyph.muted { fill: #7a6f6c; }
+    .line { font-size: 18px; fill: #2a1519; }
+    .label { font-size: 15px; fill: #745c61; }
+    .amount { font-size: 56px; font-weight: 700; fill: #1e8a57; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+    .unit { font-size: 20px; font-weight: 600; }
+    .pill { font-size: 13px; font-weight: 500; }
+    .when, .foot { font-size: 12px; fill: #9a7f85; }
+    .stale { font-size: 12px; opacity: 0; }
+    .soft { fill: #9a5b00; animation: show .3s linear 10s forwards, hide .3s linear 30s forwards; }
+    .hard { fill: #b3262c; animation: show .3s linear 30s forwards; }
+    .code { font-family: ${EMOJI}; font-size: 14px; letter-spacing: 1px; }
+    .sheen { animation: sheen 6.4s ease-in-out 1.2s infinite; transform: translateX(-130px); }
+    /* The opening: resting styles are the end state. */
+    .flap { opacity: 0; transform-origin: 210px ${CARD.y}px; transform: scaleY(${RISE.toFixed(4)}); animation: flap .7s cubic-bezier(.6, 0, .2, 1) .42s both; }
+    .pop { opacity: 0; transform-origin: ${SEAL.cx}px ${SEAL.cy}px; animation: pop .36s linear .16s both; }
+    .ring { opacity: 0; transform-origin: ${SEAL.cx}px ${SEAL.cy}px; animation: ring .46s ease-out .3s both; }
+    .sweep { opacity: 0; animation: sweep .6s cubic-bezier(.2, 0, 0, 1) .34s both; }
+    .rise { animation: rise .36s cubic-bezier(.2, 0, 0, 1) both; }
+    .r1 { animation-delay: .78s; } .r2 { animation-delay: .86s; } .r3 { animation-delay: 1.02s; } .r4 { animation-delay: 1.12s; }
+    @keyframes sheen { 0%, 72% { transform: translateX(-130px); } 92%, 100% { transform: translateX(130px); } }
+    @keyframes flap { 0% { opacity: 1; transform: scaleY(1); } 88% { opacity: 1; transform: scaleY(${RISE.toFixed(4)}); } 100% { opacity: 0; transform: scaleY(${RISE.toFixed(4)}); } }
+    @keyframes pop { 0% { opacity: 1; transform: scale(1); } 40% { opacity: 1; transform: scale(1.12); } 100% { opacity: 0; transform: scale(.5); } }
+    @keyframes ring { from { opacity: .8; transform: scale(.9); } to { opacity: 0; transform: scale(2.4); } }
+    @keyframes sweep { from { opacity: 1; transform: translateX(0); } to { opacity: 1; transform: translateX(570px); } }
+    @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+    @keyframes hide { to { opacity: 0; } }
+    @keyframes show { to { opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) { .sheen, .motion { animation: none; } .sheen { opacity: 0; } }
+  </style>
+  <g filter="url(#lift)">
+    <path d="${card}" fill="url(#paper)"/>
+  </g>
+  <g clip-path="url(#card)">
+    <g${input.muted ? ' filter="url(#muted)"' : ""}>
+      <path d="${coverPath(edge)}" fill="url(#red)"/>
+      <path d="${coverPath(edge)}" fill="url(#warm)"/>
+      <path d="${rimPath(edge)}" fill="none" stroke="#e8c079" stroke-width="3"/>
+      ${flap}
+      ${lightSweep}
+      <text x="210" y="92" class="sender">${escapeXml(sender)}</text>
+      <path d="M198 110H222" stroke="#e8c079" stroke-opacity=".7" stroke-width="2" stroke-linecap="round"/>
+      ${title}
+    </g>
+  </g>
+  ${seal}
+  ${below}
+  ${foot}
+  <text x="210" y="534" class="code">${escapeXml(input.code)}</text>
 </svg>`;
 }
 
-function imageDescription(
-  input: ActivityImagePresentation & {
-    sender: string;
-    state: ActivityImageRenderState;
-    timeZone: string;
-  },
-) {
-  const parts = [
-    input.sender ? `${input.sender} 的活动红包图片` : "活动红包图片",
-  ];
-  if (input.publicFallback || input.state === "neutral")
-    return parts[0] ?? "活动红包图片";
-
-  if (input.state === "claimed") {
-    parts.push(`状态：${input.statusText ?? "已领取"}`);
-    parts.push(`金额：${displayAmountText(input.amount)}`);
-    const claimedAt = safeDate(input.claimedAt, null);
-    if (claimedAt)
-      parts.push(
-        `领取时间：${snapshotDisplay(claimedAt, input.timeZone, true)}`,
-      );
-    return parts.join("；");
-  }
-
-  const stateText =
-    input.statusText ??
-    statusForActive(input.state) ??
-    input.sealLabel ??
-    stateLabel(input.state);
-  if (stateText) parts.push(`状态：${stateText}`);
-  if (input.quantityText) parts.push(`数量：${input.quantityText}`);
-  return parts.join("；");
-}
-
-function stateLabel(state: ActivityImageRenderState) {
-  if (state === "ended") return "已结束";
-  if (state === "not_won") return "未中奖";
-  if (state === "error") return "读取失败";
-  if (state === "unavailable") return "不可用";
-  if (state === "loading") return "读取中";
-  if (state === "pending") return "处理中";
-  if (state === "drawing") return "开奖中";
-  if (state === "registered") return "已报名，等待开奖";
-  if (state === "active") return "查看";
-  return null;
-}
-
-function renderBody(
-  input: ActivityImagePresentation & {
-    title: string;
-    sender: string;
-    state: ActivityImageRenderState;
-    timeZone: string;
-    updatedAt: Date;
-    ageSeconds: number;
-    animated: boolean;
-    scope: string;
-  },
-) {
-  if (input.publicFallback || input.state === "neutral")
-    return renderNeutral(input);
-  if (input.state === "claimed") {
-    if (input.revealPhase === "closed")
-      return renderActive({
-        ...input,
-        state: "active",
-        quantityText: input.statusText ?? "领取结果已确认",
-      });
-    return renderClaimed({
-      ...input,
-      animated: input.revealPhase === "open" ? false : input.animated,
-    });
-  }
-  if (
-    input.state === "ended" ||
-    input.state === "not_won" ||
-    input.state === "error" ||
-    input.state === "unavailable"
-  )
-    return renderEnded(input);
-  return renderActive(input);
-}
-
-function renderDefs(scope: string) {
-  return `<defs>
-    <clipPath id="${scope}-packetClip"><rect x="10" y="8" width="400" height="544" rx="28"/></clipPath>
-    <clipPath id="${scope}-sealClip"><circle cx="210" cy="388" r="58"/></clipPath>
-    <filter id="${scope}-softShadow" x="-10%" y="-10%" width="120%" height="125%"><feDropShadow dx="0" dy="5" stdDeviation="6" flood-color="#4d3027" flood-opacity=".14"/></filter>
-  </defs>`;
-}
-
-function renderActive(
-  input: ActivityImagePresentation & {
-    title: string;
-    sender: string;
-    timeZone: string;
-    updatedAt: Date;
-    ageSeconds: number;
-    animated: boolean;
-    scope: string;
-  },
-) {
-  const text = input.quantityText ?? statusForActive(input.state);
-  const sealSize =
-    Array.from(input.sealLabel).length > 1 ? " seal-text-compact" : "";
-  return `${renderActiveStyles(input.scope, input.ageSeconds, input.animated)}
-  <g class="packet" filter="url(#${input.scope}-softShadow)">
-    <rect x="10" y="8" width="400" height="544" rx="28" fill="#c94b37"/>
-    <path d="${UPPER_COVER}" fill="#d65b43"/>
-    <path d="${COVER_SEAM}" fill="none" stroke="#a83f30" stroke-opacity=".35" stroke-width="1.5"/>
-    ${renderAging(input.scope)}
-    <text x="210" y="125" class="sender">${escapeXml(input.sender)}</text>
-    ${renderTitleLines(input.title)}
-    <text x="210" y="262" class="freshness-warning">数据可能过期，打开活动查看最新状态</text>
-    <text x="210" y="262" class="stale-prompt">数据已过期，打开活动查看最新状态</text>
-    ${renderGoldParticles(input.animated)}
-    <g class="seal">
-      <circle cx="210" cy="388" r="58" fill="#dfbd7c" stroke="#8b6435" stroke-opacity=".24" stroke-width="1"/>
-      ${renderSealWear(input.scope)}
-      <text x="210" y="388" class="seal-text${sealSize}">${escapeXml(input.sealLabel)}</text>
-    </g>
-    ${text ? `<text x="210" y="495" class="data-row">${escapeXml(text)}</text>` : ""}
-    <text x="210" y="522" class="snapshot-time">数据截至 ${escapeXml(snapshotDisplay(input.updatedAt, input.timeZone))}</text>
-  </g>`;
-}
-
-function renderNeutral(
-  input: ActivityImagePresentation & {
-    title: string;
-    sender: string;
-    scope: string;
-  },
-) {
-  const sealSize =
-    Array.from(input.sealLabel).length > 1 ? " seal-text-compact" : "";
-  return `<g class="packet neutral-packet" filter="url(#${input.scope}-softShadow)">
-    <rect x="10" y="8" width="400" height="544" rx="28" fill="#c94b37"/>
-    <path d="${UPPER_COVER}" fill="#d65b43"/>
-    <path d="${COVER_SEAM}" fill="none" stroke="#a83f30" stroke-opacity=".35" stroke-width="1.5"/>
-    ${input.sender ? `<text x="210" y="125" class="sender">${escapeXml(input.sender)}</text>` : ""}
-    ${input.title ? renderTitleLines(input.title) : ""}
-    <g class="seal">
-      <circle cx="210" cy="388" r="58" fill="#dfbd7c" stroke="#8b6435" stroke-opacity=".24" stroke-width="1"/>
-      <text x="210" y="388" class="seal-text${sealSize}">${escapeXml(input.sealLabel)}</text>
-    </g>
-  </g>`;
-}
-
-function renderEnded(
-  input: ActivityImagePresentation & {
-    title: string;
-    sender: string;
-    state: ActivityImageRenderState;
-    scope: string;
-  },
-) {
-  return `<g class="packet ended-packet" filter="url(#${input.scope}-softShadow)">
-    <rect x="10" y="8" width="400" height="544" rx="28" fill="#b88c7d"/>
-    <path d="${UPPER_COVER}" fill="#c39989"/>
-    <path d="${COVER_SEAM}" fill="none" stroke="#a27767" stroke-opacity=".3" stroke-width="1.5"/>
-    <text x="210" y="125" class="sender ended-sender">${escapeXml(input.sender)}</text>
-    ${renderTitleLines(input.title, { className: "title-line ended-title", startY: 190 })}
-    <g class="ended-stamp">
-      <rect x="105" y="353" width="210" height="64" rx="12" fill="#e2cba7"/>
-      <text x="210" y="385" class="ended-stamp-text">${escapeXml(input.sealLabel)}</text>
-    </g>
-  </g>`;
-}
-
-function renderClaimed(
-  input: ActivityImagePresentation & {
-    title: string;
-    sender: string;
-    timeZone: string;
-    animated: boolean;
-    scope: string;
-  },
-) {
-  const amount = clampText(displayAmountText(input.amount), 18);
-  const units = Array.from(amount).reduce(
-    (sum, char) => sum + (/[\u0020-\u007e]/.test(char) ? 0.65 : 1),
-    0,
+/** No such 红包 (or not open yet), or a read that failed. */
+export function renderUnavailableActivityImage(kind: "missing" | "error") {
+  const card = squirclePath(
+    CARD.x,
+    CARD.y,
+    CARD.width,
+    CARD.height,
+    CARD.radius,
   );
-  const amountSize = Math.min(48, 306 / Math.max(1, units)).toFixed(2);
-  const claimedAt = safeDate(input.claimedAt, null);
-  const claimTime = claimedAt
-    ? `领取于 ${snapshotDisplay(claimedAt, input.timeZone, true)}`
-    : "领取时间未记录";
-  return `${input.animated ? renderClaimedStyles(input.scope) : ""}
-  <g class="packet claimed-packet" filter="url(#${input.scope}-softShadow)">
-    <g clip-path="url(#${input.scope}-packetClip)">
-      <rect class="claimed-background" x="10" y="8" width="400" height="544" rx="28" fill="#f6efdf"/>
-      <g class="claimed-result">
-        <text x="210" y="260" class="prize" style="font-size:${amountSize}px">${escapeXml(amount)}</text>
-        <text x="210" y="303" class="claimed-status">${escapeXml(input.statusText ?? "已领取")}</text>
-        <text x="210" y="524" class="claimed-time"${claimedAt ? ` data-claimed-at="${claimedAt.toISOString()}"` : ""}>${escapeXml(claimTime)}</text>
-      </g>
-      <g class="open-upper" transform="translate(0 -196)"><path d="${UPPER_COVER}" fill="#d65b43"/><path d="${COVER_SEAM}" fill="none" stroke="#a83f30" stroke-opacity=".35" stroke-width="1.5"/></g>
-      ${
-        input.animated
-          ? `<g class="open-lower" aria-hidden="true"><path d="${LOWER_COVER}" fill="#c94b37"/><circle cx="210" cy="388" r="58" fill="#dfbd7c" stroke="#8b6435" stroke-opacity=".24" stroke-width="1"/><text x="210" y="388" class="seal-text">开</text></g>`
-          : ""
-      }
-      ${renderClaimedHeader(input.title, input.sender, input.animated)}
-    </g>
-  </g>`;
-}
-
-function renderTitleLines(
-  title: string,
-  options: { className?: string; startY?: number; lineHeight?: number } = {},
-) {
-  const lines = splitTitle(title);
-  const {
-    className = "title-line",
-    startY = lines.length === 1 ? 200 : 180,
-    lineHeight = 38,
-  } = options;
-  return lines
-    .map(
-      (line, index) =>
-        `<text x="210" y="${startY + index * lineHeight}" class="${className}">${escapeXml(line)}</text>`,
-    )
-    .join("\n    ");
-}
-
-function renderClaimedHeader(title: string, sender: string, animated: boolean) {
-  const lines = splitTitle(title);
-  const item = (
-    text: string,
-    className: string,
-    sourceY: number,
-    finalY: number,
-  ) =>
-    `<g class="claimed-header-item" transform="translate(210 ${finalY}) scale(.7)"${
-      animated ? ` style="--source-y:${sourceY}px;--final-y:${finalY}px"` : ""
-    }><text x="0" y="0" class="${className}">${escapeXml(text)}</text></g>`;
-  return `${item(sender, "sender claimed-sender", 125, 70)}
-      ${lines
-        .map((line, index) =>
-          item(
-            line,
-            "title-line claimed-title",
-            lines.length === 1 ? 200 : 180 + index * 38,
-            lines.length === 1 ? 120 : 105 + index * 24,
-          ),
-        )
-        .join("\n      ")}`;
-}
-
-function renderActiveStyles(
-  scope: string,
-  ageSeconds: number,
-  animated: boolean,
-) {
-  const root = scopedRoot(scope);
-  const entrance = animated
-    ? `
-    ${root} .packet, ${root} .sender, ${root} .title-line, ${root} .seal, ${root} .data-row, ${root} .snapshot-time { opacity: 0; animation: ${scope}-fade-in 720ms ease-out forwards; }
-    ${root} .sender, ${root} .title-line { animation-delay: 120ms; }
-    ${root} .seal { animation-delay: 260ms; }
-    ${root} .data-row, ${root} .snapshot-time { animation-delay: 360ms; }
-    ${root} .gold-particle { opacity: 0; animation: ${scope}-gold-dust 2100ms ease-out forwards; }
-    @keyframes ${scope}-fade-in { from { opacity: 0; } to { opacity: 1; } }
-    @keyframes ${scope}-gold-dust { 0% { opacity: 0; } 18% { opacity: .95; } 100% { opacity: 0; } }`
-    : "";
-  const aging =
-    ageSeconds < 60
-      ? `animation-duration:60s;animation-delay:-${ageSeconds}s;animation-timing-function:linear;animation-fill-mode:both;animation-iteration-count:1;`
-      : "animation:none;";
-  const warning =
-    ageSeconds >= 30
-      ? "opacity:0;"
-      : ageSeconds >= 10
-        ? `opacity:1;animation:${scope}-warning ${30 - ageSeconds}s steps(1,end) 0s forwards;`
-        : `opacity:0;animation:${scope}-warning 20s steps(1,end) ${10 - ageSeconds}s forwards;`;
-  const stale =
-    ageSeconds >= 30
-      ? "opacity:1;"
-      : `opacity:0;animation:${scope}-stale 1ms step-end ${30 - ageSeconds}s forwards;`;
-  return `<style>
-    ${entrance}
-    ${root} .aging-layer{${aging}}
-    ${root} .patina-wash{opacity:.5;${ageSeconds < 60 ? `animation-name:${scope}-patina;` : ""}}
-    ${root} .edge-wear{opacity:.55;${ageSeconds < 60 ? `animation-name:${scope}-edge;` : ""}}
-    ${root} .surface-wear{opacity:.44;${ageSeconds < 60 ? `animation-name:${scope}-surface;` : ""}}
-    ${root} .seal-wear{opacity:.6;${ageSeconds < 60 ? `animation-name:${scope}-seal-wear;` : ""}}
-    ${root} .freshness-warning{${warning}}
-    ${root} .stale-prompt{${stale}}
-    @keyframes ${scope}-patina{0%,16.666667%{opacity:0}50%{opacity:.3}100%{opacity:.5}}
-    @keyframes ${scope}-edge{0%,16.666667%{opacity:0}50%{opacity:.36}100%{opacity:.55}}
-    @keyframes ${scope}-surface{0%,16.666667%{opacity:0}50%{opacity:.28}100%{opacity:.44}}
-    @keyframes ${scope}-seal-wear{0%,16.666667%{opacity:0}50%{opacity:.4}100%{opacity:.6}}
-    @keyframes ${scope}-warning{from{opacity:1}to{opacity:0}}
-    @keyframes ${scope}-stale{from{opacity:1}to{opacity:1}}
-  </style>`;
-}
-
-function renderClaimedStyles(scope: string) {
-  const root = scopedRoot(scope);
-  return `<style>
-    ${root} .open-upper{transform:translateY(-196px);animation:${scope}-upper-open 1200ms cubic-bezier(.2,.75,.2,1) 250ms both}
-    ${root} .open-lower{transform:translateY(300px);animation:${scope}-lower-open 1200ms cubic-bezier(.2,.75,.2,1) 250ms both}
-    ${root} .claimed-header-item{transform:translate(210px,var(--final-y)) scale(.7);animation:${scope}-header-open 1200ms cubic-bezier(.2,.75,.2,1) 250ms both}
-    ${root} .claimed-result{opacity:1;animation:${scope}-prize-reveal 650ms ease-out 1150ms both}
-    @keyframes ${scope}-upper-open{from{transform:translateY(0)}to{transform:translateY(-196px)}}
-    @keyframes ${scope}-lower-open{from{transform:translateY(0)}to{transform:translateY(300px)}}
-    @keyframes ${scope}-header-open{from{transform:translate(210px,var(--source-y)) scale(1)}to{transform:translate(210px,var(--final-y)) scale(.7)}}
-    @keyframes ${scope}-prize-reveal{from{opacity:0}to{opacity:1}}
-  </style>`;
-}
-
-function renderSharedStyles(scope: string) {
-  const root = scopedRoot(scope);
-  return `<style>
-    ${root} text{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;text-anchor:middle;letter-spacing:0}
-    ${root} .sender{fill:#f5d6a5;font-size:20px;font-weight:520}
-    ${root} .title-line{fill:#f9e2b8;font-size:28px;font-weight:540}
-    ${root} .seal-text{fill:#73502b;font-size:46px;font-weight:620}
-    ${root} .seal-text-compact{font-size:24px;font-weight:560}
-    ${root} .seal-text,${root} .ended-stamp-text{dominant-baseline:central}
-    ${root} .data-row{fill:#f4d5a0;font-size:18px;font-weight:520}
-    ${root} .snapshot-time{fill:#e8bd84;font-size:13px}
-    ${root} .freshness-warning,${root} .stale-prompt{fill:#fae5bf;font-size:14px}
-    ${root} .ended-sender,${root} .ended-title{fill:#fff0dc}
-    ${root} .ended-stamp-text{fill:#795b46;font-size:30px;font-weight:640}
-    ${root} .prize{fill:#168045;font-weight:720}
-    ${root} .claimed-status{fill:#7b5b2b;font-size:16px;font-weight:520}
-    ${root} .claimed-time{fill:#928678;font-size:13px;font-weight:400}
-  </style>`;
-}
-
-function scopedRoot(scope: string) {
-  return `svg[data-scope="${scope}"]`;
-}
-
-function displayAmountText(value: unknown) {
-  const text = normalizeText(value, "已分配 LDC");
-  if (/^[+-]/.test(text) || text === "已分配 LDC") return text;
-  return `+${text}`;
-}
-
-function renderAging(scope: string) {
-  return `<g clip-path="url(#${scope}-packetClip)" aria-hidden="true">
-      <rect class="aging-layer patina-wash" x="-24" y="-24" width="468" height="620" fill="#d0b5a9"/>
-      <g class="aging-layer edge-wear" fill="none" stroke="#f4d5b9" stroke-linecap="round"><rect x="11" y="9" width="398" height="542" rx="27" stroke-width="2"/><path d="M24 66v28m3 113v19m367-136v21m-3 189v32M38 533h22m63 5h17m215-5h25M24 470v24m373-43v31" stroke-width="1"/></g>
-      <g class="aging-layer surface-wear" fill="none" stroke="#f3d0ad" stroke-width="1.25" stroke-linecap="round"><path d="m47 58 9-2m22 31 6-1m243-25 12-2m32 64 8-1M42 163l7-2m313 48 10-1M64 238l8-1m253-5 7-2M40 287l12-2m316 27 9-1M58 348l7-2m298 30 11-2M40 414l8-1m23 26 12-2m266-8 7-1M75 517l8-2m210 5 13-1m39-22 7-1"/></g>
-    </g>`;
-}
-
-function renderSealWear(scope: string) {
-  return `<g clip-path="url(#${scope}-sealClip)" aria-hidden="true"><g class="aging-layer seal-wear" fill="none" stroke="#f4dfb5" stroke-width="1" stroke-linecap="round"><path transform="translate(0 16)" d="m164 351 10-5m-8 12 5-3m73 57 9-5m-16 10 5-3m-47-82 7-2"/></g></g>`;
-}
-
-function renderGoldParticles(animated: boolean) {
-  if (!animated) return "";
-  const particles = [
-    [119, 322, 2, 0],
-    [151, 312, 2.5, 80],
-    [182, 302, 2, 180],
-    [236, 303, 2.5, 280],
-    [271, 321, 2, 380],
-    [290, 356, 2.5, 480],
-    [135, 388, 2, 580],
-    [263, 403, 2, 680],
-    [198, 312, 1.6, 760],
-    [220, 415, 1.8, 840],
-  ];
-  return `<g class="gold-particles" transform="translate(0 16)" fill="#f7dc9a" aria-hidden="true">${particles
-    .map(
-      ([x, y, r, delay]) =>
-        `<circle cx="${x}" cy="${y}" r="${r}" class="gold-particle" style="animation-delay:${delay}ms"/>`,
-    )
-    .join("")}</g>`;
-}
-
-function quantityDisplay(activity: PublicActivity) {
-  const quantity = activity.quantity;
-  const draw = Boolean(activity.draw);
-  if (quantity.mode === "hidden") return null;
-  if (draw) {
-    const registered = activity.draw?.registeredCount;
-    if (quantity.mode === "exact" && typeof registered === "number")
-      return `已报名 ${registered} 人`;
-    return "限时开奖";
-  }
-  if (quantity.mode === "exact") return `剩余 ${quantity.remaining} 份`;
-  if (quantity.mode === "availability")
-    return quantity.available ? "仍可参与" : "名额已满";
-  return (
-    {
-      plenty: "名额充足",
-      limited: "名额有限",
-      low: "名额不多",
-      empty: "名额已满",
-    } satisfies Record<typeof quantity.level, string>
-  )[quantity.level];
-}
-
-function paymentStatusText(status: ActivityImagePaymentStatus) {
-  if (status === "confirmed") return "已发放";
-  if (status === "attention") return "需要关注";
-  if (status === "reconciling") return "正在核对原订单";
-  if (status === "pending" || status === "sending" || status === "waiting")
-    return "付款处理中";
-  return "付款处理中";
-}
-
-function safeGeneratedUrl(value: string) {
-  try {
-    const url = new URL(value);
-    if (url.protocol === "https:" || url.protocol === "http:") {
-      const match = /^\/e\/([^/]+)(\/live\.svg)?$/.exec(url.pathname);
-      if (match?.[1]) {
-        const emoji = decodeURIComponent(match[1]);
-        // Only decode a validated activity code; URL delimiters stay encoded.
-        if (decodeActivityEmoji(emoji))
-          return `${url.origin}/e/${emoji}${match[2] ?? ""}${url.search}${url.hash}`;
-      }
-      return url.toString();
-    }
-  } catch {
-    // fall through
-  }
-  throw new TypeError("Invalid generated activity image URL");
-}
-
-function statusForActive(state: ActivityImageRenderState) {
-  if (state === "registered") return "已报名，等待开奖";
-  if (state === "drawing") return "开奖中";
-  if (state === "loading") return "读取中";
-  if (state === "pending") return "处理中";
-  return null;
-}
-
-function dataAttributes(date: Date, timeZone: string) {
-  return ` data-updated-at="${date.toISOString()}" data-expires-at="${new Date(
-    date.getTime() + 30_000,
-  ).toISOString()}" data-timezone="${escapeXml(timeZone)}"`;
-}
-
-function snapshotDisplay(date: Date, timeZone: string, includeDate = false) {
-  const formatter = new Intl.DateTimeFormat("en-GB", {
-    timeZone,
-    ...(includeDate
-      ? { year: "numeric", month: "2-digit", day: "2-digit" }
-      : {}),
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-    timeZoneName: "shortOffset",
-  });
-  const parts = Object.fromEntries(
-    formatter.formatToParts(date).map(({ type, value }) => [type, value]),
-  );
-  const zoneLabel =
-    timeZone === "Asia/Shanghai"
-      ? "北京时间"
-      : String(parts.timeZoneName ?? "").replace("GMT", "UTC");
-  const prefix = includeDate
-    ? `${parts.year}-${parts.month}-${parts.day} `
-    : "";
-  return `${prefix}${parts.hour}:${parts.minute}:${parts.second} · ${zoneLabel}`;
-}
-
-function splitTitle(value: string) {
-  const text = clampText(normalizeText(value, "未命名活动"), 22);
-  const codePoints = Array.from(text);
-  if (codePoints.length <= 11) return [text];
-  const firstLine = codePoints.slice(0, 11).join("");
-  const punctuationBreak = Math.max(
-    firstLine.lastIndexOf("，"),
-    firstLine.lastIndexOf(","),
-    firstLine.lastIndexOf("、"),
-    firstLine.lastIndexOf(" "),
-  );
-  const breakIndex =
-    punctuationBreak >= 5 && codePoints.length - punctuationBreak - 1 <= 11
-      ? punctuationBreak + 1
-      : 11;
-  return [
-    codePoints.slice(0, breakIndex).join(""),
-    codePoints.slice(breakIndex).join(""),
-  ].filter(Boolean);
+  const text =
+    kind === "missing"
+      ? "红包不存在，或链接已经失效"
+      : "图片读取失败，请稍后刷新";
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${ACTIVITY_IMAGE_WIDTH}" height="${ACTIVITY_IMAGE_HEIGHT}" viewBox="0 0 ${ACTIVITY_IMAGE_WIDTH} ${ACTIVITY_IMAGE_HEIGHT}" role="img" aria-label="${text}">
+  <style>text { font-family: ${SANS}; text-anchor: middle; font-size: 16px; fill: #745c61; }</style>
+  <path d="${card}" fill="#f6e8e4"/>
+  <text x="210" y="280">${text}</text>
+</svg>`;
 }
 
 function normalizeText(value: unknown, fallback: string) {
@@ -787,13 +599,6 @@ function normalizeText(value: unknown, fallback: string) {
     .replace(/\s+/g, " ")
     .trim();
   return text || fallback;
-}
-
-function clampText(value: string, maxLength: number) {
-  const codePoints = Array.from(value);
-  return codePoints.length > maxLength
-    ? `${codePoints.slice(0, maxLength - 1).join("")}…`
-    : value;
 }
 
 function escapeXml(value: unknown) {
@@ -821,15 +626,4 @@ function stripInvalidXmlChars(value: string) {
     }
   }
   return output;
-}
-
-function safeDate(value: unknown, fallback: Date | null): Date | null {
-  if (value === null || value === undefined) return fallback;
-  const date = new Date(value as string | Date);
-  return Number.isFinite(date.getTime()) ? date : fallback;
-}
-
-function scopeId(value: string) {
-  const compact = value.replace(/[^A-Za-z0-9_-]/g, "-").slice(0, 48);
-  return `rp-${compact || "image"}`;
 }

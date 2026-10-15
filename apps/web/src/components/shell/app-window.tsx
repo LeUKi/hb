@@ -5,6 +5,8 @@ import { useRef, useSyncExternalStore } from "react";
 import { useBootDone } from "../../lib/boot";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { windowDialogsAtom } from "../../lib/store";
+import { NoteDialog } from "../hongbao/note-dialog";
+import { RosterDialog } from "../hongbao/roster-dialog";
 import { Omnibox } from "../omnibox/omnibox";
 import {
   editLinesAtom,
@@ -160,6 +162,8 @@ export function AppWindow() {
           </motion.div>
           <AccountCard />
           <AuthErrorWatcher />
+          <RosterDialog />
+          <NoteDialog />
           <KeyboardLayer />
         </div>
       </div>

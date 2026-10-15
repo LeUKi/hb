@@ -806,7 +806,7 @@ describe("LDC activity management", () => {
     expect(await changedRequest.json()).toEqual({
       error: {
         code: "ACTIVITY_CONFLICT",
-        message: "同一创建请求不能更换活动内容",
+        message: "同一创建请求不能更换红包内容",
       },
     });
     expect(
@@ -1215,7 +1215,7 @@ describe("LDC activity management", () => {
     expect(await staleUpdate.json()).toEqual({
       error: {
         code: "ACTIVITY_VERSION_CONFLICT",
-        message: "活动已更新，请刷新后重试",
+        message: "红包已更新，请刷新后重试",
       },
     });
   });
@@ -1654,29 +1654,32 @@ describe("LDC activity management", () => {
     }
   });
 
-  it("derives all recipient fields from the one recipient-list switch", async () => {
-    for (const showRecipientList of [false, true]) {
-      const draft = await create(
-        input({
-          showRecipientList,
-          showRecipientUsername: !showRecipientList,
-          showRecipientTime: !showRecipientList,
-          showRecipientAmount: !showRecipientList,
-        }),
-      );
-      expect(draft.config).toMatchObject({
-        showRecipientList,
-        showRecipientUsername: showRecipientList,
-        showRecipientTime: showRecipientList,
-        showRecipientAmount: showRecipientList,
-      });
-      const publicActivity = await publicView((await open(draft)).id);
-      expect(publicActivity).toMatchObject({
-        showRecipientList,
-        showRecipientUsername: showRecipientList,
-        showRecipientTime: showRecipientList,
-        showRecipientAmount: showRecipientList,
-      });
+  it("drops the retired recipient-list switches: the roster is always public", async () => {
+    const retired = [
+      "showRecipientList",
+      "showRecipientUsername",
+      "showRecipientTime",
+      "showRecipientAmount",
+    ] as const;
+    const draft = await create(
+      input({
+        showRecipientList: false,
+        showRecipientUsername: false,
+        showRecipientTime: false,
+        showRecipientAmount: false,
+      }),
+    );
+    const opened = await open(draft);
+    const stored = await env.DB.prepare(
+      "SELECT config FROM activities WHERE id=?",
+    )
+      .bind(opened.id)
+      .first<{ config: string }>();
+    const publicActivity = await publicView(opened.id);
+    for (const key of retired) {
+      expect(draft.config[key]).toBeUndefined();
+      expect(JSON.parse(stored?.config ?? "{}")).not.toHaveProperty(key);
+      expect(publicActivity).not.toHaveProperty(key);
     }
   });
 

@@ -3,17 +3,17 @@ import type { MerchantPaymentDetail } from "@hb/contracts";
 export function publicationReason(reason: string | null | undefined) {
   if (!reason) return null;
   const labels: Record<string, string> = {
-    REAL_LDC_NOT_ENABLED: "当前环境尚未启用真实 LDC 活动开放。",
-    TIMED_DRAW_NOT_ENABLED: "当前环境尚未启用限时开奖活动开放。",
-    MERCHANT_LEGACY: "活动关联的是历史商户，请明确改用当前商户后再开放。",
-    MERCHANT_CREDENTIALS_UNVERIFIED: "开放活动时将自动核验商户凭证。",
-    MERCHANT_CREDENTIALS_CHECKING: "正在自动核验商户凭证，活动仍可保存为草稿。",
+    REAL_LDC_NOT_ENABLED: "当前环境尚未开放真实 LDC 红包。",
+    TIMED_DRAW_NOT_ENABLED: "当前环境尚未启用限时开奖。",
+    MERCHANT_LEGACY: "红包关联的是历史商户，请改用当前商户后再开放。",
+    MERCHANT_CREDENTIALS_UNVERIFIED: "开放红包时将自动核验商户凭证。",
+    MERCHANT_CREDENTIALS_CHECKING: "正在自动核验商户凭证，红包仍可保存为草稿。",
     MERCHANT_CREDENTIALS_REJECTED:
       "商户凭证未通过认证，请更新 Client ID 对应的密钥。",
     MERCHANT_CREDENTIALS_UNAVAILABLE:
       "暂时无法核验商户凭证，请稍后再尝试开放。",
   };
-  return labels[reason] ?? "暂不能开放活动，请检查商户配置。";
+  return labels[reason] ?? "暂不能开放红包，请检查商户配置。";
 }
 
 export function paymentAttemptOutcome(outcome: string) {

@@ -40,9 +40,6 @@ function card(id: string, title: string): DiscoveryCard {
       unitAmount: "0.10",
       count: 5,
     },
-    showRecipientList: true,
-    showRecipientUsername: true,
-    showRecipientTime: true,
     myClaim: null,
   };
 }

@@ -100,7 +100,7 @@ export async function assertAttemptAllowed(
     continuation.discoveryId &&
     (!matches || (row.selectedActivityId !== null && !alreadyBound))
   )
-    activityConflict("兑换发现与目标活动、口令或提交标识不匹配");
+    activityConflict("查找结果与目标红包、口令或提交标识不匹配");
   if (
     matches &&
     row.origin === "home" &&

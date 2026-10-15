@@ -198,7 +198,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
         !this.ctx.id.equals(this.env.ACTIVITY_DO.idFromName(id))
       ) {
         return Response.json(
-          { error: { code: "INVALID_OBJECT", message: "活动标识不匹配" } },
+          { error: { code: "INVALID_OBJECT", message: "红包标识不匹配" } },
           { status: 400 },
         );
       }
@@ -238,7 +238,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
           if (operation === "create" || operation === "update") {
             const authorId = request.headers.get("X-HB-Actor-ID");
             if (!authorId)
-              throw new ActivityError(400, "INVALID_ACTIVITY", "活动作者无效");
+              throw new ActivityError(400, "INVALID_ACTIVITY", "红包作者无效");
             if (
               operation === "create" &&
               !this.ctx.id.equals(
@@ -255,7 +255,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
                 {
                   error: {
                     code: "INVALID_ACTIVITY",
-                    message: "请检查活动配置",
+                    message: "请检查红包配置",
                     issues: parsed.error.issues.map((issue) => ({
                       path: issue.path.join("."),
                       message: issue.message,
@@ -276,7 +276,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
             );
           }
           if (!body || typeof body !== "object" || Array.isArray(body))
-            throw new ActivityError(400, "INVALID_ACTIVITY", "活动请求无效");
+            throw new ActivityError(400, "INVALID_ACTIVITY", "红包请求无效");
           const { authorId, userId, ...input } = body as Record<
             string,
             unknown
@@ -384,7 +384,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
             );
           }
           if (typeof authorId !== "string")
-            throw new ActivityError(400, "INVALID_ACTIVITY", "活动作者无效");
+            throw new ActivityError(400, "INVALID_ACTIVITY", "红包作者无效");
           if (operation === "delete") {
             const parsed = deleteActivitySchema.safeParse(input);
             if (!parsed.success)
@@ -413,7 +413,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
           } else {
             const parsed = openActivitySchema.safeParse(input);
             if (!parsed.success)
-              throw new ActivityError(400, "INVALID_ACTIVITY", "活动配置无效");
+              throw new ActivityError(400, "INVALID_ACTIVITY", "红包配置无效");
             const check = await prepareActivityOpening(this.env, id, authorId);
             if (check) this.ctx.waitUntil(check());
             activity = await openActivity(
@@ -458,7 +458,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
             {
               error: {
                 code: "INTERNAL_SERVER_ERROR",
-                message: "活动保存失败，请重试",
+                message: "红包保存失败，请重试",
               },
             },
             { status: 500, headers: { "Cache-Control": "no-store" } },

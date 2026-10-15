@@ -9,7 +9,7 @@ import {
   type PublicRecipientList,
   type RecipientSpeedTitle,
 } from "@hb/contracts";
-import { and, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, or } from "drizzle-orm";
 import { createDb } from "../db/client";
 import {
   activities,
@@ -59,6 +59,16 @@ function beforeCursor(cursor?: Cursor) {
     ? or(
         lt(claims.claimedAt, cursor.time),
         and(eq(claims.claimedAt, cursor.time), lt(claims.id, cursor.id)),
+      )
+    : undefined;
+}
+
+/** The public roster reads oldest first, so its pages go forward. */
+function afterCursor(cursor?: Cursor) {
+  return cursor
+    ? or(
+        gt(claims.claimedAt, cursor.time),
+        and(eq(claims.claimedAt, cursor.time), gt(claims.id, cursor.id)),
       )
     : undefined;
 }
@@ -317,10 +327,11 @@ export async function listAuthorClaims(
     })
     .from(claims)
     .innerJoin(users, eq(users.id, claims.userId))
+    // Oldest first, like the public roster it adds to (redesign 06 §3).
     .where(
-      and(eq(claims.activityId, activityId), beforeCursor(parseCursor(cursor))),
+      and(eq(claims.activityId, activityId), afterCursor(parseCursor(cursor))),
     )
-    .orderBy(desc(claims.claimedAt), desc(claims.id))
+    .orderBy(asc(claims.claimedAt), asc(claims.id))
     .limit(21);
   const page = rows.slice(0, 20);
   const last = page.at(-1);
@@ -356,9 +367,6 @@ export async function listPublicRecipients(
     (activity.openedAt === null && activity.authorId !== viewerId)
   )
     activityNotFound();
-  const config = JSON.parse(activity.config) as ActivityInput;
-  if (!config.showRecipientList)
-    return { enabled: false, items: [], nextCursor: null };
   // Claims can be allocated while a timed draw settles; publish only its completed results.
   if (
     activity.drawState &&
@@ -366,19 +374,17 @@ export async function listPublicRecipients(
     activity.drawState !== "empty"
   )
     return {
-      enabled: true,
       items: [],
       nextCursor: null,
       titles: { highestClaimIds: [], lowestClaimIds: [] },
     };
-  const titles = await publicRecipientTitles(env, activity, config);
-  const speedTitles = config.showRecipientTime
-    ? await recipientSpeedTitles(env, activity)
-    : new Map<string, RecipientSpeedTitle>();
-  let before: Cursor | undefined;
+  // The roster is always public (06 §2), oldest first (06 §3).
+  const titles = await publicRecipientTitles(env, activity);
+  const speedTitles = await recipientSpeedTitles(env, activity);
+  let after: Cursor | undefined;
   if (cursor) {
     try {
-      before = parseCursor(
+      after = parseCursor(
         await decryptString(atob(cursor), env, `recipients:${activityId}`),
       );
     } catch {
@@ -396,29 +402,24 @@ export async function listPublicRecipients(
     .from(claims)
     .innerJoin(users, eq(users.id, claims.userId))
     .leftJoin(paymentTasks, eq(paymentTasks.claimId, claims.id))
-    .where(and(eq(claims.activityId, activityId), beforeCursor(before)))
-    .orderBy(desc(claims.claimedAt), desc(claims.id))
+    .where(and(eq(claims.activityId, activityId), afterCursor(after)))
+    .orderBy(asc(claims.claimedAt), asc(claims.id))
     .limit(21);
   const page = rows.slice(0, 20);
   const last = page.at(-1);
   return {
-    enabled: true,
     titles,
     items: page.map(
       ({ claim, username, displayName, avatarUrl, amountMinor }) => ({
         id: claim.id,
-        username: config.showRecipientUsername ? username : "",
-        displayName: config.showRecipientUsername ? displayName : "匿名用户",
-        avatarUrl: config.showRecipientUsername ? avatarUrl : null,
-        ...(activity.rewardType === "ldc" &&
-        config.showRecipientAmount &&
-        amountMinor !== null
+        username,
+        displayName,
+        avatarUrl,
+        ...(activity.rewardType === "ldc" && amountMinor !== null
           ? { amount: formatAmount(amountMinor) }
           : {}),
-        ...(config.showRecipientTime
-          ? { claimedAt: new Date(claim.claimedAt).toISOString() }
-          : {}),
-        ...(config.showRecipientTime && speedTitles.has(claim.id)
+        claimedAt: new Date(claim.claimedAt).toISOString(),
+        ...(speedTitles.has(claim.id)
           ? { speedTitle: speedTitles.get(claim.id) }
           : {}),
         ...(titles.highestClaimIds.includes(claim.id)
@@ -472,18 +473,12 @@ async function recipientSpeedTitles(
 async function publicRecipientTitles(
   env: ApiBindings,
   activity: ActivityRow,
-  config: ActivityInput,
 ): Promise<NonNullable<PublicRecipientList["titles"]>> {
   const empty = {
     highestClaimIds: [] as string[],
     lowestClaimIds: [] as string[],
   };
-  if (
-    activity.rewardType !== "ldc" ||
-    !config.showRecipientList ||
-    !config.showRecipientAmount
-  )
-    return empty;
+  if (activity.rewardType !== "ldc") return empty;
   const bounds =
     await env.DB.prepare(`SELECT COUNT(*) AS count,MIN(p.amount_minor) AS minimum,MAX(p.amount_minor) AS maximum
     FROM claims c JOIN payment_tasks p ON p.claim_id=c.id AND p.source='claim' WHERE c.activity_id=?`)

@@ -262,12 +262,13 @@ export function useClaim(userId: string, id: string) {
   });
 }
 
-export function useClaimReward(userId: string, csrfToken: string, id: string) {
+/** Claim, or sign up for a timed draw, in one 红包 (the id travels with it). */
+export function useClaimReward(userId: string, csrfToken: string) {
   const queryClient = useQueryClient();
   const account = useAccountSession(userId, "session");
   return useMutation({
     gcTime: 0,
-    onMutate: async (input) => ({
+    onMutate: async ({ input }: { id: string; input: ClaimActivityInput }) => ({
       identity: account.captureIdentity(),
       ticket:
         activityToolsEnabled && input.participationMode !== "direct"
@@ -279,14 +280,20 @@ export function useClaimReward(userId: string, csrfToken: string, id: string) {
             )
           : null,
     }),
-    mutationFn: async (json: ClaimActivityInput) =>
+    mutationFn: async ({
+      id,
+      input,
+    }: {
+      id: string;
+      input: ClaimActivityInput;
+    }) =>
       readResponse<ClaimResult>(
         await api.api.activities[":id"].claim.$post(
-          { param: { id }, json },
+          { param: { id }, json: input },
           { headers: { "X-CSRF-Token": csrfToken } },
         ),
       ),
-    onSuccess: async (result, _variables, context) => {
+    onSuccess: async (result, { id, input: _variables }, context) => {
       const identity = context?.identity;
       if (!account.isCurrentIdentity(identity)) return;
       const matched = passwordMatchResult(result);
@@ -322,7 +329,7 @@ export function useClaimReward(userId: string, csrfToken: string, id: string) {
           queryKey: ["password-private", userId, id],
         });
     },
-    onError: (error, _variables, context) => {
+    onError: (error, { input: _variables }, context) => {
       const identity = context?.identity;
       if (!account.isCurrentIdentity(identity)) return;
       if (_variables.participationMode !== "direct" && context?.ticket)

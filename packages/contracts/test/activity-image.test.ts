@@ -1,19 +1,23 @@
 import { describe, expect, it } from "vitest";
 import {
-  activityImagePresentation,
+  type ActivityImageViewerState,
+  activityImageInput,
   activityImageUrl,
   createActivityImageEmbed,
   encodeActivityEmoji,
   isImageTimeZone,
   type PublicActivity,
   renderActivityImage,
+  renderUnavailableActivityImage,
 } from "../src";
 
-const now = "2026-10-13T08:00:00.000Z";
+const id = "550e8400-e29b-41d4-a716-446655440000";
+const code = encodeActivityEmoji(id);
+const renderedAt = new Date("2026-10-13T08:00:00.000Z");
 
 function activity(extra: Partial<PublicActivity> = {}): PublicActivity {
   return {
-    id: "550e8400-e29b-41d4-a716-446655440000",
+    id,
     title: "红包 <script>alert(1)</script>",
     rewardType: "ldc",
     participationMode: "password",
@@ -22,12 +26,12 @@ function activity(extra: Partial<PublicActivity> = {}): PublicActivity {
       id: "user-1",
       username: "alice",
       displayName: "Alice & Bob",
-      avatarUrl: null,
+      avatarUrl: "https://cdn.example.com/avatars/alice.png",
     },
     forceDedicated: false,
     topicUrl: null,
-    openedAt: now,
-    deadlineAt: null,
+    openedAt: renderedAt.toISOString(),
+    deadlineAt: "2026-10-14T08:00:00.000Z",
     quantity: { mode: "exact", total: 3, claimed: 1, remaining: 2 },
     reward: {
       mode: "fixed",
@@ -35,246 +39,256 @@ function activity(extra: Partial<PublicActivity> = {}): PublicActivity {
       unitAmount: "1.00",
       count: 3,
     },
-    showRecipientList: true,
-    showRecipientUsername: true,
-    showRecipientTime: true,
-    beforeInfo: "",
+    beforeInfo: "SECRET-NOTE",
     paymentMode: "simulation",
     ...extra,
   };
 }
 
-describe("activity image renderer", () => {
-  it("renders active, public fallback and claimed states without demo data", () => {
-    const active = renderActivityImage(
-      activityImagePresentation({
-        activity: activity(),
-        viewer: { kind: "eligible", action: "claim" },
-        updatedAt: now,
-        now,
-        instanceId: "one",
-      }),
-    );
-    expect(active).toContain('data-state="active"');
-    expect(active).not.toContain("prefers-reduced-motion");
-    expect(active).toContain("剩余 2 份");
-    expect(active).toContain(">开<");
-    expect(active).not.toContain("未登录");
-    expect(active).not.toContain("18.88");
-    expect(active).toContain("红包 &lt;script&gt;alert(1)&lt;/script&gt;");
-    expect(active).toContain(
-      "Alice &amp; Bob 的活动红包图片；状态：开；数量：剩余 2 份",
-    );
+const draw = (state: NonNullable<PublicActivity["draw"]>["state"]) =>
+  ({
+    state,
+    deadlineAt: "2026-10-14T08:00:00.000Z",
+    closedAt: null,
+    reason: null,
+    registeredCount: 4,
+    winnerCount: null,
+  }) satisfies PublicActivity["draw"];
 
-    const fallback = renderActivityImage(
-      activityImagePresentation({
-        activity: activity(),
-        publicFallback: true,
-        updatedAt: now,
-        now,
-        instanceId: "fallback",
-      }),
-    );
-    expect(fallback).toContain('data-state="neutral"');
-    expect(fallback).toContain(">查看活动<");
-    expect(fallback).not.toContain("剩余");
-    expect(fallback).not.toContain("数据截至");
-    expect(fallback).not.toContain("data-updated-at");
-    expect(fallback).not.toContain("数据已过期");
+function image(
+  viewer: ActivityImageViewerState,
+  extra: Partial<PublicActivity> = {},
+  timeZone?: string,
+) {
+  return renderActivityImage(
+    activityImageInput({
+      activity: activity(extra),
+      viewer,
+      renderedAt,
+      timeZone,
+    }),
+  );
+}
 
-    const claimed = renderActivityImage(
-      activityImagePresentation({
-        activity: activity(),
-        viewer: {
-          kind: "claimed",
-          amount: "1.00",
-          claimedAt: now,
-          paymentStatus: "reconciling",
+/** The seal's words, or null when there is no seal. */
+const sealOf = (svg: string) =>
+  /class="glyph[^"]*"[^>]*>([^<]+)</.exec(svg)?.[1] ?? null;
+
+describe("activity image", () => {
+  it("draws a running 红包 for a guest and for a signed-in viewer", () => {
+    const guest = image({ kind: "public" });
+    expect(sealOf(guest)).toBe("查看");
+    expect(guest).toContain("剩余 2 份");
+    expect(guest).toContain("Alice &amp; Bob的红包");
+    expect(guest).toContain("&lt;script&gt;");
+    expect(guest).not.toContain("<script>");
+    expect(guest).toContain(`class="code">${code}</text>`);
+    expect(guest).toContain("数据可能过期，打开红包查看最新");
+    expect(guest).not.toContain('filter="url(#muted)"');
+    expect(sealOf(image({ kind: "eligible", action: "claim" }))).toBe("开");
+    expect(
+      sealOf(
+        image(
+          { kind: "eligible", action: "register" },
+          { draw: draw("waiting") },
+        ),
+      ),
+    ).toBe("报");
+    expect(image({ kind: "public" }, { draw: draw("waiting") })).toContain(
+      "已报名 4 人",
+    );
+    expect(
+      image(
+        { kind: "public" },
+        { quantity: { mode: "fuzzy", level: "limited" } },
+      ),
+    ).toContain("余量有限");
+    expect(
+      image(
+        { kind: "public" },
+        {
+          quantity: { mode: "fuzzy", level: "plenty" },
+          draw: { ...draw("waiting"), registeredCount: null },
         },
-        updatedAt: now,
-        now,
-        instanceId: "claimed",
-      }),
-    );
-    expect(claimed).toContain(
-      "M10 326c72 40 138.6 60 200 60s128-20 200-60v202c0 13.3-10.7 24-24 24H34c-13.3 0-24-10.7-24-24Z",
-    );
-    expect(claimed).toContain('fill="#f6efdf"');
-    expect(claimed).toContain(".prize{fill:#168045");
-    expect(claimed).toContain("+1.00 LDC");
-    expect(claimed).toContain("正在核对原订单");
-    expect(claimed).toContain("1200ms cubic-bezier(.2,.75,.2,1) 250ms");
-    expect(claimed).not.toContain("prefers-reduced-motion");
-    expect(claimed).toContain("650ms ease-out 1150ms");
-    expect(claimed).toContain("领取于");
-    expect(claimed).toContain(
-      "Alice &amp; Bob 的活动红包图片；状态：正在核对原订单；金额：+1.00 LDC；领取时间：2026-10-13 16:00:00 · 北京时间",
-    );
+      ),
+    ).toContain("限时开奖");
   });
 
-  it("renders draw states and isolates animation ids", () => {
-    const draw = activity({
-      draw: {
-        state: "waiting",
-        deadlineAt: now,
-        closedAt: null,
-        reason: null,
-        registeredCount: 4,
-        winnerCount: null,
-      },
-      quantity: { mode: "exact", total: 8, claimed: 5, remaining: 3 },
+  it("opens for the viewer who took part, with the payment and when", () => {
+    const claimed = image({
+      kind: "claimed",
+      amount: "1.00",
+      claimedAt: "2026-10-13T07:59:30.000Z",
+      paymentStatus: "pending",
     });
-    const registered = renderActivityImage(
-      activityImagePresentation({
-        activity: draw,
-        viewer: { kind: "registered", registeredAt: now },
-        updatedAt: now,
-        now,
-        instanceId: "draw-a",
+    // No seal at rest: only the one that pops as it opens.
+    expect(claimed.match(/class="glyph/g)).toHaveLength(1);
+    expect(claimed).toMatch(/<g class="pop motion">/);
+    expect(claimed).toContain("你已领取");
+    expect(claimed).toContain("<tspan>+1.00</tspan>");
+    expect(claimed).toContain("付款处理中");
+    expect(claimed).toContain("领取于 10月13日 15:59:30");
+    expect(claimed).toContain('class="flap motion"');
+    expect(claimed).toContain("数据可能过期");
+
+    const confirmed = image({
+      kind: "claimed",
+      amount: "1.00",
+      claimedAt: "2026-10-13T07:59:30.000Z",
+      paymentStatus: "confirmed",
+    });
+    expect(confirmed).toContain("已发放");
+    expect(confirmed).not.toContain("数据可能过期");
+    expect(
+      image({
+        kind: "claimed",
+        amount: "1.00",
+        claimedAt: renderedAt,
+        paymentStatus: "reconciling",
       }),
-    );
-    const drawing = renderActivityImage(
-      activityImagePresentation({
-        activity: draw,
-        viewer: { kind: "drawing" },
-        updatedAt: now,
-        now,
-        instanceId: "draw-b",
+    ).toContain("正在核对原订单");
+    expect(
+      image({
+        kind: "claimed",
+        amount: "1.00",
+        claimedAt: renderedAt,
+        paymentStatus: "attention",
       }),
+    ).toContain("需要关注");
+
+    const won = image(
+      { kind: "claimed", amount: "2.50", claimedAt: renderedAt },
+      { draw: draw("completed"), status: "ended" },
     );
+    expect(won).toContain("你中奖了");
+    expect(won).toContain("开奖于 10月13日 16:00:00");
+    expect(won).toMatch(/class="glyph"[^>]*>报</);
+  });
+
+  it("draws waiting, the draw and the end", () => {
+    const registered = image({ kind: "registered" }, { draw: draw("waiting") });
+    expect(sealOf(registered)).toBe("已报名");
     expect(registered).toContain("已报名，等待开奖");
-    expect(drawing).toContain("开奖中");
-    const publicDraw = renderActivityImage(
-      activityImagePresentation({
-        activity: draw,
-        viewer: { kind: "eligible", action: "register" },
-        updatedAt: now,
-        now,
-        instanceId: "draw-public",
-      }),
+    const drawing = image({ kind: "drawing" }, { draw: draw("settling") });
+    expect(sealOf(drawing)).toBe("开奖中");
+    expect(drawing).toContain("正在开奖");
+    expect(sealOf(image({ kind: "public" }, { draw: draw("settling") }))).toBe(
+      "开奖中",
     );
-    expect(publicDraw).toContain("已报名 4 人");
-    expect(publicDraw).not.toContain("已报名 5 / 8");
 
-    const drawSummary = draw.draw;
-    expect(drawSummary).toBeTruthy();
-    const settlingPublic = renderActivityImage(
-      activityImagePresentation({
-        activity: activity({
-          ...draw,
-          status: "ended",
-          draw: { ...drawSummary, state: "settling" },
-        }),
-        viewer: { kind: "public" },
-        updatedAt: now,
-        now,
-        instanceId: "draw-settling",
-      }),
+    const lost = image(
+      { kind: "not_won" },
+      { draw: draw("completed"), status: "ended" },
     );
-    expect(settlingPublic).toContain('data-state="drawing"');
-    expect(settlingPublic).toContain("开奖中");
-    expect(settlingPublic).not.toContain("已结束");
-    expect(registered).toContain("@keyframes rp-draw-a-fade-in");
-    expect(drawing).toContain("@keyframes rp-draw-b-fade-in");
-    expect(drawing).not.toContain("rp-draw-a-fade-in");
+    expect(sealOf(lost)).toBe("未中");
+    expect(lost).toContain("本次未中奖");
+    expect(lost).toContain('filter="url(#muted)"');
+    expect(lost).not.toContain("数据可能过期");
+
+    const soldOut = {
+      status: "ended" as const,
+      quantity: { mode: "exact" as const, total: 3, claimed: 3, remaining: 0 },
+    };
+    for (const viewer of [{ kind: "public" }, { kind: "ended" }] as const) {
+      const ended = image(viewer, soldOut);
+      expect(sealOf(ended)).toBe("完");
+      expect(ended).toContain("红包已领完");
+      expect(ended).toContain('filter="url(#muted)"');
+    }
+    expect(
+      image(
+        { kind: "ended" },
+        { status: "ended", deadlineAt: "2026-10-13T07:00:00.000Z" },
+      ),
+    ).toContain("红包已过期");
+    expect(image({ kind: "ended" }, { status: "ended" })).toContain(
+      "红包已提前结束",
+    );
+    expect(
+      image({ kind: "public" }, { status: "ended", draw: draw("empty") }),
+    ).toContain("无人报名");
+    expect(
+      image({ kind: "public" }, { status: "ended", draw: draw("completed") }),
+    ).toContain("已开奖");
   });
 
-  it("scopes every inline style to the SVG instance", () => {
-    const svg = renderActivityImage(
-      activityImagePresentation({
-        activity: activity(),
-        viewer: { kind: "eligible", action: "claim" },
-        updatedAt: now,
-        now,
-        instanceId: "scope-one",
-      }),
+  it("writes times in the viewer's zone and never draws private or outside things", () => {
+    expect(image({ kind: "public" })).toContain("数据截至 16:00:00");
+    expect(image({ kind: "public" }, {}, "UTC")).toContain("数据截至 08:00:00");
+    expect(image({ kind: "public" }, {}, "+08:00")).toContain(
+      "数据截至 16:00:00",
     );
-    expect(svg).toContain('data-scope="rp-scope-one"');
-    expect(svg).toContain('svg[data-scope="rp-scope-one"] .packet');
-    expect(svg).toContain("@keyframes rp-scope-one-fade-in");
-    expect(svg).not.toMatch(
-      /^[ \t]*\.(packet|sender|title-line|seal|data-row|snapshot-time|gold-particle|open-upper|claimed-result)\s*[,{]/m,
-    );
-    expect(svg).not.toMatch(/<style>\s*text\{/);
-  });
-
-  it("keeps a blank neutral placeholder free of invented metadata", () => {
-    const svg = renderActivityImage({
-      title: "",
-      sender: "",
-      state: "neutral",
-      sealLabel: "",
-      updatedAt: new Date(0),
-      instanceId: "home-neutral",
+    const svg = image({
+      kind: "claimed",
+      amount: "1.00",
+      claimedAt: renderedAt,
     });
-    expect(svg).toContain('data-state="neutral"');
-    expect(svg).not.toContain("未命名活动");
-    expect(svg).not.toContain("活动发起人");
-    expect(svg).not.toContain("data-updated-at");
-    expect(svg).not.toContain("数据截至");
-    expect(svg).toContain("活动红包图片");
-    expect(svg).not.toContain("状态：");
+    expect(svg).not.toContain("SECRET-NOTE");
+    expect(svg).not.toContain("cdn.example.com");
+    expect(svg).not.toContain("3.00");
+    expect(svg).not.toMatch(/<script|<image|<foreignObject|href=/);
+    expect(svg.match(/https?:\/\/[^"]+/g)).toEqual([
+      "http://www.w3.org/2000/svg",
+    ]);
   });
 
-  it("validates timezone and creates embed code", () => {
+  it("draws a missing 红包 and a failed read", () => {
+    expect(renderUnavailableActivityImage("missing")).toContain(
+      "红包不存在，或链接已经失效",
+    );
+    expect(renderUnavailableActivityImage("error")).toContain(
+      "图片读取失败，请稍后刷新",
+    );
+  });
+});
+
+describe("activity image address and embed code", () => {
+  it("validates time zones", () => {
     expect(isImageTimeZone("Asia/Shanghai")).toBe(true);
     expect(isImageTimeZone("UTC")).toBe(true);
     expect(isImageTimeZone("America/New_York")).toBe(true);
     expect(isImageTimeZone("Etc/GMT+8")).toBe(true);
     expect(isImageTimeZone("+08:00")).toBe(false);
     expect(isImageTimeZone("<script>")).toBe(false);
-    expect(
-      activityImageUrl(
-        "550e8400-e29b-41d4-a716-446655440000",
-        "https://hb.example.com",
-        {
-          timeZone: "UTC",
-          fallback: true,
-        },
-      ),
-    ).toBe(
-      `https://hb.example.com/e/${encodeActivityEmoji("550e8400-e29b-41d4-a716-446655440000")}/live.svg?fallback=public&tz=UTC`,
-    );
-    const emoji = encodeActivityEmoji("550e8400-e29b-41d4-a716-446655440000");
-    const href = `https://hb.example.com/e/${emoji}`;
-    const embed = createActivityImageEmbed({
-      imageHref: new URL(`${href}/live.svg`).href,
-      title: "红包",
-      sender: "Alice",
-    });
-    expect(embed).toContain("<picture>");
-    expect(embed).toContain('type="image/svg+xml"');
-    expect(embed).not.toContain("prefers-reduced-motion");
-    expect(embed).not.toContain("motion=reduced");
-    expect(embed.match(/<source /g)).toHaveLength(1);
-    expect(embed).toContain(" 1x");
-    expect(embed).toContain(
-      '<img width="420" height="560" alt="Alice 的活动红包：红包">',
-    );
-    expect(embed).not.toMatch(/<img\b[^>]*\bsrc(?:set)?\s*=/);
-    expect(embed).not.toContain("fallback=public");
-    expect(embed).toContain('alt="Alice 的活动红包：红包"');
-    expect(embed).toMatch(/^<center>\n {2}<picture>/);
-    expect(embed).toMatch(/<\/picture>\n<\/center>$/);
-    expect(embed).not.toMatch(/<\/?a(?:\s|>)/);
-    expect(embed).toContain(`srcset="${href}/live.svg 1x"`);
-    expect(embed).not.toContain(encodeURIComponent(emoji));
   });
 
-  it("keeps reserved URL escapes and HTML attributes safe in readable embeds", () => {
-    const href = `https://hb.example.com/e/${encodeActivityEmoji("550e8400-e29b-41d4-a716-446655440000")}`;
-    const input = {
-      imageHref: `${href}/live.svg?tz=Etc%2FGMT%2B8&x=%26%2F%22%20`,
-      title: '"><script>alert(1)</script>',
-      sender: 'Alice & "Bob"',
-    };
-    const embed = createActivityImageEmbed(input);
-    expect(embed).toContain("?tz=Etc%2FGMT%2B8&amp;x=%26%2F%22%20 1x");
-    expect(embed).not.toContain("<script>");
-    expect(embed).toContain("&quot;&gt;&lt;script&gt;");
-    expect(embed).toContain("Alice &amp; &quot;Bob&quot;");
+  it("keeps the emoji visible in the address", () => {
+    expect(activityImageUrl(id, "https://hb.example.com")).toBe(
+      `https://hb.example.com/🧧/${code}/🖼️.svg`,
+    );
+    expect(
+      activityImageUrl(id, "https://hb.example.com/any/path", {
+        timeZone: "Etc/GMT+8",
+      }),
+    ).toBe(`https://hb.example.com/🧧/${code}/🖼️.svg?tz=Etc%2FGMT%2B8`);
+    expect(() => activityImageUrl(id, "ftp://hb.example.com")).toThrow(
+      TypeError,
+    );
     expect(() =>
-      createActivityImageEmbed({ ...input, imageHref: "javascript:alert(1)" }),
+      activityImageUrl(id, "https://user:secret@hb.example.com"),
     ).toThrow(TypeError);
+  });
+
+  it("writes the forum code on one line with a safe alt", () => {
+    expect(
+      createActivityImageEmbed({
+        activityId: id,
+        origin: "https://hb.example.com",
+        sender: "小满",
+        title: "周末红包",
+      }),
+    ).toBe(
+      `<center><picture><source type="image/svg+xml" srcset="https://hb.example.com/🧧/${code}/🖼️.svg 1x"><img width="420" height="560" alt="小满的红包：周末红包"></picture></center>`,
+    );
+    const escaped = createActivityImageEmbed({
+      activityId: id,
+      origin: "https://hb.example.com",
+      sender: 'Alice & "Bob"',
+      title: '"><script>alert(1)</script>',
+    });
+    expect(escaped).not.toContain("<script>");
+    expect(escaped).toContain(
+      'alt="Alice &amp; &quot;Bob&quot;的红包：&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"',
+    );
   });
 });

@@ -13,7 +13,7 @@ export function assertParticipationMode(
     throw new ActivityError(
       409,
       "PARTICIPATION_MODE_MISMATCH",
-      "活动参与方式已更新，请刷新活动页后再参与",
+      "红包的参与方式已更新，请刷新红包页后再参与",
     );
 }
 

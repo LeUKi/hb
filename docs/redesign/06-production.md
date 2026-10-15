@@ -57,13 +57,13 @@
 - **移除名单开关**：
   - 生产有四个名单开关：`showRecipientList`、`showRecipientUsername`、`showRecipientTime`、`showRecipientAmount`（`packages/contracts/src/index.ts`），表单把它们当成一个“展示领取名单”一起切换，接口也强制它们相同；
   - 全部移除：表单开关、接口里的隐藏分支（`claim-queries.ts`、`registration-queries.ts` 返回 `enabled: false` 的地方）、前端对缓存名单的隐藏处理、页面上隐藏名单入口的判断、“作者未公开名单。”文案。
-- **旧红包**（用户决定）：以前选了不公开名单或匿名名单的，全部改为公开并显示昵称。迁移时把 `activities.config` 里的四个开关都写成 `true`（或直接删掉这几个键，读取时默认公开）。
+- **旧红包**（用户决定）：以前选了不公开名单或匿名名单的，全部改为公开并显示昵称。不迁移数据：读取时不再看这四个键，保存时不再写入；契约里留作可选字段，旧的创建请求重试时摘要不变。
 - **称号**：手气王 / 手气亡原来只在公开金额时计算，名单一律公开后总会计算。
 
 ## 3 名单弹窗
 
-- **顺序**：生产按领取时间倒序，改为先领的在上并带序号（[05](05-hongbao.md) 第 7 节）；接口的游标分页方向跟着改（或在前端反转后分页加载）。
-- **用时**：新增 `sinceOpen(ms)`（格式见 [05](05-hongbao.md) 第 7 节，原型 `lib/roster-time.ts`）放进 contracts；现有的 `formatClaimSeconds` 去掉尾零、只显示到 120 秒，两者不能混用。
+- **顺序**：生产按领取时间倒序，改为先领的在上并带序号（[05](05-hongbao.md) 第 7 节）；公开名单、报名名单和发红包的人看的名单，接口都按时间正序分页。
+- **用时**：`sinceOpen(ms)`（格式见 [05](05-hongbao.md) 第 7 节）在网页的 `lib/roster-time.ts`，只有名单弹窗用；旧的 `formatClaimSeconds`（去尾零、只到 120 秒）随旧界面删除。
 - **每人一行**：去掉第二行的绝对时间（改为悬停显示）。
 
 ## 4 口令与数量
@@ -88,16 +88,18 @@
 
 - **地址**（规则见 [03](03-commands-routes.md) 第 7 节）：
   - 红包地址统一为 `/🧧/<表情码>`，旧的 `/e/<表情码>`、`/activities/<UUID>` 显示未找到；`/🧧/<UUID>` 跳到表情码地址；
-  - `activityShareUrl` 改为生成新地址；
+  - 复制出去的地址都保留表情原样（不是百分号编码）：`activityShareUrl` 生成 `/🧧/<表情码>`，内嵌代码里的图片地址也一样；
   - 兑换结果从起始页的浮层改成 `/🔑/<结果编号>` 页面：结果编号就是兑换记录的编号，列表从 `GET /redemptions/:id` 读（`global_redemptions` 本来就持久、只限本人）；帖子页 `/topics/$topicId?postNumber=` 改为 `/💬/<帖子>/<楼>`。两个结果页的行为（选中即带口令领取、帖子只有一个红包时直接打开）见 [07](07-pages.md) 第 11 节；
-  - 内嵌图（地址见 [05](05-hongbao.md) 第 6 节）：接口加这几条路由，网页 Worker 转发百分号编码后的路径，`run_worker_first` 加上这几种写法；删掉 `/e/<码>/live.svg`、`/activity-images/<UUID>.svg` 两条接口路由（用户决定），已发出的旧帖子里的图会失效。
+  - 内嵌图（地址见 [05](05-hongbao.md) 第 6 节）：接口的路由是 `/api/🧧/:code/:file`，`file` 只认四种写法；网页 Worker 按百分号编码后的路径（十六进制大小写都认）转发到 `/api` 下的同一路径；`run_worker_first` 也按编码后的路径匹配（Cloudflare 用编码后的 `pathname` 比对），加上 `/%F0%9F%A7%A7/*/%F0%9F%96%BC*` 和它的小写写法。在新标签页直接打开图片地址时跳到红包页。删掉 `/e/<码>/live.svg`、`/activity-images/<UUID>.svg` 两条接口路由（用户决定），已发出的旧帖子里的图会失效。
 - **用词**：全站文案与测试里的“活动”改为“红包”，“直接参与”改为“无需口令”，`/square` 叫红包广场（见 [05](05-hongbao.md) 第 1 节）。印章用简体“开 / 报 / 预 / 完”，红包页和内嵌图一样（用户决定）。
 - **组件**：`envelope.tsx`、`claim-entry.tsx`、`public-roster.tsx`、`password-panel.tsx`、`activity-share.tsx` 换成新组件。红包页不再有口令输入框，口令走带作用域的指令框（[02](02-shell.md) 第 4 节）。
-- **内嵌图重画**（见 [05](05-hongbao.md) 第 6 节）：信息分级沿用生产的 `activityImagePresentation`，画法换成原型 `lib/hongbao-image.ts`：
+- **内嵌图重画**（见 [05](05-hongbao.md) 第 6 节）：信息分级沿用生产（`activityImageInput`，按图片 Cookie 认人），画法换成原型 `lib/hongbao-image.ts`，都在 `packages/contracts/src/activity-image.ts`：
   - 过期提示另起一行，不再替换“数据截至”，文案里的“活动”改为“红包”；
   - 打开的图播开包动画，取代原来的“一次性开封动画”；
   - 底部写表情码，不写品牌；去掉做旧效果；
-  - `createActivityImageEmbed` 生成新地址，`alt` 改为“小满的红包：标题”。
+  - 时间按看图的人的时区偏好写（图片偏好 Cookie，其次 `?tz=`，默认北京时间），不写时区名；
+  - 去掉 `?fallback=public` 的公开降级图；红包不存在或没开放时画“红包不存在，或链接已经失效”；
+  - `createActivityImageEmbed` 生成新地址，一行写完，`alt` 改为“小满的红包：标题”。
 - **分享菜单**：生产的“分享活动”菜单换成吸顶的“分享”下拉（[05](05-hongbao.md) 第 5 节），内嵌代码直接复制、不再弹窗；去掉“复制分享文案”（用户决定）；“复制口令 N”换成“链接与口令 N”，标题、链接和口令三行一起复制。
 - **数据截至**：只留在内嵌图里（静态 SVG 不能自己更新）；红包页上不写，页面里要及时的数据会定时刷新（用户决定）。
 

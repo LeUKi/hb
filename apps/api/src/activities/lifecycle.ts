@@ -35,15 +35,14 @@ export async function endActivity(
   version: number,
 ) {
   const row = await ownedActivity(env, activityId, authorId);
-  if (row.openedAt === null)
-    invalidActivity("准备中的活动尚未开放，不能提前结束");
+  if (row.openedAt === null) invalidActivity("草稿尚未开放，不能提前结束");
   if (activityStatus(row) !== "active") {
     await refreshActivityLifecycle(env, activityId);
     return getManagedActivity(env, activityId, authorId);
   }
   if (row.version !== version) activityConflict();
   if (row.claimedCount !== 0 || row.registeredCount !== 0)
-    invalidActivity("已有用户领取或报名，不能提前结束活动");
+    invalidActivity("已有人领取或报名，不能提前结束");
   try {
     await env.DB.batch([
       activityWriteGuard(env.DB, activityId, authorId, version),
@@ -60,7 +59,7 @@ export async function endActivity(
       return getManagedActivity(env, activityId, authorId);
     }
     if (current.claimedCount !== 0 || current.registeredCount !== 0)
-      invalidActivity("已有用户领取或报名，不能提前结束活动");
+      invalidActivity("已有人领取或报名，不能提前结束");
     if (current.version !== version) activityConflict();
     throw error;
   }

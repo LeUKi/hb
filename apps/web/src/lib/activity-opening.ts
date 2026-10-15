@@ -30,7 +30,7 @@ export function useActivityOpening(userId: string, csrfToken: string) {
   useEffect(() => () => controller.current?.abort(), []);
 
   async function open(activity: ManagedActivity) {
-    if (controller.current) throw new Error("活动正在开放，请稍候。");
+    if (controller.current) throw new Error("红包正在开放，请稍候。");
     const operation = new AbortController();
     controller.current = operation;
     const { signal } = operation;
@@ -86,14 +86,14 @@ export function useActivityOpening(userId: string, csrfToken: string) {
           activity.config.rewardType === "ldc" &&
           current.config.merchantId !== activity.config.merchantId)
       )
-        throw new Error("活动已修改，请检查活动配置后重新开放。");
+        throw new Error("红包已修改，请检查配置后重新开放。");
       if (current.openedAt) {
         if (current.version !== activity.version + 1)
-          throw new Error("活动已修改，请检查活动配置后重新开放。");
+          throw new Error("红包已修改，请检查配置后重新开放。");
         return current;
       }
       if (current.version !== activity.version)
-        throw new Error("活动已修改，请检查活动配置后重新开放。");
+        throw new Error("红包已修改，请检查配置后重新开放。");
       return current;
     };
     async function remember(opened: ManagedActivity) {

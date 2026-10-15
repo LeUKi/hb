@@ -540,7 +540,7 @@ describe("timed LDC registration and draw lifecycle", () => {
     expect(await response.json()).toEqual({
       error: {
         code: "INTERNAL_SERVER_ERROR",
-        message: "活动保存失败，请重试",
+        message: "红包保存失败，请重试",
       },
     });
   });

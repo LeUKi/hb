@@ -461,8 +461,9 @@
       --hb-arrive: none;
     }
   }
-  /* A 说明 rendered from Markdown (发红包 · 预览). */
-  .md-preview {
+  /* A sender's note rendered from Markdown: 说明, 附言, 结束说明, and the
+     preview on 发红包. */
+  :is(.md-preview, .md) {
     display: grid;
     gap: 0.5rem;
     font-size: 0.9375rem;
@@ -470,31 +471,70 @@
     color: var(--color-ink);
     overflow-wrap: anywhere;
   }
-  .md-preview :where(ul) {
+  :is(.md-preview, .md) :where(ul) {
     list-style: disc;
     padding-left: 1.25rem;
   }
-  .md-preview :where(ol) {
+  :is(.md-preview, .md) :where(ol) {
     list-style: decimal;
     padding-left: 1.25rem;
   }
-  .md-preview :where(a) {
+  :is(.md-preview, .md) :where(a) {
     color: var(--color-accent-ink);
     text-decoration: underline;
     text-underline-offset: 2px;
   }
-  .md-preview :where(code) {
+  :is(.md-preview, .md) :where(code) {
     font-family: var(--font-mono);
     font-size: 0.875em;
     color: var(--color-ink-2);
   }
-  .md-preview :where(blockquote) {
+  :is(.md-preview, .md) :where(blockquote) {
     border-left: 2px solid var(--color-line-strong);
     padding-left: 0.75rem;
     color: var(--color-ink-2);
   }
-  .md-preview :where(h1, h2, h3, h4) {
+  :is(.md-preview, .md) :where(h1, h2, h3, h4) {
     font-weight: 600;
+  }
+  :is(.md-preview, .md) :where(.md-table) {
+    max-width: 100%;
+    overflow-x: auto;
+    outline-offset: 2px;
+  }
+  :is(.md-preview, .md) :where(table) {
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+  :is(.md-preview, .md) :where(th, td) {
+    border: 1px solid var(--color-line-strong);
+    padding: 0.25rem 0.5rem;
+    text-align: left;
+  }
+  /* The cover quotes its 说明: open before the first block, close after
+     the last. */
+  .hb-cover-note-md > :first-child::before {
+    content: "“";
+  }
+  .hb-cover-note-md > :last-child::after {
+    content: "”";
+  }
+  /* On the 红包's red: cream text, cream links with an underline (06 §7). */
+  .md-red {
+    color: var(--color-cream);
+  }
+  .md-red :where(a) {
+    color: var(--color-cream);
+    text-decoration-color: rgb(255 243 226 / 0.6);
+  }
+  .md-red :where(code, blockquote) {
+    color: var(--color-cream-2);
+  }
+  .md-red :where(blockquote) {
+    border-left-color: rgb(255 243 226 / 0.35);
+  }
+  .md-red :where(th, td) {
+    border-color: rgb(255 243 226 / 0.3);
   }
   /* Locked (开放后不能修改) or read-only: flat, no hover, still readable. */
   .field:has(input:read-only),

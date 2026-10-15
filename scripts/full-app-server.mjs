@@ -155,7 +155,12 @@ async function main() {
             directory: join(temporary, "client"),
             binding: "ASSETS",
             routerConfig: { has_user_worker: true },
-            run_worker_first: ["/api", "/api/*", "/e/*"],
+            run_worker_first: [
+              "/api",
+              "/api/*",
+              "/%F0%9F%A7%A7/*/%F0%9F%96%BC*",
+              "/%f0%9f%a7%a7/*/%f0%9f%96%bc*",
+            ],
             assetConfig: { not_found_handling: "single-page-application" },
           },
         },
@@ -265,7 +270,7 @@ async function main() {
           "Cache-Control": "no-store",
         });
         response.end(
-          `<!doctype html><meta charset="utf-8"><title>Cross-site image fixture</title><center><picture><source type="image/svg+xml" srcset="${image} 1x"><img width="420" height="560" alt="活动红包"></picture></center>`,
+          `<!doctype html><meta charset="utf-8"><title>Cross-site image fixture</title><center><picture><source type="image/svg+xml" srcset="${image} 1x"><img width="420" height="560" alt="红包"></picture></center>`,
         );
       });
       await new Promise((resolve, reject) => {

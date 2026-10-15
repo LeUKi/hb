@@ -35,3 +35,10 @@ export const authErrorAtom = atom<{
  * address bar says "匹配到 N 个红包".
  */
 export const resultCountsAtom = atom<Record<string, number>>({});
+
+/** The last 验证其他口令 that worked, for the 口令区 to highlight and say. */
+export const verifyNoticeAtom = atom<{
+  activityId: string;
+  password: string;
+  token: number;
+} | null>(null);

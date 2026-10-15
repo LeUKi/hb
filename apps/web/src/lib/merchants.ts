@@ -261,7 +261,7 @@ export function useActivityPayments(
     ],
     enabled: session.enabled && Boolean(activityId),
     queryFn: async ({ signal }) => {
-      if (!activityId) throw new Error("缺少活动标识");
+      if (!activityId) throw new Error("缺少红包标识");
       return session.read<ActivityPaymentTargetList>(
         await fetch(
           `/api/me/activities/${encodeURIComponent(activityId)}/payments?${query.toString()}`,

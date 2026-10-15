@@ -10,7 +10,7 @@ import type {
   PublicRegistrationList,
   RegistrationDetail,
 } from "@hb/contracts";
-import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { createDb } from "../db/client";
 import { activities, activityRegistrations, claims, users } from "../db/schema";
 import type { ApiBindings } from "../env";
@@ -244,7 +244,8 @@ export async function listAuthorRegistrations(
   cursorValue?: string,
 ): Promise<AuthorRegistrationList> {
   const activity = await ownedActivity(env, activityId, authorId);
-  const before = cursor(cursorValue);
+  // Oldest first, like the public roster it adds to (redesign 06 §3).
+  const after = cursor(cursorValue);
   const rows = await createDb(env.DB)
     .select({
       entry: activityRegistrations,
@@ -260,20 +261,20 @@ export async function listAuthorRegistrations(
     .where(
       and(
         eq(activityRegistrations.activityId, activityId),
-        before
+        after
           ? or(
-              lt(activityRegistrations.registeredAt, before.time),
+              gt(activityRegistrations.registeredAt, after.time),
               and(
-                eq(activityRegistrations.registeredAt, before.time),
-                lt(activityRegistrations.id, before.id),
+                eq(activityRegistrations.registeredAt, after.time),
+                gt(activityRegistrations.id, after.id),
               ),
             )
           : undefined,
       ),
     )
     .orderBy(
-      desc(activityRegistrations.registeredAt),
-      desc(activityRegistrations.id),
+      asc(activityRegistrations.registeredAt),
+      asc(activityRegistrations.id),
     )
     .limit(21);
   const page = rows.slice(0, 20);
@@ -466,13 +467,11 @@ export async function listPublicRegistrations(
     (activity.openedAt === null && activity.authorId !== viewerId)
   )
     activityNotFound();
-  const config = JSON.parse(activity.config) as ActivityInput;
-  if (!config.showRecipientList)
-    return { enabled: false, items: [], nextCursor: null };
-  let before: Cursor | undefined;
+  // The roster is always public (06 §2), oldest first (06 §3).
+  let after: Cursor | undefined;
   if (cursorValue) {
     try {
-      before = cursor(
+      after = cursor(
         await decryptString(
           atob(cursorValue),
           env,
@@ -495,34 +494,31 @@ export async function listPublicRegistrations(
     .where(
       and(
         eq(activityRegistrations.activityId, activityId),
-        before
+        after
           ? or(
-              lt(activityRegistrations.registeredAt, before.time),
+              gt(activityRegistrations.registeredAt, after.time),
               and(
-                eq(activityRegistrations.registeredAt, before.time),
-                lt(activityRegistrations.id, before.id),
+                eq(activityRegistrations.registeredAt, after.time),
+                gt(activityRegistrations.id, after.id),
               ),
             )
           : undefined,
       ),
     )
     .orderBy(
-      desc(activityRegistrations.registeredAt),
-      desc(activityRegistrations.id),
+      asc(activityRegistrations.registeredAt),
+      asc(activityRegistrations.id),
     )
     .limit(21);
   const page = rows.slice(0, 20);
   const last = page.at(-1)?.entry;
   return {
-    enabled: true,
     items: page.map(({ entry, username, displayName, avatarUrl }) => ({
       id: entry.id,
-      username: config.showRecipientUsername ? username : "",
-      displayName: config.showRecipientUsername ? displayName : "匿名用户",
-      avatarUrl: config.showRecipientUsername ? avatarUrl : null,
-      ...(config.showRecipientTime
-        ? { registeredAt: new Date(entry.registeredAt).toISOString() }
-        : {}),
+      username,
+      displayName,
+      avatarUrl,
+      registeredAt: new Date(entry.registeredAt).toISOString(),
     })),
     nextCursor:
       rows.length > 20 && last

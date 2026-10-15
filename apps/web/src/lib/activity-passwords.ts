@@ -77,29 +77,32 @@ export function useActivityPasswords(
   });
 }
 
-export function useSolvePassword(
-  userId: string,
-  csrfToken: string,
-  id: string,
-) {
+/** 验证其他口令 in one 红包 (the id travels with it). */
+export function useSolvePassword(userId: string, csrfToken: string) {
   const queryClient = useQueryClient();
   const account = useAccountSession(userId);
   return useMutation({
     gcTime: 0,
-    onMutate: async (input) => ({
+    onMutate: async ({ input }: { id: string; input: PasswordClaimInput }) => ({
       identity: account.captureIdentity(),
       ticket: activityToolsEnabled
         ? await beginAttempt(userId, input.password, input.submissionId)
         : null,
     }),
-    mutationFn: async (json: PasswordClaimInput) =>
+    mutationFn: async ({
+      id,
+      input,
+    }: {
+      id: string;
+      input: PasswordClaimInput;
+    }) =>
       readResponse<SolveResult>(
         await api.api.activities[":id"]["password-solves"].$post(
-          { param: { id }, json },
+          { param: { id }, json: input },
           { headers: { "X-CSRF-Token": csrfToken } },
         ),
       ),
-    onSuccess: (result, _variables, context) => {
+    onSuccess: (result, { id }, context) => {
       const identity = context?.identity;
       if (account.isCurrentIdentity(identity)) {
         const matched = passwordMatchResult(result);

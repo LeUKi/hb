@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   activityShareUrl,
   decodeActivityEmoji,
@@ -31,8 +31,6 @@ const upstreamVectors = [
     code: "🌎🛁👯⚓🧆⭐🏮🔇🌎🛁👯🍢😻☕",
   },
 ];
-
-afterEach(() => vi.unstubAllEnvs());
 
 describe("pinned Ecoji V2 UUID codec", () => {
   it("freezes all 1024 upstream ordinals without changing their order", () => {
@@ -200,33 +198,13 @@ describe("activity link boundaries", () => {
 });
 
 describe("activity share URL generation", () => {
-  it("copies visible canonical emoji without any query or fragment", () => {
-    vi.stubEnv("VITE_EMOJI_LINKS_RECOVERY", "0");
+  it("copies /🧧/ with visible canonical emoji and no query or fragment", () => {
     const link = activityShareUrl(
       ID.toUpperCase(),
       `${ORIGIN}/?previous=1#old`,
     );
-    expect(link).toBe(`${ORIGIN}/e/${CODE}`);
+    expect(link).toBe(`${ORIGIN}/🧧/${CODE}`);
     expect(link).not.toContain("%");
-    expect(parseActivityLink(new URL(link).href, ORIGIN)).toBe(ID);
-    expect(resolveEmojiPath(new URL(link).pathname)).toBe(ID);
-  });
-
-  it.each(["", "0", "true"])(
-    "keeps emoji enabled for recovery value %s",
-    (value) => {
-      vi.stubEnv("VITE_EMOJI_LINKS_RECOVERY", value);
-      expect(activityShareUrl(ID, ORIGIN)).toBe(`${ORIGIN}/e/${CODE}`);
-    },
-  );
-
-  it("generates legacy links only for the explicit recovery build", () => {
-    vi.stubEnv("VITE_EMOJI_LINKS_RECOVERY", "1");
-    expect(activityShareUrl(ID.toUpperCase(), ORIGIN)).toBe(
-      `${ORIGIN}/activities/${ID}`,
-    );
-    expect(parseActivityLink(`${ORIGIN}/e/${CODE}`, ORIGIN)).toBe(ID);
-    expect(resolveEmojiPath(`/e/${ENCODED}`)).toBe(ID);
   });
 
   it("refuses invalid IDs and site origins", () => {

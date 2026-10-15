@@ -94,9 +94,11 @@ function storedConfig(input: ActivityInput): StoredConfig {
         }
       : {}),
     topicUrl: topic?.topicUrl ?? "",
-    showRecipientUsername: config.showRecipientList,
-    showRecipientTime: config.showRecipientList,
-    showRecipientAmount: config.showRecipientList,
+    // The roster is always public (redesign 06 §2): no switches are kept.
+    showRecipientList: undefined,
+    showRecipientUsername: undefined,
+    showRecipientTime: undefined,
+    showRecipientAmount: undefined,
   };
 }
 
@@ -115,10 +117,10 @@ function configuration(row: ActivityRow): StoredConfig {
     topicUrl: activityTopicUrl(row) ?? "",
     quantityVisibility:
       saved.quantityVisibility === "fuzzy" ? "fuzzy" : "exact",
-    showRecipientUsername:
-      saved.showRecipientUsername ?? saved.showRecipientList,
-    showRecipientTime: saved.showRecipientTime ?? saved.showRecipientList,
-    showRecipientAmount: saved.showRecipientAmount ?? saved.showRecipientList,
+    showRecipientList: undefined,
+    showRecipientUsername: undefined,
+    showRecipientTime: undefined,
+    showRecipientAmount: undefined,
     joinSquare: row.joinSquare,
   } as StoredConfig;
 }
@@ -358,15 +360,9 @@ export function projectPublicActivity(
     deadlineAt: iso(row.deadline),
     quantity: publicQuantity(row, config),
     reward: rewardSummary(row, config.quantityVisibility === "exact"),
-    showRecipientList: config.showRecipientList,
-    showRecipientUsername:
-      config.showRecipientList && config.showRecipientUsername,
-    showRecipientTime: config.showRecipientList && config.showRecipientTime,
     ...(row.rewardType === "ldc" && row.paymentMode
       ? { paymentMode: row.paymentMode }
       : {}),
-
-    showRecipientAmount: config.showRecipientList && config.showRecipientAmount,
     beforeInfo: config.beforeInfo,
     ...(status === "ended" || status === "archived"
       ? { afterEndInfo: config.afterEndInfo }
@@ -479,18 +475,18 @@ export async function createActivity(
   const existing = await previous();
   if (existing) {
     if (existing.creationDigest !== requestDigest)
-      activityConflict("同一创建请求不能更换活动内容");
+      activityConflict("同一创建请求不能更换红包内容");
     if (existing.deletedAt !== null)
       throw new ActivityError(
         410,
         "ACTIVITY_DELETED",
-        "活动已删除，原创建请求不能重新创建活动",
+        "红包已删除，原创建请求不能重新创建红包",
       );
     return managed(env, existing);
   }
   const checked = newActivityInputSchema.safeParse(input.activity);
   if (!checked.success)
-    invalidActivity(checked.error.issues[0]?.message ?? "请检查新活动配置");
+    invalidActivity(checked.error.issues[0]?.message ?? "请检查新红包的配置");
   const merchant = await ownedMerchant(
     env,
     input.activity.merchantId,
@@ -506,7 +502,7 @@ export async function createActivity(
     throw new ActivityError(
       400,
       "SIMULATION_NOT_AVAILABLE",
-      "此环境不支持创建模拟活动。",
+      "此环境不支持创建模拟红包。",
     );
   const id = crypto.randomUUID();
   const now = Date.now();
@@ -552,12 +548,12 @@ export async function createActivity(
       throw error;
     }
     if (winner.creationDigest !== requestDigest)
-      activityConflict("同一创建请求不能更换活动内容");
+      activityConflict("同一创建请求不能更换红包内容");
     if (winner.deletedAt !== null)
       throw new ActivityError(
         410,
         "ACTIVITY_DELETED",
-        "活动已删除，原创建请求不能重新创建活动",
+        "红包已删除，原创建请求不能重新创建红包",
       );
     return managed(env, winner);
   }
@@ -579,7 +575,7 @@ export async function updateActivity(
     throw new ActivityError(
       409,
       "PARTICIPATION_MODE_REQUIRED",
-      "此活动使用新的参与方式，请刷新页面后再编辑",
+      "此红包使用新的参与方式，请刷新页面后再编辑",
     );
   if (
     row.openedAt !== null &&
@@ -611,11 +607,11 @@ export async function updateActivity(
     throw new ActivityError(
       400,
       "SIMULATION_NOT_AVAILABLE",
-      "此环境不支持编辑或绑定模拟活动草稿。",
+      "此环境不支持编辑或绑定模拟红包的草稿。",
     );
   const nextPaymentMode = merchant?.mode ?? row.paymentMode;
   if (row.paymentMode && merchant && row.paymentMode !== merchant.mode)
-    invalidActivity("活动付款模式已固定，不能更换为不同模式的商户");
+    invalidActivity("红包付款模式已固定，不能更换为不同模式的商户");
   if (row.openedAt !== null && config.forceDedicated !== row.forceDedicated)
     invalidActivity("开放后不能修改口令尝试统计设置");
   if (row.joinSquare && !config.joinSquare)
@@ -638,7 +634,7 @@ export async function updateActivity(
       inputDigests.length !== existingDigests.size ||
       inputDigests.some((digest) => !existingDigests.has(digest))
     )
-      invalidActivity("历史活动超过 5 条口令，须保留原口令且不能新增");
+      invalidActivity("历史红包超过 5 条口令，须保留原口令且不能新增");
   } else if (input.activity.passwords.length > ACTIVITY_LIMITS.passwords)
     invalidActivity("最多 5 条有效口令");
   const deadline = row.deadline;
@@ -668,7 +664,7 @@ export async function updateActivity(
         invalidActivity("限时开奖开放后不能修改开奖时间");
     } else {
       if (!sameDeadlineConfig(config.deadline, oldConfig.deadline))
-        invalidActivity("开放后不能修改活动期限");
+        invalidActivity("开放后不能修改红包期限");
     }
   }
 
@@ -771,7 +767,7 @@ export async function openActivity(
     openingExpectation?.merchantId &&
     openingExpectation.merchantId !== row.merchantId
   )
-    activityConflict("活动商户已变更，请刷新后重试");
+    activityConflict("红包的商户已变更，请刷新后重试");
   const testPermission = permitsRealActivity(row.id, executionPolicy);
   const publicationMerchant = row.merchantId
     ? await ownedMerchant(env, row.merchantId, authorId)
@@ -804,7 +800,7 @@ export async function openActivity(
     ...configuration(row),
     passwords: privateContent.passwords,
   });
-  if (!checked.success) invalidActivity("活动配置不完整，无法开放");
+  if (!checked.success) invalidActivity("红包配置不完整，无法开放");
   const inventory = (await privateRows(env, id)).inventory;
   const timed = checked.data.money.mode === "timed_draw";
   if (
@@ -815,10 +811,10 @@ export async function openActivity(
   )
     invalidActivity("限时开奖配置与报名状态不一致，无法开放");
   if (inventory.length !== (timed ? 0 : row.totalCount))
-    invalidActivity("活动库存不完整，无法开放");
+    invalidActivity("红包库存不完整，无法开放");
   const merchant = await ownedMerchant(env, checked.data.merchantId, authorId);
   if (row.paymentMode !== merchant.mode)
-    invalidActivity("活动付款模式与商户配置不一致，无法开放");
+    invalidActivity("红包付款模式与商户配置不一致，无法开放");
   if (
     !timed &&
     (ldcRewardCount(checked.data) !== row.totalCount ||
@@ -834,7 +830,7 @@ export async function openActivity(
         0n,
       ) !== BigInt(ldcTotalMinor(checked.data)))
   )
-    invalidActivity("活动金额与库存不一致，无法开放");
+    invalidActivity("红包金额与库存不一致，无法开放");
   if (checked.data.money.mode === "random") {
     if (checked.data.money.algorithm === "double_mean_v1") {
       let remaining = BigInt(ldcTotalMinor(checked.data));
@@ -850,7 +846,7 @@ export async function openActivity(
               ? reservingMinimum
               : twiceMean;
         if (amount > maximum || (count === 1n && amount !== remaining))
-          invalidActivity("活动金额超出随机算法范围，无法开放");
+          invalidActivity("红包金额超出随机算法范围，无法开放");
         remaining -= amount;
         count--;
       }
@@ -866,12 +862,12 @@ export async function openActivity(
             (item.amountMinor ?? 0) > limits.max,
         )
       )
-        invalidActivity("活动金额超出随机算法范围，无法开放");
+        invalidActivity("红包金额超出随机算法范围，无法开放");
     }
   } else if (!timed) {
     const amounts = ldcAmounts(checked.data);
     if (inventory.some((item, index) => item.amountMinor !== amounts[index]))
-      invalidActivity("活动金额与库存不一致，无法开放");
+      invalidActivity("红包金额与库存不一致，无法开放");
   }
   const now = Date.now();
   const durationMs = deadlineDurationMs(checked.data.deadline);

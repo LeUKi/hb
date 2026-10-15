@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
 import { activityKeys, type PublicActivityDetail } from "./activities";
+import { useCachedQueryData } from "./cached-query";
 import { useSessionUser } from "./session";
 
 /** What the shell says about a 红包 it names (scope chip, address, hints). */
@@ -19,12 +19,10 @@ export type ActivityFacts = {
  */
 export function useActivityFacts(id: string | null): ActivityFacts | null {
   const user = useSessionUser();
-  const query = useQuery<PublicActivityDetail>({
-    queryKey: activityKeys.public(id ?? "", user?.id ?? null),
-    queryFn: () => Promise.reject(new Error("read by the 红包 page")),
-    enabled: false,
-  });
-  const activity = id ? query.data?.activity : undefined;
+  const detail = useCachedQueryData<PublicActivityDetail>(
+    id ? activityKeys.public(id, user?.id ?? null) : null,
+  );
+  const activity = detail?.activity;
   if (!activity) return null;
   return {
     id: activity.id,

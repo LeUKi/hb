@@ -378,7 +378,7 @@ async function result(
     ? (await findActivity(env, selectedCandidateId))?.id
     : undefined;
   if (row.selectedActivityId && !selectedLdcId)
-    throw new ActivityError(404, "ACTIVITY_NOT_FOUND", "活动不存在或已结束");
+    throw new ActivityError(404, "ACTIVITY_NOT_FOUND", "红包不存在或已结束");
   const claimResult = selectedLdcId
     ? await savedClaimResult(env, row)
     : undefined;
@@ -406,7 +406,7 @@ export async function redeemGlobally(
     const id = ids[0];
     if (!id) throw new Error("Missing persisted candidate");
     if (!(await findActivity(env, id)))
-      throw new ActivityError(404, "ACTIVITY_NOT_FOUND", "活动不存在或已结束");
+      throw new ActivityError(404, "ACTIVITY_NOT_FOUND", "红包不存在或已结束");
     const stub = env.ACTIVITY_DO.get(env.ACTIVITY_DO.idFromName(id));
     const response = await stub.fetch(
       `https://activity.internal/internal/activities/${encodeURIComponent(id)}/claim`,

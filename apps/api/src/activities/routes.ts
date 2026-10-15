@@ -65,7 +65,7 @@ function validated<T>(
 
 export class ActivityValidationError extends ActivityError {
   constructor(public readonly issues: { path: string; message: string }[]) {
-    super(400, "INVALID_ACTIVITY", "请检查活动配置");
+    super(400, "INVALID_ACTIVITY", "请检查红包配置");
   }
 }
 
@@ -121,7 +121,7 @@ const historyQuery = validator(
       status !== "ended" &&
       status !== "archived"
     )
-      throw new ActivityError(400, "INVALID_STATUS", "活动状态无效");
+      throw new ActivityError(400, "INVALID_STATUS", "红包状态无效");
     if (value.cursor !== undefined && typeof value.cursor !== "string")
       throw new ActivityError(400, "INVALID_CURSOR", "分页标识无效");
     return { type: type.data, status, cursor: value.cursor };
@@ -139,7 +139,7 @@ const paymentActivityQuery = validator(
       status !== "ended" &&
       status !== "archived"
     )
-      throw new ActivityError(400, "INVALID_STATUS", "活动状态无效");
+      throw new ActivityError(400, "INVALID_STATUS", "红包状态无效");
     if (value.cursor !== undefined && typeof value.cursor !== "string")
       throw new ActivityError(400, "INVALID_CURSOR", "分页标识无效");
     return { status, cursor: value.cursor };

@@ -152,7 +152,7 @@ const baseActivitySchema = z.strictObject({
   title: z
     .string()
     .trim()
-    .min(1, "请填写活动标题")
+    .min(1, "请填写红包标题")
     .refine(
       (value) => characterCount(value) <= ACTIVITY_LIMITS.titleCharacters,
       "标题不能超过 100 个字符",
@@ -167,12 +167,14 @@ const baseActivitySchema = z.strictObject({
   allocation: z.enum(["sequential", "random"]),
   passwords: z
     .array(passwordSchema)
-    .max(ACTIVITY_LIMITS.historicalPasswords, "历史活动最多 100 个口令"),
+    .max(ACTIVITY_LIMITS.historicalPasswords, "历史红包最多 100 个口令"),
   quantityVisibility: z.enum(["exact", "fuzzy", "availability", "hidden"]),
-  showRecipientList: z.boolean(),
-  showRecipientUsername: z.boolean(),
-  showRecipientTime: z.boolean(),
-  showRecipientAmount: z.boolean().default(false),
+  // The roster is always public (redesign 06 §2). Older clients still send
+  // these switches; they are accepted and ignored.
+  showRecipientList: z.boolean().optional(),
+  showRecipientUsername: z.boolean().optional(),
+  showRecipientTime: z.boolean().optional(),
+  showRecipientAmount: z.boolean().optional(),
   beforeInfo: infoSchema,
   afterClaimInfo: infoSchema,
   afterEndInfo: infoSchema,
@@ -284,13 +286,13 @@ function validateActivity(
       context.addIssue({
         code: "custom",
         path: ["passwords"],
-        message: "直接参与活动不能设置口令",
+        message: "无需口令的红包不能设置口令",
       });
     if (activity.forceDedicated)
       context.addIssue({
         code: "custom",
         path: ["forceDedicated"],
-        message: "直接参与活动不能开启口令尝试统计",
+        message: "无需口令的红包不能开启口令尝试统计",
       });
   } else if (activity.passwords.length === 0)
     context.addIssue({
@@ -459,10 +461,6 @@ export function emptyActivityInput(): LdcActivityInput {
     allocation: "sequential",
     passwords: [],
     quantityVisibility: "exact",
-    showRecipientList: true,
-    showRecipientUsername: true,
-    showRecipientTime: true,
-    showRecipientAmount: true,
     beforeInfo: "",
     afterClaimInfo: "",
     afterEndInfo: "",
@@ -582,14 +580,10 @@ export type PublicActivity = {
   deadlineAt: string | null;
   quantity: PublicQuantity;
   reward?: ActivityRewardSummary;
-  showRecipientList: boolean;
-  showRecipientUsername: boolean;
-  showRecipientTime: boolean;
   beforeInfo: string;
   afterEndInfo?: string;
   paymentMode?: PaymentMode;
   openingBlockedReason?: LdcOpeningBlockedReason;
-  showRecipientAmount?: boolean;
   draw?: DrawSummary;
 };
 
@@ -746,23 +740,23 @@ export type AuthorClaimList = {
 };
 export type PublicRecipient = PublicUserProfile & {
   id: string;
-  claimedAt?: string;
+  claimedAt: string;
   amount?: string;
   title?: "highest" | "lowest";
   speedTitle?: RecipientSpeedTitle;
 };
+/** Always public (redesign 06 §2), oldest first (06 §3). */
 export type PublicRecipientList = {
-  enabled: boolean;
   items: PublicRecipient[];
   nextCursor: string | null;
   titles?: { highestClaimIds: string[]; lowestClaimIds: string[] };
 };
 export type PublicRegistration = PublicUserProfile & {
   id: string;
-  registeredAt?: string;
+  registeredAt: string;
 };
+/** Always public (redesign 06 §2), oldest first (06 §3). */
 export type PublicRegistrationList = {
-  enabled: boolean;
   items: PublicRegistration[];
   nextCursor: string | null;
 };

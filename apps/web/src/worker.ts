@@ -1,5 +1,9 @@
 const apiPattern = /^\/api(?:\/|$)/;
-const activityImagePattern = /^\/e\/[^/]+\/live\.svg$/;
+// The forum image, /🧧/<code>/🖼️.svg or /🧧/<code>/🖼️ (with or without
+// U+FE0F), as the percent-encoded path a request carries. The API reads the
+// same path under /api.
+const activityImagePattern =
+  /^\/%F0%9F%A7%A7\/[^/]+\/%F0%9F%96%BC(?:%EF%B8%8F)?(?:\.svg)?$/i;
 
 const worker: ExportedHandler<CloudflareEnv> = {
   async fetch(request, env) {

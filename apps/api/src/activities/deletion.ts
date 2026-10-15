@@ -39,7 +39,7 @@ export async function deleteActivity(
   }
   if (row.version !== version) activityConflict();
   if (row.openedAt !== null || row.claimedCount !== 0)
-    invalidActivity("只能删除从未开放且没有领取记录的准备中活动");
+    invalidActivity("只能删除从未开放且没有领取记录的草稿");
   try {
     await env.DB.batch([
       activityWriteGuard(env.DB, id, authorId, version),
@@ -72,7 +72,7 @@ export async function deleteActivity(
     }
     if (current.version !== version) activityConflict();
     if (current.openedAt !== null || current.claimedCount !== 0)
-      invalidActivity("只能删除从未开放且没有领取记录的准备中活动");
+      invalidActivity("只能删除从未开放且没有领取记录的草稿");
     throw error;
   }
   const deleted = await read();

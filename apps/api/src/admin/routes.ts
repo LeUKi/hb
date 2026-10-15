@@ -495,7 +495,7 @@ async function activityDetail(
   ]);
   const row = activity?.results[0] as Record<string, unknown> | undefined;
   if (!row)
-    throw new ActivityError(404, "ADMIN_ACTIVITY_NOT_FOUND", "未找到活动。");
+    throw new ActivityError(404, "ADMIN_ACTIVITY_NOT_FOUND", "未找到红包。");
   const pay = payments?.results[0] as Record<string, unknown> | undefined;
   return {
     activity: {

@@ -53,7 +53,7 @@ export async function getStatistics(
     throw new ActivityError(
       404,
       "STATISTICS_UNAVAILABLE",
-      "仅限活动页兑换的活动提供尝试统计",
+      "只有开启口令尝试统计的红包才有尝试统计",
     );
   const after = parseCursor(cursor, activityId);
   const [totals, groups, passwords] = await env.DB.batch([

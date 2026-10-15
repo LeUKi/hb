@@ -1,6 +1,5 @@
 // 用时 in the 名单弹窗: how long after the 红包 opened someone claimed or
-// signed up. Production's formatClaimSeconds trims trailing zeros and stops
-// at 120 s; this is the replacement the redesign proposes (06-production).
+// signed up (05 §7).
 
 const pad = (value: number) => String(value).padStart(2, "0");
 

@@ -44,7 +44,7 @@ export async function readResponse<T>(response: Response): Promise<T> {
     throw new ActivityRequestError(
       response.status === 409 &&
         body?.error?.code === "ACTIVITY_VERSION_CONFLICT"
-        ? "活动内容已发生变化，请刷新后再试。"
+        ? "红包内容已发生变化，请刷新后再试。"
         : (body?.error?.message ?? `请求失败：HTTP ${response.status}`),
       response.status,
       body?.error?.issues,
@@ -322,7 +322,7 @@ export function useActivityWrites(
     update: useMutation({
       onMutate: account.captureIdentity,
       mutationFn: async (json: UpdateActivityInput) => {
-        if (!id) throw new Error("缺少活动标识");
+        if (!id) throw new Error("缺少红包标识");
         return readResponse<{ activity: ManagedActivity }>(
           await api.api.me.activities[":id"].$patch(
             { param: { id }, json: json as never },
@@ -336,7 +336,7 @@ export function useActivityWrites(
     open: useMutation({
       onMutate: account.captureIdentity,
       mutationFn: async (json: OpenActivityInput) => {
-        if (!id) throw new Error("缺少活动标识");
+        if (!id) throw new Error("缺少红包标识");
         return readResponse<{ activity: ManagedActivity }>(
           await api.api.me.activities[":id"].open.$post(
             { param: { id }, json: json as never },
@@ -350,7 +350,7 @@ export function useActivityWrites(
     end: useMutation({
       onMutate: account.captureIdentity,
       mutationFn: async (json: EndActivityInput) => {
-        if (!id) throw new Error("缺少活动标识");
+        if (!id) throw new Error("缺少红包标识");
         return readResponse<{ activity: ManagedActivity }>(
           await api.api.me.activities[":id"].end.$post(
             { param: { id }, json: json as never },
@@ -364,7 +364,7 @@ export function useActivityWrites(
     remove: useMutation({
       onMutate: account.captureIdentity,
       mutationFn: async (json: DeleteActivityInput) => {
-        if (!id) throw new Error("缺少活动标识");
+        if (!id) throw new Error("缺少红包标识");
         return readResponse<{
           id: string;
           deleted: true;

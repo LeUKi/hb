@@ -1,4 +1,3 @@
-/// <reference types="vite/client" />
 import {
   decodeActivityEmoji,
   encodeActivityEmoji,
@@ -68,12 +67,9 @@ export function parseActivityLink(
   }
 }
 
-/** Keep emoji visible in copied links; recovery builds generate legacy links. */
+/** A 红包's address to copy: /🧧/<code>, the emoji kept visible. */
 export function activityShareUrl(id: string, origin: string): string {
   const uuid = normalizeActivityUuid(id);
   if (!uuid) throw new TypeError("Invalid activity UUID");
-  const base = siteOrigin(origin);
-  return import.meta.env.VITE_EMOJI_LINKS_RECOVERY === "1"
-    ? `${base}/activities/${uuid}`
-    : `${base}/e/${encodeActivityEmoji(uuid)}`;
+  return `${siteOrigin(origin)}/🧧/${encodeActivityEmoji(uuid)}`;
 }

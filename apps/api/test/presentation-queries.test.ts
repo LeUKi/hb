@@ -755,14 +755,14 @@ describe("production presentation queries", () => {
     ).toBe(400);
   });
 
-  it("computes full-roster ties before pagination and applies original public field permissions", async () => {
+  it("computes full-roster ties before pagination, oldest first, whatever the retired switches say", async () => {
     const activity = await create(
       ldc({
         mode: "custom",
         amounts: [
-          "9.00",
-          "9.00",
           ...Array<string>(21).fill("1.00"),
+          "9.00",
+          "9.00",
           "5.00",
           "9.00",
         ],
@@ -781,6 +781,12 @@ describe("production presentation queries", () => {
       `/activities/${activity.id}/recipients?cursor=${encodeURIComponent(first.nextCursor ?? "")}`,
     );
     expect(second.titles).toEqual(first.titles);
+    expect(second.items.map((row) => row.amount)).toEqual([
+      "1.00",
+      "9.00",
+      "9.00",
+      "5.00",
+    ]);
     expect(second.items.filter((row) => row.title === "highest")).toHaveLength(
       2,
     );
@@ -789,44 +795,36 @@ describe("production presentation queries", () => {
       (await data<PublicRecipientList>(`/activities/${activity.id}/recipients`))
         .titles?.highestClaimIds,
     ).toEqual([]);
+    // Old 红包 may still store the retired switches: they change nothing.
     await env.DB.prepare(
-      "UPDATE activities SET config=json_set(config,'$.showRecipientUsername',json('false'),'$.showRecipientTime',json('false'),'$.showRecipientAmount',json('false')) WHERE id=?",
+      "UPDATE activities SET config=json_set(config,'$.showRecipientList',json('false'),'$.showRecipientUsername',json('false'),'$.showRecipientTime',json('false'),'$.showRecipientAmount',json('false')) WHERE id=?",
     )
       .bind(activity.id)
       .run();
-    const hiddenFields = await data<PublicRecipientList>(
+    const legacy = await data<PublicRecipientList>(
       `/activities/${activity.id}/recipients`,
     );
-    expect(hiddenFields.titles).toEqual({
-      highestClaimIds: [],
-      lowestClaimIds: [],
-    });
-    for (const row of hiddenFields.items) {
-      expect(row).toMatchObject({
-        username: "",
-        displayName: "匿名用户",
-        avatarUrl: null,
-      });
-      expect(row).not.toHaveProperty("amount");
-      expect(row).not.toHaveProperty("claimedAt");
-      expect(row).not.toHaveProperty("title");
+    expect(legacy.items).toEqual(first.items);
+    for (const row of legacy.items) {
+      expect(row.username).toMatch(/\S/);
+      expect(row).toHaveProperty("amount");
+      expect(row).toHaveProperty("claimedAt");
     }
     const detail = await data<{ activity: PublicActivity }>(
       `/activities/${activity.id}`,
     );
-    expect(detail.activity).toMatchObject({
-      showRecipientUsername: false,
-      showRecipientTime: false,
-      showRecipientAmount: false,
-    });
+    for (const key of [
+      "showRecipientList",
+      "showRecipientUsername",
+      "showRecipientTime",
+      "showRecipientAmount",
+    ])
+      expect(detail.activity).not.toHaveProperty(key);
   });
 
-  it("computes speed titles globally before pagination and keeps them behind time visibility", async () => {
+  it("computes speed titles over the whole roster, whatever the retired switches say", async () => {
     const activity = await create(
-      ldc(
-        { mode: "fixed", totalAmount: "22.00", count: 22 },
-        { showRecipientList: true, showRecipientTime: true },
-      ),
+      ldc({ mode: "fixed", totalAmount: "22.00", count: 22 }),
     );
     if (activity.openedAt === null) throw new Error("Expected opened activity");
     const openedAt = new Date(activity.openedAt).getTime();
@@ -854,13 +852,17 @@ describe("production presentation queries", () => {
       `/activities/${activity.id}/recipients`,
     );
     expect(first.items).toHaveLength(20);
-    expect(first.items.every((row) => row.speedTitle === undefined)).toBe(true);
+    expect(first.items.map((row) => row.speedTitle)).toEqual([
+      "flash",
+      "flash",
+      ...Array<undefined>(18).fill(undefined),
+    ]);
     const second = await data<PublicRecipientList>(
       `/activities/${activity.id}/recipients?cursor=${encodeURIComponent(first.nextCursor ?? "")}`,
     );
     expect(second.items.map((row) => row.speedTitle)).toEqual([
-      "flash",
-      "flash",
+      undefined,
+      undefined,
     ]);
 
     await env.DB.batch(
@@ -874,66 +876,47 @@ describe("production presentation queries", () => {
         ),
     );
     const afterThreshold = await data<PublicRecipientList>(
-      `/activities/${activity.id}/recipients?cursor=${encodeURIComponent(first.nextCursor ?? "")}`,
+      `/activities/${activity.id}/recipients`,
     );
-    expect(afterThreshold.items.map((row) => row.speedTitle)).toEqual([
-      "fastest",
-      "fastest",
-    ]);
+    expect(
+      afterThreshold.items.slice(0, 3).map((row) => row.speedTitle),
+    ).toEqual(["fastest", "fastest", undefined]);
 
+    // Old 红包 may still store the retired switches: they change nothing.
     await env.DB.prepare(
-      "UPDATE activities SET config=json_set(config,'$.showRecipientAmount',json('false')) WHERE id=?",
+      "UPDATE activities SET config=json_set(config,'$.showRecipientTime',json('false'),'$.showRecipientAmount',json('false')) WHERE id=?",
     )
       .bind(activity.id)
       .run();
-    const hiddenAmount = await data<PublicRecipientList>(
-      `/activities/${activity.id}/recipients?cursor=${encodeURIComponent(first.nextCursor ?? "")}`,
+    const legacy = await data<PublicRecipientList>(
+      `/activities/${activity.id}/recipients`,
     );
-    expect(hiddenAmount.items.map((row) => row.speedTitle)).toEqual([
-      "fastest",
-      "fastest",
-    ]);
-    for (const row of hiddenAmount.items) {
-      expect(row).not.toHaveProperty("amount");
-      expect(row).not.toHaveProperty("title");
+    expect(legacy.items).toEqual(afterThreshold.items);
+    for (const row of legacy.items) {
+      expect(row).toHaveProperty("amount");
+      expect(row).toHaveProperty("claimedAt");
     }
-
-    await env.DB.prepare(
-      "UPDATE activities SET config=json_set(config,'$.showRecipientTime',json('false')) WHERE id=?",
-    )
-      .bind(activity.id)
-      .run();
-    const hiddenTime = await data<PublicRecipientList>(
-      `/activities/${activity.id}/recipients?cursor=${encodeURIComponent(first.nextCursor ?? "")}`,
-    );
-    for (const row of hiddenTime.items) {
-      expect(row).not.toHaveProperty("claimedAt");
-      expect(row).not.toHaveProperty("speedTitle");
-    }
-    const authorFirst = await data<AuthorClaimList>(
+    const author = await data<AuthorClaimList>(
       `/me/activities/${activity.id}/claims`,
       owner,
     );
-    const author = await data<AuthorClaimList>(
-      `/me/activities/${activity.id}/claims?cursor=${encodeURIComponent(authorFirst.nextCursor ?? "")}`,
-      owner,
-    );
-    expect(author.items.map((row) => row.speedTitle)).toEqual([
+    expect(author.items.slice(0, 3).map((row) => row.speedTitle)).toEqual([
       "fastest",
       "fastest",
+      undefined,
     ]);
 
     await env.DB.prepare("UPDATE claims SET claimed_at=? WHERE id=?")
       .bind(openedAt - 1, claimIds[0])
       .run();
     const preopenIgnored = await data<AuthorClaimList>(
-      `/me/activities/${activity.id}/claims?cursor=${encodeURIComponent(authorFirst.nextCursor ?? "")}`,
+      `/me/activities/${activity.id}/claims`,
       owner,
     );
-    expect(preopenIgnored.items.map((row) => row.speedTitle)).toEqual([
-      "fastest",
-      undefined,
-    ]);
+    expect(preopenIgnored.items[0]?.id).toBe(claimIds[0]);
+    expect(
+      preopenIgnored.items.slice(0, 2).map((row) => row.speedTitle),
+    ).toEqual([undefined, "fastest"]);
   });
 
   it("does not assign speed titles to automated draw winners", async () => {
@@ -954,8 +937,11 @@ describe("production presentation queries", () => {
     const first = await data<PublicRegistrationList>(
       `/activities/${timed.id}/registrations`,
     );
-    expect(first.enabled).toBe(true);
     expect(first.items).toHaveLength(20);
+    const registeredTimes = first.items.map((row) =>
+      Date.parse(row.registeredAt),
+    );
+    expect(registeredTimes).toEqual([...registeredTimes].sort((a, b) => a - b));
     expect(JSON.stringify(first)).not.toMatch(
       /ActualSource|FirstPassword|passwordId|userId|afterClaimInfo|PRIVATE|claim/,
     );
@@ -984,11 +970,11 @@ describe("production presentation queries", () => {
     )
       .bind(timed.id)
       .run();
-    expect(await data(`/activities/${timed.id}/registrations`)).toEqual({
-      enabled: false,
-      items: [],
-      nextCursor: null,
-    });
+    const stillPublic = await data<PublicRegistrationList>(
+      `/activities/${timed.id}/registrations`,
+    );
+    expect(stillPublic.items).toEqual(first.items);
+    expect(stillPublic).not.toHaveProperty("enabled");
     const draft = await create(ldc(draw), false);
     expect((await get(`/activities/${draft.id}/registrations`)).status).toBe(
       404,

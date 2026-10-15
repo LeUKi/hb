@@ -12,14 +12,14 @@ export class ActivityError extends Error {
 }
 
 export function activityNotFound(): never {
-  throw new ActivityError(404, "ACTIVITY_NOT_FOUND", "未找到活动");
+  throw new ActivityError(404, "ACTIVITY_NOT_FOUND", "未找到红包");
 }
 
 export function activityConflict(message?: string): never {
   throw new ActivityError(
     409,
     message === undefined ? "ACTIVITY_VERSION_CONFLICT" : "ACTIVITY_CONFLICT",
-    message ?? "活动已更新，请刷新后重试",
+    message ?? "红包已更新，请刷新后重试",
   );
 }
 

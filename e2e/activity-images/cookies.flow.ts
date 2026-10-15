@@ -3,6 +3,7 @@ import { type BrowserContext, expect, type Page, test } from "@playwright/test";
 import {
   activityImageUrl,
   emptyActivityInput,
+  encodeActivityEmoji,
   type ManagedActivity,
 } from "../../packages/contracts/src";
 import { fullAppMerchant } from "../full-app/ldc-fixture";
@@ -17,15 +18,26 @@ async function localOnly(context: BrowserContext) {
   });
 }
 async function login(page: Page, role: string) {
-  await page.goto(`/__local/full-app/login?role=${role}&returnTo=%2Faccount`);
-  await expect(page).toHaveURL(`${origin}/account`);
-  await expect(page.getByRole("heading", { name: "账号信息" })).toBeVisible();
+  await page.goto(`/__local/full-app/login?role=${role}&returnTo=%2F`);
+  await expect(page).toHaveURL(`${origin}/`);
+  await page.waitForFunction(
+    () =>
+      (window as unknown as { hbBoot?: { done: boolean } }).hbBoot?.done ===
+      true,
+  );
   const response = await page.context().request.get("/api/session");
   expect(response.ok()).toBe(true);
-  return response.json() as Promise<{ csrfToken: string }>;
+  const session = (await response.json()) as {
+    user: { displayName: string } | null;
+    csrfToken: string;
+  };
+  await expect(page.locator("#identity-button")).toHaveAccessibleName(
+    `${session.user?.displayName}，打开用户卡片`,
+  );
+  return session;
 }
 
-test("跨站 HTTPS 图片验证真实 Cookie 策略、公开降级、撤销和请求记录", async ({
+test("跨站 HTTPS 图片验证真实 Cookie 策略、撤销和请求记录", async ({
   browser,
   page,
   request,
@@ -87,8 +99,13 @@ test("跨站 HTTPS 图片验证真实 Cookie 策略、公开降级、撤销和�
       sameSite: "None",
       path: "/",
     });
-    await page.goto(`/activities/${activity.id}`);
-    await page.getByRole("button", { name: "领取奖励", exact: true }).click();
+    const claimed = await page
+      .context()
+      .request.post(`/api/activities/${activity.id}/claim`, {
+        headers: { Origin: origin, "X-CSRF-Token": viewer.csrfToken },
+        data: { submissionId: randomUUID(), participationMode: "direct" },
+      });
+    expect(claimed.status(), await claimed.text()).toBe(200);
     await expect
       .poll(
         async () =>
@@ -161,12 +178,11 @@ test("跨站 HTTPS 图片验证真实 Cookie 策略、公开降级、撤销和�
       await page.context().request.get("/api/me/activity-images")
     ).json();
     expect(record.recentRequest.activityId).toBe(activity.id);
-    const fallback = await page
-      .context()
-      .request.get(`${imagePath}?fallback=public`);
-    expect(await fallback.text()).not.toMatch(/0\.01 LDC|领取于|剩余/);
+    // Opened in a tab, the image address shows the 红包 itself.
     await page.goto(imagePath);
-    await expect(page).toHaveURL(`${origin}/activities/${activity.id}`);
+    await expect(page).toHaveURL(
+      `${origin}/${encodeURIComponent("🧧")}/${encodeURIComponent(encodeActivityEmoji(activity.id))}`,
+    );
     const logout = await page.context().request.post("/api/auth/logout", {
       headers: { Origin: origin, "X-CSRF-Token": viewer.csrfToken },
     });

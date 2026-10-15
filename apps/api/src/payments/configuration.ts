@@ -22,7 +22,7 @@ export class MerchantChangeConfirmationError extends ActivityError {
     super(
       409,
       "MERCHANT_CHANGE_REQUIRES_CONFIRMATION",
-      "存在进行中的活动或付款，请确认更换配置的影响。",
+      "存在进行中的红包或付款，请确认更换配置的影响。",
     );
   }
 }

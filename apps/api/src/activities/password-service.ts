@@ -188,7 +188,7 @@ export async function solveActivityPassword(
     assertParticipationMode(activity, "password");
     const status = activityStatus(activity);
     if (status === "draft")
-      throw new ActivityError(400, "ACTIVITY_NOT_OPEN", "活动尚未开放");
+      throw new ActivityError(400, "ACTIVITY_NOT_OPEN", "红包尚未开放");
     if (
       !(await findUserClaim(env, activityId, userId)) &&
       !(await findRegistration(env, activityId, userId))
@@ -293,6 +293,6 @@ export async function solveActivityPassword(
   throw new ActivityError(
     503,
     "ACTIVITY_BUSY",
-    "活动正在更新，请使用原提交重试",
+    "红包正在更新，请使用原提交重试",
   );
 }

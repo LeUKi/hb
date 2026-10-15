@@ -1109,7 +1109,7 @@ describe("lifecycle and public recipients", () => {
     ).toBe(1);
   });
 
-  it("uses the single public-list toggle and keeps private rewards and cursor contents hidden", async () => {
+  it("keeps the roster public and oldest first whatever the retired switches say, with private rewards and cursor contents hidden", async () => {
     await Promise.all([
       storePrivateProfile(owner, "owner"),
       storePrivateProfile(alice, "alice"),
@@ -1146,6 +1146,8 @@ describe("lifecycle and public recipients", () => {
     );
     const first = (await response.json()) as PublicRecipientList;
     expect(first.items).toHaveLength(20);
+    const claimedTimes = first.items.map((item) => Date.parse(item.claimedAt));
+    expect(claimedTimes).toEqual([...claimedTimes].sort((a, b) => a - b));
     expect(
       first.items.every(
         (item) =>
@@ -1228,12 +1230,18 @@ describe("lifecycle and public recipients", () => {
       /PRIVATE-|EMAIL-CIPHERTEXT-SECRET|email_ciphertext|emailCiphertext/,
     );
     const latest = await managed(activity.id);
-    await request(`/api/me/activities/${activity.id}`, owner, "PATCH", {
-      version: latest.version,
-      activity: { ...latest.config, showRecipientList: false },
-    });
     expect(
-      await (await request(`/api/activities/${activity.id}/recipients`)).json(),
-    ).toEqual({ enabled: false, items: [], nextCursor: null });
+      (
+        await request(`/api/me/activities/${activity.id}`, owner, "PATCH", {
+          version: latest.version,
+          activity: { ...latest.config, showRecipientList: false },
+        })
+      ).status,
+    ).toBe(200);
+    const stillPublic = (await (
+      await request(`/api/activities/${activity.id}/recipients`)
+    ).json()) as PublicRecipientList;
+    expect(stillPublic.items).toHaveLength(20);
+    expect(stillPublic).not.toHaveProperty("enabled");
   }, 20_000);
 });

@@ -86,7 +86,7 @@ export function bindFingerprint(
   purpose: "claim" | "solve" | "register" = "claim",
 ) {
   if (row.purpose !== purpose || row.fingerprint !== fingerprint)
-    activityConflict("同一提交标识不能更换操作、活动或口令");
+    activityConflict("同一提交标识不能更换操作、红包或口令");
   return row;
 }
 
@@ -171,7 +171,7 @@ export async function prepareClaimSubmission(
       throw new ActivityError(
         403,
         "SELF_CLAIM_FORBIDDEN",
-        "作者不能领取自己的 LDC 活动",
+        "不能领取自己发的红包",
       );
     const existingClaim = await findUserClaim(env, activityId, userId);
     if (existingClaim)
@@ -328,7 +328,7 @@ export async function prepareClaimSubmission(
   throw new ActivityError(
     503,
     "ACTIVITY_BUSY",
-    "活动正在更新，请使用原提交重试",
+    "红包正在更新，请使用原提交重试",
   );
 }
 
@@ -499,7 +499,7 @@ export async function completeClaimSubmission(
       throw new ActivityError(
         403,
         "SELF_CLAIM_FORBIDDEN",
-        "作者不能领取自己的 LDC 活动",
+        "不能领取自己发的红包",
       );
     const testPermission = permitsRealActivity(activity.id, executionPolicy);
     const realActivityPermitted =

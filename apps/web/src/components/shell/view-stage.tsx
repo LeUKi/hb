@@ -2,6 +2,7 @@ import { useLocation, useMatches } from "@tanstack/react-router";
 import { useAtomValue, useSetAtom } from "jotai";
 import { AnimatePresence, motion, useIsPresent } from "motion/react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef } from "react";
+import { useActivityFacts } from "../../lib/activity-facts";
 import { activityIdFromCode, senderPages } from "../../lib/activity-route";
 import { documentTitle } from "../../lib/brand";
 import { type CommandId, commandById } from "../../lib/commands";
@@ -9,6 +10,7 @@ import { durations, ease, useReducedMotionPref } from "../../lib/motion";
 import { topicAddress } from "../../lib/results";
 import { pageTitleAtom, viewEdgeAtom } from "../../lib/store";
 import { HelpView } from "../views/help-view";
+import { HongbaoView } from "../views/hongbao-view";
 import {
   CommandPageView,
   MessageView,
@@ -44,7 +46,7 @@ function renderView(leaf: NonNullable<Leaf>): ReactNode {
     case "/🧧/$code": {
       const id = activityIdFromCode(params.code ?? "");
       return id ? (
-        <MigratingView title="红包" />
+        <HongbaoView id={id} />
       ) : (
         <MessageView title="表情短地址无效" text="请检查链接是否完整。" />
       );
@@ -104,16 +106,22 @@ function renderView(leaf: NonNullable<Leaf>): ReactNode {
   }
 }
 
-/** Pages that draw from the window's top edge, under the 顶栏 (bleed). */
-function bleeds(_leaf: NonNullable<Leaf>) {
-  // The 红包 page bleeds; it comes with migration phase 2.
-  return false;
+/** The 红包 a route names, if any. */
+function leafActivityId(leaf: Leaf) {
+  const code = (leaf?.params as { code?: string } | undefined)?.code;
+  return code ? activityIdFromCode(code) : null;
 }
 
-function titleFor(leaf: NonNullable<Leaf>) {
+function titleFor(leaf: NonNullable<Leaf>, activityTitle: string | null) {
   const senderPage = leaf.staticData.senderPage;
-  if (senderPage) return documentTitle(senderPages[senderPage].title);
-  if (leaf.routeId === "/🧧/$code") return documentTitle("红包");
+  if (senderPage)
+    return documentTitle(
+      activityTitle
+        ? `${senderPages[senderPage].title} · ${activityTitle}`
+        : senderPages[senderPage].title,
+    );
+  if (leaf.routeId === "/🧧/$code")
+    return documentTitle(activityTitle ?? "红包");
   const { command, subpage } = leaf.staticData;
   // 网站管理's tabs say whose list it is (its 付款 is not your 付款记录).
   if (subpage)
@@ -279,12 +287,15 @@ function ViewFrame({
 export function ViewStage() {
   const leaf = useLeaf();
   const pageTitle = useAtomValue(pageTitleAtom);
+  // The 红包 the route names, as its page has read it.
+  const activity = useActivityFacts(leafActivityId(leaf));
+  const activityTitle = activity?.title ?? null;
   useEffect(() => {
     if (leaf)
       document.title = pageTitle
         ? documentTitle(pageTitle.title)
-        : titleFor(leaf);
-  }, [leaf, pageTitle]);
+        : titleFor(leaf, activityTitle);
+  }, [leaf, pageTitle, activityTitle]);
   if (!leaf) return null;
   const start = leaf.routeId === "/";
   return (
@@ -295,7 +306,13 @@ export function ViewStage() {
         className="absolute inset-0 isolate grid grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] outline-none [grid-template-areas:'stack']"
       >
         <AnimatePresence initial={false}>
-          <ViewFrame key={leaf.id} start={start} bleed={bleeds(leaf)}>
+          {/* The 红包 page draws from the window's top edge, under the 顶栏,
+              once it has its 红包 to draw. */}
+          <ViewFrame
+            key={leaf.id}
+            start={start}
+            bleed={leaf.routeId === "/🧧/$code" && activity !== null}
+          >
             {renderView(leaf)}
           </ViewFrame>
         </AnimatePresence>
