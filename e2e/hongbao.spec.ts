@@ -344,6 +344,19 @@ test.describe("红包页", () => {
     await expect(page.getByText("待发放")).toBeVisible();
     await expect(page.getByText("2 / 3 份")).toBeVisible();
     await expect(page.getByText("记得")).toBeVisible();
+    // While it runs, the 口令 used starts hidden behind an eye, on the result
+    // and in the 口令区 alike: a screenshot must not give it away. (The
+    // folded 指令框 still holds what was typed; it is not on screen.)
+    const main = page.getByRole("main");
+    const result = page.locator("[data-hb-part=result]");
+    const section = page.locator("[data-hb-part=passwords]");
+    await expect(main.getByText(passwordOf.mine)).toHaveCount(0);
+    const eye = result.getByRole("button", { name: "显示口令" });
+    await expect(eye).toHaveAttribute("aria-pressed", "false");
+    await eye.click();
+    await expect(result.getByText(passwordOf.mine)).toBeVisible();
+    await expect(eye).toHaveAttribute("aria-pressed", "true");
+    await expect(section.getByText(passwordOf.mine)).toHaveCount(0);
     expect(state.claims).toHaveLength(2);
     const [wrong, right] = state.claims as Array<{ submissionId: string }>;
     expect(right?.submissionId).not.toBe(wrong?.submissionId);
@@ -362,9 +375,10 @@ test.describe("红包页", () => {
     await expect(
       page.getByText("口令已解锁，不会再次领取奖励。"),
     ).toBeVisible();
-    await expect(
-      page.getByRole("listitem").filter({ hasText: passwordOf.other }),
-    ).toContainText("已解出");
+    const solved = section.getByRole("listitem").filter({ hasText: "已解出" });
+    await expect(solved).toContainText("已隐藏");
+    await section.getByRole("button", { name: "显示全部口令" }).click();
+    await expect(solved).toContainText(passwordOf.other);
     // Everything solved: nothing left to verify.
     await expect(
       page.getByRole("button", { name: "验证其他口令" }),
@@ -386,6 +400,16 @@ test.describe("红包页", () => {
       .toBe(
         `【周末红包】\n红包链接：${new URL(page.url()).origin}/🧧/${code}\n领取口令：${passwordOf.mine}`,
       );
+
+    // Ended (the last share went): every 口令 plain, and no eye anywhere.
+    state.activity = {
+      ...state.activity,
+      quantity: { mode: "exact", total: 3, claimed: 3, remaining: 0 },
+    };
+    await page.reload();
+    await expect(result.getByText(passwordOf.mine)).toBeVisible();
+    await expect(section.getByText(passwordOf.other)).toBeVisible();
+    await expect(page.getByRole("button", { name: /^显示/ })).toHaveCount(0);
   });
 
   test("发红包的人：看到全部口令，不能自己领", async ({ page }) => {
@@ -419,17 +443,58 @@ test.describe("红包页", () => {
     );
     await page.route(`**/api/me/activities/${id}/claims**`, (route) =>
       route.fulfill({
-        json: { items: [], nextCursor: null } satisfies AuthorClaimList,
+        json: {
+          items: [
+            {
+              id: "claim-viewer",
+              activity: { id, title: "周末红包", status: "active" },
+              rewardType: "ldc",
+              claimedAt: new Date(Date.parse(openedAt) + 60_000).toISOString(),
+              sourcePassword: passwordOf.mine,
+              amount: "0.10",
+              payment: {
+                id: "payment-viewer",
+                mode: "simulation",
+                status: "confirmed",
+                reason: null,
+                confirmedAt: new Date().toISOString(),
+              },
+              claimant: {
+                id: viewer.id,
+                username: viewer.username,
+                displayName: viewer.displayName,
+                avatarUrl: null,
+              },
+            },
+          ],
+          nextCursor: null,
+        } satisfies AuthorClaimList,
       }),
     );
     await openApp(page, path);
     await expect(
       page.getByRole("button", { name: "这是你发的红包，你不能领取" }),
     ).toBeDisabled();
+    // Even the sender's own 口令 start hidden while it runs.
+    const section = page.locator("[data-hb-part=passwords]");
+    await expect(
+      section.getByRole("listitem").filter({ hasText: "你设置的" }),
+    ).toHaveCount(2);
+    const main = page.getByRole("main");
+    await expect(main.getByText(passwordOf.mine)).toHaveCount(0);
+    await section.getByRole("button", { name: "显示全部口令" }).click();
     for (const password of [passwordOf.mine, passwordOf.other])
       await expect(
-        page.getByRole("listitem").filter({ hasText: password }),
+        section.getByRole("listitem").filter({ hasText: password }),
       ).toContainText("你设置的");
+    // So do the 口令 on the sender's 名单, behind one eye.
+    await page.locator("#roster-entry").click();
+    const roster = page.getByRole("dialog", { name: /领取名单/ });
+    await expect(roster.getByText(viewer.displayName)).toBeVisible();
+    await expect(roster.getByText(passwordOf.mine)).toHaveCount(0);
+    await roster.getByRole("button", { name: "显示名单里的口令" }).click();
+    await expect(roster.getByText(passwordOf.mine)).toBeVisible();
+    await page.keyboard.press("Escape");
     await expect(page.getByRole("link", { name: "编辑" })).toHaveAttribute(
       "href",
       `/🧧/${code}/📝`,

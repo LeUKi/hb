@@ -312,6 +312,7 @@ export function HongbaoHero({
               play={play || reveal}
               delay={play ? delay + 0.7 : 0.2}
               deadlineAt={hongbao.view.deadlineAt}
+              ended={hongbao.view.ended}
             />
           </motion.div>
         ) : (

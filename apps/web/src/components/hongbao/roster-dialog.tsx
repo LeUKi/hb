@@ -13,6 +13,7 @@ import { PanelDialog } from "../shell/panel-dialog";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { Segmented } from "../ui/field";
+import { RevealToggle } from "./password-text";
 import {
   RosterHeader,
   type RosterKind,
@@ -81,6 +82,8 @@ function RosterContent({
   const navigate = useNavigate();
   const { activity, view, roster } = data;
   const [tab, setTab] = useState<"winners" | "registrations">("winners");
+  // The 口令 on the sender's rows: hidden while it runs, until asked here.
+  const [passwordsRevealed, setPasswordsRevealed] = useState(false);
   const fuzzy = view.quantity.kind === "fuzzy";
   const kind: RosterKind =
     roster.kind === "claims"
@@ -157,12 +160,22 @@ function RosterContent({
         </p>
         <p className="text-xs text-ink-3">{metaLine(activity, view)}</p>
         {data.author && (
-          <p className="text-xs text-gold-ink">
-            你发的红包：每行多一行
-            {activity.participation === "password"
-              ? "口令和付款状态"
-              : "付款状态"}
-            ，只有你能看到。
+          <p className="flex items-center justify-between gap-2 text-xs text-gold-ink">
+            <span>
+              你发的红包：每行多一行
+              {activity.participation === "password"
+                ? "口令和付款状态"
+                : "付款状态"}
+              ，只有你能看到。
+            </span>
+            {activity.participation === "password" && !view.ended && (
+              <RevealToggle
+                what="名单里的口令"
+                shown={passwordsRevealed}
+                onToggle={() => setPasswordsRevealed((value) => !value)}
+                className="-my-2 -mr-2 shrink-0 text-gold-ink"
+              />
+            )}
           </p>
         )}
       </header>
@@ -198,6 +211,7 @@ function RosterContent({
           openedAt={view.openedAt}
           done={total === null || fuzzy ? "已全部加载" : `共 ${total} 人`}
           detailOf={data.author ? detailOf : undefined}
+          passwordsShown={view.ended || passwordsRevealed}
           onPayment={openPayment}
         />
       </div>

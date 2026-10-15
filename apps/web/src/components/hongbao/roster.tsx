@@ -6,6 +6,7 @@ import { type LazyList, LazyListEnd } from "../page/lazy-list";
 import { Avatar } from "../ui/avatar";
 import { PersonName } from "../ui/person";
 import { Squircle } from "../ui/squircle";
+import { PasswordText } from "./password-text";
 import { TitleBadges } from "./title-badge";
 
 const paymentText = {
@@ -62,12 +63,14 @@ function Row({
   kind,
   openedAt,
   detail,
+  passwordsShown,
   onPayment,
 }: {
   row: RosterRow;
   kind: RosterKind;
   openedAt: number;
   detail?: RowDetail | null;
+  passwordsShown: boolean;
   onPayment?: (id: string) => void;
 }) {
   return (
@@ -107,8 +110,14 @@ function Row({
             {detail && (
               <span className="flex min-w-0 items-center gap-2 text-xs text-ink-3">
                 {detail.password && (
-                  <span className="min-w-0 truncate">
-                    口令 <span className="font-mono">{detail.password}</span>
+                  <span className="flex min-w-0 items-center gap-1">
+                    <span className="shrink-0">口令</span>
+                    <PasswordText
+                      text={detail.password}
+                      shown={passwordsShown}
+                      seed={row.id}
+                      className="min-w-0"
+                    />
                   </span>
                 )}
                 {detail.payment && (
@@ -153,6 +162,7 @@ export function RosterList({
   openedAt,
   done,
   detailOf,
+  passwordsShown = true,
   onPayment,
 }: {
   rows: RosterRow[];
@@ -163,6 +173,8 @@ export function RosterList({
   done: string;
   /** The sender's extra line per row (only for the 红包's sender). */
   detailOf?: (row: RosterRow) => RowDetail | null;
+  /** The 口令 on those lines: hidden while the 红包 runs, until asked. */
+  passwordsShown?: boolean;
   onPayment?: (id: string) => void;
 }) {
   if (rows.length === 0 && list.state === "done")
@@ -188,6 +200,7 @@ export function RosterList({
             kind={kind}
             openedAt={openedAt}
             detail={detailOf?.(row)}
+            passwordsShown={passwordsShown}
             onPayment={onPayment}
           />
         ))}

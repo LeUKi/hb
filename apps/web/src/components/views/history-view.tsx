@@ -110,7 +110,13 @@ function SentRow({ record }: { record: SentRecord }) {
 function JoinedRow({ item }: { item: JoinedRecord }) {
   const { leaveTo } = useOmniboxController();
   const { outcome, payment, verb } = item;
-  const how = item.password ? `用口令 ${item.password} ${verb}` : `直接${verb}`;
+  // A running 红包's 口令 stays off the list: a screenshot of it would give
+  // the 口令 away (05 §9). It is public once the 红包 ended.
+  const how = !item.password
+    ? `直接${verb}`
+    : item.ended
+      ? `用口令 ${item.password} ${verb}`
+      : `用口令${verb}`;
   return (
     <li>
       <Squircle radius={radius.row}>

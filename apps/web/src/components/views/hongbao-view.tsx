@@ -146,6 +146,7 @@ function HongbaoPage({
         <PasswordSection
           activityId={activity.id}
           passwords={passwords}
+          ended={view.ended}
           onVerify={hongbao.openVerify}
         />
       </div>

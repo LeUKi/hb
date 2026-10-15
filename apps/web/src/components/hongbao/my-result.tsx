@@ -5,7 +5,7 @@ import {
 } from "@hb/contracts";
 import { Lock } from "lucide-react";
 import { motion } from "motion/react";
-import type { Ref } from "react";
+import { type Ref, useState } from "react";
 import type { HongbaoActivity, Mine } from "../../lib/hongbao";
 import { paymentTone } from "../../lib/hongbao-text";
 import { clockLabel, clockSeconds } from "../../lib/roster-time";
@@ -16,6 +16,7 @@ import { Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
 import { Countdown } from "./cover-data";
 import { CountUp } from "./parts";
+import { PasswordText, RevealToggle } from "./password-text";
 import { TitleBadges } from "./title-badge";
 
 function PaymentStatus({ state }: { state: PaymentState }) {
@@ -73,13 +74,38 @@ function TicketNote({
   return null;
 }
 
-function PasswordChip({ text }: { text: string }) {
+/** The 口令 used: hidden behind an eye while the 红包 runs (05 §9). */
+function PasswordChip({
+  text,
+  seed,
+  ended,
+}: {
+  text: string;
+  seed: string;
+  ended: boolean;
+}) {
+  const [revealed, setRevealed] = useState(false);
   return (
-    <Squircle radius={8}>
-      <span className="inline-flex h-7 items-center gap-1.5 bg-fill px-2.5 text-sm text-ink-2">
-        口令 <span className="font-mono text-ink">{text}</span>
-      </span>
-    </Squircle>
+    <span className="inline-flex items-center gap-0.5">
+      <Squircle radius={8}>
+        <span className="inline-flex h-7 items-center gap-1.5 bg-fill px-2.5 text-sm text-ink-2">
+          口令
+          <PasswordText
+            text={text}
+            shown={ended || revealed}
+            seed={seed}
+            fit
+            className="text-ink"
+          />
+        </span>
+      </Squircle>
+      {!ended && (
+        <RevealToggle
+          shown={revealed}
+          onToggle={() => setRevealed((value) => !value)}
+        />
+      )}
+    </span>
   );
 }
 
@@ -102,6 +128,7 @@ export function MyResult({
   play,
   delay,
   deadlineAt,
+  ended,
   ref,
 }: {
   activity: HongbaoActivity;
@@ -110,6 +137,8 @@ export function MyResult({
   play: boolean;
   delay: number;
   deadlineAt: number;
+  /** Over: the 口令 is public, shown plain. */
+  ended: boolean;
   ref?: Ref<HTMLDivElement>;
 }) {
   const won = mine.kind === "claimed" || mine.outcome === "won";
@@ -149,7 +178,13 @@ export function MyResult({
         ) : mine.kind === "registered" && mine.outcome === "lost" ? (
           <span className="text-sm text-ink-2">谢谢参与</span>
         ) : null}
-        {mine.password && <PasswordChip text={mine.password} />}
+        {mine.password && (
+          <PasswordChip
+            text={mine.password}
+            seed={`${activity.id}:mine`}
+            ended={ended}
+          />
+        )}
         {/* Titles share the row with the status and the 口令, arriving last. */}
         {mine.titles.length > 0 && (
           <motion.span

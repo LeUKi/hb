@@ -144,6 +144,29 @@ async function mockHistory(page: Page) {
             },
           },
           {
+            kind: "claim",
+            claim: {
+              id: "claim-2",
+              activity: {
+                id: "66666666-6666-4666-8666-666666666666",
+                title: "上周的红包",
+                status: "ended",
+                author,
+              },
+              rewardType: "ldc",
+              claimedAt: new Date(Date.now() - 3 * hour).toISOString(),
+              sourcePassword: "上周口令2026",
+              amount: "1.00",
+              payment: {
+                id: "payment-2",
+                mode: "real",
+                status: "pending",
+                reason: null,
+                confirmedAt: null,
+              },
+            },
+          },
+          {
             kind: "registration",
             registration: {
               id: "registration-1",
@@ -161,7 +184,7 @@ async function mockHistory(page: Page) {
           },
         ],
         nextCursor: null,
-        total: 2,
+        total: 3,
       } satisfies ParticipationList,
     }),
   );
@@ -249,8 +272,12 @@ test.describe("红包记录", () => {
     await mockSession(page, viewer);
     await mockHistory(page);
     await openApp(page, "/history?tab=joined");
+    // A running 红包's 口令 stays off the list (a screenshot of it would give
+    // the 口令 away); once it ended, the 口令 is public.
+    await expect(page.getByText("小满的红包 · 用口令领取")).toBeVisible();
+    await expect(page.getByText("读书口令2026")).toHaveCount(0);
     await expect(
-      page.getByText("小满的红包 · 用口令 读书口令2026 领取"),
+      page.getByText("小满的红包 · 用口令 上周口令2026 领取"),
     ).toBeVisible();
     await expect(page.getByText("已发放")).toBeVisible();
     await expect(page.getByText("小满的红包 · 直接报名")).toBeVisible();
