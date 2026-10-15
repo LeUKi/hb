@@ -1,0 +1,115 @@
+import { expect, test } from "@playwright/test";
+import {
+  expectPath,
+  identityButton,
+  mockSession,
+  omniboxInput,
+  openApp,
+  viewer,
+} from "./support/app";
+
+test.describe("外壳", () => {
+  test("启动加载后进入起始页：标题、构建标记、游客的登录按钮", async ({
+    page,
+  }) => {
+    await mockSession(page, null);
+    await page.goto("/");
+    await expect(page.locator("#boot")).toBeVisible();
+    await openApp(page);
+    await expect(page.locator("#boot")).toHaveCount(0);
+    await expect(page).toHaveTitle("lafish的红包站");
+    await expect(page.locator("#root")).not.toHaveAttribute("inert");
+    const stamp = page.locator("#build-stamp");
+    await expect(stamp).toHaveText(/^build @ [1-9]\d*$/);
+    await expect(identityButton(page)).toHaveAccessibleName("登录");
+    await expect(omniboxInput(page)).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: /\/history\s*红包记录/ }),
+    ).toBeVisible();
+  });
+
+  test("跳到主要内容是 Tab 的第一站", async ({ page }) => {
+    await mockSession(page, null);
+    await openApp(page);
+    await page.keyboard.press("Tab");
+    await expect(
+      page.getByRole("button", { name: "跳到主要内容" }),
+    ).toBeFocused();
+  });
+
+  test("输入 / 列出命令，回车进入第一条", async ({ page }) => {
+    await mockSession(page, null);
+    await openApp(page);
+    await omniboxInput(page).click();
+    await omniboxInput(page).fill("/help");
+    await expect(page.getByRole("option", { name: /帮助/ })).toBeVisible();
+    await page.keyboard.press("Enter");
+    await expectPath(page, "/help");
+    await expect(page.getByRole("heading", { name: "帮助" })).toBeVisible();
+  });
+
+  test("游客：要登录的命令打开登录卡片，直接打开页面看到登录提示", async ({
+    page,
+  }) => {
+    await mockSession(page, null);
+    await openApp(page);
+    await omniboxInput(page).click();
+    await omniboxInput(page).fill("/history");
+    await expect(
+      page.getByRole("option", { name: /红包记录.*需登录/ }),
+    ).toBeVisible();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("dialog", { name: "登录" })).toBeVisible();
+    await expectPath(page, "/");
+
+    await openApp(page, "/history");
+    await expect(page.getByRole("heading", { name: "红包记录" })).toBeVisible();
+    await expect(page.getByText("登录后可以使用。")).toBeVisible();
+    await expect(page).toHaveTitle("红包记录 · lafish的红包站");
+  });
+
+  test("帮助、运行状态和未找到页面", async ({ page }) => {
+    await mockSession(page, viewer);
+    await openApp(page, "/help");
+    await expect(page.getByRole("heading", { name: "帮助" })).toBeVisible();
+    await expect(page).toHaveTitle("帮助 · lafish的红包站");
+
+    await page.route("**/api/health", (route) =>
+      route.fulfill({ json: { status: "ok" } }),
+    );
+    await openApp(page, "/status");
+    await expect(page.getByRole("heading", { name: "连接正常" })).toBeVisible();
+
+    await openApp(page, "/activities/00000000-0000-4000-8000-000000000000");
+    await expect(
+      page.getByRole("heading", { name: "未找到页面" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "回到起始页" }).click();
+    await expectPath(page, "/");
+  });
+
+  test("已登录时头像打开用户卡片，名字一行通往账号资料", async ({ page }) => {
+    await mockSession(page, viewer);
+    await openApp(page);
+    await identityButton(page).click();
+    const card = page.getByRole("dialog", { name: viewer.displayName });
+    await expect(card).toBeVisible();
+    await expect(card.getByRole("link", { name: /账号资料/ })).toHaveAttribute(
+      "href",
+      "/me",
+    );
+    await expect(card.getByRole("link", { name: /红包记录/ })).toBeVisible();
+    await expect(card.getByRole("link", { name: /网站管理/ })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(card).toHaveCount(0);
+    await expect(identityButton(page)).toBeFocused();
+  });
+
+  test("手机宽度满屏，构建标记仍在", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 760 });
+    await mockSession(page, null);
+    await openApp(page);
+    await expect(omniboxInput(page)).toBeVisible();
+    await expect(page.locator("#build-stamp")).toBeVisible();
+  });
+});

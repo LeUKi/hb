@@ -1,96 +1,59 @@
-import {
-  type ButtonHTMLAttributes,
-  type ReactNode,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
-import "./copy-button.css";
+import { Check, Copy } from "lucide-react";
+import { useEffect, useState } from "react";
+import { cn } from "../../lib/cn";
+import { Button } from "./button";
+import { MorphLabel } from "./morph-label";
 
-export type CopyAction = {
-  getText: () => string | null;
-  scope: string | null;
-  canCopy?: () => boolean;
-};
-
-type CopyButtonProps = Omit<
-  ButtonHTMLAttributes<HTMLButtonElement>,
-  "children" | "onClick"
-> &
-  CopyAction & {
-    label: string;
-    icon?: ReactNode;
-  };
-
+/**
+ * A small icon button that copies a value. "已复制" shows on the button for
+ * a moment; a failed copy says so, so the value can be selected by hand.
+ */
 export function CopyButton({
+  value,
   label,
-  getText,
-  scope,
-  canCopy,
-  icon,
   className,
-  "aria-label": accessibleLabel = label,
-  ...props
-}: CopyButtonProps) {
-  const [feedback, setFeedback] = useState<string | null>(null);
-  const generation = useRef(0);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const currentScope = useRef(scope);
-  const current = useRef({ getText, canCopy });
-  useLayoutEffect(() => {
-    current.current = { getText, canCopy };
-  });
-  useLayoutEffect(() => {
-    currentScope.current = scope;
-    setFeedback(null);
-    return () => {
-      generation.current += 1;
-      if (timer.current !== null) clearTimeout(timer.current);
-    };
-  }, [scope]);
-
-  async function copy() {
-    if (current.current.canCopy?.() === false) return;
-    const request = ++generation.current;
-    const submittedScope = currentScope.current;
-    if (timer.current !== null) clearTimeout(timer.current);
-    setFeedback(null);
-    let result = "已复制";
-    try {
-      const text = current.current.getText();
-      if (text === null) return;
-      await navigator.clipboard.writeText(text);
-    } catch {
-      result = "复制失败";
-    }
-    if (
-      request !== generation.current ||
-      submittedScope !== currentScope.current ||
-      current.current.canCopy?.() === false
-    )
-      return;
-    setFeedback(result);
-    timer.current = setTimeout(() => {
-      if (request === generation.current) setFeedback(null);
-    }, 3000);
-  }
-
+}: {
+  value: string;
+  /** What is copied, for the accessible name ("复制 Client ID"). */
+  label: string;
+  className?: string;
+}) {
+  const [state, setState] = useState<"idle" | "done" | "failed">("idle");
+  useEffect(() => {
+    if (state === "idle") return;
+    const timer = window.setTimeout(() => setState("idle"), 1400);
+    return () => window.clearTimeout(timer);
+  }, [state]);
+  const copy = () => {
+    const write = navigator.clipboard?.writeText(value);
+    if (!write) return setState("failed");
+    write.then(
+      () => setState("done"),
+      () => setState("failed"),
+    );
+  };
   return (
-    <button
-      type="button"
-      {...props}
-      className={`copy-button${className ? ` ${className}` : ""}`}
-      aria-label={
-        feedback ? `${accessibleLabel}，${feedback}` : accessibleLabel
-      }
-      onClick={() => void copy()}
-    >
-      {icon}
-      <span className="copy-button-label" data-label={label}>
-        <span aria-live="polite" aria-atomic="true">
-          {feedback ?? label}
-        </span>
+    <span className={cn("inline-flex shrink-0 items-center gap-1", className)}>
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        onClick={copy}
+        aria-label={`复制${label}`}
+        title={`复制${label}`}
+        className="text-ink-3"
+      >
+        {state === "done" ? (
+          <Check className="text-success" aria-hidden="true" />
+        ) : (
+          <Copy aria-hidden="true" />
+        )}
+      </Button>
+      {/* Grows in and folds away, so the text beside it moves smoothly. */}
+      <span role="status" className="text-xs text-ink-3">
+        <MorphLabel align="start">
+          {state === "done" ? "已复制" : state === "failed" ? "请手动复制" : ""}
+        </MorphLabel>
       </span>
-    </button>
+    </span>
   );
 }

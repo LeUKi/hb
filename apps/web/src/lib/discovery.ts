@@ -5,7 +5,12 @@ import type {
   GlobalRedemptionInput,
   GlobalRedemptionResult,
 } from "@hb/contracts";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { atom } from "jotai";
 import { api } from "../api";
 import { ActivityRequestError, readResponse } from "./activities";
@@ -161,6 +166,80 @@ export function useRedemptionResult(
   });
 }
 
+/**
+ * A 口令's matches as pages (/🔑/<result>): the lookup's own first page from
+ * the cache when it is there, then 20 more at a time.
+ */
+export function useRedemptionResultPages(userId: string, id: string) {
+  const queryClient = useQueryClient();
+  const account = useAccountSession(userId, "session");
+  const identity = account.captureIdentity();
+  return useInfiniteQuery({
+    queryKey: [...redemptionKey(userId, id), identity, "pages"],
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam, signal }) => {
+      const requestIdentity = account.captureIdentity();
+      const result = await readResponse<GlobalRedemptionResult>(
+        await api.api.redemptions[":id"].$get(
+          { param: { id }, query: pageParam ? { cursor: pageParam } : {} },
+          { init: { signal, cache: "no-store" } },
+        ),
+      );
+      if (
+        signal.aborted ||
+        requestIdentity !== identity ||
+        !account.isCurrentIdentity(requestIdentity)
+      )
+        throw new DOMException("请求已失效", "AbortError");
+      const ticket = pageParam === null ? getAttemptTicket(userId, id) : null;
+      if (ticket)
+        void settleAttempt(ticket, result.result !== "none", [
+          ...result.items.map((item) => item.id),
+          ...(result.selectedActivityId ? [result.selectedActivityId] : []),
+        ]);
+      return result;
+    },
+    getNextPageParam: (last) => last.nextCursor,
+    initialData: () => {
+      const first = queryClient.getQueryData<GlobalRedemptionResult>([
+        ...redemptionKey(userId, id),
+        identity,
+        null,
+      ]);
+      return first ? { pages: [first], pageParams: [null] } : undefined;
+    },
+    enabled: Boolean(userId) && Boolean(identity),
+    retry: false,
+    refetchInterval: 15_000,
+  });
+}
+
+/** A post's 红包 as pages (/💬/<topic>/<post>), 20 at a time. */
+export function useTopicActivityPages(
+  topicId: string,
+  postNumber: number,
+  userId: string | null,
+) {
+  const queryClient = useQueryClient();
+  return useInfiniteQuery({
+    queryKey: ["topic-activities", topicId, postNumber, userId, "pages"],
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) =>
+      topicActivitiesQuery(topicId, postNumber, userId, pageParam).queryFn({
+        signal,
+      }),
+    getNextPageParam: (last) => last.nextCursor,
+    initialData: () => {
+      const first = queryClient.getQueryData<DiscoveryList>(
+        topicActivitiesQuery(topicId, postNumber, userId).queryKey,
+      );
+      return first ? { pages: [first], pageParams: [null] } : undefined;
+    },
+    retry: false,
+    refetchInterval: 15_000,
+  });
+}
+
 export function useDiscovery(
   status: "all" | "active" | "ended",
   cursor: string | null,
@@ -183,17 +262,16 @@ export function useDiscovery(
   });
 }
 
-export function useTopicActivities(
+/** A post's 红包: one key and read for the 指令框 and the /💬/ page. */
+export function topicActivitiesQuery(
   topicId: string,
   postNumber: number,
-  cursor: string | null,
   userId: string | null,
-  enabled = true,
+  cursor: string | null = null,
 ) {
-  return useQuery({
+  return {
     queryKey: ["topic-activities", topicId, postNumber, userId, cursor],
-    enabled,
-    queryFn: async ({ signal }) =>
+    queryFn: async ({ signal }: { signal: AbortSignal }) =>
       readResponse<DiscoveryList>(
         await api.api.topics[":topicId"].activities.$get(
           {
@@ -207,6 +285,19 @@ export function useTopicActivities(
         ),
       ),
     retry: false,
+  } as const;
+}
+
+export function useTopicActivities(
+  topicId: string,
+  postNumber: number,
+  cursor: string | null,
+  userId: string | null,
+  enabled = true,
+) {
+  return useQuery({
+    ...topicActivitiesQuery(topicId, postNumber, userId, cursor),
+    enabled,
     refetchInterval: 15_000,
   });
 }

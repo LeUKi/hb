@@ -1,7 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
-import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { assetCachePlugin } from "./asset-cache.ts";
@@ -26,7 +25,6 @@ export default defineConfig(() => {
       brandHtmlPlugin(),
       buildTimePlugin(builtAtUnixSeconds),
       assetCachePlugin(),
-      tanstackRouter({ target: "react", autoCodeSplitting: false }),
       react(),
       tailwindcss(),
     ],

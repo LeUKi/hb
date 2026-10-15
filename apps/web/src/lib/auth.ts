@@ -58,6 +58,13 @@ export function useSession() {
     queryFn: ({ signal }) => fetchSession({ signal }),
     // A fresh data cache must not postpone detecting a session changed elsewhere.
     refetchOnWindowFocus: "always",
+    // A failed check is said at once (the 顶栏 offers 重试): an automatic retry
+    // would wait for the window to have focus and leave it "checking". A
+    // component mounting must not read it again either: with no data, each
+    // read starts as "pending", which remounts the components that show the
+    // failure, which would read again.
+    retry: false,
+    retryOnMount: false,
   });
   const session = query.data as SessionAttemptCooldownSnapshot | undefined;
   const userId = session?.user?.id ?? null;
@@ -157,22 +164,15 @@ export function isAuthUnavailable(authError: string | null) {
   return authError === "auth_not_configured";
 }
 
+/**
+ * 退出登录 holds the session until the server has ended it: a failure leaves
+ * the account signed in and says so (02 §9). Once it has, reads started
+ * before it resolve as a guest, and every private query goes.
+ */
 export function useLogout(csrfToken: string | null | undefined) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    onMutate: async () => {
-      sessionGeneration += 1;
-      forceAnonymousSession = true;
-      clearAttemptCooldown();
-      await queryClient.cancelQueries({
-        predicate: (query) => isPrivateQueryKey(query.queryKey),
-      });
-      queryClient.setQueryData<SessionResponse>(
-        sessionQueryKey,
-        anonymousSession,
-      );
-    },
     mutationFn: async () => {
       const response = await api.api.auth.logout.$post(undefined, {
         headers: csrfToken ? { "X-CSRF-Token": csrfToken } : undefined,
@@ -185,14 +185,20 @@ export function useLogout(csrfToken: string | null | undefined) {
       return response.json();
     },
     onSuccess: async () => {
-      forceAnonymousSession = false;
+      sessionGeneration += 1;
+      forceAnonymousSession = true;
+      clearAttemptCooldown();
+      await queryClient.cancelQueries({
+        predicate: (query) => isPrivateQueryKey(query.queryKey),
+      });
+      queryClient.setQueryData<SessionResponse>(
+        sessionQueryKey,
+        anonymousSession,
+      );
       queryClient.removeQueries({
         predicate: (query) =>
           isPrivateQueryKey(query.queryKey) && query.queryKey[0] !== "auth",
       });
-      await queryClient.invalidateQueries({ queryKey: sessionQueryKey });
-    },
-    onError: async () => {
       forceAnonymousSession = false;
       await queryClient.invalidateQueries({ queryKey: sessionQueryKey });
     },

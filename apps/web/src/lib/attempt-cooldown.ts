@@ -191,11 +191,16 @@ export function useAttemptCooldown(userId: string | null | undefined) {
     Math.max(now, Date.now()),
   );
   const active = remainingMs > 0;
+  // Wakes exactly when the shown number changes, so each second lasts a
+  // second (no polling, no drift).
   useEffect(() => {
     if (!active) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 250);
-    return () => window.clearInterval(timer);
-  }, [active]);
+    const timer = window.setTimeout(
+      () => setNow(Date.now()),
+      (remainingMs % 1_000 || 1_000) + 2,
+    );
+    return () => window.clearTimeout(timer);
+  }, [active, remainingMs]);
   return {
     revision: snapshot?.revision,
     nextAllowedAt: snapshot?.nextAllowedAt,

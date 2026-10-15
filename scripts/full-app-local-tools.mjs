@@ -73,11 +73,11 @@ export function rewriteOAuthAuthorizeLocation(location, publicOrigin) {
 export function createLocalExperienceHome(publicOrigin) {
   const accountRows = localRoleOptions()
     .map(({ role, name, username }) => {
-      const href = `/__local/full-app/login?role=${encodeURIComponent(role)}&returnTo=%2Faccount`;
+      const href = `/__local/full-app/login?role=${encodeURIComponent(role)}&returnTo=%2F`;
       return `<li><a href="${href}">${escapeHtml(`${name} @${username}`)}</a></li>`;
     })
     .join("\n");
-  return `<!doctype html><meta charset="utf-8"><title>解meme 本地体验</title><style>body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#111;color:#eee;margin:32px;line-height:1.6}a{color:#ff7a6e}code{background:#222;padding:2px 6px;border-radius:6px}</style><h1>解meme 本地体验</h1><p>应用入口：<a href="${publicOrigin}/">${publicOrigin}/</a></p><p>选择身份会先进入真实 <code>/api/auth/login</code>，再由本地 OAuth bridge 返回真实 callback 创建会话。</p><ul>${accountRows}</ul>`;
+  return `<!doctype html><meta charset="utf-8"><title>lafish的红包站 本地体验</title><style>body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#111;color:#eee;margin:32px;line-height:1.6}a{color:#ff7a6e}code{background:#222;padding:2px 6px;border-radius:6px}</style><h1>lafish的红包站 本地体验</h1><p>应用入口：<a href="${publicOrigin}/">${publicOrigin}/</a></p><p>选择身份会先进入真实 <code>/api/auth/login</code>，再由本地 OAuth bridge 返回真实 callback 创建会话。</p><ul>${accountRows}</ul>`;
 }
 
 export function createLocalLoginResponse(
