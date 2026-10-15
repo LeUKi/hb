@@ -1,6 +1,7 @@
 import type { ApiBindings } from "../env";
 import { allowsRealSending, readPlatformControls } from "../runtime/controls";
 import type { PaymentTaskRow } from "./adapter";
+import { claimBusinessNoSql } from "./business-no";
 import {
   claimPaymentParameterDigest,
   effectiveClaimPaymentTask,
@@ -124,7 +125,7 @@ export function claimPaymentIdentitySql(alias: "p" | "payment_tasks") {
   return `${alias}.source='claim' AND ${alias}.mode='real'
     AND ${alias}.claim_id IS NOT NULL AND ${alias}.acceptance_id IS NULL
     AND ${alias}.recovery_policy='claim_same_order_v1'
-    AND ${alias}.business_no='hb_' || REPLACE(${alias}.claim_id,'-','')
+    AND ${claimBusinessNoSql(alias)}
     AND EXISTS(SELECT 1 FROM claims c
       JOIN activities a ON a.id=c.activity_id
       JOIN reward_inventory r ON r.id=c.inventory_id AND r.activity_id=a.id

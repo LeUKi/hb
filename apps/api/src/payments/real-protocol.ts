@@ -53,7 +53,7 @@ function assertRealTask(task: PaymentTaskRow): string {
   const username = task.recipientUsername;
   if (!username || hasControlCharacter(username))
     throw new Error("Real protocol requires recipient username snapshot");
-  if (!/^[A-Za-z0-9_-]{1,64}$/.test(task.businessNo))
+  if (!/^[A-Za-z0-9._-]{1,64}$/.test(task.businessNo))
     throw new Error("Invalid business number");
   if (!Number.isSafeInteger(task.amountMinor) || task.amountMinor <= 0)
     throw new Error("Invalid payment amount");

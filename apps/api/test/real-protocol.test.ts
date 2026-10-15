@@ -4,6 +4,7 @@ import {
   ensureQueryEvidenceMatchesTask,
   type PaymentTaskRow,
 } from "../src/payments/adapter";
+import { paymentBusinessNo } from "../src/payments/business-no";
 import {
   assertUint64Decimal,
   basicAuthorization,
@@ -420,6 +421,36 @@ describe("real LDC protocol", () => {
         clientSecret: "secret-value",
       }),
     ).resolves.toMatchObject({ kind: "conflict" });
+  });
+
+  it("sends a 业务号 that starts with the site's domain, and nothing looser", async () => {
+    const businessNo = paymentBusinessNo(
+      "0bac75e5-d4e5-44e3-ae80-18c757d781ae",
+    );
+    const bodies: string[] = [];
+    const adapter = createRealPaymentAdapter({
+      baseUrl: "https://ldc-reserved.invalid",
+      fetch: vi.fn(async (_url, init) => {
+        bodies.push(String(init?.body));
+        return new Response(
+          JSON.stringify({
+            error_msg: "",
+            data: { trade_no: "TRADE1", out_trade_no: businessNo },
+          }),
+          { status: 200 },
+        );
+      }),
+    });
+    const secret = { credentialVersion: 2, clientSecret: "secret-value" };
+    expect(await adapter.send(realTask({ businessNo }), secret)).toMatchObject({
+      kind: "sent",
+      evidence: { businessNo, externalOrderId: "TRADE1" },
+    });
+    expect(bodies[0]).toContain(`"out_trade_no":"${businessNo}"`);
+    await expect(
+      adapter.send(realTask({ businessNo: "hb.lafi.sh/order 1" }), secret),
+    ).rejects.toThrow("business number");
+    expect(bodies).toHaveLength(1);
   });
 
   it("rejects unsafe base URLs and non-real tasks before fetch", async () => {

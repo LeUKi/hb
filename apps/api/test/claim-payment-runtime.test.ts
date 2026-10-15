@@ -68,6 +68,8 @@ async function fixture(
     enabled?: boolean;
     history?: boolean;
     digest?: string;
+    /** The task's 业务号, from its claim's id without dashes. */
+    businessNo?: (claim: string) => string;
   } = {},
 ) {
   const db = createDb(env.DB);
@@ -167,7 +169,9 @@ async function fixture(
     acceptanceId: null,
     merchantId,
     clientId,
-    businessNo: `hb_${claimId.replaceAll("-", "")}`,
+    businessNo: (options.businessNo ?? ((claim) => `hb_${claim}`))(
+      claimId.replaceAll("-", ""),
+    ),
     recipientId,
     recipientUsername: username,
     amountMinor: 10,
@@ -337,6 +341,30 @@ describe("ordinary real claim payments", () => {
     expect(a.query).not.toHaveBeenCalled();
     expect((await task(f)).firstSendAt).toBeNull();
     expect((await task(f)).attemptCount).toBe(0);
+  });
+
+  it("sends under either form of the claim's own 业务号, and under no other", async () => {
+    const domain = await fixture({
+      businessNo: (claim) => `hb.lafi.sh_${claim}`,
+    });
+    const sent = adapter(confirmation(domain), receipt(domain));
+    await cycle(domain, sent);
+    expect(sent.send).toHaveBeenCalledOnce();
+    expect(vi.mocked(sent.send).mock.calls[0]?.[0].businessNo).toBe(
+      domain.businessNo,
+    );
+
+    const another = crypto.randomUUID().replaceAll("-", "");
+    for (const businessNo of [
+      () => `hb.lafi.sh_${another}`,
+      (claim: string) => `x.example_${claim}`,
+    ]) {
+      const f = await fixture({ businessNo });
+      const refused = adapter(confirmation(f), receipt(f));
+      await cycle(f, refused);
+      expect(refused.send).not.toHaveBeenCalled();
+      expect((await task(f)).attemptCount).toBe(0);
+    }
   });
 
   it("defaults closed and sends historical queries while all send/open/claim flags are stopped", async () => {

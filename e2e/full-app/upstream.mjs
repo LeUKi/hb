@@ -185,7 +185,7 @@ export function createTestUpstream(Response, origin, options = {}) {
           body.username !== recipient.username ||
           amountMinor < 1 ||
           amountMinor > 10_000 ||
-          !/^hb_[0-9a-f]{32}$/.test(body.out_trade_no)
+          !/^(?:hb|hb\.lafi\.sh)_[0-9a-f]{32}$/.test(body.out_trade_no)
         )
           return json({ error_msg: "参数错误" }, 400);
         if (orders.has(body.out_trade_no))

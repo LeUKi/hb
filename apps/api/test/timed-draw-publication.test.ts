@@ -293,7 +293,8 @@ describe("durable draw bulk publication", () => {
     let sendCount = 0;
     const winner = f.plan.winners[0];
     if (!winner) throw new Error("missing winner");
-    const businessNo = `hb_${winner.claimId.replaceAll("-", "")}`;
+    // The site's domain, then the claim: what LDC is sent and asked about.
+    const businessNo = `hb.lafi.sh_${winner.claimId.replaceAll("-", "")}`;
     const transport = vi.fn(
       async (url: string | URL | Request, init?: RequestInit) => {
         const path = new URL(String(url));

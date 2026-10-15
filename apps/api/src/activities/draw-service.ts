@@ -4,6 +4,7 @@ import {
   type TimedDrawMoney,
 } from "@hb/contracts";
 import type { ApiBindings } from "../env";
+import { paymentBusinessNo } from "../payments/business-no";
 import { claimPaymentParameterDigest } from "../payments/policy";
 import { assertUint64Decimal } from "../payments/real-protocol";
 import { timedDrawMoney } from "./draw-storage";
@@ -280,7 +281,7 @@ export async function publishDrawPlan(env: ApiBindings, activityId: string) {
           throw new Error("Drawing recipient is inconsistent");
         if (activity.paymentMode === "real")
           assertUint64Decimal(winner.recipientId);
-        const businessNo = `hb_${winner.claimId.replaceAll("-", "")}`;
+        const businessNo = paymentBusinessNo(winner.claimId);
         const recoveryPolicy =
           activity.paymentMode === "real"
             ? ("claim_same_order_v1" as const)

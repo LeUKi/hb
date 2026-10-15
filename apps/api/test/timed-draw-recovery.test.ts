@@ -24,6 +24,7 @@ import { app } from "../src/app";
 import { createDb } from "../src/db/client";
 import { sessions, users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
+import { paymentBusinessNo } from "../src/payments/business-no";
 import { createMerchant } from "../src/payments/merchants";
 import { runMerchantCycle } from "../src/payments/scheduler";
 import { sha256Hex } from "../src/security/crypto";
@@ -282,7 +283,7 @@ describe("persisted timed-draw recovery and participation pagination", () => {
         inventoryId: winner.inventoryId,
         recipientId: winner.recipientId,
         amountMinor: winner.amountMinor,
-        businessNo: `hb_${winner.claimId.replaceAll("-", "")}`,
+        businessNo: paymentBusinessNo(winner.claimId),
       }))
       .sort((a, b) => (a.taskId < b.taskId ? -1 : 1));
     expect(await payouts(draft.id)).toEqual(expectedPayouts);

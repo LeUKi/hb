@@ -12,6 +12,7 @@ import {
   users,
 } from "../db/schema";
 import type { ApiBindings } from "../env";
+import { paymentBusinessNo } from "../payments/business-no";
 import { claimPaymentParameterDigest } from "../payments/policy";
 import { assertUint64Decimal } from "../payments/real-protocol";
 import {
@@ -583,7 +584,7 @@ export async function completeClaimSubmission(
       if (!merchant || reward.amount_minor === null || !activity.merchantId)
         throw new Error("LDC claim identity is incomplete");
       paymentMerchantVersion = merchant.version;
-      const businessNo = `hb_${claimId.replaceAll("-", "")}`;
+      const businessNo = paymentBusinessNo(claimId);
       const recoveryPolicy =
         activity.paymentMode === "real"
           ? ("claim_same_order_v1" as const)
