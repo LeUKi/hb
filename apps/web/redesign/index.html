@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#6e0f1b" />
+    <meta name="description" content="__BRAND_DESCRIPTION__" />
+    <title>__BRAND_TITLE__</title>
+    <!--brand-icon-->
+    <style>
+      /* Boot loader: painted before any JS or app CSS arrives. Colours mirror
+         the 夜灯 tokens in styles.css: the gradients below are the resting
+         state of .desktop-bg plus its three .desktop-glow lights, and
+         .boot-frame matches .window-glass. */
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: clip;
+        background: #3a0710;
+      }
+      #boot {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(
+            42vmax 42vmax at 10% 108%,
+            rgb(242 196 109 / 0.42),
+            transparent 70%
+          ),
+          radial-gradient(
+            30vmax 30vmax at 84% -6%,
+            rgb(255 122 92 / 0.3),
+            transparent 70%
+          ),
+          radial-gradient(
+            18vmax 18vmax at 92% 96%,
+            rgb(242 196 109 / 0.18),
+            transparent 70%
+          ),
+          radial-gradient(120% 100% at 15% 0%, #a21d2c 0%, #6e0f1b 48%, #3a0710 100%);
+        font-family:
+          system-ui,
+          -apple-system,
+          "PingFang SC",
+          "Microsoft YaHei UI",
+          sans-serif;
+        color: #2a1519;
+      }
+      /* Squircle corners: elements with data-squircle are clipped by the
+         script below using their --sq-r radius, like <Squircle> in the app. */
+      #boot .boot-window {
+        position: relative;
+        /* Same geometry and radii as AppWindow (app-window-frame utility). */
+        width: 100vw;
+        height: 100dvh;
+        --sq-r: 0px;
+      }
+      @media (min-width: 640px) and (min-height: 560px) {
+        #boot .boot-window {
+          width: calc(100vw - 32px);
+          height: calc(100dvh - 32px);
+          --sq-r: 22px;
+        }
+      }
+      @media (min-width: 1024px) and (min-height: 560px) {
+        #boot .boot-window {
+          width: min(1200px, calc(100vw - 64px));
+          height: min(940px, calc(100dvh - 64px));
+          --sq-r: 28px;
+        }
+      }
+      /* The long shadow lives on a plate: the clip would cut it off the frame. */
+      #boot .boot-plate {
+        position: absolute;
+        inset: 0;
+        border-radius: var(--sq-r);
+        box-shadow: 0 30px 60px -28px rgb(30 0 6 / 0.7);
+      }
+      #boot .boot-frame {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        border-radius: var(--sq-r);
+        background: rgb(255 250 248 / 0.84);
+        -webkit-backdrop-filter: blur(22px) saturate(1.4);
+        backdrop-filter: blur(22px) saturate(1.4);
+        box-shadow:
+          inset 0 1px 0 rgb(255 255 255 / 0.95),
+          inset 0 0 0 1px rgb(255 255 255 / 0.5);
+      }
+      @media (max-width: 639px), (max-height: 559px) {
+        #boot .boot-frame {
+          background: rgb(255 250 248 / 0.92);
+        }
+      }
+      #boot .boot-center {
+        display: grid;
+        justify-items: center;
+        gap: 22px;
+        transition:
+          opacity 200ms ease,
+          transform 200ms ease;
+      }
+      /* Lit tile: the squircle face is clipped, the glow stays outside. */
+      #boot .boot-mark {
+        position: relative;
+        isolation: isolate;
+        display: grid;
+        place-items: center;
+        width: 56px;
+        height: 56px;
+        --sq-r: 17px;
+        border-radius: var(--sq-r);
+        box-shadow: 0 10px 22px -10px rgb(197 30 42 / 0.7);
+        color: #fff6ee;
+        font-size: 28px;
+        font-weight: 600;
+        line-height: 1;
+      }
+      #boot .boot-mark-fill {
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        border-radius: inherit;
+        background: linear-gradient(180deg, #e8473d, #c51e2a);
+        box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.4);
+      }
+      #boot .boot-dot {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: linear-gradient(180deg, #f8e6bc, #edcb86);
+        box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.8);
+      }
+      #boot .boot-track {
+        position: relative;
+        width: 220px;
+        height: 6px;
+        overflow: hidden;
+        --sq-r: 3px;
+        border-radius: var(--sq-r);
+        background: rgb(42 21 25 / 0.08);
+        box-shadow: inset 0 1px 1px rgb(42 21 25 / 0.08);
+      }
+      #boot .boot-fill {
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #edcb86, #e8473d 55%, #c51e2a);
+        transform: scaleX(0);
+        transform-origin: left center;
+      }
+      #boot .boot-pct {
+        min-width: 4ch;
+        color: #9a7f85;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 13px;
+        font-variant-numeric: tabular-nums;
+        text-align: center;
+      }
+      #boot .boot-failure {
+        display: grid;
+        justify-items: center;
+        gap: 14px;
+        font-size: 16px;
+      }
+      #boot .boot-failure[hidden] {
+        display: none;
+      }
+      #boot .boot-failure button {
+        height: 44px;
+        padding: 0 20px;
+        border: 0;
+        --sq-r: 14px;
+        border-radius: var(--sq-r);
+        background: linear-gradient(180deg, #e8473d, #c51e2a);
+        box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.35);
+        color: #fff6ee;
+        font: inherit;
+        cursor: pointer;
+      }
+      #boot[data-state="failed"] .boot-center {
+        display: none;
+      }
+      #boot[data-state="done"] {
+        opacity: 0;
+        transition: opacity 220ms ease;
+      }
+      #boot[data-state="done"] .boot-center {
+        opacity: 0;
+        transform: translateY(-6px);
+      }
+      #boot[data-motion="reduce"],
+      #boot[data-motion="reduce"] .boot-center {
+        transition: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="boot"
+      role="progressbar"
+      aria-label="正在加载"
+      aria-valuemin="0"
+      aria-valuemax="100"
+      aria-valuenow="0"
+    >
+      <div class="boot-window">
+        <div class="boot-plate"></div>
+        <div class="boot-frame" data-squircle>
+          <div class="boot-center">
+            <!--brand-mark-->
+            <div class="boot-track" data-squircle>
+              <div class="boot-fill" data-boot-fill></div>
+            </div>
+            <div class="boot-pct" data-boot-pct>0%</div>
+          </div>
+          <div class="boot-failure" data-boot-failure hidden>
+            <span>加载失败</span>
+            <button type="button" data-boot-reload data-squircle>重新加载</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="root" inert></div>
+    <script>
+      // Milestones: HTML parsed 12% → bundle evaluated 70% → identity 88% →
+      // first frame 100%. Between milestones the bar trickles asymptotically.
+      (() => {
+        const boot = document.getElementById("boot");
+        const appRoot = document.getElementById("root");
+        if (!boot || !appRoot) return;
+        // figma-squircle's getSvgPath (the engine of @squircle-js/react) for
+        // equal corners, smoothing 0.8 as in lib/squircle-path.ts.
+        const smoothing = 0.8;
+        const squirclePath = (width, height, radius) => {
+          const budget = Math.min(width, height) / 2;
+          const r = Math.min(radius, budget);
+          const s = Math.max(0, Math.min(smoothing, budget / r - 1));
+          const p = Math.min((1 + smoothing) * r, budget);
+          const deg = Math.PI / 180;
+          const arcMeasure = 90 * (1 - s);
+          const arc = Math.sin((arcMeasure / 2) * deg) * r * Math.SQRT2;
+          const p34 = r * Math.tan(((90 - arcMeasure) / 4) * deg);
+          const c = p34 * Math.cos(45 * s * deg);
+          const d = c * Math.tan(45 * s * deg);
+          const b = (p - arc - c - d) / 3;
+          const a = 2 * b;
+          const e = a + b + c;
+          return (
+            `M${width - p} 0c${a} 0 ${a + b} 0 ${e} ${d}` +
+            `a${r} ${r} 0 0 1 ${arc} ${arc}c${d} ${c} ${d} ${b + c} ${d} ${e}` +
+            `L${width} ${height - p}c0 ${a} 0 ${a + b} ${-d} ${e}` +
+            `a${r} ${r} 0 0 1 ${-arc} ${arc}c${-c} ${d} ${-(b + c)} ${d} ${-e} ${d}` +
+            `L${p} ${height}c${-a} 0 ${-(a + b)} 0 ${-e} ${-d}` +
+            `a${r} ${r} 0 0 1 ${-arc} ${-arc}c${-d} ${-c} ${-d} ${-(b + c)} ${-d} ${-e}` +
+            `L0 ${p}c0 ${-a} 0 ${-(a + b)} ${d} ${-e}` +
+            `a${r} ${r} 0 0 1 ${arc} ${-arc}c${c} ${-d} ${b + c} ${-d} ${e} ${-d}Z`
+          );
+        };
+        const clipSquircles = () => {
+          for (const element of boot.querySelectorAll("[data-squircle]")) {
+            const radius = Number.parseFloat(
+              getComputedStyle(element).getPropertyValue("--sq-r"),
+            );
+            const { offsetWidth: width, offsetHeight: height } = element;
+            element.style.clipPath =
+              radius > 0 && width > 0 && height > 0
+                ? `path('${squirclePath(width, height, radius)}')`
+                : "";
+          }
+        };
+        clipSquircles();
+        addEventListener("resize", clipSquircles);
+
+        const fill = boot.querySelector("[data-boot-fill]");
+        const percent = boot.querySelector("[data-boot-pct]");
+        const failure = boot.querySelector("[data-boot-failure]");
+        const read = (key) => {
+          try {
+            return localStorage.getItem(key);
+          } catch {
+            return null;
+          }
+        };
+        const slow = read("hb-redesign:slow-boot") === "true";
+        const reduce =
+          matchMedia("(prefers-reduced-motion: reduce)").matches ||
+          read("hb-redesign:motion") === '"reduce"';
+        if (reduce) boot.dataset.motion = "reduce";
+
+        const stages = {
+          script: [70, 86],
+          identity: [88, 97],
+          frame: [100, 100],
+        };
+        const stepDelay = slow ? 850 : 0;
+        const minimumVisible = slow ? 2600 : 450;
+        const startedAt = performance.now();
+        const queue = [];
+        const listeners = [];
+        let floor = 12;
+        let ceiling = 64;
+        let value = 0;
+        let appliedAt = startedAt;
+        let failed = false;
+
+        const api = {
+          done: false,
+          /** Arrival time of each milestone, for diagnosing slow starts. */
+          timings: {},
+          mark(stage) {
+            if (!(stage in api.timings)) api.timings[stage] = performance.now();
+            if (stages[stage] && !queue.includes(stage)) queue.push(stage);
+          },
+          fail() {
+            if (api.done || failed) return;
+            failed = true;
+            boot.dataset.state = "failed";
+            if (failure) failure.hidden = false;
+            clipSquircles();
+          },
+          onDone(callback) {
+            if (api.done) callback();
+            else listeners.push(callback);
+          },
+        };
+        window.hbBoot = api;
+
+        const render = () => {
+          const shown = Math.min(100, Math.floor(value));
+          if (fill) fill.style.transform = `scaleX(${value / 100})`;
+          if (percent) percent.textContent = `${shown}%`;
+          boot.setAttribute("aria-valuenow", String(shown));
+        };
+
+        const finish = () => {
+          value = 100;
+          render();
+          api.done = true;
+          api.timings.done = performance.now();
+          appRoot.removeAttribute("inert");
+          boot.dataset.state = "done";
+          for (const callback of listeners.splice(0)) callback();
+          window.dispatchEvent(new CustomEvent("hb:boot-done"));
+          setTimeout(() => {
+            removeEventListener("resize", clipSquircles);
+            boot.remove();
+          }, reduce ? 0 : 240);
+        };
+
+        const tick = (now, painted) => {
+          if (failed) return;
+          if (queue.length > 0 && now - appliedAt >= stepDelay) {
+            const [nextFloor, nextCeiling] = stages[queue.shift()];
+            floor = Math.max(floor, nextFloor);
+            ceiling = Math.max(ceiling, nextCeiling);
+            appliedAt = now;
+          }
+          if (!painted) value = Math.max(value, floor);
+          value =
+            value < floor
+              ? value + Math.max(0.8, (floor - value) * 0.22)
+              : value + (ceiling - value) * 0.012;
+          value = Math.min(value, 100);
+          render();
+          // Nothing is painted in hidden tabs, so skip the minimum display there.
+          const shown = painted && !document.hidden;
+          if (
+            floor >= 100 &&
+            (!shown || (value >= 99.5 && now - startedAt >= minimumVisible))
+          ) {
+            finish();
+            return;
+          }
+          schedule();
+        };
+        // Frames pause in hidden or occluded tabs. Race each frame against a
+        // timer so loading still completes; at normal frame rates rAF wins.
+        const schedule = () => {
+          let ran = false;
+          const run = (painted) => {
+            if (ran) return;
+            ran = true;
+            tick(performance.now(), painted);
+          };
+          requestAnimationFrame(() => run(true));
+          setTimeout(() => run(false), 120);
+        };
+        schedule();
+
+        boot
+          .querySelector("[data-boot-reload]")
+          ?.addEventListener("click", () => location.reload());
+        addEventListener(
+          "error",
+          (event) => {
+            if (event.target instanceof HTMLScriptElement) api.fail();
+          },
+          true,
+        );
+        setTimeout(() => {
+          if (!api.done) api.fail();
+        }, 20000);
+      })();
+    </script>
+    <script type="module" src="/main.tsx"></script>
+  </body>
+</html>

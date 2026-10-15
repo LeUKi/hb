@@ -1,0 +1,257 @@
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+} from "react";
+import { useReducedMotionPref } from "../../lib/motion";
+import { allowedPasswordCharacter } from "../../lib/password-rules";
+import { omniboxElements } from "./use-omnibox-controller";
+
+const lineBreak = /[\n\r\u2028\u2029]/u;
+const invisible = /^[\p{White_Space}\p{Cc}\p{Cf}]$/u;
+
+const commandPrefix = /^\s*[/／、]+/u;
+
+/** Mirror text: invalid 口令 characters are marked without changing widths. */
+function mirror(value: string, markInvalid: boolean, command: boolean) {
+  if (command) {
+    const prefix = commandPrefix.exec(value)?.[0] ?? "";
+    return [
+      <span key="prefix" className="text-accent-ink">
+        {prefix}
+      </span>,
+      value.slice(prefix.length),
+    ];
+  }
+  if (!markInvalid) return value;
+  const parts: ReactNode[] = [];
+  let run = "";
+  for (const [index, character] of Array.from(value).entries()) {
+    if (allowedPasswordCharacter.test(character)) {
+      run += character;
+      continue;
+    }
+    if (run) {
+      parts.push(run);
+      run = "";
+    }
+    const isBreak = lineBreak.test(character);
+    const marker = isBreak ? "↵" : character === "\t" ? "→" : "·";
+    const hidden = isBreak || invisible.test(character);
+    parts.push(
+      <span
+        key={index}
+        data-marker={hidden ? marker : undefined}
+        className={`rounded-[3px] bg-danger/12 [corner-shape:superellipse(2)] text-danger ${
+          hidden
+            ? "relative before:absolute before:top-0 before:left-1/2 before:-translate-x-1/2 before:text-danger/70 before:content-[attr(data-marker)]"
+            : ""
+        }`}
+      >
+        {character}
+      </span>,
+    );
+  }
+  if (run) parts.push(run);
+  return parts;
+}
+
+/**
+ * A wrong 口令 flashes the text red twice (ink, red, ink, red, ink) so it
+ * cannot be missed. Two beats in 800ms stay under three flashes a second;
+ * reduced motion gets a single steady red beat instead.
+ */
+function useMismatchFlash(
+  layer: { current: HTMLElement | null },
+  token: number,
+) {
+  const reduced = useReducedMotionPref();
+  const shown = useRef(token);
+  const running = useRef<Animation | null>(null);
+  useEffect(() => {
+    if (token === shown.current) return;
+    shown.current = token;
+    const element = layer.current;
+    if (!element?.animate) return;
+    const style = getComputedStyle(element);
+    const ink = style.getPropertyValue("--color-ink").trim() || "#2a1519";
+    const red = style.getPropertyValue("--color-danger").trim() || "#c81e3a";
+    const beats: [string, number][] = reduced
+      ? [
+          [ink, 0],
+          [red, 0.1],
+          [red, 0.7],
+          [ink, 1],
+        ]
+      : [
+          [ink, 0],
+          [red, 0.1],
+          [red, 0.3],
+          [ink, 0.4],
+          [ink, 0.5],
+          [red, 0.6],
+          [red, 0.8],
+          [ink, 0.9],
+          [ink, 1],
+        ];
+    running.current?.cancel();
+    running.current = element.animate(
+      beats.map(([color, offset]) => ({ color, offset })),
+      { duration: reduced ? 900 : 800 },
+    );
+  }, [layer, token, reduced]);
+}
+
+/**
+ * Single-line textarea with a mirror layer. A textarea (not an input) keeps
+ * pasted line breaks verbatim so they can be flagged instead of stripped.
+ */
+export function OmniboxField({
+  value,
+  onChange,
+  onEnter,
+  onKeyDown,
+  markInvalid,
+  lines,
+  lineHeight,
+  compact,
+  readOnly,
+  inactive,
+  command,
+  placeholder,
+  ariaLabel,
+  onFocusChange,
+  onCompositionChange,
+  listbox,
+  mismatch = 0,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onEnter: () => void;
+  onKeyDown?: (event: KeyboardEvent<HTMLTextAreaElement>) => boolean;
+  markInvalid: boolean;
+  lines: number;
+  lineHeight: number;
+  compact: boolean;
+  readOnly: boolean;
+  /** Docked: stays focusable from script (expand) but out of the tab order. */
+  inactive: boolean;
+  command: boolean;
+  placeholder: string;
+  ariaLabel: string;
+  onFocusChange?: (focused: boolean) => void;
+  /** An IME is composing (the value holds unconfirmed pinyin). */
+  onCompositionChange?: (composing: boolean) => void;
+  /** Suggestion list wiring while it is open. */
+  listbox?: { id: string; active: number } | null;
+  /** Changes each time a 口令 matched nothing (see useMismatchFlash). */
+  mismatch?: number;
+}) {
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const mirrorRef = useRef<HTMLDivElement | null>(null);
+  const composing = useRef(false);
+  const justComposed = useRef(false);
+  useMismatchFlash(mirrorRef, mismatch);
+
+  const syncScroll = useCallback(() => {
+    const input = inputRef.current;
+    const layer = mirrorRef.current;
+    if (input && layer)
+      layer.style.transform = `translate(${-input.scrollLeft}px, ${-input.scrollTop}px)`;
+  }, []);
+
+  useLayoutEffect(() => {
+    syncScroll();
+  });
+
+  const setInput = useCallback((element: HTMLTextAreaElement | null) => {
+    inputRef.current = element;
+    omniboxElements.input = element;
+  }, []);
+
+  const typography = compact ? "text-lg" : "text-xl";
+
+  return (
+    <div
+      className="relative min-w-0 flex-1"
+      style={{ height: lines * lineHeight }}
+    >
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 overflow-hidden"
+      >
+        <div
+          ref={mirrorRef}
+          className={`whitespace-pre text-ink ${typography}`}
+          style={{ lineHeight: `${lineHeight}px` }}
+        >
+          {mirror(value, markInvalid, command)}
+          {"\u200b"}
+        </div>
+      </div>
+      <textarea
+        ref={setInput}
+        rows={1}
+        wrap="off"
+        value={value}
+        readOnly={readOnly}
+        tabIndex={inactive ? -1 : 0}
+        placeholder={placeholder}
+        aria-label={ariaLabel}
+        aria-autocomplete="list"
+        aria-controls={listbox?.id}
+        aria-activedescendant={
+          listbox ? `${listbox.id}-${listbox.active}` : undefined
+        }
+        spellCheck={false}
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        enterKeyHint="go"
+        data-1p-ignore=""
+        data-lpignore="true"
+        className={`absolute inset-0 block h-full w-full resize-none overflow-hidden whitespace-pre border-0 bg-transparent p-0 text-transparent caret-ink outline-none placeholder:text-ink-3 ${typography}`}
+        style={{ lineHeight: `${lineHeight}px` }}
+        onChange={(event) => {
+          onChange(event.target.value);
+          requestAnimationFrame(syncScroll);
+        }}
+        onScroll={syncScroll}
+        onSelect={syncScroll}
+        onFocus={() => onFocusChange?.(true)}
+        onBlur={() => onFocusChange?.(false)}
+        onCompositionStart={() => {
+          composing.current = true;
+          onCompositionChange?.(true);
+        }}
+        onCompositionEnd={() => {
+          composing.current = false;
+          onCompositionChange?.(false);
+          // Safari dispatches the confirming Enter right after compositionend.
+          justComposed.current = true;
+          setTimeout(() => {
+            justComposed.current = false;
+          }, 0);
+        }}
+        onKeyDown={(event) => {
+          const imeActive =
+            composing.current ||
+            justComposed.current ||
+            event.nativeEvent.isComposing ||
+            event.keyCode === 229;
+          if (event.key === "Enter") {
+            if (imeActive) return;
+            event.preventDefault();
+            if (!event.shiftKey) onEnter();
+            return;
+          }
+          if (imeActive) return;
+          onKeyDown?.(event);
+        }}
+      />
+    </div>
+  );
+}

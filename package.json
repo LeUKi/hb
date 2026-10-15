@@ -44,7 +44,10 @@
     "prototype:dev": "bun run --filter @hb/web prototype:dev",
     "prototype:build": "bun run --filter @hb/web prototype:build",
     "prototype:typecheck": "bun run --filter @hb/web prototype:typecheck",
-    "prototype:test": "playwright test --config playwright.prototype.config.ts"
+    "prototype:test": "playwright test --config playwright.prototype.config.ts",
+    "redesign:dev": "bun run contracts:build && bun run --filter @hb/web redesign:dev",
+    "redesign:build": "bun run --filter @hb/web redesign:build",
+    "redesign:typecheck": "bun run contracts:build && bun run --filter @hb/web redesign:typecheck"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
