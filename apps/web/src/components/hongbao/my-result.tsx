@@ -8,6 +8,7 @@ import { motion } from "motion/react";
 import { type Ref, useState } from "react";
 import type { HongbaoActivity, Mine } from "../../lib/hongbao";
 import { paymentTone } from "../../lib/hongbao-text";
+import { paymentReason } from "../../lib/payment-display";
 import { clockLabel, clockSeconds } from "../../lib/roster-time";
 import { Avatar } from "../ui/avatar";
 import { NoteMarkdown } from "../ui/markdown";
@@ -27,8 +28,8 @@ function PaymentStatus({ state }: { state: PaymentState }) {
   );
 }
 
-// The claimant's side of a payment that is held up, when the server has no
-// reason of its own to give.
+// The claimant's side of a payment that is held up, when the server gives
+// no reason (or one with no words of its own).
 const paymentReasons: Partial<Record<PaymentState, string>> = {
   reconciling: "付款结果尚未明确，正在核对原订单。",
   waiting: "商户资金不足，等待补足后恢复。",
@@ -42,7 +43,7 @@ function PaymentNote({ payment }: { payment: PaymentView }) {
       ? payment.confirmedAt
         ? `${clockSeconds(Date.parse(payment.confirmedAt))} 确认到账`
         : null
-      : (payment.reason ?? paymentReasons[payment.status]);
+      : (paymentReason(payment.reason, null) ?? paymentReasons[payment.status]);
   return text ? <p className="text-sm text-ink-2">{text}</p> : null;
 }
 

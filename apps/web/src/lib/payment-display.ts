@@ -10,7 +10,14 @@ export function paymentAttemptOutcome(outcome: string) {
   return labels[outcome] ?? "等待核对";
 }
 
-export function paymentReason(reason: string | null) {
+/**
+ * A payment's reason code in words. A code with no words of its own gets
+ * `fallback`: the merchant's catch-all, unless the caller has a better one.
+ */
+export function paymentReason(
+  reason: string | null,
+  fallback: string | null = "付款任务正在等待处理，请查看商户状态。",
+) {
   if (!reason) return null;
   const labels: Record<string, string> = {
     unknown: "付款结果尚未明确，正在核对原订单。",
@@ -58,7 +65,7 @@ export function paymentReason(reason: string | null) {
     credential_rejected: "当前凭证认证未通过，奖励已锁定，等待作者更新密钥。",
     credential_unavailable: "当前凭证暂时无法验证，奖励已锁定，等待恢复付款。",
   };
-  return labels[reason] ?? "付款任务正在等待处理，请查看商户状态。";
+  return labels[reason] ?? fallback;
 }
 
 export function paymentNextAction(action: MerchantPaymentDetail["nextAction"]) {

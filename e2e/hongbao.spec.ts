@@ -412,6 +412,34 @@ test.describe("红包页", () => {
     await expect(page.getByRole("button", { name: /^显示/ })).toHaveCount(0);
   });
 
+  test("我的结果：付款原因写成中文，不露出原因码", async ({ page }) => {
+    await mockSession(page, viewer);
+    const state = await mockHongbao(page);
+    state.claim = {
+      id: "claim-mine",
+      activity: { id, title: "周末红包", status: "active" },
+      rewardType: "ldc",
+      claimedAt: new Date().toISOString(),
+      sourcePassword: passwordOf.mine,
+      amount: "0.10",
+      afterClaimInfo: "",
+      payment: {
+        id: "payment-mine",
+        mode: "real",
+        status: "waiting",
+        reason: "quota",
+        confirmedAt: null,
+      },
+    };
+    await openApp(page, path);
+    const result = page.locator("[data-hb-part=result]");
+    await expect(result.getByText("等待恢复")).toBeVisible();
+    await expect(
+      result.getByText("每日发放额度不足，等待可用额度。"),
+    ).toBeVisible();
+    await expect(result.getByText("quota")).toHaveCount(0);
+  });
+
   test("发红包的人：看到全部口令，不能自己领", async ({ page }) => {
     await mockSession(page, author);
     await mockHongbao(page);
