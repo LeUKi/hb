@@ -303,6 +303,10 @@ describe("ordinary real claim payments", () => {
       businessNo: f.businessNo,
       amountMinor: 10,
     });
+    // The payee reads whose 红包 it came from, and which.
+    expect(vi.mocked(a.send).mock.calls[0]?.[1].remark).toBe(
+      `来自@${f.owner}的红包：真实活动领取测试`,
+    );
     await due(f);
     await cycle(f, a);
     expect((await task(f)).status).toBe("confirmed");

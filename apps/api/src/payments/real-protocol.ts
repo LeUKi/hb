@@ -432,7 +432,7 @@ export async function sendRealDistribute(
     username,
     amount: formatAmount(task.amountMinor),
     outTradeNo: task.businessNo,
-    remark: "Linux DO reward",
+    remark: context.remark ?? "Linux DO reward",
   });
   let response: Response;
   let text: string;

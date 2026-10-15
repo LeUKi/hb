@@ -93,6 +93,8 @@ export type PaymentAttemptContext = {
   credentialVersion: number;
   clientSecret?: string;
   clientId?: string;
+  /** What the payee reads with a send; "Linux DO reward" without one. */
+  remark?: string;
 };
 
 export type PaymentAdapter = {

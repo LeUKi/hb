@@ -189,6 +189,7 @@ describe("real LDC protocol", () => {
       "Content-Type": "application/json",
     });
     expect(String(calls[0]?.init.body)).toContain('"amount":"1.23"');
+    expect(String(calls[0]?.init.body)).toContain('"remark":"Linux DO reward"');
   });
 
   it("verifies credentials by treating authenticated missing order as passed", async () => {
@@ -441,12 +442,17 @@ describe("real LDC protocol", () => {
         );
       }),
     });
-    const secret = { credentialVersion: 2, clientSecret: "secret-value" };
+    const secret = {
+      credentialVersion: 2,
+      clientSecret: "secret-value",
+      remark: "来自@lafish的红包：周末红包",
+    };
     expect(await adapter.send(realTask({ businessNo }), secret)).toMatchObject({
       kind: "sent",
       evidence: { businessNo, externalOrderId: "TRADE1" },
     });
     expect(bodies[0]).toContain(`"out_trade_no":"${businessNo}"`);
+    expect(bodies[0]).toContain('"remark":"来自@lafish的红包：周末红包"');
     await expect(
       adapter.send(realTask({ businessNo: "hb.lafi.sh/order 1" }), secret),
     ).rejects.toThrow("business number");

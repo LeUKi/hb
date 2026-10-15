@@ -34,6 +34,7 @@ import {
   runtimeRealPolicy,
   usablePaymentRetryGrant,
 } from "./policy";
+import { paymentRemark } from "./remark";
 import type { CycleResult } from "./scheduler";
 
 type MerchantRow = typeof merchants.$inferSelect;
@@ -179,7 +180,12 @@ async function context(
   } catch {
     clientSecret = undefined;
   }
-  return { credentialVersion, clientSecret, clientId: task.clientId };
+  return {
+    credentialVersion,
+    clientSecret,
+    clientId: task.clientId,
+    remark: operation === "send" ? await paymentRemark(env, task) : undefined,
+  };
 }
 
 async function diagnostic(
