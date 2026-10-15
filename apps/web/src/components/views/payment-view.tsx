@@ -120,12 +120,15 @@ export function Timeline({ steps }: { steps: PaymentStep[] }) {
 export function Attempts({
   payment,
   stacked = false,
+  admin = false,
 }: {
   payment: MerchantPaymentDetail;
   /** One field per line, for a narrow column (the admin detail pane). */
   stacked?: boolean;
+  /** 网站管理: each request's HTTP status too. */
+  admin?: boolean;
 }) {
-  const rows = paymentAttempts(payment);
+  const rows = paymentAttempts(payment, { admin });
   if (rows.length === 0)
     return (
       <Panel className="px-4 py-3 text-sm text-ink-3">

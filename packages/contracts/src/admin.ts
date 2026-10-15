@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { paymentModeSchema, paymentStateSchema } from "./payments";
+import type { ActivityAuthor, ActivitySummary } from "./index";
+import {
+  type MerchantPaymentDetail,
+  paymentModeSchema,
+  paymentStateSchema,
+} from "./payments";
 
 export const adminPageSize = 20;
 
@@ -50,6 +55,8 @@ export type AdminListResponse<T> = {
 
 export type AdminCursorList<T> = AdminListResponse<T> & {
   readAt: number;
+  /** How many match the filters; on the first page only. */
+  total?: number;
 };
 
 export type AdminRuntimeFlag = {
@@ -62,6 +69,8 @@ export type AdminOverview = {
   counts: {
     users: number;
     activities: number;
+    /** Of the activities, those never opened. */
+    drafts: number;
     payments: { total: number; unconfirmed: number };
   };
   runtime: {
@@ -107,6 +116,8 @@ export type AdminUserListItem = {
   displayName: string;
   avatarUrl: string | null;
   active: boolean;
+  /** On the deployment's admin list (ADMIN_LINUX_DO_IDS). */
+  admin: boolean;
   createdAt: number;
   lastLoginAt: number | null;
 };
@@ -145,6 +156,9 @@ export type AdminActivityListItem = {
   openedAt: number | null;
   endedAt: number | null;
   archivedAt: number | null;
+  /** As the sender's own lists read it (status, reward, draw). */
+  summary: ActivitySummary;
+  author: ActivityAuthor;
 };
 
 export type AdminActivityDetail = AdminActivityListItem & {
@@ -153,6 +167,8 @@ export type AdminActivityDetail = AdminActivityListItem & {
   endReason: string | null;
   drawClosedAt: number | null;
   drawPublishedAt: number | null;
+  /** How many 口令 it has (never the 口令 themselves). */
+  passwordCount: number;
   payments: {
     total: number;
     pending: number;
@@ -181,6 +197,9 @@ export type AdminPaymentListItem = {
   recipientId: string;
   recipientUsername: string | null;
   currentRecipientUsername: string | null;
+  /** The recipient's account here, as it reads now. */
+  recipientDisplayName: string | null;
+  recipientAvatarUrl: string | null;
   createdAt: number;
   nextRunAt: number;
 };
@@ -198,6 +217,8 @@ export type AdminPaymentAttempt = {
 };
 
 export type AdminPaymentDetail = AdminPaymentListItem & {
+  /** The merchant's Client ID now (the order may predate a change). */
+  merchantClientId: string | null;
   claimId: string | null;
   acceptanceId: string | null;
   attemptCount: number;
@@ -215,6 +236,15 @@ export type AdminPaymentDetail = AdminPaymentListItem & {
 };
 
 export type AdminPaymentSummary = AdminPaymentListItem;
+
+/** One payment for 网站管理: its own fields, and what its sender sees. */
+export type AdminPaymentDetailResponse = {
+  payment: AdminPaymentDetail;
+  /** Null when the sender's view cannot be read for this row. */
+  view: MerchantPaymentDetail | null;
+  /** Paid to a winner of a timed draw. */
+  draw: boolean;
+};
 
 export type AdminAuditEntry = {
   id: string;
@@ -264,6 +294,8 @@ export const adminPaymentsQuerySchema = z.strictObject({
   activityId: z.uuid().optional(),
   merchantId: z.uuid().optional(),
   recipientId: z.string().trim().min(1).max(64).optional(),
+  /** The recipient's account here (either payment mode). */
+  recipientUserId: z.string().trim().min(1).max(128).optional(),
   mode: adminPaymentModeSchema.optional(),
   status: adminPaymentStatusSchema.optional(),
   exception: z.enum(["0", "1"]).optional(),

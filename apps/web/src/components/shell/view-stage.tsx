@@ -9,16 +9,19 @@ import { type CommandId, commandById } from "../../lib/commands";
 import { durations, ease, useReducedMotionPref } from "../../lib/motion";
 import { topicAddress } from "../../lib/results";
 import { pageTitleAtom, viewEdgeAtom } from "../../lib/store";
+import type { AdminSearch } from "../../router";
+import { AdminActivities } from "../views/admin/admin-activities";
+import { AdminAudit } from "../views/admin/admin-audit";
+import { AdminOverview } from "../views/admin/admin-overview";
+import { AdminPayments } from "../views/admin/admin-payments";
+import { AdminSettings } from "../views/admin/admin-settings";
+import { AdminUsers } from "../views/admin/admin-users";
 import { HelpView } from "../views/help-view";
 import { HistoryView } from "../views/history-view";
 import { HongbaoView } from "../views/hongbao-view";
 import { MeView } from "../views/me-view";
 import { MerchantView } from "../views/merchant-view";
-import {
-  CommandPageView,
-  MessageView,
-  MigratingView,
-} from "../views/message-view";
+import { CommandPageView, MessageView } from "../views/message-view";
 import { NewView } from "../views/new-view";
 import { PaymentView } from "../views/payment-view";
 import { PaymentsView } from "../views/payments-view";
@@ -39,7 +42,20 @@ const commandPages: Record<Exclude<CommandId, "help" | "login">, ReactNode> = {
   me: <MeView />,
   merchant: <MerchantView />,
   payments: <PaymentsView />,
-  admin: <MigratingView title="网站管理" />,
+  admin: <AdminOverview />,
+};
+
+/**
+ * 网站管理's pages below /admin. Their filters come in as props from the
+ * match, like route params: a page that is leaving keeps the search it was
+ * shown with instead of reading a route that is no longer there.
+ */
+const adminPages: Record<string, (search: AdminSearch) => ReactNode> = {
+  "/admin/activities": (search) => <AdminActivities search={search} />,
+  "/admin/users": (search) => <AdminUsers search={search} />,
+  "/admin/payments": (search) => <AdminPayments search={search} />,
+  "/admin/settings": () => <AdminSettings />,
+  "/admin/audit": () => <AdminAudit />,
 };
 
 function useLeaf() {
@@ -98,12 +114,12 @@ function renderView(leaf: NonNullable<Leaf>): ReactNode {
       return <StatusView />;
     default: {
       const command = leaf.staticData.command;
-      const subpage = leaf.staticData.subpage;
-      if (command === "admin" && subpage)
+      const adminPage = adminPages[leaf.routeId];
+      if (command === "admin" && adminPage)
         return (
           <CommandPageView
             id="admin"
-            page={<MigratingView title={`网站管理 · ${subpage}`} />}
+            page={adminPage(leaf.search as AdminSearch)}
           />
         );
       if (command === "help") return <HelpView />;

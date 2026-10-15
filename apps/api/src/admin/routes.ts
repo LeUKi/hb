@@ -1,11 +1,12 @@
 import {
+  type ActivitySummary,
   type AdminActivityDetail,
   type AdminActivityListItem,
   type AdminAuditEntry,
   type AdminCursorList,
   type AdminOverview,
   type AdminPaymentAttempt,
-  type AdminPaymentDetail,
+  type AdminPaymentDetailResponse,
   type AdminPaymentListItem,
   type AdminUserDetail,
   type AdminUserListItem,
@@ -30,21 +31,31 @@ import {
   normalizeTopicLink,
   updateAttemptRateLimitsSchema,
 } from "@hb/contracts";
+import { inArray } from "drizzle-orm";
 import { Hono } from "hono";
 import { validator } from "hono/validator";
 import type { z } from "zod";
 import { ActivityError } from "../activities/errors";
-import { activityListStatusCaseSql } from "../activities/history-query";
+import {
+  activityListFields,
+  activityListStatusCaseSql,
+} from "../activities/history-query";
 import { databaseNow } from "../activities/lifecycle";
 import { ActivityValidationError } from "../activities/routes";
+import { activityStatus, projectActivitySummary } from "../activities/service";
+import type { ActivityRow } from "../activities/storage";
 import { assertCsrf, requireAdmin } from "../auth/session";
+import { createDb } from "../db/client";
+import { activities } from "../db/schema";
 import type { ApiBindings, ApiContext } from "../env";
+import { merchantPaymentDetail } from "../payments/queries";
 import {
   allowsRealClaim,
   allowsRealOpening,
   allowsRealSending,
   readPlatformControls,
 } from "../runtime/controls";
+import { isAdministrator } from "./authorization";
 import {
   ADMIN_DIAGNOSTIC_THRESHOLDS,
   ADMIN_RUNTIME_BLOCKERS,
@@ -165,13 +176,27 @@ function parseActivitySearch(value: string, origin?: string) {
       !url.username &&
       !url.password
     ) {
-      const parts = url.pathname.split("/").filter(Boolean);
+      const parts = url.pathname
+        .split("/")
+        .filter(Boolean)
+        .map((part) => {
+          try {
+            return decodeURIComponent(part);
+          } catch {
+            return part;
+          }
+        });
+      // /🧧/<表情码>, and its sender pages (📝 📊 🧾).
+      if (parts[0] === "🧧" && parts.length >= 2 && parts.length <= 3) {
+        const id = decodeActivityEmoji(parts[1] ?? "");
+        if (id) return { kind: "activity" as const, id };
+      }
       if (parts[0] === "activities" && parts.length === 2) {
         const id = normalizeActivityUuid(parts[1] ?? "");
         if (id) return { kind: "activity" as const, id };
       }
       if (parts[0] === "e" && parts.length === 2) {
-        const id = decodeActivityEmoji(decodeURIComponent(parts[1] ?? ""));
+        const id = decodeActivityEmoji(parts[1] ?? "");
         if (id) return { kind: "activity" as const, id };
       }
     }
@@ -203,6 +228,81 @@ function nextCursor<T extends Cursor>(items: T[]) {
 
 function page<T>(items: T[]) {
   return items.slice(0, adminPageSize);
+}
+
+/**
+ * A list page's rows, and on the first page (no cursor) how many match the
+ * filters: `count` is the same query without the cursor, counted.
+ */
+async function rowsWithTotal(
+  env: ApiBindings,
+  list: D1PreparedStatement,
+  count: D1PreparedStatement | null,
+) {
+  if (!count)
+    return {
+      rows: (await list.all<Record<string, unknown>>()).results,
+      total: undefined,
+    };
+  const [rows, total] = await env.DB.batch<Record<string, unknown>>([
+    list,
+    count,
+  ]);
+  return {
+    rows: rows?.results ?? [],
+    total: asInt(total?.results[0]?.count),
+  };
+}
+
+/** A 红包 as the sender's own lists read it (status, reward, draw). */
+function adminSummary(row: ActivityRow): ActivitySummary {
+  try {
+    const summary = projectActivitySummary(row);
+    return { ...summary, ...activityListFields(row, summary.status) };
+  } catch {
+    // A saved config this version cannot read: what the columns say, so
+    // one odd row does not take the whole list down.
+    const iso = (value: number | null) =>
+      value === null ? null : new Date(value).toISOString();
+    return {
+      id: row.id,
+      title: row.title,
+      rewardType: "ldc",
+      participationMode: row.participationMode,
+      forceDedicated: row.forceDedicated,
+      status:
+        row.openedAt !== null &&
+        row.archivedAt === null &&
+        (row.drawState === "waiting" || row.drawState === "settling")
+          ? "active"
+          : activityStatus(row),
+      version: row.version,
+      createdAt: new Date(row.createdAt).toISOString(),
+      openedAt: iso(row.openedAt),
+      deadlineAt: iso(row.deadline),
+      topicUrl: null,
+      totalCount: row.totalCount,
+      claimedCount: row.claimedCount,
+    };
+  }
+}
+
+async function activitySummaries(env: ApiBindings, ids: string[]) {
+  if (ids.length === 0) return new Map<string, ActivitySummary>();
+  const rows = await createDb(env.DB)
+    .select()
+    .from(activities)
+    .where(inArray(activities.id, ids));
+  return new Map(rows.map((row) => [row.id, adminSummary(row)] as const));
+}
+
+function activityAuthor(row: Record<string, unknown>) {
+  return {
+    id: String(row.author_id),
+    username: String(row.authorUsername ?? ""),
+    displayName: String(row.authorDisplayName ?? ""),
+    avatarUrl: row.authorAvatarUrl == null ? null : String(row.authorAvatarUrl),
+  };
 }
 
 function readConfig(env: ApiBindings): Promise<AttemptRateLimitsResponse> {
@@ -248,6 +348,7 @@ async function overview(env: ApiBindings): Promise<AdminOverview> {
     env.DB.prepare(`SELECT
       (SELECT COUNT(*) FROM users) AS users,
       (SELECT COUNT(*) FROM activities WHERE reward_type='ldc' AND deleted_at IS NULL) AS activities,
+      (SELECT COUNT(*) FROM activities WHERE reward_type='ldc' AND deleted_at IS NULL AND opened_at IS NULL) AS drafts,
       (SELECT COUNT(*) FROM payment_tasks) AS payments,
       (SELECT COUNT(*) FROM payment_tasks WHERE status!='confirmed') AS unconfirmedPayments`),
     env.DB.prepare(
@@ -337,6 +438,7 @@ async function overview(env: ApiBindings): Promise<AdminOverview> {
     counts: {
       users: asInt(countRow?.users),
       activities: asInt(countRow?.activities),
+      drafts: asInt(countRow?.drafts),
       payments: {
         total: asInt(countRow?.payments),
         unconfirmed: asInt(countRow?.unconfirmedPayments),
@@ -433,18 +535,30 @@ async function listActivities(
     );
   if (drawException)
     values.push(Date.now() - ADMIN_DIAGNOSTIC_THRESHOLDS.drawWaitMs - 1);
+  const count = cursor
+    ? null
+    : env.DB.prepare(`SELECT COUNT(*) AS count FROM activities a
+      WHERE ${where.join(" AND ")}`).bind(...values);
   appendCursor(where, values, cursor, "a");
-  const rows =
-    await env.DB.prepare(`SELECT a.id,a.title,a.author_id,u.display_name AS authorDisplayName,
+  const { rows, total } = await rowsWithTotal(
+    env,
+    env.DB.prepare(`SELECT a.id,a.title,a.author_id,u.display_name AS authorDisplayName,
+    u.username AS authorUsername,u.avatar_url AS authorAvatarUrl,
     a.participation_mode,a.reward_type,a.payment_mode,a.total_count,a.claimed_count,a.registered_count,
     a.draw_state,a.topic_id,a.post_number,a.created_at,a.opened_at,a.ended_at,a.archived_at,
     ${lifecycleSql} AS lifecycle
     FROM activities a JOIN users u ON u.id=a.author_id
     WHERE ${where.join(" AND ")}
-    ORDER BY a.created_at DESC,a.id DESC LIMIT ${adminPageSize + 1}`)
-      .bind(...values)
-      .all<Record<string, unknown>>();
-  const items = rows.results.map((row) => ({
+    ORDER BY a.created_at DESC,a.id DESC LIMIT ${adminPageSize + 1}`).bind(
+      ...values,
+    ),
+    count,
+  );
+  const summaries = await activitySummaries(
+    env,
+    page(rows).map((row) => String(row.id)),
+  );
+  const items = rows.map((row) => ({
     id: String(row.id),
     title: String(row.title),
     authorId: String(row.author_id),
@@ -463,11 +577,17 @@ async function listActivities(
     openedAt: row.opened_at === null ? null : asInt(row.opened_at),
     endedAt: row.ended_at === null ? null : asInt(row.ended_at),
     archivedAt: row.archived_at === null ? null : asInt(row.archived_at),
+    author: activityAuthor(row),
   }));
   return {
-    items: page(items),
+    items: page(items).flatMap((item) => {
+      // Deleted between the two reads: left out.
+      const summary = summaries.get(item.id);
+      return summary ? [{ ...item, summary }] : [];
+    }),
     nextCursor: nextCursor(items),
     readAt: Date.now(),
+    ...(total === undefined ? {} : { total }),
   };
 }
 
@@ -478,9 +598,11 @@ async function activityDetail(
   const lifecycleSql = activityListStatusCaseSql(Date.now(), "a");
   const [activity, payments] = await env.DB.batch([
     env.DB.prepare(`SELECT a.id,a.title,a.author_id,u.display_name AS authorDisplayName,
+      u.username AS authorUsername,u.avatar_url AS authorAvatarUrl,
       a.participation_mode,a.reward_type,a.payment_mode,a.total_count,a.claimed_count,a.registered_count,
       a.draw_state,a.topic_id,a.post_number,a.created_at,a.updated_at,a.opened_at,a.deadline,
       a.ended_at,a.end_reason,a.archived_at,a.draw_closed_at,a.draw_published_at,
+      (SELECT COUNT(*) FROM activity_passwords p WHERE p.activity_id=a.id) AS password_count,
       ${lifecycleSql} AS lifecycle
       FROM activities a JOIN users u ON u.id=a.author_id
       WHERE a.id=? AND a.reward_type='ldc' AND a.deleted_at IS NULL`).bind(id),
@@ -494,7 +616,10 @@ async function activityDetail(
     ),
   ]);
   const row = activity?.results[0] as Record<string, unknown> | undefined;
-  if (!row)
+  const summary = row
+    ? (await activitySummaries(env, [String(row.id)])).get(String(row.id))
+    : undefined;
+  if (!row || !summary)
     throw new ActivityError(404, "ADMIN_ACTIVITY_NOT_FOUND", "未找到红包。");
   const pay = payments?.results[0] as Record<string, unknown> | undefined;
   return {
@@ -524,6 +649,9 @@ async function activityDetail(
         row.draw_closed_at === null ? null : asInt(row.draw_closed_at),
       drawPublishedAt:
         row.draw_published_at === null ? null : asInt(row.draw_published_at),
+      summary,
+      author: activityAuthor(row),
+      passwordCount: asInt(row.password_count),
       payments: {
         total: asInt(pay?.total),
         pending: asInt(pay?.pending),
@@ -556,23 +684,34 @@ async function listUsers(
   }
   if (state === "active") where.push("active=1");
   if (state === "disabled") where.push("active=0");
+  const count = cursor
+    ? null
+    : env.DB.prepare(`SELECT COUNT(*) AS count FROM users
+      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}`).bind(...values);
   appendCursor(where, values, cursor);
-  const rows =
-    await env.DB.prepare(`SELECT id,external_id,username,display_name,avatar_url,
+  const { rows, total } = await rowsWithTotal(
+    env,
+    env.DB.prepare(`SELECT id,provider,external_id,username,display_name,avatar_url,
     active,created_at,last_login_at FROM users
     ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-    ORDER BY created_at DESC,id DESC LIMIT ${adminPageSize + 1}`)
-      .bind(...values)
-      .all<Record<string, unknown>>();
-  const items = rows.results.map(userListItem);
+    ORDER BY created_at DESC,id DESC LIMIT ${adminPageSize + 1}`).bind(
+      ...values,
+    ),
+    count,
+  );
+  const items = rows.map((row) => userListItem(env, row));
   return {
     items: page(items),
     nextCursor: nextCursor(items),
     readAt: Date.now(),
+    ...(total === undefined ? {} : { total }),
   };
 }
 
-function userListItem(row: Record<string, unknown>): AdminUserListItem {
+function userListItem(
+  env: ApiBindings,
+  row: Record<string, unknown>,
+): AdminUserListItem {
   return {
     id: String(row.id),
     externalId: String(row.external_id),
@@ -580,6 +719,11 @@ function userListItem(row: Record<string, unknown>): AdminUserListItem {
     displayName: String(row.display_name),
     avatarUrl: row.avatar_url === null ? null : String(row.avatar_url),
     active: row.active === 1 || row.active === true,
+    admin: isAdministrator(
+      env,
+      String(row.provider ?? "linux_do"),
+      String(row.external_id),
+    ),
     createdAt: asInt(row.created_at),
     lastLoginAt: row.last_login_at === null ? null : asInt(row.last_login_at),
   };
@@ -590,7 +734,7 @@ async function userDetail(
   id: string,
 ): Promise<{ user: AdminUserDetail }> {
   const [user, counts] = await env.DB.batch([
-    env.DB.prepare(`SELECT id,external_id,username,display_name,avatar_url,
+    env.DB.prepare(`SELECT id,provider,external_id,username,display_name,avatar_url,
       active,created_at,last_login_at FROM users WHERE id=?`).bind(id),
     env.DB.prepare(`SELECT
       (SELECT COUNT(*) FROM activities WHERE author_id=? AND reward_type='ldc' AND deleted_at IS NULL) AS authoredActivities,
@@ -608,7 +752,7 @@ async function userDetail(
   const count = counts?.results[0] as Record<string, unknown> | undefined;
   return {
     user: {
-      ...userListItem(row),
+      ...userListItem(env, row),
       counts: {
         authoredActivities: asInt(count?.authoredActivities),
         claims: asInt(count?.claims),
@@ -642,9 +786,17 @@ function paymentFrom(row: Record<string, unknown>): AdminPaymentListItem {
     recipientUsername:
       row.recipient_username === null ? null : String(row.recipient_username),
     currentRecipientUsername:
-      row.current_recipient_username === null
+      row.current_recipient_username == null
         ? null
         : String(row.current_recipient_username),
+    recipientDisplayName:
+      row.current_recipient_display_name == null
+        ? null
+        : String(row.current_recipient_display_name),
+    recipientAvatarUrl:
+      row.current_recipient_avatar_url == null
+        ? null
+        : String(row.current_recipient_avatar_url),
     createdAt: asInt(row.created_at),
     nextRunAt: asInt(row.next_run_at),
   };
@@ -664,8 +816,13 @@ async function listPayments(
   const cursor = parseCursor(query.cursor);
   const values: BindValue[] = [];
   const where: string[] = [];
+  // The count joins only the tables its filters read: unlike the list (a
+  // page of 21 rows), it would probe every join for every payment.
+  const reads = new Set<"merchant" | "activity" | "user">();
   const q = (query.q ?? "").trim();
   if (q) {
+    reads.add("activity");
+    reads.add("user");
     const search = parseActivitySearch(q, env.APP_ORIGIN);
     // A raw UUID can identify a payment, merchant, user or activity. Only an
     // activity link/Emoji code unambiguously narrows the search to an activity.
@@ -691,11 +848,13 @@ async function listPayments(
   }
   const authorId = (query.authorId ?? "").trim();
   if (authorId) {
+    reads.add("merchant");
     where.push("m.author_id=?");
     values.push(authorId);
   }
   const activityId = (query.activityId ?? "").trim();
   if (activityId) {
+    reads.add("activity");
     where.push("a.id=?");
     values.push(activityId);
   }
@@ -713,6 +872,14 @@ async function listPayments(
         ? recipientId
         : `simulation:${recipientId}`,
     );
+  }
+  const recipientUserId = (query.recipientUserId ?? "").trim();
+  if (recipientUserId) {
+    // The account's LINUX DO ID, as a real or a simulated payment holds it.
+    where.push(`p.recipient_id IN (
+      SELECT external_id FROM users WHERE id=? AND provider='linux_do'
+      UNION ALL SELECT 'simulation:' || external_id FROM users WHERE id=? AND provider='linux_do')`);
+    values.push(recipientUserId, recipientUserId);
   }
   if (mode !== "all") {
     where.push("p.mode=?");
@@ -735,28 +902,41 @@ async function listPayments(
     );
   if (query.anomaly === "undelivered")
     values.push(Date.now() - ADMIN_DIAGNOSTIC_THRESHOLDS.outboxWaitMs - 1);
+  const joins = {
+    merchant: "LEFT JOIN merchants m ON m.id=p.merchant_id",
+    activity: `LEFT JOIN claims c ON c.id=p.claim_id
+    LEFT JOIN activities a ON a.id=c.activity_id AND a.reward_type='ldc' AND a.deleted_at IS NULL`,
+    user: `LEFT JOIN users u ON u.provider='linux_do' AND u.external_id=CASE
+      WHEN p.mode='simulation' AND p.recipient_id LIKE 'simulation:%'
+        THEN substr(p.recipient_id,12) ELSE p.recipient_id END`,
+  };
+  const count = cursor
+    ? null
+    : env.DB.prepare(`SELECT COUNT(*) AS count FROM payment_tasks p
+      ${[...reads].map((table) => joins[table]).join("\n")}
+      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}`).bind(...values);
   appendCursor(where, values, cursor, "p");
-  const rows =
-    await env.DB.prepare(`SELECT p.id,p.source,p.mode,p.status,p.reason,p.unknown_outcome,
+  const { rows, total } = await rowsWithTotal(
+    env,
+    env.DB.prepare(`SELECT p.id,p.source,p.mode,p.status,p.reason,p.unknown_outcome,
     p.amount_minor,p.business_no,p.external_order_id,p.merchant_id,m.label AS merchant_label,
     p.recipient_id,p.recipient_username,u.username AS current_recipient_username,
+    u.display_name AS current_recipient_display_name,u.avatar_url AS current_recipient_avatar_url,
     p.created_at,p.next_run_at,a.id AS activity_id,a.title AS activity_title
     FROM payment_tasks p
-    LEFT JOIN merchants m ON m.id=p.merchant_id
-    LEFT JOIN claims c ON c.id=p.claim_id
-    LEFT JOIN activities a ON a.id=c.activity_id AND a.reward_type='ldc' AND a.deleted_at IS NULL
-    LEFT JOIN users u ON u.provider='linux_do' AND u.external_id=CASE
-      WHEN p.mode='simulation' AND p.recipient_id LIKE 'simulation:%'
-        THEN substr(p.recipient_id,12) ELSE p.recipient_id END
+    ${Object.values(joins).join("\n")}
     ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-    ORDER BY p.created_at DESC,p.id DESC LIMIT ${adminPageSize + 1}`)
-      .bind(...values)
-      .all<Record<string, unknown>>();
-  const items = rows.results.map(paymentFrom);
+    ORDER BY p.created_at DESC,p.id DESC LIMIT ${adminPageSize + 1}`).bind(
+      ...values,
+    ),
+    count,
+  );
+  const items = rows.map(paymentFrom);
   return {
     items: page(items),
     nextCursor: nextCursor(items),
     readAt: Date.now(),
+    ...(total === undefined ? {} : { total }),
   };
 }
 
@@ -764,15 +944,19 @@ async function paymentDetail(
   env: ApiBindings,
   id: string,
   attemptsCursor: string | undefined,
-): Promise<{ payment: AdminPaymentDetail }> {
+): Promise<AdminPaymentDetailResponse> {
   const cursor = parseCursor(attemptsCursor);
   const [payment, attempts] = await env.DB.batch([
     env.DB.prepare(`SELECT p.id,p.source,p.claim_id,p.acceptance_id,p.mode,p.status,p.reason,p.unknown_outcome,
       p.amount_minor,p.business_no,p.external_order_id,p.merchant_id,m.label AS merchant_label,
-      p.recipient_id,p.recipient_username,u.username AS current_recipient_username,p.created_at,p.next_run_at,
+      m.client_id AS merchant_client_id,
+      p.recipient_id,p.recipient_username,u.username AS current_recipient_username,
+      u.display_name AS current_recipient_display_name,u.avatar_url AS current_recipient_avatar_url,
+      p.created_at,p.next_run_at,
       p.attempt_count,p.reconciliation_count,p.next_action,p.next_send_at,p.next_query_at,p.send_block_reason,
       p.order_observed_at,p.order_evidence,p.send_acknowledged_at,p.confirmed_at,
-      a.id AS activity_id,a.title AS activity_title
+      a.id AS activity_id,a.title AS activity_title,
+      json_extract(a.config,'$.money.mode') AS money_mode
       FROM payment_tasks p
       LEFT JOIN merchants m ON m.id=p.merchant_id
       LEFT JOIN claims c ON c.id=p.claim_id
@@ -809,9 +993,25 @@ async function paymentDetail(
       attempt.finished_at === null ? null : asInt(attempt.finished_at),
   }));
   const base = paymentFrom(row);
+  // What the 红包's sender sees of it (付款详情): its state in words, its
+  // steps and the latest 20 requests, read the same way. A row that view
+  // cannot read (an inconsistent source, say) still shows its own fields.
+  const view = await merchantPaymentDetail(env, base.merchantId, base.id).catch(
+    (error: unknown) => {
+      console.log("admin.payment_view_failed", {
+        taskId: base.id,
+        reason: error instanceof Error ? error.message : "unknown",
+      });
+      return null;
+    },
+  );
   return {
+    draw: row.money_mode === "timed_draw",
+    view,
     payment: {
       ...base,
+      merchantClientId:
+        row.merchant_client_id == null ? null : String(row.merchant_client_id),
       claimId: row.claim_id === null ? null : String(row.claim_id),
       acceptanceId:
         row.acceptance_id === null ? null : String(row.acceptance_id),
@@ -870,17 +1070,29 @@ async function audit(
   const cursorValues: BindValue[] = cursor
     ? [cursor.createdAt, cursor.createdAt, cursor.id]
     : [];
-  const rows =
-    await env.DB.prepare(`SELECT c.id,c.actor_user_id,u.display_name AS actorDisplayName,
+  const { rows, total } = await rowsWithTotal(
+    env,
+    env.DB.prepare(`SELECT c.id,c.actor_user_id,u.display_name AS actorDisplayName,
     c.previous_version,c.next_version,
     c.previous_home_interval_seconds,c.home_interval_seconds,
     c.previous_activity_interval_seconds,c.activity_interval_seconds,c.created_at
     FROM attempt_rate_limit_changes c LEFT JOIN users u ON u.id=c.actor_user_id
     WHERE 1=1 ${dateWhere} ${actorWhere} ${cursorSql}
-    ORDER BY c.created_at DESC,c.id DESC LIMIT ${adminPageSize + 1}`)
-      .bind(...dateValues, ...actorValues, ...cursorValues)
-      .all<Record<string, unknown>>();
-  const items = rows.results.map((row): AdminAuditEntry & Cursor => ({
+    ORDER BY c.created_at DESC,c.id DESC LIMIT ${adminPageSize + 1}`).bind(
+      ...dateValues,
+      ...actorValues,
+      ...cursorValues,
+    ),
+    cursor
+      ? null
+      : env.DB.prepare(`SELECT COUNT(*) AS count
+        FROM attempt_rate_limit_changes c LEFT JOIN users u ON u.id=c.actor_user_id
+        WHERE 1=1 ${dateWhere} ${actorWhere}`).bind(
+          ...dateValues,
+          ...actorValues,
+        ),
+  );
+  const items = rows.map((row): AdminAuditEntry & Cursor => ({
     id: String(row.id),
     type: "attempt_rate_limits",
     actorUserId: String(row.actor_user_id),
@@ -913,6 +1125,7 @@ async function audit(
           })
         : null,
     readAt: Date.now(),
+    ...(total === undefined ? {} : { total }),
   };
 }
 

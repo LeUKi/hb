@@ -24,11 +24,22 @@ export type Loadable = {
   refetch: () => Promise<boolean>;
 };
 
+/**
+ * The last read failed — not only a list's next batch, which its end row
+ * reports (重试加载) without calling the page stale.
+ */
+export function readFailed(query: {
+  isError: boolean;
+  isFetchNextPageError?: boolean;
+}) {
+  return query.isError && !query.isFetchNextPageError;
+}
+
 /** One query as a Loadable. */
 export function queryLoad(query: UseQueryResult<unknown>): Loadable {
   return {
     hasData: query.data !== undefined,
-    isError: query.isError,
+    isError: readFailed(query),
     isFetching: query.isFetching,
     refetch: async () => !(await query.refetch()).isError,
   };
@@ -38,7 +49,7 @@ export function queryLoad(query: UseQueryResult<unknown>): Loadable {
 export function queriesLoad(...queries: UseQueryResult<unknown>[]): Loadable {
   return {
     hasData: queries.every((query) => query.data !== undefined),
-    isError: queries.some((query) => query.isError),
+    isError: queries.some(readFailed),
     isFetching: queries.some((query) => query.isFetching),
     refetch: async () =>
       (await Promise.all(queries.map((query) => query.refetch()))).every(

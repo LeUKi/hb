@@ -1,4 +1,4 @@
-import { CircleHelp, Construction, ShieldAlert } from "lucide-react";
+import { CircleHelp, ShieldAlert } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 import {
   type CommandId,
@@ -128,18 +128,4 @@ export function CommandPageView({
       />
     );
   return page;
-}
-
-/**
- * A page the migration has not reached yet (only ever on Stage: production
- * switches to the new interface once every page is in).
- */
-export function MigratingView({ title }: { title: string }) {
-  return (
-    <MessageView
-      icon={Construction}
-      title={title}
-      text="这一页正在迁移到新界面，暂时还不能用。"
-    />
-  );
 }

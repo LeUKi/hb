@@ -217,22 +217,35 @@ export function confirmedBy(payment: MerchantPaymentDetail) {
     : "确认到账";
 }
 
-/** 处理记录: each request to LDC and each order check, oldest first. */
-export function paymentAttempts(payment: MerchantPaymentDetail) {
+/**
+ * 处理记录: each request to LDC and each order check, oldest first. `admin`
+ * (网站管理) adds the HTTP status each request got, as production showed it.
+ */
+export function paymentAttempts(
+  payment: MerchantPaymentDetail,
+  { admin = false }: { admin?: boolean } = {},
+) {
   return [...payment.attempts]
     .sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt))
-    .map((attempt) => ({
-      id: attempt.id,
-      at: Date.parse(attempt.startedAt),
-      action: attempt.operation === "send" ? "分发请求" : "订单查询",
-      result: paymentAttemptOutcome(attempt.outcome),
-      note:
+    .map((attempt) => {
+      const note =
         attempt.outcome === "succeeded"
           ? attempt.operation === "send"
             ? payment.externalOrderId
               ? `LDC 已建单，上游交易号 ${payment.externalOrderId}`
               : "LDC 已建单"
             : "订单已返回"
-          : (paymentReason(attempt.reason) ?? attempt.diagnosticSummary ?? ""),
-    }));
+          : (paymentReason(attempt.reason) ?? attempt.diagnosticSummary ?? "");
+      const status =
+        admin && attempt.httpStatus !== null
+          ? `HTTP ${attempt.httpStatus}`
+          : "";
+      return {
+        id: attempt.id,
+        at: Date.parse(attempt.startedAt),
+        action: attempt.operation === "send" ? "分发请求" : "订单查询",
+        result: paymentAttemptOutcome(attempt.outcome),
+        note: [note, status].filter(Boolean).join(" · "),
+      };
+    });
 }

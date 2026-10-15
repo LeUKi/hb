@@ -171,6 +171,9 @@ export type AdminSearch = {
   /** /admin/activities and /admin/users: the status filter. */
   status?: string;
   anomaly?: string;
+  /** /admin/payments: real or simulated payments only. */
+  mode?: string;
+  /** A user's id (发红包的人, 收款人) or a 红包's id, from another page. */
   author?: string;
   activity?: string;
   recipient?: string;
@@ -187,6 +190,7 @@ const adminRoute2 = <Path extends string>(path: Path, title: string) =>
       state: text(search.state),
       status: text(search.status),
       anomaly: text(search.anomaly),
+      mode: text(search.mode),
       author: text(search.author),
       activity: text(search.activity),
       recipient: text(search.recipient),

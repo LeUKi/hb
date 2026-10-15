@@ -1,8 +1,12 @@
 import { env } from "cloudflare:test";
 import type {
+  AdminActivityDetail,
+  AdminActivityListItem,
   AdminCursorList,
   AdminOverview,
   AdminPaymentDetail,
+  AdminPaymentDetailResponse,
+  AdminPaymentListItem,
 } from "@hb/contracts";
 import { ARCHIVE_DELAY_MS, encodeActivityEmoji } from "@hb/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,6 +15,7 @@ import { createDb } from "../src/db/client";
 import { sessions, users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
 import { sha256Hex } from "../src/security/crypto";
+import { ldcInput } from "./activity-fixtures";
 
 const origin = "https://hb.example.com";
 type Actor = { id: string; externalId: string; cookie: string; csrf: string };
@@ -875,5 +880,151 @@ describe("administrator observation APIs", () => {
       admin,
     );
     expect(seen).toEqual([...ids].reverse());
+  });
+
+  it("reads lists as the new 网站管理 draws them: totals, the sender's view, 🧧 links", async () => {
+    const now = Date.now();
+    const { admin, member, activeId, merchantId, paymentId } =
+      await seedAdminObservation(now);
+    // A draft whose saved config reads: its summary is the sender's own.
+    const draftId = crypto.randomUUID();
+    await env.DB.prepare(`INSERT INTO activities
+      (id,author_id,creation_request_id,creation_digest,title,force_dedicated,
+       participation_mode,join_square,deleted_at,allocation,config,total_count,
+       claimed_count,registered_count,reward_type,payment_mode,merchant_id,created_at,updated_at)
+      VALUES (?,?,?,'digest','Admin draft',1,'password',0,NULL,'sequential',?,
+        3,0,0,'ldc','simulation',?,?,?)`)
+      .bind(
+        draftId,
+        admin.id,
+        `request-${draftId}`,
+        // Saved as production saves it: the 口令 in their own table.
+        JSON.stringify({
+          ...ldcInput({
+            title: "Admin draft",
+            merchantId,
+            money: { mode: "fixed", totalAmount: "0.30", count: 3 },
+          }),
+          passwords: undefined,
+        }),
+        merchantId,
+        now - 10,
+        now - 10,
+      )
+      .run();
+    await env.DB.batch(
+      ["digest-a", "digest-b"].map((digest, position) =>
+        env.DB.prepare(
+          "INSERT INTO activity_passwords(id,activity_id,digest,ciphertext,position,created_at) VALUES(?,?,?,'SECRET-DRAFT-PASSWORD',?,?)",
+        ).bind(crypto.randomUUID(), draftId, digest, position, now - 10),
+      ),
+    );
+
+    const first = (await (
+      await request("/api/admin/activities", admin)
+    ).json()) as AdminCursorList<AdminActivityListItem>;
+    expect(first.total).toBe(2);
+    const draft = first.items.find((item) => item.id === draftId);
+    expect(draft).toMatchObject({
+      lifecycle: "draft",
+      author: { id: admin.id, username: "admin-read-admin" },
+      summary: {
+        status: "draft",
+        forceDedicated: true,
+        reward: { mode: "fixed", totalAmount: "0.30", count: 3 },
+      },
+    });
+    // The seeded 红包 has no readable config: the list still answers.
+    expect(
+      first.items.find((item) => item.id === activeId)?.summary,
+    ).toMatchObject({ id: activeId, status: "active", totalCount: 2 });
+    const detail = (await (
+      await request(`/api/admin/activities/${draftId}`, admin)
+    ).json()) as { activity: AdminActivityDetail };
+    expect(detail.activity).toMatchObject({ passwordCount: 2 });
+    expect(JSON.stringify(detail)).not.toContain("SECRET-DRAFT-PASSWORD");
+
+    // The new addresses, and a sender page below one, find it exactly.
+    for (const path of ["", "/📝"]) {
+      const link = `${origin}/🧧/${encodeActivityEmoji(draftId)}${path}`;
+      const found = (await (
+        await request(
+          `/api/admin/activities?q=${encodeURIComponent(link)}`,
+          admin,
+        )
+      ).json()) as AdminCursorList<AdminActivityListItem>;
+      expect(found.items.map((item) => item.id)).toEqual([draftId]);
+    }
+
+    // Totals come with the first page only.
+    const paged = (await (
+      await request(
+        `/api/admin/activities?cursor=${encodeURIComponent(`${now}:${draftId}`)}`,
+        admin,
+      )
+    ).json()) as AdminCursorList<AdminActivityListItem>;
+    expect(paged.total).toBeUndefined();
+    const users = (await (
+      await request(`/api/admin/users?q=${member.id}`, admin)
+    ).json()) as AdminCursorList<unknown>;
+    expect(users).toMatchObject({ total: 1, items: [{ admin: false }] });
+    // Admins come from the deployment's list, shown, not switchable.
+    expect(
+      await (await request(`/api/admin/users/${admin.id}`, admin)).json(),
+    ).toMatchObject({ user: { id: admin.id, admin: true } });
+
+    // Payments to one account here, by its id (either payment mode).
+    const payments = (await (
+      await request(`/api/admin/payments?recipientUserId=${member.id}`, admin)
+    ).json()) as AdminCursorList<AdminPaymentListItem>;
+    expect(payments).toMatchObject({
+      total: 1,
+      items: [
+        {
+          id: paymentId,
+          recipientDisplayName: "admin-read-member",
+          recipientAvatarUrl: null,
+        },
+      ],
+    });
+    const none = (await (
+      await request(`/api/admin/payments?recipientUserId=${admin.id}`, admin)
+    ).json()) as AdminCursorList<AdminPaymentListItem>;
+    expect(none).toMatchObject({ total: 0, items: [] });
+    // The count joins only what a filter reads, and still agrees.
+    for (const filter of [
+      `authorId=${admin.id}`,
+      `activityId=${activeId}`,
+      `q=${activeId}`,
+      `q=${member.id}`,
+    ]) {
+      const body = (await (
+        await request(`/api/admin/payments?${filter}`, admin)
+      ).json()) as AdminCursorList<AdminPaymentListItem>;
+      expect(body, filter).toMatchObject({
+        total: 1,
+        items: [{ id: paymentId }],
+      });
+    }
+
+    // A payment's detail carries what its sender sees.
+    const payment = (await (
+      await request(`/api/admin/payments/${paymentId}`, admin)
+    ).json()) as AdminPaymentDetailResponse;
+    expect(payment).toMatchObject({
+      draw: false,
+      payment: { id: paymentId },
+      view: {
+        id: paymentId,
+        status: "attention",
+        orderEvidence: "query",
+        attempts: [{ operation: "send", httpStatus: 500 }],
+      },
+    });
+
+    const overview = (await (
+      await request("/api/admin/overview", admin)
+    ).json()) as AdminOverview;
+    expect(overview.counts).toMatchObject({ activities: 2, drafts: 1 });
   });
 });
