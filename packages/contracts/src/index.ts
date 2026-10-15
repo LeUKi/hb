@@ -574,6 +574,9 @@ export type PublicQuantity =
   | { mode: "availability"; available: boolean }
   | { mode: "fuzzy"; level: "plenty" | "limited" | "low" | "empty" };
 
+/** One face on the 名单入口. */
+export type RosterPreviewPerson = PublicUserProfile & { id: string };
+
 export type PublicActivity = {
   participationMode?: ParticipationMode;
   id: string;
@@ -592,6 +595,12 @@ export type PublicActivity = {
   paymentMode?: PaymentMode;
   openingBlockedReason?: LdcOpeningBlockedReason;
   draw?: DrawSummary;
+  /**
+   * Up to five people for the 名单入口, read with the rest so they match the
+   * numbers: the latest claims; while a draw is open, the latest sign-ups;
+   * once it is drawn, the biggest prizes. Only on a single 红包's read.
+   */
+  rosterPreview?: RosterPreviewPerson[];
 };
 
 export type ActivityList = {

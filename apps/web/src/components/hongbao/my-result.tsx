@@ -186,6 +186,7 @@ export function MyResult({
               <PersonName
                 name={activity.author.displayName}
                 username={activity.author.username}
+                avatarUrl={activity.author.avatarUrl}
               />
             </p>
           </div>

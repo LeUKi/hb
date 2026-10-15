@@ -114,20 +114,21 @@ function DataCell({
   );
 }
 
-/** Who took part lately, and the way into the 名单弹窗. */
+/**
+ * Who took part lately (the biggest prizes, once drawn), and the way into
+ * the 名单弹窗. The faces come with the numbers above them, in one read.
+ */
 function RosterEntry({
   roster,
+  people,
   onOpen,
   motions,
 }: {
   roster: Roster;
+  people: PublicView["rosterPreview"];
   onOpen: () => void;
   motions: CoverMotion;
 }) {
-  const rows =
-    roster.kind === "draw"
-      ? roster.winners
-      : [...roster.rows].sort((a, b) => b.at - a.at);
   const label =
     roster.kind === "claims"
       ? "领取名单"
@@ -148,11 +149,11 @@ function RosterEntry({
         transition={motions.leaf.transition}
         className="hb-roster-entry flex h-8 shrink-0 items-center gap-2 px-1.5"
       >
-        {rows.length > 0 && (
+        {people.length > 0 && (
           <span aria-hidden="true" className="flex -space-x-1.5">
-            {rows.slice(0, 5).map((row) => (
-              <span key={row.id} className="hb-data-avatar rounded-full">
-                <Avatar name={row.name} size={22} />
+            {people.map((person) => (
+              <span key={person.id} className="hb-data-avatar rounded-full">
+                <Avatar name={person.name} src={person.avatarUrl} size={22} />
               </span>
             ))}
           </span>
@@ -205,7 +206,12 @@ export function CoverData({
           <DataCell key={cell.label} cell={cell} motions={motions} />
         ))}
       </dl>
-      <RosterEntry roster={roster} onOpen={onOpenRoster} motions={motions} />
+      <RosterEntry
+        roster={roster}
+        people={view.rosterPreview}
+        onOpen={onOpenRoster}
+        motions={motions}
+      />
     </div>
   );
 }

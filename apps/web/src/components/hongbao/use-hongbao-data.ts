@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import {
   ActivityRequestError,
   useManagedActivity,
@@ -44,20 +45,49 @@ export function useHongbaoPageData(id: string) {
   );
   const draw = activity?.reward?.mode === "timed_draw";
   const viewer = user?.username ?? null;
+  const claimsEnabled = Boolean(
+    activity &&
+      activity.status !== "draft" &&
+      (!draw || activity.draw?.state === "completed"),
+  );
+  const registrationsEnabled = Boolean(
+    activity && activity.status !== "draft" && draw,
+  );
   const claims = useRosterList(id, "claims", {
-    enabled: Boolean(
-      activity &&
-        activity.status !== "draft" &&
-        (!draw || activity.draw?.state === "completed"),
-    ),
+    enabled: claimsEnabled,
     viewer,
     author: author ? userId : null,
   });
   const registrations = useRosterList(id, "registrations", {
-    enabled: Boolean(activity && activity.status !== "draft" && draw),
+    enabled: registrationsEnabled,
     viewer,
     author: author ? userId : null,
   });
+  // The lists follow the numbers above them: a read that shows someone new
+  // (the 名单入口's faces changed) or a draw that moved on reads them again
+  // at once, instead of a polling round later.
+  const rosterSignature = activity
+    ? `${activity.draw?.state ?? ""}|${(activity.rosterPreview ?? [])
+        .map((person) => person.id)
+        .join(",")}`
+    : null;
+  const seenSignature = useRef(rosterSignature);
+  const refetchClaims = claims.query.refetch;
+  const refetchRegistrations = registrations.query.refetch;
+  useEffect(() => {
+    if (rosterSignature === null) return;
+    const before = seenSignature.current;
+    seenSignature.current = rosterSignature;
+    if (before === null || before === rosterSignature) return;
+    if (claimsEnabled) void refetchClaims();
+    if (registrationsEnabled) void refetchRegistrations();
+  }, [
+    rosterSignature,
+    claimsEnabled,
+    registrationsEnabled,
+    refetchClaims,
+    refetchRegistrations,
+  ]);
 
   const missing =
     publicQuery.error instanceof ActivityRequestError &&

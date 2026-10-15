@@ -92,6 +92,7 @@ function Row({
               <PersonName
                 name={row.name}
                 username={row.username}
+                avatarUrl={row.avatarUrl}
                 className="min-w-[2.5em] text-sm text-ink"
               />
               {row.you && (

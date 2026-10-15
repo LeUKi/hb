@@ -1073,7 +1073,7 @@ async function audit(
   const { rows, total } = await rowsWithTotal(
     env,
     env.DB.prepare(`SELECT c.id,c.actor_user_id,u.display_name AS actorDisplayName,
-    c.previous_version,c.next_version,
+    u.avatar_url AS actorAvatarUrl,c.previous_version,c.next_version,
     c.previous_home_interval_seconds,c.home_interval_seconds,
     c.previous_activity_interval_seconds,c.activity_interval_seconds,c.created_at
     FROM attempt_rate_limit_changes c LEFT JOIN users u ON u.id=c.actor_user_id
@@ -1100,6 +1100,8 @@ async function audit(
       row.actorDisplayName === null
         ? String(row.actor_user_id)
         : String(row.actorDisplayName),
+    actorAvatarUrl:
+      row.actorAvatarUrl == null ? null : String(row.actorAvatarUrl),
     previousVersion: asInt(row.previous_version),
     nextVersion: asInt(row.next_version),
     before: {

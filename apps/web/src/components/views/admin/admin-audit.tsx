@@ -131,7 +131,11 @@ export function AdminAudit() {
                     </p>
                   </div>
                   <span className="flex items-center gap-2 text-sm text-ink-2">
-                    <Avatar name={entry.actorDisplayName} size={22} />
+                    <Avatar
+                      name={entry.actorDisplayName}
+                      src={entry.actorAvatarUrl}
+                      size={22}
+                    />
                     {entry.actorDisplayName}
                   </span>
                 </li>

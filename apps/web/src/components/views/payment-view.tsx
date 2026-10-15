@@ -492,6 +492,7 @@ function PaymentPage({
               <PersonName
                 name={recipient.displayName}
                 username={recipient.username}
+                avatarUrl={recipient.avatarUrl}
               />
             </p>
             <p className="truncate text-sm text-ink-2">@{recipient.username}</p>

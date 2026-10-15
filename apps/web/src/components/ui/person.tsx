@@ -25,12 +25,15 @@ const CARD_WIDTH = 256;
 export function PersonName({
   name,
   username,
+  avatarUrl = null,
   className,
   onRed = false,
 }: {
   name: string;
-  /** Unknown for some sample rows: the card then has no profile link. */
+  /** Unknown for some rows: the card then has no profile link. */
   username?: string | null;
+  /** Their forum avatar; without one, the first character of the name. */
+  avatarUrl?: string | null;
   className?: string;
   /**
    * On the red cover, inside a line that truncates: the focus ring is drawn
@@ -62,6 +65,7 @@ export function PersonName({
         anchor={trigger}
         name={name}
         username={username ?? null}
+        avatarUrl={avatarUrl}
         onClose={() => setOpen(false)}
       />
     </>
@@ -73,12 +77,14 @@ function ProfileCard({
   anchor,
   name,
   username,
+  avatarUrl,
   onClose,
 }: {
   open: boolean;
   anchor: RefObject<HTMLButtonElement | null>;
   name: string;
   username: string | null;
+  avatarUrl: string | null;
   onClose: () => void;
 }) {
   const reduced = useReducedMotionPref();
@@ -188,7 +194,7 @@ function ProfileCard({
           <Squircle radius={radius.pop}>
             <div className="glass-pop relative grid gap-3 p-4">
               <div className="flex items-center gap-3">
-                <Avatar name={name} size={44} />
+                <Avatar name={name} src={avatarUrl} size={44} />
                 <div className="grid min-w-0">
                   <p
                     id={titleId}

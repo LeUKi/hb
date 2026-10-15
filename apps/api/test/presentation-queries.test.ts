@@ -955,6 +955,70 @@ describe("production presentation queries", () => {
       expect(detail.activity).not.toHaveProperty(key);
   });
 
+  it("reads the 名单入口's five people with the 红包, in the 名单's own order", async () => {
+    type Detail = { activity: PublicActivity };
+    // Claims: the latest five, newest first (the 领取名单 reversed).
+    const instant = await create(
+      ldc({ mode: "fixed", totalAmount: "0.70", count: 7 }),
+    );
+    for (let index = 0; index < 7; index++)
+      await redeem(instant.id, await actor());
+    const recipients = await data<PublicRecipientList>(
+      `/activities/${instant.id}/recipients`,
+    );
+    const claimed = (await data<Detail>(`/activities/${instant.id}`)).activity
+      .rosterPreview;
+    expect(claimed?.map((person) => person.id)).toEqual(
+      recipients.items
+        .map((row) => row.id)
+        .reverse()
+        .slice(0, 5),
+    );
+    expect(claimed?.[0]?.avatarUrl).toMatch(
+      /^https:\/\/avatar\.example\.com\//,
+    );
+    // A draft has nobody yet, and no preview.
+    const draft = await create(undefined, false);
+    expect(
+      (await data<Detail>(`/activities/${draft.id}`, owner)).activity,
+    ).not.toHaveProperty("rosterPreview");
+
+    // An open draw: the latest sign-ups (the 报名名单 reversed).
+    const timed = await create(ldc({ ...draw, count: 2 }));
+    for (let index = 0; index < 3; index++)
+      await register(timed.id, await actor());
+    const signUps = await data<PublicRegistrationList>(
+      `/activities/${timed.id}/registrations`,
+    );
+    expect(
+      (
+        await data<Detail>(`/activities/${timed.id}`)
+      ).activity.rosterPreview?.map((person) => person.id),
+    ).toEqual(signUps.items.map((row) => row.id).reverse());
+
+    // Drawn: the biggest prizes first, as the 中奖名单 lists them.
+    vi.spyOn(Date, "now").mockReturnValue(
+      Date.parse(timed.deadlineAt ?? "") + 10000,
+    );
+    await env.DB.prepare("UPDATE activities SET ended_at=deadline WHERE id=?")
+      .bind(timed.id)
+      .run();
+    expect(await refreshTimedDraw(bindings, timed.id)).toBe(true);
+    const winners = await data<PublicRecipientList>(
+      `/activities/${timed.id}/recipients`,
+    );
+    expect(winners.items).toHaveLength(2);
+    expect(
+      (
+        await data<Detail>(`/activities/${timed.id}`)
+      ).activity.rosterPreview?.map((person) => person.id),
+    ).toEqual(
+      [...winners.items]
+        .sort((a, b) => Number(b.amount) - Number(a.amount))
+        .map((row) => row.id),
+    );
+  });
+
   it("computes speed titles over the whole roster, whatever the retired switches say", async () => {
     const activity = await create(
       ldc({ mode: "fixed", totalAmount: "22.00", count: 22 }),

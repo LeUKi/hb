@@ -61,6 +61,7 @@ import {
   historyStatusTotal,
   rewardFilterSql,
 } from "./history-query";
+import { rosterPreview } from "./roster-preview";
 import {
   type ActivityRow,
   activityWriteGuard,
@@ -339,7 +340,7 @@ export async function getPublicActivity(
     ...projectPublicActivity(row, await author(env, row.authorId)),
     ...(row.openedAt === null
       ? { openingBlockedReason: await openingBlockedReason(env, row) }
-      : {}),
+      : { rosterPreview: await rosterPreview(env, row) }),
   };
 }
 

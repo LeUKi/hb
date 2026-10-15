@@ -70,7 +70,11 @@ export function HongbaoCard({
           )}
         >
           <span className="flex min-w-0 items-center gap-1.5 text-xs text-cream-2">
-            <Avatar name={activity.author.displayName} size={18} />
+            <Avatar
+              name={activity.author.displayName}
+              src={activity.author.avatarUrl}
+              size={18}
+            />
             <span className="truncate">
               {activity.author.displayName}的红包
             </span>

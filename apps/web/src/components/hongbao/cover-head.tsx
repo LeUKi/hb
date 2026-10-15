@@ -128,7 +128,11 @@ export function CoverHead({
         )}
       >
         <motion.span {...motions.leaf} className="inline-flex shrink-0">
-          <Avatar name={author} size={small ? 18 : 28} />
+          <Avatar
+            name={author}
+            src={activity.author.avatarUrl}
+            size={small ? 18 : 28}
+          />
         </motion.span>
         <motion.span
           {...motions.leaf}
@@ -138,7 +142,12 @@ export function CoverHead({
             "leading-[1.4]",
           )}
         >
-          <PersonName name={author} username={activity.author.username} onRed />
+          <PersonName
+            name={author}
+            username={activity.author.username}
+            avatarUrl={activity.author.avatarUrl}
+            onRed
+          />
           的红包
         </motion.span>
         <AnimatePresence mode="popLayout" initial={false}>

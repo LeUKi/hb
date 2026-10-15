@@ -251,6 +251,7 @@ export type AdminAuditEntry = {
   type: Exclude<z.infer<typeof adminAuditTypeSchema>, "all">;
   actorUserId: string;
   actorDisplayName: string;
+  actorAvatarUrl: string | null;
   createdAt: number;
   previousVersion: number;
   nextVersion: number;

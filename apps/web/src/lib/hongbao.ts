@@ -94,6 +94,11 @@ export type PublicView = {
   } | null;
   /** 结束说明: public once the 红包 has ended. */
   afterEndInfo?: string;
+  /**
+   * The 名单入口's faces, from the same read as the numbers above them
+   * (only a single 红包's read has them).
+   */
+  rosterPreview: { id: string; name: string; avatarUrl: string | null }[];
 };
 
 const topicPattern = /^https:\/\/linux\.do\/t\/(?:topic\/)?(\d+)\/(\d+)$/u;
@@ -217,6 +222,11 @@ export function publicViewOf(
         }
       : null,
     afterEndInfo: endReason ? activity.afterEndInfo : undefined,
+    rosterPreview: (activity.rosterPreview ?? []).map((person) => ({
+      id: person.id,
+      name: person.displayName || person.username,
+      avatarUrl: person.avatarUrl,
+    })),
   };
 }
 

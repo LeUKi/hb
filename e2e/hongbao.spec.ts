@@ -71,12 +71,16 @@ function publicActivity(): PublicActivity {
   };
 }
 
+/** Forum avatars, served here as a small picture. */
+const avatarOf = (name: string) =>
+  `https://avatars.example.test/${encodeURIComponent(name)}.svg`;
+
 function recipient(name: string, minutes: number): PublicRecipient {
   return {
     id: `claim-${name}`,
     username: name,
     displayName: name,
-    avatarUrl: null,
+    avatarUrl: avatarOf(name),
     claimedAt: new Date(Date.parse(openedAt) + minutes * 60_000).toISOString(),
     amount: "0.10",
   };
@@ -86,6 +90,12 @@ const passwordOf = { mine: "周末口令2026", other: "公共口令2026" };
 
 /** One 红包's server, mocked: answers reads and the two writes. */
 async function mockHongbao(page: Page) {
+  await page.route("https://avatars.example.test/**", (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#c82a30"/></svg>',
+    }),
+  );
   const state = {
     activity: publicActivity(),
     claim: null as ClaimDetail | null,
@@ -117,7 +127,23 @@ async function mockHongbao(page: Page) {
       `/api/activities/${id}`.length,
     );
     if (rest === "" && request.method() === "GET")
-      return route.fulfill({ json: { activity: state.activity } });
+      return route.fulfill({
+        json: {
+          activity: {
+            ...state.activity,
+            // The 名单入口's faces: the latest five claims, in this read.
+            rosterPreview: [...state.recipients]
+              .reverse()
+              .slice(0, 5)
+              .map(({ id, username, displayName, avatarUrl }) => ({
+                id,
+                username,
+                displayName,
+                avatarUrl,
+              })),
+          },
+        },
+      });
     if (rest === "/participation")
       return route.fulfill({
         json: { claim: state.claim, registration: null },
@@ -199,6 +225,38 @@ async function readClipboard(page: Page) {
 }
 
 test.describe("红包页", () => {
+  test("名单入口：真实头像和上面的数字同一次读取，名单随即跟上", async ({
+    page,
+  }) => {
+    await mockSession(page, null);
+    const state = await mockHongbao(page);
+    await openApp(page, path);
+    const entry = page.locator("#roster-entry");
+    await expect(entry.locator("img")).toHaveAttribute(
+      "src",
+      avatarOf("早到的人"),
+    );
+    await entry.click();
+    const roster = page.getByRole("dialog", { name: /领取名单/ });
+    await expect(roster.getByText("早到的人")).toBeVisible();
+    // Someone else claims. The next read (every 5 s) shows the new count and
+    // face, and the open 名单 follows at once, not on its own 15 s round.
+    state.recipients.push(recipient("后来的人", 2));
+    state.activity.quantity = {
+      mode: "exact",
+      total: 3,
+      claimed: 2,
+      remaining: 1,
+    };
+    await expect(roster.getByText("后来的人")).toBeVisible({ timeout: 9000 });
+    await page.keyboard.press("Escape");
+    await expect(entry.locator("img").first()).toHaveAttribute(
+      "src",
+      avatarOf("后来的人"),
+    );
+    await expect(page.getByText("2 / 3 份", { exact: true })).toBeVisible();
+  });
+
   test("游客：大红包皮、说明全文、领取名单和分享", async ({
     page,
     context,
