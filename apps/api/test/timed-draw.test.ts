@@ -456,6 +456,10 @@ describe("timed LDC registration and draw lifecycle", () => {
       registeredParticipants: 1,
       successfulClaims: 0,
       totalAttempts: 2,
+      // A sign-up counts under its 口令 before any prize exists.
+      validPasswords: expect.arrayContaining([
+        { password: "entrykey", successfulClaims: 0, registrations: 1 },
+      ]),
     });
   });
 

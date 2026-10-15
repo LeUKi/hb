@@ -19,6 +19,7 @@ import {
   MigratingView,
 } from "../views/message-view";
 import { ResultsView } from "../views/results-view";
+import { SenderView } from "../views/sender-view";
 import { SquareView } from "../views/square-view";
 import { StartView } from "../views/start-view";
 import { StatusView } from "../views/status-view";
@@ -60,7 +61,7 @@ function renderView(leaf: NonNullable<Leaf>): ReactNode {
       const id = activityIdFromCode(params.code ?? "");
       const page = leaf.staticData.senderPage;
       return id && page ? (
-        <MigratingView title={senderPages[page].title} />
+        <SenderView id={id} page={page} />
       ) : (
         <MessageView title="表情短地址无效" text="请检查链接是否完整。" />
       );

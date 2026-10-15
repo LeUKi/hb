@@ -801,15 +801,24 @@ export type AttemptStatisticsRow = {
   attempts: number;
   uniqueUsers: number;
   matchedAttempts: number;
+  /** People whose attempt with this text matched (a draw's sign-ups). */
+  matchedUsers: number;
   unmatchedAttempts: number;
   successfulClaims: number;
 };
 export type ActivityStatistics = {
   totalAttempts: number;
   uniqueUsers: number;
+  /** Attempts that matched a 口令 when they were made. */
+  matchedAttempts: number;
   successfulClaims: number;
   registeredParticipants?: number;
   items: AttemptStatisticsRow[];
-  validPasswords: { password: string; successfulClaims: number }[];
+  validPasswords: {
+    password: string;
+    successfulClaims: number;
+    /** Sign-ups with this 口令 (timed draws). */
+    registrations: number;
+  }[];
   nextCursor: string | null;
 };

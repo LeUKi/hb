@@ -1176,6 +1176,7 @@ describe("author attempt statistics", () => {
     expect(stats).toMatchObject({
       totalAttempts: 6,
       uniqueUsers: 2,
+      matchedAttempts: 2,
       successfulClaims: 2,
     });
     expect(stats.items.find((item) => item.password === "later123")).toEqual({
@@ -1183,12 +1184,13 @@ describe("author attempt statistics", () => {
       attempts: 5,
       uniqueUsers: 2,
       matchedAttempts: 1,
+      matchedUsers: 1,
       unmatchedAttempts: 4,
       successfulClaims: 1,
     });
     expect(stats.validPasswords).toEqual([
-      { password: "correct123", successfulClaims: 1 },
-      { password: "later123", successfulClaims: 1 },
+      { password: "correct123", successfulClaims: 1, registrations: 0 },
+      { password: "later123", successfulClaims: 1, registrations: 0 },
     ]);
     await env.DB.prepare("UPDATE activities SET archived_at = ? WHERE id = ?")
       .bind(Date.now(), activity.id)

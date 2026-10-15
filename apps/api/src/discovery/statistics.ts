@@ -12,6 +12,7 @@ type Aggregate = {
   attempts: number;
   uniqueUsers: number;
   matchedAttempts: number;
+  matchedUsers: number;
   unmatchedAttempts: number;
   successfulClaims: number;
 };
@@ -58,17 +59,19 @@ export async function getStatistics(
   const after = parseCursor(cursor, activityId);
   const [totals, groups, passwords] = await env.DB.batch([
     env.DB.prepare(`SELECT COUNT(*) AS totalAttempts, COUNT(DISTINCT user_id) AS uniqueUsers,
+      COALESCE(SUM(CASE WHEN matched = 1 THEN 1 ELSE 0 END), 0) AS matchedAttempts,
       COUNT(claim_id) AS successfulClaims FROM attempt_events WHERE activity_id = ?`).bind(
       activityId,
     ),
     env.DB.prepare(`WITH grouped AS (
         SELECT digest, MIN(id) AS representative, COUNT(*) AS attempts, COUNT(DISTINCT user_id) AS uniqueUsers,
           SUM(CASE WHEN matched = 1 THEN 1 ELSE 0 END) AS matchedAttempts,
+          COUNT(DISTINCT CASE WHEN matched = 1 THEN user_id END) AS matchedUsers,
           SUM(CASE WHEN matched = 0 THEN 1 ELSE 0 END) AS unmatchedAttempts,
           COUNT(claim_id) AS successfulClaims
         FROM attempt_events WHERE activity_id = ? GROUP BY digest
       ) SELECT s.digest, e.ciphertext, e.submission_row_id AS submissionRowId,
-      s.attempts, s.uniqueUsers, s.matchedAttempts, s.unmatchedAttempts, s.successfulClaims
+      s.attempts, s.uniqueUsers, s.matchedAttempts, s.matchedUsers, s.unmatchedAttempts, s.successfulClaims
       FROM (
         SELECT * FROM grouped
         WHERE ? IS NULL OR attempts < ? OR (attempts = ? AND digest > ?)
@@ -80,9 +83,10 @@ export async function getStatistics(
       after?.attempts ?? null,
       after?.digest ?? "",
     ),
-    env.DB.prepare(`SELECT p.id, p.ciphertext, COUNT(c.id) AS successfulClaims
-      FROM activity_passwords p LEFT JOIN claims c ON c.password_id = p.id
-      WHERE p.activity_id = ? GROUP BY p.id ORDER BY p.position`).bind(
+    env.DB.prepare(`SELECT p.id, p.ciphertext,
+      (SELECT COUNT(*) FROM claims c WHERE c.password_id = p.id) AS successfulClaims,
+      (SELECT COUNT(*) FROM activity_registrations r WHERE r.password_id = p.id) AS registrations
+      FROM activity_passwords p WHERE p.activity_id = ? ORDER BY p.position`).bind(
       activityId,
     ),
   ]);
@@ -92,7 +96,7 @@ export async function getStatistics(
   const last = page.at(-1);
   const summary = totals.results[0] as Pick<
     ActivityStatistics,
-    "totalAttempts" | "uniqueUsers" | "successfulClaims"
+    "totalAttempts" | "uniqueUsers" | "matchedAttempts" | "successfulClaims"
   >;
   return {
     ...summary,
@@ -122,6 +126,7 @@ export async function getStatistics(
           id: string;
           ciphertext: string;
           successfulClaims: number;
+          registrations: number;
         }[]
       ).map(async (row) => ({
         password: await decryptString(
@@ -130,6 +135,7 @@ export async function getStatistics(
           passwordAssociatedData(activityId, row.id),
         ),
         successfulClaims: row.successfulClaims,
+        registrations: row.registrations,
       })),
     ),
     nextCursor:

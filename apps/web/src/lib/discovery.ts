@@ -302,21 +302,26 @@ export function useTopicActivities(
   });
 }
 
-export function useActivityStatistics(
+/** A 红包's 尝试统计 (its sender's), the most frequent text first, 20 at a time. */
+export function useStatisticsPages(
   userId: string,
   id: string,
-  cursor: string | null,
+  enabled: boolean,
 ) {
-  return useQuery({
-    queryKey: ["activity-private", userId, "statistics", id, cursor],
-    queryFn: async ({ signal }) =>
+  return useInfiniteQuery({
+    queryKey: ["activity-private", userId, "statistics", id, "pages"],
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam, signal }) =>
       readResponse<ActivityStatistics>(
         await api.api.me.activities[":id"].statistics.$get(
-          { param: { id }, query: cursor ? { cursor } : {} },
+          { param: { id }, query: pageParam ? { cursor: pageParam } : {} },
           { init: { signal, cache: "no-store" } },
         ),
       ),
+    getNextPageParam: (last) => last.nextCursor,
+    enabled,
     retry: false,
-    refetchInterval: 15_000,
+    refetchInterval: enabled ? 15_000 : false,
+    refetchIntervalInBackground: false,
   });
 }
