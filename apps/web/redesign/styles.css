@@ -74,9 +74,32 @@
   --color-warning-soft: rgb(178 106 0 / 0.1);
   --color-danger: #c81e3a;
   --color-danger-soft: rgb(200 30 58 / 0.08);
-  /* The official envelope SVG keeps its own colours. */
+  /* The official envelope SVG keeps its own colours; the small envelope in
+     lists draws with them (flap, and greyed once ended). */
   --color-envelope: #c94b37;
   --color-envelope-gold: #dfbd7c;
+  --color-envelope-flap: #d65b43;
+  --color-envelope-ended: #c9a397;
+  --color-envelope-ended-flap: #d4b2a6;
+  /* 红包 red: the cover's lit gradient, top to bottom, and its gold rim. */
+  --color-cover-top: #d93c33;
+  --color-cover-mid: #c82a30;
+  --color-cover-bottom: #b9212c;
+  --color-cover-rim: #e8c079;
+  /* The seal: dark red words on a gold coin (centre light to rim). */
+  --color-seal-ink: #9b1c23;
+  --color-seal-0: #fff7df;
+  --color-seal-1: #f7dc9a;
+  --color-seal-2: #e7b862;
+  --color-seal-3: #cf9746;
+  /* Roster titles besides 手气王 (gold): 手气亡, 手速王, 我焯有桂！ */
+  --color-title-low: #556075;
+  --color-title-low-tint: rgb(86 97 118);
+  --color-title-fast: #0f6e48;
+  --color-title-fast-tint: rgb(24 150 100);
+  --color-title-flash: #f2ffe9;
+  --color-title-flash-top: #2fbf6b;
+  --color-title-flash-bottom: #188a4c;
   /* Text on 红包 red. */
   --color-cream: #fff3e2;
   --color-cream-2: rgb(255 236 214 / 0.74);
@@ -127,7 +150,23 @@
     color-scheme: light;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
-    --bar-h: 4rem;
+    /* The screen's safe area, where the window fills it (a phone: see
+       app-window-frame); 0 for a window floating on the desktop. */
+    --safe-top: 0px;
+    --safe-right: 0px;
+    --safe-bottom: 0px;
+    --safe-left: 0px;
+    /* The 顶栏 is 64px below the notch; everything placed under it uses
+       this. */
+    --bar-h: calc(4rem + var(--safe-top));
+  }
+  @media (max-width: 639.98px), (max-height: 559.98px) {
+    :root {
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+    }
   }
   html,
   body,
@@ -150,13 +189,17 @@
     cursor: pointer;
   }
   :focus-visible {
-    outline: 2px solid rgb(211 40 47 / 0.8);
+    outline: 2px solid color-mix(in srgb, var(--color-accent) 80%, transparent);
     outline-offset: 2px;
   }
   /* A squircle clips outlines away, so its focus ring is drawn inside: a 2px
      red ring with a 2px white band within it. */
   :root {
-    --focus-ring-color: rgb(211 40 47 / 0.75);
+    --focus-ring-color: color-mix(
+      in srgb,
+      var(--color-accent) 75%,
+      transparent
+    );
     --focus-band-color: rgb(255 255 255 / 0.8);
   }
   [data-squircle]:focus-visible:not([tabindex="-1"]) {
@@ -357,12 +400,12 @@
   }
   .field:focus-within {
     background: #fff;
-    --sq-ring: rgb(211 40 47 / 0.6);
+    --sq-ring: color-mix(in srgb, var(--color-accent) 60%, transparent);
     --sq-ring-w: 1.5px;
     box-shadow: var(--sq-ring-shadow);
   }
   .field[data-invalid] {
-    --sq-ring: rgb(200 30 58 / 0.55);
+    --sq-ring: color-mix(in srgb, var(--color-danger) 55%, transparent);
     --sq-ring-w: 1.5px;
     box-shadow: var(--sq-ring-shadow);
   }
@@ -462,7 +505,7 @@
   }
   /* A read-only value can still be focused (to select and copy it). */
   .field:has(input:read-only):focus-within {
-    --sq-ring: rgb(211 40 47 / 0.6);
+    --sq-ring: color-mix(in srgb, var(--color-accent) 60%, transparent);
     --sq-ring-w: 1.5px;
   }
   .field :disabled {
@@ -529,7 +572,7 @@
   }
   .choice[aria-pressed="true"] {
     background: rgb(255 255 255 / 0.95);
-    --sq-ring: rgb(211 40 47 / 0.55);
+    --sq-ring: color-mix(in srgb, var(--color-accent) 55%, transparent);
     --sq-ring-w: 1.5px;
     --sq-ring-2: rgb(229 69 60 / 0.06);
     --sq-ring-2-w: 2.5px;
@@ -719,7 +762,8 @@
     --btn-bottom: var(--color-button-bottom);
     --btn-inset:
       inset 0 1px 0 rgb(255 255 255 / 0.35), inset 0 -1px 0 rgb(0 0 0 / 0.14);
-    --btn-drop: 0 8px 16px -8px rgb(181 25 37 / 0.7);
+    --btn-drop: 0 8px 16px -8px
+      color-mix(in srgb, var(--color-button-bottom) 70%, transparent);
   }
   .btn-primary:hover:not(:active, :disabled, [data-disabled]) > .sq-fill {
     filter: brightness(1.06) saturate(1.05);
@@ -727,7 +771,8 @@
   .btn-primary:active:not(:disabled, [data-disabled]) {
     --btn-inset:
       inset 0 2px 5px rgb(110 0 10 / 0.35), inset 0 -1px 0 rgb(0 0 0 / 0.08);
-    --btn-drop: 0 4px 10px -6px rgb(181 25 37 / 0.6);
+    --btn-drop: 0 4px 10px -6px
+      color-mix(in srgb, var(--color-button-bottom) 60%, transparent);
   }
   /* data-disabled: focusable (aria-disabled) with nothing to do, so a
      button that just did its job keeps the focus. */
@@ -882,7 +927,7 @@
   }
   /* Focus in the editable states; the glow is on the plate. */
   .omnibox-chrome:not([data-chrome="docked-top"]):focus-within {
-    --sq-ring: rgb(211 40 47 / 0.55);
+    --sq-ring: color-mix(in srgb, var(--color-accent) 55%, transparent);
     --sq-ring-w: 1.5px;
   }
   .omnibox-plate {
@@ -978,11 +1023,16 @@
   /* The boot loader's bar: a 6px track, gold to red. */
   .step-track {
     height: 6px;
-    background: rgb(42 21 25 / 0.08);
-    box-shadow: inset 0 1px 1px rgb(42 21 25 / 0.08);
+    background: var(--color-fill-2);
+    box-shadow: inset 0 1px 1px var(--color-line);
   }
   .step-fill {
-    background: linear-gradient(90deg, #edcb86, #e8473d 55%, #c51e2a);
+    background: linear-gradient(
+      90deg,
+      var(--color-gold-bottom),
+      var(--color-accent-top) 55%,
+      var(--color-accent-bottom)
+    );
   }
   /* 更多设置 opened from a line: the group it points at glows briefly. */
   .settings-flash {
@@ -1029,10 +1079,15 @@
         rgb(255 168 120 / 0.24),
         transparent 62%
       ),
-      linear-gradient(180deg, #d93c33 0%, #c82a30 62%, #b9212c 100%);
+      linear-gradient(
+        180deg,
+        var(--color-cover-top) 0%,
+        var(--color-cover-mid) 62%,
+        var(--color-cover-bottom) 100%
+      );
     border-radius: 0 0 50% 50% / 0 0 var(--hb-curve) var(--hb-curve);
     box-shadow:
-      0 3px 0 0 #e8c079,
+      0 3px 0 0 var(--color-cover-rim),
       0 14px 26px -14px rgb(70 0 12 / 0.5);
     overflow: clip;
   }
@@ -1043,7 +1098,7 @@
     inset-inline: 0;
     bottom: 100%;
     height: 100vh;
-    background: #d93c33;
+    background: var(--color-cover-top);
   }
   /* A 红包 card (红包广场): the cover's red, a curved edge with the gold
      rim, a small seal on it. */
@@ -1054,21 +1109,26 @@
         rgb(255 168 120 / 0.24),
         transparent 62%
       ),
-      linear-gradient(180deg, #d93c33 0%, #c82a30 62%, #b9212c 100%);
+      linear-gradient(
+        180deg,
+        var(--color-cover-top) 0%,
+        var(--color-cover-mid) 62%,
+        var(--color-cover-bottom) 100%
+      );
     border-radius: 0 0 50% 50% / 0 0 1.25rem 1.25rem;
-    box-shadow: 0 2px 0 0 #e8c079;
+    box-shadow: 0 2px 0 0 var(--color-cover-rim);
   }
   .hb-card-cover.hb-ended {
     filter: saturate(0.18) brightness(0.92);
   }
   .hb-card-seal {
-    color: #9b1c23;
+    color: var(--color-seal-ink);
     background: radial-gradient(
       circle at 34% 28%,
-      #fff7df 0%,
-      #f7dc9a 36%,
-      #e7b862 70%,
-      #cf9746 100%
+      var(--color-seal-0) 0%,
+      var(--color-seal-1) 36%,
+      var(--color-seal-2) 70%,
+      var(--color-seal-3) 100%
     );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 0.75),
@@ -1117,16 +1177,14 @@
     text-decoration-thickness: 1.5px;
     text-underline-offset: 4px;
     text-decoration-color: rgb(255 243 226 / 0.55);
-    border-radius: 6px;
-    corner-shape: superellipse(2);
     outline: none;
     transition: text-decoration-color 160ms var(--ease-snappy);
+    /* Its squircle's focus ring: cream on the red, no white band. */
+    --focus-ring-color: var(--color-cream);
+    --focus-band-color: transparent;
   }
   .hb-cover-action:hover {
     text-decoration-color: var(--color-cream);
-  }
-  .hb-cover-action:focus-visible {
-    box-shadow: 0 0 0 2px var(--color-cream);
   }
   /* One light crossing the cover as it opens. */
   .hb-cover-sweep {
@@ -1165,11 +1223,11 @@
     isolation: isolate;
     width: var(--seal, 96px);
     height: var(--seal, 96px);
-    color: #9b1c23;
-    --seal-0: #fff7df;
-    --seal-1: #f7dc9a;
-    --seal-2: #e7b862;
-    --seal-3: #cf9746;
+    color: var(--color-seal-ink);
+    --seal-0: var(--color-seal-0);
+    --seal-1: var(--color-seal-1);
+    --seal-2: var(--color-seal-2);
+    --seal-3: var(--color-seal-3);
     background: radial-gradient(
       circle at 34% 28%,
       var(--seal-0) 0%,
@@ -1312,13 +1370,14 @@
     box-shadow: 0 0 8px rgb(248 230 188 / 0.45);
   }
   .hb-data-avatar {
-    box-shadow: 0 0 0 2px #c82a30;
+    box-shadow: 0 0 0 2px var(--color-cover-mid);
   }
   .hb-roster-entry {
     color: var(--color-cream);
-    border-radius: 999px;
     outline: none;
     transition: background-color 160ms var(--ease-snappy);
+    --focus-ring-color: var(--color-cream);
+    --focus-band-color: transparent;
   }
   .hb-roster-entry:hover {
     background: rgb(255 255 255 / 0.1);
@@ -1333,9 +1392,6 @@
   }
   .hb-roster-entry:hover .hb-roster-label {
     text-decoration-color: var(--color-cream);
-  }
-  .hb-roster-entry:focus-visible {
-    box-shadow: 0 0 0 2px var(--color-cream);
   }
 
   /* A 口令 just verified: a short gold glow on its row. */
@@ -1374,20 +1430,36 @@
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.8);
   }
   .title-badge[data-title="lowest"] {
-    color: #556075;
-    background: rgb(86 97 118 / 0.1);
-    --sq-ring: rgb(86 97 118 / 0.14);
+    color: var(--color-title-low);
+    background: color-mix(
+      in srgb,
+      var(--color-title-low-tint) 10%,
+      transparent
+    );
+    --sq-ring: color-mix(in srgb, var(--color-title-low-tint) 14%, transparent);
     box-shadow: var(--sq-ring-shadow);
   }
   .title-badge[data-title="fastest"] {
-    color: #0f6e48;
-    background: rgb(24 150 100 / 0.11);
-    --sq-ring: rgb(24 150 100 / 0.16);
+    color: var(--color-title-fast);
+    background: color-mix(
+      in srgb,
+      var(--color-title-fast-tint) 11%,
+      transparent
+    );
+    --sq-ring: color-mix(
+      in srgb,
+      var(--color-title-fast-tint) 16%,
+      transparent
+    );
     box-shadow: var(--sq-ring-shadow);
   }
   .title-badge[data-title="flash"] {
-    color: #f2ffe9;
-    background: linear-gradient(180deg, #2fbf6b, #188a4c);
+    color: var(--color-title-flash);
+    background: linear-gradient(
+      180deg,
+      var(--color-title-flash-top),
+      var(--color-title-flash-bottom)
+    );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 0.35),
       inset 0 -1px 0 rgb(0 0 0 / 0.12);

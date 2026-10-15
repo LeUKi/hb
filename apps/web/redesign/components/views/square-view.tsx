@@ -45,8 +45,11 @@ export function SquareView() {
     const outcome = outcomeOf(item.mine);
     return { text: outcome.label, tone: outcome.tone };
   };
-  const running = listed.filter((item) => !item.view.ended);
-  const over = listed.filter((item) => item.view.ended);
+  // A draw being settled (开奖中) is still running: its result is to come.
+  const settled = (item: (typeof listed)[number]) =>
+    item.view.ended && item.view.endReason !== "settling";
+  const running = listed.filter((item) => !settled(item));
+  const over = listed.filter(settled);
   const shown =
     filter === "active" ? running : filter === "ended" ? over : listed;
 
@@ -55,7 +58,7 @@ export function SquareView() {
       <PageHeader
         refreshable
         title="红包广场"
-        description="发红包时选择了“加入广场”的红包，按开放时间排列；结束 72 小时后不再列出。"
+        description="发红包时选了“加入红包广场”的红包，按开放时间排列；结束 72 小时后不再列出。"
         actions={
           <Segmented
             label="筛选"
@@ -71,8 +74,18 @@ export function SquareView() {
       />
       {shown.length === 0 ? (
         <EmptyNote
-          title={filter === "active" ? "现在没有进行中的红包" : "还没有红包"}
-          text="发红包时打开“加入广场”，红包就会出现在这里。"
+          title={
+            filter === "active"
+              ? "现在没有进行中的红包"
+              : filter === "ended"
+                ? "没有已结束的红包"
+                : "还没有红包"
+          }
+          text={
+            filter === "ended"
+              ? "结束不到 72 小时的红包会列在这里。"
+              : "发红包时打开“加入红包广场”，红包就会出现在这里。"
+          }
         />
       ) : (
         <LazyRows id="square" items={shown} done={`共 ${shown.length} 个`}>

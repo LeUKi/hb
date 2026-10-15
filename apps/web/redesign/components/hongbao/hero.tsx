@@ -82,9 +82,9 @@ function ActionHint({
           )}
         </MorphLabel>
       </p>
+      {/* Said by the command box's own announcer (one for every result). */}
       {message && phase === "closed" && (
         <p
-          role="status"
           className={
             message.tone === "danger"
               ? "text-sm text-danger"

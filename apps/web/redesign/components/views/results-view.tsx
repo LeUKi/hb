@@ -1,25 +1,31 @@
 import { Navigate, useNavigate } from "@tanstack/react-router";
 import { useAtomValue, useSetAtom } from "jotai";
-import { ChevronRight, ExternalLink, SearchX } from "lucide-react";
+import { ArrowUpRight, ChevronRight, SearchX } from "lucide-react";
 import { deadlineOf, findActivity } from "../../fixtures/activities";
+import { publicOf } from "../../fixtures/hongbao";
 import { lookupTopic } from "../../fixtures/redemption";
 import { activityCode } from "../../lib/activity-route";
+import { outcomeOf, useParticipations } from "../../lib/my-records";
 import { readResult } from "../../lib/results";
 import { clockLabel } from "../../lib/roster-time";
 import {
   claimsAtom,
+  drawSimAtom,
   intentAtom,
   pageLoadSimAtom,
   resultPasswords,
   sessionAtom,
 } from "../../lib/store";
+import { statusOf } from "../hongbao/hongbao-card";
 import { LazyRows } from "../page/lazy-list";
-import { RefreshNotice } from "../page/page";
+import { Page, PageHeader, Panel } from "../page/page";
 import { PageLoad } from "../page/page-state";
 import { usePageTitle } from "../shell/use-page-title";
+import { ButtonLink } from "../ui/button-link";
 import { MiniEnvelope } from "../ui/mini-envelope";
-import { Squircle } from "../ui/squircle";
-import { MessageView } from "./page-stub-view";
+import { radius, Squircle } from "../ui/squircle";
+import { StatusChip } from "../ui/status-chip";
+import { MessageView } from "./message-view";
 
 type Props =
   | { kind: "redeem"; resultId: string }
@@ -33,19 +39,16 @@ export function ResultsView(props: Props) {
   const user = useAtomValue(sessionAtom);
   const loadSim = useAtomValue(pageLoadSimAtom);
   const setIntent = useSetAtom(intentAtom);
+  const joined = useParticipations();
+  const drawSim = useAtomValue(drawSimAtom);
   const ids =
     props.kind === "redeem"
       ? readResult(props.resultId, user?.id)
       : lookupTopic(props.topicId, props.postNumber);
   const password =
     props.kind === "redeem" ? resultPasswords.get(props.resultId) : undefined;
-  usePageTitle(
-    ids && ids.length > 0
-      ? props.kind === "redeem"
-        ? "选择要领取的红包"
-        : "帖子里的红包"
-      : null,
-  );
+  const title = props.kind === "redeem" ? "选择红包" : "帖子里的红包";
+  usePageTitle(ids && ids.length > 0 ? title : null);
 
   if (!ids || ids.length === 0)
     return (
@@ -72,19 +75,29 @@ export function ResultsView(props: Props) {
       ? `https://linux.do/t/topic/${props.topicId}/${props.postNumber}`
       : null;
 
+  const statusFor = (id: string) => {
+    const activity = findActivity(id);
+    if (!activity) return null;
+    // Taken part: how it went, as 红包记录 says it; otherwise the 红包's state.
+    const item = joined.find((entry) => entry.activity.id === id);
+    if (item) {
+      const outcome = outcomeOf(item.mine);
+      return { activity, text: outcome.label, tone: outcome.tone };
+    }
+    const status = statusOf(
+      publicOf(activity, { solved: [], drawSim, now: Date.now() }),
+    );
+    return { activity, text: status.text, tone: status.tone };
+  };
+
   return (
     // The list is read from the server too (页面数据 on the dev toolbar).
     <PageLoad key={loadSim}>
-      <div className="mx-auto w-full max-w-[44rem] px-4 pt-6 pb-10 @wide/window:px-8 @wide/window:pt-10">
-        <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2 px-1">
-          <div>
-            <h1
-              tabIndex={-1}
-              className="text-xl font-semibold text-ink outline-none"
-            >
-              {props.kind === "redeem" ? "选择要领取的红包" : "帖子里的红包"}
-            </h1>
-            <p className="mt-1 text-sm text-ink-2">
+      <Page>
+        <PageHeader
+          title={title}
+          description={
+            <>
               {props.kind === "redeem" ? (
                 password ? (
                   <>
@@ -97,50 +110,43 @@ export function ResultsView(props: Props) {
               ) : (
                 `帖子 ${props.topicId} · ${props.postNumber} 楼，共 ${ids.length} 个红包`
               )}
-            </p>
-            {props.kind === "topic" ? (
-              // Anyone can link a post to their 红包 (production's notice).
-              <p className="mt-1 text-xs text-ink-3">
-                每个红包都写明了发红包的人；和帖子关联不代表楼主认可。
-              </p>
-            ) : (
-              !password && (
-                // After a reload or a change of account the 口令 is gone
-                // (it is never stored).
-                <p className="mt-1 text-xs text-ink-3">
-                  口令没有保留（刷新过页面或换过账号）：打开红包后要重新输入口令。
-                </p>
-              )
-            )}
-          </div>
-          {topicUrl && (
-            <Squircle radius={12}>
-              <a
-                href={topicUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex h-9 items-center gap-1.5 px-2.5 text-sm text-ink-2 hover:bg-fill-2 hover:text-ink"
-              >
+              {props.kind === "topic" ? (
+                // Anyone can link a post to their 红包 (production's notice).
+                <span className="mt-1 block text-xs text-ink-3">
+                  每个红包都写明了发红包的人；和帖子关联不代表楼主认可。
+                </span>
+              ) : (
+                !password && (
+                  // After a reload or a change of account the 口令 is gone
+                  // (it is never stored).
+                  <span className="mt-1 block text-xs text-ink-3">
+                    口令没有保留（刷新过页面或换过账号）：打开红包后要重新输入口令。
+                  </span>
+                )
+              )}
+            </>
+          }
+          actions={
+            topicUrl && (
+              <ButtonLink href={topicUrl} className="gap-1.5">
                 查看论坛帖子
-                <ExternalLink className="size-4" aria-hidden="true" />
-              </a>
-            </Squircle>
-          )}
-        </div>
-        <div className="mt-4 empty:hidden">
-          <RefreshNotice />
-        </div>
+                <ArrowUpRight aria-hidden="true" />
+              </ButtonLink>
+            )
+          }
+        />
         <LazyRows id="results" items={ids} done={`共 ${ids.length} 个`}>
           {(visible) => (
-            <ul className="mt-5 grid gap-1.5">
+            <Panel as="ul" className="grid gap-0.5 p-1.5">
               {visible.map((id) => {
-                const activity = findActivity(id);
-                if (!activity) return null;
+                const row = statusFor(id);
+                if (!row) return null;
+                const { activity } = row;
                 const ended = activity.status !== "active";
                 const record = claims[id];
                 return (
                   <li key={id}>
-                    <Squircle radius={20}>
+                    <Squircle radius={radius.row}>
                       <button
                         type="button"
                         onClick={() => {
@@ -157,7 +163,7 @@ export function ResultsView(props: Props) {
                             replace: true,
                           });
                         }}
-                        className="flex w-full items-center gap-4 p-3 text-left transition-colors hover:bg-fill-2"
+                        className="flex w-full items-center gap-3.5 p-3 text-left transition-colors hover:bg-fill-2"
                       >
                         <MiniEnvelope ended={ended} />
                         <span className="grid min-w-0 flex-1 gap-0.5">
@@ -175,19 +181,7 @@ export function ResultsView(props: Props) {
                             </span>
                           )}
                         </span>
-                        <Squircle radius={10}>
-                          <span
-                            className={`shrink-0 px-2.5 py-1 text-xs font-medium ${
-                              record
-                                ? "bg-gold-soft text-gold-ink"
-                                : ended
-                                  ? "bg-fill-2 text-ink-2"
-                                  : "bg-success-soft text-success"
-                            }`}
-                          >
-                            {record ? "已参与" : ended ? "已结束" : "进行中"}
-                          </span>
-                        </Squircle>
+                        <StatusChip tone={row.tone}>{row.text}</StatusChip>
                         <ChevronRight
                           className="size-5 shrink-0 text-ink-3"
                           aria-hidden="true"
@@ -197,10 +191,10 @@ export function ResultsView(props: Props) {
                   </li>
                 );
               })}
-            </ul>
+            </Panel>
           )}
         </LazyRows>
-      </div>
+      </Page>
     </PageLoad>
   );
 }

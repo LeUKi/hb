@@ -232,7 +232,7 @@ function paymentFor(
     return {
       ...base,
       state: "waiting",
-      reason: "商户凭证失效，等待作者更新。",
+      reason: "原应用的密钥失效，等待更新原订单密钥。",
       externalOrderId: null,
       confirmedAt: null,
       nextRunAt: null,
@@ -258,7 +258,7 @@ function paymentFor(
           at: sentAt,
           action: "分发请求",
           result: "请求未通过",
-          note: "商户凭证失效，等待作者更新。",
+          note: "原应用的密钥失效，等待更新原订单密钥。",
         },
       ],
     };

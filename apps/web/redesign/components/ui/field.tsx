@@ -8,7 +8,7 @@ import {
   useId,
 } from "react";
 import { cn } from "../../lib/cn";
-import { Squircle } from "./squircle";
+import { radius, Squircle } from "./squircle";
 
 // Form controls for the command pages. A control is a squircle "field" (the
 // clip lives on the wrapper, so the focus ring is drawn inside with
@@ -123,7 +123,7 @@ export function TextInput({
 }: InputProps) {
   const note = useContext(FieldNote);
   return (
-    <Squircle radius={12}>
+    <Squircle radius={radius.input}>
       <div
         className={cn("field h-11 px-3.5", className)}
         data-invalid={invalid || undefined}
@@ -154,7 +154,7 @@ export function TextArea({
 }: TextareaHTMLAttributes<HTMLTextAreaElement> & { invalid?: boolean }) {
   const note = useContext(FieldNote);
   return (
-    <Squircle radius={14}>
+    <Squircle radius={radius.textarea}>
       <div
         className={cn("field items-stretch px-3.5 py-2.5", className)}
         data-invalid={invalid || undefined}
@@ -192,13 +192,18 @@ export function Switch({
         <label htmlFor={id} className="text-sm font-medium text-ink">
           {label}
         </label>
-        {description && <p className="text-xs text-ink-3">{description}</p>}
+        {description && (
+          <p id={`${id}-description`} className="text-xs text-ink-3">
+            {description}
+          </p>
+        )}
       </div>
       <button
         id={id}
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-describedby={description ? `${id}-description` : undefined}
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className="switch mt-0.5"
@@ -217,6 +222,7 @@ export function Segmented<T extends string>({
   label,
   size = "md",
   disabled = false,
+  stretch = false,
 }: {
   value: T;
   options: { value: T; label: ReactNode; count?: number }[];
@@ -225,25 +231,34 @@ export function Segmented<T extends string>({
   size?: "sm" | "md";
   /** Locked (开放后不能修改): shows the choice, takes no input. */
   disabled?: boolean;
+  /** Fills its row, the options sharing it (the 名单弹窗's two lists). */
+  stretch?: boolean;
 }) {
   return (
-    <Squircle radius={size === "sm" ? 11 : 13}>
+    <Squircle radius={size === "sm" ? radius.segmentedSm : radius.segmented}>
       <fieldset
         aria-label={label}
         disabled={disabled}
         className={cn(
           "inline-flex w-fit min-w-0 max-w-full overflow-x-auto bg-fill-2 p-0.5 scrollbar-none",
+          stretch && "flex w-full",
           disabled && "opacity-60 [&_button]:cursor-not-allowed",
         )}
       >
         {options.map((option) => (
-          <Squircle key={option.value} radius={size === "sm" ? 9 : 11}>
+          <Squircle
+            key={option.value}
+            radius={
+              size === "sm" ? radius.segmentedSmOption : radius.segmentedOption
+            }
+          >
             <button
               type="button"
               aria-pressed={value === option.value}
               onClick={() => onChange(option.value)}
               className={cn(
                 "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap transition-colors",
+                stretch && "flex-1 justify-center",
                 size === "sm" ? "h-8 px-2.5 text-xs" : "h-9 px-3.5 text-sm",
                 value === option.value
                   ? "bg-white font-medium text-ink raised"
@@ -297,7 +312,7 @@ export function ChoiceCards<T extends string>({
         const Icon = option.icon;
         const selected = value === option.value;
         return (
-          <Squircle key={option.value} radius={14}>
+          <Squircle key={option.value} radius={radius.choice}>
             <button
               type="button"
               aria-pressed={selected}

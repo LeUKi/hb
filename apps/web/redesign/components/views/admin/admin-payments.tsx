@@ -153,7 +153,9 @@ export function AdminPayments({ search }: { search: AdminSearch }) {
         selectedId={selected}
         onSelect={setSelected}
         placeholder="点一笔付款看详情。"
-        empty={<EmptyNote title="没有符合条件的付款" />}
+        unit="笔"
+        noun="付款"
+        empty={<EmptyNote title="没有符合条件的付款" text="换个筛选看看。" />}
         row={(payment) => (
           <>
             <Avatar name={payment.recipient.displayName} size={36} />
@@ -275,11 +277,11 @@ export function AdminPayments({ search }: { search: AdminSearch }) {
                 ]}
               />
               <div className="grid gap-2">
-                <p className="text-sm font-medium text-ink">经过</p>
+                <h3 className="text-sm font-medium text-ink">经过</h3>
                 <Timeline steps={payment.steps} />
               </div>
               <div className="grid gap-2">
-                <p className="text-sm font-medium text-ink">处理记录</p>
+                <h3 className="text-sm font-medium text-ink">处理记录</h3>
                 <Attempts payment={payment} stacked />
               </div>
               {source && (

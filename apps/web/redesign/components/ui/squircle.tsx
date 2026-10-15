@@ -89,6 +89,18 @@ export const radius = {
   /** Labels; 34px tall, so the ends read as a soft capsule. */
   chip: 12,
   kbd: 8,
+  /** Form controls: one-line inputs, multi-line inputs, choice cards. */
+  input: 12,
+  textarea: 14,
+  choice: 14,
+  /** Segmented controls (outer, option): regular and small. */
+  segmented: 13,
+  segmentedOption: 11,
+  segmentedSm: 11,
+  segmentedSmOption: 9,
+  /** Status tags in lists; callouts (提示条). */
+  tag: 9,
+  callout: 12,
 } as const;
 
 type Box = { width: number; height: number; clips: boolean; scrolls: boolean };

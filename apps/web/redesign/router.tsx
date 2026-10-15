@@ -61,12 +61,24 @@ const activityRoute = createRoute({
     }
   },
 });
-// The sender's pages: same code check as the 红包 itself.
+// The sender's pages: the same code check as the 红包 itself, so a loose
+// spelling or a bare UUID settles on the one address.
 const senderRoute = (emoji: string, page: SenderPage) =>
   createRoute({
     getParentRoute: () => rootRoute,
     path: `/🧧/$code/${emoji}`,
     staticData: { chrome: "docked", senderPage: page },
+    beforeLoad: ({ params }) => {
+      const id =
+        activityIdFromCode(params.code) ?? normalizeActivityUuid(params.code);
+      if (id && params.code !== activityCode(id)) {
+        throw redirect({
+          to: `/🧧/$code/${emoji}` as "/🧧/$code/📝",
+          params: { code: activityCode(id) },
+          replace: true,
+        });
+      }
+    },
   });
 const editRoute = senderRoute("📝", "edit");
 const statsRoute = senderRoute("📊", "stats");
@@ -190,7 +202,7 @@ const helpRoute = createRoute({
   path: "/help",
   staticData: { chrome: "docked", command: "help" },
 });
-// Production's connection check: kept, with no entry (06 §10).
+// Production's connection check: kept, with no entry (06 §5).
 const statusRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/status",

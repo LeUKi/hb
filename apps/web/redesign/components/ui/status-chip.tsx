@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "../../lib/cn";
-import { Squircle } from "./squircle";
+import { radius, Squircle } from "./squircle";
 
 export type ChipTone =
   | "neutral"
@@ -19,23 +19,29 @@ const tones: Record<ChipTone, string> = {
   accent: "bg-accent-soft text-accent-ink",
 };
 
-/** A small status label: soft tone, squircle 9, optional dot. */
+/**
+ * A small status label: soft tone, optional dot. 24px (squircle 9) in
+ * lists; 28px (squircle 10) where it stands on its own (我的结果).
+ */
 export function StatusChip({
   tone = "neutral",
   dot = false,
+  size = "sm",
   children,
   className,
 }: {
   tone?: ChipTone;
   dot?: boolean;
+  size?: "sm" | "md";
   children: ReactNode;
   className?: string;
 }) {
   return (
-    <Squircle radius={9}>
+    <Squircle radius={size === "md" ? 10 : radius.tag}>
       <span
         className={cn(
-          "inline-flex h-6 shrink-0 items-center gap-1.5 px-2 text-xs font-medium whitespace-nowrap",
+          "inline-flex shrink-0 items-center gap-1.5 font-medium whitespace-nowrap",
+          size === "md" ? "h-7 px-2.5 text-sm" : "h-6 px-2 text-xs",
           tones[tone],
           className,
         )}

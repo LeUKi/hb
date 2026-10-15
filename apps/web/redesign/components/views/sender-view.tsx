@@ -13,12 +13,12 @@ import { PageLoad } from "../page/page-state";
 import { Button } from "../ui/button";
 import { HongbaoIcon } from "../ui/hongbao-icon";
 import { EditView } from "./edit-view";
-import { IdentityFailedView, MessageView } from "./page-stub-view";
+import { IdentityFailedView, MessageView } from "./message-view";
 import { PaymentsView } from "./payments-view";
 import { StatsView } from "./stats-view";
 
-/** Each sender page, as it is designed; the rest show a placeholder. */
-const pages: Partial<Record<SenderPage, (id: string) => ReactNode>> = {
+/** Each sender page. */
+const pages: Record<SenderPage, (id: string) => ReactNode> = {
   edit: (id) => <EditView id={id} />,
   stats: (id) => <StatsView id={id} />,
   payments: (id) => <PaymentsView activityId={id} />,
@@ -72,13 +72,5 @@ export function SenderView({ id, page }: { id: string; page: SenderPage }) {
         }
       />
     );
-  const content = pages[page]?.(id);
-  if (content) return <PageLoad key={loadSim}>{content}</PageLoad>;
-  return (
-    <MessageView
-      icon={HongbaoIcon}
-      title={senderPages[page].title}
-      text="这一页还在设计。"
-    />
-  );
+  return <PageLoad key={loadSim}>{pages[page](id)}</PageLoad>;
 }

@@ -8,7 +8,6 @@ import {
   AlgorithmCards,
   DrawLimitField,
   type ErrorOf,
-  LockNote,
   MerchantRow,
   PaidByRow,
   TimingFields,
@@ -251,6 +250,7 @@ export function SettingsSheet({
                     value={form.draw.algorithm}
                     range={range(form.draw.algorithm)}
                     shares={shares}
+                    pool
                     onChange={(algorithm) =>
                       update((current) => ({
                         ...current,
@@ -303,7 +303,7 @@ export function SettingsSheet({
               <Setting group="password">
                 <Switch
                   label="统计口令尝试"
-                  description="记下大家提交过的口令，在“尝试统计”里按口令汇总。开启后口令只能在红包页兑换，起始页的指令框不能用，请分享红包链接。"
+                  description="记下大家提交过的口令，在“尝试统计”里按口令汇总。开启后只能在红包页输入口令，起始页的指令框查不到它；请分享红包链接。"
                   checked={form.statistics}
                   onChange={(statistics) =>
                     update((current) => ({ ...current, statistics }))
@@ -418,10 +418,7 @@ export function SettingsSheet({
             </Setting>
             <Setting group="payment" title="付款商户">
               {opened && activityId ? (
-                <>
-                  <PaidByRow activityId={activityId} />
-                  <LockNote>开放后不能更换。</LockNote>
-                </>
+                <PaidByRow activityId={activityId} />
               ) : (
                 <MerchantRow />
               )}

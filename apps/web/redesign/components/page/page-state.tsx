@@ -72,16 +72,14 @@ export function PageSkeleton({ focus = false }: { focus?: boolean }) {
 /** The first load failed: nothing to show yet, so say so and offer a retry. */
 export function LoadError({ onRetry }: { onRetry: () => void }) {
   return (
-    <div
-      role="alert"
-      className="flex min-h-full flex-col items-center justify-center gap-5 px-6 py-10 text-center"
-    >
+    <div className="flex min-h-full flex-col items-center justify-center gap-5 px-6 py-10 text-center">
       <Squircle radius={18}>
         <span className="grid size-14 place-items-center bg-fill text-ink-2 shadow-[inset_0_1px_0_rgb(255_255_255/0.7)]">
           <CloudOff className="size-6" aria-hidden="true" />
         </span>
       </Squircle>
-      <div className="grid gap-1.5">
+      {/* The alert is the words; the button is read as itself. */}
+      <div role="alert" className="grid gap-1.5">
         <h1 className="text-xl font-semibold text-ink">读取失败</h1>
         <p className="text-base text-ink-2">
           网络或服务暂时出了问题，稍后再试。

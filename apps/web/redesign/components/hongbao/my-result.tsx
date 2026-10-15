@@ -5,24 +5,17 @@ import { motion } from "motion/react";
 import type { Ref } from "react";
 import type { FixtureActivity } from "../../fixtures/activities";
 import { type Mine, paymentOf } from "../../fixtures/hongbao";
+import { paymentTone } from "../../lib/my-records";
 import { clockLabel, clockSeconds } from "../../lib/roster-time";
 import { paymentSimAtom } from "../../lib/store";
 import { Avatar } from "../ui/avatar";
 import { PersonName } from "../ui/person";
 import { Squircle } from "../ui/squircle";
+import { StatusChip } from "../ui/status-chip";
 import { Countdown } from "./cover-data";
 import { CountUp } from "./parts";
 import { TitleBadges } from "./title-badge";
 import { useNow } from "./use-hongbao";
-
-const paymentTone = {
-  pending: "text-warning bg-warning-soft",
-  sending: "text-warning bg-warning-soft",
-  reconciling: "text-warning bg-warning-soft",
-  waiting: "text-warning bg-warning-soft",
-  confirmed: "text-success bg-success-soft",
-  attention: "text-danger bg-danger-soft",
-} as const;
 
 /** 发放状态 of the viewer's own claim; follows the payment as it moves. */
 function usePaymentState(at: number) {
@@ -33,14 +26,9 @@ function usePaymentState(at: number) {
 
 function PaymentStatus({ state }: { state: PaymentState }) {
   return (
-    <Squircle radius={8}>
-      <span
-        className={`inline-flex h-7 items-center gap-1.5 px-2.5 text-sm font-medium ${paymentTone[state]}`}
-      >
-        <span className="size-1.5 rounded-full bg-current" />
-        {PAYMENT_LABELS[state]}
-      </span>
-    </Squircle>
+    <StatusChip size="md" tone={paymentTone(state)} dot>
+      {PAYMENT_LABELS[state]}
+    </StatusChip>
   );
 }
 
@@ -104,6 +92,15 @@ function PasswordChip({ text }: { text: string }) {
  * 我的结果: what only the viewer sees after taking part — the amount in
  * green with a plus, the payment, the 口令 used, own titles, 奖励附言.
  */
+/** What on this card only the viewer sees, as it is shown. */
+function privateNote(mine: Mine, won: boolean) {
+  const parts = won ? ["金额", "发放状态"] : ["报名记录"];
+  if (mine.password) parts.push("口令");
+  if (mine.afterClaimInfo) parts.push("附言");
+  const last = parts.pop();
+  return `${parts.length > 0 ? `${parts.join("、")}和` : ""}${last}仅你可见`;
+}
+
 export function MyResult({
   activity,
   mine,
@@ -185,7 +182,7 @@ export function MyResult({
       {mine.afterClaimInfo && (
         <Squircle radius={16}>
           <div className="hb-note-card grid w-full gap-1.5 px-4 py-3 text-left">
-            <p className="text-xs font-medium text-gold-ink">奖励附言</p>
+            <p className="text-xs font-medium text-gold-ink">附言</p>
             <p className="text-base text-ink">{mine.afterClaimInfo}</p>
             <p className="flex items-center justify-end gap-1.5 text-xs text-ink-3">
               来自
@@ -201,9 +198,7 @@ export function MyResult({
 
       <p className="flex items-center gap-1.5 text-xs text-ink-3">
         <Lock className="size-3.5" aria-hidden="true" />
-        {won
-          ? "金额、发放状态、口令和奖励附言仅你可见"
-          : "报名记录和口令仅你可见"}
+        {privateNote(mine, won)}
       </p>
     </div>
   );

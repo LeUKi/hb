@@ -71,7 +71,7 @@ export function AdminAudit() {
         />
       </div>
       {records.length === 0 ? (
-        <EmptyNote title="没有符合条件的记录" />
+        <EmptyNote title="没有符合条件的记录" text="换个筛选看看。" />
       ) : (
         <LazyRows id="audit" items={records} done={`共 ${records.length} 条`}>
           {(visible) => (

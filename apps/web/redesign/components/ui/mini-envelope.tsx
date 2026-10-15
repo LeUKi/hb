@@ -20,9 +20,9 @@ export function MiniEnvelope({
           "relative shrink-0 overflow-hidden",
           size === "sm" ? "h-10 w-8" : "h-14 w-11",
           draft
-            ? "bg-white/70 squircle-ring [--sq-ring-w:1.5px] [--sq-ring:rgb(201_75_55/0.45)]"
+            ? "bg-white/70 squircle-ring [--sq-ring-w:1.5px] [--sq-ring:color-mix(in_srgb,var(--color-envelope)_45%,transparent)]"
             : ended
-              ? "bg-[#c9a397]"
+              ? "bg-envelope-ended"
               : "bg-envelope",
         )}
       >
@@ -30,10 +30,10 @@ export function MiniEnvelope({
           className={cn(
             "absolute inset-x-0 top-0 h-[58%] rounded-b-[50%]",
             draft
-              ? "shadow-[inset_0_-1.5px_0_rgb(201_75_55/0.45)]"
+              ? "shadow-[inset_0_-1.5px_0_color-mix(in_srgb,var(--color-envelope)_45%,transparent)]"
               : ended
-                ? "bg-[#d4b2a6]"
-                : "bg-[#d65b43]",
+                ? "bg-envelope-ended-flap"
+                : "bg-envelope-flap",
           )}
         />
         {!draft && (

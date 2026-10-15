@@ -135,7 +135,5 @@ export function credentialOf(
 
 /** Why the merchant's payments are on hold, if they are. */
 export function pauseOf(merchant: FixtureMerchant, sim: MerchantSim) {
-  return merchant.current && sim === "paused"
-    ? "商户资金不足，等待补足后恢复。"
-    : null;
+  return merchant.current && sim === "paused" ? "商户资金不足" : null;
 }

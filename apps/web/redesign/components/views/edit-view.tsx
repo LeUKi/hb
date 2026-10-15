@@ -1,6 +1,6 @@
 import { useAtomValue } from "jotai";
 import { CircleStop, Eye } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { type FixtureActivity, findActivity } from "../../fixtures/activities";
 import { publicOf } from "../../fixtures/hongbao";
 import { senderPages } from "../../lib/activity-route";
@@ -10,7 +10,7 @@ import { statusOf } from "../hongbao/hongbao-card";
 import { HongbaoForm } from "../hongbao-form/hongbao-form";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { Callout, Page, PageHeader, PageSection, Panel } from "../page/page";
-import { WindowDialog } from "../shell/window-dialog";
+import { ConfirmDialog } from "../shell/confirm-dialog";
 import { Button } from "../ui/button";
 import { HoverNote } from "../ui/hover-note";
 import { StatusChip } from "../ui/status-chip";
@@ -36,7 +36,6 @@ function EndEarly({
   const timer = useRef(0);
   useEffect(() => () => window.clearTimeout(timer.current), []);
   const doneRef = useRef<HTMLDivElement>(null);
-  const titleId = useId();
   const end = () => {
     setBusy(true);
     setError(null);
@@ -87,31 +86,19 @@ function EndEarly({
           </Button>
         </Panel>
       )}
-      <WindowDialog
+      <ConfirmDialog
         open={confirming}
         onClose={() => {
           setConfirming(false);
           setError(null);
         }}
         onClosed={() => doneRef.current?.focus({ preventScroll: true })}
-        labelledBy={titleId}
         busy={busy}
-      >
-        <div className="grid gap-4 p-5">
-          <div className="grid gap-1">
-            <h2 id={titleId} className="text-lg font-semibold text-ink">
-              提前结束这个红包？
-            </h2>
-            <p className="text-sm text-ink-2">
-              “{activity.title}”结束后不能再领取或报名，也不能重新开放。
-            </p>
-          </div>
-          {error && (
-            <p role="alert" className="text-sm text-danger">
-              {error}
-            </p>
-          )}
-          <div className="flex flex-wrap justify-end gap-2">
+        title="提前结束这个红包？"
+        text={`「${activity.title}」结束后不能再领取或报名，也不能重新开放。`}
+        error={error}
+        actions={
+          <>
             <Button
               aria-disabled={busy || undefined}
               onClick={() => {
@@ -131,9 +118,9 @@ function EndEarly({
             >
               {busy ? "正在结束…" : error ? "再试一次" : "提前结束"}
             </Button>
-          </div>
-        </div>
-      </WindowDialog>
+          </>
+        }
+      />
     </PageSection>
   );
 }
@@ -147,9 +134,7 @@ export function EditView({ id }: { id: string }) {
   const activity = findActivity(id);
   if (!activity) return null;
   const view = publicOf(activity, { solved: [], drawSim, now: Date.now() });
-  const status = activity.draft
-    ? { text: "草稿", tone: "neutral" as const }
-    : statusOf(view);
+  const status = statusOf(view, { draft: Boolean(activity.draft) });
   const canEnd =
     !activity.draft && !view.endReason && activity.entries.length === 0;
   // Stays on the page after ending, to say so (and to hold focus).
@@ -165,7 +150,7 @@ export function EditView({ id }: { id: string }) {
               note={
                 activity.draft
                   ? "开放前只有你能看到，什么都能改。"
-                  : "已开放：还能改标题、关联帖子、加入广场、说明和数量展示。"
+                  : "开放后还能改标题、关联帖子、加入红包广场、说明和数量展示。"
               }
             >
               <StatusChip tone={status.tone} dot>

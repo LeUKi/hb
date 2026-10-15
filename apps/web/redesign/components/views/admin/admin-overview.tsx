@@ -1,6 +1,6 @@
 import { PAYMENT_LABELS } from "@hb/contracts";
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, RefreshCw } from "lucide-react";
+import { AlertTriangle, ChevronRight, Clock, RotateCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { activities } from "../../../fixtures/activities";
 import {
@@ -17,7 +17,9 @@ import {
 import { cn } from "../../../lib/cn";
 import { clockLabel, clockSeconds } from "../../../lib/roster-time";
 import { Facts, PageSection, Panel } from "../../page/page";
+import { useWindowInfo } from "../../shell/window-info";
 import { Button } from "../../ui/button";
+import { radius, Squircle } from "../../ui/squircle";
 import { StatusChip } from "../../ui/status-chip";
 import { AdminFrame } from "./admin-frame";
 
@@ -50,6 +52,7 @@ const severe = new Set(["unknown", "attention", "maintenance"]);
  * by state, and the maintenance jobs.
  */
 export function AdminOverview() {
+  const { compact } = useWindowInfo();
   const read = useReadAt();
   const checks = diagnostics(read.at);
   const payments = sitePayments();
@@ -70,14 +73,24 @@ export function AdminOverview() {
 
   return (
     <AdminFrame
-      description={`上次读取 ${clockSeconds(read.at)} · 环境 production · 每 30 秒自动刷新`}
+      description={`上次读取 ${clockSeconds(read.at)} · 生产环境 · 每 30 秒自动刷新`}
       actions={
-        <Button size="sm" variant="ghost" onClick={read.refresh}>
-          <RefreshCw
+        // As every page's 刷新 (RefreshButton): focus stays while it reads.
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-disabled={read.busy || undefined}
+          onClick={() => {
+            if (!read.busy) read.refresh();
+          }}
+          aria-label={compact ? "刷新" : undefined}
+          title="刷新"
+        >
+          <RotateCw
             className={read.busy ? "motion-safe:animate-spin" : undefined}
             aria-hidden="true"
           />
-          刷新
+          {!compact && (read.busy ? "正在刷新…" : "刷新")}
         </Button>
       }
     >
@@ -93,9 +106,10 @@ export function AdminOverview() {
             const body = (
               <>
                 <span className="text-sm text-ink-2">{check.label}</span>
+                {/* Not by colour alone: an icon and words say how urgent. */}
                 <span
                   className={cn(
-                    "text-2xl font-semibold tabular-nums",
+                    "flex items-center gap-1.5 text-2xl font-semibold tabular-nums",
                     !hot
                       ? "text-ink-3"
                       : severe.has(check.key)
@@ -103,7 +117,18 @@ export function AdminOverview() {
                         : "text-warning",
                   )}
                 >
+                  {hot &&
+                    (severe.has(check.key) ? (
+                      <AlertTriangle className="size-5" aria-hidden="true" />
+                    ) : (
+                      <Clock className="size-5" aria-hidden="true" />
+                    ))}
                   {check.count}
+                  {hot && (
+                    <span className="sr-only">
+                      {severe.has(check.key) ? "，需要处理" : "，需要留意"}
+                    </span>
+                  )}
                 </span>
                 {check.link && hot && (
                   <span className="flex items-center gap-0.5 text-xs text-ink-3">
@@ -116,18 +141,19 @@ export function AdminOverview() {
             return (
               <li key={check.key}>
                 {check.link && hot ? (
-                  <Link
-                    to={check.link.to}
-                    search={{
-                      anomaly: check.link.anomaly,
-                      state: check.link.state,
-                    }}
-                    className="block h-full"
-                  >
-                    <Panel className="grid h-full content-start gap-1 p-4 transition-colors hover:bg-white/80">
+                  // The link is the squircle, so its focus ring follows it.
+                  <Squircle radius={radius.card}>
+                    <Link
+                      to={check.link.to}
+                      search={{
+                        anomaly: check.link.anomaly,
+                        state: check.link.state,
+                      }}
+                      className="panel grid h-full content-start gap-1 p-4 transition-colors hover:bg-white/80"
+                    >
                       {body}
-                    </Panel>
-                  </Link>
+                    </Link>
+                  </Squircle>
                 ) : (
                   <Panel className="grid h-full content-start gap-1 p-4">
                     {body}
@@ -195,9 +221,9 @@ export function AdminOverview() {
           </Panel>
         </PageSection>
 
-        <PageSection title="没确认的付款" description="按状态汇总。">
+        <PageSection title="未确认的付款" description="按状态汇总。">
           {byState.length === 0 ? (
-            <Panel className="p-5 text-sm text-ink-3">没有没确认的付款。</Panel>
+            <Panel className="p-5 text-sm text-ink-3">所有付款都已确认。</Panel>
           ) : (
             <Panel as="ul" className="grid px-4">
               {byState.map((row) => (

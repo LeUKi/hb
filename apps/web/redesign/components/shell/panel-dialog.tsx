@@ -74,7 +74,9 @@ export function PanelDialog({
           <div
             key="frame"
             className={`pointer-events-none absolute inset-0 z-50 flex ${
-              compact ? "items-end p-2" : "items-center justify-center p-6"
+              compact
+                ? "items-end p-2 pr-[max(0.5rem,var(--safe-right))] pb-[max(0.5rem,var(--safe-bottom))] pl-[max(0.5rem,var(--safe-left))]"
+                : "items-center justify-center p-6 pr-[max(1.5rem,var(--safe-right))] pl-[max(1.5rem,var(--safe-left))]"
             }`}
           >
             <motion.div

@@ -1,5 +1,5 @@
 import { useAtomValue, useSetAtom } from "jotai";
-import { AlertTriangle, ChevronRight, LogOut, RefreshCw } from "lucide-react";
+import { AlertTriangle, LogOut, RotateCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { profileOf } from "../../fixtures/session";
 import { authErrorOf } from "../../lib/auth-errors";
@@ -29,8 +29,8 @@ import {
 import { useSignOut } from "../shell/identity-check";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
+import { MoreLink } from "../ui/button-link";
 import { CopyButton } from "../ui/copy-button";
-import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
 
 /**
@@ -127,7 +127,7 @@ export function MeView() {
             aria-disabled={refresh.state === "busy" || undefined}
             title="重新登录一次，读取论坛上最新的昵称和头像"
           >
-            <RefreshCw
+            <RotateCw
               className={
                 refresh.state === "busy" ? "motion-safe:animate-spin" : ""
               }
@@ -144,7 +144,7 @@ export function MeView() {
             icon={AlertTriangle}
             title="刷新资料没有完成"
           >
-            {refreshError.text} 资料保持原样，你仍是登录状态。
+            {refreshError.refresh}资料保持原样，你仍是登录状态。
           </Callout>
         </div>
       )}
@@ -177,16 +177,12 @@ export function MeView() {
         title="红包"
         id="me-records"
         action={
-          <Squircle radius={radius.row}>
-            <button
-              type="button"
-              onClick={() => void leaveTo({ to: "/history" })}
-              className="flex h-8 items-center gap-0.5 px-2 text-sm text-ink-2 transition-colors hover:bg-fill-2 hover:text-ink"
-            >
-              红包记录
-              <ChevronRight className="size-4" aria-hidden="true" />
-            </button>
-          </Squircle>
+          <MoreLink
+            href="/history"
+            onGo={() => void leaveTo({ to: "/history" })}
+          >
+            红包记录
+          </MoreLink>
         }
       >
         <Panel className="p-5">
@@ -203,7 +199,7 @@ export function MeView() {
                 value: `${amountText(sentTotal(sent))} LDC`,
                 note: "大家领到的合计",
               },
-              { label: "参与", value: `${joined.length} 次` },
+              { label: "参与的红包", value: `${joined.length} 个` },
               {
                 label: "领到",
                 value: `${amountText(receivedTotal(joined))} LDC`,

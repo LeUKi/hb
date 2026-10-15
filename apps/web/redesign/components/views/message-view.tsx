@@ -82,7 +82,7 @@ export function IdentityFailedView({
           aria-disabled={checking || undefined}
           onClick={retry}
         >
-          {checking ? "正在检查…" : "重新检查"}
+          {checking ? "正在确认身份…" : "重新检查"}
         </Button>
       }
     />
@@ -98,7 +98,7 @@ export function CommandPageView({
   page,
 }: {
   id: CommandId;
-  page?: ReactNode;
+  page: ReactNode;
 }) {
   const command = commandById(id);
   const role = roleOf(useAtomValue(sessionAtom));
@@ -115,7 +115,7 @@ export function CommandPageView({
       <MessageView
         icon={command.icon}
         title={command.title}
-        text="此页面仅限管理员访问。"
+        text="只有管理员能打开这一页。"
       />
     );
   if (gate)
@@ -131,14 +131,6 @@ export function CommandPageView({
         }
       />
     );
-  return page ? (
-    // Re-keyed by the toolbar switch, so a change plays at once.
-    <PageLoad key={loadSim}>{page}</PageLoad>
-  ) : (
-    <MessageView
-      icon={command.icon}
-      title={command.title}
-      text="该页面将在后续步骤设计。"
-    />
-  );
+  // Re-keyed by the toolbar switch, so a change plays at once.
+  return <PageLoad key={loadSim}>{page}</PageLoad>;
 }

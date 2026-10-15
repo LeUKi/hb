@@ -157,7 +157,9 @@ function remainingLine(view: PublicView) {
       ? "限时开奖"
       : `已报名 ${view.draw.registered} 人`;
   if (view.quantity.kind === "fuzzy")
-    return `余量${fuzzyLabels[view.quantity.level]}`;
+    return view.quantity.level === "empty"
+      ? "已领完"
+      : `余量${fuzzyLabels[view.quantity.level]}`;
   return `剩余 ${view.quantity.total - view.quantity.taken} 份`;
 }
 

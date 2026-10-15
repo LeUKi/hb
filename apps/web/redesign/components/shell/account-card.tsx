@@ -40,7 +40,7 @@ function IdentityFailedContent() {
         身份检查失败
       </h2>
       <p className="px-1 text-sm text-ink-2">
-        没能确认你的登录状态，现在按游客浏览。重新检查一下；还没登录的话，检查后再登录。
+        没能确认你的登录状态，现在按游客浏览。请重新检查；还没登录的话，检查后再登录。
       </p>
       <Button
         variant="primary"
@@ -49,7 +49,7 @@ function IdentityFailedContent() {
         aria-disabled={checking || undefined}
         onClick={retry}
       >
-        {checking ? "正在检查…" : "重新检查"}
+        {checking ? "正在确认身份…" : "重新检查"}
       </Button>
     </div>
   );
@@ -269,7 +269,8 @@ export function AccountCard() {
                 close();
               }
             }}
-            className={`absolute z-50 flex flex-col outline-none ${
+            // The safe area's sides as margins: an inset box keeps clear of it.
+            className={`absolute z-50 mr-(--safe-right) ml-(--safe-left) flex flex-col outline-none ${
               compact ? "inset-x-2" : "right-3 w-[20rem] @wide/window:right-5"
             }`}
             style={{

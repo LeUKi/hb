@@ -14,7 +14,7 @@ const inputs: { label: string; example: string; note: string }[] = [
   {
     label: schemeLabels.password,
     example: "周末口令2026",
-    note: "6–18 个汉字、字母或数字，查找并领取匹配的红包",
+    note: "6–18 个字：汉字、英文字母或数字；查找并领取匹配的红包",
   },
   {
     label: schemeLabels.link,
@@ -24,7 +24,7 @@ const inputs: { label: string; example: string; note: string }[] = [
   {
     label: schemeLabels.emoji,
     example: "🔕🐋🌲…☕",
-    note: "14 个表情组成的红包码",
+    note: "14 个表情组成的表情码",
   },
   {
     label: schemeLabels.uuid,
@@ -47,7 +47,7 @@ const questions: { q: string; a: string }[] = [
   },
   {
     q: "我能领自己发的红包吗？",
-    a: "不能。打开自己的红包时，印章是灰的，下面有编辑、尝试统计和付款记录的入口。",
+    a: "不能。打开自己的红包时，印章变淡、不能点，下面有编辑、尝试统计和付款记录的入口。",
   },
   {
     q: "领到的 LDC 什么时候到账？",
@@ -55,11 +55,11 @@ const questions: { q: string; a: string }[] = [
   },
   {
     q: "口令有什么要求？",
-    a: "6–18 个汉字、英文字母或数字，区分大小写。输入里有全角字母数字或空格时，输入框会提示整理。",
+    a: "6–18 个字：汉字、英文字母或数字，区分大小写。输入里有全角字母数字或空格时，输入框会提示一键优化。",
   },
   {
     q: "为什么在起始页输入口令找不到红包？",
-    a: "开启了“统计口令尝试”的红包只能在红包页兑换，请打开发红包的人分享的链接；草稿还没开放，也找不到。",
+    a: "开启了“统计口令尝试”的红包，只能在红包页输入口令：请打开发红包的人分享的链接。草稿还没开放，也找不到。",
   },
 ];
 

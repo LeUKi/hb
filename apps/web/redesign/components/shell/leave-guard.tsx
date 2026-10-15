@@ -1,8 +1,8 @@
 import { useBlocker } from "@tanstack/react-router";
 import { useIsPresent } from "motion/react";
-import { useId, useRef } from "react";
+import { useRef } from "react";
 import { Button } from "../ui/button";
-import { WindowDialog } from "./window-dialog";
+import { ConfirmDialog } from "./confirm-dialog";
 
 /**
  * "还有没保存的修改": asks before leaving a page with unsaved edits — in
@@ -27,28 +27,21 @@ export function LeaveGuard({
     enableBeforeUnload: () => active.current,
     withResolver: true,
   });
-  const titleId = useId();
   const blocked = blocker.status === "blocked";
   return (
-    <WindowDialog
+    <ConfirmDialog
       open={blocked}
       onClose={() => blocker.reset?.()}
-      labelledBy={titleId}
-    >
-      <div className="grid gap-4 p-5">
-        <div className="grid gap-1">
-          <h2 id={titleId} className="text-lg font-semibold text-ink">
-            还有没保存的修改
-          </h2>
-          <p className="text-sm text-ink-2">{message}</p>
-        </div>
-        <div className="flex flex-wrap justify-end gap-2">
+      title="还有没保存的修改"
+      text={message}
+      actions={
+        <>
           <Button onClick={() => blocker.reset?.()}>继续编辑</Button>
           <Button variant="danger" onClick={() => blocker.proceed?.()}>
             放弃修改并离开
           </Button>
-        </div>
-      </div>
-    </WindowDialog>
+        </>
+      }
+    />
   );
 }

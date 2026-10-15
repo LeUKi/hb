@@ -28,8 +28,8 @@ function Muted({ children }: { children: ReactNode }) {
 }
 
 /**
- * The 表情码 shrunk until all of it fits the room the bar leaves (the dev
- * toolbar's 缩小字号 option for phones), never below 8px.
+ * The 表情码 shrunk until all of it fits the room the bar leaves (on
+ * phones, so all 14 show), never below 8px.
  */
 function FitCode({ text }: { text: string }) {
   const ref = useRef<HTMLSpanElement>(null);
@@ -174,7 +174,7 @@ export function useAddress(compact: boolean): Address {
 
   if (leaf.routeId === "/🔑/$resultId") {
     const count = readResult(params.resultId ?? "", userId)?.length ?? 0;
-    const label = count > 0 ? `匹配到 ${count} 个红包` : "领取结果";
+    const label = count > 0 ? `匹配到 ${count} 个红包` : "查找结果";
     return {
       key: `redeem:${params.resultId}`,
       label,

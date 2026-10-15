@@ -284,7 +284,7 @@ export const activities: FixtureActivity[] = [
   },
   {
     id: "0913fcad-8e09-4108-837c-f590410611da",
-    title: "即时随机红包 · 30 份",
+    title: "拼手气红包 · 30 份",
     situation: "进行中 · 口令",
     author: { displayName: "北岸", username: "beian" },
     mode: "random",
@@ -582,7 +582,7 @@ export const activities: FixtureActivity[] = [
         { entry: 10, amount: "1.40" },
       ],
     },
-    beforeInfo: "名额 12 人，报满就开奖。",
+    beforeInfo: "报名满 12 人就开奖，抽 4 位。",
     afterClaimInfo: "恭喜中奖！",
     afterEndInfo: "满员抽奖已开奖。",
     passwords: [],

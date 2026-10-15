@@ -16,7 +16,7 @@ import { sessionAtom } from "../../lib/store";
 import { PanelDialog } from "../shell/panel-dialog";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
-import { Squircle } from "../ui/squircle";
+import { Segmented } from "../ui/field";
 import {
   RosterHeader,
   type RosterKind,
@@ -33,7 +33,11 @@ function metaLine(activity: FixtureActivity, view: PublicView) {
     if (draw.registered === null) parts.push("名额不公开");
     else parts.push(`报名 ${draw.registered} 人`, `抽 ${activity.shares} 人`);
   } else if (quantity.kind === "fuzzy") {
-    parts.push(`余量${fuzzyLabels[quantity.level]}`);
+    parts.push(
+      quantity.level === "empty"
+        ? "已领完"
+        : `余量${fuzzyLabels[quantity.level]}`,
+    );
   } else {
     parts.push(`已领 ${quantity.taken} / ${quantity.total} 份`);
   }
@@ -41,40 +45,6 @@ function metaLine(activity: FixtureActivity, view: PublicView) {
     parts.push(`${activity.totalAmount} LDC`);
   parts.push(`${clockLabel(view.openedAt)} 开放`);
   return parts.join(" · ");
-}
-
-function Tabs({
-  value,
-  options,
-  onChange,
-}: {
-  value: string;
-  options: [string, string][];
-  onChange: (value: string) => void;
-}) {
-  return (
-    <Squircle radius={12}>
-      <div role="tablist" className="mx-5 mb-3 flex bg-fill-2 p-0.5">
-        {options.map(([key, label]) => (
-          <Squircle key={key} radius={10}>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={value === key}
-              onClick={() => onChange(key)}
-              className={`h-8 flex-1 px-3 text-sm whitespace-nowrap transition-colors ${
-                value === key
-                  ? "bg-white font-medium text-ink raised"
-                  : "text-ink-2 hover:text-ink"
-              }`}
-            >
-              {label}
-            </button>
-          </Squircle>
-        ))}
-      </div>
-    </Squircle>
-  );
 }
 
 function RosterBody({
@@ -89,7 +59,7 @@ function RosterBody({
   const navigate = useNavigate();
   const view = publicOf(activity, context);
   const roster = rosterOf(activity, context, user?.displayName ?? null);
-  const [tab, setTab] = useState("winners");
+  const [tab, setTab] = useState<"winners" | "registrations">("winners");
   const fuzzy = view.quantity.kind === "fuzzy";
   const kind: RosterKind =
     roster.kind === "claims"
@@ -176,14 +146,25 @@ function RosterBody({
         )}
       </header>
       {roster.kind === "draw" && (
-        <Tabs
-          value={tab}
-          onChange={setTab}
-          options={[
-            ["winners", `中奖名单${count(roster.winners.length)}`],
-            ["registrations", `报名名单${count(roster.registrations.length)}`],
-          ]}
-        />
+        <div className="mx-5 mb-3 grid">
+          <Segmented
+            label="名单"
+            size="sm"
+            stretch
+            value={tab}
+            onChange={setTab}
+            options={[
+              {
+                value: "winners",
+                label: `中奖名单${count(roster.winners.length)}`,
+              },
+              {
+                value: "registrations",
+                label: `报名名单${count(roster.registrations.length)}`,
+              },
+            ]}
+          />
+        </div>
       )}
       <RosterHeader kind={kind} />
       {/* The list's own scroller: its end row is watched in it. */}

@@ -171,13 +171,14 @@ export function AdminActivities({ search }: { search: AdminSearch }) {
         selectedId={selected}
         onSelect={setSelected}
         placeholder="点一个红包看详情。"
-        empty={<EmptyNote title="没有符合条件的红包" />}
+        unit="个"
+        noun="红包"
+        empty={<EmptyNote title="没有符合条件的红包" text="换个筛选看看。" />}
         row={({ activity, view, group }) => {
-          const status = activity.draft
-            ? { text: "草稿", tone: "neutral" as const }
-            : group === "archived"
-              ? { text: "已归档", tone: "neutral" as const }
-              : statusOf(view);
+          const status = statusOf(view, {
+            draft: Boolean(activity.draft),
+            archived: group === "archived",
+          });
           const taken =
             view.quantity.kind === "exact"
               ? `${view.quantity.taken} / ${view.quantity.total}`
@@ -256,11 +257,11 @@ export function AdminActivities({ search }: { search: AdminSearch }) {
                   activity.mode === "timed_draw"
                     ? {
                         label: "报名",
-                        value: `${taken} 人 · 名额 ${activity.shares} 个${activity.participantLimit ? ` · 上限 ${activity.participantLimit} 人` : ""}`,
+                        value: `${taken} 人 · 抽 ${activity.shares} 人${activity.participantLimit ? ` · 上限 ${activity.participantLimit} 人` : ""}`,
                       }
                     : {
                         label: "份数",
-                        value: `已领 ${taken} / ${activity.shares}，剩 ${Math.max(0, activity.shares - taken)}`,
+                        value: `已领 ${taken} / ${activity.shares} 份，剩 ${Math.max(0, activity.shares - taken)} 份`,
                       },
                   {
                     label: "状态",
@@ -281,7 +282,7 @@ export function AdminActivities({ search }: { search: AdminSearch }) {
                   },
                   {
                     label: "付款",
-                    value: `${own.length} 笔 · 没确认 ${own.filter(isOpenPayment).length} · 异常待处理 ${own.filter((payment) => payment.state === "attention").length}`,
+                    value: `${own.length} 笔 · 未确认 ${own.filter(isOpenPayment).length} · 异常待处理 ${own.filter((payment) => payment.state === "attention").length}`,
                   },
                   {
                     label: "开放",
@@ -322,9 +323,6 @@ export function AdminActivities({ search }: { search: AdminSearch }) {
                   </Button>
                 )}
               </div>
-              <p className="text-xs text-ink-3">
-                管理后台只读：不能修改、结束或删除别人的红包。
-              </p>
             </>
           );
         }}

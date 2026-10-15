@@ -20,12 +20,14 @@ export function resolveMessage(
   if (scheme.kind === "password" && looksLikeAddress(value))
     return {
       tone: "warning",
-      text: "无法识别这个链接。支持本站的红包链接和 Linux DO 帖子链接。",
+      text: "无法识别这个链接。支持本站的红包链接和 LINUX DO 帖子链接。",
     };
   if (scheme.kind === "password" && !scheme.valid)
     return {
       tone: "warning",
-      text: scheme.message ?? "口令为 6–18 个汉字、字母或数字。",
+      text:
+        scheme.message ??
+        "口令是 6–18 个字：汉字、英文字母或数字，区分大小写。",
       count: `${scheme.length} / 18`,
     };
   return message;
@@ -41,8 +43,9 @@ export function MessageLine({
   if (!message) return null;
   const Icon = message.tone === "neutral" ? Info : CircleAlert;
   return (
+    // Not a live region: Omnibox announces results from one lasting
+    // region, and the rules line (with its count) is not read per keystroke.
     <motion.div
-      role="status"
       initial={{ opacity: 0, y: -4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.16 }}

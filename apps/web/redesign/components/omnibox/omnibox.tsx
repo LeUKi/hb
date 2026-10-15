@@ -12,7 +12,6 @@ import {
   type KeyboardEvent,
   useCallback,
   useEffect,
-  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -39,11 +38,17 @@ import {
   viewEdgeAtom,
   windowDialogsAtom,
 } from "../../lib/store";
+import { ConfirmDialog } from "../shell/confirm-dialog";
 import { keyboardInsetAtom } from "../shell/keyboard";
 import { type SlotRect, useSlotRect } from "../shell/slots";
-import { WindowDialog } from "../shell/window-dialog";
 import { isPhoneLike, useWindowInfo } from "../shell/window-info";
-import { Button, useButtonShape } from "../ui/button";
+import {
+  Button,
+  buttonHeight,
+  buttonRadius,
+  buttonVariants,
+  useButtonShape,
+} from "../ui/button";
 import { ShortcutKbd, Spinner } from "../ui/kbd";
 import { MorphLabel, RollingNumber } from "../ui/morph-label";
 import { Squircle, SquircleFill, SquirclePlate } from "../ui/squircle";
@@ -204,7 +209,6 @@ export function Omnibox() {
   const [clearCount, setClearCount] = useState(0);
   // Cleared, the 清空 button leaves with the list: focus goes back to typing.
   const cleared = useRef(false);
-  const clearTitle = useId();
   const startLines = useAtomValue(startLinesAtom);
   const editLines = useAtomValue(editLinesAtom);
   const hintTarget = useAtomValue(startHintElementAtom);
@@ -648,8 +652,9 @@ export function Omnibox() {
     !(expanded && scheme.kind === "password" && !activeItem);
   const actionDisabled = pending || (usesCooldown && cooldown > 0 && !retryRow);
 
-  const actionRadius = compact ? 13 : 14;
-  const actionShape = useButtonShape(actionRadius, compact ? 40 : 44);
+  const actionSize = compact ? "bar" : "md";
+  const actionRadius = buttonRadius[actionSize];
+  const actionShape = useButtonShape(actionRadius, buttonHeight[actionSize]);
   const scopeActivity =
     expanded && scope && !commandMode ? findActivity(scope.id) : null;
   // The list stops above the on-screen keyboard.
@@ -744,7 +749,7 @@ export function Omnibox() {
                       ? "口令、红包链接或 / 命令"
                       : "输入口令、红包链接，或输入 / 使用命令"
               }
-              ariaLabel="口令、红包地址或命令"
+              ariaLabel="口令、红包链接或命令"
               onFocusChange={(next) => {
                 setFocused(next);
                 // Phones: the start page's box opens as the command box at
@@ -803,9 +808,10 @@ export function Omnibox() {
                     disabled={actionDisabled}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={execute}
-                    className={`btn btn-primary px-4 ${
-                      compact ? "h-10 text-sm" : "h-11 text-base"
-                    }`}
+                    className={buttonVariants({
+                      variant: "primary",
+                      size: actionSize,
+                    })}
                     style={actionShape}
                   >
                     <SquircleFill radius={actionRadius} />
@@ -892,18 +898,17 @@ export function Omnibox() {
                     最近输入只存在这个浏览器里
                     {!compact && " · Shift+Delete 删除选中的一条"}
                   </p>
-                  <Squircle radius={8}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setClearCount(recent.length);
-                        setConfirmClear(true);
-                      }}
-                      className="h-7 shrink-0 px-2 text-xs text-ink-2 transition-colors hover:bg-fill-2 hover:text-ink"
-                    >
-                      清空
-                    </button>
-                  </Squircle>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    className="-my-1"
+                    onClick={() => {
+                      setClearCount(recent.length);
+                      setConfirmClear(true);
+                    }}
+                  >
+                    清空
+                  </Button>
                 </div>
               ) : commandMode && suggestions.length > 0 && !compact ? (
                 <p className="px-3 pt-1.5 pb-1 text-xs text-ink-3">
@@ -914,26 +919,22 @@ export function Omnibox() {
           />
         )}
       </AnimatePresence>
-      <WindowDialog
+      {/* One lasting region says every result (未匹配到红包, 口令不正确…),
+          wherever it is shown; the lines that show them are not live. */}
+      <p role="status" className="sr-only">
+        {message?.text ?? ""}
+      </p>
+      <ConfirmDialog
         open={confirmClear}
         onClose={() => setConfirmClear(false)}
         onClosed={() => {
           if (cleared.current) focusOmniboxInput();
           cleared.current = false;
         }}
-        labelledBy={clearTitle}
-      >
-        <div className="grid gap-4 p-5">
-          <div className="grid gap-1">
-            <h2 id={clearTitle} className="text-lg font-semibold text-ink">
-              清空最近输入？
-            </h2>
-            <p className="text-sm text-ink-2">
-              这个浏览器里记下的 {clearCount}{" "}
-              条口令会全部删除，不能恢复。不影响已经领到的红包。
-            </p>
-          </div>
-          <div className="flex flex-wrap justify-end gap-2">
+        title="清空最近输入？"
+        text={`这个浏览器里记下的 ${clearCount} 条口令会全部删除，不能恢复。不影响已经领到的红包。`}
+        actions={
+          <>
             <Button onClick={() => setConfirmClear(false)}>取消</Button>
             <Button
               variant="danger"
@@ -945,9 +946,9 @@ export function Omnibox() {
             >
               清空
             </Button>
-          </div>
-        </div>
-      </WindowDialog>
+          </>
+        }
+      />
     </motion.div>
   );
 }

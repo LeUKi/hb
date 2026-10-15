@@ -1,9 +1,9 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
-import { type RefObject, useId, useRef, useState } from "react";
+import { type RefObject, useRef, useState } from "react";
 import type { FixtureActivity } from "../../fixtures/activities";
 import { submitSimAtom } from "../../lib/store";
-import { WindowDialog } from "../shell/window-dialog";
+import { ConfirmDialog } from "../shell/confirm-dialog";
 import { Button } from "../ui/button";
 import { deleteDraft } from "./form-state";
 
@@ -25,33 +25,20 @@ export function DeleteDraftDialog({
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const failed = useRef(false);
-  const title = useId();
   const close = () => {
     onClose();
     setError(null);
   };
   return (
-    <WindowDialog
+    <ConfirmDialog
       open={open}
       onClose={close}
-      labelledBy={title}
       busy={deleting}
-    >
-      <div className="grid gap-4 p-5">
-        <div className="grid gap-1">
-          <h2 id={title} className="text-lg font-semibold text-ink">
-            删除这个草稿？
-          </h2>
-          <p className="text-sm text-ink-2">
-            “{activity.title}”还没开放，删除后不能恢复。
-          </p>
-        </div>
-        {error && (
-          <p role="alert" className="text-sm text-danger">
-            {error}
-          </p>
-        )}
-        <div className="flex flex-wrap justify-end gap-2">
+      title="删除这个草稿？"
+      text={`「${activity.title}」还没开放，删除后不能恢复。`}
+      error={error}
+      actions={
+        <>
           <Button
             aria-disabled={deleting || undefined}
             onClick={() => {
@@ -94,8 +81,8 @@ export function DeleteDraftDialog({
           >
             {deleting ? "正在删除…" : error ? "再试一次" : "删除草稿"}
           </Button>
-        </div>
-      </div>
-    </WindowDialog>
+        </>
+      }
+    />
   );
 }

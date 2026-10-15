@@ -66,7 +66,9 @@ function CommandSlot({ compact }: { compact: boolean }) {
         compact ? "w-[calc(100%-1rem)]" : "w-[min(40rem,calc(100%-3rem))]"
       }`}
       style={{
-        top: compact ? 8 : "clamp(4.5rem, 15cqh, 9rem)",
+        top: compact
+          ? "calc(0.5rem + var(--safe-top))"
+          : "calc(clamp(4.5rem, 15cqh, 9rem) + var(--safe-top))",
         height: metrics.base + (lines - 1) * metrics.line,
       }}
     />

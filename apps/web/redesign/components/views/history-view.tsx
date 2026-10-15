@@ -1,19 +1,7 @@
 import { PAYMENT_LABELS } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import {
-  BarChart3,
-  ChevronRight,
-  LayoutGrid,
-  PenLine,
-  Plus,
-  ReceiptText,
-} from "lucide-react";
-import { endLabels } from "../../fixtures/hongbao";
-import {
-  activityCode,
-  type SenderPage,
-  senderPages,
-} from "../../lib/activity-route";
+import { ChevronRight, LayoutGrid, Plus } from "lucide-react";
+import { activityCode } from "../../lib/activity-route";
 import { cn } from "../../lib/cn";
 import {
   amountText,
@@ -27,7 +15,8 @@ import {
   useSentRecords,
 } from "../../lib/my-records";
 import { clockLabel } from "../../lib/roster-time";
-import { quantityLine } from "../hongbao/hongbao-card";
+import { quantityLine, statusOf } from "../hongbao/hongbao-card";
+import { SenderLinks } from "../hongbao/sender-links";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { LazyRows } from "../page/lazy-list";
 import { EmptyNote, Page, PageHeader, Panel } from "../page/page";
@@ -48,82 +37,14 @@ function sentStatus({ activity, view, archived }: SentRecord): {
   tone: ChipTone;
   group: Exclude<SentFilter, "all">;
 } {
-  if (activity.draft) return { text: "草稿", tone: "neutral", group: "draft" };
-  if (!view.endReason)
-    return { text: "进行中", tone: "success", group: "active" };
-  if (view.endReason === "settling")
-    return { text: "开奖中", tone: "warning", group: "active" };
-  if (archived) return { text: "已归档", tone: "neutral", group: "ended" };
-  return { text: endLabels[view.endReason], tone: "neutral", group: "ended" };
-}
-
-/** The sender's three pages, as small buttons at the end of a row. */
-const shortTitles: Record<SenderPage, string> = {
-  edit: "编辑",
-  stats: "统计",
-  payments: "付款",
-};
-
-function SenderActions({
-  record,
-  labelled,
-}: {
-  record: SentRecord;
-  /** Narrow windows: a row of small labelled buttons under the 红包. */
-  labelled: boolean;
-}) {
-  const navigate = useNavigate();
-  const go = (page: SenderPage) =>
-    void navigate({
-      to: `/🧧/$code/${senderPages[page].emoji}` as "/🧧/$code/📝",
-      params: { code: activityCode(record.activity.id) },
-    });
-  const items: { page: SenderPage; icon: typeof PenLine; show: boolean }[] = [
-    { page: "edit", icon: PenLine, show: true },
-    // 尝试统计 exists only for 红包 sent with it on.
-    {
-      page: "stats",
-      icon: BarChart3,
-      show: !record.activity.draft && Boolean(record.activity.statistics),
-    },
-    { page: "payments", icon: ReceiptText, show: !record.activity.draft },
-  ];
-  return (
-    <span
-      className={cn(
-        "flex shrink-0 items-center gap-0.5",
-        labelled && "basis-full gap-1 pb-2 pl-[4.25rem]",
-      )}
-    >
-      {items
-        .filter((item) => item.show)
-        .map(({ page, icon: Icon }) => (
-          <Squircle key={page} radius={10}>
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                go(page);
-              }}
-              aria-label={`${senderPages[page].title}：${record.activity.title}`}
-              title={senderPages[page].title}
-              className={cn(
-                "text-ink-3 transition-colors hover:bg-fill-2 hover:text-ink",
-                labelled
-                  ? "inline-flex h-8 items-center gap-1.5 bg-fill px-2.5 text-xs"
-                  : "grid size-9 place-items-center",
-              )}
-            >
-              <Icon
-                className={labelled ? "size-3.5" : "size-[18px]"}
-                aria-hidden="true"
-              />
-              {labelled && shortTitles[page]}
-            </button>
-          </Squircle>
-        ))}
-    </span>
-  );
+  const tag = statusOf(view, { draft: Boolean(activity.draft), archived });
+  // 开奖中 is still running (its result is to come), as on the square.
+  const group = activity.draft
+    ? "draft"
+    : !view.endReason || view.endReason === "settling"
+      ? "active"
+      : "ended";
+  return { ...tag, group };
 }
 
 function SentRow({ record }: { record: SentRecord }) {
@@ -180,7 +101,15 @@ function SentRow({ record }: { record: SentRecord }) {
           </span>
         </button>
       </Squircle>
-      <SenderActions record={record} labelled={compact} />
+      {/* Narrow windows: labelled, in a line under the 红包. */}
+      <span
+        className={cn(
+          "flex shrink-0 items-center gap-0.5",
+          compact && "basis-full gap-1 pb-2 pl-[4.25rem]",
+        )}
+      >
+        <SenderLinks activity={activity} iconsOnly={!compact} />
+      </span>
     </li>
   );
 }
@@ -333,7 +262,10 @@ export function HistoryView() {
           title="还没有参与过红包"
           text="在起始页输入口令，或打开别人分享的红包链接；红包广场里也有公开的红包。"
           action={
-            <Button onClick={() => void leaveTo({ to: "/square" })}>
+            <Button
+              variant="primary"
+              onClick={() => void leaveTo({ to: "/square" })}
+            >
               <LayoutGrid />
               逛红包广场
             </Button>

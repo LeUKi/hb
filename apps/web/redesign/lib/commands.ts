@@ -238,20 +238,11 @@ export const commands: Command[] = [
 ];
 
 const byId = new Map(commands.map((command) => [command.id, command]));
-const byPath = new Map(
-  commands.flatMap((command) =>
-    command.path ? [[command.path, command] as const] : [],
-  ),
-);
 
 export function commandById(id: CommandId) {
   const command = byId.get(id);
   if (!command) throw new Error(`Unknown command ${id}`);
   return command;
-}
-
-export function commandByPath(path: string) {
-  return byPath.get(path as CommandPath) ?? null;
 }
 
 export function isVisible(command: Command, role: Role) {

@@ -218,7 +218,7 @@ export function renderHongbaoImage(input: HongbaoImageInput) {
     <path d="${squirclePath(210 - pillWidth / 2, 400, pillWidth, 26, 9)}" fill="${tone.fill}"/>
     <text x="210" y="417.5" class="pill" fill="${tone.text}">${escapeXml(status.text)}</text>
   </g>
-  <text x="210" y="452" class="when rise r4 motion">领取于 ${escapeXml(dateTime(at))}</text>`;
+  <text x="210" y="452" class="when rise r4 motion">${label === "你中奖了" ? "开奖于" : "领取于"} ${escapeXml(dateTime(at))}</text>`;
     footY = 474;
   }
   // As production: "可能过期" after 10 s, "已过期" after 30 s (CSS only: an

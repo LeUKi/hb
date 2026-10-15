@@ -31,6 +31,7 @@ import {
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { Callout } from "../page/page";
 import { Button } from "../ui/button";
+import { MoreLink } from "../ui/button-link";
 import {
   ChoiceCards,
   Field,
@@ -336,13 +337,17 @@ export function AmountFields({
         </Field>
       )}
       <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1 border-line border-t pt-4 text-sm text-ink-2">
-        <span>
-          {form.mode === "timed_draw" ? "奖池" : "总额"}{" "}
-          <span className="text-base font-semibold text-ink tabular-nums">
-            {total !== null ? ldc(total) : "—"}
-          </span>{" "}
-          LDC
-        </span>
+        {total !== null ? (
+          <span>
+            {form.mode === "timed_draw" ? "奖池" : "总额"}{" "}
+            <span className="text-base font-semibold text-ink tabular-nums">
+              {ldc(total)}
+            </span>{" "}
+            LDC
+          </span>
+        ) : (
+          <span>{form.mode === "timed_draw" ? "奖池未填" : "总额未填"}</span>
+        )}
         <span className="text-ink-3">
           ·{" "}
           {shares !== null
@@ -366,12 +371,15 @@ export function AlgorithmCards({
   onChange,
   range,
   shares,
+  pool = false,
 }: {
   label: string;
   value: Algorithm;
   onChange: (value: Algorithm) => void;
   range: [number, number] | null;
   shares: number | null;
+  /** A timed draw's prizes add up to its 奖池, not a 总额. */
+  pool?: boolean;
 }) {
   return (
     <div className="grid gap-2">
@@ -387,7 +395,7 @@ export function AlgorithmCards({
             ? `只有一份：就是全部 ${ldc(range[0])} LDC。`
             : range[0] === range[1]
               ? `按现在的金额，每份都是 ${ldc(range[0])} LDC。`
-              : `按现在的金额，每份 ${ldc(range[0])}–${ldc(range[1])} LDC，加起来正好是总额。`}
+              : `按现在的金额，每份 ${ldc(range[0])}–${ldc(range[1])} LDC，加起来正好是${pool ? "奖池" : "总额"}。`}
         </p>
       )}
     </div>
@@ -421,23 +429,19 @@ export function PaidByRow({ activityId }: { activityId: string }) {
               <span className="ml-2 text-xs text-ink-3">历史商户</span>
             )}
           </span>
-          <Squircle radius={radius.row}>
-            <button
-              type="button"
-              onClick={() =>
-                merchant.current
-                  ? void leaveTo({ to: "/merchant" })
-                  : void navigate({
-                      to: "/merchant/$merchantId",
-                      params: { merchantId: merchant.id },
-                    })
-              }
-              className="flex h-8 shrink-0 items-center gap-0.5 px-2 text-sm text-ink-2 transition-colors hover:bg-fill-2 hover:text-ink"
-            >
-              查看
-              <ChevronRight className="size-4" aria-hidden="true" />
-            </button>
-          </Squircle>
+          <MoreLink
+            href={merchant.current ? "/merchant" : `/merchant/${merchant.id}`}
+            onGo={() =>
+              merchant.current
+                ? void leaveTo({ to: "/merchant" })
+                : void navigate({
+                    to: "/merchant/$merchantId",
+                    params: { merchantId: merchant.id },
+                  })
+            }
+          >
+            查看
+          </MoreLink>
         </div>
       </Squircle>
       <p className="text-xs text-ink-3">
@@ -474,7 +478,7 @@ export function MerchantRow() {
                   ? "凭证检查通过 · 开放时会自动再查一次"
                   : credential?.kind === "checking"
                     ? "正在检查凭证…"
-                    : "凭证没通过检查"}
+                    : "凭证未通过"}
               </span>
             </span>
           ) : (
@@ -482,16 +486,12 @@ export function MerchantRow() {
               还没有配置商户
             </span>
           )}
-          <Squircle radius={radius.row}>
-            <button
-              type="button"
-              onClick={() => void leaveTo({ to: "/merchant" })}
-              className="flex h-8 shrink-0 items-center gap-0.5 px-2 text-sm text-ink-2 transition-colors hover:bg-fill-2 hover:text-ink"
-            >
-              {merchant ? "管理" : "去配置"}
-              <ChevronRight className="size-4" aria-hidden="true" />
-            </button>
-          </Squircle>
+          <MoreLink
+            href="/merchant"
+            onGo={() => void leaveTo({ to: "/merchant" })}
+          >
+            {merchant ? "管理" : "去配置"}
+          </MoreLink>
         </div>
       </Squircle>
       <p className="text-xs text-ink-3">
@@ -519,17 +519,16 @@ export function MerchantNotice() {
       <AlertTriangle className="size-4 shrink-0" aria-hidden="true" />
       <span className="min-w-0">
         {merchant
-          ? "商户凭证没通过检查：可以先填完存草稿，开放前请更新密钥。"
+          ? "商户凭证未通过：可以先填完存草稿，开放前请更新密钥。"
           : "还没有配置 LDC 商户：可以先填完存草稿，开放前去配置。"}
       </span>
-      <button
-        type="button"
-        onClick={() => void leaveTo({ to: "/merchant" })}
-        className="inline-flex items-center font-medium text-accent-ink"
+      <MoreLink
+        className="-my-1"
+        href="/merchant"
+        onGo={() => void leaveTo({ to: "/merchant" })}
       >
         {merchant ? "去更新" : "去配置"}
-        <ChevronRight className="size-4" aria-hidden="true" />
-      </button>
+      </MoreLink>
     </p>
   );
 }
@@ -590,14 +589,20 @@ export function PasswordList({
                   onChange={(event) => setAt(index, event.target.value)}
                 />
                 {!locked && fixable && (
+                  // Named as in the command box (一键优化 → 优化).
                   <Button
-                    size="icon"
+                    size="sm"
                     variant="ghost"
-                    title="整理：全角字母数字转半角，去掉不能用的字符"
-                    aria-label={`整理口令 ${index + 1}`}
-                    onClick={() => setAt(index, optimizePassword(password))}
+                    title="一键优化：全角字母数字转半角，去掉不能用的字符"
+                    aria-label={`优化口令 ${index + 1}`}
+                    onClick={() => {
+                      setAt(index, optimizePassword(password));
+                      // The button goes once the 口令 is clean: stay in it.
+                      document.getElementById(field)?.focus();
+                    }}
                   >
                     <Sparkles />
+                    优化
                   </Button>
                 )}
                 {!locked && form.passwords.length > 1 && (
@@ -605,14 +610,19 @@ export function PasswordList({
                     size="icon"
                     variant="ghost"
                     aria-label={`删除口令 ${index + 1}`}
-                    onClick={() =>
+                    onClick={() => {
                       update((current) => ({
                         ...current,
                         passwords: current.passwords.filter(
                           (_, at) => at !== index,
                         ),
-                      }))
-                    }
+                      }));
+                      // Rows are kept by position: the one above (or the
+                      // next one, now in this place) takes the focus.
+                      document
+                        .getElementById(`hb-password-${Math.max(0, index - 1)}`)
+                        ?.focus();
+                    }}
                   >
                     <Trash2 />
                   </Button>
@@ -627,9 +637,8 @@ export function PasswordList({
           );
         })}
       </ul>
-      {locked ? (
-        <LockNote>开放后口令不能增删或修改。</LockNote>
-      ) : (
+      {/* Locked: the step's own 开放后不能修改 covers the 口令 too. */}
+      {!locked && (
         <div className="flex flex-wrap items-center gap-3">
           {form.passwords.length < LIMITS.passwords && (
             <Button
@@ -647,7 +656,7 @@ export function PasswordList({
           )}
           <span className="text-xs text-ink-3">
             6–18
-            个字，汉字、英文字母或数字，区分大小写。几个口令共用同一个红包，每人只能领一次。
+            个字：汉字、英文字母或数字，区分大小写。几个口令共用同一个红包，每人只能领一次。
           </span>
         </div>
       )}
@@ -848,7 +857,7 @@ export function IssueList({
           </li>
         ))}
         {issues.length > 6 && (
-          <li className="text-xs text-ink-3">还有 {issues.length - 6} 处……</li>
+          <li className="text-xs text-ink-3">还有 {issues.length - 6} 处…</li>
         )}
       </ul>
     </Callout>

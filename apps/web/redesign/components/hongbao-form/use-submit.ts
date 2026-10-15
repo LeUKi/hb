@@ -135,14 +135,14 @@ export function useSubmit({
       if (!merchant) {
         setNotice({
           tone: "danger",
-          text: "还没有配置商户，不能开放。可以先保存草稿。",
+          text: "还没有配置商户，不能开放。可以先存草稿。",
         });
         return;
       }
       if (credential?.kind === "rejected") {
         setNotice({
           tone: "danger",
-          text: "商户凭证没通过检查，不能开放。草稿可以先保存。",
+          text: "商户凭证未通过，不能开放。可以先存草稿。",
         });
         return;
       }
@@ -172,7 +172,7 @@ export function useSubmit({
             setReread(true);
             setNotice({
               tone: "danger",
-              text: "保存失败：这个红包刚在别处改过。当前输入已保留，确认无误后再保存一次。",
+              text: "保存失败：这个红包刚在别处改过。你的输入还在，确认后再保存一次。",
             });
             return;
           }

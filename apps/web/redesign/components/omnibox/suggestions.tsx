@@ -23,6 +23,7 @@ import { type EntryScheme, looksLikeAddress } from "../../lib/scheme";
 import { HongbaoIcon } from "../ui/hongbao-icon";
 import { Kbd } from "../ui/kbd";
 import { radius, Squircle, SquirclePlate } from "../ui/squircle";
+import { StatusChip } from "../ui/status-chip";
 import type { Scope, ScopeOffer } from "./state";
 
 export type Suggestion =
@@ -181,11 +182,7 @@ function Row({
 }
 
 export function GateChip() {
-  return (
-    <Squircle radius={8}>
-      <span className="chip chip-accent h-6 px-2 text-xs">需登录</span>
-    </Squircle>
-  );
+  return <StatusChip tone="accent">需登录</StatusChip>;
 }
 
 /** "/hist" → the typed part of the command name is emphasised. */

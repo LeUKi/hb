@@ -77,11 +77,11 @@ export function summaryOf(
         case "fixed":
           return `每份 ${ldc(unit ?? 0)} LDC · ${shares} 份`;
         case "custom":
-          return `${shares} 份 · 共 ${ldc(total)} LDC`;
+          return `总额 ${ldc(total)} LDC · ${shares} 份`;
         case "timed_draw":
           return `奖池 ${ldc(total)} LDC · ${shares} 个名额`;
         default:
-          return `${ldc(total)} LDC · ${shares} 份`;
+          return `总额 ${ldc(total)} LDC · ${shares} 份`;
       }
     }
     case "claim": {

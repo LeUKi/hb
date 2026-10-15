@@ -35,12 +35,13 @@ import {
 import { LeaveGuard } from "../shell/leave-guard";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
+import { MoreLink } from "../ui/button-link";
 import { CopyButton } from "../ui/copy-button";
 import { Field, TextInput } from "../ui/field";
 import { PersonName } from "../ui/person";
 import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
-import { MessageView } from "./page-stub-view";
+import { MessageView } from "./message-view";
 
 const dotTones: Record<PaymentStep["tone"], string> = {
   done: "bg-success",
@@ -56,6 +57,9 @@ export function Timeline({ steps }: { steps: PaymentStep[] }) {
       {steps.map((step, index) => (
         <li
           key={`${step.at}:${step.title}`}
+          // The last step is where it stands now (the dot's colour says the
+          // same to the eye).
+          aria-current={index === steps.length - 1 ? "step" : undefined}
           className="relative grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-3 pb-4 last:pb-0"
         >
           {index < steps.length - 1 && (
@@ -138,15 +142,13 @@ function MerchantFix() {
   return (
     <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
       <span>到 LDC 商户配置更新密钥，检查通过后自动继续。</span>
-      <Button
-        size="sm"
-        variant="ghost"
+      <MoreLink
         className="-my-1"
-        onClick={() => void leaveTo({ to: "/merchant" })}
+        href="/merchant"
+        onGo={() => void leaveTo({ to: "/merchant" })}
       >
         去更新
-        <ChevronRight aria-hidden="true" />
-      </Button>
+      </MoreLink>
     </span>
   );
 }
@@ -265,7 +267,7 @@ function RepairCredential({
               ? {
                   ...step,
                   tone: "done" as const,
-                  detail: "原应用的密钥失效，等待作者更新",
+                  detail: "原应用的密钥失效",
                 }
               : step,
           ),
@@ -326,7 +328,12 @@ function RepairCredential({
             </p>
           )}
           <div>
-            <Button type="submit" variant="primary" disabled={!secret || busy}>
+            <Button
+              type="submit"
+              variant="primary"
+              aria-disabled={!secret || busy || undefined}
+              data-disabled={!secret || undefined}
+            >
               {busy ? "正在保存…" : "保存原订单密钥"}
             </Button>
           </div>

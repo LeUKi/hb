@@ -328,10 +328,12 @@ export function HongbaoForm({
   };
 
   const allChecked = checked.size === steps.length;
+  // The notice shows once: in the page on wide windows, in the 吸底条
+  // otherwise. Read out by the lasting region at the form's top.
   const status = (
     <>
-      {submit.notice && (
-        <p role="status" className={cn("text-sm", notice[submit.notice.tone])}>
+      {roomy && submit.notice && (
+        <p className={cn("text-sm", notice[submit.notice.tone])}>
           {submit.notice.text}
         </p>
       )}
@@ -343,7 +345,8 @@ export function HongbaoForm({
   const last = linear.current === steps.length;
   const buttons = (small: boolean) =>
     !editing && !last ? (
-      <Button type="submit" variant="primary">
+      // The bar's buttons are all one height, on every step.
+      <Button type="submit" variant="primary" size={small ? "sm" : "md"}>
         下一步
       </Button>
     ) : (
@@ -404,11 +407,15 @@ export function HongbaoForm({
         message={
           activity
             ? "这个红包改过的内容还没保存，离开后会丢失。"
-            : "这个红包还没保存，离开后填的内容会丢失。可以先保存草稿。"
+            : "这个红包还没保存，离开后填的内容会丢失。可以先存草稿。"
         }
       />
       {!editing && <StepProgress step={linear.current} />}
       {!opened && <MerchantNotice />}
+      {/* Lasting, so each save result is said wherever it is shown. */}
+      <p role="status" className="sr-only">
+        {submit.notice?.text ?? ""}
+      </p>
       <form
         noValidate
         className="grid gap-5"
@@ -499,8 +506,11 @@ export function HongbaoForm({
                   variant="danger"
                   size="sm"
                   className="mr-auto"
-                  disabled={submit.busy}
-                  onClick={() => setConfirmDelete(true)}
+                  aria-disabled={submit.busy || undefined}
+                  data-disabled={submit.busy || undefined}
+                  onClick={() => {
+                    if (!submit.busy) setConfirmDelete(true);
+                  }}
                 >
                   <Trash2 />
                   删除草稿
@@ -519,8 +529,11 @@ export function HongbaoForm({
                 <Button
                   variant="danger"
                   size="sm"
-                  disabled={submit.busy}
-                  onClick={() => setConfirmDelete(true)}
+                  aria-disabled={submit.busy || undefined}
+                  data-disabled={submit.busy || undefined}
+                  onClick={() => {
+                    if (!submit.busy) setConfirmDelete(true);
+                  }}
                 >
                   <Trash2 />
                   删除草稿

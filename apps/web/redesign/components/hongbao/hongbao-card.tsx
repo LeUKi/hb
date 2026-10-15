@@ -11,14 +11,26 @@ import { coverCells } from "./cover-cells";
 /** One line for how much is left, the way the cover's quantity cell says it. */
 export function quantityLine(activity: FixtureActivity, view: PublicView) {
   const cell = coverCells(activity, view)[1];
-  return `${cell.label} ${cell.value}`;
+  // "已领 3 / 10 份", but "余量有限": a space only before a number.
+  return `${cell.label}${/^\d/.test(cell.value) ? " " : ""}${cell.value}`;
 }
 
-/** 进行中 / 已结束 (with why) for a list or a card. */
-export function statusOf(view: PublicView) {
+/**
+ * A 红包's status tag, the same in every list: 草稿, 进行中, 开奖中 (still
+ * running: its result is to come), 已归档, or why it ended.
+ */
+export function statusOf(
+  view: PublicView,
+  {
+    draft = false,
+    archived = false,
+  }: { draft?: boolean; archived?: boolean } = {},
+) {
+  if (draft) return { text: "草稿", tone: "neutral" as const };
   if (!view.endReason) return { text: "进行中", tone: "success" as const };
   if (view.endReason === "settling")
     return { text: "开奖中", tone: "warning" as const };
+  if (archived) return { text: "已归档", tone: "neutral" as const };
   return { text: endLabels[view.endReason], tone: "neutral" as const };
 }
 
@@ -57,13 +69,13 @@ export function HongbaoCard({
             ended && "hb-ended",
           )}
         >
-          <span className="flex min-w-0 items-center gap-1.5 text-[13px] text-cream-2">
+          <span className="flex min-w-0 items-center gap-1.5 text-xs text-cream-2">
             <Avatar name={activity.author.displayName} size={18} />
             <span className="truncate">
               {activity.author.displayName}的红包
             </span>
           </span>
-          <span className="line-clamp-2 text-[17px] leading-snug font-semibold text-cream">
+          <span className="line-clamp-2 text-lg leading-snug font-semibold text-cream">
             {activity.title}
           </span>
           <span

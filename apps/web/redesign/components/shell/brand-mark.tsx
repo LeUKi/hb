@@ -20,7 +20,7 @@ export function BrandMark({ size = 32 }: { size?: number }) {
   return (
     <span
       aria-hidden="true"
-      className="relative isolate grid shrink-0 place-items-center font-semibold text-on-accent shadow-[0_6px_14px_-6px_rgb(197_30_42/0.7)]"
+      className="relative isolate grid shrink-0 place-items-center font-semibold text-on-accent shadow-[0_6px_14px_-6px_color-mix(in_srgb,var(--color-accent-bottom)_70%,transparent)]"
       style={{
         width: size,
         height: size,

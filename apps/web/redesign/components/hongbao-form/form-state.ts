@@ -284,6 +284,20 @@ export function normalizeTopic(raw: string) {
 export type Issue = { field: string; message: string };
 
 /** Every problem, in form order. `field` is the id of the control. */
+/**
+ * A 口令's problem as the form says it. The form has no red marks: its fix
+ * for unusable characters is the 优化 button beside the field.
+ */
+function passwordProblem({
+  invalidCount,
+  length,
+}: ReturnType<typeof inspectPassword>) {
+  if (invalidCount > 0)
+    return `有 ${invalidCount} 个不能用的字符，点「优化」去掉`;
+  if (length < 6) return `还差 ${6 - length} 个字，至少 6 个字`;
+  return `现在有 ${length} 个字，最多 18 个字`;
+}
+
 export function issuesOf(form: FormState, now = Date.now()): Issue[] {
   const issues: Issue[] = [];
   const add = (field: string, message: string) =>
@@ -299,13 +313,19 @@ export function issuesOf(form: FormState, now = Date.now()): Issue[] {
       if (cents(form.fixed.unit) === null)
         add("hb-fixed-unit", "每份金额要大于 0，最多两位小数");
       if (count(form.fixed.count) === null)
-        add("hb-fixed-count", `份数要在 1 到 ${LIMITS.shares} 之间`);
+        add(
+          "hb-fixed-count",
+          `份数要在 1 到 ${LIMITS.shares.toLocaleString("en")} 之间`,
+        );
       break;
     case "random":
       if (cents(form.random.total) === null)
         add("hb-random-total", "总额要大于 0，最多两位小数");
       if (count(form.random.count) === null)
-        add("hb-random-count", `份数要在 1 到 ${LIMITS.shares} 之间`);
+        add(
+          "hb-random-count",
+          `份数要在 1 到 ${LIMITS.shares.toLocaleString("en")} 之间`,
+        );
       else if (total !== null && shares !== null && total < shares)
         add("hb-random-total", "总额不够分：每份至少 0.01 LDC");
       break;
@@ -313,7 +333,7 @@ export function issuesOf(form: FormState, now = Date.now()): Issue[] {
       const lines = customLines(form);
       if (lines.length === 0) add("hb-custom-lines", "至少填写一份金额");
       else if (lines.length > LIMITS.shares)
-        add("hb-custom-lines", `最多 ${LIMITS.shares} 份`);
+        add("hb-custom-lines", `最多 ${LIMITS.shares.toLocaleString("en")} 份`);
       else {
         const bad = lines.findIndex((line) => cents(line) === null);
         if (bad >= 0)
@@ -328,7 +348,10 @@ export function issuesOf(form: FormState, now = Date.now()): Issue[] {
       if (cents(form.draw.pool) === null)
         add("hb-draw-pool", "奖池要大于 0，最多两位小数");
       if (count(form.draw.winners) === null)
-        add("hb-draw-winners", `获奖名额要在 1 到 ${LIMITS.shares} 之间`);
+        add(
+          "hb-draw-winners",
+          `获奖名额要在 1 到 ${LIMITS.shares.toLocaleString("en")} 之间`,
+        );
       else if (total !== null && shares !== null && total < shares)
         add("hb-draw-pool", "奖池不够分：每个名额至少 0.01 LDC");
       if (form.draw.limit.trim() && !positiveInteger(form.draw.limit))
@@ -343,7 +366,10 @@ export function issuesOf(form: FormState, now = Date.now()): Issue[] {
       if (!item) return;
       const inspection = inspectPassword(item);
       if (!inspection.valid)
-        add(`hb-password-${index}`, `口令 ${index + 1}：${inspection.message}`);
+        add(
+          `hb-password-${index}`,
+          `口令 ${index + 1}：${passwordProblem(inspection)}`,
+        );
       else if (filled.indexOf(item) !== index)
         add(`hb-password-${index}`, `口令 ${index + 1} 和前面的重复了`);
     });
@@ -370,7 +396,7 @@ export function issuesOf(form: FormState, now = Date.now()): Issue[] {
     ["hb-after-end-info", "结束说明", form.afterEndInfo],
   ] as const)
     if (Array.from(text).length > LIMITS.info)
-      add(field, `${label}最多 ${LIMITS.info.toLocaleString("en")} 字`);
+      add(field, `${label}最多 ${LIMITS.info.toLocaleString("en")} 个字`);
 
   if (!normalizeTopic(form.topic).ok)
     add("hb-topic", "请填写 LINUX DO 帖子或回复的链接");

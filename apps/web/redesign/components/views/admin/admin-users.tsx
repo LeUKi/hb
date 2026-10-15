@@ -75,7 +75,9 @@ export function AdminUsers({ search }: { search: AdminSearch }) {
         selectedId={selected}
         onSelect={setSelected}
         placeholder="点一个人看详情。"
-        empty={<EmptyNote title="没有符合条件的用户" />}
+        unit="人"
+        noun="用户"
+        empty={<EmptyNote title="没有符合条件的用户" text="换个筛选看看。" />}
         row={(user) => (
           <>
             <Avatar name={user.displayName} size={36} />

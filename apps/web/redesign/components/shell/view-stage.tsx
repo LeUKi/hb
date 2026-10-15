@@ -21,8 +21,8 @@ import { HistoryView } from "../views/history-view";
 import { HongbaoView } from "../views/hongbao-view";
 import { MeView } from "../views/me-view";
 import { MerchantView } from "../views/merchant-view";
+import { CommandPageView, MessageView } from "../views/message-view";
 import { NewView } from "../views/new-view";
-import { CommandPageView, MessageView } from "../views/page-stub-view";
 import { PaymentView } from "../views/payment-view";
 import { PaymentsView } from "../views/payments-view";
 import { ResultsView } from "../views/results-view";
@@ -34,8 +34,8 @@ import { WindowClip } from "./window-clip";
 
 type Leaf = ReturnType<typeof useLeaf>;
 
-/** Command pages designed so far; the rest show a placeholder. */
-const commandPages: Partial<Record<CommandId, ReactNode>> = {
+/** The command pages (帮助 has its own view; 登录 is not a page). */
+const commandPages: Record<Exclude<CommandId, "help" | "login">, ReactNode> = {
   new: <NewView />,
   square: <SquareView />,
   history: <HistoryView />,
@@ -123,7 +123,7 @@ function renderView(leaf: NonNullable<Leaf>): ReactNode {
           />
         );
       if (command === "help") return <HelpView />;
-      if (command)
+      if (command && command !== "login")
         return <CommandPageView id={command} page={commandPages[command]} />;
       return <MessageView title="未找到页面" text="地址不存在或已经停用。" />;
     }
@@ -158,7 +158,13 @@ function titleFor(leaf: NonNullable<Leaf>, username: string | undefined) {
     return documentTitle(activity?.title ?? null);
   }
   const { command, subpage } = leaf.staticData;
-  if (subpage) return documentTitle(subpage);
+  // 网站管理's tabs say whose list it is (its 付款 is not your 付款记录).
+  if (subpage)
+    return documentTitle(
+      command === "admin"
+        ? `${commandById(command).title} · ${subpage}`
+        : subpage,
+    );
   if (command) return documentTitle(commandById(command).title);
   return documentTitle();
 }
@@ -288,7 +294,7 @@ function ViewFrame({
     <motion.div
       ref={scroller}
       layoutScroll
-      className={`view-scroll min-h-0 scroll-pt-(--bar-h) overflow-y-auto overscroll-y-contain [grid-area:stack] ${
+      className={`view-scroll min-h-0 scroll-pt-(--bar-h) overflow-y-auto overscroll-y-contain pr-(--safe-right) pl-(--safe-left) [grid-area:stack] ${
         bleed ? "" : "pt-(--bar-h)"
       }`}
       style={{ pointerEvents: present ? "auto" : "none" }}

@@ -80,6 +80,7 @@ export function SaveButtons({
     return (
       <Button
         variant="primary"
+        size={small ? "sm" : "md"}
         aria-disabled={busy || nothingToSave || undefined}
         data-disabled={nothingToSave || undefined}
         onClick={() => onSave(false)}
@@ -103,6 +104,7 @@ export function SaveButtons({
       </Button>
       <Button
         variant="primary"
+        size={small ? "sm" : "md"}
         aria-disabled={busy || waits(true) || undefined}
         data-disabled={waits(true) || undefined}
         onClick={() => onSave(true)}

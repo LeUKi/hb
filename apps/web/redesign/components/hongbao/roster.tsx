@@ -84,8 +84,12 @@ function Row({
             detail ? "py-1.5" : "h-10"
           } ${row.you ? "bg-gold-soft" : ""}`}
         >
+          {/* The column heads are hidden from screen readers (the list
+              scrolls apart from them): each cell names itself. */}
           <span className="text-right font-mono text-xs text-ink-3 tabular-nums">
+            <span className="sr-only">第</span>
             {row.rank}
+            <span className="sr-only">位</span>
           </span>
           <Avatar name={row.name} size={22} />
           <span className="grid min-w-0 gap-0.5">
@@ -96,7 +100,7 @@ function Row({
                 className="min-w-[2.5em] text-sm text-ink"
               />
               {row.you && (
-                <Squircle radius={6}>
+                <Squircle radius={7}>
                   <span className="chip chip-gold h-5 shrink-0 px-1.5 text-xs">
                     你
                   </span>
@@ -105,7 +109,7 @@ function Row({
               <TitleBadges titles={row.titles} className="shrink-0" />
             </span>
             {detail && (
-              <span className="flex min-w-0 items-center gap-2 text-[11px] text-ink-3">
+              <span className="flex min-w-0 items-center gap-2 text-xs text-ink-3">
                 {detail.password && (
                   <span className="min-w-0 truncate">
                     口令 <span className="font-mono">{detail.password}</span>
@@ -129,12 +133,14 @@ function Row({
           </span>
           {kind !== "winners" && (
             <span className="text-right font-mono text-xs text-ink-2 tabular-nums @wide/window:text-sm">
+              <span className="sr-only">用时</span>
               {sinceOpen(row.at - openedAt)}
             </span>
           )}
           {kind !== "registrations" && (
             <span className="text-right font-mono text-sm font-medium text-ink tabular-nums">
               {row.amount}
+              <span className="sr-only"> LDC</span>
             </span>
           )}
         </div>

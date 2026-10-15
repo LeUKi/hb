@@ -106,9 +106,11 @@ export function CoverHead({
     return () => observer.disconnect();
   }, [small]);
 
-  // Line height last: cn() drops a leading-* that a font size follows.
+  // Line height last: cn() drops a leading-* that a font size follows. Two
+  // lines at most on both covers (a title can be 100 字), so they keep
+  // breaking in the same places.
   const titleClass = cn(
-    "w-fit font-semibold text-balance text-cream outline-none",
+    "line-clamp-2 w-fit font-semibold text-balance text-cream outline-none",
     small
       ? "text-[clamp(1.0625rem,2.6cqw,1.25rem)]"
       : "text-[clamp(1.375rem,4.4cqw,2.25rem)]",
@@ -224,14 +226,17 @@ export function CoverHead({
               ))}
             </div>
             {cut && (
-              <button
-                id="note-more"
-                type="button"
-                onClick={onOpenNote}
-                className="hb-cover-action shrink-0 text-sm"
-              >
-                展开全文
-              </button>
+              <Squircle radius={8}>
+                <button
+                  id="note-more"
+                  type="button"
+                  aria-haspopup="dialog"
+                  onClick={onOpenNote}
+                  className="hb-cover-action shrink-0 text-sm"
+                >
+                  展开全文
+                </button>
+              </Squircle>
             )}
           </motion.div>
         )}
@@ -245,16 +250,18 @@ export function CoverHead({
             <span className="min-w-0 truncate">
               说明：{paragraphs.join(" ")}
             </span>
-            <button
-              type="button"
-              onClick={() => {
-                focusTitle.current = true;
-                onExpand();
-              }}
-              className="hb-cover-action shrink-0"
-            >
-              展开
-            </button>
+            <Squircle radius={8}>
+              <button
+                type="button"
+                onClick={() => {
+                  focusTitle.current = true;
+                  onExpand();
+                }}
+                className="hb-cover-action shrink-0"
+              >
+                展开
+              </button>
+            </Squircle>
           </motion.p>
         )}
       </AnimatePresence>

@@ -53,8 +53,12 @@ export function PasswordSection({
   const solvedRef = useRef<HTMLLIElement>(null);
   // A verified 口令 hands focus back from the box: to the button while more
   // remain, else to the row it just revealed.
+  // Results said so far: the announcement alternates its full stop, so the
+  // same words are said again for the next one.
+  const [said, setSaid] = useState(0);
   useEffect(() => {
     if (!fresh) return;
+    setSaid((count) => count + 1);
     (verifyRef.current ?? solvedRef.current)?.focus({ preventScroll: true });
   }, [fresh]);
 
@@ -84,7 +88,7 @@ export function PasswordSection({
           {known.length > 0 && (
             <Button
               variant="ghost"
-              size="icon"
+              size="icon-sm"
               aria-label="显示全部口令"
               aria-pressed={!allVeiled}
               title={allVeiled ? "显示全部口令" : "隐藏全部口令"}
@@ -97,9 +101,9 @@ export function PasswordSection({
             <Button
               ref={verifyRef}
               id="verify-entry"
-              variant="ghost"
+              variant="secondary"
               size="sm"
-              className="text-accent-ink"
+              className="ml-1"
               onClick={onVerify}
             >
               <KeyRound />
@@ -152,8 +156,8 @@ export function PasswordSection({
                   </span>
                   <Button
                     variant="ghost"
-                    size="icon"
-                    className="-mr-2.5 size-8"
+                    size="icon-xs"
+                    className="-mr-1.5"
                     aria-label={`显示口令 ${index + 1}`}
                     aria-pressed={!isVeiled}
                     title={isVeiled ? "显示" : "隐藏"}
@@ -186,9 +190,10 @@ export function PasswordSection({
           </li>
         ))}
       </ul>
-      {/* Re-created per result, so the same words are announced again. */}
-      <p key={fresh?.token ?? "none"} role="status" className="sr-only">
-        {fresh ? "口令已解锁，不会再次领取奖励。" : ""}
+      {/* Always there, so a result is announced; the full stop alternates,
+          so the same words are said again for the next one. */}
+      <p role="status" className="sr-only">
+        {fresh ? `口令已解锁，不会再次领取奖励${said % 2 ? "。" : ""}` : ""}
       </p>
     </section>
   );

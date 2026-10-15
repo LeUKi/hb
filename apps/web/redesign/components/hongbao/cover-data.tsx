@@ -136,27 +136,32 @@ function RosterEntry({
         ? "中奖名单"
         : "报名名单";
   return (
-    <motion.button
-      id="roster-entry"
-      type="button"
-      onClick={onOpen}
-      layout="position"
-      layoutDependency={motions.state}
-      transition={motions.leaf.transition}
-      className="hb-roster-entry flex h-8 shrink-0 items-center gap-2 px-1.5"
-    >
-      {rows.length > 0 && (
-        <span aria-hidden="true" className="flex -space-x-1.5">
-          {rows.slice(0, 5).map((row) => (
-            <span key={row.id} className="hb-data-avatar rounded-full">
-              <Avatar name={row.name} size={22} />
-            </span>
-          ))}
-        </span>
-      )}
-      <span className="hb-roster-label text-[15px] font-medium">{label}</span>
-      <ChevronRight className="size-4 opacity-70" aria-hidden="true" />
-    </motion.button>
+    // A squircle like every other control: the hover tint and the focus
+    // ring follow it.
+    <Squircle radius={11}>
+      <motion.button
+        id="roster-entry"
+        type="button"
+        aria-haspopup="dialog"
+        onClick={onOpen}
+        layout="position"
+        layoutDependency={motions.state}
+        transition={motions.leaf.transition}
+        className="hb-roster-entry flex h-8 shrink-0 items-center gap-2 px-1.5"
+      >
+        {rows.length > 0 && (
+          <span aria-hidden="true" className="flex -space-x-1.5">
+            {rows.slice(0, 5).map((row) => (
+              <span key={row.id} className="hb-data-avatar rounded-full">
+                <Avatar name={row.name} size={22} />
+              </span>
+            ))}
+          </span>
+        )}
+        <span className="hb-roster-label text-[15px] font-medium">{label}</span>
+        <ChevronRight className="size-4 opacity-70" aria-hidden="true" />
+      </motion.button>
+    </Squircle>
   );
 }
 

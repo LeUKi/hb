@@ -10,6 +10,7 @@ import {
   isOpenPayment,
   sumAmounts,
 } from "../../fixtures/payments";
+import { activityPath } from "../../lib/activity-route";
 import { paymentTone } from "../../lib/my-records";
 import { clockSeconds } from "../../lib/roster-time";
 import { drawSimAtom, sessionAtom } from "../../lib/store";
@@ -27,6 +28,7 @@ import {
 import { useSearchChoice } from "../shell/use-search-choice";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
+import { MoreLink } from "../ui/button-link";
 import { Segmented } from "../ui/field";
 import { MiniEnvelope } from "../ui/mini-envelope";
 import { radius, Squircle } from "../ui/squircle";
@@ -164,16 +166,12 @@ function GroupHead({ activity }: { activity: FixtureActivity }) {
           {quantityLine(activity, view)} · 已发放 {sumAmounts(paid)} LDC
         </p>
       </div>
-      <Squircle radius={radius.row}>
-        <button
-          type="button"
-          onClick={() => void leaveTo({ to: "activity", id: activity.id })}
-          className="flex h-8 shrink-0 items-center gap-0.5 px-2 text-sm text-ink-2 transition-colors hover:bg-fill-2 hover:text-ink"
-        >
-          打开红包
-          <ChevronRight className="size-4" aria-hidden="true" />
-        </button>
-      </Squircle>
+      <MoreLink
+        href={activityPath(activity.id)}
+        onGo={() => void leaveTo({ to: "activity", id: activity.id })}
+      >
+        打开红包
+      </MoreLink>
     </div>
   );
 }
@@ -237,7 +235,10 @@ export function PaymentsView({ activityId }: { activityId?: string }) {
           }
           action={
             single ? undefined : (
-              <Button onClick={() => void leaveTo({ to: "/new" })}>
+              <Button
+                variant="primary"
+                onClick={() => void leaveTo({ to: "/new" })}
+              >
                 <Plus />
                 发红包
               </Button>
@@ -256,7 +257,7 @@ export function PaymentsView({ activityId }: { activityId?: string }) {
                   note: `${all.length - open.length} 笔`,
                 },
                 {
-                  label: "没完成",
+                  label: "未完成",
                   value: `${sumAmounts(open)} LDC`,
                   note:
                     attention.length > 0
@@ -279,11 +280,10 @@ export function PaymentsView({ activityId }: { activityId?: string }) {
             >
               <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span>商户换过 Client ID，原应用的密钥失效了。</span>
-                <Button
-                  size="sm"
-                  variant="ghost"
+                <MoreLink
                   className="-my-1"
-                  onClick={() =>
+                  href={`/payments/${repairable[0]?.id ?? ""}`}
+                  onGo={() =>
                     void navigate({
                       to: "/payments/$paymentId",
                       params: { paymentId: repairable[0]?.id ?? "" },
@@ -291,8 +291,7 @@ export function PaymentsView({ activityId }: { activityId?: string }) {
                   }
                 >
                   去更新
-                  <ChevronRight aria-hidden="true" />
-                </Button>
+                </MoreLink>
               </span>
             </Callout>
           )}
@@ -311,7 +310,7 @@ export function PaymentsView({ activityId }: { activityId?: string }) {
             onChange={setFilter}
             options={[
               { value: "all", label: "全部", count: all.length },
-              { value: "open", label: "没完成", count: open.length },
+              { value: "open", label: "未完成", count: open.length },
               {
                 value: "confirmed",
                 label: "已发放",
@@ -320,7 +319,7 @@ export function PaymentsView({ activityId }: { activityId?: string }) {
             ]}
           />
           {groups.length === 0 ? (
-            <EmptyNote title="没有符合条件的付款" />
+            <EmptyNote title="没有符合条件的付款" text="换个筛选看看。" />
           ) : (
             <PaymentStream
               id={`payments:${filter}`}

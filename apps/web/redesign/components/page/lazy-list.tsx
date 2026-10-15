@@ -146,26 +146,60 @@ export function LazyListEnd({
   done: string;
   className?: string;
 }) {
+  // 重试加载 stays (as 正在加载…) while it retries, so focus stays on it;
+  // when the batch is in, focus goes to this row, which then says so.
+  const [retrying, setRetrying] = useState(false);
+  const row = useRef<HTMLDivElement | null>(null);
+  const { state, endRef } = list;
+  const setRow = useCallback(
+    (element: HTMLDivElement | null) => {
+      row.current = element;
+      endRef(element);
+    },
+    [endRef],
+  );
+  useEffect(() => {
+    if (!retrying || state === "loading") return;
+    setRetrying(false);
+    if (state !== "failed") row.current?.focus({ preventScroll: true });
+  }, [retrying, state]);
   if (!list.paged) return null;
+  const retryShown = state === "failed" || (retrying && state === "loading");
   return (
     <div
-      ref={list.endRef}
+      ref={setRow}
+      tabIndex={-1}
       className={cn(
-        "flex min-h-11 items-center justify-center gap-2 px-3 text-sm text-ink-3",
+        "flex min-h-11 items-center justify-center gap-2 px-3 text-sm text-ink-3 outline-none",
         className,
       )}
     >
-      {list.state === "failed" ? (
+      {retryShown ? (
         <>
-          <span role="alert">后续记录读取失败，可重试加载。</span>
-          <Button size="sm" variant="ghost" onClick={list.retry}>
-            <RotateCw aria-hidden="true" />
-            重试加载
+          {state === "failed" && (
+            <span role="alert">后续记录读取失败，可重试加载。</span>
+          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-disabled={state === "loading" || undefined}
+            onClick={() => {
+              if (state !== "failed") return;
+              setRetrying(true);
+              list.retry();
+            }}
+          >
+            {state === "loading" ? (
+              <Spinner />
+            ) : (
+              <RotateCw aria-hidden="true" />
+            )}
+            {state === "loading" ? "正在加载…" : "重试加载"}
           </Button>
         </>
       ) : (
         <span aria-live="polite" className="flex items-center gap-2">
-          {list.state === "done" ? (
+          {state === "done" ? (
             done
           ) : (
             <>

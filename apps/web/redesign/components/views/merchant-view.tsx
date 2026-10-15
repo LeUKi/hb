@@ -46,14 +46,15 @@ import {
   PageSection,
   Panel,
 } from "../page/page";
+import { ConfirmDialog } from "../shell/confirm-dialog";
 import { LeaveGuard } from "../shell/leave-guard";
-import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
+import { MoreLink } from "../ui/button-link";
 import { CopyButton } from "../ui/copy-button";
 import { Field, TextInput } from "../ui/field";
 import { radius, Squircle } from "../ui/squircle";
 import { type ChipTone, StatusChip } from "../ui/status-chip";
-import { MessageView } from "./page-stub-view";
+import { MessageView } from "./message-view";
 
 const PAGE_NOTE =
   "红包里的 LDC 从你的商户应用直接付给领取人，本站不代收、不预存。";
@@ -61,9 +62,9 @@ const PAGE_NOTE =
 /** Production's rules for a Client ID (createMerchantSchema). */
 function clientIdError(value: string) {
   const id = value.trim();
-  if (id.length > 200) return "Client ID 最多 200 个字符。";
+  if (id.length > 200) return "Client ID 最多 200 个字符";
   if (id && !/^[A-Za-z0-9_-]+$/.test(id))
-    return "Client ID 只能有字母、数字、下划线和短横线。";
+    return "Client ID 只能有字母、数字、下划线和短横线";
   return null;
 }
 
@@ -184,7 +185,11 @@ function MerchantSummary({
         </Squircle>
         <div className="grid min-w-0 flex-1 gap-1.5">
           <p className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-lg font-semibold text-ink">
+            <span
+              data-merchant-title
+              tabIndex={-1}
+              className="truncate text-lg font-semibold text-ink outline-none"
+            >
               {merchant.label}
             </span>
             <StatusChip tone={merchant.current ? "gold" : "neutral"}>
@@ -233,7 +238,7 @@ function MerchantSummary({
                     : "都已结束",
             },
             {
-              label: "没完成的付款",
+              label: "未完成的付款",
               value: `${use.open.length} 笔`,
               note:
                 use.open.length > 0
@@ -247,16 +252,12 @@ function MerchantSummary({
         />
       </div>
       <div className="-mt-1 flex justify-end">
-        <Squircle radius={radius.row}>
-          <button
-            type="button"
-            onClick={() => void leaveTo({ to: "/payments" })}
-            className="flex h-8 items-center gap-0.5 px-2 text-sm text-ink-2 transition-colors hover:bg-fill-2 hover:text-ink"
-          >
-            付款记录
-            <ChevronRight className="size-4" aria-hidden="true" />
-          </button>
-        </Squircle>
+        <MoreLink
+          href="/payments"
+          onGo={() => void leaveTo({ to: "/payments" })}
+        >
+          付款记录
+        </MoreLink>
       </div>
     </Panel>
   );
@@ -276,54 +277,57 @@ function ChangeDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  const titleId = useId();
   return (
-    <WindowDialog
+    <ConfirmDialog
       open={open}
       onClose={onCancel}
-      labelledBy={titleId}
       busy={busy}
-    >
-      <div className="grid gap-4 p-5">
-        <div className="grid gap-1">
-          <h2 id={titleId} className="text-lg font-semibold text-ink">
-            谨慎更换商户配置
-          </h2>
-          <p className="text-sm text-ink-2">
-            这个商户还有进行中的红包或没完成的付款。换 Client ID
-            或密钥之前，请确认影响。
-          </p>
-        </div>
-        <Squircle radius={12}>
-          <dl className="grid grid-cols-3 gap-x-3 gap-y-3 bg-fill px-4 py-3">
-            {impact.map((item) => (
-              <div key={item.label} className="grid gap-0.5">
-                <dt className="text-xs text-ink-3">{item.label}</dt>
-                <dd
-                  className={`text-base font-semibold tabular-nums ${item.count > 0 ? "text-ink" : "text-ink-3"}`}
-                >
-                  {item.count}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </Squircle>
-        <Callout tone="warning">
-          能安全续付的付款，会在新凭证检查通过后用新配置继续；已经建单或结果未知的付款，继续核对原订单，期间可能暂停这个商户的新发送。
-        </Callout>
-        <p className="text-xs text-ink-3">
-          原付款的业务号、收款人、金额和记录都保留。确认更换不会绕过付款保护。
-        </p>
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button onClick={onCancel} disabled={busy}>
+      title="谨慎更换商户配置"
+      text="这个商户还有进行中的红包或未完成的付款。换 Client ID 或密钥之前，请确认影响。"
+      actions={
+        <>
+          <Button
+            aria-disabled={busy || undefined}
+            data-disabled={busy || undefined}
+            onClick={() => {
+              if (!busy) onCancel();
+            }}
+          >
             返回修改
           </Button>
-          <Button variant="primary" onClick={onConfirm} disabled={busy}>
+          <Button
+            variant="primary"
+            aria-disabled={busy || undefined}
+            onClick={() => {
+              if (!busy) onConfirm();
+            }}
+          >
             {busy ? "正在保存…" : "确认更换"}
           </Button>
-        </div>
-      </div>
-    </WindowDialog>
+        </>
+      }
+    >
+      <Squircle radius={12}>
+        <dl className="grid grid-cols-3 gap-x-3 gap-y-3 bg-fill px-4 py-3">
+          {impact.map((item) => (
+            <div key={item.label} className="grid gap-0.5">
+              <dt className="text-xs text-ink-3">{item.label}</dt>
+              <dd
+                className={`text-base font-semibold tabular-nums ${item.count > 0 ? "text-ink" : "text-ink-3"}`}
+              >
+                {item.count}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </Squircle>
+      <Callout tone="warning">
+        能安全续付的付款，会在新凭证检查通过后用新配置继续；已经建单或结果未知的付款，继续核对原订单，期间可能暂停这个商户的新发送。
+      </Callout>
+      <p className="text-xs text-ink-3">
+        原付款的业务号、收款人、金额和记录都保留。确认更换不会绕过付款保护。
+      </p>
+    </ConfirmDialog>
   );
 }
 
@@ -406,10 +410,13 @@ function MerchantForm({
     if (credentialsChanged && touches) setConfirming(true);
     else commit();
   };
+  // 撤销修改 goes away with the changes: focus moves to 保存配置.
+  const saveRef = useRef<HTMLButtonElement>(null);
   const undo = () => {
     setLabel(baseline.label);
     setClientId(baseline.clientId);
     setSecret("");
+    saveRef.current?.focus();
   };
 
   return (
@@ -422,7 +429,7 @@ function MerchantForm({
         <Field
           label="商户名称"
           htmlFor={ids.label}
-          error={label.trim() ? null : "请填写商户名称。"}
+          error={label.trim() ? null : "请填写商户名称"}
           live
         >
           <TextInput
@@ -455,7 +462,7 @@ function MerchantForm({
           htmlFor={ids.secret}
           hint="保存后自动检查；密钥不会显示出来。"
           error={
-            missingSecret ? "改了 Client ID，请同时填写这个应用的密钥。" : null
+            missingSecret ? "改了 Client ID，请同时填写这个应用的密钥" : null
           }
           live
         >
@@ -475,7 +482,13 @@ function MerchantForm({
           </p>
         )}
         <div className="flex flex-wrap items-center gap-2 pt-1">
-          <Button type="submit" variant="primary" disabled={!valid || busy}>
+          <Button
+            ref={saveRef}
+            type="submit"
+            variant="primary"
+            aria-disabled={!valid || busy || undefined}
+            data-disabled={!valid || undefined}
+          >
             {busy ? "正在保存…" : "保存配置"}
           </Button>
           {changed && !busy && (
@@ -683,11 +696,17 @@ function CreateMerchant({
       />
       <Panel>
         <form className="grid gap-4 p-5" onSubmit={submit} noValidate>
-          <Field label="商户名称" htmlFor={ids.label}>
+          <Field
+            label="商户名称"
+            htmlFor={ids.label}
+            error={label.trim() ? null : "请填写商户名称"}
+            live
+          >
             <TextInput
               id={ids.label}
               value={label}
               maxLength={100}
+              invalid={!label.trim()}
               onChange={(event) => setLabel(event.target.value)}
             />
           </Field>
@@ -728,7 +747,12 @@ function CreateMerchant({
             </p>
           )}
           <div className="pt-1">
-            <Button type="submit" variant="primary" disabled={!valid || busy}>
+            <Button
+              type="submit"
+              variant="primary"
+              aria-disabled={!valid || busy || undefined}
+              data-disabled={!valid || undefined}
+            >
               {busy ? "正在保存…" : "保存配置"}
             </Button>
           </div>
@@ -782,7 +806,17 @@ export function MerchantView({ merchantId }: { merchantId?: string }) {
           onChanged={changed}
         />
       ) : (
-        <CreateMerchant onCreated={changed} />
+        <CreateMerchant
+          onCreated={() => {
+            changed();
+            // The form gives way to the new merchant: focus its name.
+            requestAnimationFrame(() =>
+              document
+                .querySelector<HTMLElement>("[data-merchant-title]")
+                ?.focus({ preventScroll: true }),
+            );
+          }}
+        />
       )}
       {legacy.length > 0 && <LegacyList items={legacy} />}
     </Page>

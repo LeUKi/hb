@@ -200,7 +200,7 @@ export function AmountStep({
             onOpen={() => openSheet("split")}
           />
         ))}
-      {locked && <LockNote>开放后奖励不能修改。</LockNote>}
+      {locked && <LockNote>开放后不能修改。</LockNote>}
     </div>
   );
 }

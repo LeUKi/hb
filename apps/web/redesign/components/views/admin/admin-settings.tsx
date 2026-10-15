@@ -1,6 +1,6 @@
-import { Link } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
-import { Check, ChevronRight } from "lucide-react";
+import { Check } from "lucide-react";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import {
   auditRecords,
@@ -12,6 +12,7 @@ import { sessionAtom, submitSimAtom } from "../../../lib/store";
 import { PageSection, Panel } from "../../page/page";
 import { LeaveGuard } from "../../shell/leave-guard";
 import { Button } from "../../ui/button";
+import { MoreLink } from "../../ui/button-link";
 import { Field, TextInput } from "../../ui/field";
 import { AdminFrame } from "./admin-frame";
 
@@ -26,6 +27,7 @@ const valid = (value: string) =>
  * (登录方式 / LiteAUTH is gone with 青春版.)
  */
 export function AdminSettings() {
+  const navigate = useNavigate();
   const user = useAtomValue(sessionAtom);
   const [saved, setSaved] = useState(() => ({ ...savedRateLimits }));
   const [home, setHome] = useState(String(saved.value.home));
@@ -35,6 +37,7 @@ export function AdminSettings() {
   const [error, setError] = useState<string | null>(null);
   const submitSim = useAtomValue(submitSimAtom);
   const failedOnce = useRef(false);
+  const saveRef = useRef<HTMLButtonElement>(null);
   const ids = { home: useId(), page: useId() };
   useEffect(() => {
     if (!done) return;
@@ -169,9 +172,12 @@ export function AdminSettings() {
             )}
             <div className="flex flex-wrap items-center gap-2">
               <Button
+                ref={saveRef}
                 type="submit"
                 variant="primary"
-                disabled={!changed || !ok || busy}
+                // Focusable while it waits: a disabled button drops focus.
+                aria-disabled={!changed || !ok || busy || undefined}
+                data-disabled={!changed || !ok || undefined}
               >
                 {busy ? "正在保存…" : "保存设置"}
               </Button>
@@ -181,6 +187,8 @@ export function AdminSettings() {
                   onClick={() => {
                     setHome(String(saved.value.home));
                     setPage(String(saved.value.page));
+                    // It goes away with the changes: focus to 保存设置.
+                    saveRef.current?.focus();
                   }}
                 >
                   撤销修改
@@ -200,13 +208,13 @@ export function AdminSettings() {
         <p className="flex flex-wrap items-center gap-x-2 px-1 text-xs text-ink-3">
           第 {saved.version} 版 · {clockLabel(saved.updatedAt)} 由{" "}
           {saved.operator.displayName} 修改
-          <Link
-            to="/admin/audit"
-            className="inline-flex items-center gap-0.5 text-ink-2 hover:text-ink"
+          <MoreLink
+            className="-my-1"
+            href="/admin/audit"
+            onGo={() => void navigate({ to: "/admin/audit" })}
           >
             操作记录
-            <ChevronRight className="size-3.5" aria-hidden="true" />
-          </Link>
+          </MoreLink>
         </p>
       </PageSection>
     </AdminFrame>

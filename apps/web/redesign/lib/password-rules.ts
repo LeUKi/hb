@@ -27,12 +27,12 @@ export function inspectPassword(raw: string): PasswordInspection {
     messages.push(`有 ${invalidCount} 个不可用字符，请修正红色标记。`);
   }
   if (length < 6) {
-    messages.push(`还需 ${6 - length} 个字符，口令至少为 6 个字符。`);
+    messages.push(`还差 ${6 - length} 个字，口令至少 6 个字。`);
   } else if (length > 18) {
-    messages.push(`当前有 ${length} 个字符，口令最多为 18 个字符。`);
+    messages.push(`现在有 ${length} 个字，口令最多 18 个字。`);
   }
 
-  return { invalidCount, length, valid, message: messages.join(" ") || null };
+  return { invalidCount, length, valid, message: messages.join("") || null };
 }
 
 export function optimizePassword(raw: string): string {

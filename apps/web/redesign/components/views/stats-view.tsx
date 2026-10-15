@@ -12,7 +12,7 @@ import {
 } from "../page/page";
 import { Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
-import { MessageView } from "./page-stub-view";
+import { MessageView } from "./message-view";
 
 type AttemptRow = ReturnType<typeof attemptStatsOf>["rows"][number];
 
@@ -93,7 +93,7 @@ export function StatsView({ id }: { id: string }) {
         text={
           activity.draft
             ? "红包开放之后才有人提交口令。"
-            : "这个红包没有开启口令尝试统计。统计要在发红包时开启，开放后不能改。"
+            : "这个红包没有开启尝试统计。统计要在发红包时开启，开放后不能改。"
         }
       />
     );
@@ -122,7 +122,7 @@ export function StatsView({ id }: { id: string }) {
       <Panel className="p-5">
         <Facts
           items={[
-            { label: "提交次数", value: stats.total },
+            { label: "提交次数", value: `${stats.total} 次` },
             { label: "提交的人", value: `${stats.people} 人` },
             { label: `成功${verb}`, value: `${stats.claims} 人` },
             { label: "猜中的比例", value: `${hitRate}%`, note: "按次数算" },

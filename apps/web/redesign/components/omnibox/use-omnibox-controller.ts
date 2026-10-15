@@ -340,7 +340,10 @@ export function useOmniboxController() {
         return;
       const ids = lookupTopic(scheme.topicId, scheme.postNumber);
       if (ids.length === 0) {
-        store.set(messageAtom, { tone: "neutral", text: "未匹配到红包。" });
+        store.set(messageAtom, {
+          tone: "neutral",
+          text: "这个帖子里还没有红包。",
+        });
         return;
       }
       if (ids.length === 1 && ids[0]) {

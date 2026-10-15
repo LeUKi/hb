@@ -11,8 +11,8 @@ import { Button } from "../ui/button";
 import { radius, Squircle } from "../ui/squircle";
 
 // The frame every command page uses: one column on the glass, a title row,
-// titled sections and in-page panels. Narrow pages read like a document;
-// wide ones (forms with a side summary, dashboards) get two columns.
+// titled sections and in-page panels. Most pages are 44rem wide; the 红包
+// 广场's cards and 网站管理's list beside its detail use 64rem.
 
 const widths = {
   narrow: "max-w-[44rem]",
@@ -95,8 +95,11 @@ export function RefreshNotice() {
           size="sm"
           variant="ghost"
           className="-my-1"
-          disabled={state.retrying}
-          onClick={state.retry}
+          // Not disabled, so focus stays on it while it reads again.
+          aria-disabled={state.retrying || undefined}
+          onClick={() => {
+            if (!state.retrying) state.retry();
+          }}
         >
           <RotateCw
             className={state.retrying ? "motion-safe:animate-spin" : undefined}
@@ -328,7 +331,7 @@ export function Callout({
   className?: string;
 }) {
   return (
-    <Squircle radius={12}>
+    <Squircle radius={radius.callout}>
       <div
         className={cn(
           "flex gap-2.5 px-3.5 py-3 text-sm",

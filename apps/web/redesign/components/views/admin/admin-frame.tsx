@@ -175,6 +175,8 @@ export function ListDetail<T extends { id: string }>({
   detail,
   empty,
   placeholder,
+  unit,
+  noun,
   pageSize = 20,
 }: {
   items: T[];
@@ -184,6 +186,10 @@ export function ListDetail<T extends { id: string }>({
   detail: (item: T) => ReactNode;
   empty: ReactNode;
   placeholder: string;
+  /** What the list counts by, as its header does: 个 / 人 / 笔. */
+  unit: string;
+  /** What one row is, for the dialog's title: 红包 / 用户 / 付款. */
+  noun: string;
   pageSize?: number;
 }) {
   const { roomy } = useWindowInfo();
@@ -225,7 +231,7 @@ export function ListDetail<T extends { id: string }>({
             </li>
           ))}
         </ul>
-        <LazyListEnd list={lazy} done={`共 ${items.length} 条`} />
+        <LazyListEnd list={lazy} done={`共 ${items.length} ${unit}`} />
       </Panel>
     );
 
@@ -242,14 +248,16 @@ export function ListDetail<T extends { id: string }>({
             <div className="grid gap-4 p-5">
               <div className="flex items-center justify-between gap-3">
                 <h2 id={titleId} className="text-lg font-semibold text-ink">
-                  详情
+                  {noun}详情
                 </h2>
                 <Button
-                  size="sm"
                   variant="ghost"
+                  size="icon-sm"
+                  aria-label="关闭"
+                  className="-mr-2 shrink-0"
                   onClick={() => onSelect(null)}
                 >
-                  关闭
+                  <X />
                 </Button>
               </div>
               {detail(dialogItem)}

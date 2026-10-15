@@ -23,7 +23,7 @@ import { RefreshContext, RefreshNotice } from "../page/page";
 import { LoadError, usePageLoad } from "../page/page-state";
 import { useWindowInfo } from "../shell/window-info";
 import { HongbaoIcon } from "../ui/hongbao-icon";
-import { IdentityFailedView, MessageView } from "./page-stub-view";
+import { IdentityFailedView, MessageView } from "./message-view";
 
 export function HongbaoView({ id }: { id: string }) {
   const user = useAtomValue(sessionAtom);
@@ -36,7 +36,7 @@ export function HongbaoView({ id }: { id: string }) {
       <IdentityFailedView
         icon={HongbaoIcon}
         title="未找到红包"
-        text="身份检查失败。草稿只有发红包的人能打开，重新检查后再试。"
+        text="身份检查失败，请重新检查后继续。草稿只有发红包的人能打开。"
       />
     );
   if (!activity)

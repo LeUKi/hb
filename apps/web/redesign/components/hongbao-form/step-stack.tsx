@@ -9,6 +9,7 @@ import { type ReactNode, type Ref, useRef } from "react";
 import { cn } from "../../lib/cn";
 import { durations, ease, useReducedMotionPref } from "../../lib/motion";
 import { radius, Squircle, SquirclePlate } from "../ui/squircle";
+import { steps } from "./steps";
 import { useMorphHeight } from "./use-morph-height";
 
 /** A collapsed step's height; the next card covers its bottom 8px. */
@@ -196,7 +197,9 @@ export function StepCard({
                   tabIndex={-1}
                   className={headClass}
                 >
-                  <span className="sr-only">第 {index + 1} 步，共 4 步：</span>
+                  <span className="sr-only">
+                    第 {index + 1} 步，共 {steps.length} 步：
+                  </span>
                   {head}
                 </span>
               )}
