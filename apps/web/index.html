@@ -391,10 +391,19 @@
         boot
           .querySelector("[data-boot-reload]")
           ?.addEventListener("click", () => location.reload());
+        // Only the site's own scripts count: a third-party one refused by the
+        // browser (an ad blocker stopping Cloudflare's analytics beacon,
+        // which Cloudflare adds to the page) is not a failed load.
         addEventListener(
           "error",
           (event) => {
-            if (event.target instanceof HTMLScriptElement) api.fail();
+            const script = event.target;
+            if (
+              script instanceof HTMLScriptElement &&
+              new URL(script.src || location.href, location.href).origin ===
+                location.origin
+            )
+              api.fail();
           },
           true,
         );

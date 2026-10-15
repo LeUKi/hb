@@ -28,6 +28,37 @@ test.describe("外壳", () => {
     ).toBeVisible();
   });
 
+  test("第三方脚本被拦截（如 Cloudflare 统计）：照常进入", async ({ page }) => {
+    await mockSession(page, null);
+    // Cloudflare adds its analytics beacon to the page; ad blockers refuse it.
+    await page.route(
+      (url) => url.pathname === "/",
+      async (route) => {
+        const response = await route.fetch();
+        const body = (await response.text()).replace(
+          "</body>",
+          '<script type="module" src="https://beacon.example.test/beacon.min.js"></script></body>',
+        );
+        await route.fulfill({ response, body });
+      },
+    );
+    await page.route("https://beacon.example.test/**", (route) =>
+      route.abort("blockedbyclient"),
+    );
+    await openApp(page);
+    await expect(page.locator("#boot")).toHaveCount(0);
+    await expect(omniboxInput(page)).toBeVisible();
+  });
+
+  test("本站的脚本没加载到：加载失败，可以重新加载", async ({ page }) => {
+    await mockSession(page, null);
+    await page.route("**/src/main.tsx", (route) => route.abort());
+    await page.goto("/");
+    await expect(page.getByText("加载失败")).toBeVisible();
+    await expect(page.getByRole("button", { name: "重新加载" })).toBeVisible();
+    await expect(page.locator("#root")).toHaveAttribute("inert");
+  });
+
   test("跳到主要内容是 Tab 的第一站", async ({ page }) => {
     await mockSession(page, null);
     await openApp(page);
