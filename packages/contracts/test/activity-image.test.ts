@@ -3,6 +3,7 @@ import {
   type ActivityImageViewerState,
   activityImageInput,
   activityImageUrl,
+  createActivityForumLink,
   createActivityImageEmbed,
   encodeActivityEmoji,
   isImageTimeZone,
@@ -267,6 +268,12 @@ describe("activity image address and embed code", () => {
     expect(() =>
       activityImageUrl(id, "https://user:secret@hb.example.com"),
     ).toThrow(TypeError);
+  });
+
+  it("writes the 社区链接 as the path in code, linking to the site's post", () => {
+    expect(createActivityForumLink(id)).toBe(
+      `[\`/🧧/${code}\`](https://linux.do/t/topic/3033290/2)`,
+    );
   });
 
   it("writes the forum code linking to the site's post, named by the emoji code", () => {

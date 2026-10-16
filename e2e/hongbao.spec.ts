@@ -450,15 +450,24 @@ test.describe("红包页", () => {
     await page.keyboard.press("Escape");
     await expect(roster).toBeHidden();
 
-    // A guest sees no 口令, so the menu has the link and the forum code.
+    // A guest sees no 口令: the 社区链接 first, the forum code, the plain
+    // link last.
     await page.getByRole("button", { name: "分享" }).click();
     const menu = page.getByRole("menu");
-    await expect(menu.getByRole("menuitem")).toHaveCount(2);
-    await menu.getByRole("menuitem", { name: /红包链接/ }).click();
+    await expect(menu.getByRole("menuitem")).toHaveCount(3);
+    await expect(menu.getByRole("menuitem").first()).toContainText("社区链接");
+    await expect(menu.getByRole("menuitem").last()).toContainText("纯链接");
+    await menu.getByRole("menuitem", { name: /社区链接/ }).click();
+    await expect
+      .poll(() => readClipboard(page))
+      .toBe(`[\`/🧧/${code}\`](https://linux.do/t/topic/3033290/2)`);
+    // "已复制" shows, then the menu folds away.
+    await expect(menu).toBeHidden();
+    await page.getByRole("button", { name: "分享" }).click();
+    await page.getByRole("menuitem", { name: /纯链接/ }).click();
     await expect
       .poll(() => readClipboard(page))
       .toBe(`${new URL(page.url()).origin}/🧧/${code}`);
-    // "已复制" shows, then the menu folds away.
     await expect(menu).toBeHidden();
     await page.getByRole("button", { name: "分享" }).click();
     await page.getByRole("menuitem", { name: /内嵌代码/ }).click();
@@ -552,13 +561,13 @@ test.describe("红包页", () => {
     );
     await page.keyboard.press("Escape");
 
-    // The menu now offers the link with each 口令 the viewer knows.
+    // The menu now offers the 社区链接 with each 口令 the viewer knows.
     await page.getByRole("button", { name: "分享" }).click();
     await page.getByRole("menuitem", { name: /链接与口令 1/ }).click();
     await expect
       .poll(() => readClipboard(page))
       .toBe(
-        `【周末红包】\n红包链接：${new URL(page.url()).origin}/🧧/${code}\n领取口令：${passwordOf.mine}`,
+        `【周末红包】\n[\`/🧧/${code}\`](https://linux.do/t/topic/3033290/2)\n口令：\`${passwordOf.mine}\``,
       );
 
     // Ended (the last share went): every 口令 plain, and no eye anywhere.

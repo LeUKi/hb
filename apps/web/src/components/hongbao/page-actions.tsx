@@ -1,10 +1,14 @@
-import { createActivityImageEmbed } from "@hb/contracts";
+import {
+  createActivityForumLink,
+  createActivityImageEmbed,
+} from "@hb/contracts";
 import {
   Check,
   CodeXml,
   KeyRound,
   Link2,
   type LucideIcon,
+  MessagesSquare,
   Share2,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
@@ -36,26 +40,32 @@ type ShareItem = {
 };
 
 /**
- * What the menu offers: the link; the link with each 口令 this viewer can
- * see (their own and verified ones, or all once it ended); the forum image's
- * code. Links keep their emoji visible.
+ * What the menu offers: the 社区链接 first (the forum keeps it as it is);
+ * it with each 口令 this viewer can see (their own and verified ones, or
+ * all once it ended); the forum image's code; the plain link last. Links
+ * keep their emoji visible.
  */
 function shareItems(
   activity: HongbaoActivity,
   passwords: PasswordView,
-  isDraw: boolean,
 ): ShareItem[] {
   const origin = window.location.origin;
-  const url = activityShareUrl(activity.id, origin);
+  const forum = createActivityForumLink(activity.id);
   return [
-    { key: "link", icon: Link2, label: "红包链接", text: url },
+    {
+      key: "forum",
+      icon: MessagesSquare,
+      label: "社区链接",
+      detail: "贴进论坛，不会被转码",
+      text: forum,
+    },
     ...passwords.known.map((password, index) => ({
       key: `password-${index}`,
       icon: KeyRound,
       label: `链接与口令 ${index + 1}`,
       detail: password.text,
       mono: true,
-      text: `【${activity.title}】\n红包链接：${url}\n${isDraw ? "报名口令" : "领取口令"}：${password.text}`,
+      text: `【${activity.title}】\n${forum}\n口令：\`${password.text}\``,
     })),
     {
       key: "embed",
@@ -68,6 +78,12 @@ function shareItems(
         sender: activity.author.displayName,
       }),
     },
+    {
+      key: "link",
+      icon: Link2,
+      label: "纯链接",
+      text: activityShareUrl(activity.id, origin),
+    },
   ];
 }
 
@@ -79,11 +95,9 @@ function shareItems(
 export function PageActions({
   activity,
   passwords,
-  isDraw,
 }: {
   activity: HongbaoActivity;
   passwords: PasswordView;
-  isDraw: boolean;
 }) {
   const { compact } = useWindowInfo();
   const reduced = useReducedMotionPref();
@@ -98,7 +112,7 @@ export function PageActions({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const leaveTimer = useRef<number | undefined>(undefined);
-  const items = shareItems(activity, passwords, isDraw);
+  const items = shareItems(activity, passwords);
 
   const close = useCallback((refocus = false) => {
     setOpen(false);

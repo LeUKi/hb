@@ -118,11 +118,7 @@ function HongbaoPage({
     >
       {/* A 草稿's link opens for nobody else, so there is nothing to share. */}
       {!activity.draft && (
-        <PageActions
-          activity={activity}
-          passwords={passwords}
-          isDraw={hongbao.isDraw}
-        />
+        <PageActions activity={activity} passwords={passwords} />
       )}
       <p className="sr-only" role="status">
         {hongbao.announcement}
