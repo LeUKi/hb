@@ -3,14 +3,21 @@ import {
   type PaymentState,
   type PaymentView,
 } from "@hb/contracts";
-import { Lock } from "lucide-react";
+import { ArrowUpRight, Lock, UserRoundX } from "lucide-react";
 import { motion } from "motion/react";
 import { type Ref, useState } from "react";
+import { ActivityRequestError } from "../../lib/activities";
+import { useResendPayment } from "../../lib/claims";
 import type { HongbaoActivity, Mine } from "../../lib/hongbao";
 import { paymentTone } from "../../lib/hongbao-text";
 import { paymentReason } from "../../lib/payment-display";
 import { clockLabel, clockSeconds } from "../../lib/roster-time";
+import { useIdentity } from "../../lib/session";
+import { useBefore } from "../../lib/use-before";
+import { Callout } from "../page/page";
 import { Avatar } from "../ui/avatar";
+import { Button } from "../ui/button";
+import { ButtonLink } from "../ui/button-link";
 import { NoteMarkdown } from "../ui/markdown";
 import { PersonName } from "../ui/person";
 import { Squircle } from "../ui/squircle";
@@ -19,6 +26,7 @@ import { Countdown } from "./cover-data";
 import { CountUp } from "./parts";
 import { PasswordText, RevealToggle } from "./password-text";
 import { TitleBadges } from "./title-badge";
+import { useNow } from "./use-hongbao";
 
 function PaymentStatus({ state }: { state: PaymentState }) {
   return (
@@ -37,14 +45,123 @@ const paymentReasons: Partial<Record<PaymentState, string>> = {
 };
 
 /** Under the status: why it waits, or when it was confirmed. */
-function PaymentNote({ payment }: { payment: PaymentView }) {
+function PaymentNote({
+  payment,
+  resending,
+}: {
+  payment: PaymentView;
+  /** Sent again from this card, and not through yet. */
+  resending: boolean;
+}) {
   const text =
     payment.status === "confirmed"
       ? payment.confirmedAt
         ? `${clockSeconds(Date.parse(payment.confirmedAt))} 确认到账`
         : null
-      : (paymentReason(payment.reason, null) ?? paymentReasons[payment.status]);
+      : resending || payment.reason === "resend"
+        ? "正在重新发送，稍等十几秒。"
+        : (paymentReason(payment.reason, null) ??
+          paymentReasons[payment.status]);
   return text ? <p className="text-sm text-ink-2">{text}</p> : null;
+}
+
+/** Where a LINUX DO Credit account is opened. */
+const CREDIT_URL = "https://credit.linux.do";
+
+/** 收款人不存在: the upstream knows no Credit account for the viewer. */
+const heldForAccount = (payment: PaymentView) =>
+  payment.status === "attention" && payment.reason === "recipient";
+
+/** "4:32" until then, ticking. */
+function ResendCountdown({ to }: { to: number }) {
+  const left = Math.max(0, Math.ceil((to - useNow(1000)) / 1000));
+  return (
+    <span className="font-mono tabular-nums">
+      {Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}
+    </span>
+  );
+}
+
+/**
+ * No Credit account yet: within five minutes of the upstream's answer the
+ * viewer may open one and send the payment again, once (api:
+ * payments/resend.ts, user's rule); past that it is not paid.
+ */
+function NoCreditAccount({
+  activityId,
+  claimId,
+  payment,
+  amount,
+  onResent,
+}: {
+  activityId: string;
+  claimId: string;
+  payment: PaymentView;
+  amount: string;
+  onResent: () => void;
+}) {
+  const identity = useIdentity();
+  const until = payment.resendUntil ? Date.parse(payment.resendUntil) : 0;
+  const open = useBefore(until);
+  const resend = useResendPayment(
+    identity.user?.id ?? "",
+    identity.csrfToken ?? "",
+    activityId,
+  );
+  if (!open || !identity.user || !identity.csrfToken)
+    return (
+      <Callout
+        icon={UserRoundX}
+        title="这笔没能发出"
+        className="w-full text-left"
+      >
+        LDC 里找不到你的 LINUX DO Credit 账户。被拒后 5
+        分钟内可以重新发送一次，现在已经不能再发，这笔不再补发。
+      </Callout>
+    );
+  const error = resend.error
+    ? resend.error instanceof ActivityRequestError
+      ? resend.error.message
+      : "重新发送失败，请稍后再试。"
+    : null;
+  return (
+    <Callout
+      tone="warning"
+      icon={UserRoundX}
+      title="还没有 LINUX DO Credit 账户"
+      className="w-full text-left"
+    >
+      <p>
+        LDC 里找不到你的账户，这笔 {amount} LDC 暂时发不出去。请先注册 Credit
+        账户，确认注册好了再回来点“重新发送”：只能重新发送一次。
+      </p>
+      <div className="mt-2.5 flex flex-wrap items-center gap-2">
+        <ButtonLink href={CREDIT_URL} variant="secondary" className="gap-1.5">
+          注册 Credit 账户
+          <ArrowUpRight aria-hidden="true" />
+        </ButtonLink>
+        <Button
+          variant="primary"
+          size="sm"
+          aria-disabled={resend.isPending || undefined}
+          onClick={() => {
+            if (resend.isPending) return;
+            resend.mutate(claimId, { onSuccess: onResent });
+          }}
+        >
+          {resend.isPending ? "正在重新发送…" : "重新发送"}
+        </Button>
+      </div>
+      <p className="mt-2 text-xs">
+        还剩 <ResendCountdown to={until} /> 可以重新发送，过时不再补发。
+      </p>
+      {error && (
+        <p role="alert" className="mt-1 text-danger">
+          {error}
+        </p>
+      )}
+    </Callout>
+  );
 }
 
 /** 报名 that is waiting or being drawn: the ticket's times and one rule. */
@@ -145,6 +262,8 @@ export function MyResult({
   const won = mine.kind === "claimed" || mine.outcome === "won";
   const amount = won ? mine.amount : undefined;
   const payment = mine.payment;
+  // Sent again from here: until it lands, the note says so.
+  const [resent, setResent] = useState(false);
   return (
     <div
       ref={ref}
@@ -199,11 +318,26 @@ export function MyResult({
         )}
       </div>
 
-      {amount
-        ? payment && <PaymentNote payment={payment} />
-        : mine.kind === "registered" && (
-            <TicketNote mine={mine} deadlineAt={deadlineAt} />
-          )}
+      {amount && payment ? (
+        heldForAccount(payment) && mine.claimId ? (
+          <NoCreditAccount
+            activityId={activity.id}
+            claimId={mine.claimId}
+            payment={payment}
+            amount={amount}
+            onResent={() => setResent(true)}
+          />
+        ) : (
+          <PaymentNote
+            payment={payment}
+            resending={resent && payment.status !== "confirmed"}
+          />
+        )
+      ) : (
+        mine.kind === "registered" && (
+          <TicketNote mine={mine} deadlineAt={deadlineAt} />
+        )
+      )}
 
       {mine.afterClaimInfo && (
         <Squircle radius={16}>

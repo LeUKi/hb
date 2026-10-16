@@ -148,12 +148,23 @@ export type MerchantList = {
   canCreate: boolean;
   canSimulate: boolean;
 };
+/**
+ * A claim's payment turned down for want of the recipient's LINUX DO Credit
+ * account can be sent again by its claimant, once they have one: within
+ * this long of the first such answer, this many times (once). Nothing
+ * retries it by itself, and past that it is not paid (user's rule).
+ */
+export const PAYMENT_RESEND_WINDOW_MS = 5 * 60_000;
+export const PAYMENT_RESEND_LIMIT = 1;
+
 export type PaymentView = {
   id: string;
   mode: PaymentMode;
   status: PaymentState;
   reason: string | null;
   confirmedAt: string | null;
+  /** Its claimant may send it again until then (ISO); absent otherwise. */
+  resendUntil?: string;
 };
 export type MerchantPayment = PaymentView & {
   amount: string;

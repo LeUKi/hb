@@ -12,6 +12,7 @@ import {
   type SolveResult,
 } from "../packages/contracts/src";
 import {
+  csrfToken,
   expectPath,
   type MockUser,
   mockSession,
@@ -404,6 +405,77 @@ test.describe("红包页", () => {
       timeout: 1_500,
     });
     await expect.poll(() => state.reads.passwords).toBe(before + 1);
+  });
+
+  test("没有 Credit 账户：5 分钟内注册后自己重新发送一次，过时不再补发", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    const state = await mockHongbao(page);
+    const claim = state.claimMine();
+    claim.payment = {
+      ...claim.payment,
+      mode: "real",
+      status: "attention",
+      reason: "recipient",
+      resendUntil: new Date(Date.now() + 4 * 60_000).toISOString(),
+    };
+    const resends: (string | null)[] = [];
+    await page.route("**/api/me/claims/claim-mine/resend", (route) => {
+      resends.push(route.request().headers()["x-csrf-token"] ?? null);
+      claim.payment = {
+        ...claim.payment,
+        status: "reconciling",
+        reason: "resend",
+        resendUntil: undefined,
+      };
+      return route.fulfill({ json: { claim } });
+    });
+    const sockets: WebSocketRoute[] = [];
+    await page.routeWebSocket(/\/api\/activities\/[^/]+\/live$/, (ws) => {
+      sockets.push(ws);
+    });
+    await openApp(page, path);
+    const main = page.locator("main");
+    await expect(main.getByText("还没有 LINUX DO Credit 账户")).toBeVisible();
+    // Where to open one: a new tab, never followed here.
+    const register = main.getByRole("link", { name: /注册 Credit 账户/ });
+    await expect(register).toHaveAttribute("href", "https://credit.linux.do");
+    await expect(register).toHaveAttribute("target", "_blank");
+    await expect(main.getByText(/还剩 [34]:\d\d 可以重新发送/)).toBeVisible();
+    await expect(main.getByText(/只能重新发送一次/)).toBeVisible();
+
+    await main.getByRole("button", { name: "重新发送" }).click();
+    await expect(main.getByText("正在重新发送，稍等十几秒。")).toBeVisible();
+    await expect(main.getByText("核对中")).toBeVisible();
+    expect(resends).toEqual([csrfToken]);
+
+    // Through: the 红包's DO says only the viewer's part moved.
+    claim.payment = {
+      ...claim.payment,
+      status: "confirmed",
+      reason: null,
+      confirmedAt: new Date().toISOString(),
+    };
+    await expect.poll(() => sockets.length).toBeGreaterThan(0);
+    sockets.at(-1)?.send(JSON.stringify({ type: "mine" }));
+    await expect(main.getByText("已发放")).toBeVisible({ timeout: 2_000 });
+
+    // Another time, too late: nothing to press.
+    claim.payment = {
+      ...claim.payment,
+      status: "attention",
+      reason: "recipient",
+      confirmedAt: null,
+      resendUntil: undefined,
+    };
+    await page.reload();
+    await expect(main.getByText("这笔没能发出")).toBeVisible();
+    await expect(
+      main.getByText(/5 分钟内可以重新发送一次，现在已经不能再发/),
+    ).toBeVisible();
+    await expect(main.getByRole("button", { name: "重新发送" })).toHaveCount(0);
+    expect(resends).toHaveLength(1);
   });
 
   test("游客：大红包皮、说明全文、领取名单和分享", async ({

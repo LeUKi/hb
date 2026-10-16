@@ -34,7 +34,9 @@ export function paymentReason(
     http: "上游返回非成功 HTTP 状态，付款结果仍需核对原订单。",
     redirect: "上游返回重定向，系统未继续请求，将保留原订单核对。",
     invalid_response: "上游响应格式无法识别，付款结果仍需核对原订单。",
-    recipient: "上游未找到指定收款人，发送已暂停。",
+    recipient:
+      "收款人还没有 LINUX DO Credit 账户，发送已停止；领取人 5 分钟内可以注册后重新发送，过时不再补发。",
+    resend: "领取人已重新发送，先核对原订单再发出。",
     self_payment: "上游拒绝向同一付款账号发放，发送已暂停。",
     configuration: "上游付款配置不可用，发送已暂停。",
     validation: "上游拒绝订单参数，发送已暂停。",

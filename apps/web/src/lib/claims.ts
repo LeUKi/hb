@@ -1,6 +1,7 @@
 import type {
   ActivityParticipationResponse,
   ClaimActivityInput,
+  ClaimDetail,
   ClaimResult,
   DrawSummary,
 } from "@hb/contracts";
@@ -192,6 +193,56 @@ export function useCurrentParticipation(
     data: query.data?.readSessionScope === identity ? query.data : undefined,
     refetch,
   };
+}
+
+/**
+ * Sends the viewer's payment again after the upstream found no LINUX DO
+ * Credit account for them (api: payments/resend.ts): only while its
+ * `resendUntil` lasts. The page reads where it went from the answer, and
+ * hears the rest over the live channel.
+ */
+export function useResendPayment(
+  userId: string,
+  csrfToken: string,
+  activityId: string,
+) {
+  const queryClient = useQueryClient();
+  const account = useAccountSession(userId, "session");
+  const key = participationKey(userId, activityId);
+  return useMutation({
+    gcTime: 0,
+    onMutate: () => ({ identity: account.captureIdentity() }),
+    mutationFn: async (claimId: string) =>
+      readResponse<{ claim: ClaimDetail }>(
+        await api.api.me.claims[":id"].resend.$post(
+          { param: { id: claimId } },
+          { headers: { "X-CSRF-Token": csrfToken } },
+        ),
+      ),
+    onSuccess: async ({ claim }, _claimId, context) => {
+      if (!account.isCurrentIdentity(context?.identity)) return;
+      await queryClient.cancelQueries({ queryKey: key, exact: true });
+      queryClient.setQueryData<ParticipationCache>(key, (previous) =>
+        previous?.claim?.id === claim.id
+          ? { ...previous, claim }
+          : previous?.registration?.claim?.id === claim.id
+            ? {
+                ...previous,
+                registration: { ...previous.registration, claim },
+              }
+            : previous,
+      );
+      void queryClient.invalidateQueries({
+        queryKey: ["claim-private", userId],
+        predicate: (query) => query.queryKey[2] !== "participation",
+      });
+    },
+    onError: (_error, _claimId, context) => {
+      // Refused (too late, or it moved): show where it stands now.
+      if (account.isCurrentIdentity(context?.identity))
+        void queryClient.invalidateQueries({ queryKey: key, exact: true });
+    },
+  });
 }
 
 /** Claim, or sign up for a timed draw, in one 红包 (the id travels with it). */

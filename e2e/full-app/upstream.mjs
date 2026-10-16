@@ -40,6 +40,16 @@ export const profiles = {
     avatar_url: "https://avatars.example.test/recipient.png",
     active: true,
   },
+  // Opens a LINUX DO Credit account only after the first payment to it is
+  // turned down (收款人不存在), to send it again (payments/resend.ts).
+  latecomer: {
+    id: "730011",
+    username: "FullAppLatecomer",
+    name: "完整应用晚开户者",
+    email: "latecomer-private@example.test",
+    avatar_url: "https://avatars.example.test/latecomer.png",
+    active: true,
+  },
   directAuthor: {
     id: "730009",
     username: "FullAppDirectAuthor",
@@ -68,6 +78,8 @@ export function createTestUpstream(Response, origin, options = {}) {
     blockedRequests: 0,
   };
   const orders = new Map();
+  /** Recipients who have since opened their Credit account. */
+  const opened = new Set();
   const latestProfiles = new Map();
   function publicProfile(role) {
     const profile = profiles[role];
@@ -194,6 +206,14 @@ export function createTestUpstream(Response, origin, options = {}) {
           return json({ error_msg: "参数错误" }, 400);
         if (orders.has(body.out_trade_no))
           return json({ error_msg: "订单号已存在" }, 400);
+        if (
+          recipient.id === profiles.latecomer.id &&
+          !opened.has(recipient.id)
+        ) {
+          opened.add(recipient.id);
+          // As the real one says it: util.Err, with data:null.
+          return json({ error_msg: "收款人不存在", data: null }, 400);
+        }
         const order = {
           clientId: credentials.clientId,
           businessNo: body.out_trade_no,

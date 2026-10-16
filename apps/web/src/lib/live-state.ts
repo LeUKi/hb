@@ -29,9 +29,14 @@ export function pastDeadline(activity: PublicActivity | undefined) {
   );
 }
 
-/** A payment on its way: only `confirmed` is done. */
+/**
+ * A payment on its way. `confirmed` is done; `attention` waits on a person
+ * (its claimant sending it again, payments/resend.ts), not on the system.
+ */
 export const paymentOpen = (payment?: { status: string } | null) =>
-  Boolean(payment && payment.status !== "confirmed");
+  Boolean(
+    payment && payment.status !== "confirmed" && payment.status !== "attention",
+  );
 
 /** This person's part of a 红包 that can still move: a payment, a draw. */
 export function participationOpen(data: ParticipationCache | undefined) {

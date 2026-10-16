@@ -37,7 +37,10 @@ export function isTerminalRegistration(data: ParticipationCache | undefined) {
 }
 
 export function claimRefresh(claim?: ClaimDetail | null) {
-  return claim?.rewardType === "ldc" && claim.payment.status === "confirmed"
+  // Stopped in attention, only its claimant moves it again (by a request).
+  return claim?.rewardType === "ldc" &&
+    (claim.payment.status === "confirmed" ||
+      claim.payment.status === "attention")
     ? false
     : 15_000;
 }

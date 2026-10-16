@@ -62,7 +62,8 @@ export function liveFingerprint(row: ActivityRow | null | undefined) {
 
 /**
  * Who still waits on this 红包 once it is over: each person whose payment
- * is on its way, and the sender while any is.
+ * is on its way, and the sender while any is. One stopped in attention
+ * waits on nobody: only its claimant moves it again (payments/resend.ts).
  */
 export async function liveWaiting(
   env: ApiBindings,
@@ -72,7 +73,8 @@ export async function liveWaiting(
   const rows = await env.DB.prepare(
     `SELECT DISTINCT c.user_id AS userId FROM payment_tasks p
       JOIN claims c ON c.id = p.claim_id
-      WHERE c.activity_id = ? AND p.source = 'claim' AND p.status <> 'confirmed'`,
+      WHERE c.activity_id = ? AND p.source = 'claim'
+        AND p.status IN ('pending','sending','reconciling','waiting')`,
   )
     .bind(activityId)
     .all<{ userId: string }>();

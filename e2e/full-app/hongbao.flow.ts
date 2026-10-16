@@ -345,3 +345,66 @@ test("实时推送：领取后付款到账也是推过来的，连着时不轮�
   await author.context.close();
   await viewer.context.close();
 });
+
+test("没有 Credit 账户：领取被拒，注册后自己重新发送一次就到账", async ({
+  browser,
+}) => {
+  const author = await account(browser, "author");
+  const merchant = await fullAppMerchant(author.context, author.csrf, origin);
+  const headers = { Origin: origin, "X-CSRF-Token": author.csrf };
+  const created = await author.context.request.post("/api/activities", {
+    headers,
+    data: {
+      requestId: randomUUID(),
+      activity: {
+        ...emptyActivityInput(),
+        title: `完整应用重新发送 ${randomUUID().slice(0, 8)}`,
+        participationMode: "direct",
+        merchantId: merchant.id,
+        deadline: { mode: "duration", value: 1, unit: "days" },
+        money: { mode: "fixed", totalAmount: "0.30", count: 3 },
+      },
+    },
+  });
+  expect(created.status(), await created.text()).toBe(200);
+  const activity = ((await created.json()) as { activity: ManagedActivity })
+    .activity;
+  const opened = await author.context.request.post(
+    `/api/me/activities/${activity.id}/open`,
+    { headers, data: { version: activity.version } },
+  );
+  expect(opened.status(), await opened.text()).toBe(200);
+
+  // The upstream knows no Credit account for them until after the first try.
+  const latecomer = await account(browser, "latecomer");
+  await waitOutCooldown(latecomer.page);
+  await latecomer.page.goto(`/🧧/${encodeActivityEmoji(activity.id)}`);
+  await waitForBoot(latecomer.page);
+  await latecomer.page.getByRole("button", { name: "领取红包" }).click();
+  const main = latecomer.page.locator("main");
+  await expect(main.getByText("还没有 LINUX DO Credit 账户")).toBeVisible({
+    timeout: 15_000,
+  });
+  const held = await participation(latecomer.context, activity.id);
+  expect(held.claim?.payment).toMatchObject({
+    status: "attention",
+    reason: "recipient",
+  });
+  expect(held.claim?.payment.resendUntil).toBeTruthy();
+
+  // Registered now: sent again once, looked up first, then paid.
+  await main.getByRole("button", { name: "重新发送" }).click();
+  await expect(main.getByText("正在重新发送，稍等十几秒。")).toBeVisible();
+  await expect(main.getByText("已发放")).toBeVisible({ timeout: 40_000 });
+  const paid = await participation(latecomer.context, activity.id);
+  expect(paid.claim?.payment.status).toBe("confirmed");
+  expect(paid.claim?.payment.resendUntil).toBeUndefined();
+  // Once only: nothing left to send again.
+  const again = await latecomer.context.request.post(
+    `/api/me/claims/${paid.claim?.id}/resend`,
+    { headers: { Origin: origin, "X-CSRF-Token": latecomer.csrf } },
+  );
+  expect(again.status()).toBe(409);
+  await author.context.close();
+  await latecomer.context.close();
+});

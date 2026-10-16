@@ -369,6 +369,8 @@ export function passwordViewOf(
 export type Mine =
   | {
       kind: "claimed";
+      /** The claim, to send its payment again (my-result.tsx). */
+      claimId: string;
       amount: string;
       password: string | null;
       at: number;
@@ -379,6 +381,8 @@ export type Mine =
   | {
       kind: "registered";
       outcome: "waiting" | "settling" | "won" | "lost";
+      /** A win's claim. */
+      claimId: string | null;
       amount?: string;
       password: string | null;
       at: number;
@@ -390,6 +394,7 @@ export type Mine =
 function claimed(claim: ClaimDetail, titles: RosterTitle[]): Mine {
   return {
     kind: "claimed",
+    claimId: claim.id,
     amount: claim.amount,
     password: claim.sourcePassword ?? null,
     at: Date.parse(claim.claimedAt),
@@ -423,6 +428,7 @@ export function mineOf(
   return {
     kind: "registered",
     outcome,
+    claimId: outcome === "won" ? (claim?.id ?? null) : null,
     amount: outcome === "won" ? claim?.amount : undefined,
     password: registration.sourcePassword ?? null,
     at: Date.parse(registration.registeredAt),

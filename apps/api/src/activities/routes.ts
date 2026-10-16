@@ -24,6 +24,7 @@ import {
   listActivityPayments,
   listPaymentActivities,
 } from "../payments/activity-queries";
+import { resendClaimPayment } from "../payments/resend";
 import { assertExactOrigin } from "../security/http";
 import {
   getClaimDetail,
@@ -506,6 +507,16 @@ export const activityRoutes = new Hono<ApiContext>()
     const session = await requireAuth(c);
     return c.json({
       claim: await getClaimDetail(c.env, c.req.param("id"), session.user.id),
+    });
+  })
+  // A payment the upstream turned down for want of the recipient's Credit
+  // account: its claimant sends it again (payments/resend.ts).
+  .post("/me/claims/:id/resend", async (c) => {
+    const session = await requireProtectedMutation(c);
+    const id = c.req.param("id");
+    await resendClaimPayment(c.env, session.user.id, id);
+    return c.json({
+      claim: await getClaimDetail(c.env, id, session.user.id),
     });
   })
   .get("/me/activities/:id/claims", cursorQuery, async (c) => {

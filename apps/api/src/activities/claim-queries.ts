@@ -19,6 +19,11 @@ import {
   users,
 } from "../db/schema";
 import type { ApiBindings } from "../env";
+import {
+  heldForRecipient,
+  recipientRejections,
+  resendDeadline,
+} from "../payments/resend-rules";
 import { decryptString, encryptString } from "../security/crypto";
 import { activityNotFound, invalidActivity } from "./errors";
 import { activityStatus, rewardSummary } from "./service";
@@ -204,10 +209,21 @@ export async function claimSummariesBatch(
   const byClaim = new Map(
     payments.map((payment) => [payment.claimId, payment]),
   );
+  // Payments turned down for want of a Credit account may go again a while.
+  const rejections = await recipientRejections(
+    env,
+    payments.filter(heldForRecipient).map((payment) => payment.id),
+  );
+  const now = Date.now();
   return new Map(
     rows.map(({ claim, activity }) => {
       const payment = byClaim.get(claim.id);
       if (!payment) throw new Error("LDC claim has no payment task");
+      const resendUntil = resendDeadline(
+        payment,
+        rejections.get(payment.id),
+        now,
+      );
       const sourcePassword =
         claim.passwordId === null ? undefined : sources.get(claim.passwordId);
       return [
@@ -227,6 +243,9 @@ export async function claimSummariesBatch(
                     payment.confirmedAt === null
                       ? null
                       : new Date(payment.confirmedAt).toISOString(),
+                  ...(resendUntil === null
+                    ? {}
+                    : { resendUntil: new Date(resendUntil).toISOString() }),
                 },
               }
             : {}),
