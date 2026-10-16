@@ -91,6 +91,33 @@ async function lookUp(page: Page, password: string) {
 }
 
 test.describe("兑奖", () => {
+  test("输入口令时一直看得到字数：起始页在框下，展开后跟在要查的口令后面", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    await openApp(page);
+    const input = omniboxInput(page);
+    await input.click();
+    await input.fill("测试口令");
+    // Too short: the rules, with the count beside them.
+    await expect(shown(page, "还差 2 个字，口令至少 6 个字。")).toBeVisible();
+    await expect(shown(page, "4 / 18")).toBeVisible();
+    // Enough: the rules go, the count stays in its place.
+    await input.fill("测试口令一二三");
+    await expect(shown(page, "还差 2 个字，口令至少 6 个字。")).toHaveCount(0);
+    await expect(shown(page, "7 / 18")).toBeVisible();
+    await input.fill("");
+    await expect(shown(page, "7 / 18")).toHaveCount(0);
+
+    // The box expanded on another page: right after the 口令 it looks up.
+    await page.goto("/help");
+    await page.getByRole("button", { name: /\/help/ }).click();
+    await omniboxInput(page).fill("测试口令一二三四");
+    await expect(
+      page.getByRole("option", { name: "查找口令 测试口令一二三四 8 / 18" }),
+    ).toBeVisible();
+  });
+
   test("没匹配到：说明、记进最近输入、按服务端的冷却倒数", async ({ page }) => {
     await mockSession(page, viewer);
     const sent = await mockDiscover(page, [

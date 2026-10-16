@@ -24,13 +24,20 @@ import { HongbaoIcon } from "../ui/hongbao-icon";
 import { Kbd } from "../ui/kbd";
 import { radius, Squircle, SquirclePlate } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
+import { PasswordCount } from "./message";
 import type { Scope, ScopeOffer } from "./state";
 
 export type Suggestion =
   | { key: string; kind: "optimize"; value: string }
   | { key: string; kind: "claim"; activityId: string }
-  | { key: string; kind: "verify"; activityId: string }
-  | { key: string; kind: "discover"; password: string; scoped: boolean }
+  | { key: string; kind: "verify"; activityId: string; length: number }
+  | {
+      key: string;
+      kind: "discover";
+      password: string;
+      scoped: boolean;
+      length: number;
+    }
   | { key: string; kind: "jump"; activityId: string }
   | {
       key: string;
@@ -110,7 +117,14 @@ export function buildSuggestions(
         : [];
     // Verifying stays inside the 红包: no global lookup to fall back on.
     if (scope?.purpose === "verify")
-      return [{ key: "verify", kind: "verify", activityId: scope.id }];
+      return [
+        {
+          key: "verify",
+          kind: "verify",
+          activityId: scope.id,
+          length: scheme.length,
+        },
+      ];
     const items: Suggestion[] = [];
     if (scope)
       items.push({ key: "claim", kind: "claim", activityId: scope.id });
@@ -119,6 +133,7 @@ export function buildSuggestions(
       kind: "discover",
       password: value,
       scoped: Boolean(scope),
+      length: scheme.length,
     });
     return items;
   }
@@ -262,6 +277,7 @@ export function SuggestionContent({
           「{activity?.title ?? "本红包"}」
         </span>
         <span className="shrink-0 text-ink-2">的口令</span>
+        <PasswordCount length={item.length} />
       </Row>
     );
   }
@@ -307,6 +323,7 @@ export function SuggestionContent({
         <span className="truncate font-mono text-sm text-ink">
           {item.password}
         </span>
+        <PasswordCount length={item.length} />
       </Row>
     );
   if (item.kind === "jump") {

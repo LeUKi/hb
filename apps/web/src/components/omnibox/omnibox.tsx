@@ -847,13 +847,19 @@ export function Omnibox() {
         </search>
       </Squircle>
 
-      {/* Start page: the message line lives in the page's own flow. */}
+      {/* Start page: the message line lives in the page's own flow. With
+          no list there, a valid 口令's length stays where the rules had it. */}
       {mode === "start" &&
         hintTarget &&
         !panelOpen &&
         createPortal(
           <MessageLine
             message={shownMessage}
+            count={
+              judgedScheme.kind === "password" && judgedScheme.valid
+                ? judgedScheme.length
+                : null
+            }
             onAction={controller.runMessageAction}
           />,
           hintTarget,
