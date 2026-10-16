@@ -44,6 +44,7 @@ import { CopyButton } from "../ui/copy-button";
 import { Field, TextInput } from "../ui/field";
 import { radius, Squircle } from "../ui/squircle";
 import { type ChipTone, StatusChip } from "../ui/status-chip";
+import { MerchantGuide } from "./merchant-guide";
 import { MessageView } from "./message-view";
 
 const PAGE_NOTE =
@@ -534,6 +535,7 @@ function MerchantDetail({
       <PageSection
         title="配置"
         description="改名称不影响付款；换 Client ID 或密钥后，要检查通过才能继续付款和开放新红包。"
+        action={<MerchantGuide />}
       >
         <MerchantForm
           key={merchant.id}
@@ -657,6 +659,7 @@ function CreateMerchant({
     <PageSection
       title="配置商户"
       description="发 LDC 红包之前，先填好你在 LDC 创建的商户应用。每个账号有一个当前商户。"
+      action={<MerchantGuide />}
     >
       <LeaveGuard
         when={touched && !busy}

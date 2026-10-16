@@ -376,7 +376,8 @@ test.describe("LDC 商户配置", () => {
     ).toBeVisible();
   });
 
-  test("还没有商户：填好三项保存后显示商户", async ({ page }) => {
+  test("还没有商户：填好三项保存后显示商户", async ({ page, context }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await mockSession(page, viewer);
     let created = false;
     await page.route("**/api/me/merchants", (route) => {
@@ -421,6 +422,22 @@ test.describe("LDC 商户配置", () => {
     );
     await openApp(page, "/merchant");
     await expect(page.getByLabel("商户名称")).toHaveValue("默认商户");
+
+    // 怎么填: the two steps in LDC, with the address to paste.
+    const help = page.getByRole("button", { name: "怎么填" });
+    await help.click();
+    const guide = page.getByRole("dialog", { name: "在 LDC 创建商户应用" });
+    await expect(guide.getByText("第 1 步：创建应用")).toBeVisible();
+    await expect(guide.getByText("第 2 步：复制 API 配置")).toBeVisible();
+    await expect(guide.getByRole("img")).toHaveCount(2);
+    await guide.getByRole("button", { name: "复制建议地址" }).click();
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe("http://localhost:3000/");
+    await guide.getByRole("button", { name: "知道了" }).click();
+    await expect(guide).toHaveCount(0);
+    await expect(help).toBeFocused();
+
     await page
       .getByRole("textbox", { name: "Client ID" })
       .fill("my_client_2026");
