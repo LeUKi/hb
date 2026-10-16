@@ -205,7 +205,7 @@ function TopicResults({
           }
           actions={
             <ButtonLink href={topicUrl} className="gap-1.5">
-              查看论坛帖子
+              查看社区帖子
               <ArrowUpRight aria-hidden="true" />
             </ButtonLink>
           }

@@ -56,7 +56,7 @@ function shareItems(
       key: "forum",
       icon: MessagesSquare,
       label: "社区链接",
-      detail: "贴进论坛，不会被转码",
+      detail: "贴进社区，不会被转码",
       text: forum,
     },
     ...passwords.known.map((password, index) => ({
@@ -71,7 +71,7 @@ function shareItems(
       key: "embed",
       icon: CodeXml,
       label: "内嵌代码",
-      detail: "贴进论坛，显示这个红包",
+      detail: "贴进社区，显示这个红包",
       text: createActivityImageEmbed({
         activityId: activity.id,
         origin,

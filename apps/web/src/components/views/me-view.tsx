@@ -115,7 +115,7 @@ function Me({ user }: { user: SessionUser }) {
           <div className="flex items-center gap-2">
             <span role="status" className="text-sm text-ink-3">
               {refresh.state === "busy"
-                ? "正在读取论坛资料…"
+                ? "正在读取社区资料…"
                 : refresh.state === "done"
                   ? "资料已是最新"
                   : ""}
@@ -124,7 +124,7 @@ function Me({ user }: { user: SessionUser }) {
               size="sm"
               onClick={refresh.start}
               aria-disabled={refresh.state === "busy" || undefined}
-              title="重新登录一次，读取论坛上最新的昵称和头像"
+              title="重新登录一次，读取社区里最新的昵称和头像"
             >
               <RotateCw
                 className={
@@ -152,7 +152,7 @@ function Me({ user }: { user: SessionUser }) {
           <InfoList
             items={[
               { label: "昵称", value: user.displayName },
-              { label: "论坛用户名", value: `@${user.username}` },
+              { label: "社区用户名", value: `@${user.username}` },
               {
                 label: "本账号 ID",
                 value: <span className="font-mono text-sm">{user.id}</span>,
