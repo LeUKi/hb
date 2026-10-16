@@ -304,6 +304,25 @@
         let ceiling = 64;
         let value = 0;
         let failed = false;
+        // Right after a release the page and its bundle can come from two
+        // versions for a few seconds: the bundle is missing, or comes back
+        // as the page. One quiet reload a moment later gets a matching
+        // pair; failing again within a minute is a failed load.
+        const retryKey = "hb:boot-retry";
+        let retrying = false;
+        const retryOnce = () => {
+          if (retrying) return true;
+          try {
+            const last = Number(sessionStorage.getItem(retryKey) || 0);
+            if (Date.now() - last < 60000) return false;
+            sessionStorage.setItem(retryKey, String(Date.now()));
+          } catch {
+            return false;
+          }
+          retrying = true;
+          setTimeout(() => location.reload(), 1500);
+          return true;
+        };
 
         const api = {
           done: false,
@@ -340,6 +359,9 @@
           render();
           api.done = true;
           api.timings.done = performance.now();
+          try {
+            sessionStorage.removeItem(retryKey);
+          } catch {}
           appRoot.removeAttribute("inert");
           boot.dataset.state = "done";
           for (const callback of listeners.splice(0)) callback();
@@ -402,7 +424,10 @@
             if (
               script instanceof HTMLScriptElement &&
               new URL(script.src || location.href, location.href).origin ===
-                location.origin
+                location.origin &&
+              !api.done &&
+              !failed &&
+              !retryOnce()
             )
               api.fail();
           },

@@ -50,11 +50,38 @@ test.describe("外壳", () => {
     await expect(omniboxInput(page)).toBeVisible();
   });
 
-  test("本站的脚本没加载到：加载失败，可以重新加载", async ({ page }) => {
+  test("发布那几秒：本站的脚本第一次没取到，自己重新加载一次就进入", async ({
+    page,
+  }) => {
+    await mockSession(page, null);
+    // The bundle comes back as the page (the other version's fallback).
+    let misses = 0;
+    await page.route("**/src/main.tsx", (route) => {
+      if (misses > 0) return route.fallback();
+      misses += 1;
+      return route.fulfill({
+        contentType: "text/html",
+        body: "<!doctype html><title>lafish的红包站</title>",
+      });
+    });
+    let loads = 0;
+    page.on("load", () => {
+      loads += 1;
+    });
+    await page.goto("/");
+    await expect(omniboxInput(page)).toBeVisible({ timeout: 10_000 });
+    expect(misses).toBe(1);
+    expect(loads).toBe(2);
+    await expect(page.getByText("加载失败")).toHaveCount(0);
+  });
+
+  test("本站的脚本重试后还是没加载到：加载失败，可以重新加载", async ({
+    page,
+  }) => {
     await mockSession(page, null);
     await page.route("**/src/main.tsx", (route) => route.abort());
     await page.goto("/");
-    await expect(page.getByText("加载失败")).toBeVisible();
+    await expect(page.getByText("加载失败")).toBeVisible({ timeout: 10_000 });
     await expect(page.getByRole("button", { name: "重新加载" })).toBeVisible();
     await expect(page.locator("#root")).toHaveAttribute("inert");
   });
