@@ -29,7 +29,12 @@ import { createSimulationPaymentAdapter } from "./simulation";
 
 const LEASE_MS = 30_000;
 export type PaymentWake = { type: "payment.wake"; taskId: string };
-export type CycleResult = { processed: boolean; nextRunAt: number | null };
+export type CycleResult = {
+  processed: boolean;
+  nextRunAt: number | null;
+  /** A task whose status or reason this cycle changed (what its page shows). */
+  moved?: string;
+};
 export type MerchantCycleOptions = {
   adapterFactory?: PaymentAdapterFactory;
 };
@@ -420,6 +425,9 @@ export async function runMerchantCycle(
       token,
     ),
   ]);
+  const moved =
+    Boolean(saved[0]?.meta.changes) &&
+    (status !== task.status || reason !== task.reason);
   if (saved[0]?.meta.changes) {
     console.info(
       JSON.stringify({
@@ -436,7 +444,11 @@ export async function runMerchantCycle(
       }),
     );
   }
-  return { processed: true, nextRunAt: await nextDue(env, merchantId) };
+  return {
+    processed: true,
+    nextRunAt: await nextDue(env, merchantId),
+    ...(moved ? { moved: task.id } : {}),
+  };
 }
 
 export async function wakePayment(env: ApiBindings, taskId: string) {

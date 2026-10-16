@@ -24,6 +24,7 @@ const bindings: ApiBindings = { ...env, APP_ORIGIN: origin };
 type Actor = { id: string; cookie: string; csrf: string };
 let owner: Actor;
 let merchantId: string;
+let merchantClientId: string;
 
 async function actor(): Promise<Actor> {
   const id = crypto.randomUUID();
@@ -123,15 +124,59 @@ async function connect(activityId: string, user: Actor) {
     const data = String(event.data);
     heard.push(data === "pong" ? "pong" : JSON.parse(data));
   });
-  socket.addEventListener("close", (event) => closed.push(event.code));
+  socket.addEventListener("close", (event) => {
+    closed.push(event.code);
+  });
   socket.accept();
   return { socket, heard, closed };
 }
 
 const claimed = (message: ActivityLiveMessage | "pong" | undefined) =>
-  message && message !== "pong" && message.activity.quantity.mode === "exact"
+  message &&
+  message !== "pong" &&
+  message.type === "activity" &&
+  message.activity.quantity.mode === "exact"
     ? message.activity.quantity.claimed
     : null;
+
+const mine = (heard: (ActivityLiveMessage | "pong")[]) =>
+  heard.filter((message) => message !== "pong" && message.type === "mine")
+    .length;
+
+/** The fixture merchant's simulated upstream answers like this. */
+async function upstream(scenario: "normal" | "daily_limit") {
+  await env.DB.prepare(
+    "UPDATE simulation_controls SET scenario=? WHERE merchant_id=?",
+  )
+    .bind(scenario, merchantId)
+    .run();
+}
+
+/** One merchant cycle on everything due, the way its alarm runs it. */
+async function payNow() {
+  await env.DB.prepare(
+    "UPDATE payment_tasks SET next_run_at=0 WHERE status <> 'confirmed'",
+  ).run();
+  const response = await env.MERCHANT_DO.get(
+    env.MERCHANT_DO.idFromName(merchantClientId),
+  ).fetch("https://merchant.internal/internal/payments/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ merchantId }),
+  });
+  expect(response.status).toBe(200);
+  await response.arrayBuffer();
+}
+
+async function paymentStatus(activityId: string, user: Actor) {
+  return (
+    await env.DB.prepare(
+      "SELECT p.status FROM payment_tasks p JOIN claims c ON c.id = p.claim_id WHERE c.activity_id = ? AND c.user_id = ?",
+    )
+      .bind(activityId, user.id)
+      .first<{ status: string }>()
+  )?.status;
+}
 
 beforeEach(async () => {
   await resetMerchantHistory(env.DB);
@@ -155,10 +200,11 @@ beforeEach(async () => {
     ].map((table) => env.DB.prepare(`DELETE FROM ${table}`)),
   );
   owner = await actor();
+  merchantClientId = `live_${crypto.randomUUID()}`;
   merchantId = (
     await createMerchant(bindings, owner.id, {
       requestId: crypto.randomUUID(),
-      clientId: `live_${crypto.randomUUID()}`,
+      clientId: merchantClientId,
       label: "Local fixture",
       secret: "fake-only",
     })
@@ -193,7 +239,8 @@ describe("a running 红包's live channel", () => {
     // Two claims in a row: at most one push each, usually one for both.
     expect(heard.length).toBeLessThanOrEqual(3);
     const last = heard.at(-1);
-    if (!last || last === "pong") throw new Error("no push");
+    if (!last || last === "pong" || last.type !== "activity")
+      throw new Error("no push");
     // The public read only: nothing of anyone's own.
     expect(last.activity).not.toHaveProperty("passwords");
     expect(last.activity.rosterPreview).toHaveLength(2);
@@ -218,6 +265,91 @@ describe("a running 红包's live channel", () => {
     expect(sockets.slice(1).every((each) => each.closed.length === 0)).toBe(
       true,
     );
+  });
+
+  it("keeps a claimant's line past the end until their payment is through, saying when it moves", async () => {
+    await upstream("daily_limit");
+    const activity = await running(1);
+    const claimant = await actor();
+    const watching = await connect(activity.id, claimant);
+    const other = await connect(activity.id, await actor());
+    await claim(activity.id, claimant);
+    // The end goes out to both; only the one still waiting stays on.
+    await vi.waitFor(() => expect(other.closed).toEqual([1000]), {
+      timeout: 3000,
+    });
+    expect(claimed(watching.heard.at(-1))).toBe(1);
+    expect(watching.closed).toEqual([]);
+    // Still waiting, they may come back on another tab; no one else may.
+    const again = await connect(activity.id, claimant);
+    expect((await upgrade(activity.id, await actor())).status).toBe(410);
+
+    // The upstream holds it back: the page hears its payment moved.
+    await payNow();
+    await vi.waitFor(() =>
+      expect(mine(watching.heard)).toBeGreaterThanOrEqual(1),
+    );
+    expect(await paymentStatus(activity.id, claimant)).toBe("waiting");
+    expect(watching.closed).toEqual([]);
+
+    // Through: told once more, then let go.
+    await upstream("normal");
+    await payNow();
+    await vi.waitFor(() => expect(watching.closed).toEqual([1000]), {
+      timeout: 3000,
+    });
+    expect(await paymentStatus(activity.id, claimant)).toBe("confirmed");
+    expect(mine(watching.heard)).toBeGreaterThanOrEqual(2);
+    await vi.waitFor(() => expect(again.closed).toEqual([1000]));
+  });
+
+  it("tells the sender when a payment in their 名单 moves, and no one else", async () => {
+    const activity = await running(3);
+    const sender = await connect(activity.id, owner);
+    const bystander = await connect(activity.id, await actor());
+    await claim(activity.id, await actor());
+    await payNow();
+    await vi.waitFor(() => expect(mine(sender.heard)).toBe(1));
+    expect(mine(bystander.heard)).toBe(0);
+  });
+
+  it("pushes the end at the deadline by itself", async () => {
+    const activity = await running(3);
+    await env.DB.prepare("UPDATE activities SET deadline=? WHERE id=?")
+      .bind(Date.now() + 400, activity.id)
+      .run();
+    const { heard, closed } = await connect(activity.id, await actor());
+    // Nothing else happens: the DO's own alarm at the deadline ends it.
+    await vi.waitFor(() => expect(closed).toEqual([1000]), { timeout: 3000 });
+    const last = heard.at(-1);
+    if (!last || last === "pong" || last.type !== "activity")
+      throw new Error("no push");
+    expect(last.activity.status).toBe("ended");
+    expect(
+      (
+        await env.DB.prepare(
+          "SELECT end_reason AS reason FROM activities WHERE id=?",
+        )
+          .bind(activity.id)
+          .first<{ reason: string | null }>()
+      )?.reason,
+    ).toBe("expired");
+  });
+
+  it("pushes a refresh only when it moved something", async () => {
+    const activity = await running(3);
+    const { heard } = await connect(activity.id, await actor());
+    await vi.waitFor(() => expect(heard).toHaveLength(1));
+    const response = await env.ACTIVITY_DO.get(
+      env.ACTIVITY_DO.idFromName(activity.id),
+    ).fetch(
+      `https://activity.internal/internal/activities/${activity.id}/refresh`,
+      { method: "POST" },
+    );
+    expect(response.status).toBe(200);
+    await response.arrayBuffer();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(heard).toHaveLength(1);
   });
 
   it("answers the keep-alive, and closes on anything else", async () => {

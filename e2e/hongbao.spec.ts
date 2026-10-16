@@ -123,7 +123,50 @@ async function mockHongbao(page: Page) {
     solved: [] as string[],
     claims: [] as unknown[],
     solves: [] as unknown[],
-    publicReads: 0,
+    /** Reads of each endpoint, to tell polling from pushes. */
+    reads: { public: 0, participation: 0, passwords: 0, recipients: 0 },
+    /** The viewer's claim, as the server records one. */
+    claimMine() {
+      state.claim = {
+        id: "claim-mine",
+        activity: {
+          id,
+          title: state.activity.title,
+          status: "active",
+        },
+        rewardType: "ldc",
+        claimedAt: new Date().toISOString(),
+        sourcePassword: passwordOf.mine,
+        amount: "0.10",
+        afterClaimInfo: "谢谢你来，**记得**看帖子。",
+        payment: {
+          id: "payment-mine",
+          mode: "simulation",
+          status: "pending",
+          reason: null,
+          confirmedAt: null,
+        },
+      };
+      const { quantity } = state.activity;
+      if (quantity.mode === "exact")
+        state.activity = {
+          ...state.activity,
+          quantity: {
+            ...quantity,
+            claimed: quantity.claimed + 1,
+            remaining: quantity.remaining - 1,
+          },
+        };
+      state.recipients = [
+        ...state.recipients,
+        {
+          ...recipient(viewer.username, 6),
+          displayName: viewer.displayName,
+          claimedAt: state.claim.claimedAt,
+        },
+      ];
+      return state.claim;
+    },
   };
   const passwords = (): ActivityPasswords => {
     const known = state.claim
@@ -148,15 +191,21 @@ async function mockHongbao(page: Page) {
       `/api/activities/${id}`.length,
     );
     if (rest === "" && request.method() === "GET") {
-      state.publicReads += 1;
+      state.reads.public += 1;
       return route.fulfill({ json: { activity: publicRead(state) } });
     }
-    if (rest === "/participation")
+    if (rest.startsWith("/participation")) {
+      state.reads.participation += 1;
       return route.fulfill({
         json: { claim: state.claim, registration: null },
       });
-    if (rest === "/passwords") return route.fulfill({ json: passwords() });
-    if (rest === "/recipients")
+    }
+    if (rest === "/passwords") {
+      state.reads.passwords += 1;
+      return route.fulfill({ json: passwords() });
+    }
+    if (rest.startsWith("/recipients")) state.reads.recipients += 1;
+    if (rest.startsWith("/recipients"))
       return route.fulfill({
         json: {
           items: state.recipients,
@@ -174,40 +223,11 @@ async function mockHongbao(page: Page) {
         return route.fulfill({
           json: { result: "incorrect" } satisfies ClaimResult,
         });
-      state.claim = {
-        id: "claim-mine",
-        activity: {
-          id,
-          title: state.activity.title,
-          status: "active",
-        },
-        rewardType: "ldc",
-        claimedAt: new Date().toISOString(),
-        sourcePassword: passwordOf.mine,
-        amount: "0.10",
-        afterClaimInfo: "谢谢你来，**记得**看帖子。",
-        payment: {
-          id: "payment-mine",
-          mode: "simulation",
-          status: "pending",
-          reason: null,
-          confirmedAt: null,
-        },
-      };
-      state.activity = {
-        ...state.activity,
-        quantity: { mode: "exact", total: 3, claimed: 2, remaining: 1 },
-      };
-      state.recipients = [
-        ...state.recipients,
-        {
-          ...recipient(viewer.username, 6),
-          displayName: viewer.displayName,
-          claimedAt: state.claim.claimedAt,
-        },
-      ];
       return route.fulfill({
-        json: { result: "claimed", claim: state.claim } satisfies ClaimResult,
+        json: {
+          result: "claimed",
+          claim: state.claimMine(),
+        } satisfies ClaimResult,
       });
     }
     if (rest === "/password-solves" && request.method() === "POST") {
@@ -264,9 +284,19 @@ test.describe("红包页", () => {
     await expect(page.getByText("2 / 3 份", { exact: true })).toBeVisible();
   });
 
-  test("登录后：推送一到就更新，连着时不再每 5 秒轮询", async ({ page }) => {
+  test("登录后：连着时什么都不轮询，推送一到就更新，付款变了只读自己那份", async ({
+    page,
+  }) => {
     await mockSession(page, viewer);
     const state = await mockHongbao(page);
+    state.activity.quantity = {
+      mode: "exact",
+      total: 5,
+      claimed: 1,
+      remaining: 4,
+    };
+    // Already claimed elsewhere; the payment is on its way.
+    state.claimMine();
     const sockets: WebSocketRoute[] = [];
     await page.routeWebSocket(/\/api\/activities\/[^/]+\/live$/, (ws) => {
       sockets.push(ws);
@@ -275,29 +305,105 @@ test.describe("红包页", () => {
       });
     });
     await openApp(page, path);
+    const main = page.locator("main");
     const entry = page.locator("#roster-entry");
-    await expect(page.getByText("1 / 3 份", { exact: true })).toBeVisible();
+    await expect(page.getByText("2 / 5 份", { exact: true })).toBeVisible();
+    await expect(main.getByText("待发放")).toBeVisible();
     await expect.poll(() => sockets.length).toBe(1);
-    // Connected: the next public read is a minute away, not 5 s.
-    const readsAtConnect = state.publicReads;
-    await page.waitForTimeout(6_000);
-    expect(state.publicReads).toBe(readsAtConnect);
-    // Someone else claims: the 红包's DO pushes its public read.
-    state.recipients.push(recipient("后来的人", 2));
+    // Connected: nothing is read again on a clock, not even every 15 s.
+    await page.waitForTimeout(1_000);
+    const atConnect = { ...state.reads };
+    await page.waitForTimeout(16_000);
+    expect(state.reads).toEqual(atConnect);
+    // Someone else claims: the 红包's DO pushes its public read, and the
+    // 名单 follows the new face.
+    state.recipients.push(recipient("后来的人", 8));
     state.activity = {
       ...state.activity,
-      quantity: { mode: "exact", total: 3, claimed: 2, remaining: 1 },
+      quantity: { mode: "exact", total: 5, claimed: 3, remaining: 2 },
     };
     sockets[0]?.send(
       JSON.stringify({ type: "activity", activity: publicRead(state) }),
     );
-    await expect(page.getByText("2 / 3 份", { exact: true })).toBeVisible({
+    await expect(page.getByText("3 / 5 份", { exact: true })).toBeVisible({
       timeout: 1_500,
     });
     await expect(entry.locator("img").first()).toHaveAttribute(
       "src",
       avatarOf("后来的人"),
     );
+    expect(state.reads.public).toBe(atConnect.public);
+    expect(state.reads.participation).toBe(atConnect.participation);
+    // The payment goes through: `mine`, and only the viewer's part is read.
+    if (state.claim)
+      state.claim.payment = {
+        ...state.claim.payment,
+        status: "confirmed",
+        confirmedAt: new Date().toISOString(),
+      };
+    const beforeMine = { ...state.reads };
+    sockets[0]?.send(JSON.stringify({ type: "mine" }));
+    await expect(main.getByText("已发放")).toBeVisible({ timeout: 1_500 });
+    expect(state.reads.participation).toBe(beforeMine.participation + 1);
+    expect(state.reads.public).toBe(beforeMine.public);
+    expect(state.reads.passwords).toBe(beforeMine.passwords);
+  });
+
+  test("登录后：连接断了退回轮询，重连后补读自己那份", async ({ page }) => {
+    await mockSession(page, viewer);
+    const state = await mockHongbao(page);
+    state.claimMine();
+    const sockets: WebSocketRoute[] = [];
+    await page.routeWebSocket(/\/api\/activities\/[^/]+\/live$/, (ws) => {
+      sockets.push(ws);
+      ws.onMessage((message) => {
+        if (message === "ping") ws.send("pong");
+      });
+    });
+    await openApp(page, path);
+    await expect.poll(() => sockets.length).toBe(1);
+    await page.waitForTimeout(1_000);
+    const connected = { ...state.reads };
+    // A deploy drops the line: until it is back the page polls.
+    await sockets[0]?.close({ code: 1012, reason: "restart" });
+    await expect.poll(() => sockets.length, { timeout: 5_000 }).toBe(2);
+    // Back: whatever it missed of its own is read once.
+    await expect
+      .poll(() => state.reads.participation)
+      .toBeGreaterThan(connected.participation);
+  });
+
+  test("登录后：到截止时间页面自己翻成已结束，推送再带来结束说明", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    const state = await mockHongbao(page);
+    state.activity.deadlineAt = new Date(Date.now() + 4_000).toISOString();
+    const sockets: WebSocketRoute[] = [];
+    await page.routeWebSocket(/\/api\/activities\/[^/]+\/live$/, (ws) => {
+      sockets.push(ws);
+    });
+    await openApp(page, path);
+    await expect.poll(() => sockets.length).toBe(1);
+    const main = page.locator("main");
+    // Nothing is pushed or read: the clock alone turns the page over.
+    await expect(main.getByText("红包已过期").first()).toBeVisible({
+      timeout: 6_000,
+    });
+    // The DO's alarm pushes the end: its 结束说明, and every 口令 now.
+    const before = state.reads.passwords;
+    state.activity = {
+      ...state.activity,
+      status: "ended",
+      afterEndInfo: "感谢参加，下周再见。",
+    };
+    sockets[0]?.send(
+      JSON.stringify({ type: "activity", activity: publicRead(state) }),
+    );
+    await expect(main.getByText("感谢参加，下周再见。")).toBeVisible({
+      timeout: 1_500,
+    });
+    await expect.poll(() => state.reads.passwords).toBe(before + 1);
   });
 
   test("游客：大红包皮、说明全文、领取名单和分享", async ({

@@ -19,15 +19,8 @@ import { IdentityFailedView, MessageView } from "./message-view";
 
 export function HongbaoView({ id }: { id: string }) {
   const page = useHongbaoPageData(id);
-  // While it runs, a signed-in viewer has its changes pushed; guests poll.
-  const viewer = page.identity.user;
-  useActivityLive(
-    id,
-    viewer?.id ?? null,
-    Boolean(
-      viewer && page.data && !page.data.activity.draft && !page.data.view.ended,
-    ),
-  );
+  // A signed-in viewer has its changes pushed; guests poll.
+  useActivityLive(id, page.identity.user?.id ?? null, page.liveWant);
   const article = useRef<HTMLElement>(null);
   const skeleton = useRef<number | null>(null);
   const load = usePageLoad(page.load, () =>

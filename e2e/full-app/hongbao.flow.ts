@@ -271,3 +271,77 @@ test("实时推送：别人领取后，开着红包页的人立刻看到", async
   await viewer.context.close();
   await claimer.context.close();
 });
+
+test("实时推送：领取后付款到账也是推过来的，连着时不轮询", async ({
+  browser,
+}) => {
+  const author = await account(browser, "author");
+  const merchant = await fullAppMerchant(author.context, author.csrf, origin);
+  const headers = { Origin: origin, "X-CSRF-Token": author.csrf };
+  const created = await author.context.request.post("/api/activities", {
+    headers,
+    data: {
+      requestId: randomUUID(),
+      activity: {
+        ...emptyActivityInput(),
+        title: `完整应用付款推送 ${randomUUID().slice(0, 8)}`,
+        participationMode: "direct",
+        merchantId: merchant.id,
+        deadline: { mode: "duration", value: 1, unit: "days" },
+        money: { mode: "fixed", totalAmount: "0.30", count: 3 },
+      },
+    },
+  });
+  expect(created.status(), await created.text()).toBe(200);
+  const activity = ((await created.json()) as { activity: ManagedActivity })
+    .activity;
+  const opened = await author.context.request.post(
+    `/api/me/activities/${activity.id}/open`,
+    { headers, data: { version: activity.version } },
+  );
+  expect(opened.status(), await opened.text()).toBe(200);
+
+  const viewer = await account(browser, "recipient3");
+  await waitOutCooldown(viewer.page);
+  // Every read of this 红包 the page makes, by what it reads.
+  const reads: { at: number; what: string }[] = [];
+  const base = `/api/activities/${activity.id}`;
+  viewer.page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (request.method() === "GET" && path.startsWith(base))
+      reads.push({ at: Date.now(), what: path.slice(base.length) || "/" });
+  });
+  let mine = 0;
+  viewer.page.on("websocket", (socket) => {
+    socket.on("framereceived", (frame) => {
+      if (String(frame.payload).includes('"mine"')) mine += 1;
+    });
+  });
+  await viewer.page.goto(`/🧧/${encodeActivityEmoji(activity.id)}`);
+  await waitForBoot(viewer.page);
+  await viewer.page.getByRole("button", { name: "领取红包" }).click();
+  await expect(
+    viewer.page.getByRole("status").filter({ hasText: /^已领取 0\.10 LDC。$/ }),
+  ).toHaveCount(1);
+  const claimedAt = Date.now();
+  // The payment goes through on the server: the page is told, not polling.
+  await expect(viewer.page.getByText("已发放")).toBeVisible({
+    timeout: 12_000,
+  });
+  expect(mine).toBeGreaterThan(0);
+  const confirmedIn = Date.now() - claimedAt;
+  // Once settled, a quiet stretch longer than any polling round: no reads.
+  await viewer.page.waitForTimeout(2_000);
+  const quietFrom = Date.now();
+  await viewer.page.waitForTimeout(16_000);
+  expect(reads.filter((read) => read.at >= quietFrom)).toEqual([]);
+  test.info().annotations.push({
+    type: "付款推送",
+    description: `领取后 ${confirmedIn} ms 显示已发放；期间读取 ${reads
+      .filter((read) => read.at >= claimedAt && read.at < quietFrom)
+      .map((read) => read.what)
+      .join(", ")}`,
+  });
+  await author.context.close();
+  await viewer.context.close();
+});

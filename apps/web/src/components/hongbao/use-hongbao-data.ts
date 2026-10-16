@@ -1,3 +1,4 @@
+import { useAtomValue } from "jotai";
 import { useEffect, useRef } from "react";
 import {
   ActivityRequestError,
@@ -13,35 +14,82 @@ import {
   publicViewOf,
   rosterOf,
 } from "../../lib/hongbao";
+import type { LiveWant } from "../../lib/live";
+import {
+  liveActivityAtom,
+  participationOpen,
+  pastDeadline,
+  paymentOpen,
+  publicSettled,
+} from "../../lib/live-state";
 import { useRosterList } from "../../lib/roster";
 import { useIdentity } from "../../lib/session";
+import { useBefore } from "../../lib/use-before";
 import { queriesLoad } from "../page/page-state";
 import type { HongbaoData } from "./use-hongbao";
+
+/** Unpushed, a running 红包 is read again this often; its lists slower. */
+const POLL_MS = 5_000;
+const LIST_POLL_MS = 15_000;
 
 /**
  * One 红包's data for its page and its dialogs (名单, 说明): the public read,
  * the sender's own read, the viewer's claim or sign-up, their 口令 and the
  * roster. Every reader shares the same queries.
+ *
+ * While the live channel is open (lib/live.ts) nothing here polls: the
+ * public read arrives pushed, and the rest is read again when a push says
+ * it moved. Without it (guests, or turned away) the running 红包 polls.
+ * Once it is over nothing does, but a payment still on its way.
  */
 export function useHongbaoPageData(id: string) {
   const identity = useIdentity();
   const user = identity.user;
   const userId = user?.id ?? null;
-  const publicQuery = usePublicActivity(id, userId, identity.ready);
+  const live = useAtomValue(liveActivityAtom) === id;
+  const publicQuery = usePublicActivity(
+    id,
+    userId,
+    identity.ready,
+    (activity) =>
+      publicSettled(activity)
+        ? false
+        : // Past the deadline the push should say so; until it has, ask.
+          live && !pastDeadline(activity)
+          ? false
+          : POLL_MS,
+  );
   const activity = publicQuery.data?.activity;
+  const settled = publicSettled(activity);
+  // Only the clock ends a 红包 at its deadline: the page turns over then.
+  useBefore(
+    activity && !activity.draw && activity.deadlineAt && !settled
+      ? Date.parse(activity.deadlineAt)
+      : 0,
+  );
+  const running = Boolean(activity) && !settled;
   const author = Boolean(activity && user && activity.author.id === user.id);
-  const managedQuery = useManagedActivity(userId ?? "", id, author);
+  const managedQuery = useManagedActivity(
+    userId ?? "",
+    id,
+    author,
+    // A 草稿 waits on its merchant to open; the rest changes by its sender.
+    activity?.status === "draft" ? LIST_POLL_MS : false,
+  );
   const participationQuery = useCurrentParticipation(
     userId ?? "",
     id,
     Boolean(activity && userId && !author),
     activity?.draw?.state,
+    live,
   );
+  const passwordsEnabled = Boolean(activity && !author);
   const passwordsQuery = useActivityPasswords(
     userId,
     id,
-    Boolean(activity && !author),
+    passwordsEnabled,
     activity?.participationMode,
+    running && !live ? LIST_POLL_MS : false,
   );
   const draw = activity?.reward?.mode === "timed_draw";
   const viewer = user?.username ?? null;
@@ -53,21 +101,32 @@ export function useHongbaoPageData(id: string) {
   const registrationsEnabled = Boolean(
     activity && activity.status !== "draft" && draw,
   );
+  const listPoll = (paymentsOpen: boolean) =>
+    live
+      ? false
+      : // The sender's 名单 shows each payment until it is through.
+        running || (author && paymentsOpen)
+        ? LIST_POLL_MS
+        : false;
   const claims = useRosterList(id, "claims", {
     enabled: claimsEnabled,
     viewer,
     author: author ? userId : null,
+    poll: listPoll,
   });
   const registrations = useRosterList(id, "registrations", {
     enabled: registrationsEnabled,
     viewer,
     author: author ? userId : null,
+    poll: listPoll,
   });
   // The lists follow the numbers above them: a read that shows someone new
-  // (the 名单入口's faces changed) or a draw that moved on reads them again
-  // at once, instead of a polling round later.
+  // (the 名单入口's faces changed), a draw that moved on or the end (the
+  // 手气王 / 手气亡) reads them again at once.
   const rosterSignature = activity
-    ? `${activity.draw?.state ?? ""}|${(activity.rosterPreview ?? [])
+    ? `${activity.status}|${activity.draw?.state ?? ""}|${(
+        activity.rosterPreview ?? []
+      )
         .map((person) => person.id)
         .join(",")}`
     : null;
@@ -88,6 +147,14 @@ export function useHongbaoPageData(id: string) {
     refetchClaims,
     refetchRegistrations,
   ]);
+  // At the end every 口令 shows: read them once more.
+  const seenSettled = useRef(settled);
+  const refetchPasswords = passwordsQuery.refetch;
+  useEffect(() => {
+    const before = seenSettled.current;
+    seenSettled.current = settled;
+    if (!before && settled && passwordsEnabled) void refetchPasswords();
+  }, [settled, passwordsEnabled, refetchPasswords]);
 
   const missing =
     publicQuery.error instanceof ActivityRequestError &&
@@ -110,10 +177,25 @@ export function useHongbaoPageData(id: string) {
       author,
     };
   }
+  // What the live channel is for: the 红包 running, or after it a payment
+  // this person sees (theirs; for the sender, any in the 名单).
+  const liveWant: LiveWant =
+    !user || !activity || activity.status === "draft"
+      ? null
+      : running
+        ? "running"
+        : (
+              author
+                ? claims.rows.some((row) => paymentOpen(row.payment))
+                : participationOpen(participationQuery.data)
+            )
+          ? "waiting"
+          : null;
   return {
     data,
     missing,
     identity,
+    liveWant,
     /** The page waits for the public read (and the sender's own). */
     load: author
       ? queriesLoad(publicQuery, managedQuery)

@@ -604,14 +604,16 @@ export type PublicActivity = {
 };
 
 /**
- * What a running 红包's live channel pushes (`GET /api/activities/:id/live`,
- * signed-in viewers only): its public read, the same for everyone, as it
- * is now. Sent on connecting and after each change, a burst as one.
+ * What a 红包's live channel pushes (`GET /api/activities/:id/live`,
+ * signed-in viewers only). `activity`: its public read, the same for
+ * everyone, as it is now; sent on connecting and after each change, a
+ * burst as one. `mine`: something only this person sees there changed (a
+ * payment of theirs; for the sender, one in their 名单, or their own edit
+ * elsewhere), so the page reads its own part again.
  */
-export type ActivityLiveMessage = {
-  type: "activity";
-  activity: PublicActivity;
-};
+export type ActivityLiveMessage =
+  | { type: "activity"; activity: PublicActivity }
+  | { type: "mine" };
 
 export type ActivityList = {
   items: ActivitySummary[];

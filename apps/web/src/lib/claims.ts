@@ -45,6 +45,8 @@ export function useCurrentParticipation(
   activityId: string,
   enabled = true,
   drawState?: DrawSummary["state"],
+  /** Its changes arrive over the live channel (lib/live.ts): no polling. */
+  live = false,
 ) {
   const client = useQueryClient();
   const account = useAccountSession(userId, "session");
@@ -122,7 +124,7 @@ export function useCurrentParticipation(
     staleTime: (query) =>
       isCompleteParticipation(query.state.data) ? 15_000 : 0,
     refetchInterval: (query) =>
-      participationRefresh(query.state.data, drawState),
+      live ? false : participationRefresh(query.state.data, drawState),
   });
   const refetch = useCallback(() => {
     // Join an existing full read; a manual refresh upgrades a snapshot-only read.

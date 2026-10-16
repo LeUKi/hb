@@ -18,7 +18,6 @@ import {
 } from "../../lib/redemption-intent";
 import { sealGlyphs } from "../../lib/seal";
 import { useSessionUser } from "../../lib/session";
-import { useBefore } from "../../lib/use-before";
 import {
   messageAtom,
   pendingAtom,
@@ -85,8 +84,6 @@ export function useHongbao(data: HongbaoData) {
   const animation = useAtomValue(rewardAnimationAtom);
   const [claiming, setClaiming] = useState(false);
   const cooling = useAttemptCooldown(user?.id ?? null).active;
-  // The deadline re-renders the page once, as the 红包 closes.
-  useBefore(view.ended ? 0 : view.deadlineAt);
 
   const phase: HongbaoPhase = mine ? "open" : view.ended ? "ended" : "closed";
 

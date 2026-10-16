@@ -1269,7 +1269,7 @@ export async function runRealMerchantCycle(
       task.firstSendAt === null &&
       !(await credentialPassed(env, merchant.id, merchant.credentialVersion))
     ) {
-      await env.DB.prepare(
+      const waited = await env.DB.prepare(
         `UPDATE payment_tasks SET status='waiting',reason='credentials',next_run_at=?,updated_at=?
          WHERE id=? AND first_send_at IS NULL AND attempt_count=0 AND recovery_version=?
          AND status IN ('pending','waiting') AND NOT EXISTS(SELECT 1 FROM merchants m JOIN merchant_credentials c ON c.merchant_id=m.id AND c.version=m.credential_version WHERE m.id=payment_tasks.merchant_id AND c.verification_status='passed')`,
@@ -1279,6 +1279,10 @@ export async function runRealMerchantCycle(
       return {
         processed: false,
         nextRunAt: await realMerchantNextDue(env, merchantId),
+        ...(waited.meta.changes &&
+        (task.status !== "waiting" || task.reason !== "credentials")
+          ? { moved: task.id }
+          : {}),
       };
     }
   }
@@ -1330,8 +1334,16 @@ export async function runRealMerchantCycle(
     result,
     sendTask,
   );
+  const after = await env.DB.prepare(
+    "SELECT status,reason FROM payment_tasks WHERE id=?",
+  )
+    .bind(task.id)
+    .first<{ status: string; reason: string | null }>();
   return {
     processed: true,
     nextRunAt: await realMerchantNextDue(env, merchantId),
+    ...(after && (after.status !== task.status || after.reason !== task.reason)
+      ? { moved: task.id }
+      : {}),
   };
 }

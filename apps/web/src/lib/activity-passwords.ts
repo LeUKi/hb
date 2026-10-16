@@ -30,6 +30,8 @@ export function useActivityPasswords(
   id: string,
   enabled = true,
   participationMode?: ParticipationMode,
+  /** How often to read them again: only while the 红包 runs unpushed. */
+  poll: number | false = 15_000,
 ) {
   const queryClient = useQueryClient();
   const scope = useRef({ userId, id, participationMode });
@@ -73,7 +75,7 @@ export function useActivityPasswords(
       return result;
     },
     retry: false,
-    refetchInterval: participationMode === "direct" ? false : 15_000,
+    refetchInterval: participationMode === "direct" ? false : poll,
   });
 }
 

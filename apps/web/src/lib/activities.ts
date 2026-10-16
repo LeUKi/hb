@@ -17,11 +17,9 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useAtomValue } from "jotai";
 import { useCallback, useEffect } from "react";
 import { api } from "../api";
 import { sessionQueryKey, useAccountSession } from "./auth";
-import { LIVE_BACKUP_POLL_MS, liveActivityAtom } from "./live-state";
 
 export class ActivityRequestError extends Error {
   constructor(
@@ -148,7 +146,13 @@ export function useHistorySummary(userId: string) {
   return query;
 }
 
-export function useManagedActivity(userId: string, id: string, enabled = true) {
+export function useManagedActivity(
+  userId: string,
+  id: string,
+  enabled = true,
+  /** How often to read it again (the 红包 page: only a 草稿's). */
+  poll: number | false = 15_000,
+) {
   return useQuery({
     queryKey: activityKeys.detail(userId, id),
     enabled,
@@ -160,7 +164,7 @@ export function useManagedActivity(userId: string, id: string, enabled = true) {
         ),
       ),
     retry: false,
-    refetchInterval: enabled ? 15_000 : false,
+    refetchInterval: enabled ? poll : false,
   });
 }
 
@@ -184,10 +188,14 @@ export function usePublicActivity(
   id: string,
   userId: string | null,
   enabled: boolean,
+  /**
+   * How often to read it again, from what was read last; false: not at all
+   * (pushed instead, or nothing left to change). Coming back to the page
+   * reads it again only while it polls.
+   */
+  poll: (activity: PublicActivity | undefined) => number | false = () => 5_000,
 ) {
   const client = useQueryClient();
-  // Pushed while its live channel is open (lib/live.ts): polling backs it up.
-  const live = useAtomValue(liveActivityAtom) === id;
   const query = useQuery({
     queryKey: activityKeys.public(id, userId),
     queryFn: async ({ signal }): Promise<PublicActivityDetail> => {
@@ -210,7 +218,8 @@ export function usePublicActivity(
     },
     enabled,
     retry: false,
-    refetchInterval: enabled ? (live ? LIVE_BACKUP_POLL_MS : 5_000) : false,
+    refetchInterval: (query) =>
+      enabled ? poll(query.state.data?.activity) : false,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: false,
   });
@@ -218,8 +227,9 @@ export function usePublicActivity(
     () => query.refetch({ cancelRefetch: false }),
     [query.refetch],
   );
+  const polling = enabled && poll(query.data?.activity) !== false;
   useMountedPageFocusRefresh(
-    useCallback(() => (enabled ? refetch() : undefined), [enabled, refetch]),
+    useCallback(() => (polling ? refetch() : undefined), [polling, refetch]),
   );
   useEffect(() => {
     if (!enabled)

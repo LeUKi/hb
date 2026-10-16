@@ -21,15 +21,20 @@ import { ActivityError, activityNotFound } from "./activities/errors";
 import { endActivity, refreshActivityLifecycle } from "./activities/lifecycle";
 import {
   LIVE_COALESCE_MS,
+  LIVE_DEADLINE_MARGIN_MS,
   LIVE_PING,
   LIVE_PONG,
   LIVE_TAG,
   LIVE_USER_HEADER,
   liveEnded,
+  liveFingerprint,
   liveMessage,
+  liveMine,
   liveUserTag,
+  liveWaiting,
   MAX_LIVE_PER_USER,
   MAX_LIVE_SOCKETS,
+  tellPaymentWatchers,
 } from "./activities/live";
 import { solveActivityPassword } from "./activities/password-service";
 import {
@@ -98,11 +103,16 @@ async function readActivityJson(request: Request): Promise<unknown> {
   }
 }
 
+type LiveAttachment = { since?: number; userId?: string };
+
 /** When a live socket joined, to find a person's oldest one. */
 function liveSince(socket: WebSocket) {
-  return (
-    (socket.deserializeAttachment() as { since?: number } | null)?.since ?? 0
-  );
+  return (socket.deserializeAttachment() as LiveAttachment | null)?.since ?? 0;
+}
+
+/** Whose live socket this is. */
+function liveViewer(socket: WebSocket) {
+  return (socket.deserializeAttachment() as LiveAttachment | null)?.userId;
 }
 
 export class ActivityDO extends DurableObject<ApiBindings> {
@@ -110,6 +120,8 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   /** A change waiting to go out on the live channel (live.ts). */
   private liveTimer: ReturnType<typeof setTimeout> | null = null;
   private livePushedAt = 0;
+  /** The deadline alarm this instance already set (one write per deadline). */
+  private liveDeadline = 0;
 
   constructor(ctx: DurableObjectState, env: ApiBindings) {
     super(ctx, env);
@@ -138,8 +150,12 @@ export class ActivityDO extends DurableObject<ApiBindings> {
         { status: 404 },
       );
     }
-    // Over: nothing more to push, the page has the result.
-    if (liveEnded(activity))
+    // Over: the page has the result. Only a payment of this person's
+    // (or, for the sender, any) can still move.
+    if (
+      liveEnded(activity) &&
+      !(await liveWaiting(this.env, id, activity.author.id)).has(userId)
+    )
       return Response.json(
         { error: { code: "ACTIVITY_ENDED", message: "红包已结束" } },
         { status: 410 },
@@ -158,10 +174,129 @@ export class ActivityDO extends DurableObject<ApiBindings> {
         .close(4001, "replaced");
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server, [LIVE_TAG, liveUserTag(userId)]);
-    server.serializeAttachment({ since: Date.now() });
+    server.serializeAttachment({
+      since: Date.now(),
+      userId,
+    } satisfies LiveAttachment);
     // What changed between the page's own read and now.
     server.send(liveMessage(activity));
+    if (!activity.draw && activity.status === "active" && activity.deadlineAt)
+      await this.watchDeadline(id, Date.parse(activity.deadlineAt));
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  /**
+   * Nothing marks a 红包 running out of time but the clock: while it has
+   * live viewers, an alarm at its deadline pushes the end. (A draw's own
+   * alarm does this for a draw.)
+   */
+  private async watchDeadline(id: string, deadline: number) {
+    const due = deadline + LIVE_DEADLINE_MARGIN_MS;
+    if (due === this.liveDeadline) return;
+    this.liveDeadline = due;
+    await this.ctx.storage.put("liveActivityId", id);
+    await this.ctx.storage.transaction(async (txn) => {
+      const current = await txn.getAlarm();
+      if (current === null || due < current) await txn.setAlarm(due);
+    });
+  }
+
+  private async deadlinePassed() {
+    const id = await this.ctx.storage.get<string>("liveActivityId");
+    if (!id) return;
+    await this.serialize(async () => {
+      const row = await findActivity(this.env, id);
+      // Moved later since (an edit): wait for the new one.
+      if (row?.deadline && row.endedAt === null && row.deadline > Date.now()) {
+        this.liveDeadline = row.deadline + LIVE_DEADLINE_MARGIN_MS;
+        await this.ctx.storage.setAlarm(this.liveDeadline);
+        return;
+      }
+      this.liveDeadline = 0;
+      await this.ctx.storage.delete("liveActivityId");
+      if (!row) return;
+      try {
+        await refreshActivityLifecycle(this.env, id);
+      } catch {
+        // The read below still tells the time; the end is written later.
+        console.error("activity_live_deadline_refresh_failed", {
+          activityId: id,
+        });
+      }
+      this.announce(id);
+    });
+  }
+
+  /** Sends `mine` to these people's sockets; how many heard it. */
+  private tellMine(userIds: Iterable<string>) {
+    const message = liveMine();
+    let told = 0;
+    for (const userId of new Set(userIds))
+      for (const socket of this.ctx.getWebSockets(liveUserTag(userId))) {
+        try {
+          socket.send(message);
+          told += 1;
+        } catch {
+          // Already closing: nothing to tell it.
+        }
+      }
+    return told;
+  }
+
+  /**
+   * Once the 红包 is over, the channel stays only for whoever still waits
+   * on a payment (live.ts liveWaiting); everyone else is let go.
+   */
+  private async releaseSettled(id: string, authorId: string) {
+    const sockets = this.ctx.getWebSockets(LIVE_TAG);
+    if (sockets.length === 0) return;
+    let waiting = new Set<string>();
+    try {
+      waiting = await liveWaiting(this.env, id, authorId);
+    } catch {
+      // Unknown: let everyone go, their pages poll what is left.
+    }
+    for (const socket of sockets) {
+      const viewer = liveViewer(socket);
+      if (viewer && waiting.has(viewer)) continue;
+      try {
+        socket.close(1000, "ended");
+      } catch {
+        // Already closing.
+      }
+    }
+  }
+
+  /** A payment of this 红包 moved (live.ts tellPaymentWatchers). */
+  private async paymentMoved(id: string, request: Request) {
+    if (!this.ctx.id.equals(this.env.ACTIVITY_DO.idFromName(id)))
+      return Response.json(
+        { error: { code: "INVALID_OBJECT", message: "红包标识不匹配" } },
+        { status: 400 },
+      );
+    const { userIds } = (await request.json().catch(() => ({}))) as {
+      userIds?: unknown;
+    };
+    if (
+      !Array.isArray(userIds) ||
+      userIds.length > 2 ||
+      !userIds.every((userId) => typeof userId === "string")
+    )
+      return Response.json(
+        { error: { code: "INVALID_REQUEST", message: "通知无效" } },
+        { status: 400 },
+      );
+    if (this.tellMine(userIds) > 0) {
+      // Over already: that may have been the last payment anyone waited on.
+      try {
+        const activity = await getPublicActivity(this.env, id);
+        if (liveEnded(activity))
+          await this.releaseSettled(id, activity.author.id);
+      } catch {
+        // Gone: its sockets close with it.
+      }
+    }
+    return new Response(null, { status: 204 });
   }
 
   /**
@@ -189,15 +324,14 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       return;
     }
     const message = liveMessage(activity);
-    const over = liveEnded(activity);
     for (const socket of sockets) {
       try {
         socket.send(message);
-        if (over) socket.close(1000, "ended");
       } catch {
         // Already closing: nothing to tell it.
       }
     }
+    if (liveEnded(activity)) await this.releaseSettled(id, activity.author.id);
   }
 
   /** Push only: a ping (answered by the runtime) is all a viewer sends. */
@@ -244,7 +378,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
 
   async alarm() {
     const id = await this.ctx.storage.get<string>("drawActivityId");
-    if (!id) return;
+    if (!id) return this.deadlinePassed();
     await this.serialize(async () => {
       const activity = await findActivity(this.env, id);
       if (!activity) {
@@ -303,6 +437,11 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     );
     if (live && request.method === "GET")
       return this.acceptLive(live[1] ?? "", request);
+    const moved = /^\/internal\/activities\/([a-f0-9-]{36})\/live\/mine$/i.exec(
+      url.pathname,
+    );
+    if (moved && request.method === "POST")
+      return this.paymentMoved(moved[1] ?? "", request);
 
     const isCreation = url.pathname === "/internal/activities/create";
     const isGlobalRedemption =
@@ -337,7 +476,13 @@ export class ActivityDO extends DurableObject<ApiBindings> {
             await refreshActivityLifecycle(this.env, id);
             await resumePendingActivityClaims(this.env, id);
             await this.scheduleDraw(id);
-            this.announce(id);
+            // Asked by every poll of a draw: pushed only if it moved it.
+            if (
+              this.ctx.getWebSockets(LIVE_TAG).length > 0 &&
+              liveFingerprint(await findActivity(this.env, id)) !==
+                liveFingerprint(activity)
+            )
+              this.announce(id);
             this.ctx.waitUntil(
               flushPaymentOutbox(this.env).catch(() => {
                 console.error("activity_draw_outbox_wake_failed", {
@@ -396,7 +541,17 @@ export class ActivityDO extends DurableObject<ApiBindings> {
               "requestId" in parsed.data
                 ? await createActivity(this.env, authorId, parsed.data)
                 : await updateActivity(this.env, id, authorId, parsed.data);
-            if (operation === "update") this.announce(id);
+            if (operation === "update") {
+              this.announce(id);
+              // The sender's other tabs read their own copy again.
+              this.tellMine([authorId]);
+              if (
+                this.ctx.getWebSockets(LIVE_TAG).length > 0 &&
+                activity.deadlineAt &&
+                !activity.draw
+              )
+                await this.watchDeadline(id, Date.parse(activity.deadlineAt));
+            }
             return Response.json(
               { activity },
               {
@@ -614,6 +769,14 @@ export class ActivityDO extends DurableObject<ApiBindings> {
 export class MerchantDO extends DurableObject<ApiBindings> {
   private async run(merchantId: string) {
     const result = await runMerchantCycle(this.env, merchantId);
+    const moved = result.moved;
+    // A claim's page hears of it at once; nothing waits on that.
+    if (moved)
+      this.ctx.waitUntil(
+        tellPaymentWatchers(this.env, moved).catch(() => {
+          console.error("payment_live_notify_failed", { taskId: moved });
+        }),
+      );
     if (result.nextRunAt !== null) {
       const due = Math.max(Date.now() + 100, result.nextRunAt);
       await this.ctx.storage.transaction(async (txn) => {

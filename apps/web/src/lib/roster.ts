@@ -5,10 +5,9 @@ import type {
   PublicRegistration,
 } from "@hb/contracts";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { useAtomValue } from "jotai";
 import { readResponse } from "./activities";
 import type { RosterRow } from "./hongbao";
-import { LIVE_BACKUP_POLL_MS, liveActivityAtom } from "./live-state";
+import { paymentOpen } from "./live-state";
 import type { RosterTitle } from "./titles";
 
 // The 名单: always public (06 §2), oldest first (06 §3), 20 at a time. The
@@ -85,11 +84,15 @@ export function useRosterList(
     viewer: string | null;
     /** The sender's own view (their user id). */
     author?: string | null;
+    /**
+     * How often to read it again, given whether a payment it shows is on
+     * its way; false: not at all. Pushed changes read it again at once
+     * (use-hongbao-data.ts).
+     */
+    poll: (paymentsOpen: boolean) => number | false;
   },
 ) {
   const author = options.author ?? null;
-  // Pushed changes read the list again at once (use-hongbao-data.ts).
-  const live = useAtomValue(liveActivityAtom) === activityId;
   const query = useInfiniteQuery({
     queryKey: author
       ? ["activity-roster", activityId, author, "author", kind]
@@ -109,7 +112,16 @@ export function useRosterList(
     getNextPageParam: (last) => last.nextCursor,
     enabled: options.enabled,
     retry: false,
-    refetchInterval: live ? LIVE_BACKUP_POLL_MS : 15_000,
+    refetchInterval: (query) =>
+      options.poll(
+        Boolean(
+          query.state.data?.pages.some((page) =>
+            page.items.some(
+              (item) => "payment" in item && paymentOpen(item.payment),
+            ),
+          ),
+        ),
+      ),
   });
   const rows = (query.data?.pages ?? [])
     .flatMap((page) => page.items)
