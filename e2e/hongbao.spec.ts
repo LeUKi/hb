@@ -465,7 +465,12 @@ test.describe("红包页", () => {
     await expect
       .poll(() => readClipboard(page))
       .toBe(
-        `<center><picture><source type="image/svg+xml" srcset="${new URL(page.url()).origin}/🧧/${code}/🖼️.svg 1x"><img width="420" height="560" alt="小满的红包：周末红包"></picture></center>`,
+        [
+          '<center><a href="https://linux.do/t/topic/3033290/2">',
+          `<picture><source type="image/svg+xml" srcset="${new URL(page.url()).origin}/🧧/${code}/🖼️.svg 1x"><img width="420" height="560" `,
+          `alt="小满的红包：${code}"></picture>`,
+          "</a></center>",
+        ].join("\n"),
       );
     // A guest polls: no live channel.
     expect(live).toBe(0);

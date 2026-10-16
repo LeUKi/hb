@@ -269,26 +269,29 @@ describe("activity image address and embed code", () => {
     ).toThrow(TypeError);
   });
 
-  it("writes the forum code on one line with a safe alt", () => {
+  it("writes the forum code linking to the site's post, named by the emoji code", () => {
     expect(
       createActivityImageEmbed({
         activityId: id,
         origin: "https://hb.example.com",
         sender: "小满",
-        title: "周末红包",
       }),
     ).toBe(
-      `<center><picture><source type="image/svg+xml" srcset="https://hb.example.com/🧧/${code}/🖼️.svg 1x"><img width="420" height="560" alt="小满的红包：周末红包"></picture></center>`,
+      [
+        '<center><a href="https://linux.do/t/topic/3033290/2">',
+        `<picture><source type="image/svg+xml" srcset="https://hb.example.com/🧧/${code}/🖼️.svg 1x"><img width="420" height="560" `,
+        `alt="小满的红包：${code}"></picture>`,
+        "</a></center>",
+      ].join("\n"),
     );
     const escaped = createActivityImageEmbed({
       activityId: id,
       origin: "https://hb.example.com",
-      sender: 'Alice & "Bob"',
-      title: '"><script>alert(1)</script>',
+      sender: '"><script>alert(1)</script>',
     });
     expect(escaped).not.toContain("<script>");
     expect(escaped).toContain(
-      'alt="Alice &amp; &quot;Bob&quot;的红包：&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"',
+      `alt="&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;的红包：${code}"`,
     );
   });
 });

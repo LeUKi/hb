@@ -66,7 +66,6 @@ function shareItems(
         activityId: activity.id,
         origin,
         sender: activity.author.displayName,
-        title: activity.title,
       }),
     },
   ];

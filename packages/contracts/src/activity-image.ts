@@ -142,16 +142,29 @@ export function activityImageUrl(
   return `${siteOrigin(origin)}${path}${zone}`;
 }
 
-/** The forum code (05 §5): one line, the image at its own size. */
+/**
+ * Where the forum image leads: the site's own post on the forum, the same
+ * for every 红包 (user's choice).
+ */
+export const ACTIVITY_IMAGE_POST_URL = "https://linux.do/t/topic/3033290/2";
+
+/**
+ * The forum code (05 §5), as the user wrote it: the image at its own size,
+ * linking to the site's post, named by the 红包's emoji code (not its title).
+ */
 export function createActivityImageEmbed(input: {
   activityId: string;
   origin: string;
   sender: string;
-  title: string;
 }) {
   const href = activityImageUrl(input.activityId, input.origin);
-  const alt = `${normalizeText(input.sender, "发红包的人")}的红包：${normalizeText(input.title, "红包")}`;
-  return `<center><picture><source type="image/svg+xml" srcset="${escapeXml(href)} 1x"><img width="${ACTIVITY_IMAGE_WIDTH}" height="${ACTIVITY_IMAGE_HEIGHT}" alt="${escapeXml(alt)}"></picture></center>`;
+  const alt = `${normalizeText(input.sender, "发红包的人")}的红包：${encodeActivityEmoji(input.activityId)}`;
+  return [
+    `<center><a href="${ACTIVITY_IMAGE_POST_URL}">`,
+    `<picture><source type="image/svg+xml" srcset="${escapeXml(href)} 1x"><img width="${ACTIVITY_IMAGE_WIDTH}" height="${ACTIVITY_IMAGE_HEIGHT}" `,
+    `alt="${escapeXml(alt)}"></picture>`,
+    "</a></center>",
+  ].join("\n");
 }
 
 /** Nothing left to take, by whatever the quantity setting shows. */
