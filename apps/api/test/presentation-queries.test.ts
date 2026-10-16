@@ -1038,9 +1038,9 @@ describe("production presentation queries", () => {
     const activity = await create(
       ldc({ mode: "custom", amounts: ["3.00", "1.00", "2.00"] }),
     );
-    const [best, worst, middle] = await Promise.all(
-      Array.from({ length: 3 }, actor),
-    );
+    const best = await actor();
+    const worst = await actor();
+    const middle = await actor();
     const titles = async () =>
       (await data<PublicRecipientList>(`/activities/${activity.id}/recipients`))
         .titles;
