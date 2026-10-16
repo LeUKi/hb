@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { createRequire } from "node:module";
+import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -278,6 +279,22 @@ async function main() {
         forum.listen(4200, "127.0.0.1", resolve);
       });
     } else proxy = createServer(handle);
+    // A 红包 page's live channel is a WebSocket: hand the upgrade, as it
+    // came, to the runtime's own server, which speaks it.
+    proxy.on("upgrade", (request, socket, head) => {
+      const upstream = connect(appPort, "127.0.0.1", () => {
+        const lines = [`${request.method} ${request.url} HTTP/1.1`];
+        for (let index = 0; index < request.rawHeaders.length; index += 2)
+          lines.push(
+            `${request.rawHeaders[index]}: ${request.rawHeaders[index + 1]}`,
+          );
+        upstream.write(`${lines.join("\r\n")}\r\n\r\n`);
+        if (head.length > 0) upstream.write(head);
+        socket.pipe(upstream).pipe(socket);
+      });
+      upstream.on("error", () => socket.destroy());
+      socket.on("error", () => upstream.destroy());
+    });
     await new Promise((resolve, reject) => {
       proxy.once("error", reject);
       proxy.listen(

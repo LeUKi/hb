@@ -24,6 +24,7 @@ import {
   listActivityPayments,
   listPaymentActivities,
 } from "../payments/activity-queries";
+import { assertExactOrigin } from "../security/http";
 import {
   getClaimDetail,
   getCurrentClaim,
@@ -32,6 +33,7 @@ import {
   listUserClaims,
 } from "./claim-queries";
 import { ActivityError, activityNotFound } from "./errors";
+import { LIVE_USER_HEADER } from "./live";
 import {
   accountHistorySummary,
   getCurrentParticipation,
@@ -466,6 +468,28 @@ export const activityRoutes = new Hono<ApiContext>()
       return c.json((await response.json()) as ClaimResult);
     },
   )
+  // A running 红包's live channel (live.ts): a WebSocket to its own DO.
+  // Signed-in viewers only, from this site's pages only (the browser sends
+  // the session cookie with the handshake, and any site can open one).
+  .get("/activities/:id/live", async (c) => {
+    if (c.req.header("Upgrade")?.toLowerCase() !== "websocket")
+      return c.json(
+        { error: { code: "UPGRADE_REQUIRED", message: "需要 WebSocket 连接" } },
+        426,
+      );
+    assertExactOrigin(c);
+    const session = await requireAuth(c);
+    const id = c.req.param("id");
+    await requireLdcActivity(c.env, id);
+    const stub = c.env.ACTIVITY_DO.get(c.env.ACTIVITY_DO.idFromName(id));
+    // The DO's 101 goes back as it is: a rebuilt one would not upgrade.
+    return stub.fetch(
+      `https://activity.internal/internal/activities/${encodeURIComponent(id)}/live`,
+      {
+        headers: { Upgrade: "websocket", [LIVE_USER_HEADER]: session.user.id },
+      },
+    );
+  })
   .get("/activities/:id/claim", async (c) => {
     const session = await requireAuth(c);
     return c.json({

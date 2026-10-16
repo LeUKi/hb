@@ -603,6 +603,16 @@ export type PublicActivity = {
   rosterPreview?: RosterPreviewPerson[];
 };
 
+/**
+ * What a running 红包's live channel pushes (`GET /api/activities/:id/live`,
+ * signed-in viewers only): its public read, the same for everyone, as it
+ * is now. Sent on connecting and after each change, a burst as one.
+ */
+export type ActivityLiveMessage = {
+  type: "activity";
+  activity: PublicActivity;
+};
+
 export type ActivityList = {
   items: ActivitySummary[];
   nextCursor: string | null;

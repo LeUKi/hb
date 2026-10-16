@@ -5,8 +5,10 @@ import type {
   PublicRegistration,
 } from "@hb/contracts";
 import { useInfiniteQuery } from "@tanstack/react-query";
+import { useAtomValue } from "jotai";
 import { readResponse } from "./activities";
 import type { RosterRow } from "./hongbao";
+import { LIVE_BACKUP_POLL_MS, liveActivityAtom } from "./live-state";
 import type { RosterTitle } from "./titles";
 
 // The 名单: always public (06 §2), oldest first (06 §3), 20 at a time. The
@@ -86,6 +88,8 @@ export function useRosterList(
   },
 ) {
   const author = options.author ?? null;
+  // Pushed changes read the list again at once (use-hongbao-data.ts).
+  const live = useAtomValue(liveActivityAtom) === activityId;
   const query = useInfiniteQuery({
     queryKey: author
       ? ["activity-roster", activityId, author, "author", kind]
@@ -105,7 +109,7 @@ export function useRosterList(
     getNextPageParam: (last) => last.nextCursor,
     enabled: options.enabled,
     retry: false,
-    refetchInterval: 15_000,
+    refetchInterval: live ? LIVE_BACKUP_POLL_MS : 15_000,
   });
   const rows = (query.data?.pages ?? [])
     .flatMap((page) => page.items)

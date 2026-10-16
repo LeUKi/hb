@@ -8,6 +8,7 @@ import {
   globalRedemptionSchema,
   type ManagedActivity,
   openActivitySchema,
+  type PublicActivity,
   passwordSolveSchema,
   updateActivitySchema,
 } from "@hb/contracts";
@@ -18,11 +19,24 @@ import {
 } from "./activities/claim-service";
 import { ActivityError, activityNotFound } from "./activities/errors";
 import { endActivity, refreshActivityLifecycle } from "./activities/lifecycle";
+import {
+  LIVE_COALESCE_MS,
+  LIVE_PING,
+  LIVE_PONG,
+  LIVE_TAG,
+  LIVE_USER_HEADER,
+  liveEnded,
+  liveMessage,
+  liveUserTag,
+  MAX_LIVE_PER_USER,
+  MAX_LIVE_SOCKETS,
+} from "./activities/live";
 import { solveActivityPassword } from "./activities/password-service";
 import {
   createActivity,
   deleteActivity,
   getManagedActivity,
+  getPublicActivity,
   openActivity,
   prepareActivityOpening,
   updateActivity,
@@ -84,8 +98,113 @@ async function readActivityJson(request: Request): Promise<unknown> {
   }
 }
 
+/** When a live socket joined, to find a person's oldest one. */
+function liveSince(socket: WebSocket) {
+  return (
+    (socket.deserializeAttachment() as { since?: number } | null)?.since ?? 0
+  );
+}
+
 export class ActivityDO extends DurableObject<ApiBindings> {
   private mutationTail: Promise<void> = Promise.resolve();
+  /** A change waiting to go out on the live channel (live.ts). */
+  private liveTimer: ReturnType<typeof setTimeout> | null = null;
+  private livePushedAt = 0;
+
+  constructor(ctx: DurableObjectState, env: ApiBindings) {
+    super(ctx, env);
+    // The browser's keep-alive, answered without waking the object.
+    ctx.setWebSocketAutoResponse(
+      new WebSocketRequestResponsePair(LIVE_PING, LIVE_PONG),
+    );
+  }
+
+  /** A signed-in viewer of this running 红包 joins its live channel. */
+  private async acceptLive(id: string, request: Request) {
+    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket")
+      return new Response("Expected a WebSocket", { status: 426 });
+    const userId = request.headers.get(LIVE_USER_HEADER);
+    if (!userId || !this.ctx.id.equals(this.env.ACTIVITY_DO.idFromName(id)))
+      return Response.json(
+        { error: { code: "INVALID_OBJECT", message: "红包标识不匹配" } },
+        { status: 400 },
+      );
+    let activity: PublicActivity;
+    try {
+      activity = await getPublicActivity(this.env, id);
+    } catch {
+      return Response.json(
+        { error: { code: "ACTIVITY_NOT_FOUND", message: "未找到红包" } },
+        { status: 404 },
+      );
+    }
+    // Over: nothing more to push, the page has the result.
+    if (liveEnded(activity))
+      return Response.json(
+        { error: { code: "ACTIVITY_ENDED", message: "红包已结束" } },
+        { status: 410 },
+      );
+    if (this.ctx.getWebSockets(LIVE_TAG).length >= MAX_LIVE_SOCKETS)
+      return Response.json(
+        { error: { code: "LIVE_BUSY", message: "实时更新人数已满" } },
+        { status: 503 },
+      );
+    const mine = this.ctx.getWebSockets(liveUserTag(userId));
+    if (mine.length >= MAX_LIVE_PER_USER)
+      mine
+        .reduce((oldest, socket) =>
+          liveSince(socket) < liveSince(oldest) ? socket : oldest,
+        )
+        .close(4001, "replaced");
+    const { 0: client, 1: server } = new WebSocketPair();
+    this.ctx.acceptWebSocket(server, [LIVE_TAG, liveUserTag(userId)]);
+    server.serializeAttachment({ since: Date.now() });
+    // What changed between the page's own read and now.
+    server.send(liveMessage(activity));
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  /**
+   * After a change: pushed at once, unless one went out in the last
+   * LIVE_COALESCE_MS; then once more as that window ends, for all of them.
+   */
+  private announce(id: string) {
+    if (this.liveTimer || this.ctx.getWebSockets(LIVE_TAG).length === 0) return;
+    const wait = Math.max(0, this.livePushedAt + LIVE_COALESCE_MS - Date.now());
+    this.liveTimer = setTimeout(() => {
+      this.liveTimer = null;
+      this.livePushedAt = Date.now();
+      void this.broadcast(id);
+    }, wait);
+  }
+
+  private async broadcast(id: string) {
+    const sockets = this.ctx.getWebSockets(LIVE_TAG);
+    if (sockets.length === 0) return;
+    let activity: PublicActivity;
+    try {
+      activity = await getPublicActivity(this.env, id);
+    } catch {
+      // The next change, or the page's slower polling, catches up.
+      return;
+    }
+    const message = liveMessage(activity);
+    const over = liveEnded(activity);
+    for (const socket of sockets) {
+      try {
+        socket.send(message);
+        if (over) socket.close(1000, "ended");
+      } catch {
+        // Already closing: nothing to tell it.
+      }
+    }
+  }
+
+  /** Push only: a ping (answered by the runtime) is all a viewer sends. */
+  async webSocketMessage(socket: WebSocket, message: string | ArrayBuffer) {
+    if (message === LIVE_PING) socket.send(LIVE_PONG);
+    else socket.close(1008, "push only");
+  }
 
   private async serialize<T>(action: () => Promise<T>) {
     const previous = this.mutationTail;
@@ -143,6 +262,8 @@ export class ActivityDO extends DurableObject<ApiBindings> {
         return;
       }
       await this.scheduleDraw(id);
+      // The draw may have run: its result goes out at once.
+      this.announce(id);
     });
   }
 
@@ -177,6 +298,12 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       );
     }
 
+    const live = /^\/internal\/activities\/([a-f0-9-]{36})\/live$/i.exec(
+      url.pathname,
+    );
+    if (live && request.method === "GET")
+      return this.acceptLive(live[1] ?? "", request);
+
     const isCreation = url.pathname === "/internal/activities/create";
     const isGlobalRedemption =
       url.pathname === "/internal/redemptions/submit" ||
@@ -210,6 +337,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
             await refreshActivityLifecycle(this.env, id);
             await resumePendingActivityClaims(this.env, id);
             await this.scheduleDraw(id);
+            this.announce(id);
             this.ctx.waitUntil(
               flushPaymentOutbox(this.env).catch(() => {
                 console.error("activity_draw_outbox_wake_failed", {
@@ -268,6 +396,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
               "requestId" in parsed.data
                 ? await createActivity(this.env, authorId, parsed.data)
                 : await updateActivity(this.env, id, authorId, parsed.data);
+            if (operation === "update") this.announce(id);
             return Response.json(
               { activity },
               {
@@ -361,6 +490,8 @@ export class ActivityDO extends DurableObject<ApiBindings> {
               parsed.data,
             );
             if ("registration" in result) await this.scheduleDraw(id);
+            if (result.result === "claimed" || result.result === "registered")
+              this.announce(id);
             if ("claim" in result && result.claim.rewardType === "ldc") {
               this.ctx.waitUntil(
                 flushPaymentOutbox(this.env, result.claim.payment.id).catch(
@@ -410,6 +541,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
               authorId,
               parsed.data.version,
             );
+            this.announce(id);
           } else {
             const parsed = openActivitySchema.safeParse(input);
             if (!parsed.success)

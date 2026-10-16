@@ -1,6 +1,7 @@
 import { type RefObject, useRef } from "react";
 import { cn } from "../../lib/cn";
 import type { HongbaoActivity } from "../../lib/hongbao";
+import { useActivityLive } from "../../lib/live";
 import { AuthorTools } from "../hongbao/author-tools";
 import { InfoNote } from "../hongbao/details";
 import { HongbaoHero, hongbaoSizes, sizeVars } from "../hongbao/hero";
@@ -18,6 +19,15 @@ import { IdentityFailedView, MessageView } from "./message-view";
 
 export function HongbaoView({ id }: { id: string }) {
   const page = useHongbaoPageData(id);
+  // While it runs, a signed-in viewer has its changes pushed; guests poll.
+  const viewer = page.identity.user;
+  useActivityLive(
+    id,
+    viewer?.id ?? null,
+    Boolean(
+      viewer && page.data && !page.data.activity.draft && !page.data.view.ended,
+    ),
+  );
   const article = useRef<HTMLElement>(null);
   const skeleton = useRef<number | null>(null);
   const load = usePageLoad(page.load, () =>

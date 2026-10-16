@@ -17,9 +17,11 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { useAtomValue } from "jotai";
 import { useCallback, useEffect } from "react";
 import { api } from "../api";
 import { sessionQueryKey, useAccountSession } from "./auth";
+import { LIVE_BACKUP_POLL_MS, liveActivityAtom } from "./live-state";
 
 export class ActivityRequestError extends Error {
   constructor(
@@ -184,6 +186,8 @@ export function usePublicActivity(
   enabled: boolean,
 ) {
   const client = useQueryClient();
+  // Pushed while its live channel is open (lib/live.ts): polling backs it up.
+  const live = useAtomValue(liveActivityAtom) === id;
   const query = useQuery({
     queryKey: activityKeys.public(id, userId),
     queryFn: async ({ signal }): Promise<PublicActivityDetail> => {
@@ -206,7 +210,7 @@ export function usePublicActivity(
     },
     enabled,
     retry: false,
-    refetchInterval: enabled ? 5_000 : false,
+    refetchInterval: enabled ? (live ? LIVE_BACKUP_POLL_MS : 5_000) : false,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: false,
   });

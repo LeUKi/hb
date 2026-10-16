@@ -3,6 +3,9 @@ import { type BrowserContext, expect, type Page, test } from "@playwright/test";
 import {
   type ActivityParticipationResponse,
   decodeActivityEmoji,
+  emptyActivityInput,
+  encodeActivityEmoji,
+  type ManagedActivity,
 } from "../../packages/contracts/src";
 import { fullAppMerchant } from "./ldc-fixture";
 import {
@@ -204,4 +207,67 @@ test("限时开奖：无需口令，报满即开，中奖的人到账", async ({
   });
   for (const entrant of entrants) await entrant.context.close();
   await author.context.close();
+});
+
+test("实时推送：别人领取后，开着红包页的人立刻看到", async ({ browser }) => {
+  const author = await account(browser, "author");
+  const merchant = await fullAppMerchant(author.context, author.csrf, origin);
+  const headers = { Origin: origin, "X-CSRF-Token": author.csrf };
+  const created = await author.context.request.post("/api/activities", {
+    headers,
+    data: {
+      requestId: randomUUID(),
+      activity: {
+        ...emptyActivityInput(),
+        title: `完整应用实时推送 ${randomUUID().slice(0, 8)}`,
+        participationMode: "direct",
+        merchantId: merchant.id,
+        deadline: { mode: "duration", value: 1, unit: "days" },
+        money: { mode: "fixed", totalAmount: "0.30", count: 3 },
+      },
+    },
+  });
+  expect(created.status(), await created.text()).toBe(200);
+  const activity = ((await created.json()) as { activity: ManagedActivity })
+    .activity;
+  const opened = await author.context.request.post(
+    `/api/me/activities/${activity.id}/open`,
+    { headers, data: { version: activity.version } },
+  );
+  expect(opened.status(), await opened.text()).toBe(200);
+
+  // A signed-in viewer keeps the page open; its live channel is a socket.
+  const viewer = await account(browser, "recipient");
+  let pushed = 0;
+  viewer.page.on("websocket", (socket) => {
+    socket.on("framereceived", () => {
+      pushed += 1;
+    });
+  });
+  await viewer.page.goto(`/🧧/${encodeActivityEmoji(activity.id)}`);
+  await waitForBoot(viewer.page);
+  await expect(
+    viewer.page.getByText("0 / 3 份", { exact: true }).first(),
+  ).toBeVisible();
+  await expect.poll(() => pushed).toBeGreaterThan(0);
+  const before = pushed;
+
+  const claimer = await account(browser, "recipient2");
+  await waitOutCooldown(claimer.page);
+  const claimed = await claimer.context.request.post(
+    `/api/activities/${activity.id}/claim`,
+    {
+      headers: { Origin: origin, "X-CSRF-Token": claimer.csrf },
+      data: { submissionId: randomUUID(), participationMode: "direct" },
+    },
+  );
+  expect(claimed.status(), await claimed.text()).toBe(200);
+  // Pushed, not polled (a poll is 5 s away): the count moves at once.
+  await expect(
+    viewer.page.getByText("1 / 3 份", { exact: true }).first(),
+  ).toBeVisible({ timeout: 2_000 });
+  expect(pushed).toBeGreaterThan(before);
+  await author.context.close();
+  await viewer.context.close();
+  await claimer.context.close();
 });

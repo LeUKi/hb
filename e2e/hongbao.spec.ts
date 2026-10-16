@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test, type WebSocketRoute } from "@playwright/test";
 import {
   type ActivityPasswords,
   type AuthorClaimList,
@@ -88,6 +88,26 @@ function recipient(name: string, minutes: number): PublicRecipient {
 
 const passwordOf = { mine: "周末口令2026", other: "公共口令2026" };
 
+/** The public read as the server gives it (and pushes it, live). */
+function publicRead(state: {
+  activity: PublicActivity;
+  recipients: PublicRecipient[];
+}): PublicActivity {
+  return {
+    ...state.activity,
+    // The 名单入口's faces: the latest five claims, in this read.
+    rosterPreview: [...state.recipients]
+      .reverse()
+      .slice(0, 5)
+      .map(({ id, username, displayName, avatarUrl }) => ({
+        id,
+        username,
+        displayName,
+        avatarUrl,
+      })),
+  };
+}
+
 /** One 红包's server, mocked: answers reads and the two writes. */
 async function mockHongbao(page: Page) {
   await page.route("https://avatars.example.test/**", (route) =>
@@ -103,6 +123,7 @@ async function mockHongbao(page: Page) {
     solved: [] as string[],
     claims: [] as unknown[],
     solves: [] as unknown[],
+    publicReads: 0,
   };
   const passwords = (): ActivityPasswords => {
     const known = state.claim
@@ -126,24 +147,10 @@ async function mockHongbao(page: Page) {
     const rest = new URL(request.url()).pathname.slice(
       `/api/activities/${id}`.length,
     );
-    if (rest === "" && request.method() === "GET")
-      return route.fulfill({
-        json: {
-          activity: {
-            ...state.activity,
-            // The 名单入口's faces: the latest five claims, in this read.
-            rosterPreview: [...state.recipients]
-              .reverse()
-              .slice(0, 5)
-              .map(({ id, username, displayName, avatarUrl }) => ({
-                id,
-                username,
-                displayName,
-                avatarUrl,
-              })),
-          },
-        },
-      });
+    if (rest === "" && request.method() === "GET") {
+      state.publicReads += 1;
+      return route.fulfill({ json: { activity: publicRead(state) } });
+    }
     if (rest === "/participation")
       return route.fulfill({
         json: { claim: state.claim, registration: null },
@@ -257,6 +264,42 @@ test.describe("红包页", () => {
     await expect(page.getByText("2 / 3 份", { exact: true })).toBeVisible();
   });
 
+  test("登录后：推送一到就更新，连着时不再每 5 秒轮询", async ({ page }) => {
+    await mockSession(page, viewer);
+    const state = await mockHongbao(page);
+    const sockets: WebSocketRoute[] = [];
+    await page.routeWebSocket(/\/api\/activities\/[^/]+\/live$/, (ws) => {
+      sockets.push(ws);
+      ws.onMessage((message) => {
+        if (message === "ping") ws.send("pong");
+      });
+    });
+    await openApp(page, path);
+    const entry = page.locator("#roster-entry");
+    await expect(page.getByText("1 / 3 份", { exact: true })).toBeVisible();
+    await expect.poll(() => sockets.length).toBe(1);
+    // Connected: the next public read is a minute away, not 5 s.
+    const readsAtConnect = state.publicReads;
+    await page.waitForTimeout(6_000);
+    expect(state.publicReads).toBe(readsAtConnect);
+    // Someone else claims: the 红包's DO pushes its public read.
+    state.recipients.push(recipient("后来的人", 2));
+    state.activity = {
+      ...state.activity,
+      quantity: { mode: "exact", total: 3, claimed: 2, remaining: 1 },
+    };
+    sockets[0]?.send(
+      JSON.stringify({ type: "activity", activity: publicRead(state) }),
+    );
+    await expect(page.getByText("2 / 3 份", { exact: true })).toBeVisible({
+      timeout: 1_500,
+    });
+    await expect(entry.locator("img").first()).toHaveAttribute(
+      "src",
+      avatarOf("后来的人"),
+    );
+  });
+
   test("游客：大红包皮、说明全文、领取名单和分享", async ({
     page,
     context,
@@ -264,6 +307,10 @@ test.describe("红包页", () => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await mockSession(page, null);
     await mockHongbao(page);
+    let live = 0;
+    await page.routeWebSocket(/\/live$/, () => {
+      live += 1;
+    });
     await openApp(page, path);
     await expect(page).toHaveTitle("周末红包 · lafish的红包站");
     await expect(
@@ -314,6 +361,8 @@ test.describe("红包页", () => {
       .toBe(
         `<center><picture><source type="image/svg+xml" srcset="${new URL(page.url()).origin}/🧧/${code}/🖼️.svg 1x"><img width="420" height="560" alt="小满的红包：周末红包"></picture></center>`,
       );
+    // A guest polls: no live channel.
+    expect(live).toBe(0);
   });
 
   test("登录后：点印章输入口令领取，再验证其他口令", async ({
