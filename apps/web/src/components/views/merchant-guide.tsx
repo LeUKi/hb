@@ -1,12 +1,15 @@
-import { CircleHelp } from "lucide-react";
+import { ArrowUpRight, CircleHelp } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import apiImage from "../../assets/ldc-guide/ldc-app-api.webp";
 import urlsImage from "../../assets/ldc-guide/ldc-app-urls.webp";
 import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
+import { ButtonLink } from "../ui/button-link";
 import { CopyButton } from "../ui/copy-button";
 import { Squircle } from "../ui/squircle";
 
+/** Where LINUX DO Credit lists (and creates) one's 集市应用. */
+const CREDIT_APPS_URL = "https://credit.linux.do/merchant";
 /** What LDC asks for both URLs; this site uses neither. */
 const SUGGESTED_URL = "http://localhost:3000/";
 
@@ -44,10 +47,11 @@ function Step({
 }
 
 /**
- * 怎么填: where the 商户应用 comes from, beside the form that asks for it —
- * create the app in LINUX DO Credit (any name, the suggested URL for both
- * addresses), then copy its Client ID and Client Secret over. A window
- * dialog with LDC's own screens (the Client ID in them masked).
+ * 怎么填: where the 集市应用 comes from, beside the form that asks for it —
+ * open LINUX DO Credit's 集市应用 page and create one (any name, the
+ * suggested URL for both addresses), then copy its Client ID and Client
+ * Secret over. A window dialog with LDC's own screens (the Client ID in
+ * them masked).
  */
 export function MerchantGuide() {
   const [open, setOpen] = useState(false);
@@ -74,25 +78,38 @@ export function MerchantGuide() {
         <div className="grid gap-6 p-5">
           <div className="grid gap-1">
             <h2 id={titleId} className="text-lg font-semibold text-ink">
-              在 LDC 创建商户应用
+              在 LDC 创建集市应用
             </h2>
             <p className="text-sm text-ink-2">
-              红包里的 LDC 从你自己的商户应用付出。在 LINUX DO Credit
-              建一个应用，再把它的 Client ID 和 Client Secret 填到这里。
+              红包里的 LDC 从你自己的集市应用付出。在 LINUX DO Credit
+              建一个集市应用，再把它的 Client ID 和 Client Secret 填到这里。
             </p>
           </div>
           <Step
             n={1}
-            title="创建应用"
+            title="创建集市应用"
             image={{
               src: urlsImage,
               width: 576,
               height: 577,
-              alt: "LDC 的应用信息窗口：应用名称填了 meme，应用主页 URL 和通知 URL 都填了 http://localhost:3000/",
+              alt: "LDC 的集市应用信息窗口：应用名称填了 meme，应用主页 URL 和通知 URL 都填了 http://localhost:3000/",
             }}
           >
             <p className="text-sm text-ink-2">
-              点“创建应用”。应用名称随意填写；应用主页 URL 和通知 URL
+              打开 LINUX DO Credit 的集市应用页，点右上角的“创建应用”。
+            </p>
+            <div>
+              <ButtonLink
+                href={CREDIT_APPS_URL}
+                variant="secondary"
+                className="gap-1.5"
+              >
+                打开 credit.linux.do/merchant
+                <ArrowUpRight aria-hidden="true" />
+              </ButtonLink>
+            </div>
+            <p className="text-sm text-ink-2">
+              应用名称随意填写；应用主页 URL 和通知 URL
               都填下面这个地址，其余几项留空。本站不用这两个地址，填它就行。
             </p>
             <div className="flex min-w-0 items-center gap-1">
@@ -111,12 +128,12 @@ export function MerchantGuide() {
               src: apiImage,
               width: 346,
               height: 470,
-              alt: "LDC 的应用页：右侧“API 配置”里的 Client ID 和 Client Secret",
+              alt: "LDC 的集市应用页：右侧“API 配置”里的 Client ID 和 Client Secret",
             }}
           >
             <p className="text-sm text-ink-2">
-              建好后，在应用页的“API 配置”里：Client ID 填到“Client ID”，Client
-              Secret 填到“商户密钥”。
+              建好后，在集市应用页右侧的“API 配置”里：Client ID 填到“Client
+              ID”，Client Secret 填到“商户密钥”。
             </p>
           </Step>
           <div className="flex justify-end">

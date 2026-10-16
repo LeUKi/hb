@@ -48,7 +48,7 @@ import { MerchantGuide } from "./merchant-guide";
 import { MessageView } from "./message-view";
 
 const PAGE_NOTE =
-  "红包里的 LDC 从你的商户应用直接付给领取人，本站不代收、不预存。";
+  "红包里的 LDC 从你的集市应用直接付给领取人，本站不代收、不预存。";
 
 /** Production's rules for a Client ID (createMerchantSchema). */
 function clientIdError(value: string) {
@@ -441,7 +441,7 @@ function MerchantForm({
         <Field
           label="Client ID"
           htmlFor={ids.client}
-          hint="在 LDC 的商户应用里查看。改 Client ID 时要同时填写它的密钥。"
+          hint="在 LDC 的集市应用里查看。改 Client ID 时要同时填写它的密钥。"
           error={idError}
           live
         >
@@ -658,7 +658,7 @@ function CreateMerchant({
   return (
     <PageSection
       title="配置商户"
-      description="发 LDC 红包之前，先填好你在 LDC 创建的商户应用。每个账号有一个当前商户。"
+      description="发 LDC 红包之前，先填好你在 LDC 创建的集市应用。每个账号有一个当前商户。"
       action={<MerchantGuide />}
     >
       <LeaveGuard
@@ -684,7 +684,7 @@ function CreateMerchant({
           <Field
             label="Client ID"
             htmlFor={ids.client}
-            hint="在 LDC 的商户应用里查看。"
+            hint="在 LDC 的集市应用里查看。"
             error={idError}
             live
           >

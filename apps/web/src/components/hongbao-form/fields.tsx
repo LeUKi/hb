@@ -483,7 +483,7 @@ export function MerchantRow() {
         </div>
       </Squircle>
       <p className="text-xs text-ink-3">
-        不用预先付款：每次有人领取，本站从这个商户应用直接付给领取人。请让商户里留有足够的
+        不用预先付款：每次有人领取，本站从这个集市应用直接付给领取人。请让商户里留有足够的
         LDC。
       </p>
     </div>

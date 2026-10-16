@@ -210,7 +210,7 @@ export function StateNote({
   if (payment.status === "waiting" && payment.config?.canRepairCredentials)
     return (
       <Callout tone="warning" icon={KeyRound} title={reason}>
-        这笔付款用的是更换前的商户应用，它的密钥失效了。
+        这笔付款用的是更换前的集市应用，它的密钥失效了。
         {admin
           ? "要等发红包的人在付款详情里更新原订单密钥后继续。"
           : "在下面“更新原订单密钥”填写它现在的密钥后继续。"}
@@ -312,7 +312,7 @@ function RepairCredential({
   return (
     <PageSection
       title="更新原订单密钥"
-      description="只用于这笔付款原来的商户应用，不会改动当前商户。"
+      description="只用于这笔付款原来的集市应用，不会改动当前商户。"
     >
       <LeaveGuard
         when={secret.length > 0 && !busy}

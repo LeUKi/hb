@@ -42,7 +42,7 @@ const inputs: { label: string; example: string; note: string }[] = [
 const questions: { q: string; a: string }[] = [
   {
     q: "发红包要先做什么？",
-    a: "先在“LDC 商户配置”填好你在 LDC 创建的商户应用（Client ID 和密钥）。不用预先付款：每次有人领取，本站从这个商户应用直接付给领取人。",
+    a: "先在“LDC 商户配置”填好你在 LDC 创建的集市应用（Client ID 和密钥）。不用预先付款：每次有人领取，本站从这个集市应用直接付给领取人。",
   },
   {
     q: "我能领自己发的红包吗？",
