@@ -723,10 +723,13 @@ export function TimingFields({
                   timing: { ...current.timing, unit },
                 }))
               }
-              options={(Object.keys(unitLabels) as TimeUnit[]).map((value) => ({
-                value,
-                label: unitLabels[value],
-              }))}
+              // Seconds only for a timed draw's countdown.
+              options={(Object.keys(unitLabels) as TimeUnit[])
+                .filter((value) => draw || value !== "seconds")
+                .map((value) => ({
+                  value,
+                  label: unitLabels[value],
+                }))}
             />
           </div>
         </Field>

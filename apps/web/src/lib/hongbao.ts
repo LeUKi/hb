@@ -37,13 +37,38 @@ export type HongbaoActivity = {
   statistics: boolean;
   /** 自定义金额's order, known to the sender only. */
   custom?: { allocation: "sequential" | "random" };
-  /** A 草稿's deadline as set: counted from opening, or a fixed time. */
+  /**
+   * A 草稿's deadline as set (a timed draw's latest draw time): counted
+   * from opening, or a fixed time.
+   */
   draftTiming?:
-    | { kind: "duration"; value: number; unit: "minutes" | "hours" | "days" }
+    | { kind: "duration"; value: number; unit: DurationUnit }
     | { kind: "at"; at: string };
   /** Every 口令: the sender's own view only. */
   passwords: string[];
 };
+
+export type DurationUnit = "seconds" | "minutes" | "hours" | "days";
+
+const unitSeconds: Record<DurationUnit, number> = {
+  seconds: 1,
+  minutes: 60,
+  hours: 3_600,
+  days: 86_400,
+};
+
+/** Seconds (a timed draw's countdown) in the largest unit they fill. */
+export function durationOfSeconds(seconds: number): {
+  value: number;
+  unit: DurationUnit;
+} {
+  const unit = (["days", "hours", "minutes"] as const).find(
+    (each) => seconds % unitSeconds[each] === 0,
+  );
+  return unit
+    ? { value: seconds / unitSeconds[unit], unit }
+    : { value: seconds, unit: "seconds" };
+}
 
 /** 已领完 · 已过期 · 已开奖 · 无人报名 · 开奖中 · 已提前结束 */
 export type EndReason =
@@ -150,7 +175,13 @@ export function hongbaoOf(
           ? { kind: "at", at: deadline.at }
           : "value" in deadline
             ? { kind: "duration", value: deadline.value, unit: deadline.unit }
-            : undefined,
+            : config?.money.mode === "timed_draw" &&
+                config.money.countdownSeconds
+              ? {
+                  kind: "duration",
+                  ...durationOfSeconds(config.money.countdownSeconds),
+                }
+              : undefined,
     passwords: config?.passwords ?? [],
   };
 }

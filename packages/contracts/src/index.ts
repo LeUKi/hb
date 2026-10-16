@@ -31,7 +31,7 @@ export const ACTIVITY_LIMITS = {
 } as const;
 
 export const DEFAULT_DURATION_MS = 24 * 60 * 60 * 1000;
-export const DEFAULT_DRAW_COUNTDOWN_SECONDS = 600;
+export const DEFAULT_DRAW_COUNTDOWN_SECONDS = 180;
 // Keep countdown arithmetic within the JavaScript Date range. Opening checks
 // the sum against the actual database opening time as well.
 export const MAX_DRAW_COUNTDOWN_SECONDS = 8_000_000_000_000;

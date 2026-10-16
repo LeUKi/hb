@@ -109,7 +109,12 @@ function timeCell(view: PublicView): CoverCell {
   };
 }
 
-const unitWords = { minutes: "分钟", hours: "小时", days: "天" } as const;
+const unitWords = {
+  seconds: "秒",
+  minutes: "分钟",
+  hours: "小时",
+  days: "天",
+} as const;
 
 /** A 草稿 has no deadline yet: what was set, counted from opening. */
 function draftTimeCell(activity: HongbaoActivity): CoverCell {

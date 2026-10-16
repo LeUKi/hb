@@ -2,11 +2,13 @@ import {
   type ActivityInput,
   amountToMinor,
   boundedMeanLimits,
+  DEFAULT_DRAW_COUNTDOWN_SECONDS,
   type LdcMoney,
   type ManagedActivity,
   normalizeTopicLink,
   sameLdcMoney,
 } from "@hb/contracts";
+import { durationOfSeconds } from "../../lib/hongbao";
 import { inspectPassword } from "../../lib/password-rules";
 
 // The 发红包 flow (/new) and the sender's 📝 编辑: one state shape, its
@@ -23,7 +25,8 @@ export const LIMITS = {
 
 export type RewardMode = LdcMoney["mode"];
 export type Algorithm = "double_mean" | "bounded_mean";
-export type TimeUnit = "minutes" | "hours" | "days";
+/** Seconds only for a timed draw's countdown: a deadline is in minutes. */
+export type TimeUnit = "seconds" | "minutes" | "hours" | "days";
 
 export type FormState = {
   title: string;
@@ -68,12 +71,14 @@ export const modeLabels: Record<RewardMode, string> = {
 };
 
 export const unitLabels: Record<TimeUnit, string> = {
+  seconds: "秒",
   minutes: "分钟",
   hours: "小时",
   days: "天",
 };
 
 const unitMs: Record<TimeUnit, number> = {
+  seconds: 1_000,
   minutes: 60_000,
   hours: 3_600_000,
   days: 86_400_000,
@@ -117,9 +122,14 @@ export function emptyForm(now = Date.now()): FormState {
   };
 }
 
-/** A timed draw's default: the latest draw 10 minutes after opening. */
+/** A timed draw's default: the latest draw 180 seconds after opening. */
 export function drawTiming(form: FormState): FormState["timing"] {
-  return { ...form.timing, kind: "duration", value: "10", unit: "minutes" };
+  return {
+    ...form.timing,
+    kind: "duration",
+    value: String(DEFAULT_DRAW_COUNTDOWN_SECONDS),
+    unit: "seconds",
+  };
 }
 
 /** Another 玩法: a timed draw counts to its draw time, the others to a deadline. */
@@ -433,6 +443,7 @@ export function rewardSummaryOf(form: FormState) {
 // ── Production ────────────────────────────────────────────────────────
 
 const unitSeconds: Record<TimeUnit, number> = {
+  seconds: 1,
   minutes: 60,
   hours: 3_600,
   days: 86_400,
@@ -440,18 +451,8 @@ const unitSeconds: Record<TimeUnit, number> = {
 
 /** A length of time in the largest whole unit (a timed draw's countdown). */
 function timingOfSeconds(seconds: number, base: FormState["timing"]) {
-  const unit: TimeUnit =
-    seconds % unitSeconds.days === 0
-      ? "days"
-      : seconds % unitSeconds.hours === 0
-        ? "hours"
-        : "minutes";
-  return {
-    ...base,
-    kind: "duration" as const,
-    value: String(Math.max(1, Math.round(seconds / unitSeconds[unit]))),
-    unit,
-  };
+  const { value, unit } = durationOfSeconds(seconds);
+  return { ...base, kind: "duration" as const, value: String(value), unit };
 }
 
 const algorithmOf = (value: "double_mean_v1" | "bounded_mean_v1"): Algorithm =>
@@ -573,11 +574,18 @@ export function inputOf(form: FormState, merchantId: string): ActivityInput {
       ? { mode: "at", at: new Date(form.timing.at).toISOString() }
       : draw
         ? { mode: "duration" }
-        : {
-            mode: "duration",
-            value: Number(form.timing.value),
-            unit: form.timing.unit,
-          };
+        : form.timing.unit === "seconds"
+          ? // Never offered for a deadline; were it there, a whole minute.
+            {
+              mode: "duration",
+              value: Math.ceil(Number(form.timing.value) / 60),
+              unit: "minutes",
+            }
+          : {
+              mode: "duration",
+              value: Number(form.timing.value),
+              unit: form.timing.unit,
+            };
   const password = form.participation === "password";
   return {
     title: form.title.trim(),

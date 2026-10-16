@@ -172,6 +172,61 @@ test.describe("发红包", () => {
     });
   });
 
+  test("限时开奖：最晚开奖默认 180 秒，时长可以按秒填", async ({ page }) => {
+    await mockSession(page, viewer);
+    await mockMerchants(page, [merchant]);
+    const sent = await mockCreate(page);
+    await openApp(page, "/new");
+    await page
+      .getByRole("button", { name: /限时开奖/ })
+      .first()
+      .click();
+    await expect(page.locator("#hb-draw-pool")).toBeVisible();
+    await page.locator("#hb-draw-pool").fill("0.20");
+    await page.locator("#hb-draw-winners").fill("1");
+    await page.locator("#hb-draw-winners").press("Enter");
+    const timing = page.locator("#hb-quiet-timing");
+    await expect(timing).toContainText("开放后 180 秒内开奖");
+    await timing.click();
+    const units = page.getByRole("group", { name: "时长单位" });
+    await expect(units.getByRole("button", { name: "秒" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.locator("#hb-timing-value")).toHaveValue("180");
+    await page.locator("#hb-timing-value").fill("90");
+    await page.keyboard.press("Escape");
+    await expect(timing).toContainText("开放后 90 秒内开奖");
+    await page.getByLabel("口令 1").fill("开奖口令2026");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#hb-title")).toBeVisible();
+    await page.getByRole("button", { name: "存草稿" }).first().click();
+    await expect.poll(() => sent.length).toBe(1);
+    expect(sent[0]?.activity).toMatchObject({
+      deadline: { mode: "duration" },
+      money: { mode: "timed_draw", countdownSeconds: 90 },
+    });
+  });
+
+  test("截止时间没有秒：普通红包的时长单位从分钟起", async ({ page }) => {
+    await mockSession(page, viewer);
+    await mockMerchants(page, [merchant]);
+    await openApp(page, "/new");
+    await page
+      .getByRole("button", { name: /拼手气/ })
+      .first()
+      .click();
+    await page.locator("#hb-random-total").fill("0.30");
+    await page.locator("#hb-random-count").fill("3");
+    await page.keyboard.press("Enter");
+    const timing = page.locator("#hb-quiet-timing");
+    await expect(timing).toContainText("开放后 24 小时截止");
+    await timing.click();
+    await expect(
+      page.getByRole("group", { name: "时长单位" }).getByRole("button"),
+    ).toHaveText(["分钟", "小时", "天"]);
+  });
+
   test("没收到保存结果：重试原提交，发的是同一个请求", async ({ page }) => {
     await mockSession(page, viewer);
     await mockMerchants(page, [merchant]);
