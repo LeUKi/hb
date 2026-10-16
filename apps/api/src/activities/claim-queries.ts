@@ -530,8 +530,10 @@ async function publicRecipientTitles(
       highest.results.length < 3
         ? highest.results.map((row) => String(row.id))
         : [],
+    // Of two, the other one only came second: 手气亡 waits for a third
+    // person (user's rule).
     lowestClaimIds:
-      lowest.results.length < 3
+      bounds.count >= 3 && lowest.results.length < 3
         ? lowest.results.map((row) => String(row.id))
         : [],
   };

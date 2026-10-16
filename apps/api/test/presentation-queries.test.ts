@@ -1034,6 +1034,35 @@ describe("production presentation queries", () => {
     );
   });
 
+  it("gives 手气亡 only once a third person claims; of two, only 手气王", async () => {
+    const activity = await create(
+      ldc({ mode: "custom", amounts: ["3.00", "1.00", "2.00"] }),
+    );
+    const [best, worst, middle] = await Promise.all(
+      Array.from({ length: 3 }, actor),
+    );
+    const titles = async () =>
+      (await data<PublicRecipientList>(`/activities/${activity.id}/recipients`))
+        .titles;
+    const claimOf = async (user: Actor) => {
+      const result = await redeem(activity.id, user);
+      if (!("claim" in result)) throw new Error("Expected a claim");
+      return result.claim.id;
+    };
+    const top = await claimOf(best);
+    expect(await titles()).toEqual({ highestClaimIds: [], lowestClaimIds: [] });
+    const bottom = await claimOf(worst);
+    expect(await titles()).toEqual({
+      highestClaimIds: [top],
+      lowestClaimIds: [],
+    });
+    await claimOf(middle);
+    expect(await titles()).toEqual({
+      highestClaimIds: [top],
+      lowestClaimIds: [bottom],
+    });
+  });
+
   it("computes speed titles over the whole roster, whatever the retired switches say", async () => {
     const activity = await create(
       ldc({ mode: "fixed", totalAmount: "22.00", count: 22 }),
