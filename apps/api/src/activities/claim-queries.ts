@@ -340,6 +340,10 @@ export async function listAuthorClaims(
     page.map(({ claim }) => ({ claim, activity })),
   );
   const speedTitles = await recipientSpeedTitles(env, activity);
+  // The same 手气王 / 手气亡 as the public roster, row for row.
+  const titles = drawPending(activity)
+    ? noTitles()
+    : await publicRecipientTitles(env, activity);
   return {
     items: page.map(({ claim, claimant }) => {
       const { afterClaimInfo: _privateNote, ...detail } =
@@ -349,6 +353,7 @@ export async function listAuthorClaims(
         ...detail,
         claimant,
         ...(speedTitle === undefined ? {} : { speedTitle }),
+        ...luckTitle(titles, claim.id),
       };
     }),
     nextCursor: rows.length > 20 && last ? encodeCursor(last.claim) : null,
@@ -368,16 +373,8 @@ export async function listPublicRecipients(
   )
     activityNotFound();
   // Claims can be allocated while a timed draw settles; publish only its completed results.
-  if (
-    activity.drawState &&
-    activity.drawState !== "completed" &&
-    activity.drawState !== "empty"
-  )
-    return {
-      items: [],
-      nextCursor: null,
-      titles: { highestClaimIds: [], lowestClaimIds: [] },
-    };
+  if (drawPending(activity))
+    return { items: [], nextCursor: null, titles: noTitles() };
   // The roster is always public (06 §2), oldest first (06 §3).
   const titles = await publicRecipientTitles(env, activity);
   const speedTitles = await recipientSpeedTitles(env, activity);
@@ -422,11 +419,7 @@ export async function listPublicRecipients(
         ...(speedTitles.has(claim.id)
           ? { speedTitle: speedTitles.get(claim.id) }
           : {}),
-        ...(titles.highestClaimIds.includes(claim.id)
-          ? { title: "highest" as const }
-          : titles.lowestClaimIds.includes(claim.id)
-            ? { title: "lowest" as const }
-            : {}),
+        ...luckTitle(titles, claim.id),
       }),
     ),
     nextCursor:
@@ -470,14 +463,36 @@ async function recipientSpeedTitles(
   return new Map(rows.results.map((row) => [String(row.id), title] as const));
 }
 
+type LuckTitles = NonNullable<PublicRecipientList["titles"]>;
+
+const noTitles = (): LuckTitles => ({
+  highestClaimIds: [],
+  lowestClaimIds: [],
+});
+
+/** A timed draw still drawing: its claims are not results yet. */
+function drawPending(activity: ActivityRow) {
+  return Boolean(
+    activity.drawState &&
+      activity.drawState !== "completed" &&
+      activity.drawState !== "empty",
+  );
+}
+
+/** One claim's 手气王 / 手气亡, from the whole roster's. */
+function luckTitle(titles: LuckTitles, claimId: string) {
+  return titles.highestClaimIds.includes(claimId)
+    ? { title: "highest" as const }
+    : titles.lowestClaimIds.includes(claimId)
+      ? { title: "lowest" as const }
+      : {};
+}
+
 async function publicRecipientTitles(
   env: ApiBindings,
   activity: ActivityRow,
-): Promise<NonNullable<PublicRecipientList["titles"]>> {
-  const empty = {
-    highestClaimIds: [] as string[],
-    lowestClaimIds: [] as string[],
-  };
+): Promise<LuckTitles> {
+  const empty = noTitles();
   if (activity.rewardType !== "ldc") return empty;
   const bounds =
     await env.DB.prepare(`SELECT COUNT(*) AS count,MIN(p.amount_minor) AS minimum,MAX(p.amount_minor) AS maximum

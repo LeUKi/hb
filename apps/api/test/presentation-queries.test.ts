@@ -923,6 +923,21 @@ describe("production presentation queries", () => {
     expect(second.items.filter((row) => row.title === "highest")).toHaveLength(
       2,
     );
+    // The sender's own 名单 carries the same titles, row for row.
+    const own = await data<AuthorClaimList>(
+      `/me/activities/${activity.id}/claims`,
+      owner,
+    );
+    const ownNext = await data<AuthorClaimList>(
+      `/me/activities/${activity.id}/claims?cursor=${encodeURIComponent(own.nextCursor ?? "")}`,
+      owner,
+    );
+    const titled = (rows: { id: string; title?: string }[]) =>
+      rows.flatMap((row) => (row.title ? [[row.id, row.title]] : []));
+    expect(titled([...own.items, ...ownNext.items])).toEqual(
+      titled([...first.items, ...second.items]),
+    );
+    expect(titled([...own.items, ...ownNext.items])).toHaveLength(2);
     await redeem(activity.id, await actor());
     expect(
       (await data<PublicRecipientList>(`/activities/${activity.id}/recipients`))

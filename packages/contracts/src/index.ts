@@ -783,6 +783,8 @@ export type AuthorRegistrationList = {
 export type AuthorClaim = Omit<ClaimDetail, "afterClaimInfo"> & {
   claimant: ActivityAuthor;
   speedTitle?: RecipientSpeedTitle;
+  /** 手气王 / 手气亡, over the whole roster, as the public list has them. */
+  title?: "highest" | "lowest";
 } & { rewardType: "ldc"; amount: string; payment: PaymentView };
 export type AuthorClaimList = {
   items: AuthorClaim[];

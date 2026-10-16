@@ -36,7 +36,11 @@ function rowOf(item: Item, rank: number, viewer: string | null): RosterRow {
       you: viewer !== null && item.claimant.username === viewer,
       amount: item.amount,
       at: Date.parse(item.claimedAt),
-      titles: item.speedTitle ? [item.speedTitle] : [],
+      // In the public list's order: 手气王 / 手气亡, then 手速王.
+      titles: [
+        ...(item.title ? [item.title] : []),
+        ...(item.speedTitle ? [item.speedTitle] : []),
+      ],
       password: item.sourcePassword ?? null,
       payment: item.payment,
     };
