@@ -450,27 +450,30 @@ test.describe("红包页", () => {
     await page.keyboard.press("Escape");
     await expect(roster).toBeHidden();
 
-    // A guest sees no 口令: the 社区链接 first, the forum code, the plain
-    // link last.
+    // A guest sees no 口令: the 社区's link and 内嵌代码, a line, the
+    // original link.
     await page.getByRole("button", { name: "分享" }).click();
     const menu = page.getByRole("menu");
-    await expect(menu.getByRole("menuitem")).toHaveCount(3);
-    await expect(menu.getByRole("menuitem").first()).toContainText("社区链接");
-    await expect(menu.getByRole("menuitem").last()).toContainText("纯链接");
-    await menu.getByRole("menuitem", { name: /社区链接/ }).click();
+    await expect(menu.getByRole("menuitem")).toHaveText([
+      /^社区专用链接避免转码与违规推广/,
+      /^社区内嵌代码可实时展示红包数据/,
+      /^原始链接/,
+    ]);
+    await expect(menu.getByRole("separator")).toHaveCount(1);
+    await menu.getByRole("menuitem", { name: /社区专用链接/ }).click();
     await expect
       .poll(() => readClipboard(page))
       .toBe(`[\`/🧧/${code}\`](https://linux.do/t/topic/3033290/2)`);
     // "已复制" shows, then the menu folds away.
     await expect(menu).toBeHidden();
     await page.getByRole("button", { name: "分享" }).click();
-    await page.getByRole("menuitem", { name: /纯链接/ }).click();
+    await page.getByRole("menuitem", { name: /原始链接/ }).click();
     await expect
       .poll(() => readClipboard(page))
       .toBe(`${new URL(page.url()).origin}/🧧/${code}`);
     await expect(menu).toBeHidden();
     await page.getByRole("button", { name: "分享" }).click();
-    await page.getByRole("menuitem", { name: /内嵌代码/ }).click();
+    await page.getByRole("menuitem", { name: /社区内嵌代码/ }).click();
     await expect
       .poll(() => readClipboard(page))
       .toBe(
@@ -561,13 +564,31 @@ test.describe("红包页", () => {
     );
     await page.keyboard.press("Escape");
 
-    // The menu now offers the 社区链接 with each 口令 the viewer knows.
+    // The menu now offers both links with each 口令 the viewer knows (the
+    // one used and the one verified), in each group.
     await page.getByRole("button", { name: "分享" }).click();
-    await page.getByRole("menuitem", { name: /链接与口令 1/ }).click();
+    await expect(page.getByRole("menu").getByRole("menuitem")).toHaveText([
+      /^社区专用链接/,
+      `专用链接与口令 1${passwordOf.mine}`,
+      `专用链接与口令 2${passwordOf.other}`,
+      /^社区内嵌代码/,
+      "原始链接",
+      `原始链接与口令 1${passwordOf.mine}`,
+      `原始链接与口令 2${passwordOf.other}`,
+    ]);
+    await page.getByRole("menuitem", { name: /专用链接与口令 1/ }).click();
     await expect
       .poll(() => readClipboard(page))
       .toBe(
         `【周末红包】\n[\`/🧧/${code}\`](https://linux.do/t/topic/3033290/2)\n口令：\`${passwordOf.mine}\``,
+      );
+    await expect(page.getByRole("menu")).toBeHidden();
+    await page.getByRole("button", { name: "分享" }).click();
+    await page.getByRole("menuitem", { name: /原始链接与口令 1/ }).click();
+    await expect
+      .poll(() => readClipboard(page))
+      .toBe(
+        `【周末红包】\n${new URL(page.url()).origin}/🧧/${code}\n口令：${passwordOf.mine}`,
       );
 
     // Ended (the last share went): every 口令 plain, and no eye anywhere.

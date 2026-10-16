@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import {
+  Fragment,
   type KeyboardEvent,
   type PointerEvent,
   useCallback,
@@ -37,13 +38,15 @@ type ShareItem = {
   detail?: string;
   mono?: boolean;
   text: string;
+  /** Starts the 原始 group: a line above it. */
+  divided?: boolean;
 };
 
 /**
- * What the menu offers: the 社区链接 first (the forum keeps it as it is);
- * it with each 口令 this viewer can see (their own and verified ones, or
- * all once it ended); the forum image's code; the plain link last. Links
- * keep their emoji visible.
+ * What the menu offers (05 §5): for the 社区 first, its own link (which it
+ * keeps as it is), that link with each 口令 this viewer can see (their own
+ * and verified ones, or all once it ended) and the 内嵌代码; below a line,
+ * the original link, plain, and it with each 口令. Links keep their emoji.
  */
 function shareItems(
   activity: HongbaoActivity,
@@ -51,39 +54,50 @@ function shareItems(
 ): ShareItem[] {
   const origin = window.location.origin;
   const forum = createActivityForumLink(activity.id);
+  const url = activityShareUrl(activity.id, origin);
+  const withPasswords = (
+    group: string,
+    label: string,
+    line: (password: string) => string,
+  ) =>
+    passwords.known.map((password, index) => ({
+      key: `${group}-password-${index}`,
+      icon: KeyRound,
+      label: `${label} ${index + 1}`,
+      detail: password.text,
+      mono: true,
+      text: `【${activity.title}】\n${line(password.text)}`,
+    }));
   return [
     {
       key: "forum",
       icon: MessagesSquare,
-      label: "社区链接",
-      detail: "贴进社区，不会被转码",
+      label: "社区专用链接",
+      detail: "避免转码与违规推广",
       text: forum,
     },
-    ...passwords.known.map((password, index) => ({
-      key: `password-${index}`,
-      icon: KeyRound,
-      label: `链接与口令 ${index + 1}`,
-      detail: password.text,
-      mono: true,
-      text: `【${activity.title}】\n${forum}\n口令：\`${password.text}\``,
-    })),
+    ...withPasswords(
+      "forum",
+      "专用链接与口令",
+      (password) => `${forum}\n口令：\`${password}\``,
+    ),
     {
       key: "embed",
       icon: CodeXml,
-      label: "内嵌代码",
-      detail: "贴进社区，显示这个红包",
+      label: "社区内嵌代码",
+      detail: "可实时展示红包数据",
       text: createActivityImageEmbed({
         activityId: activity.id,
         origin,
         sender: activity.author.displayName,
       }),
     },
-    {
-      key: "link",
-      icon: Link2,
-      label: "纯链接",
-      text: activityShareUrl(activity.id, origin),
-    },
+    { key: "link", icon: Link2, label: "原始链接", text: url, divided: true },
+    ...withPasswords(
+      "link",
+      "原始链接与口令",
+      (password) => `${url}\n口令：${password}`,
+    ),
   ];
 }
 
@@ -265,7 +279,8 @@ export function PageActions({
                   id={menuId}
                   role="menu"
                   aria-label="分享"
-                  className="glass-pop relative grid p-1.5"
+                  // Every 口令 twice can outgrow a short window: it scrolls.
+                  className="glass-pop relative grid max-h-[calc(100dvh-8rem)] overflow-y-auto overscroll-contain p-1.5"
                   onKeyDown={onMenuKey}
                   {...fade}
                 >
@@ -273,52 +288,57 @@ export function PageActions({
                     const done = copied?.key === item.key;
                     const Icon = done && copied.ok ? Check : item.icon;
                     return (
-                      <Squircle key={item.key} radius={12}>
-                        <button
-                          ref={(element) => {
-                            itemRefs.current[index] = element;
-                          }}
-                          type="button"
-                          role="menuitem"
-                          onClick={() => copy(item)}
-                          className="flex h-12 w-full items-center gap-3 px-2.5 text-left outline-none hover:bg-fill-2 focus-visible:bg-fill-2"
-                        >
-                          <Squircle radius={9}>
-                            <span
-                              className={`grid size-7 shrink-0 place-items-center transition-colors ${
-                                done && copied.ok
-                                  ? "bg-success-soft text-success"
-                                  : "bg-fill text-ink-2"
-                              }`}
-                            >
-                              <MorphLabel>
-                                <Icon className="size-4" aria-hidden="true" />
-                              </MorphLabel>
-                            </span>
-                          </Squircle>
-                          <span className="grid min-w-0 flex-1">
-                            <MorphLabel
-                              fit={false}
-                              className="text-sm text-ink"
-                            >
-                              <span className="block truncate">
-                                {done
-                                  ? copied.ok
-                                    ? "已复制"
-                                    : "复制失败"
-                                  : item.label}
-                              </span>
-                            </MorphLabel>
-                            {item.detail && (
+                      <Fragment key={item.key}>
+                        {item.divided && (
+                          <hr className="mx-2.5 my-1 border-line border-t" />
+                        )}
+                        <Squircle radius={12}>
+                          <button
+                            ref={(element) => {
+                              itemRefs.current[index] = element;
+                            }}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => copy(item)}
+                            className="flex h-12 w-full items-center gap-3 px-2.5 text-left outline-none hover:bg-fill-2 focus-visible:bg-fill-2"
+                          >
+                            <Squircle radius={9}>
                               <span
-                                className={`truncate text-xs text-ink-3 ${item.mono ? "font-mono" : ""}`}
+                                className={`grid size-7 shrink-0 place-items-center transition-colors ${
+                                  done && copied.ok
+                                    ? "bg-success-soft text-success"
+                                    : "bg-fill text-ink-2"
+                                }`}
                               >
-                                {item.detail}
+                                <MorphLabel>
+                                  <Icon className="size-4" aria-hidden="true" />
+                                </MorphLabel>
                               </span>
-                            )}
-                          </span>
-                        </button>
-                      </Squircle>
+                            </Squircle>
+                            <span className="grid min-w-0 flex-1">
+                              <MorphLabel
+                                fit={false}
+                                className="text-sm text-ink"
+                              >
+                                <span className="block truncate">
+                                  {done
+                                    ? copied.ok
+                                      ? "已复制"
+                                      : "复制失败"
+                                    : item.label}
+                                </span>
+                              </MorphLabel>
+                              {item.detail && (
+                                <span
+                                  className={`truncate text-xs text-ink-3 ${item.mono ? "font-mono" : ""}`}
+                                >
+                                  {item.detail}
+                                </span>
+                              )}
+                            </span>
+                          </button>
+                        </Squircle>
+                      </Fragment>
                     );
                   })}
                 </motion.div>
