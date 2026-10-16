@@ -1392,8 +1392,10 @@
     );
     box-shadow: 0 0 8px rgb(248 230 188 / 0.45);
   }
+  /* Exactly the avatar's box (not a line box), so this ring is round:
+     2px of red just outside its white ring, where the next face overlaps. */
   .hb-data-avatar {
-    box-shadow: 0 0 0 2px var(--color-cover-mid);
+    box-shadow: 0 0 0 4px var(--color-cover-mid);
   }
   .hb-roster-entry {
     color: var(--color-cream);

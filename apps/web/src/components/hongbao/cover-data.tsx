@@ -152,7 +152,10 @@ function RosterEntry({
         {people.length > 0 && (
           <span aria-hidden="true" className="flex -space-x-1.5">
             {people.map((person) => (
-              <span key={person.id} className="hb-data-avatar rounded-full">
+              <span
+                key={person.id}
+                className="hb-data-avatar flex rounded-full"
+              >
                 <Avatar name={person.name} src={person.avatarUrl} size={22} />
               </span>
             ))}
