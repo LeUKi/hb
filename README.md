@@ -168,7 +168,7 @@ Cloudflare Vite 插件的本地自动 trace 曾记录携带密钥的查单 URL�
 | `bun run test` | 运行共享校验及 Cloudflare Workers Vitest 测试 |
 | `bun run test:e2e` | 运行 Chromium 浏览器冒烟测试 |
 | `bun run check` | 依次执行静态检查、类型检查、测试、构建与浏览器测试 |
-| `bun run cf:typegen` | 生成两个 Worker 的绑定类型 |
+| `bun run cf:typegen` | 生成两个 Worker 的绑定类型；API 的变量与密钥名取自 `apps/api/.dev.vars.example`，不读本地 `.dev.vars` |
 | `bun run db:generate` | 从 Drizzle schema 生成数据库迁移 |
 | `bun run db:migrate:local` | 仅应用本地 D1 迁移 |
 | `bun run payment:acceptance:plan` | 查看固定单笔验收范围，不写库、不付款 |

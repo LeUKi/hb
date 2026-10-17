@@ -20,7 +20,7 @@
     "build": "wrangler deploy --dry-run --outdir dist",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.tooling.json",
     "test": "vitest run",
-    "cf:typegen": "wrangler types src/worker-configuration.d.ts --env-interface CloudflareEnv",
+    "cf:typegen": "wrangler types src/worker-configuration.d.ts --env-interface CloudflareEnv --env-file .dev.vars.example",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply hb-local --local --persist-to ../../.wrangler/state"
   },

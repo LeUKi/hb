@@ -1,4 +1,6 @@
-export type ApiBindings = Omit<CloudflareEnv, "LDC_TIMED_DRAW_ENABLED"> & {
+// cf:typegen types each key of .dev.vars.example as a string that is always
+// set. A deployment may leave any of them unset, so these replace those types.
+type ApiEnvVars = {
   APP_ORIGIN?: string;
   CONNECT_CLIENT_ID?: string;
   CONNECT_CLIENT_SECRET?: string;
@@ -17,6 +19,8 @@ export type ApiBindings = Omit<CloudflareEnv, "LDC_TIMED_DRAW_ENABLED"> & {
   LDC_STOP_SENDS?: string;
   LDC_TIMED_DRAW_ENABLED?: string;
 };
+
+export type ApiBindings = Omit<CloudflareEnv, keyof ApiEnvVars> & ApiEnvVars;
 
 export type ApiVariables = {
   userId?: string;
