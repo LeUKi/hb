@@ -527,16 +527,20 @@ export async function flushPaymentOutbox(env: ApiBindings, taskId?: string) {
 export async function sweepPayments(env: ApiBindings) {
   await flushPaymentOutbox(env);
   const runnable = await runnableTaskSql(env);
+  // A merchant held by the daily limit (quota.ts) sends nothing until its
+  // payment's resume time, whatever has queued behind it; from then on that
+  // payment is due itself.
   const page = await env.DB.prepare(
     `SELECT DISTINCT m.id,m.client_id,m.recovery_scanned_at
       FROM payment_tasks p JOIN merchants m ON m.id=p.merchant_id
       LEFT JOIN payment_acceptances a ON a.id=p.acceptance_id
       WHERE ((p.status IN ('pending','waiting','reconciling','sending') AND p.next_run_at<=?)
         OR (p.status='confirmed' AND EXISTS(SELECT 1 FROM payment_duplicate_probes d WHERE d.task_id=p.id AND (d.status IN ('pending','sending','reconciling') OR (d.status='awaiting_evidence' AND d.protocol_verified_at IS NULL)) AND d.next_run_at<=?)))
+        AND NOT EXISTS(SELECT 1 FROM payment_tasks h WHERE h.id=m.active_task_id AND m.paused_reason='quota' AND h.status='waiting' AND h.reason='quota' AND h.next_run_at>?)
         AND (${runnable.condition})
       ORDER BY m.recovery_scanned_at,m.id LIMIT 20`,
   )
-    .bind(Date.now(), Date.now(), ...runnable.values)
+    .bind(Date.now(), Date.now(), Date.now(), ...runnable.values)
     .all<{ id: string; client_id: string; recovery_scanned_at: number }>();
   if (!page.results.length) return 0;
   // Advance the bounded batch before waking it. Failed or protected merchants

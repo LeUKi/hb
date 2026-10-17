@@ -186,6 +186,32 @@ describe("bounded payment recovery sweeps", () => {
     expect(wakes.responses.every((response) => response.bodyUsed)).toBe(true);
   });
 
+  it("leaves a merchant held by the daily limit alone until it resumes", async () => {
+    const held = await fixture(2);
+    await held.claim(await user());
+    const other = await fixture();
+    const resume = Date.now() + 3_600_000;
+    await env.DB.batch([
+      env.DB.prepare("UPDATE payment_outbox SET delivered_at=1"),
+      env.DB.prepare(
+        "UPDATE payment_tasks SET status='waiting',reason='quota',next_run_at=? WHERE id=?",
+      ).bind(resume, held.taskId),
+      env.DB.prepare(
+        "UPDATE merchants SET active_task_id=?,paused_reason='quota' WHERE id=?",
+      ).bind(held.taskId, held.merchant.id),
+    ]);
+    fakeQueue();
+    const wakes = fakeWakes();
+    // The claim queued behind it has long been due, but it waits its turn.
+    expect(await sweepPayments(env)).toBe(1);
+    expect(wakes.attempts).toEqual([other.merchant.id]);
+    // From then on it is swept again, should its own alarm be lost.
+    wakes.attempts.length = 0;
+    vi.spyOn(Date, "now").mockReturnValue(resume);
+    await sweepPayments(env);
+    expect(wakes.attempts).toContain(held.merchant.id);
+  });
+
   it("recovers a delivered but unexecuted task through the real MerchantDO", async () => {
     const item = await fixture();
     await env.DB.prepare(
