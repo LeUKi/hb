@@ -101,7 +101,7 @@
 - **超椭圆**：支持 CSS `corner-shape` 的浏览器（Chromium 139+）用它画，描边、焦点环、投影都沿形状；其他浏览器用 `clip-path` 兜底，描边和焦点环由 SVG 沿同一条路径画（做法和换算见 [04](04-visual.md) 第 8 节）。
 - **毛玻璃**：顶栏、压暗层的祖先上不能有 `clip-path`，窗口形状由各层自己裁切（原因见 [02](02-shell.md) 第 1 节）。
 - **安全区**：手机满屏时让开刘海、圆角和底部横条（`viewport-fit=cover` 加 `env(safe-area-inset-*)`），哪些层怎么让见 [02](02-shell.md) 第 11 节。
-- **手机上的搜索模式**（[02](02-shell.md) 第 6 节）：起始页的输入框在手机尺寸的窗口里点中就进入展开态；建议列表的高度用 `visualViewport` 算出屏幕键盘挡住的部分（`resize` 和 `scroll` 事件），iOS Safari 和 Android Chrome 默认都不因键盘缩小布局视口。
+- **手机上的搜索模式**（[02](02-shell.md) 第 6 节）：起始页的输入框在手机尺寸的窗口里点中就进入展开态；建议列表的高度用 `visualViewport` 算出屏幕键盘挡住的部分（`resize` 和 `scroll` 事件），iOS Safari 和 Android Chrome 默认都不因键盘缩小布局视口；键盘升起时 Safari 的平移也在这里处理（`components/shell/keyboard.tsx`，桌面层带 `data-desktop`）。
 - **`/status`**：保留，用来检查深链接、Service Binding 转发和接口报错。没有入口（不进命令表、不在任何菜单），按新外壳重画（`apps/web/src/components/views/status-view.tsx`），文案和 `health-status.tsx` 一样；e2e 的 scaffold 测试照旧。
 
 ## 6 地址与用词

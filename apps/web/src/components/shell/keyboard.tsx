@@ -1,5 +1,5 @@
 import { atom, useSetAtom } from "jotai";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 /**
  * How much of the window's bottom the on-screen keyboard covers, in px,
@@ -8,15 +8,58 @@ import { useEffect, useState } from "react";
  */
 export const keyboardInsetAtom = atom(0);
 
-/** The real keyboard: what the visual viewport leaves of the window's bottom. */
-function useViewportInset() {
-  const [inset, setInset] = useState(0);
+const TEXT_FIELD = "input, textarea, [contenteditable='true']";
+/** How long after a change the keyboard, Safari's pan and the 指令框 move. */
+const SETTLE_MS = 1000;
+
+/**
+ * The real keyboard, and the focused field kept in sight.
+ *
+ * iOS Safari, raising its keyboard, pans the page so the field just focused
+ * is not under it. Here the whole site is one fixed window, so it pans the
+ * window itself, and a field near the top (the 指令框, which rises there as
+ * it opens) goes out of sight above. While the field fits above the
+ * keyboard with the window at rest, the pan is undone: scrolled back, and
+ * where Safari keeps its view panned anyway (visualViewport.offsetTop stays,
+ * as on an iPhone 13 mini), the desktop moves down by as much. A field
+ * lower down keeps Safari's pan.
+ */
+function useKeyboard(setInset: (inset: number) => void) {
   useEffect(() => {
     const viewport = window.visualViewport;
     if (!viewport) return;
+    let follow = false;
+    let shift = 0;
+    let frame = 0;
+    let until = 0;
     const update = () => {
       const layer = document.querySelector("[data-window-layer]");
-      if (!layer) return;
+      const desktop = document.querySelector<HTMLElement>("[data-desktop]");
+      if (!layer || !desktop) return;
+      const field = document.activeElement;
+      if (
+        field instanceof HTMLElement &&
+        field.matches(TEXT_FIELD) &&
+        layer.contains(field)
+      ) {
+        // Where the field ends below the window's top: panned, moved or
+        // not, the two move together.
+        const below =
+          field.getBoundingClientRect().bottom -
+          layer.getBoundingClientRect().top;
+        follow =
+          below <= viewport.height && Math.abs(viewport.scale - 1) < 0.01;
+      } else if (viewport.offsetTop === 0) {
+        // Left for a button, the keyboard goes down and the pan with it:
+        // followed until it is undone.
+        follow = false;
+      }
+      if (follow && window.scrollY !== 0) window.scrollTo(0, 0);
+      const next = follow ? Math.round(viewport.offsetTop) : 0;
+      if (next !== shift) {
+        shift = next;
+        desktop.style.translate = shift ? `0 ${shift}px` : "";
+      }
       const bottom = layer.getBoundingClientRect().bottom;
       setInset(
         Math.max(
@@ -25,68 +68,38 @@ function useViewportInset() {
         ),
       );
     };
-    update();
-    viewport.addEventListener("resize", update);
-    viewport.addEventListener("scroll", update);
-    return () => {
-      viewport.removeEventListener("resize", update);
-      viewport.removeEventListener("scroll", update);
+    // Each change is followed frame by frame for a while: the keyboard and
+    // Safari's pan animate, and the 指令框 rises after its focus.
+    const tick = () => {
+      update();
+      frame = performance.now() < until ? requestAnimationFrame(tick) : 0;
     };
-  }, []);
-  return inset;
-}
-
-/**
- * iOS Safari, raising its keyboard, pans the page so the field just focused
- * is not under it. Here the whole site is one fixed window, so it pans the
- * window itself, and a field near the top (the 指令框) goes out of sight
- * above. While the field fits above the keyboard with the window at rest,
- * pan back; a field lower down keeps Safari's pan.
- */
-function useKeepFieldInSight() {
-  useEffect(() => {
-    const viewport = window.visualViewport;
-    if (!viewport) return;
-    let frame = 0;
     const settle = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        if (window.scrollY === 0 && viewport.offsetTop === 0) return;
-        const field = document.activeElement;
-        const layer = document.querySelector("[data-window-layer]");
-        if (
-          !(field instanceof HTMLElement) ||
-          !field.matches("input, textarea, [contenteditable='true']") ||
-          !layer?.contains(field)
-        )
-          return;
-        // Where the field ends below the window's top: panned or not, the
-        // two move together.
-        const below =
-          field.getBoundingClientRect().bottom -
-          layer.getBoundingClientRect().top;
-        if (below <= viewport.height) window.scrollTo(0, 0);
-      });
+      until = performance.now() + SETTLE_MS;
+      if (!frame) frame = requestAnimationFrame(tick);
     };
+    update();
     viewport.addEventListener("resize", settle);
     viewport.addEventListener("scroll", settle);
     window.addEventListener("scroll", settle);
     document.addEventListener("focusin", settle);
+    document.addEventListener("focusout", settle);
     return () => {
       cancelAnimationFrame(frame);
       viewport.removeEventListener("resize", settle);
       viewport.removeEventListener("scroll", settle);
       window.removeEventListener("scroll", settle);
       document.removeEventListener("focusin", settle);
+      document.removeEventListener("focusout", settle);
+      document
+        .querySelector<HTMLElement>("[data-desktop]")
+        ?.style.removeProperty("translate");
     };
-  }, []);
+  }, [setInset]);
 }
 
 /** Keeps keyboardInsetAtom current, and the focused field in sight. */
 export function KeyboardLayer() {
-  const inset = useViewportInset();
-  const setInset = useSetAtom(keyboardInsetAtom);
-  useEffect(() => setInset(inset), [inset, setInset]);
-  useKeepFieldInSight();
+  useKeyboard(useSetAtom(keyboardInsetAtom));
   return null;
 }

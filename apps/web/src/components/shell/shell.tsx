@@ -142,6 +142,7 @@ export function Shell() {
     <MotionConfig reducedMotion="user">
       <SlotProvider>
         <div
+          data-desktop
           data-motion={reduced ? "reduce" : undefined}
           className="desktop-bg fixed inset-0 grid place-items-center overflow-hidden"
         >
