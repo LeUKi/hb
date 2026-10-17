@@ -6,6 +6,7 @@ import {
   applySessionAttemptCooldown,
   clearAttemptCooldown,
 } from "./attempt-cooldown";
+import { isMaintenanceAnswer, noteMaintenance } from "./maintenance";
 
 export type SessionResponse = InferResponseType<
   typeof api.api.session.$get,
@@ -39,9 +40,11 @@ export async function fetchSession({
   });
 
   if (!response.ok) {
+    noteMaintenance(await isMaintenanceAnswer(response));
     throw new Error(`身份检查失败：HTTP ${response.status}`);
   }
 
+  noteMaintenance(false);
   const session = await response.json();
   return generation === sessionGeneration && !forceAnonymousSession
     ? session
@@ -175,6 +178,7 @@ export function useLogout(csrfToken: string | null | undefined) {
       });
 
       if (!response.ok) {
+        noteMaintenance(await isMaintenanceAnswer(response));
         throw new Error(`退出登录失败：HTTP ${response.status}`);
       }
 

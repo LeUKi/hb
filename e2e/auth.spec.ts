@@ -140,4 +140,71 @@ test.describe("登录与身份", () => {
     ).toBeVisible();
     await expect(page.getByText("还没有发过红包")).toBeVisible();
   });
+
+  test("系统维护中：顶栏和要登录的页面说明在维护，结束后自己恢复", async ({
+    page,
+  }) => {
+    let maintenance = true;
+    await page.route("**/api/session", (route) =>
+      maintenance
+        ? route.fulfill({
+            status: 503,
+            headers: { "Retry-After": "60" },
+            json: {
+              error: {
+                code: "MAINTENANCE",
+                message: "系统维护中，请稍后再试。",
+              },
+            },
+          })
+        : route.fulfill({
+            json: {
+              user: viewer,
+              csrfToken: "csrf-e2e-token",
+              attemptCooldown: {
+                revision: 0,
+                serverTime: Date.now(),
+                nextAllowedAt: 0,
+              },
+            },
+          }),
+    );
+    await page.route("**/api/me/history-summary", (route) =>
+      route.fulfill({
+        json: {
+          initiatedCount: 0,
+          participatedCount: 0,
+          sentAmount: "0.00",
+          receivedAmount: "0.00",
+        },
+      }),
+    );
+    await page.route(/\/api\/me\/(activities|participations)\?/, (route) =>
+      route.fulfill({
+        json: {
+          items: [],
+          nextCursor: null,
+          total: 0,
+          statusCounts: { all: 0, draft: 0, active: 0, ended: 0, archived: 0 },
+        },
+      }),
+    );
+    await page.clock.install();
+    await openApp(page, "/history");
+    await expect(identityButton(page)).toHaveAccessibleName(
+      "系统维护中，重新检查",
+    );
+    await expect(
+      page.getByText("系统维护中，请稍后再试。维护结束后页面会自己恢复。"),
+    ).toBeVisible();
+    // Over: the site asks again by itself, every 20 seconds.
+    maintenance = false;
+    await page.clock.fastForward(20_000);
+    await expect(identityButton(page)).toHaveAccessibleName(
+      `${viewer.displayName}，打开用户卡片`,
+    );
+    await expect(
+      page.getByRole("heading", { name: "红包记录", level: 1 }),
+    ).toBeVisible();
+  });
 });

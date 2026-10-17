@@ -18,9 +18,19 @@ import {
 
 export const app = new Hono<ApiContext>()
   // 维护模式: everything but the health check waits (runtime/maintenance-mode.ts).
+  // A page opened at the API itself (signing in, the way back from LINUX DO)
+  // goes to the start page instead, which says 系统维护中.
   .use("/api/*", async (c, next) => {
     if (!inMaintenanceMode(c.env) || c.req.path === "/api/health")
       return next();
+    if (
+      c.req.method === "GET" &&
+      (c.req.header("Sec-Fetch-Mode") === "navigate" ||
+        c.req.header("Accept")?.includes("text/html"))
+    ) {
+      c.header("Cache-Control", "no-store");
+      return c.redirect("/", 302);
+    }
     return c.json(maintenanceResponse, 503, {
       "Cache-Control": "no-store",
       "Retry-After": "60",

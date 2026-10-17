@@ -12,6 +12,7 @@ import {
   isVisible,
   roleOf,
 } from "../../lib/commands";
+import { useMaintenance } from "../../lib/maintenance";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { closeOverlay, openOverlay } from "../../lib/overlay";
 import { sessionUserOf, useIdentity } from "../../lib/session";
@@ -29,16 +30,23 @@ import { useWindowInfo } from "./window-info";
 // 账号资料 (/me) is the card's head: the name itself.
 const cardCommands: CommandId[] = ["history", "merchant", "payments", "admin"];
 
-/** The identity check failed: maybe signed in, maybe not. Check again. */
+/**
+ * The identity check failed: maybe signed in, maybe not. Check again. In
+ * 维护模式 nobody can sign in either; the site says so and comes back by
+ * itself (lib/maintenance.ts).
+ */
 function IdentityFailedContent() {
   const { checking, retry } = useIdentityRetry();
+  const maintenance = useMaintenance();
   return (
     <div className="grid gap-4 p-4">
       <h2 id="account-card-title" className="px-1 text-lg font-semibold">
-        身份检查失败
+        {maintenance ? "系统维护中" : "身份检查失败"}
       </h2>
       <p className="px-1 text-sm text-ink-2">
-        没能确认你的登录状态，现在按游客浏览。请重新检查；还没登录的话，检查后再登录。
+        {maintenance
+          ? "暂时不能登录、领取和发红包。维护通常几分钟就结束，结束后页面会自己恢复。"
+          : "没能确认你的登录状态，现在按游客浏览。请重新检查；还没登录的话，检查后再登录。"}
       </p>
       <Button
         variant="primary"
@@ -62,9 +70,10 @@ function signIn() {
 function LoginContent() {
   const [authError, setAuthError] = useAtom(authErrorAtom);
   const { failed } = useIdentity();
+  const maintenance = useMaintenance();
   const error =
     authError && authError.owner === null ? authErrorOf(authError.code) : null;
-  if (failed) return <IdentityFailedContent />;
+  if (failed || maintenance) return <IdentityFailedContent />;
   return (
     <div className="grid gap-4 p-4">
       <h2 id="account-card-title" className="px-1 text-lg font-semibold">

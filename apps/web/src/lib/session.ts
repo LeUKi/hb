@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { type SessionResponse, sessionQueryKey, useSession } from "./auth";
+import { useMaintenance } from "./maintenance";
 
 export type SessionUser = NonNullable<SessionResponse["user"]>;
 
@@ -19,12 +20,15 @@ export function useSessionUser(): SessionUser | null {
  */
 export function useIdentity() {
   const session = useSession();
+  const maintenance = useMaintenance();
   const lastFailed = session.errorUpdatedAt > session.dataUpdatedAt;
   const failed = session.isError || lastFailed;
   return {
     /** The first answer has arrived (or failed). */
     ready: !session.isPending || lastFailed,
     failed,
+    /** It failed because the API is in 维护模式 (lib/maintenance.ts). */
+    maintenance: failed && maintenance,
     checking: session.isFetching,
     user: failed ? null : (session.data?.user ?? null),
     csrfToken: failed ? null : (session.data?.csrfToken ?? null),

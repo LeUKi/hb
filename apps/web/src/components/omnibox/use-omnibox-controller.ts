@@ -11,6 +11,7 @@ import {
   ActivityRequestError,
   activityKeys,
   type PublicActivityDetail,
+  refused,
 } from "../../lib/activities";
 import { passwordKey, useSolvePassword } from "../../lib/activity-passwords";
 import { activityCode } from "../../lib/activity-route";
@@ -38,6 +39,7 @@ import {
   useGlobalRedemptionDiscovery,
 } from "../../lib/discovery";
 import { askHumanCheck, endHumanCheck } from "../../lib/human-check";
+import { maintenanceAtom } from "../../lib/maintenance";
 import { closeOverlay, openOverlay, switchOverlay } from "../../lib/overlay";
 import {
   type ParticipationCache,
@@ -232,11 +234,13 @@ export function useOmniboxController() {
 
   const guard = useCallback(() => {
     if (!sessionUserOf(queryClient)) {
-      store.set(messageAtom, {
-        tone: "warning",
-        text: "请先登录。",
-        action: "login",
-      });
+      // In 维护模式 nobody can sign in: say why instead.
+      store.set(
+        messageAtom,
+        store.get(maintenanceAtom)
+          ? { tone: "warning", text: "系统维护中，请稍后再试。" }
+          : { tone: "warning", text: "请先登录。", action: "login" },
+      );
       return false;
     }
     return true;
@@ -355,7 +359,7 @@ export function useOmniboxController() {
         }
         // No answer, or the server failed: the lookup may have happened.
         // Keep it, so 再次确认 asks about the same submission.
-        if (!(error instanceof ActivityRequestError) || error.status >= 500) {
+        if (!refused(error)) {
           store.set(unconfirmedAtom, {
             ...store.get(unconfirmedAtom),
             lookup: {
@@ -652,7 +656,7 @@ export function useOmniboxController() {
         }
         // No answer, or the server failed: it may have gone through. Keep
         // the submission, so 重试原提交 asks about exactly it.
-        if (!(error instanceof ActivityRequestError) || error.status >= 500) {
+        if (!refused(error)) {
           store.set(
             unconfirmedAtom,
             withClaim(store.get(unconfirmedAtom), activityId, {
@@ -735,8 +739,7 @@ export function useOmniboxController() {
       } catch (error) {
         if (error instanceof ActivityRequestError && error.status === 429)
           say({ tone: "warning", text: "尝试过于频繁，请稍后重试。" });
-        else if (error instanceof ActivityRequestError && error.status < 500)
-          say({ tone: "warning", text: error.message });
+        else if (refused(error)) say({ tone: "warning", text: error.message });
         // Verifying changes nothing: a lost answer is simply tried again.
         else say({ tone: "warning", text: "没有收到验证结果，请再试一次。" });
       } finally {

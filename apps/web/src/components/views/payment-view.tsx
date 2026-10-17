@@ -21,7 +21,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { ActivityRequestError } from "../../lib/activities";
+import { ActivityRequestError, refused } from "../../lib/activities";
 import { cn } from "../../lib/cn";
 import { paymentTone } from "../../lib/hongbao-text";
 import { useMerchantIdentity, useMerchantWrites } from "../../lib/merchants";
@@ -300,9 +300,7 @@ function RepairCredential({
           setError(
             failure instanceof ActivityRequestError && failure.status === 429
               ? "尝试过于频繁，请稍后重试。"
-              : failure instanceof ActivityRequestError &&
-                  failure.status < 500 &&
-                  failure.message
+              : refused(failure) && failure.message
                 ? failure.message
                 : "保存没有完成：网络或服务出了问题，原订单密钥没有更新。可以再试一次。",
           ),

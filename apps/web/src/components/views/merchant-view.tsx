@@ -15,7 +15,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
-import { ActivityRequestError } from "../../lib/activities";
+import { ActivityRequestError, refused } from "../../lib/activities";
 import {
   MerchantChangeConfirmationError,
   useMerchant,
@@ -65,7 +65,7 @@ function saveError(error: unknown, what: string) {
     if (error.status === 429) return "尝试过于频繁，请稍后重试。";
     if (error.status === 409)
       return "保存失败：商户配置刚在别处改过。你的输入还在，确认后再保存一次。";
-    if (error.status < 500 && error.message) return error.message;
+    if (refused(error) && error.message) return error.message;
   }
   return `保存没有完成：网络或服务出了问题，${what}。可以再试一次。`;
 }

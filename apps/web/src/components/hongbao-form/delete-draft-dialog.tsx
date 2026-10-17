@@ -7,6 +7,7 @@ import {
   ActivityRequestError,
   forgetDeletedActivity,
   readResponse,
+  refused,
 } from "../../lib/activities";
 import type { SessionUser } from "../../lib/session";
 import { ConfirmDialog } from "../shell/confirm-dialog";
@@ -93,8 +94,7 @@ export function DeleteDraftDialog({
                     failure instanceof ActivityRequestError &&
                       failure.status === 429
                       ? "尝试过于频繁，请稍后重试。"
-                      : failure instanceof ActivityRequestError &&
-                          failure.status < 500
+                      : refused(failure)
                         ? failure.message
                         : "删除没有完成：网络或服务出了问题，草稿还在。可以再试一次。",
                   ),

@@ -1,8 +1,9 @@
 import type { UseQueryResult } from "@tanstack/react-query";
-import { CloudOff, RotateCw } from "lucide-react";
+import { CloudOff, RotateCw, Wrench } from "lucide-react";
 import { motion, useIsPresent } from "motion/react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { cn } from "../../lib/cn";
+import { useMaintenance } from "../../lib/maintenance";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { Button } from "../ui/button";
 import { Squircle } from "../ui/squircle";
@@ -115,18 +116,25 @@ export function PageSkeleton({ focus = false }: { focus?: boolean }) {
 
 /** The first load failed: nothing to show yet, so say so and offer a retry. */
 export function LoadError({ onRetry }: { onRetry: () => void }) {
+  // 维护模式 (lib/maintenance.ts): the page reads again by itself after.
+  const maintenance = useMaintenance();
+  const Icon = maintenance ? Wrench : CloudOff;
   return (
     <div className="flex min-h-full flex-col items-center justify-center gap-5 px-6 py-10 text-center">
       <Squircle radius={18}>
         <span className="grid size-14 place-items-center bg-fill text-ink-2 shadow-[inset_0_1px_0_rgb(255_255_255/0.7)]">
-          <CloudOff className="size-6" aria-hidden="true" />
+          <Icon className="size-6" aria-hidden="true" />
         </span>
       </Squircle>
       {/* The alert is the words; the button is read as itself. */}
       <div role="alert" className="grid gap-1.5">
-        <h1 className="text-xl font-semibold text-ink">读取失败</h1>
+        <h1 className="text-xl font-semibold text-ink">
+          {maintenance ? "系统维护中" : "读取失败"}
+        </h1>
         <p className="text-base text-ink-2">
-          网络或服务暂时出了问题，稍后再试。
+          {maintenance
+            ? "请稍后再试，维护结束后页面会自己恢复。"
+            : "网络或服务暂时出了问题，稍后再试。"}
         </p>
       </div>
       <Button variant="primary" onClick={onRetry}>

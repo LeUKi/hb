@@ -6,6 +6,7 @@ import {
   Plus,
   RotateCw,
   ShieldAlert,
+  Wrench,
 } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { commandById } from "../../lib/commands";
@@ -38,16 +39,23 @@ function IdentityButton({ compact }: { compact: boolean }) {
   if (!ready)
     return <span className="size-10 rounded-full bg-fill" aria-hidden="true" />;
   // The session request failed: the site works on as a guest; this retries
-  // (production's "身份检查失败，重试").
-  if (identity.failed)
+  // (production's "身份检查失败，重试"). In 维护模式 it says so instead.
+  if (identity.failed) {
+    const failure = identity.maintenance ? "系统维护中" : "身份检查失败，重试";
     return (
       <button
         id="identity-button"
         type="button"
         onClick={identity.retry}
         aria-disabled={identity.checking || undefined}
-        aria-label={identity.checking ? "正在确认身份" : "身份检查失败，重试"}
-        title="身份检查失败，重试"
+        aria-label={
+          identity.checking
+            ? "正在确认身份"
+            : identity.maintenance
+              ? "系统维护中，重新检查"
+              : failure
+        }
+        title={identity.maintenance ? "系统维护中，请稍后再试" : failure}
         className={cn(
           buttonVariants({ variant: "ghost", size }),
           "text-warning",
@@ -59,14 +67,16 @@ function IdentityButton({ compact }: { compact: boolean }) {
         <MorphLabel>
           {identity.checking ? (
             <RotateCw className="size-4 motion-safe:animate-spin" />
+          ) : identity.maintenance ? (
+            <Wrench className="size-[18px]" />
           ) : (
             <ShieldAlert className="size-[18px]" />
           )}
-          {!compact &&
-            (identity.checking ? "正在确认身份…" : "身份检查失败，重试")}
+          {!compact && (identity.checking ? "正在确认身份…" : failure)}
         </MorphLabel>
       </button>
     );
+  }
   if (!user)
     return (
       <button

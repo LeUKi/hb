@@ -6,6 +6,7 @@ import {
   gateFor,
   roleOf,
 } from "../../lib/commands";
+import { useMaintenance } from "../../lib/maintenance";
 import { useIdentity } from "../../lib/session";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { PageSkeleton } from "../page/page-state";
@@ -54,7 +55,8 @@ export function MessageView({
 
 /**
  * A page that needs an account, while nobody knows whether there is one:
- * production's "身份检查失败，请重新检查后继续。" with 重新检查.
+ * production's "身份检查失败，请重新检查后继续。" with 重新检查. In 维护模式
+ * it says so, whatever the page would say otherwise.
  */
 export function IdentityFailedView({
   title,
@@ -66,11 +68,16 @@ export function IdentityFailedView({
   text?: string;
 }) {
   const { checking, retry } = useIdentityRetry();
+  const maintenance = useMaintenance();
   return (
     <MessageView
       icon={icon}
       title={title}
-      text={text}
+      text={
+        maintenance
+          ? "系统维护中，请稍后再试。维护结束后页面会自己恢复。"
+          : text
+      }
       action={
         <Button
           variant="primary"

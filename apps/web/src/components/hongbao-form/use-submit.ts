@@ -10,6 +10,7 @@ import { api } from "../../api";
 import {
   ActivityRequestError,
   readResponse,
+  refused,
   useActivityWrites,
 } from "../../lib/activities";
 import { useActivityOpening } from "../../lib/activity-opening";
@@ -262,7 +263,7 @@ export function useSubmit({
             });
           return;
         }
-        if (!(error instanceof ActivityRequestError) || error.status >= 500) {
+        if (!refused(error)) {
           setUncertain({ open, pending });
           if (here.current) setNotice({ tone: "warning", text: lost });
           return;

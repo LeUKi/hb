@@ -206,6 +206,22 @@ test.describe("兑奖", () => {
     expect(sent[1]?.submissionId).toBe(sent[0]?.submissionId);
   });
 
+  test("系统维护中：直接说明，不当作结果未确认", async ({ page }) => {
+    await mockSession(page, viewer);
+    await mockDiscover(page, [
+      {
+        status: 503,
+        body: {
+          error: { code: "MAINTENANCE", message: "系统维护中，请稍后再试。" },
+        },
+      },
+    ]);
+    await openApp(page);
+    await lookUp(page, "测试口令2102");
+    await expect(shown(page, "系统维护中，请稍后再试。")).toBeVisible();
+    await expect(page.getByRole("button", { name: "再次确认" })).toHaveCount(0);
+  });
+
   test("太频繁：说明并按服务端给的冷却倒数", async ({ page }) => {
     await mockSession(page, viewer);
     await mockDiscover(page, [
@@ -239,6 +255,23 @@ test.describe("兑奖", () => {
       .last()
       .click();
     await expect(page.getByRole("dialog", { name: "登录" })).toBeVisible();
+  });
+
+  test("系统维护中的游客输入口令：说明在维护，不叫人登录", async ({ page }) => {
+    await page.route("**/api/session", (route) =>
+      route.fulfill({
+        status: 503,
+        json: {
+          error: { code: "MAINTENANCE", message: "系统维护中，请稍后再试。" },
+        },
+      }),
+    );
+    await openApp(page);
+    await lookUp(page, "测试口令2103");
+    await expect(shown(page, "系统维护中，请稍后再试。")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "登录", exact: true }),
+    ).toHaveCount(0);
   });
 
   test("帖子链接：一个红包直接打开，多个去 /💬/ 页", async ({ page }) => {

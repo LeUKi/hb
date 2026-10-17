@@ -21,6 +21,7 @@ import {
 import { useCallback, useEffect } from "react";
 import { api } from "../api";
 import { sessionQueryKey, useAccountSession } from "./auth";
+import { MAINTENANCE, noteMaintenance } from "./maintenance";
 
 export class ActivityRequestError extends Error {
   constructor(
@@ -37,6 +38,18 @@ export class ActivityRequestError extends Error {
   }
 }
 
+/**
+ * The server turned the request down and did nothing; its message says why.
+ * From 500 up (or with no answer at all) the outcome is unknown, except in
+ * 维护模式, which turns every request away before it does anything.
+ */
+export function refused(error: unknown): error is ActivityRequestError {
+  return (
+    error instanceof ActivityRequestError &&
+    (error.status < 500 || error.code === MAINTENANCE)
+  );
+}
+
 export async function readResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let body: ActivityError | undefined;
@@ -45,6 +58,9 @@ export async function readResponse<T>(response: Response): Promise<T> {
     } catch {
       // The gateway may fail before a JSON response can be produced.
     }
+    noteMaintenance(
+      response.status === 503 && body?.error?.code === MAINTENANCE,
+    );
     throw new ActivityRequestError(
       response.status === 409 &&
         body?.error?.code === "ACTIVITY_VERSION_CONFLICT"
@@ -59,6 +75,7 @@ export async function readResponse<T>(response: Response): Promise<T> {
       body?.humanCheck,
     );
   }
+  noteMaintenance(false);
   return (await response.json()) as T;
 }
 

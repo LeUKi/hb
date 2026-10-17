@@ -6,6 +6,7 @@ import { clearAttemptOperations } from "../../lib/attempt-history";
 import { sessionQueryKey } from "../../lib/auth";
 import { useBootMilestones } from "../../lib/boot";
 import { exchangeContextAtom } from "../../lib/discovery";
+import { useMaintenanceRecovery } from "../../lib/maintenance";
 import { useReducedMotionPref } from "../../lib/motion";
 import {
   redemptionIntentAtom,
@@ -138,6 +139,7 @@ export function Shell() {
   useBootMilestones(useIdentity().ready);
   useIdentityReset();
   useSessionRefresh();
+  useMaintenanceRecovery();
   return (
     <MotionConfig reducedMotion="user">
       <SlotProvider>

@@ -2,7 +2,12 @@ import type { ManagedActivity, Merchant } from "@hb/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import { ActivityRequestError, activityKeys, readResponse } from "./activities";
+import {
+  ActivityRequestError,
+  activityKeys,
+  readResponse,
+  refused,
+} from "./activities";
 import { type SessionResponse, sessionIdentity, sessionQueryKey } from "./auth";
 
 export type OpeningPhase = "idle" | "checking" | "opening";
@@ -141,10 +146,7 @@ export function useActivityOpening(userId: string, csrfToken: string) {
             !(error instanceof ActivityRequestError) ||
             error.code !== "MERCHANT_CREDENTIALS_CHECKING"
           ) {
-            if (
-              !(error instanceof ActivityRequestError) ||
-              error.status >= 500
-            ) {
+            if (!refused(error)) {
               const current = await readActivity();
               if (current.openedAt) return await remember(current);
             }

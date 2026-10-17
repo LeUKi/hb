@@ -187,6 +187,28 @@ describe("维护模式", () => {
     }
   });
 
+  it("sends a page opened at the API to the start page", async () => {
+    for (const headers of [
+      { "Sec-Fetch-Mode": "navigate" },
+      { Accept: "text/html,application/xhtml+xml" },
+    ] as Record<string, string>[]) {
+      const response = await app.request(
+        `${origin}/api/auth/login?returnTo=%2Fme`,
+        { headers },
+        maintenance,
+      );
+      expect(response.status).toBe(302);
+      expect(response.headers.get("Location")).toBe("/");
+      expect(response.headers.get("Cache-Control")).toBe("no-store");
+    }
+    const posted = await app.request(
+      `${origin}/api/auth/logout`,
+      { method: "POST", headers: { "Sec-Fetch-Mode": "navigate" } },
+      maintenance,
+    );
+    expect(posted.status).toBe(503);
+  });
+
   it("skips the cron's run without waking its object", async () => {
     const untouched = new Proxy(
       {},

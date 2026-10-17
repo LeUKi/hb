@@ -3,6 +3,7 @@ import { CircleStop, Eye } from "lucide-react";
 import { useRef, useState } from "react";
 import {
   ActivityRequestError,
+  refused,
   useActivityWrites,
   useManagedActivity,
 } from "../../lib/activities";
@@ -53,7 +54,7 @@ function EndEarly({
           setError(
             failure instanceof ActivityRequestError && failure.status === 429
               ? "尝试过于频繁，请稍后重试。"
-              : failure instanceof ActivityRequestError && failure.status < 500
+              : refused(failure)
                 ? failure.message
                 : "提前结束没有完成：网络或服务出了问题，红包还在进行。可以再试一次。",
           ),

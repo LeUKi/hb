@@ -1,4 +1,4 @@
-import { CloudOff, RotateCw } from "lucide-react";
+import { CloudOff, RotateCw, Wrench } from "lucide-react";
 import {
   type ComponentType,
   createContext,
@@ -6,6 +6,7 @@ import {
   useContext,
 } from "react";
 import { cn } from "../../lib/cn";
+import { useMaintenance } from "../../lib/maintenance";
 import { useWindowInfo } from "../shell/window-info";
 import { Button } from "../ui/button";
 import { radius, Squircle } from "../ui/squircle";
@@ -86,9 +87,18 @@ export function RefreshButton() {
  */
 export function RefreshNotice() {
   const state = useContext(RefreshContext);
+  const maintenance = useMaintenance();
   if (!state?.stale) return null;
   return (
-    <Callout tone="warning" icon={CloudOff} title="刷新失败，当前内容已保留。">
+    <Callout
+      tone="warning"
+      icon={maintenance ? Wrench : CloudOff}
+      title={
+        maintenance
+          ? "系统维护中，当前内容已保留。"
+          : "刷新失败，当前内容已保留。"
+      }
+    >
       <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span>下面可能不是最新的。</span>
         <Button

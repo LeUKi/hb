@@ -6,7 +6,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Check } from "lucide-react";
 import { useIsPresent } from "motion/react";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
-import { ActivityRequestError } from "../../../lib/activities";
+import { refused } from "../../../lib/activities";
 import { useRateLimits, useSaveRateLimits } from "../../../lib/admin";
 import { clockLabel } from "../../../lib/roster-time";
 import { useIdentity } from "../../../lib/session";
@@ -138,11 +138,7 @@ function SettingsForm({ data }: { data: AttemptRateLimitsResponse }) {
       reset();
       setDone(true);
     } catch (failure) {
-      if (
-        failure instanceof ActivityRequestError &&
-        failure.status !== 409 &&
-        failure.status < 500
-      ) {
+      if (refused(failure) && failure.status !== 409) {
         if (failure.status === 401 || failure.status === 403) {
           // Signed out, or no longer an admin: the page follows the
           // session once it is read again.
