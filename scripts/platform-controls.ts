@@ -67,7 +67,11 @@ async function main() {
     environment,
     readConfig(configPath(environment, "web")),
     readConfig(configPath(environment, "api")),
-    { allowPlaceholders: !values["--execute"], allowLive: true },
+    {
+      allowPlaceholders: !values["--execute"],
+      allowLive: true,
+      allowMaintenance: true,
+    },
   );
   const update = controlUpdate(environment, values);
   const command =

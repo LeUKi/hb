@@ -170,7 +170,7 @@ export function remoteBackupPlan(
     environment,
     readConfig(configPath(environment, "web")),
     api,
-    { allowPlaceholders: true, allowLive: true },
+    { allowPlaceholders: true, allowLive: true, allowMaintenance: true },
   );
   if (
     rehearsal &&

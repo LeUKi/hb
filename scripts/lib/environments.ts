@@ -284,8 +284,11 @@ export function target(
   const apiPath = configPath(environment, "api");
   const api = readConfig(apiPath);
   const web = readConfig(configPath(environment, "web"));
+  // Backups, diagnostics, payment controls and d1-move run during 维护模式
+  // too; only a release needs --maintenance.
   const resource = validateEnvironment(environment, web, api, {
     allowLive: true,
+    allowMaintenance: true,
   });
   if (environment !== "local") {
     const other = readConfig(
