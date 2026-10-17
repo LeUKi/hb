@@ -170,6 +170,36 @@ test.describe("发红包", () => {
         count: 3,
       },
     });
+    // Off, it is left out: an older request keeps its parsed shape.
+    expect(sent[0]?.activity).not.toHaveProperty("humanCheck");
+  });
+
+  test("更多设置：领取前人机验证写明代价，打开后摘要和保存的输入都带上", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    await mockMerchants(page, [merchant]);
+    const sent = await mockCreate(page);
+    await openApp(page, "/new");
+    await fillRandom(page);
+    await page.getByRole("button", { name: /更多设置/ }).click();
+    const sheet = page.getByRole("dialog", { name: "更多设置" });
+    const toggle = sheet.getByRole("switch", { name: "领取前人机验证" });
+    await expect(toggle).toHaveAttribute("aria-checked", "false");
+    await expect(sheet).toContainText(
+      "中国大陆网络、广告拦截插件或部分隐私浏览器可能加载不出验证，这些人会领不了。",
+    );
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-checked", "true");
+    await sheet.getByRole("button", { name: "完成" }).click();
+    await expect(page.getByRole("button", { name: /更多设置/ })).toContainText(
+      "领取需人机验证",
+    );
+    await page.getByRole("button", { name: "存草稿" }).first().click();
+    await expect(
+      shown(page, "草稿已保存。开放前只有你能看到它。").first(),
+    ).toBeVisible();
+    expect(sent[0]?.activity).toMatchObject({ humanCheck: true });
   });
 
   test("限时开奖：最晚开奖默认 180 秒，时长可以按秒填", async ({ page }) => {

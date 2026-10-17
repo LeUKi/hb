@@ -18,6 +18,7 @@ import {
 } from "../../lib/redemption-intent";
 import { sealGlyphs } from "../../lib/seal";
 import { useSessionUser } from "../../lib/session";
+import { loadTurnstile } from "../../lib/turnstile";
 import {
   messageAtom,
   pendingAtom,
@@ -190,6 +191,13 @@ export function useHongbao(data: HongbaoData) {
         : mine.outcome === "lost"
           ? "本次未中奖。"
           : "已报名，等待开奖。";
+
+  // 领取前人机验证: its script is fetched ahead, so the dialog opens ready.
+  const humanCheckAhead =
+    activity.humanCheck && phase === "closed" && !author && !draft && !gate;
+  useEffect(() => {
+    if (humanCheckAhead) loadTurnstile().catch(() => {});
+  }, [humanCheckAhead]);
 
   const press = () => {
     if (phase !== "closed" || spinning || author || draft) return;

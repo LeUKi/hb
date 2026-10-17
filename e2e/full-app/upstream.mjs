@@ -75,6 +75,7 @@ export function createTestUpstream(Response, origin, options = {}) {
     credentialChecks: 0,
     distributeRequests: 0,
     orderQueries: 0,
+    humanChecks: 0,
     blockedRequests: 0,
   };
   const orders = new Map();
@@ -120,6 +121,24 @@ export function createTestUpstream(Response, origin, options = {}) {
     snapshot: () => ({ ...counters, orders: [...orders.values()] }),
     async fetch(request) {
       const url = new URL(request.url);
+      // Turnstile Siteverify, as it answers Cloudflare's test secrets: the
+      // always-pass one accepts any token, the always-fail one none.
+      if (
+        url.href ===
+          "https://challenges.cloudflare.com/turnstile/v0/siteverify" &&
+        request.method === "POST"
+      ) {
+        counters.humanChecks++;
+        const form = await request.formData();
+        const passes =
+          form.get("secret") === "1x0000000000000000000000000000000AA" &&
+          Boolean(form.get("response"));
+        return json(
+          passes
+            ? { success: true, "error-codes": [] }
+            : { success: false, "error-codes": ["invalid-input-response"] },
+        );
+      }
       if (url.origin === "https://connect.linux.do") {
         if (url.pathname === "/oauth2/token" && request.method === "POST") {
           counters.oauthTokenRequests++;

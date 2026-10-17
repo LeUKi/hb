@@ -103,7 +103,7 @@ bun run dev
 
 会话 Cookie 为不透明随机令牌，数据库仅保存摘要，有效期七天；HTTPS 使用 `Secure`，本地 loopback HTTP 仅为开发放宽。OAuth state 有效期十分钟，绑定发起登录的浏览器，单次消费。未配置时登录接口返回 `AUTH_NOT_CONFIGURED`，不会提供本地模拟登录旁路。
 
-`ENCRYPTION_KEYS` 是版本到 Base64 编码的 32 字节随机 AES 密钥的 JSON 对象，dotenv 文件中使用外层单引号保留 JSON 双引号（参照示例）；`ENCRYPTION_KEY_VERSION` 指定当前写入版本。`PASSWORD_DIGEST_KEY` 使用独立的至少 32 字节随机密钥（Base64）。这些密钥用于活动口令、商户凭证、OAuth 及付款诊断；不能使用示例值或复用 Connect 密钥。轮换 AES 密钥时保留旧版本以读取已有数据；口令摘要密钥变更需要重建摘要索引。生产密钥使用 Workers Secrets，真实配置不纳入 Git。
+`ENCRYPTION_KEYS` 是版本到 Base64 编码的 32 字节随机 AES 密钥的 JSON 对象，dotenv 文件中使用外层单引号保留 JSON 双引号（参照示例）；`ENCRYPTION_KEY_VERSION` 指定当前写入版本。`PASSWORD_DIGEST_KEY` 使用独立的至少 32 字节随机密钥（Base64）。这些密钥用于活动口令、商户凭证、OAuth 及付款诊断；不能使用示例值或复用 Connect 密钥。轮换 AES 密钥时保留旧版本以读取已有数据；口令摘要密钥变更需要重建摘要索引。生产密钥使用 Workers Secrets，真实配置不纳入 Git。领取前人机验证在本地和测试里用 Cloudflare 的测试站点密钥，不需要 `TURNSTILE_SECRET_KEY`；生产的配置见[部署说明](docs/deployment-readiness.md)。
 
 自动化协议测试只使用模拟 Connect／LDC 响应，不访问真实账号或执行付款。页面测试保留模拟接口场景，完整应用测试另外经过真实 Web Worker、Service Binding、API、D1、DO 与 Queue；外部 OAuth 和 LDC 只在隔离测试运行时注入。
 

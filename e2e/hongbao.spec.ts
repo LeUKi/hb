@@ -1,5 +1,6 @@
 import { expect, type Page, test, type WebSocketRoute } from "@playwright/test";
 import {
+  type ActivityError,
   type ActivityPasswords,
   type AuthorClaimList,
   type ClaimDetail,
@@ -109,8 +110,45 @@ function publicRead(state: {
   };
 }
 
+/**
+ * Turnstile, faked: a widget that shows its spinner and passes after
+ * `window.__turnstileDelay` ms (400 unless a test changes it).
+ */
+async function fakeTurnstile(page: Page) {
+  await page.route(
+    "https://challenges.cloudflare.com/turnstile/v0/api.js**",
+    (route) =>
+      route.fulfill({
+        contentType: "text/javascript",
+        body: `window.__turnstileRenders = [];
+          window.turnstile = {
+            render(container, options) {
+              window.__turnstileRenders.push({
+                sitekey: options.sitekey,
+                action: options.action,
+                cData: options.cData,
+                language: options.language,
+              });
+              container.textContent = "正在验证…";
+              setTimeout(() => {
+                container.textContent = "成功！";
+                options.callback("e2e-turnstile-token");
+              }, window.__turnstileDelay ?? 400);
+              return "widget-" + window.__turnstileRenders.length;
+            },
+            reset() {},
+            remove() {},
+          };`,
+      }),
+  );
+}
+
 /** One 红包's server, mocked: answers reads and the two writes. */
-async function mockHongbao(page: Page) {
+async function mockHongbao(
+  page: Page,
+  /** 领取前人机验证: a right 口令 asks for a token first. */
+  options: { humanCheck?: boolean } = {},
+) {
   await page.route("https://avatars.example.test/**", (route) =>
     route.fulfill({
       contentType: "image/svg+xml",
@@ -118,7 +156,10 @@ async function mockHongbao(page: Page) {
     }),
   );
   const state = {
-    activity: publicActivity(),
+    activity: {
+      ...publicActivity(),
+      ...(options.humanCheck ? { humanCheck: true as const } : {}),
+    },
     claim: null as ClaimDetail | null,
     recipients: [recipient("早到的人", 1)],
     solved: [] as string[],
@@ -218,11 +259,27 @@ async function mockHongbao(page: Page) {
       const input = request.postDataJSON() as {
         password?: string;
         submissionId: string;
+        humanToken?: string;
       };
       state.claims.push(input);
       if (input.password !== passwordOf.mine)
         return route.fulfill({
           json: { result: "incorrect" } satisfies ClaimResult,
+        });
+      if (options.humanCheck && !input.humanToken)
+        return route.fulfill({
+          status: 403,
+          json: {
+            error: {
+              code: "HUMAN_CHECK_REQUIRED",
+              message: "领取这个红包需要先通过人机验证。",
+            },
+            humanCheck: {
+              siteKey: "1x00000000000000000000AA",
+              action: "claim",
+              cData: id,
+            },
+          } satisfies ActivityError,
         });
       return route.fulfill({
         json: {
@@ -672,6 +729,81 @@ test.describe("红包页", () => {
     await expect(result.getByText(passwordOf.mine)).toBeVisible();
     await expect(section.getByText(passwordOf.other)).toBeVisible();
     await expect(page.getByRole("button", { name: /^显示/ })).toHaveCount(0);
+  });
+
+  test("领取前人机验证：口令对了才弹窗，关掉不领，转圈通过后自动领取", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    await fakeTurnstile(page);
+    const state = await mockHongbao(page, { humanCheck: true });
+    await openApp(page, path);
+    await page.getByRole("button", { name: "输入口令领取" }).click();
+    const dialog = page.getByRole("dialog", { name: "人机验证" });
+    // A wrong 口令 never asks.
+    await omniboxInput(page).fill("不对的口令2026");
+    await page.keyboard.press("Enter");
+    await expect(shown(page, /^口令不正确/)).toBeVisible();
+    await expect(dialog).toBeHidden();
+    await expect(
+      page.getByRole("button", { name: /还需等待 \d 秒/ }),
+    ).toBeHidden({ timeout: 10_000 });
+
+    // Asked, then closed before it passes: nothing is claimed.
+    await page.evaluate(() => {
+      (window as { __turnstileDelay?: number }).__turnstileDelay = 60_000;
+    });
+    await omniboxInput(page).fill(passwordOf.mine);
+    await page.keyboard.press("Enter");
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText(
+      "这是 @author 的要求：领取这个红包需要先通过人机验证，通过后会自动领取。",
+    );
+    await expect(dialog.getByText("正在验证…")).toBeVisible();
+    await dialog.getByRole("button", { name: "取消" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(shown(page, "没有完成人机验证，这次没有领取。")).toBeVisible();
+    expect(state.claims).toHaveLength(2);
+
+    // Asked again: the spinner passes, and the same submission claims.
+    await page.evaluate(() => {
+      (window as { __turnstileDelay?: number }).__turnstileDelay = 400;
+    });
+    await page.keyboard.press("Enter");
+    await expect(dialog).toBeVisible();
+    await expect(
+      page.getByRole("status").filter({ hasText: "已领取 0.10 LDC。" }),
+    ).toHaveCount(1);
+    await expect(dialog).toBeHidden();
+    const [, , asked, passed] = state.claims as Array<{
+      submissionId: string;
+      humanToken?: string;
+    }>;
+    expect(state.claims).toHaveLength(4);
+    expect(asked?.humanToken).toBeUndefined();
+    expect(passed).toEqual({
+      submissionId: asked?.submissionId,
+      password: passwordOf.mine,
+      humanToken: "e2e-turnstile-token",
+    });
+    expect(
+      await page.evaluate(
+        () => (window as { __turnstileRenders?: unknown[] }).__turnstileRenders,
+      ),
+    ).toEqual([
+      {
+        sitekey: "1x00000000000000000000AA",
+        action: "claim",
+        cData: id,
+        language: "zh-cn",
+      },
+      {
+        sitekey: "1x00000000000000000000AA",
+        action: "claim",
+        cData: id,
+        language: "zh-cn",
+      },
+    ]);
   });
 
   test("我的结果：付款原因写成中文，不露出原因码", async ({ page }) => {

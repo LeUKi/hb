@@ -34,6 +34,7 @@ import {
   listUserClaims,
 } from "./claim-queries";
 import { ActivityError, activityNotFound } from "./errors";
+import { humanCheckOf, passesHumanCheck } from "./human-check";
 import { LIVE_USER_HEADER } from "./live";
 import {
   accountHistorySummary,
@@ -452,7 +453,19 @@ export const activityRoutes = new Hono<ApiContext>()
     async (c) => {
       const session = await requireProtectedMutation(c);
       const id = c.req.param("id");
-      await requireLdcActivity(c.env, id);
+      const activity = await requireLdcActivity(c.env, id);
+      const { humanToken, ...input } = c.req.valid("json");
+      // A token is checked here, not in the 红包's Durable Object, whose
+      // writes wait for one another (human-check.ts).
+      let humanVerified = false;
+      const challenge = humanToken ? humanCheckOf(c.env, activity) : null;
+      if (humanToken && challenge)
+        humanVerified = await passesHumanCheck(
+          c.env,
+          challenge,
+          humanToken,
+          c.req.header("CF-Connecting-IP"),
+        );
       const stub = c.env.ACTIVITY_DO.get(c.env.ACTIVITY_DO.idFromName(id));
       const response = await stub.fetch(
         `https://activity.internal/internal/activities/${encodeURIComponent(id)}/claim`,
@@ -461,7 +474,8 @@ export const activityRoutes = new Hono<ApiContext>()
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             userId: session.user.id,
-            ...c.req.valid("json"),
+            ...input,
+            humanVerified,
           }),
         },
       );

@@ -312,6 +312,16 @@ export function SettingsSheet({
                 />
               </Setting>
             )}
+            <Setting>
+              <Switch
+                label="领取前人机验证"
+                description="领取或报名前，先在弹窗里通过 Cloudflare 人机验证，挡住直接调接口的抢红包脚本。代价是：中国大陆网络、广告拦截插件或部分隐私浏览器可能加载不出验证，这些人会领不了。开放后也能改。"
+                checked={form.humanCheck}
+                onChange={(humanCheck) =>
+                  update((current) => ({ ...current, humanCheck }))
+                }
+              />
+            </Setting>
             {notes.map((item, index) => {
               const text = form[item.key].trim();
               const error = errorOf(item.id);

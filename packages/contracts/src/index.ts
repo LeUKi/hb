@@ -182,6 +182,11 @@ const baseActivitySchema = z.strictObject({
   afterEndInfo: infoSchema,
   // Preserve the parsed shape of legacy creation requests for idempotency.
   participationMode: participationModeSchema.optional(),
+  /**
+   * 领取前人机验证: claiming or signing up first passes Cloudflare Turnstile
+   * in a dialog. Optional (not defaulted) for the same reason as above.
+   */
+  humanCheck: z.boolean().optional(),
 });
 
 export const ldcMoneySchema = z.discriminatedUnion("mode", [
@@ -595,6 +600,8 @@ export type PublicActivity = {
   paymentMode?: PaymentMode;
   openingBlockedReason?: LdcOpeningBlockedReason;
   draw?: DrawSummary;
+  /** Claiming or signing up first passes a human check (Turnstile). */
+  humanCheck?: true;
   /**
    * Up to five people for the 名单入口, read with the rest so they match the
    * numbers: the latest claims; while a draw is open, the latest sign-ups;
@@ -686,9 +693,19 @@ export type AccountPaymentDetail = {
   activity: { id: string; title: string; draw: boolean };
 };
 export type ActivityIssue = { path: string; message: string };
+/** What the Turnstile widget needs for a 红包 that asks for a human check. */
+export type HumanCheckChallenge = {
+  siteKey: string;
+  /** Turnstile `action`: what the token is for. */
+  action: "claim" | "register";
+  /** Turnstile `cData`: the 红包 it is for. */
+  cData: string;
+};
 export type ActivityError = {
   error: { code: string; message: string; issues?: ActivityIssue[] };
   attemptCooldown?: AttemptCooldown;
+  /** HUMAN_CHECK_REQUIRED: pass it, then send the same submission again. */
+  humanCheck?: HumanCheckChallenge;
 };
 
 export const DEFAULT_CLAIM_LIMIT = 10;
@@ -701,11 +718,17 @@ export const passwordSolveSchema = z.strictObject({
   participationMode: z.literal("password").optional(),
 });
 export type PasswordClaimInput = z.infer<typeof passwordSolveSchema>;
+/** A Turnstile token, sent once the 红包 asked for it (HUMAN_CHECK_REQUIRED). */
+const humanTokenSchema = z.string().min(1).max(2048).optional();
 export const claimActivitySchema = z.union([
-  passwordSolveSchema,
+  z.strictObject({
+    ...passwordSolveSchema.shape,
+    humanToken: humanTokenSchema,
+  }),
   z.strictObject({
     submissionId: z.uuid(),
     participationMode: z.literal("direct"),
+    humanToken: humanTokenSchema,
   }),
 ]);
 export const endActivitySchema = z.strictObject({

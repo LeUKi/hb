@@ -37,6 +37,7 @@ import {
   topicActivitiesQuery,
   useGlobalRedemptionDiscovery,
 } from "../../lib/discovery";
+import { askHumanCheck, endHumanCheck } from "../../lib/human-check";
 import { closeOverlay, openOverlay, switchOverlay } from "../../lib/overlay";
 import {
   type ParticipationCache,
@@ -482,6 +483,54 @@ export function useOmniboxController() {
   );
 
   /**
+   * Sends a claim; a 红包 whose sender asks for a human check answers
+   * HUMAN_CHECK_REQUIRED first (and once more if a token fails), so the
+   * same submission goes again with a Turnstile token from the dialog.
+   * Null: the dialog was closed, or the page moved on meanwhile.
+   */
+  const claimWithHumanCheck = useCallback(
+    async (
+      activityId: string,
+      input: ClaimActivityInput,
+      stale: () => boolean,
+    ) => {
+      try {
+        for (let round = 0; ; round += 1) {
+          try {
+            return await claim.mutateAsync({ id: activityId, input });
+          } catch (error) {
+            if (
+              !(error instanceof ActivityRequestError) ||
+              error.code !== "HUMAN_CHECK_REQUIRED" ||
+              !error.humanCheck ||
+              round >= 2 ||
+              stale()
+            )
+              throw error;
+            const account = sessionUserOf(queryClient);
+            const read = account
+              ? queryClient.getQueryData<PublicActivityDetail>(
+                  activityKeys.public(activityId, account.id),
+                )
+              : undefined;
+            const token = await askHumanCheck(store, {
+              challenge: error.humanCheck,
+              author: read?.activity.author.username || null,
+              again: round > 0,
+            });
+            if (!token || stale()) return null;
+            input = { ...input, humanToken: token };
+          }
+        }
+      } finally {
+        // Passed, the dialog waited for this answer.
+        endHumanCheck(store);
+      }
+    },
+    [claim, queryClient, store],
+  );
+
+  /**
    * 领取 or 报名 inside one 红包: with a 口令, or none for a 红包 that needs
    * none. A submission whose answer was lost is sent again as it was (重试原
    * 提交); a lookup's single match continues with the lookup's own
@@ -537,7 +586,15 @@ export function useOmniboxController() {
       const say = (message: OmniMessage) =>
         store.set(messageAtom, { activityId, ...message });
       try {
-        const result = await claim.mutateAsync({ id: activityId, input });
+        const result = await claimWithHumanCheck(activityId, input, stale);
+        if (!result) {
+          if (!stale())
+            say({
+              tone: "neutral",
+              text: `没有完成人机验证，这次没有${verb}。`,
+            });
+          return;
+        }
         store.set(
           unconfirmedAtom,
           withClaim(store.get(unconfirmedAtom), activityId, null),
@@ -585,6 +642,14 @@ export function useOmniboxController() {
           });
           return;
         }
+        // Tokens kept failing: nothing was written, so nothing to retry.
+        if (
+          error instanceof ActivityRequestError &&
+          error.code === "HUMAN_CHECK_REQUIRED"
+        ) {
+          say({ tone: "warning", text: "人机验证没有通过，请稍后再试。" });
+          return;
+        }
         // No answer, or the server failed: it may have gone through. Keep
         // the submission, so 重试原提交 asks about exactly it.
         if (!(error instanceof ActivityRequestError) || error.status >= 500) {
@@ -610,7 +675,7 @@ export function useOmniboxController() {
         store.set(pendingAtom, false);
       }
     },
-    [claim, collapse, guard, queryClient, router, store, verbOf],
+    [claimWithHumanCheck, collapse, guard, queryClient, router, store, verbOf],
   );
 
   /**

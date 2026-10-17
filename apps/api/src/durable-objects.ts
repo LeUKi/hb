@@ -18,6 +18,7 @@ import {
   resumePendingActivityClaims,
 } from "./activities/claim-service";
 import { ActivityError, activityNotFound } from "./activities/errors";
+import { HumanCheckRequiredError } from "./activities/human-check";
 import { endActivity, refreshActivityLifecycle } from "./activities/lifecycle";
 import {
   LIVE_COALESCE_MS,
@@ -561,7 +562,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
           }
           if (!body || typeof body !== "object" || Array.isArray(body))
             throw new ActivityError(400, "INVALID_ACTIVITY", "红包请求无效");
-          const { authorId, userId, ...input } = body as Record<
+          const { authorId, userId, humanVerified, ...input } = body as Record<
             string,
             unknown
           >;
@@ -643,6 +644,8 @@ export class ActivityDO extends DurableObject<ApiBindings> {
               id,
               userId,
               parsed.data,
+              undefined,
+              humanVerified === true,
             );
             if ("registration" in result) await this.scheduleDraw(id);
             if (result.result === "claimed" || result.result === "registered")
@@ -724,6 +727,9 @@ export class ActivityDO extends DurableObject<ApiBindings> {
                 error: { code: error.code, message: error.message },
                 ...(error instanceof AttemptCooldownError
                   ? { attemptCooldown: error.attemptCooldown }
+                  : {}),
+                ...(error instanceof HumanCheckRequiredError
+                  ? { humanCheck: error.humanCheck }
                   : {}),
               },
               {

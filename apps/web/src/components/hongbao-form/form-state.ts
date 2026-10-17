@@ -61,6 +61,8 @@ export type FormState = {
   topic: string;
   listed: boolean;
   quantity: "exact" | "fuzzy";
+  /** 领取前人机验证: Turnstile in a dialog before each claim or sign-up. */
+  humanCheck: boolean;
 };
 
 export const modeLabels: Record<RewardMode, string> = {
@@ -118,6 +120,7 @@ export function emptyForm(now = Date.now()): FormState {
     afterEndInfo: "",
     topic: "",
     listed: false,
+    humanCheck: false,
     quantity: "exact",
   };
 }
@@ -527,6 +530,7 @@ export function formOf(activity: ManagedActivity, now = Date.now()): FormState {
     topic: config.topicUrl,
     listed: config.joinSquare,
     quantity: config.quantityVisibility === "fuzzy" ? "fuzzy" : "exact",
+    humanCheck: config.humanCheck === true,
   };
 }
 
@@ -607,6 +611,8 @@ export function inputOf(form: FormState, merchantId: string): ActivityInput {
     afterClaimInfo: form.afterClaimInfo,
     afterEndInfo: form.afterEndInfo,
     participationMode: form.participation,
+    // Left out when off, so older saved forms keep their shape (idempotency).
+    ...(form.humanCheck ? { humanCheck: true } : {}),
     rewardType: "ldc",
     merchantId,
     money,
@@ -615,8 +621,8 @@ export function inputOf(form: FormState, merchantId: string): ActivityInput {
 
 /**
  * An opened 红包's input with this form's edits: after opening only its
- * words, the post link, 加入广场 and how quantities show may change, so
- * everything else is sent back as it was saved.
+ * words, the post link, 加入广场, how quantities show and 领取前人机验证
+ * may change, so everything else is sent back as it was saved.
  */
 export function openedInputOf(
   activity: ManagedActivity,
@@ -631,6 +637,7 @@ export function openedInputOf(
     beforeInfo: form.beforeInfo,
     afterClaimInfo: form.afterClaimInfo,
     afterEndInfo: form.afterEndInfo,
+    humanCheck: form.humanCheck,
   };
 }
 
@@ -652,6 +659,7 @@ export function sameInput(saved: ActivityInput, sent: ActivityInput) {
       afterClaimInfo: input.afterClaimInfo,
       afterEndInfo: input.afterEndInfo,
       merchantId: input.merchantId,
+      humanCheck: input.humanCheck === true,
     });
   return (
     comparable(savedRest) === comparable(sentRest) &&

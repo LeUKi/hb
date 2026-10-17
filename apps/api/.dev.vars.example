@@ -11,6 +11,11 @@ CONNECT_CLIENT_SECRET=""
 ENCRYPTION_KEYS='{"v1":""}'
 ENCRYPTION_KEY_VERSION="v1"
 
+# 领取前人机验证 (Cloudflare Turnstile). A test site key needs no secret:
+# 1x00000000000000000000AA always passes, 3x00000000000000000000FF asks for a click.
+TURNSTILE_SITE_KEY=1x00000000000000000000AA
+TURNSTILE_SECRET_KEY=
+
 # Base64-encoded random HMAC key, at least 32 bytes.
 PASSWORD_DIGEST_KEY=""
 # 每账号、每活动滚动 60 秒内的有效提交上限；省略或无效时为 10。

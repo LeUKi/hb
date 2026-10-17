@@ -189,6 +189,9 @@ async function main() {
             CLAIM_ATTEMPTS_PER_MINUTE: "10",
             GLOBAL_REDEMPTIONS_PER_MINUTE: "10",
             ADMIN_LINUX_DO_IDS: "730001",
+            // Cloudflare's always-pass test key; Siteverify is the upstream mock.
+            TURNSTILE_SITE_KEY: "1x00000000000000000000AA",
+            TURNSTILE_SECRET_KEY: "",
           },
           d1Databases: { DB: "hb-full-app-isolated" },
           durableObjects: {

@@ -5,6 +5,7 @@ import { useRef, useSyncExternalStore } from "react";
 import { useBootDone } from "../../lib/boot";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { windowDialogsAtom } from "../../lib/store";
+import { HumanCheckDialog } from "../hongbao/human-check-dialog";
 import { NoteDialog } from "../hongbao/note-dialog";
 import { RosterDialog } from "../hongbao/roster-dialog";
 import { Omnibox } from "../omnibox/omnibox";
@@ -164,6 +165,7 @@ export function AppWindow() {
           <AuthErrorWatcher />
           <RosterDialog />
           <NoteDialog />
+          <HumanCheckDialog />
           <KeyboardLayer />
         </div>
       </div>

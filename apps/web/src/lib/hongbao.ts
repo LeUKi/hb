@@ -35,6 +35,8 @@ export type HongbaoActivity = {
   beforeInfo: string;
   /** 口令尝试统计: attempts here are summed up for the sender (📊). */
   statistics: boolean;
+  /** 领取前人机验证: claiming or signing up first passes Turnstile. */
+  humanCheck: boolean;
   /** 自定义金额's order, known to the sender only. */
   custom?: { allocation: "sequential" | "random" };
   /**
@@ -164,6 +166,7 @@ export function hongbaoOf(
     rewardSummary: rewardSummaryOf(reward),
     beforeInfo: activity.beforeInfo,
     statistics: activity.forceDedicated,
+    humanCheck: activity.humanCheck === true,
     custom:
       config && config.money.mode === "custom"
         ? { allocation: config.allocation }

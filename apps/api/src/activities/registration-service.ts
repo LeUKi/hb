@@ -29,6 +29,7 @@ import {
   type ActivityExecutionPolicy,
   permitsRealActivity,
 } from "./execution-policy";
+import { requireHumanCheck } from "./human-check";
 import { databaseNow } from "./lifecycle";
 import { assertParticipationMode, participationRequest } from "./participation";
 import { getRegistrationDetail } from "./registration-queries";
@@ -69,6 +70,7 @@ export async function registerForDraw(
   userId: string,
   input: ClaimActivityInput,
   executionPolicy?: ActivityExecutionPolicy,
+  humanVerified = false,
 ): Promise<ClaimResult> {
   const { mode, fingerprint, passwordDigest, continuation } =
     await participationRequest(env, activityId, input, "register");
@@ -164,6 +166,8 @@ export async function registerForDraw(
     const rowId = crypto.randomUUID();
     const registrationId =
       mode === "direct" || password ? crypto.randomUUID() : null;
+    // As for claims: asked only when the sign-up would go ahead.
+    if (registrationId) requireHumanCheck(env, activity, humanVerified);
     const recipient =
       registrationId && activity.paymentMode
         ? await paymentRecipient(env, userId, activity.paymentMode)

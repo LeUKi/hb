@@ -203,6 +203,26 @@ describe("release environment guards", () => {
     ).not.toThrow();
   });
 
+  it("requires a Turnstile site key setting and keeps test keys out of production", () => {
+    const { web, api } = configs();
+    expect(api.vars?.TURNSTILE_SITE_KEY).toBe("1x00000000000000000000AA");
+    expect(() => validateEnvironment("staging", web, api)).not.toThrow();
+    if (api.vars) delete api.vars.TURNSTILE_SITE_KEY;
+    expect(() => validateEnvironment("staging", web, api)).toThrow(
+      "Turnstile site key",
+    );
+    const production = configs("production");
+    production.api.vars = {
+      ...production.api.vars,
+      TURNSTILE_SITE_KEY: "1x00000000000000000000AA",
+    };
+    expect(() =>
+      validateEnvironment("production", production.web, production.api, {
+        allowLive: true,
+      }),
+    ).toThrow("Turnstile test key");
+  });
+
   it("rejects mismatched producer/consumer and conflicting DO lifecycle mechanisms", () => {
     const { web, api } = configs();
     if (api.queues?.consumers?.[0])

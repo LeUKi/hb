@@ -208,6 +208,15 @@ export function validateEnvironment(
       fail("explicit timed draw opening switch required");
     if (environment === "staging" && vars.LDC_TIMED_DRAW_ENABLED !== "false")
       fail("staging cannot enable timed draw openings");
+    // 领取前人机验证: empty until the environment has a Turnstile widget.
+    if (typeof vars.TURNSTILE_SITE_KEY !== "string")
+      fail("explicit Turnstile site key required (may be empty)");
+    // Cloudflare's test keys pass everyone (apps/api/src/activities/human-check.ts).
+    if (
+      environment === "production" &&
+      /^[123]x0{20}[A-F]{2}$/.test(vars.TURNSTILE_SITE_KEY ?? "")
+    )
+      fail("production cannot use a Turnstile test key");
     const live =
       vars.LDC_NETWORK_MODE === "live" ||
       stopFlags.some((flag) => vars[flag] === "false");

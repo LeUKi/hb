@@ -6,6 +6,7 @@ import type {
   CreateActivityInput,
   DeleteActivityInput,
   EndActivityInput,
+  HumanCheckChallenge,
   ManagedActivity,
   OpenActivityInput,
   PublicActivity,
@@ -29,6 +30,8 @@ export class ActivityRequestError extends Error {
     public readonly retryAfterSeconds?: number,
     public readonly code?: string,
     public readonly attemptCooldown?: AttemptCooldown | null,
+    /** HUMAN_CHECK_REQUIRED: what the Turnstile widget needs. */
+    public readonly humanCheck?: HumanCheckChallenge,
   ) {
     super(message);
   }
@@ -53,6 +56,7 @@ export async function readResponse<T>(response: Response): Promise<T> {
       body?.error?.code,
       (body as { attemptCooldown?: AttemptCooldown | null } | undefined)
         ?.attemptCooldown ?? null,
+      body?.humanCheck,
     );
   }
   return (await response.json()) as T;

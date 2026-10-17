@@ -34,6 +34,7 @@ import {
   type ActivityExecutionPolicy,
   permitsRealActivity,
 } from "./execution-policy";
+import { requireHumanCheck } from "./human-check";
 import { databaseNow, refreshActivityLifecycle } from "./lifecycle";
 import { assertParticipationMode, participationRequest } from "./participation";
 import { activityStatus } from "./service";
@@ -151,6 +152,7 @@ export async function prepareClaimSubmission(
   userId: string,
   input: ClaimActivityInput,
   executionPolicy?: ActivityExecutionPolicy,
+  humanVerified = false,
 ): Promise<SubmissionRow> {
   const { mode, fingerprint, passwordDigest, continuation } =
     await participationRequest(env, activityId, input, "claim");
@@ -251,6 +253,9 @@ export async function prepareClaimSubmission(
           )
         : null;
     const outcome = mode === "direct" || password ? "pending" : "incorrect";
+    // Only a claim that would go ahead asks: nothing is written (no attempt,
+    // no cooldown) until it comes back with a token.
+    if (outcome === "pending") requireHumanCheck(env, activity, humanVerified);
     const statements = [
       ...attemptWriteStatements(env, userId, "activity", rowId, continuation),
       // A failed precondition must roll back the submission AND the event together.
@@ -697,6 +702,8 @@ export async function claimActivity(
   userId: string,
   input: ClaimActivityInput,
   executionPolicy?: ActivityExecutionPolicy,
+  /** The API route checked a Turnstile token for this 红包 (human-check.ts). */
+  humanVerified = false,
 ) {
   await refreshActivityLifecycle(env, activityId);
   const activity = await findActivity(env, activityId);
@@ -708,7 +715,14 @@ export async function claimActivity(
       JSON.parse(activity.config).money?.mode === "timed_draw")
   ) {
     const { registerForDraw } = await import("./registration-service");
-    return registerForDraw(env, activityId, userId, input, executionPolicy);
+    return registerForDraw(
+      env,
+      activityId,
+      userId,
+      input,
+      executionPolicy,
+      humanVerified,
+    );
   }
   const submission = await prepareClaimSubmission(
     env,
@@ -716,6 +730,7 @@ export async function claimActivity(
     userId,
     input,
     executionPolicy,
+    humanVerified,
   );
   return completeClaimSubmission(env, submission, executionPolicy);
 }

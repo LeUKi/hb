@@ -61,6 +61,7 @@ import {
   historyStatusTotal,
   rewardFilterSql,
 } from "./history-query";
+import { humanCheckAvailable } from "./human-check";
 import { rosterPreview } from "./roster-preview";
 import {
   type ActivityRow,
@@ -103,6 +104,15 @@ function storedConfig(input: ActivityInput): StoredConfig {
     showRecipientTime: undefined,
     showRecipientAmount: undefined,
   };
+}
+
+/** Turned on where Turnstile has no keys: claims could not ask for it. */
+function humanCheckUnavailable(): never {
+  throw new ActivityError(
+    400,
+    "HUMAN_CHECK_UNAVAILABLE",
+    "这里还没有接通人机验证，暂时不能开启。",
+  );
 }
 
 function activityTopicUrl(row: ActivityRow) {
@@ -373,6 +383,7 @@ export function projectPublicActivity(
     ...(drawSummary(row, config.quantityVisibility !== "fuzzy")
       ? { draw: drawSummary(row, config.quantityVisibility !== "fuzzy") }
       : {}),
+    ...(config.humanCheck ? { humanCheck: true as const } : {}),
   };
 }
 
@@ -507,6 +518,8 @@ export async function createActivity(
       "SIMULATION_NOT_AVAILABLE",
       "此环境不支持创建模拟红包。",
     );
+  if (input.activity.humanCheck && !humanCheckAvailable(env))
+    humanCheckUnavailable();
   const id = crypto.randomUUID();
   const now = Date.now();
   const config = storedConfig(input.activity);
@@ -621,6 +634,8 @@ export async function updateActivity(
   if (row.openedAt !== null && row.joinSquare && !config.joinSquare)
     invalidActivity("加入广场后不能撤回");
   const oldConfig = configuration(row);
+  if (config.humanCheck && !oldConfig.humanCheck && !humanCheckAvailable(env))
+    humanCheckUnavailable();
   const old = await privateRows(env, id);
   if (
     old.passwords.length > ACTIVITY_LIMITS.passwords &&
