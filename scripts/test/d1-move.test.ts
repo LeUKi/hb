@@ -7,7 +7,11 @@ import {
   importScript,
 } from "../d1-move";
 
-/** Loads `script` the way D1 imports a file: one transaction, foreign keys on. */
+/**
+ * Loads `script` the way D1 imports a large file: foreign keys on, committed
+ * in several transactions (here, at worst, one per statement, so that
+ * `PRAGMA defer_foreign_keys` covers nothing).
+ */
 function loadLikeD1(script: string) {
   return JSON.parse(
     execFileSync(
@@ -20,7 +24,7 @@ import json,sqlite3,sys
 c=sqlite3.connect(':memory:',isolation_level=None)
 c.execute('PRAGMA foreign_keys=ON')
 try:
-  c.executescript('BEGIN;\\n'+sys.stdin.read()+'\\nCOMMIT;')
+  c.executescript(sys.stdin.read())
 except sqlite3.Error as error:
   print(json.dumps({'error':str(error)}));raise SystemExit
 print(json.dumps({
@@ -141,8 +145,8 @@ describe("d1-move", () => {
     ]);
   });
 
-  it("creates every table before loading rows, and indexes and triggers after them", () => {
-    // A full export, each table followed by its rows, is what failed on Stage.
+  it("creates every table first, loads referenced rows first, and adds indexes and triggers last", () => {
+    // A full export, each table followed by its rows, failed on Stage.
     const full = [
       defer,
       ...migrationsTable,
@@ -156,6 +160,20 @@ describe("d1-move", () => {
       ...indexesAndTriggers,
     ].join("\n");
     expect(loadLikeD1(full)).toEqual({ error: "no such table: main.users" });
+    // So did every table first with the rows in export order: D1 commits
+    // before the referenced rows arrive.
+    const tablesFirst = [
+      defer,
+      ...migrationsTable,
+      ...sessionsTable,
+      ...usersTable,
+      ...migrationRows,
+      ...sessionRows,
+      ...userRows,
+    ].join("\n");
+    expect(loadLikeD1(tablesFirst)).toEqual({
+      error: "FOREIGN KEY constraint failed",
+    });
     expect(loadLikeD1(importScript(schema, `${rows}\n`))).toEqual({
       objects: [
         ["index", "sessions_user_id_idx"],
@@ -180,6 +198,21 @@ describe("d1-move", () => {
     ).toThrow("table after indexes");
     expect(() =>
       importScript(schema, `${rows}\n${indexesAndTriggers[0]}`),
-    ).toThrow("schema among the rows");
+    ).toThrow("rows not one per line");
+    expect(() =>
+      importScript(
+        schema,
+        rows.replace("VALUES('t1','u1');", "VALUES('t1',\n'u1');"),
+      ),
+    ).toThrow("rows not one per line");
+    expect(() =>
+      importScript(
+        schema.replace(
+          "\t`sessions` integer DEFAULT 0 NOT NULL",
+          "\t`last_session` text REFERENCES `sessions`(`token_hash`)",
+        ),
+        rows,
+      ),
+    ).toThrow("FOREIGN_KEY_CYCLE: sessions, users");
   });
 });

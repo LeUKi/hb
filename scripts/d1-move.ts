@@ -83,17 +83,21 @@ export function compareSnapshots(source: Snapshot, copy: Snapshot) {
 
 const DEFER_FOREIGN_KEYS = "PRAGMA defer_foreign_keys=TRUE;";
 const RESET_SEQUENCES = "DELETE FROM sqlite_sequence;";
-const TABLE = /^CREATE TABLE\b/;
+const TABLE = /^CREATE TABLE (?:IF NOT EXISTS )?[`"]([^`"]+)[`"]/;
 const AFTER_ROWS = /^CREATE (?:UNIQUE INDEX|INDEX|TRIGGER|VIEW)\b/;
+const REFERENCE = /REFERENCES\s+[`"]?([A-Za-z0-9_]+)[`"]?/g;
+const ROW = /^INSERT INTO "([^"]+)" \(.*\);$/;
 
 /**
- * The import file, from a schema-only and a rows-only export: every table
- * first, then the rows, then indexes and triggers. D1 always enforces
- * foreign keys, and a full export gives each table's rows right after the
- * table, in creation order, so a table created before the one it references
- * (sessions before users) cannot take its rows. Triggers come after the rows
- * so that none fires on them. The rows are never parsed; an export laid out
- * differently is refused.
+ * The import file, from a schema-only and a rows-only export. D1 always
+ * enforces foreign keys and commits a large import in several transactions,
+ * so `PRAGMA defer_foreign_keys` does not cover the whole file, and an
+ * export gives each table's rows right after the table, in creation order
+ * (sessions' rows before users'). So every table is created first, then
+ * each table's rows come after the rows of the tables it references, then
+ * indexes and triggers, so that no trigger fires on the copied rows. A rows
+ * export has one statement per line (D1 writes a newline in a value as
+ * char(10)); an export laid out differently is refused.
  */
 export function importScript(schema: string, rows: string) {
   const schemaLines = schema.trimEnd().split("\n");
@@ -108,21 +112,57 @@ export function importScript(schema: string, rows: string) {
   );
   if (split === -1) split = schemaLines.length;
   const tables = schemaLines.slice(1, split);
-  const sequences = schemaLines[split] === RESET_SEQUENCES;
-  const after = schemaLines.slice(sequences ? split + 1 : split);
+  const after = schemaLines.slice(
+    schemaLines[split] === RESET_SEQUENCES ? split + 1 : split,
+  );
   if (!TABLE.test(tables[0] ?? ""))
     throw new Error("EXPORT_LAYOUT_UNEXPECTED: no tables");
   if (after.some((line) => TABLE.test(line) || line === RESET_SEQUENCES))
     throw new Error("EXPORT_LAYOUT_UNEXPECTED: table after indexes");
-  if (rowLines.some((line) => TABLE.test(line) || AFTER_ROWS.test(line)))
-    throw new Error("EXPORT_LAYOUT_UNEXPECTED: schema among the rows");
+
+  // Each table and the other tables it references.
+  const parents = new Map<string, Set<string>>();
+  let table = "";
+  for (const line of tables) {
+    const created = TABLE.exec(line)?.[1];
+    if (created) {
+      table = created;
+      parents.set(table, new Set());
+    }
+    for (const [, parent] of line.matchAll(REFERENCE))
+      if (parent && parent !== table) parents.get(table)?.add(parent);
+  }
+  const order: string[] = [];
+  const waiting = [...parents.keys()];
+  while (waiting.length) {
+    const next = waiting.findIndex((name) =>
+      [...(parents.get(name) ?? [])].every(
+        (parent) => order.includes(parent) || !parents.has(parent),
+      ),
+    );
+    if (next === -1)
+      throw new Error(`FOREIGN_KEY_CYCLE: ${waiting.join(", ")}`);
+    order.push(...waiting.splice(next, 1));
+  }
+
+  const rowsOf = new Map<string, string[]>();
+  for (const line of rowLines.slice(1)) {
+    const name = ROW.exec(line)?.[1];
+    if (!name || (name !== "sqlite_sequence" && !parents.has(name)))
+      throw new Error("EXPORT_LAYOUT_UNEXPECTED: rows not one per line");
+    const list = rowsOf.get(name) ?? [];
+    list.push(line);
+    rowsOf.set(name, list);
+  }
+  const sequences = rowsOf.get("sqlite_sequence") ?? [];
   return [
     DEFER_FOREIGN_KEYS,
     ...tables,
-    ...rowLines.slice(1),
+    ...order.flatMap((name) => rowsOf.get(name) ?? []),
+    ...sequences,
     // Loading an AUTOINCREMENT table's rows already counted them; keep the
-    // exported counter, which the rows' export inserts last.
-    ...(sequences
+    // exported counter, inserted after them.
+    ...(sequences.length
       ? [
           "DELETE FROM sqlite_sequence WHERE rowid NOT IN (SELECT MAX(rowid) FROM sqlite_sequence GROUP BY name);",
         ]
