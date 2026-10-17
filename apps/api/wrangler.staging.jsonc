@@ -16,15 +16,15 @@
     "LDC_STOP_NEW_CLAIMS": "true",
     "LDC_STOP_SENDS": "true",
     "MAINTENANCE_MODE": "false",
-    "DO_LOCATION_HINT": "",
-    "DO_NAME_PREFIX": "",
+    "DO_LOCATION_HINT": "apac",
+    "DO_NAME_PREFIX": "apac:",
     "LDC_TIMED_DRAW_ENABLED": "false"
   },
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "hb-staging",
-      "database_id": "05d0a65c-013c-4d56-84fe-72b004d3d787",
+      "database_name": "hb-staging-apac",
+      "database_id": "20bb686f-9bc8-4990-be54-18097c992df5",
       "migrations_dir": "migrations"
     }
   ],
