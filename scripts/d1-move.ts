@@ -1,15 +1,15 @@
 // Moves an environment's D1 database into a new, empty one
 // (docs/d1-apac-migration.md): export the current database, import it into
-// the target, and compare the two table by table. It runs only while the
-// environment is in 维护模式 (and, in production, with payments paused);
-// switching the binding afterwards is a release of its own.
+// the target, and compare the two table by table and row by row. It runs
+// only while the environment is in 维护模式 (and, in production, with
+// payments paused); switching the binding afterwards is a release of its own.
 //
 //   bun scripts/d1-move.ts --env staging --target hb-staging-apac             plan and checks
 //   bun scripts/d1-move.ts --env staging --target hb-staging-apac --execute   move and compare
 //   bun scripts/d1-move.ts --env staging --target hb-staging-apac --compare-only
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, readFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   type Environment,
@@ -79,6 +79,57 @@ export function compareSnapshots(source: Snapshot, copy: Snapshot) {
     if (a !== b) differences.push(`${type}s: ${a} → ${b}`);
   }
   return differences;
+}
+
+const DEFER_FOREIGN_KEYS = "PRAGMA defer_foreign_keys=TRUE;";
+const RESET_SEQUENCES = "DELETE FROM sqlite_sequence;";
+const TABLE = /^CREATE TABLE\b/;
+const AFTER_ROWS = /^CREATE (?:UNIQUE INDEX|INDEX|TRIGGER|VIEW)\b/;
+
+/**
+ * The import file, from a schema-only and a rows-only export: every table
+ * first, then the rows, then indexes and triggers. D1 always enforces
+ * foreign keys, and a full export gives each table's rows right after the
+ * table, in creation order, so a table created before the one it references
+ * (sessions before users) cannot take its rows. Triggers come after the rows
+ * so that none fires on them. The rows are never parsed; an export laid out
+ * differently is refused.
+ */
+export function importScript(schema: string, rows: string) {
+  const schemaLines = schema.trimEnd().split("\n");
+  const rowLines = rows.trimEnd().split("\n");
+  if (
+    schemaLines[0] !== DEFER_FOREIGN_KEYS ||
+    rowLines[0] !== DEFER_FOREIGN_KEYS
+  )
+    throw new Error("EXPORT_LAYOUT_UNEXPECTED: defer_foreign_keys");
+  let split = schemaLines.findIndex(
+    (line) => line === RESET_SEQUENCES || AFTER_ROWS.test(line),
+  );
+  if (split === -1) split = schemaLines.length;
+  const tables = schemaLines.slice(1, split);
+  const sequences = schemaLines[split] === RESET_SEQUENCES;
+  const after = schemaLines.slice(sequences ? split + 1 : split);
+  if (!TABLE.test(tables[0] ?? ""))
+    throw new Error("EXPORT_LAYOUT_UNEXPECTED: no tables");
+  if (after.some((line) => TABLE.test(line) || line === RESET_SEQUENCES))
+    throw new Error("EXPORT_LAYOUT_UNEXPECTED: table after indexes");
+  if (rowLines.some((line) => TABLE.test(line) || AFTER_ROWS.test(line)))
+    throw new Error("EXPORT_LAYOUT_UNEXPECTED: schema among the rows");
+  return [
+    DEFER_FOREIGN_KEYS,
+    ...tables,
+    ...rowLines.slice(1),
+    // Loading an AUTOINCREMENT table's rows already counted them; keep the
+    // exported counter, which the rows' export inserts last.
+    ...(sequences
+      ? [
+          "DELETE FROM sqlite_sequence WHERE rowid NOT IN (SELECT MAX(rowid) FROM sqlite_sequence GROUP BY name);",
+        ]
+      : []),
+    ...after,
+    "",
+  ].join("\n");
 }
 
 const USER_OBJECTS = "name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%'";
@@ -214,7 +265,10 @@ function main() {
     (args["--output-dir"] as string | undefined) ??
     join(repositoryRoot, ".wrangler/backups");
   mkdirSync(outputDirectory, { recursive: true, mode: 0o700 });
-  const stamp = new Date().toISOString().replaceAll(/[:.]/g, "-");
+  const base = join(
+    outputDirectory,
+    `d1-move-${environment}-${new Date().toISOString().replaceAll(/[:.]/g, "-")}`,
+  );
   const bookmark = (
     JSON.parse(
       runWrangler([
@@ -228,23 +282,36 @@ function main() {
       ]),
     ) as { bookmark: string }
   ).bookmark;
-  const file = join(outputDirectory, `d1-move-${environment}-${stamp}.sql`);
-  runWrangler(
-    [
-      "d1",
-      "export",
-      source,
-      "--config",
-      selected.apiPath,
-      "--remote",
-      "--output",
-      file,
-    ],
-    repositoryRoot,
-    TRANSFER_TIMEOUT_MS,
-  );
-  chmodSync(file, 0o600);
-  const sha256 = createHash("sha256").update(readFileSync(file)).digest("hex");
+  const exportPart = (
+    database: string,
+    part: "--no-data" | "--no-schema",
+    path: string,
+  ) => {
+    runWrangler(
+      [
+        "d1",
+        "export",
+        database,
+        "--config",
+        selected.apiPath,
+        "--remote",
+        part,
+        "--output",
+        path,
+      ],
+      repositoryRoot,
+      TRANSFER_TIMEOUT_MS,
+    );
+    chmodSync(path, 0o600);
+    return readFileSync(path, "utf8");
+  };
+  const sha256 = (text: string) =>
+    createHash("sha256").update(text).digest("hex");
+  const schema = exportPart(source, "--no-data", `${base}-schema.sql`);
+  const rows = exportPart(source, "--no-schema", `${base}-rows.sql`);
+  const file = `${base}.sql`;
+  const script = importScript(schema, rows);
+  writeFileSync(file, script, { mode: 0o600 });
   runWrangler(
     [
       "d1",
@@ -260,7 +327,11 @@ function main() {
     repositoryRoot,
     TRANSFER_TIMEOUT_MS,
   );
+  // The copy's rows, exported the same way, must match byte for byte.
+  const copied = exportPart(copy, "--no-schema", `${base}-rows-target.sql`);
   const differences = compareSnapshots(snapshot(source), snapshot(copy));
+  if (sha256(copied) !== sha256(rows))
+    differences.push("rows: the target's export differs from the source's");
   console.log(
     JSON.stringify(
       {
@@ -269,7 +340,8 @@ function main() {
         target: copy,
         bookmark,
         file,
-        sha256,
+        sha256: sha256(script),
+        rowsSha256: sha256(rows),
         differences,
       },
       null,
