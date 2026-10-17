@@ -15,6 +15,9 @@
     "LDC_STOP_NEW_OPENINGS": "false",
     "LDC_STOP_NEW_CLAIMS": "false",
     "LDC_STOP_SENDS": "false",
+    "MAINTENANCE_MODE": "false",
+    "DO_LOCATION_HINT": "",
+    "DO_NAME_PREFIX": "",
     "LDC_TIMED_DRAW_ENABLED": "true"
   },
   "d1_databases": [

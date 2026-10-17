@@ -190,6 +190,11 @@ async function main() {
             // Cloudflare's always-pass test key; Siteverify is the upstream mock.
             TURNSTILE_SITE_KEY: "1x00000000000000000000AA",
             TURNSTILE_SECRET_KEY: "",
+            MAINTENANCE_MODE: "false",
+            // Where Durable Objects go (docs/d1-apac-migration.md): a run can
+            // try the renamed objects with HB_FULL_APP_DO_NAME_PREFIX=apac:.
+            DO_LOCATION_HINT: process.env.HB_FULL_APP_DO_LOCATION_HINT ?? "",
+            DO_NAME_PREFIX: process.env.HB_FULL_APP_DO_NAME_PREFIX ?? "",
           },
           d1Databases: { DB: "hb-full-app-isolated" },
           durableObjects: {

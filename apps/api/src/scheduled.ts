@@ -2,6 +2,8 @@ import { sweepActivityLifecycle } from "./activities/lifecycle";
 import type { ApiBindings } from "./env";
 import { sweepPayments } from "./payments/scheduler";
 import { recoverCredentialChecks } from "./payments/verification";
+import { inMaintenanceMode } from "./runtime/maintenance-mode";
+import { maintenanceObject } from "./runtime/objects";
 
 export async function runScheduled(
   event: ScheduledController,
@@ -12,9 +14,12 @@ export async function runScheduled(
     cron: event.cron,
     scheduledTime: event.scheduledTime,
   });
-  const coordinator = env.ACTIVITY_DO.get(
-    env.ACTIVITY_DO.idFromName("maintenance:v1"),
-  );
+  // 维护模式: the run is skipped; the next one after it catches up.
+  if (inMaintenanceMode(env)) {
+    console.log("scheduled.skipped", { reason: "maintenance_mode" });
+    return;
+  }
+  const coordinator = maintenanceObject(env);
   const response = await coordinator.fetch(
     "https://activity.internal/internal/maintenance",
     {

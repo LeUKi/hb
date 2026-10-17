@@ -16,6 +16,12 @@ ENCRYPTION_KEY_VERSION="v1"
 TURNSTILE_SITE_KEY=1x00000000000000000000AA
 TURNSTILE_SECRET_KEY=
 
+# Only while D1 moves (docs/d1-apac-migration.md): "true" stops every write,
+# a location hint places new Durable Objects, a prefix renames long-lived ones.
+MAINTENANCE_MODE=false
+DO_LOCATION_HINT=
+DO_NAME_PREFIX=
+
 # Base64-encoded random HMAC key, at least 32 bytes.
 PASSWORD_DIGEST_KEY=""
 

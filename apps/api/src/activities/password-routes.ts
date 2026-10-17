@@ -8,6 +8,7 @@ import { bodyLimit } from "hono/body-limit";
 import { validator } from "hono/validator";
 import { getOptionalSession, requireProtectedMutation } from "../auth/session";
 import type { ApiContext } from "../env";
+import { activityObject } from "../runtime/objects";
 import { ActivityError } from "./errors";
 import { getActivityPasswords } from "./password-service";
 import { ActivityValidationError } from "./routes";
@@ -49,7 +50,7 @@ export const passwordRoutes = new Hono<ApiContext>()
     async (c) => {
       const session = await requireProtectedMutation(c);
       const id = c.req.param("id");
-      const object = c.env.ACTIVITY_DO.get(c.env.ACTIVITY_DO.idFromName(id));
+      const object = activityObject(c.env, id);
       const response = await object.fetch(
         `https://activity.internal/internal/activities/${encodeURIComponent(id)}/solve`,
         {

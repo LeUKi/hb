@@ -11,8 +11,21 @@ import type { ApiContext } from "./env";
 import { MerchantChangeConfirmationError } from "./payments/configuration";
 import { merchantRoutes } from "./payments/routes";
 import { AttemptCooldownError } from "./runtime/attempt-cooldown";
+import {
+  inMaintenanceMode,
+  maintenanceResponse,
+} from "./runtime/maintenance-mode";
 
 export const app = new Hono<ApiContext>()
+  // 维护模式: everything but the health check waits (runtime/maintenance-mode.ts).
+  .use("/api/*", async (c, next) => {
+    if (!inMaintenanceMode(c.env) || c.req.path === "/api/health")
+      return next();
+    return c.json(maintenanceResponse, 503, {
+      "Cache-Control": "no-store",
+      "Retry-After": "60",
+    });
+  })
   .get("/api/health", (c) => c.json({ status: "ok" as const }))
   .route("/api", authRoutes)
   .route("/api", adminRoutes)

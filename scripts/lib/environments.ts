@@ -77,11 +77,30 @@ export function hasPlaceholder(value: string) {
   );
 }
 
+/** Durable Object location hints (apps/api/src/runtime/objects.ts). */
+const DO_LOCATION_HINTS = [
+  "wnam",
+  "enam",
+  "sam",
+  "weur",
+  "eeur",
+  "apac",
+  "apac-ne",
+  "apac-se",
+  "oc",
+  "afr",
+  "me",
+];
+
 export function validateEnvironment(
   environment: Environment,
   web: WorkerConfig,
   api: WorkerConfig,
-  options: { allowPlaceholders?: boolean; allowLive?: boolean } = {},
+  options: {
+    allowPlaceholders?: boolean;
+    allowLive?: boolean;
+    allowMaintenance?: boolean;
+  } = {},
 ) {
   const suffix = environment === "local" ? "" : `-${environment}`;
   const fail = (reason: string): never => {
@@ -208,6 +227,22 @@ export function validateEnvironment(
       fail("explicit timed draw opening switch required");
     if (environment === "staging" && vars.LDC_TIMED_DRAW_ENABLED !== "false")
       fail("staging cannot enable timed draw openings");
+    // 维护模式 and where Durable Objects go (docs/d1-apac-migration.md).
+    if (!["true", "false"].includes(vars.MAINTENANCE_MODE ?? ""))
+      fail("explicit maintenance mode switch required");
+    if (vars.MAINTENANCE_MODE === "true" && !options.allowMaintenance)
+      fail("maintenance mode needs --maintenance");
+    if (
+      typeof vars.DO_LOCATION_HINT !== "string" ||
+      (vars.DO_LOCATION_HINT !== "" &&
+        !DO_LOCATION_HINTS.includes(vars.DO_LOCATION_HINT))
+    )
+      fail("Durable Object location hint must be empty or a known region");
+    if (
+      typeof vars.DO_NAME_PREFIX !== "string" ||
+      !/^(?:|[a-z0-9-]+:)$/.test(vars.DO_NAME_PREFIX)
+    )
+      fail("Durable Object name prefix must be empty or end with a colon");
     // 领取前人机验证: empty until the environment has a Turnstile widget.
     if (typeof vars.TURNSTILE_SITE_KEY !== "string")
       fail("explicit Turnstile site key required (may be empty)");
@@ -281,13 +316,17 @@ export function target(
   return { environment, remote, apiPath, api, web, ...resource };
 }
 
-export function runWrangler(args: string[], cwd = repositoryRoot) {
+export function runWrangler(
+  args: string[],
+  cwd = repositoryRoot,
+  timeout = 120_000,
+) {
   try {
     return execFileSync("node", [wranglerPath, ...args], {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
-      timeout: 120_000,
+      timeout,
       env: {
         ...process.env,
         X_LOCAL_OBSERVABILITY: "false",

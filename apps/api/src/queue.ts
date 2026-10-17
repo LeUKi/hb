@@ -2,6 +2,10 @@ export type QueueResult = "ack" | "retry";
 
 import type { ApiBindings } from "./env";
 import { wakePayment } from "./payments/scheduler";
+import {
+  inMaintenanceMode,
+  MAINTENANCE_QUEUE_DELAY_SECONDS,
+} from "./runtime/maintenance-mode";
 
 export type QueueProbeMessage = {
   type: "synthetic.probe";
@@ -24,6 +28,11 @@ export async function handleQueueMessage(
   message: Message<unknown>,
   env?: ApiBindings,
 ): Promise<QueueResult> {
+  // 维护模式: every message waits in the queue.
+  if (env && inMaintenanceMode(env)) {
+    message.retry({ delaySeconds: MAINTENANCE_QUEUE_DELAY_SECONDS });
+    return "retry";
+  }
   if (isProbeMessage(message.body)) {
     if (!env) {
       message.retry();

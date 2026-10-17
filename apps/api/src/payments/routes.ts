@@ -12,6 +12,7 @@ import { ActivityError } from "../activities/errors";
 import { requireAuth, requireProtectedMutation } from "../auth/session";
 import type { ApiContext } from "../env";
 import { isLocalSimulation } from "../runtime/controls";
+import { merchantObject } from "../runtime/objects";
 import { accountPaymentDetail, listAccountPayments } from "./account-queries";
 import { readMerchantImpact, readMerchantUsage } from "./configuration";
 import {
@@ -262,13 +263,14 @@ async function wakeMerchant(
   env: ApiContext["Bindings"],
   merchant: { id: string; clientId: string },
 ) {
-  const response = await env.MERCHANT_DO.get(
-    env.MERCHANT_DO.idFromName(merchant.clientId),
-  ).fetch("https://merchant.internal/internal/payments/run", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ merchantId: merchant.id }),
-  });
+  const response = await merchantObject(env, merchant.clientId).fetch(
+    "https://merchant.internal/internal/payments/run",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ merchantId: merchant.id }),
+    },
+  );
   await response.arrayBuffer();
   if (!response.ok)
     throw new ActivityError(

@@ -8,6 +8,7 @@ import {
   isLocalSimulation,
   readPlatformControls,
 } from "../runtime/controls";
+import { merchantObject } from "../runtime/objects";
 import {
   type AdapterResult,
   ensureEvidenceMatchesTask,
@@ -487,7 +488,7 @@ export async function wakePayment(env: ApiBindings, taskId: string) {
       : await realSendDecision(env, task);
     if (!decision.allowed) return;
   }
-  const stub = env.MERCHANT_DO.get(env.MERCHANT_DO.idFromName(task.clientId));
+  const stub = merchantObject(env, task.clientId);
   const response = await stub.fetch(
     "https://merchant.internal/internal/payments/run",
     {
@@ -556,13 +557,14 @@ export async function sweepPayments(env: ApiBindings) {
     await Promise.all(
       page.results.slice(i, i + 5).map(async (row) => {
         try {
-          const response = await env.MERCHANT_DO.get(
-            env.MERCHANT_DO.idFromName(row.client_id),
-          ).fetch("https://merchant.internal/internal/payments/run", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ merchantId: row.id }),
-          });
+          const response = await merchantObject(env, row.client_id).fetch(
+            "https://merchant.internal/internal/payments/run",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ merchantId: row.id }),
+            },
+          );
           await response.arrayBuffer();
           if (!response.ok) throw new Error();
           processed++;

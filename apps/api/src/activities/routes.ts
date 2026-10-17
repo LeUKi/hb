@@ -25,6 +25,7 @@ import {
   listPaymentActivities,
 } from "../payments/activity-queries";
 import { resendClaimPayment } from "../payments/resend";
+import { activityObject, creationObject } from "../runtime/objects";
 import { assertExactOrigin } from "../security/http";
 import {
   getClaimDetail,
@@ -218,9 +219,7 @@ export const activityRoutes = new Hono<ApiContext>()
     activityJsonTransport<CreateActivityInput>(),
     async (c) => {
       const session = await requireProtectedMutation(c);
-      const stub = c.env.ACTIVITY_DO.get(
-        c.env.ACTIVITY_DO.idFromName(`activity-create:${session.user.id}`),
-      );
+      const stub = creationObject(c.env, session.user.id);
       // Batch encryption runs in a Durable Object's CPU budget. D1 still
       // enforces the author/request uniqueness and atomic inventory write.
       const response = await stub.fetch(
@@ -311,7 +310,7 @@ export const activityRoutes = new Hono<ApiContext>()
       (activity.openedAt === null && activity.authorId !== session.user.id)
     )
       activityNotFound();
-    const object = c.env.ACTIVITY_DO.get(c.env.ACTIVITY_DO.idFromName(id));
+    const object = activityObject(c.env, id);
     await object.fetch(
       `https://activity.internal/internal/activities/${id}/refresh`,
       { method: "POST" },
@@ -331,7 +330,7 @@ export const activityRoutes = new Hono<ApiContext>()
       activityNotFound();
 
     if (activity.drawState && c.req.valid("query").refresh) {
-      const object = c.env.ACTIVITY_DO.get(c.env.ACTIVITY_DO.idFromName(id));
+      const object = activityObject(c.env, id);
       const response = await object.fetch(
         `https://activity.internal/internal/activities/${encodeURIComponent(id)}/refresh`,
         { method: "POST" },
@@ -352,7 +351,7 @@ export const activityRoutes = new Hono<ApiContext>()
     const session = await requireAuth(c);
     const id = c.req.param("id");
     await requireOwnedLdcActivity(c.env, id, session.user.id);
-    const stub = c.env.ACTIVITY_DO.get(c.env.ACTIVITY_DO.idFromName(id));
+    const stub = activityObject(c.env, id);
     const response = await stub.fetch(
       `https://activity.internal/internal/activities/${encodeURIComponent(id)}/manage`,
       {
@@ -370,7 +369,7 @@ export const activityRoutes = new Hono<ApiContext>()
       const session = await requireProtectedMutation(c);
       const id = c.req.param("id");
       await requireOwnedLdcActivity(c.env, id, session.user.id);
-      const stub = c.env.ACTIVITY_DO.get(c.env.ACTIVITY_DO.idFromName(id));
+      const stub = activityObject(c.env, id);
       const response = await stub.fetch(
         `https://activity.internal/internal/activities/${encodeURIComponent(id)}/update`,
         {
@@ -395,7 +394,7 @@ export const activityRoutes = new Hono<ApiContext>()
       const session = await requireProtectedMutation(c);
       const id = c.req.param("id");
       await requireOwnedLdcActivity(c.env, id, session.user.id);
-      const stub = c.env.ACTIVITY_DO.get(c.env.ACTIVITY_DO.idFromName(id));
+      const stub = activityObject(c.env, id);
       const response = await stub.fetch(
         `https://activity.internal/internal/activities/${encodeURIComponent(id)}/open`,
         {
@@ -420,7 +419,7 @@ export const activityRoutes = new Hono<ApiContext>()
       const session = await requireProtectedMutation(c);
       const id = c.req.param("id");
       await requireOwnedLdcActivityForDelete(c.env, id, session.user.id);
-      const stub = c.env.ACTIVITY_DO.get(c.env.ACTIVITY_DO.idFromName(id));
+      const stub = activityObject(c.env, id);
       return stub.fetch(
         `https://activity.internal/internal/activities/${encodeURIComponent(id)}/delete`,
         {
@@ -466,7 +465,7 @@ export const activityRoutes = new Hono<ApiContext>()
           humanToken,
           c.req.header("CF-Connecting-IP"),
         );
-      const stub = c.env.ACTIVITY_DO.get(c.env.ACTIVITY_DO.idFromName(id));
+      const stub = activityObject(c.env, id);
       const response = await stub.fetch(
         `https://activity.internal/internal/activities/${encodeURIComponent(id)}/claim`,
         {
@@ -496,7 +495,7 @@ export const activityRoutes = new Hono<ApiContext>()
     const session = await requireAuth(c);
     const id = c.req.param("id");
     await requireLdcActivity(c.env, id);
-    const stub = c.env.ACTIVITY_DO.get(c.env.ACTIVITY_DO.idFromName(id));
+    const stub = activityObject(c.env, id);
     // The DO's 101 goes back as it is: a rebuilt one would not upgrade.
     return stub.fetch(
       `https://activity.internal/internal/activities/${encodeURIComponent(id)}/live`,
@@ -563,7 +562,7 @@ export const activityRoutes = new Hono<ApiContext>()
       const session = await requireProtectedMutation(c);
       const id = c.req.param("id");
       await requireOwnedLdcActivity(c.env, id, session.user.id);
-      const stub = c.env.ACTIVITY_DO.get(c.env.ACTIVITY_DO.idFromName(id));
+      const stub = activityObject(c.env, id);
       const response = await stub.fetch(
         `https://activity.internal/internal/activities/${encodeURIComponent(id)}/end`,
         {

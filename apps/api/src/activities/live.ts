@@ -1,5 +1,6 @@
 import type { ActivityLiveMessage, PublicActivity } from "@hb/contracts";
 import type { ApiBindings } from "../env";
+import { activityObject } from "../runtime/objects";
 import type { ActivityRow } from "./storage";
 
 // A 红包's live channel: its ActivityDO (one per 红包) holds the viewers'
@@ -97,7 +98,7 @@ export async function tellPaymentWatchers(env: ApiBindings, taskId: string) {
     .bind(taskId)
     .first<{ activityId: string; userId: string; authorId: string }>();
   if (!row) return;
-  const stub = env.ACTIVITY_DO.get(env.ACTIVITY_DO.idFromName(row.activityId));
+  const stub = activityObject(env, row.activityId);
   const response = await stub.fetch(
     `https://activity.internal/internal/activities/${encodeURIComponent(row.activityId)}/live/mine`,
     {

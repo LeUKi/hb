@@ -1,5 +1,6 @@
 import { ARCHIVE_DELAY_MS } from "@hb/contracts";
 import type { ApiBindings } from "../env";
+import { activityObject } from "../runtime/objects";
 import { refreshTimedDraw } from "./draw-service";
 import { activityConflict, invalidActivity } from "./errors";
 import { activityStatus, getManagedActivity } from "./service";
@@ -86,7 +87,7 @@ export async function sweepActivityLifecycle(env: ApiBindings) {
       await Promise.all(
         batch.map(async ({ id }) => {
           try {
-            const object = env.ACTIVITY_DO.get(env.ACTIVITY_DO.idFromName(id));
+            const object = activityObject(env, id);
             const response = await object.fetch(
               `https://activity.internal/internal/activities/${id}/refresh`,
               { method: "POST" },

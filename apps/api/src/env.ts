@@ -18,6 +18,11 @@ type ApiEnvVars = {
   LDC_STOP_NEW_CLAIMS?: string;
   LDC_STOP_SENDS?: string;
   LDC_TIMED_DRAW_ENABLED?: string;
+  /** "true" while D1 is being moved: nothing writes (runtime/maintenance.ts). */
+  MAINTENANCE_MODE?: string;
+  /** Where Durable Objects are created, and new names for long-lived ones (runtime/objects.ts). */
+  DO_LOCATION_HINT?: string;
+  DO_NAME_PREFIX?: string;
 };
 
 export type ApiBindings = Omit<CloudflareEnv, keyof ApiEnvVars> & ApiEnvVars;

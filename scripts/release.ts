@@ -215,7 +215,11 @@ export function inspectAssetCache(directory: string) {
 
 export function createManifest(
   environment: Environment,
-  options: { allowPlaceholders?: boolean; allowLive?: boolean } = {},
+  options: {
+    allowPlaceholders?: boolean;
+    allowLive?: boolean;
+    allowMaintenance?: boolean;
+  } = {},
 ) {
   const directory = artifactDirectory(environment);
   const webConfig = join(directory, "hb_web/wrangler.json");
@@ -303,7 +307,11 @@ function dirnameOf(path: string) {
 
 export function verifyCandidate(
   environment: Environment,
-  options: { allowPlaceholders?: boolean; allowLive?: boolean } = {},
+  options: {
+    allowPlaceholders?: boolean;
+    allowLive?: boolean;
+    allowMaintenance?: boolean;
+  } = {},
 ) {
   const directory = artifactDirectory(environment);
   const manifest = JSON.parse(
@@ -386,11 +394,11 @@ async function main() {
   const args = parseArguments(
     process.argv.slice(3),
     ["--env"],
-    ["--execute", "--allow-placeholders", "--allow-live"],
+    ["--execute", "--allow-placeholders", "--allow-live", "--maintenance"],
   );
   if (action === "help") {
     console.log(
-      "Usage: bun scripts/release.ts build|verify|deploy|migrations --env local|staging|production [--allow-placeholders] [--allow-live] [--execute]",
+      "Usage: bun scripts/release.ts build|verify|deploy|migrations --env local|staging|production [--allow-placeholders] [--allow-live] [--maintenance] [--execute]",
     );
     return;
   }
@@ -398,6 +406,8 @@ async function main() {
   const options = {
     allowPlaceholders: args["--allow-placeholders"] === true,
     allowLive: args["--allow-live"] === true,
+    // A release with MAINTENANCE_MODE "true" (docs/d1-apac-migration.md).
+    allowMaintenance: args["--maintenance"] === true,
   };
   if (action === "build") {
     if (args["--execute"]) throw new Error("BUILD_IS_LOCAL_ONLY");

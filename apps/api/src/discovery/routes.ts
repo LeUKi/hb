@@ -16,6 +16,7 @@ import {
   requireProtectedMutation,
 } from "../auth/session";
 import type { ApiContext } from "../env";
+import { globalRedemptionObject } from "../runtime/objects";
 import { listSquare, listTopic } from "./service";
 import { getStatistics } from "./statistics";
 
@@ -70,9 +71,7 @@ export const discoveryRoutes = new Hono<ApiContext>()
     }),
     async (c) => {
       const session = await requireProtectedMutation(c);
-      const stub = c.env.ACTIVITY_DO.get(
-        c.env.ACTIVITY_DO.idFromName(`global-redemption:${session.user.id}`),
-      );
+      const stub = globalRedemptionObject(c.env, session.user.id);
       const response = await stub.fetch(
         "https://activity.internal/internal/redemptions/discover",
         {
@@ -114,9 +113,7 @@ export const discoveryRoutes = new Hono<ApiContext>()
     }),
     async (c) => {
       const session = await requireProtectedMutation(c);
-      const stub = c.env.ACTIVITY_DO.get(
-        c.env.ACTIVITY_DO.idFromName(`global-redemption:${session.user.id}`),
-      );
+      const stub = globalRedemptionObject(c.env, session.user.id);
       const response = await stub.fetch(
         "https://activity.internal/internal/redemptions/submit",
         {
@@ -135,9 +132,7 @@ export const discoveryRoutes = new Hono<ApiContext>()
   )
   .get("/redemptions/:id", cursorQuery, async (c) => {
     const session = await requireAuth(c);
-    const stub = c.env.ACTIVITY_DO.get(
-      c.env.ACTIVITY_DO.idFromName(`global-redemption:${session.user.id}`),
-    );
+    const stub = globalRedemptionObject(c.env, session.user.id);
     const response = await stub.fetch(
       "https://activity.internal/internal/redemptions/refresh",
       {

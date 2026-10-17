@@ -61,6 +61,11 @@ import {
   AttemptCooldownError,
   readAttemptCooldown,
 } from "./runtime/attempt-cooldown";
+import {
+  inMaintenanceMode,
+  MAINTENANCE_ALARM_DELAY_MS,
+} from "./runtime/maintenance-mode";
+import { objectNames } from "./runtime/objects";
 import { runMaintenance } from "./scheduled";
 
 type HealthResponse = {
@@ -378,6 +383,9 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   }
 
   async alarm() {
+    // 维护模式: a deadline or draw comes back once it is over.
+    if (inMaintenanceMode(this.env))
+      return this.ctx.storage.setAlarm(Date.now() + MAINTENANCE_ALARM_DELAY_MS);
     const id = await this.ctx.storage.get<string>("drawActivityId");
     if (!id) return this.deadlinePassed();
     await this.serialize(async () => {
@@ -419,7 +427,9 @@ export class ActivityDO extends DurableObject<ApiBindings> {
 
     if (url.pathname === "/internal/maintenance" && request.method === "POST") {
       if (
-        !this.ctx.id.equals(this.env.ACTIVITY_DO.idFromName("maintenance:v1"))
+        !this.ctx.id.equals(
+          this.env.ACTIVITY_DO.idFromName(objectNames.maintenance(this.env)),
+        )
       )
         return Response.json({ error: "INVALID_OBJECT" }, { status: 400 });
       const { scheduledAt } = await request.json<{ scheduledAt: number }>();
@@ -516,7 +526,9 @@ export class ActivityDO extends DurableObject<ApiBindings> {
             if (
               operation === "create" &&
               !this.ctx.id.equals(
-                this.env.ACTIVITY_DO.idFromName(`activity-create:${authorId}`),
+                this.env.ACTIVITY_DO.idFromName(
+                  objectNames.creation(this.env, authorId),
+                ),
               )
             )
               throw new ActivityError(400, "INVALID_OBJECT", "创建账号不匹配");
@@ -571,7 +583,9 @@ export class ActivityDO extends DurableObject<ApiBindings> {
               throw new ActivityError(400, "INVALID_ACTIVITY", "兑换请求无效");
             if (
               !this.ctx.id.equals(
-                this.env.ACTIVITY_DO.idFromName(`global-redemption:${userId}`),
+                this.env.ACTIVITY_DO.idFromName(
+                  objectNames.globalRedemption(this.env, userId),
+                ),
               )
             )
               throw new ActivityError(400, "INVALID_OBJECT", "兑换账号不匹配");
@@ -796,9 +810,39 @@ export class MerchantDO extends DurableObject<ApiBindings> {
     return result;
   }
 
+  /**
+   * Whether this is the merchant's object under the current names
+   * (runtime/objects.ts): any of its Client IDs, old or new, names it.
+   */
+  private async ownsMerchant(merchantId: string) {
+    const aliases = await this.env.DB.prepare(
+      "SELECT client_id FROM merchant_client_ids WHERE merchant_id=?",
+    )
+      .bind(merchantId)
+      .all<{ client_id: string }>();
+    return aliases.results.some((alias) =>
+      this.ctx.id.equals(
+        this.env.MERCHANT_DO.idFromName(
+          objectNames.merchant(this.env, alias.client_id),
+        ),
+      ),
+    );
+  }
+
   async alarm() {
+    // 维护模式: the next cycle comes back once it is over.
+    if (inMaintenanceMode(this.env))
+      return this.ctx.storage.setAlarm(Date.now() + MAINTENANCE_ALARM_DELAY_MS);
     const merchantId = await this.ctx.storage.get<string>("merchantId");
-    if (merchantId) await this.run(merchantId);
+    if (!merchantId) return;
+    // Renamed since: the object under the new name runs this merchant's
+    // payments, and this one clears itself and stops.
+    if (!(await this.ownsMerchant(merchantId))) {
+      await this.ctx.storage.deleteAlarm();
+      await this.ctx.storage.deleteAll();
+      return;
+    }
+    await this.run(merchantId);
   }
   async fetch(request: Request) {
     const url = new URL(request.url);
@@ -813,19 +857,7 @@ export class MerchantDO extends DurableObject<ApiBindings> {
         .from(merchants)
         .where(eq(merchants.id, merchantId))
         .get();
-      const aliases = row
-        ? await this.env.DB.prepare(
-            "SELECT client_id FROM merchant_client_ids WHERE merchant_id=?",
-          )
-            .bind(merchantId)
-            .all<{ client_id: string }>()
-        : null;
-      if (
-        !row ||
-        !aliases?.results.some((alias) =>
-          this.ctx.id.equals(this.env.MERCHANT_DO.idFromName(alias.client_id)),
-        )
-      )
+      if (!row || !(await this.ownsMerchant(merchantId)))
         return Response.json(
           { error: "Merchant identity mismatch" },
           { status: 400 },

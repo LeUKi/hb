@@ -203,6 +203,35 @@ describe("release environment guards", () => {
     ).not.toThrow();
   });
 
+  it("requires an explicit maintenance switch and checks where Durable Objects go", () => {
+    const { web, api } = configs();
+    expect(api.vars?.MAINTENANCE_MODE).toBe("false");
+    expect(() => validateEnvironment("staging", web, api)).not.toThrow();
+    const vars = api.vars ?? {};
+    api.vars = { ...vars, MAINTENANCE_MODE: "true" };
+    expect(() => validateEnvironment("staging", web, api)).toThrow(
+      "needs --maintenance",
+    );
+    expect(() =>
+      validateEnvironment("staging", web, api, { allowMaintenance: true }),
+    ).not.toThrow();
+    const { MAINTENANCE_MODE: _switch, ...withoutSwitch } = vars;
+    api.vars = withoutSwitch;
+    expect(() => validateEnvironment("staging", web, api)).toThrow(
+      "maintenance mode switch",
+    );
+    api.vars = { ...vars, DO_LOCATION_HINT: "nowhere" };
+    expect(() => validateEnvironment("staging", web, api)).toThrow(
+      "location hint",
+    );
+    api.vars = { ...vars, DO_NAME_PREFIX: "apac" };
+    expect(() => validateEnvironment("staging", web, api)).toThrow(
+      "name prefix",
+    );
+    api.vars = { ...vars, DO_LOCATION_HINT: "apac", DO_NAME_PREFIX: "apac:" };
+    expect(() => validateEnvironment("staging", web, api)).not.toThrow();
+  });
+
   it("requires a Turnstile site key setting and keeps test keys out of production", () => {
     const { web, api } = configs();
     expect(api.vars?.TURNSTILE_SITE_KEY).toBe("1x00000000000000000000AA");
