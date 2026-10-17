@@ -23,6 +23,7 @@ import {
   readMerchantImpact,
 } from "./configuration";
 import { publicationEligibility } from "./publication";
+import { quotaHolds } from "./quota";
 import {
   credentialVerificationView,
   recoverCredentialChecks,
@@ -70,6 +71,10 @@ export async function merchantView(
     row.credentialVersion,
   );
   const eligibility = await publicationEligibility(env, row, verification);
+  const quotaResumeAt =
+    row.pausedReason === "quota"
+      ? (await quotaHolds(env, [row.id])).get(row.id)
+      : undefined;
   const base = {
     credentialVerification: verification,
     usageStatus: row.usageStatus,
@@ -80,6 +85,9 @@ export async function merchantView(
     version: row.version,
     credentialVersion: row.credentialVersion,
     pausedReason: row.pausedReason,
+    ...(quotaResumeAt === undefined
+      ? {}
+      : { quotaResumeAt: new Date(quotaResumeAt).toISOString() }),
     createdAt: new Date(row.createdAt).toISOString(),
     updatedAt: new Date(row.updatedAt).toISOString(),
   };

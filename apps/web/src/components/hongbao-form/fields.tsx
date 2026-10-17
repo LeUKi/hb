@@ -43,6 +43,12 @@ import {
   unitLabels,
 } from "./form-state";
 
+/**
+ * Credit's smallest daily limit, 800 LDC in cents (its lowest pay level): a
+ * bigger 红包 may not be paid out in one day (api: payments/quota.ts).
+ */
+const DAILY_LIMIT_FLOOR = 80_000;
+
 // The 发红包 flow's controls, shared by its steps and the 更多设置 panel.
 
 export type Update = (change: (form: FormState) => FormState) => void;
@@ -348,8 +354,15 @@ export function AmountFields({
       </p>
       <p className="-mt-3 text-xs text-ink-3">
         最多 1,000 份，每份至少 0.01
-        LDC，金额最多两位小数。填的是到账金额，领取的人自己承担自己那一侧的手续费。你不能领自己的红包。
+        LDC，金额最多两位小数。填的是每份发出的金额。领取的人到账时，Credit
+        会按你的 Credit 等级扣分发费（4%–15%）。你不能领自己的红包。
       </p>
+      {total !== null && total > DAILY_LIMIT_FLOOR && (
+        <p className="-mt-2 text-xs text-warning">
+          Credit 每天最多能发 800–2000 LDC（按你的 Credit
+          等级），超出的部分可能顺延到第二天发放。
+        </p>
+      )}
     </>
   );
 }

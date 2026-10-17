@@ -823,13 +823,22 @@ test.describe("红包页", () => {
         status: "waiting",
         reason: "quota",
         confirmedAt: null,
+        // A few minutes past the next midnight in Shanghai.
+        quotaResumeAt: new Date(
+          Math.floor((Date.now() + 8 * 3_600_000) / 86_400_000) * 86_400_000 +
+            86_400_000 -
+            8 * 3_600_000 +
+            10 * 60_000,
+        ).toISOString(),
       },
     };
     await openApp(page, path);
     const result = page.locator("[data-hb-part=result]");
     await expect(result.getByText("等待恢复")).toBeVisible();
     await expect(
-      result.getByText("每日发放额度不足，等待可用额度。"),
+      result.getByText(
+        "发红包的人今天在 Credit 的发放额度用完了，明天 0 点后自动继续发放。",
+      ),
     ).toBeVisible();
     await expect(result.getByText("quota")).toHaveCount(0);
   });

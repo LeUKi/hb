@@ -22,7 +22,7 @@ export function paymentReason(
   const labels: Record<string, string> = {
     unknown: "付款结果尚未明确，正在核对原订单。",
     funds: "商户资金不足，等待补足后恢复。",
-    quota: "每日发放额度不足，等待可用额度。",
+    quota: "今日 Credit 发放额度已用完，0 点额度恢复后自动继续。",
     credentials: "商户凭证失效，等待作者更新。",
     conflict: "订单信息冲突，需要检查原订单。",
     query_unavailable: "查单暂不可用，系统会继续核对。",
@@ -113,11 +113,28 @@ export function credentialReason(reason: string | null) {
   return (reason && labels[reason]) || "凭证暂时无法确认，请稍后再查看。";
 }
 
+/**
+ * When a merchant stopped by Credit's daily limit sends again, in words:
+ * past midnight in Shanghai (where Credit's day turns), or in a few
+ * minutes when that midnight has just passed.
+ */
+export function quotaResumeWords(resumeAt?: string, now = Date.now()) {
+  const at = resumeAt ? Date.parse(resumeAt) : Number.NaN;
+  if (!Number.isFinite(at)) return "0 点额度恢复后";
+  const day = (ms: number) => Math.floor((ms + 8 * 3_600_000) / 86_400_000);
+  if (at <= now) return "稍后";
+  return day(at) > day(now) ? "明天 0 点后" : "几分钟后";
+}
+
 /** A merchant's sending is paused: why, briefly, and what happens next. */
-export function merchantPause(reason: string) {
+export function merchantPause(
+  reason: string,
+  /** For the daily limit: when it sends again, and how many wait for it. */
+  quota: { resumeAt?: string; queued?: number } = {},
+) {
   const short: Record<string, string> = {
     funds: "商户资金不足",
-    quota: "每日发放额度不足",
+    quota: "今日 Credit 发放额度已用完",
     credentials: "商户凭证失效",
     credential_rejected: "商户凭证失效",
     unknown: "付款结果尚未明确",
@@ -128,7 +145,7 @@ export function merchantPause(reason: string) {
       reason === "funds"
         ? "在 LDC 补足资金后自动继续，不需要在这里操作。领取不受影响。"
         : reason === "quota"
-          ? "额度恢复后自动继续，不需要在这里操作。领取不受影响。"
+          ? `${quotaResumeWords(quota.resumeAt)}自动继续${quota.queued ? `，${quota.queued} 笔在排队` : ""}，不需要在这里操作。领取不受影响。`
           : "条件满足后自动继续，不需要在这里操作。领取不受影响。",
   };
 }

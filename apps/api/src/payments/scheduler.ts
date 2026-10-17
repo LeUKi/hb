@@ -23,6 +23,7 @@ import {
   realSendDecision,
   runtimeRealPolicy,
 } from "./policy";
+import { quotaResumeAt } from "./quota";
 import { createRealPaymentAdapter } from "./real-protocol";
 import { realMerchantNextDue, runRealMerchantCycle } from "./recovery";
 import { createSimulationPaymentAdapter } from "./simulation";
@@ -352,9 +353,14 @@ export async function runMerchantCycle(
       if (result.kind === "waiting") {
         status = "waiting";
         reason = result.reason;
-        retainActive = false;
         outcome = "rejected";
-        nextRunAt = Date.now() + (result.reason === "quota" ? 60_000 : 30_000);
+        // The daily limit holds the whole merchant until the day turns: it
+        // keeps this task, and the rest queue behind it (quota.ts).
+        retainActive = result.reason === "quota";
+        nextRunAt =
+          result.reason === "quota"
+            ? quotaResumeAt(Date.now())
+            : Date.now() + 30_000;
         return;
       }
       if (result.kind === "not_found" && phase === "query") {

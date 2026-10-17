@@ -12,6 +12,7 @@ import {
 } from "@hb/contracts";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getClaimDetail } from "../src/activities/claim-queries";
 import { claimActivity } from "../src/activities/claim-service";
 import { createActivity, openActivity } from "../src/activities/service";
 import { createDb } from "../src/db/client";
@@ -21,6 +22,7 @@ import type { PaymentAdapter } from "../src/payments/adapter";
 import { readMerchantImpact } from "../src/payments/configuration";
 import { loadMerchantSecret } from "../src/payments/credentials";
 import { createMerchant, updateMerchant } from "../src/payments/merchants";
+import { nextQuotaReset } from "../src/payments/quota";
 import {
   flushPaymentOutbox,
   runMerchantCycle,
@@ -307,6 +309,40 @@ describe("durable simulated payments", () => {
     expect(result.status).toBe("confirmed");
     expect(result.businessNo).toBe(original.businessNo);
     expect(result.amountMinor).toBe(original.amountMinor);
+  });
+  it("a daily limit holds the whole merchant until the day turns, and its queued claimants see why", async () => {
+    const f = await fixture(2, "daily_limit");
+    const later = await user();
+    const second = await f.claim(later);
+    const before = Date.now();
+    await runMerchantCycle(env, f.merchant.id);
+    const head = await task(f.taskId);
+    expect(head).toMatchObject({ status: "waiting", reason: "quota" });
+    const resumes = [before, Date.now()].map(
+      (at) => nextQuotaReset(at) + 5 * 60_000,
+    );
+    expect(head.nextRunAt).toBeGreaterThanOrEqual(Math.min(...resumes));
+    expect(head.nextRunAt).toBeLessThan(Math.max(...resumes) + 25 * 60_000);
+    // The one behind it is not even tried.
+    await runMerchantCycle(env, f.merchant.id);
+    expect(await task(second)).toMatchObject({
+      status: "pending",
+      attemptCount: 0,
+    });
+    expect(await orders()).toBe(0);
+    const claimId = (await task(second)).claimId ?? "";
+    expect((await getClaimDetail(env, claimId, later)).payment).toMatchObject({
+      status: "pending",
+      reason: "quota",
+      quotaResumeAt: new Date(head.nextRunAt).toISOString(),
+    });
+    // The day turns: both go, oldest first.
+    await scenario(f.merchant.id, "normal");
+    await due(f.taskId);
+    await runMerchantCycle(env, f.merchant.id);
+    expect((await task(f.taskId)).status).toBe("confirmed");
+    await runMerchantCycle(env, f.merchant.id);
+    expect((await task(second)).status).toBe("confirmed");
   });
   it("later business rejection cannot erase an earlier unknown send", async () => {
     const f = await fixture();

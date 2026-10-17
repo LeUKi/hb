@@ -695,6 +695,85 @@ describe("durable same-business-number recovery", () => {
     expect((await task(f)).unknownOutcome).toBe(true);
   });
 
+  it("waits a daily limit out until just past midnight in Shanghai, looking nothing up meanwhile", async () => {
+    const day = 86_400_000;
+    const offset = 8 * 3_600_000;
+    const turn = (at: number) =>
+      Math.floor((at + offset) / day) * day + day - offset;
+    // 14:00 in Shanghai, a day ahead.
+    now = turn(now) + 14 * 3_600_000;
+    const midnight = turn(now);
+    const f = await fixture(false);
+    const a = adapter(
+      { kind: "not_found" },
+      {
+        kind: "waiting",
+        reason: "quota",
+        httpStatus: 400,
+        noOrderEvidence: "protocol_rejection_v1",
+      },
+    );
+    await cycle(f, a);
+    const waiting = await task(f);
+    expect(waiting).toMatchObject({
+      status: "waiting",
+      reason: "quota",
+      sendBlockReason: "quota",
+      unknownOutcome: false,
+    });
+    const resume = waiting.nextSendAt ?? 0;
+    expect(resume).toBeGreaterThanOrEqual(midnight + 5 * 60_000);
+    expect(resume).toBeLessThan(midnight + 30 * 60_000);
+    expect(waiting.nextQueryAt).toBe(resume);
+    expect(waiting.nextRunAt).toBe(resume);
+    expect(
+      await env.DB.prepare(
+        "SELECT active_task_id,paused_reason FROM merchants WHERE id=?",
+      )
+        .bind(f.merchant.id)
+        .first(),
+    ).toEqual({ active_task_id: f.taskId, paused_reason: "quota" });
+    // Nothing goes out before then, not even a lookup.
+    now = midnight + 4 * 60_000;
+    await cycle(f, a);
+    expect(a.query).not.toHaveBeenCalled();
+    expect(a.send).toHaveBeenCalledOnce();
+    // Past it, the original order is looked up first, then sent again.
+    now = resume;
+    await grant(f);
+    await cycle(f, a);
+    expect(a.query).toHaveBeenCalledOnce();
+    expect(await task(f)).toMatchObject({
+      nextAction: "send",
+      sendBlockReason: null,
+    });
+  });
+
+  it("a payment held by the daily limit and looked up early keeps waiting on it", async () => {
+    // As left by the release before: due for a lookup well before its send.
+    const f = await fixture(false);
+    const resume = now + 7_200_000;
+    await env.DB.batch([
+      env.DB.prepare(
+        "UPDATE payment_acceptances SET send_consumed_at=? WHERE id=?",
+      ).bind(now - 1, f.acceptanceId),
+      env.DB.prepare(
+        `UPDATE payment_tasks SET status='waiting',reason='quota',send_block_reason='quota',attempt_count=1,
+          next_action='query',next_send_at=?,next_query_at=0,next_run_at=0 WHERE id=?`,
+      ).bind(resume, f.taskId),
+    ]);
+    const a = adapter({ kind: "not_found" });
+    await cycle(f, a);
+    expect(a.query).toHaveBeenCalledOnce();
+    expect(await task(f)).toMatchObject({
+      status: "waiting",
+      reason: "quota",
+      sendBlockReason: "quota",
+      nextQueryAt: resume,
+      nextRunAt: resume,
+    });
+  });
+
   it.each(["funds", "quota", "credentials"] as const)(
     "first explicit %s rejection retains a business wait without inventing an unknown payment",
     async (reason) => {

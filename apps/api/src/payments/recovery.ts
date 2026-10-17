@@ -34,6 +34,7 @@ import {
   runtimeRealPolicy,
   usablePaymentRetryGrant,
 } from "./policy";
+import { quotaResumeAt } from "./quota";
 import { paymentRemark } from "./remark";
 import type { CycleResult } from "./scheduler";
 
@@ -730,7 +731,7 @@ async function finishAttempt(
         result.reason === "funds"
           ? now + Math.max(300_000, backoff(sendBackoff, "send"))
           : result.reason === "quota"
-            ? now + Math.max(3_600_000, backoff(sendBackoff, "send"))
+            ? Math.max(quotaResumeAt(now), now + backoff(sendBackoff, "send"))
             : null;
     } else if (result.kind === "throttled") {
       sendBlock = "throttled";
@@ -854,6 +855,18 @@ async function finishAttempt(
         );
       }
     }
+  }
+  // Stopped by the daily limit with nothing sent: there is nothing to look up
+  // before the day turns, so it sleeps until then, still saying why.
+  if (
+    !unknown &&
+    sendBlock === "quota" &&
+    nextSend !== null &&
+    nextSend > now
+  ) {
+    status = "waiting";
+    reason = "quota";
+    nextQuery = Math.max(nextQuery, nextSend);
   }
   const retryAfterAt =
     result.retryAfterMs !== undefined

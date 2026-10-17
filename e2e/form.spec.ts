@@ -174,6 +174,32 @@ test.describe("发红包", () => {
     expect(sent[0]?.activity).not.toHaveProperty("humanCheck");
   });
 
+  test("发多少：手续费按发红包的人的 Credit 等级；超过 800 提示可能顺延", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    await mockMerchants(page, [merchant]);
+    await openApp(page, "/new");
+    await page
+      .getByRole("button", { name: /拼手气/ })
+      .first()
+      .click();
+    await expect(
+      page.getByText(
+        "填的是每份发出的金额。领取的人到账时，Credit 会按你的 Credit 等级扣分发费（4%–15%）。",
+        { exact: false },
+      ),
+    ).toBeVisible();
+    const overflow = page.getByText(
+      "Credit 每天最多能发 800–2000 LDC（按你的 Credit 等级），超出的部分可能顺延到第二天发放。",
+    );
+    await page.locator("#hb-random-total").fill("800");
+    await page.locator("#hb-random-count").fill("3");
+    await expect(overflow).toBeHidden();
+    await page.locator("#hb-random-total").fill("800.01");
+    await expect(overflow).toBeVisible();
+  });
+
   test("更多设置：领取前人机验证写明代价，打开后摘要和保存的输入都带上", async ({
     page,
   }) => {

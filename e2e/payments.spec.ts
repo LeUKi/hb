@@ -376,6 +376,44 @@ test.describe("LDC 商户配置", () => {
     ).toBeVisible();
   });
 
+  test("每日额度用完：写明什么时候继续、几笔在排队", async ({ page }) => {
+    await mockSession(page, viewer);
+    await page.route("**/api/me/merchants", (route) =>
+      route.fulfill({
+        json: {
+          items: [
+            merchant({
+              pausedReason: "quota",
+              quotaResumeAt: new Date(
+                Math.floor((Date.now() + 8 * 3_600_000) / 86_400_000) *
+                  86_400_000 +
+                  86_400_000 -
+                  8 * 3_600_000 +
+                  12 * 60_000,
+              ).toISOString(),
+            }),
+          ],
+          nextCursor: null,
+          currentMerchantId: merchantId,
+          canCreate: true,
+          canSimulate: false,
+        } satisfies MerchantList,
+      }),
+    );
+    await page.route(`**/api/me/merchants/${merchantId}/usage`, (route) =>
+      route.fulfill({ json: usage }),
+    );
+    await openApp(page, "/merchant");
+    await expect(
+      page.getByText("付款已暂停：今日 Credit 发放额度已用完"),
+    ).toBeVisible();
+    await expect(
+      page.getByText(
+        "明天 0 点后自动继续，2 笔在排队，不需要在这里操作。领取不受影响。",
+      ),
+    ).toBeVisible();
+  });
+
   test("还没有商户：填好三项保存后显示商户", async ({ page, context }) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await mockSession(page, viewer);

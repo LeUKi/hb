@@ -139,7 +139,10 @@ function MerchantSummary({
   const current = merchant.usageStatus === "current";
   const verification = merchant.credentialVerification;
   const pause = merchant.pausedReason
-    ? merchantPause(merchant.pausedReason)
+    ? merchantPause(merchant.pausedReason, {
+        resumeAt: merchant.quotaResumeAt,
+        queued: usage?.openPayments,
+      })
     : null;
   return (
     <Panel className="grid gap-4 p-5">

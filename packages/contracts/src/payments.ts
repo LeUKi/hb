@@ -125,6 +125,8 @@ export type Merchant = {
   version: number;
   credentialVersion: number;
   pausedReason: string | null;
+  /** Stopped by Credit's daily limit: when it sends again (ISO). */
+  quotaResumeAt?: string;
   createdAt: string;
   updatedAt: string;
   credentialVerification: CredentialVerification;
@@ -165,6 +167,11 @@ export type PaymentView = {
   confirmedAt: string | null;
   /** Its claimant may send it again until then (ISO); absent otherwise. */
   resendUntil?: string;
+  /**
+   * Its merchant is stopped by Credit's daily limit (reason "quota"): when
+   * it sends again (ISO). The payments queued behind wait for it too.
+   */
+  quotaResumeAt?: string;
 };
 export type MerchantPayment = PaymentView & {
   amount: string;

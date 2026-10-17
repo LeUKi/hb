@@ -19,6 +19,7 @@ import {
   users,
 } from "../db/schema";
 import type { ApiBindings } from "../env";
+import { quotaHolds } from "../payments/quota";
 import {
   heldForRecipient,
   recipientRejections,
@@ -188,6 +189,9 @@ export async function sourcePasswordsBatch(
   return new Map(values);
 }
 
+/** Owed and not out yet: what a merchant's daily limit holds up. */
+const queued = (status: string) => status === "pending" || status === "waiting";
+
 export async function claimSummariesBatch(
   env: ApiBindings,
   rows: ClaimActivityRow[],
@@ -209,6 +213,13 @@ export async function claimSummariesBatch(
   const byClaim = new Map(
     payments.map((payment) => [payment.claimId, payment]),
   );
+  // A merchant stopped by its daily limit holds every payment it owes.
+  const held = await quotaHolds(
+    env,
+    payments
+      .filter((payment) => queued(payment.status))
+      .map((payment) => payment.merchantId),
+  );
   // Payments turned down for want of a Credit account may go again a while.
   const rejections = await recipientRejections(
     env,
@@ -224,6 +235,9 @@ export async function claimSummariesBatch(
         rejections.get(payment.id),
         now,
       );
+      const resumeAt = queued(payment.status)
+        ? held.get(payment.merchantId)
+        : undefined;
       const sourcePassword =
         claim.passwordId === null ? undefined : sources.get(claim.passwordId);
       return [
@@ -238,7 +252,7 @@ export async function claimSummariesBatch(
                   id: payment.id,
                   mode: payment.mode,
                   status: payment.status,
-                  reason: payment.reason,
+                  reason: resumeAt === undefined ? payment.reason : "quota",
                   confirmedAt:
                     payment.confirmedAt === null
                       ? null
@@ -246,6 +260,9 @@ export async function claimSummariesBatch(
                   ...(resendUntil === null
                     ? {}
                     : { resendUntil: new Date(resendUntil).toISOString() }),
+                  ...(resumeAt === undefined
+                    ? {}
+                    : { quotaResumeAt: new Date(resumeAt).toISOString() }),
                 },
               }
             : {}),

@@ -10,7 +10,7 @@ import { ActivityRequestError } from "../../lib/activities";
 import { useResendPayment } from "../../lib/claims";
 import type { HongbaoActivity, Mine } from "../../lib/hongbao";
 import { paymentTone } from "../../lib/hongbao-text";
-import { paymentReason } from "../../lib/payment-display";
+import { paymentReason, quotaResumeWords } from "../../lib/payment-display";
 import { clockLabel, clockSeconds } from "../../lib/roster-time";
 import { useIdentity } from "../../lib/session";
 import { useBefore } from "../../lib/use-before";
@@ -60,8 +60,10 @@ function PaymentNote({
         : null
       : resending || payment.reason === "resend"
         ? "正在重新发送，稍等十几秒。"
-        : (paymentReason(payment.reason, null) ??
-          paymentReasons[payment.status]);
+        : payment.reason === "quota"
+          ? `发红包的人今天在 Credit 的发放额度用完了，${quotaResumeWords(payment.quotaResumeAt)}自动继续发放。`
+          : (paymentReason(payment.reason, null) ??
+            paymentReasons[payment.status]);
   return text ? <p className="text-sm text-ink-2">{text}</p> : null;
 }
 
