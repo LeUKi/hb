@@ -119,7 +119,7 @@ describe("d1-move", () => {
 
   it("counts every table in one query, refusing names it cannot quote", () => {
     expect(countQuery(["users", "d1_migrations"])).toBe(
-      `SELECT 'users' AS name, COUNT(*) AS count FROM "users" UNION ALL SELECT 'd1_migrations' AS name, COUNT(*) AS count FROM "d1_migrations"`,
+      `SELECT (SELECT COUNT(*) FROM "users") AS "users", (SELECT COUNT(*) FROM "d1_migrations") AS "d1_migrations"`,
     );
     expect(() => countQuery([])).toThrow("NO_TABLES");
     expect(() => countQuery(['users"; --'])).toThrow("TABLE_NAME_UNSUPPORTED");

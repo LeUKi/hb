@@ -37,16 +37,19 @@ export function checkTarget(
   return name;
 }
 
-/** One query that counts every table's rows. */
+/**
+ * One query that counts every table's rows, one column per table (D1
+ * allows at most five terms in a compound SELECT).
+ */
 export function countQuery(tables: string[]) {
   if (!tables.length) throw new Error("NO_TABLES");
-  return tables
+  return `SELECT ${tables
     .map((table) => {
       if (!/^[A-Za-z0-9_]+$/.test(table))
         throw new Error(`TABLE_NAME_UNSUPPORTED: ${table}`);
-      return `SELECT '${table}' AS name, COUNT(*) AS count FROM "${table}"`;
+      return `(SELECT COUNT(*) FROM "${table}") AS "${table}"`;
     })
-    .join(" UNION ALL ");
+    .join(", ")}`;
 }
 
 export type Snapshot = {
@@ -220,9 +223,10 @@ function main() {
       `SELECT name FROM sqlite_master WHERE type='table' AND ${USER_OBJECTS} ORDER BY name`,
     ).map((row) => String(row.name));
     const tables: Record<string, number> = {};
-    if (names.length)
-      for (const row of read(database, countQuery(names)))
-        tables[String(row.name)] = Number(row.count);
+    if (names.length) {
+      const [counts] = read(database, countQuery(names));
+      for (const name of names) tables[name] = Number(counts?.[name]);
+    }
     return { tables, objects };
   };
 
