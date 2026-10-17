@@ -32,6 +32,7 @@ import {
   liveMessage,
   liveMine,
   liveUserTag,
+  liveViewers,
   liveWaiting,
   MAX_LIVE_PER_USER,
   MAX_LIVE_SOCKETS,
@@ -121,11 +122,26 @@ function liveViewer(socket: WebSocket) {
   return (socket.deserializeAttachment() as LiveAttachment | null)?.userId;
 }
 
+/** How many people these sockets are, counting only the open ones. */
+function livePeople(sockets: WebSocket[]) {
+  const people = new Set<string>();
+  for (const socket of sockets) {
+    const viewer = liveViewer(socket);
+    if (viewer && socket.readyState === WebSocket.OPEN) people.add(viewer);
+  }
+  return people.size;
+}
+
 export class ActivityDO extends DurableObject<ApiBindings> {
   private mutationTail: Promise<void> = Promise.resolve();
   /** A change waiting to go out on the live channel (live.ts). */
   private liveTimer: ReturnType<typeof setTimeout> | null = null;
   private livePushedAt = 0;
+  /** How many are watching, on its way out the same way. */
+  private viewersTimer: ReturnType<typeof setTimeout> | null = null;
+  private viewersPushedAt = 0;
+  /** The number last sent; unknown again after hibernating. */
+  private viewersSent = -1;
   /** The deadline alarm this instance already set (one write per deadline). */
   private liveDeadline = 0;
 
@@ -184,8 +200,11 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       since: Date.now(),
       userId,
     } satisfies LiveAttachment);
-    // What changed between the page's own read and now.
+    // What changed between the page's own read and now, and who is here.
     server.send(liveMessage(activity));
+    const people = livePeople(this.ctx.getWebSockets(LIVE_TAG));
+    server.send(liveViewers(people));
+    if (people !== this.viewersSent) this.announceViewers();
     if (!activity.draw && activity.status === "active" && activity.deadlineAt)
       await this.watchDeadline(id, Date.parse(activity.deadlineAt));
     return new Response(null, { status: 101, webSocket: client });
@@ -319,6 +338,35 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     }, wait);
   }
 
+  /**
+   * Someone came or went: everyone hears how many people are watching now,
+   * at most once per LIVE_COALESCE_MS, and only when that number moved.
+   */
+  private announceViewers() {
+    if (this.viewersTimer) return;
+    const wait = Math.max(
+      0,
+      this.viewersPushedAt + LIVE_COALESCE_MS - Date.now(),
+    );
+    this.viewersTimer = setTimeout(() => {
+      this.viewersTimer = null;
+      this.viewersPushedAt = Date.now();
+      const sockets = this.ctx.getWebSockets(LIVE_TAG);
+      const people = livePeople(sockets);
+      if (people === this.viewersSent) return;
+      this.viewersSent = people;
+      const message = liveViewers(people);
+      for (const socket of sockets) {
+        if (socket.readyState !== WebSocket.OPEN) continue;
+        try {
+          socket.send(message);
+        } catch {
+          // Already closing: nothing to tell it.
+        }
+      }
+    }, wait);
+  }
+
   private async broadcast(id: string) {
     const sockets = this.ctx.getWebSockets(LIVE_TAG);
     if (sockets.length === 0) return;
@@ -344,6 +392,15 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   async webSocketMessage(socket: WebSocket, message: string | ArrayBuffer) {
     if (message === LIVE_PING) socket.send(LIVE_PONG);
     else socket.close(1008, "push only");
+  }
+
+  /** A viewer left (a closed tab, a lost line): the others hear the number. */
+  async webSocketClose() {
+    this.announceViewers();
+  }
+
+  async webSocketError() {
+    this.announceViewers();
   }
 
   private async serialize<T>(action: () => Promise<T>) {

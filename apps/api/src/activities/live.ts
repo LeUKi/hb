@@ -5,9 +5,10 @@ import type { ActivityRow } from "./storage";
 
 // A 红包's live channel: its ActivityDO (one per 红包) holds the viewers'
 // WebSockets, hibernating between changes. It pushes the public read after
-// each change, and tells a person when only their own part moved (a
-// payment). Signed-in viewers only; everyone else polls. The channel lasts
-// while the 红包 runs, and after that for whoever still waits on a payment.
+// each change, tells a person when only their own part moved (a payment),
+// and tells everyone how many people are watching. Signed-in viewers only;
+// everyone else polls. The channel lasts while the 红包 runs, and after
+// that for whoever still waits on a payment.
 
 /** Every live socket of a 红包's DO. */
 export const LIVE_TAG = "live";
@@ -45,6 +46,9 @@ export function liveMessage(activity: PublicActivity) {
 
 export const liveMine = () =>
   JSON.stringify({ type: "mine" } satisfies ActivityLiveMessage);
+
+export const liveViewers = (count: number) =>
+  JSON.stringify({ type: "viewers", count } satisfies ActivityLiveMessage);
 
 /** What a refresh may have moved: pushed only when something did. */
 export function liveFingerprint(row: ActivityRow | null | undefined) {

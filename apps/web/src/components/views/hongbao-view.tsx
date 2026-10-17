@@ -6,6 +6,7 @@ import { AuthorTools } from "../hongbao/author-tools";
 import { InfoNote } from "../hongbao/details";
 import { HongbaoHero, hongbaoSizes, sizeVars } from "../hongbao/hero";
 import { HongbaoSkeleton } from "../hongbao/hongbao-skeleton";
+import { LiveViewers } from "../hongbao/live-viewers";
 import { PageActions } from "../hongbao/page-actions";
 import { Sparks } from "../hongbao/parts";
 import { PasswordSection } from "../hongbao/passwords";
@@ -59,6 +60,7 @@ export function HongbaoView({ id }: { id: string }) {
     <RefreshContext.Provider value={load.refresh}>
       <HongbaoPage
         data={page.data}
+        running={page.liveWant === "running"}
         articleRef={article}
         said={load.said}
         arriveFrom={load.loaded ? skeleton.current : null}
@@ -76,11 +78,14 @@ export function HongbaoView({ id }: { id: string }) {
  */
 function HongbaoPage({
   data,
+  running,
   articleRef,
   said,
   arriveFrom,
 }: {
   data: HongbaoData;
+  /** Running, for a signed-in viewer: on the live channel. */
+  running: boolean;
   articleRef: RefObject<HTMLElement | null>;
   /** "已刷新" after a 重试 that worked. */
   said: string;
@@ -120,6 +125,7 @@ function HongbaoPage({
       {!activity.draft && (
         <PageActions activity={activity} passwords={passwords} />
       )}
+      <LiveViewers activityId={activity.id} running={running} />
       <p className="sr-only" role="status">
         {hongbao.announcement}
       </p>

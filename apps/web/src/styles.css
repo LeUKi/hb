@@ -1166,6 +1166,33 @@
     background: rgb(255 255 255 / 0.13);
     color: var(--color-cream);
   }
+  /* 「N 人在看」's dot (hongbao/live-viewers.tsx): green as in 在线, not the
+     red of a reminder; it breathes, slowly. */
+  .hb-live-dot {
+    position: relative;
+    display: block;
+    flex-shrink: 0;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 9999px;
+    background: var(--color-success);
+  }
+  .hb-live-dot::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: inherit;
+    animation: hb-live-pulse 2.4s ease-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hb-live-dot::after {
+      display: none;
+    }
+  }
+  [data-motion="reduce"] .hb-live-dot::after {
+    display: none;
+  }
   .hb-chip-link {
     transition: background-color 160ms var(--ease-snappy);
   }
@@ -1613,6 +1640,17 @@
   }
 }
 
+@keyframes hb-live-pulse {
+  from {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  70%,
+  to {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
 @keyframes settings-flash {
   0%,
   35% {

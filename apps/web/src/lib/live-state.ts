@@ -6,6 +6,13 @@ import type { ParticipationCache } from "./participation-cache";
 export const liveActivityAtom = atom<string | null>(null);
 
 /**
+ * How many people have that 红包's page open on its live channel, each
+ * counted once (signed-in viewers only: nobody else is on it). Known only
+ * while the channel is connected.
+ */
+export const liveViewersAtom = atom<{ id: string; count: number } | null>(null);
+
+/**
  * Nothing public about this 红包 will change anymore (api: live.ts
  * liveEnded), so its page stops reading it. A 草稿 still may: it opens.
  */

@@ -11,7 +11,12 @@ import {
   nextPublicActivityReadGeneration,
   type PublicActivityDetail,
 } from "./activities";
-import { liveActivityAtom, participationOpen, paymentOpen } from "./live-state";
+import {
+  liveActivityAtom,
+  liveViewersAtom,
+  participationOpen,
+  paymentOpen,
+} from "./live-state";
 import {
   type ParticipationCache,
   participationKey,
@@ -104,6 +109,7 @@ export function useActivityLive(
 ) {
   const client = useQueryClient();
   const setLive = useSetAtom(liveActivityAtom);
+  const setViewers = useSetAtom(liveViewersAtom);
   const wantNow = useRef(want);
   wantNow.current = want;
   const on = want !== null;
@@ -127,6 +133,7 @@ export function useActivityLive(
       window.clearInterval(heartbeat);
       window.clearTimeout(pongWait);
       setLive((current) => (current === id ? null : current));
+      setViewers((current) => (current?.id === id ? null : current));
     };
     const retryLater = () => {
       if (since && Date.now() - since > SETTLED_MS) attempts = 0;
@@ -184,6 +191,10 @@ export function useActivityLive(
         }
         if (message?.type === "mine") {
           readOwn(client, id, userId, false);
+          return;
+        }
+        if (message?.type === "viewers") {
+          setViewers({ id, count: message.count });
           return;
         }
         if (message?.type !== "activity" || !message.activity) return;
@@ -255,5 +266,5 @@ export function useActivityLive(
       socket?.close(1000);
       settle();
     };
-  }, [id, userId, on, client, setLive]);
+  }, [id, userId, on, client, setLive, setViewers]);
 }

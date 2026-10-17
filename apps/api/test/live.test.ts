@@ -143,6 +143,22 @@ const mine = (heard: (ActivityLiveMessage | "pong")[]) =>
   heard.filter((message) => message !== "pong" && message.type === "mine")
     .length;
 
+/** The public reads heard, without the other messages in between. */
+const reads = (heard: (ActivityLiveMessage | "pong")[]) =>
+  heard.filter(
+    (message): message is Extract<ActivityLiveMessage, { type: "activity" }> =>
+      message !== "pong" && message.type === "activity",
+  );
+
+/** The number of people watching, as last heard. */
+const viewers = (heard: (ActivityLiveMessage | "pong")[]) =>
+  heard
+    .filter(
+      (message): message is Extract<ActivityLiveMessage, { type: "viewers" }> =>
+        message !== "pong" && message.type === "viewers",
+    )
+    .at(-1)?.count;
+
 /** The fixture merchant's simulated upstream answers like this. */
 async function upstream(scenario: "normal" | "daily_limit") {
   await env.DB.prepare(
@@ -229,18 +245,17 @@ describe("a running 红包's live channel", () => {
   it("pushes the public read on connecting, then once per burst of claims", async () => {
     const activity = await running(5);
     const { heard } = await connect(activity.id, await actor());
-    await vi.waitFor(() => expect(heard).toHaveLength(1));
-    expect(claimed(heard[0])).toBe(0);
+    await vi.waitFor(() => expect(reads(heard)).toHaveLength(1));
+    expect(claimed(reads(heard)[0])).toBe(0);
     await claim(activity.id, await actor());
     await claim(activity.id, await actor());
-    await vi.waitFor(() => expect(claimed(heard.at(-1))).toBe(2), {
+    await vi.waitFor(() => expect(claimed(reads(heard).at(-1))).toBe(2), {
       timeout: 3000,
     });
     // Two claims in a row: at most one push each, usually one for both.
-    expect(heard.length).toBeLessThanOrEqual(3);
-    const last = heard.at(-1);
-    if (!last || last === "pong" || last.type !== "activity")
-      throw new Error("no push");
+    expect(reads(heard).length).toBeLessThanOrEqual(3);
+    const last = reads(heard).at(-1);
+    if (!last) throw new Error("no push");
     // The public read only: nothing of anyone's own.
     expect(last.activity).not.toHaveProperty("passwords");
     expect(last.activity.rosterPreview).toHaveLength(2);
@@ -251,7 +266,7 @@ describe("a running 红包's live channel", () => {
     const { heard, closed } = await connect(activity.id, await actor());
     await claim(activity.id, await actor());
     await vi.waitFor(() => expect(closed).toEqual([1000]), { timeout: 3000 });
-    expect(claimed(heard.at(-1))).toBe(1);
+    expect(claimed(reads(heard).at(-1))).toBe(1);
     expect((await upgrade(activity.id, await actor())).status).toBe(410);
   });
 
@@ -278,7 +293,7 @@ describe("a running 红包's live channel", () => {
     await vi.waitFor(() => expect(other.closed).toEqual([1000]), {
       timeout: 3000,
     });
-    expect(claimed(watching.heard.at(-1))).toBe(1);
+    expect(claimed(reads(watching.heard).at(-1))).toBe(1);
     expect(watching.closed).toEqual([]);
     // Still waiting, they may come back on another tab; no one else may.
     const again = await connect(activity.id, claimant);
@@ -321,9 +336,8 @@ describe("a running 红包's live channel", () => {
     const { heard, closed } = await connect(activity.id, await actor());
     // Nothing else happens: the DO's own alarm at the deadline ends it.
     await vi.waitFor(() => expect(closed).toEqual([1000]), { timeout: 3000 });
-    const last = heard.at(-1);
-    if (!last || last === "pong" || last.type !== "activity")
-      throw new Error("no push");
+    const last = reads(heard).at(-1);
+    if (!last) throw new Error("no push");
     expect(last.activity.status).toBe("ended");
     expect(
       (
@@ -339,7 +353,7 @@ describe("a running 红包's live channel", () => {
   it("pushes a refresh only when it moved something", async () => {
     const activity = await running(3);
     const { heard } = await connect(activity.id, await actor());
-    await vi.waitFor(() => expect(heard).toHaveLength(1));
+    await vi.waitFor(() => expect(reads(heard)).toHaveLength(1));
     const response = await env.ACTIVITY_DO.get(
       env.ACTIVITY_DO.idFromName(activity.id),
     ).fetch(
@@ -349,7 +363,26 @@ describe("a running 红包's live channel", () => {
     expect(response.status).toBe(200);
     await response.arrayBuffer();
     await new Promise((resolve) => setTimeout(resolve, 600));
-    expect(heard).toHaveLength(1);
+    expect(reads(heard)).toHaveLength(1);
+  });
+
+  it("tells everyone how many people are watching, each counted once", async () => {
+    const activity = await running(3);
+    const first = await actor();
+    const one = await connect(activity.id, first);
+    await vi.waitFor(() => expect(viewers(one.heard)).toBe(1));
+    const other = await connect(activity.id, await actor());
+    await vi.waitFor(() => expect(viewers(other.heard)).toBe(2));
+    await vi.waitFor(() => expect(viewers(one.heard)).toBe(2));
+    // Another tab of someone already here: still two, said to it at once.
+    const second = await connect(activity.id, first);
+    await vi.waitFor(() => expect(viewers(second.heard)).toBe(2));
+    // Someone leaves: the others hear it.
+    other.socket.close(1000);
+    await vi.waitFor(() => expect(viewers(one.heard)).toBe(1), {
+      timeout: 3000,
+    });
+    expect(viewers(second.heard)).toBe(1);
   });
 
   it("answers the keep-alive, and closes on anything else", async () => {

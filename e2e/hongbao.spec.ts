@@ -407,6 +407,35 @@ test.describe("红包页", () => {
     expect(state.reads.passwords).toBe(beforeMine.passwords);
   });
 
+  test("登录后：进行中的红包左上角写着多少人在看，随推送变化，断线时收起", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    await mockHongbao(page);
+    const sockets: WebSocketRoute[] = [];
+    await page.routeWebSocket(/\/api\/activities\/[^/]+\/live$/, (ws) => {
+      sockets.push(ws);
+      ws.onMessage((message) => {
+        if (message === "ping") ws.send("pong");
+      });
+    });
+    await openApp(page, path);
+    await expect.poll(() => sockets.length).toBe(1);
+    const viewers = page.locator('[data-hb-part="viewers"]');
+    // Nothing until the channel says how many.
+    await expect(viewers).toHaveText("");
+    sockets[0]?.send(JSON.stringify({ type: "viewers", count: 3 }));
+    await expect(viewers).toHaveText("3 人在看");
+    sockets[0]?.send(JSON.stringify({ type: "viewers", count: 12 }));
+    await expect(viewers).toHaveText("12 人在看");
+    // The line drops: the number goes until the next one comes.
+    await sockets[0]?.close({ code: 1012, reason: "restart" });
+    await expect(viewers).toHaveText("");
+    await expect.poll(() => sockets.length, { timeout: 5_000 }).toBe(2);
+    sockets[1]?.send(JSON.stringify({ type: "viewers", count: 11 }));
+    await expect(viewers).toHaveText("11 人在看");
+  });
+
   test("登录后：连接断了退回轮询，重连后补读自己那份", async ({ page }) => {
     await mockSession(page, viewer);
     const state = await mockHongbao(page);

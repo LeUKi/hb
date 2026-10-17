@@ -616,11 +616,14 @@ export type PublicActivity = {
  * everyone, as it is now; sent on connecting and after each change, a
  * burst as one. `mine`: something only this person sees there changed (a
  * payment of theirs; for the sender, one in their 名单, or their own edit
- * elsewhere), so the page reads its own part again.
+ * elsewhere), so the page reads its own part again. `viewers`: how many
+ * people have its page open on the channel, each counted once however many
+ * tabs; sent on connecting and whenever it changes.
  */
 export type ActivityLiveMessage =
   | { type: "activity"; activity: PublicActivity }
-  | { type: "mine" };
+  | { type: "mine" }
+  | { type: "viewers"; count: number };
 
 export type ActivityList = {
   items: ActivitySummary[];
