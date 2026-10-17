@@ -23,7 +23,6 @@ export default defineConfig({
           }),
           ENCRYPTION_KEY_VERSION: "test",
           PASSWORD_DIGEST_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-          CLAIM_ATTEMPTS_PER_MINUTE: "10",
           // Cloudflare's always-pass test key: it needs no secret (human-check.ts).
           TURNSTILE_SITE_KEY: "1x00000000000000000000AA",
           TURNSTILE_SECRET_KEY: "",

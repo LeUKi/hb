@@ -8,8 +8,6 @@ export type ApiBindings = Omit<CloudflareEnv, "LDC_TIMED_DRAW_ENABLED"> & {
   /** Turnstile (领取前人机验证): the public site key, and its secret. */
   TURNSTILE_SITE_KEY?: string;
   TURNSTILE_SECRET_KEY?: string;
-  CLAIM_ATTEMPTS_PER_MINUTE?: string;
-  GLOBAL_REDEMPTIONS_PER_MINUTE?: string;
   ADMIN_LINUX_DO_IDS?: string;
   APP_ENV?: string;
   LDC_NETWORK_MODE?: string;

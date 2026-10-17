@@ -186,8 +186,6 @@ async function main() {
             }),
             ENCRYPTION_KEY_VERSION: "full_app",
             PASSWORD_DIGEST_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-            CLAIM_ATTEMPTS_PER_MINUTE: "10",
-            GLOBAL_REDEMPTIONS_PER_MINUTE: "10",
             ADMIN_LINUX_DO_IDS: "730001",
             // Cloudflare's always-pass test key; Siteverify is the upstream mock.
             TURNSTILE_SITE_KEY: "1x00000000000000000000AA",

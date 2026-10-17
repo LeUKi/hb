@@ -18,10 +18,6 @@ TURNSTILE_SECRET_KEY=
 
 # Base64-encoded random HMAC key, at least 32 bytes.
 PASSWORD_DIGEST_KEY=""
-# 每账号、每活动滚动 60 秒内的有效提交上限；省略或无效时为 10。
-CLAIM_ATTEMPTS_PER_MINUTE=10
-# 全站新匹配的独立账号限流，滚动 60 秒；重试原请求不重复计数。
-GLOBAL_REDEMPTIONS_PER_MINUTE=10
 
 # Real network is disabled by default. verify enables credential checks and existing order reconciliation only.
 APP_ENV="local"
