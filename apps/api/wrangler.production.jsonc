@@ -16,15 +16,15 @@
     "LDC_STOP_NEW_CLAIMS": "false",
     "LDC_STOP_SENDS": "false",
     "MAINTENANCE_MODE": "false",
-    "DO_LOCATION_HINT": "",
-    "DO_NAME_PREFIX": "",
+    "DO_LOCATION_HINT": "apac",
+    "DO_NAME_PREFIX": "apac:",
     "LDC_TIMED_DRAW_ENABLED": "true"
   },
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "hb-production",
-      "database_id": "ca852ed4-57c8-49bc-84ca-0ffa4e0c91c6",
+      "database_name": "hb-production-apac",
+      "database_id": "c4603fec-188e-4021-bb07-9ff97a49b249",
       "migrations_dir": "migrations"
     }
   ],
