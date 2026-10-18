@@ -6,6 +6,7 @@ import {
 } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { AlertTriangle, ChevronRight, KeyRound, Plus } from "lucide-react";
+import { AnimatePresence } from "motion/react";
 import { useRef } from "react";
 import { useActivityFacts } from "../../lib/activity-facts";
 import { activityPath } from "../../lib/activity-route";
@@ -37,7 +38,7 @@ import { Button } from "../ui/button";
 import { MoreLink } from "../ui/button-link";
 import { Segmented } from "../ui/field";
 import { MiniEnvelope } from "../ui/mini-envelope";
-import { Reveal } from "../ui/reveal";
+import { ListItem, Reveal } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
 
@@ -55,7 +56,7 @@ function PaymentRow({
   const verb = draw ? "中奖" : "领取";
   const recipient = payment.recipientProfile;
   return (
-    <li>
+    <ListItem>
       <Squircle radius={radius.row}>
         <button
           type="button"
@@ -102,7 +103,7 @@ function PaymentRow({
           />
         </button>
       </Squircle>
-    </li>
+    </ListItem>
   );
 }
 
@@ -154,9 +155,11 @@ function SectionPanel({
   return (
     <Panel className="grid gap-0.5 p-1.5">
       <ul className="grid gap-0.5">
-        {section.payments.map((payment) => (
-          <PaymentRow key={payment.id} payment={payment} draw={draw} />
-        ))}
+        <AnimatePresence initial={false}>
+          {section.payments.map((payment) => (
+            <PaymentRow key={payment.id} payment={payment} draw={draw} />
+          ))}
+        </AnimatePresence>
       </ul>
     </Panel>
   );

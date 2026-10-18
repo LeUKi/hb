@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { PasswordLabel, PasswordView } from "../../lib/hongbao";
 import { verifyNoticeAtom } from "../../lib/store";
 import { Button } from "../ui/button";
+import { RollingText } from "../ui/morph-label";
 import { Squircle } from "../ui/squircle";
 import { PasswordText, RevealToggle, standIn } from "./password-text";
 
@@ -74,8 +75,9 @@ export function PasswordSection({
     <section className="grid gap-2" data-hb-part="passwords">
       <div className="flex min-h-9 items-center justify-between gap-3">
         <h2 className="text-sm font-medium text-ink-3">
-          口令 · {total} 个
-          {passwords.hidden > 0 ? ` · ${passwords.hidden} 个未解出` : ""}
+          <RollingText
+            text={`口令 · ${total} 个${passwords.hidden > 0 ? ` · ${passwords.hidden} 个未解出` : ""}`}
+          />
         </h2>
         <span className="-mr-2 flex items-center">
           {!ended && known.length > 0 && (

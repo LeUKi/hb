@@ -1,7 +1,7 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import { useMatches } from "@tanstack/react-router";
 import { RotateCw, Search, X } from "lucide-react";
-import { useIsPresent } from "motion/react";
+import { AnimatePresence, useIsPresent } from "motion/react";
 import {
   createContext,
   type ReactNode,
@@ -29,7 +29,8 @@ import { WindowDialog } from "../../shell/window-dialog";
 import { useWindowInfo } from "../../shell/window-info";
 import { Button } from "../../ui/button";
 import { TextInput } from "../../ui/field";
-import { Swap } from "../../ui/reveal";
+import { RollingText } from "../../ui/morph-label";
+import { ListItem, Swap } from "../../ui/reveal";
 import { SegmentedNav } from "../../ui/segmented";
 import { radius, Squircle } from "../../ui/squircle";
 
@@ -310,9 +311,9 @@ export function ToggleChip({
   );
 }
 
-/** "共 63 笔" once the count is known; until then, nothing to say. */
+/** "63 笔" once the count is known (its figure rolls); until then, nothing. */
 export function countLine(total: number | undefined, unit: string) {
-  return total === undefined ? null : `${total} ${unit}`;
+  return total === undefined ? null : <RollingText text={`${total} ${unit}`} />;
 }
 
 /**
@@ -378,25 +379,27 @@ export function ListDetail<T extends { id: string }>({
         className={cn("grid gap-0.5 transition-opacity", busy && "opacity-60")}
         aria-busy={busy || list.state === "loading" || undefined}
       >
-        {items.map((item) => (
-          <li key={item.id}>
-            <Squircle radius={radius.row}>
-              <button
-                type="button"
-                aria-current={item.id === selectedId ? "true" : undefined}
-                onClick={() =>
-                  onSelect(item.id === selectedId ? null : item.id)
-                }
-                className={cn(
-                  "flex w-full items-center gap-3 p-3 text-left transition-colors",
-                  item.id === selectedId ? "bg-white/80" : "hover:bg-fill-2",
-                )}
-              >
-                {row(item, item.id === selectedId)}
-              </button>
-            </Squircle>
-          </li>
-        ))}
+        <AnimatePresence initial={false}>
+          {items.map((item) => (
+            <ListItem key={item.id}>
+              <Squircle radius={radius.row}>
+                <button
+                  type="button"
+                  aria-current={item.id === selectedId ? "true" : undefined}
+                  onClick={() =>
+                    onSelect(item.id === selectedId ? null : item.id)
+                  }
+                  className={cn(
+                    "flex w-full items-center gap-3 p-3 text-left transition-colors",
+                    item.id === selectedId ? "bg-white/80" : "hover:bg-fill-2",
+                  )}
+                >
+                  {row(item, item.id === selectedId)}
+                </button>
+              </Squircle>
+            </ListItem>
+          ))}
+        </AnimatePresence>
       </ul>
       <LazyListEnd
         list={list}

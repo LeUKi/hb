@@ -1,5 +1,6 @@
 import { PAYMENT_LABELS, type PaymentState } from "@hb/contracts";
 import { RotateCw } from "lucide-react";
+import { AnimatePresence } from "motion/react";
 import type { RosterRow } from "../../lib/hongbao";
 import { paymentTone } from "../../lib/hongbao-text";
 import { fullTime, sinceOpen } from "../../lib/roster-time";
@@ -8,6 +9,7 @@ import { Bone } from "../page/page-state";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { PersonName } from "../ui/person";
+import { ListItem } from "../ui/reveal";
 import { Squircle } from "../ui/squircle";
 import { PasswordText } from "./password-text";
 import { TitleBadges } from "./title-badge";
@@ -77,7 +79,7 @@ function Row({
   onPayment?: (id: string) => void;
 }) {
   return (
-    <li>
+    <ListItem>
       <Squircle radius={10}>
         <div
           title={fullTime(row.at)}
@@ -153,7 +155,7 @@ function Row({
           )}
         </div>
       </Squircle>
-    </li>
+    </ListItem>
   );
 }
 
@@ -196,17 +198,19 @@ export function RosterList({
         className="grid px-2 py-1"
         aria-busy={list.state === "loading" || undefined}
       >
-        {rows.map((row) => (
-          <Row
-            key={row.id}
-            row={row}
-            kind={kind}
-            openedAt={openedAt}
-            detail={detailOf?.(row)}
-            passwordsShown={passwordsShown}
-            onPayment={onPayment}
-          />
-        ))}
+        <AnimatePresence initial={false}>
+          {rows.map((row) => (
+            <Row
+              key={row.id}
+              row={row}
+              kind={kind}
+              openedAt={openedAt}
+              detail={detailOf?.(row)}
+              passwordsShown={passwordsShown}
+              onPayment={onPayment}
+            />
+          ))}
+        </AnimatePresence>
       </ol>
       <LazyListEnd
         list={list}

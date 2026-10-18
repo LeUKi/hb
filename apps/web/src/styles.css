@@ -105,6 +105,8 @@
   --color-cream-2: rgb(255 236 214 / 0.74);
 
   --ease-snappy: cubic-bezier(0.2, 0, 0, 1);
+  /* Every transition-* utility eases on the site's one curve (02 §12). */
+  --default-transition-timing-function: var(--ease-snappy);
 
   /* Container query sizes for in-window layout (window is the container). */
   --container-wide: 40rem;

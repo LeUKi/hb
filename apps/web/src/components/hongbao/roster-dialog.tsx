@@ -121,7 +121,6 @@ function RosterContent({
         ? "中奖名单"
         : "报名名单";
   const total = totalOf(view, kind);
-  const count = (value: number | null) => (value === null ? "" : ` ${value}`);
   const author = activity.author.displayName;
   // The sender also sees, per row, the 口令 used and the payment (the author
   // roster endpoints return both; only for the sender's own 红包).
@@ -196,11 +195,13 @@ function RosterContent({
             options={[
               {
                 value: "winners",
-                label: `中奖名单${count(totalOf(view, "winners"))}`,
+                label: "中奖名单",
+                count: totalOf(view, "winners") ?? undefined,
               },
               {
                 value: "registrations",
-                label: `报名名单${count(totalOf(view, "registrations"))}`,
+                label: "报名名单",
+                count: totalOf(view, "registrations") ?? undefined,
               },
             ]}
           />

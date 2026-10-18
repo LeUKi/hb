@@ -345,3 +345,51 @@ function SwapLayer({ children }: { children: ReactNode }) {
     </motion.div>
   );
 }
+
+/**
+ * A row of a list that changes while it is shown (a poll brings one, one is
+ * deleted): it opens in place and closes in place. Rows already there when
+ * the list appears do not move — put the rows in
+ * <AnimatePresence initial={false}>.
+ */
+export function ListItem({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  const reduced = useReducedMotionPref();
+  const present = useIsPresent();
+  return (
+    <motion.li
+      className={className}
+      initial={{ height: 0, opacity: 0, overflow: "hidden" }}
+      animate={{
+        height: "auto",
+        opacity: 1,
+        transition: {
+          height: { duration: reduced ? 0 : durations.reveal, ease },
+          opacity: {
+            duration: durations.fadeIn,
+            delay: reduced ? 0 : durations.fadeDelay,
+            ease,
+          },
+        },
+        transitionEnd: { overflow: "visible" },
+      }}
+      exit={{
+        height: 0,
+        opacity: 0,
+        overflow: "hidden",
+        transition: {
+          height: { duration: reduced ? 0 : durations.collapse, ease },
+          opacity: { duration: durations.fadeOut, ease },
+        },
+      }}
+      inert={!present || undefined}
+    >
+      {children}
+    </motion.li>
+  );
+}

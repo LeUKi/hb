@@ -9,7 +9,7 @@ import { cn } from "../../lib/cn";
 import { useMaintenance } from "../../lib/maintenance";
 import { useWindowInfo } from "../shell/window-info";
 import { Button } from "../ui/button";
-import { MorphLabel } from "../ui/morph-label";
+import { MorphLabel, RollingText } from "../ui/morph-label";
 import { Reveal } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 
@@ -257,7 +257,12 @@ export function Facts({
         <div key={item.label} className="grid min-w-0 content-start gap-0.5">
           <dt className="text-sm text-ink-3">{item.label}</dt>
           <dd className="truncate text-lg font-semibold text-ink tabular-nums">
-            {item.value}
+            {/* Figures roll as they change (a poll, 刷新). */}
+            {typeof item.value === "string" ? (
+              <RollingText text={item.value} />
+            ) : (
+              item.value
+            )}
           </dd>
           {item.note && (
             <dd className="truncate text-xs text-ink-3">{item.note}</dd>

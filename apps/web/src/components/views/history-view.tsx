@@ -1,6 +1,7 @@
 import { PAYMENT_LABELS } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronRight, LayoutGrid, Plus } from "lucide-react";
+import { AnimatePresence } from "motion/react";
 import { useHistorySummary } from "../../lib/activities";
 import { activityCode } from "../../lib/activity-route";
 import { cn } from "../../lib/cn";
@@ -33,7 +34,8 @@ import { useWindowInfo } from "../shell/window-info";
 import { Button } from "../ui/button";
 import { Segmented } from "../ui/field";
 import { MiniEnvelope } from "../ui/mini-envelope";
-import { Reveal } from "../ui/reveal";
+import { RollingText } from "../ui/morph-label";
+import { ListItem, Reveal } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
 
@@ -65,7 +67,7 @@ function SentRow({ record }: { record: SentRecord }) {
         })
       : void leaveTo({ to: "activity", id: activity.id });
   return (
-    <li
+    <ListItem
       className={cn(
         "flex items-center gap-2",
         compact ? "flex-wrap gap-y-0" : "pr-2",
@@ -110,7 +112,7 @@ function SentRow({ record }: { record: SentRecord }) {
       >
         <SenderLinks activity={activity} iconsOnly={!compact} inList />
       </span>
-    </li>
+    </ListItem>
   );
 }
 
@@ -125,7 +127,7 @@ function JoinedRow({ item }: { item: JoinedRecord }) {
       ? `用口令 ${item.password} ${verb}`
       : `用口令${verb}`;
   return (
-    <li>
+    <ListItem>
       <Squircle radius={radius.row}>
         <button
           type="button"
@@ -165,7 +167,7 @@ function JoinedRow({ item }: { item: JoinedRecord }) {
           />
         </button>
       </Squircle>
-    </li>
+    </ListItem>
   );
 }
 
@@ -234,9 +236,11 @@ function History({ user }: { user: SessionUser }) {
           refreshable
           title="红包记录"
           description={
-            totals
-              ? `已发 ${totals.initiatedCount} 个，发出 ${totals.sentAmount} LDC · 参与过 ${totals.participatedCount} 个，领到 ${totals.receivedAmount} LDC`
-              : undefined
+            totals ? (
+              <RollingText
+                text={`已发 ${totals.initiatedCount} 个，发出 ${totals.sentAmount} LDC · 参与过 ${totals.participatedCount} 个，领到 ${totals.receivedAmount} LDC`}
+              />
+            ) : undefined
           }
         />
         <div className="grid gap-3">
@@ -297,9 +301,11 @@ function History({ user }: { user: SessionUser }) {
             ) : (
               <>
                 <Panel as="ul" className="grid gap-0.5 p-1.5">
-                  {sentRecords.map((record) => (
-                    <SentRow key={record.activity.id} record={record} />
-                  ))}
+                  <AnimatePresence initial={false}>
+                    {sentRecords.map((record) => (
+                      <SentRow key={record.activity.id} record={record} />
+                    ))}
+                  </AnimatePresence>
                 </Panel>
                 <LazyListEnd list={list} done={`共 ${sentTotal} 个`} />
               </>
@@ -321,9 +327,11 @@ function History({ user }: { user: SessionUser }) {
           ) : (
             <>
               <Panel as="ul" className="grid gap-0.5 p-1.5">
-                {joinedRecords.map((item) => (
-                  <JoinedRow key={item.key} item={item} />
-                ))}
+                <AnimatePresence initial={false}>
+                  {joinedRecords.map((item) => (
+                    <JoinedRow key={item.key} item={item} />
+                  ))}
+                </AnimatePresence>
               </Panel>
               <LazyListEnd list={list} done={`共 ${joinedTotal} 个`} />
             </>

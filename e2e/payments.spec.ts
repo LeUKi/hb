@@ -490,7 +490,8 @@ test.describe("LDC 商户配置", () => {
       .fill("my_client_2026");
     await page.getByLabel("商户密钥").fill("local-test-only");
     await page.getByRole("button", { name: "保存配置" }).click();
-    await expect(page.getByText("当前商户")).toBeVisible();
+    // Exact: the form fading out says 每个账号有一个当前商户 too.
+    await expect(page.getByText("当前商户", { exact: true })).toBeVisible();
     await expect(page.getByText("还没有红包用它")).toBeVisible();
   });
 });

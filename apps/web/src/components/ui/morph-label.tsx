@@ -364,15 +364,24 @@ function Digit({
   );
 }
 
+/** A figure's size, for which way its digits roll ("11.00" → 11). */
+const magnitude = (value: number | string) =>
+  typeof value === "number"
+    ? value
+    : Number.parseFloat(value.replace(/[^\d.]/g, "")) || 0;
+
 /**
  * A count whose digits roll as it changes: only the digits that changed
  * move, downwards while it counts down (a countdown), upwards as it grows.
+ * A string keeps its form ("11.00", "1,000"): its digits roll the same way.
  */
-export function RollingNumber({ value }: { value: number }) {
+export function RollingNumber({ value }: { value: number | string }) {
   const reduced = useReducedMotionPref();
   const [last, setLast] = useState({ value, down: true });
-  if (last.value !== value) setLast({ value, down: value < last.value });
-  const down = last.value === value ? last.down : value < last.value;
+  if (last.value !== value)
+    setLast({ value, down: magnitude(value) < magnitude(last.value) });
+  const down =
+    last.value === value ? last.down : magnitude(value) < magnitude(last.value);
   const text = `${value}`;
   // Keyed by place (ones, tens…), so 10 → 9 drops the tens.
   const places = [...text].map((digit, index) => ({
@@ -402,3 +411,23 @@ export function RollingNumber({ value }: { value: number }) {
 }
 
 inlineTypes.add(RollingNumber);
+
+/**
+ * Words with figures in them ("2 / 3 份", "10.63 LDC"): the figures roll as
+ * they change, the words stay.
+ */
+export function RollingText({ text }: { text: string }) {
+  const parts = text.split(/(\d[\d,]*(?:\.\d+)?)/);
+  return (
+    <>
+      {parts.map((part, index) =>
+        index % 2 === 1 ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: a figure's place in the words
+          <RollingNumber key={index} value={part} />
+        ) : (
+          part
+        ),
+      )}
+    </>
+  );
+}

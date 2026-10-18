@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { cn } from "../../lib/cn";
 import type { HongbaoActivity, PublicView, Roster } from "../../lib/hongbao";
 import { Avatar } from "../ui/avatar";
+import { RollingText } from "../ui/morph-label";
 import { Squircle } from "../ui/squircle";
 import { type CoverCell, coverCells } from "./cover-cells";
 import type { CoverMotion } from "./cover-motion";
@@ -83,7 +84,12 @@ function DataCell({
         {...motions.leaf}
         className="hb-data-value w-fit max-w-full truncate"
       >
-        {cell.until !== undefined ? <Countdown to={cell.until} /> : cell.value}
+        {/* A pushed figure (已领 2 / 3 份) rolls to its new value. */}
+        {cell.until !== undefined ? (
+          <Countdown to={cell.until} />
+        ) : (
+          <RollingText text={cell.value} />
+        )}
       </motion.dd>
       <AnimatePresence mode="popLayout" initial={false}>
         {!small && (
