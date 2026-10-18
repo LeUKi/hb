@@ -211,7 +211,7 @@ export function CoverHead({
           {small && activity.topic && (
             <motion.span
               key="topic"
-              className="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-[1.4]"
+              className="inline-flex shrink-0 items-center gap-1.5 text-[13px] leading-[1.4] whitespace-nowrap"
               {...motions.fade}
             >
               <span aria-hidden="true">·</span>
@@ -241,9 +241,12 @@ export function CoverHead({
 
       <AnimatePresence mode="popLayout" initial={false}>
         {!small && (
+          // Full width, not its own: leaving, it is popped out at its
+          // measured width in whole pixels, and a row only as wide as its
+          // labels (218.4px) would then wrap them onto a second line.
           <motion.div
             key="chips"
-            className="relative flex flex-wrap justify-center gap-2"
+            className="relative flex w-full flex-wrap justify-center gap-2"
             {...motions.fade}
           >
             {coverTags(activity).map((tag) => (
