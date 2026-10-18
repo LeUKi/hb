@@ -1,3 +1,4 @@
+import { fromForumEmoji } from "@hb/contracts";
 import { decodeActivityEmoji, normalizeActivityUuid } from "@/lib/ecoji-v2";
 import { parseActivityLink } from "@/lib/emoji-links";
 import { classifyHomeEntry } from "@/lib/home-entry";
@@ -38,6 +39,13 @@ export const schemeLabels: Record<SchemeKind, string> = {
  */
 export function detectScheme(raw: string, origin: string): EntryScheme {
   if (raw.length === 0) return { kind: "empty" };
+  // Copied from a forum post, a link's emoji are :name: (fromForumEmoji):
+  // a 红包 read with its emoji put back.
+  const forum = fromForumEmoji(raw);
+  if (forum !== raw) {
+    const scheme = detectScheme(forum, origin);
+    if ("activityId" in scheme) return scheme;
+  }
   const packet = parseRedPacketAddress(raw, origin);
   if (packet) return { kind: "link", activityId: packet };
   const trimmed = raw.trim();

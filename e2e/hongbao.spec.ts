@@ -7,6 +7,7 @@ import {
   type ClaimResult,
   emptyActivityInput,
   encodeActivityEmoji,
+  FORUM_EMOJI,
   type ManagedActivity,
   type PublicActivity,
   type PublicRecipient,
@@ -562,6 +563,31 @@ test.describe("红包页", () => {
     ).toBeVisible();
     await expect(main.getByRole("button", { name: "重新发送" })).toHaveCount(0);
     expect(resends).toHaveLength(1);
+  });
+
+  test("论坛里复制的地址，表情成了 :名字:：打开和粘进指令框都到这个红包", async ({
+    page,
+  }) => {
+    await mockSession(page, null);
+    await mockHongbao(page);
+    await page.routeWebSocket(/\/live$/, () => {});
+    const nameOf = new Map(
+      [...FORUM_EMOJI].map(([name, emoji]) => [emoji, name]),
+    );
+    const copied = `/:red_envelope:/${[...code]
+      .map((emoji) => `:${nameOf.get(emoji)}:`)
+      .join("")}`;
+    await openApp(page, copied);
+    await expectPath(page, path);
+    await expect(
+      page.getByRole("heading", { name: "周末红包", level: 1 }),
+    ).toBeVisible();
+
+    await openApp(page);
+    await omniboxInput(page).click();
+    await omniboxInput(page).fill(copied);
+    await page.keyboard.press("Enter");
+    await expectPath(page, path);
   });
 
   test("游客：大红包皮、说明全文、领取名单和分享", async ({

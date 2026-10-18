@@ -1,3 +1,4 @@
+import { fromForumEmoji } from "@hb/contracts";
 import { useMatches } from "@tanstack/react-router";
 import { decodeActivityEmoji, encodeActivityEmoji } from "@/lib/ecoji-v2";
 
@@ -39,6 +40,34 @@ export function activityIdFromCode(code: string): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * The address as copied from a forum post, each emoji a :name:
+ * (fromForumEmoji), put back to its emoji in place: the same page, the
+ * address the site gives.
+ */
+export function restoreForumEmojiAddress() {
+  const { pathname, search, hash } = window.location;
+  const restored = pathname
+    .split("/")
+    .map((segment) => {
+      let text: string;
+      try {
+        text = decodeURIComponent(segment);
+      } catch {
+        return segment;
+      }
+      const emoji = fromForumEmoji(text);
+      return emoji === text ? segment : encodeURIComponent(emoji);
+    })
+    .join("/");
+  if (restored !== pathname)
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${restored}${search}${hash}`,
+    );
 }
 
 const packetPath = new RegExp(`^/?${RED_PACKET}/?([^/]+)/?$`, "u");

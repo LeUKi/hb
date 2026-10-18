@@ -27,6 +27,7 @@ import {
   adminUsersQuerySchema,
   decodeActivityEmoji,
   formatAmount,
+  fromForumEmoji,
   normalizeActivityUuid,
   normalizeTopicLink,
   updateAttemptRateLimitsSchema,
@@ -161,7 +162,20 @@ function like(value: string) {
   return `%${value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
 }
 
-function parseActivitySearch(value: string, origin?: string) {
+function parseActivitySearch(
+  value: string,
+  origin?: string,
+): ReturnType<typeof parseActivityText> {
+  // A link copied from a forum post, each emoji a :name: (fromForumEmoji).
+  const forum = fromForumEmoji(value);
+  if (forum !== value) {
+    const found = parseActivityText(forum, origin);
+    if (found.kind === "activity") return found;
+  }
+  return parseActivityText(value, origin);
+}
+
+function parseActivityText(value: string, origin?: string) {
   const q = value.trim();
   if (!q) return { kind: "empty" as const };
   const uuid = normalizeActivityUuid(q) ?? decodeActivityEmoji(q);

@@ -8,7 +8,11 @@ import type {
   AdminPaymentDetailResponse,
   AdminPaymentListItem,
 } from "@hb/contracts";
-import { ARCHIVE_DELAY_MS, encodeActivityEmoji } from "@hb/contracts";
+import {
+  ARCHIVE_DELAY_MS,
+  encodeActivityEmoji,
+  FORUM_EMOJI,
+} from "@hb/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { app } from "../src/app";
 import { createDb } from "../src/db/client";
@@ -944,9 +948,19 @@ describe("administrator observation APIs", () => {
     expect(detail.activity).toMatchObject({ passwordCount: 2 });
     expect(JSON.stringify(detail)).not.toContain("SECRET-DRAFT-PASSWORD");
 
-    // The new addresses, and a sender page below one, find it exactly.
-    for (const path of ["", "/📝"]) {
-      const link = `${origin}/🧧/${encodeActivityEmoji(draftId)}${path}`;
+    // The new addresses, and a sender page below one, find it exactly; so
+    // does the path as copied from a forum post (each emoji a :name:).
+    const nameOf = new Map(
+      [...FORUM_EMOJI].map(([name, emoji]) => [emoji, name]),
+    );
+    const copied = `/:red_envelope:/${[...encodeActivityEmoji(draftId)]
+      .map((emoji) => `:${nameOf.get(emoji)}:`)
+      .join("")}`;
+    for (const link of [
+      `${origin}/🧧/${encodeActivityEmoji(draftId)}`,
+      `${origin}/🧧/${encodeActivityEmoji(draftId)}/📝`,
+      `${origin}${copied}/:memo:`,
+    ]) {
       const found = (await (
         await request(
           `/api/admin/activities?q=${encodeURIComponent(link)}`,

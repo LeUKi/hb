@@ -9,6 +9,7 @@ import { Shell } from "./components/shell/shell";
 import {
   activityCode,
   activityIdFromCode,
+  restoreForumEmojiAddress,
   type SenderPage,
 } from "./lib/activity-route";
 import type { CommandId } from "./lib/commands";
@@ -245,6 +246,11 @@ const routeTree = rootRoute.addChildren([
   statusRoute,
   notFoundRoute,
 ]);
+
+// A link copied from a forum post has :name: for each emoji (/:red_envelope:/
+// :chart_decreasing:…): the emoji go back into the address before the
+// router reads it.
+restoreForumEmojiAddress();
 
 export const router = createRouter({
   routeTree,
