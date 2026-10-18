@@ -16,6 +16,7 @@ import { LeaveGuard } from "../../shell/leave-guard";
 import { Button } from "../../ui/button";
 import { MoreLink } from "../../ui/button-link";
 import { Field, TextInput } from "../../ui/field";
+import { Reveal, RevealInline } from "../../ui/reveal";
 import { AdminFrame } from "./admin-frame";
 
 const valid = (value: string) =>
@@ -207,11 +208,11 @@ function SettingsForm({ data }: { data: AttemptRateLimitsResponse }) {
                 />
               </Field>
             </div>
-            {error && (
+            <Reveal show={Boolean(error)}>
               <p role="alert" className="text-sm text-danger">
                 {error}
               </p>
-            )}
+            </Reveal>
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 ref={saveRef}
@@ -223,7 +224,7 @@ function SettingsForm({ data }: { data: AttemptRateLimitsResponse }) {
               >
                 {busy ? "正在保存…" : "保存设置"}
               </Button>
-              {changed && !busy && (
+              <RevealInline show={changed && !busy}>
                 <Button
                   variant="ghost"
                   onClick={() => {
@@ -235,14 +236,14 @@ function SettingsForm({ data }: { data: AttemptRateLimitsResponse }) {
                 >
                   撤销修改
                 </Button>
-              )}
+              </RevealInline>
               <span role="status" className="text-sm text-success">
-                {done && (
+                <RevealInline show={done}>
                   <span className="inline-flex items-center gap-1">
                     <Check className="size-4" aria-hidden="true" />
                     已保存，立即生效
                   </span>
-                )}
+                </RevealInline>
               </span>
             </div>
           </form>

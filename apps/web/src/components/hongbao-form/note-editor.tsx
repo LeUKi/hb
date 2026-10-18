@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Field, Segmented, TextArea } from "../ui/field";
+import { Swap } from "../ui/reveal";
 import { Squircle } from "../ui/squircle";
 import { counter } from "./fields";
 import { LIMITS } from "./form-state";
@@ -44,22 +45,25 @@ export function NoteEditor({
         error={error}
         aside={counter(value, LIMITS.info)}
       >
-        {shown === "preview" ? (
-          <Squircle radius={14}>
-            <div className="min-h-24 bg-white/60 squircle-ring px-3.5 py-2.5 [--sq-ring:var(--color-line)]">
-              <NotePreview text={value} />
-            </div>
-          </Squircle>
-        ) : (
-          <TextArea
-            id={id}
-            rows={rows}
-            placeholder={placeholder}
-            value={value}
-            invalid={Boolean(error)}
-            onChange={(event) => onChange(event.target.value)}
-          />
-        )}
+        {/* 原文 and 预览 fade into each other; the height eases between. */}
+        <Swap id={shown}>
+          {shown === "preview" ? (
+            <Squircle radius={14}>
+              <div className="min-h-24 bg-white/60 squircle-ring px-3.5 py-2.5 [--sq-ring:var(--color-line)]">
+                <NotePreview text={value} />
+              </div>
+            </Squircle>
+          ) : (
+            <TextArea
+              id={id}
+              rows={rows}
+              placeholder={placeholder}
+              value={value}
+              invalid={Boolean(error)}
+              onChange={(event) => onChange(event.target.value)}
+            />
+          )}
+        </Swap>
       </Field>
       <div>
         <Segmented

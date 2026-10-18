@@ -144,6 +144,110 @@ function RevealBody({
   );
 }
 
+type InlineEdge = { gap: number; start: boolean; reduced: boolean };
+
+const inlineVariants = {
+  hidden: ({ gap, start }: InlineEdge) => ({
+    width: 0,
+    opacity: 0,
+    ...(start ? { marginInlineStart: -gap } : { marginInlineEnd: -gap }),
+    overflow: "hidden",
+  }),
+  shown: ({ reduced }: InlineEdge) => ({
+    width: "auto",
+    opacity: 1,
+    marginInlineStart: 0,
+    marginInlineEnd: 0,
+    transition: {
+      width: { duration: reduced ? 0 : durations.slide, ease },
+      marginInlineStart: { duration: reduced ? 0 : durations.slide, ease },
+      marginInlineEnd: { duration: reduced ? 0 : durations.slide, ease },
+      opacity: {
+        duration: durations.fadeIn,
+        delay: reduced ? 0 : durations.fadeDelay,
+        ease,
+      },
+    },
+    transitionEnd: { overflow: "visible" },
+  }),
+};
+
+/** The gap the parent puts between items on a line. */
+function parentColumnGap(probe: HTMLElement | null) {
+  let parent = probe?.parentElement ?? null;
+  while (parent && getComputedStyle(parent).display === "contents")
+    parent = parent.parentElement;
+  if (!parent) return 0;
+  const gap = Number.parseFloat(getComputedStyle(parent).columnGap);
+  return Number.isFinite(gap) ? gap : 0;
+}
+
+/**
+ * Reveal for something on a line (a button beside a field): it grows from
+ * nothing to its width and shrinks back, taking its gap with it, so what
+ * follows slides instead of jumping.
+ */
+export function RevealInline({
+  show,
+  children,
+  className,
+}: {
+  show: boolean;
+  children: ReactNode;
+  className?: string;
+}) {
+  const reduced = useReducedMotionPref();
+  const probe = useRef<HTMLSpanElement>(null);
+  const edge: InlineEdge = {
+    gap: probe.current ? parentColumnGap(probe.current) : 0,
+    start: probe.current ? followsSibling(probe.current) : true,
+    reduced,
+  };
+  return (
+    <>
+      <span ref={probe} aria-hidden="true" className="absolute size-0" />
+      <AnimatePresence initial={false} custom={edge}>
+        {show && (
+          <InlineBody key="reveal" edge={edge} className={className}>
+            {children}
+          </InlineBody>
+        )}
+      </AnimatePresence>
+    </>
+  );
+}
+
+function InlineBody({
+  edge,
+  className,
+  children,
+}: {
+  edge: InlineEdge;
+  className?: string;
+  children: ReactNode;
+}) {
+  const present = useIsPresent();
+  return (
+    <motion.span
+      custom={edge}
+      variants={inlineVariants}
+      initial="hidden"
+      animate="shown"
+      exit="hidden"
+      transition={{
+        duration: edge.reduced ? 0 : durations.collapse,
+        ease,
+        opacity: { duration: durations.fadeOut, ease },
+      }}
+      inert={!present || undefined}
+      aria-hidden={!present || undefined}
+      className={cn("inline-flex shrink-0", className)}
+    >
+      {children}
+    </motion.span>
+  );
+}
+
 /**
  * One thing in place of another (`id` says which): the new one fades in
  * over the old one, and the place eases to the new one's height. Content

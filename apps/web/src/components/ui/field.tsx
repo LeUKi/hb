@@ -8,6 +8,8 @@ import {
   useId,
 } from "react";
 import { cn } from "../../lib/cn";
+import { MorphLabel } from "./morph-label";
+import { Reveal } from "./reveal";
 import { radius, Squircle } from "./squircle";
 
 // Form controls for the command pages. A control is a squircle "field" (the
@@ -52,14 +54,21 @@ export function Field({
 }) {
   const noteId = useId();
   const note = error || hint;
-  const noteLine = note && (
+  // A hint that turns into an error (and back) cross-fades; its colour
+  // eases with it.
+  const noteText = note && (
     <p
       id={noteId}
-      className={cn("text-xs", error ? "text-danger" : "text-ink-3")}
+      className={cn(
+        "text-xs transition-colors duration-200",
+        error ? "text-danger" : "text-ink-3",
+      )}
     >
-      {note}
+      <MorphLabel fit={false}>{note}</MorphLabel>
     </p>
   );
+  // Under the field it opens and closes in place.
+  const noteLine = <Reveal show={Boolean(note)}>{noteText}</Reveal>;
   // content-start: beside a taller field (one with an error) in a grid
   // row, the control stays under its label instead of drifting down.
   return (
@@ -92,7 +101,7 @@ export function Field({
       )}
       {labelHidden && aside ? (
         <div className="flex items-baseline justify-between gap-3">
-          {noteLine || <span />}
+          {noteText || <span />}
           <span className="shrink-0 text-xs text-ink-3">{aside}</span>
         </div>
       ) : (

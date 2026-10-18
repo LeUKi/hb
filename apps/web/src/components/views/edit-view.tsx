@@ -17,6 +17,7 @@ import { PageLoad, queryLoad } from "../page/page-state";
 import { ConfirmDialog } from "../shell/confirm-dialog";
 import { Button } from "../ui/button";
 import { HoverNote } from "../ui/hover-note";
+import { Swap } from "../ui/reveal";
 import { StatusChip } from "../ui/status-chip";
 
 /**
@@ -70,27 +71,30 @@ function EndEarly({
           : "还没有人领取或报名，所以现在可以提前结束。结束后不能再领取或报名，也不能重新开放。"
       }
     >
-      {done ? (
-        <div ref={doneRef} tabIndex={-1} className="outline-none">
-          <Callout tone="success" icon={CircleStop} title="红包已提前结束">
-            不能再领取或报名。红包页上写着“已提前结束”。
-          </Callout>
-        </div>
-      ) : (
-        <Panel className="flex flex-wrap items-center justify-between gap-3 p-4">
-          <p className="text-sm text-ink-2">
-            一旦有人领取或报名，就只能等它领完或到时间。
-          </p>
-          <Button
-            variant="danger"
-            size="sm"
-            onClick={() => setConfirming(true)}
-          >
-            <CircleStop />
-            提前结束
-          </Button>
-        </Panel>
-      )}
+      {/* The panel turns into its outcome in place. */}
+      <Swap id={done ? "done" : "panel"}>
+        {done ? (
+          <div ref={doneRef} tabIndex={-1} className="outline-none">
+            <Callout tone="success" icon={CircleStop} title="红包已提前结束">
+              不能再领取或报名。红包页上写着“已提前结束”。
+            </Callout>
+          </div>
+        ) : (
+          <Panel className="flex flex-wrap items-center justify-between gap-3 p-4">
+            <p className="text-sm text-ink-2">
+              一旦有人领取或报名，就只能等它领完或到时间。
+            </p>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => setConfirming(true)}
+            >
+              <CircleStop />
+              提前结束
+            </Button>
+          </Panel>
+        )}
+      </Swap>
       <ConfirmDialog
         open={confirming}
         onClose={() => {

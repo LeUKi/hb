@@ -9,6 +9,8 @@ import { cn } from "../../lib/cn";
 import { useMaintenance } from "../../lib/maintenance";
 import { useWindowInfo } from "../shell/window-info";
 import { Button } from "../ui/button";
+import { MorphLabel } from "../ui/morph-label";
+import { Reveal } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 
 // The frame every command page uses: one column on the glass, a title row,
@@ -88,37 +90,41 @@ export function RefreshButton() {
 export function RefreshNotice() {
   const state = useContext(RefreshContext);
   const maintenance = useMaintenance();
-  if (!state?.stale) return null;
+  // Opens and closes in place: the page under it moves, it does not jump.
   return (
-    <Callout
-      tone="warning"
-      icon={maintenance ? Wrench : CloudOff}
-      title={
-        maintenance
-          ? "系统维护中，当前内容已保留。"
-          : "刷新失败，当前内容已保留。"
-      }
-    >
-      <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span>下面可能不是最新的。</span>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="-my-1"
-          // Not disabled, so focus stays on it while it reads again.
-          aria-disabled={state.retrying || undefined}
-          onClick={() => {
-            if (!state.retrying) state.retry();
-          }}
-        >
-          <RotateCw
-            className={state.retrying ? "motion-safe:animate-spin" : undefined}
-            aria-hidden="true"
-          />
-          {state.retrying ? "正在刷新…" : "重试"}
-        </Button>
-      </span>
-    </Callout>
+    <Reveal show={Boolean(state?.stale)}>
+      <Callout
+        tone="warning"
+        icon={maintenance ? Wrench : CloudOff}
+        title={
+          maintenance
+            ? "系统维护中，当前内容已保留。"
+            : "刷新失败，当前内容已保留。"
+        }
+      >
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span>下面可能不是最新的。</span>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="-my-1"
+            // Not disabled, so focus stays on it while it reads again.
+            aria-disabled={state?.retrying || undefined}
+            onClick={() => {
+              if (state && !state.retrying) state.retry();
+            }}
+          >
+            <RotateCw
+              className={
+                state?.retrying ? "motion-safe:animate-spin" : undefined
+              }
+              aria-hidden="true"
+            />
+            {state?.retrying ? "正在刷新…" : "重试"}
+          </Button>
+        </span>
+      </Callout>
+    </Reveal>
   );
 }
 
@@ -151,7 +157,13 @@ export function PageHeader({
           >
             {title}
           </h1>
-          {description && <p className="text-sm text-ink-2">{description}</p>}
+          {/* Arrives with the data, and its words can change (网站管理's
+              tabs): it opens in place and cross-fades. */}
+          <Reveal show={Boolean(description)}>
+            <p className="text-sm text-ink-2">
+              <MorphLabel fit={false}>{description}</MorphLabel>
+            </p>
+          </Reveal>
         </div>
         {(actions || refreshable) && (
           <div className="flex flex-wrap items-center gap-2">
@@ -186,7 +198,11 @@ export function PageSection({
           <h2 id={id} className="text-base font-semibold text-ink">
             {title}
           </h2>
-          {description && <p className="text-sm text-ink-3">{description}</p>}
+          <Reveal show={Boolean(description)}>
+            <p className="text-sm text-ink-3">
+              <MorphLabel fit={false}>{description}</MorphLabel>
+            </p>
+          </Reveal>
         </div>
         {action}
       </div>

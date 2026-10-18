@@ -405,10 +405,27 @@ export function ListDetail<T extends { id: string }>({
     </Panel>
   );
 
+  // Bars, an error, nothing found or the rows: each fades in place.
+  const shownContent = (
+    <Swap
+      id={
+        !load.hasData
+          ? load.isError
+            ? "error"
+            : "loading"
+          : items.length === 0
+            ? "empty"
+            : "rows"
+      }
+    >
+      {content}
+    </Swap>
+  );
+
   if (!roomy)
     return (
       <>
-        {content}
+        {shownContent}
         <WindowDialog
           open={selected !== null}
           onClose={() => onSelect(null)}
@@ -439,20 +456,23 @@ export function ListDetail<T extends { id: string }>({
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_22rem] items-start gap-6">
-      <div className="min-w-0">{content}</div>
+      <div className="min-w-0">{shownContent}</div>
       {/* Sticky offsets count from the scroller's content box, which
           already starts under the 顶栏. */}
       <aside
         aria-label="详情"
         className="sticky top-4 max-h-[calc(100cqh-var(--bar-h)-2rem)] overflow-y-auto overscroll-contain"
       >
-        {selected ? (
-          <Panel className="grid gap-4 p-4">{detail(selected)}</Panel>
-        ) : (
-          <Panel className="grid min-h-40 place-items-center p-6 text-center">
-            <p className="text-sm text-ink-3">{placeholder}</p>
-          </Panel>
-        )}
+        {/* Another row's detail fades in over the last one's. */}
+        <Swap id={selected?.id ?? "none"}>
+          {selected ? (
+            <Panel className="grid gap-4 p-4">{detail(selected)}</Panel>
+          ) : (
+            <Panel className="grid min-h-40 place-items-center p-6 text-center">
+              <p className="text-sm text-ink-3">{placeholder}</p>
+            </Panel>
+          )}
+        </Swap>
       </aside>
     </div>
   );

@@ -11,6 +11,7 @@ import type { SessionUser } from "../../lib/session";
 import { LeaveGuard } from "../shell/leave-guard";
 import { useWindowInfo } from "../shell/window-info";
 import { Button } from "../ui/button";
+import { Reveal, Swap } from "../ui/reveal";
 import { ActionBar, SaveButtons } from "./action-bar";
 import { DeleteDraftDialog } from "./delete-draft-dialog";
 import {
@@ -341,14 +342,17 @@ export function HongbaoForm({
   // otherwise. Read out by the lasting region at the form's top.
   const status = (
     <>
-      {roomy && submit.notice && (
-        <p className={cn("text-sm", notice[submit.notice.tone])}>
-          {submit.notice.text}
+      {/* Both open and close in place as the form changes. */}
+      <Reveal show={roomy && Boolean(submit.notice)}>
+        <p
+          className={cn("text-sm", submit.notice && notice[submit.notice.tone])}
+        >
+          {submit.notice?.text}
         </p>
-      )}
-      {allChecked && issues.length > 0 && (
+      </Reveal>
+      <Reveal show={allChecked && issues.length > 0}>
         <IssueList issues={issues} onJump={(field) => showIssue(field, true)} />
-      )}
+      </Reveal>
     </>
   );
   const last = linear.current === steps.length;
@@ -367,6 +371,16 @@ export function HongbaoForm({
       />
     );
   const planned = plan(form);
+  // What the bar's left side says; a different kind fades in over the last
+  // (the total changes in place as it is typed).
+  const barKind =
+    allChecked && issues.length > 0
+      ? "issues"
+      : submit.notice
+        ? `notice:${submit.notice.tone}`
+        : planned.total === null || planned.shares === null
+          ? "mode"
+          : "total";
   const barLeft =
     allChecked && issues.length > 0 ? (
       <button
@@ -549,7 +563,9 @@ export function HongbaoForm({
                 </Button>
               </div>
             )}
-            <ActionBar left={barLeft}>{buttons(true)}</ActionBar>
+            <ActionBar left={<Swap id={barKind}>{barLeft}</Swap>}>
+              {buttons(true)}
+            </ActionBar>
           </>
         )}
       </form>

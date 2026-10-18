@@ -55,6 +55,7 @@ import { MoreLink } from "../ui/button-link";
 import { CopyButton } from "../ui/copy-button";
 import { Field, TextInput } from "../ui/field";
 import { PersonName } from "../ui/person";
+import { Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
 import { MessageView } from "./message-view";
@@ -185,7 +186,22 @@ function MerchantFix() {
  * Where the payment stands, in a sentence. `admin`: read from 网站管理,
  * where the 红包's sender is the one who can act.
  */
-export function StateNote({
+export function StateNote(props: {
+  payment: MerchantPaymentDetail;
+  admin?: boolean;
+}) {
+  const { payment } = props;
+  // A payment moving on (发放中 → 已发放) changes its note in place.
+  return (
+    <Swap
+      id={`${payment.status}:${payment.reason ?? ""}:${payment.unknownOutcome ? 1 : 0}`}
+    >
+      <StateNoteBody {...props} />
+    </Swap>
+  );
+}
+
+function StateNoteBody({
   payment,
   admin = false,
 }: {

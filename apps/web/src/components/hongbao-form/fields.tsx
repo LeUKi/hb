@@ -30,6 +30,7 @@ import {
   TextArea,
   TextInput,
 } from "../ui/field";
+import { Reveal, RevealInline, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import {
   type Algorithm,
@@ -349,17 +350,20 @@ export function AmountFields({
           {unit !== null && ` · 每份 ${ldc(unit)} LDC`}
         </span>
       </p>
-      <p className="-mt-3 text-xs text-ink-3">
-        最多 1,000 份，每份至少 0.01
-        LDC，金额最多两位小数。填的是每份发出的金额。领取的人到账时，Credit
-        会按你的 Credit 等级扣分发费（4%–15%）。你不能领自己的红包。
-      </p>
-      {total !== null && total > DAILY_LIMIT_FLOOR && (
-        <p className="-mt-2 text-xs text-warning">
-          Credit 每天最多能发 800–2000 LDC（按你的 Credit
-          等级），超出的部分可能顺延到第二天发放。
+      <div className="-mt-3 grid gap-1">
+        <p className="text-xs text-ink-3">
+          最多 1,000 份，每份至少 0.01
+          LDC，金额最多两位小数。填的是每份发出的金额。领取的人到账时，Credit
+          会按你的 Credit 等级扣分发费（4%–15%）。你不能领自己的红包。
         </p>
-      )}
+        {/* Opens as the total passes 800 LDC, and closes under it. */}
+        <Reveal show={total !== null && total > DAILY_LIMIT_FLOOR}>
+          <p className="text-xs text-warning">
+            Credit 每天最多能发 800–2000 LDC（按你的 Credit
+            等级），超出的部分可能顺延到第二天发放。
+          </p>
+        </Reveal>
+      </div>
     </>
   );
 }
@@ -586,8 +590,9 @@ export function PasswordList({
                   aria-describedby={error ? `${field}-error` : undefined}
                   onChange={(event) => setAt(index, event.target.value)}
                 />
-                {!locked && fixable && (
-                  // Named as in the command box (一键优化 → 优化).
+                {/* Named as in the command box (一键优化 → 优化); it grows in
+                    beside the 口令 and folds away once the 口令 is clean. */}
+                <RevealInline show={!locked && fixable}>
                   <Button
                     size="sm"
                     variant="ghost"
@@ -602,8 +607,8 @@ export function PasswordList({
                     <Sparkles />
                     优化
                   </Button>
-                )}
-                {!locked && form.passwords.length > 1 && (
+                </RevealInline>
+                <RevealInline show={!locked && form.passwords.length > 1}>
                   <Button
                     size="icon"
                     variant="ghost"
@@ -624,13 +629,13 @@ export function PasswordList({
                   >
                     <Trash2 />
                   </Button>
-                )}
+                </RevealInline>
               </div>
-              {error && (
+              <Reveal show={Boolean(error)}>
                 <p id={`${field}-error`} className="text-xs text-danger">
                   {error}
                 </p>
-              )}
+              </Reveal>
             </li>
           );
         })}
@@ -638,7 +643,7 @@ export function PasswordList({
       {/* Locked: the step's own 开放后不能修改 covers the 口令 too. */}
       {!locked && (
         <div className="flex flex-wrap items-center gap-3">
-          {form.passwords.length < LIMITS.passwords && (
+          <RevealInline show={form.passwords.length < LIMITS.passwords}>
             <Button
               size="sm"
               onClick={() =>
@@ -651,7 +656,7 @@ export function PasswordList({
               <Plus />
               再加一个
             </Button>
-          )}
+          </RevealInline>
           <span className="text-xs text-ink-3">
             6–18
             个字：汉字、英文字母或数字，区分大小写。几个口令共用同一个红包，每人只能领一次。
@@ -701,72 +706,75 @@ export function TimingFields({
           },
         ]}
       />
-      {form.timing.kind === "duration" ? (
-        <Field
-          label={draw ? "开放后多久开奖" : "开放多久"}
-          labelHidden
-          htmlFor="hb-timing-value"
-          error={errorOf("hb-timing-value")}
-          live
-        >
-          <div className="flex flex-wrap items-center gap-2">
+      {/* 多久 and 什么时候 fade into each other in place. */}
+      <Swap id={form.timing.kind}>
+        {form.timing.kind === "duration" ? (
+          <Field
+            label={draw ? "开放后多久开奖" : "开放多久"}
+            labelHidden
+            htmlFor="hb-timing-value"
+            error={errorOf("hb-timing-value")}
+            live
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <TextInput
+                id="hb-timing-value"
+                inputMode="numeric"
+                className="w-32"
+                value={form.timing.value}
+                invalid={Boolean(errorOf("hb-timing-value"))}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  update((current) => ({
+                    ...current,
+                    timing: { ...current.timing, value },
+                  }));
+                }}
+              />
+              <Segmented
+                label="时长单位"
+                value={form.timing.unit}
+                onChange={(unit: TimeUnit) =>
+                  update((current) => ({
+                    ...current,
+                    timing: { ...current.timing, unit },
+                  }))
+                }
+                // Seconds only for a timed draw's countdown.
+                options={(Object.keys(unitLabels) as TimeUnit[])
+                  .filter((value) => draw || value !== "seconds")
+                  .map((value) => ({
+                    value,
+                    label: unitLabels[value],
+                  }))}
+              />
+            </div>
+          </Field>
+        ) : (
+          <Field
+            label={draw ? "开奖时间" : "截止时间"}
+            labelHidden
+            htmlFor="hb-timing-at"
+            error={errorOf("hb-timing-at")}
+            live
+          >
             <TextInput
-              id="hb-timing-value"
-              inputMode="numeric"
-              className="w-32"
-              value={form.timing.value}
-              invalid={Boolean(errorOf("hb-timing-value"))}
+              id="hb-timing-at"
+              type="datetime-local"
+              className="w-fit"
+              value={form.timing.at}
+              invalid={Boolean(errorOf("hb-timing-at"))}
               onChange={(event) => {
-                const value = event.target.value;
+                const at = event.target.value;
                 update((current) => ({
                   ...current,
-                  timing: { ...current.timing, value },
+                  timing: { ...current.timing, at },
                 }));
               }}
             />
-            <Segmented
-              label="时长单位"
-              value={form.timing.unit}
-              onChange={(unit: TimeUnit) =>
-                update((current) => ({
-                  ...current,
-                  timing: { ...current.timing, unit },
-                }))
-              }
-              // Seconds only for a timed draw's countdown.
-              options={(Object.keys(unitLabels) as TimeUnit[])
-                .filter((value) => draw || value !== "seconds")
-                .map((value) => ({
-                  value,
-                  label: unitLabels[value],
-                }))}
-            />
-          </div>
-        </Field>
-      ) : (
-        <Field
-          label={draw ? "开奖时间" : "截止时间"}
-          labelHidden
-          htmlFor="hb-timing-at"
-          error={errorOf("hb-timing-at")}
-          live
-        >
-          <TextInput
-            id="hb-timing-at"
-            type="datetime-local"
-            className="w-fit"
-            value={form.timing.at}
-            invalid={Boolean(errorOf("hb-timing-at"))}
-            onChange={(event) => {
-              const at = event.target.value;
-              update((current) => ({
-                ...current,
-                timing: { ...current.timing, at },
-              }));
-            }}
-          />
-        </Field>
-      )}
+          </Field>
+        )}
+      </Swap>
     </div>
   );
 }

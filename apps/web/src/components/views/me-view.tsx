@@ -25,6 +25,8 @@ import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { MoreLink } from "../ui/button-link";
 import { CopyButton } from "../ui/copy-button";
+import { MorphLabel } from "../ui/morph-label";
+import { Reveal } from "../ui/reveal";
 import { StatusChip } from "../ui/status-chip";
 
 /** Back from 刷新资料's round trip, the address carries this once. */
@@ -114,11 +116,13 @@ function Me({ user }: { user: SessionUser }) {
           </div>
           <div className="flex items-center gap-2">
             <span role="status" className="text-sm text-ink-3">
-              {refresh.state === "busy"
-                ? "正在读取社区资料…"
-                : refresh.state === "done"
-                  ? "资料已是最新"
-                  : ""}
+              <MorphLabel>
+                {refresh.state === "busy"
+                  ? "正在读取社区资料…"
+                  : refresh.state === "done"
+                    ? "资料已是最新"
+                    : ""}
+              </MorphLabel>
             </span>
             <Button
               size="sm"
@@ -136,17 +140,17 @@ function Me({ user }: { user: SessionUser }) {
             </Button>
           </div>
         </Panel>
-        {refreshError && (
+        <Reveal show={Boolean(refreshError)}>
           <div role="alert">
             <Callout
-              tone={refreshError.tone === "neutral" ? "neutral" : "warning"}
+              tone={refreshError?.tone === "neutral" ? "neutral" : "warning"}
               icon={AlertTriangle}
               title="刷新资料没有完成"
             >
-              {refreshError.refresh}资料保持原样，你仍是登录状态。
+              {refreshError?.refresh}资料保持原样，你仍是登录状态。
             </Callout>
           </div>
-        )}
+        </Reveal>
 
         <PageSection title="资料" id="me-profile">
           <InfoList

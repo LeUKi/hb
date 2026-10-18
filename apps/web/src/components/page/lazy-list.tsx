@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "../../lib/cn";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/kbd";
+import { MorphLabel } from "../ui/morph-label";
 
 export type LazyList = {
   /** How many rows to render. */
@@ -137,16 +138,24 @@ export function LazyListEnd({
           </Button>
         </>
       ) : (
-        <span aria-live="polite" className="flex items-center gap-2">
-          {state === "done" ? (
-            done
-          ) : (
-            <>
-              <Spinner />
-              正在加载…
-            </>
-          )}
-        </span>
+        <>
+          {/* Said from a region that stays; shown as a cross-fade. */}
+          <span aria-live="polite" className="sr-only">
+            {state === "done" ? done : "正在加载…"}
+          </span>
+          <span aria-hidden="true" className="grid">
+            <MorphLabel fit={false}>
+              {state === "done" ? (
+                done
+              ) : (
+                <span className="flex items-center gap-2">
+                  <Spinner />
+                  正在加载…
+                </span>
+              )}
+            </MorphLabel>
+          </span>
+        </>
       )}
     </div>
   );

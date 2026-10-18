@@ -37,6 +37,7 @@ import { Button } from "../ui/button";
 import { MoreLink } from "../ui/button-link";
 import { Segmented } from "../ui/field";
 import { MiniEnvelope } from "../ui/mini-envelope";
+import { Reveal } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
 
@@ -335,7 +336,13 @@ function Payments({
                   ]}
                 />
               </Panel>
-              {summary.repairableCount > 0 && summary.firstRepairableId && (
+              {/* These follow the polls: they open and close in place. */}
+              <Reveal
+                show={
+                  summary.repairableCount > 0 &&
+                  Boolean(summary.firstRepairableId)
+                }
+              >
                 <Callout
                   tone="warning"
                   icon={KeyRound}
@@ -359,8 +366,8 @@ function Payments({
                     </MoreLink>
                   </span>
                 </Callout>
-              )}
-              {summary.attentionCount > 0 && (
+              </Reveal>
+              <Reveal show={summary.attentionCount > 0}>
                 <Callout
                   tone="danger"
                   icon={AlertTriangle}
@@ -368,7 +375,7 @@ function Payments({
                 >
                   这类付款不会自动重发，也不会重复付款。点开可以看到原因和经过。
                 </Callout>
-              )}
+              </Reveal>
               <Segmented
                 label="付款状态"
                 value={filter}

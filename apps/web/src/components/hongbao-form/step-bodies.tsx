@@ -1,10 +1,9 @@
 import { ChevronDown, DoorOpen, KeyRound, Plus } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
-import { type ReactNode, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { cn } from "../../lib/cn";
-import { ease, useReducedMotionPref } from "../../lib/motion";
 import { ChoiceCards, Field, TextInput } from "../ui/field";
+import { Reveal } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import {
   AmountFields,
@@ -28,27 +27,6 @@ import { NoteEditor } from "./note-editor";
 import type { SettingsGroup } from "./steps";
 
 type OpenSheet = (group: SettingsGroup) => void;
-
-/** A height reveal for something shown on request (更多玩法, 红包说明). */
-function Reveal({ show, children }: { show: boolean; children: ReactNode }) {
-  const reduced = useReducedMotionPref();
-  return (
-    <AnimatePresence initial={false}>
-      {show && (
-        <motion.div
-          key="reveal"
-          className="overflow-hidden"
-          initial={{ height: 0, opacity: 0 }}
-          animate={{ height: "auto", opacity: 1 }}
-          exit={{ height: 0, opacity: 0 }}
-          transition={{ duration: reduced ? 0 : 0.26, ease }}
-        >
-          {children}
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-}
 
 function ModeCard({
   option,
@@ -261,14 +239,15 @@ export function ClaimStep({
           },
         ]}
       />
-      {form.participation === "password" && (
+      {/* Only a 口令红包 has 口令: the list opens and closes with the choice. */}
+      <Reveal show={form.participation === "password"}>
         <PasswordList
           form={form}
           update={update}
           errorOf={errorOf}
           locked={locked}
         />
-      )}
+      </Reveal>
       {locked ? (
         <>
           <p className="px-1 text-sm text-ink-2">{time}</p>
@@ -327,7 +306,8 @@ export function TitleStep({
           }}
         />
       </Field>
-      {!note && (
+      {/* The button folds away as the 说明 opens in its place. */}
+      <Reveal show={!note}>
         <button
           type="button"
           onClick={() => {
@@ -340,7 +320,7 @@ export function TitleStep({
           <Plus className="size-4" aria-hidden="true" />
           加一段红包说明
         </button>
-      )}
+      </Reveal>
       <Reveal show={note}>
         <div ref={noteRef} className="pb-1">
           <NoteEditor

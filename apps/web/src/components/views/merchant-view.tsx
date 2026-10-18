@@ -42,6 +42,7 @@ import { Button } from "../ui/button";
 import { MoreLink } from "../ui/button-link";
 import { CopyButton } from "../ui/copy-button";
 import { Field, TextInput } from "../ui/field";
+import { Reveal, RevealInline, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import { type ChipTone, StatusChip } from "../ui/status-chip";
 import { MerchantGuide } from "./merchant-guide";
@@ -173,7 +174,8 @@ function MerchantSummary({
           <CredentialLine merchant={merchant} />
         </div>
       </div>
-      {verification.status === "rejected" && (
+      {/* They follow the merchant's state: they open and close in place. */}
+      <Reveal show={verification.status === "rejected"}>
         <Callout
           tone="danger"
           icon={AlertTriangle}
@@ -181,17 +183,17 @@ function MerchantSummary({
         >
           新红包暂时不能开放；已开放红包的付款会等新凭证通过后继续。请在下面重新填写密钥。
         </Callout>
-      )}
-      {pause && (
-        <Callout tone="warning" icon={PauseCircle} title={pause.title}>
-          {pause.text}
+      </Reveal>
+      <Reveal show={Boolean(pause)}>
+        <Callout tone="warning" icon={PauseCircle} title={pause?.title}>
+          {pause?.text}
         </Callout>
-      )}
-      {!current && (
+      </Reveal>
+      <Reveal show={!current}>
         <Callout>
           历史商户不能用来开放新红包。已开放的红包继续用它付款；如果它的密钥变了，可以在这里更新。
         </Callout>
-      )}
+      </Reveal>
       <div className="border-line border-t pt-4">
         <Facts
           className="@wide/window:grid-cols-3"
@@ -307,11 +309,11 @@ function ChangeDialog({
           })}
         </dl>
       </Squircle>
-      {note && (
+      <Reveal show={Boolean(note)}>
         <p role="alert" className="text-sm text-danger">
           {note}
         </p>
-      )}
+      </Reveal>
       <Callout tone="warning">
         能安全续付的付款，会在新凭证检查通过后用新配置继续；已经建单或结果未知的付款，继续核对原订单，期间可能暂停这个商户的新发送。
       </Callout>
@@ -477,11 +479,11 @@ function MerchantForm({
             onChange={(event) => setSecret(event.target.value)}
           />
         </Field>
-        {error && (
+        <Reveal show={Boolean(error)}>
           <p role="alert" className="text-sm text-danger">
             {error}
           </p>
-        )}
+        </Reveal>
         <div className="flex flex-wrap items-center gap-2 pt-1">
           <Button
             ref={saveRef}
@@ -492,18 +494,19 @@ function MerchantForm({
           >
             {busy ? "正在保存…" : "保存配置"}
           </Button>
-          {changed && !busy && (
+          {/* They grow in beside 保存配置 and fold away again. */}
+          <RevealInline show={changed && !busy}>
             <Button variant="ghost" onClick={undo}>
               撤销修改
             </Button>
-          )}
+          </RevealInline>
           <span role="status" className="text-sm text-success">
-            {saved && (
+            <RevealInline show={saved}>
               <span className="inline-flex items-center gap-1">
                 <Check className="size-4" aria-hidden="true" />
                 已保存
               </span>
-            )}
+            </RevealInline>
           </span>
         </div>
       </form>
@@ -714,11 +717,11 @@ function CreateMerchant({
               onChange={(event) => setSecret(event.target.value)}
             />
           </Field>
-          {error && (
+          <Reveal show={Boolean(error)}>
             <p role="alert" className="text-sm text-danger">
               {error}
             </p>
-          )}
+          </Reveal>
           <div className="pt-1">
             <Button
               type="submit"
@@ -805,22 +808,27 @@ function Merchants({
     <PageLoad load={queryLoad(query)}>
       <Page>
         <PageHeader refreshable title="LDC 商户配置" description={PAGE_NOTE} />
-        {current ? (
-          <MerchantDetail
-            key={current.id}
-            merchant={current}
-            user={user}
-            csrfToken={csrfToken}
-            focusNext={focusNext}
-          />
-        ) : (
-          <CreateMerchant
-            user={user}
-            csrfToken={csrfToken}
-            focusNext={focusNext}
-          />
-        )}
-        {legacy.length > 0 && <LegacyList items={legacy} user={user} />}
+        {/* Saving the first merchant turns the form into its page in place. */}
+        <Swap id={current?.id ?? "create"}>
+          {current ? (
+            <MerchantDetail
+              key={current.id}
+              merchant={current}
+              user={user}
+              csrfToken={csrfToken}
+              focusNext={focusNext}
+            />
+          ) : (
+            <CreateMerchant
+              user={user}
+              csrfToken={csrfToken}
+              focusNext={focusNext}
+            />
+          )}
+        </Swap>
+        <Reveal show={legacy.length > 0}>
+          <LegacyList items={legacy} user={user} />
+        </Reveal>
       </Page>
     </PageLoad>
   );
