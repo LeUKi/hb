@@ -137,7 +137,7 @@ export function AdminArea({
   return (
     <AdminHeaderContext.Provider value={context}>
       <Page width="wide">
-        <div className="grid gap-4">
+        <div className="flex flex-col gap-4">
           {/* Until the page below has read once, 刷新 turns as it reads. */}
           <RefreshContext.Provider
             value={{
@@ -376,7 +376,10 @@ export function ListDetail<T extends { id: string }>({
   ) : (
     <Panel className="grid gap-0.5 p-1.5">
       <ul
-        className={cn("grid gap-0.5 transition-opacity", busy && "opacity-60")}
+        className={cn(
+          "flex flex-col gap-0.5 transition-opacity",
+          busy && "opacity-60",
+        )}
         aria-busy={busy || list.state === "loading" || undefined}
       >
         <AnimatePresence initial={false}>

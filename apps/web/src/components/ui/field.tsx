@@ -69,10 +69,11 @@ export function Field({
   );
   // Under the field it opens and closes in place.
   const noteLine = <Reveal show={Boolean(note)}>{noteText}</Reveal>;
-  // content-start: beside a taller field (one with an error) in a grid
-  // row, the control stays under its label instead of drifting down.
+  // A column (as Reveal needs): beside a taller field (one with an error)
+  // in a grid row, the control stays under its label instead of drifting
+  // down.
   return (
-    <div className="grid content-start gap-1.5">
+    <div className="flex flex-col gap-1.5">
       {labelHidden ? (
         <label htmlFor={htmlFor} className="sr-only">
           {label}

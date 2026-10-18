@@ -39,7 +39,7 @@ export function ConfirmDialog({
       labelledBy={titleId}
       busy={busy}
     >
-      <div className="grid gap-4 p-5">
+      <div className="flex flex-col gap-4 p-5">
         <div className="grid gap-1">
           <h2 id={titleId} className="text-lg font-semibold text-ink">
             {title}

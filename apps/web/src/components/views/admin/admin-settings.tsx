@@ -173,7 +173,11 @@ function SettingsForm({ data }: { data: AttemptRateLimitsResponse }) {
             when={changed && !busy}
             message="网站设置改过的内容还没保存，离开后会丢失。"
           />
-          <form className="grid gap-4 p-5" onSubmit={submit} noValidate>
+          <form
+            className="flex flex-col gap-4 p-5"
+            onSubmit={submit}
+            noValidate
+          >
             <div className="grid gap-4 @wide/window:grid-cols-2">
               <Field
                 label="起始页"

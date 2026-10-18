@@ -3,9 +3,16 @@ import {
   type AnimationPlaybackControls,
   animate,
   motion,
+  PresenceContext,
   useIsPresent,
 } from "motion/react";
-import { type ReactNode, type Ref, useLayoutEffect, useRef } from "react";
+import {
+  type ReactNode,
+  type Ref,
+  useContext,
+  useLayoutEffect,
+  useRef,
+} from "react";
 import { cn } from "../../lib/cn";
 import { durations, ease, useReducedMotionPref } from "../../lib/motion";
 
@@ -14,16 +21,24 @@ import { durations, ease, useReducedMotionPref } from "../../lib/motion";
 //
 // - Reveal: something there or not (a filter row, a notice). Its height
 //   opens and closes with a fade; the gap its parent puts beside it opens
-//   and closes with it, so the content around it moves continuously.
+//   and closes with it, so the content around it moves continuously. The
+//   parent is a flex column: a grid keeps the gap until the content is
+//   gone, and the content around it jumps by the gap at the end.
 // - Swap: one thing replaced by another in the same place (a list by
 //   another, a skeleton by its content). The new one fades in over the old
 //   one fading out, and the place changes height smoothly between them.
 
-/** The gap the parent lays out beside its children (display: contents is skipped). */
-function parentGap(probe: HTMLElement | null) {
-  let parent = probe?.parentElement ?? null;
+/** The box that lays the element out (display: contents is skipped). */
+function layoutParent(element: HTMLElement | null) {
+  let parent = element?.parentElement ?? null;
   while (parent && getComputedStyle(parent).display === "contents")
     parent = parent.parentElement;
+  return parent;
+}
+
+/** The gap the parent lays out beside its children. */
+function parentGap(probe: HTMLElement | null) {
+  const parent = layoutParent(probe);
   if (!parent) return 0;
   const gap = Number.parseFloat(getComputedStyle(parent).rowGap);
   return Number.isFinite(gap) ? gap : 0;
@@ -43,6 +58,21 @@ function followsSibling(probe: HTMLElement | null) {
     sibling = sibling.previousElementSibling;
   }
   return false;
+}
+
+/** While developing: says so when a stack keeps the gap (a grid, see above). */
+function warnGrid(element: HTMLElement | null, what: string) {
+  if (!import.meta.env.DEV) return;
+  const parent = layoutParent(element);
+  if (
+    parent &&
+    getComputedStyle(parent).display.endsWith("grid") &&
+    parentGap(element) > 0
+  )
+    console.warn(
+      `${what} is in a grid with a gap, which jumps away when it closes: make the parent a flex column.`,
+      parent,
+    );
 }
 
 type Edge = { gap: number; top: boolean; reduced: boolean };
@@ -76,8 +106,8 @@ const revealVariants = {
 
 /**
  * Something shown or not, opening and closing in place. Put it where the
- * content goes, as a child of the stack that spaces it (a grid or a column
- * with a gap): the gap opens and closes with it.
+ * content goes, as a child of the column that spaces it (flex flex-col
+ * gap-*): the gap opens and closes with it.
  */
 export function Reveal({
   show,
@@ -98,9 +128,15 @@ export function Reveal({
     top: probe.current ? followsSibling(probe.current) : true,
     reduced,
   };
+  useLayoutEffect(() => warnGrid(probe.current, "Reveal"), []);
   return (
     <>
-      <span ref={probe} aria-hidden="true" className="absolute size-0" />
+      <span
+        ref={probe}
+        aria-hidden="true"
+        data-reveal=""
+        className="absolute size-0"
+      />
       <AnimatePresence initial={false} custom={edge}>
         {show && (
           <RevealBody key="reveal" edge={edge} className={className}>
@@ -205,7 +241,12 @@ export function RevealInline({
   };
   return (
     <>
-      <span ref={probe} aria-hidden="true" className="absolute size-0" />
+      <span
+        ref={probe}
+        aria-hidden="true"
+        data-reveal=""
+        className="absolute size-0"
+      />
       <AnimatePresence initial={false} custom={edge}>
         {show && (
           <InlineBody key="reveal" edge={edge} className={className}>
@@ -354,11 +395,19 @@ function SwapLayer({
   );
 }
 
+/** Which side of a row its list's gap is on, and how wide (none when alone). */
+function rowEdge(row: HTMLElement) {
+  const gap = parentGap(row);
+  if (followsSibling(row)) return { side: "marginTop", gap } as const;
+  if (row.nextElementSibling) return { side: "marginBottom", gap } as const;
+  return null;
+}
+
 /**
  * A row of a list that changes while it is shown (a poll brings one, one is
- * deleted): it opens in place and closes in place. Rows already there when
- * the list appears do not move — put the rows in
- * <AnimatePresence initial={false}>.
+ * deleted): it opens in place and closes in place, its gap with it (the
+ * list is a flex column, as Reveal's). Rows already there when the list
+ * appears do not move — put the rows in <AnimatePresence initial={false}>.
  */
 export function ListItem({
   children,
@@ -369,15 +418,50 @@ export function ListItem({
 }) {
   const reduced = useReducedMotionPref();
   const present = useIsPresent();
+  // A row there from the start is shown as it is (initial={false}).
+  const arriving = useContext(PresenceContext)?.initial !== false;
+  const row = useRef<HTMLLIElement>(null);
+  // Arriving, it starts without its gap: motion starts the opening after
+  // layout effects, from this margin.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: once, as it arrives
+  useLayoutEffect(() => {
+    const element = row.current;
+    if (!element) return;
+    warnGrid(element, "ListItem");
+    const edge = arriving && !reduced ? rowEdge(element) : null;
+    if (edge) element.style[edge.side] = `${-edge.gap}px`;
+  }, []);
+  // Read as it starts to close, when the row is still in its list.
+  const variants = {
+    gone: () => {
+      const edge = row.current ? rowEdge(row.current) : null;
+      return {
+        height: 0,
+        opacity: 0,
+        ...(edge && { [edge.side]: -edge.gap }),
+        overflow: "hidden",
+        transition: {
+          duration: reduced ? 0 : durations.collapse,
+          ease,
+          opacity: { duration: durations.fadeOut, ease },
+        },
+      };
+    },
+  };
   return (
     <motion.li
+      ref={row}
       className={className}
+      variants={variants}
       initial={{ height: 0, opacity: 0, overflow: "hidden" }}
       animate={{
         height: "auto",
         opacity: 1,
+        marginTop: 0,
+        marginBottom: 0,
         transition: {
-          height: { duration: reduced ? 0 : durations.reveal, ease },
+          duration: reduced ? 0 : durations.reveal,
+          ease,
           opacity: {
             duration: durations.fadeIn,
             delay: reduced ? 0 : durations.fadeDelay,
@@ -386,15 +470,7 @@ export function ListItem({
         },
         transitionEnd: { overflow: "visible" },
       }}
-      exit={{
-        height: 0,
-        opacity: 0,
-        overflow: "hidden",
-        transition: {
-          height: { duration: reduced ? 0 : durations.collapse, ease },
-          opacity: { duration: durations.fadeOut, ease },
-        },
-      }}
+      exit="gone"
       inert={!present || undefined}
     >
       {children}

@@ -103,7 +103,7 @@ export function ModeStep({
     </fieldset>
   );
   return (
-    <div className="grid gap-2.5">
+    <div className="flex flex-col gap-2.5">
       {cards(false)}
       {!locked && (
         <button
@@ -212,7 +212,7 @@ export function ClaimStep({
         : ""
     }`;
   return (
-    <div className="grid gap-4">
+    <div className="flex flex-col gap-4">
       <ChoiceCards
         label="怎么领"
         value={form.participation}
@@ -285,7 +285,7 @@ export function TitleStep({
   const [note, setNote] = useState(form.beforeInfo.trim().length > 0);
   const noteRef = useRef<HTMLDivElement>(null);
   return (
-    <div className="grid gap-4">
+    <div className="flex flex-col gap-4">
       {/* The card's title says what this is: the label is only said. */}
       <Field
         label="标题（选填）"

@@ -243,7 +243,7 @@ function History({ user }: { user: SessionUser }) {
             ) : undefined
           }
         />
-        <div className="grid gap-3">
+        <div className="flex flex-col gap-3">
           <Segmented
             label="红包记录分类"
             value={tab}
@@ -300,7 +300,7 @@ function History({ user }: { user: SessionUser }) {
               />
             ) : (
               <>
-                <Panel as="ul" className="grid gap-0.5 p-1.5">
+                <Panel as="ul" className="flex flex-col gap-0.5 p-1.5">
                   <AnimatePresence initial={false}>
                     {sentRecords.map((record) => (
                       <SentRow key={record.activity.id} record={record} />
@@ -326,7 +326,7 @@ function History({ user }: { user: SessionUser }) {
             />
           ) : (
             <>
-              <Panel as="ul" className="grid gap-0.5 p-1.5">
+              <Panel as="ul" className="flex flex-col gap-0.5 p-1.5">
                 <AnimatePresence initial={false}>
                   {joinedRecords.map((item) => (
                     <JoinedRow key={item.key} item={item} />

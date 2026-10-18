@@ -154,7 +154,7 @@ function SectionPanel({
   const draw = group?.reward?.mode === "timed_draw";
   return (
     <Panel className="grid gap-0.5 p-1.5">
-      <ul className="grid gap-0.5">
+      <ul className="flex flex-col gap-0.5">
         <AnimatePresence initial={false}>
           {section.payments.map((payment) => (
             <PaymentRow key={payment.id} payment={payment} draw={draw} />

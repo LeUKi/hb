@@ -350,7 +350,7 @@ export function AmountFields({
           {unit !== null && ` · 每份 ${ldc(unit)} LDC`}
         </span>
       </p>
-      <div className="-mt-3 grid gap-1">
+      <div className="-mt-3 flex flex-col gap-1">
         <p className="text-xs text-ink-3">
           最多 1,000 份，每份至少 0.01
           LDC，金额最多两位小数。填的是每份发出的金额。领取的人到账时，Credit
@@ -571,7 +571,7 @@ export function PasswordList({
           return (
             // Rows are only added at the end and removed by position.
             // biome-ignore lint/suspicious/noArrayIndexKey: see above
-            <li key={index} className="grid gap-1">
+            <li key={index} className="flex flex-col gap-1">
               <div className="flex items-center gap-2">
                 <TextInput
                   id={field}

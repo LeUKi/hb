@@ -441,7 +441,7 @@ export function HongbaoForm({
       </p>
       <form
         noValidate
-        className="grid gap-5"
+        className="flex flex-col gap-5"
         onSubmit={(event) => {
           event.preventDefault();
           if (!editing) advance();
@@ -486,7 +486,7 @@ export function HongbaoForm({
                   </fieldset>
                   {/* Wide /new: the step's own way on, under it. */}
                   {!editing && roomy && (
-                    <div className="grid gap-3 border-line border-t pt-4">
+                    <div className="flex flex-col gap-3 border-line border-t pt-4">
                       {last && status}
                       <div className="flex flex-wrap items-center justify-end gap-2">
                         {last && !opened && (
@@ -521,7 +521,7 @@ export function HongbaoForm({
 
         {/* 📝 on a wide window: the actions under the steps. */}
         {editing && roomy && (
-          <div className="grid gap-3">
+          <div className="flex flex-col gap-3">
             {status}
             <div className="flex flex-wrap items-center justify-end gap-2">
               {draft && (

@@ -146,7 +146,7 @@ function MerchantSummary({
       })
     : null;
   return (
-    <Panel className="grid gap-4 p-5">
+    <Panel className="flex flex-col gap-4 p-5">
       <div className="flex flex-wrap items-start gap-x-3.5 gap-y-3">
         <Squircle radius={14}>
           <span className="grid size-12 shrink-0 place-items-center bg-gold-soft text-gold-ink">
@@ -428,7 +428,7 @@ function MerchantForm({
         when={changed && !busy}
         message="商户配置改过的内容还没保存，离开后会丢失。"
       />
-      <form className="grid gap-4 p-5" onSubmit={submit} noValidate>
+      <form className="flex flex-col gap-4 p-5" onSubmit={submit} noValidate>
         <Field
           label="商户名称"
           htmlFor={ids.label}
@@ -672,7 +672,7 @@ function CreateMerchant({
         message="商户配置还没保存，离开后填的内容会丢失。"
       />
       <Panel>
-        <form className="grid gap-4 p-5" onSubmit={submit} noValidate>
+        <form className="flex flex-col gap-4 p-5" onSubmit={submit} noValidate>
           <Field
             label="商户名称"
             htmlFor={ids.label}

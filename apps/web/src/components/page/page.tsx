@@ -34,7 +34,7 @@ export function Page({
   return (
     <div
       className={cn(
-        "mx-auto grid w-full content-start gap-6 px-4 pt-6 pb-12 @wide/window:gap-8 @wide/window:px-8 @wide/window:pt-10",
+        "mx-auto flex w-full flex-col gap-6 px-4 pt-6 pb-12 @wide/window:gap-8 @wide/window:px-8 @wide/window:pt-10",
         widths[width],
         className,
       )}
@@ -148,7 +148,7 @@ export function PageHeader({
     <>
       <header className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3 px-1">
         {/* Grows, so a long description wraps beside the actions. */}
-        <div className="grid min-w-0 flex-1 basis-48 gap-1">
+        <div className="flex min-w-0 flex-1 basis-48 flex-col gap-1">
           {eyebrow && <div className="text-sm text-ink-3">{eyebrow}</div>}
           {/* Focusable from code: where reading starts again after 重试. */}
           <h1
@@ -194,7 +194,7 @@ export function PageSection({
   return (
     <section className="grid gap-3" aria-labelledby={id}>
       <div className="flex items-end justify-between gap-3 px-1">
-        <div className="grid gap-0.5">
+        <div className="flex flex-col gap-0.5">
           <h2 id={id} className="text-base font-semibold text-ink">
             {title}
           </h2>
