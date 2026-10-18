@@ -5,7 +5,7 @@ import {
   motion,
   useIsPresent,
 } from "motion/react";
-import { type ReactNode, useLayoutEffect, useRef } from "react";
+import { type ReactNode, type Ref, useLayoutEffect, useRef } from "react";
 import { cn } from "../../lib/cn";
 import { durations, ease, useReducedMotionPref } from "../../lib/motion";
 
@@ -319,24 +319,32 @@ export function Swap({
   );
 }
 
-function SwapLayer({ children }: { children: ReactNode }) {
+// popLayout pops the leaving layer out of the flow through this ref: without
+// it, the leaving and arriving layers would stack one under the other.
+function SwapLayer({
+  ref,
+  children,
+}: {
+  ref?: Ref<HTMLDivElement>;
+  children: ReactNode;
+}) {
   const present = useIsPresent();
   return (
     <motion.div
+      ref={ref}
       // Full width: popped out at its measured width, it keeps its lines.
       className="w-full"
+      // A true cross-fade: the same time and curve both ways, starting
+      // together, so the two always add up to one (no dimmer moment
+      // between them).
       initial={{ opacity: 0 }}
       animate={{
         opacity: 1,
-        transition: {
-          duration: durations.fadeIn,
-          delay: durations.fadeDelay,
-          ease,
-        },
+        transition: { duration: durations.crossFade, ease },
       }}
       exit={{
         opacity: 0,
-        transition: { duration: durations.fadeOut, ease },
+        transition: { duration: durations.crossFade, ease },
       }}
       inert={!present || undefined}
       aria-hidden={!present || undefined}

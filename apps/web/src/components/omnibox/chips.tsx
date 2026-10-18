@@ -8,6 +8,7 @@ import {
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
+import type { Ref } from "react";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import type { EntryScheme, SchemeKind } from "../../lib/scheme";
 import { schemeLabels } from "../../lib/scheme";
@@ -42,9 +43,12 @@ const schemeTones: Record<SchemeKind, string> = {
  * its shape while the chip grows or shrinks.
  */
 export function SchemeChip({
+  ref,
   scheme,
   compact,
 }: {
+  /** The omnibox's popLayout pops a leaving chip out of the row through it. */
+  ref?: Ref<HTMLSpanElement>;
   scheme: EntryScheme;
   compact: boolean;
 }) {
@@ -55,6 +59,7 @@ export function SchemeChip({
   return (
     <Squircle radius={CHIP_RADIUS}>
       <motion.span
+        ref={ref}
         initial={false}
         animate={measured === null ? undefined : { width: measured.width }}
         transition={{ duration: reduced || measured?.instant ? 0 : 0.2, ease }}
@@ -95,11 +100,14 @@ export function SchemeChip({
  * its 口令, until removed.
  */
 export function ScopeChip({
+  ref,
   title,
   purpose,
   compact,
   onRemove,
 }: {
+  /** The omnibox's popLayout pops a leaving chip out of the row through it. */
+  ref?: Ref<HTMLSpanElement>;
   title: string;
   purpose: "claim" | "verify";
   compact: boolean;
@@ -109,6 +117,7 @@ export function ScopeChip({
   return (
     <Squircle radius={CHIP_RADIUS}>
       <motion.span
+        ref={ref}
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.96 }}

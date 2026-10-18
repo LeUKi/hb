@@ -20,6 +20,8 @@ export const durations = {
   fadeDelay: 0.04,
   /** What leaves in place. */
   fadeOut: 0.12,
+  /** One thing turning into another in place (Swap): both ways at once. */
+  crossFade: 0.2,
 } as const;
 
 /** The system's reduced-motion setting. */
