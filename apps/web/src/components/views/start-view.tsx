@@ -74,28 +74,15 @@ function Reveal({
   );
 }
 
-function Row({
-  label,
-  cards = false,
-  children,
-}: {
-  label: string;
-  /** One line of cards: the label sits level with their middle. */
-  cards?: boolean;
-  children: ReactNode;
-}) {
+function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className={cn("flex gap-3", cards ? "items-center" : "items-start")}>
+    <div className="flex items-start gap-3">
       {/* Level with the first line of chips (34px). */}
       <span className="flex h-[34px] w-14 shrink-0 items-center whitespace-nowrap text-xs text-ink-3">
         {label}
       </span>
-      {cards ? (
-        <div className="grid min-w-0 flex-1 grid-cols-3 gap-2">{children}</div>
-      ) : (
-        // More than fit wrap onto further lines; nothing scrolls sideways.
-        <div className="flex min-w-0 flex-1 flex-wrap gap-2">{children}</div>
-      )}
+      {/* More than fit wrap onto further lines; nothing scrolls sideways. */}
+      <div className="flex min-w-0 flex-1 flex-wrap gap-2">{children}</div>
     </div>
   );
 }
@@ -229,7 +216,9 @@ export function StartView() {
             </Reveal>
           )}
           <Reveal index={1}>
-            <Row label="常用命令" cards>
+            {/* The cards say what they are: no label, the whole line
+                theirs (a screen reader still hears its name). */}
+            <nav aria-label="常用命令" className="grid grid-cols-3 gap-2">
               {quick.map((command) => (
                 <Squircle key={command.id} radius={radius.choice}>
                   <CommandLink
@@ -266,7 +255,7 @@ export function StartView() {
                   />
                 </button>
               </Squircle>
-            </Row>
+            </nav>
           </Reveal>
         </div>
       </div>
