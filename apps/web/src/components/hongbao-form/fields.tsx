@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../../lib/cn";
+import { splitNames, splitRules } from "../../lib/hongbao-text";
 import { useCurrentMerchant, useMerchant } from "../../lib/merchants";
 import { scrollBehavior } from "../../lib/motion";
 import { inspectPassword, optimizePassword } from "../../lib/password-rules";
@@ -116,10 +117,7 @@ export const modeOptions: {
  * How a pool is split, named after the red packets everyone knows (the
  * algorithm's own name in the small print).
  */
-export const algorithmLabels: Record<Algorithm, string> = {
-  double_mean: "微信同款",
-  bounded_mean: "支付宝同款",
-};
+export const algorithmLabels: Record<Algorithm, string> = splitNames;
 
 const algorithmOptions: {
   value: Algorithm;
@@ -129,13 +127,12 @@ const algorithmOptions: {
   {
     value: "double_mean",
     title: algorithmLabels.double_mean,
-    description:
-      "二倍均值：每份在 0.01 和剩下金额平均值的两倍之间随机，金额差距较大",
+    description: splitRules.double_mean,
   },
   {
     value: "bounded_mean",
     title: algorithmLabels.bounded_mean,
-    description: "均值上下 50%：每份在平均值上下 50% 之间随机，金额比较接近",
+    description: splitRules.bounded_mean,
   },
 ];
 

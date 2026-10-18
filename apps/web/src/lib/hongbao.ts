@@ -6,7 +6,7 @@ import type {
   PaymentView,
   PublicActivity,
 } from "@hb/contracts";
-import { rewardSummaryOf } from "./hongbao-text";
+import { rewardSummaryOf, type Split, splitOf } from "./hongbao-text";
 import type { RosterTitle } from "./titles";
 
 // What a 红包 page shows, by the tiers the API serves (05 §数据分级): the
@@ -30,6 +30,9 @@ export type HongbaoActivity = {
   unitAmount?: string;
   /** Shares offered; for a timed draw, the number of winners. */
   shares: number;
+  /** 拼手气's and a timed draw's 分法. */
+  split?: Split;
+  /** The rule in one line, for lists ("固定均分 · 0.50 LDC / 份"). */
   rewardSummary: string;
   /** 说明 (Markdown). */
   beforeInfo: string;
@@ -163,6 +166,7 @@ export function hongbaoOf(
     shares:
       reward?.count ??
       (activity.quantity.mode === "exact" ? activity.quantity.total : 0),
+    split: splitOf(reward?.algorithm),
     rewardSummary: rewardSummaryOf(reward),
     beforeInfo: activity.beforeInfo,
     statistics: activity.forceDedicated,

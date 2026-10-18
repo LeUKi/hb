@@ -12,6 +12,29 @@ import { clockLabel } from "./roster-time";
 
 export type ChipTone = "neutral" | "success" | "warning" | "danger" | "gold";
 
+/**
+ * How a pool is split (分法), named after the red packets everyone knows,
+ * with what each does in the small print: the form's choice cards and the
+ * 红包皮's 玩法 tag say the same.
+ */
+export const splitNames = {
+  double_mean: "微信同款",
+  bounded_mean: "支付宝同款",
+} as const;
+export type Split = keyof typeof splitNames;
+export const splitRules: Record<Split, string> = {
+  double_mean:
+    "二倍均值：每份在 0.01 和剩下金额平均值的两倍之间随机，金额差距较大",
+  bounded_mean: "均值上下 50%：每份在平均值上下 50% 之间随机，金额比较接近",
+};
+
+/** The API's algorithm as a 分法. */
+export function splitOf(algorithm: string | undefined): Split | undefined {
+  if (algorithm === "double_mean_v1") return "double_mean";
+  if (algorithm === "bounded_mean_v1") return "bounded_mean";
+  return undefined;
+}
+
 /** The rule in one line: "拼手气 · 30.00 LDC 奖池", "固定均分 · 0.50 LDC / 份". */
 export function rewardSummaryOf(reward: ActivityRewardSummary | undefined) {
   if (!reward) return "LDC 红包";

@@ -1,3 +1,4 @@
+import { amountToMinor, formatAmount } from "@hb/contracts";
 import type { HongbaoActivity } from "../../lib/hongbao";
 import { endLabels, fuzzyLabels, type PublicView } from "../../lib/hongbao";
 import { clockLabel } from "../../lib/roster-time";
@@ -19,26 +20,44 @@ export type CoverCell = {
   until?: number;
 };
 
+/**
+ * "平均 3.00 LDC" a share (约 when it does not divide): short enough for the
+ * narrowest cell, next to 已领 … 份.
+ */
+function averageNote(activity: HongbaoActivity) {
+  if (!activity.shares || !activity.totalAmount) return undefined;
+  const total = amountToMinor(activity.totalAmount);
+  const exact = total % activity.shares === 0;
+  const each = Math.round(total / activity.shares);
+  return `平均${exact ? "" : "约"} ${formatAmount(each)} LDC`;
+}
+
+/**
+ * The pool and the line under it. The 玩法 itself is the cover's label
+ * (cover-head), so the line says something the label does not.
+ */
 function poolCell(activity: HongbaoActivity, view: PublicView): CoverCell {
   const fuzzy = view.quantity.kind === "fuzzy";
   if (activity.mode === "fixed")
     return fuzzy
-      ? { label: "每份", value: `${activity.unitAmount} LDC`, note: "固定均分" }
+      ? { label: "每份", value: `${activity.unitAmount} LDC` }
       : {
           label: "总额",
           value: `${activity.totalAmount} LDC`,
           note: `每份 ${activity.unitAmount} LDC`,
         };
   const note =
-    activity.mode === "random"
-      ? "拼手气"
-      : activity.mode === "custom"
-        ? activity.custom?.allocation === "random"
-          ? "自定义 · 随机"
-          : "自定义 · 按顺序"
+    activity.mode === "custom" && activity.custom
+      ? activity.custom.allocation === "random"
+        ? "随机发放"
+        : "按顺序发放"
+      : activity.mode === "timed_draw"
+        ? fuzzy
+          ? undefined
+          : `抽 ${activity.shares} 人`
         : fuzzy
-          ? "中奖者拼手气"
-          : `抽 ${activity.shares} 人`;
+          ? undefined
+          : averageNote(activity);
   return { label: "奖池", value: `${activity.totalAmount} LDC`, note };
 }
 

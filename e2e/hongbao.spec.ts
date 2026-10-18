@@ -581,8 +581,23 @@ test.describe("红包页", () => {
       page.getByRole("heading", { name: "周末红包", level: 1 }),
     ).toBeVisible();
     await expect(page.getByText("小满的红包")).toBeVisible();
-    await expect(page.getByText("口令红包")).toBeVisible();
-    await expect(page.getByText("固定均分 · 0.10 LDC / 份")).toBeVisible();
+    // The labels say how to take part and the 玩法, each explaining itself;
+    // the amounts are the numbers under them, not repeated in a label.
+    const play = page.getByRole("button", { name: "固定均分" });
+    await expect(page.getByRole("button", { name: "口令红包" })).toBeVisible();
+    await expect(play).toHaveAccessibleDescription("每份金额一样。");
+    // A squircle like every other label: its shape reaches the button.
+    await expect(play).toHaveAttribute("data-squircle", "");
+    await expect(page.getByText(/LDC \/ 份/)).toHaveCount(0);
+    await expect(page.getByText("每份 0.10 LDC")).toBeVisible();
+    const bubble = page.locator("p").filter({ hasText: "每份金额一样。" });
+    await play.hover();
+    await expect(bubble).toBeVisible();
+    await page.mouse.move(0, 0);
+    await expect(bubble).toBeHidden();
+    await expect(page.getByRole("button", { name: "需人机验证" })).toHaveCount(
+      0,
+    );
     await expect(page.getByText("1 / 3 份")).toBeVisible();
     // The seal (not the 顶栏's account button) says how to take part.
     await expect(
@@ -760,6 +775,28 @@ test.describe("红包页", () => {
     await expect(page.getByRole("button", { name: /^显示/ })).toHaveCount(0);
   });
 
+  test("拼手气的标签带上分法，奖池下面写平均每份多少", async ({ page }) => {
+    await mockSession(page, null);
+    const state = await mockHongbao(page);
+    state.activity = {
+      ...state.activity,
+      reward: {
+        mode: "random",
+        totalAmount: "10.00",
+        count: 3,
+        algorithm: "bounded_mean_v1",
+      },
+    };
+    await openApp(page, path);
+    await expect(
+      page.getByRole("button", { name: "拼手气 · 支付宝同款" }),
+    ).toHaveAccessibleDescription(
+      "均值上下 50%：每份在平均值上下 50% 之间随机，金额比较接近。",
+    );
+    await expect(page.getByText("平均约 3.33 LDC")).toBeVisible();
+    await expect(page.getByText("10.00 LDC 奖池")).toHaveCount(0);
+  });
+
   test("领取前人机验证：口令对了才弹窗，关掉不领，转圈通过后自动领取", async ({
     page,
   }) => {
@@ -767,6 +804,10 @@ test.describe("红包页", () => {
     await fakeTurnstile(page);
     const state = await mockHongbao(page, { humanCheck: true });
     await openApp(page, path);
+    // The cover says so up front, and what it may cost.
+    await expect(
+      page.getByRole("button", { name: "需人机验证" }),
+    ).toHaveAccessibleDescription(/领取前要先通过 Cloudflare 人机验证/);
     await page.getByRole("button", { name: "输入口令领取" }).click();
     const dialog = page.getByRole("dialog", { name: "人机验证" });
     // A wrong 口令 never asks.
@@ -972,5 +1013,25 @@ test.describe("红包页", () => {
     );
     await openApp(page, path);
     await expect(page.getByText("未找到红包")).toBeVisible();
+  });
+});
+
+test.describe("红包页 · 手机", () => {
+  test.use({ hasTouch: true, viewport: { width: 375, height: 812 } });
+
+  test("点一下标签看说明，再点一下或点别处收起", async ({ page }) => {
+    await mockSession(page, null);
+    await mockHongbao(page);
+    await openApp(page, path);
+    const play = page.getByRole("button", { name: "固定均分" });
+    const bubble = page.locator("p").filter({ hasText: "每份金额一样。" });
+    await play.tap();
+    await expect(bubble).toBeVisible();
+    await play.tap();
+    await expect(bubble).toBeHidden();
+    await play.tap();
+    await expect(bubble).toBeVisible();
+    await page.getByRole("heading", { name: "周末红包", level: 1 }).tap();
+    await expect(bubble).toBeHidden();
   });
 });

@@ -3,21 +3,78 @@ import { AnimatePresence, motion } from "motion/react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { cn } from "../../lib/cn";
 import type { HongbaoActivity } from "../../lib/hongbao";
+import { splitNames, splitRules } from "../../lib/hongbao-text";
 import { useWindowInfo } from "../shell/window-info";
 import { Avatar } from "../ui/avatar";
 import { markdownText, NoteMarkdown } from "../ui/markdown";
 import { PersonName } from "../ui/person";
 import { Squircle } from "../ui/squircle";
+import { TagHint } from "../ui/tag-hint";
 import type { CoverMotion } from "./cover-motion";
 
-function CoverChip({ children }: { children: string }) {
+const chipClass = "hb-chip-red inline-flex h-7 items-center px-2.5 text-xs";
+
+/** A label on the cover; with a hint, it explains itself (TagHint). */
+function CoverChip({ children, hint }: { children: string; hint?: string }) {
   return (
     <Squircle radius={10}>
-      <span className="hb-chip-red inline-flex h-7 items-center px-2.5 text-xs">
-        {children}
-      </span>
+      {hint ? (
+        <TagHint
+          hint={hint}
+          className={cn(
+            chipClass,
+            "hb-chip-link focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-cream)] focus-visible:outline-none",
+          )}
+        >
+          {children}
+        </TagHint>
+      ) : (
+        <span className={chipClass}>{children}</span>
+      )}
     </Squircle>
   );
+}
+
+const playNames = {
+  fixed: "固定均分",
+  random: "拼手气",
+  custom: "自定义金额",
+  timed_draw: "限时开奖",
+} as const;
+
+/**
+ * The cover's labels, each with what it means: how to take part, the 玩法
+ * (with its 分法 where money is split at random) and the human check. The
+ * amounts are not repeated here: the numbers under them say them.
+ */
+function coverTags(activity: HongbaoActivity) {
+  const verb = activity.mode === "timed_draw" ? "报名" : "领取";
+  const split = activity.split;
+  const draw = "到开奖时间，从报名的人里抽出中奖者。";
+  const play = {
+    fixed: "每份金额一样。",
+    random: split ? `${splitRules[split]}。` : "每份金额随机。",
+    custom: "每份的金额由发红包的人定好。",
+    timed_draw: split ? `${draw}奖金分法是${splitRules[split]}。` : draw,
+  }[activity.mode];
+  const splitName =
+    split && (activity.mode === "random" || activity.mode === "timed_draw")
+      ? ` · ${splitNames[split]}`
+      : "";
+  return [
+    activity.participation === "password"
+      ? { text: "口令红包", hint: `输入正确的口令才能${verb}。` }
+      : { text: "无需口令", hint: `登录后直接${verb}，不用口令。` },
+    { text: `${playNames[activity.mode]}${splitName}`, hint: play },
+    ...(activity.humanCheck
+      ? [
+          {
+            text: "需人机验证",
+            hint: `这是发红包的人的要求：${verb}前要先通过 Cloudflare 人机验证。中国大陆网络、广告拦截插件或部分隐私浏览器可能加载不出验证。`,
+          },
+        ]
+      : []),
+  ];
 }
 
 export function topicUrl(topic: NonNullable<HongbaoActivity["topic"]>) {
@@ -189,10 +246,11 @@ export function CoverHead({
             className="relative flex flex-wrap justify-center gap-2"
             {...motions.fade}
           >
-            <CoverChip>
-              {activity.participation === "password" ? "口令红包" : "无需口令"}
-            </CoverChip>
-            <CoverChip>{activity.rewardSummary}</CoverChip>
+            {coverTags(activity).map((tag) => (
+              <CoverChip key={tag.text} hint={tag.hint}>
+                {tag.text}
+              </CoverChip>
+            ))}
             {ended && <CoverChip>已结束</CoverChip>}
             {activity.topic && (
               <Squircle radius={10}>
