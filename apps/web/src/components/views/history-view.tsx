@@ -21,12 +21,19 @@ import { SenderLinks } from "../hongbao/sender-links";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { LazyListEnd, useQueryLazyList } from "../page/lazy-list";
 import { EmptyNote, Page, PageHeader, Panel } from "../page/page";
-import { PageLoad, queriesLoad } from "../page/page-state";
+import {
+  PageLoad,
+  queriesLoad,
+  queryLoad,
+  ResultLoad,
+  resultOf,
+} from "../page/page-state";
 import { useSearchChoice } from "../shell/use-search-choice";
 import { useWindowInfo } from "../shell/window-info";
 import { Button } from "../ui/button";
 import { Segmented } from "../ui/field";
 import { MiniEnvelope } from "../ui/mini-envelope";
+import { Reveal } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
 
@@ -170,7 +177,8 @@ function JoinedRow({ item }: { item: JoinedRecord }) {
 export function HistoryView() {
   const user = useSessionUser();
   if (!user) return null;
-  return <History user={user} />;
+  // Keyed: another account never sees this one's lists while it loads.
+  return <History key={user.id} user={user} />;
 }
 
 function History({ user }: { user: SessionUser }) {
@@ -193,6 +201,7 @@ function History({ user }: { user: SessionUser }) {
     isFetchNextPageError: query.isFetchNextPageError,
     fetchNextPage: query.fetchNextPage,
     pageCount: query.data?.pages.length ?? 0,
+    isPlaceholderData: query.isPlaceholderData,
   });
   const author = {
     id: user.id,
@@ -211,8 +220,15 @@ function History({ user }: { user: SessionUser }) {
   const joinedTotal = joined.data?.pages[0]?.total ?? joinedRecords.length;
   const totals = summary.data;
 
+  // What the list area shows: which list, and whether it has rows.
+  const shown =
+    tab === "sent"
+      ? `sent:${filter}:${sentRecords.length === 0 ? "empty" : "rows"}`
+      : `joined:${joinedRecords.length === 0 ? "empty" : "rows"}`;
+
   return (
-    <PageLoad load={queriesLoad(summary, query)}>
+    // The title and the switchers stay once shown; the list loads in place.
+    <PageLoad load={queriesLoad(summary, query)} frame={queryLoad(summary)}>
       <Page>
         <PageHeader
           refreshable
@@ -223,7 +239,7 @@ function History({ user }: { user: SessionUser }) {
               : undefined
           }
         />
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="grid gap-3">
           <Segmented
             label="红包记录分类"
             value={tab}
@@ -237,7 +253,9 @@ function History({ user }: { user: SessionUser }) {
               },
             ]}
           />
-          {tab === "sent" && counts.all > 0 && (
+          {/* Only what this account sent has states: its own line, opening
+              and closing with the tab. */}
+          <Reveal show={tab === "sent" && counts.all > 0}>
             <Segmented
               size="sm"
               label="状态筛选"
@@ -250,63 +268,67 @@ function History({ user }: { user: SessionUser }) {
                 { value: "ended", label: "已结束", count: counts.finished },
               ]}
             />
-          )}
+          </Reveal>
         </div>
-        {tab === "sent" ? (
-          sentRecords.length === 0 ? (
+        <ResultLoad id={shown} load={resultOf(query)}>
+          {tab === "sent" ? (
+            sentRecords.length === 0 ? (
+              <EmptyNote
+                title={
+                  counts.all === 0 ? "还没有发过红包" : "没有符合条件的红包"
+                }
+                text={
+                  counts.all === 0
+                    ? "发一个试试：填好奖励和口令，开放后把链接发到帖子里。"
+                    : "换个筛选看看。"
+                }
+                action={
+                  counts.all === 0 ? (
+                    <Button
+                      variant="primary"
+                      onClick={() => void leaveTo({ to: "/new" })}
+                    >
+                      <Plus />
+                      发红包
+                    </Button>
+                  ) : undefined
+                }
+              />
+            ) : (
+              <>
+                <Panel as="ul" className="grid gap-0.5 p-1.5">
+                  {sentRecords.map((record) => (
+                    <SentRow key={record.activity.id} record={record} />
+                  ))}
+                </Panel>
+                <LazyListEnd list={list} done={`共 ${sentTotal} 个`} />
+              </>
+            )
+          ) : joinedRecords.length === 0 ? (
             <EmptyNote
-              title={counts.all === 0 ? "还没有发过红包" : "没有符合条件的红包"}
-              text={
-                counts.all === 0
-                  ? "发一个试试：填好奖励和口令，开放后把链接发到帖子里。"
-                  : "换个筛选看看。"
-              }
+              title="还没有参与过红包"
+              text="在起始页输入口令，或打开别人分享的红包链接；红包广场里也有公开的红包。"
               action={
-                counts.all === 0 ? (
-                  <Button
-                    variant="primary"
-                    onClick={() => void leaveTo({ to: "/new" })}
-                  >
-                    <Plus />
-                    发红包
-                  </Button>
-                ) : undefined
+                <Button
+                  variant="primary"
+                  onClick={() => void leaveTo({ to: "/square" })}
+                >
+                  <LayoutGrid />
+                  逛红包广场
+                </Button>
               }
             />
           ) : (
             <>
               <Panel as="ul" className="grid gap-0.5 p-1.5">
-                {sentRecords.map((record) => (
-                  <SentRow key={record.activity.id} record={record} />
+                {joinedRecords.map((item) => (
+                  <JoinedRow key={item.key} item={item} />
                 ))}
               </Panel>
-              <LazyListEnd list={list} done={`共 ${sentTotal} 个`} />
+              <LazyListEnd list={list} done={`共 ${joinedTotal} 个`} />
             </>
-          )
-        ) : joinedRecords.length === 0 ? (
-          <EmptyNote
-            title="还没有参与过红包"
-            text="在起始页输入口令，或打开别人分享的红包链接；红包广场里也有公开的红包。"
-            action={
-              <Button
-                variant="primary"
-                onClick={() => void leaveTo({ to: "/square" })}
-              >
-                <LayoutGrid />
-                逛红包广场
-              </Button>
-            }
-          />
-        ) : (
-          <>
-            <Panel as="ul" className="grid gap-0.5 p-1.5">
-              {joinedRecords.map((item) => (
-                <JoinedRow key={item.key} item={item} />
-              ))}
-            </Panel>
-            <LazyListEnd list={list} done={`共 ${joinedTotal} 个`} />
-          </>
-        )}
+          )}
+        </ResultLoad>
       </Page>
     </PageLoad>
   );

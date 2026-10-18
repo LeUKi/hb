@@ -9,15 +9,19 @@ import {
 } from "../../lib/hongbao";
 import { clockLabel } from "../../lib/roster-time";
 import { useQueryLazyList } from "../page/lazy-list";
+import { readFailed } from "../page/page-state";
 import { PanelDialog } from "../shell/panel-dialog";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { Segmented } from "../ui/field";
+import { Swap } from "../ui/reveal";
 import { RevealToggle } from "./password-text";
 import {
   RosterHeader,
   type RosterKind,
   RosterList,
+  RosterRetry,
+  RosterSkeleton,
   type RowDetail,
 } from "./roster";
 import type { HongbaoData } from "./use-hongbao";
@@ -101,6 +105,8 @@ function RosterContent({
     kind === "registrations"
       ? page.rosterLists.registrations.query
       : page.rosterLists.claims.query;
+  const pending =
+    source.data !== undefined ? null : readFailed(source) ? "error" : "loading";
   const list = useQueryLazyList({
     hasNextPage: source.hasNextPage,
     isFetchingNextPage: source.isFetchingNextPage,
@@ -203,17 +209,26 @@ function RosterContent({
       <RosterHeader kind={kind} />
       {/* The list's own scroller: its end row is watched in it. */}
       <div className="view-scroll relative min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <RosterList
-          key={kind}
-          rows={rows}
-          list={list}
-          kind={kind}
-          openedAt={view.openedAt}
-          done={total === null || fuzzy ? "已全部加载" : `共 ${total} 人`}
-          detailOf={data.author ? detailOf : undefined}
-          passwordsShown={view.ended || passwordsRevealed}
-          onPayment={openPayment}
-        />
+        {/* Bars until the first batch is in (not 还没有人领取), and each
+            tab's list fades in over the other's. */}
+        <Swap id={pending ?? `rows:${kind}`}>
+          {pending === "loading" ? (
+            <RosterSkeleton />
+          ) : pending === "error" ? (
+            <RosterRetry onRetry={() => void source.refetch()} />
+          ) : (
+            <RosterList
+              rows={rows}
+              list={list}
+              kind={kind}
+              openedAt={view.openedAt}
+              done={total === null || fuzzy ? "已全部加载" : `共 ${total} 人`}
+              detailOf={data.author ? detailOf : undefined}
+              passwordsShown={view.ended || passwordsRevealed}
+              onPayment={openPayment}
+            />
+          )}
+        </Swap>
       </div>
     </>
   );

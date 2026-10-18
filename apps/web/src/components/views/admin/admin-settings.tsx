@@ -162,7 +162,7 @@ function SettingsForm({ data }: { data: AttemptRateLimitsResponse }) {
   };
 
   return (
-    <AdminFrame description="能改的只有尝试间隔。保存后立即生效，并记进操作记录。">
+    <AdminFrame>
       <PageSection
         title="口令尝试间隔"
         description="同一个人两次提交口令之间至少隔多久。起始页查口令和红包页领取分开计算；无需口令的红包按红包页的间隔。"
@@ -271,7 +271,7 @@ function SettingsForm({ data }: { data: AttemptRateLimitsResponse }) {
 export function AdminSettings() {
   const query = useRateLimits();
   return (
-    <PageLoad load={queryLoad(query)}>
+    <PageLoad load={queryLoad(query)} area>
       {query.data && <SettingsForm data={query.data} />}
     </PageLoad>
   );

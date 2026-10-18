@@ -46,17 +46,20 @@ export function useQueryLazyList(query: {
   isFetchNextPageError: boolean;
   fetchNextPage: () => Promise<unknown>;
   pageCount: number;
+  /** Another filter's rows, shown while this one's load: never extended. */
+  isPlaceholderData?: boolean;
 }): LazyList {
   const [end, setEnd] = useState<HTMLElement | null>(null);
   const { fetchNextPage } = query;
   const load = useCallback(() => void fetchNextPage(), [fetchNextPage]);
-  const state = !query.hasNextPage
-    ? "done"
-    : query.isFetchingNextPage
-      ? "loading"
-      : query.isFetchNextPageError
-        ? "failed"
-        : "more";
+  const state =
+    !query.hasNextPage || query.isPlaceholderData
+      ? "done"
+      : query.isFetchingNextPage
+        ? "loading"
+        : query.isFetchNextPageError
+          ? "failed"
+          : "more";
   useNearEnd(end, state === "more", load);
   return {
     shown: Number.POSITIVE_INFINITY,

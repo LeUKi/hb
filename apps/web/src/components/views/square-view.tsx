@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import {
   type SquareFilter,
   squareRecordOf,
@@ -8,9 +9,17 @@ import { HongbaoCard } from "../hongbao/hongbao-card";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { LazyListEnd, useQueryLazyList } from "../page/lazy-list";
 import { EmptyNote, Page, PageHeader } from "../page/page";
-import { PageLoad, PageSkeleton, queryLoad } from "../page/page-state";
+import {
+  Bone,
+  PageLoad,
+  PageSkeleton,
+  queryLoad,
+  ResultLoad,
+  resultOf,
+} from "../page/page-state";
 import { useSearchChoice } from "../shell/use-search-choice";
 import { Segmented } from "../ui/field";
+import { radius } from "../ui/squircle";
 
 const filters: readonly SquareFilter[] = ["active", "ended", "all"];
 
@@ -51,9 +60,17 @@ function Square({ userId }: { userId: string | null }) {
     fetchNextPage: query.fetchNextPage,
     pageCount: query.data?.pages.length ?? 0,
   });
+  // Only the shown list polls: one shown again after a while reads again
+  // at once, instead of showing what it had for up to its next poll.
+  const { isStale, isFetching, refetch } = query;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: on a new filter only
+  useEffect(() => {
+    if (isStale && !isFetching) void refetch();
+  }, [filter]);
 
   return (
-    <PageLoad load={queryLoad(query)}>
+    // The title and the filter stay once shown; the cards load in place.
+    <PageLoad load={queryLoad(query)} frame>
       <Page width="wide">
         <PageHeader
           refreshable
@@ -72,44 +89,64 @@ function Square({ userId }: { userId: string | null }) {
             />
           }
         />
-        {items.length === 0 ? (
-          <EmptyNote
-            title={
-              filter === "active"
-                ? "现在没有进行中的红包"
-                : filter === "ended"
-                  ? "没有已结束的红包"
-                  : "还没有红包"
-            }
-            text={
-              filter === "ended"
-                ? "结束不到 72 小时的红包会列在这里。"
-                : "发红包时打开“加入红包广场”，红包就会出现在这里。"
-            }
-          />
-        ) : (
-          <>
-            <ul className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-3">
-              {items.map((card) => {
-                const record = squareRecordOf(card, userId);
-                return (
-                  <li key={card.id}>
-                    <HongbaoCard
-                      activity={record.activity}
-                      view={record.view}
-                      mine={record.mine}
-                      onOpen={() =>
-                        void leaveTo({ to: "activity", id: card.id })
-                      }
-                    />
-                  </li>
-                );
-              })}
-            </ul>
-            <LazyListEnd list={list} done={`共 ${total} 个`} />
-          </>
-        )}
+        <ResultLoad
+          id={`${filter}:${items.length === 0 ? "empty" : "cards"}`}
+          load={resultOf(query)}
+          skeleton={<CardsSkeleton />}
+        >
+          {items.length === 0 ? (
+            <EmptyNote
+              title={
+                filter === "active"
+                  ? "现在没有进行中的红包"
+                  : filter === "ended"
+                    ? "没有已结束的红包"
+                    : "还没有红包"
+              }
+              text={
+                filter === "ended"
+                  ? "结束不到 72 小时的红包会列在这里。"
+                  : "发红包时打开“加入红包广场”，红包就会出现在这里。"
+              }
+            />
+          ) : (
+            <>
+              <ul className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-3">
+                {items.map((card) => {
+                  const record = squareRecordOf(card, userId);
+                  return (
+                    <li key={card.id}>
+                      <HongbaoCard
+                        activity={record.activity}
+                        view={record.view}
+                        mine={record.mine}
+                        onOpen={() =>
+                          void leaveTo({ to: "activity", id: card.id })
+                        }
+                      />
+                    </li>
+                  );
+                })}
+              </ul>
+              <LazyListEnd list={list} done={`共 ${total} 个`} />
+            </>
+          )}
+        </ResultLoad>
       </Page>
     </PageLoad>
+  );
+}
+
+/** Grey cards where the 红包 cards go, while a filter is read first. */
+function CardsSkeleton() {
+  return (
+    <div
+      aria-hidden="true"
+      className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-3"
+    >
+      {[0, 1, 2].map((card) => (
+        <Bone key={card} className="h-56 w-full" radius={radius.card} />
+      ))}
+    </div>
   );
 }

@@ -1014,6 +1014,20 @@
     transition: none;
   }
 
+  /* A label that keeps the width it has when bold (a switcher's option):
+     the bold text is laid out under it, invisible and flat. */
+  .reserve-bold {
+    display: inline-grid;
+    justify-items: center;
+  }
+  .reserve-bold::after {
+    content: attr(data-text);
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+    font-weight: 500;
+  }
+
   /* A selected segment, raised like a key: lit top edge, hairline, darker
      bottom edge. */
   .raised {

@@ -1,11 +1,10 @@
 import type { AdminAuditEntry } from "@hb/contracts";
 import { useState } from "react";
 import { useAdminList } from "../../../lib/admin";
-import { cn } from "../../../lib/cn";
 import { fullTime } from "../../../lib/roster-time";
 import { LazyListEnd, useQueryLazyList } from "../../page/lazy-list";
 import { EmptyNote, Panel } from "../../page/page";
-import { PageLoad } from "../../page/page-state";
+import { PageLoad, ResultLoad, resultOf } from "../../page/page-state";
 import { Avatar } from "../../ui/avatar";
 import { TextInput } from "../../ui/field";
 import { StatusChip } from "../../ui/status-chip";
@@ -66,11 +65,9 @@ export function AdminAudit() {
     .filter((item) => !seen.has(item.id) && Boolean(seen.add(item.id)));
 
   return (
-    <PageLoad load={listLoad(listQuery)}>
-      <AdminFrame
-        refreshable
-        description="网站设置的每一次修改。记录一直保留。"
-      >
+    // The search and dates stay once shown; the list loads in place.
+    <PageLoad load={listLoad(listQuery)} area frame>
+      <AdminFrame>
         <div className="flex flex-wrap items-center gap-2">
           <SearchBox
             label="搜索操作者"
@@ -95,58 +92,56 @@ export function AdminAudit() {
             onChange={(event) => setTo(event.target.value)}
           />
         </div>
-        {entries.length === 0 ? (
-          <div className={cn("transition-opacity", busy && "opacity-60")}>
+        <ResultLoad
+          id={entries.length === 0 ? "empty" : "rows"}
+          load={resultOf(listQuery)}
+        >
+          {entries.length === 0 ? (
             <EmptyNote title="没有符合条件的记录" text="换个筛选看看。" />
-          </div>
-        ) : (
-          <div className="grid gap-0">
-            <Panel
-              as="ul"
-              className={cn(
-                "grid px-4 transition-opacity",
-                busy && "opacity-60",
-              )}
-            >
-              {entries.map((entry) => (
-                <li
-                  key={entry.id}
-                  className="grid gap-2 border-line border-b py-4 last:border-b-0 @wide/window:grid-cols-[11rem_minmax(0,1fr)_auto] @wide/window:items-center @wide/window:gap-4"
-                >
-                  <time
-                    dateTime={new Date(entry.createdAt).toISOString()}
-                    className="text-sm text-ink-2 tabular-nums"
+          ) : (
+            <div className="grid gap-0">
+              <Panel as="ul" className="grid px-4">
+                {entries.map((entry) => (
+                  <li
+                    key={entry.id}
+                    className="grid gap-2 border-line border-b py-4 last:border-b-0 @wide/window:grid-cols-[11rem_minmax(0,1fr)_auto] @wide/window:items-center @wide/window:gap-4"
                   >
-                    {fullTime(entry.createdAt)}
-                  </time>
-                  <div className="grid gap-1">
-                    <p className="flex flex-wrap items-center gap-2">
-                      <StatusChip>尝试间隔</StatusChip>
-                      <span className="text-sm text-ink">
-                        {changesOf(entry)}
-                      </span>
-                    </p>
-                    <p className="text-xs text-ink-3">
-                      第 {entry.previousVersion} 版 → 第 {entry.nextVersion} 版
-                    </p>
-                  </div>
-                  <span className="flex items-center gap-2 text-sm text-ink-2">
-                    <Avatar
-                      name={entry.actorDisplayName}
-                      src={entry.actorAvatarUrl}
-                      size={22}
-                    />
-                    {entry.actorDisplayName}
-                  </span>
-                </li>
-              ))}
-            </Panel>
-            <LazyListEnd
-              list={list}
-              done={total === undefined ? "已全部加载" : `共 ${total} 条`}
-            />
-          </div>
-        )}
+                    <time
+                      dateTime={new Date(entry.createdAt).toISOString()}
+                      className="text-sm text-ink-2 tabular-nums"
+                    >
+                      {fullTime(entry.createdAt)}
+                    </time>
+                    <div className="grid gap-1">
+                      <p className="flex flex-wrap items-center gap-2">
+                        <StatusChip>尝试间隔</StatusChip>
+                        <span className="text-sm text-ink">
+                          {changesOf(entry)}
+                        </span>
+                      </p>
+                      <p className="text-xs text-ink-3">
+                        第 {entry.previousVersion} 版 → 第 {entry.nextVersion}{" "}
+                        版
+                      </p>
+                    </div>
+                    <span className="flex items-center gap-2 text-sm text-ink-2">
+                      <Avatar
+                        name={entry.actorDisplayName}
+                        src={entry.actorAvatarUrl}
+                        size={22}
+                      />
+                      {entry.actorDisplayName}
+                    </span>
+                  </li>
+                ))}
+              </Panel>
+              <LazyListEnd
+                list={list}
+                done={total === undefined ? "已全部加载" : `共 ${total} 条`}
+              />
+            </div>
+          )}
+        </ResultLoad>
       </AdminFrame>
     </PageLoad>
   );

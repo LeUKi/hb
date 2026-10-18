@@ -235,7 +235,6 @@ function OverviewPage({ overview }: { overview: Overview }) {
     environments[runtime.environment] ?? `环境 ${runtime.environment}`;
   return (
     <AdminFrame
-      refreshable
       description={`上次读取 ${clockSeconds(overview.readAt)} · ${environment} · 每 30 秒自动刷新`}
     >
       <PageSection
@@ -349,7 +348,7 @@ function OverviewPage({ overview }: { overview: Overview }) {
 export function AdminOverview() {
   const query = useAdminOverview();
   return (
-    <PageLoad load={queryLoad(query)}>
+    <PageLoad load={queryLoad(query)} area>
       {query.data && <OverviewPage overview={query.data} />}
     </PageLoad>
   );

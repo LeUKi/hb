@@ -54,6 +54,13 @@ export function useAccountPaymentPages(
     },
     getNextPageParam: (last) => last.nextCursor,
     retry: false,
+    // Another filter's payments stay, dimmed, until this one's are in —
+    // the same merchant identity's and the same 红包's only.
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[1] === session.identity &&
+      previousQuery.queryKey[3] === (activityId ?? "*")
+        ? previous
+        : undefined,
     refetchInterval: 15_000,
     refetchIntervalInBackground: false,
   });

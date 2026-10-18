@@ -209,6 +209,10 @@ export function useSentPages(userId: string, status: SentFilter) {
     },
     getNextPageParam: (last) => last.nextCursor,
     retry: false,
+    // Another filter's rows stay, dimmed, until this one's are in — the
+    // same account's only (07 §1).
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[1] === userId ? previous : undefined,
     ...historyListRefreshOptions,
   });
 }

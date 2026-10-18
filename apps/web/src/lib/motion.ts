@@ -5,9 +5,21 @@ export const ease = [0.2, 0, 0, 1] as const;
 export const durations = {
   /** Omnibox travelling between start, dock and command positions. */
   travel: 0.34,
-  /** Content entering after the omnibox has started moving. */
+  /** A page entering after the omnibox has started moving. */
   enter: 0.26,
+  /** A page leaving. */
   exit: 0.14,
+  /** A switcher's highlight sliding, a label's width (as 按钮换字). */
+  slide: 0.24,
+  /** Something opening in place (Reveal), or a surface changing height. */
+  reveal: 0.26,
+  /** Something closing in place. */
+  collapse: 0.22,
+  /** What arrives in place, after a beat (fadeDelay). */
+  fadeIn: 0.2,
+  fadeDelay: 0.04,
+  /** What leaves in place. */
+  fadeOut: 0.12,
 } as const;
 
 /** The system's reduced-motion setting. */

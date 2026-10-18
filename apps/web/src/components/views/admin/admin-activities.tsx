@@ -7,6 +7,7 @@ import {
   useAdminList,
   useAdminUser,
 } from "../../../lib/admin";
+import { cn } from "../../../lib/cn";
 import { type SentRecord, sentRecordOf } from "../../../lib/records";
 import { clockLabel } from "../../../lib/roster-time";
 import type { AdminSearch } from "../../../router";
@@ -14,7 +15,7 @@ import { statusOf } from "../../hongbao/hongbao-card";
 import { useOmniboxController } from "../../omnibox/use-omnibox-controller";
 import { useQueryLazyList } from "../../page/lazy-list";
 import { EmptyNote } from "../../page/page";
-import { Bone, PageLoad } from "../../page/page-state";
+import { Bone, PageLoad, resultOf } from "../../page/page-state";
 import { useSearchChoice } from "../../shell/use-search-choice";
 import { Button } from "../../ui/button";
 import { CopyButton } from "../../ui/copy-button";
@@ -282,11 +283,9 @@ export function AdminActivities({ search }: { search: AdminSearch }) {
         (author.isError ? authorId : "…"));
 
   return (
-    <PageLoad load={listLoad(listQuery, selected ? detail : null)}>
-      <AdminFrame
-        refreshable
-        description="全站的红包，草稿也在内。只能查看，不能修改、结束或删除。"
-      >
+    // The search and filters stay once shown; the list loads in place.
+    <PageLoad load={listLoad(listQuery, selected ? detail : null)} area frame>
+      <AdminFrame>
         <div className="grid gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <SearchBox
@@ -336,7 +335,12 @@ export function AdminActivities({ search }: { search: AdminSearch }) {
                 }
               />
             )}
-            <span className="ml-auto text-sm text-ink-3">
+            <span
+              className={cn(
+                "ml-auto text-sm text-ink-3 transition-opacity",
+                busy && "opacity-60",
+              )}
+            >
               {countLine(total, "个")}
             </span>
           </div>
@@ -345,7 +349,7 @@ export function AdminActivities({ search }: { search: AdminSearch }) {
           items={rows}
           list={list}
           total={total}
-          busy={busy}
+          load={resultOf(listQuery)}
           selectedId={selected}
           onSelect={setSelected}
           placeholder="点一个红包看详情。"

@@ -6,6 +6,7 @@ import { cn } from "../../lib/cn";
 import { useMaintenance } from "../../lib/maintenance";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { Button } from "../ui/button";
+import { Swap } from "../ui/reveal";
 import { Squircle } from "../ui/squircle";
 import { Page, Panel, RefreshContext } from "./page";
 
@@ -114,6 +115,153 @@ export function PageSkeleton({ focus = false }: { focus?: boolean }) {
   );
 }
 
+/** Rows of grey bars where a list's rows go, in its panel. */
+export function ListSkeleton({ rows = 4 }: { rows?: number }) {
+  return (
+    <Panel className="grid gap-0.5 p-1.5">
+      <div aria-hidden="true" className="grid gap-0.5">
+        {Array.from({ length: rows }, (_, row) => row).map((row) => (
+          <div key={row} className="flex items-center gap-3.5 p-3">
+            <Bone className="size-10 shrink-0" radius={10} />
+            <div className="grid flex-1 gap-2">
+              <Bone
+                className={cn("h-4", row % 2 ? "w-1/3" : "w-2/5")}
+                radius={5}
+              />
+              <Bone className={cn("h-3", row % 2 ? "w-1/2" : "w-3/5")} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+/** A part of a page loading for the first time (its frame stays). */
+function AreaSkeleton({ focus = false }: { focus?: boolean }) {
+  const status = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (focus) status.current?.focus({ preventScroll: true });
+  }, [focus]);
+  return (
+    <div className="grid gap-6 @wide/window:gap-8">
+      <p
+        ref={status}
+        role="status"
+        tabIndex={-1}
+        className="sr-only outline-none"
+      >
+        正在读取…
+      </p>
+      <ListSkeleton />
+    </div>
+  );
+}
+
+/** A part of a page could not be read: say so there, with 重试. */
+export function ResultError({ onRetry }: { onRetry: () => void }) {
+  const maintenance = useMaintenance();
+  const Icon = maintenance ? Wrench : CloudOff;
+  return (
+    <Panel className="grid justify-items-center gap-3 px-6 py-10 text-center">
+      <Icon className="size-5 text-ink-3" aria-hidden="true" />
+      <div role="alert" className="grid gap-1">
+        <p className="text-base font-medium text-ink">
+          {maintenance ? "系统维护中" : "读取失败"}
+        </p>
+        <p className="text-sm text-ink-3">
+          {maintenance
+            ? "维护结束后会自己恢复。"
+            : "网络或服务暂时出了问题，稍后再试。"}
+        </p>
+      </div>
+      <Button size="sm" variant="ghost" onClick={onRetry}>
+        <RotateCw aria-hidden="true" />
+        重试
+      </Button>
+    </Panel>
+  );
+}
+
+/** A list's query as ResultLoad reads it. */
+export function resultOf(query: {
+  data: unknown;
+  isPlaceholderData: boolean;
+  isError: boolean;
+  isFetchNextPageError?: boolean;
+  refetch: () => Promise<unknown>;
+}) {
+  return {
+    hasData: query.data !== undefined,
+    placeholder: query.isPlaceholderData,
+    isError: readFailed(query),
+    retry: () => void query.refetch(),
+  };
+}
+
+/**
+ * The part of a page that shows a list, under the switchers that choose
+ * it (the frame stays). A new choice of the same list keeps the old rows,
+ * dimmed, until the new ones are in; a list never read before shows bars
+ * there; a failed read says so there. Each change fades in place (Swap),
+ * `id` naming what is shown.
+ */
+export function ResultLoad({
+  id,
+  load,
+  skeleton,
+  className,
+  children,
+}: {
+  id: string;
+  load: ReturnType<typeof resultOf>;
+  skeleton?: ReactNode;
+  className?: string;
+  children: ReactNode;
+}) {
+  const kind = load.hasData
+    ? load.placeholder
+      ? "stale"
+      : "ready"
+    : load.isError
+      ? "error"
+      : "loading";
+  // The old rows stay under the id they were read for.
+  const readyId = useRef(id);
+  if (kind === "ready") readyId.current = id;
+  const swapId =
+    kind === "ready"
+      ? `ready:${id}`
+      : kind === "stale"
+        ? `ready:${readyId.current}`
+        : kind;
+  return (
+    <Swap id={swapId}>
+      {kind === "loading" ? (
+        <>
+          <p role="status" className="sr-only">
+            正在读取…
+          </p>
+          {skeleton ?? <ListSkeleton />}
+        </>
+      ) : kind === "error" ? (
+        <ResultError onRetry={load.retry} />
+      ) : (
+        <div
+          aria-busy={kind === "stale" || undefined}
+          className={cn(
+            "grid gap-6 transition-opacity duration-200 @wide/window:gap-8",
+            kind === "stale" && "opacity-60",
+            className,
+          )}
+        >
+          {children}
+        </div>
+      )}
+    </Swap>
+  );
+}
+
 /** The first load failed: nothing to show yet, so say so and offer a retry. */
 export function LoadError({ onRetry }: { onRetry: () => void }) {
   // 维护模式 (lib/maintenance.ts): the page reads again by itself after.
@@ -155,8 +303,19 @@ export function LoadError({ onRetry }: { onRetry: () => void }) {
 export function usePageLoad(
   load: Loadable,
   title: () => HTMLElement | null | undefined,
+  frame?: Loadable | true,
 ) {
-  const state = load.hasData ? "ready" : load.isError ? "error" : "loading";
+  // Once shown, a page with a frame keeps it: a new filter's list loads in
+  // its own place (ResultLoad), not by turning the page back into bars.
+  const [shown, setShown] = useState(load.hasData);
+  if (load.hasData && !shown) setShown(true);
+  const gate = shown && frame ? (frame === true ? null : frame) : load;
+  const state =
+    gate === null || gate.hasData
+      ? "ready"
+      : gate.isError
+        ? "error"
+        : "loading";
   // Content that arrives after a skeleton fades in over it.
   const [loaded] = useState(() => !load.hasData);
   const [retried, setRetried] = useState(false);
@@ -211,21 +370,43 @@ export function usePageLoad(
   };
 }
 
-/** A page around its data: skeleton, error, or the page (maybe stale). */
+/**
+ * A page around its data: skeleton, error, or the page (maybe stale).
+ * `frame`: what the page's frame (title, switchers) needs once it has been
+ * shown — the rest, its list, then loads in place (ResultLoad); `true`
+ * when the frame needs nothing. `area`: the load fills a part of a page
+ * whose frame is drawn around it (网站管理's tabs), not a whole page.
+ */
 export function PageLoad({
   load: loadable,
+  frame,
+  area = false,
   children,
 }: {
   load: Loadable;
+  frame?: Loadable | true;
+  area?: boolean;
   children: ReactNode;
 }) {
   const content = useRef<HTMLDivElement>(null);
   const reduced = useReducedMotionPref();
-  const load = usePageLoad(loadable, () =>
-    content.current?.querySelector<HTMLElement>("h1[tabindex]"),
+  const load = usePageLoad(
+    loadable,
+    () => content.current?.querySelector<HTMLElement>("h1[tabindex]"),
+    frame,
   );
-  if (load.state === "loading") return <PageSkeleton focus={load.retried} />;
-  if (load.state === "error") return <LoadError onRetry={load.retryLoad} />;
+  if (load.state === "loading")
+    return area ? (
+      <AreaSkeleton focus={load.retried} />
+    ) : (
+      <PageSkeleton focus={load.retried} />
+    );
+  if (load.state === "error")
+    return area ? (
+      <ResultError onRetry={load.retryLoad} />
+    ) : (
+      <LoadError onRetry={load.retryLoad} />
+    );
   return (
     <RefreshContext.Provider value={load.refresh}>
       <p role="status" className="sr-only">

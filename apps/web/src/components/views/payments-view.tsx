@@ -6,6 +6,7 @@ import {
 } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { AlertTriangle, ChevronRight, KeyRound, Plus } from "lucide-react";
+import { useRef } from "react";
 import { useActivityFacts } from "../../lib/activity-facts";
 import { activityPath } from "../../lib/activity-route";
 import { paymentTone } from "../../lib/hongbao-text";
@@ -29,7 +30,7 @@ import {
   PageHeader,
   Panel,
 } from "../page/page";
-import { PageLoad, queryLoad } from "../page/page-state";
+import { PageLoad, queryLoad, ResultLoad, resultOf } from "../page/page-state";
 import { useSearchChoice } from "../shell/use-search-choice";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
@@ -222,7 +223,8 @@ function PaymentStream({
 export function PaymentsView({ activityId }: { activityId?: string }) {
   const user = useSessionUser();
   if (!user) return null;
-  return <Payments user={user} activityId={activityId} />;
+  // Keyed: another account never sees this one's figures while it loads.
+  return <Payments key={user.id} user={user} activityId={activityId} />;
 }
 
 function Payments({
@@ -250,10 +252,16 @@ function Payments({
     isFetchNextPageError: query.isFetchNextPageError,
     fetchNextPage: query.fetchNextPage,
     pageCount: query.data?.pages.length ?? 0,
+    isPlaceholderData: query.isPlaceholderData,
   });
   const pages = query.data?.pages ?? [];
   const first = pages[0];
-  const summary = first?.summary;
+  // The figures over the list are the account's (every filter's first page
+  // carries them): they stay while another filter's list loads.
+  const fresh = first?.summary;
+  const kept = useRef(fresh);
+  if (fresh) kept.current = fresh;
+  const summary = fresh ?? kept.current;
   const payments = pages.flatMap((page) => page.items);
   const groups = Object.assign(
     {},
@@ -264,7 +272,10 @@ function Payments({
   const single = useActivityFacts(activityId ?? null);
 
   return (
-    <PageLoad load={queryLoad(query)}>
+    <PageLoad
+      load={queryLoad(query)}
+      frame={{ ...queryLoad(query), hasData: summary !== undefined }}
+    >
       {summary && (
         <Page>
           <PageHeader
@@ -372,18 +383,23 @@ function Payments({
                   },
                 ]}
               />
-              {payments.length === 0 ? (
-                <EmptyNote title="没有符合条件的付款" text="换个筛选看看。" />
-              ) : (
-                <PaymentStream
-                  payments={payments}
-                  groups={groups}
-                  grouped={!activityId}
-                  user={user}
-                  list={list}
-                  done={`共 ${first.total} 笔`}
-                />
-              )}
+              <ResultLoad
+                id={`${filter}:${payments.length === 0 ? "empty" : "rows"}`}
+                load={resultOf(query)}
+              >
+                {payments.length === 0 ? (
+                  <EmptyNote title="没有符合条件的付款" text="换个筛选看看。" />
+                ) : (
+                  <PaymentStream
+                    payments={payments}
+                    groups={groups}
+                    grouped={!activityId}
+                    user={user}
+                    list={list}
+                    done={`共 ${first?.total ?? payments.length} 笔`}
+                  />
+                )}
+              </ResultLoad>
             </>
           )}
         </Page>

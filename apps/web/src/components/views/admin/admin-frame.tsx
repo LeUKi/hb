@@ -1,89 +1,192 @@
 import type { UseQueryResult } from "@tanstack/react-query";
-import { Link, useMatches } from "@tanstack/react-router";
+import { useMatches } from "@tanstack/react-router";
 import { RotateCw, Search, X } from "lucide-react";
-import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { useIsPresent } from "motion/react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { cn } from "../../../lib/cn";
 import { type LazyList, LazyListEnd } from "../../page/lazy-list";
-import { Page, PageHeader, Panel } from "../../page/page";
-import { Bone, type Loadable, readFailed } from "../../page/page-state";
+import { Page, PageHeader, Panel, RefreshContext } from "../../page/page";
+import {
+  Bone,
+  ListSkeleton,
+  type Loadable,
+  ResultError,
+  readFailed,
+  type resultOf,
+} from "../../page/page-state";
 import { WindowDialog } from "../../shell/window-dialog";
 import { useWindowInfo } from "../../shell/window-info";
 import { Button } from "../../ui/button";
 import { TextInput } from "../../ui/field";
+import { Swap } from "../../ui/reveal";
+import { SegmentedNav } from "../../ui/segmented";
 import { radius, Squircle } from "../../ui/squircle";
 
-// 网站管理: one header and one row of tabs over six pages. Production's admin
-// area is read-only except the 尝试间隔 settings, and so is this one.
+// 网站管理: one header and one row of tabs over six pages, which stay while
+// the pages below them change (ViewStage keeps one frame for all of /admin).
+// Production's admin area is read-only except the 尝试间隔 settings, and so
+// is this one.
 
-const tabs = [
-  { to: "/admin", label: "概览" },
-  { to: "/admin/activities", label: "红包" },
-  { to: "/admin/users", label: "用户" },
-  { to: "/admin/payments", label: "付款" },
-  { to: "/admin/settings", label: "网站设置" },
-  { to: "/admin/audit", label: "操作记录" },
-] as const;
+const tabs: {
+  to: string;
+  label: string;
+  /** Under the title while this tab shows (概览 says when it last read). */
+  description?: string;
+  /** A list read from the server: 刷新 in the header. */
+  refreshable: boolean;
+}[] = [
+  { to: "/admin", label: "概览", refreshable: true },
+  {
+    to: "/admin/activities",
+    label: "红包",
+    description: "全站的红包，草稿也在内。只能查看，不能修改、结束或删除。",
+    refreshable: true,
+  },
+  {
+    to: "/admin/users",
+    label: "用户",
+    description:
+      "登录过本站的人。状态跟随 LINUX DO 账号，每次登录时同步；这里只能查看。",
+    refreshable: true,
+  },
+  {
+    to: "/admin/payments",
+    label: "付款",
+    description: "全站的付款。重试和查单都是系统自己做的，这里只能查看。",
+    refreshable: true,
+  },
+  {
+    to: "/admin/settings",
+    label: "网站设置",
+    description: "能改的只有尝试间隔。保存后立即生效，并记进操作记录。",
+    refreshable: false,
+  },
+  {
+    to: "/admin/audit",
+    label: "操作记录",
+    description: "网站设置的每一次修改。记录一直保留。",
+    refreshable: true,
+  },
+];
 
 function AdminTabs() {
   const current = useMatches({
     select: (matches) => matches.at(-1)?.routeId ?? "",
   });
+  return <SegmentedNav label="管理入口" items={tabs} current={current} />;
+}
+
+/** What the page below tells the header: its state of reading. */
+type HeaderState = {
+  routeId: string;
+  description?: string;
+  stale: boolean;
+  retrying: boolean;
+};
+
+const AdminHeaderContext = createContext<{
+  register: (state: HeaderState) => void;
+  /** The shown page's 刷新 and 重试 (kept current by AdminFrame). */
+  actions: { current: { retry: () => void; reload: () => void } };
+} | null>(null);
+/** Which tab's page this is (a leaving page keeps its own). */
+const AdminRouteContext = createContext("");
+
+/**
+ * 网站管理's frame, kept across its pages: the title, its line and 刷新 (the
+ * shown page's), the tabs, then the page itself, which fades in over the
+ * one before as it changes (each page loads in place, PageLoad area).
+ */
+export function AdminArea({
+  routeId,
+  children,
+}: {
+  routeId: string;
+  children: ReactNode;
+}) {
+  const tab = tabs.find((item) => item.to === routeId) ?? tabs[0];
+  const [header, setHeader] = useState<HeaderState | null>(null);
+  const actions = useRef({ retry: () => {}, reload: () => {} });
+  const register = useCallback(
+    (next: HeaderState) =>
+      setHeader((current) =>
+        current &&
+        current.routeId === next.routeId &&
+        current.description === next.description &&
+        current.stale === next.stale &&
+        current.retrying === next.retrying
+          ? current
+          : next,
+      ),
+    [],
+  );
+  const shown = header?.routeId === routeId ? header : null;
+  const context = useMemo(() => ({ register, actions }), [register]);
   return (
-    <Squircle radius={13}>
-      <nav
-        aria-label="管理入口"
-        className="flex w-fit max-w-full overflow-x-auto bg-fill-2 p-0.5 scrollbar-none"
-      >
-        {tabs.map((tab) => {
-          const active = current === tab.to;
-          return (
-            <Squircle key={tab.to} radius={11}>
-              <Link
-                to={tab.to}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  "inline-flex h-9 shrink-0 items-center px-3.5 text-sm whitespace-nowrap transition-colors",
-                  active
-                    ? "bg-white font-medium text-ink raised"
-                    : "text-ink-2 hover:text-ink",
-                )}
-              >
-                {tab.label}
-              </Link>
-            </Squircle>
-          );
-        })}
-      </nav>
-    </Squircle>
+    <AdminHeaderContext.Provider value={context}>
+      <Page width="wide">
+        <div className="grid gap-4">
+          {/* Until the page below has read once, 刷新 turns as it reads. */}
+          <RefreshContext.Provider
+            value={{
+              stale: shown?.stale ?? false,
+              retrying: shown ? shown.retrying : true,
+              retry: () => actions.current.retry(),
+              reload: () => actions.current.reload(),
+            }}
+          >
+            <PageHeader
+              title="网站管理"
+              description={shown?.description ?? tab?.description}
+              refreshable={tab?.refreshable}
+            />
+          </RefreshContext.Provider>
+          <AdminTabs />
+        </div>
+        <Swap id={routeId}>
+          <AdminRouteContext.Provider value={routeId}>
+            {children}
+          </AdminRouteContext.Provider>
+        </Swap>
+      </Page>
+    </AdminHeaderContext.Provider>
   );
 }
 
+/**
+ * A 网站管理 page's content, inside its PageLoad: tells the frame's header
+ * how its reading goes (and, on 概览, when it last read).
+ */
 export function AdminFrame({
   description,
-  actions,
-  refreshable = false,
   children,
 }: {
-  description?: ReactNode;
-  actions?: ReactNode;
-  /** A list page: 刷新 in the header (the overview has its own). */
-  refreshable?: boolean;
+  description?: string;
   children: ReactNode;
 }) {
-  return (
-    <Page width="wide">
-      <div className="grid gap-4">
-        <PageHeader
-          title="网站管理"
-          description={description}
-          actions={actions}
-          refreshable={refreshable}
-        />
-        <AdminTabs />
-      </div>
-      {children}
-    </Page>
-  );
+  const header = useContext(AdminHeaderContext);
+  const refresh = useContext(RefreshContext);
+  const routeId = useContext(AdminRouteContext);
+  const present = useIsPresent();
+  if (header && refresh && present)
+    header.actions.current = { retry: refresh.retry, reload: refresh.reload };
+  const stale = refresh?.stale ?? false;
+  const retrying = refresh?.retrying ?? false;
+  useLayoutEffect(() => {
+    if (present) header?.register({ routeId, description, stale, retrying });
+  }, [header, routeId, description, stale, retrying, present]);
+  return <div className="grid gap-6 @wide/window:gap-8">{children}</div>;
 }
 
 type Readable = {
@@ -194,7 +297,8 @@ export function ToggleChip({
         aria-pressed={pressed}
         onClick={() => onChange(!pressed)}
         className={cn(
-          "inline-flex h-8 items-center px-3 text-sm transition-colors",
+          // The raised face eases in and out with its colour.
+          "inline-flex h-8 items-center px-3 text-sm transition-[color,background-color,box-shadow] duration-200",
           pressed
             ? "bg-white font-medium text-ink raised"
             : "bg-fill-2 text-ink-2 hover:text-ink",
@@ -220,7 +324,7 @@ export function ListDetail<T extends { id: string }>({
   items,
   list,
   total,
-  busy,
+  load,
   selectedId,
   onSelect,
   row,
@@ -234,8 +338,11 @@ export function ListDetail<T extends { id: string }>({
   list: LazyList;
   /** How many match, when the server said. */
   total: number | undefined;
-  /** A new filter's rows are on their way: these stay, dimmed. */
-  busy: boolean;
+  /**
+   * The list's read (resultOf): a new filter's rows on their way keep the
+   * old ones, dimmed; a list not read yet shows bars, a failed one 重试.
+   */
+  load: ReturnType<typeof resultOf>;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   row: (item: T, selected: boolean) => ReactNode;
@@ -254,46 +361,49 @@ export function ListDetail<T extends { id: string }>({
   const last = useRef<T | null>(null);
   if (selected) last.current = selected;
   const dialogItem = selected ?? last.current;
-  const content =
-    items.length === 0 ? (
-      <div className={cn("transition-opacity", busy && "opacity-60")}>
-        {empty}
-      </div>
+  const busy = load.placeholder;
+  const content = !load.hasData ? (
+    load.isError ? (
+      <ResultError onRetry={load.retry} />
     ) : (
-      <Panel className="grid gap-0.5 p-1.5">
-        <ul
-          className={cn(
-            "grid gap-0.5 transition-opacity",
-            busy && "opacity-60",
-          )}
-          aria-busy={busy || list.state === "loading" || undefined}
-        >
-          {items.map((item) => (
-            <li key={item.id}>
-              <Squircle radius={radius.row}>
-                <button
-                  type="button"
-                  aria-current={item.id === selectedId ? "true" : undefined}
-                  onClick={() =>
-                    onSelect(item.id === selectedId ? null : item.id)
-                  }
-                  className={cn(
-                    "flex w-full items-center gap-3 p-3 text-left transition-colors",
-                    item.id === selectedId ? "bg-white/80" : "hover:bg-fill-2",
-                  )}
-                >
-                  {row(item, item.id === selectedId)}
-                </button>
-              </Squircle>
-            </li>
-          ))}
-        </ul>
-        <LazyListEnd
-          list={list}
-          done={total === undefined ? "已全部加载" : `共 ${total} ${unit}`}
-        />
-      </Panel>
-    );
+      <ListSkeleton />
+    )
+  ) : items.length === 0 ? (
+    <div className={cn("transition-opacity", busy && "opacity-60")}>
+      {empty}
+    </div>
+  ) : (
+    <Panel className="grid gap-0.5 p-1.5">
+      <ul
+        className={cn("grid gap-0.5 transition-opacity", busy && "opacity-60")}
+        aria-busy={busy || list.state === "loading" || undefined}
+      >
+        {items.map((item) => (
+          <li key={item.id}>
+            <Squircle radius={radius.row}>
+              <button
+                type="button"
+                aria-current={item.id === selectedId ? "true" : undefined}
+                onClick={() =>
+                  onSelect(item.id === selectedId ? null : item.id)
+                }
+                className={cn(
+                  "flex w-full items-center gap-3 p-3 text-left transition-colors",
+                  item.id === selectedId ? "bg-white/80" : "hover:bg-fill-2",
+                )}
+              >
+                {row(item, item.id === selectedId)}
+              </button>
+            </Squircle>
+          </li>
+        ))}
+      </ul>
+      <LazyListEnd
+        list={list}
+        done={total === undefined ? "已全部加载" : `共 ${total} ${unit}`}
+      />
+    </Panel>
+  );
 
   if (!roomy)
     return (

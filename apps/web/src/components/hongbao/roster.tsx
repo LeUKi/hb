@@ -1,9 +1,12 @@
 import { PAYMENT_LABELS, type PaymentState } from "@hb/contracts";
+import { RotateCw } from "lucide-react";
 import type { RosterRow } from "../../lib/hongbao";
 import { paymentTone } from "../../lib/hongbao-text";
 import { fullTime, sinceOpen } from "../../lib/roster-time";
 import { type LazyList, LazyListEnd } from "../page/lazy-list";
+import { Bone } from "../page/page-state";
 import { Avatar } from "../ui/avatar";
+import { Button } from "../ui/button";
 import { PersonName } from "../ui/person";
 import { Squircle } from "../ui/squircle";
 import { PasswordText } from "./password-text";
@@ -211,5 +214,40 @@ export function RosterList({
         className="min-h-0 px-6 pt-1 pb-4 text-xs"
       />
     </>
+  );
+}
+
+/** Grey rows where the roster goes, before its first batch is in. */
+export function RosterSkeleton() {
+  return (
+    <div className="grid px-2 py-1">
+      <p role="status" className="sr-only">
+        正在读取…
+      </p>
+      <div aria-hidden="true" className="grid">
+        {[0, 1, 2, 3, 4].map((row) => (
+          <div key={row} className="flex h-10 items-center gap-2.5 px-4">
+            <Bone className="h-3 w-4" />
+            <Bone className="size-6 shrink-0" radius={12} />
+            <Bone className={row % 2 ? "h-3 w-20" : "h-3 w-28"} />
+            <span className="flex-1" />
+            <Bone className="h-3 w-12" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** The roster's first batch could not be read: say so, with 重试. */
+export function RosterRetry({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="grid justify-items-center gap-2 px-6 py-8 text-center text-sm text-ink-3">
+      <p role="alert">名单读取失败。</p>
+      <Button size="sm" variant="ghost" onClick={onRetry}>
+        <RotateCw aria-hidden="true" />
+        重试
+      </Button>
+    </div>
   );
 }

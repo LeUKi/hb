@@ -12,6 +12,7 @@ import { pageTitleAtom, viewEdgeAtom } from "../../lib/store";
 import type { AdminSearch } from "../../router";
 import { AdminActivities } from "../views/admin/admin-activities";
 import { AdminAudit } from "../views/admin/admin-audit";
+import { AdminArea } from "../views/admin/admin-frame";
 import { AdminOverview } from "../views/admin/admin-overview";
 import { AdminPayments } from "../views/admin/admin-payments";
 import { AdminSettings } from "../views/admin/admin-settings";
@@ -35,22 +36,26 @@ import { WindowClip } from "./window-clip";
 type Leaf = ReturnType<typeof useLeaf>;
 
 /** The command pages (帮助 has its own view; 登录 is not a page). */
-const commandPages: Record<Exclude<CommandId, "help" | "login">, ReactNode> = {
+const commandPages: Record<
+  Exclude<CommandId, "help" | "login" | "admin">,
+  ReactNode
+> = {
   new: <NewView />,
   square: <SquareView />,
   history: <HistoryView />,
   me: <MeView />,
   merchant: <MerchantView />,
   payments: <PaymentsView />,
-  admin: <AdminOverview />,
 };
 
 /**
- * 网站管理's pages below /admin. Their filters come in as props from the
- * match, like route params: a page that is leaving keeps the search it was
- * shown with instead of reading a route that is no longer there.
+ * 网站管理's pages, under one frame that stays (AdminArea). Their filters
+ * come in as props from the match, like route params: a page that is leaving
+ * keeps the search it was shown with instead of reading a route that is no
+ * longer there.
  */
 const adminPages: Record<string, (search: AdminSearch) => ReactNode> = {
+  "/admin": () => <AdminOverview />,
   "/admin/activities": (search) => <AdminActivities search={search} />,
   "/admin/users": (search) => <AdminUsers search={search} />,
   "/admin/payments": (search) => <AdminPayments search={search} />,
@@ -119,11 +124,15 @@ function renderView(leaf: NonNullable<Leaf>): ReactNode {
         return (
           <CommandPageView
             id="admin"
-            page={adminPage(leaf.search as AdminSearch)}
+            page={
+              <AdminArea routeId={leaf.routeId}>
+                {adminPage(leaf.search as AdminSearch)}
+              </AdminArea>
+            }
           />
         );
       if (command === "help") return <HelpView />;
-      if (command && command !== "login")
+      if (command && command !== "login" && command !== "admin")
         return <CommandPageView id={command} page={commandPages[command]} />;
       return <MessageView title="未找到页面" text="地址不存在或已经停用。" />;
     }
@@ -173,10 +182,16 @@ const scrollKeys = new Set([
 function ViewFrame({
   start,
   bleed,
+  persistent,
   children,
 }: {
   start: boolean;
   bleed: boolean;
+  /**
+   * One frame for several routes (网站管理's tabs): it follows each entry
+   * it shows, keeping each one's scroll position.
+   */
+  persistent: boolean;
   children: ReactNode;
 }) {
   const present = useIsPresent();
@@ -199,12 +214,17 @@ function ViewFrame({
   if (
     present &&
     entry.current.key !== locationKey &&
-    entry.current.pathname === pathname
+    (entry.current.pathname === pathname || persistent)
   ) {
-    const saved = scrolledTo.get(entry.current.key);
-    if (saved !== undefined) scrolledTo.set(locationKey, saved);
+    if (entry.current.pathname === pathname) {
+      const saved = scrolledTo.get(entry.current.key);
+      if (saved !== undefined) scrolledTo.set(locationKey, saved);
+    }
     entry.current = { key: locationKey, pathname };
   }
+  // A frame that stays places each new path's entry where it was left.
+  const placeFor = persistent ? entry.current.pathname : "";
+  // biome-ignore lint/correctness/useExhaustiveDependencies: placeFor starts it over
   useLayoutEffect(() => {
     const element = scroller.current;
     if (!element || !entry.current.key || bleed || start) return;
@@ -243,7 +263,12 @@ function ViewFrame({
     if (waiting) {
       observer.observe(element, { childList: true, subtree: true });
       apply();
-    } else stop();
+    } else {
+      // A frame that stays has the last tab's position: the new one starts
+      // at the top.
+      if (persistent) element.scrollTop = 0;
+      stop();
+    }
     for (const name of readerEvents)
       element.addEventListener(name, reader, { passive: true });
     // Not while waiting: a clamped position is not where the reader was.
@@ -257,7 +282,7 @@ function ViewFrame({
         element.removeEventListener(name, reader);
       element.removeEventListener("scroll", remember);
     };
-  }, [bleed, start]);
+  }, [bleed, start, persistent, placeFor]);
   // The page on screen tells the 顶栏 what is beneath it; a leaving page
   // stops writing as soon as it starts to fade.
   useLayoutEffect(() => {
@@ -322,6 +347,7 @@ export function ViewStage() {
   }, [leaf, pageTitle, activityTitle]);
   if (!leaf) return null;
   const start = leaf.routeId === "/";
+  const admin = leaf.staticData.command === "admin";
   return (
     <WindowClip>
       <main
@@ -332,10 +358,12 @@ export function ViewStage() {
         <AnimatePresence initial={false}>
           {/* The 红包 page draws from the window's top edge, under the 顶栏,
               once it has its 红包 to draw. */}
+          {/* 网站管理 keeps one frame for its tabs (AdminArea). */}
           <ViewFrame
-            key={leaf.id}
+            key={admin ? "admin" : leaf.id}
             start={start}
             bleed={leaf.routeId === "/🧧/$code" && activity !== null}
+            persistent={admin}
           >
             {renderView(leaf)}
           </ViewFrame>

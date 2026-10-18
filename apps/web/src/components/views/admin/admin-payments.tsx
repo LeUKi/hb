@@ -14,6 +14,7 @@ import {
   useAdminPayment,
   useAdminUser,
 } from "../../../lib/admin";
+import { cn } from "../../../lib/cn";
 import { paymentTone } from "../../../lib/hongbao-text";
 import {
   paymentNextAction,
@@ -24,7 +25,7 @@ import { clockLabel, clockSeconds } from "../../../lib/roster-time";
 import type { AdminSearch } from "../../../router";
 import { useQueryLazyList } from "../../page/lazy-list";
 import { Callout, EmptyNote } from "../../page/page";
-import { PageLoad } from "../../page/page-state";
+import { PageLoad, resultOf } from "../../page/page-state";
 import { Avatar } from "../../ui/avatar";
 import { Button } from "../../ui/button";
 import { CopyButton } from "../../ui/copy-button";
@@ -360,11 +361,9 @@ export function AdminPayments({ search }: { search: AdminSearch }) {
   ) => (id === null ? "编号无效" : (name ?? (failed ? id : "…")));
 
   return (
-    <PageLoad load={listLoad(listQuery, selected ? detail : null)}>
-      <AdminFrame
-        refreshable
-        description="全站的付款。重试和查单都是系统自己做的，这里只能查看。"
-      >
+    // The search and filters stay once shown; the list loads in place.
+    <PageLoad load={listLoad(listQuery, selected ? detail : null)} area frame>
+      <AdminFrame>
         <div className="grid gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <SearchBox
@@ -427,7 +426,12 @@ export function AdminPayments({ search }: { search: AdminSearch }) {
                 onClear={() => setSearch({ recipient: undefined })}
               />
             )}
-            <span className="ml-auto text-sm text-ink-3">
+            <span
+              className={cn(
+                "ml-auto text-sm text-ink-3 transition-opacity",
+                busy && "opacity-60",
+              )}
+            >
               {countLine(total, "笔")}
             </span>
           </div>
@@ -436,7 +440,7 @@ export function AdminPayments({ search }: { search: AdminSearch }) {
           items={payments}
           list={list}
           total={total}
-          busy={busy}
+          load={resultOf(listQuery)}
           selectedId={selected}
           onSelect={setSelected}
           placeholder="点一笔付款看详情。"

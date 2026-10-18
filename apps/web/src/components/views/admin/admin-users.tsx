@@ -2,11 +2,12 @@ import type { AdminUserDetail, AdminUserListItem } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { useAdminList, useAdminUser } from "../../../lib/admin";
+import { cn } from "../../../lib/cn";
 import { clockLabel, fullTime } from "../../../lib/roster-time";
 import type { AdminSearch } from "../../../router";
 import { useQueryLazyList } from "../../page/lazy-list";
 import { EmptyNote } from "../../page/page";
-import { Bone, PageLoad } from "../../page/page-state";
+import { Bone, PageLoad, resultOf } from "../../page/page-state";
 import { useSearchChoice } from "../../shell/use-search-choice";
 import { Avatar } from "../../ui/avatar";
 import { Button } from "../../ui/button";
@@ -197,11 +198,9 @@ export function AdminUsers({ search }: { search: AdminSearch }) {
     .filter((item) => !seen.has(item.id) && Boolean(seen.add(item.id)));
 
   return (
-    <PageLoad load={listLoad(listQuery, selected ? detail : null)}>
-      <AdminFrame
-        refreshable
-        description="登录过本站的人。状态跟随 LINUX DO 账号，每次登录时同步；这里只能查看。"
-      >
+    // The search and filters stay once shown; the list loads in place.
+    <PageLoad load={listLoad(listQuery, selected ? detail : null)} area frame>
+      <AdminFrame>
         <div className="flex flex-wrap items-center gap-2">
           <SearchBox
             label="搜索用户"
@@ -221,7 +220,12 @@ export function AdminUsers({ search }: { search: AdminSearch }) {
               { value: "inactive", label: "停用" },
             ]}
           />
-          <span className="ml-auto text-sm text-ink-3">
+          <span
+            className={cn(
+              "ml-auto text-sm text-ink-3 transition-opacity",
+              busy && "opacity-60",
+            )}
+          >
             {countLine(total, "人")}
           </span>
         </div>
@@ -229,7 +233,7 @@ export function AdminUsers({ search }: { search: AdminSearch }) {
           items={users}
           list={list}
           total={total}
-          busy={busy}
+          load={resultOf(listQuery)}
           selectedId={selected}
           onSelect={setSelected}
           placeholder="点一个人看详情。"
