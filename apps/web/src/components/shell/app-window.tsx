@@ -142,12 +142,11 @@ export function AppWindow() {
             ref={stageRef}
             data-window-stage
             className="absolute inset-0"
+            // Launch: the window fills in where the loader's frame was. It
+            // only fades: the 顶栏 is a frame and does not move (02 §8), and
+            // a 红包 page's cover reaches the window's top edge.
             initial={false}
-            animate={
-              bootDone
-                ? { opacity: 1, y: 0 }
-                : { opacity: 0, y: reduced ? 0 : 10 }
-            }
+            animate={{ opacity: bootDone ? 1 : 0 }}
             transition={{ duration: reduced ? 0 : 0.36, ease }}
             inert={panelOpen || dialogsOpen}
           >
