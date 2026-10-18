@@ -136,6 +136,36 @@ test.describe("兑奖", () => {
     ).toBeVisible();
   });
 
+  test("手机上点最近输入、全部命令：打开的输入框里填着它们", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 760 });
+    await mockSession(page, viewer);
+    await mockDiscover(page, [{ status: 200, body: discovered("none", []) }]);
+    await openApp(page);
+    await lookUp(page, "测试口令2099");
+    await expect(shown(page, "未匹配到红包。")).toBeVisible();
+
+    // A fresh start page (another address first: reloading this one would
+    // keep the open box's history state), not focused until tapped.
+    const fresh = async () => {
+      await page.goto("about:blank");
+      await openApp(page);
+    };
+    await fresh();
+    await page
+      .getByRole("button", { name: "填入 测试口令2099，未匹配" })
+      .click();
+    await expect(omniboxInput(page)).toBeFocused();
+    await expect(omniboxInput(page)).toHaveValue("测试口令2099");
+
+    await fresh();
+    await page.getByRole("button", { name: /全部命令/ }).click();
+    await expect(omniboxInput(page)).toBeFocused();
+    await expect(omniboxInput(page)).toHaveValue("/");
+    await expect(page.getByRole("option", { name: /红包广场/ })).toBeVisible();
+  });
+
   test("匹配到多个：去 /🔑/ 结果页，选一个就去那个红包", async ({ page }) => {
     await mockSession(page, viewer);
     await mockDiscover(page, [

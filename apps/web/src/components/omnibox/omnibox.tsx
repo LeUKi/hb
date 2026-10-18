@@ -1,5 +1,5 @@
 import { useLocation } from "@tanstack/react-router";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useStore } from "jotai";
 import { X } from "lucide-react";
 import {
   AnimatePresence,
@@ -190,6 +190,7 @@ export function Omnibox() {
   const user = useSessionUser();
   const role = roleOf(user);
 
+  const store = useStore();
   const [startDraft, setStartDraft] = useAtom(startDraftAtom);
   const [editDraft, setEditDraft] = useAtom(editDraftAtom);
   const [scope, setScope] = useAtom(scopeAtom);
@@ -747,9 +748,11 @@ export function Omnibox() {
                 setFocused(next);
                 // Phones: the start page's box opens as the command box at
                 // the top (search mode), so the list has room above the
-                // keyboard; what was typed comes along.
+                // keyboard; what was typed comes along. Read from the store:
+                // a tap that fills the box and focuses it (全部命令's "/", a
+                // 最近输入) lands here before this render has seen it.
                 if (next && mode === "start" && phoneLike)
-                  controller.expand(null, startDraft);
+                  controller.expand(null, store.get(startDraftAtom));
               }}
               onCompositionChange={(composing) =>
                 setComposeBase(composing ? value : null)
