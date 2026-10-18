@@ -1,10 +1,16 @@
 import { atom, useAtomValue, useSetAtom } from "jotai";
-import { SquareSlash } from "lucide-react";
+import { type LucideIcon, SquareSlash } from "lucide-react";
 import { motion } from "motion/react";
 import type { ReactNode } from "react";
 import { useBootDone } from "../../lib/boot";
 import { brand } from "../../lib/brand";
-import { commands, isVisible, roleOf } from "../../lib/commands";
+import { cn } from "../../lib/cn";
+import {
+  type CommandId,
+  commands,
+  isVisible,
+  roleOf,
+} from "../../lib/commands";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { useRecentInputs } from "../../lib/recent-inputs";
 import { useSessionUser } from "../../lib/session";
@@ -68,18 +74,85 @@ function Reveal({
   );
 }
 
-function Row({ label, children }: { label: string; children: ReactNode }) {
+function Row({
+  label,
+  cards = false,
+  children,
+}: {
+  label: string;
+  /** One line of cards: the label sits level with their middle. */
+  cards?: boolean;
+  children: ReactNode;
+}) {
   return (
-    <div className="flex items-start gap-3">
+    <div className={cn("flex gap-3", cards ? "items-center" : "items-start")}>
       {/* Level with the first line of chips (34px). */}
       <span className="flex h-[34px] w-14 shrink-0 items-center whitespace-nowrap text-xs text-ink-3">
         {label}
       </span>
-      {/* More than fit wrap onto further lines; nothing scrolls sideways. */}
-      <div className="flex min-w-0 flex-1 flex-wrap gap-2">{children}</div>
+      {cards ? (
+        <div className="grid min-w-0 flex-1 grid-cols-3 gap-2">{children}</div>
+      ) : (
+        // More than fit wrap onto further lines; nothing scrolls sideways.
+        <div className="flex min-w-0 flex-1 flex-wrap gap-2">{children}</div>
+      )}
     </div>
   );
 }
+
+/** Each 常用命令 its own colour, so the three read apart at a glance. */
+const tints: Partial<Record<CommandId, string>> = {
+  history: "bg-accent-soft text-accent-ink",
+  square: "bg-gold-soft text-gold-ink",
+};
+
+/**
+ * A 常用命令 as a card: its icon on a tinted tile, its name, and what to
+ * type for it. Icon beside the words on a wide window, above them on a
+ * phone, where three share the line.
+ */
+function CommandCard({
+  icon: Icon,
+  title,
+  typed,
+  tint = "bg-fill-2 text-ink-2",
+  compact,
+}: {
+  icon: LucideIcon;
+  title: string;
+  /** What to type for it ("/history"). */
+  typed: string;
+  tint?: string;
+  compact: boolean;
+}) {
+  return (
+    <>
+      <Squircle radius={10}>
+        <span
+          className={cn(
+            "grid shrink-0 place-items-center",
+            compact ? "size-8" : "size-9",
+            tint,
+          )}
+        >
+          <Icon className="size-[18px]" aria-hidden="true" />
+        </span>
+      </Squircle>
+      <span className="grid min-w-0 gap-0.5">
+        <span className="truncate text-sm font-medium text-ink">{title}</span>
+        <span className="truncate font-mono text-xs text-ink-3">{typed}</span>
+      </span>
+    </>
+  );
+}
+
+const cardClass = (compact: boolean) =>
+  cn(
+    "choice flex min-w-0 text-left",
+    compact
+      ? "flex-col items-start gap-2 p-3"
+      : "items-center gap-2.5 px-3 py-2.5",
+  );
 
 /**
  * A lookup waiting on 再次确认 holds the box while its 口令 is typed there:
@@ -156,34 +229,41 @@ export function StartView() {
             </Reveal>
           )}
           <Reveal index={1}>
-            <Row label="常用命令">
+            <Row label="常用命令" cards>
               {quick.map((command) => (
-                <Squircle key={command.id} radius={radius.chip}>
+                <Squircle key={command.id} radius={radius.choice}>
                   <CommandLink
                     command={command}
-                    className="chip"
-                    title={command.title}
+                    className={cardClass(compact)}
+                    title={`${command.title} · /${command.name}`}
                   >
-                    <span className="font-mono">
-                      <span className="text-ink-3">/</span>
-                      {command.name}
-                    </span>
-                    <span className="text-ink-2">{command.title}</span>
+                    <CommandCard
+                      icon={command.icon}
+                      title={command.title}
+                      typed={`/${command.name}`}
+                      tint={tints[command.id]}
+                      compact={compact}
+                    />
                   </CommandLink>
                 </Squircle>
               ))}
-              <Squircle radius={radius.chip}>
+              <Squircle radius={radius.choice}>
                 <button
                   type="button"
-                  className="chip text-ink-2"
+                  className={cardClass(compact)}
+                  title="全部命令 · /"
                   onClick={() => {
                     setDraft("/");
                     setMessage(null);
                     focusOmniboxInput();
                   }}
                 >
-                  <SquareSlash className="size-4" aria-hidden="true" />
-                  全部命令
+                  <CommandCard
+                    icon={SquareSlash}
+                    title="全部命令"
+                    typed="/"
+                    compact={compact}
+                  />
                 </button>
               </Squircle>
             </Row>

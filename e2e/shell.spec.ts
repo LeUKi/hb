@@ -24,7 +24,7 @@ test.describe("外壳", () => {
     await expect(identityButton(page)).toHaveAccessibleName("登录");
     await expect(omniboxInput(page)).toBeVisible();
     await expect(
-      page.getByRole("link", { name: /\/history\s*红包记录/ }),
+      page.getByRole("link", { name: /红包记录\s*\/history/ }),
     ).toBeVisible();
   });
 
