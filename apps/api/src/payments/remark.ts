@@ -13,7 +13,7 @@ export function claimPaymentRemark(author: string, title: string) {
 }
 
 /** What a person reads with their own 🐟额 转出. */
-export const WITHDRAWAL_REMARK = "hb.lafi.sh 站内🐟额转出";
+export const WITHDRAWAL_REMARK = "hb.lafi.sh 🐟额转出";
 
 /**
  * The remark for a claim's payment, read when it is sent (a title edited

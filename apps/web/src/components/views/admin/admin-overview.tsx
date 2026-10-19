@@ -55,7 +55,7 @@ type Check = {
 
 /**
  * The checks, with production's thresholds (the server counts them), and
- * 站内🐟额's two: 转出 held or slow, 转入 with a flag or a refused key.
+ * 🐟额's two: 转出 held or slow, 转入 with a flag or a refused key.
  */
 function checksOf(overview: Overview): Check[] {
   const { warnings } = overview;

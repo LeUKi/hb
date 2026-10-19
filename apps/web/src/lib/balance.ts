@@ -17,7 +17,7 @@ import { readResponse } from "./activities";
 import { useMerchantIdentity } from "./merchants";
 import { useIdentity } from "./session";
 
-// 站内🐟额 (/balance) and one 转入 (/balance/<编号>), docs/balance-design.md.
+// 🐟额 (/balance) and one 转入 (/balance/<编号>), docs/balance-design.md.
 // Keyed by the sign-in, like 付款记录: another account never sees these.
 
 export type BalancePage = InferResponseType<

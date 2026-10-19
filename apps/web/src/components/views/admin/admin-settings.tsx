@@ -280,7 +280,7 @@ export function AdminSettings() {
       {query.data && (
         <AdminFrame>
           <SettingsForm data={query.data} />
-          {/* 站内🐟额 reads on its own: its failing never holds the intervals. */}
+          {/* 🐟额 reads on its own: its failing never holds the intervals. */}
           <DetailPart query={balance} lines={3}>
             {(data) => (
               <>

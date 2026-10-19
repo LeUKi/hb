@@ -1,4 +1,4 @@
-// 站内🐟额, step two: 转出 through the payment queue against a fake Credit,
+// 🐟额, step two: 转出 through the payment queue against a fake Credit,
 // and what the database refuses about locks and endings.
 import {
   createExecutionContext,
@@ -325,7 +325,7 @@ describe("转出", () => {
         amount: "10.00",
         out_trade_no: withdrawal.businessNo,
         username: tester.username,
-        remark: "hb.lafi.sh 站内🐟额转出",
+        remark: "hb.lafi.sh 🐟额转出",
       }),
     ]);
     expect((await task(withdrawal.id))?.status).toBe("reconciling");

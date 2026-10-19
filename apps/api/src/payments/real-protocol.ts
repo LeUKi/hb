@@ -715,7 +715,7 @@ export function createRealPaymentAdapter(
   };
 }
 
-// 站内🐟额 转入 (docs/balance-design.md §3, §9.3): an EPay order to the
+// 🐟额 转入 (docs/balance-design.md §3, §9.3): an EPay order to the
 // platform app, paid by the person at Credit's cashier; then the order query
 // without a recipient, since a 转入 has none.
 

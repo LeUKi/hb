@@ -9,7 +9,7 @@ export function fishText(minor: number, signed = false) {
 }
 
 /**
- * A number of 🐟, 站内🐟额's unit (docs/balance-design.md §0): the figure
+ * A number of 🐟, 🐟额's unit (docs/balance-design.md §0): the figure
  * rolls as it changes, then 🐟; a screen reader hears “鱼”.
  */
 export function Fish({

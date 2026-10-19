@@ -1043,7 +1043,7 @@ export const paymentIdentityCorrections = sqliteTable(
   ],
 );
 
-// 站内🐟额 (docs/balance-design.md). Every change to someone's 🐟额 is an
+// 🐟额 (docs/balance-design.md). Every change to someone's 🐟额 is an
 // entry; triggers (migration 0029) keep balance_accounts equal to their sum.
 
 export const balanceSettings = sqliteTable(

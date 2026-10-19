@@ -11,7 +11,7 @@ import {
   viewer,
 } from "./support/app";
 
-// 站内🐟额 (docs/balance-design.md) against a mocked API: who sees it, the
+// 🐟额 (docs/balance-design.md) against a mocked API: who sees it, the
 // page, the 转入 and 转出 dialogs' two boxes, and a 转出 as it is sent.
 
 const topupId = "11111111-2222-4333-8444-555555555555";
@@ -109,7 +109,7 @@ async function mockBalance(page: Page, options: { withdraw?: boolean } = {}) {
   return sent;
 }
 
-test.describe("站内🐟额", () => {
+test.describe("🐟额", () => {
   test("名单外的人：用户卡片和命令里都没有，直接打开说暂未开放", async ({
     page,
   }) => {
@@ -118,17 +118,17 @@ test.describe("站内🐟额", () => {
       route.fulfill({
         status: 404,
         json: {
-          error: { code: "BALANCE_NOT_OPEN", message: "站内🐟额暂未开放" },
+          error: { code: "BALANCE_NOT_OPEN", message: "🐟额暂未开放" },
         },
       }),
     );
     await openApp(page);
     await omniboxInput(page).click();
     await omniboxInput(page).fill("/余额");
-    await expect(page.getByRole("option", { name: /站内🐟额/ })).toHaveCount(0);
+    await expect(page.getByRole("option", { name: /🐟额/ })).toHaveCount(0);
     await openApp(page, "/balance");
     await expect(
-      page.getByRole("heading", { name: "站内🐟额暂未开放" }),
+      page.getByRole("heading", { name: "🐟额暂未开放" }),
     ).toBeVisible();
   });
 
@@ -140,11 +140,12 @@ test.describe("站内🐟额", () => {
     await openApp(page);
     await omniboxInput(page).click();
     await omniboxInput(page).fill("/余额");
-    await expect(page.getByRole("option", { name: /站内🐟额/ })).toBeVisible();
+    await expect(page.getByRole("option", { name: /🐟额/ })).toBeVisible();
 
     await openApp(page, "/balance");
-    await expect(page.getByRole("heading", { name: "站内🐟额" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "🐟额" })).toBeVisible();
     await expect(page.locator("dl dd").first()).toHaveText(/12\.34\s*🐟/);
+    await expect(page.getByText("1 🐟 = 1 LDC，由本站托管。")).toBeVisible();
     await expect(
       page.getByText("有 1 笔转入还没到账", { exact: false }),
     ).toBeVisible();

@@ -190,7 +190,7 @@ function AdjustmentRow({
 type Summary = Pick<BalancePage, "settings" | "account" | "openTopups">;
 
 /**
- * 站内🐟额: what is kept here, what came in and why it changed. Only for
+ * 🐟额: what is kept here, what came in and why it changed. Only for
  * accounts the allowlist lets in, until it is open to everyone.
  */
 export function BalanceView() {
@@ -228,9 +228,7 @@ function Balance({ user }: { user: SessionUser }) {
   const [withdrawOpen, setWithdrawOpen] = useState(false);
 
   if (closed)
-    return (
-      <MessageView title="站内🐟额暂未开放" text="现在只开给一部分人试用。" />
-    );
+    return <MessageView title="🐟额暂未开放" text="现在只开给一部分人试用。" />;
   return (
     <PageLoad
       load={queryLoad(query)}
@@ -240,7 +238,7 @@ function Balance({ user }: { user: SessionUser }) {
         <Page>
           <PageHeader
             refreshable
-            title="站内🐟额"
+            title="🐟额"
             actions={
               <>
                 <Button
@@ -283,7 +281,7 @@ function Balance({ user }: { user: SessionUser }) {
                   : []),
               ]}
             />
-            <p className="text-xs text-ink-3">1 🐟 = 1 LDC</p>
+            <p className="text-xs text-ink-3">1 🐟 = 1 LDC，由本站托管。</p>
           </Panel>
           <Reveal show={summary.openTopups > 0}>
             <Callout tone="warning">

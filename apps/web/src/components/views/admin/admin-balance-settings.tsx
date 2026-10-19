@@ -46,7 +46,7 @@ type Draft = {
 };
 
 /**
- * 站内🐟额's settings (docs/balance-design.md §7): the two switches, the
+ * 🐟额's settings (docs/balance-design.md §7): the two switches, the
  * two rates, the cap on one 转出, and the allowlist while it is on. Saved
  * against the version read, like the attempt intervals.
  */
@@ -131,7 +131,7 @@ export function BalanceSettingsSection({
   return (
     <PageSection
       id="balance-settings"
-      title="站内🐟额"
+      title="🐟额"
       description="转入、转出的开关和费率。费率要和平台账户在 Credit 的等级一致：填低了，差价由本站垫上。"
     >
       <Panel>
@@ -304,7 +304,7 @@ export function PlatformAppSection({ app }: { app: PlatformApp | null }) {
   const [busy, setBusy] = useState<"save" | "check" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const requestId = useRef(crypto.randomUUID());
-  const shownLabel = label ?? app?.label ?? "站内🐟额";
+  const shownLabel = label ?? app?.label ?? "🐟额";
   const shownClientId = clientId ?? app?.clientId ?? "";
   const clientChanged = app !== null && shownClientId.trim() !== app.clientId;
   const needsSecret = app === null || clientChanged;

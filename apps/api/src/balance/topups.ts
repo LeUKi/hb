@@ -26,7 +26,7 @@ import { readPlatformAppRow } from "./platform-app";
 import { readBalanceSettings, requireBalanceOpen } from "./settings";
 
 /** Shown in Credit's records and at its cashier. */
-export const TOPUP_ORDER_NAME = "站内🐟额转入 · hb.lafi.sh";
+export const TOPUP_ORDER_NAME = "🐟额转入 · hb.lafi.sh";
 /** A constant, like a claim's 业务号: `hb.lafi.sh_in_<32 hex>`, 46 characters. */
 const BUSINESS_PREFIX = "hb.lafi.sh_in_";
 /** “去 Credit 确认” and the page's polling last this long from the first order. */

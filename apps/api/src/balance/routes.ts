@@ -1,4 +1,4 @@
-// 站内🐟额 for the person (docs/balance-design.md §8, §9.2).
+// 🐟额 for the person (docs/balance-design.md §8, §9.2).
 import {
   BALANCE_LIMITS,
   createTopupSchema,

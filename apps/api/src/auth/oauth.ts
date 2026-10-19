@@ -75,7 +75,7 @@ export const authRoutes = new Hono<ApiContext>()
     return c.json({
       user: {
         ...session.user,
-        /** 站内🐟额's entry shows (the allowlist, until it is open to all). */
+        /** 🐟额's entry shows (the allowlist, until it is open to all). */
         balance: await balanceOpenFor(c.env, session.user.id),
       },
       csrfToken: session.csrfToken,

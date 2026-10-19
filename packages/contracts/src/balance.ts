@@ -1,4 +1,4 @@
-// 站内🐟额 (docs/balance-design.md): LDC kept on this site, 1 🐟 to 1 LDC.
+// 🐟额 (docs/balance-design.md): LDC kept on this site, 1 🐟 to 1 LDC.
 // Amounts are whole cents (minor units) everywhere here, as in payments.ts.
 import { z } from "zod";
 import type { CredentialVerification } from "./payments";

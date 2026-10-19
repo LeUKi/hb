@@ -892,7 +892,7 @@ export function UserBalance({ userId }: { userId: string }) {
   };
   return (
     <section className="grid gap-2">
-      <h3 className="text-sm font-medium text-ink">站内🐟额</h3>
+      <h3 className="text-sm font-medium text-ink">🐟额</h3>
       <DetailPart query={query} lines={2}>
         {(data) => (
           <div className="grid gap-3">

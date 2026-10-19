@@ -342,7 +342,7 @@ async function mockRateLimits(page: Page) {
 
 test.describe("网站管理", () => {
   test.beforeEach(async ({ page }) => {
-    // 站内🐟额's reads (a user's detail, 网站设置): nothing set up yet.
+    // 🐟额's reads (a user's detail, 网站设置): nothing set up yet.
     await page.route(
       (url) => url.pathname.startsWith("/api/admin/balance/"),
       (route) => {

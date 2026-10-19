@@ -94,7 +94,7 @@ export type AdminOverview = {
     undeliveredPaymentTasks: number;
     undeliveredPaymentTasksOverdue: number;
     staleMaintenance: number;
-    /** 站内🐟额: 转入 with a flag or a refused key; 转出 held, unclear or slow. */
+    /** 🐟额: 转入 with a flag or a refused key; 转出 held, unclear or slow. */
     balanceTopups: number;
     balanceWithdrawals: number;
   };

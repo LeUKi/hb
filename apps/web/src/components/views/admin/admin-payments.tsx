@@ -106,7 +106,7 @@ function RowBody({ payment }: { payment: AdminPaymentListItem }) {
           </span>
           <span className="truncate text-xs text-ink-3">
             {payment.source === "withdrawal"
-              ? "站内🐟额转出"
+              ? "🐟额转出"
               : (payment.activityTitle ?? "恢复付款")}
           </span>
         </span>
@@ -151,7 +151,7 @@ function DetailBody({
   return (
     <>
       {payment.source === "withdrawal" ? (
-        <Callout title="站内🐟额转出">
+        <Callout title="🐟额转出">
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span>
               平台应用把🐟额转回这个人自己的 Credit
@@ -194,7 +194,7 @@ function DetailBody({
             label: "红包",
             value:
               payment.source === "withdrawal"
-                ? "—（站内🐟额转出）"
+                ? "—（🐟额转出）"
                 : (payment.activityTitle ?? "—（恢复付款）"),
           },
           {

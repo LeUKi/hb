@@ -239,18 +239,18 @@ function Me({ user }: { user: SessionUser }) {
   );
 }
 
-/** 站内🐟额, for accounts let in: what is kept, and the way to its page. */
+/** 🐟额, for accounts let in: what is kept, and the way to its page. */
 function MeBalance({ user }: { user: SessionUser }) {
   const { leaveTo } = useOmniboxController();
   const query = useBalancePages(user.id, "all");
   const account = query.data?.pages[0]?.account;
   return (
     <PageSection
-      title="站内🐟额"
+      title="🐟额"
       id="me-balance"
       action={
         <MoreLink href="/balance" onGo={() => void leaveTo({ to: "/balance" })}>
-          🐟额
+          明细
         </MoreLink>
       }
     >

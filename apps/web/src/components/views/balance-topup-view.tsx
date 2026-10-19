@@ -93,7 +93,7 @@ function Topup({ user, id }: { user: SessionUser; id: string }) {
       {topup && (
         <Page>
           <PageHeader
-            eyebrow="站内🐟额"
+            eyebrow="🐟额"
             title="转入"
             description={clockSeconds(topup.createdAt)}
           />

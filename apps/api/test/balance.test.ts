@@ -1,4 +1,4 @@
-// 站内🐟额, step one: settings, the platform app, 转入 against a fake
+// 🐟额, step one: settings, the platform app, 转入 against a fake
 // Credit, 调整, and what the database itself refuses.
 import {
   createExecutionContext,
@@ -276,7 +276,7 @@ describe("EPay signature", () => {
   });
 });
 
-describe("站内🐟额 settings and the platform app", () => {
+describe("🐟额 settings and the platform app", () => {
   it("starts closed, changes by version, and only an admin changes it", async () => {
     const admin = await actor("admin");
     admins = [admin.externalId];
@@ -461,7 +461,7 @@ describe("转入", () => {
     const order = credit.orders.get(topup.businessNo);
     expect(order).toMatchObject({
       money: "113.64",
-      name: "站内🐟额转入 · hb.lafi.sh",
+      name: "🐟额转入 · hb.lafi.sh",
       returnUrl: `${origin}/balance/${topup.id}`,
     });
 

@@ -2,12 +2,12 @@ import { randomBytes } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { localOnly, origin, signIn, waitForBoot } from "./session";
 
-// 站内🐟额, step one, on the real stack: the harness's LDC substitute takes
+// 🐟额, step one, on the real stack: the harness's LDC substitute takes
 // the EPay order and plays Credit's cashier (e2e/full-app/upstream.mjs).
 
 const control = "http://127.0.0.1:4194";
 
-test("站内🐟额：管理员配好平台应用和白名单，领取者转入、确认后到账，扣回写着原因，再转出到 Credit", async ({
+test("🐟额：管理员配好平台应用和白名单，领取者转入、确认后到账，扣回写着原因，再转出到 Credit", async ({
   browser,
 }) => {
   // 网站设置: the platform app, then 转入 on for the recipient alone.
@@ -26,7 +26,7 @@ test("站内🐟额：管理员配好平台应用和白名单，领取者转入�
     await admin.getByRole("button", { name: "新建平台应用" }).click();
   }
   await expect(app.getByText("凭证通过")).toBeVisible({ timeout: 20_000 });
-  const fishSettings = admin.getByRole("region", { name: "站内🐟额" });
+  const fishSettings = admin.getByRole("region", { name: "🐟额" });
   for (const name of ["转入", "转出"]) {
     const toggle = fishSettings.getByRole("switch", { name });
     if ((await toggle.getAttribute("aria-checked")) !== "true")
@@ -56,8 +56,8 @@ test("站内🐟额：管理员配好平台应用和白名单，领取者转入�
   const page = await context.newPage();
   await signIn(page, "recipient");
   await page.locator("#identity-button").click();
-  await page.getByRole("link", { name: /站内🐟额/ }).click();
-  await expect(page.getByRole("heading", { name: "站内🐟额" })).toBeVisible();
+  await page.getByRole("link", { name: /🐟额/ }).click();
+  await expect(page.getByRole("heading", { name: "🐟额" })).toBeVisible();
   // 可用, as it reads once its figures stop rolling.
   const figure = page.locator("dl dd").first();
   await expect(figure).toContainText(/\d+\.\d{2}/);

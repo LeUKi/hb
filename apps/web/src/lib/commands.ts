@@ -24,7 +24,7 @@ export function roleOf(user: SessionUser | null): Role {
   return user.isAdmin ? "admin" : "standard";
 }
 
-/** What an account has been let into beyond its role (站内🐟额's allowlist). */
+/** What an account has been let into beyond its role (🐟额's allowlist). */
 export type CommandFeatures = { balance?: boolean };
 
 export function featuresOf(user: SessionUser | null): CommandFeatures {
@@ -128,7 +128,7 @@ export const commands: Command[] = [
     id: "balance",
     path: "/balance",
     name: "balance",
-    title: "站内🐟额",
+    title: "🐟额",
     icon: Fish,
     requires: "standard",
     visibleTo: (role) => role !== "guest",

@@ -1,4 +1,4 @@
-// 站内🐟额 settings: one versioned row, written as the attempt intervals
+// 🐟额 settings: one versioned row, written as the attempt intervals
 // are (a version guard, the change, then the row by version, in one batch).
 import type {
   BalanceSettings,
@@ -63,7 +63,7 @@ export async function balanceOpenFor(env: ApiBindings, userId: string) {
 
 export async function requireBalanceOpen(env: ApiBindings, userId: string) {
   if (!(await balanceOpenFor(env, userId)))
-    balanceError(404, "BALANCE_NOT_OPEN", "站内🐟额暂未开放");
+    balanceError(404, "BALANCE_NOT_OPEN", "🐟额暂未开放");
 }
 
 function snapshot(settings: BalanceSettingsInput) {

@@ -71,13 +71,13 @@ const tabs: {
     to: "/admin/balance",
     label: "🐟额",
     description:
-      "站内🐟额：替大家存着多少，哪些转入、转出要看一下，以及每一笔转出和调整。平台应用和费率在网站设置里。",
+      "替大家存着多少🐟，哪些转入、转出要看一下，以及每一笔转出和调整。平台应用和费率在网站设置里。",
     refreshable: true,
   },
   {
     to: "/admin/settings",
     label: "网站设置",
-    description: "口令尝试间隔、站内🐟额和它的平台应用，保存后立即生效。",
+    description: "口令尝试间隔、🐟额和它的平台应用，保存后立即生效。",
     refreshable: false,
   },
   {
