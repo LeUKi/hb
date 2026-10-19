@@ -61,7 +61,7 @@ export function adminDiagnosticQueries(now: number) {
       tables: ["payment_tasks"],
       sql: `SELECT mode,status,COALESCE(reason,'') AS reason,COUNT(*) AS tasks,
       MAX((${now}-created_at)/1000.0) AS oldest_age_seconds
-      FROM payment_tasks WHERE status!='confirmed' GROUP BY mode,status,reason ORDER BY mode,status,reason`,
+      FROM payment_tasks WHERE status NOT IN ('confirmed','failed') GROUP BY mode,status,reason ORDER BY mode,status,reason`,
     },
     {
       name: "protection",
@@ -89,7 +89,7 @@ export function adminDiagnosticQueries(now: number) {
       tables: ["payment_tasks"],
       sql: `SELECT mode,next_action,COALESCE(send_block_reason,'') AS send_block_reason,
       COALESCE(order_evidence,'') AS order_evidence,COUNT(*) AS tasks,MIN(next_send_at) AS earliest_send_at,MIN(next_query_at) AS earliest_query_at
-      FROM payment_tasks WHERE status!='confirmed' GROUP BY mode,next_action,send_block_reason,order_evidence`,
+      FROM payment_tasks WHERE status NOT IN ('confirmed','failed') GROUP BY mode,next_action,send_block_reason,order_evidence`,
     },
     {
       name: "retryAuthorizations",

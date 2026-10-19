@@ -17,6 +17,8 @@ export const BALANCE_LIMITS = {
   /** A 转出 is at least 1 🐟; its cap is a setting. */
   withdrawMinMinor: 100,
   withdrawMaxDefaultMinor: 100_000,
+  /** New 转出 a person may ask for in an hour, like 转入. */
+  withdrawalsPerHour: 30,
 } as const;
 
 /**
@@ -152,6 +154,15 @@ export const createTopupSchema = z.strictObject({
 });
 export type CreateTopupInput = z.infer<typeof createTopupSchema>;
 
+export const createWithdrawalSchema = z.strictObject({
+  requestId: z.uuid(),
+  settingsVersion: z.number().int().positive(),
+  /** Which box was filled: what leaves 🐟额, or what should arrive. */
+  by: z.enum(["debit", "credit"]),
+  amount: moneySchema,
+});
+export type CreateWithdrawalInput = z.infer<typeof createWithdrawalSchema>;
+
 export const balanceAdjustmentSchema = z.strictObject({
   requestId: z.uuid(),
   direction: z.enum(["add", "deduct"]),
@@ -185,6 +196,51 @@ export type BalanceTopup = {
   creditedAt: number | null;
   creditedBy: "auto" | "admin" | null;
   lastCheckedAt: number | null;
+};
+
+/** 发放中 / 已发放 / 未发出. */
+export type WithdrawalStatus = "sending" | "sent" | "failed";
+/**
+ * What a 发放中 one waits on, from its payment: its turn, Credit's daily
+ * limit, the platform account's LDC, the platform app's credentials, a
+ * check at Credit, or an admin (Credit's answer did not match).
+ */
+export type WithdrawalWait =
+  | "queued"
+  | "quota"
+  | "funds"
+  | "credentials"
+  | "checking"
+  | "attention";
+/** Why Credit turned one down for good (no order made): 未发出. */
+export type WithdrawalFailure =
+  | "recipient"
+  | "self_payment"
+  | "configuration"
+  | "validation";
+
+export type BalanceWithdrawal = {
+  id: string;
+  businessNo: string;
+  externalOrderId: string | null;
+  status: WithdrawalStatus;
+  /** Taken from 🐟额. */
+  debitMinor: number;
+  /** Credit's 分发费, as worked out at the time. */
+  feeMinor: number;
+  /** What should arrive in Credit. */
+  creditMinor: number;
+  feePercent: number;
+  /** The Credit account it goes to. */
+  recipientUsername: string;
+  createdAt: number;
+  sentAt: number | null;
+  failedAt: number | null;
+  failure: WithdrawalFailure | null;
+  /** While 发放中. */
+  wait: WithdrawalWait | null;
+  /** When a wait for the daily limit ends. */
+  resumeAt: number | null;
 };
 
 export type BalanceEntryKind =

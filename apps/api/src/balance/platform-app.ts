@@ -161,6 +161,23 @@ export async function savePlatformApp(
       "PLATFORM_APP_SECRET_REQUIRED",
       "换 Client ID 时要同时填这个应用的密钥",
     );
+  // A 转出 is sent under the Client ID it was asked under (no corrections
+  // for the platform app): a new one waits until none is 发放中.
+  const sending = async () =>
+    (
+      await env.DB.prepare(
+        "SELECT COUNT(*) AS count FROM balance_withdrawals WHERE merchant_id=? AND status='sending'",
+      )
+        .bind(current.id)
+        .first<{ count: number }>()
+    )?.count ?? 0;
+  const busy = () =>
+    balanceError(
+      409,
+      "PLATFORM_APP_BUSY",
+      "还有转出没发完，发完再换 Client ID。当前输入已保留。",
+    );
+  if (clientChanged && (await sending()) > 0) busy();
   const registered = await assertClientIdFree(env, input.clientId, current.id);
   const credentialVersion =
     input.secret === undefined
@@ -181,10 +198,13 @@ export async function savePlatformApp(
     );
   statements.push(
     env.DB.prepare(
-      `UPDATE merchants SET version=CASE WHEN version=? AND kind='platform' THEN version+1 ELSE NULL END,
+      `UPDATE merchants SET version=CASE WHEN version=? AND kind='platform'
+          AND (?=0 OR NOT EXISTS(SELECT 1 FROM balance_withdrawals w WHERE w.merchant_id=merchants.id AND w.status='sending'))
+        THEN version+1 ELSE NULL END,
         label=?,client_id=?,credential_version=?,updated_at=? WHERE id=?`,
     ).bind(
       input.version,
+      clientChanged ? 1 : 0,
       input.label,
       input.clientId,
       credentialVersion,
@@ -229,6 +249,7 @@ export async function savePlatformApp(
     const latest = await readPlatformAppRow(env);
     if (latest && latest.version !== input.version)
       conflict("平台应用已经变了，请刷新后再试。当前输入已保留。");
+    if (clientChanged && (await sending()) > 0) busy();
     throw error;
   }
   const saved = await readPlatformAppRow(env);

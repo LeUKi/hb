@@ -20,8 +20,11 @@ import {
   adminBalanceOverview,
   adminTopupDetail,
   adminUserBalance,
+  adminWithdrawalDetail,
   listAdminAdjustments,
+  listAdminAttention,
   listAdminTopups,
+  listAdminWithdrawals,
 } from "./admin";
 import { balanceError } from "./errors";
 import { adjustBalance } from "./ledger";
@@ -106,6 +109,20 @@ export const balanceAdminRoutes = new Hono<ApiContext>()
         await confirmTopup(c.env, session.user.id, c.req.param("id"), reason),
       ),
     });
+  })
+  .get("/admin/balance/attention", async (c) =>
+    c.json(await listAdminAttention(c.env, cursorOf(c))),
+  )
+  .get("/admin/balance/withdrawals", async (c) => {
+    const view = c.req.query("view") ?? "all";
+    if (view !== "attention" && view !== "all")
+      throw new ActivityError(400, "INVALID_VIEW", "筛选无效");
+    return c.json(await listAdminWithdrawals(c.env, view, cursorOf(c)));
+  })
+  .get("/admin/balance/withdrawals/:id", async (c) => {
+    const detail = await adminWithdrawalDetail(c.env, c.req.param("id"));
+    if (!detail) balanceError(404, "WITHDRAWAL_NOT_FOUND", "没有找到这笔转出");
+    return c.json(detail);
   })
   .get("/admin/balance/adjustments", async (c) =>
     c.json(await listAdminAdjustments(c.env, cursorOf(c))),

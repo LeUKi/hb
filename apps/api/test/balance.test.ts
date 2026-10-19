@@ -896,6 +896,11 @@ describe("网站管理 · 🐟额", () => {
       env.DB.prepare("DELETE FROM balance_entries WHERE id='entry-db-1'").run(),
     ).rejects.toThrow(/append-only/);
     // A lock larger than 可用 would take it below 0: refused.
+    await env.DB.prepare(
+      "INSERT INTO balance_locks (id,user_id,purpose,activity_id,amount_minor,remaining_minor,status,created_at,updated_at) VALUES ('lock-x',?,'activity','activity-x',200,200,'active',?,?)",
+    )
+      .bind(member.id, now, now)
+      .run();
     await expect(
       env.DB.prepare(
         "INSERT INTO balance_entries (id,user_id,kind,available_delta_minor,locked_delta_minor,lock_id,created_at) VALUES ('entry-db-2',?,'lock',-200,200,'lock-x',?)",

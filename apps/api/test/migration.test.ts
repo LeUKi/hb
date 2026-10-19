@@ -590,6 +590,8 @@ it("upgrades populated simulated LDC payment data from 0008 through acceptance m
       recipient_username: null,
       source: "claim",
       acceptance_id: null,
+      // 0030: only a 🐟额 转出 has one.
+      withdrawal_id: null,
       send_acknowledged_at: null,
       recovery_policy: null,
       parameter_digest: null,
@@ -976,6 +978,7 @@ it("selects one preferred current merchant while preserving legacy credentials a
       recovery_policy: null,
       parameter_digest: null,
       first_send_at: null,
+      withdrawal_id: null,
     })),
   );
   expect(

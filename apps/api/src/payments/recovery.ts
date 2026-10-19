@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { withdrawalSettlementStatements } from "../balance/withdrawal-settlement";
 import { createDb } from "../db/client";
 import { merchants, paymentDuplicateProbes, paymentTasks } from "../db/schema";
 import type { ApiBindings } from "../env";
@@ -26,13 +27,17 @@ import {
   claimPaymentIdentitySql,
   claimPaymentParameterDigest,
   effectivePaymentTask,
+  isOrdinaryPayment,
   loadPaymentUsernameCorrection,
+  ordinaryPaymentSql,
+  ordinaryRecoveryPolicy,
   type PaymentUsernameCorrectionRow,
   paymentParameterDigest,
   realQueryDecision,
   realSendDecision,
   runtimeRealPolicy,
   usablePaymentRetryGrant,
+  withdrawalPaymentIdentitySql,
 } from "./policy";
 import { quotaResumeAt } from "./quota";
 import { paymentRemark } from "./remark";
@@ -221,7 +226,7 @@ async function selectTask(env: ApiBindings, merchant: MerchantRow) {
   const row = await env.DB.prepare(
     `SELECT p.id FROM payment_tasks p LEFT JOIN payment_acceptances a ON a.id=p.acceptance_id
      WHERE p.merchant_id=? AND p.mode='real'
-       AND ((p.source='claim' AND p.recovery_policy='claim_same_order_v1' AND p.status IN ('pending','waiting','reconciling','sending') AND ((?=1 AND p.first_send_at IS NOT NULL) OR ?=1))
+       AND ((${ordinaryPaymentSql("p")} AND p.status IN ('pending','waiting','reconciling','sending') AND ((?=1 AND p.first_send_at IS NOT NULL) OR ?=1))
          OR (?=1 AND p.source='acceptance' AND ((p.status IN ('pending','waiting','reconciling','sending') AND (a.send_consumed_at IS NOT NULL OR a.id=?))
            OR (p.status='confirmed' AND EXISTS(SELECT 1 FROM payment_duplicate_probes d WHERE d.task_id=p.id AND d.status IN ('pending','sending','reconciling','awaiting_evidence'))))))
      ORDER BY p.created_at,p.id LIMIT 1`,
@@ -249,7 +254,7 @@ async function permitsRecoverySend(
   task: PaymentTaskRow,
   now: number,
 ) {
-  if (task.source === "claim") {
+  if (isOrdinaryPayment(task)) {
     const effective = await effectiveClaimPaymentTask(env, task);
     const current = await env.DB.prepare(
       "SELECT client_id FROM merchants WHERE id=?",
@@ -257,7 +262,7 @@ async function permitsRecoverySend(
       .bind(task.merchantId)
       .first<{ client_id: string }>();
     return (
-      task.recoveryPolicy === "claim_same_order_v1" &&
+      task.recoveryPolicy === ordinaryRecoveryPolicy(task.source) &&
       task.firstSendAt !== null &&
       current?.client_id === effective.clientId &&
       (await realQueryDecision(env, task)).allowed &&
@@ -280,7 +285,12 @@ async function operationForTask(
   task: PaymentTaskRow,
   now: number,
 ) {
-  if (task.status === "confirmed" || task.status === "attention") return null;
+  if (
+    task.status === "confirmed" ||
+    task.status === "attention" ||
+    task.status === "failed"
+  )
+    return null;
   if (task.attemptCount === 0 && !task.unknownOutcome && !hasOrder(task)) {
     return { operation: "send" as const, due: task.nextRunAt };
   }
@@ -520,7 +530,7 @@ async function beginAttempt(
       ? await realSendDecision(env, task)
       : await realQueryDecision(env, task);
   if (!decision.allowed) {
-    if (task.source === "claim") return false;
+    if (isOrdinaryPayment(task)) return false;
     throw new Error("REAL_LDC_NOT_ENABLED");
   }
   if (
@@ -532,15 +542,18 @@ async function beginAttempt(
       sendTask.clientId,
     ))
   ) {
-    if (task.source === "claim") return false;
+    if (isOrdinaryPayment(task)) return false;
     throw new Error("REAL_LDC_CREDENTIALS_NOT_VERIFIED");
   }
   const statements = [leaseStatement(env, merchant, task, token, now)];
   let sendGuard = "";
   const guardValues: (number | string)[] = [];
-  if (operation === "send" && decision.source === "claim") {
+  if (
+    operation === "send" &&
+    (decision.source === "claim" || decision.source === "withdrawal")
+  ) {
     const isFirstSend = task.firstSendAt === null;
-    sendGuard = `AND parameter_digest=? AND ${claimPaymentIdentitySql("payment_tasks")}
+    sendGuard = `AND parameter_digest=? AND ${decision.source === "claim" ? claimPaymentIdentitySql("payment_tasks") : withdrawalPaymentIdentitySql("payment_tasks")}
       AND EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND version=? AND allow_real_send=1)
       AND ${isFirstSend ? "first_send_at IS NULL AND attempt_count=0 AND unknown_outcome=0 AND order_observed_at IS NULL AND external_order_id IS NULL AND send_acknowledged_at IS NULL" : "first_send_at IS NOT NULL AND order_observed_at IS NULL AND external_order_id IS NULL AND send_acknowledged_at IS NULL AND send_block_reason IS NULL AND next_action='send' AND next_send_at<=? AND queried_send_count=attempt_count AND queried_recovery_version=recovery_version"}`;
     guardValues.push(
@@ -581,7 +594,7 @@ async function beginAttempt(
   if (operation === "send") {
     sendGuard += ` AND EXISTS(SELECT 1 FROM merchants m JOIN merchant_credentials c ON c.merchant_id=m.id
         WHERE m.id=payment_tasks.merchant_id AND c.version=? AND c.client_id=? AND c.verification_status='passed'
-        ${task.source === "claim" ? "AND m.client_id=c.client_id AND m.credential_version=c.version" : ""})`;
+        ${isOrdinaryPayment(task) ? "AND m.client_id=c.client_id AND m.credential_version=c.version" : ""})`;
     guardValues.push(credentialVersion, sendTask.clientId);
     const snapshot = correctionSnapshotGuard(task.id, correction);
     sendGuard += ` ${snapshot.sql}`;
@@ -592,7 +605,7 @@ async function beginAttempt(
   guardValues.push(...identitySnapshot.values);
   statements.push(
     env.DB.prepare(`UPDATE payment_tasks SET amount_minor=CASE WHEN status=? AND recovery_version=? AND attempt_count=? AND reconciliation_count=? ${sendGuard} THEN amount_minor ELSE NULL END,
-      status=?,first_send_at=CASE WHEN source='claim' AND ?=1 THEN COALESCE(first_send_at,?) ELSE first_send_at END,next_action='query',recovery_version=recovery_version+1,attempt_count=attempt_count+?,reconciliation_count=reconciliation_count+?,send_backoff_count=send_backoff_count+?,next_send_at=CASE WHEN ?=1 THEN ? ELSE next_send_at END,query_backoff_count=query_backoff_count+?,next_query_at=MAX(?,COALESCE(query_retry_after_at,0)),updated_at=? WHERE id=?`).bind(
+      status=?,first_send_at=CASE WHEN source IN ('claim','withdrawal') AND ?=1 THEN COALESCE(first_send_at,?) ELSE first_send_at END,next_action='query',recovery_version=recovery_version+1,attempt_count=attempt_count+?,reconciliation_count=reconciliation_count+?,send_backoff_count=send_backoff_count+?,next_send_at=CASE WHEN ?=1 THEN ? ELSE next_send_at END,query_backoff_count=query_backoff_count+?,next_query_at=MAX(?,COALESCE(query_retry_after_at,0)),updated_at=? WHERE id=?`).bind(
       task.status,
       task.recoveryVersion,
       task.attemptCount,
@@ -621,7 +634,7 @@ async function beginAttempt(
       credentialVersion,
       now,
       operation === "send" ? sendTask.recipientUsername : null,
-      task.source === "claim"
+      isOrdinaryPayment(task)
         ? await claimPaymentParameterDigest(sendTask)
         : await paymentParameterDigest(sendTask),
       sendTask.clientId,
@@ -645,12 +658,14 @@ async function beginAttempt(
         currentMerchant.activeTaskId !== task.id)
     )
       return false;
-    if (task.source === "claim" && operation === "send") {
+    if (isOrdinaryPayment(task) && operation === "send") {
       const currentDecision = await realSendDecision(env, task);
       if (
         !currentDecision.allowed ||
-        currentDecision.source !== "claim" ||
-        (decision.source === "claim" &&
+        currentDecision.source !== task.source ||
+        ((decision.source === "claim" || decision.source === "withdrawal") &&
+          (currentDecision.source === "claim" ||
+            currentDecision.source === "withdrawal") &&
           currentDecision.controlsVersion !== decision.controlsVersion) ||
         currentMerchant?.credentialVersion !== credentialVersion ||
         currentMerchant?.clientId !== sendTask.clientId ||
@@ -740,7 +755,13 @@ async function finishAttempt(
         Math.max(result.retryAfterMs ?? 30_000, backoff(sendBackoff, "send"));
     } else if (result.kind === "rejected") {
       unknown = task.unknownOutcome;
-      status = unknown ? "reconciling" : "attention";
+      // A 转出 Credit refused for good, with no order made: 未发出, and its
+      // 🐟 go back in this same batch (no one is asked to resend it).
+      status = unknown
+        ? "reconciling"
+        : task.source === "withdrawal" && noOrderEvidence && !hasOrder(task)
+          ? "failed"
+          : "attention";
       sendBlock = result.reason;
       nextSend = null;
       outcome = "rejected";
@@ -831,7 +852,7 @@ async function finishAttempt(
           previous &&
           current?.verification_status === "passed" &&
           (credentialVersion > previous.credential_version ||
-            (task.source === "claim" &&
+            (isOrdinaryPayment(task) &&
               credentialVersion === previous.credential_version &&
               current.verification_checked_at !== null &&
               previous.finished_at !== null &&
@@ -856,6 +877,7 @@ async function finishAttempt(
       }
     }
   }
+  if (status === "failed") nextAction = "none";
   // Stopped by the daily limit with nothing sent: there is nothing to look up
   // before the day turns, so it sleeps until then, still saying why.
   if (
@@ -884,7 +906,10 @@ async function finishAttempt(
       ? (nextSend ?? nextQuery)
       : Math.max(nextQuery, queryRetryAfter ?? 0);
   const cipher = await diagnostic(env, task.id, attemptId, result);
-  const retain = status !== "confirmed" && (unknown || status !== "attention");
+  const retain =
+    status !== "confirmed" &&
+    status !== "failed" &&
+    (unknown || status !== "attention");
   const rejectedCredentials =
     (result.kind === "waiting" && result.reason === "credentials") ||
     (result.kind === "unknown" &&
@@ -952,6 +977,10 @@ async function finishAttempt(
       merchant.id,
       token,
     ),
+    // A 转出's own end, with its payment's (balance/withdrawal-settlement.ts).
+    ...(task.source === "withdrawal"
+      ? withdrawalSettlementStatements(env, task.id, now)
+      : []),
   ]);
   if (saved[0]?.meta.changes)
     console.info(
@@ -1271,7 +1300,7 @@ export async function runRealMerchantCycle(
       processed: false,
       nextRunAt: await realMerchantNextDue(env, merchantId),
     };
-  if (task.source === "claim") {
+  if (isOrdinaryPayment(task)) {
     const decision =
       selected.operation === "send"
         ? await realSendDecision(env, task)

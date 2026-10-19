@@ -10,6 +10,8 @@ export const paymentStateSchema = z.enum([
   "waiting",
   "confirmed",
   "attention",
+  /** 未发出: only a 🐟额 转出, turned down for good with no order made. */
+  "failed",
 ]);
 export type PaymentState = z.infer<typeof paymentStateSchema>;
 export const simulationScenarioSchema = z.enum([
@@ -282,6 +284,7 @@ export const PAYMENT_LABELS: Record<PaymentState, string> = {
   waiting: "等待恢复",
   confirmed: "已发放",
   attention: "异常待处理",
+  failed: "未发出",
 };
 
 export function paymentLabel(mode: PaymentMode, status: PaymentState): string {

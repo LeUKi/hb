@@ -1,5 +1,6 @@
 import { relations, sql } from "drizzle-orm";
 import {
+  type AnySQLiteColumn,
   check,
   foreignKey,
   index,
@@ -615,10 +616,14 @@ export const paymentTasks = sqliteTable(
   {
     id: text("id").primaryKey(),
     claimId: text("claim_id").references(() => claims.id),
-    source: text("source", { enum: ["claim", "acceptance"] })
+    source: text("source", { enum: ["claim", "acceptance", "withdrawal"] })
       .notNull()
       .default("claim"),
     acceptanceId: text("acceptance_id").references(() => paymentAcceptances.id),
+    /** A 🐟额 转出, sent by the platform app (docs/balance-design.md §5). */
+    withdrawalId: text("withdrawal_id").references(
+      (): AnySQLiteColumn => balanceWithdrawals.id,
+    ),
     merchantId: text("merchant_id")
       .notNull()
       .references(() => merchants.id),
@@ -636,6 +641,8 @@ export const paymentTasks = sqliteTable(
         "waiting",
         "confirmed",
         "attention",
+        // 未发出: a 转出 Credit turned down for good, with no order made.
+        "failed",
       ],
     })
       .notNull()
@@ -652,7 +659,9 @@ export const paymentTasks = sqliteTable(
     updatedAt: integer("updated_at").notNull(),
     confirmedAt: integer("confirmed_at"),
     sendAcknowledgedAt: integer("send_acknowledged_at"),
-    recoveryPolicy: text("recovery_policy", { enum: ["claim_same_order_v1"] }),
+    recoveryPolicy: text("recovery_policy", {
+      enum: ["claim_same_order_v1", "withdrawal_same_order_v1"],
+    }),
     parameterDigest: text("parameter_digest"),
     firstSendAt: integer("first_send_at"),
     nextAction: text("next_action", { enum: ["query", "send", "none"] })
@@ -675,9 +684,10 @@ export const paymentTasks = sqliteTable(
   (table) => [
     uniqueIndex("payment_tasks_claim_unique").on(table.claimId),
     uniqueIndex("payment_tasks_acceptance_unique").on(table.acceptanceId),
+    uniqueIndex("payment_tasks_withdrawal_unique").on(table.withdrawalId),
     check(
       "payment_tasks_source_valid",
-      sql`(${table.source} = 'claim' AND ${table.claimId} IS NOT NULL AND ${table.acceptanceId} IS NULL) OR (${table.source} = 'acceptance' AND ${table.claimId} IS NULL AND ${table.acceptanceId} IS NOT NULL AND ${table.mode} = 'real')`,
+      sql`(${table.source} = 'claim' AND ${table.claimId} IS NOT NULL AND ${table.acceptanceId} IS NULL AND ${table.withdrawalId} IS NULL) OR (${table.source} = 'acceptance' AND ${table.claimId} IS NULL AND ${table.acceptanceId} IS NOT NULL AND ${table.withdrawalId} IS NULL AND ${table.mode} = 'real') OR (${table.source} = 'withdrawal' AND ${table.claimId} IS NULL AND ${table.acceptanceId} IS NULL AND ${table.withdrawalId} IS NOT NULL AND ${table.mode} = 'real')`,
     ),
     uniqueIndex("payment_tasks_business_unique").on(
       table.clientId,
@@ -1239,7 +1249,7 @@ export const balanceEntries = sqliteTable(
     lockedDeltaMinor: integer("locked_delta_minor").notNull().default(0),
     topupId: text("topup_id").references(() => balanceTopups.id),
     adjustmentId: text("adjustment_id").references(() => balanceAdjustments.id),
-    /** A lock (转出, later 🐟 红包); its table comes with 转出. */
+    /** A lock (转出, later 🐟 红包): balance_locks, checked by trigger. */
     lockId: text("lock_id"),
     createdAt: integer("created_at").notNull(),
   },
@@ -1250,6 +1260,13 @@ export const balanceEntries = sqliteTable(
     uniqueIndex("balance_entries_adjustment_unique")
       .on(table.adjustmentId)
       .where(sql`${table.kind} = 'adjustment'`),
+    // A lock is made once and given back at most once.
+    uniqueIndex("balance_entries_lock_unique")
+      .on(table.lockId)
+      .where(sql`${table.kind} = 'lock'`),
+    uniqueIndex("balance_entries_unlock_unique")
+      .on(table.lockId)
+      .where(sql`${table.kind} = 'unlock'`),
     index("balance_entries_user_time_idx").on(
       table.userId,
       table.createdAt,
@@ -1262,6 +1279,114 @@ export const balanceEntries = sqliteTable(
         OR (${table.kind} = 'lock' AND ${table.lockId} IS NOT NULL AND ${table.availableDeltaMinor} < 0 AND ${table.lockedDeltaMinor} = -${table.availableDeltaMinor})
         OR (${table.kind} = 'unlock' AND ${table.lockId} IS NOT NULL AND ${table.availableDeltaMinor} > 0 AND ${table.lockedDeltaMinor} = -${table.availableDeltaMinor})
         OR (${table.kind} = 'deduct' AND ${table.lockId} IS NOT NULL AND ${table.availableDeltaMinor} = 0 AND ${table.lockedDeltaMinor} < 0)`,
+    ),
+  ],
+);
+
+/**
+ * A 转出 (docs/balance-design.md §5): its 🐟 locked when asked for, sent by
+ * the platform app through the payment queue (payment_tasks.withdrawal_id),
+ * then 已发放 (taken) or 未发出 (given back). Fixed once made.
+ */
+export const balanceWithdrawals = sqliteTable(
+  "balance_withdrawals",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    merchantId: text("merchant_id")
+      .notNull()
+      .references(() => merchants.id),
+    clientId: text("client_id").notNull(),
+    businessNo: text("business_no").notNull(),
+    /** The Credit account it goes to, as it was asked for. */
+    recipientId: text("recipient_id").notNull(),
+    recipientUsername: text("recipient_username").notNull(),
+    debitMinor: integer("debit_minor").notNull(),
+    feeMinor: integer("fee_minor").notNull(),
+    creditMinor: integer("credit_minor").notNull(),
+    feePercent: integer("fee_percent").notNull(),
+    settingsVersion: integer("settings_version").notNull(),
+    status: text("status", { enum: ["sending", "sent", "failed"] })
+      .notNull()
+      .default("sending"),
+    failureReason: text("failure_reason", {
+      enum: ["recipient", "self_payment", "configuration", "validation"],
+    }),
+    requestId: text("request_id").notNull(),
+    requestDigest: text("request_digest").notNull(),
+    createdAt: integer("created_at").notNull(),
+    sentAt: integer("sent_at"),
+    failedAt: integer("failed_at"),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("balance_withdrawals_business_no_unique").on(table.businessNo),
+    uniqueIndex("balance_withdrawals_request_unique").on(
+      table.userId,
+      table.requestId,
+    ),
+    index("balance_withdrawals_user_time_idx").on(
+      table.userId,
+      table.createdAt,
+      table.id,
+    ),
+    index("balance_withdrawals_status_time_idx").on(
+      table.status,
+      table.createdAt,
+    ),
+    index("balance_withdrawals_time_idx").on(table.createdAt, table.id),
+    check(
+      "balance_withdrawals_amounts_valid",
+      sql`${table.debitMinor} >= 100 AND ${table.feeMinor} >= 0 AND ${table.creditMinor} > 0 AND ${table.debitMinor} = ${table.creditMinor} + ${table.feeMinor} AND ${table.feePercent} BETWEEN 0 AND 50`,
+    ),
+    check(
+      "balance_withdrawals_status_valid",
+      sql`(${table.status} = 'sending' AND ${table.sentAt} IS NULL AND ${table.failedAt} IS NULL AND ${table.failureReason} IS NULL)
+        OR (${table.status} = 'sent' AND ${table.sentAt} IS NOT NULL AND ${table.failedAt} IS NULL AND ${table.failureReason} IS NULL)
+        OR (${table.status} = 'failed' AND ${table.sentAt} IS NULL AND ${table.failedAt} IS NOT NULL AND ${table.failureReason} IN ('recipient','self_payment','configuration','validation'))`,
+    ),
+  ],
+);
+
+/**
+ * 🐟 held for something (docs/balance-design.md §4): a 转出 now, a 🐟 红包
+ * later. Locked once, then given back (released) or taken (spent); its
+ * entries move it (triggers in migration 0030).
+ */
+export const balanceLocks = sqliteTable(
+  "balance_locks",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    purpose: text("purpose", { enum: ["withdrawal", "activity"] }).notNull(),
+    withdrawalId: text("withdrawal_id").references(() => balanceWithdrawals.id),
+    /** Kept for 🐟 红包. */
+    activityId: text("activity_id"),
+    amountMinor: integer("amount_minor").notNull(),
+    remainingMinor: integer("remaining_minor").notNull(),
+    status: text("status", { enum: ["active", "released", "spent"] })
+      .notNull()
+      .default("active"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("balance_locks_withdrawal_unique").on(table.withdrawalId),
+    index("balance_locks_user_status_idx").on(table.userId, table.status),
+    check(
+      "balance_locks_purpose_valid",
+      sql`(${table.purpose} = 'withdrawal' AND ${table.withdrawalId} IS NOT NULL AND ${table.activityId} IS NULL)
+        OR (${table.purpose} = 'activity' AND ${table.activityId} IS NOT NULL AND ${table.withdrawalId} IS NULL)`,
+    ),
+    check(
+      "balance_locks_amounts_valid",
+      sql`${table.amountMinor} > 0 AND ${table.remainingMinor} BETWEEN 0 AND ${table.amountMinor}
+        AND (${table.status} = 'active' OR ${table.remainingMinor} = 0)
+        AND ${table.status} IN ('active','released','spent')`,
     ),
   ],
 );

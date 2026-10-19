@@ -34,6 +34,7 @@ export const adminPaymentStatusSchema = z.enum([
   "waiting",
   "confirmed",
   "attention",
+  "failed",
 ]);
 export type AdminPaymentStatus = z.infer<typeof adminPaymentStatusSchema>;
 export const adminUserStateSchema = z.enum(["all", "active", "disabled"]);
@@ -93,6 +94,9 @@ export type AdminOverview = {
     undeliveredPaymentTasks: number;
     undeliveredPaymentTasksOverdue: number;
     staleMaintenance: number;
+    /** 站内🐟额: 转入 with a flag or a refused key; 转出 held, unclear or slow. */
+    balanceTopups: number;
+    balanceWithdrawals: number;
   };
   paymentsByMode: {
     mode: "simulation" | "real";
@@ -186,7 +190,7 @@ export type AdminActivitySummary = AdminActivityListItem;
 
 export type AdminPaymentListItem = {
   id: string;
-  source: "claim" | "acceptance";
+  source: "claim" | "acceptance" | "withdrawal";
   mode: "simulation" | "real";
   status: z.infer<typeof paymentStateSchema>;
   reason: string | null;

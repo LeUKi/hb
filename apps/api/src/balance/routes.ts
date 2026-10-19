@@ -1,11 +1,16 @@
 // 站内🐟额 for the person (docs/balance-design.md §8, §9.2).
-import { BALANCE_LIMITS, createTopupSchema } from "@hb/contracts";
+import {
+  BALANCE_LIMITS,
+  createTopupSchema,
+  createWithdrawalSchema,
+} from "@hb/contracts";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { validator } from "hono/validator";
 import { ActivityError } from "../activities/errors";
 import { requireAuth, requireProtectedMutation } from "../auth/session";
 import type { ApiContext } from "../env";
+import { flushPaymentOutbox } from "../payments/scheduler";
 import { requireAppOrigin } from "../security/http";
 import { type BalanceRecordFilter, listRecords, readAccount } from "./ledger";
 import { readBalanceSettings, requireBalanceOpen } from "./settings";
@@ -17,6 +22,11 @@ import {
   payTopup,
   topupView,
 } from "./topups";
+import {
+  createWithdrawal,
+  ownedWithdrawal,
+  withdrawalDetail,
+} from "./withdrawals";
 
 const body = bodyLimit({
   maxSize: 4 * 1024,
@@ -29,7 +39,12 @@ const recordsQuery = validator(
   "query",
   (value): { filter: BalanceRecordFilter; cursor?: string } => {
     const filter = value.filter ?? "all";
-    if (filter !== "all" && filter !== "topup" && filter !== "adjustment")
+    if (
+      filter !== "all" &&
+      filter !== "topup" &&
+      filter !== "withdrawal" &&
+      filter !== "adjustment"
+    )
       throw new ActivityError(400, "INVALID_FILTER", "筛选无效");
     if (value.cursor !== undefined && typeof value.cursor !== "string")
       throw new ActivityError(400, "INVALID_CURSOR", "分页标识无效");
@@ -71,6 +86,7 @@ export const balanceRoutes = new Hono<ApiContext>()
         topupMinMinor: BALANCE_LIMITS.topupMinMinor,
         topupMaxMinor: BALANCE_LIMITS.topupMaxMinor,
         topupDailyHintMinor: BALANCE_LIMITS.topupDailyHintMinor,
+        withdrawMinMinor: BALANCE_LIMITS.withdrawMinMinor,
       },
       account,
       /** 转入 not arrived yet (待确认 or 未完成). */
@@ -125,4 +141,39 @@ export const balanceRoutes = new Hono<ApiContext>()
   .post("/me/balance/topups/:id/pay", async (c) => {
     const session = await requireProtectedMutation(c);
     return c.json(await payTopup(c.env, session.user.id, c.req.param("id")));
+  })
+  .post(
+    "/me/balance/withdrawals",
+    body,
+    validator("json", (value) => {
+      const parsed = createWithdrawalSchema.safeParse(value);
+      if (!parsed.success)
+        throw new ActivityError(400, "INVALID_WITHDRAWAL", "请检查转出数量");
+      return parsed.data;
+    }),
+    async (c) => {
+      const session = await requireProtectedMutation(c);
+      const { withdrawal, taskId } = await createWithdrawal(
+        c.env,
+        session.user.id,
+        c.req.valid("json"),
+      );
+      // Its payment starts now; the sweep catches it if this does not.
+      if (taskId)
+        c.executionCtx.waitUntil(
+          flushPaymentOutbox(c.env, taskId).catch(() => {
+            console.error("balance_withdrawal_wake_failed", { taskId });
+          }),
+        );
+      return c.json({ withdrawal });
+    },
+  )
+  .get("/me/balance/withdrawals/:id", async (c) => {
+    const session = await requireAuth(c);
+    return c.json({
+      withdrawal: await withdrawalDetail(
+        c.env,
+        await ownedWithdrawal(c.env, session.user.id, c.req.param("id")),
+      ),
+    });
   });

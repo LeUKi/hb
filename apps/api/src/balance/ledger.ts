@@ -4,12 +4,14 @@ import {
   amountToMinor,
   type BalanceAdjustmentInput,
   type BalanceTopup,
+  type BalanceWithdrawal,
 } from "@hb/contracts";
 import { ActivityError } from "../activities/errors";
 import type { ApiBindings } from "../env";
 import { sha256Hex } from "../security/crypto";
 import { balanceError } from "./errors";
 import { type TopupRow, topupView } from "./topups";
+import { type WithdrawalRow, withdrawalView } from "./withdrawals";
 
 export type BalanceAccountView = {
   availableMinor: number;
@@ -36,16 +38,17 @@ export type BalanceAdjustmentView = {
   createdAt: number;
 };
 
-/** One line of 明细: a 转入 (whatever its state) or an admin's 调整. */
+/** One line of 明细: a 转入 or 转出 (whatever its state) or an admin's 调整. */
 export type BalanceRecord =
   | { type: "topup"; createdAt: number; topup: BalanceTopup }
+  | { type: "withdrawal"; createdAt: number; withdrawal: BalanceWithdrawal }
   | {
       type: "adjustment";
       createdAt: number;
       adjustment: BalanceAdjustmentView;
     };
 
-export type BalanceRecordFilter = "all" | "topup" | "adjustment";
+export type BalanceRecordFilter = "all" | "topup" | "withdrawal" | "adjustment";
 
 const PAGE_SIZE = 20;
 
@@ -79,7 +82,7 @@ export async function listRecords(
   cursor?: string,
 ) {
   const before = decodeRecordCursor(cursor);
-  const page = (table: "topups" | "adjustments") =>
+  const page = (table: "topups" | "withdrawals" | "adjustments") =>
     env.DB.prepare(
       `SELECT * FROM balance_${table} WHERE user_id=?
         AND (?=0 OR created_at<? OR (created_at=? AND id<?))
@@ -92,19 +95,26 @@ export async function listRecords(
       before?.id ?? "",
       PAGE_SIZE + 1,
     );
-  const [topups, adjustments] = await env.DB.batch<Record<string, unknown>>([
-    page("topups"),
-    page("adjustments"),
-  ]);
+  const [topups, withdrawals, adjustments] = await env.DB.batch<
+    Record<string, unknown>
+  >([page("topups"), page("withdrawals"), page("adjustments")]);
   const records: BalanceRecord[] = [];
-  if (filter !== "adjustment")
+  if (filter === "all" || filter === "topup")
     for (const row of (topups?.results ?? []) as unknown as TopupRow[])
       records.push({
         type: "topup",
         createdAt: row.created_at,
         topup: topupView(row),
       });
-  if (filter !== "topup")
+  if (filter === "all" || filter === "withdrawal")
+    for (const row of (withdrawals?.results ??
+      []) as unknown as WithdrawalRow[])
+      records.push({
+        type: "withdrawal",
+        createdAt: row.created_at,
+        withdrawal: withdrawalView(row),
+      });
+  if (filter === "all" || filter === "adjustment")
     for (const row of (adjustments?.results ?? []) as Record<string, unknown>[])
       records.push({
         type: "adjustment",
@@ -112,7 +122,11 @@ export async function listRecords(
         adjustment: adjustmentView(row),
       });
   const id = (record: BalanceRecord) =>
-    record.type === "topup" ? record.topup.id : record.adjustment.id;
+    record.type === "topup"
+      ? record.topup.id
+      : record.type === "withdrawal"
+        ? record.withdrawal.id
+        : record.adjustment.id;
   records.sort((left, right) =>
     right.createdAt !== left.createdAt
       ? right.createdAt - left.createdAt

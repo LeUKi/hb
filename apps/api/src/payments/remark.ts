@@ -12,15 +12,19 @@ export function claimPaymentRemark(author: string, title: string) {
     : `${remark.slice(0, LIMIT - 1).join("")}…`;
 }
 
+/** What a person reads with their own 🐟额 转出. */
+export const WITHDRAWAL_REMARK = "hb.lafi.sh 站内🐟额转出";
+
 /**
  * The remark for a claim's payment, read when it is sent (a title edited
- * since reads as it is now). Anything else, or a failed read, sends the
- * plain "Linux DO reward": a remark never holds a payment up.
+ * since reads as it is now), or a 转出's. Anything else, or a failed read,
+ * sends the plain "Linux DO reward": a remark never holds a payment up.
  */
 export async function paymentRemark(
   env: ApiBindings,
-  task: { claimId: string | null },
+  task: { claimId: string | null; source?: string },
 ) {
+  if (task.source === "withdrawal") return WITHDRAWAL_REMARK;
   if (!task.claimId) return undefined;
   try {
     const row = await env.DB.prepare(

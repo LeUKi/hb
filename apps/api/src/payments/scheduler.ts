@@ -20,6 +20,7 @@ import {
   synchronizeMerchantPaymentIdentities,
 } from "./identity";
 import {
+  ordinaryPaymentSql,
   realQueryDecision,
   realSendDecision,
   runtimeRealPolicy,
@@ -69,7 +70,7 @@ async function runnableTaskSql(env: ApiBindings) {
   ) {
     const sendEnabled = allowsRealSending(env, await readPlatformControls(env));
     conditions.push(
-      `(p.mode='real' AND p.source='claim' AND p.recovery_policy='claim_same_order_v1' AND (p.first_send_at IS NOT NULL${sendEnabled ? " OR p.first_send_at IS NULL" : ""}))`,
+      `(p.mode='real' AND ${ordinaryPaymentSql("p")} AND (p.first_send_at IS NOT NULL${sendEnabled ? " OR p.first_send_at IS NULL" : ""}))`,
     );
   }
   if (

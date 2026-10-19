@@ -1,4 +1,5 @@
 import { sweepActivityLifecycle } from "./activities/lifecycle";
+import { settleEndedWithdrawals } from "./balance/withdrawal-settlement";
 import type { ApiBindings } from "./env";
 import { sweepPayments } from "./payments/scheduler";
 import { recoverCredentialChecks } from "./payments/verification";
@@ -40,7 +41,15 @@ export async function runMaintenance(env: ApiBindings, scheduledAt: number) {
       run: () => cleanupExpiredIdentityRows(env.DB, new Date(scheduledAt)),
     },
     { name: "activities", run: () => sweepActivityLifecycle(env) },
-    { name: "payments", run: () => sweepPayments(env) },
+    {
+      name: "payments",
+      run: async () => {
+        const woken = await sweepPayments(env);
+        // A 转出 left 发放中 after its payment ended (it should never be).
+        await settleEndedWithdrawals(env);
+        return woken;
+      },
+    },
     { name: "credentials", run: () => recoverCredentialChecks(env) },
   ]);
 }

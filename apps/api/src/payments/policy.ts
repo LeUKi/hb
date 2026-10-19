@@ -42,7 +42,7 @@ export type RealPaymentPolicyDecision =
     }
   | {
       allowed: true;
-      source: "claim";
+      source: "claim" | "withdrawal";
       controlsVersion?: number;
     }
   | {
@@ -51,6 +51,7 @@ export type RealPaymentPolicyDecision =
         | "disabled"
         | "acceptance_mismatch"
         | "claim_mismatch"
+        | "withdrawal_mismatch"
         | "already_consumed"
         | "retry_not_authorized"
         | "retry_expired"
@@ -143,6 +144,75 @@ export function claimPaymentIdentitySql(alias: "p" | "payment_tasks") {
             WHERE d.activity_id=a.id AND json_extract(w.value,'$.claimId')=c.id
             AND json_extract(w.value,'$.userId')=c.user_id AND json_extract(w.value,'$.recipientId')=${alias}.recipient_id
             AND json_extract(w.value,'$.amountMinor')=${alias}.amount_minor))))`;
+}
+
+/**
+ * Ordinary payments, sent and recovered alike under one same-order policy
+ * each: a claim's, and a 🐟额 转出 (the platform app paying a person's own
+ * Credit account; docs/balance-design.md §5). Acceptance tasks are local.
+ */
+export function isOrdinaryPayment(task: Pick<PaymentTaskRow, "source">) {
+  return task.source === "claim" || task.source === "withdrawal";
+}
+
+export function ordinaryRecoveryPolicy(source: PaymentTaskRow["source"]) {
+  return source === "withdrawal"
+    ? "withdrawal_same_order_v1"
+    : "claim_same_order_v1";
+}
+
+/** SQL: an ordinary payment of either kind, under its own policy. */
+export function ordinaryPaymentSql(alias: "p") {
+  return `((${alias}.source='claim' AND ${alias}.recovery_policy='claim_same_order_v1')
+    OR (${alias}.source='withdrawal' AND ${alias}.recovery_policy='withdrawal_same_order_v1'))`;
+}
+
+/**
+ * Rechecked in the send-intent batch: the 转出 is still 发放中 with its 🐟
+ * held whole, from the platform app, to its own person's Credit account.
+ */
+export function withdrawalPaymentIdentitySql(alias: "p" | "payment_tasks") {
+  return `${alias}.source='withdrawal' AND ${alias}.mode='real'
+    AND ${alias}.claim_id IS NULL AND ${alias}.acceptance_id IS NULL
+    AND ${alias}.recovery_policy='withdrawal_same_order_v1'
+    AND EXISTS(SELECT 1 FROM balance_withdrawals w
+      JOIN balance_locks l ON l.withdrawal_id=w.id AND l.status='active' AND l.remaining_minor=w.debit_minor
+      JOIN users u ON u.id=w.user_id
+      JOIN merchants m ON m.id=w.merchant_id
+      WHERE w.id=${alias}.withdrawal_id AND w.status='sending'
+        AND m.kind='platform' AND m.mode='real' AND m.author_id!=w.user_id
+        AND EXISTS(SELECT 1 FROM merchant_client_ids x WHERE x.merchant_id=m.id AND x.client_id=${alias}.client_id)
+        AND w.merchant_id=${alias}.merchant_id AND w.client_id=${alias}.client_id
+        AND w.business_no=${alias}.business_no AND w.debit_minor=${alias}.amount_minor
+        AND w.recipient_id=${alias}.recipient_id AND w.recipient_username=${alias}.recipient_username
+        AND u.provider='linux_do' AND u.external_id=${alias}.recipient_id)`;
+}
+
+async function withdrawalMatchesTask(env: ApiBindings, task: PaymentTaskRow) {
+  if (
+    task.source !== "withdrawal" ||
+    task.mode !== "real" ||
+    task.recoveryPolicy !== "withdrawal_same_order_v1" ||
+    !task.withdrawalId ||
+    task.claimId !== null ||
+    task.acceptanceId !== null ||
+    !task.parameterDigest ||
+    task.parameterDigest !== (await claimPaymentParameterDigest(task))
+  )
+    return false;
+  return Boolean(
+    await env.DB.prepare(
+      `SELECT p.id FROM payment_tasks p WHERE p.id=? AND p.parameter_digest=? AND ${withdrawalPaymentIdentitySql("p")}`,
+    )
+      .bind(task.id, task.parameterDigest)
+      .first(),
+  );
+}
+
+async function ordinaryMatchesTask(env: ApiBindings, task: PaymentTaskRow) {
+  return task.source === "withdrawal"
+    ? withdrawalMatchesTask(env, task)
+    : claimMatchesTask(env, task);
 }
 
 async function claimMatchesTask(env: ApiBindings, task: PaymentTaskRow) {
@@ -373,12 +443,16 @@ export async function realSendDecision(
   task: PaymentTaskRow,
 ): Promise<RealPaymentPolicyDecision> {
   const policy = runtimeRealPolicy(env);
-  if (task.source === "claim") {
+  if (task.source === "claim" || task.source === "withdrawal") {
+    const source = task.source;
     const controls = await readPlatformControls(env);
     if (!allowsRealSending(env, controls))
       return { allowed: false, reason: "disabled" };
-    if (!(await claimMatchesTask(env, task)))
-      return { allowed: false, reason: "claim_mismatch" };
+    if (!(await ordinaryMatchesTask(env, task)))
+      return {
+        allowed: false,
+        reason: source === "claim" ? "claim_mismatch" : "withdrawal_mismatch",
+      };
     const effective = await effectiveClaimPaymentTask(env, task);
     const merchant = await env.DB.prepare(
       "SELECT client_id FROM merchants WHERE id=?",
@@ -398,7 +472,7 @@ export async function realSendDecision(
         return { allowed: false, reason: "already_consumed" };
       return {
         allowed: true,
-        source: "claim",
+        source,
         controlsVersion: controls.version,
       };
     }
@@ -416,7 +490,7 @@ export async function realSendDecision(
       return { allowed: false, reason: "not_due" };
     return {
       allowed: true,
-      source: "claim",
+      source,
       controlsVersion: controls.version,
     };
   }
@@ -470,17 +544,21 @@ export async function realQueryDecision(
   task: PaymentTaskRow,
 ): Promise<RealPaymentPolicyDecision> {
   const policy = runtimeRealPolicy(env);
-  if (task.source === "claim") {
+  if (task.source === "claim" || task.source === "withdrawal") {
     if (
       env.APP_ENV !== "production" ||
       (policy.networkMode !== "verify" && policy.networkMode !== "live")
     )
       return { allowed: false, reason: "disabled" };
-    if (!(await claimMatchesTask(env, task)))
-      return { allowed: false, reason: "claim_mismatch" };
+    if (!(await ordinaryMatchesTask(env, task)))
+      return {
+        allowed: false,
+        reason:
+          task.source === "claim" ? "claim_mismatch" : "withdrawal_mismatch",
+      };
     if (task.firstSendAt === null)
       return { allowed: false, reason: "already_consumed" };
-    return { allowed: true, source: "claim" };
+    return { allowed: true, source: task.source };
   }
   const acceptance = await loadPaymentAcceptance(
     env,

@@ -46,6 +46,7 @@ import { ActivityValidationError } from "../activities/routes";
 import { activityStatus, projectActivitySummary } from "../activities/service";
 import type { ActivityRow } from "../activities/storage";
 import { assertCsrf, requireAdmin } from "../auth/session";
+import { balanceAttentionCounts } from "../balance/admin";
 import { createDb } from "../db/client";
 import { activities } from "../db/schema";
 import type { ApiBindings, ApiContext } from "../env";
@@ -347,7 +348,10 @@ function readConfig(env: ApiBindings): Promise<AttemptRateLimitsResponse> {
 
 async function overview(env: ApiBindings): Promise<AdminOverview> {
   const now = Date.now();
-  const controls = await readPlatformControls(env);
+  const [controls, balance] = await Promise.all([
+    readPlatformControls(env),
+    balanceAttentionCounts(env),
+  ]);
   const [
     counts,
     stalePayments,
@@ -364,9 +368,9 @@ async function overview(env: ApiBindings): Promise<AdminOverview> {
       (SELECT COUNT(*) FROM activities WHERE reward_type='ldc' AND deleted_at IS NULL) AS activities,
       (SELECT COUNT(*) FROM activities WHERE reward_type='ldc' AND deleted_at IS NULL AND opened_at IS NULL) AS drafts,
       (SELECT COUNT(*) FROM payment_tasks) AS payments,
-      (SELECT COUNT(*) FROM payment_tasks WHERE status!='confirmed') AS unconfirmedPayments`),
+      (SELECT COUNT(*) FROM payment_tasks WHERE status NOT IN ('confirmed','failed')) AS unconfirmedPayments`),
     env.DB.prepare(
-      "SELECT COUNT(*) AS count FROM payment_tasks WHERE status!='confirmed' AND created_at<=?",
+      "SELECT COUNT(*) AS count FROM payment_tasks WHERE status NOT IN ('confirmed','failed') AND created_at<=?",
     ).bind(now - ADMIN_DIAGNOSTIC_THRESHOLDS.paymentWaitMs - 1),
     env.DB.prepare(
       "SELECT COUNT(*) AS count FROM payment_tasks WHERE unknown_outcome=1",
@@ -387,7 +391,7 @@ async function overview(env: ApiBindings): Promise<AdminOverview> {
     ),
     env.DB.prepare(`SELECT mode,status,COUNT(*) AS count,
       MAX(CAST((? - created_at)/1000 AS INTEGER)) AS oldestAgeSeconds
-      FROM payment_tasks WHERE status!='confirmed'
+      FROM payment_tasks WHERE status NOT IN ('confirmed','failed')
       GROUP BY mode,status ORDER BY mode,status`).bind(now),
     env.DB.prepare(
       "SELECT job,scheduled_at,started_at,finished_at,status,reason FROM maintenance_runs ORDER BY job",
@@ -486,6 +490,8 @@ async function overview(env: ApiBindings): Promise<AdminOverview> {
       undeliveredPaymentTasks: asInt(outboxTotalRow.count),
       undeliveredPaymentTasksOverdue: asInt(outboxOverdueRow.count),
       staleMaintenance,
+      balanceTopups: balance.topups,
+      balanceWithdrawals: balance.withdrawals,
     },
     paymentsByMode: (
       (byMode?.results ?? []) as Array<Record<string, unknown>>
@@ -907,7 +913,7 @@ async function listPayments(
   if (query.anomaly === "unknown") where.push("p.unknown_outcome=1");
   if (query.anomaly === "attention") where.push("p.status='attention'");
   if (query.anomaly === "overdue") {
-    where.push("p.status!='confirmed' AND p.created_at<=?");
+    where.push("p.status NOT IN ('confirmed','failed') AND p.created_at<=?");
     values.push(Date.now() - ADMIN_DIAGNOSTIC_THRESHOLDS.paymentWaitMs - 1);
   }
   if (query.anomaly === "undelivered")
