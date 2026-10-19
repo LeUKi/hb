@@ -61,7 +61,15 @@ export function useAccountPaymentPages(
       previousQuery.queryKey[3] === (activityId ?? "*")
         ? previous
         : undefined,
-    refetchInterval: 15_000,
+    // Every loaded page is read again each time: often while payments are
+    // on their way, once a minute otherwise, so a new claim's still shows
+    // (docs/redesign/07 §8).
+    refetchInterval: (query) => {
+      const summary = query.state.data?.pages[0]?.summary;
+      return !summary || summary.openCount - summary.attentionCount > 0
+        ? 15_000
+        : 60_000;
+    },
     refetchIntervalInBackground: false,
   });
 }

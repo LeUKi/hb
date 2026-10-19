@@ -21,6 +21,7 @@ import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { claimActivity } from "../src/activities/claim-service";
 import { refreshTimedDraw } from "../src/activities/draw-service";
+import { sweepActivityLifecycle } from "../src/activities/lifecycle";
 import { registerForDraw } from "../src/activities/registration-service";
 import { createActivity, openActivity } from "../src/activities/service";
 import { app } from "../src/app";
@@ -1221,4 +1222,89 @@ describe("production presentation queries", () => {
       404,
     );
   });
+});
+
+/**
+ * What D1 reads while `work` runs, from each statement's and batch's meta
+ * (first() is read through all(), which returns the same row with meta).
+ */
+async function rowsReadDuring(work: () => Promise<unknown>) {
+  let rows = 0;
+  const statement = Object.getPrototypeOf(env.DB.prepare("SELECT 1"));
+  const all = statement.all as D1PreparedStatement["all"];
+  const run = statement.run as D1PreparedStatement["run"];
+  const batch = env.DB.batch.bind(env.DB);
+  vi.spyOn(statement, "all").mockImplementation(async function (
+    this: D1PreparedStatement,
+  ) {
+    const result = await all.call(this);
+    rows += result.meta.rows_read ?? 0;
+    return result;
+  });
+  vi.spyOn(statement, "first").mockImplementation(async function (
+    this: D1PreparedStatement,
+    ...args: unknown[]
+  ) {
+    const column = args[0] as string | undefined;
+    const result = await all.call(this);
+    rows += result.meta.rows_read ?? 0;
+    const row = (result.results[0] ?? null) as Record<string, unknown> | null;
+    return column === undefined ? row : (row?.[column] ?? null);
+  });
+  vi.spyOn(statement, "run").mockImplementation(async function (
+    this: D1PreparedStatement,
+  ) {
+    const result = await run.call(this);
+    rows += result.meta.rows_read ?? 0;
+    return result;
+  });
+  vi.spyOn(env.DB, "batch").mockImplementation(async (statements) => {
+    const results = await batch(statements);
+    for (const result of results) rows += result.meta.rows_read ?? 0;
+    return results;
+  });
+  try {
+    await work();
+  } finally {
+    vi.restoreAllMocks();
+  }
+  return rows;
+}
+
+describe("D1 reads that would grow with the data (06 §12)", () => {
+  // Four 红包 of eight payments each, all from one merchant.
+  async function paid() {
+    const made = [];
+    for (let index = 0; index < 4; index++)
+      made.push(
+        await create(ldc({ mode: "fixed", totalAmount: "8.00", count: 8 })),
+      );
+    const entrants = await Promise.all(Array.from({ length: 8 }, actor));
+    for (const activity of made)
+      for (const user of entrants) await redeem(activity.id, user);
+    return made;
+  }
+
+  it("reads the account's payments once each, not once per payment of the 红包", async () => {
+    const made = await paid();
+    // 32 payments, with the session and the page's 红包: about 380 rows.
+    // Re-reading each 红包's payments per payment, or the merchant's per
+    // 红包, took 1,122.
+    const list = await rowsReadDuring(() =>
+      data<AccountPaymentList>("/me/payments", owner),
+    );
+    expect(list).toBeLessThan(500);
+    // One 红包's 8: about 106 rows (it was 286).
+    const one = await rowsReadDuring(() =>
+      data<AccountPaymentList>(`/me/payments?activity=${made[0]?.id}`, owner),
+    );
+    expect(one).toBeLessThan(180);
+  }, 60_000);
+
+  it("finds 红包 due for the lifecycle sweep without reading every submission", async () => {
+    await paid();
+    // The four 红包 themselves; not their 32 claims' submissions (it read 39).
+    const rows = await rowsReadDuring(() => sweepActivityLifecycle(bindings));
+    expect(rows).toBeLessThanOrEqual(8);
+  }, 60_000);
 });

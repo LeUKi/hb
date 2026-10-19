@@ -76,7 +76,7 @@ export async function sweepActivityLifecycle(env: ApiBindings) {
       await env.DB.prepare(`SELECT id FROM activities WHERE id > ? AND reward_type = 'ldc' AND deleted_at IS NULL AND opened_at IS NOT NULL AND
       ((ended_at IS NULL AND deadline <= ${databaseNow}) OR (ended_at IS NOT NULL AND archived_at IS NULL AND ended_at + ? <= ${databaseNow})
         OR draw_state='settling'
-        OR EXISTS (SELECT 1 FROM redemption_submissions WHERE activity_id = activities.id AND purpose='claim' AND outcome = 'pending'))
+        OR id IN (SELECT activity_id FROM redemption_submissions WHERE outcome = 'pending' AND purpose = 'claim'))
       ORDER BY id LIMIT 50`)
         .bind(cursor, ARCHIVE_DELAY_MS)
         .all<{ id: string }>();

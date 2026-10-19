@@ -42,9 +42,12 @@ function parseCursor(value: string | undefined, scope: string) {
 }
 
 /** The account's payments: claims of its own LDC 红包, paid by their merchant. */
+// The unary + keeps D1 off payment_tasks' merchant index, which would read
+// every payment of the merchant once per 红包: the plan goes author → 红包 →
+// claim → payment instead (docs/redesign/06 §12).
 function scopeSql(activityId: string | undefined) {
   return `p.source='claim' AND a.author_id=? AND a.reward_type='ldc'
-    AND a.deleted_at IS NULL AND p.merchant_id=a.merchant_id${activityId ? " AND a.id=?" : ""}`;
+    AND a.deleted_at IS NULL AND +p.merchant_id=a.merchant_id${activityId ? " AND a.id=?" : ""}`;
 }
 
 type Row = {
@@ -118,7 +121,7 @@ async function summaryOf(
           COALESCE((SELECT i.corrected_client_id FROM payment_identity_corrections i
             WHERE i.task_id=p.id ORDER BY i.version DESC LIMIT 1), p.client_id) AS client_id
         FROM payment_tasks p JOIN claims c ON c.id=p.claim_id JOIN activities a ON a.id=c.activity_id
-        WHERE ${scopeSql(activityId)} AND p.mode='real' AND p.status<>'confirmed'
+        WHERE ${scopeSql(activityId)} AND +p.mode='real' AND p.status<>'confirmed'
       ), latest AS (
         SELECT e.id, e.created_at, e.client_id, m.client_id AS current_client_id,
           (SELECT cr.verification_status || ':' || COALESCE(cr.verification_reason,'')
@@ -174,13 +177,13 @@ export async function listAccountPayments(
   const pageBinds = after
     ? [after.g, after.g, after.a, after.a, after.t, after.t, after.id]
     : [];
-  // A 红包's place is its latest payment, so its payments stay together.
+  // A 红包's place is its latest payment, so its payments stay together:
+  // one window over the listed payments, each read once.
   const rows = await env.DB.prepare(`WITH mine AS (
       SELECT p.id, p.mode, p.status, p.reason, p.confirmed_at, p.amount_minor, p.business_no,
         p.external_order_id, p.created_at, p.next_run_at, p.claim_id, p.merchant_id,
         c.activity_id, c.user_id AS claimant_id,
-        (SELECT MAX(p2.created_at) FROM payment_tasks p2 JOIN claims c2 ON c2.id=p2.claim_id
-          WHERE c2.activity_id=c.activity_id AND p2.source='claim') AS group_at
+        MAX(p.created_at) OVER (PARTITION BY c.activity_id) AS group_at
       FROM payment_tasks p JOIN claims c ON c.id=p.claim_id JOIN activities a ON a.id=c.activity_id
       WHERE ${scopeSql(activityId)}
     )
