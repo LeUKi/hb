@@ -145,6 +145,10 @@ test.describe("兑奖", () => {
     await openApp(page);
     await lookUp(page, "测试口令2099");
     await expect(shown(page, "未匹配到红包。")).toBeVisible();
+    // The answer is kept a moment after it shows: leave once it is.
+    await expect(
+      page.getByRole("button", { name: "填入 测试口令2099，未匹配" }),
+    ).toBeAttached();
 
     // A fresh start page (another address first: reloading this one would
     // keep the open box's history state), not focused until tapped.
