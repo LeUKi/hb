@@ -3,6 +3,7 @@
 import {
   balanceAdjustmentSchema,
   confirmTopupSchema,
+  createInviteLinkSchema,
   savePlatformAppSchema,
   updateBalanceSettingsSchema,
 } from "@hb/contracts";
@@ -16,6 +17,7 @@ import { ActivityValidationError } from "../activities/routes";
 import { requireAdmin, requireProtectedMutation } from "../auth/session";
 import type { ApiContext } from "../env";
 import { beginCredentialVerification } from "../payments/verification";
+import { requireAppOrigin } from "../security/http";
 import {
   adminBalanceOverview,
   adminTopupDetail,
@@ -27,7 +29,13 @@ import {
   listAdminWithdrawals,
 } from "./admin";
 import { balanceError } from "./errors";
-import { listAdminInvites, listAdminMembers } from "./invites";
+import {
+  createInviteLink,
+  listAdminInvites,
+  listAdminMembers,
+  listInviteLinks,
+  stopInviteLink,
+} from "./invites";
 import { adjustBalance, decodeRecordCursor } from "./ledger";
 import {
   platformAppView,
@@ -131,6 +139,28 @@ export const balanceAdminRoutes = new Hono<ApiContext>()
   .get("/admin/balance/invites", async (c) =>
     c.json(await listAdminInvites(c.env, decodeRecordCursor(cursorOf(c)))),
   )
+  // 通用链接 (docs/balance-design.md §13): the link is in the answer only.
+  .get("/admin/balance/invite-links", async (c) =>
+    c.json(await listInviteLinks(c.env, decodeRecordCursor(cursorOf(c)))),
+  )
+  .post("/admin/balance/invite-links", body, async (c) => {
+    const session = await adminMutation(c);
+    const input = await parsed(c, createInviteLinkSchema);
+    return c.json(
+      await createInviteLink(
+        c.env,
+        session.user.id,
+        input,
+        requireAppOrigin(c.env),
+      ),
+    );
+  })
+  .post("/admin/balance/invite-links/:id/stop", async (c) => {
+    const session = await adminMutation(c);
+    return c.json(
+      await stopInviteLink(c.env, session.user.id, c.req.param("id")),
+    );
+  })
   .get("/admin/balance/adjustments", async (c) =>
     c.json(await listAdminAdjustments(c.env, cursorOf(c))),
   )

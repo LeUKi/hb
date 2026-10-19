@@ -225,6 +225,13 @@
       "when": 1792415137945,
       "tag": "0031_fish_invites",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1792417787364,
+      "tag": "0032_fish_invite_links",
+      "breakpoints": true
     }
   ]
 }

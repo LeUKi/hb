@@ -1163,6 +1163,237 @@ describe("邀请", () => {
         .run(),
     ).rejects.toThrow(/for good/);
   });
+
+  type LinkJson = {
+    url: string;
+    link: {
+      id: string;
+      status: string;
+      maxUses: number;
+      useCount: number;
+      expiresAt: number;
+      stoppedBy: { username: string } | null;
+    };
+  };
+  const makeLink = (who: Actor, maxUses: unknown, days: unknown) =>
+    call("POST", "/admin/balance/invite-links", who, { maxUses, days });
+  const tokenOf = (result: { json: never }) =>
+    (result.json as LinkJson).url.split("/invite/")[1] ?? "";
+
+  it("lets admins make 通用链接 for whoever has them, up to a number of people", async () => {
+    const { admin, tester } = await openForTester();
+    expect((await makeLink(tester, 5, 1)).status).toBe(403);
+    for (const [maxUses, days] of [
+      [0, 1],
+      [1001, 1],
+      [1.5, 1],
+      [5, 3],
+      ["5", 1],
+    ])
+      expect((await makeLink(admin, maxUses, days)).status).toBe(400);
+    const made = await makeLink(admin, 2, 7);
+    expect(made.status).toBe(200);
+    const { url, link } = made.json as LinkJson;
+    expect(url).toMatch(
+      /^https:\/\/hb\.example\.com\/invite\/[A-Za-z0-9_-]{43}$/,
+    );
+    expect(link).toMatchObject({ status: "active", maxUses: 2, useCount: 0 });
+    expect(link.expiresAt - Date.now()).toBeGreaterThan(
+      7 * 86_400_000 - 60_000,
+    );
+    const token = tokenOf(made);
+
+    // It names no one: a guest sees who made it; anyone may accept.
+    expect((await call("GET", `/invites/${token}`)).json).toMatchObject({
+      invite: {
+        username: null,
+        status: "pending",
+        inviter: { username: admin.username },
+      },
+      viewer: null,
+    });
+    expect(
+      code(await call("POST", `/invites/${token}/accept`, admin)).code,
+    ).toBe("INVITE_OWN");
+    expect(
+      code(await call("POST", `/invites/${token}/accept`, tester)).code,
+    ).toBe("INVITE_ALREADY_MEMBER");
+    const first = await actor("first");
+    const second = await actor("second");
+    const third = await actor("third");
+    expect(
+      ((await call("GET", `/invites/${token}`, first)).json as InviteRead)
+        .viewer,
+    ).toMatchObject({ matches: true, member: false });
+    expect((await call("POST", `/invites/${token}/accept`, first)).status).toBe(
+      200,
+    );
+    // Twice is still one use.
+    expect((await call("POST", `/invites/${token}/accept`, first)).status).toBe(
+      200,
+    );
+    expect(
+      (await call("POST", `/invites/${token}/accept`, second)).status,
+    ).toBe(200);
+    const full = await call("POST", `/invites/${token}/accept`, third);
+    expect(code(full)).toMatchObject({
+      code: "INVITE_USED_UP",
+      message: "这条邀请链接的名额已经用完了。",
+    });
+    expect(
+      ((await call("GET", `/invites/${token}`, third)).json as InviteRead)
+        .invite.status,
+    ).toBe("used_up");
+    expect(
+      (
+        (await call("GET", `/invites/${token}`, first)).json as {
+          viewer: { acceptedThis: boolean };
+        }
+      ).viewer.acceptedThis,
+    ).toBe(true);
+    expect((await call("GET", "/me/balance", second)).json).toMatchObject({
+      access: { topup: true, invite: true },
+    });
+
+    // Admins see it with its uses, and whom it brought in.
+    const links = await call("GET", "/admin/balance/invite-links", admin);
+    expect((links.json as { items: unknown[] }).items[0]).toMatchObject({
+      id: link.id,
+      status: "used_up",
+      useCount: 2,
+      createdBy: { username: admin.username },
+    });
+    expect(
+      (await call("GET", "/admin/balance/invite-links", tester)).status,
+    ).toBe(403);
+    const members = (
+      (await call("GET", "/admin/balance/members", admin)).json as {
+        items: { id: string; viaLink: boolean; invitedBy: unknown }[];
+      }
+    ).items;
+    expect(members.find((item) => item.id === first.id)).toMatchObject({
+      viaLink: true,
+      invitedBy: { username: admin.username },
+    });
+    expect(members.find((item) => item.id === tester.id)?.viaLink).toBe(false);
+    expect(
+      (await call("GET", `/admin/balance/users/${second.id}`, admin)).json,
+    ).toMatchObject({ member: { viaLink: true } });
+    // Not among the links for a username, the admin's own or anyone's.
+    for (const path of ["/me/balance/invites", "/admin/balance/invites"])
+      expect(
+        (
+          (await call("GET", path, admin)).json as { items: { id: string }[] }
+        ).items.map((item) => item.id),
+      ).not.toContain(link.id);
+    // Used up: nothing to stop.
+    expect(
+      code(
+        await call(
+          "POST",
+          `/admin/balance/invite-links/${link.id}/stop`,
+          admin,
+        ),
+      ).code,
+    ).toBe("INVITE_LINK_ENDED");
+  });
+
+  it("stops a 通用链接 (who is in stays in), and lets it expire", async () => {
+    const { admin, tester } = await openForTester();
+    const made = await makeLink(admin, 10, 1);
+    const { link } = made.json as LinkJson;
+    const token = tokenOf(made);
+    const early = await actor("early");
+    const late = await actor("late");
+    expect((await call("POST", `/invites/${token}/accept`, early)).status).toBe(
+      200,
+    );
+    const stopPath = `/admin/balance/invite-links/${link.id}/stop`;
+    expect((await call("POST", stopPath, tester)).status).toBe(403);
+    const stopped = await call("POST", stopPath, admin);
+    expect(stopped.status).toBe(200);
+    expect((stopped.json as LinkJson).link).toMatchObject({
+      status: "stopped",
+      useCount: 1,
+      stoppedBy: { username: admin.username },
+    });
+    expect((await call("POST", stopPath, admin)).status).toBe(200);
+    expect(
+      code(await call("POST", `/invites/${token}/accept`, late)),
+    ).toMatchObject({
+      code: "INVITE_STOPPED",
+      message: "这条邀请链接已经停用。",
+    });
+    expect(
+      ((await call("GET", `/invites/${token}`, late)).json as InviteRead).invite
+        .status,
+    ).toBe("stopped");
+    expect((await call("GET", "/me/balance", early)).json).toMatchObject({
+      access: { topup: true },
+    });
+
+    const next = await makeLink(admin, 10, 1);
+    const nextId = (next.json as LinkJson).link.id;
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 86_400_001);
+    expect(
+      (await call("POST", `/invites/${tokenOf(next)}/accept`, late)).status,
+    ).toBe(410);
+    expect(
+      (
+        (await call("GET", `/invites/${tokenOf(next)}`, late))
+          .json as InviteRead
+      ).invite.status,
+    ).toBe("expired");
+    expect(
+      code(
+        await call("POST", `/admin/balance/invite-links/${nextId}/stop`, admin),
+      ).code,
+    ).toBe("INVITE_LINK_ENDED");
+  });
+
+  it("holds a 通用链接 to its uses and its cap in the database too", async () => {
+    const { admin } = await openForTester();
+    const made = await makeLink(admin, 1, 1);
+    const linkId = (made.json as LinkJson).link.id;
+    const someone = await actor("someone");
+    const join = (userId: string) =>
+      env.DB.prepare(
+        "INSERT INTO balance_members (user_id,invited_by_user_id,invite_id,created_at) VALUES (?,?,?,?)",
+      )
+        .bind(userId, admin.id, linkId, Date.now())
+        .run();
+    // A member for each use counted, and no more uses than it allows.
+    await expect(join(someone.id)).rejects.toThrow(/accepted/);
+    await expect(
+      env.DB.prepare("UPDATE balance_invites SET use_count=2 WHERE id=?")
+        .bind(linkId)
+        .run(),
+    ).rejects.toThrow();
+    await env.DB.prepare(
+      "UPDATE balance_invites SET use_count=use_count+1 WHERE id=?",
+    )
+      .bind(linkId)
+      .run();
+    await join(someone.id);
+    await expect(join((await actor("extra")).id)).rejects.toThrow(/accepted/);
+    await expect(
+      env.DB.prepare("UPDATE balance_invites SET max_uses=5 WHERE id=?")
+        .bind(linkId)
+        .run(),
+    ).rejects.toThrow(/fixed/);
+    await env.DB.prepare(
+      "UPDATE balance_invites SET stopped_at=?,stopped_by_user_id=? WHERE id=?",
+    )
+      .bind(Date.now(), admin.id, linkId)
+      .run();
+    await expect(
+      env.DB.prepare(
+        "UPDATE balance_invites SET stopped_at=NULL,stopped_by_user_id=NULL WHERE id=?",
+      )
+        .bind(linkId)
+        .run(),
+    ).rejects.toThrow(/stopped once/);
+  });
 });
 
 /** Another admin for reading, alongside the current ones. */

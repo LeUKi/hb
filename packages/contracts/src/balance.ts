@@ -21,6 +21,9 @@ export const BALANCE_LIMITS = {
   withdrawalsPerHour: 30,
   /** An invitation's link lasts a day. */
   inviteLifetimeMs: 86_400_000,
+  /** An admin's 通用链接: up to this many people, for 1 or 7 days. */
+  inviteLinkMaxUses: 1000,
+  inviteLinkDays: [1, 7],
 } as const;
 
 /**
@@ -282,6 +285,29 @@ export const createInviteSchema = z.strictObject({
 });
 export type CreateInviteInput = z.infer<typeof createInviteSchema>;
 
+/** An admin's 通用链接: how many people may use it, and for how long. */
+export const createInviteLinkSchema = z.strictObject({
+  maxUses: z
+    .number({ error: "请填最多几个人用" })
+    .int("人数是整数")
+    .min(1, "至少 1 个人")
+    .max(
+      BALANCE_LIMITS.inviteLinkMaxUses,
+      `最多 ${BALANCE_LIMITS.inviteLinkMaxUses} 个人`,
+    ),
+  days: z.union([z.literal(1), z.literal(7)], {
+    error: "有效期是 1 天或 7 天",
+  }),
+});
+export type CreateInviteLinkInput = z.infer<typeof createInviteLinkSchema>;
+
+/** 有效 / 已用完 / 已过期 / 已停用. */
+export type BalanceInviteLinkStatus =
+  | "active"
+  | "used_up"
+  | "expired"
+  | "stopped";
+
 /** 待接受 / 已接受 / 已过期 (a day after it was made). */
 export type BalanceInviteStatus = "pending" | "accepted" | "expired";
 
@@ -301,4 +327,17 @@ export type BalanceInvite = {
   acceptedAt: number | null;
   /** Who accepted it, as they are now. */
   acceptedBy: BalanceInviteUser | null;
+};
+
+/** A 通用链接 as admins see it (the link itself is shown once, when made). */
+export type BalanceInviteLink = {
+  id: string;
+  status: BalanceInviteLinkStatus;
+  maxUses: number;
+  useCount: number;
+  createdAt: number;
+  expiresAt: number;
+  stoppedAt: number | null;
+  createdBy: BalanceInviteUser | null;
+  stoppedBy: BalanceInviteUser | null;
 };

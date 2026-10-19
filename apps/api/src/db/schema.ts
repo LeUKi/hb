@@ -1078,7 +1078,9 @@ export const balanceSettings = sqliteTable(
 
 /**
  * An invitation to 转入 (docs/balance-design.md §13): for one LINUX DO
- * username, good for a day and for one use. Only the link's digest is kept.
+ * username, good for a day and for one use — or an admin's 通用链接, for
+ * whoever has it, up to `maxUses` people until it expires or is stopped.
+ * Only the link's digest is kept.
  */
 export const balanceInvites = sqliteTable(
   "balance_invites",
@@ -1088,12 +1090,17 @@ export const balanceInvites = sqliteTable(
     inviterUserId: text("inviter_user_id")
       .notNull()
       .references(() => users.id),
-    /** The username it is for, in lower case. */
-    inviteeUsername: text("invitee_username").notNull(),
+    /** The username it is for, in lower case; null for a 通用链接. */
+    inviteeUsername: text("invitee_username"),
     createdAt: integer("created_at").notNull(),
     expiresAt: integer("expires_at").notNull(),
     acceptedAt: integer("accepted_at"),
     acceptedUserId: text("accepted_user_id").references(() => users.id),
+    /** A 通用链接's cap, and how many have accepted it. */
+    maxUses: integer("max_uses"),
+    useCount: integer("use_count").notNull().default(0),
+    stoppedAt: integer("stopped_at"),
+    stoppedByUserId: text("stopped_by_user_id").references(() => users.id),
   },
   (table) => [
     uniqueIndex("balance_invites_token_unique").on(table.tokenHash),
@@ -1106,14 +1113,20 @@ export const balanceInvites = sqliteTable(
     check(
       "balance_invites_valid",
       sql`${table.expiresAt} > ${table.createdAt} AND length(${table.tokenHash}) = 64
-        AND ${table.inviteeUsername} = lower(${table.inviteeUsername}) AND length(${table.inviteeUsername}) BETWEEN 1 AND 60
-        AND (${table.acceptedAt} IS NULL) = (${table.acceptedUserId} IS NULL)`,
+        AND (${table.inviteeUsername} IS NULL OR (${table.inviteeUsername} = lower(${table.inviteeUsername}) AND length(${table.inviteeUsername}) BETWEEN 1 AND 60))
+        AND (${table.acceptedAt} IS NULL) = (${table.acceptedUserId} IS NULL)
+        AND (${table.inviteeUsername} IS NULL) = (${table.maxUses} IS NOT NULL)
+        AND (${table.maxUses} IS NULL OR (${table.maxUses} BETWEEN 1 AND 1000 AND ${table.acceptedAt} IS NULL))
+        AND ${table.useCount} BETWEEN 0 AND coalesce(${table.maxUses}, 0)
+        AND (${table.stoppedAt} IS NULL) = (${table.stoppedByUserId} IS NULL)
+        AND (${table.stoppedAt} IS NULL OR ${table.maxUses} IS NOT NULL)`,
     ),
   ],
 );
 
 /**
- * Who may 转入 (and so invite): for good once in, with who invited them.
+ * Who may 转入 (and so invite): for good once in, with who invited them
+ * and through which invitation (a 通用链接 brings in several).
  */
 export const balanceMembers = sqliteTable(
   "balance_members",
@@ -1126,7 +1139,7 @@ export const balanceMembers = sqliteTable(
     createdAt: integer("created_at").notNull(),
   },
   (table) => [
-    uniqueIndex("balance_members_invite_unique").on(table.inviteId),
+    index("balance_members_invite_idx").on(table.inviteId),
     index("balance_members_inviter_idx").on(table.invitedByUserId),
   ],
 );

@@ -326,6 +326,52 @@ test.describe("🐟额", () => {
     expect(accepted).toHaveLength(1);
   });
 
+  test("通用链接的接受页：不核对用户名，谁登录都能接受；用完了写清楚", async ({
+    page,
+  }) => {
+    const token = "LinkLinkLinkLinkLinkLinkLinkLinkLinkLink123";
+    let status = "pending";
+    await mockSession(page, { ...viewer, balance: false });
+    await mockBalance(page);
+    await page.route(`**/api/invites/${token}`, (route) =>
+      route.fulfill({
+        json: {
+          invite: {
+            inviter: {
+              username: "lafish",
+              displayName: "Lafish",
+              avatarUrl: null,
+            },
+            username: null,
+            status,
+            expiresAt: Date.now() + 3_600_000,
+          },
+          topupFeePercent: 12,
+          viewer: {
+            username: "someone",
+            matches: true,
+            isInviter: false,
+            member: false,
+            acceptedThis: false,
+          },
+        },
+      }),
+    );
+    await openApp(page, `/invite/${token}`);
+    await expect(
+      page.getByRole("heading", { name: /Lafish（@lafish）邀请你使用🐟额/ }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "接受邀请" })).toBeVisible();
+    await expect(page.getByText(/这个邀请是给/)).toHaveCount(0);
+
+    status = "used_up";
+    await page.reload();
+    await expect(
+      page.getByText("这条邀请链接的名额已经用完了。"),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "接受邀请" })).toHaveCount(0);
+  });
+
   test("名单里的人：能搜到；页面写着可用和明细；转入两个框互算，越界不能确认", async ({
     page,
   }) => {

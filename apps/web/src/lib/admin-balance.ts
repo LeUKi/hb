@@ -1,6 +1,8 @@
 import type {
   BalanceAdjustmentInput,
+  BalanceInviteLink,
   BalanceTopup,
+  CreateInviteLinkInput,
   PlatformApp,
   SavePlatformAppInput,
   UpdateBalanceSettingsInput,
@@ -49,6 +51,10 @@ export type AdminAttentionList = InferResponseType<
 export type AdminAttentionItem = AdminAttentionList["items"][number];
 export type AdminInviteList = InferResponseType<
   AdminBalance["invites"]["$get"],
+  200
+>;
+export type AdminInviteLinkList = InferResponseType<
+  AdminBalance["invite-links"]["$get"],
   200
 >;
 export type AdminMemberList = InferResponseType<
@@ -214,6 +220,23 @@ export function useAdminInvites(enabled: boolean) {
   });
 }
 
+/** 通用链接: every one made, read when that page of the modal shows. */
+export function useAdminInviteLinks(enabled: boolean) {
+  const identity = useAdminIdentity();
+  return useInfiniteQuery({
+    queryKey: key(identity, "invite-links"),
+    enabled,
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) =>
+      read<AdminInviteLinkList>(
+        `invite-links${pageParam ? `?cursor=${encodeURIComponent(pageParam)}` : ""}`,
+        signal,
+      ),
+    getNextPageParam: (last) => last.nextCursor,
+    retry: false,
+  });
+}
+
 export function useAdminAdjustments() {
   const identity = useAdminIdentity();
   return useInfiniteQuery({
@@ -297,6 +320,25 @@ export function useBalanceAdmin(csrfToken: string) {
         refresh("adjustments"),
         refresh("overview"),
       ]);
+      return result;
+    },
+    createInviteLink: async (input: CreateInviteLinkInput) => {
+      const result = await write<{ link: BalanceInviteLink; url: string }>(
+        "POST",
+        "invite-links",
+        csrfToken,
+        input,
+      );
+      await refresh("invite-links");
+      return result;
+    },
+    stopInviteLink: async (id: string) => {
+      const result = await write<{ link: BalanceInviteLink }>(
+        "POST",
+        `invite-links/${id}/stop`,
+        csrfToken,
+      );
+      await refresh("invite-links");
       return result;
     },
     saveSettings: async (input: UpdateBalanceSettingsInput) => {

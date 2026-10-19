@@ -789,7 +789,8 @@ function InviteDialog({
                 aria-label="邀请链接"
                 readOnly
                 value={made.url}
-                className="font-mono text-xs"
+                mono
+                className="min-w-0 flex-1"
                 onFocus={(event) => event.currentTarget.select()}
               />
               <CopyButton value={made.url} label="邀请链接" />

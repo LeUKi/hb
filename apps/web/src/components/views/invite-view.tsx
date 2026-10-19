@@ -14,14 +14,17 @@ import { MessageView } from "./message-view";
 /** Why this viewer cannot accept, in a sentence; null when they can. */
 function blockedText(page: InvitePage) {
   const { invite, viewer } = page;
-  if (invite.status === "accepted")
-    return viewer?.acceptedThis
-      ? "你已经接受了这个邀请。"
-      : "这个邀请已经用过了。";
+  if (viewer?.acceptedThis) return "你已经接受了这个邀请。";
+  if (invite.status === "accepted") return "这个邀请已经用过了。";
+  if (invite.status === "stopped") return "这条邀请链接已经停用。";
+  if (invite.status === "used_up") return "这条邀请链接的名额已经用完了。";
   if (invite.status === "expired") return "邀请已过期，请对方再发一次。";
   if (!viewer) return null;
+  // A 通用链接 names no one: whoever has it may accept.
   if (viewer.isInviter)
-    return `这是你发出的邀请，把链接发给 @${invite.username} 就好。`;
+    return invite.username === null
+      ? "这是你生成的通用链接，发给要邀请的人就好。"
+      : `这是你发出的邀请，把链接发给 @${invite.username} 就好。`;
   if (viewer.member) return "你已经可以转入了。";
   if (!viewer.matches)
     return `这个邀请是给 @${invite.username} 的，你现在登录的是 @${viewer.username}。用那个账号登录后再打开这个链接。`;
@@ -30,7 +33,8 @@ function blockedText(page: InvitePage) {
 
 /**
  * /invite/<编号> (docs/balance-design.md §13): who sent it, what 🐟额 is,
- * and 接受邀请 for the account it names. Open to anyone with the link.
+ * and 接受邀请 for the account it names (anyone, for a 通用链接). Open to
+ * anyone with the link.
  */
 export function InviteView({ token }: { token: string }) {
   const query = useInvite(token);

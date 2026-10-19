@@ -156,3 +156,52 @@ test("🐟额：管理员配好平台应用、邀请领取者，领取者接受�
   await waitForBoot(page);
   await expect(figure).toContainText((before + 5).toFixed(2));
 });
+
+test("🐟额通用链接：管理员生成、自己打开看到提示，停用后别人打开写着已停用", async ({
+  browser,
+}) => {
+  const adminContext = await browser.newContext({ baseURL: origin });
+  await localOnly(adminContext);
+  const admin = await adminContext.newPage();
+  await signIn(admin, "author");
+  await admin.goto("/admin/balance");
+  await waitForBoot(admin);
+  await admin.getByRole("button", { name: "邀请", exact: true }).click();
+  const dialog = admin.getByRole("dialog", { name: "邀请" });
+  await dialog.getByRole("button", { name: "通用链接", exact: true }).click();
+  await dialog.getByLabel("最多几个人用").fill("1");
+  await dialog.getByRole("button", { name: "生成链接" }).click();
+  const url = await dialog
+    .getByRole("textbox", { name: "通用链接" })
+    .inputValue();
+  expect(url).toMatch(/\/invite\/[A-Za-z0-9_-]{43}$/);
+  const newest = dialog.getByRole("listitem").first();
+  await expect(newest).toContainText("已用 0 / 1 人");
+  await expect(newest).toContainText("有效");
+
+  // Its maker cannot use it.
+  const own = await adminContext.newPage();
+  await own.goto(new URL(url).pathname);
+  await waitForBoot(own);
+  await expect(
+    own.getByText("这是你生成的通用链接，发给要邀请的人就好。"),
+  ).toBeVisible();
+  await own.close();
+
+  // 停用, over the modal: then no one more.
+  await newest.getByRole("button", { name: "停用" }).click();
+  const confirm = admin.getByRole("dialog", { name: "停用这条链接？" });
+  await confirm.getByRole("button", { name: "停用" }).click();
+  await expect(confirm).toHaveCount(0);
+  await expect(newest).toContainText("已停用");
+  await expect(dialog).toBeVisible();
+
+  const context = await browser.newContext({ baseURL: origin });
+  await localOnly(context);
+  const page = await context.newPage();
+  await signIn(page, "latecomer");
+  await page.goto(new URL(url).pathname);
+  await waitForBoot(page);
+  await expect(page.getByText("这条邀请链接已经停用。")).toBeVisible();
+  await expect(page.getByRole("button", { name: "接受邀请" })).toHaveCount(0);
+});

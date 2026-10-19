@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  createInviteLinkSchema,
   createInviteSchema,
   feeOf,
   formatSignedAmount,
@@ -84,5 +85,17 @@ describe("🐟额 amounts", () => {
       false,
     );
     expect(createInviteSchema.safeParse({ username: "@" }).success).toBe(false);
+  });
+
+  it("takes a 通用链接's cap as a whole number up to 1000, for 1 or 7 days", () => {
+    const ok = (input: unknown) =>
+      createInviteLinkSchema.safeParse(input).success;
+    expect(ok({ maxUses: 1, days: 1 })).toBe(true);
+    expect(ok({ maxUses: 1000, days: 7 })).toBe(true);
+    expect(ok({ maxUses: 0, days: 1 })).toBe(false);
+    expect(ok({ maxUses: 1001, days: 1 })).toBe(false);
+    expect(ok({ maxUses: 2.5, days: 1 })).toBe(false);
+    expect(ok({ maxUses: 5, days: 3 })).toBe(false);
+    expect(ok({ maxUses: 5, days: 1, username: "x" })).toBe(false);
   });
 });

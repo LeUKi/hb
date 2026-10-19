@@ -8,6 +8,7 @@ import {
   type AdminWithdrawalItem,
   useAdminAdjustments,
   useAdminAttention,
+  useAdminInviteLinks,
   useAdminInvites,
   useAdminMembers,
   useAdminTopup,
@@ -413,7 +414,7 @@ function TopupDetail({ item }: { item: AdminTopupItem }) {
               {
                 label: "邀请人",
                 value: data.member?.invitedBy
-                  ? `${data.member.invitedBy.displayName} @${data.member.invitedBy.username}`
+                  ? `${data.member.invitedBy.displayName} @${data.member.invitedBy.username}${data.member.viaLink ? "（通用链接）" : ""}`
                   : "—",
               },
               {
@@ -879,9 +880,13 @@ const inviteStatusTone = {
   expired: "neutral",
 } as const;
 
+/** A link just made: shown until the modal closes, and never again. */
+type MadeLink = { url: string; maxUses: number; days: number };
+
 /**
- * 邀请: 受邀的人 (everyone who may 转入, and who brought them in) and
- * 邀请记录 (every link, and what became of it).
+ * 邀请: 受邀的人 (everyone who may 转入, and who brought them in),
+ * 邀请记录 (every link for a username, and what became of it) and 通用链接
+ * (an admin's links for whoever has them).
  */
 function InvitesDialog({
   open,
@@ -891,7 +896,8 @@ function InvitesDialog({
   onClose: () => void;
 }) {
   const titleId = useId();
-  const [view, setView] = useState<"members" | "invites">("members");
+  const [view, setView] = useState<"members" | "invites" | "links">("members");
+  const [made, setMade] = useState<MadeLink | null>(null);
   const query = useAdminInvites(open && view === "invites");
   const list = useQueryLazyList({
     hasNextPage: query.hasNextPage,
@@ -905,7 +911,10 @@ function InvitesDialog({
     <WindowDialog
       open={open}
       onClose={onClose}
-      onClosed={() => setView("members")}
+      onClosed={() => {
+        setView("members");
+        setMade(null);
+      }}
       labelledBy={titleId}
       width="32rem"
     >
@@ -932,6 +941,7 @@ function InvitesDialog({
             options={[
               { value: "members", label: "受邀的人" },
               { value: "invites", label: "邀请记录" },
+              { value: "links", label: "通用链接" },
             ]}
           />
         </div>
@@ -939,6 +949,8 @@ function InvitesDialog({
           <Swap id={view}>
             {view === "members" ? (
               <Members open={open} onPick={onClose} />
+            ) : view === "links" ? (
+              <InviteLinks open={open} made={made} onMade={setMade} />
             ) : (
               <ResultLoad
                 id={items.length ? "rows" : "empty"}
@@ -989,6 +1001,254 @@ function InvitesDialog({
         </div>
       </div>
     </WindowDialog>
+  );
+}
+
+const linkStatusText = {
+  active: "有效",
+  used_up: "已用完",
+  expired: "已过期",
+  stopped: "已停用",
+} as const;
+const linkStatusTone = {
+  active: "success",
+  used_up: "neutral",
+  expired: "neutral",
+  stopped: "neutral",
+} as const;
+
+/** 1–1000, as typed; null otherwise. */
+function maxUsesOf(text: string) {
+  if (!/^\d{1,4}$/.test(text.trim())) return null;
+  const value = Number(text.trim());
+  return value >= 1 && value <= 1000 ? value : null;
+}
+
+/**
+ * 通用链接 (docs/balance-design.md §13): up to how many people and for 1 or
+ * 7 days, then the link, once. Below, every one made; an open one can be
+ * stopped (who is in stays in).
+ */
+function InviteLinks({
+  open,
+  made,
+  onMade,
+}: {
+  open: boolean;
+  made: MadeLink | null;
+  onMade: (made: MadeLink | null) => void;
+}) {
+  const identity = useIdentity();
+  const actions = useBalanceAdmin(identity.csrfToken ?? "");
+  const query = useAdminInviteLinks(open);
+  const list = useQueryLazyList({
+    hasNextPage: query.hasNextPage,
+    isFetchingNextPage: query.isFetchingNextPage,
+    isFetchNextPageError: query.isFetchNextPageError,
+    fetchNextPage: query.fetchNextPage,
+    pageCount: query.data?.pages.length ?? 0,
+  });
+  const items = (query.data?.pages ?? []).flatMap((page) => page.items);
+  const inputId = useId();
+  const [count, setCount] = useState("");
+  const [days, setDays] = useState<"1" | "7">("1");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Kept while the confirmation closes, so its sentence does not blank.
+  const [stopping, setStopping] = useState<(typeof items)[number] | null>(null);
+  const [stopOpen, setStopOpen] = useState(false);
+  const [stopBusy, setStopBusy] = useState(false);
+  const [stopError, setStopError] = useState<string | null>(null);
+  const maxUses = maxUsesOf(count);
+  const ready = maxUses !== null && !busy;
+  const submit = async () => {
+    if (!ready) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await actions.createInviteLink({
+        maxUses,
+        days: days === "7" ? 7 : 1,
+      });
+      onMade({ url: result.url, maxUses, days: Number(days) });
+      setCount("");
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "没有成功。");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const stop = async () => {
+    if (!stopping || stopBusy) return;
+    setStopBusy(true);
+    setStopError(null);
+    try {
+      await actions.stopInviteLink(stopping.id);
+      setStopOpen(false);
+    } catch (failure) {
+      setStopError(failure instanceof Error ? failure.message : "没有成功。");
+    } finally {
+      setStopBusy(false);
+    }
+  };
+  return (
+    <div className="grid gap-4">
+      <Swap id={made ? "made" : "form"}>
+        {made ? (
+          <div className="grid gap-2">
+            <p className="text-sm text-ink-2">
+              通用链接（最多 {made.maxUses} 人，{made.days} 天内有效）：
+            </p>
+            <div className="flex items-center gap-2">
+              <TextInput
+                aria-label="通用链接"
+                readOnly
+                value={made.url}
+                mono
+                className="min-w-0 flex-1"
+                onFocus={(event) => event.currentTarget.select()}
+              />
+              <CopyButton value={made.url} label="通用链接" />
+            </div>
+            <p className="text-xs text-ink-3">
+              链接只显示这一次，关掉弹窗前先复制好。
+            </p>
+            <div>
+              <Button size="sm" onClick={() => onMade(null)}>
+                再生成一条
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="grid gap-3">
+            <p className="text-sm text-ink-2">
+              不写用户名，谁拿到都能接受，适合发到群里。
+            </p>
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+              <Field
+                label="最多几个人用"
+                htmlFor={inputId}
+                hint="1–1000 人"
+                error={
+                  count.trim() && maxUses === null
+                    ? "填 1–1000 之间的整数"
+                    : (error ?? undefined)
+                }
+              >
+                <TextInput
+                  id={inputId}
+                  value={count}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  placeholder="50"
+                  suffix="人"
+                  onChange={(event) => {
+                    setCount(event.target.value);
+                    setError(null);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void submit();
+                  }}
+                />
+              </Field>
+              <Field label="有效期">
+                <Segmented
+                  label="有效期"
+                  value={days}
+                  onChange={setDays}
+                  options={[
+                    { value: "1", label: "1 天" },
+                    { value: "7", label: "7 天" },
+                  ]}
+                />
+              </Field>
+            </div>
+            <div>
+              <Button
+                variant="primary"
+                onClick={() => void submit()}
+                aria-disabled={!ready || undefined}
+                data-disabled={!ready || undefined}
+              >
+                {busy ? "正在生成…" : "生成链接"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Swap>
+      <section className="grid gap-1 border-line border-t pt-3">
+        <h3 className="text-xs text-ink-3">生成过的链接</h3>
+        <ResultLoad id={items.length ? "rows" : "empty"} load={resultOf(query)}>
+          {items.length === 0 ? (
+            <p className="py-2 text-sm text-ink-3">还没有生成过。</p>
+          ) : (
+            <div className="grid gap-2">
+              <ul className="grid">
+                {items.map((link) => (
+                  <li
+                    key={link.id}
+                    className="flex items-center gap-3 border-line border-b py-2.5 last:border-b-0"
+                  >
+                    <span className="grid min-w-0 flex-1 gap-0.5">
+                      <span className="text-sm text-ink tabular-nums">
+                        已用 {link.useCount} / {link.maxUses} 人
+                      </span>
+                      <span className="text-xs text-ink-3 tabular-nums">
+                        @{link.createdBy?.username} 生成于{" "}
+                        {clockLabel(link.createdAt)} ·{" "}
+                        {link.stoppedAt !== null
+                          ? `@${link.stoppedBy?.username} 停用于 ${clockLabel(link.stoppedAt)}`
+                          : `${clockLabel(link.expiresAt)} 到期`}
+                      </span>
+                    </span>
+                    <StatusChip tone={linkStatusTone[link.status]}>
+                      {linkStatusText[link.status]}
+                    </StatusChip>
+                    {link.status === "active" && (
+                      <Button
+                        size="xs"
+                        onClick={() => {
+                          setStopError(null);
+                          setStopping(link);
+                          setStopOpen(true);
+                        }}
+                      >
+                        停用
+                      </Button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <LazyListEnd list={list} done={`共 ${items.length} 条`} />
+            </div>
+          )}
+        </ResultLoad>
+      </section>
+      <ConfirmDialog
+        open={stopOpen}
+        onClose={() => setStopOpen(false)}
+        busy={stopBusy}
+        title="停用这条链接？"
+        text={
+          stopping
+            ? `停用后没人能再用它接受邀请；已经接受的 ${stopping.useCount} 个人不受影响。`
+            : ""
+        }
+        error={stopError}
+        actions={
+          <>
+            <Button onClick={() => setStopOpen(false)}>返回</Button>
+            <Button
+              variant="danger"
+              onClick={() => void stop()}
+              aria-disabled={stopBusy || undefined}
+            >
+              {stopBusy ? "正在停用…" : "停用"}
+            </Button>
+          </>
+        }
+      />
+    </div>
   );
 }
 
@@ -1043,7 +1303,7 @@ function Members({ open, onPick }: { open: boolean; onPick: () => void }) {
                     </span>
                     <span className="truncate text-xs text-ink-3">
                       {member.invitedBy
-                        ? `@${member.invitedBy.username} 邀请`
+                        ? `@${member.invitedBy.username} ${member.viaLink ? "的通用链接邀请" : "邀请"}`
                         : "站长加入"}{" "}
                       · {clockLabel(member.since)}接受 · 邀请了{" "}
                       {member.invitedCount} 人
@@ -1126,7 +1386,7 @@ export function UserBalance({ userId }: { userId: string }) {
                   label: "转入资格",
                   value: data.member
                     ? data.member.invitedBy
-                      ? `@${data.member.invitedBy.username} 邀请，${clockLabel(data.member.since)}接受`
+                      ? `@${data.member.invitedBy.username} ${data.member.viaLink ? "的通用链接邀请" : "邀请"}，${clockLabel(data.member.since)}接受`
                       : `${clockLabel(data.member.since)}起`
                     : "没有",
                 },
