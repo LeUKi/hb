@@ -27,7 +27,7 @@ import {
   listAdminWithdrawals,
 } from "./admin";
 import { balanceError } from "./errors";
-import { listAdminInvites } from "./invites";
+import { listAdminInvites, listAdminMembers } from "./invites";
 import { adjustBalance, decodeRecordCursor } from "./ledger";
 import {
   platformAppView,
@@ -125,6 +125,9 @@ export const balanceAdminRoutes = new Hono<ApiContext>()
     if (!detail) balanceError(404, "WITHDRAWAL_NOT_FOUND", "没有找到这笔转出");
     return c.json(detail);
   })
+  .get("/admin/balance/members", async (c) =>
+    c.json(await listAdminMembers(c.env, decodeRecordCursor(cursorOf(c)))),
+  )
   .get("/admin/balance/invites", async (c) =>
     c.json(await listAdminInvites(c.env, decodeRecordCursor(cursorOf(c)))),
   )

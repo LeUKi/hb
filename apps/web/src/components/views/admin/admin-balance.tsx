@@ -9,6 +9,7 @@ import {
   useAdminAdjustments,
   useAdminAttention,
   useAdminInvites,
+  useAdminMembers,
   useAdminTopup,
   useAdminTopups,
   useAdminUserBalance,
@@ -844,7 +845,7 @@ export function AdminBalance({ search }: { search: AdminSearch }) {
             ]}
           />
           <Button size="sm" onClick={() => setInvitesOpen(true)}>
-            邀请记录
+            邀请
           </Button>
         </div>
         <InvitesDialog
@@ -878,7 +879,10 @@ const inviteStatusTone = {
   expired: "neutral",
 } as const;
 
-/** 邀请记录: who invited whom, and what became of each link. */
+/**
+ * 邀请: 受邀的人 (everyone who may 转入, and who brought them in) and
+ * 邀请记录 (every link, and what became of it).
+ */
 function InvitesDialog({
   open,
   onClose,
@@ -887,7 +891,8 @@ function InvitesDialog({
   onClose: () => void;
 }) {
   const titleId = useId();
-  const query = useAdminInvites(open);
+  const [view, setView] = useState<"members" | "invites">("members");
+  const query = useAdminInvites(open && view === "invites");
   const list = useQueryLazyList({
     hasNextPage: query.hasNextPage,
     isFetchingNextPage: query.isFetchingNextPage,
@@ -900,13 +905,14 @@ function InvitesDialog({
     <WindowDialog
       open={open}
       onClose={onClose}
+      onClosed={() => setView("members")}
       labelledBy={titleId}
       width="32rem"
     >
       <div className="flex h-[min(36rem,80cqh)] min-h-0 flex-col">
         <header className="flex items-center justify-between gap-3 px-5 pt-4 pb-2">
           <h2 id={titleId} className="text-lg font-semibold text-ink">
-            邀请记录
+            邀请
           </h2>
           <Button
             size="icon-sm"
@@ -917,54 +923,143 @@ function InvitesDialog({
             <X />
           </Button>
         </header>
+        <div className="px-5 pb-3">
+          <Segmented
+            size="sm"
+            label="邀请"
+            value={view}
+            onChange={setView}
+            options={[
+              { value: "members", label: "受邀的人" },
+              { value: "invites", label: "邀请记录" },
+            ]}
+          />
+        </div>
         <div className="view-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4">
-          <ResultLoad
-            id={items.length ? "rows" : "empty"}
-            load={resultOf(query)}
-          >
-            {items.length === 0 ? (
-              <EmptyNote
-                title="还没有邀请"
-                text="有资格的人在🐟额页发出的邀请，都记在这里。"
-              />
+          <Swap id={view}>
+            {view === "members" ? (
+              <Members open={open} onPick={onClose} />
             ) : (
-              <div className="grid gap-2">
-                <ul className="grid">
-                  {items.map((invite) => (
-                    <li
-                      key={invite.id}
-                      className="flex items-center gap-3 border-line border-b py-2.5 last:border-b-0"
-                    >
-                      <Avatar
-                        name={invite.inviter?.displayName ?? "?"}
-                        src={invite.inviter?.avatarUrl ?? null}
-                        size={28}
-                      />
-                      <span className="grid min-w-0 flex-1 gap-0.5">
-                        <span className="truncate text-sm text-ink">
-                          {invite.inviter?.displayName} 邀请 @
-                          {invite.acceptedBy?.username ?? invite.username}
-                        </span>
-                        <span className="text-xs text-ink-3 tabular-nums">
-                          {clockSeconds(invite.createdAt)}
-                          {invite.acceptedAt !== null
-                            ? ` · ${clockLabel(invite.acceptedAt)}接受`
-                            : ""}
-                        </span>
-                      </span>
-                      <StatusChip tone={inviteStatusTone[invite.status]}>
-                        {inviteStatusText[invite.status]}
-                      </StatusChip>
-                    </li>
-                  ))}
-                </ul>
-                <LazyListEnd list={list} done={`共 ${items.length} 条`} />
-              </div>
+              <ResultLoad
+                id={items.length ? "rows" : "empty"}
+                load={resultOf(query)}
+              >
+                {items.length === 0 ? (
+                  <EmptyNote
+                    title="还没有邀请"
+                    text="有资格的人在🐟额页发出的邀请，都记在这里。"
+                  />
+                ) : (
+                  <div className="grid gap-2">
+                    <ul className="grid">
+                      {items.map((invite) => (
+                        <li
+                          key={invite.id}
+                          className="flex items-center gap-3 border-line border-b py-2.5 last:border-b-0"
+                        >
+                          <Avatar
+                            name={invite.inviter?.displayName ?? "?"}
+                            src={invite.inviter?.avatarUrl ?? null}
+                            size={28}
+                          />
+                          <span className="grid min-w-0 flex-1 gap-0.5">
+                            <span className="truncate text-sm text-ink">
+                              {invite.inviter?.displayName} 邀请 @
+                              {invite.acceptedBy?.username ?? invite.username}
+                            </span>
+                            <span className="text-xs text-ink-3 tabular-nums">
+                              {clockSeconds(invite.createdAt)}
+                              {invite.acceptedAt !== null
+                                ? ` · ${clockLabel(invite.acceptedAt)}接受`
+                                : ""}
+                            </span>
+                          </span>
+                          <StatusChip tone={inviteStatusTone[invite.status]}>
+                            {inviteStatusText[invite.status]}
+                          </StatusChip>
+                        </li>
+                      ))}
+                    </ul>
+                    <LazyListEnd list={list} done={`共 ${items.length} 条`} />
+                  </div>
+                )}
+              </ResultLoad>
             )}
-          </ResultLoad>
+          </Swap>
         </div>
       </div>
     </WindowDialog>
+  );
+}
+
+/** 受邀的人: a row opens that person in 用户. */
+function Members({ open, onPick }: { open: boolean; onPick: () => void }) {
+  const navigate = useNavigate();
+  const query = useAdminMembers(open);
+  const list = useQueryLazyList({
+    hasNextPage: query.hasNextPage,
+    isFetchingNextPage: query.isFetchingNextPage,
+    isFetchNextPageError: query.isFetchNextPageError,
+    fetchNextPage: query.fetchNextPage,
+    pageCount: query.data?.pages.length ?? 0,
+  });
+  const pages = query.data?.pages ?? [];
+  const items = pages.flatMap((page) => page.items);
+  const total = pages[0]?.total;
+  return (
+    <ResultLoad id={items.length ? "rows" : "empty"} load={resultOf(query)}>
+      {items.length === 0 ? (
+        <EmptyNote
+          title="还没有受邀的人"
+          text="在🐟额页点“邀请”发出链接，对方接受后就在这里。"
+        />
+      ) : (
+        <div className="grid gap-2">
+          <ul className="grid">
+            {items.map((member) => (
+              <li
+                key={member.id}
+                className="border-line border-b last:border-b-0"
+              >
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 py-2.5 text-left transition-colors hover:bg-fill-2"
+                  onClick={() => {
+                    onPick();
+                    void navigate({
+                      to: "/admin/users",
+                      search: { q: member.id },
+                    });
+                  }}
+                >
+                  <Avatar
+                    name={member.user?.displayName ?? "?"}
+                    src={member.user?.avatarUrl ?? null}
+                    size={28}
+                  />
+                  <span className="grid min-w-0 flex-1 gap-0.5">
+                    <span className="truncate text-sm text-ink">
+                      {member.user?.displayName} @{member.user?.username}
+                    </span>
+                    <span className="truncate text-xs text-ink-3">
+                      {member.invitedBy
+                        ? `@${member.invitedBy.username} 邀请`
+                        : "站长加入"}{" "}
+                      · {clockLabel(member.since)}接受 · 邀请了{" "}
+                      {member.invitedCount} 人
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-xs text-ink-2">
+                    可用 <Fish minor={member.availableMinor} />
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          <LazyListEnd list={list} done={`共 ${total ?? items.length} 人`} />
+        </div>
+      )}
+    </ResultLoad>
   );
 }
 

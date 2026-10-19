@@ -1033,6 +1033,31 @@ describe("邀请", () => {
     expect(detail.json).toMatchObject({
       member: { invitedBy: { username: tester.username } },
     });
+    // 受邀的人: everyone who may 转入, with who brought them in.
+    const members = await call("GET", "/admin/balance/members", admin);
+    const memberItems = (
+      members.json as {
+        items: {
+          id: string;
+          invitedBy: { username: string } | null;
+          invitedCount: number;
+        }[];
+        total: number;
+      }
+    ).items;
+    expect(memberItems).toContainEqual(
+      expect.objectContaining({
+        id: friend.id,
+        invitedBy: expect.objectContaining({ username: tester.username }),
+        invitedCount: 0,
+      }),
+    );
+    expect(
+      memberItems.find((item) => item.id === tester.id)?.invitedCount,
+    ).toBe(1);
+    expect((await call("GET", "/admin/balance/members", tester)).status).toBe(
+      403,
+    );
     const list = await call("GET", "/admin/balance/invites", admin);
     expect((list.json as { items: unknown[] }).items).toContainEqual(
       expect.objectContaining({

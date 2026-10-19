@@ -334,3 +334,56 @@ export async function listAdminInvites(
         : null,
   };
 }
+
+/**
+ * 受邀的人 for admins: everyone who may 转入, newest first, 20 at a time,
+ * with who invited them, what they have and how many they invited.
+ */
+export async function listAdminMembers(
+  env: ApiBindings,
+  before: { time: number; id: string } | null,
+) {
+  const [rows, total] = await env.DB.batch<Record<string, unknown>>([
+    env.DB.prepare(
+      `SELECT m.user_id,m.created_at,
+        u.username AS user_username,u.display_name AS user_display_name,u.avatar_url AS user_avatar_url,
+        i.username AS inviter_username,i.display_name AS inviter_display_name,i.avatar_url AS inviter_avatar_url,
+        COALESCE(a.available_minor,0) AS available_minor,
+        (SELECT COUNT(*) FROM balance_members n WHERE n.invited_by_user_id=m.user_id) AS invited_count
+      FROM balance_members m JOIN users u ON u.id=m.user_id
+      LEFT JOIN users i ON i.id=m.invited_by_user_id
+      LEFT JOIN balance_accounts a ON a.user_id=m.user_id
+      WHERE (?=0 OR m.created_at<? OR (m.created_at=? AND m.user_id<?))
+      ORDER BY m.created_at DESC,m.user_id DESC LIMIT 21`,
+    ).bind(
+      before ? 1 : 0,
+      before?.time ?? 0,
+      before?.time ?? 0,
+      before?.id ?? "",
+    ),
+    env.DB.prepare("SELECT COUNT(*) AS count FROM balance_members"),
+  ]);
+  const found = rows?.results ?? [];
+  const items = found.slice(0, 20);
+  const last = items.at(-1);
+  return {
+    items: items.map((row) => ({
+      id: String(row.user_id),
+      user: userOf(row, "user"),
+      invitedBy: userOf(row, "inviter"),
+      since: Number(row.created_at),
+      availableMinor: Number(row.available_minor),
+      invitedCount: Number(row.invited_count),
+    })),
+    total: Number(total?.results[0]?.count ?? 0),
+    nextCursor:
+      found.length > 20 && last
+        ? btoa(
+            JSON.stringify({
+              time: Number(last.created_at),
+              id: String(last.user_id),
+            }),
+          )
+        : null,
+  };
+}

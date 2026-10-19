@@ -51,6 +51,10 @@ export type AdminInviteList = InferResponseType<
   AdminBalance["invites"]["$get"],
   200
 >;
+export type AdminMemberList = InferResponseType<
+  AdminBalance["members"]["$get"],
+  200
+>;
 export type AdminAdjustmentList = InferResponseType<
   AdminBalance["adjustments"]["$get"],
   200
@@ -173,6 +177,23 @@ export function useAdminWithdrawal(id: string) {
     retry: false,
     refetchInterval: (query) =>
       query.state.data?.withdrawal.status === "sending" ? 10_000 : false,
+  });
+}
+
+/** 受邀的人: everyone who may 转入, read when the modal shows them. */
+export function useAdminMembers(enabled: boolean) {
+  const identity = useAdminIdentity();
+  return useInfiniteQuery({
+    queryKey: key(identity, "members"),
+    enabled,
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) =>
+      read<AdminMemberList>(
+        `members${pageParam ? `?cursor=${encodeURIComponent(pageParam)}` : ""}`,
+        signal,
+      ),
+    getNextPageParam: (last) => last.nextCursor,
+    retry: false,
   });
 }
 

@@ -544,7 +544,7 @@ LDC 是社区积分，不是钱，所以这个功能不用钱的说法。
 **管理面板**
 
 - 网站设置的🐟额组去掉白名单开关和名单。
-- 🐟额页签的标题行加一个“邀请记录”按钮，点开是模态框：每条写发起人、被邀请的用户名（接受后是这个人）、状态（待接受 / 已接受 / 已过期）和时间，一次 20 条，滚到底再加载。
+- 🐟额页签加一个“邀请”按钮，点开是模态框，分“受邀的人”和“邀请记录”两页：受邀的人列出所有有资格的人（谁邀请的、哪天接受、🐟额可用、又邀请了几个人，点一行去用户详情）；邀请记录每条写发起人、被邀请的用户名（接受后是这个人）、状态（待接受 / 已接受 / 已过期）和时间。都是一次 20 条，滚到底再加载。
 - 用户详情的🐟额部分写“转入资格：@邀请人 邀请，几号接受”（或“没有”）；转入详情也写邀请人。
 - 不能收回资格，也不在面板里直接加人：管理员用同一个弹窗邀请。
 
@@ -556,7 +556,7 @@ LDC 是社区积分，不是钱，所以这个功能不用钱的说法。
 - 新表 `balance_members`：用户、邀请人、来自哪个邀请、时间。只追加，不删。
 - `balance_settings` 去掉白名单两列（名单是空的，没有人要迁）。迁移 0031：建两张表，重建 `balance_settings`；触发器保证邀请只能在一天内、由它写明的那个账号接受一次，资格只来自接受了的邀请、建了就不改不删。以前的操作记录里仍能看到白名单的改动。
 - 会话里的 `balance` 标记仍是一项，表示能看到入口；能不能转入、能不能邀请由 `GET /api/me/balance` 的 `access` 给出，🐟额页按它显示按钮。
-- 接口：生成邀请 `POST /api/me/balance/invites`，弹窗里预览用户名 `GET /api/me/balance/invites/preview?username=`，接受页读 `GET /api/invites/:编号`，接受 `POST /api/invites/:编号/accept`，面板 `GET /api/admin/balance/invites`。新建转入时检查资格，接受邀请照现有写接口的校验（精确 Origin、会话、CSRF）。
+- 接口：生成邀请 `POST /api/me/balance/invites`，弹窗里预览用户名 `GET /api/me/balance/invites/preview?username=`，接受页读 `GET /api/invites/:编号`，接受 `POST /api/invites/:编号/accept`，面板 `GET /api/admin/balance/members`（受邀的人）和 `GET /api/admin/balance/invites`（邀请记录）。新建转入时检查资格，接受邀请照现有写接口的校验（精确 Origin、会话、CSRF）。
 
 ## 附录：Credit 行为出处（源码 `8e6d483`）
 
