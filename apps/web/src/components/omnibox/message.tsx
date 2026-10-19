@@ -1,3 +1,4 @@
+import { ACTIVITY_LIMITS } from "@hb/contracts";
 import { CircleAlert, Info } from "lucide-react";
 import { motion } from "motion/react";
 import { type EntryScheme, looksLikeAddress } from "../../lib/scheme";
@@ -12,7 +13,7 @@ const actionLabels: Record<NonNullable<OmniMessage["action"]>, string> = {
 export function PasswordCount({ length }: { length: number }) {
   return (
     <span className="shrink-0 font-mono text-xs text-ink-3 tabular-nums">
-      {length} / 18
+      {length} / {ACTIVITY_LIMITS.passwordMaxCharacters}
     </span>
   );
 }
@@ -36,7 +37,7 @@ export function resolveMessage(
       tone: "warning",
       text:
         scheme.message ??
-        "口令是 6–18 个字：汉字、英文字母或数字，区分大小写。",
+        "口令是 6–32 个字：汉字、英文字母或数字，区分大小写。",
       count: scheme.length,
     };
   return message;

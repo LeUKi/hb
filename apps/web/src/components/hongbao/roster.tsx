@@ -113,14 +113,15 @@ function Row({
               <TitleBadges titles={row.titles} className="shrink-0" />
             </span>
             {detail && (
-              <span className="flex min-w-0 items-center gap-2 text-xs text-ink-3">
+              <span className="flex min-w-0 items-start gap-2 text-xs text-ink-3">
                 {detail.password && (
-                  <span className="flex min-w-0 items-center gap-1">
+                  <span className="flex min-w-0 items-baseline gap-1">
                     <span className="shrink-0">口令</span>
                     <PasswordText
                       text={detail.password}
                       shown={passwordsShown}
                       seed={row.id}
+                      wrap
                       className="min-w-0"
                     />
                   </span>

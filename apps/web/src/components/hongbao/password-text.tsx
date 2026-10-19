@@ -24,7 +24,8 @@ export function standIn(seed: string, index = 0) {
 /**
  * A 口令 as it shows: the text, or a blurred stand-in that screen readers
  * hear as “已隐藏” (the 口令 itself is not on the page then). The two
- * cross-fade; `fit` lets the width follow (a chip), else it truncates.
+ * cross-fade; `fit` lets the width follow (a chip), `wrap` breaks a long
+ * one onto more lines, else it truncates.
  */
 export function PasswordText({
   text,
@@ -32,6 +33,7 @@ export function PasswordText({
   seed,
   index,
   fit = false,
+  wrap = false,
   className,
 }: {
   text: string;
@@ -40,11 +42,17 @@ export function PasswordText({
   seed: string;
   index?: number;
   fit?: boolean;
+  /** The whole 口令, on as many lines as it takes (up to 32 characters). */
+  wrap?: boolean;
   className?: string;
 }) {
-  const line = fit ? "" : "block truncate";
+  const line = wrap
+    ? "block [overflow-wrap:anywhere]"
+    : fit
+      ? ""
+      : "block truncate";
   return (
-    <MorphLabel fit={fit} align="start" className={className}>
+    <MorphLabel fit={fit && !wrap} align="start" className={className}>
       {shown ? (
         <span className={cn(line, "font-mono")}>{text}</span>
       ) : (

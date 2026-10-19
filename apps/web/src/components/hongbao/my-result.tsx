@@ -206,16 +206,17 @@ function PasswordChip({
 }) {
   const [revealed, setRevealed] = useState(false);
   return (
-    <span className="inline-flex items-center gap-0.5">
+    <span className="inline-flex max-w-full items-center gap-0.5">
       <Squircle radius={8}>
-        <span className="inline-flex h-7 items-center gap-1.5 bg-fill px-2.5 text-sm text-ink-2">
-          口令
+        {/* A long 口令 goes on to a second line, under itself. */}
+        <span className="inline-flex min-h-7 min-w-0 items-baseline gap-1.5 bg-fill px-2.5 py-1 text-sm text-ink-2">
+          <span className="shrink-0">口令</span>
           <PasswordText
             text={text}
             shown={ended || revealed}
             seed={seed}
-            fit
-            className="text-ink"
+            wrap
+            className="min-w-0 text-ink"
           />
         </span>
       </Squircle>

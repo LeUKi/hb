@@ -26,6 +26,9 @@ export * from "./recipient-speed";
 export const ACTIVITY_LIMITS = {
   titleCharacters: 100,
   passwords: 5,
+  /** One 口令: 6–32 汉字, letters or digits (32 since 2026-10-20). */
+  passwordMinCharacters: 6,
+  passwordMaxCharacters: 32,
   historicalPasswords: 100,
   rewards: 1000,
   infoCharacters: 10000,
@@ -94,10 +97,10 @@ export const passwordSchema = z
   .trim()
   .refine(
     (value) =>
-      characterCount(value) >= 6 &&
-      characterCount(value) <= 18 &&
+      characterCount(value) >= ACTIVITY_LIMITS.passwordMinCharacters &&
+      characterCount(value) <= ACTIVITY_LIMITS.passwordMaxCharacters &&
       /^[\p{Script=Han}A-Za-z0-9]+$/u.test(value),
-    "口令须为 6–18 个字符，仅限汉字、英文字母和数字",
+    "口令须为 6–32 个字符，仅限汉字、英文字母和数字",
   );
 
 export const deadlineSchema = z.union([

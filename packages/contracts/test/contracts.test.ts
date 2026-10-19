@@ -125,7 +125,8 @@ describe("shared activity contracts", () => {
     expect(passwordSchema.safeParse("𠀀𠀀𠀀𠀀𠀀").success).toBe(false);
     expect(passwordSchema.safeParse("ＡＢＣ１２３").success).toBe(false);
     expect(passwordSchema.safeParse("ABC 123").success).toBe(false);
-    expect(passwordSchema.safeParse("a".repeat(19)).success).toBe(false);
+    expect(passwordSchema.parse(`${"诗".repeat(28)}2026`)).toHaveLength(32);
+    expect(passwordSchema.safeParse("a".repeat(33)).success).toBe(false);
     expect(
       activityInputSchema.parse({
         ...validActivity(),

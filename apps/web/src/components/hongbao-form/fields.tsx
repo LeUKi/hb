@@ -1,3 +1,4 @@
+import { ACTIVITY_LIMITS } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import {
   AlertTriangle,
@@ -29,6 +30,7 @@ import {
   Segmented,
   TextArea,
   TextInput,
+  WrapInput,
 } from "../ui/field";
 import { Reveal, RevealInline, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
@@ -573,7 +575,8 @@ export function PasswordList({
             // biome-ignore lint/suspicious/noArrayIndexKey: see above
             <li key={index} className="flex flex-col gap-1">
               <div className="flex items-center gap-2">
-                <TextInput
+                {/* A long 口令 wraps: the whole of it in view while typing. */}
+                <WrapInput
                   id={field}
                   aria-label={`口令 ${index + 1}`}
                   className="flex-1"
@@ -581,12 +584,14 @@ export function PasswordList({
                   placeholder={
                     index === 0 ? "例如 周末口令2026" : "再加一个口令"
                   }
-                  maxLength={40}
+                  // A sentence pasted with its punctuation still fits; 优化
+                  // takes the punctuation out.
+                  maxLength={64}
                   disabled={locked}
                   invalid={Boolean(error)}
                   autoComplete="off"
                   spellCheck={false}
-                  suffix={`${inspection.length} / 18`}
+                  suffix={`${inspection.length} / ${ACTIVITY_LIMITS.passwordMaxCharacters}`}
                   aria-describedby={error ? `${field}-error` : undefined}
                   onChange={(event) => setAt(index, event.target.value)}
                 />
@@ -658,7 +663,7 @@ export function PasswordList({
             </Button>
           </RevealInline>
           <span className="text-xs text-ink-3">
-            6–18
+            6–32
             个字：汉字、英文字母或数字，区分大小写。几个口令共用同一个红包，每人只能领一次。
           </span>
         </div>

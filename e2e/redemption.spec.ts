@@ -13,6 +13,10 @@ import {
   viewer,
 } from "./support/app";
 
+// Lookups skip 红包 that take their 口令 on their own page: the line says so.
+const noMatch =
+  "未匹配到红包。可能口令有误，也可能这个红包只能在红包页领取：打开发红包的人分享的红包链接，在红包页输入口令。";
+
 const first = "11111111-2222-4333-8444-555555555555";
 const second = "22222222-3333-4444-8555-666666666666";
 const resultId = "33333333-4444-4555-8666-777777777777";
@@ -101,20 +105,20 @@ test.describe("兑奖", () => {
     await input.fill("测试口令");
     // Too short: the rules, with the count beside them.
     await expect(shown(page, "还差 2 个字，口令至少 6 个字。")).toBeVisible();
-    await expect(shown(page, "4 / 18")).toBeVisible();
+    await expect(shown(page, "4 / 32")).toBeVisible();
     // Enough: the rules go, the count stays in its place.
     await input.fill("测试口令一二三");
     await expect(shown(page, "还差 2 个字，口令至少 6 个字。")).toHaveCount(0);
-    await expect(shown(page, "7 / 18")).toBeVisible();
+    await expect(shown(page, "7 / 32")).toBeVisible();
     await input.fill("");
-    await expect(shown(page, "7 / 18")).toHaveCount(0);
+    await expect(shown(page, "7 / 32")).toHaveCount(0);
 
     // The box expanded on another page: right after the 口令 it looks up.
     await page.goto("/help");
     await page.getByRole("button", { name: /\/help/ }).click();
     await omniboxInput(page).fill("测试口令一二三四");
     await expect(
-      page.getByRole("option", { name: "查找口令 测试口令一二三四 8 / 18" }),
+      page.getByRole("option", { name: "查找口令 测试口令一二三四 8 / 32" }),
     ).toBeVisible();
   });
 
@@ -125,7 +129,7 @@ test.describe("兑奖", () => {
     ]);
     await openApp(page);
     await lookUp(page, "测试口令2099");
-    await expect(shown(page, "未匹配到红包。")).toBeVisible();
+    await expect(shown(page, noMatch)).toBeVisible();
     await expect(
       page.getByRole("button", { name: /还需等待 \d 秒/ }),
     ).toBeVisible();
@@ -144,7 +148,7 @@ test.describe("兑奖", () => {
     await mockDiscover(page, [{ status: 200, body: discovered("none", []) }]);
     await openApp(page);
     await lookUp(page, "测试口令2099");
-    await expect(shown(page, "未匹配到红包。")).toBeVisible();
+    await expect(shown(page, noMatch)).toBeVisible();
     // The answer is kept a moment after it shows: leave once it is.
     await expect(
       page.getByRole("button", { name: "填入 测试口令2099，未匹配" }),
@@ -235,7 +239,7 @@ test.describe("兑奖", () => {
     await lookUp(page, "测试口令2100");
     await expect(shown(page, "查找结果未确认，请再次确认。")).toBeVisible();
     await page.getByRole("button", { name: "再次确认" }).click();
-    await expect(shown(page, "未匹配到红包。")).toBeVisible();
+    await expect(shown(page, noMatch)).toBeVisible();
     expect(sent).toHaveLength(2);
     expect(sent[1]?.submissionId).toBe(sent[0]?.submissionId);
   });

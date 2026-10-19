@@ -232,14 +232,18 @@ export function SuggestionContent({
         icon={<WandSparkles className="size-4 text-accent" />}
         meta={<Kbd className="shrink-0">Tab</Kbd>}
       >
-        <span className="shrink-0 font-medium text-ink">一键优化</span>
-        <ArrowRight
-          className="size-3.5 shrink-0 text-ink-3"
-          aria-hidden="true"
-        />
-        <span className="sr-only">改为</span>
-        <span className="truncate font-mono text-sm text-ink">
-          {item.value}
+        {/* One run of text: a long 口令 wraps on under the words, using
+            the whole width, so what it becomes can be checked. */}
+        <span className="min-w-0 flex-1">
+          <span className="font-medium text-ink">一键优化</span>
+          <ArrowRight
+            className="mx-2 inline size-3.5 align-[-0.125em] text-ink-3"
+            aria-hidden="true"
+          />
+          <span className="sr-only">改为</span>
+          <span className="font-mono text-sm text-ink [overflow-wrap:anywhere]">
+            {item.value}
+          </span>
         </span>
       </Row>
     );
@@ -319,11 +323,14 @@ export function SuggestionContent({
   if (item.kind === "discover")
     return (
       <Row active={active} icon={<Search className="size-4" />}>
-        <span className="shrink-0 text-ink-2">
-          {item.scoped ? "在全部红包中查找" : "查找口令"}
-        </span>
-        <span className="truncate font-mono text-sm text-ink">
-          {item.password}
+        {/* One run of text, as 一键优化's: the whole 口令 to check. */}
+        <span className="min-w-0 flex-1">
+          <span className="text-ink-2">
+            {item.scoped ? "在全部红包中查找" : "查找口令"}
+          </span>{" "}
+          <span className="font-mono text-sm text-ink [overflow-wrap:anywhere]">
+            {item.password}
+          </span>
         </span>
         <PasswordCount length={item.length} />
       </Row>
@@ -439,12 +446,18 @@ export function SuggestionPanel({
                       tabIndex={-1}
                       data-index={index}
                       onMouseDown={(event) => event.preventDefault()}
-                      onMouseEnter={() => onHover(index)}
+                      // Only a pointer that moves picks a row: a row growing
+                      // under a still one (a long 口令 wrapping) must not
+                      // take the choice from the row it was on.
+                      onMouseMove={(event) => {
+                        if (event.movementX !== 0 || event.movementY !== 0)
+                          onHover(index);
+                      }}
                       onClick={() => onRun(item)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter") onRun(item);
                       }}
-                      className={`flex h-12 w-full cursor-pointer items-center gap-3 px-2.5 text-left text-base transition-colors ${
+                      className={`flex min-h-12 w-full cursor-pointer items-center gap-3 px-2.5 py-1.5 text-left text-base transition-colors ${
                         index === active ? "bg-fill-2" : ""
                       }`}
                     >

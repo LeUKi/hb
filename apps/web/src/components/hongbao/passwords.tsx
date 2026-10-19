@@ -118,25 +118,30 @@ export function PasswordSection({
               <Squircle radius={12}>
                 <div
                   key={solvedNow ? fresh.token : undefined}
-                  className={`flex h-11 items-center gap-3 px-3.5 ${
+                  className={`flex min-h-11 items-center gap-3 px-3.5 py-2.5 ${
                     solvedNow ? "hb-solved bg-fill" : "bg-fill"
                   }`}
                 >
-                  <PasswordText
-                    text={password.text}
-                    shown={isShown(password.text)}
-                    seed={`${activityId}:known`}
-                    index={index}
-                    className="min-w-0 flex-1 text-base text-ink"
-                  />
-                  <span
-                    className={`shrink-0 text-xs ${
-                      password.label === "solved"
-                        ? "font-medium text-success"
-                        : "text-ink-3"
-                    }`}
-                  >
-                    {labels[password.label]}
+                  {/* A long 口令 wraps; a narrow window puts the label under
+                      it, so the 口令 has the whole line. */}
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5 @wide/window:flex-row @wide/window:items-center @wide/window:gap-3">
+                    <PasswordText
+                      text={password.text}
+                      shown={isShown(password.text)}
+                      seed={`${activityId}:known`}
+                      index={index}
+                      wrap
+                      className="min-w-0 flex-1 text-base text-ink"
+                    />
+                    <span
+                      className={`shrink-0 text-xs ${
+                        password.label === "solved"
+                          ? "font-medium text-success"
+                          : "text-ink-3"
+                      }`}
+                    >
+                      {labels[password.label]}
+                    </span>
                   </span>
                   {!ended && (
                     <RevealToggle

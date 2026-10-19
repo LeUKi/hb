@@ -19,7 +19,7 @@ const inputs: { label: string; example: string; note: string }[] = [
   {
     label: schemeLabels.password,
     example: "周末口令2026",
-    note: "6–18 个字：汉字、英文字母或数字；查找并领取匹配的红包",
+    note: "6–32 个字：汉字、英文字母或数字；查找并领取匹配的红包",
   },
   {
     label: schemeLabels.link,
@@ -60,7 +60,7 @@ const questions: { q: string; a: string }[] = [
   },
   {
     q: "口令有什么要求？",
-    a: "6–18 个字：汉字、英文字母或数字，区分大小写。输入里有全角字母数字或空格时，输入框会提示一键优化。",
+    a: "6–32 个字：汉字、英文字母或数字，区分大小写。输入里有全角字母数字或空格时，输入框会提示一键优化。",
   },
   {
     q: "为什么在起始页输入口令找不到红包？",

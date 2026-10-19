@@ -330,7 +330,12 @@ export function useOmniboxController() {
           );
           return;
         }
-        store.set(messageAtom, { tone: "neutral", text: "未匹配到红包。" });
+        // Lookups skip 红包 that take their 口令 on their own page only
+        // (统计口令尝试): say so, as the help page does.
+        store.set(messageAtom, {
+          tone: "neutral",
+          text: "未匹配到红包。可能口令有误，也可能这个红包只能在红包页领取：打开发红包的人分享的红包链接，在红包页输入口令。",
+        });
         store.set(mismatchAtom, (count) => count + 1);
       } catch (error) {
         store.set(pendingAtom, false);

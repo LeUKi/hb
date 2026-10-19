@@ -4,8 +4,12 @@ import {
   type InputHTMLAttributes,
   type ReactNode,
   type TextareaHTMLAttributes,
+  useCallback,
   useContext,
+  useEffect,
   useId,
+  useLayoutEffect,
+  useRef,
 } from "react";
 import { cn } from "../../lib/cn";
 import { MorphLabel } from "./morph-label";
@@ -150,6 +154,89 @@ export function TextInput({
         />
         {suffix && (
           <span className="shrink-0 text-sm text-ink-3">{suffix}</span>
+        )}
+      </div>
+    </Squircle>
+  );
+}
+
+/**
+ * A TextInput whose text wraps instead of scrolling (a long 口令): it grows
+ * line by line up to `maxLines`, then scrolls inside. Enter submits the
+ * form as an input's does, and line breaks never get in.
+ */
+export function WrapInput({
+  suffix,
+  invalid,
+  maxLines = 3,
+  className,
+  value,
+  onChange,
+  onKeyDown,
+  ...props
+}: Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "rows"> & {
+  suffix?: ReactNode;
+  invalid?: boolean;
+  maxLines?: number;
+}) {
+  const note = useContext(FieldNote);
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const fit = useCallback(() => {
+    const element = ref.current;
+    if (!element) return;
+    element.style.height = "auto";
+    const line = Number.parseFloat(getComputedStyle(element).lineHeight) || 24;
+    element.style.height = `${Math.min(element.scrollHeight, line * maxLines)}px`;
+  }, [maxLines]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refit as the text changes.
+  useLayoutEffect(fit, [fit, value]);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    // A narrower window wraps it onto more lines.
+    const observer = new ResizeObserver(fit);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [fit]);
+  return (
+    <Squircle radius={radius.input}>
+      <div
+        className={cn("field min-h-11 items-start px-3.5 py-2.5", className)}
+        data-invalid={invalid || undefined}
+      >
+        <textarea
+          ref={ref}
+          rows={1}
+          enterKeyHint="next"
+          className="block min-w-0 flex-1 resize-none bg-transparent text-base text-ink outline-none [overflow-wrap:anywhere] placeholder:text-ink-3"
+          aria-invalid={invalid || undefined}
+          aria-describedby={note}
+          {...props}
+          value={value}
+          onChange={(event) => {
+            // As an input would: a pasted line break is dropped.
+            const text = event.target.value;
+            if (/[\r\n]/.test(text))
+              event.target.value = text.replace(/[\r\n]+/g, "");
+            onChange?.(event);
+          }}
+          onKeyDown={(event) => {
+            onKeyDown?.(event);
+            if (
+              event.defaultPrevented ||
+              event.key !== "Enter" ||
+              event.nativeEvent.isComposing ||
+              event.keyCode === 229
+            )
+              return;
+            event.preventDefault();
+            event.currentTarget.form?.requestSubmit();
+          }}
+        />
+        {suffix && (
+          <span className="shrink-0 text-sm leading-6 text-ink-3">
+            {suffix}
+          </span>
         )}
       </div>
     </Squircle>
