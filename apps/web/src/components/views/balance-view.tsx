@@ -804,9 +804,11 @@ function InviteDialog({
               autoComplete="off"
               autoCapitalize="none"
               spellCheck={false}
-              placeholder="例如 lafish"
+              prefix="@"
+              placeholder="lafish"
               onChange={(event) => {
-                setUsername(event.target.value);
+                // The @ is already there: a pasted “@name” keeps just one.
+                setUsername(event.target.value.replace(/^\s*@+/, ""));
                 setError(null);
               }}
               onKeyDown={(event) => {

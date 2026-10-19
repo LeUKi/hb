@@ -249,7 +249,9 @@ test.describe("🐟额", () => {
     await expect(
       dialog.getByRole("button", { name: "生成链接" }),
     ).toHaveAttribute("aria-disabled", "true");
+    // Pasted with its @: the box keeps one, in front.
     await input.fill("@taken");
+    await expect(input).toHaveValue("taken");
     await expect(dialog.getByText("@Taken 已经受邀")).toBeVisible();
     await input.fill("stranger");
     await expect(
