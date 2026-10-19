@@ -1,9 +1,4 @@
-import {
-  amountToMinor,
-  BALANCE_LIMITS,
-  type BalanceTopup,
-  quoteTopup,
-} from "@hb/contracts";
+import { amountToMinor, type BalanceTopup, quoteTopup } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowDownToLine, ChevronRight, PenLine } from "lucide-react";
 import { AnimatePresence } from "motion/react";
@@ -408,20 +403,22 @@ function TopupDialog({
         </Field>
       </div>
       <p className="text-xs text-ink-3">
-        流转费 {quote ? `${fishText(quote.feeMinor)} LDC` : "—"}（
-        {settings.topupFeePercent}%）· Credit 扣除 1.00–2000.00 LDC
+        流转费{" "}
+        {quote
+          ? `${fishText(quote.feeMinor)} LDC（${settings.topupFeePercent}%）`
+          : `${settings.topupFeePercent}%`}
       </p>
-      <Reveal
-        show={quote !== null && quote.debitMinor > settings.topupDailyHintMinor}
-      >
+      <Reveal show={inRange && quote.debitMinor > settings.topupDailyHintMinor}>
         <p className="text-xs text-warning">
           Credit 每天最多能花出 800–2000 LDC（按你的 Credit 等级），超出会失败。
         </p>
       </Reveal>
+      {/* Only once an amount is out of bounds, and which bound. */}
       <Reveal show={quote !== null && !inRange}>
         <p className="text-xs text-danger">
-          Credit 扣除要在 {fishText(BALANCE_LIMITS.topupMinMinor)} 到{" "}
-          {fishText(BALANCE_LIMITS.topupMaxMinor)} LDC 之间。
+          {quote !== null && quote.debitMinor < settings.topupMinMinor
+            ? `一笔转入至少 ${fishText(settings.topupMinMinor)} LDC。`
+            : `一笔转入最多 ${fishText(settings.topupMaxMinor)} LDC。`}
         </p>
       </Reveal>
     </ConfirmDialog>

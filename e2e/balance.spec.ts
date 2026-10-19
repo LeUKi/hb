@@ -136,13 +136,16 @@ test.describe("站内🐟额", () => {
     await expect(dialog.getByLabel("到账")).toHaveValue("88.00");
     await dialog.getByLabel("Credit 扣除").fill("900");
     await expect(dialog.getByText(/每天最多能花出 800–2000 LDC/)).toBeVisible();
+    // The bounds show only once an amount is past one, and say which.
+    await expect(dialog.getByText(/一笔转入/)).toHaveCount(0);
     await dialog.getByLabel("Credit 扣除").fill("2000.01");
-    await expect(
-      dialog.getByText(/Credit 扣除要在 1\.00 到 2000\.00 LDC 之间/),
-    ).toBeVisible();
+    await expect(dialog.getByText("一笔转入最多 2000.00 LDC。")).toBeVisible();
+    await expect(dialog.getByText(/每天最多能花出/)).toHaveCount(0);
     await expect(
       dialog.getByRole("button", { name: "去 Credit 确认" }),
     ).toHaveAttribute("aria-disabled", "true");
+    await dialog.getByLabel("到账").fill("0.5");
+    await expect(dialog.getByText("一笔转入至少 1.00 LDC。")).toBeVisible();
 
     await dialog.getByLabel("到账").fill("100");
     await dialog.getByRole("button", { name: "去 Credit 确认" }).click();
