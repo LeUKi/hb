@@ -14,7 +14,7 @@ import {
 } from "./support/app";
 
 // Lookups skip 红包 that take their 口令 on their own page: the line says so.
-const noMatch = "未匹配到红包。有的红包只能从链接进入红包页领取。";
+const noMatch = "未匹配到红包。部分红包只能在红包页输入口令领取。";
 
 const first = "11111111-2222-4333-8444-555555555555";
 const second = "22222222-3333-4444-8555-666666666666";

@@ -334,7 +334,7 @@ export function useOmniboxController() {
         // (统计口令尝试): say so, as the help page does.
         store.set(messageAtom, {
           tone: "neutral",
-          text: "未匹配到红包。有的红包只能从链接进入红包页领取。",
+          text: "未匹配到红包。部分红包只能在红包页输入口令领取。",
         });
         store.set(mismatchAtom, (count) => count + 1);
       } catch (error) {
