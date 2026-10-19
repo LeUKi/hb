@@ -20,6 +20,13 @@ import { StatusChip } from "../../ui/status-chip";
 const percentValid = (value: string) =>
   /^\d{1,2}$/.test(value.trim()) && Number(value) <= 50;
 
+/** 单笔转出上限 as typed: cents, or null while it is not 1.00–2000.00. */
+function capMinor(value: string) {
+  if (!/^\d{1,4}(\.\d{1,2})?$/.test(value.trim())) return null;
+  const minor = Math.round(Number(value.trim()) * 100);
+  return minor >= 100 && minor <= 200_000 ? minor : null;
+}
+
 /** One ID a line (spaces and commas work too). */
 function idsOf(text: string) {
   return text
@@ -31,6 +38,9 @@ function idsOf(text: string) {
 type Draft = {
   topupEnabled?: boolean;
   topupFee?: string;
+  withdrawEnabled?: boolean;
+  withdrawFee?: string;
+  withdrawMax?: string;
   allowlistEnabled?: boolean;
   allowlist?: string;
 };
@@ -56,17 +66,27 @@ export function BalanceSettingsSection({
   const [done, setDone] = useState(false);
   const ids = {
     topupFee: useId(),
+    withdrawFee: useId(),
+    withdrawMax: useId(),
     allowlist: useId(),
   };
   const values = {
     topupEnabled: draft.topupEnabled ?? shown.topupEnabled,
     topupFee: draft.topupFee ?? String(shown.topupFeePercent),
+    withdrawEnabled: draft.withdrawEnabled ?? shown.withdrawEnabled,
+    withdrawFee: draft.withdrawFee ?? String(shown.withdrawFeePercent),
+    withdrawMax: draft.withdrawMax ?? (shown.withdrawMaxMinor / 100).toFixed(2),
     allowlistEnabled: draft.allowlistEnabled ?? shown.allowlistEnabled,
     allowlist: draft.allowlist ?? shown.allowlist.join("\n"),
   };
   const allowlist = idsOf(values.allowlist);
   const badIds = allowlist.filter((id) => !/^[1-9]\d{0,18}$/.test(id));
-  const ok = percentValid(values.topupFee) && badIds.length === 0;
+  const cap = capMinor(values.withdrawMax);
+  const ok =
+    percentValid(values.topupFee) &&
+    percentValid(values.withdrawFee) &&
+    cap !== null &&
+    badIds.length === 0;
   const changed = Object.keys(draft).length > 0;
   const edit = (patch: Draft) => {
     setBase((current) => current ?? data.settings);
@@ -82,11 +102,10 @@ export function BalanceSettingsSection({
       await actions.saveSettings({
         expectedVersion: shown.version,
         topupEnabled: values.topupEnabled,
-        // 转出 comes in step two: its settings stay as saved.
-        withdrawEnabled: shown.withdrawEnabled,
+        withdrawEnabled: values.withdrawEnabled,
         topupFeePercent: Number(values.topupFee),
-        withdrawFeePercent: shown.withdrawFeePercent,
-        withdrawMaxMinor: shown.withdrawMaxMinor,
+        withdrawFeePercent: Number(values.withdrawFee),
+        withdrawMaxMinor: cap ?? shown.withdrawMaxMinor,
         allowlistEnabled: values.allowlistEnabled,
         allowlist,
       });
@@ -113,7 +132,7 @@ export function BalanceSettingsSection({
     <PageSection
       id="balance-settings"
       title="站内🐟额"
-      description="转入的开关和流转费率。费率要和 Credit 账户的等级一致：填低了，差价由本站垫上。转出在第二步上线。"
+      description="转入、转出的开关和费率。费率要和平台账户在 Credit 的等级一致：填低了，差价由本站垫上。"
     >
       <Panel>
         <LeaveGuard
@@ -126,6 +145,12 @@ export function BalanceSettingsSection({
             description="关掉后不能新建转入，已建的照常查单到账。"
             checked={values.topupEnabled}
             onChange={(topupEnabled) => edit({ topupEnabled })}
+          />
+          <Switch
+            label="转出"
+            description="关掉后不能新申请转出，已申请的照常发放。"
+            checked={values.withdrawEnabled}
+            onChange={(withdrawEnabled) => edit({ withdrawEnabled })}
           />
           <div className="grid gap-4 @wide/window:grid-cols-3">
             <Field
@@ -140,6 +165,36 @@ export function BalanceSettingsSection({
                 suffix="%"
                 value={values.topupFee}
                 onChange={(event) => edit({ topupFee: event.target.value })}
+              />
+            </Field>
+            <Field
+              label="分发费率"
+              htmlFor={ids.withdrawFee}
+              hint="转出时 Credit 收的，0–50"
+              error={
+                percentValid(values.withdrawFee) ? null : "请填 0–50 的整数"
+              }
+            >
+              <TextInput
+                id={ids.withdrawFee}
+                inputMode="numeric"
+                suffix="%"
+                value={values.withdrawFee}
+                onChange={(event) => edit({ withdrawFee: event.target.value })}
+              />
+            </Field>
+            <Field
+              label="单笔转出上限"
+              htmlFor={ids.withdrawMax}
+              hint="要低于平台账户每天能付出的 LDC"
+              error={cap === null ? "请填 1.00–2000.00" : null}
+            >
+              <TextInput
+                id={ids.withdrawMax}
+                inputMode="decimal"
+                suffix="🐟"
+                value={values.withdrawMax}
+                onChange={(event) => edit({ withdrawMax: event.target.value })}
               />
             </Field>
           </div>

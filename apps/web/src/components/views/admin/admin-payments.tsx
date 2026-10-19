@@ -28,6 +28,7 @@ import { Callout, EmptyNote } from "../../page/page";
 import { PageLoad, resultOf } from "../../page/page-state";
 import { Avatar } from "../../ui/avatar";
 import { Button } from "../../ui/button";
+import { MoreLink } from "../../ui/button-link";
 import { CopyButton } from "../../ui/copy-button";
 import { Segmented } from "../../ui/field";
 import { StatusChip } from "../../ui/status-chip";
@@ -63,7 +64,12 @@ const states = [
   "waiting",
   "attention",
   "confirmed",
+  "failed",
 ] as const satisfies readonly PaymentState[];
+
+/** 未发出 (a 🐟额 转出 refused for good, its 🐟 given back) needs nothing. */
+const stateTone = (state: string) =>
+  state === "failed" ? ("neutral" as const) : paymentTone(state);
 
 const stateOf = (value: string | undefined): StateFilter =>
   states.find((state) => state === value) ?? "all";
@@ -99,7 +105,9 @@ function RowBody({ payment }: { payment: AdminPaymentListItem }) {
             {recipientName(payment)}
           </span>
           <span className="truncate text-xs text-ink-3">
-            {payment.activityTitle ?? "恢复付款"}
+            {payment.source === "withdrawal"
+              ? "站内🐟额转出"
+              : (payment.activityTitle ?? "恢复付款")}
           </span>
         </span>
         <span className="truncate font-mono text-xs text-ink-3">
@@ -114,7 +122,7 @@ function RowBody({ payment }: { payment: AdminPaymentListItem }) {
         <span className="text-sm font-semibold text-ink tabular-nums">
           {payment.amount} LDC
         </span>
-        <StatusChip tone={paymentTone(payment.status)} dot>
+        <StatusChip tone={stateTone(payment.status)} dot>
           {PAYMENT_LABELS[payment.status]}
         </StatusChip>
       </span>
@@ -142,7 +150,28 @@ function DetailBody({
   const current = payment.currentRecipientUsername;
   return (
     <>
-      {!view ? (
+      {payment.source === "withdrawal" ? (
+        <Callout title="站内🐟额转出">
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span>
+              平台应用把🐟额转回这个人自己的 Credit
+              账户。发放中、已发放或未发出，以🐟额里的这笔转出为准。
+            </span>
+            <MoreLink
+              className="-my-1"
+              href="/admin/balance?status=withdrawals"
+              onGo={() =>
+                void navigate({
+                  to: "/admin/balance",
+                  search: { status: "withdrawals" },
+                })
+              }
+            >
+              在🐟额里看
+            </MoreLink>
+          </span>
+        </Callout>
+      ) : !view ? (
         <Callout tone="warning" icon={AlertTriangle} title="作者视角读不出来">
           这笔付款的记录对不上（日志里有原因），下面只列本站记下的字段。
         </Callout>
@@ -163,7 +192,10 @@ function DetailBody({
           },
           {
             label: "红包",
-            value: payment.activityTitle ?? "—（恢复付款）",
+            value:
+              payment.source === "withdrawal"
+                ? "—（站内🐟额转出）"
+                : (payment.activityTitle ?? "—（恢复付款）"),
           },
           {
             label: "付款商户",
@@ -278,7 +310,7 @@ function Detail({ item }: { item: AdminPaymentListItem }) {
           {item.amount}
           <span className="ml-1 text-sm font-medium text-ink-3">LDC</span>
         </p>
-        <StatusChip tone={paymentTone(item.status)} dot>
+        <StatusChip tone={stateTone(item.status)} dot>
           {PAYMENT_LABELS[item.status]}
         </StatusChip>
       </div>

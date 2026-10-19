@@ -33,6 +33,20 @@ export type AdminTopupDetail = InferResponseType<
   AdminBalance["topups"][":id"]["$get"],
   200
 >;
+export type AdminWithdrawalList = InferResponseType<
+  AdminBalance["withdrawals"]["$get"],
+  200
+>;
+export type AdminWithdrawalItem = AdminWithdrawalList["items"][number];
+export type AdminWithdrawalDetail = InferResponseType<
+  AdminBalance["withdrawals"][":id"]["$get"],
+  200
+>;
+export type AdminAttentionList = InferResponseType<
+  AdminBalance["attention"]["$get"],
+  200
+>;
+export type AdminAttentionItem = AdminAttentionList["items"][number];
 export type AdminAdjustmentList = InferResponseType<
   AdminBalance["adjustments"]["$get"],
   200
@@ -112,6 +126,52 @@ export function useAdminTopup(id: string | null) {
   });
 }
 
+/** 待处理: the 转入 and 转出 that need a look, one list. */
+export function useAdminAttention() {
+  const identity = useAdminIdentity();
+  return useInfiniteQuery({
+    queryKey: key(identity, "attention"),
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) =>
+      read<AdminAttentionList>(
+        `attention${pageParam ? `?cursor=${encodeURIComponent(pageParam)}` : ""}`,
+        signal,
+      ),
+    getNextPageParam: (last) => last.nextCursor,
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+}
+
+export function useAdminWithdrawals() {
+  const identity = useAdminIdentity();
+  return useInfiniteQuery({
+    queryKey: key(identity, "withdrawals"),
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) =>
+      read<AdminWithdrawalList>(
+        `withdrawals?view=all${pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : ""}`,
+        signal,
+      ),
+    getNextPageParam: (last) => last.nextCursor,
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+}
+
+/** One 转出: read again every 10 s while 发放中. */
+export function useAdminWithdrawal(id: string) {
+  const identity = useAdminIdentity();
+  return useQuery({
+    queryKey: key(identity, "withdrawal", id),
+    queryFn: ({ signal }) =>
+      read<AdminWithdrawalDetail>(`withdrawals/${id}`, signal),
+    retry: false,
+    refetchInterval: (query) =>
+      query.state.data?.withdrawal.status === "sending" ? 10_000 : false,
+  });
+}
+
 export function useAdminAdjustments() {
   const identity = useAdminIdentity();
   return useInfiniteQuery({
@@ -163,6 +223,7 @@ export function useBalanceAdmin(csrfToken: string) {
       await Promise.all([
         refresh("topup", id),
         refresh("topups"),
+        refresh("attention"),
         refresh("overview"),
       ]);
       return result;
@@ -177,6 +238,7 @@ export function useBalanceAdmin(csrfToken: string) {
       await Promise.all([
         refresh("topup", id),
         refresh("topups"),
+        refresh("attention"),
         refresh("overview"),
       ]);
       return result;

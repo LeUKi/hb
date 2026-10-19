@@ -381,7 +381,9 @@ test.describe("网站管理", () => {
     );
   });
 
-  test("概览：六项检查，不为零的能打开筛好的列表", async ({ page }) => {
+  test("概览：八项检查（含🐟额两项），不为零的能打开筛好的列表", async ({
+    page,
+  }) => {
     await mockSession(page, admin);
     const now = Date.now();
     const overview: AdminOverview = {
@@ -408,6 +410,8 @@ test.describe("网站管理", () => {
         undeliveredPaymentTasks: 0,
         undeliveredPaymentTasksOverdue: 0,
         staleMaintenance: 1,
+        balanceTopups: 0,
+        balanceWithdrawals: 2,
       },
       paymentsByMode: [
         { mode: "real", status: "attention", count: 1, oldestAgeSeconds: 7200 },
@@ -428,8 +432,14 @@ test.describe("网站管理", () => {
     const payments = await answer(page, "payments", () => list([payment()]));
     await openApp(page, "/admin");
     await expect(
-      page.getByText("3 项不为零，点开看具体是哪些。"),
+      page.getByText("4 项不为零，点开看具体是哪些。"),
     ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: /要看一下的转入/ }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("link", { name: /卡住的转出/ }),
+    ).toHaveAttribute("href", "/admin/balance");
     await expect(page.getByText("草稿 4 个")).toBeVisible();
     await expect(page.getByText("付款发送已暂停")).toBeVisible();
     await expect(page.getByText("最久等了 2 小时")).toBeVisible();

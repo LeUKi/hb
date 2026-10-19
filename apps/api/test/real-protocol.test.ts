@@ -22,6 +22,7 @@ function realTask(overrides: Partial<PaymentTaskRow> = {}): PaymentTaskRow {
     claimId: "claim-1",
     source: "claim",
     acceptanceId: null,
+    withdrawalId: null,
     merchantId: "merchant-1",
     clientId: "client_1",
     businessNo: "hb_order_1",

@@ -420,6 +420,10 @@ describe("admin read-only contracts", () => {
         cursor,
       }),
     ).toMatchObject({ activityId: itemId, merchantId: otherId });
+    // 未发出: a 🐟额 转出 Credit refused for good.
+    expect(adminPaymentsQuerySchema.parse({ status: "failed" }).status).toBe(
+      "failed",
+    );
     for (const invalid of [
       { rewardType: "money" },
       { status: "running" },
@@ -430,7 +434,7 @@ describe("admin read-only contracts", () => {
     for (const invalid of [
       { activityId: "not-uuid" },
       { mode: "live" },
-      { status: "failed" },
+      { status: "lost" },
       { anomaly: "stuck" },
       { exception: "true" },
     ])

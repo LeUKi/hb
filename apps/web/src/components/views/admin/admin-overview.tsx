@@ -48,12 +48,15 @@ type Check = {
   severe: boolean;
   /** Where the list is, filtered to these. */
   link?: {
-    to: "/admin/payments" | "/admin/activities";
+    to: "/admin/payments" | "/admin/activities" | "/admin/balance";
     search: { anomaly?: string; state?: string };
   };
 };
 
-/** The six checks, with production's thresholds (the server counts them). */
+/**
+ * The checks, with production's thresholds (the server counts them), and
+ * 站内🐟额's two: 转出 held or slow, 转入 with a flag or a refused key.
+ */
 function checksOf(overview: Overview): Check[] {
   const { warnings } = overview;
   return [
@@ -98,6 +101,20 @@ function checksOf(overview: Overview): Check[] {
       label: "维护失败或超过十五分钟未更新",
       count: warnings.staleMaintenance,
       severe: true,
+    },
+    {
+      key: "withdrawals",
+      label: "卡住的转出",
+      count: warnings.balanceWithdrawals,
+      severe: false,
+      link: { to: "/admin/balance", search: {} },
+    },
+    {
+      key: "topups",
+      label: "要看一下的转入",
+      count: warnings.balanceTopups,
+      severe: false,
+      link: { to: "/admin/balance", search: {} },
     },
   ];
 }
@@ -243,7 +260,7 @@ function OverviewPage({ overview }: { overview: Overview }) {
           waiting > 0 ? `${waiting} 项不为零，点开看具体是哪些。` : "都正常。"
         }
       >
-        <ul className="grid grid-cols-2 gap-3 @wide/window:grid-cols-3">
+        <ul className="grid grid-cols-2 gap-3 @wide/window:grid-cols-4">
           {checks.map((check) => (
             <li key={check.key}>
               <CheckCard check={check} />

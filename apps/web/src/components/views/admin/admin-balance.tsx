@@ -1,13 +1,18 @@
+import type { WithdrawalWait } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { AlertTriangle } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { useId, useRef, useState } from "react";
 import {
   type AdminTopupItem,
+  type AdminWithdrawalItem,
   useAdminAdjustments,
+  useAdminAttention,
   useAdminTopup,
   useAdminTopups,
   useAdminUserBalance,
+  useAdminWithdrawal,
+  useAdminWithdrawals,
   useBalanceAdmin,
   useBalanceOverview,
 } from "../../../lib/admin-balance";
@@ -28,6 +33,10 @@ import { ListItem, Swap } from "../../ui/reveal";
 import { StatusChip } from "../../ui/status-chip";
 import { topupStatusText, topupStatusTone } from "../balance-view";
 import {
+  withdrawalStatusText,
+  withdrawalStatusTone,
+} from "../balance-withdrawal-view";
+import {
   AdminFrame,
   DetailPart,
   DetailRows,
@@ -35,9 +44,11 @@ import {
   listLoad,
 } from "./admin-frame";
 
-type View = "attention" | "all" | "adjustments";
+type View = "attention" | "all" | "withdrawals" | "adjustments";
 const viewOf = (value: string | undefined): View =>
-  value === "all" || value === "adjustments" ? value : "attention";
+  value === "all" || value === "withdrawals" || value === "adjustments"
+    ? value
+    : "attention";
 
 const flagText = {
   mismatch: "订单信息不符",
@@ -58,6 +69,242 @@ const checkTriggerText: Record<string, string> = {
   admin: "管理员查单",
   submit: "下单被拒后",
 };
+
+/** A 转出 发放中, by what holds it (a word, beside its time). */
+const waitShort: Record<WithdrawalWait, string> = {
+  queued: "排队",
+  quota: "等额度",
+  funds: "等平台账户",
+  credentials: "等凭证",
+  checking: "核对中",
+  attention: "对不上",
+};
+
+/** The same, for an admin to act on. */
+function adminWaitText(wait: WithdrawalWait, resumeAt: number | null) {
+  switch (wait) {
+    case "quota":
+      return `平台账户今天的额度用完了，${resumeAt ? clockLabel(resumeAt) : "0 点"}后自动接着发。`;
+    case "funds":
+      return "平台账户里可用的 LDC 不够（转入的 LDC 要先过 Credit 的结算）。在 Credit 补足后自动接着发。";
+    case "credentials":
+      return "Credit 拒绝了平台应用的凭证。去网站设置重新检查，或者换密钥；通过后自动接着发。";
+    case "attention":
+      return "Credit 的回复和这笔转出对不上（数量、应用或订单号）。去 Credit 后台核对；这期间 🐟 一直锁着，不会重发。";
+    case "checking":
+      return "结果不明：一直在查单，查到之前不会重发。";
+    default:
+      return "排队等发放。";
+  }
+}
+
+const failureText = {
+  recipient: "Credit 里找不到这个账户（没登录过 Credit，或者改过用户名）",
+  self_payment: "不能分发给平台应用自己的账户",
+  configuration: "Credit 说支付配置不存在",
+  validation: "Credit 没有接受这个数量",
+} as const;
+
+const attemptText = {
+  operation: { send: "发送", query: "查单" } as Record<string, string>,
+  outcome: {
+    succeeded: "成功",
+    rejected: "被拒",
+    unknown: "不明",
+    started: "进行中",
+  } as Record<string, string>,
+  reason: {
+    quota: "额度用完",
+    funds: "余额不足",
+    credentials: "凭证",
+    recipient: "收款人不存在",
+    self_payment: "不能发给自己",
+    configuration: "支付配置",
+    validation: "参数被拒",
+    checking_not_found: "查不到订单",
+    upstream_pending: "未完成",
+    network: "网络",
+    timeout: "超时",
+    http: "HTTP 错误",
+    conflict: "对不上",
+    throttled: "限流",
+    interrupted: "中断",
+    unknown: "不明",
+  } as Record<string, string>,
+};
+
+function WithdrawalRowBody({ item }: { item: AdminWithdrawalItem }) {
+  const { withdrawal, user } = item;
+  return (
+    <>
+      <Avatar name={user.displayName} src={user.avatarUrl} size={36} />
+      <span className="grid min-w-0 flex-1 gap-0.5">
+        <span className="truncate text-base text-ink">{user.displayName}</span>
+        <span className="truncate text-xs text-ink-3">
+          转出 · {clockLabel(withdrawal.createdAt)}
+          {withdrawal.status === "sending" && withdrawal.wait
+            ? ` · ${waitShort[withdrawal.wait]}`
+            : ""}
+        </span>
+      </span>
+      <span className="grid shrink-0 justify-items-end gap-1">
+        <Fish
+          minor={-withdrawal.debitMinor}
+          signed
+          className="text-sm font-semibold"
+        />
+        <StatusChip tone={withdrawalStatusTone[withdrawal.status]} dot>
+          {withdrawalStatusText[withdrawal.status]}
+        </StatusChip>
+      </span>
+    </>
+  );
+}
+
+/** One 转出: only to read; the payment queue does the rest. */
+function WithdrawalDetail({ id }: { id: string }) {
+  const detail = useAdminWithdrawal(id);
+  const navigate = useNavigate();
+  return (
+    <DetailPart query={detail} lines={6}>
+      {(data) => {
+        const { withdrawal } = data;
+        const held =
+          withdrawal.status === "sending" &&
+          withdrawal.wait !== null &&
+          withdrawal.wait !== "queued";
+        return (
+          <div className="grid gap-4">
+            {held && withdrawal.wait && (
+              <Callout
+                tone="warning"
+                icon={AlertTriangle}
+                title={`发放中 · ${waitShort[withdrawal.wait]}`}
+              >
+                {adminWaitText(withdrawal.wait, withdrawal.resumeAt)}
+              </Callout>
+            )}
+            <DetailRows
+              rows={[
+                {
+                  label: "用户",
+                  value: `${data.user.displayName} @${data.user.username}`,
+                },
+                {
+                  label: "收款账户",
+                  value: `@${withdrawal.recipientUsername} · 社区 ID ${data.recipientId}`,
+                },
+                {
+                  label: "扣除",
+                  value: <Fish minor={withdrawal.debitMinor} />,
+                },
+                {
+                  label: "分发费",
+                  value: `${fishText(withdrawal.feeMinor)} LDC（${withdrawal.feePercent}%）`,
+                },
+                {
+                  label: "预计到账",
+                  value: `${fishText(withdrawal.creditMinor)} LDC`,
+                },
+                {
+                  label: "本站业务号",
+                  value: (
+                    <span className="flex items-center gap-1">
+                      <span className="min-w-0 font-mono text-xs">
+                        {withdrawal.businessNo}
+                      </span>
+                      <CopyButton
+                        value={withdrawal.businessNo}
+                        label="本站业务号"
+                      />
+                    </span>
+                  ),
+                },
+                {
+                  label: "Credit 订单号",
+                  value: withdrawal.externalOrderId ?? "尚未收到",
+                },
+                { label: "平台应用", value: data.clientId },
+                {
+                  label: "申请时间",
+                  value: clockSeconds(withdrawal.createdAt),
+                },
+                ...(withdrawal.sentAt !== null
+                  ? [
+                      {
+                        label: "发放时间",
+                        value: clockSeconds(withdrawal.sentAt),
+                      },
+                    ]
+                  : []),
+                ...(withdrawal.failedAt !== null
+                  ? [
+                      {
+                        label: "未发出",
+                        value: `${clockSeconds(withdrawal.failedAt)}，${withdrawal.failure ? failureText[withdrawal.failure] : "Credit 拒绝了"}；🐟 已退回`,
+                      },
+                    ]
+                  : []),
+              ]}
+            />
+            <section className="grid gap-2">
+              <h3 className="text-sm font-medium text-ink">发放记录</h3>
+              {data.attempts.length === 0 ? (
+                <p className="text-sm text-ink-3">还没发送。</p>
+              ) : (
+                <ul className="grid gap-1 text-sm">
+                  {data.attempts.map((attempt) => (
+                    <li
+                      key={`${attempt.startedAt}:${attempt.operation}`}
+                      className="flex flex-wrap gap-x-2 text-ink-2"
+                    >
+                      <span className="text-ink-3 tabular-nums">
+                        {clockSeconds(attempt.startedAt)}
+                      </span>
+                      <span>
+                        {attemptText.operation[attempt.operation] ??
+                          attempt.operation}
+                      </span>
+                      <span className="text-ink">
+                        {attemptText.outcome[attempt.outcome] ??
+                          attempt.outcome}
+                      </span>
+                      {attempt.reason && (
+                        <span>
+                          {attemptText.reason[attempt.reason] ?? attempt.reason}
+                        </span>
+                      )}
+                      {attempt.httpStatus !== null && (
+                        <span className="text-ink-3">
+                          HTTP {attempt.httpStatus}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+            {data.payment && (
+              <div>
+                <MoreLink
+                  href={`/admin/payments?q=${data.payment.id}`}
+                  onGo={() =>
+                    void navigate({
+                      to: "/admin/payments",
+                      search: { q: data.payment?.id },
+                    })
+                  }
+                >
+                  在付款里看
+                </MoreLink>
+              </div>
+            )}
+          </div>
+        );
+      }}
+    </DetailPart>
+  );
+}
 
 function TopupRowBody({ item }: { item: AdminTopupItem }) {
   const { topup, user } = item;
@@ -292,13 +539,23 @@ function Overview() {
           }
         >
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span>转入要先在网站设置里配好平台应用。</span>
+            <span>转入和转出都要先在网站设置里配好平台应用。</span>
             <SettingsLink />
           </span>
         </Callout>
       )}
+      {data.mismatches > 0 && (
+        <Callout
+          tone="danger"
+          icon={AlertTriangle}
+          title={`账目有 ${data.mismatches} 处对不上`}
+        >
+          明细、锁定和转出之间对不上，这不该发生。先在网站设置里关掉转入和转出，再查。
+        </Callout>
+      )}
       <Panel className="p-5">
         <Facts
+          className="@wide/window:grid-cols-3"
           items={[
             {
               label: "代存合计",
@@ -326,6 +583,19 @@ function Overview() {
                   ? `${data.attention.topups} 笔要看一下`
                   : "都正常",
             },
+            {
+              label: "转出中",
+              value: <Fish minor={data.sending.minor} />,
+              note:
+                data.attention.withdrawals > 0
+                  ? `${data.sending.count} 笔，${data.attention.withdrawals} 笔要看一下`
+                  : `${data.sending.count} 笔`,
+            },
+            {
+              label: "今天转出",
+              value: <Fish minor={data.today.withdrawnMinor} />,
+              note: `${data.today.withdrawals} 笔已发放`,
+            },
           ]}
         />
       </Panel>
@@ -343,6 +613,84 @@ function SettingsLink() {
     >
       去设置
     </MoreLink>
+  );
+}
+
+/** 待处理: the 转入 and 转出 that need a look, one list. */
+function Attention() {
+  const listQuery = useAdminAttention();
+  const [selected, setSelected] = useState<string | null>(null);
+  const list = useQueryLazyList({
+    hasNextPage: listQuery.hasNextPage,
+    isFetchingNextPage: listQuery.isFetchingNextPage,
+    isFetchNextPageError: listQuery.isFetchNextPageError,
+    fetchNextPage: listQuery.fetchNextPage,
+    pageCount: listQuery.data?.pages.length ?? 0,
+  });
+  const items = (listQuery.data?.pages ?? []).flatMap((page) => page.items);
+  return (
+    <ListDetail
+      items={items}
+      list={list}
+      total={undefined}
+      load={resultOf(listQuery)}
+      selectedId={selected}
+      onSelect={setSelected}
+      placeholder="点一笔看详情。"
+      unit="笔"
+      noun="待处理"
+      empty={
+        <EmptyNote
+          title="没有要处理的"
+          text="订单信息不符、查单不再成功、凭证被拒的转入，和在等额度、等平台账户、结果不明或超过半小时的转出，会出现在这里。"
+        />
+      }
+      row={(item) =>
+        item.type === "topup" ? (
+          <TopupRowBody item={item} />
+        ) : (
+          <WithdrawalRowBody item={item} />
+        )
+      }
+      detail={(item) =>
+        item.type === "topup" ? (
+          <TopupDetail item={item} />
+        ) : (
+          <WithdrawalDetail id={item.id} />
+        )
+      }
+    />
+  );
+}
+
+function Withdrawals() {
+  const listQuery = useAdminWithdrawals();
+  const [selected, setSelected] = useState<string | null>(null);
+  const list = useQueryLazyList({
+    hasNextPage: listQuery.hasNextPage,
+    isFetchingNextPage: listQuery.isFetchingNextPage,
+    isFetchNextPageError: listQuery.isFetchNextPageError,
+    fetchNextPage: listQuery.fetchNextPage,
+    pageCount: listQuery.data?.pages.length ?? 0,
+  });
+  const items = (listQuery.data?.pages ?? [])
+    .flatMap((page) => page.items)
+    .map((item) => ({ ...item, id: item.withdrawal.id }));
+  return (
+    <ListDetail
+      items={items}
+      list={list}
+      total={undefined}
+      load={resultOf(listQuery)}
+      selectedId={selected}
+      onSelect={setSelected}
+      placeholder="点一笔转出看详情。"
+      unit="笔"
+      noun="转出"
+      empty={<EmptyNote title="还没有转出" />}
+      row={(item) => <WithdrawalRowBody item={item} />}
+      detail={(item) => <WithdrawalDetail id={item.id} />}
+    />
   );
 }
 
@@ -476,9 +824,13 @@ export function AdminBalance({ search }: { search: AdminSearch }) {
               {
                 value: "attention",
                 label: "待处理",
-                count: overview.data?.attention.topups,
+                count: overview.data
+                  ? overview.data.attention.topups +
+                    overview.data.attention.withdrawals
+                  : undefined,
               },
-              { value: "all", label: "全部转入" },
+              { value: "all", label: "转入" },
+              { value: "withdrawals", label: "转出" },
               { value: "adjustments", label: "调整" },
             ]}
           />
@@ -486,6 +838,10 @@ export function AdminBalance({ search }: { search: AdminSearch }) {
         <Swap id={view}>
           {view === "adjustments" ? (
             <Adjustments />
+          ) : view === "withdrawals" ? (
+            <Withdrawals />
+          ) : view === "attention" ? (
+            <Attention />
           ) : (
             <Topups key={view} view={view} />
           )}
@@ -563,14 +919,18 @@ export function UserBalance({ userId }: { userId: string }) {
                     key={
                       record.type === "topup"
                         ? record.topup.id
-                        : record.adjustment.id
+                        : record.type === "withdrawal"
+                          ? record.withdrawal.id
+                          : record.adjustment.id
                     }
                     className="flex items-baseline justify-between gap-3"
                   >
                     <span className="min-w-0 truncate text-ink-2">
                       {record.type === "topup"
                         ? `转入 · ${topupStatusText[record.topup.status]}`
-                        : `${record.adjustment.direction === "add" ? "补加" : "扣回"} · ${record.adjustment.reason}`}
+                        : record.type === "withdrawal"
+                          ? `转出 · ${withdrawalStatusText[record.withdrawal.status]}`
+                          : `${record.adjustment.direction === "add" ? "补加" : "扣回"} · ${record.adjustment.reason}`}
                     </span>
                     <Fish
                       signed
@@ -578,9 +938,11 @@ export function UserBalance({ userId }: { userId: string }) {
                       minor={
                         record.type === "topup"
                           ? record.topup.creditMinor
-                          : record.adjustment.direction === "add"
-                            ? record.adjustment.amountMinor
-                            : -record.adjustment.amountMinor
+                          : record.type === "withdrawal"
+                            ? -record.withdrawal.debitMinor
+                            : record.adjustment.direction === "add"
+                              ? record.adjustment.amountMinor
+                              : -record.adjustment.amountMinor
                       }
                     />
                   </li>

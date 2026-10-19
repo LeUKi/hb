@@ -787,7 +787,7 @@ async function userDetail(
 function paymentFrom(row: Record<string, unknown>): AdminPaymentListItem {
   return {
     id: String(row.id),
-    source: row.source as "claim" | "acceptance",
+    source: row.source as AdminPaymentListItem["source"],
     mode: row.mode as "simulation" | "real",
     status: row.status as AdminPaymentListItem["status"],
     reason: row.reason === null ? null : String(row.reason),
@@ -967,7 +967,7 @@ async function paymentDetail(
 ): Promise<AdminPaymentDetailResponse> {
   const cursor = parseCursor(attemptsCursor);
   const [payment, attempts] = await env.DB.batch([
-    env.DB.prepare(`SELECT p.id,p.source,p.claim_id,p.acceptance_id,p.mode,p.status,p.reason,p.unknown_outcome,
+    env.DB.prepare(`SELECT p.id,p.source,p.claim_id,p.acceptance_id,p.withdrawal_id,p.mode,p.status,p.reason,p.unknown_outcome,
       p.amount_minor,p.business_no,p.external_order_id,p.merchant_id,m.label AS merchant_label,
       m.client_id AS merchant_client_id,
       p.recipient_id,p.recipient_username,u.username AS current_recipient_username,
@@ -1016,15 +1016,19 @@ async function paymentDetail(
   // What the 红包's sender sees of it (付款详情): its state in words, its
   // steps and the latest 20 requests, read the same way. A row that view
   // cannot read (an inconsistent source, say) still shows its own fields.
-  const view = await merchantPaymentDetail(env, base.merchantId, base.id).catch(
-    (error: unknown) => {
-      console.log("admin.payment_view_failed", {
-        taskId: base.id,
-        reason: error instanceof Error ? error.message : "unknown",
-      });
-      return null;
-    },
-  );
+  // A 🐟额 转出 has no sender's view: its own record is in 🐟额.
+  const view =
+    base.source === "withdrawal"
+      ? null
+      : await merchantPaymentDetail(env, base.merchantId, base.id).catch(
+          (error: unknown) => {
+            console.log("admin.payment_view_failed", {
+              taskId: base.id,
+              reason: error instanceof Error ? error.message : "unknown",
+            });
+            return null;
+          },
+        );
   return {
     draw: row.money_mode === "timed_draw",
     view,
@@ -1035,6 +1039,8 @@ async function paymentDetail(
       claimId: row.claim_id === null ? null : String(row.claim_id),
       acceptanceId:
         row.acceptance_id === null ? null : String(row.acceptance_id),
+      withdrawalId:
+        row.withdrawal_id == null ? null : String(row.withdrawal_id),
       attemptCount: asInt(row.attempt_count),
       reconciliationCount: asInt(row.reconciliation_count),
       nextAction: row.next_action as "query" | "send" | "none",

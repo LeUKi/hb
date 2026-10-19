@@ -647,9 +647,9 @@ describe("网站管理 · 🐟额", () => {
         .balanceWithdrawals,
     ).toBe(before.attention.withdrawals + 1);
     // Members see none of it.
-    expect(
-      (await call("GET", "/admin/balance/attention", tester)).status,
-    ).toBe(403);
+    expect((await call("GET", "/admin/balance/attention", tester)).status).toBe(
+      403,
+    );
   });
 });
 

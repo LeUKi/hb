@@ -296,7 +296,10 @@ export function createTestUpstream(Response, origin, options = {}) {
           body.username !== recipient.username ||
           amountMinor < 1 ||
           amountMinor > 10_000 ||
-          !/^(?:hb|hb\.lafi\.sh)_[0-9a-f]{32}$/.test(body.out_trade_no) ||
+          // A claim's (either form), or a 🐟额 转出's.
+          !/^(?:hb|hb\.lafi\.sh|hb\.lafi\.sh_out)_[0-9a-f]{32}$/.test(
+            body.out_trade_no,
+          ) ||
           // LDC: a remark of at most 100 characters.
           (body.remark !== undefined &&
             (typeof body.remark !== "string" ||

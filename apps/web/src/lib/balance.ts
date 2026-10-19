@@ -1,4 +1,9 @@
-import type { BalanceTopup, CreateTopupInput } from "@hb/contracts";
+import type {
+  BalanceTopup,
+  BalanceWithdrawal,
+  CreateTopupInput,
+  CreateWithdrawalInput,
+} from "@hb/contracts";
 import {
   useInfiniteQuery,
   useMutation,
@@ -20,7 +25,7 @@ export type BalancePage = InferResponseType<
   200
 >;
 export type BalanceRecord = BalancePage["items"][number];
-export type BalanceFilter = "all" | "topup" | "adjustment";
+export type BalanceFilter = "all" | "topup" | "withdrawal" | "adjustment";
 
 export const balanceKeys = {
   all: (identity: string) => ["merchant-private", identity, "balance"] as const,
@@ -28,6 +33,8 @@ export const balanceKeys = {
     [...balanceKeys.all(identity), "list", filter] as const,
   topup: (identity: string, id: string) =>
     [...balanceKeys.all(identity), "topup", id] as const,
+  withdrawal: (identity: string, id: string) =>
+    [...balanceKeys.all(identity), "withdrawal", id] as const,
 };
 
 export function useBalancePages(userId: string, filter: BalanceFilter) {
@@ -162,4 +169,52 @@ export function useTopupActions(userId: string) {
 /** Where Credit's cashier opens: this tab, and Credit brings it back. */
 export function goToCashier(url: string) {
   window.location.assign(url);
+}
+
+/**
+ * One 转出, read again every 3 s while 发放中: the payment queue moves it,
+ * and the page follows.
+ */
+export function useWithdrawal(userId: string, id: string) {
+  const session = useMerchantIdentity(userId);
+  return useQuery({
+    queryKey: balanceKeys.withdrawal(session.identity, id),
+    enabled: session.enabled,
+    queryFn: async ({ signal }) =>
+      session.read<{ withdrawal: BalanceWithdrawal }>(
+        await api.api.me.balance.withdrawals[":id"].$get(
+          { param: { id } },
+          { init: { signal, cache: "no-store" } },
+        ),
+      ),
+    retry: false,
+    refetchInterval: (query) =>
+      query.state.data?.withdrawal.status === "sending" ? 3000 : false,
+  });
+}
+
+/** 转出: asked for once; the queue does the rest. */
+export function useWithdrawalActions(userId: string) {
+  const session = useMerchantIdentity(userId);
+  const queryClient = useQueryClient();
+  const options = useCsrf();
+  const create = useMutation({
+    mutationFn: async (input: CreateWithdrawalInput) => {
+      const identity = session.captureIdentity() ?? "";
+      const result = await readResponse<{ withdrawal: BalanceWithdrawal }>(
+        await api.api.me.balance.withdrawals.$post({ json: input }, options),
+      );
+      if (session.isCurrentIdentity(identity)) {
+        queryClient.setQueryData(
+          balanceKeys.withdrawal(identity, result.withdrawal.id),
+          result,
+        );
+        await queryClient.invalidateQueries({
+          queryKey: [...balanceKeys.all(identity), "list"],
+        });
+      }
+      return result;
+    },
+  });
+  return { create };
 }

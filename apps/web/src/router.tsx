@@ -164,6 +164,11 @@ const merchantDetailRoute = subRoute(
   "商户详情",
 );
 const balanceTopupRoute = subRoute("/balance/$topupId", "balance", "转入详情");
+const balanceWithdrawalRoute = subRoute(
+  "/balance/out/$withdrawalId",
+  "balance",
+  "转出详情",
+);
 const paymentDetailRoute = subRoute(
   "/payments/$paymentId",
   "payments",
@@ -245,6 +250,7 @@ const routeTree = rootRoute.addChildren([
   paymentDetailRoute,
   balanceRoute,
   balanceTopupRoute,
+  balanceWithdrawalRoute,
   adminRoute,
   adminActivitiesRoute,
   adminUsersRoute,

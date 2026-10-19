@@ -7,7 +7,7 @@ import { localOnly, origin, signIn, waitForBoot } from "./session";
 
 const control = "http://127.0.0.1:4194";
 
-test("站内🐟额：管理员配好平台应用和白名单，领取者转入、确认后到账，扣回写着原因", async ({
+test("站内🐟额：管理员配好平台应用和白名单，领取者转入、确认后到账，扣回写着原因，再转出到 Credit", async ({
   browser,
 }) => {
   // 网站设置: the platform app, then 转入 on for the recipient alone.
@@ -27,9 +27,11 @@ test("站内🐟额：管理员配好平台应用和白名单，领取者转入�
   }
   await expect(app.getByText("凭证通过")).toBeVisible({ timeout: 20_000 });
   const fishSettings = admin.getByRole("region", { name: "站内🐟额" });
-  const topups = fishSettings.getByRole("switch", { name: "转入" });
-  if ((await topups.getAttribute("aria-checked")) !== "true")
-    await topups.click();
+  for (const name of ["转入", "转出"]) {
+    const toggle = fishSettings.getByRole("switch", { name });
+    if ((await toggle.getAttribute("aria-checked")) !== "true")
+      await toggle.click();
+  }
   await fishSettings.getByLabel("名单", { exact: true }).fill("730002");
   await fishSettings.getByRole("button", { name: "保存🐟额设置" }).click();
   await expect(fishSettings.getByText("已保存，立即生效")).toBeVisible();
@@ -101,4 +103,21 @@ test("站内🐟额：管理员配好平台应用和白名单，领取者转入�
   await expect(figure).toContainText((before + 10).toFixed(2));
   await expect(page.getByText("完整应用测试扣回")).toBeVisible();
   await expect(page.getByText("站长扣回").first()).toBeVisible();
+
+  // 转出: back to the recipient's own Credit account, sent by the queue.
+  await page
+    .locator("header")
+    .getByRole("button", { name: "转出", exact: true })
+    .click();
+  const out = page.getByRole("dialog", { name: "转出🐟额" });
+  await out.getByLabel("扣除").fill("5");
+  await expect(out.getByLabel("预计到账")).toHaveValue("4.40");
+  await out.getByRole("button", { name: "转出", exact: true }).click();
+  await page.waitForURL(/\/balance\/out\/[0-9a-f-]{36}$/);
+  await expect(page.getByText("已发放", { exact: true }).first()).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.goto("/balance");
+  await waitForBoot(page);
+  await expect(figure).toContainText((before + 5).toFixed(2));
 });

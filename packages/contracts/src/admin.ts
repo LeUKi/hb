@@ -229,6 +229,8 @@ export type AdminPaymentDetail = AdminPaymentListItem & {
   merchantClientId: string | null;
   claimId: string | null;
   acceptanceId: string | null;
+  /** A 🐟额 转出's own record (source "withdrawal"). */
+  withdrawalId: string | null;
   attemptCount: number;
   reconciliationCount: number;
   nextAction: "query" | "send" | "none";

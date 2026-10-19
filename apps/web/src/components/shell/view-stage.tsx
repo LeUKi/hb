@@ -20,6 +20,7 @@ import { AdminSettings } from "../views/admin/admin-settings";
 import { AdminUsers } from "../views/admin/admin-users";
 import { BalanceTopupView } from "../views/balance-topup-view";
 import { BalanceView } from "../views/balance-view";
+import { BalanceWithdrawalView } from "../views/balance-withdrawal-view";
 import { HelpView } from "../views/help-view";
 import { HistoryView } from "../views/history-view";
 import { HongbaoView } from "../views/hongbao-view";
@@ -118,6 +119,13 @@ function renderView(leaf: NonNullable<Leaf>): ReactNode {
         <CommandPageView
           id="balance"
           page={<BalanceTopupView id={params.topupId ?? ""} />}
+        />
+      );
+    case "/balance/out/$withdrawalId":
+      return (
+        <CommandPageView
+          id="balance"
+          page={<BalanceWithdrawalView id={params.withdrawalId ?? ""} />}
         />
       );
     case "/payments/$paymentId":
