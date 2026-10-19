@@ -107,7 +107,7 @@ function encodeAuditCursor(row: AuditCursor | undefined) {
 function parseAuditCursor(value: string | undefined): AuditCursor | null {
   if (!value) return null;
   const match =
-    /^(\d{1,16}):(attempt_rate_limits):([A-Za-z0-9_-][A-Za-z0-9_-]{0,100}|[a-f0-9-]{36})$/.exec(
+    /^(\d{1,16}):(attempt_rate_limits|balance_settings):([A-Za-z0-9_-][A-Za-z0-9_-]{0,100}|[a-f0-9-]{36})$/.exec(
       value,
     );
   if (!match) throw new ActivityError(400, "INVALID_CURSOR", "分页游标无效。");
@@ -1054,12 +1054,25 @@ async function paymentDetail(
   };
 }
 
+/** 🐟额 settings as the audit lists them: flags, numbers, the allowlist's size. */
+function balanceAuditValues(json: unknown): Record<string, boolean | number> {
+  const value = (json ?? {}) as Record<string, unknown>;
+  return {
+    topupEnabled: value.topupEnabled === true,
+    withdrawEnabled: value.withdrawEnabled === true,
+    topupFeePercent: Number(value.topupFeePercent ?? 0),
+    withdrawFeePercent: Number(value.withdrawFeePercent ?? 0),
+    withdrawMaxMinor: Number(value.withdrawMaxMinor ?? 0),
+    allowlistEnabled: value.allowlistEnabled === true,
+    allowlistCount: Array.isArray(value.allowlist) ? value.allowlist.length : 0,
+  };
+}
+
 async function audit(
   env: ApiBindings,
   query: z.infer<typeof adminAuditQuerySchema>,
 ): Promise<AdminCursorList<AdminAuditEntry>> {
-  // Only one kind of change is audited now; the filter still has to be valid.
-  parseFilter(adminAuditTypeSchema, query.type ?? "all", "type");
+  const type = parseFilter(adminAuditTypeSchema, query.type ?? "all", "type");
   const actor = (query.actorUserId ?? query.actor ?? "").trim();
   const cursor = parseAuditCursor(query.cursor);
   const actorWhere = actor
@@ -1084,50 +1097,92 @@ async function audit(
   const cursorValues: BindValue[] = cursor
     ? [cursor.createdAt, cursor.createdAt, cursor.id]
     : [];
-  const { rows, total } = await rowsWithTotal(
-    env,
-    env.DB.prepare(`SELECT c.id,c.actor_user_id,u.display_name AS actorDisplayName,
-    u.avatar_url AS actorAvatarUrl,c.previous_version,c.next_version,
-    c.previous_home_interval_seconds,c.home_interval_seconds,
-    c.previous_activity_interval_seconds,c.activity_interval_seconds,c.created_at
-    FROM attempt_rate_limit_changes c LEFT JOIN users u ON u.id=c.actor_user_id
-    WHERE 1=1 ${dateWhere} ${actorWhere} ${cursorSql}
-    ORDER BY c.created_at DESC,c.id DESC LIMIT ${adminPageSize + 1}`).bind(
-      ...dateValues,
-      ...actorValues,
-      ...cursorValues,
-    ),
-    cursor
-      ? null
-      : env.DB.prepare(`SELECT COUNT(*) AS count
-        FROM attempt_rate_limit_changes c LEFT JOIN users u ON u.id=c.actor_user_id
-        WHERE 1=1 ${dateWhere} ${actorWhere}`).bind(
+  // Each kind of change from its own table, merged newest first.
+  const sources = [
+    {
+      type: "attempt_rate_limits" as const,
+      columns: `c.previous_home_interval_seconds,c.home_interval_seconds,
+        c.previous_activity_interval_seconds,c.activity_interval_seconds`,
+      table: "attempt_rate_limit_changes",
+      values: (row: Record<string, unknown>) => ({
+        before: {
+          homeIntervalSeconds: asInt(row.previous_home_interval_seconds),
+          activityIntervalSeconds: asInt(
+            row.previous_activity_interval_seconds,
+          ),
+        },
+        after: {
+          homeIntervalSeconds: asInt(row.home_interval_seconds),
+          activityIntervalSeconds: asInt(row.activity_interval_seconds),
+        },
+      }),
+    },
+    {
+      type: "balance_settings" as const,
+      columns: "c.previous,c.next",
+      table: "balance_setting_changes",
+      values: (row: Record<string, unknown>) => ({
+        before: balanceAuditValues(JSON.parse(String(row.previous))),
+        after: balanceAuditValues(JSON.parse(String(row.next))),
+      }),
+    },
+  ].filter((source) => type === "all" || source.type === type);
+  const read = await Promise.all(
+    sources.map((source) =>
+      rowsWithTotal(
+        env,
+        env.DB.prepare(`SELECT c.id,c.actor_user_id,u.display_name AS actorDisplayName,
+        u.avatar_url AS actorAvatarUrl,c.previous_version,c.next_version,c.created_at,
+        ${source.columns}
+        FROM ${source.table} c LEFT JOIN users u ON u.id=c.actor_user_id
+        WHERE 1=1 ${dateWhere} ${actorWhere} ${cursorSql}
+        ORDER BY c.created_at DESC,c.id DESC LIMIT ${adminPageSize + 1}`).bind(
           ...dateValues,
           ...actorValues,
+          ...cursorValues,
         ),
+        cursor
+          ? null
+          : env.DB.prepare(`SELECT COUNT(*) AS count
+            FROM ${source.table} c LEFT JOIN users u ON u.id=c.actor_user_id
+            WHERE 1=1 ${dateWhere} ${actorWhere}`).bind(
+              ...dateValues,
+              ...actorValues,
+            ),
+      ).then(({ rows, total }) => ({ source, rows, total })),
+    ),
   );
-  const items = rows.map((row): AdminAuditEntry & Cursor => ({
-    id: String(row.id),
-    type: "attempt_rate_limits",
-    actorUserId: String(row.actor_user_id),
-    actorDisplayName:
-      row.actorDisplayName === null
-        ? String(row.actor_user_id)
-        : String(row.actorDisplayName),
-    actorAvatarUrl:
-      row.actorAvatarUrl == null ? null : String(row.actorAvatarUrl),
-    previousVersion: asInt(row.previous_version),
-    nextVersion: asInt(row.next_version),
-    before: {
-      homeIntervalSeconds: asInt(row.previous_home_interval_seconds),
-      activityIntervalSeconds: asInt(row.previous_activity_interval_seconds),
-    },
-    after: {
-      homeIntervalSeconds: asInt(row.home_interval_seconds),
-      activityIntervalSeconds: asInt(row.activity_interval_seconds),
-    },
-    createdAt: asInt(row.created_at),
-  }));
+  const items = read
+    .flatMap(({ source, rows }) =>
+      rows.map((row): AdminAuditEntry & Cursor => ({
+        id: String(row.id),
+        type: source.type,
+        actorUserId: String(row.actor_user_id),
+        actorDisplayName:
+          row.actorDisplayName === null
+            ? String(row.actor_user_id)
+            : String(row.actorDisplayName),
+        actorAvatarUrl:
+          row.actorAvatarUrl == null ? null : String(row.actorAvatarUrl),
+        previousVersion: asInt(row.previous_version),
+        nextVersion: asInt(row.next_version),
+        ...source.values(row),
+        createdAt: asInt(row.created_at),
+      })),
+    )
+    // As SQLite orders them: newest first, then id by its bytes.
+    .sort((left, right) =>
+      right.createdAt !== left.createdAt
+        ? right.createdAt - left.createdAt
+        : right.id > left.id
+          ? 1
+          : right.id < left.id
+            ? -1
+            : 0,
+    );
+  const total = cursor
+    ? undefined
+    : read.reduce((sum, { total }) => sum + (total ?? 0), 0);
   const pageItems = page(items);
   const last = pageItems.at(-1);
   return {

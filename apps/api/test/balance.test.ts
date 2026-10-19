@@ -326,6 +326,27 @@ describe("站内🐟额 settings and the platform app", () => {
       (changes.json as { recentChanges: { nextVersion: number }[] })
         .recentChanges[0]?.nextVersion,
     ).toBe(settings.version + 1);
+    // 操作记录 lists it among the site's changes, the allowlist as a count.
+    const audit = await call(
+      "GET",
+      "/admin/audit?type=balance_settings",
+      admin,
+    );
+    expect(audit.status).toBe(200);
+    const [entry] = (
+      audit.json as {
+        items: {
+          type: string;
+          before: Record<string, unknown>;
+          after: Record<string, unknown>;
+        }[];
+      }
+    ).items;
+    expect(entry).toMatchObject({
+      type: "balance_settings",
+      after: { topupEnabled: true, topupFeePercent: 10, allowlistCount: 1 },
+    });
+    expect(entry?.after).not.toHaveProperty("allowlist");
   });
 
   it("keeps the platform app out of the admin's own merchants, and checks its key", async () => {
@@ -406,16 +427,18 @@ describe("转入", () => {
     const outsider = await actor("outsider");
     expect((await call("GET", "/me/balance", outsider)).status).toBe(404);
     const session = await call("GET", "/session", outsider);
-    expect((session.json as { balance: boolean }).balance).toBe(false);
+    expect((session.json as { user: { balance: boolean } }).user.balance).toBe(
+      false,
+    );
     expect((await call("GET", "/session", admin)).json).toMatchObject({
-      balance: false,
+      user: { balance: false },
     });
   });
 
   it("goes to Credit's cashier, and arrives once when Credit says paid", async () => {
     const { tester, credit, settingsVersion } = await openForTester();
     expect((await call("GET", "/session", tester)).json).toMatchObject({
-      balance: true,
+      user: { balance: true },
     });
     const started = await call("POST", "/me/balance/topups", tester, {
       requestId: crypto.randomUUID(),

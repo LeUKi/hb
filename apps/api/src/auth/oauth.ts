@@ -73,11 +73,13 @@ export const authRoutes = new Hono<ApiContext>()
     if (isFirstPartySessionRead(c)) await setImageSessionCookie(c, session);
 
     return c.json({
-      user: session.user,
+      user: {
+        ...session.user,
+        /** 站内🐟额's entry shows (the allowlist, until it is open to all). */
+        balance: await balanceOpenFor(c.env, session.user.id),
+      },
       csrfToken: session.csrfToken,
       attemptCooldown: session.attemptCooldown,
-      /** 站内🐟额's entry shows (the allowlist, until it is open to all). */
-      balance: await balanceOpenFor(c.env, session.user.id),
     });
   })
   .get("/me", async (c) => {

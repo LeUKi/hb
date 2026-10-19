@@ -45,7 +45,11 @@ export const adminPaymentAnomalySchema = z.enum([
   "overdue",
   "undelivered",
 ]);
-export const adminAuditTypeSchema = z.enum(["all", "attempt_rate_limits"]);
+export const adminAuditTypeSchema = z.enum([
+  "all",
+  "attempt_rate_limits",
+  "balance_settings",
+]);
 export type AdminAuditType = z.infer<typeof adminAuditTypeSchema>;
 
 export type AdminListResponse<T> = {
@@ -269,7 +273,7 @@ const adminAuditCursorValueSchema = z
   .string()
   .max(512)
   .regex(
-    /^(\d{1,16}):(attempt_rate_limits):([A-Za-z0-9_-][A-Za-z0-9_-]{0,100}|[a-f0-9-]{36})$/,
+    /^(\d{1,16}):(attempt_rate_limits|balance_settings):([A-Za-z0-9_-][A-Za-z0-9_-]{0,100}|[a-f0-9-]{36})$/,
   )
   .refine((value) => Number.isSafeInteger(Number(value.split(":", 1)[0])));
 

@@ -886,6 +886,73 @@ describe("administrator observation APIs", () => {
     expect(seen).toEqual([...ids].reverse());
   });
 
+  it("merges 🐟额 setting changes into the same pages, ties included", async () => {
+    const { admin } = await seedAdminObservation();
+    const base = Date.now();
+    const settings = (allowlist: string[], topupEnabled: boolean) =>
+      JSON.stringify({
+        topupEnabled,
+        withdrawEnabled: false,
+        topupFeePercent: 12,
+        withdrawFeePercent: 12,
+        withdrawMaxMinor: 100_000,
+        allowlistEnabled: true,
+        allowlist,
+      });
+    const rate = Array.from(
+      { length: 25 },
+      (_, index) => `admin-audit-mixed-r${String(index).padStart(2, "0")}`,
+    );
+    const fish = Array.from(
+      { length: 25 },
+      (_, index) => `admin-audit-mixed-f${String(index).padStart(2, "0")}`,
+    );
+    await env.DB.batch([
+      ...rate.map((id, index) =>
+        env.DB.prepare(`INSERT INTO attempt_rate_limit_changes
+          (id,actor_user_id,previous_version,next_version,previous_home_interval_seconds,
+           home_interval_seconds,previous_activity_interval_seconds,activity_interval_seconds,created_at)
+          VALUES (?,?,?,?,2,3,2,4,?)`).bind(
+          id,
+          admin.id,
+          300 + index,
+          301 + index,
+          base - (index % 3),
+        ),
+      ),
+      ...fish.map((id, index) =>
+        env.DB.prepare(`INSERT INTO balance_setting_changes
+          (id,actor_user_id,previous_version,next_version,previous,next,created_at)
+          VALUES (?,?,?,?,?,?,?)`).bind(
+          id,
+          admin.id,
+          400 + index,
+          401 + index,
+          settings([], false),
+          settings(["1", "2"], true),
+          base - (index % 3),
+        ),
+      ),
+    ]);
+    const seen = await collectAdminListIds(
+      `/api/admin/audit?actor=${admin.id}`,
+      admin,
+    );
+    expect(seen).toHaveLength(50);
+    expect(new Set(seen)).toEqual(new Set([...rate, ...fish]));
+    const response = await request(
+      `/api/admin/audit?actor=${admin.id}&type=balance_settings`,
+      admin,
+    );
+    const body = (await response.json()) as AdminCursorList<unknown>;
+    expect(body.total).toBe(25);
+    expect(body.items[0]).toMatchObject({
+      type: "balance_settings",
+      before: { topupEnabled: false, allowlistCount: 0 },
+      after: { topupEnabled: true, allowlistCount: 2 },
+    });
+  });
+
   it("reads lists as the new 网站管理 draws them: totals, the sender's view, 🧧 links", async () => {
     const now = Date.now();
     const { admin, member, activeId, merchantId, paymentId } =
