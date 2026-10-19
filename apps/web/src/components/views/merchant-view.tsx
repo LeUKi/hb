@@ -48,8 +48,7 @@ import { type ChipTone, StatusChip } from "../ui/status-chip";
 import { MerchantGuide } from "./merchant-guide";
 import { MessageView } from "./message-view";
 
-const PAGE_NOTE =
-  "红包里的 LDC 从你的集市应用直接付给领取人，本站不代收、不预存。";
+const PAGE_NOTE = "LDC 红包由你的集市应用直接付给领取人，不经过本站。";
 
 /** Production's rules for a Client ID (createMerchantSchema). */
 function clientIdError(value: string) {

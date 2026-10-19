@@ -8,6 +8,7 @@ import { useIsPresent } from "motion/react";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { refused } from "../../../lib/activities";
 import { useRateLimits, useSaveRateLimits } from "../../../lib/admin";
+import { useBalanceSettings } from "../../../lib/admin-balance";
 import { clockLabel } from "../../../lib/roster-time";
 import { useIdentity } from "../../../lib/session";
 import { PageSection, Panel } from "../../page/page";
@@ -17,7 +18,11 @@ import { Button } from "../../ui/button";
 import { MoreLink } from "../../ui/button-link";
 import { Field, TextInput } from "../../ui/field";
 import { Reveal, RevealInline } from "../../ui/reveal";
-import { AdminFrame } from "./admin-frame";
+import {
+  BalanceSettingsSection,
+  PlatformAppSection,
+} from "./admin-balance-settings";
+import { AdminFrame, DetailPart } from "./admin-frame";
 
 const valid = (value: string) =>
   /^\d+$/.test(value.trim()) && Number(value) >= 1 && Number(value) <= 3600;
@@ -163,107 +168,101 @@ function SettingsForm({ data }: { data: AttemptRateLimitsResponse }) {
   };
 
   return (
-    <AdminFrame>
-      <PageSection
-        title="口令尝试间隔"
-        description="同一个人两次提交口令之间至少隔多久。起始页查口令和红包页领取分开计算；无需口令的红包按红包页的间隔。"
-      >
-        <Panel>
-          <LeaveGuard
-            when={changed && !busy}
-            message="网站设置改过的内容还没保存，离开后会丢失。"
-          />
-          <form
-            className="flex flex-col gap-4 p-5"
-            onSubmit={submit}
-            noValidate
-          >
-            <div className="grid gap-4 @wide/window:grid-cols-2">
-              <Field
-                label="起始页"
-                htmlFor={ids.home}
-                hint="默认 5 秒"
-                error={valid(home) ? null : "请填写 1–3600 的整数"}
-                live
-              >
-                <TextInput
-                  id={ids.home}
-                  inputMode="numeric"
-                  suffix="秒"
-                  value={home}
-                  invalid={!valid(home)}
-                  onChange={(event) => edit("home", event.target.value)}
-                />
-              </Field>
-              <Field
-                label="红包页"
-                htmlFor={ids.page}
-                hint="默认 2 秒"
-                error={valid(page) ? null : "请填写 1–3600 的整数"}
-                live
-              >
-                <TextInput
-                  id={ids.page}
-                  inputMode="numeric"
-                  suffix="秒"
-                  value={page}
-                  invalid={!valid(page)}
-                  onChange={(event) => edit("page", event.target.value)}
-                />
-              </Field>
-            </div>
-            <Reveal show={Boolean(error)}>
-              <p role="alert" className="text-sm text-danger">
-                {error}
-              </p>
-            </Reveal>
-            <div className="flex flex-wrap items-center gap-2">
+    <PageSection
+      title="口令尝试间隔"
+      description="同一个人两次提交口令之间至少隔多久。起始页查口令和红包页领取分开计算；无需口令的红包按红包页的间隔。"
+    >
+      <Panel>
+        <LeaveGuard
+          when={changed && !busy}
+          message="网站设置改过的内容还没保存，离开后会丢失。"
+        />
+        <form className="flex flex-col gap-4 p-5" onSubmit={submit} noValidate>
+          <div className="grid gap-4 @wide/window:grid-cols-2">
+            <Field
+              label="起始页"
+              htmlFor={ids.home}
+              hint="默认 5 秒"
+              error={valid(home) ? null : "请填写 1–3600 的整数"}
+              live
+            >
+              <TextInput
+                id={ids.home}
+                inputMode="numeric"
+                suffix="秒"
+                value={home}
+                invalid={!valid(home)}
+                onChange={(event) => edit("home", event.target.value)}
+              />
+            </Field>
+            <Field
+              label="红包页"
+              htmlFor={ids.page}
+              hint="默认 2 秒"
+              error={valid(page) ? null : "请填写 1–3600 的整数"}
+              live
+            >
+              <TextInput
+                id={ids.page}
+                inputMode="numeric"
+                suffix="秒"
+                value={page}
+                invalid={!valid(page)}
+                onChange={(event) => edit("page", event.target.value)}
+              />
+            </Field>
+          </div>
+          <Reveal show={Boolean(error)}>
+            <p role="alert" className="text-sm text-danger">
+              {error}
+            </p>
+          </Reveal>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              ref={saveRef}
+              type="submit"
+              variant="primary"
+              // Focusable while it waits: a disabled button drops focus.
+              aria-disabled={!changed || !ok || busy || undefined}
+              data-disabled={!changed || !ok || undefined}
+            >
+              {busy ? "正在保存…" : "保存设置"}
+            </Button>
+            <RevealInline show={changed && !busy}>
               <Button
-                ref={saveRef}
-                type="submit"
-                variant="primary"
-                // Focusable while it waits: a disabled button drops focus.
-                aria-disabled={!changed || !ok || busy || undefined}
-                data-disabled={!changed || !ok || undefined}
+                variant="ghost"
+                onClick={() => {
+                  reset();
+                  setError(null);
+                  // It goes away with the changes: focus to 保存设置.
+                  saveRef.current?.focus();
+                }}
               >
-                {busy ? "正在保存…" : "保存设置"}
+                撤销修改
               </Button>
-              <RevealInline show={changed && !busy}>
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    reset();
-                    setError(null);
-                    // It goes away with the changes: focus to 保存设置.
-                    saveRef.current?.focus();
-                  }}
-                >
-                  撤销修改
-                </Button>
+            </RevealInline>
+            <span role="status" className="text-sm text-success">
+              <RevealInline show={done}>
+                <span className="inline-flex items-center gap-1">
+                  <Check className="size-4" aria-hidden="true" />
+                  已保存，立即生效
+                </span>
               </RevealInline>
-              <span role="status" className="text-sm text-success">
-                <RevealInline show={done}>
-                  <span className="inline-flex items-center gap-1">
-                    <Check className="size-4" aria-hidden="true" />
-                    已保存，立即生效
-                  </span>
-                </RevealInline>
-              </span>
-            </div>
-          </form>
-        </Panel>
-        <p className="flex flex-wrap items-center gap-x-2 px-1 text-xs text-ink-3">
-          {versionLine(data)}
-          <MoreLink
-            className="-my-1"
-            href="/admin/audit"
-            onGo={() => void navigate({ to: "/admin/audit" })}
-          >
-            操作记录
-          </MoreLink>
-        </p>
-      </PageSection>
-    </AdminFrame>
+            </span>
+          </div>
+        </form>
+      </Panel>
+      <p className="flex flex-wrap items-center gap-x-2 px-1 text-xs text-ink-3">
+        {versionLine(data)}
+        <MoreLink
+          className="-my-1"
+          href="/admin/audit"
+          onGo={() => void navigate({ to: "/admin/audit" })}
+        >
+          操作记录
+        </MoreLink>
+      </p>
+    </PageSection>
   );
 }
 
@@ -275,9 +274,23 @@ function SettingsForm({ data }: { data: AttemptRateLimitsResponse }) {
  */
 export function AdminSettings() {
   const query = useRateLimits();
+  const balance = useBalanceSettings();
   return (
     <PageLoad load={queryLoad(query)} area>
-      {query.data && <SettingsForm data={query.data} />}
+      {query.data && (
+        <AdminFrame>
+          <SettingsForm data={query.data} />
+          {/* 站内🐟额 reads on its own: its failing never holds the intervals. */}
+          <DetailPart query={balance} lines={3}>
+            {(data) => (
+              <>
+                <BalanceSettingsSection data={data} />
+                <PlatformAppSection app={data.platformApp} />
+              </>
+            )}
+          </DetailPart>
+        </AdminFrame>
+      )}
     </PageLoad>
   );
 }

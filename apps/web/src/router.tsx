@@ -117,6 +117,11 @@ const historyRoute = createRoute({
   path: "/history",
   staticData: { chrome: "docked", command: "history" },
 });
+const balanceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/balance",
+  staticData: { chrome: "docked", command: "balance" },
+});
 const squareRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/square",
@@ -158,6 +163,7 @@ const merchantDetailRoute = subRoute(
   "merchant",
   "商户详情",
 );
+const balanceTopupRoute = subRoute("/balance/$topupId", "balance", "转入详情");
 const paymentDetailRoute = subRoute(
   "/payments/$paymentId",
   "payments",
@@ -200,6 +206,7 @@ const adminRoute2 = <Path extends string>(path: Path, title: string) =>
 const adminActivitiesRoute = adminRoute2("/admin/activities", "红包");
 const adminUsersRoute = adminRoute2("/admin/users", "用户");
 const adminPaymentsRoute = adminRoute2("/admin/payments", "付款");
+const adminBalanceRoute = adminRoute2("/admin/balance", "🐟额");
 const adminSettingsRoute = adminRoute2("/admin/settings", "网站设置");
 const adminAuditRoute = adminRoute2("/admin/audit", "操作记录");
 const helpRoute = createRoute({
@@ -236,10 +243,13 @@ const routeTree = rootRoute.addChildren([
   merchantDetailRoute,
   paymentsRoute,
   paymentDetailRoute,
+  balanceRoute,
+  balanceTopupRoute,
   adminRoute,
   adminActivitiesRoute,
   adminUsersRoute,
   adminPaymentsRoute,
+  adminBalanceRoute,
   adminSettingsRoute,
   adminAuditRoute,
   helpRoute,

@@ -9,6 +9,7 @@ import { authErrorOf } from "../../lib/auth-errors";
 import {
   type CommandId,
   commandById,
+  featuresOf,
   isVisible,
   roleOf,
 } from "../../lib/commands";
@@ -28,7 +29,13 @@ import { WindowClip } from "./window-clip";
 import { useWindowInfo } from "./window-info";
 
 // 账号资料 (/me) is the card's head: the name itself.
-const cardCommands: CommandId[] = ["history", "merchant", "payments", "admin"];
+const cardCommands: CommandId[] = [
+  "history",
+  "balance",
+  "merchant",
+  "payments",
+  "admin",
+];
 
 /**
  * The identity check failed: maybe signed in, maybe not. Check again. In
@@ -185,7 +192,7 @@ function AccountContent({ onDone }: { onDone: () => void }) {
       <ul className="grid">
         {cardCommands
           .map((id) => commandById(id))
-          .filter((command) => isVisible(command, role))
+          .filter((command) => isVisible(command, role, featuresOf(user)))
           .map((command) => {
             const Icon = command.icon;
             return (

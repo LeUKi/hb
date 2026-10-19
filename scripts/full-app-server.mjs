@@ -194,7 +194,8 @@ async function main() {
             // a run can show the site in maintenance with
             // HB_FULL_APP_MAINTENANCE_MODE=true, or try the renamed objects
             // with HB_FULL_APP_DO_NAME_PREFIX=apac:.
-            MAINTENANCE_MODE: process.env.HB_FULL_APP_MAINTENANCE_MODE ?? "false",
+            MAINTENANCE_MODE:
+              process.env.HB_FULL_APP_MAINTENANCE_MODE ?? "false",
             DO_LOCATION_HINT: process.env.HB_FULL_APP_DO_LOCATION_HINT ?? "",
             DO_NAME_PREFIX: process.env.HB_FULL_APP_DO_NAME_PREFIX ?? "",
           },
@@ -313,14 +314,24 @@ async function main() {
     });
   }
   control = createServer(async (request, response) => {
-    if (request.method !== "GET") {
+    // Reads only, but for the one write a test makes on the mock upstream.
+    const upstreamPay =
+      request.method === "POST" && request.url?.startsWith("/upstream/pay?");
+    if (request.method !== "GET" && !upstreamPay) {
       response.writeHead(405).end();
       return;
     }
     try {
       let body;
       if (request.url === "/ready") body = { ready: true, origin };
-      else if (request.url === "/state") {
+      // A test confirms a 🐟额 转入 at the simulated cashier.
+      else if (upstreamPay) {
+        const orderNo = new URL(
+          request.url,
+          "http://control.invalid",
+        ).searchParams.get("order_no");
+        body = { returnUrl: orderNo ? upstream.pay(orderNo) : null };
+      } else if (request.url === "/state") {
         body = {
           migrations: migrations.length,
           users: await rows(

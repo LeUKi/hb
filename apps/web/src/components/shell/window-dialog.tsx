@@ -1,7 +1,9 @@
 import { useSetAtom } from "jotai";
 import { AnimatePresence, motion } from "motion/react";
 import {
+  createContext,
   type ReactNode,
+  useContext,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -13,6 +15,9 @@ import { windowDialogsAtom } from "../../lib/store";
 import { radius, Squircle, SquirclePlate } from "../ui/squircle";
 import { WindowClip } from "./window-clip";
 import { useWindowInfo } from "./window-info";
+
+/** Inside a dialog's content: a dialog opened here stacks over it. */
+const InsideDialog = createContext(false);
 
 /**
  * A page's own dialog (a confirmation, a short form): the same frame as the
@@ -54,6 +59,10 @@ export function WindowDialog({
   inert?: boolean;
   children: ReactNode;
 }) {
+  // Opened from inside another dialog (a detail pane shown as one): drawn
+  // over it, never beside it at the same level.
+  const inside = useContext(InsideDialog);
+  const stacked = nested || inside;
   const latestClosed = useRef(onClosed);
   latestClosed.current = onClosed;
   const latestFocus = useRef(initialFocus);
@@ -104,7 +113,7 @@ export function WindowDialog({
           <WindowClip key="scrim">
             <motion.div
               aria-hidden="true"
-              className={`scrim absolute inset-0 ${nested ? "z-[60]" : "z-40"}`}
+              className={`scrim absolute inset-0 ${stacked ? "z-[60]" : "z-40"}`}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -115,7 +124,7 @@ export function WindowDialog({
           <div
             key="frame"
             className={`pointer-events-none absolute inset-0 flex ${
-              nested ? "z-[70]" : "z-50"
+              stacked ? "z-[70]" : "z-50"
             } ${
               compact
                 ? "items-end p-2 pr-[max(0.5rem,var(--safe-right))] pb-[max(0.5rem,var(--safe-bottom))] pl-[max(0.5rem,var(--safe-left))]"
@@ -165,7 +174,9 @@ export function WindowDialog({
                   className="glass-pop relative flex min-h-0 flex-1 flex-col overflow-y-auto"
                   {...fade}
                 >
-                  {children}
+                  <InsideDialog.Provider value={true}>
+                    {children}
+                  </InsideDialog.Provider>
                 </motion.div>
               </Squircle>
             </motion.div>

@@ -10,6 +10,8 @@ export type MockUser = {
   displayName: string;
   avatarUrl: string | null;
   isAdmin: boolean;
+  /** 站内🐟额's allowlist lets this account in. */
+  balance?: boolean;
 };
 
 export const viewer: MockUser = {

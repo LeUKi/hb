@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   CircleHelp,
+  Fish,
   History,
   LayoutGrid,
   LogIn,
@@ -23,9 +24,17 @@ export function roleOf(user: SessionUser | null): Role {
   return user.isAdmin ? "admin" : "standard";
 }
 
+/** What an account has been let into beyond its role (站内🐟额's allowlist). */
+export type CommandFeatures = { balance?: boolean };
+
+export function featuresOf(user: SessionUser | null): CommandFeatures {
+  return { balance: user?.balance === true };
+}
+
 export type CommandPath =
   | "/new"
   | "/history"
+  | "/balance"
   | "/square"
   | "/me"
   | "/merchant"
@@ -36,6 +45,7 @@ export type CommandPath =
 export type CommandId =
   | "new"
   | "history"
+  | "balance"
   | "square"
   | "me"
   | "merchant"
@@ -56,6 +66,8 @@ export type Command = {
   requires: Role;
   /** Hidden entirely for roles that should not even see it. */
   visibleTo?: (role: Role) => boolean;
+  /** Shown only to accounts let into it (CommandFeatures). */
+  feature?: keyof CommandFeatures;
   /** Offered as a chip on the start page. */
   quick?: boolean;
   keys: string[];
@@ -110,6 +122,32 @@ export const commands: Command[] = [
       "ls",
       "canyu",
       "cy",
+    ],
+  },
+  {
+    id: "balance",
+    path: "/balance",
+    name: "balance",
+    title: "站内🐟额",
+    icon: Fish,
+    requires: "standard",
+    visibleTo: (role) => role !== "guest",
+    feature: "balance",
+    keys: [
+      "balance",
+      "fish",
+      "站内🐟额",
+      "🐟额",
+      "鱼额",
+      "余额",
+      "转入",
+      "转出",
+      "yue",
+      "ye",
+      "zhuanru",
+      "zr",
+      "zhuanchu",
+      "zc",
     ],
   },
   {
@@ -245,7 +283,12 @@ export function commandById(id: CommandId) {
   return command;
 }
 
-export function isVisible(command: Command, role: Role) {
+export function isVisible(
+  command: Command,
+  role: Role,
+  features: CommandFeatures = {},
+) {
+  if (command.feature && !features[command.feature]) return false;
   return command.visibleTo?.(role) ?? true;
 }
 
@@ -310,8 +353,15 @@ function score(command: Command, query: string) {
 }
 
 /** Visible commands ranked for a query (empty query: registry order). */
-export function matchCommands(query: string, role: Role, limit = 8) {
-  const visible = commands.filter((command) => isVisible(command, role));
+export function matchCommands(
+  query: string,
+  role: Role,
+  features: CommandFeatures = {},
+  limit = 8,
+) {
+  const visible = commands.filter((command) =>
+    isVisible(command, role, features),
+  );
   if (!query) return visible.slice(0, limit);
   return visible
     .map((command, index) => ({ command, index, score: score(command, query) }))

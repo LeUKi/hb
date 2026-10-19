@@ -14,6 +14,7 @@ import { Button } from "../../ui/button";
 import { CopyButton } from "../../ui/copy-button";
 import { Segmented } from "../../ui/field";
 import { StatusChip } from "../../ui/status-chip";
+import { UserBalance } from "./admin-balance";
 import {
   AdminFrame,
   countLine,
@@ -158,6 +159,7 @@ function Detail({ user }: { user: AdminUserListItem }) {
           </Button>
         )}
       </div>
+      <UserBalance userId={user.id} />
     </>
   );
 }

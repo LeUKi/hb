@@ -341,6 +341,46 @@ async function mockRateLimits(page: Page) {
 }
 
 test.describe("网站管理", () => {
+  test.beforeEach(async ({ page }) => {
+    // 站内🐟额's reads (a user's detail, 网站设置): nothing set up yet.
+    await page.route(
+      (url) => url.pathname.startsWith("/api/admin/balance/"),
+      (route) => {
+        const path = new URL(route.request().url()).pathname;
+        if (path === "/api/admin/balance/settings")
+          return route.fulfill({
+            json: {
+              settings: {
+                version: 1,
+                topupEnabled: false,
+                withdrawEnabled: false,
+                topupFeePercent: 12,
+                withdrawFeePercent: 12,
+                withdrawMaxMinor: 100_000,
+                allowlistEnabled: true,
+                allowlist: [],
+                updatedAt: Date.now() - hour,
+              },
+              recentChanges: [],
+              platformApp: null,
+            },
+          });
+        if (path.startsWith("/api/admin/balance/users/"))
+          return route.fulfill({
+            json: {
+              account: { availableMinor: 0, lockedMinor: 0 },
+              items: [],
+              nextCursor: null,
+            },
+          });
+        return route.fulfill({
+          status: 404,
+          json: { error: { code: "NOT_FOUND", message: "未找到" } },
+        });
+      },
+    );
+  });
+
   test("概览：六项检查，不为零的能打开筛好的列表", async ({ page }) => {
     await mockSession(page, admin);
     const now = Date.now();

@@ -12,6 +12,7 @@ import { type ReactNode, useEffect, useRef } from "react";
 import { useActivityFacts } from "../../lib/activity-facts";
 import {
   type Command,
+  type CommandFeatures,
   gateFor,
   matchCommands,
   type Role,
@@ -76,12 +77,13 @@ export function buildSuggestions(
   scope: Scope,
   recent: RecentEntry[],
   role: Role,
+  features: CommandFeatures,
   optimized: string | null,
   /** What the 红包 on screen offers an unscoped, empty box. */
   offer: ScopeOffer,
 ): Suggestion[] {
   if (scheme.kind === "command")
-    return matchCommands(scheme.query, role).map((command) => ({
+    return matchCommands(scheme.query, role, features).map((command) => ({
       key: `command:${command.id}`,
       kind: "command",
       command,

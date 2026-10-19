@@ -1,5 +1,11 @@
 import { RED_PACKET } from "../../lib/activity-route";
-import { commands, gateFor, isVisible, roleOf } from "../../lib/commands";
+import {
+  commands,
+  featuresOf,
+  gateFor,
+  isVisible,
+  roleOf,
+} from "../../lib/commands";
 import { schemeLabels } from "../../lib/scheme";
 import { useSessionUser } from "../../lib/session";
 import { GateChip } from "../omnibox/suggestions";
@@ -64,8 +70,11 @@ const questions: { q: string; a: string }[] = [
 
 /** /help: what the omnibox understands, every command, and common questions. */
 export function HelpView() {
-  const role = roleOf(useSessionUser());
-  const visible = commands.filter((command) => isVisible(command, role));
+  const user = useSessionUser();
+  const role = roleOf(user);
+  const visible = commands.filter((command) =>
+    isVisible(command, role, featuresOf(user)),
+  );
   // A phone has no shortcut keys: the 地址条 is the way in.
   const { compact } = useWindowInfo();
   return (

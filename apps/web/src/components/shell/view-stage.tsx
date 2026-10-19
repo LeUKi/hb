@@ -12,11 +12,14 @@ import { pageTitleAtom, viewEdgeAtom } from "../../lib/store";
 import type { AdminSearch } from "../../router";
 import { AdminActivities } from "../views/admin/admin-activities";
 import { AdminAudit } from "../views/admin/admin-audit";
+import { AdminBalance } from "../views/admin/admin-balance";
 import { AdminArea } from "../views/admin/admin-frame";
 import { AdminOverview } from "../views/admin/admin-overview";
 import { AdminPayments } from "../views/admin/admin-payments";
 import { AdminSettings } from "../views/admin/admin-settings";
 import { AdminUsers } from "../views/admin/admin-users";
+import { BalanceTopupView } from "../views/balance-topup-view";
+import { BalanceView } from "../views/balance-view";
 import { HelpView } from "../views/help-view";
 import { HistoryView } from "../views/history-view";
 import { HongbaoView } from "../views/hongbao-view";
@@ -43,6 +46,7 @@ const commandPages: Record<
   new: <NewView />,
   square: <SquareView />,
   history: <HistoryView />,
+  balance: <BalanceView />,
   me: <MeView />,
   merchant: <MerchantView />,
   payments: <PaymentsView />,
@@ -59,6 +63,7 @@ const adminPages: Record<string, (search: AdminSearch) => ReactNode> = {
   "/admin/activities": (search) => <AdminActivities search={search} />,
   "/admin/users": (search) => <AdminUsers search={search} />,
   "/admin/payments": (search) => <AdminPayments search={search} />,
+  "/admin/balance": (search) => <AdminBalance search={search} />,
   "/admin/settings": () => <AdminSettings />,
   "/admin/audit": () => <AdminAudit />,
 };
@@ -106,6 +111,13 @@ function renderView(leaf: NonNullable<Leaf>): ReactNode {
         <CommandPageView
           id="merchant"
           page={<MerchantView merchantId={params.merchantId ?? ""} />}
+        />
+      );
+    case "/balance/$topupId":
+      return (
+        <CommandPageView
+          id="balance"
+          page={<BalanceTopupView id={params.topupId ?? ""} />}
         />
       );
     case "/payments/$paymentId":

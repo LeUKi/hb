@@ -29,6 +29,7 @@ import { useClaimReward } from "../../lib/claims";
 import {
   type Command,
   type CommandPath,
+  featuresOf,
   gateFor,
   matchCommands,
   roleOf,
@@ -447,9 +448,11 @@ export function useOmniboxController() {
       const scheme = detectScheme(raw, window.location.origin);
       if (scheme.kind === "empty") return;
       if (scheme.kind === "command") {
+        const user = sessionUserOf(queryClient);
         const [top] = matchCommands(
           scheme.query,
-          roleOf(sessionUserOf(queryClient)),
+          roleOf(user),
+          featuresOf(user),
         );
         if (top) await runCommand(top);
         return;

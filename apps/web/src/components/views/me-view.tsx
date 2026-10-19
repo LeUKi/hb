@@ -6,6 +6,7 @@ import { useAccountProfile } from "../../lib/account-profile";
 import { useHistorySummary } from "../../lib/activities";
 import { getLoginHref } from "../../lib/auth";
 import { authErrorOf } from "../../lib/auth-errors";
+import { useBalancePages } from "../../lib/balance";
 import { sentCounts, useSentPages } from "../../lib/records";
 import { type SessionUser, useSessionUser } from "../../lib/session";
 import { authErrorAtom } from "../../lib/store";
@@ -25,6 +26,7 @@ import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { MoreLink } from "../ui/button-link";
 import { CopyButton } from "../ui/copy-button";
+import { Fish } from "../ui/fish";
 import { MorphLabel } from "../ui/morph-label";
 import { Reveal } from "../ui/reveal";
 import { StatusChip } from "../ui/status-chip";
@@ -214,6 +216,8 @@ function Me({ user }: { user: SessionUser }) {
           </Panel>
         </PageSection>
 
+        {user.balance && <MeBalance user={user} />}
+
         <div className="grid justify-items-start gap-2 px-1">
           {signOut.error && (
             <p role="alert" className="text-sm text-danger">
@@ -232,5 +236,38 @@ function Me({ user }: { user: SessionUser }) {
         </div>
       </Page>
     </PageLoad>
+  );
+}
+
+/** 站内🐟额, for accounts let in: what is kept, and the way to its page. */
+function MeBalance({ user }: { user: SessionUser }) {
+  const { leaveTo } = useOmniboxController();
+  const query = useBalancePages(user.id, "all");
+  const account = query.data?.pages[0]?.account;
+  return (
+    <PageSection
+      title="站内🐟额"
+      id="me-balance"
+      action={
+        <MoreLink href="/balance" onGo={() => void leaveTo({ to: "/balance" })}>
+          🐟额
+        </MoreLink>
+      }
+    >
+      <Panel className="p-5">
+        <Facts
+          items={[
+            {
+              label: "可用",
+              value: <Fish minor={account?.availableMinor ?? 0} />,
+            },
+            {
+              label: "转出中",
+              value: <Fish minor={account?.lockedMinor ?? 0} />,
+            },
+          ]}
+        />
+      </Panel>
+    </PageSection>
   );
 }

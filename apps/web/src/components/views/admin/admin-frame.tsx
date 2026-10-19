@@ -68,15 +68,22 @@ const tabs: {
     refreshable: true,
   },
   {
+    to: "/admin/balance",
+    label: "🐟额",
+    description:
+      "站内🐟额：替大家存着多少、哪些转入要看一下，以及每一笔调整。平台应用和费率在网站设置里。",
+    refreshable: true,
+  },
+  {
     to: "/admin/settings",
     label: "网站设置",
-    description: "能改的只有尝试间隔。保存后立即生效，并记进操作记录。",
+    description: "口令尝试间隔、站内🐟额和它的平台应用，保存后立即生效。",
     refreshable: false,
   },
   {
     to: "/admin/audit",
     label: "操作记录",
-    description: "网站设置的每一次修改。记录一直保留。",
+    description: "尝试间隔和🐟额设置的每一次修改。记录一直保留。",
     refreshable: true,
   },
 ];

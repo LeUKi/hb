@@ -1,4 +1,5 @@
 // Test-only transport. Never imported by either application Worker.
+import { createHash } from "node:crypto";
 export const profiles = {
   author: {
     id: "730001",
@@ -75,10 +76,21 @@ export function createTestUpstream(Response, origin, options = {}) {
     credentialChecks: 0,
     distributeRequests: 0,
     orderQueries: 0,
+    paymentSubmits: 0,
     humanChecks: 0,
     blockedRequests: 0,
   };
   const orders = new Map();
+  /** 🐟额 转入: EPay orders to the platform app, paid at the cashier. */
+  const paymentOrders = new Map();
+  function epaySign(params, secret) {
+    const text = Object.keys(params)
+      .filter((key) => key !== "sign" && key !== "sign_type" && params[key])
+      .sort()
+      .map((key) => `${key}=${params[key]}`)
+      .join("&");
+    return createHash("md5").update(`${text}${secret}`).digest("hex");
+  }
   /** Recipients who have since opened their Credit account. */
   const opened = new Set();
   const latestProfiles = new Map();
@@ -118,7 +130,18 @@ export function createTestUpstream(Response, origin, options = {}) {
     }
   }
   return {
-    snapshot: () => ({ ...counters, orders: [...orders.values()] }),
+    snapshot: () => ({
+      ...counters,
+      orders: [...orders.values()],
+      paymentOrders: [...paymentOrders.values()],
+    }),
+    /** The person confirms at Credit's cashier: where Credit sends them back. */
+    pay(businessNo) {
+      const order = paymentOrders.get(businessNo);
+      if (!order) return null;
+      order.status = 1;
+      return order.returnUrl;
+    },
     async fetch(request) {
       const url = new URL(request.url);
       // Turnstile Siteverify, as it answers Cloudflare's test secrets: the
@@ -175,6 +198,18 @@ export function createTestUpstream(Response, origin, options = {}) {
           url.searchParams.get("key") !== "full-app-merchant-secret"
         )
           return json({ code: -1, msg: "商户信息不存在" }, 400);
+        const payment = paymentOrders.get(url.searchParams.get("out_trade_no"));
+        if (payment) {
+          counters.orderQueries++;
+          return json({
+            code: 1,
+            pid: payment.clientId,
+            out_trade_no: payment.businessNo,
+            trade_no: payment.externalOrderId,
+            money: payment.money,
+            status: payment.status,
+          });
+        }
         const order = orders.get(url.searchParams.get("out_trade_no"));
         if (!order) {
           counters.credentialChecks++;
@@ -188,6 +223,51 @@ export function createTestUpstream(Response, origin, options = {}) {
           trade_no: order.externalOrderId,
           money: order.amount,
           status: 1,
+        });
+      }
+      if (
+        url.pathname === "/epay/pay/submit.php" &&
+        request.method === "POST"
+      ) {
+        counters.paymentSubmits++;
+        const {
+          sign,
+          sign_type: _signType,
+          ...params
+        } = Object.fromEntries(new URLSearchParams(await request.text()));
+        if (
+          !validMerchantClientId(params.pid) ||
+          sign !== epaySign(params, "full-app-merchant-secret")
+        )
+          return json({ error_msg: "签名验证失败", data: null }, 401);
+        const existing = paymentOrders.get(params.out_trade_no);
+        if (
+          existing &&
+          (existing.money !== params.money ||
+            existing.name !== params.name ||
+            existing.returnUrl !== params.return_url)
+        )
+          return json(
+            { error_msg: "同一业务订单号的订单信息不一致", data: null },
+            409,
+          );
+        if (existing?.status === 1)
+          return json({ error_msg: "订单状态不允许支付", data: null }, 400);
+        const order = existing ?? {
+          clientId: params.pid,
+          businessNo: params.out_trade_no,
+          money: params.money,
+          name: params.name,
+          returnUrl: params.return_url,
+          status: 0,
+          externalOrderId: `full_app_payment_${paymentOrders.size + 1}`,
+        };
+        paymentOrders.set(order.businessNo, order);
+        return new Response(null, {
+          status: 302,
+          headers: {
+            Location: `https://credit.linux.do/paying?order_no=${encodeURIComponent(order.businessNo)}`,
+          },
         });
       }
       if (url.pathname === "/lpay/distribute" && request.method === "POST") {

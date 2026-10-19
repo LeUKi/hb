@@ -20,7 +20,7 @@ import {
 import { createPortal } from "react-dom";
 import { useActivityFacts } from "../../lib/activity-facts";
 import { useCurrentActivityId } from "../../lib/activity-route";
-import { roleOf } from "../../lib/commands";
+import { featuresOf, roleOf } from "../../lib/commands";
 import { durations, ease, useReducedMotionPref } from "../../lib/motion";
 import { inspectPassword } from "../../lib/password-rules";
 import { isOpenShortcut } from "../../lib/platform";
@@ -189,6 +189,8 @@ export function Omnibox() {
   const controller = useOmniboxController();
   const user = useSessionUser();
   const role = roleOf(user);
+  const balanceOpen = featuresOf(user).balance;
+  const features = useMemo(() => ({ balance: balanceOpen }), [balanceOpen]);
 
   const store = useStore();
   const [startDraft, setStartDraft] = useAtom(startDraftAtom);
@@ -306,6 +308,7 @@ export function Omnibox() {
             scope,
             recent,
             role,
+            features,
             optimized,
             expanded && scope === null ? offer : null,
           )
@@ -317,6 +320,7 @@ export function Omnibox() {
       scope,
       recent,
       role,
+      features,
       optimized,
       expanded,
       offer,
