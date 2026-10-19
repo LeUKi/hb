@@ -56,7 +56,9 @@ export async function ownedMerchant(
     .from(merchants)
     .where(eq(merchants.id, id))
     .get();
-  if (!row || row.authorId !== authorId) activityNotFound();
+  // The 🐟额 platform app is a merchant too, but never an author's.
+  if (!row || row.authorId !== authorId || row.kind !== "author")
+    activityNotFound();
   return row;
 }
 
@@ -159,6 +161,7 @@ export async function listMerchants(
     .where(
       and(
         eq(merchants.authorId, authorId),
+        eq(merchants.kind, "author"),
         before
           ? or(
               lt(merchants.createdAt, before.time),
@@ -191,6 +194,7 @@ export async function dbCurrentMerchant(env: ApiBindings, authorId: string) {
     .where(
       and(
         eq(merchants.authorId, authorId),
+        eq(merchants.kind, "author"),
         eq(merchants.usageStatus, "current"),
       ),
     )
@@ -223,6 +227,7 @@ export async function createMerchant(
       .where(
         and(
           eq(merchants.authorId, authorId),
+          eq(merchants.kind, "author"),
           eq(merchants.requestId, input.requestId),
         ),
       )
@@ -379,7 +384,7 @@ export async function updateMerchant(
     );
   statements.push(
     env.DB.prepare(
-      `UPDATE merchants SET version=CASE WHEN version=? AND author_id=? AND EXISTS(SELECT 1 FROM users WHERE id=merchants.author_id AND active=1) ${impact ? `AND (${merchantImpactSql})=?` : ""} THEN version+1 ELSE NULL END,label=?,client_id=?,credential_version=?,updated_at=? WHERE id=?`,
+      `UPDATE merchants SET version=CASE WHEN version=? AND author_id=? AND kind='author' AND EXISTS(SELECT 1 FROM users WHERE id=merchants.author_id AND active=1) ${impact ? `AND (${merchantImpactSql})=?` : ""} THEN version+1 ELSE NULL END,label=?,client_id=?,credential_version=?,updated_at=? WHERE id=?`,
     ).bind(
       input.version,
       authorId,

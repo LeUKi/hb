@@ -15,6 +15,7 @@ import type { RecipientSpeedTitle } from "./recipient-speed";
 
 export * from "./activity-image";
 export * from "./admin";
+export * from "./balance";
 export * from "./ecoji-v2";
 export * from "./forum-emoji";
 export * from "./payments";

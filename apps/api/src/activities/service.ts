@@ -923,7 +923,7 @@ export async function openActivity(
       env.DB.prepare(`UPDATE activities SET
       version = CASE WHEN version = ? AND author_id = ? AND deleted_at IS NULL AND opened_at IS NULL AND merchant_id IS ? AND ${openingDeadlineSql} > ${databaseNow} AND ${openingDeadlineSql} <= 8640000000000000
       AND reward_type='ldc'
-      AND EXISTS(SELECT 1 FROM merchants m WHERE m.id=activities.merchant_id AND m.author_id=activities.author_id AND m.usage_status='current')
+      AND EXISTS(SELECT 1 FROM merchants m WHERE m.id=activities.merchant_id AND m.author_id=activities.author_id AND m.kind='author' AND m.usage_status='current')
       AND EXISTS(SELECT 1 FROM users WHERE id=activities.author_id AND active=1)
       AND (payment_mode IS NOT 'real' OR ?=1 OR (
         EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_open=1)

@@ -1,0 +1,210 @@
+// 站内🐟额 (docs/balance-design.md): LDC kept on this site, 1 🐟 to 1 LDC.
+// Amounts are whole cents (minor units) everywhere here, as in payments.ts.
+import { z } from "zod";
+import type { CredentialVerification } from "./payments";
+import { moneySchema } from "./payments";
+
+export const BALANCE_LIMITS = {
+  /** What Credit takes for one 转入: 1.00–2000.00 LDC. */
+  topupMinMinor: 100,
+  topupMaxMinor: 200_000,
+  /** Above this, Credit's daily limit may refuse it (800–2000 by level). */
+  topupDailyHintMinor: 80_000,
+  /** New 转入 a person may start in an hour (against scripts, nothing else). */
+  topupsPerHour: 30,
+  /** Fee rates are whole percentages. */
+  feePercentMax: 50,
+  /** A 转出 is at least 1 🐟; its cap is a setting. */
+  withdrawMinMinor: 100,
+  withdrawMaxDefaultMinor: 100_000,
+} as const;
+
+/**
+ * Credit's fee on an amount: amount × rate, rounded half up to the cent
+ * (service/payment.go CalculateFee, decimal.Round(2)).
+ */
+export function feeOf(amountMinor: number, percent: number) {
+  return Math.floor((amountMinor * percent + 50) / 100);
+}
+
+export type TopupQuote = {
+  /** What Credit takes from the payer (LDC). */
+  debitMinor: number;
+  /** Credit's 流转费. */
+  feeMinor: number;
+  /** What arrives in 🐟额 (🐟). */
+  creditMinor: number;
+};
+
+/**
+ * A 转入 from either side: what Credit takes, or what should arrive. From
+ * what arrives, the least Credit can take that still brings at least that
+ * much (the fee is rounded, so a few amounts cannot arrive exactly).
+ */
+export function quoteTopup(
+  percent: number,
+  input: { debitMinor: number } | { creditMinor: number },
+): TopupQuote {
+  const of = (debitMinor: number) => {
+    const feeMinor = feeOf(debitMinor, percent);
+    return { debitMinor, feeMinor, creditMinor: debitMinor - feeMinor };
+  };
+  if ("debitMinor" in input) return of(input.debitMinor);
+  const target = input.creditMinor;
+  let debit = Math.max(1, Math.ceil((target * 100) / (100 - percent)));
+  while (debit > 1 && of(debit - 1).creditMinor >= target) debit -= 1;
+  while (of(debit).creditMinor < target) debit += 1;
+  return of(debit);
+}
+
+export type WithdrawQuote = {
+  /** Taken from 🐟额 (🐟). */
+  debitMinor: number;
+  /** Credit's 分发费, at the platform account's level. */
+  feeMinor: number;
+  /** What should arrive in Credit (LDC). */
+  creditMinor: number;
+};
+
+/** A 转出: Credit takes its 分发费 from what is sent. */
+export function quoteWithdraw(
+  percent: number,
+  input: { debitMinor: number } | { creditMinor: number },
+): WithdrawQuote {
+  return quoteTopup(percent, input);
+}
+
+/** Signed cents as "12.34" or "-12.34" (formatAmount takes no negatives). */
+export function formatSignedAmount(minor: number) {
+  if (!Number.isSafeInteger(minor)) throw new Error("Invalid amount");
+  const sign = minor < 0 ? "-" : "";
+  const value = Math.abs(minor);
+  return `${sign}${Math.floor(value / 100)}.${String(value % 100).padStart(2, "0")}`;
+}
+
+const feePercentSchema = z
+  .number()
+  .int()
+  .min(0)
+  .max(BALANCE_LIMITS.feePercentMax);
+/** Community IDs (LINUX DO user ids) on the allowlist. */
+const communityIdSchema = z.string().regex(/^[1-9]\d{0,18}$/, "社区 ID 无效");
+
+export const balanceSettingsSchema = z.strictObject({
+  topupEnabled: z.boolean(),
+  withdrawEnabled: z.boolean(),
+  topupFeePercent: feePercentSchema,
+  withdrawFeePercent: feePercentSchema,
+  withdrawMaxMinor: z
+    .number()
+    .int()
+    .min(BALANCE_LIMITS.withdrawMinMinor)
+    .max(BALANCE_LIMITS.topupMaxMinor),
+  allowlistEnabled: z.boolean(),
+  allowlist: z.array(communityIdSchema).max(500),
+});
+export type BalanceSettingsInput = z.infer<typeof balanceSettingsSchema>;
+
+export const updateBalanceSettingsSchema = balanceSettingsSchema.extend({
+  expectedVersion: z.number().int().positive(),
+});
+export type UpdateBalanceSettingsInput = z.infer<
+  typeof updateBalanceSettingsSchema
+>;
+
+export type BalanceSettings = BalanceSettingsInput & {
+  version: number;
+  updatedAt: number;
+};
+
+export const savePlatformAppSchema = z.strictObject({
+  requestId: z.uuid(),
+  /** The platform app's version when it exists; absent to create it. */
+  version: z.number().int().positive().optional(),
+  label: z.string().trim().min(1).max(100),
+  clientId: z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .regex(/^[A-Za-z0-9_-]+$/),
+  /** Required to create it, or with a new Client ID. */
+  secret: z.string().min(1).max(4096).optional(),
+});
+export type SavePlatformAppInput = z.infer<typeof savePlatformAppSchema>;
+
+export type PlatformApp = {
+  id: string;
+  label: string;
+  clientId: string;
+  version: number;
+  credentialVersion: number;
+  credentialVerification: CredentialVerification;
+  updatedAt: string;
+};
+
+export const createTopupSchema = z.strictObject({
+  requestId: z.uuid(),
+  settingsVersion: z.number().int().positive(),
+  /** Which box was filled: what Credit takes, or what should arrive. */
+  by: z.enum(["debit", "credit"]),
+  amount: moneySchema,
+});
+export type CreateTopupInput = z.infer<typeof createTopupSchema>;
+
+export const balanceAdjustmentSchema = z.strictObject({
+  requestId: z.uuid(),
+  direction: z.enum(["add", "deduct"]),
+  amount: moneySchema,
+  reason: z.string().trim().min(1).max(200),
+});
+export type BalanceAdjustmentInput = z.infer<typeof balanceAdjustmentSchema>;
+
+export const confirmTopupSchema = z.strictObject({
+  reason: z.string().trim().min(1).max(200),
+});
+
+/** 待确认 / 未完成 / 已到账. */
+export type TopupStatus = "pending" | "unpaid" | "credited";
+/** 订单信息不符 / 查单不再成功: noted beside the status, never instead of it. */
+export type TopupFlag = "mismatch" | "reversed";
+
+export type BalanceTopup = {
+  id: string;
+  businessNo: string;
+  externalOrderId: string | null;
+  status: TopupStatus;
+  flag: TopupFlag | null;
+  debitMinor: number;
+  feeMinor: number;
+  creditMinor: number;
+  feePercent: number;
+  createdAt: number;
+  /** Until when “去 Credit 确认” can open the same order again. */
+  payableUntil: number;
+  creditedAt: number | null;
+  creditedBy: "auto" | "admin" | null;
+  lastCheckedAt: number | null;
+};
+
+export type BalanceEntryKind =
+  | "topup"
+  | "adjustment"
+  | "lock"
+  | "unlock"
+  | "deduct";
+
+export type BalanceEntry = {
+  id: string;
+  kind: BalanceEntryKind;
+  availableDeltaMinor: number;
+  lockedDeltaMinor: number;
+  topupId: string | null;
+  /** An adjustment's reason, as the person sees it. */
+  reason: string | null;
+  createdAt: number;
+};
+
+export type BalanceAccess =
+  /** Not signed in, or not on the allowlist (and nothing here yet). */
+  "hidden" | "open";

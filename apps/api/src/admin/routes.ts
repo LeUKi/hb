@@ -754,7 +754,7 @@ async function userDetail(
       (SELECT COUNT(*) FROM activities WHERE author_id=? AND reward_type='ldc' AND deleted_at IS NULL) AS authoredActivities,
       (SELECT COUNT(*) FROM claims c JOIN activities a ON a.id=c.activity_id AND a.reward_type='ldc' AND a.deleted_at IS NULL WHERE c.user_id=?) AS claims,
       (SELECT COUNT(*) FROM activity_registrations r JOIN activities a ON a.id=r.activity_id AND a.reward_type='ldc' AND a.deleted_at IS NULL WHERE r.user_id=?) AS registrations,
-      (SELECT COUNT(*) FROM merchants WHERE author_id=?) AS merchants,
+      (SELECT COUNT(*) FROM merchants WHERE author_id=? AND kind='author') AS merchants,
       (SELECT COUNT(*) FROM payment_tasks WHERE recipient_id IN (
         SELECT external_id FROM users WHERE id=? UNION ALL
         SELECT 'simulation:' || external_id FROM users WHERE id=?

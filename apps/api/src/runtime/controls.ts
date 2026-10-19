@@ -34,6 +34,11 @@ export function isLocalSimulation(env: ApiBindings) {
 function live(env: ApiBindings) {
   return env.APP_ENV === "production" && env.LDC_NETWORK_MODE === "live";
 }
+
+/** Real Credit calls of any kind (🐟额 转入 too): production, live network. */
+export function reachesCredit(env: ApiBindings) {
+  return live(env);
+}
 export function allowsRealOpening(
   env: ApiBindings,
   controls: PlatformControls,

@@ -714,3 +714,221 @@ export function createRealPaymentAdapter(
     query: (task, context) => queryRealOrder(task, context, options),
   };
 }
+
+// 站内🐟额 转入 (docs/balance-design.md §3, §9.3): an EPay order to the
+// platform app, paid by the person at Credit's cashier; then the order query
+// without a recipient, since a 转入 has none.
+
+const REAL_SUBMIT_PATH = "/epay/pay/submit.php";
+const CASHIER_PATH = "/paying";
+
+export type TopupOrderInput = {
+  clientId: string;
+  clientSecret: string;
+  businessNo: string;
+  name: string;
+  amountMinor: number;
+  returnUrl: string;
+};
+
+export type TopupSubmitResult =
+  /** Credit's cashier for this order (never stored, never logged). */
+  | { kind: "cashier"; url: string }
+  /** Timeout, network or 5xx: the same parameters may be sent again. */
+  | {
+      kind: "retry";
+      reason: "timeout" | "network" | "http";
+      httpStatus?: number;
+    }
+  /** Turned down: what Credit said, for the caller to check the order first. */
+  | {
+      kind: "refused";
+      reason: "credentials" | "conflict" | "closed" | "invalid";
+      httpStatus: number;
+    };
+
+async function md5Hex(text: string) {
+  const digest = await crypto.subtle.digest(
+    "MD5",
+    new TextEncoder().encode(text),
+  );
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/** EPay MD5: non-empty fields by name, `k=v&…`, the key appended, lower-case hex. */
+export async function epaySignature(
+  params: Record<string, string>,
+  secret: string,
+) {
+  const text = Object.keys(params)
+    .filter((key) => key !== "sign" && key !== "sign_type" && params[key])
+    .sort()
+    .map((key) => `${key}=${params[key]}`)
+    .join("&");
+  return md5Hex(`${text}${secret}`);
+}
+
+function topupOrderParams(input: TopupOrderInput) {
+  if (!/^[A-Za-z0-9._-]{1,64}$/.test(input.businessNo))
+    throw new Error("Invalid business number");
+  if (!Number.isSafeInteger(input.amountMinor) || input.amountMinor <= 0)
+    throw new Error("Invalid topup amount");
+  return {
+    pid: input.clientId,
+    type: "epay",
+    out_trade_no: input.businessNo,
+    return_url: input.returnUrl,
+    name: input.name,
+    money: formatAmount(input.amountMinor),
+  };
+}
+
+export async function submitTopupOrder(
+  input: TopupOrderInput,
+  options: RealProtocolOptions,
+): Promise<TopupSubmitResult> {
+  const baseUrl = normalizeBaseUrl(options.baseUrl);
+  const params = topupOrderParams(input);
+  const form = new URLSearchParams({
+    ...params,
+    sign: await epaySignature(params, input.clientSecret),
+    sign_type: "MD5",
+  });
+  let response: Response;
+  try {
+    ({ response } = await requestTextWithTimeout(
+      options,
+      urlFor(baseUrl, REAL_SUBMIT_PATH),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: form.toString(),
+      },
+    ));
+  } catch (error) {
+    const reason = requestFailureReason(error);
+    return {
+      kind: "retry",
+      reason: reason === "timeout" ? "timeout" : "network",
+    };
+  }
+  if (response.status === 302) {
+    const location = response.headers.get("Location");
+    try {
+      const url = new URL(location ?? "");
+      if (
+        url.origin === baseUrl &&
+        url.pathname === CASHIER_PATH &&
+        url.searchParams.get("order_no")
+      )
+        return { kind: "cashier", url: url.toString() };
+    } catch {
+      // Not a URL: treated as any other unexpected answer below.
+    }
+    return { kind: "refused", reason: "invalid", httpStatus: 302 };
+  }
+  if (response.status >= 500)
+    return { kind: "retry", reason: "http", httpStatus: response.status };
+  if (response.status === 401)
+    return { kind: "refused", reason: "credentials", httpStatus: 401 };
+  if (response.status === 409)
+    return { kind: "refused", reason: "conflict", httpStatus: 409 };
+  if (response.status === 400)
+    return { kind: "refused", reason: "closed", httpStatus: 400 };
+  return { kind: "refused", reason: "invalid", httpStatus: response.status };
+}
+
+export type TopupQueryEvidence = {
+  clientId: string;
+  businessNo: string;
+  amountMinor: number;
+  externalOrderId: string;
+};
+
+export type TopupQueryResult =
+  /** status 1: paid, and only then (disputed, refused or refunded are 0). */
+  | { kind: "paid"; evidence: TopupQueryEvidence; httpStatus: number }
+  | { kind: "unpaid"; evidence: TopupQueryEvidence; httpStatus: number }
+  /** No such order (or a read replica not caught up yet). */
+  | { kind: "not_found"; httpStatus: number }
+  | { kind: "credentials"; httpStatus: number }
+  | {
+      kind: "unavailable";
+      reason: "timeout" | "network" | "http" | "invalid_response";
+      httpStatus?: number;
+    };
+
+export async function queryTopupOrder(
+  input: { clientId: string; clientSecret: string; businessNo: string },
+  options: RealProtocolOptions,
+): Promise<TopupQueryResult> {
+  const baseUrl = normalizeBaseUrl(options.baseUrl);
+  const url = new URL(urlFor(baseUrl, REAL_QUERY_PATH));
+  url.searchParams.set("pid", input.clientId);
+  url.searchParams.set("key", input.clientSecret);
+  url.searchParams.set("out_trade_no", input.businessNo);
+  let response: Response;
+  let text: string;
+  try {
+    ({ response, text } = await requestTextWithTimeout(
+      options,
+      url.toString(),
+      { method: "GET" },
+    ));
+  } catch (error) {
+    const reason = requestFailureReason(error);
+    return {
+      kind: "unavailable",
+      reason:
+        reason === "timeout"
+          ? "timeout"
+          : reason === "invalid_response"
+            ? "invalid_response"
+            : "network",
+    };
+  }
+  const httpStatus = response.status;
+  let payload: Record<string, unknown>;
+  try {
+    payload = parseJsonObject(text);
+  } catch {
+    return {
+      kind: "unavailable",
+      reason: httpStatus >= 500 ? "http" : "invalid_response",
+      httpStatus,
+    };
+  }
+  if (
+    httpStatus === 404 &&
+    payload.code === -1 &&
+    payload.msg === "订单不存在或已完成"
+  )
+    return { kind: "not_found", httpStatus };
+  if (
+    httpStatus === 400 &&
+    payload.code === -1 &&
+    payload.msg === "商户信息不存在"
+  )
+    return { kind: "credentials", httpStatus };
+  if (httpStatus !== 200 || (payload.code !== 1 && payload.code !== "1"))
+    return { kind: "unavailable", reason: "http", httpStatus };
+  const status = statusField(payload.status);
+  const clientId = stringField(payload.pid);
+  const businessNo = stringField(payload.out_trade_no);
+  const externalOrderId = stringField(payload.trade_no);
+  const amountMinor = amountMinorFromString(payload.money);
+  if (
+    status === null ||
+    !clientId ||
+    !businessNo ||
+    !externalOrderId ||
+    amountMinor === null
+  )
+    return { kind: "unavailable", reason: "invalid_response", httpStatus };
+  const evidence = { clientId, businessNo, amountMinor, externalOrderId };
+  return status === 1
+    ? { kind: "paid", evidence, httpStatus }
+    : { kind: "unpaid", evidence, httpStatus };
+}

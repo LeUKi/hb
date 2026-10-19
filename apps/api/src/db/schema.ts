@@ -508,6 +508,10 @@ export const merchants = sqliteTable(
     mode: text("mode", { enum: ["simulation", "real"] })
       .notNull()
       .default("simulation"),
+    /** An author's own app, or the 🐟额 platform app (balance/platform-app.ts). */
+    kind: text("kind", { enum: ["author", "platform"] })
+      .notNull()
+      .default("author"),
     version: integer("version").notNull().default(1),
     credentialVersion: integer("credential_version").notNull().default(1),
     pausedReason: text("paused_reason"),
@@ -523,7 +527,14 @@ export const merchants = sqliteTable(
     uniqueIndex("merchants_client_unique").on(table.clientId),
     uniqueIndex("merchants_author_current_unique")
       .on(table.authorId)
-      .where(sql`${table.usageStatus} = 'current'`),
+      .where(
+        sql`${table.usageStatus} = 'current' AND ${table.kind} = 'author'`,
+      ),
+    uniqueIndex("merchants_platform_current_unique")
+      .on(table.kind)
+      .where(
+        sql`${table.usageStatus} = 'current' AND ${table.kind} = 'platform'`,
+      ),
     uniqueIndex("merchants_author_request_unique").on(
       table.authorId,
       table.requestId,
@@ -1018,6 +1029,239 @@ export const paymentIdentityCorrections = sqliteTable(
     uniqueIndex("payment_identity_corrections_version_unique").on(
       table.taskId,
       table.version,
+    ),
+  ],
+);
+
+// 站内🐟额 (docs/balance-design.md). Every change to someone's 🐟额 is an
+// entry; triggers (migration 0029) keep balance_accounts equal to their sum.
+
+export const balanceSettings = sqliteTable(
+  "balance_settings",
+  {
+    id: text("id").primaryKey(),
+    version: integer("version").notNull(),
+    topupEnabled: integer("topup_enabled", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    withdrawEnabled: integer("withdraw_enabled", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    topupFeePercent: integer("topup_fee_percent").notNull().default(12),
+    withdrawFeePercent: integer("withdraw_fee_percent").notNull().default(12),
+    withdrawMaxMinor: integer("withdraw_max_minor").notNull().default(100000),
+    allowlistEnabled: integer("allowlist_enabled", { mode: "boolean" })
+      .notNull()
+      .default(true),
+    /** Community IDs, a JSON array of strings. */
+    allowlist: text("allowlist").notNull().default("[]"),
+    updatedAt: integer("updated_at").notNull(),
+    updatedByUserId: text("updated_by_user_id"),
+  },
+  (table) => [
+    check("balance_settings_singleton", sql`${table.id} = 'global'`),
+    check(
+      "balance_settings_fees_valid",
+      sql`${table.topupFeePercent} BETWEEN 0 AND 50 AND ${table.withdrawFeePercent} BETWEEN 0 AND 50`,
+    ),
+    check(
+      "balance_settings_withdraw_max_valid",
+      sql`${table.withdrawMaxMinor} >= 100`,
+    ),
+    check(
+      "balance_settings_allowlist_valid",
+      sql`json_valid(${table.allowlist}) AND json_type(${table.allowlist}) = 'array'`,
+    ),
+  ],
+);
+
+export const balanceSettingChanges = sqliteTable(
+  "balance_setting_changes",
+  {
+    id: text("id").primaryKey(),
+    actorUserId: text("actor_user_id").notNull(),
+    previousVersion: integer("previous_version").notNull(),
+    nextVersion: integer("next_version").notNull(),
+    /** The settings before and after, as JSON. */
+    previous: text("previous").notNull(),
+    next: text("next").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("balance_setting_changes_version_unique").on(table.nextVersion),
+    index("balance_setting_changes_time_idx").on(table.createdAt, table.id),
+  ],
+);
+
+export const balanceAccounts = sqliteTable(
+  "balance_accounts",
+  {
+    userId: text("user_id")
+      .primaryKey()
+      .references(() => users.id),
+    /** May go below 0, only by an admin's 扣回. */
+    availableMinor: integer("available_minor").notNull().default(0),
+    lockedMinor: integer("locked_minor").notNull().default(0),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    check("balance_accounts_locked_valid", sql`${table.lockedMinor} >= 0`),
+  ],
+);
+
+export const balanceTopups = sqliteTable(
+  "balance_topups",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    merchantId: text("merchant_id")
+      .notNull()
+      .references(() => merchants.id),
+    clientId: text("client_id").notNull(),
+    credentialVersion: integer("credential_version").notNull(),
+    businessNo: text("business_no").notNull(),
+    debitMinor: integer("debit_minor").notNull(),
+    feeMinor: integer("fee_minor").notNull(),
+    creditMinor: integer("credit_minor").notNull(),
+    feePercent: integer("fee_percent").notNull(),
+    settingsVersion: integer("settings_version").notNull(),
+    orderName: text("order_name").notNull(),
+    returnUrl: text("return_url").notNull(),
+    status: text("status", { enum: ["pending", "unpaid", "credited"] })
+      .notNull()
+      .default("pending"),
+    flag: text("flag", { enum: ["mismatch", "reversed"] }),
+    externalOrderId: text("external_order_id"),
+    requestId: text("request_id").notNull(),
+    requestDigest: text("request_digest").notNull(),
+    createdAt: integer("created_at").notNull(),
+    /** First time Credit gave back its cashier: “去 Credit 确认” lasts 10 minutes from here. */
+    submittedAt: integer("submitted_at"),
+    creditedAt: integer("credited_at"),
+    creditedBy: text("credited_by", { enum: ["auto", "admin"] }),
+    creditedByUserId: text("credited_by_user_id"),
+    creditReason: text("credit_reason"),
+    lastCheckedAt: integer("last_checked_at"),
+    lastCheckResult: text("last_check_result"),
+    /** Claimed before each real check, so one 转入 is checked at most every 3 s. */
+    checkClaimedAt: integer("check_claimed_at").notNull().default(0),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("balance_topups_business_no_unique").on(table.businessNo),
+    uniqueIndex("balance_topups_request_unique").on(
+      table.userId,
+      table.requestId,
+    ),
+    index("balance_topups_user_time_idx").on(
+      table.userId,
+      table.createdAt,
+      table.id,
+    ),
+    index("balance_topups_status_time_idx").on(table.status, table.createdAt),
+    check(
+      "balance_topups_amounts_valid",
+      sql`${table.debitMinor} BETWEEN 100 AND 200000 AND ${table.feeMinor} >= 0 AND ${table.creditMinor} > 0 AND ${table.debitMinor} = ${table.creditMinor} + ${table.feeMinor} AND ${table.feePercent} BETWEEN 0 AND 50`,
+    ),
+    check(
+      "balance_topups_status_valid",
+      sql`${table.status} IN ('pending','unpaid','credited') AND (${table.flag} IS NULL OR ${table.flag} IN ('mismatch','reversed'))`,
+    ),
+    check(
+      "balance_topups_credited_valid",
+      sql`(${table.status} = 'credited') = (${table.creditedAt} IS NOT NULL AND ${table.creditedBy} IN ('auto','admin'))`,
+    ),
+  ],
+);
+
+export const balanceTopupChecks = sqliteTable(
+  "balance_topup_checks",
+  {
+    id: text("id").primaryKey(),
+    topupId: text("topup_id")
+      .notNull()
+      .references(() => balanceTopups.id),
+    trigger: text("trigger", {
+      enum: ["user", "page", "admin", "submit"],
+    }).notNull(),
+    /** paid, unpaid, not_found, credentials, unavailable or mismatch. */
+    result: text("result").notNull(),
+    httpStatus: integer("http_status"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    index("balance_topup_checks_topup_idx").on(table.topupId, table.createdAt),
+  ],
+);
+
+export const balanceAdjustments = sqliteTable(
+  "balance_adjustments",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    direction: text("direction", { enum: ["add", "deduct"] }).notNull(),
+    amountMinor: integer("amount_minor").notNull(),
+    reason: text("reason").notNull(),
+    actorUserId: text("actor_user_id").notNull(),
+    requestId: text("request_id").notNull(),
+    requestDigest: text("request_digest").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("balance_adjustments_request_unique").on(table.requestId),
+    index("balance_adjustments_user_time_idx").on(
+      table.userId,
+      table.createdAt,
+    ),
+    index("balance_adjustments_time_idx").on(table.createdAt, table.id),
+    check(
+      "balance_adjustments_valid",
+      sql`${table.direction} IN ('add','deduct') AND ${table.amountMinor} > 0 AND length(${table.reason}) BETWEEN 1 AND 200`,
+    ),
+  ],
+);
+
+export const balanceEntries = sqliteTable(
+  "balance_entries",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    kind: text("kind", {
+      enum: ["topup", "adjustment", "lock", "unlock", "deduct"],
+    }).notNull(),
+    availableDeltaMinor: integer("available_delta_minor").notNull(),
+    lockedDeltaMinor: integer("locked_delta_minor").notNull().default(0),
+    topupId: text("topup_id").references(() => balanceTopups.id),
+    adjustmentId: text("adjustment_id").references(() => balanceAdjustments.id),
+    /** A lock (转出, later 🐟 红包); its table comes with 转出. */
+    lockId: text("lock_id"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("balance_entries_topup_unique")
+      .on(table.topupId)
+      .where(sql`${table.kind} = 'topup'`),
+    uniqueIndex("balance_entries_adjustment_unique")
+      .on(table.adjustmentId)
+      .where(sql`${table.kind} = 'adjustment'`),
+    index("balance_entries_user_time_idx").on(
+      table.userId,
+      table.createdAt,
+      table.id,
+    ),
+    check(
+      "balance_entries_shape_valid",
+      sql`(${table.kind} = 'topup' AND ${table.topupId} IS NOT NULL AND ${table.availableDeltaMinor} > 0 AND ${table.lockedDeltaMinor} = 0)
+        OR (${table.kind} = 'adjustment' AND ${table.adjustmentId} IS NOT NULL AND ${table.availableDeltaMinor} != 0 AND ${table.lockedDeltaMinor} = 0)
+        OR (${table.kind} = 'lock' AND ${table.lockId} IS NOT NULL AND ${table.availableDeltaMinor} < 0 AND ${table.lockedDeltaMinor} = -${table.availableDeltaMinor})
+        OR (${table.kind} = 'unlock' AND ${table.lockId} IS NOT NULL AND ${table.availableDeltaMinor} > 0 AND ${table.lockedDeltaMinor} = -${table.availableDeltaMinor})
+        OR (${table.kind} = 'deduct' AND ${table.lockId} IS NOT NULL AND ${table.availableDeltaMinor} = 0 AND ${table.lockedDeltaMinor} < 0)`,
     ),
   ],
 );

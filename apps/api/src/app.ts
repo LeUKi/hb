@@ -6,6 +6,8 @@ import { ActivityValidationError, activityRoutes } from "./activities/routes";
 import { activityImageRoutes } from "./activity-images/routes";
 import { adminRoutes } from "./admin/routes";
 import { authRoutes } from "./auth/oauth";
+import { balanceAdminRoutes } from "./balance/admin-routes";
+import { balanceRoutes } from "./balance/routes";
 import { discoveryRoutes } from "./discovery/routes";
 import type { ApiContext } from "./env";
 import { MerchantChangeConfirmationError } from "./payments/configuration";
@@ -39,11 +41,13 @@ export const app = new Hono<ApiContext>()
   .get("/api/health", (c) => c.json({ status: "ok" as const }))
   .route("/api", authRoutes)
   .route("/api", adminRoutes)
+  .route("/api", balanceAdminRoutes)
   .route("/api", activityImageRoutes)
   .route("/api", activityRoutes)
   .route("/api", passwordRoutes)
   .route("/api", discoveryRoutes)
   .route("/api", merchantRoutes)
+  .route("/api", balanceRoutes)
   .notFound((c) =>
     c.json(
       {

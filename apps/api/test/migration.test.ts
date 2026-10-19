@@ -542,6 +542,8 @@ it("upgrades populated simulated LDC payment data from 0008 through acceptance m
       ...(row as Record<string, unknown>),
       manual_check_at: null,
       usage_status: "current",
+      // 0029: every merchant before the 🐟额 platform app is an author's.
+      kind: "author",
     })),
   );
   expect(after[1]?.results).toEqual(
@@ -956,6 +958,7 @@ it("selects one preferred current merchant while preserving legacy credentials a
     before[0]?.results.map((row) => ({
       ...row,
       usage_status: current.has(String(row.id)) ? "current" : "legacy",
+      kind: "author",
     })),
   );
   expect(after[1]?.results).toEqual(
@@ -1179,7 +1182,6 @@ it("adds optional Connect profile fields without invalidating existing accounts 
     ...oldUser,
     email_ciphertext: null,
     avatar_url: null,
-    official_connect_verified: 1,
   });
   const response = await app.request(
     "https://hb.example.com/api/me",
@@ -1203,7 +1205,7 @@ it("adds optional Connect profile fields without invalidating existing accounts 
       .prepare("SELECT * FROM sessions WHERE token_hash=?")
       .bind(tokenHash)
       .first(),
-  ).toEqual({ ...oldSession, login_provider: "connect" });
+  ).toEqual(oldSession);
   expect((await db.prepare("PRAGMA foreign_key_check").all()).results).toEqual(
     [],
   );
@@ -1288,7 +1290,10 @@ it.each([true, false])(
         db.prepare("SELECT * FROM login_settings"),
       ]);
     const before = await snapshot();
-    await applyD1Migrations(db, testEnv.TEST_MIGRATIONS);
+    await applyD1Migrations(
+      db,
+      testEnv.TEST_MIGRATIONS.filter((migration) => migration.name < "0028"),
+    );
     const after = await snapshot();
     expect(after[0]?.results).toEqual(before[0]?.results);
     expect(after[1]?.results).toEqual(
@@ -1318,5 +1323,41 @@ it.each([true, false])(
     expect(
       (await db.prepare("PRAGMA foreign_key_check").all()).results,
     ).toEqual([]);
+
+    // 0028 then drops what 0027 kept one release for rollback; the rows stay.
+    await applyD1Migrations(db, testEnv.TEST_MIGRATIONS);
+    const columns = async (table: string) =>
+      (
+        await db
+          .prepare(`SELECT name FROM pragma_table_info('${table}')`)
+          .all<{ name: string }>()
+      ).results.map((row) => row.name);
+    expect(await columns("users")).not.toContain("official_connect_verified");
+    expect(await columns("sessions")).not.toContain("login_provider");
+    for (const retired of [
+      "login_provider",
+      "pkce_verifier_ciphertext",
+      "expected_user_id",
+    ])
+      expect(await columns("oauth_attempts")).not.toContain(retired);
+    expect(
+      (
+        await db
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'login_setting%'",
+          )
+          .all()
+      ).results,
+    ).toEqual([]);
+    expect(
+      (
+        await db
+          .prepare("SELECT token_hash FROM sessions ORDER BY token_hash")
+          .all()
+      ).results,
+    ).toEqual([{ token_hash: "connect-session" }]);
+    expect(
+      (await db.prepare("SELECT id FROM users ORDER BY id").all()).results,
+    ).toEqual([{ id: "lite" }, { id: "official" }]);
   },
 );
