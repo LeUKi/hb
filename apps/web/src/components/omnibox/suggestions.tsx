@@ -232,15 +232,17 @@ export function SuggestionContent({
         icon={<WandSparkles className="size-4 text-accent" />}
         meta={<Kbd className="shrink-0">Tab</Kbd>}
       >
-        {/* One run of text: a long 口令 wraps on under the words, using
-            the whole width, so what it becomes can be checked. */}
-        <span className="min-w-0 flex-1">
-          <span className="font-medium text-ink">一键优化</span>
-          <ArrowRight
-            className="mx-2 inline size-3.5 align-[-0.125em] text-ink-3"
-            aria-hidden="true"
-          />
-          <span className="sr-only">改为</span>
+        {/* The whole 口令 it becomes, to check: after the words in a wide
+            window, on a line of its own in a narrow one. */}
+        <span className="grid min-w-0 flex-1 gap-0.5 @wide/window:block">
+          <span>
+            <span className="font-medium text-ink">一键优化</span>
+            <ArrowRight
+              className="mx-2 inline size-3.5 align-[-0.125em] text-ink-3"
+              aria-hidden="true"
+            />
+            <span className="sr-only">改为</span>
+          </span>
           <span className="font-mono text-sm text-ink [overflow-wrap:anywhere]">
             {item.value}
           </span>
@@ -323,8 +325,8 @@ export function SuggestionContent({
   if (item.kind === "discover")
     return (
       <Row active={active} icon={<Search className="size-4" />}>
-        {/* One run of text, as 一键优化's: the whole 口令 to check. */}
-        <span className="min-w-0 flex-1">
+        {/* As 一键优化's: the whole 口令, on its own line when narrow. */}
+        <span className="grid min-w-0 flex-1 gap-0.5 @wide/window:block">
           <span className="text-ink-2">
             {item.scoped ? "在全部红包中查找" : "查找口令"}
           </span>{" "}
