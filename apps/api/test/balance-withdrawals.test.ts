@@ -166,12 +166,7 @@ function fakeCredit() {
 
 /** An admin, the platform app, 转出 open to `tester`, who has 50 🐟. */
 async function openWithdrawals(
-  options: {
-    withdrawEnabled?: boolean;
-    maxMinor?: number;
-    /** The admin (the platform app's owner) on the allowlist too. */
-    ownerListed?: boolean;
-  } = {},
+  options: { withdrawEnabled?: boolean; maxMinor?: number } = {},
 ) {
   const admin = await actor("admin");
   admins = [admin.externalId];
@@ -196,11 +191,6 @@ async function openWithdrawals(
     topupFeePercent: 12,
     withdrawFeePercent: 12,
     withdrawMaxMinor: options.maxMinor ?? 100_000,
-    allowlistEnabled: true,
-    allowlist: [
-      tester.externalId,
-      ...(options.ownerListed ? [admin.externalId] : []),
-    ],
   });
   expect(patched.status).toBe(200);
   const added = await call(
@@ -471,7 +461,6 @@ describe("转出", () => {
   it("refuses what it cannot do, and takes the same request once", async () => {
     const { admin, tester, settingsVersion } = await openWithdrawals({
       maxMinor: 2000,
-      ownerListed: true,
     });
     const ask = (who: Actor, amount: string, extra: object = {}) =>
       call("POST", "/me/balance/withdrawals", who, {
@@ -499,7 +488,7 @@ describe("转出", () => {
     expect(await account(tester.id)).toEqual({ available: 1000, locked: 4000 });
     // The platform app's owner: Credit cannot pay itself.
     expect(code(await ask(admin, "1.00"))).toBe("BALANCE_SELF");
-    // Not on the allowlist.
+    // Nothing in 🐟额 and not invited: no 🐟额 at all.
     const stranger = await actor("stranger");
     expect(code(await ask(stranger, "1.00"))).toBe("BALANCE_NOT_OPEN");
     // The same request twice is one 转出; with other numbers it is refused.
@@ -538,8 +527,6 @@ describe("转出", () => {
       topupFeePercent: 12,
       withdrawFeePercent: 12,
       withdrawMaxMinor: 100_000,
-      allowlistEnabled: true,
-      allowlist: [tester.externalId],
     });
     const version = (opened.json as { settings: { version: number } }).settings
       .version;

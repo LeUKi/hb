@@ -2,6 +2,7 @@
 // look, every 转入 and 调整.
 import type { ApiBindings } from "../env";
 import { credentialVerificationView } from "../payments/verification";
+import { memberOf } from "./invites";
 import { decodeRecordCursor, listRecords, readAccount } from "./ledger";
 import { readPlatformAppRow } from "./platform-app";
 import { type TopupRow, topupView } from "./topups";
@@ -200,6 +201,8 @@ export async function adminTopupDetail(env: ApiBindings, id: string) {
   return {
     topup: topupView(row),
     user: userRef(row),
+    /** Who invited the person (第 13 节), or null. */
+    member: await memberOf(env, String(row.user_id)),
     clientId: row.client_id,
     credentialVersion: row.credential_version,
     lastCheckResult: row.last_check_result,
@@ -402,9 +405,10 @@ export async function adminUserBalance(
   userId: string,
   cursor?: string,
 ) {
-  const [account, records] = await Promise.all([
+  const [account, records, member] = await Promise.all([
     readAccount(env, userId),
     listRecords(env, userId, "all", cursor),
+    memberOf(env, userId),
   ]);
-  return { account, ...records };
+  return { account, member, ...records };
 }

@@ -21,7 +21,7 @@ import { reachesCredit } from "../runtime/controls";
 import { sha256Hex } from "../security/crypto";
 import { balanceError } from "./errors";
 import { readPlatformAppRow } from "./platform-app";
-import { readBalanceSettings, requireBalanceOpen } from "./settings";
+import { readBalanceSettings, requireBalanceEntry } from "./settings";
 
 /** A constant, like a claim's: `hb.lafi.sh_out_<32 hex>`, 47 characters. */
 const BUSINESS_PREFIX = "hb.lafi.sh_out_";
@@ -181,8 +181,10 @@ export async function createWithdrawal(
   env: ApiBindings,
   userId: string,
   input: CreateWithdrawalInput,
+  isAdmin = false,
 ): Promise<{ withdrawal: BalanceWithdrawal; taskId: string | null }> {
-  await requireBalanceOpen(env, userId);
+  // 转出 needs no invitation: only 🐟 to send.
+  await requireBalanceEntry(env, userId, isAdmin);
   const digest = await sha256Hex(
     `balance-withdrawal:${JSON.stringify({ settingsVersion: input.settingsVersion, by: input.by, amount: input.amount })}`,
   );

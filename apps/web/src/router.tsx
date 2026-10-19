@@ -89,6 +89,12 @@ const redeemRoute = createRoute({
   path: "/🔑/$resultId",
   staticData: { chrome: "docked" },
 });
+// An invitation to 转入: its own page, open to anyone with the link.
+const inviteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/invite/$token",
+  staticData: { chrome: "docked", subpage: "邀请" },
+});
 const topicRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/💬/$topicId/$postNumber",
@@ -238,6 +244,7 @@ const routeTree = rootRoute.addChildren([
   statsRoute,
   paymentsOfRoute,
   redeemRoute,
+  inviteRoute,
   topicRoute,
   topicFirstPostRoute,
   newRoute,

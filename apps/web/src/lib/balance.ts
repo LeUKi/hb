@@ -1,4 +1,6 @@
 import type {
+  BalanceInvite,
+  BalanceInviteUser,
   BalanceTopup,
   BalanceWithdrawal,
   CreateTopupInput,
@@ -14,6 +16,7 @@ import type { InferResponseType } from "hono/client";
 import { useEffect, useRef } from "react";
 import { api } from "../api";
 import { readResponse } from "./activities";
+import { sessionQueryKey } from "./auth";
 import { useMerchantIdentity } from "./merchants";
 import { useIdentity } from "./session";
 
@@ -35,6 +38,10 @@ export const balanceKeys = {
     [...balanceKeys.all(identity), "topup", id] as const,
   withdrawal: (identity: string, id: string) =>
     [...balanceKeys.all(identity), "withdrawal", id] as const,
+  invites: (identity: string) =>
+    [...balanceKeys.all(identity), "invites"] as const,
+  invitee: (identity: string, username: string) =>
+    [...balanceKeys.all(identity), "invitee", username] as const,
 };
 
 export function useBalancePages(userId: string, filter: BalanceFilter) {
@@ -217,4 +224,110 @@ export function useWithdrawalActions(userId: string) {
     },
   });
   return { create };
+}
+
+/** The invite dialog's last few invitations, and what became of them. */
+export function useMyInvites(userId: string, enabled: boolean) {
+  const session = useMerchantIdentity(userId);
+  return useQuery({
+    queryKey: balanceKeys.invites(session.identity),
+    enabled: session.enabled && enabled,
+    queryFn: async ({ signal }) =>
+      session.read<{ items: BalanceInvite[] }>(
+        await api.api.me.balance.invites.$get(undefined, {
+          init: { signal, cache: "no-store" },
+        }),
+      ),
+    retry: false,
+  });
+}
+
+export type InviteePreview = {
+  user: BalanceInviteUser | null;
+  self: boolean;
+  member: boolean;
+};
+
+/** Who a typed username is here (if they have been), while it is typed. */
+export function useInviteePreview(userId: string, username: string) {
+  const session = useMerchantIdentity(userId);
+  const name = username.trim().replace(/^@/, "").toLowerCase();
+  return useQuery({
+    queryKey: balanceKeys.invitee(session.identity, name),
+    enabled: session.enabled && /^[a-z0-9_.-]{1,60}$/.test(name),
+    queryFn: async ({ signal }) =>
+      session.read<InviteePreview>(
+        await api.api.me.balance.invites.preview.$get(
+          { query: { username: name } },
+          { init: { signal, cache: "no-store" } },
+        ),
+      ),
+    retry: false,
+    staleTime: 30_000,
+    placeholderData: (previous) => previous,
+  });
+}
+
+/** 生成链接: one invitation, then the dialog's list reads again. */
+export function useInviteActions(userId: string) {
+  const session = useMerchantIdentity(userId);
+  const queryClient = useQueryClient();
+  const options = useCsrf();
+  const create = useMutation({
+    mutationFn: async (username: string) => {
+      const identity = session.captureIdentity() ?? "";
+      const result = await readResponse<{ invite: BalanceInvite; url: string }>(
+        await api.api.me.balance.invites.$post({ json: { username } }, options),
+      );
+      if (session.isCurrentIdentity(identity))
+        await queryClient.invalidateQueries({
+          queryKey: balanceKeys.invites(identity),
+        });
+      return result;
+    },
+  });
+  return { create };
+}
+
+export type InvitePage = InferResponseType<
+  (typeof api.api.invites)[":token"]["$get"],
+  200
+>;
+
+/** The accept page: open to anyone with the link, read for whoever it is. */
+export function useInvite(token: string) {
+  const { user, ready } = useIdentity();
+  return useQuery({
+    queryKey: ["invite", token, user?.id ?? "guest"] as const,
+    enabled: ready,
+    queryFn: async ({ signal }) =>
+      readResponse<InvitePage>(
+        await api.api.invites[":token"].$get(
+          { param: { token } },
+          { init: { signal, cache: "no-store" } },
+        ),
+      ),
+    retry: false,
+  });
+}
+
+/** 接受邀请, then the session reads again: 🐟额 shows from now on. */
+export function useAcceptInvite(token: string) {
+  const queryClient = useQueryClient();
+  const options = useCsrf();
+  return useMutation({
+    mutationFn: async () => {
+      const result = await readResponse<{ accepted: boolean }>(
+        await api.api.invites[":token"].accept.$post(
+          { param: { token } },
+          options,
+        ),
+      );
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: sessionQueryKey }),
+        queryClient.invalidateQueries({ queryKey: ["invite", token] }),
+      ]);
+      return result;
+    },
+  });
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  createInviteSchema,
   feeOf,
   formatSignedAmount,
   quoteTopup,
@@ -50,7 +51,7 @@ describe("🐟额 amounts", () => {
     expect(formatSignedAmount(0)).toBe("0.00");
   });
 
-  it("checks the settings: fee range, cap, allowlist ids", () => {
+  it("checks the settings: fee range and cap, and no allowlist any more", () => {
     const base = {
       expectedVersion: 1,
       topupEnabled: true,
@@ -58,8 +59,6 @@ describe("🐟额 amounts", () => {
       topupFeePercent: 12,
       withdrawFeePercent: 12,
       withdrawMaxMinor: 100_000,
-      allowlistEnabled: true,
-      allowlist: ["730002"],
     };
     expect(updateBalanceSettingsSchema.safeParse(base).success).toBe(true);
     expect(
@@ -67,8 +66,23 @@ describe("🐟额 amounts", () => {
         .success,
     ).toBe(false);
     expect(
-      updateBalanceSettingsSchema.safeParse({ ...base, allowlist: ["0x1"] })
+      updateBalanceSettingsSchema.safeParse({ ...base, withdrawMaxMinor: 99 })
         .success,
     ).toBe(false);
+    // Invitations replaced it (docs/balance-design.md §13).
+    expect(
+      updateBalanceSettingsSchema.safeParse({ ...base, allowlist: ["730002"] })
+        .success,
+    ).toBe(false);
+  });
+
+  it("reads an invitee's username as typed, with or without @", () => {
+    expect(createInviteSchema.parse({ username: " @Lafish " })).toEqual({
+      username: "Lafish",
+    });
+    expect(createInviteSchema.safeParse({ username: "两个字" }).success).toBe(
+      false,
+    );
+    expect(createInviteSchema.safeParse({ username: "@" }).success).toBe(false);
   });
 });

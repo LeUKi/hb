@@ -1060,11 +1060,6 @@ export const balanceSettings = sqliteTable(
     topupFeePercent: integer("topup_fee_percent").notNull().default(12),
     withdrawFeePercent: integer("withdraw_fee_percent").notNull().default(12),
     withdrawMaxMinor: integer("withdraw_max_minor").notNull().default(100000),
-    allowlistEnabled: integer("allowlist_enabled", { mode: "boolean" })
-      .notNull()
-      .default(true),
-    /** Community IDs, a JSON array of strings. */
-    allowlist: text("allowlist").notNull().default("[]"),
     updatedAt: integer("updated_at").notNull(),
     updatedByUserId: text("updated_by_user_id"),
   },
@@ -1078,10 +1073,61 @@ export const balanceSettings = sqliteTable(
       "balance_settings_withdraw_max_valid",
       sql`${table.withdrawMaxMinor} >= 100`,
     ),
-    check(
-      "balance_settings_allowlist_valid",
-      sql`json_valid(${table.allowlist}) AND json_type(${table.allowlist}) = 'array'`,
+  ],
+);
+
+/**
+ * An invitation to 转入 (docs/balance-design.md §13): for one LINUX DO
+ * username, good for a day and for one use. Only the link's digest is kept.
+ */
+export const balanceInvites = sqliteTable(
+  "balance_invites",
+  {
+    id: text("id").primaryKey(),
+    tokenHash: text("token_hash").notNull(),
+    inviterUserId: text("inviter_user_id")
+      .notNull()
+      .references(() => users.id),
+    /** The username it is for, in lower case. */
+    inviteeUsername: text("invitee_username").notNull(),
+    createdAt: integer("created_at").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    acceptedAt: integer("accepted_at"),
+    acceptedUserId: text("accepted_user_id").references(() => users.id),
+  },
+  (table) => [
+    uniqueIndex("balance_invites_token_unique").on(table.tokenHash),
+    index("balance_invites_inviter_time_idx").on(
+      table.inviterUserId,
+      table.createdAt,
+      table.id,
     ),
+    index("balance_invites_time_idx").on(table.createdAt, table.id),
+    check(
+      "balance_invites_valid",
+      sql`${table.expiresAt} > ${table.createdAt} AND length(${table.tokenHash}) = 64
+        AND ${table.inviteeUsername} = lower(${table.inviteeUsername}) AND length(${table.inviteeUsername}) BETWEEN 1 AND 60
+        AND (${table.acceptedAt} IS NULL) = (${table.acceptedUserId} IS NULL)`,
+    ),
+  ],
+);
+
+/**
+ * Who may 转入 (and so invite): for good once in, with who invited them.
+ */
+export const balanceMembers = sqliteTable(
+  "balance_members",
+  {
+    userId: text("user_id")
+      .primaryKey()
+      .references(() => users.id),
+    invitedByUserId: text("invited_by_user_id").references(() => users.id),
+    inviteId: text("invite_id").references(() => balanceInvites.id),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("balance_members_invite_unique").on(table.inviteId),
+    index("balance_members_inviter_idx").on(table.invitedByUserId),
   ],
 );
 

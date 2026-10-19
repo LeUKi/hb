@@ -16,13 +16,11 @@ type SettingsRow = {
   topup_fee_percent: number;
   withdraw_fee_percent: number;
   withdraw_max_minor: number;
-  allowlist_enabled: number;
-  allowlist: string;
   updated_at: number;
 };
 
 const SELECT_SETTINGS = `SELECT version,topup_enabled,withdraw_enabled,topup_fee_percent,
-  withdraw_fee_percent,withdraw_max_minor,allowlist_enabled,allowlist,updated_at
+  withdraw_fee_percent,withdraw_max_minor,updated_at
   FROM balance_settings WHERE id='global'`;
 
 function settingsOf(row: SettingsRow): BalanceSettings {
@@ -33,8 +31,6 @@ function settingsOf(row: SettingsRow): BalanceSettings {
     topupFeePercent: row.topup_fee_percent,
     withdrawFeePercent: row.withdraw_fee_percent,
     withdrawMaxMinor: row.withdraw_max_minor,
-    allowlistEnabled: row.allowlist_enabled === 1,
-    allowlist: JSON.parse(row.allowlist) as string[],
     updatedAt: row.updated_at,
   };
 }
@@ -46,24 +42,43 @@ export async function readBalanceSettings(env: ApiBindings) {
 }
 
 /**
- * Whether someone may use 🐟额: everyone once the allowlist is off; until
- * then, the community IDs on it. The entry is hidden from everyone else.
+ * What someone may do with 🐟额 (docs/balance-design.md §13). 转入 and
+ * inviting come with an accepted invitation (admins always invite); the
+ * page shows to those, and to anyone 🐟额 has records for.
  */
-export async function balanceOpenFor(env: ApiBindings, userId: string) {
+export async function balanceAccessFor(
+  env: ApiBindings,
+  userId: string,
+  isAdmin: boolean,
+) {
   const row = await env.DB.prepare(
-    `SELECT CASE WHEN s.allowlist_enabled=0 THEN 1
-      WHEN u.provider='linux_do' AND EXISTS(SELECT 1 FROM json_each(s.allowlist) WHERE value=u.external_id) THEN 1
-      ELSE 0 END AS open
-    FROM balance_settings s JOIN users u ON u.id=? AND u.active=1 WHERE s.id='global'`,
+    `SELECT EXISTS(SELECT 1 FROM balance_members WHERE user_id=?1) AS member,
+      (EXISTS(SELECT 1 FROM balance_accounts WHERE user_id=?1)
+        OR EXISTS(SELECT 1 FROM balance_topups WHERE user_id=?1)
+        OR EXISTS(SELECT 1 FROM balance_withdrawals WHERE user_id=?1)
+        OR EXISTS(SELECT 1 FROM balance_adjustments WHERE user_id=?1)) AS records,
+      EXISTS(SELECT 1 FROM users WHERE id=?1 AND active=1) AS active`,
   )
     .bind(userId)
-    .first<{ open: number }>();
-  return row?.open === 1;
+    .first<{ member: number; records: number; active: number }>();
+  const member = row?.member === 1 && row.active === 1;
+  return {
+    /** The command, the user card and /me show it. */
+    entry: row?.active === 1 && (member || row.records === 1 || isAdmin),
+    topup: member,
+    invite: member || (isAdmin && row?.active === 1),
+  };
 }
 
-export async function requireBalanceOpen(env: ApiBindings, userId: string) {
-  if (!(await balanceOpenFor(env, userId)))
-    balanceError(404, "BALANCE_NOT_OPEN", "🐟额暂未开放");
+export async function requireBalanceEntry(
+  env: ApiBindings,
+  userId: string,
+  isAdmin: boolean,
+) {
+  const access = await balanceAccessFor(env, userId, isAdmin);
+  if (!access.entry)
+    balanceError(404, "BALANCE_NOT_OPEN", "本功能仅对受邀用户开放。");
+  return access;
 }
 
 function snapshot(settings: BalanceSettingsInput) {
@@ -73,8 +88,6 @@ function snapshot(settings: BalanceSettingsInput) {
     topupFeePercent: settings.topupFeePercent,
     withdrawFeePercent: settings.withdrawFeePercent,
     withdrawMaxMinor: settings.withdrawMaxMinor,
-    allowlistEnabled: settings.allowlistEnabled,
-    allowlist: settings.allowlist,
   });
 }
 
@@ -84,7 +97,6 @@ export async function updateBalanceSettings(
   input: UpdateBalanceSettingsInput,
 ) {
   const { expectedVersion, ...next } = input;
-  const allowlist = [...new Set(next.allowlist)];
   const previous = await readBalanceSettings(env);
   try {
     await env.DB.batch([
@@ -98,12 +110,12 @@ export async function updateBalanceSettings(
         crypto.randomUUID(),
         actorUserId,
         snapshot(previous),
-        snapshot({ ...next, allowlist }),
+        snapshot(next),
         expectedVersion,
       ),
       env.DB.prepare(`UPDATE balance_settings SET version=version+1,
         topup_enabled=?,withdraw_enabled=?,topup_fee_percent=?,withdraw_fee_percent=?,
-        withdraw_max_minor=?,allowlist_enabled=?,allowlist=?,
+        withdraw_max_minor=?,
         updated_at=${databaseNow},updated_by_user_id=?
         WHERE id='global' AND version=?`).bind(
         Number(next.topupEnabled),
@@ -111,8 +123,6 @@ export async function updateBalanceSettings(
         next.topupFeePercent,
         next.withdrawFeePercent,
         next.withdrawMaxMinor,
-        Number(next.allowlistEnabled),
-        JSON.stringify(allowlist),
         actorUserId,
         expectedVersion,
       ),

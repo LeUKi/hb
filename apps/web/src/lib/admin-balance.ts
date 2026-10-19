@@ -47,6 +47,10 @@ export type AdminAttentionList = InferResponseType<
   200
 >;
 export type AdminAttentionItem = AdminAttentionList["items"][number];
+export type AdminInviteList = InferResponseType<
+  AdminBalance["invites"]["$get"],
+  200
+>;
 export type AdminAdjustmentList = InferResponseType<
   AdminBalance["adjustments"]["$get"],
   200
@@ -169,6 +173,23 @@ export function useAdminWithdrawal(id: string) {
     retry: false,
     refetchInterval: (query) =>
       query.state.data?.withdrawal.status === "sending" ? 10_000 : false,
+  });
+}
+
+/** 邀请记录: every invitation, read when its modal opens. */
+export function useAdminInvites(enabled: boolean) {
+  const identity = useAdminIdentity();
+  return useInfiniteQuery({
+    queryKey: key(identity, "invites"),
+    enabled,
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) =>
+      read<AdminInviteList>(
+        `invites${pageParam ? `?cursor=${encodeURIComponent(pageParam)}` : ""}`,
+        signal,
+      ),
+    getNextPageParam: (last) => last.nextCursor,
+    retry: false,
   });
 }
 

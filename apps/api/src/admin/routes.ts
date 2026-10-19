@@ -1066,7 +1066,10 @@ async function paymentDetail(
   };
 }
 
-/** 🐟额 settings as the audit lists them: flags, numbers, the allowlist's size. */
+/**
+ * 🐟额 settings as the audit lists them: flags and numbers, and (in changes
+ * made before invitations replaced it) the allowlist's switch and size.
+ */
 function balanceAuditValues(json: unknown): Record<string, boolean | number> {
   const value = (json ?? {}) as Record<string, unknown>;
   return {
@@ -1075,8 +1078,14 @@ function balanceAuditValues(json: unknown): Record<string, boolean | number> {
     topupFeePercent: Number(value.topupFeePercent ?? 0),
     withdrawFeePercent: Number(value.withdrawFeePercent ?? 0),
     withdrawMaxMinor: Number(value.withdrawMaxMinor ?? 0),
-    allowlistEnabled: value.allowlistEnabled === true,
-    allowlistCount: Array.isArray(value.allowlist) ? value.allowlist.length : 0,
+    ...("allowlistEnabled" in value
+      ? {
+          allowlistEnabled: value.allowlistEnabled === true,
+          allowlistCount: Array.isArray(value.allowlist)
+            ? value.allowlist.length
+            : 0,
+        }
+      : {}),
   };
 }
 

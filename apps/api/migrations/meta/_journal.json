@@ -218,6 +218,13 @@
       "when": 1792403220274,
       "tag": "0030_fish_withdrawals",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1792415137945,
+      "tag": "0031_fish_invites",
+      "breakpoints": true
     }
   ]
 }

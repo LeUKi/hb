@@ -1,6 +1,6 @@
 import type { WithdrawalWait } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, X } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { useId, useRef, useState } from "react";
 import {
@@ -8,6 +8,7 @@ import {
   type AdminWithdrawalItem,
   useAdminAdjustments,
   useAdminAttention,
+  useAdminInvites,
   useAdminTopup,
   useAdminTopups,
   useAdminUserBalance,
@@ -23,6 +24,7 @@ import { LazyListEnd, useQueryLazyList } from "../../page/lazy-list";
 import { Callout, EmptyNote, Facts, Panel } from "../../page/page";
 import { PageLoad, ResultLoad, resultOf } from "../../page/page-state";
 import { ConfirmDialog } from "../../shell/confirm-dialog";
+import { WindowDialog } from "../../shell/window-dialog";
 import { Avatar } from "../../ui/avatar";
 import { Button } from "../../ui/button";
 import { MoreLink } from "../../ui/button-link";
@@ -406,6 +408,12 @@ function TopupDetail({ item }: { item: AdminTopupItem }) {
               {
                 label: "平台应用",
                 value: `${data.clientId} · 凭证第 ${data.credentialVersion} 版`,
+              },
+              {
+                label: "邀请人",
+                value: data.member?.invitedBy
+                  ? `${data.member.invitedBy.displayName} @${data.member.invitedBy.username}`
+                  : "—",
               },
               {
                 label: "下单时间",
@@ -802,11 +810,12 @@ export function AdminBalance({ search }: { search: AdminSearch }) {
   const navigate = useNavigate({ from: "/admin/balance" });
   const view = viewOf(search.status);
   const overview = useBalanceOverview();
+  const [invitesOpen, setInvitesOpen] = useState(false);
   return (
     <PageLoad load={listLoad(overview)} area frame>
       <AdminFrame>
         <Overview />
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <Segmented
             size="sm"
             label="🐟额列表"
@@ -834,7 +843,14 @@ export function AdminBalance({ search }: { search: AdminSearch }) {
               { value: "adjustments", label: "调整" },
             ]}
           />
+          <Button size="sm" onClick={() => setInvitesOpen(true)}>
+            邀请记录
+          </Button>
         </div>
+        <InvitesDialog
+          open={invitesOpen}
+          onClose={() => setInvitesOpen(false)}
+        />
         <Swap id={view}>
           {view === "adjustments" ? (
             <Adjustments />
@@ -848,6 +864,107 @@ export function AdminBalance({ search }: { search: AdminSearch }) {
         </Swap>
       </AdminFrame>
     </PageLoad>
+  );
+}
+
+const inviteStatusText = {
+  pending: "待接受",
+  accepted: "已接受",
+  expired: "已过期",
+} as const;
+const inviteStatusTone = {
+  pending: "warning",
+  accepted: "success",
+  expired: "neutral",
+} as const;
+
+/** 邀请记录: who invited whom, and what became of each link. */
+function InvitesDialog({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  const titleId = useId();
+  const query = useAdminInvites(open);
+  const list = useQueryLazyList({
+    hasNextPage: query.hasNextPage,
+    isFetchingNextPage: query.isFetchingNextPage,
+    isFetchNextPageError: query.isFetchNextPageError,
+    fetchNextPage: query.fetchNextPage,
+    pageCount: query.data?.pages.length ?? 0,
+  });
+  const items = (query.data?.pages ?? []).flatMap((page) => page.items);
+  return (
+    <WindowDialog
+      open={open}
+      onClose={onClose}
+      labelledBy={titleId}
+      width="32rem"
+    >
+      <div className="flex h-[min(36rem,80cqh)] min-h-0 flex-col">
+        <header className="flex items-center justify-between gap-3 px-5 pt-4 pb-2">
+          <h2 id={titleId} className="text-lg font-semibold text-ink">
+            邀请记录
+          </h2>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="关闭"
+            onClick={onClose}
+          >
+            <X />
+          </Button>
+        </header>
+        <div className="view-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4">
+          <ResultLoad
+            id={items.length ? "rows" : "empty"}
+            load={resultOf(query)}
+          >
+            {items.length === 0 ? (
+              <EmptyNote
+                title="还没有邀请"
+                text="有资格的人在🐟额页发出的邀请，都记在这里。"
+              />
+            ) : (
+              <div className="grid gap-2">
+                <ul className="grid">
+                  {items.map((invite) => (
+                    <li
+                      key={invite.id}
+                      className="flex items-center gap-3 border-line border-b py-2.5 last:border-b-0"
+                    >
+                      <Avatar
+                        name={invite.inviter?.displayName ?? "?"}
+                        src={invite.inviter?.avatarUrl ?? null}
+                        size={28}
+                      />
+                      <span className="grid min-w-0 flex-1 gap-0.5">
+                        <span className="truncate text-sm text-ink">
+                          {invite.inviter?.displayName} 邀请 @
+                          {invite.acceptedBy?.username ?? invite.username}
+                        </span>
+                        <span className="text-xs text-ink-3 tabular-nums">
+                          {clockSeconds(invite.createdAt)}
+                          {invite.acceptedAt !== null
+                            ? ` · ${clockLabel(invite.acceptedAt)}接受`
+                            : ""}
+                        </span>
+                      </span>
+                      <StatusChip tone={inviteStatusTone[invite.status]}>
+                        {inviteStatusText[invite.status]}
+                      </StatusChip>
+                    </li>
+                  ))}
+                </ul>
+                <LazyListEnd list={list} done={`共 ${items.length} 条`} />
+              </div>
+            )}
+          </ResultLoad>
+        </div>
+      </div>
+    </WindowDialog>
   );
 }
 
@@ -910,6 +1027,14 @@ export function UserBalance({ userId }: { userId: string }) {
                       },
                     ]
                   : []),
+                {
+                  label: "转入资格",
+                  value: data.member
+                    ? data.member.invitedBy
+                      ? `@${data.member.invitedBy.username} 邀请，${clockLabel(data.member.since)}接受`
+                      : `${clockLabel(data.member.since)}起`
+                    : "没有",
+                },
               ]}
             />
             {data.items.length > 0 && (

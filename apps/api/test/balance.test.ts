@@ -18,7 +18,13 @@ const origin = "https://hb.example.com";
 let CLIENT_ID = "hb_balance_platform_0";
 const SECRET = "platform-secret-key";
 
-type Actor = { id: string; externalId: string; cookie: string; csrf: string };
+type Actor = {
+  id: string;
+  externalId: string;
+  username: string;
+  cookie: string;
+  csrf: string;
+};
 
 let counter = 0;
 async function actor(username = "fish"): Promise<Actor> {
@@ -50,7 +56,13 @@ async function actor(username = "fish"): Promise<Actor> {
       lastSeenAt: now,
       expiresAt: new Date(now.getTime() + 600_000),
     });
-  return { id, externalId, cookie: `hb_session=${token}`, csrf };
+  return {
+    id,
+    externalId,
+    username: `${username}${counter}`,
+    cookie: `hb_session=${token}`,
+    csrf,
+  };
 }
 
 let admins: string[] = [];
@@ -193,7 +205,19 @@ function fakeCredit() {
   };
 }
 
-/** An admin, the platform app (key checked), and 转入 open to `tester`. */
+/** `inviter` invites `invitee`, who accepts: 转入 and inviting for them. */
+async function inviteAndAccept(inviter: Actor, invitee: Actor) {
+  const made = await call("POST", "/me/balance/invites", inviter, {
+    username: invitee.username,
+  });
+  expect(made.status).toBe(200);
+  const token = (made.json as { url: string }).url.split("/invite/")[1] ?? "";
+  const accepted = await call("POST", `/invites/${token}/accept`, invitee);
+  expect(accepted.status).toBe(200);
+  return token;
+}
+
+/** An admin, the platform app (key checked), and `tester` invited to 转入. */
 async function openForTester(
   options: { feePercent?: number; credit?: ReturnType<typeof fakeCredit> } = {},
 ) {
@@ -218,10 +242,9 @@ async function openForTester(
     topupFeePercent: options.feePercent ?? 12,
     withdrawFeePercent: 12,
     withdrawMaxMinor: 100_000,
-    allowlistEnabled: true,
-    allowlist: [tester.externalId],
   });
   expect(patched.status).toBe(200);
+  await inviteAndAccept(admin, tester);
   return {
     admin,
     tester,
@@ -287,13 +310,10 @@ describe("🐟额 settings and the platform app", () => {
       settings: {
         version: number;
         topupEnabled: boolean;
-        allowlistEnabled: boolean;
       };
     };
-    expect(settings).toMatchObject({
-      topupEnabled: false,
-      allowlistEnabled: true,
-    });
+    expect(settings).toMatchObject({ topupEnabled: false });
+    expect(settings).not.toHaveProperty("allowlist");
     expect((await call("GET", "/admin/balance/settings", member)).status).toBe(
       403,
     );
@@ -304,17 +324,12 @@ describe("🐟额 settings and the platform app", () => {
       topupFeePercent: 10,
       withdrawFeePercent: 12,
       withdrawMaxMinor: 100_000,
-      allowlistEnabled: true,
-      allowlist: [member.externalId, member.externalId],
     };
     expect(
       (await call("PATCH", "/admin/balance/settings", member, next)).status,
     ).toBe(403);
     const saved = await call("PATCH", "/admin/balance/settings", admin, next);
     expect(saved.status).toBe(200);
-    expect(
-      (saved.json as { settings: { allowlist: string[] } }).settings.allowlist,
-    ).toEqual([member.externalId]);
     // Someone else changed it in between: the old version is turned down.
     const stale = await call("PATCH", "/admin/balance/settings", admin, next);
     expect(stale.status).toBe(409);
@@ -326,7 +341,7 @@ describe("🐟额 settings and the platform app", () => {
       (changes.json as { recentChanges: { nextVersion: number }[] })
         .recentChanges[0]?.nextVersion,
     ).toBe(settings.version + 1);
-    // 操作记录 lists it among the site's changes, the allowlist as a count.
+    // 操作记录 lists it among the site's changes.
     const audit = await call(
       "GET",
       "/admin/audit?type=balance_settings",
@@ -344,9 +359,9 @@ describe("🐟额 settings and the platform app", () => {
     ).items;
     expect(entry).toMatchObject({
       type: "balance_settings",
-      after: { topupEnabled: true, topupFeePercent: 10, allowlistCount: 1 },
+      after: { topupEnabled: true, topupFeePercent: 10 },
     });
-    expect(entry?.after).not.toHaveProperty("allowlist");
+    expect(entry?.after).not.toHaveProperty("allowlistCount");
   });
 
   it("keeps the platform app out of the admin's own merchants, and checks its key", async () => {
@@ -422,16 +437,27 @@ describe("🐟额 settings and the platform app", () => {
 });
 
 describe("转入", () => {
-  it("is hidden from people off the allowlist", async () => {
-    const { admin } = await openForTester();
+  it("is for invited people: others see no 🐟额 at all", async () => {
+    const { admin, tester } = await openForTester();
     const outsider = await actor("outsider");
-    expect((await call("GET", "/me/balance", outsider)).status).toBe(404);
+    const closed = await call("GET", "/me/balance", outsider);
+    expect(closed.status).toBe(404);
+    expect((closed.json as { error: { message: string } }).error.message).toBe(
+      "本功能仅对受邀用户开放。",
+    );
     const session = await call("GET", "/session", outsider);
     expect((session.json as { user: { balance: boolean } }).user.balance).toBe(
       false,
     );
+    // Admins see it (to invite); the invited one may 转入 and invite.
     expect((await call("GET", "/session", admin)).json).toMatchObject({
-      user: { balance: false },
+      user: { balance: true },
+    });
+    expect((await call("GET", "/me/balance", tester)).json).toMatchObject({
+      access: { topup: true, invite: true },
+    });
+    expect((await call("GET", "/me/balance", admin)).json).toMatchObject({
+      access: { topup: false, invite: true },
     });
   });
 
@@ -559,13 +585,25 @@ describe("转入", () => {
     expect((await start(tester, "10", settingsVersion - 1)).status).toBe(409);
     expect((await start(tester, "0.99")).status).toBe(400);
     expect((await start(tester, "2000.01")).status).toBe(400);
-    // The platform app's owner: Credit will not let them pay themselves.
+    // Not invited: no 转入.
+    const outsider = await actor("outsider");
+    const uninvited = await start(outsider);
+    expect(uninvited.status).toBe(403);
+    expect((uninvited.json as { error: { code: string } }).error.code).toBe(
+      "BALANCE_NOT_INVITED",
+    );
+    // The platform app's owner, even if let in: Credit will not let them
+    // pay themselves.
     await env.DB.prepare(
-      "UPDATE balance_settings SET allowlist=json_array(?,?) WHERE id='global'",
+      "INSERT INTO balance_members (user_id,created_at) VALUES (?,?)",
     )
-      .bind(tester.externalId, admin.externalId)
+      .bind(admin.id, Date.now())
       .run();
-    expect((await start(admin)).status).toBe(403);
+    const owner = await start(admin);
+    expect(owner.status).toBe(403);
+    expect((owner.json as { error: { code: string } }).error.code).toBe(
+      "BALANCE_SELF",
+    );
     await env.DB.prepare(
       `INSERT INTO balance_topups (id,user_id,merchant_id,client_id,credential_version,business_no,debit_minor,fee_minor,credit_minor,fee_percent,settings_version,order_name,return_url,status,request_id,request_digest,created_at,updated_at)
       SELECT lower(hex(randomblob(16))),?,id,client_id,1,'hb.lafi.sh_in_'||lower(hex(randomblob(16))),100,12,88,12,1,'x','x','unpaid',lower(hex(randomblob(16))),'d',?,?
@@ -917,3 +955,194 @@ describe("网站管理 · 🐟额", () => {
     ).toBe(100);
   });
 });
+
+describe("邀请", () => {
+  type InviteRead = {
+    invite: { username: string; status: string; inviter: { username: string } };
+    topupFeePercent: number;
+    viewer: { matches: boolean; member: boolean; isInviter: boolean } | null;
+  };
+  const make = (who: Actor, username: string) =>
+    call("POST", "/me/balance/invites", who, { username });
+  const code = (result: { json: never }) =>
+    (result.json as { error: { code: string; message: string } }).error;
+
+  it("is a link for one username, read by anyone, accepted only by that account", async () => {
+    const { tester } = await openForTester();
+    const friend = await actor("friend");
+    const stranger = await actor("stranger");
+    // Typed with an @ and other cases: the same person.
+    const made = await make(tester, `@${friend.username.toUpperCase()}`);
+    expect(made.status).toBe(200);
+    const { url, invite } = made.json as {
+      url: string;
+      invite: { username: string; status: string; expiresAt: number };
+    };
+    expect(url).toMatch(
+      /^https:\/\/hb\.example\.com\/invite\/[A-Za-z0-9_-]{43}$/,
+    );
+    expect(invite).toMatchObject({
+      username: friend.username.toLowerCase(),
+      status: "pending",
+    });
+    expect(invite.expiresAt - Date.now()).toBeGreaterThan(86_000_000);
+    const token = url.split("/invite/")[1] ?? "";
+
+    // Anyone with the link sees who sent it; only the named account matches.
+    const guest = await call("GET", `/invites/${token}`);
+    expect(guest.json).toMatchObject({
+      invite: { status: "pending", inviter: { username: tester.username } },
+      topupFeePercent: 12,
+      viewer: null,
+    });
+    expect(
+      ((await call("GET", `/invites/${token}`, stranger)).json as InviteRead)
+        .viewer,
+    ).toMatchObject({ matches: false, member: false });
+    const wrong = await call("POST", `/invites/${token}/accept`, stranger);
+    expect(wrong.status).toBe(403);
+    expect(code(wrong).message).toContain(
+      `你现在登录的是 @${stranger.username}`,
+    );
+    const own = await call("POST", `/invites/${token}/accept`, tester);
+    expect(code(own).code).toBe("INVITE_OWN");
+
+    expect((await call("GET", "/me/balance", friend)).status).toBe(404);
+    expect(
+      (await call("POST", `/invites/${token}/accept`, friend)).status,
+    ).toBe(200);
+    // Twice is still once.
+    expect(
+      (await call("POST", `/invites/${token}/accept`, friend)).status,
+    ).toBe(200);
+    expect((await call("GET", "/me/balance", friend)).json).toMatchObject({
+      access: { topup: true, invite: true },
+    });
+    const mine = await call("GET", "/me/balance/invites", tester);
+    expect((mine.json as { items: unknown[] }).items[0]).toMatchObject({
+      status: "accepted",
+      acceptedBy: { username: friend.username },
+    });
+    // The admin sees who brought whom.
+    const { admin } = { admin: await adminActor() };
+    const detail = await call(
+      "GET",
+      `/admin/balance/users/${friend.id}`,
+      admin,
+    );
+    expect(detail.json).toMatchObject({
+      member: { invitedBy: { username: tester.username } },
+    });
+    const list = await call("GET", "/admin/balance/invites", admin);
+    expect((list.json as { items: unknown[] }).items).toContainEqual(
+      expect.objectContaining({
+        status: "accepted",
+        inviter: expect.objectContaining({ username: tester.username }),
+      }),
+    );
+  });
+
+  it("makes no link for oneself or someone already invited, and lets only the invited invite", async () => {
+    const { admin, tester } = await openForTester();
+    const outsider = await actor("outsider");
+    const self = await make(tester, tester.username);
+    expect(code(self)).toMatchObject({
+      code: "INVITE_SELF",
+      message: "不能邀请自己",
+    });
+    const already = await make(admin, tester.username);
+    expect(code(already)).toMatchObject({
+      code: "INVITE_ALREADY_MEMBER",
+      message: `@${tester.username} 已经受邀`,
+    });
+    expect((await make(outsider, "someone")).status).toBe(403);
+    expect((await make(tester, "bad name!")).status).toBe(400);
+    // The dialog's preview: who that is here, and why not.
+    const preview = (username: string) =>
+      call(
+        "GET",
+        `/me/balance/invites/preview?username=${encodeURIComponent(username)}`,
+        tester,
+      );
+    expect((await preview("nobody-here")).json).toEqual({
+      user: null,
+      self: false,
+      member: false,
+    });
+    expect((await preview(`@${admin.username}`)).json).toMatchObject({
+      user: { username: admin.username },
+      self: false,
+      member: false,
+    });
+    expect((await preview(tester.username)).json).toMatchObject({
+      self: true,
+      member: true,
+    });
+  });
+
+  it("expires after a day", async () => {
+    const { tester } = await openForTester();
+    const friend = await actor("friend");
+    const made = await make(tester, friend.username);
+    const token = (made.json as { url: string }).url.split("/invite/")[1] ?? "";
+    const later = Date.now() + 86_400_001;
+    vi.spyOn(Date, "now").mockReturnValue(later);
+    const expired = await call("POST", `/invites/${token}/accept`, friend);
+    expect(expired.status).toBe(410);
+    expect(
+      ((await call("GET", `/invites/${token}`, friend)).json as InviteRead)
+        .invite.status,
+    ).toBe("expired");
+  });
+
+  it("leaves 转出 to anyone with 🐟, invited or not", async () => {
+    const { admin } = await openForTester();
+    const kept = await actor("kept");
+    await call("POST", `/admin/balance/users/${kept.id}/adjustments`, admin, {
+      requestId: crypto.randomUUID(),
+      direction: "add",
+      amount: "5.00",
+      reason: "测试",
+    });
+    expect((await call("GET", "/me/balance", kept)).json).toMatchObject({
+      access: { topup: false, invite: false },
+      account: { availableMinor: 500 },
+    });
+    expect((await call("GET", "/session", kept)).json).toMatchObject({
+      user: { balance: true },
+    });
+  });
+
+  it("keeps 资格 for good, from an accepted invitation only", async () => {
+    const { tester } = await openForTester();
+    const friend = await actor("friend");
+    const made = await make(tester, friend.username);
+    const inviteId = (made.json as { invite: { id: string } }).invite.id;
+    await expect(
+      env.DB.prepare(
+        "INSERT INTO balance_members (user_id,invited_by_user_id,invite_id,created_at) VALUES (?,?,?,?)",
+      )
+        .bind(friend.id, tester.id, inviteId, Date.now())
+        .run(),
+    ).rejects.toThrow(/accepted/);
+    await expect(
+      env.DB.prepare(
+        "UPDATE balance_invites SET accepted_at=?,accepted_user_id=? WHERE id=?",
+      )
+        .bind(Date.now(), tester.id, inviteId)
+        .run(),
+    ).rejects.toThrow(/own account/);
+    await expect(
+      env.DB.prepare("DELETE FROM balance_members WHERE user_id=?")
+        .bind(tester.id)
+        .run(),
+    ).rejects.toThrow(/for good/);
+  });
+});
+
+/** Another admin for reading, alongside the current ones. */
+async function adminActor() {
+  const admin = await actor("reader");
+  admins = [...admins, admin.externalId];
+  return admin;
+}

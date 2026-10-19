@@ -1,19 +1,32 @@
 // 🐟额 for the person (docs/balance-design.md §8, §9.2).
 import {
   BALANCE_LIMITS,
+  createInviteSchema,
   createTopupSchema,
   createWithdrawalSchema,
+  inviteUsernameSchema,
 } from "@hb/contracts";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { validator } from "hono/validator";
 import { ActivityError } from "../activities/errors";
-import { requireAuth, requireProtectedMutation } from "../auth/session";
+import {
+  getOptionalSession,
+  requireAuth,
+  requireProtectedMutation,
+} from "../auth/session";
 import type { ApiContext } from "../env";
 import { flushPaymentOutbox } from "../payments/scheduler";
 import { requireAppOrigin } from "../security/http";
+import {
+  acceptInvite,
+  createInvite,
+  listMyInvites,
+  previewInvitee,
+  readInvite,
+} from "./invites";
 import { type BalanceRecordFilter, listRecords, readAccount } from "./ledger";
-import { readBalanceSettings, requireBalanceOpen } from "./settings";
+import { readBalanceSettings, requireBalanceEntry } from "./settings";
 import {
   checkOpenTopups,
   checkTopup,
@@ -61,9 +74,17 @@ export const balanceRoutes = new Hono<ApiContext>()
     c.header("Cache-Control", "no-store");
     await next();
   })
+  .use("/invites/*", async (c, next) => {
+    c.header("Cache-Control", "no-store");
+    await next();
+  })
   .get("/me/balance", recordsQuery, async (c) => {
     const session = await requireAuth(c);
-    await requireBalanceOpen(c.env, session.user.id);
+    const access = await requireBalanceEntry(
+      c.env,
+      session.user.id,
+      session.user.isAdmin,
+    );
     const { filter, cursor } = c.req.valid("query");
     const [settings, account, records, pending] = await Promise.all([
       readBalanceSettings(c.env),
@@ -89,6 +110,8 @@ export const balanceRoutes = new Hono<ApiContext>()
         withdrawMinMinor: BALANCE_LIMITS.withdrawMinMinor,
       },
       account,
+      /** What this person may do beyond reading and 转出. */
+      access: { topup: access.topup, invite: access.invite },
       /** 转入 not arrived yet (待确认 or 未完成). */
       openTopups: pending?.count ?? 0,
       ...records,
@@ -118,7 +141,7 @@ export const balanceRoutes = new Hono<ApiContext>()
   // The page's own check, as it opens: a write, so not inside the read.
   .post("/me/balance/topups/check-open", async (c) => {
     const session = await requireProtectedMutation(c);
-    await requireBalanceOpen(c.env, session.user.id);
+    await requireBalanceEntry(c.env, session.user.id, session.user.isAdmin);
     return c.json({ credited: await checkOpenTopups(c.env, session.user.id) });
   })
   .get("/me/balance/topups/:id", async (c) => {
@@ -157,6 +180,7 @@ export const balanceRoutes = new Hono<ApiContext>()
         c.env,
         session.user.id,
         c.req.valid("json"),
+        session.user.isAdmin,
       );
       // Its payment starts now; the sweep catches it if this does not.
       if (taskId)
@@ -176,4 +200,64 @@ export const balanceRoutes = new Hono<ApiContext>()
         await ownedWithdrawal(c.env, session.user.id, c.req.param("id")),
       ),
     });
+  })
+  // 邀请 (docs/balance-design.md §13): the dialog on 🐟额, then the link's page.
+  .get("/me/balance/invites", async (c) => {
+    const session = await requireAuth(c);
+    return c.json({ items: await listMyInvites(c.env, session.user.id) });
+  })
+  .get("/me/balance/invites/preview", async (c) => {
+    const session = await requireAuth(c);
+    const parsed = inviteUsernameSchema.safeParse(
+      c.req.query("username") ?? "",
+    );
+    if (!parsed.success)
+      throw new ActivityError(
+        400,
+        "INVALID_USERNAME",
+        parsed.error.issues[0]?.message ?? "用户名无效",
+      );
+    return c.json(await previewInvitee(c.env, session.user, parsed.data));
+  })
+  .post(
+    "/me/balance/invites",
+    body,
+    validator("json", (value) => {
+      const parsed = createInviteSchema.safeParse(value);
+      if (!parsed.success)
+        throw new ActivityError(
+          400,
+          "INVALID_USERNAME",
+          parsed.error.issues[0]?.message ?? "用户名无效",
+        );
+      return parsed.data;
+    }),
+    async (c) => {
+      const session = await requireProtectedMutation(c);
+      return c.json(
+        await createInvite(
+          c.env,
+          session.user,
+          c.req.valid("json").username,
+          requireAppOrigin(c.env),
+        ),
+      );
+    },
+  )
+  // Open to anyone with the link: who sent it, and what this viewer can do.
+  .get("/invites/:token", async (c) => {
+    const session = await getOptionalSession(c);
+    return c.json(
+      await readInvite(
+        c.env,
+        c.req.param("token"),
+        session ? session.user : null,
+      ),
+    );
+  })
+  .post("/invites/:token/accept", async (c) => {
+    const session = await requireProtectedMutation(c);
+    return c.json(
+      await acceptInvite(c.env, c.req.param("token"), session.user),
+    );
   });

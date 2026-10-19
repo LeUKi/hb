@@ -13,7 +13,7 @@ import { PageSection, Panel } from "../../page/page";
 import { LeaveGuard } from "../../shell/leave-guard";
 import { Button } from "../../ui/button";
 import { MoreLink } from "../../ui/button-link";
-import { Field, Switch, TextArea, TextInput } from "../../ui/field";
+import { Field, Switch, TextInput } from "../../ui/field";
 import { Reveal, RevealInline } from "../../ui/reveal";
 import { StatusChip } from "../../ui/status-chip";
 
@@ -27,27 +27,17 @@ function capMinor(value: string) {
   return minor >= 100 && minor <= 200_000 ? minor : null;
 }
 
-/** One ID a line (spaces and commas work too). */
-function idsOf(text: string) {
-  return text
-    .split(/[\s,，、]+/u)
-    .map((id) => id.trim())
-    .filter(Boolean);
-}
-
 type Draft = {
   topupEnabled?: boolean;
   topupFee?: string;
   withdrawEnabled?: boolean;
   withdrawFee?: string;
   withdrawMax?: string;
-  allowlistEnabled?: boolean;
-  allowlist?: string;
 };
 
 /**
  * 🐟额's settings (docs/balance-design.md §7): the two switches, the
- * two rates, the cap on one 转出, and the allowlist while it is on. Saved
+ * two rates and the cap on one 转出 (who may 转入 is by invitation). Saved
  * against the version read, like the attempt intervals.
  */
 export function BalanceSettingsSection({
@@ -68,7 +58,6 @@ export function BalanceSettingsSection({
     topupFee: useId(),
     withdrawFee: useId(),
     withdrawMax: useId(),
-    allowlist: useId(),
   };
   const values = {
     topupEnabled: draft.topupEnabled ?? shown.topupEnabled,
@@ -76,17 +65,12 @@ export function BalanceSettingsSection({
     withdrawEnabled: draft.withdrawEnabled ?? shown.withdrawEnabled,
     withdrawFee: draft.withdrawFee ?? String(shown.withdrawFeePercent),
     withdrawMax: draft.withdrawMax ?? (shown.withdrawMaxMinor / 100).toFixed(2),
-    allowlistEnabled: draft.allowlistEnabled ?? shown.allowlistEnabled,
-    allowlist: draft.allowlist ?? shown.allowlist.join("\n"),
   };
-  const allowlist = idsOf(values.allowlist);
-  const badIds = allowlist.filter((id) => !/^[1-9]\d{0,18}$/.test(id));
   const cap = capMinor(values.withdrawMax);
   const ok =
     percentValid(values.topupFee) &&
     percentValid(values.withdrawFee) &&
-    cap !== null &&
-    badIds.length === 0;
+    cap !== null;
   const changed = Object.keys(draft).length > 0;
   const edit = (patch: Draft) => {
     setBase((current) => current ?? data.settings);
@@ -106,8 +90,6 @@ export function BalanceSettingsSection({
         topupFeePercent: Number(values.topupFee),
         withdrawFeePercent: Number(values.withdrawFee),
         withdrawMaxMinor: cap ?? shown.withdrawMaxMinor,
-        allowlistEnabled: values.allowlistEnabled,
-        allowlist,
       });
       setBase(null);
       setDraft({});
@@ -198,29 +180,6 @@ export function BalanceSettingsSection({
               />
             </Field>
           </div>
-          <Switch
-            label="白名单"
-            description="开着时只有名单里的人能看到🐟额；关掉就对所有人开放。"
-            checked={values.allowlistEnabled}
-            onChange={(allowlistEnabled) => edit({ allowlistEnabled })}
-          />
-          <Reveal show={values.allowlistEnabled}>
-            <Field
-              label="名单"
-              htmlFor={ids.allowlist}
-              hint={`LINUX DO 的用户 ID，一行一个。现在 ${allowlist.length} 人。`}
-              error={
-                badIds.length ? `这些不是用户 ID：${badIds.join("、")}` : null
-              }
-            >
-              <TextArea
-                id={ids.allowlist}
-                rows={4}
-                value={values.allowlist}
-                onChange={(event) => edit({ allowlist: event.target.value })}
-              />
-            </Field>
-          </Reveal>
           <Reveal show={Boolean(error)}>
             <p role="alert" className="text-sm text-danger">
               {error}

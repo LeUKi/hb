@@ -23,7 +23,7 @@ import { reachesCredit } from "../runtime/controls";
 import { sha256Hex } from "../security/crypto";
 import { balanceError } from "./errors";
 import { readPlatformAppRow } from "./platform-app";
-import { readBalanceSettings, requireBalanceOpen } from "./settings";
+import { balanceAccessFor, readBalanceSettings } from "./settings";
 
 /** Shown in Credit's records and at its cashier. */
 export const TOPUP_ORDER_NAME = "🐟额转入 · hb.lafi.sh";
@@ -119,7 +119,9 @@ export async function createTopup(
   input: CreateTopupInput,
   appOrigin: string,
 ): Promise<{ topup: BalanceTopup; cashierUrl: string | null }> {
-  await requireBalanceOpen(env, userId);
+  // 转入 is for those invited (docs/balance-design.md §13).
+  if (!(await balanceAccessFor(env, userId, false)).topup)
+    balanceError(403, "BALANCE_NOT_INVITED", "部分功能仅对受邀用户开放。");
   const digest = await sha256Hex(
     `balance-topup:${JSON.stringify({ settingsVersion: input.settingsVersion, by: input.by, amount: input.amount })}`,
   );

@@ -24,6 +24,7 @@ import { BalanceWithdrawalView } from "../views/balance-withdrawal-view";
 import { HelpView } from "../views/help-view";
 import { HistoryView } from "../views/history-view";
 import { HongbaoView } from "../views/hongbao-view";
+import { InviteView } from "../views/invite-view";
 import { MeView } from "../views/me-view";
 import { MerchantView } from "../views/merchant-view";
 import { CommandPageView, MessageView } from "../views/message-view";
@@ -97,6 +98,8 @@ function renderView(leaf: NonNullable<Leaf>): ReactNode {
         <MessageView title="表情短地址无效" text="请检查链接是否完整。" />
       );
     }
+    case "/invite/$token":
+      return <InviteView token={params.token ?? ""} />;
     case "/🔑/$resultId":
       return <ResultsView kind="redeem" resultId={params.resultId ?? ""} />;
     case "/💬/$topicId/$postNumber": {

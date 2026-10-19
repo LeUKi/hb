@@ -22,6 +22,9 @@ import {
   goToCashier,
   useBalancePages,
   useCheckOpenTopups,
+  useInviteActions,
+  useInviteePreview,
+  useMyInvites,
   useTopupActions,
   useWithdrawalActions,
 } from "../../lib/balance";
@@ -39,10 +42,12 @@ import {
 import { PageLoad, queryLoad, ResultLoad, resultOf } from "../page/page-state";
 import { ConfirmDialog } from "../shell/confirm-dialog";
 import { useSearchChoice } from "../shell/use-search-choice";
+import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
+import { CopyButton } from "../ui/copy-button";
 import { Field, Segmented, TextInput } from "../ui/field";
 import { Fish, fishText } from "../ui/fish";
-import { ListItem, Reveal } from "../ui/reveal";
+import { ListItem, Reveal, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
 import {
@@ -187,7 +192,10 @@ function AdjustmentRow({
 }
 
 /** The page's figures: kept while another filter's list loads. */
-type Summary = Pick<BalancePage, "settings" | "account" | "openTopups">;
+type Summary = Pick<
+  BalancePage,
+  "settings" | "account" | "openTopups" | "access"
+>;
 
 /**
  * 🐟额: what is kept here, what came in and why it changed. Only for
@@ -226,9 +234,11 @@ function Balance({ user }: { user: SessionUser }) {
   const records = query.data?.pages.flatMap((page) => page.items) ?? [];
   const [topupOpen, setTopupOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
+  // Neither invited nor anything here yet (docs/balance-design.md §13).
   if (closed)
-    return <MessageView title="🐟额暂未开放" text="现在只开给一部分人试用。" />;
+    return <MessageView title="🐟额" text="本功能仅对受邀用户开放。" />;
   return (
     <PageLoad
       load={queryLoad(query)}
@@ -241,16 +251,18 @@ function Balance({ user }: { user: SessionUser }) {
             title="🐟额"
             actions={
               <>
-                <Button
-                  variant="primary"
-                  aria-disabled={!summary.settings.topupEnabled || undefined}
-                  data-disabled={!summary.settings.topupEnabled || undefined}
-                  onClick={() => {
-                    if (summary.settings.topupEnabled) setTopupOpen(true);
-                  }}
-                >
-                  {summary.settings.topupEnabled ? "转入" : "转入暂停"}
-                </Button>
+                {summary.access.topup && (
+                  <Button
+                    variant="primary"
+                    aria-disabled={!summary.settings.topupEnabled || undefined}
+                    data-disabled={!summary.settings.topupEnabled || undefined}
+                    onClick={() => {
+                      if (summary.settings.topupEnabled) setTopupOpen(true);
+                    }}
+                  >
+                    {summary.settings.topupEnabled ? "转入" : "转入暂停"}
+                  </Button>
+                )}
                 <Button
                   aria-disabled={!summary.settings.withdrawEnabled || undefined}
                   data-disabled={!summary.settings.withdrawEnabled || undefined}
@@ -260,6 +272,9 @@ function Balance({ user }: { user: SessionUser }) {
                 >
                   {summary.settings.withdrawEnabled ? "转出" : "转出暂停"}
                 </Button>
+                {summary.access.invite && (
+                  <Button onClick={() => setInviteOpen(true)}>邀请</Button>
+                )}
               </>
             }
           />
@@ -281,7 +296,15 @@ function Balance({ user }: { user: SessionUser }) {
                   : []),
               ]}
             />
-            <p className="text-xs text-ink-3">1 🐟 = 1 LDC，由本站托管。</p>
+            <p className="text-xs text-ink-3">
+              1 🐟 = 1 LDC，由本站托管。
+              {!summary.access.topup && (
+                <>
+                  <br />
+                  部分功能仅对受邀用户开放。
+                </>
+              )}
+            </p>
           </Panel>
           <Reveal show={summary.openTopups > 0}>
             <Callout tone="warning">
@@ -352,6 +375,11 @@ function Balance({ user }: { user: SessionUser }) {
             user={user}
             settings={summary.settings}
             availableMinor={summary.account.availableMinor}
+          />
+          <InviteDialog
+            open={inviteOpen}
+            onClose={() => setInviteOpen(false)}
+            user={user}
           />
         </Page>
       )}
@@ -656,6 +684,181 @@ function WithdrawDialog({
       <Reveal show={bound !== null}>
         <p className="text-xs text-danger">{bound}</p>
       </Reveal>
+    </ConfirmDialog>
+  );
+}
+
+const inviteStatusText = {
+  pending: "待接受",
+  accepted: "已接受",
+  expired: "已过期",
+} as const;
+const inviteStatusTone = {
+  pending: "warning",
+  accepted: "success",
+  expired: "neutral",
+} as const;
+
+/**
+ * 邀请 (docs/balance-design.md §13): a LINUX DO username, then a link to
+ * pass on, good for a day and one use. Below, the last few sent.
+ */
+function InviteDialog({
+  open,
+  onClose,
+  user,
+}: {
+  open: boolean;
+  onClose: () => void;
+  user: SessionUser;
+}) {
+  const inputId = useId();
+  const [username, setUsername] = useState("");
+  const [made, setMade] = useState<{ url: string; username: string } | null>(
+    null,
+  );
+  const [error, setError] = useState<string | null>(null);
+  const preview = useInviteePreview(user.id, username);
+  const mine = useMyInvites(user.id, open);
+  const { create } = useInviteActions(user.id);
+  const name = username.trim().replace(/^@/, "");
+  const known = preview.data;
+  const blocked = known?.self
+    ? "不能邀请自己"
+    : known?.member
+      ? `@${known.user?.username ?? name} 已经受邀`
+      : null;
+  const ready = name.length > 0 && blocked === null && !create.isPending;
+  const reset = () => {
+    setUsername("");
+    setMade(null);
+    setError(null);
+  };
+  const submit = async () => {
+    if (!ready) return;
+    setError(null);
+    try {
+      const result = await create.mutateAsync(name);
+      // As it was typed (the link works whatever the case).
+      setMade({ url: result.url, username: name });
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "没有成功。");
+    }
+  };
+  const invites = mine.data?.items ?? [];
+  return (
+    <ConfirmDialog
+      open={open}
+      onClose={onClose}
+      onClosed={reset}
+      busy={create.isPending}
+      title="邀请"
+      text="输入对方的 LINUX DO 用户名，生成一条邀请链接发给对方。对方接受后，也能转入和邀请别人。"
+      error={error}
+      actions={
+        made ? (
+          <>
+            <Button onClick={onClose}>关闭</Button>
+            <Button variant="primary" onClick={reset}>
+              再邀请一个
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button onClick={onClose}>返回</Button>
+            <Button
+              variant="primary"
+              onClick={() => void submit()}
+              aria-disabled={!ready || undefined}
+              data-disabled={!ready || undefined}
+            >
+              {create.isPending ? "正在生成…" : "生成链接"}
+            </Button>
+          </>
+        )
+      }
+    >
+      <Swap id={made ? "made" : "form"}>
+        {made ? (
+          <div className="grid gap-2">
+            <p className="text-sm text-ink-2">
+              给 @{made.username} 的邀请链接：
+            </p>
+            <div className="flex items-center gap-2">
+              <TextInput
+                aria-label="邀请链接"
+                readOnly
+                value={made.url}
+                className="font-mono text-xs"
+                onFocus={(event) => event.currentTarget.select()}
+              />
+              <CopyButton value={made.url} label="邀请链接" />
+            </div>
+            <p className="text-xs text-ink-3">1 天内有效，只能用一次。</p>
+          </div>
+        ) : (
+          <Field label="对方的用户名" htmlFor={inputId}>
+            <TextInput
+              id={inputId}
+              value={username}
+              autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              placeholder="例如 lafish"
+              onChange={(event) => {
+                setUsername(event.target.value);
+                setError(null);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void submit();
+              }}
+            />
+            <Reveal show={name.length > 0 && known !== undefined}>
+              {blocked ? (
+                <p className="text-xs text-danger">{blocked}</p>
+              ) : known?.user ? (
+                <p className="flex items-center gap-2 text-sm text-ink-2">
+                  <Avatar
+                    name={known.user.displayName}
+                    src={known.user.avatarUrl}
+                    size={20}
+                  />
+                  {known.user.displayName} @{known.user.username}
+                </p>
+              ) : (
+                <p className="text-xs text-ink-3">
+                  这个人还没来过本站，确认用户名没拼错就行。
+                </p>
+              )}
+            </Reveal>
+          </Field>
+        )}
+      </Swap>
+      {invites.length > 0 && (
+        <section className="grid gap-1 border-line border-t pt-3">
+          <h3 className="text-xs text-ink-3">最近的邀请</h3>
+          <ul className="grid gap-1">
+            {invites.map((invite) => (
+              <li
+                key={invite.id}
+                className="flex items-center justify-between gap-3 text-sm"
+              >
+                <span className="min-w-0 truncate text-ink">
+                  @{invite.acceptedBy?.username ?? invite.username}
+                </span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <span className="text-xs text-ink-3 tabular-nums">
+                    {clockSeconds(invite.createdAt)}
+                  </span>
+                  <StatusChip tone={inviteStatusTone[invite.status]}>
+                    {inviteStatusText[invite.status]}
+                  </StatusChip>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </ConfirmDialog>
   );
 }

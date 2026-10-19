@@ -19,6 +19,8 @@ export const BALANCE_LIMITS = {
   withdrawMaxDefaultMinor: 100_000,
   /** New 转出 a person may ask for in an hour, like 转入. */
   withdrawalsPerHour: 30,
+  /** An invitation's link lasts a day. */
+  inviteLifetimeMs: 86_400_000,
 } as const;
 
 /**
@@ -89,9 +91,6 @@ const feePercentSchema = z
   .int()
   .min(0)
   .max(BALANCE_LIMITS.feePercentMax);
-/** Community IDs (LINUX DO user ids) on the allowlist. */
-const communityIdSchema = z.string().regex(/^[1-9]\d{0,18}$/, "社区 ID 无效");
-
 export const balanceSettingsSchema = z.strictObject({
   topupEnabled: z.boolean(),
   withdrawEnabled: z.boolean(),
@@ -102,8 +101,6 @@ export const balanceSettingsSchema = z.strictObject({
     .int()
     .min(BALANCE_LIMITS.withdrawMinMinor)
     .max(BALANCE_LIMITS.topupMaxMinor),
-  allowlistEnabled: z.boolean(),
-  allowlist: z.array(communityIdSchema).max(500),
 });
 export type BalanceSettingsInput = z.infer<typeof balanceSettingsSchema>;
 
@@ -261,6 +258,47 @@ export type BalanceEntry = {
   createdAt: number;
 };
 
-export type BalanceAccess =
-  /** Not signed in, or not on the allowlist (and nothing here yet). */
-  "hidden" | "open";
+/**
+ * What someone may do with 🐟额 (docs/balance-design.md §13): 转入 once
+ * invited, invite once invited (admins always). 转出 needs neither.
+ */
+export type BalanceAccess = { topup: boolean; invite: boolean };
+
+/** A LINUX DO username, as typed (a leading @ is fine). */
+export const inviteUsernameSchema = z
+  .string()
+  .trim()
+  .transform((value) => value.replace(/^@/, ""))
+  .pipe(
+    z
+      .string()
+      .min(1, "请填对方的用户名")
+      .max(60, "用户名太长了")
+      .regex(/^[A-Za-z0-9_.-]+$/, "用户名只有字母、数字和 _ . -"),
+  );
+
+export const createInviteSchema = z.strictObject({
+  username: inviteUsernameSchema,
+});
+export type CreateInviteInput = z.infer<typeof createInviteSchema>;
+
+/** 待接受 / 已接受 / 已过期 (a day after it was made). */
+export type BalanceInviteStatus = "pending" | "accepted" | "expired";
+
+export type BalanceInviteUser = {
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+};
+
+export type BalanceInvite = {
+  id: string;
+  /** The username it is for: the account's own spelling once it has been here. */
+  username: string;
+  status: BalanceInviteStatus;
+  createdAt: number;
+  expiresAt: number;
+  acceptedAt: number | null;
+  /** Who accepted it, as they are now. */
+  acceptedBy: BalanceInviteUser | null;
+};

@@ -14,7 +14,7 @@
 | --- | --- | --- | --- | --- |
 | `/new` | 发红包 | new create add 发红包 发起 新建 创建 fahongbao fhb faqi fq xinjian xj | 普通 | 所有人 |
 | `/history` | 红包记录 | history 红包记录 记录 历史 参与 hongbaojilu hbjl jilu jl lishi ls canyu cy | 普通 | 所有人 |
-| `/balance` | 🐟额 | balance fish 站内🐟额 🐟额 鱼额 余额 转入 转出 yue ye zhuanru zr zhuanchu zc | 普通 | 白名单里的账号（关掉白名单后是所有已登录账号） |
+| `/balance` | 🐟额 | balance fish 站内🐟额 🐟额 鱼额 余额 转入 转出 yue ye zhuanru zr zhuanchu zc | 普通 | 受邀的人、🐟额里有过记录的人和管理员 |
 | `/square` | 红包广场 | square public explore 红包广场 广场 公开红包 公开 hongbaoguangchang hbgc guangchang gc gongkaihongbao gkhb gongkai gk | 游客 | 所有人 |
 | `/me` | 账号资料 | me account profile 我的 账号 资料 wode wd zhanghao zh | 普通 | 已登录 |
 | `/merchant` | LDC 商户配置 | merchant shop ldc LDC商户 LDC商户配置 商户 商户配置 ldcshanghu shanghu sh peizhi pz | 普通 | 已登录 |
@@ -109,6 +109,7 @@
 | `/payments/<编号>` | 一笔付款的详情 |
 | `/balance/<编号>` | 一笔转入的详情；Credit 收银台确认后回到这里 |
 | `/balance/out/<编号>` | 一笔转出的详情 |
+| `/invite/<编号>` | 🐟额的邀请链接（接受页，见 [07](07-pages.md) 第 14 节） |
 | `/admin/activities`、`/admin/users`、`/admin/payments`、`/admin/balance`、`/admin/settings`、`/admin/audit` | 网站管理的子页，筛选写在查询参数里（见 [07](07-pages.md) 第 10 节） |
 | `/status` | 运行状态：本地服务连接检查（生产保留，没有入口，不是命令；见 [06](06-production.md) 第 5 节） |
 | 其他 | 未找到页面 |

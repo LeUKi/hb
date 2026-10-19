@@ -42,7 +42,13 @@ function changesOf(entry: AdminAuditEntry) {
   const changes =
     entry.type === "balance_settings"
       ? Object.entries(balanceLabels)
-          .filter(([key]) => entry.before[key] !== entry.after[key])
+          // Only what both sides have: the allowlist left with invitations.
+          .filter(
+            ([key]) =>
+              key in entry.before &&
+              key in entry.after &&
+              entry.before[key] !== entry.after[key],
+          )
           .map(
             ([key, [label, text]]) =>
               `${label} ${text(entry.before[key] ?? 0)} → ${text(entry.after[key] ?? 0)}`,

@@ -2,7 +2,7 @@ import { normalizeAvatarUrl, normalizeConnectEmail } from "@hb/contracts";
 import { and, eq, gt } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
-import { balanceOpenFor } from "../balance/settings";
+import { balanceAccessFor } from "../balance/settings";
 import { createDb } from "../db/client";
 import { oauthAttempts, users } from "../db/schema";
 import type { ApiBindings, ApiContext } from "../env";
@@ -76,7 +76,9 @@ export const authRoutes = new Hono<ApiContext>()
       user: {
         ...session.user,
         /** 🐟额's entry shows (the allowlist, until it is open to all). */
-        balance: await balanceOpenFor(c.env, session.user.id),
+        balance: (
+          await balanceAccessFor(c.env, session.user.id, session.user.isAdmin)
+        ).entry,
       },
       csrfToken: session.csrfToken,
       attemptCooldown: session.attemptCooldown,

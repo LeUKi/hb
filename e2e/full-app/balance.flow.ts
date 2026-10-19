@@ -7,10 +7,10 @@ import { localOnly, origin, signIn, waitForBoot } from "./session";
 
 const control = "http://127.0.0.1:4194";
 
-test("🐟额：管理员配好平台应用和白名单，领取者转入、确认后到账，扣回写着原因，再转出到 Credit", async ({
+test("🐟额：管理员配好平台应用、邀请领取者，领取者接受后转入、确认后到账，扣回写着原因，再转出到 Credit", async ({
   browser,
 }) => {
-  // 网站设置: the platform app, then 转入 on for the recipient alone.
+  // 网站设置: the platform app, then 转入 and 转出 on.
   const adminContext = await browser.newContext({ baseURL: origin });
   await localOnly(adminContext);
   const admin = await adminContext.newPage();
@@ -32,9 +32,33 @@ test("🐟额：管理员配好平台应用和白名单，领取者转入、确�
     if ((await toggle.getAttribute("aria-checked")) !== "true")
       await toggle.click();
   }
-  await fishSettings.getByLabel("名单", { exact: true }).fill("730002");
-  await fishSettings.getByRole("button", { name: "保存🐟额设置" }).click();
-  await expect(fishSettings.getByText("已保存，立即生效")).toBeVisible();
+  if (await fishSettings.getByRole("button", { name: "撤销修改" }).count()) {
+    await fishSettings.getByRole("button", { name: "保存🐟额设置" }).click();
+    await expect(fishSettings.getByText("已保存，立即生效")).toBeVisible();
+  }
+
+  // 邀请: the admin invites the recipient (once: a later run finds them in).
+  await admin.goto("/balance");
+  await waitForBoot(admin);
+  await admin
+    .locator("header")
+    .getByRole("button", { name: "邀请", exact: true })
+    .click();
+  const inviteDialog = admin.getByRole("dialog", { name: "邀请" });
+  await inviteDialog.getByLabel("对方的用户名").fill("FullAppRecipient");
+  await expect(
+    inviteDialog.getByText(
+      /完整应用领取者 @FullAppRecipient|已经受邀|还没来过本站/,
+    ),
+  ).toBeVisible();
+  let inviteUrl: string | null = null;
+  if (!(await inviteDialog.getByText("已经受邀").count())) {
+    await inviteDialog.getByRole("button", { name: "生成链接" }).click();
+    inviteUrl = await inviteDialog
+      .getByRole("textbox", { name: "邀请链接" })
+      .inputValue();
+    expect(inviteUrl).toMatch(/\/invite\/[A-Za-z0-9_-]{43}$/);
+  }
 
   // The recipient: the entry, a 转入, Credit's cashier, back here.
   const context = await browser.newContext({ baseURL: origin });
@@ -55,6 +79,17 @@ test("🐟额：管理员配好平台应用和白名单，领取者转入、确�
   });
   const page = await context.newPage();
   await signIn(page, "recipient");
+  if (inviteUrl) {
+    await page.goto(new URL(inviteUrl).pathname);
+    await waitForBoot(page);
+    await expect(
+      page.getByText(/流转费（\d+%）全部由 Credit 收取，本站没有任何收益/),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "接受邀请" }).click();
+    await page.waitForURL(/\/balance$/);
+    await page.goto("/");
+    await waitForBoot(page);
+  }
   await page.locator("#identity-button").click();
   await page.getByRole("link", { name: /🐟额/ }).click();
   await expect(page.getByRole("heading", { name: "🐟额" })).toBeVisible();

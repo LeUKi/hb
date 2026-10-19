@@ -59,7 +59,10 @@ function topup(extra: Partial<BalanceTopup> = {}): BalanceTopup {
   };
 }
 
-async function mockBalance(page: Page, options: { withdraw?: boolean } = {}) {
+async function mockBalance(
+  page: Page,
+  options: { withdraw?: boolean; invited?: boolean } = {},
+) {
   const sent: unknown[] = [];
   await page.route("**/api/me/balance?**", (route) =>
     route.fulfill({
@@ -77,6 +80,10 @@ async function mockBalance(page: Page, options: { withdraw?: boolean } = {}) {
           withdrawMinMinor: 100,
         },
         account: { availableMinor: 1234, lockedMinor: 0 },
+        access: {
+          topup: options.invited ?? true,
+          invite: options.invited ?? true,
+        },
         openTopups: 1,
         items: [
           { type: "topup", createdAt: Date.now() - 60_000, topup: topup() },
@@ -110,7 +117,7 @@ async function mockBalance(page: Page, options: { withdraw?: boolean } = {}) {
 }
 
 test.describe("🐟额", () => {
-  test("名单外的人：用户卡片和命令里都没有，直接打开说暂未开放", async ({
+  test("没受邀、也没有记录的人：用户卡片和命令里都没有，直接打开说仅对受邀用户开放", async ({
     page,
   }) => {
     await mockSession(page, viewer);
@@ -118,7 +125,10 @@ test.describe("🐟额", () => {
       route.fulfill({
         status: 404,
         json: {
-          error: { code: "BALANCE_NOT_OPEN", message: "🐟额暂未开放" },
+          error: {
+            code: "BALANCE_NOT_OPEN",
+            message: "本功能仅对受邀用户开放。",
+          },
         },
       }),
     );
@@ -127,9 +137,191 @@ test.describe("🐟额", () => {
     await omniboxInput(page).fill("/余额");
     await expect(page.getByRole("option", { name: /🐟额/ })).toHaveCount(0);
     await openApp(page, "/balance");
+    await expect(page.getByText("本功能仅对受邀用户开放。")).toBeVisible();
+  });
+
+  test("有记录、没受邀的人：能转出，没有转入和邀请，写着部分功能仅对受邀用户开放", async ({
+    page,
+  }) => {
+    await mockSession(page, { ...viewer, balance: true });
+    await mockBalance(page, { withdraw: true, invited: false });
+    await openApp(page, "/balance");
+    await expect(page.getByRole("heading", { name: "🐟额" })).toBeVisible();
+    await expect(page.getByText("部分功能仅对受邀用户开放。")).toBeVisible();
+    const header = page.locator("header");
     await expect(
-      page.getByRole("heading", { name: "🐟额暂未开放" }),
+      header.getByRole("button", { name: "转出", exact: true }),
     ).toBeVisible();
+    await expect(
+      header.getByRole("button", { name: "转入", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      header.getByRole("button", { name: "邀请", exact: true }),
+    ).toHaveCount(0);
+  });
+
+  test("邀请：输入用户名看到是谁，自己和已受邀的不给链接，生成后能复制，下面列着最近的邀请", async ({
+    page,
+  }) => {
+    await mockSession(page, { ...viewer, balance: true });
+    await mockBalance(page);
+    await page.route("**/api/me/balance/invites/preview?**", (route) => {
+      const username = new URL(route.request().url()).searchParams.get(
+        "username",
+      );
+      return route.fulfill({
+        json:
+          username === "viewer"
+            ? { user: null, self: true, member: true }
+            : username === "taken"
+              ? {
+                  user: {
+                    username: "Taken",
+                    displayName: "老朋友",
+                    avatarUrl: null,
+                  },
+                  self: false,
+                  member: true,
+                }
+              : username === "friend"
+                ? {
+                    user: {
+                      username: "Friend",
+                      displayName: "新朋友",
+                      avatarUrl: null,
+                    },
+                    self: false,
+                    member: false,
+                  }
+                : { user: null, self: false, member: false },
+      });
+    });
+    const made: unknown[] = [];
+    await page.route("**/api/me/balance/invites", (route) => {
+      if (route.request().method() === "POST") {
+        made.push(route.request().postDataJSON());
+        return route.fulfill({
+          json: {
+            url: "https://hb.lafi.sh/invite/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_abcd",
+            invite: {
+              id: "inv-1",
+              username: "friend",
+              status: "pending",
+              createdAt: Date.now(),
+              expiresAt: Date.now() + 86_400_000,
+              acceptedAt: null,
+              acceptedBy: null,
+            },
+          },
+        });
+      }
+      return route.fulfill({
+        json: {
+          items: [
+            {
+              id: "inv-0",
+              username: "oldfriend",
+              status: "accepted",
+              createdAt: Date.now() - 3_600_000,
+              expiresAt: Date.now() + 82_800_000,
+              acceptedAt: Date.now() - 3_000_000,
+              acceptedBy: {
+                username: "OldFriend",
+                displayName: "旧朋友",
+                avatarUrl: null,
+              },
+            },
+          ],
+        },
+      });
+    });
+    await openApp(page, "/balance");
+    await page
+      .locator("header")
+      .getByRole("button", { name: "邀请", exact: true })
+      .click();
+    const dialog = page.getByRole("dialog", { name: "邀请" });
+    await expect(dialog.getByText("@OldFriend")).toBeVisible();
+    await expect(dialog.getByText("已接受")).toBeVisible();
+    const input = dialog.getByLabel("对方的用户名");
+    await input.fill("viewer");
+    await expect(dialog.getByText("不能邀请自己")).toBeVisible();
+    await expect(
+      dialog.getByRole("button", { name: "生成链接" }),
+    ).toHaveAttribute("aria-disabled", "true");
+    await input.fill("@taken");
+    await expect(dialog.getByText("@Taken 已经受邀")).toBeVisible();
+    await input.fill("stranger");
+    await expect(
+      dialog.getByText("这个人还没来过本站，确认用户名没拼错就行。"),
+    ).toBeVisible();
+    await input.fill("friend");
+    await expect(dialog.getByText("新朋友 @Friend")).toBeVisible();
+    await dialog.getByRole("button", { name: "生成链接" }).click();
+    await expect(dialog.getByRole("textbox", { name: "邀请链接" })).toHaveValue(
+      /\/invite\/AbCdEf/,
+    );
+    await expect(dialog.getByText("1 天内有效，只能用一次。")).toBeVisible();
+    expect(made).toEqual([{ username: "friend" }]);
+    await dialog.getByRole("button", { name: "再邀请一个" }).click();
+    await expect(dialog.getByLabel("对方的用户名")).toHaveValue("");
+  });
+
+  test("接受页：写明谁邀请、Credit 收全部流转费，接受后去🐟额；账号不对时说清楚", async ({
+    page,
+  }) => {
+    const token = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_abcd";
+    let matches = false;
+    const accepted: unknown[] = [];
+    await mockSession(page, { ...viewer, balance: false });
+    await mockBalance(page);
+    await page.route(`**/api/invites/${token}`, (route) =>
+      route.fulfill({
+        json: {
+          invite: {
+            inviter: {
+              username: "lafish",
+              displayName: "Lafish",
+              avatarUrl: null,
+            },
+            username: "viewer",
+            status: "pending",
+            expiresAt: Date.now() + 3_600_000,
+          },
+          topupFeePercent: 12,
+          viewer: {
+            username: matches ? "viewer" : "someone",
+            matches,
+            isInviter: false,
+            member: false,
+            acceptedThis: false,
+          },
+        },
+      }),
+    );
+    await page.route(`**/api/invites/${token}/accept`, (route) => {
+      accepted.push(true);
+      return route.fulfill({ json: { accepted: true } });
+    });
+    await openApp(page, `/invite/${token}`);
+    await expect(
+      page.getByRole("heading", { name: /Lafish（@lafish）邀请你使用🐟额/ }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/流转费（12%）全部由 Credit 收取，本站没有任何收益/),
+    ).toBeVisible();
+    await expect(
+      page.getByText(
+        "这个邀请是给 @viewer 的，你现在登录的是 @someone。用那个账号登录后再打开这个链接。",
+      ),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "接受邀请" })).toHaveCount(0);
+
+    matches = true;
+    await page.reload();
+    await page.getByRole("button", { name: "接受邀请" }).click();
+    await expectPath(page, "/balance");
+    expect(accepted).toHaveLength(1);
   });
 
   test("名单里的人：能搜到；页面写着可用和明细；转入两个框互算，越界不能确认", async ({
