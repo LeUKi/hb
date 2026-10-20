@@ -151,7 +151,7 @@ export function activityImageUrl(
  * 社区链接, the 内嵌代码's image) leads, the same for every 红包 (user's
  * choice).
  */
-export const FORUM_POST_URL = "https://linux.do/t/topic/3033290/2";
+export const FORUM_POST_URL = "https://linux.do/t/3033290";
 
 /**
  * The 社区链接 (05 §5): the 红包's path as code, which the forum leaves as

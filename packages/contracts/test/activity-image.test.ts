@@ -272,7 +272,7 @@ describe("activity image address and embed code", () => {
 
   it("writes the 社区链接 as the path in code, linking to the site's post", () => {
     expect(createActivityForumLink(id)).toBe(
-      `[\`/🧧/${code}\`](https://linux.do/t/topic/3033290/2)`,
+      `[\`/🧧/${code}\`](https://linux.do/t/3033290)`,
     );
   });
 
@@ -285,7 +285,7 @@ describe("activity image address and embed code", () => {
       }),
     ).toBe(
       [
-        '<center><a href="https://linux.do/t/topic/3033290/2">',
+        '<center><a href="https://linux.do/t/3033290">',
         `<picture><source type="image/svg+xml" srcset="https://hb.example.com/🧧/${code}/🖼️.svg 1x"><img width="420" height="560" `,
         `alt="小满的红包：${code}"></picture>`,
         "</a></center>",

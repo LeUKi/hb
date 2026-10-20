@@ -705,7 +705,7 @@ test.describe("红包页", () => {
     await menu.getByRole("menuitem", { name: /社区专用链接/ }).click();
     await expect
       .poll(() => readClipboard(page))
-      .toBe(`[\`/🧧/${code}\`](https://linux.do/t/topic/3033290/2)`);
+      .toBe(`[\`/🧧/${code}\`](https://linux.do/t/3033290)`);
     // "已复制" shows, then the menu folds away.
     await expect(menu).toBeHidden();
     await page.getByRole("button", { name: "分享" }).click();
@@ -720,7 +720,7 @@ test.describe("红包页", () => {
       .poll(() => readClipboard(page))
       .toBe(
         [
-          '<center><a href="https://linux.do/t/topic/3033290/2">',
+          '<center><a href="https://linux.do/t/3033290">',
           `<picture><source type="image/svg+xml" srcset="${new URL(page.url()).origin}/🧧/${code}/🖼️.svg 1x"><img width="420" height="560" `,
           `alt="小满的红包：${code}"></picture>`,
           "</a></center>",
@@ -820,7 +820,7 @@ test.describe("红包页", () => {
     await expect
       .poll(() => readClipboard(page))
       .toBe(
-        `【周末红包】\n[\`/🧧/${code}\`](https://linux.do/t/topic/3033290/2)\n口令：\`${passwordOf.mine}\``,
+        `【周末红包】\n[\`/🧧/${code}\`](https://linux.do/t/3033290)\n口令：\`${passwordOf.mine}\``,
       );
     await expect(page.getByRole("menu")).toBeHidden();
     await page.getByRole("button", { name: "分享" }).click();
