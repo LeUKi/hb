@@ -285,7 +285,7 @@ export function AdminSettings() {
             {(data) => (
               <>
                 <BalanceSettingsSection data={data} />
-                <PlatformAppSection app={data.platformApp} />
+                <PlatformAppSection app={data.platformApp} owner={data.owner} />
               </>
             )}
           </DetailPart>

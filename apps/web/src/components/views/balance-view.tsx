@@ -1,5 +1,6 @@
 import {
   amountToMinor,
+  BALANCE_LIMITS,
   type BalanceTopup,
   type BalanceWithdrawal,
   quoteTopup,
@@ -25,6 +26,7 @@ import {
   useInviteActions,
   useInviteePreview,
   useMyInvites,
+  useOwnerAdjustment,
   useTopupActions,
   useWithdrawalActions,
 } from "../../lib/balance";
@@ -287,6 +289,10 @@ function Balance({ user }: { user: SessionUser }) {
   const [topupOpen, setTopupOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  // The 站长's own 补加 / 扣回 (balance-design §15); the way stays as the
+  // dialog fades out.
+  const [ownerOpen, setOwnerOpen] = useState(false);
+  const [ownerWay, setOwnerWay] = useState<"add" | "deduct">("add");
 
   // Neither invited nor anything here yet (docs/balance-design.md §13).
   if (closed)
@@ -303,27 +309,62 @@ function Balance({ user }: { user: SessionUser }) {
             title="🐟额"
             actions={
               <>
-                {summary.access.topup && (
-                  <Button
-                    variant="primary"
-                    aria-disabled={!summary.settings.topupEnabled || undefined}
-                    data-disabled={!summary.settings.topupEnabled || undefined}
-                    onClick={() => {
-                      if (summary.settings.topupEnabled) setTopupOpen(true);
-                    }}
-                  >
-                    {summary.settings.topupEnabled ? "转入" : "转入暂停"}
-                  </Button>
+                {/* The 站长 cannot pay their own app or be paid by it:
+                    补加 and 扣回 their own 🐟 instead. */}
+                {summary.access.owner ? (
+                  <>
+                    <Button
+                      variant="primary"
+                      onClick={() => {
+                        setOwnerWay("add");
+                        setOwnerOpen(true);
+                      }}
+                    >
+                      补加
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setOwnerWay("deduct");
+                        setOwnerOpen(true);
+                      }}
+                    >
+                      扣回
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    {summary.access.topup && (
+                      <Button
+                        variant="primary"
+                        aria-disabled={
+                          !summary.settings.topupEnabled || undefined
+                        }
+                        data-disabled={
+                          !summary.settings.topupEnabled || undefined
+                        }
+                        onClick={() => {
+                          if (summary.settings.topupEnabled) setTopupOpen(true);
+                        }}
+                      >
+                        {summary.settings.topupEnabled ? "转入" : "转入暂停"}
+                      </Button>
+                    )}
+                    <Button
+                      aria-disabled={
+                        !summary.settings.withdrawEnabled || undefined
+                      }
+                      data-disabled={
+                        !summary.settings.withdrawEnabled || undefined
+                      }
+                      onClick={() => {
+                        if (summary.settings.withdrawEnabled)
+                          setWithdrawOpen(true);
+                      }}
+                    >
+                      {summary.settings.withdrawEnabled ? "转出" : "转出暂停"}
+                    </Button>
+                  </>
                 )}
-                <Button
-                  aria-disabled={!summary.settings.withdrawEnabled || undefined}
-                  data-disabled={!summary.settings.withdrawEnabled || undefined}
-                  onClick={() => {
-                    if (summary.settings.withdrawEnabled) setWithdrawOpen(true);
-                  }}
-                >
-                  {summary.settings.withdrawEnabled ? "转出" : "转出暂停"}
-                </Button>
                 {summary.access.invite && (
                   <Button onClick={() => setInviteOpen(true)}>邀请</Button>
                 )}
@@ -363,7 +404,7 @@ function Balance({ user }: { user: SessionUser }) {
             />
             <p className="text-xs text-ink-3">
               1 🐟 = 1 LDC，由本站托管。
-              {!summary.access.topup && (
+              {!summary.access.topup && !summary.access.owner && (
                 <>
                   <br />
                   部分功能仅对受邀用户开放。
@@ -441,6 +482,13 @@ function Balance({ user }: { user: SessionUser }) {
             onClose={() => setTopupOpen(false)}
             user={user}
             settings={summary.settings}
+          />
+          <OwnerAdjustDialog
+            open={ownerOpen}
+            onClose={() => setOwnerOpen(false)}
+            user={user}
+            direction={ownerWay}
+            availableMinor={summary.account.availableMinor}
           />
           <WithdrawDialog
             open={withdrawOpen}
@@ -723,6 +771,113 @@ function WithdrawDialog({
       <p className="text-xs text-ink-3">
         需要先登录过一次 Credit；当天额度用完时顺延到第二天。
       </p>
+      {/* Only once an amount is out of bounds, and which bound. */}
+      <Reveal show={bound !== null}>
+        <p className="text-xs text-danger">{bound}</p>
+      </Reveal>
+    </ConfirmDialog>
+  );
+}
+
+/**
+ * The 站长's own 补加 or 扣回 (docs/balance-design.md §15): the button
+ * pressed is the choice, so only the amount. No payment either way: the
+ * 站长's 🐟 rests on the platform app's LDC, which is theirs.
+ */
+function OwnerAdjustDialog({
+  open,
+  onClose,
+  user,
+  direction,
+  availableMinor,
+}: {
+  open: boolean;
+  onClose: () => void;
+  user: SessionUser;
+  direction: "add" | "deduct";
+  availableMinor: number;
+}) {
+  const inputId = useId();
+  const [typed, setTyped] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const requestId = useRef(crypto.randomUUID());
+  const adjust = useOwnerAdjustment(user.id);
+  const add = direction === "add";
+  const minor = typedMinor(typed);
+  // A 扣回 is held by 可用 before the cap: that is the bound it meets.
+  const bound =
+    minor === null || minor <= 0
+      ? null
+      : !add && minor > availableMinor
+        ? `可用只有 ${fishText(Math.max(0, availableMinor))} 🐟，最多扣回这么多。`
+        : minor > BALANCE_LIMITS.ownerAdjustMaxMinor
+          ? `一次最多 ${fishText(BALANCE_LIMITS.ownerAdjustMaxMinor)} 🐟。`
+          : null;
+  const ready = minor !== null && minor > 0 && bound === null;
+  const busy = adjust.isPending;
+  const submit = async () => {
+    if (!ready || busy) return;
+    setError(null);
+    try {
+      await adjust.mutateAsync({
+        requestId: requestId.current,
+        direction,
+        amount: typed.trim().replace(/\.$/, ""),
+      });
+      onClose();
+    } catch (failure) {
+      requestId.current = crypto.randomUUID();
+      setError(
+        failure instanceof Error ? failure.message : "没有成功，请稍后再试。",
+      );
+    }
+  };
+  return (
+    <ConfirmDialog
+      open={open}
+      onClose={onClose}
+      onClosed={() => {
+        setTyped("");
+        setError(null);
+        requestId.current = crypto.randomUUID();
+      }}
+      busy={busy}
+      title={add ? "补加🐟额" : "扣回🐟额"}
+      text={
+        add
+          ? "不付款，只在账上给你记🐟。大家领了你的🐟额红包、再转出时，才从平台应用付出去，所以平台应用里要留够 LDC。"
+          : "扣掉不用的🐟，代存合计跟着变少。发出未领的要等红包结束退回可用后才能扣。"
+      }
+      error={error}
+      actions={
+        <>
+          <Button onClick={onClose} aria-disabled={busy || undefined}>
+            返回
+          </Button>
+          <Button
+            variant="primary"
+            onClick={() => void submit()}
+            aria-disabled={!ready || busy || undefined}
+            data-disabled={!ready || undefined}
+          >
+            {busy ? "正在保存…" : add ? "补加" : "扣回"}
+          </Button>
+        </>
+      }
+    >
+      <Field label={add ? "补加数量" : "扣回数量"} htmlFor={inputId}>
+        <TextInput
+          id={inputId}
+          inputMode="decimal"
+          suffix="🐟"
+          value={typed}
+          placeholder="0.00"
+          onChange={(event) => setTyped(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") void submit();
+          }}
+        />
+      </Field>
       {/* Only once an amount is out of bounds, and which bound. */}
       <Reveal show={bound !== null}>
         <p className="text-xs text-danger">{bound}</p>

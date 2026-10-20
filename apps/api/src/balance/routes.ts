@@ -5,6 +5,7 @@ import {
   createTopupSchema,
   createWithdrawalSchema,
   inviteUsernameSchema,
+  ownerAdjustmentSchema,
 } from "@hb/contracts";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -25,7 +26,13 @@ import {
   previewInvitee,
   readInvite,
 } from "./invites";
-import { type BalanceRecordFilter, listRecords, readAccount } from "./ledger";
+import {
+  adjustOwnBalance,
+  type BalanceRecordFilter,
+  listRecords,
+  readAccount,
+} from "./ledger";
+import { readPlatformAppRow } from "./platform-app";
 import { readBalanceSettings, requireBalanceEntry } from "./settings";
 import {
   checkOpenTopups,
@@ -87,7 +94,7 @@ export const balanceRoutes = new Hono<ApiContext>()
       session.user.isAdmin,
     );
     const { filter, cursor } = c.req.valid("query");
-    const [settings, account, records, pending] = await Promise.all([
+    const [settings, account, records, pending, platform] = await Promise.all([
       readBalanceSettings(c.env),
       readAccount(c.env, session.user.id),
       listRecords(c.env, session.user.id, filter, cursor),
@@ -96,6 +103,7 @@ export const balanceRoutes = new Hono<ApiContext>()
       )
         .bind(session.user.id)
         .first<{ count: number }>(),
+      readPlatformAppRow(c.env),
     ]);
     return c.json({
       settings: {
@@ -113,7 +121,12 @@ export const balanceRoutes = new Hono<ApiContext>()
       },
       account,
       /** What this person may do beyond reading and 转出. */
-      access: { topup: access.topup, invite: access.invite },
+      access: {
+        topup: access.topup,
+        invite: access.invite,
+        /** The 站长: 补加 and 扣回 their own instead (balance-design §15). */
+        owner: platform?.author_id === session.user.id,
+      },
       /** 转入 not arrived yet (待确认 or 未完成). */
       openTopups: pending?.count ?? 0,
       ...records,
@@ -207,6 +220,27 @@ export const balanceRoutes = new Hono<ApiContext>()
           }),
         );
       return c.json({ withdrawal });
+    },
+  )
+  // The 站长's own 补加 and 扣回 (docs/balance-design.md §15).
+  .post(
+    "/me/balance/owner-adjustments",
+    body,
+    validator("json", (value) => {
+      const parsed = ownerAdjustmentSchema.safeParse(value);
+      if (!parsed.success)
+        throw new ActivityError(400, "INVALID_ADJUSTMENT", "请检查数量");
+      return parsed.data;
+    }),
+    async (c) => {
+      const session = await requireProtectedMutation(c);
+      return c.json({
+        adjustment: await adjustOwnBalance(
+          c.env,
+          session.user.id,
+          c.req.valid("json"),
+        ),
+      });
     },
   )
   .get("/me/balance/withdrawals/:id", async (c) => {

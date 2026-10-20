@@ -14,6 +14,7 @@ import { LeaveGuard } from "../../shell/leave-guard";
 import { Button } from "../../ui/button";
 import { MoreLink } from "../../ui/button-link";
 import { Field, Switch, TextInput } from "../../ui/field";
+import { fishText } from "../../ui/fish";
 import { Reveal, RevealInline } from "../../ui/reveal";
 import { StatusChip } from "../../ui/status-chip";
 
@@ -263,7 +264,14 @@ const verificationTone = {
  * The platform app (docs/balance-design.md §2): its own Credit 集市应用,
  * not an author's merchant. The key is checked as it is saved.
  */
-export function PlatformAppSection({ app }: { app: PlatformApp | null }) {
+export function PlatformAppSection({
+  app,
+  owner,
+}: {
+  app: PlatformApp | null;
+  /** What the 站长 holds in 🐟额: warned of when the Client ID changes. */
+  owner: BalanceSettingsResponse["owner"];
+}) {
   const identity = useIdentity();
   const actions = useBalanceAdmin(identity.csrfToken ?? "");
   const ids = { label: useId(), clientId: useId(), secret: useId() };
@@ -277,6 +285,8 @@ export function PlatformAppSection({ app }: { app: PlatformApp | null }) {
   const shownClientId = clientId ?? app?.clientId ?? "";
   const clientChanged = app !== null && shownClientId.trim() !== app.clientId;
   const needsSecret = app === null || clientChanged;
+  // 站长补加 rests on this app (balance-design §15): another app takes it on.
+  const held = owner ? owner.availableMinor + owner.lockedMinor : 0;
   const changed = label !== null || clientId !== null || secret.length > 0;
   const ok =
     shownLabel.trim().length > 0 &&
@@ -374,6 +384,12 @@ export function PlatformAppSection({ app }: { app: PlatformApp | null }) {
               />
             </Field>
           </div>
+          <Reveal show={clientChanged && held > 0}>
+            <p className="text-sm text-warning">
+              站长账上还有 {fishText(held)} 🐟。换成别的 Credit
+              应用后，这些🐟由新应用兜底；不用了先在🐟额页扣回。
+            </p>
+          </Reveal>
           <Field
             label="密钥"
             htmlFor={ids.secret}

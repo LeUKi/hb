@@ -5,6 +5,7 @@ import type {
   BalanceWithdrawal,
   CreateTopupInput,
   CreateWithdrawalInput,
+  OwnerAdjustmentInput,
 } from "@hb/contracts";
 import {
   useInfiniteQuery,
@@ -231,6 +232,32 @@ export function useWithdrawalActions(userId: string) {
     },
   });
   return { create };
+}
+
+/**
+ * The 站长's own 补加 and 扣回 (docs/balance-design.md §15); the page, its
+ * 明细 and the form's “从哪发” read again after.
+ */
+export function useOwnerAdjustment(userId: string) {
+  const session = useMerchantIdentity(userId);
+  const queryClient = useQueryClient();
+  const options = useCsrf();
+  return useMutation({
+    mutationFn: async (input: OwnerAdjustmentInput) => {
+      const identity = session.captureIdentity() ?? "";
+      const result = await readResponse<{ adjustment: unknown }>(
+        await api.api.me.balance["owner-adjustments"].$post(
+          { json: input },
+          options,
+        ),
+      );
+      if (session.isCurrentIdentity(identity))
+        await queryClient.invalidateQueries({
+          queryKey: balanceKeys.all(identity),
+        });
+      return result;
+    },
+  });
 }
 
 /** The invite dialog's last few invitations, and what became of them. */

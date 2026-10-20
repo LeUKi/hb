@@ -902,6 +902,90 @@ describe("网站管理 · 🐟额", () => {
     ).toBeGreaterThan(0);
   });
 
+  it("lets the 站长 alone 补加 and 扣回 their own 🐟: at most 2000, 扣回 within 可用, once per request", async () => {
+    const { admin, tester } = await openForTester();
+    const other = await actor("other-admin");
+    admins = [admin.externalId, other.externalId];
+    const own = (who: Actor, input: Record<string, unknown>) =>
+      call("POST", "/me/balance/owner-adjustments", who, {
+        requestId: crypto.randomUUID(),
+        ...input,
+      });
+    // Only the account that set up the platform app is the 站长.
+    expect((await call("GET", "/me/balance", admin)).json).toMatchObject({
+      access: { owner: true },
+    });
+    expect((await call("GET", "/me/balance", tester)).json).toMatchObject({
+      access: { owner: false },
+    });
+    expect((await own(other, { direction: "add", amount: "100" })).status).toBe(
+      403,
+    );
+    expect(
+      (await own(tester, { direction: "add", amount: "100" })).status,
+    ).toBe(403);
+
+    const add = {
+      requestId: crypto.randomUUID(),
+      direction: "add",
+      amount: "100",
+    };
+    const first = await own(admin, add);
+    expect(first.status).toBe(200);
+    expect(first.json).toMatchObject({
+      adjustment: {
+        direction: "add",
+        amountMinor: 10_000,
+        reason: "给自己补加",
+      },
+    });
+    // The same request again is the same 补加, not a second one.
+    expect((await own(admin, add)).status).toBe(200);
+    expect(
+      (await own(admin, { direction: "add", amount: "2000.01" })).status,
+    ).toBe(400);
+
+    // A 扣回 stops at 可用.
+    const over = await own(admin, { direction: "deduct", amount: "100.01" });
+    expect(over.status).toBe(409);
+    expect((over.json as { error: { code: string } }).error.code).toBe(
+      "BALANCE_INSUFFICIENT",
+    );
+    expect(
+      (await own(admin, { direction: "deduct", amount: "40" })).status,
+    ).toBe(200);
+    expect((await call("GET", "/me/balance", admin)).json).toMatchObject({
+      account: { availableMinor: 6_000 },
+      items: [
+        {
+          type: "adjustment",
+          adjustment: { direction: "deduct", reason: "给自己扣回" },
+        },
+        { type: "adjustment", adjustment: { direction: "add" } },
+      ],
+    });
+    // The platform app's settings know what the 站长 holds (the reminder).
+    expect(
+      (await call("GET", "/admin/balance/settings", admin)).json,
+    ).toMatchObject({ owner: { availableMinor: 6_000, lockedMinor: 0 } });
+    // Still no adjusting oneself the admin way.
+    expect(
+      (
+        await call(
+          "POST",
+          `/admin/balance/users/${admin.id}/adjustments`,
+          admin,
+          {
+            requestId: crypto.randomUUID(),
+            direction: "add",
+            amount: "1",
+            reason: "自己加",
+          },
+        )
+      ).status,
+    ).toBe(403);
+  });
+
   it("keeps entries and 转入 as the database says: append-only, final, never below 0 but by 扣回", async () => {
     const member = await actor("member");
     const now = Date.now();

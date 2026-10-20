@@ -1,11 +1,25 @@
 import { randomBytes } from "node:crypto";
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { localOnly, origin, signIn, waitForBoot } from "./session";
 
 // 🐟额, step one, on the real stack: the harness's LDC substitute takes
 // the EPay order and plays Credit's cashier (e2e/full-app/upstream.mjs).
 
 const control = "http://127.0.0.1:4194";
+
+/** On 网站设置: the platform app, made by this admin if there is none yet. */
+async function ensurePlatformApp(admin: Page) {
+  const app = admin.getByRole("region", { name: "平台应用" });
+  if (await admin.getByRole("button", { name: "新建平台应用" }).count()) {
+    await admin
+      .getByLabel("Client ID")
+      .fill(`hb_full_app_merchant_${randomBytes(4).toString("hex")}`);
+    await admin.getByLabel("密钥").fill("full-app-merchant-secret");
+    await admin.getByRole("button", { name: "新建平台应用" }).click();
+  }
+  await expect(app.getByText("凭证通过")).toBeVisible({ timeout: 20_000 });
+  return app;
+}
 
 test("🐟额：管理员配好平台应用、邀请领取者，领取者接受后转入、确认后到账，扣回写着原因，再转出到 Credit", async ({
   browser,
@@ -17,15 +31,7 @@ test("🐟额：管理员配好平台应用、邀请领取者，领取者接受�
   await signIn(admin, "author");
   await admin.goto("/admin/settings");
   await waitForBoot(admin);
-  const app = admin.getByRole("region", { name: "平台应用" });
-  if (await admin.getByRole("button", { name: "新建平台应用" }).count()) {
-    await admin
-      .getByLabel("Client ID")
-      .fill(`hb_full_app_merchant_${randomBytes(4).toString("hex")}`);
-    await admin.getByLabel("密钥").fill("full-app-merchant-secret");
-    await admin.getByRole("button", { name: "新建平台应用" }).click();
-  }
-  await expect(app.getByText("凭证通过")).toBeVisible({ timeout: 20_000 });
+  await ensurePlatformApp(admin);
   const fishSettings = admin.getByRole("region", { name: "🐟额" });
   for (const name of ["转入", "转出"]) {
     const toggle = fishSettings.getByRole("switch", { name });
@@ -203,4 +209,60 @@ test("🐟额通用链接：管理员生成、自己打开看到提示，停用�
   await waitForBoot(page);
   await expect(page.getByText("这条邀请链接已经停用。")).toBeVisible();
   await expect(page.getByRole("button", { name: "接受邀请" })).toHaveCount(0);
+});
+
+test("站长：🐟额页补加和扣回自己的🐟，扣回不超过可用；换 Client ID 时提醒先扣回", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ baseURL: origin });
+  await localOnly(context);
+  const page = await context.newPage();
+  await signIn(page, "author");
+  await page.goto("/admin/settings");
+  await waitForBoot(page);
+  await ensurePlatformApp(page);
+
+  // The one who set up the platform app: 补加 and 扣回 for 转入 and 转出.
+  await page.goto("/balance");
+  await waitForBoot(page);
+  const header = page.locator("header");
+  await expect(
+    header.getByRole("button", { name: "补加", exact: true }),
+  ).toBeVisible();
+  await expect(header.getByRole("button", { name: "转入" })).toHaveCount(0);
+  await expect(header.getByRole("button", { name: "转出" })).toHaveCount(0);
+
+  await header.getByRole("button", { name: "补加", exact: true }).click();
+  const add = page.getByRole("dialog", { name: "补加🐟额" });
+  await expect(add).toContainText("不付款，只在账上给你记🐟");
+  await add.getByLabel("补加数量").fill("2000.01");
+  await expect(add.getByText("一次最多 2000.00 🐟。")).toBeVisible();
+  await add.getByLabel("补加数量").fill("5");
+  await add.getByRole("button", { name: "补加", exact: true }).click();
+  await expect(add).toBeHidden();
+  const first = page.getByRole("listitem").first();
+  await expect(first).toContainText("站长补加");
+  await expect(first).toContainText("给自己补加");
+
+  await header.getByRole("button", { name: "扣回", exact: true }).click();
+  const back = page.getByRole("dialog", { name: "扣回🐟额" });
+  await back.getByLabel("扣回数量").fill("1999999");
+  await expect(
+    back.getByText(/^可用只有 .+ 🐟，最多扣回这么多。$/),
+  ).toBeVisible();
+  await back.getByLabel("扣回数量").fill("2");
+  await back.getByRole("button", { name: "扣回", exact: true }).click();
+  await expect(back).toBeHidden();
+  await expect(page.getByRole("listitem").first()).toContainText("给自己扣回");
+
+  // 网站设置: another Client ID would stand behind what the 站长 holds.
+  await page.goto("/admin/settings");
+  await waitForBoot(page);
+  const app = await ensurePlatformApp(page);
+  const clientId = app.getByLabel("Client ID");
+  await clientId.click();
+  await clientId.press("End");
+  await clientId.pressSequentially("_other");
+  await expect(app.getByText(/^站长账上还有 .+ 🐟。/)).toBeVisible();
+  await context.close();
 });

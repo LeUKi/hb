@@ -1,15 +1,20 @@
-// 🐟额 accounts, their records, and an admin's 调整. An account only moves
-// by its entries (balance_entries; triggers in migration 0029 apply them).
+// 🐟额 accounts, their records, an admin's 调整 and the 站长's own. An
+// account only moves by its entries (balance_entries; triggers in migration
+// 0029 apply them).
 import {
   amountToMinor,
+  BALANCE_LIMITS,
   type BalanceAdjustmentInput,
   type BalanceTopup,
   type BalanceWithdrawal,
+  formatAmount,
+  type OwnerAdjustmentInput,
 } from "@hb/contracts";
 import { ActivityError } from "../activities/errors";
 import type { ApiBindings } from "../env";
 import { sha256Hex } from "../security/crypto";
 import { balanceError } from "./errors";
+import { readPlatformAppRow } from "./platform-app";
 import { type TopupRow, topupView } from "./topups";
 import { type WithdrawalRow, withdrawalView } from "./withdrawals";
 
@@ -41,6 +46,20 @@ export async function readAccount(
       unclaimedMinor: 0,
     }
   );
+}
+
+/**
+ * What the 站长 holds in 🐟额 (balance-design §15): the platform app's
+ * settings warn of it when its Client ID changes. Null with no platform app.
+ */
+export async function ownerHolding(env: ApiBindings) {
+  const platform = await readPlatformAppRow(env);
+  if (!platform) return null;
+  const { availableMinor, lockedMinor } = await readAccount(
+    env,
+    platform.author_id,
+  );
+  return { availableMinor, lockedMinor };
 }
 
 /**
@@ -237,6 +256,51 @@ export async function adjustBalance(
 ) {
   if (userId === adminUserId)
     balanceError(403, "BALANCE_SELF_ADMIN", "管理员不能调整自己的🐟额");
+  return writeAdjustment(env, adminUserId, userId, input, false);
+}
+
+/**
+ * The 站长's 补加 or 扣回 of their own 🐟 (balance-design §15): only the
+ * account that set up the platform app, whose LDC stands behind it; at most
+ * 2000 🐟 at a time, and a 扣回 never past 可用.
+ */
+export async function adjustOwnBalance(
+  env: ApiBindings,
+  userId: string,
+  input: OwnerAdjustmentInput,
+) {
+  const platform = await readPlatformAppRow(env);
+  if (platform?.author_id !== userId)
+    balanceError(403, "BALANCE_NOT_OWNER", "只有站长能给自己补加或扣回🐟。");
+  if (amountToMinor(input.amount) > BALANCE_LIMITS.ownerAdjustMaxMinor)
+    balanceError(
+      400,
+      "OWNER_ADJUSTMENT_TOO_LARGE",
+      `一次最多 ${formatAmount(BALANCE_LIMITS.ownerAdjustMaxMinor)} 🐟。`,
+    );
+  return writeAdjustment(
+    env,
+    userId,
+    userId,
+    {
+      ...input,
+      reason: input.direction === "add" ? "给自己补加" : "给自己扣回",
+    },
+    true,
+  );
+}
+
+/**
+ * One adjustment and its 明细 line, once per request. `withinAvailable`
+ * makes a 扣回 stop at 可用 (checked in the same batch as it is written).
+ */
+async function writeAdjustment(
+  env: ApiBindings,
+  actorUserId: string,
+  userId: string,
+  input: BalanceAdjustmentInput,
+  withinAvailable: boolean,
+) {
   const digest = await sha256Hex(
     `balance-adjustment:${JSON.stringify({ userId, direction: input.direction, amount: input.amount, reason: input.reason })}`,
   );
@@ -259,33 +323,39 @@ export async function adjustBalance(
     .first();
   if (!user) balanceError(404, "USER_NOT_FOUND", "没有找到这个用户");
   const amountMinor = amountToMinor(input.amount);
+  const limited = withinAvailable && input.direction === "deduct";
   const id = crypto.randomUUID();
   const now = Date.now();
   try {
     await env.DB.batch([
       env.DB.prepare(
         `INSERT INTO balance_adjustments (id,user_id,direction,amount_minor,reason,actor_user_id,request_id,request_digest,created_at)
-        VALUES (?,?,?,?,?,?,?,?,?)`,
+        SELECT ?,?,?,?,?,?,?,?,?
+        WHERE ?=0 OR COALESCE((SELECT available_minor FROM balance_accounts WHERE user_id=?),0) >= ?`,
       ).bind(
         id,
         userId,
         input.direction,
         amountMinor,
         input.reason,
-        adminUserId,
+        actorUserId,
         input.requestId,
         digest,
         now,
+        limited ? 1 : 0,
+        userId,
+        amountMinor,
       ),
       env.DB.prepare(
         `INSERT INTO balance_entries (id,user_id,kind,available_delta_minor,locked_delta_minor,adjustment_id,created_at)
-        VALUES (?,?,'adjustment',?,0,?,?)`,
+        SELECT ?,?,'adjustment',?,0,?,? WHERE EXISTS(SELECT 1 FROM balance_adjustments WHERE id=?)`,
       ).bind(
         crypto.randomUUID(),
         userId,
         input.direction === "add" ? amountMinor : -amountMinor,
         id,
         now,
+        id,
       ),
     ]);
   } catch (error) {
@@ -297,11 +367,27 @@ export async function adjustBalance(
     if (winner?.request_digest === digest) return adjustmentView(winner);
     throw error;
   }
+  if (limited) {
+    const written = await env.DB.prepare(
+      "SELECT 1 FROM balance_adjustments WHERE id=?",
+    )
+      .bind(id)
+      .first();
+    if (!written) {
+      const { availableMinor } = await readAccount(env, userId);
+      balanceError(
+        409,
+        "BALANCE_INSUFFICIENT",
+        `可用只有 ${formatAmount(Math.max(0, availableMinor))} 🐟，最多扣回这么多。`,
+      );
+    }
+  }
   console.info(
     JSON.stringify({
       event: "balance_adjusted",
       adjustmentId: id,
       direction: input.direction,
+      self: actorUserId === userId,
     }),
   );
   return adjustmentView({

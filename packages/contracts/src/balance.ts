@@ -17,6 +17,8 @@ export const BALANCE_LIMITS = {
   /** A 转出 is at least 1 🐟; its cap is a setting. */
   withdrawMinMinor: 100,
   withdrawMaxDefaultMinor: 100_000,
+  /** One 站长补加 or 扣回 of one's own (balance-design §15): 2000 🐟. */
+  ownerAdjustMaxMinor: 200_000,
   /** New 转出 a person may ask for in an hour, like 转入. */
   withdrawalsPerHour: 30,
   /** An invitation's link lasts a day. */
@@ -172,6 +174,14 @@ export const balanceAdjustmentSchema = z.strictObject({
   reason: z.string().trim().min(1).max(200),
 });
 export type BalanceAdjustmentInput = z.infer<typeof balanceAdjustmentSchema>;
+
+/** The 站长's own 补加 or 扣回 (balance-design §15): no reason to give. */
+export const ownerAdjustmentSchema = z.strictObject({
+  requestId: z.uuid(),
+  direction: z.enum(["add", "deduct"]),
+  amount: moneySchema,
+});
+export type OwnerAdjustmentInput = z.infer<typeof ownerAdjustmentSchema>;
 
 export const confirmTopupSchema = z.strictObject({
   reason: z.string().trim().min(1).max(200),

@@ -36,7 +36,7 @@ import {
   listInviteLinks,
   stopInviteLink,
 } from "./invites";
-import { adjustBalance, decodeRecordCursor } from "./ledger";
+import { adjustBalance, decodeRecordCursor, ownerHolding } from "./ledger";
 import {
   platformAppView,
   readPlatformApp,
@@ -180,12 +180,13 @@ export const balanceAdminRoutes = new Hono<ApiContext>()
     });
   })
   .get("/admin/balance/settings", async (c) => {
-    const [settings, recentChanges, platformApp] = await Promise.all([
+    const [settings, recentChanges, platformApp, owner] = await Promise.all([
       readBalanceSettings(c.env),
       recentBalanceSettingChanges(c.env),
       readPlatformApp(c.env),
+      ownerHolding(c.env),
     ]);
-    return c.json({ settings, recentChanges, platformApp });
+    return c.json({ settings, recentChanges, platformApp, owner });
   })
   .patch("/admin/balance/settings", body, async (c) => {
     const session = await adminMutation(c);
