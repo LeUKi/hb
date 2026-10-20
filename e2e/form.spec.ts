@@ -39,7 +39,8 @@ const merchant = {
 async function mockMerchants(
   page: Page,
   items: Merchant[],
-  fish: { available: boolean; availableMinor: number } = {
+  fish: { enabled: boolean; available: boolean; availableMinor: number } = {
+    enabled: false,
     available: false,
     availableMinor: 0,
   },
@@ -310,22 +311,28 @@ test.describe("发红包", () => {
     expect(sent[1]?.requestId).toBe(sent[0]?.requestId);
   });
 
-  test("从哪发：🐟额里有可用就能选🐟额；选了不提商户，超过可用当场说，存下的输入不带商户", async ({
+  test("从哪发：没有商户、有🐟额就默认🐟额，商户那张变灰并给入口，超过可用当场说，存下的输入不带商户", async ({
     page,
   }) => {
-    await mockSession(page, viewer);
-    await mockMerchants(page, [], { available: true, availableMinor: 1234 });
+    await mockSession(page, { ...viewer, balance: true });
+    await mockMerchants(page, [], {
+      enabled: true,
+      available: true,
+      availableMinor: 1234,
+    });
     const sent = await mockCreate(page);
     await openApp(page, "/new");
-    await expect(shown(page, /还没有配置 LDC 商户/)).toBeVisible();
     await page
       .getByRole("button", { name: /拼手气/ })
       .first()
       .click();
     const fish = page.getByRole("button", { name: /^🐟额/ });
     await expect(fish).toContainText("可用 12.34 🐟");
-    await fish.click();
-    await expect(shown(page, /还没有配置 LDC 商户/)).toHaveCount(0);
+    await expect(fish).toHaveAttribute("aria-pressed", "true");
+    const merchant = page.getByRole("button", { name: /^LDC 商户/ });
+    await expect(merchant).toContainText("还没有配置商户");
+    await expect(merchant).toBeDisabled();
+    await expect(page.getByRole("link", { name: "去配置商户" })).toBeVisible();
     await expect(
       page.getByText(/Credit 会按你的 Credit 等级扣分发费/),
     ).toHaveCount(0);
@@ -351,15 +358,27 @@ test.describe("发红包", () => {
     });
   });
 
-  test("还没有商户：提示去配置，保存不会发出", async ({ page }) => {
+  test("还没有商户：发多少里提示去配置，保存不会发出", async ({ page }) => {
     await mockSession(page, viewer);
     await mockMerchants(page, []);
     const sent = await mockCreate(page);
     await openApp(page, "/new");
+    // Not over the whole form: where the money is set.
+    await expect(page.getByText(/还没有配置 LDC 商户/)).toHaveCount(0);
+    await page
+      .getByRole("button", { name: /拼手气/ })
+      .first()
+      .click();
     await expect(
-      page.getByText("还没有配置 LDC 商户：配置好才能保存和开放红包。"),
+      page.getByText("还没有配置 LDC 商户，配置好才能保存和开放。"),
     ).toBeVisible();
-    await fillRandom(page);
+    await expect(page.getByRole("link", { name: "去配置商户" })).toBeVisible();
+    await page.locator("#hb-random-total").fill("0.30");
+    await page.locator("#hb-random-count").fill("3");
+    await page.keyboard.press("Enter");
+    await page.getByLabel("口令 1").fill("表单口令2026");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#hb-title")).toBeVisible();
     await page.getByRole("button", { name: "存草稿" }).first().click();
     await expect(
       shown(

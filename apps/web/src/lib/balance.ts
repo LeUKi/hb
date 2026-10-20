@@ -234,7 +234,13 @@ export function useWithdrawalActions(userId: string) {
 }
 
 /** The invite dialog's last few invitations, and what became of them. */
-export type BalanceFunding = { available: boolean; availableMinor: number };
+export type BalanceFunding = {
+  /** 🐟额红包 are on at all. */
+  enabled: boolean;
+  /** On, and something to send. */
+  available: boolean;
+  availableMinor: number;
+};
 
 /**
  * 🐟额红包 (docs/balance-design.md §14): may this person send one now (the

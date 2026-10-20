@@ -128,6 +128,8 @@ export const balanceRoutes = new Hono<ApiContext>()
       readAccount(c.env, session.user.id),
     ]);
     return c.json({
+      /** 🐟额红包 are on at all. */
+      enabled: settings.hongbaoEnabled,
       available: settings.hongbaoEnabled && account.availableMinor >= 1,
       availableMinor: account.availableMinor,
     });

@@ -329,6 +329,8 @@ export function ChoiceCards<T extends string>({
     title: string;
     description: string;
     icon?: LucideIcon;
+    /** This one cannot be chosen now (shown grey). */
+    disabled?: boolean;
   }[];
   onChange: (value: T) => void;
   label: string;
@@ -353,7 +355,7 @@ export function ChoiceCards<T extends string>({
             <button
               type="button"
               aria-pressed={selected}
-              disabled={disabled && !selected}
+              disabled={(disabled && !selected) || option.disabled}
               onClick={() => onChange(option.value)}
               className="choice grid content-start gap-1 px-3.5 py-3 text-left"
             >

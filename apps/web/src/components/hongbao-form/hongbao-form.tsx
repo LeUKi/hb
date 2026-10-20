@@ -1,9 +1,17 @@
 import type { ManagedActivity } from "@hb/contracts";
 import { useLocation, useRouter } from "@tanstack/react-router";
 import { AlertTriangle, ChevronRight, Trash2 } from "lucide-react";
-import { type KeyboardEvent, useLayoutEffect, useRef, useState } from "react";
+import {
+  type KeyboardEvent,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { flushSync } from "react-dom";
+import { useBalanceFunding } from "../../lib/balance";
 import { cn } from "../../lib/cn";
+import { useCurrentMerchant } from "../../lib/merchants";
 import { scrollBehavior } from "../../lib/motion";
 import { closeOverlay, openOverlay } from "../../lib/overlay";
 import { clockLabel } from "../../lib/roster-time";
@@ -19,7 +27,6 @@ import {
   IssueList,
   jumpTo,
   justJumped,
-  MerchantNotice,
   markJumped,
   QuietLine,
   type Update,
@@ -99,6 +106,25 @@ export function HongbaoForm({
   );
   const [form, setForm] = useState(baseline);
   const dirty = JSON.stringify(form) !== JSON.stringify(baseline);
+  // A new 红包 from someone with no merchant but 🐟额 to send starts on
+  // 🐟额 (balance-design §14): set as the starting point, before anything
+  // is typed, so it is not an unsaved change.
+  const { merchant, loaded: merchantLoaded } = useCurrentMerchant(user.id);
+  const funding = useBalanceFunding(user.id, !editing).data;
+  const fishReady = funding?.available === true;
+  const fishDefault = useRef(false);
+  useEffect(() => {
+    if (editing || fishDefault.current) return;
+    if (!merchantLoaded || funding === undefined) return;
+    fishDefault.current = true;
+    if (merchant || !fishReady || dirty) return;
+    const start = (current: FormState) => ({
+      ...current,
+      funding: "balance" as const,
+    });
+    setBaseline(start);
+    setForm(start);
+  }, [editing, merchantLoaded, merchant, funding, fishReady, dirty]);
   const submit = useSubmit({
     activity,
     user,
@@ -434,7 +460,6 @@ export function HongbaoForm({
         }
       />
       {!editing && <StepProgress step={linear.current} />}
-      {!opened && form.funding !== "balance" && <MerchantNotice />}
       {/* Lasting, so each save result is said wherever it is shown. */}
       <p role="status" className="sr-only">
         {submit.notice?.text ?? ""}

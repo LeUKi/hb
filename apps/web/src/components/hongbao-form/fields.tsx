@@ -385,8 +385,10 @@ export function AmountFields({
 
 /** 微信同款 or 支付宝同款, and what that gives with the amounts filled in. */
 /**
- * 从哪发 (docs/balance-design.md §14): over the amounts, only while 🐟额红包
- * are on and there is 可用 (or the draft is one already). Over 可用, a line
+ * 从哪发 (docs/balance-design.md §14), over the amounts. With 🐟额红包 on
+ * and a 🐟额 to send from, two cards: each says where it stands, one that
+ * cannot be used now is grey, and the way to fix it is right under them.
+ * Otherwise only a merchant's trouble shows, in one line. Over 可用, a line
  * says so; the draft still saves, and opening checks again.
  */
 export function FundingChoice({
@@ -399,17 +401,37 @@ export function FundingChoice({
   locked: boolean;
 }) {
   const user = useSessionUser();
+  const { leaveTo } = useOmniboxController();
+  const { merchant, loaded } = useCurrentMerchant(user?.id ?? "");
   const funding = useBalanceFunding(user?.id ?? "", !locked);
   const available = funding.data?.availableMinor ?? 0;
-  const offered = funding.data?.available === true;
+  const fishReady = funding.data?.available === true;
+  const rejected = merchant?.credentialVerification.status === "rejected";
+  const noMerchant = loaded && !merchant;
   const { total } = plan(form);
-  if (!offered && form.funding !== "balance") return null;
+  const merchantLink = (noMerchant || rejected) && (
+    <MoreLink href="/merchant" onGo={() => void leaveTo({ to: "/merchant" })}>
+      {noMerchant ? "去配置商户" : "去更新密钥"}
+    </MoreLink>
+  );
+  if (locked) return null;
+  // No 🐟额 to choose: only a merchant's trouble, where the money is set.
+  if (form.funding !== "balance" && !(funding.data?.enabled && user?.balance))
+    return noMerchant || rejected ? (
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-sm text-warning">
+        <span className="min-w-0">
+          {noMerchant
+            ? "还没有配置 LDC 商户，配置好才能保存和开放。"
+            : "商户凭证未通过，开放前要更新密钥。"}
+        </span>
+        {merchantLink}
+      </p>
+    ) : null;
   return (
     <div className="grid gap-2">
       <ChoiceCards
         label="从哪发"
         value={form.funding}
-        disabled={locked}
         onChange={(value) =>
           update((current) => ({ ...current, funding: value }))
         }
@@ -417,24 +439,44 @@ export function FundingChoice({
           {
             value: "merchant",
             title: "LDC 商户",
-            description: "每有人领取，从你的集市应用直接付给他",
+            description: noMerchant
+              ? "还没有配置商户"
+              : rejected
+                ? "商户凭证未通过，开放前要更新"
+                : "每有人领取，从你的集市应用直接付给他",
             icon: Store,
+            disabled: noMerchant,
           },
           {
             value: "balance",
             title: "🐟额",
             // 🐟额 itself is written in 🐟; LDC with a small 🐟 is for a
             // 红包's money as others see it (balance-design §14).
-            description: `可用 ${ldc(Math.max(0, available))} 🐟，领到的进领取人的🐟额`,
+            description: fishReady
+              ? `可用 ${ldc(Math.max(0, available))} 🐟，领到的进领取人的🐟额`
+              : "🐟额里没有可用",
             icon: Wallet,
+            disabled: !fishReady,
           },
         ]}
       />
+      {(merchantLink || !fishReady) && (
+        <div className="flex flex-wrap gap-x-3 px-1">
+          {merchantLink}
+          {!fishReady && (
+            <MoreLink
+              href="/balance"
+              onGo={() => void leaveTo({ to: "/balance" })}
+            >
+              去🐟额
+            </MoreLink>
+          )}
+        </div>
+      )}
       <Reveal
         show={
-          !locked &&
           form.funding === "balance" &&
-          funding.data !== undefined &&
+          fishReady &&
           total !== null &&
           total > available
         }
@@ -579,41 +621,6 @@ export function MerchantRow() {
         LDC。
       </p>
     </div>
-  );
-}
-
-/**
- * Over the steps while saving or opening is blocked: no merchant yet (a 红包
- * is saved with the merchant that will pay it), or its 凭证 failed (a
- * draft can still be saved).
- */
-export function MerchantNotice() {
-  const user = useSessionUser();
-  const { leaveTo } = useOmniboxController();
-  const { merchant, loaded } = useCurrentMerchant(user?.id ?? "");
-  // With 🐟额 to send, a missing merchant only means one way less.
-  const fish = useBalanceFunding(user?.id ?? "").data?.available === true;
-  if (!loaded) return null;
-  const rejected = merchant?.credentialVerification.status === "rejected";
-  if (merchant && !rejected) return null;
-  return (
-    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-sm text-warning">
-      <AlertTriangle className="size-4 shrink-0" aria-hidden="true" />
-      <span className="min-w-0">
-        {merchant
-          ? "商户凭证未通过：可以先填完存草稿，开放前请更新密钥。"
-          : fish
-            ? "还没有配置 LDC 商户，也可以选从🐟额发。"
-            : "还没有配置 LDC 商户：配置好才能保存和开放红包。"}
-      </span>
-      <MoreLink
-        className="-my-1"
-        href="/merchant"
-        onGo={() => void leaveTo({ to: "/merchant" })}
-      >
-        {merchant ? "去更新" : "去配置"}
-      </MoreLink>
-    </p>
   );
 }
 
