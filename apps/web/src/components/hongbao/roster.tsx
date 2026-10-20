@@ -35,7 +35,7 @@ const columns: Record<RosterKind, string> = {
 };
 
 const who: Record<RosterKind, string> = {
-  claims: "领取人",
+  claims: "领取者",
   registrations: "报名人",
   winners: "中奖人",
 };

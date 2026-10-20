@@ -198,7 +198,7 @@ test.describe("发红包", () => {
       .click();
     await expect(
       page.getByText(
-        "填的是每份发出的金额。领取的人到账时，Credit 会按你的 Credit 等级扣分发费（4%–15%）。",
+        "填的是每份发出的金额。领取者到账时，Credit 会按你的 Credit 等级扣分发费（4%–15%）。",
         { exact: false },
       ),
     ).toBeVisible();
@@ -225,13 +225,13 @@ test.describe("发红包", () => {
     const toggle = sheet.getByRole("switch", { name: "领取前人机验证" });
     await expect(toggle).toHaveAttribute("aria-checked", "false");
     await expect(sheet).toContainText(
-      "中国大陆网络、广告拦截插件或部分隐私浏览器可能加载不出验证，这些人会领不了。",
+      "领取前先通过 Cloudflare 人机验证，挡住抢红包脚本；部分网络或浏览器可能加载不出，这些人会领不了。开放后也能改。",
     );
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-checked", "true");
     await sheet.getByRole("button", { name: "完成" }).click();
     await expect(page.getByRole("button", { name: /更多设置/ })).toContainText(
-      "领取需人机验证",
+      "领取前人机验证",
     );
     await page.getByRole("button", { name: "存草稿" }).first().click();
     await expect(

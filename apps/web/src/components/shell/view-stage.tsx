@@ -84,7 +84,7 @@ function renderView(leaf: NonNullable<Leaf>): ReactNode {
       return id ? (
         <HongbaoView id={id} />
       ) : (
-        <MessageView title="表情短地址无效" text="请检查链接是否完整。" />
+        <MessageView title="红包地址不对" text="请检查链接是否完整。" />
       );
     }
     case "/🧧/$code/📝":
@@ -95,7 +95,7 @@ function renderView(leaf: NonNullable<Leaf>): ReactNode {
       return id && page ? (
         <SenderView id={id} page={page} />
       ) : (
-        <MessageView title="表情短地址无效" text="请检查链接是否完整。" />
+        <MessageView title="红包地址不对" text="请检查链接是否完整。" />
       );
     }
     case "/invite/$token":

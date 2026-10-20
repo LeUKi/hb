@@ -169,7 +169,7 @@ export function useActivityOpening(userId: string, csrfToken: string) {
             throw new Error(
               checked?.credentialVerification.status === "rejected"
                 ? "商户认证未通过，请更新凭证后再开放。"
-                : "暂时无法验证商户凭证。草稿已保存，请稍后重试。",
+                : "暂时无法验证商户凭证。草稿已保存，请稍后再试。",
             );
           break;
         }

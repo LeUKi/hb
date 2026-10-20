@@ -123,7 +123,7 @@ function SettingsForm({ data }: { data: AttemptRateLimitsResponse }) {
         ? "刚在别处"
         : "刚被另一位管理员";
     setError(
-      `保存失败：设置${who}改成第 ${config.version} 版（起始页 ${config.homeIntervalSeconds} 秒、红包页 ${config.activityIntervalSeconds} 秒）。你的输入还在，确认后再保存一次。`,
+      `保存没有完成：设置${who}改成第 ${config.version} 版（首页 ${config.homeIntervalSeconds} 秒、红包页 ${config.activityIntervalSeconds} 秒）。你的输入还在，确认后再保存一次。`,
     );
   };
 
@@ -156,7 +156,7 @@ function SettingsForm({ data }: { data: AttemptRateLimitsResponse }) {
         if (here.current)
           setError(
             failure.status === 429
-              ? "尝试过于频繁，请稍后重试。"
+              ? "尝试过于频繁，请稍后再试。"
               : (failure.issues[0]?.message ?? failure.message),
           );
         return;
@@ -170,7 +170,7 @@ function SettingsForm({ data }: { data: AttemptRateLimitsResponse }) {
   return (
     <PageSection
       title="口令尝试间隔"
-      description="同一个人两次提交口令之间至少隔多久。起始页查口令和红包页领取分开计算；无需口令的红包按红包页的间隔。"
+      description="同一个人两次提交口令之间至少隔多久。首页查口令和红包页领取分开计算；无需口令的红包按红包页的间隔。"
     >
       <Panel>
         <LeaveGuard
@@ -180,7 +180,7 @@ function SettingsForm({ data }: { data: AttemptRateLimitsResponse }) {
         <form className="flex flex-col gap-4 p-5" onSubmit={submit} noValidate>
           <div className="grid gap-4 @wide/window:grid-cols-2">
             <Field
-              label="起始页"
+              label="首页"
               htmlFor={ids.home}
               hint="默认 5 秒"
               error={valid(home) ? null : "请填写 1–3600 的整数"}

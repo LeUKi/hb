@@ -47,7 +47,7 @@ export function MessageView({
       </div>
       <div className="flex flex-wrap justify-center gap-2">
         {action}
-        <Button onClick={goHome}>回到起始页</Button>
+        <Button onClick={goHome}>回到首页</Button>
       </div>
     </div>
   );

@@ -315,7 +315,7 @@ function RepairCredential({
         onError: (failure) =>
           setError(
             failure instanceof ActivityRequestError && failure.status === 429
-              ? "尝试过于频繁，请稍后重试。"
+              ? "尝试过于频繁，请稍后再试。"
               : refused(failure) && failure.message
                 ? failure.message
                 : "保存没有完成：网络或服务出了问题，原订单密钥没有更新。可以再试一次。",

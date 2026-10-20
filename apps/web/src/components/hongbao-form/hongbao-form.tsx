@@ -323,7 +323,7 @@ export function HongbaoForm({
     ...(form.participation === "password" && form.pageOnly
       ? ["关闭首页领取"]
       : []),
-    ...(form.humanCheck ? ["领取需人机验证"] : []),
+    ...(form.humanCheck ? ["领取前人机验证"] : []),
   ].join(" · ");
   const body = (step: StepId) => {
     const locked = lockedStep(step);

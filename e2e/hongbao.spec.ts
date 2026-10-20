@@ -772,7 +772,7 @@ test.describe("红包页", () => {
     ).toHaveAccessibleDescription(/^发红包的人关闭首页领取后/);
     await page.getByRole("button", { name: "输入口令领取" }).click();
     await expect(
-      shown(page, "提交的口令会汇总给发红包的人看，看不到是谁提交的。"),
+      shown(page, "输入的口令会匿名汇总给发红包的人。"),
     ).toBeVisible();
   });
 

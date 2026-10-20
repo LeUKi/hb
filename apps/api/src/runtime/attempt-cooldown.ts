@@ -17,7 +17,7 @@ export class AttemptCooldownError extends ActivityError {
       origin === "home"
         ? "GLOBAL_REDEMPTION_RATE_LIMITED"
         : "CLAIM_RATE_LIMITED",
-      "提交过于频繁，请稍后重试",
+      "提交过于频繁，请稍后再试",
     );
     this.retryAfter = Math.max(
       1,

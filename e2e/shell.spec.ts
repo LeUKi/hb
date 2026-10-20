@@ -88,8 +88,8 @@ test.describe("外壳", () => {
 
   test("空着的输入框按时钟轮流说能输入什么，开始输入就停", async ({ page }) => {
     // Every window shows the same hint at the same moment: it follows the
-    // clock, one each 2 seconds (口令, 红包链接, 表情码, 帖子链接).
-    const start = Math.ceil(Date.UTC(2026, 9, 20) / 8000) * 8000;
+    // clock, one each 2 seconds (口令, 红包链接, 帖子链接).
+    const start = Math.ceil(Date.UTC(2026, 9, 20) / 6000) * 6000;
     await page.clock.setFixedTime(start);
     await mockSession(page, viewer);
     await openApp(page);
@@ -101,7 +101,7 @@ test.describe("外壳", () => {
     await expect(input).toHaveAccessibleName("口令、红包链接或命令");
     await page.clock.setFixedTime(start + 2000);
     await expect(hint).toHaveText("输入红包链接打开红包，或输入 / 使用命令");
-    await page.clock.setFixedTime(start + 6000);
+    await page.clock.setFixedTime(start + 4000);
     await expect(hint).toHaveText(
       "输入帖子链接查看帖子里的红包，或输入 / 使用命令",
     );
@@ -190,7 +190,7 @@ test.describe("外壳", () => {
     await expect(
       page.getByRole("heading", { name: "未找到页面" }),
     ).toBeVisible();
-    await page.getByRole("button", { name: "回到起始页" }).click();
+    await page.getByRole("button", { name: "回到首页" }).click();
     await expectPath(page, "/");
   });
 

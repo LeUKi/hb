@@ -290,7 +290,7 @@ export function useMerchantWrites(
           ),
         );
         if (!isChangeImpactResponse(result))
-          throw new Error("无法读取配置修改影响，请稍后重试。");
+          throw new Error("无法读取配置修改影响，请稍后再试。");
         return result;
       },
       onError,

@@ -59,7 +59,9 @@ export function InviteView({ token }: { token: string }) {
       await accept.mutateAsync();
       goToBalance();
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "没有成功。");
+      setError(
+        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
+      );
     }
   };
   return (
@@ -91,7 +93,7 @@ export function InviteView({ token }: { token: string }) {
               </p>
               <p>
                 🐟额在头像打开的用户卡片里，也可以输入
-                /balance。接受后，你也可以邀请别人。
+                /balance。接受后，你也可以邀请其他人。
               </p>
             </div>
             {blocked ? (

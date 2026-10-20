@@ -18,22 +18,21 @@ const noMatch =
   "未匹配到红包，可能是关闭了首页领取。去红包广场找到它，在红包页输入口令。";
 
 /**
- * The no-match line, whose “关闭了首页领取” and “红包页” are 名词解释
- * (buttons described by what they mean) and “红包广场” a link, so the
- * sentence is read around them.
+ * The no-match line, whose “关闭了首页领取” is a 名词解释 (a button described
+ * by what it means) and “红包广场” a link, so the sentence is read around
+ * them; “红包页” is plain words.
  */
 async function expectNoMatch(page: Page) {
   const which = page.getByRole("button", {
     name: "关闭了首页领取",
     exact: true,
   });
-  const where = page.getByRole("button", { name: "红包页", exact: true });
   await expect(which).toBeVisible();
   await expect(which).toHaveAccessibleDescription(/^发红包的人关闭首页领取后/);
-  await expect(where).toHaveAccessibleDescription(/^每个红包自己的页面/);
+  await expect(page.getByRole("button", { name: "红包页" })).toHaveCount(0);
   await expect
     .poll(() =>
-      where.locator("xpath=..").evaluate((line) => {
+      which.locator("xpath=..").evaluate((line) => {
         const copy = line.cloneNode(true) as HTMLElement;
         for (const hidden of copy.querySelectorAll(".sr-only")) hidden.remove();
         return copy.textContent;
@@ -305,7 +304,7 @@ test.describe("兑奖", () => {
     ]);
     await openApp(page);
     await lookUp(page, "测试口令2101");
-    await expect(shown(page, "尝试过于频繁，请稍后重试。")).toBeVisible();
+    await expect(shown(page, "尝试过于频繁，请稍后再试。")).toBeVisible();
     await expect(
       page.getByRole("button", { name: /还需等待 \d 秒/ }),
     ).toBeVisible();

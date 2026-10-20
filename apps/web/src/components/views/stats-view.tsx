@@ -137,7 +137,7 @@ export function StatsView({ id, userId }: { id: string; userId: string }) {
             refreshable
             eyebrow={activity.title}
             title="尝试统计"
-            description="大家在红包页提交的口令，按内容汇总。只有汇总，不显示谁提交了什么。"
+            description="大家在红包页提交的口令，按内容匿名汇总。"
           />
           <Panel className="p-5">
             <Facts

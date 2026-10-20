@@ -339,7 +339,6 @@ export function useOmniboxController() {
           terms: [
             { words: "关闭了首页领取", term: "首页领取" },
             { words: "红包广场", action: "square" },
-            { words: "红包页", term: "红包页" },
           ],
         });
         store.set(mismatchAtom, (count) => count + 1);
@@ -353,7 +352,7 @@ export function useOmniboxController() {
           });
           store.set(messageAtom, {
             tone: "warning",
-            text: "尝试过于频繁，请稍后重试。",
+            text: "尝试过于频繁，请稍后再试。",
           });
           return;
         }
@@ -672,7 +671,7 @@ export function useOmniboxController() {
             unconfirmedAtom,
             withClaim(store.get(unconfirmedAtom), activityId, null),
           );
-          say({ tone: "warning", text: "尝试过于频繁，请稍后重试。" });
+          say({ tone: "warning", text: "尝试过于频繁，请稍后再试。" });
           return;
         }
         if (error instanceof ActivityRequestError && error.status === 401) {
@@ -775,7 +774,7 @@ export function useOmniboxController() {
         say({ tone: "neutral", text: "红包已结束，口令已公开。" });
       } catch (error) {
         if (error instanceof ActivityRequestError && error.status === 429)
-          say({ tone: "warning", text: "尝试过于频繁，请稍后重试。" });
+          say({ tone: "warning", text: "尝试过于频繁，请稍后再试。" });
         else if (refused(error)) say({ tone: "warning", text: error.message });
         // Verifying changes nothing: a lost answer is simply tried again.
         else say({ tone: "warning", text: "没有收到验证结果，请再试一次。" });

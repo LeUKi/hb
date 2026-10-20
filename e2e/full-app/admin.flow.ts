@@ -79,7 +79,7 @@ test("网站管理：全站的红包和用户，改尝试间隔记进操作记�
   const next = before.homeIntervalSeconds + 1;
   try {
     await tab("网站设置");
-    await page.getByRole("textbox", { name: "起始页" }).fill(String(next));
+    await page.getByRole("textbox", { name: "首页" }).fill(String(next));
     await page.getByRole("button", { name: "保存设置" }).click();
     await expect(page.getByText("已保存，立即生效")).toBeVisible();
     await expect(
@@ -88,7 +88,7 @@ test("网站管理：全站的红包和用户，改尝试间隔记进操作记�
     await tab("操作记录");
     await expect(
       page
-        .getByText(`起始页 ${before.homeIntervalSeconds} 秒 → ${next} 秒`)
+        .getByText(`首页 ${before.homeIntervalSeconds} 秒 → ${next} 秒`)
         .first(),
     ).toBeVisible();
   } finally {

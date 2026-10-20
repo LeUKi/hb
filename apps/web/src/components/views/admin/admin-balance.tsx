@@ -358,7 +358,9 @@ function TopupDetail({ item }: { item: AdminTopupItem }) {
         setConfirming(false);
       }
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "没有成功。");
+      setError(
+        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
+      );
     } finally {
       setBusy(null);
     }
@@ -1077,7 +1079,9 @@ function InviteLinks({
       onMade({ url: result.url, maxUses, days: Number(days) });
       setCount("");
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "没有成功。");
+      setError(
+        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
+      );
     } finally {
       setBusy(false);
     }
@@ -1090,7 +1094,9 @@ function InviteLinks({
       await actions.stopInviteLink(stopping.id);
       setStopOpen(false);
     } catch (failure) {
-      setStopError(failure instanceof Error ? failure.message : "没有成功。");
+      setStopError(
+        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
+      );
     } finally {
       setStopBusy(false);
     }
@@ -1361,7 +1367,9 @@ export function UserBalance({ userId }: { userId: string }) {
       });
       setOpen(false);
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "没有成功。");
+      setError(
+        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
+      );
     } finally {
       setBusy(false);
     }

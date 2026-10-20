@@ -332,7 +332,7 @@ export function SettingsSheet({
             <Setting>
               <Switch
                 label="领取前人机验证"
-                description="领取或报名前，先在弹窗里通过 Cloudflare 人机验证，挡住直接调接口的抢红包脚本。代价是：中国大陆网络、广告拦截插件或部分隐私浏览器可能加载不出验证，这些人会领不了。开放后也能改。"
+                description="领取前先通过 Cloudflare 人机验证，挡住抢红包脚本；部分网络或浏览器可能加载不出，这些人会领不了。开放后也能改。"
                 checked={form.humanCheck}
                 onChange={(humanCheck) =>
                   update((current) => ({ ...current, humanCheck }))
@@ -381,7 +381,7 @@ export function SettingsSheet({
                 label="关联帖子"
                 labelHidden
                 htmlFor="hb-topic"
-                hint="选填。填了以后，在指令框粘贴这个帖子的链接就能找到这个红包。开放后也能改。"
+                hint="选填。填了以后，在输入框粘贴这个帖子的链接就能找到这个红包。开放后也能改。"
                 error={errorOf("hb-topic")}
                 live
               >

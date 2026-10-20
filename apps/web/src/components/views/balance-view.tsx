@@ -583,7 +583,7 @@ function TopupDialog({
       // A rate that changed meanwhile: the page reads it again; the boxes stay.
       requestId.current = crypto.randomUUID();
       setError(
-        failure instanceof Error ? failure.message : "没有成功，请稍后再试。",
+        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
       );
     }
   };
@@ -722,7 +722,7 @@ function WithdrawDialog({
       // A rate that changed meanwhile: the page reads it again; the box stays.
       requestId.current = crypto.randomUUID();
       setError(
-        failure instanceof Error ? failure.message : "没有成功，请稍后再试。",
+        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
       );
     }
   };
@@ -828,7 +828,7 @@ function OwnerAdjustDialog({
     } catch (failure) {
       requestId.current = crypto.randomUUID();
       setError(
-        failure instanceof Error ? failure.message : "没有成功，请稍后再试。",
+        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
       );
     }
   };
@@ -940,7 +940,9 @@ function InviteDialog({
       // As it was typed (the link works whatever the case).
       setMade({ url: result.url, username: name });
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "没有成功。");
+      setError(
+        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
+      );
     }
   };
   const invites = mine.data?.items ?? [];
@@ -951,7 +953,7 @@ function InviteDialog({
       onClosed={reset}
       busy={create.isPending}
       title="邀请"
-      text="输入对方的 LINUX DO 用户名，生成一条邀请链接发给对方。对方接受后，能转入🐟额、用🐟额发红包，也能邀请别人。"
+      text="输入对方的 LINUX DO 用户名，生成一条邀请链接发给对方。对方接受后，能转入🐟额、用🐟额发红包，也能邀请其他人。"
       error={error}
       actions={
         made ? (

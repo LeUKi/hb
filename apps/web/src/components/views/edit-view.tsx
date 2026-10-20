@@ -54,7 +54,7 @@ function EndEarly({
         onError: (failure) =>
           setError(
             failure instanceof ActivityRequestError && failure.status === 429
-              ? "尝试过于频繁，请稍后重试。"
+              ? "尝试过于频繁，请稍后再试。"
               : refused(failure)
                 ? failure.message
                 : "提前结束没有完成：网络或服务出了问题，红包还在进行。可以再试一次。",

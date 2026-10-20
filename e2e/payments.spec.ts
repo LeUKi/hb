@@ -206,7 +206,9 @@ test.describe("付款记录", () => {
     await expect(
       page.getByText("已领 3 / 5 份 · 已发放 0.66 LDC"),
     ).toBeVisible();
-    await expect(page.getByText("商户凭证失效，等待作者更新。")).toBeVisible();
+    await expect(
+      page.getByText("商户凭证失效，等待发红包的人更新。"),
+    ).toBeVisible();
     await page
       .getByRole("group", { name: "付款状态" })
       .getByRole("button", { name: /未完成/ })
@@ -302,7 +304,7 @@ test.describe("付款记录", () => {
       }),
     ).toBeVisible();
     await expect(
-      page.getByText("LDC 拒绝：商户凭证失效，等待作者更新"),
+      page.getByText("LDC 拒绝：商户凭证失效，等待发红包的人更新"),
     ).toBeVisible();
     await expect(
       page.getByText(

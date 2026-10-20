@@ -10,7 +10,6 @@ import { RollingWord } from "../ui/morph-label";
 const idleHints = [
   { kind: "password", word: "口令", purpose: "领取红包" },
   { kind: "link", word: "红包链接", purpose: "打开红包" },
-  { kind: "emoji", word: "表情码", purpose: "打开红包" },
   {
     kind: "topic",
     word: "帖子链接",
@@ -40,7 +39,7 @@ export function useIdleHint(active: boolean): IdleHint | null {
   return running ? (idleHints[index] ?? null) : null;
 }
 
-/** The placeholder sentence; only what changes rolls (红包链接 → 表情码). */
+/** The placeholder sentence; only what changes rolls (口令领取红包 → 红包链接打开红包). */
 export function IdleHintText({
   hint,
   compact,

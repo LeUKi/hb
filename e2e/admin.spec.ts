@@ -569,7 +569,7 @@ test.describe("网站管理", () => {
     ).toBeVisible();
     await expect(pane.getByText("尚未观察到订单")).toBeVisible();
     await expect(
-      pane.getByText("商户凭证失效，等待作者更新。 · HTTP 400"),
+      pane.getByText("商户凭证失效，等待发红包的人更新。 · HTTP 400"),
     ).toBeVisible();
   });
 
@@ -583,18 +583,16 @@ test.describe("网站管理", () => {
     await expect(
       page.getByText(/第 2 版 · .* 由 测试管理员 修改/),
     ).toBeVisible();
-    await page.getByRole("textbox", { name: "起始页" }).fill("8");
+    await page.getByRole("textbox", { name: "首页" }).fill("8");
     // Another admin saves version 3 just before.
     settings.saveElsewhere(5, 3);
     await page.getByRole("button", { name: "保存设置" }).click();
     await expect(
       page.getByText(
-        "保存失败：设置刚被另一位管理员改成第 3 版（起始页 5 秒、红包页 3 秒）。你的输入还在，确认后再保存一次。",
+        "保存没有完成：设置刚被另一位管理员改成第 3 版（首页 5 秒、红包页 3 秒）。你的输入还在，确认后再保存一次。",
       ),
     ).toBeVisible();
-    await expect(page.getByRole("textbox", { name: "起始页" })).toHaveValue(
-      "8",
-    );
+    await expect(page.getByRole("textbox", { name: "首页" })).toHaveValue("8");
     await expect(page.getByRole("textbox", { name: "红包页" })).toHaveValue(
       "3",
     );
@@ -614,7 +612,7 @@ test.describe("网站管理", () => {
     await mockSession(page, admin);
     const settings = await mockRateLimits(page);
     await openApp(page, "/admin/settings");
-    await page.getByRole("textbox", { name: "起始页" }).fill("8");
+    await page.getByRole("textbox", { name: "首页" }).fill("8");
     // Meanwhile another admin saves; coming back to the window reads it.
     settings.saveElsewhere(10, 2);
     const reads = settings.reads();
@@ -625,12 +623,10 @@ test.describe("网站管理", () => {
     await page.getByRole("button", { name: "保存设置" }).click();
     // Checked against the version the typing started from: a conflict.
     await expect(
-      page.getByText(/^保存失败：设置刚被另一位管理员改成第 3 版/),
+      page.getByText(/^保存没有完成：设置刚被另一位管理员改成第 3 版/),
     ).toBeVisible();
     expect(settings.sent[0]).toMatchObject({ expectedVersion: 2 });
-    await expect(page.getByRole("textbox", { name: "起始页" })).toHaveValue(
-      "8",
-    );
+    await expect(page.getByRole("textbox", { name: "首页" })).toHaveValue("8");
   });
 
   test("地址里的编号不完整：标签写编号无效，不参与筛选", async ({ page }) => {

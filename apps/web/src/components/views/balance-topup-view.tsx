@@ -85,7 +85,9 @@ function Topup({ user, id }: { user: SessionUser; id: string }) {
       if (result.cashierUrl) goToCashier(result.cashierUrl);
       else setError("Credit 暂时没有回应，请稍后再试。");
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "没有成功。");
+      setError(
+        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
+      );
     }
   };
   return (

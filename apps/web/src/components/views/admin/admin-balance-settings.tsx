@@ -352,7 +352,7 @@ export function PlatformAppSection({
                       setError(
                         failure instanceof Error
                           ? failure.message
-                          : "没有成功。",
+                          : "没有完成，请稍后再试。",
                       );
                     } finally {
                       setBusy(null);

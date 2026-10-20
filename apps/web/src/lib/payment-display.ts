@@ -23,7 +23,7 @@ export function paymentReason(
     unknown: "付款结果尚未明确，正在核对原订单。",
     funds: "商户资金不足，等待补足后恢复。",
     quota: "今日 Credit 发放额度已用完，0 点额度恢复后自动继续。",
-    credentials: "商户凭证失效，等待作者更新。",
+    credentials: "商户凭证失效，等待发红包的人更新。",
     conflict: "订单信息冲突，需要检查原订单。",
     query_unavailable: "查单暂不可用，系统会继续核对。",
     query_delayed: "订单查询有延迟，系统会继续核对。",
@@ -35,8 +35,8 @@ export function paymentReason(
     redirect: "上游返回重定向，系统未继续请求，将保留原订单核对。",
     invalid_response: "上游响应格式无法识别，付款结果仍需核对原订单。",
     recipient:
-      "收款人还没有 LINUX DO Credit 账户，发送已停止；领取人 5 分钟内可以注册后重新发送，过时不再补发。",
-    resend: "领取人已重新发送，先核对原订单再发出。",
+      "收款人还没有 LINUX DO Credit 账户，发送已停止；领取者 5 分钟内可以注册后重新发送，过时不再补发。",
+    resend: "领取者已重新发送，先核对原订单再发出。",
     self_payment: "上游拒绝向同一付款账号发放，发送已暂停。",
     configuration: "上游付款配置不可用，发送已暂停。",
     validation: "上游拒绝订单参数，发送已暂停。",
@@ -64,7 +64,8 @@ export function paymentReason(
     credential_unverified:
       "当前凭证尚未通过检查，奖励已锁定，等待检查后恢复付款。",
     credential_checking: "当前凭证正在检查，奖励已锁定，等待检查后恢复付款。",
-    credential_rejected: "当前凭证认证未通过，奖励已锁定，等待作者更新密钥。",
+    credential_rejected:
+      "当前凭证认证未通过，奖励已锁定，等待发红包的人更新密钥。",
     credential_unavailable: "当前凭证暂时无法验证，奖励已锁定，等待恢复付款。",
   };
   return labels[reason] ?? fallback;

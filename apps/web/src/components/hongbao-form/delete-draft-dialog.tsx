@@ -93,7 +93,7 @@ export function DeleteDraftDialog({
                   setError(
                     failure instanceof ActivityRequestError &&
                       failure.status === 429
-                      ? "尝试过于频繁，请稍后重试。"
+                      ? "尝试过于频繁，请稍后再试。"
                       : refused(failure)
                         ? failure.message
                         : "删除没有完成：网络或服务出了问题，草稿还在。可以再试一次。",

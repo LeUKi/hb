@@ -157,9 +157,12 @@ export function useSubmit({
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError")
           return;
+        const reason =
+          error instanceof Error ? error.message : "网络或服务出了问题。";
+        // The draft is saved either way: said once (07 §1, 没有完成).
         const note: Notice = {
           tone: "danger",
-          text: `开放失败：草稿已保存。${error instanceof Error ? error.message : "开放没有完成，可以再试一次。"}`,
+          text: `开放没有完成：${reason}${reason.includes("草稿已保存") ? "" : "草稿已保存，可以再试一次。"}`,
         };
         if (activity) settle(note, pending.form);
         else goTo(saved, "edit", note);
@@ -260,7 +263,7 @@ export function useSubmit({
           if (here.current)
             setNotice({
               tone: "danger",
-              text: "保存失败：这个红包刚在别处改过。你的输入还在，确认后再保存一次。",
+              text: "保存没有完成：这个红包刚在别处改过，你的输入还在。确认后再保存一次。",
             });
           return;
         }
@@ -275,7 +278,7 @@ export function useSubmit({
             tone: "danger",
             text:
               error.status === 429
-                ? "尝试过于频繁，请稍后重试。"
+                ? "尝试过于频繁，请稍后再试。"
                 : (error.issues[0]?.message ?? error.message),
           });
         return;

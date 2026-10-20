@@ -144,8 +144,8 @@ export function WindowBar() {
           {/* A ghost button so the brand glow is not clipped by a hover shape. */}
           <Link
             to="/"
-            aria-label="起始页"
-            title="起始页"
+            aria-label="首页"
+            title="首页"
             onClick={(event) => {
               if (
                 event.metaKey ||

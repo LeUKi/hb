@@ -48,7 +48,7 @@ import { type ChipTone, StatusChip } from "../ui/status-chip";
 import { MerchantGuide } from "./merchant-guide";
 import { MessageView } from "./message-view";
 
-const PAGE_NOTE = "用商户发的红包，由集市应用直接付给领取人，不经过本站。";
+const PAGE_NOTE = "用商户发的红包，由集市应用直接付给领取者，不经过本站。";
 
 /** Production's rules for a Client ID (createMerchantSchema). */
 function clientIdError(value: string) {
@@ -62,7 +62,7 @@ function clientIdError(value: string) {
 /** A save that did not go through, in words. */
 function saveError(error: unknown, what: string) {
   if (error instanceof ActivityRequestError) {
-    if (error.status === 429) return "尝试过于频繁，请稍后重试。";
+    if (error.status === 429) return "尝试过于频繁，请稍后再试。";
     if (error.status === 409)
       return "保存失败：商户配置刚在别处改过。你的输入还在，确认后再保存一次。";
     if (refused(error) && error.message) return error.message;

@@ -11,7 +11,7 @@ import { StatusChip } from "../../ui/status-chip";
 import { AdminFrame, listLoad, SearchBox, useSettled } from "./admin-frame";
 
 const intervalLabels = {
-  homeIntervalSeconds: "起始页",
+  homeIntervalSeconds: "首页",
   activityIntervalSeconds: "红包页",
 } as const;
 
@@ -38,7 +38,7 @@ const kinds = {
   balance_settings: "🐟额设置",
 } as const;
 
-/** Only what changed, in words: "起始页 8 秒 → 5 秒", "转入 关 → 开". */
+/** Only what changed, in words: "首页 8 秒 → 5 秒", "转入 关 → 开". */
 function changesOf(entry: AdminAuditEntry) {
   const changes =
     entry.type === "balance_settings"

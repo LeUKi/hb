@@ -360,8 +360,8 @@ export function AmountFields({
           最多 1,000 份，每份至少 0.01
           LDC，金额最多两位小数。填的是每份发出的金额。
           {form.funding === "balance"
-            ? "领到的直接存进领取人的🐟额。"
-            : "领取的人到账时，Credit 会按你的 Credit 等级扣分发费（4%–15%）。"}
+            ? "领到的直接存进领取者的🐟额。"
+            : "领取者到账时，Credit 会按你的 Credit 等级扣分发费（4%–15%）。"}
           你不能领自己的红包。
         </p>
         {/* Opens as the total passes 800 LDC, and closes under it; 🐟额
@@ -453,7 +453,7 @@ export function FundingChoice({
             // 🐟额 itself is written in 🐟; LDC with a small 🐟 is for a
             // 红包's money as others see it (balance-design §14).
             description: fishReady
-              ? `可用 ${ldc(Math.max(0, available))} 🐟，领到的进领取人的🐟额`
+              ? `可用 ${ldc(Math.max(0, available))} 🐟，领到的进领取者的🐟额`
               : "🐟额里没有可用",
             icon: Wallet,
             disabled: !fishReady,
@@ -617,7 +617,7 @@ export function MerchantRow() {
         </div>
       </Squircle>
       <p className="text-xs text-ink-3">
-        不用预先付款：每次有人领取，本站从这个集市应用直接付给领取人。请让商户里留有足够的
+        不用预先付款：每次有人领取，本站从这个集市应用直接付给领取者。请让商户里留有足够的
         LDC。
       </p>
     </div>

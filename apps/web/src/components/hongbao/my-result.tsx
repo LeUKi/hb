@@ -155,7 +155,7 @@ function NoCreditAccount({
   const error = resend.error
     ? resend.error instanceof ActivityRequestError
       ? resend.error.message
-      : "重新发送失败，请稍后再试。"
+      : "重新发送没有完成，请稍后再试。"
     : null;
   return (
     <Callout
