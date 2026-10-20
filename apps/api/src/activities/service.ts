@@ -25,6 +25,7 @@ import {
   type PublicActivity,
   type PublicQuantity,
   sameLdcMoney,
+  storedActivitySchema,
   type UpdateActivityInput,
 } from "@hb/contracts";
 import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
@@ -320,7 +321,7 @@ async function managed(
   return {
     ...projectActivitySummary(snapshot.row),
     author: activityAuthor,
-    config: activityInputSchema.parse({
+    config: storedActivitySchema.parse({
       ...configuration(snapshot.row),
       passwords: snapshot.content.passwords,
     }),

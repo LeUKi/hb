@@ -386,6 +386,12 @@ function validateActivity(
 
 export const activityInputSchema =
   ldcActivitySchema.superRefine(validateActivity);
+/**
+ * A saved 红包's settings as they read back: the shape only. The rules
+ * check what is written; one added later must not lock out a 红包 saved
+ * before it (07 §5, 加入红包广场).
+ */
+export const storedActivitySchema = ldcActivitySchema;
 /** Only the creation envelope accepts old links before the idempotency lookup. */
 export const historicalActivityInputSchema = ldcActivitySchema
   .extend({

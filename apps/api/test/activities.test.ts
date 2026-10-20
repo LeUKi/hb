@@ -1306,6 +1306,43 @@ describe("LDC activity management", () => {
     },
   );
 
+  it("still manages a page-only 红包 saved before page-only had to join 红包广场, and joins it on the next save", async () => {
+    const opened = await open(await create(input({ forceDedicated: true })));
+    // As 红包 were saved before the rule: page-only, not on the square.
+    await env.DB.prepare("UPDATE activities SET join_square=0 WHERE id=?")
+      .bind(opened.id)
+      .run();
+    const managed = await request(`/api/me/activities/${opened.id}`, owner);
+    expect(managed.status).toBe(200);
+    const legacy = ((await managed.json()) as { activity: ManagedActivity })
+      .activity;
+    expect(legacy.config).toMatchObject({
+      forceDedicated: true,
+      joinSquare: false,
+    });
+    // The rule still checks what is written.
+    const kept = await request(
+      `/api/me/activities/${opened.id}`,
+      owner,
+      "PATCH",
+      { version: legacy.version, activity: legacy.config },
+    );
+    expect(kept.status).toBe(400);
+    const saved = await request(
+      `/api/me/activities/${opened.id}`,
+      owner,
+      "PATCH",
+      {
+        version: legacy.version,
+        activity: { ...legacy.config, title: "改过的标题", joinSquare: true },
+      },
+    );
+    expect(saved.status).toBe(200);
+    expect(
+      ((await saved.json()) as { activity: ManagedActivity }).activity.config,
+    ).toMatchObject({ forceDedicated: true, joinSquare: true });
+  });
+
   it.each([false, true])(
     "locks opened dedicated mode at %s without changing either stored value",
     async (forceDedicated) => {
