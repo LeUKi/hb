@@ -242,7 +242,7 @@ test.describe("红包广场", () => {
       filter.getByRole("button", { name: /全部\s*2/ }),
     ).toBeVisible();
     await expect(page.getByRole("button", { name: /周末红包/ })).toBeVisible();
-    await filter.getByRole("button", { name: /已结束/ }).click();
+    await filter.getByRole("button", { name: /最近结束/ }).click();
     await expect(page).toHaveURL(/\/square\?filter=ended$/);
     const ended = page.getByRole("button", { name: /已经领完/ });
     await expect(ended).toContainText("已领完");

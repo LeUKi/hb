@@ -83,7 +83,8 @@ function Square({ userId }: { userId: string | null }) {
               onChange={setFilter}
               options={[
                 { value: "active", label: "进行中", count: countOf("active") },
-                { value: "ended", label: "已结束", count: countOf("ended") },
+                // Only for 72 hours after the end (archived after): 最近.
+                { value: "ended", label: "最近结束", count: countOf("ended") },
                 { value: "all", label: "全部", count: countOf("all") },
               ]}
             />
@@ -100,7 +101,7 @@ function Square({ userId }: { userId: string | null }) {
                 filter === "active"
                   ? "现在没有进行中的红包"
                   : filter === "ended"
-                    ? "没有已结束的红包"
+                    ? "最近没有结束的红包"
                     : "还没有红包"
               }
               text={
