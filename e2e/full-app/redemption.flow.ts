@@ -92,7 +92,9 @@ test("真实登录后在起始页查找口令：未匹配、多个匹配和单�
 
   await input.fill(`无此口令${suffix}`);
   await page.keyboard.press("Enter");
-  await expect(page.locator("#view").getByText("未匹配到红包。")).toBeVisible();
+  await expect(
+    page.locator("#view").getByText(/^未匹配到红包，/),
+  ).toBeVisible();
   await waitOutCooldown(page);
 
   await input.fill(shared);
