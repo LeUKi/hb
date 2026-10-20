@@ -281,7 +281,7 @@ describe("🐟额红包", () => {
       openActivity(bindings, draft.id, author.id, draft.version),
     ).rejects.toMatchObject({
       code: "BALANCE_INSUFFICIENT",
-      message: "🐟额可用不够：这个红包要 5.00 LDC，可用 1.00 LDC。",
+      message: "🐟额可用只有 1.00 🐟，不够发这个红包。",
     });
     expect(
       (await getManagedActivity(bindings, draft.id, author.id))

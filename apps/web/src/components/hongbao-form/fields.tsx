@@ -423,7 +423,9 @@ export function FundingChoice({
           {
             value: "balance",
             title: "🐟额",
-            description: `可用 ${ldc(Math.max(0, available))} LDC🐟，领到的进领取人的🐟额`,
+            // 🐟额 itself is written in 🐟; LDC with a small 🐟 is for a
+            // 红包's money as others see it (balance-design §14).
+            description: `可用 ${ldc(Math.max(0, available))} 🐟，领到的进领取人的🐟额`,
             icon: Wallet,
           },
         ]}
@@ -438,7 +440,7 @@ export function FundingChoice({
         }
       >
         <p className="px-1 text-xs text-warning">
-          🐟额可用 {ldc(Math.max(0, available))} LDC，不够发这个红包。
+          可用只有 {ldc(Math.max(0, available))} 🐟，不够发这个红包。
         </p>
       </Reveal>
     </div>

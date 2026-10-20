@@ -73,13 +73,10 @@ export async function balanceOpeningBlocked(
   return undefined;
 }
 
-export async function insufficientMessage(
-  env: ApiBindings,
-  authorId: string,
-  totalMinor: number,
-) {
+/** In 🐟额's own unit, as the form's line has it (balance-design §14). */
+export async function insufficientMessage(env: ApiBindings, authorId: string) {
   const available = Math.max(0, await availableMinor(env, authorId));
-  return `🐟额可用不够：这个红包要 ${formatAmount(totalMinor)} LDC，可用 ${formatAmount(available)} LDC。`;
+  return `🐟额可用只有 ${formatAmount(available)} 🐟，不够发这个红包。`;
 }
 
 /** Opening: the whole total leaves 可用 into the 红包's own lock. */

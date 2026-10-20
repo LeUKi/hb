@@ -323,7 +323,7 @@ test.describe("发红包", () => {
       .first()
       .click();
     const fish = page.getByRole("button", { name: /^🐟额/ });
-    await expect(fish).toContainText("可用 12.34 LDC🐟");
+    await expect(fish).toContainText("可用 12.34 🐟");
     await fish.click();
     await expect(shown(page, /还没有配置 LDC 商户/)).toHaveCount(0);
     await expect(
@@ -332,11 +332,11 @@ test.describe("发红包", () => {
     await page.locator("#hb-random-total").fill("20");
     await page.locator("#hb-random-count").fill("3");
     await expect(
-      shown(page, "🐟额可用 12.34 LDC，不够发这个红包。"),
+      shown(page, "可用只有 12.34 🐟，不够发这个红包。"),
     ).toBeVisible();
     await page.locator("#hb-random-total").fill("0.30");
     await expect(
-      shown(page, "🐟额可用 12.34 LDC，不够发这个红包。"),
+      shown(page, "可用只有 12.34 🐟，不够发这个红包。"),
     ).toHaveCount(0);
     await page.keyboard.press("Enter");
     await page.getByLabel("口令 1").fill("表单口令2026");

@@ -882,11 +882,7 @@ export async function openActivity(
         409,
         blocked,
         blocked === "BALANCE_INSUFFICIENT"
-          ? await insufficientMessage(
-              env,
-              authorId,
-              ldcTotalMinor(checked.data),
-            )
+          ? await insufficientMessage(env, authorId)
           : publicationMessages[blocked],
       );
   } else {
@@ -1028,11 +1024,7 @@ export async function openActivity(
         blocked === "TIMED_DRAW_NOT_ENABLED"
           ? "限时开奖尚未启用，草稿已保存。"
           : blocked === "BALANCE_INSUFFICIENT"
-            ? await insufficientMessage(
-                env,
-                authorId,
-                ldcTotalMinor(checked.data),
-              )
+            ? await insufficientMessage(env, authorId)
             : publicationMessages[blocked],
       );
     if (publicationMerchant) {
