@@ -5,11 +5,14 @@ import { useReducedMotionPref } from "../../lib/motion";
 import { Button } from "../ui/button";
 import { MorphLabel } from "../ui/morph-label";
 
-/** 乱码 as it is known (“锟斤拷”, “烫”, “屯”), then common 汉字 it turns into. */
-const garble =
+// 乱码 as it is known: 汉字 (“锟斤拷”, “烫”, “屯”, and common ones that UTF-8
+// read as GBK turns into), Latin-1 debris, and blocks to pile on top.
+const han =
   "锟斤拷烫屯板瑰磋扮冲歌舵卞硅绘哄版规哥辨芥虫峰诲惧剧烘靛剁疯村挎借艰撮垮搁圭炬跨荤跺藉惰兼茶佃茬告稿界垫辩遍烽肩宠块崇鸿拌婚介戒";
+const latin = "ÃÂåæçðþßµ¶§±¤©®¿¡ÐÞØøœŒ€‰†‡ƒ";
+const blocks = "▓▒░█▚▞▙▟╬╳◘◙▣▤▥▦▧▨▩�";
 
-const length = 8;
+const slots = 8;
 
 function hash(seed: string, ...parts: number[]) {
   let value = 2166136261;
@@ -19,18 +22,34 @@ function hash(seed: string, ...parts: number[]) {
   return (value ^ (value >>> 15)) >>> 0;
 }
 
+type Glyph = { text: string; transform: string };
+
 /**
- * The stand-in for a 口令 that is not shown, at one tick: always 8 汉字,
- * each changing on its own beat (every 2–4 ticks), made from something
- * else (the 红包, the row), so it says nothing of the 口令's length or
- * characters.
+ * One layer of one slot at one tick: what it shows and how askew, changing
+ * on its own beat (every `1 + layer` to `3 + layer` ticks).
  */
-function standIn(seed: string, index = 0, tick = 0) {
-  return Array.from({ length }, (_, position) => {
-    const beat = 2 + (hash(seed, index, position) % 3);
-    const step = Math.floor((tick + position * 3) / beat);
-    return garble[hash(seed, index, position, step) % garble.length];
-  }).join("");
+function glyph(
+  seed: string,
+  index: number,
+  position: number,
+  layer: number,
+  tick: number,
+): Glyph {
+  const beat = 1 + layer + (hash(seed, index, position, layer) % 3);
+  const step = Math.floor((tick + position * 3) / beat);
+  const roll = (n: number) =>
+    hash(seed, index, position, layer, step, n) / 2 ** 32;
+  const from =
+    layer === 0 ? (roll(0) < 0.6 ? han : latin) : roll(0) < 0.5 ? blocks : han;
+  const text = from[Math.floor(roll(1) * from.length)] ?? "";
+  const [x, y, turn, size] = [roll(2), roll(3), roll(4), roll(5)];
+  return {
+    text,
+    transform:
+      layer === 0
+        ? `translateY(${((y - 0.5) * 0.3).toFixed(3)}em) rotate(${Math.round((turn - 0.5) * 30)}deg) scale(${(0.85 + size * 0.45).toFixed(2)})`
+        : `translate(${((x - 0.5) * 0.4).toFixed(3)}em,${((y - 0.5) * 0.3).toFixed(3)}em) rotate(${Math.round((turn - 0.5) * 40)}deg) scale(${(0.75 + size * 0.5).toFixed(2)})`,
+  };
 }
 
 // One clock for every stand-in on the page: it runs while one is on the
@@ -74,12 +93,15 @@ function subscribe(listener: () => void) {
 const still = () => () => {};
 
 /**
- * A hidden 口令 on the page: blurred 汉字 that keep changing, like 乱码;
- * still when the system asks for less motion. Screen readers skip it.
+ * A hidden 口令 on the page: 8 slots of blurred 乱码, each a 汉字 or a bit of
+ * Latin-1 with a block or 汉字 piled on, askew and changing on their own
+ * beats; made from something else (the 红包, the row), so it says nothing
+ * of the 口令's length or characters. Still when the system asks for less
+ * motion; screen readers skip it.
  */
 export function StandIn({
   seed,
-  index,
+  index = 0,
   className,
 }: {
   /** What it is made from: never the 口令. */
@@ -94,9 +116,35 @@ export function StandIn({
   return (
     <span
       aria-hidden="true"
-      className={cn("text-ink-3 blur-[2.5px] select-none", className)}
+      className={cn(
+        "font-black whitespace-nowrap text-ink-2/80 blur-[2.5px] select-none",
+        className,
+      )}
     >
-      {standIn(seed, index, now)}
+      {Array.from({ length: slots }, (_, position) => {
+        const base = glyph(seed, index, position, 0, now);
+        const over = glyph(seed, index, position, 1, now);
+        return (
+          <span
+            // biome-ignore lint/suspicious/noArrayIndexKey: slots are fixed places.
+            key={position}
+            className="relative inline-block w-[1em] text-center leading-none"
+          >
+            <span
+              className="inline-block"
+              style={{ transform: base.transform }}
+            >
+              {base.text}
+            </span>
+            <span
+              className="absolute inset-x-0 top-0 opacity-75"
+              style={{ transform: over.transform }}
+            >
+              {over.text}
+            </span>
+          </span>
+        );
+      })}
     </span>
   );
 }
