@@ -53,7 +53,7 @@ async function fixture(count = 1) {
     if (!("claim" in result) || result.claim.rewardType !== "ldc")
       throw new Error("Missing payment");
     await advanceAttemptCooldown(env.DB, account);
-    return result.claim.payment.id;
+    return result.claim.payment?.id ?? "";
   }
   return { merchant, taskId: await claim(), claim };
 }

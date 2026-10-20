@@ -4,7 +4,7 @@ import { createDb } from "../db/client";
 import {
   activityRegistrations,
   claims,
-  paymentTasks,
+  rewardInventory,
   users,
 } from "../db/schema";
 import type { ApiBindings } from "../env";
@@ -45,10 +45,10 @@ export async function rosterPreview(
       .select({ id: claims.id, ...person })
       .from(claims)
       .innerJoin(users, eq(users.id, claims.userId))
-      .leftJoin(paymentTasks, eq(paymentTasks.claimId, claims.id))
+      .leftJoin(rewardInventory, eq(rewardInventory.id, claims.inventoryId))
       .where(eq(claims.activityId, activity.id))
       .orderBy(
-        desc(paymentTasks.amountMinor),
+        desc(rewardInventory.amountMinor),
         asc(claims.claimedAt),
         asc(claims.id),
       )

@@ -16,6 +16,9 @@ import { type WithdrawalRow, withdrawalView } from "./withdrawals";
 export type BalanceAccountView = {
   availableMinor: number;
   lockedMinor: number;
+  /** Of what is locked: 转出中, and 发出未领 (in 🐟额红包 not taken yet). */
+  withdrawingMinor: number;
+  unclaimedMinor: number;
 };
 
 export async function readAccount(
@@ -23,12 +26,35 @@ export async function readAccount(
   userId: string,
 ): Promise<BalanceAccountView> {
   const row = await env.DB.prepare(
-    "SELECT available_minor AS availableMinor,locked_minor AS lockedMinor FROM balance_accounts WHERE user_id=?",
+    `SELECT available_minor AS availableMinor,locked_minor AS lockedMinor,
+      COALESCE((SELECT SUM(remaining_minor) FROM balance_locks WHERE user_id=?1 AND status='active' AND purpose='withdrawal'),0) AS withdrawingMinor,
+      COALESCE((SELECT SUM(remaining_minor) FROM balance_locks WHERE user_id=?1 AND status='active' AND purpose='activity'),0) AS unclaimedMinor
+    FROM balance_accounts WHERE user_id=?1`,
   )
     .bind(userId)
     .first<BalanceAccountView>();
-  return row ?? { availableMinor: 0, lockedMinor: 0 };
+  return (
+    row ?? {
+      availableMinor: 0,
+      lockedMinor: 0,
+      withdrawingMinor: 0,
+      unclaimedMinor: 0,
+    }
+  );
 }
+
+/**
+ * A 🐟额红包 in 明细: 发红包 (its total locked), 红包结束退回 (what was left),
+ * or 领到红包 (a share). The amount is signed as 可用 moved.
+ */
+export type BalanceHongbaoView = {
+  id: string;
+  kind: "sent" | "refund" | "received";
+  amountMinor: number;
+  activityId: string;
+  title: string;
+  createdAt: number;
+};
 
 export type BalanceAdjustmentView = {
   id: string;
@@ -46,9 +72,15 @@ export type BalanceRecord =
       type: "adjustment";
       createdAt: number;
       adjustment: BalanceAdjustmentView;
-    };
+    }
+  | { type: "hongbao"; createdAt: number; hongbao: BalanceHongbaoView };
 
-export type BalanceRecordFilter = "all" | "topup" | "withdrawal" | "adjustment";
+export type BalanceRecordFilter =
+  | "all"
+  | "topup"
+  | "withdrawal"
+  | "adjustment"
+  | "hongbao";
 
 const PAGE_SIZE = 20;
 
@@ -95,9 +127,27 @@ export async function listRecords(
       before?.id ?? "",
       PAGE_SIZE + 1,
     );
-  const [topups, withdrawals, adjustments] = await env.DB.batch<
+  const [topups, withdrawals, adjustments, hongbao] = await env.DB.batch<
     Record<string, unknown>
-  >([page("topups"), page("withdrawals"), page("adjustments")]);
+  >([
+    page("topups"),
+    page("withdrawals"),
+    page("adjustments"),
+    env.DB.prepare(
+      `SELECT e.id,e.kind,e.available_delta_minor,e.created_at,a.id AS activity_id,a.title
+      FROM balance_entries e JOIN balance_locks l ON l.id=e.lock_id JOIN activities a ON a.id=l.activity_id
+      WHERE e.user_id=? AND l.purpose='activity' AND e.kind IN ('lock','unlock','hongbao')
+        AND (?=0 OR e.created_at<? OR (e.created_at=? AND e.id<?))
+      ORDER BY e.created_at DESC,e.id DESC LIMIT ?`,
+    ).bind(
+      userId,
+      before ? 1 : 0,
+      before?.time ?? 0,
+      before?.time ?? 0,
+      before?.id ?? "",
+      PAGE_SIZE + 1,
+    ),
+  ]);
   const records: BalanceRecord[] = [];
   if (filter === "all" || filter === "topup")
     for (const row of (topups?.results ?? []) as unknown as TopupRow[])
@@ -121,12 +171,33 @@ export async function listRecords(
         createdAt: Number(row.created_at),
         adjustment: adjustmentView(row),
       });
+  if (filter === "all" || filter === "hongbao")
+    for (const row of (hongbao?.results ?? []) as Record<string, unknown>[])
+      records.push({
+        type: "hongbao",
+        createdAt: Number(row.created_at),
+        hongbao: {
+          id: String(row.id),
+          kind:
+            row.kind === "lock"
+              ? "sent"
+              : row.kind === "unlock"
+                ? "refund"
+                : "received",
+          amountMinor: Number(row.available_delta_minor),
+          activityId: String(row.activity_id),
+          title: String(row.title),
+          createdAt: Number(row.created_at),
+        },
+      });
   const id = (record: BalanceRecord) =>
     record.type === "topup"
       ? record.topup.id
       : record.type === "withdrawal"
         ? record.withdrawal.id
-        : record.adjustment.id;
+        : record.type === "hongbao"
+          ? record.hongbao.id
+          : record.adjustment.id;
   records.sort((left, right) =>
     right.createdAt !== left.createdAt
       ? right.createdAt - left.createdAt

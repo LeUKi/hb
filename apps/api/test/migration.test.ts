@@ -246,6 +246,8 @@ it("upgrades a populated step-3 database without changing IDs, encrypted content
       join_square: 0,
       merchant_id: null,
       payment_mode: null,
+      // 0033: everything before 🐟额红包 is 商户直发.
+      funding: "merchant",
       participation_mode: "password",
       post_number: 1,
       deleted_at: null,
@@ -563,6 +565,7 @@ it("upgrades populated simulated LDC payment data from 0008 through acceptance m
     before[2]?.results.map((row) => ({
       ...(row as Record<string, unknown>),
       payment_mode: "simulation",
+      funding: "merchant",
       participation_mode: "password",
       post_number: 1,
       deleted_at: null,

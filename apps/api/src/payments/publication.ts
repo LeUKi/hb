@@ -57,4 +57,6 @@ export const publicationMessages = {
     "正在检查当前商户凭证，草稿已保留，检查通过后将继续开放。",
   MERCHANT_CREDENTIALS_REJECTED: "认证未通过，请检查商户 ID 和密钥。",
   MERCHANT_CREDENTIALS_UNAVAILABLE: "暂时无法验证商户凭证，请稍后重新检查。",
+  BALANCE_HONGBAO_PAUSED: "🐟额红包暂时关闭，草稿已保存。",
+  BALANCE_INSUFFICIENT: "🐟额可用不够，草稿已保存。",
 } as const;

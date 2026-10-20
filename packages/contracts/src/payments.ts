@@ -139,6 +139,10 @@ export type Merchant = {
 } & ({ mode: "simulation"; scenario: SimulationScenario } | { mode: "real" });
 export type LdcOpeningBlockedReason =
   | "REAL_LDC_NOT_ENABLED"
+  /** 🐟额红包 (docs/balance-design.md §14): its switch is off. */
+  | "BALANCE_HONGBAO_PAUSED"
+  /** 🐟额红包: 可用 does not cover the total. */
+  | "BALANCE_INSUFFICIENT"
   | "TIMED_DRAW_NOT_ENABLED"
   | "MERCHANT_LEGACY"
   | "MERCHANT_CREDENTIALS_UNVERIFIED"

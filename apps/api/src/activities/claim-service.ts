@@ -4,6 +4,7 @@ import type {
   ParticipationMode,
 } from "@hb/contracts";
 import { and, eq, isNull } from "drizzle-orm";
+import { claimStatements } from "../balance/hongbao";
 import { createDb } from "../db/client";
 import {
   activities,
@@ -529,7 +530,7 @@ export async function completeClaimSubmission(
     const statements = [
       env.DB.prepare(`UPDATE activities SET version = CASE WHEN deleted_at IS NULL AND opened_at IS NOT NULL AND ended_at IS NULL AND archived_at IS NULL
           AND deadline > ${databaseNow} AND claimed_count < total_count
-          AND reward_type = 'ldc' AND EXISTS(SELECT 1 FROM users WHERE id=? AND active=1) AND author_id != ? AND merchant_id IS NOT NULL AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
+          AND reward_type = 'ldc' AND EXISTS(SELECT 1 FROM users WHERE id=? AND active=1) AND author_id != ? AND (funding = 'balance' OR merchant_id IS NOT NULL) AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
           AND NOT EXISTS (SELECT 1 FROM claims WHERE activity_id = ? AND user_id = ?)
           AND EXISTS (SELECT 1 FROM redemption_submissions s WHERE s.id = ? AND s.activity_id=activities.id
             AND s.user_id=? AND s.purpose = 'claim' AND s.outcome = 'pending'
@@ -573,7 +574,19 @@ export async function completeClaimSubmission(
       ).bind(claimId, submission.id),
     ];
     let paymentMerchantVersion: number | null = null;
-    if (activity.rewardType === "ldc") {
+    // A 🐟额红包's share moves inside 🐟额 in this same batch, with no
+    // payment (docs/balance-design.md §14).
+    if (activity.funding === "balance")
+      statements.push(
+        ...claimStatements(
+          env,
+          activity.id,
+          claimId,
+          submission.userId,
+          reward.id,
+        ),
+      );
+    else if (activity.rewardType === "ldc") {
       if (!activity.paymentMode)
         throw new Error("LDC activity has no payment mode");
       const recipient = await paymentRecipient(

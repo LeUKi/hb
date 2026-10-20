@@ -56,7 +56,8 @@ const recordsQuery = validator(
       filter !== "all" &&
       filter !== "topup" &&
       filter !== "withdrawal" &&
-      filter !== "adjustment"
+      filter !== "adjustment" &&
+      filter !== "hongbao"
     )
       throw new ActivityError(400, "INVALID_FILTER", "筛选无效");
     if (value.cursor !== undefined && typeof value.cursor !== "string")
@@ -104,6 +105,7 @@ export const balanceRoutes = new Hono<ApiContext>()
         topupFeePercent: settings.topupFeePercent,
         withdrawFeePercent: settings.withdrawFeePercent,
         withdrawMaxMinor: settings.withdrawMaxMinor,
+        hongbaoEnabled: settings.hongbaoEnabled,
         topupMinMinor: BALANCE_LIMITS.topupMinMinor,
         topupMaxMinor: BALANCE_LIMITS.topupMaxMinor,
         topupDailyHintMinor: BALANCE_LIMITS.topupDailyHintMinor,
@@ -115,6 +117,19 @@ export const balanceRoutes = new Hono<ApiContext>()
       /** 转入 not arrived yet (待确认 or 未完成). */
       openTopups: pending?.count ?? 0,
       ...records,
+    });
+  })
+  // The 发红包 form's “从哪发” (docs/balance-design.md §14): shown only
+  // while 🐟额红包 are on and there is something to send.
+  .get("/me/balance/hongbao", async (c) => {
+    const session = await requireAuth(c);
+    const [settings, account] = await Promise.all([
+      readBalanceSettings(c.env),
+      readAccount(c.env, session.user.id),
+    ]);
+    return c.json({
+      available: settings.hongbaoEnabled && account.availableMinor >= 1,
+      availableMinor: account.availableMinor,
     });
   })
   .post(

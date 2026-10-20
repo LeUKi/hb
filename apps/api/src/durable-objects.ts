@@ -721,16 +721,17 @@ export class ActivityDO extends DurableObject<ApiBindings> {
             if ("registration" in result) await this.scheduleDraw(id);
             if (result.result === "claimed" || result.result === "registered")
               this.announce(id);
-            if ("claim" in result && result.claim.rewardType === "ldc") {
+            // A 🐟额红包's claim has no payment: its 🐟 is in already.
+            const payment =
+              "claim" in result ? result.claim.payment : undefined;
+            if (payment) {
               this.ctx.waitUntil(
-                flushPaymentOutbox(this.env, result.claim.payment.id).catch(
-                  () => {
-                    // The committed Outbox and Cron retain responsibility if this wake fails.
-                    console.error("payment_claim_wake_failed", {
-                      activityId: id,
-                    });
-                  },
-                ),
+                flushPaymentOutbox(this.env, payment.id).catch(() => {
+                  // The committed Outbox and Cron retain responsibility if this wake fails.
+                  console.error("payment_claim_wake_failed", {
+                    activityId: id,
+                  });
+                }),
               );
             }
             return Response.json(

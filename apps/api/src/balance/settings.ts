@@ -16,11 +16,12 @@ type SettingsRow = {
   topup_fee_percent: number;
   withdraw_fee_percent: number;
   withdraw_max_minor: number;
+  hongbao_enabled: number;
   updated_at: number;
 };
 
 const SELECT_SETTINGS = `SELECT version,topup_enabled,withdraw_enabled,topup_fee_percent,
-  withdraw_fee_percent,withdraw_max_minor,updated_at
+  withdraw_fee_percent,withdraw_max_minor,hongbao_enabled,updated_at
   FROM balance_settings WHERE id='global'`;
 
 function settingsOf(row: SettingsRow): BalanceSettings {
@@ -31,6 +32,7 @@ function settingsOf(row: SettingsRow): BalanceSettings {
     topupFeePercent: row.topup_fee_percent,
     withdrawFeePercent: row.withdraw_fee_percent,
     withdrawMaxMinor: row.withdraw_max_minor,
+    hongbaoEnabled: row.hongbao_enabled === 1,
     updatedAt: row.updated_at,
   };
 }
@@ -81,13 +83,14 @@ export async function requireBalanceEntry(
   return access;
 }
 
-function snapshot(settings: BalanceSettingsInput) {
+function snapshot(settings: Required<BalanceSettingsInput>) {
   return JSON.stringify({
     topupEnabled: settings.topupEnabled,
     withdrawEnabled: settings.withdrawEnabled,
     topupFeePercent: settings.topupFeePercent,
     withdrawFeePercent: settings.withdrawFeePercent,
     withdrawMaxMinor: settings.withdrawMaxMinor,
+    hongbaoEnabled: settings.hongbaoEnabled,
   });
 }
 
@@ -96,8 +99,12 @@ export async function updateBalanceSettings(
   actorUserId: string,
   input: UpdateBalanceSettingsInput,
 ) {
-  const { expectedVersion, ...next } = input;
+  const { expectedVersion, ...change } = input;
   const previous = await readBalanceSettings(env);
+  const next = {
+    ...change,
+    hongbaoEnabled: change.hongbaoEnabled ?? previous.hongbaoEnabled,
+  };
   try {
     await env.DB.batch([
       env.DB.prepare(`SELECT json(CASE WHEN EXISTS(
@@ -115,7 +122,7 @@ export async function updateBalanceSettings(
       ),
       env.DB.prepare(`UPDATE balance_settings SET version=version+1,
         topup_enabled=?,withdraw_enabled=?,topup_fee_percent=?,withdraw_fee_percent=?,
-        withdraw_max_minor=?,
+        withdraw_max_minor=?,hongbao_enabled=?,
         updated_at=${databaseNow},updated_by_user_id=?
         WHERE id='global' AND version=?`).bind(
         Number(next.topupEnabled),
@@ -123,6 +130,7 @@ export async function updateBalanceSettings(
         next.topupFeePercent,
         next.withdrawFeePercent,
         next.withdrawMaxMinor,
+        Number(next.hongbaoEnabled),
         actorUserId,
         expectedVersion,
       ),

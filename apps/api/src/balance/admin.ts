@@ -1,5 +1,6 @@
 // 网站管理 · 🐟额 (docs/balance-design.md §7): what is held, what needs a
 // look, every 转入 and 调整.
+import { databaseNow } from "../activities/lifecycle";
 import type { ApiBindings } from "../env";
 import { credentialVerificationView } from "../payments/verification";
 import { memberOf } from "./invites";
@@ -55,8 +56,9 @@ function withdrawalNeedsLook(now = Date.now()) {
 
 /**
  * Where the ledger disagrees with itself (none, normally; the triggers in
- * 0029 and 0030 keep it so): an account against its entries or its locks,
- * a 转出 against its lock or its payment.
+ * 0029, 0030 and 0033 keep it so): an account against its entries or its
+ * locks, a 转出 against its lock or its payment, a 🐟额红包 against its lock
+ * and its claims (docs/balance-design.md §14).
  */
 const MISMATCHES = `SELECT
   (SELECT COUNT(*) FROM balance_accounts a WHERE
@@ -66,7 +68,21 @@ const MISMATCHES = `SELECT
   + (SELECT COUNT(*) FROM balance_withdrawals w WHERE
     (w.status='sending') != EXISTS(SELECT 1 FROM balance_locks l WHERE l.withdrawal_id=w.id AND l.status='active')
     OR (w.status='sending' AND EXISTS(SELECT 1 FROM payment_tasks p WHERE p.withdrawal_id=w.id AND p.status IN ('confirmed','failed')))
-    OR NOT EXISTS(SELECT 1 FROM payment_tasks p WHERE p.withdrawal_id=w.id)) AS count`;
+    OR NOT EXISTS(SELECT 1 FROM payment_tasks p WHERE p.withdrawal_id=w.id))
+  + (SELECT COUNT(*) FROM activities a WHERE a.funding='balance' AND a.opened_at IS NOT NULL AND (
+    -- Open and not all taken: one active lock; ended a while ago: none left.
+    (a.ended_at IS NULL) != EXISTS(SELECT 1 FROM balance_locks l WHERE l.activity_id=a.id AND l.status='active')
+      AND (a.ended_at IS NULL OR a.ended_at < ${databaseNow} - 1800000)
+    -- What left the lock is what claims took.
+    OR EXISTS(SELECT 1 FROM balance_locks l WHERE l.activity_id=a.id AND l.amount_minor
+      != l.remaining_minor
+        + COALESCE((SELECT -SUM(e.locked_delta_minor) FROM balance_entries e WHERE e.lock_id=l.id AND e.kind IN ('deduct','unlock')),0)
+      OR COALESCE((SELECT -SUM(e.locked_delta_minor) FROM balance_entries e WHERE e.lock_id=l.id AND e.kind='deduct'),0)
+        != COALESCE((SELECT SUM(e.available_delta_minor) FROM balance_entries e WHERE e.lock_id=l.id AND e.kind='hongbao'),0))))
+  -- Each claim of a 🐟额红包: one share out of the lock, the same share in.
+  + (SELECT COUNT(*) FROM claims c JOIN activities a ON a.id=c.activity_id WHERE a.funding='balance'
+    AND NOT EXISTS(SELECT 1 FROM balance_entries d JOIN balance_entries h ON h.claim_id=d.claim_id AND h.kind='hongbao'
+      WHERE d.claim_id=c.id AND d.kind='deduct' AND -d.locked_delta_minor=h.available_delta_minor)) AS count`;
 
 /** For 网站管理 · 概览's 需要留意: the 转入 and 转出 to look at. */
 export async function balanceAttentionCounts(env: ApiBindings) {

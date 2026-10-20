@@ -79,7 +79,7 @@ async function fixture(
     });
     if (!("claim" in result) || result.claim.rewardType !== "ldc")
       throw new Error("Expected LDC claim");
-    taskIds.push(result.claim.payment.id);
+    taskIds.push(result.claim.payment?.id ?? "");
   }
   const stub = env.MERCHANT_DO.get(
     env.MERCHANT_DO.idFromName(merchant.clientId),
@@ -396,7 +396,7 @@ describe("MerchantDO alarms and durable payment recovery", () => {
     const outbox = await env.DB.prepare(
       "SELECT delivered_at FROM payment_outbox WHERE task_id=?",
     )
-      .bind(result.result.claim.payment.id)
+      .bind(result.result.claim.payment?.id ?? "")
       .first<{ delivered_at: number | null }>();
     expect(outbox?.delivered_at).toEqual(expect.any(Number));
   });

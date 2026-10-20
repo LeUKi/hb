@@ -33,6 +33,8 @@ export type ActivityImageViewerState =
       amount: string;
       claimedAt: string | Date;
       paymentStatus?: ActivityImagePaymentStatus;
+      /** A 🐟额红包's: in the viewer's 🐟额 already, no payment. */
+      fish?: true;
     }
   /** A claim whose amount is not settled yet. */
   | { kind: "pending" }
@@ -70,6 +72,8 @@ export type ActivityImageInput = {
         /** 你已领取 / 你中奖了 */
         label: string;
         amount: string;
+        /** The small 🐟 after LDC: it is in 🐟额 (balance-design §14). */
+        fish?: true;
         status: { text: string; tone: ActivityImageTone };
         /** When the share was taken (a winner's: when the draw ran). */
         at: Date;
@@ -256,12 +260,16 @@ export function activityImageInput(input: {
           kind: "opened",
           label: isDraw ? "你中奖了" : "你已领取",
           amount: viewer.amount,
-          status: paymentWords(status),
+          ...(viewer.fish ? { fish: true as const } : {}),
+          status: viewer.fish
+            ? { text: "已存入🐟额", tone: "success" }
+            : paymentWords(status),
           at: new Date(viewer.claimedAt),
           opens: isDraw ? "报" : "开",
         },
-        // The payment may still move on; once sent, nothing will change.
-        live: status !== "confirmed",
+        // The payment may still move on; once sent (or in 🐟额), nothing
+        // will change.
+        live: !viewer.fish && status !== "confirmed",
       };
     }
     case "pending":
@@ -424,7 +432,7 @@ function sealMarkup(words: string, muted: boolean, className = "") {
 function describe(input: ActivityImageInput) {
   const as = `数据截至 ${clock(input.renderedAt, input.timeZone)}`;
   if (input.body.kind === "opened")
-    return `${input.body.label} ${input.body.amount} LDC，${input.body.status.text}；${as}`;
+    return `${input.body.label} ${input.body.amount} LDC${input.body.fish ? "（在🐟额）" : ""}，${input.body.status.text}；${as}`;
   return `${input.body.text}；${as}`;
 }
 
@@ -482,11 +490,11 @@ export function renderActivityImage(input: ActivityImageInput) {
   if (input.body.kind === "line") {
     below = `<text x="210" y="448" class="line">${escapeXml(input.body.text)}</text>`;
   } else {
-    const { label, amount, status, at } = input.body;
+    const { label, amount, status, at, fish } = input.body;
     const tone = toneColors[status.tone];
     const pillWidth = textWidth(status.text, 13) + 24;
     below = `<text x="210" y="318" class="label rise r1 motion">${escapeXml(label)}</text>
-  <text x="210" y="380" class="amount rise r2 motion"><tspan>+${escapeXml(amount)}</tspan><tspan class="unit" dx="6">LDC</tspan></text>
+  <text x="210" y="380" class="amount rise r2 motion"><tspan>+${escapeXml(amount)}</tspan><tspan class="unit" dx="6">LDC</tspan>${fish ? `<tspan class="fish" dx="3">🐟</tspan>` : ""}</text>
   <g class="rise r3 motion">
     <path d="${squirclePath(210 - pillWidth / 2, 400, pillWidth, 26, 9)}" fill="${tone.fill}"/>
     <text x="210" y="417.5" class="pill" fill="${tone.text}">${escapeXml(status.text)}</text>
@@ -550,6 +558,7 @@ export function renderActivityImage(input: ActivityImageInput) {
     .label { font-size: 15px; fill: #745c61; }
     .amount { font-size: 56px; font-weight: 700; fill: #1e8a57; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
     .unit { font-size: 20px; font-weight: 600; }
+    .fish { font-family: ${EMOJI}; font-size: 15px; }
     .pill { font-size: 13px; font-weight: 500; }
     .when, .foot { font-size: 12px; fill: #9a7f85; }
     .stale { font-size: 12px; opacity: 0; }

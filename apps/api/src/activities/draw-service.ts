@@ -3,6 +3,7 @@ import {
   amountToMinor,
   type TimedDrawMoney,
 } from "@hb/contracts";
+import { drawStatements, refundStatement } from "../balance/hongbao";
 import type { ApiBindings } from "../env";
 import { paymentBusinessNo } from "../payments/business-no";
 import { claimPaymentParameterDigest } from "../payments/policy";
@@ -251,13 +252,17 @@ export async function publishDrawPlan(env: ApiBindings, activityId: string) {
     if (!saved) return false;
     const plan = JSON.parse(saved.payload) as DrawPlan;
     validatePlan(activity, plan, saved.participant_count);
-    if (!activity.merchantId || !activity.paymentMode)
+    // A 🐟额红包's prizes move inside 🐟额: no merchant, no payments.
+    const balance = activity.funding === "balance";
+    if ((!balance && !activity.merchantId) || !activity.paymentMode)
       throw new Error("Drawing merchant is missing");
-    const merchant = await env.DB.prepare(
-      "SELECT client_id,version FROM merchants WHERE id=? AND author_id=? AND mode=?",
-    )
-      .bind(activity.merchantId, activity.authorId, activity.paymentMode)
-      .first<{ client_id: string; version: number }>();
+    const merchant = balance
+      ? { client_id: "", version: 0 }
+      : await env.DB.prepare(
+          "SELECT client_id,version FROM merchants WHERE id=? AND author_id=? AND mode=?",
+        )
+          .bind(activity.merchantId, activity.authorId, activity.paymentMode)
+          .first<{ client_id: string; version: number }>();
     if (!merchant) throw new Error("Drawing merchant is inconsistent");
     const profiles =
       await env.DB.prepare(`SELECT u.id,u.username,u.external_id FROM users u
@@ -281,6 +286,13 @@ export async function publishDrawPlan(env: ApiBindings, activityId: string) {
           throw new Error("Drawing recipient is inconsistent");
         if (activity.paymentMode === "real")
           assertUint64Decimal(winner.recipientId);
+        if (balance)
+          return {
+            ...winner,
+            recipientUsername: user.username,
+            deductId: crypto.randomUUID(),
+            creditId: crypto.randomUUID(),
+          };
         const businessNo = paymentBusinessNo(winner.claimId);
         const recoveryPolicy =
           activity.paymentMode === "real"
@@ -315,8 +327,10 @@ export async function publishDrawPlan(env: ApiBindings, activityId: string) {
     const statements = [
       env.DB.prepare(`SELECT json(CASE WHEN EXISTS(SELECT 1 FROM activities a JOIN activity_draw_plans d ON d.activity_id=a.id
         WHERE a.id=? AND a.reward_type='ldc' AND a.draw_state='settling' AND a.deleted_at IS NULL AND a.registered_count=d.participant_count AND d.payload=?
-        AND a.merchant_id=? AND a.payment_mode=? AND a.claimed_count=0
-        AND NOT EXISTS(SELECT 1 FROM reward_inventory WHERE activity_id=a.id))
+        AND a.merchant_id IS ? AND a.payment_mode=? AND a.claimed_count=0
+        AND NOT EXISTS(SELECT 1 FROM reward_inventory WHERE activity_id=a.id)
+        AND (a.funding='merchant' OR EXISTS(SELECT 1 FROM balance_locks l WHERE l.activity_id=a.id
+          AND l.status='active' AND l.remaining_minor=l.amount_minor)))
         AND (SELECT COUNT(*) FROM json_each(?) w JOIN users u ON u.id=json_extract(w.value,'$.userId')
           JOIN activity_registrations r ON r.id=json_extract(w.value,'$.registrationId')
           WHERE u.username=json_extract(w.value,'$.recipientUsername') AND r.activity_id=?
@@ -336,23 +350,27 @@ export async function publishDrawPlan(env: ApiBindings, activityId: string) {
       env.DB.prepare(`INSERT INTO claims(id,activity_id,user_id,inventory_id,password_id,claimed_at)
         SELECT json_extract(value,'$.claimId'),?,json_extract(value,'$.userId'),json_extract(value,'$.inventoryId'),json_extract(value,'$.passwordId'),${databaseNow}
         FROM json_each(?)`).bind(activityId, payload),
-      env.DB.prepare(`INSERT INTO payment_tasks(id,claim_id,source,acceptance_id,merchant_id,client_id,business_no,recipient_id,recipient_username,amount_minor,mode,status,next_run_at,created_at,updated_at,recovery_policy,parameter_digest)
+      ...(balance
+        ? drawStatements(env, activityId, payload)
+        : [
+            env.DB.prepare(`INSERT INTO payment_tasks(id,claim_id,source,acceptance_id,merchant_id,client_id,business_no,recipient_id,recipient_username,amount_minor,mode,status,next_run_at,created_at,updated_at,recovery_policy,parameter_digest)
         SELECT json_extract(value,'$.taskId'),json_extract(value,'$.claimId'),'claim',NULL,?,
         (SELECT client_id FROM merchants WHERE id=? AND author_id=? AND mode=? AND version=?),
         json_extract(value,'$.businessNo'),json_extract(value,'$.recipientId'),json_extract(value,'$.recipientUsername'),json_extract(value,'$.amountMinor'),?,
         'pending',${databaseNow},${databaseNow},${databaseNow},json_extract(value,'$.recoveryPolicy'),json_extract(value,'$.parameterDigest') FROM json_each(?)`).bind(
-        activity.merchantId,
-        activity.merchantId,
-        activity.authorId,
-        activity.paymentMode,
-        merchant.version,
-        activity.paymentMode,
-        payload,
-      ),
-      env.DB.prepare(`INSERT INTO payment_outbox(id,task_id,created_at)
+              activity.merchantId,
+              activity.merchantId,
+              activity.authorId,
+              activity.paymentMode,
+              merchant.version,
+              activity.paymentMode,
+              payload,
+            ),
+            env.DB.prepare(`INSERT INTO payment_outbox(id,task_id,created_at)
         SELECT json_extract(value,'$.outboxId'),json_extract(value,'$.taskId'),${databaseNow} FROM json_each(?)`).bind(
-        payload,
-      ),
+              payload,
+            ),
+          ]),
       env.DB.prepare(`UPDATE attempt_events SET claim_id=(SELECT json_extract(w.value,'$.claimId') FROM json_each(?) w
         JOIN redemption_submissions s ON s.registration_id=json_extract(w.value,'$.registrationId') AND s.outcome='registered'
         WHERE s.id=attempt_events.submission_row_id)
@@ -368,6 +386,8 @@ export async function publishDrawPlan(env: ApiBindings, activityId: string) {
         winners.length ? "completed" : "empty",
         activityId,
       ),
+      // What the prizes left of a 🐟额红包's pool goes back now.
+      ...(balance ? [refundStatement(env, activityId)] : []),
     ];
     try {
       await env.DB.batch(statements);

@@ -138,6 +138,13 @@ export const activities = sqliteTable(
     title: text("title").notNull(),
     merchantId: text("merchant_id").references(() => merchants.id),
     paymentMode: text("payment_mode", { enum: ["simulation", "real"] }),
+    /**
+     * 商户直发 (merchant_id pays each claim) or 🐟额红包 (the author's 🐟额,
+     * locked at opening; no merchant). docs/balance-design.md §14.
+     */
+    funding: text("funding", { enum: ["merchant", "balance"] })
+      .notNull()
+      .default("merchant"),
     rewardType: text("reward_type", { enum: ["text", "ldc"] })
       .notNull()
       .default("text"),
@@ -1060,6 +1067,10 @@ export const balanceSettings = sqliteTable(
     topupFeePercent: integer("topup_fee_percent").notNull().default(12),
     withdrawFeePercent: integer("withdraw_fee_percent").notNull().default(12),
     withdrawMaxMinor: integer("withdraw_max_minor").notNull().default(100000),
+    /** 🐟额红包 may be made and opened (docs/balance-design.md §14). */
+    hongbaoEnabled: integer("hongbao_enabled", { mode: "boolean" })
+      .notNull()
+      .default(false),
     updatedAt: integer("updated_at").notNull(),
     updatedByUserId: text("updated_by_user_id"),
   },
@@ -1301,15 +1312,18 @@ export const balanceEntries = sqliteTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id),
+    /** hongbao: a 🐟额红包's share, into its claimant's 可用. */
     kind: text("kind", {
-      enum: ["topup", "adjustment", "lock", "unlock", "deduct"],
+      enum: ["topup", "adjustment", "lock", "unlock", "deduct", "hongbao"],
     }).notNull(),
     availableDeltaMinor: integer("available_delta_minor").notNull(),
     lockedDeltaMinor: integer("locked_delta_minor").notNull().default(0),
     topupId: text("topup_id").references(() => balanceTopups.id),
     adjustmentId: text("adjustment_id").references(() => balanceAdjustments.id),
-    /** A lock (转出, later 🐟 红包): balance_locks, checked by trigger. */
+    /** A lock (转出, 🐟额红包): balance_locks, checked by trigger. */
     lockId: text("lock_id"),
+    /** A 🐟额红包's claim: its share's deduct and its hongbao. */
+    claimId: text("claim_id").references(() => claims.id),
     createdAt: integer("created_at").notNull(),
   },
   (table) => [
@@ -1326,6 +1340,13 @@ export const balanceEntries = sqliteTable(
     uniqueIndex("balance_entries_unlock_unique")
       .on(table.lockId)
       .where(sql`${table.kind} = 'unlock'`),
+    // A claim's share leaves the lock once and arrives once.
+    uniqueIndex("balance_entries_claim_deduct_unique")
+      .on(table.claimId)
+      .where(sql`${table.kind} = 'deduct' AND ${table.claimId} IS NOT NULL`),
+    uniqueIndex("balance_entries_claim_hongbao_unique")
+      .on(table.claimId)
+      .where(sql`${table.kind} = 'hongbao'`),
     index("balance_entries_user_time_idx").on(
       table.userId,
       table.createdAt,
@@ -1333,11 +1354,12 @@ export const balanceEntries = sqliteTable(
     ),
     check(
       "balance_entries_shape_valid",
-      sql`(${table.kind} = 'topup' AND ${table.topupId} IS NOT NULL AND ${table.availableDeltaMinor} > 0 AND ${table.lockedDeltaMinor} = 0)
-        OR (${table.kind} = 'adjustment' AND ${table.adjustmentId} IS NOT NULL AND ${table.availableDeltaMinor} != 0 AND ${table.lockedDeltaMinor} = 0)
-        OR (${table.kind} = 'lock' AND ${table.lockId} IS NOT NULL AND ${table.availableDeltaMinor} < 0 AND ${table.lockedDeltaMinor} = -${table.availableDeltaMinor})
-        OR (${table.kind} = 'unlock' AND ${table.lockId} IS NOT NULL AND ${table.availableDeltaMinor} > 0 AND ${table.lockedDeltaMinor} = -${table.availableDeltaMinor})
-        OR (${table.kind} = 'deduct' AND ${table.lockId} IS NOT NULL AND ${table.availableDeltaMinor} = 0 AND ${table.lockedDeltaMinor} < 0)`,
+      sql`(${table.kind} = 'topup' AND ${table.topupId} IS NOT NULL AND ${table.availableDeltaMinor} > 0 AND ${table.lockedDeltaMinor} = 0 AND ${table.claimId} IS NULL)
+        OR (${table.kind} = 'adjustment' AND ${table.adjustmentId} IS NOT NULL AND ${table.availableDeltaMinor} != 0 AND ${table.lockedDeltaMinor} = 0 AND ${table.claimId} IS NULL)
+        OR (${table.kind} = 'lock' AND ${table.lockId} IS NOT NULL AND ${table.availableDeltaMinor} < 0 AND ${table.lockedDeltaMinor} = -${table.availableDeltaMinor} AND ${table.claimId} IS NULL)
+        OR (${table.kind} = 'unlock' AND ${table.lockId} IS NOT NULL AND ${table.availableDeltaMinor} > 0 AND ${table.lockedDeltaMinor} = -${table.availableDeltaMinor} AND ${table.claimId} IS NULL)
+        OR (${table.kind} = 'deduct' AND ${table.lockId} IS NOT NULL AND ${table.availableDeltaMinor} = 0 AND ${table.lockedDeltaMinor} < 0)
+        OR (${table.kind} = 'hongbao' AND ${table.lockId} IS NOT NULL AND ${table.claimId} IS NOT NULL AND ${table.availableDeltaMinor} > 0 AND ${table.lockedDeltaMinor} = 0)`,
     ),
   ],
 );
@@ -1423,7 +1445,7 @@ export const balanceLocks = sqliteTable(
       .references(() => users.id),
     purpose: text("purpose", { enum: ["withdrawal", "activity"] }).notNull(),
     withdrawalId: text("withdrawal_id").references(() => balanceWithdrawals.id),
-    /** Kept for 🐟 红包. */
+    /** A 🐟额红包's: one lock each (checked by trigger). */
     activityId: text("activity_id"),
     amountMinor: integer("amount_minor").notNull(),
     remainingMinor: integer("remaining_minor").notNull(),
@@ -1435,6 +1457,7 @@ export const balanceLocks = sqliteTable(
   },
   (table) => [
     uniqueIndex("balance_locks_withdrawal_unique").on(table.withdrawalId),
+    uniqueIndex("balance_locks_activity_unique").on(table.activityId),
     index("balance_locks_user_status_idx").on(table.userId, table.status),
     check(
       "balance_locks_purpose_valid",

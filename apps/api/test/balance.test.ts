@@ -933,19 +933,15 @@ describe("网站管理 · 🐟额", () => {
     await expect(
       env.DB.prepare("DELETE FROM balance_entries WHERE id='entry-db-1'").run(),
     ).rejects.toThrow(/append-only/);
-    // A lock larger than 可用 would take it below 0: refused.
-    await env.DB.prepare(
-      "INSERT INTO balance_locks (id,user_id,purpose,activity_id,amount_minor,remaining_minor,status,created_at,updated_at) VALUES ('lock-x',?,'activity','activity-x',200,200,'active',?,?)",
-    )
-      .bind(member.id, now, now)
-      .run();
+    // A 红包's lock needs its open 🐟额红包 (0033); one larger than 可用
+    // is refused when a 红包 opens (see 🐟额红包 below).
     await expect(
       env.DB.prepare(
-        "INSERT INTO balance_entries (id,user_id,kind,available_delta_minor,locked_delta_minor,lock_id,created_at) VALUES ('entry-db-2',?,'lock',-200,200,'lock-x',?)",
+        "INSERT INTO balance_locks (id,user_id,purpose,activity_id,amount_minor,remaining_minor,status,created_at,updated_at) VALUES ('lock-x',?,'activity','activity-x',200,200,'active',?,?)",
       )
-        .bind(member.id, now)
+        .bind(member.id, now, now)
         .run(),
-    ).rejects.toThrow(/BALANCE_INSUFFICIENT/);
+    ).rejects.toThrow(/open balance hongbao/);
     expect(
       await env.DB.prepare(
         "SELECT available_minor FROM balance_accounts WHERE user_id=?",

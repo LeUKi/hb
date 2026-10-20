@@ -1078,6 +1078,10 @@ function balanceAuditValues(json: unknown): Record<string, boolean | number> {
     topupFeePercent: Number(value.topupFeePercent ?? 0),
     withdrawFeePercent: Number(value.withdrawFeePercent ?? 0),
     withdrawMaxMinor: Number(value.withdrawMaxMinor ?? 0),
+    // 🐟额红包 (0033): changes from before it have no such field.
+    ...("hongbaoEnabled" in value
+      ? { hongbaoEnabled: value.hongbaoEnabled === true }
+      : {}),
     ...("allowlistEnabled" in value
       ? {
           allowlistEnabled: value.allowlistEnabled === true,

@@ -232,6 +232,13 @@
       "when": 1792417787364,
       "tag": "0032_fish_invite_links",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1792457287026,
+      "tag": "0033_fish_hongbao",
+      "breakpoints": true
     }
   ]
 }

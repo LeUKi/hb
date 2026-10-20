@@ -283,9 +283,24 @@ export const ldcMoneySchema = z.discriminatedUnion("mode", [
 export type LdcMoney = z.infer<typeof ldcMoneySchema>;
 export type RandomLdcMoney = Extract<LdcMoney, { mode: "random" }>;
 export type TimedDrawMoney = Extract<LdcMoney, { mode: "timed_draw" }>;
+/**
+ * Where a 红包's LDC comes from (docs/balance-design.md §14): the author's
+ * Credit merchant app paying each claim (商户直发), or their 🐟额, locked
+ * when it opens and credited to each claimant's 🐟额 on the spot.
+ */
+export const activityFundingSchema = z.enum(["merchant", "balance"]);
+export type ActivityFunding = z.infer<typeof activityFundingSchema>;
+/** Absent on everything saved before 🐟额红包: 商户直发. */
+export function fundingOf(value: { funding?: ActivityFunding | null }) {
+  return value.funding ?? "merchant";
+}
+
 const ldcActivitySchema = baseActivitySchema.extend({
   rewardType: z.literal("ldc"),
-  merchantId: z.uuid(),
+  // Optional (not defaulted) for the same reason as participationMode.
+  funding: activityFundingSchema.optional(),
+  /** The paying merchant; empty for a 🐟额红包. */
+  merchantId: z.union([z.uuid(), z.literal("")]),
   money: ldcMoneySchema,
 });
 
@@ -293,6 +308,13 @@ function validateActivity(
   activity: z.infer<typeof ldcActivitySchema>,
   context: z.RefinementCtx,
 ) {
+  const balance = fundingOf(activity) === "balance";
+  if (balance ? activity.merchantId !== "" : activity.merchantId === "")
+    context.addIssue({
+      code: "custom",
+      path: ["merchantId"],
+      message: balance ? "🐟额红包不用商户" : "请先配置 LDC 商户",
+    });
   if (activity.participationMode === "direct") {
     if (activity.passwords.length > 0)
       context.addIssue({
@@ -558,6 +580,8 @@ export type ActivitySummary = {
   id: string;
   title: string;
   rewardType: "ldc";
+  /** Absent: 商户直发. */
+  funding?: ActivityFunding;
   forceDedicated: boolean;
   status: ActivityStatus;
   version: number;
@@ -592,6 +616,8 @@ export type PublicActivity = {
   id: string;
   title: string;
   rewardType: "ldc";
+  /** Absent: 商户直发. */
+  funding?: ActivityFunding;
   status: ActivityStatus;
   author: ActivityAuthor;
   forceDedicated: boolean;
@@ -768,12 +794,15 @@ export type ClaimSummary = {
   claimedAt: string;
   sourcePassword?: string;
   amount?: string;
+  /** None for a 🐟额红包: the amount is in the claimant's 🐟额 already. */
   payment?: PaymentView;
 };
 export type ParticipationActivity = {
   participationMode?: ParticipationMode;
   id: string;
   title: string;
+  /** Absent: 商户直发. */
+  funding?: ActivityFunding;
   status: ActivityStatus;
   deadlineAt?: string | null;
   createdAt?: string;
@@ -783,7 +812,7 @@ export type ParticipationActivity = {
 };
 export type ClaimDetail = Omit<ClaimSummary, "rewardType"> & {
   afterClaimInfo: string;
-} & { rewardType: "ldc"; amount: string; payment: PaymentView };
+} & { rewardType: "ldc"; amount: string; payment?: PaymentView };
 export type ClaimResult = (
   | { result: "claimed" | "already_claimed"; claim: ClaimDetail }
   | {
@@ -828,7 +857,7 @@ export type AuthorClaim = Omit<ClaimDetail, "afterClaimInfo"> & {
   speedTitle?: RecipientSpeedTitle;
   /** 手气王 / 手气亡, over the whole roster, as the public list has them. */
   title?: "highest" | "lowest";
-} & { rewardType: "ldc"; amount: string; payment: PaymentView };
+} & { rewardType: "ldc"; amount: string; payment?: PaymentView };
 export type AuthorClaimList = {
   items: AuthorClaim[];
   nextCursor: string | null;

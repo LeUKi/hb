@@ -104,6 +104,8 @@ export const balanceSettingsSchema = z.strictObject({
     .int()
     .min(BALANCE_LIMITS.withdrawMinMinor)
     .max(BALANCE_LIMITS.topupMaxMinor),
+  /** 🐟额红包 (docs/balance-design.md §14); left as it is when absent. */
+  hongbaoEnabled: z.boolean().optional(),
 });
 export type BalanceSettingsInput = z.infer<typeof balanceSettingsSchema>;
 
@@ -114,7 +116,7 @@ export type UpdateBalanceSettingsInput = z.infer<
   typeof updateBalanceSettingsSchema
 >;
 
-export type BalanceSettings = BalanceSettingsInput & {
+export type BalanceSettings = Required<BalanceSettingsInput> & {
   version: number;
   updatedAt: number;
 };

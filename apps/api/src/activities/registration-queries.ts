@@ -134,6 +134,9 @@ async function registrationDetailsBatch(
             id: activity.id,
             title: activity.title,
             participationMode: activity.participationMode,
+            ...(activity.funding === "balance"
+              ? { funding: "balance" as const }
+              : {}),
             status: activityStatus(activity),
             deadlineAt:
               activity.deadline === null

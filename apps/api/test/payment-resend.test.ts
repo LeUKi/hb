@@ -272,7 +272,7 @@ async function due(f: Fixture) {
 }
 async function resendUntil(f: Fixture) {
   return (await getClaimDetail(f.bindings, f.claimId, f.recipient)).payment
-    .resendUntil;
+    ?.resendUntil;
 }
 async function refusal(promise: Promise<unknown>) {
   const error = await promise.then(

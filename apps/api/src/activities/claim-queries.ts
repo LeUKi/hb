@@ -16,6 +16,7 @@ import {
   activityPasswords,
   claims,
   paymentTasks,
+  rewardInventory,
   users,
 } from "../db/schema";
 import type { ApiBindings } from "../env";
@@ -89,6 +90,9 @@ export function projectClaimSummary(
       id: activity.id,
       title: activity.title,
       participationMode: activity.participationMode,
+      ...(activity.funding === "balance"
+        ? { funding: "balance" as const }
+        : {}),
       status: activityStatus(activity),
       deadlineAt:
         activity.deadline === null
@@ -198,7 +202,11 @@ export async function claimSummariesBatch(
 ): Promise<Map<string, ClaimSummary>> {
   if (!rows.length) return new Map();
   const ids = rows.map((row) => row.claim.id);
-  const [sources, payments] = await Promise.all([
+  // A 🐟额红包's claim has no payment: its share is what it was given.
+  const fishInventory = rows
+    .filter(({ activity }) => activity.funding === "balance")
+    .map(({ claim }) => claim.inventoryId);
+  const [sources, payments, shares] = await Promise.all([
     sourcePasswordsBatch(
       env,
       rows.map(({ claim }) => claim),
@@ -209,7 +217,17 @@ export async function claimSummariesBatch(
           .from(paymentTasks)
           .where(inArray(paymentTasks.claimId, ids))
       : Promise.resolve([]),
+    fishInventory.length
+      ? createDb(env.DB)
+          .select({
+            id: rewardInventory.id,
+            amountMinor: rewardInventory.amountMinor,
+          })
+          .from(rewardInventory)
+          .where(inArray(rewardInventory.id, fishInventory))
+      : Promise.resolve([]),
   ]);
+  const shareOf = new Map(shares.map((row) => [row.id, row.amountMinor]));
   const byClaim = new Map(
     payments.map((payment) => [payment.claimId, payment]),
   );
@@ -229,6 +247,20 @@ export async function claimSummariesBatch(
   return new Map(
     rows.map(({ claim, activity }) => {
       const payment = byClaim.get(claim.id);
+      const sourcePassword =
+        claim.passwordId === null ? undefined : sources.get(claim.passwordId);
+      if (activity.funding === "balance") {
+        const share = shareOf.get(claim.inventoryId);
+        if (share == null) throw new Error("🐟额 claim has no share");
+        return [
+          claim.id,
+          {
+            ...projectClaimSummary(claim, activity),
+            ...(sourcePassword === undefined ? {} : { sourcePassword }),
+            amount: formatAmount(share),
+          },
+        ];
+      }
       if (!payment) throw new Error("LDC claim has no payment task");
       const resendUntil = resendDeadline(
         payment,
@@ -238,8 +270,6 @@ export async function claimSummariesBatch(
       const resumeAt = queued(payment.status)
         ? held.get(payment.merchantId)
         : undefined;
-      const sourcePassword =
-        claim.passwordId === null ? undefined : sources.get(claim.passwordId);
       return [
         claim.id,
         {
@@ -284,7 +314,10 @@ export async function claimDetailsBatch(
         const afterClaimInfo = (JSON.parse(activity.config) as ActivityInput)
           .afterClaimInfo;
         if (activity.rewardType !== "ldc") activityNotFound();
-        if (!base.payment || base.amount === undefined)
+        if (
+          base.amount === undefined ||
+          (!base.payment && activity.funding !== "balance")
+        )
           throw new Error("LDC claim has no payment task");
         return [
           claim.id,
@@ -293,7 +326,6 @@ export async function claimDetailsBatch(
             afterClaimInfo,
             rewardType: "ldc",
             amount: base.amount,
-            payment: base.payment,
           },
         ];
       },
@@ -430,11 +462,13 @@ export async function listPublicRecipients(
       username: users.username,
       displayName: users.displayName,
       avatarUrl: users.avatarUrl,
-      amountMinor: paymentTasks.amountMinor,
+      // The share each was given: a payment's amount is the same (a
+      // trigger holds it), and a 🐟额红包 has no payment.
+      amountMinor: rewardInventory.amountMinor,
     })
     .from(claims)
     .innerJoin(users, eq(users.id, claims.userId))
-    .leftJoin(paymentTasks, eq(paymentTasks.claimId, claims.id))
+    .leftJoin(rewardInventory, eq(rewardInventory.id, claims.inventoryId))
     .where(and(eq(claims.activityId, activityId), afterCursor(after)))
     .orderBy(asc(claims.claimedAt), asc(claims.id))
     .limit(21);
@@ -531,8 +565,8 @@ async function publicRecipientTitles(
   const empty = noTitles();
   if (activity.rewardType !== "ldc") return empty;
   const bounds =
-    await env.DB.prepare(`SELECT COUNT(*) AS count,MIN(p.amount_minor) AS minimum,MAX(p.amount_minor) AS maximum
-    FROM claims c JOIN payment_tasks p ON p.claim_id=c.id AND p.source='claim' WHERE c.activity_id=?`)
+    await env.DB.prepare(`SELECT COUNT(*) AS count,MIN(r.amount_minor) AS minimum,MAX(r.amount_minor) AS maximum
+    FROM claims c JOIN reward_inventory r ON r.id=c.inventory_id WHERE c.activity_id=?`)
       .bind(activity.id)
       .first<{
         count: number;
@@ -548,13 +582,13 @@ async function publicRecipientTitles(
   )
     return empty;
   const [highest, lowest] = await env.DB.batch<{ id: string }>([
-    env.DB.prepare(`SELECT c.id FROM claims c JOIN payment_tasks p ON p.claim_id=c.id AND p.source='claim'
-      WHERE c.activity_id=? AND p.amount_minor=? ORDER BY c.id LIMIT 3`).bind(
+    env.DB.prepare(`SELECT c.id FROM claims c JOIN reward_inventory r ON r.id=c.inventory_id
+      WHERE c.activity_id=? AND r.amount_minor=? ORDER BY c.id LIMIT 3`).bind(
       activity.id,
       bounds.maximum,
     ),
-    env.DB.prepare(`SELECT c.id FROM claims c JOIN payment_tasks p ON p.claim_id=c.id AND p.source='claim'
-      WHERE c.activity_id=? AND p.amount_minor=? ORDER BY c.id LIMIT 3`).bind(
+    env.DB.prepare(`SELECT c.id FROM claims c JOIN reward_inventory r ON r.id=c.inventory_id
+      WHERE c.activity_id=? AND r.amount_minor=? ORDER BY c.id LIMIT 3`).bind(
       activity.id,
       bounds.minimum,
     ),

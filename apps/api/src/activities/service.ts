@@ -13,6 +13,7 @@ import {
   type CreateActivityInput,
   DEFAULT_DURATION_MS,
   formatAmount,
+  fundingOf,
   type LdcActivityInput,
   type LdcOpeningBlockedReason,
   ldcAmounts,
@@ -27,6 +28,13 @@ import {
   type UpdateActivityInput,
 } from "@hb/contracts";
 import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
+import {
+  balanceOpeningBlocked,
+  balancePaymentMode,
+  insufficientMessage,
+  lockStatements,
+  requireBalanceFunding,
+} from "../balance/hongbao";
 import { createDb } from "../db/client";
 import { activities, users } from "../db/schema";
 import type { ApiBindings } from "../env";
@@ -40,7 +48,11 @@ import {
   beginCredentialVerification,
   credentialVerificationView,
 } from "../payments/verification";
-import { isLocalSimulation } from "../runtime/controls";
+import {
+  allowsRealOpening,
+  isLocalSimulation,
+  readPlatformControls,
+} from "../runtime/controls";
 import { digestPassword } from "../security/crypto";
 import { drawSummary, timedDrawMoney } from "./draw-storage";
 import {
@@ -223,6 +235,7 @@ export function projectActivitySummary(row: ActivityRow): ActivitySummary {
     totalCount: row.totalCount,
     claimedCount: row.claimedCount,
     reward: rewardSummary(row),
+    ...(row.funding === "balance" ? { funding: "balance" as const } : {}),
     ...(row.paymentMode ? { paymentMode: row.paymentMode } : {}),
     ...(drawSummary(row) ? { draw: drawSummary(row) } : {}),
   };
@@ -232,8 +245,18 @@ async function openingBlockedReason(
   env: ApiBindings,
   row: ActivityRow,
 ): Promise<LdcOpeningBlockedReason | undefined> {
-  if (row.openedAt !== null || row.rewardType !== "ldc" || !row.merchantId)
-    return undefined;
+  if (row.openedAt !== null || row.rewardType !== "ldc") return undefined;
+  if (row.funding === "balance") {
+    if (timedDrawMoney(row) && env.LDC_TIMED_DRAW_ENABLED !== "true")
+      return "TIMED_DRAW_NOT_ENABLED";
+    if (
+      row.paymentMode === "real" &&
+      !allowsRealOpening(env, await readPlatformControls(env))
+    )
+      return "REAL_LDC_NOT_ENABLED";
+    return balanceOpeningBlocked(env, row.authorId, configuration(row));
+  }
+  if (!row.merchantId) return undefined;
   if (timedDrawMoney(row) && env.LDC_TIMED_DRAW_ENABLED !== "true")
     return "TIMED_DRAW_NOT_ENABLED";
   const merchant = await ownedMerchant(env, row.merchantId, row.authorId);
@@ -373,6 +396,7 @@ export function projectPublicActivity(
     deadlineAt: iso(row.deadline),
     quantity: publicQuantity(row, config),
     reward: rewardSummary(row, config.quantityVisibility === "exact"),
+    ...(row.funding === "balance" ? { funding: "balance" as const } : {}),
     ...(row.rewardType === "ldc" && row.paymentMode
       ? { paymentMode: row.paymentMode }
       : {}),
@@ -501,11 +525,11 @@ export async function createActivity(
   const checked = newActivityInputSchema.safeParse(input.activity);
   if (!checked.success)
     invalidActivity(checked.error.issues[0]?.message ?? "请检查新红包的配置");
-  const merchant = await ownedMerchant(
-    env,
-    input.activity.merchantId,
-    authorId,
-  );
+  const balance = fundingOf(input.activity) === "balance";
+  if (balance) await requireBalanceFunding(env, authorId);
+  const merchant = balance
+    ? null
+    : await ownedMerchant(env, input.activity.merchantId, authorId);
   if (merchant?.usageStatus === "legacy")
     throw new ActivityError(
       409,
@@ -530,8 +554,8 @@ export async function createActivity(
   try {
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO activities
-        (id, author_id, creation_request_id, creation_digest, title, reward_type, participation_mode, merchant_id, payment_mode, force_dedicated, join_square, topic_id, post_number, allocation, config, total_count, draw_state, created_at, updated_at)
-        VALUES (?, CASE WHEN ?=0 OR EXISTS(SELECT 1 FROM users WHERE id=? AND active=1) THEN ? ELSE NULL END, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+        (id, author_id, creation_request_id, creation_digest, title, reward_type, participation_mode, merchant_id, payment_mode, funding, force_dedicated, join_square, topic_id, post_number, allocation, config, total_count, draw_state, created_at, updated_at)
+        VALUES (?, CASE WHEN ?=0 OR EXISTS(SELECT 1 FROM users WHERE id=? AND active=1) THEN ? ELSE NULL END, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
         id,
         1,
         authorId,
@@ -541,8 +565,9 @@ export async function createActivity(
         config.title,
         input.activity.rewardType,
         config.participationMode ?? "password",
-        input.activity.merchantId,
-        merchant?.mode ?? null,
+        balance ? null : input.activity.merchantId,
+        balance ? balancePaymentMode(env) : (merchant?.mode ?? null),
+        fundingOf(input.activity),
         Number(config.forceDedicated),
         Number(config.joinSquare),
         normalizeTopicLink(config.topicUrl)?.topicId ?? null,
@@ -604,11 +629,14 @@ export async function updateActivity(
   )
     invalidActivity("数量展示仅支持精确或模糊");
   const config = storedConfig(input.activity);
-  const merchant = await ownedMerchant(
-    env,
-    input.activity.merchantId,
-    authorId,
-  );
+  const balance = fundingOf(input.activity) === "balance";
+  if (row.openedAt !== null && balance !== (row.funding === "balance"))
+    invalidActivity("开放后不能修改从哪发");
+  if (balance && row.openedAt === null && row.funding !== "balance")
+    await requireBalanceFunding(env, authorId);
+  const merchant = balance
+    ? null
+    : await ownedMerchant(env, input.activity.merchantId, authorId);
   if (merchant?.usageStatus === "legacy" && merchant.id !== row.merchantId)
     throw new ActivityError(
       409,
@@ -625,8 +653,10 @@ export async function updateActivity(
       "SIMULATION_NOT_AVAILABLE",
       "此环境不支持编辑或绑定模拟红包的草稿。",
     );
-  const nextPaymentMode = merchant?.mode ?? row.paymentMode;
-  if (row.paymentMode && merchant && row.paymentMode !== merchant.mode)
+  const nextPaymentMode = balance
+    ? balancePaymentMode(env)
+    : (merchant?.mode ?? row.paymentMode);
+  if (row.paymentMode && nextPaymentMode !== row.paymentMode)
     invalidActivity("红包付款模式已固定，不能更换为不同模式的商户");
   if (row.openedAt !== null && config.forceDedicated !== row.forceDedicated)
     invalidActivity("开放后不能修改口令尝试统计设置");
@@ -664,7 +694,7 @@ export async function updateActivity(
       input.activity.rewardType !== row.rewardType ||
       config.allocation !== row.allocation ||
       oldConfig.rewardType !== "ldc" ||
-      input.activity.merchantId !== row.merchantId ||
+      (balance ? null : input.activity.merchantId) !== row.merchantId ||
       !sameLdcMoney(input.activity.money, oldConfig.money)
     ) {
       invalidActivity(
@@ -712,7 +742,7 @@ export async function updateActivity(
       version = CASE WHEN version = ? AND author_id = ? AND deleted_at IS NULL
       AND (?=0 OR EXISTS(SELECT 1 FROM users WHERE id=activities.author_id AND active=1))
       THEN version + 1 ELSE NULL END,
-      title = ?, reward_type = ?, participation_mode = ?, merchant_id = ?, payment_mode = ?, force_dedicated = ?, join_square = ?, topic_id = ?, post_number = ?, allocation = ?, config = ?, total_count = ?, draw_state = ?, updated_at = ?, deadline = ?
+      title = ?, reward_type = ?, participation_mode = ?, merchant_id = ?, payment_mode = ?, funding = ?, force_dedicated = ?, join_square = ?, topic_id = ?, post_number = ?, allocation = ?, config = ?, total_count = ?, draw_state = ?, updated_at = ?, deadline = ?
       WHERE id = ?`).bind(
       input.version,
       authorId,
@@ -720,8 +750,9 @@ export async function updateActivity(
       config.title,
       input.activity.rewardType,
       config.participationMode ?? "password",
-      input.activity.merchantId,
+      balance ? null : input.activity.merchantId,
       nextPaymentMode ?? null,
+      fundingOf(input.activity),
       Number(config.forceDedicated),
       Number(config.joinSquare),
       normalizeTopicLink(config.topicUrl)?.topicId ?? null,
@@ -831,9 +862,42 @@ export async function openActivity(
     invalidActivity("限时开奖配置与报名状态不一致，无法开放");
   if (inventory.length !== (timed ? 0 : row.totalCount))
     invalidActivity("红包库存不完整，无法开放");
-  const merchant = await ownedMerchant(env, checked.data.merchantId, authorId);
-  if (row.paymentMode !== merchant.mode)
-    invalidActivity("红包付款模式与商户配置不一致，无法开放");
+  const balance = row.funding === "balance";
+  if (balance) {
+    if (row.paymentMode !== balancePaymentMode(env))
+      invalidActivity("红包付款模式与环境不一致，无法开放");
+    if (
+      row.paymentMode === "real" &&
+      !testPermission &&
+      !allowsRealOpening(env, await readPlatformControls(env))
+    )
+      throw new ActivityError(
+        400,
+        "REAL_LDC_NOT_ENABLED",
+        publicationMessages.REAL_LDC_NOT_ENABLED,
+      );
+    const blocked = await balanceOpeningBlocked(env, authorId, checked.data);
+    if (blocked)
+      throw new ActivityError(
+        409,
+        blocked,
+        blocked === "BALANCE_INSUFFICIENT"
+          ? await insufficientMessage(
+              env,
+              authorId,
+              ldcTotalMinor(checked.data),
+            )
+          : publicationMessages[blocked],
+      );
+  } else {
+    const merchant = await ownedMerchant(
+      env,
+      checked.data.merchantId,
+      authorId,
+    );
+    if (row.paymentMode !== merchant.mode)
+      invalidActivity("红包付款模式与商户配置不一致，无法开放");
+  }
   if (
     !timed &&
     (ldcRewardCount(checked.data) !== row.totalCount ||
@@ -923,12 +987,13 @@ export async function openActivity(
       env.DB.prepare(`UPDATE activities SET
       version = CASE WHEN version = ? AND author_id = ? AND deleted_at IS NULL AND opened_at IS NULL AND merchant_id IS ? AND ${openingDeadlineSql} > ${databaseNow} AND ${openingDeadlineSql} <= 8640000000000000
       AND reward_type='ldc'
-      AND EXISTS(SELECT 1 FROM merchants m WHERE m.id=activities.merchant_id AND m.author_id=activities.author_id AND m.kind='author' AND m.usage_status='current')
+      AND (funding='balance' OR EXISTS(SELECT 1 FROM merchants m WHERE m.id=activities.merchant_id AND m.author_id=activities.author_id AND m.kind='author' AND m.usage_status='current'))
+      AND (funding='merchant' OR EXISTS(SELECT 1 FROM balance_settings WHERE id='global' AND hongbao_enabled=1))
       AND EXISTS(SELECT 1 FROM users WHERE id=activities.author_id AND active=1)
       AND (payment_mode IS NOT 'real' OR ?=1 OR (
         EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_open=1)
-        AND EXISTS(SELECT 1 FROM merchants m JOIN merchant_credentials c ON c.merchant_id=m.id AND c.version=m.credential_version
-          WHERE m.id=activities.merchant_id AND c.version=? AND c.verification_status='passed' AND c.verification_checked_at>=${databaseNow}-600000)))
+        AND (funding='balance' OR EXISTS(SELECT 1 FROM merchants m JOIN merchant_credentials c ON c.merchant_id=m.id AND c.version=m.credential_version
+          WHERE m.id=activities.merchant_id AND c.version=? AND c.verification_status='passed' AND c.verification_checked_at>=${databaseNow}-600000))))
       THEN version + 1 ELSE NULL END,
       config = ?, opened_at = CASE WHEN json_extract(config,'$.money.mode')='timed_draw' THEN ${databaseNow} ELSE ? END,
       updated_at = ?, deadline = ${openingDeadlineSql} WHERE id = ?`).bind(
@@ -945,6 +1010,11 @@ export async function openActivity(
         openingDeadlineValue,
         id,
       ),
+      // A 🐟额红包 locks its total in the same write (docs/balance-design.md
+      // §14): not enough 可用 fails the whole opening.
+      ...(balance
+        ? lockStatements(env, id, authorId, ldcTotalMinor(checked.data), now)
+        : []),
     ]);
   } catch (error) {
     const current = await ownedActivity(env, id, authorId);
@@ -957,7 +1027,13 @@ export async function openActivity(
         blocked,
         blocked === "TIMED_DRAW_NOT_ENABLED"
           ? "限时开奖尚未启用，草稿已保存。"
-          : publicationMessages[blocked],
+          : blocked === "BALANCE_INSUFFICIENT"
+            ? await insufficientMessage(
+                env,
+                authorId,
+                ldcTotalMinor(checked.data),
+              )
+            : publicationMessages[blocked],
       );
     if (publicationMerchant) {
       const latestMerchant = await ownedMerchant(

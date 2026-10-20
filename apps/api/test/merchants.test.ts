@@ -141,7 +141,7 @@ async function fixture(merchant: Merchant) {
     });
     if (!("claim" in result) || result.claim.rewardType !== "ldc")
       throw new Error("Expected payment task");
-    taskIds.push(result.claim.payment.id);
+    taskIds.push(result.claim.payment?.id ?? "");
   }
   return { activity, taskIds };
 }

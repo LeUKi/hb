@@ -77,7 +77,7 @@ async function fixture(count = 2, scenario: SimulationScenario = "normal") {
     });
     if (!("claim" in result) || result.claim.rewardType !== "ldc")
       throw new Error("Missing LDC claim");
-    return result.claim.payment.id;
+    return result.claim.payment?.id ?? "";
   }
   const taskId = await claim();
   return { owner, recipient, merchant, activity, taskId, claim };

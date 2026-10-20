@@ -53,6 +53,7 @@ type ActivityImageActivityRow = Pick<
   | "topicId"
   | "postNumber"
   | "paymentMode"
+  | "funding"
   | "totalCount"
   | "claimedCount"
   | "registeredCount"
@@ -217,6 +218,7 @@ async function readPublicActivity(env: ApiContext["Bindings"], id: string) {
       topicId: activities.topicId,
       postNumber: activities.postNumber,
       paymentMode: activities.paymentMode,
+      funding: activities.funding,
       totalCount: activities.totalCount,
       claimedCount: activities.claimedCount,
       registeredCount: activities.registeredCount,
@@ -285,6 +287,7 @@ function imagePublicActivity(
     deadlineAt: iso(row.deadline),
     quantity: imagePublicQuantity(row),
     beforeInfo: "",
+    ...(row.funding === "balance" ? { funding: "balance" as const } : {}),
     ...(row.paymentMode ? { paymentMode: row.paymentMode } : {}),
     ...(imageDrawSummary(row) ? { draw: imageDrawSummary(row) } : {}),
   };
@@ -370,12 +373,19 @@ async function readViewerState(
   if (row?.claim_id && row.claimed_at !== null) {
     const amountMinor = row.amount_minor ?? row.inventory_amount_minor;
     if (amountMinor === null) return { kind: "pending" };
-    return {
-      kind: "claimed",
-      amount: formatAmount(amountMinor),
-      claimedAt: new Date(row.claimed_at).toISOString(),
-      paymentStatus: paymentStatus(row.payment_status) ?? "pending",
-    };
+    return activity.funding === "balance"
+      ? {
+          kind: "claimed",
+          amount: formatAmount(amountMinor),
+          claimedAt: new Date(row.claimed_at).toISOString(),
+          fish: true,
+        }
+      : {
+          kind: "claimed",
+          amount: formatAmount(amountMinor),
+          claimedAt: new Date(row.claimed_at).toISOString(),
+          paymentStatus: paymentStatus(row.payment_status) ?? "pending",
+        };
   }
   if (row?.registration_id) {
     if (activity.drawState === "completed" || activity.drawState === "empty")
