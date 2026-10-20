@@ -28,11 +28,14 @@ const HOVER_DELAY = 150;
 export function TagHint({
   hint,
   children,
+  width = MAX_WIDTH,
   ref,
   ...rest
 }: {
   hint: string;
   children: ReactNode;
+  /** How wide the bubble may grow (a longer explanation takes more). */
+  width?: number;
 } & Omit<ComponentPropsWithRef<"button">, "children" | "type">) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -83,14 +86,16 @@ export function TagHint({
         }}
       >
         {children}
-        <span id={descriptionId} className="sr-only">
-          {hint}
-        </span>
       </button>
+      {/* Beside the button, not in it: the tag's name stays its own words. */}
+      <span id={descriptionId} className="sr-only">
+        {hint}
+      </span>
       <HintBubble
         open={open}
         anchor={trigger}
         hint={hint}
+        width={width}
         onClose={() => setOpen(false)}
       />
     </>
@@ -101,11 +106,13 @@ function HintBubble({
   open,
   anchor,
   hint,
+  width,
   onClose,
 }: {
   open: boolean;
   anchor: RefObject<HTMLButtonElement | null>;
   hint: string;
+  width: number;
   onClose: () => void;
 }) {
   const reduced = useReducedMotionPref();
@@ -188,7 +195,7 @@ function HintBubble({
           style={{
             left: left ?? place.x,
             top: place.y,
-            maxWidth: MAX_WIDTH,
+            maxWidth: Math.min(width, place.room - 16),
             translateY: place.above ? "-100%" : 0,
             visibility: left === undefined ? "hidden" : "visible",
             transformOrigin: place.above ? "bottom center" : "top center",

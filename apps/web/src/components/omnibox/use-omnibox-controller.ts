@@ -331,10 +331,15 @@ export function useOmniboxController() {
           return;
         }
         // Lookups skip 红包 that take their 口令 on their own page only
-        // (统计口令尝试): say so, as the help page does.
+        // (统计口令尝试): say so, as the help page does, explaining which
+        // 红包 those are and what a 红包页 is.
         store.set(messageAtom, {
           tone: "neutral",
           text: "未匹配到红包。部分红包只能在红包页输入口令领取。",
+          terms: [
+            { words: "部分红包", term: "统计口令尝试" },
+            { words: "红包页", term: "红包页" },
+          ],
         });
         store.set(mismatchAtom, (count) => count + 1);
       } catch (error) {

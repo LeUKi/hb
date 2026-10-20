@@ -1,5 +1,6 @@
 import { useLocation, useMatches } from "@tanstack/react-router";
 import { atom } from "jotai";
+import type { TermMark } from "../ui/term";
 
 export type OmniMode = "start" | "docked" | "expanded";
 
@@ -26,6 +27,8 @@ export type OmniMessage = {
   tone: "neutral" | "warning" | "danger";
   text: string;
   action?: "login" | "global";
+  /** Words in `text` explained where they stand (名词解释), in order. */
+  terms?: readonly TermMark[];
   /** A claim's or verify's answer: shown on that 红包's page only. */
   activityId?: string;
 };

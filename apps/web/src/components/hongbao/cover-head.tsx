@@ -2,6 +2,7 @@ import { ArrowUpRight } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { cn } from "../../lib/cn";
+import { glossary } from "../../lib/glossary";
 import type { HongbaoActivity } from "../../lib/hongbao";
 import { splitNames, splitRules } from "../../lib/hongbao-text";
 import { useWindowInfo } from "../shell/window-info";
@@ -44,8 +45,9 @@ const playNames = {
 
 /**
  * The cover's labels, each with what it means: how to take part, the 玩法
- * (with its 分法 where money is split at random), 🐟额 and the human check. The
- * amounts are not repeated here: the numbers under them say them.
+ * (with its 分法 where money is split at random), 🐟额, 统计口令尝试 and the
+ * human check. The amounts are not repeated here: the numbers under them
+ * say them.
  */
 function coverTags(activity: HongbaoActivity) {
   const verb = activity.mode === "timed_draw" ? "报名" : "领取";
@@ -72,6 +74,16 @@ function coverTags(activity: HongbaoActivity) {
           {
             text: "🐟额",
             hint: "领到的 LDC 先存进🐟额，随时可以转出到你的 Credit 账户。",
+          },
+        ]
+      : []),
+    // 统计口令尝试: what one types here is counted for its sender, and the
+    // 口令 works on this page only.
+    ...(activity.statistics
+      ? [
+          {
+            text: "统计口令尝试",
+            hint: glossary.统计口令尝试,
           },
         ]
       : []),

@@ -2,6 +2,7 @@ import { ACTIVITY_LIMITS } from "@hb/contracts";
 import { CircleAlert, Info } from "lucide-react";
 import { motion } from "motion/react";
 import { type EntryScheme, looksLikeAddress } from "../../lib/scheme";
+import { withTerms } from "../ui/term";
 import type { OmniMessage } from "./state";
 
 const actionLabels: Record<NonNullable<OmniMessage["action"]>, string> = {
@@ -79,7 +80,7 @@ export function MessageLine({
             }`}
           />
           <span className="min-w-0 flex-1 text-ink-2">
-            {message.text}
+            {withTerms(message.text, message.terms)}
             {message.action && (
               <button
                 type="button"

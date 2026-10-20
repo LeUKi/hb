@@ -16,6 +16,31 @@ import {
 // Lookups skip 红包 that take their 口令 on their own page: the line says so.
 const noMatch = "未匹配到红包。部分红包只能在红包页输入口令领取。";
 
+/**
+ * The no-match line, whose “部分红包” and “红包页” are 名词解释: buttons
+ * described by what they mean, so the sentence is read around them.
+ */
+async function expectNoMatch(page: Page) {
+  const which = page.getByRole("button", { name: "部分红包", exact: true });
+  const where = page.getByRole("button", { name: "红包页", exact: true });
+  await expect(which).toBeVisible();
+  await expect(which).toHaveAccessibleDescription(
+    /^开启了“统计口令尝试”的红包/,
+  );
+  await expect(where).toHaveAccessibleDescription(
+    /^红包页是每个红包自己的页面/,
+  );
+  await expect
+    .poll(() =>
+      where.locator("xpath=..").evaluate((line) => {
+        const copy = line.cloneNode(true) as HTMLElement;
+        for (const hidden of copy.querySelectorAll(".sr-only")) hidden.remove();
+        return copy.textContent;
+      }),
+    )
+    .toBe(noMatch);
+}
+
 const first = "11111111-2222-4333-8444-555555555555";
 const second = "22222222-3333-4444-8555-666666666666";
 const resultId = "33333333-4444-4555-8666-777777777777";
@@ -128,7 +153,7 @@ test.describe("兑奖", () => {
     ]);
     await openApp(page);
     await lookUp(page, "测试口令2099");
-    await expect(shown(page, noMatch)).toBeVisible();
+    await expectNoMatch(page);
     await expect(
       page.getByRole("button", { name: /还需等待 \d 秒/ }),
     ).toBeVisible();
@@ -147,7 +172,7 @@ test.describe("兑奖", () => {
     await mockDiscover(page, [{ status: 200, body: discovered("none", []) }]);
     await openApp(page);
     await lookUp(page, "测试口令2099");
-    await expect(shown(page, noMatch)).toBeVisible();
+    await expectNoMatch(page);
     // The answer is kept a moment after it shows: leave once it is.
     await expect(
       page.getByRole("button", { name: "填入 测试口令2099，未匹配" }),
@@ -238,7 +263,7 @@ test.describe("兑奖", () => {
     await lookUp(page, "测试口令2100");
     await expect(shown(page, "查找结果未确认，请再次确认。")).toBeVisible();
     await page.getByRole("button", { name: "再次确认" }).click();
-    await expect(shown(page, noMatch)).toBeVisible();
+    await expectNoMatch(page);
     expect(sent).toHaveLength(2);
     expect(sent[1]?.submissionId).toBe(sent[0]?.submissionId);
   });
