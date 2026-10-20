@@ -6,7 +6,7 @@ import { verifyNoticeAtom } from "../../lib/store";
 import { Button } from "../ui/button";
 import { RollingText } from "../ui/morph-label";
 import { Squircle } from "../ui/squircle";
-import { PasswordText, RevealToggle, standIn } from "./password-text";
+import { PasswordText, RevealToggle, StandIn } from "./password-text";
 
 const labels: Record<PasswordLabel, string> = {
   registered: "已用此口令报名",
@@ -161,12 +161,11 @@ export function PasswordSection({
           <li key={index}>
             <Squircle radius={12}>
               <div className="flex h-11 items-center gap-3 bg-fill px-3.5">
-                <span
-                  aria-hidden="true"
-                  className="min-w-0 flex-1 truncate font-mono text-base text-ink-3 blur-[2.5px] select-none"
-                >
-                  {standIn(activityId, index)}
-                </span>
+                <StandIn
+                  seed={activityId}
+                  index={index}
+                  className="min-w-0 flex-1 truncate font-mono text-base"
+                />
                 <span className="flex shrink-0 items-center gap-1 text-xs text-ink-3">
                   <Lock className="size-3.5" aria-hidden="true" />
                   未解出
