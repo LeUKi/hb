@@ -50,6 +50,7 @@ import { Squircle, SquircleFill, SquirclePlate } from "../ui/squircle";
 import { AddressRoller, useAddress } from "./address";
 import { SchemeChip, ScopeChip } from "./chips";
 import { OmniboxField } from "./field";
+import { IdleHintText, useIdleHint } from "./idle-hint";
 import { MessageLine, resolveMessage } from "./message";
 import {
   editDraftAtom,
@@ -270,6 +271,8 @@ export function Omnibox() {
     scoped &&
     detected.kind !== "empty" &&
     (detected.kind !== "password" || looksLikeAddress(value));
+  // Empty and free, the box says in turn what it takes (02 §6).
+  const idleHint = useIdleHint(!docked && !scoped && value === "");
   const scheme = useMemo<EntryScheme>(
     () =>
       offScope ? { kind: "password", ...inspectPassword(value) } : detected,
@@ -715,7 +718,12 @@ export function Omnibox() {
                   }}
                 />
               ) : (
-                <SchemeChip key="scheme" scheme={scheme} compact={compact} />
+                <SchemeChip
+                  key="scheme"
+                  scheme={scheme}
+                  idle={idleHint?.kind}
+                  compact={compact}
+                />
               )}
             </AnimatePresence>
             <OmniboxField
@@ -746,6 +754,9 @@ export function Omnibox() {
                     : compact
                       ? "口令、红包链接或 / 命令"
                       : "输入口令、红包链接，或输入 / 使用命令"
+              }
+              hint={
+                idleHint && <IdleHintText hint={idleHint} compact={compact} />
               }
               ariaLabel="口令、红包链接或命令"
               onFocusChange={(next) => {

@@ -86,6 +86,44 @@ test.describe("外壳", () => {
     await expect(page.locator("#root")).toHaveAttribute("inert");
   });
 
+  test("空着的输入框按时钟轮流说能输入什么，开始输入就停", async ({ page }) => {
+    // Every window shows the same hint at the same moment: it follows the
+    // clock, one each 2 seconds (口令, 红包链接, 表情码, 帖子链接).
+    const start = Math.ceil(Date.UTC(2026, 9, 20) / 8000) * 8000;
+    await page.clock.setFixedTime(start);
+    await mockSession(page, viewer);
+    await openApp(page);
+    const input = omniboxInput(page);
+    // The moving placeholder is drawn over the box, not read out.
+    const hint = input.locator("xpath=preceding-sibling::div[1]");
+    await expect(hint).toHaveText("输入口令领取红包，或输入 / 使用命令");
+    await expect(input).not.toHaveAttribute("placeholder");
+    await expect(input).toHaveAccessibleName("口令、红包链接或命令");
+    await page.clock.setFixedTime(start + 2000);
+    await expect(hint).toHaveText("输入红包链接打开红包，或输入 / 使用命令");
+    await page.clock.setFixedTime(start + 6000);
+    await expect(hint).toHaveText(
+      "输入帖子链接查看帖子里的红包，或输入 / 使用命令",
+    );
+
+    await input.fill("测试口令");
+    await expect(hint).not.toHaveText(/使用命令/);
+    await input.fill("");
+    await expect(hint).toHaveText(
+      "输入帖子链接查看帖子里的红包，或输入 / 使用命令",
+    );
+  });
+
+  test("减少动态效果时输入框的提示不轮换", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await mockSession(page, viewer);
+    await openApp(page);
+    await expect(omniboxInput(page)).toHaveAttribute(
+      "placeholder",
+      "输入口令、红包链接，或输入 / 使用命令",
+    );
+  });
+
   test("跳到主要内容是 Tab 的第一站", async ({ page }) => {
     await mockSession(page, null);
     await openApp(page);

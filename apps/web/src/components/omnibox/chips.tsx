@@ -38,22 +38,27 @@ const schemeTones: Record<SchemeKind, string> = {
 };
 
 /**
- * Leading "protocol" label: icon only while empty, icon + name once typed.
- * The width animates for real (not a layout scale) so the squircle clip keeps
- * its shape while the chip grows or shrinks.
+ * Leading "protocol" label: icon only while empty (the idle hint's, else the
+ * key), icon + name once typed; icons cross-fade. The width animates for
+ * real (not a layout scale) so the squircle clip keeps its shape while the
+ * chip grows or shrinks.
  */
 export function SchemeChip({
   ref,
   scheme,
+  idle = "password",
   compact,
 }: {
   /** The omnibox's popLayout pops a leaving chip out of the row through it. */
   ref?: Ref<HTMLSpanElement>;
   scheme: EntryScheme;
+  /** What the empty box's hint is about now (02 §6). */
+  idle?: SchemeKind;
   compact: boolean;
 }) {
   const kind = scheme.kind === "empty" ? null : scheme.kind;
-  const Icon = kind ? schemeIcons[kind] : KeyRound;
+  const shown = kind ?? idle;
+  const Icon = schemeIcons[shown];
   const reduced = useReducedMotionPref();
   const [contentRef, measured] = useContentWidth();
   return (
@@ -71,7 +76,20 @@ export function SchemeChip({
           ref={contentRef}
           className="relative inline-flex h-full w-max items-center gap-1.5 px-2.5"
         >
-          <Icon className="size-[18px] shrink-0" aria-hidden="true" />
+          <span className="grid size-[18px] shrink-0">
+            <AnimatePresence initial={false}>
+              <motion.span
+                key={shown}
+                className="col-start-1 row-start-1"
+                initial={{ opacity: 0, scale: reduced ? 1 : 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: reduced ? 1 : 0.8 }}
+                transition={{ duration: reduced ? 0 : 0.2, ease }}
+              >
+                <Icon className="size-[18px]" aria-hidden="true" />
+              </motion.span>
+            </AnimatePresence>
+          </span>
           <AnimatePresence initial={false} mode="popLayout">
             {kind && !compact && (
               <motion.span

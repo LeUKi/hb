@@ -122,6 +122,7 @@ export function OmniboxField({
   inactive,
   command,
   placeholder,
+  hint,
   ariaLabel,
   onFocusChange,
   onCompositionChange,
@@ -141,6 +142,11 @@ export function OmniboxField({
   inactive: boolean;
   command: boolean;
   placeholder: string;
+  /**
+   * A placeholder that moves (the idle hint): drawn over the empty box in
+   * place of `placeholder`, and not read out (the box keeps its name).
+   */
+  hint?: ReactNode;
   ariaLabel: string;
   onFocusChange?: (focused: boolean) => void;
   /** An IME is composing (the value holds unconfirmed pinyin). */
@@ -192,6 +198,15 @@ export function OmniboxField({
           {"\u200b"}
         </div>
       </div>
+      {hint && value === "" && (
+        <div
+          aria-hidden="true"
+          className={`pointer-events-none absolute inset-0 overflow-hidden whitespace-nowrap text-ink-3 ${typography}`}
+          style={{ lineHeight: `${lineHeight}px` }}
+        >
+          {hint}
+        </div>
+      )}
       <textarea
         ref={setInput}
         rows={1}
@@ -199,7 +214,7 @@ export function OmniboxField({
         value={value}
         readOnly={readOnly}
         tabIndex={inactive ? -1 : 0}
-        placeholder={placeholder}
+        placeholder={hint ? undefined : placeholder}
         aria-label={ariaLabel}
         aria-autocomplete="list"
         aria-controls={listbox?.id}

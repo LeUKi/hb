@@ -431,3 +431,61 @@ export function RollingText({ text }: { text: string }) {
     </>
   );
 }
+
+/** One face of a RollingWord; the leaving one is no longer measured. */
+function WordFace({
+  children,
+  measure,
+  reduced,
+}: {
+  children: string;
+  measure: Ref<HTMLSpanElement>;
+  reduced: boolean;
+}) {
+  const present = useIsPresent();
+  return (
+    <motion.span
+      aria-hidden={present ? undefined : true}
+      custom={false}
+      variants={reduced ? fade : roll}
+      initial="enter"
+      animate="center"
+      exit="exit"
+      transition={{ duration: reduced ? 0.12 : 0.28, ease }}
+      className="col-start-1 row-start-1 justify-self-start"
+    >
+      <span
+        ref={present ? measure : undefined}
+        className="inline-block w-max whitespace-nowrap"
+      >
+        {children}
+      </span>
+    </motion.span>
+  );
+}
+
+/**
+ * Words that roll on to the next ones (the omnibox's idle hint): the new
+ * words come up from below as the old leave upwards, and the width runs to
+ * the new words', so what follows slides along.
+ */
+export function RollingWord({ text }: { text: string }) {
+  const reduced = useReducedMotionPref();
+  const [measure, measured] = useContentWidth();
+  return (
+    <motion.span
+      className="inline-grid overflow-x-clip"
+      initial={false}
+      animate={measured === null ? undefined : { width: measured.width }}
+      transition={{ duration: reduced || measured?.instant ? 0 : 0.28, ease }}
+    >
+      <AnimatePresence initial={false} custom={false}>
+        <WordFace key={text} measure={measure} reduced={reduced}>
+          {text}
+        </WordFace>
+      </AnimatePresence>
+    </motion.span>
+  );
+}
+
+inlineTypes.add(RollingWord);
