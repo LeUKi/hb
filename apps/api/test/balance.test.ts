@@ -1158,7 +1158,7 @@ describe("邀请", () => {
     const already = await make(admin, tester.username);
     expect(code(already)).toMatchObject({
       code: "INVITE_ALREADY_MEMBER",
-      message: `@${tester.username} 已经受邀`,
+      message: `@${tester.username} 已经开通`,
     });
     expect((await make(outsider, "someone")).status).toBe(403);
     expect((await make(tester, "bad name!")).status).toBe(400);

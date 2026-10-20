@@ -102,11 +102,14 @@ const still = () => () => {};
 export function StandIn({
   seed,
   index = 0,
+  length = slots,
   className,
 }: {
   /** What it is made from: never the 口令. */
   seed: string;
   index?: number;
+  /** How many slots (8 for a 口令; fewer for a short word). */
+  length?: number;
   className?: string;
 }) {
   const reduced = useReducedMotionPref();
@@ -121,7 +124,7 @@ export function StandIn({
         className,
       )}
     >
-      {Array.from({ length: slots }, (_, position) => {
+      {Array.from({ length }, (_, position) => {
         const base = glyph(seed, index, position, 0, now);
         const over = glyph(seed, index, position, 1, now);
         return (

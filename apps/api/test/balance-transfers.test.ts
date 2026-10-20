@@ -6,7 +6,9 @@ import {
   env,
   waitOnExecutionContext,
 } from "cloudflare:test";
+import { type ActivityInput, emptyActivityInput } from "@hb/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createActivity, openActivity } from "../src/activities/service";
 import { app } from "../src/app";
 import { createDb } from "../src/db/client";
 import { sessions, users } from "../src/db/schema";
@@ -563,6 +565,54 @@ describe("转账 to a Credit account", () => {
     const records = await call("GET", "/me/balance?filter=withdrawal", sender);
     expect((records.json as { items: unknown[] }).items).toEqual([]);
     expect(await account(friend.id)).toBeNull();
+  });
+
+  it("leaves a 🐟额红包's lock check alone once a 转出 has been taken", async () => {
+    const { admin, sender, friend, platformId } = await openTransfers();
+    await env.DB.prepare(
+      "UPDATE balance_settings SET hongbao_enabled=1,version=version+1 WHERE id='global'",
+    ).run();
+    await env.DB.prepare(
+      "UPDATE platform_controls SET version=version+1,allow_real_open=1,updated_at=? WHERE id='global'",
+    )
+      .bind(Date.now())
+      .run();
+    const { rewardType: _type, ...base } = emptyActivityInput();
+    const saved = await createActivity(bindings(), sender.id, {
+      requestId: crypto.randomUUID(),
+      activity: {
+        ...base,
+        title: "🐟额红包",
+        rewardType: "ldc",
+        funding: "balance",
+        merchantId: "",
+        passwords: ["FishPassword"],
+        allocation: "sequential",
+        money: { mode: "fixed", totalAmount: "3.00", count: 3 },
+      } satisfies ActivityInput,
+    });
+    await openActivity(bindings(), saved.id, sender.id, saved.version);
+    const made = await call("POST", "/me/balance/transfers", sender, {
+      requestId: crypto.randomUUID(),
+      ...to(friend),
+      destination: "credit",
+      amount: "2.00",
+    });
+    expect(made.status).toBe(200);
+    await cycle(platformId);
+    await cycle(platformId);
+    expect(
+      (made.json as TransferJson).transfer.id &&
+        (
+          await call(
+            "GET",
+            `/me/balance/transfers/${(made.json as TransferJson).transfer.id}`,
+            sender,
+          )
+        ).json,
+    ).toMatchObject({ transfer: { status: "sent" } });
+    const overview = await call("GET", "/admin/balance/overview", admin);
+    expect(overview.json).toMatchObject({ mismatches: 0 });
   });
 
   it("gives the 🐟 back when Credit refuses the recipient", async () => {

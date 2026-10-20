@@ -95,6 +95,7 @@ function Me({ user }: { user: SessionUser }) {
       ? authErrorOf(authError.code)
       : null;
   const email = profile.data?.user?.email ?? null;
+  const linuxDoId = profile.data?.user?.linuxDoId ?? null;
   const totals = summary.data;
   const drafts = sentCounts(sent.data?.pages[0]?.statusCounts).draft;
 
@@ -159,6 +160,23 @@ function Me({ user }: { user: SessionUser }) {
             items={[
               { label: "昵称", value: user.displayName },
               { label: "社区用户名", value: `@${user.username}` },
+              // What others and sites 转账 to (balance-design §16).
+              ...(linuxDoId
+                ? [
+                    {
+                      label: "LINUX DO 数字 ID",
+                      value: (
+                        <span className="font-mono text-sm">{linuxDoId}</span>
+                      ),
+                      action: (
+                        <CopyButton
+                          value={linuxDoId}
+                          label="LINUX DO 数字 ID"
+                        />
+                      ),
+                    },
+                  ]
+                : []),
               {
                 label: "本账号 ID",
                 value: <span className="font-mono text-sm">{user.id}</span>,

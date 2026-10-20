@@ -46,19 +46,24 @@ test("🐟额：管理员配好平台应用、邀请领取者，领取者接受�
   // 邀请: the admin invites the recipient (once: a later run finds them in).
   await admin.goto("/balance");
   await waitForBoot(admin);
+  // 邀请 is in PLUS's bubble: the 站长 has PLUS (balance-design §13).
   await admin
     .locator("header")
-    .getByRole("button", { name: "邀请", exact: true })
+    .getByRole("button", { name: "🐟额 PLUS", exact: true })
     .click();
-  const inviteDialog = admin.getByRole("dialog", { name: "邀请" });
+  await admin
+    .getByRole("dialog", { name: "🐟额 PLUS" })
+    .getByRole("button", { name: /邀请别人开通/ })
+    .click();
+  const inviteDialog = admin.getByRole("dialog", { name: "邀请开通🐟额 PLUS" });
   await inviteDialog.getByLabel("对方的用户名").fill("FullAppRecipient");
   await expect(
     inviteDialog.getByText(
-      /完整应用领取者 @FullAppRecipient|已经受邀|还没来过本站/,
+      /完整应用领取者 @FullAppRecipient|已经开通|还没来过本站/,
     ),
   ).toBeVisible();
   let inviteUrl: string | null = null;
-  if (!(await inviteDialog.getByText("已经受邀").count())) {
+  if (!(await inviteDialog.getByText("已经开通").count())) {
     await inviteDialog.getByRole("button", { name: "生成链接" }).click();
     inviteUrl = await inviteDialog
       .getByRole("textbox", { name: "邀请链接" })

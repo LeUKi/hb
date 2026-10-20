@@ -225,6 +225,12 @@ const helpRoute = createRoute({
   path: "/help",
   staticData: { chrome: "docked", command: "help" },
 });
+// 🐟额开放接口 (balance-design §16): the help page's own subpage.
+const helpApiRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/help/api",
+  staticData: { chrome: "docked", command: "help", subpage: "🐟额开放接口" },
+});
 // Production's connection check: kept, with no entry (06 §5).
 const statusRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -266,6 +272,7 @@ const routeTree = rootRoute.addChildren([
   adminSettingsRoute,
   adminAuditRoute,
   helpRoute,
+  helpApiRoute,
   statusRoute,
   notFoundRoute,
 ]);

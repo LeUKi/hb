@@ -68,6 +68,8 @@
   --color-gold-bottom: #edcb86;
   --color-gold-ink: #6a4510;
   --color-gold-soft: rgb(237 203 134 / 0.28);
+  /* 🐟额 PLUS's gold fish: gold that still reads as an icon on white. */
+  --color-gold-mark: #b7862f;
   --color-success: #1e8a57;
   --color-success-soft: rgb(30 138 87 / 0.1);
   --color-warning: #b26a00;

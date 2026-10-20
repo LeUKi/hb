@@ -77,24 +77,29 @@ export function InviteView({ token }: { token: string }) {
               />
               <h1 className="text-lg font-semibold text-ink">
                 {page.invite.inviter?.displayName}（@
-                {page.invite.inviter?.username}）邀请你使用🐟额
+                {page.invite.inviter?.username}）邀请你开通🐟额 PLUS
               </h1>
             </div>
             <div className="grid gap-2 text-sm text-ink-2">
               <p>🐟额是由本站托管的 LDC，1 🐟 = 1 LDC。</p>
-              <p>
-                接受后可以把 LDC
-                转入🐟额，用🐟额发红包：不用配置商户，领的人当场到账。
-              </p>
+              {/* What PLUS adds, word for word as its bubble on 🐟额. */}
+              <div className="grid gap-1">
+                <p>开通后多出：</p>
+                <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-1">
+                  {page.features.map((item) => (
+                    <div key={item.name} className="contents">
+                      <dt className="font-medium text-ink">{item.name}</dt>
+                      <dd>{item.text}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
               <p>
                 转入在 Credit 收银台确认，流转费（{page.topupFeePercent}
                 %）全部由 Credit 收取，本站没有任何收益；转出会自动发回你的
                 Credit 账户。
               </p>
-              <p>
-                🐟额在头像打开的用户卡片里，也可以输入
-                /balance。接受后，你也可以邀请其他人。
-              </p>
+              <p>🐟额在头像打开的用户卡片里，也可以输入 /balance。</p>
             </div>
             {blocked ? (
               <div className="grid gap-3">

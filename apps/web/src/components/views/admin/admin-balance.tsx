@@ -13,6 +13,7 @@ import {
   useAdminMembers,
   useAdminTopup,
   useAdminTopups,
+  useAdminTransfers,
   useAdminUserBalance,
   useAdminWithdrawal,
   useAdminWithdrawals,
@@ -22,6 +23,7 @@ import {
 import { clockLabel, clockSeconds } from "../../../lib/roster-time";
 import { useIdentity } from "../../../lib/session";
 import type { AdminSearch } from "../../../router";
+import { transferStatusText } from "../../balance/transfer";
 import { LazyListEnd, useQueryLazyList } from "../../page/lazy-list";
 import { Callout, EmptyNote, Facts, Panel } from "../../page/page";
 import { PageLoad, ResultLoad, resultOf } from "../../page/page-state";
@@ -52,9 +54,12 @@ import {
   listLoad,
 } from "./admin-frame";
 
-type View = "attention" | "all" | "withdrawals" | "adjustments";
+type View = "attention" | "all" | "withdrawals" | "transfers" | "adjustments";
 const viewOf = (value: string | undefined): View =>
-  value === "all" || value === "withdrawals" || value === "adjustments"
+  value === "all" ||
+  value === "withdrawals" ||
+  value === "transfers" ||
+  value === "adjustments"
     ? value
     : "attention";
 
@@ -149,7 +154,8 @@ function WithdrawalRowBody({ item }: { item: AdminWithdrawalItem }) {
       <span className="grid min-w-0 flex-1 gap-0.5">
         <span className="truncate text-base text-ink">{user.displayName}</span>
         <span className="truncate text-xs text-ink-3">
-          转出 · {clockLabel(withdrawal.createdAt)}
+          {item.transferId ? `转账给 @${withdrawal.recipientUsername}` : "转出"}{" "}
+          · {clockLabel(withdrawal.createdAt)}
           {withdrawal.status === "sending" && withdrawal.wait
             ? ` · ${waitShort[withdrawal.wait]}`
             : ""}
@@ -612,6 +618,11 @@ function Overview() {
               value: <Fish minor={data.today.withdrawnMinor} />,
               note: `${data.today.withdrawals} 笔已发放`,
             },
+            {
+              label: "今天转账",
+              value: <Fish minor={data.today.transferredMinor} />,
+              note: `${data.today.transfers} 笔`,
+            },
           ]}
         />
       </Panel>
@@ -810,6 +821,81 @@ function Adjustments() {
   );
 }
 
+const transferStatusTone = {
+  sent: "success",
+  sending: "warning",
+  not_sent: "neutral",
+} as const;
+
+/** 转账 (balance-design §16): who to whom, where to, and how it went. */
+function Transfers() {
+  const query = useAdminTransfers();
+  const list = useQueryLazyList({
+    hasNextPage: query.hasNextPage,
+    isFetchingNextPage: query.isFetchingNextPage,
+    isFetchNextPageError: query.isFetchNextPageError,
+    fetchNextPage: query.fetchNextPage,
+    pageCount: query.data?.pages.length ?? 0,
+  });
+  const items = (query.data?.pages ?? []).flatMap((page) => page.items);
+  return (
+    <ResultLoad id={items.length ? "rows" : "empty"} load={resultOf(query)}>
+      {items.length === 0 ? (
+        <EmptyNote
+          title="还没有转账"
+          text="开通🐟额 PLUS 的人在网页或开放接口转的，每一笔都在这里。"
+        />
+      ) : (
+        <div className="grid gap-2">
+          <Panel as="ul" className="flex flex-col gap-0.5 p-1.5">
+            <AnimatePresence initial={false}>
+              {items.map((item) => (
+                <ListItem
+                  key={item.id}
+                  className="flex items-center gap-3 px-3 py-2.5"
+                >
+                  <Avatar
+                    name={item.from.displayName}
+                    src={item.from.avatarUrl}
+                    size={36}
+                  />
+                  <span className="grid min-w-0 flex-1 gap-0.5">
+                    <span className="truncate text-base text-ink">
+                      @{item.from.username} → @{item.to.username}
+                      {item.destination === "credit" ? "（Credit）" : ""}
+                    </span>
+                    {item.remark && (
+                      <span className="truncate text-xs text-ink-2">
+                        {item.remark}
+                      </span>
+                    )}
+                    <span className="truncate text-xs text-ink-3">
+                      {item.apiKeyName ? `密钥「${item.apiKeyName}」` : "网页"}{" "}
+                      · {clockSeconds(item.createdAt)}
+                    </span>
+                  </span>
+                  <span className="grid shrink-0 justify-items-end gap-1">
+                    <Fish
+                      minor={item.amountMinor}
+                      className="text-sm font-semibold"
+                    />
+                    {item.destination === "credit" && (
+                      <StatusChip tone={transferStatusTone[item.status]} dot>
+                        {transferStatusText[item.status]}
+                      </StatusChip>
+                    )}
+                  </span>
+                </ListItem>
+              ))}
+            </AnimatePresence>
+          </Panel>
+          <LazyListEnd list={list} done={`共 ${items.length} 笔`} />
+        </div>
+      )}
+    </ResultLoad>
+  );
+}
+
 /**
  * 网站管理 · 🐟额: what is kept for everyone, the 转入 that need a look (and
  * every one), and each 调整. Settings and the platform app are in 网站设置.
@@ -848,6 +934,7 @@ export function AdminBalance({ search }: { search: AdminSearch }) {
               },
               { value: "all", label: "转入" },
               { value: "withdrawals", label: "转出" },
+              { value: "transfers", label: "转账" },
               { value: "adjustments", label: "调整" },
             ]}
           />
@@ -862,6 +949,8 @@ export function AdminBalance({ search }: { search: AdminSearch }) {
         <Swap id={view}>
           {view === "adjustments" ? (
             <Adjustments />
+          ) : view === "transfers" ? (
+            <Transfers />
           ) : view === "withdrawals" ? (
             <Withdrawals />
           ) : view === "attention" ? (
@@ -890,7 +979,7 @@ const inviteStatusTone = {
 type MadeLink = { url: string; maxUses: number; days: number };
 
 /**
- * 邀请: 受邀的人 (everyone who may 转入, and who brought them in),
+ * 邀请: 开通的人 (everyone who opened 🐟额 PLUS, and who brought them in),
  * 邀请记录 (every link for a username, and what became of it) and 通用链接
  * (an admin's links for whoever has them).
  */
@@ -945,7 +1034,7 @@ function InvitesDialog({
             value={view}
             onChange={setView}
             options={[
-              { value: "members", label: "受邀的人" },
+              { value: "members", label: "开通的人" },
               { value: "invites", label: "邀请记录" },
               { value: "links", label: "通用链接" },
             ]}
@@ -1262,7 +1351,7 @@ function InviteLinks({
   );
 }
 
-/** 受邀的人: a row opens that person in 用户. */
+/** 开通的人: a row opens that person in 用户. */
 function Members({ open, onPick }: { open: boolean; onPick: () => void }) {
   const navigate = useNavigate();
   const query = useAdminMembers(open);
@@ -1280,7 +1369,7 @@ function Members({ open, onPick }: { open: boolean; onPick: () => void }) {
     <ResultLoad id={items.length ? "rows" : "empty"} load={resultOf(query)}>
       {items.length === 0 ? (
         <EmptyNote
-          title="还没有受邀的人"
+          title="还没有开通的人"
           text="在🐟额页点“邀请”发出链接，对方接受后就在这里。"
         />
       ) : (
@@ -1349,7 +1438,28 @@ export function UserBalance({ userId }: { userId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const requestId = useRef(crypto.randomUUID());
-  const ids = { amount: useId(), reason: useId() };
+  const ids = { amount: useId(), reason: useId(), stopReason: useId() };
+  const [stopping, setStopping] = useState<{ id: string; name: string } | null>(
+    null,
+  );
+  const [stopReason, setStopReason] = useState("");
+  const [stopBusy, setStopBusy] = useState(false);
+  const [stopError, setStopError] = useState<string | null>(null);
+  const stopKey = async () => {
+    if (!stopping || !stopReason.trim() || stopBusy) return;
+    setStopBusy(true);
+    setStopError(null);
+    try {
+      await actions.revokeApiKey(userId, stopping.id, stopReason.trim());
+      setStopping(null);
+    } catch (failure) {
+      setStopError(
+        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
+      );
+    } finally {
+      setStopBusy(false);
+    }
+  };
   const amountOk =
     /^\d{1,7}(\.\d{1,2})?$/.test(amount.trim()) && Number(amount) > 0;
   const ok = amountOk && reason.trim().length > 0;
@@ -1403,12 +1513,12 @@ export function UserBalance({ userId }: { userId: string }) {
                     ]
                   : []),
                 {
-                  label: "转入资格",
+                  label: "🐟额 PLUS",
                   value: data.member
                     ? data.member.invitedBy
-                      ? `@${data.member.invitedBy.username} ${data.member.viaLink ? "的通用链接邀请" : "邀请"}，${clockLabel(data.member.since)}接受`
-                      : `${clockLabel(data.member.since)}起`
-                    : "没有",
+                      ? `@${data.member.invitedBy.username} ${data.member.viaLink ? "的通用链接邀请" : "邀请"}，${clockLabel(data.member.since)}开通`
+                      : `${clockLabel(data.member.since)}开通`
+                    : "没有开通",
                 },
               ]}
             />
@@ -1423,7 +1533,9 @@ export function UserBalance({ userId }: { userId: string }) {
                           ? record.withdrawal.id
                           : record.type === "hongbao"
                             ? record.hongbao.id
-                            : record.adjustment.id
+                            : record.type === "transfer"
+                              ? record.transfer.id
+                              : record.adjustment.id
                     }
                     className="flex items-baseline justify-between gap-3"
                   >
@@ -1434,7 +1546,11 @@ export function UserBalance({ userId }: { userId: string }) {
                           ? `转出 · ${withdrawalStatusText[record.withdrawal.status]}`
                           : record.type === "hongbao"
                             ? `${hongbaoWords[record.hongbao.kind]} · ${record.hongbao.title}`
-                            : `${record.adjustment.direction === "add" ? "补加" : "扣回"} · ${record.adjustment.reason}`}
+                            : record.type === "transfer"
+                              ? record.transfer.direction === "out"
+                                ? `转给 @${record.transfer.counterpart.username}${record.transfer.destination === "credit" ? "（Credit）" : ""}`
+                                : `@${record.transfer.counterpart.username} 转来`
+                              : `${record.adjustment.direction === "add" ? "补加" : "扣回"} · ${record.adjustment.reason}`}
                     </span>
                     <Fish
                       signed
@@ -1446,14 +1562,60 @@ export function UserBalance({ userId }: { userId: string }) {
                             ? -record.withdrawal.debitMinor
                             : record.type === "hongbao"
                               ? record.hongbao.amountMinor
-                              : record.adjustment.direction === "add"
-                                ? record.adjustment.amountMinor
-                                : -record.adjustment.amountMinor
+                              : record.type === "transfer"
+                                ? record.transfer.direction === "out"
+                                  ? -record.transfer.amountMinor
+                                  : record.transfer.amountMinor
+                                : record.adjustment.direction === "add"
+                                  ? record.adjustment.amountMinor
+                                  : -record.adjustment.amountMinor
                       }
                     />
                   </li>
                 ))}
               </ul>
+            )}
+            {data.apiKeys.length > 0 && (
+              <div className="grid gap-1">
+                <h4 className="text-xs text-ink-3">开放接口密钥</h4>
+                <ul className="grid gap-1 text-sm">
+                  {data.apiKeys.map((key) => (
+                    <li
+                      key={key.id}
+                      className="flex items-center justify-between gap-3"
+                    >
+                      <span className="min-w-0 truncate text-ink-2">
+                        {key.name}{" "}
+                        <span className="font-mono text-xs text-ink-3">
+                          …{key.lastFour}
+                        </span>{" "}
+                        <span className="text-xs text-ink-3">
+                          {key.dailyLimitMinor === null
+                            ? "不限"
+                            : `每日 ${fishText(key.dailyLimitMinor)} 🐟`}
+                        </span>
+                      </span>
+                      {key.status === "active" ? (
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          onClick={() =>
+                            setStopping({ id: key.id, name: key.name })
+                          }
+                        >
+                          停用
+                        </Button>
+                      ) : (
+                        <StatusChip tone="neutral">
+                          {key.status === "admin_revoked"
+                            ? "管理员停用"
+                            : "已停用"}
+                        </StatusChip>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
             {!self && (
               <div>
@@ -1465,6 +1627,39 @@ export function UserBalance({ userId }: { userId: string }) {
           </div>
         )}
       </DetailPart>
+      <ConfirmDialog
+        open={stopping !== null}
+        onClose={() => setStopping(null)}
+        onClosed={() => {
+          setStopReason("");
+          setStopError(null);
+        }}
+        busy={stopBusy}
+        title={`停用密钥「${stopping?.name ?? ""}」？`}
+        text="停用后用它的网站和程序就转不了了，不能恢复。原因会显示给密钥的主人。"
+        error={stopError}
+        actions={
+          <>
+            <Button onClick={() => setStopping(null)}>返回</Button>
+            <Button
+              variant="danger"
+              aria-disabled={!stopReason.trim() || stopBusy || undefined}
+              data-disabled={!stopReason.trim() || undefined}
+              onClick={() => void stopKey()}
+            >
+              {stopBusy ? "正在停用…" : "停用"}
+            </Button>
+          </>
+        }
+      >
+        <Field label="原因" htmlFor={ids.stopReason}>
+          <TextInput
+            id={ids.stopReason}
+            value={stopReason}
+            onChange={(event) => setStopReason(event.target.value)}
+          />
+        </Field>
+      </ConfirmDialog>
       <ConfirmDialog
         open={open}
         onClose={() => setOpen(false)}

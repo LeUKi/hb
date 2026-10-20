@@ -21,6 +21,7 @@ import { AdminUsers } from "../views/admin/admin-users";
 import { BalanceTopupView } from "../views/balance-topup-view";
 import { BalanceView } from "../views/balance-view";
 import { BalanceWithdrawalView } from "../views/balance-withdrawal-view";
+import { HelpApiView } from "../views/help-api-view";
 import { HelpView } from "../views/help-view";
 import { HistoryView } from "../views/history-view";
 import { HongbaoView } from "../views/hongbao-view";
@@ -140,6 +141,8 @@ function renderView(leaf: NonNullable<Leaf>): ReactNode {
       );
     case "/status":
       return <StatusView />;
+    case "/help/api":
+      return <HelpApiView />;
     default: {
       const command = leaf.staticData.command;
       const adminPage = adminPages[leaf.routeId];

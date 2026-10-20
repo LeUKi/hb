@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef } from "react";
 import { getLoginHref } from "../../lib/auth";
 import { authErrorOf } from "../../lib/auth-errors";
+import { cn } from "../../lib/cn";
 import {
   type CommandId,
   commandById,
@@ -18,6 +19,7 @@ import { ease, useReducedMotionPref } from "../../lib/motion";
 import { closeOverlay, openOverlay } from "../../lib/overlay";
 import { sessionUserOf, useIdentity } from "../../lib/session";
 import { authErrorAtom } from "../../lib/store";
+import { PlusMark } from "../balance/plus";
 import { Callout } from "../page/page";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
@@ -195,6 +197,8 @@ function AccountContent({ onDone }: { onDone: () => void }) {
           .filter((command) => isVisible(command, role, featuresOf(user)))
           .map((command) => {
             const Icon = command.icon;
+            // 🐟额 PLUS: a gold fish and its tag (balance-design §13).
+            const plus = command.id === "balance" && user.balancePlus;
             return (
               <li key={command.id}>
                 <Squircle radius={radius.row}>
@@ -202,8 +206,16 @@ function AccountContent({ onDone }: { onDone: () => void }) {
                     command={command}
                     className="flex h-11 items-center gap-3 px-2.5 text-base text-ink transition-colors hover:bg-fill-2"
                   >
-                    <Icon className="size-[18px] shrink-0 text-ink-2" />
-                    <span className="flex-1 truncate">{command.title}</span>
+                    <Icon
+                      className={cn(
+                        "size-[18px] shrink-0",
+                        plus ? "text-gold-mark" : "text-ink-2",
+                      )}
+                    />
+                    <span className="flex min-w-0 flex-1 items-center gap-2">
+                      <span className="truncate">{command.title}</span>
+                      {plus && <PlusMark />}
+                    </span>
                     <span className="font-mono text-xs text-ink-3">
                       {command.path}
                     </span>

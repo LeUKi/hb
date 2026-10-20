@@ -189,7 +189,7 @@ export async function createInvite(
     balanceError(409, "INVITE_SELF", "不能邀请自己");
   const found = await findUser(env, target);
   if (found?.member === 1)
-    balanceError(409, "INVITE_ALREADY_MEMBER", `@${found.username} 已经受邀`);
+    balanceError(409, "INVITE_ALREADY_MEMBER", `@${found.username} 已经开通`);
   const token = newToken();
   const id = crypto.randomUUID();
   const now = Date.now();

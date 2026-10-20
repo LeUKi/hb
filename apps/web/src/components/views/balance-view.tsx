@@ -32,6 +32,13 @@ import {
 } from "../../lib/balance";
 import { clockSeconds } from "../../lib/roster-time";
 import { type SessionUser, useSessionUser } from "../../lib/session";
+import { ApiKeysSection } from "../balance/api-keys";
+import { PlusTag } from "../balance/plus";
+import {
+  TransferDetailDialog,
+  TransferDialog,
+  TransferRow,
+} from "../balance/transfer";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { LazyListEnd, useQueryLazyList } from "../page/lazy-list";
 import {
@@ -247,7 +254,7 @@ function HongbaoRow({
 /** The page's figures: kept while another filter's list loads. */
 type Summary = Pick<
   BalancePage,
-  "settings" | "account" | "openTopups" | "access"
+  "settings" | "account" | "openTopups" | "access" | "plus"
 >;
 
 /**
@@ -267,6 +274,7 @@ function Balance({ user }: { user: SessionUser }) {
     "withdrawal",
     "adjustment",
     "hongbao",
+    "transfer",
   ]);
   const query = useBalancePages(user.id, filter);
   const list = useQueryLazyList({
@@ -289,6 +297,8 @@ function Balance({ user }: { user: SessionUser }) {
   const [topupOpen, setTopupOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferId, setTransferId] = useState<string | null>(null);
   // The 站长's own 补加 / 扣回 (balance-design §15); the way stays as the
   // dialog fades out.
   const [ownerOpen, setOwnerOpen] = useState(false);
@@ -296,7 +306,12 @@ function Balance({ user }: { user: SessionUser }) {
 
   // Neither invited nor anything here yet (docs/balance-design.md §13).
   if (closed)
-    return <MessageView title="🐟额" text="本功能仅对受邀用户开放。" />;
+    return (
+      <MessageView
+        title="🐟额"
+        text="还没有🐟额。受邀开通🐟额 PLUS，或者领到🐟额红包、收到转账后就有了。"
+      />
+    );
   return (
     <PageLoad
       load={queryLoad(query)}
@@ -306,7 +321,16 @@ function Balance({ user }: { user: SessionUser }) {
         <Page>
           <PageHeader
             refreshable
-            title="🐟额"
+            title={
+              <span className="inline-flex items-center gap-2">
+                🐟额
+                {/* 🐟额 PLUS: what it adds, and inviting (§13). */}
+                <PlusTag
+                  plus={summary.plus}
+                  onInvite={() => setInviteOpen(true)}
+                />
+              </span>
+            }
             actions={
               <>
                 {/* The 站长 cannot pay their own app or be paid by it:
@@ -365,8 +389,21 @@ function Balance({ user }: { user: SessionUser }) {
                     </Button>
                   </>
                 )}
-                {summary.access.invite && (
-                  <Button onClick={() => setInviteOpen(true)}>邀请</Button>
+                {summary.access.transfer && (
+                  <Button
+                    aria-disabled={
+                      !summary.settings.transferEnabled || undefined
+                    }
+                    data-disabled={
+                      !summary.settings.transferEnabled || undefined
+                    }
+                    onClick={() => {
+                      if (summary.settings.transferEnabled)
+                        setTransferOpen(true);
+                    }}
+                  >
+                    {summary.settings.transferEnabled ? "转账" : "转账暂停"}
+                  </Button>
                 )}
               </>
             }
@@ -402,15 +439,7 @@ function Balance({ user }: { user: SessionUser }) {
                   : []),
               ]}
             />
-            <p className="text-xs text-ink-3">
-              1 🐟 = 1 LDC，由本站托管。
-              {!summary.access.topup && !summary.access.owner && (
-                <>
-                  <br />
-                  部分功能仅对受邀用户开放。
-                </>
-              )}
-            </p>
+            <p className="text-xs text-ink-3">1 🐟 = 1 LDC，由本站托管。</p>
           </Panel>
           <Reveal show={summary.openTopups > 0}>
             <Callout tone="warning">
@@ -418,6 +447,8 @@ function Balance({ user }: { user: SessionUser }) {
               确认过的，打开它就会去 Credit 查。
             </Callout>
           </Reveal>
+          {/* Above 明细: the list loads on as it is scrolled, never ending. */}
+          {summary.access.transfer && <ApiKeysSection user={user} />}
           <Segmented
             label="明细筛选"
             value={filter}
@@ -426,6 +457,7 @@ function Balance({ user }: { user: SessionUser }) {
               { value: "all", label: "全部" },
               { value: "topup", label: "转入" },
               { value: "withdrawal", label: "转出" },
+              { value: "transfer", label: "转账" },
               { value: "adjustment", label: "调整" },
               { value: "hongbao", label: "红包" },
             ]}
@@ -444,7 +476,9 @@ function Balance({ user }: { user: SessionUser }) {
                       ? "用🐟额发的红包和领到的🐟额红包，都在这里。"
                       : filter === "withdrawal"
                         ? "转出以后，每一笔都在这里。"
-                        : "转入、转出和🐟额红包，每一笔都在这里。"
+                        : filter === "transfer"
+                          ? "转给别人的和别人转来的，都在这里。"
+                          : "转入、转出、转账和🐟额红包，每一笔都在这里。"
                 }
               />
             ) : (
@@ -463,6 +497,12 @@ function Balance({ user }: { user: SessionUser }) {
                         <HongbaoRow
                           key={record.hongbao.id}
                           hongbao={record.hongbao}
+                        />
+                      ) : record.type === "transfer" ? (
+                        <TransferRow
+                          key={record.transfer.id}
+                          transfer={record.transfer}
+                          onOpen={setTransferId}
                         />
                       ) : (
                         <AdjustmentRow
@@ -501,6 +541,18 @@ function Balance({ user }: { user: SessionUser }) {
             open={inviteOpen}
             onClose={() => setInviteOpen(false)}
             user={user}
+          />
+          <TransferDialog
+            open={transferOpen}
+            onClose={() => setTransferOpen(false)}
+            user={user}
+            settings={summary.settings}
+            availableMinor={summary.account.availableMinor}
+          />
+          <TransferDetailDialog
+            user={user}
+            id={transferId}
+            onClose={() => setTransferId(null)}
           />
         </Page>
       )}
@@ -924,7 +976,7 @@ function InviteDialog({
   const blocked = known?.self
     ? "不能邀请自己"
     : known?.member
-      ? `@${known.user?.username ?? name} 已经受邀`
+      ? `@${known.user?.username ?? name} 已经开通`
       : null;
   const ready = name.length > 0 && blocked === null && !create.isPending;
   const reset = () => {
@@ -952,8 +1004,8 @@ function InviteDialog({
       onClose={onClose}
       onClosed={reset}
       busy={create.isPending}
-      title="邀请"
-      text="输入对方的 LINUX DO 用户名，生成一条邀请链接发给对方。对方接受后，能转入🐟额、用🐟额发红包，也能邀请其他人。"
+      title="邀请开通🐟额 PLUS"
+      text="输入对方的 LINUX DO 用户名，生成一条邀请链接发给对方。"
       error={error}
       actions={
         made ? (
@@ -1034,6 +1086,7 @@ function InviteDialog({
                 </p>
               )}
             </Reveal>
+            <p className="text-xs text-ink-3">对方接受后开通🐟额 PLUS。</p>
           </Field>
         )}
       </Swap>

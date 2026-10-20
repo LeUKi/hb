@@ -390,13 +390,21 @@ export const balanceRoutes = new Hono<ApiContext>()
       );
     },
   )
-  .get("/me/balance/api-keys/:id", async (c) => {
-    const session = await requireAuth(c);
-    const cursor = c.req.query("cursor");
-    return c.json(
-      await apiKeyDetail(c.env, session.user.id, c.req.param("id"), cursor),
-    );
-  })
+  .get(
+    "/me/balance/api-keys/:id",
+    validator("query", (value): { cursor?: string } => {
+      if (value.cursor !== undefined && typeof value.cursor !== "string")
+        throw new ActivityError(400, "INVALID_CURSOR", "分页标识无效");
+      return { cursor: value.cursor };
+    }),
+    async (c) => {
+      const session = await requireAuth(c);
+      const { cursor } = c.req.valid("query");
+      return c.json(
+        await apiKeyDetail(c.env, session.user.id, c.req.param("id"), cursor),
+      );
+    },
+  )
   .post("/me/balance/api-keys/:id/revoke", async (c) => {
     const session = await requireProtectedMutation(c);
     return c.json({

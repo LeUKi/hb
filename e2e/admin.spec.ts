@@ -369,6 +369,8 @@ test.describe("网站管理", () => {
           return route.fulfill({
             json: {
               account: { availableMinor: 0, lockedMinor: 0 },
+              member: null,
+              apiKeys: [],
               items: [],
               nextCursor: null,
             },

@@ -70,12 +70,13 @@ const MISMATCHES = `SELECT
     -- Open and not all taken: one active lock; ended a while ago: none left.
     (a.ended_at IS NULL) != EXISTS(SELECT 1 FROM balance_locks l WHERE l.activity_id=a.id AND l.status='active')
       AND (a.ended_at IS NULL OR a.ended_at < ${databaseNow} - 1800000)
-    -- What left the lock is what claims took.
-    OR EXISTS(SELECT 1 FROM balance_locks l WHERE l.activity_id=a.id AND l.amount_minor
+    -- What left the lock is what claims took (this 红包's lock only: a 转出's
+    -- lock has its 扣走 and no 领到, and is not one of these).
+    OR EXISTS(SELECT 1 FROM balance_locks l WHERE l.activity_id=a.id AND (l.amount_minor
       != l.remaining_minor
         + COALESCE((SELECT -SUM(e.locked_delta_minor) FROM balance_entries e WHERE e.lock_id=l.id AND e.kind IN ('deduct','unlock')),0)
       OR COALESCE((SELECT -SUM(e.locked_delta_minor) FROM balance_entries e WHERE e.lock_id=l.id AND e.kind='deduct'),0)
-        != COALESCE((SELECT SUM(e.available_delta_minor) FROM balance_entries e WHERE e.lock_id=l.id AND e.kind='hongbao'),0))))
+        != COALESCE((SELECT SUM(e.available_delta_minor) FROM balance_entries e WHERE e.lock_id=l.id AND e.kind='hongbao'),0)))))
   -- Each claim of a 🐟额红包: one share out of the lock, the same share in.
   + (SELECT COUNT(*) FROM claims c JOIN activities a ON a.id=c.activity_id WHERE a.funding='balance'
     AND NOT EXISTS(SELECT 1 FROM balance_entries d JOIN balance_entries h ON h.claim_id=d.claim_id AND h.kind='hongbao'

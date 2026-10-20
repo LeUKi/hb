@@ -59,11 +59,22 @@ function topup(extra: Partial<BalanceTopup> = {}): BalanceTopup {
   };
 }
 
+const plusFeatures = [
+  { name: "转入", text: "把 Credit 的 LDC 转进🐟额" },
+  { name: "转账", text: "转给别人的🐟额或 Credit 账户" },
+  { name: "开放接口", text: "接入网站或程序" },
+  { name: "邀请", text: "请别人也开通" },
+];
+
 async function mockBalance(
   page: Page,
   options: { withdraw?: boolean; invited?: boolean } = {},
 ) {
   const sent: unknown[] = [];
+  const invited = options.invited ?? true;
+  await page.route("**/api/me/balance/api-keys", (route) =>
+    route.fulfill({ json: { items: [], max: 10 } }),
+  );
   await page.route("**/api/me/balance?**", (route) =>
     route.fulfill({
       json: {
@@ -78,11 +89,25 @@ async function mockBalance(
           topupMaxMinor: 200_000,
           topupDailyHintMinor: 80_000,
           withdrawMinMinor: 100,
+          transferEnabled: true,
+          transferToCreditBlock: options.withdraw ? null : "WITHDRAW_DISABLED",
         },
         account: { availableMinor: 1234, lockedMinor: 0 },
         access: {
-          topup: options.invited ?? true,
-          invite: options.invited ?? true,
+          topup: invited,
+          invite: invited,
+          owner: false,
+          transfer: invited,
+        },
+        plus: {
+          plus: invited,
+          owner: false,
+          invitedBy: invited
+            ? { username: "lafish", displayName: "Lafish", avatarUrl: null }
+            : null,
+          since: invited ? Date.now() - 86_400_000 : null,
+          features: invited ? plusFeatures : null,
+          featureCount: 4,
         },
         openTopups: 1,
         items: [
@@ -137,27 +162,44 @@ test.describe("🐟额", () => {
     await omniboxInput(page).fill("/余额");
     await expect(page.getByRole("option", { name: /🐟额/ })).toHaveCount(0);
     await openApp(page, "/balance");
-    await expect(page.getByText("本功能仅对受邀用户开放。")).toBeVisible();
+    await expect(
+      page.getByText(
+        "还没有🐟额。受邀开通🐟额 PLUS，或者领到🐟额红包、收到转账后就有了。",
+      ),
+    ).toBeVisible();
   });
 
-  test("有记录、没受邀的人：能转出，没有转入和邀请，写着部分功能仅对受邀用户开放", async ({
+  test("有记录、没开通 PLUS 的人：能转出，没有转入和转账；灰色 PLUS 里多出的是乱码", async ({
     page,
   }) => {
     await mockSession(page, { ...viewer, balance: true });
     await mockBalance(page, { withdraw: true, invited: false });
     await openApp(page, "/balance");
-    await expect(page.getByRole("heading", { name: "🐟额" })).toBeVisible();
-    await expect(page.getByText("部分功能仅对受邀用户开放。")).toBeVisible();
+    await expect(page.getByRole("heading", { name: /🐟额/ })).toBeVisible();
     const header = page.locator("header");
     await expect(
       header.getByRole("button", { name: "转出", exact: true }),
     ).toBeVisible();
+    for (const name of ["转入", "转账", "邀请"])
+      await expect(
+        header.getByRole("button", { name, exact: true }),
+      ).toHaveCount(0);
     await expect(
-      header.getByRole("button", { name: "转入", exact: true }),
+      page.getByRole("heading", { name: "开放接口密钥" }),
     ).toHaveCount(0);
+    await header
+      .getByRole("button", { name: "🐟额 PLUS，还没开通", exact: true })
+      .click();
+    const bubble = page.getByRole("dialog", { name: "🐟额 PLUS，还没开通" });
+    await expect(bubble.getByText("你现在能")).toBeVisible();
+    await expect(bubble.getByText("开通后多出")).toBeVisible();
+    await expect(bubble.getByText("要已开通的人邀请才能开通。")).toBeVisible();
+    await expect(bubble.getByText("接入网站或程序")).toHaveCount(0);
     await expect(
-      header.getByRole("button", { name: "邀请", exact: true }),
+      bubble.getByRole("button", { name: /邀请别人开通/ }),
     ).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(bubble).toHaveCount(0);
   });
 
   test("邀请：输入用户名看到是谁，自己和已受邀的不给链接，生成后能复制，下面列着最近的邀请", async ({
@@ -236,11 +278,19 @@ test.describe("🐟额", () => {
       });
     });
     await openApp(page, "/balance");
+    // 邀请 lives in PLUS's bubble now (balance-design §13).
     await page
       .locator("header")
-      .getByRole("button", { name: "邀请", exact: true })
+      .getByRole("button", { name: "🐟额 PLUS", exact: true })
       .click();
-    const dialog = page.getByRole("dialog", { name: "邀请" });
+    const bubble = page.getByRole("dialog", { name: "🐟额 PLUS" });
+    await expect(
+      bubble.getByText("由 @lafish 邀请", { exact: false }),
+    ).toBeVisible();
+    await expect(bubble.getByText("接入网站或程序")).toBeVisible();
+    await bubble.getByRole("button", { name: /邀请别人开通/ }).click();
+    const dialog = page.getByRole("dialog", { name: "邀请开通🐟额 PLUS" });
+    await expect(dialog.getByText("对方接受后开通🐟额 PLUS。")).toBeVisible();
     await expect(dialog.getByText("@OldFriend")).toBeVisible();
     await expect(dialog.getByText("已接受")).toBeVisible();
     const input = dialog.getByLabel("对方的用户名");
@@ -252,7 +302,7 @@ test.describe("🐟额", () => {
     // Pasted with its @: the box keeps one, in front.
     await input.fill("@taken");
     await expect(input).toHaveValue("taken");
-    await expect(dialog.getByText("@Taken 已经受邀")).toBeVisible();
+    await expect(dialog.getByText("@Taken 已经开通")).toBeVisible();
     await input.fill("stranger");
     await expect(
       dialog.getByText("这个人还没来过本站，确认用户名没拼错就行。"),
@@ -291,6 +341,7 @@ test.describe("🐟额", () => {
             expiresAt: Date.now() + 3_600_000,
           },
           topupFeePercent: 12,
+          features: plusFeatures,
           viewer: {
             username: matches ? "viewer" : "someone",
             matches,
@@ -307,8 +358,12 @@ test.describe("🐟额", () => {
     });
     await openApp(page, `/invite/${token}`);
     await expect(
-      page.getByRole("heading", { name: /Lafish（@lafish）邀请你使用🐟额/ }),
+      page.getByRole("heading", {
+        name: /Lafish（@lafish）邀请你开通🐟额 PLUS/,
+      }),
     ).toBeVisible();
+    // What PLUS adds, in plain words for one holding an invitation.
+    await expect(page.getByText("接入网站或程序")).toBeVisible();
     await expect(
       page.getByText(/流转费（12%）全部由 Credit 收取，本站没有任何收益/),
     ).toBeVisible();
@@ -347,6 +402,7 @@ test.describe("🐟额", () => {
             expiresAt: Date.now() + 3_600_000,
           },
           topupFeePercent: 12,
+          features: plusFeatures,
           viewer: {
             username: "someone",
             matches: true,
@@ -359,7 +415,9 @@ test.describe("🐟额", () => {
     );
     await openApp(page, `/invite/${token}`);
     await expect(
-      page.getByRole("heading", { name: /Lafish（@lafish）邀请你使用🐟额/ }),
+      page.getByRole("heading", {
+        name: /Lafish（@lafish）邀请你开通🐟额 PLUS/,
+      }),
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "接受邀请" })).toBeVisible();
     await expect(page.getByText(/这个邀请是给/)).toHaveCount(0);
@@ -383,7 +441,7 @@ test.describe("🐟额", () => {
     await expect(page.getByRole("option", { name: /🐟额/ })).toBeVisible();
 
     await openApp(page, "/balance");
-    await expect(page.getByRole("heading", { name: "🐟额" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /🐟额/ })).toBeVisible();
     await expect(page.locator("dl dd").first()).toHaveText(/12\.34\s*🐟/);
     await expect(page.getByText("1 🐟 = 1 LDC，由本站托管。")).toBeVisible();
     await expect(
@@ -508,5 +566,170 @@ test.describe("🐟额", () => {
         amount: "10",
       }),
     ]);
+  });
+  test("转账：找到人才能转，选到哪，确认后说转给了谁；发到 Credit 有它的限制", async ({
+    page,
+  }) => {
+    await mockSession(page, { ...viewer, balance: true, balancePlus: true });
+    await mockBalance(page, { withdraw: true });
+    await page.route("**/api/me/balance/recipients?**", (route) => {
+      const username = new URL(route.request().url()).searchParams.get(
+        "username",
+      );
+      return route.fulfill({
+        json:
+          username === "friend"
+            ? {
+                user: {
+                  userId: "12345",
+                  username: "Friend",
+                  displayName: "新朋友",
+                  avatarUrl: null,
+                },
+                self: false,
+                owner: false,
+              }
+            : username === "lafish"
+              ? {
+                  user: {
+                    userId: "1",
+                    username: "lafish",
+                    displayName: "站长",
+                    avatarUrl: null,
+                  },
+                  self: false,
+                  owner: true,
+                }
+              : { user: null, self: false, owner: false },
+      });
+    });
+    const sent: Record<string, unknown>[] = [];
+    await page.route("**/api/me/balance/transfers", (route) => {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      sent.push(body);
+      return route.fulfill({
+        json: {
+          transfer: {
+            id: "77777777-8888-4999-8aaa-bbbbbbbbbbbb",
+            direction: "out",
+            destination: body.destination,
+            amountMinor: 250,
+            remark: body.remark ?? null,
+            counterpart: {
+              userId: "12345",
+              username: "Friend",
+              displayName: "新朋友",
+              avatarUrl: null,
+            },
+            apiKeyName: null,
+            outTransferNo: null,
+            status: "sent",
+            withdrawal: null,
+            createdAt: Date.now(),
+          },
+        },
+      });
+    });
+    await openApp(page, "/balance");
+    await page
+      .locator("header")
+      .getByRole("button", { name: "转账", exact: true })
+      .click();
+    const dialog = page.getByRole("dialog", { name: "转账" });
+    const name = dialog.getByLabel("收款人");
+    await name.fill("stranger");
+    await expect(
+      dialog.getByText("这个人还没来过本站，来过才能收🐟。"),
+    ).toBeVisible();
+    await name.fill("lafish");
+    await expect(
+      dialog.getByText(
+        "不能发到 Credit：站长的 Credit 账户收不了平台应用的发放",
+      ),
+    ).toBeVisible();
+    await name.fill("@friend");
+    await expect(dialog.getByText("新朋友 @Friend")).toBeVisible();
+    await expect(dialog.getByText("数字 ID 12345")).toBeVisible();
+    await dialog.getByRole("button", { name: /对方的 Credit 账户/ }).click();
+    await dialog.getByLabel("数量").fill("0.5");
+    await expect(dialog.getByText("发到 Credit 至少 1.00 🐟。")).toBeVisible();
+    await dialog.getByRole("button", { name: /对方的🐟额/ }).click();
+    await dialog.getByLabel("数量").fill("20");
+    await expect(dialog.getByText("可用只有 12.34 🐟。")).toBeVisible();
+    await dialog.getByLabel("数量").fill("2.5");
+    await dialog.getByLabel("备注").fill("午饭钱");
+    await dialog.getByRole("button", { name: "转账", exact: true }).click();
+    const confirm = page.getByRole("dialog", {
+      name: "转给 @Friend 2.50 🐟？",
+    });
+    await expect(confirm.getByText("转出去不能撤回。")).toBeVisible();
+    await confirm.getByRole("button", { name: "确认转账" }).click();
+    await expect(dialog.getByText("已转给 @Friend 2.50 🐟。")).toBeVisible();
+    expect(sent).toEqual([
+      expect.objectContaining({
+        toUserId: "12345",
+        toUsername: "Friend",
+        destination: "balance",
+        amount: "2.5",
+        remark: "午饭钱",
+      }),
+    ]);
+  });
+
+  test("开放接口密钥：名称和上限，生成后只显示一次，说清拿到它能做什么", async ({
+    page,
+  }) => {
+    await mockSession(page, { ...viewer, balance: true, balancePlus: true });
+    await mockBalance(page);
+    const made: unknown[] = [];
+    await page.route("**/api/me/balance/api-keys", (route) => {
+      if (route.request().method() === "POST") {
+        made.push(route.request().postDataJSON());
+        return route.fulfill({
+          json: {
+            token: "hbk_abcdefghijklmnopqrstuvwxyz012345",
+            key: {
+              id: "key-1",
+              name: "我的小站",
+              lastFour: "2345",
+              status: "active",
+              dailyLimitMinor: 10_000,
+              usedTodayMinor: 0,
+              createdAt: Date.now(),
+              lastTransferAt: null,
+              lastTransferIp: null,
+              transferCount: 0,
+              transferTotalMinor: 0,
+              revokedAt: null,
+              revokeReason: null,
+            },
+          },
+        });
+      }
+      return route.fulfill({ json: { items: [], max: 10 } });
+    });
+    await openApp(page, "/balance");
+    await expect(
+      page.getByRole("heading", { name: "开放接口密钥" }),
+    ).toBeVisible();
+    await expect(page.getByRole("link", { name: "接口说明" })).toHaveAttribute(
+      "href",
+      "/help/api",
+    );
+    await page.getByRole("button", { name: "新建", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "新建开放接口密钥" });
+    await dialog.getByLabel("名称").fill("我的小站");
+    await dialog.getByLabel("每日上限").fill("100");
+    await dialog.getByRole("button", { name: "生成" }).click();
+    await expect(dialog.getByLabel("密钥", { exact: true })).toHaveValue(
+      "hbk_abcdefghijklmnopqrstuvwxyz012345",
+    );
+    await expect(
+      dialog.getByText("只显示这一次。丢了就停用它，再新建一个。"),
+    ).toBeVisible();
+    await expect(
+      dialog.getByText("拿到密钥的人能用它转走你的🐟，也能看到你收到的转账。"),
+    ).toBeVisible();
+    expect(made).toEqual([{ name: "我的小站", dailyLimit: "100" }]);
   });
 });

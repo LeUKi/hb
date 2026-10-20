@@ -21,6 +21,8 @@ import { useReducedMotionPref } from "../../lib/motion";
 import { optimizePassword } from "../../lib/password-rules";
 import type { RecentEntry } from "../../lib/recent-inputs";
 import { type EntryScheme, looksLikeAddress } from "../../lib/scheme";
+import { useSessionUser } from "../../lib/session";
+import { PlusMark } from "../balance/plus";
 import { HongbaoIcon } from "../ui/hongbao-icon";
 import { Kbd } from "../ui/kbd";
 import { radius, Squircle, SquirclePlate } from "../ui/squircle";
@@ -221,6 +223,7 @@ export function SuggestionContent({
   item: Suggestion;
   active: boolean;
 }) {
+  const user = useSessionUser();
   // What the shell knows of a 红包 the row names (from the page's own read).
   const activity = useActivityFacts(
     "activityId" in item ? item.activityId : null,
@@ -251,11 +254,13 @@ export function SuggestionContent({
     );
   if (item.kind === "command") {
     const Icon = item.command.icon;
+    // 🐟额 PLUS: a gold fish and its tag (balance-design §13).
+    const plus = item.command.id === "balance" && user?.balancePlus === true;
     return (
       <Row
         active={active}
-        icon={<Icon className="size-4" />}
-        meta={item.gate && <GateChip />}
+        icon={<Icon className={plus ? "size-4 text-gold-mark" : "size-4"} />}
+        meta={item.gate ? <GateChip /> : plus ? <PlusMark /> : undefined}
       >
         <CommandName name={item.command.name} query={item.query} />
         <span className="truncate text-ink-2">{item.command.title}</span>

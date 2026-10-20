@@ -1,9 +1,14 @@
 import type {
+  BalanceApiKey,
+  BalanceApiKeyTotals,
   BalanceInvite,
   BalanceInviteUser,
   BalanceTopup,
+  BalanceTransfer,
   BalanceWithdrawal,
+  CreateApiKeyInput,
   CreateTopupInput,
+  CreateTransferInput,
   CreateWithdrawalInput,
   OwnerAdjustmentInput,
 } from "@hb/contracts";
@@ -34,7 +39,8 @@ export type BalanceFilter =
   | "topup"
   | "withdrawal"
   | "adjustment"
-  | "hongbao";
+  | "hongbao"
+  | "transfer";
 
 export const balanceKeys = {
   all: (identity: string) => ["merchant-private", identity, "balance"] as const,
@@ -50,6 +56,14 @@ export const balanceKeys = {
     [...balanceKeys.all(identity), "invitee", username] as const,
   hongbao: (identity: string) =>
     [...balanceKeys.all(identity), "hongbao"] as const,
+  recipient: (identity: string, username: string) =>
+    [...balanceKeys.all(identity), "recipient", username] as const,
+  transfer: (identity: string, id: string) =>
+    [...balanceKeys.all(identity), "transfer", id] as const,
+  apiKeys: (identity: string) =>
+    [...balanceKeys.all(identity), "api-keys"] as const,
+  apiKey: (identity: string, id: string) =>
+    [...balanceKeys.all(identity), "api-keys", id] as const,
 };
 
 export function useBalancePages(userId: string, filter: BalanceFilter) {
@@ -392,4 +406,163 @@ export function useAcceptInvite(token: string) {
       return result;
     },
   });
+}
+
+/** Who a typed username is here, for the 转账 dialog (balance-design §16). */
+export type TransferRecipient = {
+  user: {
+    userId: string;
+    username: string;
+    displayName: string;
+    avatarUrl: string | null;
+  } | null;
+  self: boolean;
+  /** The 站长: their Credit account cannot take the platform app's. */
+  owner: boolean;
+};
+
+export function useRecipient(userId: string, username: string) {
+  const session = useMerchantIdentity(userId);
+  const name = username.trim().replace(/^@/, "").toLowerCase();
+  return useQuery({
+    queryKey: balanceKeys.recipient(session.identity, name),
+    enabled: session.enabled && /^[a-z0-9_.-]{1,60}$/.test(name),
+    queryFn: async ({ signal }) =>
+      session.read<TransferRecipient>(
+        await api.api.me.balance.recipients.$get(
+          { query: { username: name } },
+          { init: { signal, cache: "no-store" } },
+        ),
+      ),
+    retry: false,
+    staleTime: 30_000,
+    placeholderData: (previous) => previous,
+  });
+}
+
+/** 转账: once; the page's figures and 明细 read again after. */
+export function useTransferActions(userId: string) {
+  const session = useMerchantIdentity(userId);
+  const queryClient = useQueryClient();
+  const options = useCsrf();
+  const create = useMutation({
+    mutationFn: async (input: CreateTransferInput) => {
+      const identity = session.captureIdentity() ?? "";
+      const result = await readResponse<{ transfer: BalanceTransfer }>(
+        await api.api.me.balance.transfers.$post({ json: input }, options),
+      );
+      if (session.isCurrentIdentity(identity)) {
+        queryClient.setQueryData(
+          balanceKeys.transfer(identity, result.transfer.id),
+          result,
+        );
+        await queryClient.invalidateQueries({
+          queryKey: [...balanceKeys.all(identity), "list"],
+        });
+      }
+      return result;
+    },
+  });
+  return { create };
+}
+
+/** One 转账, read again every 3 s while one to a Credit account is 发放中. */
+export function useTransfer(userId: string, id: string | null) {
+  const session = useMerchantIdentity(userId);
+  return useQuery({
+    queryKey: balanceKeys.transfer(session.identity, id ?? ""),
+    enabled: session.enabled && id !== null,
+    queryFn: async ({ signal }) =>
+      session.read<{ transfer: BalanceTransfer }>(
+        await api.api.me.balance.transfers[":id"].$get(
+          { param: { id: id ?? "" } },
+          { init: { signal, cache: "no-store" } },
+        ),
+      ),
+    retry: false,
+    refetchInterval: (query) =>
+      query.state.data?.transfer.status === "sending" ? 3000 : false,
+  });
+}
+
+/** 开放接口密钥 (balance-design §16): the owner's list. */
+export function useApiKeys(userId: string, enabled: boolean) {
+  const session = useMerchantIdentity(userId);
+  return useQuery({
+    queryKey: balanceKeys.apiKeys(session.identity),
+    enabled: session.enabled && enabled,
+    queryFn: async ({ signal }) =>
+      session.read<{ items: BalanceApiKey[]; max: number }>(
+        await api.api.me.balance["api-keys"].$get(undefined, {
+          init: { signal, cache: "no-store" },
+        }),
+      ),
+    retry: false,
+  });
+}
+
+export type ApiKeyPage = {
+  key: BalanceApiKey;
+  totals: BalanceApiKeyTotals;
+  transfers: BalanceTransfer[];
+  nextCursor: string | null;
+};
+
+/** One key: what it sent, 20 at a time. */
+export function useApiKey(userId: string, id: string | null) {
+  const session = useMerchantIdentity(userId);
+  return useInfiniteQuery({
+    queryKey: balanceKeys.apiKey(session.identity, id ?? ""),
+    enabled: session.enabled && id !== null,
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam, signal }) =>
+      session.read<ApiKeyPage>(
+        await api.api.me.balance["api-keys"][":id"].$get(
+          {
+            param: { id: id ?? "" },
+            query: pageParam ? { cursor: pageParam } : {},
+          },
+          { init: { signal, cache: "no-store" } },
+        ),
+      ),
+    getNextPageParam: (last) => last.nextCursor,
+    retry: false,
+  });
+}
+
+/** 新建 (shown once) and 停用; the list reads again after either. */
+export function useApiKeyActions(userId: string) {
+  const session = useMerchantIdentity(userId);
+  const queryClient = useQueryClient();
+  const options = useCsrf();
+  const refresh = async (identity: string) => {
+    if (session.isCurrentIdentity(identity))
+      await queryClient.invalidateQueries({
+        queryKey: balanceKeys.apiKeys(identity),
+      });
+  };
+  const create = useMutation({
+    mutationFn: async (input: CreateApiKeyInput) => {
+      const identity = session.captureIdentity() ?? "";
+      const result = await readResponse<{ key: BalanceApiKey; token: string }>(
+        await api.api.me.balance["api-keys"].$post({ json: input }, options),
+      );
+      await refresh(identity);
+      return result;
+    },
+  });
+  const revoke = useMutation({
+    mutationFn: async (id: string) => {
+      const identity = session.captureIdentity() ?? "";
+      const result = await readResponse<{ key: BalanceApiKey }>(
+        await api.api.me.balance["api-keys"][":id"].revoke.$post(
+          { param: { id } },
+          options,
+        ),
+      );
+      await refresh(identity);
+      return result;
+    },
+  });
+  return { create, revoke };
 }

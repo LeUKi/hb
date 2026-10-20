@@ -57,6 +57,10 @@ export type AdminInviteLinkList = InferResponseType<
   AdminBalance["invite-links"]["$get"],
   200
 >;
+export type AdminTransferList = InferResponseType<
+  AdminBalance["transfers"]["$get"],
+  200
+>;
 export type AdminMemberList = InferResponseType<
   AdminBalance["members"]["$get"],
   200
@@ -252,6 +256,22 @@ export function useAdminAdjustments() {
   });
 }
 
+/** 转账 (balance-design §16), newest first. */
+export function useAdminTransfers() {
+  const identity = useAdminIdentity();
+  return useInfiniteQuery({
+    queryKey: key(identity, "transfers"),
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) =>
+      read<AdminTransferList>(
+        `transfers${pageParam ? `?cursor=${encodeURIComponent(pageParam)}` : ""}`,
+        signal,
+      ),
+    getNextPageParam: (last) => last.nextCursor,
+    retry: false,
+  });
+}
+
 export function useAdminUserBalance(userId: string) {
   const identity = useAdminIdentity();
   return useQuery({
@@ -359,6 +379,17 @@ export function useBalanceAdmin(csrfToken: string) {
         input,
       );
       await Promise.all([refresh("settings"), refresh("overview")]);
+      return result;
+    },
+    /** Someone's 开放接口密钥, stopped with a reason they will read. */
+    revokeApiKey: async (userId: string, keyId: string, reason: string) => {
+      const result = await write<{ key: unknown }>(
+        "POST",
+        `api-keys/${keyId}/revoke`,
+        csrfToken,
+        { reason },
+      );
+      await refresh("user", userId);
       return result;
     },
     checkPlatformApp: async () => {
