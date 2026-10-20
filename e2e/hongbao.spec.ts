@@ -769,7 +769,7 @@ test.describe("红包页", () => {
     await openApp(page, path);
     await expect(
       page.getByRole("button", { name: "关闭首页领取", exact: true }),
-    ).toHaveAccessibleDescription(/^发红包的人可以关闭首页领取/);
+    ).toHaveAccessibleDescription(/^发红包的人关闭首页领取后/);
     await page.getByRole("button", { name: "输入口令领取" }).click();
     await expect(
       shown(page, "提交的口令会汇总给发红包的人看，看不到是谁提交的。"),

@@ -61,7 +61,7 @@ describe("share text (05 §5), written", () => {
         .split("\n")
         .at(-1),
     ).toBe(
-      "这个红包关闭了首页领取，只输口令匹配不到：复制上面整段，粘贴到[红包站](https://linux.do/t/3033290)的输入框就能报名。",
+      "这个红包关闭了首页领取：复制上面整段，粘贴到[红包站](https://linux.do/t/3033290)的输入框就能报名。",
     );
   });
 
@@ -72,7 +72,7 @@ describe("share text (05 §5), written", () => {
     expect(
       plainShareWithPassword({ ...activity, pageOnly: true }, url, password),
     ).toBe(
-      `【周末红包】\n${url}\n口令：周末口令2026\n这个红包关闭了首页领取：请先打开上面的链接，再输入口令。`,
+      `【周末红包】\n${url}\n口令：周末口令2026\n这个红包关闭了首页领取，请打开上面的链接再输入口令。`,
     );
   });
 });

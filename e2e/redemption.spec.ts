@@ -15,12 +15,12 @@ import {
 
 // Lookups skip 红包 that take their 口令 on their own page: the line says so.
 const noMatch =
-  "未匹配到红包。你要领的红包可能关闭了首页领取，需要进入它的红包页输入口令。";
+  "未匹配到红包，可能是关闭了首页领取。去红包广场找到它，在红包页输入口令。";
 
 /**
- * The no-match line, whose “关闭了首页领取” and “红包页” are 名词解释:
- * buttons described by what they mean, so the sentence is read around
- * them; 去红包广场 after it.
+ * The no-match line, whose “关闭了首页领取” and “红包页” are 名词解释
+ * (buttons described by what they mean) and “红包广场” a link, so the
+ * sentence is read around them.
  */
 async function expectNoMatch(page: Page) {
   const which = page.getByRole("button", {
@@ -29,12 +29,8 @@ async function expectNoMatch(page: Page) {
   });
   const where = page.getByRole("button", { name: "红包页", exact: true });
   await expect(which).toBeVisible();
-  await expect(which).toHaveAccessibleDescription(
-    /^发红包的人可以关闭首页领取/,
-  );
-  await expect(where).toHaveAccessibleDescription(
-    /^红包页是每个红包自己的页面/,
-  );
+  await expect(which).toHaveAccessibleDescription(/^发红包的人关闭首页领取后/);
+  await expect(where).toHaveAccessibleDescription(/^每个红包自己的页面/);
   await expect
     .poll(() =>
       where.locator("xpath=..").evaluate((line) => {
@@ -43,7 +39,7 @@ async function expectNoMatch(page: Page) {
         return copy.textContent;
       }),
     )
-    .toBe(`${noMatch}去红包广场`);
+    .toBe(noMatch);
 }
 
 const first = "11111111-2222-4333-8444-555555555555";
@@ -168,7 +164,7 @@ test.describe("兑奖", () => {
       page.getByRole("button", { name: "填入 测试口令2099，未匹配" }),
     ).toBeVisible();
     // Those 红包 are all in 红包广场: the line goes there.
-    await page.getByRole("button", { name: "去红包广场" }).click();
+    await page.getByRole("button", { name: "红包广场", exact: true }).click();
     await expectPath(page, "/square");
   });
 

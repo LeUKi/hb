@@ -51,7 +51,7 @@ export function forumShareWithPassword(
     `口令：${password}`,
     FENCE,
     activity.pageOnly
-      ? `这个红包关闭了首页领取，只输口令匹配不到：复制上面整段，粘贴到[红包站](${FORUM_POST_URL})的输入框就能${result}。`
+      ? `这个红包关闭了首页领取：复制上面整段，粘贴到[红包站](${FORUM_POST_URL})的输入框就能${result}。`
       : howTo(result),
   ].join("\n");
 }
@@ -67,7 +67,7 @@ export function plainShareWithPassword(
     url,
     `口令：${password}`,
     ...(activity.pageOnly
-      ? ["这个红包关闭了首页领取：请先打开上面的链接，再输入口令。"]
+      ? ["这个红包关闭了首页领取，请打开上面的链接再输入口令。"]
       : []),
   ].join("\n");
 }

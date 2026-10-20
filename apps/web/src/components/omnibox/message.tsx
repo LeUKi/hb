@@ -81,7 +81,7 @@ export function MessageLine({
             }`}
           />
           <span className="min-w-0 flex-1 text-ink-2">
-            {withTerms(message.text, message.terms)}
+            {withTerms(message.text, message.terms, onAction)}
             {message.action && (
               <button
                 type="button"

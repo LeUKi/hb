@@ -335,12 +335,12 @@ export function useOmniboxController() {
         // wants to claim would ask it, and where they all are (02 §6).
         store.set(messageAtom, {
           tone: "neutral",
-          text: "未匹配到红包。你要领的红包可能关闭了首页领取，需要进入它的红包页输入口令。",
+          text: "未匹配到红包，可能是关闭了首页领取。去红包广场找到它，在红包页输入口令。",
           terms: [
             { words: "关闭了首页领取", term: "首页领取" },
+            { words: "红包广场", action: "square" },
             { words: "红包页", term: "红包页" },
           ],
-          action: "square",
         });
         store.set(mismatchAtom, (count) => count + 1);
       } catch (error) {

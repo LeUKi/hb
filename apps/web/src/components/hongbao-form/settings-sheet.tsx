@@ -308,7 +308,7 @@ export function SettingsSheet({
               <Setting group="password">
                 <Switch
                   label="首页领取"
-                  description="大家在首页输入口令就能领。关掉后，口令只能在这个红包的红包页输入；红包会加入红包广场，方便大家找到它。"
+                  description="关掉后，口令只能在红包页输入，红包会加入红包广场。"
                   checked={!form.pageOnly}
                   onChange={(home) =>
                     update((current) => ({
@@ -402,7 +402,7 @@ export function SettingsSheet({
                   listedLocked
                     ? "已加入红包广场，不能撤回。"
                     : squareRequired
-                      ? "关闭了首页领取的红包必须加入红包广场，方便大家找到它。"
+                      ? "关闭首页领取的红包要加入红包广场，方便大家找到。"
                       : opened
                         ? "在红包广场公开展示，谁都能看到。开启后不能撤回。"
                         : "开放后在红包广场公开展示，谁都能看到。开放之后不能撤回。"

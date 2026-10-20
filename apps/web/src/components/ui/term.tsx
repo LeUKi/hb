@@ -34,14 +34,24 @@ export function Term({
   );
 }
 
-/** Words in a sentence that explain a term. */
-export type TermMark = { words: string; term: GlossaryTerm };
+/**
+ * Words in a sentence that explain a term, or that go somewhere (an
+ * action the sentence's owner runs: “红包广场” goes there).
+ */
+export type TermMark<Action extends string = string> =
+  | { words: string; term: GlossaryTerm }
+  | { words: string; action: Action };
 
 /**
- * `text` with each mark's words explained, marks in the order they appear
- * (the rest stays plain words).
+ * `text` with each mark's words explained or made a link, marks in the
+ * order they appear (the rest stays plain words). A mouse press on a link
+ * leaves focus where it was, so the omnibox stays open until it goes.
  */
-export function withTerms(text: string, marks: readonly TermMark[] = []) {
+export function withTerms<Action extends string>(
+  text: string,
+  marks: readonly TermMark<Action>[] = [],
+  onAction?: (action: Action) => void,
+) {
   const parts: ReactNode[] = [];
   let rest = text;
   for (const mark of marks) {
@@ -49,9 +59,21 @@ export function withTerms(text: string, marks: readonly TermMark[] = []) {
     if (at < 0) continue;
     parts.push(
       rest.slice(0, at),
-      <Term key={mark.words} term={mark.term}>
-        {mark.words}
-      </Term>,
+      "term" in mark ? (
+        <Term key={mark.words} term={mark.term}>
+          {mark.words}
+        </Term>
+      ) : (
+        <button
+          key={mark.words}
+          type="button"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => onAction?.(mark.action)}
+          className="font-medium text-accent-ink underline-offset-4 hover:underline"
+        >
+          {mark.words}
+        </button>
+      ),
     );
     rest = rest.slice(at + mark.words.length);
   }

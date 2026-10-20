@@ -27,8 +27,8 @@ export type OmniMessage = {
   tone: "neutral" | "warning" | "danger";
   text: string;
   action?: "login" | "global" | "square";
-  /** Words in `text` explained where they stand (名词解释), in order. */
-  terms?: readonly TermMark[];
+  /** Words in `text` explained (名词解释) or linked, in order. */
+  terms?: readonly TermMark<NonNullable<OmniMessage["action"]>>[];
   /** A claim's or verify's answer: shown on that 红包's page only. */
   activityId?: string;
 };

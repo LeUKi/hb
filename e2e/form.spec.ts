@@ -260,7 +260,7 @@ test.describe("发红包", () => {
     await expect(square).toHaveAttribute("aria-checked", "true");
     await expect(square).toBeDisabled();
     await expect(square).toHaveAccessibleDescription(
-      "关闭了首页领取的红包必须加入红包广场，方便大家找到它。",
+      "关闭首页领取的红包要加入红包广场，方便大家找到。",
     );
     await sheet.getByRole("button", { name: "完成" }).click();
     await expect(page.getByRole("button", { name: /更多设置/ })).toContainText(
