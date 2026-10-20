@@ -254,8 +254,13 @@ test.describe("发红包", () => {
     const square = sheet.getByRole("switch", { name: "加入红包广场" });
     await expect(home).toHaveAttribute("aria-checked", "true");
     await expect(square).toHaveAttribute("aria-checked", "false");
+    await expect(sheet).not.toContainText("领取者只能在红包页输入口令");
     await home.click();
     await expect(home).toHaveAttribute("aria-checked", "false");
+    // A 口令 sent alone would match nothing: it says how to share.
+    await expect(sheet).toContainText(
+      "领取者只能在红包页输入口令。开放后请通过“分享”复制文案，文案中带有红包入口。",
+    );
     // Found in 红包广场 by those without the link: it goes on, and stays.
     await expect(square).toHaveAttribute("aria-checked", "true");
     await expect(square).toBeDisabled();

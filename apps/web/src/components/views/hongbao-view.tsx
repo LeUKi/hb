@@ -139,7 +139,9 @@ function HongbaoPage({
       />
       <div className="mx-auto flex w-full max-w-[36rem] flex-col gap-8 px-5 pt-8 @wide/window:px-8">
         <RefreshNotice />
-        {hongbao.author && <AuthorTools activity={activity} />}
+        {hongbao.author && (
+          <AuthorTools activity={activity} ended={view.ended} />
+        )}
         {view.afterEndInfo && (
           <InfoNote
             title="结束说明"

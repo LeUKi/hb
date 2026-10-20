@@ -1028,7 +1028,7 @@ test.describe("红包页", () => {
 
   test("发红包的人：看到全部口令，不能自己领", async ({ page }) => {
     await mockSession(page, author);
-    await mockHongbao(page);
+    const state = await mockHongbao(page);
     const managed: ManagedActivity = {
       id,
       title: "周末红包",
@@ -1114,6 +1114,21 @@ test.describe("红包页", () => {
       `/🧧/${code}/📝`,
     );
     await expect(page.getByRole("link", { name: "付款记录" })).toBeVisible();
+    await expect(page.getByText("关闭了首页领取", { exact: true })).toHaveCount(
+      0,
+    );
+
+    // 首页领取 off: it is shared from here, so here it says how.
+    state.activity = { ...state.activity, forceDedicated: true };
+    await page.reload();
+    await expect(
+      page.getByText("关闭了首页领取", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(
+        "领取者只能在红包页输入口令。请通过“分享”复制文案，文案中带有红包入口。",
+      ),
+    ).toBeVisible();
   });
 
   test("不存在的红包：未找到", async ({ page }) => {

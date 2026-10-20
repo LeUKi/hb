@@ -3,6 +3,7 @@ import { type ReactNode, useId, useRef, useState } from "react";
 import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
 import { ChoiceCards, Field, Switch, TextInput } from "../ui/field";
+import { Reveal } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import {
   AlgorithmCards,
@@ -319,6 +320,13 @@ export function SettingsSheet({
                     }))
                   }
                 />
+                {/* Off: a 口令 sent alone matches nothing on the start page,
+                    so it says how to share (07 §6). */}
+                <Reveal show={squareRequired}>
+                  <p className="text-sm text-warning">
+                    领取者只能在红包页输入口令。开放后请通过“分享”复制文案，文案中带有红包入口。
+                  </p>
+                </Reveal>
               </Setting>
             )}
             <Setting>
