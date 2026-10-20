@@ -186,9 +186,13 @@ test("🐟额红包：站长打开开关并给人加🐟，那人在发红包里
   await sender.page.locator("#hb-title").fill(title);
   await sender.page.getByRole("button", { name: "保存并开放" }).first().click();
   const { code, id } = await openedCode(sender.page);
-  await expect(
-    sender.page.getByRole("button", { name: /^🐟额 领到的 LDC/ }),
-  ).toBeVisible();
+  // The tag is named by its own words; what it means is its description.
+  const fishTag = sender.page.getByRole("button", {
+    name: "🐟额",
+    exact: true,
+  });
+  await expect(fishTag).toBeVisible();
+  await expect(fishTag).toHaveAccessibleDescription(/^领到的 LDC/);
 
   // Someone else takes a share: in their 🐟额 at once, no payment.
   const claimer = await account(browser, "recipient3");
