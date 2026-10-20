@@ -36,7 +36,7 @@ export type HongbaoActivity = {
   rewardSummary: string;
   /** 说明 (Markdown). */
   beforeInfo: string;
-  /** 仅能在红包页输入口令: its 口令 match nowhere else (07 §6). */
+  /** 首页领取 off: its 口令 match only on its own page (07 §6). */
   pageOnly: boolean;
   /** 领取前人机验证: claiming or signing up first passes Turnstile. */
   humanCheck: boolean;

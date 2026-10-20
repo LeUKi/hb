@@ -49,7 +49,7 @@ export type FormState = {
   participation: "password" | "direct";
   passwords: string[];
   /**
-   * 仅能在红包页输入口令 (07 §6): its 口令 match nowhere else, and it joins
+   * 首页领取 off (07 §6): its 口令 match only on its own page, and it joins
    * 红包广场 so it can be found. Every 口令红包 counts attempts anyway.
    */
   pageOnly: boolean;

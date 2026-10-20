@@ -316,12 +316,12 @@ function validateActivity(
       path: ["merchantId"],
       message: balance ? "🐟额红包不用商户" : "请先配置 LDC 商户",
     });
-  // 仅能在红包页输入口令: it is found in 红包广场 (docs/redesign/07 §6).
+  // 首页领取 off: it is found in 红包广场 (docs/redesign/07 §6).
   if (activity.forceDedicated && !activity.joinSquare)
     context.addIssue({
       code: "custom",
       path: ["joinSquare"],
-      message: "仅能在红包页输入口令的红包要加入红包广场",
+      message: "关闭了首页领取的红包要加入红包广场",
     });
   if (activity.participationMode === "direct") {
     if (activity.passwords.length > 0)
@@ -334,7 +334,7 @@ function validateActivity(
       context.addIssue({
         code: "custom",
         path: ["forceDedicated"],
-        message: "无需口令的红包不能设置仅能在红包页输入口令",
+        message: "无需口令的红包不能关闭首页领取",
       });
   } else if (activity.passwords.length === 0)
     context.addIssue({

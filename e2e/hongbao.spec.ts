@@ -760,7 +760,7 @@ test.describe("红包页", () => {
     expect(state.claims).toMatchObject([{ password: passwordOf.mine }]);
   });
 
-  test("仅限红包页的红包：标签说明在哪输入；输入口令时写明会汇总给发红包的人", async ({
+  test("关闭了首页领取的红包：标签说明怎么领；输入口令时写明会汇总给发红包的人", async ({
     page,
   }) => {
     await mockSession(page, viewer);
@@ -768,8 +768,8 @@ test.describe("红包页", () => {
     state.activity = { ...state.activity, forceDedicated: true };
     await openApp(page, path);
     await expect(
-      page.getByRole("button", { name: "仅限红包页", exact: true }),
-    ).toHaveAccessibleDescription(/^发红包的人设置了口令只能在红包页输入/);
+      page.getByRole("button", { name: "关闭首页领取", exact: true }),
+    ).toHaveAccessibleDescription(/^发红包的人可以关闭首页领取/);
     await page.getByRole("button", { name: "输入口令领取" }).click();
     await expect(
       shown(page, "提交的口令会汇总给发红包的人看，看不到是谁提交的。"),

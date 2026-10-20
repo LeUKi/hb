@@ -331,16 +331,16 @@ export function useOmniboxController() {
           );
           return;
         }
-        // Lookups skip 红包 that take their 口令 on their own page only
-        // (仅能在红包页输入口令): say so, as the help page does, explaining which
-        // 红包 those are and what a 红包页 is.
+        // Lookups skip 红包 whose 首页领取 is off: say so as the one who
+        // wants to claim would ask it, and where they all are (02 §6).
         store.set(messageAtom, {
           tone: "neutral",
-          text: "未匹配到红包。部分红包只能在红包页输入口令领取。",
+          text: "未匹配到红包。你要领的红包可能关闭了首页领取，需要进入它的红包页输入口令。",
           terms: [
-            { words: "部分红包", term: "仅限红包页" },
+            { words: "关闭了首页领取", term: "首页领取" },
             { words: "红包页", term: "红包页" },
           ],
+          action: "square",
         });
         store.set(mismatchAtom, (count) => count + 1);
       } catch (error) {
@@ -787,9 +787,14 @@ export function useOmniboxController() {
   );
 
   const runMessageAction = useCallback(
-    (action: "login" | "global" | undefined) => {
+    (action: "login" | "global" | "square" | undefined) => {
       if (action === "login") {
         openAccount();
+        return;
+      }
+      if (action === "square") {
+        store.set(messageAtom, null);
+        void leaveTo({ to: "/square" });
         return;
       }
       const expanded = Boolean(router.history.location.state.omnibox);
@@ -800,7 +805,7 @@ export function useOmniboxController() {
         void runDiscover(store.get(draftAtom), true);
       }
     },
-    [openAccount, router, runDiscover, store],
+    [leaveTo, openAccount, router, runDiscover, store],
   );
 
   const goHome = useCallback(() => {

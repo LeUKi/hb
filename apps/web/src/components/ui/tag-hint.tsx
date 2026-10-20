@@ -145,12 +145,23 @@ function HintBubble({
     });
   }, [open, anchor]);
 
-  // Once its width is known, keep the bubble 8px inside the window.
+  // Once its size is known: under the tag when it does not fit above (a
+  // long explanation), and 8px inside the window either way.
   useLayoutEffect(() => {
     if (!place || !bubble.current) return;
-    const width = bubble.current.offsetWidth;
+    const { offsetWidth: width, offsetHeight: height } = bubble.current;
+    const target = anchor.current;
+    if (place.above && place.y - height < 8 && host && target) {
+      const box = host.getBoundingClientRect();
+      setPlace({
+        ...place,
+        above: false,
+        y: target.getBoundingClientRect().bottom - box.top + 8,
+      });
+      return;
+    }
     setLeft(Math.min(Math.max(8, place.x - width / 2), place.room - width - 8));
-  }, [place]);
+  }, [place, host, anchor]);
 
   const latestClose = useRef(onClose);
   latestClose.current = onClose;

@@ -61,18 +61,18 @@ describe("share text (05 §5), written", () => {
         .split("\n")
         .at(-1),
     ).toBe(
-      "口令只能在红包页输入：复制上面这段，粘贴到[红包站](https://linux.do/t/3033290)的输入框就能报名。",
+      "这个红包关闭了首页领取，只输口令匹配不到：复制上面整段，粘贴到[红包站](https://linux.do/t/3033290)的输入框就能报名。",
     );
   });
 
-  it("keeps the plain one plain, saying so when the 口令 is page-only", () => {
+  it("keeps the plain one plain, saying so when 首页领取 is off", () => {
     expect(plainShareWithPassword(activity, url, password)).toBe(
       `【周末红包】\n${url}\n口令：周末口令2026`,
     );
     expect(
       plainShareWithPassword({ ...activity, pageOnly: true }, url, password),
     ).toBe(
-      `【周末红包】\n${url}\n口令：周末口令2026\n口令只能在红包页输入，请先打开上面的链接。`,
+      `【周末红包】\n${url}\n口令：周末口令2026\n这个红包关闭了首页领取：请先打开上面的链接，再输入口令。`,
     );
   });
 });
@@ -83,7 +83,7 @@ describe("share text, read back from a paste (02 §6)", () => {
     ["社区专用链接", forumShareLink(id), null],
     ["专用链接与口令", forumShareWithPassword(activity, password), password],
     [
-      "专用链接与口令（仅限红包页、报名）",
+      "专用链接与口令（关闭首页领取、报名）",
       forumShareWithPassword(
         { ...activity, draw: true, pageOnly: true },
         password,
@@ -102,7 +102,7 @@ describe("share text, read back from a paste (02 §6)", () => {
       password,
     ],
     [
-      "原始链接与口令（仅限红包页）",
+      "原始链接与口令（关闭首页领取）",
       plainShareWithPassword({ ...activity, pageOnly: true }, url, password),
       password,
     ],

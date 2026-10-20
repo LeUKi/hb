@@ -659,7 +659,7 @@ export async function updateActivity(
   if (row.paymentMode && nextPaymentMode !== row.paymentMode)
     invalidActivity("红包付款模式已固定，不能更换为不同模式的商户");
   if (row.openedAt !== null && config.forceDedicated !== row.forceDedicated)
-    invalidActivity("开放后不能修改“仅能在红包页输入口令”");
+    invalidActivity("开放后不能修改首页领取");
   // A draft is on no list yet: only an opened 红包 keeps 加入广场 (06 §9).
   if (row.openedAt !== null && row.joinSquare && !config.joinSquare)
     invalidActivity("加入红包广场后不能撤回");

@@ -45,7 +45,7 @@ const playNames = {
 
 /**
  * The cover's labels, each with what it means: how to take part, the 玩法
- * (with its 分法 where money is split at random), 🐟额, 仅限红包页 and the
+ * (with its 分法 where money is split at random), 🐟额, 首页领取 and the
  * human check. The amounts are not repeated here: the numbers under them
  * say them.
  */
@@ -77,9 +77,9 @@ function coverTags(activity: HongbaoActivity) {
           },
         ]
       : []),
-    // 仅能在红包页输入口令: the 口令 works on this page only (07 §6).
+    // 首页领取 off: the 口令 works on this page only (07 §6).
     ...(activity.pageOnly
-      ? [{ text: "仅限红包页", hint: glossary.仅限红包页 }]
+      ? [{ text: "关闭首页领取", hint: glossary.首页领取 }]
       : []),
     ...(activity.humanCheck
       ? [

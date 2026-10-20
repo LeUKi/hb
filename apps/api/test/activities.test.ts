@@ -110,7 +110,7 @@ function input(overrides: Partial<ActivityInput> = {}): ActivityInput {
     afterClaimInfo: "only-after-claim",
     afterEndInfo: "only-after-end",
     ...overrides,
-    // 仅能在红包页输入口令 comes with 红包广场, as the form makes it.
+    // 首页领取 off comes with 红包广场, as the form makes it.
     ...(overrides.forceDedicated ? { joinSquare: true } : {}),
   };
 }
@@ -1327,7 +1327,7 @@ describe("LDC activity management", () => {
       expect(await response.json()).toEqual({
         error: {
           code: "INVALID_ACTIVITY",
-          message: "开放后不能修改“仅能在红包页输入口令”",
+          message: "开放后不能修改首页领取",
         },
       });
       const reread = await request(`/api/me/activities/${opened.id}`, owner);

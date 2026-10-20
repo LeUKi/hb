@@ -240,7 +240,7 @@ test.describe("发红包", () => {
     expect(sent[0]?.activity).toMatchObject({ humanCheck: true });
   });
 
-  test("更多设置：仅能在红包页输入口令，打开后加入红包广场跟着打开并锁住，保存的输入都带上", async ({
+  test("更多设置：关掉首页领取，加入红包广场跟着打开并锁住，摘要和保存的输入都带上", async ({
     page,
   }) => {
     await mockSession(page, viewer);
@@ -250,20 +250,22 @@ test.describe("发红包", () => {
     await fillRandom(page);
     await page.getByRole("button", { name: /更多设置/ }).click();
     const sheet = page.getByRole("dialog", { name: "更多设置" });
-    const pageOnly = sheet.getByRole("switch", {
-      name: "仅能在红包页输入口令",
-    });
+    const home = sheet.getByRole("switch", { name: "首页领取" });
     const square = sheet.getByRole("switch", { name: "加入红包广场" });
-    await expect(pageOnly).toHaveAttribute("aria-checked", "false");
+    await expect(home).toHaveAttribute("aria-checked", "true");
     await expect(square).toHaveAttribute("aria-checked", "false");
-    await pageOnly.click();
+    await home.click();
+    await expect(home).toHaveAttribute("aria-checked", "false");
     // Found in 红包广场 by those without the link: it goes on, and stays.
     await expect(square).toHaveAttribute("aria-checked", "true");
     await expect(square).toBeDisabled();
     await expect(square).toHaveAccessibleDescription(
-      "仅能在红包页输入口令的红包必须加入红包广场，方便大家找到它。",
+      "关闭了首页领取的红包必须加入红包广场，方便大家找到它。",
     );
     await sheet.getByRole("button", { name: "完成" }).click();
+    await expect(page.getByRole("button", { name: /更多设置/ })).toContainText(
+      "关闭首页领取",
+    );
     await page.getByRole("button", { name: "存草稿" }).first().click();
     await expect(
       shown(page, "草稿已保存。开放前只有你能看到它。").first(),

@@ -8,6 +8,7 @@ import type { OmniMessage } from "./state";
 const actionLabels: Record<NonNullable<OmniMessage["action"]>, string> = {
   login: "登录",
   global: "在全部红包中查找",
+  square: "去红包广场",
 };
 
 /** How long the 口令 is against its limit, wherever it shows (02 §6). */

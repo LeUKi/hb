@@ -13,7 +13,7 @@ export type ShareActivity = {
   title: string;
   /** 限时开奖: one signs up (报名) rather than takes (领). */
   draw: boolean;
-  /** 仅能在红包页输入口令: the copy says so. */
+  /** 首页领取 off: the copy says so, and to paste it whole. */
   pageOnly: boolean;
 };
 
@@ -43,14 +43,16 @@ export function forumShareWithPassword(
   activity: ShareActivity,
   password: string,
 ) {
-  const how = howTo(activity.draw ? "报名" : "领");
+  const result = activity.draw ? "报名" : "领";
   return [
     `【${activity.title}】`,
     FENCE,
     activityPath(activity.id),
     `口令：${password}`,
     FENCE,
-    activity.pageOnly ? `口令只能在红包页输入：${how}` : how,
+    activity.pageOnly
+      ? `这个红包关闭了首页领取，只输口令匹配不到：复制上面整段，粘贴到[红包站](${FORUM_POST_URL})的输入框就能${result}。`
+      : howTo(result),
   ].join("\n");
 }
 
@@ -65,7 +67,7 @@ export function plainShareWithPassword(
     url,
     `口令：${password}`,
     ...(activity.pageOnly
-      ? ["口令只能在红包页输入，请先打开上面的链接。"]
+      ? ["这个红包关闭了首页领取：请先打开上面的链接，再输入口令。"]
       : []),
   ].join("\n");
 }

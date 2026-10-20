@@ -320,6 +320,9 @@ export function HongbaoForm({
     form.topic.trim() ? "关联了帖子" : "不关联帖子",
     form.listed ? "加入红包广场" : "不加入红包广场",
     form.quantity === "exact" ? "精确数量" : "模糊数量",
+    ...(form.participation === "password" && form.pageOnly
+      ? ["关闭首页领取"]
+      : []),
     ...(form.humanCheck ? ["领取需人机验证"] : []),
   ].join(" · ");
   const body = (step: StepId) => {

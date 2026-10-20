@@ -6,7 +6,7 @@ import { TagHint } from "./tag-hint";
 /**
  * Something new people ask about, explained where it stands (名词解释): a
  * dotted underline, and its meaning in the same bubble as a cover tag's.
- * The words may differ from the term (“部分红包” for 统计口令尝试). A mouse
+ * The words may differ from the term (“关闭了首页领取” for 首页领取). A mouse
  * press leaves focus where it was, so the omnibox stays open.
  */
 export function Term({

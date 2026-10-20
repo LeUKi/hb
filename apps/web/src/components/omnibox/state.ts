@@ -26,7 +26,7 @@ export type ScopeOffer =
 export type OmniMessage = {
   tone: "neutral" | "warning" | "danger";
   text: string;
-  action?: "login" | "global";
+  action?: "login" | "global" | "square";
   /** Words in `text` explained where they stand (名词解释), in order. */
   terms?: readonly TermMark[];
   /** A claim's or verify's answer: shown on that 红包's page only. */
