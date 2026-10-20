@@ -68,6 +68,8 @@
   --color-gold-bottom: #edcb86;
   --color-gold-ink: #6a4510;
   --color-gold-soft: rgb(237 203 134 / 0.28);
+  /* The clickable PLUS tag, hovered. */
+  --color-gold-soft-strong: rgb(237 203 134 / 0.5);
   /* 🐟额 PLUS's gold fish: gold that still reads as an icon on white. */
   --color-gold-mark: #b7862f;
   --color-success: #1e8a57;

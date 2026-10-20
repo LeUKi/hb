@@ -25,6 +25,7 @@ import { ListItem, Reveal, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
 import { withdrawalWaitText } from "../views/balance-withdrawal-view";
+import { PlusBadge } from "./plus";
 
 // 转账 (docs/balance-design.md §16): from 🐟额 to someone who has been
 // here, to their 🐟额 at once or to their Credit account (a 转出 to them).
@@ -239,7 +240,12 @@ export function TransferDialog({
       onClose={onClose}
       onClosed={reset}
       busy={busy}
-      title="转账"
+      title={
+        <span className="inline-flex items-center gap-2">
+          转账
+          <PlusBadge />
+        </span>
+      }
       text="收款人要来过本站。"
       actions={
         done ? (

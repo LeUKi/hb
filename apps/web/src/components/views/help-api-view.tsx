@@ -1,5 +1,6 @@
 import { BALANCE_LIMITS } from "@hb/contracts";
 import type { ReactNode } from "react";
+import { PlusBadge } from "../balance/plus";
 import { Page, PageHeader, PageSection, Panel } from "../page/page";
 import { Code } from "../ui/code";
 import { CopyButton } from "../ui/copy-button";
@@ -112,7 +113,12 @@ for transfer in page["items"]:
   return (
     <Page>
       <PageHeader
-        title="🐟额开放接口"
+        title={
+          <span className="inline-flex items-center gap-2">
+            🐟额开放接口
+            <PlusBadge />
+          </span>
+        }
         description="开通🐟额 PLUS 后，在🐟额页新建开放接口密钥，从你的服务器调用。"
       />
       <PageSection title="认证">

@@ -18,6 +18,7 @@ import { fishText } from "../ui/fish";
 import { ListItem, Reveal, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
+import { PlusBadge } from "./plus";
 import { TransferDetailDialog, TransferRow } from "./transfer";
 
 // 开放接口密钥 (docs/balance-design.md §16): made, listed, opened and
@@ -51,7 +52,12 @@ export function ApiKeysSection({ user }: { user: SessionUser }) {
   return (
     <PageSection
       id="api-keys"
-      title="开放接口密钥"
+      title={
+        <span className="inline-flex items-center gap-2">
+          开放接口密钥
+          <PlusBadge />
+        </span>
+      }
       description={
         <>
           接入网站或程序时用，用法见

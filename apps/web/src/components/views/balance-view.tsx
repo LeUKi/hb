@@ -33,7 +33,7 @@ import {
 import { clockSeconds } from "../../lib/roster-time";
 import { type SessionUser, useSessionUser } from "../../lib/session";
 import { ApiKeysSection } from "../balance/api-keys";
-import { PlusTag } from "../balance/plus";
+import { PlusBadge, PlusTag } from "../balance/plus";
 import {
   TransferDetailDialog,
   TransferDialog,
@@ -370,7 +370,10 @@ function Balance({ user }: { user: SessionUser }) {
                           if (summary.settings.topupEnabled) setTopupOpen(true);
                         }}
                       >
-                        {summary.settings.topupEnabled ? "转入" : "转入暂停"}
+                        <span className="inline-flex items-center gap-1.5">
+                          {summary.settings.topupEnabled ? "转入" : "转入暂停"}
+                          <PlusBadge onAccent wideOnly />
+                        </span>
                       </Button>
                     )}
                     <Button
@@ -402,7 +405,10 @@ function Balance({ user }: { user: SessionUser }) {
                         setTransferOpen(true);
                     }}
                   >
-                    {summary.settings.transferEnabled ? "转账" : "转账暂停"}
+                    <span className="inline-flex items-center gap-1.5">
+                      {summary.settings.transferEnabled ? "转账" : "转账暂停"}
+                      <PlusBadge wideOnly />
+                    </span>
                   </Button>
                 )}
               </>
@@ -649,7 +655,12 @@ function TopupDialog({
         requestId.current = crypto.randomUUID();
       }}
       busy={busy}
-      title="转入🐟额"
+      title={
+        <span className="inline-flex items-center gap-2">
+          转入🐟额
+          <PlusBadge />
+        </span>
+      }
       text="在 Credit 收银台确认，需要登录 Credit 并输入安全密码。流转费由 Credit 收取，本站不另外收费。"
       error={error}
       actions={

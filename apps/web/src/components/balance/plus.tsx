@@ -1,4 +1,4 @@
-import { ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   type ReactNode,
@@ -24,22 +24,57 @@ import { radius, Squircle, SquirclePlate } from "../ui/squircle";
 export function PlusChip({
   off = false,
   className,
+  children,
 }: {
   off?: boolean;
   className?: string;
+  /** After the word: the clickable tag's arrow. */
+  children?: ReactNode;
 }) {
   return (
     <Squircle radius={radius.tag}>
       <span
         className={cn(
-          "inline-flex h-5 shrink-0 items-center px-1.5 text-[11px] leading-none font-semibold tracking-[0.08em]",
+          "inline-flex h-5 shrink-0 items-center gap-0.5 px-1.5 text-[11px] leading-none font-semibold tracking-[0.08em]",
           off ? "bg-fill-2 text-ink-3" : "bg-gold-soft text-gold-ink",
           className,
         )}
       >
         PLUS
+        {children}
       </span>
     </Squircle>
+  );
+}
+
+/**
+ * A PLUS feature's own mark (balance-design §13): after its button's words
+ * or its title. Smaller than the tag on 🐟额's title and never an arrow,
+ * since it opens nothing; for the eye only (its button or title keeps its
+ * name), with “🐟额 PLUS 才有” on hover.
+ */
+export function PlusBadge({
+  onAccent = false,
+  wideOnly = false,
+}: {
+  onAccent?: boolean;
+  /** In a button: only where the row has room (a phone's would wrap). */
+  wideOnly?: boolean;
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      title="🐟额 PLUS 才有"
+      className={cn(
+        "h-4 shrink-0 items-center rounded-[5px] px-1 align-middle text-[9px] leading-none font-semibold tracking-[0.08em]",
+        wideOnly ? "hidden @wide/window:inline-flex" : "inline-flex",
+        onAccent
+          ? "bg-on-accent/20 text-on-accent"
+          : "bg-gold-soft text-gold-ink",
+      )}
+    >
+      PLUS
+    </span>
   );
 }
 
@@ -189,7 +224,27 @@ export function PlusTag({
   return (
     <TagPanel
       label={plus.plus ? "🐟额 PLUS" : "🐟额 PLUS，还没开通"}
-      trigger={<PlusChip off={!plus.plus} />}
+      // It opens: an arrow, unlike every other PLUS on the page.
+      trigger={(open) => (
+        <PlusChip
+          off={!plus.plus}
+          className={cn(
+            "transition-colors",
+            plus.plus
+              ? "group-hover/plus:bg-gold-soft-strong"
+              : "group-hover/plus:bg-line-strong",
+          )}
+        >
+          <ChevronDown
+            aria-hidden="true"
+            className={cn(
+              "size-3 transition-transform duration-150",
+              open && "rotate-180",
+            )}
+            strokeWidth={2.5}
+          />
+        </PlusChip>
+      )}
     >
       {(close) => (
         <PlusPanel
@@ -214,7 +269,7 @@ function TagPanel({
   children,
 }: {
   label: string;
-  trigger: ReactNode;
+  trigger: (open: boolean) => ReactNode;
   children: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -245,7 +300,7 @@ function TagPanel({
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
         aria-haspopup="dialog"
-        className="inline-flex rounded-[7px] align-middle"
+        className="group/plus inline-flex cursor-pointer rounded-[7px] align-middle"
         onPointerEnter={(event) => {
           if (event.pointerType !== "mouse") return;
           later(() => setOpen(true), HOVER_DELAY);
@@ -263,7 +318,7 @@ function TagPanel({
           setOpen(true);
         }}
       >
-        {trigger}
+        {trigger(open)}
       </button>
       <Bubble
         open={open}
