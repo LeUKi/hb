@@ -1,6 +1,7 @@
 // 网站管理 · 🐟额 (docs/balance-design.md §7, §9.2). Writes check the exact
 // Origin, the session, CSRF and the admin, in that order.
 import {
+  adminRevokeApiKeySchema,
   balanceAdjustmentSchema,
   confirmTopupSchema,
   createInviteLinkSchema,
@@ -26,8 +27,10 @@ import {
   listAdminAdjustments,
   listAdminAttention,
   listAdminTopups,
+  listAdminTransfers,
   listAdminWithdrawals,
 } from "./admin";
+import { adminRevokeApiKey } from "./api-keys";
 import { balanceError } from "./errors";
 import {
   createInviteLink,
@@ -164,6 +167,22 @@ export const balanceAdminRoutes = new Hono<ApiContext>()
   .get("/admin/balance/adjustments", async (c) =>
     c.json(await listAdminAdjustments(c.env, cursorOf(c))),
   )
+  // 转账 (balance-design §16): the list, and stopping someone's key.
+  .get("/admin/balance/transfers", async (c) =>
+    c.json(await listAdminTransfers(c.env, cursorOf(c))),
+  )
+  .post("/admin/balance/api-keys/:id/revoke", body, async (c) => {
+    const session = await adminMutation(c);
+    const input = await parsed(c, adminRevokeApiKeySchema);
+    return c.json({
+      key: await adminRevokeApiKey(
+        c.env,
+        session.user.id,
+        c.req.param("id"),
+        input.reason,
+      ),
+    });
+  })
   .get("/admin/balance/users/:id", async (c) =>
     c.json(await adminUserBalance(c.env, c.req.param("id"), cursorOf(c))),
   )

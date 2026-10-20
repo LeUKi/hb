@@ -3,10 +3,13 @@
 import { databaseNow } from "../activities/lifecycle";
 import type { ApiBindings } from "../env";
 import { credentialVerificationView } from "../payments/verification";
+import { listApiKeys } from "./api-keys";
+import { startOfBeijingDay } from "./day";
 import { memberOf } from "./invites";
 import { decodeRecordCursor, listRecords, readAccount } from "./ledger";
 import { readPlatformAppRow } from "./platform-app";
 import { type TopupRow, topupView } from "./topups";
+import { adminTransferViews, type TransferRow } from "./transfers";
 import {
   type WithdrawalPayment,
   type WithdrawalRow,
@@ -30,12 +33,6 @@ function userRef(row: Record<string, unknown>, prefix = "user"): UserRef {
         ? null
         : String(row[`${prefix}_avatar_url`]),
   };
-}
-
-/** Midnight in Beijing, today. */
-function startOfBeijingDay(now = Date.now()) {
-  const offset = 8 * 60 * 60_000;
-  return Math.floor((now + offset) / 86_400_000) * 86_400_000 - offset;
 }
 
 /** A 转入 needs a look: a flag, or Credit turned down the platform app's key. */
@@ -82,7 +79,15 @@ const MISMATCHES = `SELECT
   -- Each claim of a 🐟额红包: one share out of the lock, the same share in.
   + (SELECT COUNT(*) FROM claims c JOIN activities a ON a.id=c.activity_id WHERE a.funding='balance'
     AND NOT EXISTS(SELECT 1 FROM balance_entries d JOIN balance_entries h ON h.claim_id=d.claim_id AND h.kind='hongbao'
-      WHERE d.claim_id=c.id AND d.kind='deduct' AND -d.locked_delta_minor=h.available_delta_minor)) AS count`;
+      WHERE d.claim_id=c.id AND d.kind='deduct' AND -d.locked_delta_minor=h.available_delta_minor))
+  -- A 转账 to 🐟额: one entry out, the same amount in (balance-design §16);
+  -- to a Credit account: its own 转出, the same amount to the same person.
+  + (SELECT COUNT(*) FROM balance_transfers t WHERE
+    (t.destination='balance' AND NOT EXISTS(SELECT 1 FROM balance_entries o JOIN balance_entries i
+      ON i.transfer_id=o.transfer_id AND i.kind='transfer_in' AND i.user_id=t.to_user_id AND i.available_delta_minor=t.amount_minor
+      WHERE o.transfer_id=t.id AND o.kind='transfer_out' AND o.user_id=t.from_user_id AND -o.available_delta_minor=t.amount_minor))
+    OR (t.destination='credit' AND NOT EXISTS(SELECT 1 FROM balance_withdrawals w WHERE w.id=t.withdrawal_id
+      AND w.user_id=t.from_user_id AND w.debit_minor=t.amount_minor AND w.recipient_id=t.recipient_external_id))) AS count`;
 
 /** For 网站管理 · 概览's 需要留意: the 转入 and 转出 to look at. */
 export async function balanceAttentionCounts(env: ApiBindings) {
@@ -100,7 +105,7 @@ export async function balanceAttentionCounts(env: ApiBindings) {
 
 export async function adminBalanceOverview(env: ApiBindings) {
   const today = startOfBeijingDay();
-  const [held, credited, attention, sending, sent, mismatches] =
+  const [held, credited, attention, sending, sent, mismatches, transfers] =
     await env.DB.batch<Record<string, number | null>>([
       env.DB.prepare(`SELECT
       COALESCE(SUM(CASE WHEN available_minor>0 THEN available_minor ELSE 0 END),0)+COALESCE(SUM(locked_minor),0) AS heldMinor,
@@ -121,6 +126,9 @@ export async function adminBalanceOverview(env: ApiBindings) {
         "SELECT COUNT(*) AS count,COALESCE(SUM(debit_minor),0) AS minor FROM balance_withdrawals WHERE status='sent' AND sent_at>=?",
       ).bind(today),
       env.DB.prepare(MISMATCHES),
+      env.DB.prepare(
+        "SELECT COUNT(*) AS count,COALESCE(SUM(amount_minor),0) AS minor FROM balance_transfers WHERE created_at>=?",
+      ).bind(today),
     ]);
   const platform = await readPlatformAppRow(env);
   const verification = platform
@@ -135,6 +143,7 @@ export async function adminBalanceOverview(env: ApiBindings) {
   const counts = attention?.results[0] ?? {};
   const out = sending?.results[0] ?? {};
   const outToday = sent?.results[0] ?? {};
+  const moved = transfers?.results[0] ?? {};
   return {
     /** 代存合计: what the platform account must keep for everyone. */
     heldMinor: Number(totals.heldMinor ?? 0),
@@ -147,6 +156,9 @@ export async function adminBalanceOverview(env: ApiBindings) {
       creditMinor: Number(today_.creditMinor ?? 0),
       withdrawals: Number(outToday.count ?? 0),
       withdrawnMinor: Number(outToday.minor ?? 0),
+      /** 转账 made today, either way (balance-design §16). */
+      transfers: Number(moved.count ?? 0),
+      transferredMinor: Number(moved.minor ?? 0),
     },
     /** 转出 发放中, and how much they hold. */
     sending: { count: Number(out.count ?? 0), minor: Number(out.minor ?? 0) },
@@ -242,7 +254,8 @@ export async function adminTopupDetail(env: ApiBindings, id: string) {
 
 const WITHDRAWAL_WITH_USER = `SELECT w.*,u.id AS user_id,u.username AS user_username,u.display_name AS user_display_name,u.avatar_url AS user_avatar_url,
     p.id AS task_id,p.status AS task_status,p.reason AS task_reason,p.unknown_outcome AS task_unknown,
-    p.external_order_id AS task_order,p.next_send_at AS task_next_send,p.next_run_at AS task_next_run
+    p.external_order_id AS task_order,p.next_send_at AS task_next_send,p.next_run_at AS task_next_run,
+    (SELECT t.id FROM balance_transfers t WHERE t.withdrawal_id=w.id) AS transfer_id
   FROM balance_withdrawals w JOIN users u ON u.id=w.user_id LEFT JOIN payment_tasks p ON p.withdrawal_id=w.id`;
 
 type WithdrawalWithUser = WithdrawalRow & Record<string, unknown>;
@@ -265,6 +278,8 @@ function adminWithdrawalItem(row: WithdrawalWithUser) {
   return {
     withdrawal: withdrawalView(row, payment),
     user: userRef(row),
+    /** A 转账 to someone's Credit account: “转账给 @xxx”. */
+    transferId: row.transfer_id == null ? null : String(row.transfer_id),
     payment: payment
       ? { id: payment.id, status: payment.status, reason: payment.reason }
       : null,
@@ -421,10 +436,39 @@ export async function adminUserBalance(
   userId: string,
   cursor?: string,
 ) {
-  const [account, records, member] = await Promise.all([
+  const [account, records, member, apiKeys] = await Promise.all([
     readAccount(env, userId),
     listRecords(env, userId, "all", cursor),
     memberOf(env, userId),
+    listApiKeys(env, userId),
   ]);
-  return { account, member, ...records };
+  return { account, member, apiKeys, ...records };
+}
+
+/**
+ * 转账 for admins (balance-design §16): newest first, 20 at a time, with
+ * who sent it to whom, where to, its status and the key it came through.
+ */
+export async function listAdminTransfers(env: ApiBindings, cursor?: string) {
+  const before = decodeRecordCursor(cursor);
+  const rows = await env.DB.prepare(
+    `SELECT * FROM balance_transfers WHERE (?=0 OR created_at<? OR (created_at=? AND id<?))
+    ORDER BY created_at DESC,id DESC LIMIT 21`,
+  )
+    .bind(
+      before ? 1 : 0,
+      before?.time ?? 0,
+      before?.time ?? 0,
+      before?.id ?? "",
+    )
+    .all<TransferRow>();
+  const items = rows.results.slice(0, 20);
+  const last = items.at(-1);
+  return {
+    items: await adminTransferViews(env, items),
+    nextCursor:
+      rows.results.length > 20 && last
+        ? btoa(JSON.stringify({ time: last.created_at, id: last.id }))
+        : null,
+  };
 }

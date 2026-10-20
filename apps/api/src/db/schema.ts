@@ -1071,6 +1071,10 @@ export const balanceSettings = sqliteTable(
     hongbaoEnabled: integer("hongbao_enabled", { mode: "boolean" })
       .notNull()
       .default(false),
+    /** 转账 may be made, on the page and the open API (balance-design §16). */
+    transferEnabled: integer("transfer_enabled", { mode: "boolean" })
+      .notNull()
+      .default(false),
     updatedAt: integer("updated_at").notNull(),
     updatedByUserId: text("updated_by_user_id"),
   },
@@ -1312,9 +1316,21 @@ export const balanceEntries = sqliteTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id),
-    /** hongbao: a 🐟额红包's share, into its claimant's 可用. */
+    /**
+     * hongbao: a 🐟额红包's share, into its claimant's 可用; transfer_out and
+     * transfer_in: a 转账 to the other's 🐟额, out of one and into the other.
+     */
     kind: text("kind", {
-      enum: ["topup", "adjustment", "lock", "unlock", "deduct", "hongbao"],
+      enum: [
+        "topup",
+        "adjustment",
+        "lock",
+        "unlock",
+        "deduct",
+        "hongbao",
+        "transfer_out",
+        "transfer_in",
+      ],
     }).notNull(),
     availableDeltaMinor: integer("available_delta_minor").notNull(),
     lockedDeltaMinor: integer("locked_delta_minor").notNull().default(0),
@@ -1324,6 +1340,8 @@ export const balanceEntries = sqliteTable(
     lockId: text("lock_id"),
     /** A 🐟额红包's claim: its share's deduct and its hongbao. */
     claimId: text("claim_id").references(() => claims.id),
+    /** A 转账 to the other's 🐟额: its two entries. */
+    transferId: text("transfer_id").references(() => balanceTransfers.id),
     createdAt: integer("created_at").notNull(),
   },
   (table) => [
@@ -1347,6 +1365,13 @@ export const balanceEntries = sqliteTable(
     uniqueIndex("balance_entries_claim_hongbao_unique")
       .on(table.claimId)
       .where(sql`${table.kind} = 'hongbao'`),
+    // A 转账 leaves once and arrives once.
+    uniqueIndex("balance_entries_transfer_out_unique")
+      .on(table.transferId)
+      .where(sql`${table.kind} = 'transfer_out'`),
+    uniqueIndex("balance_entries_transfer_in_unique")
+      .on(table.transferId)
+      .where(sql`${table.kind} = 'transfer_in'`),
     index("balance_entries_user_time_idx").on(
       table.userId,
       table.createdAt,
@@ -1359,7 +1384,9 @@ export const balanceEntries = sqliteTable(
         OR (${table.kind} = 'lock' AND ${table.lockId} IS NOT NULL AND ${table.availableDeltaMinor} < 0 AND ${table.lockedDeltaMinor} = -${table.availableDeltaMinor} AND ${table.claimId} IS NULL)
         OR (${table.kind} = 'unlock' AND ${table.lockId} IS NOT NULL AND ${table.availableDeltaMinor} > 0 AND ${table.lockedDeltaMinor} = -${table.availableDeltaMinor} AND ${table.claimId} IS NULL)
         OR (${table.kind} = 'deduct' AND ${table.lockId} IS NOT NULL AND ${table.availableDeltaMinor} = 0 AND ${table.lockedDeltaMinor} < 0)
-        OR (${table.kind} = 'hongbao' AND ${table.lockId} IS NOT NULL AND ${table.claimId} IS NOT NULL AND ${table.availableDeltaMinor} > 0 AND ${table.lockedDeltaMinor} = 0)`,
+        OR (${table.kind} = 'hongbao' AND ${table.lockId} IS NOT NULL AND ${table.claimId} IS NOT NULL AND ${table.availableDeltaMinor} > 0 AND ${table.lockedDeltaMinor} = 0)
+        OR (${table.kind} = 'transfer_out' AND ${table.transferId} IS NOT NULL AND ${table.availableDeltaMinor} < 0 AND ${table.lockedDeltaMinor} = 0 AND ${table.claimId} IS NULL)
+        OR (${table.kind} = 'transfer_in' AND ${table.transferId} IS NOT NULL AND ${table.availableDeltaMinor} > 0 AND ${table.lockedDeltaMinor} = 0 AND ${table.claimId} IS NULL)`,
     ),
   ],
 );
@@ -1427,6 +1454,113 @@ export const balanceWithdrawals = sqliteTable(
       sql`(${table.status} = 'sending' AND ${table.sentAt} IS NULL AND ${table.failedAt} IS NULL AND ${table.failureReason} IS NULL)
         OR (${table.status} = 'sent' AND ${table.sentAt} IS NOT NULL AND ${table.failedAt} IS NULL AND ${table.failureReason} IS NULL)
         OR (${table.status} = 'failed' AND ${table.sentAt} IS NULL AND ${table.failedAt} IS NOT NULL AND ${table.failureReason} IN ('recipient','self_payment','configuration','validation'))`,
+    ),
+  ],
+);
+
+/**
+ * 开放接口密钥 (docs/balance-design.md §16): a 🐟额 PLUS member's key for
+ * the open API, only its digest kept. Stopped by its owner or an admin and
+ * never started again; its last 转账 and running totals ride in each
+ * 转账's batch.
+ */
+export const balanceApiKeys = sqliteTable(
+  "balance_api_keys",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    name: text("name").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    /** The key's last 4 characters, to tell keys apart in the list. */
+    lastFour: text("last_four").notNull(),
+    dailyLimitMinor: integer("daily_limit_minor"),
+    createdAt: integer("created_at").notNull(),
+    lastTransferAt: integer("last_transfer_at"),
+    lastTransferIp: text("last_transfer_ip"),
+    transferCount: integer("transfer_count").notNull().default(0),
+    transferTotalMinor: integer("transfer_total_minor").notNull().default(0),
+    revokedAt: integer("revoked_at"),
+    /** An admin's stop: who, and why (the owner's own leaves both empty). */
+    revokedByUserId: text("revoked_by_user_id").references(() => users.id),
+    revokeReason: text("revoke_reason"),
+  },
+  (table) => [
+    uniqueIndex("balance_api_keys_token_unique").on(table.tokenHash),
+    index("balance_api_keys_user_idx").on(table.userId, table.createdAt),
+    check(
+      "balance_api_keys_valid",
+      sql`length(${table.name}) BETWEEN 1 AND 20 AND length(${table.lastFour}) = 4
+        AND (${table.dailyLimitMinor} IS NULL OR ${table.dailyLimitMinor} >= 1)
+        AND ${table.transferCount} >= 0 AND ${table.transferTotalMinor} >= 0
+        AND (${table.revokedAt} IS NOT NULL OR (${table.revokedByUserId} IS NULL AND ${table.revokeReason} IS NULL))
+        AND (${table.revokedByUserId} IS NULL OR length(${table.revokeReason}) BETWEEN 1 AND 200)`,
+    ),
+  ],
+);
+
+/**
+ * A 转账 (docs/balance-design.md §16): 🐟 from one person to another's 🐟额
+ * (its two entries, at once), or to their Credit account (a 转出 to them,
+ * balance_withdrawals). Made from the page (request_id) or an open API key
+ * (out_transfer_no, the caller's own); fixed once made.
+ */
+export const balanceTransfers = sqliteTable(
+  "balance_transfers",
+  {
+    id: text("id").primaryKey(),
+    fromUserId: text("from_user_id")
+      .notNull()
+      .references(() => users.id),
+    toUserId: text("to_user_id")
+      .notNull()
+      .references(() => users.id),
+    destination: text("destination", {
+      enum: ["balance", "credit"],
+    }).notNull(),
+    withdrawalId: text("withdrawal_id").references(() => balanceWithdrawals.id),
+    amountMinor: integer("amount_minor").notNull(),
+    apiKeyId: text("api_key_id").references(() => balanceApiKeys.id),
+    outTransferNo: text("out_transfer_no"),
+    requestId: text("request_id"),
+    requestDigest: text("request_digest").notNull(),
+    remark: text("remark"),
+    /** The recipient as it was made: LINUX DO ID and username. */
+    recipientExternalId: text("recipient_external_id").notNull(),
+    recipientUsername: text("recipient_username").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("balance_transfers_out_no_unique")
+      .on(table.apiKeyId, table.outTransferNo)
+      .where(sql`${table.apiKeyId} IS NOT NULL`),
+    uniqueIndex("balance_transfers_request_unique")
+      .on(table.fromUserId, table.requestId)
+      .where(sql`${table.requestId} IS NOT NULL`),
+    uniqueIndex("balance_transfers_withdrawal_unique")
+      .on(table.withdrawalId)
+      .where(sql`${table.withdrawalId} IS NOT NULL`),
+    index("balance_transfers_from_time_idx").on(
+      table.fromUserId,
+      table.createdAt,
+      table.id,
+    ),
+    index("balance_transfers_to_time_idx").on(
+      table.toUserId,
+      table.createdAt,
+      table.id,
+    ),
+    index("balance_transfers_key_time_idx").on(table.apiKeyId, table.createdAt),
+    index("balance_transfers_time_idx").on(table.createdAt, table.id),
+    check(
+      "balance_transfers_valid",
+      sql`${table.amountMinor} > 0 AND ${table.fromUserId} != ${table.toUserId}
+        AND ((${table.destination} = 'balance' AND ${table.withdrawalId} IS NULL)
+          OR (${table.destination} = 'credit' AND ${table.withdrawalId} IS NOT NULL AND ${table.amountMinor} >= 100))
+        AND ((${table.apiKeyId} IS NULL AND ${table.outTransferNo} IS NULL AND ${table.requestId} IS NOT NULL)
+          OR (${table.apiKeyId} IS NOT NULL AND length(${table.outTransferNo}) BETWEEN 1 AND 64 AND ${table.requestId} IS NULL))
+        AND (${table.remark} IS NULL OR length(${table.remark}) BETWEEN 1 AND 64)`,
     ),
   ],
 );

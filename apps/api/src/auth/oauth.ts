@@ -3,6 +3,7 @@ import { and, eq, gt } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { balanceAccessFor } from "../balance/settings";
+import { transferAccess } from "../balance/transfers";
 import { createDb } from "../db/client";
 import { oauthAttempts, users } from "../db/schema";
 import type { ApiBindings, ApiContext } from "../env";
@@ -72,13 +73,17 @@ export const authRoutes = new Hono<ApiContext>()
     }
     if (isFirstPartySessionRead(c)) await setImageSessionCookie(c, session);
 
+    const [access, transfer] = await Promise.all([
+      balanceAccessFor(c.env, session.user.id, session.user.isAdmin),
+      transferAccess(c.env, session.user.id),
+    ]);
     return c.json({
       user: {
         ...session.user,
         /** 🐟额's entry shows (the allowlist, until it is open to all). */
-        balance: (
-          await balanceAccessFor(c.env, session.user.id, session.user.isAdmin)
-        ).entry,
+        balance: access.entry,
+        /** 🐟额 PLUS: its tag and gold fish on that entry (balance-design §13). */
+        balancePlus: transfer.allowed,
       },
       csrfToken: session.csrfToken,
       attemptCooldown: session.attemptCooldown,
@@ -110,7 +115,15 @@ export const authRoutes = new Hono<ApiContext>()
 
     const { isAdmin: _isAdmin, ...profileUser } = session.user;
     return c.json({
-      user: { ...profileUser, email },
+      user: {
+        ...profileUser,
+        email,
+        /** LINUX DO 数字 ID: what others and sites 转账 to (balance-design §16). */
+        linuxDoId:
+          privateProfile?.provider === "linux_do"
+            ? privateProfile.externalId
+            : null,
+      },
       csrfToken: session.csrfToken,
     });
   });

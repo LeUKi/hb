@@ -7,6 +7,8 @@ import { activityImageRoutes } from "./activity-images/routes";
 import { adminRoutes } from "./admin/routes";
 import { authRoutes } from "./auth/oauth";
 import { balanceAdminRoutes } from "./balance/admin-routes";
+import { RateLimitedError, RequestIssuesError } from "./balance/errors";
+import { openRoutes } from "./balance/open-routes";
 import { balanceRoutes } from "./balance/routes";
 import { discoveryRoutes } from "./discovery/routes";
 import type { ApiContext } from "./env";
@@ -48,6 +50,7 @@ export const app = new Hono<ApiContext>()
   .route("/api", discoveryRoutes)
   .route("/api", merchantRoutes)
   .route("/api", balanceRoutes)
+  .route("/api", openRoutes)
   .notFound((c) =>
     c.json(
       {
@@ -61,7 +64,10 @@ export const app = new Hono<ApiContext>()
   )
   .onError((error, c) => {
     if (error instanceof ActivityError) {
-      if (error instanceof AttemptCooldownError)
+      if (
+        error instanceof AttemptCooldownError ||
+        error instanceof RateLimitedError
+      )
         c.header("Retry-After", String(error.retryAfter));
       return c.json(
         {
@@ -77,7 +83,8 @@ export const app = new Hono<ApiContext>()
                   confirmationToken: error.preview.confirmationToken,
                 }
               : {}),
-            ...(error instanceof ActivityValidationError
+            ...(error instanceof ActivityValidationError ||
+            error instanceof RequestIssuesError
               ? { issues: error.issues }
               : {}),
           },

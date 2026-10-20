@@ -26,6 +26,17 @@ export const BALANCE_LIMITS = {
   /** An admin's 通用链接: up to this many people, for 1 or 7 days. */
   inviteLinkMaxUses: 1000,
   inviteLinkDays: [1, 7],
+  /** 转账 (balance-design §16): its remark, and its open API keys. */
+  transferRemarkMax: 64,
+  apiKeyNameMax: 20,
+  apiKeysMax: 10,
+  /** One key's 转账 in any 60 seconds, and its reads in a minute. */
+  apiTransfersPerMinute: 600,
+  apiReadsPerMinute: 600,
+  transferBatchMax: 100,
+  outTransferNoMax: 64,
+  /** A list page of the open API's 流水. */
+  transferPageMax: 100,
 } as const;
 
 /**
@@ -108,6 +119,8 @@ export const balanceSettingsSchema = z.strictObject({
     .max(BALANCE_LIMITS.topupMaxMinor),
   /** 🐟额红包 (docs/balance-design.md §14); left as it is when absent. */
   hongbaoEnabled: z.boolean().optional(),
+  /** 转账 (§16); left as it is when absent. */
+  transferEnabled: z.boolean().optional(),
 });
 export type BalanceSettingsInput = z.infer<typeof balanceSettingsSchema>;
 
@@ -273,12 +286,6 @@ export type BalanceEntry = {
   createdAt: number;
 };
 
-/**
- * What someone may do with 🐟额 (docs/balance-design.md §13): 转入 once
- * invited, invite once invited (admins always). 转出 needs neither.
- */
-export type BalanceAccess = { topup: boolean; invite: boolean };
-
 /** A LINUX DO username, as typed (a leading @ is fine). */
 export const inviteUsernameSchema = z
   .string()
@@ -291,6 +298,167 @@ export const inviteUsernameSchema = z
       .max(60, "用户名太长了")
       .regex(/^[A-Za-z0-9_.-]+$/, "用户名只有字母、数字和 _ . -"),
   );
+
+/**
+ * What someone may do with 🐟额 (docs/balance-design.md §13): 转入 once
+ * invited, invite once invited (admins always). 转出 needs neither.
+ */
+export type BalanceAccess = { topup: boolean; invite: boolean };
+
+/** 对方的🐟额 or 对方的 Credit 账户 (balance-design §16). */
+export const transferDestinationSchema = z.enum(["balance", "credit"]);
+export type TransferDestination = z.infer<typeof transferDestinationSchema>;
+
+/** A LINUX DO account's numeric ID, as a decimal string. */
+export const linuxDoUserIdSchema = z
+  .string({ error: "请填对方的数字 ID" })
+  .regex(/^[1-9][0-9]{0,18}$/, "数字 ID 是一串数字");
+
+const characters = (value: string) => Array.from(value).length;
+
+/** What the other side reads with a 转账, on this site only. */
+export const transferRemarkSchema = z
+  .string()
+  .trim()
+  .refine(
+    (value) => characters(value) <= BALANCE_LIMITS.transferRemarkMax,
+    `备注最多 ${BALANCE_LIMITS.transferRemarkMax} 个字`,
+  )
+  .refine(
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: refused on purpose.
+    (value) => !/[\u0000-\u001f\u007f]/.test(value),
+    "备注不能有换行或控制字符",
+  )
+  .transform((value) => (value === "" ? undefined : value))
+  .optional();
+
+/** A 转账 from the page: to someone found here, by a random request. */
+export const createTransferSchema = z.strictObject({
+  requestId: z.uuid(),
+  toUserId: linuxDoUserIdSchema,
+  toUsername: inviteUsernameSchema,
+  destination: transferDestinationSchema,
+  amount: moneySchema,
+  remark: transferRemarkSchema,
+});
+export type CreateTransferInput = z.infer<typeof createTransferSchema>;
+
+/** The caller's own number for a 转账, unique within its key. */
+export const outTransferNoSchema = z
+  .string({ error: "请填转账单号" })
+  .regex(/^[\x21-\x7e]{1,64}$/, "转账单号是 1–64 个可打印 ASCII 字符");
+
+/** One 转账 through the open API (balance-design §16). */
+export const openTransferItemSchema = z.strictObject({
+  outTransferNo: outTransferNoSchema,
+  toUserId: linuxDoUserIdSchema,
+  toUsername: inviteUsernameSchema,
+  destination: transferDestinationSchema.default("balance"),
+  amount: moneySchema,
+  remark: transferRemarkSchema,
+});
+export type OpenTransferItem = z.infer<typeof openTransferItemSchema>;
+
+export const openTransferSchema = openTransferItemSchema.extend({
+  /** 试转: checked as it would be, nothing moved. */
+  dryRun: z.boolean().optional(),
+});
+
+export const openTransferBatchSchema = z.strictObject({
+  transfers: z
+    .array(openTransferItemSchema)
+    .min(1, "至少一笔")
+    .max(
+      BALANCE_LIMITS.transferBatchMax,
+      `一次最多 ${BALANCE_LIMITS.transferBatchMax} 笔`,
+    ),
+  dryRun: z.boolean().optional(),
+});
+
+/** A new 开放接口密钥: a name, and a daily limit if any. */
+export const createApiKeySchema = z.strictObject({
+  name: z
+    .string()
+    .trim()
+    .min(1, "请填名称")
+    .refine(
+      (value) => characters(value) <= BALANCE_LIMITS.apiKeyNameMax,
+      `名称最多 ${BALANCE_LIMITS.apiKeyNameMax} 个字`,
+    ),
+  dailyLimit: moneySchema.nullable(),
+});
+export type CreateApiKeyInput = z.infer<typeof createApiKeySchema>;
+
+/** An admin's stop of someone's key: the reason they will read. */
+export const adminRevokeApiKeySchema = z.strictObject({
+  reason: z.string().trim().min(1, "请填原因").max(200),
+});
+
+/** 已存入🐟额 at once; to a Credit account 发放中, then 已发放 or 未发出. */
+export type TransferStatus = "sent" | "sending" | "not_sent";
+
+/** The other side of a 转账, as the page shows them. */
+export type BalanceTransferParty = {
+  userId: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+};
+
+/** A 转账 in 明细, from its sender's side (out) or its recipient's (in). */
+export type BalanceTransfer = {
+  id: string;
+  direction: "out" | "in";
+  destination: TransferDestination;
+  amountMinor: number;
+  remark: string | null;
+  counterpart: BalanceTransferParty;
+  /** The sender's key it was made with (the sender's side only). */
+  apiKeyName: string | null;
+  outTransferNo: string | null;
+  status: TransferStatus;
+  /** To a Credit account: its 转出, with what it waits on. */
+  withdrawal: BalanceWithdrawal | null;
+  createdAt: number;
+};
+
+/** 有效 / 已停用 / 管理员停用. */
+export type BalanceApiKeyStatus = "active" | "revoked" | "admin_revoked";
+
+export type BalanceApiKey = {
+  id: string;
+  name: string;
+  lastFour: string;
+  status: BalanceApiKeyStatus;
+  dailyLimitMinor: number | null;
+  /** What it has sent today (北京时间). */
+  usedTodayMinor: number;
+  createdAt: number;
+  lastTransferAt: number | null;
+  lastTransferIp: string | null;
+  transferCount: number;
+  transferTotalMinor: number;
+  revokedAt: number | null;
+  /** An admin's stop: why. */
+  revokeReason: string | null;
+};
+
+/** What a key sent: today, the last 7 days, and ever. */
+export type BalanceApiKeyTotals = Record<
+  "today" | "week" | "all",
+  { count: number; totalMinor: number }
+>;
+
+/**
+ * 🐟额 PLUS (balance-design §13): opened by invitation, or the 站长's own.
+ * Who invited them and since when, for the bubble on the tag.
+ */
+export type BalancePlus = {
+  plus: boolean;
+  owner: boolean;
+  invitedBy: BalanceInviteUser | null;
+  since: number | null;
+};
 
 export const createInviteSchema = z.strictObject({
   username: inviteUsernameSchema,

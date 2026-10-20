@@ -1,8 +1,11 @@
 // 🐟额 for the person (docs/balance-design.md §8, §9.2).
 import {
+  amountToMinor,
   BALANCE_LIMITS,
+  createApiKeySchema,
   createInviteSchema,
   createTopupSchema,
+  createTransferSchema,
   createWithdrawalSchema,
   inviteUsernameSchema,
   ownerAdjustmentSchema,
@@ -20,6 +23,12 @@ import type { ApiContext } from "../env";
 import { flushPaymentOutbox } from "../payments/scheduler";
 import { requireAppOrigin } from "../security/http";
 import {
+  apiKeyDetail,
+  createApiKey,
+  listApiKeys,
+  revokeOwnApiKey,
+} from "./api-keys";
+import {
   acceptInvite,
   createInvite,
   listMyInvites,
@@ -33,6 +42,7 @@ import {
   readAccount,
 } from "./ledger";
 import { readPlatformAppRow } from "./platform-app";
+import { plusOf } from "./plus";
 import { readBalanceSettings, requireBalanceEntry } from "./settings";
 import {
   checkOpenTopups,
@@ -42,6 +52,14 @@ import {
   payTopup,
   topupView,
 } from "./topups";
+import {
+  creditBlock,
+  findRecipientByUsername,
+  makeTransfer,
+  transferAccess,
+  transferDetail,
+  transferViews,
+} from "./transfers";
 import {
   createWithdrawal,
   ownedWithdrawal,
@@ -64,7 +82,8 @@ const recordsQuery = validator(
       filter !== "topup" &&
       filter !== "withdrawal" &&
       filter !== "adjustment" &&
-      filter !== "hongbao"
+      filter !== "hongbao" &&
+      filter !== "transfer"
     )
       throw new ActivityError(400, "INVALID_FILTER", "筛选无效");
     if (value.cursor !== undefined && typeof value.cursor !== "string")
@@ -94,17 +113,20 @@ export const balanceRoutes = new Hono<ApiContext>()
       session.user.isAdmin,
     );
     const { filter, cursor } = c.req.valid("query");
-    const [settings, account, records, pending, platform] = await Promise.all([
-      readBalanceSettings(c.env),
-      readAccount(c.env, session.user.id),
-      listRecords(c.env, session.user.id, filter, cursor),
-      c.env.DB.prepare(
-        "SELECT COUNT(*) AS count FROM balance_topups WHERE user_id=? AND status!='credited'",
-      )
-        .bind(session.user.id)
-        .first<{ count: number }>(),
-      readPlatformAppRow(c.env),
-    ]);
+    const [settings, account, records, pending, platform, plus, toCredit] =
+      await Promise.all([
+        readBalanceSettings(c.env),
+        readAccount(c.env, session.user.id),
+        listRecords(c.env, session.user.id, filter, cursor),
+        c.env.DB.prepare(
+          "SELECT COUNT(*) AS count FROM balance_topups WHERE user_id=? AND status!='credited'",
+        )
+          .bind(session.user.id)
+          .first<{ count: number }>(),
+        readPlatformAppRow(c.env),
+        plusOf(c.env, session.user.id),
+        creditBlock(c.env),
+      ]);
     return c.json({
       settings: {
         version: settings.version,
@@ -114,6 +136,9 @@ export const balanceRoutes = new Hono<ApiContext>()
         withdrawFeePercent: settings.withdrawFeePercent,
         withdrawMaxMinor: settings.withdrawMaxMinor,
         hongbaoEnabled: settings.hongbaoEnabled,
+        transferEnabled: settings.transferEnabled,
+        /** Why a 转账 cannot go to a Credit account now, if it cannot. */
+        transferToCreditBlock: toCredit?.code ?? null,
         topupMinMinor: BALANCE_LIMITS.topupMinMinor,
         topupMaxMinor: BALANCE_LIMITS.topupMaxMinor,
         topupDailyHintMinor: BALANCE_LIMITS.topupDailyHintMinor,
@@ -126,7 +151,11 @@ export const balanceRoutes = new Hono<ApiContext>()
         invite: access.invite,
         /** The 站长: 补加 and 扣回 their own instead (balance-design §15). */
         owner: platform?.author_id === session.user.id,
+        /** 转账 and 开放接口密钥: 🐟额 PLUS and the 站长 (§16). */
+        transfer: plus.plus,
       },
+      /** 🐟额 PLUS's tag and bubble (balance-design §13). */
+      plus,
       /** 转入 not arrived yet (待确认 or 未完成). */
       openTopups: pending?.count ?? 0,
       ...records,
@@ -250,6 +279,128 @@ export const balanceRoutes = new Hono<ApiContext>()
         c.env,
         await ownedWithdrawal(c.env, session.user.id, c.req.param("id")),
       ),
+    });
+  })
+  // 转账 (docs/balance-design.md §16): find who, then send.
+  .get("/me/balance/recipients", async (c) => {
+    const session = await requireAuth(c);
+    if (!(await transferAccess(c.env, session.user.id)).allowed)
+      throw new ActivityError(
+        403,
+        "TRANSFER_NOT_ALLOWED",
+        "开通🐟额 PLUS 才能转账。",
+      );
+    const parsed = inviteUsernameSchema.safeParse(
+      c.req.query("username") ?? "",
+    );
+    if (!parsed.success)
+      throw new ActivityError(
+        400,
+        "INVALID_USERNAME",
+        parsed.error.issues[0]?.message ?? "用户名无效",
+      );
+    const [found, platform] = await Promise.all([
+      findRecipientByUsername(c.env, parsed.data),
+      readPlatformAppRow(c.env),
+    ]);
+    return c.json({
+      user: found
+        ? {
+            userId: found.external_id,
+            username: found.username,
+            displayName: found.display_name,
+            avatarUrl: found.avatar_url,
+          }
+        : null,
+      self: found?.id === session.user.id,
+      /** The 站长: their Credit account cannot take the platform app's. */
+      owner: found !== null && found.id === platform?.author_id,
+    });
+  })
+  .post(
+    "/me/balance/transfers",
+    body,
+    validator("json", (value) => {
+      const parsed = createTransferSchema.safeParse(value);
+      if (!parsed.success)
+        throw new ActivityError(
+          400,
+          "INVALID_TRANSFER",
+          parsed.error.issues[0]?.message ?? "请检查转账内容",
+        );
+      return parsed.data;
+    }),
+    async (c) => {
+      const session = await requireProtectedMutation(c);
+      const input = c.req.valid("json");
+      const { row, taskId } = await makeTransfer(
+        c.env,
+        session.user.id,
+        {
+          toUserId: input.toUserId,
+          toUsername: input.toUsername,
+          destination: input.destination,
+          amountMinor: amountToMinor(input.amount),
+          remark: input.remark,
+        },
+        { kind: "page", requestId: input.requestId },
+      );
+      // To a Credit account: its payment starts now; the sweep catches it.
+      if (taskId)
+        c.executionCtx.waitUntil(
+          flushPaymentOutbox(c.env, taskId).catch(() => {
+            console.error("balance_transfer_wake_failed", { taskId });
+          }),
+        );
+      const [transfer] = await transferViews(c.env, [row], session.user.id);
+      return c.json({ transfer: transfer ?? null });
+    },
+  )
+  .get("/me/balance/transfers/:id", async (c) => {
+    const session = await requireAuth(c);
+    return c.json({
+      transfer: await transferDetail(c.env, session.user.id, c.req.param("id")),
+    });
+  })
+  // 开放接口密钥: made, listed, opened and stopped here only.
+  .get("/me/balance/api-keys", async (c) => {
+    const session = await requireAuth(c);
+    return c.json({
+      items: await listApiKeys(c.env, session.user.id),
+      max: BALANCE_LIMITS.apiKeysMax,
+    });
+  })
+  .post(
+    "/me/balance/api-keys",
+    body,
+    validator("json", (value) => {
+      const parsed = createApiKeySchema.safeParse(value);
+      if (!parsed.success)
+        throw new ActivityError(
+          400,
+          "INVALID_API_KEY_INPUT",
+          parsed.error.issues[0]?.message ?? "请检查名称和上限",
+        );
+      return parsed.data;
+    }),
+    async (c) => {
+      const session = await requireProtectedMutation(c);
+      return c.json(
+        await createApiKey(c.env, session.user.id, c.req.valid("json")),
+      );
+    },
+  )
+  .get("/me/balance/api-keys/:id", async (c) => {
+    const session = await requireAuth(c);
+    const cursor = c.req.query("cursor");
+    return c.json(
+      await apiKeyDetail(c.env, session.user.id, c.req.param("id"), cursor),
+    );
+  })
+  .post("/me/balance/api-keys/:id/revoke", async (c) => {
+    const session = await requireProtectedMutation(c);
+    return c.json({
+      key: await revokeOwnApiKey(c.env, session.user.id, c.req.param("id")),
     });
   })
   // 邀请 (docs/balance-design.md §13): the dialog on 🐟额, then the link's page.

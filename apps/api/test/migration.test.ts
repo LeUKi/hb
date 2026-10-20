@@ -1204,6 +1204,7 @@ it("adds optional Connect profile fields without invalidating existing accounts 
       displayName: "原有昵称",
       avatarUrl: null,
       email: null,
+      linuxDoId: "740001",
     },
     csrfToken,
   });

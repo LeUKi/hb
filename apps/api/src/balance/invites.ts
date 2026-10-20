@@ -15,6 +15,7 @@ import {
 import type { ApiBindings } from "../env";
 import { sha256Hex } from "../security/crypto";
 import { balanceError } from "./errors";
+import { plusFeatures } from "./plus-features";
 import { balanceAccessFor, readBalanceSettings } from "./settings";
 
 type Inviter = { id: string; username: string; isAdmin: boolean };
@@ -256,6 +257,8 @@ export async function readInvite(
       expiresAt: row.expires_at,
     },
     topupFeePercent: settings.topupFeePercent,
+    /** What 🐟额 PLUS adds: the holder of an invitation reads it plainly. */
+    features: plusFeatures(),
     viewer: viewer
       ? {
           username: viewer.username,

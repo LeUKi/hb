@@ -50,6 +50,13 @@
       }
     ]
   },
+  "ratelimits": [
+    {
+      "name": "OPEN_API_READS",
+      "namespace_id": "1001",
+      "simple": { "limit": 600, "period": 60 }
+    }
+  ],
   "triggers": {
     "crons": ["*/5 * * * *"]
   },

@@ -169,7 +169,9 @@ export function ordinaryPaymentSql(alias: "p") {
 
 /**
  * Rechecked in the send-intent batch: the 转出 is still 发放中 with its 🐟
- * held whole, from the platform app, to its own person's Credit account.
+ * held whole, from the platform app, to its own person's Credit account or,
+ * for a 转账 to a Credit account, its recipient's (balance-design §16);
+ * never the platform app's author's, whom Credit cannot pay.
  */
 export function withdrawalPaymentIdentitySql(alias: "p" | "payment_tasks") {
   return `${alias}.source='withdrawal' AND ${alias}.mode='real'
@@ -177,10 +179,10 @@ export function withdrawalPaymentIdentitySql(alias: "p" | "payment_tasks") {
     AND ${alias}.recovery_policy='withdrawal_same_order_v1'
     AND EXISTS(SELECT 1 FROM balance_withdrawals w
       JOIN balance_locks l ON l.withdrawal_id=w.id AND l.status='active' AND l.remaining_minor=w.debit_minor
-      JOIN users u ON u.id=w.user_id
+      JOIN users u ON u.id=COALESCE((SELECT t.to_user_id FROM balance_transfers t WHERE t.withdrawal_id=w.id), w.user_id)
       JOIN merchants m ON m.id=w.merchant_id
       WHERE w.id=${alias}.withdrawal_id AND w.status='sending'
-        AND m.kind='platform' AND m.mode='real' AND m.author_id!=w.user_id
+        AND m.kind='platform' AND m.mode='real' AND m.author_id!=u.id
         AND EXISTS(SELECT 1 FROM merchant_client_ids x WHERE x.merchant_id=m.id AND x.client_id=${alias}.client_id)
         AND w.merchant_id=${alias}.merchant_id AND w.client_id=${alias}.client_id
         AND w.business_no=${alias}.business_no AND w.debit_minor=${alias}.amount_minor

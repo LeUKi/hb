@@ -6,6 +6,7 @@ import {
   BALANCE_LIMITS,
   type BalanceAdjustmentInput,
   type BalanceTopup,
+  type BalanceTransfer,
   type BalanceWithdrawal,
   formatAmount,
   type OwnerAdjustmentInput,
@@ -16,6 +17,7 @@ import { sha256Hex } from "../security/crypto";
 import { balanceError } from "./errors";
 import { readPlatformAppRow } from "./platform-app";
 import { type TopupRow, topupView } from "./topups";
+import { type TransferRow, transferViews } from "./transfers";
 import { type WithdrawalRow, withdrawalView } from "./withdrawals";
 
 export type BalanceAccountView = {
@@ -92,14 +94,16 @@ export type BalanceRecord =
       createdAt: number;
       adjustment: BalanceAdjustmentView;
     }
-  | { type: "hongbao"; createdAt: number; hongbao: BalanceHongbaoView };
+  | { type: "hongbao"; createdAt: number; hongbao: BalanceHongbaoView }
+  | { type: "transfer"; createdAt: number; transfer: BalanceTransfer };
 
 export type BalanceRecordFilter =
   | "all"
   | "topup"
   | "withdrawal"
   | "adjustment"
-  | "hongbao";
+  | "hongbao"
+  | "transfer";
 
 const PAGE_SIZE = 20;
 
@@ -133,9 +137,11 @@ export async function listRecords(
   cursor?: string,
 ) {
   const before = decodeRecordCursor(cursor);
+  // A 转账 to a Credit account is its sender's 转出 too: it reads as the 转账.
   const page = (table: "topups" | "withdrawals" | "adjustments") =>
     env.DB.prepare(
       `SELECT * FROM balance_${table} WHERE user_id=?
+        ${table === "withdrawals" ? "AND NOT EXISTS(SELECT 1 FROM balance_transfers t WHERE t.withdrawal_id=balance_withdrawals.id)" : ""}
         AND (?=0 OR created_at<? OR (created_at=? AND id<?))
       ORDER BY created_at DESC,id DESC LIMIT ?`,
     ).bind(
@@ -146,27 +152,38 @@ export async function listRecords(
       before?.id ?? "",
       PAGE_SIZE + 1,
     );
-  const [topups, withdrawals, adjustments, hongbao] = await env.DB.batch<
-    Record<string, unknown>
-  >([
-    page("topups"),
-    page("withdrawals"),
-    page("adjustments"),
-    env.DB.prepare(
-      `SELECT e.id,e.kind,e.available_delta_minor,e.created_at,a.id AS activity_id,a.title
+  const [topups, withdrawals, adjustments, hongbao, transfers] =
+    await env.DB.batch<Record<string, unknown>>([
+      page("topups"),
+      page("withdrawals"),
+      page("adjustments"),
+      env.DB.prepare(
+        `SELECT e.id,e.kind,e.available_delta_minor,e.created_at,a.id AS activity_id,a.title
       FROM balance_entries e JOIN balance_locks l ON l.id=e.lock_id JOIN activities a ON a.id=l.activity_id
       WHERE e.user_id=? AND l.purpose='activity' AND e.kind IN ('lock','unlock','hongbao')
         AND (?=0 OR e.created_at<? OR (e.created_at=? AND e.id<?))
       ORDER BY e.created_at DESC,e.id DESC LIMIT ?`,
-    ).bind(
-      userId,
-      before ? 1 : 0,
-      before?.time ?? 0,
-      before?.time ?? 0,
-      before?.id ?? "",
-      PAGE_SIZE + 1,
-    ),
-  ]);
+      ).bind(
+        userId,
+        before ? 1 : 0,
+        before?.time ?? 0,
+        before?.time ?? 0,
+        before?.id ?? "",
+        PAGE_SIZE + 1,
+      ),
+      // 转账 out (either way), and in (to 🐟额; a Credit one never passes it).
+      env.DB.prepare(
+        `SELECT * FROM balance_transfers WHERE (from_user_id=?1 OR (to_user_id=?1 AND destination='balance'))
+        AND (?2=0 OR created_at<?3 OR (created_at=?3 AND id<?4))
+      ORDER BY created_at DESC,id DESC LIMIT ?5`,
+      ).bind(
+        userId,
+        before ? 1 : 0,
+        before?.time ?? 0,
+        before?.id ?? "",
+        PAGE_SIZE + 1,
+      ),
+    ]);
   const records: BalanceRecord[] = [];
   if (filter === "all" || filter === "topup")
     for (const row of (topups?.results ?? []) as unknown as TopupRow[])
@@ -209,6 +226,15 @@ export async function listRecords(
           createdAt: Number(row.created_at),
         },
       });
+  if (filter === "all" || filter === "transfer") {
+    const rows = (transfers?.results ?? []) as unknown as TransferRow[];
+    for (const transfer of await transferViews(env, rows, userId))
+      records.push({
+        type: "transfer",
+        createdAt: transfer.createdAt,
+        transfer,
+      });
+  }
   const id = (record: BalanceRecord) =>
     record.type === "topup"
       ? record.topup.id
@@ -216,7 +242,9 @@ export async function listRecords(
         ? record.withdrawal.id
         : record.type === "hongbao"
           ? record.hongbao.id
-          : record.adjustment.id;
+          : record.type === "transfer"
+            ? record.transfer.id
+            : record.adjustment.id;
   records.sort((left, right) =>
     right.createdAt !== left.createdAt
       ? right.createdAt - left.createdAt

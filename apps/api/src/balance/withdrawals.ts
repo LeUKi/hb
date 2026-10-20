@@ -267,89 +267,20 @@ export async function createWithdrawal(
       "转出太频繁了，请过一会儿再试。",
     );
 
-  const id = crypto.randomUUID();
-  const lockId = crypto.randomUUID();
-  const taskId = crypto.randomUUID();
-  const businessNo = `${BUSINESS_PREFIX}${id.replaceAll("-", "")}`;
-  const parameterDigest = await claimPaymentParameterDigest({
-    id: taskId,
-    source: "withdrawal",
-    claimId: null,
-    acceptanceId: null,
-    merchantId: platform.id,
-    clientId: platform.client_id,
-    businessNo,
-    recipientId: recipient.external_id,
-    recipientUsername: recipient.username,
-    amountMinor: quote.debitMinor,
-    mode: "real",
-    recoveryPolicy: "withdrawal_same_order_v1",
+  const plan = newWithdrawalPlan({
+    userId,
+    recipient,
+    platform,
+    quote,
+    settings,
+    requestId: input.requestId,
+    digest,
   });
-  const now = Date.now();
+  const { id } = plan;
+  const { head, tail } = await withdrawalStatements(env, plan);
+  const taskId = plan.taskId;
   try {
-    await env.DB.batch([
-      // Made only under the settings read, with 转出 still open: otherwise
-      // the lock below has nothing to hold and the batch falls through.
-      env.DB.prepare(
-        `INSERT INTO balance_withdrawals (id,user_id,merchant_id,client_id,business_no,recipient_id,
-          recipient_username,debit_minor,fee_minor,credit_minor,fee_percent,settings_version,
-          request_id,request_digest,created_at,updated_at)
-        SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
-        WHERE EXISTS(SELECT 1 FROM balance_settings WHERE id='global' AND version=? AND withdraw_enabled=1)`,
-      ).bind(
-        id,
-        userId,
-        platform.id,
-        platform.client_id,
-        businessNo,
-        recipient.external_id,
-        recipient.username,
-        quote.debitMinor,
-        quote.feeMinor,
-        quote.creditMinor,
-        settings.withdrawFeePercent,
-        settings.version,
-        input.requestId,
-        digest,
-        now,
-        now,
-        settings.version,
-      ),
-      env.DB.prepare(
-        `INSERT INTO balance_locks (id,user_id,purpose,withdrawal_id,amount_minor,remaining_minor,status,created_at,updated_at)
-        VALUES (?,?,'withdrawal',?,?,?,'active',?,?)`,
-      ).bind(lockId, userId, id, quote.debitMinor, quote.debitMinor, now, now),
-      // 可用 must cover it (balance_entries_available_guard).
-      env.DB.prepare(
-        `INSERT INTO balance_entries (id,user_id,kind,available_delta_minor,locked_delta_minor,lock_id,created_at)
-        VALUES (?,?,'lock',?,?,?,?)`,
-      ).bind(
-        crypto.randomUUID(),
-        userId,
-        -quote.debitMinor,
-        quote.debitMinor,
-        lockId,
-        now,
-      ),
-      env.DB.prepare(
-        `INSERT INTO payment_tasks (id,source,withdrawal_id,merchant_id,client_id,business_no,recipient_id,
-          recipient_username,amount_minor,mode,status,next_run_at,created_at,updated_at,recovery_policy,parameter_digest)
-        VALUES (?,'withdrawal',?,?,?,?,?,?,?,'real','pending',${databaseNow},${databaseNow},${databaseNow},'withdrawal_same_order_v1',?)`,
-      ).bind(
-        taskId,
-        id,
-        platform.id,
-        platform.client_id,
-        businessNo,
-        recipient.external_id,
-        recipient.username,
-        quote.debitMinor,
-        parameterDigest,
-      ),
-      env.DB.prepare(
-        `INSERT INTO payment_outbox (id,task_id,created_at) VALUES (?,?,${databaseNow})`,
-      ).bind(crypto.randomUUID(), taskId),
-    ]);
+    await env.DB.batch([...head, ...tail]);
   } catch (error) {
     // The same request, sent twice at once: the one that got in.
     const winner = await byRequest();
@@ -374,4 +305,134 @@ export async function createWithdrawal(
   const row = await readWithdrawal(env, id);
   if (!row) throw new Error("Withdrawal missing after creation");
   return { withdrawal: await withdrawalDetail(env, row), taskId };
+}
+
+/** One 转出's ids and what it is made of (createWithdrawal, or a 转账's). */
+export type WithdrawalPlan = {
+  id: string;
+  lockId: string;
+  taskId: string;
+  businessNo: string;
+  /** Whose 🐟 it takes. */
+  userId: string;
+  /** The Credit account it goes to: its owner's, or a 转账's recipient's. */
+  recipient: { external_id: string; username: string };
+  platform: { id: string; client_id: string };
+  quote: { debitMinor: number; feeMinor: number; creditMinor: number };
+  settings: { version: number; withdrawFeePercent: number };
+  requestId: string;
+  digest: string;
+  now: number;
+};
+
+export function newWithdrawalPlan(
+  input: Omit<
+    WithdrawalPlan,
+    "id" | "lockId" | "taskId" | "businessNo" | "now"
+  >,
+): WithdrawalPlan {
+  const id = crypto.randomUUID();
+  return {
+    ...input,
+    id,
+    lockId: crypto.randomUUID(),
+    taskId: crypto.randomUUID(),
+    businessNo: `${BUSINESS_PREFIX}${id.replaceAll("-", "")}`,
+    now: Date.now(),
+  };
+}
+
+/**
+ * A 转出's statements: the 转出, its lock and the lock's entry (head), then
+ * its payment and the payment's wake (tail). A 转账 to a Credit account
+ * writes itself between the two, so its payment's checks find it.
+ */
+export async function withdrawalStatements(
+  env: ApiBindings,
+  plan: WithdrawalPlan,
+) {
+  const { id, lockId, taskId, businessNo, userId, recipient, platform, quote } =
+    plan;
+  const { settings, now } = plan;
+  const parameterDigest = await claimPaymentParameterDigest({
+    id: taskId,
+    source: "withdrawal",
+    claimId: null,
+    acceptanceId: null,
+    merchantId: platform.id,
+    clientId: platform.client_id,
+    businessNo,
+    recipientId: recipient.external_id,
+    recipientUsername: recipient.username,
+    amountMinor: quote.debitMinor,
+    mode: "real",
+    recoveryPolicy: "withdrawal_same_order_v1",
+  });
+  return {
+    head: [
+      // Made only under the settings read, with 转出 still open: otherwise
+      // the lock below has nothing to hold and the batch falls through.
+      env.DB.prepare(
+        `INSERT INTO balance_withdrawals (id,user_id,merchant_id,client_id,business_no,recipient_id,
+          recipient_username,debit_minor,fee_minor,credit_minor,fee_percent,settings_version,
+          request_id,request_digest,created_at,updated_at)
+        SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+        WHERE EXISTS(SELECT 1 FROM balance_settings WHERE id='global' AND version=? AND withdraw_enabled=1)`,
+      ).bind(
+        id,
+        userId,
+        platform.id,
+        platform.client_id,
+        businessNo,
+        recipient.external_id,
+        recipient.username,
+        quote.debitMinor,
+        quote.feeMinor,
+        quote.creditMinor,
+        settings.withdrawFeePercent,
+        settings.version,
+        plan.requestId,
+        plan.digest,
+        now,
+        now,
+        settings.version,
+      ),
+      env.DB.prepare(
+        `INSERT INTO balance_locks (id,user_id,purpose,withdrawal_id,amount_minor,remaining_minor,status,created_at,updated_at)
+        VALUES (?,?,'withdrawal',?,?,?,'active',?,?)`,
+      ).bind(lockId, userId, id, quote.debitMinor, quote.debitMinor, now, now),
+      // 可用 must cover it (balance_entries_available_guard).
+      env.DB.prepare(
+        `INSERT INTO balance_entries (id,user_id,kind,available_delta_minor,locked_delta_minor,lock_id,created_at)
+        VALUES (?,?,'lock',?,?,?,?)`,
+      ).bind(
+        crypto.randomUUID(),
+        userId,
+        -quote.debitMinor,
+        quote.debitMinor,
+        lockId,
+        now,
+      ),
+    ],
+    tail: [
+      env.DB.prepare(
+        `INSERT INTO payment_tasks (id,source,withdrawal_id,merchant_id,client_id,business_no,recipient_id,
+          recipient_username,amount_minor,mode,status,next_run_at,created_at,updated_at,recovery_policy,parameter_digest)
+        VALUES (?,'withdrawal',?,?,?,?,?,?,?,'real','pending',${databaseNow},${databaseNow},${databaseNow},'withdrawal_same_order_v1',?)`,
+      ).bind(
+        taskId,
+        id,
+        platform.id,
+        platform.client_id,
+        businessNo,
+        recipient.external_id,
+        recipient.username,
+        quote.debitMinor,
+        parameterDigest,
+      ),
+      env.DB.prepare(
+        `INSERT INTO payment_outbox (id,task_id,created_at) VALUES (?,?,${databaseNow})`,
+      ).bind(crypto.randomUUID(), taskId),
+    ],
+  };
 }

@@ -239,6 +239,13 @@
       "when": 1792457287026,
       "tag": "0033_fish_hongbao",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1792517128632,
+      "tag": "0034_fish_transfers",
+      "breakpoints": true
     }
   ]
 }

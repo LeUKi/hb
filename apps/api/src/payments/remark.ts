@@ -15,16 +15,41 @@ export function claimPaymentRemark(author: string, title: string) {
 /** What a person reads with their own 🐟额 转出. */
 export const WITHDRAWAL_REMARK = "hb.lafi.sh 🐟额转出";
 
+/** What a 转账's recipient reads with it, in Credit (balance-design §16). */
+export function transferPaymentRemark(sender: string) {
+  return `hb.lafi.sh 🐟额转账 @${sender}`;
+}
+
 /**
  * The remark for a claim's payment, read when it is sent (a title edited
- * since reads as it is now), or a 转出's. Anything else, or a failed read,
- * sends the plain "Linux DO reward": a remark never holds a payment up.
+ * since reads as it is now), a 转出's, or a 转账's to a Credit account.
+ * Anything else, or a failed read, sends the plain "Linux DO reward" (a
+ * 转账's falls back to the 转出's): a remark never holds a payment up.
  */
 export async function paymentRemark(
   env: ApiBindings,
-  task: { claimId: string | null; source?: string },
+  task: {
+    claimId: string | null;
+    source?: string;
+    withdrawalId?: string | null;
+  },
 ) {
-  if (task.source === "withdrawal") return WITHDRAWAL_REMARK;
+  if (task.source === "withdrawal") {
+    if (!task.withdrawalId) return WITHDRAWAL_REMARK;
+    try {
+      const transfer = await env.DB.prepare(
+        `SELECT u.username FROM balance_transfers t JOIN users u ON u.id=t.from_user_id
+         WHERE t.withdrawal_id=?`,
+      )
+        .bind(task.withdrawalId)
+        .first<{ username: string }>();
+      return transfer?.username
+        ? transferPaymentRemark(transfer.username)
+        : WITHDRAWAL_REMARK;
+    } catch {
+      return WITHDRAWAL_REMARK;
+    }
+  }
   if (!task.claimId) return undefined;
   try {
     const row = await env.DB.prepare(

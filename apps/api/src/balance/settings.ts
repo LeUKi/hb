@@ -17,11 +17,12 @@ type SettingsRow = {
   withdraw_fee_percent: number;
   withdraw_max_minor: number;
   hongbao_enabled: number;
+  transfer_enabled: number;
   updated_at: number;
 };
 
 const SELECT_SETTINGS = `SELECT version,topup_enabled,withdraw_enabled,topup_fee_percent,
-  withdraw_fee_percent,withdraw_max_minor,hongbao_enabled,updated_at
+  withdraw_fee_percent,withdraw_max_minor,hongbao_enabled,transfer_enabled,updated_at
   FROM balance_settings WHERE id='global'`;
 
 function settingsOf(row: SettingsRow): BalanceSettings {
@@ -33,6 +34,7 @@ function settingsOf(row: SettingsRow): BalanceSettings {
     withdrawFeePercent: row.withdraw_fee_percent,
     withdrawMaxMinor: row.withdraw_max_minor,
     hongbaoEnabled: row.hongbao_enabled === 1,
+    transferEnabled: row.transfer_enabled === 1,
     updatedAt: row.updated_at,
   };
 }
@@ -91,6 +93,7 @@ function snapshot(settings: Required<BalanceSettingsInput>) {
     withdrawFeePercent: settings.withdrawFeePercent,
     withdrawMaxMinor: settings.withdrawMaxMinor,
     hongbaoEnabled: settings.hongbaoEnabled,
+    transferEnabled: settings.transferEnabled,
   });
 }
 
@@ -104,6 +107,7 @@ export async function updateBalanceSettings(
   const next = {
     ...change,
     hongbaoEnabled: change.hongbaoEnabled ?? previous.hongbaoEnabled,
+    transferEnabled: change.transferEnabled ?? previous.transferEnabled,
   };
   try {
     await env.DB.batch([
@@ -122,7 +126,7 @@ export async function updateBalanceSettings(
       ),
       env.DB.prepare(`UPDATE balance_settings SET version=version+1,
         topup_enabled=?,withdraw_enabled=?,topup_fee_percent=?,withdraw_fee_percent=?,
-        withdraw_max_minor=?,hongbao_enabled=?,
+        withdraw_max_minor=?,hongbao_enabled=?,transfer_enabled=?,
         updated_at=${databaseNow},updated_by_user_id=?
         WHERE id='global' AND version=?`).bind(
         Number(next.topupEnabled),
@@ -131,6 +135,7 @@ export async function updateBalanceSettings(
         next.withdrawFeePercent,
         next.withdrawMaxMinor,
         Number(next.hongbaoEnabled),
+        Number(next.transferEnabled),
         actorUserId,
         expectedVersion,
       ),
