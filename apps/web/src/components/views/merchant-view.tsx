@@ -48,7 +48,7 @@ import { type ChipTone, StatusChip } from "../ui/status-chip";
 import { MerchantGuide } from "./merchant-guide";
 import { MessageView } from "./message-view";
 
-const PAGE_NOTE = "LDC 红包由你的集市应用直接付给领取人，不经过本站。";
+const PAGE_NOTE = "用商户发的红包，由集市应用直接付给领取人，不经过本站。";
 
 /** Production's rules for a Client ID (createMerchantSchema). */
 function clientIdError(value: string) {
@@ -663,7 +663,7 @@ function CreateMerchant({
   return (
     <PageSection
       title="配置商户"
-      description="发 LDC 红包之前，先填好你在 LDC 创建的集市应用。每个账号有一个当前商户。"
+      description="用商户发红包前，先填好你在 LDC 创建的集市应用。每个账号有一个当前商户。"
       action={<MerchantGuide />}
     >
       <LeaveGuard

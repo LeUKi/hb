@@ -476,6 +476,6 @@ export async function refreshGlobalResult(
     )
     .get();
   if (!row)
-    throw new ActivityError(404, "REDEMPTION_NOT_FOUND", "未找到兑换结果");
+    throw new ActivityError(404, "REDEMPTION_NOT_FOUND", "未找到查找结果");
   return result(env, row, cursor);
 }

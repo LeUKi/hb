@@ -786,9 +786,7 @@ test.describe("红包页", () => {
     expect(state.solves).toHaveLength(0);
     await omniboxInput(page).fill(passwordOf.other);
     await page.keyboard.press("Enter");
-    await expect(
-      page.getByText("口令已解锁，不会再次领取奖励。"),
-    ).toBeVisible();
+    await expect(page.getByText("口令已解出，不会再领一次。")).toBeVisible();
     const solved = section.getByRole("listitem").filter({ hasText: "已解出" });
     await expect(solved).toContainText("已隐藏");
     await section.getByRole("button", { name: "显示全部口令" }).click();

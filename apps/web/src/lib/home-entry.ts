@@ -6,10 +6,6 @@ export type HomeEntry =
   | { kind: "activity"; id: string }
   | { kind: "topic"; topicId: string; postNumber: number; topicUrl: string };
 
-export const HOME_ENTRY_LABEL = "口令";
-export const HOME_ENTRY_HELP =
-  "输入口令兑奖，或输入活动标识跳转活动。活动标识支持 14 个 Emoji 表情码、本站活动链接、UUID，以及 https://linux.do/t/topic/… 格式的帖子链接。";
-
 const strictLinuxDoTopicUrl =
   /^https:\/\/linux\.do\/t\/topic\/[0-9]+(?:\/[0-9]+)?\/?(?:[?#].*)?$/u;
 const controlCharacter = /\p{Cc}/u;

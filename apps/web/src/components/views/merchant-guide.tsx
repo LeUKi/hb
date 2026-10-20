@@ -81,7 +81,7 @@ export function MerchantGuide() {
               在 LDC 创建集市应用
             </h2>
             <p className="text-sm text-ink-2">
-              红包里的 LDC 从你自己的集市应用付出。在 LINUX DO Credit
+              用商户发的红包，LDC 从你的集市应用付出。在 LINUX DO Credit
               建一个集市应用，再把它的 Client ID 和 Client Secret 填到这里。
             </p>
           </div>

@@ -431,7 +431,7 @@ test.describe("🐟额", () => {
     ]);
   });
 
-  test("转出：两个框互算，越界说是哪一头，申请后跟着它发出去", async ({
+  test("转出：只填🐟，说明 Credit 可能收分发费，越界说是哪一头，申请后跟着它发出去", async ({
     page,
   }) => {
     await mockSession(page, { ...viewer, balance: true });
@@ -474,22 +474,20 @@ test.describe("🐟额", () => {
     await expect(
       dialog.getByText(`@${viewer.username}`, { exact: false }),
     ).toBeVisible();
-    await dialog.getByLabel("扣除").fill("10");
-    await expect(dialog.getByLabel("预计到账")).toHaveValue("8.80");
-    await expect(dialog.getByText("分发费 1.20 LDC（12%）")).toBeVisible();
-    // From what should arrive: the least that brings at least that much.
-    await dialog.getByLabel("预计到账").fill("8.81");
-    await expect(dialog.getByLabel("扣除")).toHaveValue("10.01");
+    // One box, in 🐟: what arrives is Credit's to say, after its 分发费.
+    await expect(dialog.getByText(/Credit 可能会收取分发费/)).toBeVisible();
+    await expect(dialog.getByLabel("预计到账")).toHaveCount(0);
+    await dialog.getByLabel("转出数量").fill("10");
     // 可用 is 12.34: more is refused, and so is less than 1.
     await expect(dialog.getByText(/一笔转出|可用只有/)).toHaveCount(0);
-    await dialog.getByLabel("扣除").fill("20");
+    await dialog.getByLabel("转出数量").fill("20");
     await expect(dialog.getByText("可用只有 12.34 🐟。")).toBeVisible();
     await expect(
       dialog.getByRole("button", { name: "转出", exact: true }),
     ).toHaveAttribute("aria-disabled", "true");
-    await dialog.getByLabel("扣除").fill("0.5");
+    await dialog.getByLabel("转出数量").fill("0.5");
     await expect(dialog.getByText("一笔转出至少 1.00 🐟。")).toBeVisible();
-    await dialog.getByLabel("扣除").fill("10");
+    await dialog.getByLabel("转出数量").fill("10");
     await dialog.getByRole("button", { name: "转出", exact: true }).click();
 
     await expectPath(page, `/balance/out/${withdrawalId}`);

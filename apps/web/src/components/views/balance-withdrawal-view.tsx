@@ -66,7 +66,7 @@ function withdrawalSteps(withdrawal: BalanceWithdrawal): PaymentStep[] {
     steps.push({
       at: withdrawal.sentAt,
       title: "已发放",
-      detail: `Credit 预计到账 ${fishText(withdrawal.creditMinor)} LDC`,
+      detail: `发到你的 Credit 账户 @${withdrawal.recipientUsername}`,
       tone: "done",
     });
   else if (withdrawal.status === "failed" && withdrawal.failedAt !== null)
@@ -184,17 +184,10 @@ function Withdrawal({ user, id }: { user: SessionUser; id: string }) {
                     />
                   ) : undefined,
                 },
+                // What arrives is Credit's to say (it may take 分发费).
                 {
-                  label: "扣除",
+                  label: "转出数量",
                   value: <Fish minor={withdrawal.debitMinor} />,
-                },
-                {
-                  label: "分发费",
-                  value: `${fishText(withdrawal.feeMinor)} LDC（${withdrawal.feePercent}%）`,
-                },
-                {
-                  label: "预计到账",
-                  value: `${fishText(withdrawal.creditMinor)} LDC`,
                 },
                 {
                   label: "收款账户",

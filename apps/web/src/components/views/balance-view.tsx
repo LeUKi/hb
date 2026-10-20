@@ -3,7 +3,6 @@ import {
   type BalanceTopup,
   type BalanceWithdrawal,
   quoteTopup,
-  quoteWithdraw,
 } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -619,9 +618,10 @@ function TopupDialog({
 }
 
 /**
- * 转出: what leaves 🐟额 and what should arrive in Credit, either box
- * working out the other (docs/balance-design.md §5.1). Asked for once, it
- * is sent by itself; the page goes to the 转出 to follow it.
+ * 转出: how much leaves 🐟额, in 🐟 (docs/balance-design.md §5.1). What
+ * arrives is not shown: Credit may take its 分发费 on the way, and the
+ * dialog says so. Asked for once, it is sent by itself; the page goes to
+ * the 转出 to follow it.
  */
 function WithdrawDialog({
   open,
@@ -636,39 +636,24 @@ function WithdrawDialog({
   settings: BalancePage["settings"];
   availableMinor: number;
 }) {
-  const ids = { debit: useId(), credit: useId() };
-  const [typed, setTyped] = useState<{ by: "debit" | "credit"; value: string }>(
-    { by: "debit", value: "" },
-  );
+  const inputId = useId();
+  const [typed, setTyped] = useState("");
   const [error, setError] = useState<string | null>(null);
   const requestId = useRef(crypto.randomUUID());
   const { create } = useWithdrawalActions(user.id);
   const navigate = useNavigate();
-  const minor = typedMinor(typed.value);
-  const quote =
+  const minor = typedMinor(typed);
+  const bound =
     minor === null || minor <= 0
       ? null
-      : quoteWithdraw(
-          settings.withdrawFeePercent,
-          typed.by === "debit" ? { debitMinor: minor } : { creditMinor: minor },
-        );
-  const bound =
-    quote === null
-      ? null
-      : quote.debitMinor < settings.withdrawMinMinor
+      : minor < settings.withdrawMinMinor
         ? `一笔转出至少 ${fishText(settings.withdrawMinMinor)} 🐟。`
-        : quote.debitMinor > settings.withdrawMaxMinor
+        : minor > settings.withdrawMaxMinor
           ? `一笔转出最多 ${fishText(settings.withdrawMaxMinor)} 🐟。`
-          : quote.debitMinor > availableMinor
+          : minor > availableMinor
             ? `可用只有 ${fishText(Math.max(0, availableMinor))} 🐟。`
             : null;
-  const ready = quote !== null && bound === null;
-  const shown = (box: "debit" | "credit") =>
-    typed.by === box
-      ? typed.value
-      : quote
-        ? fishText(box === "debit" ? quote.debitMinor : quote.creditMinor)
-        : "";
+  const ready = minor !== null && minor > 0 && bound === null;
   const busy = create.isPending;
   const submit = async () => {
     if (!ready || busy) return;
@@ -677,8 +662,8 @@ function WithdrawDialog({
       const { withdrawal } = await create.mutateAsync({
         requestId: requestId.current,
         settingsVersion: settings.version,
-        by: typed.by,
-        amount: typed.value.trim().replace(/\.$/, ""),
+        by: "debit",
+        amount: typed.trim().replace(/\.$/, ""),
       });
       onClose();
       void navigate({
@@ -686,7 +671,7 @@ function WithdrawDialog({
         params: { withdrawalId: withdrawal.id },
       });
     } catch (failure) {
-      // A rate that changed meanwhile: the page reads it again; the boxes stay.
+      // A rate that changed meanwhile: the page reads it again; the box stays.
       requestId.current = crypto.randomUUID();
       setError(
         failure instanceof Error ? failure.message : "没有成功，请稍后再试。",
@@ -698,13 +683,13 @@ function WithdrawDialog({
       open={open}
       onClose={onClose}
       onClosed={() => {
-        setTyped({ by: "debit", value: "" });
+        setTyped("");
         setError(null);
         requestId.current = crypto.randomUUID();
       }}
       busy={busy}
       title="转出🐟额"
-      text={`自动发到你的 Credit 账户 @${user.username}，当天额度用完时顺延到第二天。需要先登录过一次 Credit。`}
+      text={`发到你的 Credit 账户 @${user.username}，Credit 可能会收取分发费。`}
       error={error}
       actions={
         <>
@@ -722,37 +707,21 @@ function WithdrawDialog({
         </>
       }
     >
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="扣除" htmlFor={ids.debit}>
-          <TextInput
-            id={ids.debit}
-            inputMode="decimal"
-            suffix="🐟"
-            value={shown("debit")}
-            placeholder="0.00"
-            onChange={(event) =>
-              setTyped({ by: "debit", value: event.target.value })
-            }
-          />
-        </Field>
-        <Field label="预计到账" htmlFor={ids.credit}>
-          <TextInput
-            id={ids.credit}
-            inputMode="decimal"
-            suffix="LDC"
-            value={shown("credit")}
-            placeholder="0.00"
-            onChange={(event) =>
-              setTyped({ by: "credit", value: event.target.value })
-            }
-          />
-        </Field>
-      </div>
+      <Field label="转出数量" htmlFor={inputId}>
+        <TextInput
+          id={inputId}
+          inputMode="decimal"
+          suffix="🐟"
+          value={typed}
+          placeholder="0.00"
+          onChange={(event) => setTyped(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") void submit();
+          }}
+        />
+      </Field>
       <p className="text-xs text-ink-3">
-        分发费{" "}
-        {quote
-          ? `${fishText(quote.feeMinor)} LDC（${settings.withdrawFeePercent}%）`
-          : `${settings.withdrawFeePercent}%`}
+        需要先登录过一次 Credit；当天额度用完时顺延到第二天。
       </p>
       {/* Only once an amount is out of bounds, and which bound. */}
       <Reveal show={bound !== null}>

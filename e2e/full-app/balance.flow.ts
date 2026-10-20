@@ -145,8 +145,7 @@ test("🐟额：管理员配好平台应用、邀请领取者，领取者接受�
     .getByRole("button", { name: "转出", exact: true })
     .click();
   const out = page.getByRole("dialog", { name: "转出🐟额" });
-  await out.getByLabel("扣除").fill("5");
-  await expect(out.getByLabel("预计到账")).toHaveValue("4.40");
+  await out.getByLabel("转出数量").fill("5");
   await out.getByRole("button", { name: "转出", exact: true }).click();
   await page.waitForURL(/\/balance\/out\/[0-9a-f-]{36}$/);
   await expect(page.getByText("已发放", { exact: true }).first()).toBeVisible({

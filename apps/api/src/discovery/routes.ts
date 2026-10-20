@@ -167,7 +167,7 @@ export const discoveryRoutes = new Hono<ApiContext>()
           throw new ActivityError(400, "INVALID_CURSOR", "分页标识无效");
         const type = activityRewardFilterSchema.safeParse(value.type ?? "all");
         if (!type.success)
-          throw new ActivityError(400, "INVALID_TYPE", "奖励类型无效");
+          throw new ActivityError(400, "INVALID_TYPE", "红包类型无效");
         return { status, type: type.data, cursor: value.cursor };
       },
     ),

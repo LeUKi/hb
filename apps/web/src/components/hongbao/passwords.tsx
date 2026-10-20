@@ -179,7 +179,7 @@ export function PasswordSection({
       {/* Always there, so a result is announced; the full stop alternates,
           so the same words are said again for the next one. */}
       <p role="status" className="sr-only">
-        {fresh ? `口令已解锁，不会再次领取奖励${said % 2 ? "。" : ""}` : ""}
+        {fresh ? `口令已解出，不会再领一次${said % 2 ? "。" : ""}` : ""}
       </p>
     </section>
   );

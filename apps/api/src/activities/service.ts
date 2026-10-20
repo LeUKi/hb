@@ -707,7 +707,7 @@ export async function updateActivity(
         (password, index) => input.activity.passwords[index] !== password,
       )
     )
-      invalidActivity("开放后不能修改兑换口令");
+      invalidActivity("开放后不能修改口令");
     if (timedDrawMoney(row)) {
       if (!sameDeadlineConfig(config.deadline, oldConfig.deadline))
         invalidActivity("限时开奖开放后不能修改开奖时间");

@@ -591,6 +591,8 @@ export function MerchantNotice() {
   const user = useSessionUser();
   const { leaveTo } = useOmniboxController();
   const { merchant, loaded } = useCurrentMerchant(user?.id ?? "");
+  // With 🐟额 to send, a missing merchant only means one way less.
+  const fish = useBalanceFunding(user?.id ?? "").data?.available === true;
   if (!loaded) return null;
   const rejected = merchant?.credentialVerification.status === "rejected";
   if (merchant && !rejected) return null;
@@ -600,7 +602,9 @@ export function MerchantNotice() {
       <span className="min-w-0">
         {merchant
           ? "商户凭证未通过：可以先填完存草稿，开放前请更新密钥。"
-          : "还没有配置 LDC 商户：配置好才能保存和开放红包。"}
+          : fish
+            ? "还没有配置 LDC 商户，也可以选从🐟额发。"
+            : "还没有配置 LDC 商户：配置好才能保存和开放红包。"}
       </span>
       <MoreLink
         className="-my-1"

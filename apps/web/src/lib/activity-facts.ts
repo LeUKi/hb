@@ -10,6 +10,8 @@ export type ActivityFacts = {
   timedDraw: boolean;
   /** 口令尝试统计: attempts here are summed up for its sender. */
   statistics: boolean;
+  /** 🐟额红包: nothing is paid out, so it has no 付款记录. */
+  fish: boolean;
   authorUsername: string;
 };
 
@@ -29,6 +31,7 @@ export function useActivityFacts(id: string | null): ActivityFacts | null {
     title: activity.title,
     timedDraw: activity.reward?.mode === "timed_draw",
     statistics: activity.forceDedicated,
+    fish: activity.funding === "balance",
     authorUsername: activity.author.username,
   };
 }

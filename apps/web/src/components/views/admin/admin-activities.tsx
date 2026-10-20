@@ -171,14 +171,20 @@ function Detail({ row }: { row: Row }) {
           },
           {
             label: "付款",
-            value: later(({ payments }) =>
-              [
-                `${payments.total} 笔`,
-                `未确认 ${payments.pending}`,
-                `异常待处理 ${payments.attention}`,
-                ...(payments.unknown ? [`结果未知 ${payments.unknown}`] : []),
-              ].join(" · "),
-            ),
+            // A 🐟额红包 pays nothing out (balance-design §14).
+            value:
+              row.summary.funding === "balance"
+                ? "从🐟额发，没有付款"
+                : later(({ payments }) =>
+                    [
+                      `${payments.total} 笔`,
+                      `未确认 ${payments.pending}`,
+                      `异常待处理 ${payments.attention}`,
+                      ...(payments.unknown
+                        ? [`结果未知 ${payments.unknown}`]
+                        : []),
+                    ].join(" · "),
+                  ),
           },
           {
             label: "开放",

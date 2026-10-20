@@ -261,10 +261,15 @@ function MeBalance({ user }: { user: SessionUser }) {
               label: "可用",
               value: <Fish minor={account?.availableMinor ?? 0} />,
             },
-            {
-              label: "转出中",
-              value: <Fish minor={account?.withdrawingMinor ?? 0} />,
-            },
+            // As on 🐟额: these only when there is some.
+            ...((account?.withdrawingMinor ?? 0) > 0
+              ? [
+                  {
+                    label: "转出中",
+                    value: <Fish minor={account?.withdrawingMinor ?? 0} />,
+                  },
+                ]
+              : []),
             ...((account?.unclaimedMinor ?? 0) > 0
               ? [
                   {

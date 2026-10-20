@@ -344,12 +344,12 @@ async function resultOfSubmission(
   submission: SubmissionRow,
 ): Promise<ClaimResult> {
   if (submission.purpose !== "claim" || submission.outcome === "solved")
-    activityConflict("解出口令提交不能用于领取奖励");
+    activityConflict("解出口令的提交不能用来领取");
   if (
     submission.outcome === "registered" ||
     submission.outcome === "already_registered"
   )
-    activityConflict("报名提交不能用于即时领取奖励");
+    activityConflict("报名的提交不能用来领取");
   if (
     submission.outcome === "claimed" ||
     submission.outcome === "already_claimed"
@@ -449,7 +449,7 @@ export async function completeClaimSubmission(
     );
     if (!submission) throw new Error("Submission was not found");
     if (submission.purpose !== "claim")
-      activityConflict("解出口令提交不能用于领取奖励");
+      activityConflict("解出口令的提交不能用来领取");
     const activity = await findActivity(env, submission.activityId);
     if (!activity) activityNotFound();
     if (submission.outcome !== "pending")

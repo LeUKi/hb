@@ -637,7 +637,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
           >;
           if (isGlobalRedemption) {
             if (typeof userId !== "string")
-              throw new ActivityError(400, "INVALID_ACTIVITY", "兑换请求无效");
+              throw new ActivityError(400, "INVALID_ACTIVITY", "领取请求无效");
             if (
               !this.ctx.id.equals(
                 this.env.ACTIVITY_DO.idFromName(
@@ -645,7 +645,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
                 ),
               )
             )
-              throw new ActivityError(400, "INVALID_OBJECT", "兑换账号不匹配");
+              throw new ActivityError(400, "INVALID_OBJECT", "领取账号不匹配");
             if (url.pathname === "/internal/redemptions/refresh") {
               if (
                 typeof input.id !== "string" ||
@@ -654,7 +654,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
                 throw new ActivityError(
                   400,
                   "INVALID_ACTIVITY",
-                  "兑换请求无效",
+                  "领取请求无效",
                 );
               return Response.json(
                 await refreshGlobalResult(
@@ -668,7 +668,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
             }
             const parsed = globalRedemptionSchema.safeParse(input);
             if (!parsed.success)
-              throw new ActivityError(400, "INVALID_ACTIVITY", "兑换请求无效");
+              throw new ActivityError(400, "INVALID_ACTIVITY", "领取请求无效");
             if (url.pathname === "/internal/redemptions/discover")
               return Response.json(
                 await discoverGlobalRedemption(this.env, userId, parsed.data),
