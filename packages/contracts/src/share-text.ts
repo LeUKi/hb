@@ -24,39 +24,53 @@ export function activityPath(activityId: string) {
   return `/🧧/${encodeActivityEmoji(activityId)}`;
 }
 
+// The templates' rules (05 §5): the title first (not on the plain link or
+// the image); what to copy in a code block; one line on how to use it, the
+// same everywhere; a special case adds a line of its own, “本红包…”.
+
 /** The line under a code block: paste it into the site (its forum post). */
 function howTo(result: string) {
-  return `复制上面这段，粘贴到[红包站](${FORUM_POST_URL})的输入框就能${result}。`;
+  return `复制上面这段，粘贴到[红包站](${FORUM_POST_URL})的输入框即可${result}。`;
 }
 
+/** 领取 or, for a 限时开奖, 报名. */
+const verbOf = (activity: Pick<ShareActivity, "draw">) =>
+  activity.draw ? "报名" : "领取";
+
 /**
- * 社区专用链接: the path in a code block, which the forum gives a copy
+ * 发到社区 · 链接: the path in a code block, which the forum gives a copy
  * button and leaves as it is (no emoji pictures, no link preview); the site
  * itself is only reached through its forum post.
  */
-export function forumShareLink(activityId: string) {
-  return [FENCE, activityPath(activityId), FENCE, howTo("打开红包")].join("\n");
+export function forumShareLink(activity: Pick<ShareActivity, "id" | "title">) {
+  return [
+    `【${activity.title}】`,
+    FENCE,
+    activityPath(activity.id),
+    FENCE,
+    howTo("打开红包"),
+  ].join("\n");
 }
 
-/** 专用链接与口令: the title, then the path and the 口令 to copy together. */
+/** 发到社区 · 链接与口令: the path and the 口令, copied together. */
 export function forumShareWithPassword(
   activity: ShareActivity,
   password: string,
 ) {
-  const result = activity.draw ? "报名" : "领";
   return [
     `【${activity.title}】`,
     FENCE,
     activityPath(activity.id),
     `口令：${password}`,
     FENCE,
-    activity.pageOnly
-      ? `这个红包关闭了首页领取：复制上面整段，粘贴到[红包站](${FORUM_POST_URL})的输入框就能${result}。`
-      : howTo(result),
+    howTo(verbOf(activity)),
+    ...(activity.pageOnly
+      ? [`本红包已关闭首页领取，只输入口令无法${verbOf(activity)}。`]
+      : []),
   ].join("\n");
 }
 
-/** 原始链接与口令, for outside the forum: plain lines, the link itself. */
+/** 发到别处 · 链接与口令: plain lines, the link itself. */
 export function plainShareWithPassword(
   activity: ShareActivity,
   url: string,
@@ -67,7 +81,7 @@ export function plainShareWithPassword(
     url,
     `口令：${password}`,
     ...(activity.pageOnly
-      ? ["这个红包关闭了首页领取，请打开上面的链接再输入口令。"]
+      ? ["本红包已关闭首页领取，请先打开上面的链接再输入口令。"]
       : []),
   ].join("\n");
 }

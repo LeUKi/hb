@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import {
-  Fragment,
   type KeyboardEvent,
   type PointerEvent,
   useCallback,
@@ -30,28 +29,37 @@ import type { HongbaoActivity, PasswordView } from "../../lib/hongbao";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { useWindowInfo } from "../shell/window-info";
 import { Button } from "../ui/button";
+import { Code } from "../ui/code";
 import { MorphLabel } from "../ui/morph-label";
 import { Squircle, SquirclePlate } from "../ui/squircle";
 
+type ShareGroup = "community" | "elsewhere";
+
+/** The menu's two groups, each named above its items (05 §5). */
+const groupNames: Record<ShareGroup, string> = {
+  community: "发到社区",
+  elsewhere: "发到别处",
+};
+
 type ShareItem = {
   key: string;
+  group: ShareGroup;
   icon: LucideIcon;
   label: string;
-  /** A second line: the 口令, or what the code is for. */
+  /** The second line: what it is for, unless it carries a 口令. */
   detail?: string;
-  mono?: boolean;
+  /** Shown as code on the second line, after “口令”. */
+  password?: string;
   text: string;
-  /** Starts the 原始 group: a line above it. */
-  divided?: boolean;
 };
 
 /**
- * What the menu offers (05 §5): for the 社区 first, its own link (in a code
- * block, with a copy button there), that link with each 口令 this viewer can
- * see (their own and verified ones, or all once it ended) and the 内嵌代码;
- * below a line, the original link, plain, and it with each 口令. The copy
- * itself is written in @hb/contracts (share-text), which also reads it back
- * when it is pasted whole into the omnibox. Links keep their emoji.
+ * What the menu offers (05 §5), in two named groups: 发到社区 — the link (a
+ * code block, with a copy button there), it with each 口令 this viewer can
+ * see (their own and verified ones, or all once it ended) and the image;
+ * 发到别处 — the plain link, and it with each 口令. The copy itself is
+ * written in @hb/contracts (share-text), which also reads it back when it
+ * is pasted whole into the omnibox. Links keep their emoji.
  */
 function shareItems(
   activity: HongbaoActivity,
@@ -65,43 +73,53 @@ function shareItems(
     draw: activity.mode === "timed_draw",
     pageOnly: activity.pageOnly,
   };
+  // Numbered only when there is more than one 口令 to tell apart.
+  const many = passwords.known.length > 1;
   const withPasswords = (
-    group: string,
-    label: string,
+    group: ShareGroup,
     text: (password: string) => string,
-  ) =>
+  ): ShareItem[] =>
     passwords.known.map((password, index) => ({
       key: `${group}-password-${index}`,
+      group,
       icon: KeyRound,
-      label: `${label} ${index + 1}`,
-      detail: password.text,
-      mono: true,
+      label: many ? `链接与口令 ${index + 1}` : "链接与口令",
+      password: password.text,
       text: text(password.text),
     }));
   return [
     {
       key: "forum",
+      group: "community",
       icon: MessagesSquare,
-      label: "社区专用链接",
-      detail: "避免转码与违规推广",
-      text: forumShareLink(activity.id),
+      label: "链接",
+      detail: "带领取方法，避免违规推广",
+      text: forumShareLink(shared),
     },
-    ...withPasswords("forum", "专用链接与口令", (password) =>
+    ...withPasswords("community", (password) =>
       forumShareWithPassword(shared, password),
     ),
     {
       key: "embed",
+      group: "community",
       icon: CodeXml,
-      label: "社区内嵌代码",
-      detail: "可实时展示红包数据",
+      label: "图片",
+      detail: "红包实况",
       text: createActivityImageEmbed({
         activityId: activity.id,
         origin,
         sender: activity.author.displayName,
       }),
     },
-    { key: "link", icon: Link2, label: "原始链接", text: url, divided: true },
-    ...withPasswords("link", "原始链接与口令", (password) =>
+    {
+      key: "link",
+      group: "elsewhere",
+      icon: Link2,
+      label: "链接",
+      detail: "完整网址",
+      text: url,
+    },
+    ...withPasswords("elsewhere", (password) =>
       plainShareWithPassword(shared, url, password),
     ),
   ];
@@ -229,7 +247,10 @@ export function PageActions({
   };
   const status = copied
     ? copied.ok
-      ? `已复制${items.find((item) => item.key === copied.key)?.label ?? ""}`
+      ? `已复制${(() => {
+          const item = items.find((one) => one.key === copied.key);
+          return item ? `${groupNames[item.group]}的${item.label}` : "";
+        })()}`
       : "复制失败，请手动复制"
     : "";
 
@@ -290,63 +311,88 @@ export function PageActions({
                   onKeyDown={onMenuKey}
                   {...fade}
                 >
-                  {items.map((item, index) => {
-                    const done = copied?.key === item.key;
-                    const Icon = done && copied.ok ? Check : item.icon;
-                    return (
-                      <Fragment key={item.key}>
-                        {item.divided && (
-                          <hr className="mx-2.5 my-1 border-line border-t" />
-                        )}
-                        <Squircle radius={12}>
-                          <button
-                            ref={(element) => {
-                              itemRefs.current[index] = element;
-                            }}
-                            type="button"
-                            role="menuitem"
-                            onClick={() => copy(item)}
-                            className="flex h-12 w-full items-center gap-3 px-2.5 text-left outline-none hover:bg-fill-2 focus-visible:bg-fill-2"
-                          >
-                            <Squircle radius={9}>
-                              <span
-                                className={`grid size-7 shrink-0 place-items-center transition-colors ${
-                                  done && copied.ok
-                                    ? "bg-success-soft text-success"
-                                    : "bg-fill text-ink-2"
-                                }`}
+                  {(["community", "elsewhere"] as const).map((group) => (
+                    // biome-ignore lint/a11y/useSemanticElements: a menu's items group with role="group" (WAI-ARIA menu), not a form's <fieldset>.
+                    <div
+                      key={group}
+                      role="group"
+                      aria-label={groupNames[group]}
+                      className="grid"
+                    >
+                      {group === "elsewhere" && (
+                        <hr className="mx-2.5 my-1 border-line border-t" />
+                      )}
+                      <div
+                        aria-hidden="true"
+                        className="px-2.5 pt-1.5 pb-0.5 text-xs text-ink-3"
+                      >
+                        {groupNames[group]}
+                      </div>
+                      {items
+                        .filter((item) => item.group === group)
+                        .map((item) => {
+                          const index = items.indexOf(item);
+                          const done = copied?.key === item.key;
+                          const Icon = done && copied.ok ? Check : item.icon;
+                          return (
+                            <Squircle key={item.key} radius={12}>
+                              <button
+                                ref={(element) => {
+                                  itemRefs.current[index] = element;
+                                }}
+                                type="button"
+                                role="menuitem"
+                                onClick={() => copy(item)}
+                                className="flex h-12 w-full items-center gap-3 px-2.5 text-left outline-none hover:bg-fill-2 focus-visible:bg-fill-2"
                               >
-                                <MorphLabel>
-                                  <Icon className="size-4" aria-hidden="true" />
-                                </MorphLabel>
-                              </span>
+                                <Squircle radius={9}>
+                                  <span
+                                    className={`grid size-7 shrink-0 place-items-center transition-colors ${
+                                      done && copied.ok
+                                        ? "bg-success-soft text-success"
+                                        : "bg-fill text-ink-2"
+                                    }`}
+                                  >
+                                    <MorphLabel>
+                                      <Icon
+                                        className="size-4"
+                                        aria-hidden="true"
+                                      />
+                                    </MorphLabel>
+                                  </span>
+                                </Squircle>
+                                <span className="grid min-w-0 flex-1">
+                                  <MorphLabel
+                                    fit={false}
+                                    className="text-sm text-ink"
+                                  >
+                                    <span className="block truncate">
+                                      {done
+                                        ? copied.ok
+                                          ? "已复制"
+                                          : "复制失败"
+                                        : item.label}
+                                    </span>
+                                  </MorphLabel>
+                                  {item.password !== undefined ? (
+                                    <span className="flex min-w-0 items-center gap-1 text-xs text-ink-3">
+                                      <span className="shrink-0">口令</span>
+                                      <Code className="min-w-0">
+                                        {item.password}
+                                      </Code>
+                                    </span>
+                                  ) : (
+                                    <span className="truncate text-xs text-ink-3">
+                                      {item.detail}
+                                    </span>
+                                  )}
+                                </span>
+                              </button>
                             </Squircle>
-                            <span className="grid min-w-0 flex-1">
-                              <MorphLabel
-                                fit={false}
-                                className="text-sm text-ink"
-                              >
-                                <span className="block truncate">
-                                  {done
-                                    ? copied.ok
-                                      ? "已复制"
-                                      : "复制失败"
-                                    : item.label}
-                                </span>
-                              </MorphLabel>
-                              {item.detail && (
-                                <span
-                                  className={`truncate text-xs text-ink-3 ${item.mono ? "font-mono" : ""}`}
-                                >
-                                  {item.detail}
-                                </span>
-                              )}
-                            </span>
-                          </button>
-                        </Squircle>
-                      </Fragment>
-                    );
-                  })}
+                          );
+                        })}
+                    </div>
+                  ))}
                 </motion.div>
               </Squircle>
             </motion.div>

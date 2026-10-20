@@ -30,15 +30,13 @@ const asCopiedFromForum = (text: string) =>
     [...path].map((c) => (nameOf.has(c) ? `:${nameOf.get(c)}:` : c)).join(""),
   );
 
-describe("share text (05 §5), written", () => {
-  it("puts the 社区专用链接 in a code block, the site's post behind 红包站", () => {
-    expect(forumShareLink(id)).toBe(
-      [
-        "```",
-        `/🧧/${code}`,
-        "```",
-        "复制上面这段，粘贴到[红包站](https://linux.do/t/3033290)的输入框就能打开红包。",
-      ].join("\n"),
+describe("share text (05 §5), written to one rule", () => {
+  const how = (result: string) =>
+    `复制上面这段，粘贴到[红包站](https://linux.do/t/3033290)的输入框即可${result}。`;
+
+  it("puts the link in a code block under the title, the site's post behind 红包站", () => {
+    expect(forumShareLink(activity)).toBe(
+      ["【周末红包】", "```", `/🧧/${code}`, "```", how("打开红包")].join("\n"),
     );
   });
 
@@ -50,29 +48,36 @@ describe("share text (05 §5), written", () => {
         `/🧧/${code}`,
         "口令：周末口令2026",
         "```",
-        "复制上面这段，粘贴到[红包站](https://linux.do/t/3033290)的输入框就能领。",
+        how("领取"),
       ].join("\n"),
     );
+  });
+
+  it("adds one line of its own when 首页领取 is off, the rest as it is", () => {
+    expect(
+      forumShareWithPassword({ ...activity, pageOnly: true }, password),
+    ).toBe(
+      `${forumShareWithPassword(activity, password)}\n本红包已关闭首页领取，只输入口令无法领取。`,
+    );
+    // A 限时开奖 signs up.
     expect(
       forumShareWithPassword(
         { ...activity, draw: true, pageOnly: true },
         password,
       )
         .split("\n")
-        .at(-1),
-    ).toBe(
-      "这个红包关闭了首页领取：复制上面整段，粘贴到[红包站](https://linux.do/t/3033290)的输入框就能报名。",
-    );
+        .slice(-2),
+    ).toEqual([how("报名"), "本红包已关闭首页领取，只输入口令无法报名。"]);
   });
 
-  it("keeps the plain one plain, saying so when 首页领取 is off", () => {
+  it("keeps the plain one plain, with the same extra line when 首页领取 is off", () => {
     expect(plainShareWithPassword(activity, url, password)).toBe(
       `【周末红包】\n${url}\n口令：周末口令2026`,
     );
     expect(
       plainShareWithPassword({ ...activity, pageOnly: true }, url, password),
     ).toBe(
-      `【周末红包】\n${url}\n口令：周末口令2026\n这个红包关闭了首页领取，请打开上面的链接再输入口令。`,
+      `【周末红包】\n${url}\n口令：周末口令2026\n本红包已关闭首页领取，请先打开上面的链接再输入口令。`,
     );
   });
 });
@@ -80,7 +85,7 @@ describe("share text (05 §5), written", () => {
 describe("share text, read back from a paste (02 §6)", () => {
   // Every form the menu gives out: what it names comes back.
   const forms: [string, string, string | null][] = [
-    ["社区专用链接", forumShareLink(id), null],
+    ["发到社区 · 链接", forumShareLink(activity), null],
     ["专用链接与口令", forumShareWithPassword(activity, password), password],
     [
       "专用链接与口令（关闭首页领取、报名）",

@@ -693,33 +693,40 @@ test.describe("红包页", () => {
     await page.keyboard.press("Escape");
     await expect(roster).toBeHidden();
 
-    // A guest sees no 口令: the 社区's link and 内嵌代码, a line, the
-    // original link.
+    // A guest sees no 口令: 发到社区 the link and the image, a line,
+    // 发到别处 the plain link; each line says what it is for.
     await page.getByRole("button", { name: "分享" }).click();
     const menu = page.getByRole("menu");
-    await expect(menu.getByRole("menuitem")).toHaveText([
-      /^社区专用链接避免转码与违规推广/,
-      /^社区内嵌代码可实时展示红包数据/,
-      /^原始链接/,
+    const community = () => page.getByRole("group", { name: "发到社区" });
+    const elsewhere = () => page.getByRole("group", { name: "发到别处" });
+    await expect(community().getByRole("menuitem")).toHaveText([
+      "链接带领取方法，避免违规推广",
+      "图片红包实况",
+    ]);
+    await expect(elsewhere().getByRole("menuitem")).toHaveText([
+      "链接完整网址",
     ]);
     await expect(menu.getByRole("separator")).toHaveCount(1);
-    await menu.getByRole("menuitem", { name: /社区专用链接/ }).click();
+    await community().getByRole("menuitem", { name: /^链接/ }).click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "已复制发到社区的链接" }),
+    ).toHaveCount(1);
     // A code block (the forum gives it a copy button), the site's post behind 红包站.
     await expect
       .poll(() => readClipboard(page))
       .toBe(
-        `\`\`\`\n/🧧/${code}\n\`\`\`\n复制上面这段，粘贴到[红包站](https://linux.do/t/3033290)的输入框就能打开红包。`,
+        `【周末红包】\n\`\`\`\n/🧧/${code}\n\`\`\`\n复制上面这段，粘贴到[红包站](https://linux.do/t/3033290)的输入框即可打开红包。`,
       );
     // "已复制" shows, then the menu folds away.
     await expect(menu).toBeHidden();
     await page.getByRole("button", { name: "分享" }).click();
-    await page.getByRole("menuitem", { name: /原始链接/ }).click();
+    await elsewhere().getByRole("menuitem", { name: /^链接/ }).click();
     await expect
       .poll(() => readClipboard(page))
       .toBe(`${new URL(page.url()).origin}/🧧/${code}`);
     await expect(menu).toBeHidden();
     await page.getByRole("button", { name: "分享" }).click();
-    await page.getByRole("menuitem", { name: /社区内嵌代码/ }).click();
+    await community().getByRole("menuitem", { name: /^图片/ }).click();
     await expect
       .poll(() => readClipboard(page))
       .toBe(
@@ -852,25 +859,31 @@ test.describe("红包页", () => {
 
     // The menu now offers both links with each 口令 the viewer knows (the
     // one used and the one verified), in each group.
+    // Two 口令, so numbered; each shown as code after “口令”.
     await page.getByRole("button", { name: "分享" }).click();
-    await expect(page.getByRole("menu").getByRole("menuitem")).toHaveText([
-      /^社区专用链接/,
-      `专用链接与口令 1${passwordOf.mine}`,
-      `专用链接与口令 2${passwordOf.other}`,
-      /^社区内嵌代码/,
-      "原始链接",
-      `原始链接与口令 1${passwordOf.mine}`,
-      `原始链接与口令 2${passwordOf.other}`,
+    const community = page.getByRole("group", { name: "发到社区" });
+    const elsewhere = page.getByRole("group", { name: "发到别处" });
+    await expect(community.getByRole("menuitem")).toHaveText([
+      /^链接带领取方法/,
+      `链接与口令 1口令${passwordOf.mine}`,
+      `链接与口令 2口令${passwordOf.other}`,
+      "图片红包实况",
     ]);
-    await page.getByRole("menuitem", { name: /专用链接与口令 1/ }).click();
+    await expect(elsewhere.getByRole("menuitem")).toHaveText([
+      "链接完整网址",
+      `链接与口令 1口令${passwordOf.mine}`,
+      `链接与口令 2口令${passwordOf.other}`,
+    ]);
+    await expect(community.locator("code").first()).toHaveText(passwordOf.mine);
+    await community.getByRole("menuitem", { name: /链接与口令 1/ }).click();
     await expect
       .poll(() => readClipboard(page))
       .toBe(
-        `【周末红包】\n\`\`\`\n/🧧/${code}\n口令：${passwordOf.mine}\n\`\`\`\n复制上面这段，粘贴到[红包站](https://linux.do/t/3033290)的输入框就能领。`,
+        `【周末红包】\n\`\`\`\n/🧧/${code}\n口令：${passwordOf.mine}\n\`\`\`\n复制上面这段，粘贴到[红包站](https://linux.do/t/3033290)的输入框即可领取。`,
       );
     await expect(page.getByRole("menu")).toBeHidden();
     await page.getByRole("button", { name: "分享" }).click();
-    await page.getByRole("menuitem", { name: /原始链接与口令 1/ }).click();
+    await elsewhere.getByRole("menuitem", { name: /链接与口令 1/ }).click();
     await expect
       .poll(() => readClipboard(page))
       .toBe(
