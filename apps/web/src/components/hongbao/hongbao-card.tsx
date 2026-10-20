@@ -109,6 +109,10 @@ export function HongbaoCard({
               {activity.participation === "password" ? "口令红包" : "无需口令"}
             </StatusChip>
             {activity.fish && <StatusChip tone="neutral">🐟额</StatusChip>}
+            {/* Its 口令 only on its own page: this card is the way in. */}
+            {activity.pageOnly && (
+              <StatusChip tone="neutral">关闭首页领取</StatusChip>
+            )}
             {mine && <StatusChip tone={mine.tone}>{mine.text}</StatusChip>}
           </span>
         </span>

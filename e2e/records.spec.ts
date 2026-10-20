@@ -211,9 +211,15 @@ test.describe("红包广场", () => {
               }),
             ]
           : status === "active"
-            ? [card("77777777-7777-4777-8777-777777777777", "周末红包")]
+            ? [
+                card("77777777-7777-4777-8777-777777777777", "周末红包", {
+                  forceDedicated: true,
+                }),
+              ]
             : [
-                card("77777777-7777-4777-8777-777777777777", "周末红包"),
+                card("77777777-7777-4777-8777-777777777777", "周末红包", {
+                  forceDedicated: true,
+                }),
                 card("66666666-6666-4666-8666-666666666666", "已经领完", {
                   status: "ended",
                   quantity: {
@@ -241,8 +247,14 @@ test.describe("红包广场", () => {
     await expect(
       filter.getByRole("button", { name: /全部\s*2/ }),
     ).toBeVisible();
-    // 全部 by default: the running one and the recently ended one.
-    await expect(page.getByRole("button", { name: /周末红包/ })).toBeVisible();
+    // 全部 by default: the running one and the recently ended one; one
+    // with 首页领取 off says so, as it is entered from here.
+    await expect(page.getByRole("button", { name: /周末红包/ })).toContainText(
+      "关闭首页领取",
+    );
+    await expect(
+      page.getByRole("button", { name: /已经领完/ }),
+    ).not.toContainText("关闭首页领取");
     await expect(page.getByRole("button", { name: /已经领完/ })).toBeVisible();
     await filter.getByRole("button", { name: /最近结束/ }).click();
     await expect(page).toHaveURL(/\/square\?filter=ended$/);
