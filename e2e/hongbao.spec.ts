@@ -720,10 +720,10 @@ test.describe("红包页", () => {
       .poll(() => readClipboard(page))
       .toBe(
         [
-          '<center><a href="https://linux.do/t/3033290">',
+          '<a href="https://linux.do/t/3033290">',
           `<picture><source type="image/svg+xml" srcset="${new URL(page.url()).origin}/🧧/${code}/🖼️.svg 1x"><img width="420" height="560" `,
           `alt="小满的红包：${code}"></picture>`,
-          "</a></center>",
+          "</a>",
         ].join("\n"),
       );
     // A guest polls: no live channel.

@@ -173,10 +173,10 @@ export function createActivityImageEmbed(input: {
   const href = activityImageUrl(input.activityId, input.origin);
   const alt = `${normalizeText(input.sender, "发红包的人")}的红包：${encodeActivityEmoji(input.activityId)}`;
   return [
-    `<center><a href="${FORUM_POST_URL}">`,
+    `<a href="${FORUM_POST_URL}">`,
     `<picture><source type="image/svg+xml" srcset="${escapeXml(href)} 1x"><img width="${ACTIVITY_IMAGE_WIDTH}" height="${ACTIVITY_IMAGE_HEIGHT}" `,
     `alt="${escapeXml(alt)}"></picture>`,
-    "</a></center>",
+    "</a>",
   ].join("\n");
 }
 

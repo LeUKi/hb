@@ -285,10 +285,10 @@ describe("activity image address and embed code", () => {
       }),
     ).toBe(
       [
-        '<center><a href="https://linux.do/t/3033290">',
+        '<a href="https://linux.do/t/3033290">',
         `<picture><source type="image/svg+xml" srcset="https://hb.example.com/🧧/${code}/🖼️.svg 1x"><img width="420" height="560" `,
         `alt="小满的红包：${code}"></picture>`,
-        "</a></center>",
+        "</a>",
       ].join("\n"),
     );
     const escaped = createActivityImageEmbed({
