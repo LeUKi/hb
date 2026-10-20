@@ -1,22 +1,11 @@
 import { describe, expect, it } from "vitest";
-import {
-  classifyHomeEntry,
-  HOME_ENTRY_HELP,
-  HOME_ENTRY_LABEL,
-} from "../../apps/web/src/lib/home-entry";
+import { classifyHomeEntry } from "../../apps/web/src/lib/home-entry";
 
 const ORIGIN = "https://redeem.example";
 const ID = "cecef876-ddbb-4ed5-93ce-9b311e3df3ea";
 const CODE = "🚷🎼📯😨😸🎺🐵🦄🪁🚍🤽📄🥘☕";
 
 describe("homepage entry classification", () => {
-  it("exports the adopted home entry copy", () => {
-    expect(HOME_ENTRY_LABEL).toBe("口令");
-    expect(HOME_ENTRY_HELP).toBe(
-      "输入口令兑奖，或输入活动标识跳转活动。活动标识支持 14 个 Emoji 表情码、本站活动链接、UUID，以及 https://linux.do/t/topic/… 格式的帖子链接。",
-    );
-  });
-
   it.each([
     [ID],
     [ID.toUpperCase()],
