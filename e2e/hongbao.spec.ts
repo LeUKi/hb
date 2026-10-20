@@ -700,16 +700,18 @@ test.describe("红包页", () => {
     const community = () => page.getByRole("group", { name: "发到社区" });
     const elsewhere = () => page.getByRole("group", { name: "发到别处" });
     await expect(community().getByRole("menuitem")).toHaveText([
-      "链接带领取方法，避免违规推广",
-      "图片红包实况",
+      "红包链接带领取方法，避免违规推广",
+      "红包实况图嵌入帖子，实时更新",
     ]);
     await expect(elsewhere().getByRole("menuitem")).toHaveText([
-      "链接完整网址",
+      "网页链接完整网址，可直接打开",
     ]);
     await expect(menu.getByRole("separator")).toHaveCount(1);
-    await community().getByRole("menuitem", { name: /^链接/ }).click();
+    await community()
+      .getByRole("menuitem", { name: /^红包链接/ })
+      .click();
     await expect(
-      page.getByRole("status").filter({ hasText: "已复制发到社区的链接" }),
+      page.getByRole("status").filter({ hasText: "已复制发到社区的红包链接" }),
     ).toHaveCount(1);
     // A code block (the forum gives it a copy button), the site's post behind 红包站.
     await expect
@@ -720,13 +722,17 @@ test.describe("红包页", () => {
     // "已复制" shows, then the menu folds away.
     await expect(menu).toBeHidden();
     await page.getByRole("button", { name: "分享" }).click();
-    await elsewhere().getByRole("menuitem", { name: /^链接/ }).click();
+    await elsewhere()
+      .getByRole("menuitem", { name: /^网页链接/ })
+      .click();
     await expect
       .poll(() => readClipboard(page))
       .toBe(`${new URL(page.url()).origin}/🧧/${code}`);
     await expect(menu).toBeHidden();
     await page.getByRole("button", { name: "分享" }).click();
-    await community().getByRole("menuitem", { name: /^图片/ }).click();
+    await community()
+      .getByRole("menuitem", { name: /^红包实况图/ })
+      .click();
     await expect
       .poll(() => readClipboard(page))
       .toBe(
@@ -864,18 +870,18 @@ test.describe("红包页", () => {
     const community = page.getByRole("group", { name: "发到社区" });
     const elsewhere = page.getByRole("group", { name: "发到别处" });
     await expect(community.getByRole("menuitem")).toHaveText([
-      /^链接带领取方法/,
-      `链接与口令 1口令${passwordOf.mine}`,
-      `链接与口令 2口令${passwordOf.other}`,
-      "图片红包实况",
+      /^红包链接带领取方法/,
+      `红包链接与口令 1口令${passwordOf.mine}`,
+      `红包链接与口令 2口令${passwordOf.other}`,
+      "红包实况图嵌入帖子，实时更新",
     ]);
     await expect(elsewhere.getByRole("menuitem")).toHaveText([
-      "链接完整网址",
-      `链接与口令 1口令${passwordOf.mine}`,
-      `链接与口令 2口令${passwordOf.other}`,
+      "网页链接完整网址，可直接打开",
+      `网页链接与口令 1口令${passwordOf.mine}`,
+      `网页链接与口令 2口令${passwordOf.other}`,
     ]);
     await expect(community.locator("code").first()).toHaveText(passwordOf.mine);
-    await community.getByRole("menuitem", { name: /链接与口令 1/ }).click();
+    await community.getByRole("menuitem", { name: /红包链接与口令 1/ }).click();
     await expect
       .poll(() => readClipboard(page))
       .toBe(
@@ -883,7 +889,7 @@ test.describe("红包页", () => {
       );
     await expect(page.getByRole("menu")).toBeHidden();
     await page.getByRole("button", { name: "分享" }).click();
-    await elsewhere.getByRole("menuitem", { name: /链接与口令 1/ }).click();
+    await elsewhere.getByRole("menuitem", { name: /网页链接与口令 1/ }).click();
     await expect
       .poll(() => readClipboard(page))
       .toBe(

@@ -41,6 +41,12 @@ const groupNames: Record<ShareGroup, string> = {
   elsewhere: "发到别处",
 };
 
+/** What each group's link is: the 红包's path, or the full web address. */
+const linkNames: Record<ShareGroup, string> = {
+  community: "红包链接",
+  elsewhere: "网页链接",
+};
+
 type ShareItem = {
   key: string;
   group: ShareGroup;
@@ -83,7 +89,9 @@ function shareItems(
       key: `${group}-password-${index}`,
       group,
       icon: KeyRound,
-      label: many ? `链接与口令 ${index + 1}` : "链接与口令",
+      label: many
+        ? `${linkNames[group]}与口令 ${index + 1}`
+        : `${linkNames[group]}与口令`,
       password: password.text,
       text: text(password.text),
     }));
@@ -92,7 +100,7 @@ function shareItems(
       key: "forum",
       group: "community",
       icon: MessagesSquare,
-      label: "链接",
+      label: linkNames.community,
       detail: "带领取方法，避免违规推广",
       text: forumShareLink(shared),
     },
@@ -103,8 +111,8 @@ function shareItems(
       key: "embed",
       group: "community",
       icon: CodeXml,
-      label: "图片",
-      detail: "红包实况",
+      label: "红包实况图",
+      detail: "嵌入帖子，实时更新",
       text: createActivityImageEmbed({
         activityId: activity.id,
         origin,
@@ -115,8 +123,8 @@ function shareItems(
       key: "link",
       group: "elsewhere",
       icon: Link2,
-      label: "链接",
-      detail: "完整网址",
+      label: linkNames.elsewhere,
+      detail: "完整网址，可直接打开",
       text: url,
     },
     ...withPasswords("elsewhere", (password) =>
