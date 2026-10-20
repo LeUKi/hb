@@ -306,7 +306,7 @@ export function SettingsSheet({
               <Setting group="password">
                 <Switch
                   label="统计口令尝试"
-                  description="记下大家提交过的口令，在“尝试统计”里按口令汇总。开启后只能在红包页输入口令，起始页的指令框查不到它；请分享红包链接。"
+                  description="记下大家提交过的口令，在“尝试统计”里按口令汇总。开启后只能在红包页输入口令领取，在别处输入匹配不到它；请分享红包链接。"
                   checked={form.statistics}
                   onChange={(statistics) =>
                     update((current) => ({ ...current, statistics }))
