@@ -107,6 +107,8 @@ export type JoinedRecord = {
   outcome: { label: string; tone: ChipTone; amount?: string };
   /** The payment of a claimed or won share; null for a sign-up. */
   payment: PaymentState | null;
+  /** A 🐟额红包's: what was taken is in 🐟额 (在🐟额), no payment. */
+  fish: boolean;
   ended: boolean;
 };
 
@@ -120,6 +122,7 @@ export function joinedRecordOf(item: Participation): JoinedRecord {
     author:
       activity.author?.displayName || activity.author?.username || "发红包的人",
     password: record.sourcePassword ?? null,
+    fish: activity.funding === "balance",
     ended: activity.status !== "active",
   };
   if (item.kind === "claim")
@@ -150,7 +153,7 @@ export function joinedRecordOf(item: Participation): JoinedRecord {
     outcome,
     payment:
       registration.status === "won"
-        ? (registration.claim?.payment.status ?? null)
+        ? (registration.claim?.payment?.status ?? null)
         : null,
   };
 }

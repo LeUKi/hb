@@ -73,15 +73,16 @@ export function summaryOf(
     case "amount": {
       const { total, shares, unit } = plan(form);
       if (total === null || shares === null) return "还没填";
+      const from = form.funding === "balance" ? " · 从🐟额发" : "";
       switch (form.mode) {
         case "fixed":
-          return `每份 ${ldc(unit ?? 0)} LDC · ${shares} 份`;
+          return `每份 ${ldc(unit ?? 0)} LDC · ${shares} 份${from}`;
         case "custom":
-          return `总额 ${ldc(total)} LDC · ${shares} 份`;
+          return `总额 ${ldc(total)} LDC · ${shares} 份${from}`;
         case "timed_draw":
-          return `奖池 ${ldc(total)} LDC · ${shares} 个名额`;
+          return `奖池 ${ldc(total)} LDC · ${shares} 个名额${from}`;
         default:
-          return `总额 ${ldc(total)} LDC · ${shares} 份`;
+          return `总额 ${ldc(total)} LDC · ${shares} 份${from}`;
       }
     }
     case "claim": {

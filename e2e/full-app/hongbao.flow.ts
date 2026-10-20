@@ -94,7 +94,7 @@ test("在发红包的四步里开放，领取后付款记录里有这一笔", as
     timeout: 30_000,
   });
   const claimed = await participation(recipient.context, id);
-  expect(claimed.claim?.payment.status).toBe("confirmed");
+  expect(claimed.claim?.payment?.status).toBe("confirmed");
 
   // The sender's 付款记录: the 红包 heads its payment, already paid.
   await author.page.goto(`/🧧/${code}/🧾`);
@@ -124,6 +124,102 @@ test("在发红包的四步里开放，领取后付款记录里有这一笔", as
   await expect(rosterButton).toBeFocused();
   await author.context.close();
   await recipient.context.close();
+});
+
+test("🐟额红包：站长打开开关并给人加🐟，那人在发红包里选🐟额，别人领到当场存进🐟额", async ({
+  browser,
+}) => {
+  const suffix = randomUUID().replaceAll("-", "").slice(0, 8);
+  const password = `鱼额${suffix}`;
+  const title = `完整应用🐟额红包 ${suffix}`;
+  const write = (csrf: string) => ({
+    headers: { Origin: origin, "X-CSRF-Token": csrf },
+  });
+
+  // 网站设置: 🐟额红包 on; then 1.00 🐟 for the sender, by 调整.
+  const admin = await account(browser, "author");
+  const settings = (await (
+    await admin.context.request.get("/api/admin/balance/settings")
+  ).json()) as { settings: Record<string, unknown> & { version: number } };
+  const { version, updatedAt: _u, ...current } = settings.settings;
+  const switched = await admin.context.request.patch(
+    "/api/admin/balance/settings",
+    {
+      ...write(admin.csrf),
+      data: { ...current, expectedVersion: version, hongbaoEnabled: true },
+    },
+  );
+  expect(switched.status()).toBe(200);
+  const sender = await account(browser, "recipient2");
+  const senderId = (
+    (await (await sender.context.request.get("/api/session")).json()) as {
+      user: { id: string };
+    }
+  ).user.id;
+  const given = await admin.context.request.post(
+    `/api/admin/balance/users/${senderId}/adjustments`,
+    {
+      ...write(admin.csrf),
+      data: {
+        requestId: randomUUID(),
+        direction: "add",
+        amount: "1.00",
+        reason: "完整应用🐟额红包",
+      },
+    },
+  );
+  expect(given.status()).toBe(200);
+
+  // The sender: 从哪发 🐟额, then 保存并开放. No merchant is needed.
+  await sender.page.goto("/new");
+  await waitForBoot(sender.page);
+  await sender.page
+    .getByRole("button", { name: /拼手气/ })
+    .first()
+    .click();
+  await sender.page.getByRole("button", { name: /^🐟额/ }).click();
+  await sender.page.locator("#hb-random-total").fill("0.30");
+  await sender.page.locator("#hb-random-count").fill("3");
+  await sender.page.locator("#hb-random-count").press("Enter");
+  await sender.page.getByLabel("口令 1").fill(password);
+  await sender.page.getByLabel("口令 1").press("Enter");
+  await sender.page.locator("#hb-title").fill(title);
+  await sender.page.getByRole("button", { name: "保存并开放" }).first().click();
+  const { code, id } = await openedCode(sender.page);
+  await expect(
+    sender.page.getByRole("button", { name: /^🐟额 领到的 LDC/ }),
+  ).toBeVisible();
+
+  // Someone else takes a share: in their 🐟额 at once, no payment.
+  const claimer = await account(browser, "recipient3");
+  await waitOutCooldown(claimer.page);
+  await claimer.page.goto(`/🧧/${code}`);
+  await waitForBoot(claimer.page);
+  await claimer.page.getByRole("button", { name: "输入口令领取" }).click();
+  await claimer.page
+    .getByRole("textbox", { name: "口令、红包链接或命令" })
+    .fill(password);
+  await claimer.page.keyboard.press("Enter");
+  await expect(
+    claimer.page
+      .getByRole("status")
+      .filter({ hasText: /^已领取 0\.\d\d LDC，存进了🐟额。$/ }),
+  ).toHaveCount(1);
+  await expect(
+    claimer.page.locator("[data-hb-part=result]").getByText("已存入🐟额"),
+  ).toBeVisible();
+  const claimed = await participation(claimer.context, id);
+  expect(claimed.claim?.payment).toBeUndefined();
+  expect(claimed.claim?.activity.funding).toBe("balance");
+
+  // The sender's 🐟额: what is still in it, and the 红包 in 明细.
+  await sender.page.goto("/balance");
+  await waitForBoot(sender.page);
+  await expect(sender.page.getByText("发出未领")).toBeVisible();
+  await expect(sender.page.getByText(`发红包「${title}」`)).toBeVisible();
+  await admin.context.close();
+  await sender.context.close();
+  await claimer.context.close();
 });
 
 test("限时开奖：无需口令，报满即开，中奖的人到账", async ({ browser }) => {

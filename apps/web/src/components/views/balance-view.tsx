@@ -10,6 +10,7 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   ChevronRight,
+  Gift,
   PenLine,
 } from "lucide-react";
 import { AnimatePresence } from "motion/react";
@@ -30,6 +31,7 @@ import {
 } from "../../lib/balance";
 import { clockSeconds } from "../../lib/roster-time";
 import { type SessionUser, useSessionUser } from "../../lib/session";
+import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { LazyListEnd, useQueryLazyList } from "../page/lazy-list";
 import {
   Callout,
@@ -191,6 +193,56 @@ function AdjustmentRow({
   );
 }
 
+export const hongbaoWords = {
+  sent: "发红包",
+  refund: "红包结束退回",
+  received: "领到红包",
+} as const;
+
+/** A 🐟额红包 in 明细 (balance-design §14): a row opens the 红包. */
+function HongbaoRow({
+  hongbao,
+}: {
+  hongbao: Extract<BalanceRecord, { type: "hongbao" }>["hongbao"];
+}) {
+  const { leaveTo } = useOmniboxController();
+  return (
+    <ListItem>
+      <Squircle radius={radius.row}>
+        <button
+          type="button"
+          onClick={() =>
+            void leaveTo({ to: "activity", id: hongbao.activityId })
+          }
+          className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-fill-2"
+        >
+          <Gift
+            className="size-[18px] shrink-0 text-ink-3"
+            aria-hidden="true"
+          />
+          <span className="grid min-w-0 flex-1 gap-0.5">
+            <span className="truncate text-sm font-medium text-ink">
+              {hongbaoWords[hongbao.kind]}「{hongbao.title}」
+            </span>
+            <span className="text-xs text-ink-3 tabular-nums">
+              {clockSeconds(hongbao.createdAt)}
+            </span>
+          </span>
+          <Fish
+            minor={hongbao.amountMinor}
+            signed
+            className="shrink-0 text-sm text-ink"
+          />
+          <ChevronRight
+            className="size-4 shrink-0 text-ink-3"
+            aria-hidden="true"
+          />
+        </button>
+      </Squircle>
+    </ListItem>
+  );
+}
+
 /** The page's figures: kept while another filter's list loads. */
 type Summary = Pick<
   BalancePage,
@@ -213,6 +265,7 @@ function Balance({ user }: { user: SessionUser }) {
     "topup",
     "withdrawal",
     "adjustment",
+    "hongbao",
   ]);
   const query = useBalancePages(user.id, filter);
   const list = useQueryLazyList({
@@ -286,11 +339,24 @@ function Balance({ user }: { user: SessionUser }) {
                   label: "可用",
                   value: <Fish minor={summary.account.availableMinor} />,
                 },
-                ...(summary.account.lockedMinor > 0
+                ...(summary.account.withdrawingMinor > 0
                   ? [
                       {
                         label: "转出中",
-                        value: <Fish minor={summary.account.lockedMinor} />,
+                        value: (
+                          <Fish minor={summary.account.withdrawingMinor} />
+                        ),
+                      },
+                    ]
+                  : []),
+                // Not 待领取: on one's own page that reads as something to take.
+                ...(summary.account.unclaimedMinor > 0
+                  ? [
+                      {
+                        label: "发出未领",
+                        value: <Fish minor={summary.account.unclaimedMinor} />,
+                        // 你发的🐟额红包里还没被领走的部分.
+                        note: "红包结束后退回可用",
                       },
                     ]
                   : []),
@@ -321,6 +387,7 @@ function Balance({ user }: { user: SessionUser }) {
               { value: "topup", label: "转入" },
               { value: "withdrawal", label: "转出" },
               { value: "adjustment", label: "调整" },
+              { value: "hongbao", label: "红包" },
             ]}
           />
           <ResultLoad
@@ -333,9 +400,11 @@ function Balance({ user }: { user: SessionUser }) {
                 text={
                   filter === "adjustment"
                     ? "站长补加或扣回时，这里会写明原因。"
-                    : filter === "withdrawal"
-                      ? "转出以后，每一笔都在这里。"
-                      : "转入、转出以后，每一笔都在这里。"
+                    : filter === "hongbao"
+                      ? "用🐟额发的红包和领到的🐟额红包，都在这里。"
+                      : filter === "withdrawal"
+                        ? "转出以后，每一笔都在这里。"
+                        : "转入、转出和🐟额红包，每一笔都在这里。"
                 }
               />
             ) : (
@@ -349,6 +418,11 @@ function Balance({ user }: { user: SessionUser }) {
                         <WithdrawalRow
                           key={record.withdrawal.id}
                           withdrawal={record.withdrawal}
+                        />
+                      ) : record.type === "hongbao" ? (
+                        <HongbaoRow
+                          key={record.hongbao.id}
+                          hongbao={record.hongbao}
                         />
                       ) : (
                         <AdjustmentRow
@@ -753,7 +827,7 @@ function InviteDialog({
       onClosed={reset}
       busy={create.isPending}
       title="邀请"
-      text="输入对方的 LINUX DO 用户名，生成一条邀请链接发给对方。对方接受后，也能转入和邀请别人。"
+      text="输入对方的 LINUX DO 用户名，生成一条邀请链接发给对方。对方接受后，能转入🐟额、用🐟额发红包，也能邀请别人。"
       error={error}
       actions={
         made ? (

@@ -615,6 +615,15 @@ export function useOmniboxController() {
         switch (result.result) {
           case "claimed":
           case "registered":
+            // A 🐟额红包's share opens 🐟额 to a first-timer: its entry
+            // comes with the session (balance-design §14).
+            if (
+              result.result === "claimed" &&
+              result.claim.activity.funding === "balance"
+            )
+              void queryClient.invalidateQueries({
+                queryKey: sessionQueryKey,
+              });
             if (router.history.location.state.omnibox) collapse();
             return;
           case "already_claimed":

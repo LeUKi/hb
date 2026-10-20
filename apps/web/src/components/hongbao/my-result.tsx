@@ -3,10 +3,12 @@ import {
   type PaymentState,
   type PaymentView,
 } from "@hb/contracts";
+import { useNavigate } from "@tanstack/react-router";
 import { ArrowUpRight, Lock, UserRoundX } from "lucide-react";
 import { motion } from "motion/react";
 import { type Ref, useState } from "react";
 import { ActivityRequestError } from "../../lib/activities";
+import { useBalanceFunding } from "../../lib/balance";
 import { useResendPayment } from "../../lib/claims";
 import type { HongbaoActivity, Mine } from "../../lib/hongbao";
 import { paymentTone } from "../../lib/hongbao-text";
@@ -17,9 +19,11 @@ import { useBefore } from "../../lib/use-before";
 import { Callout } from "../page/page";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
-import { ButtonLink } from "../ui/button-link";
+import { ButtonLink, MoreLink } from "../ui/button-link";
+import { FishMark } from "../ui/fish";
 import { NoteMarkdown } from "../ui/markdown";
 import { PersonName } from "../ui/person";
+import { Reveal } from "../ui/reveal";
 import { Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
 import { Countdown } from "./cover-data";
@@ -27,6 +31,33 @@ import { CountUp } from "./parts";
 import { PasswordText, RevealToggle } from "./password-text";
 import { TitleBadges } from "./title-badge";
 import { useNow } from "./use-hongbao";
+
+/** A 🐟额红包's share: in 🐟额 already, and the way on to Credit. */
+function FishStored() {
+  const navigate = useNavigate();
+  return (
+    <span className="inline-flex items-center gap-1">
+      <StatusChip size="md" tone="success" dot>
+        已存入🐟额
+      </StatusChip>
+      <MoreLink href="/balance" onGo={() => void navigate({ to: "/balance" })}>
+        转出
+      </MoreLink>
+    </span>
+  );
+}
+
+/** Below 1 in 🐟额 it cannot go to Credit yet: say so, once. */
+function FishNote() {
+  const identity = useIdentity();
+  const funding = useBalanceFunding(identity.user?.id ?? "");
+  const short = funding.data !== undefined && funding.data.availableMinor < 100;
+  return (
+    <Reveal show={short}>
+      <p className="text-sm text-ink-2">满 1 LDC 可以转出到 Credit。</p>
+    </Reveal>
+  );
+}
 
 function PaymentStatus({ state }: { state: PaymentState }) {
   return (
@@ -279,7 +310,10 @@ export function MyResult({
           <span className="text-[clamp(2.75rem,12cqw,4.5rem)] leading-none font-semibold tracking-tight">
             <CountUp value={amount} play={play} delay={delay} prefix="+" />
           </span>
-          <span className="text-xl font-medium">LDC</span>
+          <span className="text-xl font-medium">
+            LDC
+            {activity.fish && <FishMark explained />}
+          </span>
         </p>
       ) : (
         <p className="text-2xl font-semibold text-ink">
@@ -292,7 +326,9 @@ export function MyResult({
       )}
 
       <div className="flex flex-wrap items-center justify-center gap-2">
-        {amount && payment ? (
+        {amount && activity.fish ? (
+          <FishStored />
+        ) : amount && payment ? (
           <PaymentStatus state={payment.status} />
         ) : mine.kind === "registered" && mine.outcome === "waiting" ? (
           <span className="text-sm text-ink-2">
@@ -321,7 +357,9 @@ export function MyResult({
         )}
       </div>
 
-      {amount && payment ? (
+      {amount && activity.fish ? (
+        <FishNote />
+      ) : amount && payment ? (
         heldForAccount(payment) && mine.claimId ? (
           <NoCreditAccount
             activityId={activity.id}

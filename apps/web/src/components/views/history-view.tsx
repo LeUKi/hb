@@ -33,6 +33,7 @@ import { useSearchChoice } from "../shell/use-search-choice";
 import { useWindowInfo } from "../shell/window-info";
 import { Button } from "../ui/button";
 import { Segmented } from "../ui/field";
+import { FishMark } from "../ui/fish";
 import { MiniEnvelope } from "../ui/mini-envelope";
 import { RollingText } from "../ui/morph-label";
 import { ListItem, Reveal } from "../ui/reveal";
@@ -151,14 +152,21 @@ function JoinedRow({ item }: { item: JoinedRecord }) {
               <span className="text-base font-semibold text-success tabular-nums">
                 +{outcome.amount}
                 <span className="ml-0.5 text-xs font-medium">LDC</span>
+                {item.fish && <FishMark />}
               </span>
             ) : (
               <StatusChip tone={outcome.tone}>{outcome.label}</StatusChip>
             )}
-            {payment && (
-              <StatusChip tone={paymentTone(payment)} dot>
-                {PAYMENT_LABELS[payment]}
+            {outcome.amount && item.fish ? (
+              <StatusChip tone="success" dot>
+                在🐟额
               </StatusChip>
+            ) : (
+              payment && (
+                <StatusChip tone={paymentTone(payment)} dot>
+                  {PAYMENT_LABELS[payment]}
+                </StatusChip>
+              )
             )}
           </span>
           <ChevronRight

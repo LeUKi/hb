@@ -147,9 +147,16 @@ async function fakeTurnstile(page: Page) {
 /** One 红包's server, mocked: answers reads and the two writes. */
 async function mockHongbao(
   page: Page,
-  /** 领取前人机验证: a right 口令 asks for a token first. */
-  options: { humanCheck?: boolean } = {},
+  /**
+   * 领取前人机验证: a right 口令 asks for a token first. 🐟额红包: claims go
+   * into 🐟额, with no payment (balance-design §14).
+   */
+  options: { humanCheck?: boolean; fish?: boolean } = {},
 ) {
+  // What a 🐟额红包's claimant has in 🐟额 then: under 1, not out yet.
+  await page.route("**/api/me/balance/hongbao", (route) =>
+    route.fulfill({ json: { available: false, availableMinor: 10 } }),
+  );
   await page.route("https://avatars.example.test/**", (route) =>
     route.fulfill({
       contentType: "image/svg+xml",
@@ -160,6 +167,7 @@ async function mockHongbao(
     activity: {
       ...publicActivity(),
       ...(options.humanCheck ? { humanCheck: true as const } : {}),
+      ...(options.fish ? { funding: "balance" as const } : {}),
     },
     claim: null as ClaimDetail | null,
     recipients: [recipient("早到的人", 1)],
@@ -176,19 +184,24 @@ async function mockHongbao(
           id,
           title: state.activity.title,
           status: "active",
+          ...(options.fish ? { funding: "balance" as const } : {}),
         },
         rewardType: "ldc",
         claimedAt: new Date().toISOString(),
         sourcePassword: passwordOf.mine,
         amount: "0.10",
         afterClaimInfo: "谢谢你来，**记得**看帖子。",
-        payment: {
-          id: "payment-mine",
-          mode: "simulation",
-          status: "pending",
-          reason: null,
-          confirmedAt: null,
-        },
+        ...(options.fish
+          ? {}
+          : {
+              payment: {
+                id: "payment-mine",
+                mode: "simulation" as const,
+                status: "pending" as const,
+                reason: null,
+                confirmedAt: null,
+              },
+            }),
       };
       const { quantity } = state.activity;
       if (quantity.mode === "exact")
@@ -311,6 +324,36 @@ async function readClipboard(page: Page) {
 }
 
 test.describe("红包页", () => {
+  test("🐟额红包：皮上写🐟额；领到后金额带小 🐟，状态是已存入🐟额，可以去转出", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    await mockHongbao(page, { fish: true });
+    await openApp(page, path);
+    const cover = page.getByRole("button", { name: "🐟额" });
+    await expect(cover).toBeVisible();
+    await page.getByRole("button", { name: "输入口令领取" }).click();
+    await omniboxInput(page).fill(passwordOf.mine);
+    await page.keyboard.press("Enter");
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "已领取 0.10 LDC，存进了🐟额。" }),
+    ).toHaveCount(1);
+    const result = page.locator("[data-hb-part=result]");
+    await expect(result.getByText("已存入🐟额")).toBeVisible();
+    await expect(result.getByRole("button", { name: "在🐟额" })).toBeVisible();
+    await expect(
+      result.getByText("满 1 LDC 可以转出到 Credit。"),
+    ).toBeVisible();
+    await expect(result.getByRole("link", { name: "转出" })).toHaveAttribute(
+      "href",
+      "/balance",
+    );
+    // No payment to follow: nothing about 待发放 or Credit accounts.
+    await expect(result.getByText("待发放")).toHaveCount(0);
+  });
+
   test("名单入口：真实头像和上面的数字同一次读取，名单随即跟上", async ({
     page,
   }) => {

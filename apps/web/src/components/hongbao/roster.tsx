@@ -60,6 +60,8 @@ export function RosterHeader({ kind }: { kind: RosterKind }) {
 export type RowDetail = {
   password: string | null;
   payment: { id: string; state: PaymentState } | null;
+  /** A 🐟额红包's share: in the person's 🐟额, no payment to follow. */
+  fish?: boolean;
 };
 
 /** One person, one line: rank, avatar, name, titles, 用时, amount. */
@@ -124,6 +126,17 @@ function Row({
                       wrap
                       className="min-w-0"
                     />
+                  </span>
+                )}
+                {detail.fish && (
+                  <span
+                    className={`inline-flex shrink-0 items-center gap-1 ${paymentText.success}`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="size-1.5 rounded-full bg-current"
+                    />
+                    已存入🐟额
                   </span>
                 )}
                 {detail.payment && (

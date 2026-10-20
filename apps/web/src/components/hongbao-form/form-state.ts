@@ -31,6 +31,8 @@ export type TimeUnit = "seconds" | "minutes" | "hours" | "days";
 
 export type FormState = {
   title: string;
+  /** 从哪发: the merchant pays each claim, or 🐟额 (balance-design §14). */
+  funding: "merchant" | "balance";
   mode: RewardMode;
   fixed: { unit: string; count: string };
   random: { total: string; count: string; algorithm: Algorithm };
@@ -96,6 +98,7 @@ function localInput(at: number) {
 export function emptyForm(now = Date.now()): FormState {
   return {
     title: "",
+    funding: "merchant",
     mode: "random",
     fixed: { unit: "", count: "" },
     random: { total: "", count: "", algorithm: "double_mean" },
@@ -490,6 +493,7 @@ export function formOf(activity: ManagedActivity, now = Date.now()): FormState {
   return {
     ...base,
     title: config.title,
+    funding: config.funding ?? "merchant",
     mode: money.mode,
     fixed:
       money.mode === "fixed"
@@ -535,7 +539,10 @@ export function formOf(activity: ManagedActivity, now = Date.now()): FormState {
   };
 }
 
-/** The form as production saves it, paid by `merchantId`. Checked first. */
+/**
+ * The form as production saves it, paid by `merchantId` (none for a
+ * 🐟额红包). Checked first.
+ */
 export function inputOf(form: FormState, merchantId: string): ActivityInput {
   const { total, shares, unit } = plan(form);
   const pool = ldc(total ?? 0);
@@ -615,7 +622,10 @@ export function inputOf(form: FormState, merchantId: string): ActivityInput {
     // Left out when off, so older saved forms keep their shape (idempotency).
     ...(form.humanCheck ? { humanCheck: true } : {}),
     rewardType: "ldc",
-    merchantId,
+    // Left out for 商户直发, as before 🐟额红包 (idempotency).
+    ...(form.funding === "balance"
+      ? { funding: "balance" as const, merchantId: "" }
+      : { merchantId }),
     money,
   };
 }
@@ -660,6 +670,7 @@ export function sameInput(saved: ActivityInput, sent: ActivityInput) {
       afterClaimInfo: input.afterClaimInfo,
       afterEndInfo: input.afterEndInfo,
       merchantId: input.merchantId,
+      funding: input.funding ?? "merchant",
       humanCheck: input.humanCheck === true,
     });
   return (

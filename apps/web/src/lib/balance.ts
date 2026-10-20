@@ -28,7 +28,12 @@ export type BalancePage = InferResponseType<
   200
 >;
 export type BalanceRecord = BalancePage["items"][number];
-export type BalanceFilter = "all" | "topup" | "withdrawal" | "adjustment";
+export type BalanceFilter =
+  | "all"
+  | "topup"
+  | "withdrawal"
+  | "adjustment"
+  | "hongbao";
 
 export const balanceKeys = {
   all: (identity: string) => ["merchant-private", identity, "balance"] as const,
@@ -42,6 +47,8 @@ export const balanceKeys = {
     [...balanceKeys.all(identity), "invites"] as const,
   invitee: (identity: string, username: string) =>
     [...balanceKeys.all(identity), "invitee", username] as const,
+  hongbao: (identity: string) =>
+    [...balanceKeys.all(identity), "hongbao"] as const,
 };
 
 export function useBalancePages(userId: string, filter: BalanceFilter) {
@@ -227,6 +234,28 @@ export function useWithdrawalActions(userId: string) {
 }
 
 /** The invite dialog's last few invitations, and what became of them. */
+export type BalanceFunding = { available: boolean; availableMinor: number };
+
+/**
+ * 🐟额红包 (docs/balance-design.md §14): may this person send one now (the
+ * form's “从哪发”), and what is 可用 (my result's “满 1 LDC 可以转出”).
+ */
+export function useBalanceFunding(userId: string, enabled = true) {
+  const session = useMerchantIdentity(userId);
+  return useQuery({
+    queryKey: balanceKeys.hongbao(session.identity),
+    enabled: session.enabled && enabled,
+    queryFn: async ({ signal }) =>
+      session.read<BalanceFunding>(
+        await api.api.me.balance.hongbao.$get(undefined, {
+          init: { signal, cache: "no-store" },
+        }),
+      ),
+    retry: false,
+    staleTime: 0,
+  });
+}
+
 export function useMyInvites(userId: string, enabled: boolean) {
   const session = useMerchantIdentity(userId);
   return useQuery({

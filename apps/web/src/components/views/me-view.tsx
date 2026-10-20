@@ -263,8 +263,16 @@ function MeBalance({ user }: { user: SessionUser }) {
             },
             {
               label: "转出中",
-              value: <Fish minor={account?.lockedMinor ?? 0} />,
+              value: <Fish minor={account?.withdrawingMinor ?? 0} />,
             },
+            ...((account?.unclaimedMinor ?? 0) > 0
+              ? [
+                  {
+                    label: "发出未领",
+                    value: <Fish minor={account?.unclaimedMinor ?? 0} />,
+                  },
+                ]
+              : []),
           ]}
         />
       </Panel>

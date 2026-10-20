@@ -108,6 +108,7 @@ export function HongbaoCard({
             <StatusChip tone="neutral">
               {activity.participation === "password" ? "口令红包" : "无需口令"}
             </StatusChip>
+            {activity.fish && <StatusChip tone="neutral">🐟额</StatusChip>}
             {mine && <StatusChip tone={mine.tone}>{mine.text}</StatusChip>}
           </span>
         </span>

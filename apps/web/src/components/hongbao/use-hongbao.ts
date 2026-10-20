@@ -185,9 +185,9 @@ export function useHongbao(data: HongbaoData) {
   const announcement = !mine
     ? ""
     : mine.kind === "claimed"
-      ? `已领取 ${mine.amount} LDC。`
+      ? `已领取 ${mine.amount} LDC${activity.fish ? "，存进了🐟额" : ""}。`
       : mine.outcome === "won"
-        ? `已中奖，${mine.amount} LDC。`
+        ? `已中奖，${mine.amount} LDC${activity.fish ? "，存进了🐟额" : ""}。`
         : mine.outcome === "lost"
           ? "本次未中奖。"
           : "已报名，等待开奖。";

@@ -128,8 +128,10 @@ function RosterContent({
     const payment = row.payment
       ? { id: row.payment.id, state: row.payment.status }
       : null;
-    if (!row.password && !payment) return null;
-    return { password: row.password ?? null, payment };
+    // A 🐟额红包's claims and prizes went into 🐟额 (balance-design §14).
+    const fish = activity.fish && kind !== "registrations";
+    if (!row.password && !payment && !fish) return null;
+    return { password: row.password ?? null, payment, fish };
   };
   const openPayment = (paymentId: string) =>
     void navigate({
@@ -168,9 +170,8 @@ function RosterContent({
           <p className="flex items-center justify-between gap-2 text-xs text-gold-ink">
             <span>
               你发的红包：每行多一行
-              {activity.participation === "password"
-                ? "口令和付款状态"
-                : "付款状态"}
+              {activity.participation === "password" ? "口令和" : ""}
+              {activity.fish ? "到账状态" : "付款状态"}
               ，只有你能看到。
             </span>
             {activity.participation === "password" && !view.ended && (

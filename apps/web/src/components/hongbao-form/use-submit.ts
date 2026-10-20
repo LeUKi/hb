@@ -183,8 +183,9 @@ export function useSubmit({
     if (idle(open) || inFlight.current) return;
     const retrying = retries(open);
     setNotice(null);
-    const paying = activity?.config.merchantId ?? merchant?.id;
-    if (!retrying && !opened) {
+    const paying = activity?.config.merchantId || merchant?.id;
+    // A 🐟额红包 has no merchant: 🐟额 is checked when it opens.
+    if (!retrying && !opened && form.funding !== "balance") {
       if (!merchant || !paying) {
         setNotice({
           tone: "danger",

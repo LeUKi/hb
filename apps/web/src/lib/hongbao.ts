@@ -40,6 +40,8 @@ export type HongbaoActivity = {
   statistics: boolean;
   /** 领取前人机验证: claiming or signing up first passes Turnstile. */
   humanCheck: boolean;
+  /** A 🐟额红包: what is taken goes into 🐟额 (balance-design §14). */
+  fish: boolean;
   /** 自定义金额's order, known to the sender only. */
   custom?: { allocation: "sequential" | "random" };
   /**
@@ -171,6 +173,7 @@ export function hongbaoOf(
     beforeInfo: activity.beforeInfo,
     statistics: activity.forceDedicated,
     humanCheck: activity.humanCheck === true,
+    fish: activity.funding === "balance",
     custom:
       config && config.money.mode === "custom"
         ? { allocation: config.allocation }
@@ -407,7 +410,7 @@ function claimed(claim: ClaimDetail, titles: RosterTitle[]): Mine {
     at: Date.parse(claim.claimedAt),
     titles,
     afterClaimInfo: claim.afterClaimInfo || undefined,
-    payment: claim.payment,
+    payment: claim.payment ?? null,
   };
 }
 

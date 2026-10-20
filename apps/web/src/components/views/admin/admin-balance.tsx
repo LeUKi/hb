@@ -35,7 +35,11 @@ import { Field, Segmented, TextInput } from "../../ui/field";
 import { Fish, fishText } from "../../ui/fish";
 import { ListItem, Swap } from "../../ui/reveal";
 import { StatusChip } from "../../ui/status-chip";
-import { topupStatusText, topupStatusTone } from "../balance-view";
+import {
+  hongbaoWords,
+  topupStatusText,
+  topupStatusTone,
+} from "../balance-view";
 import {
   withdrawalStatusText,
   withdrawalStatusTone,
@@ -1374,11 +1378,19 @@ export function UserBalance({ userId }: { userId: string }) {
                   label: "可用",
                   value: <Fish minor={data.account.availableMinor} />,
                 },
-                ...(data.account.lockedMinor > 0
+                ...(data.account.withdrawingMinor > 0
                   ? [
                       {
                         label: "转出中",
-                        value: <Fish minor={data.account.lockedMinor} />,
+                        value: <Fish minor={data.account.withdrawingMinor} />,
+                      },
+                    ]
+                  : []),
+                ...(data.account.unclaimedMinor > 0
+                  ? [
+                      {
+                        label: "发出未领",
+                        value: <Fish minor={data.account.unclaimedMinor} />,
                       },
                     ]
                   : []),
@@ -1401,7 +1413,9 @@ export function UserBalance({ userId }: { userId: string }) {
                         ? record.topup.id
                         : record.type === "withdrawal"
                           ? record.withdrawal.id
-                          : record.adjustment.id
+                          : record.type === "hongbao"
+                            ? record.hongbao.id
+                            : record.adjustment.id
                     }
                     className="flex items-baseline justify-between gap-3"
                   >
@@ -1410,7 +1424,9 @@ export function UserBalance({ userId }: { userId: string }) {
                         ? `转入 · ${topupStatusText[record.topup.status]}`
                         : record.type === "withdrawal"
                           ? `转出 · ${withdrawalStatusText[record.withdrawal.status]}`
-                          : `${record.adjustment.direction === "add" ? "补加" : "扣回"} · ${record.adjustment.reason}`}
+                          : record.type === "hongbao"
+                            ? `${hongbaoWords[record.hongbao.kind]} · ${record.hongbao.title}`
+                            : `${record.adjustment.direction === "add" ? "补加" : "扣回"} · ${record.adjustment.reason}`}
                     </span>
                     <Fish
                       signed
@@ -1420,9 +1436,11 @@ export function UserBalance({ userId }: { userId: string }) {
                           ? record.topup.creditMinor
                           : record.type === "withdrawal"
                             ? -record.withdrawal.debitMinor
-                            : record.adjustment.direction === "add"
-                              ? record.adjustment.amountMinor
-                              : -record.adjustment.amountMinor
+                            : record.type === "hongbao"
+                              ? record.hongbao.amountMinor
+                              : record.adjustment.direction === "add"
+                                ? record.adjustment.amountMinor
+                                : -record.adjustment.amountMinor
                       }
                     />
                   </li>

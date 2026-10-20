@@ -22,6 +22,7 @@ const balanceLabels: Record<
 > = {
   topupEnabled: ["转入", (value) => (value ? "开" : "关")],
   withdrawEnabled: ["转出", (value) => (value ? "开" : "关")],
+  hongbaoEnabled: ["🐟额红包", (value) => (value ? "开" : "关")],
   topupFeePercent: ["流转费率", (value) => `${value}%`],
   withdrawFeePercent: ["转出费率", (value) => `${value}%`],
   withdrawMaxMinor: [

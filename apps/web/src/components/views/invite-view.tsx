@@ -81,11 +81,18 @@ export function InviteView({ token }: { token: string }) {
             <div className="grid gap-2 text-sm text-ink-2">
               <p>🐟额是由本站托管的 LDC，1 🐟 = 1 LDC。</p>
               <p>
+                接受后可以把 LDC
+                转入🐟额，用🐟额发红包：不用配置商户，领的人当场到账。
+              </p>
+              <p>
                 转入在 Credit 收银台确认，流转费（{page.topupFeePercent}
                 %）全部由 Credit 收取，本站没有任何收益；转出会自动发回你的
                 Credit 账户。
               </p>
-              <p>接受后，你也可以邀请别人。</p>
+              <p>
+                🐟额在头像打开的用户卡片里，也可以输入
+                /balance。接受后，你也可以邀请别人。
+              </p>
             </div>
             {blocked ? (
               <div className="grid gap-3">

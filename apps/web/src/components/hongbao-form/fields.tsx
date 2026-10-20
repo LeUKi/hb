@@ -10,10 +10,13 @@ import {
   Plus,
   Shuffle,
   Sparkles,
+  Store,
   Timer,
   Trash2,
+  Wallet,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { useBalanceFunding } from "../../lib/balance";
 import { cn } from "../../lib/cn";
 import { splitNames, splitRules } from "../../lib/hongbao-text";
 import { useCurrentMerchant, useMerchant } from "../../lib/merchants";
@@ -355,11 +358,21 @@ export function AmountFields({
       <div className="-mt-3 flex flex-col gap-1">
         <p className="text-xs text-ink-3">
           最多 1,000 份，每份至少 0.01
-          LDC，金额最多两位小数。填的是每份发出的金额。领取的人到账时，Credit
-          会按你的 Credit 等级扣分发费（4%–15%）。你不能领自己的红包。
+          LDC，金额最多两位小数。填的是每份发出的金额。
+          {form.funding === "balance"
+            ? "领到的直接存进领取人的🐟额。"
+            : "领取的人到账时，Credit 会按你的 Credit 等级扣分发费（4%–15%）。"}
+          你不能领自己的红包。
         </p>
-        {/* Opens as the total passes 800 LDC, and closes under it. */}
-        <Reveal show={total !== null && total > DAILY_LIMIT_FLOOR}>
+        {/* Opens as the total passes 800 LDC, and closes under it; 🐟额
+            does not go through Credit at all. */}
+        <Reveal
+          show={
+            form.funding !== "balance" &&
+            total !== null &&
+            total > DAILY_LIMIT_FLOOR
+          }
+        >
           <p className="text-xs text-warning">
             Credit 每天最多能发 800–2000 LDC（按你的 Credit
             等级），超出的部分可能顺延到第二天发放。
@@ -371,6 +384,67 @@ export function AmountFields({
 }
 
 /** 微信同款 or 支付宝同款, and what that gives with the amounts filled in. */
+/**
+ * 从哪发 (docs/balance-design.md §14): over the amounts, only while 🐟额红包
+ * are on and there is 可用 (or the draft is one already). Over 可用, a line
+ * says so; the draft still saves, and opening checks again.
+ */
+export function FundingChoice({
+  form,
+  update,
+  locked,
+}: {
+  form: FormState;
+  update: Update;
+  locked: boolean;
+}) {
+  const user = useSessionUser();
+  const funding = useBalanceFunding(user?.id ?? "", !locked);
+  const available = funding.data?.availableMinor ?? 0;
+  const offered = funding.data?.available === true;
+  const { total } = plan(form);
+  if (!offered && form.funding !== "balance") return null;
+  return (
+    <div className="grid gap-2">
+      <ChoiceCards
+        label="从哪发"
+        value={form.funding}
+        disabled={locked}
+        onChange={(value) =>
+          update((current) => ({ ...current, funding: value }))
+        }
+        options={[
+          {
+            value: "merchant",
+            title: "LDC 商户",
+            description: "每有人领取，从你的集市应用直接付给他",
+            icon: Store,
+          },
+          {
+            value: "balance",
+            title: "🐟额",
+            description: `可用 ${ldc(Math.max(0, available))} LDC🐟，领到的进领取人的🐟额`,
+            icon: Wallet,
+          },
+        ]}
+      />
+      <Reveal
+        show={
+          !locked &&
+          form.funding === "balance" &&
+          funding.data !== undefined &&
+          total !== null &&
+          total > available
+        }
+      >
+        <p className="px-1 text-xs text-warning">
+          🐟额可用 {ldc(Math.max(0, available))} LDC，不够发这个红包。
+        </p>
+      </Reveal>
+    </div>
+  );
+}
+
 export function AlgorithmCards({
   label,
   value,

@@ -33,11 +33,13 @@ type Draft = {
   withdrawEnabled?: boolean;
   withdrawFee?: string;
   withdrawMax?: string;
+  hongbaoEnabled?: boolean;
 };
 
 /**
- * 🐟额's settings (docs/balance-design.md §7): the two switches, the
- * two rates and the cap on one 转出 (who may 转入 is by invitation). Saved
+ * 🐟额's settings (docs/balance-design.md §7, §14): the switches for 转入,
+ * 转出 and 🐟额红包, the two rates and the cap on one 转出 (who may 转入 is
+ * by invitation). Saved
  * against the version read, like the attempt intervals.
  */
 export function BalanceSettingsSection({
@@ -65,6 +67,7 @@ export function BalanceSettingsSection({
     withdrawEnabled: draft.withdrawEnabled ?? shown.withdrawEnabled,
     withdrawFee: draft.withdrawFee ?? String(shown.withdrawFeePercent),
     withdrawMax: draft.withdrawMax ?? (shown.withdrawMaxMinor / 100).toFixed(2),
+    hongbaoEnabled: draft.hongbaoEnabled ?? shown.hongbaoEnabled,
   };
   const cap = capMinor(values.withdrawMax);
   const ok =
@@ -90,6 +93,7 @@ export function BalanceSettingsSection({
         topupFeePercent: Number(values.topupFee),
         withdrawFeePercent: Number(values.withdrawFee),
         withdrawMaxMinor: cap ?? shown.withdrawMaxMinor,
+        hongbaoEnabled: values.hongbaoEnabled,
       });
       setBase(null);
       setDraft({});
@@ -114,7 +118,7 @@ export function BalanceSettingsSection({
     <PageSection
       id="balance-settings"
       title="🐟额"
-      description="转入、转出的开关和费率。费率要和平台账户在 Credit 的等级一致：填低了，差价由本站垫上。"
+      description="转入、转出和🐟额红包的开关，以及费率。费率要和平台账户在 Credit 的等级一致：填低了，差价由本站垫上。"
     >
       <Panel>
         <LeaveGuard
@@ -133,6 +137,12 @@ export function BalanceSettingsSection({
             description="关掉后不能新申请转出，已申请的照常发放。"
             checked={values.withdrawEnabled}
             onChange={(withdrawEnabled) => edit({ withdrawEnabled })}
+          />
+          <Switch
+            label="🐟额红包"
+            description="开着时，🐟额里有可用的人能用🐟额发红包。关掉后不能新建、开放，已经开放的照常能领、照常退回。"
+            checked={values.hongbaoEnabled}
+            onChange={(hongbaoEnabled) => edit({ hongbaoEnabled })}
           />
           <div className="grid gap-4 @wide/window:grid-cols-3">
             <Field

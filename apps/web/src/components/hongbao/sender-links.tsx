@@ -22,12 +22,16 @@ const labels: Record<SenderPage, string> = {
   payments: "付款记录",
 };
 
-/** A draft has only 编辑; 尝试统计 exists only for 红包 sent with it on. */
+/**
+ * A draft has only 编辑; 尝试统计 exists only for 红包 sent with it on;
+ * a 🐟额红包 pays nothing out, so it has no 付款记录 (balance-design §14).
+ */
 export function senderPagesOf(activity: HongbaoActivity): SenderPage[] {
   if (activity.draft) return ["edit"];
-  return activity.statistics
-    ? ["edit", "stats", "payments"]
-    : ["edit", "payments"];
+  const pages: SenderPage[] = activity.statistics
+    ? ["edit", "stats"]
+    : ["edit"];
+  return activity.fish ? pages : [...pages, "payments"];
 }
 
 /**

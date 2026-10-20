@@ -55,7 +55,9 @@ export function groupsOf(form: FormState, opened: boolean): SettingsGroup[] {
     groups.push("timing");
     if (form.participation === "password") groups.push("password");
   }
-  groups.push("notes", "public", "payment");
+  groups.push("notes", "public");
+  // 🐟额红包 have no merchant to show (balance-design §14).
+  if (form.funding !== "balance") groups.push("payment");
   return groups;
 }
 

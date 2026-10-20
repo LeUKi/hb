@@ -434,7 +434,7 @@ export function HongbaoForm({
         }
       />
       {!editing && <StepProgress step={linear.current} />}
-      {!opened && <MerchantNotice />}
+      {!opened && form.funding !== "balance" && <MerchantNotice />}
       {/* Lasting, so each save result is said wherever it is shown. */}
       <p role="status" className="sr-only">
         {submit.notice?.text ?? ""}

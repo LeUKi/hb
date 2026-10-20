@@ -36,7 +36,18 @@ const merchant = {
   mode: "real",
 } as Merchant;
 
-async function mockMerchants(page: Page, items: Merchant[]) {
+async function mockMerchants(
+  page: Page,
+  items: Merchant[],
+  fish: { available: boolean; availableMinor: number } = {
+    available: false,
+    availableMinor: 0,
+  },
+) {
+  // 从哪发 (🐟额红包) shows only with 🐟额 to send.
+  await page.route("**/api/me/balance/hongbao", (route) =>
+    route.fulfill({ json: fish }),
+  );
   await page.route("**/api/me/merchants", (route) =>
     route.fulfill({
       json: {
@@ -297,6 +308,47 @@ test.describe("发红包", () => {
     await expectPath(page, `/🧧/${encodeActivityEmoji(createdId)}/📝`);
     expect(sent).toHaveLength(2);
     expect(sent[1]?.requestId).toBe(sent[0]?.requestId);
+  });
+
+  test("从哪发：🐟额里有可用就能选🐟额；选了不提商户，超过可用当场说，存下的输入不带商户", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    await mockMerchants(page, [], { available: true, availableMinor: 1234 });
+    const sent = await mockCreate(page);
+    await openApp(page, "/new");
+    await expect(shown(page, /还没有配置 LDC 商户/)).toBeVisible();
+    await page
+      .getByRole("button", { name: /拼手气/ })
+      .first()
+      .click();
+    const fish = page.getByRole("button", { name: /^🐟额/ });
+    await expect(fish).toContainText("可用 12.34 LDC🐟");
+    await fish.click();
+    await expect(shown(page, /还没有配置 LDC 商户/)).toHaveCount(0);
+    await expect(
+      page.getByText(/Credit 会按你的 Credit 等级扣分发费/),
+    ).toHaveCount(0);
+    await page.locator("#hb-random-total").fill("20");
+    await page.locator("#hb-random-count").fill("3");
+    await expect(
+      shown(page, "🐟额可用 12.34 LDC，不够发这个红包。"),
+    ).toBeVisible();
+    await page.locator("#hb-random-total").fill("0.30");
+    await expect(
+      shown(page, "🐟额可用 12.34 LDC，不够发这个红包。"),
+    ).toHaveCount(0);
+    await page.keyboard.press("Enter");
+    await page.getByLabel("口令 1").fill("表单口令2026");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#hb-title")).toBeVisible();
+    await page.getByRole("button", { name: "存草稿" }).first().click();
+    await expect.poll(() => sent.length).toBe(1);
+    expect(sent[0]?.activity).toMatchObject({
+      funding: "balance",
+      merchantId: "",
+      money: { mode: "random", totalAmount: "0.30", count: 3 },
+    });
   });
 
   test("还没有商户：提示去配置，保存不会发出", async ({ page }) => {

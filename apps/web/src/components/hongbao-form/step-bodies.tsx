@@ -10,6 +10,7 @@ import {
   algorithmLabels,
   counter,
   type ErrorOf,
+  FundingChoice,
   LockNote,
   modeOptions,
   PasswordList,
@@ -162,6 +163,7 @@ export function AmountStep({
   const split = splitLine(form);
   return (
     <div className="grid gap-4">
+      <FundingChoice form={form} update={update} locked={locked} />
       <AmountFields
         form={form}
         update={update}
