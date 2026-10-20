@@ -154,14 +154,6 @@ export function activityImageUrl(
 export const FORUM_POST_URL = "https://linux.do/t/3033290";
 
 /**
- * The 社区链接 (05 §5): the 红包's path as code, which the forum leaves as
- * it is (no emoji pictures, no link preview), linking to the site's post.
- */
-export function createActivityForumLink(activityId: string) {
-  return `[\`/🧧/${encodeActivityEmoji(activityId)}\`](${FORUM_POST_URL})`;
-}
-
-/**
  * The forum code (05 §5), as the user wrote it: the image at its own size,
  * linking to the site's post, named by the 红包's emoji code (not its title).
  */

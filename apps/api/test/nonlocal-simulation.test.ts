@@ -54,6 +54,7 @@ async function fixture(open = true) {
     merchantId: merchant.id,
     passwords: ["Correct123"],
     forceDedicated: true,
+    joinSquare: true,
     money: { mode: "fixed", count: 3, totalAmount: "0.30" },
   };
   const draft = await createActivity(local, owner, {

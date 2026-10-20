@@ -8,6 +8,7 @@ import {
   emptyActivityInput,
   encodeActivityEmoji,
   FORUM_EMOJI,
+  forumShareWithPassword,
   type ManagedActivity,
   type PublicActivity,
   type PublicRecipient,
@@ -703,9 +704,12 @@ test.describe("红包页", () => {
     ]);
     await expect(menu.getByRole("separator")).toHaveCount(1);
     await menu.getByRole("menuitem", { name: /社区专用链接/ }).click();
+    // A code block (the forum gives it a copy button), the site's post behind 红包站.
     await expect
       .poll(() => readClipboard(page))
-      .toBe(`[\`/🧧/${code}\`](https://linux.do/t/3033290)`);
+      .toBe(
+        `\`\`\`\n/🧧/${code}\n\`\`\`\n复制上面这段，粘贴到[红包站](https://linux.do/t/3033290)的输入框就能打开红包。`,
+      );
     // "已复制" shows, then the menu folds away.
     await expect(menu).toBeHidden();
     await page.getByRole("button", { name: "分享" }).click();
@@ -728,6 +732,48 @@ test.describe("红包页", () => {
       );
     // A guest polls: no live channel.
     expect(live).toBe(0);
+  });
+
+  test("整段粘贴分享文案：起始页认出红包和口令，回车打开红包就自动领取", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await mockSession(page, viewer);
+    const state = await mockHongbao(page);
+    await openApp(page);
+    // What the 分享 menu hands out, as copied from the forum's code block.
+    const shared = forumShareWithPassword(
+      { id, title: "周末红包", draw: false, pageOnly: true },
+      passwordOf.mine,
+    );
+    await page.evaluate((text) => navigator.clipboard.writeText(text), shared);
+    await omniboxInput(page).click();
+    await page.keyboard.press("ControlOrMeta+V");
+    await expect(omniboxInput(page)).toHaveValue(`/🧧/${code}`);
+    await expect(shown(page, "已识别口令，打开红包后自动提交。")).toBeVisible();
+    await page.keyboard.press("Enter");
+    await expectPath(page, path);
+    await expect(
+      page.getByRole("status").filter({ hasText: "已领取 0.10 LDC。" }),
+    ).toHaveCount(1);
+    expect(state.claims).toMatchObject([{ password: passwordOf.mine }]);
+  });
+
+  test("仅限红包页的红包：标签说明在哪输入；输入口令时写明会汇总给发红包的人", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    const state = await mockHongbao(page);
+    state.activity = { ...state.activity, forceDedicated: true };
+    await openApp(page, path);
+    await expect(
+      page.getByRole("button", { name: "仅限红包页", exact: true }),
+    ).toHaveAccessibleDescription(/^发红包的人设置了口令只能在红包页输入/);
+    await page.getByRole("button", { name: "输入口令领取" }).click();
+    await expect(
+      shown(page, "提交的口令会汇总给发红包的人看，看不到是谁提交的。"),
+    ).toBeVisible();
   });
 
   test("登录后：点印章输入口令领取，再验证其他口令", async ({
@@ -820,7 +866,7 @@ test.describe("红包页", () => {
     await expect
       .poll(() => readClipboard(page))
       .toBe(
-        `【周末红包】\n[\`/🧧/${code}\`](https://linux.do/t/3033290)\n口令：\`${passwordOf.mine}\``,
+        `【周末红包】\n\`\`\`\n/🧧/${code}\n口令：${passwordOf.mine}\n\`\`\`\n复制上面这段，粘贴到[红包站](https://linux.do/t/3033290)的输入框就能领。`,
       );
     await expect(page.getByRole("menu")).toBeHidden();
     await page.getByRole("button", { name: "分享" }).click();

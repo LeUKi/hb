@@ -125,6 +125,7 @@ it("upgrades a populated step-3 database without changing IDs, encrypted content
     title: "旧活动",
     topicUrl: "https://linux.do/t/12345",
     forceDedicated: true,
+    joinSquare: true,
     deadline: { mode: "at", at: new Date(now + 86400000).toISOString() },
     allocation: "sequential",
     quantityVisibility: "hidden",

@@ -110,6 +110,8 @@ function input(overrides: Partial<ActivityInput> = {}): ActivityInput {
     afterClaimInfo: "only-after-claim",
     afterEndInfo: "only-after-end",
     ...overrides,
+    // 仅能在红包页输入口令 comes with 红包广场, as the form makes it.
+    ...(overrides.forceDedicated ? { joinSquare: true } : {}),
   };
 }
 
@@ -1188,7 +1190,9 @@ describe("LDC activity management", () => {
   });
 
   it("updates draft inventory and order while keeping IDs", async () => {
-    const activity = await create(input({ forceDedicated: true }));
+    const activity = await create(
+      input({ forceDedicated: true, joinSquare: true }),
+    );
     const updated = {
       ...activity.config,
       title: "更新后的活动",
@@ -1231,7 +1235,7 @@ describe("LDC activity management", () => {
         "PATCH",
         {
           version: draft.version,
-          activity: { ...draft.config, forceDedicated },
+          activity: { ...draft.config, forceDedicated, joinSquare: true },
         },
       );
       expect(response.status).toBe(200);
@@ -1289,10 +1293,11 @@ describe("LDC activity management", () => {
       expect(found.items.map((activity) => activity.id)).toEqual(
         forceDedicated ? [] : [draft.id],
       );
+      // Every opened 口令红包 counts attempts, page-only or not.
       expect(
         (await request(`/api/me/activities/${draft.id}/statistics`, owner))
           .status,
-      ).toBe(forceDedicated ? 200 : 404);
+      ).toBe(200);
       expect(
         await env.DB.prepare("SELECT count(*) FROM claims WHERE activity_id=?")
           .bind(draft.id)
@@ -1311,14 +1316,18 @@ describe("LDC activity management", () => {
         "PATCH",
         {
           version: opened.version,
-          activity: { ...opened.config, forceDedicated: !forceDedicated },
+          activity: {
+            ...opened.config,
+            forceDedicated: !forceDedicated,
+            joinSquare: true,
+          },
         },
       );
       expect(response.status).toBe(400);
       expect(await response.json()).toEqual({
         error: {
           code: "INVALID_ACTIVITY",
-          message: "开放后不能修改口令尝试统计设置",
+          message: "开放后不能修改“仅能在红包页输入口令”",
         },
       });
       const reread = await request(`/api/me/activities/${opened.id}`, owner);
@@ -1374,6 +1383,7 @@ describe("LDC activity management", () => {
             ...activity.config,
             title: "must roll back",
             forceDedicated: !activity.config.forceDedicated,
+            joinSquare: true,
             passwords: ["newPass123"],
             money: { mode: "fixed", totalAmount: "3.00", count: 3 },
           },
@@ -1392,7 +1402,7 @@ describe("LDC activity management", () => {
   it("allows only one concurrent version update and does not let the losing inventory leak into the winner", async () => {
     const activity = await create();
     const updates = [
-      input({ title: "winner A", forceDedicated: true }),
+      input({ title: "winner A", forceDedicated: true, joinSquare: true }),
       input({ title: "winner B" }),
     ];
     const results = await Promise.all(
@@ -1503,6 +1513,7 @@ describe("LDC activity management", () => {
       const different = {
         ...draft.config,
         forceDedicated: !initialDedicated,
+        joinSquare: true,
         money: { mode: "fixed", totalAmount: "3.00", count: 3 },
       };
       const responses = await Promise.all([
@@ -1544,7 +1555,7 @@ describe("LDC activity management", () => {
       { money: { mode: "fixed" as const, totalAmount: "3.00", count: 3 } },
       { passwords: ["replacement123"] },
       { passwords: [...activity.config.passwords, "newPass123"] },
-      { forceDedicated: true },
+      { forceDedicated: true, joinSquare: true },
       {
         deadline: {
           mode: "at" as const,

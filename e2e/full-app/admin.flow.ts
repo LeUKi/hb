@@ -31,6 +31,8 @@ test("网站管理：全站的红包和用户，改尝试间隔记进操作记�
         title,
         passwords: [`管理甲${suffix}`, `管理乙${suffix}`],
         forceDedicated: true,
+        // 仅能在红包页输入口令 comes with 红包广场.
+        joinSquare: true,
         merchantId: merchant.id,
         deadline: { mode: "duration", value: 1, unit: "days" },
         money: { mode: "fixed", totalAmount: "0.30", count: 3 },
@@ -57,7 +59,7 @@ test("网站管理：全站的红包和用户，改尝试间隔记进操作记�
   await expect(row).toContainText("草稿");
   await row.click();
   const pane = page.getByRole("complementary", { name: "详情" });
-  await expect(pane.getByText("口令 2 个 · 统计尝试")).toBeVisible();
+  await expect(pane.getByText("口令 2 个 · 仅限红包页")).toBeVisible();
   await expect(pane.getByText("0 笔 · 未确认 0 · 异常待处理 0")).toBeVisible();
 
   // The author is on the admin list, shown and not switchable.

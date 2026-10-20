@@ -134,7 +134,7 @@ function Detail({ row }: { row: Row }) {
               row.participationMode === "password"
                 ? later(
                     (detail) =>
-                      `口令 ${detail.passwordCount} 个${activity.statistics ? " · 统计尝试" : ""}`,
+                      `口令 ${detail.passwordCount} 个${activity.pageOnly ? " · 仅限红包页" : ""}`,
                   )
                 : "无需口令",
           },

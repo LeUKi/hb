@@ -64,6 +64,7 @@ async function fixture(options: { recipientId?: string; open?: boolean } = {}) {
     money: { mode: "fixed", count: 1, totalAmount: "0.10" },
     passwords: ["correct123"],
     forceDedicated: true,
+    joinSquare: true,
     afterClaimInfo: "分配后立即解锁",
   };
   const draft = await createActivity(bindings, authorId, {

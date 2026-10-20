@@ -91,6 +91,7 @@ function input(
     title: "限时开奖",
     passwords: ["entrykey", "secondkey", "thirdkey"],
     forceDedicated: true,
+    joinSquare: true,
     rewardType: "ldc",
     merchantId,
     allocation: "random",

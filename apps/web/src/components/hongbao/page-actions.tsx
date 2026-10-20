@@ -1,6 +1,9 @@
 import {
-  createActivityForumLink,
   createActivityImageEmbed,
+  forumShareLink,
+  forumShareWithPassword,
+  plainShareWithPassword,
+  type ShareActivity,
 } from "@hb/contracts";
 import {
   Check,
@@ -43,22 +46,29 @@ type ShareItem = {
 };
 
 /**
- * What the menu offers (05 §5): for the 社区 first, its own link (which it
- * keeps as it is), that link with each 口令 this viewer can see (their own
- * and verified ones, or all once it ended) and the 内嵌代码; below a line,
- * the original link, plain, and it with each 口令. Links keep their emoji.
+ * What the menu offers (05 §5): for the 社区 first, its own link (in a code
+ * block, with a copy button there), that link with each 口令 this viewer can
+ * see (their own and verified ones, or all once it ended) and the 内嵌代码;
+ * below a line, the original link, plain, and it with each 口令. The copy
+ * itself is written in @hb/contracts (share-text), which also reads it back
+ * when it is pasted whole into the omnibox. Links keep their emoji.
  */
 function shareItems(
   activity: HongbaoActivity,
   passwords: PasswordView,
 ): ShareItem[] {
   const origin = window.location.origin;
-  const forum = createActivityForumLink(activity.id);
   const url = activityShareUrl(activity.id, origin);
+  const shared: ShareActivity = {
+    id: activity.id,
+    title: activity.title,
+    draw: activity.mode === "timed_draw",
+    pageOnly: activity.pageOnly,
+  };
   const withPasswords = (
     group: string,
     label: string,
-    line: (password: string) => string,
+    text: (password: string) => string,
   ) =>
     passwords.known.map((password, index) => ({
       key: `${group}-password-${index}`,
@@ -66,7 +76,7 @@ function shareItems(
       label: `${label} ${index + 1}`,
       detail: password.text,
       mono: true,
-      text: `【${activity.title}】\n${line(password.text)}`,
+      text: text(password.text),
     }));
   return [
     {
@@ -74,12 +84,10 @@ function shareItems(
       icon: MessagesSquare,
       label: "社区专用链接",
       detail: "避免转码与违规推广",
-      text: forum,
+      text: forumShareLink(activity.id),
     },
-    ...withPasswords(
-      "forum",
-      "专用链接与口令",
-      (password) => `${forum}\n口令：\`${password}\``,
+    ...withPasswords("forum", "专用链接与口令", (password) =>
+      forumShareWithPassword(shared, password),
     ),
     {
       key: "embed",
@@ -93,10 +101,8 @@ function shareItems(
       }),
     },
     { key: "link", icon: Link2, label: "原始链接", text: url, divided: true },
-    ...withPasswords(
-      "link",
-      "原始链接与口令",
-      (password) => `${url}\n口令：${password}`,
+    ...withPasswords("link", "原始链接与口令", (password) =>
+      plainShareWithPassword(shared, url, password),
     ),
   ];
 }

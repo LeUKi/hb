@@ -46,15 +46,14 @@ export async function getStatistics(
   cursor?: string,
 ): Promise<ActivityStatistics> {
   const activity = await ownedActivity(env, activityId, authorId);
-  if (
-    activity.participationMode !== "password" ||
-    !activity.forceDedicated ||
-    activity.openedAt === null
-  )
+  // Every opened 口令红包 has them (07 §7).
+  if (activity.participationMode !== "password" || activity.openedAt === null)
     throw new ActivityError(
       404,
       "STATISTICS_UNAVAILABLE",
-      "只有开启口令尝试统计的红包才有尝试统计",
+      activity.participationMode !== "password"
+        ? "无需口令的红包没有口令尝试"
+        : "红包开放之后才有人提交口令",
     );
   const after = parseCursor(cursor, activityId);
   const [totals, groups, passwords] = await env.DB.batch([

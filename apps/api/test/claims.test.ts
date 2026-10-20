@@ -248,7 +248,7 @@ describe("LDC claiming and private history", () => {
     });
   });
   it("returns the current activity participation without creating extra facts", async () => {
-    const activity = await create({ forceDedicated: true });
+    const activity = await create({ forceDedicated: true, joinSquare: true });
     expect(
       (await request(`/api/activities/${activity.id}/participation`)).status,
     ).toBe(401);
@@ -301,11 +301,12 @@ describe("LDC claiming and private history", () => {
       result: "claimed",
       claim: { rewardType: "ldc", afterClaimInfo: "AFTER-CLAIM" },
     });
+    // Every 口令红包 counts what was typed (07 §7).
     expect(await stats(activity.id)).toMatchObject({
       claimed: 1,
       claims: 1,
       version: activity.version,
-      attempts: 0,
+      attempts: 1,
     });
     const again = await claim(activity.id, alice, "another123");
     expect(again).toMatchObject({
@@ -351,7 +352,7 @@ describe("LDC claiming and private history", () => {
   });
 
   it("replays lost responses with the same claim and rejects changed password or activity on a reused key", async () => {
-    const activity = await create({ forceDedicated: true });
+    const activity = await create({ forceDedicated: true, joinSquare: true });
     const key = crypto.randomUUID();
     const first = await claim(activity.id, alice, "正确口令123", key);
     const replay = await claim(activity.id, alice, "正确口令123", key);
@@ -375,6 +376,7 @@ describe("LDC claiming and private history", () => {
   it("serializes the last reward and competing keys without overselling", async () => {
     const activity = await create({
       forceDedicated: true,
+      joinSquare: true,
       money: { mode: "fixed", totalAmount: "1.00", count: 1 },
     });
     const results = await Promise.all([
@@ -399,7 +401,7 @@ describe("LDC claiming and private history", () => {
   });
 
   it("does not create claims, validation events or private responses for unauthenticated, invalid or blocked requests", async () => {
-    const activity = await create({ forceDedicated: true });
+    const activity = await create({ forceDedicated: true, joinSquare: true });
     const payload = {
       submissionId: crypto.randomUUID(),
       password: "正确口令123",
@@ -426,7 +428,10 @@ describe("LDC claiming and private history", () => {
       ).status,
     ).toBe(403);
     expect((await submit(activity.id, alice, "bad!")).status).toBe(400);
-    const draft = await create({ forceDedicated: true }, false);
+    const draft = await create(
+      { forceDedicated: true, joinSquare: true },
+      false,
+    );
     expect((await submit(draft.id, owner)).status).toBe(403);
     expect((await submit(draft.id, alice)).status).toBe(404);
     expect(await stats(activity.id)).toMatchObject({
@@ -499,7 +504,7 @@ describe("LDC claiming and private history", () => {
 
 describe("durable validation, statistics and recovery", () => {
   it("counts new wrong submissions, deduplicates retransmission, and never rewrites history after adding a password", async () => {
-    const activity = await create({ forceDedicated: true });
+    const activity = await create({ forceDedicated: true, joinSquare: true });
     const password = "将来有效123";
     const firstKey = crypto.randomUUID();
     for (const key of [firstKey, crypto.randomUUID(), crypto.randomUUID()])
@@ -564,7 +569,7 @@ describe("durable validation, statistics and recovery", () => {
   });
 
   it("retains admitted matched attempts through process eviction and resumes without duplicate events", async () => {
-    const activity = await create({ forceDedicated: true });
+    const activity = await create({ forceDedicated: true, joinSquare: true });
     const input = {
       submissionId: crypto.randomUUID(),
       password: "正确口令123",
@@ -595,7 +600,7 @@ describe("durable validation, statistics and recovery", () => {
   });
 
   it("preserves matched-but-unallocated attempts when the deadline passes or another person takes the last reward", async () => {
-    const expired = await create({ forceDedicated: true });
+    const expired = await create({ forceDedicated: true, joinSquare: true });
     const pending = await prepareClaimSubmission(
       bindings,
       expired.id,
@@ -623,6 +628,7 @@ describe("durable validation, statistics and recovery", () => {
     ).toEqual({ matched: 1, claim_id: null });
     const exhausted = await create({
       forceDedicated: true,
+      joinSquare: true,
       money: { mode: "fixed", totalAmount: "1.00", count: 1 },
     });
     await advanceAttemptCooldown(env.DB, alice.id);
@@ -641,8 +647,8 @@ describe("durable validation, statistics and recovery", () => {
   });
 
   it("lets Cron resume interrupted valid submissions and settle expired pending work without new attempts", async () => {
-    const active = await create({ forceDedicated: true });
-    const expired = await create({ forceDedicated: true });
+    const active = await create({ forceDedicated: true, joinSquare: true });
+    const expired = await create({ forceDedicated: true, joinSquare: true });
     await prepareClaimSubmission(bindings, active.id, alice.id, {
       submissionId: crypto.randomUUID(),
       password: "正确口令123",
@@ -677,7 +683,7 @@ describe("durable validation, statistics and recovery", () => {
   it("isolates early lifecycle failures and recovers later pages plus interrupted claims before retrying failures next sweep", async () => {
     const activities: ManagedActivity[] = [];
     for (let index = 0; index < 56; index++)
-      activities.push(await create({ forceDedicated: true }));
+      activities.push(await create({ forceDedicated: true, joinSquare: true }));
     activities.sort((left, right) => left.id.localeCompare(right.id));
     const databaseFailure = required(activities[0]);
     const networkFailure = required(activities[1]);
@@ -766,6 +772,7 @@ describe("durable validation, statistics and recovery", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const activity = await create({
       forceDedicated: true,
+      joinSquare: true,
       money: { mode: "fixed", totalAmount: "1.00", count: 1 },
     });
     const key = crypto.randomUUID();
@@ -806,7 +813,7 @@ describe("durable validation, statistics and recovery", () => {
   });
 
   it("persists a shared account cooldown across activities and object eviction while saved replays bypass it", async () => {
-    const activity = await create({ forceDedicated: true });
+    const activity = await create({ forceDedicated: true, joinSquare: true });
     const firstKey = crypto.randomUUID();
     const first = await submit(activity.id, alice, "wrong123", firstKey);
     expect(first.status).toBe(200);
@@ -914,7 +921,7 @@ describe("durable validation, statistics and recovery", () => {
   });
 
   it("enforces SQL uniqueness even when pending allocations bypass the DO in a concurrent recovery test", async () => {
-    const activity = await create({ forceDedicated: true });
+    const activity = await create({ forceDedicated: true, joinSquare: true });
     const first = await prepareClaimSubmission(
       bindings,
       activity.id,

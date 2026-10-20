@@ -64,6 +64,7 @@ async function fixture() {
     rewardType: "ldc",
     merchantId: merchant.id,
     forceDedicated: true,
+    joinSquare: true,
     passwords: ["Correct123"],
     money: { mode: "fixed", totalAmount: "0.30", count: 3 },
   };

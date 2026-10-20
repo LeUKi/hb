@@ -538,7 +538,8 @@ describe("persistent global redemption", () => {
     ).toEqual([activity.id]);
     expect(await count("global_redemptions")).toBe(1);
     expect(await count("claims")).toBe(1);
-    expect(await count("attempt_events")).toBe(0);
+    // The claim counts in that 红包's 尝试统计, as every 口令红包 does.
+    expect(await count("attempt_events")).toBe(1);
     await env.DB.prepare("UPDATE activities SET deadline = ? WHERE id = ?")
       .bind(Date.now() - ARCHIVE_DELAY_MS - 1000, activity.id)
       .run();
@@ -590,7 +591,7 @@ describe("persistent global redemption", () => {
   it("filters dedicated, draft and time-derived archived activities, independently of square and topic", async () => {
     const first = await create();
     const second = await create();
-    await create({ forceDedicated: true });
+    await create({ forceDedicated: true, joinSquare: true });
     await create({}, false);
     const archived = await create();
     await env.DB.prepare("UPDATE activities SET deadline = ? WHERE id = ?")
@@ -693,7 +694,7 @@ describe("persistent global redemption", () => {
         .bind(claimId)
         .first("user_id"),
     ).toBe(alice.id);
-    expect(await count("attempt_events")).toBe(0);
+    expect(await count("attempt_events")).toBe(1);
   });
 
   it("paginates the original candidate set and reuses the public card whitelist", async () => {
@@ -1168,14 +1169,17 @@ describe("square and topic discovery", () => {
 
 describe("author attempt statistics", () => {
   it("does not expose attempt statistics for an unopened dedicated draft", async () => {
-    const draft = await create({ forceDedicated: true }, false);
+    const draft = await create(
+      { forceDedicated: true, joinSquare: true },
+      false,
+    );
     expect(
       (await request(`/api/me/activities/${draft.id}/statistics`, owner))
         .status,
     ).toBe(404);
   });
   it("preserves historical matched results after adding a password and counts unique accounts and successful claims", async () => {
-    const activity = await create({ forceDedicated: true });
+    const activity = await create({ forceDedicated: true, joinSquare: true });
     const key = crypto.randomUUID();
     for (let index = 0; index < 3; index += 1)
       expect((await claim(activity.id, "later123", alice)).status).toBe(200);
@@ -1224,15 +1228,16 @@ describe("author attempt statistics", () => {
     expect(
       (await request(`/api/me/activities/${activity.id}/statistics`)).status,
     ).toBe(401);
+    // Every opened 口令红包 has them, page-only or not.
     const ordinary = await create();
     expect(
       (await request(`/api/me/activities/${ordinary.id}/statistics`, owner))
         .status,
-    ).toBe(404);
+    ).toBe(200);
   });
 
   it("paginates distinct attempt values without returning per-user trajectories", async () => {
-    const activity = await create({ forceDedicated: true });
+    const activity = await create({ forceDedicated: true, joinSquare: true });
     const people = [alice, bob];
     for (let index = 0; index < 21; index += 1) {
       const person = people[index % people.length];

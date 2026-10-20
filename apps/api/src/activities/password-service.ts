@@ -220,13 +220,12 @@ export async function solveActivityPassword(
       .get();
     const rowId = crypto.randomUUID();
     const outcome = password ? "solved" : "incorrect";
-    const ciphertext = activity.forceDedicated
-      ? await encryptString(
-          input.password,
-          env,
-          attemptAssociatedData(activityId, rowId),
-        )
-      : null;
+    // Every 口令红包 counts what is typed on its page (07 §7), encrypted.
+    const ciphertext = await encryptString(
+      input.password,
+      env,
+      attemptAssociatedData(activityId, rowId),
+    );
     const statements = [
       ...attemptWriteStatements(env, userId, "activity", rowId),
       env.DB.prepare(`UPDATE activities SET version = CASE WHEN version = ? AND reward_type = 'ldc' AND participation_mode='password' AND deleted_at IS NULL

@@ -96,8 +96,7 @@ export function StatsView({ id, userId }: { id: string; userId: string }) {
   const available = Boolean(
     activity &&
       activity.status !== "draft" &&
-      activity.participationMode !== "direct" &&
-      activity.forceDedicated,
+      activity.participationMode !== "direct",
   );
   const stats = useStatisticsPages(userId, id, available);
   const list = useQueryLazyList({
@@ -114,7 +113,7 @@ export function StatsView({ id, userId }: { id: string; userId: string }) {
         text={
           activity.status === "draft"
             ? "红包开放之后才有人提交口令。"
-            : "这个红包没有开启尝试统计。统计要在发红包时开启，开放后不能改。"
+            : "无需口令的红包没有口令尝试。"
         }
       />
     );

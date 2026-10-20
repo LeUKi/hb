@@ -1,3 +1,4 @@
+import { activityPath, readShareText } from "@hb/contracts";
 import { useLocation } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useStore } from "jotai";
 import { X } from "lucide-react";
@@ -58,6 +59,7 @@ import {
   messageAtom,
   mismatchAtom,
   omniboxMetrics,
+  pastedPasswordAtom,
   pendingAtom,
   type Scope,
   type ScopeOffer,
@@ -354,14 +356,23 @@ export function Omnibox() {
       : undefined
     : unconfirmed.lookup;
   const locked = Boolean(waiting && value !== "" && waiting.password === value);
-  // A 红包 that counts attempts says so before anything is typed in it
-  // (production's notice): what is submitted is summed up for its sender.
+  // Every 口令红包 counts what is typed on its page (05 §10): the box says
+  // so before anything is typed in it, claiming or verifying.
   const statisticsNote =
-    expanded && scope?.purpose === "claim" && scopeFacts?.statistics
+    expanded && scope && scopeFacts?.password
       ? ({
           tone: "neutral",
-          text: "这个红包开了尝试统计：提交的口令会汇总给发红包的人看。",
+          text: "提交的口令会汇总给发红包的人看，看不到是谁提交的。",
         } as const)
+      : null;
+  // A share text pasted whole (02 §6): its 口令 goes in once the 红包 opens.
+  const pasted = useAtomValue(pastedPasswordAtom);
+  const pastedNote =
+    pasted &&
+    !scoped &&
+    "activityId" in scheme &&
+    scheme.activityId === pasted.activityId
+      ? ({ tone: "neutral", text: "已识别口令，打开红包后自动提交。" } as const)
       : null;
   const shownMessage = offScope
     ? ({
@@ -378,7 +389,9 @@ export function Omnibox() {
           message?.activityId && message.activityId !== scope?.id
             ? null
             : message,
-        ) ?? statisticsNote);
+        ) ??
+        pastedNote ??
+        statisticsNote);
 
   // The bar keeps its last address while fading out, and rolls to a new one
   // only if it was already showing an address (not while fading in).
@@ -731,6 +744,38 @@ export function Omnibox() {
               onChange={(next) => {
                 setValue(next);
                 if (message) setMessage(null);
+                store.set(pastedPasswordAtom, null);
+              }}
+              onPaste={(text) => {
+                // A share text pasted whole (02 §6): its 红包's address in
+                // the box (its 口令 kept for when it opens), or the 口令 alone.
+                const shared = readShareText(text);
+                if (!shared) return false;
+                if (scoped) {
+                  // In a 红包's box only its own 口令 goes in.
+                  if (
+                    !shared.password ||
+                    (shared.activityId && shared.activityId !== scope?.id)
+                  )
+                    return false;
+                  setValue(shared.password);
+                } else if (shared.activityId) {
+                  setValue(activityPath(shared.activityId));
+                  store.set(
+                    pastedPasswordAtom,
+                    shared.password
+                      ? {
+                          activityId: shared.activityId,
+                          password: shared.password,
+                        }
+                      : null,
+                  );
+                  if (message) setMessage(null);
+                  return true;
+                } else if (shared.password) setValue(shared.password);
+                if (message) setMessage(null);
+                store.set(pastedPasswordAtom, null);
+                return true;
               }}
               onEnter={execute}
               onKeyDown={onKeyDown}

@@ -221,7 +221,9 @@ describe("LDC activity allocation and durable payment responsibility", () => {
   });
 
   it("rejects author self-claim before allocation or attempts while preserving ordinary text behavior", async () => {
-    const activity = await create(config({ forceDedicated: true }));
+    const activity = await create(
+      config({ forceDedicated: true, joinSquare: true }),
+    );
     expect((await submit(activity.id, owner)).status).toBe(403);
     expect(await counts()).toEqual({
       claims: 0,
@@ -339,7 +341,9 @@ describe("LDC activity allocation and durable payment responsibility", () => {
   });
 
   it("rolls allocation back when payment task insertion fails and recovers the same submission", async () => {
-    const activity = await create(config({ forceDedicated: true }));
+    const activity = await create(
+      config({ forceDedicated: true, joinSquare: true }),
+    );
     await env.DB.prepare(
       "CREATE TRIGGER fail_payment BEFORE INSERT ON payment_tasks BEGIN SELECT RAISE(ABORT, 'injected payment failure'); END",
     ).run();

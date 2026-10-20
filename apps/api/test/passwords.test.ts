@@ -352,7 +352,9 @@ describe("dedicated-page password visibility", () => {
   it.each(["ended", "archived"] as const)(
     "publishes all answers at the actual %s time before lifecycle persistence",
     async (status) => {
-      const activity = await create(ldcConfig({ forceDedicated: true }));
+      const activity = await create(
+        ldcConfig({ forceDedicated: true, joinSquare: true }),
+      );
       await claim(activity.id);
       await solve(activity.id);
       const before = await counts(activity.id);
@@ -434,7 +436,9 @@ describe("dedicated-page password visibility", () => {
 
 describe("terminal password validation without reward allocation", () => {
   it("requires a previous claim, authentication, CSRF and a valid password", async () => {
-    const activity = await create(ldcConfig({ forceDedicated: true }));
+    const activity = await create(
+      ldcConfig({ forceDedicated: true, joinSquare: true }),
+    );
     const payload = {
       submissionId: crypto.randomUUID(),
       password: "secret456",
@@ -482,7 +486,9 @@ describe("terminal password validation without reward allocation", () => {
   });
 
   it("keeps forced attempts encrypted and increments validations without increasing claim statistics", async () => {
-    const activity = await create(ldcConfig({ forceDedicated: true }));
+    const activity = await create(
+      ldcConfig({ forceDedicated: true, joinSquare: true }),
+    );
     const award = await claim(activity.id);
     expect(await solve(activity.id)).toEqual({
       outcome: "solved",
@@ -552,7 +558,7 @@ describe("terminal password validation without reward allocation", () => {
     });
   });
 
-  it("never saves failed raw input for ordinary activities", async () => {
+  it("counts every 口令红包's attempts, keeping what was typed only encrypted", async () => {
     const activity = await create();
     await claim(activity.id);
     expect(await solve(activity.id, alice, "wrong123")).toEqual({
@@ -560,9 +566,16 @@ describe("terminal password validation without reward allocation", () => {
       passwordMatched: false,
     });
     expect(await counts(activity.id)).toMatchObject({
-      attempts: 0,
+      attempts: 2,
       validations: 2,
     });
+    const events = await env.DB.prepare(
+      "SELECT ciphertext FROM attempt_events WHERE activity_id=?",
+    )
+      .bind(activity.id)
+      .all();
+    expect(events.results).toHaveLength(2);
+    expect(JSON.stringify(events.results)).not.toContain("wrong123");
     const row = await env.DB.prepare(
       "SELECT * FROM redemption_submissions WHERE purpose='solve'",
     ).first();
@@ -571,7 +584,9 @@ describe("terminal password validation without reward allocation", () => {
   });
 
   it("replays normalized lost-response submissions across DO eviction and binds their purpose and content", async () => {
-    const activity = await create(ldcConfig({ forceDedicated: true }));
+    const activity = await create(
+      ldcConfig({ forceDedicated: true, joinSquare: true }),
+    );
     const awardKey = crypto.randomUUID();
     await claim(activity.id, alice, "claim123", awardKey);
     const key = crypto.randomUUID();
@@ -648,7 +663,9 @@ describe("terminal password validation without reward allocation", () => {
   });
 
   it("shares the persistent cooldown across claim and solve and does not advance it for saved replays", async () => {
-    const activity = await create(ldcConfig({ forceDedicated: true }));
+    const activity = await create(
+      ldcConfig({ forceDedicated: true, joinSquare: true }),
+    );
     const awardKey = crypto.randomUUID();
     await claim(activity.id, alice, "claim123", awardKey);
     const solveKey = crypto.randomUUID();
@@ -717,6 +734,7 @@ describe("terminal password validation without reward allocation", () => {
       ldcConfig({
         passwords: validPasswords.slice(0, 4),
         forceDedicated: true,
+        joinSquare: true,
       }),
     );
     await claim(activity.id);
@@ -766,7 +784,9 @@ describe("terminal password validation without reward allocation", () => {
   });
 
   it("atomically enforces the shared cooldown even without DO request serialization", async () => {
-    const activity = await create(ldcConfig({ forceDedicated: true }));
+    const activity = await create(
+      ldcConfig({ forceDedicated: true, joinSquare: true }),
+    );
     await claim(activity.id);
     await advanceAttemptCooldown(env.DB, alice.id);
     const outcomes = await Promise.allSettled(
@@ -794,7 +814,9 @@ describe("terminal password validation without reward allocation", () => {
   });
 
   it("rolls back failed solve persistence atomically and permits a same-key retry", async () => {
-    const activity = await create(ldcConfig({ forceDedicated: true }));
+    const activity = await create(
+      ldcConfig({ forceDedicated: true, joinSquare: true }),
+    );
     await claim(activity.id);
     const key = crypto.randomUUID();
     const before = await counts(activity.id);
@@ -825,7 +847,9 @@ describe("terminal password validation without reward allocation", () => {
   });
 
   it("deduplicates concurrent UUIDs and admits only one concurrent new solution without allocating", async () => {
-    const activity = await create(ldcConfig({ forceDedicated: true }));
+    const activity = await create(
+      ldcConfig({ forceDedicated: true, joinSquare: true }),
+    );
     await claim(activity.id);
     const key = crypto.randomUUID();
     await advanceAttemptCooldown(env.DB, alice.id);
@@ -866,7 +890,10 @@ describe("terminal password validation without reward allocation", () => {
 
   it("leaves the original simulated LDC task, reward and outbox unchanged", async () => {
     const merchant = { id: merchantId };
-    const { rewardType: _type, ...base } = ldcConfig({ forceDedicated: true });
+    const { rewardType: _type, ...base } = ldcConfig({
+      forceDedicated: true,
+      joinSquare: true,
+    });
     const activity = await create({
       ...base,
       rewardType: "ldc",

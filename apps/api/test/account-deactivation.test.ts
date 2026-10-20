@@ -159,7 +159,11 @@ describe("accounts disabled while a write is in flight", () => {
   });
 
   it("rolls back claim validation before its admission batch commits", async () => {
-    const saved = await activity({ ...ldc(), forceDedicated: true });
+    const saved = await activity({
+      ...ldc(),
+      forceDedicated: true,
+      joinSquare: true,
+    });
     const before = await counts(saved.id);
     deactivateBeforeBatch(participant);
     await expect(
@@ -185,7 +189,11 @@ describe("accounts disabled while a write is in flight", () => {
   });
 
   it("rolls back a draw registration and its attempt", async () => {
-    const saved = await activity({ ...ldc(true), forceDedicated: true });
+    const saved = await activity({
+      ...ldc(true),
+      forceDedicated: true,
+      joinSquare: true,
+    });
     const before = await counts(saved.id);
     deactivateBeforeBatch(participant);
     await expect(

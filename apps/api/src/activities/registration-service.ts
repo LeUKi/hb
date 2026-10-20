@@ -172,8 +172,9 @@ export async function registerForDraw(
       registrationId && activity.paymentMode
         ? await paymentRecipient(env, userId, activity.paymentMode)
         : null;
+    // Every 口令红包 counts what is typed on its page (07 §7), encrypted.
     const ciphertext =
-      activity.forceDedicated && "password" in input
+      "password" in input
         ? await encryptString(
             input.password,
             env,

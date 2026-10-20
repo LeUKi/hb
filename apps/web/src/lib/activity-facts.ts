@@ -8,8 +8,8 @@ export type ActivityFacts = {
   title: string;
   /** 限时开奖: one signs up instead of claiming. */
   timedDraw: boolean;
-  /** 口令尝试统计: attempts here are summed up for its sender. */
-  statistics: boolean;
+  /** A 口令红包: what is typed here is summed up for its sender (07 §7). */
+  password: boolean;
   /** 🐟额红包: nothing is paid out, so it has no 付款记录. */
   fish: boolean;
   authorUsername: string;
@@ -30,7 +30,7 @@ export function useActivityFacts(id: string | null): ActivityFacts | null {
     id: activity.id,
     title: activity.title,
     timedDraw: activity.reward?.mode === "timed_draw",
-    statistics: activity.forceDedicated,
+    password: activity.participationMode !== "direct",
     fish: activity.funding === "balance",
     authorUsername: activity.author.username,
   };

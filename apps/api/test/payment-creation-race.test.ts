@@ -74,6 +74,7 @@ async function fixture(money: LdcActivityInput["money"]) {
     passwords: [password],
     allocation: "random",
     forceDedicated: true,
+    joinSquare: true,
     money,
   };
   const draft = await createActivity(live, author.id, {

@@ -223,7 +223,7 @@ export function ClaimStep({
           update((current) => ({
             ...current,
             participation,
-            statistics: participation === "direct" ? false : current.statistics,
+            pageOnly: participation === "direct" ? false : current.pageOnly,
           }))
         }
         options={[

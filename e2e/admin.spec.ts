@@ -495,7 +495,7 @@ test.describe("网站管理", () => {
 
     await page.getByRole("button", { name: /周末红包/ }).click();
     const pane = page.getByRole("complementary", { name: "详情" });
-    await expect(pane.getByText("口令 2 个 · 统计尝试")).toBeVisible();
+    await expect(pane.getByText("口令 2 个 · 仅限红包页")).toBeVisible();
     await expect(
       pane.getByText("1 笔 · 未确认 0 · 异常待处理 0"),
     ).toBeVisible();

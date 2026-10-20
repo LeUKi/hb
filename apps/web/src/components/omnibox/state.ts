@@ -33,6 +33,14 @@ export type OmniMessage = {
   activityId?: string;
 };
 export const messageAtom = atom<OmniMessage | null>(null);
+/**
+ * A 口令 read from a pasted share text (02 §6), for the 红包 whose address
+ * it put in the box: used once that 红包 opens. Memory only, never a URL.
+ */
+export const pastedPasswordAtom = atom<{
+  activityId: string;
+  password: string;
+} | null>(null);
 /** Bumped when a 口令 matched nothing; the field then flashes its text red. */
 export const mismatchAtom = atom(0);
 export const pendingAtom = atom(false);

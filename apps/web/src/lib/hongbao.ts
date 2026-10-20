@@ -36,8 +36,8 @@ export type HongbaoActivity = {
   rewardSummary: string;
   /** 说明 (Markdown). */
   beforeInfo: string;
-  /** 口令尝试统计: attempts here are summed up for the sender (📊). */
-  statistics: boolean;
+  /** 仅能在红包页输入口令: its 口令 match nowhere else (07 §6). */
+  pageOnly: boolean;
   /** 领取前人机验证: claiming or signing up first passes Turnstile. */
   humanCheck: boolean;
   /** A 🐟额红包: what is taken goes into 🐟额 (balance-design §14). */
@@ -171,7 +171,7 @@ export function hongbaoOf(
     split: splitOf(reward?.algorithm),
     rewardSummary: rewardSummaryOf(reward),
     beforeInfo: activity.beforeInfo,
-    statistics: activity.forceDedicated,
+    pageOnly: activity.forceDedicated,
     humanCheck: activity.humanCheck === true,
     fish: activity.funding === "balance",
     custom:

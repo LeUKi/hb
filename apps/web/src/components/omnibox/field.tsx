@@ -126,6 +126,7 @@ export function OmniboxField({
   ariaLabel,
   onFocusChange,
   onCompositionChange,
+  onPaste,
   listbox,
   mismatch = 0,
 }: {
@@ -151,6 +152,8 @@ export function OmniboxField({
   onFocusChange?: (focused: boolean) => void;
   /** An IME is composing (the value holds unconfirmed pinyin). */
   onCompositionChange?: (composing: boolean) => void;
+  /** Pasted text; true when it was taken (a share text read back). */
+  onPaste?: (text: string) => boolean;
   /** Suggestion list wiring while it is open. */
   listbox?: { id: string; active: number } | null;
   /** Changes each time a 口令 matched nothing (see useMismatchFlash). */
@@ -236,6 +239,13 @@ export function OmniboxField({
         }}
         onScroll={syncScroll}
         onSelect={syncScroll}
+        onPaste={(event) => {
+          if (readOnly) return;
+          if (onPaste?.(event.clipboardData.getData("text"))) {
+            event.preventDefault();
+            requestAnimationFrame(syncScroll);
+          }
+        }}
         onFocus={() => onFocusChange?.(true)}
         onBlur={() => onFocusChange?.(false)}
         onCompositionStart={() => {

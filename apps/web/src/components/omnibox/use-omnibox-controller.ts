@@ -62,6 +62,7 @@ import {
   messageAtom,
   mismatchAtom,
   type OmniMessage,
+  pastedPasswordAtom,
   pendingAtom,
   type Scope,
   type ScopeOffer,
@@ -331,13 +332,13 @@ export function useOmniboxController() {
           return;
         }
         // Lookups skip 红包 that take their 口令 on their own page only
-        // (统计口令尝试): say so, as the help page does, explaining which
+        // (仅能在红包页输入口令): say so, as the help page does, explaining which
         // 红包 those are and what a 红包页 is.
         store.set(messageAtom, {
           tone: "neutral",
           text: "未匹配到红包。部分红包只能在红包页输入口令领取。",
           terms: [
-            { words: "部分红包", term: "统计口令尝试" },
+            { words: "部分红包", term: "仅限红包页" },
             { words: "红包页", term: "红包页" },
           ],
         });
@@ -473,6 +474,20 @@ export function useOmniboxController() {
         scheme.kind === "link"
       ) {
         store.set(messageAtom, null);
+        // A 口令 that came with the pasted address (02 §6): the 红包 page
+        // takes it as soon as it opens, as after a single match.
+        const pasted = store.get(pastedPasswordAtom);
+        store.set(pastedPasswordAtom, null);
+        const account = sessionUserOf(queryClient);
+        if (pasted?.activityId === scheme.activityId && account)
+          store.set(redemptionIntentAtom, {
+            userId: account.id,
+            activityId: scheme.activityId,
+            operation: {
+              submissionId: crypto.randomUUID(),
+              password: pasted.password,
+            },
+          });
         await leaveTo(
           { to: "activity", id: scheme.activityId },
           fromExpanded || undefined,

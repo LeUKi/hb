@@ -25,7 +25,7 @@ async function expectNoMatch(page: Page) {
   const where = page.getByRole("button", { name: "红包页", exact: true });
   await expect(which).toBeVisible();
   await expect(which).toHaveAccessibleDescription(
-    /^开启了“统计口令尝试”的红包/,
+    /^发红包的人设置了口令只能在红包页输入/,
   );
   await expect(where).toHaveAccessibleDescription(
     /^红包页是每个红包自己的页面/,

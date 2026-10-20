@@ -48,8 +48,11 @@ export type FormState = {
   };
   participation: "password" | "direct";
   passwords: string[];
-  /** 口令尝试统计: passwords only on the 红包 page, attempts recorded. */
-  statistics: boolean;
+  /**
+   * 仅能在红包页输入口令 (07 §6): its 口令 match nowhere else, and it joins
+   * 红包广场 so it can be found. Every 口令红包 counts attempts anyway.
+   */
+  pageOnly: boolean;
   /** When it closes (or, for a timed draw, the latest draw time). */
   timing: {
     kind: "duration" | "at";
@@ -112,7 +115,7 @@ export function emptyForm(now = Date.now()): FormState {
     },
     participation: "password",
     passwords: [""],
-    statistics: false,
+    pageOnly: false,
     timing: {
       kind: "duration",
       value: "24",
@@ -527,7 +530,7 @@ export function formOf(activity: ManagedActivity, now = Date.now()): FormState {
     participation:
       activity.participationMode ?? config.participationMode ?? "password",
     passwords: config.passwords.length > 0 ? [...config.passwords] : [""],
-    statistics: config.forceDedicated,
+    pageOnly: config.forceDedicated,
     timing,
     beforeInfo: config.beforeInfo,
     afterClaimInfo: config.afterClaimInfo,
@@ -602,8 +605,8 @@ export function inputOf(form: FormState, merchantId: string): ActivityInput {
   return {
     title: form.title.trim(),
     topicUrl: normalizeTopic(form.topic).value,
-    forceDedicated: password && form.statistics,
-    joinSquare: form.listed,
+    forceDedicated: password && form.pageOnly,
+    joinSquare: form.listed || (password && form.pageOnly),
     deadline,
     allocation:
       form.mode === "random" || draw

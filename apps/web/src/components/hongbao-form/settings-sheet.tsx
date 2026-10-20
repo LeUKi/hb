@@ -142,6 +142,8 @@ export function SettingsSheet({
   const scroller = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState<NoteKey | null>(null);
   const groups = groupsOf(form, opened);
+  // 仅能在红包页输入口令 keeps 红包广场 on (07 §6).
+  const squareRequired = form.participation === "password" && form.pageOnly;
   const { total, shares } = plan(form);
   const range = (algorithm: FormState["random"]["algorithm"]) =>
     total !== null && shares !== null && total >= shares
@@ -305,11 +307,16 @@ export function SettingsSheet({
             {groups.includes("password") && (
               <Setting group="password">
                 <Switch
-                  label="统计口令尝试"
-                  description="记下大家提交过的口令，在“尝试统计”里按口令汇总。开启后只能在红包页输入口令领取，在别处输入匹配不到它；请分享红包链接。"
-                  checked={form.statistics}
-                  onChange={(statistics) =>
-                    update((current) => ({ ...current, statistics }))
+                  label="仅能在红包页输入口令"
+                  description="开启后，口令只能在这个红包的红包页输入，在别处输入匹配不到；分享文案会写上怎么领。这样的红包必须加入红包广场，方便没有链接的人找到它。"
+                  checked={form.pageOnly}
+                  onChange={(pageOnly) =>
+                    update((current) => ({
+                      ...current,
+                      pageOnly,
+                      // Found in 红包广场 (07 §6): it goes on with it.
+                      listed: pageOnly || current.listed,
+                    }))
                   }
                 />
               </Setting>
@@ -393,13 +400,15 @@ export function SettingsSheet({
                 label="加入红包广场"
                 description={
                   listedLocked
-                    ? "已加入广场，不能撤回。"
-                    : opened
-                      ? "在红包广场公开展示，谁都能看到。开启后不能撤回。"
-                      : "开放后在红包广场公开展示，谁都能看到。开放之后不能撤回。"
+                    ? "已加入红包广场，不能撤回。"
+                    : squareRequired
+                      ? "仅能在红包页输入口令的红包必须加入红包广场，方便大家找到它。"
+                      : opened
+                        ? "在红包广场公开展示，谁都能看到。开启后不能撤回。"
+                        : "开放后在红包广场公开展示，谁都能看到。开放之后不能撤回。"
                 }
-                checked={form.listed}
-                disabled={listedLocked}
+                checked={form.listed || squareRequired}
+                disabled={listedLocked || squareRequired}
                 onChange={(listed) =>
                   update((current) => ({ ...current, listed }))
                 }
