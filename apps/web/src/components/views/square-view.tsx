@@ -21,7 +21,7 @@ import { useSearchChoice } from "../shell/use-search-choice";
 import { Segmented } from "../ui/field";
 import { radius } from "../ui/squircle";
 
-const filters: readonly SquareFilter[] = ["active", "ended", "all"];
+const filters: readonly SquareFilter[] = ["all", "active", "ended"];
 
 /**
  * /square 红包广场: the 红包 their senders chose to list (加入红包广场),
@@ -37,9 +37,11 @@ export function SquareView() {
 
 function Square({ userId }: { userId: string | null }) {
   const { leaveTo } = useOmniboxController();
+  // 全部 first: 进行中 is often empty, and one sent here to find a 红包
+  // sees it even if it has just ended (07 §2).
   const [filter, setFilter] = useSearchChoice<SquareFilter>(
     "filter",
-    "active",
+    "all",
     filters,
   );
   // Each filter's first page carries its count; only the shown list polls.
@@ -82,10 +84,10 @@ function Square({ userId }: { userId: string | null }) {
               value={filter}
               onChange={setFilter}
               options={[
+                { value: "all", label: "全部", count: countOf("all") },
                 { value: "active", label: "进行中", count: countOf("active") },
                 // Only for 72 hours after the end (archived after): 最近.
                 { value: "ended", label: "最近结束", count: countOf("ended") },
-                { value: "all", label: "全部", count: countOf("all") },
               ]}
             />
           }
