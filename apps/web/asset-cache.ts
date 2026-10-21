@@ -9,14 +9,20 @@ export function assetCacheHeaders(files: readonly string[]) {
   ].sort();
   if (assets.length === 0)
     throw new Error("ASSET_CACHE_NO_FINGERPRINTED_ASSETS");
+  // The build a page compares itself with is never kept (02-shell §8).
+  const version = files.includes("version.json")
+    ? ["/version.json\n  Cache-Control: no-store\n"]
+    : [];
   // Workers _headers supports at most 100 rules. Never silently drop a chunk.
-  if (assets.length > 100) throw new Error("ASSET_CACHE_RULE_LIMIT_EXCEEDED");
-  return assets
-    .map(
+  if (assets.length + version.length > 100)
+    throw new Error("ASSET_CACHE_RULE_LIMIT_EXCEEDED");
+  return [
+    ...assets.map(
       (path) =>
         `/${path}\n  Cache-Control: public, max-age=31536000, immutable\n`,
-    )
-    .join("\n");
+    ),
+    ...version,
+  ].join("\n");
 }
 
 export function assetCachePlugin(): Plugin {

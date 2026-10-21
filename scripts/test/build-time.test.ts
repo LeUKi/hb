@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   buildTimeUnixSeconds,
   readBuildTimeUnixSeconds,
+  versionFileSource,
 } from "../../apps/web/build-time";
 import { inspectBuildTime } from "../release";
 
@@ -54,6 +55,21 @@ describe("build timestamp provenance", () => {
     writeFileSync(
       join(directory, "client/index.html"),
       '<span class="build-stamp" id="build-stamp" data-build-unix-seconds="1791217236">build @ 1791217236</span>',
+    );
+    // The build open pages compare themselves with must be this one.
+    expect(() => inspectBuildTime(directory, 1_791_217_236)).toThrow(
+      "RELEASE_VERSION_FILE_MISMATCH",
+    );
+    writeFileSync(
+      join(directory, "client/version.json"),
+      versionFileSource(1_791_217_235),
+    );
+    expect(() => inspectBuildTime(directory, 1_791_217_236)).toThrow(
+      "RELEASE_VERSION_FILE_MISMATCH",
+    );
+    writeFileSync(
+      join(directory, "client/version.json"),
+      versionFileSource(1_791_217_236),
     );
     expect(inspectBuildTime(directory, 1_791_217_236)).toBe(1_791_217_236);
     expect(() => inspectBuildTime(directory, 1_791_217_237)).toThrow(

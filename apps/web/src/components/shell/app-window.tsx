@@ -19,6 +19,7 @@ import { radius, Squircle, SquirclePlate } from "../ui/squircle";
 import { AccountCard, AuthErrorWatcher } from "./account-card";
 import { KeyboardLayer } from "./keyboard";
 import { useSlot, useSlotStage } from "./slots";
+import { UpdatePrompt } from "./update-prompt";
 import { ViewStage } from "./view-stage";
 import { WindowBar } from "./window-bar";
 import { WindowClip } from "./window-clip";
@@ -165,6 +166,7 @@ export function AppWindow() {
           <RosterDialog />
           <NoteDialog />
           <HumanCheckDialog />
+          <UpdatePrompt />
           <KeyboardLayer />
         </div>
       </div>

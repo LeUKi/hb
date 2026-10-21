@@ -5,7 +5,11 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { assetCachePlugin } from "./asset-cache.ts";
 import { brandHtmlPlugin } from "./brand-html.ts";
-import { buildTimePlugin, buildTimeUnixSeconds } from "./build-time.ts";
+import {
+  buildTimePlugin,
+  buildTimeUnixSeconds,
+  versionFilePlugin,
+} from "./build-time.ts";
 
 // LDC query URLs carry credentials; local automatic traces ignore Wrangler redaction.
 // Keep application structured console logs, but never collect these request spans.
@@ -36,6 +40,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       brandHtmlPlugin(),
       buildTimePlugin(builtAtUnixSeconds),
+      versionFilePlugin(builtAtUnixSeconds),
       assetCachePlugin(),
       react(),
       tailwindcss(),

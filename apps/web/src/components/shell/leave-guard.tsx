@@ -1,6 +1,7 @@
 import { useBlocker } from "@tanstack/react-router";
 import { useIsPresent } from "motion/react";
 import { useRef } from "react";
+import { useUnsavedMark } from "../../lib/unsaved";
 import { Button } from "../ui/button";
 import { ConfirmDialog } from "./confirm-dialog";
 
@@ -21,6 +22,8 @@ export function LeaveGuard({
   // Read at navigation time: a save that navigates away clears it first.
   const active = useRef(false);
   active.current = when && present;
+  // The update prompt waits while there is something to lose.
+  useUnsavedMark(when && present);
   const blocker = useBlocker({
     shouldBlockFn: ({ current, next }) =>
       active.current && current.pathname !== next.pathname,

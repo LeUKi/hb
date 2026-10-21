@@ -14,6 +14,7 @@ import { assetCacheHeaders } from "../apps/web/asset-cache";
 import {
   buildTimeUnixSeconds,
   readBuildTimeUnixSeconds,
+  versionFileSource,
 } from "../apps/web/build-time";
 import {
   configPath,
@@ -200,6 +201,13 @@ export function inspectBuildTime(directory: string, expected?: number) {
   );
   if (expected !== undefined && seconds !== expected)
     throw new Error("RELEASE_BUILD_TIMESTAMP_MISMATCH");
+  // What open pages compare themselves with: the same build (02-shell §8).
+  const version = join(directory, "client/version.json");
+  if (
+    !existsSync(version) ||
+    readFileSync(version, "utf8") !== versionFileSource(seconds)
+  )
+    throw new Error("RELEASE_VERSION_FILE_MISMATCH");
   return seconds;
 }
 

@@ -5,7 +5,11 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { assetCachePlugin } from "./asset-cache.ts";
 import { brandHtmlPlugin } from "./brand-html.ts";
-import { buildTimePlugin, buildTimeUnixSeconds } from "./build-time.ts";
+import {
+  buildTimePlugin,
+  buildTimeUnixSeconds,
+  versionFilePlugin,
+} from "./build-time.ts";
 
 const builtAtUnixSeconds = buildTimeUnixSeconds();
 
@@ -24,6 +28,7 @@ export default defineConfig(() => {
     plugins: [
       brandHtmlPlugin(),
       buildTimePlugin(builtAtUnixSeconds),
+      versionFilePlugin(builtAtUnixSeconds),
       assetCachePlugin(),
       react(),
       tailwindcss(),

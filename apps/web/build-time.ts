@@ -36,6 +36,30 @@ export function buildTimePlugin(seconds: number): Plugin {
   };
 }
 
+/**
+ * /version.json: the build the page compares itself with, to offer a
+ * reload after a release (docs/redesign/02-shell.md §8). The page's own
+ * build stamp holds the same number.
+ */
+export function versionFilePlugin(seconds: number): Plugin {
+  return {
+    name: "hb-version-file",
+    apply: "build",
+    applyToEnvironment: (environment) => environment.name === "client",
+    generateBundle() {
+      this.emitFile({
+        type: "asset",
+        fileName: "version.json",
+        source: versionFileSource(seconds),
+      });
+    },
+  };
+}
+
+export function versionFileSource(seconds: number) {
+  return `${JSON.stringify({ build: seconds })}\n`;
+}
+
 export function readBuildTimeUnixSeconds(html: string) {
   const marker = html.match(
     /<span\b(?=[^>]*\bid="build-stamp")(?=[^>]*\bdata-build-unix-seconds="([1-9]\d*)")[^>]*>build @ ([1-9]\d*)<\/span>/,

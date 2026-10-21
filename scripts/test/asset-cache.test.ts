@@ -35,6 +35,15 @@ describe("fingerprinted static asset caching", () => {
     );
   });
 
+  it("never keeps the build a page compares itself with", () => {
+    const headers = assetCacheHeaders([
+      "assets/app-ABCDEFGH.js",
+      "version.json",
+    ]);
+    expect(headers).toContain("/version.json\n  Cache-Control: no-store\n");
+    expect(headers.match(/immutable/g)).toHaveLength(1);
+  });
+
   it("fails the build instead of silently exceeding Cloudflare's rule limit", () => {
     expect(() =>
       assetCacheHeaders(
