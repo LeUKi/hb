@@ -148,7 +148,7 @@ function NoCreditAccount({
         title="这笔没能发出"
         className="w-full text-left"
       >
-        LDC 里找不到你的 LINUX DO Credit 账户。被拒后 5
+        Credit 站里找不到你的 LINUX DO Credit 账户。被拒后 5
         分钟内可以重新发送一次，现在已经不能再发，这笔不再补发。
       </Callout>
     );
@@ -165,8 +165,8 @@ function NoCreditAccount({
       className="w-full text-left"
     >
       <p>
-        LDC 里找不到你的账户，这笔 {amount} LDC 暂时发不出去。请先注册 Credit
-        账户，确认注册好了再回来点“重新发送”：只能重新发送一次。
+        Credit 站里找不到你的账户，这笔 {amount} LDC 暂时发不出去。请先注册
+        Credit 账户，确认注册好了再回来点“重新发送”：只能重新发送一次。
       </p>
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
         <ButtonLink href={CREDIT_URL} variant="secondary" className="gap-1.5">

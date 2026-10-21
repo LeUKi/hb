@@ -144,7 +144,7 @@ export function merchantPause(
     title: `付款已暂停：${short[reason] ?? (paymentReason(reason) ?? "").replace(/。$/u, "")}`,
     text:
       reason === "funds"
-        ? "在 LDC 补足资金后自动继续，不需要在这里操作。领取不受影响。"
+        ? "在 Credit 站补足资金后自动继续，不需要在这里操作。领取不受影响。"
         : reason === "quota"
           ? `${quotaResumeWords(quota.resumeAt)}自动继续${quota.queued ? `，${quota.queued} 笔在排队` : ""}，不需要在这里操作。领取不受影响。`
           : "条件满足后自动继续，不需要在这里操作。领取不受影响。",

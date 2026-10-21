@@ -449,7 +449,7 @@ function MerchantForm({
         <Field
           label="Client ID"
           htmlFor={ids.client}
-          hint="在 LDC 的集市应用里查看。改 Client ID 时要同时填写它的密钥。"
+          hint="在 Credit 站的集市应用里查看。改 Client ID 时要同时填写它的密钥。"
           error={idError}
           live
         >
@@ -723,7 +723,7 @@ function CreateMerchant({
   return (
     <PageSection
       title="配置商户"
-      description="用商户发红包前，先填好你在 LDC 创建的集市应用。每个账号有一个当前商户。"
+      description="用商户发红包前，先填好你在 Credit 站创建的集市应用。每个账号有一个当前商户。"
       action={<MerchantGuide />}
     >
       <LeaveGuard
@@ -749,7 +749,7 @@ function CreateMerchant({
           <Field
             label="Client ID"
             htmlFor={ids.client}
-            hint="在 LDC 的集市应用里查看。"
+            hint="在 Credit 站的集市应用里查看。"
             error={idError}
             live
           >

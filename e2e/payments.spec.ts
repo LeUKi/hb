@@ -478,7 +478,9 @@ test.describe("LDC 商户配置", () => {
     // 怎么填: the two steps in LDC, with the address to paste.
     const help = page.getByRole("button", { name: "怎么填" });
     await help.click();
-    const guide = page.getByRole("dialog", { name: "在 LDC 创建集市应用" });
+    const guide = page.getByRole("dialog", {
+      name: "在 Credit 站创建集市应用",
+    });
     await expect(guide.getByText("第 1 步：创建集市应用")).toBeVisible();
     // It starts on LDC's 集市应用 page, in a new tab.
     const credit = guide.getByRole("link", {

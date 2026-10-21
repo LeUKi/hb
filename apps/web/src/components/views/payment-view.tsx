@@ -345,7 +345,7 @@ function RepairCredential({
           <Field
             label="原订单商户密钥"
             htmlFor={ids.secret}
-            hint="在 LDC 的这个应用里查看现在的密钥。保存后自动检查，密钥不会显示出来。"
+            hint="在 Credit 站的这个应用里查看现在的密钥。保存后自动检查，密钥不会显示出来。"
           >
             <TextInput
               id={ids.secret}

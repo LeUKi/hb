@@ -78,7 +78,7 @@ export function MerchantGuide() {
         <div className="grid gap-6 p-5">
           <div className="grid gap-1">
             <h2 id={titleId} className="text-lg font-semibold text-ink">
-              在 LDC 创建集市应用
+              在 Credit 站创建集市应用
             </h2>
             <p className="text-sm text-ink-2">
               用商户发的红包，LDC 从你的集市应用付出。在 LINUX DO Credit
@@ -92,7 +92,7 @@ export function MerchantGuide() {
               src: urlsImage,
               width: 576,
               height: 577,
-              alt: "LDC 的集市应用信息窗口：应用名称填了 meme，应用主页 URL 和通知 URL 都填了 http://localhost:3000/",
+              alt: "Credit 站的集市应用信息窗口：应用名称填了 meme，应用主页 URL 和通知 URL 都填了 http://localhost:3000/",
             }}
           >
             <p className="text-sm text-ink-2">
@@ -128,7 +128,7 @@ export function MerchantGuide() {
               src: apiImage,
               width: 346,
               height: 470,
-              alt: "LDC 的集市应用页：右侧“API 配置”里的 Client ID 和 Client Secret",
+              alt: "Credit 站的集市应用页：右侧“API 配置”里的 Client ID 和 Client Secret",
             }}
           >
             <p className="text-sm text-ink-2">
