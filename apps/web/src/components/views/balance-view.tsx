@@ -33,7 +33,7 @@ import {
 import { clockSeconds } from "../../lib/roster-time";
 import { type SessionUser, useSessionUser } from "../../lib/session";
 import { ApiKeysSection } from "../balance/api-keys";
-import { PlusBadge, PlusTag } from "../balance/plus";
+import { PlusBadge, PlusName, PlusTag } from "../balance/plus";
 import {
   TransferDetailDialog,
   TransferDialog,
@@ -1019,7 +1019,12 @@ function InviteDialog({
       onClose={onClose}
       onClosed={reset}
       busy={create.isPending}
-      title="邀请开通🐟额 PLUS"
+      title={
+        <>
+          邀请开通
+          <PlusName />
+        </>
+      }
       text="输入对方的 LINUX DO 用户名，生成一条邀请链接发给对方。"
       error={error}
       actions={

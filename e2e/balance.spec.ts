@@ -359,11 +359,14 @@ test.describe("🐟额", () => {
       return route.fulfill({ json: { accepted: true } });
     });
     await openApp(page, `/invite/${token}`);
-    await expect(
-      page.getByRole("heading", {
-        name: /Lafish（@lafish）邀请你开通🐟额 PLUS/,
-      }),
-    ).toBeVisible();
+    const heading = page.getByRole("heading", {
+      name: /Lafish（@lafish）邀请你开通🐟额 PLUS/,
+    });
+    await expect(heading).toBeVisible();
+    // Its PLUS is the gold tag, as beside 🐟额's title.
+    await expect(heading.getByText("PLUS", { exact: true })).toHaveClass(
+      /bg-gold-soft/,
+    );
     await expect(
       page.getByText("🐟额是由本站托管的 LDC，1 🐟 = 1 LDC，可用于发红包。"),
     ).toBeVisible();

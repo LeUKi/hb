@@ -48,6 +48,18 @@ export function PlusChip({
 }
 
 /**
+ * 🐟额 PLUS named in a title (the invitation's dialog and page): its PLUS
+ * as the gold tag, still read as “PLUS”. In a sentence it stays the word.
+ */
+export function PlusName() {
+  return (
+    <>
+      🐟额 <PlusChip className="align-middle" />
+    </>
+  );
+}
+
+/**
  * A PLUS feature's own mark (balance-design §13): after its button's words
  * or its title. Smaller than the tag on 🐟额's title and never an arrow,
  * since it opens nothing; for the eye only (its button or title keeps its

@@ -3,6 +3,7 @@ import { Fish as FishIcon } from "lucide-react";
 import { useState } from "react";
 import { ActivityRequestError } from "../../lib/activities";
 import { type InvitePage, useAcceptInvite, useInvite } from "../../lib/balance";
+import { PlusName } from "../balance/plus";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { Page, Panel } from "../page/page";
 import { PageLoad, queryLoad } from "../page/page-state";
@@ -77,7 +78,8 @@ export function InviteView({ token }: { token: string }) {
               />
               <h1 className="text-lg font-semibold text-ink">
                 {page.invite.inviter?.displayName}（@
-                {page.invite.inviter?.username}）邀请你开通🐟额 PLUS
+                {page.invite.inviter?.username}）邀请你开通
+                <PlusName />
               </h1>
             </div>
             {/* A 通用链接's 附言, as written: line breaks kept, no links. */}
