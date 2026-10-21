@@ -1,4 +1,4 @@
-import type { WithdrawalWait } from "@hb/contracts";
+import { BALANCE_LIMITS, type WithdrawalWait } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { AlertTriangle, X } from "lucide-react";
 import { AnimatePresence } from "motion/react";
@@ -20,6 +20,7 @@ import {
   useBalanceAdmin,
   useBalanceOverview,
 } from "../../../lib/admin-balance";
+import { useInviteePreview } from "../../../lib/balance";
 import { clockLabel, clockSeconds } from "../../../lib/roster-time";
 import { useIdentity } from "../../../lib/session";
 import type { AdminSearch } from "../../../router";
@@ -33,9 +34,9 @@ import { Avatar } from "../../ui/avatar";
 import { Button } from "../../ui/button";
 import { MoreLink } from "../../ui/button-link";
 import { CopyButton } from "../../ui/copy-button";
-import { Field, Segmented, TextInput } from "../../ui/field";
+import { Field, Segmented, TextArea, TextInput } from "../../ui/field";
 import { Fish, fishText } from "../../ui/fish";
-import { ListItem, Swap } from "../../ui/reveal";
+import { ListItem, Reveal, Swap } from "../../ui/reveal";
 import { StatusChip } from "../../ui/status-chip";
 import {
   hongbaoWords,
@@ -976,7 +977,14 @@ const inviteStatusTone = {
 } as const;
 
 /** A link just made: shown until the modal closes, and never again. */
-type MadeLink = { url: string; maxUses: number; days: number };
+type MadeLink = {
+  url: string;
+  /** Null: any number of people; for good. */
+  maxUses: number | null;
+  days: number | null;
+  /** In whose name, when not one's own. */
+  inviter: string | null;
+};
 
 /**
  * 邀请: 开通的人 (everyone who opened 🐟额 PLUS, and who brought them in),
@@ -1113,16 +1121,22 @@ const linkStatusTone = {
 } as const;
 
 /** 1–1000, as typed; null otherwise. */
-function maxUsesOf(text: string) {
-  if (!/^\d{1,4}$/.test(text.trim())) return null;
+/** 最多几个人用: nothing is any number (null); else 1–1000, or invalid. */
+function maxUsesOf(text: string): number | null | "invalid" {
+  if (!text.trim()) return null;
+  if (!/^\d{1,4}$/.test(text.trim())) return "invalid";
   const value = Number(text.trim());
-  return value >= 1 && value <= 1000 ? value : null;
+  return value >= 1 && value <= 1000 ? value : "invalid";
 }
 
+/** 永久 or a number of days, as the segmented control has it. */
+type LinkLifetime = "1" | "7" | "forever";
+
 /**
- * 通用链接 (docs/balance-design.md §13): up to how many people and for 1 or
- * 7 days, then the link, once. Below, every one made; an open one can be
- * stopped (who is in stays in).
+ * 通用链接 (docs/balance-design.md §13): up to how many people (or any),
+ * for 1 or 7 days or for good, in one's own name or that of someone who
+ * has been here, with a 附言; then the link, once. Below, every one made;
+ * an open one can be stopped (who is in stays in).
  */
 function InviteLinks({
   open,
@@ -1145,8 +1159,12 @@ function InviteLinks({
   });
   const items = (query.data?.pages ?? []).flatMap((page) => page.items);
   const inputId = useId();
+  const nameId = useId();
+  const noteId = useId();
   const [count, setCount] = useState("");
-  const [days, setDays] = useState<"1" | "7">("1");
+  const [days, setDays] = useState<LinkLifetime>("1");
+  const [name, setName] = useState("");
+  const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Kept while the confirmation closes, so its sentence does not blank.
@@ -1155,18 +1173,40 @@ function InviteLinks({
   const [stopBusy, setStopBusy] = useState(false);
   const [stopError, setStopError] = useState<string | null>(null);
   const maxUses = maxUsesOf(count);
-  const ready = maxUses !== null && !busy;
+  // 以谁的名义: who that is here; one who has not been cannot be named.
+  const named = name.trim().toLowerCase();
+  const preview = useInviteePreview(identity.user?.id ?? "", named);
+  const found =
+    !preview.isPlaceholderData && preview.data ? preview.data.user : undefined;
+  const nameMissing = named.length > 0 && found === null;
+  const nameReady = !named || found?.username.toLowerCase() === named || false;
+  const noteLength = Array.from(note.trim()).length;
+  const ready =
+    maxUses !== "invalid" &&
+    nameReady &&
+    noteLength <= BALANCE_LIMITS.inviteLinkNoteMax &&
+    !busy;
   const submit = async () => {
     if (!ready) return;
     setBusy(true);
     setError(null);
     try {
+      const lifetime = days === "forever" ? null : days === "7" ? 7 : 1;
       const result = await actions.createInviteLink({
         maxUses,
-        days: days === "7" ? 7 : 1,
+        days: lifetime,
+        inviterUsername: named || null,
+        note: note.trim() || null,
       });
-      onMade({ url: result.url, maxUses, days: Number(days) });
+      onMade({
+        url: result.url,
+        maxUses,
+        days: lifetime,
+        inviter: found && !preview.data?.self ? found.username : null,
+      });
       setCount("");
+      setName("");
+      setNote("");
     } catch (failure) {
       setError(
         failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
@@ -1196,7 +1236,10 @@ function InviteLinks({
         {made ? (
           <div className="grid gap-2">
             <p className="text-sm text-ink-2">
-              通用链接（最多 {made.maxUses} 人，{made.days} 天内有效）：
+              通用链接（
+              {made.maxUses === null ? "不限人数" : `最多 ${made.maxUses} 人`}，
+              {made.days === null ? "永久有效" : `${made.days} 天内有效`}
+              {made.inviter && `，以 @${made.inviter} 的名义`}）：
             </p>
             <div className="flex items-center gap-2">
               <TextInput
@@ -1227,11 +1270,9 @@ function InviteLinks({
               <Field
                 label="最多几个人用"
                 htmlFor={inputId}
-                hint="1–1000 人"
+                hint="1–1000 人，不填不限"
                 error={
-                  count.trim() && maxUses === null
-                    ? "填 1–1000 之间的整数"
-                    : (error ?? undefined)
+                  maxUses === "invalid" ? "填 1–1000 之间的整数" : undefined
                 }
               >
                 <TextInput
@@ -1239,7 +1280,7 @@ function InviteLinks({
                   value={count}
                   inputMode="numeric"
                   autoComplete="off"
-                  placeholder="50"
+                  placeholder="不限"
                   suffix="人"
                   onChange={(event) => {
                     setCount(event.target.value);
@@ -1258,10 +1299,73 @@ function InviteLinks({
                   options={[
                     { value: "1", label: "1 天" },
                     { value: "7", label: "7 天" },
+                    { value: "forever", label: "永久" },
                   ]}
                 />
               </Field>
             </div>
+            <Field
+              label="以谁的名义"
+              optional
+              htmlFor={nameId}
+              hint="不填就是你自己。"
+              error={nameMissing ? "这个人还没来过本站" : undefined}
+            >
+              <TextInput
+                id={nameId}
+                value={name}
+                autoComplete="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                prefix="@"
+                invalid={nameMissing}
+                onChange={(event) => {
+                  // The @ is already there: a pasted “@name” keeps just one.
+                  setName(event.target.value.replace(/^\s*@+/, ""));
+                  setError(null);
+                }}
+              />
+              <Reveal show={Boolean(named && found)}>
+                {found && (
+                  <p className="flex items-center gap-2 text-sm text-ink-2">
+                    <Avatar
+                      name={found.displayName}
+                      src={found.avatarUrl}
+                      size={20}
+                    />
+                    {found.displayName} @{found.username}
+                  </p>
+                )}
+              </Reveal>
+            </Field>
+            <Field
+              label="附言"
+              optional
+              htmlFor={noteId}
+              aside={`${noteLength}/${BALANCE_LIMITS.inviteLinkNoteMax}`}
+              hint={`显示在邀请页的标题下面，最多 ${BALANCE_LIMITS.inviteLinkNoteMax} 个字。`}
+              error={
+                noteLength > BALANCE_LIMITS.inviteLinkNoteMax
+                  ? `附言最多 ${BALANCE_LIMITS.inviteLinkNoteMax} 个字`
+                  : undefined
+              }
+            >
+              <TextArea
+                id={noteId}
+                rows={2}
+                value={note}
+                invalid={noteLength > BALANCE_LIMITS.inviteLinkNoteMax}
+                onChange={(event) => {
+                  setNote(event.target.value);
+                  setError(null);
+                }}
+              />
+            </Field>
+            <Reveal show={Boolean(error)}>
+              <p role="alert" className="text-xs text-danger">
+                {error}
+              </p>
+            </Reveal>
             <div>
               <Button
                 variant="primary"
@@ -1290,15 +1394,24 @@ function InviteLinks({
                   >
                     <span className="grid min-w-0 flex-1 gap-0.5">
                       <span className="text-sm text-ink tabular-nums">
-                        已用 {link.useCount} / {link.maxUses} 人
+                        {link.maxUses === null
+                          ? `已用 ${link.useCount} 人`
+                          : `已用 ${link.useCount} / ${link.maxUses} 人`}
                       </span>
                       <span className="text-xs text-ink-3 tabular-nums">
-                        @{link.createdBy?.username} 生成于{" "}
+                        邀请人 @{link.inviter?.username} · 生成于{" "}
                         {clockLabel(link.createdAt)} ·{" "}
                         {link.stoppedAt !== null
                           ? `@${link.stoppedBy?.username} 停用于 ${clockLabel(link.stoppedAt)}`
-                          : `${clockLabel(link.expiresAt)} 到期`}
+                          : link.expiresAt === null
+                            ? "永久有效"
+                            : `${clockLabel(link.expiresAt)} 到期`}
                       </span>
+                      {link.note && (
+                        <span className="truncate text-xs text-ink-3">
+                          附言：{link.note.replaceAll("\n", " ")}
+                        </span>
+                      )}
                     </span>
                     <StatusChip tone={linkStatusTone[link.status]}>
                       {linkStatusText[link.status]}

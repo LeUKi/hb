@@ -1342,7 +1342,8 @@ describe("邀请", () => {
       id: link.id,
       status: "used_up",
       useCount: 2,
-      createdBy: { username: admin.username },
+      inviter: { username: admin.username },
+      note: null,
     });
     expect(
       (await call("GET", "/admin/balance/invite-links", tester)).status,
@@ -1430,6 +1431,108 @@ describe("邀请", () => {
         await call("POST", `/admin/balance/invite-links/${nextId}/stop`, admin),
       ).code,
     ).toBe("INVITE_LINK_ENDED");
+  });
+
+  it("makes a 通用链接 for good, for anyone, in another's name, with a 附言", async () => {
+    const { admin } = await openForTester();
+    const partner = await actor("partner");
+    const make = (input: Record<string, unknown>) =>
+      call("POST", "/admin/balance/invite-links", admin, {
+        maxUses: null,
+        days: null,
+        ...input,
+      });
+    expect(code(await make({ inviterUsername: "nobody-here" }))).toMatchObject({
+      code: "INVITER_NOT_FOUND",
+      message: "@nobody-here 还没来过本站",
+    });
+    for (const note of ["字".repeat(101), "响\u0007铃"])
+      expect((await make({ note })).status).toBe(400);
+    expect(
+      (
+        await call("POST", "/admin/balance/invite-links", admin, {
+          maxUses: null,
+        })
+      ).status,
+    ).toBe(400);
+    const made = await make({
+      inviterUsername: `@${partner.username.toUpperCase()}`,
+      note: "  example.com 的用户\r\n在这里开通  ",
+    });
+    expect(made.status).toBe(200);
+    const { link } = made.json as LinkJson;
+    expect(link).toMatchObject({
+      status: "active",
+      maxUses: null,
+      expiresAt: null,
+      inviter: { username: partner.username },
+      note: "example.com 的用户\n在这里开通",
+    });
+    const token = tokenOf(made);
+    expect((await call("GET", `/invites/${token}`)).json).toMatchObject({
+      invite: {
+        username: null,
+        status: "pending",
+        expiresAt: null,
+        inviter: { username: partner.username },
+        note: "example.com 的用户\n在这里开通",
+      },
+    });
+    // In the partner's name: theirs to hand out, not to take.
+    expect(
+      code(await call("POST", `/invites/${token}/accept`, partner)),
+    ).toMatchObject({
+      code: "INVITE_OWN",
+      message: "这是以你的名义生成的通用链接，发给要邀请的人就好。",
+    });
+    for (const name of ["one", "two", "three"])
+      expect(
+        (await call("POST", `/invites/${token}/accept`, await actor(name)))
+          .status,
+      ).toBe(200);
+    // A year on, it still takes anyone.
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 400 * 86_400_000);
+    const later = await actor("later");
+    expect((await call("POST", `/invites/${token}/accept`, later)).status).toBe(
+      200,
+    );
+    const listed = (
+      (await call("GET", "/admin/balance/invite-links", admin)).json as {
+        items: { id: string; status: string; useCount: number }[];
+      }
+    ).items.find((item) => item.id === link.id);
+    expect(listed).toMatchObject({ status: "active", useCount: 4 });
+    expect(
+      (
+        (await call("GET", "/admin/balance/members", admin)).json as {
+          items: { id: string; viaLink: boolean; invitedBy: unknown }[];
+        }
+      ).items.find((item) => item.id === later.id),
+    ).toMatchObject({
+      viaLink: true,
+      invitedBy: { username: partner.username },
+    });
+    // Not in the partner's own invite dialog: the link is the admin's.
+    expect(
+      (
+        (await call("GET", "/me/balance/invites", partner)).json as {
+          items: unknown[];
+        }
+      ).items,
+    ).toHaveLength(0);
+    // Only a 通用链接 is for good or has a 附言.
+    await expect(
+      env.DB.prepare(
+        "INSERT INTO balance_invites (id,token_hash,inviter_user_id,invitee_username,created_at,expires_at) VALUES (?,?,?,?,?,NULL)",
+      )
+        .bind(crypto.randomUUID(), "a".repeat(64), admin.id, "someone", 1)
+        .run(),
+    ).rejects.toThrow();
+    await expect(
+      env.DB.prepare("UPDATE balance_invites SET note='改' WHERE id=?")
+        .bind(link.id)
+        .run(),
+    ).rejects.toThrow(/fixed/);
   });
 
   it("holds a 通用链接 to its uses and its cap in the database too", async () => {

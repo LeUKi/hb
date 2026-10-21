@@ -23,9 +23,10 @@ export const BALANCE_LIMITS = {
   withdrawalsPerHour: 30,
   /** An invitation's link lasts a day. */
   inviteLifetimeMs: 86_400_000,
-  /** An admin's 通用链接: up to this many people, for 1 or 7 days. */
+  /** An admin's 通用链接: up to this many people (or any), 1 or 7 days or for good. */
   inviteLinkMaxUses: 1000,
-  inviteLinkDays: [1, 7],
+  /** Its 附言, under the accept page's title. */
+  inviteLinkNoteMax: 100,
   /** 转账 (balance-design §16): its remark, and its open API keys. */
   transferRemarkMax: 64,
   apiKeyNameMax: 20,
@@ -465,7 +466,25 @@ export const createInviteSchema = z.strictObject({
 });
 export type CreateInviteInput = z.infer<typeof createInviteSchema>;
 
-/** An admin's 通用链接: how many people may use it, and for how long. */
+/** A 通用链接's 附言: a few lines, as written; empty is none. */
+export const inviteLinkNoteSchema = z
+  .string()
+  .transform((value) => value.replaceAll("\r\n", "\n").trim())
+  .refine(
+    (value) => characters(value) <= BALANCE_LIMITS.inviteLinkNoteMax,
+    `附言最多 ${BALANCE_LIMITS.inviteLinkNoteMax} 个字`,
+  )
+  .refine(
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: refused on purpose.
+    (value) => !/[\u0000-\u0009\u000b-\u001f\u007f]/.test(value),
+    "附言不能有控制字符",
+  )
+  .transform((value) => value || null);
+
+/**
+ * An admin's 通用链接: how many people may use it (null: any), for how
+ * long (null: for good), in whose name (null: the admin's) and its 附言.
+ */
 export const createInviteLinkSchema = z.strictObject({
   maxUses: z
     .number({ error: "请填最多几个人用" })
@@ -474,10 +493,13 @@ export const createInviteLinkSchema = z.strictObject({
     .max(
       BALANCE_LIMITS.inviteLinkMaxUses,
       `最多 ${BALANCE_LIMITS.inviteLinkMaxUses} 个人`,
-    ),
-  days: z.union([z.literal(1), z.literal(7)], {
-    error: "有效期是 1 天或 7 天",
+    )
+    .nullable(),
+  days: z.union([z.literal(1), z.literal(7), z.null()], {
+    error: "有效期是 1 天、7 天或永久",
   }),
+  inviterUsername: inviteUsernameSchema.nullable().optional(),
+  note: inviteLinkNoteSchema.nullable().optional(),
 });
 export type CreateInviteLinkInput = z.infer<typeof createInviteLinkSchema>;
 
@@ -513,11 +535,15 @@ export type BalanceInvite = {
 export type BalanceInviteLink = {
   id: string;
   status: BalanceInviteLinkStatus;
-  maxUses: number;
+  /** Null: any number of people. */
+  maxUses: number | null;
   useCount: number;
   createdAt: number;
-  expiresAt: number;
+  /** Null: for good. */
+  expiresAt: number | null;
   stoppedAt: number | null;
-  createdBy: BalanceInviteUser | null;
+  /** In whose name it invites. */
+  inviter: BalanceInviteUser | null;
+  note: string | null;
   stoppedBy: BalanceInviteUser | null;
 };

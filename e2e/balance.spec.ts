@@ -404,7 +404,8 @@ test.describe("🐟额", () => {
             },
             username: null,
             status,
-            expiresAt: Date.now() + 3_600_000,
+            expiresAt: null,
+            note: "example.com 的用户\n在这里开通",
           },
           topupFeePercent: 12,
           features: plusFeatures,
@@ -426,6 +427,10 @@ test.describe("🐟额", () => {
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "接受邀请" })).toBeVisible();
     await expect(page.getByText(/这个邀请是给/)).toHaveCount(0);
+    // Its 附言 under the title, line breaks kept.
+    await expect(
+      page.getByText("example.com 的用户\n在这里开通", { exact: true }),
+    ).toBeVisible();
     // 🐟额红包 off: nothing said about sending 红包.
     await expect(
       page.getByText("🐟额是由本站托管的 LDC，1 🐟 = 1 LDC。", { exact: true }),

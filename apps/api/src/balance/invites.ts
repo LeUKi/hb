@@ -1,8 +1,9 @@
 // Invitations to 转入 (docs/balance-design.md §13). Whoever may 转入 may
 // invite, and admins always may: a LINUX DO username and a link good for a
 // day and one use, which only that account can accept. Admins also make
-// 通用链接: for whoever has them, up to a number of people, for 1 or 7
-// days, until stopped. Accepting gives 转入 and inviting, for good.
+// 通用链接: for whoever has them, up to a number of people (or any), for 1
+// or 7 days or for good, until stopped, in their own name or another's,
+// with a 附言. Accepting gives 转入 and inviting, for good.
 import {
   BALANCE_LIMITS,
   type BalanceInvite,
@@ -27,18 +28,24 @@ type InviteRow = {
   /** Null for a 通用链接. */
   invitee_username: string | null;
   created_at: number;
-  expires_at: number;
+  /** Null for a 通用链接 good for good. */
+  expires_at: number | null;
   accepted_at: number | null;
   accepted_user_id: string | null;
   max_uses: number | null;
   use_count: number;
   stopped_at: number | null;
   stopped_by_user_id: string | null;
+  note: string | null;
 };
+
+/** Past its time: never, for a 通用链接 good for good. */
+const expired = (row: InviteRow, now = Date.now()) =>
+  row.expires_at !== null && row.expires_at <= now;
 
 function statusOf(row: InviteRow, now = Date.now()): BalanceInviteStatus {
   if (row.accepted_at !== null) return "accepted";
-  return row.expires_at <= now ? "expired" : "pending";
+  return expired(row, now) ? "expired" : "pending";
 }
 
 function linkStatusOf(
@@ -46,8 +53,8 @@ function linkStatusOf(
   now = Date.now(),
 ): BalanceInviteLinkStatus {
   if (row.stopped_at !== null) return "stopped";
-  if (row.use_count >= (row.max_uses ?? 0)) return "used_up";
-  return row.expires_at <= now ? "expired" : "active";
+  if (row.max_uses !== null && row.use_count >= row.max_uses) return "used_up";
+  return expired(row, now) ? "expired" : "active";
 }
 
 /** Where the accept page stands: a 通用链接 that is open reads as 待接受. */
@@ -87,7 +94,8 @@ function inviteView(row: InviteRow & Record<string, unknown>): BalanceInvite {
     username: spelling(row) ?? "",
     status: statusOf(row),
     createdAt: row.created_at,
-    expiresAt: row.expires_at,
+    // One for a username always has its day.
+    expiresAt: Number(row.expires_at),
     acceptedAt: row.accepted_at,
     acceptedBy: userOf(row, "accepted"),
   };
@@ -97,12 +105,13 @@ function linkView(row: InviteRow & Record<string, unknown>): BalanceInviteLink {
   return {
     id: row.id,
     status: linkStatusOf(row),
-    maxUses: row.max_uses ?? 0,
+    maxUses: row.max_uses,
     useCount: row.use_count,
     createdAt: row.created_at,
     expiresAt: row.expires_at,
     stoppedAt: row.stopped_at,
-    createdBy: userOf(row, "inviter"),
+    inviter: userOf(row, "inviter"),
+    note: row.note,
     stoppedBy: userOf(row, "stopped"),
   };
 }
@@ -255,6 +264,8 @@ export async function readInvite(
       username: spelling(row),
       status: pageStatusOf(row),
       expiresAt: row.expires_at,
+      /** A 通用链接's 附言, under the title as written. */
+      note: row.note,
     },
     topupFeePercent: settings.topupFeePercent,
     /** Whether 🐟额 may send 红包 now: the first line says so. */
@@ -294,7 +305,7 @@ export async function acceptInvite(
   if (row.accepted_user_id === viewer.id) return { accepted: true };
   if (row.accepted_at !== null)
     balanceError(409, "INVITE_USED", "这个邀请已经用过了。");
-  if (row.expires_at <= Date.now())
+  if (expired(row))
     balanceError(410, "INVITE_EXPIRED", "邀请已过期，请对方再发一次。");
   if (row.inviter_user_id === viewer.id)
     balanceError(
@@ -357,7 +368,7 @@ function refuseLink(row: InviteRow, viewerId: string, member: boolean) {
     balanceError(
       409,
       "INVITE_OWN",
-      "这是你生成的通用链接，发给要邀请的人就好。",
+      "这是以你的名义生成的通用链接，发给要邀请的人就好。",
     );
   if (member) balanceError(409, "INVITE_ALREADY_MEMBER", "你已经可以转入了。");
 }
@@ -378,13 +389,14 @@ async function acceptLink(
   await env.DB.batch([
     env.DB.prepare(
       `UPDATE balance_invites SET use_count=use_count+1
-      WHERE id=? AND stopped_at IS NULL AND use_count<max_uses AND expires_at>?
+      WHERE id=? AND stopped_at IS NULL AND (max_uses IS NULL OR use_count<max_uses)
+        AND (expires_at IS NULL OR expires_at>?)
         AND inviter_user_id<>? AND NOT EXISTS(SELECT 1 FROM balance_members WHERE user_id=?)`,
     ).bind(row.id, now, viewer.id, viewer.id),
     env.DB.prepare(
       `INSERT INTO balance_members (user_id,invited_by_user_id,invite_id,created_at)
       SELECT ?,inviter_user_id,id,? FROM balance_invites
-      WHERE id=? AND stopped_at IS NULL AND expires_at>?
+      WHERE id=? AND stopped_at IS NULL AND (expires_at IS NULL OR expires_at>?)
         AND (SELECT COUNT(*) FROM balance_members WHERE invite_id=?)<use_count
         AND NOT EXISTS(SELECT 1 FROM balance_members WHERE user_id=?)`,
     ).bind(viewer.id, now, row.id, now, row.id, viewer.id),
@@ -549,27 +561,42 @@ async function readLink(env: ApiBindings, id: string) {
   return row;
 }
 
-/** An admin's 通用链接. The link is in this answer and nowhere else. */
+/**
+ * An admin's 通用链接, in their own name or that of someone who has been
+ * here. The link is in this answer and nowhere else.
+ */
 export async function createInviteLink(
   env: ApiBindings,
   adminId: string,
   input: CreateInviteLinkInput,
   appOrigin: string,
 ) {
+  let inviterId = adminId;
+  if (input.inviterUsername) {
+    const found = await findUser(env, input.inviterUsername.toLowerCase());
+    if (!found)
+      balanceError(
+        404,
+        "INVITER_NOT_FOUND",
+        `@${input.inviterUsername} 还没来过本站`,
+      );
+    inviterId = found.id;
+  }
   const token = newToken();
   const id = crypto.randomUUID();
   const now = Date.now();
   await env.DB.prepare(
-    `INSERT INTO balance_invites (id,token_hash,inviter_user_id,created_at,expires_at,max_uses)
-    VALUES (?,?,?,?,?,?)`,
+    `INSERT INTO balance_invites (id,token_hash,inviter_user_id,created_at,expires_at,max_uses,note)
+    VALUES (?,?,?,?,?,?,?)`,
   )
     .bind(
       id,
       await tokenDigest(token),
-      adminId,
+      inviterId,
       now,
-      now + input.days * 86_400_000,
+      input.days === null ? null : now + input.days * 86_400_000,
       input.maxUses,
+      input.note ?? null,
     )
     .run();
   console.info(

@@ -23,7 +23,7 @@ function blockedText(page: InvitePage) {
   // A 通用链接 names no one: whoever has it may accept.
   if (viewer.isInviter)
     return invite.username === null
-      ? "这是你生成的通用链接，发给要邀请的人就好。"
+      ? "这是以你的名义生成的通用链接，发给要邀请的人就好。"
       : `这是你发出的邀请，把链接发给 @${invite.username} 就好。`;
   if (viewer.member) return "你已经可以转入了。";
   if (!viewer.matches)
@@ -80,6 +80,12 @@ export function InviteView({ token }: { token: string }) {
                 {page.invite.inviter?.username}）邀请你开通🐟额 PLUS
               </h1>
             </div>
+            {/* A 通用链接's 附言, as written: line breaks kept, no links. */}
+            {page.invite.note && (
+              <p className="whitespace-pre-line border-line border-l-2 pl-3 text-sm text-ink [overflow-wrap:anywhere]">
+                {page.invite.note}
+              </p>
+            )}
             <div className="grid gap-2 text-sm text-ink-2">
               <p>
                 {page.hongbaoEnabled

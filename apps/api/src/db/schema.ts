@@ -1108,14 +1108,17 @@ export const balanceInvites = sqliteTable(
     /** The username it is for, in lower case; null for a 通用链接. */
     inviteeUsername: text("invitee_username"),
     createdAt: integer("created_at").notNull(),
-    expiresAt: integer("expires_at").notNull(),
+    /** Null for a 通用链接 good for good. */
+    expiresAt: integer("expires_at"),
     acceptedAt: integer("accepted_at"),
     acceptedUserId: text("accepted_user_id").references(() => users.id),
-    /** A 通用链接's cap, and how many have accepted it. */
+    /** A 通用链接's cap (null: any number), and how many have accepted it. */
     maxUses: integer("max_uses"),
     useCount: integer("use_count").notNull().default(0),
     stoppedAt: integer("stopped_at"),
     stoppedByUserId: text("stopped_by_user_id").references(() => users.id),
+    /** A 通用链接's 附言, under the accept page's title. */
+    note: text("note"),
   },
   (table) => [
     uniqueIndex("balance_invites_token_unique").on(table.tokenHash),
@@ -1127,14 +1130,15 @@ export const balanceInvites = sqliteTable(
     index("balance_invites_time_idx").on(table.createdAt, table.id),
     check(
       "balance_invites_valid",
-      sql`${table.expiresAt} > ${table.createdAt} AND length(${table.tokenHash}) = 64
-        AND (${table.inviteeUsername} IS NULL OR (${table.inviteeUsername} = lower(${table.inviteeUsername}) AND length(${table.inviteeUsername}) BETWEEN 1 AND 60))
+      sql`(${table.expiresAt} IS NULL OR ${table.expiresAt} > ${table.createdAt}) AND length(${table.tokenHash}) = 64
+        AND (${table.inviteeUsername} IS NULL OR (${table.inviteeUsername} = lower(${table.inviteeUsername}) AND length(${table.inviteeUsername}) BETWEEN 1 AND 60
+          AND ${table.expiresAt} IS NOT NULL AND ${table.maxUses} IS NULL AND ${table.useCount} = 0 AND ${table.stoppedAt} IS NULL AND ${table.note} IS NULL))
         AND (${table.acceptedAt} IS NULL) = (${table.acceptedUserId} IS NULL)
-        AND (${table.inviteeUsername} IS NULL) = (${table.maxUses} IS NOT NULL)
-        AND (${table.maxUses} IS NULL OR (${table.maxUses} BETWEEN 1 AND 1000 AND ${table.acceptedAt} IS NULL))
-        AND ${table.useCount} BETWEEN 0 AND coalesce(${table.maxUses}, 0)
+        AND (${table.inviteeUsername} IS NOT NULL OR ${table.acceptedAt} IS NULL)
+        AND (${table.maxUses} IS NULL OR ${table.maxUses} BETWEEN 1 AND 1000)
+        AND ${table.useCount} >= 0 AND (${table.maxUses} IS NULL OR ${table.useCount} <= ${table.maxUses})
         AND (${table.stoppedAt} IS NULL) = (${table.stoppedByUserId} IS NULL)
-        AND (${table.stoppedAt} IS NULL OR ${table.maxUses} IS NOT NULL)`,
+        AND (${table.note} IS NULL OR length(${table.note}) BETWEEN 1 AND 100)`,
     ),
   ],
 );

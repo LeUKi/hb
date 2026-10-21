@@ -194,7 +194,7 @@ test("🐟额通用链接：管理员生成、自己打开看到提示，停用�
   await own.goto(new URL(url).pathname);
   await waitForBoot(own);
   await expect(
-    own.getByText("这是你生成的通用链接，发给要邀请的人就好。"),
+    own.getByText("这是以你的名义生成的通用链接，发给要邀请的人就好。"),
   ).toBeVisible();
   await own.close();
 
@@ -214,6 +214,81 @@ test("🐟额通用链接：管理员生成、自己打开看到提示，停用�
   await waitForBoot(page);
   await expect(page.getByText("这条邀请链接已经停用。")).toBeVisible();
   await expect(page.getByRole("button", { name: "接受邀请" })).toHaveCount(0);
+});
+
+test("🐟额通用链接：永久、不限人数、以别人的名义带附言，邀请页写着他和附言", async ({
+  browser,
+}) => {
+  // The one it is in the name of has been here.
+  const namedContext = await browser.newContext({ baseURL: origin });
+  await localOnly(namedContext);
+  const named = await namedContext.newPage();
+  await signIn(named, "recipient2");
+
+  const adminContext = await browser.newContext({ baseURL: origin });
+  await localOnly(adminContext);
+  const admin = await adminContext.newPage();
+  await signIn(admin, "author");
+  await admin.goto("/admin/balance");
+  await waitForBoot(admin);
+  await admin.getByRole("button", { name: "邀请", exact: true }).click();
+  const dialog = admin.getByRole("dialog", { name: "邀请" });
+  await dialog.getByRole("button", { name: "通用链接", exact: true }).click();
+  await dialog.getByRole("button", { name: "永久", exact: true }).click();
+  await dialog.getByLabel("以谁的名义").fill("nobody-was-here");
+  await expect(dialog.getByText("这个人还没来过本站")).toBeVisible();
+  await dialog.getByLabel("以谁的名义").fill("@FullAppSecond");
+  await expect(
+    dialog.locator("p").filter({ hasText: "@FullAppSecond" }),
+  ).toBeVisible();
+  await dialog.getByLabel("附言").fill("example.com 的用户\n在这里开通");
+  await dialog.getByRole("button", { name: "生成链接" }).click();
+  await expect(
+    dialog.getByText(
+      "通用链接（不限人数，永久有效，以 @FullAppSecond 的名义）：",
+    ),
+  ).toBeVisible();
+  const url = await dialog
+    .getByRole("textbox", { name: "通用链接" })
+    .inputValue();
+  const newest = dialog.getByRole("listitem").first();
+  await expect(newest).toContainText("已用 0 人");
+  await expect(newest).toContainText("邀请人 @FullAppSecond");
+  await expect(newest).toContainText("永久有效");
+  await expect(newest).toContainText("附言：example.com 的用户 在这里开通");
+
+  // In his name: his to hand out.
+  await named.goto(new URL(url).pathname);
+  await waitForBoot(named);
+  await expect(
+    named.getByRole("heading", { name: /@FullAppSecond）邀请你开通🐟额 PLUS/ }),
+  ).toBeVisible();
+  await expect(
+    named.getByText(/example\.com 的用户\s*在这里开通/),
+  ).toBeVisible();
+  await expect(
+    named.getByText("这是以你的名义生成的通用链接，发给要邀请的人就好。"),
+  ).toBeVisible();
+
+  // Anyone else may take it, the 附言 under the title.
+  const context = await browser.newContext({ baseURL: origin });
+  await localOnly(context);
+  const page = await context.newPage();
+  await signIn(page, "latecomer");
+  await page.goto(new URL(url).pathname);
+  await waitForBoot(page);
+  await expect(
+    page.getByText(/example\.com 的用户\s*在这里开通/),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "接受邀请" })).toBeVisible();
+
+  // Left stopped, so no later test finds it open.
+  await newest.getByRole("button", { name: "停用" }).click();
+  await admin
+    .getByRole("dialog", { name: "停用这条链接？" })
+    .getByRole("button", { name: "停用" })
+    .click();
+  await expect(newest).toContainText("已停用");
 });
 
 test("站长：🐟额页补加和扣回自己的🐟，扣回不超过可用；换 Client ID 时提醒先扣回", async ({
