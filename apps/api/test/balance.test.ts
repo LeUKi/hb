@@ -1073,6 +1073,7 @@ describe("邀请", () => {
     expect(guest.json).toMatchObject({
       invite: { status: "pending", inviter: { username: tester.username } },
       topupFeePercent: 12,
+      hongbaoEnabled: false,
       viewer: null,
     });
     expect(

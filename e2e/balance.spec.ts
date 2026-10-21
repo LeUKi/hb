@@ -342,6 +342,7 @@ test.describe("🐟额", () => {
             expiresAt: Date.now() + 3_600_000,
           },
           topupFeePercent: 12,
+          hongbaoEnabled: true,
           features: plusFeatures,
           viewer: {
             username: matches ? "viewer" : "someone",
@@ -362,6 +363,9 @@ test.describe("🐟额", () => {
       page.getByRole("heading", {
         name: /Lafish（@lafish）邀请你开通🐟额 PLUS/,
       }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("🐟额是由本站托管的 LDC，1 🐟 = 1 LDC，可用于发红包。"),
     ).toBeVisible();
     // What PLUS adds, in plain words for one holding an invitation.
     await expect(page.getByText("接入网站或程序")).toBeVisible();
@@ -422,6 +426,10 @@ test.describe("🐟额", () => {
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "接受邀请" })).toBeVisible();
     await expect(page.getByText(/这个邀请是给/)).toHaveCount(0);
+    // 🐟额红包 off: nothing said about sending 红包.
+    await expect(
+      page.getByText("🐟额是由本站托管的 LDC，1 🐟 = 1 LDC。", { exact: true }),
+    ).toBeVisible();
 
     status = "used_up";
     await page.reload();

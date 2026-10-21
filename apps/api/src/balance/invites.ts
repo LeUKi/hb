@@ -257,6 +257,8 @@ export async function readInvite(
       expiresAt: row.expires_at,
     },
     topupFeePercent: settings.topupFeePercent,
+    /** Whether 🐟额 may send 红包 now: the first line says so. */
+    hongbaoEnabled: settings.hongbaoEnabled,
     /** What 🐟额 PLUS adds: the holder of an invitation reads it plainly. */
     features: plusFeatures(),
     viewer: viewer

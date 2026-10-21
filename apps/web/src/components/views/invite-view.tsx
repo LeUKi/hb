@@ -81,7 +81,11 @@ export function InviteView({ token }: { token: string }) {
               </h1>
             </div>
             <div className="grid gap-2 text-sm text-ink-2">
-              <p>🐟额是由本站托管的 LDC，1 🐟 = 1 LDC。</p>
+              <p>
+                {page.hongbaoEnabled
+                  ? "🐟额是由本站托管的 LDC，1 🐟 = 1 LDC，可用于发红包。"
+                  : "🐟额是由本站托管的 LDC，1 🐟 = 1 LDC。"}
+              </p>
               {/* What PLUS adds, word for word as its bubble on 🐟额. */}
               <div className="grid gap-1">
                 <p>开通后多出：</p>
