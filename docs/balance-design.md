@@ -818,7 +818,7 @@ LDC 是社区积分，不是钱，所以这个功能不用钱的说法。
 - **领到的人**：`userId`、`username`、`amount`、`claimedAt`，按领取先后，带 `cursor`，可以用 `since` 只拉新的；限时开奖开奖后才有，是中奖的人。网站靠轮询它知道谁领了，本站不推送。**报名的人**：`userId`、`username`、`registeredAt`。
 - **可用**接口的 `apiKey` 多一项 `unclaimed`：这个密钥发的红包里还没领走的合计。
 - **新的错误**：403 `HONGBAO_NOT_ALLOWED`“开通🐟额 PLUS 才能用接口发红包。”；403 `HONGBAO_DISABLED`“🐟额红包暂时关闭”（网站设置的开关）；503 `HONGBAO_PAUSED`“发红包暂停中，请稍后再试”（发布时暂停了开放许可，带 `Retry-After`）。可用不够、超过每日上限、字段不对，同转账的错误码。
-- **频率**：每个密钥每分钟最多发 10 个（建一个要加密口令、预先排好最多 1000 份，比一笔转账重得多），计数不写库，数红包表里这个密钥最近 60 秒发的。查询类和第 16 节的合在一起算。
+- **频率**：发红包不另限频率；查询类和第 16 节的合在一起算。
 - **数据**：红包表加发它的密钥和红包单号，两者一起唯一（网页发的为空）。
 - **说明**：`/help/api` 和 OpenAPI 加这些接口和例子（发一个、轮询领到的人）；密钥详情里加用它发了几个红包、锁定了多少。
 
@@ -858,9 +858,10 @@ LDC 是社区积分，不是钱，所以这个功能不用钱的说法。
 |---|---|
 | `POST /api/open/balance/hongbao-links` | 建链接：`prefill`、`returnUrl`、`origin`、`expiresIn`（秒），都选填；返回 `id`、`url`、`expiresAt`、`ignored` |
 | `GET /api/open/balance/hongbao-links/:id` | 查链接：`status`（`pending` / `created` / `expired`），发了的带 `hongbao`（同第 17 节：链接、分享文案、状态、领了多少） |
-| `GET /api/open/balance/hongbao/:id` | 红包状态：同第 17 节的 `hongbao`，给最新的；只能查经这个密钥发的，其他的 404 `HONGBAO_NOT_FOUND` |
+| `GET /api/open/balance/hongbao/:id` | 红包状态：同第 17 节的 `hongbao`，给最新的 |
+| `GET /api/open/balance/hongbao/:id/claims` | 领到的人：同第 17 节，网站靠它知道具体谁领了 |
 
-链接用掉后，网站拿查链接给的红包 `id` 查红包状态。
+链接用掉后，网站拿查链接给的红包 `id` 查红包状态和领到的人；只能查经这个密钥发的，其他的 404 `HONGBAO_NOT_FOUND`。
 
 **技术**
 
@@ -872,7 +873,7 @@ LDC 是社区积分，不是钱，所以这个功能不用钱的说法。
 
 - 第 17 节的两条：已经给出去的密钥上线后自动能发红包，要不要事先提示主人；要不要限制一个密钥同时进行的红包个数。
 - 要不要让密钥提前作废一个还没用的链接。
-- 要不要加第 17 节的领到的人、报名的人和提前结束。
+- 要不要加第 17 节的报名的人和提前结束。
 
 ## 附录：Credit 行为出处（源码 `8e6d483`）
 
