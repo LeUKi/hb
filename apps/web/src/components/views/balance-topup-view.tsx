@@ -34,8 +34,8 @@ function topupSteps(topup: BalanceTopup): PaymentStep[] {
       title: "已到账",
       detail:
         topup.creditedBy === "admin"
-          ? "站长在 Credit 核对后确认到账"
-          : "Credit 确认付款成功",
+          ? "站长在 Credit 站核对后确认到账"
+          : "Credit 站确认付款成功",
       tone: "done",
     });
   else if (topup.status === "unpaid")
@@ -47,7 +47,7 @@ function topupSteps(topup: BalanceTopup): PaymentStep[] {
   else
     steps.push({
       at: topup.lastCheckedAt ?? topup.createdAt,
-      title: "等你在 Credit 确认",
+      title: "等你在 Credit 站确认",
       tone: "now",
     });
   return steps;
@@ -83,7 +83,7 @@ function Topup({ user, id }: { user: SessionUser; id: string }) {
     try {
       const result = await pay.mutateAsync(id);
       if (result.cashierUrl) goToCashier(result.cashierUrl);
-      else setError("Credit 暂时没有回应，请稍后再试。");
+      else setError("Credit 站暂时没有回应，请稍后再试。");
     } catch (failure) {
       setError(
         failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
@@ -113,10 +113,10 @@ function Topup({ user, id }: { user: SessionUser; id: string }) {
                 {topup.status === "credited"
                   ? `已记进你的🐟额，${clockSeconds(topup.creditedAt ?? topup.createdAt)} 到账。`
                   : topup.status === "unpaid"
-                    ? "没有查到这笔转入。如果已经在 Credit 确认过，请点重新查询。"
+                    ? "没有查到这笔转入。如果已经在 Credit 站确认过，请点重新查询。"
                     : query.isFetching
-                      ? "正在向 Credit 确认…"
-                      : "等你在 Credit 确认。"}
+                      ? "正在向 Credit 站确认…"
+                      : "等你在 Credit 站确认。"}
               </MorphLabel>
             </p>
             <Reveal show={payable || topup.status === "unpaid"}>
@@ -128,7 +128,7 @@ function Topup({ user, id }: { user: SessionUser; id: string }) {
                     aria-disabled={pay.isPending || undefined}
                   >
                     <ExternalLink />
-                    {pay.isPending ? "正在打开…" : "去 Credit 确认"}
+                    {pay.isPending ? "正在打开…" : "去 Credit 站确认"}
                   </Button>
                 )}
                 {topup.status === "unpaid" && (

@@ -1225,7 +1225,7 @@ export const balanceTopups = sqliteTable(
     requestId: text("request_id").notNull(),
     requestDigest: text("request_digest").notNull(),
     createdAt: integer("created_at").notNull(),
-    /** First time Credit gave back its cashier: “去 Credit 确认” lasts 10 minutes from here. */
+    /** First time Credit gave back its cashier: “去 Credit 站确认” lasts 10 minutes from here. */
     submittedAt: integer("submitted_at"),
     creditedAt: integer("credited_at"),
     creditedBy: text("credited_by", { enum: ["auto", "admin"] }),
@@ -1260,6 +1260,78 @@ export const balanceTopups = sqliteTable(
     check(
       "balance_topups_credited_valid",
       sql`(${table.status} = 'credited') = (${table.creditedAt} IS NOT NULL AND ${table.creditedBy} IN ('auto','admin'))`,
+    ),
+  ],
+);
+
+/**
+ * 转账 through 对方的收银台 (docs/balance-design.md §16): an order made with
+ * the recipient's LDC 商户, paid at Credit 站 from the payer's own Credit
+ * account. Nothing passes 🐟额; this only says how the order stands.
+ */
+export const balanceCheckouts = sqliteTable(
+  "balance_checkouts",
+  {
+    id: text("id").primaryKey(),
+    fromUserId: text("from_user_id")
+      .notNull()
+      .references(() => users.id),
+    toUserId: text("to_user_id")
+      .notNull()
+      .references(() => users.id),
+    /** The recipient as named when it was made. */
+    toUsername: text("to_username").notNull(),
+    toLinuxDoId: text("to_linux_do_id").notNull(),
+    merchantId: text("merchant_id")
+      .notNull()
+      .references(() => merchants.id),
+    clientId: text("client_id").notNull(),
+    credentialVersion: integer("credential_version").notNull(),
+    businessNo: text("business_no").notNull(),
+    amountMinor: integer("amount_minor").notNull(),
+    remark: text("remark"),
+    orderName: text("order_name").notNull(),
+    returnUrl: text("return_url").notNull(),
+    status: text("status", { enum: ["pending", "unpaid", "paid"] })
+      .notNull()
+      .default("pending"),
+    flag: text("flag", { enum: ["mismatch", "reversed"] }),
+    externalOrderId: text("external_order_id"),
+    requestId: text("request_id").notNull(),
+    requestDigest: text("request_digest").notNull(),
+    createdAt: integer("created_at").notNull(),
+    /** First time Credit gave back its cashier: “去 Credit 站确认” lasts 10 minutes from here. */
+    submittedAt: integer("submitted_at"),
+    paidAt: integer("paid_at"),
+    lastCheckedAt: integer("last_checked_at"),
+    lastCheckResult: text("last_check_result"),
+    /** Claimed before each real check, so one is checked at most every 3 s. */
+    checkClaimedAt: integer("check_claimed_at").notNull().default(0),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("balance_checkouts_business_no_unique").on(table.businessNo),
+    uniqueIndex("balance_checkouts_request_unique").on(
+      table.fromUserId,
+      table.requestId,
+    ),
+    index("balance_checkouts_from_time_idx").on(
+      table.fromUserId,
+      table.createdAt,
+      table.id,
+    ),
+    index("balance_checkouts_to_status_time_idx").on(
+      table.toUserId,
+      table.status,
+      table.createdAt,
+      table.id,
+    ),
+    check(
+      "balance_checkouts_valid",
+      sql`${table.amountMinor} BETWEEN 100 AND 200000 AND ${table.fromUserId} <> ${table.toUserId}
+        AND ${table.status} IN ('pending','unpaid','paid') AND (${table.flag} IS NULL OR ${table.flag} IN ('mismatch','reversed'))
+        AND (${table.status} = 'paid') = (${table.paidAt} IS NOT NULL)
+        AND (${table.remark} IS NULL OR length(${table.remark}) BETWEEN 1 AND 64)`,
     ),
   ],
 );

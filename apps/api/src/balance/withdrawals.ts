@@ -226,7 +226,7 @@ export async function createWithdrawal(
     balanceError(
       403,
       "BALANCE_SELF",
-      "Credit 不能分发给自己，站长的账号不能转出。",
+      "Credit 站不能分发给自己，站长的账号不能转出。",
     );
   const recipient = await env.DB.prepare(
     "SELECT external_id,username FROM users WHERE id=? AND provider='linux_do'",

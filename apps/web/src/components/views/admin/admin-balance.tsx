@@ -73,8 +73,8 @@ const checkResultText: Record<string, string> = {
   paid: "已付款",
   unpaid: "还没付款",
   not_found: "查不到订单",
-  credentials: "Credit 拒绝了平台应用的凭证",
-  unavailable: "没连上 Credit",
+  credentials: "Credit 站拒绝了平台应用的凭证",
+  unavailable: "没连上 Credit 站",
   mismatch: "订单信息对不上",
 };
 const checkTriggerText: Record<string, string> = {
@@ -100,11 +100,11 @@ function adminWaitText(wait: WithdrawalWait, resumeAt: number | null) {
     case "quota":
       return `平台账户今天的额度用完了，${resumeAt ? clockLabel(resumeAt) : "0 点"}后自动接着发。`;
     case "funds":
-      return "平台账户里可用的 LDC 不够（转入的 LDC 要先过 Credit 的结算）。在 Credit 补足后自动接着发。";
+      return "平台账户里可用的 LDC 不够（转入的 LDC 要先过 Credit 站的结算）。在 Credit 站补足后自动接着发。";
     case "credentials":
-      return "Credit 拒绝了平台应用的凭证。去网站设置重新检查，或者换密钥；通过后自动接着发。";
+      return "Credit 站拒绝了平台应用的凭证。去网站设置重新检查，或者换密钥；通过后自动接着发。";
     case "attention":
-      return "Credit 的回复和这笔转出对不上（数量、应用或订单号）。去 Credit 后台核对；这期间 🐟 一直锁着，不会重发。";
+      return "Credit 站的回复和这笔转出对不上（数量、应用或订单号）。去 Credit 站后台核对；这期间 🐟 一直锁着，不会重发。";
     case "checking":
       return "结果不明：一直在查单，查到之前不会重发。";
     default:
@@ -113,10 +113,10 @@ function adminWaitText(wait: WithdrawalWait, resumeAt: number | null) {
 }
 
 const failureText = {
-  recipient: "Credit 里找不到这个账户（没登录过 Credit，或者改过用户名）",
+  recipient: "Credit 站里找不到这个账户（没登录过 Credit 站，或者改过用户名）",
   self_payment: "不能分发给平台应用自己的账户",
-  configuration: "Credit 说支付配置不存在",
-  validation: "Credit 没有接受这个数量",
+  configuration: "Credit 站说支付配置不存在",
+  validation: "Credit 站没有接受这个数量",
 } as const;
 
 const attemptText = {
@@ -256,7 +256,7 @@ function WithdrawalDetail({ id }: { id: string }) {
                   ? [
                       {
                         label: "未发出",
-                        value: `${clockSeconds(withdrawal.failedAt)}，${withdrawal.failure ? failureText[withdrawal.failure] : "Credit 拒绝了"}；🐟 已退回`,
+                        value: `${clockSeconds(withdrawal.failedAt)}，${withdrawal.failure ? failureText[withdrawal.failure] : "Credit 站拒绝了"}；🐟 已退回`,
                       },
                     ]
                   : []),
@@ -383,8 +383,8 @@ function TopupDetail({ item }: { item: AdminTopupItem }) {
               title={flagText[data.topup.flag]}
             >
               {data.topup.flag === "reversed"
-                ? "到账后再查，Credit 不再说已付款：可能在争议中、你拒绝过争议，或者已经退款。去 Credit 后台核对；退了款再用“调整”扣回。"
-                : "Credit 说已付款，但数量、应用或订单号对不上，没有到账。去 Credit 后台核对。"}
+                ? "到账后再查，Credit 站不再说已付款：可能在争议中、你拒绝过争议，或者已经退款。去 Credit 站后台核对；退了款再用“调整”扣回。"
+                : "Credit 站说已付款，但数量、应用或订单号对不上，没有到账。去 Credit 站后台核对。"}
             </Callout>
           )}
           <DetailRows
@@ -507,7 +507,7 @@ function TopupDetail({ item }: { item: AdminTopupItem }) {
             }}
             busy={busy === "confirm"}
             title="确认到账"
-            text={`在 Credit 后台核对过这笔付款后，把 ${fishText(data.topup.creditMinor)} 🐟 记进 ${data.user.displayName} 的🐟额。和自动到账走同一条路，不会重复。`}
+            text={`在 Credit 站后台核对过这笔付款后，把 ${fishText(data.topup.creditMinor)} 🐟 记进 ${data.user.displayName} 的🐟额。和自动到账走同一条路，不会重复。`}
             error={error}
             actions={
               <>
@@ -534,7 +534,7 @@ function TopupDetail({ item }: { item: AdminTopupItem }) {
                 id={reasonId}
                 value={reason}
                 maxLength={200}
-                placeholder="例如：Credit 后台核对过，付款成功"
+                placeholder="例如：Credit 站后台核对过，付款成功"
                 onChange={(event) => setReason(event.target.value)}
               />
             </Field>
@@ -1637,55 +1637,61 @@ export function UserBalance({ userId }: { userId: string }) {
             />
             {data.items.length > 0 && (
               <ul className="grid gap-1 text-sm">
-                {data.items.slice(0, 5).map((record) => (
-                  <li
-                    key={
-                      record.type === "topup"
-                        ? record.topup.id
-                        : record.type === "withdrawal"
-                          ? record.withdrawal.id
-                          : record.type === "hongbao"
-                            ? record.hongbao.id
-                            : record.type === "transfer"
-                              ? record.transfer.id
-                              : record.adjustment.id
-                    }
-                    className="flex items-baseline justify-between gap-3"
-                  >
-                    <span className="min-w-0 truncate text-ink-2">
-                      {record.type === "topup"
-                        ? `转入 · ${topupStatusText[record.topup.status]}`
-                        : record.type === "withdrawal"
-                          ? `转出 · ${withdrawalStatusText[record.withdrawal.status]}`
-                          : record.type === "hongbao"
-                            ? `${hongbaoWords[record.hongbao.kind]} · ${record.hongbao.title}`
-                            : record.type === "transfer"
-                              ? record.transfer.direction === "out"
-                                ? `转给 @${record.transfer.counterpart.username}${record.transfer.destination === "credit" ? "（Credit）" : ""}`
-                                : `@${record.transfer.counterpart.username} 转来`
-                              : `${record.adjustment.direction === "add" ? "补加" : "扣回"} · ${record.adjustment.reason}`}
-                    </span>
-                    <Fish
-                      signed
-                      className="shrink-0 text-ink"
-                      minor={
+                {data.items
+                  // 🐟额's own: a 转账 to 对方的收银台 never passes it.
+                  .flatMap((record) =>
+                    record.type === "checkout" ? [] : [record],
+                  )
+                  .slice(0, 5)
+                  .map((record) => (
+                    <li
+                      key={
                         record.type === "topup"
-                          ? record.topup.creditMinor
+                          ? record.topup.id
                           : record.type === "withdrawal"
-                            ? -record.withdrawal.debitMinor
+                            ? record.withdrawal.id
                             : record.type === "hongbao"
-                              ? record.hongbao.amountMinor
+                              ? record.hongbao.id
+                              : record.type === "transfer"
+                                ? record.transfer.id
+                                : record.adjustment.id
+                      }
+                      className="flex items-baseline justify-between gap-3"
+                    >
+                      <span className="min-w-0 truncate text-ink-2">
+                        {record.type === "topup"
+                          ? `转入 · ${topupStatusText[record.topup.status]}`
+                          : record.type === "withdrawal"
+                            ? `转出 · ${withdrawalStatusText[record.withdrawal.status]}`
+                            : record.type === "hongbao"
+                              ? `${hongbaoWords[record.hongbao.kind]} · ${record.hongbao.title}`
                               : record.type === "transfer"
                                 ? record.transfer.direction === "out"
-                                  ? -record.transfer.amountMinor
-                                  : record.transfer.amountMinor
-                                : record.adjustment.direction === "add"
-                                  ? record.adjustment.amountMinor
-                                  : -record.adjustment.amountMinor
-                      }
-                    />
-                  </li>
-                ))}
+                                  ? `转给 @${record.transfer.counterpart.username}${record.transfer.destination === "credit" ? "（Credit）" : ""}`
+                                  : `@${record.transfer.counterpart.username} 转来`
+                                : `${record.adjustment.direction === "add" ? "补加" : "扣回"} · ${record.adjustment.reason}`}
+                      </span>
+                      <Fish
+                        signed
+                        className="shrink-0 text-ink"
+                        minor={
+                          record.type === "topup"
+                            ? record.topup.creditMinor
+                            : record.type === "withdrawal"
+                              ? -record.withdrawal.debitMinor
+                              : record.type === "hongbao"
+                                ? record.hongbao.amountMinor
+                                : record.type === "transfer"
+                                  ? record.transfer.direction === "out"
+                                    ? -record.transfer.amountMinor
+                                    : record.transfer.amountMinor
+                                  : record.adjustment.direction === "add"
+                                    ? record.adjustment.amountMinor
+                                    : -record.adjustment.amountMinor
+                        }
+                      />
+                    </li>
+                  ))}
               </ul>
             )}
             {data.apiKeys.length > 0 && (
@@ -1829,7 +1835,7 @@ export function UserBalance({ userId }: { userId: string }) {
             id={ids.reason}
             maxLength={200}
             value={reason}
-            placeholder="例如：Credit 退款后扣回"
+            placeholder="例如：Credit 站退款后扣回"
             onChange={(event) => setReason(event.target.value)}
           />
         </Field>

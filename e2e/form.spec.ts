@@ -198,12 +198,12 @@ test.describe("发红包", () => {
       .click();
     await expect(
       page.getByText(
-        "填的是每份发出的金额。领取者到账时，Credit 会按你的 Credit 等级扣分发费（4%–15%）。",
+        "填的是每份发出的金额。领取者到账时，Credit 站会按你在 Credit 站的等级扣分发费（4%–15%）。",
         { exact: false },
       ),
     ).toBeVisible();
     const overflow = page.getByText(
-      "Credit 每天最多能发 800–2000 LDC（按你的 Credit 等级），超出的部分可能顺延到第二天发放。",
+      "Credit 站每天最多能发 800–2000 LDC（按你在 Credit 站的等级），超出的部分可能顺延到第二天发放。",
     );
     await page.locator("#hb-random-total").fill("800");
     await page.locator("#hb-random-count").fill("3");
@@ -375,7 +375,7 @@ test.describe("发红包", () => {
     await expect(merchant).toBeDisabled();
     await expect(page.getByRole("link", { name: "去配置商户" })).toBeVisible();
     await expect(
-      page.getByText(/Credit 会按你的 Credit 等级扣分发费/),
+      page.getByText(/Credit 站会按你在 Credit 站的等级扣分发费/),
     ).toHaveCount(0);
     await page.locator("#hb-random-total").fill("20");
     await page.locator("#hb-random-count").fill("3");

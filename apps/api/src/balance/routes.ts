@@ -3,6 +3,7 @@ import {
   amountToMinor,
   BALANCE_LIMITS,
   createApiKeySchema,
+  createCheckoutSchema,
   createInviteSchema,
   createTopupSchema,
   createTransferSchema,
@@ -29,6 +30,16 @@ import {
   revokeOwnApiKey,
 } from "./api-keys";
 import {
+  checkCheckout,
+  checkOpenCheckouts,
+  checkoutMerchant,
+  checkoutView,
+  createCheckout,
+  listReceivedCheckouts,
+  ownedCheckout,
+  payCheckout,
+} from "./checkouts";
+import {
   acceptInvite,
   createInvite,
   listMyInvites,
@@ -38,6 +49,7 @@ import {
 import {
   adjustOwnBalance,
   type BalanceRecordFilter,
+  decodeRecordCursor,
   listRecords,
   readAccount,
 } from "./ledger";
@@ -201,7 +213,12 @@ export const balanceRoutes = new Hono<ApiContext>()
   .post("/me/balance/topups/check-open", async (c) => {
     const session = await requireProtectedMutation(c);
     await requireBalanceEntry(c.env, session.user.id, session.user.isAdmin);
-    return c.json({ credited: await checkOpenTopups(c.env, session.user.id) });
+    // 转入 not yet arrived, and 转账 to 对方的收银台 not yet paid.
+    const [credited, paid] = await Promise.all([
+      checkOpenTopups(c.env, session.user.id),
+      checkOpenCheckouts(c.env, session.user.id, "payer"),
+    ]);
+    return c.json({ credited, paid });
   })
   .get("/me/balance/topups/:id", async (c) => {
     const session = await requireAuth(c);
@@ -303,6 +320,11 @@ export const balanceRoutes = new Hono<ApiContext>()
       findRecipientByUsername(c.env, parsed.data),
       readPlatformAppRow(c.env),
     ]);
+    // 对方的收银台: whether their LDC 商户 can take a payment now.
+    const checkout =
+      found && found.id !== session.user.id
+        ? (await checkoutMerchant(c.env, found.id)).block
+        : null;
     return c.json({
       user: found
         ? {
@@ -315,6 +337,8 @@ export const balanceRoutes = new Hono<ApiContext>()
       self: found?.id === session.user.id,
       /** The 站长: their Credit account cannot take the platform app's. */
       owner: found !== null && found.id === platform?.author_id,
+      /** Why 对方的收银台 cannot be chosen; null when it can. */
+      checkoutBlock: found ? checkout : null,
     });
   })
   .post(
@@ -356,6 +380,73 @@ export const balanceRoutes = new Hono<ApiContext>()
       return c.json({ transfer: transfer ?? null });
     },
   )
+  // 转账 through 对方的收银台 (§16): ordered here, paid at Credit 站.
+  .post(
+    "/me/balance/checkouts",
+    body,
+    validator("json", (value) => {
+      const parsed = createCheckoutSchema.safeParse(value);
+      if (!parsed.success)
+        throw new ActivityError(
+          400,
+          "INVALID_CHECKOUT",
+          parsed.error.issues[0]?.message ?? "请检查付款内容",
+        );
+      return parsed.data;
+    }),
+    async (c) => {
+      const session = await requireProtectedMutation(c);
+      return c.json(
+        await createCheckout(
+          c.env,
+          { id: session.user.id, username: session.user.username },
+          c.req.valid("json"),
+          requireAppOrigin(c.env),
+        ),
+      );
+    },
+  )
+  // 收到的付款, on the recipient's LDC 商户 page.
+  .get("/me/balance/checkouts/received", async (c) => {
+    const session = await requireAuth(c);
+    return c.json(
+      await listReceivedCheckouts(
+        c.env,
+        session.user.id,
+        decodeRecordCursor(c.req.query("cursor")),
+      ),
+    );
+  })
+  .post("/me/balance/checkouts/received/check-open", async (c) => {
+    const session = await requireProtectedMutation(c);
+    return c.json({
+      paid: await checkOpenCheckouts(c.env, session.user.id, "recipient"),
+    });
+  })
+  .get("/me/balance/checkouts/:id", async (c) => {
+    const session = await requireAuth(c);
+    return c.json({
+      checkout: checkoutView(
+        await ownedCheckout(c.env, session.user.id, c.req.param("id")),
+        session.user.id,
+      ),
+    });
+  })
+  .post("/me/balance/checkouts/:id/check", async (c) => {
+    const session = await requireProtectedMutation(c);
+    const row = await ownedCheckout(c.env, session.user.id, c.req.param("id"));
+    if (row.status !== "paid") await checkCheckout(c.env, row, "user");
+    return c.json({
+      checkout: checkoutView(
+        await ownedCheckout(c.env, session.user.id, row.id),
+        session.user.id,
+      ),
+    });
+  })
+  .post("/me/balance/checkouts/:id/pay", async (c) => {
+    const session = await requireProtectedMutation(c);
+    return c.json(await payCheckout(c.env, session.user.id, c.req.param("id")));
+  })
   .get("/me/balance/transfers/:id", async (c) => {
     const session = await requireAuth(c);
     return c.json({

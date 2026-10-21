@@ -35,6 +35,7 @@ import { type SessionUser, useSessionUser } from "../../lib/session";
 import { ApiKeysSection } from "../balance/api-keys";
 import { PlusBadge, PlusName, PlusTag } from "../balance/plus";
 import {
+  CheckoutRow,
   TransferDetailDialog,
   TransferDialog,
   TransferRow,
@@ -454,7 +455,7 @@ function Balance({ user }: { user: SessionUser }) {
           <Reveal show={summary.openTopups > 0}>
             <Callout tone="warning">
               有 {summary.openTopups} 笔转入还没到账。在 Credit
-              确认过的，打开它就会去 Credit 查。
+              确认过的，打开它就会去 Credit 站查。
             </Callout>
           </Reveal>
           {/* Above 明细: the list loads on as it is scrolled, never ending. */}
@@ -513,6 +514,11 @@ function Balance({ user }: { user: SessionUser }) {
                           key={record.transfer.id}
                           transfer={record.transfer}
                           onOpen={setTransferId}
+                        />
+                      ) : record.type === "checkout" ? (
+                        <CheckoutRow
+                          key={record.checkout.id}
+                          checkout={record.checkout}
                         />
                       ) : (
                         <AdjustmentRow
@@ -582,7 +588,7 @@ function typedMinor(value: string) {
 
 /**
  * 转入: two boxes side by side, what Credit takes and what arrives; either
- * one works out the other (docs/balance-design.md §3.1). 去 Credit 确认
+ * one works out the other (docs/balance-design.md §3.1). 去 Credit 站确认
  * opens Credit's cashier in this tab; Credit brings it back to the 转入.
  */
 function TopupDialog({
@@ -665,7 +671,7 @@ function TopupDialog({
           <PlusBadge />
         </span>
       }
-      text="在 Credit 收银台确认，需要登录 Credit 并输入安全密码。流转费由 Credit 收取，本站不另外收费。"
+      text="在 Credit 站收银台确认，需要登录 Credit 站并输入安全密码。流转费由 Credit 站收取，本站不另外收费。"
       error={error}
       actions={
         <>
@@ -678,7 +684,7 @@ function TopupDialog({
             aria-disabled={!inRange || busy || undefined}
             data-disabled={!inRange || undefined}
           >
-            {busy ? "正在下单…" : "去 Credit 确认"}
+            {busy ? "正在下单…" : "去 Credit 站确认"}
           </Button>
         </>
       }
@@ -717,7 +723,8 @@ function TopupDialog({
       </p>
       <Reveal show={inRange && quote.debitMinor > settings.topupDailyHintMinor}>
         <p className="text-xs text-warning">
-          Credit 每天最多能花出 800–2000 LDC（按你的 Credit 等级），超出会失败。
+          Credit 站每天最多能花出 800–2000 LDC（按你在 Credit
+          站的等级），超出会失败。
         </p>
       </Reveal>
       {/* Only once an amount is out of bounds, and which bound. */}
@@ -804,7 +811,7 @@ function WithdrawDialog({
       }}
       busy={busy}
       title="转出🐟额"
-      text={`发到你的 Credit 账户 @${user.username}，Credit 可能会收取分发费。`}
+      text={`发到你的 Credit 账户 @${user.username}，Credit 站可能会收取分发费。`}
       error={error}
       actions={
         <>

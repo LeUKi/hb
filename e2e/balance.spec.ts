@@ -373,7 +373,7 @@ test.describe("🐟额", () => {
     // What PLUS adds, in plain words for one holding an invitation.
     await expect(page.getByText("接入网站或程序")).toBeVisible();
     await expect(
-      page.getByText(/流转费（12%）全部由 Credit 收取，本站没有任何收益/),
+      page.getByText(/流转费（12%）全部由 Credit 站收取，本站没有任何收益/),
     ).toBeVisible();
     await expect(
       page.getByText(
@@ -484,18 +484,18 @@ test.describe("🐟额", () => {
     await expect(dialog.getByText("一笔转入最多 2000.00 LDC。")).toBeVisible();
     await expect(dialog.getByText(/每天最多能花出/)).toHaveCount(0);
     await expect(
-      dialog.getByRole("button", { name: "去 Credit 确认" }),
+      dialog.getByRole("button", { name: "去 Credit 站确认" }),
     ).toHaveAttribute("aria-disabled", "true");
     await dialog.getByLabel("到账").fill("0.5");
     await expect(dialog.getByText("一笔转入至少 1.00 LDC。")).toBeVisible();
 
     await dialog.getByLabel("到账").fill("100");
-    await dialog.getByRole("button", { name: "去 Credit 确认" }).click();
+    await dialog.getByRole("button", { name: "去 Credit 站确认" }).click();
     // No cashier this time: the 转入 itself, waiting to be confirmed.
     await expectPath(page, `/balance/${topupId}`);
-    await expect(page.getByText("等你在 Credit 确认。")).toBeVisible();
+    await expect(page.getByText("等你在 Credit 站确认。")).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "去 Credit 确认" }),
+      page.getByRole("button", { name: "去 Credit 站确认" }),
     ).toBeVisible();
     expect(sent).toEqual([
       expect.objectContaining({
@@ -515,7 +515,7 @@ test.describe("🐟额", () => {
     ).toBeVisible();
   });
 
-  test("转出：只填🐟，说明 Credit 可能收分发费，越界说是哪一头，申请后跟着它发出去", async ({
+  test("转出：只填🐟，说明 Credit 站可能收分发费，越界说是哪一头，申请后跟着它发出去", async ({
     page,
   }) => {
     await mockSession(page, { ...viewer, balance: true });
@@ -559,7 +559,7 @@ test.describe("🐟额", () => {
       dialog.getByText(`@${viewer.username}`, { exact: false }),
     ).toBeVisible();
     // One box, in 🐟: what arrives is Credit's to say, after its 分发费.
-    await expect(dialog.getByText(/Credit 可能会收取分发费/)).toBeVisible();
+    await expect(dialog.getByText(/Credit 站可能会收取分发费/)).toBeVisible();
     await expect(dialog.getByLabel("预计到账")).toHaveCount(0);
     await dialog.getByLabel("转出数量").fill("10");
     // 可用 is 12.34: more is refused, and so is less than 1.
@@ -700,6 +700,154 @@ test.describe("🐟额", () => {
         remark: "午饭钱",
       }),
     ]);
+  });
+
+  test("转账走对方的收银台：对方有可用的商户才能选，只填付多少，列出各等级实收，直接去 Credit 站确认", async ({
+    page,
+  }) => {
+    await mockSession(page, { ...viewer, balance: true, balancePlus: true });
+    await mockBalance(page, { withdraw: true });
+    const person = (username: string, userId: string) => ({
+      userId,
+      username,
+      displayName: `${username}昵称`,
+      avatarUrl: null,
+    });
+    await page.route("**/api/me/balance/recipients?**", (route) => {
+      const username = new URL(route.request().url()).searchParams.get(
+        "username",
+      );
+      return route.fulfill({
+        json:
+          username === "friend"
+            ? {
+                user: person("Friend", "12345"),
+                self: false,
+                owner: false,
+                checkoutBlock: null,
+              }
+            : {
+                user: person("Plain", "54321"),
+                self: false,
+                owner: false,
+                checkoutBlock: "no_merchant",
+              },
+      });
+    });
+    const sent: Record<string, unknown>[] = [];
+    await page.route("**/api/me/balance/checkouts", (route) => {
+      sent.push(route.request().postDataJSON() as Record<string, unknown>);
+      return route.fulfill({
+        json: {
+          checkout: {
+            id: "99999999-8888-4777-8666-555555555555",
+            direction: "out",
+            counterpart: person("Friend", "12345"),
+            amountMinor: 10_000,
+            remark: "饭钱",
+            status: "pending",
+            mismatch: false,
+            businessNo: "hb.lafi.sh_tr_0123456789abcdef0123456789abcdef",
+            externalOrderId: null,
+            createdAt: Date.now(),
+            payableUntil: Date.now() + 600_000,
+            paidAt: null,
+            lastCheckedAt: null,
+          },
+          cashierUrl: "https://credit.linux.do/paying?order_no=sealed-1",
+        },
+      });
+    });
+    await page.route("https://credit.linux.do/**", (route) =>
+      route.fulfill({
+        contentType: "text/html",
+        body: "<p>Credit 站收银台</p>",
+      }),
+    );
+    await openApp(page, "/balance");
+    await page
+      .locator("header")
+      .getByRole("button", { name: "转账", exact: true })
+      .click();
+    const dialog = page.getByRole("dialog", { name: "转账" });
+    const checkoutCard = dialog.getByRole("button", { name: /对方的收银台/ });
+    await dialog.getByLabel("收款人").fill("plain");
+    await expect(checkoutCard).toContainText("对方还没有配置 LDC 商户");
+    await expect(checkoutCard).toBeDisabled();
+    await dialog.getByLabel("收款人").fill("friend");
+    await expect(checkoutCard).toContainText(
+      "在 Credit 站付款，进对方的 LDC 商户",
+    );
+    await checkoutCard.click();
+    // No 到哪: it goes into their LDC 商户.
+    await expect(
+      dialog.getByRole("button", { name: /对方的🐟额/ }),
+    ).toHaveCount(0);
+    const amount = dialog.getByLabel("付多少");
+    await amount.fill("0.5");
+    await expect(dialog.getByText("一笔至少 1.00 LDC。")).toBeVisible();
+    await amount.fill("100");
+    for (const line of [
+      "Level 0（15%）85.00",
+      "Level 1（12%）88.00",
+      "Level 2（9%）91.00",
+      "Level 3（5%）95.00 LDC",
+    ])
+      await expect(dialog.getByText(line, { exact: true })).toBeVisible();
+    await expect(
+      dialog.getByText("本站看不到对方的等级，付之前先和对方确认好。"),
+    ).toBeVisible();
+    await dialog.getByLabel("备注").fill("饭钱");
+    await dialog.getByRole("button", { name: "去 Credit 站确认" }).click();
+    await page.waitForURL(/credit\.linux\.do\/paying/);
+    expect(sent).toEqual([
+      expect.objectContaining({
+        toUserId: "12345",
+        toUsername: "Friend",
+        amount: "100",
+        remark: "饭钱",
+      }),
+    ]);
+  });
+
+  test("收银台付款页：写着付给谁、付了多少和对方各等级的实收", async ({
+    page,
+  }) => {
+    await mockSession(page, { ...viewer, balance: true, balancePlus: true });
+    const id = "99999999-8888-4777-8666-555555555555";
+    await page.route(`**/api/me/balance/checkouts/${id}/check`, (route) =>
+      route.fulfill({
+        json: {
+          checkout: {
+            id,
+            direction: "out",
+            counterpart: {
+              userId: "12345",
+              username: "Friend",
+              displayName: "新朋友",
+              avatarUrl: null,
+            },
+            amountMinor: 10_000,
+            remark: "饭钱",
+            status: "paid",
+            mismatch: false,
+            businessNo: "hb.lafi.sh_tr_0123456789abcdef0123456789abcdef",
+            externalOrderId: "credit_1",
+            createdAt: Date.now() - 60_000,
+            payableUntil: Date.now() + 540_000,
+            paidAt: Date.now() - 30_000,
+            lastCheckedAt: Date.now() - 30_000,
+          },
+        },
+      }),
+    );
+    await openApp(page, `/balance/pay/${id}`);
+    await expect(
+      page.getByRole("heading", { name: "付给 @Friend 的收银台" }),
+    ).toBeVisible();
+    await expect(page.getByText("已付到 @Friend 的 LDC 商户。")).toBeVisible();
+    await expect(page.getByText("100.00 LDC").first()).toBeVisible();
+    await expect(page.getByText("Level 3（5%）95.00 LDC")).toBeVisible();
   });
 
   test("开放接口密钥：名称和上限，生成后只显示一次，说清拿到它能做什么", async ({

@@ -48,6 +48,27 @@ export function feeOf(amountMinor: number, percent: number) {
   return Math.floor((amountMinor * percent + 50) / 100);
 }
 
+/**
+ * Credit 站's 流转费率 by its account level, as its fee table had them on
+ * 2026-10-17 (balance-design §16, 对方的收银台): what a merchant keeps of a
+ * payment depends on its owner's level, which this site cannot read.
+ */
+export const CREDIT_MARKET_FEE_LEVELS = [
+  { level: 0, percent: 15 },
+  { level: 1, percent: 12 },
+  { level: 2, percent: 9 },
+  { level: 3, percent: 5 },
+] as const;
+
+/** What a merchant keeps of a payment at each level. */
+export function checkoutReceipts(amountMinor: number) {
+  return CREDIT_MARKET_FEE_LEVELS.map(({ level, percent }) => ({
+    level,
+    percent,
+    receivedMinor: amountMinor - feeOf(amountMinor, percent),
+  }));
+}
+
 export type TopupQuote = {
   /** What Credit takes from the payer (LDC). */
   debitMinor: number;
@@ -217,7 +238,7 @@ export type BalanceTopup = {
   creditMinor: number;
   feePercent: number;
   createdAt: number;
-  /** Until when “去 Credit 确认” can open the same order again. */
+  /** Until when “去 Credit 站确认” can open the same order again. */
   payableUntil: number;
   creditedAt: number | null;
   creditedBy: "auto" | "admin" | null;
@@ -344,6 +365,19 @@ export const createTransferSchema = z.strictObject({
 });
 export type CreateTransferInput = z.infer<typeof createTransferSchema>;
 
+/**
+ * 转账 through 对方的收银台 (balance-design §16): paid at Credit 站 from
+ * one's own Credit account into the recipient's LDC 商户, in LDC.
+ */
+export const createCheckoutSchema = z.strictObject({
+  requestId: z.uuid(),
+  toUserId: linuxDoUserIdSchema,
+  toUsername: inviteUsernameSchema,
+  amount: moneySchema,
+  remark: transferRemarkSchema,
+});
+export type CreateCheckoutInput = z.infer<typeof createCheckoutSchema>;
+
 /** The caller's own number for a 转账, unique within its key. */
 export const outTransferNoSchema = z
   .string({ error: "请填转账单号" })
@@ -421,6 +455,32 @@ export type BalanceTransfer = {
   /** To a Credit account: its 转出, with what it waits on. */
   withdrawal: BalanceWithdrawal | null;
   createdAt: number;
+};
+
+/** 待确认 / 未完成 / 已付款, as a 转入's. */
+export type CheckoutStatus = "pending" | "unpaid" | "paid";
+
+/** Why a recipient's 收银台 cannot be chosen: no 商户, or its 凭证 not passed. */
+export type CheckoutBlock = "no_merchant" | "unverified";
+
+/** A 转账 through 对方的收银台, as its payer (out) or recipient (in) sees it. */
+export type BalanceCheckout = {
+  id: string;
+  direction: "out" | "in";
+  counterpart: BalanceTransferParty;
+  /** What the payer pays at Credit 站 (LDC). */
+  amountMinor: number;
+  remark: string | null;
+  status: CheckoutStatus;
+  /** Credit 站 said paid, but its order does not match this one. */
+  mismatch: boolean;
+  businessNo: string;
+  externalOrderId: string | null;
+  createdAt: number;
+  /** Until when “去 Credit 站确认” can open the same order again. */
+  payableUntil: number;
+  paidAt: number | null;
+  lastCheckedAt: number | null;
 };
 
 /** 有效 / 已停用 / 管理员停用. */

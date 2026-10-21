@@ -40,7 +40,7 @@ const transferItem = {
       enum: ["balance", "credit"],
       default: "balance",
       description:
-        "balance：对方的🐟额，当场到账、不收费；credit：对方的 Credit 账户，和转出一样排队发放（至少 1.00，不超过单笔转出上限，Credit 可能收分发费）",
+        "balance：对方的🐟额，当场到账、不收费；credit：对方的 Credit 账户，和转出一样排队发放（至少 1.00，不超过单笔转出上限，Credit 站可能收分发费）",
     },
     amount,
     remark: {

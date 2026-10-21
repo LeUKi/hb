@@ -36,9 +36,9 @@ export function withdrawalWaitText(withdrawal: BalanceWithdrawal) {
     case "credentials":
       return "在等平台应用的凭证重新检查通过，之后接着发。";
     case "checking":
-      return "正在向 Credit 确认…";
+      return "正在向 Credit 站确认…";
     case "attention":
-      return "Credit 的回复和这笔转出对不上，站长会核对。🐟 仍在转出中。";
+      return "Credit 站的回复和这笔转出对不上，站长会核对。🐟 仍在转出中。";
     default:
       return "排队发放，通常几秒内就发出。";
   }
@@ -46,10 +46,10 @@ export function withdrawalWaitText(withdrawal: BalanceWithdrawal) {
 
 const failureText = {
   recipient:
-    "Credit 里找不到你的账户。先用同一个 LINUX DO 账号登录一次 Credit，再转出一次。",
-  self_payment: "Credit 不能分发给平台应用自己的账户。",
-  configuration: "平台应用在 Credit 的配置有问题，请稍后再试。",
-  validation: "Credit 没有接受这个数量，换个数量再试。",
+    "Credit 站里找不到你的账户。先用同一个 LINUX DO 账号登录一次 Credit 站，再转出一次。",
+  self_payment: "Credit 站不能分发给平台应用自己的账户。",
+  configuration: "平台应用在 Credit 站的配置有问题，请稍后再试。",
+  validation: "Credit 站没有接受这个数量，换个数量再试。",
 } as const;
 
 /** What a 转出 has been through, oldest first. */

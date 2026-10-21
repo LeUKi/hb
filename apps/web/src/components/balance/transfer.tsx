@@ -1,14 +1,20 @@
 import {
   amountToMinor,
   BALANCE_LIMITS,
+  type BalanceCheckout,
   type BalanceTransfer,
+  type CheckoutBlock,
+  checkoutReceipts,
   type TransferDestination,
 } from "@hb/contracts";
-import { ArrowRightLeft, ChevronRight } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { ArrowRightLeft, ChevronRight, Store, Wallet } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { ActivityRequestError } from "../../lib/activities";
 import {
   type BalancePage,
+  goToCashier,
+  useCheckoutActions,
   useRecipient,
   useTransfer,
   useTransferActions,
@@ -21,6 +27,7 @@ import { Button } from "../ui/button";
 import { CopyButton } from "../ui/copy-button";
 import { ChoiceCards, Field, TextInput } from "../ui/field";
 import { Fish, fishText } from "../ui/fish";
+import { MorphLabel } from "../ui/morph-label";
 import { ListItem, Reveal, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
@@ -28,7 +35,8 @@ import { withdrawalWaitText } from "../views/balance-withdrawal-view";
 import { PlusBadge } from "./plus";
 
 // 转账 (docs/balance-design.md §16): from 🐟额 to someone who has been
-// here, to their 🐟额 at once or to their Credit account (a 转出 to them).
+// here, to their 🐟额 at once or to their Credit account (a 转出 to them);
+// or through 对方的收银台, paid at Credit 站 into their LDC 商户.
 
 export const transferStatusText = {
   sent: "已发放",
@@ -44,11 +52,99 @@ const transferStatusTone = {
 /** Why a 转账 to a Credit account was turned down, in the sender's words. */
 const notSentText = {
   recipient:
-    "Credit 里找不到对方的账户：对方要先用同一个 LINUX DO 账号登录一次 Credit。",
-  self_payment: "Credit 不能分发给平台应用自己的账户。",
-  configuration: "平台应用在 Credit 的配置有问题，请稍后再试。",
-  validation: "Credit 没有接受这个数量，换个数量再试。",
+    "Credit 站里找不到对方的账户：对方要先用同一个 LINUX DO 账号登录一次 Credit 站。",
+  self_payment: "Credit 站不能分发给平台应用自己的账户。",
+  configuration: "平台应用在 Credit 站的配置有问题，请稍后再试。",
+  validation: "Credit 站没有接受这个数量，换个数量再试。",
 } as const;
+
+export const checkoutStatusText = {
+  pending: "待确认",
+  unpaid: "未完成",
+  paid: "已付款",
+} as const;
+export const checkoutStatusTone = {
+  pending: "warning",
+  unpaid: "neutral",
+  paid: "success",
+} as const;
+
+const checkoutBlockText: Record<CheckoutBlock, string> = {
+  no_merchant: "对方还没有配置 LDC 商户",
+  unverified: "对方的商户凭证未通过",
+};
+
+/**
+ * What the recipient's 商户 keeps of an amount at each Credit 站 level
+ * (it takes its 流转费 from them); only the rates while nothing is typed.
+ */
+export function CheckoutReceipts({ minor }: { minor: number | null }) {
+  const valid = minor !== null && minor > 0;
+  return (
+    <span className="flex flex-wrap gap-x-3 gap-y-0.5 tabular-nums">
+      {checkoutReceipts(valid ? minor : 0).map((item, index, all) => (
+        <span key={item.level}>
+          Level {item.level}（{item.percent}%）
+          {valid && fishText(item.receivedMinor)}
+          {valid && index === all.length - 1 && " LDC"}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** A 转账 to 对方的收银台 in its payer's 明细: it opens its own page. */
+export function CheckoutRow({ checkout }: { checkout: BalanceCheckout }) {
+  const navigate = useNavigate();
+  const who = `付给 @${checkout.counterpart.username} 的收银台`;
+  return (
+    <ListItem>
+      <Squircle radius={radius.row}>
+        <button
+          type="button"
+          onClick={() =>
+            void navigate({
+              to: "/balance/pay/$checkoutId",
+              params: { checkoutId: checkout.id },
+            })
+          }
+          className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-fill-2"
+        >
+          <ArrowRightLeft
+            className="size-[18px] shrink-0 text-ink-3"
+            aria-hidden="true"
+          />
+          <span className="grid min-w-0 flex-1 gap-0.5">
+            <span className="truncate text-sm font-medium text-ink">
+              {checkout.remark ? `${who} · ${checkout.remark}` : who}
+            </span>
+            <span className="truncate text-xs text-ink-3 tabular-nums">
+              {clockSeconds(checkout.createdAt)} · 不经过🐟额
+            </span>
+          </span>
+          <span className="grid shrink-0 justify-items-end gap-1">
+            <span
+              className={
+                checkout.status === "paid"
+                  ? "text-sm text-ink tabular-nums"
+                  : "text-sm text-ink-3 tabular-nums"
+              }
+            >
+              −{fishText(checkout.amountMinor)} LDC
+            </span>
+            <StatusChip tone={checkoutStatusTone[checkout.status]}>
+              {checkoutStatusText[checkout.status]}
+            </StatusChip>
+          </span>
+          <ChevronRight
+            className="size-4 shrink-0 text-ink-3"
+            aria-hidden="true"
+          />
+        </button>
+      </Squircle>
+    </ListItem>
+  );
+}
 
 /** 转给 @xxx（Credit）· 备注, or @xxx 转来 · 备注. */
 function transferTitle(transfer: BalanceTransfer) {
@@ -134,9 +230,10 @@ const creditBlockText = {
 } as const;
 
 /**
- * 转账: who (by username, found among those who have been here), where to,
- * how much and a remark; then a confirmation on top, since it cannot be
- * taken back. Done, it says so and offers another.
+ * 转账: who (by username, found among those who have been here), how it is
+ * paid, where to, how much and a remark. From 🐟额, a confirmation on top,
+ * since it cannot be taken back; done, it says so and offers another.
+ * Through 对方的收银台, straight to Credit 站, where it is confirmed.
  */
 export function TransferDialog({
   open,
@@ -153,6 +250,7 @@ export function TransferDialog({
 }) {
   const ids = { name: useId(), amount: useId(), remark: useId() };
   const [username, setUsername] = useState("");
+  const [source, setSource] = useState<"balance" | "checkout">("balance");
   const [destination, setDestination] =
     useState<TransferDestination>("balance");
   const [typed, setTyped] = useState("");
@@ -163,6 +261,7 @@ export function TransferDialog({
   const requestId = useRef(crypto.randomUUID());
   const preview = useRecipient(user.id, username);
   const { create } = useTransferActions(user.id);
+  const checkoutActions = useCheckoutActions(user.id);
   const name = username.trim().replace(/^@/, "");
   const known = name.length > 0 ? preview.data : undefined;
   const recipient = known?.user && !known.self ? known.user : null;
@@ -173,22 +272,34 @@ export function TransferDialog({
       : known?.owner
         ? "站长的 Credit 账户收不了平台应用的发放"
         : null;
+  // Once the recipient is found: whether their 收银台 can take it.
+  const checkoutBlock = recipient ? (known?.checkoutBlock ?? null) : null;
   // Credit chosen, then no longer possible: back to 🐟额.
   useEffect(() => {
     if (destination === "credit" && creditBlock) setDestination("balance");
   }, [destination, creditBlock]);
-  const credit = destination === "credit";
+  useEffect(() => {
+    if (source === "checkout" && checkoutBlock) setSource("balance");
+  }, [source, checkoutBlock]);
+  const checkout = source === "checkout";
+  const credit = !checkout && destination === "credit";
   const minor = typedMinor(typed);
   const bound =
     minor === null || minor <= 0
       ? null
-      : minor > availableMinor
-        ? `可用只有 ${fishText(Math.max(0, availableMinor))} 🐟。`
-        : credit && minor < BALANCE_LIMITS.withdrawMinMinor
-          ? `发到 Credit 至少 ${fishText(BALANCE_LIMITS.withdrawMinMinor)} 🐟。`
-          : credit && minor > settings.withdrawMaxMinor
-            ? `发到 Credit 单笔不超过 ${fishText(settings.withdrawMaxMinor)} 🐟。`
-            : null;
+      : checkout
+        ? minor < BALANCE_LIMITS.topupMinMinor
+          ? `一笔至少 ${fishText(BALANCE_LIMITS.topupMinMinor)} LDC。`
+          : minor > BALANCE_LIMITS.topupMaxMinor
+            ? `一笔最多 ${fishText(BALANCE_LIMITS.topupMaxMinor)} LDC。`
+            : null
+        : minor > availableMinor
+          ? `可用只有 ${fishText(Math.max(0, availableMinor))} 🐟。`
+          : credit && minor < BALANCE_LIMITS.withdrawMinMinor
+            ? `发到 Credit 至少 ${fishText(BALANCE_LIMITS.withdrawMinMinor)} 🐟。`
+            : credit && minor > settings.withdrawMaxMinor
+              ? `发到 Credit 单笔不超过 ${fishText(settings.withdrawMaxMinor)} 🐟。`
+              : null;
   const remarkTooLong =
     Array.from(remark.trim()).length > BALANCE_LIMITS.transferRemarkMax;
   const ready =
@@ -197,10 +308,11 @@ export function TransferDialog({
     minor > 0 &&
     bound === null &&
     !remarkTooLong;
-  const busy = create.isPending;
+  const busy = create.isPending || checkoutActions.create.isPending;
   const amountText = minor === null ? "" : fishText(minor);
   const reset = () => {
     setUsername("");
+    setSource("balance");
     setDestination("balance");
     setTyped("");
     setRemark("");
@@ -234,6 +346,28 @@ export function TransferDialog({
       );
     }
   };
+  // 对方的收银台: the order is made here, then Credit 站 takes over.
+  const payAtCheckout = async () => {
+    if (!ready || busy || !recipient) return;
+    setError(null);
+    try {
+      const { cashierUrl } = await checkoutActions.create.mutateAsync({
+        requestId: requestId.current,
+        toUserId: recipient.userId,
+        toUsername: recipient.username,
+        amount: typed.trim().replace(/\.$/, ""),
+        remark: remark.trim() || undefined,
+      });
+      if (cashierUrl) goToCashier(cashierUrl);
+      else setError("Credit 站暂时没有回应，请稍后再试。");
+    } catch (failure) {
+      if (failure instanceof ActivityRequestError)
+        requestId.current = crypto.randomUUID();
+      setError(
+        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
+      );
+    }
+  };
   return (
     <ConfirmDialog
       open={open}
@@ -247,6 +381,7 @@ export function TransferDialog({
         </span>
       }
       text="收款人要来过本站。"
+      error={checkout && !confirming ? error : null}
       actions={
         done ? (
           <>
@@ -261,12 +396,16 @@ export function TransferDialog({
             <Button
               variant="primary"
               onClick={() => {
-                if (ready) setConfirming(true);
+                if (!ready) return;
+                if (checkout) void payAtCheckout();
+                else setConfirming(true);
               }}
-              aria-disabled={!ready || undefined}
+              aria-disabled={!ready || busy || undefined}
               data-disabled={!ready || undefined}
             >
-              转账
+              <MorphLabel>
+                {checkout ? (busy ? "正在打开…" : "去 Credit 站确认") : "转账"}
+              </MorphLabel>
             </Button>
           </>
         )
@@ -317,48 +456,102 @@ export function TransferDialog({
                 )}
               </Reveal>
             </Field>
-            <div className="grid gap-2">
+            <Field label="从哪付">
               <ChoiceCards
-                label="到哪"
-                value={destination}
-                onChange={setDestination}
+                label="从哪付"
+                value={source}
+                onChange={setSource}
                 options={[
                   {
                     value: "balance",
-                    title: "对方的🐟额",
-                    description: "当场到账，不收费",
+                    title: "🐟额",
+                    description: `可用 ${fishText(Math.max(0, availableMinor))} 🐟`,
+                    icon: Wallet,
                   },
                   {
-                    value: "credit",
-                    title: "对方的 Credit 账户",
-                    description: "和转出一样排队发放，Credit 可能收分发费",
-                    disabled: creditBlock !== null,
+                    value: "checkout",
+                    title: "对方的收银台",
+                    description: checkoutBlock
+                      ? checkoutBlockText[checkoutBlock]
+                      : "在 Credit 站付款，进对方的 LDC 商户",
+                    icon: Store,
+                    disabled: checkoutBlock !== null,
                   },
                 ]}
               />
-              <Reveal show={creditBlock !== null}>
-                <p className="text-xs text-ink-3">
-                  不能发到 Credit：{creditBlock}
-                </p>
-              </Reveal>
-            </div>
-            <Field label="数量" htmlFor={ids.amount}>
+            </Field>
+            <Reveal show={!checkout}>
+              <div className="grid gap-2">
+                <Field label="到哪">
+                  <ChoiceCards
+                    label="到哪"
+                    value={destination}
+                    onChange={setDestination}
+                    options={[
+                      {
+                        value: "balance",
+                        title: "对方的🐟额",
+                        description: "当场到账，没有手续费",
+                      },
+                      {
+                        value: "credit",
+                        title: "对方的 Credit 账户",
+                        description:
+                          "和转出一样排队发放，Credit 站可能收分发费",
+                        disabled: creditBlock !== null,
+                      },
+                    ]}
+                  />
+                </Field>
+                <Reveal show={creditBlock !== null}>
+                  <p className="text-xs text-ink-3">
+                    不能发到 Credit：{creditBlock}
+                  </p>
+                </Reveal>
+              </div>
+            </Reveal>
+            <Field
+              label={
+                <MorphLabel align="start">
+                  {checkout ? "付多少" : "数量"}
+                </MorphLabel>
+              }
+              htmlFor={ids.amount}
+            >
               <TextInput
                 id={ids.amount}
                 inputMode="decimal"
-                suffix="🐟"
+                suffix={<MorphLabel>{checkout ? "LDC" : "🐟"}</MorphLabel>}
                 value={typed}
                 placeholder="0.00"
                 onChange={(event) => setTyped(event.target.value)}
               />
-              <p className="text-xs text-ink-3">
-                可用 {fishText(Math.max(0, availableMinor))} 🐟
-                {credit &&
-                  `；发到 Credit 最少 ${fishText(BALANCE_LIMITS.withdrawMinMinor)} 🐟，单笔不超过 ${fishText(settings.withdrawMaxMinor)} 🐟`}
-              </p>
+              <Swap id={checkout ? "checkout" : "balance"}>
+                {checkout ? (
+                  <div className="grid gap-1 text-xs text-ink-3">
+                    <p>
+                      对方实收要扣掉 Credit 站的流转费，费率看对方在 Credit
+                      站的等级：
+                    </p>
+                    <CheckoutReceipts minor={minor} />
+                    <p>本站看不到对方的等级，付之前先和对方确认好。</p>
+                    <p>
+                      在 Credit 站收银台确认，需要登录 Credit
+                      站并输入安全密码。流转费由 Credit
+                      站从对方实收里扣，本站不另外收费。
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-ink-3">
+                    可用 {fishText(Math.max(0, availableMinor))} 🐟
+                    {credit &&
+                      `；发到 Credit 最少 ${fishText(BALANCE_LIMITS.withdrawMinMinor)} 🐟，单笔不超过 ${fishText(settings.withdrawMaxMinor)} 🐟`}
+                  </p>
+                )}
+              </Swap>
               <Reveal show={credit}>
                 <p className="text-xs text-ink-3">
-                  对方需要先登录过一次 Credit；当天额度用完时顺延到第二天。
+                  对方需要先登录过一次 Credit 站；当天额度用完时顺延到第二天。
                 </p>
               </Reveal>
               <Reveal show={bound !== null}>

@@ -107,8 +107,8 @@ export function InviteView({ token }: { token: string }) {
                 </dl>
               </div>
               <p>
-                转入在 Credit 收银台确认，流转费（{page.topupFeePercent}
-                %）全部由 Credit 收取，本站没有任何收益；转出会自动发回你的
+                转入在 Credit 站收银台确认，流转费（{page.topupFeePercent}
+                %）全部由 Credit 站收取，本站没有任何收益；转出会自动发回你的
                 Credit 账户。
               </p>
               <p>🐟额在头像打开的用户卡片里，也可以输入 /balance。</p>

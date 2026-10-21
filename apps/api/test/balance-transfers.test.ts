@@ -459,6 +459,8 @@ describe("转账 to 🐟额", () => {
       },
       self: false,
       owner: false,
+      /** No LDC 商户: 对方的收银台 cannot be chosen. */
+      checkoutBlock: "no_merchant",
     });
     const owner = await call(
       "GET",

@@ -361,7 +361,7 @@ export function AmountFields({
           LDC，金额最多两位小数。填的是每份发出的金额。
           {form.funding === "balance"
             ? "领到的直接存进领取者的🐟额。"
-            : "领取者到账时，Credit 会按你的 Credit 等级扣分发费（4%–15%）。"}
+            : "领取者到账时，Credit 站会按你在 Credit 站的等级扣分发费（4%–15%）。"}
           你不能领自己的红包。
         </p>
         {/* Opens as the total passes 800 LDC, and closes under it; 🐟额
@@ -374,8 +374,8 @@ export function AmountFields({
           }
         >
           <p className="text-xs text-warning">
-            Credit 每天最多能发 800–2000 LDC（按你的 Credit
-            等级），超出的部分可能顺延到第二天发放。
+            Credit 站每天最多能发 800–2000 LDC（按你在 Credit
+            站的等级），超出的部分可能顺延到第二天发放。
           </p>
         </Reveal>
       </div>

@@ -1039,7 +1039,7 @@ test.describe("红包页", () => {
     await expect(result.getByText("等待恢复")).toBeVisible();
     await expect(
       result.getByText(
-        "发红包的人今天在 Credit 的发放额度用完了，明天 0 点后自动继续发放。",
+        "发红包的人今天在 Credit 站的发放额度用完了，明天 0 点后自动继续发放。",
       ),
     ).toBeVisible();
     await expect(result.getByText("quota")).toHaveCount(0);

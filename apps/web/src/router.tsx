@@ -175,6 +175,12 @@ const balanceWithdrawalRoute = subRoute(
   "balance",
   "转出详情",
 );
+// A 转账 to 对方的收银台 (balance-design §16): Credit 站 brings the payer back.
+const balanceCheckoutRoute = subRoute(
+  "/balance/pay/$checkoutId",
+  "balance",
+  "付款详情",
+);
 const paymentDetailRoute = subRoute(
   "/payments/$paymentId",
   "payments",
@@ -264,6 +270,7 @@ const routeTree = rootRoute.addChildren([
   balanceRoute,
   balanceTopupRoute,
   balanceWithdrawalRoute,
+  balanceCheckoutRoute,
   adminRoute,
   adminActivitiesRoute,
   adminUsersRoute,

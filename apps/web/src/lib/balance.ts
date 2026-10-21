@@ -1,12 +1,15 @@
 import type {
   BalanceApiKey,
   BalanceApiKeyTotals,
+  BalanceCheckout,
   BalanceInvite,
   BalanceInviteUser,
   BalanceTopup,
   BalanceTransfer,
   BalanceWithdrawal,
+  CheckoutBlock,
   CreateApiKeyInput,
+  CreateCheckoutInput,
   CreateTopupInput,
   CreateTransferInput,
   CreateWithdrawalInput,
@@ -60,6 +63,10 @@ export const balanceKeys = {
     [...balanceKeys.all(identity), "recipient", username] as const,
   transfer: (identity: string, id: string) =>
     [...balanceKeys.all(identity), "transfer", id] as const,
+  checkout: (identity: string, id: string) =>
+    [...balanceKeys.all(identity), "checkout", id] as const,
+  received: (identity: string) =>
+    [...balanceKeys.all(identity), "received"] as const,
   apiKeys: (identity: string) =>
     [...balanceKeys.all(identity), "api-keys"] as const,
   apiKey: (identity: string, id: string) =>
@@ -93,8 +100,9 @@ function useCsrf() {
 }
 
 /**
- * The 🐟额 page, opened: its 转入 not yet arrived are checked once (a write,
- * so not part of the read), and the page reads again if one did.
+ * The 🐟额 page, opened: its 转入 not yet arrived, and its 转账 to 对方的收银台
+ * not yet paid, are checked once (a write, so not part of the read); the
+ * page reads again if one moved.
  */
 export function useCheckOpenTopups(userId: string, enabled: boolean) {
   const session = useMerchantIdentity(userId);
@@ -107,13 +115,16 @@ export function useCheckOpenTopups(userId: string, enabled: boolean) {
     const identity = session.identity;
     void (async () => {
       try {
-        const { credited } = await readResponse<{ credited: number }>(
+        const { credited, paid } = await readResponse<{
+          credited: number;
+          paid: number;
+        }>(
           await api.api.me.balance.topups["check-open"].$post(
             undefined,
             options,
           ),
         );
-        if (credited > 0 && session.isCurrentIdentity(identity))
+        if (credited + paid > 0 && session.isCurrentIdentity(identity))
           await queryClient.invalidateQueries({
             queryKey: balanceKeys.all(identity),
           });
@@ -151,7 +162,7 @@ export function useTopup(userId: string, id: string) {
   });
 }
 
-/** 去 Credit 确认: a new 转入, or the same order again. */
+/** 去 Credit 站确认: a new 转入, or the same order again. */
 export function useTopupActions(userId: string) {
   const session = useMerchantIdentity(userId);
   const queryClient = useQueryClient();
@@ -419,6 +430,8 @@ export type TransferRecipient = {
   self: boolean;
   /** The 站长: their Credit account cannot take the platform app's. */
   owner: boolean;
+  /** Why 对方的收银台 cannot be chosen; null when it can. */
+  checkoutBlock: CheckoutBlock | null;
 };
 
 export function useRecipient(userId: string, username: string) {
@@ -482,6 +495,123 @@ export function useTransfer(userId: string, id: string | null) {
     retry: false,
     refetchInterval: (query) =>
       query.state.data?.transfer.status === "sending" ? 3000 : false,
+  });
+}
+
+/**
+ * One 转账 to 对方的收银台 (/balance/pay/<编号>). Reading it is a check at
+ * Credit 站, as a 转入's is: once as the page opens, then every 3 s while
+ * it waits to be confirmed.
+ */
+export function useCheckout(userId: string, id: string) {
+  const session = useMerchantIdentity(userId);
+  const options = useCsrf();
+  return useQuery({
+    queryKey: balanceKeys.checkout(session.identity, id),
+    enabled: session.enabled,
+    queryFn: async () =>
+      session.read<{ checkout: BalanceCheckout }>(
+        await api.api.me.balance.checkouts[":id"].check.$post(
+          { param: { id } },
+          options,
+        ),
+      ),
+    retry: false,
+    refetchInterval: (query) => {
+      const checkout = query.state.data?.checkout;
+      return checkout?.status === "pending" &&
+        Date.now() < checkout.payableUntil
+        ? 3000
+        : false;
+    },
+  });
+}
+
+/** 去 Credit 站确认: a new 转账 to 对方的收银台, or the same order again. */
+export function useCheckoutActions(userId: string) {
+  const session = useMerchantIdentity(userId);
+  const queryClient = useQueryClient();
+  const options = useCsrf();
+  const settle = async (identity: string, checkout: BalanceCheckout) => {
+    if (!session.isCurrentIdentity(identity)) return;
+    queryClient.setQueryData(balanceKeys.checkout(identity, checkout.id), {
+      checkout,
+    });
+    await queryClient.invalidateQueries({
+      queryKey: [...balanceKeys.all(identity), "list"],
+    });
+  };
+  type Made = { checkout: BalanceCheckout; cashierUrl: string | null };
+  const create = useMutation({
+    mutationFn: async (input: CreateCheckoutInput) => {
+      const identity = session.captureIdentity() ?? "";
+      const result = await readResponse<Made>(
+        await api.api.me.balance.checkouts.$post({ json: input }, options),
+      );
+      await settle(identity, result.checkout);
+      return result;
+    },
+  });
+  const pay = useMutation({
+    mutationFn: async (id: string) => {
+      const identity = session.captureIdentity() ?? "";
+      const result = await readResponse<Made>(
+        await api.api.me.balance.checkouts[":id"].pay.$post(
+          { param: { id } },
+          options,
+        ),
+      );
+      await settle(identity, result.checkout);
+      return result;
+    },
+  });
+  return { create, pay };
+}
+
+/**
+ * 收到的付款 on the LDC 商户 page: paid ones only. As the page opens, the
+ * recent ones not yet paid are checked once, and the list reads again if
+ * one was.
+ */
+export function useReceivedCheckouts(userId: string, enabled: boolean) {
+  const session = useMerchantIdentity(userId);
+  const queryClient = useQueryClient();
+  const options = useCsrf();
+  const checked = useRef(false);
+  useEffect(() => {
+    if (!enabled || !session.enabled || checked.current) return;
+    checked.current = true;
+    const identity = session.identity;
+    void (async () => {
+      try {
+        const { paid } = await readResponse<{ paid: number }>(
+          await api.api.me.balance.checkouts.received["check-open"].$post(
+            undefined,
+            options,
+          ),
+        );
+        if (paid > 0 && session.isCurrentIdentity(identity))
+          await queryClient.invalidateQueries({
+            queryKey: balanceKeys.received(identity),
+          });
+      } catch {
+        // The list says what it knows; the next visit checks again.
+      }
+    })();
+  }, [enabled, session, queryClient, options]);
+  return useInfiniteQuery({
+    queryKey: balanceKeys.received(session.identity),
+    enabled: enabled && session.enabled,
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam, signal }) =>
+      session.read<{ items: BalanceCheckout[]; nextCursor: string | null }>(
+        await api.api.me.balance.checkouts.received.$get(
+          { query: pageParam ? { cursor: pageParam } : {} },
+          { init: { signal, cache: "no-store" } },
+        ),
+      ),
+    getNextPageParam: (last) => last.nextCursor,
+    retry: false,
   });
 }
 

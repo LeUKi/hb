@@ -29,7 +29,7 @@ import { balanceAccessFor, readBalanceSettings } from "./settings";
 export const TOPUP_ORDER_NAME = "🐟额转入 · hb.lafi.sh";
 /** A constant, like a claim's 业务号: `hb.lafi.sh_in_<32 hex>`, 46 characters. */
 const BUSINESS_PREFIX = "hb.lafi.sh_in_";
-/** “去 Credit 确认” and the page's polling last this long from the first order. */
+/** “去 Credit 站确认” and the page's polling last this long from the first order. */
 export const TOPUP_PAYABLE_MS = 10 * 60_000;
 const CHECK_INTERVAL_MS = 3_000;
 /** 重新查询 on a 未完成 one. */
@@ -165,7 +165,7 @@ export async function createTopup(
     balanceError(
       403,
       "BALANCE_SELF",
-      "Credit 不能给自己的应用付款，站长的账号不能转入。",
+      "Credit 站不能给自己的应用付款，站长的账号不能转入。",
     );
 
   const amountMinor = amountToMinor(input.amount);
@@ -244,7 +244,7 @@ export async function createTopup(
   return resubmit(env, row);
 }
 
-/** “去 Credit 确认” again: the same order, while it can still be paid. */
+/** “去 Credit 站确认” again: the same order, while it can still be paid. */
 export async function payTopup(env: ApiBindings, userId: string, id: string) {
   const row = await ownedTopup(env, userId, id);
   if (row.status !== "pending" || Date.now() >= payableUntil(row))

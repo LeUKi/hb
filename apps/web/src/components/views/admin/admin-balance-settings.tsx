@@ -122,7 +122,7 @@ export function BalanceSettingsSection({
     <PageSection
       id="balance-settings"
       title="🐟额"
-      description="转入、转出、🐟额红包和转账的开关，以及费率。费率要和平台账户在 Credit 的等级一致：填低了，差价由本站垫上。"
+      description="转入、转出、🐟额红包和转账的开关，以及费率。费率要和平台账户在 Credit 站的等级一致：填低了，差价由本站垫上。"
     >
       <Panel>
         <LeaveGuard
@@ -158,7 +158,7 @@ export function BalanceSettingsSection({
             <Field
               label="流转费率"
               htmlFor={ids.topupFee}
-              hint="转入时 Credit 收的，0–50"
+              hint="转入时 Credit 站收的，0–50"
               error={percentValid(values.topupFee) ? null : "请填 0–50 的整数"}
             >
               <TextInput
@@ -172,7 +172,7 @@ export function BalanceSettingsSection({
             <Field
               label="分发费率"
               htmlFor={ids.withdrawFee}
-              hint="转出时 Credit 收的，0–50"
+              hint="转出时 Credit 站收的，0–50"
               error={
                 percentValid(values.withdrawFee) ? null : "请填 0–50 的整数"
               }
@@ -330,7 +330,7 @@ export function PlatformAppSection({
     <PageSection
       id="balance-platform-app"
       title="平台应用"
-      description="Credit 里单独新建的集市应用，专门收转入、发转出。回调地址填 http://localhost/，关闭测试模式。"
+      description="Credit 站里单独新建的集市应用，专门收转入、发转出。回调地址填 http://localhost/，关闭测试模式。"
     >
       <Panel>
         <LeaveGuard

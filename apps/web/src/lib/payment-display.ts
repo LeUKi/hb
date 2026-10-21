@@ -22,7 +22,7 @@ export function paymentReason(
   const labels: Record<string, string> = {
     unknown: "付款结果尚未明确，正在核对原订单。",
     funds: "商户资金不足，等待补足后恢复。",
-    quota: "今日 Credit 发放额度已用完，0 点额度恢复后自动继续。",
+    quota: "今日 Credit 站发放额度已用完，0 点额度恢复后自动继续。",
     credentials: "商户凭证失效，等待发红包的人更新。",
     conflict: "订单信息冲突，需要检查原订单。",
     query_unavailable: "查单暂不可用，系统会继续核对。",
@@ -135,7 +135,7 @@ export function merchantPause(
 ) {
   const short: Record<string, string> = {
     funds: "商户资金不足",
-    quota: "今日 Credit 发放额度已用完",
+    quota: "今日 Credit 站发放额度已用完",
     credentials: "商户凭证失效",
     credential_rejected: "商户凭证失效",
     unknown: "付款结果尚未明确",

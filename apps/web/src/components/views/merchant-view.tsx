@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { ActivityRequestError, refused } from "../../lib/activities";
+import { useReceivedCheckouts } from "../../lib/balance";
 import {
   MerchantChangeConfirmationError,
   useMerchant,
@@ -27,6 +28,7 @@ import { credentialReason, merchantPause } from "../../lib/payment-display";
 import { clockLabel } from "../../lib/roster-time";
 import { type SessionUser, useIdentity } from "../../lib/session";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
+import { LazyListEnd, useQueryLazyList } from "../page/lazy-list";
 import {
   Callout,
   Facts,
@@ -38,10 +40,12 @@ import {
 import { PageLoad, queryLoad } from "../page/page-state";
 import { ConfirmDialog } from "../shell/confirm-dialog";
 import { LeaveGuard } from "../shell/leave-guard";
+import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { MoreLink } from "../ui/button-link";
 import { CopyButton } from "../ui/copy-button";
 import { Field, TextInput } from "../ui/field";
+import { fishText } from "../ui/fish";
 import { Reveal, RevealInline, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import { type ChipTone, StatusChip } from "../ui/status-chip";
@@ -599,6 +603,62 @@ function LegacyRow({
   );
 }
 
+/**
+ * 收到的付款 (docs/balance-design.md §16, 对方的收银台): what others paid
+ * into this person's LDC 商户 through 转账, once Credit 站 said paid. Shown
+ * only when there are some.
+ */
+function ReceivedPayments({ user }: { user: SessionUser }) {
+  const query = useReceivedCheckouts(user.id, true);
+  const list = useQueryLazyList({
+    hasNextPage: query.hasNextPage,
+    isFetchingNextPage: query.isFetchingNextPage,
+    isFetchNextPageError: query.isFetchNextPageError,
+    fetchNextPage: query.fetchNextPage,
+    pageCount: query.data?.pages.length ?? 0,
+  });
+  const items = (query.data?.pages ?? []).flatMap((page) => page.items);
+  return (
+    <Reveal show={items.length > 0}>
+      <PageSection
+        title="收到的付款"
+        description="别人转账时选“对方的收银台”付给你的。实收按你在 Credit 站的等级扣掉流转费。"
+      >
+        <div className="grid gap-2">
+          <Panel as="ul" className="grid gap-0.5 p-1.5">
+            {items.map((payment) => (
+              <li
+                key={payment.id}
+                className="flex items-center gap-3 px-3 py-2.5"
+              >
+                <Avatar
+                  name={payment.counterpart.displayName}
+                  src={payment.counterpart.avatarUrl}
+                  size={28}
+                />
+                <span className="grid min-w-0 flex-1 gap-0.5">
+                  <span className="truncate text-sm text-ink">
+                    {payment.counterpart.displayName} @
+                    {payment.counterpart.username}
+                    {payment.remark && ` · ${payment.remark}`}
+                  </span>
+                  <span className="text-xs text-ink-3 tabular-nums">
+                    {clockLabel(payment.paidAt ?? payment.createdAt)}
+                  </span>
+                </span>
+                <span className="shrink-0 text-sm text-ink tabular-nums">
+                  {fishText(payment.amountMinor)} LDC
+                </span>
+              </li>
+            ))}
+          </Panel>
+          <LazyListEnd list={list} done={`共 ${items.length} 笔`} />
+        </div>
+      </PageSection>
+    </Reveal>
+  );
+}
+
 function LegacyList({ items, user }: { items: Merchant[]; user: SessionUser }) {
   return (
     <PageSection
@@ -825,6 +885,7 @@ function Merchants({
             />
           )}
         </Swap>
+        <ReceivedPayments user={user} />
         <Reveal show={legacy.length > 0}>
           <LegacyList items={legacy} user={user} />
         </Reveal>

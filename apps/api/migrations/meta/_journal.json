@@ -253,6 +253,13 @@
       "when": 1792575865587,
       "tag": "0035_fish_invite_forever",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1792591423703,
+      "tag": "0036_fish_checkouts",
+      "breakpoints": true
     }
   ]
 }

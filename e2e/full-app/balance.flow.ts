@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { expect, type Page, test } from "@playwright/test";
+import { fullAppMerchant } from "./ldc-fixture";
 import { localOnly, origin, signIn, waitForBoot } from "./session";
 
 // 🐟额, step one, on the real stack: the harness's LDC substitute takes
@@ -94,7 +95,7 @@ test("🐟额：管理员配好平台应用、邀请领取者，领取者接受�
     await page.goto(new URL(inviteUrl).pathname);
     await waitForBoot(page);
     await expect(
-      page.getByText(/流转费（\d+%）全部由 Credit 收取，本站没有任何收益/),
+      page.getByText(/流转费（\d+%）全部由 Credit 站收取，本站没有任何收益/),
     ).toBeVisible();
     await page.getByRole("button", { name: "接受邀请" }).click();
     await page.waitForURL(/\/balance$/);
@@ -118,7 +119,7 @@ test("🐟额：管理员配好平台应用、邀请领取者，领取者接受�
   await dialog.getByLabel("到账").fill("12");
   await expect(dialog.getByLabel("Credit 扣除")).toHaveValue("13.64");
   await expect(dialog.getByText(/流转费 1\.64 LDC/)).toBeVisible();
-  await dialog.getByRole("button", { name: "去 Credit 确认" }).click();
+  await dialog.getByRole("button", { name: "去 Credit 站确认" }).click();
   await page.waitForURL(/\/balance\/[0-9a-f-]{36}$/);
   await expect(page.getByText("已到账", { exact: true }).first()).toBeVisible();
   await page.goto("/balance");
@@ -165,6 +166,77 @@ test("🐟额：管理员配好平台应用、邀请领取者，领取者接受�
   await page.goto("/balance");
   await waitForBoot(page);
   await expect(figure).toContainText((before + 5).toFixed(2));
+});
+
+test("转账走对方的收银台：领取者在 Credit 站付给站长的 LDC 商户，回来写着已付款，站长的商户页列着这笔", async ({
+  browser,
+}) => {
+  // The 站长: an LDC 商户 that can take payments, and 转账 on.
+  const adminContext = await browser.newContext({ baseURL: origin });
+  await localOnly(adminContext);
+  const admin = await adminContext.newPage();
+  const csrf = await signIn(admin, "author");
+  await fullAppMerchant(adminContext, csrf, origin);
+  await admin.goto("/admin/settings");
+  await waitForBoot(admin);
+  await ensurePlatformApp(admin);
+  const fishSettings = admin.getByRole("region", { name: "🐟额" });
+  const toggle = fishSettings.getByRole("switch", { name: "转账" });
+  if ((await toggle.getAttribute("aria-checked")) !== "true") {
+    await toggle.click();
+    await fishSettings.getByRole("button", { name: "保存🐟额设置" }).click();
+    await expect(fishSettings.getByText("已保存，立即生效")).toBeVisible();
+  }
+
+  // The recipient (PLUS since the first flow) pays at Credit 站's cashier.
+  const context = await browser.newContext({ baseURL: origin });
+  await localOnly(context);
+  await context.route("https://credit.linux.do/paying**", async (route) => {
+    const orderNo = new URL(route.request().url()).searchParams.get("order_no");
+    const paid = (await (
+      await fetch(
+        `${control}/upstream/pay?order_no=${encodeURIComponent(orderNo ?? "")}`,
+        { method: "POST" },
+      )
+    ).json()) as { returnUrl: string | null };
+    expect(paid.returnUrl).toMatch(/\/balance\/pay\/[0-9a-f-]{36}$/);
+    await route.fulfill({
+      status: 302,
+      headers: { Location: paid.returnUrl ?? "/" },
+    });
+  });
+  const page = await context.newPage();
+  await signIn(page, "recipient");
+  await page.goto("/balance");
+  await waitForBoot(page);
+  await page
+    .locator("header")
+    .getByRole("button", { name: "转账", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "转账" });
+  await dialog.getByLabel("收款人").fill("FullAppAuthor");
+  const checkout = dialog.getByRole("button", { name: /对方的收银台/ });
+  await expect(checkout).toContainText("在 Credit 站付款，进对方的 LDC 商户");
+  await checkout.click();
+  const remark = `收银台 ${randomBytes(3).toString("hex")}`;
+  await dialog.getByLabel("付多少").fill("5");
+  await dialog.getByLabel("备注").fill(remark);
+  await dialog.getByRole("button", { name: "去 Credit 站确认" }).click();
+  await page.waitForURL(/\/balance\/pay\/[0-9a-f-]{36}$/);
+  await expect(
+    page.getByRole("heading", { name: "付给 @FullAppAuthor 的收银台" }),
+  ).toBeVisible();
+  await expect(page.getByText("已付款", { exact: true }).first()).toBeVisible();
+
+  // The 站长 sees it under 收到的付款.
+  await admin.goto("/merchant");
+  await waitForBoot(admin);
+  await expect(
+    admin.getByRole("heading", { name: "收到的付款" }),
+  ).toBeVisible();
+  const row = admin.getByRole("listitem").filter({ hasText: remark });
+  await expect(row).toContainText("@FullAppRecipient");
+  await expect(row).toContainText("5.00 LDC");
 });
 
 test("🐟额通用链接：管理员生成、自己打开看到提示，停用后别人打开写着已停用", async ({

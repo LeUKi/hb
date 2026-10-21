@@ -325,6 +325,18 @@ test.describe("付款记录", () => {
 });
 
 test.describe("LDC 商户配置", () => {
+  test.beforeEach(async ({ page }) => {
+    // 收到的付款 (none here): its list, and its check as the page opens.
+    await page.route("**/api/me/balance/checkouts/received**", (route) =>
+      route.fulfill({
+        json:
+          route.request().method() === "POST"
+            ? { paid: 0 }
+            : { items: [], nextCursor: null },
+      }),
+    );
+  });
+
   const usage: MerchantUsage = {
     activities: 3,
     activeActivities: 1,
@@ -407,7 +419,7 @@ test.describe("LDC 商户配置", () => {
     );
     await openApp(page, "/merchant");
     await expect(
-      page.getByText("付款已暂停：今日 Credit 发放额度已用完"),
+      page.getByText("付款已暂停：今日 Credit 站发放额度已用完"),
     ).toBeVisible();
     await expect(
       page.getByText(

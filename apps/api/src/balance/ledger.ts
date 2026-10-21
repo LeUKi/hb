@@ -5,6 +5,7 @@ import {
   amountToMinor,
   BALANCE_LIMITS,
   type BalanceAdjustmentInput,
+  type BalanceCheckout,
   type BalanceTopup,
   type BalanceTransfer,
   type BalanceWithdrawal,
@@ -14,6 +15,7 @@ import {
 import { ActivityError } from "../activities/errors";
 import type { ApiBindings } from "../env";
 import { sha256Hex } from "../security/crypto";
+import { checkoutPage } from "./checkouts";
 import { balanceError } from "./errors";
 import { readPlatformAppRow } from "./platform-app";
 import { type TopupRow, topupView } from "./topups";
@@ -95,7 +97,9 @@ export type BalanceRecord =
       adjustment: BalanceAdjustmentView;
     }
   | { type: "hongbao"; createdAt: number; hongbao: BalanceHongbaoView }
-  | { type: "transfer"; createdAt: number; transfer: BalanceTransfer };
+  | { type: "transfer"; createdAt: number; transfer: BalanceTransfer }
+  /** Paid at 对方的收银台: a 转账 that never passes 🐟额 (the payer's only). */
+  | { type: "checkout"; createdAt: number; checkout: BalanceCheckout };
 
 export type BalanceRecordFilter =
   | "all"
@@ -234,6 +238,17 @@ export async function listRecords(
         createdAt: transfer.createdAt,
         transfer,
       });
+    for (const checkout of await checkoutPage(
+      env,
+      userId,
+      before,
+      PAGE_SIZE + 1,
+    ))
+      records.push({
+        type: "checkout",
+        createdAt: checkout.createdAt,
+        checkout,
+      });
   }
   const id = (record: BalanceRecord) =>
     record.type === "topup"
@@ -244,7 +259,9 @@ export async function listRecords(
           ? record.hongbao.id
           : record.type === "transfer"
             ? record.transfer.id
-            : record.adjustment.id;
+            : record.type === "checkout"
+              ? record.checkout.id
+              : record.adjustment.id;
   records.sort((left, right) =>
     right.createdAt !== left.createdAt
       ? right.createdAt - left.createdAt
