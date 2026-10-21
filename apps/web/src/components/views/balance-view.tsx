@@ -445,7 +445,11 @@ function Balance({ user }: { user: SessionUser }) {
                   : []),
               ]}
             />
-            <p className="text-xs text-ink-3">1 🐟 = 1 LDC，由本站托管。</p>
+            <p className="text-xs text-ink-3">
+              {summary.settings.hongbaoEnabled
+                ? "1 🐟 = 1 LDC，由本站托管，可用于发红包。"
+                : "1 🐟 = 1 LDC，由本站托管。"}
+            </p>
           </Panel>
           <Reveal show={summary.openTopups > 0}>
             <Callout tone="warning">

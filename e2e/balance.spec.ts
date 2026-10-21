@@ -68,7 +68,7 @@ const plusFeatures = [
 
 async function mockBalance(
   page: Page,
-  options: { withdraw?: boolean; invited?: boolean } = {},
+  options: { withdraw?: boolean; invited?: boolean; hongbao?: boolean } = {},
 ) {
   const sent: unknown[] = [];
   const invited = options.invited ?? true;
@@ -89,6 +89,7 @@ async function mockBalance(
           topupMaxMinor: 200_000,
           topupDailyHintMinor: 80_000,
           withdrawMinMinor: 100,
+          hongbaoEnabled: options.hongbao ?? false,
           transferEnabled: true,
           transferToCreditBlock: options.withdraw ? null : "WITHDRAW_DISABLED",
         },
@@ -487,6 +488,15 @@ test.describe("🐟额", () => {
         amount: "100",
       }),
     ]);
+  });
+
+  test("🐟额红包开着时，说明写上可用于发红包", async ({ page }) => {
+    await mockSession(page, { ...viewer, balance: true });
+    await mockBalance(page, { hongbao: true });
+    await openApp(page, "/balance");
+    await expect(
+      page.getByText("1 🐟 = 1 LDC，由本站托管，可用于发红包。"),
+    ).toBeVisible();
   });
 
   test("转出：只填🐟，说明 Credit 可能收分发费，越界说是哪一头，申请后跟着它发出去", async ({
