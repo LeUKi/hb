@@ -162,7 +162,7 @@ describe("领取范围", () => {
 
   it("turns away someone outside before the 口令, its attempt or cooldown", async () => {
     const low = await person("low", "802", 1);
-    const activity = await open(input({ levels: { min: 2, max: 4 } }));
+    const activity = await open(input({ levels: [2, 3, 4] }));
     await expect(claim(activity.id, low)).rejects.toMatchObject({
       status: 403,
       code: "NOT_IN_SCOPE",
@@ -180,13 +180,15 @@ describe("领取范围", () => {
   });
 
   it("lets in either part: a level in range, a name, a noted ID after a rename", async () => {
-    const leveled = await person("leveled", "803", 3);
+    const leveled = await person("leveled", "803", 4);
+    // Lv3 sits between the two picked: not in.
+    const between = await person("between", "810", 3);
     const named = await person("named", "804", 0);
     const renamed = await person("before", "805", null);
     const unknownLevel = await person("unknown", "806", null);
     const activity = await open(
       input({
-        levels: { min: 2, max: 4 },
+        levels: [2, 4],
         users: [
           { username: "named", linuxDoId: null },
           { username: "before", linuxDoId: null },
@@ -200,13 +202,14 @@ describe("领取范围", () => {
       expect(await claim(activity.id, userId)).toMatchObject({
         result: "claimed",
       });
-    await expect(claim(activity.id, unknownLevel)).rejects.toMatchObject({
-      code: "NOT_IN_SCOPE",
-    });
+    for (const userId of [unknownLevel, between])
+      await expect(claim(activity.id, userId)).rejects.toMatchObject({
+        code: "NOT_IN_SCOPE",
+      });
   });
 
   it("is fixed once opened; presentation still changes", async () => {
-    const activity = await open(input({ levels: { min: 1, max: 4 } }));
+    const activity = await open(input({ levels: [1, 3] }));
     const managed = await getManagedActivity(bindings, activity.id, ownerId);
     const config = managed.config as LdcActivityInput;
     await expect(
@@ -220,7 +223,37 @@ describe("领取范围", () => {
       activity: { ...config, passwords: ["scopekey1"], title: "新标题" },
     });
     expect((edited.config as LdcActivityInput).scope).toEqual({
-      levels: { min: 1, max: 4 },
+      levels: [1, 3],
+    });
+  });
+
+  it("reads a 红包 saved with a first-version range as its levels, and keeps it", async () => {
+    const low = await person("range-low", "811", 1);
+    const mid = await person("range-mid", "812", 2);
+    const activity = await open(input({ levels: [2] }));
+    // As the first version stored it: Lv2–3.
+    await env.DB.prepare(
+      `UPDATE activities SET config = json_set(config, '$.scope', json('{"levels":{"min":2,"max":3}}')) WHERE id = ?`,
+    )
+      .bind(activity.id)
+      .run();
+    expect((await getPublicActivity(bindings, activity.id)).scope).toEqual({
+      levels: [2, 3],
+    });
+    const managed = await getManagedActivity(bindings, activity.id, ownerId);
+    const config = managed.config as LdcActivityInput;
+    expect(config.scope).toEqual({ levels: [2, 3] });
+    await expect(claim(activity.id, low)).rejects.toMatchObject({
+      code: "NOT_IN_SCOPE",
+    });
+    expect(await claim(activity.id, mid)).toMatchObject({ result: "claimed" });
+    // Its owner can still change what it says; the range stays as it was.
+    const edited = await updateActivity(bindings, activity.id, ownerId, {
+      version: managed.version,
+      activity: { ...config, passwords: ["scopekey1"], title: "改个标题" },
+    });
+    expect((edited.config as LdcActivityInput).scope).toEqual({
+      levels: [2, 3],
     });
   });
 
@@ -229,7 +262,7 @@ describe("领取范围", () => {
     const high = await person("draw-high", "808", 4);
     const activity = await open(
       input(
-        { levels: { min: 4, max: 4 } },
+        { levels: [4] },
         {
           mode: "timed_draw",
           algorithm: "double_mean_v1",

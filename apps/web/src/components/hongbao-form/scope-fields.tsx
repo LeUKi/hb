@@ -1,18 +1,17 @@
 import {
   CLAIM_SCOPE_LIMITS,
-  levelRangeText,
+  levelsText,
   scopeSentence,
-  TRUST_LEVEL_MAX,
   TRUST_LEVEL_MIN,
+  TRUST_LEVEL_NAMES,
 } from "@hb/contracts";
 import { Plus, UserCheck, Users, X } from "lucide-react";
 import { useState } from "react";
 import { usePerson } from "../../lib/people";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
-import { ChoiceCards, Field, Switch, TextInput } from "../ui/field";
+import { ChoiceCards, Field, TextInput, ToggleCards } from "../ui/field";
 import { PersonLine } from "../ui/person-line";
-import { RangeSlider } from "../ui/range-slider";
 import { Reveal } from "../ui/reveal";
 import type { ErrorOf, Update } from "./fields";
 import type { FormState, ScopeForm, ScopePerson } from "./form-state";
@@ -20,10 +19,12 @@ import type { FormState, ScopeForm, ScopePerson } from "./form-state";
 // 领取范围 (docs/claim-scope-design.md §5): everyone, or limited by name
 // and/or by 等级, either letting someone in — the sentence under it says so.
 
-const levels = Array.from(
-  { length: TRUST_LEVEL_MAX - TRUST_LEVEL_MIN + 1 },
-  (_, index) => `Lv${index + TRUST_LEVEL_MIN}`,
-);
+/** Lv0–Lv4, each with LINUX DO's name for it. */
+const levelOptions = TRUST_LEVEL_NAMES.map((name, index) => ({
+  value: TRUST_LEVEL_MIN + index,
+  title: `Lv${TRUST_LEVEL_MIN + index}`,
+  description: name,
+}));
 
 /** The 领取范围 in a line: the step's summary and its line to 更多设置. */
 export function scopeLine(form: FormState) {
@@ -31,7 +32,7 @@ export function scopeLine(form: FormState) {
   const { scope } = form;
   if (!scope.limited) return `${name}：所有人`;
   const parts = [
-    ...(scope.byLevel ? [levelRangeText(scope.levels)] : []),
+    ...(scope.levels.length > 0 ? [levelsText(scope.levels)] : []),
     ...(scope.users.length > 0 ? [`指定的 ${scope.users.length} 人`] : []),
   ];
   return parts.length > 0
@@ -209,10 +210,10 @@ export function ScopeFields({
   const levelsError = errorOf("hb-scope-levels");
   const missing = errorOf("hb-scope");
   const sentence =
-    scope.byLevel || scope.users.length > 0
+    scope.levels.length > 0 || scope.users.length > 0
       ? scopeSentence(
           {
-            ...(scope.byLevel ? { levels: scope.levels } : {}),
+            ...(scope.levels.length > 0 ? { levels: scope.levels } : {}),
             users: scope.users,
           },
           verb,
@@ -247,37 +248,22 @@ export function ScopeFields({
             set={set}
             error={errorOf("hb-scope-user")}
           />
-          <Switch
-            label="按等级"
-            description="LINUX DO 信任等级。"
-            checked={scope.byLevel}
-            onChange={(byLevel) => set({ byLevel })}
-          />
-          <Reveal show={scope.byLevel}>
-            <div
-              id="hb-scope-levels"
-              tabIndex={-1}
-              className="grid gap-2 outline-none"
+          {/* Any of Lv0–Lv4; none picked, not by level. */}
+          <div id="hb-scope-levels" tabIndex={-1} className="outline-none">
+            <Field
+              label="等级"
+              hint="LINUX DO 信任等级，可以多选。"
+              error={levelsError}
             >
-              <p className="text-sm text-ink">
-                {scope.levels.min === scope.levels.max
-                  ? `只有 Lv${scope.levels.min}`
-                  : levelRangeText(scope.levels)}
-              </p>
-              <RangeSlider
-                value={scope.levels}
-                bounds={{ min: TRUST_LEVEL_MIN, max: TRUST_LEVEL_MAX }}
-                onChange={(next) => set({ levels: next })}
-                names={["最低等级", "最高等级"]}
-                marks={levels}
-                valueText={(level) => `Lv${level}`}
+              <ToggleCards
+                label="等级"
+                values={scope.levels}
+                options={levelOptions}
+                onChange={(levels) => set({ levels })}
                 invalid={Boolean(levelsError)}
               />
-              <Reveal show={Boolean(levelsError)}>
-                <p className="text-xs text-danger">{levelsError}</p>
-              </Reveal>
-            </div>
-          </Reveal>
+            </Field>
+          </div>
           {/* Both parts: “或”, said plainly, so nobody reads it as “and”.
               Nothing picked yet (限定 starts so) is the next step, not a
               mistake: said the same, quietly; the step outside marks it. */}

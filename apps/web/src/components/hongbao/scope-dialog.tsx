@@ -1,4 +1,4 @@
-import { levelRangeText, scopeSentence } from "@hb/contracts";
+import { levelsText, scopeSentence } from "@hb/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAtom } from "jotai";
 import { useRef } from "react";
@@ -39,8 +39,8 @@ export function ScopeDialog() {
     ? ""
     : scope.levels
       ? level === null || seen === null
-        ? "还不知道你的等级，重新登录一次就能更新。"
-        : `本站记的是你 ${seen.getMonth() + 1}月${seen.getDate()}日登录时的等级：Lv${level}。等级变了的话，重新登录一次就能更新。`
+        ? "本站还没有你的等级。重新登录可以刷新个人资料，包括等级。"
+        : `本站记的是你 ${seen.getMonth() + 1}月${seen.getDate()}日登录时的等级：Lv${level}。重新登录可以刷新个人资料，包括等级。`
       : `你是 @${user?.username ?? ""}，不在里面。`;
   return (
     <ConfirmDialog
@@ -74,7 +74,7 @@ export function ScopeDialog() {
             {scope.levels && (
               <div className="contents">
                 <dt className="text-ink-3">信任等级</dt>
-                <dd className="text-ink">{levelRangeText(scope.levels)}</dd>
+                <dd className="text-ink">{levelsText(scope.levels)}</dd>
               </div>
             )}
             {scope.users && scope.users.length > 0 && (

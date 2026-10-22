@@ -240,7 +240,7 @@ test.describe("发红包", () => {
     expect(sent[0]?.activity).toMatchObject({ humanCheck: true });
   });
 
-  test("领取范围：按等级加指定的人，“或”说清楚，保存的输入带上", async ({
+  test("领取范围：等级加指定的人，“或”说清楚，保存的输入带上", async ({
     page,
   }) => {
     await mockSession(page, viewer);
@@ -272,17 +272,18 @@ test.describe("发红包", () => {
       scope.getByRole("button", { name: /^所有人/ }),
     ).toHaveAttribute("aria-pressed", "true");
     await scope.getByRole("button", { name: /^限定/ }).click();
-    // Both parts start off: it says what to pick, and stays open.
-    const byLevel = scope.getByRole("switch", { name: "按等级" });
-    await expect(byLevel).toHaveAttribute("aria-checked", "false");
+    // Both parts start empty: it says what to pick, and stays open.
+    const level = (name: string) =>
+      scope.getByRole("button", { name: new RegExp(`^${name}`) });
+    for (const name of ["Lv0", "Lv1", "Lv2", "Lv3", "Lv4"])
+      await expect(level(name)).toHaveAttribute("aria-pressed", "false");
     await expect(scope).toContainText("至少选一项：指定的人，或按等级");
     await expect(sheet).toBeVisible();
-    // 按等级 on starts at Lv1 and up.
-    await byLevel.click();
-    await expect(scope).toContainText("Lv1 及以上的人能领。");
-    // The low end up to Lv2 by keyboard.
-    await scope.getByRole("slider", { name: "最低等级" }).press("ArrowRight");
-    await expect(scope).toContainText("Lv2 及以上");
+    // Each card names its level as LINUX DO does.
+    await expect(level("Lv3")).toHaveText("Lv3活跃用户");
+    for (const name of ["Lv2", "Lv3", "Lv4"]) await level(name).click();
+    await expect(level("Lv2")).toHaveAttribute("aria-pressed", "true");
+    await expect(scope).toContainText("Lv2 及以上的人能领。");
     const field = scope.getByLabel("指定的人");
     await field.fill("@xiaoman");
     await expect(scope).toContainText("小满 @XiaoMan");
@@ -300,7 +301,7 @@ test.describe("发红包", () => {
       shown(page, "草稿已保存。开放前只有你能看到它。").first(),
     ).toBeVisible();
     expect(sent[0]?.activity.scope).toEqual({
-      levels: { min: 2, max: 4 },
+      levels: [2, 3, 4],
       users: [
         { username: "XiaoMan", linuxDoId: null },
         { username: "newcomer", linuxDoId: null },
@@ -308,9 +309,7 @@ test.describe("发红包", () => {
     });
   });
 
-  test("领取范围：可以只选一级；两头重合时，往哪边拖就动哪一头", async ({
-    page,
-  }) => {
+  test("领取范围：等级任意组合，不连着的分开写；全选不行", async ({ page }) => {
     await mockSession(page, viewer);
     await mockMerchants(page, [merchant]);
     const sent = await mockCreate(page);
@@ -320,65 +319,28 @@ test.describe("发红包", () => {
     const sheet = page.getByRole("dialog", { name: "更多设置" });
     const scope = sheet.getByRole("region", { name: "领取范围" });
     await scope.getByRole("button", { name: /^限定/ }).click();
-    await scope.getByRole("switch", { name: "按等级" }).click();
-    const low = scope.getByRole("slider", { name: "最低等级" });
-    const high = scope.getByRole("slider", { name: "最高等级" });
-    // The high end down to Lv1 meets the low end: one level.
-    await high.press("ArrowLeft");
-    await high.press("ArrowLeft");
-    await high.press("ArrowLeft");
-    await expect(high).toHaveAttribute("aria-valuenow", "1");
-    await expect(scope).toContainText("只有 Lv1");
-    await expect(scope).toContainText("Lv1 的人能领。");
-    // Neither passes the other by keyboard.
-    await high.press("ArrowLeft");
-    await low.press("ArrowRight");
-    await expect(low).toHaveAttribute("aria-valuenow", "1");
-    await expect(high).toHaveAttribute("aria-valuenow", "1");
-    // Where they meet, a drag right takes the high end, a drag left the low.
-    // Measured once the sheet has stopped moving.
-    const at = async () => {
-      let last: { x: number; y: number } | undefined;
-      for (let tries = 0; tries < 40; tries += 1) {
-        const box = await low.boundingBox();
-        const track = await low.locator("..").boundingBox();
-        if (box && track && last?.x === box.x && last.y === box.y)
-          return {
-            x: box.x + box.width / 2,
-            y: box.y + box.height / 2,
-            step: (track.width - box.width) / 4,
-          };
-        last = box ?? undefined;
-        await page.waitForTimeout(100);
-      }
-      throw new Error("the slider kept moving");
-    };
-    const drag = async (by: number) => {
-      const { x, y, step } = await at();
-      await page.mouse.move(x, y);
-      await page.mouse.down();
-      await page.mouse.move(x + by * step, y, { steps: 8 });
-      await page.mouse.up();
-    };
-    await drag(2);
-    await expect(scope).toContainText("Lv1–3 的人能领。");
-    await drag(-1);
-    await expect(scope).toContainText("Lv0–3 的人能领。");
-    // A press on the track takes the nearer end: Lv2 is nearer Lv3 than Lv0.
-    const { x, y, step } = await at();
-    await page.mouse.click(x + 2 * step, y);
-    await expect(scope).toContainText("Lv0–2 的人能领。");
-    // Both ends out to the edges: that is everyone, and it says so.
-    await high.press("End");
-    await expect(scope).toContainText("等级拉满就等于所有人，把范围收窄一点");
-    await high.press("ArrowLeft");
-    await expect(scope).toContainText("Lv0–3 的人能领。");
+    const level = (name: string) =>
+      scope.getByRole("button", { name: new RegExp(`^${name}`) });
+    // One level alone.
+    await level("Lv3").click();
+    await expect(scope).toContainText("Lv3 的人能领。");
+    // Two apart: each said, a 顿号 between, picked in any order.
+    await level("Lv1").click();
+    await expect(scope).toContainText("Lv1、Lv3 的人能领。");
+    // Every level is everyone: it says so.
+    for (const name of ["Lv0", "Lv2", "Lv4"]) await level(name).click();
+    await expect(scope).toContainText("等级全选就等于所有人");
+    // One off again (Lv2): two runs.
+    await level("Lv2").click();
+    await expect(level("Lv2")).toHaveAttribute("aria-pressed", "false");
+    await expect(scope).toContainText("Lv0–1、Lv3–4 的人能领。");
+    await expect(scope).not.toContainText("等级全选就等于所有人");
     await sheet.getByRole("button", { name: "完成" }).click();
     await page.getByRole("button", { name: "存草稿" }).first().click();
     await expect(
       shown(page, "草稿已保存。开放前只有你能看到它。").first(),
     ).toBeVisible();
-    expect(sent[0]?.activity.scope).toEqual({ levels: { min: 0, max: 3 } });
+    expect(sent[0]?.activity.scope).toEqual({ levels: [0, 1, 3, 4] });
   });
 
   test("更多设置：关掉首页领取，加入红包广场跟着打开并锁住，摘要和保存的输入都带上", async ({

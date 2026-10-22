@@ -7,21 +7,46 @@ import { inviteUsernameSchema } from "./balance";
 /** LINUX DO 信任等级: Lv0–Lv4. */
 export const TRUST_LEVEL_MIN = 0;
 export const TRUST_LEVEL_MAX = 4;
+/** Each level's name as LINUX DO (Discourse in Chinese) says it, from Lv0. */
+export const TRUST_LEVEL_NAMES = [
+  "新用户",
+  "基本用户",
+  "成员",
+  "活跃用户",
+  "领导者",
+] as const;
 export const CLAIM_SCOPE_LIMITS = { users: 100 } as const;
 
 const levelSchema = z.number().int().min(TRUST_LEVEL_MIN).max(TRUST_LEVEL_MAX);
+const levelCount = TRUST_LEVEL_MAX - TRUST_LEVEL_MIN + 1;
+
+/** Every level from `min` to `max`: how the first version's range reads now. */
+function levelsBetween(min: number, max: number) {
+  return Array.from({ length: max - min + 1 }, (_, index) => min + index);
+}
+
+/** The levels picked, low to high, each once. */
+function sortedLevels(levels: readonly number[]) {
+  return [...new Set(levels)].sort((left, right) => left - right);
+}
+
+const levelsSchema = z
+  .union([
+    z.array(levelSchema),
+    // The first version (2026-10-22 19:28) kept a range, { min, max }.
+    z
+      .strictObject({ min: levelSchema, max: levelSchema })
+      .refine((value) => value.min <= value.max, "等级范围无效")
+      .transform((value) => levelsBetween(value.min, value.max)),
+  ])
+  .transform(sortedLevels)
+  .refine((levels) => levels.length > 0, "至少选一个等级")
+  .refine((levels) => levels.length < levelCount, "等级全选就等于所有人");
 
 export const claimScopeSchema = z
   .strictObject({
-    /** A range of 信任等级; both ends are in it. */
-    levels: z
-      .strictObject({ min: levelSchema, max: levelSchema })
-      .refine((value) => value.min <= value.max, "等级范围无效")
-      .refine(
-        (value) => value.min > TRUST_LEVEL_MIN || value.max < TRUST_LEVEL_MAX,
-        "等级选了全部，就等于所有人",
-      )
-      .optional(),
+    /** The 信任等级 let in, any of Lv0–Lv4 but not all of them. */
+    levels: levelsSchema.optional(),
     /**
      * People by name. The server notes the LINUX DO ID of each who has been
      * here when it saves; the others it knows by name only.
@@ -52,9 +77,32 @@ export const claimScopeSchema = z
 
 export type ClaimScope = z.infer<typeof claimScopeSchema>;
 
+/**
+ * A 领取范围 as a 红包's config holds it: one saved by the first version
+ * may still have its levels as a range.
+ */
+export type StoredClaimScope = Omit<ClaimScope, "levels"> & {
+  levels?: number[] | { min: number; max: number };
+};
+
+/** A saved 领取范围 read today: a first-version range becomes its levels. */
+export function readClaimScope(
+  scope: StoredClaimScope | undefined,
+): ClaimScope | undefined {
+  if (!scope) return undefined;
+  const { levels, ...rest } = scope;
+  if (levels === undefined) return rest;
+  return {
+    ...rest,
+    levels: Array.isArray(levels)
+      ? sortedLevels(levels)
+      : levelsBetween(levels.min, levels.max),
+  };
+}
+
 /** What a 红包's public read says of its 领取范围: the people with their faces when known. */
 export type PublicClaimScope = {
-  levels?: { min: number; max: number };
+  levels?: number[];
   users?: {
     username: string;
     displayName?: string;
@@ -79,8 +127,7 @@ export function scopeAllows(
   if (
     levels &&
     viewer.trustLevel !== null &&
-    viewer.trustLevel >= levels.min &&
-    viewer.trustLevel <= levels.max
+    levels.includes(viewer.trustLevel)
   )
     return true;
   const name = viewer.username.toLowerCase();
@@ -91,22 +138,37 @@ export function scopeAllows(
   );
 }
 
-/** A range of 信任等级 in words: “Lv2 及以上”, “Lv0–2”, “Lv1–3”, “Lv0”. */
-export function levelRangeText(levels: { min: number; max: number }) {
-  if (levels.min === levels.max) return `Lv${levels.min}`;
-  if (levels.max === TRUST_LEVEL_MAX) return `Lv${levels.min} 及以上`;
-  return `Lv${levels.min}–${levels.max}`;
+/**
+ * 信任等级 in words: levels in a row go together, “及以上” when the only
+ * run reaches Lv4; apart, a 顿号 between: “Lv2 及以上”, “Lv0–2”, “Lv3”,
+ * “Lv1、Lv3”, “Lv0–1、Lv3–4”.
+ */
+export function levelsText(levels: readonly number[]) {
+  const runs: [number, number][] = [];
+  for (const level of sortedLevels(levels)) {
+    const last = runs.at(-1);
+    if (last && level === last[1] + 1) last[1] = level;
+    else runs.push([level, level]);
+  }
+  const [only] = runs;
+  if (
+    runs.length === 1 &&
+    only &&
+    only[0] !== only[1] &&
+    only[1] === TRUST_LEVEL_MAX
+  )
+    return `Lv${only[0]} 及以上`;
+  return runs
+    .map(([low, high]) => (low === high ? `Lv${low}` : `Lv${low}–${high}`))
+    .join("、");
 }
 
 /**
- * A range of 信任等级 followed by words, a space between when it ends in
- * Latin: “Lv1–3 的人”, “Lv2 及以上的人”.
+ * 信任等级 followed by words, a space between when it ends in Latin:
+ * “Lv1–3 的人”, “Lv2 及以上的人”.
  */
-export function levelPhrase(
-  levels: { min: number; max: number },
-  rest: string,
-) {
-  const level = levelRangeText(levels);
+export function levelPhrase(levels: readonly number[], rest: string) {
+  const level = levelsText(levels);
   return /[A-Za-z0-9]$/.test(level) ? `${level} ${rest}` : `${level}${rest}`;
 }
 
@@ -115,7 +177,7 @@ export function scopeTag(scope: PublicClaimScope) {
   const count = scope.users?.length ?? 0;
   if (scope.levels && count > 0)
     return `仅限 ${levelPhrase(scope.levels, "或指定的")} ${count} 人`;
-  if (scope.levels) return `仅限 ${levelRangeText(scope.levels)}`;
+  if (scope.levels) return `仅限 ${levelsText(scope.levels)}`;
   return `仅限指定的 ${count} 人`;
 }
 
@@ -145,8 +207,7 @@ export function publicScopeAllows(
   if (
     levels &&
     viewer.trustLevel !== null &&
-    viewer.trustLevel >= levels.min &&
-    viewer.trustLevel <= levels.max
+    levels.includes(viewer.trustLevel)
   )
     return true;
   const name = viewer.username.toLowerCase();

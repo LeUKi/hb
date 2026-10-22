@@ -16,7 +16,7 @@ const author = {
   avatarUrl: null,
 };
 const scope = {
-  levels: { min: 2, max: 4 },
+  levels: [2, 3, 4],
   users: [
     { username: "XiaoHong", displayName: "小红", avatarUrl: null },
     { username: "viewer" },
@@ -104,7 +104,7 @@ test.describe("领取范围", () => {
     await expect(dialog).toContainText("@XiaoHong");
     await expect(dialog).toContainText("@viewer");
     await expect(dialog).toContainText(
-      "本站记的是你 10月20日登录时的等级：Lv1。等级变了的话，重新登录一次就能更新。",
+      "本站记的是你 10月20日登录时的等级：Lv1。重新登录可以刷新个人资料，包括等级。",
     );
     await expect(
       dialog.getByRole("button", { name: "重新登录" }),
@@ -114,7 +114,7 @@ test.describe("领取范围", () => {
     expect(claims).toHaveLength(0);
   });
 
-  test("等级还不知道：提示重新登录一次", async ({ page }) => {
+  test("等级还不知道：提示重新登录刷新资料", async ({ page }) => {
     await mockSession(page, {
       ...viewer,
       username: "outsider",
@@ -125,7 +125,7 @@ test.describe("领取范围", () => {
     await page.getByRole("button", { name: "领取红包" }).click();
     await expect(
       page.getByRole("dialog", { name: "这个红包只有部分人能领" }),
-    ).toContainText("还不知道你的等级，重新登录一次就能更新。");
+    ).toContainText("本站还没有你的等级。重新登录可以刷新个人资料，包括等级。");
   });
 
   test("指定的人照常领取；服务器说不在范围里，也弹同一个说明", async ({
@@ -150,7 +150,7 @@ test.describe("领取范围", () => {
           items: [
             {
               ...activity,
-              scope: { levels: { min: 1, max: 3 } },
+              scope: { levels: [1, 3] },
               myClaim: null,
             },
           ],
@@ -162,6 +162,6 @@ test.describe("领取范围", () => {
     await openApp(page, "/square");
     await expect(
       page.getByRole("button", { name: /老朋友的红包/ }),
-    ).toContainText("仅限 Lv1–3");
+    ).toContainText("仅限 Lv1、Lv3");
   });
 });

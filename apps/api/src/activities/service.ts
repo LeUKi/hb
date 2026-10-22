@@ -24,6 +24,7 @@ import {
   normalizeTopicLink,
   type PublicActivity,
   type PublicQuantity,
+  readClaimScope,
   sameLdcMoney,
   storedActivitySchema,
   type UpdateActivityInput,
@@ -149,6 +150,8 @@ function configuration(row: ActivityRow): StoredConfig {
   const saved = JSON.parse(row.config) as StoredConfig;
   return {
     ...saved,
+    // A first-version 领取范围 kept its levels as a range.
+    scope: readClaimScope(saved.scope),
     rewardType: "ldc",
     participationMode: row.participationMode,
     topicUrl: activityTopicUrl(row) ?? "",

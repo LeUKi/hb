@@ -1,7 +1,8 @@
 import {
   type ClaimScope,
-  type LdcActivityInput,
   type PublicClaimScope,
+  readClaimScope,
+  type StoredClaimScope,
   scopeAllows,
 } from "@hb/contracts";
 import type { ApiBindings } from "../env";
@@ -74,7 +75,9 @@ export async function resolveScope(
 }
 
 export function scopeOf(row: ActivityRow) {
-  return (JSON.parse(row.config) as LdcActivityInput).scope;
+  return readClaimScope(
+    (JSON.parse(row.config) as { scope?: StoredClaimScope }).scope,
+  );
 }
 
 /** Before the 口令, the attempt and its cooldown: someone outside is turned away. */

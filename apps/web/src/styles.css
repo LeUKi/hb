@@ -1289,32 +1289,6 @@
     border-radius: 50%;
   }
 
-  /* RangeSlider (ui/range-slider.tsx): its two ends, white with the
-     accent's ring; red when the range is not allowed. */
-  .hb-range-thumb {
-    background: #fff;
-    border: 2px solid var(--color-accent);
-    box-shadow: 0 2px 6px -2px rgb(70 0 10 / 0.35);
-    cursor: grab;
-    outline: none;
-    transition:
-      scale 120ms var(--ease-snappy),
-      border-color 200ms var(--ease-snappy);
-  }
-  .hb-range-thumb-invalid {
-    border-color: var(--color-danger);
-  }
-  .hb-range-thumb-active {
-    cursor: grabbing;
-    /* Tailwind's centring is the translate property; this adds to it. */
-    scale: 1.12;
-  }
-  .hb-range-thumb:focus-visible {
-    box-shadow:
-      0 0 0 3px var(--color-cream),
-      0 0 0 5px var(--color-accent-ink);
-  }
-
   /* 印章: a coin, so it stays a true circle. A sheen crosses it now and
      then; while confirming, the sheen runs on and a gold arc circles it. */
   .hb-seal {

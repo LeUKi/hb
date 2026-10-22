@@ -373,3 +373,69 @@ export function ChoiceCards<T extends string>({
     </fieldset>
   );
 }
+
+/**
+ * ChoiceCards where each card goes on and off by itself, any number of
+ * them: small, side by side, a title over a word or two.
+ */
+export function ToggleCards<T extends string | number>({
+  values,
+  options,
+  onChange,
+  label,
+  invalid,
+}: {
+  values: readonly T[];
+  options: { value: T; title: string; description: string }[];
+  onChange: (values: T[]) => void;
+  label: string;
+  invalid?: boolean;
+}) {
+  return (
+    <fieldset
+      aria-label={label}
+      aria-invalid={invalid || undefined}
+      className="grid min-w-0 gap-1.5"
+      style={{
+        gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))`,
+      }}
+    >
+      {options.map((option) => {
+        const on = values.includes(option.value);
+        return (
+          <Squircle key={option.value} radius={radius.choice}>
+            <button
+              type="button"
+              aria-pressed={on}
+              onClick={() =>
+                onChange(
+                  on
+                    ? values.filter((value) => value !== option.value)
+                    : options
+                        .map((each) => each.value)
+                        .filter(
+                          (value) =>
+                            value === option.value || values.includes(value),
+                        ),
+                )
+              }
+              className="choice grid content-start justify-items-center gap-0.5 px-1 py-2.5 text-center"
+            >
+              <span
+                className={cn(
+                  "text-sm font-medium tabular-nums transition-colors",
+                  on ? "text-accent-ink" : "text-ink",
+                )}
+              >
+                {option.title}
+              </span>
+              <span className="text-[0.6875rem] whitespace-nowrap text-ink-3">
+                {option.description}
+              </span>
+            </button>
+          </Squircle>
+        );
+      })}
+    </fieldset>
+  );
+}
