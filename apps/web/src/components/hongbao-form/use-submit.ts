@@ -15,6 +15,7 @@ import {
 } from "../../lib/activities";
 import { useActivityOpening } from "../../lib/activity-opening";
 import { activityCode } from "../../lib/activity-route";
+import { hapticForTone } from "../../lib/haptics";
 import { useCurrentMerchant } from "../../lib/merchants";
 import type { SessionUser } from "../../lib/session";
 import {
@@ -84,6 +85,11 @@ export function useSubmit({
     pending: Pending;
   } | null>(null);
   const [notice, setNotice] = useState<Notice | null>(() => carried);
+  /** A notice from a press, felt as it shows (震动反馈). */
+  const notify = (note: Notice) => {
+    hapticForTone(note.tone);
+    setNotice(note);
+  };
   useEffect(() => {
     carried = null;
   }, []);
@@ -128,6 +134,7 @@ export function useSubmit({
     note?: Notice,
   ) => {
     if (!here.current) return;
+    hapticForTone(note?.tone ?? "success");
     carried = note ?? null;
     void navigate({
       to: page === "activity" ? "/🧧/$code" : "/🧧/$code/📝",
@@ -141,7 +148,7 @@ export function useSubmit({
     if (!here.current) return;
     onSettled(saved);
     onSaved?.();
-    setNotice(note);
+    notify(note);
   };
 
   /** Saved (as a draft unless it was open already): open it if asked. */
@@ -190,14 +197,14 @@ export function useSubmit({
     // A 🐟额红包 has no merchant: 🐟额 is checked when it opens.
     if (!retrying && !opened && form.funding !== "balance") {
       if (!merchant || !paying) {
-        setNotice({
+        notify({
           tone: "danger",
           text: "还没有配置商户，不能保存。先到 LDC 商户配置填好商户。",
         });
         return;
       }
       if (open && merchant.credentialVerification.status === "rejected") {
-        setNotice({
+        notify({
           tone: "danger",
           text: "商户凭证未通过，不能开放。可以先存草稿。",
         });
@@ -261,7 +268,7 @@ export function useSubmit({
           }
           setUncertain(null);
           if (here.current)
-            setNotice({
+            notify({
               tone: "danger",
               text: "保存没有完成：这个红包刚在别处改过，你的输入还在。确认后再保存一次。",
             });
@@ -269,12 +276,12 @@ export function useSubmit({
         }
         if (!refused(error)) {
           setUncertain({ open, pending });
-          if (here.current) setNotice({ tone: "warning", text: lost });
+          if (here.current) notify({ tone: "warning", text: lost });
           return;
         }
         setUncertain(null);
         if (here.current)
-          setNotice({
+          notify({
             tone: "danger",
             text:
               error.status === 429

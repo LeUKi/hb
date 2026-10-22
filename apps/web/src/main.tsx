@@ -4,6 +4,7 @@ import { getDefaultStore, Provider as JotaiProvider } from "jotai";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { failBoot, markBoot } from "./lib/boot";
+import { installHaptics } from "./lib/haptics";
 import { createAppQueryClient } from "./lib/query-cache";
 import { router } from "./router";
 import "./styles.css";
@@ -15,6 +16,8 @@ const root = document.getElementById("root");
 if (!root) throw new Error("App root is missing");
 
 const queryClient = createAppQueryClient();
+// 震动反馈 (docs/haptics-design.md): presses, the same everywhere.
+installHaptics();
 
 createRoot(root, {
   onUncaughtError: () => failBoot("render"),

@@ -5,9 +5,11 @@ import type {
 } from "../packages/contracts/src";
 import {
   expectPath,
+  haptics,
   mockSession,
   omniboxInput,
   openApp,
+  recordHaptics,
   viewer,
 } from "./support/app";
 
@@ -596,6 +598,7 @@ test.describe("🐟额", () => {
   test("转账：找到人才能转，选到哪，确认后说转给了谁；发到 Credit 有它的限制", async ({
     page,
   }) => {
+    const felt = await recordHaptics(page);
     await mockSession(page, { ...viewer, balance: true, balancePlus: true });
     await mockBalance(page, { withdraw: true });
     await page.route("**/api/me/balance/recipients?**", (route) => {
@@ -691,6 +694,8 @@ test.describe("🐟额", () => {
     await expect(confirm.getByText("转出去不能撤回。")).toBeVisible();
     await confirm.getByRole("button", { name: "确认转账" }).click();
     await expect(dialog.getByText("已转给 @Friend 2.50 🐟。")).toBeVisible();
+    // 震动反馈: the press a light touch, the answer a success.
+    expect((await felt()).slice(-2)).toEqual([haptics.light, haptics.success]);
     expect(sent).toEqual([
       expect.objectContaining({
         toUserId: "12345",

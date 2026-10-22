@@ -17,6 +17,7 @@ import type { InferResponseType } from "hono/client";
 import type { api } from "../api";
 import { readResponse } from "./activities";
 import { adminKey, useAdminIdentity } from "./admin";
+import { haptic } from "./haptics";
 
 // 网站管理 · 🐟额 (docs/balance-design.md §7): its own reads, and the few
 // writes an admin makes (查单, 确认到账, 调整, settings, the platform app).
@@ -90,17 +91,25 @@ async function write<T>(
   csrfToken: string,
   body?: unknown,
 ) {
-  return readResponse<T>(
-    await fetch(`/api/admin/balance/${path}`, {
-      method,
-      headers: {
-        "X-CSRF-Token": csrfToken,
-        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      cache: "no-store",
-    }),
-  );
+  // 震动反馈: a change asked for, felt as it answers.
+  try {
+    const saved = await readResponse<T>(
+      await fetch(`/api/admin/balance/${path}`, {
+        method,
+        headers: {
+          "X-CSRF-Token": csrfToken,
+          ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        cache: "no-store",
+      }),
+    );
+    haptic("success");
+    return saved;
+  } catch (error) {
+    haptic("error");
+    throw error;
+  }
 }
 
 const key = (identity: string, ...rest: unknown[]) =>

@@ -1,6 +1,13 @@
 import { AnimatePresence, motion, type Transition } from "motion/react";
-import { type CSSProperties, useId, useLayoutEffect, useRef } from "react";
+import {
+  type CSSProperties,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+} from "react";
 import { cn } from "../../lib/cn";
+import { haptic } from "../../lib/haptics";
 import type { HongbaoActivity } from "../../lib/hongbao";
 import { isApple } from "../../lib/platform";
 import {
@@ -141,6 +148,22 @@ export function HongbaoHero({
   const faceRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const hintId = useId();
+
+  // 震动反馈: success as the cover starts to open on a claim or sign-up
+  // just made (once; StrictMode's second run must not drop it).
+  const felt = useRef<number | null>(null);
+  const claimedAt = opened && fresh && mine ? mine.at : null;
+  useEffect(() => {
+    if (claimedAt === null || felt.current === claimedAt) return;
+    const timer = window.setTimeout(
+      () => {
+        felt.current = claimedAt;
+        haptic("success");
+      },
+      reduced ? 0 : delay * 1000,
+    );
+    return () => window.clearTimeout(timer);
+  }, [claimedAt, delay, reduced]);
 
   const cover = useCoverState({
     opened,

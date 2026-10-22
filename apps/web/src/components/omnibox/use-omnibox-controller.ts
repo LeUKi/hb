@@ -40,6 +40,7 @@ import {
   topicActivitiesQuery,
   useGlobalRedemptionDiscovery,
 } from "../../lib/discovery";
+import { haptic, hapticForTone } from "../../lib/haptics";
 import { askHumanCheck, endHumanCheck } from "../../lib/human-check";
 import { maintenanceAtom } from "../../lib/maintenance";
 import { closeOverlay, openOverlay, switchOverlay } from "../../lib/overlay";
@@ -342,6 +343,7 @@ export function useOmniboxController() {
             { words: "红包广场", action: "square" },
           ],
         });
+        haptic("error");
         store.set(mismatchAtom, (count) => count + 1);
       } catch (error) {
         store.set(pendingAtom, false);
@@ -615,8 +617,10 @@ export function useOmniboxController() {
         activityId,
         token: input.submissionId,
       });
-      const say = (message: OmniMessage) =>
+      const say = (message: OmniMessage) => {
+        hapticForTone(message.tone);
         store.set(messageAtom, { activityId, ...message });
+      };
       try {
         const result = await claimWithHumanCheck(activityId, input, stale);
         if (!result) {
@@ -758,8 +762,10 @@ export function useOmniboxController() {
       const href = router.history.location.href;
       store.set(pendingAtom, true);
       store.set(messageAtom, null);
-      const say = (message: OmniMessage) =>
+      const say = (message: OmniMessage) => {
+        hapticForTone(message.tone);
         store.set(messageAtom, { activityId, ...message });
+      };
       try {
         const result = await solve.mutateAsync({
           id: activityId,

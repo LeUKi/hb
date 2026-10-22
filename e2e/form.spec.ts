@@ -6,7 +6,15 @@ import {
   type Merchant,
   type MerchantList,
 } from "../packages/contracts/src";
-import { expectPath, mockSession, openApp, shown, viewer } from "./support/app";
+import {
+  expectPath,
+  haptics,
+  mockSession,
+  openApp,
+  recordHaptics,
+  shown,
+  viewer,
+} from "./support/app";
 
 // 发红包 (migration phase 3) against a mocked API: the four steps, what is
 // sent, a lost answer sent again as it was, and a missing merchant.
@@ -238,6 +246,49 @@ test.describe("发红包", () => {
       shown(page, "草稿已保存。开放前只有你能看到它。").first(),
     ).toBeVisible();
     expect(sent[0]?.activity).toMatchObject({ humanCheck: true });
+  });
+
+  test("震动反馈：下一步被拦下震出错；选择类的控件换了才轻震；存草稿成功震成功", async ({
+    page,
+  }) => {
+    const felt = await recordHaptics(page);
+    await mockSession(page, viewer);
+    await mockMerchants(page, [merchant]);
+    await mockCreate(page);
+    await openApp(page, "/new");
+    // 发多少 left empty, Enter is turned back: an error.
+    await fillRandom(page);
+    expect(await felt()).toContainEqual(haptics.error);
+    await page.getByRole("button", { name: /更多设置/ }).click();
+    const sheet = page.getByRole("dialog", { name: "更多设置" });
+    const scope = sheet.getByRole("region", { name: "领取范围" });
+    const count = async () => (await felt()).length;
+    const start = await count();
+    await scope.getByRole("button", { name: /^限定/ }).click();
+    await expect
+      .poll(felt)
+      .toEqual(expect.arrayContaining([haptics.selection]));
+    await expect.poll(count).toBe(start + 1);
+    // The one already picked: nothing.
+    await scope.getByRole("button", { name: /^限定/ }).click();
+    await page.waitForTimeout(100);
+    await scope.getByRole("button", { name: /^Lv2/ }).click();
+    await expect.poll(count).toBe(start + 2);
+    // A person's next tap: picks closer than 45 ms are felt as one.
+    await page.waitForTimeout(100);
+    await sheet.getByRole("switch", { name: "首页领取" }).click();
+    await expect.poll(count).toBe(start + 3);
+    expect((await felt()).slice(start)).toEqual([
+      haptics.selection,
+      haptics.selection,
+      haptics.selection,
+    ]);
+    await sheet.getByRole("button", { name: "完成" }).click();
+    await page.getByRole("button", { name: "存草稿" }).first().click();
+    await expect(
+      shown(page, "草稿已保存。开放前只有你能看到它。").first(),
+    ).toBeVisible();
+    expect((await felt()).at(-1)).toEqual(haptics.success);
   });
 
   test("领取范围：等级加指定的人，“或”说清楚，保存的输入带上", async ({

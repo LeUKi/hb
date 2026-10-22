@@ -18,6 +18,7 @@ import {
   rosterMatches,
   seedMatches,
 } from "../../lib/draw-check";
+import { haptic } from "../../lib/haptics";
 import { splitOf } from "../../lib/hongbao-text";
 import { clockSeconds } from "../../lib/roster-time";
 import verifyScript from "../../lib/verify-draw.mjs?raw";
@@ -197,7 +198,10 @@ function CopyScript() {
         const write = navigator.clipboard?.writeText(verifyScript);
         if (!write) return setState("failed");
         write.then(
-          () => setState("done"),
+          () => {
+            haptic("light");
+            setState("done");
+          },
           () => setState("failed"),
         );
       }}

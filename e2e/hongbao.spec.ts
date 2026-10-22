@@ -17,10 +17,12 @@ import {
 import {
   csrfToken,
   expectPath,
+  haptics,
   type MockUser,
   mockSession,
   omniboxInput,
   openApp,
+  recordHaptics,
   shown,
   viewer,
 } from "./support/app";
@@ -325,6 +327,27 @@ async function readClipboard(page: Page) {
 }
 
 test.describe("红包页", () => {
+  test("震动反馈：按印章轻触一下，口令不对震出错，领到时和打开的红包一起震成功", async ({
+    page,
+  }) => {
+    const felt = await recordHaptics(page);
+    await mockSession(page, viewer);
+    await mockHongbao(page);
+    await openApp(page, path);
+    // Nothing on the way in.
+    expect(await felt()).toEqual([]);
+    await page.getByRole("button", { name: "输入口令领取" }).click();
+    await expect.poll(felt).toEqual([haptics.light]);
+    await omniboxInput(page).fill("不对的口令123");
+    await page.keyboard.press("Enter");
+    await expect.poll(felt).toEqual([haptics.light, haptics.error]);
+    await omniboxInput(page).fill(passwordOf.mine);
+    await page.keyboard.press("Enter");
+    await expect
+      .poll(felt)
+      .toEqual([haptics.light, haptics.error, haptics.success]);
+  });
+
   test("🐟额红包：皮上写🐟额；领到后金额带小 🐟，状态是已存入🐟额，可以去转出", async ({
     page,
   }) => {

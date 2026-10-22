@@ -250,6 +250,8 @@ export function useClaimReward(userId: string, csrfToken: string) {
   const queryClient = useQueryClient();
   const account = useAccountSession(userId, "session");
   return useMutation({
+    // 震动反馈: the claim flow feels its own result.
+    meta: { haptics: false },
     gcTime: 0,
     onMutate: async ({ input }: { id: string; input: ClaimActivityInput }) => ({
       identity: account.captureIdentity(),

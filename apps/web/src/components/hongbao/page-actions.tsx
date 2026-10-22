@@ -27,6 +27,7 @@ import {
   useState,
 } from "react";
 import { activityShareUrl } from "../../lib/emoji-links";
+import { haptic } from "../../lib/haptics";
 import type { HongbaoActivity, PasswordView } from "../../lib/hongbao";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { useWindowInfo } from "../shell/window-info";
@@ -234,7 +235,10 @@ export function PageActions({
       return;
     }
     write.then(
-      () => setCopied({ key: item.key, ok: true }),
+      () => {
+        haptic("light");
+        setCopied({ key: item.key, ok: true });
+      },
       () => setCopied({ key: item.key, ok: false }),
     );
   };

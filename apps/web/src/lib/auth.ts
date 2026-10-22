@@ -172,6 +172,8 @@ export function useLogout(csrfToken: string | null | undefined) {
   const queryClient = useQueryClient();
 
   return useMutation({
+    // 震动反馈: signing out leaves the page; nothing to feel.
+    meta: { haptics: false },
     mutationFn: async () => {
       const response = await api.api.auth.logout.$post(undefined, {
         headers: csrfToken ? { "X-CSRF-Token": csrfToken } : undefined,

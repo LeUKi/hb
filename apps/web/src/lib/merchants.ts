@@ -281,6 +281,8 @@ export function useMerchantWrites(
       onError,
     }),
     changeImpact: useMutation({
+      // 震动反馈: a look before saving, not a result.
+      meta: { haptics: false },
       onMutate: account.captureIdentity,
       mutationFn: async () => {
         const result = await readResponse<MerchantChangePreview>(

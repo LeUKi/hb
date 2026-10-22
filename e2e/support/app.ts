@@ -99,3 +99,32 @@ export function shown(page: Page, text: string | RegExp) {
     .getByText(text, { exact: true })
     .and(page.locator(":not(.sr-only)"));
 }
+
+/**
+ * 震动反馈: stands in for the phone's motor, keeping each rhythm asked for
+ * (docs/haptics-design.md). Reads them back as they are now.
+ */
+export async function recordHaptics(page: Page) {
+  await page.addInitScript(() => {
+    const felt: unknown[] = [];
+    (window as unknown as { hbFelt: unknown[] }).hbFelt = felt;
+    Object.defineProperty(Navigator.prototype, "vibrate", {
+      configurable: true,
+      value: (pattern: number | number[]) => {
+        felt.push(pattern);
+        return true;
+      },
+    });
+  });
+  return () =>
+    page.evaluate(() => (window as unknown as { hbFelt: unknown[] }).hbFelt);
+}
+
+/** The five rhythms, as docs/haptics-design.md §2 sets them. */
+export const haptics = {
+  selection: 10,
+  light: 15,
+  success: [14, 60, 22],
+  warning: [24, 80, 24],
+  error: [18, 45, 18, 45, 28],
+} as const;

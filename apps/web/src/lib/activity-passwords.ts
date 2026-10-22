@@ -84,6 +84,8 @@ export function useSolvePassword(userId: string, csrfToken: string) {
   const queryClient = useQueryClient();
   const account = useAccountSession(userId);
   return useMutation({
+    // 震动反馈: 验证其他口令 feels its result in the box.
+    meta: { haptics: false },
     gcTime: 0,
     onMutate: async ({ input }: { id: string; input: PasswordClaimInput }) => ({
       identity: account.captureIdentity(),

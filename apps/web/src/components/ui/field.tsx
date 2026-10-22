@@ -12,6 +12,7 @@ import {
   useRef,
 } from "react";
 import { cn } from "../../lib/cn";
+import { haptic } from "../../lib/haptics";
 import { MorphLabel } from "./morph-label";
 import { Reveal } from "./reveal";
 import { radius, Squircle } from "./squircle";
@@ -302,7 +303,10 @@ export function Switch({
         aria-checked={checked}
         aria-describedby={description ? `${id}-description` : undefined}
         disabled={disabled}
-        onClick={() => onChange(!checked)}
+        onClick={() => {
+          haptic("selection");
+          onChange(!checked);
+        }}
         className="switch mt-0.5"
       >
         <span aria-hidden="true" className="switch-knob" />
@@ -356,7 +360,10 @@ export function ChoiceCards<T extends string>({
               type="button"
               aria-pressed={selected}
               disabled={(disabled && !selected) || option.disabled}
-              onClick={() => onChange(option.value)}
+              onClick={() => {
+                if (option.value !== value) haptic("selection");
+                onChange(option.value);
+              }}
               className="choice grid content-start gap-1 px-3.5 py-3 text-left"
             >
               <span className="flex items-center gap-2 text-sm font-medium text-ink">
@@ -409,7 +416,8 @@ export function ToggleCards<T extends string | number>({
                 <button
                   type="button"
                   aria-pressed={on}
-                  onClick={() =>
+                  onClick={() => {
+                    haptic("selection");
                     onChange(
                       on
                         ? values.filter((value) => value !== option.value)
@@ -420,8 +428,8 @@ export function ToggleCards<T extends string | number>({
                                 value === option.value ||
                                 values.includes(value),
                             ),
-                    )
-                  }
+                    );
+                  }}
                   className="choice choice-toggle grid content-start justify-items-center gap-0.5 px-1 py-2.5 text-center"
                 >
                   <span

@@ -339,6 +339,8 @@ export function useActivityWrites(
   return {
     isCurrentSession: account.isCurrentSession,
     create: useMutation({
+      // 震动反馈: the form feels its own save (use-submit).
+      meta: { haptics: false },
       onMutate: account.captureIdentity,
       mutationFn: async (json: CreateActivityInput) =>
         readResponse<{ activity: ManagedActivity }>(
@@ -348,6 +350,8 @@ export function useActivityWrites(
       onError,
     }),
     update: useMutation({
+      // 震动反馈: the form feels its own save (use-submit).
+      meta: { haptics: false },
       onMutate: account.captureIdentity,
       mutationFn: async (json: UpdateActivityInput) => {
         if (!id) throw new Error("缺少红包标识");

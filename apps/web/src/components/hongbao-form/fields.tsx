@@ -18,6 +18,7 @@ import {
 import type { ReactNode } from "react";
 import { useBalanceFunding } from "../../lib/balance";
 import { cn } from "../../lib/cn";
+import { haptic } from "../../lib/haptics";
 import { splitNames, splitRules } from "../../lib/hongbao-text";
 import { useCurrentMerchant, useMerchant } from "../../lib/merchants";
 import { scrollBehavior } from "../../lib/motion";
@@ -706,6 +707,7 @@ export function PasswordList({
                     variant="ghost"
                     aria-label={`删除口令 ${index + 1}`}
                     onClick={() => {
+                      haptic("selection");
                       update((current) => ({
                         ...current,
                         passwords: current.passwords.filter(
@@ -738,12 +740,13 @@ export function PasswordList({
           <RevealInline show={form.passwords.length < LIMITS.passwords}>
             <Button
               size="sm"
-              onClick={() =>
+              onClick={() => {
+                haptic("selection");
                 update((current) => ({
                   ...current,
                   passwords: [...current.passwords, ""],
-                }))
-              }
+                }));
+              }}
             >
               <Plus />
               再加一个

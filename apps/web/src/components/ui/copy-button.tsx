@@ -1,6 +1,7 @@
 import { Check, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "../../lib/cn";
+import { haptic } from "../../lib/haptics";
 import { Button } from "./button";
 import { MorphLabel } from "./morph-label";
 
@@ -28,7 +29,10 @@ export function CopyButton({
     const write = navigator.clipboard?.writeText(value);
     if (!write) return setState("failed");
     write.then(
-      () => setState("done"),
+      () => {
+        haptic("light");
+        setState("done");
+      },
       () => setState("failed"),
     );
   };

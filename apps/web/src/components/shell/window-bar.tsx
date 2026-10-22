@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { commandById } from "../../lib/commands";
+import { haptic } from "../../lib/haptics";
 import { useIdentity } from "../../lib/session";
 import { viewEdgeAtom } from "../../lib/store";
 import { omniboxMetrics } from "../omnibox/state";
@@ -82,7 +83,10 @@ function IdentityButton({ compact }: { compact: boolean }) {
       <button
         id="identity-button"
         type="button"
-        onClick={openAccount}
+        onClick={() => {
+          haptic("light");
+          openAccount();
+        }}
         aria-label="登录"
         className={buttonVariants({ variant: "ghost", size })}
         style={shape}
@@ -95,7 +99,10 @@ function IdentityButton({ compact }: { compact: boolean }) {
     <button
       id="identity-button"
       type="button"
-      onClick={openAccount}
+      onClick={() => {
+        haptic("light");
+        openAccount();
+      }}
       aria-label={`${user.displayName}，打开用户卡片`}
       title={user.displayName}
       className="grid size-10 place-items-center rounded-full transition-transform active:translate-y-px"

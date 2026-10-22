@@ -4,6 +4,7 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useEffect, useRef, useState } from "react";
 import { useAttemptCooldown } from "../../lib/attempt-cooldown";
 import { scopeNoticeAtom } from "../../lib/claim-scope";
+import { haptic } from "../../lib/haptics";
 import {
   endHint,
   type HongbaoActivity,
@@ -81,6 +82,7 @@ export function useDrawStep(view: PublicView) {
     return {
       hint: "已取到随机数，正在创建付款…",
       note: "已取到随机数，正在算中奖名单并创建付款，结果出来后显示在这里。",
+      beat: "random",
     };
   const roster =
     view.draw?.registered == null
@@ -92,10 +94,13 @@ export function useDrawStep(view: PublicView) {
     ? {
         hint: `名单已冻结，${left} 秒后出随机数…`,
         note: `${roster}，等 ${round}随机数，${left} 秒后产生。`,
+        // 震动反馈: the last three seconds each a beat.
+        beat: left <= 3 ? `frozen-${left}` : "frozen",
       }
     : {
         hint: "正在取随机数…",
         note: `${roster}，正在取 ${round}随机数。`,
+        beat: "fetching",
       };
 }
 
@@ -164,8 +169,14 @@ export function useHongbao(data: HongbaoData) {
     if (
       (before === "waiting" || before === "settling") &&
       (outcome === "won" || outcome === "lost")
-    )
+    ) {
       setRevealed({ outcome, at: Date.now() });
+      // Felt as the result shows (it plays 0.2 s in).
+      window.setTimeout(
+        () => haptic(outcome === "won" ? "success" : "warning"),
+        200,
+      );
+    }
   }, [outcome]);
   const reveal = revealed !== null && revealed.outcome === outcome;
 
@@ -206,6 +217,16 @@ export function useHongbao(data: HongbaoData) {
           ? "disabled"
           : "idle";
   const drawStep = useDrawStep(view);
+  // 震动反馈: someone in this draw, watching, feels each step it takes
+  // (not the step it was at when the page opened).
+  const beat = drawStep?.beat ?? null;
+  const lastBeat = useRef(beat);
+  const inDraw = mine?.kind === "registered";
+  useEffect(() => {
+    if (beat === lastBeat.current) return;
+    lastBeat.current = beat;
+    if (beat && inDraw) haptic("selection");
+  }, [beat, inDraw]);
   const hint =
     phase === "ended"
       ? (drawStep?.hint ?? endHint(view))
@@ -254,6 +275,7 @@ export function useHongbao(data: HongbaoData) {
   const press = () => {
     if (phase !== "closed" || spinning || author || draft) return;
     if (gate) {
+      haptic("light");
       controller.openAccount();
       return;
     }
@@ -269,6 +291,7 @@ export function useHongbao(data: HongbaoData) {
       return;
     }
     if (pendingRetry) {
+      haptic("light");
       setClaiming(true);
       void controller
         .redeemIn(activity.id, pendingRetry.password || null)
@@ -276,10 +299,12 @@ export function useHongbao(data: HongbaoData) {
       return;
     }
     if (activity.participation === "password") {
+      haptic("light");
       controller.expand({ id: activity.id, purpose: "claim" });
       return;
     }
     if (cooldown) return;
+    haptic("light");
     setClaiming(true);
     void controller
       .redeemIn(activity.id, null)

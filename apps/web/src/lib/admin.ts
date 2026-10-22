@@ -20,6 +20,7 @@ import {
 import { readResponse } from "./activities";
 import { adminIdentity } from "./admin-identity";
 import { useSession } from "./auth";
+import { haptic } from "./haptics";
 
 // 网站管理 (/admin): production's read-only admin API, and the one setting
 // an admin can change. Every read is kept under the session that made it
@@ -158,6 +159,7 @@ export function useSaveRateLimits(csrfToken: string) {
   };
   return {
     run: async (input: UpdateAttemptRateLimitsInput) => {
+      // 震动反馈: felt as it answers.
       const saved = await readResponse<AttemptRateLimitsResponse>(
         await fetch("/api/admin/rate-limits", {
           method: "PATCH",
@@ -168,7 +170,11 @@ export function useSaveRateLimits(csrfToken: string) {
           body: JSON.stringify(input),
           cache: "no-store",
         }),
-      );
+      ).catch((error: unknown) => {
+        haptic("error");
+        throw error;
+      });
+      haptic("success");
       await adopt(saved);
       return saved;
     },

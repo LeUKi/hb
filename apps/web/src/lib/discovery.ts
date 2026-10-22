@@ -48,6 +48,8 @@ export function useGlobalRedemptionDiscovery(
   const queryClient = useQueryClient();
   const account = useAccountSession(userId, "session");
   return useMutation({
+    // 震动反馈: a 口令 lookup feels its result where it lands.
+    meta: { haptics: false },
     gcTime: 0,
     onMutate: async (input) => ({
       identity: account.captureIdentity(),

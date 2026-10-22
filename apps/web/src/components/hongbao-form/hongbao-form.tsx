@@ -11,6 +11,7 @@ import {
 import { flushSync } from "react-dom";
 import { useBalanceFunding } from "../../lib/balance";
 import { cn } from "../../lib/cn";
+import { haptic } from "../../lib/haptics";
 import { useCurrentMerchant } from "../../lib/merchants";
 import { scrollBehavior } from "../../lib/motion";
 import { closeOverlay, openOverlay } from "../../lib/overlay";
@@ -234,6 +235,7 @@ export function HongbaoForm({
     const problems = stepIssues(issues, step);
     const first = problems[0];
     if (first) {
+      haptic("error");
       say(`这一步还有 ${problems.length} 处要改。第一处：${first.message}`);
       showIssue(first.field);
       return;
@@ -249,6 +251,7 @@ export function HongbaoForm({
       check(steps.map((step) => step.id));
       const first = issues[0];
       if (first) {
+        haptic("error");
         say(`还有 ${issues.length} 处要改。第一处：${first.message}`);
         showIssue(first.field);
         return;

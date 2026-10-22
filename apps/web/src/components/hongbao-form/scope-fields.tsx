@@ -7,6 +7,7 @@ import {
 } from "@hb/contracts";
 import { Plus, UserCheck, Users, X } from "lucide-react";
 import { useState } from "react";
+import { haptic } from "../../lib/haptics";
 import { usePerson } from "../../lib/people";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
@@ -98,6 +99,7 @@ function ScopePeople({
   const ready = settled && !duplicate && !full;
   const add = () => {
     if (!ready) return;
+    haptic("selection");
     set({
       users: [
         ...scope.users,
@@ -177,11 +179,12 @@ function ScopePeople({
             <PersonChip
               key={person.username.toLowerCase()}
               person={person}
-              onRemove={() =>
+              onRemove={() => {
+                haptic("selection");
                 set({
                   users: scope.users.filter((user) => user !== person),
-                })
-              }
+                });
+              }}
             />
           ))}
         </div>

@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { cn } from "../../lib/cn";
+import { haptic } from "../../lib/haptics";
 import {
   durations,
   ease,
@@ -227,7 +228,10 @@ export function Segmented<T extends string>({
             type="button"
             data-segment=""
             aria-pressed={value === option.value}
-            onClick={() => onChange(option.value)}
+            onClick={() => {
+              if (option.value !== value) haptic("selection");
+              onChange(option.value);
+            }}
             className={itemClass(size, value === option.value, stretch)}
           >
             <Face
@@ -274,6 +278,9 @@ export function SegmentedNav({
             to={item.to}
             data-segment=""
             aria-current={item.to === current ? "page" : undefined}
+            onClick={() => {
+              if (item.to !== current) haptic("selection");
+            }}
             className={itemClass(size, item.to === current, false)}
           >
             <Face label={item.label} chosen={item.to === current} />

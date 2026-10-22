@@ -1,10 +1,11 @@
 import { levelsText, scopeSentence } from "@hb/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAtom } from "jotai";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { activityKeys, type PublicActivityDetail } from "../../lib/activities";
 import { getLoginHref } from "../../lib/auth";
 import { scopeNoticeAtom } from "../../lib/claim-scope";
+import { haptic } from "../../lib/haptics";
 import { useSessionUser } from "../../lib/session";
 import { ConfirmDialog } from "../shell/confirm-dialog";
 import { Avatar } from "../ui/avatar";
@@ -32,6 +33,11 @@ export function ScopeDialog() {
   const draw = shown?.reward?.mode === "timed_draw";
   const verb = draw ? "报名" : "领";
   const close = () => setNotice(null);
+  const open = notice !== null && Boolean(read?.scope);
+  // Felt as it opens: the press was turned away (震动反馈).
+  useEffect(() => {
+    if (open) haptic("warning");
+  }, [open]);
   const level = user?.trustLevel ?? null;
   // The level is read at sign-in only: the day it was read, said plainly.
   const seen = user?.profileSeenAt ? new Date(user.profileSeenAt) : null;
@@ -44,7 +50,7 @@ export function ScopeDialog() {
       : `你是 @${user?.username ?? ""}，不在里面。`;
   return (
     <ConfirmDialog
-      open={notice !== null && Boolean(read?.scope)}
+      open={open}
       onClose={close}
       title={`这个红包只有部分人能${verb}`}
       text={scope ? scopeSentence(scope, verb) : ""}

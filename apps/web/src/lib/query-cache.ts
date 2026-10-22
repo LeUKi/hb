@@ -1,7 +1,8 @@
-import { QueryCache, QueryClient } from "@tanstack/react-query";
+import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
 import { ActivityRequestError } from "./activities";
 import { adminIdentity } from "./admin-identity";
 import { type SessionResponse, sessionQueryKey } from "./auth";
+import { haptic } from "./haptics";
 import { merchantSessionIdentity } from "./merchants";
 import { accessQueryScope, isAccessQueryError } from "./query-view";
 
@@ -282,8 +283,20 @@ export function createAppQueryClient() {
       }
     },
   });
+  // 震动反馈: what a write the person asked for came to, felt as it
+  // answers. A flow with its own rhythm (claiming, saving a 红包) sets
+  // meta.haptics to false and feels it there.
+  const mutationCache = new MutationCache({
+    onSuccess: (_data, _variables, _context, mutation) => {
+      if (mutation.meta?.haptics !== false) haptic("success");
+    },
+    onError: (_error, _variables, _context, mutation) => {
+      if (mutation.meta?.haptics !== false) haptic("error");
+    },
+  });
   const queryClient = new QueryClient({
     queryCache,
+    mutationCache,
     defaultOptions: {
       queries: {
         // Reuse recent data across observers, filters and route revisits.
