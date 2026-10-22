@@ -214,11 +214,13 @@ test.describe("红包广场", () => {
             ? [
                 card("77777777-7777-4777-8777-777777777777", "周末红包", {
                   forceDedicated: true,
+                  topicUrl: "https://linux.do/t/3033290/12",
                 }),
               ]
             : [
                 card("77777777-7777-4777-8777-777777777777", "周末红包", {
                   forceDedicated: true,
+                  topicUrl: "https://linux.do/t/3033290/12",
                 }),
                 card("66666666-6666-4666-8666-666666666666", "已经领完", {
                   status: "ended",
@@ -255,6 +257,13 @@ test.describe("红包广场", () => {
     await expect(
       page.getByRole("button", { name: /已经领完/ }),
     ).not.toContainText("关闭首页领取");
+    // One linked to a post says where it comes from.
+    await expect(page.getByRole("button", { name: /周末红包/ })).toContainText(
+      "来自帖子",
+    );
+    await expect(
+      page.getByRole("button", { name: /已经领完/ }),
+    ).not.toContainText("来自帖子");
     await expect(page.getByRole("button", { name: /已经领完/ })).toBeVisible();
     await filter.getByRole("button", { name: /最近结束/ }).click();
     await expect(page).toHaveURL(/\/square\?filter=ended$/);

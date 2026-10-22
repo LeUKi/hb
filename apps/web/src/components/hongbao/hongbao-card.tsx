@@ -121,6 +121,8 @@ export function HongbaoCard({
             {activity.pageOnly && (
               <StatusChip tone="neutral">关闭首页领取</StatusChip>
             )}
+            {/* Its post's link is on its page: the whole card is one button. */}
+            {activity.topic && <StatusChip tone="neutral">来自帖子</StatusChip>}
             {mine && <StatusChip tone={mine.tone}>{mine.text}</StatusChip>}
           </span>
         </span>
