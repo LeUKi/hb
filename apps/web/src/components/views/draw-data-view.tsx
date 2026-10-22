@@ -260,7 +260,7 @@ function VerifySection({
           </Button>
         </div>
         <p className="text-xs text-ink-3">
-          验证脚本只用 Node 自带的库：
+          验证脚本无外部依赖：
           <code className="ml-1 font-mono">node verify.mjs 数据.json</code>
         </p>
         <Reveal show={check.states !== null}>
