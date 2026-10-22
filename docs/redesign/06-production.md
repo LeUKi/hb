@@ -112,7 +112,7 @@
   - 复制出去的地址都保留表情原样（不是百分号编码）：`activityShareUrl` 生成 `/🧧/<表情码>`，内嵌代码里的图片地址也一样；
   - 兑换结果从起始页的浮层改成 `/🔑/<结果编号>` 页面：结果编号就是兑换记录的编号，列表从 `GET /redemptions/:id` 读（`global_redemptions` 本来就持久、只限本人）；帖子页 `/topics/$topicId?postNumber=` 改为 `/💬/<帖子>/<楼>`。两个结果页的行为（选中即带口令领取、帖子只有一个红包时直接打开）见 [07](07-pages.md) 第 11 节；
   - 内嵌图（地址见 [05](05-hongbao.md) 第 6 节）：接口的路由是 `/api/🧧/:code/:file`，`file` 只认四种写法；网页 Worker 按百分号编码后的路径（十六进制大小写都认）转发到 `/api` 下的同一路径；`run_worker_first` 也按编码后的路径匹配（Cloudflare 用编码后的 `pathname` 比对），加上 `/%F0%9F%A7%A7/*/%F0%9F%96%BC*` 和它的小写写法。在新标签页直接打开图片地址时跳到红包页。删掉 `/e/<码>/live.svg`、`/activity-images/<UUID>.svg` 两条接口路由（用户决定），已发出的旧帖子里的图会失效。
-- **用词**：全站文案与测试里的“活动”改为“红包”，“直接参与”改为“无需口令”，`/square` 叫红包广场（见 [05](05-hongbao.md) 第 1 节）；LINUX DO 在界面上叫“社区”，不叫“论坛”（用户决定）。印章用简体“开 / 报 / 预 / 完”，红包页和内嵌图一样（用户决定）。
+- **用词**：全站文案与测试里的“活动”改为“红包”，“直接参与”改为“无需口令”，`/square` 叫红包广场（见 [05](05-hongbao.md) 第 1 节）；LINUX DO 在界面上叫“社区”，不叫“论坛”（用户决定）。印章用简体“开 / 报 / 预 / 完”，开奖中写“开奖中”，红包页和内嵌图一样（用户决定）。
 - **组件**：`envelope.tsx`、`claim-entry.tsx`、`public-roster.tsx`、`password-panel.tsx`、`activity-share.tsx` 换成新组件。红包页不再有口令输入框，口令走带作用域的指令框（[02](02-shell.md) 第 4 节）。
 - **内嵌图重画**（见 [05](05-hongbao.md) 第 6 节）：信息分级沿用生产（`activityImageInput`，按图片 Cookie 认人），画法换成新设计，都在 `packages/contracts/src/activity-image.ts`：
   - 过期提示另起一行，不再替换“数据截至”，文案里的“活动”改为“红包”；

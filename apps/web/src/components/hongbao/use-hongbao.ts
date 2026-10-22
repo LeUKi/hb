@@ -173,8 +173,12 @@ export function useHongbao(data: HongbaoData) {
   const author = data.author;
   const draft = activity.draft;
   const seal = sealGlyphs;
-  const glyph =
-    phase === "ended"
+  // 开奖中 is the draw's last step, not its end: the cover stays red and
+  // its seal turns until the result comes (开奖证明, 05 §7).
+  const drawing = view.endReason === "settling";
+  const glyph = drawing
+    ? seal.drawing
+    : phase === "ended"
       ? seal.ended
       : draft
         ? seal.draft
@@ -189,8 +193,9 @@ export function useHongbao(data: HongbaoData) {
   const retry = Boolean(pendingRetry);
   const cooldown =
     activity.participation === "direct" && !gate && cooling && !retry;
-  const sealState =
-    phase === "ended"
+  const sealState = drawing
+    ? "pending"
+    : phase === "ended"
       ? "muted"
       : spinning
         ? "pending"
@@ -330,6 +335,8 @@ export function useHongbao(data: HongbaoData) {
     sealState,
     sealLabel,
     hint,
+    /** Past its deadline, its result to come: shown as running, not over. */
+    drawing,
     /** A v2 draw being drawn: where it is at, for the hint and the ticket. */
     drawStep,
     cooldown,

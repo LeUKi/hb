@@ -112,6 +112,7 @@ function noteLine(text: string | undefined) {
 export function CoverHead({
   activity,
   ended,
+  drawing = false,
   motions,
   onExpand,
   onOpenNote,
@@ -119,6 +120,8 @@ export function CoverHead({
   activity: HongbaoActivity;
   /** Over before the viewer took part. */
   ended: boolean;
+  /** Past its deadline, its result being drawn. */
+  drawing?: boolean;
   motions: CoverMotion;
   onExpand: () => void;
   onOpenNote: () => void;
@@ -270,6 +273,7 @@ export function CoverHead({
               </CoverChip>
             ))}
             {ended && <CoverChip>已结束</CoverChip>}
+            {drawing && <CoverChip>开奖中</CoverChip>}
             {activity.topic && (
               <Squircle radius={10}>
                 <a

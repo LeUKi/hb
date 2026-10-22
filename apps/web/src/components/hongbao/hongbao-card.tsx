@@ -55,7 +55,13 @@ export function HongbaoCard({
   const status = statusOf(view);
   const draw = activity.mode === "timed_draw";
   const seal = sealGlyphs;
-  const glyph = ended ? seal.ended : draw ? seal.draw : seal.open;
+  const glyph = ended
+    ? seal.ended
+    : view.endReason === "settling"
+      ? seal.drawing
+      : draw
+        ? seal.draw
+        : seal.open;
   return (
     <Squircle radius={radius.card + 4}>
       <button
@@ -85,7 +91,9 @@ export function HongbaoCard({
           <span
             aria-hidden="true"
             className={cn(
-              "hb-card-seal absolute top-full left-1/2 grid size-9 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full text-sm font-bold",
+              "hb-card-seal absolute top-full left-1/2 grid size-9 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full font-bold",
+              // Words (开奖中) small enough for the coin.
+              Array.from(glyph).length > 1 ? "text-[9px]" : "text-sm",
               ended && "hb-seal-muted",
             )}
           >

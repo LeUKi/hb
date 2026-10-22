@@ -1182,6 +1182,10 @@
   .hb-cover.hb-ended {
     filter: saturate(0.18) brightness(0.92);
   }
+  /* A draw's result arriving: the red fades out, it does not snap. */
+  .hb-cover-frame {
+    transition: filter 600ms var(--ease-snappy);
+  }
   .hb-chip-red {
     background: rgb(255 255 255 / 0.13);
     color: var(--color-cream);
@@ -1357,6 +1361,11 @@
     font-weight: 700;
     line-height: 1;
     text-shadow: 0 1px 0 rgb(255 255 255 / 0.55);
+    transition: font-size 200ms var(--ease-snappy);
+  }
+  /* Words, not a character (开奖中): the forum image's size for three. */
+  .hb-seal-glyph[data-words] {
+    font-size: calc(var(--seal, 96px) * 0.22);
   }
   /* Grey, on the gold's four stops (the 36% and 70% stops fall on the
      grey's own 0–60–100% ramp), so the two fade into each other. */

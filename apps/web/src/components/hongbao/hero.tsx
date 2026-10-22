@@ -191,7 +191,7 @@ export function HongbaoHero({
         className={cn(
           "hb-cover-frame z-10",
           pinned ? "sticky top-0" : "relative",
-          phase === "ended" && "hb-ended",
+          phase === "ended" && !hongbao.drawing && "hb-ended",
         )}
         style={{ marginBottom: comp }}
         data-cover={state}
@@ -214,7 +214,8 @@ export function HongbaoHero({
           >
             <CoverHead
               activity={activity}
-              ended={phase === "ended"}
+              ended={phase === "ended" && !hongbao.drawing}
+              drawing={hongbao.drawing}
               motions={motions}
               onExpand={expand}
               onOpenNote={hongbao.openNote}

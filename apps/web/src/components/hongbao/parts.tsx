@@ -72,7 +72,11 @@ export function Seal({
         whileHover={live ? { scale: 1.04 } : undefined}
         whileTap={live ? { scale: 0.96 } : undefined}
       >
-        <span aria-hidden="true" className="hb-seal-glyph">
+        <span
+          aria-hidden="true"
+          className="hb-seal-glyph"
+          data-words={Array.from(glyph).length > 1 || undefined}
+        >
           <MorphLabel>{glyph}</MorphLabel>
         </span>
       </motion.button>

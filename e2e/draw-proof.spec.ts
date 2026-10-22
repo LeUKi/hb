@@ -433,6 +433,15 @@ test.describe("开奖证明", () => {
     await expect(
       page.getByText(/^名单已冻结，[1-4] 秒后出随机数…$/),
     ).toBeVisible();
+    // Still red, its seal turning: the draw's last step, not its end.
+    await expect(page.locator("[data-hb-part=hero]")).not.toHaveClass(
+      /hb-ended/,
+    );
+    await expect(page.locator(".hb-seal")).toHaveAttribute(
+      "data-state",
+      "pending",
+    );
+    await expect(page.getByText("已结束", { exact: true })).toHaveCount(0);
     await expect(page.getByText("正在取随机数…")).toBeVisible({
       timeout: 6_000,
     });

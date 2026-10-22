@@ -4,4 +4,6 @@ export const sealGlyphs = {
   draw: "报",
   draft: "预",
   ended: "完",
+  /** 开奖中: the draw's last step, not its end (the forum image says the same). */
+  drawing: "开奖中",
 } as const;
