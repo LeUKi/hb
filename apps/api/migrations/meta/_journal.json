@@ -267,6 +267,13 @@
       "when": 1792631610214,
       "tag": "0037_draw_proof",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "6",
+      "when": 1792657496695,
+      "tag": "0038_user_trust_level",
+      "breakpoints": true
     }
   ]
 }

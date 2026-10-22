@@ -1193,6 +1193,10 @@ it("adds optional Connect profile fields without invalidating existing accounts 
     ...oldUser,
     email_ciphertext: null,
     avatar_url: null,
+    // 0038: read at the next sign-in.
+    trust_level: null,
+    silenced: null,
+    profile_seen_at: null,
   });
   const response = await app.request(
     "https://hb.example.com/api/me",
@@ -1207,6 +1211,8 @@ it("adds optional Connect profile fields without invalidating existing accounts 
       username: "OldProfile",
       displayName: "原有昵称",
       avatarUrl: null,
+      trustLevel: null,
+      profileSeenAt: null,
       email: null,
       linuxDoId: "740001",
     },

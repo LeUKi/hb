@@ -31,6 +31,9 @@ export type AuthenticatedUser = {
   displayName: string;
   avatarUrl: string | null;
   isAdmin: boolean;
+  /** 信任等级 as of the last sign-in (profileSeenAt); null: not read yet. */
+  trustLevel: number | null;
+  profileSeenAt: number | null;
 };
 
 export type AuthenticatedSession = {
@@ -179,6 +182,8 @@ export async function getOptionalSession(c: Context<ApiContext>) {
       username: users.username,
       displayName: users.displayName,
       avatarUrl: users.avatarUrl,
+      trustLevel: users.trustLevel,
+      profileSeenAt: users.profileSeenAt,
       active: users.active,
       provider: users.provider,
       externalId: users.externalId,
@@ -220,6 +225,8 @@ export async function getOptionalSession(c: Context<ApiContext>) {
       displayName: row.displayName,
       avatarUrl: row.avatarUrl,
       isAdmin: isAdministrator(c.env, row.provider, row.externalId),
+      trustLevel: row.trustLevel,
+      profileSeenAt: row.profileSeenAt ? row.profileSeenAt.getTime() : null,
     },
     attemptCooldown: {
       revision: row.cooldownRevision ?? 0,

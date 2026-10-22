@@ -25,6 +25,8 @@ export const profiles = {
     email: "author-private@example.test",
     avatar_url: "https://avatars.example.test/author.png",
     active: true,
+    trust_level: 3,
+    silenced: false,
   },
   recipient: {
     id: "730002",
@@ -33,6 +35,8 @@ export const profiles = {
     email: "recipient-private@example.test",
     avatar_url: "https://avatars.example.test/recipient.png",
     active: true,
+    trust_level: 2,
+    silenced: false,
   },
   recipient2: {
     id: "730003",
@@ -41,6 +45,8 @@ export const profiles = {
     email: "second-private@example.test",
     avatar_url: "https://avatars.example.test/second.png",
     active: true,
+    trust_level: 1,
+    silenced: false,
   },
   recipient3: {
     id: "730004",
@@ -49,6 +55,8 @@ export const profiles = {
     email: "third-private@example.test",
     avatar_url: "https://avatars.example.test/third.png",
     active: true,
+    trust_level: 0,
+    silenced: false,
   },
   recipientRenamed: {
     id: "730002",

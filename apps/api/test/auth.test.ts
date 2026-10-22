@@ -676,8 +676,49 @@ describe("Connect authorization and sessions", () => {
         displayName: "alice",
         avatarUrl: null,
         isAdmin: false,
+        trustLevel: null,
+        profileSeenAt: expect.any(Number),
       },
     });
+  });
+
+  it("keeps each sign-in's 信任等级 and 禁言 from Connect, and when it read them", async () => {
+    const before = Date.now();
+    const signed = await login({
+      id: 24680,
+      username: "leveled",
+      active: true,
+      trust_level: 3,
+      silenced: false,
+    });
+    const row = await env.DB.prepare(
+      "SELECT trust_level,silenced,profile_seen_at FROM users WHERE id=?",
+    )
+      .bind(signed.me.user.id)
+      .first<{
+        trust_level: number;
+        silenced: number;
+        profile_seen_at: number;
+      }>();
+    expect(row).toMatchObject({ trust_level: 3, silenced: 0 });
+    expect(row?.profile_seen_at).toBeGreaterThanOrEqual(before);
+    const session = (await (
+      await request("/api/session", { headers: { Cookie: signed.cookie } })
+    ).json()) as { user: { trustLevel: number; profileSeenAt: number } };
+    expect(session.user.trustLevel).toBe(3);
+    expect(session.user.profileSeenAt).toBe(row?.profile_seen_at);
+    // A later sign-in brings the new level; one out of range is not kept.
+    await login({
+      id: 24680,
+      username: "leveled",
+      active: true,
+      trust_level: 9,
+    });
+    expect(
+      await env.DB.prepare("SELECT trust_level FROM users WHERE id=?")
+        .bind(signed.me.user.id)
+        .first(),
+    ).toEqual({ trust_level: null });
   });
 
   it("rejects callbacks on a different origin without consuming their state", async () => {

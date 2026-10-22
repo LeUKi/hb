@@ -328,6 +328,9 @@ export type LinuxDoProfile = {
   email: string | null;
   avatarUrl: string | null;
   active: true;
+  /** 信任等级 0–4; null when Connect leaves it out. */
+  trustLevel: number | null;
+  silenced: boolean | null;
 };
 
 export function parseLinuxDoUser(body: unknown): LinuxDoProfile {
@@ -345,6 +348,12 @@ export function parseLinuxDoUser(body: unknown): LinuxDoProfile {
     throw new AuthFlowError("profile", "invalid_response");
   }
 
+  const trustLevel =
+    Number.isInteger(body.trust_level) &&
+    (body.trust_level as number) >= 0 &&
+    (body.trust_level as number) <= 4
+      ? (body.trust_level as number)
+      : null;
   return {
     externalId,
     username,
@@ -352,6 +361,8 @@ export function parseLinuxDoUser(body: unknown): LinuxDoProfile {
     email,
     avatarUrl,
     active: true,
+    trustLevel,
+    silenced: typeof body.silenced === "boolean" ? body.silenced : null,
   };
 }
 
@@ -375,6 +386,9 @@ async function upsertUser(env: ApiBindings, profile: LinuxDoProfile) {
       emailCiphertext,
       avatarUrl: profile.avatarUrl,
       active: profile.active,
+      trustLevel: profile.trustLevel,
+      silenced: profile.silenced,
+      profileSeenAt: now,
       createdAt: now,
       updatedAt: now,
       lastLoginAt: now,
@@ -386,6 +400,9 @@ async function upsertUser(env: ApiBindings, profile: LinuxDoProfile) {
         displayName: profile.displayName,
         emailCiphertext,
         avatarUrl: profile.avatarUrl,
+        trustLevel: profile.trustLevel,
+        silenced: profile.silenced,
+        profileSeenAt: now,
         updatedAt: now,
         lastLoginAt: now,
       },

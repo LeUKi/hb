@@ -25,6 +25,14 @@ export const users = sqliteTable(
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
     lastLoginAt: integer("last_login_at", { mode: "timestamp_ms" }),
+    /**
+     * From LINUX DO Connect at each sign-in (docs/claim-scope-design.md
+     * §2): 信任等级 0–4 and 禁言, as of profileSeenAt. Null until the first
+     * sign-in that read them.
+     */
+    trustLevel: integer("trust_level"),
+    silenced: integer("silenced", { mode: "boolean" }),
+    profileSeenAt: integer("profile_seen_at", { mode: "timestamp_ms" }),
   },
   (table) => [
     uniqueIndex("users_provider_external_id_unique").on(
