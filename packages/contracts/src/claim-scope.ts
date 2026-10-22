@@ -98,25 +98,38 @@ export function levelRangeText(levels: { min: number; max: number }) {
   return `Lv${levels.min}–${levels.max}`;
 }
 
+/**
+ * A range of 信任等级 followed by words, a space between when it ends in
+ * Latin: “Lv1–3 的人”, “Lv2 及以上的人”.
+ */
+export function levelPhrase(
+  levels: { min: number; max: number },
+  rest: string,
+) {
+  const level = levelRangeText(levels);
+  return /[A-Za-z0-9]$/.test(level) ? `${level} ${rest}` : `${level}${rest}`;
+}
+
 /** The tag on the 红包皮 and its card: “仅限 Lv2 及以上或指定的 3 人”. */
 export function scopeTag(scope: PublicClaimScope) {
   const count = scope.users?.length ?? 0;
   if (scope.levels && count > 0)
-    return `仅限 ${levelRangeText(scope.levels)}或指定的 ${count} 人`;
+    return `仅限 ${levelPhrase(scope.levels, "或指定的")} ${count} 人`;
   if (scope.levels) return `仅限 ${levelRangeText(scope.levels)}`;
   return `仅限指定的 ${count} 人`;
 }
 
 /**
- * The range in one sentence, its “或” plain: “Lv2 及以上的人，或下面这 3
- * 位，都能领。” `verb`: 领 or 报名.
+ * The range in one sentence, its “或” plain and nothing said of where the
+ * people are shown: “Lv2 及以上的人，或指定的 3 位，都能领。” `verb`: 领 or
+ * 报名.
  */
 export function scopeSentence(scope: PublicClaimScope, verb: "领" | "报名") {
   const count = scope.users?.length ?? 0;
   if (scope.levels && count > 0)
-    return `${levelRangeText(scope.levels)}的人，或下面这 ${count} 位，都能${verb}。`;
-  if (scope.levels) return `${levelRangeText(scope.levels)}的人能${verb}。`;
-  return `只有下面这 ${count} 位能${verb}。`;
+    return `${levelPhrase(scope.levels, "的人")}，或指定的 ${count} 位，都能${verb}。`;
+  if (scope.levels) return `${levelPhrase(scope.levels, "的人")}能${verb}。`;
+  return `只有指定的 ${count} 位能${verb}。`;
 }
 
 /**

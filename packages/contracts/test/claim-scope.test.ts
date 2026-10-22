@@ -68,13 +68,19 @@ describe("领取范围", () => {
       users: [{ username: "a" }, { username: "b" }, { username: "c" }],
     };
     expect(scopeTag(both)).toBe("仅限 Lv2 及以上或指定的 3 人");
+    expect(scopeTag({ ...both, levels: { min: 1, max: 3 } })).toBe(
+      "仅限 Lv1–3 或指定的 3 人",
+    );
     expect(scopeTag({ levels: { min: 1, max: 3 } })).toBe("仅限 Lv1–3");
     expect(scopeTag({ users: [{ username: "a" }] })).toBe("仅限指定的 1 人");
     expect(scopeSentence(both, "领")).toBe(
-      "Lv2 及以上的人，或下面这 3 位，都能领。",
+      "Lv2 及以上的人，或指定的 3 位，都能领。",
     );
     expect(scopeSentence({ users: [{ username: "a" }] }, "报名")).toBe(
-      "只有下面这 1 位能报名。",
+      "只有指定的 1 位能报名。",
+    );
+    expect(scopeSentence({ levels: { min: 2, max: 2 } }, "领")).toBe(
+      "Lv2 的人能领。",
     );
   });
 });

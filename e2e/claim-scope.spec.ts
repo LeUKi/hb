@@ -93,7 +93,7 @@ test.describe("领取范围", () => {
       name: "这个红包只有部分人能领",
     });
     await expect(dialog).toContainText(
-      "Lv2 及以上的人，或下面这 2 位，都能领。",
+      "Lv2 及以上的人，或指定的 2 位，都能领。",
     );
     await expect(dialog).toContainText("信任等级Lv2 及以上");
     await expect(dialog).toContainText("@XiaoHong");

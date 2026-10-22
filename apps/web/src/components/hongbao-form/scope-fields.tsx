@@ -112,58 +112,63 @@ function ScopePeople({
     });
     setTyped("");
   };
+  // The hint stays under the input; the people added follow it.
   return (
-    <Field
-      label="指定的人"
-      htmlFor="hb-scope-user"
-      hint={`填 LINUX DO 用户名，最多 ${CLAIM_SCOPE_LIMITS.users} 人。`}
-      error={error}
-    >
-      <div className="flex gap-2">
-        <div className="min-w-0 flex-1">
-          <TextInput
-            id="hb-scope-user"
-            value={typed}
-            autoComplete="off"
-            autoCapitalize="none"
-            spellCheck={false}
-            prefix="@"
-            placeholder="LINUX DO 用户名"
-            onChange={(event) =>
-              // The @ is already there: a pasted “@name” keeps just one.
-              setTyped(event.target.value.replace(/^\s*@+/, ""))
-            }
-            onKeyDown={(event) => {
-              if (event.key !== "Enter") return;
-              event.preventDefault();
-              add();
-            }}
-          />
+    <div className="grid gap-2">
+      <Field
+        label="指定的人"
+        htmlFor="hb-scope-user"
+        hint={`填 LINUX DO 用户名，最多 ${CLAIM_SCOPE_LIMITS.users} 人。`}
+        error={error}
+      >
+        <div className="flex gap-2">
+          <div className="min-w-0 flex-1">
+            <TextInput
+              id="hb-scope-user"
+              value={typed}
+              autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              prefix="@"
+              placeholder="LINUX DO 用户名"
+              onChange={(event) =>
+                // The @ is already there: a pasted “@name” keeps just one.
+                setTyped(event.target.value.replace(/^\s*@+/, ""))
+              }
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") return;
+                event.preventDefault();
+                add();
+              }}
+            />
+          </div>
+          <Button
+            onClick={add}
+            aria-disabled={!ready || undefined}
+            data-disabled={!ready || undefined}
+          >
+            <Plus />
+            添加
+          </Button>
         </div>
-        <Button
-          onClick={add}
-          aria-disabled={!ready || undefined}
-          data-disabled={!ready || undefined}
-        >
-          <Plus />
-          添加
-        </Button>
-      </div>
-      <Reveal show={name.length > 0 && (settled || !valid)}>
-        {!valid ? (
-          <p className="text-xs text-danger">用户名只有字母、数字和 _ . -</p>
-        ) : duplicate ? (
-          <p className="text-xs text-ink-3">已经加过了。</p>
-        ) : full ? (
-          <p className="text-xs text-danger">
-            最多指定 {CLAIM_SCOPE_LIMITS.users} 人。
-          </p>
-        ) : found ? (
-          <PersonLine person={found} />
-        ) : (
-          <p className="text-xs text-ink-3">这个人还没来过本站，按用户名认。</p>
-        )}
-      </Reveal>
+        <Reveal show={name.length > 0 && (settled || !valid)}>
+          {!valid ? (
+            <p className="text-xs text-danger">用户名只有字母、数字和 _ . -</p>
+          ) : duplicate ? (
+            <p className="text-xs text-ink-3">已经加过了。</p>
+          ) : full ? (
+            <p className="text-xs text-danger">
+              最多指定 {CLAIM_SCOPE_LIMITS.users} 人。
+            </p>
+          ) : found ? (
+            <PersonLine person={found} />
+          ) : (
+            <p className="text-xs text-ink-3">
+              这个人还没来过本站，按用户名认。
+            </p>
+          )}
+        </Reveal>
+      </Field>
       <Reveal show={scope.users.length > 0}>
         <div className="flex flex-wrap gap-1.5">
           {scope.users.map((person) => (
@@ -179,7 +184,7 @@ function ScopePeople({
           ))}
         </div>
       </Reveal>
-    </Field>
+    </div>
   );
 }
 
@@ -254,7 +259,11 @@ export function ScopeFields({
               tabIndex={-1}
               className="grid gap-2 outline-none"
             >
-              <p className="text-sm text-ink">{levelRangeText(scope.levels)}</p>
+              <p className="text-sm text-ink">
+                {scope.levels.min === scope.levels.max
+                  ? `只有 Lv${scope.levels.min}`
+                  : levelRangeText(scope.levels)}
+              </p>
               <RangeSlider
                 value={scope.levels}
                 bounds={{ min: TRUST_LEVEL_MIN, max: TRUST_LEVEL_MAX }}

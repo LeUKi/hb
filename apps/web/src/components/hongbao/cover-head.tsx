@@ -1,4 +1,4 @@
-import { levelRangeText, type PublicClaimScope, scopeTag } from "@hb/contracts";
+import { levelPhrase, type PublicClaimScope, scopeTag } from "@hb/contracts";
 import { ArrowUpRight } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useLayoutEffect, useRef, useState } from "react";
@@ -58,8 +58,8 @@ function scopeHint(scope: PublicClaimScope, verb: "领" | "报名") {
     .map((user) => `@${user.username}`)
     .join("、")}${users.length > 10 ? ` 等 ${users.length} 人` : ""}`;
   if (scope.levels && users.length > 0)
-    return `${levelRangeText(scope.levels)}的人能${verb}，指定的 ${names} 也能${verb}。`;
-  if (scope.levels) return `${levelRangeText(scope.levels)}的人能${verb}。`;
+    return `${levelPhrase(scope.levels, "的人")}能${verb}，指定的 ${names} 也能${verb}。`;
+  if (scope.levels) return `${levelPhrase(scope.levels, "的人")}能${verb}。`;
   return `只有 ${names} 能${verb}。`;
 }
 

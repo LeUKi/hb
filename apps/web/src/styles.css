@@ -1289,45 +1289,27 @@
     border-radius: 50%;
   }
 
-  /* RangeSlider (ui/range-slider.tsx): two native sliders on one track,
-     only their thumbs taking the pointer. */
-  .hb-range {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    margin: 0;
-    appearance: none;
-    background: transparent;
-    pointer-events: none;
+  /* RangeSlider (ui/range-slider.tsx): its two ends, white with the
+     accent's ring; red when the range is not allowed. */
+  .hb-range-thumb {
+    background: #fff;
+    border: 2px solid var(--color-accent);
+    box-shadow: 0 2px 6px -2px rgb(70 0 10 / 0.35);
+    cursor: grab;
     outline: none;
+    transition:
+      scale 120ms var(--ease-snappy),
+      border-color 200ms var(--ease-snappy);
   }
-  .hb-range::-webkit-slider-thumb {
-    appearance: none;
-    pointer-events: auto;
-    width: 1.375rem;
-    height: 1.375rem;
-    border-radius: 9999px;
-    background: #fff;
-    border: 2px solid var(--color-accent);
-    box-shadow: 0 2px 6px -2px rgb(70 0 10 / 0.35);
-    cursor: grab;
+  .hb-range-thumb-invalid {
+    border-color: var(--color-danger);
   }
-  .hb-range::-moz-range-thumb {
-    pointer-events: auto;
-    width: 1.375rem;
-    height: 1.375rem;
-    border-radius: 9999px;
-    background: #fff;
-    border: 2px solid var(--color-accent);
-    box-shadow: 0 2px 6px -2px rgb(70 0 10 / 0.35);
-    cursor: grab;
+  .hb-range-thumb-active {
+    cursor: grabbing;
+    /* Tailwind's centring is the translate property; this adds to it. */
+    scale: 1.12;
   }
-  .hb-range:focus-visible::-webkit-slider-thumb {
-    box-shadow:
-      0 0 0 3px var(--color-cream),
-      0 0 0 5px var(--color-accent-ink);
-  }
-  .hb-range:focus-visible::-moz-range-thumb {
+  .hb-range-thumb:focus-visible {
     box-shadow:
       0 0 0 3px var(--color-cream),
       0 0 0 5px var(--color-accent-ink);
