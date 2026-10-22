@@ -82,7 +82,12 @@ test.describe("领取范围", () => {
   test("红包皮上写明仅限谁；范围外的人点印章，说清谁能领，不发请求", async ({
     page,
   }) => {
-    await mockSession(page, { ...viewer, username: "outsider", trustLevel: 1 });
+    await mockSession(page, {
+      ...viewer,
+      username: "outsider",
+      trustLevel: 1,
+      profileSeenAt: new Date(2026, 9, 20, 9, 30).getTime(),
+    });
     const claims = await mock(page);
     await openApp(page, path);
     await expect(
@@ -99,7 +104,7 @@ test.describe("领取范围", () => {
     await expect(dialog).toContainText("@XiaoHong");
     await expect(dialog).toContainText("@viewer");
     await expect(dialog).toContainText(
-      "你是 Lv1（按你上次登录本站时）。等级变了的话，重新登录一次就能更新。",
+      "本站记的是你 10月20日登录时的等级：Lv1。等级变了的话，重新登录一次就能更新。",
     );
     await expect(
       dialog.getByRole("button", { name: "重新登录" }),

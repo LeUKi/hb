@@ -33,12 +33,14 @@ export function ScopeDialog() {
   const verb = draw ? "报名" : "领";
   const close = () => setNotice(null);
   const level = user?.trustLevel ?? null;
+  // The level is read at sign-in only: the day it was read, said plainly.
+  const seen = user?.profileSeenAt ? new Date(user.profileSeenAt) : null;
   const you = !scope
     ? ""
     : scope.levels
-      ? level === null
+      ? level === null || seen === null
         ? "还不知道你的等级，重新登录一次就能更新。"
-        : `你是 Lv${level}（按你上次登录本站时）。等级变了的话，重新登录一次就能更新。`
+        : `本站记的是你 ${seen.getMonth() + 1}月${seen.getDate()}日登录时的等级：Lv${level}。等级变了的话，重新登录一次就能更新。`
       : `你是 @${user?.username ?? ""}，不在里面。`;
   return (
     <ConfirmDialog

@@ -249,7 +249,7 @@ export function ScopeFields({
           />
           <Switch
             label="按等级"
-            description="LINUX DO 信任等级，按对方上次登录本站时算。"
+            description="LINUX DO 信任等级。"
             checked={scope.byLevel}
             onChange={(byLevel) => set({ byLevel })}
           />

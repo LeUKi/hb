@@ -14,6 +14,8 @@ export type MockUser = {
   balance?: boolean;
   /** 信任等级 as of the last sign-in (领取范围); null: not read yet. */
   trustLevel?: number | null;
+  /** When that level was read (ms). */
+  profileSeenAt?: number | null;
 };
 
 export const viewer: MockUser = {
