@@ -207,6 +207,7 @@ export function ScopeFields({
       scope: { ...current.scope, ...change },
     }));
   const levelsError = errorOf("hb-scope-levels");
+  const missing = errorOf("hb-scope");
   const sentence =
     scope.byLevel || scope.users.length > 0
       ? scopeSentence(
@@ -222,14 +223,7 @@ export function ScopeFields({
       <ChoiceCards
         label={draw ? "报名范围" : "领取范围"}
         value={scope.limited ? "limited" : "all"}
-        onChange={(value) =>
-          // 限定 starts with 按等级 on (Lv1 and up): never empty to begin with.
-          set(
-            value === "limited" && !scope.byLevel && scope.users.length === 0
-              ? { limited: true, byLevel: true }
-              : { limited: value === "limited" },
-          )
-        }
+        onChange={(value) => set({ limited: value === "limited" })}
         options={[
           {
             value: "all",
@@ -283,16 +277,12 @@ export function ScopeFields({
             set={set}
             error={errorOf("hb-scope-user")}
           />
-          {/* Both parts: “或”, said plainly, so nobody reads it as “and”. */}
-          <Reveal show={sentence !== null || Boolean(errorOf("hb-scope"))}>
-            <p
-              className={`rounded-lg px-3 py-2 text-sm ${
-                errorOf("hb-scope")
-                  ? "bg-danger-soft text-danger"
-                  : "bg-fill text-ink-2"
-              }`}
-            >
-              {errorOf("hb-scope") ?? sentence}
+          {/* Both parts: “或”, said plainly, so nobody reads it as “and”.
+              Nothing picked yet (限定 starts so) is the next step, not a
+              mistake: said the same, quietly; the step outside marks it. */}
+          <Reveal show={sentence !== null || Boolean(missing)}>
+            <p className="rounded-lg bg-fill px-3 py-2 text-sm text-ink-2">
+              {missing ?? sentence}
             </p>
           </Reveal>
         </div>

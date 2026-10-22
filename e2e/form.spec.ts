@@ -272,14 +272,14 @@ test.describe("发红包", () => {
       scope.getByRole("button", { name: /^所有人/ }),
     ).toHaveAttribute("aria-pressed", "true");
     await scope.getByRole("button", { name: /^限定/ }).click();
-    // 按等级 comes on with it, Lv1 and up: never empty to begin with.
+    // Both parts start off: it says what to pick, and stays open.
     const byLevel = scope.getByRole("switch", { name: "按等级" });
-    await expect(byLevel).toHaveAttribute("aria-checked", "true");
-    await expect(scope).toContainText("Lv1 及以上的人能领。");
-    // Off with nobody named: it says what is missing, and stays open.
-    await byLevel.click();
+    await expect(byLevel).toHaveAttribute("aria-checked", "false");
     await expect(scope).toContainText("至少选一项：按等级，或指定的人");
+    await expect(sheet).toBeVisible();
+    // 按等级 on starts at Lv1 and up.
     await byLevel.click();
+    await expect(scope).toContainText("Lv1 及以上的人能领。");
     // The low end up to Lv2 by keyboard.
     await scope.getByRole("slider", { name: "最低等级" }).press("ArrowRight");
     await expect(scope).toContainText("Lv2 及以上");
@@ -320,6 +320,7 @@ test.describe("发红包", () => {
     const sheet = page.getByRole("dialog", { name: "更多设置" });
     const scope = sheet.getByRole("region", { name: "领取范围" });
     await scope.getByRole("button", { name: /^限定/ }).click();
+    await scope.getByRole("switch", { name: "按等级" }).click();
     const low = scope.getByRole("slider", { name: "最低等级" });
     const high = scope.getByRole("slider", { name: "最高等级" });
     // The high end down to Lv1 meets the low end: one level.
