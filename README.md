@@ -1,225 +1,96 @@
 # lafish的红包站
 
-原名“解meme”。
+LINUX DO 社区的口令红包站（原名“解meme”）。发红包的人设好口令、金额和领取规则，大家在帖子里找口令来领；钱由 LINUX DO Credit（LDC）直接发到领取者的账户。线上地址：<https://hb.lafi.sh>。
 
-为 Linux DO 社区提供口令兑奖与 LDC 分发服务。谜题、提示和讨论保留在论坛，平台负责兑奖与奖励交付。
+## 功能
 
-## 本地运行
+- **红包**：口令红包或无需口令；固定均分、拼手气、自定义金额、限时开奖；关联社区帖子、加入红包广场、领取范围（信任等级任意组合或指定的人）、领取前人机验证。
+- **付款**：发红包的人配好自己的 LDC 商户，领取后自动发放；结果不明时先查原单，不会重复付款。
+- **🐟额**：站内余额，转入、转出、转账、PLUS 邀请和开放接口；🐟额也能用来发红包。
+- **开奖证明**：限时开奖用 drand 的公开随机数，拼手气在开放时封存顺序，任何人都能自己验证。
+- **网站管理**：站长用的后台，管统计、设置、付款和🐟额。
 
-正式迁移已接入正式会话、持久化、兑奖、报名、开奖和付款恢复；LDC-only 收敛已于2026-10-12提交并发布到预发布和生产，当前版本及旧数据保持证据见[LDC 收敛记录](docs/ldc-only-retirement.md#授权提交与部署2026-10-12发布后补录)。完整迁移状态以[迁移台账](docs/prototype-migration.md)为准。运行 `bun run dev:full-app`，从[本地账号选择](http://127.0.0.1:4195/__local/full-app)进入；OAuth/LDC使用隔离本地协议替身，业务API、D1、DO与Queue实际运行，不访问真实外部业务。
+## 技术栈
 
-新界面已于 2026-10-15 上线，设计原型随之删除（最后一版见提交 `f5d4a33`）。现行规范见[DESIGN.md](DESIGN.md)，旧原型的体验见[原型指南](docs/visual-prototype.md)。下文带日期的旧远程版本和发布数字继续作为历史证据；最新的发布记录见[部署准备](docs/deployment-readiness.md)。
+| 部分 | 用到的 |
+|---|---|
+| 网页 `apps/web` | React、Vite、TanStack Router / Query、Jotai、Tailwind CSS、Motion；跑在 Cloudflare Workers 上，`/api` 经 Service Binding 转给 API |
+| 接口 `apps/api` | Hono、Cloudflare Workers、D1（Drizzle）、Durable Objects、Queues、Cron |
+| 共享契约 `packages/contracts` | Zod：前后端共用的校验、数据类型和输入上限 |
+| 测试 | Vitest（Workers 测试池）、Playwright |
 
-## 项目文档
-
-- [动态活动图片](docs/activity-images.md)：旧版内嵌图的样式、只读图片 Cookie 与本地跨站验收（2026-10-15 起的画法和地址见 [05 红包页](docs/redesign/05-hongbao.md) 第 6 节）。
-- [外观重构](docs/redesign/README.md)：现行的界面与交互规范（2026-10-15 上线），以及重构的功能清单、分步原型和迁移记录。
-
-- [业务规格 v1](docs/business-spec-v1.md)：完整业务规则、一期与后续阶段边界，以及业务验收基线。
-- [一期技术方案](docs/technical-design-phase-1.md)：技术选型、部署与数据边界、兑奖一致性、自动付款恢复和接入验收要求。
-- [一期实施记录](docs/implementation-phase-1.md)：八步实施顺序、已完成内容、验证证据和外部联调条件。
-- [本地模拟付款与故障恢复](docs/local-payment-operations.md)：虚拟数据、故障场景、状态含义、补偿命令及真实接入检查表。
-- [LDC 接入证据](docs/ldc-integration-evidence.md)：固定版本源码事实、线上验证边界与真实接入前的核实项。
-- [付款运维](docs/payment-operations.md)：凭证轮换、只读诊断、单笔验收、备份恢复及防重复要求。
-- [LDC 收敛与退役数据](docs/ldc-only-retirement.md)：清理范围、旧数据不变与本地验收。
-- [管理员后台一期](docs/admin-operations.md)：六入口、只读查询、隐私范围、网站设置与本地验收。
-- [部署准备](docs/deployment-readiness.md)：环境模板、Secrets、绑定、CI 和尚未完成的发布验收。
-
-一期提供作者商户 LDC 直发，以及活动、兑奖、发现入口和统计功能。平台收款、平台代发、余额、提现、资金占用、结余释放及费率功能留待后续阶段。
-
-前后端采用同仓库、独立应用、同一公共域名：前端使用 React、Vite、TanStack Router／Query／Form、Jotai、Tailwind CSS 和 Motion；后端使用 Hono、Cloudflare Workers、D1、Drizzle、Durable Objects 和 Queues。
-
-当前阶段：LDC 兑奖、发现入口、作者统计、四类LDC奖励及普通真实付款恢复均已实现，预发布和生产已部署LiteAuth双登录与0021–0022。上一批“解meme”命名、构建标记、即时加载反馈、表单调整及同一商户Client ID修正的0020发布证据保留；本轮迁移、实际版本、运行许可及金融身份保持见[实施记录](docs/implementation-phase-1.md)。原5×0.10 LDC试运行活动已全部领取并确认，本轮没有新增资金测试。费用、净收款、结算可用时间及线上额度恢复仍待验证。用户已于2026-10-05确认完成套餐升级；升级后的实际Workers配额与CPU预算尚待核验。
-
-上一批完整 `bun run check` 通过32项工具、56项契约、526项API、132项页面及16项完整应用测试；另补2项本地D1领取／开奖与配置竞争测试通过。Stage通过真实Connect、同一虚拟商户切换Client ID并切回、600秒／空报名上限、历史草稿保留及窄屏构建标记检查。风险提醒正向流程以本地完整Web／D1／DO测试为证据，Stage没有进行中风险，不宣称在那里触发过确认弹窗。两环境候选及0020兼容回退版本见[部署说明](docs/deployment-readiness.md)。
-
-本轮 LiteAuth 双登录、永久账号资格和本人账号入口调整已完成，最新 `bun run check` 的837项测试通过（工具33、契约56、API584、页面146、完整应用18）。[Stage](https://staging.meme.442224.xyz)为 `build @ 1791262134`，[生产](https://meme.442224.xyz)为 `build @ 1791263153`，两环境使用同一源码候选、独立应用及Secrets。真实K.lafish分别经LiteAuth登录两环境，青春版资格、头像、缺少邮箱及LDC能力关闭均已核对；Stage另外完成文本创建、领取、继续解口令、刷新／重登录幂等、公开标签及商户限制。生产只验证登录与既有记录，没有新增活动或付款；原lafish官方账号及邮箱、原12笔已确认付款保持。生产控制version10、三项许可1，实际live、timed=true、三项环境停止开关false；最终诊断无警告，发布后备份及本地隔离恢复通过，没有恢复生产数据库。真实跨来源升级与不降级的完整矩阵以本地测试为证据，不将两个不同账号的登录写成同账号升级。准确版本、备份及兼容回退记录见[实施记录](docs/implementation-phase-1.md)。
-
-## 取消青春版（2026-10-15）
-
-青春版与 LiteAuth 登录已取消（[决定与范围](docs/redesign/06-production.md#1-取消青春版2c-决定)）：只保留官方 Connect 登录，所有账号都是普通账号，不再有账号类型、升级入口或 `OFFICIAL_CONNECT_REQUIRED` 限制。迁移 `0027_retire_lite_accounts.sql` 删除 LiteAuth 会话和未完成的 LiteAuth／升级授权，这些用户改用 Connect 重新登录，原账号和记录不变；它必须在新 Worker 部署**之前**执行。`users.official_connect_verified`、会话来源等旧列和登录设置表保留一个版本以便回滚，之后的迁移删除。2026-10-15 已随新界面发布到生产。
-
-文本 / CDK 功能已从运行时退役；旧数据原样保留但不读取、解密、展示或后台恢复，旧资源按未找到处理。数据库结构和历史迁移保留，无数据迁移。清理范围与本地验收见 [LDC 收敛记录](docs/ldc-only-retirement.md)。
-
-邮箱仅本人可见。右上角本人头像和昵称直接进入 `/account`，不打开资料弹层；其他用户保留头像、昵称及详细卡片。活动、商户、付款仍按本站记录 ID 关联，付款的上游 Client ID 和原用户名快照保持原意。
-
-本轮不接入邮件、零钱或挂账，不新增真实资金测试，不自动提交或推送 Git。迁移、应用设置及兼容回退要求见[部署说明](docs/deployment-readiness.md)。
-
-## 名称、构建时间与配置修正
-
-站点名称统一为“解meme”。右下角固定显示浅色等宽的 `build @ <Unix 秒级时间戳>`，对应产物构建开始时间；开发环境使用开发服务启动时间。发布清单的 `buildUnixSeconds` 与HTML标记必须一致。路由已拆包，导航立即展示“正在加载页面…”，保留顶栏；组件加载后继续使用页面内数据加载状态，资源失败可以重新加载页面。
-
-活动表单分为“活动与奖励”“参与与分享”“更多设置”和摘要操作。“参与与分享”集中放置帖子／回复关联、加入广场及强制专属页；数量展示和领取名单进入默认折叠的“更多设置”。新限时活动默认倒计时600秒、报名上限留空，已保存配置不因新默认值改变。广场与帖子关联完全独立，加入广场不需要帖子，清空帖子只移除对应索引。
-
-同一个商户的名称、Client ID和密钥可以修改，商户ID、页面地址及付款模式不变，也没有删除商户入口。改Client ID必须填写对应密钥；密钥留空且Client ID不变表示保留。存在进行中活动、未完成开奖或未完成付款时，凭证修改必须确认影响范围，服务端保存时再次核对。新凭证检查通过后，普通任务仅在从未发送，或每次发送都有可信未建单证据且没有历史未知／订单证据时追加身份更正并安全续付；其他任务继续按原身份核对。付款详情可修复已失效的原订单身份密钥，不修改原业务号、收款人、金额或强制重发。
-
-增量迁移 `0020_lyrical_scorpion.sql` 保存永久Client ID归属、凭证身份快照、配置幂等记录及付款身份更正。旧密文、ID、原参数摘要和发送历史保留；历史HTTP400不回填未建单证据。开始采用新配置或更正后，不能回退到不识别0020语义的调度器，具体发布与恢复要求见[付款运维](docs/payment-operations.md)。
-
-上一批0020的Stage候选 `hb-staging-2026-10-05T17-51-19-458Z` 标记为 `build @ 1791222672`；生产候选 `hb-production-2026-10-05T18-07-29-991Z` 为 `build @ 1791223643`。两者源码摘要相同，准确263份源码、46份产物和21项迁移已归档；当前0022版本见前述LiteAuth交付记录。本文等发布后记录会改变当前工作区文档摘要，已部署运行代码仍来自归档候选；下次发布必须重新构建，不用现工作区冒充旧候选。
-
-两环境27项入口和37份静态资源检查通过；生产浏览器读取首页及既有活动，构建标记与清单一致。新备份只导出并在本地隔离恢复，未在生产恢复数据库。最新敏感检查覆盖38份客户端文件、263份归档源码和52份日志，对16个秘密值及2个私有邮箱只在内存匹配，结果通过。付款和开奖诊断无警告，队列探针实际消费；这些结果不扩大历史资金、结算或线上容量验收范围。
-
-2026-10-04 的本地独立验收已向 `100001 / Tester7369` 发放 **0.10 LDC**，查单确认交易号 `100000000000000001`。随后仅执行一次相同参数的重复请求，上游返回业务号唯一约束拒绝；查单与 Credit 后台核对为原订单，受控重复验证通过。原业务号中的连字符被正常接受；用户名大小写更正和原始发送历史均保留，首次 HTTP 400 的业务原因仍未知。这笔历史验收没有导入生产，也不证明普通活动的真人领取、线上额度或费用结算已经验收，详见 [LDC 接入证据](docs/ldc-integration-evidence.md)。
-
-## Connect 账号资料
-
-Connect 邮箱、头像及统一用户卡片已完成本地及 Stage 验收，并于2026-10-06随限时开奖更新生产。两环境真实 Connect 登录、邮箱头像显示正常，Stage退出清理通过。账号页展示本人邮箱并支持复制、重新登录更新资料；活动作者、发现卡片及领取记录共用头像和昵称展示，悬停、键盘或触屏可查看用户名并打开 Linux DO 个人主页。本轮本地调整将顶栏本人入口改为直接访问账号页，远程尚待更新。旧账号需要重新登录才能从 Connect 补齐新资料。
-
-授权范围为 `profile email`，邮箱按版本加密保存，仅在本人 `/api/me` 中解密返回，公共用户资料不包含邮箱。头像只接受无认证信息的 HTTPS 地址，失败使用本地占位图；付款记录的收款 ID 和用户名快照不随用户资料更新。本轮没有邮件发送功能，也未验证邮箱转站内信的送达行为。字段依据为 [Connect 官方公开元数据](https://connect.linux.do/.well-known/openid-configuration)，本地迁移为 `0018_abnormal_thunderball.sql`。
-
-## LDC 四类奖励与限时开奖
-
-已于2026-10-06完成 Stage 验收及生产发布，生产限时开奖开放开关已启用。可从 [发红包](https://hb.lafi.sh/new) 选择玩法。本批完整 `bun run check` 通过29项运维、56项契约、504项API、116项页面及9项完整应用测试；包含1,001人报名、1,000人中奖的批量结算和故障恢复。Stage保持真实资金关闭，生产发布未创建资金测试活动或执行分发探测。
-
-创建页将 LDC 整理为固定均分、即时随机、自定义金额、限时开奖四类；随机算法和自定义领取顺序分别作为子选项。限时开奖配置总奖池、获奖名额、可空报名上限及最晚开奖倒计时。满上限或到时即停止报名；每个账号只取得一次资格，报名阶段不产生付款。
-
-开奖时随机选出最多配置名额的获奖者，再生成并固定金额。“人数不足时发完奖池”开启时按实际获奖人数分完；关闭时按原名额生成完整金额池，随机发出实际份数，剩余不发。无人报名不付款。报名截止、不可变方案及原子发布分别持久保存，重启或失败不会重新抽取。获奖后使用现有同业务号付款恢复；报名者可立即分享本人报名口令和继续解其他口令，不增加中奖机会。
-
-“我的参与”合并即时领取和报名，中奖记录只显示一次。旧活动、已领取奖励及付款快照不改变。限时开奖的新开放由 `LDC_TIMED_DRAW_ENABLED` 独立控制；关闭此开关不停止已接纳报名的开奖或付款核对。诊断和恢复方法见[付款运维](docs/payment-operations.md)。本批发布进度及本地、Stage、生产的证据分别记录于[实施记录](docs/implementation-phase-1.md)，不以本地模拟上游测试代替线上资金验收。
+```
+apps/web            网页与网关 Worker
+apps/api            接口 Worker、数据库迁移（apps/api/migrations）
+packages/contracts  共享契约
+e2e                 浏览器测试（e2e/full-app 是完整应用测试）
+scripts             本地工具、发布与运维脚本
+docs                设计与规格
+```
 
 ## 本地开发
 
-预发布位于 <https://staging.hb.lafi.sh>（2026-10-15 起，原 staging.meme.442224.xyz），生产位于 <https://hb.lafi.sh>（2026-10-15 起，原 meme.442224.xyz 跳转到这里）。预发布的 TLS、网关、队列消费、四项 Cron、兼容版本回滚、空库恢复、真实 Connect 登录和 1,000 份文本兑奖闭环已验证。生产已完成真实 `lafish` Connect 登录，商户“1”使用生产加密密钥重新保存、凭证版本 1 检查通过。本轮自动创建的授权测试活动 `aeb4a7c2-4cd9-4d2c-8314-abb88b7d93fb` 为 5 份、每份 0.10 LDC，总额 0.50 LDC，于 2026-10-05 03:30:34.558 开放，截止时间为次日同一时刻（Asia/Shanghai）；生产另有正常活动。“唯一”仅指本轮自动创建的授权测试活动。开放后独立检查覆盖 16 个 API、8 个资源、11 项 Cloudflare 配置和 7 项数据库条件，全部通过。03:32:16 的零领取、零付款任务是早期快照；随后四笔普通领取付款各发送和查单一次、HTTP 200、凭证版本 1，Credit 后台对应订单及付款记录未见重复迹象。09:48 诊断无待处理付款、未知任务或商户占用，业务队列与 DLQ 均为零，Cron 四项成功。该时点活动公共响应遵守当时的隐藏数量设置。这是历史验收快照；2026-10-05配置简化迁移后旧隐藏数量统一为精确，金额池、私有库存、进行中未知口令及未解锁说明仍不公开。
+需要 Bun 1.3.13（见 `.bun-version`）和 Node 22.20.0（见 `.node-version`）。
 
-升级前 Free 稳定 CPU 预算未通过，保留历史测量：预发布样本为 62 次成功、0 次运行错误，CPU P99 为 **12.423 ms**，1,000 份 × 900 字节创建为 **12.178 ms**；生产 live 固定窗口为 92 次成功、0 次运行错误，CPU P99 **18.721 ms**。这些峰值未满足当时普通 Worker 的 10 ms 预算，也没有证据将其认定为冷启动。用户已确认套餐升级；此处保留升级前证据，升级后的套餐生效范围、实际配额和运行预算需另行核验，不能直接将旧限制记为已通过。2026-10-05本批 `bun run check` 通过27项运维、20项契约、480项Worker、105项页面及3项完整应用测试。付款后生产 SQL 导出已通过本地隔离恢复、内容摘要、外键及完整性检查；生产原地恢复仍未执行。详细远程证据、版本和剩余验收见实施记录及 [LDC 接入证据](docs/ldc-integration-evidence.md)。
-
-使用 Bun `1.3.13` 和 Node `22.20.0`。Bun 管理工作区、依赖及脚本入口，Vite、Wrangler 和 Vitest 按各自的 Node 入口执行；Worker 使用 Cloudflare 的本地运行环境。
-
-```sh
+```bash
 bun install --frozen-lockfile
-bun run db:migrate:local
 bun run dev
 ```
 
-打开 <http://127.0.0.1:5173>。开发命令同时启动 Web Worker 与辅助 API Worker，前端通过同域 `/api/health` 检查后端；`/status` 可直接访问和刷新。
+打开 <http://127.0.0.1:5173>。匿名浏览不需要任何配置。要登录，把 `apps/api/.dev.vars.example` 复制成 `apps/api/.dev.vars`，填上 LINUX DO Connect 的 `CONNECT_CLIENT_ID`、`CONNECT_CLIENT_SECRET` 和加密密钥（示例文件里有说明），Connect 里登记的回调是 `http://127.0.0.1:5173/api/auth/callback`。改了配置要重启开发服务。
 
-匿名浏览和健康检查无需 Cloudflare 登录、OAuth 或 LDC 凭证，绑定均使用本地资源。登录需要在 `apps/api/.dev.vars` 中配置 Connect，参考 [API 环境变量示例](apps/api/.dev.vars.example)。开发服务启动后修改配置需要重启。
+不想接真实 Connect 和 LDC 时，用完整应用环境：
 
-## 登录本地接入
+```bash
+bun run dev:full-app
+```
 
-将 `apps/api/.dev.vars.example` 复制为 `apps/api/.dev.vars`，设置 `APP_ORIGIN`、`CONNECT_CLIENT_ID` 和 `CONNECT_CLIENT_SECRET`。本地默认 origin 为 `http://127.0.0.1:5173`，在 Connect 中登记的回调必须为该 origin 加 `/api/auth/callback`。如果 Connect 要求 HTTPS，应使用已配置的开发域名并同步 origin，不能绕过证书验证。
-
-环境独立应用、远程回调及发布步骤见[部署说明](docs/deployment-readiness.md)。
-
-会话 Cookie 为不透明随机令牌，数据库仅保存摘要，有效期七天；HTTPS 使用 `Secure`，本地 loopback HTTP 仅为开发放宽。OAuth state 有效期十分钟，绑定发起登录的浏览器，单次消费。未配置时登录接口返回 `AUTH_NOT_CONFIGURED`，不会提供本地模拟登录旁路。
-
-`ENCRYPTION_KEYS` 是版本到 Base64 编码的 32 字节随机 AES 密钥的 JSON 对象，dotenv 文件中使用外层单引号保留 JSON 双引号（参照示例）；`ENCRYPTION_KEY_VERSION` 指定当前写入版本。`PASSWORD_DIGEST_KEY` 使用独立的至少 32 字节随机密钥（Base64）。这些密钥用于活动口令、商户凭证、OAuth 及付款诊断；不能使用示例值或复用 Connect 密钥。轮换 AES 密钥时保留旧版本以读取已有数据；口令摘要密钥变更需要重建摘要索引。生产密钥使用 Workers Secrets，真实配置不纳入 Git。领取前人机验证在本地和测试里用 Cloudflare 的测试站点密钥，不需要 `TURNSTILE_SECRET_KEY`；生产的配置见[部署说明](docs/deployment-readiness.md)。
-
-自动化协议测试只使用模拟 Connect／LDC 响应，不访问真实账号或执行付款。页面测试保留模拟接口场景，完整应用测试另外经过真实 Web Worker、Service Binding、API、D1、DO 与 Queue；外部 OAuth 和 LDC 只在隔离测试运行时注入。
-
-排查真实登录时，后端 `auth_failure` 日志仅记录阶段、预定义原因和可用的 HTTP 状态码。`stage=token, reason=network` 表示令牌请求阶段抛出异常、未取得 HTTP 响应，不能单凭这一分类区分网络故障和运行时参数错误。浏览器可以打开授权页并不能证明本地 Worker 的请求可用。Cloudflare Worker 请求使用 `redirect: "manual"` 并拒绝非 2xx 响应，以兼容运行时且避免向重定向目标发送凭证。授权状态只能消费一次，排除故障后应从登录入口重新发起授权。
-
-## LDC 活动与领取本地验收
-
-运行隔离完整应用环境，以普通资格账号配置本地商户并创建四种金额方式的 LDC 草稿。保存、编辑、开放、删除和提前结束沿用版本校验及原编号重试；公开说明与奖励附言保持既有可见权限。仅成功参与后显示分配金额和付款状态，刷新、返回及重复请求不重新分配。
-
-每账号每活动最多一份，作者不能领取自己的活动。限时开奖先报名、固定方案再分配并生成付款。已领取者可以继续解其他口令，不再次领取或付款。生命周期、并发、隐私、冷却及未知结果回归通过真实本地 Web／API／D1／DO／Queue 和替身上游验收，远程不开放模拟旁路。
-
-## 全站兑换与发现
-
-首页可提交口令，或通过 UUID、活动链接、Linux DO 帖子链接定位活动。一个匹配按既定流程处理；多个匹配展示全部候选卡片，进入专属页后再确认领取。已结束、本人已领取和待付款活动不遮挡其他匹配；强制专属、准备中和已归档活动不参与全站匹配。
-
-提交结果持久绑定原请求，网络重发及限流后的原提交重试不会因新活动出现而改领其他活动。返回列表使用只读刷新，不触发领取。口令只在当前页面会话中保留，不进入 URL 或浏览器持久存储。首页与专属页的提交共用每账号冷却，默认首页 5 秒、专属页 2 秒，管理员可在网站设置中调整。
-
-`/square` 展示作者主动加入的活动，开启后不能撤回，不要求关联帖子。填写关联帖即可通过 `/topics/:topicId?postNumber=1` 精确到回复查询，无需加入广场；清空或替换帖子只改变对应回复索引，不改变广场收录。单个结果直达专属页，多个结果展示列表。卡片和专属页共同遵守服务端数量、名单及金额权限。作者统计位于 `/my/activities/:id/statistics`，仅强制专属活动提供。
-
-## LDC 本地模拟
-
-商户创建时可选择本地模拟或真实 LDC，保存后模式固定；同一商户的Client ID可以连同对应密钥修改，永久归属登记保持平台唯一。本节使用 `simulation`：请填写虚拟 `client_id` 和虚拟密钥，模拟适配器不会读取商户密钥或调用 LDC 外部接口。密钥存储仍走版本化加密，接口不返回密钥或密文。
-
-1. 登录后在 `/my/merchants` 创建模拟商户，在同一配置页维护名称、Client ID、密钥及本地故障场景；没有有效修改时禁用保存。
-2. 创建活动时选择 LDC 及本人商户。固定模式按总额与份数精确均分；自定义逐份填写金额，可顺序发放或不放回随机抽取。随机模式支持二倍均值法和波动均值法（初始均值上下 50%，按分向外取整）。随机份额保存草稿时生成，仅修改总额、份数或算法时重新生成；开放与付款重试不会重抽，领取统一采用不放回随机抽取。
-3. 开放活动后，由另一账号领取。作者不能领取自己的 LDC 活动；金额一旦分配即固定，同时生成付款任务与 Outbox。领取后说明即时解锁。
-4. 在商户页切换正常、响应丢失、查单延迟／不可用、余额不足、额度不足、凭证失效或订单冲突场景，保存场景后由系统自动恢复，付款记录弹窗可只读刷新状态。队列、Alarm 和 Cron 共用 MerchantDO 调度；未知付款先查单并暂停该商户的新发送，更换密钥不能绕过保护。
-5. 领取记录与商户“付款记录”表格弹窗展示当前状态，模拟成功明确显示“模拟发放已确认”，不表示真实 LDC 转账。需要立即触发补偿时，可使用下方本地 Cron 命令。
-
-只有一个真实登录账号时，运行 `bun run dev:seed`，会在本地新增独立虚拟作者的固定、自定义及两种随机活动，并输出口令和链接。它不创建会话、不修改现有用户；重跑不会重置领取或期限。详见[本地模拟操作说明](docs/local-payment-operations.md)。
-
-真实 Connect 登录本身不证明 LDC 收款身份。模拟收款标识使用独立命名空间；本轮四名真实非作者的领取身份、金额和商户关联已核对，普通真实付款已确认。其他账号状态、改名、额度和结算语义仍按接入检查表逐项验证。
-
-## 真实商户检查与受控验收
-
-商户页统一保存真实模式配置及轮换密钥，不提供二级管理表单、手动凭证检查或恢复检查。启用网络检查的环境在保存或轮换后按既有机制自动验证，开放活动时校验资格和当前凭证；列表和详情刷新只读取已保存结果。检查绑定当前密钥版本并防止迟到覆盖，内部版本不面向用户展示。通过仅证明接口接受凭证，不证明商户归属、余额或分发能力。商户凭证接口不能读取余额，页面提供前往 LDC 查看余额的链接。
-
-每个账号最多一个当前商户，旧开发配置归为历史并保留记录及凭证维护。新 LDC 草稿使用当前商户，历史草稿须明确重新绑定同模式当前商户。付款模式固定，历史模拟活动不能转为真实，重新绑定不会重新抽取随机金额。真实传输使用官方公开路径 `/lpay/distribute`、`/epay/api.php`，主机固定为 `credit.linux.do`。
-
-生产 `live` 模式支持普通真实活动，需同时通过版本化平台控制、当前商户及当前凭证版本最近十分钟检查。新发布若需检查，会保留草稿并异步验证；开放原子更新再次检查凭证版本。已开放活动在凭证失效、轮换或检查中继续领取，金额与应付任务固定，付款等待凭证恢复。
-
-`APP_ENV`、`LDC_NETWORK_MODE`、数据库控制和不可变的活动/领取/任务关联共同约束普通付款。部署默认 `disabled` 且关闭新开放、新领取、新发送；`verify` 允许检查凭证及核对已发送的普通生产任务；`acceptance` 只适用于本地旧独立验收。普通任务使用 `claim_same_order_v1`，不继承旧验收五次/二十四小时限制，也不自动执行成功后的重复请求探测。环境变量本身不能授权任意付款，没有公网手动发款接口。
-
-环境停止发送仍保留原单查询，停止新领取仍允许读取已有奖励及幂等回放。新领取从真实 Connect 账号固定稳定收款 ID 及准确大小写用户名；客户端不能指定收款人。未知结果、成功回执和已观察到订单证据持续保存，活动结束/归档不会取消付款责任。生产与预发布不提供模拟配置和故障入口。
-
-2026-10-04 商户“1”的历史独立验收任务没有创建朋友的平台账号或领取记录；2026-10-05 的生产验收使用普通活动领取与 `claim_same_order_v1`，没有导入历史独立授权。当前付款列表和完整详情共用紧凑弹窗，桌面及手机均保留真实表格。列表按金额、状态、来源、业务号、创建时间和操作展示；详情只展示一次概况、订单、实际付款时间线和分页处理记录，不显示资格卡片或内部版本。异常且允许时可“更新原订单密钥”，其余恢复由后台自动执行；旧 `/my/merchants/:id/payments/:taskId` replace 到配置页并打开详情。没有强制重发或标记付款成功的公网接口。
-
-`0009` 保留历史模式，`0010` 增加版本化凭证检查和独立验收／付款来源约束，`0011` 增加安全 HTTP 状态，`0012` 增加同号恢复授权、持久退避、加密诊断和独立重复验证许可，`0013` 防止通过 SQLite 替换插入重置历史，`0014` 固定重复验证的后台证据摘要，`0015` 增加只追加的用户名大小写更正与每次实际发送的身份快照。`0017` 增加回复序号、草稿删除墓碑、提交用途和展示迁移；`0016` 增加当前商户唯一约束、普通任务策略与首次发送意图、默认关闭的平台控制、队列探针和独立补偿记录。历史 ID、密文、首次发送消费记录及付款参数保留；迁移本身不启用付款或更正收款人。维护命令与授权边界见 [付款运维](docs/payment-operations.md)。
-
-Cloudflare Vite 插件的本地自动 trace 曾记录携带密钥的查单 URL；已清除相关本地 trace，并在 Vite 强制 `X_LOCAL_OBSERVABILITY=false`。API 配置关闭 traces、开启 `redact_query_string` 并关闭自动调用日志，保留脱敏结构化日志。不要重新开启包含完整请求 URL 的自动采集。
+它启动真实的网页、接口、D1、DO 和队列，登录和 LDC 换成本地替身，从 <http://127.0.0.1:4195/__local/full-app> 选本地账号进入。`bun run dev:seed` 会在本地加一个虚拟作者和几种红包，方便试领取。
 
 ## 常用命令
 
 | 命令 | 用途 |
 |---|---|
-| `bun run dev` | 启动前后端统一开发入口 |
-| `bun run dev:seed` | 仅在本地新增幂等的 LDC 虚拟验收活动 |
-| `bun run build` | 生成绑定类型，构建 API 与前端，不部署 |
-| `bun run typecheck` | 检查前后端、Worker 与测试配置类型 |
-| `bun run lint` | Biome 格式与静态检查 |
-| `bun run format` | 应用 Biome 格式及可自动修复项 |
-| `bun run test` | 运行共享校验及 Cloudflare Workers Vitest 测试 |
-| `bun run test:e2e` | 运行 Chromium 浏览器冒烟测试 |
-| `bun run check` | 依次执行静态检查、类型检查、测试、构建与浏览器测试 |
-| `bun run cf:typegen` | 生成两个 Worker 的绑定类型；API 的变量与密钥名取自 `apps/api/.dev.vars.example`，不读本地 `.dev.vars` |
-| `bun run db:generate` | 从 Drizzle schema 生成数据库迁移 |
-| `bun run db:migrate:local` | 仅应用本地 D1 迁移 |
-| `bun run payment:acceptance:plan` | 查看固定单笔验收范围，不写库、不付款 |
-| `bun run payment:acceptance:check` | 只读核对本地商户和已有验收／任务／Outbox |
-| `bun run payment:recovery:plan` | 查看原单恢复的固定范围与当前许可，不新增授权 |
-| `bun run payment:recovery:check` | 只读核对原任务、恢复授权和独立重复验证 |
-| `bun run payment:diagnostics` | 只读汇总待付款、保护状态和 Outbox |
-| `bun run payment:backup` | 创建权限为 0600 的本地备份并在隔离库演练恢复 |
+| `bun run dev` | 启动前后端开发服务 |
+| `bun run dev:full-app` | 完整应用环境（本地替身代替 Connect 和 LDC） |
+| `bun run dev:seed` | 本地加虚拟作者和红包 |
+| `bun run lint` / `bun run format` | Biome 检查 / 自动修复 |
+| `bun run typecheck` | 类型检查 |
+| `bun run test` | 工具、契约和接口测试（用这个，不要用 `bun test`） |
+| `bun run test:e2e` | 浏览器测试（模拟接口） |
+| `bun run test:e2e:full-app` | 完整应用的浏览器测试 |
+| `bun run check` | 以上全部，再加构建；提交前跑这个 |
+| `bun run db:generate` | 从 Drizzle schema 生成迁移 |
+| `bun run db:migrate:local` | 只应用本地 D1 迁移 |
 
-首次运行浏览器测试前安装测试浏览器：
+第一次跑浏览器测试前先装 Chromium：
 
-```sh
-bun x playwright install chromium
+```bash
+bunx playwright install chromium
 ```
 
-测试使用 Vitest `4.1.11` 与 `@cloudflare/vitest-plugin` `1.3.6`；后者要求 Vitest 4.1 系列。运行 `bun run test`，而非使用另一个测试运行器的 `bun test`。
+本地调试定时任务：开发服务开着时，
 
-## 工程与本地资源
-
-- `apps/web`：React 文件路由、状态页、API 客户端与 Web Worker 网关。
-- `apps/api`：Hono HTTP 路由、Drizzle 客户端、两类 DO 及队列和定时入口。
-- `packages/contracts`：前后端共用的纯 Zod 校验、活动数据契约与输入上限。开发及检查命令会先生成声明文件。
-- `e2e`：同域 API、页面刷新、失败恢复和窄屏浏览器测试。
-
-Web Worker 将 `/api` 和 `/api/*` 通过 Service Binding 转发给 API Worker；未知 API 返回 JSON 404。前端 API 类型由 Hono 推导，浏览器不导入 Worker 实现。
-
-本地、预发布和生产使用独立 D1、DO 与队列绑定。开发服务与数据库命令共享根目录 `.wrangler/state`，该目录不纳入 Git。增量 Drizzle 迁移覆盖身份、活动、领取／尝试、全站请求快照、商户、付款／Outbox 和模拟订单。`0006_watery_psynapse.sql` 将文本库存升级为统一奖励库存，保留原 ID、密文及领取关系；已用独立旧版数据库验证迁移和原文本解密。健康检查本身不创建业务表。自动化 Worker 测试使用独立数据库并应用同一组迁移。
-
-生成的 Worker 类型、路由树、构建产物、依赖、测试产物和真实环境变量均不纳入 Git。`bun.lock` 纳入版本管理，复现安装使用 `--frozen-lockfile`。
-
-## 定时任务调试
-
-统一开发服务运行时，可以通过本地 Local Explorer 指定 API Worker 触发：
-
-```sh
-curl --fail -X POST \
-  'http://127.0.0.1:5173/cdn-cgi/local/explorer/api/local/scheduled?worker=hb-api' \
-  -H 'Content-Type: application/json' \
-  --data '{"cron":"*/5 * * * *"}'
+```bash
+curl --fail -X POST 'http://127.0.0.1:5173/cdn-cgi/local/explorer/api/local/scheduled?worker=hb-api' -H 'Content-Type: application/json' --data '{"cron":"*/5 * * * *"}'
 ```
 
-该入口只用于本地调试。也可以停止统一开发服务后，独立启动 API Worker：
+## 文档
 
-```sh
-bun run --filter @hb/api dev
-```
+- [DESIGN.md](DESIGN.md)：设计入口。
+- [外观重构](docs/redesign/README.md)：现行的界面与交互规范（八篇）。
+- [业务规格 v1](docs/business-spec-v1.md)、[一期技术方案](docs/technical-design-phase-1.md)：业务规则和技术方案的基线。
+- [🐟额](docs/balance-design.md)、[开奖证明](docs/draw-proof-design.md)、[领取范围](docs/claim-scope-design.md)、[震动反馈](docs/haptics-design.md)：各个功能的设计。
+- [本地模拟付款与故障恢复](docs/local-payment-operations.md)：本地怎么模拟付款和各种故障。
+- [管理员后台](docs/admin-operations.md)、[D1 迁往亚太](docs/d1-apac-migration.md)、[动态活动图片](docs/activity-images.md)。
+- [历史修订记录](docs/design-history.md)、[原型指南](docs/visual-prototype.md)：旧界面时期的记录。
 
-在另一终端触发本地定时入口：
+文档先于代码：改功能前先改对应的设计文档。
 
-```sh
-curl 'http://127.0.0.1:8787/cdn-cgi/local/scheduled?cron=*/5%20*%20*%20*%20*'
-```
+## 发布
 
-这是 API Worker 的本地调试地址；访问 Web Worker 的同名路径不会自动触发辅助 API Worker。定时入口清理过期授权记录和会话、补偿到期与归档状态、恢复未完成领取和中断的凭证检查，同时补投 Outbox、扫描到期付款／核对任务及独立重复验证并唤醒商户。队列只唤醒持久任务，普通真实发送受领取关系、平台开关、凭证版本、商户占用和持久退避约束；本地独立验收另外受其原授权及一次验证许可限制。
+预发布和生产由站长发布：`scripts/release.ts` 等脚本需要 Cloudflare 凭证，生产还有暂停、备份、迁移的固定流程。生产的运维记录、发布记录和验收证据不在这个仓库里。
+
+## 许可证
+
+[GNU Affero General Public License v3.0 或更高版本](LICENSE)（AGPL-3.0-or-later）。
