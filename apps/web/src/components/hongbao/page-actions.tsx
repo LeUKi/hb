@@ -1,4 +1,5 @@
 import {
+  ACTIVITY_IMAGE_EMBED_SIZES,
   createActivityImageEmbed,
   forumShareLink,
   forumShareWithPassword,
@@ -7,6 +8,7 @@ import {
 } from "@hb/contracts";
 import {
   Check,
+  ChevronDown,
   CodeXml,
   KeyRound,
   Link2,
@@ -31,6 +33,7 @@ import { useWindowInfo } from "../shell/window-info";
 import { Button } from "../ui/button";
 import { Code } from "../ui/code";
 import { MorphLabel } from "../ui/morph-label";
+import { Reveal } from "../ui/reveal";
 import { Squircle, SquirclePlate } from "../ui/squircle";
 
 type ShareGroup = "community" | "elsewhere";
@@ -57,7 +60,12 @@ type ShareItem = {
   /** Shown as code on the second line, after “口令”. */
   password?: string;
   text: string;
+  /** A second level under it (红包实况图's sizes): it opens, they copy. */
+  options?: ShareOption[];
 };
+
+/** One line of a second level: its label, a faint note after it. */
+type ShareOption = { key: string; label: string; note?: string; text: string };
 
 /**
  * What the menu offers (05 §5), in two named groups: 发到社区 — the link (a
@@ -113,11 +121,19 @@ function shareItems(
       icon: CodeXml,
       label: "红包实况图",
       detail: "嵌入帖子，实时更新",
-      text: createActivityImageEmbed({
-        activityId: activity.id,
-        origin,
-        sender: activity.author.displayName,
-      }),
+      text: "",
+      // The image in the post at one of its sizes, 300 × 400 first (05 §5).
+      options: ACTIVITY_IMAGE_EMBED_SIZES.map((size, index) => ({
+        key: `embed-${size.width}`,
+        label: `${size.width} × ${size.height}`,
+        ...(index === 0 ? { note: "默认" } : {}),
+        text: createActivityImageEmbed({
+          activityId: activity.id,
+          origin,
+          sender: activity.author.displayName,
+          size,
+        }),
+      })),
     },
     {
       key: "link",
@@ -154,17 +170,41 @@ export function PageActions({
   const [copied, setCopied] = useState<{ key: string; ok: boolean } | null>(
     null,
   );
+  // The item whose second level is open (红包实况图's sizes).
+  const [expanded, setExpanded] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const itemRefs = useRef(new Map<string, HTMLButtonElement>());
+  const focusNext = useRef<string | null>(null);
   const leaveTimer = useRef<number | undefined>(undefined);
   const items = shareItems(activity, passwords);
+  // What the arrow keys move through: each item, and an open one's options.
+  const rows = items.flatMap((item) => [
+    { key: item.key, item, option: undefined as ShareOption | undefined },
+    ...(expanded === item.key
+      ? (item.options ?? []).map((option) => ({
+          key: option.key,
+          item,
+          option,
+        }))
+      : []),
+  ]);
 
   const close = useCallback((refocus = false) => {
     setOpen(false);
     setPinned(false);
+    setExpanded(null);
     if (refocus) buttonRef.current?.focus({ preventScroll: true });
   }, []);
+
+  // Opened or closed from the keyboard: focus goes to its first option, or back.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: once the second level has changed.
+  useEffect(() => {
+    if (!focusNext.current) return;
+    const key = focusNext.current;
+    focusNext.current = null;
+    requestAnimationFrame(() => itemRefs.current.get(key)?.focus());
+  }, [expanded]);
 
   // A pinned menu closes on a press anywhere else.
   useEffect(() => {
@@ -187,7 +227,7 @@ export function PageActions({
     return () => window.clearTimeout(timer);
   }, [copied, close]);
 
-  const copy = (item: ShareItem) => {
+  const copy = (item: { key: string; text: string }) => {
     const write = navigator.clipboard?.writeText(item.text);
     if (!write) {
       setCopied({ key: item.key, ok: false });
@@ -200,7 +240,14 @@ export function PageActions({
   };
 
   const focusItem = (index: number) =>
-    itemRefs.current[(index + items.length) % items.length]?.focus();
+    itemRefs.current
+      .get(rows[(index + rows.length) % rows.length]?.key ?? "")
+      ?.focus();
+  const toggle = (item: ShareItem, focus?: string) => {
+    setPinned(true);
+    if (focus) focusNext.current = focus;
+    setExpanded((current) => (current === item.key ? null : item.key));
+  };
 
   const onPointerEnter = (event: PointerEvent) => {
     if (event.pointerType !== "mouse") return;
@@ -225,20 +272,28 @@ export function PageActions({
       setOpen(true);
       setPinned(true);
       requestAnimationFrame(() =>
-        focusItem(event.key === "ArrowDown" ? 0 : items.length - 1),
+        focusItem(event.key === "ArrowDown" ? 0 : rows.length - 1),
       );
     }
   };
   const onMenuKey = (event: KeyboardEvent) => {
-    const index = itemRefs.current.indexOf(
-      document.activeElement as HTMLButtonElement,
+    const index = rows.findIndex(
+      (row) => itemRefs.current.get(row.key) === document.activeElement,
     );
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    const row = rows[index];
+    if (event.key === "ArrowRight" && row?.item.options && !row.option) {
+      event.preventDefault();
+      if (expanded === row.item.key) focusItem(index + 1);
+      else toggle(row.item, row.item.options[0]?.key);
+    } else if (event.key === "ArrowLeft" && row?.item.options) {
+      event.preventDefault();
+      if (expanded === row.item.key) toggle(row.item, row.item.key);
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       focusItem(index + (event.key === "ArrowDown" ? 1 : -1));
     } else if (event.key === "Home" || event.key === "End") {
       event.preventDefault();
-      focusItem(event.key === "Home" ? 0 : items.length - 1);
+      focusItem(event.key === "Home" ? 0 : rows.length - 1);
     } else if (event.key === "Escape") {
       event.preventDefault();
       close(true);
@@ -256,8 +311,10 @@ export function PageActions({
   const status = copied
     ? copied.ok
       ? `已复制${(() => {
-          const item = items.find((one) => one.key === copied.key);
-          return item ? `${groupNames[item.group]}的${item.label}` : "";
+          const row = rows.find((one) => one.key === copied.key);
+          return row
+            ? `${groupNames[row.item.group]}的${row.item.label}${row.option ? ` ${row.option.label}` : ""}`
+            : "";
         })()}`
       : "复制失败，请手动复制"
     : "";
@@ -339,64 +396,145 @@ export function PageActions({
                       {items
                         .filter((item) => item.group === group)
                         .map((item) => {
-                          const index = items.indexOf(item);
                           const done = copied?.key === item.key;
                           const Icon = done && copied.ok ? Check : item.icon;
+                          const options = item.options;
+                          const opened = expanded === item.key;
                           return (
-                            <Squircle key={item.key} radius={12}>
-                              <button
-                                ref={(element) => {
-                                  itemRefs.current[index] = element;
-                                }}
-                                type="button"
-                                role="menuitem"
-                                onClick={() => copy(item)}
-                                className="flex h-12 w-full items-center gap-3 px-2.5 text-left outline-none hover:bg-fill-2 focus-visible:bg-fill-2"
-                              >
-                                <Squircle radius={9}>
-                                  <span
-                                    className={`grid size-7 shrink-0 place-items-center transition-colors ${
-                                      done && copied.ok
-                                        ? "bg-success-soft text-success"
-                                        : "bg-fill text-ink-2"
-                                    }`}
-                                  >
-                                    <MorphLabel>
-                                      <Icon
-                                        className="size-4"
-                                        aria-hidden="true"
-                                      />
+                            <div key={item.key} className="grid">
+                              <Squircle radius={12}>
+                                <button
+                                  ref={(element) => {
+                                    if (element)
+                                      itemRefs.current.set(item.key, element);
+                                    else itemRefs.current.delete(item.key);
+                                  }}
+                                  type="button"
+                                  role="menuitem"
+                                  aria-haspopup={options ? "menu" : undefined}
+                                  aria-expanded={options ? opened : undefined}
+                                  onClick={() =>
+                                    options ? toggle(item) : copy(item)
+                                  }
+                                  className="flex h-12 w-full items-center gap-3 px-2.5 text-left outline-none hover:bg-fill-2 focus-visible:bg-fill-2"
+                                >
+                                  <Squircle radius={9}>
+                                    <span
+                                      className={`grid size-7 shrink-0 place-items-center transition-colors ${
+                                        done && copied.ok
+                                          ? "bg-success-soft text-success"
+                                          : "bg-fill text-ink-2"
+                                      }`}
+                                    >
+                                      <MorphLabel>
+                                        <Icon
+                                          className="size-4"
+                                          aria-hidden="true"
+                                        />
+                                      </MorphLabel>
+                                    </span>
+                                  </Squircle>
+                                  <span className="grid min-w-0 flex-1">
+                                    <MorphLabel
+                                      fit={false}
+                                      className="text-sm text-ink"
+                                    >
+                                      <span className="block truncate">
+                                        {done
+                                          ? copied.ok
+                                            ? "已复制"
+                                            : "复制失败"
+                                          : item.label}
+                                      </span>
                                     </MorphLabel>
+                                    {item.password !== undefined ? (
+                                      <span className="flex min-w-0 items-center gap-1 text-xs text-ink-3">
+                                        <span className="shrink-0">口令</span>
+                                        <Code className="min-w-0">
+                                          {item.password}
+                                        </Code>
+                                      </span>
+                                    ) : (
+                                      <span className="truncate text-xs text-ink-3">
+                                        {item.detail}
+                                      </span>
+                                    )}
                                   </span>
-                                </Squircle>
-                                <span className="grid min-w-0 flex-1">
-                                  <MorphLabel
-                                    fit={false}
-                                    className="text-sm text-ink"
-                                  >
-                                    <span className="block truncate">
-                                      {done
-                                        ? copied.ok
-                                          ? "已复制"
-                                          : "复制失败"
-                                        : item.label}
-                                    </span>
-                                  </MorphLabel>
-                                  {item.password !== undefined ? (
-                                    <span className="flex min-w-0 items-center gap-1 text-xs text-ink-3">
-                                      <span className="shrink-0">口令</span>
-                                      <Code className="min-w-0">
-                                        {item.password}
-                                      </Code>
-                                    </span>
-                                  ) : (
-                                    <span className="truncate text-xs text-ink-3">
-                                      {item.detail}
-                                    </span>
+                                  {options && (
+                                    <ChevronDown
+                                      aria-hidden="true"
+                                      className={`size-4 shrink-0 text-ink-3 transition-transform duration-200 ${
+                                        opened ? "rotate-180" : ""
+                                      }`}
+                                    />
                                   )}
-                                </span>
-                              </button>
-                            </Squircle>
+                                </button>
+                              </Squircle>
+                              {options && (
+                                <Reveal show={opened}>
+                                  {/* biome-ignore lint/a11y/useSemanticElements: a menu's items group with role="group" (WAI-ARIA menu), not a form's <fieldset>. */}
+                                  <div
+                                    role="group"
+                                    aria-label={`${item.label}的大小`}
+                                    className="grid"
+                                  >
+                                    {options.map((option) => {
+                                      const optionDone =
+                                        copied?.key === option.key;
+                                      return (
+                                        <Squircle key={option.key} radius={10}>
+                                          <button
+                                            ref={(element) => {
+                                              if (element)
+                                                itemRefs.current.set(
+                                                  option.key,
+                                                  element,
+                                                );
+                                              else
+                                                itemRefs.current.delete(
+                                                  option.key,
+                                                );
+                                            }}
+                                            type="button"
+                                            role="menuitem"
+                                            onClick={() => copy(option)}
+                                            className="flex h-9 w-full items-center gap-2 pr-2.5 pl-[3.125rem] text-left outline-none hover:bg-fill-2 focus-visible:bg-fill-2"
+                                          >
+                                            <MorphLabel
+                                              fit={false}
+                                              className="min-w-0 flex-1 text-sm text-ink tabular-nums"
+                                            >
+                                              {optionDone ? (
+                                                <span className="block truncate">
+                                                  {copied.ok
+                                                    ? "已复制"
+                                                    : "复制失败"}
+                                                </span>
+                                              ) : (
+                                                <span className="block truncate">
+                                                  {option.label}
+                                                  {option.note && (
+                                                    <span className="ml-1.5 text-xs text-ink-3">
+                                                      {option.note}
+                                                    </span>
+                                                  )}
+                                                </span>
+                                              )}
+                                            </MorphLabel>
+                                            {optionDone && copied.ok && (
+                                              <Check
+                                                aria-hidden="true"
+                                                className="size-4 shrink-0 text-success"
+                                              />
+                                            )}
+                                          </button>
+                                        </Squircle>
+                                      );
+                                    })}
+                                  </div>
+                                </Reveal>
+                              )}
+                            </div>
                           );
                         })}
                     </div>

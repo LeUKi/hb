@@ -729,20 +729,50 @@ test.describe("红包页", () => {
       .poll(() => readClipboard(page))
       .toBe(`${new URL(page.url()).origin}/🧧/${code}`);
     await expect(menu).toBeHidden();
+    // 红包实况图 opens a second level: its sizes, 300 × 400 first.
     await page.getByRole("button", { name: "分享" }).click();
-    await community()
-      .getByRole("menuitem", { name: /^红包实况图/ })
-      .click();
+    const embed = community().getByRole("menuitem", { name: /^红包实况图/ });
+    await expect(embed).toHaveAttribute("aria-expanded", "false");
+    await embed.click();
+    await expect(embed).toHaveAttribute("aria-expanded", "true");
+    const sizes = page.getByRole("group", { name: "红包实况图的大小" });
+    await expect(sizes.getByRole("menuitem")).toHaveText([
+      "300 × 400默认",
+      "360 × 480",
+      "420 × 560",
+    ]);
+    await sizes.getByRole("menuitem", { name: /^300 × 400/ }).click();
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "已复制发到社区的红包实况图 300 × 400" }),
+    ).toHaveCount(1);
     await expect
       .poll(() => readClipboard(page))
       .toBe(
         [
           '<a href="https://linux.do/t/3033290">',
-          `<picture><source type="image/svg+xml" srcset="${new URL(page.url()).origin}/🧧/${code}/🖼️.svg 1x"><img width="420" height="560" `,
+          `<picture><source type="image/svg+xml" srcset="${new URL(page.url()).origin}/🧧/${code}/🖼️.svg 1x"><img width="300" height="400" `,
           `alt="小满的红包：${code}"></picture>`,
           "</a>",
         ].join("\n"),
       );
+    await expect(menu).toBeHidden();
+    // From the keyboard: → opens it on its first size, ↓ to the largest.
+    await page.getByRole("button", { name: "分享" }).focus();
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("ArrowUp");
+    await expect(embed).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect(
+      sizes.getByRole("menuitem", { name: /^300 × 400/ }),
+    ).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await expect
+      .poll(() => readClipboard(page))
+      .toContain('<img width="420" height="560" ');
     // A guest polls: no live channel.
     expect(live).toBe(0);
   });

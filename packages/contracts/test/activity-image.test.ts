@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACTIVITY_IMAGE_EMBED_SIZES,
+  ACTIVITY_IMAGE_HEIGHT,
+  ACTIVITY_IMAGE_WIDTH,
   type ActivityImageViewerState,
   activityImageInput,
   activityImageUrl,
@@ -279,11 +282,27 @@ describe("activity image address and embed code", () => {
     ).toBe(
       [
         '<a href="https://linux.do/t/3033290">',
-        `<picture><source type="image/svg+xml" srcset="https://hb.example.com/🧧/${code}/🖼️.svg 1x"><img width="420" height="560" `,
+        `<picture><source type="image/svg+xml" srcset="https://hb.example.com/🧧/${code}/🖼️.svg 1x"><img width="300" height="400" `,
         `alt="小满的红包：${code}"></picture>`,
         "</a>",
       ].join("\n"),
     );
+    // Each size keeps the image's 3:4; the largest is the image's own.
+    for (const size of ACTIVITY_IMAGE_EMBED_SIZES) {
+      expect(size.width * 4).toBe(size.height * 3);
+      expect(
+        createActivityImageEmbed({
+          activityId: id,
+          origin: "https://hb.example.com",
+          sender: "小满",
+          size,
+        }),
+      ).toContain(`<img width="${size.width}" height="${size.height}" `);
+    }
+    expect(ACTIVITY_IMAGE_EMBED_SIZES.at(-1)).toEqual({
+      width: ACTIVITY_IMAGE_WIDTH,
+      height: ACTIVITY_IMAGE_HEIGHT,
+    });
     const escaped = createActivityImageEmbed({
       activityId: id,
       origin: "https://hb.example.com",

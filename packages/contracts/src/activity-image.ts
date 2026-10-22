@@ -12,6 +12,17 @@ import { squirclePath } from "./squircle-path";
 
 export const ACTIVITY_IMAGE_WIDTH = 420;
 export const ACTIVITY_IMAGE_HEIGHT = 560;
+/**
+ * The sizes the forum code offers (05 §5, 2026-10-22): the image is drawn
+ * at 420 × 560 and scaled to these, all 3:4. The first is the default.
+ */
+export const ACTIVITY_IMAGE_EMBED_SIZES = [
+  { width: 300, height: 400 },
+  { width: 360, height: 480 },
+  { width: 420, height: 560 },
+] as const;
+export type ActivityImageEmbedSize =
+  (typeof ACTIVITY_IMAGE_EMBED_SIZES)[number];
 export const DEFAULT_ACTIVITY_IMAGE_TIME_ZONE = "Asia/Shanghai";
 
 export type ActivityImagePaymentStatus = Extract<
@@ -154,19 +165,22 @@ export function activityImageUrl(
 export const FORUM_POST_URL = "https://linux.do/t/3033290";
 
 /**
- * The forum code (05 §5), as the user wrote it: the image at its own size,
- * linking to the site's post, named by the 红包's emoji code (not its title).
+ * The forum code (05 §5), as the user wrote it: the image at one of its
+ * sizes (300 × 400 unless chosen), linking to the site's post, named by the
+ * 红包's emoji code (not its title).
  */
 export function createActivityImageEmbed(input: {
   activityId: string;
   origin: string;
   sender: string;
+  size?: ActivityImageEmbedSize;
 }) {
+  const size = input.size ?? ACTIVITY_IMAGE_EMBED_SIZES[0];
   const href = activityImageUrl(input.activityId, input.origin);
   const alt = `${normalizeText(input.sender, "发红包的人")}的红包：${encodeActivityEmoji(input.activityId)}`;
   return [
     `<a href="${FORUM_POST_URL}">`,
-    `<picture><source type="image/svg+xml" srcset="${escapeXml(href)} 1x"><img width="${ACTIVITY_IMAGE_WIDTH}" height="${ACTIVITY_IMAGE_HEIGHT}" `,
+    `<picture><source type="image/svg+xml" srcset="${escapeXml(href)} 1x"><img width="${size.width}" height="${size.height}" `,
     `alt="${escapeXml(alt)}"></picture>`,
     "</a>",
   ].join("\n");
