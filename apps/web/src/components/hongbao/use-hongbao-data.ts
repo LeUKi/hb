@@ -1,3 +1,4 @@
+import type { PublicActivity } from "@hb/contracts";
 import { useAtomValue } from "jotai";
 import { useEffect, useRef } from "react";
 import {
@@ -31,6 +32,18 @@ import type { HongbaoData } from "./use-hongbao";
 /** Unpushed, a running 红包 is read again this often; its lists slower. */
 const POLL_MS = 5_000;
 const LIST_POLL_MS = 15_000;
+const DRAWING_POLL_MS = 1_000;
+
+/** A draw in its seconds between closing and its result: read every second until 30 s past its round. */
+function drawing(activity: PublicActivity | undefined) {
+  if (activity?.draw?.state !== "settling") return false;
+  const proof = activity.drawProof;
+  const at =
+    proof?.kind === "draw"
+      ? Date.parse(proof.roundAt)
+      : Date.parse(activity.deadlineAt ?? "");
+  return Date.now() < at + 30_000;
+}
 
 /**
  * One 红包's data for its page and its dialogs (名单, 说明): the public read,
@@ -54,10 +67,13 @@ export function useHongbaoPageData(id: string) {
     (activity) =>
       publicSettled(activity)
         ? false
-        : // Past the deadline the push should say so; until it has, ask.
-          live && !pastDeadline(activity)
-          ? false
-          : POLL_MS,
+        : // Being drawn (开奖证明): each step as it comes, pushed or not.
+          drawing(activity)
+          ? DRAWING_POLL_MS
+          : // Past the deadline the push should say so; until it has, ask.
+            live && !pastDeadline(activity)
+            ? false
+            : POLL_MS,
   );
   const activity = publicQuery.data?.activity;
   const settled = publicSettled(activity);

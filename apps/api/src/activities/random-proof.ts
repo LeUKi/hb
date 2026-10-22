@@ -269,6 +269,7 @@ export async function publicDrawProof(
       round: proof.round,
       roundAt: new Date(proof.roundAt).toISOString(),
       rosterHash: proof.rosterHash,
+      ...(proof.randomness ? { randomness: proof.randomness } : {}),
     };
   const closing = row.drawClosedAt ?? row.deadline;
   if (closing === null) return undefined;

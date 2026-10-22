@@ -605,6 +605,8 @@ export type DrawProof =
       roundAt: string;
       /** From closing on: the frozen roster's 名单哈希. */
       rosterHash?: string;
+      /** Once the round is fetched: its randomness (payments being made). */
+      randomness?: string;
     }
   | { kind: "queue"; commitment: string };
 

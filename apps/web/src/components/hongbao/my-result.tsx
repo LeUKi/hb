@@ -22,6 +22,7 @@ import { Button } from "../ui/button";
 import { ButtonLink, MoreLink } from "../ui/button-link";
 import { FishMark } from "../ui/fish";
 import { NoteMarkdown } from "../ui/markdown";
+import { MorphLabel } from "../ui/morph-label";
 import { PersonName } from "../ui/person";
 import { Reveal } from "../ui/reveal";
 import { Squircle } from "../ui/squircle";
@@ -201,9 +202,12 @@ function NoCreditAccount({
 function TicketNote({
   mine,
   deadlineAt,
+  drawNote,
 }: {
   mine: Extract<Mine, { kind: "registered" }>;
   deadlineAt: number;
+  /** A v2 draw's step while it is drawn (useDrawStep). */
+  drawNote?: string;
 }) {
   if (mine.outcome === "waiting")
     return (
@@ -215,7 +219,9 @@ function TicketNote({
   if (mine.outcome === "settling")
     return (
       <p className="text-sm text-ink-2">
-        正在抽取中奖名单并创建付款，结果出来后显示在这里。
+        <MorphLabel fit={false}>
+          {drawNote ?? "正在抽取中奖名单并创建付款，结果出来后显示在这里。"}
+        </MorphLabel>
       </p>
     );
   if (mine.outcome === "lost")
@@ -281,10 +287,13 @@ export function MyResult({
   delay,
   deadlineAt,
   ended,
+  drawNote,
   ref,
 }: {
   activity: HongbaoActivity;
   mine: Mine;
+  /** A v2 draw's step while it is drawn (useDrawStep). */
+  drawNote?: string;
   /** Count up and stagger in (the opening, or a draw result arriving). */
   play: boolean;
   delay: number;
@@ -376,7 +385,7 @@ export function MyResult({
         )
       ) : (
         mine.kind === "registered" && (
-          <TicketNote mine={mine} deadlineAt={deadlineAt} />
+          <TicketNote mine={mine} deadlineAt={deadlineAt} drawNote={drawNote} />
         )
       )}
 

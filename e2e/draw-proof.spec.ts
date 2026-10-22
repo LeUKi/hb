@@ -224,6 +224,71 @@ async function mock(
   return { drandRequests, path: `/🧧/${encodeActivityEmoji(id ?? "")}` };
 }
 
+/**
+ * A 限时开奖 just closed, its round 3.5 s away, on its page; the viewer
+ * signed up or not. Returns what makes the next read say the round came.
+ */
+async function drawing(page: Page, registered: boolean) {
+  if (drawData.kind !== "draw") throw new Error();
+  const base = activityOf(drawData, false);
+  let activity = {
+    ...base,
+    status: "ended",
+    draw: { ...base.draw, state: "settling", reason: "full" },
+    drawProof: {
+      kind: "draw",
+      round: drawData.drand.round,
+      roundAt: iso(Date.now() + 3_500),
+      rosterHash: drawData.roster.hash,
+    } as Record<string, unknown>,
+  };
+  const id = drawData.activity.id;
+  await page.route(`**/api/activities/${id}**`, (route) => {
+    const rest = new URL(route.request().url()).pathname.slice(
+      `/api/activities/${id}`.length,
+    );
+    if (rest === "") return route.fulfill({ json: { activity } });
+    if (rest.startsWith("/participation"))
+      return route.fulfill({
+        json: {
+          claim: null,
+          registration: registered
+            ? {
+                id: "reg-mine",
+                activity: { id, title: activity.title, status: "ended" },
+                registeredAt: iso(Date.now() - 60_000),
+                status: "drawing",
+                drawAt: null,
+                claim: null,
+              }
+            : null,
+        },
+      });
+    if (rest === "/passwords")
+      return route.fulfill({
+        json: { passwords: [], hiddenCount: 0, canSolve: false },
+      });
+    return route.fulfill({
+      json: {
+        items: [],
+        nextCursor: null,
+        titles: { highestClaimIds: [], lowestClaimIds: [] },
+      },
+    });
+  });
+  await mockSession(page, viewer);
+  await openApp(page, `/🧧/${encodeActivityEmoji(id)}`);
+  return () => {
+    activity = {
+      ...activity,
+      drawProof: {
+        ...activity.drawProof,
+        randomness: vector?.drand.randomness,
+      },
+    };
+  };
+}
+
 async function openRoster(page: Page, path: string) {
   await mockSession(page, viewer);
   await openApp(page, path);
@@ -338,6 +403,43 @@ test.describe("开奖证明", () => {
     expect(JSON.parse(readFileSync(await file.path(), "utf8"))).toEqual(
       drawData,
     );
+  });
+
+  test("开奖过程：报了名的人看到名单冻结、倒数到那一轮、取到随机数", async ({
+    page,
+  }) => {
+    const fetched = await drawing(page, true);
+    await expect(
+      page.getByText(
+        /名单已冻结（7 人），等 drand 第 20,000,000 轮随机数，[1-4] 秒后产生。/,
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByText(
+        "名单已冻结（7 人），正在取 drand 第 20,000,000 轮随机数。",
+      ),
+    ).toBeVisible({ timeout: 6_000 });
+    // The round fetched: the next read (every second while drawing) says so.
+    fetched();
+    await expect(
+      page.getByText(
+        "已取到随机数，正在算中奖名单并创建付款，结果出来后显示在这里。",
+      ),
+    ).toBeVisible({ timeout: 3_000 });
+  });
+
+  test("开奖过程：没报名的人在红包皮下面看到同样几步", async ({ page }) => {
+    const fetched = await drawing(page, false);
+    await expect(
+      page.getByText(/^名单已冻结，[1-4] 秒后出随机数…$/),
+    ).toBeVisible();
+    await expect(page.getByText("正在取随机数…")).toBeVisible({
+      timeout: 6_000,
+    });
+    fetched();
+    await expect(page.getByText("已取到随机数，正在创建付款…")).toBeVisible({
+      timeout: 3_000,
+    });
   });
 
   test("🎲：报名中就公开已报名的人和要用的那一轮，刷新后看到开奖", async ({

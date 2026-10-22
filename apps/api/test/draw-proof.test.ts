@@ -388,6 +388,7 @@ describe("限时开奖: the drand round right after closing", () => {
       round,
       roundAt: new Date(drandRoundAt(round)).toISOString(),
       rosterHash: data.roster.hash,
+      randomness: drand.randomness,
     });
     const policy = await env.DB.prepare(
       "SELECT json_extract(payload,'$.policy') AS policy FROM activity_draw_plans WHERE activity_id=?",
