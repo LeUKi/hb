@@ -381,10 +381,11 @@ test("实时推送：别人领取后，开着红包页的人立刻看到", async
     },
   );
   expect(claimed.status(), await claimed.text()).toBe(200);
-  // Pushed, not polled (a poll is 5 s away): the count moves at once.
+  // Pushed, not polled (a poll is 5 s away): the count moves before one
+  // could, with room for a slow machine (CI's runner took over 2 s).
   await expect(
     viewer.page.getByText("1 / 3 份", { exact: true }).first(),
-  ).toBeVisible({ timeout: 2_000 });
+  ).toBeVisible({ timeout: 4_500 });
   expect(pushed).toBeGreaterThan(before);
   await author.context.close();
   await viewer.context.close();
