@@ -777,7 +777,8 @@ describe("timed LDC registration and draw lifecycle", () => {
       payments: 0,
       outbox: 0,
     });
-  });
+    // Two real 1.2 s waits: a slower machine (CI) needs more than 5 s.
+  }, 20_000);
 
   it("refuses manual cancellation after registration but lets an empty draw finish safely", async () => {
     const activity = await create();
