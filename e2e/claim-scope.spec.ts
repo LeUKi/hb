@@ -1,5 +1,5 @@
-import { encodeActivityEmoji } from "@hb/contracts";
 import { expect, type Page, test } from "@playwright/test";
+import { encodeActivityEmoji } from "../packages/contracts/src";
 import { mockSession, openApp, viewer } from "./support/app";
 
 // 领取范围 (docs/claim-scope-design.md §5): its tag on the 红包皮 and the

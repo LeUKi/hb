@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
+import { expect, type Page, test } from "@playwright/test";
 import {
   type ActivityProofData,
   encodeActivityEmoji,
   formatAmount,
-} from "@hb/contracts";
-import { expect, type Page, test } from "@playwright/test";
+} from "../packages/contracts/src";
 import vectors from "../packages/contracts/test/fixtures/draw-proof-v2.json";
 import { expectPath, mockSession, openApp, viewer } from "./support/app";
 
