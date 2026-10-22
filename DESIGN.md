@@ -18,9 +18,9 @@
 ## 业务与运维
 
 - 业务语义以 [业务规格 v1](docs/business-spec-v1.md) 和共享契约 `packages/contracts` 为准（表情码的编码也在契约里）。
-- 付款、诊断、备份与恢复：[付款运维](docs/payment-operations.md)。
 - 网站管理的接口与隐私范围：[管理员后台](docs/admin-operations.md)。
-- 环境、发布记录与回退：[部署准备](docs/deployment-readiness.md)。
+- 维护模式与 D1、DO 的位置：[D1 迁往亚太](docs/d1-apac-migration.md)。
+- 生产的付款运维、发布记录和验收证据由站长另外保存，不在仓库里。
 
 ## 旧规范
 
