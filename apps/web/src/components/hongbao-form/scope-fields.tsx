@@ -17,8 +17,8 @@ import { Reveal } from "../ui/reveal";
 import type { ErrorOf, Update } from "./fields";
 import type { FormState, ScopeForm, ScopePerson } from "./form-state";
 
-// 领取范围 (docs/claim-scope-design.md §5): everyone, or limited by 等级
-// and/or by name, either letting someone in — the sentence under it says so.
+// 领取范围 (docs/claim-scope-design.md §5): everyone, or limited by name
+// and/or by 等级, either letting someone in — the sentence under it says so.
 
 const levels = Array.from(
   { length: TRUST_LEVEL_MAX - TRUST_LEVEL_MIN + 1 },
@@ -188,7 +188,7 @@ function ScopePeople({
   );
 }
 
-/** The setting in 更多设置: 所有人, or 限定 by 等级 and/or 指定的人. */
+/** The setting in 更多设置: 所有人, or 限定 to 指定的人 and/or by 等级. */
 export function ScopeFields({
   form,
   update,
@@ -234,13 +234,19 @@ export function ScopeFields({
           {
             value: "limited",
             title: "限定",
-            description: "按等级，或指定的人",
+            description: "指定的人，或按等级",
             icon: UserCheck,
           },
         ]}
       />
       <Reveal show={scope.limited}>
         <div id="hb-scope" tabIndex={-1} className="grid gap-4 outline-none">
+          {/* 指定的人 first: sending to someone in particular is the usual case. */}
+          <ScopePeople
+            scope={scope}
+            set={set}
+            error={errorOf("hb-scope-user")}
+          />
           <Switch
             label="按等级"
             description="LINUX DO 信任等级，按对方上次登录本站时算。"
@@ -272,11 +278,6 @@ export function ScopeFields({
               </Reveal>
             </div>
           </Reveal>
-          <ScopePeople
-            scope={scope}
-            set={set}
-            error={errorOf("hb-scope-user")}
-          />
           {/* Both parts: “或”, said plainly, so nobody reads it as “and”.
               Nothing picked yet (限定 starts so) is the next step, not a
               mistake: said the same, quietly; the step outside marks it. */}

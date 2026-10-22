@@ -275,7 +275,7 @@ test.describe("发红包", () => {
     // Both parts start off: it says what to pick, and stays open.
     const byLevel = scope.getByRole("switch", { name: "按等级" });
     await expect(byLevel).toHaveAttribute("aria-checked", "false");
-    await expect(scope).toContainText("至少选一项：按等级，或指定的人");
+    await expect(scope).toContainText("至少选一项：指定的人，或按等级");
     await expect(sheet).toBeVisible();
     // 按等级 on starts at Lv1 and up.
     await byLevel.click();

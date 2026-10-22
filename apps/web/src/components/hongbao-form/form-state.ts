@@ -474,7 +474,7 @@ export function issuesOf(form: FormState, now = Date.now()): Issue[] {
       scope.levels.min === TRUST_LEVEL_MIN &&
       scope.levels.max === TRUST_LEVEL_MAX;
     if (!scope.byLevel && scope.users.length === 0)
-      add("hb-scope", "至少选一项：按等级，或指定的人");
+      add("hb-scope", "至少选一项：指定的人，或按等级");
     else if (scope.byLevel && levelsAll)
       add("hb-scope-levels", "等级拉满就等于所有人，把范围收窄一点");
     if (scope.users.length > CLAIM_SCOPE_LIMITS.users)
