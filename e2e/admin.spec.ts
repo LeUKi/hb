@@ -250,6 +250,7 @@ function paymentDetail(): AdminPaymentDetailResponse {
       merchantClientId: "new_client_2026",
       claimId: "claim-1",
       acceptanceId: null,
+      withdrawalId: null,
       attemptCount: 1,
       reconciliationCount: 0,
       nextAction: "none",

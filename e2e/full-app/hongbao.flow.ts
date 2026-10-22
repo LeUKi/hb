@@ -509,15 +509,15 @@ test("没有 Credit 账户：领取被拒，注册后自己重新发送一次就
     status: "attention",
     reason: "recipient",
   });
-  expect(held.claim?.payment.resendUntil).toBeTruthy();
+  expect(held.claim?.payment?.resendUntil).toBeTruthy();
 
   // Registered now: sent again once, looked up first, then paid.
   await main.getByRole("button", { name: "重新发送" }).click();
   await expect(main.getByText("正在重新发送，稍等十几秒。")).toBeVisible();
   await expect(main.getByText("已发放")).toBeVisible({ timeout: 40_000 });
   const paid = await participation(latecomer.context, activity.id);
-  expect(paid.claim?.payment.status).toBe("confirmed");
-  expect(paid.claim?.payment.resendUntil).toBeUndefined();
+  expect(paid.claim?.payment?.status).toBe("confirmed");
+  expect(paid.claim?.payment?.resendUntil).toBeUndefined();
   // Once only: nothing left to send again.
   const again = await latecomer.context.request.post(
     `/api/me/claims/${paid.claim?.id}/resend`,

@@ -322,6 +322,12 @@ async function mockHongbao(
   return state;
 }
 
+/** A claim's payment, which the mock always makes. */
+function paymentOf(claim: ClaimDetail) {
+  if (!claim.payment) throw new Error("the mock claim has no payment");
+  return claim.payment;
+}
+
 async function readClipboard(page: Page) {
   return page.evaluate(() => navigator.clipboard.readText());
 }
@@ -463,7 +469,7 @@ test.describe("红包页", () => {
     // The payment goes through: `mine`, and only the viewer's part is read.
     if (state.claim)
       state.claim.payment = {
-        ...state.claim.payment,
+        ...paymentOf(state.claim),
         status: "confirmed",
         confirmedAt: new Date().toISOString(),
       };
@@ -568,7 +574,7 @@ test.describe("红包页", () => {
     const state = await mockHongbao(page);
     const claim = state.claimMine();
     claim.payment = {
-      ...claim.payment,
+      ...paymentOf(claim),
       mode: "real",
       status: "attention",
       reason: "recipient",
@@ -578,7 +584,7 @@ test.describe("红包页", () => {
     await page.route("**/api/me/claims/claim-mine/resend", (route) => {
       resends.push(route.request().headers()["x-csrf-token"] ?? null);
       claim.payment = {
-        ...claim.payment,
+        ...paymentOf(claim),
         status: "reconciling",
         reason: "resend",
         resendUntil: undefined,
@@ -606,7 +612,7 @@ test.describe("红包页", () => {
 
     // Through: the 红包's DO says only the viewer's part moved.
     claim.payment = {
-      ...claim.payment,
+      ...paymentOf(claim),
       status: "confirmed",
       reason: null,
       confirmedAt: new Date().toISOString(),
@@ -617,7 +623,7 @@ test.describe("红包页", () => {
 
     // Another time, too late: nothing to press.
     claim.payment = {
-      ...claim.payment,
+      ...paymentOf(claim),
       status: "attention",
       reason: "recipient",
       confirmedAt: null,

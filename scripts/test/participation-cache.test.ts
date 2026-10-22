@@ -358,7 +358,7 @@ describe("shared submission cache synchronization", () => {
       () => true,
     );
     const confirmed = cache.getQueryData<ParticipationCache>(key);
-    expect(confirmed?.claim?.payment.status).toBe("confirmed");
+    expect(confirmed?.claim?.payment?.status).toBe("confirmed");
     expect(confirmed?.readAt).toBe(Date.now());
     expect(confirmed?.readAt).toBeGreaterThan(readAt);
     vi.setSystemTime(new Date("2026-10-10T00:01:00.000Z"));
