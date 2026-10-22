@@ -333,7 +333,7 @@ async function readClipboard(page: Page) {
 }
 
 test.describe("红包页", () => {
-  test("震动反馈：按印章轻触一下，口令不对震出错，领到时和打开的红包一起震成功", async ({
+  test("震动反馈：按印章轻触一下，口令不对震出错，领到时和打开的红包一起震成功；别的按钮轻点一下", async ({
     page,
   }) => {
     const felt = await recordHaptics(page);
@@ -352,6 +352,16 @@ test.describe("红包页", () => {
     await expect
       .poll(felt)
       .toEqual([haptics.light, haptics.error, haptics.success]);
+    // Any other press: the lightest touch, once.
+    await page.getByRole("button", { name: "验证其他口令" }).click();
+    await expect
+      .poll(felt)
+      .toEqual([
+        haptics.light,
+        haptics.error,
+        haptics.success,
+        haptics.selection,
+      ]);
   });
 
   test("🐟额红包：皮上写🐟额；领到后金额带小 🐟，状态是已存入🐟额，可以去转出", async ({
