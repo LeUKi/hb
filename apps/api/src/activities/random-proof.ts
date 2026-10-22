@@ -168,7 +168,8 @@ async function fetchRound(base: string, round: number) {
       `${base}/${DRAND_QUICKNET.chainHash}/public/${round}`,
       {
         cache: "no-store",
-        headers: { "User-Agent": "hb.lafi.sh 开奖证明" },
+        // Header values are bytes: ASCII only.
+        headers: { "User-Agent": "hb.lafi.sh draw-proof" },
         signal: AbortSignal.timeout(2_500),
       },
     );

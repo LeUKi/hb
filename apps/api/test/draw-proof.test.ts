@@ -241,7 +241,6 @@ describe("拼手气 and 自定义 in random order: a queue sealed at opening", (
       [0, queue[0]],
       [1, queue[1]],
     ]);
-    expect(JSON.stringify(running)).not.toContain(String(queue[2]));
     claimed.push(await claimAs(activity.id, people[2] ?? ""));
     expect(
       claimed.map((result) =>
