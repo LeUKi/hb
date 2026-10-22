@@ -350,6 +350,7 @@ export function HongbaoForm({
             openSheet={(group) => openSheet(group)}
             deadline={deadline}
             timingError={groupError(["timing"])}
+            scopeError={groupError(["scope"])}
           />
         );
       case "title":
@@ -360,7 +361,7 @@ export function HongbaoForm({
             errorOf={errorOf}
             openSheet={(group) => openSheet(group)}
             moreLine={moreLine}
-            moreError={groupError(["notes", "public"])}
+            moreError={groupError(["scope", "notes", "public"])}
           />
         );
     }
@@ -542,7 +543,7 @@ export function HongbaoForm({
                 <span className="truncate text-xs text-ink-3">{moreLine}</span>
               </span>
             }
-            error={groupError(["timing", "notes", "public"])}
+            error={groupError(["timing", "scope", "notes", "public"])}
             onOpen={() => openSheet(groupsOf(form, opened)[0] ?? "notes")}
           />
         )}

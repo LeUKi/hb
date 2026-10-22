@@ -1,3 +1,4 @@
+import { levelRangeText, type PublicClaimScope, scopeTag } from "@hb/contracts";
 import { ArrowUpRight } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useLayoutEffect, useRef, useState } from "react";
@@ -49,6 +50,19 @@ const playNames = {
  * human check. The amounts are not repeated here: the numbers under them
  * say them.
  */
+/** 领取范围 under its tag, its people named (the first ten). */
+function scopeHint(scope: PublicClaimScope, verb: "领" | "报名") {
+  const users = scope.users ?? [];
+  const names = `${users
+    .slice(0, 10)
+    .map((user) => `@${user.username}`)
+    .join("、")}${users.length > 10 ? ` 等 ${users.length} 人` : ""}`;
+  if (scope.levels && users.length > 0)
+    return `${levelRangeText(scope.levels)}的人能${verb}，指定的 ${names} 也能${verb}。`;
+  if (scope.levels) return `${levelRangeText(scope.levels)}的人能${verb}。`;
+  return `只有 ${names} 能${verb}。`;
+}
+
 function coverTags(activity: HongbaoActivity) {
   const verb = activity.mode === "timed_draw" ? "报名" : "领取";
   const split = activity.split;
@@ -68,6 +82,18 @@ function coverTags(activity: HongbaoActivity) {
       ? { text: "口令红包", hint: `输入正确的口令才能${verb}。` }
       : { text: "无需口令", hint: `登录后直接${verb}，不用口令。` },
     { text: `${playNames[activity.mode]}${splitName}`, hint: play },
+    // 领取范围 (docs/claim-scope-design.md §5): who may, its people by name.
+    ...(activity.scope
+      ? [
+          {
+            text: scopeTag(activity.scope),
+            hint: `这是发红包的人的要求：${scopeHint(
+              activity.scope,
+              activity.mode === "timed_draw" ? "报名" : "领",
+            )}`,
+          },
+        ]
+      : []),
     // A 🐟额红包: where what is taken goes (docs/balance-design.md §14).
     ...(activity.fish
       ? [

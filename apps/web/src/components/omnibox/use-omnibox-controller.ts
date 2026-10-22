@@ -25,6 +25,7 @@ import {
   sessionScope,
 } from "../../lib/auth";
 import { useCachedQueryData } from "../../lib/cached-query";
+import { noteOutOfScope } from "../../lib/claim-scope";
 import { useClaimReward } from "../../lib/claims";
 import {
   type Command,
@@ -680,6 +681,18 @@ export function useOmniboxController() {
             text: "登录已失效，请重新登录。",
             action: "login",
           });
+          return;
+        }
+        // 领取范围: outside it, nothing was written; the 红包 says who may.
+        if (
+          error instanceof ActivityRequestError &&
+          error.code === "NOT_IN_SCOPE"
+        ) {
+          store.set(
+            unconfirmedAtom,
+            withClaim(store.get(unconfirmedAtom), activityId, null),
+          );
+          noteOutOfScope(store, activityId);
           return;
         }
         // Tokens kept failing: nothing was written, so nothing to retry.

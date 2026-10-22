@@ -7,6 +7,7 @@ import {
   claimActivitySchema,
   deleteActivitySchema,
   endActivitySchema,
+  inviteUsernameSchema,
   type ManagedActivity,
   openActivitySchema,
   type UpdateActivityInput,
@@ -34,6 +35,7 @@ import {
   listPublicRecipients,
   listUserClaims,
 } from "./claim-queries";
+import { findPerson } from "./claim-scope";
 import { ActivityError, activityNotFound } from "./errors";
 import { humanCheckOf, passesHumanCheck } from "./human-check";
 import { LIVE_USER_HEADER } from "./live";
@@ -486,6 +488,22 @@ export const activityRoutes = new Hono<ApiContext>()
   // A running 红包's live channel (live.ts): a WebSocket to its own DO.
   // Signed-in viewers only, from this site's pages only (the browser sends
   // the session cookie with the handshake, and any site can open one).
+  // 领取范围's 指定的人 (docs/claim-scope-design.md §5): someone by name, as
+  // the form adds them; null when they have not been here.
+  .get("/people", async (c) => {
+    await requireAuth(c);
+    const parsed = inviteUsernameSchema.safeParse(
+      c.req.query("username") ?? "",
+    );
+    if (!parsed.success)
+      throw new ActivityError(
+        400,
+        "INVALID_USERNAME",
+        parsed.error.issues[0]?.message ?? "用户名无效",
+      );
+    c.header("Cache-Control", "no-store");
+    return c.json({ person: await findPerson(c.env, parsed.data) });
+  })
   // 开奖证明 (docs/draw-proof-design.md): what a v2 红包's random parts came
   // from, for the 🎲 page and anyone checking it. Public, like its roster.
   .get("/activities/:id/proof", async (c) => {

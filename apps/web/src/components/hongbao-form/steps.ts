@@ -28,6 +28,7 @@ export const stepIndex = (step: StepId) =>
 export type SettingsGroup =
   | "split"
   | "timing"
+  | "scope"
   | "password"
   | "notes"
   | "public"
@@ -41,6 +42,9 @@ export function stepOfField(field: string): StepId {
     field === "hb-draw-limit"
   )
     return "claim";
+  // Set in 更多设置 (its line on 怎么领 says so too): a problem made there
+  // never sends the form back a step, closing it mid-edit.
+  if (field.startsWith("hb-scope")) return "title";
   if (field === "hb-title" || field.endsWith("-info") || field === "hb-topic")
     return "title";
   return "amount";
@@ -50,6 +54,7 @@ export function stepOfField(field: string): StepId {
 export function groupOfField(field: string): SettingsGroup | null {
   if (field.startsWith("hb-timing-") || field === "hb-draw-limit")
     return "timing";
+  if (field.startsWith("hb-scope")) return "scope";
   if (field === "hb-after-claim-info" || field === "hb-after-end-info")
     return "notes";
   if (field === "hb-topic") return "public";

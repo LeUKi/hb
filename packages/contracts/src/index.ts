@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { claimScopeSchema, type PublicClaimScope } from "./claim-scope";
 import {
   amountToMinor,
   type LdcOpeningBlockedReason,
@@ -16,6 +17,7 @@ import type { RecipientSpeedTitle } from "./recipient-speed";
 export * from "./activity-image";
 export * from "./admin";
 export * from "./balance";
+export * from "./claim-scope";
 export * from "./draw-proof";
 export * from "./ecoji-v2";
 export * from "./forum-emoji";
@@ -195,6 +197,11 @@ const baseActivitySchema = z.strictObject({
    * in a dialog. Optional (not defaulted) for the same reason as above.
    */
   humanCheck: z.boolean().optional(),
+  /**
+   * 领取范围 (docs/claim-scope-design.md): who may claim or sign up, by
+   * 信任等级 or by name. Absent: everyone. Fixed once opened.
+   */
+  scope: claimScopeSchema.optional(),
 });
 
 export const ldcMoneySchema = z.discriminatedUnion("mode", [
@@ -748,6 +755,8 @@ export type PublicActivity = {
   drawProof?: DrawProof;
   /** Claiming or signing up first passes a human check (Turnstile). */
   humanCheck?: true;
+  /** 领取范围: absent for everyone. */
+  scope?: PublicClaimScope;
   /**
    * Up to five people for the 名单入口, read with the rest so they match the
    * numbers: the latest claims; while a draw is open, the latest sign-ups;

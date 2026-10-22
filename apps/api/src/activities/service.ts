@@ -55,6 +55,12 @@ import {
   readPlatformControls,
 } from "../runtime/controls";
 import { digestPassword } from "../security/crypto";
+import {
+  publicScope,
+  publicScopeWithPeople,
+  resolveScope,
+  sameScope,
+} from "./claim-scope";
 import { drawSummary, timedDrawMoney } from "./draw-storage";
 import {
   ActivityError,
@@ -375,10 +381,14 @@ export async function getPublicActivity(
   const row = await findActivity(env, id);
   if (!row || (row.openedAt === null && row.authorId !== viewerId))
     activityNotFound();
-  const drawProof = await publicDrawProof(env, row);
+  const [drawProof, scope] = await Promise.all([
+    publicDrawProof(env, row),
+    publicScopeWithPeople(env, configuration(row).scope),
+  ]);
   return {
     ...projectPublicActivity(row, await author(env, row.authorId)),
     ...(drawProof ? { drawProof } : {}),
+    ...(scope ? { scope } : {}),
     ...(row.openedAt === null
       ? { openingBlockedReason: await openingBlockedReason(env, row) }
       : { rosterPreview: await rosterPreview(env, row) }),
@@ -416,6 +426,7 @@ export function projectPublicActivity(
       ? { draw: drawSummary(row, config.quantityVisibility !== "fuzzy") }
       : {}),
     ...(config.humanCheck ? { humanCheck: true as const } : {}),
+    ...(config.scope ? { scope: publicScope(config.scope) } : {}),
   };
 }
 
@@ -554,7 +565,10 @@ export async function createActivity(
     humanCheckUnavailable();
   const id = crypto.randomUUID();
   const now = Date.now();
-  const config = storedConfig(input.activity);
+  const config = {
+    ...storedConfig(input.activity),
+    scope: await resolveScope(env, input.activity.scope),
+  };
   const [passwords, inventory] = await Promise.all([
     preparePasswords(env, id, input.activity.passwords, [], now),
     prepareLdcInventory(id, input.activity, [], now),
@@ -637,6 +651,13 @@ export async function updateActivity(
   )
     invalidActivity("数量展示仅支持精确或模糊");
   const config = storedConfig(input.activity);
+  // 领取范围 is fixed once opened (docs/claim-scope-design.md §1).
+  const storedScope = configuration(row).scope;
+  if (row.openedAt !== null) {
+    if (!sameScope(input.activity.scope, storedScope))
+      invalidActivity("开放后不能修改领取范围");
+    config.scope = storedScope;
+  } else config.scope = await resolveScope(env, input.activity.scope);
   const balance = fundingOf(input.activity) === "balance";
   if (row.openedAt !== null && balance !== (row.funding === "balance"))
     invalidActivity("开放后不能修改从哪发");
@@ -977,6 +998,8 @@ export async function openActivity(
   if (deadline <= now) invalidActivity("截止时间必须晚于正式开放时间");
   const config = {
     ...storedConfig(checked.data),
+    // Names noted by LINUX DO ID as late as can be, before they are fixed.
+    scope: await resolveScope(env, checked.data.scope),
     deadline: timed
       ? checked.data.deadline
       : { mode: "at", at: new Date(deadline).toISOString() },

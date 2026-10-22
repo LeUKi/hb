@@ -53,11 +53,11 @@ import {
 import { PageLoad, queryLoad, ResultLoad, resultOf } from "../page/page-state";
 import { ConfirmDialog } from "../shell/confirm-dialog";
 import { useSearchChoice } from "../shell/use-search-choice";
-import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { CopyButton } from "../ui/copy-button";
 import { Field, Segmented, TextInput } from "../ui/field";
 import { Fish, fishText } from "../ui/fish";
+import { PersonLine } from "../ui/person-line";
 import { ListItem, Reveal, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
@@ -1099,14 +1099,7 @@ function InviteDialog({
               {blocked ? (
                 <p className="text-xs text-danger">{blocked}</p>
               ) : known?.user ? (
-                <p className="flex items-center gap-2 text-sm text-ink-2">
-                  <Avatar
-                    name={known.user.displayName}
-                    src={known.user.avatarUrl}
-                    size={20}
-                  />
-                  {known.user.displayName} @{known.user.username}
-                </p>
+                <PersonLine person={known.user} />
               ) : (
                 <p className="text-xs text-ink-3">
                   这个人还没来过本站，确认用户名没拼错就行。

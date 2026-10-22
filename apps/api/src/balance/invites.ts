@@ -15,6 +15,7 @@ import {
 } from "@hb/contracts";
 import type { ApiBindings } from "../env";
 import { sha256Hex } from "../security/crypto";
+import { findUserByUsername } from "../users/find";
 import { balanceError } from "./errors";
 import { plusFeatures } from "./plus-features";
 import { balanceAccessFor, readBalanceSettings } from "./settings";
@@ -139,20 +140,14 @@ function newToken() {
 }
 
 async function findUser(env: ApiBindings, username: string) {
-  return env.DB.prepare(
-    `SELECT u.id,u.username,u.display_name,u.avatar_url,
-      EXISTS(SELECT 1 FROM balance_members m WHERE m.user_id=u.id) AS member
-    FROM users u WHERE u.provider='linux_do' AND lower(u.username)=?
-    ORDER BY u.last_login_at DESC LIMIT 1`,
+  const user = await findUserByUsername(env, username, { activeOnly: false });
+  if (!user) return null;
+  const member = await env.DB.prepare(
+    "SELECT EXISTS(SELECT 1 FROM balance_members WHERE user_id=?) AS member",
   )
-    .bind(username)
-    .first<{
-      id: string;
-      username: string;
-      display_name: string;
-      avatar_url: string | null;
-      member: number;
-    }>();
+    .bind(user.id)
+    .first<{ member: number }>();
+  return { ...user, member: member?.member ?? 0 };
 }
 
 async function requireInviter(env: ApiBindings, inviter: Inviter) {

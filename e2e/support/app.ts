@@ -12,6 +12,8 @@ export type MockUser = {
   isAdmin: boolean;
   /** 🐟额's allowlist lets this account in. */
   balance?: boolean;
+  /** 信任等级 as of the last sign-in (领取范围); null: not read yet. */
+  trustLevel?: number | null;
 };
 
 export const viewer: MockUser = {

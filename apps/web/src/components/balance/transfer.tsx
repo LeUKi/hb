@@ -28,6 +28,7 @@ import { CopyButton } from "../ui/copy-button";
 import { ChoiceCards, Field, TextInput } from "../ui/field";
 import { Fish, fishText } from "../ui/fish";
 import { MorphLabel } from "../ui/morph-label";
+import { PersonLine } from "../ui/person-line";
 import { ListItem, Reveal, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
@@ -438,17 +439,11 @@ export function TransferDialog({
                 {known?.self ? (
                   <p className="text-xs text-danger">不能转给自己</p>
                 ) : known?.user ? (
-                  <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-ink-2">
-                    <Avatar
-                      name={known.user.displayName}
-                      src={known.user.avatarUrl}
-                      size={20}
-                    />
-                    {known.user.displayName} @{known.user.username}
+                  <PersonLine person={known.user}>
                     <span className="text-xs text-ink-3 tabular-nums">
                       数字 ID {known.user.userId}
                     </span>
-                  </p>
+                  </PersonLine>
                 ) : (
                   <p className="text-xs text-ink-3">
                     这个人还没来过本站，来过才能收🐟。

@@ -1,7 +1,9 @@
+import { publicScopeAllows } from "@hb/contracts";
 import { useRouter } from "@tanstack/react-router";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useEffect, useRef, useState } from "react";
 import { useAttemptCooldown } from "../../lib/attempt-cooldown";
+import { scopeNoticeAtom } from "../../lib/claim-scope";
 import {
   endHint,
   type HongbaoActivity,
@@ -127,6 +129,7 @@ export function useHongbao(data: HongbaoData) {
   const [intent, setIntent] = useAtom(redemptionIntentAtom);
   const animation = useAtomValue(rewardAnimationAtom);
   const [claiming, setClaiming] = useState(false);
+  const showScope = useSetAtom(scopeNoticeAtom);
   const cooling = useAttemptCooldown(user?.id ?? null).active;
 
   const phase: HongbaoPhase = mine ? "open" : view.ended ? "ended" : "closed";
@@ -252,6 +255,17 @@ export function useHongbao(data: HongbaoData) {
     if (phase !== "closed" || spinning || author || draft) return;
     if (gate) {
       controller.openAccount();
+      return;
+    }
+    // 领取范围: someone outside is told who may, nothing is sent.
+    if (
+      user &&
+      !publicScopeAllows(activity.scope, {
+        username: user.username,
+        trustLevel: user.trustLevel,
+      })
+    ) {
+      showScope({ activityId: activity.id });
       return;
     }
     if (pendingRetry) {

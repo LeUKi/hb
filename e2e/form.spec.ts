@@ -240,6 +240,74 @@ test.describe("发红包", () => {
     expect(sent[0]?.activity).toMatchObject({ humanCheck: true });
   });
 
+  test("领取范围：按等级加指定的人，“或”说清楚，保存的输入带上", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    await mockMerchants(page, [merchant]);
+    const sent = await mockCreate(page);
+    // Who that name is here: one has been, one has not.
+    await page.route("**/api/people?**", (route) => {
+      const name = new URL(route.request().url()).searchParams.get("username");
+      return route.fulfill({
+        json: {
+          person:
+            name === "xiaoman"
+              ? {
+                  linuxDoId: "730001",
+                  username: "XiaoMan",
+                  displayName: "小满",
+                  avatarUrl: null,
+                }
+              : null,
+        },
+      });
+    });
+    await openApp(page, "/new");
+    await fillRandom(page);
+    await page.getByRole("button", { name: /更多设置/ }).click();
+    const sheet = page.getByRole("dialog", { name: "更多设置" });
+    const scope = sheet.getByRole("region", { name: "领取范围" });
+    await expect(
+      scope.getByRole("button", { name: /^所有人/ }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await scope.getByRole("button", { name: /^限定/ }).click();
+    // 按等级 comes on with it, Lv1 and up: never empty to begin with.
+    const byLevel = scope.getByRole("switch", { name: "按等级" });
+    await expect(byLevel).toHaveAttribute("aria-checked", "true");
+    await expect(scope).toContainText("Lv1 及以上的人能领。");
+    // Off with nobody named: it says what is missing, and stays open.
+    await byLevel.click();
+    await expect(scope).toContainText("至少选一项：按等级，或指定的人");
+    await byLevel.click();
+    // The low end up to Lv2 by keyboard.
+    await scope.getByRole("slider", { name: "最低等级" }).press("ArrowRight");
+    await expect(scope).toContainText("Lv2 及以上");
+    const field = scope.getByLabel("指定的人");
+    await field.fill("@xiaoman");
+    await expect(scope).toContainText("小满 @XiaoMan");
+    await field.press("Enter");
+    await field.fill("newcomer");
+    await expect(scope).toContainText("这个人还没来过本站，按用户名认。");
+    await scope.getByRole("button", { name: "添加" }).click();
+    await expect(scope.getByRole("button", { name: /^去掉 @/ })).toHaveCount(2);
+    await expect(scope).toContainText(
+      "Lv2 及以上的人，或下面这 2 位，都能领。",
+    );
+    await sheet.getByRole("button", { name: "完成" }).click();
+    await page.getByRole("button", { name: "存草稿" }).first().click();
+    await expect(
+      shown(page, "草稿已保存。开放前只有你能看到它。").first(),
+    ).toBeVisible();
+    expect(sent[0]?.activity.scope).toEqual({
+      levels: { min: 2, max: 4 },
+      users: [
+        { username: "XiaoMan", linuxDoId: null },
+        { username: "newcomer", linuxDoId: null },
+      ],
+    });
+  });
+
   test("更多设置：关掉首页领取，加入红包广场跟着打开并锁住，摘要和保存的输入都带上", async ({
     page,
   }) => {

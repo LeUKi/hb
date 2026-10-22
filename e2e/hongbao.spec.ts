@@ -761,6 +761,10 @@ test.describe("红包页", () => {
     // From the keyboard: → opens it on its first size, ↓ to the largest.
     await page.getByRole("button", { name: "分享" }).focus();
     await page.keyboard.press("ArrowUp");
+    // ↑ opens it on the last item, a frame later.
+    await expect(
+      elsewhere().getByRole("menuitem", { name: /^网页链接/ }),
+    ).toBeFocused();
     await page.keyboard.press("ArrowUp");
     await expect(embed).toBeFocused();
     await page.keyboard.press("ArrowRight");

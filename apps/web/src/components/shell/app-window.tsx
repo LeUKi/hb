@@ -8,6 +8,7 @@ import { windowDialogsAtom } from "../../lib/store";
 import { HumanCheckDialog } from "../hongbao/human-check-dialog";
 import { NoteDialog } from "../hongbao/note-dialog";
 import { RosterDialog } from "../hongbao/roster-dialog";
+import { ScopeDialog } from "../hongbao/scope-dialog";
 import { Omnibox } from "../omnibox/omnibox";
 import {
   editLinesAtom,
@@ -166,6 +167,7 @@ export function AppWindow() {
           <RosterDialog />
           <NoteDialog />
           <HumanCheckDialog />
+          <ScopeDialog />
           <UpdatePrompt />
           <KeyboardLayer />
         </div>

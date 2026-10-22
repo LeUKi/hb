@@ -17,6 +17,7 @@ import {
 import type { ApiBindings } from "../env";
 import { reachesCredit } from "../runtime/controls";
 import { sha256Hex } from "../security/crypto";
+import { findUserByUsername } from "../users/find";
 import type { ApiKeyRow } from "./api-keys";
 import { startOfBeijingDay } from "./day";
 import { balanceError, RateLimitedError } from "./errors";
@@ -133,13 +134,7 @@ export function findRecipient(
 
 /** Someone who has been here, by username: the transfer dialog's search. */
 export function findRecipientByUsername(env: ApiBindings, username: string) {
-  return env.DB.prepare(
-    `SELECT id,external_id,username,display_name,avatar_url FROM users
-    WHERE provider='linux_do' AND lower(username)=? AND active=1
-    ORDER BY last_login_at DESC LIMIT 1`,
-  )
-    .bind(username.toLowerCase())
-    .first<Recipient>();
+  return findUserByUsername(env, username) as Promise<Recipient | null>;
 }
 
 function transferDigest(input: TransferInput) {

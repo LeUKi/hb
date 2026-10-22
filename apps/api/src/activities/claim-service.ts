@@ -30,6 +30,7 @@ import {
 } from "../runtime/controls";
 import { encryptString } from "../security/crypto";
 import { findUserClaim, getClaimDetail } from "./claim-queries";
+import { assertInScope } from "./claim-scope";
 import { ActivityError, activityConflict, activityNotFound } from "./errors";
 import {
   type ActivityExecutionPolicy,
@@ -230,6 +231,8 @@ export async function prepareClaimSubmission(
           : "REAL_LDC_NOT_ENABLED",
         "真实 LDC 新领取暂时关闭，已领取奖励仍可从记录查看。",
       );
+    // 领取范围: someone outside never reaches the 口令 or its cooldown.
+    await assertInScope(env, activity, userId);
     await assertAttemptAllowed(env, userId, "activity", continuation);
     const password =
       passwordDigest === null

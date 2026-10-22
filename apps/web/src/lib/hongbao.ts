@@ -6,6 +6,7 @@ import type {
   ManagedActivity,
   PaymentView,
   PublicActivity,
+  PublicClaimScope,
 } from "@hb/contracts";
 import { rewardSummaryOf, type Split, splitOf } from "./hongbao-text";
 import type { RosterTitle } from "./titles";
@@ -41,6 +42,8 @@ export type HongbaoActivity = {
   pageOnly: boolean;
   /** 领取前人机验证: claiming or signing up first passes Turnstile. */
   humanCheck: boolean;
+  /** 领取范围: who may (docs/claim-scope-design.md); absent for everyone. */
+  scope?: PublicClaimScope;
   /** A 🐟额红包: what is taken goes into 🐟额 (balance-design §14). */
   fish: boolean;
   /** 自定义金额's order, known to the sender only. */
@@ -176,6 +179,7 @@ export function hongbaoOf(
     beforeInfo: activity.beforeInfo,
     pageOnly: activity.forceDedicated,
     humanCheck: activity.humanCheck === true,
+    ...(activity.scope ? { scope: activity.scope } : {}),
     fish: activity.funding === "balance",
     custom:
       config && config.money.mode === "custom"

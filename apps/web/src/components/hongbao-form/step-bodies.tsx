@@ -25,6 +25,7 @@ import {
   timingLine,
 } from "./form-state";
 import { NoteEditor } from "./note-editor";
+import { scopeLine } from "./scope-fields";
 import type { SettingsGroup } from "./steps";
 
 type OpenSheet = (group: SettingsGroup) => void;
@@ -194,6 +195,7 @@ export function ClaimStep({
   openSheet,
   deadline,
   timingError,
+  scopeError,
 }: {
   form: FormState;
   update: Update;
@@ -204,6 +206,8 @@ export function ClaimStep({
   deadline?: string;
   /** The first problem with the timing (set in 更多设置). */
   timingError?: string;
+  /** The first problem with 领取范围 (set in 更多设置). */
+  scopeError?: string;
 }) {
   const draw = form.mode === "timed_draw";
   const time =
@@ -253,15 +257,24 @@ export function ClaimStep({
       {locked ? (
         <>
           <p className="px-1 text-sm text-ink-2">{time}</p>
+          <p className="px-1 text-sm text-ink-2">{scopeLine(form)}</p>
           <LockNote>开放后不能修改。</LockNote>
         </>
       ) : (
-        <QuietLine
-          id="hb-quiet-timing"
-          text={time}
-          error={timingError}
-          onOpen={() => openSheet("timing")}
-        />
+        <>
+          <QuietLine
+            id="hb-quiet-timing"
+            text={time}
+            error={timingError}
+            onOpen={() => openSheet("timing")}
+          />
+          <QuietLine
+            id="hb-quiet-scope"
+            text={scopeLine(form)}
+            error={scopeError}
+            onOpen={() => openSheet("scope")}
+          />
+        </>
       )}
     </div>
   );

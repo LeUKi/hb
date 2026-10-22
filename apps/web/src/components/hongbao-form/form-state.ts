@@ -3,11 +3,15 @@ import {
   type ActivityInput,
   amountToMinor,
   boundedMeanLimits,
+  CLAIM_SCOPE_LIMITS,
+  type ClaimScope,
   DEFAULT_DRAW_COUNTDOWN_SECONDS,
   type LdcMoney,
   type ManagedActivity,
   normalizeTopicLink,
   sameLdcMoney,
+  TRUST_LEVEL_MAX,
+  TRUST_LEVEL_MIN,
 } from "@hb/contracts";
 import { durationOfSeconds } from "../../lib/hongbao";
 import { inspectPassword } from "../../lib/password-rules";
@@ -69,7 +73,28 @@ export type FormState = {
   quantity: "exact" | "fuzzy";
   /** 领取前人机验证: Turnstile in a dialog before each claim or sign-up. */
   humanCheck: boolean;
+  /** 领取范围 (docs/claim-scope-design.md): everyone, or by 等级 and/or by name. */
+  scope: ScopeForm;
 };
+
+/** Someone added to 指定的人: their face once found (the server notes their ID). */
+export type ScopePerson = {
+  username: string;
+  displayName?: string;
+  avatarUrl?: string | null;
+  /** Found here when added: false shows they will be known by name. */
+  known?: boolean;
+};
+
+export type ScopeForm = {
+  limited: boolean;
+  byLevel: boolean;
+  levels: { min: number; max: number };
+  users: ScopePerson[];
+};
+
+/** Turned on, 按等级 starts at Lv1 and up: past brand-new accounts. */
+const defaultLevels = { min: 1, max: TRUST_LEVEL_MAX };
 
 export const modeLabels: Record<RewardMode, string> = {
   fixed: "固定均分",
@@ -129,6 +154,30 @@ export function emptyForm(now = Date.now()): FormState {
     listed: false,
     humanCheck: false,
     quantity: "exact",
+    scope: {
+      limited: false,
+      byLevel: false,
+      levels: defaultLevels,
+      users: [],
+    },
+  };
+}
+
+/** The 领取范围 as saved, or none (everyone). */
+export function scopeInputOf(form: FormState): ClaimScope | undefined {
+  const { scope } = form;
+  if (!scope.limited || (!scope.byLevel && scope.users.length === 0))
+    return undefined;
+  return {
+    ...(scope.byLevel ? { levels: scope.levels } : {}),
+    ...(scope.users.length > 0
+      ? {
+          users: scope.users.map((user) => ({
+            username: user.username,
+            linuxDoId: null,
+          })),
+        }
+      : {}),
   };
 }
 
@@ -418,6 +467,19 @@ export function issuesOf(form: FormState, now = Date.now()): Issue[] {
 
   if (!normalizeTopic(form.topic).ok)
     add("hb-topic", "请填写 LINUX DO 帖子或回复的链接");
+
+  const { scope } = form;
+  if (scope.limited) {
+    const levelsAll =
+      scope.levels.min === TRUST_LEVEL_MIN &&
+      scope.levels.max === TRUST_LEVEL_MAX;
+    if (!scope.byLevel && scope.users.length === 0)
+      add("hb-scope", "至少选一项：按等级，或指定的人");
+    else if (scope.byLevel && levelsAll)
+      add("hb-scope-levels", "等级拉满就等于所有人，把范围收窄一点");
+    if (scope.users.length > CLAIM_SCOPE_LIMITS.users)
+      add("hb-scope-user", `最多指定 ${CLAIM_SCOPE_LIMITS.users} 人`);
+  }
   return issues;
 }
 
@@ -539,6 +601,17 @@ export function formOf(activity: ManagedActivity, now = Date.now()): FormState {
     listed: config.joinSquare,
     quantity: config.quantityVisibility === "fuzzy" ? "fuzzy" : "exact",
     humanCheck: config.humanCheck === true,
+    scope: config.scope
+      ? {
+          limited: true,
+          byLevel: config.scope.levels !== undefined,
+          levels: config.scope.levels ?? defaultLevels,
+          users: (config.scope.users ?? []).map((user) => ({
+            username: user.username,
+            known: user.linuxDoId !== null,
+          })),
+        }
+      : base.scope,
   };
 }
 
@@ -624,6 +697,7 @@ export function inputOf(form: FormState, merchantId: string): ActivityInput {
     participationMode: form.participation,
     // Left out when off, so older saved forms keep their shape (idempotency).
     ...(form.humanCheck ? { humanCheck: true } : {}),
+    ...(scopeInputOf(form) ? { scope: scopeInputOf(form) } : {}),
     rewardType: "ldc",
     // Left out for 商户直发, as before 🐟额红包 (idempotency).
     ...(form.funding === "balance"
@@ -675,6 +749,14 @@ export function sameInput(saved: ActivityInput, sent: ActivityInput) {
       merchantId: input.merchantId,
       funding: input.funding ?? "merchant",
       humanCheck: input.humanCheck === true,
+      scope: input.scope
+        ? {
+            levels: input.scope.levels ?? null,
+            users: (input.scope.users ?? [])
+              .map((user) => user.username.toLowerCase())
+              .sort(),
+          }
+        : null,
     });
   return (
     comparable(savedRest) === comparable(sentRest) &&

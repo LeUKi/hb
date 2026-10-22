@@ -1,3 +1,4 @@
+import { scopeTag } from "@hb/contracts";
 import { cn } from "../../lib/cn";
 import type { HongbaoActivity } from "../../lib/hongbao";
 import { endLabels, type PublicView } from "../../lib/hongbao";
@@ -116,6 +117,9 @@ export function HongbaoCard({
             <StatusChip tone="neutral">
               {activity.participation === "password" ? "口令红包" : "无需口令"}
             </StatusChip>
+            {activity.scope && (
+              <StatusChip tone="neutral">{scopeTag(activity.scope)}</StatusChip>
+            )}
             {activity.fish && <StatusChip tone="neutral">🐟额</StatusChip>}
             {/* Its 口令 only on its own page: this card is the way in. */}
             {activity.pageOnly && (

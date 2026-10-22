@@ -1289,6 +1289,50 @@
     border-radius: 50%;
   }
 
+  /* RangeSlider (ui/range-slider.tsx): two native sliders on one track,
+     only their thumbs taking the pointer. */
+  .hb-range {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    margin: 0;
+    appearance: none;
+    background: transparent;
+    pointer-events: none;
+    outline: none;
+  }
+  .hb-range::-webkit-slider-thumb {
+    appearance: none;
+    pointer-events: auto;
+    width: 1.375rem;
+    height: 1.375rem;
+    border-radius: 9999px;
+    background: #fff;
+    border: 2px solid var(--color-accent);
+    box-shadow: 0 2px 6px -2px rgb(70 0 10 / 0.35);
+    cursor: grab;
+  }
+  .hb-range::-moz-range-thumb {
+    pointer-events: auto;
+    width: 1.375rem;
+    height: 1.375rem;
+    border-radius: 9999px;
+    background: #fff;
+    border: 2px solid var(--color-accent);
+    box-shadow: 0 2px 6px -2px rgb(70 0 10 / 0.35);
+    cursor: grab;
+  }
+  .hb-range:focus-visible::-webkit-slider-thumb {
+    box-shadow:
+      0 0 0 3px var(--color-cream),
+      0 0 0 5px var(--color-accent-ink);
+  }
+  .hb-range:focus-visible::-moz-range-thumb {
+    box-shadow:
+      0 0 0 3px var(--color-cream),
+      0 0 0 5px var(--color-accent-ink);
+  }
+
   /* 印章: a coin, so it stays a true circle. A sheen crosses it now and
      then; while confirming, the sheen runs on and a gold arc circles it. */
   .hb-seal {

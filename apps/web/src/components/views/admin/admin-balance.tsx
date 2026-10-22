@@ -36,6 +36,7 @@ import { MoreLink } from "../../ui/button-link";
 import { CopyButton } from "../../ui/copy-button";
 import { Field, Segmented, TextArea, TextInput } from "../../ui/field";
 import { Fish, fishText } from "../../ui/fish";
+import { PersonLine } from "../../ui/person-line";
 import { ListItem, Reveal, Swap } from "../../ui/reveal";
 import { StatusChip } from "../../ui/status-chip";
 import {
@@ -1326,16 +1327,7 @@ function InviteLinks({
                 }}
               />
               <Reveal show={Boolean(named && found)}>
-                {found && (
-                  <p className="flex items-center gap-2 text-sm text-ink-2">
-                    <Avatar
-                      name={found.displayName}
-                      src={found.avatarUrl}
-                      size={20}
-                    />
-                    {found.displayName} @{found.username}
-                  </p>
-                )}
+                {found && <PersonLine person={found} />}
               </Reveal>
             </Field>
             <Field

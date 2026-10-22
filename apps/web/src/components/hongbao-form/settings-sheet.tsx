@@ -21,6 +21,7 @@ import {
   randomRange,
 } from "./form-state";
 import { NoteEditor } from "./note-editor";
+import { ScopeFields } from "./scope-fields";
 import type { SettingsGroup } from "./steps";
 
 type NoteKey = "afterClaimInfo" | "afterEndInfo";
@@ -53,7 +54,7 @@ export function groupsOf(form: FormState, opened: boolean): SettingsGroup[] {
   const groups: SettingsGroup[] = [];
   if (!opened) {
     if (form.mode !== "fixed") groups.push("split");
-    groups.push("timing");
+    groups.push("timing", "scope");
     if (form.participation === "password") groups.push("password");
   }
   groups.push("notes", "public");
@@ -304,6 +305,14 @@ export function SettingsSheet({
                   </Setting>
                 )}
               </>
+            )}
+            {groups.includes("scope") && (
+              <Setting
+                group="scope"
+                title={form.mode === "timed_draw" ? "报名范围" : "领取范围"}
+              >
+                <ScopeFields form={form} update={update} errorOf={errorOf} />
+              </Setting>
             )}
             {groups.includes("password") && (
               <Setting group="password">

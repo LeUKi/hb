@@ -15,6 +15,7 @@ import {
   readPlatformControls,
 } from "../runtime/controls";
 import { encryptString } from "../security/crypto";
+import { assertInScope } from "./claim-scope";
 import {
   attemptAssociatedData,
   bindFingerprint,
@@ -149,6 +150,8 @@ export async function registerForDraw(
         "REAL_LDC_CLAIMS_PAUSED",
         "真实 LDC 新报名暂时关闭，已有报名仍会正常开奖。",
       );
+    // 报名范围: someone outside never reaches the 口令 or its cooldown.
+    await assertInScope(env, activity, userId);
     await assertAttemptAllowed(env, userId, "activity", continuation);
     const password =
       passwordDigest === null
