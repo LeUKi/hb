@@ -1,0 +1,181 @@
+{
+  "stream": {
+    "seed": "0000000000000000000000000000000000000000000000000000000000000000",
+    "first64": "6a2ea17ca8998eeb90196b94c7fbf983b995345ce3c6d755358070a980b3544e0014ab94578f46aac267ddc24503efc56ad0d5941c006f8ca0ef7e5a63c8f17f"
+  },
+  "draws": [
+    {
+      "activityId": "6f1c2a9e-3b7d-4c55-9a1e-2d4b8f0c7e31",
+      "money": {
+        "mode": "timed_draw",
+        "algorithm": "double_mean_v1",
+        "totalAmount": "10.00",
+        "count": 3,
+        "participantLimit": null,
+        "distributeFullPool": false
+      },
+      "roster": [
+        {
+          "ordinal": 1,
+          "registrationId": "00000000-0000-4000-8000-000000000001"
+        },
+        {
+          "ordinal": 2,
+          "registrationId": "00000000-0000-4000-8000-000000000002"
+        },
+        {
+          "ordinal": 3,
+          "registrationId": "00000000-0000-4000-8000-000000000003"
+        },
+        {
+          "ordinal": 4,
+          "registrationId": "00000000-0000-4000-8000-000000000004"
+        },
+        {
+          "ordinal": 5,
+          "registrationId": "00000000-0000-4000-8000-000000000005"
+        },
+        {
+          "ordinal": 6,
+          "registrationId": "00000000-0000-4000-8000-000000000006"
+        },
+        {
+          "ordinal": 7,
+          "registrationId": "00000000-0000-4000-8000-000000000007"
+        }
+      ],
+      "drand": {
+        "round": 20000000,
+        "randomness": "f39c98df5525968e6622e0c63edb3d1f9c5607cf780db78abdded36e4b3dba95",
+        "signature": "96892582a33552a7b67ba44ef09c3ccd535bbebe760c93ecf45be8958d0c0f06390c6d19d7bf492eb806af7eef6b125c"
+      },
+      "rosterHash": "3d989ec89de3d6469cb9382cc7b2ce48834a4fb24a4f945c26e63cebddf43b10",
+      "seed": "a996e66d321e55e33353fdb3c3c167920745e03c6f419a8df10e5858996be0c7",
+      "picked": [4, 6, 7],
+      "amounts": [493, 183, 324],
+      "assignedPositions": [2, 1, 0],
+      "winners": [
+        {
+          "ordinal": 4,
+          "position": 2,
+          "amountMinor": 324
+        },
+        {
+          "ordinal": 6,
+          "position": 1,
+          "amountMinor": 183
+        },
+        {
+          "ordinal": 7,
+          "position": 0,
+          "amountMinor": 493
+        }
+      ]
+    },
+    {
+      "activityId": "0b9d5e47-8a2f-4e61-b3c8-91f7d2a6e054",
+      "money": {
+        "mode": "timed_draw",
+        "algorithm": "bounded_mean_v1",
+        "totalAmount": "5.00",
+        "count": 5,
+        "participantLimit": 20,
+        "distributeFullPool": true
+      },
+      "roster": [
+        {
+          "ordinal": 1,
+          "registrationId": "00000000-0000-4000-8000-000000000001"
+        },
+        {
+          "ordinal": 2,
+          "registrationId": "00000000-0000-4000-8000-000000000002"
+        }
+      ],
+      "drand": {
+        "round": 20000000,
+        "randomness": "f39c98df5525968e6622e0c63edb3d1f9c5607cf780db78abdded36e4b3dba95",
+        "signature": "96892582a33552a7b67ba44ef09c3ccd535bbebe760c93ecf45be8958d0c0f06390c6d19d7bf492eb806af7eef6b125c"
+      },
+      "rosterHash": "d34ccfd940f9377bbd5d69fcd69e4af18819ee7b041eef344c3dc011a8d0bb5f",
+      "seed": "ffa7fed7df37b5c12a9c89c97f334470b181f24bc897b1b55bb6e9b96b24c092",
+      "picked": [1, 2],
+      "amounts": [156, 344],
+      "assignedPositions": [1, 0],
+      "winners": [
+        {
+          "ordinal": 1,
+          "position": 1,
+          "amountMinor": 344
+        },
+        {
+          "ordinal": 2,
+          "position": 0,
+          "amountMinor": 156
+        }
+      ]
+    },
+    {
+      "activityId": "c3e8a1f0-5d27-4b9c-8e46-7a0f3b2d9c18",
+      "money": {
+        "mode": "timed_draw",
+        "algorithm": "double_mean_v1",
+        "totalAmount": "1.00",
+        "count": 1,
+        "participantLimit": null,
+        "distributeFullPool": false
+      },
+      "roster": [],
+      "drand": {
+        "round": 20000000,
+        "randomness": "f39c98df5525968e6622e0c63edb3d1f9c5607cf780db78abdded36e4b3dba95",
+        "signature": "96892582a33552a7b67ba44ef09c3ccd535bbebe760c93ecf45be8958d0c0f06390c6d19d7bf492eb806af7eef6b125c"
+      },
+      "rosterHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "seed": "ca144d748f76e72f0f3e56d0bc4aa8cf4951a8a9f9f695fe523d9bd6bd1d5581",
+      "picked": [],
+      "amounts": [],
+      "assignedPositions": [],
+      "winners": []
+    }
+  ],
+  "queues": [
+    {
+      "activityId": "6f1c2a9e-3b7d-4c55-9a1e-2d4b8f0c7e31",
+      "secret": "a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7",
+      "money": {
+        "mode": "random",
+        "algorithm": "double_mean_v1",
+        "totalAmount": "8.88",
+        "count": 6
+      },
+      "commitment": "6231e728804eaca90e08ad1c134c4f677842f1dee16b44ddf2c6a71aae055266",
+      "seed": "7d05243663f9e195ef43e84b798a339704b44ec95be66fa0a5cb7e68227fa968",
+      "queue": [107, 140, 403, 90, 65, 83]
+    },
+    {
+      "activityId": "0b9d5e47-8a2f-4e61-b3c8-91f7d2a6e054",
+      "secret": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "money": {
+        "mode": "random",
+        "algorithm": "bounded_mean_v1",
+        "totalAmount": "100.00",
+        "count": 4
+      },
+      "commitment": "1a1a84c6708ee6af476b961de8219a3abf114dd6a8978e3a782ecd61ab7fe44a",
+      "seed": "7d66ea73e467e932324687b98b41248decd8acc9949b06e1707db4af2d4353ad",
+      "queue": [2919, 3302, 2347, 1432]
+    },
+    {
+      "activityId": "c3e8a1f0-5d27-4b9c-8e46-7a0f3b2d9c18",
+      "secret": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "money": {
+        "mode": "custom",
+        "amounts": ["1.00", "2.50", "0.01", "6.66", "3.00"]
+      },
+      "commitment": "0d63cb1a3275e2a52297c45aa3000cdb71b433b52748d1b9c803ee910d51c0cb",
+      "seed": "8483b712e3deb9228e31a7f59a957d78c89967ab79c3fcf2a4cc785f5d5011e3",
+      "queue": [666, 1, 250, 100, 300]
+    }
+  ]
+}

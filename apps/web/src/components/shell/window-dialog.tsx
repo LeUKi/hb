@@ -20,6 +20,14 @@ import { useWindowInfo } from "./window-info";
 const InsideDialog = createContext(false);
 
 /**
+ * Another kind of dialog's content (a 红包's panel): a window dialog opened
+ * in it stacks over it, its own 压暗层 covering it, as over a window dialog.
+ */
+export function StacksDialogs({ children }: { children: ReactNode }) {
+  return <InsideDialog.Provider value={true}>{children}</InsideDialog.Provider>;
+}
+
+/**
  * A page's own dialog (a confirmation, a short form): the same frame as the
  * 红包's panels, laid over the whole window, but without a history entry —
  * it belongs to what the page is doing, so back still leaves the page.

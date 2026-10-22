@@ -75,6 +75,11 @@ import {
   rewardFilterSql,
 } from "./history-query";
 import { humanCheckAvailable } from "./human-check";
+import {
+  openingRandomVersion,
+  publicDrawProof,
+  sealQueue,
+} from "./random-proof";
 import { rosterPreview } from "./roster-preview";
 import {
   type ActivityRow,
@@ -370,8 +375,10 @@ export async function getPublicActivity(
   const row = await findActivity(env, id);
   if (!row || (row.openedAt === null && row.authorId !== viewerId))
     activityNotFound();
+  const drawProof = await publicDrawProof(env, row);
   return {
     ...projectPublicActivity(row, await author(env, row.authorId)),
+    ...(drawProof ? { drawProof } : {}),
     ...(row.openedAt === null
       ? { openingBlockedReason: await openingBlockedReason(env, row) }
       : { rosterPreview: await rosterPreview(env, row) }),
@@ -978,9 +985,25 @@ export async function openActivity(
   // The same expression validates and writes the deadline within the batch.
   const openingDeadlineSql = timedCountdown ? `${databaseNow}+?` : "?";
   const openingDeadlineValue = timedCountdown ? countdownMs : deadline;
+  // 开奖证明 v2: a queue's amounts and order are sealed now, with the opening.
+  const randomVersion = openingRandomVersion(checked.data);
+  const sealed =
+    randomVersion !== null && !timed
+      ? await sealQueue(env, id, checked.data.money, inventory, now)
+      : null;
+  if (
+    sealed &&
+    (sealed.inventory.length !== row.totalCount ||
+      sealed.inventory.reduce(
+        (sum, item) => sum + BigInt(item.amountMinor ?? 0),
+        0n,
+      ) !== BigInt(ldcTotalMinor(checked.data)))
+  )
+    invalidActivity("红包金额与库存不一致，无法开放");
   try {
     await env.DB.batch([
       activityWriteGuard(env.DB, id, authorId, version),
+      ...(sealed?.before ?? []),
       env.DB.prepare(`UPDATE activities SET
       version = CASE WHEN version = ? AND author_id = ? AND deleted_at IS NULL AND opened_at IS NULL AND merchant_id IS ? AND ${openingDeadlineSql} > ${databaseNow} AND ${openingDeadlineSql} <= 8640000000000000
       AND reward_type='ldc'
@@ -993,7 +1016,7 @@ export async function openActivity(
           WHERE m.id=activities.merchant_id AND c.version=? AND c.verification_status='passed' AND c.verification_checked_at>=${databaseNow}-600000))))
       THEN version + 1 ELSE NULL END,
       config = ?, opened_at = CASE WHEN json_extract(config,'$.money.mode')='timed_draw' THEN ${databaseNow} ELSE ? END,
-      updated_at = ?, deadline = ${openingDeadlineSql} WHERE id = ?`).bind(
+      updated_at = ?, deadline = ${openingDeadlineSql}, random_version = ? WHERE id = ?`).bind(
         version,
         authorId,
         expectedMerchantId,
@@ -1005,8 +1028,10 @@ export async function openActivity(
         now,
         now,
         openingDeadlineValue,
+        randomVersion,
         id,
       ),
+      ...(sealed ? [sealed.after] : []),
       // A 🐟额红包 locks its total in the same write (docs/balance-design.md
       // §14): not enough 可用 fails the whole opening.
       ...(balance

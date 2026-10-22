@@ -489,7 +489,8 @@ export async function completeClaimSubmission(
     const reward =
       available.results.find((item) => item.id === selectedInventoryId) ??
       available.results[
-        activity.allocation === "random"
+        // A v2 queue hands out its shares in order (开奖证明): the k-th claim takes the k-th.
+        activity.allocation === "random" && activity.randomVersion === null
           ? randomIndex(available.results.length || 1)
           : 0
       ];

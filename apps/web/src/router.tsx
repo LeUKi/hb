@@ -84,6 +84,23 @@ const senderRoute = (emoji: string, page: SenderPage) =>
 const editRoute = senderRoute("📝", "edit");
 const statsRoute = senderRoute("📊", "stats");
 const paymentsOfRoute = senderRoute("🧾", "payments");
+// 🎲 开奖数据 (docs/draw-proof-design.md §5): open to anyone.
+const drawDataRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/🧧/$code/🎲",
+  staticData: { chrome: "docked", subpage: "开奖数据" },
+  beforeLoad: ({ params }) => {
+    const id =
+      activityIdFromCode(params.code) ?? normalizeActivityUuid(params.code);
+    if (id && params.code !== activityCode(id)) {
+      throw redirect({
+        to: "/🧧/$code/🎲",
+        params: { code: activityCode(id) },
+        replace: true,
+      });
+    }
+  },
+});
 const redeemRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/🔑/$resultId",
@@ -255,6 +272,7 @@ const routeTree = rootRoute.addChildren([
   editRoute,
   statsRoute,
   paymentsOfRoute,
+  drawDataRoute,
   redeemRoute,
   inviteRoute,
   topicRoute,

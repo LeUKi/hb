@@ -12,6 +12,9 @@ import {
   type Merchant,
   type PublicActivity,
   type PublicRecipientList,
+  queueAmountsV2,
+  queueCommitment,
+  queueSeed,
   type RandomLdcMoney,
 } from "@hb/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -21,7 +24,7 @@ import { sessions, users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
 import { createMerchant } from "../src/payments/merchants";
 import { runMerchantCycle } from "../src/payments/scheduler";
-import { sha256Hex } from "../src/security/crypto";
+import { decryptString, sha256Hex } from "../src/security/crypto";
 import { advanceAttemptCooldown } from "./advance-attempt-cooldown";
 import { resetMerchantHistory } from "./reset-merchant-history";
 
@@ -506,6 +509,35 @@ function randomConfig(algorithm: RandomLdcMoney["algorithm"]) {
     money: { mode: "random", algorithm, totalAmount: "10", count: 3 },
   });
 }
+/**
+ * Opening a v2 queue keeps each share's id and position but gives it the
+ * sealed amount: the one the secret (kept encrypted) makes.
+ */
+async function sealedQueue(id: string, draft: InventoryRows) {
+  const proof = await env.DB.prepare(
+    "SELECT p.commitment,p.secret_ciphertext,a.config FROM activity_random_proofs p JOIN activities a ON a.id=p.activity_id WHERE p.activity_id=? AND p.kind='queue'",
+  )
+    .bind(id)
+    .first<{ commitment: string; secret_ciphertext: string; config: string }>();
+  if (!proof) throw new Error("Missing sealed queue");
+  const secret = await decryptString(
+    proof.secret_ciphertext,
+    bindings,
+    `random-proof:${id}`,
+  );
+  expect(queueCommitment(id, secret)).toBe(proof.commitment);
+  const amounts = queueAmountsV2({
+    seed: queueSeed(id, secret),
+    money: (JSON.parse(proof.config) as LdcActivityInput).money,
+  });
+  return draft.map((row, position) => ({
+    ...row,
+    amount_minor: amounts[position] as number,
+  }));
+}
+
+type InventoryRows = Awaited<ReturnType<typeof inventory>>;
+
 async function inventory(id: string) {
   return (
     await env.DB.prepare(
@@ -609,6 +641,7 @@ describe("random LDC inventory persistence and coordination", () => {
       let saved = created[0];
       if (!saved) throw new Error("Missing created activity");
       const original = await inventory(saved.id);
+      let sealed = original;
       expect(original).toHaveLength(3);
       expect(original.reduce((sum, row) => sum + row.amount_minor, 0)).toBe(
         1000,
@@ -643,6 +676,8 @@ describe("random LDC inventory persistence and coordination", () => {
           money: { mode: "random", algorithm, totalAmount: "10.00", count: 3 },
         });
         expect(await inventory(saved.id)).toEqual(original);
+        // Opening seals the queue anew (开奖证明 v2); nothing else rewrites it.
+        await env.DB.prepare("DROP TRIGGER reject_random_rewrite").run();
         const openedResponses = await Promise.all([
           request(`/api/me/activities/${saved.id}/open`, owner, "POST", {
             version: saved.version,
@@ -665,15 +700,18 @@ describe("random LDC inventory persistence and coordination", () => {
         const first = opened[0];
         if (first?.config.rewardType !== "ldc")
           throw new Error("Missing opened LDC activity");
+        sealed = await sealedQueue(first.id, original);
         saved = await edit(first, {
           ...first.config,
           afterEndInfo: "结束说明",
           money: { mode: "random", algorithm, totalAmount: "10.0", count: 3 },
         });
         expect(saved.status).toBe("active");
-        expect(await inventory(saved.id)).toEqual(original);
+        expect(await inventory(saved.id)).toEqual(sealed);
       } finally {
-        await env.DB.prepare("DROP TRIGGER reject_random_rewrite").run();
+        await env.DB.prepare(
+          "DROP TRIGGER IF EXISTS reject_random_rewrite",
+        ).run();
       }
       const otherAlgorithm =
         algorithm === "double_mean_v1" ? "bounded_mean_v1" : "double_mean_v1";
@@ -693,7 +731,7 @@ describe("random LDC inventory persistence and coordination", () => {
           })
         ).status,
       ).toBe(400);
-      expect(await inventory(saved.id)).toEqual(original);
+      expect(await inventory(saved.id)).toEqual(sealed);
     },
   );
 
@@ -820,7 +858,8 @@ describe("random LDC inventory persistence and coordination", () => {
         ).json()) as { activity: ManagedActivity }
       ).activity;
       const pool = await inventory(saved.id);
-      if (current.status === "active") expect(pool).toEqual(original);
+      if (current.status === "active")
+        expect(pool).toEqual(await sealedQueue(saved.id, original));
       else {
         expect(pool).toHaveLength(4);
         expect(pool.reduce((sum, row) => sum + row.amount_minor, 0)).toBe(2000);
@@ -834,7 +873,9 @@ describe("random LDC inventory persistence and coordination", () => {
             )
           ).status,
         ).toBe(200);
-        expect(await inventory(saved.id)).toEqual(pool);
+        expect(await inventory(saved.id)).toEqual(
+          await sealedQueue(saved.id, pool),
+        );
       }
     },
   );

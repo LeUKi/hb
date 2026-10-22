@@ -16,10 +16,12 @@ import type { RecipientSpeedTitle } from "./recipient-speed";
 export * from "./activity-image";
 export * from "./admin";
 export * from "./balance";
+export * from "./draw-proof";
 export * from "./ecoji-v2";
 export * from "./forum-emoji";
 export * from "./payments";
 export * from "./profile";
+export * from "./random";
 export * from "./rate-limits";
 export * from "./recipient-speed";
 export * from "./share-text";
@@ -589,6 +591,94 @@ export type DrawSummary = {
   participantLimit?: number | null;
 };
 
+/**
+ * 开奖证明 (docs/draw-proof-design.md): on a v2 红包's public read, what
+ * the roster dialog says. A 限时开奖 is drawn from one drand round after
+ * closing; a 拼手气 (or 自定义 in random order) hands out a queue sealed at
+ * opening. The full data is at GET /api/activities/:id/proof.
+ */
+export type DrawProof =
+  | {
+      kind: "draw";
+      /** The round after closing; before then, the round after the deadline. */
+      round: number;
+      roundAt: string;
+      /** From closing on: the frozen roster's 名单哈希. */
+      rosterHash?: string;
+    }
+  | { kind: "queue"; commitment: string };
+
+/** One sign-up of a 限时开奖's frozen roster, as anyone can see it. */
+export type ProofRosterEntry = {
+  ordinal: number;
+  registrationId: string;
+  registeredAt: string;
+  user: PublicUserProfile;
+};
+
+/**
+ * GET /api/activities/:id/proof: everything a v2 红包's random parts came
+ * from, for the 🎲 page, the check in the browser and the verification
+ * script (docs/draw-proof-design.md). Amounts are in 0.01 LDC.
+ */
+export type ActivityProofData =
+  | {
+      kind: "draw";
+      version: 2;
+      activity: {
+        id: string;
+        title: string;
+        author: PublicUserProfile;
+        closedAt: string;
+        money: TimedDrawMoney;
+      };
+      drand: {
+        chainHash: string;
+        round: number;
+        roundAt: string;
+        /** Null until the round is fetched. */
+        randomness: string | null;
+        signature: string | null;
+      };
+      roster: { hash: string; entries: ProofRosterEntry[] };
+      seed: string | null;
+      /**
+       * Once drawn: the ordinals in the order they were picked, the prize
+       * pool by position, and the prize each winner got.
+       */
+      result: {
+        picked: number[];
+        amounts: number[];
+        winners: { ordinal: number; position: number; amountMinor: number }[];
+      } | null;
+    }
+  | {
+      kind: "queue";
+      version: 2;
+      activity: {
+        id: string;
+        title: string;
+        author: PublicUserProfile;
+        openedAt: string;
+        endedAt: string | null;
+        money: Extract<LdcMoney, { mode: "random" | "custom" }>;
+      };
+      commitment: string;
+      /** Both null until the 红包 is over. */
+      secret: string | null;
+      queue:
+        | {
+            position: number;
+            amountMinor: number;
+            claim: { user: PublicUserProfile; claimedAt: string } | null;
+          }[]
+        | null;
+    }
+  /** A 限时开奖 not closed yet: its roster is still open. */
+  | { kind: "pending" }
+  /** Opened before v2, or nothing random about it. */
+  | { kind: "none" };
+
 export type ActivitySummary = {
   participationMode?: ParticipationMode;
   id: string;
@@ -645,6 +735,7 @@ export type PublicActivity = {
   paymentMode?: PaymentMode;
   openingBlockedReason?: LdcOpeningBlockedReason;
   draw?: DrawSummary;
+  drawProof?: DrawProof;
   /** Claiming or signing up first passes a human check (Turnstile). */
   humanCheck?: true;
   /**

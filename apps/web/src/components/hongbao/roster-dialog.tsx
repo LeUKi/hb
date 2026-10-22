@@ -15,6 +15,7 @@ import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { Segmented } from "../ui/field";
 import { Swap } from "../ui/reveal";
+import { DrawProofDialog, DrawProofLine } from "./draw-proof";
 import { RevealToggle } from "./password-text";
 import {
   RosterHeader,
@@ -88,6 +89,19 @@ function RosterContent({
   const [tab, setTab] = useState<"winners" | "registrations">("winners");
   // The 口令 on the sender's rows: hidden while it runs, until asked here.
   const [passwordsRevealed, setPasswordsRevealed] = useState(false);
+  const [proofOpen, setProofOpen] = useState(false);
+  // 开奖证明: a draw's round, or a 拼手气's sealed queue.
+  const proof = view.drawProof;
+  const proofDone =
+    proof?.kind === "draw"
+      ? view.draw?.state === "completed" || view.draw?.state === "empty"
+      : view.ended;
+  const proofPeople =
+    proof?.kind === "draw"
+      ? (view.draw?.registered ?? null)
+      : view.quantity.kind === "exact"
+        ? view.quantity.taken
+        : null;
   const fuzzy = view.quantity.kind === "fuzzy";
   const kind: RosterKind =
     roster.kind === "claims"
@@ -166,6 +180,13 @@ function RosterContent({
           </span>
         </p>
         <p className="text-xs text-ink-3">{metaLine(activity, view)}</p>
+        {proof && (
+          <DrawProofLine
+            proof={proof}
+            done={proofDone}
+            onOpen={() => setProofOpen(true)}
+          />
+        )}
         {data.author && (
           <p className="flex items-center justify-between gap-2 text-xs text-gold-ink">
             <span>
@@ -232,6 +253,16 @@ function RosterContent({
           )}
         </Swap>
       </div>
+      {proof && (
+        <DrawProofDialog
+          open={proofOpen}
+          onClose={() => setProofOpen(false)}
+          activityId={activity.id}
+          proof={proof}
+          done={proofDone}
+          people={proofPeople}
+        />
+      )}
     </>
   );
 }

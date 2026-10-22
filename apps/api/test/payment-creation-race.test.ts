@@ -1,5 +1,9 @@
 import { env } from "cloudflare:test";
-import { emptyActivityInput, type LdcActivityInput } from "@hb/contracts";
+import {
+  emptyActivityInput,
+  formatAmount,
+  type LdcActivityInput,
+} from "@hb/contracts";
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -133,11 +137,12 @@ describe("payment creation racing normal merchant configuration updates", () => 
       recipient.id,
       request,
     );
+    // A queue sealed at opening (开奖证明 v2): the first claim takes its first share.
     const firstReward = await env.DB.prepare(
-      "SELECT id FROM reward_inventory WHERE activity_id=? ORDER BY position LIMIT 1",
+      "SELECT id,amount_minor FROM reward_inventory WHERE activity_id=? ORDER BY position LIMIT 1",
     )
       .bind(f.activity.id)
-      .first<{ id: string }>();
+      .first<{ id: string; amount_minor: number }>();
     const random = crypto.getRandomValues.bind(crypto);
     let selections = 0;
     vi.spyOn(crypto, "getRandomValues").mockImplementation((array) => {
@@ -201,7 +206,7 @@ describe("payment creation racing normal merchant configuration updates", () => 
     ]);
     expect(result).toMatchObject({
       result: "claimed",
-      claim: { amount: "0.10" },
+      claim: { amount: formatAmount(firstReward?.amount_minor ?? 0) },
     });
     const claim = await env.DB.prepare(
       "SELECT inventory_id FROM claims WHERE activity_id=? AND user_id=?",
@@ -217,7 +222,7 @@ describe("payment creation racing normal merchant configuration updates", () => 
       clientId: changed.result.clientId,
       recipientId: recipient.externalId,
       recipientUsername: recipient.username,
-      amountMinor: 10,
+      amountMinor: firstReward?.amount_minor,
       recoveryPolicy: "claim_same_order_v1",
       status: "pending",
       attemptCount: 0,

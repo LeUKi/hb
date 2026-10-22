@@ -11,6 +11,7 @@ import {
   senderPages,
 } from "../../lib/activity-route";
 import { commandById } from "../../lib/commands";
+import { useDrawDataName } from "../../lib/draw-check";
 import { ease } from "../../lib/motion";
 import { resultCountsAtom } from "../../lib/store";
 
@@ -72,6 +73,7 @@ export function useAddress(compact: boolean): Address {
   const pathname = useLocation({ select: (location) => location.pathname });
   const code = (leaf?.params as { code?: string } | undefined)?.code;
   const activity = useActivityFacts(code ? activityIdFromCode(code) : null);
+  const drawDataName = useDrawDataName(code ? activityIdFromCode(code) : null);
   const resultCounts = useAtomValue(resultCountsAtom);
   if (!leaf || leaf.routeId === "/")
     return { key: "start", label: "", node: null };
@@ -126,7 +128,8 @@ export function useAddress(compact: boolean): Address {
     };
   }
 
-  const subpage = leaf.staticData.subpage;
+  const subpage =
+    leaf.routeId === "/🧧/$code/🎲" ? drawDataName : leaf.staticData.subpage;
   if (subpage) {
     return {
       key: `path:${pathname}`,

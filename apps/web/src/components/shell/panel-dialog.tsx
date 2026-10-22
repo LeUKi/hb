@@ -7,6 +7,7 @@ import { closeOverlay, type Panel } from "../../lib/overlay";
 import { radius, Squircle, SquirclePlate } from "../ui/squircle";
 import { useOverlayFocus } from "./use-overlay-focus";
 import { WindowClip } from "./window-clip";
+import { StacksDialogs } from "./window-dialog";
 import { useWindowInfo } from "./window-info";
 
 /**
@@ -127,7 +128,7 @@ export function PanelDialog({
                   className="glass-pop relative flex min-h-0 flex-1 flex-col"
                   {...fade}
                 >
-                  {children(activity, close)}
+                  <StacksDialogs>{children(activity, close)}</StacksDialogs>
                 </motion.div>
               </Squircle>
             </motion.div>

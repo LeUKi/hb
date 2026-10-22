@@ -1,5 +1,22 @@
 // Test-only transport. Never imported by either application Worker.
 import { createHash } from "node:crypto";
+
+const sha256 = (input) => createHash("sha256").update(input).digest("hex");
+const DRAND_CHAIN =
+  "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971";
+
+/** A stand-in drand quicknet round: its randomness is its signature's SHA-256. */
+export function fakeDrandRound(round) {
+  const signature = (
+    sha256(`full app drand ${round}`) + sha256(`full app drand ${round}+`)
+  ).slice(0, 96);
+  return {
+    round,
+    randomness: sha256(Buffer.from(signature, "hex")),
+    signature,
+  };
+}
+
 export const profiles = {
   author: {
     id: "730001",
@@ -78,6 +95,7 @@ export function createTestUpstream(Response, origin, options = {}) {
     orderQueries: 0,
     paymentSubmits: 0,
     humanChecks: 0,
+    drandRounds: 0,
     blockedRequests: 0,
   };
   const orders = new Map();
@@ -161,6 +179,21 @@ export function createTestUpstream(Response, origin, options = {}) {
             ? { success: true, "error-codes": [] }
             : { success: false, "error-codes": ["invalid-input-response"] },
         );
+      }
+      // drand's two nodes, as they answer: a round only once its time has
+      // come (quicknet: a round every 3 s since its genesis).
+      if (
+        (url.origin === "https://drand.cloudflare.com" ||
+          url.origin === "https://api.drand.sh") &&
+        request.method === "GET"
+      ) {
+        const round = Number(
+          new RegExp(`^/${DRAND_CHAIN}/public/(\\d+)$`).exec(url.pathname)?.[1],
+        );
+        if (!round || Date.now() < (1692803367 + (round - 1) * 3) * 1000)
+          return new Response(null, { status: 404 });
+        counters.drandRounds++;
+        return json(fakeDrandRound(round));
       }
       if (url.origin === "https://connect.linux.do") {
         if (url.pathname === "/oauth2/token" && request.method === "POST") {

@@ -22,6 +22,7 @@ import { BalanceCheckoutView } from "../views/balance-checkout-view";
 import { BalanceTopupView } from "../views/balance-topup-view";
 import { BalanceView } from "../views/balance-view";
 import { BalanceWithdrawalView } from "../views/balance-withdrawal-view";
+import { DrawDataView } from "../views/draw-data-view";
 import { HelpApiView } from "../views/help-api-view";
 import { HelpView } from "../views/help-view";
 import { HistoryView } from "../views/history-view";
@@ -96,6 +97,14 @@ function renderView(leaf: NonNullable<Leaf>): ReactNode {
       const page = leaf.staticData.senderPage;
       return id && page ? (
         <SenderView id={id} page={page} />
+      ) : (
+        <MessageView title="红包地址不对" text="请检查链接是否完整。" />
+      );
+    }
+    case "/🧧/$code/🎲": {
+      const id = activityIdFromCode(params.code ?? "");
+      return id ? (
+        <DrawDataView id={id} />
       ) : (
         <MessageView title="红包地址不对" text="请检查链接是否完整。" />
       );

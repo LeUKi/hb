@@ -11,7 +11,7 @@ import {
   type ParticipationList,
   type TimedDrawMoney,
 } from "@hb/contracts";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { claimActivity } from "../src/activities/claim-service";
 import {
   type DrawPlan,
@@ -29,6 +29,7 @@ import { createMerchant } from "../src/payments/merchants";
 import { runMerchantCycle } from "../src/payments/scheduler";
 import { sha256Hex } from "../src/security/crypto";
 import { advanceAttemptCooldown } from "./advance-attempt-cooldown";
+import { drandRoundPicking } from "./drand-round";
 
 const origin = "https://hb.example.com";
 const bindings: ApiBindings = {
@@ -373,28 +374,19 @@ describe("persisted timed-draw recovery and participation pagination", () => {
         winnerClaimIds.add(plan.winners[0]?.claimId ?? "");
       }
     }
-    const losingDraw = await createOpened(
-      f.owner,
-      timedInput(f.merchant.id, { count: 1, participantLimit: 2 }),
-    );
+    const losing = timedInput(f.merchant.id, { count: 1, participantLimit: 2 });
+    const losingDraw = await createOpened(f.owner, losing);
     await seedRegistration(losingDraw.id, f.other.id, time);
     const losingId = await seedRegistration(losingDraw.id, f.reader.id, time);
     expected.push({ kind: "registration", id: losingId });
-    // Floyd's single-winner sample selects ordinal 1, leaving the reader's
-    // ordinal 2 as a deterministic not_won participation.
-    const randomness = vi
-      .spyOn(crypto, "getRandomValues")
-      .mockImplementation((array) => {
-        if (array)
-          new Uint8Array(array.buffer, array.byteOffset, array.byteLength).fill(
-            0,
-          );
-        return array;
-      });
+    // A drand round that picks ordinal 1, leaving the reader's ordinal 2 as a
+    // deterministic not_won participation.
+    if (losing.money.mode !== "timed_draw") throw new Error("Not a draw");
+    const round = drandRoundPicking(losingDraw.id, losing.money, [1]);
     try {
       expect(await refreshTimedDraw(bindings, losingDraw.id)).toBe(true);
     } finally {
-      randomness.mockRestore();
+      round.mockRestore();
     }
     const ordinaryLdc = await createOpened(f.owner, {
       ...timedInput(f.merchant.id),

@@ -16,6 +16,8 @@ export default defineConfig({
           LDC_NETWORK_MODE: "disabled",
           LDC_ACCEPTANCE_ID: "",
           LDC_TIMED_DRAW_ENABLED: "true",
+          // test/setup.ts answers for this drand node.
+          DRAND_URLS: "https://drand.test",
           CONNECT_CLIENT_ID: "",
           CONNECT_CLIENT_SECRET: "",
           ENCRYPTION_KEYS: JSON.stringify({

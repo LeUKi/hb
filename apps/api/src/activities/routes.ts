@@ -37,6 +37,7 @@ import {
 import { ActivityError, activityNotFound } from "./errors";
 import { humanCheckOf, passesHumanCheck } from "./human-check";
 import { LIVE_USER_HEADER } from "./live";
+import { activityProofData } from "./random-proof";
 import {
   accountHistorySummary,
   getCurrentParticipation,
@@ -485,6 +486,12 @@ export const activityRoutes = new Hono<ApiContext>()
   // A running 红包's live channel (live.ts): a WebSocket to its own DO.
   // Signed-in viewers only, from this site's pages only (the browser sends
   // the session cookie with the handshake, and any site can open one).
+  // 开奖证明 (docs/draw-proof-design.md): what a v2 红包's random parts came
+  // from, for the 🎲 page and anyone checking it. Public, like its roster.
+  .get("/activities/:id/proof", async (c) => {
+    c.header("Cache-Control", "no-store");
+    return c.json(await activityProofData(c.env, c.req.param("id")));
+  })
   .get("/activities/:id/live", async (c) => {
     if (c.req.header("Upgrade")?.toLowerCase() !== "websocket")
       return c.json(

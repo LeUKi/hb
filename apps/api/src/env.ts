@@ -18,6 +18,8 @@ type ApiEnvVars = {
   LDC_STOP_NEW_CLAIMS?: string;
   LDC_STOP_SENDS?: string;
   LDC_TIMED_DRAW_ENABLED?: string;
+  /** drand nodes a 限时开奖 v2 takes its round from, comma-separated (default: Cloudflare's, then drand's own). */
+  DRAND_URLS?: string;
   /** "true" while D1 is being moved: nothing writes (runtime/maintenance.ts). */
   MAINTENANCE_MODE?: string;
   /** Where Durable Objects are created, and new names for long-lived ones (runtime/objects.ts). */

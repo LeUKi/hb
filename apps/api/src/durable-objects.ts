@@ -39,6 +39,7 @@ import {
   tellPaymentWatchers,
 } from "./activities/live";
 import { solveActivityPassword } from "./activities/password-service";
+import { drawRetryAt } from "./activities/random-proof";
 import {
   createActivity,
   deleteActivity,
@@ -426,9 +427,11 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     )
       return;
     await this.ctx.storage.put("drawActivityId", activityId);
+    // A v2 draw waits for its drand round (activities/random-proof.ts).
+    const roundRetry = await drawRetryAt(this.env, row);
     const due =
       row.drawState === "settling"
-        ? Date.now() + 100
+        ? Math.max(Date.now() + 100, roundRetry ?? 0)
         : Math.max(
             Date.now() + 100,
             Math.min(row.deadline ?? Date.now(), Date.now() + 86_400_000),

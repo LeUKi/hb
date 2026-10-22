@@ -15,6 +15,7 @@ import {
   waitForBoot,
   waitOutCooldown,
 } from "./session";
+import { fakeDrandRound } from "./upstream.mjs";
 
 // Migration phase 3 on the real stack: a 红包 made in the 发红包 steps and
 // opened from there, claimed on its page and paid; a timed draw that draws
@@ -305,6 +306,24 @@ test("限时开奖：无需口令，报满即开，中奖的人到账", async ({
   await expect(winner.page.getByText("已发放")).toBeVisible({
     timeout: 30_000,
   });
+
+  // 开奖证明: drawn from the drand round right after closing; the browser
+  // redoes it, both nodes answering as the Worker's did.
+  await winner.page.route(
+    /^https:\/\/(drand\.cloudflare\.com|api\.drand\.sh)\//,
+    (route) =>
+      route.fulfill({
+        json: fakeDrandRound(
+          Number(new URL(route.request().url()).pathname.split("/").pop()),
+        ),
+        headers: { "Access-Control-Allow-Origin": "*" },
+      }),
+  );
+  await winner.page.locator("#roster-entry").click();
+  await winner.page.getByRole("button", { name: /开奖证明/ }).click();
+  const proof = winner.page.getByRole("dialog", { name: "开奖证明" });
+  await proof.getByRole("button", { name: "自己验证" }).click();
+  await expect(proof.getByText("完全一致")).toBeVisible({ timeout: 15_000 });
   for (const entrant of entrants) await entrant.context.close();
   await author.context.close();
 });

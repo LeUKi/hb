@@ -1,7 +1,8 @@
 import {
-  ACTIVITY_LIMITS,
   amountToMinor,
-  type TimedDrawMoney,
+  drawAmounts,
+  drawPlanV2,
+  sampleOrdinals,
 } from "@hb/contracts";
 import { drawStatements, refundStatement } from "../balance/hongbao";
 import type { ApiBindings } from "../env";
@@ -10,7 +11,7 @@ import { claimPaymentParameterDigest } from "../payments/policy";
 import { assertUint64Decimal } from "../payments/real-protocol";
 import { timedDrawMoney } from "./draw-storage";
 import { databaseNow } from "./lifecycle";
-import { generateRandomAmounts, randomIntegerInclusive } from "./random-money";
+import { drawRandomness, RANDOM_VERSION } from "./random-proof";
 import { type ActivityRow, findActivity, type InventoryRow } from "./storage";
 
 type Winner = {
@@ -26,10 +27,15 @@ type Winner = {
   amountMinor: number;
 };
 export type DrawPlan = {
-  policy: "timed_draw_v1";
+  /** v2 (开奖证明): drawn from the proof's seed, `picked` as it was drawn. */
+  policy: "timed_draw_v1" | "timed_draw_v2";
   inventory: InventoryRow[];
   winners: Winner[];
+  picked?: number[];
 };
+// The draw steps live in @hb/contracts, shared with the browser's 开奖证明.
+export { drawAmounts, sampleOrdinals };
+
 type PlanRow = {
   participant_count: number;
   payload: string;
@@ -42,49 +48,6 @@ function hasControlCharacter(value: string) {
     if (code < 32 || code === 127) return true;
   }
   return false;
-}
-
-/** Floyd sampling is O(winner count), even when participation has no configured cap. */
-export function sampleOrdinals(population: number, count: number): number[] {
-  if (
-    !Number.isSafeInteger(population) ||
-    population < 0 ||
-    !Number.isInteger(count) ||
-    count < 0 ||
-    count > population ||
-    count > ACTIVITY_LIMITS.rewards
-  )
-    throw new Error("Invalid drawing population");
-  const selected = new Set<number>();
-  for (let value = population - count + 1; value <= population; value++) {
-    const candidate = Number(randomIntegerInclusive(1n, BigInt(value)));
-    selected.add(selected.has(candidate) ? value : candidate);
-  }
-  return [...selected];
-}
-
-export function drawAmounts(money: TimedDrawMoney, participantCount: number) {
-  const count = Math.min(participantCount, money.count);
-  if (count === 0) return { amounts: [], assignedPositions: [] };
-  const poolCount =
-    money.distributeFullPool && count < money.count ? count : money.count;
-  const amounts = generateRandomAmounts({
-    mode: "random",
-    algorithm: money.algorithm,
-    totalAmount: money.totalAmount,
-    count: poolCount,
-  });
-  const assignedPositions = sampleOrdinals(poolCount, count).map(
-    (ordinal) => ordinal - 1,
-  );
-  for (let index = assignedPositions.length - 1; index > 0; index--) {
-    const target = Number(randomIntegerInclusive(0n, BigInt(index)));
-    [assignedPositions[index], assignedPositions[target]] = [
-      assignedPositions[target] as number,
-      assignedPositions[index] as number,
-    ];
-  }
-  return { amounts, assignedPositions };
 }
 
 async function loadPlan(env: ApiBindings, activityId: string) {
@@ -119,7 +82,16 @@ export async function saveDrawPlan(env: ApiBindings, activityId: string) {
   const money = timedDrawMoney(activity);
   if (!money) throw new Error("Drawing activity has no timed configuration");
   const count = Math.min(activity.registeredCount, money.count);
-  const ordinals = sampleOrdinals(activity.registeredCount, count);
+  // v2 waits for the drand round right after closing, a few seconds at
+  // most; its seed decides it all, the same way anyone can redo.
+  const v2 = activity.randomVersion === RANDOM_VERSION;
+  const seed = v2 ? await drawRandomness(env, activityId) : null;
+  if (v2 && !seed) return null;
+  const drawn = seed
+    ? drawPlanV2({ seed, registered: activity.registeredCount, money })
+    : null;
+  const ordinals =
+    drawn?.picked ?? sampleOrdinals(activity.registeredCount, count);
   const entries =
     await env.DB.prepare(`SELECT id,user_id,password_id,ordinal,recipient_id FROM activity_registrations
     WHERE activity_id=? AND ordinal IN (SELECT CAST(value AS INTEGER) FROM json_each(?)) ORDER BY ordinal`)
@@ -133,10 +105,8 @@ export async function saveDrawPlan(env: ApiBindings, activityId: string) {
       }>();
   if (entries.results.length !== count)
     throw new Error("Drawing population is inconsistent");
-  const { amounts, assignedPositions } = drawAmounts(
-    money,
-    activity.registeredCount,
-  );
+  const { amounts, assignedPositions } =
+    drawn ?? drawAmounts(money, activity.registeredCount);
   const now = Date.now();
   const inventory: InventoryRow[] = amounts.map((amountMinor, position) => ({
     id: crypto.randomUUID(),
@@ -148,7 +118,8 @@ export async function saveDrawPlan(env: ApiBindings, activityId: string) {
     createdAt: now,
   }));
   const plan: DrawPlan = {
-    policy: "timed_draw_v1",
+    policy: drawn ? "timed_draw_v2" : "timed_draw_v1",
+    ...(drawn ? { picked: drawn.picked } : {}),
     inventory,
     winners: entries.results.map((entry, index) => {
       const reward = inventory[assignedPositions[index] ?? -1];
@@ -192,7 +163,10 @@ function validatePlan(
   const winnerCount = money ? Math.min(participantCount, money.count) : -1;
   if (
     !money ||
-    plan.policy !== "timed_draw_v1" ||
+    plan.policy !==
+      (activity.randomVersion === RANDOM_VERSION
+        ? "timed_draw_v2"
+        : "timed_draw_v1") ||
     plan.winners.length !== winnerCount ||
     participantCount !== activity.registeredCount
   )

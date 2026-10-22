@@ -173,6 +173,11 @@ export const activities = sqliteTable(
     drawClosedAt: integer("draw_closed_at"),
     drawReason: text("draw_reason", { enum: ["full", "deadline", "manual"] }),
     drawPublishedAt: integer("draw_published_at"),
+    /**
+     * 开奖证明 (docs/draw-proof-design.md): 2 when the random parts follow
+     * v2, set at opening; null for fixed money and anything opened before.
+     */
+    randomVersion: integer("random_version"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
     openedAt: integer("opened_at"),
@@ -459,6 +464,49 @@ export const activityDrawPlans = sqliteTable(
     check(
       "activity_draw_plans_count_valid",
       sql`typeof(${table.participantCount})='integer' AND ${table.participantCount}>=0 AND ${table.participantCount}<=9007199254740991`,
+    ),
+  ],
+);
+
+/**
+ * 开奖证明 v2: what a 限时开奖 was drawn from (a drand round after closing and
+ * the frozen roster), or a 拼手气's sealed secret. Written once, never deleted.
+ */
+export const activityRandomProofs = sqliteTable(
+  "activity_random_proofs",
+  {
+    activityId: text("activity_id")
+      .primaryKey()
+      .references(() => activities.id),
+    kind: text("kind", { enum: ["draw", "queue"] }).notNull(),
+    version: integer("version").notNull(),
+    round: integer("round"),
+    roundAt: integer("round_at"),
+    rosterHash: text("roster_hash"),
+    rosterCount: integer("roster_count"),
+    randomness: text("randomness"),
+    signature: text("signature"),
+    seed: text("seed"),
+    fetchedAt: integer("fetched_at"),
+    commitment: text("commitment"),
+    secretCiphertext: text("secret_ciphertext"),
+    secret: text("secret"),
+    revealedAt: integer("revealed_at"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    check(
+      "activity_random_proofs_shape",
+      sql`${table.version} = 2 AND ((${table.kind} = 'draw' AND typeof(${table.round}) = 'integer' AND ${table.round} > 0
+        AND typeof(${table.roundAt}) = 'integer' AND length(${table.rosterHash}) = 64
+        AND typeof(${table.rosterCount}) = 'integer' AND ${table.rosterCount} >= 0
+        AND ${table.commitment} IS NULL AND ${table.secretCiphertext} IS NULL AND ${table.secret} IS NULL AND ${table.revealedAt} IS NULL
+        AND ((${table.randomness} IS NULL AND ${table.signature} IS NULL AND ${table.seed} IS NULL AND ${table.fetchedAt} IS NULL)
+          OR (length(${table.randomness}) = 64 AND length(${table.signature}) = 96 AND length(${table.seed}) = 64 AND ${table.fetchedAt} IS NOT NULL)))
+      OR (${table.kind} = 'queue' AND length(${table.commitment}) = 64 AND ${table.secretCiphertext} IS NOT NULL
+        AND ${table.round} IS NULL AND ${table.roundAt} IS NULL AND ${table.rosterHash} IS NULL AND ${table.rosterCount} IS NULL
+        AND ${table.randomness} IS NULL AND ${table.signature} IS NULL AND ${table.seed} IS NULL AND ${table.fetchedAt} IS NULL
+        AND ((${table.secret} IS NULL AND ${table.revealedAt} IS NULL) OR (length(${table.secret}) = 64 AND ${table.revealedAt} IS NOT NULL))))`,
     ),
   ],
 );

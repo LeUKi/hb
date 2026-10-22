@@ -2,6 +2,7 @@ import type {
   ActivityParticipationResponse,
   ActivityPasswords,
   ClaimDetail,
+  DrawProof,
   ManagedActivity,
   PaymentView,
   PublicActivity,
@@ -124,6 +125,8 @@ export type PublicView = {
     /** 报名上限 reached: settling early rather than at the deadline. */
     full: boolean;
   } | null;
+  /** 开奖证明 (v2): a draw's drand round, or a queue's 封存值. */
+  drawProof: DrawProof | null;
   /** 结束说明: public once the 红包 has ended. */
   afterEndInfo?: string;
   /**
@@ -262,6 +265,7 @@ export function publicViewOf(
             (limit !== null && registered !== null && registered >= limit),
         }
       : null,
+    drawProof: activity.drawProof ?? null,
     afterEndInfo: endReason ? activity.afterEndInfo : undefined,
     rosterPreview: (activity.rosterPreview ?? []).map((person) => ({
       id: person.id,
