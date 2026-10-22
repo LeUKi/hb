@@ -623,6 +623,24 @@
     --sq-ring-2: rgb(229 69 60 / 0.06);
     --sq-ring-2-w: 2.5px;
   }
+  /* ToggleCards: a card picked is filled, not only ringed; its corner
+     circle, empty and grey-edged until then, fills red. */
+  .choice-toggle[aria-pressed="true"] {
+    background: color-mix(in srgb, var(--color-accent) 8%, white);
+  }
+  .choice-tick {
+    background: #fff;
+    box-shadow:
+      inset 0 0 0 1.5px rgb(42 21 25 / 0.24),
+      0 0 0 2px #fff;
+    transition:
+      background-color 150ms var(--ease-snappy),
+      box-shadow 150ms var(--ease-snappy);
+  }
+  .choice-tick[data-on] {
+    background: var(--color-accent);
+    box-shadow: 0 0 0 2px #fff;
+  }
   .choice[aria-pressed="true"] .choice-icon {
     color: var(--color-accent-ink);
   }

@@ -123,7 +123,8 @@ function ScopePeople({
         error={error}
       >
         <div className="flex gap-2">
-          <div className="min-w-0 flex-1">
+          {/* No width of its own: on a narrow window it gives way to 添加. */}
+          <div className="w-0 min-w-0 flex-1">
             <TextInput
               id="hb-scope-user"
               value={typed}

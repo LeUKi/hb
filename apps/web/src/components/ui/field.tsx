@@ -1,4 +1,4 @@
-import type { LucideIcon } from "lucide-react";
+import { Check, type LucideIcon } from "lucide-react";
 import {
   createContext,
   type InputHTMLAttributes,
@@ -376,7 +376,10 @@ export function ChoiceCards<T extends string>({
 
 /**
  * ChoiceCards where each card goes on and off by itself, any number of
- * them: small, side by side, a title over a word or two.
+ * them: small, side by side, a title over a word or two. Each has a
+ * circle on its corner, empty until picked, then a red tick (and the card
+ * turns pale red): it reads as a box to tick, not a button. Five to a row
+ * when they fit; on a narrow window three, so no word is squeezed.
  */
 export function ToggleCards<T extends string | number>({
   values,
@@ -392,50 +395,71 @@ export function ToggleCards<T extends string | number>({
   invalid?: boolean;
 }) {
   return (
-    <fieldset
-      aria-label={label}
-      aria-invalid={invalid || undefined}
-      className="grid min-w-0 gap-1.5"
-      style={{
-        gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))`,
-      }}
-    >
-      {options.map((option) => {
-        const on = values.includes(option.value);
-        return (
-          <Squircle key={option.value} radius={radius.choice}>
-            <button
-              type="button"
-              aria-pressed={on}
-              onClick={() =>
-                onChange(
-                  on
-                    ? values.filter((value) => value !== option.value)
-                    : options
-                        .map((each) => each.value)
-                        .filter(
-                          (value) =>
-                            value === option.value || values.includes(value),
-                        ),
-                )
-              }
-              className="choice grid content-start justify-items-center gap-0.5 px-1 py-2.5 text-center"
-            >
+    <div className="@container">
+      <fieldset
+        aria-label={label}
+        aria-invalid={invalid || undefined}
+        className="grid min-w-0 grid-cols-3 gap-1.5 @min-[18.5rem]:grid-cols-5"
+      >
+        {options.map((option) => {
+          const on = values.includes(option.value);
+          return (
+            <div key={option.value} className="relative min-w-0">
+              <Squircle radius={radius.choice}>
+                <button
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() =>
+                    onChange(
+                      on
+                        ? values.filter((value) => value !== option.value)
+                        : options
+                            .map((each) => each.value)
+                            .filter(
+                              (value) =>
+                                value === option.value ||
+                                values.includes(value),
+                            ),
+                    )
+                  }
+                  className="choice choice-toggle grid content-start justify-items-center gap-0.5 px-1 py-2.5 text-center"
+                >
+                  <span
+                    className={cn(
+                      "text-sm font-medium tabular-nums transition-colors",
+                      on ? "text-accent-ink" : "text-ink",
+                    )}
+                  >
+                    {option.title}
+                  </span>
+                  <span
+                    className={cn(
+                      "text-[0.6875rem] whitespace-nowrap transition-colors",
+                      on ? "text-accent-ink/75" : "text-ink-3",
+                    )}
+                  >
+                    {option.description}
+                  </span>
+                </button>
+              </Squircle>
+              {/* The circle sits outside the card's clip, over its corner. */}
               <span
-                className={cn(
-                  "text-sm font-medium tabular-nums transition-colors",
-                  on ? "text-accent-ink" : "text-ink",
-                )}
+                aria-hidden="true"
+                data-on={on || undefined}
+                className="choice-tick pointer-events-none absolute -top-1.5 -right-1.5 flex size-4 items-center justify-center rounded-full text-on-accent"
               >
-                {option.title}
+                <Check
+                  className={cn(
+                    "size-3 transition-[scale,opacity] duration-150",
+                    on ? "scale-100 opacity-100" : "scale-50 opacity-0",
+                  )}
+                  strokeWidth={3}
+                />
               </span>
-              <span className="text-[0.6875rem] whitespace-nowrap text-ink-3">
-                {option.description}
-              </span>
-            </button>
-          </Squircle>
-        );
-      })}
-    </fieldset>
+            </div>
+          );
+        })}
+      </fieldset>
+    </div>
   );
 }
