@@ -619,28 +619,38 @@ export type ProofRosterEntry = {
 /**
  * GET /api/activities/:id/proof: everything a v2 红包's random parts came
  * from, for the 🎲 page, the check in the browser and the verification
- * script (docs/draw-proof-design.md). Amounts are in 0.01 LDC.
+ * script (docs/draw-proof-design.md). Whatever is public at its stage is
+ * here; the rest is null until it comes. Amounts are in 0.01 LDC.
  */
 export type ActivityProofData =
   | {
       kind: "draw";
       version: 2;
+      /**
+       * registering: the roster is open; waiting: frozen, the round not
+       * fetched yet; drawing: drawn, payments being made; drawn: published.
+       */
+      stage: "registering" | "waiting" | "drawing" | "drawn";
       activity: {
         id: string;
         title: string;
         author: PublicUserProfile;
-        closedAt: string;
+        deadlineAt: string;
+        /** Null while the roster is open. */
+        closedAt: string | null;
         money: TimedDrawMoney;
       };
       drand: {
         chainHash: string;
+        /** While the roster is open, the round after the deadline. */
         round: number;
         roundAt: string;
         /** Null until the round is fetched. */
         randomness: string | null;
         signature: string | null;
       };
-      roster: { hash: string; entries: ProofRosterEntry[] };
+      /** The sign-ups so far; the hash once closed. */
+      roster: { hash: string | null; entries: ProofRosterEntry[] };
       seed: string | null;
       /**
        * Once drawn: the ordinals in the order they were picked, the prize
@@ -655,6 +665,7 @@ export type ActivityProofData =
   | {
       kind: "queue";
       version: 2;
+      stage: "running" | "ended";
       activity: {
         id: string;
         title: string;
@@ -664,18 +675,15 @@ export type ActivityProofData =
         money: Extract<LdcMoney, { mode: "random" | "custom" }>;
       };
       commitment: string;
-      /** Both null until the 红包 is over. */
+      /** Null until the 红包 is over. */
       secret: string | null;
-      queue:
-        | {
-            position: number;
-            amountMinor: number;
-            claim: { user: PublicUserProfile; claimedAt: string } | null;
-          }[]
-        | null;
+      /** The shares claimed so far, in order; once over, all of them. */
+      queue: {
+        position: number;
+        amountMinor: number;
+        claim: { user: PublicUserProfile; claimedAt: string } | null;
+      }[];
     }
-  /** A 限时开奖 not closed yet: its roster is still open. */
-  | { kind: "pending" }
   /** Opened before v2, or nothing random about it. */
   | { kind: "none" };
 

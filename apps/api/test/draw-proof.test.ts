@@ -17,7 +17,11 @@ import {
 } from "@hb/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { claimActivity } from "../src/activities/claim-service";
-import { refreshTimedDraw } from "../src/activities/draw-service";
+import {
+  publishDrawPlan,
+  refreshTimedDraw,
+  saveDrawPlan,
+} from "../src/activities/draw-service";
 import { drandTime, drawRetryAt } from "../src/activities/random-proof";
 import { registerForDraw } from "../src/activities/registration-service";
 import {
@@ -199,13 +203,14 @@ describe("拼手气 and 自定义 in random order: a queue sealed at opening", (
       kind: "queue",
       commitment,
     });
-    // Nothing of the queue before the end, nor on the author's own pages.
+    // Before the end only what was claimed, nor more on the author's pages.
     const before = await proofData(activity.id);
     expect(before).toMatchObject({
       kind: "queue",
+      stage: "running",
       commitment,
       secret: null,
-      queue: null,
+      queue: [],
     });
     expect(JSON.stringify(before)).not.toContain(secret);
     await expect(
@@ -224,8 +229,20 @@ describe("拼手气 and 自定义 in random order: a queue sealed at opening", (
     ).rejects.toThrow("immutable_queue");
 
     const claimed = [];
-    for (const userId of people.slice(0, 3))
+    for (const userId of people.slice(0, 2))
       claimed.push(await claimAs(activity.id, userId));
+    const running = await proofData(activity.id);
+    if (running.kind !== "queue") throw new Error("Missing queue proof");
+    expect(running.stage).toBe("running");
+    expect(running.secret).toBeNull();
+    expect(
+      running.queue.map((item) => [item.position, item.amountMinor]),
+    ).toEqual([
+      [0, queue[0]],
+      [1, queue[1]],
+    ]);
+    expect(JSON.stringify(running)).not.toContain(String(queue[2]));
+    claimed.push(await claimAs(activity.id, people[2] ?? ""));
     expect(
       claimed.map((result) =>
         "claim" in result ? result.claim.amount : undefined,
@@ -234,9 +251,10 @@ describe("拼手气 and 自定义 in random order: a queue sealed at opening", (
 
     const after = await proofData(activity.id);
     if (after.kind !== "queue") throw new Error("Missing queue proof");
+    expect(after.stage).toBe("ended");
     expect(after.secret).toBe(secret);
-    expect(after.queue?.map((item) => item.amountMinor)).toEqual(queue);
-    expect(after.queue?.map((item) => item.claim?.user.username)).toEqual([
+    expect(after.queue.map((item) => item.amountMinor)).toEqual(queue);
+    expect(after.queue.map((item) => item.claim?.user.username)).toEqual([
       "proof1",
       "proof2",
       "proof3",
@@ -279,7 +297,7 @@ describe("拼手气 and 自定义 in random order: a queue sealed at opening", (
     if (after.kind !== "queue") throw new Error("Missing queue proof");
     expect(after.secret).toBe(secret);
     expect(
-      after.queue?.map((item) => [item.amountMinor, item.claim !== null]),
+      after.queue.map((item) => [item.amountMinor, item.claim !== null]),
     ).toEqual(queue.map((amount, index) => [amount, index === 0]));
   });
 
@@ -354,7 +372,7 @@ describe("限时开奖: the drand round right after closing", () => {
     });
     const seed = drawSeed({
       activityId: activity.id,
-      rosterHash: data.roster.hash,
+      rosterHash: data.roster.hash ?? "",
       round,
       randomness: drand.randomness,
     });
@@ -377,6 +395,72 @@ describe("限时开奖: the drand round right after closing", () => {
       .bind(activity.id)
       .first();
     expect(policy).toEqual({ policy: "timed_draw_v2" });
+  });
+
+  it("shows what is public at each stage: the open roster, the frozen one, the plan, the result", async () => {
+    drandTime.now = () => Date.now();
+    const activity = await open(timed, {
+      forceDedicated: true,
+      joinSquare: true,
+    });
+    for (const userId of people.slice(0, 2))
+      await registerForDraw(bindings, activity.id, userId, {
+        submissionId: crypto.randomUUID(),
+        password: "proofkey1",
+      });
+    const deadline = (await findActivity(bindings, activity.id))?.deadline;
+    const registering = await proofData(activity.id);
+    if (registering.kind !== "draw" || !deadline) throw new Error("No draw");
+    expect(registering).toMatchObject({
+      stage: "registering",
+      activity: {
+        closedAt: null,
+        deadlineAt: new Date(deadline).toISOString(),
+      },
+      drand: {
+        round: drandRoundAfter(deadline),
+        randomness: null,
+        signature: null,
+      },
+      roster: { hash: null },
+      seed: null,
+      result: null,
+    });
+    expect(registering.roster.entries.map((entry) => entry.ordinal)).toEqual([
+      1, 2,
+    ]);
+
+    for (const userId of people.slice(2))
+      await registerForDraw(bindings, activity.id, userId, {
+        submissionId: crypto.randomUUID(),
+        password: "proofkey1",
+      });
+    await refreshTimedDraw(bindings, activity.id);
+    const waiting = await proofData(activity.id);
+    if (waiting.kind !== "draw") throw new Error("No draw");
+    expect(waiting.stage).toBe("waiting");
+    expect(waiting.roster.hash).toEqual(expect.any(String));
+    expect(waiting.result).toBeNull();
+
+    // Drawn, not yet published: the plan is public already.
+    drandTime.now = () => Date.parse(waiting.drand.roundAt) + 600;
+    await saveDrawPlan(bindings, activity.id);
+    const drawing = await proofData(activity.id);
+    if (drawing.kind !== "draw" || !drawing.seed) throw new Error("No seed");
+    expect(drawing.stage).toBe("drawing");
+    const plan = drawPlanV2({
+      seed: drawing.seed,
+      registered: 4,
+      money: timed,
+    });
+    expect(drawing.result).toEqual({
+      picked: plan.picked,
+      amounts: plan.amounts,
+      winners: plan.winners,
+    });
+    await publishDrawPlan(bindings, activity.id);
+    const drawn = await proofData(activity.id);
+    expect(drawn).toMatchObject({ stage: "drawn", result: drawing.result });
   });
 
   it("waits for its round without asking a node early, then retries the next node", async () => {

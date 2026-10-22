@@ -81,6 +81,10 @@ function shuffle(items, take) {
   return items;
 }
 
+if ((data.kind === "draw" && !data.result) || (data.kind === "queue" && !data.secret)) {
+  console.log("还没到能验证的时候：开奖或结束后，再从 🎲 页面下载数据。");
+  process.exit(1);
+}
 const { activity } = data;
 const money = activity.money;
 if (data.kind === "draw") {

@@ -1,6 +1,6 @@
 import { amountToMinor, DRAND_QUICKNET, formatAmount } from "@hb/contracts";
 import { useQuery } from "@tanstack/react-query";
-import { Copy, Download } from "lucide-react";
+import { ArrowLeft, Copy, Download } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import {
   claimedCount,
@@ -28,7 +28,15 @@ import {
   StepList,
   useProofCheck,
 } from "../hongbao/draw-proof";
-import { InfoList, Page, PageHeader, PageSection, Panel } from "../page/page";
+import { useOmniboxController } from "../omnibox/use-omnibox-controller";
+import {
+  Callout,
+  InfoList,
+  Page,
+  PageHeader,
+  PageSection,
+  Panel,
+} from "../page/page";
 import { PageLoad, queryLoad } from "../page/page-state";
 import { usePageTitle } from "../shell/use-page-title";
 import { Button } from "../ui/button";
@@ -56,6 +64,49 @@ function download(name: string, text: string, type: string) {
   link.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
+
+/** 回到红包, and 刷新 while a step is still to come; then where it stands. */
+function DataHeader({
+  id,
+  eyebrow,
+  title,
+  description,
+  next,
+}: {
+  id: string;
+  eyebrow: string;
+  title: string;
+  description: string;
+  /** Not over yet: what it is at, and what comes. */
+  next: string | null;
+}) {
+  const { leaveTo } = useOmniboxController();
+  return (
+    <>
+      <PageHeader
+        eyebrow={eyebrow}
+        title={title}
+        description={description}
+        actions={
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void leaveTo({ to: "activity", id })}
+          >
+            <ArrowLeft />
+            回到红包
+          </Button>
+        }
+        refreshable={next !== null}
+      />
+      <Reveal show={next !== null}>
+        <Callout>{next}</Callout>
+      </Reveal>
+    </>
+  );
+}
+
+const muted = (text: string) => <span className="text-ink-3">{text}</span>;
 
 /** A whole hex value, wrapped, with its copy button. */
 function FullHex({ value }: { value: string }) {
@@ -225,22 +276,37 @@ function VerifySection({
 
 function DrawPage({ data }: { data: DrawData }) {
   const [all, setAll] = useState(false);
-  const { activity, drand, roster, result } = data;
+  const { activity, drand, roster, result, stage } = data;
   const { money } = activity;
+  const open = stage === "registering";
   const registered = roster.entries.length;
   const winners = Math.min(registered, money.count);
   const entries = all ? roster.entries : roster.entries.slice(0, 10);
   const people = new Map(
     roster.entries.map((entry) => [entry.ordinal, entry.user.displayName]),
   );
-  const waiting = <span className="text-ink-3">正在等待随机数</span>;
+  const notYet = muted(open ? "开奖时公开" : "正在等待随机数");
   usePageTitle(`开奖数据 · ${activity.title}`);
   return (
     <Page>
-      <PageHeader
+      <DataHeader
+        id={activity.id}
         eyebrow="🎲 开奖数据"
         title={activity.title}
-        description={`${activity.author.displayName}的红包 · ${clockSeconds(Date.parse(activity.closedAt))} 截止 · 报名 ${registered} 人 · 抽 ${winners} 人 · 奖池 ${money.totalAmount} LDC`}
+        description={
+          open
+            ? `${activity.author.displayName}的红包 · ${clockSeconds(Date.parse(activity.deadlineAt))} 截止 · 已报名 ${registered} 人 · 抽 ${money.count} 人 · 奖池 ${money.totalAmount} LDC`
+            : `${activity.author.displayName}的红包 · ${clockSeconds(Date.parse(activity.closedAt ?? activity.deadlineAt))} 截止 · 报名 ${registered} 人 · 抽 ${winners} 人 · 奖池 ${money.totalAmount} LDC`
+        }
+        next={
+          stage === "registering"
+            ? "还在报名。截止时冻结报名名单，再用截止后的下一轮 drand 随机数开奖。"
+            : stage === "waiting"
+              ? `名单已冻结，正在等 ${roundText(drand.round)}随机数。`
+              : stage === "drawing"
+                ? "已取到随机数，中奖名单已经算出，正在创建付款。"
+                : null
+        }
       />
       <PageSection
         title="随机数"
@@ -251,14 +317,16 @@ function DrawPage({ data }: { data: DrawData }) {
             {
               label: "轮次",
               value: roundText(drand.round),
-              note: `${clockSeconds(Date.parse(drand.roundAt))} 产生；截止后的下一轮`,
+              note: open
+                ? `按现在的截止时间算，约 ${clockSeconds(Date.parse(drand.roundAt))} 产生；提前截止就换成那时之后的一轮`
+                : `${clockSeconds(Date.parse(drand.roundAt))} 产生；截止后的下一轮`,
             },
             {
               label: "随机值",
               value: drand.randomness ? (
                 <FullHex value={drand.randomness} />
               ) : (
-                waiting
+                notYet
               ),
               action: drand.randomness && (
                 <CopyButton value={drand.randomness} label="随机值" />
@@ -269,7 +337,7 @@ function DrawPage({ data }: { data: DrawData }) {
               value: drand.signature ? (
                 <FullHex value={drand.signature} />
               ) : (
-                waiting
+                notYet
               ),
               action: drand.signature && (
                 <CopyButton value={drand.signature} label="签名" />
@@ -282,42 +350,59 @@ function DrawPage({ data }: { data: DrawData }) {
                 <CopyButton value={DRAND_QUICKNET.chainHash} label="链" />
               ),
             },
-            {
-              label: "查看原始数据",
-              value: (
-                <span className="flex flex-wrap gap-x-4 text-sm">
-                  {DRAND_NODES.map((node, index) => (
-                    <a
-                      key={node}
-                      href={drandRoundUrl(drand.round, node)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-accent hover:underline"
-                    >
-                      {index === 0 ? "Cloudflare 节点 ↗" : "drand 官方节点 ↗"}
-                    </a>
-                  ))}
-                </span>
-              ),
-            },
+            // Not before the round is out: a node keeps an early 404 a while.
+            ...(drand.randomness
+              ? [
+                  {
+                    label: "查看原始数据",
+                    value: (
+                      <span className="flex flex-wrap gap-x-4 text-sm">
+                        {DRAND_NODES.map((node, index) => (
+                          <a
+                            key={node}
+                            href={drandRoundUrl(drand.round, node)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-accent hover:underline"
+                          >
+                            {index === 0
+                              ? "Cloudflare 节点 ↗"
+                              : "drand 官方节点 ↗"}
+                          </a>
+                        ))}
+                      </span>
+                    ),
+                  },
+                ]
+              : []),
           ]}
         />
       </PageSection>
       <PageSection
         title="报名名单"
-        description="截止时冻结，按报名先后排好。名单哈希在截止时就推送出去。"
+        description={
+          open
+            ? "按报名先后排好。截止时冻结，算出名单哈希。"
+            : "截止时冻结，按报名先后排好。名单哈希在截止时就推送出去。"
+        }
       >
         <div className="grid gap-3">
           <InfoList
             items={[
               {
                 label: "名单哈希",
-                value: <FullHex value={roster.hash} />,
-                action: <CopyButton value={roster.hash} label="名单哈希" />,
+                value: roster.hash ? (
+                  <FullHex value={roster.hash} />
+                ) : (
+                  muted("截止时算出")
+                ),
+                action: roster.hash && (
+                  <CopyButton value={roster.hash} label="名单哈希" />
+                ),
               },
             ]}
           />
-          {registered > 0 && (
+          {registered > 0 ? (
             <Table
               head={["#", "报名的人", "报名编号", "报名时间"]}
               widths="2.25rem minmax(0,1fr) 6.5rem 5.5rem"
@@ -334,32 +419,36 @@ function DrawPage({ data }: { data: DrawData }) {
                 clockSeconds(Date.parse(entry.registeredAt)),
               ])}
             />
+          ) : (
+            <Panel className="p-5 text-sm text-ink-3">还没有人报名。</Panel>
           )}
-          <div className="flex flex-wrap gap-2">
-            {registered > 10 && (
-              <Button size="sm" onClick={() => setAll((value) => !value)}>
-                {all ? "只看前 10 个" : `展开全部 ${registered} 人`}
+          {registered > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {registered > 10 && (
+                <Button size="sm" onClick={() => setAll((value) => !value)}>
+                  {all ? "只看前 10 个" : `展开全部 ${registered} 人`}
+                </Button>
+              )}
+              <Button
+                size="sm"
+                onClick={() =>
+                  download(
+                    "报名名单.csv",
+                    `\uFEFF序号,报名编号,用户名,报名时间\n${roster.entries
+                      .map(
+                        (entry) =>
+                          `${entry.ordinal},${entry.registrationId},${entry.user.username},${entry.registeredAt}`,
+                      )
+                      .join("\n")}\n`,
+                    "text/csv",
+                  )
+                }
+              >
+                <Download />
+                下载名单
               </Button>
-            )}
-            <Button
-              size="sm"
-              onClick={() =>
-                download(
-                  "报名名单.csv",
-                  `﻿序号,报名编号,用户名,报名时间\n${roster.entries
-                    .map(
-                      (entry) =>
-                        `${entry.ordinal},${entry.registrationId},${entry.user.username},${entry.registeredAt}`,
-                    )
-                    .join("\n")}\n`,
-                  "text/csv",
-                )
-              }
-            >
-              <Download />
-              下载名单
-            </Button>
-          </div>
+            </div>
+          )}
         </div>
       </PageSection>
       <PageSection
@@ -386,49 +475,58 @@ function DrawPage({ data }: { data: DrawData }) {
                 "取整：取够位数的字节，按大端读成整数，超出范围就丢掉重取，不偏向任何结果",
             },
             {
-              title: `抽中奖者：Floyd 抽样，从 1…${registered} 里抽 ${winners} 个序号`,
+              title: open
+                ? `抽中奖者：Floyd 抽样，从 1…报名人数里抽 ${money.count} 个序号，报名不到 ${money.count} 人就全部中奖`
+                : `抽中奖者：Floyd 抽样，从 1…${registered} 里抽 ${winners} 个序号`,
             },
             {
               title: `生成金额：${ruleOf(money.algorithm)}，${
-                money.distributeFullPool ? winners : money.count
-              } 份，合计 ${money.totalAmount}`,
+                !money.distributeFullPool
+                  ? `${money.count} 份`
+                  : open
+                    ? "份数等于中奖人数"
+                    : `${winners} 份`
+              }，合计 ${money.totalAmount}`,
             },
             { title: "分配：从金额里抽位置再洗牌，按序号从小到大对到中奖者" },
           ]}
         />
       </PageSection>
       <PageSection title="中间结果">
-        {result ? (
+        {data.seed ? (
           <div className="grid gap-3">
             <InfoList
               items={[
                 {
                   label: "种子",
-                  value: data.seed && <FullHex value={data.seed} />,
-                  action: data.seed && (
-                    <CopyButton value={data.seed} label="种子" />
-                  ),
+                  value: <FullHex value={data.seed} />,
+                  action: <CopyButton value={data.seed} label="种子" />,
                 },
-                {
-                  label: "抽到的序号",
-                  value: (
-                    <span className="tabular-nums">
-                      {result.picked.join("、") || "无"}
-                    </span>
-                  ),
-                  note: "按抽取的先后",
-                },
-                {
-                  label: "生成的金额",
-                  value: (
-                    <span className="tabular-nums">
-                      {result.amounts.map(formatAmount).join("、") || "无"}
-                    </span>
-                  ),
-                },
+                ...(result
+                  ? [
+                      {
+                        label: "抽到的序号",
+                        value: (
+                          <span className="tabular-nums">
+                            {result.picked.join("、") || "无"}
+                          </span>
+                        ),
+                        note: "按抽取的先后",
+                      },
+                      {
+                        label: "生成的金额",
+                        value: (
+                          <span className="tabular-nums">
+                            {result.amounts.map(formatAmount).join("、") ||
+                              "无"}
+                          </span>
+                        ),
+                      },
+                    ]
+                  : []),
               ]}
             />
-            {result.winners.length > 0 && (
+            {result && result.winners.length > 0 && (
               <Table
                 head={["#", "中奖的人", "LDC"]}
                 widths="2.25rem minmax(0,1fr) 4.5rem"
@@ -483,10 +581,16 @@ function QueuePage({ data }: { data: QueueData }) {
   usePageTitle(`发放数据 · ${activity.title}`);
   return (
     <Page>
-      <PageHeader
+      <DataHeader
+        id={activity.id}
         eyebrow="🎲 发放数据"
         title={activity.title}
         description={`${activity.author.displayName}的红包 · ${clockSeconds(Date.parse(activity.openedAt))} 开放 · ${split} · ${count} 份 · 总额 ${total} LDC`}
+        next={
+          data.stage === "running"
+            ? "还在发放。结束后公开种子和没领的份额，就能核对整个队列。"
+            : null
+        }
       />
       <PageSection
         title="封存"
@@ -509,7 +613,7 @@ function QueuePage({ data }: { data: QueueData }) {
                 }
               : {
                   label: "种子",
-                  value: <span className="text-ink-3">结束后公开</span>,
+                  value: muted("结束后公开"),
                 },
           ]}
         />
@@ -545,25 +649,41 @@ function QueuePage({ data }: { data: QueueData }) {
           ]}
         />
       </PageSection>
-      <PageSection title="队列和领取">
-        {data.queue ? (
-          <Table
-            head={["位置", "LDC", "领到的人", "领取时间"]}
-            widths="2.75rem 4.5rem minmax(0,1fr) 5.5rem"
-            rows={data.queue.map((item) => [
-              item.position + 1,
-              formatAmount(item.amountMinor),
-              item.claim?.user.displayName ?? (
-                <span key="none" className="text-ink-3">
-                  没人领
-                </span>
-              ),
-              item.claim ? clockSeconds(Date.parse(item.claim.claimedAt)) : "",
-            ])}
-          />
-        ) : (
-          <Panel className="p-5 text-sm text-ink-3">结束后公开整个队列。</Panel>
-        )}
+      <PageSection
+        title="队列和领取"
+        description={
+          data.stage === "running"
+            ? "领走的份额随时公开，名单里本来就有；没领的结束后公开。"
+            : undefined
+        }
+      >
+        <div className="grid gap-3">
+          {data.queue.length > 0 ? (
+            <Table
+              head={["位置", "LDC", "领到的人", "领取时间"]}
+              widths="2.75rem 4.5rem minmax(0,1fr) 5.5rem"
+              rows={data.queue.map((item) => [
+                item.position + 1,
+                formatAmount(item.amountMinor),
+                item.claim?.user.displayName ?? (
+                  <span key="none" className="text-ink-3">
+                    没人领
+                  </span>
+                ),
+                item.claim
+                  ? clockSeconds(Date.parse(item.claim.claimedAt))
+                  : "",
+              ])}
+            />
+          ) : (
+            <Panel className="p-5 text-sm text-ink-3">还没有人领取。</Panel>
+          )}
+          {data.stage === "running" && data.queue.length < count && (
+            <p className="px-1 text-sm text-ink-3">
+              还有 {count - data.queue.length} 份，结束后公开。
+            </p>
+          )}
+        </div>
       </PageSection>
       {data.secret && (
         <VerifySection
@@ -588,6 +708,7 @@ function QueuePage({ data }: { data: QueueData }) {
 
 /** 🎲 at /🧧/<编号>/🎲: open to anyone, signed in or not. */
 export function DrawDataView({ id }: { id: string }) {
+  const { leaveTo } = useOmniboxController();
   const query = useQuery({
     queryKey: proofKey(id),
     queryFn: ({ signal }) => readProofData(id, signal),
@@ -600,15 +721,16 @@ export function DrawDataView({ id }: { id: string }) {
         <DrawPage data={data} />
       ) : data?.kind === "queue" ? (
         <QueuePage data={data} />
-      ) : data?.kind === "pending" ? (
-        <MessageView
-          title="还没开奖"
-          text="截止后用 drand 公开随机数开奖，开奖数据到时在这里公开。"
-        />
       ) : data ? (
         <MessageView
           title="没有开奖数据"
           text="这个红包用的是旧算法，或者没有随机的部分。"
+          action={
+            <Button onClick={() => void leaveTo({ to: "activity", id })}>
+              <ArrowLeft />
+              回到红包
+            </Button>
+          }
         />
       ) : null}
     </PageLoad>

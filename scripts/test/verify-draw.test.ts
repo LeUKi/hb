@@ -119,6 +119,14 @@ describe("verify-draw.mjs", () => {
       expect(output).toContain("✗");
       expect(code).toBe(1);
     }
+    for (const early of [
+      { ...draw, stage: "waiting", seed: null, result: null },
+      { ...queue, stage: "running", secret: null },
+    ]) {
+      const { code, output } = run(early);
+      expect(output).toContain("还没到能验证的时候");
+      expect(code).toBe(1);
+    }
     const other = { ...draw.drand, randomness: "0".repeat(64) };
     expect(run(draw, other).output).toContain(
       "✗ drand 第 20000000 轮：官方节点给的一样",

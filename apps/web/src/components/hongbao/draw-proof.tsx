@@ -389,22 +389,20 @@ export function DrawProofDialog({
             />
           </div>
         </Reveal>
-        {done && (
-          <div>
-            <MoreLink
-              href={drawDataPath(activityId)}
-              onGo={() =>
-                void navigate({
-                  to: "/🧧/$code/🎲",
-                  params: { code: activityCode(activityId) },
-                })
-              }
-              className="-ml-2"
-            >
-              数据和算法
-            </MoreLink>
-          </div>
-        )}
+        <div>
+          <MoreLink
+            href={drawDataPath(activityId)}
+            onGo={() =>
+              void navigate({
+                to: "/🧧/$code/🎲",
+                params: { code: activityCode(activityId) },
+              })
+            }
+            className="-ml-2"
+          >
+            数据和算法
+          </MoreLink>
+        </div>
       </div>
     </ConfirmDialog>
   );

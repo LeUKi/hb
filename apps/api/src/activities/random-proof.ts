@@ -20,6 +20,7 @@ import { createDb } from "../db/client";
 import { activityRandomProofs } from "../db/schema";
 import type { ApiBindings } from "../env";
 import { decryptString, encryptString } from "../security/crypto";
+import type { DrawPlan } from "./draw-service";
 import { timedDrawMoney } from "./draw-storage";
 import { activityNotFound } from "./errors";
 import { databaseNow } from "./lifecycle";
@@ -325,6 +326,69 @@ const profile = (row: ProfileRow) => ({
   avatarUrl: row.avatar_url,
 });
 
+/**
+ * A draw's result, public as soon as its plan is saved: the ordinals as
+ * picked, the pool by position and each winner's prize; once published,
+ * what each winner was actually given.
+ */
+async function drawResult(
+  env: ApiBindings,
+  activityId: string,
+  published: boolean,
+): Promise<NonNullable<
+  Extract<ActivityProofData, { kind: "draw" }>["result"]
+> | null> {
+  const saved = await env.DB.prepare(
+    "SELECT payload FROM activity_draw_plans WHERE activity_id = ?",
+  )
+    .bind(activityId)
+    .first<{ payload: string }>();
+  if (!saved) return null;
+  const plan = JSON.parse(saved.payload) as DrawPlan;
+  const positions = new Map(
+    plan.inventory.map((item) => [item.id, item.position]),
+  );
+  const picked = plan.picked ?? [];
+  if (!published)
+    return {
+      picked,
+      amounts: plan.inventory.map((item) => item.amountMinor ?? 0),
+      winners: plan.winners
+        .map((winner) => ({
+          ordinal: winner.ordinal,
+          position: positions.get(winner.inventoryId) ?? -1,
+          amountMinor: winner.amountMinor,
+        }))
+        .sort((left, right) => left.ordinal - right.ordinal),
+    };
+  const [amounts, winners] = await env.DB.batch([
+    env.DB.prepare(
+      "SELECT amount_minor FROM reward_inventory WHERE activity_id = ? ORDER BY position",
+    ).bind(activityId),
+    env.DB.prepare(`SELECT r.ordinal, i.position, i.amount_minor FROM claims c
+      JOIN activity_registrations r ON r.activity_id = c.activity_id AND r.user_id = c.user_id
+      JOIN reward_inventory i ON i.activity_id = c.activity_id AND i.id = c.inventory_id
+      WHERE c.activity_id = ? ORDER BY r.ordinal`).bind(activityId),
+  ]);
+  return {
+    picked,
+    amounts: ((amounts?.results ?? []) as { amount_minor: number }[]).map(
+      (item) => item.amount_minor,
+    ),
+    winners: (
+      (winners?.results ?? []) as {
+        ordinal: number;
+        position: number;
+        amount_minor: number;
+      }[]
+    ).map((winner) => ({
+      ordinal: winner.ordinal,
+      position: winner.position,
+      amountMinor: winner.amount_minor,
+    })),
+  };
+}
+
 /** GET /api/activities/:id/proof: the same for everyone, signed in or not. */
 export async function activityProofData(
   env: ApiBindings,
@@ -342,14 +406,6 @@ export async function activityProofData(
   if (!author) activityNotFound();
   const money = (JSON.parse(row.config) as LdcActivityInput).money;
   if (money.mode === "timed_draw") {
-    if (
-      proof?.kind !== "draw" ||
-      proof.round === null ||
-      proof.roundAt === null ||
-      proof.rosterHash === null ||
-      row.drawClosedAt === null
-    )
-      return { kind: "pending" };
     const roster =
       await env.DB.prepare(`SELECT r.id, r.ordinal, r.registered_at, u.username, u.display_name, u.avatar_url
       FROM activity_registrations r JOIN users u ON u.id = r.user_id WHERE r.activity_id = ? ORDER BY r.ordinal`)
@@ -357,41 +413,43 @@ export async function activityProofData(
         .all<
           ProfileRow & { id: string; ordinal: number; registered_at: number }
         >();
+    const frozen = proof?.kind === "draw" ? proof : null;
     const drawn = row.drawState === "completed" || row.drawState === "empty";
-    const [plan, amounts, winners] = drawn
-      ? await env.DB.batch([
-          env.DB.prepare(
-            "SELECT json_extract(payload, '$.picked') AS picked FROM activity_draw_plans WHERE activity_id = ?",
-          ).bind(row.id),
-          env.DB.prepare(
-            "SELECT amount_minor FROM reward_inventory WHERE activity_id = ? ORDER BY position",
-          ).bind(row.id),
-          env.DB.prepare(`SELECT r.ordinal, i.position, i.amount_minor FROM claims c
-            JOIN activity_registrations r ON r.activity_id = c.activity_id AND r.user_id = c.user_id
-            JOIN reward_inventory i ON i.activity_id = c.activity_id AND i.id = c.inventory_id
-            WHERE c.activity_id = ? ORDER BY r.ordinal`).bind(row.id),
-        ])
-      : [];
-    const picked = plan?.results[0] as { picked: string | null } | undefined;
+    // While the roster is open, the round its deadline would take.
+    const round =
+      frozen?.round ?? drandRoundAfter(row.drawClosedAt ?? row.deadline ?? 0);
+    const result = frozen?.seed ? await drawResult(env, row.id, drawn) : null;
     return {
       kind: "draw",
       version: RANDOM_VERSION,
+      stage:
+        row.drawState === "waiting"
+          ? "registering"
+          : !frozen?.seed
+            ? "waiting"
+            : drawn
+              ? "drawn"
+              : "drawing",
       activity: {
         id: row.id,
         title: row.title,
         author: profile(author),
-        closedAt: new Date(row.drawClosedAt).toISOString(),
+        deadlineAt: new Date(row.deadline ?? 0).toISOString(),
+        closedAt:
+          row.drawClosedAt === null
+            ? null
+            : new Date(row.drawClosedAt).toISOString(),
         money,
       },
       drand: {
         chainHash: DRAND_QUICKNET.chainHash,
-        round: proof.round,
-        roundAt: new Date(proof.roundAt).toISOString(),
-        randomness: proof.randomness,
-        signature: proof.signature,
+        round,
+        roundAt: new Date(frozen?.roundAt ?? drandRoundAt(round)).toISOString(),
+        randomness: frozen?.randomness ?? null,
+        signature: frozen?.signature ?? null,
       },
       roster: {
-        hash: proof.rosterHash,
+        hash: frozen?.rosterHash ?? null,
         entries: roster.results.map((entry) => ({
           ordinal: entry.ordinal,
           registrationId: entry.id,
@@ -399,29 +457,8 @@ export async function activityProofData(
           user: profile(entry),
         })),
       },
-      seed: proof.seed,
-      result:
-        drawn && amounts && winners
-          ? {
-              picked: picked?.picked
-                ? (JSON.parse(picked.picked) as number[])
-                : [],
-              amounts: (amounts.results as { amount_minor: number }[]).map(
-                (item) => item.amount_minor,
-              ),
-              winners: (
-                winners.results as {
-                  ordinal: number;
-                  position: number;
-                  amount_minor: number;
-                }[]
-              ).map((winner) => ({
-                ordinal: winner.ordinal,
-                position: winner.position,
-                amountMinor: winner.amount_minor,
-              })),
-            }
-          : null,
+      seed: frozen?.seed ?? null,
+      result,
     };
   }
   if (
@@ -434,22 +471,24 @@ export async function activityProofData(
   const ended =
     row.endedAt ??
     (row.deadline !== null && row.deadline <= Date.now() ? row.deadline : null);
-  const queue = secret
-    ? await env.DB.prepare(`SELECT i.position, i.amount_minor, c.claimed_at, u.username, u.display_name, u.avatar_url
+  // The shares claimed so far are public already (the 名单 shows them);
+  // the rest only once it is over.
+  const queue =
+    await env.DB.prepare(`SELECT i.position, i.amount_minor, c.claimed_at, u.username, u.display_name, u.avatar_url
       FROM reward_inventory i LEFT JOIN claims c ON c.activity_id = i.activity_id AND c.inventory_id = i.id
-      LEFT JOIN users u ON u.id = c.user_id WHERE i.activity_id = ? ORDER BY i.position`)
-        .bind(row.id)
-        .all<
-          {
-            position: number;
-            amount_minor: number;
-            claimed_at: number | null;
-          } & (ProfileRow | { [key in keyof ProfileRow]: null })
-        >()
-    : null;
+      LEFT JOIN users u ON u.id = c.user_id WHERE i.activity_id = ? AND (? = 1 OR c.id IS NOT NULL) ORDER BY i.position`)
+      .bind(row.id, secret ? 1 : 0)
+      .all<
+        {
+          position: number;
+          amount_minor: number;
+          claimed_at: number | null;
+        } & (ProfileRow | { [key in keyof ProfileRow]: null })
+      >();
   return {
     kind: "queue",
     version: RANDOM_VERSION,
+    stage: secret ? "ended" : "running",
     activity: {
       id: row.id,
       title: row.title,
@@ -460,17 +499,16 @@ export async function activityProofData(
     },
     commitment: proof.commitment,
     secret,
-    queue:
-      queue?.results.map((item) => ({
-        position: item.position,
-        amountMinor: item.amount_minor,
-        claim:
-          item.claimed_at !== null && item.username !== null
-            ? {
-                user: profile(item as ProfileRow),
-                claimedAt: new Date(item.claimed_at).toISOString(),
-              }
-            : null,
-      })) ?? null,
+    queue: queue.results.map((item) => ({
+      position: item.position,
+      amountMinor: item.amount_minor,
+      claim:
+        item.claimed_at !== null && item.username !== null
+          ? {
+              user: profile(item as ProfileRow),
+              claimedAt: new Date(item.claimed_at).toISOString(),
+            }
+          : null,
+    })),
   };
 }

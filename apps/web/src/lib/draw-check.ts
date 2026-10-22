@@ -80,6 +80,7 @@ export async function nodesAgree(data: DrawData) {
 
 export function rosterMatches(data: DrawData) {
   return (
+    data.roster.hash !== null &&
     rosterHash(
       data.roster.entries.map((entry) => ({
         ordinal: entry.ordinal,
@@ -91,7 +92,7 @@ export function rosterMatches(data: DrawData) {
 
 function recomputedSeed(data: DrawData) {
   const { randomness, round } = data.drand;
-  return randomness === null
+  return randomness === null || data.roster.hash === null
     ? null
     : drawSeed({
         activityId: data.activity.id,
@@ -129,7 +130,7 @@ export function commitmentMatches(data: QueueData) {
 }
 
 export function queueMatches(data: QueueData) {
-  if (!data.secret || !data.queue) return false;
+  if (!data.secret) return false;
   return same(
     queueAmountsV2({
       seed: queueSeed(data.activity.id, data.secret),
@@ -140,14 +141,12 @@ export function queueMatches(data: QueueData) {
 }
 
 export const claimedCount = (data: QueueData) =>
-  data.queue?.filter((item) => item.claim).length ?? 0;
+  data.queue.filter((item) => item.claim).length;
 
 /** Handed out in order: the first k shares went to the k who claimed. */
 export function claimedInOrder(data: QueueData) {
   const taken = claimedCount(data);
-  return (
-    data.queue?.every(
-      (item, index) => (item.claim !== null) === index < taken,
-    ) ?? false
+  return data.queue.every(
+    (item, index) => (item.claim !== null) === index < taken,
   );
 }

@@ -6,7 +6,7 @@ import {
 } from "@hb/contracts";
 import { expect, type Page, test } from "@playwright/test";
 import vectors from "../packages/contracts/test/fixtures/draw-proof-v2.json";
-import { mockSession, openApp, viewer } from "./support/app";
+import { expectPath, mockSession, openApp, viewer } from "./support/app";
 
 // 开奖证明 (docs/draw-proof-design.md): the browser redoes a v2 红包's
 // random parts from its public data and two drand nodes. The data here is
@@ -27,10 +27,12 @@ const iso = (ms: number) => new Date(ms).toISOString();
 const drawData: ActivityProofData = {
   kind: "draw",
   version: 2,
+  stage: "drawn",
   activity: {
     id: vector.activityId,
     title: "周五抽奖",
     author,
+    deadlineAt: iso(now - 600_000),
     closedAt: iso(now - 600_000),
     money: vector.money as Extract<
       ActivityProofData,
@@ -62,6 +64,7 @@ const claimedShares = 4;
 const queueData: ActivityProofData = {
   kind: "queue",
   version: 2,
+  stage: "ended",
   activity: {
     id: queueVector.activityId,
     title: "周末拼手气",
@@ -87,7 +90,7 @@ const queueData: ActivityProofData = {
 
 function activityOf(data: ActivityProofData, done: boolean) {
   if (data.kind === "draw") {
-    const deadline = Date.parse(data.activity.closedAt);
+    const deadline = Date.parse(data.activity.deadlineAt);
     return {
       id: data.activity.id,
       title: data.activity.title,
@@ -175,9 +178,14 @@ async function mock(
 ) {
   const id = data.kind === "draw" ? data.activity.id : queueVector?.activityId;
   const proof =
-    done || data.kind === "draw"
+    done || data.kind !== "queue"
       ? data
-      : { ...data, secret: null, queue: null };
+      : {
+          ...data,
+          stage: "running" as const,
+          secret: null,
+          queue: data.queue.filter((item) => item.claim),
+        };
   const drandRequests: string[] = [];
   await page.route(/\/(drand\.cloudflare\.com|api\.drand\.sh)\//, (route) => {
     drandRequests.push(new URL(route.request().url()).host);
@@ -330,6 +338,67 @@ test.describe("开奖证明", () => {
     expect(JSON.parse(readFileSync(await file.path(), "utf8"))).toEqual(
       drawData,
     );
+  });
+
+  test("🎲：报名中就公开已报名的人和要用的那一轮，刷新后看到开奖", async ({
+    page,
+  }) => {
+    if (drawData.kind !== "draw") throw new Error();
+    const registering: ActivityProofData = {
+      ...drawData,
+      stage: "registering",
+      activity: { ...drawData.activity, closedAt: null },
+      drand: { ...drawData.drand, randomness: null, signature: null },
+      roster: { hash: null, entries: drawData.roster.entries.slice(0, 3) },
+      seed: null,
+      result: null,
+    };
+    const { path } = await mock(page, registering);
+    await mockSession(page, viewer);
+    await openApp(page, `${path}/🎲`);
+    await expect(
+      page.getByText(
+        "还在报名。截止时冻结报名名单，再用截止后的下一轮 drand 随机数开奖。",
+      ),
+    ).toBeVisible();
+    await expect(page.getByText("截止时算出")).toBeVisible();
+    await expect(page.getByText("报名者3")).toBeVisible();
+    await expect(page.getByText("报名者4")).toHaveCount(0);
+    await expect(
+      page.getByRole("link", { name: /Cloudflare 节点/ }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "在浏览器里验证" }),
+    ).toHaveCount(0);
+
+    // Drawn meanwhile.
+    await page.route(
+      `**/api/activities/${drawData.activity.id}/proof`,
+      (route) => route.fulfill({ json: drawData }),
+    );
+    await page.getByRole("button", { name: "刷新" }).click();
+    await expect(page.getByText(vector.seed)).toBeVisible();
+    await expect(page.getByText("还在报名。", { exact: false })).toBeHidden();
+    await expect(page.getByRole("button", { name: "刷新" })).toHaveCount(0);
+    await page.getByRole("button", { name: "在浏览器里验证" }).click();
+    await expect(page.getByText("完全一致")).toBeVisible({ timeout: 8000 });
+
+    await page.getByRole("button", { name: "回到红包" }).click();
+    await expectPath(page, path);
+  });
+
+  test("🎲：拼手气发放中就公开领走的份额", async ({ page }) => {
+    const { path } = await mock(page, queueData, { done: false });
+    await mockSession(page, viewer);
+    await openApp(page, `${path}/🎲`);
+    await expect(
+      page.getByText(
+        "还在发放。结束后公开种子和没领的份额，就能核对整个队列。",
+      ),
+    ).toBeVisible();
+    await expect(page.getByText("报名者4")).toBeVisible();
+    await expect(page.getByText("还有 2 份，结束后公开。")).toBeVisible();
+    await expect(page.getByText("没人领")).toHaveCount(0);
   });
 
   test("🎲：旧算法的红包没有开奖数据", async ({ page }) => {
