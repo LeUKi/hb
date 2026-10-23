@@ -52,6 +52,25 @@ function Steps({ filled }: { filled: number }) {
 }
 
 /**
+ * A value, its unit (LDC) set smaller after the figure so a big pool fits
+ * its cell; a figure of five digits or more before the point a step smaller
+ * still.
+ */
+function Amount({ value }: { value: string }) {
+  const unit = / LDC$/.exec(value);
+  if (!unit) return <RollingText text={value} />;
+  const figure = value.slice(0, unit.index);
+  const digits = figure.split(".")[0]?.length ?? 0;
+  return (
+    <span className={cn(digits >= 5 && "hb-data-value-long")}>
+      <RollingText text={figure} />
+      {/* The space inside: read and found as “1000.00 LDC”. */}
+      <span className="hb-data-unit"> LDC</span>
+    </span>
+  );
+}
+
+/**
  * A cell from coverCells(). Big: label, value, and a third row (a note, the
  * bar or the four steps). Small: label and value on one line, the third row
  * shrunk away. Label and value are the same elements in both, so they move
@@ -88,7 +107,7 @@ function DataCell({
         {cell.until !== undefined ? (
           <Countdown to={cell.until} />
         ) : (
-          <RollingText text={cell.value} />
+          <Amount value={cell.value} />
         )}
       </motion.dd>
       <AnimatePresence mode="popLayout" initial={false}>
@@ -208,7 +227,7 @@ export function CoverData({
         className={cn(
           small
             ? "flex w-full flex-wrap items-baseline justify-center gap-x-5 gap-y-0.5 @wide/window:w-auto"
-            : "grid w-full max-w-[34rem] grid-cols-3 gap-x-4 px-4 @wide/window:gap-x-8 @wide/window:px-0",
+            : "grid w-full max-w-[34rem] grid-cols-[repeat(3,minmax(0,auto))] justify-between gap-x-4 px-4 @wide/window:gap-x-8 @wide/window:px-0",
         )}
       >
         {coverCells(activity, view).map((cell) => (

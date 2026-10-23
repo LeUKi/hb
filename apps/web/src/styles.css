@@ -1446,6 +1446,17 @@
       font-size: clamp(1rem, calc(7.27cqw - 0.4545rem), 1.25rem);
     }
   }
+  /* A value's unit (LDC): smaller and lighter after the figure. */
+  .hb-data-unit {
+    font-size: 0.62em;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--color-cream-2);
+  }
+  /* Five digits or more before the point: a step smaller, still whole. */
+  .hb-data-value-long {
+    font-size: 0.86em;
+  }
   /* The small cover: everything a size or two down, on one line. */
   [data-cover="small"] .hb-data-label {
     font-size: 0.75rem;
