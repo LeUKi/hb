@@ -37,8 +37,38 @@ export const adminPaymentStatusSchema = z.enum([
   "failed",
 ]);
 export type AdminPaymentStatus = z.infer<typeof adminPaymentStatusSchema>;
-export const adminUserStateSchema = z.enum(["all", "active", "disabled"]);
+export const adminUserStateSchema = z.enum([
+  "all",
+  "active",
+  "disabled",
+  "silenced",
+]);
 export type AdminUserState = z.infer<typeof adminUserStateSchema>;
+/** 用户's order: newest sign-up first (the default), or by what is read. */
+export const adminUserSortSchema = z.enum([
+  "created",
+  "login",
+  "idle",
+  "fish",
+  "level",
+]);
+export type AdminUserSort = z.infer<typeof adminUserSortSchema>;
+/** 有🐟额: something available (or owed) or held; 没有🐟额: the rest. */
+export const adminUserFishSchema = z.enum(["all", "has", "plus", "none"]);
+export type AdminUserFish = z.infer<typeof adminUserFishSchema>;
+/** Last seen within 7 or 30 days, or not for more than 30. */
+export const adminUserLoginSchema = z.enum(["all", "week", "month", "away"]);
+export type AdminUserLogin = z.infer<typeof adminUserLoginSchema>;
+/** A 等级 to filter by: 0–4, or never read. */
+export type AdminUserLevel = 0 | 1 | 2 | 3 | 4 | "unknown";
+export const ADMIN_USER_LEVELS: readonly AdminUserLevel[] = [
+  0,
+  1,
+  2,
+  3,
+  4,
+  "unknown",
+];
 export const adminDrawAnomalySchema = z.enum(["overdue", "unpublished"]);
 export const adminPaymentAnomalySchema = z.enum([
   "unknown",
@@ -128,6 +158,13 @@ export type AdminUserListItem = {
   admin: boolean;
   createdAt: number;
   lastLoginAt: number | null;
+  /** LINUX DO 信任等级 as read at a sign-in, and when; null until one did. */
+  trustLevel: number | null;
+  silenced: boolean;
+  profileSeenAt: number | null;
+  /** 🐟额: null without an account. */
+  fish: { availableMinor: number; lockedMinor: number } | null;
+  plus: boolean;
 };
 
 export type AdminUserDetail = AdminUserListItem & {
@@ -138,6 +175,8 @@ export type AdminUserDetail = AdminUserListItem & {
     merchants: number;
     paymentTasks: number;
   };
+  /** As /me adds them: 大家领到的 of this person's 红包, and what they got. */
+  amounts: { sent: string; received: string };
 };
 
 export type AdminUserSummary = AdminUserListItem & {
@@ -293,10 +332,31 @@ export const adminActivitiesQuerySchema = z.strictObject({
   status: adminActivityStatusSchema.optional(),
   drawException: z.enum(["0", "1"]).optional(),
 });
+/** The sort it was made for, its one or two keys, then the id. */
+const adminUserCursorSchema = z
+  .string()
+  .max(512)
+  .regex(
+    /^(created|login|idle|fish|level)(:-?\d{1,16}){1,2}:([A-Za-z0-9_-][A-Za-z0-9_-]{0,100}|[a-f0-9-]{36})$/i,
+  )
+  .optional();
 export const adminUsersQuerySchema = z.strictObject({
   q: z.string().trim().max(200).optional(),
-  cursor: adminCursorSchema,
+  cursor: adminUserCursorSchema,
   state: adminUserStateSchema.optional(),
+  sort: adminUserSortSchema.optional(),
+  /** Comma-separated, any of 0–4 and unknown: "2,3,unknown". */
+  level: z
+    .string()
+    .regex(/^([0-4]|unknown)(,([0-4]|unknown)){0,5}$/)
+    .transform((value) =>
+      ADMIN_USER_LEVELS.filter((level) =>
+        value.split(",").includes(String(level)),
+      ),
+    )
+    .optional(),
+  fish: adminUserFishSchema.optional(),
+  login: adminUserLoginSchema.optional(),
 });
 export const adminPaymentsQuerySchema = z.strictObject({
   q: z.string().trim().max(2048).optional(),

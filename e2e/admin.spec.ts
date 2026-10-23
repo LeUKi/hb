@@ -145,6 +145,11 @@ function user(
     admin: false,
     createdAt: Date.now() - 48 * hour,
     lastLoginAt: Date.now() - hour,
+    trustLevel: 2,
+    silenced: false,
+    profileSeenAt: Date.now() - hour,
+    fish: null,
+    plus: false,
     ...extra,
   };
 }
@@ -372,6 +377,7 @@ test.describe("网站管理", () => {
               account: { availableMinor: 0, lockedMinor: 0 },
               member: null,
               apiKeys: [],
+              invitedCount: 0,
               items: [],
               nextCursor: null,
             },
@@ -525,6 +531,7 @@ test.describe("网站管理", () => {
           merchants: 0,
           paymentTasks: 2,
         },
+        amounts: { sent: "0.00", received: "1.50" },
       } satisfies AdminUserDetail,
     }));
     const payments = await answer(page, "payments", () => list([payment()]));
@@ -550,6 +557,76 @@ test.describe("网站管理", () => {
       .poll(() => payments.map((query) => query.get("recipientUserId")))
       .toContain(recipientId);
     await expect(page.getByText("收款人：小满")).toBeVisible();
+  });
+
+  test("用户：筛选弹窗写进地址，生效的条件可以一个个删掉", async ({ page }) => {
+    await mockSession(page, admin);
+    const queries = await answer(page, "users", () =>
+      list([
+        user("admin-1", "站长", {
+          admin: true,
+          trustLevel: 3,
+          plus: true,
+          fish: { availableMinor: 12_345, lockedMinor: 0 },
+        }),
+        user(recipientId, "小满", { trustLevel: null, silenced: true }),
+      ]),
+    );
+    await openApp(page, "/admin/users");
+    // Each row: the level (or 等级未知), 🐟额 when there is some, 禁言.
+    await expect(shown(page, "Lv3 活跃用户")).toBeVisible();
+    await expect(shown(page, "123.45")).toBeVisible();
+    await expect(shown(page, "等级未知")).toBeVisible();
+    await expect(shown(page, "禁言")).toBeVisible();
+
+    await page.getByRole("button", { name: /^筛选/ }).click();
+    const dialog = page.getByRole("dialog", { name: "筛选用户" });
+    await dialog.getByRole("button", { name: "最近登录" }).click();
+    await dialog.getByRole("button", { name: /^Lv2/ }).click();
+    await dialog.getByRole("button", { name: /^未知/ }).click();
+    await dialog.getByRole("button", { name: "PLUS" }).click();
+    await dialog.getByRole("button", { name: "7 天内" }).click();
+    await dialog.getByRole("button", { name: "禁言" }).click();
+    // 禁言 in the address is the API's silenced; 等级 is lv2 there.
+    await expect
+      .poll(() => Object.fromEntries(queries.at(-1) ?? []))
+      .toEqual({
+        state: "silenced",
+        sort: "login",
+        level: "2,unknown",
+        fish: "plus",
+        login: "week",
+      });
+    await expect(page).toHaveURL(
+      /sort=login.*level=lv2(%2C|,)unknown.*fish=plus.*login=week.*status=silenced/,
+    );
+    await dialog.getByRole("button", { name: "完成" }).click();
+    await expect(dialog).toHaveCount(0);
+
+    await expect(page.getByRole("button", { name: "筛选 · 5" })).toBeVisible();
+    // The conditions in force, each with its own ×.
+    const tags = page
+      .getByRole("button", { name: "清除这个筛选" })
+      .locator("xpath=..");
+    await expect(tags).toHaveText([
+      "排序：最近登录",
+      "Lv2、未知",
+      "PLUS",
+      "7 天内登录",
+      "禁言",
+    ]);
+    // Taking one off leaves the others.
+    await tags.nth(1).getByRole("button", { name: "清除这个筛选" }).click();
+    await expect.poll(() => queries.at(-1)?.get("level")).toBeNull();
+    await expect(page).not.toHaveURL(/level=/);
+    await expect(page).toHaveURL(/sort=login/);
+    await expect(page.getByRole("button", { name: "筛选 · 4" })).toBeVisible();
+    await expect(tags).toHaveText([
+      "排序：最近登录",
+      "PLUS",
+      "7 天内登录",
+      "禁言",
+    ]);
   });
 
   test("付款详情：作者看到的说明、经过和带 HTTP 状态的处理记录", async ({

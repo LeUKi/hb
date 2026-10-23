@@ -437,13 +437,25 @@ export async function adminUserBalance(
   userId: string,
   cursor?: string,
 ) {
-  const [account, records, member, apiKeys] = await Promise.all([
+  const [account, records, member, apiKeys, invited] = await Promise.all([
     readAccount(env, userId),
     listRecords(env, userId, "all", cursor),
     memberOf(env, userId),
     listApiKeys(env, userId),
+    // 邀请开通: the people this one invited who accepted.
+    env.DB.prepare(
+      "SELECT COUNT(*) AS count FROM balance_members WHERE invited_by_user_id=?",
+    )
+      .bind(userId)
+      .first<{ count: number }>(),
   ]);
-  return { account, member, apiKeys, ...records };
+  return {
+    account,
+    member,
+    apiKeys,
+    invitedCount: invited?.count ?? 0,
+    ...records,
+  };
 }
 
 /**

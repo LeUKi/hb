@@ -10,6 +10,7 @@ import {
   type AdminPaymentListItem,
   type AdminUserDetail,
   type AdminUserListItem,
+  type AdminUserSort,
   type AttemptRateLimitChange,
   type AttemptRateLimits,
   type AttemptRateLimitsResponse,
@@ -23,7 +24,6 @@ import {
   adminPaymentStatusSchema,
   adminPaymentsQuerySchema,
   adminRewardTypeSchema,
-  adminUserStateSchema,
   adminUsersQuerySchema,
   decodeActivityEmoji,
   formatAmount,
@@ -42,6 +42,7 @@ import {
   activityListStatusCaseSql,
 } from "../activities/history-query";
 import { databaseNow } from "../activities/lifecycle";
+import { accountHistorySummary } from "../activities/registration-queries";
 import { ActivityValidationError } from "../activities/routes";
 import { activityStatus, projectActivitySummary } from "../activities/service";
 import type { ActivityRow } from "../activities/storage";
@@ -683,46 +684,134 @@ async function activityDetail(
   };
 }
 
+/** 最近登录, or the sign-up for someone never seen since. */
+const lastSeen = "COALESCE(u.last_login_at,u.created_at)";
+
+/**
+ * Each sort's keys, the first deciding: the cursor carries their values
+ * and the id. 🐟额 and 等级 tie often, so the latest seen comes first there.
+ */
+const userOrders: Record<
+  AdminUserSort,
+  { keys: string[]; ascending?: boolean }
+> = {
+  created: { keys: ["u.created_at"] },
+  login: { keys: [lastSeen] },
+  idle: { keys: [lastSeen], ascending: true },
+  fish: { keys: ["COALESCE(b.available_minor,0)", lastSeen] },
+  level: { keys: ["COALESCE(u.trust_level,-1)", lastSeen] },
+};
+
+const USER_COLUMNS = `u.id,u.provider,u.external_id,u.username,u.display_name,u.avatar_url,
+  u.active,u.created_at,u.last_login_at,u.trust_level,u.silenced,u.profile_seen_at,
+  b.available_minor,b.locked_minor,m.user_id IS NOT NULL AS plus`;
+const USER_JOINS = `FROM users u
+  LEFT JOIN balance_accounts b ON b.user_id=u.id
+  LEFT JOIN balance_members m ON m.user_id=u.id`;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+type UserCursor = { sort: AdminUserSort; keys: number[]; id: string };
+
+function parseUserCursor(
+  value: string | undefined,
+  sort: AdminUserSort,
+): UserCursor | null {
+  if (!value) return null;
+  const parts = value.split(":");
+  const keys = parts.slice(1, -1).map(Number);
+  // Made for another sort (or a key count it does not have): not this list's.
+  if (
+    parts[0] !== sort ||
+    keys.length !== userOrders[sort].keys.length ||
+    !keys.every(Number.isSafeInteger)
+  )
+    throw new ActivityError(400, "INVALID_CURSOR", "分页游标无效。");
+  return { sort, keys, id: parts.at(-1) ?? "" };
+}
+
+/** Rows after the cursor's, in the sort's order: (a, b, id) past (a, b, id). */
+function afterUser(columns: string[], ascending: boolean): string {
+  const [first, ...rest] = columns;
+  const past = `${first}${ascending ? ">" : "<"}?`;
+  return rest.length
+    ? `(${past} OR (${first}=? AND ${afterUser(rest, ascending)}))`
+    : past;
+}
+
 async function listUsers(
   env: ApiBindings,
-  query: Record<string, string | undefined>,
+  query: z.infer<typeof adminUsersQuerySchema>,
 ): Promise<AdminCursorList<AdminUserListItem>> {
-  const state = parseFilter(
-    adminUserStateSchema,
-    query.state ?? "all",
-    "state",
-  );
-  const cursor = parseCursor(query.cursor);
+  const sort = query.sort ?? "created";
+  const order = userOrders[sort];
+  const cursor = parseUserCursor(query.cursor, sort);
   const values: BindValue[] = [];
   const where: string[] = [];
   const q = (query.q ?? "").trim();
   if (q) {
     where.push(
-      "(id=? OR external_id=? OR username LIKE ? ESCAPE '\\' OR display_name LIKE ? ESCAPE '\\')",
+      "(u.id=? OR u.external_id=? OR u.username LIKE ? ESCAPE '\\' OR u.display_name LIKE ? ESCAPE '\\')",
     );
     values.push(q, q, like(q), like(q));
   }
-  if (state === "active") where.push("active=1");
-  if (state === "disabled") where.push("active=0");
+  if (query.state === "active") where.push("u.active=1");
+  if (query.state === "disabled") where.push("u.active=0");
+  if (query.state === "silenced") where.push("u.silenced=1");
+  const levels = query.level ?? [];
+  if (levels.length) {
+    const known = levels.filter((level) => level !== "unknown");
+    const either = [
+      ...(known.length
+        ? [`u.trust_level IN (${known.map(() => "?").join(",")})`]
+        : []),
+      ...(levels.includes("unknown") ? ["u.trust_level IS NULL"] : []),
+    ];
+    where.push(`(${either.join(" OR ")})`);
+    values.push(...known);
+  }
+  const holds =
+    "(COALESCE(b.available_minor,0)<>0 OR COALESCE(b.locked_minor,0)>0)";
+  if (query.fish === "has") where.push(holds);
+  if (query.fish === "none") where.push(`NOT ${holds}`);
+  if (query.fish === "plus") where.push("m.user_id IS NOT NULL");
+  if (query.login && query.login !== "all") {
+    const days = query.login === "week" ? 7 : 30;
+    where.push(`${lastSeen}${query.login === "away" ? "<" : ">="}?`);
+    values.push(Date.now() - days * DAY_MS);
+  }
   const count = cursor
     ? null
-    : env.DB.prepare(`SELECT COUNT(*) AS count FROM users
+    : env.DB.prepare(`SELECT COUNT(*) AS count ${USER_JOINS}
       ${where.length ? `WHERE ${where.join(" AND ")}` : ""}`).bind(...values);
-  appendCursor(where, values, cursor);
+  if (cursor) {
+    const columns = [...order.keys, "u.id"];
+    where.push(afterUser(columns, order.ascending ?? false));
+    for (const key of cursor.keys) values.push(key, key);
+    values.push(cursor.id);
+  }
+  const direction = order.ascending ? "ASC" : "DESC";
   const { rows, total } = await rowsWithTotal(
     env,
-    env.DB.prepare(`SELECT id,provider,external_id,username,display_name,avatar_url,
-    active,created_at,last_login_at FROM users
+    env.DB.prepare(`SELECT ${USER_COLUMNS},
+    ${order.keys.map((key, index) => `${key} AS k${index}`).join(",")}
+    ${USER_JOINS}
     ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-    ORDER BY created_at DESC,id DESC LIMIT ${adminPageSize + 1}`).bind(
-      ...values,
-    ),
+    ORDER BY ${[...order.keys, "u.id"].map((key) => `${key} ${direction}`).join(",")}
+    LIMIT ${adminPageSize + 1}`).bind(...values),
     count,
   );
   const items = rows.map((row) => userListItem(env, row));
+  const last = rows[adminPageSize - 1];
   return {
     items: page(items),
-    nextCursor: nextCursor(items),
+    nextCursor:
+      rows.length > adminPageSize && last
+        ? [
+            sort,
+            ...order.keys.map((_, index) => asInt(last[`k${index}`])),
+            String(last.id),
+          ].join(":")
+        : null,
     readAt: Date.now(),
     ...(total === undefined ? {} : { total }),
   };
@@ -746,6 +835,18 @@ function userListItem(
     ),
     createdAt: asInt(row.created_at),
     lastLoginAt: row.last_login_at === null ? null : asInt(row.last_login_at),
+    trustLevel: row.trust_level === null ? null : asInt(row.trust_level),
+    silenced: row.silenced === 1 || row.silenced === true,
+    profileSeenAt:
+      row.profile_seen_at === null ? null : asInt(row.profile_seen_at),
+    fish:
+      row.available_minor === null
+        ? null
+        : {
+            availableMinor: asInt(row.available_minor),
+            lockedMinor: asInt(row.locked_minor),
+          },
+    plus: row.plus === 1 || row.plus === true,
   };
 }
 
@@ -753,10 +854,12 @@ async function userDetail(
   env: ApiBindings,
   id: string,
 ): Promise<{ user: AdminUserDetail }> {
-  const [user, counts] = await env.DB.batch([
-    env.DB.prepare(`SELECT id,provider,external_id,username,display_name,avatar_url,
-      active,created_at,last_login_at FROM users WHERE id=?`).bind(id),
-    env.DB.prepare(`SELECT
+  const [[user, counts], amounts] = await Promise.all([
+    env.DB.batch([
+      env.DB.prepare(`SELECT ${USER_COLUMNS} ${USER_JOINS} WHERE u.id=?`).bind(
+        id,
+      ),
+      env.DB.prepare(`SELECT
       (SELECT COUNT(*) FROM activities WHERE author_id=? AND reward_type='ldc' AND deleted_at IS NULL) AS authoredActivities,
       (SELECT COUNT(*) FROM claims c JOIN activities a ON a.id=c.activity_id AND a.reward_type='ldc' AND a.deleted_at IS NULL WHERE c.user_id=?) AS claims,
       (SELECT COUNT(*) FROM activity_registrations r JOIN activities a ON a.id=r.activity_id AND a.reward_type='ldc' AND a.deleted_at IS NULL WHERE r.user_id=?) AS registrations,
@@ -765,6 +868,8 @@ async function userDetail(
         SELECT external_id FROM users WHERE id=? UNION ALL
         SELECT 'simulation:' || external_id FROM users WHERE id=?
       )) AS paymentTasks`).bind(id, id, id, id, id, id),
+    ]),
+    accountHistorySummary(env, id),
   ]);
   const row = user?.results[0] as Record<string, unknown> | undefined;
   if (!row)
@@ -780,6 +885,7 @@ async function userDetail(
         merchants: asInt(count?.merchants),
         paymentTasks: asInt(count?.paymentTasks),
       },
+      amounts: { sent: amounts.sentAmount, received: amounts.receivedAmount },
     },
   };
 }

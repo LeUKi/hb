@@ -7,6 +7,7 @@ import type {
   AdminPaymentDetail,
   AdminPaymentDetailResponse,
   AdminPaymentListItem,
+  AdminUserListItem,
 } from "@hb/contracts";
 import {
   ARCHIVE_DELAY_MS,
@@ -767,6 +768,188 @@ describe("administrator observation APIs", () => {
     expect(disabledIds).not.toContain(activeUser.id);
   });
 
+  it("sorts and filters users by 等级, 🐟额, login and state, paging every order without gaps", async () => {
+    const admin = await actor("admin-user-sort-admin");
+    const now = Date.now();
+    const day = 86_400_000;
+    // 45 people: levels 0–4 and unknown, logins in nine ties half a day off
+    // each boundary, every fourth with an account (0, 100 or 200 available,
+    // some held), every tenth PLUS, every seventh 禁言.
+    const people = Array.from({ length: 45 }, (_, index) => ({
+      id: crypto.randomUUID(),
+      externalId: linuxDoId(),
+      username: `sort-person-${String(index).padStart(2, "0")}`,
+      level: index % 6 === 5 ? null : index % 5,
+      login: now - ((index % 9) * 5 + 0.5) * day,
+      silenced: index % 7 === 0 ? 1 : 0,
+      account:
+        index % 4 === 0
+          ? { available: (index % 3) * 100, locked: index % 8 === 0 ? 50 : 0 }
+          : null,
+      plus: index % 10 === 0,
+    }));
+    await env.DB.batch([
+      ...people.map((person) =>
+        env.DB.prepare(`INSERT INTO users
+          (id,external_id,username,display_name,active,created_at,updated_at,last_login_at,trust_level,silenced,profile_seen_at)
+          VALUES (?,?,?,?,1,?,?,?,?,?,?)`).bind(
+          person.id,
+          person.externalId,
+          person.username,
+          person.username,
+          now - 100 * day,
+          now,
+          Math.round(person.login),
+          person.level,
+          person.silenced,
+          person.level === null ? null : Math.round(person.login),
+        ),
+      ),
+      ...people.flatMap((person) =>
+        person.account
+          ? [
+              env.DB.prepare(`INSERT INTO balance_accounts
+                (user_id,available_minor,locked_minor,updated_at) VALUES (?,?,?,?)`).bind(
+                person.id,
+                person.account.available,
+                person.account.locked,
+                now,
+              ),
+            ]
+          : [],
+      ),
+      ...people.flatMap((person) =>
+        person.plus
+          ? [
+              env.DB.prepare(`INSERT INTO balance_members
+                (user_id,invited_by_user_id,created_at) VALUES (?,?,?)`).bind(
+                person.id,
+                person.id === people[0]?.id ? null : people[0]?.id,
+                now,
+              ),
+            ]
+          : [],
+      ),
+    ]);
+    const seen = (person: (typeof people)[number]) => Math.round(person.login);
+    const fish = (person: (typeof people)[number]) =>
+      person.account?.available ?? 0;
+    const byKeys =
+      (...keys: ((person: (typeof people)[number]) => number)[]) =>
+      (a: (typeof people)[number], b: (typeof people)[number]) => {
+        for (const key of keys) if (key(a) !== key(b)) return key(b) - key(a);
+        return a.id < b.id ? 1 : -1;
+      };
+    const orders = {
+      created: [...people].sort(byKeys(() => 0)),
+      login: [...people].sort(byKeys(seen)),
+      idle: [...people].sort(byKeys(seen)).reverse(),
+      fish: [...people].sort(byKeys(fish, seen)),
+      level: [...people].sort(byKeys((person) => person.level ?? -1, seen)),
+    };
+    for (const [sort, expected] of Object.entries(orders)) {
+      const ids = await collectAdminListIds(
+        `/api/admin/users?q=sort-person&sort=${sort}`,
+        admin,
+      );
+      expect(ids, sort).toEqual(expected.map((person) => person.id));
+    }
+
+    // Every page of a filter, its count checked against them.
+    async function listed(filter: string) {
+      const path = `/api/admin/users?q=sort-person&${filter}`;
+      const response = await request(path, admin);
+      expect(response.status, filter).toBe(200);
+      const body = (await response.json()) as AdminCursorList<{ id: string }>;
+      const ids = await collectAdminListIds(path, admin);
+      expect(body.total, filter).toBe(ids.length);
+      return ids.sort();
+    }
+    const idsOf = (list: { id: string }[]) =>
+      list.map((item) => item.id).sort();
+    const holds = (person: (typeof people)[number]) =>
+      Boolean(
+        person.account &&
+          (person.account.available !== 0 || person.account.locked > 0),
+      );
+    const cases: [string, (person: (typeof people)[number]) => boolean][] = [
+      [
+        "level=2,unknown",
+        (person) => person.level === 2 || person.level === null,
+      ],
+      ["level=unknown", (person) => person.level === null],
+      ["level=0,4", (person) => person.level === 0 || person.level === 4],
+      ["fish=has", holds],
+      ["fish=none", (person) => !holds(person)],
+      ["fish=plus", (person) => person.plus],
+      ["login=week", (person) => now - person.login < 7 * day],
+      ["login=month", (person) => now - person.login < 30 * day],
+      ["login=away", (person) => now - person.login > 30 * day],
+      ["state=silenced", (person) => person.silenced === 1],
+      [
+        "level=3&fish=has&login=month",
+        (person) =>
+          person.level === 3 && holds(person) && now - person.login < 30 * day,
+      ],
+    ];
+    for (const [filter, keep] of cases)
+      expect(await listed(filter), filter).toEqual(idsOf(people.filter(keep)));
+
+    // What a row says: the level, 禁言, 🐟额 and PLUS.
+    const row = (await (
+      await request(`/api/admin/users?q=${people[0]?.id}`, admin)
+    ).json()) as AdminCursorList<AdminUserListItem>;
+    expect(row.items[0]).toMatchObject({
+      trustLevel: 0,
+      silenced: true,
+      fish: { availableMinor: 0, lockedMinor: 50 },
+      plus: true,
+    });
+
+    // A cursor belongs to its order.
+    const loginPage = (await (
+      await request("/api/admin/users?q=sort-person&sort=login", admin)
+    ).json()) as AdminCursorList<{ id: string }>;
+    expect(loginPage.nextCursor).toMatch(/^login:\d+:/);
+    expect(
+      (
+        await request(
+          withCursor(
+            "/api/admin/users?q=sort-person&sort=fish",
+            loginPage.nextCursor,
+          ),
+          admin,
+        )
+      ).status,
+    ).toBe(400);
+    for (const bad of [
+      "sort=vip",
+      "level=5",
+      "level=2,,3",
+      "fish=rich",
+      "login=day",
+    ])
+      expect(
+        (await request(`/api/admin/users?${bad}`, admin)).status,
+        bad,
+      ).toBe(400);
+
+    // The detail: amounts as /me adds them; 邀请开通 in the 🐟额 part.
+    const detail = await request(`/api/admin/users/${people[0]?.id}`, admin);
+    expect(await detail.json()).toMatchObject({
+      user: { amounts: { sent: "0.00", received: "0.00" } },
+    });
+    const balance = await request(
+      `/api/admin/balance/users/${people[0]?.id}`,
+      admin,
+    );
+    expect(await balance.json()).toMatchObject({
+      invitedCount: people.filter(
+        (person) => person.plus && person.id !== people[0]?.id,
+      ).length,
+    });
+  });
+
   it("rejects invalid admin query filters before running list queries", async () => {
     const { admin } = await seedAdminObservation();
     expect(
@@ -805,9 +988,13 @@ describe("administrator observation APIs", () => {
         "SELECT id FROM activities WHERE deleted_at IS NULL ORDER BY created_at DESC,id DESC LIMIT 21",
       ),
     ).resolves.toContain("activities_admin_created_idx");
+    // As the list reads it, with the 🐟额 joins.
     await expect(
-      plan("SELECT id FROM users ORDER BY created_at DESC,id DESC LIMIT 21"),
-    ).resolves.toContain("users_created_idx");
+      plan(`SELECT u.id FROM users u
+        LEFT JOIN balance_accounts b ON b.user_id=u.id
+        LEFT JOIN balance_members m ON m.user_id=u.id
+        ORDER BY u.created_at DESC,u.id DESC LIMIT 21`),
+    ).resolves.toMatch(/users_created_idx(?![\s\S]*TEMP B-TREE)/);
     await expect(
       plan(
         "SELECT id FROM payment_tasks WHERE mode='simulation' AND status='attention' ORDER BY created_at DESC,id DESC LIMIT 21",

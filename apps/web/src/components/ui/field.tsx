@@ -385,8 +385,8 @@ export function ChoiceCards<T extends string>({
  * ChoiceCards where each card goes on and off by itself, any number of
  * them: small, side by side, a title over a word or two. Each has a
  * circle on its corner, empty until picked, then a red tick (and the card
- * turns pale red): it reads as a box to tick, not a button. Five to a row
- * when they fit; on a narrow window three, so no word is squeezed.
+ * turns pale red): it reads as a box to tick, not a button. Five (or six)
+ * to a row when they fit; on a narrow window three, so no word is squeezed.
  */
 export function ToggleCards<T extends string | number>({
   values,
@@ -406,7 +406,12 @@ export function ToggleCards<T extends string | number>({
       <fieldset
         aria-label={label}
         aria-invalid={invalid || undefined}
-        className="grid min-w-0 grid-cols-3 gap-1.5 @min-[18.5rem]:grid-cols-5"
+        className={cn(
+          "grid min-w-0 grid-cols-3 gap-1.5",
+          options.length > 5
+            ? "@min-[24rem]:grid-cols-6"
+            : "@min-[18.5rem]:grid-cols-5",
+        )}
       >
         {options.map((option) => {
           const on = values.includes(option.value);

@@ -218,6 +218,11 @@ export type AdminSearch = {
   author?: string;
   activity?: string;
   recipient?: string;
+  /** /admin/users: the order, and 等级 ("lv2,lv3,unknown"), 🐟额 and login. */
+  sort?: string;
+  level?: string;
+  fish?: string;
+  login?: string;
 };
 const text = (value: unknown) =>
   typeof value === "string" && value ? value : undefined;
@@ -235,6 +240,10 @@ const adminRoute2 = <Path extends string>(path: Path, title: string) =>
       author: text(search.author),
       activity: text(search.activity),
       recipient: text(search.recipient),
+      sort: text(search.sort),
+      level: text(search.level),
+      fish: text(search.fish),
+      login: text(search.login),
     }),
   });
 const adminActivitiesRoute = adminRoute2("/admin/activities", "红包");

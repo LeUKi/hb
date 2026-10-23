@@ -1625,6 +1625,10 @@ export function UserBalance({ userId }: { userId: string }) {
                       : `${clockLabel(data.member.since)}开通`
                     : "没有开通",
                 },
+                // The 站长 invites without opening PLUS.
+                ...(data.member || data.invitedCount > 0
+                  ? [{ label: "邀请开通", value: `${data.invitedCount} 人` }]
+                  : []),
               ]}
             />
             {data.items.length > 0 && (
