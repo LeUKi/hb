@@ -185,6 +185,27 @@ describe("the move to hb.lafi.sh", () => {
     }
   });
 
+  it("sends plain http on a real host to https, the same request; this machine stays on http", async () => {
+    for (const origin of ["http://hb.lafi.sh", "http://staging.hb.lafi.sh"])
+      for (const path of ["/api/auth/login?returnTo=%2F", imagePath()]) {
+        const { response, upstream } = await routeOn(origin, path);
+        expect(response.status).toBe(308);
+        expect(response.headers.get("Location")).toBe(
+          `${origin.replace("http:", "https:")}${path}`,
+        );
+        expect(upstream).toBe(0);
+      }
+    for (const origin of [
+      "http://127.0.0.1:5173",
+      "http://localhost:5173",
+      "http://hb.localhost",
+    ]) {
+      const { response, upstream } = await routeOn(origin, "/api/session");
+      expect(response.status).toBe(200);
+      expect(upstream).toBe(1);
+    }
+  });
+
   it("serves the new host and any other host as before", async () => {
     for (const origin of ["https://hb.lafi.sh", "https://staging.hb.lafi.sh"]) {
       const { response, upstream } = await routeOn(origin, "/api/session");
@@ -201,6 +222,8 @@ describe("the move to hb.lafi.sh", () => {
       const url = new URL(href);
       const replaced: string[] = [];
       new Function("location", code)({
+        protocol: url.protocol,
+        host: url.host,
         hostname: url.hostname,
         pathname: url.pathname,
         search: url.search,
@@ -213,5 +236,14 @@ describe("the move to hb.lafi.sh", () => {
       "https://hb.lafi.sh/history?tab=joined#top",
     ]);
     expect(visit("https://hb.lafi.sh/history")).toEqual([]);
+    // Plain http: the same page over https; on this machine, as it is.
+    expect(visit("http://hb.lafi.sh/history?tab=joined#top")).toEqual([
+      "https://hb.lafi.sh/history?tab=joined#top",
+    ]);
+    expect(visit("http://meme.442224.xyz/square")).toEqual([
+      "https://hb.lafi.sh/square",
+    ]);
+    expect(visit("http://127.0.0.1:5173/history")).toEqual([]);
+    expect(visit("http://localhost:4195/")).toEqual([]);
   });
 });

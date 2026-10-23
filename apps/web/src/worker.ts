@@ -1,4 +1,4 @@
-import { movedLocation } from "./lib/site-move";
+import { movedLocation, secureLocation } from "./lib/site-move";
 
 const apiPattern = /^\/api(?:\/|$)/;
 // The forum image, /🧧/<code>/🖼️.svg or /🧧/<code>/🖼️ (with or without
@@ -13,6 +13,9 @@ const worker: ExportedHandler<CloudflareEnv> = {
     // The site moved: what reaches the Worker on the old host goes there.
     const moved = movedLocation(url);
     if (moved) return Response.redirect(moved, 301);
+    // Plain http goes to https, the same request (308 keeps its method).
+    const secure = secureLocation(url);
+    if (secure) return Response.redirect(secure, 308);
 
     if (activityImagePattern.test(url.pathname)) {
       url.pathname = `/api${url.pathname}`;
