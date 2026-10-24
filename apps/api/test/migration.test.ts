@@ -1197,6 +1197,9 @@ it("adds optional Connect profile fields without invalidating existing accounts 
     trust_level: null,
     silenced: null,
     profile_seen_at: null,
+    // 0039: 排行榜's defaults (发出 shown, 领到 匿名) until one chooses.
+    rank_sent_visible: null,
+    rank_received_visible: null,
   });
   const response = await app.request(
     "https://hb.example.com/api/me",

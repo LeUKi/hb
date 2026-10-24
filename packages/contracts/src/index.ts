@@ -24,6 +24,7 @@ export * from "./forum-emoji";
 export * from "./payments";
 export * from "./profile";
 export * from "./random";
+export * from "./rank";
 export * from "./rate-limits";
 export * from "./recipient-speed";
 export * from "./share-text";

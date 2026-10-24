@@ -91,37 +91,29 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 const tints: Partial<Record<CommandId, string>> = {
   history: "bg-accent-soft text-accent-ink",
   square: "bg-gold-soft text-gold-ink",
+  rank: "bg-warning-soft text-warning",
 };
 
 /**
  * A 常用命令 as a card: its icon on a tinted tile, its name, and what to
- * type for it. Icon beside the words on a wide window, above them on a
- * phone, where three share the line.
+ * type for it, side by side (four to a line, two on a phone).
  */
 function CommandCard({
   icon: Icon,
   title,
   typed,
   tint = "bg-fill-2 text-ink-2",
-  compact,
 }: {
   icon: LucideIcon;
   title: string;
   /** What to type for it ("/history"). */
   typed: string;
   tint?: string;
-  compact: boolean;
 }) {
   return (
     <>
       <Squircle radius={10}>
-        <span
-          className={cn(
-            "grid shrink-0 place-items-center",
-            compact ? "size-8" : "size-9",
-            tint,
-          )}
-        >
+        <span className={cn("grid size-9 shrink-0 place-items-center", tint)}>
           <Icon className="size-[18px]" aria-hidden="true" />
         </span>
       </Squircle>
@@ -133,13 +125,8 @@ function CommandCard({
   );
 }
 
-const cardClass = (compact: boolean) =>
-  cn(
-    "choice flex min-w-0 text-left",
-    compact
-      ? "flex-col items-start gap-2 p-3"
-      : "items-center gap-2.5 px-3 py-2.5",
-  );
+const cardClass =
+  "choice flex min-w-0 items-center gap-2.5 px-3 py-2.5 text-left";
 
 /**
  * A lookup waiting on 再次确认 holds the box while its 口令 is typed there:
@@ -218,12 +205,15 @@ export function StartView() {
           <Reveal index={1}>
             {/* The cards say what they are: no label, the whole line
                 theirs (a screen reader still hears its name). */}
-            <nav aria-label="常用命令" className="grid grid-cols-3 gap-2">
+            <nav
+              aria-label="常用命令"
+              className="grid grid-cols-2 gap-2 @wide/window:grid-cols-4"
+            >
               {quick.map((command) => (
                 <Squircle key={command.id} radius={radius.choice}>
                   <CommandLink
                     command={command}
-                    className={cardClass(compact)}
+                    className={cardClass}
                     title={`${command.title} · /${command.name}`}
                   >
                     <CommandCard
@@ -231,7 +221,6 @@ export function StartView() {
                       title={command.title}
                       typed={`/${command.name}`}
                       tint={tints[command.id]}
-                      compact={compact}
                     />
                   </CommandLink>
                 </Squircle>
@@ -239,7 +228,7 @@ export function StartView() {
               <Squircle radius={radius.choice}>
                 <button
                   type="button"
-                  className={cardClass(compact)}
+                  className={cardClass}
                   title="全部命令 · /"
                   onClick={() => {
                     setDraft("/");
@@ -247,12 +236,7 @@ export function StartView() {
                     focusOmniboxInput();
                   }}
                 >
-                  <CommandCard
-                    icon={SquareSlash}
-                    title="全部命令"
-                    typed="/"
-                    compact={compact}
-                  />
+                  <CommandCard icon={SquareSlash} title="全部命令" typed="/" />
                 </button>
               </Squircle>
             </nav>

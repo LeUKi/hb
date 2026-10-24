@@ -7,6 +7,7 @@ LINUX DO 社区的口令红包站（原名“解meme”）。发红包的人设�
 - **红包**：口令红包或无需口令；固定均分、拼手气、自定义金额、限时开奖；关联社区帖子、加入红包广场、领取范围（信任等级任意组合或指定的人）、领取前人机验证。
 - **付款**：发红包的人配好自己的 LDC 商户，领取后自动发放；结果不明时先查原单，不会重复付款。
 - **🐟额**：站内余额，转入、转出、转账、PLUS 邀请和开放接口；🐟额也能用来发红包。
+- **排行榜**：发出和领到两个榜，近 7 天或全部；领到榜默认匿名，每个人可以自己选显示不显示。
 - **开奖证明**：限时开奖用 drand 的公开随机数，拼手气在开放时封存顺序，任何人都能自己验证。
 - **网站管理**：站长用的后台，管统计、设置、付款和🐟额。
 
@@ -80,7 +81,7 @@ curl --fail -X POST 'http://127.0.0.1:5173/cdn-cgi/local/explorer/api/local/sche
 - [DESIGN.md](DESIGN.md)：设计入口。
 - [外观重构](docs/redesign/README.md)：现行的界面与交互规范（八篇）。
 - [业务规格 v1](docs/business-spec-v1.md)、[一期技术方案](docs/technical-design-phase-1.md)：业务规则和技术方案的基线。
-- [🐟额](docs/balance-design.md)、[开奖证明](docs/draw-proof-design.md)、[领取范围](docs/claim-scope-design.md)、[震动反馈](docs/haptics-design.md)：各个功能的设计。
+- [🐟额](docs/balance-design.md)、[开奖证明](docs/draw-proof-design.md)、[领取范围](docs/claim-scope-design.md)、[排行榜](docs/leaderboard-design.md)、[震动反馈](docs/haptics-design.md)：各个功能的设计。
 - [本地模拟付款与故障恢复](docs/local-payment-operations.md)：本地怎么模拟付款和各种故障。
 - [管理员后台](docs/admin-operations.md)、[D1 迁往亚太](docs/d1-apac-migration.md)、[动态活动图片](docs/activity-images.md)。
 - [历史修订记录](docs/design-history.md)、[原型指南](docs/visual-prototype.md)：旧界面时期的记录。

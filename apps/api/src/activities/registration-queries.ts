@@ -446,16 +446,20 @@ export async function listParticipations(
   };
 }
 
+/**
+ * What a claim was worth, in cents: every claim (a draw's prizes are claims
+ * too), whatever the payment's progress (redesign 06 §9). /me and the 排行榜
+ * add them up the same way.
+ */
+export const claimAmount = `COALESCE(p.amount_minor, i.amount_minor, 0)`;
+export const claimJoins = `FROM claims c JOIN activities a ON a.id=c.activity_id
+      LEFT JOIN payment_tasks p ON p.claim_id=c.id AND p.source='claim'
+      LEFT JOIN reward_inventory i ON i.activity_id=c.activity_id AND i.id=c.inventory_id AND i.kind='ldc'`;
+
 export async function accountHistorySummary(
   env: ApiBindings,
   userId: string,
 ): Promise<AccountHistorySummary> {
-  // Amounts are every claim (a draw's prizes are claims too), summed in
-  // cents whatever the payment's progress (redesign 06 §9).
-  const claimAmount = `COALESCE(p.amount_minor, i.amount_minor, 0)`;
-  const claimJoins = `FROM claims c JOIN activities a ON a.id=c.activity_id
-      LEFT JOIN payment_tasks p ON p.claim_id=c.id AND p.source='claim'
-      LEFT JOIN reward_inventory i ON i.activity_id=c.activity_id AND i.id=c.inventory_id AND i.kind='ldc'`;
   const result = await env.DB.prepare(`SELECT
     (SELECT COUNT(*) FROM activities WHERE author_id=? AND reward_type='ldc' AND deleted_at IS NULL) AS initiatedCount,
     (SELECT COUNT(*) FROM activities a WHERE a.reward_type='ldc' AND a.deleted_at IS NULL AND (

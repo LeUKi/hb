@@ -14,6 +14,7 @@ import { discoveryRoutes } from "./discovery/routes";
 import type { ApiContext } from "./env";
 import { MerchantChangeConfirmationError } from "./payments/configuration";
 import { merchantRoutes } from "./payments/routes";
+import { rankRoutes } from "./rank/routes";
 import { AttemptCooldownError } from "./runtime/attempt-cooldown";
 import {
   inMaintenanceMode,
@@ -48,6 +49,7 @@ export const app = new Hono<ApiContext>()
   .route("/api", activityRoutes)
   .route("/api", passwordRoutes)
   .route("/api", discoveryRoutes)
+  .route("/api", rankRoutes)
   .route("/api", merchantRoutes)
   .route("/api", balanceRoutes)
   .route("/api", openRoutes)

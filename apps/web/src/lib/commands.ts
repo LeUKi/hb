@@ -9,6 +9,7 @@ import {
   ReceiptText,
   Settings2,
   Store,
+  Trophy,
   UserRound,
 } from "lucide-react";
 import type { SessionUser } from "./session";
@@ -36,6 +37,7 @@ export type CommandPath =
   | "/history"
   | "/balance"
   | "/square"
+  | "/rank"
   | "/me"
   | "/merchant"
   | "/payments"
@@ -47,6 +49,7 @@ export type CommandId =
   | "history"
   | "balance"
   | "square"
+  | "rank"
   | "me"
   | "merchant"
   | "payments"
@@ -174,6 +177,30 @@ export const commands: Command[] = [
       "gkhb",
       "gongkai",
       "gk",
+    ],
+  },
+  {
+    id: "rank",
+    path: "/rank",
+    name: "rank",
+    title: "排行榜",
+    icon: Trophy,
+    requires: "guest",
+    quick: true,
+    keys: [
+      "rank",
+      "leaderboard",
+      "top",
+      "排行榜",
+      "排行",
+      "排名",
+      "榜单",
+      "paihangbang",
+      "phb",
+      "paihang",
+      "paiming",
+      "pm",
+      "bangdan",
     ],
   },
   {

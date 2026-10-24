@@ -351,6 +351,9 @@ test.describe("账号资料", () => {
         },
       }),
     );
+    await page.route("**/api/me/rank-visibility", (route) =>
+      route.fulfill({ json: { sent: true, received: false } }),
+    );
     const logins: string[] = [];
     await page.route("**/api/auth/login**", (route) => {
       logins.push(route.request().url());
@@ -365,6 +368,13 @@ test.describe("账号资料", () => {
     await expect(page.getByText("11.00 LDC")).toBeVisible();
     await expect(page.getByText("3.54 LDC")).toBeVisible();
     await expect(page.getByText("草稿 1 个")).toBeVisible();
+    // 排行榜: the two switches as chosen (07 §4).
+    await expect(
+      page.getByRole("switch", { name: "在发出榜上显示我" }),
+    ).toHaveAttribute("aria-checked", "true");
+    await expect(
+      page.getByRole("switch", { name: "在领到榜上显示我" }),
+    ).toHaveAttribute("aria-checked", "false");
     await page.getByRole("button", { name: "刷新资料" }).click();
     await expect(page.getByText("资料已是最新")).toBeVisible();
     // The flag is said once, then leaves the address.

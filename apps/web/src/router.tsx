@@ -150,6 +150,11 @@ const squareRoute = createRoute({
   path: "/square",
   staticData: { chrome: "docked", command: "square" },
 });
+const rankRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/rank",
+  staticData: { chrome: "docked", command: "rank" },
+});
 const meRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/me",
@@ -289,6 +294,7 @@ const routeTree = rootRoute.addChildren([
   newRoute,
   historyRoute,
   squareRoute,
+  rankRoute,
   meRoute,
   merchantRoute,
   merchantDetailRoute,

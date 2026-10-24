@@ -33,6 +33,12 @@ export const users = sqliteTable(
     trustLevel: integer("trust_level"),
     silenced: integer("silenced", { mode: "boolean" }),
     profileSeenAt: integer("profile_seen_at", { mode: "timestamp_ms" }),
+    /**
+     * 排行榜 (docs/leaderboard-design.md §2): shown by name on each board,
+     * as this person chose. Null is the default: 发出 shown, 领到 匿名.
+     */
+    rankSentVisible: integer("rank_sent_visible", { mode: "boolean" }),
+    rankReceivedVisible: integer("rank_received_visible", { mode: "boolean" }),
   },
   (table) => [
     uniqueIndex("users_provider_external_id_unique").on(
@@ -45,6 +51,23 @@ export const users = sqliteTable(
       sql`${table.id} DESC`,
     ),
   ],
+);
+
+/**
+ * 排行榜's snapshots (docs/leaderboard-design.md §3): each board's full
+ * order as of `computedAt`, read for 5 minutes, worked out again when
+ * someone opens it later. `entries` is JSON: [userId, amountMinor,
+ * activities, claims][], best first.
+ */
+export const rankSnapshots = sqliteTable(
+  "rank_snapshots",
+  {
+    board: text("board", { enum: ["sent", "received"] }).notNull(),
+    range: text("range", { enum: ["week", "all"] }).notNull(),
+    computedAt: integer("computed_at").notNull(),
+    entries: text("entries").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.board, table.range] })],
 );
 
 export const attemptRateLimits = sqliteTable("attempt_rate_limits", {

@@ -7,8 +7,13 @@ import { useHistorySummary } from "../../lib/activities";
 import { getLoginHref } from "../../lib/auth";
 import { authErrorOf } from "../../lib/auth-errors";
 import { useBalancePages } from "../../lib/balance";
+import { useRankVisibility, useSetRankVisibility } from "../../lib/rank";
 import { sentCounts, useSentPages } from "../../lib/records";
-import { type SessionUser, useSessionUser } from "../../lib/session";
+import {
+  type SessionUser,
+  useIdentity,
+  useSessionUser,
+} from "../../lib/session";
 import { authErrorAtom } from "../../lib/store";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import {
@@ -26,10 +31,12 @@ import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { MoreLink } from "../ui/button-link";
 import { CopyButton } from "../ui/copy-button";
+import { Switch } from "../ui/field";
 import { Fish } from "../ui/fish";
 import { MorphLabel } from "../ui/morph-label";
 import { Reveal } from "../ui/reveal";
 import { StatusChip } from "../ui/status-chip";
+import { rankSwitchLabel, rankVisibilityNote } from "./rank-view";
 
 /** Back from 刷新资料's round trip, the address carries this once. */
 const refreshedFlag = "refreshed";
@@ -236,6 +243,10 @@ function Me({ user }: { user: SessionUser }) {
 
         {user.balance && <MeBalance user={user} />}
 
+        {/* Its own read: the page does not wait for it, and without it
+            the section stays away. */}
+        <MeRank user={user} />
+
         <div className="grid justify-items-start gap-2 px-1">
           {signOut.error && (
             <p role="alert" className="text-sm text-danger">
@@ -300,5 +311,50 @@ function MeBalance({ user }: { user: SessionUser }) {
         />
       </Panel>
     </PageSection>
+  );
+}
+
+/**
+ * 排行榜 (07 §4, §15): the two switches, as on the board itself, and the
+ * way to it.
+ */
+function MeRank({ user }: { user: SessionUser }) {
+  const { leaveTo } = useOmniboxController();
+  const { csrfToken } = useIdentity();
+  const visibility = useRankVisibility(user.id);
+  const save = useSetRankVisibility(user.id, csrfToken ?? "");
+  const shown = visibility.data;
+  return (
+    <Reveal show={Boolean(shown)}>
+      {shown && (
+        <PageSection
+          title="排行榜"
+          id="me-rank"
+          action={
+            <MoreLink href="/rank" onGo={() => void leaveTo({ to: "/rank" })}>
+              排行榜
+            </MoreLink>
+          }
+        >
+          <Panel className="grid gap-4 p-5">
+            {(["sent", "received"] as const).map((board) => (
+              <Switch
+                key={board}
+                checked={shown[board]}
+                onChange={(visible) => save.mutate({ board, visible })}
+                label={rankSwitchLabel[board]}
+                description={
+                  <MorphLabel fit={false}>
+                    {save.isError && save.variables?.board === board
+                      ? "没有保存，请稍后再试。"
+                      : rankVisibilityNote(shown[board])}
+                  </MorphLabel>
+                }
+              />
+            ))}
+          </Panel>
+        </PageSection>
+      )}
+    </Reveal>
   );
 }

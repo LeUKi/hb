@@ -34,6 +34,7 @@ import { CommandPageView, MessageView } from "../views/message-view";
 import { NewView } from "../views/new-view";
 import { PaymentView } from "../views/payment-view";
 import { PaymentsView } from "../views/payments-view";
+import { RankView } from "../views/rank-view";
 import { ResultsView } from "../views/results-view";
 import { SenderView } from "../views/sender-view";
 import { SquareView } from "../views/square-view";
@@ -50,6 +51,7 @@ const commandPages: Record<
 > = {
   new: <NewView />,
   square: <SquareView />,
+  rank: <RankView />,
   history: <HistoryView />,
   balance: <BalanceView />,
   me: <MeView />,

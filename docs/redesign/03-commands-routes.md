@@ -16,6 +16,7 @@
 | `/history` | 红包记录 | history 红包记录 记录 历史 参与 hongbaojilu hbjl jilu jl lishi ls canyu cy | 普通 | 所有人 |
 | `/balance` | 🐟额 | balance fish 站内🐟额 🐟额 鱼额 余额 转入 转出 yue ye zhuanru zr zhuanchu zc | 普通 | 受邀的人、🐟额里有过记录的人和管理员 |
 | `/square` | 红包广场 | square public explore 红包广场 广场 公开红包 公开 hongbaoguangchang hbgc guangchang gc gongkaihongbao gkhb gongkai gk | 游客 | 所有人 |
+| `/rank` | 排行榜 | rank leaderboard top 排行榜 排行 排名 榜单 paihangbang phb paihang paiming pm bangdan | 游客 | 所有人 |
 | `/me` | 账号资料 | me account profile 我的 账号 资料 wode wd zhanghao zh | 普通 | 已登录 |
 | `/merchant` | LDC 商户配置 | merchant shop ldc LDC商户 LDC商户配置 商户 商户配置 ldcshanghu shanghu sh peizhi pz | 普通 | 已登录 |
 | `/payments` | 付款记录 | payments pay 付款 发放 fukuan fk fafang ff | 普通 | 已登录 |
@@ -23,12 +24,12 @@
 | `/help` | 帮助（输入说明、命令、常见问题） | help 帮助 说明 bangzhu bz | 游客 | 所有人 |
 | `/login`（不跳转） | 登录 | login signin 登录 denglu dl | 游客 | 仅游客 |
 
-各身份能看到的命令数：游客 5、普通账号 7、管理员 8；能用🐟额的账号再多 1 个。
+各身份能看到的命令数：游客 6、普通账号 8、管理员 9；能用🐟额的账号再多 1 个。
 
 - 游客能看到、但需要登录的命令仍然列出，带“需登录”标记；执行时打开用户卡片登录，地址不变。
 - 游客直接打开需要登录的命令页时，页面显示“登录后可以使用。”和“登录”按钮（`/admin` 也先这样）；已登录的非管理员打开 `/admin`，页面显示“只有管理员能打开这一页。”。
 - 不提供“退出登录”命令，避免模糊匹配误触；退出在用户卡片和 `/me` 里。
-- 起始页的常用命令：`/history`、`/square`，以及“全部命令”。
+- 起始页的常用命令：`/history`、`/square`、`/rank`，以及“全部命令”。
 
 ## 3 识别与匹配
 
@@ -100,7 +101,7 @@
 | --- | --- |
 | `/` | 起始页 |
 | `/🧧/<表情码>` | 红包页（规范地址） |
-| `/new`、`/history`、`/balance`、`/square`、`/me`、`/merchant`、`/payments`、`/admin`、`/help` | 命令页 |
+| `/new`、`/history`、`/balance`、`/square`、`/rank`、`/me`、`/merchant`、`/payments`、`/admin`、`/help` | 命令页 |
 | `/🔑/<结果编号>` | 口令多匹配结果（地址只含编号，不含口令；页面见 [07](07-pages.md) 第 11 节） |
 | `/💬/<帖子>/<楼>` | 帖子里的红包（页面见 [07](07-pages.md) 第 11 节）；`/💬/<帖子>` 用替换跳到 1 楼。帖子编号 1–19 位数字、楼层为正整数，否则显示未找到 |
 | `/🧧/<表情码>/🖼️.svg`、`/🧧/<表情码>/🖼️` | 内嵌图，由接口提供（原型只有开发服务器有，见 [05](05-hongbao.md) 第 6 节） |

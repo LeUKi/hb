@@ -72,6 +72,9 @@
   --color-gold-soft-strong: rgb(237 203 134 / 0.5);
   /* 🐟额 PLUS's gold fish: gold that still reads as an icon on white. */
   --color-gold-mark: #b7862f;
+  /* 排行榜's second and third places, beside the gold of the first. */
+  --color-silver: #8a8590;
+  --color-bronze: #b0703c;
   --color-success: #1e8a57;
   --color-success-soft: rgb(30 138 87 / 0.1);
   --color-warning: #b26a00;
