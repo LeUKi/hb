@@ -2,8 +2,9 @@ import { env } from "cloudflare:test";
 import type {
   ActivityStatistics,
   AdminActivityDetail,
+  AuthorClaimList,
+  ClaimDetail,
   CodeFailureList,
-  CodeJudgmentList,
   JudgeInput,
 } from "@hb/contracts";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -119,7 +120,7 @@ async function get<T>(
 }
 
 describe("代码判定红包: records", () => {
-  it("lists every judgment for its sender, with what was typed and both amounts", async () => {
+  it("shows its sender each claim's input and both amounts, and the failures", async () => {
     const opened = await open();
     const first = await actor();
     const second = await actor();
@@ -127,57 +128,30 @@ describe("代码判定红包: records", () => {
     await submit(opened.id, first, "go 1");
     await submit(opened.id, second, "boom");
     await submit(opened.id, second, "go 2");
-    const list = await get<CodeJudgmentList>(
-      `/me/activities/${opened.id}/judgments`,
+    // The roster's sender view: 代码给 50.00，按上限发 0.98.
+    const roster = await get<AuthorClaimList>(
+      `/me/activities/${opened.id}/claims`,
       author,
     );
-    expect(list.status).toBe(200);
+    expect(roster.status).toBe(200);
     expect(
-      list.body.items.map(
-        ({ sequence, input, ok, asked, paid, note, claimed }) => ({
-          sequence,
-          input,
-          ok,
-          asked,
-          paid,
-          note,
-          claimed,
-        }),
-      ),
+      roster.body.items.map(({ amount, judge }) => ({
+        amount,
+        input: judge?.input,
+        asked: judge?.asked,
+        note: judge?.note,
+      })),
     ).toEqual([
-      {
-        sequence: 2,
-        input: "go 2",
-        ok: true,
-        asked: "50.00",
-        paid: "0.01",
-        note: "cap",
-        claimed: true,
-      },
-      {
-        sequence: 1,
-        input: "go 1",
-        ok: true,
-        asked: "50.00",
-        paid: "0.98",
-        note: "cap",
-        claimed: true,
-      },
-      {
-        sequence: 0,
-        input: "nope",
-        ok: false,
-        asked: undefined,
-        paid: undefined,
-        note: undefined,
-        claimed: undefined,
-      },
+      { amount: "0.98", input: "go 1", asked: "50.00", note: "cap" },
+      { amount: "0.01", input: "go 2", asked: "50.00", note: "cap" },
     ]);
-    expect(list.body.items[2]?.user.username).toMatch(/^code_/);
-    // Only its sender.
-    expect(
-      (await get(`/me/activities/${opened.id}/judgments`, first)).status,
-    ).toBe(404);
+    // The claimant's own read has the reason, not the code's number.
+    const own = await get<{ claim: ClaimDetail }>(
+      `/activities/${opened.id}/claim`,
+      first,
+    );
+    expect(own.body.claim.judge).toMatchObject({ input: "go 1", note: "cap" });
+    expect(own.body.claim.judge).not.toHaveProperty("asked");
 
     const failures = await get<CodeFailureList>(
       `/me/activities/${opened.id}/code-failures`,

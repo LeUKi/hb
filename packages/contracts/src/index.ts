@@ -1088,7 +1088,9 @@ export type AuthorRegistrationList = {
   items: AuthorRegistration[];
   nextCursor: string | null;
 };
-export type AuthorClaim = Omit<ClaimDetail, "afterClaimInfo"> & {
+export type AuthorClaim = Omit<ClaimDetail, "afterClaimInfo" | "judge"> & {
+  /** 代码判定: as the claimant's, with what the code asked when it was pulled in. */
+  judge?: NonNullable<ClaimDetail["judge"]> & { asked?: string };
   claimant: ActivityAuthor;
   speedTitle?: RecipientSpeedTitle;
   /** 手气王 / 手气亡, over the whole roster, as the public list has them. */

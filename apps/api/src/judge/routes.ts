@@ -11,7 +11,7 @@ import { requireAuth, requireProtectedMutation } from "../auth/session";
 import type { ApiContext } from "../env";
 import { activityObject } from "../runtime/objects";
 import { checkJudge } from "./check";
-import { judgeRecords, listFailures, listJudgments } from "./records";
+import { judgeRecords, listFailures } from "./records";
 
 export const judgeRoutes = new Hono<ApiContext>()
   .use("*", async (c, next) => {
@@ -48,17 +48,6 @@ export const judgeRoutes = new Hono<ApiContext>()
       });
     },
   )
-  .get("/me/activities/:id/judgments", async (c) => {
-    const session = await requireAuth(c);
-    return c.json(
-      await listJudgments(
-        c.env,
-        c.req.param("id"),
-        session.user.id,
-        c.req.query("cursor"),
-      ),
-    );
-  })
   .get("/me/activities/:id/code-failures", async (c) => {
     const session = await requireAuth(c);
     return c.json(

@@ -1,12 +1,9 @@
 // A 代码判定红包's records, for its sender only (docs/programmable-hongbao-
-// design.md §6): every judgment with what was typed and both amounts, the
-// judgments the code failed, and the full records to replay with the kit.
+// design.md §6, redesign/07 §6): the judgments the code failed, and the
+// full records to replay with the kit. What each claim typed and both
+// amounts are in the roster (claim-queries.ts).
 import {
   type CodeFailureList,
-  type CodeJudgment,
-  type CodeJudgmentList,
-  formatAmount,
-  formatSignedAmount,
   type JudgeNote,
   type LdcActivityInput,
   ldcTotalMinor,
@@ -72,53 +69,6 @@ const inputOf = (env: ApiBindings, activityId: string, row: JudgmentRow) =>
     env,
     attemptAssociatedData(activityId, row.rowId),
   );
-
-/** 判定记录: newest first, twenty a page. */
-export async function listJudgments(
-  env: ApiBindings,
-  activityId: string,
-  authorId: string,
-  cursor?: string,
-): Promise<CodeJudgmentList> {
-  await ownedCode(env, activityId, authorId);
-  const before = cursor === undefined ? null : Number(cursor);
-  if (before !== null && (!Number.isSafeInteger(before) || before < 0))
-    throw new ActivityError(400, "INVALID_CURSOR", "分页标识无效");
-  const rows = await env.DB.prepare(
-    `${JUDGMENTS} WHERE j.activity_id = ? AND (? IS NULL OR j.sequence < ?) ORDER BY j.sequence DESC LIMIT 21`,
-  )
-    .bind(activityId, before, before)
-    .all<JudgmentRow>();
-  const page = rows.results.slice(0, 20);
-  const items = await Promise.all(
-    page.map(
-      async (row): Promise<CodeJudgment> => ({
-        sequence: row.sequence,
-        at: new Date(row.at).toISOString(),
-        user: {
-          username: row.username,
-          displayName: row.displayName,
-          avatarUrl: row.avatarUrl,
-        },
-        attempt: row.attempt,
-        input: await inputOf(env, activityId, row),
-        ok: row.ok === 1,
-        ...(row.asked !== null ? { asked: formatSignedAmount(row.asked) } : {}),
-        ...(row.paid !== null ? { paid: formatAmount(row.paid) } : {}),
-        ...(row.note ? { note: row.note } : {}),
-        ...(row.message ? { message: row.message } : {}),
-        ...(row.claimedAt !== null ? { claimed: true as const } : {}),
-      }),
-    ),
-  );
-  return {
-    items,
-    nextCursor:
-      rows.results.length > 20 && page.at(-1)
-        ? String(page.at(-1)?.sequence)
-        : null,
-  };
-}
 
 /** 出错记录: the latest fifty, and where the count to a pause stands. */
 export async function listFailures(

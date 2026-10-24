@@ -1,11 +1,13 @@
 import {
   type ActivityInput,
+  type AuthorClaim,
   type AuthorClaimList,
   type ClaimDetail,
   type ClaimList,
   type ClaimSummary,
   claimSpeedTitle,
   formatAmount,
+  formatSignedAmount,
   type JudgeNote,
   type PublicRecipientList,
   type RecipientSpeedTitle,
@@ -304,16 +306,19 @@ export async function claimSummariesBatch(
   );
 }
 
-/** 代码判定: what each claimant typed and what the code said to them. */
+/**
+ * 代码判定: what each claimant typed, what the code said to them and, when
+ * its number was pulled into range, that number (the sender's roster only).
+ */
 async function judgmentsBatch(env: ApiBindings, rows: ClaimActivityRow[]) {
   const coded = rows.filter(
     ({ activity }) => activity.participationMode === "code",
   );
-  if (!coded.length)
-    return new Map<string, NonNullable<ClaimDetail["judge"]>>();
+  const judgments = new Map<string, NonNullable<AuthorClaim["judge"]>>();
+  if (!coded.length) return judgments;
   const found =
     await env.DB.prepare(`SELECT s.claim_id AS claimId, s.activity_id AS activityId, s.id AS rowId,
-      j.message, j.note, e.ciphertext
+      j.message, j.note, j.asked_minor AS asked, e.ciphertext
     FROM redemption_submissions s JOIN code_judgments j ON j.submission_row_id = s.id
     JOIN attempt_events e ON e.submission_row_id = s.id
     WHERE s.claim_id IN (SELECT value FROM json_each(?)) AND s.participation_mode = 'code'`)
@@ -324,32 +329,38 @@ async function judgmentsBatch(env: ApiBindings, rows: ClaimActivityRow[]) {
         rowId: string;
         message: string | null;
         note: JudgeNote | null;
+        asked: number | null;
         ciphertext: string;
       }>();
-  return new Map(
-    await Promise.all(
-      found.results.map(
-        async (row) =>
-          [
-            row.claimId,
-            {
-              input: await decryptString(
-                row.ciphertext,
-                env,
-                attemptAssociatedData(row.activityId, row.rowId),
-              ),
-              ...(row.message ? { message: row.message } : {}),
-              ...(row.note ? { note: row.note } : {}),
-            },
-          ] as const,
+  for (const row of found.results)
+    judgments.set(row.claimId, {
+      input: await decryptString(
+        row.ciphertext,
+        env,
+        attemptAssociatedData(row.activityId, row.rowId),
       ),
-    ),
-  );
+      ...(row.message ? { message: row.message } : {}),
+      ...(row.note ? { note: row.note } : {}),
+      ...(row.note && row.asked !== null
+        ? { asked: formatSignedAmount(row.asked) }
+        : {}),
+    });
+  return judgments;
+}
+
+/** What the claimant sees of their judgment: not the code's own number. */
+function claimantView({
+  asked: _asked,
+  ...judge
+}: NonNullable<AuthorClaim["judge"]>): NonNullable<ClaimDetail["judge"]> {
+  return judge;
 }
 
 export async function claimDetailsBatch(
   env: ApiBindings,
   rows: ClaimActivityRow[],
+  /** The sender's roster: the code's own number too. */
+  options: { asked?: boolean } = {},
 ): Promise<Map<string, ClaimDetail>> {
   const [summaries, judgments] = await Promise.all([
     claimSummariesBatch(env, rows),
@@ -367,7 +378,7 @@ export async function claimDetailsBatch(
           (!base.payment && activity.funding !== "balance")
         )
           throw new Error("LDC claim has no payment task");
-        const judge = judgments.get(claim.id);
+        const found = judgments.get(claim.id);
         return [
           claim.id,
           {
@@ -375,7 +386,9 @@ export async function claimDetailsBatch(
             afterClaimInfo,
             rewardType: "ldc",
             amount: base.amount,
-            ...(judge ? { judge } : {}),
+            ...(found
+              ? { judge: options.asked ? found : claimantView(found) }
+              : {}),
           },
         ];
       },
@@ -456,6 +469,7 @@ export async function listAuthorClaims(
   const details = await claimDetailsBatch(
     env,
     page.map(({ claim }) => ({ claim, activity })),
+    { asked: true },
   );
   const speedTitles = await recipientSpeedTitles(env, activity);
   // The same 手气王 / 手气亡 as the public roster, row for row.

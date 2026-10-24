@@ -114,29 +114,6 @@ export type PublicJudge = {
   seed?: string;
 };
 
-/** One judgment in its sender's 判定记录: what was typed and what came of it. */
-export type CodeJudgment = {
-  /** Its place among the 红包's judgments, from 0: the list's cursor. */
-  sequence: number;
-  at: string;
-  user: PublicUserProfile;
-  /** Times this person was judged before. */
-  attempt: number;
-  input: string;
-  ok: boolean;
-  /** What the code asked for and what was paid (signed: a code may ask for less than nothing). */
-  asked?: string;
-  paid?: string;
-  note?: JudgeNote;
-  message?: string;
-  /** Its share was claimed (not, say, ended first). */
-  claimed?: true;
-};
-export type CodeJudgmentList = {
-  items: CodeJudgment[];
-  nextCursor: string | null;
-};
-
 /** A judgment the code failed (出错记录); nothing of it counted. */
 export type CodeFailure = {
   at: string;
