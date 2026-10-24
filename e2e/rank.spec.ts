@@ -199,10 +199,15 @@ test.describe("排行榜", () => {
     await expect(shown(page, "第 126 名")).toBeVisible();
     await expect(page.locator(".sticky")).toHaveCount(1);
     const scroller = page.locator(".view-scroll").first();
-    for (let batch = 0; batch < 6; batch++)
+    // A batch at a time: each one in before scrolling on to the next.
+    for (const last of [20, 40, 60, 80, 100]) {
+      await expect(
+        page.getByText(`第${last}位`, { exact: true }),
+      ).toBeAttached();
       await scroller.evaluate((element) =>
         element.scrollTo({ top: element.scrollHeight }),
       );
+    }
     await expect(shown(page, "只列前 100 名")).toBeVisible();
     await expect(page.getByText("第100位", { exact: true })).toBeVisible();
     // Still there at the end: one's place is past the list.
