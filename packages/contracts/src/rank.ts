@@ -9,6 +9,8 @@ export const rankRangeSchema = z.enum(["week", "all"]);
 export type RankRange = z.infer<typeof rankRangeSchema>;
 
 export const RANK_PAGE_SIZE = 20;
+/** The board lists this many; everyone still has a rank (`total`, `me`). */
+export const RANK_LIST_LIMIT = 100;
 /** A board is worked out again once its snapshot is this old. */
 export const RANK_SNAPSHOT_MS = 5 * 60 * 1000;
 /** 近 7 天: the 7 × 24 hours before now, not a calendar week. */

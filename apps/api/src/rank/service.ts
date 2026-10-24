@@ -1,5 +1,6 @@
 import {
   formatAmount,
+  RANK_LIST_LIMIT,
   RANK_PAGE_SIZE,
   RANK_SNAPSHOT_MS,
   RANK_VISIBLE_BY_DEFAULT,
@@ -117,8 +118,11 @@ export async function rankPage(
   const { board, range } = query;
   const { computedAt, entries } = await snapshot(env, board, range, now);
   const ranks = ranksOf(entries);
-  const start = Math.min(Number(query.cursor ?? 0), entries.length);
-  const slice = entries.slice(start, start + RANK_PAGE_SIZE);
+  // The first 100 are listed; the rest still count for `total` and `me`.
+  const listed = Math.min(entries.length, RANK_LIST_LIMIT);
+  const start = Math.min(Number(query.cursor ?? 0), listed);
+  const end = Math.min(start + RANK_PAGE_SIZE, listed);
+  const slice = entries.slice(start, end);
   const ids = [...new Set([...slice.map(([id]) => id), viewerId ?? ""])];
   const people = new Map(
     (
@@ -167,10 +171,7 @@ export async function rankPage(
     computedAt,
     total: entries.length,
     items,
-    nextCursor:
-      start + RANK_PAGE_SIZE < entries.length
-        ? String(start + RANK_PAGE_SIZE)
-        : null,
+    nextCursor: end < listed ? String(end) : null,
     me: viewerId
       ? {
           rank: mine ? (ranks[position] ?? position + 1) : null,

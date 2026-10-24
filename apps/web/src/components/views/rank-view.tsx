@@ -1,4 +1,10 @@
-import type { RankBoard, RankEntry, RankMe, RankRange } from "@hb/contracts";
+import {
+  RANK_LIST_LIMIT,
+  type RankBoard,
+  type RankEntry,
+  type RankMe,
+  type RankRange,
+} from "@hb/contracts";
 import { Crown, Lock } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { type ReactNode, useEffect, useState } from "react";
@@ -42,7 +48,7 @@ const descriptions: Record<RankBoard, string> = {
 export function rankVisibilityNote(visible: boolean) {
   return visible
     ? "大家看得到你的头像和昵称。"
-    : "别人看到的是“匿名”，名次和金额照常；红包的领取名单仍然公开。";
+    : "别人看到的是“匿名”，名次和金额照常。";
 }
 
 export const rankSwitchLabel: Record<RankBoard, string> = {
@@ -246,13 +252,11 @@ function Row({
  */
 function MyRank({
   me,
-  total,
   board,
   user,
   csrfToken,
 }: {
   me: RankMe;
-  total: number;
   board: RankBoard;
   user: SessionUser;
   csrfToken: string;
@@ -275,17 +279,13 @@ function MyRank({
                 <RollingText text={`第 ${me.rank} 名`} />
               )}
             </span>
-            <span className="text-sm text-ink-3">
-              {me.rank === null ? (
-                board === "sent" ? (
-                  "你发的红包被领取后就会上榜。"
-                ) : (
-                  "领到红包后就会上榜。"
-                )
-              ) : (
-                <RollingText text={`共 ${total} 人`} />
-              )}
-            </span>
+            {me.rank === null && (
+              <span className="text-sm text-ink-3">
+                {board === "sent"
+                  ? "你发的红包被领取后就会上榜。"
+                  : "领到红包后就会上榜。"}
+              </span>
+            )}
           </p>
         </div>
         {me.rank !== null && (
@@ -454,13 +454,7 @@ function Rank({
         >
           <div className="flex flex-col gap-3">
             {user && csrfToken && me && (
-              <MyRank
-                me={me}
-                total={total}
-                board={board}
-                user={user}
-                csrfToken={csrfToken}
-              />
+              <MyRank me={me} board={board} user={user} csrfToken={csrfToken} />
             )}
             {entries.length === 0 ? (
               <EmptyNote
@@ -494,13 +488,15 @@ function Rank({
                     </AnimatePresence>
                   </Panel>
                 )}
-                <LazyListEnd list={list} done={`共 ${total} 人`} />
+                <LazyListEnd
+                  list={list}
+                  done={
+                    total > RANK_LIST_LIMIT
+                      ? `只列前 ${RANK_LIST_LIMIT} 名`
+                      : "已全部加载"
+                  }
+                />
               </>
-            )}
-            {first && (
-              <p className="px-1 text-center text-xs text-ink-3">
-                每 5 分钟更新一次 · 更新于 {clockLabel(first.computedAt)}
-              </p>
             )}
           </div>
         </ResultLoad>
@@ -532,6 +528,13 @@ function Rank({
             </motion.div>
           )}
         </AnimatePresence>
+        {/* After one's held row: outside the first 100, it comes to rest
+            at the end of the list, above this. */}
+        {first && (
+          <p className="-mt-3 px-1 text-center text-xs text-ink-3 @wide/window:-mt-5">
+            每 5 分钟更新一次 · 更新于 {clockLabel(first.computedAt)}
+          </p>
+        )}
       </Page>
     </PageLoad>
   );

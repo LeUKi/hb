@@ -85,7 +85,6 @@ test.describe("排行榜", () => {
     await expect(shown(page, "3 个红包")).toHaveCount(3);
     await expect(shown(page, "3 个红包 · 12 人次")).toHaveCount(2);
     await expect(shown(page, "匿名")).toHaveCount(1);
-    await expect(shown(page, "共 5 人")).toHaveCount(0);
 
     await page.getByRole("button", { name: "领到" }).click();
     await expect(page).toHaveURL(/\/rank\?board=received$/);
@@ -143,7 +142,6 @@ test.describe("排行榜", () => {
     });
     await openApp(page, "/rank");
     await expect(shown(page, "第 26 名")).toBeVisible();
-    await expect(shown(page, "共 30 人")).toBeVisible();
     // Not loaded yet: one's row is held at the bottom of the window.
     await expect(shown(page, "你")).toHaveCount(1);
     await expect(shown(page, "大家看得到你")).toHaveCount(2);
@@ -151,10 +149,7 @@ test.describe("排行榜", () => {
     await page.getByRole("switch", { name: "在发出榜上显示我" }).click();
     await expect(shown(page, "别人看到匿名")).toHaveCount(2);
     await expect(
-      shown(
-        page,
-        "别人看到的是“匿名”，名次和金额照常；红包的领取名单仍然公开。",
-      ),
+      shown(page, "别人看到的是“匿名”，名次和金额照常。"),
     ).toBeVisible();
     expect(saves).toEqual([
       { body: { board: "sent", visible: false }, csrf: csrfToken },
@@ -168,12 +163,51 @@ test.describe("排行榜", () => {
       );
     await toBottom();
     await expect(page.getByText("第30位", { exact: true })).toBeVisible();
+    // No total at the end (the user's call): only that it is all here.
+    await expect(shown(page, "已全部加载")).toBeVisible();
     await toBottom();
     await expect(page.locator(".sticky")).toHaveCount(0);
     await expect(shown(page, "你")).toHaveCount(1);
     // Back up past the first rows: held at the bottom again.
     await scroller.evaluate((element) => element.scrollTo({ top: 0 }));
     await expect(page.locator(".sticky")).toHaveCount(1);
+  });
+
+  test("只列前 100 名：名次在 100 以外的人，你那一行停在列表末尾", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    const people = Array.from({ length: 100 }, (_, position) =>
+      entry(position, `第${position + 1}位`, (200 - position).toFixed(2)),
+    );
+    await answerRank(page, (url) => {
+      const start = Number(url.searchParams.get("cursor") ?? 0);
+      return rankPage(people.slice(start, start + 20), {
+        total: 130,
+        nextCursor: start + 20 < 100 ? String(start + 20) : null,
+        me: {
+          rank: 126,
+          position: 125,
+          amount: "1.00",
+          activities: 1,
+          claims: 1,
+          visible: false,
+        },
+      });
+    });
+    await openApp(page, "/rank");
+    await expect(shown(page, "第 126 名")).toBeVisible();
+    await expect(page.locator(".sticky")).toHaveCount(1);
+    const scroller = page.locator(".view-scroll").first();
+    for (let batch = 0; batch < 6; batch++)
+      await scroller.evaluate((element) =>
+        element.scrollTo({ top: element.scrollHeight }),
+      );
+    await expect(shown(page, "只列前 100 名")).toBeVisible();
+    await expect(page.getByText("第100位", { exact: true })).toBeVisible();
+    // Still there at the end: one's place is past the list.
+    await expect(page.locator(".sticky")).toHaveCount(1);
+    await expect(shown(page, "你")).toHaveCount(1);
   });
 
   test("没人上榜：近 7 天提示换到全部", async ({ page }) => {

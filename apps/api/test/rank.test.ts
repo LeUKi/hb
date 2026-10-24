@@ -286,6 +286,40 @@ describe("排行榜", () => {
     ).toEqual(takers.map((_, index) => (1.24 - index / 100).toFixed(2)));
   });
 
+  it("lists the first 100; the rest still have their rank", async () => {
+    const now = Date.now();
+    const author = await person("author");
+    const takers = await Promise.all(
+      Array.from({ length: 105 }, (_, index) => person(`many-${index}`)),
+    );
+    await hongbao(
+      author,
+      takers.map((by, index) => ({ by, minor: 1000 - index, at: now - day })),
+    );
+    const last = takers.at(-1);
+    if (!last) throw new Error("people");
+    let cursor: string | null = null;
+    const positions: number[] = [];
+    let me: RankPage["me"] = null;
+    for (let read = 0; read < 10; read++) {
+      const batch = await page(
+        `/api/rank?board=received&range=all${cursor ? `&cursor=${cursor}` : ""}`,
+        last,
+      );
+      expect(batch.total).toBe(105);
+      positions.push(...batch.items.map((item) => item.position));
+      me = batch.me;
+      cursor = batch.nextCursor;
+      if (!cursor) break;
+    }
+    expect(positions).toEqual(Array.from({ length: 100 }, (_, index) => index));
+    // Past the list: nothing more, but one's own place is known.
+    expect(
+      (await page("/api/rank?board=received&range=all&cursor=100")).items,
+    ).toEqual([]);
+    expect(me).toMatchObject({ rank: 105, position: 104, amount: "8.96" });
+  });
+
   it("reads and changes one's own switches only, with the CSRF token", async () => {
     const someone = await person("someone");
     expect((await request("/api/me/rank-visibility")).status).toBe(401);
