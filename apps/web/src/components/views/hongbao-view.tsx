@@ -3,6 +3,7 @@ import { cn } from "../../lib/cn";
 import type { HongbaoActivity } from "../../lib/hongbao";
 import { useActivityLive } from "../../lib/live";
 import { AuthorTools } from "../hongbao/author-tools";
+import { CodeSection } from "../hongbao/code-section";
 import { InfoNote } from "../hongbao/details";
 import { HongbaoHero, hongbaoSizes, sizeVars } from "../hongbao/hero";
 import { HongbaoSkeleton } from "../hongbao/hongbao-skeleton";
@@ -150,12 +151,22 @@ function HongbaoPage({
             part="end-note"
           />
         )}
-        <PasswordSection
-          activityId={activity.id}
-          passwords={passwords}
-          ended={view.ended}
-          onVerify={hongbao.openVerify}
-        />
+        {/* 代码判定红包 has its code where others have their 口令 (05 §9). */}
+        {activity.judge ? (
+          <CodeSection
+            activityId={activity.id}
+            judge={activity.judge}
+            ended={view.ended}
+            senderCode={activity.senderCode}
+          />
+        ) : (
+          <PasswordSection
+            activityId={activity.id}
+            passwords={passwords}
+            ended={view.ended}
+            onVerify={hongbao.openVerify}
+          />
+        )}
       </div>
       {flecks && (
         <div className="pointer-events-none absolute inset-x-0 top-0 z-30 h-[100cqh]">

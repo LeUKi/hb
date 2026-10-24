@@ -62,7 +62,16 @@ export type RowDetail = {
   payment: { id: string; state: PaymentState } | null;
   /** A 🐟额红包's share: in the person's 🐟额, no payment to follow. */
   fish?: boolean;
+  /** 代码判定: what was typed, and the code's own number when pulled in. */
+  judge?: RosterRow["judge"];
 };
+
+/** 代码判定: "代码给 30.00，按上限发 20.00" (07 §6). */
+const pulledIn = {
+  cap: "按上限发",
+  floor: "按每份至少发",
+  last: "最后一份发",
+} as const;
 
 /** One person, one line: rank, avatar, name, titles, 用时, amount. */
 function Row({
@@ -126,6 +135,24 @@ function Row({
                       wrap
                       className="min-w-0"
                     />
+                  </span>
+                )}
+                {detail.judge && (
+                  <span className="flex min-w-0 items-baseline gap-1">
+                    <span className="shrink-0">输入</span>
+                    <PasswordText
+                      text={detail.judge.input}
+                      shown={passwordsShown}
+                      seed={row.id}
+                      wrap
+                      className="min-w-0"
+                    />
+                  </span>
+                )}
+                {detail.judge?.asked && detail.judge.note && (
+                  <span className="shrink-0">
+                    代码给 {detail.judge.asked}，{pulledIn[detail.judge.note]}{" "}
+                    {row.amount}
                   </span>
                 )}
                 {detail.fish && (

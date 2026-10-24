@@ -74,6 +74,8 @@ export function HongbaoCard({
           className={cn(
             "hb-card-cover relative grid content-start gap-1.5 px-4 pt-3.5 pb-7",
             ended && "hb-ended",
+            // 代码判定红包: 黑漆描金 here too (05 §14).
+            activity.mode === "code" && "hb-code",
           )}
         >
           <span className="flex min-w-0 items-center gap-1.5 text-xs text-cream-2">
@@ -114,15 +116,25 @@ export function HongbaoCard({
             <StatusChip tone={status.tone} dot>
               {status.text}
             </StatusChip>
-            <StatusChip tone="neutral">
-              {activity.participation === "password" ? "口令红包" : "无需口令"}
-            </StatusChip>
+            {activity.mode === "code" ? (
+              <Squircle radius={radius.tag}>
+                <span className="hb-lacquer-chip inline-flex h-6 items-center px-2 text-xs font-medium">
+                  代码判定
+                </span>
+              </Squircle>
+            ) : (
+              <StatusChip tone="neutral">
+                {activity.participation === "password"
+                  ? "口令红包"
+                  : "无需口令"}
+              </StatusChip>
+            )}
             {activity.scope && (
               <StatusChip tone="neutral">{scopeTag(activity.scope)}</StatusChip>
             )}
             {activity.fish && <StatusChip tone="neutral">🐟额</StatusChip>}
             {/* Its 口令 only on its own page: this card is the way in. */}
-            {activity.pageOnly && (
+            {activity.pageOnly && activity.mode !== "code" && (
               <StatusChip tone="neutral">关闭首页领取</StatusChip>
             )}
             {/* Its post's link is on its page: the whole card is one button. */}

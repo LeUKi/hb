@@ -144,8 +144,13 @@ function RosterContent({
       : null;
     // A 🐟额红包's claims and prizes went into 🐟额 (balance-design §14).
     const fish = activity.fish && kind !== "registrations";
-    if (!row.password && !payment && !fish) return null;
-    return { password: row.password ?? null, payment, fish };
+    if (!row.password && !payment && !fish && !row.judge) return null;
+    return {
+      password: row.password ?? null,
+      payment,
+      fish,
+      ...(row.judge ? { judge: row.judge } : {}),
+    };
   };
   const openPayment = (paymentId: string) =>
     void navigate({
@@ -191,13 +196,21 @@ function RosterContent({
           <p className="flex items-center justify-between gap-2 text-xs text-gold-ink">
             <span>
               你发的红包：每行多一行
-              {activity.participation === "password" ? "口令和" : ""}
+              {activity.participation === "password"
+                ? "口令和"
+                : activity.participation === "code"
+                  ? "输入和"
+                  : ""}
               {activity.fish ? "到账状态" : "付款状态"}
               ，只有你能看到。
             </span>
-            {activity.participation === "password" && !view.ended && (
+            {activity.participation !== "direct" && !view.ended && (
               <RevealToggle
-                what="名单里的口令"
+                what={
+                  activity.participation === "code"
+                    ? "名单里的输入"
+                    : "名单里的口令"
+                }
                 shown={passwordsRevealed}
                 onToggle={() => setPasswordsRevealed((value) => !value)}
                 className="-my-2 -mr-2 shrink-0 text-gold-ink"

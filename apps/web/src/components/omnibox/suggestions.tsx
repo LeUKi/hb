@@ -53,7 +53,7 @@ export type Suggestion =
       /** This 红包, to type into: picking it sets the box's scope. */
       kind: "scope";
       activityId: string;
-      purpose: "claim" | "verify";
+      purpose: "claim" | "verify" | "code";
       /** 口令 still to find, for verifying. */
       hidden: number;
     }

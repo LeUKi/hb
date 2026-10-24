@@ -44,6 +44,7 @@ function rowOf(item: Item, rank: number, viewer: string | null): RosterRow {
       ],
       password: item.sourcePassword ?? null,
       payment: item.payment,
+      ...(item.judge ? { judge: item.judge } : {}),
     };
   if ("participant" in item)
     return {

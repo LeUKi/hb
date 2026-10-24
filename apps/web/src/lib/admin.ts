@@ -14,6 +14,7 @@ import type {
 import {
   keepPreviousData,
   useInfiniteQuery,
+  useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -186,4 +187,31 @@ export function useSaveRateLimits(csrfToken: string) {
       ).catch(() => null),
     adopt,
   };
+}
+
+/**
+ * 停用 a 代码判定红包 (07 §10): the one change an admin makes to someone
+ * else's 红包. Its detail, the lists and 操作记录 read again after.
+ */
+export function useStopCode(csrfToken: string) {
+  const identity = useAdminIdentity();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (activityId: string) => {
+      await readResponse<{ status: "stopped" }>(
+        await fetch(
+          `/api/admin/activities/${encodeURIComponent(activityId)}/stop-code`,
+          {
+            method: "POST",
+            headers: { "X-CSRF-Token": csrfToken },
+            cache: "no-store",
+          },
+        ),
+      );
+      for (const kind of ["activities", "audit", "overview"])
+        void queryClient.invalidateQueries({
+          queryKey: adminKey(identity, kind),
+        });
+    },
+  });
 }

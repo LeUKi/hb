@@ -2,6 +2,7 @@ import { ChevronDown, DoorOpen, KeyRound, Plus } from "lucide-react";
 import { useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { cn } from "../../lib/cn";
+import { PlusBadge } from "../balance/plus";
 import { ChoiceCards, Field, TextInput } from "../ui/field";
 import { Reveal } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
@@ -56,14 +57,17 @@ function ModeCard({
             className={cn(
               "choice-icon grid size-9 place-items-center bg-fill-2 text-ink-2",
               selected && "bg-accent-soft",
+              // 代码判定: black lacquer and gold (05 §14).
+              option.value === "code" && "hb-lacquer-chip",
             )}
           >
             <Icon className="size-[18px]" aria-hidden="true" />
           </span>
         </Squircle>
         <span className="grid gap-0.5">
-          <span className="text-base font-semibold text-ink">
+          <span className="flex items-center gap-1.5 text-base font-semibold text-ink">
             {option.title}
+            {option.plus && <PlusBadge />}
           </span>
           <span className="text-sm text-ink-3">{option.description}</span>
         </span>
@@ -72,17 +76,26 @@ function ModeCard({
   );
 }
 
-/** ① 玩法: the two most used as big cards; the other two behind 更多玩法. */
+/**
+ * ① 玩法: the two most used as big cards; the others behind 更多玩法, where
+ * 🐟额 PLUS also has 代码判定 (none for anyone else, not even grey).
+ */
 export function ModeStep({
   form,
   onPick,
   locked,
+  codeOffered,
 }: {
   form: FormState;
   onPick: (mode: RewardMode) => void;
   locked: boolean;
+  /** This person may send 代码判定红包 now. */
+  codeOffered: boolean;
 }) {
-  const rare = modeOptions.some(
+  const offered = modeOptions.filter(
+    (option) => !option.plus || codeOffered || option.value === form.mode,
+  );
+  const rare = offered.some(
     (option) => option.more && option.value === form.mode,
   );
   const [more, setMore] = useState(rare);
@@ -91,7 +104,7 @@ export function ModeStep({
       aria-label={rareOnes ? "更多玩法" : "玩法"}
       className="grid grid-cols-2 gap-2.5"
     >
-      {modeOptions
+      {offered
         .filter((option) => Boolean(option.more) === rareOnes)
         .map((option) => (
           <ModeCard

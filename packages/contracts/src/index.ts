@@ -808,12 +808,18 @@ export type ActivitySummary = {
   reward?: ActivityRewardSummary;
   paymentMode?: PaymentMode;
   draw?: DrawSummary;
+  /** 代码判定红包 the 站长 stopped (停用): ended, for that reason. */
+  stopped?: true;
 };
 
 export type ManagedActivity = ActivitySummary & {
   author: ActivityAuthor;
   config: ActivityInput;
   openingBlockedReason?: LdcOpeningBlockedReason;
+  /** 代码判定: this code and these tests passed its sender's 在线检查. */
+  judgePassed?: boolean;
+  /** 代码判定: its code failed five times running; it may end early. */
+  judgePaused?: true;
 };
 
 export type PublicQuantity =
@@ -852,6 +858,8 @@ export type PublicActivity = {
   scope?: PublicClaimScope;
   /** 代码判定: the prompt, fingerprints, and the code once it is over. */
   judge?: PublicJudge;
+  /** 代码判定红包 the 站长 stopped (停用): ended, for that reason. */
+  stopped?: true;
   /**
    * Up to five people for the 名单入口, read with the rest so they match the
    * numbers: the latest claims; while a draw is open, the latest sign-ups;

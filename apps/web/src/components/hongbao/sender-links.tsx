@@ -23,13 +23,14 @@ const labels: Record<SenderPage, string> = {
 };
 
 /**
- * A draft has only 编辑; every 口令红包 has 尝试统计 (07 §7); a 🐟额红包
- * pays nothing out, so it has no 付款记录 (balance-design §14).
+ * A draft has only 编辑; every 口令红包 and 代码判定红包 has 尝试统计
+ * (07 §7); a 🐟额红包 pays nothing out, so it has no 付款记录
+ * (balance-design §14).
  */
 export function senderPagesOf(activity: HongbaoActivity): SenderPage[] {
   if (activity.draft) return ["edit"];
   const pages: SenderPage[] =
-    activity.participation === "password" ? ["edit", "stats"] : ["edit"];
+    activity.participation !== "direct" ? ["edit", "stats"] : ["edit"];
   return activity.fish ? pages : [...pages, "payments"];
 }
 

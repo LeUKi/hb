@@ -31,7 +31,7 @@ export async function stopCodeActivity(
       WHERE activity_id = ? AND stopped_at IS NULL`).bind(adminId, activityId),
     env.DB.prepare(`UPDATE activities SET
       version = CASE WHEN ended_at IS NULL AND opened_at IS NOT NULL AND participation_mode = 'code' THEN version + 1 ELSE NULL END,
-      ended_at = ${databaseNow}, end_reason = 'manual', updated_at = ${databaseNow}
+      ended_at = ${databaseNow}, end_reason = 'stopped', updated_at = ${databaseNow}
       WHERE id = ?`).bind(activityId),
   ]);
   // What nobody took goes back, and a claim judged but not yet in ends.

@@ -45,6 +45,7 @@ export function rewardSummaryOf(reward: ActivityRewardSummary | undefined) {
   const pool = reward.totalAmount ? ` · ${reward.totalAmount} LDC 奖池` : "";
   if (reward.mode === "random") return `拼手气${pool}`;
   if (reward.mode === "custom") return `自定义金额${pool}`;
+  if (reward.mode === "code") return `代码判定${pool}`;
   return `限时开奖${pool}`;
 }
 

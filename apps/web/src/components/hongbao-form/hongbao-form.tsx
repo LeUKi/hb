@@ -1,4 +1,4 @@
-import type { ManagedActivity } from "@hb/contracts";
+import type { JudgeCheck, ManagedActivity } from "@hb/contracts";
 import { useLocation, useRouter } from "@tanstack/react-router";
 import { AlertTriangle, ChevronRight, Trash2 } from "lucide-react";
 import {
@@ -12,6 +12,7 @@ import { flushSync } from "react-dom";
 import { useBalanceFunding } from "../../lib/balance";
 import { cn } from "../../lib/cn";
 import { haptic } from "../../lib/haptics";
+import { useJudgeCheck, useJudgeDigests } from "../../lib/judge";
 import { useCurrentMerchant } from "../../lib/merchants";
 import { scrollBehavior } from "../../lib/motion";
 import { closeOverlay, openOverlay } from "../../lib/overlay";
@@ -22,6 +23,7 @@ import { useWindowInfo } from "../shell/window-info";
 import { Button } from "../ui/button";
 import { Reveal, Swap } from "../ui/reveal";
 import { ActionBar, SaveButtons } from "./action-bar";
+import { type CodeCheckState, CodeStep } from "./code-step";
 import { DeleteDraftDialog } from "./delete-draft-dialog";
 import {
   type ErrorOf,
@@ -41,9 +43,11 @@ import {
   modeLabels,
   plan,
   type RewardMode,
+  timingLine,
   withDefaultTitle,
   withMode,
 } from "./form-state";
+import { scopeLine } from "./scope-fields";
 import { groupsOf, SettingsSheet } from "./settings-sheet";
 import { AmountStep, ClaimStep, ModeStep, TitleStep } from "./step-bodies";
 import { StepProgress } from "./step-progress";
@@ -56,6 +60,7 @@ import {
   stepIssues,
   stepOfField,
   steps,
+  stepTitle,
   summaryOf,
 } from "./steps";
 import { useLinearSteps } from "./use-step-flow";
@@ -111,7 +116,8 @@ export function HongbaoForm({
   // 🐟额 (balance-design §14): set as the starting point, before anything
   // is typed, so it is not an unsaved change.
   const { merchant, loaded: merchantLoaded } = useCurrentMerchant(user.id);
-  const funding = useBalanceFunding(user.id, !editing).data;
+  // Also says whether 代码判定红包 may be sent, and checks left today.
+  const funding = useBalanceFunding(user.id).data;
   const fishReady = funding?.available === true;
   const fishDefault = useRef(false);
   useEffect(() => {
@@ -138,6 +144,52 @@ export function HongbaoForm({
   const update: Update = (change) => {
     setForm((current) => change(current));
     submit.setNotice(null);
+  };
+
+  // 代码判定's 在线检查 (07 §5): for the code and tests as typed now; a
+  // saved draft says whether its own passed.
+  const judgeCheck = useJudgeCheck(user.id);
+  const [lastCheck, setLastCheck] = useState<JudgeCheck | null>(null);
+  const [codeGate, setCodeGate] = useState(false);
+  const digests = useJudgeDigests(form.judge.code, form.judge.tests);
+  const checkedNow =
+    lastCheck !== null &&
+    digests !== null &&
+    lastCheck.fingerprint === digests.code &&
+    lastCheck.testsDigest === digests.tests;
+  const savedPassed =
+    activity?.judgePassed === true &&
+    form.judge.code === baseline.judge.code &&
+    form.judge.tests === baseline.judge.tests;
+  const checkState: CodeCheckState =
+    checkedNow && lastCheck
+      ? lastCheck.passed
+        ? { kind: "passed", check: lastCheck }
+        : { kind: "failed", check: lastCheck }
+      : savedPassed
+        ? { kind: "passed" }
+        : {
+            kind: "unchecked",
+            changed: lastCheck !== null || activity?.judgePassed === true,
+          };
+  const codeBlocked = form.mode === "code" && checkState.kind !== "passed";
+  const runCheck = async () => {
+    if (judgeCheck.isPending) return;
+    try {
+      const check = await judgeCheck.mutateAsync({
+        code: form.judge.code,
+        tests: form.judge.tests,
+      });
+      setLastCheck(check);
+      haptic(check.passed ? "success" : "error");
+      say(check.passed ? "在线检查通过。" : "在线检查没有通过。");
+    } catch (error) {
+      haptic("error");
+      submit.setNotice({
+        tone: "danger",
+        text: `在线检查没有完成：${error instanceof Error ? error.message : "网络或服务出了问题。"}`,
+      });
+    }
   };
 
   const issues = issuesOf(withDefaultTitle(form));
@@ -256,6 +308,19 @@ export function HongbaoForm({
         showIssue(first.field);
         return;
       }
+      // Opening needs this very code and these tests to have passed (07 §5);
+      // a draft saves without.
+      if (open && codeBlocked) {
+        setCodeGate(true);
+        haptic("error");
+        say("代码还没通过在线检查。");
+        // Back on step 3 (/new keeps it folded): its 在线检查 in view.
+        if (!editing) {
+          linear.back(stepIndex("claim") + 1);
+          window.setTimeout(() => jumpTo("hb-code-check"), 400);
+        } else showIssue("hb-code-check");
+        return;
+      }
     }
     setAnnounced(undefined);
     submit.run(open);
@@ -321,9 +386,12 @@ export function HongbaoForm({
   const moreLine = [
     form.afterClaimInfo.trim() ? "有附言" : "附言未填",
     form.topic.trim() ? "关联了帖子" : "不关联帖子",
-    form.listed ? "加入红包广场" : "不加入红包广场",
+    form.listed || form.mode === "code" ? "加入红包广场" : "不加入红包广场",
     form.quantity === "exact" ? "精确数量" : "模糊数量",
-    ...(form.participation === "password" && form.pageOnly
+    // 代码判定 is only ever on its page: not a setting to mention.
+    ...(form.mode !== "code" &&
+    form.participation === "password" &&
+    form.pageOnly
       ? ["关闭首页领取"]
       : []),
     ...(form.humanCheck ? ["领取前人机验证"] : []),
@@ -332,7 +400,14 @@ export function HongbaoForm({
     const locked = lockedStep(step);
     switch (step) {
       case "mode":
-        return <ModeStep form={form} onPick={pickMode} locked={locked} />;
+        return (
+          <ModeStep
+            form={form}
+            onPick={pickMode}
+            locked={locked}
+            codeOffered={Boolean(funding?.code)}
+          />
+        );
       case "amount":
         return (
           <AmountStep
@@ -344,6 +419,26 @@ export function HongbaoForm({
           />
         );
       case "claim":
+        if (form.mode === "code")
+          return (
+            <CodeStep
+              form={form}
+              update={update}
+              errorOf={errorOf}
+              locked={locked}
+              checkState={checkState}
+              checking={judgeCheck.isPending}
+              checksLeft={funding?.code?.checksLeft}
+              gated={codeGate}
+              onCheck={() => void runCheck()}
+              openSheet={(group) => openSheet(group)}
+              deadline={deadline}
+              timingError={groupError(["timing"])}
+              scopeError={groupError(["scope"])}
+              timeLine={timingLine(form)}
+              scopeLine={scopeLine(form)}
+            />
+          );
         return (
           <ClaimStep
             form={form}
@@ -492,13 +587,14 @@ export function HongbaoForm({
             {visible.map((step, index) => {
               const open = index === currentIndex;
               const problems = checked.has(step.id)
-                ? stepIssues(issues, step.id).length
+                ? stepIssues(issues, step.id).length +
+                  (step.id === "claim" && codeGate && codeBlocked ? 1 : 0)
                 : 0;
               return (
                 <StepCard
                   key={step.id}
                   index={index}
-                  title={step.title}
+                  title={stepTitle(step.id, form)}
                   summary={summaryOf(step.id, form, deadline)}
                   open={open}
                   current={!editing && open}
@@ -523,7 +619,9 @@ export function HongbaoForm({
                       <div className="flex flex-wrap items-center justify-end gap-2">
                         {last && !opened && (
                           <span className="mr-auto text-xs text-ink-3">
-                            开放后奖励、参与方式、口令和时间都不能再改。
+                            {form.mode === "code"
+                              ? "开放后奖励、代码和时间都不能再改。"
+                              : "开放后奖励、参与方式、口令和时间都不能再改。"}
                           </span>
                         )}
                         {buttons(false)}

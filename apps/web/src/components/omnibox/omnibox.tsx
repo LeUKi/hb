@@ -247,17 +247,18 @@ export function Omnibox() {
     () =>
       offerId === null || offerPurpose === null
         ? null
-        : offerPurpose === "claim"
-          ? { id: offerId, purpose: "claim" }
-          : { id: offerId, purpose: "verify", hidden: offerHidden },
+        : offerPurpose === "verify"
+          ? { id: offerId, purpose: "verify", hidden: offerHidden }
+          : { id: offerId, purpose: offerPurpose },
     [offerId, offerPurpose, offerHidden],
   );
-  // ⌘K on a 红包 page claims into it. Verifying is offered as the list's
-  // first row (and from the 口令区), not opened straight away.
+  // ⌘K on a 红包 page claims into it (or submits to its code). Verifying is
+  // offered as the list's first row (and from the 口令区), not opened
+  // straight away.
   const defaultScope = useMemo<Scope>(
     () =>
-      offerId !== null && offerPurpose === "claim"
-        ? { id: offerId, purpose: "claim" }
+      offerId !== null && offerPurpose !== null && offerPurpose !== "verify"
+        ? { id: offerId, purpose: offerPurpose }
         : null,
     [offerId, offerPurpose],
   );
@@ -269,16 +270,24 @@ export function Omnibox() {
   // A box scoped to one 红包 only takes its 口令. Input that reads as a link
   // or a command is explained rather than acted on (or "optimised").
   const scoped = expanded && scope !== null;
+  // 代码判定: whatever is typed goes as it is, links and commands too, with
+  // no 口令 rules and no 优化 (02 §4).
+  const codeScope = scoped && scope?.purpose === "code";
   const offScope =
     scoped &&
+    !codeScope &&
     detected.kind !== "empty" &&
     (detected.kind !== "password" || looksLikeAddress(value));
   // Empty and free, the box says in turn what it takes (02 §6).
   const idleHint = useIdleHint(!docked && !scoped && value === "");
   const scheme = useMemo<EntryScheme>(
     () =>
-      offScope ? { kind: "password", ...inspectPassword(value) } : detected,
-    [offScope, detected, value],
+      codeScope
+        ? { kind: "empty" }
+        : offScope
+          ? { kind: "password", ...inspectPassword(value) }
+          : detected,
+    [codeScope, offScope, detected, value],
   );
   const commandMode = scheme.kind === "command";
   // While an IME composes, a 口令 holds unconfirmed pinyin and separators.
@@ -304,21 +313,29 @@ export function Omnibox() {
   const panelOpen =
     expanded ||
     (mode === "start" && inputFocused && (commandMode || optimized !== null));
-  const suggestions = useMemo(
+  const codeTyped = codeScope && value.trim() !== "";
+  const suggestions = useMemo<Suggestion[]>(
     () =>
-      panelOpen
-        ? buildSuggestions(
-            judgedValue,
-            judgedScheme,
-            scope,
-            recent,
-            role,
-            features,
-            optimized,
-            expanded && scope === null ? offer : null,
-          )
-        : [],
+      // 代码判定's list is its one row: 领取「标题」(nothing found elsewhere).
+      panelOpen && codeScope && scope
+        ? codeTyped
+          ? [{ key: "claim", kind: "claim", activityId: scope.id }]
+          : []
+        : panelOpen
+          ? buildSuggestions(
+              judgedValue,
+              judgedScheme,
+              scope,
+              recent,
+              role,
+              features,
+              optimized,
+              expanded && scope === null ? offer : null,
+            )
+          : [],
     [
+      codeScope,
+      codeTyped,
       panelOpen,
       judgedValue,
       judgedScheme,
@@ -351,7 +368,7 @@ export function Omnibox() {
   // lookup (再次确认) in the plain box, a claim (重试原提交) in the box
   // scoped to its 红包.
   const waiting = scope
-    ? scope.purpose === "claim"
+    ? scope.purpose !== "verify"
       ? unconfirmed.claims[scope.id]
       : undefined
     : unconfirmed.lookup;
@@ -374,24 +391,30 @@ export function Omnibox() {
     scheme.activityId === pasted.activityId
       ? ({ tone: "neutral", text: "已识别口令，打开红包后自动提交。" } as const)
       : null;
-  const shownMessage = offScope
-    ? ({
-        tone: "warning",
-        text: "这里只能输入口令；清空后按退格，可改为输入链接或命令。",
-      } as const)
-    : commandMode
-      ? null
-      : (resolveMessage(
-          judgedValue,
-          judgedScheme,
-          // A claim's answer belongs in the box scoped to its 红包 (or on
-          // that page), not wherever the box is when it arrives.
-          message?.activityId && message.activityId !== scope?.id
-            ? null
-            : message,
-        ) ??
-        pastedNote ??
-        statisticsNote);
+  const ownMessage =
+    message?.activityId && message.activityId !== scope?.id ? null : message;
+  const typed = Array.from(value.trim()).length;
+  const shownMessage = codeScope
+    ? (ownMessage ?? {
+        tone: /[\r\n]/.test(value) || typed > 200 ? "warning" : "neutral",
+        text: `原样提交：区分大小写，符号都算，首尾空格会去掉 · ${typed} / 200`,
+      })
+    : offScope
+      ? ({
+          tone: "warning",
+          text: "这里只能输入口令；清空后按退格，可改为输入链接或命令。",
+        } as const)
+      : commandMode
+        ? null
+        : (resolveMessage(
+            judgedValue,
+            judgedScheme,
+            // A claim's answer belongs in the box scoped to its 红包 (or on
+            // that page), not wherever the box is when it arrives.
+            ownMessage,
+          ) ??
+          pastedNote ??
+          statisticsNote);
 
   // The bar keeps its last address while fading out, and rolls to a new one
   // only if it was already showing an address (not while fading in).
@@ -502,7 +525,9 @@ export function Omnibox() {
         return;
       }
       if (item.kind === "claim") {
-        void controller.redeemIn(item.activityId, value);
+        void controller.redeemIn(item.activityId, value, {
+          code: scope?.purpose === "code",
+        });
         return;
       }
       if (item.kind === "verify") {
@@ -512,7 +537,7 @@ export function Omnibox() {
       if (item.kind === "discover") setScope(null);
       void controller.submit(value, true);
     },
-    [controller, setEditDraft, setMessage, setScope, setValue, value],
+    [controller, scope, setEditDraft, setMessage, setScope, setValue, value],
   );
 
   const execute = useCallback(() => {
@@ -612,7 +637,7 @@ export function Omnibox() {
 
   const activeItem = panelOpen ? (suggestions[active] ?? suggestions[0]) : null;
   const usesCooldown =
-    scheme.kind === "password" &&
+    (scheme.kind === "password" || codeScope) &&
     activeItem?.kind !== "optimize" &&
     (!expanded ||
       activeItem?.kind === "claim" ||
@@ -747,6 +772,8 @@ export function Omnibox() {
                 store.set(pastedPasswordAtom, null);
               }}
               onPaste={(text) => {
+                // 代码判定 takes what is pasted as it is.
+                if (codeScope) return false;
                 // A share text pasted whole (02 §6): its 红包's address in
                 // the box (its 口令 kept for when it opens), or the 口令 alone.
                 const shared = readShareText(text);
@@ -791,14 +818,17 @@ export function Omnibox() {
               compact={compact}
               readOnly={locked || pending}
               inactive={docked}
+              mono={codeScope}
               placeholder={
-                scope?.purpose === "verify" && scoped
-                  ? "输入其他口令"
-                  : scoped
-                    ? "输入口令"
-                    : compact
-                      ? "口令、红包链接或 / 命令"
-                      : "输入口令、红包链接，或输入 / 使用命令"
+                codeScope
+                  ? scopeFacts?.code?.prompt || "输入要提交的内容"
+                  : scope?.purpose === "verify" && scoped
+                    ? "输入其他口令"
+                    : scoped
+                      ? "输入口令"
+                      : compact
+                        ? "口令、红包链接或 / 命令"
+                        : "输入口令、红包链接，或输入 / 使用命令"
               }
               hint={
                 idleHint && <IdleHintText hint={idleHint} compact={compact} />
@@ -947,11 +977,14 @@ export function Omnibox() {
               ) : undefined
             }
             empty={
-              <p className="px-3 py-3 text-sm text-ink-3">
-                {commandMode
-                  ? "没有匹配的命令 · 输入 / 查看全部"
-                  : "输入口令、红包链接，或输入 / 使用命令"}
-              </p>
+              // 代码判定: its message line says what to type.
+              codeScope ? null : (
+                <p className="px-3 py-3 text-sm text-ink-3">
+                  {commandMode
+                    ? "没有匹配的命令 · 输入 / 查看全部"
+                    : "输入口令、红包链接，或输入 / 使用命令"}
+                </p>
+              )
             }
             footer={
               suggestions.some((item) => item.kind === "recent") ? (

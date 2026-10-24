@@ -111,7 +111,10 @@ function shareItems(
       icon: MessagesSquare,
       label: linkNames.community,
       detail: "带领取方法，避免违规推广",
-      text: forumShareLink(shared),
+      text: forumShareLink({
+        ...shared,
+        ...(activity.judge ? { codePrompt: activity.judge.prompt } : {}),
+      }),
     },
     ...withPasswords("community", (password) =>
       forumShareWithPassword(shared, password),

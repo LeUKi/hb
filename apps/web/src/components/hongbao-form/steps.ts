@@ -34,12 +34,22 @@ export type SettingsGroup =
   | "public"
   | "payment";
 
+/** A step's title: 代码判定's third step is 代码, in place of 怎么领. */
+export function stepTitle(step: StepId, form: FormState) {
+  if (step === "claim" && form.mode === "code") return "代码";
+  return steps[stepIndex(step)]?.title ?? "";
+}
+
 /** The step a field belongs to (fields in the panel count for theirs). */
 export function stepOfField(field: string): StepId {
   if (
     field.startsWith("hb-password-") ||
     field.startsWith("hb-timing-") ||
-    field === "hb-draw-limit"
+    field === "hb-draw-limit" ||
+    field === "hb-code-prompt" ||
+    field === "hb-code-code" ||
+    field === "hb-code-tests" ||
+    field === "hb-code-check"
   )
     return "claim";
   // Set in 更多设置 (its line on 怎么领 says so too): a problem made there
@@ -59,6 +69,23 @@ export function groupOfField(field: string): SettingsGroup | null {
     return "notes";
   if (field === "hb-topic") return "public";
   return null;
+}
+
+/** "2.3 KB" for a pasted file. */
+export function sizeOf(text: string) {
+  const bytes = new TextEncoder().encode(text).byteLength;
+  return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+/** "5 条测试", or what is wrong with tests.json at a glance. */
+export function testCount(text: string) {
+  if (!text.trim()) return "没有测试";
+  try {
+    const tests: unknown = JSON.parse(text);
+    return Array.isArray(tests) ? `${tests.length} 条测试` : "测试不是数组";
+  } catch {
+    return "测试不是有效的 JSON";
+  }
 }
 
 export function stepIssues(issues: Issue[], step: StepId) {
@@ -86,12 +113,18 @@ export function summaryOf(
           return `总额 ${ldc(total)} LDC · ${shares} 份${from}`;
         case "timed_draw":
           return `奖池 ${ldc(total)} LDC · ${shares} 个名额${from}`;
+        case "code":
+          return `总奖池 ${ldc(total)} LDC · ${shares} 份${from}`;
         default:
           return `总额 ${ldc(total)} LDC · ${shares} 份${from}`;
       }
     }
     case "claim": {
       const time = deadline ?? timingLine(form);
+      if (form.mode === "code")
+        return form.judge.code.trim()
+          ? `judge.js ${sizeOf(form.judge.code)} · ${testCount(form.judge.tests)} · ${time}`
+          : `代码还没贴 · ${time}`;
       if (form.participation === "direct") return `无需口令 · ${time}`;
       const count = form.passwords.filter((item) => item.trim()).length;
       return `${count > 0 ? `口令 ${count} 个` : "口令还没填"} · ${time}`;

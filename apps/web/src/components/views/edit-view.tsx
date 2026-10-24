@@ -22,7 +22,9 @@ import { StatusChip } from "../ui/status-chip";
 
 /**
  * 提前结束: only while it is running and nobody has claimed or signed up
- * (production's rule); otherwise the people already in would lose out.
+ * (production's rule); otherwise the people already in would lose out. A
+ * 代码判定红包 its code paused may end with claims in: claims wait anyway,
+ * and the rest goes back (docs/programmable-hongbao-design.md §3).
  */
 function EndEarly({
   activity,
@@ -64,11 +66,14 @@ function EndEarly({
   };
   return (
     <PageSection
+      id="end-early"
       title="提前结束"
       description={
         done
           ? undefined
-          : "还没有人领取或报名，所以现在可以提前结束。结束后不能再领取或报名，也不能重新开放。"
+          : activity.judgePaused
+            ? "红包的代码连续出错，已暂停领取，所以现在可以提前结束。已经领到的不受影响，剩下的退回你的🐟额。结束后不能重新开放。"
+            : "还没有人领取或报名，所以现在可以提前结束。结束后不能再领取或报名，也不能重新开放。"
       }
     >
       {/* The panel turns into its outcome in place. */}
@@ -82,7 +87,9 @@ function EndEarly({
         ) : (
           <Panel className="flex flex-wrap items-center justify-between gap-3 p-4">
             <p className="text-sm text-ink-2">
-              一旦有人领取或报名，就只能等它领完或到时间。
+              {activity.judgePaused
+                ? "暂停后只能提前结束，或者等到截止时间。"
+                : "一旦有人领取或报名，就只能等它领完或到时间。"}
             </p>
             <Button
               variant="danger"
@@ -195,8 +202,9 @@ function EditPage({
   const canEnd =
     !draft &&
     !view.endReason &&
-    activity.claimedCount === 0 &&
-    (activity.draw?.registeredCount ?? 0) === 0;
+    ((activity.claimedCount === 0 &&
+      (activity.draw?.registeredCount ?? 0) === 0) ||
+      activity.judgePaused === true);
   // Stays on the page after ending, to say so (and to hold focus).
   return (
     <Page>

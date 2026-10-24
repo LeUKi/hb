@@ -13,6 +13,8 @@ export type ActivityFacts = {
   /** 🐟额红包: nothing is paid out, so it has no 付款记录. */
   fish: boolean;
   authorUsername: string;
+  /** 代码判定红包: what its sender wrote above the box (02 §4). */
+  code?: { prompt: string };
 };
 
 /**
@@ -30,8 +32,9 @@ export function useActivityFacts(id: string | null): ActivityFacts | null {
     id: activity.id,
     title: activity.title,
     timedDraw: activity.reward?.mode === "timed_draw",
-    password: activity.participationMode !== "direct",
+    password: activity.participationMode === "password",
     fish: activity.funding === "balance",
     authorUsername: activity.author.username,
+    ...(activity.judge ? { code: { prompt: activity.judge.prompt } } : {}),
   };
 }

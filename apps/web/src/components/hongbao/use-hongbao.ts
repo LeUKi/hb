@@ -154,7 +154,7 @@ export function useHongbao(data: HongbaoData) {
     (pending &&
       mode === "expanded" &&
       scope?.id === activity.id &&
-      scope.purpose === "claim");
+      scope.purpose !== "verify");
 
   // A draw result arriving while the page is open plays its own reveal.
   const outcome = mine?.kind === "registered" ? mine.outcome : null;
@@ -207,13 +207,16 @@ export function useHongbao(data: HongbaoData) {
   const retry = Boolean(pendingRetry);
   const cooldown =
     activity.participation === "direct" && !gate && cooling && !retry;
+  // 代码判定: its code failed five times running, claims wait (05 §13).
+  const code = activity.participation === "code";
+  const paused = code && activity.judge?.paused === true;
   const sealState = drawing
     ? "pending"
     : phase === "ended"
       ? "muted"
       : spinning
         ? "pending"
-        : cooldown || author || draft
+        : cooldown || author || draft || paused
           ? "disabled"
           : "idle";
   const drawStep = useDrawStep(view);
@@ -234,27 +237,33 @@ export function useHongbao(data: HongbaoData) {
         ? `草稿预览，开放后才能${verb}`
         : author
           ? `这是你发的红包，你不能${verb}`
-          : spinning
-            ? "正在确认…"
-            : gate === "login"
-              ? `登录后${verb}`
-              : retry
-                ? `点「${glyph}」重试原提交`
-                : activity.participation === "password"
-                  ? `点「${glyph}」，输入口令${verb}`
-                  : `点「${glyph}」${verb}`;
+          : paused
+            ? "红包的代码连续出错，暂停领取"
+            : spinning
+              ? "正在确认…"
+              : gate === "login"
+                ? `登录后${verb}`
+                : retry
+                  ? `点「${glyph}」重试原提交`
+                  : code
+                    ? `点「${glyph}」，输入后提交，由发红包的人的代码判定`
+                    : activity.participation === "password"
+                      ? `点「${glyph}」，输入口令${verb}`
+                      : `点「${glyph}」${verb}`;
   const sealLabel =
-    phase === "ended" || author || draft
+    phase === "ended" || author || draft || paused
       ? hint
       : gate === "login"
         ? "登录"
         : retry
           ? "重试原提交"
-          : activity.participation === "password"
-            ? `输入口令${verb}`
-            : isDraw
-              ? "报名"
-              : "领取红包";
+          : code
+            ? "输入后提交"
+            : activity.participation === "password"
+              ? `输入口令${verb}`
+              : isDraw
+                ? "报名"
+                : "领取红包";
   const announcement = !mine
     ? ""
     : mine.kind === "claimed"
@@ -273,7 +282,7 @@ export function useHongbao(data: HongbaoData) {
   }, [humanCheckAhead]);
 
   const press = () => {
-    if (phase !== "closed" || spinning || author || draft) return;
+    if (phase !== "closed" || spinning || author || draft || paused) return;
     if (gate) {
       haptic("light");
       controller.openAccount();
@@ -294,13 +303,13 @@ export function useHongbao(data: HongbaoData) {
       haptic("light");
       setClaiming(true);
       void controller
-        .redeemIn(activity.id, pendingRetry.password || null)
+        .redeemIn(activity.id, pendingRetry.password || null, { code })
         .finally(() => setClaiming(false));
       return;
     }
-    if (activity.participation === "password") {
+    if (activity.participation === "password" || code) {
       haptic("light");
-      controller.expand({ id: activity.id, purpose: "claim" });
+      controller.expand({ id: activity.id, purpose: code ? "code" : "claim" });
       return;
     }
     if (cooldown) return;

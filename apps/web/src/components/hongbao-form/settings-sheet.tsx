@@ -53,9 +53,11 @@ const notes: {
 export function groupsOf(form: FormState, opened: boolean): SettingsGroup[] {
   const groups: SettingsGroup[] = [];
   if (!opened) {
-    if (form.mode !== "fixed") groups.push("split");
+    // 代码判定 has no 分法 or 发放顺序, and no 首页领取 (07 §5).
+    if (form.mode !== "fixed" && form.mode !== "code") groups.push("split");
     groups.push("timing", "scope");
-    if (form.participation === "password") groups.push("password");
+    if (form.mode !== "code" && form.participation === "password")
+      groups.push("password");
   }
   groups.push("notes", "public");
   // 🐟额红包 have no merchant to show (balance-design §14).
@@ -144,8 +146,10 @@ export function SettingsSheet({
   const scroller = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState<NoteKey | null>(null);
   const groups = groupsOf(form, opened);
-  // 首页领取 off keeps 红包广场 on (07 §6).
-  const squareRequired = form.participation === "password" && form.pageOnly;
+  // 首页领取 off keeps 红包广场 on (07 §6); 代码判定 is only on its page.
+  const coded = form.mode === "code";
+  const squareRequired =
+    coded || (form.participation === "password" && form.pageOnly);
   const { total, shares } = plan(form);
   const range = (algorithm: FormState["random"]["algorithm"]) =>
     total !== null && shares !== null && total >= shares
@@ -418,11 +422,13 @@ export function SettingsSheet({
                 description={
                   listedLocked
                     ? "已加入红包广场，不能撤回。"
-                    : squareRequired
-                      ? "关闭首页领取的红包要加入红包广场，方便大家找到。"
-                      : opened
-                        ? "在红包广场公开展示，谁都能看到。开启后不能撤回。"
-                        : "开放后在红包广场公开展示，谁都能看到。开放之后不能撤回。"
+                    : coded
+                      ? "代码判定红包只能在红包页领，自动加入红包广场。"
+                      : squareRequired
+                        ? "关闭首页领取的红包要加入红包广场，方便大家找到。"
+                        : opened
+                          ? "在红包广场公开展示，谁都能看到。开启后不能撤回。"
+                          : "开放后在红包广场公开展示，谁都能看到。开放之后不能撤回。"
                 }
                 checked={form.listed || squareRequired}
                 disabled={listedLocked || squareRequired}

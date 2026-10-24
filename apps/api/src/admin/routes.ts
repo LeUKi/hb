@@ -109,7 +109,7 @@ function encodeAuditCursor(row: AuditCursor | undefined) {
 function parseAuditCursor(value: string | undefined): AuditCursor | null {
   if (!value) return null;
   const match =
-    /^(\d{1,16}):(attempt_rate_limits|balance_settings):([A-Za-z0-9_-][A-Za-z0-9_-]{0,100}|[a-f0-9-]{36})$/.exec(
+    /^(\d{1,16}):(attempt_rate_limits|balance_settings|code_stop):([A-Za-z0-9_-][A-Za-z0-9_-]{0,100}|[a-f0-9-]{36})$/.exec(
       value,
     );
   if (!match) throw new ActivityError(400, "INVALID_CURSOR", "分页游标无效。");
@@ -1212,6 +1212,17 @@ function balanceAuditValues(json: unknown): Record<string, boolean | number> {
     ...("hongbaoEnabled" in value
       ? { hongbaoEnabled: value.hongbaoEnabled === true }
       : {}),
+    ...("transferEnabled" in value
+      ? { transferEnabled: value.transferEnabled === true }
+      : {}),
+    // 代码判定红包 (0040), likewise.
+    ...("codeHongbaoEnabled" in value
+      ? {
+          codeHongbaoEnabled: value.codeHongbaoEnabled === true,
+          codeHongbaoDailyLimit: Number(value.codeHongbaoDailyLimit ?? 0),
+          codeCheckDailyLimit: Number(value.codeCheckDailyLimit ?? 0),
+        }
+      : {}),
     ...("allowlistEnabled" in value
       ? {
           allowlistEnabled: value.allowlistEnabled === true,
@@ -1279,6 +1290,20 @@ async function audit(
       values: (row: Record<string, unknown>) => ({
         before: balanceAuditValues(JSON.parse(String(row.previous))),
         after: balanceAuditValues(JSON.parse(String(row.next))),
+      }),
+    },
+    // 停用 of a 代码判定红包 (07 §10): kept on the 红包's own code row.
+    {
+      type: "code_stop" as const,
+      columns: "c.title",
+      table: `(SELECT j.activity_id AS id, j.stopped_by_user_id AS actor_user_id,
+        j.stopped_at AS created_at, 0 AS previous_version, 0 AS next_version, a.title
+        FROM activity_code j JOIN activities a ON a.id = j.activity_id
+        WHERE j.stopped_at IS NOT NULL)`,
+      values: (row: Record<string, unknown>) => ({
+        before: {},
+        after: {},
+        activity: { id: String(row.id), title: String(row.title) },
       }),
     },
   ].filter((source) => type === "all" || source.type === type);

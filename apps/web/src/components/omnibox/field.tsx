@@ -129,6 +129,7 @@ export function OmniboxField({
   onPaste,
   listbox,
   mismatch = 0,
+  mono = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -158,6 +159,8 @@ export function OmniboxField({
   listbox?: { id: string; active: number } | null;
   /** Changes each time a 口令 matched nothing (see useMismatchFlash). */
   mismatch?: number;
+  /** 代码判定's box: what is typed in fixed width (02 §4). */
+  mono?: boolean;
 }) {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const mirrorRef = useRef<HTMLDivElement | null>(null);
@@ -181,7 +184,7 @@ export function OmniboxField({
     omniboxElements.input = element;
   }, []);
 
-  const typography = compact ? "text-lg" : "text-xl";
+  const typography = `${compact ? "text-lg" : "text-xl"}${mono ? " font-mono" : ""}`;
 
   return (
     <div

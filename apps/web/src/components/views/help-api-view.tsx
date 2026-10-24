@@ -9,21 +9,44 @@ import { CopyButton } from "../ui/copy-button";
 // machine-readable twin /api/open/openapi.json (apps/api balance/openapi.ts).
 // Keep the two together when either changes.
 
-function Block({ label, code }: { label: string; code: string }) {
+/**
+ * A copyable block of code (also on /help/code); `wrap` for prose, such as
+ * the prompt for an AI, kept to a scrolling height.
+ */
+export function Block({
+  label,
+  code,
+  wrap = false,
+}: {
+  label: string;
+  code: string;
+  wrap?: boolean;
+}) {
   return (
     <Panel className="relative grid gap-1 p-3">
       <span className="flex items-center justify-between gap-2">
         <span className="text-xs text-ink-3">{label}</span>
         <CopyButton value={code} label={label} />
       </span>
-      <pre className="overflow-x-auto font-mono text-[13px] leading-5 text-ink-2 whitespace-pre">
+      <pre
+        className={
+          wrap
+            ? "max-h-[24rem] overflow-y-auto font-mono text-[13px] leading-5 break-words whitespace-pre-wrap text-ink-2"
+            : "overflow-x-auto font-mono text-[13px] leading-5 text-ink-2 whitespace-pre"
+        }
+      >
         {code}
       </pre>
     </Panel>
   );
 }
 
-function Fields({ items }: { items: { name: string; note: ReactNode }[] }) {
+/** Names and what they mean (also on /help/code). */
+export function Fields({
+  items,
+}: {
+  items: { name: string; note: ReactNode }[];
+}) {
   return (
     <Panel as="dl" className="grid px-4">
       {items.map((item) => (

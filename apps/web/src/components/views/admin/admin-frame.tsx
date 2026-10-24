@@ -51,7 +51,8 @@ const tabs: {
   {
     to: "/admin/activities",
     label: "红包",
-    description: "全站的红包，草稿也在内。只能查看，不能修改、结束或删除。",
+    description:
+      "全站的红包，草稿也在内。只能查看，不能修改、结束或删除；进行中的代码判定红包可以停用。",
     refreshable: true,
   },
   {

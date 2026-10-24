@@ -21,6 +21,13 @@ import { StatusChip } from "../../ui/status-chip";
 const percentValid = (value: string) =>
   /^\d{1,2}$/.test(value.trim()) && Number(value) <= 50;
 
+/** A daily count as typed (代码判定红包's two limits): 1–1000, or null. */
+function countOf(value: string) {
+  if (!/^\d{1,4}$/.test(value.trim())) return null;
+  const count = Number(value.trim());
+  return count >= 1 && count <= 1000 ? count : null;
+}
+
 /** 单笔转出上限 as typed: cents, or null while it is not 1.00–2000.00. */
 function capMinor(value: string) {
   if (!/^\d{1,4}(\.\d{1,2})?$/.test(value.trim())) return null;
@@ -36,6 +43,9 @@ type Draft = {
   withdrawMax?: string;
   hongbaoEnabled?: boolean;
   transferEnabled?: boolean;
+  codeEnabled?: boolean;
+  codeDaily?: string;
+  checkDaily?: string;
 };
 
 /**
@@ -62,6 +72,8 @@ export function BalanceSettingsSection({
     topupFee: useId(),
     withdrawFee: useId(),
     withdrawMax: useId(),
+    codeDaily: useId(),
+    checkDaily: useId(),
   };
   const values = {
     topupEnabled: draft.topupEnabled ?? shown.topupEnabled,
@@ -71,12 +83,19 @@ export function BalanceSettingsSection({
     withdrawMax: draft.withdrawMax ?? (shown.withdrawMaxMinor / 100).toFixed(2),
     hongbaoEnabled: draft.hongbaoEnabled ?? shown.hongbaoEnabled,
     transferEnabled: draft.transferEnabled ?? shown.transferEnabled,
+    codeEnabled: draft.codeEnabled ?? shown.codeHongbaoEnabled,
+    codeDaily: draft.codeDaily ?? String(shown.codeHongbaoDailyLimit),
+    checkDaily: draft.checkDaily ?? String(shown.codeCheckDailyLimit),
   };
   const cap = capMinor(values.withdrawMax);
+  const codeDaily = countOf(values.codeDaily);
+  const checkDaily = countOf(values.checkDaily);
   const ok =
     percentValid(values.topupFee) &&
     percentValid(values.withdrawFee) &&
-    cap !== null;
+    cap !== null &&
+    codeDaily !== null &&
+    checkDaily !== null;
   const changed = Object.keys(draft).length > 0;
   const edit = (patch: Draft) => {
     setBase((current) => current ?? data.settings);
@@ -98,6 +117,9 @@ export function BalanceSettingsSection({
         withdrawMaxMinor: cap ?? shown.withdrawMaxMinor,
         hongbaoEnabled: values.hongbaoEnabled,
         transferEnabled: values.transferEnabled,
+        codeHongbaoEnabled: values.codeEnabled,
+        codeHongbaoDailyLimit: codeDaily ?? shown.codeHongbaoDailyLimit,
+        codeCheckDailyLimit: checkDaily ?? shown.codeCheckDailyLimit,
       });
       setBase(null);
       setDraft({});
@@ -122,7 +144,7 @@ export function BalanceSettingsSection({
     <PageSection
       id="balance-settings"
       title="🐟额"
-      description="转入、转出、🐟额红包和转账的开关，以及费率。费率要和平台账户在 Credit 站的等级一致：填低了，差价由本站垫上。"
+      description="转入、转出、🐟额红包、转账和代码判定红包的开关，以及费率。费率要和平台账户在 Credit 站的等级一致：填低了，差价由本站垫上。"
     >
       <Panel>
         <LeaveGuard
@@ -154,6 +176,42 @@ export function BalanceSettingsSection({
             checked={values.transferEnabled}
             onChange={(transferEnabled) => edit({ transferEnabled })}
           />
+          <Switch
+            label="代码判定红包"
+            description="开着时，开通🐟额 PLUS 的人能发代码判定红包（也要开着🐟额红包）。关掉后不能新建、开放，已经开放的照常能领、照常退回。"
+            checked={values.codeEnabled}
+            onChange={(codeEnabled) => edit({ codeEnabled })}
+          />
+          <div className="grid gap-4 @wide/window:grid-cols-2">
+            <Field
+              label="代码判定红包每人每天最多开放"
+              htmlFor={ids.codeDaily}
+              hint="按北京时间算一天，1–1000"
+              error={codeDaily === null ? "请填 1–1000 的整数" : null}
+            >
+              <TextInput
+                id={ids.codeDaily}
+                inputMode="numeric"
+                suffix="个"
+                value={values.codeDaily}
+                onChange={(event) => edit({ codeDaily: event.target.value })}
+              />
+            </Field>
+            <Field
+              label="在线检查每人每天"
+              htmlFor={ids.checkDaily}
+              hint="发代码判定红包前检查代码，1–1000"
+              error={checkDaily === null ? "请填 1–1000 的整数" : null}
+            >
+              <TextInput
+                id={ids.checkDaily}
+                inputMode="numeric"
+                suffix="次"
+                value={values.checkDaily}
+                onChange={(event) => edit({ checkDaily: event.target.value })}
+              />
+            </Field>
+          </div>
           <div className="grid gap-4 @wide/window:grid-cols-3">
             <Field
               label="流转费率"

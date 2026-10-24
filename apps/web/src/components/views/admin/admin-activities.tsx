@@ -6,16 +6,19 @@ import {
   useAdminActivity,
   useAdminList,
   useAdminUser,
+  useStopCode,
 } from "../../../lib/admin";
 import { cn } from "../../../lib/cn";
 import { type SentRecord, sentRecordOf } from "../../../lib/records";
 import { clockLabel } from "../../../lib/roster-time";
+import { useIdentity } from "../../../lib/session";
 import type { AdminSearch } from "../../../router";
 import { statusOf } from "../../hongbao/hongbao-card";
 import { useOmniboxController } from "../../omnibox/use-omnibox-controller";
 import { useQueryLazyList } from "../../page/lazy-list";
 import { EmptyNote } from "../../page/page";
 import { Bone, PageLoad, resultOf } from "../../page/page-state";
+import { ConfirmDialog } from "../../shell/confirm-dialog";
 import { useSearchChoice } from "../../shell/use-search-choice";
 import { Button } from "../../ui/button";
 import { CopyButton } from "../../ui/copy-button";
@@ -89,6 +92,70 @@ function RowBody({ row }: { row: Row }) {
   );
 }
 
+/**
+ * 停用 (07 §10): the one exception to a read-only 红包 tab, for a running
+ * 代码判定红包. It stops claims and gives the rest back to its sender.
+ */
+function StopCode({ row, title }: { row: Row; title: string }) {
+  const identity = useIdentity();
+  const stop = useStopCode(identity.csrfToken ?? "");
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const busy = stop.isPending;
+  return (
+    <>
+      <Button size="sm" variant="danger" onClick={() => setConfirming(true)}>
+        停用
+      </Button>
+      <ConfirmDialog
+        open={confirming}
+        onClose={() => {
+          if (busy) return;
+          setConfirming(false);
+          setError(null);
+        }}
+        busy={busy}
+        title={`停用「${title}」？`}
+        text="停用后不能再领，剩下的退回发红包的人的🐟额。"
+        error={error}
+        actions={
+          <>
+            <Button
+              aria-disabled={busy || undefined}
+              onClick={() => {
+                if (busy) return;
+                setConfirming(false);
+                setError(null);
+              }}
+            >
+              取消
+            </Button>
+            <Button
+              variant="danger"
+              aria-disabled={busy || undefined}
+              onClick={() => {
+                if (busy) return;
+                setError(null);
+                stop.mutate(row.id, {
+                  onSuccess: () => setConfirming(false),
+                  onError: (failure) =>
+                    setError(
+                      failure instanceof Error
+                        ? failure.message
+                        : "停用没有完成，请再试一次。",
+                    ),
+                });
+              }}
+            >
+              {busy ? "正在停用…" : error ? "再试一次" : "停用"}
+            </Button>
+          </>
+        }
+      />
+    </>
+  );
+}
+
 function Detail({ row }: { row: Row }) {
   const navigate = useNavigate({ from: "/admin/activities" });
   const { leaveTo } = useOmniboxController();
@@ -136,8 +203,40 @@ function Detail({ row }: { row: Row }) {
                     (detail) =>
                       `口令 ${detail.passwordCount} 个${activity.pageOnly ? " · 关闭首页领取" : ""}`,
                   )
-                : "无需口令",
+                : row.participationMode === "code"
+                  ? "代码判定"
+                  : "无需口令",
           },
+          // 代码判定红包: its fingerprint and how its code is doing; never
+          // the code or anyone's input.
+          ...(row.participationMode === "code"
+            ? [
+                {
+                  label: "代码指纹",
+                  value: later((detail) =>
+                    detail.code ? (
+                      <span className="font-mono text-xs break-all">
+                        {detail.code.fingerprint}
+                      </span>
+                    ) : (
+                      "—"
+                    ),
+                  ),
+                },
+                {
+                  label: "代码",
+                  value: later((detail) =>
+                    !detail.code
+                      ? "—"
+                      : detail.code.stoppedAt
+                        ? `${clockLabel(detail.code.stoppedAt)} 由 ${detail.code.stoppedBy ?? "站长"} 停用`
+                        : detail.code.pausedAt
+                          ? `连续出错，${clockLabel(detail.code.pausedAt)} 起暂停领取`
+                          : `正常 · 连续出错 ${detail.code.failuresInRow} 次`,
+                  ),
+                },
+              ]
+            : []),
           draw
             ? {
                 label: "报名",
@@ -211,6 +310,11 @@ function Detail({ row }: { row: Row }) {
             打开红包
           </Button>
         )}
+        {row.participationMode === "code" &&
+          !activity.draft &&
+          !view.endReason &&
+          more?.code &&
+          !more.code.stoppedAt && <StopCode row={row} title={activity.title} />}
         {(more?.payments.total ?? 0) > 0 && (
           <Button
             size="sm"

@@ -103,7 +103,8 @@ function ActionHint({
       )}
       {!compact &&
         phase === "closed" &&
-        activity.participation === "password" &&
+        activity.participation !== "direct" &&
+        hongbao.sealState === "idle" &&
         !hongbao.gate &&
         !hongbao.author &&
         !hongbao.draft && (
@@ -215,6 +216,8 @@ export function HongbaoHero({
           "hb-cover-frame z-10",
           pinned ? "sticky top-0" : "relative",
           phase === "ended" && !hongbao.drawing && "hb-ended",
+          // 代码判定红包: 黑漆描金 (05 §14).
+          activity.mode === "code" && "hb-code",
         )}
         style={{ marginBottom: comp }}
         data-cover={state}
@@ -305,7 +308,7 @@ export function HongbaoHero({
                 onPress={hongbao.press}
                 describedBy={hintId}
                 shortcut={
-                  activity.participation === "password" &&
+                  activity.participation !== "direct" &&
                   hongbao.sealState === "idle" &&
                   !hongbao.gate
                     ? isApple

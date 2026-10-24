@@ -1,12 +1,14 @@
 import type {
   ActivityParticipationResponse,
   ActivityPasswords,
+  AuthorClaim,
   ClaimDetail,
   DrawProof,
   ManagedActivity,
   PaymentView,
   PublicActivity,
   PublicClaimScope,
+  PublicJudge,
 } from "@hb/contracts";
 import { rewardSummaryOf, type Split, splitOf } from "./hongbao-text";
 import type { RosterTitle } from "./titles";
@@ -58,6 +60,15 @@ export type HongbaoActivity = {
     | { kind: "at"; at: string };
   /** Every 口令: the sender's own view only. */
   passwords: string[];
+  /**
+   * 代码判定 (docs/programmable-hongbao-design.md §6): the prompt, the
+   * fingerprints, whether failing code paused it, and once over the code.
+   */
+  judge?: PublicJudge;
+  /** 代码判定's 每份至少. */
+  minEach?: string;
+  /** 代码判定: the code in full, for its sender while it runs (07 §6). */
+  senderCode?: string;
 };
 
 export type DurationUnit = "seconds" | "minutes" | "hours" | "days";
@@ -89,7 +100,9 @@ export type EndReason =
   | "drawn"
   | "empty"
   | "settling"
-  | "closed";
+  | "closed"
+  /** 代码判定红包 stopped by the 站长 (07 §10). */
+  | "stopped";
 
 export const endLabels: Record<EndReason, string> = {
   sold_out: "已领完",
@@ -98,6 +111,7 @@ export const endLabels: Record<EndReason, string> = {
   empty: "无人报名",
   settling: "开奖中",
   closed: "已提前结束",
+  stopped: "已停用",
 };
 
 export type FuzzyLevel = "plenty" | "limited" | "low" | "empty";
@@ -201,6 +215,9 @@ export function hongbaoOf(
                 }
               : undefined,
     passwords: config?.passwords ?? [],
+    ...(activity.judge ? { judge: activity.judge } : {}),
+    ...(reward?.minEach ? { minEach: reward.minEach } : {}),
+    ...(config?.judge ? { senderCode: config.judge.code } : {}),
   };
 }
 
@@ -221,6 +238,7 @@ function endReasonOf(activity: PublicActivity, now: number): EndReason | null {
     if (draw.state === "empty") return "empty";
     return activity.status === "active" ? null : "drawn";
   }
+  if (activity.stopped || activity.judge?.stopped) return "stopped";
   if (soldOut(activity)) return "sold_out";
   const deadline = activity.deadlineAt ? Date.parse(activity.deadlineAt) : null;
   if (deadline !== null && deadline <= now) return "expired";
@@ -290,6 +308,7 @@ export function endHint(view: PublicView) {
     drawn: "已开奖",
     empty: "无人报名",
     closed: "红包已提前结束",
+    stopped: "红包已被站长停用",
   }[view.endReason ?? "expired"];
 }
 
@@ -307,6 +326,8 @@ export type RosterRow = {
   /** The sender's view: the 口令 used and the payment (05 §作者名单). */
   password?: string | null;
   payment?: PaymentView | null;
+  /** 代码判定, the sender's view: what was typed, and the code's own number. */
+  judge?: AuthorClaim["judge"];
 };
 
 /**
@@ -396,6 +417,8 @@ export type Mine =
       titles: RosterTitle[];
       afterClaimInfo?: string;
       payment: PaymentView | null;
+      /** 代码判定: what was typed, the code's reply, why the amount differs. */
+      judge?: ClaimDetail["judge"];
     }
   | {
       kind: "registered";
@@ -420,6 +443,7 @@ function claimed(claim: ClaimDetail, titles: RosterTitle[]): Mine {
     titles,
     afterClaimInfo: claim.afterClaimInfo || undefined,
     payment: claim.payment ?? null,
+    ...(claim.judge ? { judge: claim.judge } : {}),
   };
 }
 

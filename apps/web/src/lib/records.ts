@@ -86,6 +86,7 @@ export function sentRecordOf(
     beforeInfo: "",
     ...(summary.paymentMode ? { paymentMode: summary.paymentMode } : {}),
     ...(summary.draw ? { draw: summary.draw } : {}),
+    ...(summary.stopped ? { stopped: true as const } : {}),
   };
   return {
     activity: hongbaoOf(activity),

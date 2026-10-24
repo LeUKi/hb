@@ -247,6 +247,7 @@ describe("代码判定红包: records", () => {
     const page = await getPublicActivity(bindings, opened.id);
     expect(page.status).toBe("ended");
     expect(page.judge).toMatchObject({ stopped: true, code: ECHO });
+    expect(page.stopped).toBe(true);
     expect(await readAccount(bindings, author.id)).toMatchObject({
       availableMinor: 402,
       lockedMinor: 0,

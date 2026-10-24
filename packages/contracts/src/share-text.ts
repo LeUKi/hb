@@ -42,13 +42,23 @@ const verbOf = (activity: Pick<ShareActivity, "draw">) =>
  * button and leaves as it is (no emoji pictures, no link preview); the site
  * itself is only reached through its forum post.
  */
-export function forumShareLink(activity: Pick<ShareActivity, "id" | "title">) {
+export function forumShareLink(
+  activity: Pick<ShareActivity, "id" | "title"> & {
+    /** 代码判定红包: its sender's prompt, said under how to open it. */
+    codePrompt?: string;
+  },
+) {
   return [
     `【${activity.title}】`,
     FENCE,
     activityPath(activity.id),
     FENCE,
     howTo("打开红包"),
+    ...(activity.codePrompt !== undefined
+      ? [
+          `本红包由代码判定，打开后在红包页输入。${activity.codePrompt ? `提示：${activity.codePrompt}` : ""}`,
+        ]
+      : []),
   ].join("\n");
 }
 

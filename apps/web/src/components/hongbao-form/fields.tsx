@@ -2,6 +2,7 @@ import { ACTIVITY_LIMITS } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import {
   AlertTriangle,
+  Braces,
   ChevronRight,
   Equal,
   KeyRound,
@@ -40,6 +41,7 @@ import { Reveal, RevealInline, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import {
   type Algorithm,
+  cents,
   customLines,
   type FormState,
   type Issue,
@@ -82,8 +84,8 @@ export function counter(text: string, max: number) {
 }
 
 /**
- * The 玩法: the two most used first (拼手气, 限时开奖); the other two wait
- * behind 更多玩法.
+ * The 玩法: the two most used first (拼手气, 限时开奖); the rest wait
+ * behind 更多玩法, 代码判定 only for 🐟额 PLUS (07 §5).
  */
 export const modeOptions: {
   value: RewardMode;
@@ -91,6 +93,7 @@ export const modeOptions: {
   description: string;
   icon: typeof Equal;
   more?: boolean;
+  plus?: boolean;
 }[] = [
   {
     value: "random",
@@ -117,6 +120,14 @@ export const modeOptions: {
     description: "一行一份，自己定",
     icon: ListOrdered,
     more: true,
+  },
+  {
+    value: "code",
+    title: "代码判定",
+    description: "写一段代码，决定谁领多少",
+    icon: Braces,
+    more: true,
+    plus: true,
   },
 ];
 
@@ -310,6 +321,52 @@ export function AmountFields({
             }),
           ],
         )}
+      {form.mode === "code" && (
+        <>
+          {pair(
+            [
+              "hb-code-total",
+              "总奖池",
+              "100.00",
+              form.judge.total,
+              (current, total) => ({
+                ...current,
+                judge: { ...current.judge, total },
+              }),
+            ],
+            [
+              "hb-code-count",
+              "份数",
+              "10",
+              form.judge.count,
+              (current, count) => ({
+                ...current,
+                judge: { ...current.judge, count },
+              }),
+            ],
+          )}
+          <Field
+            label="每份至少"
+            htmlFor="hb-code-min"
+            hint="每份最少发多少，最少 0.01。代码给得更少时按它发。"
+            error={errorOf("hb-code-min")}
+          >
+            <TextInput
+              {...amountProps("hb-code-min")}
+              className="@wide/window:w-[calc(50%-0.5rem)]"
+              placeholder="0.01"
+              value={form.judge.minEach}
+              onChange={(event) => {
+                const minEach = event.target.value;
+                update((current) => ({
+                  ...current,
+                  judge: { ...current.judge, minEach },
+                }));
+              }}
+            />
+          </Field>
+        </>
+      )}
       {form.mode === "custom" && (
         <Field
           label="每份金额"
@@ -339,14 +396,24 @@ export function AmountFields({
       <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1 border-line border-t pt-4 text-sm text-ink-2">
         {total !== null ? (
           <span>
-            {form.mode === "timed_draw" ? "奖池" : "总额"}{" "}
+            {form.mode === "timed_draw"
+              ? "奖池"
+              : form.mode === "code"
+                ? "总奖池"
+                : "总额"}{" "}
             <span className="text-base font-semibold text-ink tabular-nums">
               {ldc(total)}
             </span>{" "}
             LDC
           </span>
         ) : (
-          <span>{form.mode === "timed_draw" ? "奖池未填" : "总额未填"}</span>
+          <span>
+            {form.mode === "timed_draw"
+              ? "奖池未填"
+              : form.mode === "code"
+                ? "总奖池未填"
+                : "总额未填"}
+          </span>
         )}
         <span className="text-ink-3">
           ·{" "}
@@ -354,17 +421,26 @@ export function AmountFields({
             ? `${shares} ${form.mode === "timed_draw" ? "个名额" : "份"}`
             : "份数未填"}
           {unit !== null && ` · 每份 ${ldc(unit)} LDC`}
+          {form.mode === "code" &&
+            ` · 每份至少 ${cents(form.judge.minEach) !== null ? ldc(cents(form.judge.minEach) ?? 0) : "—"} LDC · 每份发多少由代码定`}
         </span>
       </p>
       <div className="-mt-3 flex flex-col gap-1">
-        <p className="text-xs text-ink-3">
-          最多 1,000 份，每份至少 0.01
-          LDC，金额最多两位小数。填的是每份发出的金额。
-          {form.funding === "balance"
-            ? "领到的直接存进领取者的🐟额。"
-            : "领取者到账时，Credit 站会按你在 Credit 站的等级扣分发费（4%–15%）。"}
-          你不能领自己的红包。
-        </p>
+        {form.mode === "code" ? (
+          <p className="text-xs text-ink-3">
+            最多 1,000
+            份，金额最多两位小数；总奖池要够每份都拿到“每份至少”。每份发多少由你的代码定，多了按上限发，少了按每份至少发，最后一份发完剩下的。领到的直接存进领取者的🐟额。你不能领自己的红包。
+          </p>
+        ) : (
+          <p className="text-xs text-ink-3">
+            最多 1,000 份，每份至少 0.01
+            LDC，金额最多两位小数。填的是每份发出的金额。
+            {form.funding === "balance"
+              ? "领到的直接存进领取者的🐟额。"
+              : "领取者到账时，Credit 站会按你在 Credit 站的等级扣分发费（4%–15%）。"}
+            你不能领自己的红包。
+          </p>
+        )}
         {/* Opens as the total passes 800 LDC, and closes under it; 🐟额
             does not go through Credit at all. */}
         <Reveal
@@ -416,6 +492,33 @@ export function FundingChoice({
     </MoreLink>
   );
   if (locked) return null;
+  // 代码判定红包只能从🐟额发 (07 §5): the one card, and why.
+  if (form.mode === "code")
+    return (
+      <div className="grid gap-2">
+        <ChoiceCards
+          label="从哪发"
+          value="balance"
+          onChange={() => {}}
+          options={[
+            {
+              value: "balance",
+              title: "🐟额",
+              description: fishReady
+                ? `可用 ${ldc(Math.max(0, available))} 🐟，领到的进领取者的🐟额`
+                : "🐟额里没有可用",
+              icon: Wallet,
+            },
+          ]}
+        />
+        <p className="px-1 text-xs text-ink-3">代码判定红包只能从🐟额发。</p>
+        <Reveal show={fishReady && total !== null && total > available}>
+          <p className="px-1 text-xs text-warning">
+            可用只有 {ldc(Math.max(0, available))} 🐟，不够发这个红包。
+          </p>
+        </Reveal>
+      </div>
+    );
   // No 🐟额 to choose: only a merchant's trouble, where the money is set.
   if (form.funding !== "balance" && !(funding.data?.enabled && user?.balance))
     return noMerchant || rejected ? (

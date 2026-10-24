@@ -41,7 +41,7 @@ import {
 import { createDb } from "../db/client";
 import { activities, users } from "../db/schema";
 import type { ApiBindings } from "../env";
-import { requireCodeHongbao } from "../judge/check";
+import { passedCheck, requireCodeHongbao } from "../judge/check";
 import {
   CODE_OPENING_ALLOWED,
   codeOpeningBlocked,
@@ -273,6 +273,7 @@ export function projectActivitySummary(row: ActivityRow): ActivitySummary {
     ...(row.funding === "balance" ? { funding: "balance" as const } : {}),
     ...(row.paymentMode ? { paymentMode: row.paymentMode } : {}),
     ...(drawSummary(row) ? { draw: drawSummary(row) } : {}),
+    ...(row.endReason === "stopped" ? { stopped: true as const } : {}),
   };
 }
 
@@ -372,6 +373,17 @@ async function managed(
       ...(judgeRow ? { judge: await readJudgeInput(env, judgeRow) } : {}),
     }),
     openingBlockedReason: await openingBlockedReason(env, snapshot.row),
+    ...(judgeRow
+      ? {
+          judgePassed: await passedCheck(
+            env,
+            row.authorId,
+            judgeRow.fingerprint,
+            judgeRow.testsDigest,
+          ),
+          ...(judgeRow.pausedAt !== null ? { judgePaused: true as const } : {}),
+        }
+      : {}),
   };
 }
 
@@ -464,6 +476,7 @@ export function projectPublicActivity(
       : {}),
     ...(config.humanCheck ? { humanCheck: true as const } : {}),
     ...(config.scope ? { scope: publicScope(config.scope) } : {}),
+    ...(row.endReason === "stopped" ? { stopped: true as const } : {}),
   };
 }
 

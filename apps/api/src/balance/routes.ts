@@ -21,6 +21,7 @@ import {
   requireProtectedMutation,
 } from "../auth/session";
 import type { ApiContext } from "../env";
+import { codeHongbaoOffer } from "../judge/check";
 import { flushPaymentOutbox } from "../payments/scheduler";
 import { requireAppOrigin } from "../security/http";
 import {
@@ -177,15 +178,18 @@ export const balanceRoutes = new Hono<ApiContext>()
   // while 🐟额红包 are on and there is something to send.
   .get("/me/balance/hongbao", async (c) => {
     const session = await requireAuth(c);
-    const [settings, account] = await Promise.all([
+    const [settings, account, code] = await Promise.all([
       readBalanceSettings(c.env),
       readAccount(c.env, session.user.id),
+      codeHongbaoOffer(c.env, session.user.id),
     ]);
     return c.json({
       /** 🐟额红包 are on at all. */
       enabled: settings.hongbaoEnabled,
       available: settings.hongbaoEnabled && account.availableMinor >= 1,
       availableMinor: account.availableMinor,
+      /** 代码判定红包 may be sent: 在线检查 left today. */
+      ...(code ? { code } : {}),
     });
   })
   .post(

@@ -80,6 +80,8 @@ export const adminAuditTypeSchema = z.enum([
   "all",
   "attempt_rate_limits",
   "balance_settings",
+  /** 站长 stopped a 代码判定红包 (docs/programmable-hongbao-design.md §1). */
+  "code_stop",
 ]);
 export type AdminAuditType = z.infer<typeof adminAuditTypeSchema>;
 
@@ -318,6 +320,8 @@ export type AdminAuditEntry = {
   nextVersion: number;
   before: Record<string, boolean | number>;
   after: Record<string, boolean | number>;
+  /** code_stop: the 红包 stopped. */
+  activity?: { id: string; title: string };
 };
 
 const adminCursorValueSchema = z
@@ -330,7 +334,7 @@ const adminAuditCursorValueSchema = z
   .string()
   .max(512)
   .regex(
-    /^(\d{1,16}):(attempt_rate_limits|balance_settings):([A-Za-z0-9_-][A-Za-z0-9_-]{0,100}|[a-f0-9-]{36})$/,
+    /^(\d{1,16}):(attempt_rate_limits|balance_settings|code_stop):([A-Za-z0-9_-][A-Za-z0-9_-]{0,100}|[a-f0-9-]{36})$/,
   )
   .refine((value) => Number.isSafeInteger(Number(value.split(":", 1)[0])));
 

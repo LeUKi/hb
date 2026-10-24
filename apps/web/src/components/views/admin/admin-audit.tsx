@@ -24,6 +24,9 @@ const balanceLabels: Record<
   withdrawEnabled: ["转出", (value) => (value ? "开" : "关")],
   hongbaoEnabled: ["🐟额红包", (value) => (value ? "开" : "关")],
   transferEnabled: ["转账", (value) => (value ? "开" : "关")],
+  codeHongbaoEnabled: ["代码判定红包", (value) => (value ? "开" : "关")],
+  codeHongbaoDailyLimit: ["代码判定红包每人每天", (value) => `${value} 个`],
+  codeCheckDailyLimit: ["在线检查每人每天", (value) => `${value} 次`],
   topupFeePercent: ["流转费率", (value) => `${value}%`],
   withdrawFeePercent: ["转出费率", (value) => `${value}%`],
   withdrawMaxMinor: [
@@ -37,10 +40,13 @@ const balanceLabels: Record<
 const kinds = {
   attempt_rate_limits: "尝试间隔",
   balance_settings: "🐟额设置",
+  code_stop: "停用红包",
 } as const;
 
 /** Only what changed, in words: "首页 8 秒 → 5 秒", "转入 关 → 开". */
 function changesOf(entry: AdminAuditEntry) {
+  if (entry.type === "code_stop")
+    return [`停用代码判定红包「${entry.activity?.title ?? ""}」`];
   const changes =
     entry.type === "balance_settings"
       ? Object.entries(balanceLabels)
@@ -158,10 +164,13 @@ export function AdminAudit() {
                           {changesOf(entry)}
                         </span>
                       </p>
-                      <p className="text-xs text-ink-3">
-                        第 {entry.previousVersion} 版 → 第 {entry.nextVersion}{" "}
-                        版
-                      </p>
+                      {/* A 停用 changes a 红包, not a numbered setting. */}
+                      {entry.type !== "code_stop" && (
+                        <p className="text-xs text-ink-3">
+                          第 {entry.previousVersion} 版 → 第 {entry.nextVersion}{" "}
+                          版
+                        </p>
+                      )}
                     </div>
                     <span className="flex items-center gap-2 text-sm text-ink-2">
                       <Avatar

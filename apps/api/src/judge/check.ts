@@ -55,6 +55,22 @@ export async function requireCodeHongbao(env: ApiBindings, userId: string) {
   return access.settings;
 }
 
+/**
+ * What the 发红包 form needs: whether this person may send 代码判定红包 now
+ * (PLUS, its switch and 🐟额红包's), and 在线检查 left today. Null otherwise.
+ */
+export async function codeHongbaoOffer(env: ApiBindings, userId: string) {
+  const access = await codeHongbaoAccess(env, userId);
+  if (!access.allowed || !access.enabled || !access.settings.hongbaoEnabled)
+    return null;
+  return {
+    checksLeft: Math.max(
+      0,
+      access.settings.codeCheckDailyLimit - (await checksToday(env, userId)),
+    ),
+  };
+}
+
 async function checksToday(env: ApiBindings, userId: string) {
   const row = await env.DB.prepare(
     "SELECT COUNT(*) AS count FROM judge_checks WHERE user_id = ? AND created_at >= ?",

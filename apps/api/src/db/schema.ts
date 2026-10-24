@@ -215,7 +215,10 @@ export const activities = sqliteTable(
     openedAt: integer("opened_at"),
     deadline: integer("deadline"),
     endedAt: integer("ended_at"),
-    endReason: text("end_reason", { enum: ["expired", "exhausted", "manual"] }),
+    /** stopped: a 代码判定红包's 停用 by the 站长. */
+    endReason: text("end_reason", {
+      enum: ["expired", "exhausted", "manual", "stopped"],
+    }),
     archivedAt: integer("archived_at"),
   },
   (table) => [

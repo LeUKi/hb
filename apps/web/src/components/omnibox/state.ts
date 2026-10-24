@@ -9,17 +9,18 @@ export const startDraftAtom = atom("");
 /** Text typed in the expanded command box; cleared whenever it collapses. */
 export const editDraftAtom = atom("");
 /**
- * The expanded box's 作用域: claim into one 红包, or verify another of its
- * 口令 (验证其他口令). null = global lookup.
+ * The expanded box's 作用域: claim into one 红包, verify another of its
+ * 口令 (验证其他口令), or submit to a 代码判定红包's code (02 §4). null =
+ * global lookup.
  */
-export type Scope = { id: string; purpose: "claim" | "verify" } | null;
+export type Scope = { id: string; purpose: "claim" | "verify" | "code" } | null;
 export const scopeAtom = atom<Scope>(null);
 /**
  * What the box could do inside the 红包 on screen: claim into it, or verify
  * more of its 口令 (`hidden` of them left). null = nothing.
  */
 export type ScopeOffer =
-  | { id: string; purpose: "claim" }
+  | { id: string; purpose: "claim" | "code" }
   | { id: string; purpose: "verify"; hidden: number }
   | null;
 

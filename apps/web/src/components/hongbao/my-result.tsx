@@ -231,15 +231,20 @@ function TicketNote({
   return null;
 }
 
-/** The 口令 used: hidden behind an eye while the 红包 runs (05 §9). */
+/**
+ * The 口令 used (or, for 代码判定, what was typed): hidden behind an eye
+ * while the 红包 runs (05 §9).
+ */
 function PasswordChip({
   text,
   seed,
   ended,
+  label = "口令",
 }: {
   text: string;
   seed: string;
   ended: boolean;
+  label?: string;
 }) {
   const [revealed, setRevealed] = useState(false);
   return (
@@ -247,7 +252,7 @@ function PasswordChip({
       <Squircle radius={8}>
         {/* A long 口令 goes on to a second line, under itself. */}
         <span className="inline-flex min-h-7 min-w-0 items-baseline gap-1.5 bg-fill px-2.5 py-1 text-sm text-ink-2">
-          <span className="shrink-0">口令</span>
+          <span className="shrink-0">{label}</span>
           <PasswordText
             text={text}
             shown={ended || revealed}
@@ -267,6 +272,13 @@ function PasswordChip({
   );
 }
 
+/** 代码判定: why a share is not what the code asked (05 §13). */
+const judgeNotes = {
+  cap: "按上限发",
+  floor: "按每份至少发",
+  last: "最后一份，发完剩下的",
+} as const;
+
 /**
  * 我的结果: what only the viewer sees after taking part — the amount in
  * green with a plus, the payment, the 口令 used, own titles, 奖励附言.
@@ -275,6 +287,7 @@ function PasswordChip({
 function privateNote(mine: Mine, won: boolean) {
   const parts = won ? ["金额", "发放状态"] : ["报名记录"];
   if (mine.password) parts.push("口令");
+  if (mine.kind === "claimed" && mine.judge) parts.push("输入", "代码的回复");
   if (mine.afterClaimInfo) parts.push("附言");
   const last = parts.pop();
   return `${parts.length > 0 ? `${parts.join("、")}和` : ""}${last}仅你可见`;
@@ -334,6 +347,22 @@ export function MyResult({
         </p>
       )}
 
+      {/* 代码判定: the code's reply under the amount, and why the amount
+          is not what the code asked (05 §13). */}
+      {mine.kind === "claimed" && mine.judge && (
+        <div className="grid gap-1">
+          {mine.judge.message && (
+            <p className="text-base text-ink">
+              <span className="text-ink-3">代码的回复：</span>
+              {mine.judge.message}
+            </p>
+          )}
+          {mine.judge.note && (
+            <p className="text-sm text-ink-2">{judgeNotes[mine.judge.note]}</p>
+          )}
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-center gap-2">
         {amount && activity.fish ? (
           <FishStored />
@@ -349,6 +378,14 @@ export function MyResult({
         {mine.password && (
           <PasswordChip
             text={mine.password}
+            seed={`${activity.id}:mine`}
+            ended={ended}
+          />
+        )}
+        {mine.kind === "claimed" && mine.judge && (
+          <PasswordChip
+            label="输入"
+            text={mine.judge.input}
             seed={`${activity.id}:mine`}
             ended={ended}
           />

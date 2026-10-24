@@ -216,6 +216,8 @@ export function withMode(form: FormState, mode: RewardMode): FormState {
   return {
     ...form,
     mode,
+    // 代码判定红包只能从🐟额发 (07 §5).
+    funding: mode === "code" ? "balance" : form.funding,
     timing:
       mode === "timed_draw"
         ? drawTiming(form)

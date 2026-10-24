@@ -1,6 +1,7 @@
 import {
   type ActivityPasswords,
   type ClaimActivityInput,
+  judgeAnswerSchema,
   passwordSchema,
 } from "@hb/contracts";
 import { useQueryClient } from "@tanstack/react-query";
@@ -129,8 +130,15 @@ export function useScopeOffer(activityId: string | null): ScopeOffer {
   // One re-render when it closes, which takes the offer away.
   useBefore(deadline ? Date.parse(deadline) : 0);
   if (!user || !activity || activity.status !== "active") return null;
-  if ((activity.participationMode ?? "password") !== "password") return null;
   if (activity.author.id === user.id) return null;
+  // 代码判定: submit to its code until taken part; nothing to verify after.
+  if (activity.participationMode === "code")
+    return participation?.claim ||
+      activity.judge?.paused ||
+      (deadline && Date.parse(deadline) <= Date.now())
+      ? null
+      : { id: activity.id, purpose: "code" };
+  if ((activity.participationMode ?? "password") !== "password") return null;
   const taken = Boolean(participation?.claim || participation?.registration);
   if (!taken)
     return deadline && Date.parse(deadline) <= Date.now()
@@ -566,18 +574,21 @@ export function useOmniboxController() {
 
   /**
    * 领取 or 报名 inside one 红包: with a 口令, or none for a 红包 that needs
-   * none. A submission whose answer was lost is sent again as it was (重试原
-   * 提交); a lookup's single match continues with the lookup's own
+   * none, or (`code`) what is typed for a 代码判定红包's code to judge, sent
+   * as it is. A submission whose answer was lost is sent again as it was
+   * (重试原提交); a lookup's single match continues with the lookup's own
    * submission. Only a new attempt waits for the cooldown.
    */
   const redeemIn = useCallback(
     async (
       activityId: string,
       password: string | null,
-      options: { operation?: RedemptionIntentOperation } = {},
+      options: { operation?: RedemptionIntentOperation; code?: boolean } = {},
     ) => {
       if (store.get(pendingAtom)) return;
-      if (password !== null && !inspectPassword(password).valid) return;
+      const code = options.code === true;
+      if (password !== null && !code && !inspectPassword(password).valid)
+        return;
       if (!guard()) return;
       const account = sessionUserOf(queryClient);
       if (!account) return;
@@ -587,8 +598,13 @@ export function useOmniboxController() {
       let input: ClaimActivityInput;
       if (options.operation) input = options.operation;
       else if (retrying && previous)
-        input =
-          password === null
+        input = code
+          ? {
+              participationMode: "code",
+              submissionId: previous.submissionId,
+              input: password ?? "",
+            }
+          : password === null
             ? {
                 participationMode: "direct",
                 submissionId: previous.submissionId,
@@ -596,7 +612,23 @@ export function useOmniboxController() {
             : { submissionId: previous.submissionId, password };
       else {
         if (attemptCooldownRemainingMs(account.id) > 0) return;
-        if (password === null)
+        if (code) {
+          // One line, 1–200 字, ends trimmed (02 §4): said in the box.
+          const checked = judgeAnswerSchema.safeParse(password ?? "");
+          if (!checked.success) {
+            store.set(messageAtom, {
+              activityId,
+              tone: "warning",
+              text: checked.error.issues[0]?.message ?? "请检查输入",
+            });
+            return;
+          }
+          input = {
+            participationMode: "code",
+            submissionId: crypto.randomUUID(),
+            input: checked.data,
+          };
+        } else if (password === null)
           input = {
             participationMode: "direct",
             submissionId: crypto.randomUUID(),
@@ -663,6 +695,15 @@ export function useOmniboxController() {
             say({ tone: "danger", text: "口令不正确。", action: "global" });
             store.set(mismatchAtom, (count) => count + 1);
             return;
+          // 代码判定 said no: its own words, plain (02 §4).
+          case "rejected":
+            say({
+              tone: "danger",
+              text: result.message
+                ? `代码的回复：${result.message}`
+                : "没有领到，代码没有回复。",
+            });
+            return;
           case "draft":
             say({ tone: "neutral", text: `红包还没开放，暂时不能${verb}。` });
             return;
@@ -671,6 +712,25 @@ export function useOmniboxController() {
         }
       } catch (error) {
         if (stale()) return;
+        // 代码判定: its code failed or waits; nothing was written or counted.
+        if (
+          error instanceof ActivityRequestError &&
+          (error.code === "JUDGE_FAILED" ||
+            error.code === "JUDGE_UNAVAILABLE" ||
+            error.code === "CODE_PAUSED" ||
+            error.code === "CODE_BUSY")
+        ) {
+          store.set(
+            unconfirmedAtom,
+            withClaim(store.get(unconfirmedAtom), activityId, null),
+          );
+          say({ tone: "warning", text: error.message });
+          if (error.code === "CODE_PAUSED")
+            void queryClient.invalidateQueries({
+              queryKey: activityKeys.public(activityId, account.id),
+            });
+          return;
+        }
         if (error instanceof ActivityRequestError && error.status === 429) {
           store.set(
             unconfirmedAtom,

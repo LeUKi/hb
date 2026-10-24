@@ -200,6 +200,8 @@ async function main() {
             DO_NAME_PREFIX: process.env.HB_FULL_APP_DO_NAME_PREFIX ?? "",
           },
           d1Databases: { DB: "hb-full-app-isolated" },
+          // 代码判定红包's sandboxes (apps/api/src/judge/sandbox.ts).
+          workerLoaders: { LOADER: {} },
           durableObjects: {
             ACTIVITY_DO: { className: "ActivityDO", useSQLite: true },
             MERCHANT_DO: { className: "MerchantDO", useSQLite: true },

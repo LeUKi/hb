@@ -38,6 +38,13 @@ function averageNote(activity: HongbaoActivity) {
  */
 function poolCell(activity: HongbaoActivity, view: PublicView): CoverCell {
   const fuzzy = view.quantity.kind === "fuzzy";
+  // 代码判定: the pool and 每份至少 (05 §4); each share is the code's to say.
+  if (activity.mode === "code")
+    return {
+      label: "奖池",
+      value: `${activity.totalAmount} LDC`,
+      note: activity.minEach ? `每份至少 ${activity.minEach} LDC` : undefined,
+    };
   if (activity.mode === "fixed")
     return fuzzy
       ? { label: "每份", value: `${activity.unitAmount} LDC` }

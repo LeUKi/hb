@@ -16,22 +16,34 @@ import type { CoverMotion } from "./cover-motion";
 
 const chipClass = "hb-chip-red inline-flex h-7 items-center px-2.5 text-xs";
 
-/** A label on the cover; with a hint, it explains itself (TagHint). */
-function CoverChip({ children, hint }: { children: string; hint?: string }) {
+/**
+ * A label on the cover; with a hint, it explains itself (TagHint). 代码判定's
+ * own is drawn in gold (05 §14).
+ */
+function CoverChip({
+  children,
+  hint,
+  code = false,
+}: {
+  children: string;
+  hint?: string;
+  code?: boolean;
+}) {
+  const className = cn(chipClass, code && "hb-chip-code");
   return (
     <Squircle radius={10}>
       {hint ? (
         <TagHint
           hint={hint}
           className={cn(
-            chipClass,
+            className,
             "hb-chip-link focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-cream)] focus-visible:outline-none",
           )}
         >
           {children}
         </TagHint>
       ) : (
-        <span className={chipClass}>{children}</span>
+        <span className={className}>{children}</span>
       )}
     </Squircle>
   );
@@ -82,6 +94,7 @@ function coverTags(activity: HongbaoActivity) {
   const playTag = {
     text: `${playNames[activity.mode]}${splitName}`,
     hint: play,
+    code: activity.mode === "code",
   };
   return [
     // 代码判定 comes first, in place of 口令红包 / 无需口令 (05 §4).
@@ -115,7 +128,8 @@ function coverTags(activity: HongbaoActivity) {
         ]
       : []),
     // 首页领取 off: the 口令 works on this page only (07 §6).
-    ...(activity.pageOnly
+    // 代码判定 is only ever on its page: no tag for it (05 §4).
+    ...(activity.pageOnly && activity.mode !== "code"
       ? [{ text: "关闭首页领取", hint: glossary.首页领取 }]
       : []),
     ...(activity.humanCheck
@@ -217,7 +231,7 @@ export function CoverHead({
   // lines at most on both covers (a title can be 100 字), so they keep
   // breaking in the same places.
   const titleClass = cn(
-    "line-clamp-2 w-fit font-semibold text-balance text-cream outline-none",
+    "hb-cover-title line-clamp-2 w-fit font-semibold text-balance text-cream outline-none",
     small
       ? "text-[clamp(1.0625rem,2.6cqw,1.25rem)]"
       : "text-[clamp(1.375rem,4.4cqw,2.25rem)]",
@@ -305,7 +319,11 @@ export function CoverHead({
             {...motions.fade}
           >
             {coverTags(activity).map((tag) => (
-              <CoverChip key={tag.text} hint={tag.hint}>
+              <CoverChip
+                key={tag.text}
+                hint={tag.hint}
+                code={"code" in tag && tag.code === true}
+              >
                 {tag.text}
               </CoverChip>
             ))}
