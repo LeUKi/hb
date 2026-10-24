@@ -118,12 +118,9 @@ function SettingsForm({ data }: { data: AttemptRateLimitsResponse }) {
       setError("保存没有完成：网络或服务出了问题，设置没有改。可以再试一次。");
       return;
     }
-    const who =
-      config.updatedByUserId === identity.user?.id
-        ? "刚在别处"
-        : "刚被另一位管理员";
+    // The 站长 is the only admin: the other save was theirs, elsewhere.
     setError(
-      `保存没有完成：设置${who}改成第 ${config.version} 版（首页 ${config.homeIntervalSeconds} 秒、红包页 ${config.activityIntervalSeconds} 秒）。你的输入还在，确认后再保存一次。`,
+      `保存没有完成：设置刚在别处改成第 ${config.version} 版（首页 ${config.homeIntervalSeconds} 秒、红包页 ${config.activityIntervalSeconds} 秒）。你的输入还在，确认后再保存一次。`,
     );
   };
 

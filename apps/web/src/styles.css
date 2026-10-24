@@ -1564,7 +1564,7 @@
     color: #fff3e2;
   }
   /* 代码判定红包 (05 §14): black lacquer and gold, outside its cover too —
-     the 发红包 card's mark, its code boxes and the 在线检查 button. */
+     the 发红包 card's mark, its code boxes and the 部署 button. */
   .hb-lacquer-chip {
     background: linear-gradient(180deg, #2c2724, #12100e);
     color: #f3d38b;
@@ -1611,6 +1611,110 @@
   .hb-lacquer-chip {
     --focus-ring-color: #f3d38b;
     --focus-band-color: rgb(18 16 14 / 0.85);
+  }
+  /* The 判定器 card (07 §5, hongbao-form/judge-card.tsx): the code boxes'
+     lacquer, its head and foot ruled off in faint gold; the code inside it
+     lies on the card, without a box of its own. */
+  .hb-judge-card {
+    background:
+      linear-gradient(
+        118deg,
+        transparent 30%,
+        rgb(255 244 220 / 0.05) 45%,
+        transparent 60%
+      ),
+      linear-gradient(180deg, #2c2724 0%, #1a1614 60%, #12100e 100%);
+    color: #f3e6cc;
+    color-scheme: dark;
+    --sq-ring: rgb(232 192 121 / 0.22);
+    box-shadow: var(--sq-ring-shadow);
+    --focus-ring-color: #f3d38b;
+    --focus-band-color: rgb(18 16 14 / 0.85);
+  }
+  .hb-judge-card[data-empty] {
+    --sq-ring: rgb(232 192 121 / 0.12);
+  }
+  .hb-judge-card.hb-lacquer-invalid {
+    --sq-ring: var(--color-danger);
+    --sq-ring-w: 1.5px;
+  }
+  .hb-judge-card .hb-lacquer-code {
+    background: none;
+    --sq-ring: transparent;
+  }
+  .hb-judge-card .hb-lacquer-code:has(.cm-focused) {
+    --sq-ring: rgb(232 192 121 / 0.6);
+  }
+  .hb-judge-rule {
+    border-color: rgb(232 192 121 / 0.12);
+  }
+  .hb-judge-mark {
+    color: #f3d38b;
+    background: rgb(232 192 121 / 0.1);
+    --sq-ring: rgb(232 192 121 / 0.35);
+    box-shadow: var(--sq-ring-shadow);
+  }
+  .hb-judge-name {
+    color: #fbe9c6;
+  }
+  .hb-judge-version {
+    color: #f3d38b;
+  }
+  .hb-judge-quiet {
+    color: rgb(240 212 154 / 0.66);
+  }
+  /* 未部署 / 部署中… / 已部署 · 测试全过 / 已部署 · 测试没过 on the lacquer. */
+  .hb-judge-state {
+    color: rgb(240 212 154 / 0.85);
+    background: rgb(255 228 180 / 0.08);
+  }
+  .hb-judge-state[data-state="deploying"] {
+    color: #f3d38b;
+    background: rgb(232 192 121 / 0.12);
+  }
+  .hb-judge-state[data-state="passed"] {
+    color: #8fe3b4;
+    background: rgb(60 190 120 / 0.14);
+  }
+  .hb-judge-state[data-state="failed"] {
+    color: #ff9aa9;
+    background: rgb(255 80 100 / 0.14);
+  }
+  /* The card's own buttons: gold words, a faint light on hover; the empty
+     card's two with a gold edge. */
+  .hb-judge-action {
+    color: #f3d38b;
+    transition: background-color 150ms var(--ease-snappy);
+  }
+  .hb-judge-action:hover:not(:disabled) {
+    background: rgb(255 228 180 / 0.08);
+  }
+  .hb-judge-action:disabled {
+    color: rgb(240 212 154 / 0.4);
+  }
+  .hb-judge-action.hb-judge-outline {
+    background: rgb(255 228 180 / 0.08);
+    --sq-ring: rgb(232 192 121 / 0.45);
+    box-shadow: var(--sq-ring-shadow);
+  }
+  .hb-judge-action.hb-judge-outline:hover:not(:disabled) {
+    background: rgb(255 228 180 / 0.14);
+    --sq-ring: rgb(232 192 121 / 0.8);
+  }
+  .hb-judge-action.hb-judge-more {
+    color: rgb(240 212 154 / 0.72);
+  }
+  /* Folded: the first lines, fading into the card. */
+  .hb-judge-fold {
+    position: relative;
+  }
+  .hb-judge-fold::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    height: 2.75rem;
+    background: linear-gradient(rgb(20 17 15 / 0), #14110f);
+    pointer-events: none;
   }
   /* 「N 人在看」's dot (hongbao/live-viewers.tsx): green as in 在线, not the
      red of a reminder; it breathes, slowly. */

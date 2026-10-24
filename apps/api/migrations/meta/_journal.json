@@ -288,6 +288,13 @@
       "when": 1792842952600,
       "tag": "0040_code_judge",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "6",
+      "when": 1792860080494,
+      "tag": "0041_judge_deploy",
+      "breakpoints": true
     }
   ]
 }

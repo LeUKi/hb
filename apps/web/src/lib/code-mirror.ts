@@ -85,7 +85,7 @@ const lacquerTheme = EditorView.theme(
       padding: "0 10px 0 14px",
       minWidth: "2ch",
     },
-    // A line 在线检查 named: its number in red.
+    // A line 部署 named: its number in red.
     ".cm-gutterElement.hb-code-problem": { color: "var(--color-danger)" },
     ".cm-placeholder": { color: "rgb(240 212 154 / 0.42)" },
   },
@@ -97,7 +97,7 @@ class ProblemMarker extends GutterMarker {
 }
 const problemMarker = new ProblemMarker();
 const setProblems = StateEffect.define<number[]>();
-/** The lines 在线检查 named, marked in the line numbers. */
+/** The lines 部署 named, marked in the line numbers. */
 const problems = StateField.define<RangeSet<GutterMarker>>({
   create: () => RangeSet.empty,
   update(markers, transaction) {

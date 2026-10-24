@@ -152,6 +152,35 @@ export function judge(submission, tools) {
     });
   });
 
+  // The runtime cancels a judgment nothing is left to answer: it would
+  // never end, so it times out (a deploy and a claim alike), as in the kit.
+  it("times out a judgment that awaits a promise that never settles", async () => {
+    const code = `export async function judge() { await new Promise(() => {}); return { ok: false }; }`;
+    for (const loading of [true, false])
+      expect(
+        await runJudge(
+          env,
+          {
+            code,
+            fingerprint: sha256Text(code),
+            submission: submission(),
+            seeds,
+          },
+          loading,
+        ),
+      ).toEqual({
+        failure: "timeout",
+        detail: "代码一直没有返回（在等一个永远不会完成的 Promise）",
+        hung: true,
+      });
+    // Not at its top level: that is code that never loads.
+    expect(
+      await judge(
+        `await new Promise(() => {}); export function judge() { return { ok: false }; }`,
+      ),
+    ).toMatchObject({ failure: "load" });
+  });
+
   // Locally workerd neither limits CPU nor runs the sandbox apart from its
   // caller, so a real endless loop would stall the test; in production the
   // caller's clock keeps going (docs/programmable-hongbao-design.md §7). This
@@ -177,5 +206,40 @@ export function judge(submission, tools) {
       failure: "timeout",
       detail: "超过 50 毫秒没有判定完",
     });
+  });
+
+  // Only code that does not compile fails to start on its own account;
+  // Dynamic Workers failing is no fault of the code, a deploy or a claim.
+  it("tells the platform failing apart from code that does not compile", async () => {
+    expect(await judge(`export function judge( {`)).toMatchObject({
+      failure: "load",
+      detail: expect.stringContaining("SyntaxError"),
+    });
+    const down = {
+      LOADER: {
+        get: () => ({
+          getEntrypoint: () => ({
+            fetch: () =>
+              Promise.reject(new Error("Dynamic Worker loader unavailable")),
+          }),
+        }),
+      },
+    } as unknown as typeof env;
+    for (const loading of [true, false])
+      expect(
+        await runJudge(
+          down,
+          {
+            code: "",
+            fingerprint: "down",
+            submission: submission(),
+            seeds,
+          },
+          loading,
+        ),
+      ).toEqual({
+        failure: "unavailable",
+        detail: "Dynamic Worker loader unavailable",
+      });
   });
 });

@@ -26,7 +26,24 @@ export type SandboxFailure =
 
 export type SandboxOutcome =
   | { verdict: unknown; logs?: string[] }
-  | { failure: SandboxFailure; detail: string; logs?: string[] };
+  | {
+      failure: SandboxFailure;
+      detail: string;
+      logs?: string[];
+      /**
+       * A timeout the runtime cut short at once: nothing is left running in
+       * its sandbox, so the next judgment can go on in it.
+       */
+      hung?: true;
+    };
+
+/** The kinds main.mjs itself reports. */
+const REPORTED = new Set<SandboxFailure>([
+  "load",
+  "no-judge",
+  "threw",
+  "invalid",
+]);
 
 // Dynamic Workers take .js names as modules; the runtime's .mjs files say so.
 const runtimeModules = Object.fromEntries(
@@ -48,7 +65,7 @@ export type JudgeRun = {
   submission: Submission;
   /** This submission's and this person's seeds (kit/runtime/seeds.mjs). */
   seeds: { submission: string; user: string };
-  /** Keep console output: the online check, never a claim. */
+  /** Keep console output: a deploy, never a claim. */
   capture?: boolean;
   fresh?: number;
   waitMs?: number;
@@ -63,14 +80,28 @@ function classify(error: unknown, loading: boolean): SandboxOutcome {
     return { failure: "timeout", detail };
   if (/exceeded memory limit/i.test(detail))
     return { failure: "memory", detail };
-  // Code that loaded once (it passed the online check) only fails to load
-  // again if the platform does.
-  return { failure: loading ? "load" : "unavailable", detail };
+  // The runtime gives up at once on a judgment nothing is left to answer
+  // (it awaits a promise that never settles): it would never end, so it is
+  // a timeout, and its sandbox goes on, as the kit has it
+  // (kit/cli/lib/sandbox.mjs).
+  if (/code had hung|never generate a response|runtime canceled/i.test(detail))
+    return {
+      failure: "timeout",
+      detail: "代码一直没有返回（在等一个永远不会完成的 Promise）",
+      hung: true,
+    };
+  // Only code that does not compile fails to start this way (workerd's
+  // "Uncaught SyntaxError"); a throw at its top level comes back from
+  // main.mjs. Anything else is taken as the platform failing us, and code
+  // that loaded once (its deploy passed) only fails to load again if it does.
+  if (loading && /Uncaught|SyntaxError/.test(detail))
+    return { failure: "load", detail };
+  return { failure: "unavailable", detail };
 }
 
 /**
  * Runs judge() once. `loading` says whether a failure to start counts
- * against the code (the online check) or the platform (a claim).
+ * against the code (a deploy) or the platform (a claim).
  */
 export async function runJudge(
   env: ApiBindings,
@@ -113,16 +144,18 @@ export async function runJudge(
       error?: { kind: SandboxFailure; detail: string };
       logs?: string[];
     };
-    if (body.error)
+    if (body.error) {
+      // judge.js shares main.mjs's isolate and can forge its answer: a kind
+      // main.mjs never reports (a timeout, the platform failing) is the
+      // host's alone to say, and claimed by the code it is a wrong answer.
+      const kind = REPORTED.has(body.error.kind) ? body.error.kind : "invalid";
       return {
         // Checked code that stops loading is the platform's failure too.
-        failure:
-          body.error.kind === "load" && !loading
-            ? "unavailable"
-            : body.error.kind,
-        detail: body.error.detail,
+        failure: kind === "load" && !loading ? "unavailable" : kind,
+        detail: String(body.error.detail ?? "").slice(0, 500),
         logs: body.logs,
       };
+    }
     return { verdict: body.verdict, logs: body.logs };
   } catch (error) {
     return classify(error, loading);

@@ -24,9 +24,6 @@ const balanceLabels: Record<
   withdrawEnabled: ["转出", (value) => (value ? "开" : "关")],
   hongbaoEnabled: ["🐟额红包", (value) => (value ? "开" : "关")],
   transferEnabled: ["转账", (value) => (value ? "开" : "关")],
-  codeHongbaoEnabled: ["代码判定红包", (value) => (value ? "开" : "关")],
-  codeHongbaoDailyLimit: ["代码判定红包每人每天", (value) => `${value} 个`],
-  codeCheckDailyLimit: ["在线检查每人每天", (value) => `${value} 次`],
   topupFeePercent: ["流转费率", (value) => `${value}%`],
   withdrawFeePercent: ["转出费率", (value) => `${value}%`],
   withdrawMaxMinor: [
@@ -37,36 +34,53 @@ const balanceLabels: Record<
   allowlistCount: ["白名单人数", (value) => `${value} 人`],
 };
 
+/** 判定器设置 (07 §10): “每月判定器上限 1000 份 → 2000 份”. */
+const judgeLabels: Record<
+  string,
+  [string, (value: boolean | number) => string]
+> = {
+  enabled: ["代码判定红包", (value) => (value ? "开" : "关")],
+  dailyOpenLimit: ["每人每天最多开放", (value) => `${value} 个`],
+  dailyDeployLimit: ["每人每天部署", (value) => `${value} 次`],
+  monthlyLimit: ["每月判定器上限", (value) => `${value} 份`],
+};
+
 const kinds = {
   attempt_rate_limits: "尝试间隔",
   balance_settings: "🐟额设置",
   code_stop: "停用红包",
+  judge_settings: "判定器设置",
 } as const;
 
 /** Only what changed, in words: "首页 8 秒 → 5 秒", "转入 关 → 开". */
 function changesOf(entry: AdminAuditEntry) {
   if (entry.type === "code_stop")
     return [`停用代码判定红包「${entry.activity?.title ?? ""}」`];
-  const changes =
+  const labels =
     entry.type === "balance_settings"
-      ? Object.entries(balanceLabels)
-          // Only what both sides have: the allowlist left with invitations.
-          .filter(
-            ([key]) =>
-              key in entry.before &&
-              key in entry.after &&
-              entry.before[key] !== entry.after[key],
-          )
-          .map(
-            ([key, [label, text]]) =>
-              `${label} ${text(entry.before[key] ?? 0)} → ${text(entry.after[key] ?? 0)}`,
-          )
-      : (Object.keys(intervalLabels) as (keyof typeof intervalLabels)[])
-          .filter((key) => entry.before[key] !== entry.after[key])
-          .map(
-            (key) =>
-              `${intervalLabels[key]} ${entry.before[key]} 秒 → ${entry.after[key]} 秒`,
-          );
+      ? balanceLabels
+      : entry.type === "judge_settings"
+        ? judgeLabels
+        : null;
+  const changes = labels
+    ? Object.entries(labels)
+        // Only what both sides have: the allowlist left with invitations.
+        .filter(
+          ([key]) =>
+            key in entry.before &&
+            key in entry.after &&
+            entry.before[key] !== entry.after[key],
+        )
+        .map(
+          ([key, [label, text]]) =>
+            `${label} ${text(entry.before[key] ?? 0)} → ${text(entry.after[key] ?? 0)}`,
+        )
+    : (Object.keys(intervalLabels) as (keyof typeof intervalLabels)[])
+        .filter((key) => entry.before[key] !== entry.after[key])
+        .map(
+          (key) =>
+            `${intervalLabels[key]} ${entry.before[key]} 秒 → ${entry.after[key]} 秒`,
+        );
   return changes.length > 0 ? changes.join("；") : "没有改动";
 }
 
@@ -78,8 +92,8 @@ function dayStart(value: string) {
 /**
  * /admin/audit 操作记录: every change to the site settings — who, when,
  * from which version to which, and what changed, in words (production
- * printed the raw keys). Kept for good: 尝试间隔 and 🐟额设置 (the 🐟额
- * tab keeps its own 调整 and 确认到账).
+ * printed the raw keys). Kept for good: 尝试间隔, 🐟额设置 and 判定器设置,
+ * and a 代码判定红包's 停用 (the 🐟额 tab keeps its own 调整 and 确认到账).
  */
 export function AdminAudit() {
   const [query, setQuery] = useState("");

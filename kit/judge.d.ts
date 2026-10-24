@@ -211,7 +211,7 @@ export interface TestStep {
   expect: TestExpect;
 }
 
-/** 拉进范围的原因：封顶、保底、最后一份发完剩下的。 */
+/** 拉进范围的原因：封顶、保底、最后一份，发完剩下的。 */
 export type JudgeNote = "cap" | "floor" | "last";
 
 /**

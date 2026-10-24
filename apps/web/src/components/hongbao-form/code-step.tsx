@@ -1,66 +1,41 @@
 import { JUDGE_LIMITS, type JudgeCheck } from "@hb/contracts";
 import {
+  AlertTriangle,
   BookOpen,
   Bot,
   Check,
   ClipboardPaste,
   FileUp,
   FolderGit2,
+  Info,
   X,
 } from "lucide-react";
 import { type ReactNode, useId, useRef } from "react";
 import { cn } from "../../lib/cn";
-import { haptic } from "../../lib/haptics";
 import { KIT_URL } from "../../lib/judge";
+import { Callout } from "../page/page";
 import { Button } from "../ui/button";
 import { CodeEditor } from "../ui/code-editor";
 import { Field, TextInput } from "../ui/field";
 import { Reveal } from "../ui/reveal";
-import { radius, Squircle } from "../ui/squircle";
 import { counter, type ErrorOf, QuietLine, type Update } from "./fields";
 import type { FormState } from "./form-state";
-import { sizeOf, testCount } from "./steps";
-
-/** Where 在线检查 stands for the code and tests as they are typed. */
-export type CodeCheckState =
-  /** Passed for exactly these. */
-  | { kind: "passed"; check?: JudgeCheck }
-  /** Ran on these and did not pass. */
-  | { kind: "failed"; check: JudgeCheck }
-  /** Not run on these (never, or they changed since). */
-  | { kind: "unchecked"; changed: boolean };
+import { FilePicker, fromClipboard, JudgeCard } from "./judge-card";
+import { testCount } from "./steps";
+import type { JudgeDeploy } from "./use-judge-deploy";
 
 /**
- * judge.js or tests.json: a dark box with line numbers and colours (05
- * §14) to type or paste into, its name and size above.
+ * tests.json: still a plain box (07 §5) with line numbers and colours (05
+ * §14) to type or paste into, its name and count above.
  */
-function CodeBox({
-  id,
-  name,
-  meta,
-  note,
+function TestsBox({
   value,
-  placeholder,
-  rows,
-  maxRows,
-  language,
-  problemLines,
   error,
   disabled,
   frozen,
-  accept,
   onChange,
 }: {
-  id: string;
-  name: string;
-  meta: string;
-  note?: string;
   value: string;
-  placeholder: string;
-  rows: number;
-  maxRows: number;
-  language: "js" | "json";
-  problemLines?: number[];
   error?: string;
   disabled: boolean;
   /**
@@ -68,31 +43,25 @@ function CodeBox({
    * controls only, so the editor is told too.
    */
   frozen: boolean;
-  accept: string;
   onChange: (value: string) => void;
 }) {
+  const id = "hb-code-tests";
   const file = useRef<HTMLInputElement>(null);
   const noteId = useId();
   const labelId = useId();
   const paste = async () => {
-    try {
-      const text = await navigator.clipboard.readText();
-      if (text) {
-        haptic("selection");
-        onChange(text);
-      }
-    } catch {
-      // No clipboard permission: the box takes ⌘V as ever.
-      document.getElementById(id)?.focus();
-    }
+    // No clipboard permission: the box takes ⌘V as ever.
+    if (!(await fromClipboard(onChange))) document.getElementById(id)?.focus();
   };
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)] gap-1.5">
+    <div className="flex min-w-0 flex-col gap-1.5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         {/* The editor is no form control: its name goes by aria-labelledby. */}
         <span id={labelId} className="flex items-baseline gap-2">
-          <span className="font-mono text-sm font-medium text-ink">{name}</span>
-          <span className="text-xs text-ink-3">{meta}</span>
+          <span className="font-mono text-sm font-medium text-ink">
+            tests.json
+          </span>
+          <span className="text-xs text-ink-3">{testCount(value)}</span>
         </span>
         {!disabled && (
           <span className="flex items-center gap-1">
@@ -108,43 +77,31 @@ function CodeBox({
               <FileUp />
               从文件选
             </Button>
-            <input
-              ref={file}
-              type="file"
-              accept={accept}
-              className="hidden"
-              tabIndex={-1}
-              onChange={async (event) => {
-                const picked = event.target.files?.[0];
-                event.target.value = "";
-                if (picked) onChange(await picked.text());
-              }}
+            <FilePicker
+              pickerRef={file}
+              accept=".json,application/json"
+              onText={onChange}
             />
           </span>
         )}
       </div>
-      {note && (
-        <p id={noteId} className="text-xs text-ink-3">
-          {note}
-        </p>
-      )}
+      <p id={noteId} className="text-xs text-ink-3">
+        只是数据，不算进代码，不公开。
+      </p>
       <CodeEditor
         id={id}
         labelledBy={labelId}
-        describedBy={
-          [note ? noteId : "", error ? `${id}-error` : ""]
-            .filter(Boolean)
-            .join(" ") || undefined
-        }
+        describedBy={[noteId, error ? `${id}-error` : ""].join(" ").trim()}
         value={value}
         onChange={onChange}
-        language={language}
-        placeholder={placeholder}
+        language="json"
+        placeholder={
+          '{\n  "tests": [\n    { "name": "答对", "input": "flag{…}", "expect": { "ok": true } }\n  ]\n}'
+        }
         disabled={disabled || frozen}
         invalid={Boolean(error)}
-        problemLines={problemLines}
-        rows={rows}
-        maxRows={maxRows}
+        rows={6}
+        maxRows={16}
       />
       <Reveal show={Boolean(error)}>
         <p id={`${id}-error`} className="text-xs text-danger">
@@ -173,12 +130,12 @@ function Row({ ok, children }: { ok: boolean; children: ReactNode }) {
   );
 }
 
-/** 在线检查's result, row by row (07 §5). */
+/** A deploy's (or rerun's) result, row by row (07 §5). */
 function CheckResult({ check }: { check: JudgeCheck }) {
   const loaded = check.problems.length === 0 && !check.loadProblem;
   const passedTests = check.tests.filter((test) => test.passed).length;
   return (
-    <ul className="grid gap-1.5" aria-label="在线检查的结果">
+    <ul className="grid gap-1.5" aria-label="测试结果">
       <Row ok={check.problems.length === 0}>
         import 都在清单里
         {check.problems.map((problem) => (
@@ -204,6 +161,7 @@ function CheckResult({ check }: { check: JudgeCheck }) {
         loaded && (
           <Row ok={passedTests === check.tests.length}>
             测试 {passedTests} / {check.tests.length} 通过
+            {check.slowestMs !== null && ` · 最慢 ${check.slowestMs} 毫秒`}
             {check.tests
               .filter((test) => !test.passed)
               .slice(0, 5)
@@ -221,22 +179,142 @@ function CheckResult({ check }: { check: JudgeCheck }) {
           。用了真随机，重放会对不上。
         </li>
       )}
-      {check.slowestMs !== null && (
-        <li className="pl-6 text-xs text-ink-3">
-          最慢一次 {check.slowestMs} 毫秒
-        </li>
-      )}
-      <li className="pl-6 text-xs text-ink-3">
-        指纹 <span className="font-mono break-all">{check.fingerprint}</span>
-      </li>
     </ul>
+  );
+}
+
+/** “今天还能部署 7 次”, or that today's are used up (07 §5). */
+function quotaText(judge: JudgeDeploy) {
+  if (judge.deploysLeft === undefined) return null;
+  return judge.deploysLeft > 0 ? (
+    <>
+      今天还能部署{" "}
+      <b className="font-semibold text-ink tabular-nums">{judge.deploysLeft}</b>{" "}
+      次
+    </>
+  ) : (
+    `今天的 ${judge.deployLimit ?? ""} 次部署用完了，明天再来`
+  );
+}
+
+/**
+ * 部署 (07 §5): a new version's 部署并跑测试 with today's count, or for a
+ * version whose tests changed 重新跑测试 (no deploy, nothing counted); the
+ * last run's rows; and why 保存并开放 waits, once it was pressed.
+ */
+function DeployArea({
+  judge,
+  frozen,
+  gated,
+}: {
+  judge: JudgeDeploy;
+  frozen: boolean;
+  gated: boolean;
+}) {
+  const check = judge.result?.check;
+  const used = judge.deploysLeft === 0;
+  // A version whose run failed takes no second deploy: a new one does.
+  const failed = Boolean(judge.version) && judge.result?.passed === false;
+  // Its rows went with the page that ran it (a draft opened again): a
+  // rerun, free, brings them back.
+  const unseen = failed && !check;
+  const fresh = !judge.version && judge.status !== "empty";
+  // Grey but focusable while it runs (07 §1): it was just pressed.
+  const held = !fresh || used || judge.busy || frozen || !judge.known;
+  return (
+    <fieldset
+      id="hb-code-check"
+      aria-label="部署"
+      tabIndex={-1}
+      className="flex min-w-0 flex-col gap-3 outline-none"
+    >
+      <Reveal show={Boolean(check)}>
+        {check && <CheckResult check={check} />}
+      </Reveal>
+      {judge.rerun && judge.version ? (
+        <Callout icon={Info} className="items-center [&>div:last-child]:flex-1">
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span className="min-w-0 flex-1">
+              tests.json 改过了：在判定器 第 {judge.version.n} 版
+              上重新跑一遍才能开放。不算部署，不扣次数。
+            </span>
+            <Button
+              size="xs"
+              aria-disabled={judge.busy || frozen || undefined}
+              data-disabled={judge.busy || frozen || undefined}
+              onClick={() => {
+                if (!judge.busy && !frozen) void judge.deploy();
+              }}
+            >
+              {judge.pending === "rerun" ? "正在跑测试…" : "重新跑测试"}
+            </Button>
+          </span>
+        </Callout>
+      ) : (
+        // A version deployed shows a button only when its run failed.
+        (!judge.version || failed) && (
+          <div className="grid gap-1.5">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <Button
+                variant="lacquer"
+                size="sm"
+                aria-disabled={held || undefined}
+                data-disabled={held || undefined}
+                onClick={() => {
+                  if (!held) void judge.deploy();
+                }}
+              >
+                {judge.pending === "deploy" ? "正在部署…" : "部署并跑测试"}
+              </Button>
+              {unseen && (
+                <Button
+                  size="xs"
+                  aria-disabled={judge.busy || frozen || undefined}
+                  data-disabled={judge.busy || frozen || undefined}
+                  onClick={() => {
+                    if (!judge.busy && !frozen) void judge.deploy();
+                  }}
+                >
+                  {judge.pending === "rerun" ? "正在跑测试…" : "重新跑测试"}
+                </Button>
+              )}
+              <span className="min-w-0 flex-1 text-xs text-ink-2">
+                {failed && "改出新版本才能再部署"}
+                {failed && quotaText(judge) && " · "}
+                {quotaText(judge)}
+              </span>
+            </div>
+            {unseen && (
+              <p className="text-xs text-ink-3">
+                没过的是哪几条没留下：重新跑测试就能看到，不算部署。
+              </p>
+            )}
+            {/* Stopped by 保存并开放, the red line below says why instead. */}
+            {fresh && !(gated && judge.gate) && (
+              <p className="text-xs text-ink-3">
+                {used
+                  ? "已经部署过的判定器换回去照样能开放。"
+                  : "部署：把这一版代码做成判定器，在线上跑你的测试。开放前谁也领不到；只改测试再跑，不算部署。"}
+              </p>
+            )}
+          </div>
+        )
+      )}
+      {/* Read out by the form's alert region, as it happens. */}
+      <Reveal show={Boolean(judge.error)}>
+        <p className="text-sm text-danger">{judge.error}</p>
+      </Reveal>
+      <Reveal show={gated && Boolean(judge.gate)}>
+        <p className="text-sm text-danger">{judge.gate}</p>
+      </Reveal>
+    </fieldset>
   );
 }
 
 /**
  * ③ 代码 (代码判定红包, in place of 怎么领): the prompt shown to claimants,
- * judge.js and tests.json pasted, and 在线检查 in the sandbox the claims will
- * use (docs/programmable-hongbao-design.md §5).
+ * judge.js as a 判定器 card, tests.json as typed, and 部署 into the sandbox
+ * the claims will use (docs/programmable-hongbao-design.md §5).
  */
 export function CodeStep({
   form,
@@ -244,11 +322,8 @@ export function CodeStep({
   errorOf,
   locked,
   frozen,
-  checkState,
-  checking,
-  checksLeft,
+  judge,
   gated,
-  onCheck,
   openSheet,
   deadline,
   timingError,
@@ -262,13 +337,9 @@ export function CodeStep({
   locked: boolean;
   /** Saving, or waiting on 重试原提交 (the form's fieldset lock). */
   frozen: boolean;
-  checkState: CodeCheckState;
-  checking: boolean;
-  /** 在线检查 left today; undefined while unknown. */
-  checksLeft?: number;
-  /** 保存并开放 was stopped by it: said in red under the button. */
+  judge: JudgeDeploy;
+  /** 保存并开放 was stopped by it: said in red in the deploy area. */
   gated: boolean;
-  onCheck: () => void;
   openSheet: (group: "timing" | "scope") => void;
   deadline?: string;
   timingError?: string;
@@ -276,20 +347,22 @@ export function CodeStep({
   timeLine: string;
   scopeLine: string;
 }) {
-  const set = (key: "prompt" | "code" | "tests") => (value: string) =>
+  const set = (key: "prompt" | "tests") => (value: string) =>
     update((current) => ({
       ...current,
       judge: { ...current.judge, [key]: value },
     }));
-  const result =
-    checkState.kind === "failed"
-      ? checkState.check
-      : checkState.kind === "passed"
-        ? checkState.check
-        : undefined;
-  const noChecks = checksLeft === 0;
+  const check = judge.result?.check;
+  const problemLines =
+    check?.fingerprint === judge.fingerprint
+      ? (check?.problems.map((problem) => problem.line) ?? [])
+      : [];
+  const named = judge.version ? `判定器 第 ${judge.version.n} 版 ` : "判定器";
   return (
-    <div className="flex flex-col gap-5">
+    // A grid of one shrinkable column: the long lines of the code and the
+    // tests stay in their editors and never widen the step. Its children
+    // are no Reveals; the columns inside that hold one are flex.
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5">
       <Field
         label="领取时的提示"
         htmlFor="hb-code-prompt"
@@ -307,86 +380,63 @@ export function CodeStep({
           onChange={(event) => set("prompt")(event.target.value)}
         />
       </Field>
-      <CodeBox
-        id="hb-code-code"
-        name="judge.js"
-        meta={form.judge.code ? sizeOf(form.judge.code) : "还没贴"}
-        value={form.judge.code}
-        placeholder={
-          "export function judge(submission, tools) {\n  // 返回 { ok, amount, message, state }\n}"
-        }
-        rows={12}
-        maxRows={28}
-        language="js"
-        problemLines={
-          checkState.kind === "failed"
-            ? checkState.check.problems.map((problem) => problem.line)
-            : undefined
-        }
-        error={errorOf("hb-code-code")}
-        disabled={locked}
-        frozen={frozen}
-        accept=".js,.mjs,text/javascript"
-        onChange={set("code")}
-      />
-      <CodeBox
-        id="hb-code-tests"
-        name="tests.json"
-        meta={testCount(form.judge.tests)}
-        note="只是数据，不算进代码，不公开。"
+      <div className="flex flex-col gap-2.5">
+        {/* 换回 (§5): the latest passing version, put back with no deploy. */}
+        <Reveal show={!locked && Boolean(judge.restore)}>
+          {judge.restore && (
+            <Callout
+              tone="warning"
+              icon={AlertTriangle}
+              className="items-center [&>div:last-child]:flex-1"
+            >
+              <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                {/* A version deployed already takes no second deploy:
+                    the deploy area says what it waits for. */}
+                <span className="min-w-0 flex-1">
+                  {judge.version ? (
+                    <>
+                      代码换了：判定器 第 {judge.version.n}{" "}
+                      版还没有测试全过，可以换回测试全过的第 {judge.restore.n}{" "}
+                      版。
+                    </>
+                  ) : (
+                    <>
+                      代码换了：和测试全过的判定器 第 {judge.restore.n}{" "}
+                      版不一样，要部署这一版才能开放；或者换回去。
+                    </>
+                  )}
+                </span>
+                <Button
+                  size="xs"
+                  aria-disabled={judge.busy || frozen || undefined}
+                  data-disabled={judge.busy || frozen || undefined}
+                  onClick={() => {
+                    if (!judge.busy && !frozen) judge.restoreCode();
+                  }}
+                >
+                  换回第 {judge.restore.n} 版
+                </Button>
+              </span>
+            </Callout>
+          )}
+        </Reveal>
+        <JudgeCard
+          code={form.judge.code}
+          judge={judge}
+          locked={locked}
+          busy={frozen || judge.busy}
+          problemLines={problemLines}
+          error={errorOf("hb-code-code")}
+        />
+      </div>
+      <TestsBox
         value={form.judge.tests}
-        placeholder={
-          '{\n  "tests": [\n    { "name": "答对", "input": "flag{…}", "expect": { "ok": true } }\n  ]\n}'
-        }
-        rows={6}
-        maxRows={16}
-        language="json"
         error={errorOf("hb-code-tests")}
         disabled={locked}
         frozen={frozen}
-        accept=".json,application/json"
         onChange={set("tests")}
       />
-      {!locked && (
-        <div className="grid gap-3">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <Squircle radius={radius.input}>
-              <button
-                id="hb-code-check"
-                type="button"
-                onClick={onCheck}
-                disabled={
-                  checking || noChecks || !form.judge.code.trim() || locked
-                }
-                className="hb-lacquer-button inline-flex h-9 items-center gap-1.5 px-4 text-sm font-semibold disabled:opacity-60"
-              >
-                {checking ? "正在检查…" : "在线检查"}
-              </button>
-            </Squircle>
-            <span className="min-w-0 flex-1 text-xs text-ink-3">
-              在线上同一个沙箱里跑你的测试；只改测试不算新代码
-              {checksLeft !== undefined && ` · 今天还能检查 ${checksLeft} 次`}
-            </span>
-          </div>
-          <Reveal show={checkState.kind === "passed" && !result}>
-            <p className="flex items-center gap-1.5 text-sm text-success">
-              <Check className="size-4" aria-hidden="true" />
-              这份代码和测试已经通过在线检查。
-            </p>
-          </Reveal>
-          <Reveal show={Boolean(result)}>
-            {result && <CheckResult check={result} />}
-          </Reveal>
-          <Reveal show={checkState.kind === "unchecked" && checkState.changed}>
-            <p className="text-xs text-warning">
-              代码或测试改过了，要再检查一次。
-            </p>
-          </Reveal>
-          <Reveal show={gated && checkState.kind !== "passed"}>
-            <p className="text-sm text-danger">代码还没通过在线检查</p>
-          </Reveal>
-        </div>
-      )}
+      {!locked && <DeployArea judge={judge} frozen={frozen} gated={gated} />}
       {/* In a new tab: the form stays as it is. */}
       <div className="flex flex-wrap gap-x-4 gap-y-1">
         {[
@@ -428,7 +478,8 @@ export function CodeStep({
         </>
       )}
       <p className="text-xs text-ink-3">
-        开放后代码不能改；结束后所有人都能看到代码。
+        {locked ? "由" : "开放后由"}
+        {named}判定每次提交，不能再换；结束后所有人都能看到代码。
       </p>
     </div>
   );

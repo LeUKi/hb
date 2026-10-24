@@ -34,10 +34,10 @@ import { ListItem, Swap } from "../../ui/reveal";
 import { SegmentedNav } from "../../ui/segmented";
 import { radius, Squircle } from "../../ui/squircle";
 
-// 网站管理: one header and one row of tabs over six pages, which stay while
+// 网站管理: one header and one row of tabs over its pages, which stay while
 // the pages below them change (ViewStage keeps one frame for all of /admin).
-// Production's admin area is read-only except the 尝试间隔 settings, and so
-// is this one.
+// Production's admin area is read-only except the 尝试间隔 settings; this one
+// also changes 🐟额, 判定器设置 and a 代码判定红包's 停用 (07 §10).
 
 const tabs: {
   to: string;
@@ -76,6 +76,13 @@ const tabs: {
     refreshable: true,
   },
   {
+    to: "/admin/judge",
+    label: "判定器",
+    description:
+      "代码判定红包的判定器用了多少份、谁在用，以及它的开关和上限。设置保存后立即生效。",
+    refreshable: true,
+  },
+  {
     to: "/admin/settings",
     label: "网站设置",
     description: "口令尝试间隔、🐟额和它的平台应用，保存后立即生效。",
@@ -84,7 +91,8 @@ const tabs: {
   {
     to: "/admin/audit",
     label: "操作记录",
-    description: "尝试间隔和🐟额设置的每一次修改。记录一直保留。",
+    description:
+      "尝试间隔、🐟额设置和判定器设置的每一次修改，以及停用代码判定红包。记录一直保留。",
     refreshable: true,
   },
 ];
@@ -233,6 +241,29 @@ export function useSettled(value: string, delay = 300) {
     return () => window.clearTimeout(timer);
   }, [value, delay]);
   return settled;
+}
+
+/**
+ * A full id brought in the address's search (判定器's 谁在用, 查看这个红包):
+ * once the list has read it, the one row it finds opens its detail. Only
+ * on arriving, and not after the search has been changed.
+ */
+export function useOpenSearched(
+  /** The address's `q`, as the page opened with it. */
+  wanted: string | undefined,
+  /** The search the list's rows are for. */
+  searched: string,
+  /** The rows, once read (not a previous search's, kept meanwhile). */
+  rows: { id: string }[] | undefined,
+  open: (id: string) => void,
+) {
+  const [pending, setPending] = useState(() => wanted?.trim() || null);
+  useEffect(() => {
+    if (pending === null || rows === undefined) return;
+    if (searched === pending && rows.some((row) => row.id === pending))
+      open(pending);
+    setPending(null);
+  }, [pending, searched, rows, open]);
 }
 
 /** The search box over a list: searches as you type (the server's search). */
@@ -492,12 +523,21 @@ export function ListDetail<T extends { id: string }>({
   );
 }
 
-/** A detail's own read failed: say so, with 重试 (the rest stays). */
-export function DetailRetry({ query }: { query: UseQueryResult<unknown> }) {
+/**
+ * A detail's own read failed: say so, with 重试 (the rest stays). `what`
+ * names the part when it is not a detail (用量).
+ */
+export function DetailRetry({
+  query,
+  what = "详情",
+}: {
+  query: UseQueryResult<unknown>;
+  what?: string;
+}) {
   if (!query.isError || query.data !== undefined) return null;
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink-2">
-      <span role="alert">详情读取失败。</span>
+      <span role="alert">{what}读取失败。</span>
       <Button
         size="sm"
         variant="ghost"
@@ -524,14 +564,17 @@ export function DetailRetry({ query }: { query: UseQueryResult<unknown> }) {
 export function DetailPart<T>({
   query,
   lines = 4,
+  what,
   children,
 }: {
   query: UseQueryResult<T>;
   lines?: number;
+  /** What failed to read, if not 详情 (DetailRetry). */
+  what?: string;
   children: (data: T) => ReactNode;
 }) {
   if (query.data !== undefined) return children(query.data);
-  if (query.isError) return <DetailRetry query={query} />;
+  if (query.isError) return <DetailRetry query={query} what={what} />;
   return (
     <div className="grid gap-3">
       <p role="status" className="sr-only">

@@ -1158,19 +1158,6 @@ export const balanceSettings = sqliteTable(
     transferEnabled: integer("transfer_enabled", { mode: "boolean" })
       .notNull()
       .default(false),
-    /**
-     * 代码判定红包 may be made and opened, how many each person may open a
-     * day, and how many 在线检查 each may run a day (balance-design §14).
-     */
-    codeHongbaoEnabled: integer("code_hongbao_enabled", { mode: "boolean" })
-      .notNull()
-      .default(false),
-    codeHongbaoDailyLimit: integer("code_hongbao_daily_limit")
-      .notNull()
-      .default(3),
-    codeCheckDailyLimit: integer("code_check_daily_limit")
-      .notNull()
-      .default(10),
     updatedAt: integer("updated_at").notNull(),
     updatedByUserId: text("updated_by_user_id"),
   },
@@ -1814,6 +1801,12 @@ export const activityCode = sqliteTable(
     code: text("code"),
     seed: text("seed"),
     revealedAt: integer("revealed_at"),
+    /**
+     * The draft's deployed versions (JudgeVersions, encrypted JSON, §5 版本
+     * and 换回): numbered by the form, kept as the code is; fixed from
+     * opening.
+     */
+    versionsCiphertext: text("versions_ciphertext"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
@@ -1919,7 +1912,12 @@ export const codeFailures = sqliteTable(
   ],
 );
 
-/** 在线检查: one run of a sender's code and tests, counted per day. */
+/**
+ * 部署 (§5): one run of a sender's code and tests, counted per day. The
+ * first run of a code by its sender deploys it; later ones rerun its tests
+ * (migration 0041 holds `kind` to that). Written as it starts and finished
+ * once, with `passed`, at its end.
+ */
 export const judgeChecks = sqliteTable(
   "judge_checks",
   {
@@ -1931,7 +1929,12 @@ export const judgeChecks = sqliteTable(
     fingerprint: text("fingerprint").notNull(),
     testsDigest: text("tests_digest").notNull(),
     passed: integer("passed", { mode: "boolean" }).notNull(),
+    kind: text("kind", { enum: ["deploy", "rerun"] })
+      .notNull()
+      .default("deploy"),
     createdAt: integer("created_at").notNull(),
+    /** Null while it runs, and for good when it was cut off. */
+    finishedAt: integer("finished_at"),
   },
   (table) => [
     index("judge_checks_user_time_idx").on(table.userId, table.createdAt),
@@ -1939,6 +1942,126 @@ export const judgeChecks = sqliteTable(
       table.userId,
       table.fingerprint,
       table.testsDigest,
+    ),
+    // 用量: the month's new versions, by person.
+    index("judge_checks_kind_time_idx").on(table.kind, table.createdAt),
+  ],
+);
+
+/**
+ * 部署 (§5): a person's run under way. One at a time, so the day's counts
+ * and 每月上限 a run read still hold when it is written; a run that died
+ * leaves its lease to run out.
+ */
+export const judgeRunLeases = sqliteTable(
+  "judge_run_leases",
+  {
+    userId: text("user_id")
+      .primaryKey()
+      .references(() => users.id),
+    token: text("token").notNull(),
+    leaseUntil: integer("lease_until").notNull(),
+  },
+  (table) => [
+    check(
+      "judge_run_leases_valid",
+      sql`length(${table.token}) = 36 AND typeof(${table.leaseUntil}) = 'integer'`,
+    ),
+  ],
+);
+
+/**
+ * 判定器设置 (redesign/07 §10): 代码判定红包's switch, openings and deploys a
+ * person may make a day, and the 判定器 a month; one versioned row, written
+ * as 🐟额's settings are.
+ */
+export const judgeSettings = sqliteTable(
+  "judge_settings",
+  {
+    id: text("id").primaryKey(),
+    version: integer("version").notNull(),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(false),
+    dailyOpenLimit: integer("daily_open_limit").notNull().default(3),
+    dailyDeployLimit: integer("daily_deploy_limit").notNull().default(10),
+    monthlyLimit: integer("monthly_limit").notNull().default(1000),
+    updatedAt: integer("updated_at").notNull(),
+    updatedByUserId: text("updated_by_user_id"),
+  },
+  (table) => [
+    check("judge_settings_singleton", sql`${table.id} = 'global'`),
+    check(
+      "judge_settings_valid",
+      sql`typeof(${table.version}) = 'integer' AND ${table.version} >= 1
+        AND ${table.enabled} IN (0, 1)
+        AND typeof(${table.dailyOpenLimit}) = 'integer' AND ${table.dailyOpenLimit} BETWEEN 1 AND 1000
+        AND typeof(${table.dailyDeployLimit}) = 'integer' AND ${table.dailyDeployLimit} BETWEEN 1 AND 1000
+        AND typeof(${table.monthlyLimit}) = 'integer' AND ${table.monthlyLimit} BETWEEN 1 AND 1000000`,
+    ),
+  ],
+);
+
+export const judgeSettingChanges = sqliteTable(
+  "judge_setting_changes",
+  {
+    id: text("id").primaryKey(),
+    actorUserId: text("actor_user_id").notNull(),
+    previousVersion: integer("previous_version").notNull(),
+    nextVersion: integer("next_version").notNull(),
+    /** The settings before and after, as JSON. */
+    previous: text("previous").notNull(),
+    next: text("next").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("judge_setting_changes_version_unique").on(table.nextVersion),
+    index("judge_setting_changes_time_idx").on(table.createdAt, table.id),
+  ],
+);
+
+/**
+ * 用量记录 (§7): a 判定器 (its Dynamic Worker's ID) the first time it is
+ * used on a UTC day, as Cloudflare bills them, and what used it that day.
+ * Whose it is and which 红包 come from the first use (a deploy before
+ * opening is its author's); kept 90 days.
+ */
+export const judgeUsage = sqliteTable(
+  "judge_usage",
+  {
+    /** The UTC day, 2026-10-25. */
+    day: text("day").notNull(),
+    sandboxId: text("sandbox_id").notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    /** Its sandbox after timeouts moved on (sandboxId's ":n"); 0 at first. */
+    fresh: integer("fresh").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    activityId: text("activity_id").references(() => activities.id),
+    deploys: integer("deploys").notNull().default(0),
+    reruns: integer("reruns").notNull().default(0),
+    /** Claims it judged (paid or not). */
+    claims: integer("claims").notNull().default(0),
+    timeouts: integer("timeouts").notNull().default(0),
+    /** Of the timeouts, those that moved on to a fresh sandbox. */
+    switches: integer("switches").notNull().default(0),
+    firstAt: integer("first_at").notNull(),
+    lastAt: integer("last_at").notNull(),
+  },
+  (table) => [
+    // Days in order: a month, the last 30 days and pruning read ranges.
+    primaryKey({ columns: [table.day, table.sandboxId] }),
+    check(
+      "judge_usage_shape",
+      sql`length(${table.fingerprint}) = 64
+        AND typeof(${table.fresh}) = 'integer' AND ${table.fresh} BETWEEN 0 AND 3
+        AND ${table.sandboxId} = 'judge:v1:' || ${table.fingerprint} || CASE WHEN ${table.fresh} > 0 THEN ':' || ${table.fresh} ELSE '' END
+        AND typeof(${table.firstAt}) = 'integer' AND typeof(${table.lastAt}) = 'integer' AND ${table.firstAt} <= ${table.lastAt}
+        AND ${table.day} = strftime('%Y-%m-%d', ${table.firstAt} / 1000, 'unixepoch')
+        AND typeof(${table.deploys}) = 'integer' AND ${table.deploys} >= 0
+        AND typeof(${table.reruns}) = 'integer' AND ${table.reruns} >= 0
+        AND typeof(${table.claims}) = 'integer' AND ${table.claims} >= 0
+        AND typeof(${table.timeouts}) = 'integer' AND ${table.timeouts} >= 0
+        AND typeof(${table.switches}) = 'integer' AND ${table.switches} BETWEEN 0 AND ${table.timeouts}`,
     ),
   ],
 );

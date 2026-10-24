@@ -1,6 +1,6 @@
 // tests.json (协议第 5 节): read, held to what can happen on the site, run
 // and compared the same way by the kit's npm test and npm run check and by
-// the site's 在线检查. A test is one submission, or steps: several people
+// the site's 部署. A test is one submission, or steps: several people
 // in turn, carried forward as the site does (scenario.mjs). Each test says
 // only what matters to it; everything else takes the defaults below.
 import { sha256Text } from "./hash.mjs";
@@ -38,7 +38,7 @@ const NOTES = ["cap", "floor", "last"];
 const NOTE_WORDS = {
   cap: "按上限发",
   floor: "按每份至少发",
-  last: "最后一份发完剩下的",
+  last: "最后一份，发完剩下的",
 };
 const encoder = new TextEncoder();
 const isObject = (value) =>
@@ -49,7 +49,7 @@ const isName = (value) =>
   typeof value === "string" && value.trim() !== "" && characters(value) <= 60;
 const isLevel = (value) => value === null || [0, 1, 2, 3, 4].includes(value);
 // A written time names its zone: without one Date.parse reads the machine's
-// own, and npm test (the author's zone) and 在线检查 (UTC) would disagree.
+// own, and npm test (the author's zone) and 部署 (UTC) would disagree.
 const ISO_WITH_ZONE =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
 const TIME_WORDS =

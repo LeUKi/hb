@@ -39,6 +39,7 @@ import {
 } from "../security/crypto";
 import { runJudge, type SandboxFailure } from "./sandbox";
 import { findJudgeRow, type JudgeRow, judgeData, readSeed } from "./storage";
+import { usageStatement } from "./usage";
 
 type CodeClaim = Extract<ClaimActivityInput, { participationMode: "code" }>;
 
@@ -138,15 +139,22 @@ const failureKind = (
 /**
  * The code failed this judgment: noted for its sender, and the fifth in a
  * row pauses claims. A timeout moves to the next sandbox, past one that
- * may still be stuck.
+ * may still be stuck, unless the runtime cut it short (`hung`): then
+ * nothing holds it. The sandbox was used all the same (用量记录).
  */
 async function recordFailure(
   env: ApiBindings,
   row: JudgeRow,
+  sender: string,
   userId: string,
   kind: "threw" | "timeout" | "invalid" | "memory",
   detail: string,
+  /** When the judgment began: its 份's day. */
+  now: number,
+  hung = false,
 ) {
+  const timeout = Number(kind === "timeout");
+  const moves = Number(kind === "timeout" && !hung);
   await env.DB.batch([
     env.DB.prepare(`INSERT INTO code_failures (id, activity_id, user_id, kind, detail, created_at)
       VALUES (?, ?, ?, ?, ?, ${databaseNow})`).bind(
@@ -162,10 +170,19 @@ async function recordFailure(
       WHERE activity_id = ?`).bind(
       FAILURES_TO_PAUSE,
       FAILURES_TO_PAUSE,
-      Number(kind === "timeout"),
+      moves,
       SANDBOXES,
       row.activityId,
     ),
+    usageStatement(env, {
+      now,
+      fingerprint: row.fingerprint,
+      fresh: row.sandbox,
+      userId: sender,
+      activityId: row.activityId,
+      timeouts: timeout,
+      switches: moves,
+    }),
   ]);
   return row.failuresInRow + 1 >= FAILURES_TO_PAUSE;
 }
@@ -303,13 +320,34 @@ export async function claimByCode(
     const kind = failureKind(
       outcome.failure === "load" ? "threw" : outcome.failure,
     );
-    if (await recordFailure(env, row, userId, kind, outcome.detail))
+    if (
+      await recordFailure(
+        env,
+        row,
+        activity.authorId,
+        userId,
+        kind,
+        outcome.detail,
+        submission.now,
+        outcome.hung,
+      )
+    )
       hooks.paused?.();
     throw failed();
   }
   reading = readVerdict(outcome.verdict, share);
   if ("error" in reading) {
-    if (await recordFailure(env, row, userId, "invalid", reading.error.detail))
+    if (
+      await recordFailure(
+        env,
+        row,
+        activity.authorId,
+        userId,
+        "invalid",
+        reading.error.detail,
+        submission.now,
+      )
+    )
       hooks.paused?.();
     throw failed();
   }
@@ -385,6 +423,15 @@ export async function claimByCode(
       stateCiphertext,
       activityId,
     ),
+    // 用量记录 (§7): the 判定器 it ran in, on its sender's row.
+    usageStatement(env, {
+      now: submission.now,
+      fingerprint: row.fingerprint,
+      fresh: row.sandbox,
+      userId: activity.authorId,
+      activityId,
+      claims: 1,
+    }),
   ];
   try {
     await env.DB.batch(statements);

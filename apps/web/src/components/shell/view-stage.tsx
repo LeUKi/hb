@@ -14,6 +14,7 @@ import { AdminActivities } from "../views/admin/admin-activities";
 import { AdminAudit } from "../views/admin/admin-audit";
 import { AdminBalance } from "../views/admin/admin-balance";
 import { AdminArea } from "../views/admin/admin-frame";
+import { AdminJudge } from "../views/admin/admin-judge";
 import { AdminOverview } from "../views/admin/admin-overview";
 import { AdminPayments } from "../views/admin/admin-payments";
 import { AdminSettings } from "../views/admin/admin-settings";
@@ -72,6 +73,7 @@ const adminPages: Record<string, (search: AdminSearch) => ReactNode> = {
   "/admin/users": (search) => <AdminUsers search={search} />,
   "/admin/payments": (search) => <AdminPayments search={search} />,
   "/admin/balance": (search) => <AdminBalance search={search} />,
+  "/admin/judge": () => <AdminJudge />,
   "/admin/settings": () => <AdminSettings />,
   "/admin/audit": () => <AdminAudit />,
 };

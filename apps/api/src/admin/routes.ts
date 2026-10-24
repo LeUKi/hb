@@ -109,7 +109,7 @@ function encodeAuditCursor(row: AuditCursor | undefined) {
 function parseAuditCursor(value: string | undefined): AuditCursor | null {
   if (!value) return null;
   const match =
-    /^(\d{1,16}):(attempt_rate_limits|balance_settings|code_stop):([A-Za-z0-9_-][A-Za-z0-9_-]{0,100}|[a-f0-9-]{36})$/.exec(
+    /^(\d{1,16}):(attempt_rate_limits|balance_settings|code_stop|judge_settings):([A-Za-z0-9_-][A-Za-z0-9_-]{0,100}|[a-f0-9-]{36})$/.exec(
       value,
     );
   if (!match) throw new ActivityError(400, "INVALID_CURSOR", "分页游标无效。");
@@ -1215,14 +1215,6 @@ function balanceAuditValues(json: unknown): Record<string, boolean | number> {
     ...("transferEnabled" in value
       ? { transferEnabled: value.transferEnabled === true }
       : {}),
-    // 代码判定红包 (0040), likewise.
-    ...("codeHongbaoEnabled" in value
-      ? {
-          codeHongbaoEnabled: value.codeHongbaoEnabled === true,
-          codeHongbaoDailyLimit: Number(value.codeHongbaoDailyLimit ?? 0),
-          codeCheckDailyLimit: Number(value.codeCheckDailyLimit ?? 0),
-        }
-      : {}),
     ...("allowlistEnabled" in value
       ? {
           allowlistEnabled: value.allowlistEnabled === true,
@@ -1231,6 +1223,17 @@ function balanceAuditValues(json: unknown): Record<string, boolean | number> {
             : 0,
         }
       : {}),
+  };
+}
+
+/** 判定器设置 as the audit lists them (redesign/07 §10). */
+function judgeAuditValues(json: unknown): Record<string, boolean | number> {
+  const value = (json ?? {}) as Record<string, unknown>;
+  return {
+    enabled: value.enabled === true,
+    dailyOpenLimit: Number(value.dailyOpenLimit ?? 0),
+    dailyDeployLimit: Number(value.dailyDeployLimit ?? 0),
+    monthlyLimit: Number(value.monthlyLimit ?? 0),
   };
 }
 
@@ -1290,6 +1293,15 @@ async function audit(
       values: (row: Record<string, unknown>) => ({
         before: balanceAuditValues(JSON.parse(String(row.previous))),
         after: balanceAuditValues(JSON.parse(String(row.next))),
+      }),
+    },
+    {
+      type: "judge_settings" as const,
+      columns: "c.previous,c.next",
+      table: "judge_setting_changes",
+      values: (row: Record<string, unknown>) => ({
+        before: judgeAuditValues(JSON.parse(String(row.previous))),
+        after: judgeAuditValues(JSON.parse(String(row.next))),
       }),
     },
     // 停用 of a 代码判定红包 (07 §10): kept on the 红包's own code row.

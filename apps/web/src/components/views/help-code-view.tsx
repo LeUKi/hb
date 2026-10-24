@@ -53,6 +53,7 @@ const AI_PROMPT = `你要帮我写一个“代码判定红包”的判定代码 
   - tools.time.parts(timeZone?)：now 在某个时区的 year、month、day、hour、minute、second、weekday（1 是周一），默认 Asia/Shanghai
 - 每次判定 CPU 最多 50 毫秒。超时、抛错、返回不对都算出错：这次不算数，连续出错 5 次红包会暂停领取。
 - 每人只能领到一次；领过的人、发红包的人和领取范围以外的人走不到代码。平台不限提交次数，要限次数就按 user.attempts 自己拒绝，并在 message 里说清楚。
+- 网站上每部署一份新代码算一次，每人每天有限，所以给我的代码要先能在本地开发包里跑过 npm test 和 npm run check。
 
 tests.json 是一个对象 { "tests": [ … ] }，只是数据：
 - 一条测试就是一次提交 { name, input, expect }，字段和 submission 同名，可选 now（毫秒或带时区的 ISO 时间，比如 2026-10-24T12:00:00+08:00）、user（id、username、level、attempts）、hongbao（title、total、count、minEach、openedAt、endsAt）、claims（前面已领的：写数字表示领了几份，或者完整列表，每条 { user: { id, username }, amount, input, at }）、state、seed（64 位十六进制）。没写的用默认：2026-10-24 12:00（北京时间）提交、测试用户 tester（ID 10000、Lv2、之前没被判定过）、总奖池 10000、10 份、每份至少 1、提交前 1 小时开放、后 1 天截止、还没人领、状态 null、固定的种子。剩余奖池、剩余份数和 share 由 claims 推出来，不能写。
@@ -105,7 +106,7 @@ export function HelpCodeView() {
       <PageSection
         id="ai"
         title="给 AI 的说明"
-        description="整段复制给聊天 AI，把最后一行换成你的玩法。它写出的 judge.js 和 tests.json，先在本地开发包里跑测试，再贴到发红包的第 3 步。"
+        description="整段复制给聊天 AI，把最后一行换成你的玩法。它写出的 judge.js 和 tests.json，先在本地开发包里跑测试，再贴到发红包的第 3 步部署。"
       >
         <Block label="提示词" code={AI_PROMPT} wrap />
       </PageSection>
@@ -135,12 +136,12 @@ export function HelpCodeView() {
             ：照网站的规则查一遍，最后写“可以去网站部署了”再往下。
           </p>
           <p>
-            4. 发红包选“代码判定”，第 3
-            步贴上两个文件，点“在线检查”：在线上同一个沙箱里再跑一遍。每人每天能检查的次数有限。
+            4. 发红包选“代码判定”，第 3 步贴上 judge.js 和
+            tests.json，点“部署并跑测试”：把这一版代码做成判定器，在线上跑你的测试。部署新版本才算次数，每人每天有限；只改测试再跑、换回部署过的版本都不算。
           </p>
           <p>
             5.
-            检查通过后才能开放。开放后代码、测试和提示都不能改；结束后所有人都能看到代码。
+            有一个部署过、测试全过的判定器才能开放，开放用的就是它。开放后代码、测试和提示都不能改；结束后所有人都能看到代码。
           </p>
         </Panel>
       </PageSection>
@@ -308,7 +309,7 @@ export function HelpCodeView() {
               note: (
                 <>
                   <Code>crypto.getRandomValues</Code>{" "}
-                  能用，但重放对不上，在线检查会提醒
+                  能用，但重放对不上，部署时会提醒
                 </>
               ),
             },

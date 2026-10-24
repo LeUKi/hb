@@ -409,10 +409,13 @@ test.describe("开奖证明", () => {
     page,
   }) => {
     const fetched = await drawing(page, true);
+    // As the count moves on, the old line and the new cross-fade: either.
     await expect(
-      page.getByText(
-        /名单已冻结（7 人），等 drand 第 20,000,000 轮随机数，[1-4] 秒后产生。/,
-      ),
+      page
+        .getByText(
+          /名单已冻结（7 人），等 drand 第 20,000,000 轮随机数，[1-4] 秒后产生。/,
+        )
+        .first(),
     ).toBeVisible();
     await expect(
       page.getByText(
@@ -431,7 +434,7 @@ test.describe("开奖证明", () => {
   test("开奖过程：没报名的人在红包皮下面看到同样几步", async ({ page }) => {
     const fetched = await drawing(page, false);
     await expect(
-      page.getByText(/^名单已冻结，[1-4] 秒后出随机数…$/),
+      page.getByText(/^名单已冻结，[1-4] 秒后出随机数…$/).first(),
     ).toBeVisible();
     // Still red, its seal turning: the draw's last step, not its end.
     await expect(page.locator("[data-hb-part=hero]")).not.toHaveClass(

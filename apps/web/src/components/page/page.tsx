@@ -264,8 +264,9 @@ export function Facts({
               item.value
             )}
           </dd>
+          {/* A note wraps: cut short at phone width it would say less. */}
           {item.note && (
-            <dd className="truncate text-xs text-ink-3">{item.note}</dd>
+            <dd className="text-xs text-pretty text-ink-3">{item.note}</dd>
           )}
         </div>
       ))}

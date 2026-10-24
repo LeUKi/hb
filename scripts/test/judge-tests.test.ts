@@ -15,7 +15,7 @@ import {
 } from "../../kit/runtime/index.mjs";
 
 // tests.json v1 (docs/programmable-hongbao-design.md §5): one set of rules
-// for the kit's npm test and npm run check and the site's 在线检查.
+// for the kit's npm test and npm run check and the site's 部署.
 
 const seed = "a".repeat(64);
 const NOW = Date.parse("2026-10-24T12:00:00+08:00");
@@ -141,7 +141,7 @@ describe("tests.json: the file", () => {
         { ...single, now: "明天" },
         "第 1 条测试（a）：now 要是毫秒（整数）或带时区的 ISO 时间，比如 2026-10-24T12:00:00+08:00",
       ],
-      // Without a zone the machine's own is used: npm test and 在线检查
+      // Without a zone the machine's own is used: npm test and 部署
       // would read it differently.
       [
         { ...single, now: "2026-10-24T12:00:00" },

@@ -39,6 +39,7 @@ import {
   ListDetail,
   listLoad,
   SearchBox,
+  useOpenSearched,
   useSettled,
 } from "./admin-frame";
 
@@ -566,6 +567,12 @@ export function AdminUsers({ search }: { search: AdminSearch }) {
   const users = pages
     .flatMap((page) => page.items)
     .filter((item) => !seen.has(item.id) && Boolean(seen.add(item.id)));
+  useOpenSearched(
+    search.q,
+    q,
+    listQuery.data && !busy ? users : undefined,
+    setSelected,
+  );
   const changed = changedCount(filters);
   // Each condition in force, removable on its own.
   const tags: { key: string; label: string; clear: Partial<Filters> }[] = [

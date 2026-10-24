@@ -278,6 +278,14 @@ export async function requireProtectedMutation(c: Context<ApiContext>) {
   return session;
 }
 
+/** The 站长's writes: the exact Origin, the session, CSRF, then the admin. */
+export async function requireAdminMutation(c: Context<ApiContext>) {
+  const session = await requireProtectedMutation(c);
+  if (!session.user.isAdmin)
+    throw new HTTPException(403, { message: "此页面仅限管理员访问" });
+  return session;
+}
+
 export async function logout(c: Context<ApiContext>) {
   assertExactOrigin(c);
   const session = await getOptionalSession(c);

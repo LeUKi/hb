@@ -9,10 +9,6 @@ import {
   updateActivity,
 } from "../src/activities/service";
 import { readAccount } from "../src/balance/ledger";
-import {
-  readBalanceSettings,
-  updateBalanceSettings,
-} from "../src/balance/settings";
 import { findJudgeRow, readSeed } from "../src/judge/storage";
 import { sha256Hex } from "../src/security/crypto";
 import {
@@ -23,6 +19,7 @@ import {
   coded,
   give,
   JUDGE,
+  judgeSettings,
   plus,
   rejects,
   settings,
@@ -30,7 +27,7 @@ import {
 } from "./code-fixtures";
 
 // 代码判定红包 (docs/programmable-hongbao-design.md): who may send one, how its
-// code is kept, 在线检查, and opening with a sealed seed and a locked pool.
+// code is kept, 部署, and opening with a sealed seed and a locked pool.
 
 const draft = (input = coded()) =>
   createActivity(bindings, author.id, {
@@ -44,7 +41,8 @@ let author: Actor;
 beforeEach(async () => {
   admin = await actor();
   author = await actor();
-  await settings({ hongbao_enabled: 1, code_hongbao_enabled: 1 });
+  await settings({ hongbao_enabled: 1 });
+  await judgeSettings({ enabled: 1, daily_open_limit: 3 });
   await plus(author);
   await give(admin, author, "5.00");
 });
@@ -59,7 +57,7 @@ describe("代码判定红包: sending one", () => {
       }),
       "CODE_HONGBAO_NOT_ALLOWED",
     );
-    await settings({ code_hongbao_enabled: 0 });
+    await judgeSettings({ enabled: 0 });
     await rejects(draft(), "CODE_HONGBAO_PAUSED");
   });
 
@@ -114,7 +112,7 @@ describe("代码判定红包: sending one", () => {
     ).toBe(0);
   });
 
-  it("checks the code online by the kit's rules, ten times a day", async () => {
+  it("deploys the code and runs its tests by the kit's rules", async () => {
     const passed = await check(author);
     expect(passed.status).toBe(200);
     expect(passed.body.check).toMatchObject({
@@ -123,7 +121,8 @@ describe("代码判定红包: sending one", () => {
       passed: true,
       problems: [],
       unstable: [],
-      remainingToday: 9,
+      kind: "deploy",
+      deploysLeft: 9,
     });
     expect(passed.body.check.tests.map((test) => test.passed)).toEqual([
       true,
@@ -169,10 +168,6 @@ describe("代码判定红包: sending one", () => {
     );
     expect(random.body.check.unstable).toEqual(["随便"]);
 
-    await settings({ code_check_daily_limit: 6 });
-    const used = await check(author);
-    expect(used.status).toBe(429);
-    expect(used.body.error?.code).toBe("JUDGE_CHECK_LIMIT");
     const stranger = await actor();
     expect((await check(stranger)).status).toBe(403);
   });
@@ -266,11 +261,14 @@ describe("代码判定红包: sending one", () => {
   it("opens only with code and tests that passed, sealing a seed and locking the pool", async () => {
     const saved = await draft();
     expect(saved.openingBlockedReason).toBe("JUDGE_CHECK_REQUIRED");
-    await rejects(
+    await expect(
       openActivity(bindings, saved.id, author.id, saved.version),
-      "JUDGE_CHECK_REQUIRED",
-    );
-    // A pass for other tests is not a pass for these.
+    ).rejects.toMatchObject({
+      code: "JUDGE_CHECK_REQUIRED",
+      message: "还没有测试全过的判定器，草稿已保存。",
+    });
+    // A pass for other tests is not a pass for these: they changed since,
+    // and want a rerun (redesign/07 §5).
     await check(
       author,
       JUDGE,
@@ -281,7 +279,13 @@ describe("代码判定红包: sending one", () => {
     expect(
       (await getManagedActivity(bindings, saved.id, author.id))
         .openingBlockedReason,
-    ).toBe("JUDGE_CHECK_REQUIRED");
+    ).toBe("JUDGE_RERUN_REQUIRED");
+    await expect(
+      openActivity(bindings, saved.id, author.id, saved.version),
+    ).rejects.toMatchObject({
+      code: "JUDGE_RERUN_REQUIRED",
+      message: "测试改过了，要重新跑一遍，草稿已保存。",
+    });
     await check(author);
     expect(
       (await getManagedActivity(bindings, saved.id, author.id))
@@ -333,46 +337,8 @@ describe("代码判定红包: sending one", () => {
     ).rejects.toThrow(/immutable_activity_code/);
   });
 
-  it("keeps its three 网站设置 with the rest of 🐟额's, each left as it is when not sent", async () => {
-    const before = await readBalanceSettings(bindings);
-    const changed = await updateBalanceSettings(bindings, admin.id, {
-      expectedVersion: before.version,
-      topupEnabled: before.topupEnabled,
-      withdrawEnabled: before.withdrawEnabled,
-      topupFeePercent: before.topupFeePercent,
-      withdrawFeePercent: before.withdrawFeePercent,
-      withdrawMaxMinor: before.withdrawMaxMinor,
-      codeHongbaoDailyLimit: 5,
-      codeCheckDailyLimit: 20,
-    });
-    expect(changed).toMatchObject({
-      codeHongbaoEnabled: true,
-      codeHongbaoDailyLimit: 5,
-      codeCheckDailyLimit: 20,
-    });
-    const off = await updateBalanceSettings(bindings, admin.id, {
-      expectedVersion: changed.version,
-      topupEnabled: before.topupEnabled,
-      withdrawEnabled: before.withdrawEnabled,
-      topupFeePercent: before.topupFeePercent,
-      withdrawFeePercent: before.withdrawFeePercent,
-      withdrawMaxMinor: before.withdrawMaxMinor,
-      codeHongbaoEnabled: false,
-    });
-    expect(off).toMatchObject({
-      codeHongbaoEnabled: false,
-      codeHongbaoDailyLimit: 5,
-      codeCheckDailyLimit: 20,
-    });
-    await expect(
-      env.DB.prepare(
-        "UPDATE balance_settings SET code_check_daily_limit = 0 WHERE id = 'global'",
-      ).run(),
-    ).rejects.toThrow(/invalid_code_limits/);
-  });
-
-  it("opens as many a day as 网站设置 says", async () => {
-    await settings({ code_hongbao_daily_limit: 1 });
+  it("opens as many a day as 判定器设置 says", async () => {
+    await judgeSettings({ daily_open_limit: 1 });
     await check(author);
     const first = await draft();
     await openActivity(bindings, first.id, author.id, first.version);

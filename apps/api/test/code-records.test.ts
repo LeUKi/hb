@@ -27,6 +27,7 @@ import {
   check,
   coded,
   give,
+  judgeSettings,
   origin,
   plus,
   settings,
@@ -42,7 +43,8 @@ let author: Actor;
 beforeEach(async () => {
   admin = await actor();
   author = await actor();
-  await settings({ hongbao_enabled: 1, code_hongbao_enabled: 1 });
+  await settings({ hongbao_enabled: 1 });
+  await judgeSettings({ enabled: 1 });
   await plus(author);
   await give(admin, author, "5.00");
 });

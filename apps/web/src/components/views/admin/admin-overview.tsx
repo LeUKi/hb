@@ -38,6 +38,7 @@ const jobs = [
   { job: "payments", name: "付款补偿" },
   { job: "credentials", name: "凭证检查恢复" },
   { job: "identity", name: "会话清理" },
+  { job: "judge_usage", name: "判定器用量清理" },
 ] as const;
 
 type Check = {

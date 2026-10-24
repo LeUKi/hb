@@ -82,6 +82,8 @@ export const adminAuditTypeSchema = z.enum([
   "balance_settings",
   /** 站长 stopped a 代码判定红包 (docs/programmable-hongbao-design.md §1). */
   "code_stop",
+  /** 判定器设置 (redesign/07 §10). */
+  "judge_settings",
 ]);
 export type AdminAuditType = z.infer<typeof adminAuditTypeSchema>;
 
@@ -324,6 +326,58 @@ export type AdminAuditEntry = {
   activity?: { id: string; title: string };
 };
 
+/** 判定器's 用量 (redesign/07 §10): what the 份 were used for. */
+export type AdminJudgeUsageCounts = {
+  /** 份: 判定器 by UTC day, as Cloudflare bills Dynamic Workers. */
+  rows: number;
+  /** 部署新版本 and 重新跑测试. */
+  deploys: number;
+  reruns: number;
+  /** Claims judged (paid or not). */
+  claims: number;
+  timeouts: number;
+  /** Of the timeouts, those that moved on to a fresh sandbox (换了实例). */
+  switches: number;
+};
+
+/**
+ * 网站管理 · 判定器's 用量 (docs/programmable-hongbao-design.md §7): today
+ * and this month (UTC, as billed), the estimate past the free allowance,
+ * the last 30 days, and this month's top people and 红包.
+ */
+export type AdminJudgeUsage = {
+  readAt: number;
+  /** The UTC day ("2026-10-25") and its month ("2026-10"). */
+  day: string;
+  month: string;
+  today: AdminJudgeUsageCounts;
+  thisMonth: AdminJudgeUsageCounts;
+  /** 份 free a month, and the price of each past them, in USD. */
+  freeRows: number;
+  pricePerRow: number;
+  /** max(0, thisMonth.rows − freeRows) × pricePerRow, in USD. */
+  estimatedCost: number;
+  /** 每月判定器上限 (判定器设置). */
+  monthlyLimit: number;
+  /** The last 30 UTC days, oldest first, today last; none used counts 0. */
+  days: { day: string; rows: number }[];
+  /** 部署最多的人: new versions deployed this month, and 份 on them. */
+  people: { user: ActivityAuthor; deploys: number; rows: number }[];
+  /** 占用最多的红包: 份 this month, and claims judged this month. */
+  hongbao: {
+    activity: {
+      id: string;
+      title: string;
+      author: ActivityAuthor;
+      status: AdminLifecycle;
+      /** 站长 stopped it (停用). */
+      stopped?: true;
+    };
+    rows: number;
+    judgments: number;
+  }[];
+};
+
 const adminCursorValueSchema = z
   .string()
   .max(512)
@@ -334,7 +388,7 @@ const adminAuditCursorValueSchema = z
   .string()
   .max(512)
   .regex(
-    /^(\d{1,16}):(attempt_rate_limits|balance_settings|code_stop):([A-Za-z0-9_-][A-Za-z0-9_-]{0,100}|[a-f0-9-]{36})$/,
+    /^(\d{1,16}):(attempt_rate_limits|balance_settings|code_stop|judge_settings):([A-Za-z0-9_-][A-Za-z0-9_-]{0,100}|[a-f0-9-]{36})$/,
   )
   .refine((value) => Number.isSafeInteger(Number(value.split(":", 1)[0])));
 

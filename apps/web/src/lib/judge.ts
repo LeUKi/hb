@@ -18,9 +18,9 @@ import { balanceKeys } from "./balance";
 import { useMerchantIdentity } from "./merchants";
 import { useIdentity } from "./session";
 
-// 代码判定红包 (docs/programmable-hongbao-design.md) on the web: 在线检查
-// and which code and tests a check was for, a claimant's 我的提交, its
-// sender's 出错记录 and records.
+// 代码判定红包 (docs/programmable-hongbao-design.md) on the web: 部署 and
+// which code and tests a run was for, a claimant's 我的提交, its sender's
+// 出错记录 and records.
 
 /** The kit in the public repo (协议第 5 节). */
 export const KIT_URL = "https://github.com/LeUKi/hb/tree/main/kit";
@@ -36,30 +36,52 @@ export async function textDigest(text: string) {
   ).join("");
 }
 
-/** The digests of the code and tests as typed, kept up as they change. */
-export function useJudgeDigests(code: string, tests: string) {
-  const [digests, setDigests] = useState<{
-    code: string;
-    tests: string;
-    for: string;
-  } | null>(null);
-  const key = `${code.length}:${tests.length}:${code}\u0000${tests}`;
+/**
+ * Digests worked out lately, by text: the same text (a version pasted back,
+ * the step opened again) has its digest at once. The latest few only.
+ */
+const digested = new Map<string, string>();
+
+/** A text's digest, kept up as it changes; null while being worked out. */
+function useTextDigest(text: string) {
+  const [state, setState] = useState<{ text: string; digest: string }>();
+  const known = digested.get(text);
   useEffect(() => {
+    // Held here too: the cache may let it go while the text stays.
+    const cached = digested.get(text);
+    if (cached !== undefined) {
+      setState({ text, digest: cached });
+      return;
+    }
     let live = true;
-    void Promise.all([textDigest(code), textDigest(tests)]).then(
-      ([codeDigest, testsDigest]) => {
-        if (live)
-          setDigests({ code: codeDigest, tests: testsDigest, for: key });
-      },
-    );
+    void textDigest(text).then((digest) => {
+      digested.set(text, digest);
+      for (const old of digested.keys()) {
+        if (digested.size <= 16) break;
+        digested.delete(old);
+      }
+      if (live) setState({ text, digest });
+    });
     return () => {
       live = false;
     };
-  }, [code, tests, key]);
-  return digests?.for === key ? digests : null;
+  }, [text]);
+  return known ?? (state?.text === text ? state.digest : null);
 }
 
-/** 在线检查: counted against today's checks, which the form reads again. */
+/**
+ * judge.js's fingerprint and tests.json's digest as typed, each on its own:
+ * typing in the tests leaves the code's fingerprint known.
+ */
+export function useJudgeDigests(code: string, tests: string) {
+  return { code: useTextDigest(code), tests: useTextDigest(tests) };
+}
+
+/**
+ * 部署 (§5): a new version made into a 判定器 and its tests run, or a
+ * version deployed before running its tests again. Deploys are counted a
+ * day, so the form reads what is left again, after a refusal too.
+ */
 export function useJudgeCheck(userId: string) {
   const session = useMerchantIdentity(userId);
   const queryClient = useQueryClient();
@@ -67,17 +89,20 @@ export function useJudgeCheck(userId: string) {
   return useMutation({
     mutationFn: async (input: JudgeCheckInput) => {
       const identity = session.captureIdentity() ?? "";
-      const { check } = await readResponse<{ check: JudgeCheck }>(
-        await api.api.judge.check.$post(
-          { json: input },
-          { headers: { "X-CSRF-Token": csrfToken ?? "" } },
-        ),
-      );
-      if (session.isCurrentIdentity(identity))
-        void queryClient.invalidateQueries({
-          queryKey: balanceKeys.hongbao(identity),
-        });
-      return check;
+      try {
+        const { check } = await readResponse<{ check: JudgeCheck }>(
+          await api.api.judge.check.$post(
+            { json: input },
+            { headers: { "X-CSRF-Token": csrfToken ?? "" } },
+          ),
+        );
+        return check;
+      } finally {
+        if (session.isCurrentIdentity(identity))
+          void queryClient.invalidateQueries({
+            queryKey: balanceKeys.hongbao(identity),
+          });
+      }
     },
   });
 }

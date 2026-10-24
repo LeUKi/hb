@@ -816,7 +816,7 @@ export type ManagedActivity = ActivitySummary & {
   author: ActivityAuthor;
   config: ActivityInput;
   openingBlockedReason?: LdcOpeningBlockedReason;
-  /** 代码判定: this code and these tests passed its sender's 在线检查. */
+  /** 代码判定: this code and these tests passed its sender's 部署. */
   judgePassed?: boolean;
   /** 代码判定: its code failed five times running; it may end early. */
   judgePaused?: true;

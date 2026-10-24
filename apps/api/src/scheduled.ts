@@ -1,6 +1,7 @@
 import { sweepActivityLifecycle } from "./activities/lifecycle";
 import { settleEndedWithdrawals } from "./balance/withdrawal-settlement";
 import type { ApiBindings } from "./env";
+import { pruneJudgeUsage } from "./judge/usage";
 import { sweepPayments } from "./payments/scheduler";
 import { recoverCredentialChecks } from "./payments/verification";
 import { inMaintenanceMode } from "./runtime/maintenance-mode";
@@ -51,6 +52,8 @@ export async function runMaintenance(env: ApiBindings, scheduledAt: number) {
       },
     },
     { name: "credentials", run: () => recoverCredentialChecks(env) },
+    // 代码判定红包's 用量记录 are kept 90 days (programmable-hongbao §7).
+    { name: "judge_usage", run: () => pruneJudgeUsage(env, scheduledAt) },
   ]);
 }
 

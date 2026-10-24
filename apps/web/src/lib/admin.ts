@@ -3,13 +3,17 @@ import type {
   AdminActivityListItem,
   AdminAuditEntry,
   AdminCursorList,
+  AdminJudgeUsage,
   AdminOverview,
   AdminPaymentDetailResponse,
   AdminPaymentListItem,
   AdminUserDetail,
   AdminUserListItem,
   AttemptRateLimitsResponse,
+  JudgeSettingChange,
+  JudgeSettings,
   UpdateAttemptRateLimitsInput,
+  UpdateJudgeSettingsInput,
 } from "@hb/contracts";
 import {
   keepPreviousData,
@@ -23,10 +27,11 @@ import { adminIdentity } from "./admin-identity";
 import { useSession } from "./auth";
 import { haptic } from "./haptics";
 
-// 网站管理 (/admin): production's read-only admin API, and the one setting
-// an admin can change. Every read is kept under the session that made it
-// (query-cache.ts drops them when the session changes, and turns a 401 or
-// 403 into the account it now is).
+// 网站管理 (/admin): production's read-only admin API, and the settings
+// an admin can change (尝试间隔, 判定器设置; 🐟额's are in admin-balance.ts).
+// Every read is kept under the session that made it (query-cache.ts drops
+// them when the session changes, and turns a 401 or 403 into the account it
+// now is).
 
 /** The admin session reads belong to. */
 export function useAdminIdentity() {
@@ -208,10 +213,102 @@ export function useStopCode(csrfToken: string) {
           },
         ),
       );
-      for (const kind of ["activities", "audit", "overview"])
+      // 判定器's 用量 lists the 红包 as 进行中 until read again.
+      for (const rest of [
+        ["activities"],
+        ["audit"],
+        ["overview"],
+        ["judge", "usage"],
+      ])
         void queryClient.invalidateQueries({
-          queryKey: adminKey(identity, kind),
+          queryKey: adminKey(identity, ...rest),
         });
     },
   });
+}
+
+/**
+ * 判定器's 用量 (07 §10): today and this month (UTC days, as billed), the
+ * last 30 days, and this month's top people and 红包.
+ */
+export function useJudgeUsage() {
+  const identity = useAdminIdentity();
+  return useQuery({
+    queryKey: adminKey(identity, "judge", "usage"),
+    queryFn: ({ signal }) =>
+      readAdmin<AdminJudgeUsage>("judge/usage", {}, signal),
+    retry: false,
+  });
+}
+
+export type JudgeSettingsResponse = {
+  settings: JudgeSettings;
+  recentChanges: JudgeSettingChange[];
+};
+
+/** 判定器设置, read again whenever the window comes back, as 网站设置's. */
+export function useJudgeSettings() {
+  const identity = useAdminIdentity();
+  return useQuery({
+    queryKey: adminKey(identity, "judge", "settings"),
+    queryFn: ({ signal }) =>
+      readAdmin<JudgeSettingsResponse>("judge/settings", {}, signal),
+    retry: false,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+  });
+}
+
+/**
+ * Saving 判定器设置 against the version read (a 409 when someone saved
+ * first), as the intervals are saved: `check` reads what is saved now, and
+ * `adopt` makes it the page's data. A save also has 用量 (its 上限) and
+ * 操作记录 read again.
+ */
+export function useSaveJudgeSettings(csrfToken: string) {
+  const identity = useAdminIdentity();
+  const queryClient = useQueryClient();
+  const queryKey = adminKey(identity, "judge", "settings");
+  const adopt = async (fresh: JudgeSettingsResponse) => {
+    // A read already on its way must not put the older version back.
+    await queryClient.cancelQueries({ queryKey });
+    queryClient.setQueryData(queryKey, fresh);
+  };
+  const others = () => {
+    for (const rest of [["judge", "usage"], ["audit"]])
+      void queryClient.invalidateQueries({
+        queryKey: adminKey(identity, ...rest),
+      });
+  };
+  return {
+    run: async (input: UpdateJudgeSettingsInput) => {
+      const { settings } = await readResponse<{ settings: JudgeSettings }>(
+        await fetch("/api/admin/judge/settings", {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-Token": csrfToken,
+          },
+          body: JSON.stringify(input),
+          cache: "no-store",
+        }),
+      );
+      // The new version now; who saved it comes with the next read.
+      const current = queryClient.getQueryData<JudgeSettingsResponse>(queryKey);
+      await adopt({ settings, recentChanges: current?.recentChanges ?? [] });
+      void queryClient.invalidateQueries({ queryKey });
+      others();
+      return settings;
+    },
+    check: () =>
+      readAdmin<JudgeSettingsResponse>(
+        "judge/settings",
+        {},
+        new AbortController().signal,
+      ).catch(() => null),
+    adopt: async (fresh: JudgeSettingsResponse) => {
+      await adopt(fresh);
+      others();
+    },
+  };
 }

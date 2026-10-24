@@ -11,11 +11,10 @@ import {
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { HTTPException } from "hono/http-exception";
 import type { z } from "zod";
 import { ActivityError } from "../activities/errors";
 import { ActivityValidationError } from "../activities/routes";
-import { requireAdmin, requireProtectedMutation } from "../auth/session";
+import { requireAdmin, requireAdminMutation } from "../auth/session";
 import type { ApiContext } from "../env";
 import { beginCredentialVerification } from "../payments/verification";
 import { requireAppOrigin } from "../security/http";
@@ -60,13 +59,6 @@ const body = bodyLimit({
   },
 });
 
-async function adminMutation(c: Context<ApiContext>) {
-  const session = await requireProtectedMutation(c);
-  if (!session.user.isAdmin)
-    throw new HTTPException(403, { message: "此页面仅限管理员访问" });
-  return session;
-}
-
 async function parsed<T extends z.ZodType>(
   c: Context<ApiContext>,
   schema: T,
@@ -108,13 +100,13 @@ export const balanceAdminRoutes = new Hono<ApiContext>()
     return c.json(detail);
   })
   .post("/admin/balance/topups/:id/check", async (c) => {
-    await adminMutation(c);
+    await requireAdminMutation(c);
     const row = await readTopup(c.env, c.req.param("id"));
     if (!row) balanceError(404, "TOPUP_NOT_FOUND", "没有找到这笔转入");
     return c.json({ topup: topupView(await checkTopup(c.env, row, "admin")) });
   })
   .post("/admin/balance/topups/:id/confirm", body, async (c) => {
-    const session = await adminMutation(c);
+    const session = await requireAdminMutation(c);
     const { reason } = await parsed(c, confirmTopupSchema);
     return c.json({
       topup: topupView(
@@ -147,7 +139,7 @@ export const balanceAdminRoutes = new Hono<ApiContext>()
     c.json(await listInviteLinks(c.env, decodeRecordCursor(cursorOf(c)))),
   )
   .post("/admin/balance/invite-links", body, async (c) => {
-    const session = await adminMutation(c);
+    const session = await requireAdminMutation(c);
     const input = await parsed(c, createInviteLinkSchema);
     return c.json(
       await createInviteLink(
@@ -159,7 +151,7 @@ export const balanceAdminRoutes = new Hono<ApiContext>()
     );
   })
   .post("/admin/balance/invite-links/:id/stop", async (c) => {
-    const session = await adminMutation(c);
+    const session = await requireAdminMutation(c);
     return c.json(
       await stopInviteLink(c.env, session.user.id, c.req.param("id")),
     );
@@ -172,7 +164,7 @@ export const balanceAdminRoutes = new Hono<ApiContext>()
     c.json(await listAdminTransfers(c.env, cursorOf(c))),
   )
   .post("/admin/balance/api-keys/:id/revoke", body, async (c) => {
-    const session = await adminMutation(c);
+    const session = await requireAdminMutation(c);
     const input = await parsed(c, adminRevokeApiKeySchema);
     return c.json({
       key: await adminRevokeApiKey(
@@ -187,7 +179,7 @@ export const balanceAdminRoutes = new Hono<ApiContext>()
     c.json(await adminUserBalance(c.env, c.req.param("id"), cursorOf(c))),
   )
   .post("/admin/balance/users/:id/adjustments", body, async (c) => {
-    const session = await adminMutation(c);
+    const session = await requireAdminMutation(c);
     const input = await parsed(c, balanceAdjustmentSchema);
     return c.json({
       adjustment: await adjustBalance(
@@ -208,14 +200,14 @@ export const balanceAdminRoutes = new Hono<ApiContext>()
     return c.json({ settings, recentChanges, platformApp, owner });
   })
   .patch("/admin/balance/settings", body, async (c) => {
-    const session = await adminMutation(c);
+    const session = await requireAdminMutation(c);
     const input = await parsed(c, updateBalanceSettingsSchema);
     return c.json({
       settings: await updateBalanceSettings(c.env, session.user.id, input),
     });
   })
   .put("/admin/balance/platform-app", body, async (c) => {
-    const session = await adminMutation(c);
+    const session = await requireAdminMutation(c);
     const input = await parsed(c, savePlatformAppSchema);
     const row = await savePlatformApp(c.env, session.user.id, input);
     const job = await beginCredentialVerification(c.env, row.id);
@@ -224,7 +216,7 @@ export const balanceAdminRoutes = new Hono<ApiContext>()
   })
   // 重新检查: the key again, when Credit could not be reached.
   .post("/admin/balance/platform-app/check", async (c) => {
-    await adminMutation(c);
+    await requireAdminMutation(c);
     const row = await readPlatformAppRow(c.env);
     if (!row) balanceError(404, "PLATFORM_APP_NOT_FOUND", "还没有平台应用");
     const job = await beginCredentialVerification(c.env, row.id);

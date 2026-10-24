@@ -292,8 +292,11 @@ export type BalanceFunding = {
   /** On, and something to send. */
   available: boolean;
   availableMinor: number;
-  /** 代码判定红包 may be sent (🐟额 PLUS, its switch on): 在线检查 left today. */
-  code?: { checksLeft: number };
+  /**
+   * 代码判定红包 may be sent (🐟额 PLUS, its switch on): new versions left
+   * to deploy today, of 每人每天部署几次.
+   */
+  code?: { deploysLeft: number; deployLimit: number };
 };
 
 /**

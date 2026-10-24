@@ -21,6 +21,7 @@ import {
   actor as codeActor,
   coded,
   give,
+  judgeSettings,
   plus,
   settings,
 } from "./code-fixtures";
@@ -627,7 +628,8 @@ describe("activity image APIs", () => {
 // can never be deleted, so the clean-up above could not run after it.
 describe("activity image of a 代码判定红包", () => {
   it("draws it in black lacquer, paused, and graphite once the 站长 stops it", async () => {
-    await settings({ hongbao_enabled: 1, code_hongbao_enabled: 1 });
+    await settings({ hongbao_enabled: 1 });
+    await judgeSettings({ enabled: 1 });
     const [admin, sender, claimant, stranger] = await Promise.all([
       codeActor(),
       codeActor(),

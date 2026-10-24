@@ -43,7 +43,7 @@ export function CodeEditor({
   readOnly?: boolean;
   disabled?: boolean;
   placeholder?: string;
-  /** Lines 在线检查 named (from 1): their numbers turn red. */
+  /** Lines 部署 named (from 1): their numbers turn red. */
   problemLines?: number[];
   /** On the editable element, so a jump to the field lands in it. */
   id?: string;

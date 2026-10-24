@@ -12,6 +12,8 @@ export const JUDGE_LIMITS = {
   inputCharacters: 200,
   messageCharacters: 100,
   stateBytes: 16 * 1024,
+  /** Deployed versions a draft keeps (§5 换回). */
+  versions: 10,
 } as const;
 
 const characters = (value: string) => Array.from(value).length;
@@ -31,6 +33,69 @@ const testsSchema = z
     `测试超过 ${JUDGE_LIMITS.testsBytes / 1024} KB`,
   );
 
+const fingerprintSchema = z.string().regex(/^[0-9a-f]{64}$/);
+
+/**
+ * 版本 and 换回 (docs/programmable-hongbao-design.md §5): each new code a
+ * draft deploys is 第 n 版, numbered by the form in the order deployed; a
+ * code pasted back keeps its number. Kept with the code, encrypted.
+ */
+export const judgeVersionsSchema = z
+  .strictObject({
+    /** The number the next new version takes. */
+    next: z.number().int().min(1),
+    /** The latest deployed versions, at most ten. */
+    versions: z
+      .array(
+        z.strictObject({
+          n: z.number().int().min(1),
+          fingerprint: fingerprintSchema,
+          /** When it was deployed. */
+          at: z.iso.datetime(),
+          /** The tests.json it last ran, so a draft opened again knows. */
+          testsDigest: fingerprintSchema,
+          /** Those tests all passed. */
+          passed: z.boolean(),
+        }),
+      )
+      .max(JUDGE_LIMITS.versions),
+    /**
+     * 换回: the latest version whose tests all passed, with its code, while
+     * the code is another.
+     */
+    restore: z
+      .strictObject({ n: z.number().int().min(1), code: codeSchema })
+      .optional(),
+  })
+  .superRefine((value, context) => {
+    const numbers = new Set(value.versions.map((version) => version.n));
+    const fingerprints = new Set(
+      value.versions.map((version) => version.fingerprint),
+    );
+    if (
+      numbers.size !== value.versions.length ||
+      fingerprints.size !== value.versions.length ||
+      value.versions.some((version) => version.n >= value.next)
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["versions"],
+        message: "版本号不对",
+      });
+    if (
+      value.restore &&
+      !value.versions.some(
+        (version) => version.n === value.restore?.n && version.passed,
+      )
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["restore"],
+        message: "只能换回测试全过的版本",
+      });
+  });
+export type JudgeVersions = z.infer<typeof judgeVersionsSchema>;
+
 /** Step 3 of 发红包 (代码): the prompt, judge.js and tests.json as pasted. */
 export const judgeInputSchema = z.strictObject({
   prompt: z
@@ -42,10 +107,12 @@ export const judgeInputSchema = z.strictObject({
     ),
   code: codeSchema,
   tests: testsSchema,
+  /** A draft's deployed versions; back in its sender's own read. */
+  versions: judgeVersionsSchema.optional(),
 });
 export type JudgeInput = z.infer<typeof judgeInputSchema>;
 
-/** 在线检查: the code and tests to run, saved or not. */
+/** 部署 (§5): the code and tests to run, saved or not. */
 export const judgeCheckInputSchema = z.strictObject({
   code: codeSchema,
   tests: testsSchema,
@@ -85,7 +152,7 @@ export type JudgeTestOutcome = {
   ms?: number;
 };
 
-/** 在线检查's result: the same rules as the kit's `npm run check`. */
+/** 部署's result: the same rules as the kit's `npm run check`. */
 export type JudgeCheck = {
   fingerprint: string;
   testsDigest: string;
@@ -101,8 +168,14 @@ export type JudgeCheck = {
   unstable: string[];
   slowestMs: number | null;
   checkedAt: string;
-  /** Checks left today (网站设置: 在线检查每人每天几次). */
-  remainingToday: number;
+  /**
+   * `deploy`: this sender's first run of this code, a new version made
+   * into a 判定器; `rerun`: its tests again on a version deployed before,
+   * which counts toward no limit shown.
+   */
+  kind: "deploy" | "rerun";
+  /** New versions this sender may still deploy today (判定器设置). */
+  deploysLeft: number;
 };
 
 /** Why a claimant's share differs from what the code asked for. */
@@ -159,4 +232,41 @@ export type CodeFailureList = {
   items: CodeFailure[];
   failuresInRow: number;
   pausedAt: string | null;
+};
+
+/**
+ * 判定器设置 (redesign/07 §10, docs/programmable-hongbao-design.md §1, §5,
+ * §7): 代码判定红包's switch, 每人每天最多开放几个, 每人每天部署几次 (new
+ * versions only) and 每月判定器上限 (份).
+ */
+export const judgeSettingsSchema = z.strictObject({
+  enabled: z.boolean(),
+  dailyOpenLimit: z.number().int().min(1).max(1000),
+  dailyDeployLimit: z.number().int().min(1).max(1000),
+  monthlyLimit: z.number().int().min(1).max(1_000_000),
+});
+export type JudgeSettingsInput = z.infer<typeof judgeSettingsSchema>;
+
+export const updateJudgeSettingsSchema = judgeSettingsSchema.extend({
+  expectedVersion: z.number().int().positive(),
+});
+export type UpdateJudgeSettingsInput = z.infer<
+  typeof updateJudgeSettingsSchema
+>;
+
+export type JudgeSettings = JudgeSettingsInput & {
+  version: number;
+  updatedAt: number;
+};
+
+/** One saved change, for “第 N 版 · 什么时候由谁修改”. */
+export type JudgeSettingChange = {
+  id: string;
+  actorUserId: string;
+  actorDisplayName: string;
+  previousVersion: number;
+  nextVersion: number;
+  previous: JudgeSettingsInput;
+  next: JudgeSettingsInput;
+  createdAt: number;
 };

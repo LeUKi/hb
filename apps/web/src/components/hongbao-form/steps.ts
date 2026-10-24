@@ -105,6 +105,8 @@ export function summaryOf(
   form: FormState,
   /** An opened 红包's real deadline ("10月16日 20:00 截止"). */
   deadline?: string,
+  /** 代码判定: which 判定器 the code is (判定器 第 3 版, 新代码), once known. */
+  judgeName?: string,
 ) {
   switch (step) {
     case "mode":
@@ -130,7 +132,7 @@ export function summaryOf(
       const time = deadline ?? timingLine(form);
       if (form.mode === "code")
         return form.judge.code.trim()
-          ? `judge.js ${sizeOf(form.judge.code)} · ${testCount(form.judge.tests)} · ${time}`
+          ? `${judgeName ?? `judge.js ${sizeOf(form.judge.code)}`} · ${testCount(form.judge.tests)} · ${time}`
           : `代码还没贴 · ${time}`;
       if (form.participation === "direct") return `无需口令 · ${time}`;
       const count = form.passwords.filter((item) => item.trim()).length;

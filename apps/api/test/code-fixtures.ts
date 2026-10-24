@@ -14,7 +14,8 @@ import { sessions, users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
 import { sha256Hex } from "../src/security/crypto";
 
-// 代码判定红包's tests share these: people, 网站设置, a 红包 and its code.
+// 代码判定红包's tests share these: people, 网站设置 and 判定器设置, a 红包
+// and its code.
 
 export const origin = "https://hb.example.com";
 export const bindings: ApiBindings = { ...env, APP_ORIGIN: origin };
@@ -69,16 +70,24 @@ export const TESTS = JSON.stringify({
   ],
 });
 
-export async function settings(change: Record<string, number>) {
+async function setRow(table: string, change: Record<string, number>) {
   const sets = Object.keys(change)
     .map((key) => `${key}=?`)
     .join(",");
   await env.DB.prepare(
-    `UPDATE balance_settings SET ${sets},version=version+1 WHERE id='global'`,
+    `UPDATE ${table} SET ${sets},version=version+1 WHERE id='global'`,
   )
     .bind(...Object.values(change))
     .run();
 }
+
+/** 🐟额's settings, by column. */
+export const settings = (change: Record<string, number>) =>
+  setRow("balance_settings", change);
+
+/** 判定器设置, by column: enabled, daily_open_limit, daily_deploy_limit, monthly_limit. */
+export const judgeSettings = (change: Record<string, number>) =>
+  setRow("judge_settings", change);
 
 export async function plus(user: Actor) {
   await env.DB.prepare(
@@ -124,6 +133,7 @@ export function coded(
   };
 }
 
+/** 部署: POST /api/judge/check as this person. */
 export async function check(user: Actor, code = JUDGE, tests = TESTS) {
   const response = await app.request(
     `${origin}/api/judge/check`,
@@ -143,10 +153,13 @@ export async function check(user: Actor, code = JUDGE, tests = TESTS) {
     status: response.status,
     body: (await response.json()) as {
       check: JudgeCheck;
-      error?: { code: string };
+      error?: { code: string; message: string };
     },
   };
 }
+
+/** Code of its own, so its 判定器 and 用量 rows are this test's alone. */
+export const unique = (code = JUDGE) => `${code}// ${crypto.randomUUID()}\n`;
 
 export async function rejects(action: Promise<unknown>, code: string) {
   await expect(action).rejects.toMatchObject({ code });

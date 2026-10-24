@@ -35,6 +35,7 @@ import {
   listLoad,
   SearchBox,
   ToggleChip,
+  useOpenSearched,
   useSettled,
 } from "./admin-frame";
 
@@ -382,6 +383,12 @@ export function AdminActivities({ search }: { search: AdminSearch }) {
       ...item,
       record: sentRecordOf(item.summary, item.author),
     }));
+  useOpenSearched(
+    search.q,
+    q,
+    listQuery.data && !busy ? rows : undefined,
+    setSelected,
+  );
   // The filter's name: from the rows, otherwise read (or cached from the
   // user's detail it came from).
   const authorRow = rows.find((row) => authorId && row.authorId === authorId);

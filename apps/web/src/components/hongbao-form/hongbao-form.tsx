@@ -1,4 +1,4 @@
-import type { JudgeCheck, ManagedActivity } from "@hb/contracts";
+import type { ManagedActivity } from "@hb/contracts";
 import { useLocation, useRouter } from "@tanstack/react-router";
 import { AlertTriangle, ChevronRight, Trash2 } from "lucide-react";
 import {
@@ -12,7 +12,6 @@ import { flushSync } from "react-dom";
 import { useBalanceFunding } from "../../lib/balance";
 import { cn } from "../../lib/cn";
 import { haptic } from "../../lib/haptics";
-import { useJudgeCheck, useJudgeDigests } from "../../lib/judge";
 import { useCurrentMerchant } from "../../lib/merchants";
 import { scrollBehavior } from "../../lib/motion";
 import { closeOverlay, openOverlay } from "../../lib/overlay";
@@ -23,7 +22,7 @@ import { useWindowInfo } from "../shell/window-info";
 import { Button } from "../ui/button";
 import { Reveal, Swap } from "../ui/reveal";
 import { ActionBar, SaveButtons } from "./action-bar";
-import { type CodeCheckState, CodeStep } from "./code-step";
+import { CodeStep } from "./code-step";
 import { DeleteDraftDialog } from "./delete-draft-dialog";
 import {
   type ErrorOf,
@@ -63,6 +62,7 @@ import {
   stepTitle,
   summaryOf,
 } from "./steps";
+import { useJudgeDeploy } from "./use-judge-deploy";
 import { useLinearSteps } from "./use-step-flow";
 import { useSubmit } from "./use-submit";
 
@@ -116,7 +116,7 @@ export function HongbaoForm({
   // 🐟额 (balance-design §14): set as the starting point, before anything
   // is typed, so it is not an unsaved change.
   const { merchant, loaded: merchantLoaded } = useCurrentMerchant(user.id);
-  // Also says whether 代码判定红包 may be sent, and checks left today.
+  // Also says whether 代码判定红包 may be sent, and deploys left today.
   const funding = useBalanceFunding(user.id).data;
   const fishReady = funding?.available === true;
   const fishDefault = useRef(false);
@@ -146,51 +146,17 @@ export function HongbaoForm({
     submit.setNotice(null);
   };
 
-  // 代码判定's 在线检查 (07 §5): for the code and tests as typed now; a
-  // saved draft says whether its own passed.
-  const judgeCheck = useJudgeCheck(user.id);
-  const [lastCheck, setLastCheck] = useState<JudgeCheck | null>(null);
+  // 代码判定's 部署 (07 §5): which 判定器 the code as typed is, and whether
+  // a run of these very tests on it passed (a saved draft says for its own).
+  const judge = useJudgeDeploy({
+    form,
+    activity,
+    userId: user.id,
+    update,
+    say: (text) => say(text),
+  });
   const [codeGate, setCodeGate] = useState(false);
-  const digests = useJudgeDigests(form.judge.code, form.judge.tests);
-  const checkedNow =
-    lastCheck !== null &&
-    digests !== null &&
-    lastCheck.fingerprint === digests.code &&
-    lastCheck.testsDigest === digests.tests;
-  const savedPassed =
-    activity?.judgePassed === true &&
-    form.judge.code === baseline.judge.code &&
-    form.judge.tests === baseline.judge.tests;
-  const checkState: CodeCheckState =
-    checkedNow && lastCheck
-      ? lastCheck.passed
-        ? { kind: "passed", check: lastCheck }
-        : { kind: "failed", check: lastCheck }
-      : savedPassed
-        ? { kind: "passed" }
-        : {
-            kind: "unchecked",
-            changed: lastCheck !== null || activity?.judgePassed === true,
-          };
-  const codeBlocked = form.mode === "code" && checkState.kind !== "passed";
-  const runCheck = async () => {
-    if (judgeCheck.isPending) return;
-    try {
-      const check = await judgeCheck.mutateAsync({
-        code: form.judge.code,
-        tests: form.judge.tests,
-      });
-      setLastCheck(check);
-      haptic(check.passed ? "success" : "error");
-      say(check.passed ? "在线检查通过。" : "在线检查没有通过。");
-    } catch (error) {
-      haptic("error");
-      submit.setNotice({
-        tone: "danger",
-        text: `在线检查没有完成：${error instanceof Error ? error.message : "网络或服务出了问题。"}`,
-      });
-    }
-  };
+  const codeBlocked = form.mode === "code" && !judge.ready;
 
   const issues = issuesOf(withDefaultTitle(form));
   // A step's problems show once it was checked (下一步, or a save).
@@ -308,13 +274,13 @@ export function HongbaoForm({
         showIssue(first.field);
         return;
       }
-      // Opening needs this very code and these tests to have passed (07 §5);
-      // a draft saves without.
+      // Opening needs a 判定器 of this very code that passed these very
+      // tests (07 §5); a draft saves without.
       if (open && codeBlocked) {
         setCodeGate(true);
         haptic("error");
-        say("代码还没通过在线检查。");
-        // Back on step 3 (/new keeps it folded): its 在线检查 in view.
+        say(`${judge.gate ?? ""}。`);
+        // Back on step 3 (/new keeps it folded): its 部署 in view.
         if (!editing) {
           linear.back(stepIndex("claim") + 1);
           window.setTimeout(() => jumpTo("hb-code-check"), 400);
@@ -427,11 +393,8 @@ export function HongbaoForm({
               errorOf={errorOf}
               locked={locked}
               frozen={locks}
-              checkState={checkState}
-              checking={judgeCheck.isPending}
-              checksLeft={funding?.code?.checksLeft}
+              judge={judge}
               gated={codeGate}
-              onCheck={() => void runCheck()}
               openSheet={(group) => openSheet(group)}
               deadline={deadline}
               timingError={groupError(["timing"])}
@@ -596,7 +559,18 @@ export function HongbaoForm({
                   key={step.id}
                   index={index}
                   title={stepTitle(step.id, form)}
-                  summary={summaryOf(step.id, form, deadline)}
+                  summary={summaryOf(
+                    step.id,
+                    form,
+                    deadline,
+                    // Opened, a code not among its versions is the
+                    // 判定器 it opened with, as its card says.
+                    judge.known
+                      ? opened && !judge.version
+                        ? "判定器"
+                        : judge.name
+                      : undefined,
+                  )}
                   open={open}
                   current={!editing && open}
                   afterOpen={editing && index - 1 === currentIndex}

@@ -7,6 +7,7 @@ import {
   type ClaimScope,
   DEFAULT_DRAW_COUNTDOWN_SECONDS,
   JUDGE_LIMITS,
+  type JudgeVersions,
   type LdcMoney,
   type ManagedActivity,
   normalizeTopicLink,
@@ -16,6 +17,7 @@ import {
 } from "@hb/contracts";
 import { durationOfSeconds } from "../../lib/hongbao";
 import { inspectPassword } from "../../lib/password-rules";
+import { noVersions } from "./judge-versions";
 
 // The 发红包 flow (/new) and the sender's 📝 编辑: one state shape, its
 // checks, and the conversion to and from production's ActivityInput. Limits
@@ -53,7 +55,8 @@ export type FormState = {
   };
   /**
    * 代码判定 (docs/programmable-hongbao-design.md): a pool, shares and
-   * 每份至少, then the prompt, judge.js and tests.json as pasted.
+   * 每份至少, then the prompt, judge.js and tests.json as pasted, and the
+   * versions deployed (§5 版本, 换回: judge-versions.ts).
    */
   judge: {
     total: string;
@@ -62,6 +65,7 @@ export type FormState = {
     prompt: string;
     code: string;
     tests: string;
+    versions: JudgeVersions;
   };
   /** Not asked for 代码判定, which its code judges. */
   participation: "password" | "direct";
@@ -157,6 +161,7 @@ export function emptyForm(now = Date.now()): FormState {
       prompt: "",
       code: "",
       tests: "",
+      versions: noVersions(),
     },
     participation: "password",
     passwords: [""],
@@ -660,6 +665,7 @@ export function formOf(activity: ManagedActivity, now = Date.now()): FormState {
             prompt: config.judge?.prompt ?? "",
             code: config.judge?.code ?? "",
             tests: config.judge?.tests ?? "",
+            versions: config.judge?.versions ?? noVersions(),
           }
         : base.judge,
     participation: participationOf(
@@ -793,6 +799,7 @@ export function inputOf(form: FormState, merchantId: string): ActivityInput {
             prompt: form.judge.prompt.trim(),
             code: form.judge.code,
             tests: form.judge.tests,
+            versions: form.judge.versions,
           },
         }
       : {}),

@@ -495,7 +495,7 @@ export function FundingChoice({
   // 代码判定红包只能从🐟额发 (07 §5): the one card, and why.
   if (form.mode === "code")
     return (
-      <div className="grid gap-2">
+      <div className="flex flex-col gap-2">
         <ChoiceCards
           label="从哪发"
           value="balance"
@@ -532,7 +532,7 @@ export function FundingChoice({
       </p>
     ) : null;
   return (
-    <div className="grid gap-2">
+    <div className="flex flex-col gap-2">
       <ChoiceCards
         label="从哪发"
         value={form.funding}

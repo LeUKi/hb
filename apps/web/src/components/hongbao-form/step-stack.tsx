@@ -232,7 +232,7 @@ function StepBody({
     <motion.div
       ref={ref}
       inert={!present}
-      className="grid gap-5 px-4 pt-1 pb-5 @wide/window:px-5"
+      className="grid grid-cols-[minmax(0,1fr)] gap-5 px-4 pt-1 pb-5 @wide/window:px-5"
       {...fade}
     >
       {children}
@@ -240,10 +240,14 @@ function StepBody({
   );
 }
 
-/** The steps as a stack (an ordered list): cards that leave fold away. */
+/**
+ * The steps as a stack (an ordered list): cards that leave fold away. Its
+ * one column never grows past the window: a long summary on a strip is cut
+ * short, not the form widened (minmax(0, 1fr)).
+ */
 export function StepStack({ children }: { children: ReactNode }) {
   return (
-    <ol className="step-stack grid [overflow-anchor:none]">
+    <ol className="step-stack grid grid-cols-[minmax(0,1fr)] [overflow-anchor:none]">
       <AnimatePresence initial={false}>{children}</AnimatePresence>
     </ol>
   );
