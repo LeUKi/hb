@@ -133,9 +133,11 @@ describe("代码判定红包: sending one", () => {
     const failing = await check(
       author,
       JUDGE,
-      JSON.stringify([
-        { name: "答对", input: "flag{ok}", expect: { ok: true, amount: 50 } },
-      ]),
+      JSON.stringify({
+        tests: [
+          { name: "答对", input: "flag{ok}", expect: { ok: true, amount: 50 } },
+        ],
+      }),
     );
     expect(failing.body.check.passed).toBe(false);
     expect(failing.body.check.tests[0]?.problem).toBe("应该发 50，实际发 30");
@@ -149,7 +151,11 @@ describe("代码判定红包: sending one", () => {
     const broken = await check(author, "export function judge( {");
     expect(broken.body.check.passed).toBe(false);
     expect(broken.body.check.loadProblem).toContain("代码加载不了");
-    const badTests = await check(author, JUDGE, "[{}]");
+    const badTests = await check(
+      author,
+      JUDGE,
+      JSON.stringify({ tests: [{}] }),
+    );
     expect(badTests.body.check.testsProblem).toContain("第 1 条测试");
 
     const random = await check(
@@ -157,7 +163,9 @@ describe("代码判定红包: sending one", () => {
       `export function judge() {
   return { ok: false, message: String(crypto.getRandomValues(new Uint32Array(1))[0]) };
 }`,
-      JSON.stringify([{ name: "随便", input: "x", expect: { ok: false } }]),
+      JSON.stringify({
+        tests: [{ name: "随便", input: "x", expect: { ok: false } }],
+      }),
     );
     expect(random.body.check.unstable).toEqual(["随便"]);
 
@@ -167,6 +175,92 @@ describe("代码判定红包: sending one", () => {
     expect(used.body.error?.code).toBe("JUDGE_CHECK_LIMIT");
     const stranger = await actor();
     expect((await check(stranger)).status).toBe(403);
+  });
+
+  it("runs a multi-step test step by step as the claims would go, and the whole of it twice", async () => {
+    const code = `export function judge(s) {
+  const tries = (s.state?.tries ?? 0) + 1;
+  if (s.input === "flag{ok}")
+    return { ok: true, amount: 30, message: \`\${s.user.username} 第 \${s.user.attempts + 1} 次答对，\${s.claims.length} 人领过\` };
+  return { ok: false, message: "不对", state: { tries } };
+}`;
+    const scenario = (last: Record<string, unknown>, who = "小红") =>
+      JSON.stringify({
+        tests: [
+          {
+            name: "两个人",
+            hongbao: { total: 100, count: 3 },
+            steps: [
+              {
+                who: "小明",
+                input: "x",
+                expect: { ok: false, state: { tries: 1 } },
+              },
+              {
+                who: "小明",
+                input: "flag{ok}",
+                expect: {
+                  ok: true,
+                  amount: 30,
+                  message: "小明 第 2 次答对，0 人领过",
+                },
+              },
+              { who, input: "flag{ok}", expect: last },
+            ],
+          },
+        ],
+      });
+    const passed = await check(
+      author,
+      code,
+      scenario({
+        ok: true,
+        messageIncludes: "1 人领过",
+        stateIncludes: { tries: 1 },
+      }),
+    );
+    expect(passed.body.check).toMatchObject({
+      passed: true,
+      unstable: [],
+      tests: [
+        { name: "两个人", passed: true, actual: { ok: true, amount: 30 } },
+      ],
+    });
+    const failing = await check(
+      author,
+      code,
+      scenario({ ok: true, amount: 50 }),
+    );
+    expect(failing.body.check.tests[0]?.problem).toBe(
+      "第 3 步（小红）：应该发 50，实际发 30",
+    );
+    const twice = await check(author, code, scenario({ ok: true }, "小明"));
+    expect(twice.body.check.tests[0]?.problem).toBe(
+      "第 3 步（小明）：已经领过了，线上不会交给代码",
+    );
+
+    const random = await check(
+      author,
+      `export function judge(s) {
+  if (s.input === "a") return { ok: false };
+  return { ok: false, message: String(crypto.getRandomValues(new Uint32Array(1))[0]) };
+}`,
+      JSON.stringify({
+        tests: [
+          {
+            name: "第二步真随机",
+            steps: [
+              { who: "小明", input: "a", expect: { ok: false } },
+              { who: "小红", input: "b", expect: { ok: false } },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(random.body.check).toMatchObject({
+      passed: true,
+      unstable: ["第二步真随机"],
+    });
   });
 
   it("opens only with code and tests that passed, sealing a seed and locking the pool", async () => {
@@ -180,7 +274,9 @@ describe("代码判定红包: sending one", () => {
     await check(
       author,
       JUDGE,
-      JSON.stringify([{ name: "答错", input: "x", expect: { ok: false } }]),
+      JSON.stringify({
+        tests: [{ name: "答错", input: "x", expect: { ok: false } }],
+      }),
     );
     expect(
       (await getManagedActivity(bindings, saved.id, author.id))

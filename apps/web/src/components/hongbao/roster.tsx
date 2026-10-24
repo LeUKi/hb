@@ -124,7 +124,8 @@ function Row({
               <TitleBadges titles={row.titles} className="shrink-0" />
             </span>
             {(detail || row.attempt) && (
-              <span className="flex min-w-0 items-start gap-2 text-xs text-ink-3">
+              // Wraps rather than squeezing: the input needs room to read.
+              <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-ink-3">
                 {/* 代码判定: on which of their judged submissions (05 §7). */}
                 {row.attempt && (
                   <span className="shrink-0">第 {row.attempt} 次领到</span>
@@ -142,7 +143,7 @@ function Row({
                   </span>
                 )}
                 {detail?.judge && (
-                  <span className="flex min-w-0 items-baseline gap-1">
+                  <span className="flex min-w-0 max-w-full items-baseline gap-1">
                     <span className="shrink-0">输入</span>
                     <PasswordText
                       text={detail.judge.input}

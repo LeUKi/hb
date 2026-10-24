@@ -1,0 +1,7 @@
+---
+description: 写、改、测代码判定红包的 judge.js、tests.json 和 simulate.json
+globs: judge.js,tests.json,simulate.json
+alwaysApply: false
+---
+
+规则、做法和要跑的命令都在开发包根目录的 `AGENTS.md`：动手前完整读一遍，照它做。

@@ -1,0 +1,22 @@
+{
+  "$schema": "./simulate.schema.json",
+  "hongbao": { "title": "猜暗号", "total": 10000, "count": 5 },
+  "submissions": [
+    { "who": "小明", "input": "flag{guess}" },
+    { "who": "小明", "input": "flag{n0t_s0_s1mpl3}" },
+    { "who": "小红", "input": "flag{n0t_s0_s1mpl3}", "level": 1 },
+    { "who": "小刚", "input": "flag{1}" },
+    { "who": "小刚", "input": "flag{2}" },
+    { "who": "小刚", "input": "flag{3}" },
+    { "who": "小刚", "input": "flag{n0t_s0_s1mpl3}" },
+    { "who": "小李", "input": "flag{n0t_s0_s1mpl3}", "level": 3 },
+    { "who": "小明", "input": "flag{n0t_s0_s1mpl3}" },
+    {
+      "who": "小王",
+      "input": "flag{n0t_s0_s1mpl3}",
+      "at": "2026-10-24T18:30:00+08:00"
+    },
+    { "who": "小赵", "input": "flag{n0t_s0_s1mpl3}" },
+    { "who": "小钱", "input": "flag{n0t_s0_s1mpl3}" }
+  ]
+}

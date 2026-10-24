@@ -132,27 +132,128 @@ export type Judge = (
   tools: Tools,
 ) => Verdict | Promise<Verdict>;
 
-/** tests.json 的一条。没写的字段用默认值。 */
-export interface TestCase {
-  name: string;
-  input: string;
-  user?: Partial<Submission["user"]>;
-  hongbao?: Partial<Submission["hongbao"]>;
-  /** 写数字表示前面已经领了几份 */
-  claims?: number | Submission["claims"];
-  state?: Json;
-  /** 毫秒或 ISO 时间 */
-  now?: number | string;
-  /** 64 位十六进制的种子 */
-  seed?: string;
-  expect: {
-    ok: boolean;
-    /** 实际发出的金额（拉进范围以后） */
-    amount?: number;
-    message?: string;
-    state?: Json;
-  };
+/** 时间：毫秒，或带时区的 ISO 时间（比如 "2026-10-24T12:00:00+08:00"；不带时区的不认）。 */
+export type TestTime = number | string;
+
+/**
+ * tests.json：只是数据，平台不当代码跑，不算进指纹，不公开。
+ * 所有测试加起来最多判定 200 次（多步的一步算一次）。
+ */
+export interface TestFile {
+  /** 写 "./tests.schema.json"，编辑器就能补全、标错 */
+  $schema?: string;
+  tests: TestCase[];
 }
+
+/** 一条测试：一次提交，或者几个人依次提交（steps）。 */
+export type TestCase = SingleTest | StepsTest;
+
+/**
+ * 两种测试都能写的：第一次提交之前红包的样子。没写的用默认值；
+ * 剩余奖池、剩余份数和这一份的范围由 claims 推出来，不能直接写。
+ * 只能写线上可能出现的情况，不然这条测试本身不通过。
+ */
+interface TestBase {
+  /** 测试的名字，最多 100 个字，不能重名 */
+  name: string;
+  /** 这次提交的时间（多步的是第一步的），默认 2026-10-24 12:00（北京时间） */
+  now?: TestTime;
+  /** 默认：测试红包、10000、10 份、每份至少 1、now 前 1 小时开放、now 后 1 天截止 */
+  hongbao?: Partial<
+    Pick<Submission["hongbao"], "title" | "total" | "count" | "minEach">
+  > & { openedAt?: TestTime; endsAt?: TestTime };
+  /** 前面已领的份：数字（补上占位记录，每份平均）或完整列表；默认没人领 */
+  claims?: number | TestClaim[];
+  /** 代码之前存的状态，默认 null；最大 16 KB */
+  state?: Json;
+  /** 种子（64 位小写十六进制），默认固定的测试种子 */
+  seed?: string;
+}
+
+/** 前面已领的一份：按先后，不早于开放，不晚于这次提交，同一个人只有一份。 */
+export interface TestClaim {
+  user: { id: number; username: string };
+  /** 不少于每份至少 */
+  amount: number;
+  input: string;
+  at: TestTime;
+}
+
+/** 一次提交：字段和 judge() 收到的 submission 同名。 */
+export interface SingleTest extends TestBase {
+  /** 规则同线上：一行、1–200 个字、去掉首尾空白 */
+  input: string;
+  /** 默认 id 10000、username tester、level 2、attempts 0 */
+  user?: Partial<Submission["user"]>;
+  expect: TestExpect;
+  steps?: never;
+}
+
+/**
+ * 几个人依次提交：状态、已领记录、每人被判定过几次、剩余奖池都像线上一样
+ * 一步步往下传。已经领过的人、或者份已经领完了还要提交，这一步算不通过。
+ */
+export interface StepsTest extends TestBase {
+  steps: TestStep[];
+  input?: never;
+  user?: never;
+  expect?: never;
+}
+
+export interface TestStep {
+  /** 谁提交的：同一个 who 是同一个人（username 就是它，id 按第一次出现的先后从 10001 编） */
+  who: string;
+  input: string;
+  /** 信任等级，默认 2 */
+  level?: 0 | 1 | 2 | 3 | 4 | null;
+  /** 默认上一步往后 1 分钟，第一步是 now */
+  at?: TestTime;
+  expect: TestExpect;
+}
+
+/** 拉进范围的原因：封顶、保底、最后一份发完剩下的。 */
+export type JudgeNote = "cap" | "floor" | "last";
+
+/**
+ * 期望：ok 必填，其余写了才比，不一样的地方一起列出来。
+ * 代码返回协议以外的字段也算不通过。
+ */
+export type TestExpect = (
+  | {
+      ok: true;
+      /** 实际发的（拉进范围以后） */
+      amount?: number;
+      /** 代码自己给的 */
+      asked?: number;
+      /** 拉进范围的原因，没拉写 null */
+      note?: JudgeNote | null;
+    }
+  | { ok: false; amount?: never; asked?: never; note?: never }
+) &
+  (
+    | {
+        /** 逐字比 */
+        message?: string;
+        messageIncludes?: never;
+      }
+    | {
+        message?: never;
+        /** 含这几个字 */
+        messageIncludes: string;
+      }
+  ) &
+  (
+    | {
+        /** 整份比，键的顺序不算 */
+        state?: Json;
+        stateIncludes?: never;
+      }
+    | {
+        state?: never;
+        /** 只比写了的键，数组整个比 */
+        stateIncludes: { [key: string]: Json };
+      }
+  );
 
 /**
  * 发红包的人下载的完整领取记录（网站上“下载完整记录”）：每次判定交给代码的

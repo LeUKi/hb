@@ -1,0 +1,279 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "tests.json",
+  "description": "代码判定红包的测试：只是数据，平台不当代码跑，不算进指纹，不公开。一条测试就是一次提交，字段和 judge() 收到的 submission 同名，只写跟它有关的，其余用默认值。规则见 AGENTS.md。",
+  "type": "object",
+  "required": ["tests"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "写 \"./tests.schema.json\"，编辑器就能补全、标错"
+    },
+    "tests": {
+      "type": "array",
+      "description": "测试的数组。名字不能重复；所有测试加起来最多判定 200 次（多步的一步算一次）。",
+      "minItems": 1,
+      "maxItems": 200,
+      "items": { "$ref": "#/$defs/test" }
+    }
+  },
+  "$defs": {
+    "test": {
+      "description": "一条测试：一次提交（写 input 和 expect），或者几个人依次提交（写 steps）。只能写线上可能出现的情况，不然这条测试本身不通过。",
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "测试的名字，最多 100 个字，不能重名；npm test -- 名字 只跑名字里含这几个字的",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "\\S"
+        },
+        "now": {
+          "$ref": "#/$defs/time",
+          "description": "这次提交的时间（多步的是第一步的），要在开放和截止之间；默认 2026-10-24 12:00（北京时间）"
+        },
+        "hongbao": { "$ref": "#/$defs/hongbao" },
+        "claims": {
+          "description": "前面已领的份：写数字，补上这么多份占位记录（每份平均）；或者写完整列表。默认没人领；要留至少一份没领。",
+          "anyOf": [
+            { "type": "integer", "minimum": 0 },
+            { "type": "array", "items": { "$ref": "#/$defs/claim" } }
+          ]
+        },
+        "state": {
+          "description": "代码之前存的状态（任意 JSON），默认 null；最大 16 KB"
+        },
+        "seed": {
+          "description": "种子（64 位小写十六进制）：tools.random 和 tools.userRandom 由它推出来。默认固定的测试种子",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "input": { "$ref": "#/$defs/input" },
+        "user": { "$ref": "#/$defs/user" },
+        "expect": { "$ref": "#/$defs/expect" },
+        "steps": {
+          "description": "几个人依次提交。状态、已领记录、每人被判定过几次、剩余奖池都像线上一样一步步往下传；hongbao、claims、state、seed 是第一步之前的样子。写了 steps 就不写 input、user、expect。",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 200,
+          "items": { "$ref": "#/$defs/step" }
+        },
+        "share": {
+          "description": "这一份的范围由 claims 推出来，不能直接写",
+          "not": {}
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["input", "expect"],
+          "not": { "required": ["steps"] }
+        },
+        {
+          "required": ["steps"],
+          "not": {
+            "anyOf": [
+              { "required": ["input"] },
+              { "required": ["user"] },
+              { "required": ["expect"] }
+            ]
+          }
+        }
+      ]
+    },
+    "time": {
+      "description": "毫秒（整数），或带时区的 ISO 时间，比如 \"2026-10-24T12:00:00+08:00\"；不带时区的不认",
+      "anyOf": [
+        { "type": "integer" },
+        {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,3})?)?(Z|[+-]\\d{2}:\\d{2})$"
+        }
+      ]
+    },
+    "input": {
+      "description": "提交的输入，规则同线上：一行，去掉首尾空白以后 1–200 个字；区分大小写，符号都算",
+      "type": "string",
+      "pattern": "^\\s*[^\\r\\n]{0,199}\\S\\s*$"
+    },
+    "username": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60,
+      "pattern": "\\S"
+    },
+    "level": {
+      "description": "信任等级 0–4，没有时 null；默认 2",
+      "enum": [0, 1, 2, 3, 4, null],
+      "default": 2
+    },
+    "hongbao": {
+      "description": "第一次提交之前红包的样子。默认：测试红包、总奖池 10000、10 份、每份至少 1、now 前 1 小时开放、now 后 1 天截止。总奖池要够每份都拿到每份至少。",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "description": "红包的标题，1–100 个字；默认“测试红包”",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "\\S",
+          "default": "测试红包"
+        },
+        "total": {
+          "description": "总奖池（分）",
+          "type": "integer",
+          "minimum": 1,
+          "default": 10000
+        },
+        "count": {
+          "description": "总份数，最多 1000",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "default": 10
+        },
+        "minEach": {
+          "description": "每份至少（分）",
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        },
+        "openedAt": {
+          "$ref": "#/$defs/time",
+          "description": "开放的时间；默认 now 前 1 小时"
+        },
+        "endsAt": {
+          "$ref": "#/$defs/time",
+          "description": "截止的时间，要晚于开放；默认 now 后 1 天"
+        },
+        "remaining": {
+          "description": "剩余奖池由 claims 推出来，不能直接写",
+          "not": {}
+        },
+        "remainingCount": {
+          "description": "剩余份数由 claims 推出来，不能直接写",
+          "not": {}
+        }
+      }
+    },
+    "claim": {
+      "description": "已领的一份。按先后写，不早于开放、不晚于这次提交（多步的是第一步）；每份不少于每份至少，剩下的够剩下每份都拿到每份至少；同一个人只有一份，提交的人不在里面。",
+      "type": "object",
+      "required": ["user", "amount", "input", "at"],
+      "additionalProperties": false,
+      "properties": {
+        "user": {
+          "type": "object",
+          "required": ["id", "username"],
+          "additionalProperties": false,
+          "properties": {
+            "id": { "type": "integer", "minimum": 1 },
+            "username": { "$ref": "#/$defs/username" }
+          }
+        },
+        "amount": {
+          "description": "领到的（分）",
+          "type": "integer",
+          "minimum": 1
+        },
+        "input": { "$ref": "#/$defs/input" },
+        "at": { "$ref": "#/$defs/time", "description": "领到的时间" }
+      }
+    },
+    "user": {
+      "description": "提交的人。默认 id 10000、username tester、level 2、attempts 0",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "LINUX DO 数字 ID",
+          "type": "integer",
+          "minimum": 1,
+          "default": 10000
+        },
+        "username": { "$ref": "#/$defs/username", "default": "tester" },
+        "level": { "$ref": "#/$defs/level" },
+        "attempts": {
+          "description": "他在这个红包里之前被判定过几次（出错、超时不算）",
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        }
+      }
+    },
+    "step": {
+      "description": "多步场景的一步。同一个 who 是同一个人；已经领过的人、或者份已经领完了还提交，这一步算不通过（线上根本不会交给代码）。",
+      "type": "object",
+      "required": ["who", "input", "expect"],
+      "additionalProperties": false,
+      "properties": {
+        "who": {
+          "description": "谁提交的：username 就是它，id 按第一次出现的先后从 10001 编",
+          "$ref": "#/$defs/username"
+        },
+        "input": { "$ref": "#/$defs/input" },
+        "level": { "$ref": "#/$defs/level" },
+        "at": {
+          "$ref": "#/$defs/time",
+          "description": "这一步的时间，要按先后写、在开放和截止之间；默认上一步往后 1 分钟，第一步是 now"
+        },
+        "expect": { "$ref": "#/$defs/expect" }
+      }
+    },
+    "expect": {
+      "description": "期望：ok 必填，其余写了才比，不一样的地方一起列出来。代码返回协议以外的字段也算不通过。",
+      "type": "object",
+      "required": ["ok"],
+      "additionalProperties": false,
+      "properties": {
+        "ok": { "description": "发还是不发", "type": "boolean" },
+        "amount": {
+          "description": "实际发的（分），拉进这一份的范围以后",
+          "type": "integer",
+          "minimum": 1
+        },
+        "asked": { "description": "代码自己给的（分）", "type": "integer" },
+        "note": {
+          "description": "拉进范围的原因：cap 按上限发，floor 按每份至少发，last 最后一份，发完剩下的；没拉写 null",
+          "enum": ["cap", "floor", "last", null]
+        },
+        "message": {
+          "description": "代码的回复，逐字比（换行和连续空白已合成一个空格）",
+          "type": "string"
+        },
+        "messageIncludes": {
+          "description": "代码的回复里含这几个字",
+          "type": "string",
+          "minLength": 1
+        },
+        "state": {
+          "description": "这次判定以后的状态，整份比，键的顺序不算"
+        },
+        "stateIncludes": {
+          "description": "这次判定以后的状态，只比写了的键，数组整个比",
+          "type": "object"
+        }
+      },
+      "allOf": [
+        { "not": { "required": ["message", "messageIncludes"] } },
+        { "not": { "required": ["state", "stateIncludes"] } },
+        {
+          "if": { "properties": { "ok": { "const": false } } },
+          "then": {
+            "not": {
+              "anyOf": [
+                { "required": ["amount"] },
+                { "required": ["asked"] },
+                { "required": ["note"] }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

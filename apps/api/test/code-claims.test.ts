@@ -144,9 +144,9 @@ describe("代码判定红包: claims", () => {
   if (s.input === "go") return { ok: true, amount: 10, message: reply, state: { seen } };
   return { ok: false, message: reply, state: { seen } };
 }`,
-      tests: JSON.stringify([
-        { name: "领", input: "go", expect: { ok: true, amount: 10 } },
-      ]),
+      tests: JSON.stringify({
+        tests: [{ name: "领", input: "go", expect: { ok: true, amount: 10 } }],
+      }),
     });
     const first = await actor();
     const second = await actor();
@@ -167,9 +167,11 @@ describe("代码判定红包: claims", () => {
   it("pulls what the code asks into each share's range, the last taking what is left", async () => {
     const opened = await open({
       code: `export const judge = () => ({ ok: true, amount: 5000 });`,
-      tests: JSON.stringify([
-        { name: "要 50.00", input: "x", expect: { ok: true, amount: 5000 } },
-      ]),
+      tests: JSON.stringify({
+        tests: [
+          { name: "要 50.00", input: "x", expect: { ok: true, amount: 5000 } },
+        ],
+      }),
     });
     const people = [await actor(), await actor(), await actor()];
     const paid = [];
@@ -207,9 +209,9 @@ describe("代码判定红包: claims", () => {
   if (s.input === "bad") return { ok: true };
   return { ok: false, message: "再试" };
 }`,
-      tests: JSON.stringify([
-        { name: "错", input: "x", expect: { ok: false } },
-      ]),
+      tests: JSON.stringify({
+        tests: [{ name: "错", input: "x", expect: { ok: false } }],
+      }),
     });
     const claimant = await actor();
     await rejects(submit(opened.id, claimant, "boom"), "JUDGE_FAILED");
@@ -255,9 +257,9 @@ describe("代码判定红包: claims", () => {
   if (s.input === "quiet") return { ok: false };
   return { ok: false, message: "不对" };
 }`,
-      tests: JSON.stringify([
-        { name: "错", input: "x", expect: { ok: false } },
-      ]),
+      tests: JSON.stringify({
+        tests: [{ name: "错", input: "x", expect: { ok: false } }],
+      }),
     });
     const claimant = await actor();
     const other = await actor();
@@ -475,9 +477,9 @@ describe("代码判定红包: claims", () => {
   if (s.input === "boom") throw new Error("炸了");
   return { ok: true, amount: 20 };
 }`,
-      tests: JSON.stringify([
-        { name: "领", input: "x", expect: { ok: true, amount: 20 } },
-      ]),
+      tests: JSON.stringify({
+        tests: [{ name: "领", input: "x", expect: { ok: true, amount: 20 } }],
+      }),
     });
     expect(detail(await submit(opened.id, await actor(), "x")).amount).toBe(
       "0.20",
@@ -512,9 +514,9 @@ describe("代码判定红包: claims", () => {
       code: `export function judge(s, tools) {
   return { ok: false, message: \`\${tools.random.int(1, 1000000)} \${tools.userRandom.int(1, 1000000)} \${Math.random()}\` };
 }`,
-      tests: JSON.stringify([
-        { name: "随", input: "x", expect: { ok: false } },
-      ]),
+      tests: JSON.stringify({
+        tests: [{ name: "随", input: "x", expect: { ok: false } }],
+      }),
     });
     const before = await getPublicActivity(bindings, opened.id);
     expect(before.judge).toMatchObject({

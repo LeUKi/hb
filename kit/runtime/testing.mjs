@@ -1,10 +1,11 @@
-// tests.json (协议第 5 节): read, filled in and compared the same way by the
-// kit's npm test and npm run check and by the site's 在线检查. Each test
-// says only what matters to it; everything else takes the defaults below.
+// tests.json (协议第 5 节): read, held to what can happen on the site, run
+// and compared the same way by the kit's npm test and npm run check and by
+// the site's 在线检查. A test is one submission, or steps: several people
+// in turn, carried forward as the site does (scenario.mjs). Each test says
+// only what matters to it; everything else takes the defaults below.
 import { sha256Text } from "./hash.mjs";
-import { shareRange } from "./money.mjs";
-import { submissionSeed, userSeed } from "./seeds.mjs";
-import { LIMITS, readVerdict } from "./verdict.mjs";
+import { judgeNext, startScenario } from "./scenario.mjs";
+import { LIMITS } from "./verdict.mjs";
 
 /** The 红包 ID tests run as, for their seeds. */
 export const TEST_HONGBAO_ID = "test";
@@ -24,304 +25,602 @@ export const TEST_DEFAULTS = Object.freeze({
   now: TEST_NOW,
 });
 
+const MINUTE = 60_000;
+const HOUR = 3_600_000;
+const DAY = 86_400_000;
+/** The people in steps, numbered as they first appear. */
+const FIRST_PERSON = 10001;
+/** The claims a number stands for. */
+const FIRST_PLACEHOLDER = 20001;
+
 const HEX64 = /^[0-9a-f]{64}$/;
+const NOTES = ["cap", "floor", "last"];
+const NOTE_WORDS = {
+  cap: "按上限发",
+  floor: "按每份至少发",
+  last: "最后一份发完剩下的",
+};
+const encoder = new TextEncoder();
 const isObject = (value) =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 const isWhole = (value) => Number.isSafeInteger(value);
 const characters = (text) => [...text].length;
+const isName = (value) =>
+  typeof value === "string" && value.trim() !== "" && characters(value) <= 60;
+const isLevel = (value) => value === null || [0, 1, 2, 3, 4].includes(value);
+// A written time names its zone: without one Date.parse reads the machine's
+// own, and npm test (the author's zone) and 在线检查 (UTC) would disagree.
+const ISO_WITH_ZONE =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+const TIME_WORDS =
+  "要是毫秒（整数）或带时区的 ISO 时间，比如 2026-10-24T12:00:00+08:00";
+const isTime = (value) =>
+  typeof value === "number"
+    ? isWhole(value)
+    : typeof value === "string" &&
+      ISO_WITH_ZONE.test(value) &&
+      Number.isFinite(Date.parse(value));
+/** Whether this engine can write it as JSON: nested too deep, it cannot. */
+const writable = (value) => {
+  try {
+    return JSON.stringify(value) !== undefined;
+  } catch {
+    return false;
+  }
+};
+const toMs = (value) =>
+  value === undefined
+    ? undefined
+    : typeof value === "number"
+      ? value
+      : Date.parse(value);
 
 function only(value, keys, where) {
   const extra = Object.keys(value).filter((key) => !keys.includes(key));
   return extra.length > 0 ? `${where}没有 ${extra.join("、")} 这一项` : null;
 }
 
-function checkInput(input) {
-  if (typeof input !== "string") return "input 要是字符串";
+function timeProblem(value, label) {
+  return value !== undefined && !isTime(value)
+    ? `${label} ${TIME_WORDS}`
+    : null;
+}
+
+/** An input as the site takes it: one line, 1–200 characters once trimmed. */
+function inputProblem(input, label = "input") {
+  if (typeof input !== "string") return `${label} 要是字符串`;
   const text = input.trim();
-  if (/[\r\n]/.test(text)) return "input 只能是一行";
+  if (/[\r\n]/.test(text)) return `${label} 只能是一行`;
   if (characters(text) < 1 || characters(text) > LIMITS.inputCharacters)
-    return `input 要是 1–${LIMITS.inputCharacters} 个字`;
+    return `${label} 要是 1–${LIMITS.inputCharacters} 个字`;
   return null;
 }
 
-function checkJson(value) {
-  try {
-    return JSON.stringify(value) !== undefined;
-  } catch {
-    return false;
-  }
+function userProblem(user) {
+  if (user === undefined) return null;
+  if (!isObject(user)) return "user 要是一个对象";
+  const extra = only(user, ["id", "username", "level", "attempts"], "user 里");
+  if (extra) return extra;
+  const { id, username, level, attempts } = user;
+  if (id !== undefined && (!isWhole(id) || id < 1)) return "user.id 要是正整数";
+  if (username !== undefined && !isName(username))
+    return "user.username 要是 1–60 个字";
+  if (level !== undefined && !isLevel(level))
+    return "user.level 要是 0–4 或 null";
+  if (attempts !== undefined && (!isWhole(attempts) || attempts < 0))
+    return "user.attempts 要是 0 或正整数";
+  return null;
 }
 
-/** One test's problem, or null. */
-function problemOf(test) {
+function hongbaoProblem(hongbao) {
+  if (hongbao === undefined) return null;
+  if (!isObject(hongbao)) return "hongbao 要是一个对象";
+  // The table in §5: what follows from claims is never written.
+  for (const key of ["remaining", "remainingCount"])
+    if (Object.hasOwn(hongbao, key))
+      return `hongbao.${key} 由 claims 推出来，不能直接写`;
+  const extra = only(
+    hongbao,
+    ["title", "total", "count", "minEach", "openedAt", "endsAt"],
+    "hongbao 里",
+  );
+  if (extra) return extra;
+  if (
+    hongbao.title !== undefined &&
+    (typeof hongbao.title !== "string" ||
+      !hongbao.title.trim() ||
+      characters(hongbao.title) > 100)
+  )
+    return "hongbao.title 要是 1–100 个字";
+  for (const key of ["total", "count", "minEach"])
+    if (
+      hongbao[key] !== undefined &&
+      (!isWhole(hongbao[key]) || hongbao[key] < 1)
+    )
+      return `hongbao.${key} 要是正整数`;
+  if (hongbao.count !== undefined && hongbao.count > 1000)
+    return "hongbao.count 最多 1000";
+  return (
+    timeProblem(hongbao.openedAt, "hongbao.openedAt") ??
+    timeProblem(hongbao.endsAt, "hongbao.endsAt")
+  );
+}
+
+function claimsProblem(claims) {
+  if (claims === undefined) return null;
+  if (typeof claims === "number")
+    return isWhole(claims) && claims >= 0
+      ? null
+      : "claims 写数字时要是 0 或正整数";
+  if (!Array.isArray(claims)) return "claims 要是数字或数组";
+  for (const [index, claim] of claims.entries()) {
+    const where = `claims 第 ${index + 1} 条`;
+    if (!isObject(claim)) return `${where}要是一个对象`;
+    const extra =
+      only(claim, ["user", "amount", "input", "at"], `${where}里`) ??
+      (isObject(claim.user)
+        ? only(claim.user, ["id", "username"], `${where}的 user 里`)
+        : null);
+    if (extra) return extra;
+    if (
+      !isObject(claim.user) ||
+      !isWhole(claim.user.id) ||
+      claim.user.id < 1 ||
+      !isName(claim.user.username)
+    )
+      return `${where}的 user 要有 id（正整数）和 username（1–60 个字）`;
+    if (!isWhole(claim.amount) || claim.amount < 1)
+      return `${where}的 amount 要是正整数（分）`;
+    const input = inputProblem(claim.input, `${where}的 input`);
+    if (input) return input;
+    if (!isTime(claim.at)) return `${where}的 at ${TIME_WORDS}`;
+  }
+  return null;
+}
+
+/** expect, one test's or one step's. */
+function expectProblem(expect) {
+  if (!isObject(expect)) return "要有 expect";
+  const extra = only(
+    expect,
+    [
+      "ok",
+      "amount",
+      "asked",
+      "note",
+      "message",
+      "messageIncludes",
+      "state",
+      "stateIncludes",
+    ],
+    "expect 里",
+  );
+  if (extra) return extra;
+  if (typeof expect.ok !== "boolean") return "expect.ok 要是 true 或 false";
+  if (!expect.ok) {
+    const money = ["amount", "asked", "note"].filter((key) =>
+      Object.hasOwn(expect, key),
+    );
+    if (money.length > 0)
+      return `expect.ok 是 false 时不能写 ${money.join("、")}`;
+  }
+  if (
+    expect.amount !== undefined &&
+    (!isWhole(expect.amount) || expect.amount < 1)
+  )
+    return "expect.amount 要是正整数（分）";
+  if (expect.asked !== undefined && !isWhole(expect.asked))
+    return "expect.asked 要是整数（分）";
+  if (
+    expect.note !== undefined &&
+    expect.note !== null &&
+    !NOTES.includes(expect.note)
+  )
+    return 'expect.note 要是 "cap"、"floor"、"last" 或 null';
+  if (expect.message !== undefined && expect.messageIncludes !== undefined)
+    return "expect.message 和 expect.messageIncludes 只能写一个";
+  if (expect.message !== undefined && typeof expect.message !== "string")
+    return "expect.message 要是字符串";
+  if (
+    expect.messageIncludes !== undefined &&
+    (typeof expect.messageIncludes !== "string" || !expect.messageIncludes)
+  )
+    return "expect.messageIncludes 要是不空的字符串";
+  if (expect.state !== undefined && expect.stateIncludes !== undefined)
+    return "expect.state 和 expect.stateIncludes 只能写一个";
+  if (expect.stateIncludes !== undefined && !isObject(expect.stateIncludes))
+    return "expect.stateIncludes 要是一个对象（只比写了的键）";
+  return null;
+}
+
+function stepProblem(step) {
+  if (!isObject(step)) return "要是一个对象";
+  const extra = only(step, ["who", "input", "level", "at", "expect"], "");
+  if (extra) return extra;
+  if (typeof step.who !== "string" || !step.who.trim())
+    return "要有 who（谁提交的）";
+  if (characters(step.who) > 60) return "who 最多 60 个字";
+  return (
+    inputProblem(step.input) ??
+    (step.level !== undefined && !isLevel(step.level)
+      ? "level 要是 0–4 或 null"
+      : null) ??
+    timeProblem(step.at, "at") ??
+    expectProblem(step.expect)
+  );
+}
+
+const named = (value, key) =>
+  isObject(value) && typeof value[key] === "string" && value[key].trim()
+    ? `（${value[key]}）`
+    : "";
+
+/** Whether one test is written the way tests.json says: its problem, or null. */
+function shapeProblem(test) {
   if (!isObject(test)) return "要是一个对象";
+  if (typeof test.name !== "string" || !test.name.trim())
+    return "要有 name（测试的名字）";
+  if (characters(test.name) > 100) return "name 最多 100 个字";
+  if (Object.hasOwn(test, "share")) return "share 由 claims 推出来，不能直接写";
+  const multi = Object.hasOwn(test, "steps");
+  if (multi && Object.hasOwn(test, "input")) return "input 和 steps 只能写一个";
+  if (!multi && !Object.hasOwn(test, "input"))
+    return "要有 input（一次提交）或 steps（几个人依次提交）";
+  if (multi && Object.hasOwn(test, "user"))
+    return "多步场景不写 user：每一步的人写在 who 和 level 上";
+  if (multi && Object.hasOwn(test, "expect"))
+    return "多步场景不写 expect：写在每一步上";
   const extra = only(
     test,
     [
       "name",
-      "input",
-      "user",
+      "now",
       "hongbao",
       "claims",
       "state",
-      "now",
       "seed",
-      "expect",
+      ...(multi ? ["steps"] : ["input", "user", "expect"]),
     ],
     "",
   );
   if (extra) return extra;
-  if (typeof test.name !== "string" || !test.name.trim())
-    return "要有 name（测试的名字）";
-  if (characters(test.name) > 100) return "name 最多 100 个字";
-  const input = checkInput(test.input);
-  if (input) return input;
-  if (test.user !== undefined) {
-    if (!isObject(test.user)) return "user 要是一个对象";
-    const userExtra = only(
-      test.user,
-      ["id", "username", "level", "attempts"],
-      "user 里",
-    );
-    if (userExtra) return userExtra;
-    const { id, username, level, attempts } = test.user;
-    if (id !== undefined && (!isWhole(id) || id < 1))
-      return "user.id 要是正整数";
-    if (
-      username !== undefined &&
-      (typeof username !== "string" || !username || characters(username) > 60)
-    )
-      return "user.username 要是 1–60 个字";
-    if (
-      level !== undefined &&
-      level !== null &&
-      ![0, 1, 2, 3, 4].includes(level)
-    )
-      return "user.level 要是 0–4 或 null";
-    if (attempts !== undefined && (!isWhole(attempts) || attempts < 0))
-      return "user.attempts 要是 0 或正整数";
-  }
-  if (test.hongbao !== undefined) {
-    if (!isObject(test.hongbao)) return "hongbao 要是一个对象";
-    const hongbaoExtra = only(
-      test.hongbao,
-      [
-        "title",
-        "total",
-        "count",
-        "minEach",
-        "remaining",
-        "remainingCount",
-        "openedAt",
-        "endsAt",
-      ],
-      "hongbao 里",
-    );
-    if (hongbaoExtra) return hongbaoExtra;
-    const hongbao = test.hongbao;
-    if (
-      hongbao.title !== undefined &&
-      (typeof hongbao.title !== "string" || characters(hongbao.title) > 100)
-    )
-      return "hongbao.title 要是最多 100 个字的字符串";
-    for (const key of ["total", "count", "minEach", "remainingCount"])
-      if (
-        hongbao[key] !== undefined &&
-        (!isWhole(hongbao[key]) || hongbao[key] < 1)
-      )
-        return `hongbao.${key} 要是正整数`;
-    if (hongbao.count !== undefined && hongbao.count > 1000)
-      return "hongbao.count 最多 1000";
-    if (
-      hongbao.remaining !== undefined &&
-      (!isWhole(hongbao.remaining) || hongbao.remaining < 0)
-    )
-      return "hongbao.remaining 要是 0 或正整数";
-    for (const key of ["openedAt", "endsAt"])
-      if (hongbao[key] !== undefined && !isWhole(hongbao[key]))
-        return `hongbao.${key} 要是毫秒（整数）`;
-  }
-  if (test.claims !== undefined) {
-    if (typeof test.claims === "number") {
-      if (!isWhole(test.claims) || test.claims < 0)
-        return "claims 写数字时要是 0 或正整数";
-    } else if (!Array.isArray(test.claims)) return "claims 要是数字或数组";
-    else
-      for (const [index, claim] of test.claims.entries()) {
-        const where = `claims 第 ${index + 1} 条`;
-        if (!isObject(claim)) return `${where}要是一个对象`;
-        const claimExtra = only(
-          claim,
-          ["user", "amount", "input", "at"],
-          `${where}里`,
-        );
-        if (claimExtra) return claimExtra;
-        if (
-          !isObject(claim.user) ||
-          !isWhole(claim.user.id) ||
-          claim.user.id < 1 ||
-          typeof claim.user.username !== "string" ||
-          !claim.user.username
-        )
-          return `${where}的 user 要有 id（正整数）和 username`;
-        if (!isWhole(claim.amount) || claim.amount < 1)
-          return `${where}的 amount 要是正整数（分）`;
-        if (typeof claim.input !== "string")
-          return `${where}的 input 要是字符串`;
-        if (!isWhole(claim.at)) return `${where}的 at 要是毫秒（整数）`;
-      }
-  }
-  if (test.state !== undefined && !checkJson(test.state))
-    return "state 要能转成 JSON";
-  if (test.now !== undefined) {
-    const valid =
-      typeof test.now === "number"
-        ? isWhole(test.now)
-        : typeof test.now === "string" && Number.isFinite(Date.parse(test.now));
-    if (!valid) return "now 要是毫秒（整数）或 ISO 时间";
-  }
-  if (
-    test.seed !== undefined &&
+  const common =
+    timeProblem(test.now, "now") ??
+    hongbaoProblem(test.hongbao) ??
+    claimsProblem(test.claims) ??
+    (test.state !== undefined && !writable(test.state)
+      ? "state 要能转成 JSON"
+      : null) ??
+    (test.seed !== undefined &&
     (typeof test.seed !== "string" || !HEX64.test(test.seed))
-  )
-    return "seed 要是 64 位小写十六进制";
-  if (!isObject(test.expect)) return "要有 expect";
-  const expectExtra = only(
-    test.expect,
-    ["ok", "amount", "message", "state"],
-    "expect 里",
-  );
-  if (expectExtra) return expectExtra;
-  if (typeof test.expect.ok !== "boolean")
-    return "expect.ok 要是 true 或 false";
-  if (
-    test.expect.amount !== undefined &&
-    (!isWhole(test.expect.amount) || test.expect.amount < 1)
-  )
-    return "expect.amount 要是正整数（分）";
-  if (
-    test.expect.message !== undefined &&
-    typeof test.expect.message !== "string"
-  )
-    return "expect.message 要是字符串";
-  if (test.expect.state !== undefined && !checkJson(test.expect.state))
-    return "expect.state 要能转成 JSON";
+      ? "seed 要是 64 位小写十六进制"
+      : null);
+  if (common) return common;
+  if (!multi)
+    return (
+      inputProblem(test.input) ??
+      userProblem(test.user) ??
+      expectProblem(test.expect)
+    );
+  if (!Array.isArray(test.steps) || test.steps.length === 0)
+    return "steps 要是一个数组，至少一步";
+  for (const [index, step] of test.steps.entries()) {
+    const problem = stepProblem(step);
+    if (problem) return `第 ${index + 1} 步${named(step, "who")}：${problem}`;
+  }
   return null;
 }
 
 /**
  * tests.json, read: `{ tests }`, or `{ problem }` saying what is wrong
- * with the file or which test.
+ * with the file or which test. Whether each test could happen on the site
+ * is runTest's to say: such a test fails, the others still run.
  */
 export function readTests(text) {
   if (typeof text !== "string" || !text.trim())
     return { problem: "至少写一条测试" };
-  let tests;
+  let file;
   try {
-    tests = JSON.parse(text);
+    file = JSON.parse(text);
   } catch (error) {
     return { problem: `tests.json 不是有效的 JSON：${error.message}` };
   }
-  if (!Array.isArray(tests))
-    return { problem: "tests.json 要是一个数组，每条测试是其中一项" };
-  if (tests.length === 0) return { problem: "至少写一条测试" };
-  if (tests.length > LIMITS.tests)
-    return { problem: `测试最多 ${LIMITS.tests} 条` };
+  if (!isObject(file))
+    return {
+      problem:
+        'tests.json 要是一个对象，测试写在它的 tests 里：{ "tests": [ … ] }',
+    };
+  const extra = only(file, ["$schema", "tests"], "tests.json 里");
+  if (extra) return { problem: extra };
+  if (file.$schema !== undefined && typeof file.$schema !== "string")
+    return { problem: "$schema 要是字符串" };
+  if (!Array.isArray(file.tests))
+    return { problem: "tests 要是一个数组，每条测试是其中一项" };
+  if (file.tests.length === 0) return { problem: "至少写一条测试" };
   const names = new Set();
-  for (const [index, test] of tests.entries()) {
-    const problem = problemOf(test);
+  let judgments = 0;
+  for (const [index, test] of file.tests.entries()) {
+    const problem = shapeProblem(test);
     if (problem)
       return {
-        problem: `第 ${index + 1} 条测试${typeof test?.name === "string" && test.name.trim() ? `（${test.name}）` : ""}：${problem}`,
+        problem: `第 ${index + 1} 条测试${named(test, "name")}：${problem}`,
       };
     if (names.has(test.name))
       return { problem: `第 ${index + 1} 条测试：名字“${test.name}”重复了` };
     names.add(test.name);
+    judgments += multiStep(test) ? test.steps.length : 1;
   }
-  return { tests };
+  if (judgments > LIMITS.tests)
+    return {
+      problem: `所有测试加起来最多判定 ${LIMITS.tests} 次（多步的一步算一次），现在是 ${judgments} 次`,
+    };
+  return { tests: file.tests };
+}
+
+const multiStep = (test) => Array.isArray(test.steps);
+const stepName = (index, who) => `第 ${index + 1} 步（${who}）`;
+
+/** A number of claims: placeholders, each the even share, up to `until`. */
+function placeholders(count, hongbao, until) {
+  const each = Math.floor(hongbao.total / hongbao.count);
+  // A minute apart, closer when that would start before the opening.
+  const gap = Math.min(
+    MINUTE,
+    Math.floor((until - hongbao.openedAt) / (count + 1)),
+  );
+  return Array.from({ length: count }, (_, index) => ({
+    user: { id: FIRST_PLACEHOLDER + index, username: `claimer${index + 1}` },
+    amount: each,
+    input: "占位",
+    at: until - (count - index) * gap,
+  }));
+}
+
+const samePerson = (a, b) => a.id === b.id || a.username === b.username;
+
+/** The claims before the first submission, as the site could have them. */
+function claimsInconsistency(claims, hongbao, until, multi) {
+  for (const [index, claim] of claims.entries()) {
+    const where = `已领的第 ${index + 1} 份`;
+    if (claim.amount < hongbao.minEach)
+      return `${where}少于每份至少（${hongbao.minEach}）`;
+    if (claim.at < hongbao.openedAt)
+      return `${where}早于开放（hongbao.openedAt）`;
+    if (claim.at > until) return `${where}晚于${multi ? "第一步" : " now"}`;
+    if (index > 0 && claim.at < claims[index - 1].at)
+      return `${where}早于第 ${index} 份，要按先后写`;
+    const earlier = claims.findIndex(
+      (other, before) => before < index && samePerson(other.user, claim.user),
+    );
+    if (earlier >= 0)
+      return `${where}和第 ${earlier + 1} 份是同一个人（${claim.user.username}）`;
+  }
+  const paid = claims.reduce((sum, claim) => sum + claim.amount, 0);
+  if (hongbao.total - paid < (hongbao.count - claims.length) * hongbao.minEach)
+    return "已领的加起来太多，剩下的不够剩下每份都拿到每份至少";
+  return null;
 }
 
 /**
- * What one test hands the code: its submission with the defaults filled
- * in, its two seeds and its share's range. `{ problem }` when its numbers
- * cannot be a 红包 (more claimed than there is).
+ * One test, defaults filled in and held to what can happen on the site
+ * (§5 只能写线上可能出现的情况): `{ problem }`, or the 红包 before the first
+ * submission and each submission with who makes it, when and what is
+ * expected.
  */
-export function testSubmission(test) {
-  const now =
-    test.now === undefined
-      ? TEST_DEFAULTS.now
-      : typeof test.now === "number"
-        ? test.now
-        : Date.parse(test.now);
-  const user = { ...TEST_DEFAULTS.user, ...test.user };
-  const base = { ...TEST_DEFAULTS.hongbao, ...test.hongbao };
-  const each = Math.floor(base.total / base.count);
+function planOf(test) {
+  const multi = multiStep(test);
+  const now = toMs(test.now) ?? TEST_DEFAULTS.now;
+  const hongbao = {
+    ...TEST_DEFAULTS.hongbao,
+    ...test.hongbao,
+    openedAt: toMs(test.hongbao?.openedAt) ?? now - HOUR,
+    endsAt: toMs(test.hongbao?.endsAt) ?? now + DAY,
+  };
+  const fail = (problem) => ({ problem });
+  if (hongbao.minEach * hongbao.count > hongbao.total)
+    return fail("总奖池不够每份都拿到每份至少");
+  if (hongbao.endsAt <= hongbao.openedAt)
+    return fail("hongbao.endsAt 要晚于 hongbao.openedAt");
+  const within = (at) => at >= hongbao.openedAt && at < hongbao.endsAt;
+  const window =
+    "在开放和截止之间（不早于 hongbao.openedAt，早于 hongbao.endsAt）";
+  const times = [];
+  if (!multi) {
+    if (!within(now)) return fail(`now 要${window}`);
+    times.push(now);
+  } else
+    for (const [index, step] of test.steps.entries()) {
+      const at =
+        toMs(step.at) ?? (index === 0 ? now : times[index - 1] + MINUTE);
+      if (index > 0 && at < times[index - 1])
+        return fail(`${stepName(index, step.who)}：时间早于上一步，要按先后写`);
+      if (!within(at))
+        return fail(`${stepName(index, step.who)}：这一步的时间要${window}`);
+      times.push(at);
+    }
+  const start = times[0];
+  // Counted before a number becomes placeholders: "claims": 1e10 is a
+  // test that cannot happen, not ten billion records.
+  const written =
+    typeof test.claims === "number" ? test.claims : (test.claims ?? []).length;
+  if (written >= hongbao.count)
+    return fail(
+      `claims 写了 ${written} 份，红包一共 ${hongbao.count} 份，要留至少一份没领`,
+    );
   const claims =
     typeof test.claims === "number"
-      ? Array.from({ length: test.claims }, (_, index) => ({
-          user: { id: 20001 + index, username: `claimer${index + 1}` },
-          amount: each,
-          input: "",
-          at: now - (test.claims - index) * 60_000,
-        }))
-      : (test.claims ?? []);
-  const paid = claims.reduce((sum, claim) => sum + claim.amount, 0);
-  const hongbao = {
-    title: base.title,
-    total: base.total,
-    count: base.count,
-    minEach: base.minEach,
-    remaining: base.remaining ?? base.total - paid,
-    remainingCount: base.remainingCount ?? base.count - claims.length,
-    openedAt: base.openedAt ?? now - 3_600_000,
-    endsAt: base.endsAt ?? now + 86_400_000,
+      ? placeholders(test.claims, hongbao, start)
+      : (test.claims ?? []).map((claim) => ({
+          user: { id: claim.user.id, username: claim.user.username },
+          amount: claim.amount,
+          input: claim.input.trim(),
+          at: toMs(claim.at),
+        }));
+  const inconsistent = claimsInconsistency(claims, hongbao, start, multi);
+  if (inconsistent) return fail(inconsistent);
+  const state = test.state ?? null;
+  if (encoder.encode(canonicalJson(state)).length > LIMITS.stateBytes)
+    return fail(`state 超过 ${LIMITS.stateBytes / 1024} KB`);
+  const plan = {
+    hongbao,
+    claims,
+    state,
+    secret: test.seed ?? TEST_SEED,
   };
-  if (hongbao.minEach * hongbao.count > hongbao.total)
-    return { problem: "总奖池不够每份都拿到每份至少" };
-  if (hongbao.remainingCount < 1)
-    return { problem: "已经领完了，没有剩下的份" };
-  if (hongbao.remaining < hongbao.remainingCount * hongbao.minEach)
-    return { problem: "剩余奖池不够剩下的每份都拿到每份至少" };
-  const secret = test.seed ?? TEST_SEED;
+  if (!multi) {
+    const user = { ...TEST_DEFAULTS.user, ...test.user };
+    if (claims.some((claim) => samePerson(claim.user, user)))
+      return fail(`这个人（${user.username}）已经领过了，线上不会交给代码`);
+    return {
+      ...plan,
+      steps: [{ user, input: test.input.trim(), at: now, expect: test.expect }],
+    };
+  }
+  // The same who is the same person: someone in claims by that name, or
+  // the next number nobody has.
+  const taken = new Set(claims.map((claim) => claim.user.id));
+  const people = new Map(
+    claims.map((claim) => [claim.user.username, claim.user.id]),
+  );
+  let next = FIRST_PERSON;
   return {
-    submission: {
-      input: test.input.trim(),
-      now,
-      user,
-      hongbao,
-      share: shareRange(hongbao),
-      claims,
-      state: test.state ?? null,
-    },
-    seeds: {
-      submission: submissionSeed(
-        TEST_HONGBAO_ID,
-        secret,
-        user.id,
-        user.attempts,
-      ),
-      user: userSeed(TEST_HONGBAO_ID, secret, user.id),
-    },
+    ...plan,
+    steps: test.steps.map((step, index) => {
+      let id = people.get(step.who);
+      if (id === undefined) {
+        while (taken.has(next)) next += 1;
+        id = next;
+        taken.add(id);
+        people.set(step.who, id);
+      }
+      return {
+        who: step.who,
+        user: {
+          id,
+          username: step.who,
+          level:
+            step.level === undefined ? TEST_DEFAULTS.user.level : step.level,
+        },
+        input: step.input.trim(),
+        at: times[index],
+        expect: step.expect,
+      };
+    }),
   };
 }
 
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (isObject(value))
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  return value;
+/**
+ * JSON with every object's keys sorted. Written without recursion: a state
+ * nested a few thousand deep is still small enough to be allowed, and a
+ * tests.json can nest deeper than the stack goes.
+ */
+function canonicalJson(value) {
+  let text = "";
+  // Last first: [true, text] is written as it is, [false, value] is a value.
+  const todo = [[false, value ?? null]];
+  while (todo.length > 0) {
+    const [raw, item] = todo.pop();
+    if (raw) text += item;
+    else if (Array.isArray(item)) {
+      todo.push([true, "]"]);
+      for (let index = item.length - 1; index >= 0; index -= 1) {
+        todo.push([false, item[index] ?? null]);
+        if (index > 0) todo.push([true, ","]);
+      }
+      todo.push([true, "["]);
+    } else if (isObject(item)) {
+      const keys = Object.keys(item)
+        .filter((key) => item[key] !== undefined)
+        .sort();
+      todo.push([true, "}"]);
+      for (let index = keys.length - 1; index >= 0; index -= 1) {
+        todo.push([false, item[keys[index]]]);
+        todo.push([
+          true,
+          `${index > 0 ? "," : ""}${JSON.stringify(keys[index])}:`,
+        ]);
+      }
+      todo.push([true, "{"]);
+    } else text += JSON.stringify(item);
+  }
+  return text;
 }
 
 /** Equal as JSON, whatever the order of keys. */
 export function sameJson(left, right) {
-  return (
-    JSON.stringify(canonical(left ?? null)) ===
-    JSON.stringify(canonical(right ?? null))
-  );
+  return canonicalJson(left) === canonicalJson(right);
+}
+
+/**
+ * Where `actual` differs from the keys `expected` names, as paths ("" for
+ * the whole), in the order written: objects only by the keys written,
+ * anything else whole. Without recursion, as canonicalJson.
+ */
+function unmatched(expected, actual) {
+  const found = [];
+  // Last first, so the paths come out in the order written.
+  const todo = [{ path: "", want: expected, got: actual }];
+  while (todo.length > 0) {
+    const { path, want, got, missing } = todo.pop();
+    if (missing || (isObject(want) ? !isObject(got) : !sameJson(want, got)))
+      found.push(path);
+    else if (isObject(want))
+      for (const key of Object.keys(want).reverse()) {
+        const at = path ? `${path}.${key}` : key;
+        todo.push(
+          Object.hasOwn(got, key)
+            ? { path: at, want: want[key], got: got[key] }
+            : { path: at, missing: true },
+        );
+      }
+  }
+  return found;
+}
+
+const noteText = (note) =>
+  note === null ? "null（没拉进范围）" : `"${note}"（${NOTE_WORDS[note]}）`;
+
+/** Every way a read answer differs from what was expected (§5 expect). */
+function differences(expect, reading, state) {
+  const found = [];
+  if (expect.ok !== reading.ok)
+    found.push(expect.ok ? "应该发，实际没发" : "不应该发，实际发了");
+  else if (reading.ok) {
+    if (expect.amount !== undefined && expect.amount !== reading.paid)
+      found.push(
+        reading.note === null
+          ? `应该发 ${expect.amount}，实际发 ${reading.paid}`
+          : `应该发 ${expect.amount}，实际发 ${reading.paid}（代码给的是 ${reading.asked}，${NOTE_WORDS[reading.note]}）`,
+      );
+    if (expect.asked !== undefined && expect.asked !== reading.asked)
+      found.push(`代码应该给 ${expect.asked}，实际给 ${reading.asked}`);
+    if (expect.note !== undefined && expect.note !== reading.note)
+      found.push(
+        `note 应该是 ${noteText(expect.note)}，实际是 ${noteText(reading.note)}`,
+      );
+  }
+  const message = reading.message ?? "";
+  const said = message ? `实际是“${message}”` : "实际没有回复";
+  if (expect.message !== undefined && expect.message !== message)
+    found.push(`回复应该是“${expect.message}”，${said}`);
+  if (
+    expect.messageIncludes !== undefined &&
+    !message.includes(expect.messageIncludes)
+  )
+    found.push(`回复应该含“${expect.messageIncludes}”，${said}`);
+  if (expect.state !== undefined && !sameJson(expect.state, state))
+    found.push("state 和 expect.state 不一样");
+  if (expect.stateIncludes !== undefined) {
+    const paths = unmatched(expect.stateIncludes, state);
+    if (paths.includes("")) found.push("state 和 expect.stateIncludes 不一样");
+    else if (paths.length > 0)
+      found.push(
+        `state 里的 ${paths.join("、")} 和 expect.stateIncludes 不一样`,
+      );
+  }
+  if (reading.unknown.length > 0)
+    found.push(`代码返回了协议以外的字段：${reading.unknown.join("、")}`);
+  return found;
 }
 
 const failureWords = {
@@ -334,50 +633,126 @@ const failureWords = {
   unavailable: "沙箱暂时不可用",
 };
 
-/**
- * One test's result from what the sandbox answered (`{ verdict }` or
- * `{ failure, detail }`): passed, or the first thing that differs.
- */
-export function judgeTest(test, submission, outcome) {
-  if ("failure" in outcome)
+/** One submission of a test, as it went (judgeNext's result). */
+function stepOutcome(step, judged) {
+  if ("refused" in judged)
     return {
       passed: false,
-      problem: `${failureWords[outcome.failure] ?? "出错"}：${outcome.detail}`,
+      problem:
+        judged.refused === "claimed"
+          ? "已经领过了，线上不会交给代码"
+          : "份已经领完了，线上不会交给代码",
+      ms: 0,
     };
-  const reading = readVerdict(outcome.verdict, submission.share);
+  const { answer, ms, reading, submission } = judged;
+  const logs = answer.logs?.length ? { logs: answer.logs } : {};
+  if ("failure" in answer)
+    return {
+      passed: false,
+      problem: `${failureWords[answer.failure] ?? "出错"}：${answer.detail}`,
+      ms,
+      ...logs,
+      failure: { kind: answer.failure, detail: answer.detail },
+    };
   if ("error" in reading)
-    return { passed: false, problem: `返回不对：${reading.error.detail}` };
+    return {
+      passed: false,
+      problem: `返回不对：${reading.error.detail}`,
+      ms,
+      ...logs,
+    };
   const state = reading.state.keep ? submission.state : reading.state.value;
   const actual = {
     ok: reading.ok,
-    ...(reading.ok ? { amount: reading.paid } : {}),
+    ...(reading.ok
+      ? { amount: reading.paid, asked: reading.asked, note: reading.note }
+      : {}),
     ...(reading.message !== undefined ? { message: reading.message } : {}),
     state,
   };
-  const { expect } = test;
-  let problem = null;
-  if (expect.ok !== reading.ok)
-    problem = expect.ok ? "应该发，实际没发" : "不应该发，实际发了";
-  else if (
-    reading.ok &&
-    expect.amount !== undefined &&
-    expect.amount !== reading.paid
-  )
-    problem =
-      reading.paid === reading.asked
-        ? `应该发 ${expect.amount}，实际发 ${reading.paid}`
-        : `应该发 ${expect.amount}，实际发 ${reading.paid}（代码给的是 ${reading.asked}，${reading.note === "last" ? "最后一份发完剩下的" : reading.note === "floor" ? "按每份至少发" : "按上限发"}）`;
-  else if (
-    expect.message !== undefined &&
-    expect.message !== (reading.message ?? "")
-  )
-    problem = `回复应该是“${expect.message}”，实际是“${reading.message ?? ""}”`;
-  else if (expect.state !== undefined && !sameJson(expect.state, state))
-    problem = "state 和 expect.state 不一样";
+  const found = differences(step.expect, reading, state);
   return {
-    passed: problem === null,
-    ...(problem ? { problem } : {}),
+    passed: found.length === 0,
+    ...(found.length > 0 ? { problem: found.join("；") } : {}),
     actual,
-    ...(reading.unknown.length > 0 ? { unknown: reading.unknown } : {}),
+    ms,
+    ...logs,
+  };
+}
+
+/**
+ * One test, run: `run(submission, seeds)` is the sandbox, answering
+ * `{ verdict, logs? }` or `{ failure, detail, logs? }`. A test that could
+ * not happen on the site fails before the code runs; steps stop at the
+ * first that fails. The result says whether it passed and, if not, why
+ * (a step's problem names the step and who), what the code answered and
+ * paid (`actual`), the time all its judgments took, each step for a
+ * multi-step test, and `failure` when the sandbox failed (so the site can
+ * stop on code that will not load). With `twice`, everything the code
+ * judged is judged again in the same order: `unstable` when an answer
+ * differs, true randomness that no replay can match.
+ */
+export async function runTest(test, run, { twice = false } = {}) {
+  const plan = planOf(test);
+  if ("problem" in plan) return { passed: false, problem: plan.problem, ms: 0 };
+  const scenario = startScenario({
+    hongbao: plan.hongbao,
+    claims: plan.claims,
+    state: plan.state,
+    hongbaoId: TEST_HONGBAO_ID,
+    secret: plan.secret,
+  });
+  const steps = [];
+  const answered = [];
+  let ms = 0;
+  let failure;
+  for (const step of plan.steps) {
+    const judged = await judgeNext(scenario, step, run);
+    if ("answer" in judged && "verdict" in judged.answer)
+      answered.push({
+        submission: judged.submission,
+        seeds: judged.seeds,
+        verdict: judged.answer.verdict,
+      });
+    const { failure: failed, ...outcome } = stepOutcome(step, judged);
+    ms += outcome.ms;
+    failure = failed;
+    steps.push({
+      ...(step.who !== undefined ? { who: step.who } : {}),
+      input: step.input,
+      at: step.at,
+      ...outcome,
+    });
+    if (!outcome.passed) break;
+  }
+  let unstable = false;
+  if (twice && !failure)
+    for (const first of answered) {
+      const again = await run(first.submission, first.seeds);
+      if ("failure" in again) break;
+      if (!sameJson(first.verdict, again.verdict)) {
+        unstable = true;
+        break;
+      }
+    }
+  // Steps stop at the first that fails: the last one says how it went.
+  const last = steps.at(-1);
+  const extra = {
+    ...(failure ? { failure } : {}),
+    ...(unstable ? { unstable: true } : {}),
+  };
+  if (!multiStep(test)) {
+    const { input: _input, at: _at, ...single } = last;
+    return { ...single, ...extra };
+  }
+  return {
+    passed: last.passed,
+    ...(last.problem
+      ? { problem: `${stepName(steps.length - 1, last.who)}：${last.problem}` }
+      : {}),
+    ...(last.actual ? { actual: last.actual } : {}),
+    ms,
+    steps,
+    ...extra,
   };
 }

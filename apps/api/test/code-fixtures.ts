@@ -58,14 +58,16 @@ export const JUDGE = `export function judge(submission, tools) {
   return { ok: false, message: "不对", state: { last: submission.input } };
 }
 `;
-export const TESTS = JSON.stringify([
-  {
-    name: "答对",
-    input: "flag{ok}",
-    expect: { ok: true, amount: 30, message: "对了" },
-  },
-  { name: "答错", input: "x", expect: { ok: false, message: "不对" } },
-]);
+export const TESTS = JSON.stringify({
+  tests: [
+    {
+      name: "答对",
+      input: "flag{ok}",
+      expect: { ok: true, amount: 30, message: "对了" },
+    },
+    { name: "答错", input: "x", expect: { ok: false, message: "不对" } },
+  ],
+});
 
 export async function settings(change: Record<string, number>) {
   const sets = Object.keys(change)

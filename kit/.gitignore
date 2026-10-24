@@ -1,0 +1,3 @@
+node_modules/
+# 下载的完整记录里有别人的输入，别提交出去
+judge-records-*.json

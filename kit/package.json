@@ -1,0 +1,14 @@
+{
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "test": "node cli/test.mjs",
+    "check": "node cli/check.mjs",
+    "simulate": "node cli/simulate.mjs",
+    "replay": "node cli/replay.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "4.147.0"
+  }
+}

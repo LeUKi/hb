@@ -113,7 +113,7 @@
 | `/balance/<编号>` | 一笔转入的详情；Credit 收银台确认后回到这里 |
 | `/balance/out/<编号>` | 一笔转出的详情 |
 | `/invite/<编号>` | 🐟额的邀请链接（接受页，见 [07](07-pages.md) 第 14 节） |
-| `/admin/activities`、`/admin/users`、`/admin/payments`、`/admin/balance`、`/admin/settings`、`/admin/audit` | 网站管理的子页，筛选写在查询参数里（见 [07](07-pages.md) 第 10 节） |
+| `/admin/activities`、`/admin/users`、`/admin/payments`、`/admin/balance`、`/admin/judge`、`/admin/settings`、`/admin/audit` | 网站管理的子页，筛选写在查询参数里（见 [07](07-pages.md) 第 10 节） |
 | `/status` | 运行状态：本地服务连接检查（生产保留，没有入口，不是命令；见 [06](06-production.md) 第 5 节） |
 | 其他 | 未找到页面 |
 

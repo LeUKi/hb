@@ -70,8 +70,18 @@ export type JudgeTestOutcome = {
   passed: boolean;
   /** Why it did not pass: a differing field, or how the code failed. */
   problem?: string;
-  /** What the code answered and what was paid. */
-  actual?: { ok: boolean; amount?: number; message?: string; state?: unknown };
+  /**
+   * What the code answered and what was paid: `amount` paid, `asked` the
+   * code's own number, `note` why they differ (null when they do not).
+   */
+  actual?: {
+    ok: boolean;
+    amount?: number;
+    asked?: number;
+    note?: JudgeNote | null;
+    message?: string;
+    state?: unknown;
+  };
   ms?: number;
 };
 

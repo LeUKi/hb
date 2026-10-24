@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "simulate.json",
+  "description": "npm run simulate 用的：一个红包，和依次来提交的人。状态、已领记录、剩余奖池都像线上一样往下传。随机数用固定的种子，同一份文件每次结果一样；npm run simulate -- --seed 别的 换一个。",
+  "type": "object",
+  "required": ["submissions"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "写 \"./simulate.schema.json\"，编辑器就能补全、标错"
+    },
+    "now": {
+      "$ref": "#/$defs/time",
+      "description": "第一次提交的时间；默认 2026-10-24 12:00（北京时间）"
+    },
+    "hongbao": { "$ref": "#/$defs/hongbao" },
+    "seed": {
+      "description": "种子（64 位小写十六进制），默认固定的测试种子；--seed 能临时换一个",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "submissions": {
+      "description": "依次来提交的，写法同 tests.json 多步场景的一步，只是没有 expect。已经领过的人、领完以后的提交不算错，照实写“已领过”“已领完”。",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/submission" }
+    }
+  },
+  "$defs": {
+    "submission": {
+      "type": "object",
+      "required": ["who", "input"],
+      "additionalProperties": false,
+      "properties": {
+        "who": {
+          "description": "谁提交的：同一个 who 是同一个人，username 就是它，id 按第一次出现的先后从 10001 编",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "pattern": "\\S"
+        },
+        "input": {
+          "description": "提交的输入，规则同线上：一行，去掉首尾空白以后 1–200 个字；区分大小写，符号都算",
+          "type": "string",
+          "pattern": "^\\s*[^\\r\\n]{0,199}\\S\\s*$"
+        },
+        "level": {
+          "description": "信任等级 0–4，没有时 null；默认 2",
+          "enum": [0, 1, 2, 3, 4, null],
+          "default": 2
+        },
+        "at": {
+          "$ref": "#/$defs/time",
+          "description": "这次提交的时间，要按先后写、在开放和截止之间；默认上一次往后 1 分钟，第一次是 now"
+        }
+      }
+    },
+    "time": {
+      "description": "毫秒（整数），或带时区的 ISO 时间，比如 \"2026-10-24T12:00:00+08:00\"；不带时区的不认",
+      "anyOf": [
+        { "type": "integer" },
+        {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,3})?)?(Z|[+-]\\d{2}:\\d{2})$"
+        }
+      ]
+    },
+    "hongbao": {
+      "description": "红包，写法同 tests.json。默认：测试红包、总奖池 10000、10 份、每份至少 1、now 前 1 小时开放、now 后 1 天截止。总奖池要够每份都拿到每份至少。",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "description": "红包的标题，1–100 个字；默认“测试红包”",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "\\S",
+          "default": "测试红包"
+        },
+        "total": {
+          "description": "总奖池（分）",
+          "type": "integer",
+          "minimum": 1,
+          "default": 10000
+        },
+        "count": {
+          "description": "总份数，最多 1000",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "default": 10
+        },
+        "minEach": {
+          "description": "每份至少（分）",
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        },
+        "openedAt": {
+          "$ref": "#/$defs/time",
+          "description": "开放的时间；默认 now 前 1 小时"
+        },
+        "endsAt": {
+          "$ref": "#/$defs/time",
+          "description": "截止的时间，要晚于开放；默认 now 后 1 天"
+        }
+      }
+    }
+  }
+}

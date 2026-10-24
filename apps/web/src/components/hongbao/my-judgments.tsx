@@ -2,7 +2,7 @@ import type { JudgeNote, MyJudgment } from "@hb/contracts";
 import { useRouter } from "@tanstack/react-router";
 import { atom, useAtom, useSetAtom } from "jotai";
 import { ChevronRight, X } from "lucide-react";
-import { AnimatePresence } from "motion/react";
+import { AnimatePresence, useIsPresent } from "motion/react";
 import { useEffect } from "react";
 import { useMyJudgments } from "../../lib/judge";
 import { switchOverlay } from "../../lib/overlay";
@@ -134,8 +134,13 @@ export function MyJudgments({
   const router = useRouter();
   const query = useMyJudgments(user?.id ?? "", activityId);
   const eye = useShown(activityId, ended);
-  // Leaving the page hides them again (the dialog is over the page).
+  // Leaving the page hides them again (the dialog is over the page): as
+  // it starts to leave, since a quick 返回 brings the leaving page back.
   const setShownFor = useSetAtom(shownAtom);
+  const present = useIsPresent();
+  useEffect(() => {
+    if (!present) setShownFor(null);
+  }, [present, setShownFor]);
   useEffect(() => () => setShownFor(null), [setShownFor]);
   const first = query.data?.pages[0];
   if (!user || !first || first.total === 0) return null;

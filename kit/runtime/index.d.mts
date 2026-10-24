@@ -1,5 +1,6 @@
 import type {
   Json,
+  JudgeNote,
   JudgeRecords,
   Random,
   Submission,
@@ -159,24 +160,120 @@ export const TEST_DEFAULTS: Readonly<{
 export function readTests(
   text: string,
 ): { tests: TestCase[] } | { problem: string };
-export function testSubmission(test: TestCase):
-  | {
-      submission: Submission;
-      seeds: { submission: string; user: string };
-    }
-  | { problem: string };
 export function sameJson(left: unknown, right: unknown): boolean;
-export type TestResult = {
+export type SandboxFailureKind =
+  | "load"
+  | "no-judge"
+  | "threw"
+  | "invalid"
+  | "timeout"
+  | "memory"
+  | "unavailable";
+/** What the sandbox answered for one submission. */
+export type SandboxAnswer =
+  | { verdict: unknown; logs?: string[] }
+  | { failure: SandboxFailureKind; detail: string; logs?: string[] };
+export type Seeds = { submission: string; user: string };
+/** What the code answered, and what was paid. */
+export type TestActual = {
+  ok: boolean;
+  amount?: number;
+  asked?: number;
+  note?: JudgeNote | null;
+  message?: string;
+  /** The state after this judgment: what it wrote, or the one it kept. */
+  state: Json;
+};
+export type StepRun = {
+  who?: string;
+  input: string;
+  at: number;
   passed: boolean;
   problem?: string;
-  actual?: { ok: boolean; amount?: number; message?: string; state: Json };
-  unknown?: string[];
+  actual?: TestActual;
+  ms: number;
+  logs?: string[];
 };
-export function judgeTest(
+export type TestRun = {
+  passed: boolean;
+  /** Every difference; for steps, the step that failed and who. */
+  problem?: string;
+  actual?: TestActual;
+  /** All its judgments, in milliseconds. */
+  ms: number;
+  /** A single test's console output. */
+  logs?: string[];
+  /** A multi-step test: each step that ran, the failing one last. */
+  steps?: StepRun[];
+  /** The sandbox failed rather than the code answering. */
+  failure?: { kind: SandboxFailureKind; detail: string };
+  /** Run twice, and an answer differed: true randomness. */
+  unstable?: true;
+};
+export function runTest(
   test: TestCase,
+  run: (submission: Submission, seeds: Seeds) => Promise<SandboxAnswer>,
+  options?: { twice?: boolean },
+): Promise<TestRun>;
+
+// scenario.mjs
+export type Scenario = {
+  hongbao: Omit<
+    Submission["hongbao"],
+    "remaining" | "remainingCount" | "title"
+  > & {
+    title?: string;
+  };
+  claims: Submission["claims"];
+  paid: number;
+  state: Json;
+  judged: Map<number, number>;
+  hongbaoId?: string;
+  secret: string | null;
+};
+export function startScenario(input: {
+  hongbao: Scenario["hongbao"];
+  claims?: Submission["claims"];
+  state?: Json;
+  hongbaoId?: string;
+  secret?: string | null;
+}): Scenario;
+export function refusalOf(
+  scenario: Scenario,
+  user: { id: number },
+): "claimed" | "sold-out" | null;
+export function nextSubmission(
+  scenario: Scenario,
+  next: {
+    input: string;
+    now: number;
+    user: Omit<Submission["user"], "attempts"> & { attempts?: number };
+    title?: string;
+  },
+): Submission;
+export function advance(
+  scenario: Scenario,
   submission: Submission,
-  outcome: { verdict: unknown } | { failure: string; detail: string },
-): TestResult;
+  change: { state: StateChange; paid?: number; at?: number },
+): void;
+export function judgeNext(
+  scenario: Scenario,
+  next: {
+    user: Omit<Submission["user"], "attempts"> & { attempts?: number };
+    input: string;
+    at: number;
+  },
+  run: (submission: Submission, seeds: Seeds) => Promise<SandboxAnswer>,
+): Promise<
+  | { refused: "claimed" | "sold-out" }
+  | {
+      submission: Submission;
+      seeds: Seeds;
+      answer: SandboxAnswer;
+      ms: number;
+      reading?: VerdictReading;
+    }
+>;
 
 // records.mjs
 export function submissionsOf(records: JudgeRecords): Submission[];

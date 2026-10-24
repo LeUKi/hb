@@ -54,7 +54,12 @@ const AI_PROMPT = `你要帮我写一个“代码判定红包”的判定代码 
 - 每次判定 CPU 最多 50 毫秒。超时、抛错、返回不对都算出错：这次不算数，连续出错 5 次红包会暂停领取。
 - 每人只能领到一次；领过的人、发红包的人和领取范围以外的人走不到代码。平台不限提交次数，要限次数就按 user.attempts 自己拒绝，并在 message 里说清楚。
 
-tests.json 是一个数组，每条 { name, input, expect: { ok, amount?, message?, state? } }，可选 user、hongbao、claims（写数字表示前面已经领了几份）、state、now（毫秒或 ISO 时间）、seed（64 位十六进制）。没写的用默认：Lv2 的测试用户、总奖池 10000、10 份、每份至少 1、还没人领、状态 null、固定的种子。expect.amount 比的是拉进范围以后实际发的数；写了 message、state 的逐字比。最多 200 条。
+tests.json 是一个对象 { "tests": [ … ] }，只是数据：
+- 一条测试就是一次提交 { name, input, expect }，字段和 submission 同名，可选 now（毫秒或带时区的 ISO 时间，比如 2026-10-24T12:00:00+08:00）、user（id、username、level、attempts）、hongbao（title、total、count、minEach、openedAt、endsAt）、claims（前面已领的：写数字表示领了几份，或者完整列表，每条 { user: { id, username }, amount, input, at }）、state、seed（64 位十六进制）。没写的用默认：2026-10-24 12:00（北京时间）提交、测试用户 tester（ID 10000、Lv2、之前没被判定过）、总奖池 10000、10 份、每份至少 1、提交前 1 小时开放、后 1 天截止、还没人领、状态 null、固定的种子。剩余奖池、剩余份数和 share 由 claims 推出来，不能写。
+- 只能写线上可能出现的情况：now 在开放和截止之间；已领的按先后、不早于开放、不晚于 now，每份不少于每份至少，剩下的够剩下每份都拿到每份至少，还有没领的份；同一个人只领一份，这个人不在里面；state 不超过 16 KB；总奖池够每份都拿到每份至少。不然这条测试不通过。
+- 要测靠状态往下传的玩法，不写 input，写 steps，几个人依次提交：每一步 { who, input, expect }，可选 level（默认 2）、at（默认上一步往后 1 分钟，第一步是 now）。同一个 who 是同一个人；状态、已领记录、每人被判定过几次、剩余奖池都像线上一样一步步往下传。已经领过的人、或者份领完了还提交，这一步不通过。
+- expect：ok 必填；其余写了才比：amount（拉进范围以后实际发的）、asked（代码自己给的）、note（拉进范围的原因 "cap"、"floor"、"last"，没拉写 null）、message（逐字）或 messageIncludes（含这几个字）、state（整份，键的顺序不算）或 stateIncludes（只比写了的键，数组整个比）。ok 为 false 时不写 amount、asked、note。代码返回协议以外的字段也算不通过。
+- 所有测试加起来最多判定 ${JUDGE_LIMITS.tests} 次（多步的一步算一次）。
 
 我的玩法是：（在这里写清楚：什么输入算对、发多少、每人能试几次、有没有时间限制……）`;
 
@@ -70,14 +75,20 @@ export function judge(submission, tools) {
   return { ok: true, amount: tools.money.even(), message: "答对了" };
 }`;
 
-const TESTS = `[
-  { "name": "前三名答对", "input": "flag{n0t_s0_s1mpl3}",
-    "expect": { "ok": true, "amount": 2000, "message": "前三名！" } },
-  { "name": "第 4 个答对", "input": "flag{n0t_s0_s1mpl3}",
-    "claims": 3, "expect": { "ok": true, "amount": 1000 } },
-  { "name": "错满三次", "input": "flag{n0t_s0_s1mpl3}",
-    "user": { "attempts": 3 }, "expect": { "ok": false } }
-]`;
+const TESTS = `{
+  "tests": [
+    { "name": "第 4 个答对", "input": "flag{n0t_s0_s1mpl3}", "claims": 3,
+      "expect": { "ok": true, "amount": 1000, "message": "答对了" } },
+    { "name": "答错一次再答对", "steps": [
+      { "who": "小明", "input": "flag{guess}",
+        "expect": { "ok": false, "message": "不对，还能试 2 次" } },
+      { "who": "小明", "input": "flag{n0t_s0_s1mpl3}",
+        "expect": { "ok": true, "amount": 2000, "message": "前三名！" } },
+      { "who": "小红", "input": "flag{n0t_s0_s1mpl3}",
+        "expect": { "ok": true, "messageIncludes": "前三名" } }
+    ] }
+  ]
+}`;
 
 export function HelpCodeView() {
   return (
@@ -101,7 +112,7 @@ export function HelpCodeView() {
       <PageSection title="怎么开始">
         <Panel className="grid gap-1.5 px-4 py-3 text-sm text-ink-2">
           <p>
-            1. 下载
+            1. 取
             <a
               href={KIT_URL}
               target="_blank"
@@ -110,17 +121,25 @@ export function HelpCodeView() {
             >
               本地开发包 ↗
             </a>
-            ，在里面写 <Code>judge.js</Code> 和 <Code>tests.json</Code>。
+            ：运行 <Code>npx degit LeUKi/hb/kit 我的红包</Code>
+            ，或者下载仓库的压缩包、取出 <Code>kit</Code> 目录；进去运行{" "}
+            <Code>npm install</Code>（要 Node.js 22 或更新）。
           </p>
           <p>
-            2. 本地跑测试，看每条的结果和 <Code>console</Code> 输出。
+            2. 在里面写 <Code>judge.js</Code> 和 <Code>tests.json</Code>
+            （模板就是一个能跑通的示例玩法），运行 <Code>npm test</Code>{" "}
+            跑测试，看每条的结果和 <Code>console</Code> 输出。
           </p>
           <p>
-            3. 发红包选“代码判定”，第 3
+            3. 运行 <Code>npm run check</Code>
+            ：照网站的规则查一遍，最后写“可以去网站部署了”再往下。
+          </p>
+          <p>
+            4. 发红包选“代码判定”，第 3
             步贴上两个文件，点“在线检查”：在线上同一个沙箱里再跑一遍。每人每天能检查的次数有限。
           </p>
           <p>
-            4.
+            5.
             检查通过后才能开放。开放后代码、测试和提示都不能改；结束后所有人都能看到代码。
           </p>
         </Panel>
@@ -348,29 +367,61 @@ export function HelpCodeView() {
       </PageSection>
       <PageSection
         title="测试"
-        description={`tests.json 是一个数组，最多 ${JUDGE_LIMITS.tests} 条，每条只写跟它有关的。它只是数据，不算进代码，不公开。`}
+        description={`tests.json 是一个对象，测试写在它的 tests 里。一条测试就是一次提交，只写跟它有关的；也可以写 steps，让几个人依次提交。所有测试加起来最多判定 ${JUDGE_LIMITS.tests} 次（一步算一次）。它只是数据，不算进代码，不公开。`}
       >
         <Block label="tests.json" code={TESTS} />
         <Fields
           items={[
             {
               name: "默认",
-              note: "Lv2 的测试用户、总奖池 10000（100.00）、10 份、每份至少 1（0.01）、还没人领、状态 null、固定的种子",
+              note: "2026-10-24 12:00（北京时间）提交；测试用户 tester（ID 10000、Lv2、之前没被判定过）；总奖池 10000（100.00）、10 份、每份至少 1（0.01），提交前 1 小时开放、后 1 天截止；还没人领、状态 null、固定的种子",
             },
             {
               name: "可以写",
               note: (
                 <>
-                  <Code>user</Code>、<Code>hongbao</Code>、<Code>claims</Code>
-                  （写数字表示前面已经领了几份）、<Code>state</Code>、
-                  <Code>now</Code>（毫秒或 ISO 时间）、<Code>seed</Code>（64
-                  位十六进制）
+                  和代码收到的 submission 同名：<Code>now</Code>（毫秒或带时区的
+                  ISO 时间）、<Code>user</Code>、<Code>hongbao</Code>（
+                  <Code>title</Code>、<Code>total</Code>、<Code>count</Code>、
+                  <Code>minEach</Code>、<Code>openedAt</Code>、
+                  <Code>endsAt</Code>）、<Code>claims</Code>
+                  （写数字表示前面已经领了几份，或者写完整列表）、
+                  <Code>state</Code>、<Code>seed</Code>（64
+                  位十六进制）。剩余奖池、剩余份数和 <Code>share</Code> 由
+                  claims 推出来，不能写
+                </>
+              ),
+            },
+            {
+              name: "只能写",
+              note: "线上可能出现的情况：now 在开放和截止之间；已领的按先后、不早于开放、不晚于 now，每份不少于每份至少，剩下的够剩下每份都拿到每份至少，还有没领的份；同一个人只领一份，这个人不在里面；state 不超过 16 KB；总奖池够每份都拿到每份至少。不然这条测试本身不通过",
+            },
+            {
+              name: "steps",
+              note: (
+                <>
+                  不写 input，写 steps：每一步{" "}
+                  <Code>{"{ who, input, expect }"}</Code>，可选{" "}
+                  <Code>level</Code>（默认 2）、<Code>at</Code>
+                  （默认上一步往后 1 分钟，第一步是 now）。同一个 who
+                  是同一个人；状态、已领记录、被判定过几次、剩余奖池都像线上一样往下传。已经领过的人、或者份领完了还提交，这一步不通过
                 </>
               ),
             },
             {
               name: "expect",
-              note: "ok 必须一致；amount 比的是拉进范围以后实际发的数；写了 message、state 的逐字比",
+              note: (
+                <>
+                  <Code>ok</Code> 必填，其余写了才比：<Code>amount</Code>
+                  （拉进范围以后实际发的）、<Code>asked</Code>（代码给的）、
+                  <Code>note</Code>（<Code>"cap"</Code>、<Code>"floor"</Code>、
+                  <Code>"last"</Code>，没拉进范围写 null）、<Code>message</Code>
+                  （逐字）或 <Code>messageIncludes</Code>（含这几个字）、
+                  <Code>state</Code>（整份，键的顺序不算）或{" "}
+                  <Code>stateIncludes</Code>
+                  （只比写了的键，数组整个比）。没发就不写金额几项；代码返回协议以外的字段也算不通过；不一样的地方一起列出来
+                </>
+              ),
             },
           ]}
         />

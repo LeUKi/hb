@@ -1,6 +1,7 @@
 // 在线检查 (docs/programmable-hongbao-design.md §5): the sender's judge.js and
-// tests.json, run here by the kit's rules in the same Dynamic Worker the
-// claims will use. A 红包 opens only with code and tests that passed.
+// tests.json, run here by the kit's rules (kit/runtime/testing.mjs, which
+// npm test and npm run check share) in the same Dynamic Worker the claims
+// will use. A 红包 opens only with code and tests that passed.
 import type {
   JudgeCheck,
   JudgeCheckInput,
@@ -8,10 +9,8 @@ import type {
 } from "@hb/contracts";
 import {
   checkSource,
-  judgeTest,
   readTests,
-  sameJson,
-  testSubmission,
+  runTest,
 } from "../../../../kit/runtime/index.mjs";
 import { ActivityError } from "../activities/errors";
 import { databaseNow } from "../activities/lifecycle";
@@ -96,8 +95,6 @@ export async function passedCheck(
   );
 }
 
-type Run = { outcome: SandboxOutcome; ms: number };
-
 export async function checkJudge(
   env: ApiBindings,
   userId: string,
@@ -127,17 +124,16 @@ export async function checkJudge(
     const run = async (
       submission: Parameters<typeof runJudge>[1]["submission"],
       seeds: { submission: string; user: string },
-    ): Promise<Run> => {
+    ): Promise<SandboxOutcome> => {
       const started = Date.now();
       const outcome = await runJudge(
         env,
         { code: input.code, fingerprint, submission, seeds, fresh: sandbox },
         true,
       );
-      const ms = Date.now() - started;
       if ("failure" in outcome && outcome.failure === "timeout") sandbox += 1;
-      else slowestMs = Math.max(slowestMs ?? 0, ms);
-      return { outcome, ms };
+      else slowestMs = Math.max(slowestMs ?? 0, Date.now() - started);
+      return outcome;
     };
     for (const test of read.tests) {
       if (sandbox >= SANDBOXES) {
@@ -148,46 +144,31 @@ export async function checkJudge(
         });
         continue;
       }
-      const made = testSubmission(test);
-      if ("problem" in made) {
-        tests.push({ name: test.name, passed: false, problem: made.problem });
-        continue;
-      }
-      const first = await run(made.submission, made.seeds);
-      if (
-        "failure" in first.outcome &&
-        (first.outcome.failure === "load" ||
-          first.outcome.failure === "no-judge")
-      ) {
+      // Twice, a multi-step test as a whole: an answer that changes is
+      // true randomness, not replayable.
+      const result = await runTest(test, run, { twice: true });
+      const { failure } = result;
+      if (failure?.kind === "load" || failure?.kind === "no-judge") {
         loadProblem =
-          first.outcome.failure === "load"
-            ? `代码加载不了：${first.outcome.detail}`
-            : first.outcome.detail;
+          failure.kind === "load"
+            ? `代码加载不了：${failure.detail}`
+            : failure.detail;
         break;
       }
-      if ("failure" in first.outcome && first.outcome.failure === "unavailable")
+      if (failure?.kind === "unavailable")
         throw new ActivityError(
           503,
           "JUDGE_UNAVAILABLE",
           "沙箱暂时不可用，这次不算次数，请稍后再试。",
         );
-      const result = judgeTest(test, made.submission, first.outcome);
       tests.push({
         name: test.name,
         passed: result.passed,
         ...(result.problem ? { problem: result.problem } : {}),
         ...(result.actual ? { actual: result.actual } : {}),
-        ms: first.ms,
+        ms: result.ms,
       });
-      // Run twice: an answer that changes is true randomness, not replayable.
-      if ("verdict" in first.outcome && sandbox < SANDBOXES) {
-        const second = await run(made.submission, made.seeds);
-        if (
-          "verdict" in second.outcome &&
-          !sameJson(first.outcome.verdict, second.outcome.verdict)
-        )
-          unstable.push(test.name);
-      }
+      if (result.unstable) unstable.push(test.name);
     }
   }
   const passed =

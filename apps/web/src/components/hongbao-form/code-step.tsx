@@ -336,7 +336,7 @@ export function CodeStep({
         note="只是数据，不算进代码，不公开。"
         value={form.judge.tests}
         placeholder={
-          '[\n  { "name": "答对", "input": "flag{…}", "expect": { "ok": true } }\n]'
+          '{\n  "tests": [\n    { "name": "答对", "input": "flag{…}", "expect": { "ok": true } }\n  ]\n}'
         }
         rows={6}
         maxRows={16}

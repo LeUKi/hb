@@ -77,9 +77,9 @@ async function open(judge: Partial<JudgeInput> = {}) {
     {},
     {
       code: ECHO,
-      tests: JSON.stringify([
-        { name: "领", input: "go", expect: { ok: true } },
-      ]),
+      tests: JSON.stringify({
+        tests: [{ name: "领", input: "go", expect: { ok: true } }],
+      }),
       ...judge,
     },
   );

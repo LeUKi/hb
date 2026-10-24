@@ -81,8 +81,15 @@ export function sizeOf(text: string) {
 export function testCount(text: string) {
   if (!text.trim()) return "没有测试";
   try {
-    const tests: unknown = JSON.parse(text);
-    return Array.isArray(tests) ? `${tests.length} 条测试` : "测试不是数组";
+    // tests.json is an object whose tests are the list (协议第 5 节).
+    const file: unknown = JSON.parse(text);
+    const tests =
+      file !== null && typeof file === "object" && !Array.isArray(file)
+        ? (file as { tests?: unknown }).tests
+        : undefined;
+    return Array.isArray(tests)
+      ? `${tests.length} 条测试`
+      : "测试要写在 tests 里";
   } catch {
     return "测试不是有效的 JSON";
   }

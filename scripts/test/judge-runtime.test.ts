@@ -12,14 +12,11 @@ import {
   formatAmount,
   hmacSha1,
   hmacSha256,
-  judgeTest,
   luckyAmount,
   normalizeText,
   personalCode,
-  readTests,
   readVerdict,
   sameCode,
-  sameJson,
   scanImports,
   seedCommitment,
   seedStream,
@@ -28,9 +25,6 @@ import {
   sha256,
   shareRange,
   submissionSeed,
-  TEST_HONGBAO_ID,
-  TEST_SEED,
-  testSubmission,
   timeParts,
   timeWindow,
   totp,
@@ -454,115 +448,6 @@ const z = await import("node:" + "fs");
     expect(checkSource(`export const judge = () => ({ ok: false });`)).toEqual(
       [],
     );
-  });
-});
-
-describe("tests.json", () => {
-  it("fills in what a test leaves out", () => {
-    const read = readTests(
-      JSON.stringify([
-        { name: "默认", input: "  flag  ", expect: { ok: false } },
-        {
-          name: "第 4 个",
-          input: "x",
-          user: { level: 3, attempts: 2 },
-          claims: 3,
-          now: "2026-10-25T08:00:00+08:00",
-          seed,
-          expect: { ok: true, amount: 500 },
-        },
-      ]),
-    );
-    if (!("tests" in read)) throw new Error(read.problem);
-    const [plain, fourth] = read.tests.map(testSubmission);
-    if (!plain || !fourth || "problem" in plain || "problem" in fourth)
-      throw new Error("Tests did not fill in");
-    expect(plain.submission).toMatchObject({
-      input: "flag",
-      now: Date.parse("2026-10-24T12:00:00+08:00"),
-      user: { id: 10000, username: "tester", level: 2, attempts: 0 },
-      hongbao: { total: 10000, count: 10, minEach: 1, remaining: 10000 },
-      share: { min: 1, max: 9991, last: false },
-      claims: [],
-      state: null,
-    });
-    expect(plain.seeds.submission).toBe(
-      submissionSeed(TEST_HONGBAO_ID, TEST_SEED, 10000, 0),
-    );
-    expect(fourth.submission.user).toMatchObject({ level: 3, attempts: 2 });
-    expect(fourth.submission.claims).toHaveLength(3);
-    expect(fourth.submission.hongbao).toMatchObject({
-      remaining: 7000,
-      remainingCount: 7,
-    });
-    expect(fourth.seeds.user).toBe(userSeed(TEST_HONGBAO_ID, seed, 10000));
-  });
-
-  it("names the test and what is wrong with it", () => {
-    const problem = (text: string) => {
-      const read = readTests(text);
-      return "problem" in read ? read.problem : null;
-    };
-    expect(problem("")).toBe("至少写一条测试");
-    expect(problem("{")).toContain("不是有效的 JSON");
-    expect(problem("{}")).toContain("要是一个数组");
-    expect(problem('[{"name":"a","input":"x"}]')).toBe(
-      "第 1 条测试（a）：要有 expect",
-    );
-    expect(
-      problem('[{"name":"a","input":"x","expect":{"ok":true},"users":{}}]'),
-    ).toBe("第 1 条测试（a）：没有 users 这一项");
-    expect(
-      problem(
-        '[{"name":"a","input":"x","expect":{"ok":true}},{"name":"a","input":"y","expect":{"ok":true}}]',
-      ),
-    ).toBe("第 2 条测试：名字“a”重复了");
-    expect(
-      problem(
-        `[${Array(201).fill('{"name":"a","input":"x","expect":{"ok":true}}').join(",")}]`,
-      ),
-    ).toBe("测试最多 200 条");
-  });
-
-  it("compares what is paid, the reply and the state", () => {
-    const test = {
-      name: "答对",
-      input: "x",
-      expect: { ok: true, amount: 20000, message: "对", state: { n: 1 } },
-    };
-    const made = testSubmission(test);
-    if ("problem" in made) throw new Error(made.problem);
-    // Asked for more than the share may take: what is paid is compared.
-    expect(
-      judgeTest(test, made.submission, {
-        verdict: { ok: true, amount: 20000, message: "对", state: { n: 1 } },
-      }).problem,
-    ).toBe("应该发 20000，实际发 9991（代码给的是 20000，按上限发）");
-    expect(
-      judgeTest(
-        { ...test, expect: { ...test.expect, amount: 9991 } },
-        made.submission,
-        {
-          verdict: { ok: true, amount: 20000, message: "对", state: { n: 1 } },
-        },
-      ),
-    ).toMatchObject({ passed: true, actual: { ok: true, amount: 9991 } });
-    expect(
-      judgeTest(test, made.submission, { verdict: { ok: false } }).problem,
-    ).toBe("应该发，实际没发");
-    expect(
-      judgeTest(test, made.submission, { failure: "threw", detail: "Error: x" })
-        .problem,
-    ).toBe("代码抛错：Error: x");
-    expect(
-      judgeTest(test, made.submission, { verdict: { ok: "yes" } }).problem,
-    ).toBe("返回不对：ok 要是 true 或 false");
-    expect(
-      sameJson(
-        { a: 1, b: [1, { c: 2, d: 3 }] },
-        { b: [1, { d: 3, c: 2 }], a: 1 },
-      ),
-    ).toBe(true);
   });
 });
 
