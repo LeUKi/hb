@@ -5,8 +5,9 @@ import { clockLabel } from "../../lib/roster-time";
 
 /**
  * One cell of 公开数据: a label, a value and one line under it — a note, a
- * bar (share taken, or sign-ups toward the limit) or the four fuzzy steps.
- * The page draws these; the forum image keeps to one line of its own.
+ * bar (share taken, or sign-ups toward the limit), the four fuzzy steps, or
+ * (代码判定) how many times its code has judged. The page draws these; the
+ * forum image keeps to one line of its own.
  */
 export type CoverCell = {
   label: string;
@@ -16,6 +17,8 @@ export type CoverCell = {
   noteWide?: string;
   bar?: { share: number; label: string };
   steps?: number;
+  /** 代码判定: 已判定 N 次, rolling as it moves (05 §4). */
+  judged?: number;
   /** A countdown to this moment, ticking on the page. */
   until?: number;
 };
@@ -70,7 +73,7 @@ function poolCell(activity: HongbaoActivity, view: PublicView): CoverCell {
 
 const fuzzySteps = { plenty: 4, limited: 2, low: 1, empty: 0 } as const;
 
-function quantityCell(view: PublicView): CoverCell {
+function quantityCell(view: PublicView, judged?: number): CoverCell {
   const { draw, quantity } = view;
   if (draw) {
     if (draw.registered === null)
@@ -89,16 +92,21 @@ function quantityCell(view: PublicView): CoverCell {
         }
       : { label: "报名", value: `${draw.registered} 人`, note: "不限人数" };
   }
+  // 代码判定: how often its code judged says more than a bar (05 §4).
   if (quantity.kind === "fuzzy")
     return {
       label: "余量",
       value: fuzzyLabels[quantity.level],
-      steps: fuzzySteps[quantity.level],
+      ...(judged !== undefined
+        ? { judged }
+        : { steps: fuzzySteps[quantity.level] }),
     };
   return {
     label: "已领",
     value: `${quantity.taken} / ${quantity.total} 份`,
-    bar: { share: quantity.taken / quantity.total, label: "已领份数" },
+    ...(judged !== undefined
+      ? { judged }
+      : { bar: { share: quantity.taken / quantity.total, label: "已领份数" } }),
   };
 }
 
@@ -161,14 +169,21 @@ function draftTimeCell(activity: HongbaoActivity): CoverCell {
   };
 }
 
-/** 金额 · 数量 · 时间, with fuzzy quantity hidden the way production does. */
+/**
+ * 金额 · 数量 · 时间, with fuzzy quantity hidden the way production does.
+ * `judged`: a 代码判定红包's count, the latest the page has.
+ */
 export function coverCells(
   activity: HongbaoActivity,
   view: PublicView,
+  judged?: number,
 ): [CoverCell, CoverCell, CoverCell] {
   return [
     poolCell(activity, view),
-    quantityCell(view),
+    quantityCell(
+      view,
+      activity.judge ? (judged ?? activity.judge.judged) : undefined,
+    ),
     activity.draft ? draftTimeCell(activity) : timeCell(view),
   ];
 }

@@ -14,6 +14,8 @@ export const buttonVariants = cva("btn", {
       secondary: "btn-secondary",
       ghost: "btn-ghost",
       danger: "btn-danger",
+      /** 代码判定红包's action (05 §14). */
+      lacquer: "btn-lacquer",
     },
     size: {
       /** Quiet links and small actions inside a line ("红包记录 ›"). */

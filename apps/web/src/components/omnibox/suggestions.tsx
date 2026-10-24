@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  Braces,
   CornerDownLeft,
   History,
   KeyRound,
@@ -200,6 +201,15 @@ function Row({
   );
 }
 
+/** A 红包 to take part in; a 代码判定红包's mark is its gold braces. */
+function ClaimIcon({ code }: { code: boolean }) {
+  return code ? (
+    <Braces className="size-4 text-gold-mark" />
+  ) : (
+    <HongbaoIcon className="size-4 text-accent" />
+  );
+}
+
 export function GateChip() {
   return <StatusChip tone="accent">需登录</StatusChip>;
 }
@@ -269,10 +279,7 @@ export function SuggestionContent({
   }
   if (item.kind === "claim") {
     return (
-      <Row
-        active={active}
-        icon={<HongbaoIcon className="size-4 text-accent" />}
-      >
+      <Row active={active} icon={<ClaimIcon code={Boolean(activity?.code)} />}>
         <span className="shrink-0 text-ink-2">
           {activity?.timedDraw ? "报名" : "领取"}
         </span>
@@ -316,7 +323,11 @@ export function SuggestionContent({
     return (
       <Row
         active={active}
-        icon={<HongbaoIcon className="size-4 text-accent" />}
+        icon={
+          <ClaimIcon
+            code={item.purpose === "code" || Boolean(activity?.code)}
+          />
+        }
       >
         <span className="shrink-0 text-ink-2">
           {activity?.timedDraw ? "报名" : "领取"}

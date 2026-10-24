@@ -13,6 +13,7 @@ import {
 } from "./activities";
 import {
   liveActivityAtom,
+  liveJudgedAtom,
   liveViewersAtom,
   participationOpen,
   paymentOpen,
@@ -110,6 +111,7 @@ export function useActivityLive(
   const client = useQueryClient();
   const setLive = useSetAtom(liveActivityAtom);
   const setViewers = useSetAtom(liveViewersAtom);
+  const setJudged = useSetAtom(liveJudgedAtom);
   const wantNow = useRef(want);
   wantNow.current = want;
   const on = want !== null;
@@ -197,6 +199,10 @@ export function useActivityLive(
           setViewers({ id, count: message.count });
           return;
         }
+        if (message?.type === "judged") {
+          setJudged({ id, count: message.count });
+          return;
+        }
         if (message?.type !== "activity" || !message.activity) return;
         // A poll already on its way could land after this, with older data.
         void client.cancelQueries({ queryKey: key, exact: true }).then(() =>
@@ -265,6 +271,9 @@ export function useActivityLive(
       window.clearTimeout(retry);
       socket?.close(1000);
       settle();
+      // Kept across a dropped line: a pushed count is never above the truth,
+      // and the read alone may be older (a turn-down pushes nothing else).
+      setJudged((current) => (current?.id === id ? null : current));
     };
-  }, [id, userId, on, client, setLive, setViewers]);
+  }, [id, userId, on, client, setLive, setViewers, setJudged]);
 }

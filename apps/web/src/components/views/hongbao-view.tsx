@@ -1,13 +1,15 @@
 import { type RefObject, useRef } from "react";
+import { useCoverLook } from "../../lib/activity-facts";
 import { cn } from "../../lib/cn";
 import type { HongbaoActivity } from "../../lib/hongbao";
 import { useActivityLive } from "../../lib/live";
 import { AuthorTools } from "../hongbao/author-tools";
-import { CodeSection } from "../hongbao/code-section";
+import { CodeEntry } from "../hongbao/code-section";
 import { InfoNote } from "../hongbao/details";
 import { HongbaoHero, hongbaoSizes, sizeVars } from "../hongbao/hero";
 import { HongbaoSkeleton } from "../hongbao/hongbao-skeleton";
 import { LiveViewers } from "../hongbao/live-viewers";
+import { MyJudgments } from "../hongbao/my-judgments";
 import { PageActions } from "../hongbao/page-actions";
 import { Sparks } from "../hongbao/parts";
 import { PasswordSection } from "../hongbao/passwords";
@@ -25,6 +27,9 @@ export function HongbaoView({ id }: { id: string }) {
   useActivityLive(id, page.identity.user?.id ?? null, page.liveWant);
   const article = useRef<HTMLElement>(null);
   const skeleton = useRef<number | null>(null);
+  // What the skeleton drew: a 代码判定红包 drawn red fades into its lacquer.
+  const look = useCoverLook(id);
+  const skeletonCode = useRef(false);
   const load = usePageLoad(page.load, () =>
     article.current?.querySelector<HTMLElement>("h1[tabindex]"),
   );
@@ -51,9 +56,12 @@ export function HongbaoView({ id }: { id: string }) {
       <HongbaoSkeleton
         focus={load.retried}
         small={false}
-        ended={false}
+        // Red keeps its own skeleton; only a 代码判定红包 is drawn as known.
+        ended={look?.code ? look.ended : false}
+        code={look?.code ?? false}
         onMeasure={(height) => {
           skeleton.current = height;
+          skeletonCode.current = look?.code ?? false;
         }}
       />
     );
@@ -65,6 +73,9 @@ export function HongbaoView({ id }: { id: string }) {
         articleRef={article}
         said={load.said}
         arriveFrom={load.loaded ? skeleton.current : null}
+        fromRed={
+          load.loaded && skeleton.current !== null && !skeletonCode.current
+        }
       />
     </RefreshContext.Provider>
   );
@@ -83,6 +94,7 @@ function HongbaoPage({
   articleRef,
   said,
   arriveFrom,
+  fromRed,
 }: {
   data: HongbaoData;
   /** Running, for a signed-in viewer: on the live channel. */
@@ -95,6 +107,8 @@ function HongbaoPage({
    * and only what is on it fades in.
    */
   arriveFrom: number | null;
+  /** The skeleton before it was red (a 代码判定红包 not known as one yet). */
+  fromRed: boolean;
 }) {
   const activity: HongbaoActivity = data.activity;
   const hongbao = useHongbao(data);
@@ -137,6 +151,7 @@ function HongbaoPage({
         activity={activity}
         hongbao={hongbao}
         arriveFrom={arriveFrom}
+        fromRed={fromRed}
       />
       <div className="mx-auto flex w-full max-w-[36rem] flex-col gap-8 px-5 pt-8 @wide/window:px-8">
         <RefreshNotice />
@@ -151,14 +166,13 @@ function HongbaoPage({
             part="end-note"
           />
         )}
+        {/* What a claimant typed and what the code said (05 §3). */}
+        {activity.judge && !hongbao.author && !activity.draft && (
+          <MyJudgments activityId={activity.id} ended={view.ended} />
+        )}
         {/* 代码判定红包 has its code where others have their 口令 (05 §9). */}
         {activity.judge ? (
-          <CodeSection
-            activityId={activity.id}
-            judge={activity.judge}
-            ended={view.ended}
-            senderCode={activity.senderCode}
-          />
+          <CodeEntry published={Boolean(activity.judge.code)} />
         ) : (
           <PasswordSection
             activityId={activity.id}

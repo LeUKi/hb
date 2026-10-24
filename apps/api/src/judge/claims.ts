@@ -236,8 +236,9 @@ export async function claimByCode(
       )
         .bind(activityId, userId)
         .first<number>("count"),
+      // Sequences run 0…N-1: the next is the last plus one (public.ts).
       env.DB.prepare(
-        "SELECT COUNT(*) AS count FROM code_judgments WHERE activity_id = ?",
+        "SELECT COALESCE(MAX(sequence) + 1, 0) AS count FROM code_judgments WHERE activity_id = ?",
       )
         .bind(activityId)
         .first<number>("count"),

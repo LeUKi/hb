@@ -5,6 +5,7 @@ import {
   useId,
   useLayoutEffect,
   useRef,
+  useState,
 } from "react";
 import { cn } from "../../lib/cn";
 import { haptic } from "../../lib/haptics";
@@ -135,11 +136,14 @@ export function HongbaoHero({
   activity,
   hongbao,
   arriveFrom = null,
+  fromRed = false,
 }: {
   activity: HongbaoActivity;
   hongbao: Hongbao;
   /** The skeleton's cover height, when the page arrived after one. */
   arriveFrom?: number | null;
+  /** That skeleton was red: a 代码判定红包's lacquer fades in from it. */
+  fromRed?: boolean;
 }) {
   const { phase, mine, fresh, reveal, openDelay: delay, reduced } = hongbao;
   const opened = phase === "open";
@@ -149,6 +153,15 @@ export function HongbaoHero({
   const faceRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const hintId = useId();
+  // Red for a frame, then the registered cover colours fade to lacquer.
+  const [red, setRed] = useState(fromRed && activity.mode === "code");
+  useEffect(() => {
+    if (!red) return;
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => setRed(false));
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [red]);
 
   // 震动反馈: success as the cover starts to open on a claim or sign-up
   // just made (once; StrictMode's second run must not drop it).
@@ -218,6 +231,7 @@ export function HongbaoHero({
           phase === "ended" && !hongbao.drawing && "hb-ended",
           // 代码判定红包: 黑漆描金 (05 §14).
           activity.mode === "code" && "hb-code",
+          red && "hb-from-red",
         )}
         style={{ marginBottom: comp }}
         data-cover={state}
@@ -339,7 +353,6 @@ export function HongbaoHero({
               play={play || reveal}
               delay={play ? delay + 0.7 : 0.2}
               deadlineAt={hongbao.view.deadlineAt}
-              ended={hongbao.view.ended}
               drawNote={hongbao.drawStep?.note}
             />
           </motion.div>

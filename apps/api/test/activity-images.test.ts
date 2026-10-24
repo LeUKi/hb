@@ -13,8 +13,17 @@ import { app } from "../src/app";
 import { createDb } from "../src/db/client";
 import { sessions, users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
+import { stopCodeActivity } from "../src/judge/stop";
 import { createMerchant } from "../src/payments/merchants";
 import { sha256Hex } from "../src/security/crypto";
+import {
+  check,
+  actor as codeActor,
+  coded,
+  give,
+  plus,
+  settings,
+} from "./code-fixtures";
 import { resetMerchantHistory } from "./reset-merchant-history";
 
 const origin = "https://hb.example.com";
@@ -611,5 +620,84 @@ describe("activity image APIs", () => {
     const wildcard = await request(path, { headers: { Accept: "*/*" } });
     expect(wildcard.status).toBe(200);
     expect(wildcard.headers.get("content-type")).toContain("image/svg+xml");
+  });
+});
+
+// Last in the file: a 代码判定红包 leaves judgments and 🐟额 entries that
+// can never be deleted, so the clean-up above could not run after it.
+describe("activity image of a 代码判定红包", () => {
+  it("draws it in black lacquer, paused, and graphite once the 站长 stops it", async () => {
+    await settings({ hongbao_enabled: 1, code_hongbao_enabled: 1 });
+    const [admin, sender, claimant, stranger] = await Promise.all([
+      codeActor(),
+      codeActor(),
+      codeActor(),
+      codeActor(),
+    ]);
+    await plus(sender);
+    await give(admin, sender, "5.00");
+    expect((await check(sender)).body.check.passed).toBe(true);
+    const draft = await createActivity(bindings, sender.id, {
+      requestId: crypto.randomUUID(),
+      activity: coded(),
+    });
+    const activity = await openActivity(
+      bindings,
+      draft.id,
+      sender.id,
+      draft.version,
+    );
+    const path = imagePath(activity.id);
+    const lacquer = (svg: string) => {
+      expect(svg).toContain('fill="url(#lacquer)"');
+      expect(svg).toContain('stroke="url(#rim-gold)"');
+      expect(svg).not.toContain("url(#red)");
+    };
+
+    const guest = await (await request(path)).text();
+    lacquer(guest);
+    expect(guest).toContain("查看");
+    expect(guest).toContain("剩余 3 份");
+    await claimActivity(bindings, activity.id, claimant.id, {
+      submissionId: crypto.randomUUID(),
+      participationMode: "code",
+      input: "flag{ok}",
+    });
+    const claimed = await (
+      await request(path, { cookie: claimant.cookie })
+    ).text();
+    lacquer(claimed);
+    expect(claimed).toContain("你已领取");
+    expect(claimed).toContain("已存入🐟额");
+
+    // Five failures in a row: claims wait, and the image says so.
+    await env.DB.prepare(
+      "UPDATE activity_code SET paused_at = ? WHERE activity_id = ?",
+    )
+      .bind(Date.now(), activity.id)
+      .run();
+    const paused = await (
+      await request(path, { cookie: stranger.cookie })
+    ).text();
+    lacquer(paused);
+    expect(paused).toContain("红包的代码连续出错，暂停领取");
+    expect(paused).toMatch(
+      /fill="url\(#faded\)"[\s\S]*class="glyph faded"[^>]*>开</,
+    );
+    expect(await (await request(path)).text()).toContain(
+      "红包的代码连续出错，暂停领取",
+    );
+
+    await stopCodeActivity(bindings, activity.id, admin.id);
+    for (const cookie of [undefined, stranger.cookie]) {
+      const stopped = await (await request(path, { cookie })).text();
+      expect(stopped).toContain("红包已被站长停用");
+      expect(stopped).not.toContain("暂停领取");
+      expect(stopped).toContain('fill="url(#graphite)"');
+      expect(stopped).toContain("#5a5e65");
+      expect(stopped).toContain('fill="url(#steel)"');
+      expect(stopped).not.toContain('filter="url(#muted)"');
+      expect(stopped).not.toContain("url(#lacquer)");
+    }
   });
 });

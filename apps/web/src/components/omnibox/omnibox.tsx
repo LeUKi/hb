@@ -223,7 +223,8 @@ export function Omnibox() {
   const docked = mode === "docked";
   // Docked in the 顶栏 over a page that bleeds (the red 红包 cover): the
   // address becomes a light pill so it stays legible on the colour.
-  const overColor = useAtomValue(viewEdgeAtom).bleed && docked;
+  const edge = useAtomValue(viewEdgeAtom);
+  const overColor = edge.bleed && docked;
   const liveValue = expanded ? editDraft : startDraft;
   // While fading out into the address, keep showing what was typed.
   const frozen = useRef(liveValue);
@@ -721,6 +722,7 @@ export function Omnibox() {
         className="omnibox-plate"
         data-chrome={chrome}
         data-bleed={overColor || undefined}
+        data-lacquer={(overColor && edge.lacquer) || undefined}
         data-focus={!docked && inputFocused ? "" : undefined}
         radius={geometry.radius}
       />
@@ -895,7 +897,8 @@ export function Omnibox() {
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={execute}
                     className={buttonVariants({
-                      variant: "primary",
+                      // 代码判定: lacquer, as its scope chip (05 §14).
+                      variant: codeScope ? "lacquer" : "primary",
                       size: actionSize,
                     })}
                     style={actionShape}

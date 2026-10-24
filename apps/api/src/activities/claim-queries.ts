@@ -317,11 +317,13 @@ async function judgmentsBatch(env: ApiBindings, rows: ClaimActivityRow[]) {
   const judgments = new Map<string, NonNullable<AuthorClaim["judge"]>>();
   if (!coded.length) return judgments;
   const found =
-    await env.DB.prepare(`SELECT s.claim_id AS claimId, s.activity_id AS activityId, s.id AS rowId,
-      j.message, j.note, j.asked_minor AS asked, e.ciphertext
-    FROM redemption_submissions s JOIN code_judgments j ON j.submission_row_id = s.id
-    JOIN attempt_events e ON e.submission_row_id = s.id
-    WHERE s.claim_id IN (SELECT value FROM json_each(?)) AND s.participation_mode = 'code'`)
+    // From attempt_events.claim_id (indexed; set on the paying judgment's
+    // row when its claim completes): never a scan of every submission.
+    await env.DB.prepare(`SELECT e.claim_id AS claimId, s.activity_id AS activityId, s.id AS rowId,
+      j.message, j.note, j.asked_minor AS asked, j.attempt, e.ciphertext
+    FROM attempt_events e JOIN redemption_submissions s ON s.id = e.submission_row_id
+    JOIN code_judgments j ON j.submission_row_id = s.id
+    WHERE e.claim_id IN (SELECT value FROM json_each(?)) AND s.participation_mode = 'code'`)
       .bind(JSON.stringify(coded.map(({ claim }) => claim.id)))
       .all<{
         claimId: string;
@@ -330,6 +332,7 @@ async function judgmentsBatch(env: ApiBindings, rows: ClaimActivityRow[]) {
         message: string | null;
         note: JudgeNote | null;
         asked: number | null;
+        attempt: number;
         ciphertext: string;
       }>();
   for (const row of found.results)
@@ -344,6 +347,7 @@ async function judgmentsBatch(env: ApiBindings, rows: ClaimActivityRow[]) {
       ...(row.note && row.asked !== null
         ? { asked: formatSignedAmount(row.asked) }
         : {}),
+      attempt: row.attempt + 1,
     });
   return judgments;
 }
@@ -538,6 +542,11 @@ export async function listPublicRecipients(
     .limit(21);
   const page = rows.slice(0, 20);
   const last = page.at(-1);
+  const attempts = await claimAttempts(
+    env,
+    activity,
+    page.map(({ claim }) => claim.id),
+  );
   return {
     titles,
     items: page.map(
@@ -554,6 +563,7 @@ export async function listPublicRecipients(
           ? { speedTitle: speedTitles.get(claim.id) }
           : {}),
         ...luckTitle(titles, claim.id),
+        ...(attempts.has(claim.id) ? { attempt: attempts.get(claim.id) } : {}),
       }),
     ),
     nextCursor:
@@ -567,6 +577,24 @@ export async function listPublicRecipients(
           )
         : null,
   };
+}
+
+/** 代码判定: on which of each claimant's judged submissions they claimed. */
+async function claimAttempts(
+  env: ApiBindings,
+  activity: ActivityRow,
+  claimIds: string[],
+) {
+  if (activity.participationMode !== "code" || claimIds.length === 0)
+    return new Map<string, number>();
+  const found = await env.DB.prepare(`SELECT e.claim_id AS claimId, j.attempt
+    FROM attempt_events e JOIN code_judgments j ON j.submission_row_id = e.submission_row_id
+    WHERE e.claim_id IN (SELECT value FROM json_each(?))`)
+    .bind(JSON.stringify(claimIds))
+    .all<{ claimId: string; attempt: number }>();
+  return new Map(
+    found.results.map((row) => [row.claimId, row.attempt + 1] as const),
+  );
 }
 
 async function recipientSpeedTitles(

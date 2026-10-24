@@ -881,7 +881,9 @@ export type PublicActivity = {
 export type ActivityLiveMessage =
   | { type: "activity"; activity: PublicActivity }
   | { type: "mine" }
-  | { type: "viewers"; count: number };
+  | { type: "viewers"; count: number }
+  /** 代码判定: how many verdicts its code has given (PublicJudge.judged). */
+  | { type: "judged"; count: number };
 
 export type ActivityList = {
   items: ActivitySummary[];
@@ -1050,10 +1052,16 @@ export type ClaimDetail = Omit<ClaimSummary, "rewardType"> & {
   amount: string;
   payment?: PaymentView;
   /**
-   * 代码判定: what the claimant typed, the code's reply, and why the amount
-   * is not what the code asked (按上限发, 按每份至少发, 最后一份).
+   * 代码判定: what the claimant typed, the code's reply, why the amount is
+   * not what the code asked (按上限发, 按每份至少发, 最后一份), and on
+   * which of their judged submissions it came (第 N 次领到, from 1).
    */
-  judge?: { input: string; message?: string; note?: JudgeNote };
+  judge?: {
+    input: string;
+    message?: string;
+    note?: JudgeNote;
+    attempt: number;
+  };
 };
 export type ClaimResult = (
   | { result: "claimed" | "already_claimed"; claim: ClaimDetail }
@@ -1114,6 +1122,8 @@ export type PublicRecipient = PublicUserProfile & {
   amount?: string;
   title?: "highest" | "lowest";
   speedTitle?: RecipientSpeedTitle;
+  /** 代码判定: 第 N 次领到, from 1 (05 §7). */
+  attempt?: number;
 };
 /** Always public (redesign 06 §2), oldest first (06 §3). */
 export type PublicRecipientList = {

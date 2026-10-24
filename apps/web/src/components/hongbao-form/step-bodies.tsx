@@ -55,10 +55,11 @@ function ModeCard({
         <Squircle radius={10}>
           <span
             className={cn(
-              "choice-icon grid size-9 place-items-center bg-fill-2 text-ink-2",
-              selected && "bg-accent-soft",
-              // 代码判定: black lacquer and gold (05 §14).
-              option.value === "code" && "hb-lacquer-chip",
+              "choice-icon grid size-9 place-items-center",
+              // 代码判定: black lacquer and gold (05 §14), picked or not.
+              option.value === "code"
+                ? "hb-lacquer-chip"
+                : cn("bg-fill-2 text-ink-2", selected && "bg-accent-soft"),
             )}
           >
             <Icon className="size-[18px]" aria-hidden="true" />

@@ -43,6 +43,7 @@ import {
 } from "../../lib/discovery";
 import { haptic, hapticForTone } from "../../lib/haptics";
 import { askHumanCheck, endHumanCheck } from "../../lib/human-check";
+import { myJudgmentsKey } from "../../lib/judge";
 import { maintenanceAtom } from "../../lib/maintenance";
 import { closeOverlay, openOverlay, switchOverlay } from "../../lib/overlay";
 import {
@@ -668,6 +669,11 @@ export function useOmniboxController() {
           withClaim(store.get(unconfirmedAtom), activityId, null),
         );
         if (stale()) return;
+        // 代码判定: this one joins 我的提交 (05 §3).
+        if (code)
+          void queryClient.invalidateQueries({
+            queryKey: myJudgmentsKey(account.id, activityId),
+          });
         switch (result.result) {
           case "claimed":
           case "registered":

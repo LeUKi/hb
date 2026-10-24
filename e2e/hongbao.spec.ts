@@ -890,19 +890,25 @@ test.describe("红包页", () => {
     await expect(page.getByText("待发放")).toBeVisible();
     await expect(page.getByText("2 / 3 份")).toBeVisible();
     await expect(page.getByText("记得")).toBeVisible();
-    // While it runs, the 口令 used starts hidden behind an eye, on the result
-    // and in the 口令区 alike: a screenshot must not give it away. (The
-    // folded 指令框 still holds what was typed; it is not on screen.)
+    // The 口令 used is in the 口令区 only, not again on the result (05 §3),
+    // and while it runs it starts hidden behind an eye: a screenshot must
+    // not give it away. (The folded 指令框 still holds what was typed; it
+    // is not on screen.)
     const main = page.getByRole("main");
     const result = page.locator("[data-hb-part=result]");
     const section = page.locator("[data-hb-part=passwords]");
     await expect(main.getByText(passwordOf.mine)).toHaveCount(0);
-    const eye = result.getByRole("button", { name: "显示口令" });
-    await expect(eye).toHaveAttribute("aria-pressed", "false");
-    await eye.click();
-    await expect(result.getByText(passwordOf.mine)).toBeVisible();
-    await expect(eye).toHaveAttribute("aria-pressed", "true");
-    await expect(section.getByText(passwordOf.mine)).toHaveCount(0);
+    await expect(result.getByRole("button", { name: "显示口令" })).toHaveCount(
+      0,
+    );
+    await expect(result).toContainText("金额、发放状态和附言仅你可见");
+    const used = section
+      .getByRole("listitem")
+      .filter({ hasText: "已用此口令领取" });
+    await expect(used).toContainText("已隐藏");
+    await used.getByRole("button", { name: "显示口令 1" }).click();
+    await expect(used).toContainText(passwordOf.mine);
+    await expect(result.getByText(passwordOf.mine)).toHaveCount(0);
     expect(state.claims).toHaveLength(2);
     const [wrong, right] = state.claims as Array<{ submissionId: string }>;
     expect(right?.submissionId).not.toBe(wrong?.submissionId);
@@ -975,7 +981,7 @@ test.describe("红包页", () => {
       quantity: { mode: "exact", total: 3, claimed: 3, remaining: 0 },
     };
     await page.reload();
-    await expect(result.getByText(passwordOf.mine)).toBeVisible();
+    await expect(section.getByText(passwordOf.mine)).toBeVisible();
     await expect(section.getByText(passwordOf.other)).toBeVisible();
     await expect(page.getByRole("button", { name: /^显示/ })).toHaveCount(0);
   });

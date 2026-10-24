@@ -13,6 +13,12 @@ export const liveActivityAtom = atom<string | null>(null);
 export const liveViewersAtom = atom<{ id: string; count: number } | null>(null);
 
 /**
+ * 代码判定: how many times that 红包's code has judged, pushed at most once
+ * a second. The public read says it too; the page shows the larger.
+ */
+export const liveJudgedAtom = atom<{ id: string; count: number } | null>(null);
+
+/**
  * Nothing public about this 红包 will change anymore (api: live.ts
  * liveEnded), so its page stops reading it. A 草稿 still may: it opens.
  */

@@ -6,7 +6,10 @@ declare module "@tanstack/history" {
   interface HistoryState {
     /** The omnibox is expanded into the command box over the current view. */
     omnibox?: "expanded";
-    /** A panel is open over the window: 用户卡片, 名单弹窗, 说明弹窗 or 更多设置. */
+    /**
+     * A panel is open over the window: 用户卡片, 名单弹窗, 说明弹窗, 更多设置,
+     * or a 代码判定红包's 我的提交 and 代码 (05 §3, §9).
+     */
     panel?: Panel;
     /**
      * The 红包 a 名单弹窗 opened from a list is about (红包记录); on the
@@ -18,7 +21,13 @@ declare module "@tanstack/history" {
   }
 }
 
-export type Panel = "account" | "roster" | "note" | "settings";
+export type Panel =
+  | "account"
+  | "roster"
+  | "note"
+  | "settings"
+  | "judgments"
+  | "code";
 
 type Overlay = { omnibox?: "expanded"; panel?: Panel; panelFor?: string };
 

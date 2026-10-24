@@ -95,7 +95,7 @@ function Row({
         <div
           title={fullTime(row.at)}
           className={`grid items-center gap-x-2 px-4 @wide/window:gap-x-2.5 ${columns[kind]} ${
-            detail ? "py-1.5" : "h-10"
+            detail || row.attempt ? "py-1.5" : "h-10"
           } ${row.you ? "bg-gold-soft" : ""}`}
         >
           {/* The column heads are hidden from screen readers (the list
@@ -123,9 +123,13 @@ function Row({
               )}
               <TitleBadges titles={row.titles} className="shrink-0" />
             </span>
-            {detail && (
+            {(detail || row.attempt) && (
               <span className="flex min-w-0 items-start gap-2 text-xs text-ink-3">
-                {detail.password && (
+                {/* 代码判定: on which of their judged submissions (05 §7). */}
+                {row.attempt && (
+                  <span className="shrink-0">第 {row.attempt} 次领到</span>
+                )}
+                {detail?.password && (
                   <span className="flex min-w-0 items-baseline gap-1">
                     <span className="shrink-0">口令</span>
                     <PasswordText
@@ -137,7 +141,7 @@ function Row({
                     />
                   </span>
                 )}
-                {detail.judge && (
+                {detail?.judge && (
                   <span className="flex min-w-0 items-baseline gap-1">
                     <span className="shrink-0">输入</span>
                     <PasswordText
@@ -149,13 +153,13 @@ function Row({
                     />
                   </span>
                 )}
-                {detail.judge?.asked && detail.judge.note && (
+                {detail?.judge?.asked && detail.judge.note && (
                   <span className="shrink-0">
                     代码给 {detail.judge.asked}，{pulledIn[detail.judge.note]}{" "}
                     {row.amount}
                   </span>
                 )}
-                {detail.fish && (
+                {detail?.fish && (
                   <span
                     className={`inline-flex shrink-0 items-center gap-1 ${paymentText.success}`}
                   >
@@ -166,7 +170,7 @@ function Row({
                     已存入🐟额
                   </span>
                 )}
-                {detail.payment && (
+                {detail?.payment && (
                   <button
                     type="button"
                     onClick={() => onPayment?.(detail.payment?.id ?? "")}

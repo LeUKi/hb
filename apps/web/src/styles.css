@@ -153,6 +153,79 @@
   inherits: false;
   initial-value: transparent;
 }
+/* The cover's own colours, inherited by all on it: a 代码判定红包's cover
+   fades from lacquer to cool grey as it ends (05 §14), as a red one fades
+   by its filter. */
+@property --color-cover-top {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #d93c33;
+}
+@property --color-cover-mid {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #c82a30;
+}
+@property --color-cover-bottom {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #b9212c;
+}
+@property --color-cream {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #fff3e2;
+}
+@property --color-cream-2 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: rgb(255 236 214 / 0.74);
+}
+@property --hb-rim-0 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #e8c079;
+}
+@property --hb-rim-1 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #e8c079;
+}
+@property --hb-rim-2 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #e8c079;
+}
+@property --hb-rim-3 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #e8c079;
+}
+@property --hb-title-top {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #fff3e2;
+}
+@property --hb-title-bottom {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #fff3e2;
+}
+@property --hb-fret-ink {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --hb-warm {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: rgb(255 168 120 / 0.24);
+}
+@property --hb-sheen {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
 
 @layer base {
   :root {
@@ -534,16 +607,20 @@
   }
   .md-red :where(a) {
     color: var(--color-cream);
-    text-decoration-color: rgb(255 243 226 / 0.6);
+    text-decoration-color: color-mix(
+      in srgb,
+      var(--color-cream) 60%,
+      transparent
+    );
   }
   .md-red :where(code, blockquote) {
     color: var(--color-cream-2);
   }
   .md-red :where(blockquote) {
-    border-left-color: rgb(255 243 226 / 0.35);
+    border-left-color: color-mix(in srgb, var(--color-cream) 35%, transparent);
   }
   .md-red :where(th, td) {
-    border-color: rgb(255 243 226 / 0.3);
+    border-color: color-mix(in srgb, var(--color-cream) 30%, transparent);
   }
   /* Locked (开放后不能修改) or read-only: flat, no hover, still readable. */
   .field:has(input:read-only),
@@ -647,6 +724,9 @@
   .choice[aria-pressed="true"] .choice-icon {
     color: var(--color-accent-ink);
   }
+  .choice[aria-pressed="true"] .choice-icon.hb-lacquer-chip {
+    color: #f3d38b;
+  }
   .choice:disabled {
     opacity: 0.45;
     cursor: not-allowed;
@@ -697,6 +777,13 @@
     backdrop-filter: blur(18px) saturate(1.05);
     background-color: rgb(255 250 248 / 0.3);
   }
+  /* Over a 代码判定红包's lacquer: barely any white, or the black under the
+     bar turns grey (05 §14). */
+  .window-bar[data-bleed][data-lacquer] {
+    -webkit-backdrop-filter: blur(18px) saturate(1);
+    backdrop-filter: blur(18px) saturate(1);
+    background-color: rgb(255 250 248 / 0.08);
+  }
   .window-bar[data-scrolled] {
     box-shadow: inset 0 -1px 0 var(--color-line-strong);
   }
@@ -717,6 +804,9 @@
     }
     .window-bar:is([data-scrolled], [data-bleed]) {
       background-color: rgb(255 250 248 / 0.94);
+    }
+    .window-bar[data-bleed][data-lacquer] {
+      background-color: rgb(28 24 22 / 0.92);
     }
     .glass-pop {
       background: #ffffff;
@@ -882,6 +972,31 @@
     --btn-top: var(--color-fill-2);
     --btn-bottom: var(--color-fill-2);
   }
+  /* 代码判定红包's (05 §14): black lacquer, gold words. */
+  .btn-lacquer {
+    color: #f3d38b;
+    --btn-top: #2c2724;
+    --btn-bottom: #12100e;
+    --btn-inset:
+      inset 0 1px 0 rgb(255 244 220 / 0.12), inset 0 -1px 0 rgb(0 0 0 / 0.3);
+    --btn-drop: 0 8px 16px -8px rgb(0 0 0 / 0.45);
+    --focus-ring-color: #f3d38b;
+    --focus-band-color: rgb(18 16 14 / 0.85);
+  }
+  .btn-lacquer:hover:not(:active, :disabled, [data-disabled]) > .sq-fill {
+    filter: brightness(1.18);
+  }
+  .btn-lacquer:active:not(:disabled, [data-disabled]) {
+    --btn-inset: inset 0 2px 5px rgb(0 0 0 / 0.45);
+    --btn-drop: 0 4px 10px -6px rgb(0 0 0 / 0.4);
+  }
+  .btn-lacquer:is(:disabled, [data-disabled]) {
+    color: var(--color-ink-3);
+    --btn-top: var(--color-fill-2);
+    --btn-bottom: var(--color-fill-2);
+    --btn-inset: inset 0 1px 0 rgb(255 255 255 / 0.6);
+    --btn-drop: 0 0 #0000;
+  }
   .btn-danger {
     color: var(--color-danger);
   }
@@ -1031,6 +1146,12 @@
       0 8px 18px -10px rgb(90 10 20 / 0.45),
       var(--omnibox-glow);
   }
+  .omnibox-plate[data-chrome="docked-top"][data-bleed][data-lacquer] {
+    box-shadow:
+      0 1px 2px rgb(0 0 0 / 0.25),
+      0 8px 18px -10px rgb(0 0 0 / 0.6),
+      var(--omnibox-glow);
+  }
   @media (prefers-reduced-motion: reduce) {
     .omnibox-chrome,
     .omnibox-plate {
@@ -1164,6 +1285,11 @@
     height: 100vh;
     background: var(--color-cover-top);
   }
+  .hb-cover-frame.hb-code::before {
+    background:
+      var(--hb-fret) 0 100% / 24px 24px,
+      var(--color-cover-top);
+  }
   /* A 红包 card (红包广场): the cover's red, a curved edge with the gold
      rim, a small seal on it. */
   .hb-card-cover {
@@ -1196,8 +1322,8 @@
     );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 0.75),
-      inset 0 -2px 4px rgb(140 80 10 / 0.3),
-      0 4px 10px -4px rgb(70 0 10 / 0.55);
+      inset 0 -2px 4px var(--hb-seal-shade, rgb(140 80 10 / 0.3)),
+      0 4px 10px -4px var(--hb-seal-drop, rgb(70 0 10 / 0.55));
   }
   .hb-cover-frame.hb-ended,
   .hb-cover.hb-ended {
@@ -1208,8 +1334,10 @@
     transition: filter 600ms var(--ease-snappy);
   }
   /* 代码判定红包: 黑漆描金 (05 §14). Warm black with a sheen and a faint gold
-     回纹 all over, a metal-gold rim, gold words. Once ended it turns cool
-     grey: black made darker still reads as running. */
+     回纹 all over, a metal-gold rim, gold words. Once ended it turns a cool
+     graphite with a silver 回纹: black made darker still reads as running.
+     Its colours are registered (top of this file), so it fades from one to
+     the other. */
   .hb-code {
     --color-cover-top: #2c2724;
     --color-cover-mid: #1a1614;
@@ -1217,64 +1345,141 @@
     --color-cream: #fbe9c6;
     --color-cream-2: rgb(240 212 154 / 0.72);
     --color-seal-ink: #24180f;
+    --hb-rim-0: #a8772a;
+    --hb-rim-1: #f6dfa5;
+    --hb-rim-2: #d4a24c;
+    --hb-rim-3: #f8e4ad;
+    --hb-title-top: #fff1cf;
+    --hb-title-bottom: #e7bd70;
+    --hb-fret-ink: rgb(232 192 121 / 0.085);
+    --hb-warm: rgb(255 214 160 / 0.16);
+    --hb-sheen: rgb(255 244 220 / 0.08);
+    /* The 回纹 as a tile (card, overscroll) and as a mask (the cover, whose
+       ink fades to silver as it ends). */
     --hb-fret: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M1 23H23V1H5V19H19V5H9V15H15V9H12' fill='none' stroke='rgba(232,192,121,0.085)' stroke-width='1.2'/%3E%3C/svg%3E");
-    --hb-gold-rim: linear-gradient(
-      90deg,
-      #a8772a,
-      #f6dfa5 22%,
-      #d4a24c 48%,
-      #f8e4ad 72%,
-      #a8772a
-    );
+    --hb-fret-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M1 23H23V1H5V19H19V5H9V15H15V9H12' fill='none' stroke='%23000' stroke-width='1.2'/%3E%3C/svg%3E");
+    /* The seal's shade falls on black or grey here, not on red. */
+    --hb-seal-drop: rgb(0 0 0 / 0.45);
+    /* Keyboard focus in gold, not the site's red. */
+    --hb-seal-focus: #f3d38b;
+    --hb-seal-focus-ring: #24180f;
+    --focus-ring-color: rgb(243 211 139 / 0.9);
+    --focus-band-color: transparent;
   }
-  .hb-code .hb-cover,
-  .hb-card-cover.hb-code {
+  /* The × inside a lacquer chip (omnibox), and anything on the lacquer. */
+  .hb-lacquer-button :focus-visible,
+  .hb-code :focus-visible {
+    outline-color: rgb(243 211 139 / 0.9);
+  }
+  .hb-cover-frame.hb-code {
+    transition:
+      filter 600ms var(--ease-snappy),
+      --color-cover-top 600ms var(--ease-snappy),
+      --color-cover-mid 600ms var(--ease-snappy),
+      --color-cover-bottom 600ms var(--ease-snappy),
+      --color-cream 600ms var(--ease-snappy),
+      --color-cream-2 600ms var(--ease-snappy),
+      --hb-rim-0 600ms var(--ease-snappy),
+      --hb-rim-1 600ms var(--ease-snappy),
+      --hb-rim-2 600ms var(--ease-snappy),
+      --hb-rim-3 600ms var(--ease-snappy),
+      --hb-title-top 600ms var(--ease-snappy),
+      --hb-title-bottom 600ms var(--ease-snappy),
+      --hb-fret-ink 600ms var(--ease-snappy),
+      --hb-warm 600ms var(--ease-snappy),
+      --hb-sheen 600ms var(--ease-snappy);
+  }
+  .hb-code .hb-cover {
     background:
-      var(--hb-fret) 0 0 / 24px 24px,
       linear-gradient(
         118deg,
         transparent 30%,
-        rgb(255 244 220 / 0.08) 45%,
+        var(--hb-sheen) 45%,
         transparent 60%
       ),
-      radial-gradient(
-        110% 70% at 16% 0%,
-        rgb(255 214 160 / 0.16),
-        transparent 62%
-      ),
+      radial-gradient(110% 70% at 16% 0%, var(--hb-warm), transparent 62%),
       linear-gradient(
         180deg,
         var(--color-cover-top) 0%,
         var(--color-cover-mid) 60%,
         var(--color-cover-bottom) 100%
       );
-    box-shadow: 0 14px 26px -14px rgb(0 0 0 / 0.6);
+    box-shadow: none;
   }
-  /* A card's rim is thin enough for one gold. */
+  /* The 回纹 on a layer of its own, under what is on the cover: its ink is
+     a colour, so gold fades to silver as it ends. */
+  .hb-code .hb-cover::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-color: var(--hb-fret-ink);
+    -webkit-mask: var(--hb-fret-mask) 0 0 / 24px 24px;
+    mask: var(--hb-fret-mask) 0 0 / 24px 24px;
+  }
   .hb-card-cover.hb-code {
+    background:
+      var(--hb-fret) 0 0 / 24px 24px,
+      linear-gradient(
+        118deg,
+        transparent 30%,
+        var(--hb-sheen) 45%,
+        transparent 60%
+      ),
+      radial-gradient(110% 80% at 16% 0%, var(--hb-warm), transparent 62%),
+      linear-gradient(
+        180deg,
+        var(--color-cover-top) 0%,
+        var(--color-cover-mid) 60%,
+        var(--color-cover-bottom) 100%
+      );
+    /* A card's rim is thin enough for one gold. */
     box-shadow: 0 2px 0 0 #d9ab55;
   }
-  /* The rim: metal gold along the curve, 3px out from under the face. */
+  /* The rim: metal gold along the curve, 3px out from under the face; the
+     drop falls from it, so it does not dim the rim. */
   .hb-cover-frame.hb-code::after {
-    background: var(--hb-gold-rim);
+    background: linear-gradient(
+      90deg,
+      var(--hb-rim-0),
+      var(--hb-rim-1) 22%,
+      var(--hb-rim-2) 48%,
+      var(--hb-rim-3) 72%,
+      var(--hb-rim-0)
+    );
+    box-shadow: 0 14px 26px -14px rgb(0 0 0 / 0.6);
     content: "";
     position: absolute;
     inset: 0 0 -3px;
     z-index: -1;
     border-radius: 0 0 50% 50% / 0 0 var(--hb-curve) var(--hb-curve);
   }
-  .hb-code:not(.hb-ended) .hb-cover-title {
-    background: linear-gradient(180deg, #fff1cf 10%, #e7bd70 90%);
+  /* Gold words; the fill colour, not color, so the text-cream utility does
+     not paint over the gradient. Cream once ended. */
+  .hb-code .hb-cover-title {
+    background: linear-gradient(
+      180deg,
+      var(--hb-title-top) 10%,
+      var(--hb-title-bottom) 90%
+    );
     -webkit-background-clip: text;
     background-clip: text;
-    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
+  /* An emoji in the title keeps its own colours (hb-emoji, cover-head). */
+  .hb-code .hb-cover-title .hb-emoji {
+    -webkit-text-fill-color: initial;
   }
   .hb-cover-frame.hb-code.hb-ended,
   .hb-card-cover.hb-code.hb-ended {
     filter: none;
-    --color-cover-top: #7d8188;
-    --color-cover-mid: #6d7178;
-    --color-cover-bottom: #60646b;
+    --color-cover-top: #5a5e65;
+    --color-cover-mid: #4c5056;
+    --color-cover-bottom: #41454b;
+    --hb-fret-ink: rgb(214 220 228 / 0.08);
+    --hb-warm: rgb(220 226 234 / 0.06);
+    --hb-sheen: rgb(240 244 248 / 0.05);
+    --hb-fret: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M1 23H23V1H5V19H19V5H9V15H15V9H12' fill='none' stroke='rgba(214,220,228,0.08)' stroke-width='1.2'/%3E%3C/svg%3E");
     --color-cream: #fff3e2;
     --color-cream-2: rgb(255 243 226 / 0.75);
     --color-seal-ink: #5f646b;
@@ -1282,21 +1487,55 @@
     --color-seal-1: #e2e4e7;
     --color-seal-2: #ced1d5;
     --color-seal-3: #b9bdc3;
+    --hb-rim-0: #cfcac2;
+    --hb-rim-1: #cfcac2;
+    --hb-rim-2: #cfcac2;
+    --hb-rim-3: #cfcac2;
+    --hb-title-top: #fff3e2;
+    --hb-title-bottom: #fff3e2;
+    --hb-seal-shade: rgb(60 64 72 / 0.22);
+    --hb-seal-edge: rgb(95 100 107 / 0.18);
+    --hb-seal-drop: rgb(20 22 26 / 0.4);
+    --hb-seal-focus: #fff3e2;
+    --hb-seal-focus-ring: #4b4f56;
+    --focus-ring-color: rgb(255 243 226 / 0.9);
   }
-  .hb-code.hb-ended .hb-cover,
-  .hb-card-cover.hb-code.hb-ended {
-    background: linear-gradient(
-      180deg,
-      var(--color-cover-top) 0%,
-      var(--color-cover-mid) 62%,
-      var(--color-cover-bottom) 100%
-    );
+  .hb-code.hb-ended :focus-visible {
+    outline-color: rgb(255 243 226 / 0.9);
   }
-  .hb-cover-frame.hb-code.hb-ended::after {
-    background: #cfcac2;
+  /* Arrived after a red skeleton (the page could not tell yet): the red
+     fades into the lacquer, or the graphite, instead of switching
+     (hero.tsx); after the ended rule, so it wins while it is on. */
+  .hb-cover-frame.hb-code.hb-from-red {
+    --color-cover-top: #d93c33;
+    --color-cover-mid: #c82a30;
+    --color-cover-bottom: #b9212c;
+    --color-cream: #fff3e2;
+    --hb-rim-0: #e8c079;
+    --hb-rim-1: #e8c079;
+    --hb-rim-2: #e8c079;
+    --hb-rim-3: #e8c079;
+    --hb-title-top: #fff3e2;
+    --hb-title-bottom: #fff3e2;
+    --hb-fret-ink: transparent;
+    --hb-warm: rgb(255 168 120 / 0.24);
+    --hb-sheen: transparent;
+    transition: none;
   }
   .hb-card-cover.hb-code.hb-ended {
     box-shadow: 0 2px 0 0 #cfcac2;
+  }
+  /* A 代码判定红包 in a list (MiniEnvelope): lacquer and its gold dot,
+     cool grey once over. */
+  .mini-lacquer {
+    --color-envelope: #1a1614;
+    --color-envelope-flap: #2c2724;
+    --color-envelope-gold: #e8c079;
+    --color-envelope-ended: #4c5056;
+    --color-envelope-ended-flap: #5a5e65;
+  }
+  .mini-lacquer[data-ended] {
+    --color-envelope-gold: #cfcac2;
   }
   .hb-chip-red {
     background: rgb(255 255 255 / 0.13);
@@ -1307,9 +1546,12 @@
     background: rgb(255 228 180 / 0.1);
     color: #f5e3bd;
   }
+  /* Outlined through the squircle's ring: an inset shadow would be cut near
+     the corners where the squircle is a clip-path. */
   .hb-code .hb-chip-code {
     background: transparent;
-    box-shadow: inset 0 0 0 1px rgb(232 192 121 / 0.7);
+    --sq-ring: rgb(232 192 121 / 0.7);
+    box-shadow: var(--sq-ring-shadow);
     color: #f3d38b;
   }
   .hb-code.hb-ended .hb-chip-red {
@@ -1317,7 +1559,8 @@
     color: #fff3e2;
   }
   .hb-code.hb-ended .hb-chip-code {
-    box-shadow: inset 0 0 0 1px rgb(255 243 226 / 0.5);
+    background: transparent;
+    --sq-ring: rgb(255 243 226 / 0.5);
     color: #fff3e2;
   }
   /* 代码判定红包 (05 §14): black lacquer and gold, outside its cover too —
@@ -1326,6 +1569,9 @@
     background: linear-gradient(180deg, #2c2724, #12100e);
     color: #f3d38b;
   }
+  /* The code box (ui/code-editor.tsx): its edge and focus as the squircle's
+     ring, which outside Chromium an SVG draws along the clip (an inset
+     shadow there is cut near the corners); dark scrollbars on the lacquer. */
   .hb-lacquer-code {
     background:
       linear-gradient(
@@ -1336,30 +1582,35 @@
       ),
       linear-gradient(180deg, #2c2724 0%, #1a1614 60%, #12100e 100%);
     color: #f5e3bd;
-    caret-color: #f3d38b;
-    box-shadow: inset 0 0 0 1px rgb(232 192 121 / 0.22);
+    color-scheme: dark;
+    scrollbar-color: rgb(232 192 121 / 0.45) transparent;
+    --sq-ring: rgb(232 192 121 / 0.22);
+    box-shadow: var(--sq-ring-shadow);
     transition: box-shadow 150ms var(--ease-snappy);
   }
-  .hb-lacquer-code::placeholder {
-    color: rgb(240 212 154 / 0.42);
-  }
-  .hb-lacquer-code:focus-visible {
-    box-shadow: inset 0 0 0 1.5px rgb(232 192 121 / 0.8);
-  }
-  .hb-lacquer-code:disabled {
-    color: rgb(245 227 189 / 0.8);
+  .hb-lacquer-code:has(.cm-focused) {
+    --sq-ring: rgb(232 192 121 / 0.8);
+    --sq-ring-w: 1.5px;
   }
   .hb-lacquer-code.hb-lacquer-invalid {
-    box-shadow: inset 0 0 0 1.5px var(--color-danger);
+    --sq-ring: var(--color-danger);
+    --sq-ring-w: 1.5px;
   }
   .hb-lacquer-button {
     background: linear-gradient(180deg, #2c2724, #12100e);
     color: #f3d38b;
-    box-shadow: inset 0 0 0 1px rgb(232 192 121 / 0.55);
+    --sq-ring: rgb(232 192 121 / 0.55);
+    box-shadow: var(--sq-ring-shadow);
     transition: box-shadow 150ms var(--ease-snappy);
   }
   .hb-lacquer-button:hover:not(:disabled) {
-    box-shadow: inset 0 0 0 1px rgb(232 192 121 / 0.95);
+    --sq-ring: rgb(232 192 121 / 0.95);
+  }
+  /* Their focus in gold with a dark band, and the × inside the chip too. */
+  .hb-lacquer-button,
+  .hb-lacquer-chip {
+    --focus-ring-color: #f3d38b;
+    --focus-band-color: rgb(18 16 14 / 0.85);
   }
   /* 「N 人在看」's dot (hongbao/live-viewers.tsx): green as in 在线, not the
      red of a reminder; it breathes, slowly. */
@@ -1394,6 +1645,19 @@
   .hb-chip-link:hover {
     background: rgb(255 255 255 / 0.22);
   }
+  .hb-code .hb-chip-link:hover {
+    background: rgb(255 228 180 / 0.18);
+  }
+  .hb-code .hb-chip-code.hb-chip-link:hover {
+    background: rgb(232 192 121 / 0.12);
+    --sq-ring: rgb(232 192 121 / 0.95);
+  }
+  .hb-code.hb-ended .hb-chip-link:hover {
+    background: rgb(255 255 255 / 0.2);
+  }
+  .hb-code.hb-ended .hb-chip-code.hb-chip-link:hover {
+    background: rgb(255 255 255 / 0.1);
+  }
   .hb-meta-link {
     color: var(--color-cream-2);
     transition: color 160ms var(--ease-snappy);
@@ -1411,7 +1675,11 @@
     text-decoration-line: underline;
     text-decoration-thickness: 1px;
     text-underline-offset: 3px;
-    text-decoration-color: rgb(255 243 226 / 0.55);
+    text-decoration-color: color-mix(
+      in srgb,
+      var(--color-cream) 55%,
+      transparent
+    );
   }
   .hb-cover-note-text[data-cut] {
     mask-image: linear-gradient(180deg, #000 calc(100% - 1.6em), transparent);
@@ -1421,7 +1689,11 @@
     text-decoration-line: underline;
     text-decoration-thickness: 1.5px;
     text-underline-offset: 4px;
-    text-decoration-color: rgb(255 243 226 / 0.55);
+    text-decoration-color: color-mix(
+      in srgb,
+      var(--color-cream) 55%,
+      transparent
+    );
     outline: none;
     transition: text-decoration-color 160ms var(--ease-snappy);
     /* Its squircle's focus ring: cream on the red, no white band. */
@@ -1482,9 +1754,9 @@
     );
     box-shadow:
       inset 0 2px 0 rgb(255 255 255 / 0.75),
-      inset 0 -4px 8px rgb(140 80 10 / 0.35),
-      inset 0 0 0 3px rgb(176 116 36 / 0.28),
-      0 12px 24px -10px rgb(70 0 10 / 0.6);
+      inset 0 -4px 8px var(--hb-seal-shade, rgb(140 80 10 / 0.35)),
+      inset 0 0 0 3px var(--hb-seal-edge, rgb(176 116 36 / 0.28)),
+      0 12px 24px -10px var(--hb-seal-drop, rgb(70 0 10 / 0.6));
     transition:
       opacity 200ms var(--ease-snappy),
       filter 200ms var(--ease-snappy),
@@ -1518,14 +1790,25 @@
     filter: saturate(0.6);
     cursor: not-allowed;
   }
-  /* Readable on the red above the 封口 and on the glass below it. */
+  /* On the lacquer a see-through seal turns muddy above the 封口: a faded,
+     solid gold instead. */
+  .hb-code .hb-seal[data-state="disabled"] {
+    opacity: 1;
+    filter: none;
+    color: rgb(36 24 15 / 0.55);
+    --seal-0: #f3eee4;
+    --seal-1: #e4d8bf;
+    --seal-2: #d2bf98;
+    --seal-3: #bba377;
+  }
+  /* Readable on the cover above the 封口 and on the glass below it. */
   .hb-seal:focus-visible {
     outline: none;
     box-shadow:
       inset 0 2px 0 rgb(255 255 255 / 0.75),
-      inset 0 -4px 8px rgb(140 80 10 / 0.35),
-      0 0 0 3px var(--color-cream),
-      0 0 0 5px var(--color-accent-ink);
+      inset 0 -4px 8px var(--hb-seal-shade, rgb(140 80 10 / 0.35)),
+      0 0 0 3px var(--hb-seal-focus, var(--color-cream)),
+      0 0 0 5px var(--hb-seal-focus-ring, var(--color-accent-ink));
   }
   .hb-seal-glyph {
     font-size: calc(var(--seal, 96px) * 0.42);
@@ -1546,6 +1829,14 @@
     --seal-1: #e5dddc;
     --seal-2: #d2c8c6;
     --seal-3: #bdb1af;
+  }
+  /* 代码判定红包 ended: its own cool 印章灰 (05 §14). */
+  .hb-code.hb-ended .hb-seal-muted {
+    color: var(--color-seal-ink);
+    --seal-0: var(--color-seal-0);
+    --seal-1: var(--color-seal-1);
+    --seal-2: var(--color-seal-2);
+    --seal-3: var(--color-seal-3);
   }
   .hb-seal-ring circle {
     fill: none;
@@ -1655,7 +1946,11 @@
     text-decoration-line: underline;
     text-decoration-thickness: 1.5px;
     text-underline-offset: 5px;
-    text-decoration-color: rgb(255 243 226 / 0.55);
+    text-decoration-color: color-mix(
+      in srgb,
+      var(--color-cream) 55%,
+      transparent
+    );
     transition: text-decoration-color 160ms var(--ease-snappy);
   }
   .hb-roster-entry:hover .hb-roster-label {

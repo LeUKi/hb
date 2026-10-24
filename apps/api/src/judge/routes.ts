@@ -1,5 +1,6 @@
 // 代码判定红包's own routes (docs/programmable-hongbao-design.md): 在线检查
-// (§5), its sender's records (§6) and the 站长's 停用 (§1).
+// (§5), a claimant's 我的提交 (§3), its sender's records (§6) and the
+// 站长's 停用 (§1).
 import { ACTIVITY_LIMITS, judgeCheckInputSchema } from "@hb/contracts";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -11,6 +12,7 @@ import { requireAuth, requireProtectedMutation } from "../auth/session";
 import type { ApiContext } from "../env";
 import { activityObject } from "../runtime/objects";
 import { checkJudge } from "./check";
+import { myJudgments } from "./mine";
 import { judgeRecords, listFailures } from "./records";
 
 export const judgeRoutes = new Hono<ApiContext>()
@@ -46,6 +48,32 @@ export const judgeRoutes = new Hono<ApiContext>()
       return c.json({
         check: await checkJudge(c.env, session.user.id, c.req.valid("json")),
       });
+    },
+  )
+  // 我的提交: the viewer's own, twenty at a time.
+  .get(
+    "/activities/:id/judgments",
+    validator("query", (value) => {
+      const cursor = value.cursor;
+      if (
+        cursor !== undefined &&
+        (typeof cursor !== "string" || !/^[1-9]\d{0,8}$/.test(cursor))
+      )
+        throw new ActivityValidationError([
+          { path: "cursor", message: "分页位置无效" },
+        ]);
+      return { cursor: cursor === undefined ? null : Number(cursor) };
+    }),
+    async (c) => {
+      const session = await requireAuth(c);
+      return c.json(
+        await myJudgments(
+          c.env,
+          c.req.param("id"),
+          session.user.id,
+          c.req.valid("query").cursor,
+        ),
+      );
     },
   )
   .get("/me/activities/:id/code-failures", async (c) => {

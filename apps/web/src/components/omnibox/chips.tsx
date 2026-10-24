@@ -174,7 +174,10 @@ export function ScopeChip({
           onClick={onRemove}
           aria-label="改为查找全部红包"
           title="改为查找全部红包（退格）"
-          className="grid size-6 shrink-0 place-items-center rounded-full hover:bg-accent/10"
+          className={cn(
+            "grid size-6 shrink-0 place-items-center rounded-full",
+            code ? "hover:bg-[rgb(243_211_139/0.16)]" : "hover:bg-accent/10",
+          )}
         >
           <X className="size-3.5" aria-hidden="true" />
         </button>

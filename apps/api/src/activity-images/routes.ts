@@ -63,12 +63,15 @@ type ActivityImageActivityRow = Pick<
   | "openedAt"
   | "deadline"
   | "endedAt"
+  | "endReason"
   | "archivedAt"
   | "deletedAt"
 > & {
   quantityVisibility: "exact" | "fuzzy" | "availability" | "hidden";
   moneyMode: string | null;
   participantLimit: number | null;
+  /** 代码判定: when its code's failures paused claims. */
+  codePausedAt: number | null;
 };
 
 type ActivityImageRow = {
@@ -175,6 +178,11 @@ async function renderImage(
       activityImageInput({
         activity: activity.activity,
         viewer,
+        // 代码判定: paused only while it runs, as on its page (judge/public.ts,
+        // which is not called here: it writes the code out once over).
+        paused:
+          activity.row.codePausedAt !== null &&
+          activity.activity.status === "active",
         renderedAt: new Date(),
         timeZone,
       }),
@@ -228,6 +236,7 @@ async function readPublicActivity(env: ApiContext["Bindings"], id: string) {
       openedAt: activities.openedAt,
       deadline: activities.deadline,
       endedAt: activities.endedAt,
+      endReason: activities.endReason,
       archivedAt: activities.archivedAt,
       deletedAt: activities.deletedAt,
       quantityVisibility: sql<
@@ -239,6 +248,9 @@ async function readPublicActivity(env: ApiContext["Bindings"], id: string) {
       participantLimit: sql<
         number | null
       >`json_extract(${activities.config}, '$.money.participantLimit')`,
+      codePausedAt: sql<
+        number | null
+      >`(SELECT paused_at FROM activity_code WHERE activity_code.activity_id = ${activities.id})`,
     })
     .from(activities)
     .where(
@@ -290,6 +302,7 @@ function imagePublicActivity(
     ...(row.funding === "balance" ? { funding: "balance" as const } : {}),
     ...(row.paymentMode ? { paymentMode: row.paymentMode } : {}),
     ...(imageDrawSummary(row) ? { draw: imageDrawSummary(row) } : {}),
+    ...(row.endReason === "stopped" ? { stopped: true as const } : {}),
   };
 }
 

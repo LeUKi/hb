@@ -33,6 +33,8 @@ import { useWindowInfo } from "./window-info";
 
 function IdentityButton({ compact }: { compact: boolean }) {
   const size = compact ? "icon-bar" : "bar";
+  // Over a 代码判定红包's black lacquer a bare 登录 would not show.
+  const lacquer = useAtomValue(viewEdgeAtom).lacquer;
   const shape = useButtonShape(buttonRadius[size], buttonHeight[size]);
   const { ready, user } = useIdentity();
   const { openAccount } = useOmniboxController();
@@ -88,7 +90,10 @@ function IdentityButton({ compact }: { compact: boolean }) {
           openAccount();
         }}
         aria-label="登录"
-        className={buttonVariants({ variant: "ghost", size })}
+        className={buttonVariants({
+          variant: lacquer ? "secondary" : "ghost",
+          size,
+        })}
         style={shape}
       >
         <SquircleFill radius={buttonRadius[size]} />
@@ -140,6 +145,7 @@ export function WindowBar() {
     <WindowClip top>
       <header
         data-bleed={edge.bleed || undefined}
+        data-lacquer={(edge.bleed && edge.lacquer) || undefined}
         data-scrolled={edge.scrolled || undefined}
         className={`window-bar absolute inset-x-0 top-0 z-10 grid h-(--bar-h) items-center gap-2 pt-(--safe-top) pr-[calc(0.75rem+var(--safe-right))] pl-[calc(0.75rem+var(--safe-left))] @wide/window:gap-4 @wide/window:pr-[calc(1.25rem+var(--safe-right))] @wide/window:pl-[calc(1.25rem+var(--safe-left))] ${
           compact

@@ -1,11 +1,14 @@
 import { env } from "cloudflare:test";
 import type {
   ActivityInput,
+  ActivityLiveMessage,
   ClaimDetail,
   ClaimResult,
   JudgeInput,
+  MyJudgmentList,
+  PublicRecipientList,
 } from "@hb/contracts";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createRandom,
   seedCommitment,
@@ -19,6 +22,7 @@ import {
   getPublicActivity,
   openActivity,
 } from "../src/activities/service";
+import { app } from "../src/app";
 import { readAccount } from "../src/balance/ledger";
 import type { ApiBindings } from "../src/env";
 import { findJudgeRow } from "../src/judge/storage";
@@ -30,6 +34,7 @@ import {
   check,
   coded,
   give,
+  origin,
   plus,
   rejects,
   settings,
@@ -81,6 +86,9 @@ const detail = (result: ClaimResult) =>
 describe("代码判定红包: claims", () => {
   it("pays what the code says to a right answer, and turns a wrong one down with its reply", async () => {
     const opened = await open();
+    expect((await getPublicActivity(bindings, opened.id)).judge?.judged).toBe(
+      0,
+    );
     const claimant = await actor();
     expect(await submit(opened.id, claimant, "nope")).toEqual({
       result: "rejected",
@@ -94,6 +102,22 @@ describe("代码判定红包: claims", () => {
     });
     expect((await readAccount(bindings, claimant.id)).availableMinor).toBe(30);
     expect((await readAccount(bindings, author.id)).unclaimedMinor).toBe(70);
+    // 已判定 2 次: the turn-down and the payment.
+    expect((await getPublicActivity(bindings, opened.id)).judge?.judged).toBe(
+      2,
+    );
+    // The roster says, for everyone, on which judgment it came.
+    expect(detail(claimed).judge?.attempt).toBe(2);
+    const recipients = await app.request(
+      `${origin}/api/activities/${opened.id}/recipients`,
+      {},
+      bindings,
+    );
+    expect(
+      ((await recipients.json()) as PublicRecipientList).items.map(
+        (item) => item.attempt,
+      ),
+    ).toEqual([2]);
     // Once claimed, again is the same claim; the sender cannot claim.
     expect((await submit(opened.id, claimant, "flag{ok}")).result).toBe(
       "already_claimed",
@@ -203,13 +227,9 @@ describe("代码判定红包: claims", () => {
     );
     await rejects(submit(opened.id, claimant, "x"), "CODE_PAUSED");
     // Failures were not judgments: only the one turn-down counts.
-    expect(
-      await env.DB.prepare(
-        "SELECT COUNT(*) AS n FROM code_judgments WHERE activity_id = ?",
-      )
-        .bind(opened.id)
-        .first("n"),
-    ).toBe(1);
+    expect((await getPublicActivity(bindings, opened.id)).judge?.judged).toBe(
+      1,
+    );
     const failures = await env.DB.prepare(
       "SELECT kind, detail FROM code_failures WHERE activity_id = ? ORDER BY created_at",
     )
@@ -225,6 +245,153 @@ describe("代码判定红包: claims", () => {
       "invalid",
     ]);
     expect(failures.results[0]?.detail).toContain("炸了");
+  });
+
+  it("keeps each claimant's own judged submissions for them to look back on, and no one else's", async () => {
+    const opened = await open({
+      code: `export function judge(s) {
+  if (s.input === "boom") throw new Error("炸了");
+  if (s.input === "flag{ok}") return { ok: true, amount: 30, message: "对了" };
+  if (s.input === "quiet") return { ok: false };
+  return { ok: false, message: "不对" };
+}`,
+      tests: JSON.stringify([
+        { name: "错", input: "x", expect: { ok: false } },
+      ]),
+    });
+    const claimant = await actor();
+    const other = await actor();
+    const read = async (user: Actor, cursor?: string) => {
+      const response = await app.request(
+        `${origin}/api/activities/${opened.id}/judgments${cursor ? `?cursor=${cursor}` : ""}`,
+        { headers: { Cookie: user.cookie } },
+        bindings,
+      );
+      expect(response.status).toBe(200);
+      return (await response.json()) as MyJudgmentList;
+    };
+    for (let index = 0; index < 20; index += 1)
+      await submit(opened.id, claimant, `guess ${index}`);
+    // Twenty a second is all one 红包 takes.
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    await rejects(submit(opened.id, claimant, "boom"), "JUDGE_FAILED");
+    await submit(opened.id, claimant, "quiet");
+    await submit(opened.id, claimant, "flag{ok}");
+    await submit(opened.id, other, "nope");
+    const first = await read(claimant);
+    expect(first.total).toBe(22);
+    expect(first.items).toHaveLength(20);
+    // Newest first; a failure was no judgment, so it is not here.
+    expect(first.items.slice(0, 3)).toEqual([
+      {
+        attempt: 22,
+        at: expect.any(String),
+        input: "flag{ok}",
+        message: "对了",
+        amount: "0.30",
+      },
+      { attempt: 21, at: expect.any(String), input: "quiet" },
+      {
+        attempt: 20,
+        at: expect.any(String),
+        input: "guess 19",
+        message: "不对",
+      },
+    ]);
+    expect(first.nextCursor).toBe("3");
+    const rest = await read(claimant, first.nextCursor ?? "");
+    expect(rest.items.map((item) => item.input)).toEqual([
+      "guess 1",
+      "guess 0",
+    ]);
+    expect(rest.nextCursor).toBeNull();
+    const theirs = await read(other);
+    expect(theirs.total).toBe(1);
+    expect(theirs.items.map((item) => item.input)).toEqual(["nope"]);
+    expect(
+      (
+        await app.request(
+          `${origin}/api/activities/${opened.id}/judgments`,
+          {},
+          bindings,
+        )
+      ).status,
+    ).toBe(401);
+  });
+
+  it("tells its live viewers how many times the code has judged, at most once a second", async () => {
+    const opened = await open();
+    const viewer = await actor();
+    const response = await app.request(
+      `${origin}/api/activities/${opened.id}/live`,
+      {
+        headers: {
+          Upgrade: "websocket",
+          Origin: origin,
+          Cookie: viewer.cookie,
+        },
+      },
+      bindings,
+    );
+    expect(response.status).toBe(101);
+    const socket = response.webSocket;
+    if (!socket) throw new Error("no WebSocket");
+    const heard: { message: ActivityLiveMessage; at: number }[] = [];
+    socket.addEventListener("message", (event) => {
+      const data = String(event.data);
+      if (data !== "pong")
+        heard.push({ message: JSON.parse(data), at: Date.now() });
+    });
+    socket.accept();
+    await vi.waitFor(() =>
+      expect(heard[0]?.message).toMatchObject({
+        type: "activity",
+        activity: { judge: { judged: 0 } },
+      }),
+    );
+    const counts = () =>
+      heard.flatMap(({ message, at }) =>
+        message.type === "judged" ? [{ count: message.count, at }] : [],
+      );
+    const claimant = await actor();
+    for (const input of ["a", "b", "flag{ok}"]) {
+      const claimed = await app.request(
+        `${origin}/api/activities/${opened.id}/claim`,
+        {
+          method: "POST",
+          headers: {
+            Origin: origin,
+            Cookie: claimant.cookie,
+            "X-CSRF-Token": claimant.csrf,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            submissionId: crypto.randomUUID(),
+            participationMode: "code",
+            input,
+          }),
+        },
+        bindings,
+      );
+      expect(claimed.status).toBe(200);
+      await advanceAttemptCooldown(env.DB, claimant.id);
+      // Turn-downs alone are pushed: nothing else public moved for them.
+      if (input === "b")
+        await vi.waitFor(() => expect(counts().at(-1)?.count).toBe(2), {
+          timeout: 3000,
+        });
+    }
+    await vi.waitFor(() => expect(counts().at(-1)?.count).toBe(3), {
+      timeout: 3000,
+    });
+    // Each count larger than the last, a second or so apart however busy.
+    for (const [index, { count, at }] of counts().entries()) {
+      const before = counts()[index - 1];
+      if (!before) continue;
+      expect(count).toBeGreaterThan(before.count);
+      expect(at - before.at).toBeGreaterThanOrEqual(900);
+    }
+    socket.close();
   });
 
   it("moves to another sandbox after a judgment runs too long", async () => {

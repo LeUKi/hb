@@ -426,6 +426,7 @@ export function HongbaoForm({
               update={update}
               errorOf={errorOf}
               locked={locked}
+              frozen={locks}
               checkState={checkState}
               checking={judgeCheck.isPending}
               checksLeft={funding?.code?.checksLeft}

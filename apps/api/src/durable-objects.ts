@@ -23,12 +23,14 @@ import { endActivity, refreshActivityLifecycle } from "./activities/lifecycle";
 import {
   LIVE_COALESCE_MS,
   LIVE_DEADLINE_MARGIN_MS,
+  LIVE_JUDGED_MS,
   LIVE_PING,
   LIVE_PONG,
   LIVE_TAG,
   LIVE_USER_HEADER,
   liveEnded,
   liveFingerprint,
+  liveJudged,
   liveMessage,
   liveMine,
   liveUserTag,
@@ -58,6 +60,7 @@ import {
   refreshGlobalResult,
 } from "./discovery/service";
 import type { ApiBindings } from "./env";
+import { judgedCount } from "./judge/public";
 import { stopCodeActivity } from "./judge/stop";
 import { flushPaymentOutbox, runMerchantCycle } from "./payments/scheduler";
 import {
@@ -144,6 +147,10 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   private viewersPushedAt = 0;
   /** The number last sent; unknown again after hibernating. */
   private viewersSent = -1;
+  /** 代码判定's 已判定 N 次, the same way, once a second. */
+  private judgedTimer: ReturnType<typeof setTimeout> | null = null;
+  private judgedPushedAt = 0;
+  private judgedSent = -1;
   /** The deadline alarm this instance already set (one write per deadline). */
   private liveDeadline = 0;
 
@@ -366,6 +373,38 @@ export class ActivityDO extends DurableObject<ApiBindings> {
           // Already closing: nothing to tell it.
         }
       }
+    }, wait);
+  }
+
+  /**
+   * 代码判定: its code judged again (paid or not). Everyone hears how many
+   * times so far, at most once per LIVE_JUDGED_MS, and only when it moved;
+   * a turn-down changes nothing else public, so nothing else goes out.
+   */
+  private announceJudged(id: string) {
+    if (this.judgedTimer || this.ctx.getWebSockets(LIVE_TAG).length === 0)
+      return;
+    const wait = Math.max(0, this.judgedPushedAt + LIVE_JUDGED_MS - Date.now());
+    this.judgedTimer = setTimeout(() => {
+      this.judgedTimer = null;
+      this.judgedPushedAt = Date.now();
+      void judgedCount(this.env, id)
+        .then((count) => {
+          if (count === this.judgedSent) return;
+          this.judgedSent = count;
+          const message = liveJudged(count);
+          for (const socket of this.ctx.getWebSockets(LIVE_TAG)) {
+            if (socket.readyState !== WebSocket.OPEN) continue;
+            try {
+              socket.send(message);
+            } catch {
+              // Already closing: nothing to tell it.
+            }
+          }
+        })
+        .catch(() => {
+          // The next judgment, or the next public read, catches up.
+        });
     }, wait);
   }
 
@@ -727,6 +766,11 @@ export class ActivityDO extends DurableObject<ApiBindings> {
             if ("registration" in result) await this.scheduleDraw(id);
             if (result.result === "claimed" || result.result === "registered")
               this.announce(id);
+            if (
+              parsed.data.participationMode === "code" &&
+              (result.result === "claimed" || result.result === "rejected")
+            )
+              this.announceJudged(id);
             // A 🐟额红包's claim has no payment: its 🐟 is in already.
             const payment =
               "claim" in result ? result.claim.payment : undefined;

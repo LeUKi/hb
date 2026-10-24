@@ -80,7 +80,11 @@ function SentRow({ record }: { record: SentRecord }) {
           onClick={open}
           className="flex min-w-0 flex-1 items-center gap-3.5 p-3 text-left transition-colors hover:bg-fill-2"
         >
-          <MiniEnvelope ended={status.ended} draft={activity.draft} />
+          <MiniEnvelope
+            ended={status.ended}
+            draft={activity.draft}
+            code={activity.participation === "code"}
+          />
           <span className="grid min-w-0 flex-1 gap-0.5">
             <span className="flex min-w-0 items-center gap-2">
               <span className="truncate text-base font-medium text-ink">
@@ -122,11 +126,13 @@ function JoinedRow({ item }: { item: JoinedRecord }) {
   const { outcome, payment, verb } = item;
   // A running 红包's 口令 stays off the list: a screenshot of it would give
   // the 口令 away (05 §9). It is public once the 红包 ended.
-  const how = !item.password
-    ? `直接${verb}`
-    : item.ended
-      ? `用口令 ${item.password} ${verb}`
-      : `用口令${verb}`;
+  const how = item.code
+    ? `代码判定${verb}`
+    : !item.password
+      ? `直接${verb}`
+      : item.ended
+        ? `用口令 ${item.password} ${verb}`
+        : `用口令${verb}`;
   return (
     <ListItem>
       <Squircle radius={radius.row}>
@@ -135,7 +141,7 @@ function JoinedRow({ item }: { item: JoinedRecord }) {
           onClick={() => void leaveTo({ to: "activity", id: item.activityId })}
           className="flex w-full items-center gap-3.5 p-3 text-left transition-colors hover:bg-fill-2"
         >
-          <MiniEnvelope ended={item.ended} />
+          <MiniEnvelope ended={item.ended} code={item.code} />
           <span className="grid min-w-0 flex-1 gap-0.5">
             <span className="truncate text-base font-medium text-ink">
               {item.title}

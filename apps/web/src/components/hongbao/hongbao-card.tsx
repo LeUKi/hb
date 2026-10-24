@@ -5,6 +5,7 @@ import { endLabels, type PublicView } from "../../lib/hongbao";
 import { clockLabel } from "../../lib/roster-time";
 import { sealGlyphs } from "../../lib/seal";
 import { Avatar } from "../ui/avatar";
+import { EmojiText } from "../ui/emoji-text";
 import { radius, Squircle } from "../ui/squircle";
 import { type ChipTone, StatusChip } from "../ui/status-chip";
 import { coverCells } from "./cover-cells";
@@ -88,8 +89,8 @@ export function HongbaoCard({
               {activity.author.displayName}的红包
             </span>
           </span>
-          <span className="line-clamp-2 text-lg leading-snug font-semibold text-cream">
-            {activity.title}
+          <span className="hb-cover-title line-clamp-2 text-lg leading-snug font-semibold text-cream">
+            <EmojiText text={activity.title} />
           </span>
           <span
             aria-hidden="true"

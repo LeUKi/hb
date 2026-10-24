@@ -285,7 +285,10 @@ function ResultRow({
           onClick={onOpen}
           className="flex w-full items-center gap-3.5 p-3 text-left transition-colors hover:bg-fill-2"
         >
-          <MiniEnvelope ended={status.ended} />
+          <MiniEnvelope
+            ended={status.ended}
+            code={card.participationMode === "code"}
+          />
           <span className="grid min-w-0 flex-1 gap-0.5">
             <span className="truncate text-base font-medium text-ink">
               {card.title}

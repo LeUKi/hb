@@ -29,7 +29,6 @@ import { Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
 import { Countdown } from "./cover-data";
 import { CountUp } from "./parts";
-import { PasswordText, RevealToggle } from "./password-text";
 import { TitleBadges } from "./title-badge";
 import { useNow } from "./use-hongbao";
 
@@ -231,47 +230,6 @@ function TicketNote({
   return null;
 }
 
-/**
- * The 口令 used (or, for 代码判定, what was typed): hidden behind an eye
- * while the 红包 runs (05 §9).
- */
-function PasswordChip({
-  text,
-  seed,
-  ended,
-  label = "口令",
-}: {
-  text: string;
-  seed: string;
-  ended: boolean;
-  label?: string;
-}) {
-  const [revealed, setRevealed] = useState(false);
-  return (
-    <span className="inline-flex max-w-full items-center gap-0.5">
-      <Squircle radius={8}>
-        {/* A long 口令 goes on to a second line, under itself. */}
-        <span className="inline-flex min-h-7 min-w-0 items-baseline gap-1.5 bg-fill px-2.5 py-1 text-sm text-ink-2">
-          <span className="shrink-0">{label}</span>
-          <PasswordText
-            text={text}
-            shown={ended || revealed}
-            seed={seed}
-            wrap
-            className="min-w-0 text-ink"
-          />
-        </span>
-      </Squircle>
-      {!ended && (
-        <RevealToggle
-          shown={revealed}
-          onToggle={() => setRevealed((value) => !value)}
-        />
-      )}
-    </span>
-  );
-}
-
 /** 代码判定: why a share is not what the code asked (05 §13). */
 const judgeNotes = {
   cap: "按上限发",
@@ -281,13 +239,12 @@ const judgeNotes = {
 
 /**
  * 我的结果: what only the viewer sees after taking part — the amount in
- * green with a plus, the payment, the 口令 used, own titles, 奖励附言.
+ * green with a plus, the payment, own titles, 奖励附言.
  */
 /** What on this card only the viewer sees, as it is shown. */
 function privateNote(mine: Mine, won: boolean) {
   const parts = won ? ["金额", "发放状态"] : ["报名记录"];
-  if (mine.password) parts.push("口令");
-  if (mine.kind === "claimed" && mine.judge) parts.push("输入", "代码的回复");
+  if (mine.kind === "claimed" && mine.judge?.message) parts.push("代码的回复");
   if (mine.afterClaimInfo) parts.push("附言");
   const last = parts.pop();
   return `${parts.length > 0 ? `${parts.join("、")}和` : ""}${last}仅你可见`;
@@ -299,7 +256,6 @@ export function MyResult({
   play,
   delay,
   deadlineAt,
-  ended,
   drawNote,
   ref,
 }: {
@@ -311,8 +267,6 @@ export function MyResult({
   play: boolean;
   delay: number;
   deadlineAt: number;
-  /** Over: the 口令 is public, shown plain. */
-  ended: boolean;
   ref?: Ref<HTMLDivElement>;
 }) {
   const won = mine.kind === "claimed" || mine.outcome === "won";
@@ -375,22 +329,8 @@ export function MyResult({
         ) : mine.kind === "registered" && mine.outcome === "lost" ? (
           <span className="text-sm text-ink-2">谢谢参与</span>
         ) : null}
-        {mine.password && (
-          <PasswordChip
-            text={mine.password}
-            seed={`${activity.id}:mine`}
-            ended={ended}
-          />
-        )}
-        {mine.kind === "claimed" && mine.judge && (
-          <PasswordChip
-            label="输入"
-            text={mine.judge.input}
-            seed={`${activity.id}:mine`}
-            ended={ended}
-          />
-        )}
-        {/* Titles share the row with the status and the 口令, arriving last. */}
+        {/* Titles share the row with the status, arriving last. The 口令
+            used is in the 口令区, what was typed in 我的提交: not again here. */}
         {mine.titles.length > 0 && (
           <motion.span
             className="inline-flex"

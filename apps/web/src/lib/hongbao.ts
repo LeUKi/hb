@@ -328,6 +328,8 @@ export type RosterRow = {
   payment?: PaymentView | null;
   /** 代码判定, the sender's view: what was typed, and the code's own number. */
   judge?: AuthorClaim["judge"];
+  /** 代码判定: 第 N 次领到, for everyone (05 §7). */
+  attempt?: number;
 };
 
 /**

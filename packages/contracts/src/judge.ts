@@ -105,6 +105,8 @@ export type PublicJudge = {
   fingerprint: string;
   /** Published at opening (null on a draft). */
   seedCommitment: string | null;
+  /** How many times the code gave a verdict, paid or not (05 §3). */
+  judged: number;
   /** The code failed five judgments running: claims wait. */
   paused?: true;
   /** 站长 stopped it. */
@@ -112,6 +114,27 @@ export type PublicJudge = {
   /** Once it is over: the code and the seed, to check the fingerprints. */
   code?: string;
   seed?: string;
+};
+
+/** 我的提交 (05 §3): one of the viewer's own judged submissions. */
+export type MyJudgment = {
+  /** 第 N 次, from 1. */
+  attempt: number;
+  at: string;
+  /** What they typed, as the code got it. */
+  input: string;
+  /** 代码的回复, if it gave one. */
+  message?: string;
+  /** Paid: how much, as "0.30". */
+  amount?: string;
+  /** Paid, not what the code asked: 按上限发, 按每份至少发, 最后一份. */
+  note?: JudgeNote;
+};
+export type MyJudgmentList = {
+  /** Newest first, twenty at a time. */
+  items: MyJudgment[];
+  total: number;
+  nextCursor: string | null;
 };
 
 /** A judgment the code failed (出错记录); nothing of it counted. */

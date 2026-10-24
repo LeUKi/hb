@@ -6,7 +6,8 @@ import type { ActivityRow } from "./storage";
 // A 红包's live channel: its ActivityDO (one per 红包) holds the viewers'
 // WebSockets, hibernating between changes. It pushes the public read after
 // each change, tells a person when only their own part moved (a payment),
-// and tells everyone how many people are watching. Signed-in viewers only;
+// and tells everyone how many people are watching (and, for 代码判定, how
+// many times its code has judged). Signed-in viewers only;
 // everyone else polls. The channel lasts while the 红包 runs, and after
 // that for whoever still waits on a payment.
 
@@ -22,6 +23,8 @@ export const MAX_LIVE_PER_USER = 4;
 export const MAX_LIVE_SOCKETS = 5_000;
 /** At most one push per window: a rush of claims goes out together. */
 export const LIVE_COALESCE_MS = 300;
+/** 代码判定's 已判定 N 次: at most once a second, however busy (05 §3). */
+export const LIVE_JUDGED_MS = 1_000;
 /** Past the deadline by this much, the DO's clock and D1's agree it is. */
 export const LIVE_DEADLINE_MARGIN_MS = 250;
 /** What the browser sends to keep the line open; answered without waking. */
@@ -49,6 +52,9 @@ export const liveMine = () =>
 
 export const liveViewers = (count: number) =>
   JSON.stringify({ type: "viewers", count } satisfies ActivityLiveMessage);
+
+export const liveJudged = (count: number) =>
+  JSON.stringify({ type: "judged", count } satisfies ActivityLiveMessage);
 
 /** What a refresh may have moved: pushed only when something did. */
 export function liveFingerprint(row: ActivityRow | null | undefined) {

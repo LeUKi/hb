@@ -2,9 +2,14 @@ import { atom } from "jotai";
 
 /**
  * What lies under the 顶栏 right now: a page drawn from the window's top edge
- * (bleed), or content scrolled beneath it. The current view writes it.
+ * (bleed; lacquer for a 代码判定红包's black cover), or content scrolled
+ * beneath it. The current view writes it.
  */
-export const viewEdgeAtom = atom({ bleed: false, scrolled: false });
+export const viewEdgeAtom = atom({
+  bleed: false,
+  lacquer: false,
+  scrolled: false,
+});
 
 /**
  * How many page dialogs (WindowDialog: confirmations, leave guard, compact

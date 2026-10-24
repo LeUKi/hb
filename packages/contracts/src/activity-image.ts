@@ -72,10 +72,20 @@ export type ActivityImageInput = {
   /** Over, or not won: desaturated cover, pewter seal. */
   muted: boolean;
   /**
+   * 代码判定红包: 黑漆描金, and once muted graphite with a steel seal
+   * rather than desaturated (05 §14).
+   */
+  lacquer?: true;
+  /**
    * The seal's words: 开 / 报 for a signed-in viewer, 查看 for a guest,
    * 已报名 / 开奖中, 完 / 未中 when muted. Null: no seal (opened).
    */
   seal: string | null;
+  /**
+   * 开 that does nothing now (代码判定 paused): a faded, solid gold, as on
+   * the page (.hb-code .hb-seal[data-state="disabled"]).
+   */
+  faded?: true;
   body:
     | { kind: "line"; text: string }
     | {
@@ -216,6 +226,7 @@ function remainingLine(activity: PublicActivity) {
 function endLine(activity: PublicActivity, now: Date) {
   if (activity.draw)
     return activity.draw.state === "empty" ? "无人报名" : "已开奖";
+  if (activity.stopped || activity.judge?.stopped) return "红包已被站长停用";
   if (soldOut(activity)) return "红包已领完";
   if (activity.deadlineAt && Date.parse(activity.deadlineAt) <= now.getTime())
     return "红包已过期";
@@ -240,6 +251,11 @@ export function activityImageInput(input: {
   viewer: ActivityImageViewerState;
   renderedAt: Date;
   timeZone?: string | null;
+  /**
+   * 代码判定: its code failed five judgments running and claims wait, for
+   * a read without the page's `judge` (05 §13).
+   */
+  paused?: boolean;
 }): ActivityImageInput {
   const { activity, viewer, renderedAt } = input;
   const isDraw = Boolean(activity.draw);
@@ -248,12 +264,20 @@ export function activityImageInput(input: {
       activity.author.displayName || activity.author.username || "发红包的人",
     title: activity.title || "红包",
     code: encodeActivityEmoji(activity.id),
+    ...(activity.participationMode === "code" ||
+    activity.reward?.mode === "code"
+      ? { lacquer: true as const }
+      : {}),
     renderedAt,
     timeZone: isImageTimeZone(input.timeZone)
       ? input.timeZone
       : DEFAULT_ACTIVITY_IMAGE_TIME_ZONE,
   };
+  const paused = input.paused === true || activity.judge?.paused === true;
   const line = (text: string) => ({ kind: "line" as const, text });
+  // What is left, or, while paused, that nothing can be taken (05 §13).
+  const running = () =>
+    line(paused ? "红包的代码连续出错，暂停领取" : remainingLine(activity));
   const open = { ...base, muted: false };
   const over = { ...base, muted: true, live: false };
   switch (viewer.kind) {
@@ -302,7 +326,8 @@ export function activityImageInput(input: {
       return {
         ...open,
         seal: viewer.action === "register" ? "报" : "开",
-        body: line(remainingLine(activity)),
+        ...(paused ? { faded: true as const } : {}),
+        body: running(),
         live: true,
       };
     default:
@@ -314,13 +339,9 @@ export function activityImageInput(input: {
           seal: "完",
           body: line(endLine(activity, renderedAt)),
         };
-      // A guest may have taken part already: the seal only offers a look.
-      return {
-        ...open,
-        seal: "查看",
-        body: line(remainingLine(activity)),
-        live: true,
-      };
+      // A guest may have taken part already: the seal only offers a look
+      // (which a pause does not stop).
+      return { ...open, seal: "查看", body: running(), live: true };
   }
 }
 
@@ -410,6 +431,159 @@ const coverPath = (edge: { side: number; depth: number }) =>
 const rimPath = (edge: { side: number; depth: number }) =>
   `M${CARD.x + CARD.width} ${edge.side}A${CARD.width / 2} ${edge.depth} 0 0 1 ${CARD.x} ${edge.side}`;
 
+/** The cover's paints and the seal's (05 §14). */
+type Face = {
+  /** Its own <defs>, beside the paper, the gold coin and the shadows. */
+  defs: string;
+  /** Painted over the cover's shape, bottom first. */
+  layers: string[];
+  rim: string;
+  /** The short rule under the sender. */
+  rule: string;
+  sender: string;
+  title: string;
+  /** The coin a muted seal has instead of gold: its <defs> and its id. */
+  mutedCoinDefs: string;
+  mutedCoin: string;
+  /** The seal's words and inner ring, on gold and on the muted coin. */
+  ink: string;
+  mutedInk: string;
+  /** Under the card and under the seal. */
+  shadow: string;
+  /** Muted: put through the `muted` filter, as red is. */
+  desaturate: boolean;
+  /** The coin of a faded seal, its <defs> and its ink (only the lacquer's). */
+  faded?: { defs: string; coin: string; ink: string };
+};
+
+const RED: Face = {
+  defs: `<linearGradient id="red" gradientUnits="userSpaceOnUse" x1="0" y1="${CARD.y}" x2="0" y2="${SEAL.cy}">
+      <stop offset="0" stop-color="#d93c33"/><stop offset=".62" stop-color="#c82a30"/><stop offset="1" stop-color="#b9212c"/>
+    </linearGradient>
+    <radialGradient id="warm" gradientUnits="userSpaceOnUse" cx="74" cy="${CARD.y}" r="300">
+      <stop offset="0" stop-color="#ffa878" stop-opacity=".26"/><stop offset="1" stop-color="#ffa878" stop-opacity="0"/>
+    </radialGradient>`,
+  layers: ["url(#red)", "url(#warm)"],
+  rim: "#e8c079",
+  rule: "#e8c079",
+  sender: "rgb(255 236 214 / .8)",
+  title: "#fff3e2",
+  mutedCoinDefs: `<radialGradient id="pewter" cx="35%" cy="30%" r="75%">
+      <stop offset="0" stop-color="#f7f4f2"/><stop offset=".55" stop-color="#ddd6d2"/><stop offset="1" stop-color="#b9b0ab"/>
+    </radialGradient>`,
+  mutedCoin: "pewter",
+  ink: "#9b1c23",
+  mutedInk: "#7a6f6c",
+  shadow: "#5a0a14",
+  desaturate: true,
+};
+
+// 代码判定红包's seal: gold with dark ink, steel once over (the page's
+// .hb-code --color-seal-*), and neutral shadows on the black.
+const CODE_SEAL = {
+  mutedCoinDefs: `<radialGradient id="steel" cx="35%" cy="30%" r="75%">
+      <stop offset="0" stop-color="#f4f5f7"/><stop offset=".36" stop-color="#e2e4e7"/><stop offset=".7" stop-color="#ced1d5"/><stop offset="1" stop-color="#b9bdc3"/>
+    </radialGradient>`,
+  mutedCoin: "steel",
+  ink: "#24180f",
+  mutedInk: "#5f646b",
+  shadow: "#100d0c",
+  desaturate: false,
+};
+
+/** A colour and its opacity. */
+type Tint = readonly [color: string, opacity: string];
+
+// The lacquer's layers, as the page's .hb-code .hb-cover: the cover's three
+// stops, a warm light at the top left (the CSS ellipse, 110% × 70% to 62%),
+// the 118° sheen across the sealed cover's 400 × 350, the 回纹 (--hb-fret).
+// Over, the same layers in graphite (.hb-code.hb-ended).
+function lacquerFace(
+  id: string,
+  paint: {
+    cover: readonly [string, string, string];
+    warm: Tint;
+    sheen: Tint;
+    fret: Tint;
+  },
+) {
+  const [top, mid, bottom] = paint.cover;
+  const [warm, warmOpacity] = paint.warm;
+  const [sheen, sheenOpacity] = paint.sheen;
+  const [fret, fretOpacity] = paint.fret;
+  return {
+    defs: `<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="0" y1="${CARD.y}" x2="0" y2="${SEAL.cy}">
+      <stop offset="0" stop-color="${top}"/><stop offset=".6" stop-color="${mid}"/><stop offset="1" stop-color="${bottom}"/>
+    </linearGradient>
+    <radialGradient id="${id}-warm" gradientUnits="userSpaceOnUse" cx="74" cy="${CARD.y}" r="273" gradientTransform="translate(74 ${CARD.y}) scale(1 .557) translate(-74 -${CARD.y})">
+      <stop offset="0" stop-color="${warm}" stop-opacity="${warmOpacity}"/><stop offset="1" stop-color="${warm}" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="${id}-sheen" gradientUnits="userSpaceOnUse" x1="-18" y1="64" x2="438" y2="306">
+      <stop offset=".3" stop-color="${sheen}" stop-opacity="0"/><stop offset=".45" stop-color="${sheen}" stop-opacity="${sheenOpacity}"/><stop offset=".6" stop-color="${sheen}" stop-opacity="0"/>
+    </linearGradient>
+    <pattern id="${id}-fret" patternUnits="userSpaceOnUse" x="${CARD.x}" y="${CARD.y}" width="24" height="24">
+      <path d="M1 23H23V1H5V19H19V5H9V15H15V9H12" fill="none" stroke="${fret}" stroke-opacity="${fretOpacity}" stroke-width="1.2"/>
+    </pattern>`,
+    layers: [
+      `url(#${id})`,
+      `url(#${id}-warm)`,
+      `url(#${id}-sheen)`,
+      `url(#${id}-fret)`,
+    ],
+  };
+}
+
+// 黑漆描金: the black and its gold 回纹, then the metal-gold rim and the
+// gold title. A paused 开 is a faded, solid gold: a see-through one turns
+// muddy on the black (.hb-code .hb-seal[data-state="disabled"]).
+const BLACK = lacquerFace("lacquer", {
+  cover: ["#2c2724", "#1a1614", "#100d0c"],
+  warm: ["#ffd6a0", ".16"],
+  sheen: ["#fff4dc", ".08"],
+  fret: ["#e8c079", ".085"],
+});
+const LACQUER: Face = {
+  ...CODE_SEAL,
+  defs: `${BLACK.defs}
+    <linearGradient id="rim-gold" gradientUnits="userSpaceOnUse" x1="${CARD.x}" y1="0" x2="${CARD.x + CARD.width}" y2="0">
+      <stop offset="0" stop-color="#a8772a"/><stop offset=".22" stop-color="#f6dfa5"/><stop offset=".48" stop-color="#d4a24c"/><stop offset=".72" stop-color="#f8e4ad"/><stop offset="1" stop-color="#a8772a"/>
+    </linearGradient>
+    <linearGradient id="title-gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset=".1" stop-color="#fff1cf"/><stop offset=".9" stop-color="#e7bd70"/>
+    </linearGradient>`,
+  layers: BLACK.layers,
+  rim: "url(#rim-gold)",
+  rule: "#e8c079",
+  sender: "rgb(240 212 154 / .72)",
+  title: "url(#title-gold)",
+  faded: {
+    defs: `<radialGradient id="faded" cx="35%" cy="30%" r="75%">
+      <stop offset="0" stop-color="#f3eee4"/><stop offset=".36" stop-color="#e4d8bf"/><stop offset=".7" stop-color="#d2bf98"/><stop offset="1" stop-color="#bba377"/>
+    </radialGradient>`,
+    coin: "faded",
+    ink: "rgb(36 24 15 / .55)",
+  },
+};
+
+// Over: graphite, not desaturated, as black made darker still reads as
+// running, nor a grey so pale the 回纹 goes (05 §14): the 回纹 in cool
+// silver, the lights faint and cold, a pale rim, cream words and a cool
+// shade (--hb-seal-drop).
+const GRAPHITE: Face = {
+  ...CODE_SEAL,
+  ...lacquerFace("graphite", {
+    cover: ["#5a5e65", "#4c5056", "#41454b"],
+    warm: ["#dce2ea", ".06"],
+    sheen: ["#f0f4f8", ".05"],
+    fret: ["#d6dce4", ".08"],
+  }),
+  rim: "#cfcac2",
+  rule: "#cfcac2",
+  sender: "rgb(255 243 226 / .75)",
+  title: "#fff3e2",
+  shadow: "#14161a",
+};
+
 const toneColors: Record<ActivityImageTone, { fill: string; text: string }> = {
   success: { fill: "rgb(30 138 87 / .12)", text: "#1e8a57" },
   warning: { fill: "rgb(196 122 18 / .14)", text: "#9a5b00" },
@@ -420,17 +594,28 @@ const toneColors: Record<ActivityImageTone, { fill: string; text: string }> = {
 const sealSize = (words: string) =>
   ({ 1: 40, 2: 24 })[Array.from(words).length] ?? 19;
 
-/** The gold (or pewter) coin on the curved edge, with its words. */
-function sealMarkup(words: string, muted: boolean, className = "") {
+/**
+ * The gold (or pewter, or steel, or faded gold) coin on the curved edge,
+ * with its words. Only an idle gold one has the sheen, as on the page.
+ */
+function sealMarkup(
+  words: string,
+  muted: boolean,
+  face: Face,
+  className = "",
+  faded?: Face["faded"],
+) {
+  const coin = muted ? face.mutedCoin : (faded?.coin ?? "gold");
+  const ink = muted ? face.mutedInk : (faded?.ink ?? face.ink);
   return `<g class="${className}">
-    <g filter="url(#seal-shadow)"><circle cx="${SEAL.cx}" cy="${SEAL.cy}" r="${SEAL.r}" fill="url(#${muted ? "pewter" : "gold"})"/></g>
+    <g filter="url(#seal-shadow)"><circle cx="${SEAL.cx}" cy="${SEAL.cy}" r="${SEAL.r}" fill="url(#${coin})"/></g>
     <circle cx="${SEAL.cx}" cy="${SEAL.cy}" r="${SEAL.r - 1}" fill="none" stroke="#fff" stroke-opacity=".55"/>
-    <circle cx="${SEAL.cx}" cy="${SEAL.cy}" r="${SEAL.r - 7}" fill="none" stroke="${muted ? "#7a6f6c" : "#9b1c23"}" stroke-opacity=".16"/>${
-      muted || className
+    <circle cx="${SEAL.cx}" cy="${SEAL.cy}" r="${SEAL.r - 7}" fill="none" stroke="${ink}" stroke-opacity=".16"/>${
+      muted || faded || className
         ? ""
         : `<g clip-path="url(#seal-clip)"><rect class="sheen" x="${SEAL.cx - 22}" y="${SEAL.cy - 60}" width="44" height="120" fill="url(#sheen)" transform="rotate(20 ${SEAL.cx} ${SEAL.cy})"/></g>`
     }
-    <text x="${SEAL.cx}" y="${SEAL.cy + 1}" class="glyph${muted ? " muted" : ""}" style="font-size:${sealSize(words)}px">${escapeXml(words)}</text>
+    <text x="${SEAL.cx}" y="${SEAL.cy + 1}" class="glyph${muted ? " muted" : faded ? " faded" : ""}" style="font-size:${sealSize(words)}px">${escapeXml(words)}</text>
   </g>`;
 }
 
@@ -453,6 +638,12 @@ export function renderActivityImage(input: ActivityImageInput) {
     CARD.radius,
   );
   const edge = opened ? OPENED : SEALED;
+  const face = !input.lacquer ? RED : input.muted ? GRAPHITE : LACQUER;
+  const faded = input.faded && !input.muted ? face.faded : undefined;
+  /** The cover down to an edge: its layers, then its rim. */
+  const cover = (to: typeof edge) =>
+    `${face.layers.map((fill) => `<path d="${coverPath(to)}" fill="${fill}"/>`).join("\n      ")}
+      <path d="${rimPath(to)}" fill="none" stroke="${face.rim}" stroke-width="3"/>`;
   const senderName = normalizeText(input.sender, "发红包的人");
   const titleText = normalizeText(input.title, "红包");
 
@@ -460,12 +651,18 @@ export function renderActivityImage(input: ActivityImageInput) {
   const titleLines = wrap(titleText, 28, 340, 2);
   const lineGap = 38;
   const titleTop = 176 - ((titleLines.length - 1) * lineGap) / 2;
-  const title = titleLines
-    .map(
-      (line, index) =>
-        `<text x="210" y="${(titleTop + index * lineGap).toFixed(1)}" class="title">${escapeXml(line)}</text>`,
-    )
-    .join("");
+  const lineY = (index: number) => (titleTop + index * lineGap).toFixed(1);
+  // The gold runs down the whole title, as the page's background-clip does:
+  // one <text>, a <tspan> a line (each <text> would get the whole ramp).
+  const title =
+    face === LACQUER
+      ? `<text class="title">${titleLines.map((line, index) => `<tspan x="210" y="${lineY(index)}">${escapeXml(line)}</tspan>`).join("")}</text>`
+      : titleLines
+          .map(
+            (line, index) =>
+              `<text x="210" y="${lineY(index)}" class="title">${escapeXml(line)}</text>`,
+          )
+          .join("");
   const sender = wrap(`${senderName}的红包`, 15, 300, 1)[0] ?? "";
 
   // Opened: the sealed cover lies over the opened one and folds up into it
@@ -473,9 +670,7 @@ export function renderActivityImage(input: ActivityImageInput) {
   // resting style is the end state, so reduced motion simply shows it.
   const flap = opened
     ? `<g class="flap motion">
-      <path d="${coverPath(SEALED)}" fill="url(#red)"/>
-      <path d="${coverPath(SEALED)}" fill="url(#warm)"/>
-      <path d="${rimPath(SEALED)}" fill="none" stroke="#e8c079" stroke-width="3"/>
+      ${cover(SEALED)}
     </g>`
     : "";
   const lightSweep = opened
@@ -483,10 +678,10 @@ export function renderActivityImage(input: ActivityImageInput) {
     : "";
   const seal =
     input.seal !== null
-      ? sealMarkup(input.seal, input.muted)
+      ? sealMarkup(input.seal, input.muted, face, "", faded)
       : input.body.kind === "opened"
-        ? `${sealMarkup(input.body.opens, false, "pop motion")}
-  <circle class="ring motion" cx="${SEAL.cx}" cy="${SEAL.cy}" r="${SEAL.r}" fill="none" stroke="#e8c079" stroke-width="3"/>`
+        ? `${sealMarkup(input.body.opens, false, face, "pop motion")}
+  <circle class="ring motion" cx="${SEAL.cx}" cy="${SEAL.cy}" r="${SEAL.r}" fill="none" stroke="${face.rim}" stroke-width="3"/>`
         : "";
 
   // Below the edge: one line, or the viewer's own result. Then, always, the
@@ -528,18 +723,11 @@ export function renderActivityImage(input: ActivityImageInput) {
     <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#fdf6f3"/><stop offset="1" stop-color="#f6e8e4"/>
     </linearGradient>
-    <linearGradient id="red" gradientUnits="userSpaceOnUse" x1="0" y1="${CARD.y}" x2="0" y2="${SEAL.cy}">
-      <stop offset="0" stop-color="#d93c33"/><stop offset=".62" stop-color="#c82a30"/><stop offset="1" stop-color="#b9212c"/>
-    </linearGradient>
-    <radialGradient id="warm" gradientUnits="userSpaceOnUse" cx="74" cy="${CARD.y}" r="300">
-      <stop offset="0" stop-color="#ffa878" stop-opacity=".26"/><stop offset="1" stop-color="#ffa878" stop-opacity="0"/>
-    </radialGradient>
+    ${face.defs}
     <radialGradient id="gold" cx="35%" cy="30%" r="75%">
       <stop offset="0" stop-color="#fff7df"/><stop offset=".36" stop-color="#f7dc9a"/><stop offset=".7" stop-color="#e7b862"/><stop offset="1" stop-color="#cf9746"/>
     </radialGradient>
-    <radialGradient id="pewter" cx="35%" cy="30%" r="75%">
-      <stop offset="0" stop-color="#f7f4f2"/><stop offset=".55" stop-color="#ddd6d2"/><stop offset="1" stop-color="#b9b0ab"/>
-    </radialGradient>
+    ${face.mutedCoinDefs}${faded ? `\n    ${faded.defs}` : ""}
     <linearGradient id="sheen" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".55"/><stop offset="1" stop-color="#fff" stop-opacity="0"/>
     </linearGradient>
@@ -547,19 +735,23 @@ export function renderActivityImage(input: ActivityImageInput) {
       <stop offset="0" stop-color="#ffecc8" stop-opacity="0"/><stop offset=".5" stop-color="#ffecc8" stop-opacity=".32"/><stop offset="1" stop-color="#ffecc8" stop-opacity="0"/>
     </linearGradient>
     <filter id="lift" x="-10%" y="-10%" width="120%" height="120%">
-      <feDropShadow dx="0" dy="3" stdDeviation="3.5" flood-color="#5a0a14" flood-opacity=".18"/>
+      <feDropShadow dx="0" dy="3" stdDeviation="3.5" flood-color="${face.shadow}" flood-opacity=".18"/>
     </filter>
     <filter id="seal-shadow" x="-30%" y="-30%" width="160%" height="170%">
-      <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#5a0a14" flood-opacity=".32"/>
-    </filter>
-    <filter id="muted"><feColorMatrix type="saturate" values=".18"/><feComponentTransfer><feFuncR type="linear" slope=".92"/><feFuncG type="linear" slope=".92"/><feFuncB type="linear" slope=".92"/></feComponentTransfer></filter>
+      <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="${face.shadow}" flood-opacity=".32"/>
+    </filter>${
+      face.desaturate
+        ? `
+    <filter id="muted"><feColorMatrix type="saturate" values=".18"/><feComponentTransfer><feFuncR type="linear" slope=".92"/><feFuncG type="linear" slope=".92"/><feFuncB type="linear" slope=".92"/></feComponentTransfer></filter>`
+        : ""
+    }
   </defs>
   <style>
     text { font-family: ${SANS}; text-anchor: middle; }
-    .sender { font-size: 15px; fill: rgb(255 236 214 / .8); }
-    .title { font-size: 28px; font-weight: 700; fill: #fff3e2; letter-spacing: .01em; }
-    .glyph { font-weight: 700; fill: #9b1c23; dominant-baseline: central; }
-    .glyph.muted { fill: #7a6f6c; }
+    .sender { font-size: 15px; fill: ${face.sender}; }
+    .title { font-size: 28px; font-weight: 700; fill: ${face.title}; letter-spacing: .01em; }
+    .glyph { font-weight: 700; fill: ${face.ink}; dominant-baseline: central; }
+    .glyph.muted { fill: ${face.mutedInk}; }${faded ? `\n    .glyph.faded { fill: ${faded.ink}; }` : ""}
     .line { font-size: 18px; fill: #2a1519; }
     .label { font-size: 15px; fill: #745c61; }
     .amount { font-size: 56px; font-weight: 700; fill: #1e8a57; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
@@ -593,14 +785,12 @@ export function renderActivityImage(input: ActivityImageInput) {
     <path d="${card}" fill="url(#paper)"/>
   </g>
   <g clip-path="url(#card)">
-    <g${input.muted ? ' filter="url(#muted)"' : ""}>
-      <path d="${coverPath(edge)}" fill="url(#red)"/>
-      <path d="${coverPath(edge)}" fill="url(#warm)"/>
-      <path d="${rimPath(edge)}" fill="none" stroke="#e8c079" stroke-width="3"/>
+    <g${input.muted && face.desaturate ? ' filter="url(#muted)"' : ""}>
+      ${cover(edge)}
       ${flap}
       ${lightSweep}
       <text x="210" y="92" class="sender">${escapeXml(sender)}</text>
-      <path d="M198 110H222" stroke="#e8c079" stroke-opacity=".7" stroke-width="2" stroke-linecap="round"/>
+      <path d="M198 110H222" stroke="${face.rule}" stroke-opacity=".7" stroke-width="2" stroke-linecap="round"/>
       ${title}
     </g>
   </g>

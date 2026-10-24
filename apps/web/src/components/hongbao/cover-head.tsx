@@ -8,6 +8,7 @@ import type { HongbaoActivity } from "../../lib/hongbao";
 import { splitNames, splitRules } from "../../lib/hongbao-text";
 import { useWindowInfo } from "../shell/window-info";
 import { Avatar } from "../ui/avatar";
+import { EmojiText } from "../ui/emoji-text";
 import { markdownText, NoteMarkdown } from "../ui/markdown";
 import { PersonName } from "../ui/person";
 import { Squircle } from "../ui/squircle";
@@ -305,7 +306,7 @@ export function CoverHead({
         style={{ maxWidth: `${titleEm}em` }}
         {...motions.leaf}
       >
-        {activity.title}
+        <EmojiText text={activity.title} />
       </motion.h1>
 
       <AnimatePresence mode="popLayout" initial={false}>

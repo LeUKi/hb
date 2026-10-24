@@ -110,6 +110,8 @@ export type JoinedRecord = {
   payment: PaymentState | null;
   /** A 🐟额红包's: what was taken is in 🐟额 (在🐟额), no payment. */
   fish: boolean;
+  /** 代码判定红包: its code judged the claim (代码判定领取). */
+  code: boolean;
   ended: boolean;
 };
 
@@ -124,6 +126,7 @@ export function joinedRecordOf(item: Participation): JoinedRecord {
       activity.author?.displayName || activity.author?.username || "发红包的人",
     password: record.sourcePassword ?? null,
     fish: activity.funding === "balance",
+    code: activity.participationMode === "code",
     ended: activity.status !== "active",
   };
   if (item.kind === "claim")

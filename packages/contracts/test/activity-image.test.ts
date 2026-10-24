@@ -215,6 +215,125 @@ describe("activity image", () => {
     ).toContain("已开奖");
   });
 
+  it("draws a 代码判定红包 in black lacquer and gold, and graphite once over", () => {
+    const coded = {
+      participationMode: "code" as const,
+      funding: "balance" as const,
+    };
+    for (const viewer of [
+      { kind: "public" },
+      { kind: "eligible", action: "claim" },
+      { kind: "claimed", amount: "0.33", claimedAt: renderedAt, fish: true },
+    ] as const) {
+      const svg = image(viewer, coded);
+      expect(svg).toContain('fill="url(#lacquer)"');
+      expect(svg).toContain('fill="url(#lacquer-fret)"');
+      expect(svg).toContain('stroke="url(#rim-gold)"');
+      expect(svg).toContain("fill: url(#title-gold)");
+      expect(svg).toContain("#24180f");
+      expect(svg).not.toContain("#d93c33");
+      expect(svg).not.toContain("url(#red)");
+      expect(svg).not.toContain('filter="url(#muted)"');
+    }
+    // The opening folds a lacquer flap, not a red one.
+    expect(
+      image(
+        { kind: "claimed", amount: "0.33", claimedAt: renderedAt, fish: true },
+        coded,
+      ),
+    ).toMatch(/<g class="flap motion">\s*<path[^>]*fill="url\(#lacquer\)"/);
+    // The gold runs down a two-line title as one: one <text>, two lines.
+    const long = { ...coded, title: "很长".repeat(14) };
+    expect(image({ kind: "public" }, long)).toMatch(
+      /<text class="title"><tspan[^>]*>[^<]+<\/tspan><tspan[^>]*>[^<]+<\/tspan><\/text>/,
+    );
+    expect(image({ kind: "public" }, { title: "很长".repeat(14) })).toMatch(
+      /<text x="210" y="157.0" class="title">[^<]+<\/text><text x="210" y="195.0" class="title">/,
+    );
+
+    // Black made darker still reads as running: graphite with a silver
+    // 回纹, a steel seal.
+    for (const viewer of [{ kind: "public" }, { kind: "ended" }] as const) {
+      const ended = image(viewer, { ...coded, status: "ended" });
+      expect(sealOf(ended)).toBe("完");
+      expect(ended).not.toContain('filter="url(#muted)"');
+      expect(ended).toContain('fill="url(#graphite)"');
+      expect(ended).toContain("#5a5e65");
+      expect(ended).toContain('fill="url(#graphite-fret)"');
+      expect(ended).toContain('stroke="#d6dce4"');
+      expect(ended).toContain('stroke="#cfcac2"');
+      expect(ended).toContain('fill="url(#steel)"');
+      expect(ended).toContain("#5f646b");
+      expect(ended).not.toContain("url(#lacquer)");
+      expect(ended).not.toContain("url(#pewter)");
+    }
+    // A red 红包 is as it was.
+    const red = image({ kind: "public" });
+    expect(red).toContain('fill="url(#red)"');
+    expect(red).not.toContain("url(#lacquer)");
+    expect(image({ kind: "ended" }, { status: "ended" })).toContain(
+      'fill="url(#pewter)"',
+    );
+  });
+
+  it("says when the 站长 stopped a 代码判定红包, and when its code paused claims", () => {
+    const coded = {
+      participationMode: "code" as const,
+      funding: "balance" as const,
+    };
+    for (const viewer of [{ kind: "public" }, { kind: "ended" }] as const)
+      expect(
+        image(viewer, { ...coded, status: "ended", stopped: true }),
+      ).toContain("红包已被站长停用");
+    const judge = {
+      protocol: 1,
+      prompt: "输入 flag",
+      fingerprint: "f".repeat(64),
+      seedCommitment: "c".repeat(64),
+      judged: 5,
+    };
+    expect(
+      image(
+        { kind: "public" },
+        { ...coded, status: "ended", judge: { ...judge, stopped: true } },
+      ),
+    ).toContain("红包已被站长停用");
+
+    const paused = (viewer: ActivityImageViewerState) =>
+      renderActivityImage(
+        activityImageInput({
+          activity: activity(coded),
+          viewer,
+          renderedAt,
+          paused: true,
+        }),
+      );
+    // 开 is there but a faded, solid gold with no sheen; a guest's 查看
+    // still offers a look.
+    const eligible = paused({ kind: "eligible", action: "claim" });
+    expect(eligible).toContain("红包的代码连续出错，暂停领取");
+    expect(eligible).not.toContain("剩余 2 份");
+    expect(sealOf(eligible)).toBe("开");
+    expect(eligible).toContain('fill="url(#faded)"');
+    expect(eligible).toContain('class="glyph faded"');
+    expect(eligible).not.toContain('class="sheen"');
+    expect(eligible).not.toContain('opacity=".6"');
+    expect(eligible).toContain("数据可能过期");
+    const guest = paused({ kind: "public" });
+    expect(guest).toContain("红包的代码连续出错，暂停领取");
+    expect(sealOf(guest)).toBe("查看");
+    expect(guest).not.toContain("url(#faded)");
+    expect(guest).toContain('class="sheen"');
+    // The page's own read says it in `judge`.
+    expect(
+      image(
+        { kind: "public" },
+        { ...coded, judge: { ...judge, paused: true } },
+      ),
+    ).toContain("红包的代码连续出错，暂停领取");
+    expect(image({ kind: "public" }, coded)).toContain("剩余 2 份");
+  });
+
   it("writes times in the viewer's zone and never draws private or outside things", () => {
     expect(image({ kind: "public" })).toContain("数据截至 16:00:00");
     expect(image({ kind: "public" }, {}, "UTC")).toContain("数据截至 08:00:00");

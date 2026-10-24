@@ -1,23 +1,30 @@
 import { cn } from "../../lib/cn";
 import { Squircle } from "./squircle";
 
-/** A small 红包 for lists: red with the gold dot; dusty once it is over. */
+/**
+ * A small 红包 for lists: red with the gold dot; dusty once it is over. A
+ * 代码判定红包 is black lacquer, cool grey once over (05 §14).
+ */
 export function MiniEnvelope({
   ended = false,
   draft = false,
+  code = false,
   size = "md",
 }: {
   ended?: boolean;
   /** Not opened yet: outlined, no seal. */
   draft?: boolean;
+  code?: boolean;
   size?: "sm" | "md";
 }) {
   return (
     <Squircle radius={size === "sm" ? 7 : 9}>
       <span
         aria-hidden="true"
+        data-ended={(code && ended) || undefined}
         className={cn(
           "relative shrink-0 overflow-hidden",
+          code && "mini-lacquer",
           size === "sm" ? "h-10 w-8" : "h-14 w-11",
           draft
             ? "bg-white/70 squircle-ring [--sq-ring-w:1.5px] [--sq-ring:color-mix(in_srgb,var(--color-envelope)_45%,transparent)]"

@@ -53,6 +53,20 @@ async function revealed(env: ApiBindings, row: ActivityRow, judge: JudgeRow) {
   return { code, seed };
 }
 
+/**
+ * 已判定 N 次 (05 §4): every verdict, paid or not; failures never count.
+ * Sequences run 0…N-1 (the insert guard, no updates, no deletes), so the
+ * last one says it in one index seek, not a count of them all.
+ */
+export async function judgedCount(env: ApiBindings, activityId: string) {
+  const row = await env.DB.prepare(
+    "SELECT COALESCE(MAX(sequence) + 1, 0) AS count FROM code_judgments WHERE activity_id = ?",
+  )
+    .bind(activityId)
+    .first<{ count: number }>();
+  return row?.count ?? 0;
+}
+
 export async function publicJudge(
   env: ApiBindings,
   row: ActivityRow,
@@ -60,12 +74,16 @@ export async function publicJudge(
   if (row.participationMode !== "code") return undefined;
   const judge = await findJudgeRow(env, row.id);
   if (!judge) return undefined;
-  const out = await revealed(env, row, judge);
+  const [out, judged] = await Promise.all([
+    revealed(env, row, judge),
+    judgedCount(env, row.id),
+  ]);
   return {
     protocol: judge.protocol,
     prompt: judge.prompt,
     fingerprint: judge.fingerprint,
     seedCommitment: judge.seedCommitment,
+    judged,
     ...(judge.pausedAt !== null && activityStatus(row) === "active"
       ? { paused: true as const }
       : {}),

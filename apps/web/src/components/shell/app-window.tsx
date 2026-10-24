@@ -5,7 +5,9 @@ import { useRef, useSyncExternalStore } from "react";
 import { useBootDone } from "../../lib/boot";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { windowDialogsAtom } from "../../lib/store";
+import { CodeDialog } from "../hongbao/code-section";
 import { HumanCheckDialog } from "../hongbao/human-check-dialog";
+import { MyJudgmentsDialog } from "../hongbao/my-judgments";
 import { NoteDialog } from "../hongbao/note-dialog";
 import { RosterDialog } from "../hongbao/roster-dialog";
 import { ScopeDialog } from "../hongbao/scope-dialog";
@@ -166,6 +168,8 @@ export function AppWindow() {
           <AuthErrorWatcher />
           <RosterDialog />
           <NoteDialog />
+          <MyJudgmentsDialog />
+          <CodeDialog />
           <HumanCheckDialog />
           <ScopeDialog />
           <UpdatePrompt />

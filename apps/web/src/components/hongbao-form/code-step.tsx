@@ -13,6 +13,7 @@ import { cn } from "../../lib/cn";
 import { haptic } from "../../lib/haptics";
 import { KIT_URL } from "../../lib/judge";
 import { Button } from "../ui/button";
+import { CodeEditor } from "../ui/code-editor";
 import { Field, TextInput } from "../ui/field";
 import { Reveal } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
@@ -29,7 +30,10 @@ export type CodeCheckState =
   /** Not run on these (never, or they changed since). */
   | { kind: "unchecked"; changed: boolean };
 
-/** judge.js or tests.json: a dark box to paste into, its name and size above. */
+/**
+ * judge.js or tests.json: a dark box with line numbers and colours (05
+ * §14) to type or paste into, its name and size above.
+ */
 function CodeBox({
   id,
   name,
@@ -38,8 +42,12 @@ function CodeBox({
   value,
   placeholder,
   rows,
+  maxRows,
+  language,
+  problemLines,
   error,
   disabled,
+  frozen,
   accept,
   onChange,
 }: {
@@ -50,13 +58,22 @@ function CodeBox({
   value: string;
   placeholder: string;
   rows: number;
+  maxRows: number;
+  language: "js" | "json";
+  problemLines?: number[];
   error?: string;
   disabled: boolean;
+  /**
+   * Saving, or waiting on 重试原提交: the step's fieldset stops native
+   * controls only, so the editor is told too.
+   */
+  frozen: boolean;
   accept: string;
   onChange: (value: string) => void;
 }) {
   const file = useRef<HTMLInputElement>(null);
   const noteId = useId();
+  const labelId = useId();
   const paste = async () => {
     try {
       const text = await navigator.clipboard.readText();
@@ -70,12 +87,13 @@ function CodeBox({
     }
   };
   return (
-    <div className="grid gap-1.5">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-1.5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <label htmlFor={id} className="flex items-baseline gap-2">
+        {/* The editor is no form control: its name goes by aria-labelledby. */}
+        <span id={labelId} className="flex items-baseline gap-2">
           <span className="font-mono text-sm font-medium text-ink">{name}</span>
           <span className="text-xs text-ink-3">{meta}</span>
-        </label>
+        </span>
         {!disabled && (
           <span className="flex items-center gap-1">
             <Button size="sm" variant="ghost" onClick={() => void paste()}>
@@ -110,30 +128,24 @@ function CodeBox({
           {note}
         </p>
       )}
-      <Squircle radius={radius.textarea}>
-        <textarea
-          id={id}
-          value={value}
-          rows={rows}
-          placeholder={placeholder}
-          disabled={disabled}
-          spellCheck={false}
-          autoCapitalize="off"
-          autoCorrect="off"
-          wrap="off"
-          aria-invalid={error ? true : undefined}
-          aria-describedby={
-            [note ? noteId : "", error ? `${id}-error` : ""]
-              .filter(Boolean)
-              .join(" ") || undefined
-          }
-          onChange={(event) => onChange(event.target.value)}
-          className={cn(
-            "hb-lacquer-code block w-full resize-y px-3.5 py-3 font-mono text-[13px] leading-5 outline-none",
-            error && "hb-lacquer-invalid",
-          )}
-        />
-      </Squircle>
+      <CodeEditor
+        id={id}
+        labelledBy={labelId}
+        describedBy={
+          [note ? noteId : "", error ? `${id}-error` : ""]
+            .filter(Boolean)
+            .join(" ") || undefined
+        }
+        value={value}
+        onChange={onChange}
+        language={language}
+        placeholder={placeholder}
+        disabled={disabled || frozen}
+        invalid={Boolean(error)}
+        problemLines={problemLines}
+        rows={rows}
+        maxRows={maxRows}
+      />
       <Reveal show={Boolean(error)}>
         <p id={`${id}-error`} className="text-xs text-danger">
           {error}
@@ -231,6 +243,7 @@ export function CodeStep({
   update,
   errorOf,
   locked,
+  frozen,
   checkState,
   checking,
   checksLeft,
@@ -247,6 +260,8 @@ export function CodeStep({
   update: Update;
   errorOf: ErrorOf;
   locked: boolean;
+  /** Saving, or waiting on 重试原提交 (the form's fieldset lock). */
+  frozen: boolean;
   checkState: CodeCheckState;
   checking: boolean;
   /** 在线检查 left today; undefined while unknown. */
@@ -301,8 +316,16 @@ export function CodeStep({
           "export function judge(submission, tools) {\n  // 返回 { ok, amount, message, state }\n}"
         }
         rows={12}
+        maxRows={28}
+        language="js"
+        problemLines={
+          checkState.kind === "failed"
+            ? checkState.check.problems.map((problem) => problem.line)
+            : undefined
+        }
         error={errorOf("hb-code-code")}
         disabled={locked}
+        frozen={frozen}
         accept=".js,.mjs,text/javascript"
         onChange={set("code")}
       />
@@ -316,8 +339,11 @@ export function CodeStep({
           '[\n  { "name": "答对", "input": "flag{…}", "expect": { "ok": true } }\n]'
         }
         rows={6}
+        maxRows={16}
+        language="json"
         error={errorOf("hb-code-tests")}
         disabled={locked}
+        frozen={frozen}
         accept=".json,application/json"
         onChange={set("tests")}
       />

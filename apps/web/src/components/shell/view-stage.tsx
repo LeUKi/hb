@@ -230,11 +230,14 @@ const scrollKeys = new Set([
 function ViewFrame({
   start,
   bleed,
+  lacquer,
   persistent,
   children,
 }: {
   start: boolean;
   bleed: boolean;
+  /** What bleeds is a 代码判定红包's black lacquer. */
+  lacquer: boolean;
   /**
    * One frame for several routes (网站管理's tabs): it follows each entry
    * it shows, keeping each one's scroll position.
@@ -343,15 +346,17 @@ function ViewFrame({
         (element?.scrollTop ?? 0) > 0 &&
         !element?.querySelector(":scope > [data-cover-pinned]");
       setEdge((current) =>
-        current.bleed === bleed && current.scrolled === scrolled
+        current.bleed === bleed &&
+        current.lacquer === lacquer &&
+        current.scrolled === scrolled
           ? current
-          : { bleed, scrolled },
+          : { bleed, lacquer, scrolled },
       );
     };
     update();
     element?.addEventListener("scroll", update, { passive: true });
     return () => element?.removeEventListener("scroll", update);
-  }, [bleed, present, setEdge]);
+  }, [bleed, lacquer, present, setEdge]);
   return (
     <motion.div
       ref={scroller}
@@ -411,6 +416,7 @@ export function ViewStage() {
             key={admin ? "admin" : leaf.id}
             start={start}
             bleed={leaf.routeId === "/🧧/$code" && activity !== null}
+            lacquer={leaf.routeId === "/🧧/$code" && Boolean(activity?.code)}
             persistent={admin}
           >
             {renderView(leaf)}

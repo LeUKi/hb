@@ -44,7 +44,7 @@ function rowOf(item: Item, rank: number, viewer: string | null): RosterRow {
       ],
       password: item.sourcePassword ?? null,
       payment: item.payment,
-      ...(item.judge ? { judge: item.judge } : {}),
+      ...(item.judge ? { judge: item.judge, attempt: item.judge.attempt } : {}),
     };
   if ("participant" in item)
     return {
@@ -72,6 +72,7 @@ function rowOf(item: Item, rank: number, viewer: string | null): RosterRow {
     amount: "amount" in item ? (item.amount ?? null) : null,
     at: Date.parse("claimedAt" in item ? item.claimedAt : item.registeredAt),
     titles,
+    ...("attempt" in item && item.attempt ? { attempt: item.attempt } : {}),
   };
 }
 

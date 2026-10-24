@@ -72,7 +72,11 @@ function RowBody({ row }: { row: Row }) {
   const status = statusLine(row);
   return (
     <>
-      <MiniEnvelope ended={status.ended} draft={activity.draft} />
+      <MiniEnvelope
+        ended={status.ended}
+        draft={activity.draft}
+        code={activity.participation === "code"}
+      />
       <span className="grid min-w-0 flex-1 gap-0.5">
         <span className="flex min-w-0 items-center gap-2">
           <span className="truncate text-base font-medium text-ink">

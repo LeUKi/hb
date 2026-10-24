@@ -1,9 +1,11 @@
+import { useAtomValue } from "jotai";
 import { ChevronRight } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { cn } from "../../lib/cn";
 import type { HongbaoActivity, PublicView, Roster } from "../../lib/hongbao";
+import { liveJudgedAtom } from "../../lib/live-state";
 import { Avatar } from "../ui/avatar";
-import { RollingText } from "../ui/morph-label";
+import { RollingNumber, RollingText } from "../ui/morph-label";
 import { Squircle } from "../ui/squircle";
 import { type CoverCell, coverCells } from "./cover-cells";
 import type { CoverMotion } from "./cover-motion";
@@ -118,7 +120,11 @@ function DataCell({
             style={{ transformOrigin: "left center" }}
             {...motions.shrink}
           >
-            {cell.bar ? (
+            {cell.judged !== undefined ? (
+              <span>
+                已判定 <RollingNumber value={cell.judged} /> 次
+              </span>
+            ) : cell.bar ? (
               <Meter share={cell.bar.share} label={cell.bar.label} />
             ) : cell.steps !== undefined ? (
               <Steps filled={cell.steps} />
@@ -213,6 +219,15 @@ export function CoverData({
   motions: CoverMotion;
 }) {
   const small = motions.state === "small";
+  // 已判定 N 次: the read and the push each know a count; the later one is
+  // the larger (05 §4).
+  const pushed = useAtomValue(liveJudgedAtom);
+  const judged = activity.judge
+    ? Math.max(
+        activity.judge.judged,
+        pushed?.id === activity.id ? pushed.count : 0,
+      )
+    : undefined;
   return (
     <div
       className={cn(
@@ -230,7 +245,7 @@ export function CoverData({
             : "grid w-full max-w-[34rem] grid-cols-[repeat(3,minmax(0,auto))] justify-between gap-x-4 px-4 @wide/window:gap-x-8 @wide/window:px-0",
         )}
       >
-        {coverCells(activity, view).map((cell) => (
+        {coverCells(activity, view, judged).map((cell) => (
           <DataCell key={cell.label} cell={cell} motions={motions} />
         ))}
       </dl>
