@@ -1,5 +1,10 @@
 import { env } from "cloudflare:test";
-import type { ClaimDetail, ClaimResult, JudgeInput } from "@hb/contracts";
+import type {
+  ActivityInput,
+  ClaimDetail,
+  ClaimResult,
+  JudgeInput,
+} from "@hb/contracts";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   createRandom,
@@ -15,6 +20,7 @@ import {
   openActivity,
 } from "../src/activities/service";
 import { readAccount } from "../src/balance/ledger";
+import type { ApiBindings } from "../src/env";
 import { findJudgeRow } from "../src/judge/storage";
 import { advanceAttemptCooldown } from "./advance-attempt-cooldown";
 import {
@@ -44,8 +50,12 @@ beforeEach(async () => {
   await give(admin, author, "5.00");
 });
 
-async function open(judge: Partial<JudgeInput> = {}, total = "1.00") {
-  const input = coded({ totalAmount: total }, judge);
+async function open(
+  judge: Partial<JudgeInput> = {},
+  total = "1.00",
+  extra: Partial<ActivityInput> = {},
+) {
+  const input = { ...coded({ totalAmount: total }, judge), ...extra };
   const passed = await check(author, input.judge?.code, input.judge?.tests);
   expect(passed.body.check.passed).toBe(true);
   const saved = await createActivity(bindings, author.id, {
@@ -215,6 +225,81 @@ describe("代码判定红包: claims", () => {
       "invalid",
     ]);
     expect(failures.results[0]?.detail).toContain("炸了");
+  });
+
+  it("moves to another sandbox after a judgment runs too long", async () => {
+    const opened = await open();
+    // A sandbox that never answers, as one stuck in a loop would not.
+    const stuck: ApiBindings = {
+      ...bindings,
+      LOADER: {
+        get: () => ({
+          getEntrypoint: () => ({
+            fetch: () => new Promise<Response>(() => {}),
+          }),
+        }),
+      } as unknown as ApiBindings["LOADER"],
+    };
+    const claimant = await actor();
+    await expect(
+      claimActivity(stuck, opened.id, claimant.id, {
+        submissionId: crypto.randomUUID(),
+        participationMode: "code",
+        input: "flag{ok}",
+      }),
+    ).rejects.toMatchObject({ code: "JUDGE_FAILED" });
+    expect(await findJudgeRow(bindings, opened.id)).toMatchObject({
+      sandbox: 1,
+      failuresInRow: 1,
+    });
+    expect(
+      await env.DB.prepare(
+        "SELECT kind FROM code_failures WHERE activity_id = ?",
+      )
+        .bind(opened.id)
+        .first("kind"),
+    ).toBe("timeout");
+    // The next one runs in the next sandbox and pays.
+    expect(detail(await submit(opened.id, claimant, "flag{ok}")).amount).toBe(
+      "0.30",
+    );
+  });
+
+  it("asks for the human check at every submission, before the code runs", async () => {
+    const opened = await open({}, "1.00", { humanCheck: true });
+    const claimant = await actor();
+    const input = (text: string) => ({
+      submissionId: crypto.randomUUID(),
+      participationMode: "code" as const,
+      input: text,
+    });
+    await rejects(
+      claimActivity(bindings, opened.id, claimant.id, input("nope")),
+      "HUMAN_CHECK_REQUIRED",
+    );
+    expect(
+      await env.DB.prepare(
+        "SELECT COUNT(*) AS n FROM code_judgments WHERE activity_id = ?",
+      )
+        .bind(opened.id)
+        .first("n"),
+    ).toBe(0);
+    expect(
+      await claimActivity(
+        bindings,
+        opened.id,
+        claimant.id,
+        input("nope"),
+        undefined,
+        true,
+      ),
+    ).toMatchObject({ result: "rejected" });
+    await advanceAttemptCooldown(env.DB, claimant.id);
+    // A turn-down passed the check once; the next try asks again.
+    await rejects(
+      claimActivity(bindings, opened.id, claimant.id, input("flag{ok}")),
+      "HUMAN_CHECK_REQUIRED",
+    );
   });
 
   it("may end early once paused, with claims in, and gives back the rest", async () => {
