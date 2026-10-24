@@ -13,6 +13,7 @@ import {
   StateField,
 } from "@codemirror/state";
 import {
+  drawSelection,
   EditorView,
   GutterMarker,
   gutterLineClass,
@@ -148,6 +149,10 @@ export function mountCode(parent: HTMLElement, options: CodeOptions) {
         // would have the code pass under it.
         gutters({ fixed: false }),
         lineNumbers(),
+        // CodeMirror's own caret and selection: one line tall even beside the
+        // three-line placeholder (the browser's would span its whole box),
+        // and in the gold of the theme.
+        drawSelection(),
         history(),
         // Tab is left alone: it moves on to the next control, as in a form.
         keymap.of([...defaultKeymap, ...historyKeymap]),
