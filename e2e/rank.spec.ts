@@ -155,18 +155,20 @@ test.describe("排行榜", () => {
       { body: { board: "sent", visible: false }, csrf: csrfToken },
     ]);
 
-    // Down to one's place: the held row goes, the list's own stays.
+    // Down to one's place: the held row goes, the list's own stays. Rows
+    // open in place as they arrive: scroll again until it has settled.
     const scroller = page.locator(".view-scroll").first();
-    const toBottom = () =>
-      scroller.evaluate((element) =>
+    await expect(async () => {
+      await scroller.evaluate((element) =>
         element.scrollTo({ top: element.scrollHeight }),
       );
-    await toBottom();
-    await expect(page.getByText("第30位", { exact: true })).toBeVisible();
+      await expect(page.getByText("第30位", { exact: true })).toBeVisible({
+        timeout: 1000,
+      });
+      await expect(page.locator(".sticky")).toHaveCount(0, { timeout: 1000 });
+    }).toPass({ timeout: 15_000 });
     // No total at the end (the user's call): only that it is all here.
     await expect(shown(page, "已全部加载")).toBeVisible();
-    await toBottom();
-    await expect(page.locator(".sticky")).toHaveCount(0);
     await expect(shown(page, "你")).toHaveCount(1);
     // Back up past the first rows: held at the bottom again.
     await scroller.evaluate((element) => element.scrollTo({ top: 0 }));
@@ -199,15 +201,20 @@ test.describe("排行榜", () => {
     await expect(shown(page, "第 126 名")).toBeVisible();
     await expect(page.locator(".sticky")).toHaveCount(1);
     const scroller = page.locator(".view-scroll").first();
-    // A batch at a time: each one in before scrolling on to the next.
-    for (const last of [20, 40, 60, 80, 100]) {
-      await expect(
-        page.getByText(`第${last}位`, { exact: true }),
-      ).toBeAttached();
-      await scroller.evaluate((element) =>
-        element.scrollTo({ top: element.scrollHeight }),
-      );
-    }
+    // Rows open in place as they arrive, so a jump to the bottom can land
+    // short of it: scroll again until the batch is there.
+    for (const last of [40, 60, 80, 100])
+      await expect(async () => {
+        await scroller.evaluate((element) =>
+          element.scrollTo({ top: element.scrollHeight }),
+        );
+        await expect(
+          page.getByText(`第${last}位`, { exact: true }),
+        ).toBeAttached({ timeout: 1000 });
+      }).toPass({ timeout: 15_000 });
+    await scroller.evaluate((element) =>
+      element.scrollTo({ top: element.scrollHeight }),
+    );
     await expect(shown(page, "只列前 100 名")).toBeVisible();
     await expect(page.getByText("第100位", { exact: true })).toBeVisible();
     // Still there at the end: one's place is past the list.
