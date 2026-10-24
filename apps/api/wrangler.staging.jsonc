@@ -50,6 +50,7 @@
       "storage": "sqlite"
     }
   },
+  "worker_loaders": [{ "binding": "LOADER" }],
   "queues": {
     "producers": [
       {

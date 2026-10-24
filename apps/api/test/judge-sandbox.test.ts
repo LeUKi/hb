@@ -1,0 +1,181 @@
+import { env } from "cloudflare:test";
+import { describe, expect, it } from "vitest";
+import type { Submission } from "../../../kit/judge";
+import {
+  createRandom,
+  sha256Text,
+  shareRange,
+  submissionSeed,
+  userSeed,
+} from "../../../kit/runtime/index.mjs";
+import { runJudge } from "../src/judge/sandbox";
+
+const secret = "0123456789abcdef".repeat(4);
+const seeds = {
+  submission: submissionSeed("hb-test", secret, 7, 0),
+  user: userSeed("hb-test", secret, 7),
+};
+
+function submission(): Submission {
+  const hongbao = {
+    title: "测试红包",
+    total: 10000,
+    count: 10,
+    minEach: 1,
+    remaining: 10000,
+    remainingCount: 10,
+    openedAt: Date.UTC(2026, 9, 24),
+    endsAt: Date.UTC(2026, 9, 25),
+  };
+  return {
+    input: "flag{x}",
+    now: Date.UTC(2026, 9, 24, 0, 30),
+    user: { id: 7, username: "tester", level: 2, attempts: 0 },
+    hongbao,
+    share: shareRange(hongbao),
+    claims: [],
+    state: null,
+  };
+}
+
+/** Each code gets its own isolate, as each 红包's code does. */
+function judge(
+  code: string,
+  extra: { capture?: boolean; waitMs?: number } = {},
+) {
+  return runJudge(
+    env,
+    {
+      code,
+      fingerprint: sha256Text(code),
+      submission: submission(),
+      seeds,
+      ...extra,
+    },
+    true,
+  );
+}
+
+describe("the judge sandbox", () => {
+  it("gives judge() the submission and the tools, and returns its answer", async () => {
+    const outcome = await judge(`import { createHash } from "node:crypto";
+export function judge(submission, tools) {
+  return {
+    ok: true,
+    amount: tools.money.even(),
+    message: createHash("sha256").update(submission.input).digest("hex").slice(0, 8),
+    state: { user: submission.user.username, hour: tools.time.parts().hour },
+  };
+}`);
+    expect(outcome).toEqual({
+      verdict: {
+        ok: true,
+        amount: 1000,
+        message: sha256Text("flag{x}").slice(0, 8),
+        state: { user: "tester", hour: 8 },
+      },
+    });
+  });
+
+  it("pins the time and draws Math.random() from this submission's stream", async () => {
+    const outcome = await judge(`export function judge(submission, tools) {
+  return { ok: false, state: [Date.now(), new Date().getTime(), Math.random(), tools.random.next(), tools.userRandom.next()] };
+}`);
+    const stream = createRandom(seeds.submission).api;
+    const now = Date.UTC(2026, 9, 24, 0, 30);
+    expect(outcome).toEqual({
+      verdict: {
+        ok: false,
+        state: [
+          now,
+          now,
+          stream.next(),
+          stream.next(),
+          createRandom(seeds.user).api.next(),
+        ],
+      },
+    });
+  });
+
+  it("has no network, no cache and no secrets", async () => {
+    const outcome = await judge(`export async function judge() {
+  let network = "open";
+  try { await fetch("https://example.com/"); } catch { network = "blocked"; }
+  return { ok: false, state: { network, caches: typeof caches, env: Object.keys(globalThis.process?.env ?? {}).length } };
+}`);
+    expect(outcome).toEqual({
+      verdict: {
+        ok: false,
+        state: { network: "blocked", caches: "undefined", env: 0 },
+      },
+    });
+  });
+
+  it("keeps console output only when asked", async () => {
+    const code = `export function judge(s) { console.log("input", s.input, { n: 1 }); console.warn("careful"); return { ok: false }; }`;
+    expect(await judge(code, { capture: true })).toEqual({
+      verdict: { ok: false },
+      logs: ['input flag{x} {"n":1}', "warn: careful"],
+    });
+    expect(await judge(code)).toEqual({ verdict: { ok: false } });
+  });
+
+  it("tells each kind of failure apart", async () => {
+    expect(
+      await judge(`export function judge() { throw new TypeError("坏了"); }`),
+    ).toMatchObject({
+      failure: "threw",
+      detail: "TypeError: 坏了",
+    });
+    expect(
+      await judge(`export function decide() { return { ok: false }; }`),
+    ).toMatchObject({
+      failure: "no-judge",
+    });
+    expect(
+      await judge(
+        `export function judge() { return { ok: false, state: 1n }; }`,
+      ),
+    ).toMatchObject({
+      failure: "invalid",
+    });
+    expect(await judge(`export function judge( {`)).toMatchObject({
+      failure: "load",
+    });
+    expect(
+      await judge(
+        `const START = Date.now(); export function judge() { return { ok: false }; }`,
+      ),
+    ).toMatchObject({
+      failure: "load",
+      detail: expect.stringContaining("Date.now() 只能在 judge 里用"),
+    });
+  });
+
+  // Locally workerd neither limits CPU nor runs the sandbox apart from its
+  // caller, so a real endless loop would stall the test; in production the
+  // caller's clock keeps going (docs/programmable-hongbao-design.md §7). This
+  // checks the caller's own deadline with a sandbox that never answers.
+  it("stops waiting after its deadline", async () => {
+    const silent = {
+      LOADER: {
+        get: () => ({
+          getEntrypoint: () => ({
+            fetch: () => new Promise<Response>(() => {}),
+          }),
+        }),
+      },
+    } as unknown as typeof env;
+    const outcome = await runJudge(silent, {
+      code: "",
+      fingerprint: "silent",
+      submission: submission(),
+      seeds,
+      waitMs: 50,
+    });
+    expect(outcome).toEqual({
+      failure: "timeout",
+      detail: "超过 50 毫秒没有判定完",
+    });
+  });
+});

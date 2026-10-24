@@ -34,6 +34,7 @@
     "payment:diagnostics": "bun scripts/payment-diagnostics.ts",
     "payment:backup": "bun scripts/payment-backup.ts --local-rehearsal",
     "test:tooling": "vitest run --config scripts/vitest.config.mts",
+    "judge:runtime": "bun scripts/judge-runtime.ts",
     "release:build": "bun scripts/release.ts build",
     "release:verify": "bun scripts/release.ts verify",
     "release:deploy": "bun scripts/release.ts deploy",

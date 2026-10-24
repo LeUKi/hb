@@ -129,10 +129,10 @@ interface Verdict {
 
 ### 4.4 随机数
 
-- **种子**：开放时本站生成 32 字节的秘密种子 S，公布 SHA-256(S)（封存值），同开奖证明的拼手气。结束前谁都不知道 S，发红包的人也不知道：他要是知道，就能算出“谁第几次提交会抽到什么”，代码看着公平却暗中照顾人。
+- **种子**：开放时本站生成 32 字节的秘密种子 S（64 位十六进制），公布封存值 `SHA-256("hb.lafi.sh/judge/v1\n<红包 ID>\nS")`，写法同开奖证明的拼手气。结束前谁都不知道 S，发红包的人也不知道：他要是知道，就能算出“谁第几次提交会抽到什么”，代码看着公平却暗中照顾人。沙箱里也只拿得到下面两个子种子，拿不到 S。
 - **两条流**（用户定）：
-  - `tools.random`：这一次提交的。子种子 `SHA-256(S \n 用户 ID \n attempts)`。同一个人每次提交拿到的都不同，别人怎么提交也影响不到。`Math.random()` 也用它。
-  - `tools.userRandom`：这个人固定的。子种子 `SHA-256(S \n 用户 ID)`。同一个人不管提交几次都拿到同一组，适合“每人抽一次签”。
+  - `tools.random`：这一次提交的。子种子 `SHA-256("hb.lafi.sh/judge/v1/random\n<红包 ID>\nS\n<用户 ID>\n<attempts>")`。同一个人每次提交拿到的都不同，别人怎么提交也影响不到。`Math.random()` 也用它。
+  - `tools.userRandom`：这个人固定的。子种子 `SHA-256("hb.lafi.sh/judge/v1/user-random\n<红包 ID>\nS\n<用户 ID>")`。同一个人不管提交几次都拿到同一组，适合“每人抽一次签”。
   - 字节流同开奖证明第 2 节：`SHA-256("<子种子>:0")`、`SHA-256("<子种子>:1")`……接起来按顺序取。`next()` 取 53 位，`int()` 用拒绝采样不偏；同一次判定里所有的随机调用按调用顺序往下取。
 - 同一个种子、同一个人、同一个第几次，本地和线上取出来的数一模一样；测试里可以指定种子。代码出错或超时不算一次判定，重试拿到的还是同一组数，不会因为出错换一次运气。
 - 按每次提交的流，人能靠反复提交重新抽：只要代码在拒绝时露了随机结果，就要按 `attempts` 限次数，或者改用 `userRandom`。
@@ -154,14 +154,15 @@ interface Tools {
   };
   code: {              // 口令
     personal(key: string, parts: (string | number)[], length?: number): string; // HMAC-SHA256 → Crockford Base32，默认 10 位
-    totp(secret: string, options?: { step?: number; digits?: number }): string;  // RFC 6238，兼容验证器 App
+    totp(secret: string, options?: { step?: number; digits?: number; offset?: number }): string; // RFC 6238，兼容验证器 App；offset -1 是上一步
     window(seconds: number): number;            // now 落在第几个时间段
     same(input: string, code: string): boolean; // 按 Crockford 比：不分大小写，O=0、I/L=1，忽略空格和横线
   };
   text: { normalize(text: string): string };    // NFKC、去零宽字符、合并空白、转小写
   time: {
     parts(timeZone?: string): {                 // now 在某个时区的日期时间，默认 Asia/Shanghai
-      year: number; month: number; day: number; hour: number; minute: number; weekday: number };
+      year: number; month: number; day: number; hour: number; minute: number; second: number;
+      weekday: number };                       // weekday：1 是周一，7 是周日
   };
 }
 
@@ -226,8 +227,8 @@ interface Random {
 
 ## 7 运行：Dynamic Workers
 
-- 每份代码一个独立的 isolate：不给任何绑定和密钥，网络断开（`globalOutbound: null`），打开 `nodejs_compat`，兼容日期按协议版本。
-- isolate 的 ID 是协议版本加代码指纹：同一份代码一天里调用多少次都只算一个，几个红包用同一份代码也只算一个，只改测试也不会多一个。
+- 每份代码一个独立的 isolate：不给任何绑定和密钥，网络断开（`globalOutbound: null`），打开 `nodejs_compat`，兼容日期按协议版本。模块是开发包 `kit/runtime/` 的沙箱部分（`bun scripts/judge-runtime.ts` 复制进 API，测试会检查是否最新）加上 `judge.js`；入口 `main.mjs` 先加载 `prelude.mjs`，代码之前就固定好时间、`Math.random()`、`console`，去掉 `caches`。
+- isolate 的 ID 是 `judge:v<协议版本>:<代码指纹>`：同一份代码一天里调用多少次都只算一个，几个红包用同一份代码也只算一个，只改测试也不会多一个。协议开放后，这一版的运行时就不再改，改了算新版本，老红包一直用开放时那一版。
 - 超时以后，下一次换一个新的 isolate，免得排在卡住的那个后面。
 - **费用**（官方价格，2026-06）：按“代码 × 天”计，每月 1,000 个免费，之后每个 0.002 美元；请求和 CPU 按 Workers 原价，算在现有套餐里。正式的红包每开一天算一个，测试都在本地，在线检查限次数，所以几乎不花钱。
 - **实验**（2026-10-24，单独的实验 Worker `hongbao-code-lab`，不碰线上服务；用户同意留着以后再测）：
@@ -235,7 +236,8 @@ interface Random {
   - 断网有效，`eval` 被禁，环境变量是空的。
   - 吃爆内存只死沙箱自己，下一次照常。
   - CPU 上限要到“设的值 + 约 2 秒”才杀（设 10、50、200 毫秒都是约 2.2 秒），所以平台要在外面自己计时；死循环时调用方不受影响，但后面对同一份代码的调用会排在它后面。
-  - 运行中 `Date.now()` 不走；本地会走，本地也不限 CPU。
+  - 运行中 `Date.now()` 不走；本地会走，本地也不限 CPU。本地的沙箱和调用方似乎在同一个线程，死循环会把本地测试整个卡住，所以本地测超时用一个不回答的假沙箱；线上调用方的计时器照常走。
+  - API 的测试环境（`@cloudflare/vitest-plugin`）能跑真的 Dynamic Worker：断网、Node 兼容都生效，沙箱的测试直接用它。
   - 语法错在加载时就报出来，在线检查能查到。
   - 出网网关（第二版要用）：只放行声明的网站，11 毫秒；别的网站被拒。
   - 打开 `nodejs_compat` 后，`node:crypto`（md5、sha256、HMAC）、`Buffer`、`node:util` 等都能用，按时区取时间、NFKC 也正常；第一次加载约 30 毫秒（不开时 15–20 毫秒），之后约 4 毫秒。
