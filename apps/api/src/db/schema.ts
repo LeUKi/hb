@@ -1848,8 +1848,14 @@ export const codeJudgments = sqliteTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id),
+    /** Its place among this 红包's judgments, from 0. */
+    sequence: integer("sequence").notNull(),
     /** Times this person was judged before (Submission.user.attempts). */
     attempt: integer("attempt").notNull(),
+    /** As the code was given them, for replaying it (§6). */
+    title: text("title").notNull(),
+    username: text("username").notNull(),
+    level: integer("level"),
     ok: integer("ok", { mode: "boolean" }).notNull(),
     /** What the code asked, what is paid (pulled into the share's range). */
     askedMinor: integer("asked_minor"),
@@ -1867,13 +1873,15 @@ export const codeJudgments = sqliteTable(
       table.userId,
       table.attempt,
     ),
-    index("code_judgments_activity_time_idx").on(
+    uniqueIndex("code_judgments_sequence_unique").on(
       table.activityId,
-      table.judgedAt,
+      table.sequence,
     ),
     check(
       "code_judgments_shape",
       sql`typeof(${table.attempt}) = 'integer' AND ${table.attempt} >= 0
+        AND typeof(${table.sequence}) = 'integer' AND ${table.sequence} >= 0
+        AND (${table.level} IS NULL OR (typeof(${table.level}) = 'integer' AND ${table.level} BETWEEN 0 AND 4))
         AND (${table.message} IS NULL OR length(${table.message}) BETWEEN 1 AND 100)
         AND ((${table.ok} = 1 AND typeof(${table.askedMinor}) = 'integer'
             AND typeof(${table.paidMinor}) = 'integer' AND ${table.paidMinor} > 0

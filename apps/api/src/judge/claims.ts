@@ -87,15 +87,18 @@ async function stateOf(env: ApiBindings, row: JudgeRow) {
   ) as Submission["state"];
 }
 
-/** The claims so far, in order, with what each typed (§4.1). */
+/**
+ * The claims so far, in order, with what each typed (§4.1), each person as
+ * the code was given them when judged: so a replay sees the same.
+ */
 async function claimsOf(env: ApiBindings, activityId: string) {
   const rows =
-    await env.DB.prepare(`SELECT c.id, c.claimed_at AS at, r.amount_minor AS amount,
-      u.external_id AS externalId, u.username, e.ciphertext, e.submission_row_id AS rowId
-    FROM claims c JOIN reward_inventory r ON r.activity_id = c.activity_id AND r.id = c.inventory_id
-    JOIN users u ON u.id = c.user_id
-    LEFT JOIN attempt_events e ON e.claim_id = c.id
-    WHERE c.activity_id = ? ORDER BY c.claimed_at, c.id`)
+    await env.DB.prepare(`SELECT c.id, c.claimed_at AS at, j.paid_minor AS amount,
+      u.external_id AS externalId, j.username, e.ciphertext, s.id AS rowId
+    FROM code_judgments j JOIN redemption_submissions s ON s.id = j.submission_row_id
+    JOIN claims c ON c.id = s.claim_id JOIN users u ON u.id = j.user_id
+    JOIN attempt_events e ON e.submission_row_id = s.id
+    WHERE j.activity_id = ? AND j.ok = 1 AND s.outcome = 'claimed' ORDER BY j.sequence`)
       .bind(activityId)
       .all<{
         id: string;
@@ -103,21 +106,18 @@ async function claimsOf(env: ApiBindings, activityId: string) {
         amount: number;
         externalId: string;
         username: string;
-        ciphertext: string | null;
-        rowId: string | null;
+        ciphertext: string;
+        rowId: string;
       }>();
   return Promise.all(
     rows.results.map(async (row) => {
       let input = claimedInputs.get(row.id);
       if (input === undefined) {
-        input =
-          row.ciphertext && row.rowId
-            ? await decryptString(
-                row.ciphertext,
-                env,
-                attemptAssociatedData(activityId, row.rowId),
-              )
-            : "";
+        input = await decryptString(
+          row.ciphertext,
+          env,
+          attemptAssociatedData(activityId, row.rowId),
+        );
         claimedInputs.set(row.id, input);
       }
       return {
@@ -220,8 +220,8 @@ export async function claimByCode(
       "这个红包同时提交的人太多，请稍后再试。",
     );
 
-  const [user, attempts, lock, claims, state, code, secret] = await Promise.all(
-    [
+  const [user, attempts, sequence, lock, claims, state, code, secret] =
+    await Promise.all([
       env.DB.prepare(
         "SELECT external_id AS externalId, username, trust_level AS level FROM users WHERE id = ?",
       )
@@ -237,6 +237,11 @@ export async function claimByCode(
         .bind(activityId, userId)
         .first<number>("count"),
       env.DB.prepare(
+        "SELECT COUNT(*) AS count FROM code_judgments WHERE activity_id = ?",
+      )
+        .bind(activityId)
+        .first<number>("count"),
+      env.DB.prepare(
         "SELECT remaining_minor AS remaining FROM balance_locks WHERE activity_id = ? AND purpose = 'activity' AND status = 'active'",
       )
         .bind(activityId)
@@ -245,9 +250,8 @@ export async function claimByCode(
       stateOf(env, row),
       codeOf(env, row),
       readSeed(env, row),
-    ],
-  );
-  if (!user || attempts === null || lock === null)
+    ]);
+  if (!user || attempts === null || sequence === null || lock === null)
     throw new Error("代码判定红包 claim is missing its parts");
   const config = JSON.parse(activity.config) as LdcActivityInput;
   const hongbao = {
@@ -355,12 +359,16 @@ export async function claimByCode(
       rowId,
     ),
     env.DB.prepare(`INSERT INTO code_judgments
-      (submission_row_id, activity_id, user_id, attempt, ok, asked_minor, paid_minor, note, message, state_ciphertext, judged_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+      (submission_row_id, activity_id, user_id, sequence, attempt, title, username, level, ok, asked_minor, paid_minor, note, message, state_ciphertext, judged_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
       rowId,
       activityId,
       userId,
+      sequence,
       attempts,
+      submission.hongbao.title,
+      submission.user.username,
+      submission.user.level,
       Number(reading.ok),
       reading.ok ? reading.asked : null,
       reading.ok ? reading.paid : null,

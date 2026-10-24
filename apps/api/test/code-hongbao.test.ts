@@ -9,6 +9,10 @@ import {
   updateActivity,
 } from "../src/activities/service";
 import { readAccount } from "../src/balance/ledger";
+import {
+  readBalanceSettings,
+  updateBalanceSettings,
+} from "../src/balance/settings";
 import { findJudgeRow, readSeed } from "../src/judge/storage";
 import { sha256Hex } from "../src/security/crypto";
 import {
@@ -231,6 +235,44 @@ describe("代码判定红包: sending one", () => {
         .bind(saved.id)
         .run(),
     ).rejects.toThrow(/immutable_activity_code/);
+  });
+
+  it("keeps its three 网站设置 with the rest of 🐟额's, each left as it is when not sent", async () => {
+    const before = await readBalanceSettings(bindings);
+    const changed = await updateBalanceSettings(bindings, admin.id, {
+      expectedVersion: before.version,
+      topupEnabled: before.topupEnabled,
+      withdrawEnabled: before.withdrawEnabled,
+      topupFeePercent: before.topupFeePercent,
+      withdrawFeePercent: before.withdrawFeePercent,
+      withdrawMaxMinor: before.withdrawMaxMinor,
+      codeHongbaoDailyLimit: 5,
+      codeCheckDailyLimit: 20,
+    });
+    expect(changed).toMatchObject({
+      codeHongbaoEnabled: true,
+      codeHongbaoDailyLimit: 5,
+      codeCheckDailyLimit: 20,
+    });
+    const off = await updateBalanceSettings(bindings, admin.id, {
+      expectedVersion: changed.version,
+      topupEnabled: before.topupEnabled,
+      withdrawEnabled: before.withdrawEnabled,
+      topupFeePercent: before.topupFeePercent,
+      withdrawFeePercent: before.withdrawFeePercent,
+      withdrawMaxMinor: before.withdrawMaxMinor,
+      codeHongbaoEnabled: false,
+    });
+    expect(off).toMatchObject({
+      codeHongbaoEnabled: false,
+      codeHongbaoDailyLimit: 5,
+      codeCheckDailyLimit: 20,
+    });
+    await expect(
+      env.DB.prepare(
+        "UPDATE balance_settings SET code_check_daily_limit = 0 WHERE id = 'global'",
+      ).run(),
+    ).rejects.toThrow(/invalid_code_limits/);
   });
 
   it("opens as many a day as 网站设置 says", async () => {

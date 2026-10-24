@@ -6,6 +6,7 @@ export * from "./hash.mjs";
 export * from "./imports.mjs";
 export * from "./money.mjs";
 export * from "./random.mjs";
+export * from "./records.mjs";
 export * from "./seeds.mjs";
 export * from "./testing.mjs";
 export * from "./text.mjs";

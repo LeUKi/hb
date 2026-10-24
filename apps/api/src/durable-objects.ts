@@ -58,6 +58,7 @@ import {
   refreshGlobalResult,
 } from "./discovery/service";
 import type { ApiBindings } from "./env";
+import { stopCodeActivity } from "./judge/stop";
 import { flushPaymentOutbox, runMerchantCycle } from "./payments/scheduler";
 import {
   AttemptCooldownError,
@@ -520,7 +521,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       url.pathname === "/internal/redemptions/discover" ||
       url.pathname === "/internal/redemptions/refresh";
     const route =
-      /^\/internal\/activities\/([a-f0-9-]{36})\/(manage|update|open|claim|solve|delete|end|refresh)$/i.exec(
+      /^\/internal\/activities\/([a-f0-9-]{36})\/(manage|update|open|claim|solve|delete|end|refresh|stop)$/i.exec(
         url.pathname,
       );
     if (
@@ -747,6 +748,18 @@ export class ActivityDO extends DurableObject<ApiBindings> {
               {
                 headers: { "Cache-Control": "no-store" },
               },
+            );
+          }
+          // 站长's 停用 of a 代码判定红包 (judge/stop.ts); the route checked who.
+          if (operation === "stop") {
+            if (typeof input.adminId !== "string")
+              throw new ActivityError(400, "INVALID_ACTIVITY", "停用请求无效");
+            await stopCodeActivity(this.env, id, input.adminId);
+            await resumePendingActivityClaims(this.env, id);
+            this.announce(id);
+            return Response.json(
+              { status: "stopped" },
+              { headers: { "Cache-Control": "no-store" } },
             );
           }
           if (typeof authorId !== "string")

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "0bb24eeb-191f-4cc6-b3cf-fc1625b3206c",
+  "id": "d6da97c9-92d3-4813-93a1-5cae3c3e3487",
   "prevId": "b7a17016-db89-4339-a65a-fbe500d9817e",
   "tables": {
     "account_attempt_cooldowns": {
@@ -3451,11 +3451,39 @@
           "notNull": true,
           "autoincrement": false
         },
+        "sequence": {
+          "name": "sequence",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
         "attempt": {
           "name": "attempt",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "username": {
+          "name": "username",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "level": {
+          "name": "level",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         },
         "ok": {
@@ -3514,10 +3542,10 @@
           "columns": ["activity_id", "user_id", "attempt"],
           "isUnique": true
         },
-        "code_judgments_activity_time_idx": {
-          "name": "code_judgments_activity_time_idx",
-          "columns": ["activity_id", "judged_at"],
-          "isUnique": false
+        "code_judgments_sequence_unique": {
+          "name": "code_judgments_sequence_unique",
+          "columns": ["activity_id", "sequence"],
+          "isUnique": true
         }
       },
       "foreignKeys": {
@@ -3554,7 +3582,7 @@
       "checkConstraints": {
         "code_judgments_shape": {
           "name": "code_judgments_shape",
-          "value": "typeof(\"code_judgments\".\"attempt\") = 'integer' AND \"code_judgments\".\"attempt\" >= 0\n        AND (\"code_judgments\".\"message\" IS NULL OR length(\"code_judgments\".\"message\") BETWEEN 1 AND 100)\n        AND ((\"code_judgments\".\"ok\" = 1 AND typeof(\"code_judgments\".\"asked_minor\") = 'integer'\n            AND typeof(\"code_judgments\".\"paid_minor\") = 'integer' AND \"code_judgments\".\"paid_minor\" > 0\n            AND (\"code_judgments\".\"note\" IS NULL OR \"code_judgments\".\"note\" IN ('floor','cap','last')))\n          OR (\"code_judgments\".\"ok\" = 0 AND \"code_judgments\".\"asked_minor\" IS NULL AND \"code_judgments\".\"paid_minor\" IS NULL AND \"code_judgments\".\"note\" IS NULL))"
+          "value": "typeof(\"code_judgments\".\"attempt\") = 'integer' AND \"code_judgments\".\"attempt\" >= 0\n        AND typeof(\"code_judgments\".\"sequence\") = 'integer' AND \"code_judgments\".\"sequence\" >= 0\n        AND (\"code_judgments\".\"level\" IS NULL OR (typeof(\"code_judgments\".\"level\") = 'integer' AND \"code_judgments\".\"level\" BETWEEN 0 AND 4))\n        AND (\"code_judgments\".\"message\" IS NULL OR length(\"code_judgments\".\"message\") BETWEEN 1 AND 100)\n        AND ((\"code_judgments\".\"ok\" = 1 AND typeof(\"code_judgments\".\"asked_minor\") = 'integer'\n            AND typeof(\"code_judgments\".\"paid_minor\") = 'integer' AND \"code_judgments\".\"paid_minor\" > 0\n            AND (\"code_judgments\".\"note\" IS NULL OR \"code_judgments\".\"note\" IN ('floor','cap','last')))\n          OR (\"code_judgments\".\"ok\" = 0 AND \"code_judgments\".\"asked_minor\" IS NULL AND \"code_judgments\".\"paid_minor\" IS NULL AND \"code_judgments\".\"note\" IS NULL))"
         }
       }
     },

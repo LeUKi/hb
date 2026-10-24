@@ -18,7 +18,12 @@ import { sha256Hex } from "../src/security/crypto";
 
 export const origin = "https://hb.example.com";
 export const bindings: ApiBindings = { ...env, APP_ORIGIN: origin };
-export type Actor = { id: string; cookie: string; csrf: string };
+export type Actor = {
+  id: string;
+  cookie: string;
+  csrf: string;
+  externalId: string;
+};
 
 export async function actor(): Promise<Actor> {
   const id = crypto.randomUUID();
@@ -26,9 +31,10 @@ export async function actor(): Promise<Actor> {
   const csrf = crypto.randomUUID();
   const now = new Date();
   const db = createDb(env.DB);
+  const externalId = String(800_000 + Math.floor(Math.random() * 1_000_000));
   await db.insert(users).values({
     id,
-    externalId: String(800_000 + Math.floor(Math.random() * 1_000_000)),
+    externalId,
     username: `code_${id.slice(0, 8)}`,
     displayName: `Code ${id.slice(0, 4)}`,
     trustLevel: 2,
@@ -43,7 +49,7 @@ export async function actor(): Promise<Actor> {
     lastSeenAt: now,
     expiresAt: new Date(Date.now() + 3600000),
   });
-  return { id, cookie: `hb_session=${token}`, csrf };
+  return { id, cookie: `hb_session=${token}`, csrf, externalId };
 }
 
 export const JUDGE = `export function judge(submission, tools) {

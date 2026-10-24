@@ -51,7 +51,11 @@ CREATE TABLE `code_judgments` (
 	`submission_row_id` text PRIMARY KEY NOT NULL,
 	`activity_id` text NOT NULL,
 	`user_id` text NOT NULL,
+	`sequence` integer NOT NULL,
 	`attempt` integer NOT NULL,
+	`title` text NOT NULL,
+	`username` text NOT NULL,
+	`level` integer,
 	`ok` integer NOT NULL,
 	`asked_minor` integer,
 	`paid_minor` integer,
@@ -63,6 +67,8 @@ CREATE TABLE `code_judgments` (
 	FOREIGN KEY (`activity_id`) REFERENCES `activities`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action,
 	CONSTRAINT "code_judgments_shape" CHECK(typeof("code_judgments"."attempt") = 'integer' AND "code_judgments"."attempt" >= 0
+        AND typeof("code_judgments"."sequence") = 'integer' AND "code_judgments"."sequence" >= 0
+        AND ("code_judgments"."level" IS NULL OR (typeof("code_judgments"."level") = 'integer' AND "code_judgments"."level" BETWEEN 0 AND 4))
         AND ("code_judgments"."message" IS NULL OR length("code_judgments"."message") BETWEEN 1 AND 100)
         AND (("code_judgments"."ok" = 1 AND typeof("code_judgments"."asked_minor") = 'integer'
             AND typeof("code_judgments"."paid_minor") = 'integer' AND "code_judgments"."paid_minor" > 0
@@ -71,7 +77,7 @@ CREATE TABLE `code_judgments` (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `code_judgments_attempt_unique` ON `code_judgments` (`activity_id`,`user_id`,`attempt`);--> statement-breakpoint
-CREATE INDEX `code_judgments_activity_time_idx` ON `code_judgments` (`activity_id`,`judged_at`);--> statement-breakpoint
+CREATE UNIQUE INDEX `code_judgments_sequence_unique` ON `code_judgments` (`activity_id`,`sequence`);--> statement-breakpoint
 CREATE TABLE `judge_checks` (
 	`id` text PRIMARY KEY NOT NULL,
 	`user_id` text NOT NULL,
@@ -87,7 +93,8 @@ CREATE INDEX `judge_checks_user_time_idx` ON `judge_checks` (`user_id`,`created_
 CREATE INDEX `judge_checks_user_code_idx` ON `judge_checks` (`user_id`,`fingerprint`,`tests_digest`);--> statement-breakpoint
 ALTER TABLE `balance_settings` ADD `code_hongbao_enabled` integer DEFAULT false NOT NULL;--> statement-breakpoint
 ALTER TABLE `balance_settings` ADD `code_hongbao_daily_limit` integer DEFAULT 3 NOT NULL;--> statement-breakpoint
-ALTER TABLE `balance_settings` ADD `code_check_daily_limit` integer DEFAULT 10 NOT NULL;--> statement-breakpoint
+ALTER TABLE `balance_settings` ADD `code_check_daily_limit` integer DEFAULT 10 NOT NULL;
+--> statement-breakpoint
 -- 代码判定红包 (docs/programmable-hongbao-design.md): a third way to take
 -- part. Only from 🐟额, only on its page (so on 红包广场), shares made one
 -- at a time as the code judges them, never with 口令.
@@ -242,8 +249,8 @@ WHEN EXISTS(SELECT 1 FROM activities WHERE id=OLD.activity_id AND opened_at IS N
 BEGIN SELECT RAISE(ABORT,'immutable_activity_code'); END;
 --> statement-breakpoint
 -- A judgment belongs to its submission (pending when paid, incorrect when
--- turned down), counts this person's judgments in order, and is kept as it
--- was.
+-- turned down), counts this 红包's and this person's judgments in order,
+-- and is kept as it was.
 CREATE TRIGGER code_judgments_insert_guard BEFORE INSERT ON code_judgments
 WHEN NOT EXISTS(SELECT 1 FROM redemption_submissions s JOIN activities a ON a.id=s.activity_id
    JOIN activity_code c ON c.activity_id=a.id
@@ -252,6 +259,7 @@ WHEN NOT EXISTS(SELECT 1 FROM redemption_submissions s JOIN activities a ON a.id
      AND s.outcome=CASE WHEN NEW.ok=1 THEN 'pending' ELSE 'incorrect' END
      AND a.opened_at IS NOT NULL AND a.ended_at IS NULL AND c.paused_at IS NULL AND c.stopped_at IS NULL)
  OR NEW.attempt IS NOT (SELECT COUNT(*) FROM code_judgments WHERE activity_id=NEW.activity_id AND user_id=NEW.user_id)
+ OR NEW.sequence IS NOT (SELECT COUNT(*) FROM code_judgments WHERE activity_id=NEW.activity_id)
 BEGIN SELECT RAISE(ABORT,'invalid_code_judgment'); END;
 --> statement-breakpoint
 CREATE TRIGGER code_judgments_immutable BEFORE UPDATE ON code_judgments

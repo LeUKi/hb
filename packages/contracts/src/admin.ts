@@ -189,7 +189,7 @@ export type AdminActivityListItem = {
   title: string;
   authorId: string;
   authorDisplayName: string;
-  participationMode: "password" | "direct";
+  participationMode: "password" | "direct" | "code";
   rewardType: "ldc";
   paymentMode: "simulation" | "real" | null;
   lifecycle: AdminLifecycle;
@@ -216,6 +216,18 @@ export type AdminActivityDetail = AdminActivityListItem & {
   drawPublishedAt: number | null;
   /** How many 口令 it has (never the 口令 themselves). */
   passwordCount: number;
+  /**
+   * 代码判定红包 (docs/programmable-hongbao-design.md §1): its code's
+   * fingerprint, whether failing code paused it, and the 站长's 停用 (never
+   * the code or anyone's input).
+   */
+  code?: {
+    fingerprint: string;
+    failuresInRow: number;
+    pausedAt: number | null;
+    stoppedAt: number | null;
+    stoppedBy: string | null;
+  };
   payments: {
     total: number;
     pending: number;

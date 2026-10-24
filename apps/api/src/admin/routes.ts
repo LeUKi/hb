@@ -584,7 +584,8 @@ async function listActivities(
     title: String(row.title),
     authorId: String(row.author_id),
     authorDisplayName: String(row.authorDisplayName),
-    participationMode: row.participation_mode as "password" | "direct",
+    participationMode:
+      row.participation_mode as AdminActivityListItem["participationMode"],
     rewardType: row.reward_type as AdminActivityListItem["rewardType"],
     paymentMode: row.payment_mode as "simulation" | "real" | null,
     lifecycle: row.lifecycle as AdminActivityListItem["lifecycle"],
@@ -624,8 +625,12 @@ async function activityDetail(
       a.draw_state,a.topic_id,a.post_number,a.created_at,a.updated_at,a.opened_at,a.deadline,
       a.ended_at,a.end_reason,a.archived_at,a.draw_closed_at,a.draw_published_at,
       (SELECT COUNT(*) FROM activity_passwords p WHERE p.activity_id=a.id) AS password_count,
-      ${lifecycleSql} AS lifecycle
+      ${lifecycleSql} AS lifecycle,
+      c.fingerprint AS code_fingerprint, c.failures_in_row AS code_failures, c.paused_at AS code_paused_at,
+      c.stopped_at AS code_stopped_at, s.display_name AS code_stopped_by
       FROM activities a JOIN users u ON u.id=a.author_id
+      LEFT JOIN activity_code c ON c.activity_id=a.id AND a.participation_mode='code'
+      LEFT JOIN users s ON s.id=c.stopped_by_user_id
       WHERE a.id=? AND a.reward_type='ldc' AND a.deleted_at IS NULL`).bind(id),
     env.DB.prepare(`SELECT COUNT(*) AS total,
       SUM(CASE WHEN status!='confirmed' THEN 1 ELSE 0 END) AS pending,
@@ -649,7 +654,8 @@ async function activityDetail(
       title: String(row.title),
       authorId: String(row.author_id),
       authorDisplayName: String(row.authorDisplayName),
-      participationMode: row.participation_mode as "password" | "direct",
+      participationMode:
+        row.participation_mode as AdminActivityDetail["participationMode"],
       rewardType: row.reward_type as AdminActivityDetail["rewardType"],
       paymentMode: row.payment_mode as "simulation" | "real" | null,
       lifecycle: row.lifecycle as AdminActivityListItem["lifecycle"],
@@ -673,6 +679,24 @@ async function activityDetail(
       summary,
       author: activityAuthor(row),
       passwordCount: asInt(row.password_count),
+      ...(row.code_fingerprint
+        ? {
+            code: {
+              fingerprint: String(row.code_fingerprint),
+              failuresInRow: asInt(row.code_failures),
+              pausedAt:
+                row.code_paused_at === null ? null : asInt(row.code_paused_at),
+              stoppedAt:
+                row.code_stopped_at === null
+                  ? null
+                  : asInt(row.code_stopped_at),
+              stoppedBy:
+                row.code_stopped_by === null
+                  ? null
+                  : String(row.code_stopped_by),
+            },
+          }
+        : {}),
       payments: {
         total: asInt(pay?.total),
         pending: asInt(pay?.pending),

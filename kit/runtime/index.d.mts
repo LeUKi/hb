@@ -1,4 +1,11 @@
-import type { Json, Random, Submission, TestCase, Tools } from "../judge";
+import type {
+  Json,
+  JudgeRecords,
+  Random,
+  Submission,
+  TestCase,
+  Tools,
+} from "../judge";
 
 export type Fill = (bytes: Uint8Array) => void;
 
@@ -170,3 +177,6 @@ export function judgeTest(
   submission: Submission,
   outcome: { verdict: unknown } | { failure: string; detail: string },
 ): TestResult;
+
+// records.mjs
+export function submissionsOf(records: JudgeRecords): Submission[];

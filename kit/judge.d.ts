@@ -153,3 +153,41 @@ export interface TestCase {
     state?: Json;
   };
 }
+
+/**
+ * 发红包的人下载的完整领取记录（网站上“下载完整记录”）：每次判定交给代码的
+ * 输入和那时的情况，加上代码的回答；npm run replay 拿它逐条重放核对。
+ * 已领记录、剩余奖池和状态都由前面的判定推出来，不重复写。
+ */
+export interface JudgeRecords {
+  protocol: number;
+  hongbao: {
+    id: string;
+    total: number;
+    count: number;
+    minEach: number;
+    openedAt: number;
+    endsAt: number;
+    /** judge.js 的 SHA-256 */
+    fingerprint: string;
+    seedCommitment: string;
+    /** 结束后才有 */
+    seed: string | null;
+  };
+  /** 按判定的先后 */
+  judgments: {
+    /** Submission.now */
+    at: number;
+    input: string;
+    user: Submission["user"];
+    /** 那时的红包标题 */
+    title: string;
+    /** 代码的回答（读过以后：message 合并了空白）；写了 state 才有 state */
+    verdict: { ok: boolean; amount?: number; message?: string; state?: Json };
+    /** 实际发的，和拉进范围的原因 */
+    paid?: number;
+    note?: "floor" | "cap" | "last";
+    /** 这一份领到的时间；没领成（比如到点结束了）就没有 */
+    claimedAt?: number;
+  }[];
+}
