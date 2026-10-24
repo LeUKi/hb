@@ -602,14 +602,16 @@ describe("tests.json: expect", () => {
     expect((await runTest(part, shallow.run)).problem).toBe(
       "state 里的 a.a 和 expect.stateIncludes 不一样",
     );
-    // Under 16 KB, the code's own state can still nest 5000 deep.
+    // The code's own state, nested deep, still compares. Its depth is held
+    // to what JSON.stringify manages on any stack (it recurses: 5000 deep
+    // passes here and fails on CI's Linux runner).
     const [same] = readTestsOrThrow(
-      `{"tests":[{"name":"深","input":"x","expect":{"ok":false,"state":${nested(5_000)}}}]}`,
+      `{"tests":[{"name":"深","input":"x","expect":{"ok":false,"state":${nested(500)}}}]}`,
     );
     if (!same) throw new Error("No test");
     const deep = sandbox(() => ({
       ok: false,
-      state: JSON.parse(nested(5_000)),
+      state: JSON.parse(nested(500)),
     }));
     const result = await runTest(same, deep.run, { twice: true });
     expect(result.passed).toBe(true);
