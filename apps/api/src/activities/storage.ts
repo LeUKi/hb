@@ -170,7 +170,9 @@ export function prepareLdcInventory(
   existing: InventoryRow[],
   now: number,
 ): InventoryRow[] {
-  if (input.money.mode === "timed_draw") return [];
+  // A draw's prizes come with its plan, a 代码判定's shares as judged.
+  if (input.money.mode === "timed_draw" || input.money.mode === "code")
+    return [];
   const amounts =
     input.money.mode === "random"
       ? generateRandomAmounts(input.money)

@@ -30,6 +30,7 @@ import {
   type UpdateActivityInput,
 } from "@hb/contracts";
 import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { seedCommitment } from "../../../../kit/runtime/index.mjs";
 import {
   balanceOpeningBlocked,
   balancePaymentMode,
@@ -40,6 +41,20 @@ import {
 import { createDb } from "../db/client";
 import { activities, users } from "../db/schema";
 import type { ApiBindings } from "../env";
+import { requireCodeHongbao } from "../judge/check";
+import {
+  CODE_OPENING_ALLOWED,
+  codeOpeningBlocked,
+  codeOpeningDay,
+} from "../judge/opening";
+import {
+  dropJudgeStatement,
+  findJudgeRow,
+  readJudgeInput,
+  sameJudge,
+  saveJudgeStatement,
+  sealSeedStatement,
+} from "../judge/storage";
 import { ownedMerchant } from "../payments/merchants";
 import {
   PUBLICATION_VERIFICATION_MS,
@@ -104,12 +119,13 @@ import {
 
 export { deleteActivity } from "./deletion";
 
-type StoredConfig = Omit<LdcActivityInput, "passwords">;
+type StoredConfig = Omit<LdcActivityInput, "passwords" | "judge">;
 const databaseNow =
   "CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)";
 
 function storedConfig(input: ActivityInput): StoredConfig {
-  const { passwords: _passwords, ...config } = input;
+  // 代码判定's code is kept apart, encrypted (judge/storage.ts).
+  const { passwords: _passwords, judge: _judge, ...config } = input;
   const topic = normalizeTopicLink(config.topicUrl);
   return {
     ...config,
@@ -269,7 +285,17 @@ async function openingBlockedReason(
       !allowsRealOpening(env, await readPlatformControls(env))
     )
       return "REAL_LDC_NOT_ENABLED";
-    return balanceOpeningBlocked(env, row.authorId, configuration(row));
+    const balance = await balanceOpeningBlocked(
+      env,
+      row.authorId,
+      configuration(row),
+    );
+    if (balance === "BALANCE_HONGBAO_PAUSED") return balance;
+    return (
+      (row.participationMode === "code"
+        ? await codeOpeningBlocked(env, row)
+        : undefined) ?? balance
+    );
   }
   if (!row.merchantId) return undefined;
   if (timedDrawMoney(row) && env.LDC_TIMED_DRAW_ENABLED !== "true")
@@ -328,9 +354,10 @@ async function managed(
   env: ApiBindings,
   row: ActivityRow,
 ): Promise<ManagedActivity> {
-  const [snapshot, activityAuthor] = await Promise.all([
+  const [snapshot, activityAuthor, judgeRow] = await Promise.all([
     privateSnapshot(env, row.id),
     author(env, row.authorId),
+    row.participationMode === "code" ? findJudgeRow(env, row.id) : undefined,
   ]);
   return {
     ...projectActivitySummary(snapshot.row),
@@ -338,6 +365,7 @@ async function managed(
     config: storedActivitySchema.parse({
       ...configuration(snapshot.row),
       passwords: snapshot.content.passwords,
+      ...(judgeRow ? { judge: await readJudgeInput(env, judgeRow) } : {}),
     }),
     openingBlockedReason: await openingBlockedReason(env, snapshot.row),
   };
@@ -548,6 +576,8 @@ export async function createActivity(
   if (!checked.success)
     invalidActivity(checked.error.issues[0]?.message ?? "请检查新红包的配置");
   const balance = fundingOf(input.activity) === "balance";
+  if (input.activity.money.mode === "code")
+    await requireCodeHongbao(env, authorId);
   if (balance) await requireBalanceFunding(env, authorId);
   const merchant = balance
     ? null
@@ -572,9 +602,18 @@ export async function createActivity(
     ...storedConfig(input.activity),
     scope: await resolveScope(env, input.activity.scope),
   };
-  const [passwords, inventory] = await Promise.all([
+  const [passwords, inventory, judge] = await Promise.all([
     preparePasswords(env, id, input.activity.passwords, [], now),
     prepareLdcInventory(id, input.activity, [], now),
+    input.activity.money.mode === "code" && input.activity.judge
+      ? saveJudgeStatement(
+          env,
+          id,
+          input.activity.judge,
+          input.activity.money,
+          now,
+        )
+      : null,
   ]);
   try {
     await env.DB.batch([
@@ -606,6 +645,7 @@ export async function createActivity(
       ),
       insertPasswordRows(env.DB, passwords),
       insertInventoryRows(env.DB, inventory),
+      ...(judge ? [judge] : []),
     ]);
   } catch (error) {
     // A parallel retry may have won the unique (author, request) constraint.
@@ -666,6 +706,9 @@ export async function updateActivity(
     invalidActivity("开放后不能修改从哪发");
   if (balance && row.openedAt === null && row.funding !== "balance")
     await requireBalanceFunding(env, authorId);
+  const coded = input.activity.money.mode === "code";
+  if (coded && row.participationMode !== "code")
+    await requireCodeHongbao(env, authorId);
   const merchant = balance
     ? null
     : await ownedMerchant(env, input.activity.merchantId, authorId);
@@ -740,6 +783,15 @@ export async function updateActivity(
       )
     )
       invalidActivity("开放后不能修改口令");
+    if (row.participationMode === "code") {
+      const judgeRow = await findJudgeRow(env, id);
+      if (
+        !judgeRow ||
+        !input.activity.judge ||
+        !(await sameJudge(judgeRow, input.activity.judge))
+      )
+        invalidActivity("开放后不能修改代码、测试和提示");
+    }
     if (timedDrawMoney(row)) {
       if (!sameDeadlineConfig(config.deadline, oldConfig.deadline))
         invalidActivity("限时开奖开放后不能修改开奖时间");
@@ -803,6 +855,19 @@ export async function updateActivity(
     ),
   ];
   if (row.openedAt === null) {
+    // After the activity's own row, which says whether it is 代码判定.
+    if (input.activity.money.mode === "code" && input.activity.judge)
+      statements.push(
+        await saveJudgeStatement(
+          env,
+          id,
+          input.activity.judge,
+          input.activity.money,
+          now,
+        ),
+      );
+    else if (row.participationMode === "code")
+      statements.push(dropJudgeStatement(env, id));
     statements.push(
       env.DB.prepare(
         "DELETE FROM activity_passwords WHERE activity_id = ?",
@@ -878,13 +943,18 @@ export async function openActivity(
       );
   }
   const privateContent = await readPrivateContent(env, id);
+  const judgeRow =
+    row.participationMode === "code" ? await findJudgeRow(env, id) : undefined;
   const checked = activityInputSchema.safeParse({
     ...configuration(row),
     passwords: privateContent.passwords,
+    ...(judgeRow ? { judge: await readJudgeInput(env, judgeRow) } : {}),
   });
   if (!checked.success) invalidActivity("红包配置不完整，无法开放");
   const inventory = (await privateRows(env, id)).inventory;
   const timed = checked.data.money.mode === "timed_draw";
+  // 代码判定: each share is made when it is judged (judge/claims.ts).
+  const coded = checked.data.money.mode === "code";
   if (
     timed &&
     (ldcRewardCount(checked.data) !== row.totalCount ||
@@ -892,7 +962,7 @@ export async function openActivity(
       row.registeredCount !== 0)
   )
     invalidActivity("限时开奖配置与报名状态不一致，无法开放");
-  if (inventory.length !== (timed ? 0 : row.totalCount))
+  if (inventory.length !== (timed || coded ? 0 : row.totalCount))
     invalidActivity("红包库存不完整，无法开放");
   const balance = row.funding === "balance";
   if (balance) {
@@ -908,7 +978,9 @@ export async function openActivity(
         "REAL_LDC_NOT_ENABLED",
         publicationMessages.REAL_LDC_NOT_ENABLED,
       );
-    const blocked = await balanceOpeningBlocked(env, authorId, checked.data);
+    const blocked =
+      (await balanceOpeningBlocked(env, authorId, checked.data)) ??
+      (coded ? await codeOpeningBlocked(env, row) : undefined);
     if (blocked)
       throw new ActivityError(
         409,
@@ -926,8 +998,11 @@ export async function openActivity(
     if (row.paymentMode !== merchant.mode)
       invalidActivity("红包付款模式与商户配置不一致，无法开放");
   }
+  if (coded && ldcRewardCount(checked.data) !== row.totalCount)
+    invalidActivity("红包金额与库存不一致，无法开放");
   if (
     !timed &&
+    !coded &&
     (ldcRewardCount(checked.data) !== row.totalCount ||
       inventory.some(
         (item, index) =>
@@ -975,7 +1050,7 @@ export async function openActivity(
       )
         invalidActivity("红包金额超出随机算法范围，无法开放");
     }
-  } else if (!timed) {
+  } else if (!timed && !coded) {
     const amounts = ldcAmounts(checked.data);
     if (inventory.some((item, index) => item.amountMinor !== amounts[index]))
       invalidActivity("红包金额与库存不一致，无法开放");
@@ -1030,12 +1105,21 @@ export async function openActivity(
     await env.DB.batch([
       activityWriteGuard(env.DB, id, authorId, version),
       ...(sealed?.before ?? []),
+      // 代码判定's seed is sealed now; the opening checks it is there.
+      ...(coded
+        ? [
+            await sealSeedStatement(env, id, (secret) =>
+              seedCommitment(id, secret),
+            ),
+          ]
+        : []),
       env.DB.prepare(`UPDATE activities SET
       version = CASE WHEN version = ? AND author_id = ? AND deleted_at IS NULL AND opened_at IS NULL AND merchant_id IS ? AND ${openingDeadlineSql} > ${databaseNow} AND ${openingDeadlineSql} <= 8640000000000000
       AND reward_type='ldc'
       AND (funding='balance' OR EXISTS(SELECT 1 FROM merchants m WHERE m.id=activities.merchant_id AND m.author_id=activities.author_id AND m.kind='author' AND m.usage_status='current'))
       AND (funding='merchant' OR EXISTS(SELECT 1 FROM balance_settings WHERE id='global' AND hongbao_enabled=1))
       AND EXISTS(SELECT 1 FROM users WHERE id=activities.author_id AND active=1)
+      AND ${CODE_OPENING_ALLOWED}
       AND (payment_mode IS NOT 'real' OR ?=1 OR (
         EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_open=1)
         AND (funding='balance' OR EXISTS(SELECT 1 FROM merchants m JOIN merchant_credentials c ON c.merchant_id=m.id AND c.version=m.credential_version
@@ -1048,6 +1132,7 @@ export async function openActivity(
         expectedMerchantId,
         openingDeadlineValue,
         openingDeadlineValue,
+        codeOpeningDay(),
         Number(testPermission),
         expectedCredentialVersion,
         JSON.stringify(config),

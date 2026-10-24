@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { claimScopeSchema, type PublicClaimScope } from "./claim-scope";
 import {
+  type JudgeNote,
+  judgeAnswerSchema,
+  judgeInputSchema,
+  type PublicJudge,
+} from "./judge";
+import {
   amountToMinor,
   type LdcOpeningBlockedReason,
   type Merchant,
@@ -21,6 +27,7 @@ export * from "./claim-scope";
 export * from "./draw-proof";
 export * from "./ecoji-v2";
 export * from "./forum-emoji";
+export * from "./judge";
 export * from "./payments";
 export * from "./profile";
 export * from "./random";
@@ -158,7 +165,8 @@ function acceptsHistoricalTopicLink(value: string): boolean {
   }
 }
 
-export const participationModeSchema = z.enum(["password", "direct"]);
+/** 代码判定 (docs/programmable-hongbao-design.md): the sender's code judges each submission. */
+export const participationModeSchema = z.enum(["password", "direct", "code"]);
 export type ParticipationMode = z.infer<typeof participationModeSchema>;
 
 const baseActivitySchema = z.strictObject({
@@ -290,10 +298,38 @@ export const ldcMoneySchema = z.discriminatedUnion("mode", [
           message: "总奖池不足，每个获奖名额至少需要 0.01 LDC",
         });
     }),
+  /**
+   * 代码判定: a pool and a number of shares; each share's amount is the
+   * code's to say, within its range, never under 每份至少 (minEach).
+   */
+  z
+    .strictObject({
+      mode: z.literal("code"),
+      totalAmount: moneySchema,
+      count: z.number().int().min(1).max(ACTIVITY_LIMITS.rewards),
+      minEach: moneySchema,
+    })
+    .superRefine((value, ctx) => {
+      if (
+        !moneySchema.safeParse(value.totalAmount).success ||
+        !moneySchema.safeParse(value.minEach).success
+      )
+        return;
+      if (
+        BigInt(amountToMinor(value.minEach)) * BigInt(value.count) >
+        BigInt(amountToMinor(value.totalAmount))
+      )
+        ctx.addIssue({
+          code: "custom",
+          path: ["totalAmount"],
+          message: "总奖池要够每份都拿到“每份至少”",
+        });
+    }),
 ]);
 export type LdcMoney = z.infer<typeof ldcMoneySchema>;
 export type RandomLdcMoney = Extract<LdcMoney, { mode: "random" }>;
 export type TimedDrawMoney = Extract<LdcMoney, { mode: "timed_draw" }>;
+export type CodeMoney = Extract<LdcMoney, { mode: "code" }>;
 /**
  * Where a 红包's LDC comes from (docs/balance-design.md §14): the author's
  * Credit merchant app paying each claim (商户直发), or their 🐟额, locked
@@ -313,6 +349,8 @@ const ldcActivitySchema = baseActivitySchema.extend({
   /** The paying merchant; empty for a 🐟额红包. */
   merchantId: z.union([z.uuid(), z.literal("")]),
   money: ldcMoneySchema,
+  /** 代码判定 only: stored apart and encrypted, like the passwords. */
+  judge: judgeInputSchema.optional(),
 });
 
 function validateActivity(
@@ -333,6 +371,40 @@ function validateActivity(
       path: ["joinSquare"],
       message: "关闭了首页领取的红包要加入红包广场",
     });
+  const coded = activity.money.mode === "code";
+  if (coded !== (activity.participationMode === "code"))
+    context.addIssue({
+      code: "custom",
+      path: ["participationMode"],
+      message: coded
+        ? "代码判定红包由代码判定，不用口令"
+        : "只有代码判定红包由代码判定",
+    });
+  if (coded) {
+    if (!balance)
+      context.addIssue({
+        code: "custom",
+        path: ["funding"],
+        message: "代码判定红包只能从🐟额发",
+      });
+    if (!activity.forceDedicated)
+      context.addIssue({
+        code: "custom",
+        path: ["forceDedicated"],
+        message: "代码判定红包只能在红包页领",
+      });
+    if (!activity.judge)
+      context.addIssue({
+        code: "custom",
+        path: ["judge"],
+        message: "请粘贴代码",
+      });
+  } else if (activity.judge)
+    context.addIssue({
+      code: "custom",
+      path: ["judge"],
+      message: "只有代码判定红包有代码",
+    });
   if (activity.participationMode === "direct") {
     if (activity.passwords.length > 0)
       context.addIssue({
@@ -345,6 +417,13 @@ function validateActivity(
         code: "custom",
         path: ["forceDedicated"],
         message: "无需口令的红包不能关闭首页领取",
+      });
+  } else if (activity.participationMode === "code") {
+    if (activity.passwords.length > 0)
+      context.addIssue({
+        code: "custom",
+        path: ["passwords"],
+        message: "代码判定红包不能设置口令",
       });
   } else if (activity.passwords.length === 0)
     context.addIssue({
@@ -361,6 +440,12 @@ function validateActivity(
       code: "custom",
       path: ["allocation"],
       message: "随机金额模式须采用不放回随机领取",
+    });
+  if (coded && activity.allocation !== "sequential")
+    context.addIssue({
+      code: "custom",
+      path: ["allocation"],
+      message: "代码判定红包的金额由代码定，不预先排序",
     });
   if (activity.money.mode === "timed_draw") {
     if (
@@ -436,6 +521,8 @@ export type LdcActivityInput = ActivityInput;
 export function ldcAmounts(input: LdcActivityInput): number[] {
   if (input.money.mode === "random" || input.money.mode === "timed_draw")
     throw new Error("Random amounts must come from saved server inventory");
+  if (input.money.mode === "code")
+    throw new Error("A code-judged share is made when it is claimed");
   return input.money.mode === "fixed"
     ? Array<number>(input.money.count).fill(
         amountToMinor(input.money.totalAmount) / input.money.count,
@@ -478,6 +565,9 @@ export function sameLdcMoney(left: LdcMoney, right: LdcMoney): boolean {
     amountToMinor(left.totalAmount) === amountToMinor(right.totalAmount) &&
     (left.mode !== "random" ||
       (right.mode === "random" && left.algorithm === right.algorithm)) &&
+    (left.mode !== "code" ||
+      (right.mode === "code" &&
+        amountToMinor(left.minEach) === amountToMinor(right.minEach))) &&
     (left.mode !== "timed_draw" ||
       (right.mode === "timed_draw" &&
         left.algorithm === right.algorithm &&
@@ -758,6 +848,8 @@ export type PublicActivity = {
   humanCheck?: true;
   /** 领取范围: absent for everyone. */
   scope?: PublicClaimScope;
+  /** 代码判定: the prompt, fingerprints, and the code once it is over. */
+  judge?: PublicJudge;
   /**
    * Up to five people for the 名单入口, read with the rest so they match the
    * numbers: the latest claims; while a draw is open, the latest sign-ups;
@@ -889,6 +981,12 @@ export const claimActivitySchema = z.union([
     participationMode: z.literal("direct"),
     humanToken: humanTokenSchema,
   }),
+  z.strictObject({
+    submissionId: z.uuid(),
+    participationMode: z.literal("code"),
+    input: judgeAnswerSchema,
+    humanToken: humanTokenSchema,
+  }),
 ]);
 export const endActivitySchema = z.strictObject({
   version: z.number().int().positive(),
@@ -937,7 +1035,13 @@ export type ParticipationActivity = {
 };
 export type ClaimDetail = Omit<ClaimSummary, "rewardType"> & {
   afterClaimInfo: string;
-} & { rewardType: "ldc"; amount: string; payment?: PaymentView };
+} & {
+  rewardType: "ldc";
+  amount: string;
+  payment?: PaymentView;
+  /** 代码判定: the code's reply, and why the amount differs from its own. */
+  judge?: { message?: string; note?: JudgeNote; asked?: string };
+};
 export type ClaimResult = (
   | { result: "claimed" | "already_claimed"; claim: ClaimDetail }
   | {
@@ -945,6 +1049,8 @@ export type ClaimResult = (
       registration: RegistrationDetail;
     }
   | { result: "incorrect" | "draft" | "ended" | "archived" }
+  /** 代码判定 said no; its reply, if any. */
+  | { result: "rejected"; message?: string }
 ) & { attemptCooldown?: AttemptCooldown; passwordMatched?: boolean | null };
 export type ClaimList = { items: ClaimSummary[]; nextCursor: string | null };
 export type RegistrationStatus = "registered" | "drawing" | "won" | "not_won";

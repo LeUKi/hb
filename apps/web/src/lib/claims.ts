@@ -256,7 +256,10 @@ export function useClaimReward(userId: string, csrfToken: string) {
     onMutate: async ({ input }: { id: string; input: ClaimActivityInput }) => ({
       identity: account.captureIdentity(),
       ticket:
-        activityToolsEnabled && input.participationMode !== "direct"
+        // 口令 only: what a 代码判定 claimant types is not a 口令 to keep.
+        activityToolsEnabled &&
+        input.participationMode !== "direct" &&
+        input.participationMode !== "code"
           ? await beginAttempt(
               userId,
               input.password,

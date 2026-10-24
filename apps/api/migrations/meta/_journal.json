@@ -281,6 +281,13 @@
       "when": 1792801148682,
       "tag": "0039_rank",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1792841727135,
+      "tag": "0040_code_judge",
+      "breakpoints": true
     }
   ]
 }

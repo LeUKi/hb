@@ -180,8 +180,9 @@ export const activities = sqliteTable(
       .notNull()
       .default("text"),
     forceDedicated: integer("force_dedicated", { mode: "boolean" }).notNull(),
+    /** 代码判定: the sender's code judges each submission (activity_code). */
     participationMode: text("participation_mode", {
-      enum: ["password", "direct"],
+      enum: ["password", "direct", "code"],
     })
       .notNull()
       .default("password"),
@@ -385,7 +386,7 @@ export const redemptionSubmissions = sqliteTable(
     submissionId: text("submission_id").notNull(),
     fingerprint: text("fingerprint").notNull(),
     participationMode: text("participation_mode", {
-      enum: ["password", "direct"],
+      enum: ["password", "direct", "code"],
     })
       .notNull()
       .default("password"),
@@ -1154,6 +1155,19 @@ export const balanceSettings = sqliteTable(
     transferEnabled: integer("transfer_enabled", { mode: "boolean" })
       .notNull()
       .default(false),
+    /**
+     * 代码判定红包 may be made and opened, how many each person may open a
+     * day, and how many 在线检查 each may run a day (balance-design §14).
+     */
+    codeHongbaoEnabled: integer("code_hongbao_enabled", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    codeHongbaoDailyLimit: integer("code_hongbao_daily_limit")
+      .notNull()
+      .default(3),
+    codeCheckDailyLimit: integer("code_check_daily_limit")
+      .notNull()
+      .default(10),
     updatedAt: integer("updated_at").notNull(),
     updatedByUserId: text("updated_by_user_id"),
   },
@@ -1758,6 +1772,162 @@ export const balanceLocks = sqliteTable(
       sql`${table.amountMinor} > 0 AND ${table.remainingMinor} BETWEEN 0 AND ${table.amountMinor}
         AND (${table.status} = 'active' OR ${table.remainingMinor} = 0)
         AND ${table.status} IN ('active','released','spent')`,
+    ),
+  ],
+);
+
+/**
+ * 代码判定红包 (docs/programmable-hongbao-design.md): its judge.js and
+ * tests.json (encrypted, like 口令), the prompt and 每份至少; from opening
+ * its sealed seed, the code's state and how its judgments go. The code and
+ * the seed are kept in the clear once it is over, never changed after.
+ */
+export const activityCode = sqliteTable(
+  "activity_code",
+  {
+    activityId: text("activity_id")
+      .primaryKey()
+      .references(() => activities.id),
+    protocol: integer("protocol").notNull(),
+    prompt: text("prompt").notNull(),
+    /** judge.js's SHA-256: published at opening. */
+    fingerprint: text("fingerprint").notNull(),
+    codeCiphertext: text("code_ciphertext").notNull(),
+    testsCiphertext: text("tests_ciphertext").notNull(),
+    testsDigest: text("tests_digest").notNull(),
+    minEachMinor: integer("min_each_minor").notNull(),
+    seedCommitment: text("seed_commitment"),
+    seedCiphertext: text("seed_ciphertext"),
+    /** What the code last kept (encrypted JSON); null until it keeps one. */
+    stateCiphertext: text("state_ciphertext"),
+    /** Judgments in a row the code failed; five pause claims. */
+    failuresInRow: integer("failures_in_row").notNull().default(0),
+    /** Which of four sandboxes it runs in: moved on after a timeout. */
+    sandbox: integer("sandbox").notNull().default(0),
+    pausedAt: integer("paused_at"),
+    /** 站长's 停用. */
+    stoppedAt: integer("stopped_at"),
+    stoppedByUserId: text("stopped_by_user_id").references(() => users.id),
+    code: text("code"),
+    seed: text("seed"),
+    revealedAt: integer("revealed_at"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    check(
+      "activity_code_shape",
+      sql`${table.protocol} = 1 AND length(${table.fingerprint}) = 64 AND length(${table.testsDigest}) = 64
+        AND length(${table.prompt}) <= 40
+        AND typeof(${table.minEachMinor}) = 'integer' AND ${table.minEachMinor} > 0
+        AND (${table.seedCommitment} IS NULL) = (${table.seedCiphertext} IS NULL)
+        AND (${table.seedCommitment} IS NULL OR length(${table.seedCommitment}) = 64)
+        AND typeof(${table.failuresInRow}) = 'integer' AND ${table.failuresInRow} BETWEEN 0 AND 5
+        AND typeof(${table.sandbox}) = 'integer' AND ${table.sandbox} BETWEEN 0 AND 3
+        AND (${table.stoppedAt} IS NULL) = (${table.stoppedByUserId} IS NULL)
+        AND (${table.code} IS NULL) = (${table.revealedAt} IS NULL)
+        AND (${table.seed} IS NULL) = (${table.revealedAt} IS NULL)
+        AND (${table.seed} IS NULL OR length(${table.seed}) = 64)`,
+    ),
+  ],
+);
+
+/**
+ * One judgment: a claimant's submission and what the code answered. Inputs
+ * are in attempt_events, as for 口令. Written once.
+ */
+export const codeJudgments = sqliteTable(
+  "code_judgments",
+  {
+    submissionRowId: text("submission_row_id")
+      .primaryKey()
+      .references(() => redemptionSubmissions.id),
+    activityId: text("activity_id")
+      .notNull()
+      .references(() => activities.id),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    /** Times this person was judged before (Submission.user.attempts). */
+    attempt: integer("attempt").notNull(),
+    ok: integer("ok", { mode: "boolean" }).notNull(),
+    /** What the code asked, what is paid (pulled into the share's range). */
+    askedMinor: integer("asked_minor"),
+    paidMinor: integer("paid_minor"),
+    note: text("note", { enum: ["floor", "cap", "last"] }),
+    message: text("message"),
+    /** The state it set, if it set one (encrypted JSON). */
+    stateCiphertext: text("state_ciphertext"),
+    /** Submission.now. */
+    judgedAt: integer("judged_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("code_judgments_attempt_unique").on(
+      table.activityId,
+      table.userId,
+      table.attempt,
+    ),
+    index("code_judgments_activity_time_idx").on(
+      table.activityId,
+      table.judgedAt,
+    ),
+    check(
+      "code_judgments_shape",
+      sql`typeof(${table.attempt}) = 'integer' AND ${table.attempt} >= 0
+        AND (${table.message} IS NULL OR length(${table.message}) BETWEEN 1 AND 100)
+        AND ((${table.ok} = 1 AND typeof(${table.askedMinor}) = 'integer'
+            AND typeof(${table.paidMinor}) = 'integer' AND ${table.paidMinor} > 0
+            AND (${table.note} IS NULL OR ${table.note} IN ('floor','cap','last')))
+          OR (${table.ok} = 0 AND ${table.askedMinor} IS NULL AND ${table.paidMinor} IS NULL AND ${table.note} IS NULL))`,
+    ),
+  ],
+);
+
+/** A judgment the code failed: for its sender, who is told after five in a row. */
+export const codeFailures = sqliteTable(
+  "code_failures",
+  {
+    id: text("id").primaryKey(),
+    activityId: text("activity_id")
+      .notNull()
+      .references(() => activities.id),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    kind: text("kind", {
+      enum: ["threw", "timeout", "invalid", "memory"],
+    }).notNull(),
+    detail: text("detail").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    index("code_failures_activity_time_idx").on(
+      table.activityId,
+      table.createdAt,
+    ),
+  ],
+);
+
+/** 在线检查: one run of a sender's code and tests, counted per day. */
+export const judgeChecks = sqliteTable(
+  "judge_checks",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    protocol: integer("protocol").notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    testsDigest: text("tests_digest").notNull(),
+    passed: integer("passed", { mode: "boolean" }).notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    index("judge_checks_user_time_idx").on(table.userId, table.createdAt),
+    index("judge_checks_user_code_idx").on(
+      table.userId,
+      table.fingerprint,
+      table.testsDigest,
     ),
   ],
 );

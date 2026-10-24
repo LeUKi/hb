@@ -143,6 +143,14 @@ export const balanceSettingsSchema = z.strictObject({
   hongbaoEnabled: z.boolean().optional(),
   /** 转账 (§16); left as it is when absent. */
   transferEnabled: z.boolean().optional(),
+  /**
+   * 代码判定红包 (§14, docs/programmable-hongbao-design.md §1, §5): the
+   * switch, 每人每天最多开放几个 and 在线检查每人每天几次; each left as it is
+   * when absent.
+   */
+  codeHongbaoEnabled: z.boolean().optional(),
+  codeHongbaoDailyLimit: z.number().int().min(1).max(1000).optional(),
+  codeCheckDailyLimit: z.number().int().min(1).max(1000).optional(),
 });
 export type BalanceSettingsInput = z.infer<typeof balanceSettingsSchema>;
 

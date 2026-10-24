@@ -12,6 +12,7 @@ import { openRoutes } from "./balance/open-routes";
 import { balanceRoutes } from "./balance/routes";
 import { discoveryRoutes } from "./discovery/routes";
 import type { ApiContext } from "./env";
+import { judgeRoutes } from "./judge/routes";
 import { MerchantChangeConfirmationError } from "./payments/configuration";
 import { merchantRoutes } from "./payments/routes";
 import { rankRoutes } from "./rank/routes";
@@ -50,6 +51,7 @@ export const app = new Hono<ApiContext>()
   .route("/api", passwordRoutes)
   .route("/api", discoveryRoutes)
   .route("/api", rankRoutes)
+  .route("/api", judgeRoutes)
   .route("/api", merchantRoutes)
   .route("/api", balanceRoutes)
   .route("/api", openRoutes)

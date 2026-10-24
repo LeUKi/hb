@@ -42,6 +42,7 @@ const playNames = {
   random: "拼手气",
   custom: "自定义金额",
   timed_draw: "限时开奖",
+  code: "代码判定",
 } as const;
 
 /**
@@ -72,16 +73,26 @@ function coverTags(activity: HongbaoActivity) {
     random: split ? `${splitRules[split]}。` : "每份金额随机。",
     custom: "每份的金额由发红包的人定好。",
     timed_draw: split ? `${draw}奖金分法是${splitRules[split]}。` : draw,
+    code: "每次领多少由发红包的人的代码判定；开放时公布代码的指纹，结束后公开代码。",
   }[activity.mode];
   const splitName =
     split && (activity.mode === "random" || activity.mode === "timed_draw")
       ? ` · ${splitNames[split]}`
       : "";
+  const playTag = {
+    text: `${playNames[activity.mode]}${splitName}`,
+    hint: play,
+  };
   return [
-    activity.participation === "password"
-      ? { text: "口令红包", hint: `输入正确的口令才能${verb}。` }
-      : { text: "无需口令", hint: `登录后直接${verb}，不用口令。` },
-    { text: `${playNames[activity.mode]}${splitName}`, hint: play },
+    // 代码判定 comes first, in place of 口令红包 / 无需口令 (05 §4).
+    ...(activity.mode === "code"
+      ? [playTag]
+      : [
+          activity.participation === "password"
+            ? { text: "口令红包", hint: `输入正确的口令才能${verb}。` }
+            : { text: "无需口令", hint: `登录后直接${verb}，不用口令。` },
+          playTag,
+        ]),
     // 领取范围 (docs/claim-scope-design.md §5): who may, its people by name.
     ...(activity.scope
       ? [

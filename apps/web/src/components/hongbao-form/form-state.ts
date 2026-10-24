@@ -6,6 +6,7 @@ import {
   CLAIM_SCOPE_LIMITS,
   type ClaimScope,
   DEFAULT_DRAW_COUNTDOWN_SECONDS,
+  JUDGE_LIMITS,
   type LdcMoney,
   type ManagedActivity,
   normalizeTopicLink,
@@ -50,6 +51,19 @@ export type FormState = {
     /** 人数不足时发完奖池. */
     fillPool: boolean;
   };
+  /**
+   * 代码判定 (docs/programmable-hongbao-design.md): a pool, shares and
+   * 每份至少, then the prompt, judge.js and tests.json as pasted.
+   */
+  judge: {
+    total: string;
+    count: string;
+    minEach: string;
+    prompt: string;
+    code: string;
+    tests: string;
+  };
+  /** Not asked for 代码判定, which its code judges. */
   participation: "password" | "direct";
   passwords: string[];
   /**
@@ -98,6 +112,7 @@ export const modeLabels: Record<RewardMode, string> = {
   random: "拼手气",
   custom: "自定义金额",
   timed_draw: "限时开奖",
+  code: "代码判定",
 };
 
 export const unitLabels: Record<TimeUnit, string> = {
@@ -134,6 +149,14 @@ export function emptyForm(now = Date.now()): FormState {
       limit: "",
       algorithm: "double_mean",
       fillPool: true,
+    },
+    judge: {
+      total: "",
+      count: "",
+      minEach: "0.01",
+      prompt: "",
+      code: "",
+      tests: "",
     },
     participation: "password",
     passwords: [""],
@@ -276,6 +299,12 @@ export function plan(form: FormState) {
         shares: count(form.draw.winners),
         unit: null,
       };
+    case "code":
+      return {
+        total: cents(form.judge.total),
+        shares: count(form.judge.count),
+        unit: null,
+      };
   }
 }
 
@@ -313,6 +342,8 @@ export function defaultTitle(form: FormState) {
       return shares ? `红包 · ${shares} 份` : "红包";
     case "timed_draw":
       return shares ? `限时开奖 · ${shares} 个名额` : "限时开奖";
+    case "code":
+      return shares ? `代码判定 · ${shares} 份` : "代码判定";
   }
 }
 
@@ -345,6 +376,8 @@ export function normalizeTopic(raw: string) {
 // ── Checks ────────────────────────────────────────────────────────────
 
 export type Issue = { field: string; message: string };
+
+const bytes = (value: string) => new TextEncoder().encode(value).byteLength;
 
 /** Every problem, in form order. `field` is the id of the control. */
 /**
@@ -420,9 +453,39 @@ export function issuesOf(form: FormState, now = Date.now()): Issue[] {
       if (form.draw.limit.trim() && !positiveInteger(form.draw.limit))
         add("hb-draw-limit", "报名上限要是正整数，或者留空不限");
       break;
+    case "code": {
+      const minEach = cents(form.judge.minEach);
+      if (total === null) add("hb-code-total", "总奖池要大于 0，最多两位小数");
+      if (shares === null)
+        add(
+          "hb-code-count",
+          `份数要在 1 到 ${LIMITS.shares.toLocaleString("en")} 之间`,
+        );
+      if (minEach === null)
+        add("hb-code-min", "每份至少要大于 0，最多两位小数");
+      else if (total !== null && shares !== null && total < minEach * shares)
+        add(
+          "hb-code-total",
+          `总奖池不够：${shares} 份每份至少 ${ldc(minEach)}，要 ${ldc(minEach * shares)} LDC`,
+        );
+      if (
+        Array.from(form.judge.prompt.trim()).length >
+        JUDGE_LIMITS.promptCharacters
+      )
+        add(
+          "hb-code-prompt",
+          `领取时的提示最多 ${JUDGE_LIMITS.promptCharacters} 个字`,
+        );
+      if (!form.judge.code.trim()) add("hb-code-code", "请粘贴代码");
+      else if (bytes(form.judge.code) > JUDGE_LIMITS.codeBytes)
+        add("hb-code-code", `代码超过 ${JUDGE_LIMITS.codeBytes / 1024} KB`);
+      if (bytes(form.judge.tests) > JUDGE_LIMITS.testsBytes)
+        add("hb-code-tests", `测试超过 ${JUDGE_LIMITS.testsBytes / 1024} KB`);
+      break;
+    }
   }
 
-  if (form.participation === "password") {
+  if (form.mode !== "code" && form.participation === "password") {
     const filled = form.passwords.map((item) => item.trim());
     if (filled.every((item) => !item)) add("hb-password-0", "至少填写一个口令");
     filled.forEach((item, index) => {
@@ -523,6 +586,10 @@ function timingOfSeconds(seconds: number, base: FormState["timing"]) {
 const algorithmOf = (value: "double_mean_v1" | "bounded_mean_v1"): Algorithm =>
   value === "bounded_mean_v1" ? "bounded_mean" : "double_mean";
 
+const participationOf = (
+  mode: ActivityInput["participationMode"],
+): FormState["participation"] => (mode === "direct" ? "direct" : "password");
+
 /** A saved 红包 back into the form (📝 编辑). */
 export function formOf(activity: ManagedActivity, now = Date.now()): FormState {
   const base = emptyForm(now);
@@ -582,8 +649,20 @@ export function formOf(activity: ManagedActivity, now = Date.now()): FormState {
             fillPool: money.distributeFullPool,
           }
         : base.draw,
-    participation:
-      activity.participationMode ?? config.participationMode ?? "password",
+    judge:
+      money.mode === "code"
+        ? {
+            total: money.totalAmount,
+            count: String(money.count),
+            minEach: money.minEach,
+            prompt: config.judge?.prompt ?? "",
+            code: config.judge?.code ?? "",
+            tests: config.judge?.tests ?? "",
+          }
+        : base.judge,
+    participation: participationOf(
+      activity.participationMode ?? config.participationMode,
+    ),
     passwords: config.passwords.length > 0 ? [...config.passwords] : [""],
     pageOnly: config.forceDedicated,
     timing,
@@ -638,17 +717,24 @@ export function inputOf(form: FormState, merchantId: string): ActivityInput {
               mode: "custom",
               amounts: customLines(form).map((line) => ldc(cents(line) ?? 0)),
             }
-          : {
-              mode: "timed_draw",
-              algorithm: algorithm(form.draw.algorithm),
-              totalAmount: pool,
-              count,
-              participantLimit: form.draw.limit.trim()
-                ? Number(form.draw.limit)
-                : null,
-              distributeFullPool: form.draw.fillPool,
-              ...(countdown ? { countdownSeconds: countdown } : {}),
-            };
+          : form.mode === "code"
+            ? {
+                mode: "code",
+                totalAmount: pool,
+                count,
+                minEach: ldc(cents(form.judge.minEach) ?? 0),
+              }
+            : {
+                mode: "timed_draw",
+                algorithm: algorithm(form.draw.algorithm),
+                totalAmount: pool,
+                count,
+                participantLimit: form.draw.limit.trim()
+                  ? Number(form.draw.limit)
+                  : null,
+                distributeFullPool: form.draw.fillPool,
+                ...(countdown ? { countdownSeconds: countdown } : {}),
+              };
   const deadline: ActivityInput["deadline"] =
     form.timing.kind === "at"
       ? { mode: "at", at: new Date(form.timing.at).toISOString() }
@@ -666,12 +752,15 @@ export function inputOf(form: FormState, merchantId: string): ActivityInput {
               value: Number(form.timing.value),
               unit: form.timing.unit,
             };
-  const password = form.participation === "password";
+  const coded = form.mode === "code";
+  const password = !coded && form.participation === "password";
+  // 代码判定红包只能在红包页领，自动加入红包广场 (07 §5).
+  const pageOnly = coded || (password && form.pageOnly);
   return {
     title: form.title.trim(),
     topicUrl: normalizeTopic(form.topic).value,
-    forceDedicated: password && form.pageOnly,
-    joinSquare: form.listed || (password && form.pageOnly),
+    forceDedicated: pageOnly,
+    joinSquare: form.listed || pageOnly,
     deadline,
     allocation:
       form.mode === "random" || draw
@@ -686,16 +775,25 @@ export function inputOf(form: FormState, merchantId: string): ActivityInput {
     beforeInfo: form.beforeInfo,
     afterClaimInfo: form.afterClaimInfo,
     afterEndInfo: form.afterEndInfo,
-    participationMode: form.participation,
+    participationMode: coded ? "code" : form.participation,
     // Left out when off, so older saved forms keep their shape (idempotency).
     ...(form.humanCheck ? { humanCheck: true } : {}),
     ...(scopeInputOf(form) ? { scope: scopeInputOf(form) } : {}),
     rewardType: "ldc",
     // Left out for 商户直发, as before 🐟额红包 (idempotency).
-    ...(form.funding === "balance"
+    ...(coded || form.funding === "balance"
       ? { funding: "balance" as const, merchantId: "" }
       : { merchantId }),
     money,
+    ...(coded
+      ? {
+          judge: {
+            prompt: form.judge.prompt.trim(),
+            code: form.judge.code,
+            tests: form.judge.tests,
+          },
+        }
+      : {}),
   };
 }
 
@@ -741,6 +839,7 @@ export function sameInput(saved: ActivityInput, sent: ActivityInput) {
       merchantId: input.merchantId,
       funding: input.funding ?? "merchant",
       humanCheck: input.humanCheck === true,
+      judge: input.judge ?? null,
       scope: input.scope
         ? {
             levels: input.scope.levels ?? null,

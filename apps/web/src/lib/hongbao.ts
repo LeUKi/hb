@@ -16,7 +16,7 @@ import type { RosterTitle } from "./titles";
 // the viewer's own claim or sign-up. Pure mappers from production data to
 // the shapes the 红包 components draw.
 
-export type RewardMode = "fixed" | "random" | "custom" | "timed_draw";
+export type RewardMode = "fixed" | "random" | "custom" | "timed_draw" | "code";
 
 /** The 红包 itself, as its components need it. */
 export type HongbaoActivity = {
@@ -24,7 +24,8 @@ export type HongbaoActivity = {
   title: string;
   author: { displayName: string; username: string; avatarUrl: string | null };
   mode: RewardMode;
-  participation: "password" | "direct";
+  /** 代码判定: its code judges what is typed (no 口令). */
+  participation: "password" | "direct" | "code";
   /** Saved but not opened (草稿): only its sender can see it. */
   draft: boolean;
   topic?: { topicId: string; postNumber: number };

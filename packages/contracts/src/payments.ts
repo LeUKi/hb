@@ -143,6 +143,14 @@ export type LdcOpeningBlockedReason =
   | "BALANCE_HONGBAO_PAUSED"
   /** 🐟额红包: 可用 does not cover the total. */
   | "BALANCE_INSUFFICIENT"
+  /** 代码判定红包 (docs/programmable-hongbao-design.md §1): its switch is off. */
+  | "CODE_HONGBAO_PAUSED"
+  /** 代码判定红包: only 🐟额 PLUS (and the 站长) send it. */
+  | "CODE_HONGBAO_NOT_ALLOWED"
+  /** 代码判定红包: this code and these tests have not passed 在线检查. */
+  | "JUDGE_CHECK_REQUIRED"
+  /** 代码判定红包: today's openings are used up. */
+  | "CODE_HONGBAO_DAILY_LIMIT"
   | "TIMED_DRAW_NOT_ENABLED"
   | "MERCHANT_LEGACY"
   | "MERCHANT_CREDENTIALS_UNVERIFIED"

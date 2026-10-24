@@ -18,11 +18,15 @@ type SettingsRow = {
   withdraw_max_minor: number;
   hongbao_enabled: number;
   transfer_enabled: number;
+  code_hongbao_enabled: number;
+  code_hongbao_daily_limit: number;
+  code_check_daily_limit: number;
   updated_at: number;
 };
 
 const SELECT_SETTINGS = `SELECT version,topup_enabled,withdraw_enabled,topup_fee_percent,
-  withdraw_fee_percent,withdraw_max_minor,hongbao_enabled,transfer_enabled,updated_at
+  withdraw_fee_percent,withdraw_max_minor,hongbao_enabled,transfer_enabled,
+  code_hongbao_enabled,code_hongbao_daily_limit,code_check_daily_limit,updated_at
   FROM balance_settings WHERE id='global'`;
 
 function settingsOf(row: SettingsRow): BalanceSettings {
@@ -35,6 +39,9 @@ function settingsOf(row: SettingsRow): BalanceSettings {
     withdrawMaxMinor: row.withdraw_max_minor,
     hongbaoEnabled: row.hongbao_enabled === 1,
     transferEnabled: row.transfer_enabled === 1,
+    codeHongbaoEnabled: row.code_hongbao_enabled === 1,
+    codeHongbaoDailyLimit: row.code_hongbao_daily_limit,
+    codeCheckDailyLimit: row.code_check_daily_limit,
     updatedAt: row.updated_at,
   };
 }
@@ -94,6 +101,9 @@ function snapshot(settings: Required<BalanceSettingsInput>) {
     withdrawMaxMinor: settings.withdrawMaxMinor,
     hongbaoEnabled: settings.hongbaoEnabled,
     transferEnabled: settings.transferEnabled,
+    codeHongbaoEnabled: settings.codeHongbaoEnabled,
+    codeHongbaoDailyLimit: settings.codeHongbaoDailyLimit,
+    codeCheckDailyLimit: settings.codeCheckDailyLimit,
   });
 }
 
@@ -108,6 +118,12 @@ export async function updateBalanceSettings(
     ...change,
     hongbaoEnabled: change.hongbaoEnabled ?? previous.hongbaoEnabled,
     transferEnabled: change.transferEnabled ?? previous.transferEnabled,
+    codeHongbaoEnabled:
+      change.codeHongbaoEnabled ?? previous.codeHongbaoEnabled,
+    codeHongbaoDailyLimit:
+      change.codeHongbaoDailyLimit ?? previous.codeHongbaoDailyLimit,
+    codeCheckDailyLimit:
+      change.codeCheckDailyLimit ?? previous.codeCheckDailyLimit,
   };
   try {
     await env.DB.batch([
@@ -127,6 +143,7 @@ export async function updateBalanceSettings(
       env.DB.prepare(`UPDATE balance_settings SET version=version+1,
         topup_enabled=?,withdraw_enabled=?,topup_fee_percent=?,withdraw_fee_percent=?,
         withdraw_max_minor=?,hongbao_enabled=?,transfer_enabled=?,
+        code_hongbao_enabled=?,code_hongbao_daily_limit=?,code_check_daily_limit=?,
         updated_at=${databaseNow},updated_by_user_id=?
         WHERE id='global' AND version=?`).bind(
         Number(next.topupEnabled),
@@ -136,6 +153,9 @@ export async function updateBalanceSettings(
         next.withdrawMaxMinor,
         Number(next.hongbaoEnabled),
         Number(next.transferEnabled),
+        Number(next.codeHongbaoEnabled),
+        next.codeHongbaoDailyLimit,
+        next.codeCheckDailyLimit,
         actorUserId,
         expectedVersion,
       ),

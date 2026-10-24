@@ -1,4 +1,4 @@
-import type { Json, Random, Submission, Tools } from "../judge";
+import type { Json, Random, Submission, TestCase, Tools } from "../judge";
 
 export type Fill = (bytes: Uint8Array) => void;
 
@@ -138,3 +138,35 @@ export function scanImports(
 export function checkSource(
   source: string,
 ): { line: number; message: string }[];
+
+// testing.mjs
+export const TEST_HONGBAO_ID: string;
+export const TEST_SEED: string;
+export const TEST_DEFAULTS: Readonly<{
+  user: Readonly<Submission["user"]>;
+  hongbao: Readonly<
+    Pick<Submission["hongbao"], "title" | "total" | "count" | "minEach">
+  >;
+  now: number;
+}>;
+export function readTests(
+  text: string,
+): { tests: TestCase[] } | { problem: string };
+export function testSubmission(test: TestCase):
+  | {
+      submission: Submission;
+      seeds: { submission: string; user: string };
+    }
+  | { problem: string };
+export function sameJson(left: unknown, right: unknown): boolean;
+export type TestResult = {
+  passed: boolean;
+  problem?: string;
+  actual?: { ok: boolean; amount?: number; message?: string; state: Json };
+  unknown?: string[];
+};
+export function judgeTest(
+  test: TestCase,
+  submission: Submission,
+  outcome: { verdict: unknown } | { failure: string; detail: string },
+): TestResult;
