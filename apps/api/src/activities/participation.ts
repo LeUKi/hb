@@ -29,6 +29,17 @@ export async function participationRequest(
   passwordDigest: string | null;
   continuation: ActivityAttempt | undefined;
 }> {
+  // 代码判定: what is typed is the code's to judge, not a 口令.
+  if ("input" in input)
+    return {
+      mode: "code",
+      fingerprint: await digestPassword(
+        `code-${purpose}-request:${activityId}:${input.input}`,
+        env.PASSWORD_DIGEST_KEY,
+      ),
+      passwordDigest: null,
+      continuation: undefined,
+    };
   if (!("password" in input))
     return {
       mode: "direct",

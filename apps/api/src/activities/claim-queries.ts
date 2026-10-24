@@ -6,6 +6,7 @@ import {
   type ClaimSummary,
   claimSpeedTitle,
   formatAmount,
+  type JudgeNote,
   type PublicRecipientList,
   type RecipientSpeedTitle,
 } from "@hb/contracts";
@@ -27,6 +28,7 @@ import {
   resendDeadline,
 } from "../payments/resend-rules";
 import { decryptString, encryptString } from "../security/crypto";
+import { attemptAssociatedData } from "./claim-service";
 import { activityNotFound, invalidActivity } from "./errors";
 import { activityStatus, rewardSummary } from "./service";
 import {
@@ -302,11 +304,57 @@ export async function claimSummariesBatch(
   );
 }
 
+/** 代码判定: what each claimant typed and what the code said to them. */
+async function judgmentsBatch(env: ApiBindings, rows: ClaimActivityRow[]) {
+  const coded = rows.filter(
+    ({ activity }) => activity.participationMode === "code",
+  );
+  if (!coded.length)
+    return new Map<string, NonNullable<ClaimDetail["judge"]>>();
+  const found =
+    await env.DB.prepare(`SELECT s.claim_id AS claimId, s.activity_id AS activityId, s.id AS rowId,
+      j.message, j.note, e.ciphertext
+    FROM redemption_submissions s JOIN code_judgments j ON j.submission_row_id = s.id
+    JOIN attempt_events e ON e.submission_row_id = s.id
+    WHERE s.claim_id IN (SELECT value FROM json_each(?)) AND s.participation_mode = 'code'`)
+      .bind(JSON.stringify(coded.map(({ claim }) => claim.id)))
+      .all<{
+        claimId: string;
+        activityId: string;
+        rowId: string;
+        message: string | null;
+        note: JudgeNote | null;
+        ciphertext: string;
+      }>();
+  return new Map(
+    await Promise.all(
+      found.results.map(
+        async (row) =>
+          [
+            row.claimId,
+            {
+              input: await decryptString(
+                row.ciphertext,
+                env,
+                attemptAssociatedData(row.activityId, row.rowId),
+              ),
+              ...(row.message ? { message: row.message } : {}),
+              ...(row.note ? { note: row.note } : {}),
+            },
+          ] as const,
+      ),
+    ),
+  );
+}
+
 export async function claimDetailsBatch(
   env: ApiBindings,
   rows: ClaimActivityRow[],
 ): Promise<Map<string, ClaimDetail>> {
-  const summaries = await claimSummariesBatch(env, rows);
+  const [summaries, judgments] = await Promise.all([
+    claimSummariesBatch(env, rows),
+    judgmentsBatch(env, rows),
+  ]);
   const entries = await Promise.all(
     rows.map(
       async ({ claim, activity }): Promise<readonly [string, ClaimDetail]> => {
@@ -319,6 +367,7 @@ export async function claimDetailsBatch(
           (!base.payment && activity.funding !== "balance")
         )
           throw new Error("LDC claim has no payment task");
+        const judge = judgments.get(claim.id);
         return [
           claim.id,
           {
@@ -326,6 +375,7 @@ export async function claimDetailsBatch(
             afterClaimInfo,
             rewardType: "ldc",
             amount: base.amount,
+            ...(judge ? { judge } : {}),
           },
         ];
       },

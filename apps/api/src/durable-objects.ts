@@ -720,6 +720,8 @@ export class ActivityDO extends DurableObject<ApiBindings> {
               parsed.data,
               undefined,
               humanVerified === true,
+              // 代码判定: its code failed five times running, claims wait.
+              { paused: () => this.announce(id) },
             );
             if ("registration" in result) await this.scheduleDraw(id);
             if (result.result === "claimed" || result.result === "registered")

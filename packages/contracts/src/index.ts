@@ -664,6 +664,8 @@ export type ActivityRewardSummary = {
   algorithm?: RandomLdcMoney["algorithm"];
   participantLimit?: number | null;
   distributeFullPool?: boolean;
+  /** 代码判定: 每份至少. */
+  minEach?: string;
 };
 export type AccountHistorySummary = {
   initiatedCount: number;
@@ -1039,8 +1041,11 @@ export type ClaimDetail = Omit<ClaimSummary, "rewardType"> & {
   rewardType: "ldc";
   amount: string;
   payment?: PaymentView;
-  /** 代码判定: the code's reply, and why the amount differs from its own. */
-  judge?: { message?: string; note?: JudgeNote; asked?: string };
+  /**
+   * 代码判定: what the claimant typed, the code's reply, and why the amount
+   * is not what the code asked (按上限发, 按每份至少发, 最后一份).
+   */
+  judge?: { input: string; message?: string; note?: JudgeNote };
 };
 export type ClaimResult = (
   | { result: "claimed" | "already_claimed"; claim: ClaimDetail }

@@ -45,13 +45,25 @@ export async function endActivity(
     return getManagedActivity(env, activityId, authorId);
   }
   if (row.version !== version) activityConflict();
-  if (row.claimedCount !== 0 || row.registeredCount !== 0)
+  // A 代码判定红包 its code paused may end with claims in (docs/
+  // programmable-hongbao-design.md §3); the rest gives back.
+  const paused =
+    row.participationMode === "code" &&
+    (await env.DB.prepare(
+      "SELECT paused_at FROM activity_code WHERE activity_id = ?",
+    )
+      .bind(activityId)
+      .first<number | null>("paused_at")) !== null;
+  if (!paused && (row.claimedCount !== 0 || row.registeredCount !== 0))
     invalidActivity("已有人领取或报名，不能提前结束");
   try {
     await env.DB.batch([
       activityWriteGuard(env.DB, activityId, authorId, version),
       env.DB.prepare(`UPDATE activities SET
-      version = CASE WHEN author_id = ? AND version = ? AND reward_type = 'ldc' AND deleted_at IS NULL AND claimed_count = 0 AND registered_count = 0 AND opened_at IS NOT NULL AND ended_at IS NULL AND deadline > ${databaseNow}
+      version = CASE WHEN author_id = ? AND version = ? AND reward_type = 'ldc' AND deleted_at IS NULL
+        AND ((claimed_count = 0 AND registered_count = 0)
+          OR EXISTS(SELECT 1 FROM activity_code WHERE activity_id = activities.id AND paused_at IS NOT NULL))
+        AND opened_at IS NOT NULL AND ended_at IS NULL AND deadline > ${databaseNow}
         THEN version + 1 ELSE NULL END,
       ended_at = ${databaseNow}, end_reason = 'manual', updated_at = ${databaseNow}
       WHERE id = ?`).bind(authorId, version, activityId),
@@ -62,7 +74,10 @@ export async function endActivity(
       await refreshActivityLifecycle(env, activityId);
       return getManagedActivity(env, activityId, authorId);
     }
-    if (current.claimedCount !== 0 || current.registeredCount !== 0)
+    if (
+      !paused &&
+      (current.claimedCount !== 0 || current.registeredCount !== 0)
+    )
       invalidActivity("已有人领取或报名，不能提前结束");
     if (current.version !== version) activityConflict();
     throw error;

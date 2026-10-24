@@ -40,7 +40,7 @@ import { requireHumanCheck } from "./human-check";
 import { databaseNow, refreshActivityLifecycle } from "./lifecycle";
 import { assertParticipationMode, participationRequest } from "./participation";
 import { activityStatus } from "./service";
-import { findActivity } from "./storage";
+import { type ActivityRow, findActivity } from "./storage";
 
 export type SubmissionRow = typeof redemptionSubmissions.$inferSelect;
 
@@ -51,7 +51,7 @@ export function submissionPasswordMatched(
     "matchedPasswordId" | "validatedAt" | "participationMode"
   >,
 ): boolean | null {
-  if (submission.participationMode === "direct") return null;
+  if (submission.participationMode !== "password") return null;
   if (submission.matchedPasswordId !== null) return true;
   return submission.validatedAt !== null ? false : null;
 }
@@ -147,6 +147,138 @@ async function registerFinished(
   return row;
 }
 
+type Admitted = {
+  activity: ActivityRow;
+  testPermission: boolean;
+  realActivityPermitted: boolean;
+};
+
+/**
+ * Everything a claim is checked for before its 口令 (or its code) is: an
+ * earlier answer to this submission, the 红包 and its state, the real-LDC
+ * switches, 领取范围 and the attempt interval. `{ row }` when it is
+ * decided already.
+ */
+export async function admitClaim(
+  env: ApiBindings,
+  activityId: string,
+  userId: string,
+  submissionId: string,
+  fingerprint: string,
+  mode: ParticipationMode,
+  continuation: ActivityAttempt | undefined,
+  executionPolicy?: ActivityExecutionPolicy,
+): Promise<{ row: SubmissionRow } | Admitted> {
+  const previous = await findSubmission(env, userId, submissionId);
+  if (previous) {
+    bindFingerprint(previous, fingerprint);
+    if (!(await findActivity(env, activityId))) activityNotFound();
+    return { row: previous };
+  }
+  const activity = await findActivity(env, activityId);
+  if (!activity || (activity.openedAt === null && activity.authorId !== userId))
+    activityNotFound();
+  assertParticipationMode(activity, mode);
+  if (activity.rewardType === "ldc" && activity.authorId === userId)
+    throw new ActivityError(
+      403,
+      "SELF_CLAIM_FORBIDDEN",
+      "不能领取自己发的红包",
+    );
+  const existingClaim = await findUserClaim(env, activityId, userId);
+  if (existingClaim)
+    return {
+      row: await registerFinished(
+        env,
+        activityId,
+        userId,
+        submissionId,
+        fingerprint,
+        mode,
+        "already_claimed",
+        existingClaim.id,
+        continuation,
+      ),
+    };
+  const status = activityStatus(activity);
+  if (status !== "active")
+    return {
+      row: await registerFinished(
+        env,
+        activityId,
+        userId,
+        submissionId,
+        fingerprint,
+        mode,
+        status,
+        null,
+        continuation,
+      ),
+    };
+  if (
+    activity.rewardType === "ldc" &&
+    activity.paymentMode === "simulation" &&
+    !isLocalSimulation(env)
+  )
+    throw new ActivityError(
+      400,
+      "SIMULATION_NOT_AVAILABLE",
+      "此环境不支持新的模拟奖励领取。",
+    );
+  const testPermission = permitsRealActivity(activity.id, executionPolicy);
+  const realActivityPermitted =
+    testPermission ||
+    (activity.paymentMode === "real" &&
+      allowsRealClaim(env, await readPlatformControls(env)));
+  if (
+    activity.rewardType === "ldc" &&
+    activity.paymentMode === "real" &&
+    !realActivityPermitted
+  )
+    throw new ActivityError(
+      400,
+      env.APP_ENV === "production" && env.LDC_NETWORK_MODE === "live"
+        ? "REAL_LDC_CLAIMS_PAUSED"
+        : "REAL_LDC_NOT_ENABLED",
+      "真实 LDC 新领取暂时关闭，已领取奖励仍可从记录查看。",
+    );
+  // 领取范围: someone outside never reaches the 口令 or its cooldown.
+  await assertInScope(env, activity, userId);
+  await assertAttemptAllowed(env, userId, "activity", continuation);
+  return { activity, testPermission, realActivityPermitted };
+}
+
+/**
+ * In a submission's batch: the 红包 is still open to this person, as the
+ * write sees it (a failed precondition rolls the whole batch back). A
+ * 代码判定红包 paused or stopped takes none.
+ */
+export function claimGuardStatement(
+  env: ApiBindings,
+  activity: ActivityRow,
+  mode: ParticipationMode,
+  userId: string,
+  admitted: Pick<Admitted, "testPermission" | "realActivityPermitted">,
+) {
+  return env.DB.prepare(`UPDATE activities SET version = CASE WHEN version = ? AND participation_mode = ? AND deleted_at IS NULL AND opened_at IS NOT NULL AND ended_at IS NULL
+    AND archived_at IS NULL AND deadline > ${databaseNow} AND claimed_count < total_count
+    AND reward_type = 'ldc' AND EXISTS(SELECT 1 FROM users WHERE id=? AND active=1) AND author_id != ? AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
+    AND NOT EXISTS (SELECT 1 FROM claims WHERE activity_id = ? AND user_id = ?)
+    AND NOT EXISTS (SELECT 1 FROM activity_code WHERE activity_id = activities.id AND (paused_at IS NOT NULL OR stopped_at IS NOT NULL))
+    THEN version ELSE NULL END WHERE id = ?`).bind(
+    activity.version,
+    mode,
+    userId,
+    userId,
+    Number(isLocalSimulation(env)),
+    Number(admitted.realActivityPermitted),
+    Number(admitted.testPermission),
+    activity.id,
+    userId,
+    activity.id,
+  );
+}
+
 /** Durable validation is separate from allocation, so a process interruption cannot erase an attempt. */
 export async function prepareClaimSubmission(
   env: ApiBindings,
@@ -159,81 +291,18 @@ export async function prepareClaimSubmission(
   const { mode, fingerprint, passwordDigest, continuation } =
     await participationRequest(env, activityId, input, "claim");
   for (let retry = 0; retry < 4; retry += 1) {
-    const previous = await findSubmission(env, userId, input.submissionId);
-    if (previous) {
-      bindFingerprint(previous, fingerprint);
-      if (!(await findActivity(env, activityId))) activityNotFound();
-      return previous;
-    }
-    const activity = await findActivity(env, activityId);
-    if (
-      !activity ||
-      (activity.openedAt === null && activity.authorId !== userId)
-    )
-      activityNotFound();
-    assertParticipationMode(activity, mode);
-    if (activity.rewardType === "ldc" && activity.authorId === userId)
-      throw new ActivityError(
-        403,
-        "SELF_CLAIM_FORBIDDEN",
-        "不能领取自己发的红包",
-      );
-    const existingClaim = await findUserClaim(env, activityId, userId);
-    if (existingClaim)
-      return registerFinished(
-        env,
-        activityId,
-        userId,
-        input.submissionId,
-        fingerprint,
-        mode,
-        "already_claimed",
-        existingClaim.id,
-        continuation,
-      );
-    const status = activityStatus(activity);
-    if (status !== "active")
-      return registerFinished(
-        env,
-        activityId,
-        userId,
-        input.submissionId,
-        fingerprint,
-        mode,
-        status,
-        null,
-        continuation,
-      );
-    if (
-      activity.rewardType === "ldc" &&
-      activity.paymentMode === "simulation" &&
-      !isLocalSimulation(env)
-    )
-      throw new ActivityError(
-        400,
-        "SIMULATION_NOT_AVAILABLE",
-        "此环境不支持新的模拟奖励领取。",
-      );
-    const testPermission = permitsRealActivity(activity.id, executionPolicy);
-    const realActivityPermitted =
-      testPermission ||
-      (activity.paymentMode === "real" &&
-        allowsRealClaim(env, await readPlatformControls(env)));
-    if (
-      activity.rewardType === "ldc" &&
-      activity.paymentMode === "real" &&
-      !realActivityPermitted
-    )
-      throw new ActivityError(
-        400,
-        env.APP_ENV === "production" && env.LDC_NETWORK_MODE === "live"
-          ? "REAL_LDC_CLAIMS_PAUSED"
-          : "REAL_LDC_NOT_ENABLED",
-        "真实 LDC 新领取暂时关闭，已领取奖励仍可从记录查看。",
-      );
-    // 领取范围: someone outside never reaches the 口令 or its cooldown.
-    await assertInScope(env, activity, userId);
-    await assertAttemptAllowed(env, userId, "activity", continuation);
+    const admission = await admitClaim(
+      env,
+      activityId,
+      userId,
+      input.submissionId,
+      fingerprint,
+      mode,
+      continuation,
+      executionPolicy,
+    );
+    if ("row" in admission) return admission.row;
+    const { activity, testPermission } = admission;
     const password =
       passwordDigest === null
         ? undefined
@@ -264,22 +333,7 @@ export async function prepareClaimSubmission(
     const statements = [
       ...attemptWriteStatements(env, userId, "activity", rowId, continuation),
       // A failed precondition must roll back the submission AND the event together.
-      env.DB.prepare(`UPDATE activities SET version = CASE WHEN version = ? AND participation_mode = ? AND deleted_at IS NULL AND opened_at IS NOT NULL AND ended_at IS NULL
-        AND archived_at IS NULL AND deadline > ${databaseNow} AND claimed_count < total_count
-        AND reward_type = 'ldc' AND EXISTS(SELECT 1 FROM users WHERE id=? AND active=1) AND author_id != ? AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
-        AND NOT EXISTS (SELECT 1 FROM claims WHERE activity_id = ? AND user_id = ?)
-        THEN version ELSE NULL END WHERE id = ?`).bind(
-        activity.version,
-        mode,
-        userId,
-        userId,
-        Number(isLocalSimulation(env)),
-        Number(realActivityPermitted),
-        Number(testPermission),
-        activityId,
-        userId,
-        activityId,
-      ),
+      claimGuardStatement(env, activity, mode, userId, admission),
       env.DB.prepare(`INSERT INTO redemption_submissions
         (id, activity_id, user_id, submission_id, fingerprint, purpose, participation_mode, outcome, matched_password_id, created_at, validated_at, finished_at)
         VALUES (?, ?, ?, ?, ?, 'claim', ?, ?, ?, ${databaseNow}, ${databaseNow}, CASE WHEN ? = 'incorrect' THEN ${databaseNow} ELSE NULL END)`).bind(
@@ -343,7 +397,7 @@ export async function prepareClaimSubmission(
   );
 }
 
-async function resultOfSubmission(
+export async function resultOfSubmission(
   env: ApiBindings,
   submission: SubmissionRow,
 ): Promise<ClaimResult> {
@@ -368,6 +422,18 @@ async function resultOfSubmission(
   }
   if (submission.outcome === "pending")
     throw new Error("Submission still requires allocation");
+  // 代码判定 turned it down: its reply, if it gave one.
+  if (
+    submission.participationMode === "code" &&
+    submission.outcome === "incorrect"
+  ) {
+    const message = await env.DB.prepare(
+      "SELECT message FROM code_judgments WHERE submission_row_id = ?",
+    )
+      .bind(submission.id)
+      .first<string | null>("message");
+    return { result: "rejected", ...(message ? { message } : {}) };
+  }
   return {
     result: submission.outcome,
     passwordMatched: submissionPasswordMatched(submission),
@@ -483,12 +549,24 @@ export async function completeClaimSubmission(
         "SIMULATION_NOT_AVAILABLE",
         "此环境不支持新的模拟奖励领取。",
       );
-    const available =
-      await env.DB.prepare(`SELECT inventory.id, inventory.amount_minor FROM reward_inventory inventory
+    // 代码判定: the share is made now, as its judgment paid (judge/claims.ts).
+    const coded = activity.participationMode === "code";
+    const paid = coded
+      ? await env.DB.prepare(
+          "SELECT paid_minor FROM code_judgments WHERE submission_row_id = ? AND ok = 1",
+        )
+          .bind(submission.id)
+          .first<number>("paid_minor")
+      : null;
+    if (coded && paid === null)
+      throw new Error("A code-judged claim has no judgment");
+    const available = coded
+      ? { results: [{ id: crypto.randomUUID(), amount_minor: paid }] }
+      : await env.DB.prepare(`SELECT inventory.id, inventory.amount_minor FROM reward_inventory inventory
       WHERE inventory.activity_id = ? AND inventory.kind = 'ldc' AND NOT EXISTS (SELECT 1 FROM claims WHERE claims.activity_id = inventory.activity_id AND claims.inventory_id = inventory.id)
       ORDER BY inventory.position`)
-        .bind(activity.id)
-        .all<{ id: string; amount_minor: number | null }>();
+          .bind(activity.id)
+          .all<{ id: string; amount_minor: number | null }>();
     const reward =
       available.results.find((item) => item.id === selectedInventoryId) ??
       available.results[
@@ -541,7 +619,9 @@ export async function completeClaimSubmission(
             AND s.user_id=? AND s.purpose = 'claim' AND s.outcome = 'pending'
             AND s.participation_mode=activities.participation_mode AND s.validated_at IS NOT NULL
             AND ((s.participation_mode='password' AND s.matched_password_id IS NOT NULL)
-              OR (s.participation_mode='direct' AND s.matched_password_id IS NULL)))
+              OR (s.participation_mode='direct' AND s.matched_password_id IS NULL)
+              OR (s.participation_mode='code' AND s.matched_password_id IS NULL
+                AND EXISTS (SELECT 1 FROM code_judgments j WHERE j.submission_row_id = s.id AND j.ok = 1))))
           THEN version ELSE NULL END WHERE id = ?`).bind(
         submission.userId,
         submission.userId,
@@ -554,6 +634,16 @@ export async function completeClaimSubmission(
         submission.userId,
         activity.id,
       ),
+      ...(coded
+        ? [
+            env.DB.prepare(`INSERT INTO reward_inventory (id, activity_id, position, kind, ciphertext, amount_minor, created_at)
+              SELECT ?, id, claimed_count, 'ldc', NULL, ?, ${databaseNow} FROM activities WHERE id = ?`).bind(
+              reward.id,
+              reward.amount_minor,
+              activity.id,
+            ),
+          ]
+        : []),
       env.DB.prepare(
         `INSERT INTO claims (id, activity_id, user_id, inventory_id, password_id, claimed_at) VALUES (?, ?, ?, ?, ?, ${databaseNow})`,
       ).bind(
@@ -722,6 +812,8 @@ export async function claimActivity(
   executionPolicy?: ActivityExecutionPolicy,
   /** The API route checked a Turnstile token for this 红包 (human-check.ts). */
   humanVerified = false,
+  /** 代码判定: told when its code's failures pause it. */
+  hooks: { paused?: () => void } = {},
 ) {
   await refreshActivityLifecycle(env, activityId);
   const activity = await findActivity(env, activityId);
@@ -740,6 +832,18 @@ export async function claimActivity(
       input,
       executionPolicy,
       humanVerified,
+    );
+  }
+  if (input.participationMode === "code") {
+    const { claimByCode } = await import("../judge/claims");
+    return claimByCode(
+      env,
+      activityId,
+      userId,
+      input,
+      executionPolicy,
+      humanVerified,
+      hooks,
     );
   }
   const submission = await prepareClaimSubmission(

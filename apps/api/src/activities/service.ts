@@ -47,6 +47,7 @@ import {
   codeOpeningBlocked,
   codeOpeningDay,
 } from "../judge/opening";
+import { publicJudge } from "../judge/public";
 import {
   dropJudgeStatement,
   findJudgeRow,
@@ -247,6 +248,9 @@ export function rewardSummary(
           distributeFullPool: money.distributeFullPool,
         }
       : {}),
+    ...(money.mode === "code"
+      ? { minEach: formatAmount(amountToMinor(money.minEach)) }
+      : {}),
   };
 }
 
@@ -412,13 +416,15 @@ export async function getPublicActivity(
   const row = await findActivity(env, id);
   if (!row || (row.openedAt === null && row.authorId !== viewerId))
     activityNotFound();
-  const [drawProof, scope] = await Promise.all([
+  const [drawProof, scope, judge] = await Promise.all([
     publicDrawProof(env, row),
     publicScopeWithPeople(env, configuration(row).scope),
+    publicJudge(env, row),
   ]);
   return {
     ...projectPublicActivity(row, await author(env, row.authorId)),
     ...(drawProof ? { drawProof } : {}),
+    ...(judge ? { judge } : {}),
     ...(scope ? { scope } : {}),
     ...(row.openedAt === null
       ? { openingBlockedReason: await openingBlockedReason(env, row) }
