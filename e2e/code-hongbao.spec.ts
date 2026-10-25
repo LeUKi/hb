@@ -1215,12 +1215,17 @@ test.describe("发红包 · 代码判定", () => {
       .click();
   }
 
-  /** tests.json, typed over in its editor. */
+  /**
+   * tests.json, written over in its editor at once, as typed text arrives
+   * from an input method. Typed key by key, CI's Linux Chromium now and
+   * then dropped the " after 猜中 or 答对, and the tests sent were not
+   * these (2026-10-25).
+   */
   async function typeTests(page: Page, text: string) {
     const editor = page.getByRole("textbox", { name: /^tests\.json/ });
     await editor.click();
     await page.keyboard.press("ControlOrMeta+A");
-    await page.keyboard.type(text);
+    await page.keyboard.insertText(text);
   }
 
   const card = (page: Page) => page.locator("#hb-code-code");
