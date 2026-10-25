@@ -882,6 +882,33 @@ test.describe("红包页", () => {
     expect(state.claims).toMatchObject([{ password: passwordOf.mine }]);
   });
 
+  // 分享's forum copy links to the 红包页 itself (05 §5): there the whole
+  // paragraph goes into its box, which keeps only the 口令 (02 §6).
+  test("红包页上整段粘贴分享文案：输入框只留下口令，按领取就领", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await mockSession(page, viewer);
+    const state = await mockHongbao(page);
+    await openApp(page, path);
+    const shared = forumShareWithPassword(
+      { id, title: "周末红包", draw: false, pageOnly: false },
+      passwordOf.mine,
+      { page: `${new URL(page.url()).origin}/🧧/${code}` },
+    );
+    await page.evaluate((text) => navigator.clipboard.writeText(text), shared);
+    await page.getByRole("button", { name: "输入口令领取" }).click();
+    await expect(omniboxInput(page)).toBeFocused();
+    await page.keyboard.press("ControlOrMeta+V");
+    await expect(omniboxInput(page)).toHaveValue(passwordOf.mine);
+    await page.keyboard.press("Enter");
+    await expect(
+      page.getByRole("status").filter({ hasText: "已领取 0.10 LDC。" }),
+    ).toHaveCount(1);
+    expect(state.claims).toMatchObject([{ password: passwordOf.mine }]);
+  });
+
   test("关闭了首页领取的红包：标签说明怎么领；输入口令时写明会汇总给发红包的人", async ({
     page,
   }) => {
