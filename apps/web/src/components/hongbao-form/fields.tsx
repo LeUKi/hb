@@ -771,11 +771,23 @@ export function PasswordList({
         ? { lines: lines.length - taken.length, shown: true }
         : null,
     );
-    // Focus on the last one put in, once it is drawn.
+    // Focus on the last one put in, scrolled into the middle, once the
+    // step's card holds it: while the card is still opening it keeps its
+    // height, and a scroll then stops at the card's old bottom.
     const last = index + (own ? 0 : 1) + taken.length - 1;
-    requestAnimationFrame(() =>
-      document.getElementById(`hb-password-${Math.max(index, last)}`)?.focus(),
-    );
+    const field = `hb-password-${Math.max(index, last)}`;
+    const started = performance.now();
+    const reveal = () => {
+      const card = document.getElementById(field)?.closest(".step-card");
+      if (
+        card &&
+        card.scrollHeight > card.clientHeight &&
+        performance.now() - started < 2000
+      )
+        requestAnimationFrame(reveal);
+      else jumpTo(field);
+    };
+    requestAnimationFrame(reveal);
   };
   return (
     <div className="flex flex-col gap-2">
