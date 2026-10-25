@@ -151,6 +151,7 @@ function DataCell({
  */
 function RosterEntry({
   roster,
+  code,
   people,
   onOpen,
   motions,
@@ -159,9 +160,12 @@ function RosterEntry({
   people: PublicView["rosterPreview"];
   onOpen: () => void;
   motions: CoverMotion;
+  /** 代码判定: 参与名单, those who took a share and those who tried (05 §7). */
+  code?: boolean;
 }) {
-  const label =
-    roster.kind === "claims"
+  const label = code
+    ? "参与名单"
+    : roster.kind === "claims"
       ? "领取名单"
       : roster.kind === "draw"
         ? "中奖名单"
@@ -251,6 +255,7 @@ export function CoverData({
       </dl>
       <RosterEntry
         roster={roster}
+        code={Boolean(activity.judge)}
         people={view.rosterPreview}
         onOpen={onOpenRoster}
         motions={motions}

@@ -23,6 +23,18 @@ export function sinceOpen(ms: number | null | undefined) {
   return `${Math.floor(hours / 24)}天${hours % 24}小时`;
 }
 
+/**
+ * How long ago, as people say it (参与名单's 挑战, 05 §7): "刚刚" under a
+ * minute, "3 分钟前", "2 小时前", then the date and time.
+ */
+export function agoLabel(at: number, now = Date.now()) {
+  const minutes = Math.floor((now - at) / 60_000);
+  if (minutes < 1) return "刚刚";
+  if (minutes < 60) return `${minutes} 分钟前`;
+  if (minutes < 24 * 60) return `${Math.floor(minutes / 60)} 小时前`;
+  return clockLabel(at, now);
+}
+
 /** "2026-10-14 17:58:04", shown on hover. */
 export function fullTime(at: number) {
   const date = new Date(at);

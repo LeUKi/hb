@@ -1,5 +1,6 @@
 import type {
   CodeFailureList,
+  JudgeChallengerList,
   JudgeCheck,
   JudgeCheckInput,
   MyJudgmentList,
@@ -136,6 +137,27 @@ export function useMyJudgments(userId: string, activityId: string) {
         throw new DOMException("身份已变化", "AbortError");
       return list;
     },
+    getNextPageParam: (last) => last.nextCursor,
+    retry: false,
+  });
+}
+
+/**
+ * 参与名单 · 挑战 (05 §7): everyone the code judged, public, the latest
+ * judged first, twenty a page. Read again when 已判定 moves (the dialog).
+ */
+export function useChallengers(activityId: string, enabled: boolean) {
+  return useInfiniteQuery({
+    queryKey: ["activity-challengers", activityId] as const,
+    enabled,
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam, signal }) =>
+      readResponse<JudgeChallengerList>(
+        await fetch(
+          `/api/activities/${encodeURIComponent(activityId)}/challengers${pageParam ? `?cursor=${encodeURIComponent(pageParam)}` : ""}`,
+          { signal, cache: "no-store" },
+        ),
+      ),
     getNextPageParam: (last) => last.nextCursor,
     retry: false,
   });

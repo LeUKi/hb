@@ -1,10 +1,9 @@
 import type { JudgeNote, MyJudgment } from "@hb/contracts";
 import { useRouter } from "@tanstack/react-router";
-import { atom, useAtom, useSetAtom } from "jotai";
 import { ChevronRight, X } from "lucide-react";
-import { AnimatePresence, useIsPresent } from "motion/react";
-import { useEffect } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import { useMyJudgments } from "../../lib/judge";
+import { ease, useReducedMotionPref } from "../../lib/motion";
 import { switchOverlay } from "../../lib/overlay";
 import { clockSeconds } from "../../lib/roster-time";
 import { useSessionUser } from "../../lib/session";
@@ -15,7 +14,6 @@ import { Button } from "../ui/button";
 import { RollingText } from "../ui/morph-label";
 import { ListItem } from "../ui/reveal";
 import { Squircle } from "../ui/squircle";
-import { PasswordText, RevealToggle } from "./password-text";
 import { useHongbaoPageData } from "./use-hongbao-data";
 
 /** On the page; the rest are in the dialog (05 §3). */
@@ -28,35 +26,10 @@ const notes: Record<JudgeNote, string> = {
 };
 
 /**
- * Whose inputs are shown, page and dialog alike: the 红包's id. Kept in
- * memory only, for that 红包, and only while its page is open: not
- * remembered, as the eye of a 口令 (05 §9).
+ * One judged submission: 第 N 次 and when, what was typed (as typed: a
+ * 代码判定红包's inputs are not hidden, 05 §3), the result, the reply.
  */
-const shownAtom = atom<string | null>(null);
-
-function useShown(activityId: string, ended: boolean) {
-  const [shownFor, setShownFor] = useAtom(shownAtom);
-  const shown = shownFor === activityId;
-  return {
-    shown: ended || shown,
-    toggle: ended
-      ? null
-      : () =>
-          setShownFor((current) =>
-            current === activityId ? null : activityId,
-          ),
-  };
-}
-
-function Row({
-  item,
-  activityId,
-  shown,
-}: {
-  item: MyJudgment;
-  activityId: string;
-  shown: boolean;
-}) {
+export function JudgmentRow({ item }: { item: MyJudgment }) {
   return (
     <ListItem>
       <Squircle radius={12}>
@@ -73,14 +46,9 @@ function Row({
               <span className="shrink-0 text-sm text-ink-3">没领到</span>
             )}
           </div>
-          <PasswordText
-            text={item.input}
-            shown={shown}
-            seed={`${activityId}:judgment`}
-            index={item.attempt}
-            wrap
-            className="text-base text-ink"
-          />
+          <p className="font-mono text-base break-all whitespace-pre-wrap text-ink">
+            {item.input}
+          </p>
           {item.message && (
             <p className="text-sm text-ink-2">
               <span className="text-ink-3">代码的回复：</span>
@@ -96,52 +64,114 @@ function Row({
   );
 }
 
-/** “仅你可见” and the eye, beside the title on the page and in the dialog. */
-function Privacy({
-  eye,
-}: {
-  eye: { shown: boolean; toggle: (() => void) | null };
-}) {
+/** What a screen reader hears of a judgment as it comes in. */
+const spoken = (item: MyJudgment) =>
+  `第 ${item.attempt} 次：${item.amount ? `领到 ${item.amount} LDC` : "没领到"}${
+    item.message ? `。代码的回复：${item.message}` : ""
+  }`;
+
+/**
+ * Under the 指令框 in a 代码判定红包's scope (02 §4): the latest judged
+ * submission as a card — 第 N 次, what was typed, the result, the code's
+ * reply in larger type — then the earlier ones, all of them as one
+ * scrolls. Before the first, what taking part makes public.
+ */
+export function JudgmentRecord({ activityId }: { activityId: string }) {
+  const user = useSessionUser();
+  const reduced = useReducedMotionPref();
+  const query = useMyJudgments(user?.id ?? "", activityId);
+  const list = useQueryLazyList({
+    hasNextPage: query.hasNextPage,
+    isFetchingNextPage: query.isFetchingNextPage,
+    isFetchNextPageError: query.isFetchNextPageError,
+    fetchNextPage: query.fetchNextPage,
+    pageCount: query.data?.pages.length ?? 0,
+  });
+  const total = query.data?.pages[0]?.total ?? 0;
+  const [latest, ...earlier] =
+    query.data?.pages.flatMap((batch) => batch.items) ?? [];
+  if (!user || !query.data) return null;
+  if (!latest)
+    return (
+      <p className="px-2.5 pb-2 text-xs text-ink-3">
+        提交后，你的昵称和判定次数会出现在参与名单里。
+      </p>
+    );
   return (
-    <span className="flex shrink-0 items-center gap-1">
-      <span className="text-xs text-ink-3">仅你可见</span>
-      {eye.toggle && (
-        <RevealToggle
-          size="icon-sm"
-          what="输入"
-          shown={eye.shown}
-          onToggle={eye.toggle}
-        />
-      )}
-    </span>
+    <section aria-label="我的提交" className="grid gap-1.5 px-0.5 pb-1">
+      <p role="status" className="sr-only">
+        {spoken(latest)}
+      </p>
+      <AnimatePresence initial={false} mode="popLayout">
+        <motion.div
+          key={latest.attempt}
+          initial={{ opacity: 0, y: reduced ? 0 : -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: reduced ? 0 : 0.22, ease }}
+        >
+          <Squircle radius={14}>
+            <div
+              className={`grid gap-1.5 px-4 py-3 ${
+                latest.amount ? "bg-success-soft" : "bg-fill-2"
+              }`}
+            >
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-xs text-ink-3 tabular-nums">
+                  第 {latest.attempt} 次 · {clockSeconds(Date.parse(latest.at))}
+                </span>
+                {latest.amount ? (
+                  <span className="shrink-0 text-sm font-medium text-success tabular-nums">
+                    领到 {latest.amount} LDC
+                  </span>
+                ) : (
+                  <span className="shrink-0 text-sm text-ink-2">没领到</span>
+                )}
+              </div>
+              <p className="font-mono text-sm break-all whitespace-pre-wrap text-ink-2">
+                {latest.input}
+              </p>
+              <p className="text-lg leading-snug font-medium text-ink">
+                {latest.message ?? "代码没有回复。"}
+              </p>
+              {latest.note && (
+                <p className="text-sm text-ink-2">{notes[latest.note]}</p>
+              )}
+            </div>
+          </Squircle>
+        </motion.div>
+      </AnimatePresence>
+      <ul className="flex flex-col gap-1.5">
+        <AnimatePresence initial={false}>
+          {earlier.map((item) => (
+            <JudgmentRow key={item.attempt} item={item} />
+          ))}
+        </AnimatePresence>
+      </ul>
+      <LazyListEnd
+        list={list}
+        done={`共 ${total} 次`}
+        className="px-2 pt-0.5 text-xs"
+      />
+    </section>
   );
+}
+
+/** “仅你可见”, beside the title on the page and in the dialog. */
+function Privacy() {
+  return <span className="shrink-0 text-xs text-ink-3">仅你可见</span>;
 }
 
 /**
  * 我的提交 (05 §3): a 代码判定红包's claimant looks back on what they typed
  * and what the code said, newest first, theirs only. The page keeps the
- * latest three; 全部 N 次 opens the rest. While it runs what was typed
- * hides behind one eye, as a 口令 does (05 §9).
+ * latest three; 全部 N 次 opens the rest. What was typed shows as typed
+ * (2026-10-25: to look back on it; a 口令 still hides, 05 §9).
  */
-export function MyJudgments({
-  activityId,
-  ended,
-}: {
-  activityId: string;
-  ended: boolean;
-}) {
+export function MyJudgments({ activityId }: { activityId: string }) {
   const user = useSessionUser();
   const router = useRouter();
   const query = useMyJudgments(user?.id ?? "", activityId);
-  const eye = useShown(activityId, ended);
-  // Leaving the page hides them again (the dialog is over the page): as
-  // it starts to leave, since a quick 返回 brings the leaving page back.
-  const setShownFor = useSetAtom(shownAtom);
-  const present = useIsPresent();
-  useEffect(() => {
-    if (!present) setShownFor(null);
-  }, [present, setShownFor]);
-  useEffect(() => () => setShownFor(null), [setShownFor]);
   const first = query.data?.pages[0];
   if (!user || !first || first.total === 0) return null;
   return (
@@ -151,18 +181,13 @@ export function MyJudgments({
           <RollingText text={`我的提交 · ${first.total} 次`} />
         </h2>
         <span className="-mr-2 flex items-center">
-          <Privacy eye={eye} />
+          <Privacy />
         </span>
       </div>
       <ul className="flex flex-col gap-1.5">
         <AnimatePresence initial={false}>
           {first.items.slice(0, ON_PAGE).map((item) => (
-            <Row
-              key={item.attempt}
-              item={item}
-              activityId={activityId}
-              shown={eye.shown}
-            />
+            <JudgmentRow key={item.attempt} item={item} />
           ))}
         </AnimatePresence>
       </ul>
@@ -193,8 +218,6 @@ function JudgmentsBody({
   const user = useSessionUser();
   const page = useHongbaoPageData(activityId).data;
   const query = useMyJudgments(user?.id ?? "", activityId);
-  const ended = page?.view.ended ?? false;
-  const eye = useShown(activityId, ended);
   const list = useQueryLazyList({
     hasNextPage: query.hasNextPage,
     isFetchingNextPage: query.isFetchingNextPage,
@@ -236,7 +259,7 @@ function JudgmentsBody({
             </p>
           )}
           <span className="-my-1 -mr-2 flex items-center">
-            <Privacy eye={eye} />
+            <Privacy />
           </span>
         </div>
       </header>
@@ -244,12 +267,7 @@ function JudgmentsBody({
         <ul className="flex flex-col gap-1.5">
           <AnimatePresence initial={false}>
             {items.map((item) => (
-              <Row
-                key={item.attempt}
-                item={item}
-                activityId={activityId}
-                shown={eye.shown}
-              />
+              <JudgmentRow key={item.attempt} item={item} />
             ))}
           </AnimatePresence>
         </ul>

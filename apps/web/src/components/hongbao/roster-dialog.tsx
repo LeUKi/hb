@@ -1,12 +1,15 @@
 import { useNavigate } from "@tanstack/react-router";
+import { useAtomValue } from "jotai";
 import { X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   fuzzyLabels,
   type HongbaoActivity,
   type PublicView,
   type RosterRow,
 } from "../../lib/hongbao";
+import { useChallengers } from "../../lib/judge";
+import { liveJudgedAtom } from "../../lib/live-state";
 import { clockLabel } from "../../lib/roster-time";
 import { useQueryLazyList } from "../page/lazy-list";
 import { readFailed } from "../page/page-state";
@@ -18,6 +21,7 @@ import { Swap } from "../ui/reveal";
 import { DrawProofDialog, DrawProofLine } from "./draw-proof";
 import { RevealToggle } from "./password-text";
 import {
+  ChallengerList,
   RosterHeader,
   type RosterKind,
   RosterList,
@@ -87,6 +91,24 @@ function RosterContent({
   const navigate = useNavigate();
   const { activity, view, roster } = data;
   const [tab, setTab] = useState<"winners" | "registrations">("winners");
+  // 代码判定's 参与名单: 领到 (the claims) or 挑战 (everyone judged), 05 §7.
+  const code = activity.participation === "code";
+  const [codeTab, setCodeTab] = useState<"claims" | "challengers">("claims");
+  const challengers = useChallengers(activity.id, code);
+  // A new judgment (已判定 moved, read or pushed): read it again.
+  const pushed = useAtomValue(liveJudgedAtom);
+  const judged = Math.max(
+    activity.judge?.judged ?? 0,
+    pushed?.id === activity.id ? pushed.count : 0,
+  );
+  const refetchChallengers = challengers.refetch;
+  const [seenJudged, setSeenJudged] = useState(judged);
+  useEffect(() => {
+    if (!code || judged === seenJudged) return;
+    setSeenJudged(judged);
+    void refetchChallengers();
+  }, [code, judged, seenJudged, refetchChallengers]);
+  const challenging = code && codeTab === "challengers";
   // The 口令 on the sender's rows: hidden while it runs, until asked here.
   const [passwordsRevealed, setPasswordsRevealed] = useState(false);
   const [proofOpen, setProofOpen] = useState(false);
@@ -115,8 +137,9 @@ function RosterContent({
         ? roster.winners
         : roster.registrations
       : roster.rows;
-  const source =
-    kind === "registrations"
+  const source = challenging
+    ? challengers
+    : kind === "registrations"
       ? page.rosterLists.registrations.query
       : page.rosterLists.claims.query;
   const pending =
@@ -128,13 +151,15 @@ function RosterContent({
     fetchNextPage: source.fetchNextPage,
     pageCount: source.data?.pages.length ?? 0,
   });
-  const title =
-    kind === "claims"
+  const title = code
+    ? "参与名单"
+    : kind === "claims"
       ? "领取名单"
       : kind === "winners"
         ? "中奖名单"
         : "报名名单";
   const total = totalOf(view, kind);
+  const challengerTotal = challengers.data?.pages[0]?.total;
   const author = activity.author.displayName;
   // The sender also sees, per row, the 口令 used and the payment (the author
   // roster endpoints return both; only for the sender's own 红包).
@@ -166,7 +191,7 @@ function RosterContent({
         <div className="flex items-center justify-between gap-3">
           <h2 id="roster-title" className="text-lg font-semibold text-ink">
             {title}
-            {total === null ? "" : ` · ${total} 人`}
+            {code || total === null ? "" : ` · ${total} 人`}
           </h2>
           <Button
             variant="ghost"
@@ -204,13 +229,10 @@ function RosterContent({
               {activity.fish ? "到账状态" : "付款状态"}
               ，只有你能看到。
             </span>
-            {activity.participation !== "direct" && !view.ended && (
+            {/* 代码判定's inputs show as typed (05 §3); 口令 hide until asked. */}
+            {activity.participation === "password" && !view.ended && (
               <RevealToggle
-                what={
-                  activity.participation === "code"
-                    ? "名单里的输入"
-                    : "名单里的口令"
-                }
+                what="名单里的口令"
                 shown={passwordsRevealed}
                 onToggle={() => setPasswordsRevealed((value) => !value)}
                 className="-my-2 -mr-2 shrink-0 text-gold-ink"
@@ -219,6 +241,29 @@ function RosterContent({
           </p>
         )}
       </header>
+      {code && (
+        <div className="mx-5 mb-3 grid">
+          <Segmented
+            label="名单"
+            size="sm"
+            stretch
+            value={codeTab}
+            onChange={setCodeTab}
+            options={[
+              {
+                value: "claims",
+                label: "领到",
+                count: total ?? undefined,
+              },
+              {
+                value: "challengers",
+                label: "挑战",
+                count: challengerTotal,
+              },
+            ]}
+          />
+        </div>
+      )}
       {roster.kind === "draw" && (
         <div className="mx-5 mb-3 grid">
           <Segmented
@@ -242,16 +287,24 @@ function RosterContent({
           />
         </div>
       )}
-      <RosterHeader kind={kind} />
+      {!challenging && <RosterHeader kind={kind} />}
       {/* The list's own scroller: its end row is watched in it. */}
       <div className="view-scroll relative min-h-0 flex-1 overflow-y-auto overscroll-contain">
         {/* Bars until the first batch is in (not 还没有人领取), and each
             tab's list fades in over the other's. */}
-        <Swap id={pending ?? `rows:${kind}`}>
+        <Swap id={pending ?? `rows:${challenging ? "challengers" : kind}`}>
           {pending === "loading" ? (
             <RosterSkeleton />
           ) : pending === "error" ? (
             <RosterRetry onRetry={() => void source.refetch()} />
+          ) : challenging ? (
+            <ChallengerList
+              items={(challengers.data?.pages ?? []).flatMap(
+                (one) => one.items,
+              )}
+              list={list}
+              viewer={page.identity.user?.username ?? null}
+            />
           ) : (
             <RosterList
               rows={rows}
@@ -260,7 +313,7 @@ function RosterContent({
               openedAt={view.openedAt}
               done={total === null || fuzzy ? "已全部加载" : `共 ${total} 人`}
               detailOf={data.author ? detailOf : undefined}
-              passwordsShown={view.ended || passwordsRevealed}
+              passwordsShown={view.ended || code || passwordsRevealed}
               onPayment={openPayment}
             />
           )}

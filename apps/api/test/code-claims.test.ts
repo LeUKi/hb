@@ -4,6 +4,7 @@ import type {
   ActivityLiveMessage,
   ClaimDetail,
   ClaimResult,
+  JudgeChallengerList,
   JudgeInput,
   MyJudgmentList,
   PublicRecipientList,
@@ -321,6 +322,55 @@ describe("代码判定红包: claims", () => {
         )
       ).status,
     ).toBe(401);
+  });
+
+  it("lists everyone the code judged for 参与名单's 挑战, the latest first, public, without what they typed", async () => {
+    const opened = await open();
+    const first = await actor();
+    const second = await actor();
+    await submit(opened.id, first, "nope");
+    await submit(opened.id, first, "still nope");
+    await submit(opened.id, first, "flag{ok}");
+    await submit(opened.id, second, "nope");
+    const read = async (query = "") =>
+      app.request(
+        `${origin}/api/activities/${opened.id}/challengers${query}`,
+        {},
+        bindings,
+      );
+    const response = await read();
+    expect(response.status).toBe(200);
+    const list = (await response.json()) as JudgeChallengerList;
+    expect(list.total).toBe(2);
+    expect(list.nextCursor).toBeNull();
+    expect(list.items).toEqual([
+      {
+        username: `code_${second.id.slice(0, 8)}`,
+        displayName: expect.any(String),
+        avatarUrl: null,
+        judged: 1,
+        lastAt: expect.any(String),
+        claimed: false,
+      },
+      {
+        username: `code_${first.id.slice(0, 8)}`,
+        displayName: expect.any(String),
+        avatarUrl: null,
+        judged: 3,
+        lastAt: expect.any(String),
+        claimed: true,
+      },
+    ]);
+    expect(JSON.stringify(list)).not.toMatch(/nope|flag|不对|对了/);
+    // Past the first: the rest, by its latest judgment and id.
+    const after = `${Date.parse(list.items[0]?.lastAt ?? "")}:${second.id}`;
+    const rest = (await (
+      await read(`?cursor=${encodeURIComponent(after)}`)
+    ).json()) as JudgeChallengerList;
+    expect(rest.items.map((item) => item.username)).toEqual([
+      `code_${first.id.slice(0, 8)}`,
+    ]);
+    expect((await read("?cursor=nonsense")).status).toBe(400);
   });
 
   it("tells its live viewers how many times the code has judged, at most once a second", async () => {

@@ -10,6 +10,8 @@ import {
   type DiscoveryList,
   emptyActivityInput,
   encodeActivityEmoji,
+  type JudgeChallenger,
+  type JudgeChallengerList,
   type JudgeCheck,
   type JudgeVersions,
   type ManagedActivity,
@@ -21,7 +23,6 @@ import {
   type PublicRecipient,
 } from "../packages/contracts/src";
 import {
-  expectPath,
   type MockUser,
   mockSession,
   omniboxInput,
@@ -138,6 +139,8 @@ type CodeState = {
   submissions: { participationMode?: string; input?: string }[];
   /** The cursor of each read of 我的提交 (null: the first page). */
   judgmentReads: (string | null)[];
+  /** 参与名单 · 挑战: everyone judged, the latest first. */
+  challengers: JudgeChallenger[];
   reads: { public: number; participation: number };
 };
 
@@ -172,6 +175,24 @@ async function mockCodeHongbao(page: Page, judgments: MyJudgment[] = []) {
     judgments,
     submissions: [],
     judgmentReads: [],
+    challengers: [
+      {
+        username: "trying",
+        displayName: "还在猜的人",
+        avatarUrl: null,
+        judged: 6,
+        lastAt: new Date(Date.now() - 20_000).toISOString(),
+        claimed: false,
+      },
+      {
+        username: "early",
+        displayName: "早到的人",
+        avatarUrl: null,
+        judged: 3,
+        lastAt: new Date(Date.now() - 3 * 60_000).toISOString(),
+        claimed: true,
+      },
+    ],
     reads: { public: 0, participation: 0 },
   };
   await page.route(`**/api/activities/${id}**`, (route) => {
@@ -203,6 +224,14 @@ async function mockCodeHongbao(page: Page, judgments: MyJudgment[] = []) {
           nextCursor: null,
           titles: { highestClaimIds: [], lowestClaimIds: [] },
         },
+      });
+    if (rest === "/challengers")
+      return route.fulfill({
+        json: {
+          items: state.challengers,
+          total: state.challengers.length,
+          nextCursor: null,
+        } satisfies JudgeChallengerList,
       });
     if (rest === "/judgments") {
       const cursor = url.searchParams.get("cursor");
@@ -489,12 +518,26 @@ test.describe("代码判定红包", () => {
     await expect(entry).toHaveText(/^代码结束后公开$/);
     await expect(entry).toHaveAttribute("aria-haspopup", "dialog");
 
-    // The roster: on which of their judged submissions each one came.
+    // 参与名单 (05 §7): 领到, on which of their judged submissions each one
+    // came; 挑战, everyone judged, the latest first, how many times.
+    await expect(page.locator("#roster-entry")).toContainText("参与名单");
     await page.locator("#roster-entry").click();
-    const roster = page.getByRole("dialog", { name: /领取名单/ });
+    const roster = page.getByRole("dialog", { name: "参与名单" });
+    const tabs = roster.getByRole("group", { name: "名单" });
+    await expect(tabs.getByRole("button")).toHaveText(["领到1", "挑战2"]);
     await expect(
       roster.getByRole("listitem").filter({ hasText: "早到的人" }),
     ).toContainText("第 3 次领到");
+    await tabs.getByRole("button", { name: /^挑战/ }).click();
+    const challengers = roster.getByRole("listitem");
+    await expect(challengers).toHaveCount(2);
+    await expect(challengers.nth(0)).toContainText("还在猜的人");
+    await expect(challengers.nth(0)).toContainText("判定 6 次");
+    await expect(challengers.nth(0)).toContainText("刚刚");
+    await expect(challengers.nth(0)).not.toContainText("领到了");
+    await expect(challengers.nth(1)).toContainText("早到的人");
+    await expect(challengers.nth(1)).toContainText("领到了");
+    await expect(challengers.nth(1)).toContainText("3 分钟前");
   });
 
   test("登录后：已判定次数随推送的 judged 变化，不重读公开数据", async ({
@@ -550,30 +593,42 @@ test.describe("代码判定红包", () => {
     ).toBeVisible();
     // Nothing typed, nothing to run.
     await expect(page.getByRole("option")).toHaveCount(0);
+    // Before the first: taking part puts one's name in 参与名单 (02 §4).
+    const panel = page.locator(".glass-pop");
+    await expect(
+      panel.getByText("提交后，你的昵称和判定次数会出现在参与名单里。"),
+    ).toBeVisible();
     await input.fill("50");
     await expect(
       shown(page, "原样提交：区分大小写，符号都算，首尾空格会去掉 · 2 / 200"),
     ).toBeVisible();
-    // One row only: this 红包 (the start page cannot find it). 02 §4 writes
-    // it “领取「标题」”; the row is the 口令 scope's “领取 标题”, without 「」
-    // (suggestions.tsx), pending the owner's word on which is meant.
-    await expect(page.getByRole("option")).toHaveText([`领取${title}`]);
+    // No rows: what is typed goes straight to the code.
+    await expect(page.getByRole("option")).toHaveCount(0);
     await expect(page.getByText("在全部红包中查找")).toHaveCount(0);
     const action = page.locator("search button.btn-lacquer");
     await expect(action).toHaveText("领取");
     await page.keyboard.press("Enter");
 
-    // Turned down: the code's own words, and the turn joins 我的提交.
-    const panel = page.locator(".glass-pop");
+    // Turned down: the record under the box leads with it, the code's own
+    // words large; the box empties for the next try.
+    const record = panel.getByRole("region", { name: "我的提交" });
+    await expect(record).toContainText("第 1 次");
+    await expect(record).toContainText("没领到");
+    await expect(record.getByText("大了", { exact: true })).toBeVisible();
+    await expect(record.getByText("50", { exact: true })).toBeVisible();
     await expect(
-      panel.getByText("代码的回复：大了", { exact: true }),
-    ).toBeVisible();
-    // With the cooldown the answer carried (02 §4).
-    const waiting = page.getByRole("button", { name: /还需等待 \d 秒/ });
-    await expect(waiting).toBeVisible();
+      page
+        .getByRole("status")
+        .filter({ hasText: "第 1 次：没领到。代码的回复：大了" }),
+    ).toHaveCount(1);
+    await expect(input).toHaveValue("");
     expect(state.submissions).toMatchObject([
       { participationMode: "code", input: "50" },
     ]);
+    // The cooldown the answer carried shows once something is typed.
+    await input.fill("40");
+    const waiting = page.getByRole("button", { name: /还需等待 \d 秒/ });
+    await expect(waiting).toBeVisible();
     const mine = page.locator("[data-hb-part=my-judgments]");
     await expect(mine.getByRole("heading")).toHaveText("我的提交 · 1 次");
     const first = mine.getByRole("listitem");
@@ -581,9 +636,8 @@ test.describe("代码判定红包", () => {
     await expect(first).toContainText("第 1 次");
     await expect(first).toContainText("没领到");
     await expect(first).toContainText("代码的回复：大了");
-    // What was typed hides while it runs (the 指令框 still holds it).
-    await expect(first).toContainText("已隐藏");
-    await expect(first.getByText("50", { exact: true })).toHaveCount(0);
+    // What was typed shows as typed (05 §3).
+    await expect(first.getByText("50", { exact: true })).toBeVisible();
     // Nothing is said about 口令 here.
     await expect(shown(page, "输入的口令会匿名汇总给发红包的人。")).toHaveCount(
       0,
@@ -620,13 +674,12 @@ test.describe("代码判定红包", () => {
     expect(state.judgmentReads.length).toBeGreaterThanOrEqual(3);
   });
 
-  test("我的提交：页面上最近 3 次，输入在一个眼睛后面；全部 N 次的弹窗滚到底再读；离开页面后又遮住", async ({
+  test("我的提交：页面上最近 3 次，输入直接显示；全部 N 次的弹窗滚到底再读", async ({
     page,
   }) => {
     await mockSession(page, viewer);
     const state = await mockCodeHongbao(page, rejected(25));
     await mockLive(page);
-    await mockHistory(page, []);
     await openApp(page, path);
     const mine = page.locator("[data-hb-part=my-judgments]");
     await expect(mine.getByRole("heading")).toHaveText("我的提交 · 25 次");
@@ -637,17 +690,12 @@ test.describe("代码判定红包", () => {
     await expect(rows.nth(2)).toContainText("第 23 次");
     await expect(rows.nth(0)).toContainText("没领到");
     await expect(rows.nth(0)).toContainText("代码的回复：小了");
-    // Hidden while it runs, behind one eye for them all.
-    await expect(mine.getByText("已隐藏")).toHaveCount(3);
-    await expect(mine.getByText("答案-25")).toHaveCount(0);
-    const eye = page.getByRole("button", { name: "显示输入" });
-    await expect(eye).toHaveCount(1);
-    await expect(eye).toHaveAttribute("aria-pressed", "false");
-    await eye.click();
+    // As typed, no eye (05 §3, 2026-10-25).
     await expect(mine.getByText("答案-25")).toBeVisible();
-    await expect(mine.getByText("答案-23")).toBeVisible();
+    await expect(mine.getByText("已隐藏")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "显示输入" })).toHaveCount(0);
 
-    // 全部 25 次: the dialog, the same eye, twenty more as it scrolls.
+    // 全部 25 次: the dialog, twenty more as it scrolls.
     await mine.getByRole("button", { name: "全部 25 次" }).click();
     const dialog = page.getByRole("dialog", { name: "我的提交 · 25 次" });
     await expect(dialog).toBeVisible();
@@ -669,55 +717,6 @@ test.describe("代码判定红包", () => {
       "20",
     ]);
     await expect(dialog.getByText("答案-1", { exact: true })).toBeVisible();
-    // Hidden from the dialog: hidden on the page as well.
-    const dialogEye = dialog.getByRole("button", { name: "显示输入" });
-    await expect(dialogEye).toHaveAttribute("aria-pressed", "true");
-    await dialogEye.click();
-    await expect(dialog.getByText("答案-1", { exact: true })).toHaveCount(0);
-    await page.keyboard.press("Escape");
-    await expect(dialog).toBeHidden();
-    await expect(mine.getByText("已隐藏")).toHaveCount(3);
-    await eye.click();
-    await expect(mine.getByText("答案-25")).toBeVisible();
-
-    // Away and back: not remembered, hidden again.
-    await page
-      .getByRole("banner")
-      .getByRole("link", { name: "红包记录" })
-      .click();
-    await expectPath(page, "/history");
-    await expect(mine).toHaveCount(0);
-    await page.goBack();
-    await expectPath(page, path);
-    await expect(mine.getByRole("listitem")).toHaveCount(3);
-    await expect(mine.getByText("已隐藏")).toHaveCount(3);
-    await expect(mine.getByText("答案-25")).toHaveCount(0);
-    await expect(eye).toHaveAttribute("aria-pressed", "false");
-  });
-
-  // Back within the view's exit (0.14 s, view-stage.tsx) re-enters the
-  // leaving 红包 page instead of mounting it again: MyJudgments resets its
-  // eye as the page starts to leave, not only on unmount (05 §9 “不记住选择”).
-  test("我的提交：离开后马上回来（离场动画还没放完）也要重新遮住", async ({
-    page,
-  }) => {
-    await mockSession(page, viewer);
-    await mockCodeHongbao(page, rejected(5));
-    await mockLive(page);
-    await mockHistory(page, []);
-    await openApp(page, path);
-    const mine = page.locator("[data-hb-part=my-judgments]");
-    await mine.getByRole("button", { name: "显示输入" }).click();
-    await expect(mine.getByText("答案-5")).toBeVisible();
-    await page
-      .getByRole("banner")
-      .getByRole("link", { name: "红包记录" })
-      .click();
-    await expectPath(page, "/history");
-    await page.goBack();
-    await expectPath(page, path);
-    await expect(mine.getByText("已隐藏")).toHaveCount(3);
-    await expect(mine.getByText("答案-5")).toHaveCount(0);
   });
 
   test("代码弹窗（发红包的人）：只读的代码带行号，复制代码；指纹、封存值和不联网；名单写输入和代码给的数", async ({
@@ -777,27 +776,26 @@ test.describe("代码判定红包", () => {
     await expect(dialog).toBeHidden();
     await expect(entry).toBeFocused();
 
-    // The sender's 名单: what was typed (hidden while it runs) and both
-    // amounts when the code's was pulled in (07 §6).
+    // The sender's 名单: what was typed, as typed, and both amounts when
+    // the code's was pulled in (07 §6).
     await page.locator("#roster-entry").click();
-    const roster = page.getByRole("dialog", { name: /领取名单/ });
+    const roster = page.getByRole("dialog", { name: "参与名单" });
     const row = roster.getByRole("listitem").filter({ hasText: "早到的人" });
     await expect(row).toContainText("第 3 次领到");
     await expect(row).toContainText("代码给 0.50，按上限发 0.20");
     await expect(row).toContainText("输入");
-    await expect(row).toContainText("已隐藏");
-    await expect(row.getByText(answer, { exact: true })).toHaveCount(0);
-    // Its eye puts what each one typed in (readable or not: see below).
-    await roster.getByRole("button", { name: "显示名单里的输入" }).click();
     await expect(row.getByText(answer, { exact: true })).toHaveCount(1);
     await expect(row).not.toContainText("已隐藏");
+    await expect(
+      roster.getByRole("button", { name: "显示名单里的输入" }),
+    ).toHaveCount(0);
   });
 
   // The sender's 名单 line under a name (roster.tsx, the detail span) holds
   // 第 N 次领到, the 输入, 代码给 …，按上限发 … and 已存入🐟额: in the 480px
   // dialog it wraps rather than squeezing the input or running over the
   // time and the amount (07 §6 “写他的输入和发了多少”).
-  test("名单（发红包的人）：输入显示出来看得见，那行小字不压到右边的时间和金额", async ({
+  test("名单（发红包的人）：输入看得见，那行小字不压到右边的时间和金额", async ({
     page,
   }) => {
     await mockSession(page, author);
@@ -806,8 +804,7 @@ test.describe("代码判定红包", () => {
     await mockSenderReads(page);
     await openApp(page, path);
     await page.locator("#roster-entry").click();
-    const roster = page.getByRole("dialog", { name: /领取名单/ });
-    await roster.getByRole("button", { name: "显示名单里的输入" }).click();
+    const roster = page.getByRole("dialog", { name: "参与名单" });
     const row = roster.getByRole("listitem").filter({ hasText: "早到的人" });
     const input = row.getByText(answer, { exact: true });
     await expect(input).toBeVisible();

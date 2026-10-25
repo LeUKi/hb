@@ -34,6 +34,7 @@ import {
 } from "../../lib/scheme";
 import { useSessionUser } from "../../lib/session";
 import { viewEdgeAtom, windowDialogsAtom } from "../../lib/store";
+import { JudgmentRecord } from "../hongbao/my-judgments";
 import { ConfirmDialog } from "../shell/confirm-dialog";
 import { keyboardInsetAtom } from "../shell/keyboard";
 import { type SlotRect, useSlotRect } from "../shell/slots";
@@ -315,13 +316,19 @@ export function Omnibox() {
     expanded ||
     (mode === "start" && inputFocused && (commandMode || optimized !== null));
   const codeTyped = codeScope && value.trim() !== "";
+  // 代码判定 lists no rows: its record shows under the box instead (02 §4),
+  // and what is typed goes to its code as if 领取「标题」 were chosen.
+  const codeClaim = useMemo<Suggestion | null>(
+    () =>
+      codeTyped && scope
+        ? { key: "claim", kind: "claim", activityId: scope.id }
+        : null,
+    [codeTyped, scope],
+  );
   const suggestions = useMemo<Suggestion[]>(
     () =>
-      // 代码判定's list is its one row: 领取「标题」(nothing found elsewhere).
-      panelOpen && codeScope && scope
-        ? codeTyped
-          ? [{ key: "claim", kind: "claim", activityId: scope.id }]
-          : []
+      codeScope
+        ? []
         : panelOpen
           ? buildSuggestions(
               judgedValue,
@@ -336,7 +343,6 @@ export function Omnibox() {
           : [],
     [
       codeScope,
-      codeTyped,
       panelOpen,
       judgedValue,
       judgedScheme,
@@ -543,6 +549,10 @@ export function Omnibox() {
 
   const execute = useCallback(() => {
     if (pending) return;
+    if (codeClaim) {
+      runSuggestion(codeClaim);
+      return;
+    }
     if (panelOpen) {
       const item = suggestions[active] ?? suggestions[0];
       if (item) runSuggestion(item);
@@ -551,6 +561,7 @@ export function Omnibox() {
     void controller.submit(value, false);
   }, [
     active,
+    codeClaim,
     controller,
     panelOpen,
     pending,
@@ -636,7 +647,8 @@ export function Omnibox() {
     ],
   );
 
-  const activeItem = panelOpen ? (suggestions[active] ?? suggestions[0]) : null;
+  const activeItem =
+    codeClaim ?? (panelOpen ? (suggestions[active] ?? suggestions[0]) : null);
   const usesCooldown =
     (scheme.kind === "password" || codeScope) &&
     activeItem?.kind !== "optimize" &&
@@ -977,6 +989,11 @@ export function Omnibox() {
                   message={shownMessage}
                   onAction={controller.runMessageAction}
                 />
+              ) : undefined
+            }
+            body={
+              codeScope && scope ? (
+                <JudgmentRecord activityId={scope.id} />
               ) : undefined
             }
             empty={

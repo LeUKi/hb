@@ -1,9 +1,14 @@
-import { PAYMENT_LABELS, type PaymentState } from "@hb/contracts";
+import {
+  type JudgeChallenger,
+  PAYMENT_LABELS,
+  type PaymentState,
+} from "@hb/contracts";
 import { RotateCw } from "lucide-react";
 import { AnimatePresence } from "motion/react";
+import { useEffect, useState } from "react";
 import type { RosterRow } from "../../lib/hongbao";
 import { paymentTone } from "../../lib/hongbao-text";
-import { fullTime, sinceOpen } from "../../lib/roster-time";
+import { agoLabel, fullTime, sinceOpen } from "../../lib/roster-time";
 import { type LazyList, LazyListEnd } from "../page/lazy-list";
 import { Bone } from "../page/page-state";
 import { Avatar } from "../ui/avatar";
@@ -261,6 +266,96 @@ export function RosterList({
       <LazyListEnd
         list={list}
         done={done}
+        className="min-h-0 px-6 pt-1 pb-4 text-xs"
+      />
+    </>
+  );
+}
+
+/**
+ * 参与名单 · 挑战 (05 §7): one line each, the latest judged first — the
+ * person, 判定 N 次 under the name, 领到了 if they did, and how long ago.
+ * The times move on by themselves.
+ */
+export function ChallengerList({
+  items,
+  list,
+  viewer,
+}: {
+  items: JudgeChallenger[];
+  list: LazyList;
+  /** The viewer's username: their own row is marked "你". */
+  viewer: string | null;
+}) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  if (items.length === 0 && list.state === "done")
+    return (
+      <p className="px-6 py-8 text-center text-sm text-ink-3">还没有人挑战。</p>
+    );
+  return (
+    <>
+      <ol
+        className="grid px-2 py-1"
+        aria-busy={list.state === "loading" || undefined}
+      >
+        <AnimatePresence initial={false}>
+          {items.map((item) => {
+            const at = Date.parse(item.lastAt);
+            const name = item.displayName || item.username;
+            const you = viewer !== null && item.username === viewer;
+            return (
+              <ListItem key={item.username}>
+                <Squircle radius={10}>
+                  <div
+                    title={fullTime(at)}
+                    className={`grid grid-cols-[1.375rem_minmax(3em,1fr)_auto] items-center gap-x-2.5 px-4 py-1.5 ${
+                      you ? "bg-gold-soft" : ""
+                    }`}
+                  >
+                    <Avatar name={name} src={item.avatarUrl} size={22} />
+                    <span className="grid min-w-0 gap-0.5">
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <PersonName
+                          name={name}
+                          username={item.username}
+                          avatarUrl={item.avatarUrl}
+                          className="min-w-[2.5em] text-sm text-ink"
+                        />
+                        {you && (
+                          <Squircle radius={7}>
+                            <span className="chip chip-gold h-5 shrink-0 px-1.5 text-xs">
+                              你
+                            </span>
+                          </Squircle>
+                        )}
+                        {item.claimed && (
+                          <span className="shrink-0 text-xs text-success">
+                            领到了
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-xs text-ink-3 tabular-nums">
+                        判定 {item.judged} 次
+                      </span>
+                    </span>
+                    <span className="text-right text-xs text-ink-3 tabular-nums">
+                      <span className="sr-only">最近一次 </span>
+                      {agoLabel(at, now)}
+                    </span>
+                  </div>
+                </Squircle>
+              </ListItem>
+            );
+          })}
+        </AnimatePresence>
+      </ol>
+      <LazyListEnd
+        list={list}
+        done="已全部加载"
         className="min-h-0 px-6 pt-1 pb-4 text-xs"
       />
     </>

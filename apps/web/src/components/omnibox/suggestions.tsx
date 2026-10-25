@@ -407,6 +407,7 @@ export function SuggestionPanel({
   message,
   footer,
   empty,
+  body,
   maxHeight,
 }: {
   id: string;
@@ -417,6 +418,8 @@ export function SuggestionPanel({
   message?: ReactNode;
   footer?: ReactNode;
   empty?: ReactNode;
+  /** In place of rows (代码判定's own record, 02 §4). */
+  body?: ReactNode;
   maxHeight?: number;
 }) {
   const reduced = useReducedMotionPref();
@@ -490,6 +493,7 @@ export function SuggestionPanel({
             ) : (
               !message && empty
             )}
+            {body}
             {footer}
           </div>
         </motion.div>

@@ -199,6 +199,25 @@ export type PublicJudge = {
   seed?: string;
 };
 
+/**
+ * 参与名单 · 挑战 (05 §7): one person the code has judged, public — how
+ * many times and when last, never what they typed or what it said.
+ */
+export type JudgeChallenger = PublicUserProfile & {
+  /** How many times the code judged them. */
+  judged: number;
+  /** Their latest judgment. */
+  lastAt: string;
+  /** One of those judgments was a share. */
+  claimed: boolean;
+};
+/** The latest judged first, twenty at a time; `total`: how many people. */
+export type JudgeChallengerList = {
+  items: JudgeChallenger[];
+  total: number;
+  nextCursor: string | null;
+};
+
 /** 我的提交 (05 §3): one of the viewer's own judged submissions. */
 export type MyJudgment = {
   /** 第 N 次, from 1. */

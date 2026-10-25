@@ -1,6 +1,7 @@
 // 代码判定红包's own routes (docs/programmable-hongbao-design.md): 部署
-// (§5), a claimant's 我的提交 (§3), its sender's records (§6), and the
-// 站长's 停用 (§1) and 判定器 tab (redesign/07 §10).
+// (§5), a claimant's 我的提交 (§3), 参与名单's 挑战 (redesign/05 §7), its
+// sender's records (§6), and the 站长's 停用 (§1) and 判定器 tab
+// (redesign/07 §10).
 import {
   ACTIVITY_LIMITS,
   judgeCheckInputSchema,
@@ -19,6 +20,7 @@ import {
 } from "../auth/session";
 import type { ApiContext } from "../env";
 import { activityObject } from "../runtime/objects";
+import { listChallengers, readChallengerCursor } from "./challengers";
 import { checkJudge } from "./check";
 import { myJudgments } from "./mine";
 import { judgeRecords, listFailures } from "./records";
@@ -89,6 +91,29 @@ export const judgeRoutes = new Hono<ApiContext>()
         ),
       );
     },
+  )
+  // 参与名单 · 挑战: everyone judged, public, the latest first.
+  .get(
+    "/activities/:id/challengers",
+    validator("query", (value) => {
+      const cursor = value.cursor;
+      if (cursor === undefined) return { cursor: null };
+      const read =
+        typeof cursor === "string" ? readChallengerCursor(cursor) : null;
+      if (!read)
+        throw new ActivityValidationError([
+          { path: "cursor", message: "分页位置无效" },
+        ]);
+      return { cursor: read };
+    }),
+    async (c) =>
+      c.json(
+        await listChallengers(
+          c.env,
+          c.req.param("id"),
+          c.req.valid("query").cursor,
+        ),
+      ),
   )
   .get("/me/activities/:id/code-failures", async (c) => {
     const session = await requireAuth(c);

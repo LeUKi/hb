@@ -701,14 +701,12 @@ export function useOmniboxController() {
             say({ tone: "danger", text: "口令不正确。", action: "global" });
             store.set(mismatchAtom, (count) => count + 1);
             return;
-          // 代码判定 said no: its own words, plain (02 §4).
+          // 代码判定 said no: its reply heads the record under the box (02
+          // §4), which says it aloud too; the box empties for the next try.
           case "rejected":
-            say({
-              tone: "danger",
-              text: result.message
-                ? `代码的回复：${result.message}`
-                : "没有领到，代码没有回复。",
-            });
+            hapticForTone("danger");
+            if (store.get(editDraftAtom) === (password ?? ""))
+              store.set(editDraftAtom, "");
             return;
           case "draft":
             say({ tone: "neutral", text: `红包还没开放，暂时不能${verb}。` });

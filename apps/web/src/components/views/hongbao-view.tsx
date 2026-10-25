@@ -166,7 +166,7 @@ function HongbaoPage({
         )}
         {/* What a claimant typed and what the code said (05 §3). */}
         {activity.judge && !hongbao.author && !activity.draft && (
-          <MyJudgments activityId={activity.id} ended={view.ended} />
+          <MyJudgments activityId={activity.id} />
         )}
         {/* 代码判定红包 has its code where others have their 口令 (05 §9). */}
         {activity.judge ? (
