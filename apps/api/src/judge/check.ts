@@ -21,7 +21,12 @@ import { startOfBeijingDay } from "../balance/day";
 import { readBalanceSettings } from "../balance/settings";
 import { transferAccess } from "../balance/transfers";
 import type { ApiBindings } from "../env";
-import { JUDGE_PROTOCOL, runJudge, type SandboxOutcome } from "./sandbox";
+import {
+  JUDGE_PROTOCOL,
+  runJudge,
+  type SandboxOutcome,
+  warmJudge,
+} from "./sandbox";
 import { readJudgeSettings } from "./settings";
 import { textDigest } from "./storage";
 import { overMonthlyLimit, usageStatement } from "./usage";
@@ -264,29 +269,37 @@ async function runChecks(
   >();
   let sandbox = 0;
   let timeouts = 0;
-  if (problems.length === 0 && "tests" in read) {
+  /**
+   * A sandbox's first use: its 份 on record before the 判定器 is made (§7:
+   * 每月上限 and 用量 see it even if the run goes no further; the run
+   * counts on the first sandbox, as its judge_checks row says), then warmed
+   * as the kit warms its own, so neither the write nor the start is timed
+   * as a judgment (最慢).
+   */
+  const prepare = async (fresh: number) => {
+    const usage = { firstAt: Date.now(), timeouts: 0, switches: 0 };
+    sandboxes.set(fresh, usage);
+    await usageStatement(env, {
+      now: usage.firstAt,
+      fingerprint,
+      fresh,
+      userId,
+      ...(fresh === 0 ? { checkId } : {}),
+    }).run();
+    await warmJudge(env, { code: input.code, fingerprint, fresh });
+    return usage;
+  };
+  if (problems.length === 0 && "tests" in read && read.tests.length > 0) {
+    await prepare(0);
     const run = async (
       submission: Parameters<typeof runJudge>[1]["submission"],
       seeds: { submission: string; user: string },
     ): Promise<SandboxOutcome> => {
       if (timeouts >= SANDBOXES)
         return { failure: "timeout", detail: "前面超时，这条没跑" };
+      // A fresh sandbox after a timeout is made when it is first needed.
+      const usage = sandboxes.get(sandbox) ?? (await prepare(sandbox));
       const started = Date.now();
-      let usage = sandboxes.get(sandbox);
-      if (!usage) {
-        usage = { firstAt: started, timeouts: 0, switches: 0 };
-        sandboxes.set(sandbox, usage);
-        // Its 份 is on record before the 判定器 is made (§7): 每月上限 and
-        // 用量 see it even if the run goes no further. The run counts on
-        // the first sandbox, as its judge_checks row says.
-        await usageStatement(env, {
-          now: started,
-          fingerprint,
-          fresh: sandbox,
-          userId,
-          ...(sandbox === 0 ? { checkId } : {}),
-        }).run();
-      }
       const outcome = await runJudge(
         env,
         { code: input.code, fingerprint, submission, seeds, fresh: sandbox },

@@ -99,6 +99,48 @@ function classify(error: unknown, loading: boolean): SandboxOutcome {
   return { failure: "unavailable", detail };
 }
 
+/** This code's Dynamic Worker (a fresh one by `fresh`), its CPU limited. */
+function judgeEntrypoint(
+  env: ApiBindings,
+  run: Pick<JudgeRun, "code" | "fingerprint" | "fresh">,
+) {
+  return env.LOADER.get(sandboxId(run.fingerprint, run.fresh), async () => ({
+    compatibilityDate: COMPATIBILITY_DATE,
+    compatibilityFlags: ["nodejs_compat"],
+    mainModule: "main.mjs",
+    modules: { ...runtimeModules, "judge.js": run.code },
+    globalOutbound: null,
+  })).getEntrypoint(undefined, { limits: { cpuMs: CPU_MS } });
+}
+
+/**
+ * Before a 部署's first judgment on a sandbox: the two requests the kit
+ * makes (kit/cli/lib/sandbox.mjs), which main.mjs stops at — one it cannot
+ * read starts the Dynamic Worker, an empty one imports judge.js — so the
+ * start and judge.js's top level are not timed as a judgment (最慢). The
+ * same Worker ID on the same day: no further 份 (§7). What they answer the
+ * judgments say again; each is waited on JUDGE_WAIT_MS at most.
+ */
+export async function warmJudge(
+  env: ApiBindings,
+  run: Pick<JudgeRun, "code" | "fingerprint" | "fresh">,
+) {
+  const entrypoint = judgeEntrypoint(env, run);
+  for (const body of ["", "{}"]) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      entrypoint
+        .fetch("http://judge/", { method: "POST", body })
+        .then((response) => response.text())
+        .catch(() => {}),
+      new Promise((resolve) => {
+        timer = setTimeout(resolve, JUDGE_WAIT_MS);
+      }),
+    ]);
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Runs judge() once. `loading` says whether a failure to start counts
  * against the code (a deploy) or the platform (a claim).
@@ -108,27 +150,15 @@ export async function runJudge(
   run: JudgeRun,
   loading = false,
 ): Promise<SandboxOutcome> {
-  const worker = env.LOADER.get(
-    sandboxId(run.fingerprint, run.fresh),
-    async () => ({
-      compatibilityDate: COMPATIBILITY_DATE,
-      compatibilityFlags: ["nodejs_compat"],
-      mainModule: "main.mjs",
-      modules: { ...runtimeModules, "judge.js": run.code },
-      globalOutbound: null,
-    }),
-  );
   const waitMs = run.waitMs ?? JUDGE_WAIT_MS;
-  const request = worker
-    .getEntrypoint(undefined, { limits: { cpuMs: CPU_MS } })
-    .fetch("http://judge/", {
-      method: "POST",
-      body: JSON.stringify({
-        submission: run.submission,
-        seeds: run.seeds,
-        capture: run.capture === true,
-      }),
-    });
+  const request = judgeEntrypoint(env, run).fetch("http://judge/", {
+    method: "POST",
+    body: JSON.stringify({
+      submission: run.submission,
+      seeds: run.seeds,
+      capture: run.capture === true,
+    }),
+  });
   // A judgment given up on still ends (or is killed) later: nothing waits.
   request.catch(() => {});
   let timer: ReturnType<typeof setTimeout> | undefined;

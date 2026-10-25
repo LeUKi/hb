@@ -478,6 +478,61 @@ export function judge() { return { ok: false }; }
     );
   });
 
+  it("times judgments alone for 最慢: not the usage write, nor the sandbox starting and loading judge.js", async () => {
+    // A usage write that takes a while (D1 is a round trip away online).
+    const slowDb = {
+      prepare: (query: string) => {
+        const statement = env.DB.prepare(query);
+        if (!query.trimStart().startsWith("INSERT INTO judge_usage"))
+          return statement;
+        const bind = statement.bind.bind(statement);
+        statement.bind = (...values: unknown[]) => {
+          const bound = bind(...values);
+          const run = bound.run.bind(bound);
+          bound.run = async () => {
+            await new Promise((resolve) => setTimeout(resolve, 250));
+            return run();
+          };
+          return bound;
+        };
+        return statement;
+      },
+      batch: (statements: D1PreparedStatement[]) => env.DB.batch(statements),
+    } as unknown as D1Database;
+    // What the sandbox is sent: it is warmed as the kit warms its own,
+    // before the first judgment, so judge.js loads untimed.
+    const sent: string[] = [];
+    const loader = {
+      get: (...args: Parameters<ApiBindings["LOADER"]["get"]>) => {
+        const worker = env.LOADER.get(...args);
+        return {
+          getEntrypoint: (
+            ...entry: Parameters<typeof worker.getEntrypoint>
+          ) => {
+            const target = worker.getEntrypoint(...entry);
+            return {
+              fetch: (url: string, init: RequestInit) => {
+                sent.push(String(init.body ?? ""));
+                return target.fetch(url, init);
+              },
+            };
+          },
+        };
+      },
+    } as unknown as ApiBindings["LOADER"];
+    const result = await checkJudge(
+      { ...bindings, DB: slowDb, LOADER: loader },
+      author.id,
+      { code: unique(), tests: TESTS },
+    );
+    expect(result.passed).toBe(true);
+    // The 250 ms write is not in any judgment's time.
+    expect(result.slowestMs).toBeLessThan(100);
+    expect(sent.slice(0, 2)).toEqual(["", "{}"]);
+    expect(JSON.parse(sent[2] ?? "{}")).toHaveProperty("submission");
+    expect(sent).toHaveLength(2 + 4);
+  });
+
   it("refuses a deploy the platform could not run, keeps it on record, and runs the same code again free", async () => {
     const down: ApiBindings = {
       ...bindings,
