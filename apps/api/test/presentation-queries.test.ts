@@ -1228,6 +1228,29 @@ describe("production presentation queries", () => {
  * What D1 reads while `work` runs, from each statement's and batch's meta
  * (first() is read through all(), which returns the same row with meta).
  */
+/** Every statement prepared while the work runs, with what it was bound to. */
+async function statementsDuring(work: () => Promise<unknown>) {
+  const statements: { sql: string; params: unknown[] }[] = [];
+  const prepare = env.DB.prepare.bind(env.DB);
+  vi.spyOn(env.DB, "prepare").mockImplementation((sql: string) => {
+    const entry = { sql, params: [] as unknown[] };
+    statements.push(entry);
+    const statement = prepare(sql);
+    const bind = statement.bind.bind(statement);
+    statement.bind = (...values: unknown[]) => {
+      entry.params = values;
+      return bind(...values);
+    };
+    return statement;
+  });
+  try {
+    await work();
+  } finally {
+    vi.restoreAllMocks();
+  }
+  return statements;
+}
+
 async function rowsReadDuring(work: () => Promise<unknown>) {
   let rows = 0;
   const statement = Object.getPrototypeOf(env.DB.prepare("SELECT 1"));
@@ -1299,6 +1322,57 @@ describe("D1 reads that would grow with the data (06 §12)", () => {
       data<AccountPaymentList>(`/me/payments?activity=${made[0]?.id}`, owner),
     );
     expect(one).toBeLessThan(180);
+  }, 60_000);
+
+  it("reads a 红包's 名单, its 统计 and the square by index, not every 红包's rows", async () => {
+    // reward_inventory is keyed (activity_id, id): joined by id alone, each
+    // 名单 row read every 红包's inventory (2026-10-25: most of D1's reads).
+    // The square's guest joins read every claim per 红包 listed (ON 0).
+    for (let index = 0; index < 3; index++)
+      await create(ldc({ mode: "fixed", totalAmount: "3.00", count: 3 }));
+    const shown = await create(
+      ldc(
+        { mode: "custom", amounts: ["0.10", "0.20", "0.30"] },
+        { joinSquare: true },
+      ),
+    );
+    const entrants = await Promise.all(Array.from({ length: 3 }, actor));
+    for (const user of entrants) await redeem(shown.id, user);
+    const statements = await statementsDuring(async () => {
+      await data<PublicRecipientList>(`/activities/${shown.id}/recipients`);
+      await data<PublicActivity>(`/activities/${shown.id}`);
+      await data<DiscoveryList>("/discovery/activities?status=all");
+      await data<DiscoveryList>("/discovery/activities?status=all", owner);
+      await data(`/me/activities/${shown.id}/statistics`, owner);
+      await data<ParticipationList>("/me/participations", entrants[0]);
+    });
+    // A scan of a table (not of a subquery, or json_each) reads all of it.
+    const tables = new Set(
+      (
+        await env.DB.prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table'",
+        ).all<{ name: string }>()
+      ).results.map((row) => row.name),
+    );
+    const scans: string[] = [];
+    for (const { sql, params } of statements) {
+      if (!/^\s*select/i.test(sql)) continue;
+      const aliases = new Map<string, string>();
+      for (const [, table, alias] of sql.matchAll(
+        /\b(?:FROM|JOIN)\s+"?(\w+)"?\s+(?:AS\s+)?(\w+)/gi,
+      ))
+        if (table && alias) aliases.set(alias, table);
+      const plan = await env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`)
+        .bind(...params)
+        .all<{ detail: string }>();
+      for (const { detail } of plan.results) {
+        const name = /^SCAN (\w+)/.exec(detail)?.[1];
+        const table = name && (aliases.get(name) ?? name);
+        if (table && tables.has(table))
+          scans.push(`${table}: ${detail} in ${sql.slice(0, 80)}`);
+      }
+    }
+    expect(scans).toEqual([]);
   }, 60_000);
 
   it("finds 红包 due for the lifecycle sweep without reading every submission", async () => {

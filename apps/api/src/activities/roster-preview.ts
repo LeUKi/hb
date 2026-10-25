@@ -1,5 +1,5 @@
 import type { RosterPreviewPerson } from "@hb/contracts";
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { createDb } from "../db/client";
 import {
   activityRegistrations,
@@ -45,7 +45,13 @@ export async function rosterPreview(
       .select({ id: claims.id, ...person })
       .from(claims)
       .innerJoin(users, eq(users.id, claims.userId))
-      .leftJoin(rewardInventory, eq(rewardInventory.id, claims.inventoryId))
+      .leftJoin(
+        rewardInventory,
+        and(
+          eq(rewardInventory.activityId, claims.activityId),
+          eq(rewardInventory.id, claims.inventoryId),
+        ),
+      )
       .where(eq(claims.activityId, activity.id))
       .orderBy(
         desc(rewardInventory.amountMinor),

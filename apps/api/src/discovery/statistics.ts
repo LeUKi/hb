@@ -83,8 +83,8 @@ export async function getStatistics(
       after?.digest ?? "",
     ),
     env.DB.prepare(`SELECT p.id, p.ciphertext,
-      (SELECT COUNT(*) FROM claims c WHERE c.password_id = p.id) AS successfulClaims,
-      (SELECT COUNT(*) FROM activity_registrations r WHERE r.password_id = p.id) AS registrations
+      (SELECT COUNT(*) FROM claims c WHERE c.activity_id = p.activity_id AND c.password_id = p.id) AS successfulClaims,
+      (SELECT COUNT(*) FROM activity_registrations r WHERE r.activity_id = p.activity_id AND r.password_id = p.id) AS registrations
       FROM activity_passwords p WHERE p.activity_id = ? ORDER BY p.position`).bind(
       activityId,
     ),

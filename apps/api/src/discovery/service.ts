@@ -125,21 +125,22 @@ async function list(
     })
     .from(activities)
     .innerJoin(users, eq(users.id, activities.authorId))
+    // A guest has no claim or registration: looked up as nobody (""), by
+    // the index. ON 0 read every claim for each 红包 listed.
     .leftJoin(
       claims,
-      viewerId
-        ? and(eq(claims.activityId, activities.id), eq(claims.userId, viewerId))
-        : sql`0`,
+      and(
+        eq(claims.activityId, activities.id),
+        eq(claims.userId, viewerId ?? ""),
+      ),
     )
     .leftJoin(paymentTasks, eq(paymentTasks.claimId, claims.id))
     .leftJoin(
       activityRegistrations,
-      viewerId
-        ? and(
-            eq(activityRegistrations.activityId, activities.id),
-            eq(activityRegistrations.userId, viewerId),
-          )
-        : sql`0`,
+      and(
+        eq(activityRegistrations.activityId, activities.id),
+        eq(activityRegistrations.userId, viewerId ?? ""),
+      ),
     )
     .where(
       and(

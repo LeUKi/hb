@@ -207,9 +207,8 @@ export async function claimSummariesBatch(
   if (!rows.length) return new Map();
   const ids = rows.map((row) => row.claim.id);
   // A 🐟额红包's claim has no payment: its share is what it was given.
-  const fishInventory = rows
-    .filter(({ activity }) => activity.funding === "balance")
-    .map(({ claim }) => claim.inventoryId);
+  const fish = rows.filter(({ activity }) => activity.funding === "balance");
+  const fishInventory = fish.map(({ claim }) => claim.inventoryId);
   const [sources, payments, shares] = await Promise.all([
     sourcePasswordsBatch(
       env,
@@ -228,7 +227,16 @@ export async function claimSummariesBatch(
             amountMinor: rewardInventory.amountMinor,
           })
           .from(rewardInventory)
-          .where(inArray(rewardInventory.id, fishInventory))
+          // By the whole key, (activity_id, id): by id alone every row of
+          // every 红包 is read.
+          .where(
+            and(
+              inArray(rewardInventory.activityId, [
+                ...new Set(fish.map(({ claim }) => claim.activityId)),
+              ]),
+              inArray(rewardInventory.id, fishInventory),
+            ),
+          )
       : Promise.resolve([]),
   ]);
   const shareOf = new Map(shares.map((row) => [row.id, row.amountMinor]));
@@ -536,7 +544,15 @@ export async function listPublicRecipients(
     })
     .from(claims)
     .innerJoin(users, eq(users.id, claims.userId))
-    .leftJoin(rewardInventory, eq(rewardInventory.id, claims.inventoryId))
+    // Joined by the whole key: by id alone each row read every 红包's
+    // inventory (2026-10-25, most of D1's reads).
+    .leftJoin(
+      rewardInventory,
+      and(
+        eq(rewardInventory.activityId, claims.activityId),
+        eq(rewardInventory.id, claims.inventoryId),
+      ),
+    )
     .where(and(eq(claims.activityId, activityId), afterCursor(after)))
     .orderBy(asc(claims.claimedAt), asc(claims.id))
     .limit(21);
@@ -658,7 +674,7 @@ async function publicRecipientTitles(
   if (activity.rewardType !== "ldc") return empty;
   const bounds =
     await env.DB.prepare(`SELECT COUNT(*) AS count,MIN(r.amount_minor) AS minimum,MAX(r.amount_minor) AS maximum
-    FROM claims c JOIN reward_inventory r ON r.id=c.inventory_id WHERE c.activity_id=?`)
+    FROM claims c JOIN reward_inventory r ON r.activity_id=c.activity_id AND r.id=c.inventory_id WHERE c.activity_id=?`)
       .bind(activity.id)
       .first<{
         count: number;
@@ -674,12 +690,12 @@ async function publicRecipientTitles(
   )
     return empty;
   const [highest, lowest] = await env.DB.batch<{ id: string }>([
-    env.DB.prepare(`SELECT c.id FROM claims c JOIN reward_inventory r ON r.id=c.inventory_id
+    env.DB.prepare(`SELECT c.id FROM claims c JOIN reward_inventory r ON r.activity_id=c.activity_id AND r.id=c.inventory_id
       WHERE c.activity_id=? AND r.amount_minor=? ORDER BY c.id LIMIT 3`).bind(
       activity.id,
       bounds.maximum,
     ),
-    env.DB.prepare(`SELECT c.id FROM claims c JOIN reward_inventory r ON r.id=c.inventory_id
+    env.DB.prepare(`SELECT c.id FROM claims c JOIN reward_inventory r ON r.activity_id=c.activity_id AND r.id=c.inventory_id
       WHERE c.activity_id=? AND r.amount_minor=? ORDER BY c.id LIMIT 3`).bind(
       activity.id,
       bounds.minimum,
