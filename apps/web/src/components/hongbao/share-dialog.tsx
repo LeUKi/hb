@@ -8,6 +8,7 @@ import {
   forumShareWithPassword,
   plainShareWithPassword,
   type ShareActivity,
+  type ShareLink,
 } from "@hb/contracts";
 import { Check, ChevronRight, Copy, Share, X } from "lucide-react";
 import { type ReactNode, useEffect, useId, useState } from "react";
@@ -41,7 +42,7 @@ const kindsOf: Record<Where, Kind[]> = {
 };
 
 const cards: Record<Kind, { title: string; description: string }> = {
-  link: { title: "红包链接", description: "带领取方法，避免违规推广" },
+  link: { title: "红包链接", description: "点链接或整段粘贴都能打开" },
   password: { title: "红包链接与口令", description: "整段粘贴到输入框就能领" },
   image: { title: "红包实况图", description: "嵌入帖子，实时更新" },
   url: { title: "网页链接", description: "完整网址，可直接打开" },
@@ -131,8 +132,9 @@ function shareOf(
     draw: activity.mode === "timed_draw",
     pageOnly: activity.pageOnly,
   };
-  // 红包站 leads to the site, or to its post when asked (05 §5 链接到哪).
-  const site = post ? FORUM_POST_URL : origin;
+  // 红包页 leads to this 红包 (never with its 口令), or 红包站 to the site's
+  // post when asked (05 §5 链接到哪).
+  const link: ShareLink = post ? { post: FORUM_POST_URL } : { page: url };
   switch (kind) {
     case "link":
       return forumShareLink(
@@ -140,10 +142,10 @@ function shareOf(
           ...shared,
           ...(activity.judge ? { codePrompt: activity.judge.prompt } : {}),
         },
-        site,
+        link,
       );
     case "password":
-      return forumShareWithPassword(shared, password ?? "", site);
+      return forumShareWithPassword(shared, password ?? "", link);
     case "image":
       return createActivityImageEmbed({
         activityId: activity.id,
@@ -340,7 +342,14 @@ function ShareForm({
             label="发什么"
             columns={1}
             value={kind}
-            options={kinds.map((each) => ({ value: each, ...cards[each] }))}
+            options={kinds.map((each) => ({
+              value: each,
+              ...cards[each],
+              // Linking to the site's post, it does not lead off the forum.
+              ...(each === "link" && choice.post
+                ? { description: "不直接链到站外，整段粘贴就能打开" }
+                : {}),
+            }))}
             onChange={(next) => choose({ kind: next })}
           />
           {withPassword(kind) && passwords.known.length > 1 && (
@@ -408,7 +417,7 @@ function ShareForm({
                     : "点图打开这个红包"
                   : choice.post
                     ? "“红包站”链到社区里的红包站主贴"
-                    : `“红包站”链到 ${window.location.host}`}
+                    : "“红包页”链到这个红包"}
               </span>
               <Button
                 variant="ghost"

@@ -28,11 +28,16 @@ export function activityPath(activityId: string) {
 // same everywhere; a special case adds a line of its own, “本红包…”.
 
 /**
- * The line under a code block: paste it into the site, 红包站 linking to
- * `link` — the site itself, or its post in the forum (05 §5 链接到哪).
+ * Where the line under a code block leads (05 §5 链接到哪): this 红包's own
+ * page (by default; never with its 口令), or the site's post in the forum.
  */
-function howTo(result: string, link: string) {
-  return `复制上面这段，粘贴到[红包站](${link})的输入框即可${result}。`;
+export type ShareLink = { page: string } | { post: string };
+
+/** The line under a code block: paste it into the 红包页 (or 红包站). */
+function howTo(result: string, link: ShareLink) {
+  const [name, href] =
+    "page" in link ? ["红包页", link.page] : ["红包站", link.post];
+  return `复制上面这段，粘贴到[${name}](${href})的输入框即可${result}。`;
 }
 
 /** 领取 or, for a 限时开奖, 报名. */
@@ -41,15 +46,15 @@ const verbOf = (activity: Pick<ShareActivity, "draw">) =>
 
 /**
  * 发到社区 · 链接: the path in a code block, which the forum gives a copy
- * button and leaves as it is (no emoji pictures, no link preview); 红包站
- * links to `link`.
+ * button and leaves as it is (no emoji pictures, no link preview); the
+ * line under it links to `link`.
  */
 export function forumShareLink(
   activity: Pick<ShareActivity, "id" | "title"> & {
     /** 代码判定红包: its sender's prompt, said under how to open it. */
     codePrompt?: string;
   },
-  link: string,
+  link: ShareLink,
 ) {
   return [
     `【${activity.title}】`,
@@ -69,7 +74,7 @@ export function forumShareLink(
 export function forumShareWithPassword(
   activity: ShareActivity,
   password: string,
-  link: string,
+  link: ShareLink,
 ) {
   return [
     `【${activity.title}】`,

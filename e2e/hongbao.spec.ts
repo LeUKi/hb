@@ -745,15 +745,13 @@ test.describe("红包页", () => {
       where.getByRole("button", { name: "发到社区" }),
     ).toHaveAttribute("aria-pressed", "true");
     await expect(what.getByRole("button")).toHaveText([
-      "红包链接带领取方法，避免违规推广",
+      "红包链接点链接或整段粘贴都能打开",
       "红包实况图嵌入帖子，实时更新",
     ]);
-    // The preview shows the post, the copy waits behind 原文; 红包站 leads
+    // The preview shows the post, the copy waits behind 原文; 红包页 leads
     // to the site unless asked.
     await expect(share.getByText(`/🧧/${code}`)).toBeVisible();
-    await expect(
-      share.getByText(`“红包站”链到 ${new URL(origin).host}`),
-    ).toBeVisible();
+    await expect(share.getByText("“红包页”链到这个红包")).toBeVisible();
     const copyButton = share.getByRole("button", { name: "复制红包链接" });
     await copyButton.click();
     await expect(
@@ -762,7 +760,7 @@ test.describe("红包页", () => {
     await expect
       .poll(() => readClipboard(page))
       .toBe(
-        `【周末红包】\n\`\`\`\n/🧧/${code}\n\`\`\`\n复制上面这段，粘贴到[红包站](${origin})的输入框即可打开红包。`,
+        `【周末红包】\n\`\`\`\n/🧧/${code}\n\`\`\`\n复制上面这段，粘贴到[红包页](${origin}/🧧/${code})的输入框即可打开红包。`,
       );
     // Copied, it says so and stays open for another.
     await expect(share.getByRole("button", { name: "已复制" })).toBeVisible();
@@ -774,6 +772,9 @@ test.describe("红包页", () => {
     await expect(
       share.getByText("“红包站”链到社区里的红包站主贴"),
     ).toBeVisible();
+    await expect(what.getByRole("button").first()).toHaveText(
+      "红包链接不直接链到站外，整段粘贴就能打开",
+    );
     await share.getByRole("button", { name: "复制红包链接" }).click();
     await expect
       .poll(() => readClipboard(page))
@@ -866,7 +867,7 @@ test.describe("红包页", () => {
     const shared = forumShareWithPassword(
       { id, title: "周末红包", draw: false, pageOnly: true },
       passwordOf.mine,
-      "https://hb.lafi.sh",
+      { page: `https://hb.lafi.sh/🧧/${code}` },
     );
     await page.evaluate((text) => navigator.clipboard.writeText(text), shared);
     await omniboxInput(page).click();
@@ -983,7 +984,7 @@ test.describe("红包页", () => {
     const share = page.getByRole("dialog", { name: "分享红包" });
     const what = share.getByRole("group", { name: "发什么" });
     await expect(what.getByRole("button")).toHaveText([
-      /^红包链接带领取方法/,
+      /^红包链接点链接或整段粘贴都能打开/,
       "红包链接与口令整段粘贴到输入框就能领",
       "红包实况图嵌入帖子，实时更新",
     ]);
@@ -999,7 +1000,7 @@ test.describe("红包页", () => {
     await expect
       .poll(() => readClipboard(page))
       .toBe(
-        `【周末红包】\n\`\`\`\n/🧧/${code}\n口令：${passwordOf.mine}\n\`\`\`\n复制上面这段，粘贴到[红包站](${origin})的输入框即可领取。`,
+        `【周末红包】\n\`\`\`\n/🧧/${code}\n口令：${passwordOf.mine}\n\`\`\`\n复制上面这段，粘贴到[红包页](${origin}/🧧/${code})的输入框即可领取。`,
       );
     await share
       .getByRole("group", { name: "发到哪" })
