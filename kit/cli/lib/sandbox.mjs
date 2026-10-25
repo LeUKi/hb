@@ -24,6 +24,7 @@ export const SANDBOX_MODULES = Object.freeze([
   "random.mjs",
   "text.mjs",
   "time.mjs",
+  "verdict.mjs",
 ]);
 export const TIMEOUT_MS = 1000;
 /** On the site a judgment has 50 ms of CPU: slower than that here may time out there. */

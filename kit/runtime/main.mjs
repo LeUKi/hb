@@ -4,6 +4,7 @@
 // submission's two seeds (seeds.mjs).
 import { begin, finish } from "./prelude.mjs";
 import { createTools } from "./tools.mjs";
+import { LIMITS, nestsDeeper } from "./verdict.mjs";
 
 // The sender's code loads at the first judgment, so the prelude has always
 // fixed the time, Math.random() and console before any of its lines run.
@@ -47,6 +48,22 @@ export default {
       });
     }
     const logs = finish();
+    // Too deep for JSON.stringify here on one machine and not another: the
+    // same answer for all (verdict.mjs, state's depth).
+    if (
+      verdict !== null &&
+      typeof verdict === "object" &&
+      nestsDeeper(verdict, LIMITS.stateDepth + 1)
+    )
+      return reply({
+        error: {
+          kind: "invalid",
+          detail: nestsDeeper(verdict.state, LIMITS.stateDepth)
+            ? `state 嵌套超过 ${LIMITS.stateDepth} 层`
+            : "返回的值转不成 JSON",
+        },
+        logs,
+      });
     try {
       return reply({ verdict, logs });
     } catch {

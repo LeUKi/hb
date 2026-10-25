@@ -5,7 +5,7 @@
 // only what matters to it; everything else takes the defaults below.
 import { sha256Text } from "./hash.mjs";
 import { judgeNext, startScenario } from "./scenario.mjs";
-import { LIMITS } from "./verdict.mjs";
+import { LIMITS, nestsDeeper } from "./verdict.mjs";
 
 /** The 红包 ID tests run as, for their seeds. */
 export const TEST_HONGBAO_ID = "test";
@@ -459,6 +459,8 @@ function planOf(test) {
   const inconsistent = claimsInconsistency(claims, hongbao, start, multi);
   if (inconsistent) return fail(inconsistent);
   const state = test.state ?? null;
+  if (nestsDeeper(state, LIMITS.stateDepth))
+    return fail(`state 嵌套超过 ${LIMITS.stateDepth} 层`);
   if (encoder.encode(canonicalJson(state)).length > LIMITS.stateBytes)
     return fail(`state 超过 ${LIMITS.stateBytes / 1024} KB`);
   const plan = {

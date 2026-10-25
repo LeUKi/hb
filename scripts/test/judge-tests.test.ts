@@ -435,6 +435,10 @@ describe("tests.json: one submission", () => {
         "这个人（tester）已经领过了，线上不会交给代码",
       ],
       [{ state: { big: "x".repeat(17_000) } }, "state 超过 16 KB"],
+      [
+        { state: JSON.parse(`${"[".repeat(101)}${"]".repeat(101)}`) },
+        "state 嵌套超过 100 层",
+      ],
     ];
     for (const [change, problem] of cases) {
       const { result, seen } = await runOne(
@@ -602,20 +606,27 @@ describe("tests.json: expect", () => {
     expect((await runTest(part, shallow.run)).problem).toBe(
       "state 里的 a.a 和 expect.stateIncludes 不一样",
     );
-    // The code's own state, nested deep, still compares. Its depth is held
-    // to what JSON.stringify manages on any stack (it recurses: 5000 deep
-    // passes here and fails on CI's Linux runner).
+    // The code's own state compares at the deepest it may nest (100); past
+    // that it is refused, however deep, as JSON.stringify's depth depends on
+    // the machine's stack.
     const [same] = readTestsOrThrow(
-      `{"tests":[{"name":"深","input":"x","expect":{"ok":false,"state":${nested(500)}}}]}`,
+      `{"tests":[{"name":"深","input":"x","expect":{"ok":false,"state":${nested(100)}}}]}`,
     );
     if (!same) throw new Error("No test");
     const deep = sandbox(() => ({
       ok: false,
-      state: JSON.parse(nested(500)),
+      state: JSON.parse(nested(100)),
     }));
     const result = await runTest(same, deep.run, { twice: true });
     expect(result.passed).toBe(true);
     expect(result.unstable).toBeUndefined();
+    const deeper = sandbox(() => ({
+      ok: false,
+      state: JSON.parse(nested(5_000)),
+    }));
+    expect((await runTest(same, deeper.run)).problem).toBe(
+      "返回不对：state 嵌套超过 100 层",
+    );
   });
 
   it("fails an answer with fields outside the protocol", async () => {

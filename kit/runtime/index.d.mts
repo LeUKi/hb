@@ -115,11 +115,13 @@ export function createTools(
 export const LIMITS: Readonly<{
   codeBytes: number;
   stateBytes: number;
+  stateDepth: number;
   messageCharacters: number;
   inputCharacters: number;
   promptCharacters: number;
   tests: number;
 }>;
+export function nestsDeeper(value: unknown, limit: number): boolean;
 export type StateChange = { keep: true } | { keep: false; value: Json };
 export type VerdictReading =
   | { error: { kind: "invalid"; detail: string } }

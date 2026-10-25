@@ -13,6 +13,7 @@ import {
   hmacSha1,
   hmacSha256,
   luckyAmount,
+  nestsDeeper,
   normalizeText,
   personalCode,
   readVerdict,
@@ -385,6 +386,33 @@ describe("verdict.mjs", () => {
       { ok: false, state: () => 1 },
     ])
       expect(readVerdict(raw, share)).toHaveProperty("error.kind", "invalid");
+  });
+
+  it("holds state to 100 levels, however deep it goes and on any stack", () => {
+    const nested = (depth: number) =>
+      JSON.parse("[".repeat(depth) + "]".repeat(depth));
+    expect(readVerdict({ ok: false, state: nested(100) }, share)).toMatchObject(
+      { ok: false, state: { keep: false } },
+    );
+    for (const depth of [101, 100_000])
+      expect(readVerdict({ ok: false, state: nested(depth) }, share)).toEqual({
+        error: { kind: "invalid", detail: "state 嵌套超过 100 层" },
+      });
+    expect(nestsDeeper(1, 0)).toBe(false);
+    expect(nestsDeeper([], 0)).toBe(true);
+    expect(nestsDeeper({ a: [{ b: 1 }] }, 3)).toBe(false);
+    expect(nestsDeeper({ a: [{ b: [] }] }, 3)).toBe(true);
+    // Wide is not deep.
+    expect(
+      nestsDeeper(
+        Array.from({ length: 10_000 }, () => [1]),
+        2,
+      ),
+    ).toBe(false);
+    // A value that refers to itself stops at the limit.
+    const loop: { self?: unknown } = {};
+    loop.self = loop;
+    expect(nestsDeeper(loop, 100)).toBe(true);
   });
 });
 

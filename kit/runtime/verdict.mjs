@@ -1,11 +1,16 @@
 // What the platform makes of judge()'s answer (协议第 4.2 节). The site runs
 // this after every judgment and the kit runs it in tests, so both read an
-// answer alike.
+// answer alike; the sandbox's entry (main.mjs) holds state to the same depth.
 import { settle } from "./money.mjs";
 
 export const LIMITS = Object.freeze({
   codeBytes: 64 * 1024,
   stateBytes: 16 * 1024,
+  /**
+   * How deep state may nest. JSON.stringify recurses, and how deep it gets
+   * depends on the machine's stack: past this, every machine refuses it.
+   */
+  stateDepth: 100,
   messageCharacters: 100,
   inputCharacters: 200,
   promptCharacters: 40,
@@ -14,6 +19,23 @@ export const LIMITS = Object.freeze({
 
 const KNOWN = new Set(["ok", "amount", "message", "state"]);
 const encoder = new TextEncoder();
+
+/**
+ * Whether a value nests arrays and objects more than `limit` deep (a bare
+ * value is 0 deep, `[]` and `{}` 1), found without recursion; a value that
+ * refers to itself is too deep.
+ */
+export function nestsDeeper(value, limit) {
+  const stack = [[value, 0]];
+  while (stack.length > 0) {
+    const [item, depth] = stack.pop();
+    if (item === null || typeof item !== "object") continue;
+    if (depth >= limit) return true;
+    for (const child of Array.isArray(item) ? item : Object.values(item))
+      stack.push([child, depth + 1]);
+  }
+  return false;
+}
 
 /**
  * judge()'s answer, read. `{ error }` when it does not follow the protocol;
@@ -38,6 +60,8 @@ export function readVerdict(raw, share) {
   }
   let state = { keep: true };
   if (raw.state !== undefined) {
+    if (nestsDeeper(raw.state, LIMITS.stateDepth))
+      return invalid(`state 嵌套超过 ${LIMITS.stateDepth} 层`);
     let text;
     try {
       text = JSON.stringify(raw.state);

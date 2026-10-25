@@ -15,6 +15,7 @@ export const SANDBOX_MODULES = [
   "random.mjs",
   "text.mjs",
   "time.mjs",
+  "verdict.mjs",
 ] as const;
 
 const root = join(import.meta.dirname, "..");

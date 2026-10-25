@@ -40,7 +40,7 @@ const AI_PROMPT = `你要帮我写一个“代码判定红包”的判定代码 
   - ok：发还是不发，必填
   - amount：ok 为 true 时必填，整数分。平台把它拉进 share 的范围：低于 min 按 min 发，高于 max 按 max 发；最后一份发完剩下的
   - message：给提交的人的一句话，发不发都用；纯文字，最多 100 个字，换行会合成空格
-  - state：写了就整个换掉（发不发都存），不写就不变；能转成 JSON，最大 16 KB
+  - state：写了就整个换掉（发不发都存），不写就不变；能转成 JSON，最大 16 KB，最多嵌套 100 层
 - 每次判定可能在不同的沙箱里，不要靠全局变量记东西；要记的放进 state。
 - 能用：Web 标准（完整的 crypto、Intl、TextEncoder、URL、atob、btoa 等）。Node 模块只能在文件开头静态 import，必须带 node: 前缀：${MODULES.join("、")}。
 - 不能用：联网（fetch 会失败）、别的 Node 模块、npm 包、import 别的文件、动态 import()、require、caches。console 的输出线上丢弃。
@@ -57,7 +57,7 @@ const AI_PROMPT = `你要帮我写一个“代码判定红包”的判定代码 
 
 tests.json 是一个对象 { "tests": [ … ] }，只是数据：
 - 一条测试就是一次提交 { name, input, expect }，字段和 submission 同名，可选 now（毫秒或带时区的 ISO 时间，比如 2026-10-24T12:00:00+08:00）、user（id、username、level、attempts）、hongbao（title、total、count、minEach、openedAt、endsAt）、claims（前面已领的：写数字表示领了几份，或者完整列表，每条 { user: { id, username }, amount, input, at }）、state、seed（64 位十六进制）。没写的用默认：2026-10-24 12:00（北京时间）提交、测试用户 tester（ID 10000、Lv2、之前没被判定过）、总奖池 10000、10 份、每份至少 1、提交前 1 小时开放、后 1 天截止、还没人领、状态 null、固定的种子。剩余奖池、剩余份数和 share 由 claims 推出来，不能写。
-- 只能写线上可能出现的情况：now 在开放和截止之间；已领的按先后、不早于开放、不晚于 now，每份不少于每份至少，剩下的够剩下每份都拿到每份至少，还有没领的份；同一个人只领一份，这个人不在里面；state 不超过 16 KB；总奖池够每份都拿到每份至少。不然这条测试不通过。
+- 只能写线上可能出现的情况：now 在开放和截止之间；已领的按先后、不早于开放、不晚于 now，每份不少于每份至少，剩下的够剩下每份都拿到每份至少，还有没领的份；同一个人只领一份，这个人不在里面；state 不超过 16 KB、嵌套不超过 100 层；总奖池够每份都拿到每份至少。不然这条测试不通过。
 - 要测靠状态往下传的玩法，不写 input，写 steps，几个人依次提交：每一步 { who, input, expect }，可选 level（默认 2）、at（默认上一步往后 1 分钟，第一步是 now）。同一个 who 是同一个人；状态、已领记录、每人被判定过几次、剩余奖池都像线上一样一步步往下传。已经领过的人、或者份领完了还提交，这一步不通过。
 - expect：ok 必填；其余写了才比：amount（拉进范围以后实际发的）、asked（代码自己给的）、note（拉进范围的原因 "cap"、"floor"、"last"，没拉写 null）、message（逐字）或 messageIncludes（含这几个字）、state（整份，键的顺序不算）或 stateIncludes（只比写了的键，数组整个比）。ok 为 false 时不写 amount、asked、note。代码返回协议以外的字段也算不通过。
 - 所有测试加起来最多判定 ${JUDGE_LIMITS.tests} 次（多步的一步算一次）。
@@ -395,7 +395,7 @@ export function HelpCodeView() {
             },
             {
               name: "只能写",
-              note: "线上可能出现的情况：now 在开放和截止之间；已领的按先后、不早于开放、不晚于 now，每份不少于每份至少，剩下的够剩下每份都拿到每份至少，还有没领的份；同一个人只领一份，这个人不在里面；state 不超过 16 KB；总奖池够每份都拿到每份至少。不然这条测试本身不通过",
+              note: "线上可能出现的情况：now 在开放和截止之间；已领的按先后、不早于开放、不晚于 now，每份不少于每份至少，剩下的够剩下每份都拿到每份至少，还有没领的份；同一个人只领一份，这个人不在里面；state 不超过 16 KB、嵌套不超过 100 层；总奖池够每份都拿到每份至少。不然这条测试本身不通过",
             },
             {
               name: "steps",

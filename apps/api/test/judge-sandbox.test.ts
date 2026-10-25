@@ -139,6 +139,20 @@ export function judge(submission, tools) {
     ).toMatchObject({
       failure: "invalid",
     });
+    // Too deep for JSON.stringify on some machines: refused on all.
+    expect(
+      await judge(
+        `export function judge() { return { ok: false, state: JSON.parse("[".repeat(5000) + "]".repeat(5000)) }; }`,
+      ),
+    ).toMatchObject({
+      failure: "invalid",
+      detail: "state 嵌套超过 100 层",
+    });
+    expect(
+      await judge(
+        `export function judge() { return { ok: false, state: JSON.parse("[".repeat(100) + "]".repeat(100)) }; }`,
+      ),
+    ).toMatchObject({ verdict: { ok: false } });
     expect(await judge(`export function judge( {`)).toMatchObject({
       failure: "load",
     });

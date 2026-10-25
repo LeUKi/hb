@@ -45,7 +45,7 @@
           ]
         },
         "state": {
-          "description": "代码之前存的状态（任意 JSON），默认 null；最大 16 KB"
+          "description": "代码之前存的状态（任意 JSON），默认 null；最大 16 KB，最多嵌套 100 层"
         },
         "seed": {
           "description": "种子（64 位小写十六进制）：tools.random 和 tools.userRandom 由它推出来。默认固定的测试种子",

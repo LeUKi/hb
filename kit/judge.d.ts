@@ -62,7 +62,7 @@ export interface Verdict {
   amount?: number;
   /** 给领的人的一句话，发不发都用它；纯文字，最多 100 个字 */
   message?: string;
-  /** 写了就整个换掉（发不发都存），不写就不变；最大 16 KB */
+  /** 写了就整个换掉（发不发都存），不写就不变；最大 16 KB，最多嵌套 100 层 */
   state?: Json;
 }
 
@@ -164,7 +164,7 @@ interface TestBase {
   > & { openedAt?: TestTime; endsAt?: TestTime };
   /** 前面已领的份：数字（补上占位记录，每份平均）或完整列表；默认没人领 */
   claims?: number | TestClaim[];
-  /** 代码之前存的状态，默认 null；最大 16 KB */
+  /** 代码之前存的状态，默认 null；最大 16 KB，最多嵌套 100 层 */
   state?: Json;
   /** 种子（64 位小写十六进制），默认固定的测试种子 */
   seed?: string;
