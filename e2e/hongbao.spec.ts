@@ -388,9 +388,6 @@ test.describe("红包页", () => {
     const result = page.locator("[data-hb-part=result]");
     await expect(result.getByText("已存入🐟额")).toBeVisible();
     await expect(result.getByRole("button", { name: "在🐟额" })).toBeVisible();
-    await expect(
-      result.getByText("满 1 LDC 可以转出到 Credit。"),
-    ).toBeVisible();
     await expect(result.getByRole("link", { name: "转出" })).toHaveAttribute(
       "href",
       "/balance",

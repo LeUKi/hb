@@ -301,7 +301,7 @@ export type BalanceFunding = {
 
 /**
  * 🐟额红包 (docs/balance-design.md §14): may this person send one now (the
- * form's “从哪发”), and what is 可用 (my result's “满 1 LDC 可以转出”).
+ * form's “从哪发”), and what is 可用.
  */
 export function useBalanceFunding(userId: string, enabled = true) {
   const session = useMerchantIdentity(userId);

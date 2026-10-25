@@ -1606,7 +1606,8 @@ export const balanceWithdrawals = sqliteTable(
     index("balance_withdrawals_time_idx").on(table.createdAt, table.id),
     check(
       "balance_withdrawals_amounts_valid",
-      sql`${table.debitMinor} >= 100 AND ${table.feeMinor} >= 0 AND ${table.creditMinor} > 0 AND ${table.debitMinor} = ${table.creditMinor} + ${table.feeMinor} AND ${table.feePercent} BETWEEN 0 AND 50`,
+      // Under 1 🐟 too since 0042: all of 可用 at once (balance-design §5).
+      sql`${table.debitMinor} > 0 AND ${table.feeMinor} >= 0 AND ${table.creditMinor} > 0 AND ${table.debitMinor} = ${table.creditMinor} + ${table.feeMinor} AND ${table.feePercent} BETWEEN 0 AND 50`,
     ),
     check(
       "balance_withdrawals_status_valid",

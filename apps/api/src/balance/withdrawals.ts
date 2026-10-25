@@ -20,6 +20,7 @@ import { quotaHolds } from "../payments/quota";
 import { reachesCredit } from "../runtime/controls";
 import { sha256Hex } from "../security/crypto";
 import { balanceError } from "./errors";
+import { availableMinor } from "./hongbao";
 import { readPlatformAppRow } from "./platform-app";
 import { readBalanceSettings, requireBalanceEntry } from "./settings";
 
@@ -243,12 +244,15 @@ export async function createWithdrawal(
       ? { debitMinor: amountMinor }
       : { creditMinor: amountMinor },
   );
-  if (quote.debitMinor < BALANCE_LIMITS.withdrawMinMinor)
-    balanceError(
-      400,
-      "BALANCE_WITHDRAW_RANGE",
-      `一笔转出至少 ${formatAmount(BALANCE_LIMITS.withdrawMinMinor)} 🐟。`,
-    );
+  // Under 1 🐟 only all of 可用 at once (docs/balance-design.md §5,
+  // 2026-10-25): no run of small 转出, and no remainder left behind. The
+  // batch holds it to 可用 as it is then (withdrawalStatements).
+  const available = await availableMinor(env, userId);
+  if (
+    quote.debitMinor < BALANCE_LIMITS.withdrawMinMinor &&
+    quote.debitMinor !== available
+  )
+    allOrAtLeast(available);
   if (quote.debitMinor > settings.withdrawMaxMinor)
     balanceError(
       400,
@@ -288,6 +292,9 @@ export async function createWithdrawal(
       return { withdrawal: await withdrawalDetail(env, winner), taskId: null };
     if (String(error).includes("BALANCE_INSUFFICIENT"))
       balanceError(409, "BALANCE_INSUFFICIENT", "可用的🐟不够。");
+    // Under 1 🐟, and 可用 moved meanwhile: it is no longer all of it.
+    if (quote.debitMinor < BALANCE_LIMITS.withdrawMinMinor)
+      allOrAtLeast(await availableMinor(env, userId), 409);
     const latest = await readBalanceSettings(env);
     if (!latest.withdrawEnabled)
       balanceError(409, "BALANCE_WITHDRAW_PAUSED", "转出暂停");
@@ -305,6 +312,18 @@ export async function createWithdrawal(
   const row = await readWithdrawal(env, id);
   if (!row) throw new Error("Withdrawal missing after creation");
   return { withdrawal: await withdrawalDetail(env, row), taskId };
+}
+
+/** Refuses a 转出 under 1 🐟 that is not all of 可用, saying which rule. */
+function allOrAtLeast(available: number, status: 400 | 409 = 400): never {
+  const least = formatAmount(BALANCE_LIMITS.withdrawMinMinor);
+  return balanceError(
+    status,
+    "BALANCE_WITHDRAW_RANGE",
+    available > 0 && available < BALANCE_LIMITS.withdrawMinMinor
+      ? `不到 ${least} 🐟 时只能全部转出，可用 ${formatAmount(available)} 🐟。`
+      : `一笔转出至少 ${least} 🐟。`,
+  );
 }
 
 /** One 转出's ids and what it is made of (createWithdrawal, or a 转账's). */
@@ -377,7 +396,8 @@ export async function withdrawalStatements(
           recipient_username,debit_minor,fee_minor,credit_minor,fee_percent,settings_version,
           request_id,request_digest,created_at,updated_at)
         SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
-        WHERE EXISTS(SELECT 1 FROM balance_settings WHERE id='global' AND version=? AND withdraw_enabled=1)`,
+        WHERE EXISTS(SELECT 1 FROM balance_settings WHERE id='global' AND version=? AND withdraw_enabled=1)
+          AND (?>=? OR ?=(SELECT available_minor FROM balance_accounts WHERE user_id=?))`,
       ).bind(
         id,
         userId,
@@ -396,6 +416,11 @@ export async function withdrawalStatements(
         now,
         now,
         settings.version,
+        // Under 1 🐟 only all of 可用, as it is now (createWithdrawal).
+        quote.debitMinor,
+        BALANCE_LIMITS.withdrawMinMinor,
+        quote.debitMinor,
+        userId,
       ),
       env.DB.prepare(
         `INSERT INTO balance_locks (id,user_id,purpose,withdrawal_id,amount_minor,remaining_minor,status,created_at,updated_at)

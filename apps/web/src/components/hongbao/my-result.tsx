@@ -8,7 +8,6 @@ import { ArrowUpRight, Lock, UserRoundX } from "lucide-react";
 import { motion } from "motion/react";
 import { type Ref, useState } from "react";
 import { ActivityRequestError } from "../../lib/activities";
-import { useBalanceFunding } from "../../lib/balance";
 import { useResendPayment } from "../../lib/claims";
 import type { HongbaoActivity, Mine } from "../../lib/hongbao";
 import { paymentTone } from "../../lib/hongbao-text";
@@ -24,7 +23,6 @@ import { FishMark } from "../ui/fish";
 import { NoteMarkdown } from "../ui/markdown";
 import { MorphLabel } from "../ui/morph-label";
 import { PersonName } from "../ui/person";
-import { Reveal } from "../ui/reveal";
 import { Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
 import { Countdown } from "./cover-data";
@@ -44,18 +42,6 @@ function FishStored() {
         转出
       </MoreLink>
     </span>
-  );
-}
-
-/** Below 1 in 🐟额 it cannot go to Credit yet: say so, once. */
-function FishNote() {
-  const identity = useIdentity();
-  const funding = useBalanceFunding(identity.user?.id ?? "");
-  const short = funding.data !== undefined && funding.data.availableMinor < 100;
-  return (
-    <Reveal show={short}>
-      <p className="text-sm text-ink-2">满 1 LDC 可以转出到 Credit。</p>
-    </Reveal>
   );
 }
 
@@ -343,9 +329,9 @@ export function MyResult({
         )}
       </div>
 
-      {amount && activity.fish ? (
-        <FishNote />
-      ) : amount && payment ? (
+      {/* A 🐟额红包's share is in 🐟额 already: nothing to follow (under
+          1 🐟 it goes to Credit all at once, balance-design §5). */}
+      {amount && activity.fish ? null : amount && payment ? (
         heldForAccount(payment) && mine.claimId ? (
           <NoCreditAccount
             activityId={activity.id}

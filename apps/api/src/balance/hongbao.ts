@@ -19,7 +19,8 @@ export function balancePaymentMode(env: ApiBindings) {
   return isLocalSimulation(env) ? ("simulation" as const) : ("real" as const);
 }
 
-async function availableMinor(env: ApiBindings, userId: string) {
+/** What is 可用 in this person's 🐟额 now (0 without an account). */
+export async function availableMinor(env: ApiBindings, userId: string) {
   const row = await env.DB.prepare(
     "SELECT available_minor FROM balance_accounts WHERE user_id=?",
   )

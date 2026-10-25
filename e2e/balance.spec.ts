@@ -70,7 +70,13 @@ const plusFeatures = [
 
 async function mockBalance(
   page: Page,
-  options: { withdraw?: boolean; invited?: boolean; hongbao?: boolean } = {},
+  options: {
+    withdraw?: boolean;
+    invited?: boolean;
+    hongbao?: boolean;
+    /** 可用, 12.34 unless said. */
+    availableMinor?: number;
+  } = {},
 ) {
   const sent: unknown[] = [];
   const invited = options.invited ?? true;
@@ -95,7 +101,10 @@ async function mockBalance(
           transferEnabled: true,
           transferToCreditBlock: options.withdraw ? null : "WITHDRAW_DISABLED",
         },
-        account: { availableMinor: 1234, lockedMinor: 0 },
+        account: {
+          availableMinor: options.availableMinor ?? 1234,
+          lockedMinor: 0,
+        },
         access: {
           topup: invited,
           invite: invited,
@@ -515,6 +524,41 @@ test.describe("🐟额", () => {
     await expect(
       page.getByText("1 🐟 = 1 LDC，由本站托管，可用于发红包。"),
     ).toBeVisible();
+  });
+
+  test("转出：可用不到 1 🐟 时只能一次全部转出，别的数说清可用多少", async ({
+    page,
+  }) => {
+    await mockSession(page, { ...viewer, balance: true });
+    await mockBalance(page, { withdraw: true, availableMinor: 37 });
+    const asked: { amount: string }[] = [];
+    await page.route("**/api/me/balance/withdrawals", (route) => {
+      asked.push(route.request().postDataJSON());
+      return route.fulfill({ json: { withdrawal: withdrawal() } });
+    });
+    await page.route(`**/api/me/balance/withdrawals/${withdrawalId}`, (route) =>
+      route.fulfill({ json: { withdrawal: withdrawal() } }),
+    );
+    await openApp(page, "/balance");
+    await page
+      .locator("header")
+      .getByRole("button", { name: "转出", exact: true })
+      .click();
+    const dialog = page.getByRole("dialog", { name: "转出🐟额" });
+    const send = dialog.getByRole("button", { name: "转出", exact: true });
+    // Part of it, or more than there is: all of it or nothing.
+    for (const amount of ["0.2", "0.5", "1"]) {
+      await dialog.getByLabel("转出数量").fill(amount);
+      await expect(
+        dialog.getByText("不到 1.00 🐟 时只能全部转出，可用 0.37 🐟。"),
+      ).toBeVisible();
+      await expect(send).toHaveAttribute("aria-disabled", "true");
+    }
+    await dialog.getByLabel("转出数量").fill("0.37");
+    await expect(dialog.getByText(/只能全部转出|至少|可用只有/)).toHaveCount(0);
+    await send.click();
+    await expectPath(page, `/balance/out/${withdrawalId}`);
+    expect(asked.map(({ amount }) => amount)).toEqual(["0.37"]);
   });
 
   test("转出：只填🐟，说明 Credit 站可能收分发费，越界说是哪一头，申请后跟着它发出去", async ({

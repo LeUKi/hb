@@ -503,6 +503,57 @@ describe("转出", () => {
     );
   });
 
+  it("under 1 🐟 takes all of 可用 at once or nothing, as 可用 is when it is made", async () => {
+    // Fewer, larger 转出 (docs/balance-design.md §5, 2026-10-25): a part
+    // is at least 1 🐟; what is left under 1 goes all at once.
+    const { tester, settingsVersion } = await openWithdrawals();
+    const ask = (amount: string) =>
+      call("POST", "/me/balance/withdrawals", tester, {
+        requestId: crypto.randomUUID(),
+        settingsVersion,
+        by: "debit",
+        amount,
+      });
+    const error = (result: { json: never }) =>
+      (result.json as { error: { code: string; message: string } }).error;
+    // 可用 50.00: a part under 1 is refused, as before.
+    expect(error(await ask("0.99"))).toEqual({
+      code: "BALANCE_WITHDRAW_RANGE",
+      message: "一笔转出至少 1.00 🐟。",
+    });
+    expect((await ask("49.63")).status).toBe(200);
+    expect(await account(tester.id)).toEqual({ available: 37, locked: 4963 });
+    // 0.37 left: part of it, or more, is refused, saying how much there is.
+    for (const amount of ["0.20", "0.50"])
+      expect(error(await ask(amount))).toEqual({
+        code: "BALANCE_WITHDRAW_RANGE",
+        message: "不到 1.00 🐟 时只能全部转出，可用 0.37 🐟。",
+      });
+    // 可用 moves between the check and the batch (a share comes in): the
+    // batch holds it to 可用 as it is then, and nothing is made.
+    const prepare = env.DB.prepare.bind(env.DB);
+    vi.spyOn(env.DB, "prepare").mockImplementation((sql: string) =>
+      sql.startsWith("SELECT available_minor FROM balance_accounts")
+        ? prepare("SELECT 20 AS available_minor WHERE ? IS NOT NULL")
+        : prepare(sql),
+    );
+    const moved = await ask("0.20");
+    vi.restoreAllMocks();
+    expect(moved.status).toBe(409);
+    expect(error(moved).code).toBe("BALANCE_WITHDRAW_RANGE");
+    expect(await account(tester.id)).toEqual({ available: 37, locked: 4963 });
+    // All of it goes.
+    const all = await ask("0.37");
+    expect(all.status).toBe(200);
+    // Credit's 分发费 (12%) comes off it as ever.
+    expect((all.json as WithdrawalJson).withdrawal).toMatchObject({
+      debitMinor: 37,
+      feeMinor: 4,
+      creditMinor: 33,
+    });
+    expect(await account(tester.id)).toEqual({ available: 0, locked: 5000 });
+  });
+
   it("is refused while 转出 is off, and the platform app keeps its Client ID while one is 发放中", async () => {
     const { admin, tester, settingsVersion } = await openWithdrawals({
       withdrawEnabled: false,
@@ -719,6 +770,40 @@ describe("migration 0030", () => {
       "payment_username_corrections_insert_guard",
       "payment_username_corrections_resume",
     ]);
+    const broken = await env.DB.prepare("PRAGMA foreign_key_check").all();
+    expect(broken.results).toEqual([]);
+  });
+});
+
+describe("migration 0042", () => {
+  it("rebuilds balance_withdrawals with every trigger on it or reading it, and no trigger finds a share by id alone", async () => {
+    const rows = await env.DB.prepare(
+      "SELECT name FROM sqlite_master WHERE type='trigger' AND (tbl_name='balance_withdrawals' OR sql LIKE '%balance_withdrawals%') ORDER BY name",
+    ).all<{ name: string }>();
+    expect(rows.results.map((row) => row.name)).toEqual([
+      "balance_transfers_insert_valid",
+      "balance_withdrawals_identity_immutable",
+      "balance_withdrawals_insert_valid",
+      "balance_withdrawals_permanent",
+      "balance_withdrawals_status_final",
+      "payment_claim_policy_insert",
+      "payment_tasks_insert_consistency",
+    ]);
+    // reward_inventory is keyed (activity_id, id): by id alone a trigger
+    // read every 红包's inventory on each write (06 §12).
+    const triggers = await env.DB.prepare(
+      "SELECT name,sql FROM sqlite_master WHERE type='trigger' AND sql LIKE '%JOIN reward_inventory%'",
+    ).all<{ name: string; sql: string }>();
+    const joins = triggers.results.flatMap(({ name, sql }) =>
+      [...sql.matchAll(/JOIN reward_inventory (\w+) ON (.*)/g)].map(
+        ([, alias, on]) => ({
+          name,
+          keyed: on?.includes(`${alias}.activity_id`),
+        }),
+      ),
+    );
+    expect(joins.length).toBeGreaterThanOrEqual(3);
+    expect(joins.filter((join) => !join.keyed)).toEqual([]);
     const broken = await env.DB.prepare("PRAGMA foreign_key_check").all();
     expect(broken.results).toEqual([]);
   });

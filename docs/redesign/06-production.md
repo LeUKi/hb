@@ -232,5 +232,5 @@
 - **广场给游客的连接**：游客没有领取和报名，原来用 `ON 0` 连，SQLite 照样把每个列出的红包的领取都扫一遍（约 1100 万行/天）；改成按索引找一个不存在的用户（`user_id = ''`）。
 - **统计里每个口令的领取数**：按 `password_id` 数，没有这个索引，每个口令扫一遍全部领取；加上 `activity_id`，只看这个红包的。一个红包最多 32 个口令以后这条也会放大。
 - 测试（`presentation-queries.test.ts`）记下领取名单、红包页、广场（游客和登录）、统计和我参与的发出的每条查询，看查询计划，不许整表扫描。
-- 暂不改：付款任务和🐟额流水的两个写入触发器（`payment_tasks_insert_consistency`、`balance_entries_lock_guard`）也只按 id 连库存，每次写入约 4,000 行、一天几百次；改触发器要迁移，下次有迁移时一起改。Durable Object 本月约 7,600 次“错误”仍然都是连接断开。
+- 付款任务和🐟额流水的两个写入触发器（`payment_tasks_insert_consistency`、`balance_entries_lock_guard`）也只按 id 连库存，每次写入约 4,000 行、一天几百次；改触发器要迁移，和同一天的“不到 1 🐟 全部转出”一起在 0042 里改成按 (activity_id, id)。Durable Object 本月约 7,600 次“错误”仍然都是连接断开。
 

@@ -765,16 +765,21 @@ function WithdrawDialog({
   const { create } = useWithdrawalActions(user.id);
   const navigate = useNavigate();
   const minor = typedMinor(typed);
+  // At least 1 🐟; under 1 only all of 可用 at once (balance-design §5).
+  const allOnly =
+    availableMinor > 0 && availableMinor < settings.withdrawMinMinor;
   const bound =
     minor === null || minor <= 0
       ? null
-      : minor < settings.withdrawMinMinor
-        ? `一笔转出至少 ${fishText(settings.withdrawMinMinor)} 🐟。`
-        : minor > settings.withdrawMaxMinor
-          ? `一笔转出最多 ${fishText(settings.withdrawMaxMinor)} 🐟。`
-          : minor > availableMinor
-            ? `可用只有 ${fishText(Math.max(0, availableMinor))} 🐟。`
-            : null;
+      : allOnly && minor !== availableMinor
+        ? `不到 ${fishText(settings.withdrawMinMinor)} 🐟 时只能全部转出，可用 ${fishText(availableMinor)} 🐟。`
+        : minor < settings.withdrawMinMinor && minor !== availableMinor
+          ? `一笔转出至少 ${fishText(settings.withdrawMinMinor)} 🐟。`
+          : minor > settings.withdrawMaxMinor
+            ? `一笔转出最多 ${fishText(settings.withdrawMaxMinor)} 🐟。`
+            : minor > availableMinor
+              ? `可用只有 ${fishText(Math.max(0, availableMinor))} 🐟。`
+              : null;
   const ready = minor !== null && minor > 0 && bound === null;
   const busy = create.isPending;
   const submit = async () => {
