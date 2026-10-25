@@ -57,7 +57,16 @@ function withdrawalNeedsLook(now = Date.now()) {
  * locks, a 转出 against its lock or its payment, a 🐟额红包 against its lock
  * and its claims (docs/balance-design.md §14).
  */
-const MISMATCHES = `SELECT
+const MISMATCHES = `WITH lock_flows AS MATERIALIZED (
+  -- What each lock gave out and what its claims took in, summed in one pass:
+  -- per lock, three sums over the whole of balance_entries (no index by
+  -- lock) read it three times for every 🐟额红包 (06 §12).
+  SELECT lock_id,
+    -SUM(CASE WHEN kind IN ('deduct','unlock') THEN locked_delta_minor ELSE 0 END) AS released,
+    -SUM(CASE WHEN kind='deduct' THEN locked_delta_minor ELSE 0 END) AS deducted,
+    SUM(CASE WHEN kind='hongbao' THEN available_delta_minor ELSE 0 END) AS paid
+  FROM balance_entries WHERE kind IN ('deduct','unlock','hongbao') GROUP BY lock_id)
+SELECT
   (SELECT COUNT(*) FROM balance_accounts a WHERE
     a.available_minor!=COALESCE((SELECT SUM(e.available_delta_minor) FROM balance_entries e WHERE e.user_id=a.user_id),0)
     OR a.locked_minor!=COALESCE((SELECT SUM(e.locked_delta_minor) FROM balance_entries e WHERE e.user_id=a.user_id),0)
@@ -72,11 +81,9 @@ const MISMATCHES = `SELECT
       AND (a.ended_at IS NULL OR a.ended_at < ${databaseNow} - 1800000)
     -- What left the lock is what claims took (this 红包's lock only: a 转出's
     -- lock has its 扣走 and no 领到, and is not one of these).
-    OR EXISTS(SELECT 1 FROM balance_locks l WHERE l.activity_id=a.id AND (l.amount_minor
-      != l.remaining_minor
-        + COALESCE((SELECT -SUM(e.locked_delta_minor) FROM balance_entries e WHERE e.lock_id=l.id AND e.kind IN ('deduct','unlock')),0)
-      OR COALESCE((SELECT -SUM(e.locked_delta_minor) FROM balance_entries e WHERE e.lock_id=l.id AND e.kind='deduct'),0)
-        != COALESCE((SELECT SUM(e.available_delta_minor) FROM balance_entries e WHERE e.lock_id=l.id AND e.kind='hongbao'),0)))))
+    OR EXISTS(SELECT 1 FROM balance_locks l LEFT JOIN lock_flows f ON f.lock_id=l.id
+      WHERE l.activity_id=a.id AND (l.amount_minor != l.remaining_minor + COALESCE(f.released,0)
+        OR COALESCE(f.deducted,0) != COALESCE(f.paid,0)))))
   -- Each claim of a 🐟额红包: one share out of the lock, the same share in.
   + (SELECT COUNT(*) FROM claims c JOIN activities a ON a.id=c.activity_id WHERE a.funding='balance'
     AND NOT EXISTS(SELECT 1 FROM balance_entries d JOIN balance_entries h ON h.claim_id=d.claim_id AND h.kind='hongbao'
