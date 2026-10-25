@@ -169,27 +169,28 @@ export function activityImageUrl(
 
 /**
  * The site's own post on the forum: where what it hands the forum (the
- * 社区链接, the 内嵌代码's image) leads, the same for every 红包 (user's
- * choice).
+ * 社区链接's 红包站, the 实况图) leads when the sharer asks for it (05 §5
+ * 链接到哪); by default they lead to the site.
  */
 export const FORUM_POST_URL = "https://linux.do/t/3033290";
 
 /**
  * The forum code (05 §5), as the user wrote it: the image at one of its
- * sizes (300 × 400 unless chosen), linking to the site's post, named by the
- * 红包's emoji code (not its title).
+ * sizes (300 × 400 unless chosen), linking to `link` (the 红包's page, or
+ * the site's post), named by the 红包's emoji code (not its title).
  */
 export function createActivityImageEmbed(input: {
   activityId: string;
   origin: string;
   sender: string;
+  link: string;
   size?: ActivityImageEmbedSize;
 }) {
   const size = input.size ?? ACTIVITY_IMAGE_EMBED_SIZES[0];
   const href = activityImageUrl(input.activityId, input.origin);
   const alt = `${normalizeText(input.sender, "发红包的人")}的红包：${encodeActivityEmoji(input.activityId)}`;
   return [
-    `<a href="${FORUM_POST_URL}">`,
+    `<a href="${escapeXml(input.link)}">`,
     `<picture><source type="image/svg+xml" srcset="${escapeXml(href)} 1x"><img width="${size.width}" height="${size.height}" `,
     `alt="${escapeXml(alt)}"></picture>`,
     "</a>",

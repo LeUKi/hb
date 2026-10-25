@@ -8,6 +8,7 @@ import {
   activityImageUrl,
   createActivityImageEmbed,
   encodeActivityEmoji,
+  FORUM_POST_URL,
   isImageTimeZone,
   type PublicActivity,
   renderActivityImage,
@@ -391,12 +392,13 @@ describe("activity image address and embed code", () => {
     ).toThrow(TypeError);
   });
 
-  it("writes the forum code linking to the site's post, named by the emoji code", () => {
+  it("writes the forum code linking where it is told (the 红包's page, or the site's post), named by the emoji code", () => {
     expect(
       createActivityImageEmbed({
         activityId: id,
         origin: "https://hb.example.com",
         sender: "小满",
+        link: FORUM_POST_URL,
       }),
     ).toBe(
       [
@@ -414,6 +416,7 @@ describe("activity image address and embed code", () => {
           activityId: id,
           origin: "https://hb.example.com",
           sender: "小满",
+          link: FORUM_POST_URL,
           size,
         }),
       ).toContain(`<img width="${size.width}" height="${size.height}" `);
@@ -422,10 +425,20 @@ describe("activity image address and embed code", () => {
       width: ACTIVITY_IMAGE_WIDTH,
       height: ACTIVITY_IMAGE_HEIGHT,
     });
+    const page = `https://hb.example.com/🧧/${code}`;
+    expect(
+      createActivityImageEmbed({
+        activityId: id,
+        origin: "https://hb.example.com",
+        sender: "小满",
+        link: page,
+      }).split("\n")[0],
+    ).toBe(`<a href="${page}">`);
     const escaped = createActivityImageEmbed({
       activityId: id,
       origin: "https://hb.example.com",
       sender: '"><script>alert(1)</script>',
+      link: page,
     });
     expect(escaped).not.toContain("<script>");
     expect(escaped).toContain(

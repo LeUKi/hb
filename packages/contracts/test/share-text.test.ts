@@ -4,6 +4,7 @@ import {
   createActivityImageEmbed,
   encodeActivityEmoji,
   FORUM_EMOJI,
+  FORUM_POST_URL,
   forumShareLink,
   forumShareWithPassword,
   plainShareWithPassword,
@@ -22,6 +23,8 @@ const activity: ShareActivity = {
   pageOnly: false,
 };
 const password = "周末口令2026";
+/** 红包站 links to the site by default, or to its post (05 §5). */
+const site = origin;
 
 const nameOf = new Map([...FORUM_EMOJI].map(([name, emoji]) => [emoji, name]));
 /** As the forum hands copied text back: its emoji as :name:. */
@@ -32,16 +35,19 @@ const asCopiedFromForum = (text: string) =>
 
 describe("share text (05 §5), written to one rule", () => {
   const how = (result: string) =>
-    `复制上面这段，粘贴到[红包站](https://linux.do/t/3033290)的输入框即可${result}。`;
+    `复制上面这段，粘贴到[红包站](${site})的输入框即可${result}。`;
 
-  it("puts the link in a code block under the title, the site's post behind 红包站", () => {
-    expect(forumShareLink(activity)).toBe(
+  it("puts the link in a code block under the title, 红包站 linking to the site or its post", () => {
+    expect(forumShareLink(activity, site)).toBe(
       ["【周末红包】", "```", `/🧧/${code}`, "```", how("打开红包")].join("\n"),
+    );
+    expect(forumShareLink(activity, FORUM_POST_URL).split("\n").at(-1)).toBe(
+      "复制上面这段，粘贴到[红包站](https://linux.do/t/3033290)的输入框即可打开红包。",
     );
   });
 
   it("puts the path and its 口令 in one code block under the title", () => {
-    expect(forumShareWithPassword(activity, password)).toBe(
+    expect(forumShareWithPassword(activity, password, site)).toBe(
       [
         "【周末红包】",
         "```",
@@ -55,15 +61,16 @@ describe("share text (05 §5), written to one rule", () => {
 
   it("adds one line of its own when 首页领取 is off, the rest as it is", () => {
     expect(
-      forumShareWithPassword({ ...activity, pageOnly: true }, password),
+      forumShareWithPassword({ ...activity, pageOnly: true }, password, site),
     ).toBe(
-      `${forumShareWithPassword(activity, password)}\n本红包已关闭首页领取，只输入口令无法领取。`,
+      `${forumShareWithPassword(activity, password, site)}\n本红包已关闭首页领取，只输入口令无法领取。`,
     );
     // A 限时开奖 signs up.
     expect(
       forumShareWithPassword(
         { ...activity, draw: true, pageOnly: true },
         password,
+        site,
       )
         .split("\n")
         .slice(-2),
@@ -85,19 +92,30 @@ describe("share text (05 §5), written to one rule", () => {
 describe("share text, read back from a paste (02 §6)", () => {
   // Every form the menu gives out: what it names comes back.
   const forms: [string, string, string | null][] = [
-    ["发到社区 · 链接", forumShareLink(activity), null],
-    ["专用链接与口令", forumShareWithPassword(activity, password), password],
+    ["发到社区 · 链接", forumShareLink(activity, site), null],
+    ["发到社区 · 链接（主贴）", forumShareLink(activity, FORUM_POST_URL), null],
+    [
+      "专用链接与口令",
+      forumShareWithPassword(activity, password, site),
+      password,
+    ],
     [
       "专用链接与口令（关闭首页领取、报名）",
       forumShareWithPassword(
         { ...activity, draw: true, pageOnly: true },
         password,
+        FORUM_POST_URL,
       ),
       password,
     ],
     [
       "社区内嵌代码",
-      createActivityImageEmbed({ activityId: id, origin, sender: "小满" }),
+      createActivityImageEmbed({
+        activityId: id,
+        origin,
+        sender: "小满",
+        link: url,
+      }),
       null,
     ],
     ["原始链接", url, null],

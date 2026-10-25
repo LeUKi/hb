@@ -3,7 +3,6 @@
 // Both live here so they cannot drift apart: every form below is read back
 // in test/share-text.test.ts.
 import { passwordSchema } from ".";
-import { FORUM_POST_URL } from "./activity-image";
 import { decodeActivityEmoji, encodeActivityEmoji } from "./ecoji-v2";
 import { fromForumEmoji } from "./forum-emoji";
 
@@ -28,9 +27,12 @@ export function activityPath(activityId: string) {
 // the image); what to copy in a code block; one line on how to use it, the
 // same everywhere; a special case adds a line of its own, “本红包…”.
 
-/** The line under a code block: paste it into the site (its forum post). */
-function howTo(result: string) {
-  return `复制上面这段，粘贴到[红包站](${FORUM_POST_URL})的输入框即可${result}。`;
+/**
+ * The line under a code block: paste it into the site, 红包站 linking to
+ * `link` — the site itself, or its post in the forum (05 §5 链接到哪).
+ */
+function howTo(result: string, link: string) {
+  return `复制上面这段，粘贴到[红包站](${link})的输入框即可${result}。`;
 }
 
 /** 领取 or, for a 限时开奖, 报名. */
@@ -39,21 +41,22 @@ const verbOf = (activity: Pick<ShareActivity, "draw">) =>
 
 /**
  * 发到社区 · 链接: the path in a code block, which the forum gives a copy
- * button and leaves as it is (no emoji pictures, no link preview); the site
- * itself is only reached through its forum post.
+ * button and leaves as it is (no emoji pictures, no link preview); 红包站
+ * links to `link`.
  */
 export function forumShareLink(
   activity: Pick<ShareActivity, "id" | "title"> & {
     /** 代码判定红包: its sender's prompt, said under how to open it. */
     codePrompt?: string;
   },
+  link: string,
 ) {
   return [
     `【${activity.title}】`,
     FENCE,
     activityPath(activity.id),
     FENCE,
-    howTo("打开红包"),
+    howTo("打开红包", link),
     ...(activity.codePrompt !== undefined
       ? [
           `本红包由代码判定，打开后在红包页输入。${activity.codePrompt ? `提示：${activity.codePrompt}` : ""}`,
@@ -66,6 +69,7 @@ export function forumShareLink(
 export function forumShareWithPassword(
   activity: ShareActivity,
   password: string,
+  link: string,
 ) {
   return [
     `【${activity.title}】`,
@@ -73,7 +77,7 @@ export function forumShareWithPassword(
     activityPath(activity.id),
     `口令：${password}`,
     FENCE,
-    howTo(verbOf(activity)),
+    howTo(verbOf(activity), link),
     ...(activity.pageOnly
       ? [`本红包已关闭首页领取，只输入口令无法${verbOf(activity)}。`]
       : []),

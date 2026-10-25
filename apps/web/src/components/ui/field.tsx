@@ -338,7 +338,8 @@ export function ChoiceCards<T extends string>({
   }[];
   onChange: (value: T) => void;
   label: string;
-  columns?: 2 | 4;
+  /** 1: one under another, in a narrow column (分享's 发什么). */
+  columns?: 1 | 2 | 4;
   disabled?: boolean;
 }) {
   return (
@@ -348,7 +349,9 @@ export function ChoiceCards<T extends string>({
         "grid min-w-0 gap-2",
         columns === 4
           ? "grid-cols-2 @wide/window:grid-cols-4"
-          : "grid-cols-1 @wide/window:grid-cols-2",
+          : columns === 1
+            ? "grid-cols-1"
+            : "grid-cols-1 @wide/window:grid-cols-2",
       )}
     >
       {options.map((option) => {

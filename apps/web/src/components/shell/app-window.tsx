@@ -11,6 +11,7 @@ import { MyJudgmentsDialog } from "../hongbao/my-judgments";
 import { NoteDialog } from "../hongbao/note-dialog";
 import { RosterDialog } from "../hongbao/roster-dialog";
 import { ScopeDialog } from "../hongbao/scope-dialog";
+import { ShareDialog } from "../hongbao/share-dialog";
 import { Omnibox } from "../omnibox/omnibox";
 import {
   editLinesAtom,
@@ -170,6 +171,7 @@ export function AppWindow() {
           <NoteDialog />
           <MyJudgmentsDialog />
           <CodeDialog />
+          <ShareDialog />
           <HumanCheckDialog />
           <ScopeDialog />
           <UpdatePrompt />

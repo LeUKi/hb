@@ -8,7 +8,7 @@ declare module "@tanstack/history" {
     omnibox?: "expanded";
     /**
      * A panel is open over the window: 用户卡片, 名单弹窗, 说明弹窗, 更多设置,
-     * or a 代码判定红包's 我的提交 and 代码 (05 §3, §9).
+     * 分享 (05 §5), or a 代码判定红包's 我的提交 and 代码 (05 §3, §9).
      */
     panel?: Panel;
     /**
@@ -27,7 +27,8 @@ export type Panel =
   | "note"
   | "settings"
   | "judgments"
-  | "code";
+  | "code"
+  | "share";
 
 type Overlay = { omnibox?: "expanded"; panel?: Panel; panelFor?: string };
 
