@@ -838,7 +838,7 @@ LDC 是社区积分，不是钱，所以这个功能不用钱的说法。
     - 限时开奖 `{ "mode": "timed_draw", "total", "winners", "participantLimit"?, "algorithm"?, "fillPool"? }`：总奖池、获奖名额、报名上限（不填不限）、人数不足时发完奖池（默认是）。
 
     `algorithm` 是 `double_mean`（二倍均值，默认）或 `bounded_mean`（初始均值上下 50%）。金额都是字符串，最多两位小数，每份至少 `"0.01"`，最多 1000 份。
-  - `passwords`：口令，最多 5 个；不填就是无需口令。
+  - `passwords`：口令，最多 32 个（同网页）；不填就是无需口令。
   - `homeClaim`：首页领取，默认是；只有口令红包能关，关掉时 `square` 必须为是。
   - `square`：加入红包广场，默认否。
   - `endsAt`：截止时间（ISO 时间），限时开奖就是开奖时间；不填时和网页新建的默认一样。

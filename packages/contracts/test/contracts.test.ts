@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACTIVITY_LIMITS,
   activityInputSchema,
   adminActivitiesQuerySchema,
   adminAuditQuerySchema,
@@ -215,7 +216,9 @@ describe("shared activity contracts", () => {
 
   it("limits new passwords and quantity choices without invalidating historical input", () => {
     const input = validActivity();
-    input.passwords = Array.from({ length: 6 }, (_, i) => `Secret${i}`);
+    // 32 口令 since 2026-10-25 (5 before).
+    expect(ACTIVITY_LIMITS.passwords).toBe(32);
+    input.passwords = Array.from({ length: 33 }, (_, i) => `Secret${i}`);
     expect(activityInputSchema.safeParse(input).success).toBe(true);
     expect(newActivityInputSchema.safeParse(input).success).toBe(false);
     input.passwords.pop();

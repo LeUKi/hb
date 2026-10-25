@@ -16,7 +16,7 @@ import {
   Trash2,
   Wallet,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { useBalanceFunding } from "../../lib/balance";
 import { cn } from "../../lib/cn";
 import { haptic } from "../../lib/haptics";
@@ -746,8 +746,39 @@ export function PasswordList({
         at === index ? value : item,
       ),
     }));
+  // 粘贴多行 (07 §5): the lines left out past the limit, said under the
+  // list (by the last row, where focus lands) until a 口令 is typed. Hidden,
+  // the count stays while the note folds away.
+  const [leftOut, setLeftOut] = useState<{
+    lines: number;
+    shown: boolean;
+  } | null>(null);
+  /**
+   * Several lines pasted: one 口令 each, from this row down — into it if it
+   * is empty, else in new rows under it — up to the limit.
+   */
+  const pasteLines = (index: number, lines: string[]) => {
+    const own = form.passwords[index]?.trim() === "";
+    const room = LIMITS.passwords - form.passwords.length + (own ? 1 : 0);
+    const taken = lines.slice(0, Math.max(0, room));
+    update((current) => {
+      const next = [...current.passwords];
+      next.splice(index + (own ? 0 : 1), own ? 1 : 0, ...taken);
+      return { ...current, passwords: next };
+    });
+    setLeftOut(
+      lines.length > taken.length
+        ? { lines: lines.length - taken.length, shown: true }
+        : null,
+    );
+    // Focus on the last one put in, once it is drawn.
+    const last = index + (own ? 0 : 1) + taken.length - 1;
+    requestAnimationFrame(() =>
+      document.getElementById(`hb-password-${Math.max(index, last)}`)?.focus(),
+    );
+  };
   return (
-    <div className="grid gap-2">
+    <div className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between gap-3">
         <span className="text-sm font-medium text-ink">口令</span>
         <span className="text-xs text-ink-3">
@@ -784,7 +815,22 @@ export function PasswordList({
                   spellCheck={false}
                   suffix={`${inspection.length} / ${ACTIVITY_LIMITS.passwordMaxCharacters}`}
                   aria-describedby={error ? `${field}-error` : undefined}
-                  onChange={(event) => setAt(index, event.target.value)}
+                  onChange={(event) => {
+                    setLeftOut(
+                      (current) => current && { ...current, shown: false },
+                    );
+                    setAt(index, event.target.value);
+                  }}
+                  onPaste={(event) => {
+                    const lines = event.clipboardData
+                      .getData("text")
+                      .split(/\r\n|\r|\n/)
+                      .map((line) => line.trim().slice(0, 64))
+                      .filter((line) => line !== "");
+                    if (lines.length < 2) return;
+                    event.preventDefault();
+                    pasteLines(index, lines);
+                  }}
                 />
                 {/* Named as in the command box (一键优化 → 优化); it grows in
                     beside the 口令 and folds away once the 口令 is clean. */}
@@ -811,6 +857,10 @@ export function PasswordList({
                     aria-label={`删除口令 ${index + 1}`}
                     onClick={() => {
                       haptic("selection");
+                      // Rows move up: the note would sit under another.
+                      setLeftOut(
+                        (current) => current && { ...current, shown: false },
+                      );
                       update((current) => ({
                         ...current,
                         passwords: current.passwords.filter(
@@ -837,6 +887,12 @@ export function PasswordList({
           );
         })}
       </ul>
+      <Reveal show={Boolean(leftOut?.shown)}>
+        <p role="status" className="text-xs text-warning">
+          最多 {LIMITS.passwords} 个口令，后面 {leftOut?.lines ?? 0}{" "}
+          行没有加进来。
+        </p>
+      </Reveal>
       {/* Locked: the step's own 开放后不能修改 covers the 口令 too. */}
       {!locked && (
         <div className="flex flex-wrap items-center gap-3">
@@ -857,7 +913,7 @@ export function PasswordList({
           </RevealInline>
           <span className="text-xs text-ink-3">
             6–32
-            个字：汉字、英文字母或数字，区分大小写。几个口令共用同一个红包，每人只能领一次。
+            个字：汉字、英文字母或数字，区分大小写。几个口令共用同一个红包，每人只能领一次。粘贴多行会拆成多个口令。
           </span>
         </div>
       )}

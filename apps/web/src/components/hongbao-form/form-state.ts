@@ -26,7 +26,7 @@ import { noVersions } from "./judge-versions";
 
 export const LIMITS = {
   title: 100,
-  passwords: 5,
+  passwords: ACTIVITY_LIMITS.passwords,
   shares: 1000,
   info: 10_000,
 } as const;

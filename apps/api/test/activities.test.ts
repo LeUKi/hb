@@ -185,9 +185,14 @@ beforeEach(async () => {
 });
 
 describe("historical passwords and draft deletion", () => {
-  it("limits new activities to five passwords while preserving over-limit historical drafts and create replays", async () => {
+  it("limits new activities to 32 passwords while preserving over-limit historical drafts and create replays", async () => {
+    const limit = ACTIVITY_LIMITS.passwords;
+    expect(limit).toBe(32);
     const historical = input({
-      passwords: Array.from({ length: 6 }, (_, index) => `password${index}`),
+      passwords: Array.from(
+        { length: limit + 1 },
+        (_, index) => `password${index}`,
+      ),
     });
     const requestId = crypto.randomUUID();
     const rejected = await request("/api/activities", owner, "POST", {
@@ -197,7 +202,10 @@ describe("historical passwords and draft deletion", () => {
     expect(rejected.status).toBe(400);
     const created = await request("/api/activities", owner, "POST", {
       requestId,
-      activity: { ...historical, passwords: historical.passwords.slice(0, 5) },
+      activity: {
+        ...historical,
+        passwords: historical.passwords.slice(0, limit),
+      },
     });
     expect(created.status).toBe(200);
     const draft = ((await created.json()) as { activity: ManagedActivity })
@@ -251,8 +259,8 @@ describe("historical passwords and draft deletion", () => {
     ).activity;
     for (const passwords of [
       [...historical.passwords, "anotherPassword"],
-      historical.passwords.slice(0, 5),
-      [...historical.passwords.slice(0, 5), "changedPassword"],
+      historical.passwords.slice(0, limit),
+      [...historical.passwords.slice(0, limit), "changedPassword"],
     ]) {
       const update = await request(
         `/api/me/activities/${draft.id}`,

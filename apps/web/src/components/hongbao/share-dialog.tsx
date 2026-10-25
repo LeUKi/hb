@@ -20,6 +20,7 @@ import { WindowDialog } from "../shell/window-dialog";
 import { useWindowInfo } from "../shell/window-info";
 import { Button } from "../ui/button";
 import { ChoiceCards, Segmented, Switch } from "../ui/field";
+import { radius, Squircle } from "../ui/squircle";
 import { useHongbaoPageData } from "./use-hongbao-data";
 
 // 分享 (05 §5): a 红包's panel. Where it goes and what is copied are
@@ -354,15 +355,23 @@ function ShareForm({
           />
           {withPassword(kind) && passwords.known.length > 1 && (
             <Option label="口令">
-              <Segmented
-                label="口令"
-                value={String(passwordIndex)}
-                options={passwords.known.map((_, index) => ({
-                  value: String(index),
-                  label: `口令 ${index + 1}`,
-                }))}
-                onChange={(index) => setPasswordIndex(Number(index))}
-              />
+              {passwords.known.length > PICKER_SEGMENTS ? (
+                <PasswordPicker
+                  texts={passwords.known.map((each) => each.text)}
+                  value={passwordIndex}
+                  onChange={setPasswordIndex}
+                />
+              ) : (
+                <Segmented
+                  label="口令"
+                  value={String(passwordIndex)}
+                  options={passwords.known.map((_, index) => ({
+                    value: String(index),
+                    label: `口令 ${index + 1}`,
+                  }))}
+                  onChange={(index) => setPasswordIndex(Number(index))}
+                />
+              )}
             </Option>
           )}
           {kind === "image" && (
@@ -491,6 +500,56 @@ function ShareForm({
         </div>
       </WindowDialog>
     </div>
+  );
+}
+
+/** Past this many 口令 the picker is a list rather than a bar (05 §5). */
+const PICKER_SEGMENTS = 5;
+
+/**
+ * Many 口令 (up to 32): a list about five rows tall that scrolls (half of
+ * the sixth shows, so it reads as more below), each row its number and the
+ * 口令 itself, the chosen one raised as in Segmented.
+ */
+function PasswordPicker({
+  texts,
+  value,
+  onChange,
+}: {
+  texts: string[];
+  value: number;
+  onChange: (index: number) => void;
+}) {
+  return (
+    <Squircle radius={radius.segmented}>
+      <fieldset
+        aria-label="口令"
+        className="view-scroll grid max-h-60 gap-0.5 overflow-y-auto overscroll-contain bg-fill-2 p-0.5"
+      >
+        {texts.map((text, index) => (
+          <Squircle key={text} radius={radius.segmentedOption}>
+            <button
+              type="button"
+              aria-pressed={index === value}
+              onClick={() => {
+                if (index !== value) haptic("selection");
+                onChange(index);
+              }}
+              className={`flex min-h-10 w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
+                index === value
+                  ? "bg-white font-medium text-ink raised"
+                  : "text-ink-2 hover:text-ink"
+              }`}
+            >
+              <span className="w-5 shrink-0 text-xs text-ink-3 tabular-nums">
+                {index + 1}
+              </span>
+              <span className="min-w-0 flex-1 font-mono break-all">{text}</span>
+            </button>
+          </Squircle>
+        ))}
+      </fieldset>
+    </Squircle>
   );
 }
 

@@ -194,6 +194,64 @@ test.describe("发红包", () => {
     expect(sent[0]?.activity).not.toHaveProperty("humanCheck");
   });
 
+  test("口令：粘贴多行拆成多个口令，最多 32 个，多出来的写明", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await mockSession(page, viewer);
+    await mockMerchants(page, [merchant]);
+    await openApp(page, "/new");
+    await page
+      .getByRole("button", { name: /拼手气/ })
+      .first()
+      .click();
+    await page.locator("#hb-random-total").fill("0.30");
+    await page.locator("#hb-random-count").fill("3");
+    await page.keyboard.press("Enter");
+    const row = (n: number) => page.getByLabel(`口令 ${n}`, { exact: true });
+    const paste = async (n: number, text: string) => {
+      await page.evaluate(
+        (value) => navigator.clipboard.writeText(value),
+        text,
+      );
+      await row(n).focus();
+      await page.keyboard.press("ControlOrMeta+V");
+    };
+    await expect(page.getByText("粘贴多行会拆成多个口令。")).toBeVisible();
+
+    // Into the empty first row: one 口令 a line, blank lines skipped.
+    await paste(1, "周末口令2026\n\n  公共口令2026  \r\n第三个口令88");
+    await expect(row(1)).toHaveValue("周末口令2026");
+    await expect(row(2)).toHaveValue("公共口令2026");
+    await expect(row(3)).toHaveValue("第三个口令88");
+    await expect(row(4)).toHaveCount(0);
+    await expect(row(3)).toBeFocused();
+    await expect(page.getByText("3 / 32", { exact: true })).toBeVisible();
+
+    // Into a filled row: under it, up to 32; the rest are said.
+    const batch = Array.from(
+      { length: 31 },
+      (_, index) => `批量口令${String(index + 1).padStart(2, "0")}`,
+    );
+    await paste(1, batch.join("\n"));
+    await expect(row(1)).toHaveValue("周末口令2026");
+    await expect(row(2)).toHaveValue("批量口令01");
+    await expect(row(30)).toHaveValue("批量口令29");
+    await expect(row(31)).toHaveValue("公共口令2026");
+    await expect(row(32)).toHaveValue("第三个口令88");
+    await expect(row(30)).toBeFocused();
+    await expect(row(30)).toBeInViewport();
+    await expect(page.getByText("32 / 32", { exact: true })).toBeVisible();
+    // Said under the list, so it is in view by the rows just put in.
+    const note = page.getByText("最多 32 个口令，后面 2 行没有加进来。");
+    await expect(note).toBeInViewport();
+    await expect(page.getByRole("button", { name: "再加一个" })).toBeHidden();
+    // Typing again folds the note away.
+    await row(2).fill("改过的口令01");
+    await expect(note).toBeHidden();
+  });
+
   test("发多少：手续费按发红包的人的 Credit 等级；超过 800 提示可能顺延", async ({
     page,
   }) => {

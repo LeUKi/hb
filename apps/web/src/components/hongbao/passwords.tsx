@@ -1,12 +1,16 @@
 import { useAtomValue } from "jotai";
-import { KeyRound, Lock } from "lucide-react";
+import { ChevronDown, KeyRound, Lock } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { PasswordLabel, PasswordView } from "../../lib/hongbao";
 import { verifyNoticeAtom } from "../../lib/store";
 import { Button } from "../ui/button";
 import { RollingText } from "../ui/morph-label";
+import { Reveal } from "../ui/reveal";
 import { Squircle } from "../ui/squircle";
 import { PasswordText, RevealToggle, StandIn } from "./password-text";
+
+/** Rows shown before 展开全部 (up to 32 口令 since 2026-10-25, 05 §2). */
+const FOLDED = 5;
 
 const labels: Record<PasswordLabel, string> = {
   registered: "已用此口令报名",
@@ -70,9 +74,91 @@ export function PasswordSection({
     });
 
   const total = passwords.known.length + passwords.hidden;
+  // Many 口令 fold under 展开全部; one just solved down there opens them
+  // once its row arrives (the list is read again after the result), in the
+  // same render, so focus can land on it.
+  const [expanded, setExpanded] = useState(false);
+  const [openedFor, setOpenedFor] = useState<number | null>(null);
+  const solvedAt = fresh
+    ? passwords.known.findIndex((password) => password.text === fresh.password)
+    : -1;
+  if (fresh && solvedAt >= 0 && openedFor !== fresh.token) {
+    setOpenedFor(fresh.token);
+    if (solvedAt >= FOLDED) setExpanded(true);
+  }
   if (total === 0) return null;
+  const rows = [
+    ...passwords.known.map((password, index) => {
+      const solvedNow = fresh?.password === password.text;
+      return (
+        <li
+          key={password.text}
+          ref={solvedNow ? solvedRef : undefined}
+          tabIndex={solvedNow ? -1 : undefined}
+          className="outline-none"
+        >
+          <Squircle radius={12}>
+            <div
+              key={solvedNow ? fresh.token : undefined}
+              className={`flex min-h-11 items-center gap-3 px-3.5 py-2.5 ${
+                solvedNow ? "hb-solved bg-fill" : "bg-fill"
+              }`}
+            >
+              {/* A long 口令 wraps; a narrow window puts the label under
+                  it, so the 口令 has the whole line. */}
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5 @wide/window:flex-row @wide/window:items-center @wide/window:gap-3">
+                <PasswordText
+                  text={password.text}
+                  shown={isShown(password.text)}
+                  seed={`${activityId}:known`}
+                  index={index}
+                  wrap
+                  className="min-w-0 flex-1 text-base text-ink"
+                />
+                <span
+                  className={`shrink-0 text-xs ${
+                    password.label === "solved"
+                      ? "font-medium text-success"
+                      : "text-ink-3"
+                  }`}
+                >
+                  {labels[password.label]}
+                </span>
+              </span>
+              {!ended && (
+                <RevealToggle
+                  what={`口令 ${index + 1}`}
+                  shown={isShown(password.text)}
+                  onToggle={() => toggle(password.text)}
+                  className="-mr-1.5"
+                />
+              )}
+            </div>
+          </Squircle>
+        </li>
+      );
+    }),
+    ...Array.from({ length: passwords.hidden }, (_, index) => (
+      // biome-ignore lint/suspicious/noArrayIndexKey: placeholders have no identity.
+      <li key={index}>
+        <Squircle radius={12}>
+          <div className="flex h-11 items-center gap-3 bg-fill px-3.5">
+            <StandIn
+              seed={activityId}
+              index={index}
+              className="min-w-0 flex-1 truncate font-mono text-base"
+            />
+            <span className="flex shrink-0 items-center gap-1 text-xs text-ink-3">
+              <Lock className="size-3.5" aria-hidden="true" />
+              未解出
+            </span>
+          </div>
+        </Squircle>
+      </li>
+    )),
+  ];
   return (
-    <section className="grid gap-2" data-hb-part="passwords">
+    <section className="flex flex-col gap-2" data-hb-part="passwords">
       <div className="flex min-h-9 items-center justify-between gap-3">
         <h2 className="text-sm font-medium text-ink-3">
           <RollingText
@@ -105,76 +191,30 @@ export function PasswordSection({
           )}
         </span>
       </div>
-      <ul className="grid gap-1.5">
-        {passwords.known.map((password, index) => {
-          const solvedNow = fresh?.password === password.text;
-          return (
-            <li
-              key={password.text}
-              ref={solvedNow ? solvedRef : undefined}
-              tabIndex={solvedNow ? -1 : undefined}
-              className="outline-none"
-            >
-              <Squircle radius={12}>
-                <div
-                  key={solvedNow ? fresh.token : undefined}
-                  className={`flex min-h-11 items-center gap-3 px-3.5 py-2.5 ${
-                    solvedNow ? "hb-solved bg-fill" : "bg-fill"
-                  }`}
-                >
-                  {/* A long 口令 wraps; a narrow window puts the label under
-                      it, so the 口令 has the whole line. */}
-                  <span className="flex min-w-0 flex-1 flex-col gap-0.5 @wide/window:flex-row @wide/window:items-center @wide/window:gap-3">
-                    <PasswordText
-                      text={password.text}
-                      shown={isShown(password.text)}
-                      seed={`${activityId}:known`}
-                      index={index}
-                      wrap
-                      className="min-w-0 flex-1 text-base text-ink"
-                    />
-                    <span
-                      className={`shrink-0 text-xs ${
-                        password.label === "solved"
-                          ? "font-medium text-success"
-                          : "text-ink-3"
-                      }`}
-                    >
-                      {labels[password.label]}
-                    </span>
-                  </span>
-                  {!ended && (
-                    <RevealToggle
-                      what={`口令 ${index + 1}`}
-                      shown={isShown(password.text)}
-                      onToggle={() => toggle(password.text)}
-                      className="-mr-1.5"
-                    />
-                  )}
-                </div>
-              </Squircle>
-            </li>
-          );
-        })}
-        {Array.from({ length: passwords.hidden }, (_, index) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: placeholders have no identity.
-          <li key={index}>
-            <Squircle radius={12}>
-              <div className="flex h-11 items-center gap-3 bg-fill px-3.5">
-                <StandIn
-                  seed={activityId}
-                  index={index}
-                  className="min-w-0 flex-1 truncate font-mono text-base"
-                />
-                <span className="flex shrink-0 items-center gap-1 text-xs text-ink-3">
-                  <Lock className="size-3.5" aria-hidden="true" />
-                  未解出
-                </span>
-              </div>
-            </Squircle>
-          </li>
-        ))}
-      </ul>
+      {/* Past FOLDED the rest wait under 展开全部, opening in place. */}
+      <div className="flex flex-col gap-1.5">
+        <ul className="grid gap-1.5">{rows.slice(0, FOLDED)}</ul>
+        <Reveal show={expanded}>
+          <ul id={`${activityId}-more-passwords`} className="grid gap-1.5">
+            {rows.slice(FOLDED)}
+          </ul>
+        </Reveal>
+      </div>
+      {total > FOLDED && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="self-center"
+          aria-expanded={expanded}
+          aria-controls={`${activityId}-more-passwords`}
+          onClick={() => setExpanded((current) => !current)}
+        >
+          {expanded ? "收起" : `展开全部 ${total} 个`}
+          <ChevronDown
+            className={`transition-transform ${expanded ? "rotate-180" : ""}`}
+          />
+        </Button>
+      )}
       {/* Always there, so a result is announced; the full stop alternates,
           so the same words are said again for the next one. */}
       <p role="status" className="sr-only">

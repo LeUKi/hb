@@ -777,9 +777,11 @@ export async function updateActivity(
       inputDigests.length !== existingDigests.size ||
       inputDigests.some((digest) => !existingDigests.has(digest))
     )
-      invalidActivity("历史红包超过 5 条口令，须保留原口令且不能新增");
+      invalidActivity(
+        `历史红包超过 ${ACTIVITY_LIMITS.passwords} 条口令，须保留原口令且不能新增`,
+      );
   } else if (input.activity.passwords.length > ACTIVITY_LIMITS.passwords)
-    invalidActivity("最多 5 条有效口令");
+    invalidActivity(`最多 ${ACTIVITY_LIMITS.passwords} 条有效口令`);
   const deadline = row.deadline;
 
   if (row.openedAt !== null) {

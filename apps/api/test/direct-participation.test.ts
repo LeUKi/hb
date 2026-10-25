@@ -1,5 +1,6 @@
 import { env } from "cloudflare:test";
 import {
+  ACTIVITY_LIMITS,
   type ActivityInput,
   activityInputSchema,
   type ClaimActivityInput,
@@ -517,13 +518,13 @@ describe("direct participation", () => {
 
   it("clears over-limit historical draft passwords when switching to direct without allowing new over-limit sets", async () => {
     const passwords = Array.from(
-      { length: 6 },
+      { length: ACTIVITY_LIMITS.passwords + 1 },
       (_, index) => `LegacyPass${index}`,
     );
     const draft = await save(
       directInput({
         participationMode: "password",
-        passwords: passwords.slice(0, 5),
+        passwords: passwords.slice(0, ACTIVITY_LIMITS.passwords),
       }),
       false,
     );

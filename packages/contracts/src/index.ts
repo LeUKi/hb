@@ -38,7 +38,8 @@ export * from "./share-text";
 
 export const ACTIVITY_LIMITS = {
   titleCharacters: 100,
-  passwords: 5,
+  /** 口令 a 红包 can have (32 since 2026-10-25; 5 before). */
+  passwords: 32,
   /** One 口令: 6–32 汉字, letters or digits (32 since 2026-10-20). */
   passwordMinCharacters: 6,
   passwordMaxCharacters: 32,
@@ -503,7 +504,7 @@ export const newActivityInputSchema = activityInputSchema.superRefine(
       context.addIssue({
         code: "custom",
         path: ["passwords"],
-        message: "最多 5 条有效口令",
+        message: `最多 ${ACTIVITY_LIMITS.passwords} 条有效口令`,
       });
     if (
       value.quantityVisibility !== "exact" &&

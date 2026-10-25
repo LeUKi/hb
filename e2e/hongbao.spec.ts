@@ -152,9 +152,10 @@ async function mockHongbao(
   page: Page,
   /**
    * 领取前人机验证: a right 口令 asks for a token first. 🐟额红包: claims go
-   * into 🐟额, with no payment (balance-design §14).
+   * into 🐟额, with no payment (balance-design §14). `more`: 口令 past the
+   * two, each one solvable.
    */
-  options: { humanCheck?: boolean; fish?: boolean } = {},
+  options: { humanCheck?: boolean; fish?: boolean; more?: string[] } = {},
 ) {
   // What a 🐟额红包's claimant has in 🐟额 then: under 1, not out yet.
   await page.route("**/api/me/balance/hongbao", (route) =>
@@ -240,7 +241,9 @@ async function mockHongbao(
       : [];
     return {
       passwords: known,
-      hiddenCount: state.claim ? 2 - known.length : 0,
+      hiddenCount: state.claim
+        ? 2 + (options.more?.length ?? 0) - known.length
+        : 0,
       canSolve: Boolean(state.claim),
     };
   };
@@ -308,8 +311,10 @@ async function mockHongbao(
     if (rest === "/password-solves" && request.method() === "POST") {
       const input = request.postDataJSON() as { password: string };
       state.solves.push(input);
-      const solved = input.password === passwordOf.other;
-      if (solved) state.solved.push(passwordOf.other);
+      const solved = [passwordOf.other, ...(options.more ?? [])].includes(
+        input.password,
+      );
+      if (solved) state.solved.push(input.password);
       return route.fulfill({
         json: {
           outcome: solved ? "solved" : "incorrect",
@@ -1050,6 +1055,68 @@ test.describe("红包页", () => {
     await expect(section.getByText(passwordOf.mine)).toBeVisible();
     await expect(section.getByText(passwordOf.other)).toBeVisible();
     await expect(page.getByRole("button", { name: /^显示/ })).toHaveCount(0);
+  });
+
+  test("口令多时折起：先显示 5 行，刚解出的在折起处就展开；分享时口令换成列表", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    const more = Array.from(
+      { length: 6 },
+      (_, index) => `更多口令2026${index}`,
+    );
+    await mockHongbao(page, { more });
+    await openApp(page, path);
+    await page.getByRole("button", { name: "输入口令领取" }).click();
+    await omniboxInput(page).fill(passwordOf.mine);
+    await page.keyboard.press("Enter");
+    await expect(
+      page.getByRole("status").filter({ hasText: "已领取 0.10 LDC。" }),
+    ).toHaveCount(1);
+    const section = page.locator("[data-hb-part=passwords]");
+    const rows = section.getByRole("listitem");
+    await expect(section.getByText("口令 · 8 个 · 7 个未解出")).toBeVisible();
+    await expect(rows).toHaveCount(5);
+    await section.getByRole("button", { name: "展开全部 8 个" }).click();
+    await expect(rows).toHaveCount(8);
+    await section.getByRole("button", { name: "收起" }).click();
+    await expect(rows).toHaveCount(5);
+
+    // The fifth solved is the sixth row, folded away: the list opens on it.
+    const solving = [passwordOf.other, ...more.slice(0, 4)];
+    const lastSolved = more[3] ?? "";
+    for (const [index, text] of solving.entries()) {
+      await page.getByRole("button", { name: "验证其他口令" }).click();
+      await omniboxInput(page).fill(text);
+      await page.keyboard.press("Enter");
+      await expect(
+        section.getByText(`口令 · 8 个 · ${6 - index} 个未解出`),
+      ).toBeVisible();
+    }
+    await expect(rows).toHaveCount(8);
+    await expect(rows.nth(5)).toContainText("已解出");
+    await expect(section.getByRole("button", { name: "收起" })).toBeVisible();
+
+    // 分享: more than five known, so a list of them, numbered.
+    await page.getByRole("button", { name: "分享" }).click();
+    const share = page.getByRole("dialog", { name: "分享红包" });
+    await share
+      .getByRole("group", { name: "发什么" })
+      .getByRole("button", { name: /^红包链接与口令/ })
+      .click();
+    const which = share.getByRole("group", { name: "口令" });
+    const known = [passwordOf.mine, ...solving];
+    await expect(which.getByRole("button")).toHaveText(
+      known.map((text, index) => new RegExp(`^${index + 1}\\s*${text}$`)),
+    );
+    await expect(which.getByRole("button").first()).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    const last = which.getByRole("button", { name: new RegExp(lastSolved) });
+    await last.click();
+    await expect(last).toHaveAttribute("aria-pressed", "true");
+    await expect(share.getByText(`口令：${lastSolved}`)).toBeVisible();
   });
 
   test("拼手气的标签带上分法，奖池下面写平均每份多少", async ({ page }) => {
