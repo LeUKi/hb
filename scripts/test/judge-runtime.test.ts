@@ -483,4 +483,14 @@ describe("the API's copy of the sandbox runtime", () => {
   it("is up to date (bun scripts/judge-runtime.ts)", () => {
     expect(readFileSync(RUNTIME_COPY, "utf8")).toBe(runtimeCopy());
   });
+
+  // Protocol v1 is frozen: a 代码判定红包 opened with it on 2026-10-25, and
+  // an opened 红包 keeps the runtime it opened with (docs/programmable-
+  // hongbao-design.md §4.7). A change to these modules is protocol v2: a
+  // new version beside this one, never an edit of it.
+  it("is protocol v1 as opened, unchanged", () => {
+    expect(
+      createHash("sha256").update(readFileSync(RUNTIME_COPY)).digest("hex"),
+    ).toBe("dbfed16b0b3763a839828ddd0fe4ca1f4bd686580f2e77987a0e4a8096bcae23");
+  });
 });
