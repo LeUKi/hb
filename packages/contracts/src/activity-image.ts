@@ -1,5 +1,6 @@
 import type { PaymentState, PublicActivity } from ".";
 import { encodeActivityEmoji } from "./ecoji-v2";
+import { forumHref } from "./forum-emoji";
 import { squirclePath } from "./squircle-path";
 
 // The forum image of a 红包 (内嵌图, docs/redesign/05 §6), served at
@@ -187,10 +188,11 @@ export function createActivityImageEmbed(input: {
   size?: ActivityImageEmbedSize;
 }) {
   const size = input.size ?? ACTIVITY_IMAGE_EMBED_SIZES[0];
-  const href = activityImageUrl(input.activityId, input.origin);
+  // Both addresses without emoji (forumHref, 05 §5); the alt keeps them.
+  const href = forumHref(activityImageUrl(input.activityId, input.origin));
   const alt = `${normalizeText(input.sender, "发红包的人")}的红包：${encodeActivityEmoji(input.activityId)}`;
   return [
-    `<a href="${escapeXml(input.link)}">`,
+    `<a href="${escapeXml(forumHref(input.link))}">`,
     `<picture><source type="image/svg+xml" srcset="${escapeXml(href)} 1x"><img width="${size.width}" height="${size.height}" `,
     `alt="${escapeXml(alt)}"></picture>`,
     "</a>",

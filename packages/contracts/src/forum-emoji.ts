@@ -237,3 +237,13 @@ export function fromForumEmoji(text: string): string {
     (token, name: string) => FORUM_EMOJI.get(name) ?? token,
   );
 }
+
+/**
+ * A link's address as it goes into a post (05 §5): everything outside
+ * printable ASCII percent-encoded, so no emoji is left in it. A community
+ * iOS client was reported to crash when a link with emoji in it is tapped
+ * (2026-10-25); the site reads either form. What is already encoded stays.
+ */
+export function forumHref(url: string): string {
+  return url.replace(/[^\x21-\x7e]+/gu, encodeURIComponent);
+}

@@ -5,6 +5,7 @@ import {
   encodeActivityEmoji,
   FORUM_EMOJI,
   FORUM_POST_URL,
+  forumHref,
   forumShareLink,
   forumShareWithPassword,
   plainShareWithPassword,
@@ -16,6 +17,8 @@ const id = "550e8400-e29b-41d4-a716-446655440000";
 const code = encodeActivityEmoji(id);
 const origin = "https://hb.example.com";
 const url = `${origin}/🧧/${code}`;
+/** The same address as a post's link carries it: no emoji (05 §5). */
+const href = `${origin}/%F0%9F%A7%A7/${encodeURIComponent(code)}`;
 const activity: ShareActivity = {
   id,
   title: "周末红包",
@@ -36,7 +39,7 @@ const asCopiedFromForum = (text: string) =>
 
 describe("share text (05 §5), written to one rule", () => {
   const how = (result: string) =>
-    `复制上面这段，粘贴到[红包页](${url})的输入框即可${result}。`;
+    `复制上面这段，粘贴到[红包页](${href})的输入框即可${result}。`;
 
   it("puts the link in a code block under the title, 红包页 linking to this 红包 (or 红包站 to the site's post)", () => {
     expect(forumShareLink(activity, page)).toBe(
@@ -45,6 +48,31 @@ describe("share text (05 §5), written to one rule", () => {
     expect(forumShareLink(activity, post).split("\n").at(-1)).toBe(
       "复制上面这段，粘贴到[红包站](https://linux.do/t/3033290)的输入框即可打开红包。",
     );
+  });
+
+  it("writes no emoji into a link's address, the path in the code block as it is", () => {
+    // A community iOS client was reported to crash on a link with emoji
+    // in it (2026-10-25); the site reads either form.
+    expect(forumHref(url)).toBe(href);
+    expect(forumHref(href)).toBe(href);
+    expect(forumHref(FORUM_POST_URL)).toBe(FORUM_POST_URL);
+    const addresses = [
+      forumShareLink(activity, page),
+      forumShareWithPassword(activity, password, page),
+      createActivityImageEmbed({
+        activityId: id,
+        origin,
+        sender: "小满",
+        link: url,
+      }),
+    ].flatMap((text) =>
+      [...text.matchAll(/(?:\]\(|href="|srcset=")([^)"\s]+)/g)].map(
+        ([, address]) => address,
+      ),
+    );
+    // Two lines' links, and the image's link and picture.
+    expect(addresses).toHaveLength(4);
+    for (const address of addresses) expect(address).toMatch(/^[\x21-\x7e]+$/);
   });
 
   it("puts the path and its 口令 in one code block under the title", () => {
@@ -120,6 +148,7 @@ describe("share text, read back from a paste (02 §6)", () => {
       null,
     ],
     ["原始链接", url, null],
+    ["帖子里的一个链接（编码过）", `[红包页](${href})`, null],
     [
       "原始链接与口令",
       plainShareWithPassword(activity, url, password),

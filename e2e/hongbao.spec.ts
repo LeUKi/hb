@@ -765,7 +765,7 @@ test.describe("红包页", () => {
     await expect
       .poll(() => readClipboard(page))
       .toBe(
-        `【周末红包】\n\`\`\`\n/🧧/${code}\n\`\`\`\n复制上面这段，粘贴到[红包页](${origin}/🧧/${code})的输入框即可打开红包。`,
+        `【周末红包】\n\`\`\`\n/🧧/${code}\n\`\`\`\n复制上面这段，粘贴到[红包页](${origin}/%F0%9F%A7%A7/${encodeURIComponent(code)})的输入框即可打开红包。`,
       );
     // Copied, it says so and stays open for another.
     await expect(share.getByRole("button", { name: "已复制" })).toBeVisible();
@@ -818,7 +818,7 @@ test.describe("红包页", () => {
       .toBe(
         [
           '<a href="https://linux.do/t/3033290">',
-          `<picture><source type="image/svg+xml" srcset="${origin}/🧧/${code}/🖼️.svg 1x"><img width="300" height="400" `,
+          `<picture><source type="image/svg+xml" srcset="${origin}/%F0%9F%A7%A7/${encodeURIComponent(code)}/%F0%9F%96%BC%EF%B8%8F.svg 1x"><img width="300" height="400" `,
           `alt="小满的红包：${code}"></picture>`,
           "</a>",
         ].join("\n"),
@@ -833,7 +833,7 @@ test.describe("红包页", () => {
       .poll(() => readClipboard(page))
       .toMatch(
         new RegExp(
-          `^<a href="${origin}/🧧/${code}">\n.*<img width="420" height="560" `,
+          `^<a href="${origin}/%F0%9F%A7%A7/${encodeURIComponent(code)}">\n.*<img width="420" height="560" `,
           "u",
         ),
       );
@@ -1032,7 +1032,7 @@ test.describe("红包页", () => {
     await expect
       .poll(() => readClipboard(page))
       .toBe(
-        `【周末红包】\n\`\`\`\n/🧧/${code}\n口令：${passwordOf.mine}\n\`\`\`\n复制上面这段，粘贴到[红包页](${origin}/🧧/${code})的输入框即可领取。`,
+        `【周末红包】\n\`\`\`\n/🧧/${code}\n口令：${passwordOf.mine}\n\`\`\`\n复制上面这段，粘贴到[红包页](${origin}/%F0%9F%A7%A7/${encodeURIComponent(code)})的输入框即可领取。`,
       );
     await share
       .getByRole("group", { name: "发到哪" })

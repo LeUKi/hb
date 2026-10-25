@@ -403,7 +403,7 @@ describe("activity image address and embed code", () => {
     ).toBe(
       [
         '<a href="https://linux.do/t/3033290">',
-        `<picture><source type="image/svg+xml" srcset="https://hb.example.com/🧧/${code}/🖼️.svg 1x"><img width="300" height="400" `,
+        `<picture><source type="image/svg+xml" srcset="https://hb.example.com/%F0%9F%A7%A7/${encodeURIComponent(code)}/%F0%9F%96%BC%EF%B8%8F.svg 1x"><img width="300" height="400" `,
         `alt="小满的红包：${code}"></picture>`,
         "</a>",
       ].join("\n"),
@@ -433,7 +433,11 @@ describe("activity image address and embed code", () => {
         sender: "小满",
         link: page,
       }).split("\n")[0],
-    ).toBe(`<a href="${page}">`);
+    ).toBe(
+      // No emoji in a post's link (05 §5): a community iOS client was
+      // reported to crash on one.
+      `<a href="https://hb.example.com/%F0%9F%A7%A7/${encodeURIComponent(code)}">`,
+    );
     const escaped = createActivityImageEmbed({
       activityId: id,
       origin: "https://hb.example.com",

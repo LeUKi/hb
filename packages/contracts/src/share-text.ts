@@ -4,7 +4,7 @@
 // in test/share-text.test.ts.
 import { passwordSchema } from ".";
 import { decodeActivityEmoji, encodeActivityEmoji } from "./ecoji-v2";
-import { fromForumEmoji } from "./forum-emoji";
+import { forumHref, fromForumEmoji } from "./forum-emoji";
 
 /** What the copy needs to know of a 红包. */
 export type ShareActivity = {
@@ -33,11 +33,14 @@ export function activityPath(activityId: string) {
  */
 export type ShareLink = { page: string } | { post: string };
 
-/** The line under a code block: paste it into the 红包页 (or 红包站). */
+/**
+ * The line under a code block: paste it into the 红包页 (or 红包站). The
+ * link's address has no emoji in it (forumHref); the path above keeps them.
+ */
 function howTo(result: string, link: ShareLink) {
   const [name, href] =
     "page" in link ? ["红包页", link.page] : ["红包站", link.post];
-  return `复制上面这段，粘贴到[${name}](${href})的输入框即可${result}。`;
+  return `复制上面这段，粘贴到[${name}](${forumHref(href)})的输入框即可${result}。`;
 }
 
 /** 领取 or, for a 限时开奖, 报名. */
