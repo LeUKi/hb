@@ -1,5 +1,5 @@
 import { JUDGE_LIMITS } from "@hb/contracts";
-import { KIT_URL } from "../../lib/judge";
+import { KIT_AGENTS_URL, KIT_URL } from "../../lib/judge";
 import { PlusBadge } from "../balance/plus";
 import { Page, PageHeader, PageSection, Panel } from "../page/page";
 import { Code } from "../ui/code";
@@ -22,8 +22,19 @@ const MODULES = [
   "node:events",
 ];
 
-/** For a chat AI, whole: the protocol in one go, then the sender's own game. */
-const AI_PROMPT = `你要帮我写一个“代码判定红包”的判定代码 judge.js 和它的测试 tests.json（lafish的红包站，代码协议第一版）。
+/**
+ * For a chat AI, whole: where everything is, the protocol in one go, then
+ * the sender's own game. This page is drawn in the browser, so an agent
+ * that fetches it reads nothing: AGENTS.md is its text.
+ */
+const aiPrompt = (
+  origin: string,
+) => `你要帮我写一个“代码判定红包”的判定代码 judge.js 和它的测试 tests.json（lafish的红包站，代码协议第一版）。
+
+资料（下面的规则是摘要，细节以这些为准）：
+- 本地开发包：${KIT_URL} ，用 npx degit LeUKi/hb/kit 我的红包 取到本地，里面有能跑通的模板、npm test 和 npm run check。
+- 开发包里写给 AI 的完整说明 AGENTS.md（纯文本，能直接读）：${KIT_AGENTS_URL}
+- 开发文档：${origin}/help/code （网页要用浏览器打开，直接抓取读不到内容）
 
 规则：
 - judge.js 是一个 ES 模块，导出函数 judge(submission, tools)，可以是 async。每次有人在红包页提交一行输入，平台调用它一次，按它的返回决定发不发、发多少。
@@ -108,7 +119,7 @@ export function HelpCodeView() {
         title="给 AI 的说明"
         description="整段复制给聊天 AI，把最后一行换成你的玩法。它写出的 judge.js 和 tests.json，先在本地开发包里跑测试，再贴到发红包的第 3 步部署。"
       >
-        <Block label="提示词" code={AI_PROMPT} wrap />
+        <Block label="提示词" code={aiPrompt(window.location.origin)} wrap />
       </PageSection>
       <PageSection title="怎么开始">
         <Panel className="grid gap-1.5 px-4 py-3 text-sm text-ink-2">

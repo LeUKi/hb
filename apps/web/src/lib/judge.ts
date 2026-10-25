@@ -24,6 +24,9 @@ import { useIdentity } from "./session";
 
 /** The kit in the public repo (协议第 5 节). */
 export const KIT_URL = "https://github.com/LeUKi/hb/tree/main/kit";
+/** The kit's AGENTS.md as plain text: what an AI agent can read by URL. */
+export const KIT_AGENTS_URL =
+  "https://raw.githubusercontent.com/LeUKi/hb/main/kit/AGENTS.md";
 
 /** SHA-256 of the text as hex: judge.js's fingerprint, tests.json's digest. */
 export async function textDigest(text: string) {
