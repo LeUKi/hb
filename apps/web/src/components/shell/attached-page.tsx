@@ -10,13 +10,13 @@ import { useLocation, useRouter } from "@tanstack/react-router";
 import { atom, useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
   ArrowUpRight,
-  ChevronDown,
   ChevronUp,
   Globe,
   LoaderCircle,
   PanelRightClose,
   PanelRightOpen,
   RotateCw,
+  ShieldAlert,
   X,
 } from "lucide-react";
 import { AnimatePresence, motion, useDragControls } from "motion/react";
@@ -52,6 +52,8 @@ import { radius, Squircle, SquirclePlate } from "../ui/squircle";
 type Held = {
   forId: string | null;
   url: string | null;
+  /** The 红包 author's LINUX DO username: whose page this is. */
+  author: string | null;
   open: boolean;
   loaded: boolean;
   mainWidth: number;
@@ -59,6 +61,7 @@ type Held = {
 const heldAtom = atom<Held>({
   forId: null,
   url: null,
+  author: null,
   open: false,
   loaded: false,
   mainWidth: 460,
@@ -169,15 +172,69 @@ function useViewport() {
 
 const hostOf = (url: string) => new URL(url).hostname;
 
-/** The 红包 page's 附带网页, from what that page has read (no read of its own). */
+/**
+ * The 红包 page's 附带网页 and its author's username, from what that page
+ * has read (no read of its own).
+ */
 function useCurrentPage(activityId: string | null) {
   const userId = useIdentity().user?.id ?? null;
   const { data } = useQuery({
     queryKey: activityKeys.public(activityId ?? "", userId),
     queryFn: skipToken,
-    select: (detail: PublicActivityDetail) => detail.activity.page ?? null,
+    select: (detail: PublicActivityDetail) =>
+      detail.activity.page
+        ? {
+            url: detail.activity.page.url,
+            author: detail.activity.author.username,
+          }
+        : null,
   });
   return activityId ? (data ?? null) : null;
+}
+
+/** Whose page this is, said wherever it is named. */
+const fromLine = (author: string | null) =>
+  author ? `来自 @${author} 的红包` : "红包作者附带的网页";
+
+/** The 站长's LINUX DO username: whom to tell about a page that breaks the rules. */
+const OWNER = "lafish";
+
+/** The page's mark wherever it is named: a globe on the 红包's red. */
+function PageMark() {
+  return (
+    <span
+      aria-hidden="true"
+      className="grid size-8 shrink-0 place-items-center rounded-full bg-accent text-white shadow-sm"
+    >
+      <Globe className="size-4" />
+    </span>
+  );
+}
+
+/**
+ * Under the title bar, always (docs/attached-page-design.md §2.5, the
+ * user's words, 2026-10-26): not this site's page, what it sees, no
+ * dealings in it, and whom to tell.
+ */
+function PageNotice() {
+  return (
+    <p className="flex shrink-0 gap-2 border-line border-b bg-warning-soft px-4 py-2 text-xs leading-5 text-warning">
+      <ShieldAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+      <span>
+        不是红包站的网页，它能看到你的 IP
+        和浏览器信息。不要在里面付款、转账或做任何交易；发现违规推广，请联系站长{" "}
+        <a
+          href={`https://linux.do/u/${OWNER}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-medium underline underline-offset-2"
+        >
+          @{OWNER}
+        </a>
+        。
+      </span>
+    </p>
+  );
 }
 
 /** The 红包 window's frame as the layout sets it (AppWindow reads it). */
@@ -399,46 +456,29 @@ function BarButton({
 }
 
 /**
- * Its title bar: whose page this is, that it isn't ours, and that it sees
- * who visits (nothing asks before it loads; this says it). Beside the 红包
- * window it is as tall as that window's 顶栏, its tops in line; on a phone
- * lower, to leave the page room.
+ * Beside the 红包 window, its title bar: whose 红包 the page comes from and
+ * its address, as tall as the 红包 window's 顶栏, its tops in line. The
+ * notice under it says the rest.
  */
 function TitleBar({
   host,
-  tall = false,
+  author,
   children,
-  onPointerDown,
 }: {
   host: string;
-  tall?: boolean;
+  author: string | null;
   children: ReactNode;
-  onPointerDown?: (event: ReactPointerEvent) => void;
 }) {
   return (
-    <div
-      className={`flex shrink-0 touch-none items-center border-line border-b ${
-        tall ? "h-16 gap-1.5 pr-3 pl-5" : "h-12 gap-1 pr-2 pl-4"
-      }`}
-      onPointerDown={onPointerDown}
-    >
-      <Globe className="mr-1 size-4 shrink-0 text-ink-3" aria-hidden="true" />
-      <span
-        className="grid min-w-0 flex-1 gap-0.5 leading-tight"
-        title="这是红包作者附带的网页，不是本站的。它能看到你的 IP 地址和浏览器信息。"
-      >
-        <span className="truncate font-mono text-sm font-medium text-ink">
-          {host}
+    <div className="flex h-16 shrink-0 items-center gap-3 border-line border-b pr-3 pl-5">
+      <PageMark />
+      <span className="grid min-w-0 flex-1 gap-0.5 leading-tight">
+        <span className="truncate text-sm font-semibold text-ink">
+          {fromLine(author)}
         </span>
-        <span
-          className={`text-[11px] text-ink-3 ${tall ? "line-clamp-2" : "truncate"}`}
-        >
-          不是本站的网页，它能看到你的 IP 和浏览器信息
-        </span>
+        <span className="truncate font-mono text-xs text-ink-3">{host}</span>
       </span>
-      <BarSize.Provider value={tall ? "icon-sm" : "icon-xs"}>
-        {children}
-      </BarSize.Provider>
+      <BarSize.Provider value="icon-sm">{children}</BarSize.Provider>
     </div>
   );
 }
@@ -469,6 +509,7 @@ function Reload() {
 /** Wide screens: the window beside the 红包's. */
 function SideWindow({
   url,
+  author,
   width,
   height,
   cornerRadius,
@@ -480,6 +521,7 @@ function SideWindow({
   onHide,
 }: {
   url: string;
+  author: string | null;
   width: number;
   height: number;
   cornerRadius: number;
@@ -514,7 +556,7 @@ function SideWindow({
             className="absolute inset-y-0 left-0 flex w-full flex-col"
             style={{ minWidth: SIDE_MIN }}
           >
-            <TitleBar host={hostOf(url)} tall>
+            <TitleBar host={hostOf(url)} author={author}>
               <Reload />
               <OpenElsewhere url={url} />
               <BarButton
@@ -527,6 +569,7 @@ function SideWindow({
                 <X />
               </BarButton>
             </TitleBar>
+            <PageNotice />
             {/* While the line is dragged the page takes no pointer: over
                 its frame the moves would go to it, not to the line. */}
             <div
@@ -636,54 +679,114 @@ function Divider({
 }
 
 const SHEET_PEEK = 68;
-/** The sheet's handle and title bar. */
-const SHEET_HEAD = 64;
 type Stop = "peek" | "full";
 const sheetStopAtom = atom<Stop>("peek");
+/**
+ * The sheet has stepped aside for the 红包 window's dialog: it is below the
+ * screen, and the window reaches the screen's bottom until it is back.
+ */
+const sheetAwayAtom = atom(false);
 
 /**
- * The sheet down, as it shows at the bottom of the 红包 page: one wide
- * button (a tap pulls it up; it can be dragged up too), in the 红包's own
- * colour, the arrow nodding upward.
+ * The sheet's head, the same down and up (2026-10-26, the user: the icon
+ * shrank, the address jumped, the buttons popped in and the colours
+ * snapped): the mark and the address stay where they are; only the line
+ * above the address changes, sliding (上拉查看附带网页 ↔ whose 红包 it comes
+ * from); the arrow turns over; 刷新 opens beside it; the line under the
+ * head fades in. Down, all of it pulls the sheet up; up, it lets it down.
  */
-function PeekBar({
+function SheetHeader({
   host,
-  onOpen,
+  author,
+  up,
+  onToggle,
   onPointerDown,
 }: {
   host: string;
-  onOpen: () => void;
+  author: string | null;
+  up: boolean;
+  onToggle: () => void;
   onPointerDown: (event: ReactPointerEvent) => void;
 }) {
   const reduced = useReducedMotionPref();
+  const shift = reduced ? 0 : 10;
+  const turn = { duration: reduced ? 0 : 0.26, ease };
   return (
-    <button
-      type="button"
-      onClick={onOpen}
+    <div
+      className={`flex h-12 shrink-0 touch-none items-center gap-1 pr-2 pl-4 transition-[box-shadow] duration-200 ${
+        up
+          ? "shadow-[inset_0_-1px_0_var(--color-line)]"
+          : "shadow-[inset_0_-1px_0_transparent]"
+      }`}
       onPointerDown={onPointerDown}
-      aria-label={`上拉查看附带网页：${host}`}
-      className="flex h-12 shrink-0 touch-none items-center gap-3 px-4 text-left"
     >
-      <span className="grid size-8 shrink-0 place-items-center rounded-full bg-accent text-white shadow-sm">
-        <Globe className="size-4" aria-hidden="true" />
-      </span>
-      <span className="grid min-w-0 flex-1 leading-tight">
-        <span className="truncate text-sm font-semibold text-ink">
-          上拉查看附带网页
-        </span>
-        <span className="truncate font-mono text-[11px] text-ink-3">
-          {host}
-        </span>
-      </span>
-      <motion.span
-        aria-hidden="true"
-        className="grid size-8 place-items-center text-accent"
-        animate={reduced ? undefined : { y: [0, -4, 0] }}
-        transition={{ duration: 1.4, repeat: Number.POSITIVE_INFINITY, ease }}
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={up}
+        aria-label={up ? "收起" : `上拉查看附带网页：${host}`}
+        className="flex min-w-0 flex-1 items-center gap-3 self-stretch text-left"
       >
-        <ChevronUp className="size-5" />
-      </motion.span>
-    </button>
+        <PageMark />
+        <span className="grid min-w-0 flex-1 leading-tight">
+          <span className="relative grid h-5 overflow-hidden">
+            <AnimatePresence initial={false} mode="popLayout">
+              <motion.span
+                key={up ? "from" : "pull"}
+                className="truncate text-sm font-semibold text-ink"
+                initial={{ opacity: 0, y: up ? shift : -shift }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: up ? -shift : shift }}
+                transition={turn}
+              >
+                {up ? fromLine(author) : "上拉查看附带网页"}
+              </motion.span>
+            </AnimatePresence>
+          </span>
+          <span className="truncate font-mono text-xs text-ink-3">{host}</span>
+        </span>
+      </button>
+      <AnimatePresence initial={false}>
+        {up && (
+          <motion.span
+            key="reload"
+            className="flex shrink-0 justify-center overflow-hidden"
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: 32, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            transition={turn}
+          >
+            <Reload />
+          </motion.span>
+        )}
+      </AnimatePresence>
+      {/* The same toggle, for a thumb at the edge; the head says it. */}
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-hidden="true"
+        onClick={onToggle}
+        className="grid size-8 shrink-0 place-items-center text-accent"
+      >
+        <motion.span
+          className="grid"
+          animate={reduced || up ? { y: 0 } : { y: [0, -4, 0] }}
+          transition={
+            reduced || up
+              ? { duration: 0.2 }
+              : { duration: 1.4, repeat: Number.POSITIVE_INFINITY, ease }
+          }
+        >
+          <motion.span
+            className="grid"
+            animate={{ rotate: up ? 180 : 0 }}
+            transition={turn}
+          >
+            <ChevronUp className="size-5" />
+          </motion.span>
+        </motion.span>
+      </button>
+    </div>
   );
 }
 
@@ -701,30 +804,22 @@ function useWindowCovered() {
 }
 
 /**
- * A tap on the sheet's 压暗层 is a tap on the window's: what is on top
- * closes (a dialog opened over another is drawn, and its 压暗层 put, after
- * it).
- */
-function tapWindowScrim() {
-  const scrims = document.querySelectorAll<HTMLElement>(
-    "[data-window-layer] .scrim",
-  );
-  scrims[scrims.length - 1]?.click();
-}
-
-/**
  * Phones: the page in a sheet pulled up from the bottom. It comes up from
  * below with a bounce and, once, nods up as if pulled, until touched. Off
  * a 红包 page it goes below the screen, still loaded. While the 红包
- * window's dialog is open it goes down to its bar, under the same 压暗层
- * as the window, and cannot be pulled: the dialog is over everything.
+ * window's dialog is open it steps aside, below the screen, and the window
+ * reaches the bottom: the dialog's 压暗层 alone covers the screen, one blur
+ * (a 压暗层 of the sheet's own blurred only the sheet, a block of its own).
+ * The window grows and shrinks under the sheet, out of sight.
  */
 function Sheet({
   url,
+  author,
   shown,
   inset,
 }: {
   url: string;
+  author: string | null;
   shown: boolean;
   inset: number;
 }) {
@@ -735,26 +830,34 @@ function Sheet({
   const full = Math.round(height * 0.92);
   const [stop, go] = useAtom(sheetStopAtom);
   const covered = useWindowCovered() && shown;
-  useEffect(() => {
-    if (covered) go("peek");
-  }, [covered, go]);
+  const setAway = useSetAtom(sheetAwayAtom);
+  // Until it is touched (or a dialog has come over it), it nods up once
+  // after coming in.
+  const [touched, setTouched] = useState(false);
+  // Before the frame is painted: the window reaches down while the sheet
+  // still covers the bottom.
+  useLayoutEffect(() => {
+    if (!covered) return;
+    go("peek");
+    setAway(true);
+    setTouched(true);
+  }, [covered, go, setAway]);
+  const hidden = !shown || covered;
   const offsetOf = (at: Stop) =>
-    !shown ? full + 24 : at === "full" ? 0 : full - SHEET_PEEK;
-  const up = shown && stop !== "peek";
-  // Only coming up from below to the bar bounces: anywhere else a bounce
-  // would show the screen's edge under the sheet.
+    hidden ? full + 24 : at === "full" ? 0 : full - SHEET_PEEK;
+  const up = !hidden && stop !== "peek";
   const target = offsetOf(stop);
-  const [last, setLast] = useState(target);
-  const [rising, setRising] = useState(true);
-  if (target !== last) {
-    setLast(target);
-    setRising(last === full + 24 && target === full - SHEET_PEEK);
+  // Only coming onto the 红包 page bounces: back from a dialog, pulled or
+  // let go, a bounce would show the screen's edge under the sheet.
+  const [lastShown, setLastShown] = useState(shown);
+  const [rising, setRising] = useState(shown);
+  if (lastShown !== shown) {
+    setLastShown(shown);
+    setRising(shown);
   }
   // A drag ends in a click too: that click is not a tap.
   const dragged = useRef(false);
-  // Until it is touched, it nods up once after coming in.
-  const [touched, setTouched] = useState(false);
-  const nod = shown && stop === "peek" && !touched && !covered && !reduced;
+  const nod = !hidden && stop === "peek" && !touched && !reduced;
   return (
     <>
       <AnimatePresence>
@@ -790,8 +893,13 @@ function Sheet({
               ? { type: "spring", damping: 14, stiffness: 260 }
               : { type: "spring", damping: 34, stiffness: 340 }
         }
-        aria-hidden={!shown}
-        inert={!shown}
+        onAnimationComplete={() => {
+          setRising(false);
+          // Back in place: the window ends above it again, under it.
+          if (!covered) setAway(false);
+        }}
+        aria-hidden={hidden}
+        inert={hidden}
         drag="y"
         dragListener={false}
         dragControls={drag}
@@ -814,7 +922,6 @@ function Sheet({
       >
         <motion.div
           className="absolute inset-0"
-          inert={covered}
           animate={nod ? { y: [0, -18, 0, -8, 0] } : { y: 0 }}
           transition={
             nod
@@ -839,54 +946,42 @@ function Sheet({
                 >
                   <span className="h-1 w-10 rounded-full bg-ink-3/40" />
                 </div>
-                {up ? (
-                  <TitleBar
-                    host={host}
-                    onPointerDown={(event) => drag.start(event)}
-                  >
-                    <Reload />
-                    <BarButton label="收起" onClick={() => go("peek")}>
-                      <ChevronDown />
-                    </BarButton>
-                  </TitleBar>
-                ) : (
-                  <PeekBar
-                    host={host}
-                    onPointerDown={(event) => {
-                      dragged.current = false;
-                      drag.start(event);
-                    }}
-                    onOpen={() => {
-                      setTouched(true);
-                      if (!dragged.current) go("full");
-                    }}
-                  />
-                )}
-                <div
-                  className="relative shrink-0 bg-white/60 select-text"
-                  style={{ height: full - SHEET_HEAD }}
-                >
+                <SheetHeader
+                  host={host}
+                  author={author}
+                  up={up}
+                  onPointerDown={(event) => {
+                    dragged.current = false;
+                    drag.start(event);
+                  }}
+                  onToggle={() => {
+                    setTouched(true);
+                    if (!dragged.current) go(up ? "peek" : "full");
+                  }}
+                />
+                <AnimatePresence initial={false}>
+                  {up && (
+                    <motion.div
+                      key="notice"
+                      className="shrink-0 overflow-hidden"
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: reduced ? 0 : 0.26, ease }}
+                    >
+                      <PageNotice />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+                <div className="relative min-h-0 flex-1 bg-white/60 select-text">
                   <Page url={url} active={up} />
                 </div>
+                {/* Below the screen's edge (its lower corners): nothing. */}
+                <div className="shrink-0" style={{ height: radius.window }} />
               </div>
             </div>
           </Squircle>
         </motion.div>
-        <AnimatePresence>
-          {covered && (
-            <Squircle key="dim" radius={radius.window}>
-              <motion.div
-                aria-hidden="true"
-                className="scrim absolute inset-0"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: reduced ? 0 : 0.22, ease }}
-                onClick={tapWindowScrim}
-              />
-            </Squircle>
-          )}
-        </AnimatePresence>
       </motion.div>
     </>
   );
@@ -910,6 +1005,7 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
   // A 红包's page takes its own (or none); other pages keep what is held.
   // On a wide screen it opens again where this browser left it open.
   const pageUrl = page?.url ?? null;
+  const pageAuthor = page?.author ?? null;
   useLayoutEffect(() => {
     if (activityId === null) return;
     setHeld((current) =>
@@ -918,13 +1014,14 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
         : {
             forId: activityId,
             url: pageUrl,
+            author: pageAuthor,
             open:
               pageUrl !== null && wide && rememberedOpen().includes(activityId),
             loaded: false,
             mainWidth: current.mainWidth,
           },
     );
-  }, [activityId, pageUrl, wide, setHeld]);
+  }, [activityId, pageUrl, pageAuthor, wide, setHeld]);
   const url = held.url;
   const onPage =
     url !== null && activityId !== null && held.forId === activityId;
@@ -959,6 +1056,10 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
   // On a narrow screen the 红包 window ends where the sheet begins; it
   // grows back, not jumps, when the sheet goes (leaving the 红包 page).
   const sheetBelow = onPage && !wide;
+  // Stepped aside for a dialog: the window reaches the bottom at once (the
+  // sheet still covers it), not moving.
+  const away = useAtomValue(sheetAwayAtom);
+  const above = sheetBelow && !away;
   const [last, setLast] = useState({ split, sheetBelow });
   if (last.split !== split || last.sheetBelow !== sheetBelow) {
     setLast({ split, sheetBelow });
@@ -1025,7 +1126,7 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
 
   const frame: Frame = {
     width: split ? mainWidth : null,
-    height: !sheetBelow
+    height: !above
       ? null
       : mid
         ? `calc(100dvh - ${16 + SHEET_PEEK + 8}px)`
@@ -1038,12 +1139,13 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
   return (
     <FrameContext.Provider value={frame}>
       <div
-        className={`relative flex items-center justify-center ${sheetBelow ? (mid ? "mt-4 self-start" : "self-start") : ""}`}
+        className={`relative flex items-center justify-center ${above ? (mid ? "mt-4 self-start" : "self-start") : ""}`}
       >
         {children}
         {wide && url !== null && (
           <SideWindow
             url={url}
+            author={held.author}
             width={sideWidth}
             height={frameHeight}
             cornerRadius={cornerRadius}
@@ -1130,7 +1232,12 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
         </AnimatePresence>
       </div>
       {!wide && url !== null && (
-        <Sheet url={url} shown={onPage} inset={mid ? 16 : 0} />
+        <Sheet
+          url={url}
+          author={held.author}
+          shown={onPage}
+          inset={mid ? 16 : 0}
+        />
       )}
     </FrameContext.Provider>
   );

@@ -95,7 +95,13 @@ const frameWidth = (page: Page) =>
     .locator(".app-window-frame")
     .evaluate((element) => element.getBoundingClientRect().width);
 
-const notice = "不是本站的网页，它能看到你的 IP 和浏览器信息";
+const notice =
+  "不是红包站的网页，它能看到你的 IP 和浏览器信息。不要在里面付款、转账或做任何交易；发现违规推广，请联系站长 @lafish。";
+
+const frameHeight = (page: Page) =>
+  page
+    .locator(".app-window-frame")
+    .evaluate((element) => Math.round(element.getBoundingClientRect().height));
 
 /** The sheet's top edge on the screen. */
 const sheetTop = (page: Page) =>
@@ -131,10 +137,15 @@ test.describe("附带网页", () => {
     await expect.poll(() => frameWidth(page)).toBeCloseTo(460, 0);
     await expect(page.getByText(notice)).toBeVisible();
     await expect(page.getByRole("separator")).toBeVisible();
+    // Whose 红包 it comes from; the 站长 to tell, at his LINUX DO page.
+    await expect(page.getByRole("link", { name: "@lafish" })).toHaveAttribute(
+      "href",
+      "https://linux.do/u/lafish",
+    );
     // As tall as the 红包 window's 顶栏, in line with it.
     const bar = await page.locator("header.window-bar").boundingBox();
     const title = await page
-      .getByText(notice)
+      .getByText("来自 @xiaoman 的红包")
       .locator("xpath=../..")
       .boundingBox();
     expect(title?.y).toBeCloseTo(bar?.y ?? 0, 0);
@@ -327,7 +338,9 @@ test.describe("附带网页", () => {
     await expect(page.getByText(notice)).toBeVisible();
   });
 
-  test("手机：弹窗打开时抽屉也压暗、拖不动，点它关上弹窗", async ({ page }) => {
+  test("手机：弹窗打开时抽屉让到屏幕下面，红包窗口铺到底、压暗盖满；关上弹窗抽屉回来", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     // Still, so where it rests is where it is (no bounce, no nod).
     await page.emulateMedia({ reducedMotion: "reduce" });
@@ -339,19 +352,25 @@ test.describe("附带网页", () => {
     ).toBeVisible();
     await expect.poll(() => sheetTop(page)).toBeGreaterThan(700);
     const resting = await sheetTop(page);
+    // The 红包 window ends above the sheet.
+    await expect.poll(() => frameHeight(page)).toBeLessThan(844);
     await page.getByRole("button", { name: "分享" }).click();
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
-    // Pulled from its bar, it does not move.
-    await page.mouse.move(195, 830);
-    await page.mouse.down();
-    await page.mouse.move(195, 400, { steps: 10 });
-    await page.mouse.up();
-    expect(await sheetTop(page)).toBe(resting);
-    // Its 压暗层 is the window's: a tap closes the dialog.
-    await page.mouse.click(195, 830);
+    // Below the screen; the window, and its 压暗层, reach the bottom: one
+    // 压暗层 over everything, none of the sheet's own.
+    await expect.poll(() => sheetTop(page)).toBeGreaterThan(844);
+    await expect.poll(() => frameHeight(page)).toBe(844);
+    const scrim = await page
+      .locator("[data-window-layer] .scrim")
+      .last()
+      .boundingBox();
+    expect((scrim?.y ?? 0) + (scrim?.height ?? 0)).toBeCloseTo(844, 0);
+    await page.mouse.click(195, 40);
     await expect(dialog).toHaveCount(0);
-    await expect(page.getByText(notice)).toHaveCount(0);
+    // Back: the sheet where it was, the window above it again.
+    await expect.poll(() => sheetTop(page)).toBe(resting);
+    await expect.poll(() => frameHeight(page)).toBeLessThan(844);
   });
 
   test("手机：说明弹窗里的按钮先关上弹窗，再拉满抽屉", async ({ page }) => {
