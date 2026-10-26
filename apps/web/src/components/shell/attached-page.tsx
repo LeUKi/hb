@@ -225,7 +225,10 @@ export function attachedFrameStyle(frame: Frame): CSSProperties {
  * a veil over the window whose backdrop-filter blurs what lies under it. A
  * filter on the window itself would fade its edges into the transparent
  * beyond them, a pale ring; a backdrop blur mirrors its edges instead. The
- * veil is only there while it blurs.
+ * veil is only there while it blurs. A change of layout that comes as a
+ * hold is let go (the line dragged past its end and released, closing the
+ * page) carries the held blur on: it stays until the windows are in place,
+ * never clearing and blurring again on the way.
  */
 export function MorphVeil({
   tick,
@@ -237,16 +240,18 @@ export function MorphVeil({
   "children"
 >) {
   const reduced = useReducedMotionPref();
-  const [pulse, setPulse] = useState(0);
+  const [pulse, setPulse] = useState({ n: 0, carried: false });
   const [releasing, setReleasing] = useState(false);
-  const [wasHeld, setWasHeld] = useState(hold);
-  if (wasHeld !== hold) {
-    setWasHeld(hold);
-    if (!hold) setReleasing(true);
+  // From tick 0: mounted after a change (the page window coming with the
+  // layout), it still passes.
+  const [seen, setSeen] = useState({ tick: 0, hold });
+  if (seen.tick !== tick || seen.hold !== hold) {
+    setSeen({ tick, hold });
+    if (tick !== seen.tick && tick > 0 && !hold) {
+      setPulse({ n: tick, carried: seen.hold || releasing });
+      setReleasing(false);
+    } else if (seen.hold && !hold) setReleasing(true);
   }
-  useEffect(() => {
-    if (tick > 0 && !reduced) setPulse(tick);
-  }, [tick, reduced]);
   if (reduced) return null;
   const veil = {
     "aria-hidden": true,
@@ -268,21 +273,22 @@ export function MorphVeil({
         }}
       />
     );
-  if (pulse === 0) return null;
+  if (pulse.n === 0) return null;
+  const from = pulse.carried ? "blur(10px)" : "blur(0px)";
   return (
     <motion.div
-      key={`pulse-${pulse}`}
+      key={`pulse-${pulse.n}`}
       {...veil}
-      initial={{ backdropFilter: "blur(0px)" }}
+      initial={{ backdropFilter: from }}
       animate={{
-        backdropFilter: ["blur(0px)", "blur(12px)", "blur(12px)", "blur(0px)"],
+        backdropFilter: [from, "blur(12px)", "blur(12px)", "blur(0px)"],
       }}
       transition={{
         duration: 0.68,
         times: [0, 0.22, 0.7, 1],
         ease: "easeInOut",
       }}
-      onAnimationComplete={() => setPulse(0)}
+      onAnimationComplete={() => setPulse({ n: 0, carried: false })}
     />
   );
 }
