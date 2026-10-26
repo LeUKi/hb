@@ -103,13 +103,14 @@
 
 ### 3.1 给接入的开发者
 
-- **允许被嵌入**：返回头里 `frame-ancestors` 写上 `https://hb.lafi.sh`（试用时再加 `https://staging.hb.lafi.sh`），或者不发 `frame-ancestors` 和 `X-Frame-Options`。
+发红包表单的附带网页一项右边有“接入说明”，不许嵌入的提醒后面有“怎么让它能嵌入”，都打开一个叠在更多设置上的弹窗（`hongbao-form/attached-page-guide.tsx`，2026-10-26 用户要）：面向红包作者，分五步，每段代码能复制，最后是一段给 AI 的提示词（同代码判定开发包的做法）。用户定推荐沿用网站自己的 Cookie：
+
+- **允许被嵌入**：返回头 `Content-Security-Policy: frame-ancestors 'self' https://hb.lafi.sh`（试 Stage 时再加 `https://staging.hb.lafi.sh`），不发 `X-Frame-Options`。
+- **沿用自己的登录**：登录 Cookie 设 `Secure; HttpOnly; SameSite=None`，不加 `Partitioned`（加了就只在嵌入时的那一份里，和单独打开时的登录不是一个）；会改东西的接口校验 `Origin`（或 CSRF 令牌）。
+  - Chrome、Edge 默认设置下这样就带进来了。
+  - Safari、Firefox、无痕窗口和关了第三方 Cookie 的 Chrome：网页里一个“使用已登录的账号”按钮，点击时 `document.requestStorageAccess()`，同意后刷新；先用 `document.hasStorageAccess()` 判断要不要显示。Safari 只同意近期直接打开过那个网站的人。
+- **没登录过**：红包页不许整页跳转，LINUX DO 的登录页也不许嵌入（`X-Frame-Options: SAMEORIGIN`），所以在点击里 `window.open` 开新窗口登录。LINUX DO 的登录页还发 `Cross-Origin-Opener-Policy: same-origin`，新窗口和红包页的联系会断开（`window.opener` 变成 `null`），登录完没法 `postMessage` 通知网页；所以网页里放“我已登录，继续”，这一下点击正好用来请求使用 Cookie 并刷新。（2026-10-26 查过 connect.linux.do 和 linux.do/login 的返回头。）
 - **知道自己在哪个红包里**：读 `document.referrer`；也可以在附带的地址里自己带参数（`https://example.com/?hb=…`）。
-- **登录态**：嵌在红包页里时，网页对浏览器来说是第三方，单独打开时的登录 Cookie 默认带不进来：
-  - Chrome、Edge 只发 `SameSite=None; Secure` 的 Cookie；Safari 默认不发第三方 Cookie；Firefox 给每个顶层网站一份单独的 Cookie。
-  - 要用已有的登录：在网页里放一个按钮，点击时调用 `document.requestStorageAccess()`，浏览器问过看的人以后，就能用单独打开时的 Cookie。可以先用 `document.hasStorageAccess()` 判断要不要显示这个按钮。
-  - 或者在窗口里单独登录一次：登录 Cookie 设 `SameSite=None; Secure; Partitioned`，只在红包站这个窗口里有效。
-  - 登录页本身常常不许被嵌入（比如 linux.do），在窗口里登录请用 `window.open` 开新窗口，登录完再回到窗口。
 - WebSocket 和 `fetch` 带不带 Cookie，跟上面同一套规则。
 
 ## 4 数据和接口
@@ -127,7 +128,8 @@
 ## 5 文案
 
 - 表单：标题“附带网页”；说明“选填。红包页旁边会显示这个网页（手机上在底部），比如题目、规则或排行榜。开放后不能改。说明里写 `[文字](#附带网页)` 会显示成打开它的按钮。”（开放后是“开放后不能改。说明里写 …”）
-- 网页不许嵌入：“这个网站不允许被嵌入，红包页上会显示不出来，只能在新标签页打开。”
+- 网页不许嵌入：“这个网站不允许被嵌入，红包页上会显示不出来，只能在新标签页打开。”后面链接“怎么让它能嵌入”。
+- 接入说明：表单按钮“接入说明”；弹窗标题“附带网页接入说明”，五步“允许红包站嵌入”“沿用网站自己的登录”“没登录过：在新窗口里登录”“知道是哪个红包”“不能做的事”，代码块“返回头”“Cookie”“使用已登录的账号”“打开登录窗口”“给 AI 的提示词”，按钮“知道了”；正文以 `attached-page-guide.tsx` 为准。
 - 地址的问题：只能用 https:// 开头的地址；不能带用户名和密码；不能带端口；不能写 IP 地址；要写完整的域名（比如 example.com）；不能写 localhost；不能用 linux.do 和它的子域名；不能用本站的地址；最多 500 个字；不是有效的地址。
 - 接口：`PAGE_NOT_ALLOWED`“开通🐟额 PLUS 才能附带网页。”；`PAGE_PAUSED`“附带网页暂时关闭。”；`PAGE_LOCKED`“开放后不能改附带网页。”
 - 红包页：

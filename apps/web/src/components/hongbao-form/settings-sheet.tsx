@@ -1,5 +1,5 @@
 import { normalizePageUrl } from "@hb/contracts";
-import { ChevronRight, X } from "lucide-react";
+import { BookOpen, ChevronRight, X } from "lucide-react";
 import { type ReactNode, useId, useRef, useState } from "react";
 import { useAttachedPageCheck } from "../../lib/activities";
 import { PlusBadge } from "../balance/plus";
@@ -8,6 +8,7 @@ import { Button } from "../ui/button";
 import { ChoiceCards, Field, Switch, TextInput } from "../ui/field";
 import { Reveal } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
+import { AttachedPageGuide } from "./attached-page-guide";
 import {
   AlgorithmCards,
   DrawLimitField,
@@ -77,12 +78,15 @@ function Setting({
   group,
   title,
   badge,
+  action,
   children,
 }: {
   group?: SettingsGroup;
   title?: string;
   /** Beside the name: PLUS for 附带网页. */
   badge?: ReactNode;
+  /** At the end of the name's line: 附带网页's 接入说明. */
+  action?: ReactNode;
   children: ReactNode;
 }) {
   const anchor = group ? `hb-group-${group}` : undefined;
@@ -102,14 +106,17 @@ function Setting({
       aria-label={anchor ? undefined : title}
       className="grid gap-3 py-4 first:pt-1"
     >
-      <h3
-        id={anchor}
-        tabIndex={anchor ? -1 : undefined}
-        className="flex items-center gap-1.5 text-sm font-medium text-ink outline-none"
-      >
-        {title}
-        {badge}
-      </h3>
+      <div className="flex items-center justify-between gap-2">
+        <h3
+          id={anchor}
+          tabIndex={anchor ? -1 : undefined}
+          className="flex items-center gap-1.5 text-sm font-medium text-ink outline-none"
+        >
+          {title}
+          {badge}
+        </h3>
+        {action}
+      </div>
       {children}
     </section>
   );
@@ -158,6 +165,8 @@ export function SettingsSheet({
   const noteTitleId = useId();
   const scroller = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState<NoteKey | null>(null);
+  // 附带网页's 接入说明, over the panel.
+  const [guide, setGuide] = useState(false);
   const groups = groupsOf(form, opened);
   // 附带网页: the address last left, and whether that page may be framed.
   const [checkedPage, setCheckedPage] = useState(() =>
@@ -211,7 +220,7 @@ export function SettingsSheet({
         labelledBy={titleId}
         width="32rem"
         initialFocus={showTarget}
-        inert={note !== null}
+        inert={note !== null || guide}
       >
         <div className="flex h-[min(40rem,80cqh)] min-h-0 flex-col">
           <header className="flex items-center justify-between gap-3 px-5 pt-4 pb-2">
@@ -439,7 +448,21 @@ export function SettingsSheet({
             {/* 附带网页 (docs/attached-page-design.md §2.1): for those who
                 may set one, or a draft that has one (to take it off). */}
             {(pageOffered || form.page !== "") && (
-              <Setting title="附带网页" badge={<PlusBadge />}>
+              <Setting
+                title="附带网页"
+                badge={<PlusBadge />}
+                action={
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    aria-haspopup="dialog"
+                    onClick={() => setGuide(true)}
+                  >
+                    <BookOpen />
+                    接入说明
+                  </Button>
+                }
+              >
                 <Field
                   label="附带网页"
                   labelHidden
@@ -488,6 +511,14 @@ export function SettingsSheet({
                   normalizePageUrl(form.page) === checkedPage && (
                     <p className="text-sm text-warning">
                       这个网站不允许被嵌入，红包页上会显示不出来，只能在新标签页打开。
+                      <button
+                        type="button"
+                        aria-haspopup="dialog"
+                        onClick={() => setGuide(true)}
+                        className="ml-1 text-accent-ink underline underline-offset-2"
+                      >
+                        怎么让它能嵌入
+                      </button>
                     </p>
                   )}
               </Setting>
@@ -608,6 +639,8 @@ export function SettingsSheet({
           </div>
         )}
       </WindowDialog>
+
+      <AttachedPageGuide open={open && guide} onClose={() => setGuide(false)} />
     </>
   );
 }

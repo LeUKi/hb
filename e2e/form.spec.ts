@@ -349,6 +349,23 @@ test.describe("发红包", () => {
     const refused =
       "这个网站不允许被嵌入，红包页上会显示不出来，只能在新标签页打开。";
     await expect(field).toContainText(refused);
+    // 怎么让它能嵌入, like 接入说明, opens the guide over the panel.
+    await field.getByRole("button", { name: "怎么让它能嵌入" }).click();
+    const guide = page.getByRole("dialog", { name: "附带网页接入说明" });
+    await expect(guide).toBeVisible();
+    await expect(guide).toContainText("frame-ancestors 'self'");
+    await expect(guide).toContainText("SameSite=None");
+    await expect(
+      guide.getByRole("button", { name: /复制给 AI 的提示词/ }),
+    ).toBeVisible();
+    await guide.getByRole("button", { name: "知道了" }).click();
+    await expect(guide).toHaveCount(0);
+    await expect(sheet).toBeVisible();
+    await field.getByRole("button", { name: "接入说明" }).click();
+    await expect(guide).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(guide).toHaveCount(0);
+    await expect(sheet).toBeVisible();
     expect(checked).toEqual([
       "https://puzzle.example.com/%E9%A2%98%E7%9B%AE?day=3",
     ]);
