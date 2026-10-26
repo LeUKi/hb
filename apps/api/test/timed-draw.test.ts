@@ -403,9 +403,6 @@ describe("timed LDC registration and draw lifecycle", () => {
         )
       ).id,
     ).toBe(activity.id);
-    await expect(
-      registerForDraw(bindings, activity.id, owner.id, submission()),
-    ).rejects.toMatchObject({ code: "SELF_CLAIM_FORBIDDEN" });
     const key = submission();
     const replay = await Promise.all([
       register(activity.id, 0, key),

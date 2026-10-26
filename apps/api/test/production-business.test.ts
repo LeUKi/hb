@@ -229,18 +229,22 @@ describe("production business authorization without activity test bypass", () =>
       claimActivity(paused, f.activity.id, await actor(), submit()),
     ).rejects.toMatchObject({ code: "REAL_LDC_CLAIMS_PAUSED" });
   });
-  it("rejects author allocation before creating a payment task", async () => {
+  it("gives the sender a share of a real 红包 without a payment task (自领)", async () => {
+    // docs/self-claim-design.md: Credit pays no one to themselves, and the
+    // share never leaves the merchant.
     const f = await fixture();
     await verified(f.merchant.id);
     await openActivity(runtime, f.activity.id, f.author, 1);
-    await expect(
-      claimActivity(runtime, f.activity.id, f.author, submit()),
-    ).rejects.toMatchObject({ code: "SELF_CLAIM_FORBIDDEN" });
     expect(
-      await env.DB.prepare("SELECT claimed_count FROM activities WHERE id=?")
+      await claimActivity(runtime, f.activity.id, f.author, submit()),
+    ).toMatchObject({ result: "claimed", claim: { self: true } });
+    expect(
+      await env.DB.prepare(
+        "SELECT claimed_count,(SELECT COUNT(*) FROM payment_tasks p JOIN claims c ON c.id=p.claim_id WHERE c.activity_id=activities.id) AS payments FROM activities WHERE id=?",
+      )
         .bind(f.activity.id)
         .first(),
-    ).toEqual({ claimed_count: 0 });
+    ).toEqual({ claimed_count: 1, payments: 0 });
   });
   it("rolls an opening back if a credential rotates after the eligibility read", async () => {
     const f = await fixture();

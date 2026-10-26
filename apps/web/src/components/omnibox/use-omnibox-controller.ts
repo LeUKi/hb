@@ -57,6 +57,7 @@ import {
   rewardAnimationAtom,
 } from "../../lib/redemption-intent";
 import { detectScheme, type EntryScheme } from "../../lib/scheme";
+import { askSelfClaim } from "../../lib/self-claim";
 import { sessionUserOf, useSessionUser } from "../../lib/session";
 import { verifyNoticeAtom } from "../../lib/store";
 import { useBefore } from "../../lib/use-before";
@@ -524,6 +525,14 @@ export function useOmniboxController() {
         : "领取",
     [queryClient],
   );
+  /** 自领: the 红包 is the one asking's own (docs/self-claim-design.md). */
+  const ownOf = useCallback(
+    (activityId: string, userId: string) =>
+      queryClient.getQueryData<PublicActivityDetail>(
+        activityKeys.public(activityId, userId),
+      )?.activity.author.id === userId,
+    [queryClient],
+  );
 
   /**
    * Sends a claim; a 红包 whose sender asks for a human check answers
@@ -640,6 +649,14 @@ export function useOmniboxController() {
           input = { submissionId: crypto.randomUUID(), password: checked.data };
         }
       }
+      // 自领: asked once before it is sent (not again for a retry of it);
+      // 返回 sends nothing and leaves the box as it was.
+      if (
+        !retrying &&
+        ownOf(activityId, account.id) &&
+        !(await askSelfClaim(store, verb === "报名"))
+      )
+        return;
       const href = router.history.location.href;
       const stale = () =>
         router.history.location.href !== href ||
@@ -796,7 +813,16 @@ export function useOmniboxController() {
         store.set(pendingAtom, false);
       }
     },
-    [claimWithHumanCheck, collapse, guard, queryClient, router, store, verbOf],
+    [
+      claimWithHumanCheck,
+      collapse,
+      guard,
+      ownOf,
+      queryClient,
+      router,
+      store,
+      verbOf,
+    ],
   );
 
   /**

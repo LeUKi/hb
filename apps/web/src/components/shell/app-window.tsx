@@ -11,6 +11,7 @@ import { MyJudgmentsDialog } from "../hongbao/my-judgments";
 import { NoteDialog } from "../hongbao/note-dialog";
 import { RosterDialog } from "../hongbao/roster-dialog";
 import { ScopeDialog } from "../hongbao/scope-dialog";
+import { SelfClaimDialog } from "../hongbao/self-claim-dialog";
 import { ShareDialog } from "../hongbao/share-dialog";
 import { Omnibox } from "../omnibox/omnibox";
 import {
@@ -173,6 +174,7 @@ export function AppWindow() {
           <CodeDialog />
           <ShareDialog />
           <HumanCheckDialog />
+          <SelfClaimDialog />
           <ScopeDialog />
           <UpdatePrompt />
           <KeyboardLayer />

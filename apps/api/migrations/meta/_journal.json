@@ -302,6 +302,13 @@
       "when": 1792917620360,
       "tag": "0042_fish_withdraw_all",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "6",
+      "when": 1792973381946,
+      "tag": "0043_self_claim",
+      "breakpoints": true
     }
   ]
 }

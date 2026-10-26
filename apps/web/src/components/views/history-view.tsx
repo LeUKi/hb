@@ -167,6 +167,9 @@ function JoinedRow({ item }: { item: JoinedRecord }) {
               <StatusChip tone="success" dot>
                 在🐟额
               </StatusChip>
+            ) : outcome.amount && item.self ? (
+              // 自领 (docs/self-claim-design.md): no payment to follow.
+              <StatusChip dot>自领</StatusChip>
             ) : (
               payment && (
                 <StatusChip tone={paymentTone(payment)} dot>

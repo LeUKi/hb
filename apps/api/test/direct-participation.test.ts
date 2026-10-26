@@ -473,7 +473,6 @@ describe("direct participation", () => {
     );
     const input = { submissionId: crypto.randomUUID(), password: "Secret123" };
     // Persist a pre-existing LDC terminal submission to verify its old digest and replay.
-    // New author submissions are rejected by the current self-claim rule.
     await env.DB.prepare(`INSERT INTO redemption_submissions
       (id,activity_id,user_id,submission_id,fingerprint,purpose,participation_mode,outcome,created_at,finished_at)
       VALUES (?,?,?,?,?,'claim','password','draft',?,?)`)
@@ -655,14 +654,22 @@ describe("direct participation", () => {
     },
   );
 
-  it("preserves author restrictions without consuming cooldown", async () => {
+  it("lets its sender take a share too, unpaid (自领)", async () => {
+    // docs/self-claim-design.md: as anyone else would, but no payment.
     const activity = await save(
       ldcInput({ mode: "fixed", totalAmount: "1.00", count: 2 }),
     );
-    await expect(
-      claimActivity(bindings, activity.id, owner.id, direct()),
-    ).rejects.toMatchObject({ code: "SELF_CLAIM_FORBIDDEN" });
-    expect((await readAttemptCooldown(bindings, owner.id)).revision).toBe(0);
+    expect(
+      await claimActivity(bindings, activity.id, owner.id, direct()),
+    ).toMatchObject({ result: "claimed", claim: { self: true } });
+    expect(
+      await env.DB.prepare(
+        "SELECT COUNT(*) AS n FROM payment_tasks p JOIN claims c ON c.id=p.claim_id WHERE c.activity_id=?",
+      )
+        .bind(activity.id)
+        .first("n"),
+    ).toBe(0);
+    expect((await readAttemptCooldown(bindings, owner.id)).revision).toBe(1);
   });
 
   it("admits direct registration durably, closes a full draw and publishes nullable winners", async () => {

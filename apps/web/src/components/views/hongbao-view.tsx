@@ -164,8 +164,9 @@ function HongbaoPage({
             part="end-note"
           />
         )}
-        {/* What a claimant typed and what the code said (05 §3). */}
-        {activity.judge && !hongbao.author && !activity.draft && (
+        {/* What a claimant typed and what the code said (05 §3); its
+            sender's too once they tried it (自领, docs/self-claim-design.md). */}
+        {activity.judge && !activity.draft && (
           <MyJudgments activityId={activity.id} />
         )}
         {/* 代码判定红包 has its code where others have their 口令 (05 §9). */}

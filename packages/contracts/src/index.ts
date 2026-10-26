@@ -1032,6 +1032,11 @@ export type ClaimSummary = {
   amount?: string;
   /** None for a 🐟额红包: the amount is in the claimant's 🐟额 already. */
   payment?: PaymentView;
+  /**
+   * 自领: the sender's own share, never paid (a 🐟额红包's goes back to
+   * their 🐟额) (docs/self-claim-design.md).
+   */
+  self?: true;
 };
 export type ParticipationActivity = {
   participationMode?: ParticipationMode;
@@ -1125,6 +1130,8 @@ export type PublicRecipient = PublicUserProfile & {
   speedTitle?: RecipientSpeedTitle;
   /** 代码判定: 第 N 次领到, from 1 (05 §7). */
   attempt?: number;
+  /** 自领: the sender's own share; its title is 自领的屑, none other. */
+  self?: true;
 };
 /** Always public (redesign 06 §2), oldest first (06 §3). */
 export type PublicRecipientList = {

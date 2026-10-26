@@ -110,6 +110,8 @@ export type JoinedRecord = {
   payment: PaymentState | null;
   /** A 🐟额红包's: what was taken is in 🐟额 (在🐟额), no payment. */
   fish: boolean;
+  /** 自领: the sender's own share, unpaid (docs/self-claim-design.md). */
+  self: boolean;
   /** 代码判定红包: its code judged the claim (代码判定领取). */
   code: boolean;
   ended: boolean;
@@ -136,6 +138,7 @@ export function joinedRecordOf(item: Participation): JoinedRecord {
       at: Date.parse(item.claim.claimedAt),
       outcome: { label: "已领取", tone: "success", amount: item.claim.amount },
       payment: item.claim.payment?.status ?? null,
+      self: item.claim.self === true,
     };
   const registration = item.registration;
   const outcome =
@@ -159,6 +162,7 @@ export function joinedRecordOf(item: Participation): JoinedRecord {
       registration.status === "won"
         ? (registration.claim?.payment?.status ?? null)
         : null,
+    self: registration.status === "won" && registration.claim?.self === true,
   };
 }
 

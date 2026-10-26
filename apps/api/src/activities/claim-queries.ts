@@ -206,9 +206,13 @@ export async function claimSummariesBatch(
 ): Promise<Map<string, ClaimSummary>> {
   if (!rows.length) return new Map();
   const ids = rows.map((row) => row.claim.id);
-  // A 🐟额红包's claim has no payment: its share is what it was given.
-  const fish = rows.filter(({ activity }) => activity.funding === "balance");
-  const fishInventory = fish.map(({ claim }) => claim.inventoryId);
+  // A 🐟额红包's claim has no payment, nor has 自领 (the sender's own,
+  // docs/self-claim-design.md): its share is what it was given.
+  const unpaid = rows.filter(
+    ({ claim, activity }) =>
+      activity.funding === "balance" || claim.userId === activity.authorId,
+  );
+  const unpaidInventory = unpaid.map(({ claim }) => claim.inventoryId);
   const [sources, payments, shares] = await Promise.all([
     sourcePasswordsBatch(
       env,
@@ -220,7 +224,7 @@ export async function claimSummariesBatch(
           .from(paymentTasks)
           .where(inArray(paymentTasks.claimId, ids))
       : Promise.resolve([]),
-    fishInventory.length
+    unpaidInventory.length
       ? createDb(env.DB)
           .select({
             id: rewardInventory.id,
@@ -232,9 +236,9 @@ export async function claimSummariesBatch(
           .where(
             and(
               inArray(rewardInventory.activityId, [
-                ...new Set(fish.map(({ claim }) => claim.activityId)),
+                ...new Set(unpaid.map(({ claim }) => claim.activityId)),
               ]),
-              inArray(rewardInventory.id, fishInventory),
+              inArray(rewardInventory.id, unpaidInventory),
             ),
           )
       : Promise.resolve([]),
@@ -261,15 +265,17 @@ export async function claimSummariesBatch(
       const payment = byClaim.get(claim.id);
       const sourcePassword =
         claim.passwordId === null ? undefined : sources.get(claim.passwordId);
-      if (activity.funding === "balance") {
+      const self = claim.userId === activity.authorId;
+      if (activity.funding === "balance" || self) {
         const share = shareOf.get(claim.inventoryId);
-        if (share == null) throw new Error("🐟额 claim has no share");
+        if (share == null) throw new Error("Unpaid claim has no share");
         return [
           claim.id,
           {
             ...projectClaimSummary(claim, activity),
             ...(sourcePassword === undefined ? {} : { sourcePassword }),
             amount: formatAmount(share),
+            ...(self ? { self: true as const } : {}),
           },
         ];
       }
@@ -387,7 +393,7 @@ export async function claimDetailsBatch(
         if (activity.rewardType !== "ldc") activityNotFound();
         if (
           base.amount === undefined ||
-          (!base.payment && activity.funding !== "balance")
+          (!base.payment && activity.funding !== "balance" && !base.self)
         )
           throw new Error("LDC claim has no payment task");
         const found = judgments.get(claim.id);
@@ -580,6 +586,7 @@ export async function listPublicRecipients(
           : {}),
         ...luckTitle(titles, claim.id),
         ...(attempts.has(claim.id) ? { attempt: attempts.get(claim.id) } : {}),
+        ...(claim.userId === activity.authorId ? { self: true as const } : {}),
       }),
     ),
     nextCursor:
@@ -623,10 +630,11 @@ async function recipientSpeedTitles(
     activity.drawState
   )
     return new Map();
+  // 自领 takes no title but its own (docs/self-claim-design.md).
   const fastest = await env.DB.prepare(
-    `SELECT MIN(claimed_at) AS claimedAt FROM claims WHERE activity_id=? AND claimed_at>=?`,
+    `SELECT MIN(claimed_at) AS claimedAt FROM claims WHERE activity_id=? AND claimed_at>=? AND user_id!=?`,
   )
-    .bind(activity.id, activity.openedAt)
+    .bind(activity.id, activity.openedAt, activity.authorId)
     .first<{ claimedAt: number | null }>();
   if (fastest?.claimedAt === null || fastest?.claimedAt === undefined)
     return new Map();
@@ -634,9 +642,9 @@ async function recipientSpeedTitles(
   if (elapsed < 0) return new Map();
   const title = claimSpeedTitle(elapsed);
   const rows = await env.DB.prepare(
-    `SELECT id FROM claims WHERE activity_id=? AND claimed_at=? ORDER BY id`,
+    `SELECT id FROM claims WHERE activity_id=? AND claimed_at=? AND user_id!=? ORDER BY id`,
   )
-    .bind(activity.id, fastest.claimedAt)
+    .bind(activity.id, fastest.claimedAt, activity.authorId)
     .all<{ id: string }>();
   return new Map(rows.results.map((row) => [String(row.id), title] as const));
 }
@@ -672,10 +680,12 @@ async function publicRecipientTitles(
 ): Promise<LuckTitles> {
   const empty = noTitles();
   if (activity.rewardType !== "ldc") return empty;
+  // Among the others' claims: 自领 takes no title but its own
+  // (docs/self-claim-design.md).
   const bounds =
     await env.DB.prepare(`SELECT COUNT(*) AS count,MIN(r.amount_minor) AS minimum,MAX(r.amount_minor) AS maximum
-    FROM claims c JOIN reward_inventory r ON r.activity_id=c.activity_id AND r.id=c.inventory_id WHERE c.activity_id=?`)
-      .bind(activity.id)
+    FROM claims c JOIN reward_inventory r ON r.activity_id=c.activity_id AND r.id=c.inventory_id WHERE c.activity_id=? AND c.user_id!=?`)
+      .bind(activity.id, activity.authorId)
       .first<{
         count: number;
         minimum: number | null;
@@ -691,13 +701,15 @@ async function publicRecipientTitles(
     return empty;
   const [highest, lowest] = await env.DB.batch<{ id: string }>([
     env.DB.prepare(`SELECT c.id FROM claims c JOIN reward_inventory r ON r.activity_id=c.activity_id AND r.id=c.inventory_id
-      WHERE c.activity_id=? AND r.amount_minor=? ORDER BY c.id LIMIT 3`).bind(
+      WHERE c.activity_id=? AND c.user_id!=? AND r.amount_minor=? ORDER BY c.id LIMIT 3`).bind(
       activity.id,
+      activity.authorId,
       bounds.maximum,
     ),
     env.DB.prepare(`SELECT c.id FROM claims c JOIN reward_inventory r ON r.activity_id=c.activity_id AND r.id=c.inventory_id
-      WHERE c.activity_id=? AND r.amount_minor=? ORDER BY c.id LIMIT 3`).bind(
+      WHERE c.activity_id=? AND c.user_id!=? AND r.amount_minor=? ORDER BY c.id LIMIT 3`).bind(
       activity.id,
+      activity.authorId,
       bounds.minimum,
     ),
   ]);

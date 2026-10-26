@@ -293,9 +293,8 @@ describe("LDC claiming and private history", () => {
     ).toBe(404);
   });
 
-  it("allocates sequentially, rejects author self-claims, and retains one immutable reward per account", async () => {
+  it("allocates sequentially and retains one immutable reward per account", async () => {
     const activity = await create();
-    expect((await submit(activity.id, owner)).status).toBe(403);
     const first = await claim(activity.id);
     expect(first).toMatchObject({
       result: "claimed",
@@ -432,7 +431,11 @@ describe("LDC claiming and private history", () => {
       { forceDedicated: true, joinSquare: true },
       false,
     );
-    expect((await submit(draft.id, owner)).status).toBe(403);
+    // A draft is not open to its sender either (自领 starts at opening).
+    expect(await claim(draft.id, owner)).toEqual({
+      result: "draft",
+      passwordMatched: null,
+    });
     expect((await submit(draft.id, alice)).status).toBe(404);
     expect(await stats(activity.id)).toMatchObject({
       claims: 0,
@@ -498,7 +501,8 @@ describe("LDC claiming and private history", () => {
       claimant: { id: alice.id },
     });
     expect((await claim(activity.id)).result).toBe("already_claimed");
-    expect((await submit(activity.id, owner)).status).toBe(403);
+    // Archived: its sender too (自领, docs/self-claim-design.md).
+    expect((await claim(activity.id, owner)).result).toBe("archived");
   });
 });
 
@@ -1045,11 +1049,11 @@ describe("lifecycle and public recipients", () => {
     await env.DB.prepare("UPDATE activities SET deadline = ? WHERE id = ?")
       .bind(deadline, activity.id)
       .run();
-    expect((await submit(activity.id, owner)).status).toBe(403);
-    expect(await claim(activity.id)).toEqual({
-      result: "archived",
-      passwordMatched: null,
-    });
+    for (const user of [owner, alice])
+      expect(await claim(activity.id, user)).toEqual({
+        result: "archived",
+        passwordMatched: null,
+      });
     const row = await stats(activity.id);
     expect(row).toMatchObject({
       endedAt: deadline,

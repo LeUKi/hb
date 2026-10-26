@@ -455,6 +455,8 @@ export const claimAmount = `COALESCE(p.amount_minor, i.amount_minor, 0)`;
 export const claimJoins = `FROM claims c JOIN activities a ON a.id=c.activity_id
       LEFT JOIN payment_tasks p ON p.claim_id=c.id AND p.source='claim'
       LEFT JOIN reward_inventory i ON i.activity_id=c.activity_id AND i.id=c.inventory_id AND i.kind='ldc'`;
+/** 自领 (docs/self-claim-design.md) counts in neither sum, nor the 排行榜. */
+export const othersOnly = "c.user_id!=a.author_id";
 
 export async function accountHistorySummary(
   env: ApiBindings,
@@ -467,9 +469,9 @@ export async function accountHistorySummary(
       OR EXISTS(SELECT 1 FROM activity_registrations r WHERE r.activity_id=a.id AND r.user_id=?)
     )) AS participatedCount,
     (SELECT COALESCE(SUM(${claimAmount}),0) ${claimJoins}
-      WHERE a.author_id=? AND a.reward_type='ldc' AND a.deleted_at IS NULL) AS sentMinor,
+      WHERE a.author_id=? AND a.reward_type='ldc' AND a.deleted_at IS NULL AND ${othersOnly}) AS sentMinor,
     (SELECT COALESCE(SUM(${claimAmount}),0) ${claimJoins}
-      WHERE c.user_id=? AND a.reward_type='ldc' AND a.deleted_at IS NULL) AS receivedMinor`)
+      WHERE c.user_id=? AND a.reward_type='ldc' AND a.deleted_at IS NULL AND ${othersOnly}) AS receivedMinor`)
     .bind(userId, userId, userId, userId, userId)
     .first<{
       initiatedCount: number;

@@ -67,6 +67,8 @@ export type RowDetail = {
   payment: { id: string; state: PaymentState } | null;
   /** A 🐟额红包's share: in the person's 🐟额, no payment to follow. */
   fish?: boolean;
+  /** 自领: the sender's own share, never paid (docs/self-claim-design.md). */
+  self?: boolean;
   /** 代码判定: what was typed, and the code's own number when pulled in. */
   judge?: RosterRow["judge"];
 };
@@ -165,16 +167,26 @@ function Row({
                     {row.amount}
                   </span>
                 )}
-                {detail?.fish && (
-                  <span
-                    className={`inline-flex shrink-0 items-center gap-1 ${paymentText.success}`}
-                  >
+                {detail?.self ? (
+                  <span className="inline-flex shrink-0 items-center gap-1 text-ink-3">
                     <span
                       aria-hidden="true"
                       className="size-1.5 rounded-full bg-current"
                     />
-                    已存入🐟额
+                    自领
                   </span>
+                ) : (
+                  detail?.fish && (
+                    <span
+                      className={`inline-flex shrink-0 items-center gap-1 ${paymentText.success}`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="size-1.5 rounded-full bg-current"
+                      />
+                      已存入🐟额
+                    </span>
+                  )
                 )}
                 {detail?.payment && (
                   <button

@@ -121,22 +121,23 @@ describe("代码判定红包: claims", () => {
         (item) => item.attempt,
       ),
     ).toEqual([2]);
-    // Once claimed, again is the same claim; the sender cannot claim.
+    // Once claimed, again is the same claim. The sender's own right
+    // answer is 自领: a share back to their 🐟额 (docs/self-claim-design.md).
     expect((await submit(opened.id, claimant, "flag{ok}")).result).toBe(
       "already_claimed",
     );
-    await rejects(
-      submit(opened.id, author, "flag{ok}"),
-      "SELF_CLAIM_FORBIDDEN",
-    );
-    // Both inputs are in the sender's 尝试统计, the claim's marked.
+    expect(await submit(opened.id, author, "flag{ok}")).toMatchObject({
+      result: "claimed",
+      claim: { self: true },
+    });
+    // Every input is in the sender's 尝试统计, the claims' marked.
     expect(
       await env.DB.prepare(
         "SELECT COUNT(*) AS n, COUNT(claim_id) AS claimed FROM attempt_events WHERE activity_id = ?",
       )
         .bind(opened.id)
         .first(),
-    ).toEqual({ n: 2, claimed: 1 });
+    ).toEqual({ n: 3, claimed: 2 });
   });
 
   it("gives the code each person's attempts, the claims so far and its own state", async () => {

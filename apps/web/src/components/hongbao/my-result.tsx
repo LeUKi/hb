@@ -306,6 +306,10 @@ export function MyResult({
       <div className="flex flex-wrap items-center justify-center gap-2">
         {amount && activity.fish ? (
           <FishStored />
+        ) : amount && mine.self ? (
+          <StatusChip size="md" dot>
+            自领
+          </StatusChip>
         ) : amount && payment ? (
           <PaymentStatus state={payment.status} />
         ) : mine.kind === "registered" && mine.outcome === "waiting" ? (
@@ -329,9 +333,17 @@ export function MyResult({
         )}
       </div>
 
-      {/* A 🐟额红包's share is in 🐟额 already: nothing to follow (under
-          1 🐟 it goes to Credit all at once, balance-design §5). */}
-      {amount && activity.fish ? null : amount && payment ? (
+      {/* 自领: where the share is, said to the sender alone
+          (docs/self-claim-design.md). */}
+      {amount && mine.self ? (
+        <p className="text-sm text-ink-2">
+          {activity.fish
+            ? "这份已退回你的🐟额。"
+            : "这份没有发出去，钱还在付款的商户账户里。"}
+        </p>
+      ) : /* A 🐟额红包's share is in 🐟额 already: nothing to follow (under
+          1 🐟 it goes to Credit all at once, balance-design §5). */
+      amount && activity.fish ? null : amount && payment ? (
         heldForAccount(payment) && mine.claimId ? (
           <NoCreditAccount
             activityId={activity.id}

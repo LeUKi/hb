@@ -429,7 +429,7 @@ export function AmountFields({
         {form.mode === "code" ? (
           <p className="text-xs text-ink-3">
             最多 1,000
-            份，金额最多两位小数；总奖池要够每份都拿到“每份至少”。每份发多少由你的代码定，多了按上限发，少了按每份至少发，最后一份发完剩下的。领到的直接存进领取者的🐟额。你不能领自己的红包。
+            份，金额最多两位小数；总奖池要够每份都拿到“每份至少”。每份发多少由你的代码定，多了按上限发，少了按每份至少发，最后一份发完剩下的。领到的直接存进领取者的🐟额。
           </p>
         ) : (
           <p className="text-xs text-ink-3">
@@ -438,7 +438,6 @@ export function AmountFields({
             {form.funding === "balance"
               ? "领到的直接存进领取者的🐟额。"
               : "领取者到账时，Credit 站会按你在 Credit 站的等级扣分发费（4%–15%）。"}
-            你不能领自己的红包。
           </p>
         )}
         {/* Opens as the total passes 800 LDC, and closes under it; 🐟额

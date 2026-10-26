@@ -298,6 +298,10 @@ export async function publishDrawPlan(env: ApiBindings, activityId: string) {
       }),
     );
     const payload = JSON.stringify(winners);
+    // 自领: a prize the sender drew is not paid (docs/self-claim-design.md).
+    const paid = JSON.stringify(
+      winners.filter((winner) => winner.userId !== activity.authorId),
+    );
     const statements = [
       env.DB.prepare(`SELECT json(CASE WHEN EXISTS(SELECT 1 FROM activities a JOIN activity_draw_plans d ON d.activity_id=a.id
         WHERE a.id=? AND a.reward_type='ldc' AND a.draw_state='settling' AND a.deleted_at IS NULL AND a.registered_count=d.participant_count AND d.payload=?
@@ -338,11 +342,11 @@ export async function publishDrawPlan(env: ApiBindings, activityId: string) {
               activity.paymentMode,
               merchant.version,
               activity.paymentMode,
-              payload,
+              paid,
             ),
             env.DB.prepare(`INSERT INTO payment_outbox(id,task_id,created_at)
         SELECT json_extract(value,'$.outboxId'),json_extract(value,'$.taskId'),${databaseNow} FROM json_each(?)`).bind(
-              payload,
+              paid,
             ),
           ]),
       env.DB.prepare(`UPDATE attempt_events SET claim_id=(SELECT json_extract(w.value,'$.claimId') FROM json_each(?) w

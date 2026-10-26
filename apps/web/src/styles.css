@@ -99,7 +99,7 @@
   --color-seal-1: #f7dc9a;
   --color-seal-2: #e7b862;
   --color-seal-3: #cf9746;
-  /* Roster titles besides 手气王 (gold): 手气亡, 手速王, 我焯有桂！ */
+  /* Roster titles besides 手气王 (gold): 手气亡, 手速王, 我焯有桂！, 自领的屑 */
   --color-title-low: #556075;
   --color-title-low-tint: rgb(86 97 118);
   --color-title-fast: #0f6e48;
@@ -107,6 +107,8 @@
   --color-title-flash: #f2ffe9;
   --color-title-flash-top: #2fbf6b;
   --color-title-flash-bottom: #188a4c;
+  --color-title-self: #7a5a48;
+  --color-title-self-tint: rgb(150 108 84);
   /* Text on 红包 red. */
   --color-cream: #fff3e2;
   --color-cream-2: rgb(255 236 214 / 0.74);
@@ -2116,6 +2118,20 @@
     --sq-ring: color-mix(
       in srgb,
       var(--color-title-fast-tint) 16%,
+      transparent
+    );
+    box-shadow: var(--sq-ring-shadow);
+  }
+  .title-badge[data-title="self"] {
+    color: var(--color-title-self);
+    background: color-mix(
+      in srgb,
+      var(--color-title-self-tint) 11%,
+      transparent
+    );
+    --sq-ring: color-mix(
+      in srgb,
+      var(--color-title-self-tint) 16%,
       transparent
     );
     box-shadow: var(--sq-ring-shadow);

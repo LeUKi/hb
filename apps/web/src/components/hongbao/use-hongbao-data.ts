@@ -92,10 +92,12 @@ export function useHongbaoPageData(id: string) {
     // A 草稿 waits on its merchant to open; the rest changes by its sender.
     activity?.status === "draft" ? LIST_POLL_MS : false,
   );
+  // The sender's too: they may take a share of their own (自领,
+  // docs/self-claim-design.md).
   const participationQuery = useCurrentParticipation(
     userId ?? "",
     id,
-    Boolean(activity && userId && !author),
+    Boolean(activity && userId),
     activity?.draw?.state,
     live,
   );
@@ -189,7 +191,7 @@ export function useHongbaoPageData(id: string) {
         passwordsQuery.data,
         author && managed ? { passwords: managed.config.passwords } : null,
       ),
-      mine: author ? null : mineOf(participationQuery.data, view, roster),
+      mine: mineOf(participationQuery.data, view, roster),
       author,
     };
   }

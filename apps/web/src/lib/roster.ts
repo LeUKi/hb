@@ -37,10 +37,12 @@ function rowOf(item: Item, rank: number, viewer: string | null): RosterRow {
       you: viewer !== null && item.claimant.username === viewer,
       amount: item.amount,
       at: Date.parse(item.claimedAt),
-      // In the public list's order: 手气王 / 手气亡, then 手速王.
+      // In the public list's order: 手气王 / 手气亡, then 手速王; 自领的屑
+      // on the sender's own share, which takes no other.
       titles: [
         ...(item.title ? [item.title] : []),
         ...(item.speedTitle ? [item.speedTitle] : []),
+        ...(item.self ? (["self"] as const) : []),
       ],
       password: item.sourcePassword ?? null,
       payment: item.payment,
@@ -62,6 +64,7 @@ function rowOf(item: Item, rank: number, viewer: string | null): RosterRow {
   const titles: RosterTitle[] = [];
   if ("title" in item && item.title) titles.push(item.title);
   if ("speedTitle" in item && item.speedTitle) titles.push(item.speedTitle);
+  if ("self" in item && item.self) titles.push("self");
   return {
     id: item.id,
     rank,

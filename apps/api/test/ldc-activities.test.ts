@@ -223,22 +223,31 @@ describe("LDC activity allocation and durable payment responsibility", () => {
     });
   });
 
-  it("rejects author self-claim before allocation or attempts while preserving ordinary text behavior", async () => {
+  it("lets the sender take a share of their own, unpaid, and find it by its 口令 on the start page (自领)", async () => {
+    // docs/self-claim-design.md: a share, no payment, no outbox.
     const activity = await create(
       config({ forceDedicated: true, joinSquare: true }),
     );
-    expect((await submit(activity.id, owner)).status).toBe(403);
+    const own = await submit(activity.id, owner);
+    expect(own.status).toBe(200);
+    expect(await own.json()).toMatchObject({
+      result: "claimed",
+      claim: { self: true },
+    });
     expect(await counts()).toEqual({
-      claims: 0,
+      claims: 1,
       payments: 0,
       outbox: 0,
-      assigned: 0,
+      assigned: 1,
     });
     const attempts = await env.DB.prepare(
       "SELECT COUNT(*) AS count FROM attempt_events",
     ).first();
-    expect(attempts).toEqual({ count: 0 });
+    expect(attempts).toEqual({ count: 1 });
+    // The start page finds the sender's own 红包 like any other (after the
+    // same wait between attempts as anyone's).
     const ordinary = await create();
+    await advanceAttemptCooldown(env.DB, owner.id);
     expect(
       (
         await request("/api/redemptions", owner, "POST", {
@@ -246,7 +255,7 @@ describe("LDC activity allocation and durable payment responsibility", () => {
           password: "correct123",
         })
       ).status,
-    ).toBe(403);
+    ).toBe(200);
     expect((await submit(ordinary.id, alice)).status).toBe(200);
   });
 

@@ -88,12 +88,6 @@ export async function registerForDraw(
     assertParticipationMode(activity, mode);
     const money = timedDrawMoney(activity);
     if (!money) throw new Error("Activity is not a timed draw");
-    if (activity.authorId === userId)
-      throw new ActivityError(
-        403,
-        "SELF_CLAIM_FORBIDDEN",
-        "不能报名自己发的红包",
-      );
     const existing = await findRegistration(env, activityId, userId);
     const status = activityStatus(activity);
     if (existing || status !== "active") {
@@ -190,13 +184,12 @@ export async function registerForDraw(
       AND opened_at IS NOT NULL AND ended_at IS NULL AND archived_at IS NULL AND draw_state='waiting'
       AND deadline>${databaseNow} AND registered_count<9007199254740991
       AND (json_extract(config,'$.money.participantLimit') IS NULL OR registered_count<json_extract(config,'$.money.participantLimit'))
-      AND author_id!=? AND ((payment_mode='simulation' AND ?=1) OR (payment_mode='real' AND ?=1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
+      AND ((payment_mode='simulation' AND ?=1) OR (payment_mode='real' AND ?=1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
       AND EXISTS(SELECT 1 FROM users WHERE id=? AND active=1)
       AND NOT EXISTS(SELECT 1 FROM activity_registrations WHERE activity_id=? AND user_id=?)
       THEN version ELSE NULL END WHERE id=?`).bind(
         activity.version,
         mode,
-        userId,
         Number(isLocalSimulation(env)),
         Number(realPermitted),
         Number(testPermission),

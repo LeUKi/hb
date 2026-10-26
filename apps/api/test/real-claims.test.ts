@@ -345,20 +345,21 @@ describe("real activity claim implementation with injected service policy", () =
     ).toMatchObject({ result: "claimed", claim: { amount: "0.10" } });
   });
 
-  it("continues to reject author self-claim before attempts or allocation", async () => {
+  it("allocates the sender's own share with no payment task or outbox (自领)", async () => {
+    // docs/self-claim-design.md; payment_claim_policy_insert would refuse one.
     const f = await fixture();
-    await expect(
-      claimActivity(
+    expect(
+      await claimActivity(
         bindings,
         f.activity.id,
         f.authorId,
         submission(),
         f.policy,
       ),
-    ).rejects.toMatchObject({ code: "SELF_CLAIM_FORBIDDEN" });
+    ).toMatchObject({ result: "claimed", claim: { self: true } });
     expect(await allocationCounts(f.activity.id)).toEqual({
-      allocated: 0,
-      claims: 0,
+      allocated: 1,
+      claims: 1,
       tasks: 0,
       outbox: 0,
     });
@@ -368,7 +369,7 @@ describe("real activity claim implementation with injected service policy", () =
       )
         .bind(f.activity.id)
         .first(),
-    ).toEqual({ count: 0 });
+    ).toEqual({ count: 1 });
   });
 
   it.each(["recipient-name", "000100001", "0", "18446744073709551616"])(

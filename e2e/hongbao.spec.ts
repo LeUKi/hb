@@ -2,6 +2,7 @@ import { expect, type Page, test, type WebSocketRoute } from "@playwright/test";
 import {
   type ActivityError,
   type ActivityPasswords,
+  type AuthorClaim,
   type AuthorClaimList,
   type ClaimDetail,
   type ClaimResult,
@@ -1254,9 +1255,13 @@ test.describe("红包页", () => {
     await expect(result.getByText("quota")).toHaveCount(0);
   });
 
-  test("发红包的人：看到全部口令，不能自己领", async ({ page }) => {
+  test("发红包的人：看到全部口令；也能自领，先确认一次，不付款，名单上是自领的屑", async ({
+    page,
+  }) => {
     await mockSession(page, author);
     const state = await mockHongbao(page);
+    // The sender's own share, once taken (自领, docs/self-claim-design.md).
+    let own: AuthorClaim | null = null;
     const managed: ManagedActivity = {
       id,
       title: "周末红包",
@@ -1308,15 +1313,15 @@ test.describe("红包页", () => {
                 avatarUrl: null,
               },
             },
+            ...(own ? [own] : []),
           ],
           nextCursor: null,
         } satisfies AuthorClaimList,
       }),
     );
     await openApp(page, path);
-    await expect(
-      page.getByRole("button", { name: "这是你发的红包，你不能领取" }),
-    ).toBeDisabled();
+    const seal = page.getByRole("button", { name: "输入口令领取" });
+    await expect(seal).toBeEnabled();
     // Even the sender's own 口令 start hidden while it runs.
     const section = page.locator("[data-hb-part=passwords]");
     await expect(
@@ -1357,6 +1362,71 @@ test.describe("红包页", () => {
         "领取者只能在红包页输入口令。请通过“分享”复制文案，文案中带有红包入口。",
       ),
     ).toBeVisible();
+
+    // 自领: asked once before it goes; 返回 sends nothing, the 口令 stays.
+    const sent: unknown[] = [];
+    await page.route(`**/api/activities/${id}/claim`, (route) => {
+      sent.push(route.request().postDataJSON());
+      const claimedAt = new Date().toISOString();
+      state.claim = {
+        id: "claim-own",
+        activity: { id, title: "周末红包", status: "active" },
+        rewardType: "ldc",
+        claimedAt,
+        sourcePassword: passwordOf.mine,
+        amount: "0.10",
+        afterClaimInfo: "",
+        self: true,
+      };
+      own = {
+        id: "claim-own",
+        activity: { id, title: "周末红包", status: "active" },
+        rewardType: "ldc",
+        claimedAt,
+        sourcePassword: passwordOf.mine,
+        amount: "0.10",
+        self: true,
+        claimant: {
+          id: author.id,
+          username: author.username,
+          displayName: author.displayName,
+          avatarUrl: null,
+        },
+      };
+      state.recipients = [
+        ...state.recipients,
+        {
+          ...recipient(author.username, 7),
+          displayName: author.displayName,
+          claimedAt,
+          self: true,
+        },
+      ];
+      return route.fulfill({
+        json: { result: "claimed", claim: state.claim } satisfies ClaimResult,
+      });
+    });
+    await seal.click();
+    await expect(omniboxInput(page)).toBeFocused();
+    await omniboxInput(page).fill(passwordOf.mine);
+    await page.keyboard.press("Enter");
+    const confirm = page.getByRole("dialog", { name: "领自己的红包" });
+    await expect(confirm).toContainText("会占掉一份，名单里显示「自领的屑」。");
+    await confirm.getByRole("button", { name: "返回" }).click();
+    await expect(confirm).toBeHidden();
+    expect(sent).toHaveLength(0);
+    await expect(omniboxInput(page)).toHaveValue(passwordOf.mine);
+    await omniboxInput(page).press("Enter");
+    await confirm.getByRole("button", { name: "领取" }).click();
+    await expect.poll(() => sent.length).toBe(1);
+    // Where it is, to the sender alone; 自领的屑 and no payment to follow.
+    const result = page.locator("[data-hb-part=result]");
+    await expect(result.getByText("自领", { exact: true })).toBeVisible();
+    await expect(
+      result.getByText("这份没有发出去，钱还在付款的商户账户里。"),
+    ).toBeVisible();
+    await expect(result.getByText("自领的屑")).toBeVisible();
+    await expect(result.getByText("待发放")).toHaveCount(0);
   });
 
   test("不存在的红包：未找到", async ({ page }) => {

@@ -21,7 +21,10 @@ import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { claimActivity } from "../src/activities/claim-service";
 import { refreshTimedDraw } from "../src/activities/draw-service";
-import { sweepActivityLifecycle } from "../src/activities/lifecycle";
+import {
+  endActivity,
+  sweepActivityLifecycle,
+} from "../src/activities/lifecycle";
 import { registerForDraw } from "../src/activities/registration-service";
 import { createActivity, openActivity } from "../src/activities/service";
 import { app } from "../src/app";
@@ -1293,6 +1296,114 @@ async function rowsReadDuring(work: () => Promise<unknown>) {
   }
   return rows;
 }
+
+describe("自领 (docs/self-claim-design.md)", () => {
+  const payments = (activityId: string) =>
+    env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM payment_tasks p JOIN claims c ON c.id=p.claim_id WHERE c.activity_id=?",
+    )
+      .bind(activityId)
+      .first<number>("n");
+
+  it("gives the sender a share unpaid: 自领的屑 and no other title, in 我参与的, out of the sums and the 排行榜", async () => {
+    // In order: the sender takes the biggest share, then three others.
+    const activity = await create(
+      ldc({ mode: "custom", amounts: ["4.00", "1.00", "3.00", "2.00"] }),
+    );
+    const own = await redeem(activity.id, owner);
+    expect(own).toMatchObject({
+      result: "claimed",
+      claim: { self: true, amount: "4.00" },
+    });
+    expect("claim" in own && own.claim.payment).toBeFalsy();
+    const others = [await actor(), await actor(), await actor()];
+    for (const user of others) await redeem(activity.id, user);
+    expect(await payments(activity.id)).toBe(3);
+    // 手气王, 手气亡 and the speed title go among the others.
+    const list = await data<PublicRecipientList>(
+      `/activities/${activity.id}/recipients`,
+    );
+    expect(
+      list.items.map((item) => [
+        item.amount,
+        item.self ?? false,
+        item.title ?? null,
+        Boolean(item.speedTitle),
+      ]),
+    ).toEqual([
+      ["4.00", true, null, false],
+      ["1.00", false, "lowest", true],
+      ["3.00", false, "highest", false],
+      ["2.00", false, null, false],
+    ]);
+    // The sender's own view of the roster says the same.
+    const mine = await data<AuthorClaimList>(
+      `/me/activities/${activity.id}/claims`,
+      owner,
+    );
+    expect(mine.items.map((item) => item.self ?? false)).toEqual([
+      true,
+      false,
+      false,
+      false,
+    ]);
+    // 我参与的 lists it; the sums and the 排行榜 leave it out.
+    const participated = await data<ParticipationList>(
+      "/me/participations",
+      owner,
+    );
+    expect(participated.items).toEqual([
+      expect.objectContaining({
+        kind: "claim",
+        claim: expect.objectContaining({ self: true, amount: "4.00" }),
+      }),
+    ]);
+    expect(await data("/me/history-summary", owner)).toMatchObject({
+      sentAmount: "6.00",
+      receivedAmount: "0.00",
+    });
+    const sent = (await (
+      await get("/rank?board=sent&range=week", owner)
+    ).json()) as { items: { me: boolean; amount: string; claims: number }[] };
+    expect(sent.items.find((item) => item.me)).toMatchObject({
+      amount: "6.00",
+      claims: 3,
+    });
+  }, 60_000);
+
+  it("lets the sender sign up for their own 限时开奖; a prize they draw is not paid", async () => {
+    const timed = await create(
+      ldc({ ...draw, totalAmount: "2.00", count: 2, participantLimit: 2 }),
+    );
+    expect(await register(timed.id, owner)).toMatchObject({
+      result: "registered",
+    });
+    await register(timed.id, participant);
+    await refreshTimedDraw(bindings, timed.id);
+    const winners = await data<PublicRecipientList>(
+      `/activities/${timed.id}/recipients`,
+    );
+    expect(winners.items).toHaveLength(2);
+    expect(winners.items.filter((item) => item.self)).toHaveLength(1);
+    expect(await payments(timed.id)).toBe(1);
+  }, 60_000);
+
+  it("leaves the sender no early end once they took a share, as anyone's would", async () => {
+    const activity = await create();
+    await redeem(activity.id, owner);
+    const version = await env.DB.prepare(
+      "SELECT version FROM activities WHERE id=?",
+    )
+      .bind(activity.id)
+      .first<number>("version");
+    await expect(
+      endActivity(bindings, activity.id, owner.id, version ?? 0),
+    ).rejects.toMatchObject({
+      code: "INVALID_ACTIVITY",
+      message: "已有人领取或报名，不能提前结束",
+    });
+  });
+});
 
 describe("D1 reads that would grow with the data (06 §12)", () => {
   // Four 红包 of eight payments each, all from one merchant.

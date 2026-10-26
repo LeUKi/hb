@@ -419,6 +419,8 @@ export type Mine =
       titles: RosterTitle[];
       afterClaimInfo?: string;
       payment: PaymentView | null;
+      /** 自领: the sender's own share, unpaid (docs/self-claim-design.md). */
+      self: boolean;
       /** 代码判定: what was typed, the code's reply, why the amount differs. */
       judge?: ClaimDetail["judge"];
     }
@@ -433,6 +435,8 @@ export type Mine =
       titles: RosterTitle[];
       afterClaimInfo?: string;
       payment: PaymentView | null;
+      /** 自领: a prize the sender drew themselves, unpaid. */
+      self: boolean;
     };
 
 function claimed(claim: ClaimDetail, titles: RosterTitle[]): Mine {
@@ -445,6 +449,7 @@ function claimed(claim: ClaimDetail, titles: RosterTitle[]): Mine {
     titles,
     afterClaimInfo: claim.afterClaimInfo || undefined,
     payment: claim.payment ?? null,
+    self: claim.self === true,
     ...(claim.judge ? { judge: claim.judge } : {}),
   };
 }
@@ -481,5 +486,6 @@ export function mineOf(
     afterClaimInfo:
       outcome === "won" ? claim?.afterClaimInfo || undefined : undefined,
     payment: outcome === "won" ? (claim?.payment ?? null) : null,
+    self: outcome === "won" && claim?.self === true,
   };
 }

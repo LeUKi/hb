@@ -11,7 +11,11 @@ import {
   type RankRange,
   type RankVisibility,
 } from "@hb/contracts";
-import { claimAmount, claimJoins } from "../activities/registration-queries";
+import {
+  claimAmount,
+  claimJoins,
+  othersOnly,
+} from "../activities/registration-queries";
 import type { ApiBindings } from "../env";
 
 // 排行榜 (docs/leaderboard-design.md §1–§3): each board's order is a
@@ -45,7 +49,7 @@ async function compute(
       COUNT(DISTINCT c.activity_id) AS activities,
       COUNT(*) AS claims
     ${claimJoins}
-    WHERE a.reward_type='ldc' AND a.deleted_at IS NULL AND c.claimed_at>=?
+    WHERE a.reward_type='ldc' AND a.deleted_at IS NULL AND ${othersOnly} AND c.claimed_at>=?
     GROUP BY ${who} HAVING amount>0
     ORDER BY amount DESC, claims DESC, user_id`)
     .bind(range === "week" ? now - RANK_WEEK_MS : 0)

@@ -179,12 +179,6 @@ export async function admitClaim(
   if (!activity || (activity.openedAt === null && activity.authorId !== userId))
     activityNotFound();
   assertParticipationMode(activity, mode);
-  if (activity.rewardType === "ldc" && activity.authorId === userId)
-    throw new ActivityError(
-      403,
-      "SELF_CLAIM_FORBIDDEN",
-      "不能领取自己发的红包",
-    );
   const existingClaim = await findUserClaim(env, activityId, userId);
   if (existingClaim)
     return {
@@ -262,13 +256,12 @@ export function claimGuardStatement(
 ) {
   return env.DB.prepare(`UPDATE activities SET version = CASE WHEN version = ? AND participation_mode = ? AND deleted_at IS NULL AND opened_at IS NOT NULL AND ended_at IS NULL
     AND archived_at IS NULL AND deadline > ${databaseNow} AND claimed_count < total_count
-    AND reward_type = 'ldc' AND EXISTS(SELECT 1 FROM users WHERE id=? AND active=1) AND author_id != ? AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
+    AND reward_type = 'ldc' AND EXISTS(SELECT 1 FROM users WHERE id=? AND active=1) AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
     AND NOT EXISTS (SELECT 1 FROM claims WHERE activity_id = ? AND user_id = ?)
     AND NOT EXISTS (SELECT 1 FROM activity_code WHERE activity_id = activities.id AND (paused_at IS NOT NULL OR stopped_at IS NOT NULL))
     THEN version ELSE NULL END WHERE id = ?`).bind(
     activity.version,
     mode,
-    userId,
     userId,
     Number(isLocalSimulation(env)),
     Number(admitted.realActivityPermitted),
@@ -582,15 +575,6 @@ export async function completeClaimSubmission(
         "奖励库存暂时不可用，请使用原提交重试",
       );
     selectedInventoryId = reward.id;
-    if (
-      activity.rewardType === "ldc" &&
-      activity.authorId === submission.userId
-    )
-      throw new ActivityError(
-        403,
-        "SELF_CLAIM_FORBIDDEN",
-        "不能领取自己发的红包",
-      );
     const testPermission = permitsRealActivity(activity.id, executionPolicy);
     const realActivityPermitted =
       testPermission ||
@@ -613,7 +597,7 @@ export async function completeClaimSubmission(
     const statements = [
       env.DB.prepare(`UPDATE activities SET version = CASE WHEN deleted_at IS NULL AND opened_at IS NOT NULL AND ended_at IS NULL AND archived_at IS NULL
           AND deadline > ${databaseNow} AND claimed_count < total_count
-          AND reward_type = 'ldc' AND EXISTS(SELECT 1 FROM users WHERE id=? AND active=1) AND author_id != ? AND (funding = 'balance' OR merchant_id IS NOT NULL) AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
+          AND reward_type = 'ldc' AND EXISTS(SELECT 1 FROM users WHERE id=? AND active=1) AND (funding = 'balance' OR merchant_id IS NOT NULL) AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
           AND NOT EXISTS (SELECT 1 FROM claims WHERE activity_id = ? AND user_id = ?)
           AND EXISTS (SELECT 1 FROM redemption_submissions s WHERE s.id = ? AND s.activity_id=activities.id
             AND s.user_id=? AND s.purpose = 'claim' AND s.outcome = 'pending'
@@ -623,7 +607,6 @@ export async function completeClaimSubmission(
               OR (s.participation_mode='code' AND s.matched_password_id IS NULL
                 AND EXISTS (SELECT 1 FROM code_judgments j WHERE j.submission_row_id = s.id AND j.ok = 1))))
           THEN version ELSE NULL END WHERE id = ?`).bind(
-        submission.userId,
         submission.userId,
         Number(isLocalSimulation(env)),
         Number(realActivityPermitted),
@@ -681,7 +664,13 @@ export async function completeClaimSubmission(
           reward.id,
         ),
       );
-    else if (activity.rewardType === "ldc") {
+    // 自领 of a 商户直发 红包: no payment, its share never leaves the
+    // merchant (docs/self-claim-design.md; payment_claim_policy_insert
+    // refuses one to the sender anyway).
+    else if (
+      activity.rewardType === "ldc" &&
+      activity.authorId !== submission.userId
+    ) {
       if (!activity.paymentMode)
         throw new Error("LDC activity has no payment mode");
       const recipient = await paymentRecipient(

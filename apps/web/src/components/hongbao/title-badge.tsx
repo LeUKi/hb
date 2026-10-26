@@ -6,6 +6,7 @@ const labels: Record<RosterTitle, string> = {
   lowest: "手气亡",
   fastest: "手速王",
   flash: "我焯有桂！",
+  self: "自领的屑",
 };
 
 /**

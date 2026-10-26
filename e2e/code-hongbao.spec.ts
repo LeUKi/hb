@@ -729,10 +729,11 @@ test.describe("代码判定红包", () => {
     await mockLive(page);
     await mockSenderReads(page);
     await openApp(page, path);
+    // Its sender may try it too (自领, docs/self-claim-design.md); 我的提交
+    // shows once they have.
     await expect(
-      page.getByRole("button", { name: "这是你发的红包，你不能领取" }),
-    ).toBeDisabled();
-    // No 我的提交 for its sender.
+      page.getByRole("button", { name: "输入后提交" }),
+    ).toBeEnabled();
     await expect(page.locator("[data-hb-part=my-judgments]")).toHaveCount(0);
 
     const entry = page.locator("#code-entry");

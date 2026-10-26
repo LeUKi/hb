@@ -182,8 +182,9 @@ export function useHongbao(data: HongbaoData) {
 
   const isDraw = activity.mode === "timed_draw";
   const gate = user ? null : "login";
-  // The sender sees their own 红包 as it is, but cannot take part (a draft
-  // is a preview: nobody can yet).
+  // The sender sees their own 红包 as it is, and may take part too (自领,
+  // asked first: docs/self-claim-design.md); a draft is a preview, nobody
+  // can yet.
   const author = data.author;
   const draft = activity.draft;
   const seal = sealGlyphs;
@@ -216,7 +217,7 @@ export function useHongbao(data: HongbaoData) {
       ? "muted"
       : spinning
         ? "pending"
-        : cooldown || author || draft || paused
+        : cooldown || draft || paused
           ? "disabled"
           : "idle";
   const drawStep = useDrawStep(view);
@@ -235,23 +236,21 @@ export function useHongbao(data: HongbaoData) {
       ? (drawStep?.hint ?? endHint(view))
       : draft
         ? `草稿预览，开放后才能${verb}`
-        : author
-          ? `这是你发的红包，你不能${verb}`
-          : paused
-            ? "红包的代码连续出错，暂停领取"
-            : spinning
-              ? "正在确认…"
-              : gate === "login"
-                ? `登录后${verb}`
-                : retry
-                  ? `点「${glyph}」重试原提交`
-                  : code
-                    ? `点「${glyph}」，输入后提交，由发红包的人的代码判定`
-                    : activity.participation === "password"
-                      ? `点「${glyph}」，输入口令${verb}`
-                      : `点「${glyph}」${verb}`;
+        : paused
+          ? "红包的代码连续出错，暂停领取"
+          : spinning
+            ? "正在确认…"
+            : gate === "login"
+              ? `登录后${verb}`
+              : retry
+                ? `点「${glyph}」重试原提交`
+                : code
+                  ? `点「${glyph}」，输入后提交，由发红包的人的代码判定`
+                  : activity.participation === "password"
+                    ? `点「${glyph}」，输入口令${verb}`
+                    : `点「${glyph}」${verb}`;
   const sealLabel =
-    phase === "ended" || author || draft || paused
+    phase === "ended" || draft || paused
       ? hint
       : gate === "login"
         ? "登录"
@@ -276,13 +275,13 @@ export function useHongbao(data: HongbaoData) {
 
   // 领取前人机验证: its script is fetched ahead, so the dialog opens ready.
   const humanCheckAhead =
-    activity.humanCheck && phase === "closed" && !author && !draft && !gate;
+    activity.humanCheck && phase === "closed" && !draft && !gate;
   useEffect(() => {
     if (humanCheckAhead) loadTurnstile().catch(() => {});
   }, [humanCheckAhead]);
 
   const press = () => {
-    if (phase !== "closed" || spinning || author || draft || paused) return;
+    if (phase !== "closed" || spinning || draft || paused) return;
     if (gate) {
       haptic("light");
       controller.openAccount();

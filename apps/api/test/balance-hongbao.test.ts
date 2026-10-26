@@ -213,6 +213,27 @@ describe("🐟额红包", () => {
     expect((await adminBalanceOverview(bindings)).mismatches).toBe(0);
   });
 
+  it("gives its sender's own share back to their 可用 on the spot (自领)", async () => {
+    // docs/self-claim-design.md: as anyone's share, the claimant being them.
+    await give(author, "3.00");
+    const opened = await create(
+      fish({ mode: "fixed", totalAmount: "2.00", count: 2 }),
+    );
+    expect(await account(author)).toMatchObject({
+      availableMinor: 100,
+      lockedMinor: 200,
+    });
+    expect(await redeem(opened.id, author)).toMatchObject({
+      result: "claimed",
+      claim: { self: true, amount: "1.00" },
+    });
+    expect(await account(author)).toMatchObject({
+      availableMinor: 200,
+      lockedMinor: 100,
+    });
+    expect((await adminBalanceOverview(bindings)).mismatches).toBe(0);
+  });
+
   it("spends the lock when all is taken, with nothing to give back", async () => {
     await give(author, "2.00");
     const opened = await create(

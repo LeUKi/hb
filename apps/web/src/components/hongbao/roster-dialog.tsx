@@ -169,11 +169,14 @@ function RosterContent({
       : null;
     // A 🐟额红包's claims and prizes went into 🐟额 (balance-design §14).
     const fish = activity.fish && kind !== "registrations";
-    if (!row.password && !payment && !fish && !row.judge) return null;
+    // 自领: the sender's own, no payment (docs/self-claim-design.md).
+    const self = row.titles.includes("self");
+    if (!row.password && !payment && !fish && !self && !row.judge) return null;
     return {
       password: row.password ?? null,
       payment,
       fish,
+      self,
       ...(row.judge ? { judge: row.judge } : {}),
     };
   };
