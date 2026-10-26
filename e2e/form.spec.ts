@@ -322,6 +322,14 @@ test.describe("发红包", () => {
       page: true,
     });
     const sent = await mockCreate(page);
+    // The page's own headers, read by the API: this one refuses frames.
+    const checked: string[] = [];
+    await page.route("**/api/me/attached-page/check**", (route) => {
+      checked.push(
+        new URL(route.request().url()).searchParams.get("url") ?? "",
+      );
+      return route.fulfill({ json: { embeddable: "no" } });
+    });
     await openApp(page, "/new");
     await fillRandom(page);
     await page.getByRole("button", { name: /更多设置/ }).click();
@@ -338,13 +346,24 @@ test.describe("发红包", () => {
     await expect(input).toHaveValue(
       "https://puzzle.example.com/%E9%A2%98%E7%9B%AE?day=3",
     );
+    const refused =
+      "这个网站不允许被嵌入，红包页上会显示不出来，只能在新标签页打开。";
+    await expect(field).toContainText(refused);
+    expect(checked).toEqual([
+      "https://puzzle.example.com/%E9%A2%98%E7%9B%AE?day=3",
+    ]);
+    // Typing again: the warning is for the address it was read for.
+    await input.fill("https://puzzle.example.com/other");
+    await expect(field).not.toContainText(refused);
+    await input.blur();
     await sheet.getByRole("button", { name: "完成" }).click();
     await page.getByRole("button", { name: "存草稿" }).first().click();
     await expect(
       shown(page, "草稿已保存。开放前只有你能看到它。").first(),
     ).toBeVisible();
+    // Only a warning: it is saved all the same.
     expect(sent[0]?.activity).toMatchObject({
-      pageUrl: "https://puzzle.example.com/%E9%A2%98%E7%9B%AE?day=3",
+      pageUrl: "https://puzzle.example.com/other",
     });
   });
 

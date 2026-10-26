@@ -1,6 +1,7 @@
 import { normalizePageUrl } from "@hb/contracts";
 import { ChevronRight, X } from "lucide-react";
 import { type ReactNode, useId, useRef, useState } from "react";
+import { useAttachedPageCheck } from "../../lib/activities";
 import { PlusBadge } from "../balance/plus";
 import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
@@ -158,6 +159,13 @@ export function SettingsSheet({
   const scroller = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState<NoteKey | null>(null);
   const groups = groupsOf(form, opened);
+  // 附带网页: the address last left, and whether that page may be framed.
+  const [checkedPage, setCheckedPage] = useState(() =>
+    normalizePageUrl(form.page),
+  );
+  const pageCheck = useAttachedPageCheck(
+    (pageOffered || opened) && !pageStopped ? checkedPage : null,
+  );
   // 首页领取 off keeps 红包广场 on (07 §6); 代码判定 is only on its page.
   const coded = form.mode === "code";
   const squareRequired =
@@ -461,9 +469,18 @@ export function SettingsSheet({
                       const page = normalizePageUrl(form.page);
                       if (page && page !== form.page)
                         update((current) => ({ ...current, page }));
+                      setCheckedPage(page);
                     }}
                   />
                 </Field>
+                {/* Read from the page's own headers when the field is left:
+                    a page that refuses frames shows nothing here. */}
+                {pageCheck.data?.embeddable === "no" &&
+                  normalizePageUrl(form.page) === checkedPage && (
+                    <p className="text-sm text-warning">
+                      这个网站不允许被嵌入，红包页上会显示不出来，只能在新标签页打开。
+                    </p>
+                  )}
               </Setting>
             )}
             <Setting>

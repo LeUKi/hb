@@ -2,6 +2,7 @@ import type {
   AccountHistorySummary,
   ActivityError,
   ActivityIssue,
+  AttachedPageCheck,
   AttemptCooldown,
   CreateActivityInput,
   DeleteActivityInput,
@@ -416,4 +417,24 @@ export function useActivityWrites(
       onError,
     }),
   };
+}
+
+/**
+ * 附带网页 (docs/attached-page-design.md §2.1): may this site show the page
+ * in a frame, by its own headers, read by the API; once a minute at most.
+ */
+export function useAttachedPageCheck(url: string | null) {
+  return useQuery({
+    queryKey: ["attached-page-check", url],
+    enabled: url !== null,
+    queryFn: async ({ signal }) =>
+      readResponse<AttachedPageCheck>(
+        await fetch(
+          `/api/me/attached-page/check?url=${encodeURIComponent(url ?? "")}`,
+          { signal, cache: "no-store" },
+        ),
+      ),
+    staleTime: 60_000,
+    retry: false,
+  });
 }

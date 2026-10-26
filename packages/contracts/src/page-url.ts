@@ -42,6 +42,13 @@ export function normalizePageUrl(value: string): string | null {
   return new URL(text).href;
 }
 
+/**
+ * Whether the page lets this site show it in a frame, by its own headers
+ * read now (X-Frame-Options, frame-ancestors): unknown when it could not
+ * be read.
+ */
+export type AttachedPageCheck = { embeddable: "yes" | "no" | "unknown" };
+
 /** A 红包's page as its viewers get it. */
 export type AttachedPage = { url: string; host: string };
 

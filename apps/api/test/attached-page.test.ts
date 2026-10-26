@@ -4,7 +4,8 @@ import {
   type AdminAuditEntry,
   emptyActivityInput,
 } from "@hb/contracts";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { framingOf } from "../src/activities/attached-page";
 import {
   createActivity,
   getManagedActivity,
@@ -231,5 +232,99 @@ describe("附带网页", () => {
       (await call<{ page?: true }>("GET", "/me/balance/hongbao", other)).body
         .page,
     ).toBeUndefined();
+  });
+});
+
+describe("附带网页: may this site frame it", () => {
+  afterEach(() => vi.restoreAllMocks());
+  const origin = "https://hb.lafi.sh";
+  const framing = (headers: Record<string, string>) =>
+    framingOf(new Headers(headers), origin);
+
+  it("reads frame-ancestors first, X-Frame-Options only without it", () => {
+    expect(framing({})).toBe("yes");
+    expect(framing({ "x-frame-options": "DENY" })).toBe("no");
+    expect(framing({ "x-frame-options": "sameorigin" })).toBe("no");
+    expect(
+      framing({
+        "content-security-policy": "default-src 'self'; frame-ancestors 'none'",
+      }),
+    ).toBe("no");
+    expect(
+      framing({ "content-security-policy": "frame-ancestors 'self'" }),
+    ).toBe("no");
+    for (const allowed of [
+      "frame-ancestors https://hb.lafi.sh",
+      "frame-ancestors hb.lafi.sh",
+      "frame-ancestors https://*.lafi.sh",
+      "frame-ancestors https:",
+      "frame-ancestors *",
+      "frame-ancestors 'self' https://hb.lafi.sh:443/any",
+    ])
+      expect(framing({ "content-security-policy": allowed })).toBe("yes");
+    for (const refused of [
+      "frame-ancestors https://example.com",
+      "frame-ancestors https://hb.lafi.sh:8443",
+      "frame-ancestors *.hb.lafi.sh",
+    ])
+      expect(framing({ "content-security-policy": refused })).toBe("no");
+    // A frame-ancestors list that lets this site in: X-Frame-Options is not read.
+    expect(
+      framing({
+        "content-security-policy": "frame-ancestors https://hb.lafi.sh",
+        "x-frame-options": "DENY",
+      }),
+    ).toBe("yes");
+    // Two policies: both must let it in.
+    expect(
+      framing({
+        "content-security-policy":
+          "frame-ancestors https://hb.lafi.sh, frame-ancestors 'none'",
+      }),
+    ).toBe("no");
+  });
+
+  it("asks the page for those who may set one, and says unknown when it cannot", async () => {
+    const answers: (Response | Error)[] = [
+      new Response("<p>no</p>", {
+        headers: {
+          "content-security-policy":
+            "default-src 'self'; frame-ancestors 'none'",
+        },
+      }),
+      new Response("<p>yes</p>"),
+      new Error("unreachable"),
+    ];
+    const asked: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      asked.push(String(url));
+      const answer = answers.shift();
+      if (!answer || answer instanceof Error) throw answer ?? new Error("none");
+      return answer;
+    });
+    const check = (user: Actor, url: string) =>
+      call<{ embeddable: string }>(
+        "GET",
+        `/me/attached-page/check?url=${encodeURIComponent(url)}`,
+        user,
+      );
+    expect((await check(author, "https://Chat.Example.com/")).body).toEqual({
+      embeddable: "no",
+    });
+    expect((await check(author, "https://example.com/ok")).body).toEqual({
+      embeddable: "yes",
+    });
+    expect((await check(author, "https://example.com/down")).body).toEqual({
+      embeddable: "unknown",
+    });
+    expect(asked).toEqual([
+      "https://chat.example.com/",
+      "https://example.com/ok",
+      "https://example.com/down",
+    ]);
+    expect((await check(author, "http://example.com/")).status).toBe(400);
+    const other = await actor();
+    expect((await check(other, "https://example.com/")).status).toBe(403);
+    expect(asked).toHaveLength(3);
   });
 });
