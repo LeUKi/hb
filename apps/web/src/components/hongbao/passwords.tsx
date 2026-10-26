@@ -116,6 +116,7 @@ export function PasswordSection({
                   className="min-w-0 flex-1 text-base text-ink"
                 />
                 <span
+                  data-morph="move"
                   className={`shrink-0 text-xs ${
                     password.label === "solved"
                       ? "font-medium text-success"
@@ -193,9 +194,15 @@ export function PasswordSection({
       </div>
       {/* Past FOLDED the rest wait under 展开全部, opening in place. */}
       <div className="flex flex-col gap-1.5">
-        <ul className="grid gap-1.5">{rows.slice(0, FOLDED)}</ul>
+        <ul className="grid gap-1.5" data-morph-children="move">
+          {rows.slice(0, FOLDED)}
+        </ul>
         <Reveal show={expanded}>
-          <ul id={`${activityId}-more-passwords`} className="grid gap-1.5">
+          <ul
+            id={`${activityId}-more-passwords`}
+            className="grid gap-1.5"
+            data-morph-children="move"
+          >
             {rows.slice(FOLDED)}
           </ul>
         </Reveal>

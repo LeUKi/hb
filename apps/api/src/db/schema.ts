@@ -220,6 +220,14 @@ export const activities = sqliteTable(
       enum: ["expired", "exhausted", "manual", "stopped"],
     }),
     archivedAt: integer("archived_at"),
+    /**
+     * 附带网页 (docs/attached-page-design.md) the 站长 stopped: when and by
+     * whom; the page is no longer shown. Never undone.
+     */
+    pageStoppedAt: integer("page_stopped_at"),
+    pageStoppedByUserId: text("page_stopped_by_user_id").references(
+      () => users.id,
+    ),
   },
   (table) => [
     uniqueIndex("activities_author_request_unique").on(
@@ -1156,6 +1164,10 @@ export const balanceSettings = sqliteTable(
       .default(false),
     /** 转账 may be made, on the page and the open API (balance-design §16). */
     transferEnabled: integer("transfer_enabled", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    /** 附带网页 are shown and may be set (docs/attached-page-design.md). */
+    pageEnabled: integer("page_enabled", { mode: "boolean" })
       .notNull()
       .default(false),
     updatedAt: integer("updated_at").notNull(),

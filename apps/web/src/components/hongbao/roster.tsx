@@ -30,7 +30,8 @@ const paymentText = {
 export type RosterKind = "claims" | "registrations" | "winners";
 
 // Narrow windows trade column width for the name, so a long title badge
-// ("我焯有桂！") still leaves room for a few characters of it.
+// ("我焯有桂！") still leaves room for a few characters of it. The window
+// turning narrow or wide tweens one set into the other (布局补间).
 const columns: Record<RosterKind, string> = {
   claims:
     "grid-cols-[1.25rem_1.375rem_minmax(3em,1fr)_4.25rem_3rem] @wide/window:grid-cols-[1.75rem_1.375rem_minmax(3em,1fr)_5.25rem_3.5rem]",
@@ -51,7 +52,7 @@ export function RosterHeader({ kind }: { kind: RosterKind }) {
   return (
     <div
       aria-hidden="true"
-      className={`grid h-8 items-center gap-x-2 border-b border-line px-6 text-xs text-ink-3 @wide/window:gap-x-2.5 ${columns[kind]}`}
+      className={`grid h-8 items-center gap-x-2 border-b border-line px-6 text-xs text-ink-3 transition-[grid-template-columns,column-gap] duration-[420ms] ease-[cubic-bezier(0.2,0,0,1)] @wide/window:gap-x-2.5 ${columns[kind]}`}
     >
       <span className="text-right">#</span>
       <span />
@@ -102,7 +103,7 @@ function Row({
       <Squircle radius={10}>
         <div
           title={fullTime(row.at)}
-          className={`grid items-center gap-x-2 px-4 @wide/window:gap-x-2.5 ${columns[kind]} ${
+          className={`grid items-center gap-x-2 px-4 transition-[grid-template-columns,column-gap] duration-[420ms] ease-[cubic-bezier(0.2,0,0,1)] @wide/window:gap-x-2.5 ${columns[kind]} ${
             detail || row.attempt ? "py-1.5" : "h-10"
           } ${row.you ? "bg-gold-soft" : ""}`}
         >
@@ -206,7 +207,7 @@ function Row({
             )}
           </span>
           {kind !== "winners" && (
-            <span className="text-right font-mono text-xs text-ink-2 tabular-nums @wide/window:text-sm">
+            <span className="text-right font-mono text-xs text-ink-2 tabular-nums transition-[font-size] duration-[420ms] ease-[cubic-bezier(0.2,0,0,1)] @wide/window:text-sm">
               <span className="sr-only">用时</span>
               {sinceOpen(row.at - openedAt)}
             </span>

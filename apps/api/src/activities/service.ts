@@ -9,6 +9,7 @@ import {
   ARCHIVE_DELAY_MS,
   activityInputSchema,
   amountToMinor,
+  attachedPageOf,
   boundedMeanLimits,
   type CreateActivityInput,
   DEFAULT_DURATION_MS,
@@ -21,6 +22,7 @@ import {
   ldcTotalMinor,
   type ManagedActivity,
   newActivityInputSchema,
+  normalizePageUrl,
   normalizeTopicLink,
   type PublicActivity,
   type PublicQuantity,
@@ -72,6 +74,11 @@ import {
   readPlatformControls,
 } from "../runtime/controls";
 import { digestPassword } from "../security/crypto";
+import {
+  attachedPageLocked,
+  requireAttachedPage,
+  withPageSwitch,
+} from "./attached-page";
 import {
   publicScope,
   publicScopeWithPeople,
@@ -140,6 +147,8 @@ function storedConfig(input: ActivityInput): StoredConfig {
         }
       : {}),
     topicUrl: topic?.topicUrl ?? "",
+    // 附带网页: kept as the URL standard writes it, not at all when empty.
+    pageUrl: normalizePageUrl(config.pageUrl ?? "") ?? undefined,
     // The roster is always public (redesign 06 §2): no switches are kept.
     showRecipientList: undefined,
     showRecipientUsername: undefined,
@@ -373,6 +382,9 @@ async function managed(
       ...(judgeRow ? { judge: await readJudgeInput(env, judgeRow) } : {}),
     }),
     openingBlockedReason: await openingBlockedReason(env, snapshot.row),
+    ...(snapshot.row.pageStoppedAt !== null
+      ? { pageStopped: true as const }
+      : {}),
     ...(judgeRow
       ? {
           judgePassed: await passedCheck(
@@ -434,7 +446,10 @@ export async function getPublicActivity(
     publicJudge(env, row),
   ]);
   return {
-    ...projectPublicActivity(row, await author(env, row.authorId)),
+    ...(await withPageSwitch(
+      env,
+      projectPublicActivity(row, await author(env, row.authorId)),
+    )),
     ...(drawProof ? { drawProof } : {}),
     ...(judge ? { judge } : {}),
     ...(scope ? { scope } : {}),
@@ -477,6 +492,11 @@ export function projectPublicActivity(
     ...(config.humanCheck ? { humanCheck: true as const } : {}),
     ...(config.scope ? { scope: publicScope(config.scope) } : {}),
     ...(row.endReason === "stopped" ? { stopped: true as const } : {}),
+    // 附带网页: not once the 站长 stopped it; the switch is the reader's
+    // (withPageSwitch).
+    ...(config.pageUrl && row.pageStoppedAt === null
+      ? { page: attachedPageOf(config.pageUrl) }
+      : {}),
   };
 }
 
@@ -597,6 +617,7 @@ export async function createActivity(
   const balance = fundingOf(input.activity) === "balance";
   if (input.activity.money.mode === "code")
     await requireCodeHongbao(env, authorId);
+  if (input.activity.pageUrl) await requireAttachedPage(env, authorId);
   if (balance) await requireBalanceFunding(env, authorId);
   const merchant = balance
     ? null
@@ -760,6 +781,11 @@ export async function updateActivity(
   const oldConfig = configuration(row);
   if (config.humanCheck && !oldConfig.humanCheck && !humanCheckAvailable(env))
     humanCheckUnavailable();
+  // 附带网页 is fixed once opened (docs/attached-page-design.md §1).
+  if ((config.pageUrl ?? "") !== (oldConfig.pageUrl ?? "")) {
+    if (row.openedAt !== null) attachedPageLocked();
+    if (config.pageUrl) await requireAttachedPage(env, authorId);
+  }
   const old = await privateRows(env, id);
   if (
     old.passwords.length > ACTIVITY_LIMITS.passwords &&

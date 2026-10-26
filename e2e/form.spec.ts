@@ -47,7 +47,12 @@ const merchant = {
 async function mockMerchants(
   page: Page,
   items: Merchant[],
-  fish: { enabled: boolean; available: boolean; availableMinor: number } = {
+  fish: {
+    enabled: boolean;
+    available: boolean;
+    availableMinor: number;
+    page?: true;
+  } = {
     enabled: false,
     available: false,
     availableMinor: 0,
@@ -304,6 +309,63 @@ test.describe("发红包", () => {
       shown(page, "草稿已保存。开放前只有你能看到它。").first(),
     ).toBeVisible();
     expect(sent[0]?.activity).toMatchObject({ humanCheck: true });
+  });
+
+  test("更多设置：附带网页只给 PLUS，地址按规矩检查、整理，存草稿时带上", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    await mockMerchants(page, [merchant], {
+      enabled: false,
+      available: false,
+      availableMinor: 0,
+      page: true,
+    });
+    const sent = await mockCreate(page);
+    await openApp(page, "/new");
+    await fillRandom(page);
+    await page.getByRole("button", { name: /更多设置/ }).click();
+    const sheet = page.getByRole("dialog", { name: "更多设置" });
+    const field = sheet.getByRole("region", { name: "附带网页" });
+    await expect(field).toContainText(
+      "选填。红包页旁边会显示这个网页（手机上在底部），比如题目、规则或排行榜。开放后不能改。",
+    );
+    const input = sheet.locator("#hb-page");
+    await input.fill("http://example.com/题目");
+    await expect(field).toContainText("只能用 https:// 开头的地址");
+    await input.fill("https://Puzzle.Example.com/题目?day=3");
+    await input.blur();
+    await expect(input).toHaveValue(
+      "https://puzzle.example.com/%E9%A2%98%E7%9B%AE?day=3",
+    );
+    await sheet.getByRole("button", { name: "完成" }).click();
+    await page.getByRole("button", { name: "存草稿" }).first().click();
+    await expect(
+      shown(page, "草稿已保存。开放前只有你能看到它。").first(),
+    ).toBeVisible();
+    expect(sent[0]?.activity).toMatchObject({
+      pageUrl: "https://puzzle.example.com/%E9%A2%98%E7%9B%AE?day=3",
+    });
+  });
+
+  test("更多设置：不能附带网页的人看不到这一项，存草稿不带", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    await mockMerchants(page, [merchant]);
+    const sent = await mockCreate(page);
+    await openApp(page, "/new");
+    await fillRandom(page);
+    await page.getByRole("button", { name: /更多设置/ }).click();
+    const sheet = page.getByRole("dialog", { name: "更多设置" });
+    await expect(sheet.getByRole("region", { name: "关联帖子" })).toBeVisible();
+    await expect(sheet.locator("#hb-page")).toHaveCount(0);
+    await sheet.getByRole("button", { name: "完成" }).click();
+    await page.getByRole("button", { name: "存草稿" }).first().click();
+    await expect(
+      shown(page, "草稿已保存。开放前只有你能看到它。").first(),
+    ).toBeVisible();
+    expect(sent[0]?.activity).not.toHaveProperty("pageUrl");
   });
 
   test("震动反馈：下一步被拦下震出错；选择类的控件换了才轻震；存草稿成功震成功", async ({

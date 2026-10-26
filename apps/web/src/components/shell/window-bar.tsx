@@ -194,6 +194,7 @@ export function WindowBar() {
             aria-current={page === "/new" ? "page" : undefined}
             aria-label="发红包"
             title="发红包 · /new"
+            data-morph="fade"
             className={cn(
               buttonVariants({ variant: "secondary", size: "icon-bar" }),
               "text-sm @min-[66rem]/window:w-auto @min-[66rem]/window:px-3.5 @min-[66rem]/window:[&_svg]:size-[18px]",
@@ -209,6 +210,7 @@ export function WindowBar() {
             aria-current={page === "/history" ? "page" : undefined}
             aria-label="红包记录"
             title="红包记录 · /history"
+            data-morph="move"
             className={cn(
               buttonVariants({ variant: "secondary", size: "icon-bar" }),
               "@min-[66rem]/window:[&_svg]:size-[18px]",
@@ -218,7 +220,9 @@ export function WindowBar() {
             <SquircleFill radius={buttonRadius["icon-bar"]} />
             <History aria-hidden="true" />
           </CommandLink>
-          <IdentityButton compact={compact} />
+          <span data-morph="fade" className="inline-flex">
+            <IdentityButton compact={compact} />
+          </span>
         </div>
       </header>
     </WindowClip>

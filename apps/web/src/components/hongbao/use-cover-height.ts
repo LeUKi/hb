@@ -5,6 +5,8 @@ import {
   useMotionValue,
 } from "motion/react";
 import { type RefObject, useLayoutEffect, useRef } from "react";
+import { ease } from "../../lib/motion";
+import { crossedJustNow, MORPH_MS } from "../shell/layout-morph";
 import { COVER_RESERVE, type CoverState, scrollerOf } from "./use-cover-state";
 
 /**
@@ -89,6 +91,16 @@ export function useCoverHeight({
     if (!inner) return;
     const observer = new ResizeObserver(() => {
       if (height.isAnimating()) return;
+      // The window crossing a layout line (布局补间) changes the cover's
+      // size: it grows or shrinks there, as the parts in it move.
+      if (crossedJustNow()) {
+        animate(height, inner.offsetHeight, {
+          duration: MORPH_MS / 1000,
+          ease,
+          onComplete: () => height.jump(inner.offsetHeight),
+        });
+        return;
+      }
       height.jump(inner.offsetHeight);
       if (previous.current === "small")
         smallHeight.current = inner.offsetHeight;

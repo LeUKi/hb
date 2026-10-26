@@ -12,6 +12,7 @@ export function plusFeatures(owner = false): PlusFeature[] {
     { name: "转账", text: "转给别人的🐟额或 Credit 账户" },
     { name: "开放接口", text: "接入网站或程序" },
     { name: "代码判定红包", text: "写一段代码，决定谁领多少" },
+    { name: "附带网页", text: "在红包页旁边放一个自己的网页" },
     { name: "邀请", text: "请别人也开通" },
   ];
 }

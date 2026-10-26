@@ -6,6 +6,7 @@ import {
   judgeInputSchema,
   type PublicJudge,
 } from "./judge";
+import { type AttachedPage, pageUrlProblem } from "./page-url";
 import {
   amountToMinor,
   type LdcOpeningBlockedReason,
@@ -28,6 +29,7 @@ export * from "./draw-proof";
 export * from "./ecoji-v2";
 export * from "./forum-emoji";
 export * from "./judge";
+export * from "./page-url";
 export * from "./payments";
 export * from "./profile";
 export * from "./random";
@@ -212,6 +214,19 @@ const baseActivitySchema = z.strictObject({
    * 信任等级 or by name. Absent: everyone. Fixed once opened.
    */
   scope: claimScopeSchema.optional(),
+  /**
+   * 附带网页 (docs/attached-page-design.md): an https page shown beside the
+   * 红包's own. Absent (or empty): none. 🐟额 PLUS; fixed once opened.
+   */
+  pageUrl: z
+    .string()
+    .trim()
+    .max(2048, "地址太长")
+    .optional()
+    .superRefine((value, ctx) => {
+      const problem = value ? pageUrlProblem(value) : null;
+      if (problem) ctx.addIssue({ code: "custom", message: problem });
+    }),
 });
 
 export const ldcMoneySchema = z.discriminatedUnion("mode", [
@@ -816,6 +831,8 @@ export type ActivitySummary = {
 export type ManagedActivity = ActivitySummary & {
   author: ActivityAuthor;
   config: ActivityInput;
+  /** 附带网页 the 站长 stopped: no longer shown on the 红包 page. */
+  pageStopped?: true;
   openingBlockedReason?: LdcOpeningBlockedReason;
   /** 代码判定: this code and these tests passed its sender's 部署. */
   judgePassed?: boolean;
@@ -861,6 +878,11 @@ export type PublicActivity = {
   judge?: PublicJudge;
   /** 代码判定红包 the 站长 stopped (停用): ended, for that reason. */
   stopped?: true;
+  /**
+   * 附带网页: absent when none, the switch is off or the 站长 stopped it
+   * (docs/attached-page-design.md §1).
+   */
+  page?: AttachedPage;
   /**
    * Up to five people for the 名单入口, read with the rest so they match the
    * numbers: the latest claims; while a draw is open, the latest sign-ups;

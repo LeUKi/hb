@@ -34,6 +34,7 @@ export function LiveViewers({
           <motion.div
             key="viewers"
             className="absolute top-0 left-3 @wide/window:left-5"
+            data-morph="move"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

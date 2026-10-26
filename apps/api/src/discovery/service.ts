@@ -83,9 +83,11 @@ function card(
   activityAuthor: PublicActivity["author"],
   myClaim: DiscoveryCard["myClaim"],
 ): DiscoveryCard {
+  // A card has no 附带网页: that is the 红包 page's.
   const {
     beforeInfo: _beforeInfo,
     afterEndInfo: _afterEndInfo,
+    page: _page,
     ...fields
   } = projectPublicActivity(row, activityAuthor);
   return {

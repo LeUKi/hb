@@ -17,7 +17,10 @@ export function PageActions() {
       className="pointer-events-none sticky top-[calc(var(--bar-h)+0.75rem)] z-20 h-0"
       data-hb-part="actions"
     >
-      <div className="pointer-events-auto absolute top-0 right-3 @wide/window:right-5">
+      <div
+        className="pointer-events-auto absolute top-0 right-3 @wide/window:right-5"
+        data-morph="fade"
+      >
         <Button
           id="share-button"
           variant="secondary"

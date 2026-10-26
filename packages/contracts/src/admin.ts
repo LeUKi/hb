@@ -82,6 +82,8 @@ export const adminAuditTypeSchema = z.enum([
   "balance_settings",
   /** 站长 stopped a 代码判定红包 (docs/programmable-hongbao-design.md §1). */
   "code_stop",
+  /** 站长 stopped a 红包's 附带网页 (docs/attached-page-design.md). */
+  "page_stop",
   /** 判定器设置 (redesign/07 §10). */
   "judge_settings",
 ]);
@@ -232,6 +234,12 @@ export type AdminActivityDetail = AdminActivityListItem & {
     stoppedAt: number | null;
     stoppedBy: string | null;
   };
+  /** 附带网页 (docs/attached-page-design.md): its address and the 站长's 停用. */
+  page?: {
+    url: string;
+    stoppedAt: number | null;
+    stoppedBy: string | null;
+  };
   payments: {
     total: number;
     pending: number;
@@ -322,7 +330,7 @@ export type AdminAuditEntry = {
   nextVersion: number;
   before: Record<string, boolean | number>;
   after: Record<string, boolean | number>;
-  /** code_stop: the 红包 stopped. */
+  /** code_stop, page_stop: the 红包 stopped. */
   activity?: { id: string; title: string };
 };
 
@@ -390,7 +398,7 @@ const adminAuditCursorValueSchema = z
   .string()
   .max(512)
   .regex(
-    /^(\d{1,16}):(attempt_rate_limits|balance_settings|code_stop|judge_settings):([A-Za-z0-9_-][A-Za-z0-9_-]{0,100}|[a-f0-9-]{36})$/,
+    /^(\d{1,16}):(attempt_rate_limits|balance_settings|code_stop|judge_settings|page_stop):([A-Za-z0-9_-][A-Za-z0-9_-]{0,100}|[a-f0-9-]{36})$/,
   )
   .refine((value) => Number.isSafeInteger(Number(value.split(":", 1)[0])));
 

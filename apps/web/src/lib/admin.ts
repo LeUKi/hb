@@ -227,6 +227,30 @@ export function useStopCode(csrfToken: string) {
   });
 }
 
+/** 停用附带网页 (docs/attached-page-design.md §1): for good. */
+export function useStopPage(csrfToken: string) {
+  const identity = useAdminIdentity();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (activityId: string) => {
+      await readResponse<{ stopped: true }>(
+        await fetch(
+          `/api/admin/activities/${encodeURIComponent(activityId)}/stop-page`,
+          {
+            method: "POST",
+            headers: { "X-CSRF-Token": csrfToken },
+            cache: "no-store",
+          },
+        ),
+      );
+      for (const rest of [["activities"], ["audit"]])
+        void queryClient.invalidateQueries({
+          queryKey: adminKey(identity, ...rest),
+        });
+    },
+  });
+}
+
 /**
  * 判定器's 用量 (07 §10): today and this month (UTC days, as billed), the
  * last 30 days, and this month's top people and 红包.

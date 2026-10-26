@@ -10,7 +10,9 @@ import {
   type JudgeVersions,
   type LdcMoney,
   type ManagedActivity,
+  normalizePageUrl,
   normalizeTopicLink,
+  pageUrlProblem,
   sameLdcMoney,
   TRUST_LEVEL_MAX,
   TRUST_LEVEL_MIN,
@@ -87,6 +89,8 @@ export type FormState = {
   afterClaimInfo: string;
   afterEndInfo: string;
   topic: string;
+  /** 附带网页 (docs/attached-page-design.md): an https page; empty for none. */
+  page: string;
   listed: boolean;
   quantity: "exact" | "fuzzy";
   /** 领取前人机验证: Turnstile in a dialog before each claim or sign-up. */
@@ -176,6 +180,7 @@ export function emptyForm(now = Date.now()): FormState {
     afterClaimInfo: "",
     afterEndInfo: "",
     topic: "",
+    page: "",
     listed: false,
     humanCheck: false,
     quantity: "exact",
@@ -533,6 +538,8 @@ export function issuesOf(form: FormState, now = Date.now()): Issue[] {
 
   if (!normalizeTopic(form.topic).ok)
     add("hb-topic", "请填写 LINUX DO 帖子或回复的链接");
+  const pageProblem = pageUrlProblem(form.page);
+  if (pageProblem) add("hb-page", pageProblem);
 
   const { scope } = form;
   if (scope.limited) {
@@ -678,6 +685,7 @@ export function formOf(activity: ManagedActivity, now = Date.now()): FormState {
     afterClaimInfo: config.afterClaimInfo,
     afterEndInfo: config.afterEndInfo,
     topic: config.topicUrl,
+    page: config.pageUrl ?? "",
     listed: config.joinSquare,
     quantity: config.quantityVisibility === "fuzzy" ? "fuzzy" : "exact",
     humanCheck: config.humanCheck === true,
@@ -786,6 +794,9 @@ export function inputOf(form: FormState, merchantId: string): ActivityInput {
     participationMode: coded ? "code" : form.participation,
     // Left out when off, so older saved forms keep their shape (idempotency).
     ...(form.humanCheck ? { humanCheck: true } : {}),
+    ...(normalizePageUrl(form.page)
+      ? { pageUrl: normalizePageUrl(form.page) ?? "" }
+      : {}),
     ...(scopeInputOf(form) ? { scope: scopeInputOf(form) } : {}),
     rewardType: "ldc",
     // Left out for 商户直发, as before 🐟额红包 (idempotency).
@@ -809,7 +820,8 @@ export function inputOf(form: FormState, merchantId: string): ActivityInput {
 /**
  * An opened 红包's input with this form's edits: after opening only its
  * words, the post link, 加入广场, how quantities show and 领取前人机验证
- * may change, so everything else is sent back as it was saved.
+ * may change, so everything else (附带网页 among it) is sent back as it
+ * was saved.
  */
 export function openedInputOf(
   activity: ManagedActivity,
@@ -848,6 +860,7 @@ export function sameInput(saved: ActivityInput, sent: ActivityInput) {
       merchantId: input.merchantId,
       funding: input.funding ?? "merchant",
       humanCheck: input.humanCheck === true,
+      pageUrl: input.pageUrl ?? "",
       judge: input.judge ?? null,
       scope: input.scope
         ? {

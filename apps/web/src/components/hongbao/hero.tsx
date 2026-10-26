@@ -10,11 +10,13 @@ import {
 import { cn } from "../../lib/cn";
 import { haptic } from "../../lib/haptics";
 import type { HongbaoActivity } from "../../lib/hongbao";
+import { ease, useReducedMotionPref } from "../../lib/motion";
 import { isApple } from "../../lib/platform";
 import {
   omniboxElements,
   useCooldownSeconds,
 } from "../omnibox/use-omnibox-controller";
+import { MORPH_MS } from "../shell/layout-morph";
 import { useWindowInfo, type WindowInfo } from "../shell/window-info";
 import { ShortcutKbd } from "../ui/kbd";
 import { MorphLabel, RollingNumber } from "../ui/morph-label";
@@ -74,6 +76,7 @@ function ActionHint({
   hintId: string;
 }) {
   const { compact } = useWindowInfo();
+  const reduced = useReducedMotionPref();
   const { phase, message } = hongbao;
   return (
     <div
@@ -102,17 +105,28 @@ function ActionHint({
           {message.text}
         </p>
       )}
-      {!compact &&
-        phase === "closed" &&
-        activity.participation !== "direct" &&
-        hongbao.sealState === "idle" &&
-        !hongbao.gate &&
-        !hongbao.author &&
-        !hongbao.draft && (
-          <p className="flex items-center gap-1.5 text-sm text-ink-3">
-            或按 <ShortcutKbd />
-          </p>
-        )}
+      {/* Only beside a keyboard's room: the window turning narrow or wide
+          folds it away or opens it (布局补间), the page below following. */}
+      <AnimatePresence initial={false}>
+        {!compact &&
+          phase === "closed" &&
+          activity.participation !== "direct" &&
+          hongbao.sealState === "idle" &&
+          !hongbao.gate &&
+          !hongbao.author &&
+          !hongbao.draft && (
+            <motion.p
+              key="shortcut"
+              className="flex items-center gap-1.5 overflow-hidden text-sm text-ink-3"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: reduced ? 0 : MORPH_MS / 1000, ease }}
+            >
+              或按 <ShortcutKbd />
+            </motion.p>
+          )}
+      </AnimatePresence>
     </div>
   );
 }

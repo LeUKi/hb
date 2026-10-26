@@ -6,6 +6,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { layoutKey } from "./layout-morph";
 
 // The omnibox is a single element that moves between "slots": invisible
 // placeholders laid out by the start page, the window bar and the command
@@ -13,7 +14,14 @@ import {
 // so a transform on the stage never skews them.
 
 export type SlotName = "start" | "dock" | "command";
-export type SlotRect = { x: number; y: number; width: number; height: number };
+export type SlotRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** The stage's side of the layout lines when measured (布局补间). */
+  layout: string;
+};
 
 class SlotRegistry {
   private stage: HTMLElement | null = null;
@@ -66,6 +74,7 @@ class SlotRegistry {
   measure() {
     if (!this.stage) return;
     const base = this.stage.getBoundingClientRect();
+    const layout = layoutKey(base.width);
     let changed = false;
     for (const name of this.rects.keys()) {
       if (!this.elements.has(name)) {
@@ -80,6 +89,7 @@ class SlotRegistry {
         y: Math.round((box.top - base.top) * 2) / 2,
         width: Math.round(box.width * 2) / 2,
         height: Math.round(box.height * 2) / 2,
+        layout,
       };
       const current = this.rects.get(name);
       if (
@@ -87,7 +97,8 @@ class SlotRegistry {
         current.x !== next.x ||
         current.y !== next.y ||
         current.width !== next.width ||
-        current.height !== next.height
+        current.height !== next.height ||
+        current.layout !== next.layout
       ) {
         this.rects.set(name, next);
         changed = true;
@@ -131,6 +142,15 @@ export function useSlotStage() {
     },
     [registry],
   );
+}
+
+/**
+ * Measures the slots now: the window's own resize work calls it, so the
+ * omnibox is placed in the frame its slot moved, not the next.
+ */
+export function useMeasureSlots() {
+  const registry = useRegistry();
+  return useCallback(() => registry.measure(), [registry]);
 }
 
 /** Ref callback that registers an invisible placeholder for the omnibox. */

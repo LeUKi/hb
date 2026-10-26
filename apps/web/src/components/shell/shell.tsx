@@ -21,6 +21,7 @@ import {
   unconfirmedAtom,
 } from "../omnibox/state";
 import { AppWindow } from "./app-window";
+import { AttachedPageLayout } from "./attached-page";
 import { SlotProvider } from "./slots";
 
 /** Queries that hold no account's data: kept across sign-in and sign-out. */
@@ -153,7 +154,9 @@ export function Shell() {
             <span className="desktop-glow desktop-glow-coral" />
             <span className="desktop-glow desktop-glow-ember" />
           </div>
-          <AppWindow />
+          <AttachedPageLayout>
+            <AppWindow />
+          </AttachedPageLayout>
         </div>
       </SlotProvider>
     </MotionConfig>

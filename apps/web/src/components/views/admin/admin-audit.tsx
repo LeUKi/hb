@@ -24,6 +24,7 @@ const balanceLabels: Record<
   withdrawEnabled: ["转出", (value) => (value ? "开" : "关")],
   hongbaoEnabled: ["🐟额红包", (value) => (value ? "开" : "关")],
   transferEnabled: ["转账", (value) => (value ? "开" : "关")],
+  pageEnabled: ["附带网页", (value) => (value ? "开" : "关")],
   topupFeePercent: ["流转费率", (value) => `${value}%`],
   withdrawFeePercent: ["转出费率", (value) => `${value}%`],
   withdrawMaxMinor: [
@@ -50,6 +51,7 @@ const kinds = {
   attempt_rate_limits: "尝试间隔",
   balance_settings: "🐟额设置",
   code_stop: "停用红包",
+  page_stop: "停用附带网页",
   judge_settings: "判定器设置",
 } as const;
 
@@ -57,6 +59,8 @@ const kinds = {
 function changesOf(entry: AdminAuditEntry) {
   if (entry.type === "code_stop")
     return [`停用代码判定红包「${entry.activity?.title ?? ""}」`];
+  if (entry.type === "page_stop")
+    return [`停用红包「${entry.activity?.title ?? ""}」的附带网页`];
   const labels =
     entry.type === "balance_settings"
       ? balanceLabels
@@ -180,12 +184,13 @@ export function AdminAudit() {
                         </span>
                       </p>
                       {/* A 停用 changes a 红包, not a numbered setting. */}
-                      {entry.type !== "code_stop" && (
-                        <p className="text-xs text-ink-3">
-                          第 {entry.previousVersion} 版 → 第 {entry.nextVersion}{" "}
-                          版
-                        </p>
-                      )}
+                      {entry.type !== "code_stop" &&
+                        entry.type !== "page_stop" && (
+                          <p className="text-xs text-ink-3">
+                            第 {entry.previousVersion} 版 → 第{" "}
+                            {entry.nextVersion} 版
+                          </p>
+                        )}
                     </div>
                     <span className="flex items-center gap-2 text-sm text-ink-2">
                       <Avatar

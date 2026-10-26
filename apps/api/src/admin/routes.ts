@@ -36,6 +36,7 @@ import { inArray } from "drizzle-orm";
 import { Hono } from "hono";
 import { validator } from "hono/validator";
 import type { z } from "zod";
+import { stopAttachedPage } from "../activities/attached-page";
 import { ActivityError } from "../activities/errors";
 import {
   activityListFields,
@@ -109,7 +110,7 @@ function encodeAuditCursor(row: AuditCursor | undefined) {
 function parseAuditCursor(value: string | undefined): AuditCursor | null {
   if (!value) return null;
   const match =
-    /^(\d{1,16}):(attempt_rate_limits|balance_settings|code_stop|judge_settings):([A-Za-z0-9_-][A-Za-z0-9_-]{0,100}|[a-f0-9-]{36})$/.exec(
+    /^(\d{1,16}):(attempt_rate_limits|balance_settings|code_stop|judge_settings|page_stop):([A-Za-z0-9_-][A-Za-z0-9_-]{0,100}|[a-f0-9-]{36})$/.exec(
       value,
     );
   if (!match) throw new ActivityError(400, "INVALID_CURSOR", "分页游标无效。");
@@ -627,10 +628,13 @@ async function activityDetail(
       (SELECT COUNT(*) FROM activity_passwords p WHERE p.activity_id=a.id) AS password_count,
       ${lifecycleSql} AS lifecycle,
       c.fingerprint AS code_fingerprint, c.failures_in_row AS code_failures, c.paused_at AS code_paused_at,
-      c.stopped_at AS code_stopped_at, s.display_name AS code_stopped_by
+      c.stopped_at AS code_stopped_at, s.display_name AS code_stopped_by,
+      json_extract(a.config,'$.pageUrl') AS page_url, a.page_stopped_at,
+      ps.display_name AS page_stopped_by
       FROM activities a JOIN users u ON u.id=a.author_id
       LEFT JOIN activity_code c ON c.activity_id=a.id AND a.participation_mode='code'
       LEFT JOIN users s ON s.id=c.stopped_by_user_id
+      LEFT JOIN users ps ON ps.id=a.page_stopped_by_user_id
       WHERE a.id=? AND a.reward_type='ldc' AND a.deleted_at IS NULL`).bind(id),
     env.DB.prepare(`SELECT COUNT(*) AS total,
       SUM(CASE WHEN status!='confirmed' THEN 1 ELSE 0 END) AS pending,
@@ -694,6 +698,21 @@ async function activityDetail(
                 row.code_stopped_by === null
                   ? null
                   : String(row.code_stopped_by),
+            },
+          }
+        : {}),
+      ...(row.page_url
+        ? {
+            page: {
+              url: String(row.page_url),
+              stoppedAt:
+                row.page_stopped_at === null
+                  ? null
+                  : asInt(row.page_stopped_at),
+              stoppedBy:
+                row.page_stopped_by === null
+                  ? null
+                  : String(row.page_stopped_by),
             },
           }
         : {}),
@@ -1215,6 +1234,10 @@ function balanceAuditValues(json: unknown): Record<string, boolean | number> {
     ...("transferEnabled" in value
       ? { transferEnabled: value.transferEnabled === true }
       : {}),
+    // 附带网页 (0046): the same.
+    ...("pageEnabled" in value
+      ? { pageEnabled: value.pageEnabled === true }
+      : {}),
     ...("allowlistEnabled" in value
       ? {
           allowlistEnabled: value.allowlistEnabled === true,
@@ -1318,6 +1341,19 @@ async function audit(
         activity: { id: String(row.id), title: String(row.title) },
       }),
     },
+    // 停用附带网页 (docs/attached-page-design.md): kept on the 红包's row.
+    {
+      type: "page_stop" as const,
+      columns: "c.title",
+      table: `(SELECT id, page_stopped_by_user_id AS actor_user_id,
+        page_stopped_at AS created_at, 0 AS previous_version, 0 AS next_version, title
+        FROM activities WHERE page_stopped_at IS NOT NULL)`,
+      values: (row: Record<string, unknown>) => ({
+        before: {},
+        after: {},
+        activity: { id: String(row.id), title: String(row.title) },
+      }),
+    },
   ].filter((source) => type === "all" || source.type === type);
   const read = await Promise.all(
     sources.map((source) =>
@@ -1410,6 +1446,14 @@ export const adminRoutes = new Hono<ApiContext>()
   .get("/admin/activities/:id", async (c) =>
     c.json(await activityDetail(c.env, c.req.param("id"))),
   )
+  // 停用附带网页 (docs/attached-page-design.md §1): for good.
+  .post("/admin/activities/:id/stop-page", async (c) => {
+    const session = await requireAdmin(c);
+    assertCsrf(c, session);
+    return c.json(
+      await stopAttachedPage(c.env, c.req.param("id"), session.user.id),
+    );
+  })
   .get("/admin/users", async (c) =>
     c.json(
       await listUsers(

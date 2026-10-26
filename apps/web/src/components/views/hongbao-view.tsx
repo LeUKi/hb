@@ -151,7 +151,10 @@ function HongbaoPage({
         arriveFrom={arriveFrom}
         fromRed={fromRed}
       />
-      <div className="mx-auto flex w-full max-w-[36rem] flex-col gap-8 px-5 pt-8 @wide/window:px-8">
+      <div
+        className="mx-auto flex w-full max-w-[36rem] flex-col gap-8 px-5 pt-8 transition-[padding] duration-[420ms] ease-[cubic-bezier(0.2,0,0,1)] @wide/window:px-8"
+        data-morph-children="move"
+      >
         <RefreshNotice />
         {hongbao.author && (
           <AuthorTools activity={activity} ended={view.ended} />

@@ -18,11 +18,13 @@ type SettingsRow = {
   withdraw_max_minor: number;
   hongbao_enabled: number;
   transfer_enabled: number;
+  page_enabled: number;
   updated_at: number;
 };
 
 const SELECT_SETTINGS = `SELECT version,topup_enabled,withdraw_enabled,topup_fee_percent,
-  withdraw_fee_percent,withdraw_max_minor,hongbao_enabled,transfer_enabled,updated_at
+  withdraw_fee_percent,withdraw_max_minor,hongbao_enabled,transfer_enabled,page_enabled,
+  updated_at
   FROM balance_settings WHERE id='global'`;
 
 function settingsOf(row: SettingsRow): BalanceSettings {
@@ -35,6 +37,7 @@ function settingsOf(row: SettingsRow): BalanceSettings {
     withdrawMaxMinor: row.withdraw_max_minor,
     hongbaoEnabled: row.hongbao_enabled === 1,
     transferEnabled: row.transfer_enabled === 1,
+    pageEnabled: row.page_enabled === 1,
     updatedAt: row.updated_at,
   };
 }
@@ -94,6 +97,7 @@ function snapshot(settings: Required<BalanceSettingsInput>) {
     withdrawMaxMinor: settings.withdrawMaxMinor,
     hongbaoEnabled: settings.hongbaoEnabled,
     transferEnabled: settings.transferEnabled,
+    pageEnabled: settings.pageEnabled,
   });
 }
 
@@ -108,6 +112,7 @@ export async function updateBalanceSettings(
     ...change,
     hongbaoEnabled: change.hongbaoEnabled ?? previous.hongbaoEnabled,
     transferEnabled: change.transferEnabled ?? previous.transferEnabled,
+    pageEnabled: change.pageEnabled ?? previous.pageEnabled,
   };
   try {
     await env.DB.batch([
@@ -126,7 +131,7 @@ export async function updateBalanceSettings(
       ),
       env.DB.prepare(`UPDATE balance_settings SET version=version+1,
         topup_enabled=?,withdraw_enabled=?,topup_fee_percent=?,withdraw_fee_percent=?,
-        withdraw_max_minor=?,hongbao_enabled=?,transfer_enabled=?,
+        withdraw_max_minor=?,hongbao_enabled=?,transfer_enabled=?,page_enabled=?,
         updated_at=${databaseNow},updated_by_user_id=?
         WHERE id='global' AND version=?`).bind(
         Number(next.topupEnabled),
@@ -136,6 +141,7 @@ export async function updateBalanceSettings(
         next.withdrawMaxMinor,
         Number(next.hongbaoEnabled),
         Number(next.transferEnabled),
+        Number(next.pageEnabled),
         actorUserId,
         expectedVersion,
       ),

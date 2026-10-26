@@ -1,6 +1,7 @@
 import type {
   ActivityParticipationResponse,
   ActivityPasswords,
+  AttachedPage,
   AuthorClaim,
   ClaimDetail,
   DrawProof,
@@ -69,6 +70,8 @@ export type HongbaoActivity = {
   minEach?: string;
   /** 代码判定: the code in full, for its sender while it runs (07 §6). */
   senderCode?: string;
+  /** 附带网页 (docs/attached-page-design.md): absent when none or not shown. */
+  page?: AttachedPage;
 };
 
 export type DurationUnit = "seconds" | "minutes" | "hours" | "days";
@@ -218,6 +221,7 @@ export function hongbaoOf(
     ...(activity.judge ? { judge: activity.judge } : {}),
     ...(reward?.minEach ? { minEach: reward.minEach } : {}),
     ...(config?.judge ? { senderCode: config.judge.code } : {}),
+    ...(activity.page ? { page: activity.page } : {}),
   };
 }
 

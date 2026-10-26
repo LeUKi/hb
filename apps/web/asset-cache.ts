@@ -1,5 +1,13 @@
 import type { Plugin } from "vite";
 
+/**
+ * Every page and file: shown in this site's own frames only, never inside
+ * another site's (docs/attached-page-design.md §3). No cache rule is this
+ * broad.
+ */
+export const FRAMING_RULE =
+  "/*\n  Content-Security-Policy: frame-ancestors 'self'\n  X-Frame-Options: SAMEORIGIN\n";
+
 const fingerprintedAsset =
   /^assets\/[^/\s?#]+-[\w-]{8,}\.(?:js|css|svg|png|jpe?g|webp|avif|gif|ico|woff2?|ttf|otf)$/;
 
@@ -14,9 +22,10 @@ export function assetCacheHeaders(files: readonly string[]) {
     ? ["/version.json\n  Cache-Control: no-store\n"]
     : [];
   // Workers _headers supports at most 100 rules. Never silently drop a chunk.
-  if (assets.length + version.length > 100)
+  if (assets.length + version.length + 1 > 100)
     throw new Error("ASSET_CACHE_RULE_LIMIT_EXCEEDED");
   return [
+    FRAMING_RULE,
     ...assets.map(
       (path) =>
         `/${path}\n  Cache-Control: public, max-age=31536000, immutable\n`,

@@ -116,6 +116,10 @@ export function PanelDialog({
                   : { scale: reduced ? 1 : 0.97 }),
                 transition: { duration: reduced ? 0 : 0.12 },
               }}
+              // The window turning narrow or wide while it is open: from the
+              // middle to the bottom (or back), its width tweened, its words
+              // rewrapping, never stretched (布局补间).
+              data-morph="panel"
               transition={{ duration: reduced ? 0 : 0.2, ease }}
             >
               <SquirclePlate

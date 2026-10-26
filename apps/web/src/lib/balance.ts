@@ -297,6 +297,8 @@ export type BalanceFunding = {
    * to deploy today, of 每人每天部署几次.
    */
   code?: { deploysLeft: number; deployLimit: number };
+  /** 附带网页 may be set (PLUS, its switch on; docs/attached-page-design.md). */
+  page?: true;
 };
 
 /**

@@ -255,6 +255,7 @@ export function AddressRoller({
           }}
           style={{ originZ: -depth, backfaceVisibility: "hidden" }}
           className="absolute inset-0 flex items-center"
+          data-morph="swap"
         >
           {address.node}
         </motion.span>

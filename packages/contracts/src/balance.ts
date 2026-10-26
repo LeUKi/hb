@@ -143,6 +143,8 @@ export const balanceSettingsSchema = z.strictObject({
   hongbaoEnabled: z.boolean().optional(),
   /** 转账 (§16); left as it is when absent. */
   transferEnabled: z.boolean().optional(),
+  /** 附带网页 (docs/attached-page-design.md); left as it is when absent. */
+  pageEnabled: z.boolean().optional(),
 });
 export type BalanceSettingsInput = z.infer<typeof balanceSettingsSchema>;
 

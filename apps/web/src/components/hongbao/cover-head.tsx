@@ -252,6 +252,7 @@ export function CoverHead({
 
   return (
     <div
+      data-morph="centre"
       className={cn(
         "relative flex w-full flex-col items-center text-center",
         small

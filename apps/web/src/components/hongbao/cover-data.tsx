@@ -88,6 +88,7 @@ function DataCell({
   const small = motions.state === "small";
   return (
     <div
+      data-morph="move"
       className={cn(
         "relative min-w-0",
         small
@@ -104,6 +105,7 @@ function DataCell({
       <motion.dd
         {...motions.leaf}
         className="hb-data-value w-fit max-w-full truncate"
+        data-morph="scale"
       >
         {/* A pushed figure (已领 2 / 3 份) rolls to its new value. */}
         {cell.until !== undefined ? (
@@ -117,6 +119,7 @@ function DataCell({
           <motion.dd
             key="third"
             className="hb-data-note flex w-full items-center truncate"
+            data-morph="scale"
             style={{ transformOrigin: "left center" }}
             {...motions.shrink}
           >
@@ -183,6 +186,7 @@ function RosterEntry({
         layoutDependency={motions.state}
         transition={motions.leaf.transition}
         className="hb-roster-entry flex h-8 shrink-0 items-center gap-2 px-1.5"
+        data-morph="move"
       >
         {people.length > 0 && (
           <span aria-hidden="true" className="flex -space-x-1.5">
@@ -241,6 +245,7 @@ export function CoverData({
           : "flex-col items-center gap-3 @wide/window:gap-4",
       )}
       data-hb-part="stats"
+      data-morph="move"
     >
       <dl
         className={cn(

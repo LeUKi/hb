@@ -36,13 +36,15 @@ type Draft = {
   withdrawMax?: string;
   hongbaoEnabled?: boolean;
   transferEnabled?: boolean;
+  pageEnabled?: boolean;
 };
 
 /**
  * 🐟额's settings (docs/balance-design.md §7, §14, §16): the switches for
- * 转入, 转出, 🐟额红包 and 转账, the two rates and the cap on one 转出 (who
- * may 转入 is by invitation). Saved against the version read, like the
- * attempt intervals. 代码判定红包's are in 判定器 (07 §10).
+ * 转入, 转出, 🐟额红包, 转账 and 附带网页 (docs/attached-page-design.md),
+ * the two rates and the cap on one 转出 (who may 转入 is by invitation).
+ * Saved against the version read, like the attempt intervals. 代码判定红包's
+ * are in 判定器 (07 §10).
  */
 export function BalanceSettingsSection({
   data,
@@ -71,6 +73,7 @@ export function BalanceSettingsSection({
     withdrawMax: draft.withdrawMax ?? (shown.withdrawMaxMinor / 100).toFixed(2),
     hongbaoEnabled: draft.hongbaoEnabled ?? shown.hongbaoEnabled,
     transferEnabled: draft.transferEnabled ?? shown.transferEnabled,
+    pageEnabled: draft.pageEnabled ?? shown.pageEnabled,
   };
   const cap = capMinor(values.withdrawMax);
   const ok =
@@ -98,6 +101,7 @@ export function BalanceSettingsSection({
         withdrawMaxMinor: cap ?? shown.withdrawMaxMinor,
         hongbaoEnabled: values.hongbaoEnabled,
         transferEnabled: values.transferEnabled,
+        pageEnabled: values.pageEnabled,
       });
       setBase(null);
       setDraft({});
@@ -153,6 +157,12 @@ export function BalanceSettingsSection({
             description="开着时，开通🐟额 PLUS 的人能在网页和开放接口转账。关掉后都不能转，查单和流水照常，已经在发放中的照常发完。"
             checked={values.transferEnabled}
             onChange={(transferEnabled) => edit({ transferEnabled })}
+          />
+          <Switch
+            label="附带网页"
+            description="PLUS 发红包时可以附带一个网页，显示在红包页旁边。关闭后，已附带的网页也不显示。"
+            checked={values.pageEnabled}
+            onChange={(pageEnabled) => edit({ pageEnabled })}
           />
           <div className="grid gap-4 @wide/window:grid-cols-3">
             <Field

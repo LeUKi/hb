@@ -687,6 +687,8 @@ export function HongbaoForm({
         opened={opened}
         merchantId={activity?.config.merchantId}
         listedLocked={listedLocked}
+        pageOffered={funding?.page === true}
+        pageStopped={activity?.pageStopped === true}
       />
       {activity && draft && (
         <DeleteDraftDialog

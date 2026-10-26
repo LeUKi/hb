@@ -307,6 +307,7 @@ export function AccountCard() {
               scale: reduced ? 1 : 0.97,
               transition: { duration: reduced ? 0 : 0.12 },
             }}
+            data-morph="panel"
             transition={{ duration: reduced ? 0 : 0.18, ease }}
           >
             <SquirclePlate

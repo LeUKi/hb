@@ -104,10 +104,16 @@ export function AuthorTools({
       )}
       <Panel className="flex flex-wrap items-center justify-between gap-1 p-1.5">
         {/* The hint above already says so on a narrow window. */}
-        <span className="hidden px-2.5 text-sm text-ink-3 @wide/window:inline">
+        <span
+          className="hidden px-2.5 text-sm text-ink-3 @wide/window:inline"
+          data-morph="fade"
+        >
           你发的红包
         </span>
-        <span className="flex flex-1 flex-wrap justify-around gap-1 @wide/window:flex-none @wide/window:justify-end">
+        <span
+          className="flex flex-1 flex-wrap justify-around gap-1 @wide/window:flex-none @wide/window:justify-end"
+          data-morph-children="move"
+        >
           <SenderLinks activity={activity} draftFirst />
         </span>
       </Panel>

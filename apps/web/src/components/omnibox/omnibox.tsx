@@ -8,6 +8,7 @@ import {
   animate,
   motion,
   useMotionValue,
+  useTransform,
 } from "motion/react";
 import {
   type KeyboardEvent,
@@ -37,6 +38,7 @@ import { viewEdgeAtom, windowDialogsAtom } from "../../lib/store";
 import { JudgmentRecord } from "../hongbao/my-judgments";
 import { ConfirmDialog } from "../shell/confirm-dialog";
 import { keyboardInsetAtom } from "../shell/keyboard";
+import { MORPH_MS } from "../shell/layout-morph";
 import { type SlotRect, useSlotRect } from "../shell/slots";
 import { isPhoneLike, useWindowInfo } from "../shell/window-info";
 import {
@@ -108,6 +110,10 @@ function isEditableTarget(target: EventTarget | null) {
 /**
  * Moves one element between slots by animating real geometry (no scale); the
  * corner radius travels with it so the squircle reshapes in the same flight.
+ * The window crossing a line its layout changes at (布局补间) moves the slot
+ * at once while the window may still be resizing: there the box keeps to
+ * its slot every frame, and only the jump fades out (an offset to nothing),
+ * so it never trails the rest of the window.
  */
 function useSlotGeometry(
   target: SlotRect | undefined,
@@ -115,14 +121,31 @@ function useSlotGeometry(
   cornerRadius: number,
 ) {
   const reduced = useReducedMotionPref();
-  const x = useMotionValue(0);
-  const y = useMotionValue(0);
-  const width = useMotionValue(0);
-  const height = useMotionValue(0);
+  // Where the slot is, and the jump still fading out after a crossing.
+  const baseX = useMotionValue(0);
+  const baseY = useMotionValue(0);
+  const baseWidth = useMotionValue(0);
+  const baseHeight = useMotionValue(0);
+  const shiftX = useMotionValue(0);
+  const shiftY = useMotionValue(0);
+  const shiftWidth = useMotionValue(0);
+  const shiftHeight = useMotionValue(0);
+  const x = useTransform(() => baseX.get() + shiftX.get());
+  const y = useTransform(() => baseY.get() + shiftY.get());
+  const width = useTransform(() => baseWidth.get() + shiftWidth.get());
+  const height = useTransform(() => baseHeight.get() + shiftHeight.get());
   const radius = useMotionValue(cornerRadius);
+  const element = useRef<HTMLDivElement | null>(null);
   const [placed, setPlaced] = useState(false);
   const pending = useRef(false);
+  const crossed = useRef(false);
+  /** When the last crossing was, and where each step of it started. */
+  const crossedAt = useRef(Number.NEGATIVE_INFINITY);
+  const step = useRef<number[]>([]);
+  /** The slot as last followed, and the frame before: its pace. */
+  const followed = useRef<{ at: number; rect: SlotRect }[]>([]);
   const lastKey = useRef(modeKey);
+  const lastLayout = useRef(target?.layout);
   const flight = useRef<{
     until: number;
     controls: AnimationPlaybackControls[];
@@ -134,15 +157,30 @@ function useSlotGeometry(
       pending.current = true;
     }
   }, [modeKey]);
+  useLayoutEffect(() => {
+    if (lastLayout.current !== target?.layout) {
+      if (lastLayout.current !== undefined) crossed.current = true;
+      lastLayout.current = target?.layout;
+    }
+  }, [target?.layout]);
 
   useLayoutEffect(() => {
     if (!target) return;
+    // Where it is now, onto the page in this frame: motion would write the
+    // same next frame, a frame behind its slot while the window resizes.
+    const paint = () => {
+      const box = element.current;
+      if (!box) return;
+      // From the values themselves: the sums are worked out a frame later.
+      box.style.transform = `translateX(${baseX.get() + shiftX.get()}px) translateY(${baseY.get() + shiftY.get()}px)`;
+      box.style.width = `${baseWidth.get() + shiftWidth.get()}px`;
+      box.style.height = `${baseHeight.get() + shiftHeight.get()}px`;
+    };
     const pairs = [
-      [x, target.x],
-      [y, target.y],
-      [width, target.width],
-      [height, target.height],
-      [radius, cornerRadius],
+      [baseX, shiftX, target.x],
+      [baseY, shiftY, target.y],
+      [baseWidth, shiftWidth, target.width],
+      [baseHeight, shiftHeight, target.height],
     ] as const;
     const stop = () => {
       for (const control of flight.current?.controls ?? []) control.stop();
@@ -152,34 +190,101 @@ function useSlotGeometry(
       for (const control of flight.current?.controls ?? []) control.stop();
       flight.current = {
         until: performance.now() + seconds * 1000,
-        controls: pairs.map(([value, to]) =>
-          animate(value, to, { duration: seconds, ease }),
-        ),
+        controls: [
+          ...pairs.map(([value, , to]) =>
+            animate(value, to, { duration: seconds, ease }),
+          ),
+          animate(radius, cornerRadius, { duration: seconds, ease }),
+        ],
       };
     };
     if (!placed || reduced) {
       stop();
-      for (const [value, to] of pairs) value.jump(to);
+      for (const [value, shift, to] of pairs) {
+        value.jump(to);
+        shift.jump(0);
+      }
+      radius.jump(cornerRadius);
       pending.current = false;
+      crossed.current = false;
+      paint();
       if (!placed) setPlaced(true);
       return;
     }
     if (pending.current) {
       pending.current = false;
+      crossed.current = false;
       fly(durations.travel);
       return;
     }
     const now = performance.now();
+    const keys = ["x", "y", "width", "height"] as const;
+    // The slot as followed, one a frame (two reads in a frame are not a
+    // pace), crossing frames too: the next crossing's pace starts there.
+    const remember = (at: number) => {
+      const kept = followed.current.filter((entry) => at - entry.at > 8);
+      followed.current = [...kept, { at, rect: target }].slice(-2);
+    };
+    if (crossed.current) {
+      crossed.current = false;
+      crossedAt.current = now;
+      // Where the slot would be this frame at the pace of the two frames
+      // before: the crossing's jump is what it is beyond that.
+      const [before, last] = followed.current.slice(-2);
+      step.current = keys.map((key) => {
+        if (!last || now - last.at > 80) return target[key];
+        if (!before || last.at - before.at > 80) return last.rect[key];
+        return last.rect[key] + (last.rect[key] - before.rect[key]);
+      });
+    }
+    // In the crossing's frame the slot may move in steps (the page's own
+    // rules first, its parts a moment later): each step's jump fades out
+    // (MORPH_MS, as the rest of the window), never the pace it keeps.
+    if (now - crossedAt.current < 14) {
+      pairs.forEach(([value, shift, to], index) => {
+        const from = step.current[index] ?? to;
+        step.current[index] = to;
+        value.stop();
+        value.jump(to);
+        if (Math.abs(to - from) < 1) return;
+        shift.jump(shift.get() + from - to);
+        animate(shift, 0, { duration: MORPH_MS / 1000, ease });
+      });
+      animate(radius, cornerRadius, { duration: MORPH_MS / 1000, ease });
+      flight.current = null;
+      remember(now);
+      paint();
+      return;
+    }
     if (flight.current && now < flight.current.until) {
       // Slot moved mid-flight: retarget with the remaining time.
       fly(Math.max(0.08, (flight.current.until - now) / 1000));
       return;
     }
     stop();
-    for (const [value, to] of pairs) value.jump(to);
-  }, [target, cornerRadius, placed, reduced, x, y, width, height, radius]);
+    for (const [value, , to] of pairs) value.jump(to);
+    remember(now);
+    paint();
+    // Outside a flight the corner changes with the layout: it eases there.
+    if (Math.abs(radius.get() - cornerRadius) > 0.5)
+      animate(radius, cornerRadius, { duration: MORPH_MS / 1000, ease });
+  }, [
+    target,
+    cornerRadius,
+    placed,
+    reduced,
+    baseX,
+    baseY,
+    baseWidth,
+    baseHeight,
+    shiftX,
+    shiftY,
+    shiftWidth,
+    shiftHeight,
+    radius,
+  ]);
 
-  return { x, y, width, height, radius, placed };
+  return { x, y, width, height, radius, placed, element };
 }
 
 export function Omnibox() {
@@ -719,6 +824,7 @@ export function Omnibox() {
 
   return (
     <motion.div
+      ref={geometry.element}
       className="absolute top-0 left-0 z-30"
       style={{
         x: geometry.x,

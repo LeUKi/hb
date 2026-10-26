@@ -1,7 +1,7 @@
 import { useLocation } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
 import { AnimatePresence, motion } from "motion/react";
-import { useRef, useSyncExternalStore } from "react";
+import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import { useBootDone } from "../../lib/boot";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { windowDialogsAtom } from "../../lib/store";
@@ -22,8 +22,14 @@ import {
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { radius, Squircle, SquirclePlate } from "../ui/squircle";
 import { AccountCard, AuthErrorWatcher } from "./account-card";
+import {
+  attachedFrameStyle,
+  MorphVeil,
+  useAttachedFrame,
+} from "./attached-page";
 import { KeyboardLayer } from "./keyboard";
-import { useSlot, useSlotStage } from "./slots";
+import { layoutKey, morphPass } from "./layout-morph";
+import { useMeasureSlots, useSlot, useSlotStage } from "./slots";
 import { UpdatePrompt } from "./update-prompt";
 import { ViewStage } from "./view-stage";
 import { WindowBar } from "./window-bar";
@@ -127,6 +133,16 @@ export function AppWindow() {
     select: (location) => Boolean(location.state.panel),
   });
   const dialogsOpen = useAtomValue(windowDialogsAtom) > 0;
+  const companion = useAttachedFrame();
+  // 布局补间: each new size is measured; crossing a layout line moves the
+  // marked parts from where they were.
+  const measureSlots = useMeasureSlots();
+  useLayoutEffect(() => {
+    const root = windowRef.current;
+    if (root) morphPass(root, layoutKey(info.width), reduced);
+    // The omnibox's slot moved with the window: placed in this frame.
+    measureSlots();
+  }, [info.width, reduced, measureSlots]);
 
   return (
     <WindowInfoProvider value={info}>
@@ -134,7 +150,10 @@ export function AppWindow() {
           the 玻璃层 and the 内容区 are two layers of exactly the same size.
           The 内容区 itself is not clipped: its full-window layers each clip
           themselves (WindowClip), so the 顶栏's blur can see the page. */}
-      <div className="app-window-frame relative">
+      <div
+        className="app-window-frame relative"
+        style={attachedFrameStyle(companion)}
+      >
         <SquirclePlate className="window-plate" radius={frameRadius} />
         <WindowClip ring>
           <div aria-hidden="true" className="window-glass absolute inset-0" />
@@ -178,6 +197,9 @@ export function AppWindow() {
           <ScopeDialog />
           <UpdatePrompt />
           <KeyboardLayer />
+          <WindowClip>
+            <MorphVeil tick={companion.tick} hold={companion.holding} />
+          </WindowClip>
         </div>
       </div>
     </WindowInfoProvider>

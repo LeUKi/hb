@@ -7,6 +7,7 @@ import {
   useAdminList,
   useAdminUser,
   useStopCode,
+  useStopPage,
 } from "../../../lib/admin";
 import { cn } from "../../../lib/cn";
 import { type SentRecord, sentRecordOf } from "../../../lib/records";
@@ -161,6 +162,67 @@ function StopCode({ row, title }: { row: Row; title: string }) {
   );
 }
 
+/** 停用附带网页 (docs/attached-page-design.md §1): the page goes, for good. */
+function StopPage({ row, title }: { row: Row; title: string }) {
+  const identity = useIdentity();
+  const stop = useStopPage(identity.csrfToken ?? "");
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const busy = stop.isPending;
+  return (
+    <>
+      <Button size="sm" variant="danger" onClick={() => setConfirming(true)}>
+        停用附带网页
+      </Button>
+      <ConfirmDialog
+        open={confirming}
+        onClose={() => {
+          if (busy) return;
+          setConfirming(false);
+          setError(null);
+        }}
+        busy={busy}
+        title={`停用「${title}」的附带网页？`}
+        text="停用后，这个红包页不再显示附带的网页，不能恢复。"
+        error={error}
+        actions={
+          <>
+            <Button
+              aria-disabled={busy || undefined}
+              onClick={() => {
+                if (busy) return;
+                setConfirming(false);
+                setError(null);
+              }}
+            >
+              取消
+            </Button>
+            <Button
+              variant="danger"
+              aria-disabled={busy || undefined}
+              onClick={() => {
+                if (busy) return;
+                setError(null);
+                stop.mutate(row.id, {
+                  onSuccess: () => setConfirming(false),
+                  onError: (failure) =>
+                    setError(
+                      failure instanceof Error
+                        ? failure.message
+                        : "停用没有完成，请再试一次。",
+                    ),
+                });
+              }}
+            >
+              {busy ? "正在停用…" : error ? "再试一次" : "停用"}
+            </Button>
+          </>
+        }
+      />
+    </>
+  );
+}
+
 function Detail({ row }: { row: Row }) {
   const navigate = useNavigate({ from: "/admin/activities" });
   const { leaveTo } = useOmniboxController();
@@ -274,6 +336,16 @@ function Detail({ row }: { row: Row }) {
               : "—",
           },
           {
+            label: "附带网页",
+            value: later((detail) =>
+              !detail.page
+                ? "—"
+                : detail.page.stoppedAt
+                  ? `${detail.page.url} · ${clockLabel(detail.page.stoppedAt)} 由 ${detail.page.stoppedBy ?? "站长"} 停用`
+                  : detail.page.url,
+            ),
+          },
+          {
             label: "付款",
             // A 🐟额红包 pays nothing out (balance-design §14).
             value:
@@ -320,6 +392,9 @@ function Detail({ row }: { row: Row }) {
           !view.endReason &&
           more?.code &&
           !more.code.stoppedAt && <StopCode row={row} title={activity.title} />}
+        {more?.page && !more.page.stoppedAt && (
+          <StopPage row={row} title={activity.title} />
+        )}
         {(more?.payments.total ?? 0) > 0 && (
           <Button
             size="sm"

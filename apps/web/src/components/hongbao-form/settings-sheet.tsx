@@ -1,5 +1,7 @@
+import { normalizePageUrl } from "@hb/contracts";
 import { ChevronRight, X } from "lucide-react";
 import { type ReactNode, useId, useRef, useState } from "react";
+import { PlusBadge } from "../balance/plus";
 import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
 import { ChoiceCards, Field, Switch, TextInput } from "../ui/field";
@@ -73,10 +75,13 @@ export function groupsOf(form: FormState, opened: boolean): SettingsGroup[] {
 function Setting({
   group,
   title,
+  badge,
   children,
 }: {
   group?: SettingsGroup;
   title?: string;
+  /** Beside the name: PLUS for 附带网页. */
+  badge?: ReactNode;
   children: ReactNode;
 }) {
   const anchor = group ? `hb-group-${group}` : undefined;
@@ -99,9 +104,10 @@ function Setting({
       <h3
         id={anchor}
         tabIndex={anchor ? -1 : undefined}
-        className="text-sm font-medium text-ink outline-none"
+        className="flex items-center gap-1.5 text-sm font-medium text-ink outline-none"
       >
         {title}
+        {badge}
       </h3>
       {children}
     </section>
@@ -125,6 +131,8 @@ export function SettingsSheet({
   opened,
   merchantId,
   listedLocked,
+  pageOffered,
+  pageStopped,
 }: {
   open: boolean;
   /** The group to show first. */
@@ -140,6 +148,10 @@ export function SettingsSheet({
   /** An opened 红包's merchant (it keeps paying it). */
   merchantId?: string;
   listedLocked: boolean;
+  /** 附带网页 may be set: 🐟额 PLUS, its switch on. */
+  pageOffered: boolean;
+  /** The 站长 stopped this 红包's 附带网页. */
+  pageStopped: boolean;
 }) {
   const titleId = useId();
   const noteTitleId = useId();
@@ -416,6 +428,44 @@ export function SettingsSheet({
                 />
               </Field>
             </Setting>
+            {/* 附带网页 (docs/attached-page-design.md §2.1): for those who
+                may set one, or a draft that has one (to take it off). */}
+            {(pageOffered || form.page !== "") && (
+              <Setting title="附带网页" badge={<PlusBadge />}>
+                <Field
+                  label="附带网页"
+                  labelHidden
+                  htmlFor="hb-page"
+                  hint={
+                    pageStopped
+                      ? "站长停用了这个网页，红包页上不再显示。"
+                      : opened
+                        ? "开放后不能改。"
+                        : "选填。红包页旁边会显示这个网页（手机上在底部），比如题目、规则或排行榜。开放后不能改。"
+                  }
+                  error={errorOf("hb-page")}
+                  live
+                >
+                  <TextInput
+                    id="hb-page"
+                    inputMode="url"
+                    placeholder="https://example.com/…"
+                    value={form.page}
+                    readOnly={opened}
+                    invalid={Boolean(errorOf("hb-page"))}
+                    onChange={(event) => {
+                      const page = event.target.value;
+                      update((current) => ({ ...current, page }));
+                    }}
+                    onBlur={() => {
+                      const page = normalizePageUrl(form.page);
+                      if (page && page !== form.page)
+                        update((current) => ({ ...current, page }));
+                    }}
+                  />
+                </Field>
+              </Setting>
+            )}
             <Setting>
               <Switch
                 label="加入红包广场"

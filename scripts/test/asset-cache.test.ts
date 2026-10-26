@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { assetCacheHeaders } from "../../apps/web/asset-cache";
+import { assetCacheHeaders, FRAMING_RULE } from "../../apps/web/asset-cache";
 import { inspectAssetCache } from "../release";
 
 const temporary: string[] = [];
@@ -24,11 +24,14 @@ describe("fingerprinted static asset caching", () => {
       "_headers",
     ]);
     expect(headers.split("\n").filter((line) => line.startsWith("/"))).toEqual([
+      "/*",
       "/assets/app-1234abcd.css",
       "/assets/app-ABCDEFGH.js",
       "/assets/font-1234abcd.woff2",
     ]);
-    expect(headers).not.toContain("*");
+    // The one rule for every path is the framing one, with no caching.
+    expect(headers.startsWith(FRAMING_RULE)).toBe(true);
+    expect(FRAMING_RULE).not.toContain("Cache-Control");
     expect(headers.match(/max-age=31536000, immutable/g)).toHaveLength(3);
     expect(() => assetCacheHeaders(["index.html"])).toThrow(
       "ASSET_CACHE_NO_FINGERPRINTED_ASSETS",
@@ -45,11 +48,23 @@ describe("fingerprinted static asset caching", () => {
   });
 
   it("fails the build instead of silently exceeding Cloudflare's rule limit", () => {
+    // 99 chunks and the framing rule fit; one more does not.
     expect(() =>
       assetCacheHeaders(
-        Array.from({ length: 101 }, (_, i) => `assets/chunk${i}-1234abcd.js`),
+        Array.from({ length: 99 }, (_, i) => `assets/chunk${i}-1234abcd.js`),
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assetCacheHeaders(
+        Array.from({ length: 100 }, (_, i) => `assets/chunk${i}-1234abcd.js`),
       ),
     ).toThrow("ASSET_CACHE_RULE_LIMIT_EXCEEDED");
+  });
+
+  it("keeps every page out of other sites' frames", () => {
+    expect(assetCacheHeaders(["assets/app-ABCDEFGH.js"])).toContain(
+      "/*\n  Content-Security-Policy: frame-ancestors 'self'\n  X-Frame-Options: SAMEORIGIN\n",
+    );
   });
 
   it("release verification rejects missing, broad or incomplete cache policies", () => {

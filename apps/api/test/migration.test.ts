@@ -259,6 +259,9 @@ it("upgrades a populated step-3 database without changing IDs, encrypted content
       draw_published_at: null,
       // 0037: opened before 开奖证明 v2.
       random_version: null,
+      // 0046: no 附带网页 stopped.
+      page_stopped_at: null,
+      page_stopped_by_user_id: null,
       version: Number(row.version) + 1,
       config: JSON.stringify({
         ...oldConfig,
@@ -579,6 +582,9 @@ it("upgrades populated simulated LDC payment data from 0008 through acceptance m
       draw_published_at: null,
       // 0037: opened before 开奖证明 v2.
       random_version: null,
+      // 0046: no 附带网页 stopped.
+      page_stopped_at: null,
+      page_stopped_by_user_id: null,
       version: Number(row.version) + 1,
       config: JSON.stringify({
         ...JSON.parse(String(row.config)),
