@@ -1427,6 +1427,13 @@ test.describe("红包页", () => {
     ).toBeVisible();
     await expect(result.getByText("自领的屑")).toBeVisible();
     await expect(result.getByText("待发放")).toHaveCount(0);
+    // The 口令 it went with is marked as anyone's would be; the rest are theirs.
+    await expect(
+      section.getByRole("listitem").filter({ hasText: "已用此口令领取" }),
+    ).toHaveCount(1);
+    await expect(
+      section.getByRole("listitem").filter({ hasText: "你设置的" }),
+    ).toHaveCount(1);
   });
 
   test("不存在的红包：未找到", async ({ page }) => {

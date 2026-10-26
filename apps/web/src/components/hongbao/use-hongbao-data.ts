@@ -1,4 +1,7 @@
-import type { PublicActivity } from "@hb/contracts";
+import type {
+  ActivityParticipationResponse,
+  PublicActivity,
+} from "@hb/contracts";
 import { useAtomValue } from "jotai";
 import { useEffect, useRef } from "react";
 import {
@@ -55,6 +58,19 @@ function drawing(activity: PublicActivity | undefined) {
  * it moved. Without it (guests, or turned away) the running 红包 polls.
  * Once it is over nothing does, but a payment still on its way.
  */
+/** 自领: the 口令 the sender took their own share (or place) with. */
+function usedBySender(
+  participation: Partial<ActivityParticipationResponse> | undefined,
+) {
+  const registration = participation?.registration;
+  if (registration?.sourcePassword)
+    return { text: registration.sourcePassword, label: "registered" as const };
+  const claim = participation?.claim;
+  return claim?.sourcePassword
+    ? { text: claim.sourcePassword, label: "claimed" as const }
+    : null;
+}
+
 export function useHongbaoPageData(id: string) {
   const identity = useIdentity();
   const user = identity.user;
@@ -189,7 +205,12 @@ export function useHongbaoPageData(id: string) {
       roster,
       passwords: passwordViewOf(
         passwordsQuery.data,
-        author && managed ? { passwords: managed.config.passwords } : null,
+        author && managed
+          ? {
+              passwords: managed.config.passwords,
+              used: usedBySender(participationQuery.data),
+            }
+          : null,
       ),
       mine: mineOf(participationQuery.data, view, roster),
       author,

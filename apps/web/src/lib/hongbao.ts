@@ -380,14 +380,24 @@ export type PasswordView = {
 
 const noPasswords: PasswordView = { known: [], hidden: 0, canVerify: false };
 
-/** The viewer's 口令 tier (the passwords endpoint), or every one for the sender. */
+/**
+ * The viewer's 口令 tier (the passwords endpoint), or every one for the
+ * sender: theirs, the one they took their own share with marked as
+ * anyone's would be (自领, docs/self-claim-design.md).
+ */
 export function passwordViewOf(
   passwords: ActivityPasswords | undefined,
-  sender?: { passwords: string[] } | null,
+  sender?: {
+    passwords: string[];
+    used?: { text: string; label: "claimed" | "registered" } | null;
+  } | null,
 ): PasswordView {
   if (sender)
     return {
-      known: sender.passwords.map((text) => ({ text, label: "own" })),
+      known: sender.passwords.map((text) => ({
+        text,
+        label: sender.used?.text === text ? sender.used.label : "own",
+      })),
       hidden: 0,
       canVerify: false,
     };
