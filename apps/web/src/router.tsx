@@ -219,7 +219,7 @@ export type AdminSearch = {
   anomaly?: string;
   /** /admin/payments: real or simulated payments only. */
   mode?: string;
-  /** A user's id (发红包的人, 收款人) or a 红包's id, from another page. */
+  /** A user's id (红包作者, 收款人) or a 红包's id, from another page. */
   author?: string;
   activity?: string;
   recipient?: string;

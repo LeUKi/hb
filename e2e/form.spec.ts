@@ -257,7 +257,7 @@ test.describe("发红包", () => {
     await expect(note).toBeHidden();
   });
 
-  test("发多少：手续费按发红包的人的 Credit 等级；超过 800 提示可能顺延", async ({
+  test("发多少：手续费按红包作者的 Credit 等级；超过 800 提示可能顺延", async ({
     page,
   }) => {
     await mockSession(page, viewer);

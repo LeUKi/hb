@@ -645,7 +645,7 @@ function QueuePage({ data }: { data: QueueData }) {
               ? {
                   title: `生成金额：${ruleOf(money.algorithm)}，${count} 份，合计 ${total}`,
                 }
-              : { title: `金额：发红包的人填的 ${count} 份，合计 ${total}` },
+              : { title: `金额：红包作者填的 ${count} 份，合计 ${total}` },
             {
               title: random ? "洗牌，排成队列" : "按填写的顺序洗牌，排成队列",
             },

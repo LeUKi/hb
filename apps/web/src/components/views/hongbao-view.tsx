@@ -39,7 +39,7 @@ export function HongbaoView({ id }: { id: string }) {
       <IdentityFailedView
         icon={HongbaoIcon}
         title="未找到红包"
-        text="身份检查失败，请重新检查后继续。草稿只有发红包的人能打开。"
+        text="身份检查失败，请重新检查后继续。草稿只有红包作者能打开。"
       />
     );
   if (page.missing)

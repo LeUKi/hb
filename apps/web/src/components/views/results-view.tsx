@@ -199,7 +199,7 @@ function TopicResults({
               {`帖子 ${topicId} · ${postNumber} 楼，共 ${total} 个红包`}
               {/* Anyone can link a post to their 红包 (production's notice). */}
               <span className="mt-1 block text-xs text-ink-3">
-                每个红包都写明了发红包的人；和帖子关联不代表楼主认可。
+                每个红包都写明了红包作者；和帖子关联不代表楼主认可。
               </span>
             </>
           }

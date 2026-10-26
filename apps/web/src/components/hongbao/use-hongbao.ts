@@ -245,7 +245,7 @@ export function useHongbao(data: HongbaoData) {
               : retry
                 ? `点「${glyph}」重试原提交`
                 : code
-                  ? `点「${glyph}」，输入后提交，由发红包的人的代码判定`
+                  ? `点「${glyph}」，输入后提交，由红包作者的代码判定`
                   : activity.participation === "password"
                     ? `点「${glyph}」，输入口令${verb}`
                     : `点「${glyph}」${verb}`;

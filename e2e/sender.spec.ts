@@ -115,8 +115,8 @@ async function mockActivity(page: Page) {
   );
 }
 
-test.describe("发红包的人的页面", () => {
-  test("别人打开：只有发红包的人能看", async ({ page }) => {
+test.describe("红包作者的页面", () => {
+  test("别人打开：只有红包作者能看", async ({ page }) => {
     await mockSession(page, viewer);
     await mockActivity(page);
     await openApp(page, `/🧧/${code}/📊`);

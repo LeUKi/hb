@@ -125,7 +125,7 @@ export function joinedRecordOf(item: Participation): JoinedRecord {
     activityId: activity.id,
     title: activity.title,
     author:
-      activity.author?.displayName || activity.author?.username || "发红包的人",
+      activity.author?.displayName || activity.author?.username || "红包作者",
     password: record.sourcePassword ?? null,
     fish: activity.funding === "balance",
     code: activity.participationMode === "code",

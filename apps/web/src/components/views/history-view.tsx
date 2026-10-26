@@ -330,7 +330,7 @@ function History({ user }: { user: SessionUser }) {
           ) : joinedRecords.length === 0 ? (
             <EmptyNote
               title="还没有参与过红包"
-              text="在首页输入口令，或打开发红包的人分享的红包链接；红包广场里也有公开的红包。"
+              text="在首页输入口令，或打开红包作者分享的红包链接；红包广场里也有公开的红包。"
               action={
                 <Button
                   variant="primary"

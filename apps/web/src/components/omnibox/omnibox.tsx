@@ -491,7 +491,7 @@ export function Omnibox() {
     expanded && scope && scopeFacts?.password
       ? ({
           tone: "neutral",
-          text: "输入的口令会匿名汇总给发红包的人。",
+          text: "输入的口令会匿名汇总给红包作者。",
         } as const)
       : null;
   // A share text pasted whole (02 §6): its 口令 goes in once the 红包 opens.

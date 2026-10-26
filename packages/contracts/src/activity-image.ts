@@ -196,7 +196,7 @@ export function createActivityImageEmbed(input: {
   const size = input.size ?? ACTIVITY_IMAGE_EMBED_SIZES[0];
   // Both addresses without emoji (forumHref, 05 §5); the alt keeps them.
   const href = forumHref(activityImageUrl(input.activityId, input.origin));
-  const alt = `${normalizeText(input.sender, "发红包的人")}的红包：${encodeActivityEmoji(input.activityId)}`;
+  const alt = `${normalizeText(input.sender, "红包作者")}的红包：${encodeActivityEmoji(input.activityId)}`;
   return [
     `<a href="${escapeXml(forumHref(input.link))}">`,
     `<picture><source type="image/svg+xml" srcset="${escapeXml(href)} 1x"><img width="${size.width}" height="${size.height}" `,
@@ -271,7 +271,7 @@ export function activityImageInput(input: {
   const isDraw = Boolean(activity.draw);
   const base = {
     sender:
-      activity.author.displayName || activity.author.username || "发红包的人",
+      activity.author.displayName || activity.author.username || "红包作者",
     title: activity.title || "红包",
     code: encodeActivityEmoji(activity.id),
     ...(activity.participationMode === "code" ||
@@ -655,7 +655,7 @@ export function renderActivityImage(input: ActivityImageInput) {
   const cover = (to: typeof edge) =>
     `${face.layers.map((fill) => `<path d="${coverPath(to)}" fill="${fill}"/>`).join("\n      ")}
       <path d="${rimPath(to)}" fill="none" stroke="${face.rim}" stroke-width="3"/>`;
-  const senderName = normalizeText(input.sender, "发红包的人");
+  const senderName = normalizeText(input.sender, "红包作者");
   const titleText = normalizeText(input.title, "红包");
 
   // On the red: the sender, a short gold rule, the title (one or two lines).

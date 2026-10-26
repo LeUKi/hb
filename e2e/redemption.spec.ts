@@ -28,7 +28,7 @@ async function expectNoMatch(page: Page) {
     exact: true,
   });
   await expect(which).toBeVisible();
-  await expect(which).toHaveAccessibleDescription(/^发红包的人关闭首页领取后/);
+  await expect(which).toHaveAccessibleDescription(/^红包作者关闭首页领取后/);
   await expect(page.getByRole("button", { name: "红包页" })).toHaveCount(0);
   await expect
     .poll(() =>
@@ -54,7 +54,7 @@ function card(id: string, title: string): DiscoveryCard {
     author: {
       id: "author-e2e",
       username: "author",
-      displayName: "测试发红包的人",
+      displayName: "测试红包作者",
       avatarUrl: null,
     },
     forceDedicated: false,

@@ -122,7 +122,7 @@ function StopCode({ row, title }: { row: Row; title: string }) {
         }}
         busy={busy}
         title={`停用「${title}」？`}
-        text="停用后不能再领，剩下的退回发红包的人的🐟额。"
+        text="停用后不能再领，剩下的退回红包作者的🐟额。"
         error={error}
         actions={
           <>
@@ -522,7 +522,7 @@ export function AdminActivities({ search }: { search: AdminSearch }) {
             />
             {search.author && (
               <FilterChip
-                label={`发红包的人：${authorName}`}
+                label={`红包作者：${authorName}`}
                 onClear={() =>
                   void navigate({
                     search: (prev) => ({ ...prev, author: undefined }),

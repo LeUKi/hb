@@ -372,7 +372,7 @@ function TitleBar({
       <Globe className="mr-1 size-4 shrink-0 text-ink-3" aria-hidden="true" />
       <span
         className="grid min-w-0 flex-1 gap-0.5 leading-tight"
-        title="这是发红包的人提供的网页，不是本站的。它能看到你的 IP 地址和浏览器信息。"
+        title="这是红包作者附带的网页，不是本站的。它能看到你的 IP 地址和浏览器信息。"
       >
         <span className="truncate font-mono text-sm font-medium text-ink">
           {host}
@@ -631,7 +631,7 @@ function EdgeTab({
     >
       <Globe className="size-4" aria-hidden="true" />
       <span className="text-xs whitespace-nowrap [writing-mode:vertical-rl]">
-        发红包的人的网页
+        附带网页
       </span>
     </motion.button>
   );
@@ -663,7 +663,7 @@ function PeekBar({
       type="button"
       onClick={onOpen}
       onPointerDown={onPointerDown}
-      aria-label={`上拉查看发红包的人的网页：${host}`}
+      aria-label={`上拉查看附带网页：${host}`}
       className="flex h-12 shrink-0 touch-none items-center gap-3 px-4 text-left"
     >
       <span className="grid size-8 shrink-0 place-items-center rounded-full bg-accent text-white shadow-sm">
@@ -671,7 +671,7 @@ function PeekBar({
       </span>
       <span className="grid min-w-0 flex-1 leading-tight">
         <span className="truncate text-sm font-semibold text-ink">
-          上拉查看发红包的人的网页
+          上拉查看附带网页
         </span>
         <span className="truncate font-mono text-[11px] text-ink-3">
           {host}

@@ -4,7 +4,7 @@ import type { ApiBindings } from "../env";
 // shows it with the payment; it adds its own fee note after it.
 const LIMIT = 100;
 
-/** What a payee reads with a 红包's payment: 来自@发红包的人的红包：标题. */
+/** What a payee reads with a 红包's payment: 来自@作者的名字的红包：标题. */
 export function claimPaymentRemark(author: string, title: string) {
   const remark = Array.from(`来自@${author}的红包：${title}`);
   return remark.length <= LIMIT

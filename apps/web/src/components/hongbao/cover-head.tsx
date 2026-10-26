@@ -85,9 +85,9 @@ function coverTags(activity: HongbaoActivity) {
   const play = {
     fixed: "每份金额一样。",
     random: split ? `${splitRules[split]}。` : "每份金额随机。",
-    custom: "每份的金额由发红包的人定好。",
+    custom: "每份的金额由红包作者定好。",
     timed_draw: split ? `${draw}奖金分法是${splitRules[split]}。` : draw,
-    code: "每次领多少由发红包的人的代码判定；开放时公布代码的指纹，结束后公开代码。",
+    code: "每次领多少由红包作者的代码判定；开放时公布代码的指纹，结束后公开代码。",
   }[activity.mode];
   const splitName =
     split && (activity.mode === "random" || activity.mode === "timed_draw")
@@ -124,7 +124,7 @@ function coverTags(activity: HongbaoActivity) {
       ? [
           {
             text: scopeTag(activity.scope),
-            hint: `这是发红包的人的要求：${scopeHint(
+            hint: `这是红包作者的要求：${scopeHint(
               activity.scope,
               activity.mode === "timed_draw" ? "报名" : "领",
             )}`,
@@ -149,7 +149,7 @@ function coverTags(activity: HongbaoActivity) {
       ? [
           {
             text: "需人机验证",
-            hint: `这是发红包的人的要求：${verb}前要先通过 Cloudflare 人机验证。中国大陆网络、广告拦截插件或部分隐私浏览器可能加载不出验证。`,
+            hint: `这是红包作者的要求：${verb}前要先通过 Cloudflare 人机验证。中国大陆网络、广告拦截插件或部分隐私浏览器可能加载不出验证。`,
           },
         ]
       : []),

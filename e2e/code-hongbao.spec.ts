@@ -497,7 +497,7 @@ test.describe("代码判定红包", () => {
     await expect(
       page.getByRole("button", { name: "代码判定", exact: true }),
     ).toHaveAccessibleDescription(
-      "每次领多少由发红包的人的代码判定；开放时公布代码的指纹，结束后公开代码。",
+      "每次领多少由红包作者的代码判定；开放时公布代码的指纹，结束后公开代码。",
     );
     await expect(page.getByRole("button", { name: "🐟额" })).toBeVisible();
     // 奖池 over 每份至少; 已领 over 已判定 N 次, no bar.
@@ -575,7 +575,7 @@ test.describe("代码判定红包", () => {
     await mockLive(page);
     await openApp(page, path);
     await expect(
-      page.getByText("点「开」，输入后提交，由发红包的人的代码判定"),
+      page.getByText("点「开」，输入后提交，由红包作者的代码判定"),
     ).toBeVisible();
     // Nothing judged yet: no 我的提交.
     await expect(page.locator("[data-hb-part=my-judgments]")).toHaveCount(0);
@@ -639,7 +639,7 @@ test.describe("代码判定红包", () => {
     // What was typed shows as typed (05 §3).
     await expect(first.getByText("50", { exact: true })).toBeVisible();
     // Nothing is said about 口令 here.
-    await expect(shown(page, "输入的口令会匿名汇总给发红包的人。")).toHaveCount(
+    await expect(shown(page, "输入的口令会匿名汇总给红包作者。")).toHaveCount(
       0,
     );
 
@@ -719,7 +719,7 @@ test.describe("代码判定红包", () => {
     await expect(dialog.getByText("答案-1", { exact: true })).toBeVisible();
   });
 
-  test("代码弹窗（发红包的人）：只读的代码带行号，复制代码；指纹、封存值和不联网；名单写输入和代码给的数", async ({
+  test("代码弹窗（红包作者）：只读的代码带行号，复制代码；指纹、封存值和不联网；名单写输入和代码给的数", async ({
     page,
     context,
   }) => {
@@ -796,7 +796,7 @@ test.describe("代码判定红包", () => {
   // 第 N 次领到, the 输入, 代码给 …，按上限发 … and 已存入🐟额: in the 480px
   // dialog it wraps rather than squeezing the input or running over the
   // time and the amount (07 §6 “写他的输入和发了多少”).
-  test("名单（发红包的人）：输入看得见，那行小字不压到右边的时间和金额", async ({
+  test("名单（红包作者）：输入看得见，那行小字不压到右边的时间和金额", async ({
     page,
   }) => {
     await mockSession(page, author);

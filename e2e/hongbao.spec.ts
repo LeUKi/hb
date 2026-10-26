@@ -919,7 +919,7 @@ test.describe("红包页", () => {
     expect(state.claims).toMatchObject([{ password: passwordOf.mine }]);
   });
 
-  test("关闭了首页领取的红包：标签说明怎么领；输入口令时写明会汇总给发红包的人", async ({
+  test("关闭了首页领取的红包：标签说明怎么领；输入口令时写明会汇总给红包作者", async ({
     page,
   }) => {
     await mockSession(page, viewer);
@@ -928,11 +928,9 @@ test.describe("红包页", () => {
     await openApp(page, path);
     await expect(
       page.getByRole("button", { name: "关闭首页领取", exact: true }),
-    ).toHaveAccessibleDescription(/^发红包的人关闭首页领取后/);
+    ).toHaveAccessibleDescription(/^红包作者关闭首页领取后/);
     await page.getByRole("button", { name: "输入口令领取" }).click();
-    await expect(
-      shown(page, "输入的口令会匿名汇总给发红包的人。"),
-    ).toBeVisible();
+    await expect(shown(page, "输入的口令会匿名汇总给红包作者。")).toBeVisible();
   });
 
   test("登录后：点印章输入口令领取，再验证其他口令", async ({
@@ -1256,13 +1254,13 @@ test.describe("红包页", () => {
     await expect(result.getByText("等待恢复")).toBeVisible();
     await expect(
       result.getByText(
-        "发红包的人今天在 Credit 站的发放额度用完了，明天 0 点后自动继续发放。",
+        "红包作者今天在 Credit 站的发放额度用完了，明天 0 点后自动继续发放。",
       ),
     ).toBeVisible();
     await expect(result.getByText("quota")).toHaveCount(0);
   });
 
-  test("发红包的人：看到全部口令；也能自领，先确认一次，不付款，名单上是自领的屑", async ({
+  test("红包作者：看到全部口令；也能自领，先确认一次，不付款，名单上是自领的屑", async ({
     page,
   }) => {
     await mockSession(page, author);

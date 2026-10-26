@@ -101,7 +101,7 @@ const notice = "不是本站的网页，它能看到你的 IP 和浏览器信息
 const sheetTop = (page: Page) =>
   page
     // Not by its role: under a dialog the sheet is inert.
-    .locator("button[aria-label^='上拉查看发红包的人的网页']")
+    .locator("button[aria-label^='上拉查看附带网页']")
     .evaluate((bar) => Math.round(bar.getBoundingClientRect().top));
 
 test.describe("附带网页", () => {
@@ -272,7 +272,7 @@ test.describe("附带网页", () => {
     const loads = await mock(page);
     await openApp(page, path);
     const bar = page.getByRole("button", {
-      name: "上拉查看发红包的人的网页：puzzle.example.com",
+      name: "上拉查看附带网页：puzzle.example.com",
     });
     await expect(bar).toBeVisible();
     expect(loads).toEqual([]);
@@ -296,7 +296,7 @@ test.describe("附带网页", () => {
     await mock(page);
     await openApp(page, path);
     await expect(
-      page.getByRole("button", { name: /^上拉查看发红包的人的网页/ }),
+      page.getByRole("button", { name: /^上拉查看附带网页/ }),
     ).toBeVisible();
     await expect.poll(() => sheetTop(page)).toBeGreaterThan(700);
     const resting = await sheetTop(page);

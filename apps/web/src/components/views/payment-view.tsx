@@ -237,7 +237,7 @@ function StateNoteBody({
       <Callout tone="warning" icon={KeyRound} title={reason}>
         这笔付款用的是更换前的集市应用，它的密钥失效了。
         {admin
-          ? "要等发红包的人在付款详情里更新原订单密钥后继续。"
+          ? "要等红包作者在付款详情里更新原订单密钥后继续。"
           : "在下面“更新原订单密钥”填写它现在的密钥后继续。"}
       </Callout>
     );
@@ -246,11 +246,7 @@ function StateNoteBody({
   if (needsMerchantKey(payment))
     return (
       <Callout tone="warning" icon={KeyRound} title={reason}>
-        {admin ? (
-          "要等发红包的人更新商户密钥，检查通过后继续。"
-        ) : (
-          <MerchantFix />
-        )}
+        {admin ? "要等红包作者更新商户密钥，检查通过后继续。" : <MerchantFix />}
       </Callout>
     );
   const next = payment.nextSendAt ?? payment.nextQueryAt ?? payment.nextRunAt;

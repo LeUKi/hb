@@ -179,7 +179,7 @@ export function hongbaoOf(
     title: activity.title,
     author: {
       displayName:
-        activity.author.displayName || activity.author.username || "发红包的人",
+        activity.author.displayName || activity.author.username || "红包作者",
       username: activity.author.username,
       avatarUrl: activity.author.avatarUrl,
     },
@@ -327,7 +327,7 @@ export type RosterRow = {
   amount: string | null;
   at: number;
   titles: RosterTitle[];
-  /** The sender's view: the 口令 used and the payment (05 §作者名单). */
+  /** The sender's view: the 口令 used and the payment (06 §红包作者名单). */
   password?: string | null;
   payment?: PaymentView | null;
   /** 代码判定, the sender's view: what was typed, and the code's own number. */

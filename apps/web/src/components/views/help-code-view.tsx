@@ -64,7 +64,7 @@ const aiPrompt = (
   - tools.text.normalize(text)：NFKC、去零宽字符、合并空白、转小写
   - tools.time.parts(timeZone?)：now 在某个时区的 year、month、day、hour、minute、second、weekday（1 是周一），默认 Asia/Shanghai
 - 每次判定 CPU 最多 50 毫秒。超时、抛错、返回不对都算出错：这次不算数，连续出错 5 次红包会暂停领取。
-- 每人只能领到一次；领过的人和领取范围以外的人走不到代码（发红包的人自己也能领）。平台不限提交次数，要限次数就按 user.attempts 自己拒绝，并在 message 里说清楚。
+- 每人只能领到一次；领过的人和领取范围以外的人走不到代码（红包作者自己也能领）。平台不限提交次数，要限次数就按 user.attempts 自己拒绝，并在 message 里说清楚。
 - 网站上每部署一份新代码算一次，每人每天有限，所以给我的代码要先能在本地开发包里跑过 npm test 和 npm run check。
 
 tests.json 是一个对象 { "tests": [ … ] }，只是数据：

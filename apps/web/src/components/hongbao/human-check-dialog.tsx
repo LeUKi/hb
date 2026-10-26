@@ -101,7 +101,7 @@ export function HumanCheckDialog() {
 
   const passed = shown?.passed === true;
   const verb = shown?.challenge.action === "register" ? "报名" : "领取";
-  const who = shown?.author ? ` @${shown.author} ` : "发红包的人";
+  const who = shown?.author ? ` @${shown.author} ` : "红包作者";
   return (
     <ConfirmDialog
       open={request !== null}

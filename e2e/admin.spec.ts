@@ -629,7 +629,7 @@ test.describe("网站管理", () => {
     ]);
   });
 
-  test("付款详情：作者看到的说明、经过和带 HTTP 状态的处理记录", async ({
+  test("付款详情：红包作者看到的说明、经过和带 HTTP 状态的处理记录", async ({
     page,
   }) => {
     await mockSession(page, admin);
@@ -639,7 +639,7 @@ test.describe("网站管理", () => {
     await page.getByRole("button", { name: /小满/ }).click();
     const pane = page.getByRole("complementary", { name: "详情" });
     await expect(
-      pane.getByText("要等发红包的人更新商户密钥，检查通过后继续。"),
+      pane.getByText("要等红包作者更新商户密钥，检查通过后继续。"),
     ).toBeVisible();
     await expect(
       pane.getByText("默认商户 · old_client_2025（更换前的应用）"),
@@ -649,7 +649,7 @@ test.describe("网站管理", () => {
     ).toBeVisible();
     await expect(pane.getByText("尚未观察到订单")).toBeVisible();
     await expect(
-      pane.getByText("商户凭证失效，等待发红包的人更新。 · HTTP 400"),
+      pane.getByText("商户凭证失效，等待红包作者更新。 · HTTP 400"),
     ).toBeVisible();
   });
 

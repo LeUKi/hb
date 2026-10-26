@@ -171,7 +171,7 @@ function DetailBody({
         <Callout
           tone="warning"
           icon={AlertTriangle}
-          title="发红包的人视角读不出来"
+          title="红包作者视角读不出来"
         >
           这笔付款的记录对不上（日志里有原因），下面只列本站记下的字段。
         </Callout>

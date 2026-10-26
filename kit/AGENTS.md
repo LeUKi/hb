@@ -1,6 +1,6 @@
 # 代码判定红包 · 写代码的说明
 
-这个目录是“代码判定红包”（lafish的红包站）的本地开发包。发红包的人写一个 `judge.js`：每次有人在红包页提交一行输入，平台调用它一次，按它的返回决定发不发、发多少。你要帮他写的是 `judge.js` 和它的测试 `tests.json`，需要时再改 `simulate.json`。下面是代码协议第二版（第一版加上联网）的全部规则。
+这个目录是“代码判定红包”（lafish的红包站）的本地开发包。红包作者写一个 `judge.js`：每次有人在红包页提交一行输入，平台调用它一次，按它的返回决定发不发、发多少。你要帮他写的是 `judge.js` 和它的测试 `tests.json`，需要时再改 `simulate.json`。下面是代码协议第二版（第一版加上联网）的全部规则。
 
 ## 怎么干活
 
@@ -34,7 +34,7 @@ export function judge(submission, tools) { … }
 - `claims`：已领到的，按先后，每条 `{ user: { id, username }, amount, input, at }`
 - `state`：代码上次存的 JSON，最开始是 `null`
 
-领过的人、领取范围以外的人都走不到代码：每人只能领到一次。发红包的人自己也能领（占一份，不付款）。
+领过的人、领取范围以外的人都走不到代码：每人只能领到一次。红包作者自己也能领（占一份，不付款）。
 
 ### 返回的判定
 
@@ -98,7 +98,7 @@ export const network = ["https://api.example.com/hongbao/"];
 export async function judge(submission) {
   const response = await fetch("https://api.example.com/hongbao/check", {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: "Bearer 只有发红包的人知道的令牌" },
+    headers: { "content-type": "application/json", authorization: "Bearer 只有红包作者知道的令牌" },
     body: JSON.stringify({ id: submission.user.id, input: submission.input }),
   });
   const answer = await response.json();
@@ -112,7 +112,7 @@ export async function judge(submission) {
 - 每次判定最多 3 个请求（可以并发），只许 GET 和 POST，请求体最大 16 KB；单个请求 3 秒，返回最大 64 KB，跳转不跟随（3xx 原样给代码）。等请求的时间不算进 50 毫秒的计算时间，整次判定最多 5 秒。判定结束以后再发的请求都会被拒。
 - 不行时 `fetch()` 抛 `TypeError`，信息以“联网失败：”开头，写明原因。可以接住，自己在 `message` 里回复；没接住就算代码出错。对方返回 4xx、5xx 不算失败。
 - 本站给每个请求加 `X-Hb-Hongbao`（红包 ID，不保密）和自己的 `User-Agent`；代码不能设 `Host` 和 `X-Hb-` 开头的请求头。
-- 领的人可以绕过本站直接请求接口（那样没有尝试间隔和人机验证）：要防，就在代码里放一个只有发红包的人知道的令牌，请求时带上，接口只认它。代码结束后公开，令牌也会公开，结束后要作废。
+- 领的人可以绕过本站直接请求接口（那样没有尝试间隔和人机验证）：要防，就在代码里放一个只有红包作者知道的令牌，请求时带上，接口只认它。代码结束后公开，令牌也会公开，结束后要作废。
 - 红包结束后，领的人能看到自己那几次判定的返回内容：别在返回里放不想公开的东西。
 - 测试里写 `fetch`（见 `tests.json`），测试从不真的联网；`npm run simulate -- --live` 才从这台电脑真的发出去。
 
