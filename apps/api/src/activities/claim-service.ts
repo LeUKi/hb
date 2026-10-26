@@ -13,6 +13,7 @@ import {
   users,
 } from "../db/schema";
 import type { ApiBindings } from "../env";
+import type { JudgeHooks } from "../judge/session";
 import { paymentBusinessNo } from "../payments/business-no";
 import { claimPaymentParameterDigest } from "../payments/policy";
 import { assertUint64Decimal } from "../payments/real-protocol";
@@ -801,8 +802,8 @@ export async function claimActivity(
   executionPolicy?: ActivityExecutionPolicy,
   /** The API route checked a Turnstile token for this 红包 (human-check.ts). */
   humanVerified = false,
-  /** 代码判定: told when its code's failures pause it. */
-  hooks: { paused?: () => void } = {},
+  /** 代码判定: told when its code's failures pause it; 联网 (session.ts). */
+  hooks: JudgeHooks = {},
 ) {
   await refreshActivityLifecycle(env, activityId);
   const activity = await findActivity(env, activityId);

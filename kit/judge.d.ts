@@ -1,7 +1,7 @@
 /**
- * 代码判定红包 · 代码协议第一版。
+ * 代码判定红包 · 代码协议第二版（第一版加上联网）。
  * 金额都是整数，单位是分（0.01）；时间都是毫秒。
- * 规则见 hb 仓库的 docs/programmable-hongbao-design.md 第 4 节。
+ * 规则见 hb 仓库的 docs/programmable-hongbao-design.md 第 4 节，联网见第 9 节。
  */
 
 export type Json =
@@ -132,6 +132,40 @@ export type Judge = (
   tools: Tools,
 ) => Verdict | Promise<Verdict>;
 
+/**
+ * 联网：judge.js 导出 network，列出能请求的地址前缀，最多 3 个；不导出就不联网。
+ * 写法：https:// 开头的完整域名加路径前缀，比如 "https://api.example.com/hongbao/"；
+ * 不带端口、? 和 #，不能是 IP 地址、linux.do 和本站。
+ * 判定里直接用 fetch()：每次判定最多 3 个请求，只许 GET 和 POST，请求体最大 16 KB，
+ * 单个请求 3 秒、返回最大 64 KB，不跟随跳转；不行时 fetch() 抛 TypeError（“联网失败：…”）。
+ * 代码结束后公开，写在里面的令牌也会公开；红包结束后，领的人能看到自己那几次判定的返回内容。
+ */
+export type Network = readonly string[];
+
+/**
+ * 测试里一个请求的返回（tests.json 和 simulate.json 的 fetch）：
+ * 代码发出的请求按方法和完整地址对上一个还没用过的。
+ */
+export type FetchAnswer =
+  | {
+      url: string;
+      /** 默认 GET */
+      method?: "GET" | "POST";
+      /** 默认 200 */
+      status?: number;
+      headers?: { [name: string]: string };
+      /** 返回的 JSON（content-type 默认 application/json）；和 text 二选一 */
+      json?: Json;
+      text?: string;
+      error?: never;
+    }
+  | {
+      url: string;
+      method?: "GET" | "POST";
+      /** 这个请求失败：超时、连不上、返回超过 64 KB */
+      error: "timeout" | "unreachable" | "too-big";
+    };
+
 /** 时间：毫秒，或带时区的 ISO 时间（比如 "2026-10-24T12:00:00+08:00"；不带时区的不认）。 */
 export type TestTime = number | string;
 
@@ -185,6 +219,8 @@ export interface SingleTest extends TestBase {
   input: string;
   /** 默认 id 10000、username tester、level 2、attempts 0 */
   user?: Partial<Submission["user"]>;
+  /** 这次判定的请求拿到的返回，最多 3 个；有请求没写到、写了没用上，都不通过 */
+  fetch?: FetchAnswer[];
   expect: TestExpect;
   steps?: never;
 }
@@ -208,6 +244,8 @@ export interface TestStep {
   level?: 0 | 1 | 2 | 3 | 4 | null;
   /** 默认上一步往后 1 分钟，第一步是 now */
   at?: TestTime;
+  /** 这一步的请求拿到的返回，最多 3 个 */
+  fetch?: FetchAnswer[];
   expect: TestExpect;
 }
 
@@ -261,7 +299,10 @@ export type TestExpect = (
  * 已领记录、剩余奖池和状态都由前面的判定推出来，不重复写。
  */
 export interface JudgeRecords {
+  /** 红包开放时用的协议版本：1 或 2 */
   protocol: number;
+  /** 第二版联网的红包：白名单 */
+  network?: string[];
   hongbao: {
     id: string;
     total: number;
@@ -290,5 +331,17 @@ export interface JudgeRecords {
     note?: "floor" | "cap" | "last";
     /** 这一份领到的时间；没领成（比如到点结束了）就没有 */
     claimedAt?: number;
+    /** 联网（第二版）：这次判定发出的请求和拿到的返回，按先后；返回按 UTF-8 文本记 */
+    fetches?: {
+      method: "GET" | "POST";
+      url: string;
+      body?: string;
+      status?: number;
+      contentType?: string;
+      response?: string;
+      /** 失败：超时、连不上、返回超过 64 KB */
+      error?: "timeout" | "unreachable" | "too-big";
+      ms: number;
+    }[];
   }[];
 }

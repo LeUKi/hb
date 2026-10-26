@@ -1,10 +1,15 @@
 // simulate.json (协议第 5 节): a 红包 and the submissions made to it, in
-// order, each written like a step of a multi-step test in tests.json, only
-// without expect. Unlike a step, someone who already has a share or a
+// order, each written like a step of a multi-step test in tests.json (with
+// the answers its requests get, `fetch`), only without expect. Unlike a step, someone who already has a share or a
 // submission after the last share is no mistake here: npm run simulate
 // says 已领过 or 已领完, as the site would turn them away. The 红包 and the
 // times follow tests.json's rules and defaults (runtime/testing.mjs).
-import { LIMITS, TEST_DEFAULTS, TEST_SEED } from "../../runtime/index.mjs";
+import {
+  fetchProblem,
+  LIMITS,
+  TEST_DEFAULTS,
+  TEST_SEED,
+} from "../../runtime/index.mjs";
 
 const MINUTE = 60_000;
 const HOUR = 3_600_000;
@@ -75,7 +80,7 @@ function hongbaoProblem(hongbao) {
 
 function submissionProblem(item) {
   if (!isObject(item)) return "要是一个对象";
-  const extra = extraKey(item, ["who", "input", "level", "at"], "");
+  const extra = extraKey(item, ["who", "input", "level", "at", "fetch"], "");
   if (extra) return extra;
   if (typeof item.who !== "string" || !item.who.trim())
     return "要有 who（谁提交的）";
@@ -87,7 +92,7 @@ function submissionProblem(item) {
     return `input 要是 1–${LIMITS.inputCharacters} 个字`;
   if (item.level !== undefined && ![0, 1, 2, 3, 4, null].includes(item.level))
     return "level 要是 0–4 或 null";
-  return timeProblem(item.at, "at");
+  return timeProblem(item.at, "at") ?? fetchProblem(item.fetch);
 }
 
 const named = (item) =>
@@ -169,6 +174,7 @@ export function readSimulation(text, file = "simulate.json") {
       },
       input: item.input.trim(),
       at,
+      fetch: item.fetch ?? [],
     });
   }
   return { plan: { hongbao, seed: data.seed ?? TEST_SEED, submissions } };

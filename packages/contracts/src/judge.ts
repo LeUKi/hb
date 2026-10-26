@@ -4,6 +4,12 @@
 import { z } from "zod";
 import type { PublicUserProfile } from "./profile";
 
+/**
+ * The protocol a 红包 opens with now (§4.7, §9): v2 is v1 with 联网. An
+ * opened 红包 keeps the one it opened with.
+ */
+export const JUDGE_PROTOCOL = 2;
+
 export const JUDGE_LIMITS = {
   promptCharacters: 40,
   codeBytes: 64 * 1024,
@@ -56,6 +62,10 @@ export const judgeVersionsSchema = z
           testsDigest: fingerprintSchema,
           /** Those tests all passed. */
           passed: z.boolean(),
+          /** The protocol that run was on; absent: 1. */
+          protocol: z.number().int().min(1).max(JUDGE_PROTOCOL).optional(),
+          /** 联网 (§9): the addresses that run read from the code. */
+          network: z.array(z.string().max(200)).min(1).max(3).optional(),
         }),
       )
       .max(JUDGE_LIMITS.versions),
@@ -156,7 +166,16 @@ export type JudgeTestOutcome = {
 export type JudgeCheck = {
   fingerprint: string;
   testsDigest: string;
+  /** The protocol it ran on (JUDGE_PROTOCOL). */
+  protocol: number;
   passed: boolean;
+  /**
+   * 联网 (§9): the addresses the code exports, as it will ask them; null
+   * when it exports none.
+   */
+  network: string[] | null;
+  /** What is wrong with them, or that 联网 is off: no pass. */
+  networkProblems?: string[];
   /** Found without running the code: imports, size. */
   problems: { line: number; message: string }[];
   /** tests.json itself: not JSON, or an entry the protocol does not have. */
@@ -186,6 +205,8 @@ export type PublicJudge = {
   protocol: number;
   prompt: string;
   fingerprint: string;
+  /** 联网 (§9): the addresses its code may ask; absent without network. */
+  network?: string[];
   /** Published at opening (null on a draft). */
   seedCommitment: string | null;
   /** How many times the code gave a verdict, paid or not (05 §3). */
@@ -231,6 +252,21 @@ export type MyJudgment = {
   amount?: string;
   /** Paid, not what the code asked: 按上限发, 按每份至少发, 最后一份. */
   note?: JudgeNote;
+  /**
+   * 联网 (§9.4), once the 红包 is over: what each request of this judgment
+   * got back — the site, the status and the body — never the request.
+   */
+  fetches?: JudgeFetchAnswer[];
+};
+
+/** One request's answer, as the person judged sees it once it is over. */
+export type JudgeFetchAnswer = {
+  host: string;
+  status?: number;
+  /** The body as UTF-8 text (64 KB at most). */
+  response?: string;
+  /** It failed: 超时, 连不上, 返回超过 64 KB. */
+  error?: "timeout" | "unreachable" | "too-big";
 };
 export type MyJudgmentList = {
   /** Newest first, twenty at a time. */
@@ -260,6 +296,8 @@ export type CodeFailureList = {
  */
 export const judgeSettingsSchema = z.strictObject({
   enabled: z.boolean(),
+  /** 代码判定联网 (§9.7): off, code that exports network neither deploys nor opens. */
+  networkEnabled: z.boolean(),
   dailyOpenLimit: z.number().int().min(1).max(1000),
   dailyDeployLimit: z.number().int().min(1).max(1000),
   monthlyLimit: z.number().int().min(1).max(1_000_000),

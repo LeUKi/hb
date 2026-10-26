@@ -986,6 +986,73 @@ test.describe("代码判定红包", () => {
     );
   });
 
+  test("联网的红包：红包皮写联网，代码弹窗列出地址，第一次提交前说清提交会被发去哪", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    const state = await mockCodeHongbao(page);
+    state.judge = { ...state.judge, network: ["https://api.example.com/hb/"] };
+    await mockLive(page);
+    await openApp(page, path);
+    await expect(
+      page.getByRole("button", { name: "联网", exact: true }),
+    ).toBeVisible();
+    await page.locator("#code-entry").click();
+    const dialog = page.getByRole("dialog", { name: "代码" });
+    await expect(dialog.getByText("https://api.example.com/hb/")).toBeVisible();
+    await expect(dialog.getByText("不联网", { exact: true })).toHaveCount(0);
+    await expect(dialog).toContainText(
+      "判定时代码会请求这些地址，你的提交（数字 ID、用户名、等级和输入）可能随请求发送给对方。判定结果取决于对方的回答，开放后对方的回答可能变化，本站无法核对。",
+    );
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await seal(page).click();
+    await expect(
+      page
+        .locator(".glass-pop")
+        .getByText(
+          "提交后，你的昵称和判定次数会出现在参与名单里。这个红包会联网：你的提交（数字 ID、用户名、等级和输入）可能被发到 api.example.com。",
+        ),
+    ).toBeVisible();
+  });
+
+  test("已结束（联网，参与过）：我的提交里展开看得到每个请求的返回，看不到请求", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    const judged = rejected(1);
+    const state = await mockCodeHongbao(page, [
+      {
+        ...(judged[0] as MyJudgment),
+        fetches: [
+          {
+            host: "api.example.com",
+            status: 200,
+            response: '{"right":false,"say":"小了"}',
+          },
+          { host: "api.example.com", error: "timeout" },
+        ],
+      },
+    ]);
+    state.activity = { ...state.activity, status: "ended" };
+    state.judge = {
+      ...state.judge,
+      code: judgeCode,
+      seed,
+      network: ["https://api.example.com/hb/"],
+    };
+    await mockLive(page);
+    await openApp(page, path);
+    const mine = page.locator("[data-hb-part=my-judgments]");
+    const toggle = mine.getByRole("button", { name: "联网返回 · 2 个" });
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(mine.getByText("api.example.com · 200")).toBeVisible();
+    await expect(mine.getByText('{"right":false,"say":"小了"}')).toBeVisible();
+    await expect(mine.getByText("api.example.com · 超时")).toBeVisible();
+  });
+
   test("站长停用：状态写已停用，印章下面写红包已被站长停用", async ({
     page,
   }) => {
@@ -1156,7 +1223,12 @@ test.describe("发红包 · 代码判定", () => {
           check: {
             fingerprint,
             testsDigest: sha256(input.tests),
+            protocol: 2,
             passed,
+            // 联网 (§9): what the code exports, read by the deploy.
+            network: input.code.includes("export const network")
+              ? ["https://api.example.com/hb/"]
+              : null,
             problems,
             tests:
               problems.length > 0
@@ -1354,6 +1426,29 @@ test.describe("发红包 · 代码判定", () => {
     await expect(card(page)).toContainText(`代码指纹 ${sha256(firstCode)}`);
     await card(page).getByRole("button", { name: "收起" }).click();
     await expect(lines).toHaveCount(6);
+  });
+
+  test("联网的代码：部署后在测试结果下面列出白名单，写清对领的人、对令牌、对结束后的返回意味着什么", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await mockDeploys(page);
+    await toCodeStep(page);
+    const networked = `export const network = ["https://api.example.com/hb/"];\n${firstCode}`;
+    await pasteCode(page, networked, "粘贴代码");
+    await typeTests(page, testsFile);
+    await deployButton(page).click();
+    await expect(cardState(page)).toHaveText("已部署 · 测试全过");
+    const area = page.locator("#hb-code-check");
+    await expect(area).toContainText("联网：https://api.example.com/hb/");
+    await expect(area).toContainText("领的人提交的内容可能被发到这些地址。");
+    await expect(area).toContainText(
+      "结束后代码公开，写在代码里的令牌也会公开，结束后请作废。",
+    );
+    await expect(area).toContainText(
+      "红包结束后，领的人能看到自己那几次判定的返回内容，别在返回里放不想公开的东西。",
+    );
   });
 
   test("换了代码：卡上是新代码，写和第 1 版比改了几行，上面一条琥珀提示；换回第 1 版不发部署请求、不算次数", async ({
@@ -1737,6 +1832,7 @@ test.describe("发红包 · 代码判定", () => {
           at: expect.any(String),
           testsDigest: sha256(testsFile),
           passed: true,
+          protocol: 2,
         },
       ],
       restore: { n: 1, code: firstCode },
@@ -1760,6 +1856,7 @@ test.describe("发红包 · 代码判定", () => {
             at: openedAt,
             testsDigest: sha256(testsFile),
             passed: true,
+            protocol: 2,
           },
         ],
         restore: { n: 1, code: firstCode },
@@ -1809,6 +1906,7 @@ test.describe("发红包 · 代码判定", () => {
             at: openedAt,
             testsDigest: sha256('{ "tests": [] }'),
             passed: true,
+            protocol: 2,
           },
         ],
         restore: { n: 1, code: firstCode },
@@ -1827,6 +1925,43 @@ test.describe("发红包 · 代码判定", () => {
     await expect(
       area.getByRole("button", { name: "重新跑测试" }),
     ).toBeVisible();
+  });
+
+  test("草稿重新打开：第一版上部署过、测试全过的版本，换回后要在第二版上重新跑一遍，不算部署", async ({
+    page,
+  }) => {
+    await mockCodeHongbao(page);
+    const server = await mockDeploys(page, { user: author });
+    await mockSenderReads(page, {
+      draft: { code: secondCode, tests: testsFile },
+      versions: {
+        next: 2,
+        versions: [
+          {
+            // Run before 第二版: no protocol written.
+            n: 1,
+            fingerprint: sha256(firstCode),
+            at: openedAt,
+            testsDigest: sha256(testsFile),
+            passed: true,
+          },
+        ],
+        restore: { n: 1, code: firstCode },
+      },
+    });
+    await openApp(page, `${path}/📝`);
+    await page
+      .getByRole("button", { name: /^第 3 步 代码：新代码 · / })
+      .click();
+    await page.getByRole("button", { name: "换回第 1 版" }).click();
+    await expect(cardName(page)).toHaveText("判定器 第 1 版");
+    const area = page.locator("#hb-code-check");
+    await expect(area).toContainText(
+      "判定器升级到第二版了：在判定器 第 1 版 上重新跑一遍测试才能开放。不算部署，不扣次数。",
+    );
+    await area.getByRole("button", { name: "重新跑测试" }).click();
+    await expect(cardState(page)).toHaveText("已部署 · 测试全过");
+    expect(server.requests).toEqual([{ code: firstCode, tests: testsFile }]);
   });
 
   test("草稿重新打开：测试没过的那一版没留下是哪几条，重新跑测试就看得到，不算部署", async ({

@@ -3,7 +3,9 @@
 // as the site does (runtime/scenario.mjs): state, claims and the pool left
 // pass on, amounts are pulled into each share's range. One line a
 // submission, then what was paid out. The seed is fixed, so a file always
-// gives the same result; --seed changes it.
+// gives the same result; --seed changes it. Requests get the answers each
+// submission wrote (`fetch`); --live sends them out from this computer
+// (协议第 9 节).
 import { resolve } from "node:path";
 import {
   checkSource,
@@ -28,10 +30,11 @@ import {
 
 const HEX64 = /^[0-9a-f]{64}$/;
 
-/** `--seed x` or `--seed=x`, and the file, if one is named. */
+/** `--seed x` or `--seed=x`, `--live`, and the file, if one is named. */
 function readArgs(args) {
   let seed;
   let file;
+  let live = false;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--seed") {
@@ -39,9 +42,10 @@ function readArgs(args) {
       index += 1;
       if (seed === undefined) throw new KitError("--seed 后面要写一个种子");
     } else if (arg.startsWith("--seed=")) seed = arg.slice("--seed=".length);
+    else if (arg === "--live") live = true;
     else if (!arg.startsWith("--")) file = arg;
   }
-  return { seed, file };
+  return { seed, file, live };
 }
 
 /** A seed as written: 64 hex digits as they are, anything else hashed into one. */
@@ -104,7 +108,19 @@ export async function simulateCommand({
   );
   print(`种子 ${seed}`);
 
-  const sandbox = await openSandbox(code);
+  const sandbox = await openSandbox(code, { live: options.live });
+  if ("problems" in sandbox.network) {
+    for (const problem of sandbox.network.problems) print(`✗ ${problem}`);
+    print("先改好 judge.js 的 network，模拟没跑");
+    await sandbox.close();
+    return { exitCode: 1 };
+  }
+  if (sandbox.network.list)
+    print(
+      options.live
+        ? `联网：${sandbox.network.list.join("、")}（--live：从这台电脑真的发出去）`
+        : `联网：${sandbox.network.list.join("、")}（请求拿 simulate.json 里写的 fetch 当返回；加 --live 真的发出去）`,
+    );
   const judged = [];
   let failed = 0;
   let slow = false;

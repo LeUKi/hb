@@ -17,11 +17,17 @@ import {
 } from "../../kit/cli/index.mjs";
 import type { JudgeRecords } from "../../kit/judge";
 import {
+  allowedBy,
+  readNetwork,
+  requestProblem,
   seedCommitment,
   shareRange,
   TEST_SEED,
 } from "../../kit/runtime/index.mjs";
-import { JUDGE_LIMITS } from "../../packages/contracts/src/judge";
+import {
+  JUDGE_LIMITS,
+  JUDGE_PROTOCOL,
+} from "../../packages/contracts/src/judge";
 import { SANDBOX_MODULES as SITE_MODULES } from "../judge-runtime";
 
 // The kit's four commands (docs/programmable-hongbao-design.md §5) on the
@@ -94,7 +100,7 @@ describe("the kit's sandbox", () => {
     );
     expect(SANDBOX_MODULES).toEqual(SITE_MODULES);
     expect(site).toContain(`COMPATIBILITY_DATE = "${COMPATIBILITY_DATE}"`);
-    expect(site).toContain(`JUDGE_PROTOCOL = ${PROTOCOL};`);
+    expect(PROTOCOL).toBe(JUDGE_PROTOCOL);
     expect(TESTS_BYTES).toBe(JUDGE_LIMITS.testsBytes);
     // Authors run the workerd and Miniflare the site is built with.
     const wrangler = (path: string) =>
@@ -122,7 +128,9 @@ export async function judge(submission) {
       });
       expect(await sandbox.run(submission("net"), seeds)).toMatchObject({
         failure: "threw",
-        detail: expect.stringContaining("not permitted to access the internet"),
+        detail: expect.stringContaining(
+          "联网失败：这个红包没有联网（judge.js 没有导出 network）",
+        ),
       });
       const started = Date.now();
       expect(await sandbox.run(submission("loop"), seeds)).toEqual({
@@ -550,8 +558,8 @@ describe("npm run replay", () => {
       "✗ 记录里还没有种子：红包结束后才公开，到时候再下载一次完整记录",
     ]);
     expect(unsealed.exitCode).toBe(1);
-    await expect(replayWith({ ...records, protocol: 2 })).rejects.toThrow(
-      "记录是第 2 版协议，这个开发包是第 1 版：换一个对应版本的开发包再重放",
+    await expect(replayWith({ ...records, protocol: 3 })).rejects.toThrow(
+      "记录是第 3 版协议，这个开发包只认第 1 到第 2 版：换一个新的开发包再重放",
     );
 
     const second = records.judgments[1];
@@ -578,5 +586,238 @@ describe("npm run replay", () => {
     ]);
     expect(changed.lines).not.toContainEqual(expect.stringContaining("次判定"));
     expect(changed.exitCode).toBe(1);
+  }, 30_000);
+});
+
+// 联网 (docs/programmable-hongbao-design.md §9): the rules, and the kit's
+// commands answering requests from what the tests wrote.
+describe("network", () => {
+  const API = "https://api.example.com/hb/";
+
+  it("reads the list judge.js exports, and lets out only what it names", () => {
+    expect(readNetwork(undefined)).toEqual({ list: null });
+    expect(readNetwork([API, "https://b.example.com"])).toEqual({
+      list: [API, "https://b.example.com/"],
+    });
+    const problems = (value: unknown) =>
+      (readNetwork(value) as { problems: string[] }).problems;
+    expect(problems("x")[0]).toContain("network 要是字符串数组");
+    expect(problems([])[0]).toContain("至少写一个地址");
+    expect(problems([API, API])).toEqual(["network 第 2 个和前面的重复了"]);
+    expect(problems(["a", "b", "c", "d"])).toEqual(["network 最多写 3 个地址"]);
+    for (const [entry, said] of [
+      ["http://api.example.com/", "只能用 https://"],
+      ["https://1.2.3.4/", "不能写 IP 地址"],
+      ["https://[::1]/", "不能写 IP 地址"],
+      ["https://localhost/", "要写完整的域名"],
+      ["https://connect.linux.do/", "不能请求 linux.do 和它的子域名"],
+      ["https://hb.lafi.sh/api/", "不能请求 hb.lafi.sh 和它的子域名"],
+      ["https://api.example.com:8443/", "不能带端口"],
+      ["https://u:p@api.example.com/", "不能带用户名和密码"],
+      ["https://api.example.com/?x=1", "不能带 ? 和 #"],
+      ["https://API.example.com/hb", "要写成 https://api.example.com/hb"],
+      ["https://api.example.com/a%2fb", "编码过的斜杠"],
+    ] as const)
+      expect(problems([entry])[0]).toContain(said);
+
+    const list = ["https://a.example.com/api", "https://b.example.com/x/"];
+    for (const [address, allowed] of [
+      ["https://a.example.com/api", true],
+      ["https://a.example.com/api/v1?q=1", true],
+      ["https://a.example.com/apix", false],
+      ["https://a.example.com/api/../admin", false],
+      ["https://a.example.com/api/%2e%2e/admin", false],
+      ["https://a.example.com/api/a%2Fb", false],
+      ["https://a.example.com:444/api", false],
+      ["http://a.example.com/api", false],
+      ["https://b.example.com/x/y", true],
+      ["https://b.example.com/x", false],
+      ["https://c.example.com/api", false],
+    ] as const)
+      expect([address, allowedBy(list, address)]).toEqual([address, allowed]);
+    expect(
+      requestProblem(
+        { method: "PUT", address: `${API}x`, headers: [], bodyBytes: 0 },
+        [API],
+      ),
+    ).toBe("只能用 GET 和 POST");
+    expect(
+      requestProblem(
+        {
+          method: "POST",
+          address: `${API}x`,
+          headers: ["X-Hb-Hongbao"],
+          bodyBytes: 0,
+        },
+        [API],
+      ),
+    ).toBe("不能设请求头 X-Hb-Hongbao");
+    expect(
+      requestProblem(
+        { method: "POST", address: `${API}x`, headers: [], bodyBytes: 20_000 },
+        [API],
+      ),
+    ).toBe("请求体超过 16 KB");
+  });
+
+  const NETWORKED = `export const network = ["${API}"];
+export async function judge(submission) {
+  const response = await fetch("${API}check?input=" + encodeURIComponent(submission.input));
+  const answer = await response.json();
+  return answer.right ? { ok: true, amount: 100, message: answer.say } : { ok: false, message: answer.say };
+}
+`;
+  const right = (input: string) => ({
+    url: `${API}check?input=${input}`,
+    json: { right: true, say: "对" },
+  });
+  const wrong = (input: string) => ({
+    url: `${API}check?input=${input}`,
+    json: { right: false, say: "不对" },
+  });
+
+  it("answers requests from the tests, and fails a test that misses one or leaves one unused", async () => {
+    const dir = kit({
+      "judge.js": NETWORKED,
+      "tests.json": {
+        tests: [
+          {
+            name: "对",
+            input: "a",
+            fetch: [right("a")],
+            expect: { ok: true, amount: 100, message: "对" },
+          },
+          {
+            name: "没写返回",
+            input: "b",
+            expect: { ok: false },
+          },
+          {
+            name: "多写了",
+            input: "c",
+            fetch: [wrong("c"), wrong("d")],
+            expect: { ok: false, message: "不对" },
+          },
+        ],
+      },
+    });
+    const tested = await run(testCommand, { dir });
+    expect(tested.lines[0]).toMatch(/^✓ 对（\d+ 毫秒）$/);
+    expect(tested.lines[1]).toContain(
+      `✗ 没写返回：代码抛错：TypeError: 联网失败：测试里没写这个请求的返回：GET ${API}check?input=b`,
+    );
+    expect(tested.lines).toContain(
+      `✗ 多写了：写了的返回没用上：GET ${API}check?input=d`,
+    );
+    expect(tested.exitCode).toBe(1);
+    const checked = await run(checkCommand, { dir });
+    expect(checked.lines).toContain(`✓ 联网：${API}`);
+  }, 30_000);
+
+  it("says what is wrong with the list before any test runs", async () => {
+    const dir = kit({
+      "judge.js": `export const network = ["http://api.example.com/"];
+export function judge() { return { ok: false }; }`,
+      "tests.json": {
+        tests: [{ name: "不发", input: "x", expect: { ok: false } }],
+      },
+    });
+    const tested = await run(testCommand, { dir });
+    expect(tested.lines).toEqual([
+      "✗ network 第 1 个（http://api.example.com/）：只能用 https://",
+      "先改好 judge.js 的 network，测试没跑",
+    ]);
+    const checked = await run(checkCommand, { dir });
+    expect(checked.lines).toContain("✗ network 写得不对");
+    expect(checked.exitCode).toBe(1);
+  }, 30_000);
+
+  it("replays a 联网 红包 with the answers the site got, and says where the requests differ", async () => {
+    const dir = kit({
+      "judge.js": NETWORKED,
+      "simulate.json": {
+        submissions: [
+          { who: "小明", input: "a", fetch: [wrong("a")] },
+          { who: "小明", input: "b", fetch: [right("b")] },
+        ],
+      },
+    });
+    const { simulation: simulated } = await run(simulateCommand, {
+      dir,
+      args: ["--seed", "network"],
+    });
+    if (!simulated) throw new Error("No simulation");
+    const records = recordsOf(simulated, NETWORKED);
+    const [first, second] = records.judgments;
+    if (!first || !second) throw new Error("No judgments");
+    // As the site's gateway kept them (records.ts).
+    first.fetches = [
+      {
+        method: "GET",
+        url: `${API}check?input=a`,
+        status: 200,
+        contentType: "application/json",
+        response: JSON.stringify({ right: false, say: "不对" }),
+        ms: 5,
+      },
+    ];
+    second.fetches = [
+      {
+        method: "GET",
+        url: `${API}check?input=b`,
+        status: 200,
+        contentType: "application/json",
+        response: JSON.stringify({ right: true, say: "对" }),
+        ms: 5,
+      },
+    ];
+    const downloads = kit({ "judge-records-x.json": records });
+    const replay = () =>
+      run(replayCommand, {
+        dir,
+        cwd: downloads,
+        args: ["judge-records-x.json"],
+      });
+    expect((await replay()).lines.slice(-3)).toEqual([
+      "第 1 次判定 一致",
+      "第 2 次判定 一致",
+      "2 次判定全部一致",
+    ]);
+    first.fetches = first.fetches.map((asked) => ({
+      ...asked,
+      url: `${API}check?input=z`,
+    }));
+    writeFileSync(
+      join(downloads, "judge-records-x.json"),
+      JSON.stringify(records),
+    );
+    const differing = await replay();
+    expect(differing.lines).toContain(
+      `第 1 次判定 不一致：第 1 个请求 记录是 GET ${API}check?input=z，重放是 GET ${API}check?input=a；重放时代码抛错：TypeError: 联网失败：测试里没写这个请求的返回：GET ${API}check?input=a`,
+    );
+    expect(differing.exitCode).toBe(1);
+  }, 30_000);
+
+  it("replays a 红包 opened on the first protocol with its own runtime", async () => {
+    const dir = kit({
+      "judge.js": LUCKY,
+      "simulate.json": simulation(3, ["小明", "小红"]),
+    });
+    const { simulation: simulated } = await run(simulateCommand, {
+      dir,
+      args: ["--seed", "v1"],
+    });
+    if (!simulated) throw new Error("No simulation");
+    const records = { ...recordsOf(simulated, LUCKY), protocol: 1 };
+    const downloads = kit({ "judge-records-x.json": records });
+    const replayed = await run(replayCommand, {
+      dir,
+      cwd: downloads,
+      args: ["judge-records-x.json"],
+    });
+    expect(replayed.lines.at(-1)).toBe(
+      `${records.judgments.length} 次判定全部一致`,
+    );
+    expect(replayed.exitCode).toBe(0);
   }, 30_000);
 });

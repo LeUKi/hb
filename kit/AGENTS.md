@@ -1,6 +1,6 @@
 # 代码判定红包 · 写代码的说明
 
-这个目录是“代码判定红包”（lafish的红包站）的本地开发包。发红包的人写一个 `judge.js`：每次有人在红包页提交一行输入，平台调用它一次，按它的返回决定发不发、发多少。你要帮他写的是 `judge.js` 和它的测试 `tests.json`，需要时再改 `simulate.json`。下面是代码协议第一版的全部规则。
+这个目录是“代码判定红包”（lafish的红包站）的本地开发包。发红包的人写一个 `judge.js`：每次有人在红包页提交一行输入，平台调用它一次，按它的返回决定发不发、发多少。你要帮他写的是 `judge.js` 和它的测试 `tests.json`，需要时再改 `simulate.json`。下面是代码协议第二版（第一版加上联网）的全部规则。
 
 ## 怎么干活
 
@@ -9,7 +9,7 @@
 3. 写完先跑 `npm test`，再跑 `npm run check`。两个都过了（最后一行分别是“测试 N / N 通过”和“可以去网站部署了”）才算写完，才让人把两个文件贴到网站。没过就按输出改代码或测试，不要删掉不过的测试来凑数。
 4. 改了玩法就同时改测试：每条规则至少一条测试，靠状态或先后顺序的玩法写多步场景（`steps`）。
 
-## 代码协议（第一版）
+## 代码协议（第二版）
 
 `judge.js` 是一个 ES 模块，导出 `judge(submission, tools)`，可以是 async。类型在 `judge.d.ts`；`judge.js` 里用 JSDoc 标上类型，编辑器就能检查：
 
@@ -34,7 +34,7 @@ export function judge(submission, tools) { … }
 - `claims`：已领到的，按先后，每条 `{ user: { id, username }, amount, input, at }`
 - `state`：代码上次存的 JSON，最开始是 `null`
 
-领过的人、发红包的人自己、领取范围以外的人都走不到代码：每人只能领到一次。
+领过的人、领取范围以外的人都走不到代码：每人只能领到一次。发红包的人自己也能领（占一份，不付款）。
 
 ### 返回的判定
 
@@ -83,10 +83,38 @@ export function judge(submission, tools) { … }
 
 ### 不能用的
 
-- 联网：`fetch` 会报错。
+- 没导出 `network` 就不能联网：`fetch` 会报错（见下面的“联网”）。
 - 别的 Node 模块（`node:fs`、`node:net`、`node:http`、`node:os`、`node:child_process` 等）、npm 包、import 别的文件或网址。要用第三方库，就把要用的部分放进 `judge.js`。
 - 动态 `import()`、`require`、`caches`。
 - 全局变量记东西：每次判定可能在不同的沙箱里，要记的放进 `state`。
+
+### 联网（可选）
+
+导出 `network`，列出能请求的地址前缀，最多 3 个；判定里直接用 `fetch()`：
+
+```js
+export const network = ["https://api.example.com/hongbao/"];
+
+export async function judge(submission) {
+  const response = await fetch("https://api.example.com/hongbao/check", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: "Bearer 只有发红包的人知道的令牌" },
+    body: JSON.stringify({ id: submission.user.id, input: submission.input }),
+  });
+  const answer = await response.json();
+  return answer.right
+    ? { ok: true, amount: answer.amount, message: answer.say }
+    : { ok: false, message: answer.say };
+}
+```
+
+- 地址写法：`https://` 加完整域名和路径前缀，不带端口、`?` 和 `#`，主机名小写；不能是 IP、`localhost`、`linux.do` 和它的子域名、`hb.lafi.sh` 和它的子域名。前缀 `https://a.com/api` 放行 `/api`、`/api/x`、`/api?x`，不放行 `/apix`；路径里编码过的斜杠（`%2F`、`%5C`）一律拒绝。
+- 每次判定最多 3 个请求（可以并发），只许 GET 和 POST，请求体最大 16 KB；单个请求 3 秒，返回最大 64 KB，跳转不跟随（3xx 原样给代码）。联网的红包每次判定最多等 5 秒。判定结束以后再发的请求都会被拒。
+- 不行时 `fetch()` 抛 `TypeError`，信息以“联网失败：”开头，写明原因。可以接住，自己在 `message` 里回复；没接住就算代码出错。对方返回 4xx、5xx 不算失败。
+- 本站给每个请求加 `X-Hb-Hongbao`（红包 ID，不保密）和自己的 `User-Agent`；代码不能设 `Host` 和 `X-Hb-` 开头的请求头。
+- 领的人可以绕过本站直接请求接口（那样没有尝试间隔和人机验证）：要防，就在代码里放一个只有发红包的人知道的令牌，请求时带上，接口只认它。代码结束后公开，令牌也会公开，结束后要作废。
+- 红包结束后，领的人能看到自己那几次判定的返回内容：别在返回里放不想公开的东西。
+- 测试里写 `fetch`（见 `tests.json`），测试从不真的联网；`npm run simulate -- --live` 才从这台电脑真的发出去。
 
 ### 限制
 
@@ -146,11 +174,30 @@ export function judge(submission, tools) { … }
 }
 ```
 
-- 每一步 `{ "who", "input", "expect" }`，可选 `level`（默认 2）和 `at`（默认上一步往后 1 分钟，第一步是 `now`；要按先后写）。
+- 每一步 `{ "who", "input", "expect" }`，可选 `level`（默认 2）、`at`（默认上一步往后 1 分钟，第一步是 `now`；要按先后写）和 `fetch`（这一步的请求拿到的返回，见下）。
 - 同一个 `who` 是同一个人（`username` 就是它，`id` 按第一次出现的先后从 10001 编）。状态、已领记录、每人被判定过几次、剩余奖池都像线上一样一步步往下传，和 `npm run simulate`、`npm run replay` 同一套推进。
 - 已经领过的人、或者份已经领完了还要提交，这一步算不通过（线上根本不会交给代码）。
 - `hongbao`、`claims`、`state`、`seed` 写在测试上，是第一步之前的样子。
 - 一步不通过，后面的步就不跑了。
+
+### `fetch`（联网的代码）
+
+一次判定的请求拿到的返回，写在测试上（多步的写在每一步上），最多 3 个：
+
+```json
+{
+  "name": "服务器说对",
+  "input": "flag",
+  "fetch": [
+    { "url": "https://api.example.com/hongbao/check", "method": "POST", "json": { "right": true, "amount": 100, "say": "对" } }
+  ],
+  "expect": { "ok": true, "amount": 100, "message": "对" }
+}
+```
+
+- 每个 `{ "url", "method", "status", "headers", "json" 或 "text" }`：`method` 默认 `GET`，`status` 默认 200，`json` 的 `content-type` 默认 `application/json`。写 `{ "url", "method", "error": "timeout" | "unreachable" | "too-big" }` 就是这个请求失败（超时、连不上、返回超过 64 KB）。
+- 代码发出的请求按方法和完整地址，对上一个还没用过的返回。有请求没写返回（`fetch()` 会抛“测试里没写这个请求的返回”）、写了的返回没用上，这条测试都不通过。
+- 白名单、次数和大小的限制照线上查。
 
 ### `expect`
 
@@ -182,14 +229,14 @@ export function judge(submission, tools) { … }
 }
 ```
 
-`hongbao` 和 `now`、`seed` 的写法同 `tests.json`；每次提交的写法同多步场景的一步，只是没有 `expect`。和多步场景不同，已经领过的人、领完以后的提交不算错，照实写“已领过”“已领完”。
+`hongbao` 和 `now`、`seed` 的写法同 `tests.json`；每次提交的写法同多步场景的一步（联网的代码写 `fetch`），只是没有 `expect`。和多步场景不同，已经领过的人、领完以后的提交不算错，照实写“已领过”“已领完”。
 
 ## 四个命令
 
 - `npm test`：先按网站部署的规则查 import，不过就列出第几行什么问题、不跑测试；然后每条一行 `✓ 名字（3 毫秒）` 或 `✗ 名字：哪里不对`，`console` 的输出缩进跟在那一条下面；最后 `测试 N / M 通过`。`npm test -- 名字` 只跑名字里含这几个字的。
-- `npm run check`：网站部署时同样的几行（import 都在清单里、代码能加载、导出了 judge、测试 N / M 通过），每条测试跑两遍，结果不一样的提醒用了真随机；再写文件大小和代码指纹（和网站上展开代码时显示的一致）；最后 `可以去网站部署了` 或 `还不能开放`。
-- `npm run simulate`：一行一次提交：第几次、谁、输入、结果、代码的回复；最后发出多少、领了几份。`npm run simulate -- --seed 别的` 换一个种子，`npm run simulate -- 别的.json` 换一个文件。
-- `npm run replay -- judge-records-xxx.json`：用网站上下载的完整记录逐条重放，先核对指纹和种子。
+- `npm run check`：网站部署时同样的几行（import 都在清单里、代码能加载、导出了 judge、联网的写出白名单、测试 N / M 通过），每条测试跑两遍，结果不一样的提醒用了真随机；再写文件大小和代码指纹（和网站上展开代码时显示的一致）；最后 `可以去网站部署了` 或 `还不能开放`。
+- `npm run simulate`：一行一次提交：第几次、谁、输入、结果、代码的回复；最后发出多少、领了几份。`npm run simulate -- --seed 别的` 换一个种子，`npm run simulate -- 别的.json` 换一个文件，`npm run simulate -- --live` 让请求真的从这台电脑发出去（照样只许白名单里的地址）。
+- `npm run replay -- judge-records-xxx.json`：用网站上下载的完整记录逐条重放，先核对指纹和种子；联网的红包用记录里的返回，先比请求再比判定。第一版开放的红包用第一版的运行时重放。
 
 失败时退出码都不是 0。
 
@@ -240,7 +287,9 @@ return { ok: false, message: `不对，大家一共猜错了 ${wrong} 次`, stat
 - **靠全局变量记东西**：下一次判定可能在新的沙箱里，变量没了。要记的放进 `state`，或者从 `claims`、`user.attempts` 算出来。
 - **拼错返回的字段**：`mesage`、`amout` 会被忽略，测试里算不通过。
 - **`ok: true` 不写 `amount`**，或者 `message` 超过 100 个字：都算出错。
-- **import 不在清单里的模块、别的文件或 npm 包**，用动态 `import()`、`require`、`fetch`。
+- **import 不在清单里的模块、别的文件或 npm 包**，用动态 `import()`、`require`；没导出 `network` 就用 `fetch`。
+- **联网的代码测试里不写 `fetch`**：测试从不真的联网，没写返回的请求会让测试不通过。
+- **把令牌写进代码以后忘了作废**：红包结束后代码公开，令牌也跟着公开。
 - **忘了限次数**：平台不限提交次数，靠猜的玩法要按 `user.attempts` 自己拒绝。
 - **测试写了线上不可能的情况**：比如 `claims` 的时间晚于 `now`、已领的份数等于总份数、提交的人已经在 `claims` 里。
 - **把 `expect.amount` 当成代码给的数**：`amount` 是拉进范围以后实际发的，代码自己给的写 `asked`。

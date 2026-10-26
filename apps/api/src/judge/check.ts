@@ -1,17 +1,20 @@
 // 部署 (docs/programmable-hongbao-design.md §5): the sender's judge.js made
 // into a 判定器 — the same Dynamic Worker the claims will use — and
 // tests.json run in it by the kit's rules (kit/runtime/testing.mjs, which
-// npm test and npm run check share). A sender's first run of a code deploys
-// it; later runs rerun its tests. A 红包 opens only with code and tests
-// that passed.
+// npm test and npm run check share), its requests answered from what the
+// tests wrote, never the network (§9.6). A sender's first run of a code
+// deploys it, on whichever protocol; later runs rerun its tests. A 红包
+// opens only with code and tests that passed on the current protocol.
 import type {
   JudgeCheck,
   JudgeCheckInput,
   JudgeSettings,
   JudgeTestOutcome,
 } from "@hb/contracts";
+import type { FetchAnswer } from "../../../../kit/judge";
 import {
   checkSource,
+  readNetwork,
   readTests,
   runTest,
 } from "../../../../kit/runtime/index.mjs";
@@ -22,6 +25,7 @@ import { readBalanceSettings } from "../balance/settings";
 import { transferAccess } from "../balance/transfers";
 import type { ApiBindings } from "../env";
 import {
+  describeJudge,
   JUDGE_PROTOCOL,
   runJudge,
   type SandboxOutcome,
@@ -101,7 +105,10 @@ async function runsToday(env: ApiBindings, userId: string) {
   return { runs: row?.runs ?? 0, deploys: row?.deploys ?? 0 };
 }
 
-/** Whether this sender ran this code before: then it is no new version. */
+/**
+ * Whether this sender ran this code before, on any protocol: then it is no
+ * new version (§9.1: a version deployed on v1 runs again on v2 for free).
+ */
 async function deployedBefore(
   env: ApiBindings,
   userId: string,
@@ -109,9 +116,9 @@ async function deployedBefore(
 ) {
   return Boolean(
     await env.DB.prepare(
-      "SELECT 1 FROM judge_checks WHERE user_id = ? AND protocol = ? AND fingerprint = ? LIMIT 1",
+      "SELECT 1 FROM judge_checks WHERE user_id = ? AND fingerprint = ? LIMIT 1",
     )
-      .bind(userId, JUDGE_PROTOCOL, fingerprint)
+      .bind(userId, fingerprint)
       .first(),
   );
 }
@@ -251,7 +258,7 @@ async function runChecks(
   const recorded =
     await env.DB.prepare(`INSERT INTO judge_checks (id, user_id, protocol, fingerprint, tests_digest, passed, kind, created_at)
     SELECT ?1, ?2, ?3, ?4, ?5, 0, CASE WHEN EXISTS(SELECT 1 FROM judge_checks
-      WHERE user_id = ?2 AND protocol = ?3 AND fingerprint = ?4) THEN 'rerun' ELSE 'deploy' END, ${databaseNow}
+      WHERE user_id = ?2 AND fingerprint = ?4) THEN 'rerun' ELSE 'deploy' END, ${databaseNow}
     RETURNING kind`)
       .bind(checkId, userId, JUDGE_PROTOCOL, fingerprint, testsDigest)
       .first<{ kind: JudgeCheck["kind"] }>();
@@ -269,6 +276,9 @@ async function runChecks(
   >();
   let sandbox = 0;
   let timeouts = 0;
+  // 联网 (§9.2): what judge.js exports, read once it is loaded.
+  let network: string[] | null = null;
+  const networkProblems: string[] = [];
   /**
    * A sandbox's first use: its 份 on record before the 判定器 is made (§7:
    * 每月上限 and 用量 see it even if the run goes no further; the run
@@ -291,9 +301,28 @@ async function runChecks(
   };
   if (problems.length === 0 && "tests" in read && read.tests.length > 0) {
     await prepare(0);
+    const described = await describeJudge(env, {
+      code: input.code,
+      fingerprint,
+      fresh: 0,
+    });
+    // Code that will not load says so in its first test.
+    if (described) {
+      const declared =
+        described.network !== null &&
+        typeof described.network === "object" &&
+        "unreadable" in described.network
+          ? { problems: ["network 要是字符串数组"] }
+          : readNetwork(described.network);
+      if ("problems" in declared) networkProblems.push(...declared.problems);
+      else network = declared.list;
+      if (network && !settings.networkEnabled)
+        networkProblems.push("代码判定暂时不能联网。");
+    }
     const run = async (
       submission: Parameters<typeof runJudge>[1]["submission"],
       seeds: { submission: string; user: string },
+      answers: readonly FetchAnswer[] = [],
     ): Promise<SandboxOutcome> => {
       if (timeouts >= SANDBOXES)
         return { failure: "timeout", detail: "前面超时，这条没跑" };
@@ -302,7 +331,14 @@ async function runChecks(
       const started = Date.now();
       const outcome = await runJudge(
         env,
-        { code: input.code, fingerprint, submission, seeds, fresh: sandbox },
+        {
+          code: input.code,
+          fingerprint,
+          submission,
+          seeds,
+          fresh: sandbox,
+          network: { mode: "mock", list: network, answers },
+        },
         true,
       );
       if ("failure" in outcome && outcome.failure === "timeout") {
@@ -355,6 +391,7 @@ async function runChecks(
     problems.length === 0 &&
     !testsProblem &&
     !loadProblem &&
+    networkProblems.length === 0 &&
     tests.length > 0 &&
     tests.every((test) => test.passed);
   const checkedAt = Date.now();
@@ -381,14 +418,21 @@ async function runChecks(
   }
   await env.DB.batch([
     env.DB.prepare(
-      `UPDATE judge_checks SET passed = ?, finished_at = ${databaseNow} WHERE id = ?`,
-    ).bind(Number(passed), checkId),
+      `UPDATE judge_checks SET passed = ?, finished_at = ${databaseNow}, network = ? WHERE id = ?`,
+    ).bind(
+      Number(passed),
+      network && networkProblems.length === 0 ? JSON.stringify(network) : null,
+      checkId,
+    ),
     ...usage,
   ]);
   return {
     fingerprint,
     testsDigest,
+    protocol: JUDGE_PROTOCOL,
     passed,
+    network,
+    ...(networkProblems.length > 0 ? { networkProblems } : {}),
     problems,
     ...(testsProblem ? { testsProblem } : {}),
     ...(loadProblem ? { loadProblem } : {}),

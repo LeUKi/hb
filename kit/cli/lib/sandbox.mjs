@@ -1,17 +1,21 @@
 // The local sandbox (协议第 5 节, 开发包的样子): workerd started through the
 // Miniflare that comes with wrangler, running judge.js in the same kind of
-// Dynamic Worker as the site, with the same compatibility date, nodejs_compat,
-// runtime modules and no network. Locally the CPU is not limited, so each
-// judgment is cut off by the clock instead: past 1 second it is a timeout,
-// and workerd is thrown away and started afresh, as the site moves to a new
-// sandbox after one.
+// Dynamic Worker as the site, with the same compatibility date, nodejs_compat
+// and runtime modules. Its fetch() is answered from what the test wrote
+// (协议第 9 节); with `live` it goes out from this computer through a
+// gateway holding the site's rules (gateway.mjs). Locally the CPU is not
+// limited, so each judgment is cut off by the clock instead: past 1 second
+// it is a timeout (with the network, past the site's 5), and workerd is
+// thrown away and started afresh, as the site moves to a new sandbox after
+// one.
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
+import { NETWORK_LIMITS, readNetwork } from "../../runtime/index.mjs";
 import { fingerprintOf, KitError } from "./files.mjs";
 
-/** Protocol v1: this runtime on this compatibility date with nodejs_compat. */
-export const PROTOCOL = 1;
+/** Protocol v2: this runtime on this compatibility date with nodejs_compat. */
+export const PROTOCOL = 2;
 export const COMPATIBILITY_DATE = "2026-09-01";
 /** What runs beside judge.js, as hb's scripts/judge-runtime.ts copies it to the site. */
 export const SANDBOX_MODULES = Object.freeze([
@@ -21,6 +25,7 @@ export const SANDBOX_MODULES = Object.freeze([
   "codes.mjs",
   "hash.mjs",
   "money.mjs",
+  "network.mjs",
   "random.mjs",
   "text.mjs",
   "time.mjs",
@@ -32,6 +37,8 @@ export const SLOW_MS = 50;
 
 const runtimeDir = new URL("../../runtime/", import.meta.url);
 const host = readFileSync(new URL("./host.mjs", import.meta.url), "utf8");
+const gateway = readFileSync(new URL("./gateway.mjs", import.meta.url), "utf8");
+const networkRules = readFileSync(new URL("network.mjs", runtimeDir), "utf8");
 const LATE = Symbol("late");
 
 async function loadMiniflare() {
@@ -47,11 +54,21 @@ async function loadMiniflare() {
   return import(pathToFileURL(fromWrangler.resolve("miniflare")).href);
 }
 
-/** The modules of the Dynamic Worker: .js names are modules there. */
-function modulesWith(code) {
+/**
+ * The modules of the Dynamic Worker: .js names are modules there. Protocol
+ * v1's are its runtime as 红包 opened with it, kept frozen, for replaying
+ * their records.
+ */
+function modulesWith(code, protocol) {
   const modules = {};
-  for (const name of SANDBOX_MODULES)
-    modules[name] = { js: readFileSync(new URL(name, runtimeDir), "utf8") };
+  if (protocol === 1) {
+    const frozen = JSON.parse(
+      readFileSync(new URL("frozen/v1.json", runtimeDir), "utf8"),
+    );
+    for (const [name, js] of Object.entries(frozen)) modules[name] = { js };
+  } else
+    for (const name of SANDBOX_MODULES)
+      modules[name] = { js: readFileSync(new URL(name, runtimeDir), "utf8") };
   modules["judge.js"] = code;
   return modules;
 }
@@ -72,8 +89,8 @@ function failureOf(detail) {
   return { failure: "load", detail };
 }
 
-/** workerd's answer to one request, or LATE once TIMEOUT_MS has passed. */
-async function ask(runtime, body) {
+/** workerd's answer to one request, or LATE once `waitMs` has passed. */
+async function ask(runtime, body, waitMs = TIMEOUT_MS) {
   const request = runtime
     .dispatchFetch("http://judge/", { method: "POST", body })
     .then((response) => response.json());
@@ -81,7 +98,7 @@ async function ask(runtime, body) {
   request.catch(() => {});
   let timer;
   const late = new Promise((resolve) => {
-    timer = setTimeout(() => resolve(LATE), TIMEOUT_MS);
+    timer = setTimeout(() => resolve(LATE), waitMs);
   });
   try {
     return await Promise.race([request, late]);
@@ -90,39 +107,68 @@ async function ask(runtime, body) {
   }
 }
 
+/** What judge.js exports as `network`: `{ list }` or `{ problems }`. */
+function networkOf(answer) {
+  if (!answer || answer === LATE || typeof answer.host === "string")
+    return { list: null };
+  if (answer.network?.unreadable)
+    return { problems: ["network 要是字符串数组"] };
+  return readNetwork(answer.network ?? null);
+}
+
 /**
- * A sandbox for this judge.js. `run(submission, seeds)` judges once, the
- * way runTest and judgeNext call it, always keeping console output;
- * `close()` stops workerd. Call close when done, or the process stays.
+ * A sandbox for this judge.js. `run(submission, seeds, answers)` judges
+ * once, the way runTest and judgeNext call it, always keeping console
+ * output; fetch() gets `answers` (a test's), or with `live` goes out.
+ * `network` is what judge.js exports. `protocol` 1 runs the first
+ * protocol's runtime, which has no network. `close()` stops workerd. Call
+ * close when done, or the process stays.
  */
-export async function openSandbox(code) {
+export async function openSandbox(
+  code,
+  { live = false, protocol = PROTOCOL } = {},
+) {
   const { Miniflare, convertV4MiniflareOptions } = await loadMiniflare();
-  const options = convertV4MiniflareOptions({
-    // Request.cf is fetched from Cloudflare and cached in the working
-    // directory otherwise: nothing here needs it.
-    cf: false,
-    workers: [
-      {
-        name: "judge-host",
-        // By contents: a path would be named relative to the working directory.
-        modules: [{ type: "ESModule", path: "host.mjs", contents: host }],
-        compatibilityDate: COMPATIBILITY_DATE,
-        bindings: {
-          ID: `judge:v${PROTOCOL}:${fingerprintOf(code)}`,
-          COMPATIBILITY_DATE,
-          MODULES: modulesWith(code),
+  // The list the gateway lets out, known once judge.js is read.
+  let allowed = [];
+  const options = () =>
+    convertV4MiniflareOptions({
+      // Request.cf is fetched from Cloudflare and cached in the working
+      // directory otherwise: nothing here needs it.
+      cf: false,
+      workers: [
+        {
+          name: "judge-host",
+          // By contents: a path would be named relative to the working directory.
+          modules: [{ type: "ESModule", path: "host.mjs", contents: host }],
+          compatibilityDate: COMPATIBILITY_DATE,
+          bindings: {
+            ID: `judge:v${protocol}:${fingerprintOf(code)}${live ? ":live" : ""}`,
+            COMPATIBILITY_DATE,
+            MODULES: modulesWith(code, protocol),
+            LIVE: live,
+          },
+          serviceBindings: { GATEWAY: "judge-gateway" },
+          workerLoaders: { LOADER: {} },
         },
-        workerLoaders: { LOADER: {} },
-      },
-    ],
-  });
+        {
+          name: "judge-gateway",
+          modules: [
+            { type: "ESModule", path: "gateway.mjs", contents: gateway },
+            { type: "ESModule", path: "network.mjs", contents: networkRules },
+          ],
+          compatibilityDate: COMPATIBILITY_DATE,
+          bindings: { LIST: JSON.stringify(allowed) },
+        },
+      ],
+    });
   // Before the first judgment, two requests main.mjs stops at: one it
   // cannot read starts the Dynamic Worker without importing judge.js, then
   // an empty one imports it. The second's time is judge.js's top level,
   // which the site counts in the first judgment of each sandbox; neither is
   // timed as a judgment here. What they answer, judgments say again.
   const start = async () => {
-    const runtime = new Miniflare(options);
+    const runtime = new Miniflare(options());
     await runtime.ready;
     await ask(runtime, "").catch(() => {});
     const began = Date.now();
@@ -132,6 +178,27 @@ export async function openSandbox(code) {
   };
   let { runtime, hung, loadMs } = await start();
   let restarts = 0;
+  // What judge.js exports as `network`: a request main.mjs answers once
+  // judge.js is loaded.
+  const network =
+    hung || protocol === 1
+      ? { list: null }
+      : networkOf(
+          await ask(runtime, JSON.stringify({ describe: true })).catch(
+            () => null,
+          ),
+        );
+  const list = "list" in network ? network.list : null;
+  // Going out, the gateway knows the list: workerd again, with it.
+  if (live && list) {
+    allowed = list;
+    const first = runtime;
+    ({ runtime, hung, loadMs } = await start());
+    await first.dispose().catch(() => {});
+  }
+  const waitMs = list
+    ? Math.max(TIMEOUT_MS, NETWORK_LIMITS.judgmentMs)
+    : TIMEOUT_MS;
 
   // A judgment that will not end keeps workerd busy: start a new one.
   const restart = async () => {
@@ -141,7 +208,7 @@ export async function openSandbox(code) {
     await stuck.dispose().catch(() => {});
   };
 
-  async function run(submission, seeds) {
+  async function run(submission, seeds, answers = []) {
     // A top level that never ends blocks every judgment, as it would online:
     // no judgment is sent, and no new workerd would do better.
     if (hung)
@@ -152,20 +219,39 @@ export async function openSandbox(code) {
     try {
       const body = await ask(
         runtime,
-        JSON.stringify({ submission, seeds, capture: true }),
+        JSON.stringify({
+          submission,
+          seeds,
+          capture: true,
+          network:
+            live && list
+              ? { list, mode: "live" }
+              : { list, mode: "mock", answers },
+        }),
+        waitMs,
       );
       if (body === LATE) {
         await restart();
         return {
           failure: "timeout",
-          detail: `超过 ${TIMEOUT_MS / 1000} 秒没有判定完`,
+          detail: `超过 ${waitMs / 1000} 秒没有判定完`,
         };
       }
       if (typeof body.host === "string") return failureOf(body.host);
       const logs = body.logs?.length ? { logs: body.logs } : {};
+      // What the code asked of the network, when there is something to say.
+      const asked =
+        body.requests?.length || body.unused?.length
+          ? { requests: body.requests ?? [], unused: body.unused ?? [] }
+          : {};
       if (body.error)
-        return { failure: body.error.kind, detail: body.error.detail, ...logs };
-      return { verdict: body.verdict, ...logs };
+        return {
+          failure: body.error.kind,
+          detail: body.error.detail,
+          ...logs,
+          ...asked,
+        };
+      return { verdict: body.verdict, ...logs, ...asked };
     } catch (error) {
       // workerd itself went away: start it again for the next judgment.
       await restart();
@@ -178,6 +264,8 @@ export async function openSandbox(code) {
 
   return {
     run,
+    /** What judge.js exports as `network`: `{ list }` or `{ problems }`. */
+    network,
     /** How many times workerd was started afresh after a timeout. */
     get restarts() {
       return restarts;

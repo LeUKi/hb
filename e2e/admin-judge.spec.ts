@@ -59,6 +59,7 @@ function usage(patch: Partial<AdminJudgeUsage> = {}): AdminJudgeUsage {
     claims: 0,
     timeouts: 0,
     switches: 0,
+    fetches: 0,
   });
   return {
     readAt: now,
@@ -73,6 +74,7 @@ function usage(patch: Partial<AdminJudgeUsage> = {}): AdminJudgeUsage {
       claims: 340,
       timeouts: 2,
       switches: 1,
+      fetches: 0,
     },
     freeRows: 1000,
     pricePerRow: 0.002,
@@ -191,6 +193,7 @@ function codeActivity(): AdminActivityListItem {
 async function mockSettings(page: Page) {
   const values: JudgeSettingsInput = {
     enabled: true,
+    networkEnabled: false,
     dailyOpenLimit: 3,
     dailyDeployLimit: 10,
     monthlyLimit: 1000,
@@ -545,6 +548,7 @@ test.describe("网站管理 · 判定器", () => {
     expect(settings.sent[1]).toEqual({
       expectedVersion: 3,
       enabled: true,
+      networkEnabled: false,
       dailyOpenLimit: 3,
       dailyDeployLimit: 20,
       monthlyLimit: 2000,
@@ -552,6 +556,23 @@ test.describe("网站管理 · 判定器", () => {
     await expect(
       page.getByText(/^第 4 版 · .* 由 测试管理员 修改/),
     ).toBeVisible();
+  });
+
+  test("设置：代码判定联网单独一个开关，默认关，存的时候一起带上", async ({
+    page,
+  }) => {
+    const settings = await mockSettings(page);
+    await answer(page, "audit", () => list([]));
+    await openApp(page, "/admin/judge");
+    const network = page.getByRole("switch", { name: "代码判定联网" });
+    await expect(network).toHaveAttribute("aria-checked", "false");
+    await expect(
+      page.getByText("关着时联网的代码不能部署、不能开放；已经开放的照常领。"),
+    ).toBeVisible();
+    await network.click();
+    await page.getByRole("button", { name: "保存设置" }).click();
+    await expect(shown(page, "已保存，立即生效")).toBeVisible();
+    expect(settings.sent.at(-1)).toMatchObject({ networkEnabled: true });
   });
 
   test("操作记录：判定器设置写成中文", async ({ page }) => {

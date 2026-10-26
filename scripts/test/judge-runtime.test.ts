@@ -33,7 +33,7 @@ import {
 } from "../../kit/runtime/index.mjs";
 import { seedStream as contractsSeedStream } from "../../packages/contracts/src/draw-proof";
 import { generateRandomAmounts } from "../../packages/contracts/src/random";
-import { RUNTIME_COPY, runtimeCopy } from "../judge-runtime";
+import { FROZEN_V1, RUNTIME_COPY, runtimeCopy } from "../judge-runtime";
 
 const seed = "a".repeat(64);
 const secret = "0123456789abcdef".repeat(4);
@@ -486,11 +486,11 @@ describe("the API's copy of the sandbox runtime", () => {
 
   // Protocol v1 is frozen: a 代码判定红包 opened with it on 2026-10-25, and
   // an opened 红包 keeps the runtime it opened with (docs/programmable-
-  // hongbao-design.md §4.7). A change to these modules is protocol v2: a
-  // new version beside this one, never an edit of it.
-  it("is protocol v1 as opened, unchanged", () => {
+  // hongbao-design.md §4.7). Protocol v2 (§9) is kit/runtime as it is now;
+  // v1 stays beside it as it was, never edited.
+  it("keeps protocol v1 as opened, unchanged", () => {
     expect(
-      createHash("sha256").update(readFileSync(RUNTIME_COPY)).digest("hex"),
+      createHash("sha256").update(readFileSync(FROZEN_V1)).digest("hex"),
     ).toBe("dbfed16b0b3763a839828ddd0fe4ca1f4bd686580f2e77987a0e4a8096bcae23");
   });
 });

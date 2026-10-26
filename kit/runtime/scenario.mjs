@@ -100,13 +100,14 @@ export function advance(scenario, submission, { state, paid, at }) {
 
 /**
  * One submission at `at`, judged by `run` (the sandbox: `{ verdict }` or
- * `{ failure, detail }`) and the 红包 moved on. `{ refused }` when the site
+ * `{ failure, detail }`, given `fetch`, the answers its requests get when
+ * they are written down) and the 红包 moved on. `{ refused }` when the site
  * would not have asked the code; otherwise what was given, how the sandbox
  * answered, the time it took and, for an answer, how readVerdict read it.
  * Only an answer that follows the protocol moves anything on: a failure
  * counts for nothing, as on the site.
  */
-export async function judgeNext(scenario, { user, input, at }, run) {
+export async function judgeNext(scenario, { user, input, at, fetch }, run) {
   const refused = refusalOf(scenario, user);
   if (refused) return { refused };
   const submission = nextSubmission(scenario, { input, now: at, user });
@@ -121,7 +122,7 @@ export async function judgeNext(scenario, { user, input, at }, run) {
     user: userSeed(scenario.hongbaoId, scenario.secret, id),
   };
   const started = Date.now();
-  const answer = await run(submission, seeds);
+  const answer = await run(submission, seeds, fetch);
   const ms = Date.now() - started;
   if ("failure" in answer) return { submission, seeds, answer, ms };
   const reading = readVerdict(answer.verdict, submission.share);

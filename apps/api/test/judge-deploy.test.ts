@@ -528,9 +528,10 @@ export function judge() { return { ok: false }; }
     expect(result.passed).toBe(true);
     // The 250 ms write is not in any judgment's time.
     expect(result.slowestMs).toBeLessThan(100);
-    expect(sent.slice(0, 2)).toEqual(["", "{}"]);
-    expect(JSON.parse(sent[2] ?? "{}")).toHaveProperty("submission");
-    expect(sent).toHaveLength(2 + 4);
+    // Warmed, then asked what it exports as network (§9.2), then judged.
+    expect(sent.slice(0, 3)).toEqual(["", "{}", '{"describe":true}']);
+    expect(JSON.parse(sent[3] ?? "{}")).toHaveProperty("submission");
+    expect(sent).toHaveLength(3 + 4);
   });
 
   it("refuses a deploy the platform could not run, keeps it on record, and runs the same code again free", async () => {

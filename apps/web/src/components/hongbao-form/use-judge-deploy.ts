@@ -1,4 +1,8 @@
-import type { JudgeCheck, ManagedActivity } from "@hb/contracts";
+import {
+  JUDGE_PROTOCOL,
+  type JudgeCheck,
+  type ManagedActivity,
+} from "@hb/contracts";
 import { useMemo, useState } from "react";
 import { ActivityRequestError, refused } from "../../lib/activities";
 import { useBalanceFunding } from "../../lib/balance";
@@ -115,10 +119,17 @@ export function useJudgeDeploy({
       : activity?.openingBlockedReason === "JUDGE_CHECK_REQUIRED" && version
         ? { passed: false }
         : undefined;
+  // A version last run on an earlier protocol runs again on this one
+  // before it opens (§9.1): free, as a rerun.
+  const upgraded =
+    version !== undefined && (version.protocol ?? 1) < JUDGE_PROTOCOL;
   // A version's last run, kept with the draft, when it ran these tests: a
   // version put back (换回, or pasted) on a draft opened again.
   const last =
-    version && digests.tests !== null && version.testsDigest === digests.tests
+    version &&
+    !upgraded &&
+    digests.tests !== null &&
+    version.testsDigest === digests.tests
       ? { passed: version.passed }
       : undefined;
   /**
@@ -136,7 +147,7 @@ export function useJudgeDeploy({
       ? sent.kind
       : null;
   // This run's word, else the version's last (its tests changed since).
-  const passed = result?.passed ?? version?.passed;
+  const passed = result?.passed ?? (upgraded ? undefined : version?.passed);
   const status: JudgeStatus = !code.trim()
     ? "empty"
     : pending === "deploy"
@@ -248,6 +259,13 @@ export function useJudgeDeploy({
   return {
     /** The code is digested: which version it is is known. */
     known: fingerprint !== null || !code.trim(),
+    /** Last run on an earlier protocol: run again on this one. */
+    upgraded,
+    /**
+     * 联网 (§9.5): the addresses this code exports, as its run read them;
+     * null without network or before it is deployed.
+     */
+    network: check?.network ?? version?.network ?? null,
     fingerprint,
     version,
     status,
@@ -258,7 +276,9 @@ export function useJudgeDeploy({
     gate: ready
       ? null
       : rerun
-        ? "测试改过了，要重新跑一遍"
+        ? upgraded
+          ? "判定器升级到第二版了，要重新跑一遍测试"
+          : "测试改过了，要重新跑一遍"
         : "还没有测试全过的判定器",
     pending,
     busy: mutation.isPending,

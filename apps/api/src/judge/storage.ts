@@ -16,13 +16,14 @@ import { activityCode } from "../db/schema";
 import type { ApiBindings } from "../env";
 import { decryptString, encryptString, sha256Hex } from "../security/crypto";
 import { JUDGE_PROTOCOL } from "./sandbox";
+import type { FetchRecord } from "./session";
 
 export type JudgeRow = typeof activityCode.$inferSelect;
 
 /** What each encrypted part is bound to. */
 export const judgeData = (
   activityId: string,
-  part: "code" | "tests" | "seed" | "state" | "versions",
+  part: "code" | "tests" | "seed" | "state" | "versions" | "fetches",
 ) => `judge:${activityId}:${part}`;
 
 /** The fingerprint (judge.js) and the tests' digest: SHA-256 of the text. */
@@ -152,7 +153,11 @@ export async function sameJudge(row: JudgeRow, judge: JudgeInput) {
   );
 }
 
-/** Opening: the secret seed, sealed; its 封存值 is public from now on. */
+/**
+ * Opening: the secret seed, sealed; its 封存值 is public from now on. The
+ * 红包 takes the current protocol, and the addresses its code exports as
+ * the run of this code and these tests that passed found them (§9.2).
+ */
 export async function sealSeedStatement(
   env: ApiBindings,
   activityId: string,
@@ -163,12 +168,35 @@ export async function sealSeedStatement(
   const secret = Array.from(bytes, (byte) =>
     byte.toString(16).padStart(2, "0"),
   ).join("");
-  return env.DB.prepare(`UPDATE activity_code SET seed_commitment = ?, seed_ciphertext = ?, updated_at = ${databaseNow}
-    WHERE activity_id = ? AND seed_commitment IS NULL`).bind(
+  return env.DB.prepare(`UPDATE activity_code SET seed_commitment = ?1, seed_ciphertext = ?2,
+      protocol = ?4, network = (SELECT k.network FROM judge_checks k JOIN activities a ON a.id = activity_code.activity_id
+        WHERE k.user_id = a.author_id AND k.protocol = ?4 AND k.fingerprint = activity_code.fingerprint
+          AND k.tests_digest = activity_code.tests_digest AND k.passed = 1
+        ORDER BY k.created_at DESC LIMIT 1),
+      updated_at = ${databaseNow}
+    WHERE activity_id = ?3 AND seed_commitment IS NULL`).bind(
     commitment(secret),
     await encryptString(secret, env, judgeData(activityId, "seed")),
     activityId,
+    JUDGE_PROTOCOL,
   );
+}
+
+/** A judgment's requests and answers (联网, §9.4), as the gateway kept them. */
+export async function fetchesOf(
+  env: ApiBindings,
+  activityId: string,
+  rowId: string,
+  ciphertext: string | null,
+): Promise<FetchRecord[]> {
+  if (ciphertext === null) return [];
+  return JSON.parse(
+    await decryptString(
+      ciphertext,
+      env,
+      `${judgeData(activityId, "fetches")}:${rowId}`,
+    ),
+  ) as FetchRecord[];
 }
 
 export async function readSeed(env: ApiBindings, row: JudgeRow) {

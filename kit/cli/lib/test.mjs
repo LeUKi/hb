@@ -75,6 +75,12 @@ export async function testCommand({ dir, args = [], print = console.log }) {
   }
 
   const sandbox = await openSandbox(code);
+  if ("problems" in sandbox.network) {
+    for (const problem of sandbox.network.problems) print(`✗ ${problem}`);
+    print("先改好 judge.js 的 network，测试没跑");
+    await sandbox.close();
+    return { exitCode: 1 };
+  }
   let passed = 0;
   let slow = false;
   let loaded = true;

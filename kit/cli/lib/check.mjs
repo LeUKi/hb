@@ -1,7 +1,8 @@
 // npm run check (协议第 5 节, 四个命令的输出 and 部署): the rows the site
 // shows when it deploys this code, by the same rules: imports, loading,
-// tests, each run twice to catch true randomness, then the sizes and the
-// fingerprint the site shows beside the code. Like a deployment, after a
+// the addresses it may ask (network, 第 9 节), tests, each run twice to
+// catch true randomness, then the sizes and the fingerprint the site shows
+// beside the code. Like a deployment, after a
 // timeout it goes on in a new sandbox once; a second one stops the rest.
 import {
   checkSource,
@@ -41,6 +42,7 @@ async function runAll(code, tests) {
   const results = [];
   const unstable = [];
   let loadProblem = null;
+  const { network } = sandbox;
   try {
     for (const test of tests) {
       if (timeouts >= TIMEOUTS) {
@@ -63,7 +65,7 @@ async function runAll(code, tests) {
     await sandbox.close();
   }
   const loadNote = loadProblem ? null : slowLoadNote(sandbox.loadMs);
-  return { results, unstable, loadProblem, slowest, loadNote };
+  return { results, unstable, loadProblem, slowest, loadNote, network };
 }
 
 export async function checkCommand({ dir, print = console.log }) {
@@ -90,8 +92,14 @@ export async function checkCommand({ dir, print = console.log }) {
     print(row(!all.loadProblem, "代码能加载、导出了 judge"));
     if (all.loadProblem) say(print, `  ${all.loadProblem}`, "    ");
     else {
+      const networkOk = !("problems" in all.network);
+      if (!networkOk) {
+        print(row(false, "network 写得不对"));
+        for (const problem of all.network.problems) print(`  ${problem}`);
+      } else if (all.network.list)
+        print(row(true, `联网：${all.network.list.join("、")}`));
       const good = all.results.filter((result) => result.passed).length;
-      passed = good === read.tests.length;
+      passed = networkOk && good === read.tests.length;
       print(row(passed, `测试 ${good} / ${read.tests.length} 通过`));
       for (const result of all.results)
         if (!result.passed)

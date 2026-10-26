@@ -1808,13 +1808,20 @@ export const activityCode = sqliteTable(
      * opening.
      */
     versionsCiphertext: text("versions_ciphertext"),
+    /**
+     * 联网 (protocol 2, §9): the addresses judge.js may ask (JSON array of
+     * prefixes), set at opening from its deploy; null without network.
+     */
+    network: text("network"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
   (table) => [
     check(
       "activity_code_shape",
-      sql`${table.protocol} = 1 AND length(${table.fingerprint}) = 64 AND length(${table.testsDigest}) = 64
+      sql`${table.protocol} IN (1, 2) AND length(${table.fingerprint}) = 64 AND length(${table.testsDigest}) = 64
+        AND (${table.network} IS NULL OR (${table.protocol} = 2 AND json_valid(${table.network})
+          AND json_type(${table.network}) = 'array' AND json_array_length(${table.network}) BETWEEN 1 AND 3))
         AND length(${table.prompt}) <= 40
         AND typeof(${table.minEachMinor}) = 'integer' AND ${table.minEachMinor} > 0
         AND (${table.seedCommitment} IS NULL) = (${table.seedCiphertext} IS NULL)
@@ -1861,6 +1868,11 @@ export const codeJudgments = sqliteTable(
     message: text("message"),
     /** The state it set, if it set one (encrypted JSON). */
     stateCiphertext: text("state_ciphertext"),
+    /**
+     * 联网 (§9): its requests and their answers, as the gateway saw them
+     * (encrypted JSON); null when it asked nothing.
+     */
+    fetchesCiphertext: text("fetches_ciphertext"),
     /** Submission.now. */
     judgedAt: integer("judged_at").notNull(),
   },
@@ -1936,6 +1948,11 @@ export const judgeChecks = sqliteTable(
     createdAt: integer("created_at").notNull(),
     /** Null while it runs, and for good when it was cut off. */
     finishedAt: integer("finished_at"),
+    /**
+     * 联网 (§9): the addresses the code exports (JSON array of prefixes),
+     * written when the run finishes; null when it has none.
+     */
+    network: text("network"),
   },
   (table) => [
     index("judge_checks_user_time_idx").on(table.userId, table.createdAt),
@@ -1985,6 +2002,10 @@ export const judgeSettings = sqliteTable(
     dailyOpenLimit: integer("daily_open_limit").notNull().default(3),
     dailyDeployLimit: integer("daily_deploy_limit").notNull().default(10),
     monthlyLimit: integer("monthly_limit").notNull().default(1000),
+    /** 代码判定联网 (§9): off, code that exports network neither deploys nor opens. */
+    networkEnabled: integer("network_enabled", { mode: "boolean" })
+      .notNull()
+      .default(false),
     updatedAt: integer("updated_at").notNull(),
     updatedByUserId: text("updated_by_user_id"),
   },
@@ -1993,7 +2014,7 @@ export const judgeSettings = sqliteTable(
     check(
       "judge_settings_valid",
       sql`typeof(${table.version}) = 'integer' AND ${table.version} >= 1
-        AND ${table.enabled} IN (0, 1)
+        AND ${table.enabled} IN (0, 1) AND ${table.networkEnabled} IN (0, 1)
         AND typeof(${table.dailyOpenLimit}) = 'integer' AND ${table.dailyOpenLimit} BETWEEN 1 AND 1000
         AND typeof(${table.dailyDeployLimit}) = 'integer' AND ${table.dailyDeployLimit} BETWEEN 1 AND 1000
         AND typeof(${table.monthlyLimit}) = 'integer' AND ${table.monthlyLimit} BETWEEN 1 AND 1000000`,
@@ -2031,7 +2052,16 @@ export const judgeUsage = sqliteTable(
     /** The UTC day, 2026-10-25. */
     day: text("day").notNull(),
     sandboxId: text("sandbox_id").notNull(),
+    /** The protocol its runtime is (sandboxId's "v1", "v2"). */
+    protocol: integer("protocol").notNull().default(1),
     fingerprint: text("fingerprint").notNull(),
+    /**
+     * A 联网 红包's own 判定器 (§9.7): its sandboxId names the 红包 after
+     * the code, so the gateway knows whose requests it sends.
+     */
+    networked: integer("networked", { mode: "boolean" })
+      .notNull()
+      .default(false),
     /** Its sandbox after timeouts moved on (sandboxId's ":n"); 0 at first. */
     fresh: integer("fresh").notNull(),
     userId: text("user_id")
@@ -2045,6 +2075,8 @@ export const judgeUsage = sqliteTable(
     timeouts: integer("timeouts").notNull().default(0),
     /** Of the timeouts, those that moved on to a fresh sandbox. */
     switches: integer("switches").notNull().default(0),
+    /** 联网: requests its judgments sent out. */
+    fetches: integer("fetches").notNull().default(0),
     firstAt: integer("first_at").notNull(),
     lastAt: integer("last_at").notNull(),
   },
@@ -2054,8 +2086,13 @@ export const judgeUsage = sqliteTable(
     check(
       "judge_usage_shape",
       sql`length(${table.fingerprint}) = 64
+        AND ${table.protocol} IN (1, 2) AND ${table.networked} IN (0, 1)
+        AND (${table.networked} = 0 OR (${table.protocol} = 2 AND ${table.activityId} IS NOT NULL))
         AND typeof(${table.fresh}) = 'integer' AND ${table.fresh} BETWEEN 0 AND 3
-        AND ${table.sandboxId} = 'judge:v1:' || ${table.fingerprint} || CASE WHEN ${table.fresh} > 0 THEN ':' || ${table.fresh} ELSE '' END
+        AND ${table.sandboxId} = 'judge:v' || ${table.protocol} || ':' || ${table.fingerprint}
+          || CASE WHEN ${table.networked} = 1 THEN ':' || ${table.activityId} ELSE '' END
+          || CASE WHEN ${table.fresh} > 0 THEN ':' || ${table.fresh} ELSE '' END
+        AND typeof(${table.fetches}) = 'integer' AND ${table.fetches} >= 0
         AND typeof(${table.firstAt}) = 'integer' AND typeof(${table.lastAt}) = 'integer' AND ${table.firstAt} <= ${table.lastAt}
         AND ${table.day} = strftime('%Y-%m-%d', ${table.firstAt} / 1000, 'unixepoch')
         AND typeof(${table.deploys}) = 'integer' AND ${table.deploys} >= 0

@@ -2,6 +2,9 @@
 // judge.js, copied from kit/runtime into the API as JSON so the Worker can
 // hand them to Dynamic Workers (docs/programmable-hongbao-design.md §7).
 // `bun scripts/judge-runtime.ts` writes the copy; `--check` fails if stale.
+// This is the current protocol's; an opened 红包 keeps the runtime it
+// opened with, so an earlier protocol's copy is kept as it was, frozen, in
+// kit/runtime/frozen (v1.json: protocol v1).
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -12,6 +15,7 @@ export const SANDBOX_MODULES = [
   "codes.mjs",
   "hash.mjs",
   "money.mjs",
+  "network.mjs",
   "random.mjs",
   "text.mjs",
   "time.mjs",
@@ -23,6 +27,8 @@ export const RUNTIME_COPY = join(
   root,
   "apps/api/src/judge/runtime.generated.json",
 );
+/** Protocol v1's runtime as 红包 opened with it, never written again. */
+export const FROZEN_V1 = join(root, "kit/runtime/frozen/v1.json");
 
 export function runtimeCopy() {
   const modules: Record<string, string> = {};

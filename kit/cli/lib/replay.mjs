@@ -2,10 +2,13 @@
 // full records, judged again by the local judge.js. First that this is the
 // code the 红包 opened with (its fingerprint) and that the seed is the one
 // sealed at opening (its commitment); then every judgment, given what the
-// site gave it (runtime/records.mjs), compared on ok, the amount the code
-// asked, the reply and the state.
+// site gave it (runtime/records.mjs) and its requests the answers the site
+// got (第 9 节), compared on the requests, ok, the amount the code asked,
+// the reply and the state. A 红包 runs the protocol it opened with: the
+// first protocol's records replay on its runtime, kept frozen.
 import { resolve } from "node:path";
 import {
+  answersOf,
   readVerdict,
   sameJson,
   seedCommitment,
@@ -60,6 +63,38 @@ function recordsProblem(records) {
 
 const said = (message) => (message === undefined ? "没有回复" : `“${message}”`);
 
+const requestText = (request) =>
+  `${request.method} ${request.url}${request.body === undefined ? "" : `（请求体 ${shortJson(request.body, 200)}）`}`;
+
+/** Where the replay's requests differ from those the site sent. */
+function requestDifferences(recorded = [], answer) {
+  const asked = answer.requests ?? [];
+  const found = [];
+  for (
+    let index = 0;
+    index < Math.max(recorded.length, asked.length);
+    index += 1
+  ) {
+    const was = recorded[index];
+    const now = asked[index];
+    if (!now)
+      found.push(`第 ${index + 1} 个请求 记录是 ${requestText(was)}，重放没发`);
+    else if (!was)
+      found.push(
+        `第 ${index + 1} 个请求 记录里没有，重放发了 ${requestText(now)}`,
+      );
+    else if (
+      was.method !== now.method ||
+      was.url !== now.url ||
+      (was.body ?? "") !== (now.body ?? "")
+    )
+      found.push(
+        `第 ${index + 1} 个请求 记录是 ${requestText(was)}，重放是 ${requestText(now)}`,
+      );
+  }
+  return found;
+}
+
 /** Where the replay's answer differs from the recorded one. */
 function differences(recorded, reading) {
   const found = [];
@@ -107,9 +142,9 @@ export async function replayCommand({
   if (problem)
     throw new KitError(`${file} 不像是网站上下载的完整记录：${problem}`);
   const { hongbao } = records;
-  if (records.protocol !== PROTOCOL)
+  if (records.protocol !== 1 && records.protocol !== PROTOCOL)
     throw new KitError(
-      `记录是第 ${records.protocol} 版协议，这个开发包是第 ${PROTOCOL} 版：换一个对应版本的开发包再重放`,
+      `记录是第 ${records.protocol} 版协议，这个开发包只认第 1 到第 ${PROTOCOL} 版：换一个新的开发包再重放`,
     );
 
   const code = await readProjectFile(dir, "judge.js");
@@ -142,26 +177,32 @@ export async function replayCommand({
   }
 
   const submissions = submissionsOf(records);
-  const sandbox = await openSandbox(code);
+  const sandbox = await openSandbox(code, { protocol: records.protocol });
   let differing = 0;
   let replayed = 0;
   try {
     for (const [index, submission] of submissions.entries()) {
       const { id, attempts } = submission.user;
-      const answer = await sandbox.run(submission, {
-        submission: submissionSeed(hongbao.id, hongbao.seed, id, attempts),
-        user: userSeed(hongbao.id, hongbao.seed, id),
-      });
+      const judgment = records.judgments[index];
+      const answer = await sandbox.run(
+        submission,
+        {
+          submission: submissionSeed(hongbao.id, hongbao.seed, id, attempts),
+          user: userSeed(hongbao.id, hongbao.seed, id),
+        },
+        answersOf(judgment),
+      );
       const label = `第 ${index + 1} 次判定`;
-      let found;
+      const found = requestDifferences(judgment.fetches, answer);
       if ("failure" in answer)
-        found = [`重放时${failureText(answer.failure, answer.detail)}`];
+        found.push(`重放时${failureText(answer.failure, answer.detail)}`);
       else {
         const reading = readVerdict(answer.verdict, submission.share);
-        found =
-          "error" in reading
+        found.push(
+          ...("error" in reading
             ? [`重放时返回不对：${reading.error.detail}`]
-            : differences(records.judgments[index].verdict, reading);
+            : differences(judgment.verdict, reading)),
+        );
       }
       replayed += 1;
       if (found.length === 0) print(`${label} 一致`);

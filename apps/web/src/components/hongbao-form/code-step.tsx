@@ -173,6 +173,16 @@ function CheckResult({ check }: { check: JudgeCheck }) {
           </Row>
         )
       )}
+      {check.networkProblems && (
+        <Row ok={false}>
+          联网
+          {check.networkProblems.map((problem) => (
+            <span key={problem} className="block text-xs break-all">
+              {problem}
+            </span>
+          ))}
+        </Row>
+      )}
       {check.unstable.length > 0 && (
         <li className="pl-6 text-xs text-warning">
           两次跑出的结果不一样：{check.unstable.join("、")}
@@ -180,6 +190,33 @@ function CheckResult({ check }: { check: JudgeCheck }) {
         </li>
       )}
     </ul>
+  );
+}
+
+/**
+ * 联网 (docs/programmable-hongbao-design.md §9.5): the addresses the code
+ * may ask, read from it by its deploy, and what that means for whom.
+ */
+function NetworkNote({ network }: { network: string[] }) {
+  return (
+    <div className="grid gap-1.5 rounded-xl bg-fill px-3.5 py-3">
+      <p className="text-sm text-ink">
+        联网：
+        {network.map((address, index) => (
+          <span key={address}>
+            {index > 0 && "、"}
+            <span className="font-mono break-all">{address}</span>
+          </span>
+        ))}
+      </p>
+      <ul className="grid gap-1 text-xs text-ink-2">
+        <li>领的人提交的内容可能被发到这些地址。</li>
+        <li>结束后代码公开，写在代码里的令牌也会公开，结束后请作废。</li>
+        <li>
+          红包结束后，领的人能看到自己那几次判定的返回内容，别在返回里放不想公开的东西。
+        </li>
+      </ul>
+    </div>
   );
 }
 
@@ -231,12 +268,16 @@ function DeployArea({
       <Reveal show={Boolean(check)}>
         {check && <CheckResult check={check} />}
       </Reveal>
+      <Reveal show={Boolean(judge.network)}>
+        {judge.network && <NetworkNote network={judge.network} />}
+      </Reveal>
       {judge.rerun && judge.version ? (
         <Callout icon={Info} className="items-center [&>div:last-child]:flex-1">
           <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <span className="min-w-0 flex-1">
-              tests.json 改过了：在判定器 第 {judge.version.n} 版
-              上重新跑一遍才能开放。不算部署，不扣次数。
+              {judge.upgraded
+                ? `判定器升级到第二版了：在判定器 第 ${judge.version.n} 版 上重新跑一遍测试才能开放。不算部署，不扣次数。`
+                : `tests.json 改过了：在判定器 第 ${judge.version.n} 版 上重新跑一遍才能开放。不算部署，不扣次数。`}
             </span>
             <Button
               size="xs"

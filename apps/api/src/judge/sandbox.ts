@@ -1,16 +1,26 @@
 // One judgment in a 代码判定红包's sandbox: the sender's judge.js beside the
-// runtime from kit/runtime, in its own Dynamic Worker with no bindings, no
-// secrets and no network (docs/programmable-hongbao-design.md §4, §7).
-import type { Submission } from "../../../../kit/judge";
+// runtime from kit/runtime, in its own Dynamic Worker with no bindings and
+// no secrets (docs/programmable-hongbao-design.md §4, §7). Its network is
+// none, or for a 联网 红包 the gateway (gateway.ts, §9.7).
+import { JUDGE_PROTOCOL } from "@hb/contracts";
+import type { FetchAnswer, Submission } from "../../../../kit/judge";
+import frozenV1 from "../../../../kit/runtime/frozen/v1.json";
+import { NETWORK_LIMITS } from "../../../../kit/runtime/index.mjs";
 import type { ApiBindings } from "../env";
 import runtime from "./runtime.generated.json";
 
-/** Protocol v1: this runtime on this compatibility date with nodejs_compat. */
-export const JUDGE_PROTOCOL = 1;
+/**
+ * Protocol v2: this runtime on this compatibility date with nodejs_compat.
+ * v1's runtime is kept as 红包 opened with it.
+ */
+export { JUDGE_PROTOCOL };
+
 const COMPATIBILITY_DATE = "2026-09-01";
 /** The sandbox is killed past about cpuMs + 2 s; the caller stops waiting first. */
 const CPU_MS = 50;
 export const JUDGE_WAIT_MS = 300;
+/** A 联网 judgment: its requests are waited for too (§9.3). */
+export const NETWORK_WAIT_MS = NETWORK_LIMITS.judgmentMs;
 
 export type SandboxFailure =
   /** judge.js would not load: a syntax error or a throw at its top level. */
@@ -24,7 +34,18 @@ export type SandboxFailure =
   /** Dynamic Workers failed us: not the code's fault. */
   | "unavailable";
 
-export type SandboxOutcome =
+/** A test's requests against the answers it wrote (kit/runtime/testing.mjs). */
+type Asked = {
+  requests?: {
+    method: string;
+    url: string;
+    body?: string;
+    unanswered?: true;
+  }[];
+  unused?: { method: string; url: string }[];
+};
+
+export type SandboxOutcome = (
   | { verdict: unknown; logs?: string[] }
   | {
       failure: SandboxFailure;
@@ -35,7 +56,9 @@ export type SandboxOutcome =
        * its sandbox, so the next judgment can go on in it.
        */
       hung?: true;
-    };
+    }
+) &
+  Asked;
 
 /** The kinds main.mjs itself reports. */
 const REPORTED = new Set<SandboxFailure>([
@@ -46,18 +69,41 @@ const REPORTED = new Set<SandboxFailure>([
 ]);
 
 // Dynamic Workers take .js names as modules; the runtime's .mjs files say so.
-const runtimeModules = Object.fromEntries(
-  Object.entries(runtime).map(([name, js]) => [name, { js }]),
-);
+const modulesOf = (copy: Record<string, string>) =>
+  Object.fromEntries(Object.entries(copy).map(([name, js]) => [name, { js }]));
+const runtimeModules: Record<number, Record<string, { js: string }>> = {
+  1: modulesOf(frozenV1),
+  [JUDGE_PROTOCOL]: modulesOf(runtime),
+};
 
 /**
  * The isolate's ID: the protocol and the code's fingerprint, so a day's
  * claims on one code share one Dynamic Worker and only code changes make a
- * new one. `fresh` > 0 moves past an isolate stuck in a slow judgment.
+ * new one; a 联网 红包's own after it (§9.7), so the gateway it goes out
+ * through knows whose it is. `fresh` > 0 moves past an isolate stuck in a
+ * slow judgment.
  */
-export function sandboxId(fingerprint: string, fresh = 0) {
-  return `judge:v${JUDGE_PROTOCOL}:${fingerprint}${fresh > 0 ? `:${fresh}` : ""}`;
+export function sandboxId(
+  fingerprint: string,
+  fresh = 0,
+  protocol = JUDGE_PROTOCOL,
+  networkedFor?: string,
+) {
+  return `judge:v${protocol}:${fingerprint}${networkedFor ? `:${networkedFor}` : ""}${fresh > 0 ? `:${fresh}` : ""}`;
 }
+
+/**
+ * The network a judgment has: none; a test's written answers (`mock`); or
+ * out through `outbound`, the gateway made for this 红包 (`live`).
+ */
+export type JudgeNetwork =
+  | { mode: "mock"; list: string[] | null; answers: readonly FetchAnswer[] }
+  | {
+      mode: "live";
+      list: string[];
+      activityId: string;
+      outbound: Fetcher;
+    };
 
 export type JudgeRun = {
   code: string;
@@ -69,6 +115,9 @@ export type JudgeRun = {
   capture?: boolean;
   fresh?: number;
   waitMs?: number;
+  /** The protocol the 红包 runs (JUDGE_PROTOCOL for a deploy). */
+  protocol?: number;
+  network?: JudgeNetwork;
 };
 
 function classify(error: unknown, loading: boolean): SandboxOutcome {
@@ -102,15 +151,25 @@ function classify(error: unknown, loading: boolean): SandboxOutcome {
 /** This code's Dynamic Worker (a fresh one by `fresh`), its CPU limited. */
 function judgeEntrypoint(
   env: ApiBindings,
-  run: Pick<JudgeRun, "code" | "fingerprint" | "fresh">,
+  run: Pick<
+    JudgeRun,
+    "code" | "fingerprint" | "fresh" | "protocol" | "network"
+  >,
 ) {
-  return env.LOADER.get(sandboxId(run.fingerprint, run.fresh), async () => ({
-    compatibilityDate: COMPATIBILITY_DATE,
-    compatibilityFlags: ["nodejs_compat"],
-    mainModule: "main.mjs",
-    modules: { ...runtimeModules, "judge.js": run.code },
-    globalOutbound: null,
-  })).getEntrypoint(undefined, { limits: { cpuMs: CPU_MS } });
+  const protocol = run.protocol ?? JUDGE_PROTOCOL;
+  const modules = runtimeModules[protocol];
+  if (!modules) throw new Error(`No runtime for protocol ${protocol}`);
+  const live = run.network?.mode === "live" ? run.network : null;
+  return env.LOADER.get(
+    sandboxId(run.fingerprint, run.fresh, protocol, live?.activityId),
+    async () => ({
+      compatibilityDate: COMPATIBILITY_DATE,
+      compatibilityFlags: ["nodejs_compat"],
+      mainModule: "main.mjs",
+      modules: { ...modules, "judge.js": run.code },
+      globalOutbound: live ? live.outbound : null,
+    }),
+  ).getEntrypoint(undefined, { limits: { cpuMs: CPU_MS } });
 }
 
 /**
@@ -142,6 +201,36 @@ export async function warmJudge(
 }
 
 /**
+ * What judge.js exports as `network` (§9.2), read by main.mjs once it is
+ * loaded: the value as JSON (null for none), `{ unreadable: true }` when it
+ * is not JSON, or null when the sandbox could not say (it will not load).
+ */
+export async function describeJudge(
+  env: ApiBindings,
+  run: Pick<JudgeRun, "code" | "fingerprint" | "fresh">,
+): Promise<{ network: unknown } | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const answer = await Promise.race([
+      judgeEntrypoint(env, run)
+        .fetch("http://judge/", {
+          method: "POST",
+          body: JSON.stringify({ describe: true }),
+        })
+        .then((response) => response.json<{ network?: unknown }>()),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), JUDGE_WAIT_MS);
+      }),
+    ]);
+    return answer && "network" in answer ? { network: answer.network } : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * Runs judge() once. `loading` says whether a failure to start counts
  * against the code (a deploy) or the platform (a claim).
  */
@@ -150,13 +239,21 @@ export async function runJudge(
   run: JudgeRun,
   loading = false,
 ): Promise<SandboxOutcome> {
-  const waitMs = run.waitMs ?? JUDGE_WAIT_MS;
+  const waitMs =
+    run.waitMs ??
+    (run.network?.mode === "live" ? NETWORK_WAIT_MS : JUDGE_WAIT_MS);
+  const { network } = run;
   const request = judgeEntrypoint(env, run).fetch("http://judge/", {
     method: "POST",
     body: JSON.stringify({
       submission: run.submission,
       seeds: run.seeds,
       capture: run.capture === true,
+      network: !network
+        ? null
+        : network.mode === "mock"
+          ? { list: network.list, mode: "mock", answers: network.answers }
+          : { list: network.list, mode: "live" },
     }),
   });
   // A judgment given up on still ends (or is killed) later: nothing waits.
@@ -173,7 +270,13 @@ export async function runJudge(
       verdict?: unknown;
       error?: { kind: SandboxFailure; detail: string };
       logs?: string[];
-    };
+    } & Asked;
+    // A test's requests (written answers only: a claim's are the gateway's
+    // to keep, where the code cannot reach).
+    const asked: Asked =
+      network?.mode === "mock" && (body.requests?.length || body.unused?.length)
+        ? { requests: body.requests ?? [], unused: body.unused ?? [] }
+        : {};
     if (body.error) {
       // judge.js shares main.mjs's isolate and can forge its answer: a kind
       // main.mjs never reports (a timeout, the platform failing) is the
@@ -184,9 +287,10 @@ export async function runJudge(
         failure: kind === "load" && !loading ? "unavailable" : kind,
         detail: String(body.error.detail ?? "").slice(0, 500),
         logs: body.logs,
+        ...asked,
       };
     }
-    return { verdict: body.verdict, logs: body.logs };
+    return { verdict: body.verdict, logs: body.logs, ...asked };
   } catch (error) {
     return classify(error, loading);
   } finally {

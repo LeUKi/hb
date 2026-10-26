@@ -247,6 +247,7 @@ function Usage({ usage }: { usage: AdminJudgeUsage }) {
           {thisMonth.timeouts > 0
             ? `（其中换了 ${thisMonth.switches} 次实例）`
             : ""}
+          {thisMonth.fetches > 0 ? ` · 联网请求 ${thisMonth.fetches} 次` : ""}
         </p>
         <DayChart usage={usage} />
       </Panel>
@@ -387,6 +388,7 @@ function countOf(value: string, max: number) {
 
 const sameValues = (settings: JudgeSettings, next: JudgeSettingsInput) =>
   settings.enabled === next.enabled &&
+  settings.networkEnabled === next.networkEnabled &&
   settings.dailyOpenLimit === next.dailyOpenLimit &&
   settings.dailyDeployLimit === next.dailyDeployLimit &&
   settings.monthlyLimit === next.monthlyLimit;
@@ -403,6 +405,7 @@ function versionLine({ settings, recentChanges }: JudgeSettingsResponse) {
 
 type Draft = {
   enabled?: boolean;
+  networkEnabled?: boolean;
   open?: string;
   deploy?: string;
   monthly?: string;
@@ -424,6 +427,7 @@ function SettingsForm({ data }: { data: JudgeSettingsResponse }) {
   const [draft, setDraft] = useState<Draft>({});
   const values = {
     enabled: draft.enabled ?? shown.enabled,
+    networkEnabled: draft.networkEnabled ?? shown.networkEnabled,
     open: draft.open ?? String(shown.dailyOpenLimit),
     deploy: draft.deploy ?? String(shown.dailyDeployLimit),
     monthly: draft.monthly ?? String(shown.monthlyLimit),
@@ -466,6 +470,7 @@ function SettingsForm({ data }: { data: JudgeSettingsResponse }) {
     counts.open !== null && counts.deploy !== null && counts.monthly !== null;
   const next: JudgeSettingsInput = {
     enabled: values.enabled,
+    networkEnabled: values.networkEnabled,
     dailyOpenLimit: counts.open ?? shown.dailyOpenLimit,
     dailyDeployLimit: counts.deploy ?? shown.dailyDeployLimit,
     monthlyLimit: counts.monthly ?? shown.monthlyLimit,
@@ -552,6 +557,12 @@ function SettingsForm({ data }: { data: JudgeSettingsResponse }) {
             description="关着时不能新建、不能开放；已经开放的照常领、照常退回。"
             checked={values.enabled}
             onChange={(enabled) => edit({ enabled })}
+          />
+          <Switch
+            label="代码判定联网"
+            description="关着时联网的代码不能部署、不能开放；已经开放的照常领。"
+            checked={values.networkEnabled}
+            onChange={(networkEnabled) => edit({ networkEnabled })}
           />
           <div className="grid gap-4 @wide/window:grid-cols-3">
             <Field

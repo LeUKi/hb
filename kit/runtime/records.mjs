@@ -4,6 +4,26 @@
 // (scenario.mjs).
 import { advance, nextSubmission, startScenario } from "./scenario.mjs";
 
+/**
+ * What a judgment's requests got (协议第 9 节), as a test writes its answers
+ * (`fetch`): so a replay answers them as the site's gateway did.
+ */
+export function answersOf(judgment) {
+  return (judgment.fetches ?? []).map((asked) =>
+    asked.error
+      ? { url: asked.url, method: asked.method, error: asked.error }
+      : {
+          url: asked.url,
+          method: asked.method,
+          status: asked.status,
+          headers: asked.contentType
+            ? { "content-type": asked.contentType }
+            : {},
+          text: asked.response ?? "",
+        },
+  );
+}
+
 /** Each judgment's submission, in order. */
 export function submissionsOf(records) {
   const { hongbao } = records;

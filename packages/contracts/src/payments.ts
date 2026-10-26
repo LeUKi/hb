@@ -157,6 +157,8 @@ export type LdcOpeningBlockedReason =
   | "JUDGE_RERUN_REQUIRED"
   /** 代码判定红包: today's openings are used up. */
   | "CODE_HONGBAO_DAILY_LIMIT"
+  /** 代码判定红包: its code goes online, and 联网 is off (§9.7). */
+  | "CODE_NETWORK_PAUSED"
   | "TIMED_DRAW_NOT_ENABLED"
   | "MERCHANT_LEGACY"
   | "MERCHANT_CREDENTIALS_UNVERIFIED"

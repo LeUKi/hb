@@ -218,14 +218,34 @@ function CodeBody({
             matched={checks?.seed ? "和封存值一致" : undefined}
           />
         )}
-        {!view.ended && (
+        {judge.network ? (
           <div className="grid gap-1">
             <span className="text-xs text-ink-3">联网</span>
-            <p className="text-sm text-ink">不联网</p>
+            <ul className="grid gap-0.5">
+              {judge.network.map((address) => (
+                <li
+                  key={address}
+                  className="font-mono text-sm break-all text-ink"
+                >
+                  {address}
+                </li>
+              ))}
+            </ul>
             <p className="text-xs text-ink-3">
-              代码碰不到网络，只拿得到你的输入、用户名和等级。
+              判定时代码会请求这些地址，你的提交（数字
+              ID、用户名、等级和输入）可能随请求发送给对方。判定结果取决于对方的回答，开放后对方的回答可能变化，本站无法核对。
             </p>
           </div>
+        ) : (
+          !view.ended && (
+            <div className="grid gap-1">
+              <span className="text-xs text-ink-3">联网</span>
+              <p className="text-sm text-ink">不联网</p>
+              <p className="text-xs text-ink-3">
+                代码碰不到网络，只拿得到你的输入、用户名和等级。
+              </p>
+            </div>
+          )
         )}
       </div>
     </>
@@ -234,9 +254,10 @@ function CodeBody({
 
 /**
  * The 代码 dialog (05 §9): while it runs, the code's fingerprint, the seed's
- * 封存值 and that it cannot reach the network; once over, the code itself
- * and its seed, each checked here against what was sealed when it opened.
- * Its sender sees the code all along (07 §6).
+ * 封存值 and that it cannot reach the network (or, 联网, the addresses it
+ * may ask); once over, the code itself and its seed, each checked here
+ * against what was sealed when it opened. Its sender sees the code all
+ * along (07 §6).
  */
 export function CodeDialog() {
   return (

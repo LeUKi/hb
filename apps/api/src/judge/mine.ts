@@ -1,6 +1,7 @@
 // 我的提交 (docs/redesign/05-hongbao.md §3): a claimant's own judged
 // submissions on a 代码判定红包, what they typed and what the code said,
-// to look back on. Only theirs, never anyone else's.
+// to look back on, and once it is over what its requests got back (联网,
+// §9.4). Only theirs, never anyone else's.
 import {
   formatSignedAmount,
   type JudgeNote,
@@ -11,6 +12,8 @@ import { activityNotFound } from "../activities/errors";
 import { findActivity } from "../activities/storage";
 import type { ApiBindings } from "../env";
 import { decryptString } from "../security/crypto";
+import { isOver } from "./public";
+import { fetchesOf } from "./storage";
 
 export const MY_JUDGMENTS_PAGE = 20;
 
@@ -30,7 +33,7 @@ export async function myJudgments(
     activityNotFound();
   const [found, total] = await Promise.all([
     env.DB.prepare(`SELECT j.submission_row_id AS rowId, j.attempt, j.judged_at AS at,
-        j.paid_minor AS paid, j.note, j.message, e.ciphertext
+        j.paid_minor AS paid, j.note, j.message, e.ciphertext, j.fetches_ciphertext AS fetchesCiphertext
       FROM code_judgments j JOIN attempt_events e ON e.submission_row_id = j.submission_row_id
       WHERE j.activity_id = ? AND j.user_id = ? AND j.attempt < ?
       ORDER BY j.attempt DESC LIMIT ?`)
@@ -48,6 +51,7 @@ export async function myJudgments(
         note: JudgeNote | null;
         message: string | null;
         ciphertext: string;
+        fetchesCiphertext: string | null;
       }>(),
     env.DB.prepare(
       "SELECT COUNT(*) AS count FROM code_judgments WHERE activity_id = ? AND user_id = ?",
@@ -56,6 +60,19 @@ export async function myJudgments(
       .first<{ count: number }>(),
   ]);
   const rows = found.results.slice(0, MY_JUDGMENTS_PAGE);
+  // What came back, not what was asked (it may hold the sender's token).
+  const over = isOver(activity);
+  const answersOf = async (row: (typeof rows)[number]) =>
+    (await fetchesOf(env, activityId, row.rowId, row.fetchesCiphertext)).map(
+      (fetched) => ({
+        host: new URL(fetched.url).hostname,
+        ...(fetched.status !== undefined ? { status: fetched.status } : {}),
+        ...(fetched.response !== undefined
+          ? { response: fetched.response }
+          : {}),
+        ...(fetched.error ? { error: fetched.error } : {}),
+      }),
+    );
   const items = await Promise.all(
     rows.map(async (row) => ({
       attempt: row.attempt + 1,
@@ -68,6 +85,9 @@ export async function myJudgments(
       ...(row.message ? { message: row.message } : {}),
       ...(row.paid !== null ? { amount: formatSignedAmount(row.paid) } : {}),
       ...(row.note ? { note: row.note } : {}),
+      ...(over && row.fetchesCiphertext !== null
+        ? { fetches: await answersOf(row) }
+        : {}),
     })),
   );
   const last = items.at(-1);

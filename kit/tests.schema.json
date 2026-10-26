@@ -54,9 +54,15 @@
         },
         "input": { "$ref": "#/$defs/input" },
         "user": { "$ref": "#/$defs/user" },
+        "fetch": {
+          "description": "这次判定的请求拿到的返回（联网，协议第 9 节），最多 3 个；有请求没写到、写了没用上，这条测试都不通过。测试从不真的联网。",
+          "type": "array",
+          "maxItems": 3,
+          "items": { "$ref": "#/$defs/fetchAnswer" }
+        },
         "expect": { "$ref": "#/$defs/expect" },
         "steps": {
-          "description": "几个人依次提交。状态、已领记录、每人被判定过几次、剩余奖池都像线上一样一步步往下传；hongbao、claims、state、seed 是第一步之前的样子。写了 steps 就不写 input、user、expect。",
+          "description": "几个人依次提交。状态、已领记录、每人被判定过几次、剩余奖池都像线上一样一步步往下传；hongbao、claims、state、seed 是第一步之前的样子。写了 steps 就不写 input、user、fetch、expect。",
           "type": "array",
           "minItems": 1,
           "maxItems": 200,
@@ -78,6 +84,7 @@
             "anyOf": [
               { "required": ["input"] },
               { "required": ["user"] },
+              { "required": ["fetch"] },
               { "required": ["expect"] }
             ]
           }
@@ -205,6 +212,52 @@
         }
       }
     },
+    "fetchAnswer": {
+      "description": "一个请求的返回（联网，协议第 9 节）：代码发出的请求按方法和完整地址对上一个还没用过的。写了 error 就是这个请求失败。",
+      "type": "object",
+      "required": ["url"],
+      "additionalProperties": false,
+      "properties": {
+        "url": { "description": "请求的完整地址", "type": "string" },
+        "method": {
+          "description": "默认 GET",
+          "enum": ["GET", "POST"],
+          "default": "GET"
+        },
+        "status": {
+          "description": "状态码，默认 200",
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 599,
+          "default": 200
+        },
+        "headers": {
+          "description": "返回的头",
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "json": {
+          "description": "返回的 JSON（content-type 默认 application/json）；和 text 二选一"
+        },
+        "text": {
+          "description": "返回的文字；和 json 二选一",
+          "type": "string"
+        },
+        "error": {
+          "description": "这个请求失败：timeout 超时，unreachable 连不上，too-big 返回超过 64 KB；写了就不写 status、headers、json、text",
+          "enum": ["timeout", "unreachable", "too-big"]
+        }
+      },
+      "not": {
+        "anyOf": [
+          { "required": ["json", "text"] },
+          { "required": ["error", "status"] },
+          { "required": ["error", "headers"] },
+          { "required": ["error", "json"] },
+          { "required": ["error", "text"] }
+        ]
+      }
+    },
     "step": {
       "description": "多步场景的一步。同一个 who 是同一个人；已经领过的人、或者份已经领完了还提交，这一步算不通过（线上根本不会交给代码）。",
       "type": "object",
@@ -220,6 +273,12 @@
         "at": {
           "$ref": "#/$defs/time",
           "description": "这一步的时间，要按先后写、在开放和截止之间；默认上一步往后 1 分钟，第一步是 now"
+        },
+        "fetch": {
+          "description": "这一步的请求拿到的返回（联网，协议第 9 节），最多 3 个；有请求没写到、写了没用上，这一步都不通过。",
+          "type": "array",
+          "maxItems": 3,
+          "items": { "$ref": "#/$defs/fetchAnswer" }
         },
         "expect": { "$ref": "#/$defs/expect" }
       }

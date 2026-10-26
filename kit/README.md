@@ -15,13 +15,13 @@ npm test
 
 不用 degit 也行：下载仓库的压缩包，取出里面的 `kit` 目录，进去运行 `npm install`。
 
-`npm install` 只装 `wrangler`（版本和网站一致）。四个命令靠它自带的 Miniflare 在本地起 workerd：兼容日期、`nodejs_compat`、外层和 `tools` 都和线上一样，网络也一样连不出去。本地不限 CPU，每次判定超过 1 秒算超时，超过 50 毫秒的标“慢”（线上每次判定只有 50 毫秒 CPU）。
+`npm install` 只装 `wrangler`（版本和网站一致）。四个命令靠它自带的 Miniflare 在本地起 workerd：兼容日期、`nodejs_compat`、外层和 `tools` 都和线上一样。代码导出 `network` 才能联网；测试里的请求拿 `tests.json` 写的返回，从不真的联网，`npm run simulate -- --live` 才真的发出去。本地不限 CPU，每次判定超过 1 秒算超时，超过 50 毫秒的标“慢”（线上每次判定只有 50 毫秒 CPU）。
 
 ## 四个命令
 
 - `npm test`：跑 `tests.json`，每条一行，`console` 的输出跟在下面。`npm test -- 名字` 只跑名字里含这几个字的。
 - `npm run check`：照网站部署时的规则查一遍，最后写“可以去网站部署了”或“还不能开放”，还有代码指纹，和网站上展开代码时显示的对得上。
-- `npm run simulate`：让 `simulate.json` 里的人依次来领，看钱怎么发出去。`npm run simulate -- --seed 别的` 换一个种子。
+- `npm run simulate`：让 `simulate.json` 里的人依次来领，看钱怎么发出去。`npm run simulate -- --seed 别的` 换一个种子，`--live` 让联网的请求真的发出去。
 - `npm run replay -- judge-records-xxx.json`：红包结束后，用网站上下载的完整记录逐条重放核对。
 
 失败时退出码都不是 0，脚本和 AI 都能据此判断。
@@ -39,4 +39,4 @@ npm test
 
 `npm test` 和 `npm run check` 都过了，就去网站发红包：选“代码判定”，在第 3 步贴上 `judge.js` 和 `tests.json`。用 AI 写也一样：告诉它你的玩法，让它照 `AGENTS.md` 写，两个命令都过了再贴。
 
-开发包按协议版本发布，这一份是第一版（兼容日期 2026-09-01 + `nodejs_compat`）。协议的来龙去脉见仓库的 `docs/programmable-hongbao-design.md` 第 4、5 节。
+开发包按协议版本发布，这一份是第二版（第一版加上联网；兼容日期 2026-09-01 + `nodejs_compat`），也能重放第一版开放的红包（`runtime/frozen/v1.json`）。协议的来龙去脉见仓库的 `docs/programmable-hongbao-design.md` 第 4、5、9 节。

@@ -15,8 +15,7 @@ import { type ActivityRow, ownedActivity } from "../activities/storage";
 import type { ApiBindings } from "../env";
 import { decryptString } from "../security/crypto";
 import { publicJudge } from "./public";
-import { JUDGE_PROTOCOL } from "./sandbox";
-import { findJudgeRow, judgeData } from "./storage";
+import { fetchesOf, findJudgeRow, judgeData } from "./storage";
 
 async function ownedCode(
   env: ApiBindings,
@@ -46,6 +45,7 @@ type JudgmentRow = {
   note: JudgeNote | null;
   message: string | null;
   stateCiphertext: string | null;
+  fetchesCiphertext: string | null;
   at: number;
   externalId: string;
   displayName: string;
@@ -56,6 +56,7 @@ type JudgmentRow = {
 
 const JUDGMENTS = `SELECT j.submission_row_id AS rowId, j.sequence, j.attempt, j.title, j.username, j.level,
     j.ok, j.asked_minor AS asked, j.paid_minor AS paid, j.note, j.message, j.state_ciphertext AS stateCiphertext,
+    j.fetches_ciphertext AS fetchesCiphertext,
     j.judged_at AS at, u.external_id AS externalId, u.display_name AS displayName, u.avatar_url AS avatarUrl,
     e.ciphertext, c.claimed_at AS claimedAt
   FROM code_judgments j JOIN users u ON u.id = j.user_id
@@ -135,6 +136,12 @@ async function recordsOf(
                 `${judgeData(activity.id, "state")}:${row.rowId}`,
               ),
             ) as Json);
+      const fetches = await fetchesOf(
+        env,
+        activity.id,
+        row.rowId,
+        row.fetchesCiphertext,
+      );
       return {
         at: row.at,
         input: await inputOf(env, activity.id, row),
@@ -154,11 +161,16 @@ async function recordsOf(
         ...(row.paid !== null ? { paid: row.paid } : {}),
         ...(row.note ? { note: row.note } : {}),
         ...(row.claimedAt !== null ? { claimedAt: row.claimedAt } : {}),
+        ...(fetches.length > 0 ? { fetches } : {}),
       };
     }),
   );
   return {
-    protocol: JUDGE_PROTOCOL,
+    // The protocol it opened with: what a replay runs (§4.7).
+    protocol: judge.protocol,
+    ...(judge.network !== null
+      ? { network: JSON.parse(judge.network) as string[] }
+      : {}),
     hongbao: {
       id: activity.id,
       total: ldcTotalMinor(config),

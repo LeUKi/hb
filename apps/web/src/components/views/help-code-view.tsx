@@ -29,7 +29,7 @@ const MODULES = [
  */
 const aiPrompt = (
   origin: string,
-) => `你要帮我写一个“代码判定红包”的判定代码 judge.js 和它的测试 tests.json（lafish的红包站，代码协议第一版）。
+) => `你要帮我写一个“代码判定红包”的判定代码 judge.js 和它的测试 tests.json（lafish的红包站，代码协议第二版）。
 
 资料（下面的规则是摘要，细节以这些为准）：
 - 本地开发包：${KIT_URL} ，用 npx degit LeUKi/hb/kit 我的红包 取到本地，里面有能跑通的模板、npm test 和 npm run check。
@@ -54,7 +54,8 @@ const aiPrompt = (
   - state：写了就整个换掉（发不发都存），不写就不变；能转成 JSON，最大 16 KB，最多嵌套 100 层
 - 每次判定可能在不同的沙箱里，不要靠全局变量记东西；要记的放进 state。
 - 能用：Web 标准（完整的 crypto、Intl、TextEncoder、URL、atob、btoa 等）。Node 模块只能在文件开头静态 import，必须带 node: 前缀：${MODULES.join("、")}。
-- 不能用：联网（fetch 会失败）、别的 Node 模块、npm 包、import 别的文件、动态 import()、require、caches。console 的输出线上丢弃。
+- 不能用：别的 Node 模块、npm 包、import 别的文件、动态 import()、require、caches。console 的输出线上丢弃。
+- 联网（可选）：judge.js 导出 network，列出能请求的地址前缀，最多 3 个，比如 export const network = ["https://api.example.com/hongbao/"]；写法是 https:// 加完整域名和路径，不带端口、? 和 #，不能是 IP、linux.do 和本站。不导出就不联网，fetch 会失败。判定里直接用 fetch()：每次判定最多 3 个请求，只许 GET 和 POST，请求体最大 16 KB，单个请求 3 秒，返回最大 64 KB，不跟随跳转；不行时 fetch() 抛 TypeError（“联网失败：…”），可以接住。领的人可以绕过本站直接请求你的接口，要防就在代码里放一个只有你知道的令牌，请求时带上；红包结束后代码公开，令牌也会公开，结束后要作废。红包结束后，领的人能看到自己那几次判定的返回内容。
 - 随机数用 tools.random（这一次提交的，Math.random() 也是它）或 tools.userRandom（这个人固定的，提交几次都一样）。都能复现：红包结束后公开种子，谁都能核对。crypto.getRandomValues 是真随机，能用但没法核对。
 - tools 全是同步的：
   - tools.random、tools.userRandom：next()（[0, 1)）、int(min, max)（含两端）、pick(items)、shuffle(items)
@@ -63,13 +64,14 @@ const aiPrompt = (
   - tools.text.normalize(text)：NFKC、去零宽字符、合并空白、转小写
   - tools.time.parts(timeZone?)：now 在某个时区的 year、month、day、hour、minute、second、weekday（1 是周一），默认 Asia/Shanghai
 - 每次判定 CPU 最多 50 毫秒。超时、抛错、返回不对都算出错：这次不算数，连续出错 5 次红包会暂停领取。
-- 每人只能领到一次；领过的人、发红包的人和领取范围以外的人走不到代码。平台不限提交次数，要限次数就按 user.attempts 自己拒绝，并在 message 里说清楚。
+- 每人只能领到一次；领过的人和领取范围以外的人走不到代码（发红包的人自己也能领）。平台不限提交次数，要限次数就按 user.attempts 自己拒绝，并在 message 里说清楚。
 - 网站上每部署一份新代码算一次，每人每天有限，所以给我的代码要先能在本地开发包里跑过 npm test 和 npm run check。
 
 tests.json 是一个对象 { "tests": [ … ] }，只是数据：
 - 一条测试就是一次提交 { name, input, expect }，字段和 submission 同名，可选 now（毫秒或带时区的 ISO 时间，比如 2026-10-24T12:00:00+08:00）、user（id、username、level、attempts）、hongbao（title、total、count、minEach、openedAt、endsAt）、claims（前面已领的：写数字表示领了几份，或者完整列表，每条 { user: { id, username }, amount, input, at }）、state、seed（64 位十六进制）。没写的用默认：2026-10-24 12:00（北京时间）提交、测试用户 tester（ID 10000、Lv2、之前没被判定过）、总奖池 10000、10 份、每份至少 1、提交前 1 小时开放、后 1 天截止、还没人领、状态 null、固定的种子。剩余奖池、剩余份数和 share 由 claims 推出来，不能写。
 - 只能写线上可能出现的情况：now 在开放和截止之间；已领的按先后、不早于开放、不晚于 now，每份不少于每份至少，剩下的够剩下每份都拿到每份至少，还有没领的份；同一个人只领一份，这个人不在里面；state 不超过 16 KB、嵌套不超过 100 层；总奖池够每份都拿到每份至少。不然这条测试不通过。
-- 要测靠状态往下传的玩法，不写 input，写 steps，几个人依次提交：每一步 { who, input, expect }，可选 level（默认 2）、at（默认上一步往后 1 分钟，第一步是 now）。同一个 who 是同一个人；状态、已领记录、每人被判定过几次、剩余奖池都像线上一样一步步往下传。已经领过的人、或者份领完了还提交，这一步不通过。
+- 联网的代码，测试里写 fetch：这次判定的请求拿到的返回，最多 3 个，每个 { url, method（默认 GET）, status（默认 200）, headers, json 或 text }，或者 { url, method, error: "timeout" | "unreachable" | "too-big" }。请求按方法和完整地址对上；有请求没写返回、写了没用上，这条测试都不通过。测试从不真的联网。
+- 要测靠状态往下传的玩法，不写 input，写 steps，几个人依次提交：每一步 { who, input, expect }，可选 level（默认 2）、at（默认上一步往后 1 分钟，第一步是 now）、fetch。同一个 who 是同一个人；状态、已领记录、每人被判定过几次、剩余奖池都像线上一样一步步往下传。已经领过的人、或者份领完了还提交，这一步不通过。
 - expect：ok 必填；其余写了才比：amount（拉进范围以后实际发的）、asked（代码自己给的）、note（拉进范围的原因 "cap"、"floor"、"last"，没拉写 null）、message（逐字）或 messageIncludes（含这几个字）、state（整份，键的顺序不算）或 stateIncludes（只比写了的键，数组整个比）。ok 为 false 时不写 amount、asked、note。代码返回协议以外的字段也算不通过。
 - 所有测试加起来最多判定 ${JUDGE_LIMITS.tests} 次（多步的一步算一次）。
 
@@ -275,11 +277,69 @@ export function HelpCodeView() {
             },
             {
               name: "不能用",
-              note: "联网（fetch 会失败）、别的 Node 模块、npm 包、import 别的文件、动态 import()、require、caches。想用第三方库，把要用的部分放进 judge.js。",
+              note: "别的 Node 模块、npm 包、import 别的文件、动态 import()、require、caches。想用第三方库，把要用的部分放进 judge.js。联网要先导出 network（见下一节）。",
             },
             {
               name: "console",
               note: "线上丢弃，只在本地开发包里看得到",
+            },
+          ]}
+        />
+      </PageSection>
+      <PageSection
+        id="network"
+        title="联网"
+        description="可选：把提交交给你自己的接口判定，或者让你的服务器做运算。不导出 network 就不联网，fetch 会失败。"
+      >
+        <Block
+          label="judge.js"
+          code={`export const network = ["https://api.example.com/hongbao/"];
+
+export async function judge(submission) {
+  const response = await fetch("https://api.example.com/hongbao/check", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: "Bearer 只有你知道的令牌" },
+    body: JSON.stringify({ id: submission.user.id, input: submission.input }),
+  });
+  const answer = await response.json();
+  return answer.right
+    ? { ok: true, amount: answer.amount, message: answer.say }
+    : { ok: false, message: answer.say };
+}`}
+        />
+        <Fields
+          items={[
+            {
+              name: "network",
+              note: "能请求的地址前缀，最多 3 个：https:// 加完整域名和路径，不带端口、? 和 #；不能是 IP、linux.do 和本站。前缀 https://a.com/api 放行 /api、/api/x，不放行 /apix。写在代码里：改它就是改代码，开放后不能改，结束后跟代码一起公开。",
+            },
+            {
+              name: "fetch()",
+              note: "判定里直接用。每次判定最多 3 个请求，只许 GET 和 POST，请求体最大 16 KB；单个请求 3 秒，返回最大 64 KB，不跟随跳转。联网的红包每次判定最多等 5 秒。",
+            },
+            {
+              name: "失败",
+              note: "fetch() 抛 TypeError，信息以“联网失败：”开头，写明原因（不在白名单里、超时、返回超过 64 KB、发了 3 个请求……）。可以接住，自己回复领的人；没接住就算代码出错。对方返回 4xx、5xx 不算失败。",
+            },
+            {
+              name: "令牌",
+              note: "领的人可以绕过本站直接请求你的接口，那样没有尝试间隔和人机验证。要防，就在代码里放一个只有你知道的令牌，请求时带上，接口只认它。代码结束后公开，令牌也会公开，结束后要作废。本站给每个请求加 X-Hb-Hongbao（红包 ID，不保密）和自己的 User-Agent。",
+            },
+            {
+              name: "谁看得到",
+              note: "红包皮上标“联网”，列出这些地址；领的人第一次提交前会看到提交可能发送到这些地址。你看得到每次的请求和返回（下载完整记录，能重放）；红包结束后，领的人能看到自己那几次判定的返回内容，别在返回里放不想公开的东西。",
+            },
+            {
+              name: "测试",
+              note: (
+                <>
+                  测试从不真的联网：每条测试（多步的每一步）写{" "}
+                  <Code>fetch</Code>
+                  ，这次判定的请求拿到的返回；有请求没写返回、写了没用上，都不通过。
+                  <Code>npm run simulate -- --live</Code>{" "}
+                  从你自己的电脑真的发出去。
+                </>
+              ),
             },
           ]}
         />
@@ -421,6 +481,20 @@ export function HelpCodeView() {
               ),
             },
             {
+              name: "fetch",
+              note: (
+                <>
+                  联网的代码：这次判定的请求拿到的返回（多步的写在每一步上），最多
+                  3 个，每个{" "}
+                  <Code>
+                    {"{ url, method, status, headers, json 或 text }"}
+                  </Code>
+                  ，或 <Code>{"{ url, method, error }"}</Code>
+                  （"timeout"、"unreachable"、"too-big"）。请求按方法和完整地址对上；有请求没写返回、写了没用上，都不通过
+                </>
+              ),
+            },
+            {
               name: "expect",
               note: (
                 <>
@@ -452,7 +526,7 @@ export function HelpCodeView() {
             {JUDGE_LIMITS.inputCharacters} 个字。
           </p>
           <p>
-            每人只能领到一次；领过的人、你自己和领取范围以外的人走不到代码。平台不限提交次数，要限次数就按{" "}
+            每人只能领到一次；领过的人和领取范围以外的人走不到代码（你自己也能领）。平台不限提交次数，要限次数就按{" "}
             <Code>user.attempts</Code> 自己拒绝。
           </p>
         </Panel>

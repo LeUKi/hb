@@ -13,6 +13,7 @@ import {
   updateActivitySchema,
 } from "@hb/contracts";
 import { eq } from "drizzle-orm";
+import { NETWORK_REASONS } from "../../../kit/runtime/index.mjs";
 import {
   claimActivity,
   resumePendingActivityClaims,
@@ -61,6 +62,7 @@ import {
 } from "./discovery/service";
 import type { ApiBindings } from "./env";
 import { judgedCount } from "./judge/public";
+import { type FetchRecord, NetworkSession } from "./judge/session";
 import { stopCodeActivity } from "./judge/stop";
 import { flushPaymentOutbox, runMerchantCycle } from "./payments/scheduler";
 import {
@@ -139,6 +141,10 @@ function livePeople(sockets: WebSocket[]) {
 
 export class ActivityDO extends DurableObject<ApiBindings> {
   private mutationTail: Promise<void> = Promise.resolve();
+  /** 代码判定联网: the judgment under way's requests (judge/session.ts). */
+  private judging: NetworkSession | null = null;
+  /** Claims waiting their turn here, the one being judged among them. */
+  private claimsWaiting = 0;
   /** A change waiting to go out on the live channel (live.ts). */
   private liveTimer: ReturnType<typeof setTimeout> | null = null;
   private livePushedAt = 0;
@@ -302,6 +308,28 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   }
 
   /** A payment of this 红包 moved (live.ts tellPaymentWatchers). */
+  /**
+   * 代码判定联网 (judge/gateway.ts): may a request of the judgment under way
+   * go out, and what came of it. Nothing under way: none may.
+   */
+  private async judgeFetch(id: string, request: Request) {
+    if (!this.ctx.id.equals(this.env.ACTIVITY_DO.idFromName(id)))
+      return Response.json({ error: "INVALID_OBJECT" }, { status: 400 });
+    const body = await request.json<
+      | { op: "begin" }
+      | { op: "finish"; index: number; record: FetchRecord }
+      | { op: "broken"; index: number }
+    >();
+    const session = this.judging;
+    if (body.op === "begin")
+      return Response.json(
+        session?.begin() ?? { refused: NETWORK_REASONS.ended },
+      );
+    if (body.op === "finish") session?.finish(body.index, body.record);
+    else if (body.op === "broken") session?.fail(body.index);
+    return Response.json({ ok: true });
+  }
+
   private async paymentMoved(id: string, request: Request) {
     if (!this.ctx.id.equals(this.env.ACTIVITY_DO.idFromName(id)))
       return Response.json(
@@ -553,6 +581,14 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     );
     if (moved && request.method === "POST")
       return this.paymentMoved(moved[1] ?? "", request);
+    // The gateway, about a judgment under way: never queued behind it,
+    // which waits on its requests (judge/gateway.ts).
+    const fetching =
+      /^\/internal\/activities\/([a-f0-9-]{36})\/judge-fetch$/i.exec(
+        url.pathname,
+      );
+    if (fetching && request.method === "POST")
+      return this.judgeFetch(fetching[1] ?? "", request);
 
     const isCreation = url.pathname === "/internal/activities/create";
     const isGlobalRedemption =
@@ -579,6 +615,13 @@ export class ActivityDO extends DurableObject<ApiBindings> {
           { status: 400 },
         );
       }
+      // Claims count from their arrival: a 联网 红包 turns away more than
+      // a few waiting (judge/claims.ts).
+      const claiming = operation === "claim";
+      if (claiming) this.claimsWaiting += 1;
+      const done = () => {
+        if (claiming) this.claimsWaiting -= 1;
+      };
       return this.serialize(async () => {
         try {
           if (operation === "refresh") {
@@ -760,8 +803,25 @@ export class ActivityDO extends DurableObject<ApiBindings> {
               parsed.data,
               undefined,
               humanVerified === true,
-              // 代码判定: its code failed five times running, claims wait.
-              { paused: () => this.announce(id) },
+              // 代码判定: its code failed five times running, claims wait;
+              // a 联网 红包's judgment goes out through the gateway.
+              {
+                paused: () => this.announce(id),
+                network: {
+                  start: () => {
+                    this.judging = new NetworkSession();
+                    return this.judging;
+                  },
+                  end: () => {
+                    this.judging = null;
+                  },
+                  outbound: (activityId, network) =>
+                    this.ctx.exports.JudgeGateway({
+                      props: { activityId, network },
+                    }),
+                  waiting: () => this.claimsWaiting,
+                },
+              },
             );
             if ("registration" in result) await this.scheduleDraw(id);
             if (result.result === "claimed" || result.result === "registered")
@@ -891,7 +951,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
             { status: 500, headers: { "Cache-Control": "no-store" } },
           );
         }
-      });
+      }).finally(done);
     }
 
     return Response.json(

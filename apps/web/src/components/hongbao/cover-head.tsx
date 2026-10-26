@@ -98,9 +98,20 @@ function coverTags(activity: HongbaoActivity) {
     code: activity.mode === "code",
   };
   return [
-    // 代码判定 comes first, in place of 口令红包 / 无需口令 (05 §4).
+    // 代码判定 comes first, in place of 口令红包 / 无需口令 (05 §4), with
+    // 联网 beside it when its code asks addresses (§9.5).
     ...(activity.mode === "code"
-      ? [playTag]
+      ? [
+          playTag,
+          ...(activity.judge?.network
+            ? [
+                {
+                  text: "联网",
+                  hint: `判定时会请求这些地址：${activity.judge.network.join("、")}。判定结果取决于对方的回答，开放后对方的回答可能变化，本站无法核对。`,
+                },
+              ]
+            : []),
+        ]
       : [
           activity.participation === "password"
             ? { text: "口令红包", hint: `输入正确的口令才能${verb}。` }

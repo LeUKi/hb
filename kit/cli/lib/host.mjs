@@ -1,7 +1,8 @@
 // Runs inside the local workerd, in the site's place: each request is one
 // judgment, handed to a Dynamic Worker built the way the site builds it
 // (hb's apps/api/src/judge/sandbox.ts): main.mjs first, the runtime and
-// judge.js as modules, nodejs_compat, no bindings and no network.
+// judge.js as modules, nodejs_compat, no bindings, and no network unless
+// `npm run simulate -- --live` sends it out through the gateway.
 export default {
   async fetch(request, env) {
     try {
@@ -10,7 +11,7 @@ export default {
         compatibilityFlags: ["nodejs_compat"],
         mainModule: "main.mjs",
         modules: env.MODULES,
-        globalOutbound: null,
+        globalOutbound: env.LIVE ? env.GATEWAY : null,
       }));
       return await worker.getEntrypoint().fetch("http://judge/", {
         method: "POST",

@@ -2,7 +2,9 @@
 // usual checks first, then the sender's code judges what was typed, and
 // what it pays (pulled into the share's range) is made into the share and
 // claimed. The 红包's Durable Object runs these one at a time, so the pool,
-// the claims and the code's state it was given are the ones it changes.
+// the claims and the code's state it was given are the ones it changes. A
+// 联网 红包's judgment goes out through the gateway, and what it asked and
+// got is kept with it (§9).
 import {
   type ClaimActivityInput,
   type ClaimResult,
@@ -38,6 +40,7 @@ import {
   encryptString,
 } from "../security/crypto";
 import { runJudge, type SandboxFailure } from "./sandbox";
+import type { FetchRecord, JudgeHooks } from "./session";
 import { findJudgeRow, type JudgeRow, judgeData, readSeed } from "./storage";
 import { usageStatement } from "./usage";
 
@@ -47,7 +50,13 @@ type CodeClaim = Extract<ClaimActivityInput, { participationMode: "code" }>;
 export const FAILURES_TO_PAUSE = 5;
 /** Submissions a 红包 takes a second (§3, 暂定); more wait, unjudged. */
 const PER_SECOND = 20;
+/** A 联网 红包's claims waiting at once, the one judged too (§9.3). */
+const NETWORK_WAITING = 5;
 const SANDBOXES = 4;
+
+/** A 红包's addresses (activity_code.network), or null without network. */
+export const networkOf = (row: JudgeRow) =>
+  row.network === null ? null : (JSON.parse(row.network) as string[]);
 
 const recent = new Map<string, number[]>();
 
@@ -152,6 +161,8 @@ async function recordFailure(
   /** When the judgment began: its 份's day. */
   now: number,
   hung = false,
+  /** 联网: the requests it sent out. */
+  fetches = 0,
 ) {
   const timeout = Number(kind === "timeout");
   const moves = Number(kind === "timeout" && !hung);
@@ -178,10 +189,13 @@ async function recordFailure(
       now,
       fingerprint: row.fingerprint,
       fresh: row.sandbox,
+      protocol: row.protocol,
+      networked: row.network !== null,
       userId: sender,
       activityId: row.activityId,
       timeouts: timeout,
       switches: moves,
+      fetches,
     }),
   ]);
   return row.failuresInRow + 1 >= FAILURES_TO_PAUSE;
@@ -199,7 +213,7 @@ export async function claimByCode(
   input: CodeClaim,
   executionPolicy?: ActivityExecutionPolicy,
   humanVerified = false,
-  hooks: { paused?: () => void } = {},
+  hooks: JudgeHooks = {},
 ): Promise<ClaimResult> {
   const { fingerprint } = await participationRequest(
     env,
@@ -230,7 +244,17 @@ export async function claimByCode(
   if (row.pausedAt !== null || row.stoppedAt !== null) throw paused();
   // Every submission, before the code runs (§3).
   requireHumanCheck(env, activity, humanVerified);
-  if (busy(activityId))
+  const network = networkOf(row);
+  // A 联网 judgment goes out through the gateway, which only the 红包's
+  // Durable Object has.
+  const online = network ? hooks.network : undefined;
+  if (network && !online)
+    throw new ActivityError(
+      503,
+      "JUDGE_UNAVAILABLE",
+      "暂时领不了，请稍后再试。",
+    );
+  if (busy(activityId) || (online && online.waiting() > NETWORK_WAITING))
     throw new ActivityError(
       429,
       "CODE_BUSY",
@@ -298,16 +322,45 @@ export async function claimByCode(
     claims,
     state,
   };
-  const outcome = await runJudge(env, {
-    code,
-    fingerprint: row.fingerprint,
-    submission,
-    seeds: {
-      submission: submissionSeed(activityId, secret, linuxDoId, attempts),
-      user: userSeed(activityId, secret, linuxDoId),
-    },
-    fresh: row.sandbox,
-  });
+  // 联网: the requests this judgment sends are kept as the gateway saw
+  // them; one the gateway failed on makes it count for nothing.
+  const session = online?.start();
+  let fetches: FetchRecord[] = [];
+  let outcome: Awaited<ReturnType<typeof runJudge>>;
+  try {
+    outcome = await runJudge(env, {
+      code,
+      fingerprint: row.fingerprint,
+      submission,
+      seeds: {
+        submission: submissionSeed(activityId, secret, linuxDoId, attempts),
+        user: userSeed(activityId, secret, linuxDoId),
+      },
+      fresh: row.sandbox,
+      protocol: row.protocol,
+      ...(network && online
+        ? {
+            network: {
+              mode: "live" as const,
+              list: network,
+              activityId,
+              outbound: online.outbound(activityId, network),
+            },
+          }
+        : {}),
+    });
+    if (session) {
+      fetches = await session.close();
+      if (session.broken)
+        throw new ActivityError(
+          503,
+          "JUDGE_UNAVAILABLE",
+          "暂时领不了，请稍后再试。",
+        );
+    }
+  } finally {
+    online?.end();
+  }
   let reading: ReturnType<typeof readVerdict>;
   if ("failure" in outcome) {
     // Not the code's fault: nothing counts, nothing is noted.
@@ -330,6 +383,7 @@ export async function claimByCode(
         outcome.detail,
         submission.now,
         outcome.hung,
+        fetches.length,
       )
     )
       hooks.paused?.();
@@ -346,6 +400,8 @@ export async function claimByCode(
         "invalid",
         reading.error.detail,
         submission.now,
+        false,
+        fetches.length,
       )
     )
       hooks.paused?.();
@@ -359,21 +415,33 @@ export async function claimByCode(
   const stateText = reading.state.keep
     ? null
     : JSON.stringify(reading.state.value);
-  const [inputCiphertext, digest, stateCiphertext, judgmentState] =
-    await Promise.all([
-      encryptString(input.input, env, attemptAssociatedData(activityId, rowId)),
-      digestPassword(input.input, env.PASSWORD_DIGEST_KEY),
-      stateText === null
-        ? null
-        : encryptString(stateText, env, judgeData(activityId, "state")),
-      stateText === null
-        ? null
-        : encryptString(
-            stateText,
-            env,
-            `${judgeData(activityId, "state")}:${rowId}`,
-          ),
-    ]);
+  const [
+    inputCiphertext,
+    digest,
+    stateCiphertext,
+    judgmentState,
+    fetchesCiphertext,
+  ] = await Promise.all([
+    encryptString(input.input, env, attemptAssociatedData(activityId, rowId)),
+    digestPassword(input.input, env.PASSWORD_DIGEST_KEY),
+    stateText === null
+      ? null
+      : encryptString(stateText, env, judgeData(activityId, "state")),
+    stateText === null
+      ? null
+      : encryptString(
+          stateText,
+          env,
+          `${judgeData(activityId, "state")}:${rowId}`,
+        ),
+    fetches.length === 0
+      ? null
+      : encryptString(
+          JSON.stringify(fetches),
+          env,
+          `${judgeData(activityId, "fetches")}:${rowId}`,
+        ),
+  ]);
   const statements = [
     ...attemptWriteStatements(env, userId, "activity", rowId),
     claimGuardStatement(env, activity, "code", userId, admission),
@@ -398,8 +466,8 @@ export async function claimByCode(
       rowId,
     ),
     env.DB.prepare(`INSERT INTO code_judgments
-      (submission_row_id, activity_id, user_id, sequence, attempt, title, username, level, ok, asked_minor, paid_minor, note, message, state_ciphertext, judged_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+      (submission_row_id, activity_id, user_id, sequence, attempt, title, username, level, ok, asked_minor, paid_minor, note, message, state_ciphertext, fetches_ciphertext, judged_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
       rowId,
       activityId,
       userId,
@@ -414,6 +482,7 @@ export async function claimByCode(
       reading.ok ? reading.note : null,
       reading.message ?? null,
       judgmentState,
+      fetchesCiphertext,
       submission.now,
     ),
     env.DB.prepare(`UPDATE activity_code SET failures_in_row = 0,
@@ -428,9 +497,12 @@ export async function claimByCode(
       now: submission.now,
       fingerprint: row.fingerprint,
       fresh: row.sandbox,
+      protocol: row.protocol,
+      networked: network !== null,
       userId: activity.authorId,
       activityId,
       claims: 1,
+      fetches: fetches.length,
     }),
   ];
   try {

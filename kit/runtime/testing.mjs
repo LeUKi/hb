@@ -4,6 +4,7 @@
 // in turn, carried forward as the site does (scenario.mjs). Each test says
 // only what matters to it; everything else takes the defaults below.
 import { sha256Text } from "./hash.mjs";
+import { NETWORK_LIMITS, NETWORK_METHODS } from "./network.mjs";
 import { judgeNext, startScenario } from "./scenario.mjs";
 import { LIMITS, nestsDeeper } from "./verdict.mjs";
 
@@ -178,6 +179,69 @@ function claimsProblem(claims) {
   return null;
 }
 
+const ANSWER_ERRORS = ["timeout", "unreachable", "too-big"];
+
+/**
+ * fetch, one test's or one step's (协议第 9 节): the answers this judgment
+ * gets, each `{ url, method, status, headers, json | text }`, or
+ * `{ url, method, error }` for a request that fails. simulate.json's
+ * submissions take the same.
+ */
+export function fetchProblem(list) {
+  if (list === undefined) return null;
+  if (!Array.isArray(list)) return "fetch 要是一个数组，每个是一个请求的返回";
+  if (list.length > NETWORK_LIMITS.requests)
+    return `fetch 最多写 ${NETWORK_LIMITS.requests} 个：一次判定最多发 ${NETWORK_LIMITS.requests} 个请求`;
+  for (const [index, answer] of list.entries()) {
+    const where = `fetch 第 ${index + 1} 个`;
+    if (!isObject(answer)) return `${where}要是一个对象`;
+    const extra = only(
+      answer,
+      ["url", "method", "status", "headers", "json", "text", "error"],
+      `${where}里`,
+    );
+    if (extra) return extra;
+    if (typeof answer.url !== "string") return `${where}要有 url`;
+    try {
+      new URL(answer.url);
+    } catch {
+      return `${where}的 url 不是有效的地址`;
+    }
+    if (answer.method !== undefined && !NETWORK_METHODS.includes(answer.method))
+      return `${where}的 method 要是 ${NETWORK_METHODS.map((method) => `"${method}"`).join(" 或 ")}`;
+    if (answer.error !== undefined) {
+      if (!ANSWER_ERRORS.includes(answer.error))
+        return `${where}的 error 要是 "timeout"（超时）、"unreachable"（连不上）或 "too-big"（返回超过 64 KB）`;
+      const more = ["status", "headers", "json", "text"].filter((key) =>
+        Object.hasOwn(answer, key),
+      );
+      if (more.length > 0)
+        return `${where}写了 error 就不能写 ${more.join("、")}`;
+      continue;
+    }
+    if (
+      answer.status !== undefined &&
+      (!isWhole(answer.status) || answer.status < 200 || answer.status > 599)
+    )
+      return `${where}的 status 要是 200–599 的整数`;
+    if (
+      answer.headers !== undefined &&
+      (!isObject(answer.headers) ||
+        Object.values(answer.headers).some(
+          (value) => typeof value !== "string",
+        ))
+    )
+      return `${where}的 headers 要是一个对象，值都是字符串`;
+    if (Object.hasOwn(answer, "json") && Object.hasOwn(answer, "text"))
+      return `${where}的 json 和 text 只能写一个`;
+    if (answer.text !== undefined && typeof answer.text !== "string")
+      return `${where}的 text 要是字符串`;
+    if (Object.hasOwn(answer, "json") && !writable(answer.json))
+      return `${where}的 json 要能转成 JSON`;
+  }
+  return null;
+}
+
 /** expect, one test's or one step's. */
 function expectProblem(expect) {
   if (!isObject(expect)) return "要有 expect";
@@ -235,7 +299,11 @@ function expectProblem(expect) {
 
 function stepProblem(step) {
   if (!isObject(step)) return "要是一个对象";
-  const extra = only(step, ["who", "input", "level", "at", "expect"], "");
+  const extra = only(
+    step,
+    ["who", "input", "level", "at", "fetch", "expect"],
+    "",
+  );
   if (extra) return extra;
   if (typeof step.who !== "string" || !step.who.trim())
     return "要有 who（谁提交的）";
@@ -246,6 +314,7 @@ function stepProblem(step) {
       ? "level 要是 0–4 或 null"
       : null) ??
     timeProblem(step.at, "at") ??
+    fetchProblem(step.fetch) ??
     expectProblem(step.expect)
   );
 }
@@ -270,6 +339,8 @@ function shapeProblem(test) {
     return "多步场景不写 user：每一步的人写在 who 和 level 上";
   if (multi && Object.hasOwn(test, "expect"))
     return "多步场景不写 expect：写在每一步上";
+  if (multi && Object.hasOwn(test, "fetch"))
+    return "多步场景不写 fetch：写在每一步上";
   const extra = only(
     test,
     [
@@ -279,7 +350,7 @@ function shapeProblem(test) {
       "claims",
       "state",
       "seed",
-      ...(multi ? ["steps"] : ["input", "user", "expect"]),
+      ...(multi ? ["steps"] : ["input", "user", "fetch", "expect"]),
     ],
     "",
   );
@@ -300,6 +371,7 @@ function shapeProblem(test) {
     return (
       inputProblem(test.input) ??
       userProblem(test.user) ??
+      fetchProblem(test.fetch) ??
       expectProblem(test.expect)
     );
   if (!Array.isArray(test.steps) || test.steps.length === 0)
@@ -475,7 +547,15 @@ function planOf(test) {
       return fail(`这个人（${user.username}）已经领过了，线上不会交给代码`);
     return {
       ...plan,
-      steps: [{ user, input: test.input.trim(), at: now, expect: test.expect }],
+      steps: [
+        {
+          user,
+          input: test.input.trim(),
+          at: now,
+          fetch: test.fetch ?? [],
+          expect: test.expect,
+        },
+      ],
     };
   }
   // The same who is the same person: someone in claims by that name, or
@@ -505,6 +585,7 @@ function planOf(test) {
         },
         input: step.input.trim(),
         at: times[index],
+        fetch: step.fetch ?? [],
         expect: step.expect,
       };
     }),
@@ -635,6 +716,20 @@ const failureWords = {
   unavailable: "沙箱暂时不可用",
 };
 
+/**
+ * What the code asked of the network against the answers the test wrote:
+ * a request with no answer, an answer no request used.
+ */
+function networkDifferences(answer) {
+  const found = [];
+  for (const request of answer.requests ?? [])
+    if (request.unanswered)
+      found.push(`有请求没写返回：${request.method} ${request.url}`);
+  for (const unused of answer.unused ?? [])
+    found.push(`写了的返回没用上：${unused.method} ${unused.url}`);
+  return found;
+}
+
 /** One submission of a test, as it went (judgeNext's result). */
 function stepOutcome(step, judged) {
   if ("refused" in judged)
@@ -672,7 +767,10 @@ function stepOutcome(step, judged) {
     ...(reading.message !== undefined ? { message: reading.message } : {}),
     state,
   };
-  const found = differences(step.expect, reading, state);
+  const found = [
+    ...differences(step.expect, reading, state),
+    ...networkDifferences(answer),
+  ];
   return {
     passed: found.length === 0,
     ...(found.length > 0 ? { problem: found.join("；") } : {}),
@@ -683,8 +781,10 @@ function stepOutcome(step, judged) {
 }
 
 /**
- * One test, run: `run(submission, seeds)` is the sandbox, answering
- * `{ verdict, logs? }` or `{ failure, detail, logs? }`. A test that could
+ * One test, run: `run(submission, seeds, answers)` is the sandbox,
+ * answering `{ verdict, logs? }` or `{ failure, detail, logs? }`, with
+ * `requests` and `unused` when it answered fetch() from `answers` (the
+ * test's or step's `fetch`). A test that could
  * not happen on the site fails before the code runs; steps stop at the
  * first that fails. The result says whether it passed and, if not, why
  * (a step's problem names the step and who), what the code answered and
@@ -714,6 +814,7 @@ export async function runTest(test, run, { twice = false } = {}) {
       answered.push({
         submission: judged.submission,
         seeds: judged.seeds,
+        answers: step.fetch,
         verdict: judged.answer.verdict,
       });
     const { failure: failed, ...outcome } = stepOutcome(step, judged);
@@ -730,7 +831,7 @@ export async function runTest(test, run, { twice = false } = {}) {
   let unstable = false;
   if (twice && !failure)
     for (const first of answered) {
-      const again = await run(first.submission, first.seeds);
+      const again = await run(first.submission, first.seeds, first.answers);
       if ("failure" in again) break;
       if (!sameJson(first.verdict, again.verdict)) {
         unstable = true;

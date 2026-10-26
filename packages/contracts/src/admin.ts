@@ -338,6 +338,8 @@ export type AdminJudgeUsageCounts = {
   timeouts: number;
   /** Of the timeouts, those that moved on to a fresh sandbox (换了实例). */
   switches: number;
+  /** 联网: requests judgments sent out (§9.7). */
+  fetches: number;
 };
 
 /**

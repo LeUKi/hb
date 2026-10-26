@@ -53,9 +53,62 @@
         "at": {
           "$ref": "#/$defs/time",
           "description": "这次提交的时间，要按先后写、在开放和截止之间；默认上一次往后 1 分钟，第一次是 now"
+        },
+        "fetch": {
+          "description": "这次提交的请求拿到的返回（联网，协议第 9 节），最多 3 个；加 --live 时不用它，真的发出去",
+          "type": "array",
+          "maxItems": 3,
+          "items": { "$ref": "#/$defs/fetchAnswer" }
         }
       }
     },
+    "fetchAnswer": {
+      "description": "一个请求的返回（联网，协议第 9 节）：代码发出的请求按方法和完整地址对上一个还没用过的。写了 error 就是这个请求失败。",
+      "type": "object",
+      "required": ["url"],
+      "additionalProperties": false,
+      "properties": {
+        "url": { "description": "请求的完整地址", "type": "string" },
+        "method": {
+          "description": "默认 GET",
+          "enum": ["GET", "POST"],
+          "default": "GET"
+        },
+        "status": {
+          "description": "状态码，默认 200",
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 599,
+          "default": 200
+        },
+        "headers": {
+          "description": "返回的头",
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "json": {
+          "description": "返回的 JSON（content-type 默认 application/json）；和 text 二选一"
+        },
+        "text": {
+          "description": "返回的文字；和 json 二选一",
+          "type": "string"
+        },
+        "error": {
+          "description": "这个请求失败：timeout 超时，unreachable 连不上，too-big 返回超过 64 KB；写了就不写 status、headers、json、text",
+          "enum": ["timeout", "unreachable", "too-big"]
+        }
+      },
+      "not": {
+        "anyOf": [
+          { "required": ["json", "text"] },
+          { "required": ["error", "status"] },
+          { "required": ["error", "headers"] },
+          { "required": ["error", "json"] },
+          { "required": ["error", "text"] }
+        ]
+      }
+    },
+
     "time": {
       "description": "毫秒（整数），或带时区的 ISO 时间，比如 \"2026-10-24T12:00:00+08:00\"；不带时区的不认",
       "anyOf": [

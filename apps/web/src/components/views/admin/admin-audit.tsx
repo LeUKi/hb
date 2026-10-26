@@ -40,6 +40,7 @@ const judgeLabels: Record<
   [string, (value: boolean | number) => string]
 > = {
   enabled: ["代码判定红包", (value) => (value ? "开" : "关")],
+  networkEnabled: ["代码判定联网", (value) => (value ? "开" : "关")],
   dailyOpenLimit: ["每人每天最多开放", (value) => `${value} 个`],
   dailyDeployLimit: ["每人每天部署", (value) => `${value} 次`],
   monthlyLimit: ["每月判定器上限", (value) => `${value} 份`],

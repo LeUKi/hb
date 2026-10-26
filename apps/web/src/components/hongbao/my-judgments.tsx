@@ -1,7 +1,8 @@
-import type { JudgeNote, MyJudgment } from "@hb/contracts";
+import type { JudgeFetchAnswer, JudgeNote, MyJudgment } from "@hb/contracts";
 import { useRouter } from "@tanstack/react-router";
-import { ChevronRight, X } from "lucide-react";
+import { ChevronDown, ChevronRight, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
+import { useId, useState } from "react";
 import { useMyJudgments } from "../../lib/judge";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { switchOverlay } from "../../lib/overlay";
@@ -12,7 +13,7 @@ import { PanelDialog } from "../shell/panel-dialog";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { RollingText } from "../ui/morph-label";
-import { ListItem } from "../ui/reveal";
+import { ListItem, Reveal } from "../ui/reveal";
 import { Squircle } from "../ui/squircle";
 import { useHongbaoPageData } from "./use-hongbao-data";
 
@@ -25,9 +26,65 @@ const notes: Record<JudgeNote, string> = {
   last: "最后一份，发完剩下的",
 };
 
+const failed: Record<NonNullable<JudgeFetchAnswer["error"]>, string> = {
+  timeout: "超时",
+  unreachable: "连不上",
+  "too-big": "返回超过 64 KB",
+};
+
+/**
+ * 联网 (docs/programmable-hongbao-design.md §9.4): once it is over, what
+ * this judgment's requests got back — the site, the status, the body as
+ * it came — folded until asked for. Never what was sent.
+ */
+function FetchAnswers({ answers }: { answers: JudgeFetchAnswer[] }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return (
+    <div className="grid gap-1">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={() => setOpen((current) => !current)}
+        className="-ml-0.5 inline-flex items-center gap-0.5 justify-self-start text-xs text-ink-3 hover:text-ink-2"
+      >
+        联网返回 · {answers.length} 个
+        <ChevronDown
+          aria-hidden="true"
+          className={`size-3.5 transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      <Reveal show={open}>
+        <ul id={id} className="grid gap-1.5">
+          {answers.map((answer, index) => (
+            <li
+              // In order; nothing else tells two answers of one site apart.
+              // biome-ignore lint/suspicious/noArrayIndexKey: fixed list
+              key={index}
+              className="grid gap-0.5 rounded-lg bg-fill-2 px-2.5 py-1.5"
+            >
+              <span className="text-xs text-ink-3">
+                {answer.host} ·{" "}
+                {answer.error ? failed[answer.error] : answer.status}
+              </span>
+              {answer.response !== undefined && answer.response !== "" && (
+                <pre className="max-h-48 overflow-auto font-mono text-xs break-all whitespace-pre-wrap text-ink-2">
+                  {answer.response}
+                </pre>
+              )}
+            </li>
+          ))}
+        </ul>
+      </Reveal>
+    </div>
+  );
+}
+
 /**
  * One judged submission: 第 N 次 and when, what was typed (as typed: a
- * 代码判定红包's inputs are not hidden, 05 §3), the result, the reply.
+ * 代码判定红包's inputs are not hidden, 05 §3), the result, the reply, and
+ * once it is over what its requests got back.
  */
 export function JudgmentRow({ item }: { item: MyJudgment }) {
   return (
@@ -58,11 +115,18 @@ export function JudgmentRow({ item }: { item: MyJudgment }) {
           {item.note && (
             <p className="text-sm text-ink-2">{notes[item.note]}</p>
           )}
+          {item.fetches && item.fetches.length > 0 && (
+            <FetchAnswers answers={item.fetches} />
+          )}
         </div>
       </Squircle>
     </ListItem>
   );
 }
+
+/** The sites of a 联网 红包's addresses: api.example.com、b.example.com. */
+const hostsOf = (network: string[]) =>
+  [...new Set(network.map((address) => new URL(address).hostname))].join("、");
 
 /** What a screen reader hears of a judgment as it comes in. */
 const spoken = (item: MyJudgment) =>
@@ -87,6 +151,7 @@ export function JudgmentRecord({ activityId }: { activityId: string }) {
     fetchNextPage: query.fetchNextPage,
     pageCount: query.data?.pages.length ?? 0,
   });
+  const network = useHongbaoPageData(activityId).data?.activity.judge?.network;
   const total = query.data?.pages[0]?.total ?? 0;
   const [latest, ...earlier] =
     query.data?.pages.flatMap((batch) => batch.items) ?? [];
@@ -95,6 +160,8 @@ export function JudgmentRecord({ activityId }: { activityId: string }) {
     return (
       <p className="px-2.5 pb-2 text-xs text-ink-3">
         提交后，你的昵称和判定次数会出现在参与名单里。
+        {network &&
+          `这个红包会联网：你的提交（数字 ID、用户名、等级和输入）可能被发到 ${hostsOf(network)}。`}
       </p>
     );
   return (

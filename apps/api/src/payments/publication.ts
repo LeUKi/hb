@@ -64,4 +64,5 @@ export const publicationMessages = {
   JUDGE_CHECK_REQUIRED: "还没有测试全过的判定器，草稿已保存。",
   JUDGE_RERUN_REQUIRED: "测试改过了，要重新跑一遍，草稿已保存。",
   CODE_HONGBAO_DAILY_LIMIT: "今天开放代码判定红包的次数用完了，草稿已保存。",
+  CODE_NETWORK_PAUSED: "代码判定暂时不能联网，草稿已保存。",
 } as const;

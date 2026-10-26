@@ -1,4 +1,5 @@
 import type {
+  FetchAnswer,
   Json,
   JudgeNote,
   JudgeRecords,
@@ -149,7 +150,51 @@ export function checkSource(
   source: string,
 ): { line: number; message: string }[];
 
+// network.mjs
+export const NETWORK_LIMITS: Readonly<{
+  entries: number;
+  entryCharacters: number;
+  requests: number;
+  requestBytes: number;
+  responseBytes: number;
+  requestMs: number;
+  judgmentMs: number;
+}>;
+export const NETWORK_METHODS: readonly ("GET" | "POST")[];
+export const NETWORK_REASONS: Readonly<
+  Record<
+    | "none"
+    | "ended"
+    | "tooMany"
+    | "method"
+    | "requestTooBig"
+    | "responseTooBig"
+    | "timeout"
+    | "unreachable"
+    | "upgrade",
+    string
+  >
+>;
+export function networkError(reason: string): TypeError;
+export function readNetwork(
+  value: unknown,
+): { list: string[] | null } | { problems: string[] };
+export function allowedBy(
+  list: readonly string[] | null,
+  address: string,
+): boolean;
+export function requestProblem(
+  request: {
+    method: string;
+    address: string;
+    headers: readonly string[];
+    bodyBytes: number;
+  },
+  list: readonly string[] | null,
+): string | null;
+
 // testing.mjs
+export function fetchProblem(list: unknown): string | null;
 export const TEST_HONGBAO_ID: string;
 export const TEST_SEED: string;
 export const TEST_DEFAULTS: Readonly<{
@@ -171,10 +216,31 @@ export type SandboxFailureKind =
   | "timeout"
   | "memory"
   | "unavailable";
+/** A request the code made, answered from what a test wrote. */
+export type AskedRequest = {
+  method: string;
+  url: string;
+  body?: string;
+  /** No answer was written for it: fetch() threw. */
+  unanswered?: true;
+};
+/** What answering from written answers left: what was asked, what went unused. */
+export type AskedNetwork = {
+  requests?: AskedRequest[];
+  unused?: { method: string; url: string }[];
+};
 /** What the sandbox answered for one submission. */
-export type SandboxAnswer =
+export type SandboxAnswer = (
   | { verdict: unknown; logs?: string[] }
-  | { failure: SandboxFailureKind; detail: string; logs?: string[] };
+  | { failure: SandboxFailureKind; detail: string; logs?: string[] }
+) &
+  AskedNetwork;
+/** The sandbox: one judgment, its requests answered from `answers`. */
+export type RunSandbox = (
+  submission: Submission,
+  seeds: Seeds,
+  answers?: readonly FetchAnswer[],
+) => Promise<SandboxAnswer>;
 export type Seeds = { submission: string; user: string };
 /** What the code answered, and what was paid. */
 export type TestActual = {
@@ -214,7 +280,7 @@ export type TestRun = {
 };
 export function runTest(
   test: TestCase,
-  run: (submission: Submission, seeds: Seeds) => Promise<SandboxAnswer>,
+  run: RunSandbox,
   options?: { twice?: boolean },
 ): Promise<TestRun>;
 
@@ -264,8 +330,9 @@ export function judgeNext(
     user: Omit<Submission["user"], "attempts"> & { attempts?: number };
     input: string;
     at: number;
+    fetch?: readonly FetchAnswer[];
   },
-  run: (submission: Submission, seeds: Seeds) => Promise<SandboxAnswer>,
+  run: RunSandbox,
 ): Promise<
   | { refused: "claimed" | "sold-out" }
   | {
@@ -279,3 +346,6 @@ export function judgeNext(
 
 // records.mjs
 export function submissionsOf(records: JudgeRecords): Submission[];
+export function answersOf(
+  judgment: JudgeRecords["judgments"][number],
+): FetchAnswer[];

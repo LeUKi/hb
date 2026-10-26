@@ -17,7 +17,8 @@ import {
   textDigest,
 } from "./storage";
 
-function isOver(row: ActivityRow) {
+/** Over: ended, every share claimed, or its deadline passed. */
+export function isOver(row: ActivityRow) {
   return (
     row.endedAt !== null ||
     row.claimedCount >= row.totalCount ||
@@ -82,6 +83,10 @@ export async function publicJudge(
     protocol: judge.protocol,
     prompt: judge.prompt,
     fingerprint: judge.fingerprint,
+    // 联网 (§9.5): public from opening, as the code it belongs to is.
+    ...(judge.network !== null
+      ? { network: JSON.parse(judge.network) as string[] }
+      : {}),
     seedCommitment: judge.seedCommitment,
     judged,
     ...(judge.pausedAt !== null && activityStatus(row) === "active"

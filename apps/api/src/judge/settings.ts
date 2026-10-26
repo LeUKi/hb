@@ -17,6 +17,7 @@ type SettingsRow = {
   daily_open_limit: number;
   daily_deploy_limit: number;
   monthly_limit: number;
+  network_enabled: number;
   updated_at: number;
 };
 
@@ -24,7 +25,7 @@ export async function readJudgeSettings(
   env: ApiBindings,
 ): Promise<JudgeSettings> {
   const row = await env.DB.prepare(
-    `SELECT version,enabled,daily_open_limit,daily_deploy_limit,monthly_limit,updated_at
+    `SELECT version,enabled,daily_open_limit,daily_deploy_limit,monthly_limit,network_enabled,updated_at
     FROM judge_settings WHERE id='global'`,
   ).first<SettingsRow>();
   if (!row) throw new Error("Missing judge settings");
@@ -34,6 +35,7 @@ export async function readJudgeSettings(
     dailyOpenLimit: row.daily_open_limit,
     dailyDeployLimit: row.daily_deploy_limit,
     monthlyLimit: row.monthly_limit,
+    networkEnabled: row.network_enabled === 1,
     updatedAt: row.updated_at,
   };
 }
@@ -44,6 +46,7 @@ function snapshot(settings: JudgeSettingsInput) {
     dailyOpenLimit: settings.dailyOpenLimit,
     dailyDeployLimit: settings.dailyDeployLimit,
     monthlyLimit: settings.monthlyLimit,
+    networkEnabled: settings.networkEnabled,
   });
 }
 
@@ -70,13 +73,14 @@ export async function updateJudgeSettings(
         expectedVersion,
       ),
       env.DB.prepare(`UPDATE judge_settings SET version=version+1,
-        enabled=?,daily_open_limit=?,daily_deploy_limit=?,monthly_limit=?,
+        enabled=?,daily_open_limit=?,daily_deploy_limit=?,monthly_limit=?,network_enabled=?,
         updated_at=${databaseNow},updated_by_user_id=?
         WHERE id='global' AND version=?`).bind(
         Number(next.enabled),
         next.dailyOpenLimit,
         next.dailyDeployLimit,
         next.monthlyLimit,
+        Number(next.networkEnabled),
         actorUserId,
         expectedVersion,
       ),
@@ -107,9 +111,15 @@ export async function recentJudgeSettingChanges(
       next: string;
     }
   >();
+  // Changes from before 联网 had a switch: it was off.
+  const read = (text: string) =>
+    ({
+      networkEnabled: false,
+      ...(JSON.parse(text) as Partial<JudgeSettingsInput>),
+    }) as JudgeSettingsInput;
   return rows.results.map((row) => ({
     ...row,
-    previous: JSON.parse(row.previous) as JudgeSettingsInput,
-    next: JSON.parse(row.next) as JudgeSettingsInput,
+    previous: read(row.previous),
+    next: read(row.next),
   }));
 }

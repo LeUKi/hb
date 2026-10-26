@@ -99,6 +99,7 @@ describe("网站管理 · 判定器: 设置", () => {
       dailyOpenLimit: 3,
       dailyDeployLimit: 10,
       monthlyLimit: 1000,
+      networkEnabled: false,
     });
     expect((await call("GET", "/admin/judge/settings", author)).status).toBe(
       403,
@@ -111,6 +112,7 @@ describe("网站管理 · 判定器: 设置", () => {
       dailyOpenLimit: 3,
       dailyDeployLimit: 10,
       monthlyLimit: 2000,
+      networkEnabled: false,
     };
     expect(
       (await call("PUT", "/admin/judge/settings", admin, next, false)).status,

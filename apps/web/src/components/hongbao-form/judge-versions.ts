@@ -29,6 +29,12 @@ export function versionOf(
  * number and takes this run's outcome. The latest ten are kept, and always
  * the one 换回 names, which the server checks against its code.
  */
+/** The protocol a run was on, and the addresses it read (§9). */
+const ranOn = (check: JudgeCheck) => ({
+  protocol: check.protocol,
+  ...(check.network ? { network: check.network } : {}),
+});
+
 export function withRun(
   versions: JudgeVersions,
   check: JudgeCheck,
@@ -37,7 +43,12 @@ export function withRun(
   const list = known
     ? versions.versions.map((version) =>
         version === known
-          ? { ...version, testsDigest: check.testsDigest, passed: check.passed }
+          ? {
+              ...version,
+              testsDigest: check.testsDigest,
+              passed: check.passed,
+              ...ranOn(check),
+            }
           : version,
       )
     : [
@@ -48,6 +59,7 @@ export function withRun(
           at: check.checkedAt,
           testsDigest: check.testsDigest,
           passed: check.passed,
+          ...ranOn(check),
         },
       ];
   // 换回 only ever names a version whose tests passed.
