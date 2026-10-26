@@ -1,11 +1,15 @@
 import { useNavigate } from "@tanstack/react-router";
+import { Globe } from "lucide-react";
 import type { ReactNode } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "../../lib/cn";
+import { useAttachedPageOpener } from "../shell/attached-page";
+import { radius, Squircle } from "./squircle";
 
 // The notes a sender writes (说明, 附言, 结束说明) are Markdown. No raw HTML,
-// no images, links only to http(s); this site's own links stay in the app.
+// no images, links only to http(s); this site's own links stay in the app,
+// and `[文字](#附带网页)` is a button that opens the 红包's 附带网页.
 
 function safeLink(url: string) {
   const candidate = url.trim();
@@ -26,9 +30,58 @@ function safeLink(url: string) {
   }
 }
 
+/** A link to `#附带网页` on the page it is written on. */
+export function isPageLink(href: string) {
+  const url = new URL(href, window.location.href);
+  if (
+    url.origin !== window.location.origin ||
+    url.pathname !== window.location.pathname
+  )
+    return false;
+  try {
+    return decodeURIComponent(url.hash) === "#附带网页";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * `[文字](#附带网页)` (docs/attached-page-design.md §2.6): opens the page
+ * beside the 红包, or pulls up its sheet; where there is none, only the
+ * words. `preview` (发红包's preview) only looks like it.
+ */
+export function PageButton({
+  children,
+  preview = false,
+}: {
+  children: ReactNode;
+  preview?: boolean;
+}) {
+  const page = useAttachedPageOpener();
+  if (preview)
+    return (
+      <Squircle radius={radius.tag}>
+        <span className="md-page" title="红包页上是打开附带网页的按钮">
+          <Globe aria-hidden="true" />
+          {children}
+        </span>
+      </Squircle>
+    );
+  if (!page.available) return <span>{children}</span>;
+  return (
+    <Squircle radius={radius.tag}>
+      <button type="button" className="md-page" onClick={page.open}>
+        <Globe aria-hidden="true" />
+        {children}
+      </button>
+    </Squircle>
+  );
+}
+
 function NoteLink({ href, children }: { href?: string; children: ReactNode }) {
   const navigate = useNavigate();
   if (!href) return <span>{children}</span>;
+  if (isPageLink(href)) return <PageButton>{children}</PageButton>;
   const url = new URL(href, window.location.href);
   const own =
     url.origin === window.location.origin && !url.username && !url.password;

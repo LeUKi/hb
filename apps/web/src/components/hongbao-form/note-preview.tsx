@@ -1,5 +1,6 @@
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { isPageLink, PageButton } from "../ui/markdown";
 
 /** Only http(s) links, and same-site paths; anything else is dropped. */
 function safeLink(url: string) {
@@ -34,7 +35,9 @@ export function NotePreview({ text }: { text: string }) {
         urlTransform={safeLink}
         components={{
           a: ({ href, children }) =>
-            href ? (
+            href && isPageLink(href) ? (
+              <PageButton preview>{children}</PageButton>
+            ) : href ? (
               <a href={href} target="_blank" rel="noreferrer noopener">
                 {children}
               </a>

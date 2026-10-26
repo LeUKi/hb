@@ -445,11 +445,20 @@ export function SettingsSheet({
                   labelHidden
                   htmlFor="hb-page"
                   hint={
-                    pageStopped
-                      ? "站长停用了这个网页，红包页上不再显示。"
-                      : opened
-                        ? "开放后不能改。"
-                        : "选填。红包页旁边会显示这个网页（手机上在底部），比如题目、规则或排行榜。开放后不能改。"
+                    pageStopped ? (
+                      "站长停用了这个网页，红包页上不再显示。"
+                    ) : (
+                      <>
+                        {opened
+                          ? "开放后不能改。"
+                          : "选填。红包页旁边会显示这个网页（手机上在底部），比如题目、规则或排行榜。开放后不能改。"}
+                        说明里写{" "}
+                        <code className="font-mono text-ink-2">
+                          [文字](#附带网页)
+                        </code>{" "}
+                        会显示成打开它的按钮。
+                      </>
+                    )
                   }
                   error={errorOf("hb-page")}
                   live

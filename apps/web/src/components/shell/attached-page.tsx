@@ -6,12 +6,14 @@
 // narrow one it is a sheet pulled up from the bottom. The layout changes
 // behind a passing blur, the windows' widths moving.
 import { skipToken, useQuery } from "@tanstack/react-query";
-import { atom, useAtom, useAtomValue } from "jotai";
+import { useLocation, useRouter } from "@tanstack/react-router";
+import { atom, useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
   ArrowUpRight,
   ChevronDown,
   ChevronUp,
   Globe,
+  LoaderCircle,
   PanelRightClose,
   PanelRightOpen,
   RotateCw,
@@ -34,13 +36,16 @@ import {
 import { activityKeys, type PublicActivityDetail } from "../../lib/activities";
 import { useCurrentActivityId } from "../../lib/activity-route";
 import { ease, useReducedMotionPref } from "../../lib/motion";
+import { closeOverlay } from "../../lib/overlay";
 import { useIdentity } from "../../lib/session";
+import { windowDialogsAtom } from "../../lib/store";
+import { useOmniboxMode } from "../omnibox/state";
 import { Button } from "../ui/button";
 import { radius, Squircle, SquirclePlate } from "../ui/squircle";
 
 /**
  * The page held: the 红包 it is for and its address (null: none), open
- * beside the 红包 (or pulled up), loaded once asked, and the split. Off its
+ * beside the 红包 (or pulled up), loaded once first opened, and the split. Off its
  * 红包's page (its 📝 page, the start page) it stays, hidden; another
  * 红包's page lets it go.
  */
@@ -60,6 +65,23 @@ const heldAtom = atom<Held>({
 });
 /** Bumped to reload the page (刷新). */
 const reloadAtom = atom(0);
+/** Bumped to open the page: the cover's tag, a note's button. */
+const openRequestAtom = atom(0);
+
+/**
+ * Opens the page of the 红包 page shown, when it has one: beside it on a
+ * wide screen, the sheet pulled up on a narrow one.
+ */
+export function useAttachedPageOpener() {
+  const activityId = useCurrentActivityId();
+  const held = useAtomValue(heldAtom);
+  const request = useSetAtom(openRequestAtom);
+  return {
+    available:
+      held.url !== null && activityId !== null && held.forId === activityId,
+    open: () => request((count) => count + 1),
+  };
+}
 
 /** Both windows with the line between them: wider than one, not endless. */
 const SPLIT_MAX = 1680;
@@ -68,6 +90,10 @@ const SIDE_MIN = 360;
 const GAP = 16;
 /** The 红包 window's width when the page beside it is wide. */
 const MAIN_BESIDE = 460;
+/** Dragged this far past its end, the line closes the page on letting go. */
+const PULL_CLOSE = 96;
+/** How much of a pull past the end the windows give (rubber). */
+const pullGive = (pull: number) => Math.min(pull, 240) * 0.35;
 const MOVE_MS = 520;
 const MOVE = `${MOVE_MS}ms cubic-bezier(0.2, 0, 0, 1)`;
 
@@ -214,34 +240,6 @@ export function MorphVeil({
   );
 }
 
-/** Before it loads: whose page, and what loading it tells them. */
-function NotLoaded({ host }: { host: string }) {
-  const [, setHeld] = useAtom(heldAtom);
-  return (
-    <div className="grid h-full place-items-center overflow-y-auto p-6">
-      <div className="grid max-w-72 justify-items-center gap-3 text-center">
-        <span className="grid size-12 place-items-center rounded-full bg-fill-2 text-ink-2">
-          <Globe className="size-6" aria-hidden="true" />
-        </span>
-        <p className="text-base font-semibold text-ink">发红包的人的网页</p>
-        <p className="font-mono text-sm break-all text-ink-2">{host}</p>
-        <p className="text-xs text-ink-3">
-          这是发红包的人提供的网页，不是本站的。加载以后，对方能看到你的 IP
-          地址和浏览器信息。
-        </p>
-        <Button
-          variant="primary"
-          size="sm"
-          className="mt-1"
-          onClick={() => setHeld((current) => ({ ...current, loaded: true }))}
-        >
-          加载网页
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 /**
  * What the page may do (§3, as freely as is safe, for those who build
  * on it): run, send forms, open windows (to log in), show its own
@@ -276,24 +274,51 @@ const PAGE_FEATURES = [
   "storage-access",
 ].join("; ");
 
-/** The page itself: its own origin, never this site's; nothing here listens to it. */
-function Page({ url }: { url: string }) {
+/**
+ * The page itself: its own origin, never this site's; nothing here listens
+ * to it. It loads the first time it is opened (beside the 红包, or the
+ * sheet pulled up), not before: only then does its site learn of the
+ * visit (the title bar says so), and then it stays.
+ */
+function Page({ url, active }: { url: string; active: boolean }) {
   const reload = useAtomValue(reloadAtom);
-  const { loaded } = useAtomValue(heldAtom);
+  const [{ loaded }, setHeld] = useAtom(heldAtom);
+  useEffect(() => {
+    if (active && !loaded) setHeld((current) => ({ ...current, loaded: true }));
+  }, [active, loaded, setHeld]);
+  if (!loaded) return null;
+  return <PageFrame key={`${url}-${reload}`} url={url} />;
+}
+
+/** The frame, clear until its page has loaded (a spinner under it). */
+function PageFrame({ url }: { url: string }) {
+  const [ready, setReady] = useState(false);
   const host = hostOf(url);
-  if (!loaded) return <NotLoaded host={host} />;
   return (
-    <iframe
-      key={`${url}-${reload}`}
-      title={`${host} 的网页`}
-      className="absolute inset-0 size-full border-0 bg-white"
-      src={url}
-      referrerPolicy="no-referrer-when-downgrade"
-      allow={PAGE_FEATURES}
-      sandbox={PAGE_SANDBOX}
-    />
+    <>
+      {!ready && (
+        <div className="absolute inset-0 grid place-items-center text-ink-3">
+          <LoaderCircle
+            className="size-5 motion-safe:animate-spin"
+            aria-label="正在加载"
+          />
+        </div>
+      )}
+      <iframe
+        title={`${host} 的网页`}
+        className={`absolute inset-0 size-full border-0 ${ready ? "bg-white" : ""}`}
+        src={url}
+        onLoad={() => setReady(true)}
+        referrerPolicy="no-referrer-when-downgrade"
+        allow={PAGE_FEATURES}
+        sandbox={PAGE_SANDBOX}
+      />
+    </>
   );
 }
+
+/** The title bar's buttons: as large as the 顶栏's beside the 红包 window. */
+const BarSize = createContext<"icon-xs" | "icon-sm">("icon-xs");
 
 function BarButton({
   label,
@@ -309,7 +334,7 @@ function BarButton({
   return (
     <Button
       variant="ghost"
-      size="icon-xs"
+      size={useContext(BarSize)}
       aria-label={label}
       title={label}
       disabled={disabled}
@@ -320,31 +345,47 @@ function BarButton({
   );
 }
 
-/** Its title bar: always says whose page this is, and that it isn't ours. */
+/**
+ * Its title bar: whose page this is, that it isn't ours, and that it sees
+ * who visits (nothing asks before it loads; this says it). Beside the 红包
+ * window it is as tall as that window's 顶栏, its tops in line; on a phone
+ * lower, to leave the page room.
+ */
 function TitleBar({
   host,
+  tall = false,
   children,
   onPointerDown,
 }: {
   host: string;
+  tall?: boolean;
   children: ReactNode;
   onPointerDown?: (event: ReactPointerEvent) => void;
 }) {
   return (
     <div
-      className="flex h-12 shrink-0 touch-none items-center gap-1 border-line border-b pr-2 pl-4"
+      className={`flex shrink-0 touch-none items-center border-line border-b ${
+        tall ? "h-16 gap-1.5 pr-3 pl-5" : "h-12 gap-1 pr-2 pl-4"
+      }`}
       onPointerDown={onPointerDown}
     >
       <Globe className="mr-1 size-4 shrink-0 text-ink-3" aria-hidden="true" />
-      <span className="grid min-w-0 flex-1 leading-tight">
+      <span
+        className="grid min-w-0 flex-1 gap-0.5 leading-tight"
+        title="这是发红包的人提供的网页，不是本站的。它能看到你的 IP 地址和浏览器信息。"
+      >
         <span className="truncate font-mono text-sm font-medium text-ink">
           {host}
         </span>
-        <span className="truncate text-[11px] text-ink-3">
-          发红包的人提供的网页 · 不是本站
+        <span
+          className={`text-[11px] text-ink-3 ${tall ? "line-clamp-2" : "truncate"}`}
+        >
+          不是本站的网页，它能看到你的 IP 和浏览器信息
         </span>
       </span>
-      {children}
+      <BarSize.Provider value={tall ? "icon-sm" : "icon-xs"}>
+        {children}
+      </BarSize.Provider>
     </div>
   );
 }
@@ -381,6 +422,7 @@ function SideWindow({
   open,
   frame,
   sideIsNarrow,
+  closing,
   onToggleWidth,
   onHide,
 }: {
@@ -391,9 +433,12 @@ function SideWindow({
   open: boolean;
   frame: Frame;
   sideIsNarrow: boolean;
+  /** The line is dragged past its end: let go and the page closes. */
+  closing: boolean;
   onToggleWidth: () => void;
   onHide: () => void;
 }) {
+  const reduced = useReducedMotionPref();
   return (
     <div
       className="relative shrink-0"
@@ -416,7 +461,7 @@ function SideWindow({
             className="absolute inset-y-0 left-0 flex w-full flex-col"
             style={{ minWidth: SIDE_MIN }}
           >
-            <TitleBar host={hostOf(url)}>
+            <TitleBar host={hostOf(url)} tall>
               <Reload />
               <OpenElsewhere url={url} />
               <BarButton
@@ -429,11 +474,48 @@ function SideWindow({
                 <X />
               </BarButton>
             </TitleBar>
-            <div className="relative min-h-0 flex-1 bg-white/60">
-              <Page url={url} />
+            {/* While the line is dragged the page takes no pointer: over
+                its frame the moves would go to it, not to the line. */}
+            <div
+              className={`relative min-h-0 flex-1 bg-white/60 ${
+                frame.holding ? "pointer-events-none" : ""
+              }`}
+            >
+              <Page url={url} active={open} />
             </div>
           </div>
           <MorphVeil tick={frame.tick} hold={frame.holding} />
+          {/* Dragged past its end: the whole window under a red blur. */}
+          <AnimatePresence>
+            {closing && (
+              <motion.div
+                key="closing"
+                role="status"
+                className="absolute inset-0 z-[110] grid place-items-center bg-[rgb(176_18_40/0.45)] text-white backdrop-blur-md backdrop-saturate-150"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: reduced ? 0 : 0.16, ease }}
+              >
+                <span className="grid justify-items-center gap-3 px-6 text-center">
+                  <motion.span
+                    className="grid size-14 place-items-center rounded-full bg-white/20 ring-1 ring-white/50"
+                    initial={{ scale: reduced ? 1 : 0.6 }}
+                    animate={{ scale: 1 }}
+                    transition={
+                      reduced
+                        ? { duration: 0 }
+                        : { type: "spring", stiffness: 520, damping: 22 }
+                    }
+                  >
+                    <X className="size-7" aria-hidden="true" />
+                  </motion.span>
+                  <span className="text-base font-semibold">松手关闭网页</span>
+                  <span className="text-xs text-white/80">往回拖可以取消</span>
+                </span>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </Squircle>
     </div>
@@ -445,12 +527,16 @@ function Divider({
   value,
   min,
   max,
+  armed,
   onChange,
   onDragging,
 }: {
   value: number;
   min: number;
   max: number;
+  /** Dragged past its end: the page closes on letting go. */
+  armed: boolean;
+  /** The width asked for, not held to min and max. */
   onChange: (width: number) => void;
   onDragging: (dragging: boolean) => void;
 }) {
@@ -466,7 +552,7 @@ function Divider({
       tabIndex={0}
       aria-orientation="vertical"
       aria-label="拖动调整两个窗口的宽度"
-      aria-valuenow={Math.round(value)}
+      aria-valuenow={Math.round(Math.min(value, max))}
       aria-valuemin={min}
       aria-valuemax={max}
       className="group absolute top-1/2 z-10 grid h-28 w-4 -translate-x-1/2 -translate-y-1/2 cursor-col-resize touch-none place-items-center outline-none"
@@ -489,7 +575,9 @@ function Divider({
         event.preventDefault();
       }}
     >
-      <span className="h-12 w-1 rounded-full bg-white/45 shadow-sm transition-[background-color,height] group-hover:h-16 group-hover:bg-white group-focus-visible:h-16 group-focus-visible:bg-white" />
+      <span
+        className={`h-12 w-1 rounded-full shadow-sm transition-[background-color,height] group-hover:h-16 group-focus-visible:h-16 ${armed ? "h-16 bg-danger" : "bg-white/45 group-hover:bg-white group-focus-visible:bg-white"}`}
+      />
     </div>
   );
 }
@@ -556,8 +644,82 @@ type Stop = "peek" | "full";
 const sheetStopAtom = atom<Stop>("peek");
 
 /**
- * Phones: the page in a sheet pulled up from the bottom. Off a 红包 page
- * it goes below the screen, still loaded.
+ * The sheet down, as it shows at the bottom of the 红包 page: one wide
+ * button (a tap pulls it up; it can be dragged up too), in the 红包's own
+ * colour, the arrow nodding upward.
+ */
+function PeekBar({
+  host,
+  onOpen,
+  onPointerDown,
+}: {
+  host: string;
+  onOpen: () => void;
+  onPointerDown: (event: ReactPointerEvent) => void;
+}) {
+  const reduced = useReducedMotionPref();
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      onPointerDown={onPointerDown}
+      aria-label={`上拉查看发红包的人的网页：${host}`}
+      className="flex h-12 shrink-0 touch-none items-center gap-3 px-4 text-left"
+    >
+      <span className="grid size-8 shrink-0 place-items-center rounded-full bg-accent text-white shadow-sm">
+        <Globe className="size-4" aria-hidden="true" />
+      </span>
+      <span className="grid min-w-0 flex-1 leading-tight">
+        <span className="truncate text-sm font-semibold text-ink">
+          上拉查看发红包的人的网页
+        </span>
+        <span className="truncate font-mono text-[11px] text-ink-3">
+          {host}
+        </span>
+      </span>
+      <motion.span
+        aria-hidden="true"
+        className="grid size-8 place-items-center text-accent"
+        animate={reduced ? undefined : { y: [0, -4, 0] }}
+        transition={{ duration: 1.4, repeat: Number.POSITIVE_INFINITY, ease }}
+      >
+        <ChevronUp className="size-5" />
+      </motion.span>
+    </button>
+  );
+}
+
+/**
+ * Something of the 红包 window's dims the whole screen: one of its dialogs
+ * (名单弹窗, 用户卡片, a confirmation) or its expanded 指令框.
+ */
+function useWindowCovered() {
+  const panel = useLocation({
+    select: (location) => Boolean(location.state.panel),
+  });
+  const dialogs = useAtomValue(windowDialogsAtom) > 0;
+  const omnibox = useOmniboxMode() === "expanded";
+  return panel || dialogs || omnibox;
+}
+
+/**
+ * A tap on the sheet's 压暗层 is a tap on the window's: what is on top
+ * closes (a dialog opened over another is drawn, and its 压暗层 put, after
+ * it).
+ */
+function tapWindowScrim() {
+  const scrims = document.querySelectorAll<HTMLElement>(
+    "[data-window-layer] .scrim",
+  );
+  scrims[scrims.length - 1]?.click();
+}
+
+/**
+ * Phones: the page in a sheet pulled up from the bottom. It comes up from
+ * below with a bounce and, once, nods up as if pulled, until touched. Off
+ * a 红包 page it goes below the screen, still loaded. While the 红包
+ * window's dialog is open it goes down to its bar, under the same 压暗层
+ * as the window, and cannot be pulled: the dialog is over everything.
  */
 function Sheet({
   url,
@@ -574,9 +736,27 @@ function Sheet({
   const host = hostOf(url);
   const full = Math.round(height * 0.92);
   const [stop, go] = useAtom(sheetStopAtom);
+  const covered = useWindowCovered() && shown;
+  useEffect(() => {
+    if (covered) go("peek");
+  }, [covered, go]);
   const offsetOf = (at: Stop) =>
     !shown ? full + 24 : at === "full" ? 0 : full - SHEET_PEEK;
   const up = shown && stop !== "peek";
+  // Only coming up from below to the bar bounces: anywhere else a bounce
+  // would show the screen's edge under the sheet.
+  const target = offsetOf(stop);
+  const [last, setLast] = useState(target);
+  const [rising, setRising] = useState(true);
+  if (target !== last) {
+    setLast(target);
+    setRising(last === full + 24 && target === full - SHEET_PEEK);
+  }
+  // A drag ends in a click too: that click is not a tap.
+  const dragged = useRef(false);
+  // Until it is touched, it nods up once after coming in.
+  const [touched, setTouched] = useState(false);
+  const nod = shown && stop === "peek" && !touched && !covered && !reduced;
   return (
     <>
       <AnimatePresence>
@@ -603,12 +783,14 @@ function Sheet({
           left: inset,
           right: inset,
         }}
-        initial={false}
-        animate={{ y: offsetOf(stop) }}
+        initial={{ y: full + 24 }}
+        animate={{ y: target }}
         transition={
           reduced
             ? { duration: 0 }
-            : { type: "spring", damping: 34, stiffness: 340 }
+            : rising
+              ? { type: "spring", damping: 14, stiffness: 260 }
+              : { type: "spring", damping: 34, stiffness: 340 }
         }
         aria-hidden={!shown}
         inert={!shown}
@@ -618,6 +800,11 @@ function Sheet({
         dragConstraints={{ top: 0, bottom: full - SHEET_PEEK }}
         dragElastic={0.08}
         dragMomentum={false}
+        onDragStart={() => {
+          dragged.current = true;
+          setTouched(true);
+          setRising(false);
+        }}
         onDragEnd={(_, info) => {
           // Past halfway, or flicked, it goes the rest of the way.
           const at = offsetOf(stop) + info.offset.y;
@@ -627,33 +814,81 @@ function Sheet({
           go(next);
         }}
       >
-        <SquirclePlate className="window-plate" radius={radius.window} />
-        <Squircle radius={radius.window}>
-          <div className="window-glass absolute inset-0 flex flex-col overflow-hidden select-none">
-            <div
-              aria-hidden="true"
-              className="grid h-4 shrink-0 cursor-grab touch-none place-items-center"
-              onPointerDown={(event) => drag.start(event)}
-            >
-              <span className="h-1 w-10 rounded-full bg-ink-3/40" />
+        <motion.div
+          className="absolute inset-0"
+          inert={covered}
+          animate={nod ? { y: [0, -18, 0, -8, 0] } : { y: 0 }}
+          transition={
+            nod
+              ? {
+                  duration: 1.2,
+                  delay: 1.1,
+                  times: [0, 0.3, 0.55, 0.75, 1],
+                  ease: "easeInOut",
+                }
+              : { duration: 0.2 }
+          }
+        >
+          <SquirclePlate className="window-plate" radius={radius.window} />
+          <Squircle radius={radius.window}>
+            <div className="window-glass absolute inset-0 overflow-hidden select-none">
+              {/* Over the glass's light, not under it. */}
+              <div className="absolute inset-0 flex flex-col">
+                <div
+                  aria-hidden="true"
+                  className="grid h-4 shrink-0 cursor-grab touch-none place-items-center"
+                  onPointerDown={(event) => drag.start(event)}
+                >
+                  <span className="h-1 w-10 rounded-full bg-ink-3/40" />
+                </div>
+                {up ? (
+                  <TitleBar
+                    host={host}
+                    onPointerDown={(event) => drag.start(event)}
+                  >
+                    <Reload />
+                    <BarButton label="收起" onClick={() => go("peek")}>
+                      <ChevronDown />
+                    </BarButton>
+                  </TitleBar>
+                ) : (
+                  <PeekBar
+                    host={host}
+                    onPointerDown={(event) => {
+                      dragged.current = false;
+                      drag.start(event);
+                    }}
+                    onOpen={() => {
+                      setTouched(true);
+                      if (!dragged.current) go("full");
+                    }}
+                  />
+                )}
+                <div
+                  className="relative shrink-0 bg-white/60 select-text"
+                  style={{ height: full - SHEET_HEAD }}
+                >
+                  <Page url={url} active={up} />
+                </div>
+              </div>
             </div>
-            <TitleBar host={host} onPointerDown={(event) => drag.start(event)}>
-              <Reload />
-              <BarButton
-                label={up ? "收起" : "拉起"}
-                onClick={() => go(up ? "peek" : "full")}
-              >
-                {up ? <ChevronDown /> : <ChevronUp />}
-              </BarButton>
-            </TitleBar>
-            <div
-              className="relative shrink-0 bg-white/60 select-text"
-              style={{ height: full - SHEET_HEAD }}
-            >
-              <Page url={url} />
-            </div>
-          </div>
-        </Squircle>
+          </Squircle>
+        </motion.div>
+        <AnimatePresence>
+          {covered && (
+            <Squircle key="dim" radius={radius.window}>
+              <motion.div
+                aria-hidden="true"
+                className="scrim absolute inset-0"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: reduced ? 0 : 0.22, ease }}
+                onClick={tapWindowScrim}
+              />
+            </Squircle>
+          )}
+        </AnimatePresence>
       </motion.div>
     </>
   );
@@ -701,7 +936,13 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
   const cornerRadius = roomy ? radius.window : radius.windowMid;
   const both = Math.min(SPLIT_MAX, vw - (roomy ? 64 : 32));
   const maxMain = both - GAP - SIDE_MIN;
-  const mainWidth = Math.max(MAIN_MIN, Math.min(held.mainWidth, maxMain));
+  // Dragged past the end, the line gives a little and, far enough, closes
+  // the page on letting go (dragged back, it does not).
+  const [pull, setPull] = useState(0);
+  const dragFrom = useRef(MAIN_BESIDE);
+  const armed = pull >= PULL_CLOSE;
+  const mainWidth =
+    Math.max(MAIN_MIN, Math.min(held.mainWidth, maxMain)) + pullGive(pull);
   const sideWidth = both - GAP - mainWidth;
   const sideIsNarrow = sideWidth < SIDE_MIN + 40;
 
@@ -741,6 +982,37 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
   };
   const setOpen = (open: boolean) =>
     change(() => setHeld((current) => ({ ...current, open })));
+  // Asked from the page (the cover's tag, a note's button).
+  const openRequest = useAtomValue(openRequestAtom);
+  const answered = useRef(openRequest);
+  const setSheetStop = useSetAtom(sheetStopAtom);
+  const router = useRouter();
+  useEffect(() => {
+    if (answered.current === openRequest) return;
+    answered.current = openRequest;
+    if (!onPage) return;
+    if (!wide) {
+      // Asked from a dialog (the 说明弹窗): over it the sheet could not
+      // come up, so the dialog closes first.
+      closeOverlay(router);
+      setSheetStop("full");
+    } else if (!held.open) {
+      if (!reduced) {
+        setTick((count) => count + 1);
+        setMoving(true);
+      }
+      setHeld((current) => ({ ...current, open: true }));
+    }
+  }, [
+    openRequest,
+    onPage,
+    wide,
+    held.open,
+    reduced,
+    router,
+    setHeld,
+    setSheetStop,
+  ]);
 
   const frame: Frame = {
     width: split ? mainWidth : null,
@@ -786,6 +1058,7 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
             open={split}
             frame={frame}
             sideIsNarrow={sideIsNarrow}
+            closing={armed}
             onToggleWidth={() =>
               change(() =>
                 setHeld((current) => ({
@@ -832,13 +1105,32 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
                   value={mainWidth}
                   min={MAIN_MIN}
                   max={maxMain}
-                  onChange={(width) =>
+                  armed={armed}
+                  onChange={(width) => {
+                    if (dragging) setPull(Math.max(0, width - maxMain));
                     setHeld((current) => ({
                       ...current,
                       mainWidth: Math.max(MAIN_MIN, Math.min(width, maxMain)),
-                    }))
-                  }
-                  onDragging={setDragging}
+                    }));
+                  }}
+                  onDragging={(on) => {
+                    setDragging(on);
+                    if (on) {
+                      dragFrom.current = Math.min(held.mainWidth, maxMain);
+                      return;
+                    }
+                    setPull(0);
+                    // Let go past the end: the page closes, and opens
+                    // again at the width it had before the drag.
+                    if (armed)
+                      change(() =>
+                        setHeld((current) => ({
+                          ...current,
+                          open: false,
+                          mainWidth: dragFrom.current,
+                        })),
+                      );
+                  }}
                 />
               </motion.div>
             </div>

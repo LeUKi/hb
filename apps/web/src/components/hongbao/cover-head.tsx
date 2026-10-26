@@ -1,11 +1,12 @@
 import { levelPhrase, type PublicClaimScope, scopeTag } from "@hb/contracts";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Globe } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { cn } from "../../lib/cn";
 import { glossary } from "../../lib/glossary";
 import type { HongbaoActivity } from "../../lib/hongbao";
 import { splitNames, splitRules } from "../../lib/hongbao-text";
+import { useAttachedPageOpener } from "../shell/attached-page";
 import { useWindowInfo } from "../shell/window-info";
 import { Avatar } from "../ui/avatar";
 import { EmojiText } from "../ui/emoji-text";
@@ -190,6 +191,7 @@ export function CoverHead({
   onOpenNote: () => void;
 }) {
   const small = motions.state === "small";
+  const page = useAttachedPageOpener();
   const { compact } = useWindowInfo();
   const author = activity.author.displayName;
   const note = activity.beforeInfo.trim();
@@ -353,6 +355,18 @@ export function CoverHead({
                   来自帖子
                   <ArrowUpRight className="size-3.5" aria-hidden="true" />
                 </a>
+              </Squircle>
+            )}
+            {page.available && (
+              <Squircle radius={10}>
+                <button
+                  type="button"
+                  onClick={page.open}
+                  className="hb-chip-red hb-chip-link inline-flex h-7 items-center gap-1 px-2.5 text-xs focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-cream)] focus-visible:outline-none"
+                >
+                  <Globe className="size-3.5" aria-hidden="true" />
+                  附带网页
+                </button>
               </Squircle>
             )}
           </motion.div>

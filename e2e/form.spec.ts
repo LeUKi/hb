@@ -336,7 +336,7 @@ test.describe("发红包", () => {
     const sheet = page.getByRole("dialog", { name: "更多设置" });
     const field = sheet.getByRole("region", { name: "附带网页" });
     await expect(field).toContainText(
-      "选填。红包页旁边会显示这个网页（手机上在底部），比如题目、规则或排行榜。开放后不能改。",
+      "选填。红包页旁边会显示这个网页（手机上在底部），比如题目、规则或排行榜。开放后不能改。说明里写 [文字](#附带网页) 会显示成打开它的按钮。",
     );
     const input = sheet.locator("#hb-page");
     await input.fill("http://example.com/题目");

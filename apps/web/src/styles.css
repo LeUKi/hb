@@ -568,6 +568,28 @@
     text-decoration: underline;
     text-underline-offset: 2px;
   }
+  /* `[文字](#附带网页)`: a button that opens the 红包's 附带网页. */
+  :is(.md-preview, .md) :where(.md-page) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+    margin-inline: 0.125em;
+    padding: 0.125em 0.6em;
+    vertical-align: baseline;
+    font-size: 0.875em;
+    font-weight: 600;
+    line-height: 1.5;
+    background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+    color: var(--color-accent-ink);
+    transition: background-color 160ms var(--ease-snappy);
+  }
+  :is(.md-preview, .md) :where(.md-page) svg {
+    width: 1.1em;
+    height: 1.1em;
+  }
+  :is(.md-preview, .md) :where(button.md-page):hover {
+    background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  }
   :is(.md-preview, .md) :where(code) {
     font-family: var(--font-mono);
     font-size: 0.875em;
@@ -614,6 +636,13 @@
       var(--color-cream) 60%,
       transparent
     );
+  }
+  .md-red :where(.md-page) {
+    background: rgb(255 255 255 / 0.15);
+    color: var(--color-cream);
+  }
+  .md-red :where(button.md-page):hover {
+    background: rgb(255 255 255 / 0.25);
   }
   .md-red :where(code, blockquote) {
     color: var(--color-cream-2);
