@@ -8,7 +8,6 @@ import { Button } from "../ui/button";
 import { ChoiceCards, Field, Switch, TextInput } from "../ui/field";
 import { Reveal } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
-import { AttachedPageGuide } from "./attached-page-guide";
 import {
   AlgorithmCards,
   DrawLimitField,
@@ -165,8 +164,6 @@ export function SettingsSheet({
   const noteTitleId = useId();
   const scroller = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState<NoteKey | null>(null);
-  // 附带网页's 接入说明, over the panel.
-  const [guide, setGuide] = useState(false);
   const groups = groupsOf(form, opened);
   // 附带网页: the address last left, and whether that page may be framed.
   const [checkedPage, setCheckedPage] = useState(() =>
@@ -220,7 +217,7 @@ export function SettingsSheet({
         labelledBy={titleId}
         width="32rem"
         initialFocus={showTarget}
-        inert={note !== null || guide}
+        inert={note !== null}
       >
         <div className="flex h-[min(40rem,80cqh)] min-h-0 flex-col">
           <header className="flex items-center justify-between gap-3 px-5 pt-4 pb-2">
@@ -452,15 +449,16 @@ export function SettingsSheet({
                 title="附带网页"
                 badge={<PlusBadge />}
                 action={
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    aria-haspopup="dialog"
-                    onClick={() => setGuide(true)}
+                  // In a new tab: the form stays as it is.
+                  <a
+                    href="/help/page"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-sm text-accent-ink hover:underline"
                   >
-                    <BookOpen />
-                    接入说明
-                  </Button>
+                    <BookOpen className="size-4" aria-hidden="true" />
+                    接入说明 ↗
+                  </a>
                 }
               >
                 <Field
@@ -511,14 +509,14 @@ export function SettingsSheet({
                   normalizePageUrl(form.page) === checkedPage && (
                     <p className="text-sm text-warning">
                       这个网站不允许被嵌入，红包页上会显示不出来，只能在新标签页打开。
-                      <button
-                        type="button"
-                        aria-haspopup="dialog"
-                        onClick={() => setGuide(true)}
+                      <a
+                        href="/help/page#embed"
+                        target="_blank"
+                        rel="noreferrer"
                         className="ml-1 text-accent-ink underline underline-offset-2"
                       >
-                        怎么让它能嵌入
-                      </button>
+                        怎么让它能嵌入 ↗
+                      </a>
                     </p>
                   )}
               </Setting>
@@ -639,8 +637,6 @@ export function SettingsSheet({
           </div>
         )}
       </WindowDialog>
-
-      <AttachedPageGuide open={open && guide} onClose={() => setGuide(false)} />
     </>
   );
 }

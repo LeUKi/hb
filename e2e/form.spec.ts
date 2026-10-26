@@ -349,23 +349,13 @@ test.describe("发红包", () => {
     const refused =
       "这个网站不允许被嵌入，红包页上会显示不出来，只能在新标签页打开。";
     await expect(field).toContainText(refused);
-    // 怎么让它能嵌入, like 接入说明, opens the guide over the panel.
-    await field.getByRole("button", { name: "怎么让它能嵌入" }).click();
-    const guide = page.getByRole("dialog", { name: "附带网页接入说明" });
-    await expect(guide).toBeVisible();
-    await expect(guide).toContainText("frame-ancestors 'self'");
-    await expect(guide).toContainText("SameSite=None");
-    await expect(
-      guide.getByRole("button", { name: /复制给 AI 的提示词/ }),
-    ).toBeVisible();
-    await guide.getByRole("button", { name: "知道了" }).click();
-    await expect(guide).toHaveCount(0);
-    await expect(sheet).toBeVisible();
-    await field.getByRole("button", { name: "接入说明" }).click();
-    await expect(guide).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(guide).toHaveCount(0);
-    await expect(sheet).toBeVisible();
+    // 怎么让它能嵌入 and 接入说明: /help/page in a new tab (the form stays).
+    const how = field.getByRole("link", { name: "怎么让它能嵌入 ↗" });
+    await expect(how).toHaveAttribute("href", "/help/page#embed");
+    await expect(how).toHaveAttribute("target", "_blank");
+    const guide = field.getByRole("link", { name: "接入说明 ↗" });
+    await expect(guide).toHaveAttribute("href", "/help/page");
+    await expect(guide).toHaveAttribute("target", "_blank");
     expect(checked).toEqual([
       "https://puzzle.example.com/%E9%A2%98%E7%9B%AE?day=3",
     ]);
@@ -395,6 +385,40 @@ test.describe("发红包", () => {
       pageUrl: "https://puzzle.example.com/other",
       beforeInfo: "今天的题在旁边，[看题](#附带网页)",
     });
+  });
+
+  test("附带网页 · 接入说明：独立的帮助子页，复制给 AI 的说明在 #ai", async ({
+    page,
+  }) => {
+    await mockSession(page, { ...viewer, balancePlus: true });
+    await openApp(page, "/help");
+    await page.getByRole("link", { name: /附带网页 · 接入说明/ }).click();
+    await expect(page).toHaveURL(/\/help\/page$/);
+    await expect(
+      page.getByRole("heading", { name: /附带网页 · 接入说明/ }),
+    ).toBeVisible();
+    for (const title of [
+      "给 AI 的说明",
+      "1. 允许红包站嵌入",
+      "2. 沿用网站自己的登录",
+      "3. 没登录过：在新窗口里登录",
+      "4. 知道是哪个红包",
+      "5. 能做和不能做的",
+    ])
+      await expect(page.getByRole("heading", { name: title })).toBeVisible();
+    // The prompt says where this page is; the steps carry the lines.
+    await expect(page.getByText(/说明文档：.*\/help\/page/)).toBeVisible();
+    await expect(
+      page.getByText(
+        /^Content-Security-Policy: frame-ancestors 'self' https?:\/\/\S+$/,
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Set-Cookie: session=…; Path=/; Secure; HttpOnly"),
+    ).toBeVisible();
+    // The anchors the form's links open at.
+    for (const id of ["ai", "embed", "login"])
+      await expect(page.locator(`#${id}`)).toHaveCount(1);
   });
 
   test("更多设置：不能附带网页的人看不到这一项，存草稿不带", async ({

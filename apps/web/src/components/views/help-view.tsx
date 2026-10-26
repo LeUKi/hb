@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Braces, ChevronRight } from "lucide-react";
+import { Braces, ChevronRight, Globe } from "lucide-react";
 import { RED_PACKET } from "../../lib/activity-route";
 import {
   commands,
@@ -158,6 +158,24 @@ export function HelpView() {
                 <Braces className="size-[18px] shrink-0 text-ink-2" />
                 <span className="min-w-0 flex-1 truncate text-ink">
                   代码判定红包 · 开发文档
+                </span>
+                <PlusBadge />
+                <ChevronRight
+                  className="size-4 shrink-0 text-ink-3"
+                  aria-hidden="true"
+                />
+              </Link>
+            </Squircle>
+          </li>
+          <li>
+            <Squircle radius={radius.row}>
+              <Link
+                to="/help/page"
+                className="flex min-h-12 items-center gap-3 px-3 py-2 transition-colors hover:bg-fill-2"
+              >
+                <Globe className="size-[18px] shrink-0 text-ink-2" />
+                <span className="min-w-0 flex-1 truncate text-ink">
+                  附带网页 · 接入说明
                 </span>
                 <PlusBadge />
                 <ChevronRight
