@@ -175,9 +175,14 @@ export function OmniboxField({
       layer.style.transform = `translate(${-input.scrollLeft}px, ${-input.scrollTop}px)`;
   }, []);
 
+  // Only when what is shown changes: reading scrollLeft lays the page out,
+  // and the field renders on every frame of a window resize. Scrolls and
+  // selections have their own events (below), a width clamping the scroll
+  // too.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the text and its type set where the field scrolls
   useLayoutEffect(() => {
     syncScroll();
-  });
+  }, [syncScroll, value, lines, lineHeight, compact, mono]);
 
   const setInput = useCallback((element: HTMLTextAreaElement | null) => {
     inputRef.current = element;

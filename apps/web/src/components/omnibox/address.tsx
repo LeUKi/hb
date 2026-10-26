@@ -37,17 +37,23 @@ function FitCode({ text }: { text: string }) {
   useLayoutEffect(() => {
     const element = ref.current;
     if (!element) return;
-    const fit = () => {
-      element.style.fontSize = "15px";
-      const natural = element.scrollWidth;
-      const room = element.clientWidth;
+    // Its width at 15px, once (the text is this one's for good): set and
+    // read on each resize, it laid the page out on every frame of one.
+    element.style.fontSize = "15px";
+    const natural = element.scrollWidth;
+    const fit = (room: number) => {
       const next = Math.max(8, Math.min(15, (15 * room) / natural - 0.1));
       element.style.fontSize = `${next}px`;
       setSize(next);
     };
-    fit();
-    const observer = new ResizeObserver(fit);
-    if (element.parentElement) observer.observe(element.parentElement);
+    fit(element.clientWidth);
+    // Its own width (flex: the room left beside the rest of the bar), as
+    // the observer measured it.
+    const observer = new ResizeObserver((entries) => {
+      const room = entries[0]?.contentRect.width;
+      if (room !== undefined) fit(room);
+    });
+    observer.observe(element);
     return () => observer.disconnect();
   }, []);
   return (

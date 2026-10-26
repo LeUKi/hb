@@ -31,15 +31,23 @@ export function senderPagePath(id: string, page: SenderPage) {
   return `${activityPath(id)}/${senderPages[page].emoji}`;
 }
 
+/** The last codes read: the page's own is read again on every render. */
+const decoded = new Map<string, string | null>();
+
 /** Decode a route param (already percent-decoded by the router, usually). */
 export function activityIdFromCode(code: string): string | null {
-  const direct = decodeActivityEmoji(code);
-  if (direct) return direct;
-  try {
-    return decodeActivityEmoji(decodeURIComponent(code));
-  } catch {
-    return null;
-  }
+  const known = decoded.get(code);
+  if (known !== undefined) return known;
+  let id = decodeActivityEmoji(code);
+  if (!id)
+    try {
+      id = decodeActivityEmoji(decodeURIComponent(code));
+    } catch {
+      id = null;
+    }
+  if (decoded.size >= 32) decoded.clear();
+  decoded.set(code, id ?? null);
+  return id ?? null;
 }
 
 /**

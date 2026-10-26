@@ -22,6 +22,7 @@ import {
 } from "../omnibox/state";
 import { AppWindow } from "./app-window";
 import { AttachedPageLayout } from "./attached-page";
+import { DesktopGlows } from "./desktop-glows";
 import { SlotProvider } from "./slots";
 
 /** Queries that hold no account's data: kept across sign-in and sign-out. */
@@ -149,11 +150,7 @@ export function Shell() {
           data-motion={reduced ? "reduce" : undefined}
           className="desktop-bg fixed inset-0 grid place-items-center overflow-hidden"
         >
-          <div aria-hidden="true" className="desktop-glows">
-            <span className="desktop-glow desktop-glow-gold" />
-            <span className="desktop-glow desktop-glow-coral" />
-            <span className="desktop-glow desktop-glow-ember" />
-          </div>
+          <DesktopGlows />
           <AttachedPageLayout>
             <AppWindow />
           </AttachedPageLayout>

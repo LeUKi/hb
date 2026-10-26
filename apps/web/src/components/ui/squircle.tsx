@@ -102,7 +102,9 @@ export const radius = {
 
 type Box = { width: number; height: number; clips: boolean; scrolls: boolean };
 
-// One observer for every squircle; callbacks run after layout, before paint.
+// One observer for every squircle; callbacks run after layout, before paint,
+// all of one round's in a single synchronous render: a window resize changes
+// many at once, and one flush each meant as many commits a frame.
 const listeners = new WeakMap<
   Element,
   (size: { width: number; height: number }) => void
@@ -114,14 +116,16 @@ function observe(
   listener: (size: { width: number; height: number }) => void,
 ) {
   observer ??= new ResizeObserver((entries) => {
-    for (const entry of entries) {
-      const box = entry.borderBoxSize?.[0];
-      if (box)
-        listeners.get(entry.target)?.({
-          width: box.inlineSize,
-          height: box.blockSize,
-        });
-    }
+    flushSync(() => {
+      for (const entry of entries) {
+        const box = entry.borderBoxSize?.[0];
+        if (box)
+          listeners.get(entry.target)?.({
+            width: box.inlineSize,
+            height: box.blockSize,
+          });
+      }
+    });
   });
   listeners.set(element, listener);
   observer.observe(element);
@@ -159,7 +163,7 @@ function useBorderBox() {
             },
       );
     update({ width: element.offsetWidth, height: element.offsetHeight });
-    return observe(element, (next) => flushSync(() => update(next)));
+    return observe(element, update);
   }, []);
   return [ref, box] as const;
 }

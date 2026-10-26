@@ -810,15 +810,9 @@ function SheetHeader({
         onClick={onToggle}
         className="grid size-8 shrink-0 place-items-center text-accent"
       >
-        <motion.span
-          className="grid"
-          animate={reduced || up ? { y: 0 } : { y: [0, -4, 0] }}
-          transition={
-            reduced || up
-              ? { duration: 0.2 }
-              : { duration: 1.4, repeat: Number.POSITIVE_INFINITY, ease }
-          }
-        >
+        {/* Down, it nods up: a CSS animation, on the compositor (driven
+            from script it ran a frame of work for as long as it showed). */}
+        <span className={`grid ${up ? "" : "hb-nudge-up"}`}>
           <motion.span
             className="grid"
             animate={{ rotate: up ? 180 : 0 }}
@@ -826,7 +820,7 @@ function SheetHeader({
           >
             <ChevronUp className="size-5" />
           </motion.span>
-        </motion.span>
+        </span>
       </button>
     </div>
   );

@@ -27,7 +27,11 @@ const SETTLE_MS = 1000;
 function useKeyboard(setInset: (inset: number) => void) {
   useEffect(() => {
     const viewport = window.visualViewport;
-    if (!viewport) return;
+    // Only where a finger types on the screen: with a mouse there is no
+    // keyboard to follow, and each round reads the layout every frame for
+    // a second after any focus or resize (opening the page window, dragging
+    // the line between the windows).
+    if (!viewport || !matchMedia("(any-pointer: coarse)").matches) return;
     let follow = false;
     let shift = 0;
     let frame = 0;

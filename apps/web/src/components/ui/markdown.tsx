@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Globe } from "lucide-react";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "../../lib/cn";
@@ -114,9 +114,11 @@ function NoteLink({ href, children }: { href?: string; children: ReactNode }) {
 
 /**
  * A sender's note. `tone` picks the colours: on the glass, or cream on the
- * 红包's red (06 §7).
+ * 红包's red (06 §7). Parsed again only when the text changes: the cover
+ * renders on every frame of a window resize, and parsing is the dearest
+ * part of it.
  */
-export function NoteMarkdown({
+export const NoteMarkdown = memo(function NoteMarkdown({
   children,
   tone = "glass",
   className,
@@ -152,7 +154,7 @@ export function NoteMarkdown({
       </Markdown>
     </div>
   );
-}
+});
 
 /**
  * The note as one line of plain text (the small cover's summary): links

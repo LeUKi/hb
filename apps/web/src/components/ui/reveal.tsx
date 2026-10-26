@@ -121,13 +121,20 @@ export function Reveal({
   const reduced = useReducedMotionPref();
   // Out of the flow, so it takes no gap; it finds the parent's gap and
   // which side of the content it is on. Read as the content arrives or
-  // leaves (the probe is from the last commit).
+  // leaves (the probe is from the last commit), and only then: the edge
+  // only shapes opening and closing, and read on every render it laid the
+  // page out on each frame of a window resize.
   const probe = useRef<HTMLSpanElement>(null);
-  const edge: Edge = {
-    gap: probe.current ? parentGap(probe.current) : 0,
-    top: probe.current ? followsSibling(probe.current) : true,
-    reduced,
-  };
+  const read = useRef<{ show: boolean; gap: number; top: boolean } | null>(
+    null,
+  );
+  if (read.current?.show !== show)
+    read.current = {
+      show,
+      gap: probe.current ? parentGap(probe.current) : 0,
+      top: probe.current ? followsSibling(probe.current) : true,
+    };
+  const edge: Edge = { gap: read.current.gap, top: read.current.top, reduced };
   useLayoutEffect(() => warnGrid(probe.current, "Reveal"), []);
   return (
     <>
@@ -234,9 +241,19 @@ export function RevealInline({
 }) {
   const reduced = useReducedMotionPref();
   const probe = useRef<HTMLSpanElement>(null);
+  // As Reveal's: read only as it opens or closes.
+  const read = useRef<{ show: boolean; gap: number; start: boolean } | null>(
+    null,
+  );
+  if (read.current?.show !== show)
+    read.current = {
+      show,
+      gap: probe.current ? parentColumnGap(probe.current) : 0,
+      start: probe.current ? followsSibling(probe.current) : true,
+    };
   const edge: InlineEdge = {
-    gap: probe.current ? parentColumnGap(probe.current) : 0,
-    start: probe.current ? followsSibling(probe.current) : true,
+    gap: read.current.gap,
+    start: read.current.start,
     reduced,
   };
   return (
@@ -315,8 +332,11 @@ export function Swap({
     const element = surface.current;
     if (!element) return;
     height.current = element.offsetHeight;
-    const observer = new ResizeObserver(() => {
-      height.current = element.offsetHeight;
+    // The size the observer measured: reading it again could lay the page
+    // out once more, after another observer has changed it.
+    const observer = new ResizeObserver((entries) => {
+      const box = entries[0]?.borderBoxSize?.[0];
+      height.current = box ? box.blockSize : element.offsetHeight;
     });
     observer.observe(element);
     return () => observer.disconnect();

@@ -344,7 +344,8 @@
 
 @layer components {
   /* 背景: a deep crimson base with three lantern glows (.desktop-glow) that
-     drift and breathe. At rest the glows match the boot loader exactly. */
+     drift and breathe, moved in steps (shell/desktop-glows.tsx). At rest
+     the glows match the boot loader exactly. */
   .desktop-bg {
     background: radial-gradient(
       120% 100% at 15% 0%,
@@ -387,36 +388,12 @@
     --r: 18vmax;
     --c: rgb(242 196 109 / 0.18);
   }
-  /* Only where the 背景 shows around the window; a full-screen phone window
-     hides it. Cycle lengths share no factor, so the drift never repeats. */
+  /* Only where the 背景 shows around the window (a full-screen phone
+     window hides it): their own layers, so a step only recomposites. */
   @media (min-width: 640px) and (min-height: 560px) {
     .desktop-glow {
       will-change: transform, opacity;
     }
-    .desktop-glow-gold {
-      animation:
-        glow-drift-gold 37s ease-in-out infinite alternate,
-        glow-breathe 23s ease-in-out infinite alternate;
-    }
-    .desktop-glow-coral {
-      animation:
-        glow-drift-coral 29s ease-in-out infinite alternate,
-        glow-breathe 31s ease-in-out infinite alternate;
-    }
-    .desktop-glow-ember {
-      animation:
-        glow-drift-ember 43s ease-in-out infinite alternate,
-        glow-breathe 20s ease-in-out infinite alternate;
-    }
-  }
-  /* Paused, not removed, so switching motion off never snaps them back. */
-  @media (prefers-reduced-motion: reduce) {
-    .desktop-glow {
-      animation-play-state: paused;
-    }
-  }
-  [data-motion="reduce"] .desktop-glow {
-    animation-play-state: paused;
   }
 
   /* 玻璃层: frosted white glass with a top light edge, the same size as the
@@ -1772,6 +1749,18 @@
       display: none;
     }
   }
+  /* 附带网页's sheet, down: its arrow nods up. */
+  .hb-nudge-up {
+    animation: hb-nudge-up 1.4s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hb-nudge-up {
+      animation: none;
+    }
+  }
+  [data-motion="reduce"] .hb-nudge-up {
+    animation: none;
+  }
   [data-motion="reduce"] .hb-live-dot::after {
     display: none;
   }
@@ -2247,24 +2236,9 @@
   user-select: none;
 }
 
-@keyframes glow-drift-gold {
-  to {
-    transform: translate(6vmax, -4vmax) scale(1.08);
-  }
-}
-@keyframes glow-drift-coral {
-  to {
-    transform: translate(-5vmax, 5vmax) scale(1.12);
-  }
-}
-@keyframes glow-drift-ember {
-  to {
-    transform: translate(-6vmax, -5vmax) scale(0.9);
-  }
-}
-@keyframes glow-breathe {
-  to {
-    opacity: 0.8;
+@keyframes hb-nudge-up {
+  50% {
+    transform: translateY(-4px);
   }
 }
 
