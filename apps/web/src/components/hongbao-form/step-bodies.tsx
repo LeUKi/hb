@@ -1,3 +1,4 @@
+import { normalizePageUrl } from "@hb/contracts";
 import { ChevronDown, DoorOpen, KeyRound, Plus } from "lucide-react";
 import { useRef, useState } from "react";
 import { flushSync } from "react-dom";
@@ -357,6 +358,7 @@ export function TitleStep({
             label="红包说明"
             hint="写在红包皮上，所有人都能看到。支持 Markdown（链接、加粗、列表）。"
             placeholder="例如：口令藏在帖子一楼的最后一句话里。"
+            pageLink={normalizePageUrl(form.page) !== null}
             value={form.beforeInfo}
             error={errorOf("hb-before-info")}
             onChange={(beforeInfo) =>

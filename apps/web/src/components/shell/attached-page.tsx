@@ -65,22 +65,69 @@ const heldAtom = atom<Held>({
 });
 /** Bumped to reload the page (刷新). */
 const reloadAtom = atom(0);
-/** Bumped to open the page: the cover's tag, a note's button. */
-const openRequestAtom = atom(0);
+/**
+ * Asked from the 红包 page (附带网页 under 分享, the cover's tag, a note's
+ * button): `n` moves on with each ask, `open` says which way.
+ */
+const requestAtom = atom({ n: 0, open: true });
+
+/** Wide enough for the page beside the 红包 window. */
+const WIDE = "(min-width: 900px) and (min-height: 560px)";
 
 /**
- * Opens the page of the 红包 page shown, when it has one: beside it on a
- * wide screen, the sheet pulled up on a narrow one.
+ * The page of the 红包 page shown, when it has one: open beside it on a
+ * wide screen, or its sheet pulled up on a narrow one.
  */
 export function useAttachedPageOpener() {
   const activityId = useCurrentActivityId();
   const held = useAtomValue(heldAtom);
-  const request = useSetAtom(openRequestAtom);
+  const stop = useAtomValue(sheetStopAtom);
+  const wide = useMedia(WIDE);
+  const request = useSetAtom(requestAtom);
+  const available =
+    held.url !== null && activityId !== null && held.forId === activityId;
+  const isOpen = available && (wide ? held.open : stop === "full");
+  const ask = (open: boolean) =>
+    request((current) => ({ n: current.n + 1, open }));
   return {
-    available:
-      held.url !== null && activityId !== null && held.forId === activityId,
-    open: () => request((count) => count + 1),
+    available,
+    isOpen,
+    open: () => ask(true),
+    toggle: () => ask(!isOpen),
   };
+}
+
+/**
+ * The 红包 whose page this browser left open beside it, newest last (the
+ * page opens there again on the next visit, docs/attached-page-design.md
+ * §2.2). Only this browser's: nothing is sent anywhere.
+ */
+const REMEMBERED = "hb.attached-page";
+const REMEMBERED_MAX = 50;
+
+function rememberedOpen(): string[] {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(REMEMBERED) ?? "[]");
+    return Array.isArray(saved)
+      ? saved.filter((id): id is string => typeof id === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberOpen(activityId: string, open: boolean) {
+  try {
+    const rest = rememberedOpen().filter((id) => id !== activityId);
+    localStorage.setItem(
+      REMEMBERED,
+      JSON.stringify(
+        open ? [...rest, activityId].slice(-REMEMBERED_MAX) : rest,
+      ),
+    );
+  } catch {
+    // Not kept (a private window): next time it starts hidden.
+  }
 }
 
 /** Both windows with the line between them: wider than one, not endless. */
@@ -582,61 +629,6 @@ function Divider({
   );
 }
 
-/** How far the tab goes in under the 红包 window when it hides. */
-const TAB_IN = -32;
-
-/**
- * Hidden on a wide screen: a tab behind the 红包 window's edge brings the
- * page back. It slides out from under the edge once the layout has settled
- * (never over a blurred window), with a small bounce to be noticed; it
- * leans out under the pointer, gives under a press, and slides back in as
- * the windows part. Behind the window, the window's own dialogs and their
- * dimming never reach it.
- */
-function EdgeTab({
-  host,
-  delay,
-  onOpen,
-}: {
-  host: string;
-  delay: number;
-  onOpen: () => void;
-}) {
-  const reduced = useReducedMotionPref();
-  return (
-    <motion.button
-      type="button"
-      onClick={onOpen}
-      aria-label={`打开 ${host} 的网页`}
-      title={`打开 ${host} 的网页`}
-      initial={{ x: TAB_IN, opacity: 0 }}
-      animate={{
-        x: 0,
-        opacity: 1,
-        transition: reduced
-          ? { duration: 0 }
-          : {
-              x: { type: "spring", stiffness: 420, damping: 15, delay },
-              opacity: { duration: 0.12, delay },
-            },
-      }}
-      whileHover={reduced ? undefined : { x: 5 }}
-      whileTap={reduced ? undefined : { scale: 0.92, x: 2 }}
-      exit={{
-        x: TAB_IN,
-        opacity: 0,
-        transition: { duration: reduced ? 0 : 0.16, ease },
-      }}
-      className="glass-pop absolute top-1/2 left-0 flex -translate-y-1/2 flex-col items-center gap-2 rounded-2xl py-3 pr-2 pl-4 text-ink-2 hover:text-ink"
-    >
-      <Globe className="size-4" aria-hidden="true" />
-      <span className="text-xs whitespace-nowrap [writing-mode:vertical-rl]">
-        附带网页
-      </span>
-    </motion.button>
-  );
-}
-
 const SHEET_PEEK = 68;
 /** The sheet's handle and title bar. */
 const SHEET_HEAD = 64;
@@ -905,11 +897,12 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
   const page = useCurrentPage(activityId);
   const [held, setHeld] = useAtom(heldAtom);
   const reduced = useReducedMotionPref();
-  const wide = useMedia("(min-width: 900px) and (min-height: 560px)");
+  const wide = useMedia(WIDE);
   const mid = useMedia("(min-width: 640px) and (min-height: 560px)");
   const roomy = useMedia("(min-width: 1024px) and (min-height: 560px)");
   const [vw, vh] = useViewport();
   // A 红包's page takes its own (or none); other pages keep what is held.
+  // On a wide screen it opens again where this browser left it open.
   const pageUrl = page?.url ?? null;
   useLayoutEffect(() => {
     if (activityId === null) return;
@@ -919,19 +912,25 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
         : {
             forId: activityId,
             url: pageUrl,
-            open: false,
+            open:
+              pageUrl !== null && wide && rememberedOpen().includes(activityId),
             loaded: false,
             mainWidth: current.mainWidth,
           },
     );
-  }, [activityId, pageUrl, setHeld]);
+  }, [activityId, pageUrl, wide, setHeld]);
   const url = held.url;
   const onPage =
     url !== null && activityId !== null && held.forId === activityId;
   const split = onPage && wide && held.open;
+  // Opened or closed beside the 红包 window (not the phone's sheet): kept
+  // for the next visit.
+  const forId = held.forId;
+  useEffect(() => {
+    if (onPage && wide && forId !== null) rememberOpen(forId, held.open);
+  }, [onPage, wide, forId, held.open]);
   // The same sizes as app-window-frame; beside the page, the two windows
   // take the desktop's width, up to SPLIT_MAX.
-  const alone = roomy ? Math.min(1200, vw - 64) : vw - 32;
   const frameHeight = roomy ? Math.min(940, vh - 64) : vh - 32;
   const cornerRadius = roomy ? radius.window : radius.windowMid;
   const both = Math.min(SPLIT_MAX, vw - (roomy ? 64 : 32));
@@ -982,29 +981,33 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
   };
   const setOpen = (open: boolean) =>
     change(() => setHeld((current) => ({ ...current, open })));
-  // Asked from the page (the cover's tag, a note's button).
-  const openRequest = useAtomValue(openRequestAtom);
-  const answered = useRef(openRequest);
+  // Asked from the 红包 page (附带网页 under 分享, the cover's tag, a
+  // note's button).
+  const request = useAtomValue(requestAtom);
+  const answered = useRef(request.n);
   const setSheetStop = useSetAtom(sheetStopAtom);
   const router = useRouter();
   useEffect(() => {
-    if (answered.current === openRequest) return;
-    answered.current = openRequest;
+    if (answered.current === request.n) return;
+    answered.current = request.n;
     if (!onPage) return;
     if (!wide) {
-      // Asked from a dialog (the 说明弹窗): over it the sheet could not
-      // come up, so the dialog closes first.
-      closeOverlay(router);
-      setSheetStop("full");
-    } else if (!held.open) {
+      if (!request.open) setSheetStop("peek");
+      else {
+        // Asked from a dialog (the 说明弹窗): over it the sheet could not
+        // come up, so the dialog closes first.
+        closeOverlay(router);
+        setSheetStop("full");
+      }
+    } else if (held.open !== request.open) {
       if (!reduced) {
         setTick((count) => count + 1);
         setMoving(true);
       }
-      setHeld((current) => ({ ...current, open: true }));
+      setHeld((current) => ({ ...current, open: request.open }));
     }
   }, [
-    openRequest,
+    request,
     onPage,
     wide,
     held.open,
@@ -1031,23 +1034,6 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
       <div
         className={`relative flex items-center justify-center ${sheetBelow ? (mid ? "mt-4 self-start" : "self-start") : ""}`}
       >
-        {/* Before the windows: it lies under the 红包 window's edge. Back
-            from beside the page, it waits until the layout has settled. */}
-        <AnimatePresence>
-          {onPage && wide && !held.open && (
-            <div
-              key="edge"
-              className="absolute inset-y-0"
-              style={{ left: alone - 12 }}
-            >
-              <EdgeTab
-                host={hostOf(url)}
-                delay={reduced ? 0 : moving ? (MOVE_MS + 260) / 1000 : 0.45}
-                onOpen={() => setOpen(true)}
-              />
-            </div>
-          )}
-        </AnimatePresence>
         {children}
         {wide && url !== null && (
           <SideWindow

@@ -357,6 +357,18 @@ test.describe("发红包", () => {
     await expect(field).not.toContainText(refused);
     await input.blur();
     await sheet.getByRole("button", { name: "完成" }).click();
+    // With a page, the 说明 offers 插入网页按钮: the link at the cursor,
+    // its words selected to type over.
+    await page.getByRole("button", { name: "加一段红包说明" }).click();
+    const note = page.locator("#hb-before-info");
+    // Typed as a person does, the cursor after the words (fill() may leave
+    // it at the start).
+    await note.click();
+    await page.keyboard.type("今天的题在旁边，");
+    await page.getByRole("button", { name: "插入网页按钮" }).click();
+    await expect(note).toHaveValue("今天的题在旁边，[打开网页](#附带网页)");
+    await page.keyboard.type("看题");
+    await expect(note).toHaveValue("今天的题在旁边，[看题](#附带网页)");
     await page.getByRole("button", { name: "存草稿" }).first().click();
     await expect(
       shown(page, "草稿已保存。开放前只有你能看到它。").first(),
@@ -364,6 +376,7 @@ test.describe("发红包", () => {
     // Only a warning: it is saved all the same.
     expect(sent[0]?.activity).toMatchObject({
       pageUrl: "https://puzzle.example.com/other",
+      beforeInfo: "今天的题在旁边，[看题](#附带网页)",
     });
   });
 

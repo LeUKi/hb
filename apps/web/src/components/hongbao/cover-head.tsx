@@ -193,6 +193,11 @@ export function CoverHead({
   const small = motions.state === "small";
   const page = useAttachedPageOpener();
   const { compact } = useWindowInfo();
+  // The big cover's name line and title keep clear of 分享 (and 附带网页
+  // under it) over the cover's right edge, on both sides to stay centred:
+  // a long name ran under 分享. The small cover's padding already does.
+  const clear =
+    small || activity.draft ? 0 : compact ? 4 : page.available ? 14 : 11;
   const author = activity.author.displayName;
   const note = activity.beforeInfo.trim();
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -267,6 +272,7 @@ export function CoverHead({
           "relative flex max-w-full items-center text-cream-2",
           small ? "gap-1.5" : "gap-2",
         )}
+        style={clear ? { maxWidth: `calc(100% - ${clear}rem)` } : undefined}
       >
         <motion.span {...motions.leaf} className="inline-flex shrink-0">
           <Avatar
@@ -317,7 +323,11 @@ export function CoverHead({
         ref={titleRef}
         tabIndex={-1}
         className={titleClass}
-        style={{ maxWidth: `${titleEm}em` }}
+        style={{
+          maxWidth: clear
+            ? `min(${titleEm}em, calc(100% - ${clear}rem))`
+            : `${titleEm}em`,
+        }}
         {...motions.leaf}
       >
         <EmojiText text={activity.title} />

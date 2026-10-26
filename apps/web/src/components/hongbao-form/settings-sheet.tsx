@@ -593,6 +593,7 @@ export function SettingsSheet({
               hint={shownNote.hint}
               placeholder={shownNote.placeholder}
               rows={10}
+              pageLink={normalizePageUrl(form.page) !== null && !pageStopped}
               value={form[shownNote.key]}
               error={errorOf(shownNote.id)}
               onChange={(value) =>

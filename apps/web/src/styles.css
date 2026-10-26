@@ -988,8 +988,9 @@
     --btn-inset: inset 0 1px 3px rgb(42 21 25 / 0.12);
     --btn-drop: 0 1px 2px -1px rgb(42 21 25 / 0.1);
   }
-  /* The bar's 发红包 on /new itself: pressed in, as the current page. */
-  .btn-secondary[aria-current="page"] {
+  /* The bar's 发红包 on /new itself, as the current page, and 附带网页 while
+     its page is open: pressed in. */
+  .btn-secondary:is([aria-current="page"], [aria-pressed="true"]) {
     --btn-top: var(--color-fill-2);
     --btn-bottom: var(--color-fill-2);
     --btn-inset: inset 0 1px 3px rgb(42 21 25 / 0.1);

@@ -105,21 +105,27 @@ const sheetTop = (page: Page) =>
     .evaluate((bar) => Math.round(bar.getBoundingClientRect().top));
 
 test.describe("附带网页", () => {
-  test("宽屏：边缘标签打开右边的网页窗口，打开才加载，隐藏后还在", async ({
+  test("宽屏：分享下面的“附带网页”打开右边的网页窗口，打开才加载，再点收起、还在", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await mockSession(page, viewer);
     const loads = await mock(page);
     await openApp(page, path);
-    const tab = page.getByRole("button", {
-      name: "打开 puzzle.example.com 的网页",
-    });
-    await expect(tab).toBeVisible();
+    const toggle = page.locator("#page-button");
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    // Under 分享, not beside it (the author's name runs there).
+    const share = await page.locator("#share-button").boundingBox();
+    const below = await toggle.boundingBox();
+    expect(below?.y ?? 0).toBeGreaterThan(
+      (share?.y ?? 0) + (share?.height ?? 0),
+    );
     expect(await frameWidth(page)).toBeCloseTo(1200, 0);
     // Only looking at the 红包: its page knows nothing yet.
     expect(loads).toEqual([]);
-    await tab.click();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
     // The 红包 window narrows beside it; the page loads, nothing asked,
     // the title bar saying whose it is and what it sees.
     await expect.poll(() => frameWidth(page)).toBeCloseTo(460, 0);
@@ -165,10 +171,42 @@ test.describe("附带网页", () => {
     // Hidden, it stays loaded: back again, the same page, not read again.
     await page.getByRole("button", { name: "隐藏（不会卸载）" }).click();
     await expect.poll(() => frameWidth(page)).toBeCloseTo(1200, 0);
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
     await expect(frame).toHaveCount(1);
-    await tab.click();
+    await toggle.click();
     await expect.poll(() => frameWidth(page)).toBeCloseTo(460, 0);
     expect(loads).toEqual([pageUrl]);
+    // The same button closes it.
+    await toggle.click();
+    await expect.poll(() => frameWidth(page)).toBeCloseTo(1200, 0);
+  });
+
+  test("宽屏：这个浏览器记住开着的网页窗口，下次进来照样开着；关了就不再开", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await mockSession(page, viewer);
+    const loads = await mock(page);
+    await openApp(page, path);
+    await page.locator("#page-button").click();
+    await expect.poll(() => frameWidth(page)).toBeCloseTo(460, 0);
+    await page.reload();
+    await expect.poll(() => frameWidth(page)).toBeCloseTo(460, 0);
+    await expect(page.locator("#page-button")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect.poll(() => loads.length).toBe(2);
+    // Closed, it stays closed next time, and nothing is loaded.
+    await page.locator("#page-button").click();
+    await expect.poll(() => frameWidth(page)).toBeCloseTo(1200, 0);
+    await page.reload();
+    await expect(page.locator("#page-button")).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(await frameWidth(page)).toBeCloseTo(1200, 0);
+    expect(loads.length).toBe(2);
   });
 
   test("宽屏：两扇窗合起来最宽 1680", async ({ page }) => {
@@ -176,9 +214,7 @@ test.describe("附带网页", () => {
     await mockSession(page, viewer);
     await mock(page);
     await openApp(page, path);
-    await page
-      .getByRole("button", { name: "打开 puzzle.example.com 的网页" })
-      .click();
+    await page.locator("#page-button").click();
     await expect.poll(() => frameWidth(page)).toBeCloseTo(460, 0);
     // From the 红包 window's left edge to the page window's right one.
     const both = () =>
@@ -200,7 +236,8 @@ test.describe("附带网页", () => {
     await mockSession(page, viewer);
     const loads = await mock(page);
     await openApp(page, path);
-    await page.getByRole("button", { name: "附带网页", exact: true }).click();
+    // The cover's tag (the button under 分享 has the same name).
+    await page.locator("button.hb-chip-red", { hasText: "附带网页" }).click();
     await expect.poll(() => frameWidth(page)).toBeCloseTo(460, 0);
     await expect.poll(() => loads).toEqual([pageUrl]);
     await page.getByRole("button", { name: "隐藏（不会卸载）" }).click();
@@ -216,9 +253,7 @@ test.describe("附带网页", () => {
     await mockSession(page, viewer);
     await mock(page);
     await openApp(page, path);
-    await page
-      .getByRole("button", { name: "打开 puzzle.example.com 的网页" })
-      .click();
+    await page.locator("#page-button").click();
     await expect.poll(() => frameWidth(page)).toBeCloseTo(460, 0);
     const handle = page.getByRole("separator");
     const box = await handle.boundingBox();
@@ -250,7 +285,7 @@ test.describe("附带网页", () => {
     await expect.poll(() => frameWidth(page)).toBeCloseTo(1200, 0);
   });
 
-  test("没有附带网页的红包：没有边缘标签、标签，说明里只有文字", async ({
+  test("没有附带网页的红包：没有按钮、标签，说明里只有文字", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -258,7 +293,8 @@ test.describe("附带网页", () => {
     await mock(page, false);
     await openApp(page, path);
     await expect(page.getByRole("heading", { name: "谜题红包" })).toBeVisible();
-    await expect(page.getByRole("button", { name: /的网页$/ })).toHaveCount(0);
+    await expect(page.locator("#share-button")).toBeVisible();
+    await expect(page.locator("#page-button")).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "附带网页", exact: true }),
     ).toHaveCount(0);
@@ -286,6 +322,9 @@ test.describe("附带网页", () => {
     await page.getByRole("button", { name: "收起" }).click();
     await expect(bar).toBeVisible();
     expect(loads).toEqual([pageUrl]);
+    // The button under 分享 pulls it up too.
+    await page.locator("#page-button").click();
+    await expect(page.getByText(notice)).toBeVisible();
   });
 
   test("手机：弹窗打开时抽屉也压暗、拖不动，点它关上弹窗", async ({ page }) => {
