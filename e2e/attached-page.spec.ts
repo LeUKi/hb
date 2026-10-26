@@ -44,8 +44,12 @@ function activity(page?: { url: string; host: string }) {
 }
 
 /** The 红包 (with its page or not), and the page itself, counted. */
+/** Who the page was told sent it (the Referer of each load). */
+let referrers: (string | undefined)[] = [];
+
 async function mock(page: Page, attached = true) {
   const loads: string[] = [];
+  referrers = [];
   await page.route(`**/api/activities/${id}**`, (route) => {
     const rest = new URL(route.request().url()).pathname.slice(
       `/api/activities/${id}`.length,
@@ -74,6 +78,7 @@ async function mock(page: Page, attached = true) {
   });
   await page.route("https://puzzle.example.com/**", (route) => {
     loads.push(route.request().url());
+    referrers.push(route.request().headers().referer);
     return route.fulfill({
       contentType: "text/html; charset=utf-8",
       body: "<!doctype html><title>谜题</title><h1>今日第 3 题</h1>",
@@ -119,15 +124,30 @@ test.describe("附带网页", () => {
     await expect(frame).toHaveAttribute("src", pageUrl);
     await expect(frame).toHaveAttribute(
       "sandbox",
-      "allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox",
+      "allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads allow-pointer-lock allow-orientation-lock allow-presentation allow-storage-access-by-user-activation",
     );
-    await expect(frame).toHaveAttribute("referrerpolicy", "no-referrer");
+    // Never the page away; never the camera, the microphone, the place.
+    await expect(frame).not.toHaveAttribute("sandbox", /allow-top-navigation/);
+    await expect(frame).not.toHaveAttribute(
+      "allow",
+      /camera|microphone|geolocation|payment/,
+    );
+    await expect(frame).toHaveAttribute(
+      "allow",
+      /fullscreen; clipboard-write; .*storage-access/,
+    );
+    // It is told which 红包 page it is on.
+    await expect(frame).toHaveAttribute(
+      "referrerpolicy",
+      "no-referrer-when-downgrade",
+    );
     await expect(
       page
         .frameLocator("iframe[title='puzzle.example.com 的网页']")
         .getByText("今日第 3 题"),
     ).toBeVisible();
     expect(loads).toEqual([pageUrl]);
+    expect(decodeURI(referrers[0] ?? "")).toContain(path);
 
     // Hidden, it stays loaded: back again, the same page, not read again.
     await page.getByRole("button", { name: "隐藏（不会卸载）" }).click();

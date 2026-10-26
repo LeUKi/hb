@@ -243,11 +243,40 @@ function NotLoaded({ host }: { host: string }) {
 }
 
 /**
- * The page itself (§3): its own origin, never this site's; it may run,
- * send forms and open windows, but not move this page, show dialogs over
- * it, download, or use the camera, the place, payments or the clipboard;
- * it is not told where it was opened from, and nothing here listens to it.
+ * What the page may do (§3, as freely as is safe, for those who build
+ * on it): run, send forms, open windows (to log in), show its own
+ * dialogs, download, lock the pointer and the screen's turn, go full
+ * screen, write the clipboard, play sound and video, and ask (on a click)
+ * for its own cookies (the Storage Access API). Never move this page away,
+ * nor use the camera, the microphone, the place or payments (their prompts
+ * would bear this site's name). It is told which 红包 page it is on.
  */
+const PAGE_SANDBOX = [
+  "allow-scripts",
+  "allow-forms",
+  "allow-same-origin",
+  "allow-popups",
+  "allow-popups-to-escape-sandbox",
+  "allow-modals",
+  "allow-downloads",
+  "allow-pointer-lock",
+  "allow-orientation-lock",
+  "allow-presentation",
+  "allow-storage-access-by-user-activation",
+].join(" ");
+const PAGE_FEATURES = [
+  "fullscreen",
+  "clipboard-write",
+  "autoplay",
+  "encrypted-media",
+  "picture-in-picture",
+  "web-share",
+  "screen-wake-lock",
+  "gamepad",
+  "storage-access",
+].join("; ");
+
+/** The page itself: its own origin, never this site's; nothing here listens to it. */
 function Page({ url }: { url: string }) {
   const reload = useAtomValue(reloadAtom);
   const { loaded } = useAtomValue(heldAtom);
@@ -259,9 +288,9 @@ function Page({ url }: { url: string }) {
       title={`${host} 的网页`}
       className="absolute inset-0 size-full border-0 bg-white"
       src={url}
-      referrerPolicy="no-referrer"
-      allow=""
-      sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+      referrerPolicy="no-referrer-when-downgrade"
+      allow={PAGE_FEATURES}
+      sandbox={PAGE_SANDBOX}
     />
   );
 }

@@ -79,13 +79,30 @@
 
 加载一次以后，这个红包页上一直留着（收起、换宽窄屏不卸载；宽窄屏之间切换会重新加载一次，浏览器挪动嵌入的网页必然重新加载）。
 
-## 3 安全
+## 3 安全和能力
 
-- iframe：`sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox"`，没有 `allow-top-navigation`（不能把整页导走）、没有 `allow-modals`、没有 `allow-downloads`；`allow=""`（摄像头、麦克风、定位、支付、剪贴板等都不给）；`referrerpolicy="no-referrer"`（对方不知道是从哪个红包来的，除非地址里自己写了）。
+按宽松的来（2026-10-26 用户定：方便开发者自行接入、二次开发）：不会伤到本站和看的人的能力都给，只挡会被拿来骗人的。
+
+- **给**（iframe 的 `sandbox` 和 `allow`）：运行脚本、提交表单、保留自己的来源（`allow-same-origin`，有自己的 Cookie 和存储）、开新窗口（`allow-popups`，新窗口不受沙箱限制，用来登录）、自己的提示框（`allow-modals`）、下载（`allow-downloads`）、锁定指针和屏幕方向（游戏）、演示、点击后申请自己的 Cookie（`allow-storage-access-by-user-activation`，即 Storage Access API）；全屏、写剪贴板、自动播放、加密媒体、画中画、系统分享、屏幕常亮、手柄。
+- **不给**：
+  - 把整个红包页导走（没有 `allow-top-navigation` 的任何一种）：嵌入的网页不能把看的人带到一个假的红包站。
+  - 摄像头、麦克风、定位、支付、读剪贴板、USB 之类：浏览器问权限时写的是红包站的名字，看的人会以为是本站要的。
+- **来源**：`referrerpolicy="no-referrer-when-downgrade"`，网页能从 `Referer` 和 `document.referrer` 知道自己在哪个红包页里（`https://hb.lafi.sh/🧧/<码>`）。红包页地址本来就公开，里面没有口令。
 - 本站不听它的 `postMessage`，两边不通信。
 - 不点不加载；标题栏一直写着域名和“不是本站”。
-- 本站自己的页面不许被别的网站嵌入：所有静态页加 `Content-Security-Policy: frame-ancestors 'self'` 和 `X-Frame-Options: SAMEORIGIN`（`apps/web/public/_headers`）。以后做[发红包链接](balance-design.md)（§18）时，那一页按它的 `origin` 单独放开。
-- 很多网站不许被嵌入，网页窗口里会显示浏览器的错误页，看不出来是哪种情况；“在新标签页打开”一直在。
+- 本站自己的页面不许被别的网站嵌入：所有静态页加 `Content-Security-Policy: frame-ancestors 'self'` 和 `X-Frame-Options: SAMEORIGIN`（`apps/web/asset-cache.ts` 写进 `_headers`）。以后做[发红包链接](balance-design.md)（§18）时，那一页按它的 `origin` 单独放开。
+- 很多网站不许被嵌入，网页窗口里会显示浏览器的错误页；表单里会先提醒（2.1），“在新标签页打开”一直在。
+
+### 3.1 给接入的开发者
+
+- **允许被嵌入**：返回头里 `frame-ancestors` 写上 `https://hb.lafi.sh`（试用时再加 `https://staging.hb.lafi.sh`），或者不发 `frame-ancestors` 和 `X-Frame-Options`。
+- **知道自己在哪个红包里**：读 `document.referrer`；也可以在附带的地址里自己带参数（`https://example.com/?hb=…`）。
+- **登录态**：嵌在红包页里时，网页对浏览器来说是第三方，单独打开时的登录 Cookie 默认带不进来：
+  - Chrome、Edge 只发 `SameSite=None; Secure` 的 Cookie；Safari 默认不发第三方 Cookie；Firefox 给每个顶层网站一份单独的 Cookie。
+  - 要用已有的登录：在网页里放一个按钮，点击时调用 `document.requestStorageAccess()`，浏览器问过看的人以后，就能用单独打开时的 Cookie。可以先用 `document.hasStorageAccess()` 判断要不要显示这个按钮。
+  - 或者在窗口里单独登录一次：登录 Cookie 设 `SameSite=None; Secure; Partitioned`，只在红包站这个窗口里有效。
+  - 登录页本身常常不许被嵌入（比如 linux.do），在窗口里登录请用 `window.open` 开新窗口，登录完再回到窗口。
+- WebSocket 和 `fetch` 带不带 Cookie，跟上面同一套规则。
 
 ## 4 数据和接口
 
