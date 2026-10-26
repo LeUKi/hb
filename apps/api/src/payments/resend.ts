@@ -1,4 +1,4 @@
-import { PAYMENT_RESEND_LIMIT } from "@hb/contracts";
+import { PAYMENT_RESEND_LIMIT, PAYMENT_RESEND_WINDOW_MS } from "@hb/contracts";
 import { and, eq } from "drizzle-orm";
 import { ActivityError, activityNotFound } from "../activities/errors";
 import { tellPaymentWatchers } from "../activities/live";
@@ -12,6 +12,7 @@ import {
   heldForRecipient,
   recipientRejections,
   resendDeadline,
+  unsentForRecipient,
 } from "./resend-rules";
 import { flushPaymentOutbox } from "./scheduler";
 
@@ -22,7 +23,8 @@ import { flushPaymentOutbox } from "./scheduler";
 // such answer, once (PAYMENT_RESEND_LIMIT). A resend is the recovery the
 // pipeline already does for an order it cannot vouch for: look the order up
 // (there is none), then send it under the same 业务号. Nothing retries it by
-// itself, and past the window it is not paid (user's rule).
+// itself, and past the window it is not paid (user's rule): the payments
+// job then ends it 未发出 (endLapsedResends).
 
 /**
  * The claimant asks for their payment again. Returns once it is on its
@@ -50,7 +52,7 @@ export async function resendClaimPayment(
   const now = Date.now();
   const rejections = (await recipientRejections(env, [task.id])).get(task.id);
   if (resendDeadline(task, rejections, now) === null) {
-    if (!heldForRecipient(task))
+    if (!heldForRecipient(task) && !unsentForRecipient(task))
       throw new ActivityError(
         409,
         "PAYMENT_RESEND_NOT_NEEDED",
@@ -118,4 +120,39 @@ export async function resendClaimPayment(
     console.error("payment_resend_wake_failed", { taskId: task.id });
   });
   await tellPaymentWatchers(env, task.id).catch(() => {});
+}
+
+/**
+ * A payment held for its recipient whose time to be sent again is over
+ * (resendDeadline: past the window, or sent again and refused again) ends
+ * 未发出, as a refused 转出 does, so it no longer reads as one to see to
+ * (docs/redesign/05-hongbao.md §3). The payments job runs it; nothing else
+ * would ever move such a payment. Returns how many ended.
+ */
+export async function endLapsedResends(env: ApiBindings, now = Date.now()) {
+  const ended = await env.DB.prepare(
+    `UPDATE payment_tasks SET status='failed',next_action='none',updated_at=?
+      WHERE id IN (SELECT p.id FROM payment_tasks p
+        WHERE p.status='attention' AND p.mode='real' AND p.source='claim'
+          AND p.recovery_policy='claim_same_order_v1' AND p.send_block_reason='recipient'
+          AND p.unknown_outcome=0 AND p.first_send_at IS NOT NULL AND p.external_order_id IS NULL
+          AND p.order_observed_at IS NULL AND p.send_acknowledged_at IS NULL
+          AND NOT EXISTS(SELECT 1 FROM payment_attempts a WHERE a.task_id=p.id AND a.finished_at IS NULL)
+          AND EXISTS(SELECT 1 FROM payment_attempts a WHERE a.task_id=p.id
+            AND a.operation='send' AND a.outcome='rejected' AND a.reason='recipient'
+            AND a.no_order_evidence='protocol_rejection_v1' AND a.finished_at IS NOT NULL
+            GROUP BY a.task_id HAVING COUNT(*)>? OR MIN(a.finished_at)<=?)
+        ORDER BY p.updated_at LIMIT 50)
+        AND status='attention'
+      RETURNING id`,
+  )
+    .bind(now, PAYMENT_RESEND_LIMIT, now - PAYMENT_RESEND_WINDOW_MS)
+    .all<{ id: string }>();
+  for (const { id } of ended.results) {
+    console.info(
+      JSON.stringify({ event: "ldc_payment_resend_lapsed", taskId: id }),
+    );
+    await tellPaymentWatchers(env, id).catch(() => {});
+  }
+  return ended.results.length;
 }

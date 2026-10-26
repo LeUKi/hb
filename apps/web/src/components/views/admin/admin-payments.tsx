@@ -67,10 +67,6 @@ const states = [
   "failed",
 ] as const satisfies readonly PaymentState[];
 
-/** 未发出 (a 🐟额 转出 refused for good, its 🐟 given back) needs nothing. */
-const stateTone = (state: string) =>
-  state === "failed" ? ("neutral" as const) : paymentTone(state);
-
 const stateOf = (value: string | undefined): StateFilter =>
   states.find((state) => state === value) ?? "all";
 const modeOf = (value: string | undefined): ModeFilter =>
@@ -122,7 +118,7 @@ function RowBody({ payment }: { payment: AdminPaymentListItem }) {
         <span className="text-sm font-semibold text-ink tabular-nums">
           {payment.amount} LDC
         </span>
-        <StatusChip tone={stateTone(payment.status)} dot>
+        <StatusChip tone={paymentTone(payment.status)} dot>
           {PAYMENT_LABELS[payment.status]}
         </StatusChip>
       </span>
@@ -314,7 +310,7 @@ function Detail({ item }: { item: AdminPaymentListItem }) {
           {item.amount}
           <span className="ml-1 text-sm font-medium text-ink-3">LDC</span>
         </p>
-        <StatusChip tone={stateTone(item.status)} dot>
+        <StatusChip tone={paymentTone(item.status)} dot>
           {PAYMENT_LABELS[item.status]}
         </StatusChip>
       </div>

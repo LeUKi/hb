@@ -87,9 +87,13 @@ function PaymentNote({
 /** Where a LINUX DO Credit account is opened. */
 const CREDIT_URL = "https://credit.linux.do";
 
-/** 收款人不存在: the upstream knows no Credit account for the viewer. */
+/**
+ * 收款人不存在: the upstream knows no Credit account for the viewer. Past
+ * its resend it ends 未发出 (failed), and says so the same way.
+ */
 const heldForAccount = (payment: PaymentView) =>
-  payment.status === "attention" && payment.reason === "recipient";
+  (payment.status === "attention" || payment.status === "failed") &&
+  payment.reason === "recipient";
 
 /** "4:32" until then, ticking. */
 function ResendCountdown({ to }: { to: number }) {

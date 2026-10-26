@@ -929,16 +929,18 @@ export type AccountPaymentGroup = ActivitySummary & { confirmedAmount: string };
 export type AccountPaymentSummary = {
   confirmedAmount: string;
   confirmedCount: number;
-  /** Not confirmed yet (attention included). */
+  /** Not confirmed yet (attention included, 未发出 not: it is over). */
   openAmount: string;
   openCount: number;
   /** Sending paused (异常待处理). */
   attentionCount: number;
+  /** 未发出: the recipient had no Credit account, and it was not sent again. */
+  failedCount: number;
   /** Waiting for its sender to update the original order's key. */
   repairableCount: number;
   firstRepairableId: string | null;
 };
-export type AccountPaymentFilter = "all" | "open" | "confirmed";
+export type AccountPaymentFilter = "all" | "open" | "confirmed" | "failed";
 /**
  * Payments grouped by 红包: the 红包 with the latest payment first, each
  * one's payments newest first, 20 at a time (a group may go on in the next

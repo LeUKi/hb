@@ -4,13 +4,15 @@ import {
   type BalanceApiKey,
 } from "@hb/contracts";
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, KeyRound } from "lucide-react";
+import { ChevronRight, KeyRound, X } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { useApiKey, useApiKeyActions, useApiKeys } from "../../lib/balance";
 import { clockSeconds } from "../../lib/roster-time";
 import type { SessionUser } from "../../lib/session";
+import { LazyListEnd, useQueryLazyList } from "../page/lazy-list";
 import { EmptyNote, PageSection, Panel } from "../page/page";
 import { ConfirmDialog } from "../shell/confirm-dialog";
+import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
 import { CopyButton } from "../ui/copy-button";
 import { Field, TextInput } from "../ui/field";
@@ -41,14 +43,80 @@ function limitLine(key: BalanceApiKey) {
     : `今天已转 ${fishText(key.usedTodayMinor)} / ${fishText(key.dailyLimitMinor)} 🐟`;
 }
 
+/** A key in a list: what it is, and how it was used or stopped. */
+function KeyRow({
+  apiKey,
+  onOpen,
+}: {
+  apiKey: BalanceApiKey;
+  onOpen: (id: string) => void;
+}) {
+  const active = apiKey.status === "active";
+  return (
+    <ListItem>
+      <Squircle radius={radius.row}>
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          onClick={() => onOpen(apiKey.id)}
+          className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-fill-2"
+        >
+          <KeyRound
+            className="size-[18px] shrink-0 text-ink-3"
+            aria-hidden="true"
+          />
+          <span className="grid min-w-0 flex-1 gap-0.5">
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="truncate text-sm font-medium text-ink">
+                {apiKey.name}
+              </span>
+              <span className="shrink-0 font-mono text-xs text-ink-3">
+                …{apiKey.lastFour}
+              </span>
+            </span>
+            <span className="truncate text-xs text-ink-3 tabular-nums">
+              {active
+                ? `${limitLine(apiKey)} · ${
+                    apiKey.lastTransferAt
+                      ? `最近一次转账 ${clockSeconds(apiKey.lastTransferAt)}`
+                      : "还没用它转过"
+                  }`
+                : apiKey.revokedAt
+                  ? `${clockSeconds(apiKey.revokedAt)} 停用`
+                  : ""}
+            </span>
+          </span>
+          {/* The section lists the working ones alone: no word for them. */}
+          {!active && (
+            <StatusChip tone={statusTone[apiKey.status]}>
+              {statusText[apiKey.status]}
+            </StatusChip>
+          )}
+          <ChevronRight
+            className="size-4 shrink-0 text-ink-3"
+            aria-hidden="true"
+          />
+        </button>
+      </Squircle>
+    </ListItem>
+  );
+}
+
 /** The section at the bottom of 🐟额, for those who may 转账. */
 export function ApiKeysSection({ user }: { user: SessionUser }) {
   const query = useApiKeys(user.id, true);
   const [making, setMaking] = useState(false);
   const [opened, setOpened] = useState<string | null>(null);
+  const [showStopped, setShowStopped] = useState(false);
   const keys = query.data?.items ?? [];
-  const inUse = keys.filter((key) => key.status === "active").length;
-  const full = inUse >= (query.data?.max ?? BALANCE_LIMITS.apiKeysMax);
+  // The working keys here; the stopped ones behind a line of their own
+  // (balance-design §16, 2026-10-26).
+  const active = keys.filter((key) => key.status === "active");
+  const stopped = keys.filter((key) => key.status !== "active");
+  const byAdmin = stopped.filter(
+    (key) => key.status === "admin_revoked",
+  ).length;
+  const full = active.length >= (query.data?.max ?? BALANCE_LIMITS.apiKeysMax);
   return (
     <PageSection
       id="api-keys"
@@ -82,57 +150,29 @@ export function ApiKeysSection({ user }: { user: SessionUser }) {
         </Button>
       }
     >
-      {keys.length === 0 ? (
+      {active.length === 0 ? (
         query.isSuccess && (
           <EmptyNote title="还没有密钥" text="新建一个，交给你的网站或程序。" />
         )
       ) : (
         <Panel as="ul" className="flex flex-col gap-0.5 p-1.5">
-          {keys.map((key) => (
-            <ListItem key={key.id}>
-              <Squircle radius={radius.row}>
-                <button
-                  type="button"
-                  onClick={() => setOpened(key.id)}
-                  className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-fill-2"
-                >
-                  <KeyRound
-                    className="size-[18px] shrink-0 text-ink-3"
-                    aria-hidden="true"
-                  />
-                  <span className="grid min-w-0 flex-1 gap-0.5">
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span className="truncate text-sm font-medium text-ink">
-                        {key.name}
-                      </span>
-                      <span className="shrink-0 font-mono text-xs text-ink-3">
-                        …{key.lastFour}
-                      </span>
-                    </span>
-                    <span className="truncate text-xs text-ink-3 tabular-nums">
-                      {key.status === "active"
-                        ? `${limitLine(key)} · ${
-                            key.lastTransferAt
-                              ? `最近一次转账 ${clockSeconds(key.lastTransferAt)}`
-                              : "还没用它转过"
-                          }`
-                        : key.revokedAt
-                          ? `${clockSeconds(key.revokedAt)} 停用`
-                          : ""}
-                    </span>
-                  </span>
-                  <StatusChip tone={statusTone[key.status]}>
-                    {statusText[key.status]}
-                  </StatusChip>
-                  <ChevronRight
-                    className="size-4 shrink-0 text-ink-3"
-                    aria-hidden="true"
-                  />
-                </button>
-              </Squircle>
-            </ListItem>
+          {active.map((key) => (
+            <KeyRow key={key.id} apiKey={key} onOpen={setOpened} />
           ))}
         </Panel>
+      )}
+      {stopped.length > 0 && (
+        <Button
+          variant="ghost"
+          size="xs"
+          aria-haspopup="dialog"
+          className="-mt-1 gap-0.5 justify-self-center pr-1.5"
+          onClick={() => setShowStopped(true)}
+        >
+          已停用的密钥 {stopped.length} 个
+          {byAdmin > 0 && `（${byAdmin} 个由管理员停用）`}
+          <ChevronRight aria-hidden="true" />
+        </Button>
       )}
       <NewKeyDialog
         open={making}
@@ -140,7 +180,61 @@ export function ApiKeysSection({ user }: { user: SessionUser }) {
         user={user}
       />
       <KeyDialog user={user} id={opened} onClose={() => setOpened(null)} />
+      <StoppedKeysDialog
+        user={user}
+        open={showStopped}
+        keys={stopped}
+        onClose={() => setShowStopped(false)}
+      />
     </PageSection>
+  );
+}
+
+/** 已停用的密钥: the stopped keys, each opening its detail over this. */
+function StoppedKeysDialog({
+  user,
+  open,
+  keys,
+  onClose,
+}: {
+  user: SessionUser;
+  open: boolean;
+  keys: BalanceApiKey[];
+  onClose: () => void;
+}) {
+  const titleId = useId();
+  const [opened, setOpened] = useState<string | null>(null);
+  return (
+    <WindowDialog
+      open={open}
+      onClose={onClose}
+      onClosed={() => setOpened(null)}
+      labelledBy={titleId}
+      width="30rem"
+    >
+      <header className="flex items-center justify-between gap-3 px-5 pt-4 pb-2">
+        <h2 id={titleId} className="text-lg font-semibold text-ink">
+          已停用的密钥 · {keys.length} 个
+        </h2>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="关闭"
+          className="-mr-2 shrink-0"
+          onClick={onClose}
+        >
+          <X />
+        </Button>
+      </header>
+      <div className="view-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-3.5 pb-4">
+        <ul className="flex flex-col gap-0.5">
+          {keys.map((key) => (
+            <KeyRow key={key.id} apiKey={key} onOpen={setOpened} />
+          ))}
+        </ul>
+      </div>
+      <KeyDialog user={user} id={opened} onClose={() => setOpened(null)} />
+    </WindowDialog>
   );
 }
 
@@ -289,7 +383,7 @@ function NewKeyDialog({
   );
 }
 
-/** One key: what it sent, where from last, and stopping it. */
+/** One key: how much it sent, where from last, and stopping it. */
 function KeyDialog({
   user,
   id,
@@ -305,11 +399,10 @@ function KeyDialog({
   const { revoke } = useApiKeyActions(user.id);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [transferId, setTransferId] = useState<string | null>(null);
+  const [listing, setListing] = useState(false);
   const first = query.data?.pages[0];
   const key = first?.key;
   const totals = first?.totals;
-  const transfers = query.data?.pages.flatMap((page) => page.transfers) ?? [];
   const stop = async () => {
     if (!key) return;
     setError(null);
@@ -332,6 +425,7 @@ function KeyDialog({
       onClosed={() => {
         kept.current = null;
         setStopping(false);
+        setListing(false);
         setError(null);
       }}
       title={key ? `密钥「${key.name}」` : "密钥"}
@@ -382,35 +476,25 @@ function KeyDialog({
               这个 IP 不是你的网站或程序的，就该停用它。
             </p>
           )}
-          {transfers.length > 0 && (
-            <section className="grid gap-1 border-line border-t pt-3">
-              <h3 className="text-xs text-ink-3">用它转的</h3>
-              <ul className="flex flex-col gap-0.5">
-                {transfers.map((transfer) => (
-                  <TransferRow
-                    key={transfer.id}
-                    transfer={transfer}
-                    onOpen={setTransferId}
-                  />
-                ))}
-              </ul>
-              {query.hasNextPage && (
-                <Button
-                  size="sm"
-                  onClick={() => void query.fetchNextPage()}
-                  aria-disabled={query.isFetchingNextPage || undefined}
-                >
-                  {query.isFetchingNextPage ? "正在读取…" : "再看 20 笔"}
-                </Button>
-              )}
-            </section>
+          {/* What it sent opens over this, so 停用 stays in reach. */}
+          {totals.all.count > 0 && (
+            <Button
+              variant="ghost"
+              size="xs"
+              aria-haspopup="dialog"
+              className="-ml-2 gap-0.5 justify-self-start pr-1.5"
+              onClick={() => setListing(true)}
+            >
+              用它转的 {totals.all.count} 笔
+              <ChevronRight aria-hidden="true" />
+            </Button>
           )}
         </div>
       )}
-      <TransferDetailDialog
+      <KeyTransfersDialog
         user={user}
-        id={transferId}
-        onClose={() => setTransferId(null)}
+        id={listing ? kept.current : null}
+        onClose={() => setListing(false)}
       />
       <ConfirmDialog
         open={stopping}
@@ -436,5 +520,87 @@ function KeyDialog({
         }
       />
     </ConfirmDialog>
+  );
+}
+
+/** 用它转的: what one key sent, twenty more as it scrolls. */
+function KeyTransfersDialog({
+  user,
+  id,
+  onClose,
+}: {
+  user: SessionUser;
+  id: string | null;
+  onClose: () => void;
+}) {
+  const titleId = useId();
+  const kept = useRef<string | null>(null);
+  if (id) kept.current = id;
+  const query = useApiKey(user.id, kept.current);
+  const list = useQueryLazyList({
+    hasNextPage: query.hasNextPage,
+    isFetchingNextPage: query.isFetchingNextPage,
+    isFetchNextPageError: query.isFetchNextPageError,
+    fetchNextPage: query.fetchNextPage,
+    pageCount: query.data?.pages.length ?? 0,
+  });
+  const [transferId, setTransferId] = useState<string | null>(null);
+  const first = query.data?.pages[0];
+  const count = first?.totals.all.count ?? 0;
+  const transfers = query.data?.pages.flatMap((page) => page.transfers) ?? [];
+  return (
+    <WindowDialog
+      open={id !== null}
+      onClose={onClose}
+      onClosed={() => {
+        kept.current = null;
+        setTransferId(null);
+      }}
+      labelledBy={titleId}
+      width="32rem"
+    >
+      <header className="grid gap-1 px-5 pt-4 pb-2">
+        <div className="flex items-center justify-between gap-3">
+          <h2 id={titleId} className="text-lg font-semibold text-ink">
+            用它转的 · {count} 笔
+          </h2>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="关闭"
+            className="-mr-2 shrink-0"
+            onClick={onClose}
+          >
+            <X />
+          </Button>
+        </div>
+        {first && (
+          <p className="truncate text-sm text-ink-2">
+            密钥「{first.key.name}」
+            <span className="font-mono text-xs text-ink-3">
+              {" "}
+              …{first.key.lastFour}
+            </span>
+          </p>
+        )}
+      </header>
+      <div className="view-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-3.5 pb-4">
+        <ul className="flex flex-col gap-0.5">
+          {transfers.map((transfer) => (
+            <TransferRow
+              key={transfer.id}
+              transfer={transfer}
+              onOpen={setTransferId}
+            />
+          ))}
+        </ul>
+        <LazyListEnd list={list} done={`共 ${count} 笔`} />
+      </div>
+      <TransferDetailDialog
+        user={user}
+        id={transferId}
+        onClose={() => setTransferId(null)}
+      />
+    </WindowDialog>
   );
 }

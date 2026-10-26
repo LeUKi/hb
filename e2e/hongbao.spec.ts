@@ -648,6 +648,13 @@ test.describe("红包页", () => {
       main.getByText(/5 分钟内可以重新发送一次，现在已经不能再发/),
     ).toBeVisible();
     await expect(main.getByRole("button", { name: "重新发送" })).toHaveCount(0);
+
+    // Past it, the payments job ends it 未发出: said the same way.
+    claim.payment = { ...claim.payment, status: "failed" };
+    await page.reload();
+    await expect(main.getByText("未发出", { exact: true })).toBeVisible();
+    await expect(main.getByText("这笔没能发出")).toBeVisible();
+    await expect(main.getByText("异常待处理")).toHaveCount(0);
     expect(resends).toHaveLength(1);
   });
 

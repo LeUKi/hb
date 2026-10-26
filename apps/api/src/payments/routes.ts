@@ -1,4 +1,5 @@
 import {
+  type AccountPaymentFilter,
   createMerchantSchema,
   repairPaymentCredentialSchema,
   simulationScenarioSchema,
@@ -43,12 +44,17 @@ const accountPaymentQuery = validator(
   (
     value,
   ): {
-    status: "all" | "open" | "confirmed";
+    status: AccountPaymentFilter;
     activity?: string;
     cursor?: string;
   } => {
     const status = value.status ?? "all";
-    if (status !== "all" && status !== "open" && status !== "confirmed")
+    if (
+      status !== "all" &&
+      status !== "open" &&
+      status !== "confirmed" &&
+      status !== "failed"
+    )
       throw new ActivityError(400, "INVALID_STATUS", "付款状态无效");
     if (
       value.activity !== undefined &&

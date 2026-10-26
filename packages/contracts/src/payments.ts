@@ -10,7 +10,11 @@ export const paymentStateSchema = z.enum([
   "waiting",
   "confirmed",
   "attention",
-  /** 未发出: only a 🐟额 转出, turned down for good with no order made. */
+  /**
+   * 未发出, final, with no order made: a 🐟额 转出 turned down for good, or
+   * a claim's payment whose recipient had no Credit account and was not
+   * sent again in time (payments/resend.ts).
+   */
   "failed",
 ]);
 export type PaymentState = z.infer<typeof paymentStateSchema>;

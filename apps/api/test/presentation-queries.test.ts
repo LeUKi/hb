@@ -724,6 +724,7 @@ describe("production presentation queries", () => {
       openAmount: "25.00",
       openCount: 25,
       attentionCount: 1,
+      failedCount: 0,
       repairableCount: 0,
       firstRepairableId: null,
     });

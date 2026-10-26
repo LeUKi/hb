@@ -11,6 +11,7 @@ import {
   Clock3,
   KeyRound,
   PauseCircle,
+  UserRoundX,
 } from "lucide-react";
 import { useIsPresent } from "motion/react";
 import {
@@ -221,6 +222,14 @@ function StateNoteBody({
     return (
       <Callout tone="danger" icon={AlertTriangle} title={reason}>
         这笔付款不会自动重发，也不会重复付款。
+      </Callout>
+    );
+  // 未发出: a claim's payment past its resend (docs/redesign/07 §8).
+  if (payment.status === "failed")
+    return (
+      <Callout icon={UserRoundX} title="这笔没能发出">
+        收款人没有 LINUX DO Credit
+        账户，过了重新发送的时间，不再补发。钱没有付出去，还在付款的商户账户里。
       </Callout>
     );
   if (payment.status === "waiting" && payment.config?.canRepairCredentials)

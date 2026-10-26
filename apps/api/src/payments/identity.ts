@@ -289,7 +289,7 @@ export async function synchronizeMerchantPaymentIdentities(
     return;
   const candidates = await env.DB.prepare(
     `SELECT p.id FROM payment_tasks p WHERE p.merchant_id=? AND p.source='claim' AND p.mode='real'
-      AND p.recovery_policy='claim_same_order_v1' AND p.status!='confirmed' AND p.unknown_outcome=0
+      AND p.recovery_policy='claim_same_order_v1' AND p.status NOT IN ('confirmed','failed') AND p.unknown_outcome=0
       AND p.confirmed_at IS NULL AND p.parameter_digest IS NOT NULL
       AND p.order_observed_at IS NULL AND p.external_order_id IS NULL AND p.send_acknowledged_at IS NULL
       AND COALESCE(p.send_block_reason,'')!='conflict'

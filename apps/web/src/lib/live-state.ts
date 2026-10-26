@@ -43,12 +43,16 @@ export function pastDeadline(activity: PublicActivity | undefined) {
 }
 
 /**
- * A payment on its way. `confirmed` is done; `attention` waits on a person
- * (its claimant sending it again, payments/resend.ts), not on the system.
+ * A payment on its way. `confirmed` and `failed` (未发出) are done;
+ * `attention` waits on a person (its claimant sending it again,
+ * payments/resend.ts), not on the system.
  */
 export const paymentOpen = (payment?: { status: string } | null) =>
   Boolean(
-    payment && payment.status !== "confirmed" && payment.status !== "attention",
+    payment &&
+      payment.status !== "confirmed" &&
+      payment.status !== "attention" &&
+      payment.status !== "failed",
   );
 
 /** This person's part of a 红包 that can still move: a payment, a draw. */

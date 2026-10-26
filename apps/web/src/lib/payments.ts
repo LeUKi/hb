@@ -162,7 +162,7 @@ export function paymentSteps(
       tone:
         !first || first.outcome === "succeeded"
           ? "done"
-          : payment.status === "attention"
+          : payment.status === "attention" || payment.status === "failed"
             ? "stop"
             : "warn",
     });
@@ -190,6 +190,14 @@ export function paymentSteps(
         at: latest,
         title: "发送已暂停",
         detail: "这笔付款不会自动重发",
+        tone: "stop",
+      });
+      break;
+    case "failed":
+      steps.push({
+        at: latest,
+        title: "没能发出",
+        detail: "收款人没有 LINUX DO Credit 账户，不再补发",
         tone: "stop",
       });
       break;

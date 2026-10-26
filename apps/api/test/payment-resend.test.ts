@@ -22,9 +22,13 @@ import {
   users,
 } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
+import {
+  accountPaymentDetail,
+  listAccountPayments,
+} from "../src/payments/account-queries";
 import type { AdapterResult, PaymentAdapter } from "../src/payments/adapter";
 import { claimPaymentParameterDigest } from "../src/payments/policy";
-import { resendClaimPayment } from "../src/payments/resend";
+import { endLapsedResends, resendClaimPayment } from "../src/payments/resend";
 import { runMerchantCycle } from "../src/payments/scheduler";
 import { encryptString } from "../src/security/crypto";
 import { resetMerchantHistory } from "./reset-merchant-history";
@@ -193,6 +197,7 @@ async function fixture() {
     updatedAt: now - 1,
   });
   return {
+    owner,
     recipient,
     stranger,
     merchantId,
@@ -427,5 +432,111 @@ describe("sending a payment again for its claimant", () => {
     expect(later.send).not.toHaveBeenCalled();
     expect(later.query).not.toHaveBeenCalled();
     expect((await task(f)).status).toBe("attention");
+  });
+});
+
+describe("a payment past its resend", () => {
+  it("ends 未发出 once five minutes have passed, and reads so everywhere", async () => {
+    const { f, rejectedAt } = await turnedDown();
+    now = rejectedAt + PAYMENT_RESEND_WINDOW_MS - 1;
+    expect(await endLapsedResends(f.bindings)).toBe(0);
+    expect((await task(f)).status).toBe("attention");
+
+    now = rejectedAt + PAYMENT_RESEND_WINDOW_MS;
+    expect(await endLapsedResends(f.bindings)).toBe(1);
+    expect(await task(f)).toMatchObject({
+      status: "failed",
+      reason: "recipient",
+      sendBlockReason: "recipient",
+      nextAction: "none",
+    });
+    expect(await endLapsedResends(f.bindings)).toBe(0);
+    // Its claimant: 未发出, and still why.
+    expect(
+      (await getClaimDetail(f.bindings, f.claimId, f.recipient)).payment,
+    ).toMatchObject({ status: "failed", reason: "recipient" });
+    expect(await resendUntil(f)).toBeUndefined();
+    expect(
+      await refusal(resendClaimPayment(f.bindings, f.recipient, f.claimId)),
+    ).toMatchObject({
+      code: "PAYMENT_RESEND_CLOSED",
+      message: "重新发送的时间已过（被拒后 5 分钟内有效），这笔不再补发。",
+    });
+    // Its sender: over, not 未完成 and not 异常待处理.
+    const all = await listAccountPayments(f.bindings, f.owner);
+    expect(all.summary).toMatchObject({
+      openCount: 0,
+      openAmount: "0.00",
+      attentionCount: 0,
+      failedCount: 1,
+    });
+    expect(all.total).toBe(1);
+    expect(all.items.map((item) => item.status)).toEqual(["failed"]);
+    expect(
+      (await listAccountPayments(f.bindings, f.owner, "open")).items,
+    ).toHaveLength(0);
+    const failed = await listAccountPayments(f.bindings, f.owner, "failed");
+    expect(failed.total).toBe(1);
+    expect(failed.items.map((item) => item.id)).toEqual([f.taskId]);
+    expect(
+      (await accountPaymentDetail(f.bindings, f.owner, f.taskId)).payment,
+    ).toMatchObject({ status: "failed", nextAction: "none" });
+    // Nothing moves it again.
+    const later = upstream(receipt(f), { kind: "not_found" });
+    now += 3_600_000;
+    await cycle(f, later);
+    expect(later.send).not.toHaveBeenCalled();
+    expect((await task(f)).status).toBe("failed");
+  });
+
+  it("ends one sent again and refused again on the next run", async () => {
+    const { f } = await turnedDown();
+    const again = upstream(noAccount, { kind: "not_found" });
+    await resendClaimPayment(f.bindings, f.recipient, f.claimId);
+    // Being sent again: not over.
+    expect(await endLapsedResends(f.bindings)).toBe(0);
+    await cycle(f, again);
+    await due(f);
+    await cycle(f, again);
+    expect((await task(f)).status).toBe("attention");
+    expect(await endLapsedResends(f.bindings)).toBe(1);
+    expect((await task(f)).status).toBe("failed");
+    expect(
+      await refusal(resendClaimPayment(f.bindings, f.recipient, f.claimId)),
+    ).toMatchObject({
+      code: "PAYMENT_RESEND_CLOSED",
+      message: "已经重新发送过一次，这笔不再补发。",
+    });
+  });
+
+  it("is refused by the database for a claim's payment held for anything else", async () => {
+    const waiting = await fixture();
+    await expect(
+      env.DB.prepare("UPDATE payment_tasks SET status='failed' WHERE id=?")
+        .bind(waiting.taskId)
+        .run(),
+    ).rejects.toThrow(/observed real payment evidence cannot be cleared/u);
+
+    const other = await fixture();
+    await cycle(
+      other,
+      upstream(
+        {
+          kind: "rejected",
+          reason: "self_payment",
+          httpStatus: 400,
+          noOrderEvidence: "protocol_rejection_v1",
+        },
+        { kind: "not_found" },
+      ),
+    );
+    expect((await task(other)).status).toBe("attention");
+    now += 3_600_000;
+    expect(await endLapsedResends(other.bindings)).toBe(0);
+    await expect(
+      env.DB.prepare("UPDATE payment_tasks SET status='failed' WHERE id=?")
+        .bind(other.taskId)
+        .run(),
+    ).rejects.toThrow(/observed real payment evidence cannot be cleared/u);
   });
 });

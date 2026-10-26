@@ -38,11 +38,12 @@ export function isTerminalRegistration(data: ParticipationCache | undefined) {
 
 export function claimRefresh(claim?: ClaimDetail | null) {
   // Stopped in attention, only its claimant moves it again (by a request);
-  // a 🐟额红包's share has no payment to wait for.
+  // 未发出 is over; a 🐟额红包's share has no payment to wait for.
   return claim?.rewardType === "ldc" &&
     (!claim.payment ||
       claim.payment.status === "confirmed" ||
-      claim.payment.status === "attention")
+      claim.payment.status === "attention" ||
+      claim.payment.status === "failed")
     ? false
     : 15_000;
 }

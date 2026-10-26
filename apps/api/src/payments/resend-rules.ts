@@ -46,6 +46,15 @@ export function heldForRecipient(task: PaymentTaskRow) {
   );
 }
 
+/** A claim's payment that ended 未发出 for want of a Credit account. */
+export function unsentForRecipient(task: PaymentTaskRow) {
+  return (
+    task.source === "claim" &&
+    task.status === "failed" &&
+    task.sendBlockReason === "recipient"
+  );
+}
+
 /** Until when its claimant may send it again (ms), or null. */
 export function resendDeadline(
   task: PaymentTaskRow,

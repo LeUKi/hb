@@ -1,5 +1,9 @@
 import type { MerchantPaymentDetail } from "@hb/contracts";
 
+/** 未发出, on a claim's payment: its recipient had no Credit account. */
+export const UNSENT_REASON =
+  "收款人没有 LINUX DO Credit 账户，没能发出，不再补发。";
+
 export function paymentAttemptOutcome(outcome: string) {
   const labels: Record<string, string> = {
     started: "进行中",

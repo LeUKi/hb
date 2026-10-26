@@ -108,9 +108,10 @@ async function summaryOf(
     env.DB.prepare(`SELECT
       COALESCE(SUM(CASE WHEN p.status='confirmed' THEN p.amount_minor ELSE 0 END),0) AS confirmedMinor,
       COALESCE(SUM(CASE WHEN p.status='confirmed' THEN 1 ELSE 0 END),0) AS confirmedCount,
-      COALESCE(SUM(CASE WHEN p.status<>'confirmed' THEN p.amount_minor ELSE 0 END),0) AS openMinor,
-      COALESCE(SUM(CASE WHEN p.status<>'confirmed' THEN 1 ELSE 0 END),0) AS openCount,
-      COALESCE(SUM(CASE WHEN p.status='attention' THEN 1 ELSE 0 END),0) AS attentionCount
+      COALESCE(SUM(CASE WHEN p.status NOT IN ('confirmed','failed') THEN p.amount_minor ELSE 0 END),0) AS openMinor,
+      COALESCE(SUM(CASE WHEN p.status NOT IN ('confirmed','failed') THEN 1 ELSE 0 END),0) AS openCount,
+      COALESCE(SUM(CASE WHEN p.status='attention' THEN 1 ELSE 0 END),0) AS attentionCount,
+      COALESCE(SUM(CASE WHEN p.status='failed' THEN 1 ELSE 0 END),0) AS failedCount
       FROM payment_tasks p JOIN claims c ON c.id=p.claim_id JOIN activities a ON a.id=c.activity_id
       WHERE ${scopeSql(activityId)}`).bind(...binds),
     // The same rule as the detail's canRepairCredentials: an unconfirmed
@@ -121,7 +122,7 @@ async function summaryOf(
           COALESCE((SELECT i.corrected_client_id FROM payment_identity_corrections i
             WHERE i.task_id=p.id ORDER BY i.version DESC LIMIT 1), p.client_id) AS client_id
         FROM payment_tasks p JOIN claims c ON c.id=p.claim_id JOIN activities a ON a.id=c.activity_id
-        WHERE ${scopeSql(activityId)} AND +p.mode='real' AND p.status<>'confirmed'
+        WHERE ${scopeSql(activityId)} AND +p.mode='real' AND p.status NOT IN ('confirmed','failed')
       ), latest AS (
         SELECT e.id, e.created_at, e.client_id, m.client_id AS current_client_id,
           (SELECT cr.verification_status || ':' || COALESCE(cr.verification_reason,'')
@@ -139,6 +140,7 @@ async function summaryOf(
         openMinor: number;
         openCount: number;
         attentionCount: number;
+        failedCount: number;
       }
     | undefined;
   const ids = (repairable?.results ?? []) as { id: string }[];
@@ -148,6 +150,7 @@ async function summaryOf(
     openAmount: formatAmount(Number(row?.openMinor ?? 0)),
     openCount: Number(row?.openCount ?? 0),
     attentionCount: Number(row?.attentionCount ?? 0),
+    failedCount: Number(row?.failedCount ?? 0),
     repairableCount: ids.length,
     firstRepairableId: ids[0]?.id ?? null,
   };
@@ -169,8 +172,10 @@ export async function listAccountPayments(
     filter === "confirmed"
       ? "AND m.status='confirmed'"
       : filter === "open"
-        ? "AND m.status<>'confirmed'"
-        : "";
+        ? "AND m.status NOT IN ('confirmed','failed')"
+        : filter === "failed"
+          ? "AND m.status='failed'"
+          : "";
   const page = after
     ? `AND (m.group_at<? OR (m.group_at=? AND (m.activity_id<? OR (m.activity_id=? AND (m.created_at<? OR (m.created_at=? AND m.id<?))))))`
     : "";
@@ -235,7 +240,9 @@ export async function listAccountPayments(
         ? summary.confirmedCount
         : filter === "open"
           ? summary.openCount
-          : summary.confirmedCount + summary.openCount,
+          : filter === "failed"
+            ? summary.failedCount
+            : summary.confirmedCount + summary.openCount + summary.failedCount,
     nextCursor:
       rows.results.length > 20 && last
         ? btoa(

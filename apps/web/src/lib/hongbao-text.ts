@@ -120,11 +120,13 @@ export function deadlineLine(
   return `${facts.draw ? "开奖" : "截止"} ${clockLabel(Date.parse(at), now)}`;
 }
 
-/** The tone of a payment state: confirmed, held up, or waiting. */
+/** The tone of a payment state: confirmed, held up, over unpaid, or waiting. */
 export function paymentTone(state: string) {
   return state === "confirmed"
     ? ("success" as const)
     : state === "attention"
       ? ("danger" as const)
-      : ("warning" as const);
+      : state === "failed"
+        ? ("neutral" as const)
+        : ("warning" as const);
 }

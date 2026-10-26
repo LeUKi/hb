@@ -23,6 +23,7 @@ const paymentText = {
   success: "text-success",
   warning: "text-warning",
   danger: "text-danger",
+  neutral: "text-ink-3",
 } as const;
 
 /** Which list: claims (用时 + amount), sign-ups (用时), winners (amount). */

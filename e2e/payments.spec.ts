@@ -54,6 +54,9 @@ const list: AccountPaymentList = {
     }),
     payment("11111111-2222-4333-8444-555555555552", "attention"),
     payment("11111111-2222-4333-8444-555555555553", "confirmed"),
+    payment("11111111-2222-4333-8444-555555555554", "failed", {
+      reason: "recipient",
+    }),
   ],
   activities: {
     [activityId]: {
@@ -85,10 +88,11 @@ const list: AccountPaymentList = {
     openAmount: "1.32",
     openCount: 2,
     attentionCount: 1,
+    failedCount: 1,
     repairableCount: 1,
     firstRepairableId: "11111111-2222-4333-8444-555555555551",
   },
-  total: 3,
+  total: 4,
   nextCursor: null,
 };
 
@@ -215,6 +219,18 @@ test.describe("付款记录", () => {
       .click();
     await expect(page).toHaveURL(/\/payments\?filter=open$/);
     await expect.poll(() => filters).toContain("open");
+    // 未发出 is over: neither 未完成 nor 异常待处理, a filter of its own.
+    await expect(
+      page
+        .getByText("收款人没有 LINUX DO Credit 账户，没能发出，不再补发。")
+        .first(),
+    ).toBeVisible();
+    await page
+      .getByRole("group", { name: "付款状态" })
+      .getByRole("button", { name: /未发出/ })
+      .click();
+    await expect(page).toHaveURL(/\/payments\?filter=failed$/);
+    await expect.poll(() => filters).toContain("failed");
   });
 
   test("切走再回到标签页：列表和详情都不闪骨架屏", async ({ page }) => {

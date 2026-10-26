@@ -1,6 +1,8 @@
 import { expect, type Page, test } from "@playwright/test";
 import type {
+  BalanceApiKey,
   BalanceTopup,
+  BalanceTransfer,
   BalanceWithdrawal,
 } from "../packages/contracts/src";
 import {
@@ -954,5 +956,132 @@ test.describe("🐟额", () => {
       dialog.getByText("拿到密钥的人能用它转走你的🐟，也能看到你收到的转账。"),
     ).toBeVisible();
     expect(made).toEqual([{ name: "我的小站", dailyLimit: "100" }]);
+  });
+
+  test("开放接口密钥：停用的收进二级弹窗，详情里的停用不用翻流水", async ({
+    page,
+  }) => {
+    await mockSession(page, { ...viewer, balance: true, balancePlus: true });
+    await mockBalance(page);
+    const now = Date.now();
+    const key = (extra: Partial<BalanceApiKey>): BalanceApiKey => ({
+      id: "key-1",
+      name: "我的小站",
+      lastFour: "2345",
+      status: "active",
+      dailyLimitMinor: null,
+      usedTodayMinor: 0,
+      createdAt: now - 86_400_000,
+      lastTransferAt: now - 60_000,
+      lastTransferIp: null,
+      transferCount: 25,
+      transferTotalMinor: 2500,
+      revokedAt: null,
+      revokeReason: null,
+      ...extra,
+    });
+    const keys = [
+      key({}),
+      key({
+        id: "key-2",
+        name: "旧网站",
+        lastFour: "1111",
+        status: "revoked",
+        revokedAt: now - 3_600_000,
+      }),
+      key({
+        id: "key-3",
+        name: "被停的",
+        lastFour: "3333",
+        status: "admin_revoked",
+        revokedAt: now - 7_200_000,
+        revokeReason: "滥用",
+      }),
+    ];
+    const transfer = (index: number): BalanceTransfer => ({
+      id: `transfer-${index}`,
+      direction: "out",
+      destination: "balance",
+      amountMinor: 100,
+      remark: `第 ${index} 笔`,
+      counterpart: {
+        userId: "200",
+        username: "Friend",
+        displayName: "Friend",
+        avatarUrl: null,
+      },
+      apiKeyName: "我的小站",
+      outTransferNo: `out-${index}`,
+      status: "sent",
+      withdrawal: null,
+      createdAt: now - index * 1000,
+    });
+    const totals = (count: number) => ({
+      today: { count, totalMinor: count * 100 },
+      week: { count, totalMinor: count * 100 },
+      all: { count, totalMinor: count * 100 },
+    });
+    await page.route("**/api/me/balance/api-keys", (route) =>
+      route.fulfill({ json: { items: keys, max: 10 } }),
+    );
+    await page.route("**/api/me/balance/api-keys/*", (route) => {
+      const url = new URL(route.request().url());
+      const id = url.pathname.split("/").at(-1);
+      const found = keys.find((item) => item.id === id) ?? keys[0];
+      const later = url.searchParams.has("cursor");
+      const count = found?.id === "key-1" ? 25 : 0;
+      return route.fulfill({
+        json: {
+          key: found,
+          totals: totals(count),
+          transfers:
+            count === 0
+              ? []
+              : Array.from({ length: later ? 5 : 20 }, (_, index) =>
+                  transfer(later ? 20 + index : index),
+                ),
+          nextCursor: count > 0 && !later ? "next" : null,
+        },
+      });
+    });
+    await openApp(page, "/balance");
+    const section = page.locator("section", {
+      has: page.getByRole("heading", { name: "开放接口密钥" }),
+    });
+    // The working key alone, with no word for it.
+    await expect(
+      section.getByRole("button", { name: /我的小站/ }),
+    ).toBeVisible();
+    await expect(section.getByText("有效", { exact: true })).toHaveCount(0);
+    await expect(section.getByText("旧网站")).toHaveCount(0);
+
+    await section
+      .getByRole("button", { name: "已停用的密钥 2 个（1 个由管理员停用）" })
+      .click();
+    const stopped = page.getByRole("dialog", { name: "已停用的密钥 · 2 个" });
+    await expect(stopped.getByText("旧网站")).toBeVisible();
+    await expect(stopped.getByText("管理员停用")).toBeVisible();
+    await stopped.getByRole("button", { name: /被停的/ }).click();
+    const stoppedKey = page.getByRole("dialog", { name: "密钥「被停的」" });
+    await expect(stoppedKey.getByText("管理员停用：滥用")).toBeVisible();
+    await expect(stoppedKey.getByRole("button", { name: "停用" })).toHaveCount(
+      0,
+    );
+    await stoppedKey.getByRole("button", { name: "关闭" }).click();
+    await expect(stoppedKey).toHaveCount(0);
+    await stopped.getByRole("button", { name: "关闭" }).click();
+    await expect(stopped).toHaveCount(0);
+
+    // Its detail: 停用 in reach, what it sent one step further.
+    await section.getByRole("button", { name: /我的小站/ }).click();
+    const detail = page.getByRole("dialog", { name: "密钥「我的小站」" });
+    await expect(detail.getByRole("button", { name: "停用" })).toBeInViewport();
+    await expect(detail.getByText("第 3 笔")).toHaveCount(0);
+    await detail.getByRole("button", { name: "用它转的 25 笔" }).click();
+    const sent = page.getByRole("dialog", { name: "用它转的 · 25 笔" });
+    await expect(sent.getByText("转给 @Friend · 第 3 笔")).toBeVisible();
+    await sent.getByText("转给 @Friend · 第 19 笔").scrollIntoViewIfNeeded();
+    await expect(sent.getByText("转给 @Friend · 第 24 笔")).toBeAttached();
+    await expect(sent.getByText("共 25 笔").last()).toBeAttached();
   });
 });

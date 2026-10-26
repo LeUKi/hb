@@ -63,6 +63,7 @@ import {
   createTopup,
   ownedTopup,
   payTopup,
+  TOPUP_PAYABLE_MS,
   topupView,
 } from "./topups";
 import {
@@ -131,10 +132,13 @@ export const balanceRoutes = new Hono<ApiContext>()
         readBalanceSettings(c.env),
         readAccount(c.env, session.user.id),
         listRecords(c.env, session.user.id, filter, cursor),
+        // The page's 还没到账 note: only those still payable at Credit (its
+        // order lasts 5 minutes, 去 Credit 站确认 10). Past that it would
+        // stay for good; the rest are in 明细 as 未完成 (balance-design §8).
         c.env.DB.prepare(
-          "SELECT COUNT(*) AS count FROM balance_topups WHERE user_id=? AND status!='credited'",
+          "SELECT COUNT(*) AS count FROM balance_topups WHERE user_id=? AND status='pending' AND COALESCE(submitted_at,created_at)>?",
         )
-          .bind(session.user.id)
+          .bind(session.user.id, Date.now() - TOPUP_PAYABLE_MS)
           .first<{ count: number }>(),
         readPlatformAppRow(c.env),
         plusOf(c.env, session.user.id),

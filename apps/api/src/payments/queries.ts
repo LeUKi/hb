@@ -260,7 +260,9 @@ export async function merchantPaymentDetail(
         }
       : null,
     nextAction:
-      row.status === "confirmed" || row.status === "attention"
+      row.status === "confirmed" ||
+      row.status === "attention" ||
+      row.status === "failed"
         ? "none"
         : row.mode === "simulation"
           ? row.status === "pending" || row.status === "waiting"

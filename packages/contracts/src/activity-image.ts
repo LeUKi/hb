@@ -28,7 +28,13 @@ export const DEFAULT_ACTIVITY_IMAGE_TIME_ZONE = "Asia/Shanghai";
 
 export type ActivityImagePaymentStatus = Extract<
   PaymentState,
-  "pending" | "sending" | "reconciling" | "waiting" | "confirmed" | "attention"
+  | "pending"
+  | "sending"
+  | "reconciling"
+  | "waiting"
+  | "confirmed"
+  | "attention"
+  | "failed"
 > | null;
 
 /**
@@ -62,7 +68,7 @@ export type ActivityImagePreferences = {
   };
 };
 
-export type ActivityImageTone = "success" | "warning" | "danger";
+export type ActivityImageTone = "success" | "warning" | "danger" | "neutral";
 
 /** What the image draws; `activityImageInput` picks it for a viewer. */
 export type ActivityImageInput = {
@@ -236,13 +242,14 @@ function endLine(activity: PublicActivity, now: Date) {
   return "红包已提前结束";
 }
 
-/** Production's four payment words. */
+/** Production's payment words. */
 function paymentWords(status: ActivityImagePaymentStatus): {
   text: string;
   tone: ActivityImageTone;
 } {
   if (status === "confirmed") return { text: "已发放", tone: "success" };
   if (status === "attention") return { text: "需要关注", tone: "danger" };
+  if (status === "failed") return { text: "未发出", tone: "neutral" };
   if (status === "reconciling")
     return { text: "正在核对原订单", tone: "warning" };
   return { text: "付款处理中", tone: "warning" };
@@ -591,6 +598,7 @@ const toneColors: Record<ActivityImageTone, { fill: string; text: string }> = {
   success: { fill: "rgb(30 138 87 / .12)", text: "#1e8a57" },
   warning: { fill: "rgb(196 122 18 / .14)", text: "#9a5b00" },
   danger: { fill: "rgb(200 42 48 / .12)", text: "#b3262c" },
+  neutral: { fill: "rgb(20 22 26 / .08)", text: "#5c6066" },
 };
 
 /** The seal's words get smaller as there are more of them. */

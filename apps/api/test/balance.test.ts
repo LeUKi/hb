@@ -539,6 +539,32 @@ describe("转入", () => {
     ).toBe(1);
   });
 
+  it("tells of a 转入 not arrived only while Credit can still be paid", async () => {
+    const { tester, settingsVersion } = await openForTester();
+    const started = await call("POST", "/me/balance/topups", tester, {
+      requestId: crypto.randomUUID(),
+      settingsVersion,
+      by: "credit",
+      amount: "100",
+    });
+    const { topup } = started.json as TopupJson;
+    expect((await call("GET", "/me/balance", tester)).json).toMatchObject({
+      openTopups: 1,
+    });
+    // Ten minutes from its order, 去 Credit 站确认 is gone: no more note,
+    // and it is still in 明细 as it was.
+    const later = Date.now() + 10 * 60_000;
+    vi.spyOn(Date, "now").mockReturnValue(later);
+    try {
+      expect((await call("GET", "/me/balance", tester)).json).toMatchObject({
+        openTopups: 0,
+        items: [{ type: "topup", topup: { id: topup.id, status: "pending" } }],
+      });
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
   it("answers the same request with the same 转入, and goes back to the same order", async () => {
     const { tester, credit, settingsVersion } = await openForTester();
     const body = {

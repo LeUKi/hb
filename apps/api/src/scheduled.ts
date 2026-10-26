@@ -2,6 +2,7 @@ import { sweepActivityLifecycle } from "./activities/lifecycle";
 import { settleEndedWithdrawals } from "./balance/withdrawal-settlement";
 import type { ApiBindings } from "./env";
 import { pruneJudgeUsage } from "./judge/usage";
+import { endLapsedResends } from "./payments/resend";
 import { sweepPayments } from "./payments/scheduler";
 import { recoverCredentialChecks } from "./payments/verification";
 import { inMaintenanceMode } from "./runtime/maintenance-mode";
@@ -48,6 +49,8 @@ export async function runMaintenance(env: ApiBindings, scheduledAt: number) {
         const woken = await sweepPayments(env);
         // A 转出 left 发放中 after its payment ended (it should never be).
         await settleEndedWithdrawals(env);
+        // A payment refused for want of a Credit account, past its resend.
+        await endLapsedResends(env);
         return woken;
       },
     },

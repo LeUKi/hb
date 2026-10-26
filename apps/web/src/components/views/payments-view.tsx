@@ -11,7 +11,7 @@ import { useRef } from "react";
 import { useActivityFacts } from "../../lib/activity-facts";
 import { activityPath } from "../../lib/activity-route";
 import { paymentTone } from "../../lib/hongbao-text";
-import { paymentReason } from "../../lib/payment-display";
+import { paymentReason, UNSENT_REASON } from "../../lib/payment-display";
 import { useAccountPaymentPages } from "../../lib/payments";
 import { sentRecordOf } from "../../lib/records";
 import { clockSeconds } from "../../lib/roster-time";
@@ -43,7 +43,7 @@ import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
 
 /** In the address as the page says it; the API's open is 未完成. */
-type Filter = "all" | "open" | "confirmed";
+type Filter = "all" | "open" | "confirmed" | "failed";
 
 function PaymentRow({
   payment,
@@ -83,9 +83,11 @@ function PaymentRow({
               </span>
             </span>
             <span className="truncate text-xs text-ink-3">
-              {payment.status !== "confirmed" && payment.reason
-                ? paymentReason(payment.reason)
-                : `${clockSeconds(Date.parse(payment.createdAt))} ${verb}`}
+              {payment.status === "failed"
+                ? UNSENT_REASON
+                : payment.status !== "confirmed" && payment.reason
+                  ? paymentReason(payment.reason)
+                  : `${clockSeconds(Date.parse(payment.createdAt))} ${verb}`}
             </span>
           </span>
           <span className="grid shrink-0 justify-items-end gap-1">
@@ -244,6 +246,7 @@ function Payments({
     "all",
     "open",
     "confirmed",
+    "failed",
   ]);
   const query = useAccountPaymentPages(
     user.id,
@@ -271,7 +274,9 @@ function Payments({
     {},
     ...pages.map((page) => page.activities),
   ) as Record<string, AccountPaymentGroup>;
-  const all = summary ? summary.confirmedCount + summary.openCount : 0;
+  const all = summary
+    ? summary.confirmedCount + summary.openCount + summary.failedCount
+    : 0;
   // 🧾: the 红包's title over the page (its public read is in the cache).
   const single = useActivityFacts(activityId ?? null);
 
@@ -393,6 +398,16 @@ function Payments({
                     label: "已发放",
                     count: summary.confirmedCount,
                   },
+                  // 未发出 is over: shown only when there is some (07 §8).
+                  ...(summary.failedCount > 0 || filter === "failed"
+                    ? [
+                        {
+                          value: "failed" as const,
+                          label: "未发出",
+                          count: summary.failedCount,
+                        },
+                      ]
+                    : []),
                 ]}
               />
               <ResultLoad

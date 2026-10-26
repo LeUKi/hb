@@ -426,7 +426,8 @@ function paymentStatus(value: string | null) {
     value === "reconciling" ||
     value === "waiting" ||
     value === "confirmed" ||
-    value === "attention"
+    value === "attention" ||
+    value === "failed"
     ? value
     : null;
 }
