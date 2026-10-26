@@ -220,6 +220,25 @@ test.describe("附带网页", () => {
     expect(loads.length).toBe(2);
   });
 
+  test("提醒条可以关掉，只到刷新页面为止", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await mockSession(page, viewer);
+    await mock(page);
+    await openApp(page, path);
+    await page.locator("#page-button").click();
+    await expect(page.getByText(notice)).toBeVisible();
+    await page.getByRole("button", { name: "关闭提醒" }).click();
+    await expect(page.getByText(notice)).toHaveCount(0);
+    // Hidden and shown again on this 红包: still closed.
+    await page.locator("#page-button").click();
+    await page.locator("#page-button").click();
+    await expect(page.getByText("来自 @xiaoman 的红包")).toBeVisible();
+    await expect(page.getByText(notice)).toHaveCount(0);
+    // The site loaded again: back (the page window remembered open).
+    await page.reload();
+    await expect(page.getByText(notice)).toBeVisible();
+  });
+
   test("宽屏：两扇窗合起来最宽 1680", async ({ page }) => {
     await page.setViewportSize({ width: 2560, height: 1000 });
     await mockSession(page, viewer);

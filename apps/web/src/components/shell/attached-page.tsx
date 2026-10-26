@@ -54,6 +54,8 @@ type Held = {
   url: string | null;
   /** The 红包 author's LINUX DO username: whose page this is. */
   author: string | null;
+  /** Its notice closed: for this 红包 until the site is reloaded. */
+  noticeClosed: boolean;
   open: boolean;
   loaded: boolean;
   mainWidth: number;
@@ -62,6 +64,7 @@ const heldAtom = atom<Held>({
   forId: null,
   url: null,
   author: null,
+  noticeClosed: false,
   open: false,
   loaded: false,
   mainWidth: 460,
@@ -212,15 +215,16 @@ function PageMark() {
 }
 
 /**
- * Under the title bar, always (docs/attached-page-design.md §2.5, the
- * user's words, 2026-10-26): not this site's page, what it sees, no
- * dealings in it, and whom to tell.
+ * Under the title bar (docs/attached-page-design.md §2.5, the user's
+ * words, 2026-10-26): not this site's page, what it sees, no dealings in
+ * it, and whom to tell. It can be closed for a while: it is back on the
+ * site's next load, or on another 红包's page.
  */
-function PageNotice() {
+function PageNotice({ onClose }: { onClose: () => void }) {
   return (
-    <p className="flex shrink-0 gap-2 border-line border-b bg-warning-soft px-4 py-2 text-xs leading-5 text-warning">
+    <div className="flex shrink-0 items-start gap-2 border-line border-b bg-warning-soft py-2 pr-2 pl-4 text-xs leading-5 text-warning">
       <ShieldAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-      <span>
+      <p className="min-w-0 flex-1">
         不是红包站的网页，它能看到你的 IP
         和浏览器信息。不要在里面付款、转账或做任何交易；发现违规推广，请联系站长{" "}
         <a
@@ -232,8 +236,46 @@ function PageNotice() {
           @{OWNER}
         </a>
         。
-      </span>
-    </p>
+      </p>
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="关闭提醒"
+        title="关闭提醒"
+        className="-my-0.5 grid size-6 shrink-0 place-items-center rounded-full transition-colors hover:bg-warning/10"
+      >
+        <X className="size-3.5" aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
+/**
+ * The notice where it goes, until closed: it folds away, and opens again
+ * where it is shown anew (the sheet pulled up).
+ */
+function NoticeSlot({ shown = true }: { shown?: boolean }) {
+  const [held, setHeld] = useAtom(heldAtom);
+  const reduced = useReducedMotionPref();
+  return (
+    <AnimatePresence initial={false}>
+      {shown && !held.noticeClosed && (
+        <motion.div
+          key="notice"
+          className="shrink-0 overflow-hidden"
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: "auto", opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{ duration: reduced ? 0 : 0.26, ease }}
+        >
+          <PageNotice
+            onClose={() =>
+              setHeld((current) => ({ ...current, noticeClosed: true }))
+            }
+          />
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -569,7 +611,7 @@ function SideWindow({
                 <X />
               </BarButton>
             </TitleBar>
-            <PageNotice />
+            <NoticeSlot />
             {/* While the line is dragged the page takes no pointer: over
                 its frame the moves would go to it, not to the line. */}
             <div
@@ -959,20 +1001,7 @@ function Sheet({
                     if (!dragged.current) go(up ? "peek" : "full");
                   }}
                 />
-                <AnimatePresence initial={false}>
-                  {up && (
-                    <motion.div
-                      key="notice"
-                      className="shrink-0 overflow-hidden"
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: reduced ? 0 : 0.26, ease }}
-                    >
-                      <PageNotice />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                <NoticeSlot shown={up} />
                 <div className="relative min-h-0 flex-1 bg-white/60 select-text">
                   <Page url={url} active={up} />
                 </div>
@@ -1015,6 +1044,7 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
             forId: activityId,
             url: pageUrl,
             author: pageAuthor,
+            noticeClosed: false,
             open:
               pageUrl !== null && wide && rememberedOpen().includes(activityId),
             loaded: false,
