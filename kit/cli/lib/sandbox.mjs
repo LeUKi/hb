@@ -5,7 +5,7 @@
 // (协议第 9 节); with `live` it goes out from this computer through a
 // gateway holding the site's rules (gateway.mjs). Locally the CPU is not
 // limited, so each judgment is cut off by the clock instead: past 1 second
-// it is a timeout (with the network, past the site's 5), and workerd is
+// it is a timeout (going out with --live, past the site's 5), and workerd is
 // thrown away and started afresh, as the site moves to a new sandbox after
 // one.
 import { readFileSync } from "node:fs";
@@ -196,9 +196,11 @@ export async function openSandbox(
     ({ runtime, hung, loadMs } = await start());
     await first.dispose().catch(() => {});
   }
-  const waitMs = list
-    ? Math.max(TIMEOUT_MS, NETWORK_LIMITS.judgmentMs)
-    : TIMEOUT_MS;
+  // Written answers come back at once: waiting buys no time, as on the
+  // site, where the clock stops while a request is out. Going out, the
+  // judgment has the site's 5 seconds in all.
+  const waitMs =
+    live && list ? Math.max(TIMEOUT_MS, NETWORK_LIMITS.judgmentMs) : TIMEOUT_MS;
 
   // A judgment that will not end keeps workerd busy: start a new one.
   const restart = async () => {

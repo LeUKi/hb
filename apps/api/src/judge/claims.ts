@@ -39,7 +39,12 @@ import {
   digestPassword,
   encryptString,
 } from "../security/crypto";
-import { runJudge, type SandboxFailure } from "./sandbox";
+import {
+  JUDGE_WAIT_MS,
+  NETWORK_WAIT_MS,
+  runJudge,
+  type SandboxFailure,
+} from "./sandbox";
 import type { FetchRecord, JudgeHooks } from "./session";
 import { findJudgeRow, type JudgeRow, judgeData, readSeed } from "./storage";
 import { usageStatement } from "./usage";
@@ -338,7 +343,7 @@ export async function claimByCode(
       },
       fresh: row.sandbox,
       protocol: row.protocol,
-      ...(network && online
+      ...(network && online && session
         ? {
             network: {
               mode: "live" as const,
@@ -346,6 +351,9 @@ export async function claimByCode(
               activityId,
               outbound: online.outbound(activityId, network),
             },
+            // Waiting on its requests buys no time to compute: the clock
+            // stops while one is out, 5 s in all (§9.3).
+            timer: session.deadline(JUDGE_WAIT_MS, NETWORK_WAIT_MS),
           }
         : {}),
     });

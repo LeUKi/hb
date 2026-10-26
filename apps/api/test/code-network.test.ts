@@ -12,6 +12,7 @@ import {
   openActivity,
 } from "../src/activities/service";
 import { app } from "../src/app";
+import { NetworkSession } from "../src/judge/session";
 import { advanceAttemptCooldown } from "./advance-attempt-cooldown";
 import {
   type Actor,
@@ -347,5 +348,68 @@ export async function judge(submission) {
       passed: false,
       networkProblems: ["代码判定暂时不能联网。"],
     });
+  });
+});
+
+// The clock of a 联网 judgment (session.ts): waiting on a request buys no
+// time to compute.
+describe("代码判定联网: the judgment's clock", () => {
+  const after = (ms: number) =>
+    new Promise((resolve) => setTimeout(resolve, ms));
+
+  it("gives up after the budget with no request out", async () => {
+    const session = new NetworkSession();
+    const started = Date.now();
+    const timer = session.deadline(60, 1000);
+    expect(await timer.late).toBe("compute");
+    expect(Date.now() - started).toBeGreaterThanOrEqual(55);
+    expect(Date.now() - started).toBeLessThan(400);
+    timer.stop();
+  });
+
+  it("stops while a request is out, and goes on after", async () => {
+    const session = new NetworkSession();
+    const timer = session.deadline(100, 2000);
+    let late: string | null = null;
+    void timer.late.then((reason) => {
+      late = reason;
+    });
+    await after(40);
+    const begun = session.begin();
+    if (!("index" in begun)) throw new Error("Refused");
+    // Out for longer than the whole budget: not late.
+    await after(250);
+    expect(late).toBeNull();
+    session.finish(begun.index, { method: "GET", url: API, ms: 250 });
+    await after(30);
+    expect(late).toBeNull();
+    // The rest of the budget, about 30 ms more.
+    await after(120);
+    expect(late).toBe("compute");
+    timer.stop();
+  });
+
+  it("gives up at the cap even with a request that never comes back", async () => {
+    const session = new NetworkSession();
+    const timer = session.deadline(50, 200);
+    session.begin();
+    expect(await timer.late).toBe("total");
+    timer.stop();
+    const records = await session.close();
+    expect(records).toEqual([]);
+    expect(session.broken).toBe(true);
+  }, 10_000);
+});
+
+describe("代码判定联网: a slow answer", () => {
+  it("is waited for past the 300 ms a judgment computes in", async () => {
+    const opened = await open();
+    answer = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      return Response.json({ right: true, say: "慢慢来" });
+    };
+    const claimant = await actor();
+    const result = await claim(opened.id, claimant, "flag");
+    expect(result.body).toMatchObject({ result: "claimed" });
   });
 });

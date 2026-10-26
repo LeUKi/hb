@@ -19,7 +19,10 @@ const COMPATIBILITY_DATE = "2026-09-01";
 /** The sandbox is killed past about cpuMs + 2 s; the caller stops waiting first. */
 const CPU_MS = 50;
 export const JUDGE_WAIT_MS = 300;
-/** A 联网 judgment: its requests are waited for too (§9.3). */
+/**
+ * A 联网 judgment, all of it (§9.3). Its requests are waited for; the rest
+ * of it still has JUDGE_WAIT_MS (session.ts's deadline).
+ */
 export const NETWORK_WAIT_MS = NETWORK_LIMITS.judgmentMs;
 
 export type SandboxFailure =
@@ -118,6 +121,11 @@ export type JudgeRun = {
   /** The protocol the 红包 runs (JUDGE_PROTOCOL for a deploy). */
   protocol?: number;
   network?: JudgeNetwork;
+  /**
+   * When to give up, if not after `waitMs`: a 联网 judgment's clock, which
+   * stops while a request is out (session.ts).
+   */
+  timer?: { late: Promise<"compute" | "total">; stop: () => void };
 };
 
 function classify(error: unknown, loading: boolean): SandboxOutcome {
@@ -259,13 +267,25 @@ export async function runJudge(
   // A judgment given up on still ends (or is killed) later: nothing waits.
   request.catch(() => {});
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const late = new Promise<"late">((resolve) => {
-    timer = setTimeout(() => resolve("late"), waitMs);
-  });
+  const late = run.timer
+    ? run.timer.late
+    : new Promise<"late">((resolve) => {
+        timer = setTimeout(() => resolve("late"), waitMs);
+      });
   try {
     const response = await Promise.race([request, late]);
     if (response === "late")
       return { failure: "timeout", detail: `超过 ${waitMs} 毫秒没有判定完` };
+    if (response === "compute")
+      return {
+        failure: "timeout",
+        detail: `除了等网络，超过 ${JUDGE_WAIT_MS} 毫秒没有判定完`,
+      };
+    if (response === "total")
+      return {
+        failure: "timeout",
+        detail: `超过 ${NETWORK_WAIT_MS / 1000} 秒没有判定完`,
+      };
     const body = (await response.json()) as {
       verdict?: unknown;
       error?: { kind: SandboxFailure; detail: string };
@@ -295,5 +315,6 @@ export async function runJudge(
     return classify(error, loading);
   } finally {
     clearTimeout(timer);
+    run.timer?.stop();
   }
 }
