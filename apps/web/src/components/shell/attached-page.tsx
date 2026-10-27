@@ -876,16 +876,19 @@ const sheetAwayAtom = atom(false);
  * shrank, the address jumped, the buttons popped in and the colours
  * snapped): the mark and the address stay where they are; only the line
  * above the address changes, sliding (上拉查看附带网页 ↔ whose 红包 it comes
- * from); the arrow turns over; 刷新 opens beside it; the line under the
- * head fades in. Down, all of it pulls the sheet up; up, it lets it down.
+ * from); the arrow turns over; 刷新 and 在新标签页打开 open beside it; the
+ * line under the head fades in. Down, all of it pulls the sheet up; up, it
+ * lets it down.
  */
 function SheetHeader({
+  url,
   host,
   author,
   up,
   onToggle,
   onPointerDown,
 }: {
+  url: string;
   host: string;
   author: string | null;
   up: boolean;
@@ -895,6 +898,14 @@ function SheetHeader({
   const reduced = useReducedMotionPref();
   const shift = reduced ? 0 : 10;
   const turn = { duration: reduced ? 0 : 0.26, ease };
+  // A button up only: it opens from nothing beside the arrow.
+  const grow = {
+    className: "flex shrink-0 justify-center overflow-hidden",
+    initial: { width: 0, opacity: 0 },
+    animate: { width: 32, opacity: 1 },
+    exit: { width: 0, opacity: 0 },
+    transition: turn,
+  };
   return (
     <div
       className={`flex h-12 shrink-0 touch-none items-center gap-1 pr-2 pl-4 transition-[box-shadow] duration-200 ${
@@ -932,15 +943,13 @@ function SheetHeader({
       </button>
       <AnimatePresence initial={false}>
         {up && (
-          <motion.span
-            key="reload"
-            className="flex shrink-0 justify-center overflow-hidden"
-            initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 32, opacity: 1 }}
-            exit={{ width: 0, opacity: 0 }}
-            transition={turn}
-          >
+          <motion.span key="reload" {...grow}>
             <Reload />
+          </motion.span>
+        )}
+        {up && (
+          <motion.span key="open" {...grow}>
+            <OpenElsewhere url={url} />
           </motion.span>
         )}
       </AnimatePresence>
@@ -1125,6 +1134,7 @@ function Sheet({
                   <span className="h-1 w-10 rounded-full bg-ink-3/40" />
                 </div>
                 <SheetHeader
+                  url={url}
                   host={host}
                   author={author}
                   up={up}

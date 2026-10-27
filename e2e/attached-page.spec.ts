@@ -441,6 +441,8 @@ test.describe("附带网页", () => {
     });
     await expect(bar).toBeVisible();
     expect(loads).toEqual([]);
+    const elsewhere = page.getByRole("button", { name: "在新标签页打开" });
+    await expect(elsewhere).toHaveCount(0);
     await bar.click();
     await expect(page.getByText(notice)).toBeVisible();
     await expect(
@@ -448,8 +450,24 @@ test.describe("附带网页", () => {
         .frameLocator("iframe[title='puzzle.example.com 的网页']")
         .getByText("今日第 3 题"),
     ).toBeVisible();
+    // Pulled up, it opens whole too (a site that refuses frames shows
+    // nothing in the sheet), beside 刷新, as beside the 红包 window.
+    await expect(page.getByRole("button", { name: "刷新" })).toBeVisible();
+    await page.context().route(pageUrl, (route) =>
+      route.fulfill({
+        contentType: "text/html",
+        body: "<title>谜题</title>",
+      }),
+    );
+    const [opened] = await Promise.all([
+      page.context().waitForEvent("page"),
+      elsewhere.click(),
+    ]);
+    await expect.poll(() => opened.url()).toBe(pageUrl);
+    await opened.close();
     await page.getByRole("button", { name: "收起" }).click();
     await expect(bar).toBeVisible();
+    await expect(elsewhere).toHaveCount(0);
     expect(loads).toEqual([pageUrl]);
     // The button under 分享 pulls it up too.
     await page.locator("#page-button").click();
