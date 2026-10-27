@@ -6,6 +6,7 @@ import {
   useLayoutEffect,
   useRef,
 } from "react";
+import { flushSync } from "react-dom";
 import { useReducedMotionPref } from "../../lib/motion";
 import { allowedPasswordCharacter } from "../../lib/password-rules";
 import { omniboxElements } from "./use-omnibox-controller";
@@ -106,8 +107,31 @@ function useMismatchFlash(
 }
 
 /**
+ * Pasted lines as one, for 代码判定's box (programmable-hongbao-design §3):
+ * each run of line breaks, blank lines and the spaces and tabs around them
+ * included, becomes one space.
+ */
+function joinedLines(text: string) {
+  return text.replace(/[ \t]*(?:\r\n?|\n)[\r\n \t]*/gu, " ");
+}
+
+/** `text` at the caret, over what is selected, as typing it would be. */
+function insertAtCaret(
+  input: HTMLTextAreaElement,
+  text: string,
+  onChange: (value: string) => void,
+) {
+  // 撤销 takes it back.
+  if (document.execCommand("insertText", false, text)) return;
+  const { value, selectionStart: start, selectionEnd: end } = input;
+  flushSync(() => onChange(value.slice(0, start) + text + value.slice(end)));
+  input.setSelectionRange(start + text.length, start + text.length);
+}
+
+/**
  * Single-line textarea with a mirror layer. A textarea (not an input) keeps
- * pasted line breaks verbatim so they can be flagged instead of stripped.
+ * pasted line breaks verbatim so they can be flagged instead of stripped,
+ * except where `joinLines` makes them spaces.
  */
 export function OmniboxField({
   value,
@@ -130,6 +154,8 @@ export function OmniboxField({
   listbox,
   mismatch = 0,
   mono = false,
+  joinLines = false,
+  onLinesJoined,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -161,6 +187,10 @@ export function OmniboxField({
   mismatch?: number;
   /** 代码判定's box: what is typed in fixed width (02 §4). */
   mono?: boolean;
+  /** 代码判定's box: pasted or dropped lines go in as one (02 §4). */
+  joinLines?: boolean;
+  /** Lines were joined: the text that went in for them. */
+  onLinesJoined?: (text: string) => void;
 }) {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const mirrorRef = useRef<HTMLDivElement | null>(null);
@@ -242,14 +272,33 @@ export function OmniboxField({
         className={`absolute inset-0 block h-full w-full resize-none overflow-hidden whitespace-pre border-0 bg-transparent p-0 text-transparent caret-ink outline-none placeholder:text-ink-3 ${typography}`}
         style={{ lineHeight: `${lineHeight}px` }}
         onChange={(event) => {
-          onChange(event.target.value);
+          const input = event.target;
+          if (joinLines && /[\r\n]/u.test(input.value)) {
+            // Dropped in (a paste is joined before it goes in).
+            const caret = joinedLines(
+              input.value.slice(0, input.selectionStart),
+            ).length;
+            const joined = joinedLines(input.value);
+            flushSync(() => onChange(joined));
+            input.setSelectionRange(caret, caret);
+            onLinesJoined?.(joined);
+          } else onChange(input.value);
           requestAnimationFrame(syncScroll);
         }}
         onScroll={syncScroll}
         onSelect={syncScroll}
         onPaste={(event) => {
           if (readOnly) return;
-          if (onPaste?.(event.clipboardData.getData("text"))) {
+          const text = event.clipboardData.getData("text");
+          if (joinLines && /[\r\n]/u.test(text)) {
+            event.preventDefault();
+            const joined = joinedLines(text);
+            insertAtCaret(event.currentTarget, joined, onChange);
+            onLinesJoined?.(joined);
+            requestAnimationFrame(syncScroll);
+            return;
+          }
+          if (onPaste?.(text)) {
             event.preventDefault();
             requestAnimationFrame(syncScroll);
           }

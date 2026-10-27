@@ -977,6 +977,27 @@ test.describe("红包页", () => {
     expect(state.claims).toMatchObject([{ password: passwordOf.mine }]);
   });
 
+  // Only 代码判定's box joins pasted lines (02 §6): a 口令's keeps them, to
+  // be marked rather than quietly dropped.
+  test("口令红包的框粘贴多行文字：换行照样留着、标出来，不换成空格", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await mockSession(page, viewer);
+    await mockHongbao(page);
+    await openApp(page, path);
+    await page.evaluate(
+      (text) => navigator.clipboard.writeText(text),
+      "周末口令\n2026",
+    );
+    await page.getByRole("button", { name: "输入口令领取" }).click();
+    await expect(omniboxInput(page)).toBeFocused();
+    await page.keyboard.press("ControlOrMeta+V");
+    await expect(omniboxInput(page)).toHaveValue("周末口令\n2026");
+    await expect(shown(page, "粘贴的换行已换成空格")).toHaveCount(0);
+  });
+
   // 分享's forum copy links to the 红包页 itself (05 §5): there the whole
   // paragraph goes into its box, which keeps only the 口令 (02 §6).
   test("红包页上整段粘贴分享文案：输入框只留下口令，按领取就领", async ({

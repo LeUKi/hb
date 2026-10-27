@@ -40,7 +40,7 @@ const aiPrompt = (
 - judge.js 是一个 ES 模块，导出函数 judge(submission, tools)，可以是 async。每次有人在红包页提交一行输入，平台调用它一次，按它的返回决定发不发、发多少。
 - 金额都是整数，单位是分（0.01），不带币种；时间都是毫秒。
 - submission：
-  - input：提交的输入，已去掉首尾空白，1–200 个字，区分大小写，符号都算
+  - input：提交的输入，一行，已去掉首尾空白，1–200 个字，区分大小写，符号都算；领的人粘贴多行文字时，每处换行（连同两边的空格）换成了一个空格
   - now：判定时间；代码里 Date.now()、new Date() 都是它
   - user：{ id（LINUX DO 数字 ID）, username, level（信任等级 0–4，没有时 null）, attempts（他在这个红包里之前被判定过几次，出错不算） }
   - hongbao：{ title, total（总奖池）, count（总份数）, minEach（每份至少）, remaining（剩余奖池）, remainingCount（剩余份数，含这一份）, openedAt, endsAt }
@@ -166,7 +166,7 @@ export function HelpCodeView() {
           items={[
             {
               name: "input",
-              note: `提交的输入：已去掉首尾空白，1–${JUDGE_LIMITS.inputCharacters} 个字，区分大小写，符号都算`,
+              note: `提交的输入，一行：已去掉首尾空白，1–${JUDGE_LIMITS.inputCharacters} 个字，区分大小写，符号都算。粘贴的多行文字，每处换行（连同两边的空格）换成了一个空格`,
             },
             {
               name: "now",

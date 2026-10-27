@@ -26,7 +26,7 @@ export function judge(submission, tools) { … }
 
 ### 收到的 `submission`
 
-- `input`：提交的输入，已去掉首尾空白，1–200 个字，区分大小写，空格和符号都算
+- `input`：提交的输入，一行，已去掉首尾空白，1–200 个字，区分大小写，空格和符号都算。领的人粘贴多行文字时，每处换行（连同两边的空格）换成了一个空格
 - `now`：判定时间；代码里 `Date.now()`、`new Date()` 都是它
 - `user`：`{ id, username, level, attempts }`。`id` 是 LINUX DO 数字 ID；`level` 是信任等级 0–4，没有时 `null`；`attempts` 是他在这个红包里之前被判定过几次（出错、超时不算）
 - `hongbao`：`{ title, total, count, minEach, remaining, remainingCount, openedAt, endsAt }`：总奖池、总份数、每份至少、剩余奖池、剩余份数（含这一份）、开放和截止时间

@@ -674,6 +674,90 @@ test.describe("代码判定红包", () => {
     expect(state.judgmentReads.length).toBeGreaterThanOrEqual(3);
   });
 
+  // A share text of several lines pasted whole (programmable-hongbao-design
+  // §3), as a daily Bingo's: the code gets it as one line.
+  test("粘贴多行文字：换行换成空格，插在光标处，框下说一句；提交的是接起来的一行", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await mockSession(page, viewer);
+    const state = await mockCodeHongbao(page);
+    await mockLive(page);
+    await openApp(page, path);
+    await seal(page).click();
+    const input = omniboxInput(page);
+    await expect(input).toBeFocused();
+    const paste = async (text: string) => {
+      await page.evaluate(
+        (value) => navigator.clipboard.writeText(value),
+        text,
+      );
+      await page.keyboard.press("ControlOrMeta+V");
+    };
+    // Each run of line breaks, blank lines and the spaces and tabs around
+    // them included, is one space; spaces inside a line stay.
+    await input.fill("[]");
+    await page.keyboard.press("ArrowLeft");
+    await paste("第一行  \r\n\r\n \t第二行\n第三  行");
+    await expect(input).toHaveValue("[第一行 第二行 第三  行]");
+    await expect(shown(page, "粘贴的换行已换成空格 · 15 / 200")).toBeVisible();
+    // Typing on: still said; cleared, the usual line again.
+    await page.keyboard.press("End");
+    await page.keyboard.type("!");
+    await expect(shown(page, "粘贴的换行已换成空格 · 16 / 200")).toBeVisible();
+    await input.fill("");
+    await expect(
+      shown(page, "原样提交：区分大小写，符号都算，首尾空格会去掉 · 0 / 200"),
+    ).toBeVisible();
+    // Dropped in, as a drag of text from elsewhere puts it: the same, the
+    // caret after what was dropped.
+    await input.evaluate((element: HTMLTextAreaElement) => {
+      const value = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        "value",
+      )?.set;
+      value?.call(element, "甲\n\n乙丙");
+      element.setSelectionRange(4, 4);
+      element.dispatchEvent(
+        new InputEvent("input", { bubbles: true, inputType: "insertFromDrop" }),
+      );
+    });
+    await expect(input).toHaveValue("甲 乙丙");
+    expect(
+      await input.evaluate(
+        (element: HTMLTextAreaElement) => element.selectionStart,
+      ),
+    ).toBe(3);
+    await expect(shown(page, "粘贴的换行已换成空格 · 4 / 200")).toBeVisible();
+    await input.fill("");
+
+    // Seven lines, the last a link: one line, its ends trimmed on submit.
+    const bingo = [
+      "每日 Bingo #12",
+      "3 连线，用时 02:41",
+      "🟩⬜🟩⬜🟩",
+      "⬜🟩🟩🟩⬜",
+      "🟩🟩🟩⬜🟩",
+      "⬜🟩⬜🟩⬜",
+      "https://bingo.example.test/r/12-abc",
+      "",
+    ].join("\n");
+    const joined = bingo.trim().split("\n").join(" ");
+    await paste(bingo);
+    await expect(input).toHaveValue(`${joined} `);
+    await expect(
+      shown(page, `粘贴的换行已换成空格 · ${Array.from(joined).length} / 200`),
+    ).toBeVisible();
+    await page.keyboard.press("Enter");
+    await expect(
+      page.locator(".glass-pop").getByRole("region", { name: "我的提交" }),
+    ).toContainText("第 1 次");
+    expect(state.submissions).toMatchObject([
+      { participationMode: "code", input: joined },
+    ]);
+  });
+
   test("我的提交：页面上最近 3 次，输入直接显示；全部 N 次的弹窗滚到底再读", async ({
     page,
   }) => {

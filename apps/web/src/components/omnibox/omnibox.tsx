@@ -506,10 +506,14 @@ export function Omnibox() {
   const ownMessage =
     message?.activityId && message.activityId !== scope?.id ? null : message;
   const typed = Array.from(value.trim()).length;
+  // 代码判定 joins pasted lines (02 §4): said while what went in for them
+  // is still in the box.
+  const [joined, setJoined] = useState<string | null>(null);
+  const linesJoined = codeScope && joined !== null && value.includes(joined);
   const shownMessage = codeScope
     ? (ownMessage ?? {
         tone: /[\r\n]/.test(value) || typed > 200 ? "warning" : "neutral",
-        text: `原样提交：区分大小写，符号都算，首尾空格会去掉 · ${typed} / 200`,
+        text: `${linesJoined ? "粘贴的换行已换成空格" : "原样提交：区分大小写，符号都算，首尾空格会去掉"} · ${typed} / 200`,
       })
     : offScope
       ? ({
@@ -891,8 +895,11 @@ export function Omnibox() {
                 if (message) setMessage(null);
                 store.set(pastedPasswordAtom, null);
               }}
+              joinLines={codeScope}
+              onLinesJoined={setJoined}
               onPaste={(text) => {
-                // 代码判定 takes what is pasted as it is.
+                // 代码判定 takes what is pasted as it is, its lines joined
+                // (the field does that).
                 if (codeScope) return false;
                 // A share text pasted whole (02 §6): its 红包's address in
                 // the box (its 口令 kept for when it opens), or the 口令 alone.
