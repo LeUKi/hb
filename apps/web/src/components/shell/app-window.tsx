@@ -153,6 +153,8 @@ export function AppWindow() {
       <div
         className="app-window-frame relative"
         style={attachedFrameStyle(companion)}
+        // Under the 附带网页 gone full screen: as it was, out of reach.
+        inert={companion.covered}
       >
         <SquirclePlate className="window-plate" radius={frameRadius} />
         <WindowClip ring>

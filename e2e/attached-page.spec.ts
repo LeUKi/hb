@@ -259,6 +259,105 @@ test.describe("附带网页", () => {
     await expect.poll(both).toBeCloseTo(1680, 0);
   });
 
+  test("宽屏：全屏贴满浏览器，标题栏、提醒条还在，只留刷新和退出全屏；红包窗口原地不动、点不到；退出或 Esc 缩回原处", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await mockSession(page, viewer);
+    await mock(page);
+    await openApp(page, path);
+    await page.locator("#page-button").click();
+    await expect.poll(() => frameWidth(page)).toBeCloseTo(460, 0);
+    const frame = page.locator("iframe[title='puzzle.example.com 的网页']");
+    await expect(
+      page
+        .frameLocator("iframe[title='puzzle.example.com 的网页']")
+        .getByText("今日第 3 题"),
+    ).toBeVisible();
+    const box = () =>
+      frame.evaluate((element) => {
+        const { left, right, bottom } = element.getBoundingClientRect();
+        return { left, right, bottom };
+      });
+    const beside = await box();
+    const main = page.locator(".app-window-frame");
+    const mainBox = () =>
+      main.evaluate((element) => element.getBoundingClientRect().toJSON());
+    const before = await mainBox();
+    // Each frame of the move: the 红包 window stays where it was.
+    const watch = () =>
+      main.evaluate(
+        (element) =>
+          new Promise<string[]>((resolve) => {
+            const seen = new Set<string>();
+            const start = performance.now();
+            const look = () => {
+              const { x, y, width, height } = element.getBoundingClientRect();
+              seen.add(`${x},${y},${width},${height}`);
+              if (performance.now() - start < 800) requestAnimationFrame(look);
+              else resolve([...seen]);
+            };
+            look();
+          }),
+      );
+
+    let moves = watch();
+    await page.getByRole("button", { name: "全屏", exact: true }).click();
+    expect(await moves).toEqual([
+      `${before.x},${before.y},${before.width},${before.height}`,
+    ]);
+    // To the page's edges, its title bar and notice still on top.
+    await expect.poll(box).toEqual({ left: 0, right: 1440, bottom: 900 });
+    const title = await page.getByText("来自 @xiaoman 的红包").boundingBox();
+    expect(title?.y ?? 99).toBeLessThan(32);
+    await expect(page.getByText(notice)).toBeVisible();
+    // Only what is for the page itself: 刷新 and 退出全屏.
+    await expect(page.getByRole("button", { name: "刷新" })).toBeVisible();
+    for (const name of ["在新标签页打开", "收窄", "放宽", "隐藏（不会卸载）"])
+      await expect(page.getByRole("button", { name })).toHaveCount(0);
+    await expect(page.getByRole("separator")).toHaveCount(0);
+    // The 红包 window under it, as it was, out of reach: none of its parts
+    // over it, not even the 指令框 (hit-tested as if it were in reach).
+    await expect(main).toHaveAttribute("inert", "");
+    const over = await main.evaluate((element) => {
+      const omnibox = element.querySelector("search")?.getBoundingClientRect();
+      if (!omnibox) return "no 指令框";
+      element.removeAttribute("inert");
+      const hit = document.elementFromPoint(
+        omnibox.x + omnibox.width / 2,
+        omnibox.y + omnibox.height / 2,
+      );
+      element.setAttribute("inert", "");
+      return hit && element.contains(hit) ? hit.outerHTML.slice(0, 80) : null;
+    });
+    expect(over).toBeNull();
+    expect(await frameWidth(page)).toBeCloseTo(460, 0);
+
+    // Esc (the page itself not in focus): back where it was.
+    moves = watch();
+    await page.keyboard.press("Escape");
+    expect(await moves).toHaveLength(1);
+    await expect.poll(box).toEqual(beside);
+    await expect(main).not.toHaveAttribute("inert");
+    await expect(page.getByRole("separator")).toBeVisible();
+    for (const name of ["在新标签页打开", "收窄", "隐藏（不会卸载）"])
+      await expect(page.getByRole("button", { name })).toBeVisible();
+
+    // And with its button; not kept: reloaded, the windows side by side.
+    await page.getByRole("button", { name: "全屏", exact: true }).click();
+    await expect.poll(box).toEqual({ left: 0, right: 1440, bottom: 900 });
+    await page.getByRole("button", { name: "退出全屏" }).click();
+    await expect.poll(box).toEqual(beside);
+    await page.getByRole("button", { name: "全屏", exact: true }).click();
+    await expect(page.getByRole("button", { name: "退出全屏" })).toBeVisible();
+    await page.reload();
+    await expect.poll(() => frameWidth(page)).toBeCloseTo(460, 0);
+    await expect(
+      page.getByRole("button", { name: "全屏", exact: true }),
+    ).toBeVisible();
+    await expect(main).not.toHaveAttribute("inert");
+  });
+
   test("宽屏：红包皮上的“附带网页”和说明里的按钮都打开网页窗口", async ({
     page,
   }) => {

@@ -4,7 +4,8 @@
 // narrow one by itself — and the page opens on the right, in a window of
 // the same make; it narrows, widens or hides (and stays loaded). On a
 // narrow one it is a sheet pulled up from the bottom. The layout changes
-// behind a passing blur, the windows' widths moving.
+// behind a passing blur, the windows' widths moving. Full screen, the
+// page's window covers the whole page, the 红包 window still under it.
 import { skipToken, useQuery } from "@tanstack/react-query";
 import { useLocation, useRouter } from "@tanstack/react-router";
 import { atom, useAtom, useAtomValue, useSetAtom } from "jotai";
@@ -13,13 +14,21 @@ import {
   ChevronUp,
   Globe,
   LoaderCircle,
+  Maximize2,
+  Minimize2,
   PanelRightClose,
   PanelRightOpen,
   RotateCw,
   ShieldAlert,
   X,
 } from "lucide-react";
-import { AnimatePresence, motion, useDragControls } from "motion/react";
+import {
+  AnimatePresence,
+  animate,
+  motion,
+  useDragControls,
+  useMotionValue,
+} from "motion/react";
 import {
   type CSSProperties,
   createContext,
@@ -76,6 +85,11 @@ const reloadAtom = atom(0);
  * button): `n` moves on with each ask, `open` says which way.
  */
 const requestAtom = atom({ n: 0, open: true });
+/**
+ * The page's window covers the whole page (wide screens, open beside the
+ * 红包 window only): nothing of the 背景 shows.
+ */
+export const pageFullAtom = atom(false);
 
 /** Wide enough for the page beside the 红包 window. */
 const WIDE = "(min-width: 900px) and (min-height: 560px)";
@@ -293,6 +307,8 @@ type Frame = {
   lifting: boolean;
   /** While the line between the windows is dragged: both stay blurred. */
   holding: boolean;
+  /** Under the page's window gone full screen: where it was, out of reach. */
+  covered: boolean;
 };
 const FrameContext = createContext<Frame>({
   width: null,
@@ -301,6 +317,7 @@ const FrameContext = createContext<Frame>({
   moving: false,
   lifting: false,
   holding: false,
+  covered: false,
 });
 export const useAttachedFrame = () => useContext(FrameContext);
 
@@ -520,8 +537,41 @@ function TitleBar({
         </span>
         <span className="truncate font-mono text-xs text-ink-3">{host}</span>
       </span>
-      <BarSize.Provider value="icon-sm">{children}</BarSize.Provider>
+      <BarSize.Provider value="icon-sm">
+        {/* Each button 12px after the last (Fold), the first after the text. */}
+        <span className="-ml-3 flex shrink-0 items-center">{children}</span>
+      </BarSize.Provider>
     </div>
+  );
+}
+
+/**
+ * One of the title bar's buttons (36 wide, 12 after the last): one that
+ * goes, going full screen, folds away, the rest closing up, not popping
+ * out; coming back, it opens again.
+ */
+function Fold({
+  shown = true,
+  children,
+}: {
+  shown?: boolean;
+  children: ReactNode;
+}) {
+  const reduced = useReducedMotionPref();
+  return (
+    <AnimatePresence initial={false}>
+      {shown && (
+        <motion.span
+          className="flex shrink-0 justify-end overflow-hidden"
+          initial={{ width: 0, marginLeft: 0, opacity: 0 }}
+          animate={{ width: 36, marginLeft: 12, opacity: 1 }}
+          exit={{ width: 0, marginLeft: 0, opacity: 0 }}
+          transition={{ duration: reduced ? 0 : 0.26, ease }}
+        >
+          {children}
+        </motion.span>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -559,7 +609,10 @@ function SideWindow({
   frame,
   sideIsNarrow,
   closing,
+  full,
+  veilTick,
   onToggleWidth,
+  onToggleFull,
   onHide,
 }: {
   url: string;
@@ -572,13 +625,58 @@ function SideWindow({
   sideIsNarrow: boolean;
   /** The line is dragged past its end: let go and the page closes. */
   closing: boolean;
+  /** Over the whole page, the 红包 window still where it was under it. */
+  full: boolean;
+  /** Its own passing blur: each change of layout, and full screen. */
+  veilTick: number;
   onToggleWidth: () => void;
+  onToggleFull: () => void;
   onHide: () => void;
 }) {
   const reduced = useReducedMotionPref();
+  const { loaded } = useAtomValue(heldAtom);
+  // Full screen, the window reaches from its place in the row (kept, so
+  // nothing beside it moves) to the page's edges: where that place is,
+  // read as it goes (its first frame already starts from there) and again
+  // as the browser window changes.
+  const place = useRef<HTMLDivElement>(null);
+  const [at, setAt] = useState({ x: 0, y: 0 });
+  const readPlace = () => {
+    const box = place.current?.getBoundingClientRect();
+    if (box)
+      setAt((current) =>
+        current.x === box.left && current.y === box.top
+          ? current
+          : { x: box.left, y: box.top },
+      );
+  };
+  // Each render while full screen (the layout renders it again as the
+  // browser window is resized), before it is painted.
+  useLayoutEffect(() => {
+    if (full) readPlace();
+  });
+  // Its corners square off as it reaches the edges, and round again.
+  const corner = useMotionValue(cornerRadius);
+  const moving = frame.moving;
+  useEffect(() => {
+    const to = full ? 0 : cornerRadius;
+    if (reduced || !moving) {
+      corner.set(to);
+      return;
+    }
+    const controls = animate(corner, to, {
+      duration: MOVE_MS / 1000,
+      ease: [0.2, 0, 0, 1],
+    });
+    return () => controls.stop();
+  }, [full, cornerRadius, reduced, moving, corner]);
   return (
+    // Over all of the 红包 window's parts (they stack with the desktop's:
+    // the 指令框, its dialogs, its passing blur at 100), which only meet it
+    // full screen.
     <div
-      className="relative shrink-0"
+      ref={place}
+      className="relative z-[120] shrink-0"
       style={{
         height,
         width: open ? width : 0,
@@ -591,71 +689,115 @@ function SideWindow({
       aria-hidden={!open}
       inert={!open}
     >
-      <SquirclePlate className="window-plate" radius={cornerRadius} />
-      <Squircle radius={cornerRadius}>
-        <div className="window-glass absolute inset-0 overflow-hidden">
-          <div
-            className="absolute inset-y-0 left-0 flex w-full flex-col"
-            style={{ minWidth: SIDE_MIN }}
-          >
-            <TitleBar host={hostOf(url)} author={author}>
-              <Reload />
-              <OpenElsewhere url={url} />
-              <BarButton
-                label={sideIsNarrow ? "放宽" : "收窄"}
-                onClick={onToggleWidth}
-              >
-                {sideIsNarrow ? <PanelRightOpen /> : <PanelRightClose />}
-              </BarButton>
-              <BarButton label="隐藏（不会卸载）" onClick={onHide}>
-                <X />
-              </BarButton>
-            </TitleBar>
-            <NoticeSlot />
-            {/* While the line is dragged the page takes no pointer: over
-                its frame the moves would go to it, not to the line. */}
+      <div
+        className="absolute"
+        style={{
+          ...(full
+            ? { left: -at.x, top: -at.y, width: "100vw", height: "100dvh" }
+            : { left: 0, top: 0, width: "100%", height: "100%" }),
+          transition: moving
+            ? `left ${MOVE}, top ${MOVE}, width ${MOVE}, height ${MOVE}`
+            : undefined,
+        }}
+      >
+        <SquirclePlate className="window-plate" radius={corner} />
+        <Squircle radius={corner}>
+          <div className="window-glass absolute inset-0 overflow-hidden">
             <div
-              className={`relative min-h-0 flex-1 bg-white/60 ${
-                frame.holding ? "pointer-events-none" : ""
-              }`}
+              className="absolute inset-y-0 left-0 flex w-full flex-col"
+              style={{ minWidth: SIDE_MIN }}
             >
-              <Page url={url} active={open} />
-            </div>
-          </div>
-          <MorphVeil tick={frame.tick} hold={frame.holding} />
-          {/* Dragged past its end: the whole window under a red blur. */}
-          <AnimatePresence>
-            {closing && (
-              <motion.div
-                key="closing"
-                role="status"
-                className="absolute inset-0 z-[110] grid place-items-center bg-[rgb(176_18_40/0.45)] text-white backdrop-blur-md backdrop-saturate-150"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: reduced ? 0 : 0.16, ease }}
-              >
-                <span className="grid justify-items-center gap-3 px-6 text-center">
-                  <motion.span
-                    className="grid size-14 place-items-center rounded-full bg-white/20 ring-1 ring-white/50"
-                    initial={{ scale: reduced ? 1 : 0.6 }}
-                    animate={{ scale: 1 }}
-                    transition={
-                      reduced
-                        ? { duration: 0 }
-                        : { type: "spring", stiffness: 520, damping: 22 }
-                    }
+              <TitleBar host={hostOf(url)} author={author}>
+                <Fold shown={loaded}>
+                  <Reload />
+                </Fold>
+                {/* Full screen, only what is for the page itself stays. */}
+                <Fold shown={!full}>
+                  <OpenElsewhere url={url} />
+                </Fold>
+                <Fold shown={!full}>
+                  <BarButton
+                    label={sideIsNarrow ? "放宽" : "收窄"}
+                    onClick={onToggleWidth}
                   >
-                    <X className="size-7" aria-hidden="true" />
-                  </motion.span>
-                  <span className="text-base font-semibold">松手关闭网页</span>
-                  <span className="text-xs text-white/80">往回拖可以取消</span>
-                </span>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </Squircle>
+                    {sideIsNarrow ? <PanelRightOpen /> : <PanelRightClose />}
+                  </BarButton>
+                </Fold>
+                <Fold>
+                  <BarButton
+                    label={full ? "退出全屏" : "全屏"}
+                    onClick={() => {
+                      if (!full) readPlace();
+                      onToggleFull();
+                    }}
+                  >
+                    <motion.span
+                      key={full ? "leave" : "enter"}
+                      className="grid"
+                      initial={{ opacity: 0, scale: reduced ? 1 : 0.6 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ duration: reduced ? 0 : 0.2, ease }}
+                    >
+                      {full ? <Minimize2 /> : <Maximize2 />}
+                    </motion.span>
+                  </BarButton>
+                </Fold>
+                <Fold shown={!full}>
+                  <BarButton label="隐藏（不会卸载）" onClick={onHide}>
+                    <X />
+                  </BarButton>
+                </Fold>
+              </TitleBar>
+              <NoticeSlot />
+              {/* While the line is dragged the page takes no pointer: over
+                its frame the moves would go to it, not to the line. */}
+              <div
+                className={`relative min-h-0 flex-1 bg-white/60 ${
+                  frame.holding ? "pointer-events-none" : ""
+                }`}
+              >
+                <Page url={url} active={open} />
+              </div>
+            </div>
+            <MorphVeil tick={veilTick} hold={frame.holding} />
+            {/* Dragged past its end: the whole window under a red blur. */}
+            <AnimatePresence>
+              {closing && (
+                <motion.div
+                  key="closing"
+                  role="status"
+                  className="absolute inset-0 z-[110] grid place-items-center bg-[rgb(176_18_40/0.45)] text-white backdrop-blur-md backdrop-saturate-150"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: reduced ? 0 : 0.16, ease }}
+                >
+                  <span className="grid justify-items-center gap-3 px-6 text-center">
+                    <motion.span
+                      className="grid size-14 place-items-center rounded-full bg-white/20 ring-1 ring-white/50"
+                      initial={{ scale: reduced ? 1 : 0.6 }}
+                      animate={{ scale: 1 }}
+                      transition={
+                        reduced
+                          ? { duration: 0 }
+                          : { type: "spring", stiffness: 520, damping: 22 }
+                      }
+                    >
+                      <X className="size-7" aria-hidden="true" />
+                    </motion.span>
+                    <span className="text-base font-semibold">
+                      松手关闭网页
+                    </span>
+                    <span className="text-xs text-white/80">
+                      往回拖可以取消
+                    </span>
+                  </span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </Squircle>
+      </div>
     </div>
   );
 }
@@ -1084,9 +1226,17 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
   // sheet still covers it), not moving.
   const away = useAtomValue(sheetAwayAtom);
   const above = sheetBelow && !away;
+  // Full screen, beside the 红包 window only: closed (leaving the 红包
+  // page, the browser window narrowed to the sheet), it is over.
+  const [fullAsked, setFullAsked] = useState(false);
+  const full = split && fullAsked;
+  const [fullTick, setFullTick] = useState(0);
+  const setPageFull = useSetAtom(pageFullAtom);
+  useEffect(() => setPageFull(full), [full, setPageFull]);
   const [last, setLast] = useState({ split, sheetBelow });
   if (last.split !== split || last.sheetBelow !== sheetBelow) {
     setLast({ split, sheetBelow });
+    if (!split && fullAsked) setFullAsked(false);
     if (!reduced) {
       if (last.split !== split) {
         setTick((count) => count + 1);
@@ -1112,6 +1262,22 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
   };
   const setOpen = (open: boolean) =>
     change(() => setHeld((current) => ({ ...current, open })));
+  // Going full screen or back, only the page's window moves, under its
+  // own blur; the 红包 window stays as it is.
+  useEffect(() => {
+    if (!full) return;
+    const leave = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      if (!reduced) {
+        setFullTick((count) => count + 1);
+        setMoving(true);
+      }
+      setFullAsked(false);
+    };
+    window.addEventListener("keydown", leave);
+    return () => window.removeEventListener("keydown", leave);
+  }, [full, reduced]);
   // Asked from the 红包 page (附带网页 under 分享, the cover's tag, a
   // note's button).
   const request = useAtomValue(requestAtom);
@@ -1159,6 +1325,7 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
     moving: moving && !dragging,
     lifting,
     holding: dragging,
+    covered: full,
   };
   return (
     <FrameContext.Provider value={frame}>
@@ -1177,6 +1344,15 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
             frame={frame}
             sideIsNarrow={sideIsNarrow}
             closing={armed}
+            full={full}
+            veilTick={tick + fullTick}
+            onToggleFull={() => {
+              if (!reduced) {
+                setFullTick((count) => count + 1);
+                setMoving(true);
+              }
+              setFullAsked(!full);
+            }}
             onToggleWidth={() =>
               change(() =>
                 setHeld((current) => ({
@@ -1189,10 +1365,10 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
           />
         )}
         {/* The handle comes once both windows are in place, growing from
-            its middle, and goes first; it follows the line when 收窄 or
-            放宽 moves it. */}
+            its middle, and goes first (full screen too); it follows the
+            line when 收窄 or 放宽 moves it. */}
         <AnimatePresence>
-          {split && (
+          {split && !full && (
             <div
               key="divider"
               className="absolute inset-y-0"
