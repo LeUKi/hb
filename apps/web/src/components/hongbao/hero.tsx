@@ -262,7 +262,7 @@ export function HongbaoHero({
             className={cn(
               "relative flex flex-col items-center",
               state === "big"
-                ? "max-h-[100cqh] min-h-(--hb-cover) gap-6 pt-[calc(var(--bar-h)+1rem)] pb-[calc(var(--seal)/2+1rem)]"
+                ? "max-h-[max(100cqh,var(--hb-cover-least,0px))] min-h-(--hb-cover) gap-6 pt-[calc(var(--bar-h)+1rem)] pb-[calc(var(--seal)/2+1rem)]"
                 : "gap-3 pt-[calc(var(--bar-h)+0.875rem)] pb-[calc(var(--hb-curve)*0.55+0.75rem)]",
             )}
           >

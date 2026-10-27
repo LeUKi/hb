@@ -11,6 +11,37 @@ import { radius, Squircle } from "./squircle";
 // no images, links only to http(s); this site's own links stay in the app,
 // and `[文字](#附带网页)` is a button that opens the 红包's 附带网页.
 
+type MarkdownNode = { type: string; value?: string; children?: MarkdownNode[] };
+
+/** Each line ending in a run of text becomes a line break. */
+function breakLines(node: MarkdownNode) {
+  if (!node.children) return;
+  node.children = node.children.flatMap((child) => {
+    if (child.type !== "text" || !child.value?.includes("\n")) {
+      breakLines(child);
+      return [child];
+    }
+    return child.value
+      .split(/\r?\n/u)
+      .flatMap((line, index) => [
+        ...(index > 0 ? [{ type: "break" }] : []),
+        ...(line ? [{ type: "text", value: line }] : []),
+      ]);
+  });
+}
+
+/**
+ * One Enter is a new line, as in a LINUX DO post (07 §5): Markdown alone
+ * joins a paragraph's lines with a space. A blank line still starts a new
+ * paragraph; code keeps its own lines.
+ */
+function remarkLineBreaks() {
+  return (tree: MarkdownNode) => breakLines(tree);
+}
+
+/** Everywhere a note is drawn, 发红包's preview too. */
+export const notePlugins = [remarkGfm, remarkLineBreaks];
+
 function safeLink(url: string) {
   const candidate = url.trim();
   if (
@@ -130,7 +161,7 @@ export const NoteMarkdown = memo(function NoteMarkdown({
   return (
     <div className={cn("md", tone === "red" && "md-red", className)}>
       <Markdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={notePlugins}
         skipHtml
         disallowedElements={["img"]}
         urlTransform={safeLink}

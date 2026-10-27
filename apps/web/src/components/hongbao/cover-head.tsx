@@ -12,7 +12,7 @@ import { Avatar } from "../ui/avatar";
 import { EmojiText } from "../ui/emoji-text";
 import { markdownText, NoteMarkdown } from "../ui/markdown";
 import { PersonName } from "../ui/person";
-import { Squircle } from "../ui/squircle";
+import { radius, Squircle } from "../ui/squircle";
 import { TagHint } from "../ui/tag-hint";
 import type { CoverMotion } from "./cover-motion";
 
@@ -167,11 +167,17 @@ function noteLine(text: string | undefined) {
 
 /**
  * The cover's head: who sent it, the title, and on the big cover the labels
- * and the full 说明 (up to six lines, fewer when the window is short; cut
- * text fades and 展开全文 opens the 说明弹窗). On the small cover the title
- * gets its own line; on wide windows the 说明 folds to one line with 展开,
- * which scrolls back up to the big cover. Phones leave that line out: the
- * small cover is sticky and already takes a good part of the screen.
+ * and the full 说明 in its card (up to six lines, fewer when the window is
+ * short; cut text fades and 展开全文 opens the 说明弹窗). On the small cover
+ * the title gets its own line; on wide windows the 说明 folds to one line
+ * with 展开, which scrolls back up to the big cover. Phones leave that line
+ * out: the small cover is sticky and already takes a good part of the
+ * screen.
+ *
+ * Only the 说明 gives way when the window is short, down to two lines (05
+ * §12). Where even that does not fit, the cover grows past the window:
+ * `--hb-cover-least` on the cover's inner box (hero.tsx) is the height that
+ * holds it, so nothing is drawn over anything else.
  */
 export function CoverHead({
   activity,
@@ -203,8 +209,13 @@ export function CoverHead({
   const titleRef = useRef<HTMLHeadingElement>(null);
   // 展开 hands focus to the big cover's title once it is there.
   const focusTitle = useRef(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const noteBoxRef = useRef<HTMLDivElement>(null);
   const noteRef = useRef<HTMLDivElement>(null);
   const [cut, setCut] = useState(false);
+  // Two lines or fewer: never squeezed, so a one-line 说明 keeps its own
+  // height rather than the two lines a longer one keeps.
+  const [short, setShort] = useState(true);
   // The title wraps at the same width in em on both covers, so its lines
   // break in the same places and it simply scales between them. Measured on
   // the big cover: 16em, or less where the window is narrower.
@@ -238,19 +249,57 @@ export function CoverHead({
   useLayoutEffect(() => {
     const element = noteRef.current;
     if (small || !element) return;
-    const measure = () =>
+    const measure = () => {
+      const line = Number.parseFloat(getComputedStyle(element).lineHeight);
       setCut(element.scrollHeight > element.clientHeight + 1);
+      setShort(element.scrollHeight <= 2 * line + 1);
+    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
   }, [small]);
 
+  // The least the big cover's inner box can be: everything at its own
+  // height, the 说明 at its least. Measured while the parts are laid out,
+  // and the same however short the window is, so setting it settles.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: observe the parts again when the 说明 or its 展开全文 row comes or goes.
+  useLayoutEffect(() => {
+    const head = rootRef.current;
+    const inner = head?.parentElement;
+    if (small || !head || !inner) return;
+    const measure = () => {
+      const parts = [...head.children].filter(
+        (part): part is HTMLElement =>
+          part instanceof HTMLElement &&
+          getComputedStyle(part).position !== "absolute",
+      );
+      const gap = Number.parseFloat(getComputedStyle(head).rowGap) || 0;
+      const least = parts.reduce(
+        (sum, part) =>
+          sum +
+          (part === noteBoxRef.current && !short
+            ? Number.parseFloat(getComputedStyle(part).minHeight)
+            : part.offsetHeight),
+        gap * Math.max(0, parts.length - 1),
+      );
+      const value = `${Math.ceil(inner.offsetHeight - head.offsetHeight + least)}px`;
+      if (inner.style.getPropertyValue("--hb-cover-least") !== value)
+        inner.style.setProperty("--hb-cover-least", value);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(head);
+    for (const part of head.children) observer.observe(part);
+    return () => observer.disconnect();
+  }, [small, short, cut, note]);
+
   // Line height last: cn() drops a leading-* that a font size follows. Two
   // lines at most on both covers (a title can be 100 字), so they keep
-  // breaking in the same places.
+  // breaking in the same places. A short window never squeezes it (05 §12):
+  // line-clamp clips it, and a clipped item would otherwise give way.
   const titleClass = cn(
-    "hb-cover-title line-clamp-2 w-fit font-semibold text-balance text-cream outline-none",
+    "hb-cover-title line-clamp-2 w-fit shrink-0 font-semibold text-balance text-cream outline-none",
     small
       ? "text-[clamp(1.0625rem,2.6cqw,1.25rem)]"
       : "text-[clamp(1.375rem,4.4cqw,2.25rem)]",
@@ -259,6 +308,7 @@ export function CoverHead({
 
   return (
     <div
+      ref={rootRef}
       data-morph="centre"
       className={cn(
         "relative flex w-full flex-col items-center text-center",
@@ -382,34 +432,53 @@ export function CoverHead({
           </motion.div>
         )}
         {!small && note && (
+          // The card's least: its padding and two lines, and the 展开全文
+          // row once cut.
           <motion.div
             key="note"
-            className="hb-cover-note relative flex min-h-0 w-full max-w-[30rem] shrink flex-col items-center gap-1.5"
+            ref={noteBoxRef}
+            className={cn(
+              "hb-cover-note relative flex w-fit max-w-[min(30rem,100%)] flex-col text-[15px] leading-6",
+              short
+                ? "shrink-0"
+                : cut
+                  ? "min-h-[calc(2lh+3rem)] shrink"
+                  : "min-h-[calc(2lh+1.25rem)] shrink",
+            )}
             data-hb-part="note"
             {...motions.fade}
           >
-            <div
-              ref={noteRef}
-              data-cut={cut || undefined}
-              className="hb-cover-note-text grid max-h-[6lh] min-h-[2lh] overflow-hidden text-[15px] leading-6 text-pretty"
-            >
-              <NoteMarkdown tone="red" className="hb-cover-note-md">
-                {note}
-              </NoteMarkdown>
-            </div>
-            {cut && (
-              <Squircle radius={8}>
-                <button
-                  id="note-more"
-                  type="button"
-                  aria-haspopup="dialog"
-                  onClick={onOpenNote}
-                  className="hb-cover-action shrink-0 text-sm"
+            <Squircle radius={radius.card}>
+              <div className="hb-cover-note-card flex min-h-0 flex-1 flex-col gap-1 px-3.5 py-2.5 text-left">
+                <div
+                  ref={noteRef}
+                  data-cut={cut || undefined}
+                  className={cn(
+                    "hb-cover-note-text grid max-h-[6lh] overflow-hidden text-pretty",
+                    short ? "shrink-0" : "min-h-[2lh] shrink",
+                  )}
                 >
-                  展开全文
-                </button>
-              </Squircle>
-            )}
+                  <NoteMarkdown tone="red" className="hb-cover-note-md">
+                    {note}
+                  </NoteMarkdown>
+                </div>
+                {cut && (
+                  <div className="flex h-6 shrink-0 items-center justify-end">
+                    <Squircle radius={8}>
+                      <button
+                        id="note-more"
+                        type="button"
+                        aria-haspopup="dialog"
+                        onClick={onOpenNote}
+                        className="hb-cover-action text-sm"
+                      >
+                        展开全文
+                      </button>
+                    </Squircle>
+                  </div>
+                )}
+              </div>
+            </Squircle>
           </motion.div>
         )}
         {small && !compact && note && (

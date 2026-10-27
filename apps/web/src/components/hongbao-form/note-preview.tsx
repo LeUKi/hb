@@ -1,6 +1,5 @@
 import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { isPageLink, PageButton } from "../ui/markdown";
+import { isPageLink, notePlugins, PageButton } from "../ui/markdown";
 
 /** Only http(s) links, and same-site paths; anything else is dropped. */
 function safeLink(url: string) {
@@ -29,7 +28,7 @@ export function NotePreview({ text }: { text: string }) {
   return (
     <div className="md-preview">
       <Markdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={notePlugins}
         skipHtml
         disallowedElements={["img"]}
         urlTransform={safeLink}

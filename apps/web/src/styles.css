@@ -594,13 +594,10 @@
     padding: 0.25rem 0.5rem;
     text-align: left;
   }
-  /* The cover quotes its 说明: open before the first block, close after
-     the last. */
-  .hb-cover-note-md > :first-child::before {
-    content: "“";
-  }
-  .hb-cover-note-md > :last-child::after {
-    content: "”";
+  /* The cover's 说明: lines of 24px (05 §12), so its two-line least and
+     six-line most are whole lines. */
+  .hb-cover-note-md {
+    line-height: 1.5rem;
   }
   /* On the 红包's red: cream text, cream links with an underline (06 §7). */
   .md-red {
@@ -1805,6 +1802,21 @@
       var(--color-cream) 55%,
       transparent
     );
+  }
+  /* The 说明's card (04 §3): a faint white leaf on the red, faint gold on
+     代码判定's lacquer, white again on its ended graphite. */
+  .hb-cover-note-card {
+    background: rgb(255 255 255 / 0.08);
+    --sq-ring: rgb(255 255 255 / 0.18);
+    box-shadow: var(--sq-ring-shadow);
+  }
+  .hb-code .hb-cover-note-card {
+    background: rgb(255 228 180 / 0.06);
+    --sq-ring: rgb(232 192 121 / 0.24);
+  }
+  .hb-code.hb-ended .hb-cover-note-card {
+    background: rgb(255 255 255 / 0.08);
+    --sq-ring: rgb(255 255 255 / 0.18);
   }
   .hb-cover-note-text[data-cut] {
     mask-image: linear-gradient(180deg, #000 calc(100% - 1.6em), transparent);

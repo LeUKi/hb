@@ -154,9 +154,14 @@ async function mockHongbao(
   /**
    * 领取前人机验证: a right 口令 asks for a token first. 🐟额红包: claims go
    * into 🐟额, with no payment (balance-design §14). `more`: 口令 past the
-   * two, each one solvable.
+   * two, each one solvable. `note`: the 说明, in place of the long list.
    */
-  options: { humanCheck?: boolean; fish?: boolean; more?: string[] } = {},
+  options: {
+    humanCheck?: boolean;
+    fish?: boolean;
+    more?: string[];
+    note?: string;
+  } = {},
 ) {
   // What a 🐟额红包's claimant has in 🐟额 then: under 1, not out yet.
   await page.route("**/api/me/balance/hongbao", (route) =>
@@ -173,6 +178,7 @@ async function mockHongbao(
       ...publicActivity(),
       ...(options.humanCheck ? { humanCheck: true as const } : {}),
       ...(options.fish ? { funding: "balance" as const } : {}),
+      ...(options.note !== undefined ? { beforeInfo: options.note } : {}),
     },
     claim: null as ClaimDetail | null,
     recipients: [recipient("早到的人", 1)],
@@ -681,6 +687,85 @@ test.describe("红包页", () => {
     await omniboxInput(page).fill(copied);
     await page.keyboard.press("Enter");
     await expectPath(page, path);
+  });
+
+  test("说明在笺卡里：一个回车就换行；窗口矮时只压缩说明，不叠在别的上面", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 700, height: 560 });
+    await mockSession(page, null);
+    await mockHongbao(page, {
+      note: [
+        "周末快乐！口令藏在帖子一楼。",
+        "每人限领一次。",
+        "",
+        ...Array.from({ length: 8 }, (_, line) => `第 ${line + 1} 行说明`),
+      ].join("\n"),
+    });
+    await openApp(page, path);
+    const card = page.locator(".hb-cover-note-card");
+    await expect(card).toBeVisible();
+    // One Enter is a new line (07 §5), a blank line a new paragraph; no
+    // quotes around it any more (04 §3).
+    const first = card.locator("p").first();
+    await expect(first.locator("br")).toHaveCount(1);
+    await expect(first).toHaveText(
+      /^周末快乐！口令藏在帖子一楼。\n每人限领一次。$/,
+    );
+    expect(
+      await first.evaluate((p) => getComputedStyle(p, "::before").content),
+    ).toBe("none");
+
+    // Short window: only the 说明 gives way, to two lines; the title keeps
+    // its height and 展开全文 stays inside the card, above the numbers.
+    const more = page.getByRole("button", { name: "展开全文" });
+    await expect(more).toBeVisible();
+    const layout = () =>
+      page.evaluate(() => {
+        const box = (selector: string) => {
+          const element = document.querySelector(selector);
+          if (!element) throw new Error(selector);
+          return element.getBoundingClientRect();
+        };
+        const title = document.querySelector(".hb-cover-title") as HTMLElement;
+        const face = document.querySelector(
+          "[data-hb-part=cover]",
+        ) as HTMLElement;
+        return {
+          titleClipped: title.scrollHeight - title.clientHeight,
+          noteHeight: box(".hb-cover-note-text").height,
+          moreBelowCard:
+            box("#note-more").bottom - box(".hb-cover-note-card").bottom,
+          cardIntoNumbers:
+            box(".hb-cover-note-card").bottom -
+            box("[data-hb-part=cover] dl").top,
+          pastTheRed:
+            (face.firstElementChild as HTMLElement).offsetHeight -
+            face.offsetHeight,
+          coverHeight: face.offsetHeight,
+        };
+      });
+    await expect
+      .poll(async () => (await layout()).pastTheRed)
+      .toBeLessThanOrEqual(1);
+    const roomy = await layout();
+    expect(roomy.titleClipped).toBe(0);
+    expect(roomy.noteHeight).toBeGreaterThanOrEqual(48);
+    expect(roomy.moreBelowCard).toBeLessThan(0);
+    expect(roomy.cardIntoNumbers).toBeLessThan(0);
+
+    // Shorter than even that holds: the cover grows past the window and the
+    // page scrolls, rather than one part being drawn over another.
+    await page.setViewportSize({ width: 700, height: 460 });
+    await expect
+      .poll(async () => (await layout()).pastTheRed)
+      .toBeLessThanOrEqual(1);
+    const tight = await layout();
+    expect(tight.titleClipped).toBe(0);
+    expect(tight.noteHeight).toBeGreaterThanOrEqual(48);
+    expect(tight.moreBelowCard).toBeLessThan(0);
+    expect(tight.cardIntoNumbers).toBeLessThan(0);
+    expect(tight.coverHeight).toBeGreaterThan(460);
   });
 
   test("游客：大红包皮、说明全文、领取名单和分享", async ({
