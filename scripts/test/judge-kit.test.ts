@@ -714,6 +714,33 @@ export async function judge(submission) {
     expect(checked.lines).toContain(`✓ 联网：${API}`);
   }, 30_000);
 
+  it("gives check the tests' answers too, both runs of each", async () => {
+    const dir = kit({
+      "judge.js": NETWORKED,
+      "tests.json": {
+        tests: [
+          {
+            name: "对",
+            input: "a",
+            fetch: [right("a")],
+            expect: { ok: true, amount: 100, message: "对" },
+          },
+          {
+            name: "不对",
+            input: "b",
+            fetch: [wrong("b")],
+            expect: { ok: false, message: "不对" },
+          },
+        ],
+      },
+    });
+    const checked = await run(checkCommand, { dir });
+    expect(checked.lines).toContain("✓ 测试 2 / 2 通过");
+    expect(checked.unstable).toEqual([]);
+    expect(checked.lines.at(-1)).toBe("可以去网站部署了");
+    expect(checked.exitCode).toBe(0);
+  }, 30_000);
+
   it("says what is wrong with the list before any test runs", async () => {
     const dir = kit({
       "judge.js": `export const network = ["http://api.example.com/"];

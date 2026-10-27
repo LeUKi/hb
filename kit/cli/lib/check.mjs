@@ -32,9 +32,9 @@ async function runAll(code, tests) {
   const sandbox = await openSandbox(code);
   let timeouts = 0;
   let slowest = null;
-  const run = async (submission, seeds) => {
+  const run = async (submission, seeds, answers) => {
     const started = Date.now();
-    const answer = await sandbox.run(submission, seeds);
+    const answer = await sandbox.run(submission, seeds, answers);
     if (answer.failure === "timeout") timeouts += 1;
     else slowest = Math.max(slowest ?? 0, Date.now() - started);
     return answer;
