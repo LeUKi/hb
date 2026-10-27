@@ -14,6 +14,7 @@ import {
   updateActivity,
 } from "../src/activities/service";
 import { app } from "../src/app";
+import { listSquare } from "../src/discovery/service";
 import {
   type Actor,
   actor,
@@ -218,6 +219,27 @@ describe("附带网页", () => {
       (await call("POST", `/admin/activities/${plain.id}/stop-page`, admin))
         .body.error?.code,
     ).toBe("PAGE_NOT_FOUND");
+  });
+
+  it("is on the 红包广场's card too, as on its page: not while the switch is off, nor once stopped", async () => {
+    const square = (activity: ActivityInput) =>
+      draft(author, { ...activity, joinSquare: true }).then((saved) =>
+        openActivity(bindings, saved.id, author.id, saved.version),
+      );
+    const attached = await square(withPage("https://example.com/a"));
+    const plain = await square(withPage());
+    const cardOf = async (id: string) =>
+      (await listSquare(bindings, "all")).items.find((item) => item.id === id);
+    expect((await cardOf(attached.id))?.page).toEqual({
+      url: "https://example.com/a",
+      host: "example.com",
+    });
+    expect(await cardOf(plain.id)).not.toHaveProperty("page");
+    await settings({ page_enabled: 0 });
+    expect(await cardOf(attached.id)).not.toHaveProperty("page");
+    await settings({ page_enabled: 1 });
+    await call("POST", `/admin/activities/${attached.id}/stop-page`, admin);
+    expect(await cardOf(attached.id)).not.toHaveProperty("page");
   });
 
   it("is offered to the form for PLUS while the switch is on", async () => {

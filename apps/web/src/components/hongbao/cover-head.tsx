@@ -1,5 +1,5 @@
 import { levelPhrase, type PublicClaimScope, scopeTag } from "@hb/contracts";
-import { ArrowUpRight, Globe } from "lucide-react";
+import { ArrowUpRight, Braces, Globe } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { cn } from "../../lib/cn";
@@ -20,7 +20,8 @@ const chipClass = "hb-chip-red inline-flex h-7 items-center px-2.5 text-xs";
 
 /**
  * A label on the cover; with a hint, it explains itself (TagHint). 代码判定's
- * own is drawn in gold (05 §14).
+ * own is drawn in gold (05 §14), its braces before it, as everywhere it is
+ * named.
  */
 function CoverChip({
   children,
@@ -31,7 +32,15 @@ function CoverChip({
   hint?: string;
   code?: boolean;
 }) {
-  const className = cn(chipClass, code && "hb-chip-code");
+  const className = cn(chipClass, code && "hb-chip-code gap-1");
+  const label = code ? (
+    <>
+      <Braces className="size-3.5" aria-hidden="true" />
+      {children}
+    </>
+  ) : (
+    children
+  );
   return (
     <Squircle radius={10}>
       {hint ? (
@@ -42,10 +51,10 @@ function CoverChip({
             "hb-chip-link focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-cream)] focus-visible:outline-none",
           )}
         >
-          {children}
+          {label}
         </TagHint>
       ) : (
-        <span className={className}>{children}</span>
+        <span className={className}>{label}</span>
       )}
     </Squircle>
   );

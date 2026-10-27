@@ -494,6 +494,8 @@ test.describe("代码判定红包", () => {
     const chips = hero.locator(".hb-chip-red");
     await expect(chips).toHaveText(["代码判定", "🐟额"]);
     await expect(chips.first()).toHaveClass(/\bhb-chip-code\b/);
+    // Its braces before it, as wherever 代码判定 is named.
+    await expect(chips.first().locator("svg.lucide-braces")).toHaveCount(1);
     await expect(
       page.getByRole("button", { name: "代码判定", exact: true }),
     ).toHaveAccessibleDescription(
@@ -1195,6 +1197,9 @@ test.describe("代码判定红包", () => {
     const lacquer = page.getByRole("button", { name: new RegExp(title) });
     await expect(lacquer.locator(".hb-card-cover")).toHaveClass(/\bhb-code\b/);
     await expect(lacquer.locator(".hb-lacquer-chip")).toHaveText("代码判定");
+    await expect(
+      lacquer.locator(".hb-lacquer-chip svg.lucide-braces"),
+    ).toHaveCount(1);
     await expect(lacquer).not.toContainText("口令红包");
     await expect(lacquer).not.toContainText("关闭首页领取");
     const red = page.getByRole("button", { name: /周末红包/ });

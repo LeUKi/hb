@@ -22,6 +22,7 @@ import { databaseNow } from "../activities/lifecycle";
 import { getRegistrationDetail } from "../activities/registration-queries";
 import { projectPublicActivity } from "../activities/service";
 import { type ActivityRow, findActivity } from "../activities/storage";
+import { readBalanceSettings } from "../balance/settings";
 import { createDb } from "../db/client";
 import {
   activities,
@@ -83,11 +84,10 @@ function card(
   activityAuthor: PublicActivity["author"],
   myClaim: DiscoveryCard["myClaim"],
 ): DiscoveryCard {
-  // A card has no 附带网页: that is the 红包 page's.
+  // Its 附带网页 stays, for the card's tag (the switch is the list's).
   const {
     beforeInfo: _beforeInfo,
     afterEndInfo: _afterEndInfo,
-    page: _page,
     ...fields
   } = projectPublicActivity(row, activityAuthor);
   return {
@@ -162,39 +162,50 @@ async function list(
     .limit(PAGE_SIZE + 1);
   const page = rows.slice(0, PAGE_SIZE);
   const last = page.at(-1)?.activity;
+  const items = page.map(
+    ({ activity, author, claimId, paymentState, registrationId }) => ({
+      ...card(
+        activity,
+        author,
+        claimId
+          ? {
+              id: claimId,
+              ...(activity.rewardType === "ldc" && paymentState
+                ? { paymentState }
+                : {}),
+            }
+          : null,
+      ),
+      ...(activity.drawState
+        ? {
+            myRegistration: registrationId
+              ? {
+                  id: registrationId,
+                  status: registrationStatus(activity, Boolean(claimId)),
+                }
+              : null,
+          }
+        : {}),
+    }),
+  );
   return {
     total: Number(count?.total ?? 0),
-    items: page.map(
-      ({ activity, author, claimId, paymentState, registrationId }) => ({
-        ...card(
-          activity,
-          author,
-          claimId
-            ? {
-                id: claimId,
-                ...(activity.rewardType === "ldc" && paymentState
-                  ? { paymentState }
-                  : {}),
-              }
-            : null,
-        ),
-        ...(activity.drawState
-          ? {
-              myRegistration: registrationId
-                ? {
-                    id: registrationId,
-                    status: registrationStatus(activity, Boolean(claimId)),
-                  }
-                : null,
-            }
-          : {}),
-      }),
-    ),
+    items: await withPageSwitches(env, items),
     nextCursor:
       rows.length > PAGE_SIZE && last
         ? btoa(JSON.stringify({ scope, time: last.openedAt, id: last.id }))
         : null,
   };
+}
+
+/**
+ * The cards' 附带网页 only while the switch is on: read once, and only for
+ * a page of cards where one has one.
+ */
+async function withPageSwitches(env: ApiBindings, items: DiscoveryCard[]) {
+  if (!items.some((item) => item.page)) return items;
+  if ((await readBalanceSettings(env)).pageEnabled) return items;
+  return items.map(({ page: _page, ...item }) => item);
 }
 
 export function listSquare(

@@ -1,4 +1,5 @@
 import { scopeTag } from "@hb/contracts";
+import { Braces, Globe } from "lucide-react";
 import { cn } from "../../lib/cn";
 import type { HongbaoActivity } from "../../lib/hongbao";
 import { endLabels, type PublicView } from "../../lib/hongbao";
@@ -119,7 +120,8 @@ export function HongbaoCard({
             </StatusChip>
             {activity.mode === "code" ? (
               <Squircle radius={radius.tag}>
-                <span className="hb-lacquer-chip inline-flex h-6 items-center px-2 text-xs font-medium">
+                <span className="hb-lacquer-chip inline-flex h-6 items-center gap-1 px-2 text-xs font-medium">
+                  <Braces className="size-3.5" aria-hidden="true" />
                   代码判定
                 </span>
               </Squircle>
@@ -140,6 +142,13 @@ export function HongbaoCard({
             )}
             {/* Its post's link is on its page: the whole card is one button. */}
             {activity.topic && <StatusChip tone="neutral">来自帖子</StatusChip>}
+            {/* Its 附带网页 opens on its page, as the post's link does. */}
+            {activity.page && (
+              <StatusChip tone="neutral" className="gap-1">
+                <Globe className="size-3.5" aria-hidden="true" />
+                附带网页
+              </StatusChip>
+            )}
             {mine && <StatusChip tone={mine.tone}>{mine.text}</StatusChip>}
           </span>
         </span>

@@ -215,12 +215,20 @@ test.describe("红包广场", () => {
                 card("77777777-7777-4777-8777-777777777777", "周末红包", {
                   forceDedicated: true,
                   topicUrl: "https://linux.do/t/3033290/12",
+                  page: {
+                    url: "https://puzzle.example.com/today",
+                    host: "puzzle.example.com",
+                  },
                 }),
               ]
             : [
                 card("77777777-7777-4777-8777-777777777777", "周末红包", {
                   forceDedicated: true,
                   topicUrl: "https://linux.do/t/3033290/12",
+                  page: {
+                    url: "https://puzzle.example.com/today",
+                    host: "puzzle.example.com",
+                  },
                 }),
                 card("66666666-6666-4666-8666-666666666666", "已经领完", {
                   status: "ended",
@@ -264,6 +272,16 @@ test.describe("红包广场", () => {
     await expect(
       page.getByRole("button", { name: /已经领完/ }),
     ).not.toContainText("来自帖子");
+    // One with a 附带网页 says so, its globe before it (the page opens on
+    // the 红包 page: the card is one button).
+    const attached = page
+      .getByRole("button", { name: /周末红包/ })
+      .getByText("附带网页", { exact: true });
+    await expect(attached).toBeVisible();
+    await expect(attached.locator("svg.lucide-globe")).toHaveCount(1);
+    await expect(
+      page.getByRole("button", { name: /已经领完/ }),
+    ).not.toContainText("附带网页");
     await expect(page.getByRole("button", { name: /已经领完/ })).toBeVisible();
     await filter.getByRole("button", { name: /最近结束/ }).click();
     await expect(page).toHaveURL(/\/square\?filter=ended$/);
