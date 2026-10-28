@@ -39,4 +39,4 @@ npm test
 
 `npm test` 和 `npm run check` 都过了，就去网站发红包：选“代码判定”，在第 3 步贴上 `judge.js` 和 `tests.json`。用 AI 写也一样：告诉它你的玩法，让它照 `AGENTS.md` 写，两个命令都过了再贴。
 
-开发包按协议版本发布，这一份是第二版（第一版加上联网；兼容日期 2026-09-01 + `nodejs_compat`），也能重放第一版开放的红包（`runtime/frozen/v1.json`）。协议的来龙去脉见仓库的 `docs/programmable-hongbao-design.md` 第 4、5、9 节。
+开发包按协议版本发布，这一份是第三版（第二版加上参数，第二版是第一版加上联网；兼容日期 2026-09-01 + `nodejs_compat`），也能重放第一、二版开放的红包（`runtime/frozen/`）。协议的来龙去脉见仓库的 `docs/programmable-hongbao-design.md` 第 4、5、9 节，参数见 `docs/judge-square-design.md` 第 3–5 节。

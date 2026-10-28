@@ -1,6 +1,6 @@
 # 代码判定红包 · 写代码的说明
 
-这个目录是“代码判定红包”（lafish的红包站）的本地开发包。红包作者写一个 `judge.js`：每次有人在红包页提交一行输入，平台调用它一次，按它的返回决定发不发、发多少。你要帮他写的是 `judge.js` 和它的测试 `tests.json`，需要时再改 `simulate.json`。下面是代码协议第二版（第一版加上联网）的全部规则。
+这个目录是“代码判定红包”（lafish的红包站）的本地开发包。红包作者写一个 `judge.js`：每次有人在红包页提交一行输入，平台调用它一次，按它的返回决定发不发、发多少。你要帮他写的是 `judge.js` 和它的测试 `tests.json`，需要时再改 `simulate.json`。下面是代码协议第三版（第二版加上参数；第二版是第一版加上联网）的全部规则。
 
 ## 怎么干活
 
@@ -9,7 +9,7 @@
 3. 写完先跑 `npm test`，再跑 `npm run check`。两个都过了（最后一行分别是“测试 N / N 通过”和“可以去网站部署了”）才算写完，才让人把两个文件贴到网站。没过就按输出改代码或测试，不要删掉不过的测试来凑数。
 4. 改了玩法就同时改测试：每条规则至少一条测试，靠状态或先后顺序的玩法写多步场景（`steps`）。
 
-## 代码协议（第二版）
+## 代码协议（第三版）
 
 `judge.js` 是一个 ES 模块，导出 `judge(submission, tools)`，可以是 async。类型在 `judge.d.ts`；`judge.js` 里用 JSDoc 标上类型，编辑器就能检查：
 
@@ -33,6 +33,7 @@ export function judge(submission, tools) { … }
 - `share`：`{ min, max, last }`，这一份能发的范围（见下）
 - `claims`：已领到的，按先后，每条 `{ user: { id, username }, amount, input, at }`
 - `state`：代码上次存的 JSON，最开始是 `null`
+- `params`：发红包的人填的参数（见下面的“参数”），没声明参数时是 `{}`
 
 领过的人、领取范围以外的人都走不到代码：每人只能领到一次。红包作者自己也能领（占一份，不付款）。
 
@@ -116,6 +117,27 @@ export async function judge(submission) {
 - 红包结束后，领的人能看到自己那几次判定的返回内容：别在返回里放不想公开的东西。
 - 测试里写 `fetch`（见 `tests.json`），测试从不真的联网；`npm run simulate -- --live` 才从这台电脑真的发出去。
 
+### 参数（可选）
+
+同一份代码能发出不同的红包：代码声明要填什么，发红包的人在网站上填，判定时在 `submission.params` 里。会变的东西（答案、范围、次数、题目）写成参数，别写死在代码里。
+
+- `export const params = [ … ]`：最多 20 项，每项 `{ key, label, hint, type, default, required, secret }` 加上这种类型自己的限制。`key` 只用字母、数字和下划线；`label` 是表单上的名字，最多 20 个字；`hint` 是一句说明，最多 60 个字；`required` 默认 `true`；`secret` 默认 `false`。
+- 八种 `type`：
+  - `text`：单行文字，`minLength`、`maxLength`（最多 200）
+  - `textarea`：多行文字，`maxLength`（最多 2000）
+  - `integer`：整数，`min`、`max`、`step`（要是 `step` 的倍数，从 `min` 算起）
+  - `money`：金额，整数分，`min`（至少 1）、`max`
+  - `switch`：开关，`true` 或 `false`
+  - `choice`：选一个，`options` 是 2–20 个 `{ value, label }`，值是 `value`
+  - `list`：一行一个的文字，`minItems`、`maxItems`（最多 100）、`maxLength`（每项最多几个字，最多 200）
+  - `table`：每行几格，`columns` 是 1–6 列 `{ key, label, type, required }`，`type` 是 `text`、`integer` 或 `money`（带各自的限制），`minRows`、`maxRows`（最多 100）
+- 网站按声明校验，代码收到的都是对的：文字去掉了首尾空白；没填的选填项，开关是 `false`，列表和表格是 `[]`，其他是 `null`。整份最大 16 KB。
+- 保密参数（`secret: true`）：开放时只公布参数封存值，结束后和代码、种子一起公开。回复里会不会透露它，要看代码怎么写。
+- `export function check(params, hongbao)`（可选）：查几项合起来对不对，比如“最小不能大于最大”“题目不能比份数少”。`hongbao` 是 `{ title, total, count, minEach }`。返回问题的数组 `[{ key, message }]`（`key` 是参数的 `key`，`message` 最多 100 个字），没问题返回 `[]`。发红包的人填参数时在判定器里跑，不能联网，`Math.random()` 每次都一样。
+- `export const hongbao = { … }`（可选）：用它发的红包在“发多少”的默认值和范围，只能收窄网站的规则：`count: { min, max, default }`（份数，1–1000 之内）、`total: { min, max, default }`、`minEach: { min, default }`（金额都是整数分）、`deadline: { value, unit }`（默认截止时长，`unit` 是 `"minutes"`、`"hours"` 或 `"days"`）、`prompt`（领取提示的默认值，最多 40 个字）、`humanCheck`（建议打开领取前人机验证）。
+- `export const meta = { name, description }`（可选）：判定器的名字（最多 20 个字）和一句说明（最多 60 个字），贴代码时自动填好，之后以网站上的为准。
+- 这几个导出写得不对，`npm test` 不跑，`npm run check` 写“参数声明写得不对”和哪里不对。
+
 ### 限制
 
 - 每次判定 CPU 最多 50 毫秒。本地不限 CPU，超过 1 秒算超时，超过 50 毫秒的标“慢”（线上可能超时）。
@@ -131,6 +153,8 @@ export async function judge(submission) {
 ## `tests.json`
 
 一个对象，测试写在它的 `tests` 里。第一行写 `"$schema": "./tests.schema.json"`，编辑器就能补全、标错。它只是数据，平台不当代码跑，不算进指纹，不公开。
+
+声明了参数的代码，顶层写 `"params": { … }`，是每条测试默认用的一份；一条测试也能写自己的 `params`。没写的项用 `default`。每条测试的参数都要过声明的校验和 `check`，不然这条不通过。要覆盖几组不同的参数：部署时就证明“这些参数下代码是对的”。
 
 ### 一条测试就是一次提交
 
@@ -229,7 +253,7 @@ export async function judge(submission) {
 }
 ```
 
-`hongbao` 和 `now`、`seed` 的写法同 `tests.json`；每次提交的写法同多步场景的一步（联网的代码写 `fetch`），只是没有 `expect`。和多步场景不同，已经领过的人、领完以后的提交不算错，照实写“已领过”“已领完”。
+`hongbao` 和 `now`、`seed` 的写法同 `tests.json`，声明了参数的代码在顶层写 `params`；每次提交的写法同多步场景的一步（联网的代码写 `fetch`），只是没有 `expect`。和多步场景不同，已经领过的人、领完以后的提交不算错，照实写“已领过”“已领完”。
 
 ## 四个命令
 

@@ -20,6 +20,10 @@
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
     },
+    "params": {
+      "description": "发红包时填的参数（协议第三版）：按 judge.js 的 params 声明校验，没写的项用 default；代码导出了 check 也要过 check。金额是整数分。",
+      "type": "object"
+    },
     "submissions": {
       "description": "依次来提交的，写法同 tests.json 多步场景的一步，只是没有 expect。已经领过的人、领完以后的提交不算错，照实写“已领过”“已领完”。",
       "type": "array",

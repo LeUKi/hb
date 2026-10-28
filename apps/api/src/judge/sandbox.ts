@@ -5,13 +5,14 @@
 import { JUDGE_PROTOCOL } from "@hb/contracts";
 import type { FetchAnswer, Submission } from "../../../../kit/judge";
 import frozenV1 from "../../../../kit/runtime/frozen/v1.json";
+import frozenV2 from "../../../../kit/runtime/frozen/v2.json";
 import { NETWORK_LIMITS } from "../../../../kit/runtime/index.mjs";
 import type { ApiBindings } from "../env";
 import runtime from "./runtime.generated.json";
 
 /**
- * Protocol v2: this runtime on this compatibility date with nodejs_compat.
- * v1's runtime is kept as 红包 opened with it.
+ * Protocol v3: this runtime on this compatibility date with nodejs_compat.
+ * v1's and v2's runtimes are kept as 红包 opened with them.
  */
 export { JUDGE_PROTOCOL };
 
@@ -76,6 +77,7 @@ const modulesOf = (copy: Record<string, string>) =>
   Object.fromEntries(Object.entries(copy).map(([name, js]) => [name, { js }]));
 const runtimeModules: Record<number, Record<string, { js: string }>> = {
   1: modulesOf(frozenV1),
+  2: modulesOf(frozenV2),
   [JUDGE_PROTOCOL]: modulesOf(runtime),
 };
 
@@ -209,14 +211,16 @@ export async function warmJudge(
 }
 
 /**
- * What judge.js exports as `network` (§9.2), read by main.mjs once it is
- * loaded: the value as JSON (null for none), `{ unreadable: true }` when it
- * is not JSON, or null when the sandbox could not say (it will not load).
+ * What judge.js exports besides judge, read by main.mjs once it is loaded:
+ * `network` (§9.2) and from v3 `meta`, `params`, `hongbao` and `check`
+ * (docs/judge-square-design.md §3, §4), each as JSON (null for none, named
+ * in `unreadable` when it is not JSON); null when the sandbox could not
+ * say (it will not load). readNetwork and readDeclarations read it.
  */
 export async function describeJudge(
   env: ApiBindings,
   run: Pick<JudgeRun, "code" | "fingerprint" | "fresh">,
-): Promise<{ network: unknown } | null> {
+): Promise<Record<string, unknown> | null> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const answer = await Promise.race([
@@ -225,14 +229,70 @@ export async function describeJudge(
           method: "POST",
           body: JSON.stringify({ describe: true }),
         })
-        .then((response) => response.json<{ network?: unknown }>()),
+        .then((response) => response.json<Record<string, unknown>>()),
       new Promise<null>((resolve) => {
         timer = setTimeout(() => resolve(null), JUDGE_WAIT_MS);
       }),
     ]);
-    return answer && "network" in answer ? { network: answer.network } : null;
+    return answer && typeof answer === "object" && "network" in answer
+      ? answer
+      : null;
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * check(params, hongbao) once (docs/judge-square-design.md §3 校验), in the
+ * same 判定器 as its judgments: what it answered (for readCheckAnswer), or
+ * how it failed.
+ */
+export async function checkParamsInJudge(
+  env: ApiBindings,
+  run: Pick<JudgeRun, "code" | "fingerprint" | "fresh">,
+  input: { params: unknown; hongbao: unknown },
+): Promise<
+  { answer: unknown } | { failure: SandboxFailure; detail: string; hung?: true }
+> {
+  const request = judgeEntrypoint(env, run).fetch("http://judge/", {
+    method: "POST",
+    body: JSON.stringify({ check: { ...input, now: Date.now() } }),
+  });
+  request.catch(() => {});
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<"late">((resolve) => {
+    timer = setTimeout(() => resolve("late"), JUDGE_WAIT_MS);
+  });
+  try {
+    const response = await Promise.race([request, late]);
+    if (response === "late")
+      return {
+        failure: "timeout",
+        detail: `check 超过 ${JUDGE_WAIT_MS} 毫秒没有返回`,
+      };
+    const body = (await response.json()) as {
+      answer?: unknown;
+      error?: { kind: SandboxFailure; detail: string };
+    };
+    if (body.error) {
+      const kind = REPORTED.has(body.error.kind) ? body.error.kind : "invalid";
+      return {
+        failure: kind,
+        detail: String(body.error.detail ?? "").slice(0, 500),
+      };
+    }
+    return { answer: body.answer ?? null };
+  } catch (error) {
+    const outcome = classify(error, true);
+    return "failure" in outcome
+      ? {
+          failure: outcome.failure,
+          detail: outcome.detail,
+          ...(outcome.hung ? { hung: true as const } : {}),
+        }
+      : { failure: "unavailable", detail: "check 没有返回" };
   } finally {
     clearTimeout(timer);
   }

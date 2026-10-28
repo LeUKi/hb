@@ -1,11 +1,10 @@
 import { JUDGE_LIMITS } from "@hb/contracts";
 import { KIT_AGENTS_URL, KIT_URL } from "../../lib/judge";
-import { PlusBadge } from "../balance/plus";
 import { Page, PageHeader, PageSection, Panel } from "../page/page";
 import { Code } from "../ui/code";
 import { Block, Fields } from "./help-api-view";
 
-// /help/code: 代码判定红包's code protocol, first version, in words
+// /help/code: 代码判定红包's code protocol, third version, in words
 // (docs/programmable-hongbao-design.md §4–5; kit/judge.d.ts is the same in
 // types). Keep the three together when any of them changes.
 
@@ -29,7 +28,7 @@ const MODULES = [
  */
 const aiPrompt = (
   origin: string,
-) => `你要帮我写一个“代码判定红包”的判定代码 judge.js 和它的测试 tests.json（lafish的红包站，代码协议第二版）。
+) => `你要帮我写一个“代码判定红包”的判定代码 judge.js 和它的测试 tests.json（lafish的红包站，代码协议第三版）。
 
 资料（下面的规则是摘要，细节以这些为准）：
 - 本地开发包：${KIT_URL} ，用 npx degit LeUKi/hb/kit 我的红包 取到本地，里面有能跑通的模板、npm test 和 npm run check。
@@ -47,6 +46,7 @@ const aiPrompt = (
   - share：{ min, max, last }，这一份能发的范围；last 时 min 和 max 都是剩余奖池
   - claims：已领到的，按先后，每条 { user: { id, username }, amount, input, at }
   - state：代码上次存的 JSON，最开始是 null
+  - params：发红包的人填的参数，没声明参数时是 {}
 - 返回 { ok, amount, message, state }：
   - ok：发还是不发，必填
   - amount：ok 为 true 时必填，整数分。平台把它拉进 share 的范围：低于 min 按 min 发，高于 max 按 max 发；最后一份发完剩下的
@@ -56,6 +56,7 @@ const aiPrompt = (
 - 能用：Web 标准（完整的 crypto、Intl、TextEncoder、URL、atob、btoa 等）。Node 模块只能在文件开头静态 import，必须带 node: 前缀：${MODULES.join("、")}。
 - 不能用：别的 Node 模块、npm 包、import 别的文件、动态 import()、require、caches。console 的输出线上丢弃。
 - 联网（可选）：judge.js 导出 network，列出能请求的地址前缀，最多 3 个，比如 export const network = ["https://api.example.com/hongbao/"]；写法是 https:// 加完整域名和路径，不带端口、? 和 #，不能是 IP、linux.do 和本站。不导出就不联网，fetch 会失败。判定里直接用 fetch()：每次判定最多 3 个请求，只许 GET 和 POST，请求体最大 16 KB，单个请求 3 秒，返回最大 64 KB，不跟随跳转；等请求的时间不算进 50 毫秒，整次判定最多 5 秒；不行时 fetch() 抛 TypeError（“联网失败：…”），可以接住。领的人可以绕过本站直接请求你的接口，要防就在代码里放一个只有你知道的令牌，请求时带上；红包结束后代码公开，令牌也会公开，结束后要作废。红包结束后，领的人能看到自己那几次判定的返回内容。
+- 参数（可选）：会变的东西（答案、范围、次数、题目）写成参数，发红包的人在网站上填，判定时在 submission.params 里。export const params = [ … ]，最多 20 项，每项 { key（字母、数字、下划线）, label（最多 20 个字）, hint（最多 60 个字）, type, default, required（默认 true）, secret（默认 false） } 加上类型自己的限制。type：text（单行，minLength、maxLength ≤ 200）、textarea（多行，maxLength ≤ 2000）、integer（min、max、step）、money（整数分，min ≥ 1、max）、switch、choice（options：2–20 个 { value, label }）、list（一行一个，minItems、maxItems ≤ 100、maxLength）、table（columns：1–6 列 { key, label, type: text | integer | money }，minRows、maxRows ≤ 100）。网站按声明校验；没填的选填项，开关是 false，列表和表格是 []，其他是 null。secret 的参数开放时只公布封存值，结束后公开。几项合起来的检查写 export function check(params, hongbao)，返回 [{ key, message }]，没问题返回 []；hongbao 是 { title, total, count, minEach }。export const hongbao = { count: { min, max, default }, total: { min, max, default }, minEach: { min, default }, deadline: { value, unit }, prompt, humanCheck } 给“发多少”设默认值和范围（金额是整数分）。export const meta = { name, description } 是判定器的名字（最多 20 个字）和说明（最多 60 个字）。
 - 随机数用 tools.random（这一次提交的，Math.random() 也是它）或 tools.userRandom（这个人固定的，提交几次都一样）。都能复现：红包结束后公开种子，谁都能核对。crypto.getRandomValues 是真随机，能用但没法核对。
 - tools 全是同步的：
   - tools.random、tools.userRandom：next()（[0, 1)）、int(min, max)（含两端）、pick(items)、shuffle(items)
@@ -73,6 +74,7 @@ tests.json 是一个对象 { "tests": [ … ] }，只是数据：
 - 联网的代码，测试里写 fetch：这次判定的请求拿到的返回，最多 3 个，每个 { url, method（默认 GET）, status（默认 200）, headers, json 或 text }，或者 { url, method, error: "timeout" | "unreachable" | "too-big" }。请求按方法和完整地址对上；有请求没写返回、写了没用上，这条测试都不通过。测试从不真的联网。
 - 要测靠状态往下传的玩法，不写 input，写 steps，几个人依次提交：每一步 { who, input, expect }，可选 level（默认 2）、at（默认上一步往后 1 分钟，第一步是 now）、fetch。同一个 who 是同一个人；状态、已领记录、每人被判定过几次、剩余奖池都像线上一样一步步往下传。已经领过的人、或者份领完了还提交，这一步不通过。
 - expect：ok 必填；其余写了才比：amount（拉进范围以后实际发的）、asked（代码自己给的）、note（拉进范围的原因 "cap"、"floor"、"last"，没拉写 null）、message（逐字）或 messageIncludes（含这几个字）、state（整份，键的顺序不算）或 stateIncludes（只比写了的键，数组整个比）。ok 为 false 时不写 amount、asked、note。代码返回协议以外的字段也算不通过。
+- 声明了参数的代码：tests.json 顶层写 params，是每条测试默认用的一份，测试自己也能写 params，没写的项用 default；每条测试的参数都要过声明的校验和 check。要覆盖几组不同的参数。
 - 所有测试加起来最多判定 ${JUDGE_LIMITS.tests} 次（多步的一步算一次）。
 
 我的玩法是：（在这里写清楚：什么输入算对、发多少、每人能试几次、有没有时间限制……）`;
@@ -108,12 +110,7 @@ export function HelpCodeView() {
   return (
     <Page>
       <PageHeader
-        title={
-          <span className="inline-flex items-center gap-2">
-            代码判定红包 · 开发文档
-            <PlusBadge />
-          </span>
-        }
+        title="代码判定红包 · 开发文档"
         description="写一段代码，决定谁领多少。登录就能发；代码在本站的沙箱里跑，开放时公布指纹，结束后公开代码。"
       />
       <PageSection
@@ -338,6 +335,84 @@ export async function judge(submission) {
                   ，这次判定的请求拿到的返回；有请求没写返回、写了没用上，都不通过。
                   <Code>npm run simulate -- --live</Code>{" "}
                   从你自己的电脑真的发出去。
+                </>
+              ),
+            },
+          ]}
+        />
+      </PageSection>
+      <PageSection
+        id="params"
+        title="参数"
+        description="可选：同一份代码发出不同的红包。代码声明要填什么，发红包的人在网站上填，判定时在 submission.params 里。会变的东西（答案、范围、次数、题目）写成参数，别写死在代码里。"
+      >
+        <Block
+          label="judge.js"
+          code={`export const meta = { name: "猜数字", description: "猜 1 到最大之间的数，猜中的领" };
+
+export const params = [
+  { key: "max", label: "最大", type: "integer", min: 2, max: 1000, default: 100 },
+  { key: "answer", label: "答案", type: "integer", secret: true },
+  { key: "tries", label: "每人最多猜几次", type: "integer", min: 1, max: 10, default: 5 },
+];
+
+export const hongbao = { count: { min: 1, max: 10, default: 5 } };
+
+export function check(params) {
+  return params.answer < 1 || params.answer > params.max
+    ? [{ key: "answer", message: "答案要在 1 到最大之间" }]
+    : [];
+}
+
+export function judge(submission, tools) {
+  const { input, user, params } = submission;
+  if (user.attempts >= params.tries)
+    return { ok: false, message: \`已经猜了 \${params.tries} 次\` };
+  const guess = Number(input);
+  if (guess !== params.answer)
+    return { ok: false, message: guess < params.answer ? "小了" : "大了" };
+  return { ok: true, amount: tools.money.even(), message: "猜中了" };
+}`}
+        />
+        <Fields
+          items={[
+            {
+              name: "params",
+              note: "最多 20 项，每项 { key, label, hint, type, default, required, secret } 加上类型自己的限制。key 只用字母、数字和下划线；label 是表单上的名字，最多 20 个字；hint 是一句说明，最多 60 个字；required 默认 true，secret 默认 false。",
+            },
+            {
+              name: "type",
+              note: "text 单行文字（minLength、maxLength，最多 200）；textarea 多行文字（maxLength，最多 2000）；integer 整数（min、max、step）；money 金额，整数分（min 至少 1、max）；switch 开关；choice 选一个（options：2–20 个 { value, label }）；list 一行一个（minItems、maxItems 最多 100、maxLength）；table 每行几格（columns：1–6 列，每列 text、integer 或 money；minRows、maxRows 最多 100）。",
+            },
+            {
+              name: "submission.params",
+              note: "网站按声明校验过：文字去掉了首尾空白；没填的选填项，开关是 false，列表和表格是 []，其他是 null。整份最大 16 KB。",
+            },
+            {
+              name: "保密",
+              note: "secret: true 的参数开放时只公布参数封存值，结束后和代码、种子一起公开，谁都能核对。回复里会不会透露它，要看代码怎么写。",
+            },
+            {
+              name: "check(params, hongbao)",
+              note: "可选：查几项合起来对不对，比如最小不能大于最大、题目不能比份数少。hongbao 是 { title, total, count, minEach }。返回 [{ key, message }]（message 最多 100 个字），没问题返回 []。发红包的人填参数时在判定器里跑，不能联网，Math.random() 每次都一样。",
+            },
+            {
+              name: "hongbao",
+              note: "可选：用它发的红包在“发多少”的默认值和范围，只能收窄本站的规则。count、total 是 { min, max, default }，minEach 是 { min, default }（金额都是整数分）；deadline 是默认截止时长 { value, unit }，unit 是 minutes、hours 或 days；prompt 是领取提示的默认值；humanCheck 建议打开领取前人机验证。",
+            },
+            {
+              name: "meta",
+              note: "可选：判定器的名字（最多 20 个字）和一句说明（最多 60 个字），贴代码时自动填好，之后以网站上的为准。",
+            },
+            {
+              name: "测试",
+              note: (
+                <>
+                  tests.json 顶层写 <Code>params</Code>
+                  ，是每条测试默认用的一份；测试自己也能写 <Code>params</Code>
+                  ，没写的项用 default。每条测试的参数都要过声明的校验和
+                  check，不然这条不通过。要覆盖几组不同的参数。simulate.json
+                  写在顶层。
                 </>
               ),
             },

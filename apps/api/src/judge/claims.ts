@@ -332,7 +332,8 @@ export async function claimByCode(
   };
   const share = shareRange(hongbao);
   const linuxDoId = Number(user.externalId);
-  const submission: Submission = {
+  // An earlier protocol's code is given what it was given then: no params.
+  const submission = {
     input: input.input,
     now: Date.now(),
     user: {
@@ -345,7 +346,8 @@ export async function claimByCode(
     share,
     claims,
     state,
-  };
+    ...(row.protocol >= 3 ? { params: {} } : {}),
+  } as Submission;
   // 联网: the requests this judgment sends are kept as the gateway saw
   // them; one the gateway failed on makes it count for nothing.
   const session = online?.start();

@@ -37,6 +37,8 @@ export function submissionsOf(records) {
     },
     hongbaoId: hongbao.id,
     secret: hongbao.seed,
+    // 协议第三版: what the sender filled, the same for every judgment.
+    ...(records.protocol >= 3 ? { params: records.params ?? {} } : {}),
   });
   return records.judgments.map((judgment) => {
     const submission = nextSubmission(scenario, {

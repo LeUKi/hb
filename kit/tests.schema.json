@@ -10,6 +10,10 @@
       "type": "string",
       "description": "写 \"./tests.schema.json\"，编辑器就能补全、标错"
     },
+    "params": {
+      "description": "每条测试默认用的参数（协议第三版）：key 对应 judge.js 的 params 声明，没写的项用 default；测试自己写了 params 就用自己的。金额是整数分。",
+      "type": "object"
+    },
     "tests": {
       "type": "array",
       "description": "测试的数组。名字不能重复；所有测试加起来最多判定 200 次（多步的一步算一次）。",
@@ -51,6 +55,10 @@
           "description": "种子（64 位小写十六进制）：tools.random 和 tools.userRandom 由它推出来。默认固定的测试种子",
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
+        },
+        "params": {
+          "description": "这条测试的参数（协议第三版）：按 judge.js 的 params 声明校验，没写的项用 default；代码导出了 check 也要过 check。默认用文件顶层的 params。金额是整数分。",
+          "type": "object"
         },
         "input": { "$ref": "#/$defs/input" },
         "user": { "$ref": "#/$defs/user" },

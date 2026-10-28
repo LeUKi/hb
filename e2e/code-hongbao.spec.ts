@@ -10,6 +10,7 @@ import {
   type DiscoveryList,
   emptyActivityInput,
   encodeActivityEmoji,
+  JUDGE_PROTOCOL,
   type JudgeChallenger,
   type JudgeChallengerList,
   type JudgeCheck,
@@ -1312,7 +1313,7 @@ test.describe("发红包 · 代码判定", () => {
           check: {
             fingerprint,
             testsDigest: sha256(input.tests),
-            protocol: 2,
+            protocol: JUDGE_PROTOCOL,
             passed,
             // 联网 (§9): what the code exports, read by the deploy.
             network: input.code.includes("export const network")
@@ -1335,6 +1336,12 @@ test.describe("发红包 · 代码判定", () => {
             checkedAt: new Date().toISOString(),
             kind,
             deploysLeft: state.deploysLeft,
+            declarations: {
+              meta: null,
+              params: [],
+              hongbao: null,
+              check: false,
+            },
           } satisfies JudgeCheck,
         },
       });
@@ -1967,7 +1974,7 @@ test.describe("发红包 · 代码判定", () => {
           at: expect.any(String),
           testsDigest: sha256(testsFile),
           passed: true,
-          protocol: 2,
+          protocol: JUDGE_PROTOCOL,
         },
       ],
       restore: { n: 1, code: firstCode },
@@ -1991,7 +1998,7 @@ test.describe("发红包 · 代码判定", () => {
             at: openedAt,
             testsDigest: sha256(testsFile),
             passed: true,
-            protocol: 2,
+            protocol: JUDGE_PROTOCOL,
           },
         ],
         restore: { n: 1, code: firstCode },
@@ -2041,7 +2048,7 @@ test.describe("发红包 · 代码判定", () => {
             at: openedAt,
             testsDigest: sha256('{ "tests": [] }'),
             passed: true,
-            protocol: 2,
+            protocol: JUDGE_PROTOCOL,
           },
         ],
         restore: { n: 1, code: firstCode },
@@ -2062,7 +2069,7 @@ test.describe("发红包 · 代码判定", () => {
     ).toBeVisible();
   });
 
-  test("草稿重新打开：第一版上部署过、测试全过的版本，换回后要在第二版上重新跑一遍，不算部署", async ({
+  test("草稿重新打开：旧协议上部署过、测试全过的版本，换回后要在第三版上重新跑一遍，不算部署", async ({
     page,
   }) => {
     await mockCodeHongbao(page);
@@ -2073,7 +2080,7 @@ test.describe("发红包 · 代码判定", () => {
         next: 2,
         versions: [
           {
-            // Run before 第二版: no protocol written.
+            // Run before 第二版: no protocol written (v1), now on 第三版.
             n: 1,
             fingerprint: sha256(firstCode),
             at: openedAt,
@@ -2092,7 +2099,7 @@ test.describe("发红包 · 代码判定", () => {
     await expect(cardName(page)).toHaveText("判定器 第 1 版");
     const area = page.locator("#hb-code-check");
     await expect(area).toContainText(
-      "判定器升级到第二版了：在判定器 第 1 版 上重新跑一遍测试才能开放。不算部署，不扣次数。",
+      "判定器升级到第三版了：在判定器 第 1 版 上重新跑一遍测试才能开放。不算部署，不扣次数。",
     );
     await area.getByRole("button", { name: "重新跑测试" }).click();
     await expect(cardState(page)).toHaveText("已部署 · 测试全过");

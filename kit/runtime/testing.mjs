@@ -5,6 +5,7 @@
 // only what matters to it; everything else takes the defaults below.
 import { sha256Text } from "./hash.mjs";
 import { NETWORK_LIMITS, NETWORK_METHODS } from "./network.mjs";
+import { paramValues } from "./params.mjs";
 import { judgeNext, startScenario } from "./scenario.mjs";
 import { LIMITS, nestsDeeper } from "./verdict.mjs";
 
@@ -350,11 +351,14 @@ function shapeProblem(test) {
       "claims",
       "state",
       "seed",
+      "params",
       ...(multi ? ["steps"] : ["input", "user", "fetch", "expect"]),
     ],
     "",
   );
   if (extra) return extra;
+  if (test.params !== undefined && !isObject(test.params))
+    return "params 要是一个对象（参数的 key 对应填的值）";
   const common =
     timeProblem(test.now, "now") ??
     hongbaoProblem(test.hongbao) ??
@@ -402,10 +406,14 @@ export function readTests(text) {
       problem:
         'tests.json 要是一个对象，测试写在它的 tests 里：{ "tests": [ … ] }',
     };
-  const extra = only(file, ["$schema", "tests"], "tests.json 里");
+  const extra = only(file, ["$schema", "params", "tests"], "tests.json 里");
   if (extra) return { problem: extra };
   if (file.$schema !== undefined && typeof file.$schema !== "string")
     return { problem: "$schema 要是字符串" };
+  if (file.params !== undefined && !isObject(file.params))
+    return {
+      problem: "顶层的 params 要是一个对象（每条测试默认用这一份参数）",
+    };
   if (!Array.isArray(file.tests))
     return { problem: "tests 要是一个数组，每条测试是其中一项" };
   if (file.tests.length === 0) return { problem: "至少写一条测试" };
@@ -426,7 +434,15 @@ export function readTests(text) {
     return {
       problem: `所有测试加起来最多判定 ${LIMITS.tests} 次（多步的一步算一次），现在是 ${judgments} 次`,
     };
-  return { tests: file.tests };
+  // A test without its own params takes the file's (协议第三版).
+  return {
+    tests:
+      file.params === undefined
+        ? file.tests
+        : file.tests.map((test) =>
+            test.params === undefined ? { ...test, params: file.params } : test,
+          ),
+  };
 }
 
 const multiStep = (test) => Array.isArray(test.steps);
@@ -794,15 +810,48 @@ function stepOutcome(step, judged) {
  * judged is judged again in the same order: `unstable` when an answer
  * differs, true randomness that no replay can match.
  */
-export async function runTest(test, run, { twice = false } = {}) {
+export async function runTest(
+  test,
+  run,
+  { twice = false, params: declared, check } = {},
+) {
   const plan = planOf(test);
   if ("problem" in plan) return { passed: false, problem: plan.problem, ms: 0 };
+  // 协议第三版: the params it is judged with, as the site would take them
+  // from a sender, and as check() would let them through.
+  const fail = (problem) => ({ passed: false, problem, ms: 0 });
+  let params;
+  if (declared !== undefined) {
+    const read = paramValues(declared, test.params);
+    if ("problems" in read) {
+      const [first] = read.problems;
+      return fail(
+        `params${first.key ? ` 的 ${first.key}` : ""}：${first.message}`,
+      );
+    }
+    params = read.values;
+    if (check) {
+      const { title, total, count, minEach } = plan.hongbao;
+      const checked = await check(params, { title, total, count, minEach });
+      if ("failure" in checked)
+        return {
+          ...fail(`check 出错：${checked.detail}`),
+          failure: { kind: checked.failure, detail: checked.detail },
+        };
+      if ("invalid" in checked) return fail(checked.invalid);
+      if (checked.problems.length > 0) {
+        const [first] = checked.problems;
+        return fail(`params 没通过 check：${first.key}：${first.message}`);
+      }
+    }
+  }
   const scenario = startScenario({
     hongbao: plan.hongbao,
     claims: plan.claims,
     state: plan.state,
     hongbaoId: TEST_HONGBAO_ID,
     secret: plan.secret,
+    ...(params !== undefined ? { params } : {}),
   });
   const steps = [];
   const answered = [];

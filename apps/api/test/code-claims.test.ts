@@ -632,7 +632,7 @@ describe("代码判定红包: claims", () => {
     });
     const before = await getPublicActivity(bindings, opened.id);
     expect(before.judge).toMatchObject({
-      protocol: 2,
+      protocol: 3,
       prompt: "输入 flag",
       seedCommitment: expect.stringMatching(/^[0-9a-f]{64}$/),
     });

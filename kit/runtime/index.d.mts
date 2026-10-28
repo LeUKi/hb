@@ -1,8 +1,13 @@
 import type {
   FetchAnswer,
+  HongbaoRules,
   Json,
   JudgeNote,
   JudgeRecords,
+  Meta,
+  ParamDeclaration,
+  ParamProblem,
+  Params,
   Random,
   Submission,
   TestCase,
@@ -193,6 +198,67 @@ export function requestProblem(
   list: readonly string[] | null,
 ): string | null;
 
+// params.mjs
+export const PARAM_TYPES: readonly ParamDeclaration["type"][];
+export const COLUMN_TYPES: readonly ("text" | "integer" | "money")[];
+export const PARAM_LIMITS: Readonly<{
+  params: number;
+  keyCharacters: number;
+  labelCharacters: number;
+  hintCharacters: number;
+  textCharacters: number;
+  textareaCharacters: number;
+  minOptions: number;
+  maxOptions: number;
+  optionValueCharacters: number;
+  items: number;
+  rows: number;
+  columns: number;
+  bytes: number;
+  checkProblems: number;
+  checkMessageCharacters: number;
+}>;
+export const META_LIMITS: Readonly<{ name: number; description: number }>;
+export const HONGBAO_LIMITS: Readonly<{
+  count: number;
+  promptCharacters: number;
+}>;
+export function readParams(
+  value: unknown,
+): { list: ParamDeclaration[] } | { problems: string[] };
+export function paramValues(
+  list: readonly ParamDeclaration[],
+  given: unknown,
+): { values: Params } | { problems: ParamProblem[] };
+export function secretKeys(list: readonly ParamDeclaration[]): string[];
+export function readCheckAnswer(
+  value: unknown,
+  list: readonly ParamDeclaration[],
+): { problems: ParamProblem[] } | { invalid: string };
+export function readHongbaoRules(
+  value: unknown,
+): { rules: HongbaoRules | null } | { problems: string[] };
+export function hongbaoRuleProblems(
+  rules: HongbaoRules | null | undefined,
+  numbers: {
+    count?: number | null;
+    total?: number | null;
+    minEach?: number | null;
+  },
+): { field: "count" | "total" | "minEach"; message: string }[];
+export function readMeta(
+  value: unknown,
+): { meta: Meta | null } | { problems: string[] };
+export function paramLine(item: ParamDeclaration): string;
+export type Declarations = {
+  meta: Meta | null;
+  params: ParamDeclaration[];
+  hongbao: HongbaoRules | null;
+  check: boolean;
+  problems: string[];
+};
+export function readDeclarations(answer: unknown): Declarations;
+
 // testing.mjs
 export function fetchProblem(list: unknown): string | null;
 export const TEST_HONGBAO_ID: string;
@@ -278,10 +344,24 @@ export type TestRun = {
   /** Run twice, and an answer differed: true randomness. */
   unstable?: true;
 };
+/** check(params, hongbao) run once: what it said, or how it failed. */
+export type RunCheck = (
+  params: Params,
+  hongbao: Pick<Submission["hongbao"], "title" | "total" | "count" | "minEach">,
+) => Promise<
+  | { problems: ParamProblem[] }
+  | { invalid: string }
+  | { failure: SandboxFailureKind; detail: string }
+>;
 export function runTest(
   test: TestCase,
   run: RunSandbox,
-  options?: { twice?: boolean },
+  options?: {
+    twice?: boolean;
+    /** 协议第三版: the declared params, each test's checked against them. */
+    params?: readonly ParamDeclaration[];
+    check?: RunCheck;
+  },
 ): Promise<TestRun>;
 
 // scenario.mjs
@@ -298,6 +378,8 @@ export type Scenario = {
   judged: Map<number, number>;
   hongbaoId?: string;
   secret: string | null;
+  /** 协议第三版: submission.params. */
+  params?: Params;
 };
 export function startScenario(input: {
   hongbao: Scenario["hongbao"];
@@ -305,6 +387,7 @@ export function startScenario(input: {
   state?: Json;
   hongbaoId?: string;
   secret?: string | null;
+  params?: Params;
 }): Scenario;
 export function refusalOf(
   scenario: Scenario,

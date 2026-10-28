@@ -13,7 +13,9 @@ const copyClaim = (claim) => ({ ...claim, user: { ...claim.user } });
  * A 红包 before its first submission here: `hongbao` its fixed numbers
  * (title, total, count, minEach, openedAt, endsAt), the claims already in
  * and the code's state. `hongbaoId` and `secret` make each submission's
- * seeds; a replay before the seed is out has no secret.
+ * seeds; a replay before the seed is out has no secret. `params`, from the
+ * third protocol, is submission.params (none before it: an earlier
+ * 红包's submissions stay as they were).
  */
 export function startScenario({
   hongbao,
@@ -21,8 +23,10 @@ export function startScenario({
   state = null,
   hongbaoId,
   secret = null,
+  params,
 }) {
   return {
+    ...(params !== undefined ? { params } : {}),
     hongbao: { ...hongbao },
     claims: claims.map(copyClaim),
     paid: claims.reduce((sum, claim) => sum + claim.amount, 0),
@@ -76,6 +80,9 @@ export function nextSubmission(scenario, { input, now, user, title }) {
     share: shareRange(numbers),
     claims: scenario.claims.map(copyClaim),
     state: scenario.state,
+    ...(scenario.params !== undefined
+      ? { params: structuredClone(scenario.params) }
+      : {}),
   };
 }
 

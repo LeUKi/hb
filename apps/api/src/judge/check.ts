@@ -8,12 +8,16 @@
 import type {
   JudgeCheck,
   JudgeCheckInput,
+  JudgeDeclarations,
   JudgeSettings,
   JudgeTestOutcome,
 } from "@hb/contracts";
 import type { FetchAnswer } from "../../../../kit/judge";
 import {
   checkSource,
+  type RunCheck,
+  readCheckAnswer,
+  readDeclarations,
   readNetwork,
   readTests,
   runTest,
@@ -24,6 +28,7 @@ import { startOfBeijingDay } from "../balance/day";
 import { transferAccess } from "../balance/transfers";
 import type { ApiBindings } from "../env";
 import {
+  checkParamsInJudge,
   describeJudge,
   JUDGE_PROTOCOL,
   runJudge,
@@ -274,6 +279,14 @@ async function runChecks(
   // 联网 (§9.2): what judge.js exports, read once it is loaded.
   let network: string[] | null = null;
   const networkProblems: string[] = [];
+  // 协议第三版: meta, params, hongbao and check, read with it.
+  let declarations: JudgeDeclarations = {
+    meta: null,
+    params: [],
+    hongbao: null,
+    check: false,
+  };
+  const declarationProblems: string[] = [];
   /**
    * A sandbox's first use: its 份 on record before the 判定器 is made (§7:
    * 每月上限 and 用量 see it even if the run goes no further; the run
@@ -303,16 +316,19 @@ async function runChecks(
     });
     // Code that will not load says so in its first test.
     if (described) {
-      const declared =
-        described.network !== null &&
-        typeof described.network === "object" &&
-        "unreadable" in described.network
-          ? { problems: ["network 要是字符串数组"] }
-          : readNetwork(described.network);
+      const unreadable = Array.isArray(described.unreadable)
+        ? described.unreadable
+        : [];
+      const declared = unreadable.includes("network")
+        ? { problems: ["network 要是字符串数组"] }
+        : readNetwork(described.network);
       if ("problems" in declared) networkProblems.push(...declared.problems);
       else network = declared.list;
       if (network && !settings.networkEnabled)
         networkProblems.push("代码判定暂时不能联网。");
+      const { problems: wrong, ...read } = readDeclarations(described);
+      declarations = read;
+      declarationProblems.push(...wrong);
     }
     const run = async (
       submission: Parameters<typeof runJudge>[1]["submission"],
@@ -348,6 +364,38 @@ async function runChecks(
       } else slowestMs = Math.max(slowestMs ?? 0, Date.now() - started);
       return outcome;
     };
+    // check(params, hongbao), once for the same params and numbers, in the
+    // sandbox in use: its timeouts count as a judgment's do.
+    const checked = new Map<string, Awaited<ReturnType<RunCheck>>>();
+    const check: RunCheck = async (params, hongbao) => {
+      const key = JSON.stringify([params, hongbao]);
+      const known = checked.get(key);
+      if (known) return known;
+      let answer: Awaited<ReturnType<RunCheck>>;
+      if (timeouts >= SANDBOXES)
+        answer = { failure: "timeout", detail: "前面超时，这条没跑" };
+      else {
+        const usage = sandboxes.get(sandbox) ?? (await prepare(sandbox));
+        const outcome = await checkParamsInJudge(
+          env,
+          { code: input.code, fingerprint, fresh: sandbox },
+          { params, hongbao },
+        );
+        if ("failure" in outcome) {
+          if (outcome.failure === "timeout") {
+            timeouts += 1;
+            usage.timeouts += 1;
+            if (!outcome.hung && timeouts < SANDBOXES) {
+              usage.switches += 1;
+              sandbox += 1;
+            }
+          }
+          answer = { failure: outcome.failure, detail: outcome.detail };
+        } else answer = readCheckAnswer(outcome.answer, declarations.params);
+      }
+      checked.set(key, answer);
+      return answer;
+    };
     for (const test of read.tests) {
       if (timeouts >= SANDBOXES) {
         tests.push({
@@ -358,8 +406,14 @@ async function runChecks(
         continue;
       }
       // Twice, a multi-step test as a whole: an answer that changes is
-      // true randomness, not replayable.
-      const result = await runTest(test, run, { twice: true });
+      // true randomness, not replayable. Its params held to the declared
+      // ones and to check() (协议第三版); none to check while those are wrong.
+      if (declarationProblems.length > 0) break;
+      const result = await runTest(test, run, {
+        twice: true,
+        params: declarations.params,
+        ...(declarations.check ? { check } : {}),
+      });
       const { failure } = result;
       if (failure?.kind === "load" || failure?.kind === "no-judge") {
         loadProblem =
@@ -387,6 +441,7 @@ async function runChecks(
     !testsProblem &&
     !loadProblem &&
     networkProblems.length === 0 &&
+    declarationProblems.length === 0 &&
     tests.length > 0 &&
     tests.every((test) => test.passed);
   const checkedAt = Date.now();
@@ -428,6 +483,8 @@ async function runChecks(
     passed,
     network,
     ...(networkProblems.length > 0 ? { networkProblems } : {}),
+    declarations,
+    ...(declarationProblems.length > 0 ? { declarationProblems } : {}),
     problems,
     ...(testsProblem ? { testsProblem } : {}),
     ...(loadProblem ? { loadProblem } : {}),

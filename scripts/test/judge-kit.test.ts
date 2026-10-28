@@ -88,6 +88,7 @@ function submissionOf(input: string) {
     share: shareRange(hongbao),
     claims: [],
     state: null,
+    params: {},
   };
 }
 const SEEDS = { submission: TEST_SEED, user: TEST_SEED };
@@ -558,8 +559,8 @@ describe("npm run replay", () => {
       "✗ 记录里还没有种子：红包结束后才公开，到时候再下载一次完整记录",
     ]);
     expect(unsealed.exitCode).toBe(1);
-    await expect(replayWith({ ...records, protocol: 3 })).rejects.toThrow(
-      "记录是第 3 版协议，这个开发包只认第 1 到第 2 版：换一个新的开发包再重放",
+    await expect(replayWith({ ...records, protocol: 4 })).rejects.toThrow(
+      "记录是第 4 版协议，这个开发包只认第 1 到第 3 版：换一个新的开发包再重放",
     );
 
     const second = records.judgments[1];
@@ -847,4 +848,192 @@ export function judge() { return { ok: false }; }`,
     );
     expect(replayed.exitCode).toBe(0);
   }, 30_000);
+});
+
+// 协议第三版 (docs/judge-square-design.md §3–§5): meta, params, hongbao and
+// check, through every command.
+const GUESS = `export const meta = { name: "猜数字", description: "猜中的领" };
+export const params = [
+  { key: "max", label: "最大", type: "integer", min: 2, max: 1000, default: 100 },
+  { key: "answer", label: "答案", type: "integer", secret: true },
+  { key: "words", label: "提示", type: "list", required: false },
+];
+export const hongbao = { count: { min: 1, max: 10, default: 5 } };
+export function check(params) {
+  return params.answer > params.max
+    ? [{ key: "answer", message: "答案不能大于最大" }]
+    : [];
+}
+export function judge(submission) {
+  const ok = Number(submission.input) === submission.params.answer;
+  return ok
+    ? { ok, amount: submission.share.min }
+    : { ok, message: \`不对，范围 1–\${submission.params.max}\` };
+}`;
+const GUESS_TESTS = {
+  params: { answer: 42 },
+  tests: [
+    { name: "猜中", input: "42", expect: { ok: true } },
+    {
+      name: "猜错",
+      input: "7",
+      expect: { ok: false, message: "不对，范围 1–100" },
+    },
+    {
+      name: "自己的参数",
+      input: "7",
+      params: { answer: 7, max: 10 },
+      expect: { ok: true },
+    },
+    {
+      name: "参数不对",
+      input: "7",
+      params: { answer: "七" },
+      expect: { ok: false },
+    },
+    {
+      name: "没过 check",
+      input: "7",
+      params: { answer: 500 },
+      expect: { ok: false },
+    },
+  ],
+};
+
+describe("协议第三版：参数", () => {
+  it("npm test gives each test its params, held to the declarations and to check()", async () => {
+    const dir = kit({ "judge.js": GUESS, "tests.json": GUESS_TESTS });
+    const { exitCode, lines } = await run(testCommand, { dir });
+    expect(lines).toEqual([
+      expect.stringMatching(/^✓ 猜中（/),
+      expect.stringMatching(/^✓ 猜错（/),
+      expect.stringMatching(/^✓ 自己的参数（/),
+      "✗ 参数不对：params 的 answer：答案要是整数",
+      "✗ 没过 check：params 没通过 check：answer：答案不能大于最大",
+      "测试 3 / 5 通过",
+    ]);
+    expect(exitCode).toBe(1);
+  }, 20_000);
+
+  it("npm run check draws the form, and says what is wrong with the declarations", async () => {
+    const good = kit({
+      "judge.js": GUESS,
+      "tests.json": { ...GUESS_TESTS, tests: GUESS_TESTS.tests.slice(0, 3) },
+    });
+    const passed = await run(checkCommand, { dir: good });
+    expect(passed.lines.slice(0, 6)).toEqual([
+      "✓ import 都在清单里",
+      "✓ 代码能加载、导出了 judge",
+      "✓ 参数表单预览",
+      "  最大（整数，2–1000，默认 100）",
+      "  答案（整数，保密）",
+      "  提示（列表，选填）",
+    ]);
+    expect(passed.lines.at(-1)).toBe("可以去网站部署了");
+    const bad = kit({
+      "judge.js": `export const meta = { name: "名字太长了名字太长了名字太长了名字太长了名字" };
+export const params = [{ key: "x", label: "选", type: "choice", options: [{ value: "a", label: "A" }] }];
+export const hongbao = { deadline: { value: 2, unit: "weeks" } };
+export function judge() { return { ok: false }; }`,
+      "tests.json": {
+        tests: [{ name: "一条", input: "x", expect: { ok: false } }],
+      },
+    });
+    const failed = await run(checkCommand, { dir: bad });
+    expect(failed.lines.slice(2, 6)).toEqual([
+      "✗ 参数声明写得不对",
+      "  meta.name 最多 20 个字",
+      "  params 第 1 项（x）：options 要 2–20 个",
+      '  hongbao.deadline 要写成 { value: 正整数, unit: "minutes" | "hours" | "days" }',
+    ]);
+    expect(failed.lines.at(-1)).toBe("还不能开放");
+    expect(failed.exitCode).toBe(1);
+  }, 20_000);
+
+  it("npm run simulate sends the params in, and stops at ones that do not pass", async () => {
+    const dir = kit({
+      "judge.js": GUESS,
+      "simulate.json": {
+        params: { answer: 42 },
+        hongbao: { total: 1000, count: 2 },
+        submissions: [
+          { who: "小明", input: "7" },
+          { who: "小红", input: "42" },
+        ],
+      },
+    });
+    const simulated = await run(simulateCommand, { dir });
+    expect(simulated.lines).toContainEqual(
+      expect.stringMatching(
+        /^第 1 次 {2}小明 {2}"7" {2}没领到 {2}代码的回复：不对，范围 1–100/,
+      ),
+    );
+    expect(simulated.lines).toContainEqual(
+      expect.stringMatching(/^第 2 次 {2}小红 {2}"42" {2}领到 /),
+    );
+    const missing = kit({
+      "judge.js": GUESS,
+      "simulate.json": { submissions: [{ who: "小明", input: "7" }] },
+    });
+    const refused = await run(simulateCommand, { dir: missing });
+    expect(refused.lines.at(-1)).toBe("✗ params 的 answer：请填写答案");
+    expect(refused.exitCode).toBe(1);
+  }, 30_000);
+
+  it("npm run replay gives a third-protocol 红包 its params, and a second-protocol one its own runtime", async () => {
+    const dir = kit({
+      "judge.js": GUESS,
+      "simulate.json": {
+        params: { answer: 42, max: 50 },
+        hongbao: { total: 1000, count: 2 },
+        submissions: [
+          { who: "小明", input: "7" },
+          { who: "小红", input: "42" },
+        ],
+      },
+    });
+    const { simulation: simulated } = await run(simulateCommand, { dir });
+    if (!simulated) throw new Error("No simulation");
+    const records = {
+      ...recordsOf(simulated, GUESS),
+      params: { answer: 42, max: 50, words: [] },
+    };
+    const downloads = kit({ "judge-records-x.json": records });
+    const replayed = await run(replayCommand, {
+      dir,
+      cwd: downloads,
+      args: ["judge-records-x.json"],
+    });
+    expect(replayed.lines.at(-1)).toBe("2 次判定全部一致");
+    // Another answer: the replay is given it, and the judgments differ.
+    const other = kit({
+      "judge-records-x.json": { ...records, params: { answer: 7, max: 50 } },
+    });
+    const differing = await run(replayCommand, {
+      dir,
+      cwd: other,
+      args: ["judge-records-x.json"],
+    });
+    expect(differing.exitCode).toBe(1);
+
+    const lucky = kit({
+      "judge.js": LUCKY,
+      "simulate.json": simulation(3, ["小明", "小红"]),
+    });
+    const { simulation: second } = await run(simulateCommand, {
+      dir: lucky,
+      args: ["--seed", "v2"],
+    });
+    if (!second) throw new Error("No simulation");
+    const v2 = kit({
+      "judge-records-x.json": { ...recordsOf(second, LUCKY), protocol: 2 },
+    });
+    const old = await run(replayCommand, {
+      dir: lucky,
+      cwd: v2,
+      args: ["judge-records-x.json"],
+    });
+    expect(old.lines.at(-1)).toMatch(/^\d+ 次判定全部一致$/);
+    expect(old.exitCode).toBe(0);
+  }, 40_000);
 });

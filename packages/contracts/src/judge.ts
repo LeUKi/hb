@@ -2,13 +2,39 @@
 // API agree on about a sender's code. What the code itself is given and
 // returns is kit/judge.d.ts.
 import { z } from "zod";
+import type {
+  HongbaoRules,
+  Meta,
+  ParamDeclaration,
+  ParamProblem,
+  Params,
+} from "../../../kit/judge";
 import type { PublicUserProfile } from "./profile";
 
+/** 协议第三版 (docs/judge-square-design.md §3, §4), as kit/judge.d.ts has them. */
+export type {
+  HongbaoRules as JudgeHongbaoRules,
+  Meta as JudgeMeta,
+  ParamDeclaration as JudgeParam,
+  ParamProblem as JudgeParamProblem,
+  Params as JudgeParams,
+};
+
+/** What a v3 judge.js exports besides judge, as its deploy read it. */
+export type JudgeDeclarations = {
+  meta: Meta | null;
+  params: ParamDeclaration[];
+  hongbao: HongbaoRules | null;
+  /** It exports check(params, hongbao). */
+  check: boolean;
+};
+
 /**
- * The protocol a 红包 opens with now (§4.7, §9): v2 is v1 with 联网. An
- * opened 红包 keeps the one it opened with.
+ * The protocol a 红包 opens with now (§4.7, §9; docs/judge-square-design.md
+ * §5): v2 is v1 with 联网, v3 is v2 with params. An opened 红包 keeps the
+ * one it opened with.
  */
-export const JUDGE_PROTOCOL = 2;
+export const JUDGE_PROTOCOL = 3;
 
 export const JUDGE_LIMITS = {
   promptCharacters: 40,
@@ -176,6 +202,10 @@ export type JudgeCheck = {
   network: string[] | null;
   /** What is wrong with them, or that 联网 is off: no pass. */
   networkProblems?: string[];
+  /** 协议第三版: meta, params, hongbao and check, as declared. */
+  declarations: JudgeDeclarations;
+  /** What is wrong with them: no pass. */
+  declarationProblems?: string[];
   /** Found without running the code: imports, size. */
   problems: { line: number; message: string }[];
   /** tests.json itself: not JSON, or an entry the protocol does not have. */

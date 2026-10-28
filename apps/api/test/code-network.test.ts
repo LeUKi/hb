@@ -117,7 +117,7 @@ async function open(
   expect(passed.body.check).toMatchObject({
     passed: true,
     network: [API],
-    protocol: 2,
+    protocol: 3,
   });
   const saved = await createActivity(bindings, author.id, {
     requestId: crypto.randomUUID(),
@@ -156,7 +156,7 @@ describe("代码判定联网", () => {
   it("asks the address through the gateway and keeps what it got", async () => {
     const opened = await open();
     expect((await getPublicActivity(bindings, opened.id)).judge).toMatchObject({
-      protocol: 2,
+      protocol: 3,
       network: [API],
     });
     answer = async () => Response.json({ right: true, say: "服务器说对" });
@@ -217,7 +217,7 @@ describe("代码判定联网", () => {
       network: string[];
       judgments: { fetches?: Record<string, unknown>[] }[];
     };
-    expect(body.protocol).toBe(2);
+    expect(body.protocol).toBe(3);
     expect(body.network).toEqual([API]);
     expect(body.judgments[0]?.fetches).toEqual([
       expect.objectContaining({

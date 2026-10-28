@@ -1847,8 +1847,8 @@ export const activityCode = sqliteTable(
   (table) => [
     check(
       "activity_code_shape",
-      sql`${table.protocol} IN (1, 2) AND length(${table.fingerprint}) = 64 AND length(${table.testsDigest}) = 64
-        AND (${table.network} IS NULL OR (${table.protocol} = 2 AND json_valid(${table.network})
+      sql`${table.protocol} IN (1, 2, 3) AND length(${table.fingerprint}) = 64 AND length(${table.testsDigest}) = 64
+        AND (${table.network} IS NULL OR (${table.protocol} >= 2 AND json_valid(${table.network})
           AND json_type(${table.network}) = 'array' AND json_array_length(${table.network}) BETWEEN 1 AND 3))
         AND length(${table.prompt}) <= 40
         AND typeof(${table.minEachMinor}) = 'integer' AND ${table.minEachMinor} > 0
@@ -2119,8 +2119,8 @@ export const judgeUsage = sqliteTable(
     check(
       "judge_usage_shape",
       sql`length(${table.fingerprint}) = 64
-        AND ${table.protocol} IN (1, 2) AND ${table.networked} IN (0, 1)
-        AND (${table.networked} = 0 OR (${table.protocol} = 2 AND ${table.activityId} IS NOT NULL))
+        AND ${table.protocol} IN (1, 2, 3) AND ${table.networked} IN (0, 1)
+        AND (${table.networked} = 0 OR (${table.protocol} >= 2 AND ${table.activityId} IS NOT NULL))
         AND typeof(${table.fresh}) = 'integer' AND ${table.fresh} BETWEEN 0 AND 3
         AND ${table.sandboxId} = 'judge:v' || ${table.protocol} || ':' || ${table.fingerprint}
           || CASE WHEN ${table.networked} = 1 THEN ':' || ${table.activityId} ELSE '' END

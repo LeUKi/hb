@@ -7,6 +7,7 @@
 import {
   checkSource,
   LIMITS,
+  paramLine,
   readTests,
   runTest,
 } from "../../runtime/index.mjs";
@@ -42,7 +43,13 @@ async function runAll(code, tests) {
   const results = [];
   const unstable = [];
   let loadProblem = null;
-  const { network } = sandbox;
+  const { network, declarations } = sandbox;
+  // 协议第三版: each test's params, held to what is declared and to check().
+  const options = {
+    twice: true,
+    params: declarations.params,
+    ...(declarations.check ? { check: sandbox.check } : {}),
+  };
   try {
     for (const test of tests) {
       if (timeouts >= TIMEOUTS) {
@@ -53,7 +60,7 @@ async function runAll(code, tests) {
         });
         continue;
       }
-      const result = await runTest(test, run, { twice: true });
+      const result = await runTest(test, run, options);
       if (result.failure && unloadable(result.failure.kind)) {
         loadProblem = failureText(result.failure.kind, result.failure.detail);
         break;
@@ -65,7 +72,15 @@ async function runAll(code, tests) {
     await sandbox.close();
   }
   const loadNote = loadProblem ? null : slowLoadNote(sandbox.loadMs);
-  return { results, unstable, loadProblem, slowest, loadNote, network };
+  return {
+    results,
+    unstable,
+    loadProblem,
+    slowest,
+    loadNote,
+    network,
+    declarations,
+  };
 }
 
 export async function checkCommand({ dir, print = console.log }) {
@@ -98,8 +113,19 @@ export async function checkCommand({ dir, print = console.log }) {
         for (const problem of all.network.problems) print(`  ${problem}`);
       } else if (all.network.list)
         print(row(true, `联网：${all.network.list.join("、")}`));
+      // 协议第三版: meta, params, hongbao and check, and the form drawn
+      // from params as the site draws it.
+      const declared = all.declarations;
+      const declaredOk = declared.problems.length === 0;
+      if (!declaredOk) {
+        print(row(false, "参数声明写得不对"));
+        for (const problem of declared.problems) print(`  ${problem}`);
+      } else if (declared.params.length > 0) {
+        print(row(true, "参数表单预览"));
+        for (const item of declared.params) print(`  ${paramLine(item)}`);
+      }
       const good = all.results.filter((result) => result.passed).length;
-      passed = networkOk && good === read.tests.length;
+      passed = networkOk && declaredOk && good === read.tests.length;
       print(row(passed, `测试 ${good} / ${read.tests.length} 通过`));
       for (const result of all.results)
         if (!result.passed)

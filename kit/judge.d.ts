@@ -1,7 +1,8 @@
 /**
- * 代码判定红包 · 代码协议第二版（第一版加上联网）。
+ * 代码判定红包 · 代码协议第三版（第二版加上参数）。
  * 金额都是整数，单位是分（0.01）；时间都是毫秒。
- * 规则见 hb 仓库的 docs/programmable-hongbao-design.md 第 4 节，联网见第 9 节。
+ * 规则见 hb 仓库的 docs/programmable-hongbao-design.md 第 4 节，联网见第 9 节，
+ * 参数（meta、params、hongbao、check）见 docs/judge-square-design.md 第 3、4 节。
  */
 
 export type Json =
@@ -53,6 +54,11 @@ export interface Submission {
   }[];
   /** 代码上次存的，最开始是 null */
   state: Json;
+  /**
+   * 发红包的人在参数表单里填的（按 params 的声明校验过；没声明 params 是 {}）。
+   * 金额是整数分；没填的选填项：开关是 false，列表和表格是 []，其他是 null。
+   */
+  params: Params;
 }
 
 /** judge() 的返回：发还是不发。 */
@@ -132,6 +138,128 @@ export type Judge = (
   tools: Tools,
 ) => Verdict | Promise<Verdict>;
 
+/** 参数的值：submission.params 里每个 key 一个。 */
+export type ParamValue =
+  | string
+  | number
+  | boolean
+  | null
+  | string[]
+  | Record<string, string | number | null>[];
+export type Params = Record<string, ParamValue>;
+
+/** 每个参数都能写的。 */
+interface ParamBase {
+  /** 字母、数字和下划线，最多 32 个字；代码里用 submission.params[key] 取 */
+  key: string;
+  /** 表单上的名字，最多 20 个字 */
+  label: string;
+  /** 表单上的一句说明，最多 60 个字 */
+  hint?: string;
+  /** 默认 true */
+  required?: boolean;
+  /** 保密：开放时只公布参数封存值，结束后公开。默认 false */
+  secret?: boolean;
+}
+
+/** 表格的一列。 */
+export type TableColumn = {
+  key: string;
+  label: string;
+  /** 默认 true */
+  required?: boolean;
+} & (
+  | { type: "text"; minLength?: number; maxLength?: number }
+  | { type: "integer"; min?: number; max?: number; step?: number }
+  | { type: "money"; min?: number; max?: number }
+);
+
+/**
+ * 参数的声明：judge.js 导出 `params`（这种声明的数组，最多 20 项），网站按它画出
+ * 发红包时填的表单。金额（money）是整数分，min 至少 1。
+ */
+export type ParamDeclaration = ParamBase &
+  (
+    | { type: "text"; minLength?: number; maxLength?: number; default?: string }
+    | { type: "textarea"; maxLength?: number; default?: string }
+    | {
+        type: "integer";
+        min?: number;
+        max?: number;
+        step?: number;
+        default?: number;
+      }
+    | { type: "money"; min?: number; max?: number; default?: number }
+    | { type: "switch"; default?: boolean }
+    | {
+        type: "choice";
+        /** 2–20 个 */
+        options: { value: string; label: string }[];
+        default?: string;
+      }
+    | {
+        type: "list";
+        minItems?: number;
+        /** 最多 100 */
+        maxItems?: number;
+        /** 每项最多几个字，最多 200 */
+        maxLength?: number;
+        default?: string[];
+      }
+    | {
+        type: "table";
+        /** 1–6 列 */
+        columns: TableColumn[];
+        minRows?: number;
+        /** 最多 100 */
+        maxRows?: number;
+        default?: Record<string, string | number | null>[];
+      }
+  );
+
+/**
+ * judge.js 导出 `hongbao`：用它发的红包在“发多少”这一步的默认值和范围，
+ * 只能收窄平台的规则。金额是整数分。
+ */
+export interface HongbaoRules {
+  /** 份数，1–1000 之内 */
+  count?: { min?: number; max?: number; default?: number };
+  /** 总奖池 */
+  total?: { min?: number; max?: number; default?: number };
+  /** 每份至少 */
+  minEach?: { min?: number; default?: number };
+  /** 默认的截止时长（从开放算起） */
+  deadline?: { value: number; unit: "minutes" | "hours" | "days" };
+  /** 领取提示的默认值，最多 40 个字 */
+  prompt?: string;
+  /** 建议打开领取前人机验证（发红包的人能关） */
+  humanCheck?: boolean;
+}
+
+/** judge.js 导出 `meta`：贴代码时填好判定器的名字和说明，之后以网站上的为准。 */
+export interface Meta {
+  /** 最多 20 个字 */
+  name: string;
+  /** 最多 60 个字 */
+  description?: string;
+}
+
+/** check() 说的一个问题：哪个参数、错在哪（最多 100 个字）。 */
+export interface ParamProblem {
+  key: string;
+  message: string;
+}
+
+/**
+ * judge.js 可以导出 `check(params, hongbao)`：查单看每一项查不出来的，比如最小
+ * 不能大于最大、题目不能比份数少。返回问题的数组，没问题返回 []。
+ * 发红包的人填参数时在判定器里跑，Math.random() 每次都一样，不能联网。
+ */
+export type Check = (
+  params: Params,
+  hongbao: Pick<Submission["hongbao"], "title" | "total" | "count" | "minEach">,
+) => ParamProblem[] | Promise<ParamProblem[]>;
+
 /**
  * 联网：judge.js 导出 network，列出能请求的地址前缀，最多 3 个；不导出就不联网。
  * 写法：https:// 开头的完整域名加路径前缀，比如 "https://api.example.com/hongbao/"；
@@ -176,6 +304,8 @@ export type TestTime = number | string;
 export interface TestFile {
   /** 写 "./tests.schema.json"，编辑器就能补全、标错 */
   $schema?: string;
+  /** 每条测试默认用的参数（测试自己写了 params 就用自己的） */
+  params?: Params;
   tests: TestCase[];
 }
 
@@ -202,6 +332,11 @@ interface TestBase {
   state?: Json;
   /** 种子（64 位小写十六进制），默认固定的测试种子 */
   seed?: string;
+  /**
+   * 这条测试的参数，按 params 的声明校验（没写的项用 default），代码导出了 check
+   * 也要过 check；默认用文件顶层的 params
+   */
+  params?: Params;
 }
 
 /** 前面已领的一份：按先后，不早于开放，不晚于这次提交，同一个人只有一份。 */
@@ -299,10 +434,12 @@ export type TestExpect = (
  * 已领记录、剩余奖池和状态都由前面的判定推出来，不重复写。
  */
 export interface JudgeRecords {
-  /** 红包开放时用的协议版本：1 或 2 */
+  /** 红包开放时用的协议版本：1、2 或 3 */
   protocol: number;
-  /** 第二版联网的红包：白名单 */
+  /** 第二版起联网的红包：白名单 */
   network?: string[];
+  /** 第三版：发红包时填的参数，保密的也在（这份记录只给红包作者） */
+  params?: Params;
   hongbao: {
     id: string;
     total: number;

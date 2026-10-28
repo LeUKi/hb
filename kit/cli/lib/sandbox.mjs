@@ -11,11 +11,16 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
-import { NETWORK_LIMITS, readNetwork } from "../../runtime/index.mjs";
+import {
+  NETWORK_LIMITS,
+  readCheckAnswer,
+  readDeclarations,
+  readNetwork,
+} from "../../runtime/index.mjs";
 import { fingerprintOf, KitError } from "./files.mjs";
 
-/** Protocol v2: this runtime on this compatibility date with nodejs_compat. */
-export const PROTOCOL = 2;
+/** Protocol v3: this runtime on this compatibility date with nodejs_compat. */
+export const PROTOCOL = 3;
 export const COMPATIBILITY_DATE = "2026-09-01";
 /** What runs beside judge.js, as hb's scripts/judge-runtime.ts copies it to the site. */
 export const SANDBOX_MODULES = Object.freeze([
@@ -55,15 +60,15 @@ async function loadMiniflare() {
 }
 
 /**
- * The modules of the Dynamic Worker: .js names are modules there. Protocol
- * v1's are its runtime as 红包 opened with it, kept frozen, for replaying
- * their records.
+ * The modules of the Dynamic Worker: .js names are modules there. An
+ * earlier protocol's are its runtime as 红包 opened with it, kept frozen,
+ * for replaying their records.
  */
 function modulesWith(code, protocol) {
   const modules = {};
-  if (protocol === 1) {
+  if (protocol < PROTOCOL) {
     const frozen = JSON.parse(
-      readFileSync(new URL("frozen/v1.json", runtimeDir), "utf8"),
+      readFileSync(new URL(`frozen/v${protocol}.json`, runtimeDir), "utf8"),
     );
     for (const [name, js] of Object.entries(frozen)) modules[name] = { js };
   } else
@@ -107,13 +112,17 @@ async function ask(runtime, body, waitMs = TIMEOUT_MS) {
   }
 }
 
+const described = (answer) =>
+  answer && answer !== LATE && typeof answer.host !== "string" ? answer : null;
+
 /** What judge.js exports as `network`: `{ list }` or `{ problems }`. */
 function networkOf(answer) {
-  if (!answer || answer === LATE || typeof answer.host === "string")
-    return { list: null };
-  if (answer.network?.unreadable)
+  const read = described(answer);
+  if (!read) return { list: null };
+  // The second protocol's runtime marked it in place.
+  if (read.network?.unreadable || read.unreadable?.includes("network"))
     return { problems: ["network 要是字符串数组"] };
-  return readNetwork(answer.network ?? null);
+  return readNetwork(read.network ?? null);
 }
 
 /**
@@ -178,16 +187,19 @@ export async function openSandbox(
   };
   let { runtime, hung, loadMs } = await start();
   let restarts = 0;
-  // What judge.js exports as `network`: a request main.mjs answers once
-  // judge.js is loaded.
-  const network =
+  // What judge.js exports besides judge: a request main.mjs answers once
+  // judge.js is loaded (none in the first protocol).
+  const answer =
     hung || protocol === 1
-      ? { list: null }
-      : networkOf(
-          await ask(runtime, JSON.stringify({ describe: true })).catch(
-            () => null,
-          ),
+      ? null
+      : await ask(runtime, JSON.stringify({ describe: true })).catch(
+          () => null,
         );
+  const network = networkOf(answer);
+  // The third protocol's meta, params, hongbao and check.
+  const declarations = readDeclarations(
+    protocol >= 3 ? described(answer) : null,
+  );
   const list = "list" in network ? network.list : null;
   // Going out, the gateway knows the list: workerd again, with it.
   if (live && list) {
@@ -264,10 +276,58 @@ export async function openSandbox(
     }
   }
 
+  /**
+   * check(params, hongbao) once (协议第三版): `{ problems }`, `{ invalid }`
+   * or `{ failure, detail }`, as runTest takes it.
+   */
+  // The same params and numbers ask check() once: tests share theirs.
+  const checked = new Map();
+  async function check(params, hongbao) {
+    const key = JSON.stringify([params, hongbao]);
+    if (!checked.has(key)) checked.set(key, await checkOnce(params, hongbao));
+    return checked.get(key);
+  }
+  async function checkOnce(params, hongbao) {
+    if (hung)
+      return {
+        failure: "timeout",
+        detail: `judge.js 顶层的代码超过 ${TIMEOUT_MS / 1000} 秒还没跑完`,
+      };
+    try {
+      const body = await ask(
+        runtime,
+        JSON.stringify({
+          check: { params, hongbao, now: Date.now() },
+          capture: true,
+        }),
+      );
+      if (body === LATE) {
+        await restart();
+        return {
+          failure: "timeout",
+          detail: `check 超过 ${TIMEOUT_MS / 1000} 秒没有返回`,
+        };
+      }
+      if (typeof body.host === "string") return failureOf(body.host);
+      if (body.error)
+        return { failure: body.error.kind, detail: body.error.detail };
+      return readCheckAnswer(body.answer, declarations.params);
+    } catch (error) {
+      await restart();
+      return {
+        failure: "unavailable",
+        detail: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   return {
     run,
+    check,
     /** What judge.js exports as `network`: `{ list }` or `{ problems }`. */
     network,
+    /** 协议第三版: meta, params, hongbao and check, with their problems. */
+    declarations,
     /** How many times workerd was started afresh after a timeout. */
     get restarts() {
       return restarts;

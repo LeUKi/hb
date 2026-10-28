@@ -276,7 +276,7 @@ function DeployArea({
           <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <span className="min-w-0 flex-1">
               {judge.upgraded
-                ? `判定器升级到第二版了：在判定器 第 ${judge.version.n} 版 上重新跑一遍测试才能开放。不算部署，不扣次数。`
+                ? `判定器升级到第三版了：在判定器 第 ${judge.version.n} 版 上重新跑一遍测试才能开放。不算部署，不扣次数。`
                 : `tests.json 改过了：在判定器 第 ${judge.version.n} 版 上重新跑一遍才能开放。不算部署，不扣次数。`}
             </span>
             <Button

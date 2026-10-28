@@ -4,8 +4,8 @@
 // sealed at opening (its commitment); then every judgment, given what the
 // site gave it (runtime/records.mjs) and its requests the answers the site
 // got (第 9 节), compared on the requests, ok, the amount the code asked,
-// the reply and the state. A 红包 runs the protocol it opened with: the
-// first protocol's records replay on its runtime, kept frozen.
+// the reply and the state. A 红包 runs the protocol it opened with: an
+// earlier protocol's records replay on its runtime, kept frozen.
 import { resolve } from "node:path";
 import {
   answersOf,
@@ -43,6 +43,8 @@ function recordsProblem(records) {
     if (typeof hongbao[key] !== "string") return `缺 hongbao.${key}`;
   if (hongbao.seed !== null && typeof hongbao.seed !== "string")
     return "hongbao.seed 要是字符串或 null";
+  if (records.params !== undefined && !isObject(records.params))
+    return "params 要是一个对象";
   if (!Array.isArray(judgments)) return "缺 judgments";
   for (const [index, judgment] of judgments.entries()) {
     const { user, verdict } = judgment ?? {};
@@ -142,7 +144,7 @@ export async function replayCommand({
   if (problem)
     throw new KitError(`${file} 不像是网站上下载的完整记录：${problem}`);
   const { hongbao } = records;
-  if (records.protocol !== 1 && records.protocol !== PROTOCOL)
+  if (records.protocol < 1 || records.protocol > PROTOCOL)
     throw new KitError(
       `记录是第 ${records.protocol} 版协议，这个开发包只认第 1 到第 ${PROTOCOL} 版：换一个新的开发包再重放`,
     );

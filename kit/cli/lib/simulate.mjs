@@ -10,6 +10,7 @@ import { resolve } from "node:path";
 import {
   checkSource,
   judgeNext,
+  paramValues,
   sha256Text,
   startScenario,
   TEST_HONGBAO_ID,
@@ -69,6 +70,36 @@ function outcome(judged) {
   return `领到 ${yuan(reading.paid)}${pulled}${said}`;
 }
 
+/** simulate.json's params against what judge.js declares, and its check(). */
+async function paramsOf(given, hongbao, sandbox) {
+  const { declarations } = sandbox;
+  const read = paramValues(declarations.params, given);
+  if ("problems" in read) {
+    const [first] = read.problems;
+    return {
+      problem: `params${first.key ? ` 的 ${first.key}` : ""}：${first.message}`,
+    };
+  }
+  if (!declarations.check) return read;
+  const { title, total, count, minEach } = hongbao;
+  const checked = await sandbox.check(read.values, {
+    title,
+    total,
+    count,
+    minEach,
+  });
+  if ("failure" in checked)
+    return {
+      problem: `check 出错：${failureText(checked.failure, checked.detail)}`,
+    };
+  if ("invalid" in checked) return { problem: checked.invalid };
+  if (checked.problems.length > 0) {
+    const [first] = checked.problems;
+    return { problem: `params 没通过 check：${first.key}：${first.message}` };
+  }
+  return read;
+}
+
 export async function simulateCommand({
   dir,
   args = [],
@@ -98,11 +129,6 @@ export async function simulateCommand({
   const { hongbao, submissions } = read.plan;
   const seed =
     options.seed === undefined ? read.plan.seed : seedOf(options.seed);
-  const scenario = startScenario({
-    hongbao,
-    hongbaoId: TEST_HONGBAO_ID,
-    secret: seed,
-  });
   print(
     `${hongbao.title}：总奖池 ${yuan(hongbao.total)}，${hongbao.count} 份，每份至少 ${yuan(hongbao.minEach)}`,
   );
@@ -115,6 +141,26 @@ export async function simulateCommand({
     await sandbox.close();
     return { exitCode: 1 };
   }
+  const { declarations } = sandbox;
+  if (declarations.problems.length > 0) {
+    for (const problem of declarations.problems) print(`✗ ${problem}`);
+    print("先改好上面的问题，模拟没跑");
+    await sandbox.close();
+    return { exitCode: 1 };
+  }
+  // 协议第三版: the params, as the site would take them from a sender.
+  const params = await paramsOf(read.plan.params, hongbao, sandbox);
+  if ("problem" in params) {
+    print(`✗ ${params.problem}`);
+    await sandbox.close();
+    return { exitCode: 1 };
+  }
+  const scenario = startScenario({
+    hongbao,
+    hongbaoId: TEST_HONGBAO_ID,
+    secret: seed,
+    params: params.values,
+  });
   if (sandbox.network.list)
     print(
       options.live

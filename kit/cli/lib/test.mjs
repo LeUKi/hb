@@ -81,12 +81,24 @@ export async function testCommand({ dir, args = [], print = console.log }) {
     await sandbox.close();
     return { exitCode: 1 };
   }
+  const { declarations } = sandbox;
+  if (declarations.problems.length > 0) {
+    for (const problem of declarations.problems) print(`✗ ${problem}`);
+    print("先改好上面的问题，测试没跑");
+    await sandbox.close();
+    return { exitCode: 1 };
+  }
+  // 协议第三版: each test's params, held to what is declared and to check().
+  const options = {
+    params: declarations.params,
+    ...(declarations.check ? { check: sandbox.check } : {}),
+  };
   let passed = 0;
   let slow = false;
   let loaded = true;
   try {
     for (const [index, test] of tests.entries()) {
-      const result = await runTest(test, sandbox.run);
+      const result = await runTest(test, sandbox.run, options);
       if (result.failure && unloadable(result.failure.kind)) {
         const { kind, detail } = result.failure;
         say(print, `✗ ${test.name}：${failureText(kind, detail)}`);

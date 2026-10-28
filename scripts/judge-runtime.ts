@@ -4,7 +4,7 @@
 // `bun scripts/judge-runtime.ts` writes the copy; `--check` fails if stale.
 // This is the current protocol's; an opened 红包 keeps the runtime it
 // opened with, so an earlier protocol's copy is kept as it was, frozen, in
-// kit/runtime/frozen (v1.json: protocol v1).
+// kit/runtime/frozen (v1.json: protocol v1; v2.json: protocol v2).
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -29,6 +29,8 @@ export const RUNTIME_COPY = join(
 );
 /** Protocol v1's runtime as 红包 opened with it, never written again. */
 export const FROZEN_V1 = join(root, "kit/runtime/frozen/v1.json");
+/** Protocol v2's (联网), frozen as v3 came (2026-10-28). */
+export const FROZEN_V2 = join(root, "kit/runtime/frozen/v2.json");
 
 export function runtimeCopy() {
   const modules: Record<string, string> = {};

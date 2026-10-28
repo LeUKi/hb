@@ -3,12 +3,18 @@ import { describe, expect, it } from "vitest";
 import type { Submission } from "../../../kit/judge";
 import {
   createRandom,
+  readCheckAnswer,
+  readDeclarations,
   sha256Text,
   shareRange,
   submissionSeed,
   userSeed,
 } from "../../../kit/runtime/index.mjs";
-import { runJudge } from "../src/judge/sandbox";
+import {
+  checkParamsInJudge,
+  describeJudge,
+  runJudge,
+} from "../src/judge/sandbox";
 
 const secret = "0123456789abcdef".repeat(4);
 const seeds = {
@@ -35,6 +41,7 @@ function submission(): Submission {
     share: shareRange(hongbao),
     claims: [],
     state: null,
+    params: {},
   };
 }
 
@@ -255,5 +262,81 @@ export function judge(submission, tools) {
         failure: "unavailable",
         detail: "Dynamic Worker loader unavailable",
       });
+  });
+
+  // 协议第三版 (docs/judge-square-design.md §3, §4).
+  it("describes meta, params, hongbao and check, and hands the params to judge()", async () => {
+    const code = `export const meta = { name: "猜数字" };
+export const params = [
+  { key: "max", label: "最大", type: "integer", min: 2, default: 100 },
+  { key: "answer", label: "答案", type: "integer", secret: true },
+];
+export const hongbao = { count: { min: 1, max: 10, default: 5 } };
+export function check(params, hongbao) {
+  return params.answer > params.max
+    ? [{ key: "answer", message: \`答案不能大于 \${params.max}（\${hongbao.count} 份）\` }]
+    : [];
+}
+export function judge(submission) {
+  return { ok: Number(submission.input) === submission.params.answer };
+}`;
+    const run = { code, fingerprint: sha256Text(code) };
+    const described = await describeJudge(env, run);
+    expect(readDeclarations(described)).toEqual({
+      meta: { name: "猜数字" },
+      params: [
+        { key: "max", label: "最大", type: "integer", min: 2, default: 100 },
+        { key: "answer", label: "答案", type: "integer", secret: true },
+      ],
+      hongbao: { count: { min: 1, max: 10, default: 5 } },
+      check: true,
+      problems: [],
+    });
+    const checked = await checkParamsInJudge(env, run, {
+      params: { max: 100, answer: 120 },
+      hongbao: { title: "测试红包", total: 10000, count: 5, minEach: 1 },
+    });
+    expect(
+      "answer" in checked &&
+        readCheckAnswer(checked.answer, readDeclarations(described).params),
+    ).toEqual({
+      problems: [{ key: "answer", message: "答案不能大于 100（5 份）" }],
+    });
+    const outcome = await runJudge(
+      env,
+      {
+        ...run,
+        submission: {
+          ...submission(),
+          input: "42",
+          params: { max: 100, answer: 42 },
+        },
+        seeds,
+      },
+      true,
+    );
+    expect(outcome).toEqual({ verdict: { ok: true } });
+  });
+
+  it("says what is wrong with the declarations, and when check() throws", async () => {
+    const code = `export const params = [{ key: "a-b", label: "x", type: "date" }];
+export const hongbao = { count: { min: 5, max: 2 } };
+export const check = 3;
+export function judge() { return { ok: false }; }`;
+    const run = { code, fingerprint: sha256Text(code) };
+    expect(readDeclarations(await describeJudge(env, run)).problems).toEqual([
+      "params 第 1 项（a-b）：type 只能是 text、textarea、integer、money、switch、choice、list、table",
+      "hongbao.count.min 不能大于 hongbao.count.max",
+      "check 要是一个函数",
+    ]);
+    const throwing = `export function check() { throw new Error("坏了"); }
+export function judge() { return { ok: false }; }`;
+    expect(
+      await checkParamsInJudge(
+        env,
+        { code: throwing, fingerprint: sha256Text(throwing) },
+        { params: {}, hongbao: {} },
+      ),
+    ).toEqual({ failure: "threw", detail: "Error: 坏了" });
   });
 });

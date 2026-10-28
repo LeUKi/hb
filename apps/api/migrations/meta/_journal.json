@@ -344,6 +344,13 @@
       "when": 1793188172094,
       "tag": "0048_scheduled_opening",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "6",
+      "when": 1793192036114,
+      "tag": "0049_judge_protocol_3",
+      "breakpoints": true
     }
   ]
 }

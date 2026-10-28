@@ -33,7 +33,12 @@ import {
 } from "../../kit/runtime/index.mjs";
 import { seedStream as contractsSeedStream } from "../../packages/contracts/src/draw-proof";
 import { generateRandomAmounts } from "../../packages/contracts/src/random";
-import { FROZEN_V1, RUNTIME_COPY, runtimeCopy } from "../judge-runtime";
+import {
+  FROZEN_V1,
+  FROZEN_V2,
+  RUNTIME_COPY,
+  runtimeCopy,
+} from "../judge-runtime";
 
 const seed = "a".repeat(64);
 const secret = "0123456789abcdef".repeat(4);
@@ -57,6 +62,7 @@ function submission(overrides: Partial<Submission> = {}): Submission {
     share: shareRange(hongbao),
     claims: [],
     state: null,
+    params: {},
     ...overrides,
   };
 }
@@ -486,11 +492,17 @@ describe("the API's copy of the sandbox runtime", () => {
 
   // Protocol v1 is frozen: a 代码判定红包 opened with it on 2026-10-25, and
   // an opened 红包 keeps the runtime it opened with (docs/programmable-
-  // hongbao-design.md §4.7). Protocol v2 (§9) is kit/runtime as it is now;
-  // v1 stays beside it as it was, never edited.
+  // hongbao-design.md §4.7). So is v2 (联网, §9), live since 2026-10-26,
+  // frozen as v3 (docs/judge-square-design.md §5) came. v3 is kit/runtime
+  // as it is now; v1 and v2 stay beside it as they were, never edited.
   it("keeps protocol v1 as opened, unchanged", () => {
     expect(
       createHash("sha256").update(readFileSync(FROZEN_V1)).digest("hex"),
     ).toBe("dbfed16b0b3763a839828ddd0fe4ca1f4bd686580f2e77987a0e4a8096bcae23");
+  });
+  it("keeps protocol v2 as opened, unchanged", () => {
+    expect(
+      createHash("sha256").update(readFileSync(FROZEN_V2)).digest("hex"),
+    ).toBe("954cf46722c9789aee36a297d9cc393e29a502e1183c0633eb04cbf70bd8cd0f");
   });
 });

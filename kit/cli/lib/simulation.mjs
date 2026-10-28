@@ -1,4 +1,5 @@
-// simulate.json (协议第 5 节): a 红包 and the submissions made to it, in
+// simulate.json (协议第 5 节): a 红包, the params it was sent with (协议第三
+// 版) and the submissions made to it, in
 // order, each written like a step of a multi-step test in tests.json (with
 // the answers its requests get, `fetch`), only without expect. Unlike a step, someone who already has a share or a
 // submission after the last share is no mistake here: npm run simulate
@@ -119,12 +120,14 @@ export function readSimulation(text, file = "simulate.json") {
   const fail = (problem) => ({ problem });
   const extra = extraKey(
     data,
-    ["$schema", "now", "hongbao", "seed", "submissions"],
+    ["$schema", "now", "hongbao", "seed", "params", "submissions"],
     `${file} 里`,
   );
   if (extra) return fail(extra);
   if (data.$schema !== undefined && typeof data.$schema !== "string")
     return fail("$schema 要是字符串");
+  if (data.params !== undefined && !isObject(data.params))
+    return fail("params 要是一个对象（参数的 key 对应填的值）");
   const shape =
     timeProblem(data.now, "now") ??
     hongbaoProblem(data.hongbao) ??
@@ -177,5 +180,13 @@ export function readSimulation(text, file = "simulate.json") {
       fetch: item.fetch ?? [],
     });
   }
-  return { plan: { hongbao, seed: data.seed ?? TEST_SEED, submissions } };
+  return {
+    plan: {
+      hongbao,
+      seed: data.seed ?? TEST_SEED,
+      // Checked against judge.js's params once it is loaded.
+      params: data.params ?? {},
+      submissions,
+    },
+  };
 }
