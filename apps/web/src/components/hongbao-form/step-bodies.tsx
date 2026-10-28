@@ -36,11 +36,14 @@ function ModeCard({
   selected,
   onPick,
   disabled,
+  stacked = false,
 }: {
   option: (typeof modeOptions)[number];
   selected: boolean;
   onPick: () => void;
   disabled: boolean;
+  /** Its words under its icon, where the two groups sit side by side. */
+  stacked?: boolean;
 }) {
   const Icon = option.icon;
   return (
@@ -50,7 +53,11 @@ function ModeCard({
         aria-pressed={selected}
         disabled={disabled && !selected}
         onClick={onPick}
-        className="choice flex h-full items-center gap-2.5 p-3 text-left"
+        className={cn(
+          "choice flex h-full items-center gap-2.5 p-3 text-left",
+          stacked &&
+            "@min-[34rem]/modes:flex-col @min-[34rem]/modes:items-start @min-[34rem]/modes:justify-center @min-[34rem]/modes:gap-3 @min-[34rem]/modes:p-4",
+        )}
       >
         <Squircle radius={10}>
           <span
@@ -81,7 +88,7 @@ function ModeCard({
 /**
  * ① 玩法 (07 §5, 2026-10-28): 经典玩法 two by two; 代码判定 apart as 进阶玩法
  * while it can be sent (not even grey otherwise). Side by side, two to
- * one, where they fit, their first rows one height (a subgrid); one above
+ * one, where they fit, 代码判定 standing as tall as the two rows; one above
  * the other where they do not.
  */
 export function ModeStep({
@@ -98,13 +105,14 @@ export function ModeStep({
 }) {
   const classicId = useId();
   const advancedId = useId();
-  const card = (option: (typeof modeOptions)[number]) => (
+  const card = (option: (typeof modeOptions)[number], stacked = false) => (
     <ModeCard
       key={option.value}
       option={option}
       selected={form.mode === option.value}
       disabled={locked}
       onPick={() => onPick(option.value)}
+      stacked={stacked}
     />
   );
   const classic = modeOptions.filter((option) => !option.code);
@@ -114,53 +122,48 @@ export function ModeStep({
   const split = advanced.length > 0;
   return (
     <div className="flex flex-col gap-2.5">
-      <div role="group" aria-label="玩法" className="@container/modes">
+      <fieldset aria-label="玩法" className="@container/modes min-w-0">
         <div
           className={cn(
-            "grid gap-2.5",
+            "grid",
             split &&
-              "@min-[34rem]/modes:grid-cols-[2fr_auto_1fr] @min-[34rem]/modes:grid-rows-[auto_auto_auto] @min-[34rem]/modes:gap-x-3",
+              "@min-[34rem]/modes:grid-cols-[2fr_auto_1fr] @min-[34rem]/modes:gap-x-3",
           )}
         >
-          <div
-            role="group"
+          <fieldset
             aria-labelledby={split ? classicId : undefined}
-            className={cn(
-              "grid gap-2.5 @min-[22rem]/modes:grid-cols-2",
-              split &&
-                "@min-[34rem]/modes:row-span-3 @min-[34rem]/modes:grid-rows-subgrid",
-            )}
+            className="flex min-w-0 flex-col gap-2.5"
           >
             {split && (
-              <p
-                id={classicId}
-                className="col-span-full px-1 text-xs text-ink-3"
-              >
+              <p id={classicId} className="px-1 text-xs text-ink-3">
                 经典玩法
               </p>
             )}
-            {classic.map(card)}
-          </div>
+            <div className="grid gap-2.5 @min-[22rem]/modes:grid-cols-2">
+              {classic.map((option) => card(option))}
+            </div>
+          </fieldset>
           {split && (
             <>
               <span
                 aria-hidden="true"
-                className="hidden w-px bg-line @min-[34rem]/modes:col-start-2 @min-[34rem]/modes:row-span-2 @min-[34rem]/modes:row-start-2 @min-[34rem]/modes:my-4 @min-[34rem]/modes:block"
+                className="hidden w-px bg-line @min-[34rem]/modes:mt-10 @min-[34rem]/modes:mb-4 @min-[34rem]/modes:block"
               />
-              <div
-                role="group"
+              <fieldset
                 aria-labelledby={advancedId}
-                className="mt-2.5 grid gap-2.5 @min-[34rem]/modes:col-start-3 @min-[34rem]/modes:row-span-3 @min-[34rem]/modes:row-start-1 @min-[34rem]/modes:mt-0 @min-[34rem]/modes:grid-rows-subgrid"
+                className="mt-5 flex min-w-0 flex-col gap-2.5 @min-[34rem]/modes:mt-0"
               >
                 <p id={advancedId} className="px-1 text-xs text-ink-3">
                   进阶玩法
                 </p>
-                {advanced.map(card)}
-              </div>
+                <div className="grid flex-1">
+                  {advanced.map((option) => card(option, true))}
+                </div>
+              </fieldset>
             </>
           )}
         </div>
-      </div>
+      </fieldset>
       {locked && <LockNote>开放后不能修改。</LockNote>}
     </div>
   );

@@ -182,7 +182,7 @@ async function fillRandom(page: Page) {
 }
 
 test.describe("发红包", () => {
-  test("玩法：经典玩法 2 × 2，进阶玩法的代码判定在右边，两组第一行对齐；窄了上下排", async ({
+  test("玩法：经典玩法 2 × 2，进阶玩法的代码判定在右边竖着排、和两行一样高；窄了上下排", async ({
     page,
   }) => {
     await mockSession(page, viewer);
@@ -216,18 +216,28 @@ test.describe("发红包", () => {
         width: 0,
         height: 0,
       };
-    const [first, second, third, code] = await Promise.all([
+    const [first, second, third, fourth, code] = await Promise.all([
       box(/^拼手气/),
       box(/^限时开奖/),
       box(/^固定均分/),
+      box(/^自定义金额/),
       box(/^代码判定/),
     ]);
-    // Two by two, 代码判定 to their right, on their first row's line and height.
+    // Two by two, 代码判定 to their right, standing as tall as both rows.
     expect(Math.round(third.x)).toBe(Math.round(first.x));
     expect(second.x).toBeGreaterThan(first.x + first.width);
     expect(code.x).toBeGreaterThan(second.x + second.width);
     expect(Math.abs(code.y - first.y)).toBeLessThan(1);
-    expect(Math.abs(code.height - first.height)).toBeLessThan(1);
+    expect(
+      Math.abs(code.y + code.height - (fourth.y + fourth.height)),
+    ).toBeLessThan(1);
+    // Its words under its icon.
+    const tall = page.getByRole("button", { name: /^代码判定/ });
+    const tallIcon = await tall.locator(".choice-icon").boundingBox();
+    const tallTitle = await tall.getByText("代码判定").boundingBox();
+    expect(tallTitle?.y ?? 0).toBeGreaterThan(
+      (tallIcon?.y ?? 0) + (tallIcon?.height ?? 0),
+    );
     // The icon beside the words, not above them.
     const card = page.getByRole("button", { name: /^拼手气/ });
     const icon = await card.locator(".choice-icon").boundingBox();
@@ -238,10 +248,23 @@ test.describe("发红包", () => {
     // A phone: one above the other, 经典玩法 one to a row.
     await page.setViewportSize({ width: 375, height: 812 });
     await expect
-      .poll(async () => Math.round((await box(/^限时开奖/)).x))
-      .toBe(Math.round((await box(/^拼手气/)).x));
-    const last = await box(/^自定义金额/);
-    expect((await box(/^代码判定/)).y).toBeGreaterThan(last.y + last.height);
+      .poll(async () => {
+        const [top, next] = await Promise.all([
+          box(/^拼手气/),
+          box(/^限时开奖/),
+        ]);
+        return top.width > 0 && Math.round(top.x) === Math.round(next.x);
+      })
+      .toBe(true);
+    await expect
+      .poll(async () => {
+        const [last, code] = await Promise.all([
+          box(/^自定义金额/),
+          box(/^代码判定/),
+        ]);
+        return last.width > 0 && code.y > last.y + last.height;
+      })
+      .toBe(true);
   });
 
   test("玩法：不能发代码判定时只有经典玩法，不写小标题", async ({ page }) => {
