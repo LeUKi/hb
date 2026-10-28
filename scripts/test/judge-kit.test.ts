@@ -1075,3 +1075,25 @@ export function judge() { return { ok: false }; }`,
     expect(old.exitCode).toBe(0);
   }, 40_000);
 });
+
+// The six 判定器 of the first 站长精选 (docs/judge-square-design.md §9,
+// §15.5): each passes its own tests and its check, declarations and all.
+describe("kit/examples", () => {
+  const examples = [
+    "guess-number",
+    "quiz",
+    "daily-question",
+    "by-level",
+    "first-correct",
+    "timed-password",
+  ];
+  it.each(examples)("%s passes npm test and npm run check", async (name) => {
+    const dir = join(kitDir, "examples", name);
+    const tested = await run(testCommand, { dir, cwd: dir, args: [] });
+    expect(tested.lines.at(-1)).toMatch(/^测试 (\d+) \/ \1 通过$/);
+    expect(tested.exitCode).toBe(0);
+    const checked = await run(checkCommand, { dir, cwd: dir, args: [] });
+    expect(checked.lines).toContain("✓ 参数表单预览");
+    expect(checked.exitCode).toBe(0);
+  });
+});

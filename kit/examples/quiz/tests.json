@@ -1,0 +1,81 @@
+{
+  "$schema": "../../tests.schema.json",
+  "params": {
+    "questions": [
+      { "question": "LINUX DO 的吉祥物叫什么？", "answer": "佬友" }
+    ],
+    "tries": 2
+  },
+  "tests": [
+    {
+      "name": "第一次提交：告诉他题目",
+      "input": "随便",
+      "expect": {
+        "ok": false,
+        "message": "你的题目：LINUX DO 的吉祥物叫什么？（能答 2 次）"
+      }
+    },
+    {
+      "name": "看过题以后答对",
+      "input": "佬友",
+      "user": { "attempts": 1 },
+      "expect": { "ok": true, "message": "答对了！" }
+    },
+    {
+      "name": "答错，还能答 1 次",
+      "input": "猫",
+      "user": { "attempts": 1 },
+      "expect": {
+        "ok": false,
+        "message": "不对，还能答 1 次。题目：LINUX DO 的吉祥物叫什么？"
+      }
+    },
+    {
+      "name": "最后一次也不对",
+      "input": "猫",
+      "user": { "attempts": 2 },
+      "expect": { "ok": false, "message": "不对，次数用完了" }
+    },
+    {
+      "name": "答满了，答对也不发",
+      "input": "佬友",
+      "user": { "attempts": 3 },
+      "expect": { "ok": false, "messageIncludes": "不能再答" }
+    },
+    {
+      "name": "英文答案不分大小写",
+      "input": "Linux",
+      "params": {
+        "questions": [
+          { "question": "Tux 是哪个系统的吉祥物？", "answer": "linux" }
+        ],
+        "tries": 1
+      },
+      "user": { "attempts": 1 },
+      "expect": { "ok": true }
+    },
+    {
+      "name": "几道题：同一个人每次都是同一道",
+      "params": {
+        "questions": [
+          { "question": "1 + 1 = ?", "answer": "2" },
+          { "question": "2 + 2 = ?", "answer": "4" },
+          { "question": "3 + 3 = ?", "answer": "6" }
+        ],
+        "tries": 3
+      },
+      "steps": [
+        {
+          "who": "小明",
+          "input": "看题",
+          "expect": { "ok": false, "messageIncludes": "你的题目" }
+        },
+        {
+          "who": "小明",
+          "input": "100",
+          "expect": { "ok": false, "messageIncludes": "还能答 2 次" }
+        }
+      ]
+    }
+  ]
+}

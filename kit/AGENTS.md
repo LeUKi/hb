@@ -268,6 +268,8 @@ export async function judge(submission) {
 
 开发包里的模板就是一个能跑通的玩法：猜暗号，每人最多猜 3 次，前三个猜中的各 20.00，之后的拼手气。`tests.json` 有它的单条测试和一个多步场景，`simulate.json` 有一批人来领、份领完。照着改成自己的玩法。
 
+`examples/` 里还有六个带参数的判定器（猜数字、答题、每日一题、按等级发、前 N 个答对的、限时口令），参数、`check` 和 `hongbao` 怎么写都在里面，见 `examples/README.md`。
+
 ```js
 const ANSWER = "flag{n0t_s0_s1mpl3}";
 const TRIES = 3;

@@ -1,0 +1,41 @@
+{
+  "$schema": "../../tests.schema.json",
+  "params": { "passwords": ["春天", "夏天", "秋天"], "minutes": 10 },
+  "tests": [
+    {
+      "name": "开放后 5 分钟，第一个口令",
+      "input": "春天",
+      "now": "2026-10-24T12:05:00+08:00",
+      "hongbao": { "openedAt": "2026-10-24T12:00:00+08:00" },
+      "expect": { "ok": true, "message": "对了！" }
+    },
+    {
+      "name": "开放后 15 分钟，换成第二个",
+      "input": "夏天",
+      "now": "2026-10-24T12:15:00+08:00",
+      "hongbao": { "openedAt": "2026-10-24T12:00:00+08:00" },
+      "expect": { "ok": true }
+    },
+    {
+      "name": "过期的口令",
+      "input": "春天",
+      "now": "2026-10-24T12:15:00+08:00",
+      "hongbao": { "openedAt": "2026-10-24T12:00:00+08:00" },
+      "expect": { "ok": false, "message": "这个口令已经过期了" }
+    },
+    {
+      "name": "还没到的口令",
+      "input": "秋天",
+      "now": "2026-10-24T12:15:00+08:00",
+      "hongbao": { "openedAt": "2026-10-24T12:00:00+08:00" },
+      "expect": { "ok": false, "message": "口令不对" }
+    },
+    {
+      "name": "都过期了",
+      "input": "秋天",
+      "now": "2026-10-24T12:45:00+08:00",
+      "hongbao": { "openedAt": "2026-10-24T12:00:00+08:00" },
+      "expect": { "ok": false, "message": "口令都过期了" }
+    }
+  ]
+}

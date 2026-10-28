@@ -1,0 +1,54 @@
+{
+  "$schema": "../../tests.schema.json",
+  "params": {
+    "password": "佬友好",
+    "lv0": null,
+    "lv1": 100,
+    "lv2": 200,
+    "lv3": 500,
+    "lv4": 500
+  },
+  "tests": [
+    {
+      "name": "2 级发 2.00",
+      "input": "佬友好",
+      "expect": { "ok": true, "amount": 200, "message": "2 级，发 2.00" }
+    },
+    {
+      "name": "3 级发 5.00",
+      "input": "佬友好",
+      "user": { "level": 3 },
+      "expect": { "ok": true, "amount": 500 }
+    },
+    {
+      "name": "0 级不发",
+      "input": "佬友好",
+      "user": { "level": 0 },
+      "expect": { "ok": false, "message": "0 级没有这个红包" }
+    },
+    {
+      "name": "口令不对",
+      "input": "你好",
+      "expect": { "ok": false, "message": "口令不对" }
+    },
+    {
+      "name": "看不到等级",
+      "input": "佬友好",
+      "user": { "level": null },
+      "expect": { "ok": false, "message": "看不到你的信任等级，发不了" }
+    },
+    {
+      "name": "没有口令，输入什么都行",
+      "input": "领",
+      "params": {
+        "password": null,
+        "lv0": null,
+        "lv1": null,
+        "lv2": 300,
+        "lv3": null,
+        "lv4": null
+      },
+      "expect": { "ok": true, "amount": 300 }
+    }
+  ]
+}
