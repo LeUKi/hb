@@ -201,7 +201,7 @@ describe("代码判定红包: 部署", () => {
     await check(plain, unique());
     const refused = await check(plain, unique());
     expect(refused.status).toBe(429);
-    expect(refused.body.error.message).toBe(
+    expect(refused.body.error?.message).toBe(
       "今天的 2 次部署用完了，明天再来。",
     );
     expect((await check(author, unique())).body.check.deploysLeft).toBe(4);

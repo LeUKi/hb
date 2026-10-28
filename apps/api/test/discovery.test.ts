@@ -1167,11 +1167,11 @@ describe("square and topic discovery", () => {
   });
   it("leaves out of the square the 红包 ended early or stopped, in its lists and its counts", async () => {
     const titles = ["领完了", "提前结束", "停用了", "还在领"];
-    const made = [];
-    for (const title of titles)
-      made.push(
-        await create({ title, joinSquare: true, passwords: [`${title}123`] }),
-      );
+    const [exhausted, manual, stopped] = await Promise.all(
+      titles.map((title) =>
+        create({ title, joinSquare: true, passwords: [`${title}123`] }),
+      ),
+    );
     const now = Date.now();
     const end = (id: string, reason: string) =>
       env.DB.prepare(
@@ -1179,9 +1179,9 @@ describe("square and topic discovery", () => {
       )
         .bind(now - 1000, reason, id)
         .run();
-    await end(made[0].id, "exhausted");
-    await end(made[1].id, "manual");
-    await end(made[2].id, "stopped");
+    await end(exhausted?.id ?? "", "exhausted");
+    await end(manual?.id ?? "", "manual");
+    await end(stopped?.id ?? "", "stopped");
     const read = async (status: string) =>
       (await (
         await request(`/api/discovery/activities?status=${status}`)
@@ -1195,7 +1195,7 @@ describe("square and topic discovery", () => {
     expect(ended.items.map((item) => item.title)).toEqual(["领完了"]);
     expect(ended.total).toBe(1);
     // Still there by its link.
-    expect((await request(`/api/activities/${made[1].id}`)).status).toBe(200);
+    expect((await request(`/api/activities/${manual?.id}`)).status).toBe(200);
   });
 });
 
