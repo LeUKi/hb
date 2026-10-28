@@ -19,7 +19,7 @@ import { RefreshContext, RefreshNotice } from "../page/page";
 import { LoadError, usePageLoad } from "../page/page-state";
 import { useWindowInfo } from "../shell/window-info";
 import { HongbaoIcon } from "../ui/hongbao-icon";
-import { IdentityFailedView, MessageView } from "./message-view";
+import { MessageView } from "./message-view";
 
 export function HongbaoView({ id }: { id: string }) {
   const page = useHongbaoPageData(id);
@@ -33,15 +33,7 @@ export function HongbaoView({ id }: { id: string }) {
   const load = usePageLoad(page.load, () =>
     article.current?.querySelector<HTMLElement>("h1[tabindex]"),
   );
-  // A 草稿 opens only for its sender, who cannot be told apart right now.
-  if (page.missing && page.identity.failed)
-    return (
-      <IdentityFailedView
-        icon={HongbaoIcon}
-        title="未找到红包"
-        text="身份检查失败，请重新检查后继续。草稿只有红包作者能打开。"
-      />
-    );
+  // Anyone with its link reads a 草稿 too: missing is missing.
   if (page.missing)
     return (
       <MessageView
