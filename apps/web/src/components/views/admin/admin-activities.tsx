@@ -100,7 +100,8 @@ function RowBody({ row }: { row: Row }) {
 
 /**
  * 停用 (07 §10): the one exception to a read-only 红包 tab, for a running
- * 代码判定红包. It stops claims and gives the rest back to its sender.
+ * 代码判定红包. It stops claims and gives the rest back to its sender
+ * (a 🐟额红包's; a 商户直发's shares nobody took are not sent).
  */
 function StopCode({ row, title }: { row: Row; title: string }) {
   const identity = useIdentity();
@@ -122,7 +123,11 @@ function StopCode({ row, title }: { row: Row; title: string }) {
         }}
         busy={busy}
         title={`停用「${title}」？`}
-        text="停用后不能再领，剩下的退回红包作者的🐟额。"
+        text={
+          row.summary.funding === "balance"
+            ? "停用后不能再领，剩下的退回红包作者的🐟额。"
+            : "停用后不能再领，没领的份不再发。"
+        }
         error={error}
         actions={
           <>

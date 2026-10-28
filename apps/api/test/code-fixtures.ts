@@ -85,7 +85,10 @@ async function setRow(table: string, change: Record<string, number>) {
 export const settings = (change: Record<string, number>) =>
   setRow("balance_settings", change);
 
-/** 判定器设置, by column: enabled, daily_open_limit, daily_deploy_limit, monthly_limit. */
+/**
+ * 判定器设置, by column: enabled, daily_open_limit, daily_deploy_limit (and
+ * daily_deploy_limit_plus, PLUS's), monthly_limit.
+ */
 export const judgeSettings = (change: Record<string, number>) =>
   setRow("judge_settings", change);
 

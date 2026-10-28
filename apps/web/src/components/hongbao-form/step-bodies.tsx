@@ -3,7 +3,6 @@ import { ChevronDown, DoorOpen, KeyRound, Plus } from "lucide-react";
 import { useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { cn } from "../../lib/cn";
-import { PlusBadge } from "../balance/plus";
 import { ChoiceCards, Field, TextInput } from "../ui/field";
 import { Reveal } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
@@ -69,7 +68,6 @@ function ModeCard({
         <span className="grid gap-0.5">
           <span className="flex items-center gap-1.5 text-base font-semibold text-ink">
             {option.title}
-            {option.plus && <PlusBadge />}
           </span>
           <span className="text-sm text-ink-3">{option.description}</span>
         </span>
@@ -79,8 +77,8 @@ function ModeCard({
 }
 
 /**
- * ① 玩法: the two most used as big cards; the others behind 更多玩法, where
- * 🐟额 PLUS also has 代码判定 (none for anyone else, not even grey).
+ * ① 玩法: the two most used as big cards; the others behind 更多玩法,
+ * 代码判定 among them while it can be sent (not even grey otherwise).
  */
 export function ModeStep({
   form,
@@ -91,11 +89,11 @@ export function ModeStep({
   form: FormState;
   onPick: (mode: RewardMode) => void;
   locked: boolean;
-  /** This person may send 代码判定红包 now. */
+  /** 代码判定红包 can be sent now (its switch). */
   codeOffered: boolean;
 }) {
   const offered = modeOptions.filter(
-    (option) => !option.plus || codeOffered || option.value === form.mode,
+    (option) => !option.code || codeOffered || option.value === form.mode,
   );
   const rare = offered.some(
     (option) => option.more && option.value === form.mode,

@@ -14,6 +14,7 @@ import {
   type CreateInviteLinkInput,
 } from "@hb/contracts";
 import type { ApiBindings } from "../env";
+import { readJudgeSettings } from "../judge/settings";
 import { sha256Hex } from "../security/crypto";
 import { findUserByUsername } from "../users/find";
 import { balanceError } from "./errors";
@@ -266,7 +267,7 @@ export async function readInvite(
     /** Whether 🐟额 may send 红包 now: the first line says so. */
     hongbaoEnabled: settings.hongbaoEnabled,
     /** What 🐟额 PLUS adds: the holder of an invitation reads it plainly. */
-    features: plusFeatures(),
+    features: plusFeatures((await readJudgeSettings(env)).dailyDeployLimitPlus),
     viewer: viewer
       ? {
           username: viewer.username,

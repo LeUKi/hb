@@ -330,6 +330,13 @@
       "when": 1792997096701,
       "tag": "0046_attached_page",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "6",
+      "when": 1793179143147,
+      "tag": "0047_code_for_everyone",
+      "breakpoints": true
     }
   ]
 }

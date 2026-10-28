@@ -21,7 +21,6 @@ import {
 import { ActivityError } from "../activities/errors";
 import { databaseNow } from "../activities/lifecycle";
 import { startOfBeijingDay } from "../balance/day";
-import { readBalanceSettings } from "../balance/settings";
 import { transferAccess } from "../balance/transfers";
 import type { ApiBindings } from "../env";
 import {
@@ -45,7 +44,10 @@ export const RUNS_PER_DAY = 50;
 /** Longer than the longest run: 200 judgments twice, each given up at 300 ms. */
 const RUN_LEASE_MS = 3 * 60_000;
 
-/** May this person send 代码判定红包: the switch, and 🐟额 PLUS (or 站长). */
+/**
+ * 代码判定红包 for anyone signed in while its switch is on (§1, 2026-10-28):
+ * 🐟额 PLUS and the 站长 only deploy more a day (§5 次数).
+ */
 export async function codeHongbaoAccess(env: ApiBindings, userId: string) {
   const [settings, access] = await Promise.all([
     readJudgeSettings(env),
@@ -53,44 +55,35 @@ export async function codeHongbaoAccess(env: ApiBindings, userId: string) {
   ]);
   return {
     enabled: settings.enabled,
-    allowed: access.allowed,
+    deployLimit: access.allowed
+      ? settings.dailyDeployLimitPlus
+      : settings.dailyDeployLimit,
     settings,
   };
 }
 
 export async function requireCodeHongbao(env: ApiBindings, userId: string) {
   const access = await codeHongbaoAccess(env, userId);
-  if (!access.allowed)
-    throw new ActivityError(
-      403,
-      "CODE_HONGBAO_NOT_ALLOWED",
-      "开通🐟额 PLUS 才能发代码判定红包。",
-    );
   if (!access.enabled)
     throw new ActivityError(
       409,
       "CODE_HONGBAO_PAUSED",
       "代码判定红包暂时关闭。",
     );
-  return access.settings;
+  return access;
 }
 
 /**
- * What the 发红包 form needs: whether this person may send 代码判定红包 now
- * (PLUS, its switch and 🐟额红包's), and new versions left to deploy today.
- * Null otherwise.
+ * What the 发红包 form needs: whether 代码判定红包 can be sent now (its
+ * switch), and new versions left to deploy today. Null otherwise.
  */
 export async function codeHongbaoOffer(env: ApiBindings, userId: string) {
-  const [access, balance] = await Promise.all([
-    codeHongbaoAccess(env, userId),
-    readBalanceSettings(env),
-  ]);
-  if (!access.allowed || !access.enabled || !balance.hongbaoEnabled)
-    return null;
-  const limit = access.settings.dailyDeployLimit;
+  const access = await codeHongbaoAccess(env, userId);
+  if (!access.enabled) return null;
+  const limit = access.deployLimit;
   return {
     deploysLeft: Math.max(0, limit - (await runsToday(env, userId)).deploys),
-    /** 每人每天部署几次: “今天的 10 次部署用完了”. */
+    /** 每人每天部署几次: “今天的 2 次部署用完了”. */
     deployLimit: limit,
   };
 }
@@ -190,10 +183,10 @@ export async function checkJudge(
   userId: string,
   input: JudgeCheckInput,
 ): Promise<JudgeCheck> {
-  const settings = await requireCodeHongbao(env, userId);
+  const { settings, deployLimit } = await requireCodeHongbao(env, userId);
   const lease = await leaseRun(env, userId);
   try {
-    return await runChecks(env, userId, input, settings);
+    return await runChecks(env, userId, input, settings, deployLimit);
   } finally {
     // One left behind runs out by itself.
     await env.DB.prepare(
@@ -210,6 +203,8 @@ async function runChecks(
   userId: string,
   input: JudgeCheckInput,
   settings: JudgeSettings,
+  /** This person's a day: PLUS's or everyone's (§5 次数). */
+  deployLimit: number,
 ): Promise<JudgeCheck> {
   const [fingerprint, testsDigest] = await Promise.all([
     textDigest(input.code),
@@ -227,11 +222,11 @@ async function runChecks(
     );
   // Only a new version counts; its tests again, or a version deployed
   // before, do not (§5 次数).
-  if (!rerun && used.deploys >= settings.dailyDeployLimit)
+  if (!rerun && used.deploys >= deployLimit)
     throw new ActivityError(
       429,
       "JUDGE_DEPLOY_LIMIT",
-      `今天的 ${settings.dailyDeployLimit} 次部署用完了，明天再来。`,
+      `今天的 ${deployLimit} 次部署用完了，明天再来。`,
     );
   const problems = checkSource(input.code);
   const read = readTests(input.tests);
@@ -443,7 +438,7 @@ async function runChecks(
     kind,
     deploysLeft: Math.max(
       0,
-      settings.dailyDeployLimit - used.deploys - Number(kind === "deploy"),
+      deployLimit - used.deploys - Number(kind === "deploy"),
     ),
   };
 }

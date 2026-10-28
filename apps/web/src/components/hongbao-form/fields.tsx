@@ -85,7 +85,7 @@ export function counter(text: string, max: number) {
 
 /**
  * The 玩法: the two most used first (拼手气, 限时开奖); the rest wait
- * behind 更多玩法, 代码判定 only for 🐟额 PLUS (07 §5).
+ * behind 更多玩法, 代码判定 while its switch is on (07 §5).
  */
 export const modeOptions: {
   value: RewardMode;
@@ -93,7 +93,8 @@ export const modeOptions: {
   description: string;
   icon: typeof Equal;
   more?: boolean;
-  plus?: boolean;
+  /** Only while 代码判定红包 can be sent (its switch). */
+  code?: boolean;
 }[] = [
   {
     value: "random",
@@ -127,7 +128,7 @@ export const modeOptions: {
     description: "写一段代码，决定谁领多少",
     icon: Braces,
     more: true,
-    plus: true,
+    code: true,
   },
 ];
 
@@ -429,15 +430,14 @@ export function AmountFields({
         {form.mode === "code" ? (
           <p className="text-xs text-ink-3">
             最多 1,000
-            份，金额最多两位小数；总奖池要够每份都拿到“每份至少”。每份发多少由你的代码定，多了按上限发，少了按每份至少发，最后一份发完剩下的。领到的直接存进领取者的🐟额。
+            份，金额最多两位小数；总奖池要够每份都拿到“每份至少”。每份发多少由你的代码定，多了按上限发，少了按每份至少发，最后一份发完剩下的。
+            {fundingNote(form)}
           </p>
         ) : (
           <p className="text-xs text-ink-3">
             最多 1,000 份，每份至少 0.01
             LDC，金额最多两位小数。填的是每份发出的金额。
-            {form.funding === "balance"
-              ? "领到的直接存进领取者的🐟额。"
-              : "领取者到账时，Credit 站会按你在 Credit 站的等级扣分发费（4%–15%）。"}
+            {fundingNote(form)}
           </p>
         )}
         {/* Opens as the total passes 800 LDC, and closes under it; 🐟额
@@ -458,6 +458,12 @@ export function AmountFields({
     </>
   );
 }
+
+/** Where a share goes once taken, by 从哪发. */
+const fundingNote = (form: FormState) =>
+  form.funding === "balance"
+    ? "领到的直接存进领取者的🐟额。"
+    : "领取者到账时，Credit 站会按你在 Credit 站的等级扣分发费（4%–15%）。";
 
 /** 微信同款 or 支付宝同款, and what that gives with the amounts filled in. */
 /**
@@ -491,33 +497,6 @@ export function FundingChoice({
     </MoreLink>
   );
   if (locked) return null;
-  // 代码判定红包只能从🐟额发 (07 §5): the one card, and why.
-  if (form.mode === "code")
-    return (
-      <div className="flex flex-col gap-2">
-        <ChoiceCards
-          label="从哪发"
-          value="balance"
-          onChange={() => {}}
-          options={[
-            {
-              value: "balance",
-              title: "🐟额",
-              description: fishReady
-                ? `可用 ${ldc(Math.max(0, available))} 🐟，领到的进领取者的🐟额`
-                : "🐟额里没有可用",
-              icon: Wallet,
-            },
-          ]}
-        />
-        <p className="px-1 text-xs text-ink-3">代码判定红包只能从🐟额发。</p>
-        <Reveal show={fishReady && total !== null && total > available}>
-          <p className="px-1 text-xs text-warning">
-            可用只有 {ldc(Math.max(0, available))} 🐟，不够发这个红包。
-          </p>
-        </Reveal>
-      </div>
-    );
   // No 🐟额 to choose: only a merchant's trouble, where the money is set.
   if (form.funding !== "balance" && !(funding.data?.enabled && user?.balance))
     return noMerchant || rejected ? (

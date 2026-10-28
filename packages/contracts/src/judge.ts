@@ -293,7 +293,8 @@ export type CodeFailureList = {
 /**
  * 判定器设置 (redesign/07 §10, docs/programmable-hongbao-design.md §1, §5,
  * §7): 代码判定红包's switch, 每人每天最多开放几个, 每人每天部署几次 (new
- * versions only) and 每月判定器上限 (份).
+ * versions only; another number for 🐟额 PLUS and the 站长) and 每月判定器上限
+ * (份).
  */
 export const judgeSettingsSchema = z.strictObject({
   enabled: z.boolean(),
@@ -301,6 +302,7 @@ export const judgeSettingsSchema = z.strictObject({
   networkEnabled: z.boolean(),
   dailyOpenLimit: z.number().int().min(1).max(1000),
   dailyDeployLimit: z.number().int().min(1).max(1000),
+  dailyDeployLimitPlus: z.number().int().min(1).max(1000),
   monthlyLimit: z.number().int().min(1).max(1_000_000),
 });
 export type JudgeSettingsInput = z.infer<typeof judgeSettingsSchema>;

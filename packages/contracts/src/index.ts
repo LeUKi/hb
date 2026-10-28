@@ -397,12 +397,6 @@ function validateActivity(
         : "只有代码判定红包由代码判定",
     });
   if (coded) {
-    if (!balance)
-      context.addIssue({
-        code: "custom",
-        path: ["funding"],
-        message: "代码判定红包只能从🐟额发",
-      });
     if (!activity.forceDedicated)
       context.addIssue({
         code: "custom",

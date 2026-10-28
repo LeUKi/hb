@@ -1,5 +1,5 @@
-// Opening a 代码判定红包 (docs/programmable-hongbao-design.md §1, §5): its
-// sender has 🐟额 PLUS, the switch is on, today's openings are not used up
+// Opening a 代码判定红包 (docs/programmable-hongbao-design.md §1, §5): the
+// switch is on, its sender's openings today are not used up
 // and this very code, deployed, passed these very tests. The SQL below
 // holds the same inside the opening write.
 import { JUDGE_PROTOCOL, type LdcOpeningBlockedReason } from "@hb/contracts";
@@ -23,7 +23,6 @@ export async function codeOpeningBlocked(
   row: ActivityRow,
 ): Promise<LdcOpeningBlockedReason | undefined> {
   const access = await codeHongbaoAccess(env, row.authorId);
-  if (!access.allowed) return "CODE_HONGBAO_NOT_ALLOWED";
   if (!access.enabled) return "CODE_HONGBAO_PAUSED";
   const judge = await findJudgeRow(env, row.id);
   if (!judge) return "JUDGE_CHECK_REQUIRED";
@@ -56,8 +55,6 @@ export const CODE_OPENING_ALLOWED = `(participation_mode != 'code' OR (
   EXISTS(SELECT 1 FROM judge_settings WHERE id='global' AND enabled=1)
   AND (NOT EXISTS(SELECT 1 FROM activity_code c WHERE c.activity_id=activities.id AND c.network IS NOT NULL)
     OR EXISTS(SELECT 1 FROM judge_settings WHERE id='global' AND network_enabled=1))
-  AND (EXISTS(SELECT 1 FROM balance_members WHERE user_id=activities.author_id)
-    OR EXISTS(SELECT 1 FROM merchants WHERE kind='platform' AND usage_status='current' AND author_id=activities.author_id))
   AND (SELECT COUNT(*) FROM activities o WHERE o.author_id=activities.author_id AND o.participation_mode='code'
     AND o.opened_at>=?) < (SELECT daily_open_limit FROM judge_settings WHERE id='global')))`;
 

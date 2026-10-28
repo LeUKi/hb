@@ -316,7 +316,13 @@ async function openingBlockedReason(
   if (timedDrawMoney(row) && env.LDC_TIMED_DRAW_ENABLED !== "true")
     return "TIMED_DRAW_NOT_ENABLED";
   const merchant = await ownedMerchant(env, row.merchantId, row.authorId);
-  return (await publicationEligibility(env, merchant)).reason ?? undefined;
+  return (
+    (row.participationMode === "code"
+      ? await codeOpeningBlocked(env, row)
+      : undefined) ??
+    (await publicationEligibility(env, merchant)).reason ??
+    undefined
+  );
 }
 
 /** Admission persists quickly; the DO schedules the network check outside its mutation queue. */
@@ -1040,9 +1046,7 @@ export async function openActivity(
         "REAL_LDC_NOT_ENABLED",
         publicationMessages.REAL_LDC_NOT_ENABLED,
       );
-    const blocked =
-      (await balanceOpeningBlocked(env, authorId, checked.data)) ??
-      (coded ? await codeOpeningBlocked(env, row) : undefined);
+    const blocked = await balanceOpeningBlocked(env, authorId, checked.data);
     if (blocked)
       throw new ActivityError(
         409,
@@ -1060,6 +1064,10 @@ export async function openActivity(
     if (row.paymentMode !== merchant.mode)
       invalidActivity("红包付款模式与商户配置不一致，无法开放");
   }
+  // 代码判定, from 🐟额 or a 商户 alike (docs/programmable-hongbao-design.md §1).
+  const codeBlocked = coded ? await codeOpeningBlocked(env, row) : undefined;
+  if (codeBlocked)
+    throw new ActivityError(409, codeBlocked, publicationMessages[codeBlocked]);
   if (coded && ldcRewardCount(checked.data) !== row.totalCount)
     invalidActivity("红包金额与库存不一致，无法开放");
   if (

@@ -16,6 +16,7 @@ type SettingsRow = {
   enabled: number;
   daily_open_limit: number;
   daily_deploy_limit: number;
+  daily_deploy_limit_plus: number;
   monthly_limit: number;
   network_enabled: number;
   updated_at: number;
@@ -25,7 +26,7 @@ export async function readJudgeSettings(
   env: ApiBindings,
 ): Promise<JudgeSettings> {
   const row = await env.DB.prepare(
-    `SELECT version,enabled,daily_open_limit,daily_deploy_limit,monthly_limit,network_enabled,updated_at
+    `SELECT version,enabled,daily_open_limit,daily_deploy_limit,daily_deploy_limit_plus,monthly_limit,network_enabled,updated_at
     FROM judge_settings WHERE id='global'`,
   ).first<SettingsRow>();
   if (!row) throw new Error("Missing judge settings");
@@ -34,6 +35,7 @@ export async function readJudgeSettings(
     enabled: row.enabled === 1,
     dailyOpenLimit: row.daily_open_limit,
     dailyDeployLimit: row.daily_deploy_limit,
+    dailyDeployLimitPlus: row.daily_deploy_limit_plus,
     monthlyLimit: row.monthly_limit,
     networkEnabled: row.network_enabled === 1,
     updatedAt: row.updated_at,
@@ -45,6 +47,7 @@ function snapshot(settings: JudgeSettingsInput) {
     enabled: settings.enabled,
     dailyOpenLimit: settings.dailyOpenLimit,
     dailyDeployLimit: settings.dailyDeployLimit,
+    dailyDeployLimitPlus: settings.dailyDeployLimitPlus,
     monthlyLimit: settings.monthlyLimit,
     networkEnabled: settings.networkEnabled,
   });
@@ -73,12 +76,13 @@ export async function updateJudgeSettings(
         expectedVersion,
       ),
       env.DB.prepare(`UPDATE judge_settings SET version=version+1,
-        enabled=?,daily_open_limit=?,daily_deploy_limit=?,monthly_limit=?,network_enabled=?,
+        enabled=?,daily_open_limit=?,daily_deploy_limit=?,daily_deploy_limit_plus=?,monthly_limit=?,network_enabled=?,
         updated_at=${databaseNow},updated_by_user_id=?
         WHERE id='global' AND version=?`).bind(
         Number(next.enabled),
         next.dailyOpenLimit,
         next.dailyDeployLimit,
+        next.dailyDeployLimitPlus,
         next.monthlyLimit,
         Number(next.networkEnabled),
         actorUserId,
@@ -111,12 +115,17 @@ export async function recentJudgeSettingChanges(
       next: string;
     }
   >();
-  // Changes from before 联网 had a switch: it was off.
-  const read = (text: string) =>
-    ({
+  // Changes from before 联网 had a switch: it was off. From before PLUS
+  // had its own 部署 number, the one number was everyone's, PLUS's too.
+  const read = (text: string) => {
+    const value = JSON.parse(text) as Partial<JudgeSettingsInput>;
+    return {
       networkEnabled: false,
-      ...(JSON.parse(text) as Partial<JudgeSettingsInput>),
-    }) as JudgeSettingsInput;
+      ...value,
+      dailyDeployLimitPlus:
+        value.dailyDeployLimitPlus ?? value.dailyDeployLimit,
+    } as JudgeSettingsInput;
+  };
   return rows.results.map((row) => ({
     ...row,
     previous: read(row.previous),

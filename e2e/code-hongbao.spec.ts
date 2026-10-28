@@ -1405,6 +1405,54 @@ test.describe("发红包 · 代码判定", () => {
     await expect(cardState(page)).toHaveText("已部署 · 测试全过");
   }
 
+  test("没开通 PLUS、只有商户也能发（2026-10-28）：卡上没有 PLUS；从商户直发，说明写分发费", async ({
+    page,
+  }) => {
+    await mockDeploys(page, {
+      deploysLeft: 2,
+      deployLimit: 2,
+      user: { ...viewer, balance: false, balancePlus: false },
+    });
+    await page.route("**/api/me/merchants", (route) =>
+      route.fulfill({
+        json: {
+          items: [
+            {
+              id: "m-code",
+              label: "我的商户",
+              usageStatus: "current",
+              clientId: "client_code",
+              mode: "real",
+              pausedReason: null,
+              credentialVerification: {
+                status: "passed",
+                credentialVersion: 1,
+                checkedAt: new Date().toISOString(),
+                nextCheckAt: null,
+                reason: null,
+              },
+            },
+          ],
+          nextCursor: null,
+          currentMerchantId: "m-code",
+          canCreate: true,
+          canSimulate: false,
+        },
+      }),
+    );
+    await openApp(page, "/new");
+    await page.getByRole("button", { name: "更多玩法" }).click();
+    const pick = page.getByRole("button", { name: /^代码判定/ });
+    await expect(pick).toBeVisible();
+    await expect(pick).not.toContainText("PLUS");
+    await pick.click();
+    await expect(page.locator("#hb-code-total")).toBeVisible();
+    await expect(
+      page.getByText(/Credit 站会按你在 Credit 站的等级扣分发费/),
+    ).toBeVisible();
+    await expect(page.getByText("代码判定红包只能从🐟额发。")).toHaveCount(0);
+  });
+
   test("第 3 步：judge.js 是判定器卡，不是编辑框；tests.json 还是 CodeMirror 编辑器，能打字，条数跟着变，空的时候光标只有一行高", async ({
     page,
   }) => {

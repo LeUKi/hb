@@ -60,7 +60,6 @@ export const publicationMessages = {
   BALANCE_HONGBAO_PAUSED: "🐟额红包暂时关闭，草稿已保存。",
   BALANCE_INSUFFICIENT: "🐟额可用不够，草稿已保存。",
   CODE_HONGBAO_PAUSED: "代码判定红包暂时关闭，草稿已保存。",
-  CODE_HONGBAO_NOT_ALLOWED: "开通🐟额 PLUS 才能发代码判定红包，草稿已保存。",
   JUDGE_CHECK_REQUIRED: "还没有测试全过的判定器，草稿已保存。",
   JUDGE_RERUN_REQUIRED: "测试改过了，要重新跑一遍，草稿已保存。",
   CODE_HONGBAO_DAILY_LIMIT: "今天开放代码判定红包的次数用完了，草稿已保存。",

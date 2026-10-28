@@ -41,6 +41,7 @@ beforeEach(async () => {
     enabled: 1,
     daily_open_limit: 3,
     daily_deploy_limit: 10,
+    daily_deploy_limit_plus: 10,
     monthly_limit: 1000,
   });
   await plus(author);
@@ -93,11 +94,19 @@ describe("网站管理 · 判定器: 设置", () => {
       recentChanges: JudgeSettingChange[];
     }>("GET", "/admin/judge/settings", admin);
     expect(read.status).toBe(200);
+    // Migration 0047 (2026-10-28): the one number became PLUS's, and
+    // everyone else's 2, written down as a change.
+    expect(read.body.recentChanges[0]).toMatchObject({
+      actorUserId: "migration",
+      previous: { dailyDeployLimit: 10, dailyDeployLimitPlus: 10 },
+      next: { dailyDeployLimit: 2, dailyDeployLimitPlus: 10 },
+    });
     const before = read.body.settings;
     expect(before).toMatchObject({
       enabled: true,
       dailyOpenLimit: 3,
       dailyDeployLimit: 10,
+      dailyDeployLimitPlus: 10,
       monthlyLimit: 1000,
       networkEnabled: false,
     });
@@ -111,6 +120,7 @@ describe("网站管理 · 判定器: 设置", () => {
       enabled: true,
       dailyOpenLimit: 3,
       dailyDeployLimit: 10,
+      dailyDeployLimitPlus: 12,
       monthlyLimit: 2000,
       networkEnabled: false,
     };
@@ -161,7 +171,7 @@ describe("网站管理 · 判定器: 设置", () => {
       actorUserId: admin.id,
       previousVersion: before.version,
       nextVersion: before.version + 1,
-      next: { monthlyLimit: 2000 },
+      next: { monthlyLimit: 2000, dailyDeployLimitPlus: 12 },
     });
 
     const audit = await call<AdminCursorList<AdminAuditEntry>>(
@@ -178,9 +188,10 @@ describe("网站管理 · 判定器: 设置", () => {
         enabled: true,
         dailyOpenLimit: 3,
         dailyDeployLimit: 10,
+        dailyDeployLimitPlus: 10,
         monthlyLimit: 1000,
       },
-      after: { monthlyLimit: 2000 },
+      after: { monthlyLimit: 2000, dailyDeployLimitPlus: 12 },
     });
 
     // 🐟额's settings no longer carry them.
@@ -196,6 +207,7 @@ describe("网站管理 · 判定器: 设置", () => {
     for (const change of [
       "monthly_limit = 0",
       "daily_deploy_limit = 1001",
+      "daily_deploy_limit_plus = 0",
       "daily_open_limit = 0",
       "enabled = 2",
     ])

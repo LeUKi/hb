@@ -146,27 +146,27 @@ export function HelpView() {
           })}
         </Panel>
       </PageSection>
-      {/* 🐟额 PLUS's own docs (07 §12): only for those who can use them. */}
-      {user?.balancePlus && (
-        <Panel as="ul" className="grid gap-0.5 p-1.5">
-          <li>
-            <Squircle radius={radius.row}>
-              <Link
-                to="/help/code"
-                className="flex min-h-12 items-center gap-3 px-3 py-2 transition-colors hover:bg-fill-2"
-              >
-                <Braces className="size-[18px] shrink-0 text-ink-2" />
-                <span className="min-w-0 flex-1 truncate text-ink">
-                  代码判定红包 · 开发文档
-                </span>
-                <PlusBadge />
-                <ChevronRight
-                  className="size-4 shrink-0 text-ink-3"
-                  aria-hidden="true"
-                />
-              </Link>
-            </Squircle>
-          </li>
+      {/* The docs for senders (07 §12): 代码判定's for everyone (since
+          2026-10-28), 附带网页's for 🐟额 PLUS, who can use it. */}
+      <Panel as="ul" className="grid gap-0.5 p-1.5">
+        <li>
+          <Squircle radius={radius.row}>
+            <Link
+              to="/help/code"
+              className="flex min-h-12 items-center gap-3 px-3 py-2 transition-colors hover:bg-fill-2"
+            >
+              <Braces className="size-[18px] shrink-0 text-ink-2" />
+              <span className="min-w-0 flex-1 truncate text-ink">
+                代码判定红包 · 开发文档
+              </span>
+              <ChevronRight
+                className="size-4 shrink-0 text-ink-3"
+                aria-hidden="true"
+              />
+            </Link>
+          </Squircle>
+        </li>
+        {user?.balancePlus && (
           <li>
             <Squircle radius={radius.row}>
               <Link
@@ -185,8 +185,8 @@ export function HelpView() {
               </Link>
             </Squircle>
           </li>
-        </Panel>
-      )}
+        )}
+      </Panel>
       <PageSection title="常见问题">
         <Panel as="dl" className="grid px-4">
           {questions.map((item) => (

@@ -1221,10 +1221,11 @@ describe("production presentation queries", () => {
     );
     expect(stillPublic.items).toEqual(first.items);
     expect(stillPublic).not.toHaveProperty("enabled");
+    // A draft's is there for whoever has its link (05 §5), and empty.
     const draft = await create(ldc(draw), false);
-    expect((await get(`/activities/${draft.id}/registrations`)).status).toBe(
-      404,
-    );
+    const unopened = await get(`/activities/${draft.id}/registrations`);
+    expect(unopened.status).toBe(200);
+    expect(((await unopened.json()) as { items: unknown[] }).items).toEqual([]);
   });
 });
 

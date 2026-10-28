@@ -27,6 +27,7 @@ import { app } from "../src/app";
 import { readAccount } from "../src/balance/ledger";
 import type { ApiBindings } from "../src/env";
 import { findJudgeRow } from "../src/judge/storage";
+import { createMerchant } from "../src/payments/merchants";
 import { advanceAttemptCooldown } from "./advance-attempt-cooldown";
 import {
   type Actor,
@@ -85,6 +86,64 @@ async function submit(activityId: string, user: Actor, input: string) {
 
 const detail = (result: ClaimResult) =>
   (result as { claim: ClaimDetail }).claim;
+
+describe("代码判定红包: from a 商户 (2026-10-28)", () => {
+  it("pays each share by the 商户's payments, its range counted from the total less the shares made", async () => {
+    const sender = await actor();
+    const merchant = await createMerchant(bindings, sender.id, {
+      requestId: crypto.randomUUID(),
+      clientId: `code_${crypto.randomUUID().replaceAll("-", "")}`,
+      label: "代码判定商户",
+      secret: "virtual-only-secret",
+    });
+    const input: ActivityInput = {
+      ...coded(),
+      funding: "merchant",
+      merchantId: merchant.id,
+    };
+    expect(
+      (await check(sender, input.judge?.code, input.judge?.tests)).body.check
+        .passed,
+    ).toBe(true);
+    const saved = await createActivity(bindings, sender.id, {
+      requestId: crypto.randomUUID(),
+      activity: input,
+    });
+    const opened = await openActivity(
+      bindings,
+      saved.id,
+      sender.id,
+      saved.version,
+    );
+    expect(opened.status).toBe("active");
+    // Nothing locked: it is not a 🐟额红包.
+    expect((await readAccount(bindings, sender.id)).unclaimedMinor).toBe(0);
+    const amounts = [];
+    for (const _ of [1, 2, 3]) {
+      const claimed = await submit(opened.id, await actor(), "flag{ok}");
+      expect(claimed.result).toBe("claimed");
+      amounts.push(detail(claimed).amount);
+      expect(detail(claimed).payment).toBeTruthy();
+    }
+    // 30 twice; the last share takes what is left of 1.00.
+    expect(amounts).toEqual(["0.30", "0.30", "0.40"]);
+    const payments = await env.DB.prepare(
+      "SELECT t.amount_minor AS amount FROM payment_tasks t JOIN claims c ON c.id = t.claim_id WHERE c.activity_id = ? ORDER BY c.claimed_at",
+    )
+      .bind(opened.id)
+      .all<{ amount: number }>();
+    expect(payments.results.map((row) => row.amount)).toEqual([30, 30, 40]);
+    expect((await getPublicActivity(bindings, opened.id)).status).toBe("ended");
+    // The database counts the range the same way: past it, no share.
+    await expect(
+      env.DB.prepare(
+        "INSERT INTO reward_inventory (id, activity_id, position, kind, amount_minor) VALUES (?, ?, 3, 'ldc', 1)",
+      )
+        .bind(crypto.randomUUID(), opened.id)
+        .run(),
+    ).rejects.toThrow();
+  });
+});
 
 describe("代码判定红包: claims", () => {
   it("pays what the code says to a right answer, and turns a wrong one down with its reply", async () => {

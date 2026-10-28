@@ -1256,6 +1256,10 @@ function judgeAuditValues(json: unknown): Record<string, boolean | number> {
     enabled: value.enabled === true,
     dailyOpenLimit: Number(value.dailyOpenLimit ?? 0),
     dailyDeployLimit: Number(value.dailyDeployLimit ?? 0),
+    // One number for everyone, PLUS too, before 2026-10-28.
+    dailyDeployLimitPlus: Number(
+      value.dailyDeployLimitPlus ?? value.dailyDeployLimit ?? 0,
+    ),
     monthlyLimit: Number(value.monthlyLimit ?? 0),
   };
 }

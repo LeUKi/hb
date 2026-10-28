@@ -2012,7 +2012,11 @@ export const judgeSettings = sqliteTable(
     version: integer("version").notNull(),
     enabled: integer("enabled", { mode: "boolean" }).notNull().default(false),
     dailyOpenLimit: integer("daily_open_limit").notNull().default(3),
-    dailyDeployLimit: integer("daily_deploy_limit").notNull().default(10),
+    dailyDeployLimit: integer("daily_deploy_limit").notNull().default(2),
+    /** 🐟额 PLUS and the 站长 deploy this many a day (2026-10-28). */
+    dailyDeployLimitPlus: integer("daily_deploy_limit_plus")
+      .notNull()
+      .default(10),
     monthlyLimit: integer("monthly_limit").notNull().default(1000),
     /** 代码判定联网 (§9): off, code that exports network neither deploys nor opens. */
     networkEnabled: integer("network_enabled", { mode: "boolean" })
@@ -2029,6 +2033,7 @@ export const judgeSettings = sqliteTable(
         AND ${table.enabled} IN (0, 1) AND ${table.networkEnabled} IN (0, 1)
         AND typeof(${table.dailyOpenLimit}) = 'integer' AND ${table.dailyOpenLimit} BETWEEN 1 AND 1000
         AND typeof(${table.dailyDeployLimit}) = 'integer' AND ${table.dailyDeployLimit} BETWEEN 1 AND 1000
+        AND typeof(${table.dailyDeployLimitPlus}) = 'integer' AND ${table.dailyDeployLimitPlus} BETWEEN 1 AND 1000
         AND typeof(${table.monthlyLimit}) = 'integer' AND ${table.monthlyLimit} BETWEEN 1 AND 1000000`,
     ),
   ],

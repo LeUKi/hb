@@ -391,6 +391,7 @@ const sameValues = (settings: JudgeSettings, next: JudgeSettingsInput) =>
   settings.networkEnabled === next.networkEnabled &&
   settings.dailyOpenLimit === next.dailyOpenLimit &&
   settings.dailyDeployLimit === next.dailyDeployLimit &&
+  settings.dailyDeployLimitPlus === next.dailyDeployLimitPlus &&
   settings.monthlyLimit === next.monthlyLimit;
 
 /** "第 4 版 · 23:41 由林间修改", from the change that made this version. */
@@ -408,12 +409,13 @@ type Draft = {
   networkEnabled?: boolean;
   open?: string;
   deploy?: string;
+  deployPlus?: string;
   monthly?: string;
 };
 
 /**
- * 设置: 代码判定红包's switch, 每人每天最多开放几个, 每人每天部署几次 and
- * 每月判定器上限, saved and undone as 网站设置's groups are: against the
+ * 设置: 代码判定红包's switch, 每人每天最多开放几个, 每人每天部署几次 (and
+ * PLUS's) and 每月判定器上限, saved and undone as 网站设置's groups are: against the
  * version typing started from, so a save made elsewhere meanwhile comes back
  * as a conflict, keeping what was typed.
  */
@@ -430,11 +432,13 @@ function SettingsForm({ data }: { data: JudgeSettingsResponse }) {
     networkEnabled: draft.networkEnabled ?? shown.networkEnabled,
     open: draft.open ?? String(shown.dailyOpenLimit),
     deploy: draft.deploy ?? String(shown.dailyDeployLimit),
+    deployPlus: draft.deployPlus ?? String(shown.dailyDeployLimitPlus),
     monthly: draft.monthly ?? String(shown.monthlyLimit),
   };
   const counts = {
     open: countOf(values.open, 1000),
     deploy: countOf(values.deploy, 1000),
+    deployPlus: countOf(values.deployPlus, 1000),
     monthly: countOf(values.monthly, 1_000_000),
   };
   const edit = (patch: Draft) => {
@@ -449,7 +453,12 @@ function SettingsForm({ data }: { data: JudgeSettingsResponse }) {
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const saveRef = useRef<HTMLButtonElement>(null);
-  const ids = { open: useId(), deploy: useId(), monthly: useId() };
+  const ids = {
+    open: useId(),
+    deploy: useId(),
+    deployPlus: useId(),
+    monthly: useId(),
+  };
   // A save already sent finishes even if the page is left meanwhile; only
   // what the page says about it needs the page.
   const present = useIsPresent();
@@ -467,12 +476,16 @@ function SettingsForm({ data }: { data: JudgeSettingsResponse }) {
     return () => window.clearTimeout(timer);
   }, [done]);
   const ok =
-    counts.open !== null && counts.deploy !== null && counts.monthly !== null;
+    counts.open !== null &&
+    counts.deploy !== null &&
+    counts.deployPlus !== null &&
+    counts.monthly !== null;
   const next: JudgeSettingsInput = {
     enabled: values.enabled,
     networkEnabled: values.networkEnabled,
     dailyOpenLimit: counts.open ?? shown.dailyOpenLimit,
     dailyDeployLimit: counts.deploy ?? shown.dailyDeployLimit,
+    dailyDeployLimitPlus: counts.deployPlus ?? shown.dailyDeployLimitPlus,
     monthlyLimit: counts.monthly ?? shown.monthlyLimit,
   };
   const changed = ok ? !sameValues(shown, next) : Object.keys(draft).length > 0;
@@ -564,7 +577,7 @@ function SettingsForm({ data }: { data: JudgeSettingsResponse }) {
             checked={values.networkEnabled}
             onChange={(networkEnabled) => edit({ networkEnabled })}
           />
-          <div className="grid gap-4 @wide/window:grid-cols-3">
+          <div className="grid gap-4 @wide/window:grid-cols-2">
             <Field
               label="每人每天最多开放"
               htmlFor={ids.open}
@@ -595,6 +608,22 @@ function SettingsForm({ data }: { data: JudgeSettingsResponse }) {
                 value={values.deploy}
                 invalid={counts.deploy === null}
                 onChange={(event) => edit({ deploy: event.target.value })}
+              />
+            </Field>
+            <Field
+              label="开通 PLUS 的人每天部署"
+              htmlFor={ids.deployPlus}
+              hint="开通🐟额 PLUS 的人和站长用这个数"
+              error={counts.deployPlus === null ? "请填 1–1000 的整数" : null}
+              live
+            >
+              <TextInput
+                id={ids.deployPlus}
+                inputMode="numeric"
+                suffix="次"
+                value={values.deployPlus}
+                invalid={counts.deployPlus === null}
+                onChange={(event) => edit({ deployPlus: event.target.value })}
               />
             </Field>
             <Field

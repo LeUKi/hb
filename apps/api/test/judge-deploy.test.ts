@@ -47,6 +47,7 @@ beforeEach(async () => {
     enabled: 1,
     daily_open_limit: 3,
     daily_deploy_limit: 10,
+    daily_deploy_limit_plus: 10,
     monthly_limit: 1000,
   });
   await plus(author);
@@ -190,8 +191,38 @@ describe("代码判定红包: 部署", () => {
     });
   });
 
+  it("deploys 2 a day for everyone, 10 for 🐟额 PLUS, as 判定器设置 says (2026-10-28)", async () => {
+    await judgeSettings({ daily_deploy_limit: 2, daily_deploy_limit_plus: 5 });
+    const plain = await actor();
+    expect((await check(plain, unique())).body.check).toMatchObject({
+      kind: "deploy",
+      deploysLeft: 1,
+    });
+    await check(plain, unique());
+    const refused = await check(plain, unique());
+    expect(refused.status).toBe(429);
+    expect(refused.body.error.message).toBe(
+      "今天的 2 次部署用完了，明天再来。",
+    );
+    expect((await check(author, unique())).body.check.deploysLeft).toBe(4);
+    const offer = async (user: Actor) =>
+      (
+        await app.request(
+          `${origin}/api/me/balance/hongbao`,
+          { headers: { Cookie: user.cookie } },
+          bindings,
+        )
+      ).json();
+    expect(await offer(plain)).toMatchObject({
+      code: { deploysLeft: 0, deployLimit: 2 },
+    });
+    expect(await offer(author)).toMatchObject({
+      code: { deploysLeft: 4, deployLimit: 5 },
+    });
+  });
+
   it("stops new versions once today's deploys are used, never a version deployed before", async () => {
-    await judgeSettings({ daily_deploy_limit: 2 });
+    await judgeSettings({ daily_deploy_limit_plus: 2 });
     const code = unique();
     await check(author, code);
     expect((await check(author, unique())).body.check.deploysLeft).toBe(0);
@@ -239,7 +270,7 @@ describe("代码判定红包: 部署", () => {
   });
 
   it("runs a person's checks one at a time: a burst at the last deploy makes one", async () => {
-    await judgeSettings({ daily_deploy_limit: 1 });
+    await judgeSettings({ daily_deploy_limit_plus: 1 });
     const codes = Array.from({ length: 4 }, () => unique());
     const burst = await Promise.all(codes.map((code) => check(author, code)));
     const done = burst.findIndex((one) => one.status === 200);
@@ -458,7 +489,7 @@ describe("代码判定红包: 部署", () => {
   });
 
   it("takes only main.mjs's own failures from the sandbox: code that forges one is a wrong answer, and counts", async () => {
-    await judgeSettings({ daily_deploy_limit: 1 });
+    await judgeSettings({ daily_deploy_limit_plus: 1 });
     const forged = (kind: string) =>
       unique(`JSON.stringify = () => '{"error":{"kind":"${kind}","detail":"x"}}';
 export function judge() { return { ok: false }; }

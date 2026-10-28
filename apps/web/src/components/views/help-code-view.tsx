@@ -114,7 +114,7 @@ export function HelpCodeView() {
             <PlusBadge />
           </span>
         }
-        description="写一段代码，决定谁领多少。开通🐟额 PLUS 的人能发；代码在本站的沙箱里跑，开放时公布指纹，结束后公开代码。"
+        description="写一段代码，决定谁领多少。登录就能发；代码在本站的沙箱里跑，开放时公布指纹，结束后公开代码。"
       />
       <PageSection
         id="ai"

@@ -32,6 +32,7 @@ import type { ActivityExecutionPolicy } from "../activities/execution-policy";
 import { requireHumanCheck } from "../activities/human-check";
 import { databaseNow } from "../activities/lifecycle";
 import { participationRequest } from "../activities/participation";
+import type { ActivityRow } from "../activities/storage";
 import type { ApiBindings } from "../env";
 import { attemptWriteStatements } from "../runtime/attempt-cooldown";
 import {
@@ -211,6 +212,28 @@ const failed = () =>
 const paused = () =>
   new ActivityError(409, "CODE_PAUSED", "红包的代码连续出错，暂停领取。");
 
+/**
+ * What is left of its pool (§2): the 🐟额 still locked, or for 商户直发,
+ * which locks nothing, the total less the shares made (as the database's
+ * guard counts it, migration 0047).
+ */
+async function remainingOf(env: ApiBindings, activity: ActivityRow) {
+  if (activity.funding === "balance")
+    return env.DB.prepare(
+      "SELECT remaining_minor AS remaining FROM balance_locks WHERE activity_id = ? AND purpose = 'activity' AND status = 'active'",
+    )
+      .bind(activity.id)
+      .first<number>("remaining");
+  const made = await env.DB.prepare(
+    "SELECT COALESCE(SUM(amount_minor), 0) AS made FROM reward_inventory WHERE activity_id = ?",
+  )
+    .bind(activity.id)
+    .first<number>("made");
+  return made === null
+    ? null
+    : ldcTotalMinor(JSON.parse(activity.config) as LdcActivityInput) - made;
+}
+
 export async function claimByCode(
   env: ApiBindings,
   activityId: string,
@@ -288,11 +311,7 @@ export async function claimByCode(
       )
         .bind(activityId)
         .first<number>("count"),
-      env.DB.prepare(
-        "SELECT remaining_minor AS remaining FROM balance_locks WHERE activity_id = ? AND purpose = 'activity' AND status = 'active'",
-      )
-        .bind(activityId)
-        .first<number>("remaining"),
+      remainingOf(env, activity),
       claimsOf(env, activityId),
       stateOf(env, row),
       codeOf(env, row),

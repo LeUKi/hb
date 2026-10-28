@@ -226,8 +226,6 @@ export function withMode(form: FormState, mode: RewardMode): FormState {
   return {
     ...form,
     mode,
-    // 代码判定红包只能从🐟额发 (07 §5).
-    funding: mode === "code" ? "balance" : form.funding,
     timing:
       mode === "timed_draw"
         ? drawTiming(form)
@@ -800,7 +798,7 @@ export function inputOf(form: FormState, merchantId: string): ActivityInput {
     ...(scopeInputOf(form) ? { scope: scopeInputOf(form) } : {}),
     rewardType: "ldc",
     // Left out for 商户直发, as before 🐟额红包 (idempotency).
-    ...(coded || form.funding === "balance"
+    ...(form.funding === "balance"
       ? { funding: "balance" as const, merchantId: "" }
       : { merchantId }),
     money,

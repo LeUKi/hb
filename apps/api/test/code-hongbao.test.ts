@@ -48,17 +48,23 @@ beforeEach(async () => {
 });
 
 describe("代码判定红包: sending one", () => {
-  it("is for 🐟额 PLUS while its switch is on", async () => {
+  it("is for anyone signed in while its switch is on, PLUS or not (2026-10-28)", async () => {
     const stranger = await actor();
+    await give(admin, stranger, "1.00");
+    const saved = await createActivity(bindings, stranger.id, {
+      requestId: crypto.randomUUID(),
+      activity: coded(),
+    });
+    expect(saved.config.money.mode).toBe("code");
+    await judgeSettings({ enabled: 0 });
+    await rejects(draft(), "CODE_HONGBAO_PAUSED");
     await rejects(
       createActivity(bindings, stranger.id, {
         requestId: crypto.randomUUID(),
         activity: coded(),
       }),
-      "CODE_HONGBAO_NOT_ALLOWED",
+      "CODE_HONGBAO_PAUSED",
     );
-    await judgeSettings({ enabled: 0 });
-    await rejects(draft(), "CODE_HONGBAO_PAUSED");
   });
 
   it("keeps the code to its sender: encrypted, back in their own read, never on the page", async () => {
@@ -176,8 +182,9 @@ describe("代码判定红包: sending one", () => {
     );
     expect(random.body.check.unstable).toEqual(["随便"]);
 
+    // Not PLUS: deploys all the same (2026-10-28).
     const stranger = await actor();
-    expect((await check(stranger)).status).toBe(403);
+    expect((await check(stranger)).status).toBe(200);
   });
 
   it("runs a multi-step test step by step as the claims would go, and the whole of it twice", async () => {
