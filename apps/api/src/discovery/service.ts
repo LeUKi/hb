@@ -217,9 +217,12 @@ export function listSquare(
 ) {
   const state =
     status === "all" ? sql`1 = 1` : sql`${activityListStatusSql()} = ${status}`;
+  // Not the ones ended early, by their sender or the 站长 (07 §2): they
+  // stay in 红包记录 and open by their link.
+  const kept = sql`COALESCE(${activities.endReason}, '') NOT IN ('manual', 'stopped')`;
   return list(
     env,
-    sql`${activities.joinSquare} = 1 AND ${state} AND ${rewardFilterSql(type)}`,
+    sql`${activities.joinSquare} = 1 AND ${kept} AND ${state} AND ${rewardFilterSql(type)}`,
     type === "all" ? `square:${status}` : `square:${status}:${type}`,
     viewerId,
     cursor,
