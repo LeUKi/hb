@@ -5,8 +5,11 @@
 import {
   ACTIVITY_LIMITS,
   judgeCheckInputSchema,
+  judgeFeatureChangeSchema,
+  judgeFeatureSchema,
   judgeListingSchema,
   judgeParamsCheckSchema,
+  judgeTakeDownSchema,
   judgeTrySchema,
   updateJudgeSchema,
   updateJudgeSettingsSchema,
@@ -27,6 +30,14 @@ import { listJudgeActivities } from "../discovery/service";
 import type { ApiContext } from "../env";
 import { activityObject } from "../runtime/objects";
 import { listChallengers, readChallengerCursor } from "./challengers";
+import {
+  changeFeature,
+  featureJudge,
+  judgeCuration,
+  restoreJudge,
+  takeDownJudge,
+  unfeatureJudge,
+} from "./curation";
 import {
   checkMyParams,
   deployJudge,
@@ -351,6 +362,58 @@ export const judgeRoutes = new Hono<ApiContext>()
     return c.json({ status: "stopped" as const });
   })
   // 网站管理 · 判定器 (redesign/07 §10).
+  // 判定器广场's 精选 and 撤下 (docs/judge-square-design.md §9, §15.4).
+  .get("/admin/judge/curation", async (c) => {
+    await requireAdmin(c);
+    return c.json(await judgeCuration(c.env));
+  })
+  .post(
+    "/admin/judges/:id/take-down",
+    validator("json", parsedWith(judgeTakeDownSchema)),
+    async (c) => {
+      const session = await requireAdminMutation(c);
+      await takeDownJudge(
+        c.env,
+        session.user.id,
+        c.req.param("id"),
+        c.req.valid("json"),
+      );
+      return c.json({ ok: true });
+    },
+  )
+  .post("/admin/judges/:id/restore", async (c) => {
+    const session = await requireAdminMutation(c);
+    await restoreJudge(c.env, session.user.id, c.req.param("id"));
+    return c.json({ ok: true });
+  })
+  .post(
+    "/admin/judge/features",
+    validator("json", parsedWith(judgeFeatureSchema)),
+    async (c) => {
+      const session = await requireAdminMutation(c);
+      await featureJudge(c.env, session.user.id, c.req.valid("json"));
+      return c.json(await judgeCuration(c.env));
+    },
+  )
+  .put(
+    "/admin/judge/features/:id",
+    validator("json", parsedWith(judgeFeatureChangeSchema)),
+    async (c) => {
+      const session = await requireAdminMutation(c);
+      await changeFeature(
+        c.env,
+        session.user.id,
+        c.req.param("id"),
+        c.req.valid("json"),
+      );
+      return c.json(await judgeCuration(c.env));
+    },
+  )
+  .delete("/admin/judge/features/:id", async (c) => {
+    const session = await requireAdminMutation(c);
+    await unfeatureJudge(c.env, session.user.id, c.req.param("id"));
+    return c.json(await judgeCuration(c.env));
+  })
   .get("/admin/judge/settings", async (c) => {
     await requireAdmin(c);
     const [settings, recentChanges] = await Promise.all([

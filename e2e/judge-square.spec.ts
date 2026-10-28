@@ -556,4 +556,59 @@ test.describe("判定器广场", () => {
     await expect(page.getByText("站长精选 · 第 2 版")).toBeVisible();
     await expect(page.locator("#hb-param-max")).toBeFocused();
   });
+
+  test("站长在别人的判定器页撤下它：原因必填，撤下后页上写原因，能恢复", async ({
+    page,
+  }) => {
+    await mockSquare(page, { ...member, isAdmin: true });
+    let shown: JudgePage = guessPage;
+    const sent: { path: string; body: unknown }[] = [];
+    await page.route(`**/api/judges/${GUESS}`, (route) =>
+      route.fulfill({ json: { judge: shown } }),
+    );
+    await page.route("**/api/admin/judges/**", (route) => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      sent.push({
+        path,
+        body: request.postData() ? request.postDataJSON() : undefined,
+      });
+      shown = path.endsWith("/take-down")
+        ? {
+            ...guessPage,
+            listed: false,
+            takenDown: { at: deployedAt, reason: "抄袭别人的判定器" },
+          }
+        : guessPage;
+      return route.fulfill({ json: { ok: true } });
+    });
+    await openApp(page, `/judges/${GUESS}`);
+    await page.getByRole("button", { name: "撤下" }).click();
+    const dialog = page.getByRole("dialog", { name: "从判定器广场撤下？" });
+    await expect(dialog).toContainText(
+      "新的红包选不到它，已经选进草稿的也不能开放；已经开放的照常。作者会看到原因。",
+    );
+    const reason = dialog.getByRole("textbox", { name: "原因" });
+    await expect(reason).toHaveAccessibleDescription(
+      "作者看得到，最多 100 个字",
+    );
+    await dialog.getByRole("button", { name: "撤下" }).click();
+    await expect(dialog.getByText("请写原因")).toBeVisible();
+    expect(sent).toHaveLength(0);
+    await reason.fill("抄袭别人的判定器");
+    await dialog.getByRole("button", { name: "撤下" }).click();
+    await expect(dialog).toBeHidden();
+    expect(sent.at(-1)).toEqual({
+      path: `/api/admin/judges/${GUESS}/take-down`,
+      body: { reason: "抄袭别人的判定器" },
+    });
+    await expect(page.getByText("原因：抄袭别人的判定器")).toBeVisible();
+    await page.getByRole("button", { name: "恢复" }).click();
+    await page
+      .getByRole("dialog", { name: "恢复到判定器广场？" })
+      .getByRole("button", { name: "恢复" })
+      .click();
+    await expect(page.getByRole("button", { name: "撤下" })).toBeVisible();
+    expect(sent.at(-1)?.path).toBe(`/api/admin/judges/${GUESS}/restore`);
+  });
 });

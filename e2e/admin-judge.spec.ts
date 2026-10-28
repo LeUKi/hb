@@ -4,6 +4,8 @@ import type {
   AdminActivityListItem,
   AdminAuditEntry,
   AdminCursorList,
+  AdminJudgeCuration,
+  AdminJudgeFeature,
   AdminJudgeUsage,
   AdminUserDetail,
   AdminUserListItem,
@@ -267,6 +269,11 @@ test.describe("网站管理 · 判定器", () => {
   test.beforeEach(async ({ page }) => {
     await mockSession(page, admin);
     await answer(page, "judge/usage", usage);
+    // 精选 and 已撤下: none, unless a test answers otherwise.
+    await answer(page, "judge/curation", () => ({
+      features: [],
+      takenDown: [],
+    }));
     // A user's 🐟额 in their detail: nothing to show.
     await page.route(
       (url) => url.pathname.startsWith("/api/admin/balance/users/"),
@@ -614,5 +621,180 @@ test.describe("网站管理 · 判定器", () => {
       page.getByText("代码判定红包 开 → 关；每月判定器上限 1000 份 → 2000 份"),
     ).toBeVisible();
     await expect(page.getByText("第 2 版 → 第 3 版")).toBeVisible();
+  });
+
+  test("精选：上移、下移、移出，作者有新版本时换成新版本；按编号或地址查找后选一版选入；已撤下的能恢复", async ({
+    page,
+  }) => {
+    await mockSettings(page);
+    const GUESS = "33333333-4444-4555-8666-777777777777";
+    const ANSWER = "88888888-9999-4aaa-8bbb-cccccccccccc";
+    const QUIZ = "99999999-aaaa-4bbb-8ccc-dddddddddddd";
+    const maker = { username: "maker", displayName: "做题家", avatarUrl: null };
+    const feature = (
+      judgeId: string,
+      name: string,
+      n: number,
+      patch: Partial<AdminJudgeFeature> = {},
+    ): AdminJudgeFeature => ({
+      judgeId,
+      name,
+      author: maker,
+      bySiteOwner: false,
+      basedOn: null,
+      n,
+      newer: null,
+      listed: true,
+      ...patch,
+    });
+    let curation: AdminJudgeCuration = {
+      features: [
+        feature(GUESS, "猜数字", 3, { newer: 4 }),
+        feature(ANSWER, "答题", 1, {
+          bySiteOwner: true,
+          basedOn: "quizzer",
+        }),
+      ],
+      takenDown: [
+        {
+          judgeId: QUIZ,
+          name: "抄来的",
+          author: maker,
+          reason: "抄袭别人的判定器",
+          at: new Date(Date.now() - hour).toISOString(),
+        },
+      ],
+    };
+    const sent: { method: string; path: string; body: unknown }[] = [];
+    await page.route(
+      (url) =>
+        url.pathname.startsWith("/api/admin/judge/features") ||
+        url.pathname.startsWith("/api/admin/judges/") ||
+        url.pathname === "/api/admin/judge/curation",
+      (route) => {
+        const request = route.request();
+        const path = new URL(request.url()).pathname;
+        if (request.method() === "GET")
+          return route.fulfill({ json: curation });
+        sent.push({
+          method: request.method(),
+          path,
+          body: request.postData() ? request.postDataJSON() : undefined,
+        });
+        if (path.endsWith("/restore")) {
+          curation = { ...curation, takenDown: [] };
+          return route.fulfill({ json: { ok: true } });
+        }
+        return route.fulfill({ json: curation });
+      },
+    );
+    await page.route(`**/api/judges/${QUIZ}`, (route) =>
+      route.fulfill({
+        json: {
+          judge: {
+            id: QUIZ,
+            name: "每日一题",
+            description: "",
+            author: maker,
+            basedOn: null,
+            featured: false,
+            bySiteOwner: false,
+            network: false,
+            stats: { hongbao: 2, judged: 10, claimed: 4 },
+            own: false,
+            listed: true,
+            codePublic: "always",
+            version: null,
+            versions: [
+              { n: 2, deployedAt: new Date().toISOString(), opened: 1 },
+              { n: 1, deployedAt: new Date().toISOString(), opened: 1 },
+            ],
+          },
+        },
+      }),
+    );
+    await openApp(page, "/admin/judge");
+    const featured = page.getByRole("region", { name: "精选" });
+    await expect(featured).toContainText("发红包第 2 步显示前 6 个。");
+    await expect(featured).toContainText("猜数字 · @maker · 第 3 版");
+    await expect(featured).toContainText(
+      "答题 · @maker · 第 1 版 · 基于 @quizzer",
+    );
+    await expect(featured).toContainText("作者有第 4 版");
+    await featured.getByRole("button", { name: "换成第 4 版" }).click();
+    await expect.poll(() => sent.at(-1)?.body).toEqual({ n: 4 });
+    expect(sent.at(-1)?.path).toBe(`/api/admin/judge/features/${GUESS}`);
+    await featured.getByRole("button", { name: "下移" }).first().click();
+    await expect.poll(() => sent.at(-1)?.body).toEqual({ move: "down" });
+    await featured.getByRole("button", { name: "移出" }).last().click();
+    await expect.poll(() => sent.at(-1)?.method).toBe("DELETE");
+    await featured
+      .getByRole("textbox", { name: "判定器的编号或地址" })
+      .fill(`https://hb.lafi.sh/judges/${QUIZ}`);
+    await featured.getByRole("button", { name: "查找" }).click();
+    await expect(featured).toContainText("每日一题 · @maker");
+    await featured.getByRole("button", { name: "第 1 版" }).click();
+    await featured.getByRole("button", { name: "选入" }).click();
+    await expect.poll(() => sent.at(-1)?.body).toEqual({ judgeId: QUIZ, n: 1 });
+    await featured
+      .getByRole("textbox", { name: "判定器的编号或地址" })
+      .fill("不是地址");
+    await featured.getByRole("button", { name: "查找" }).click();
+    await expect(featured.getByRole("alert")).toHaveText("没有这个判定器");
+    const removed = page.getByRole("region", { name: "已撤下" });
+    await expect(removed).toContainText("抄来的 · @maker");
+    await expect(removed).toContainText("原因：抄袭别人的判定器");
+    await removed.getByRole("button", { name: "恢复" }).click();
+    const restore = page.getByRole("dialog", { name: "恢复到判定器广场？" });
+    await expect(restore).toContainText(
+      "新的红包又能选它，已经选进草稿的也能开放。",
+    );
+    await restore.getByRole("button", { name: "恢复" }).click();
+    await expect(restore).toBeHidden();
+    expect(sent.at(-1)?.path).toBe(`/api/admin/judges/${QUIZ}/restore`);
+    await expect(page.getByRole("region", { name: "已撤下" })).toHaveCount(0);
+  });
+
+  test("操作记录：判定器广场的撤下、恢复和精选写成一句话，不写第几版", async ({
+    page,
+  }) => {
+    const entry = (
+      id: string,
+      judge: NonNullable<AdminAuditEntry["judge"]>,
+    ): AdminAuditEntry => ({
+      id,
+      type: "judge_square",
+      actorUserId: admin.id,
+      actorDisplayName: admin.displayName,
+      actorAvatarUrl: null,
+      createdAt: Date.now() - hour,
+      previousVersion: 0,
+      nextVersion: 0,
+      before: {},
+      after: {},
+      judge,
+    });
+    const judge = { id: "j", name: "猜数字", reason: null, n: null };
+    await answer(page, "audit", () =>
+      list([
+        entry("a", { ...judge, action: "take_down", reason: "抄袭" }),
+        entry("b", { ...judge, action: "restore" }),
+        entry("c", { ...judge, action: "feature", n: 3 }),
+        entry("d", { ...judge, action: "unfeature" }),
+        entry("e", { ...judge, action: "move" }),
+        entry("f", { ...judge, action: "version", n: 4 }),
+      ]),
+    );
+    await openApp(page, "/admin/audit");
+    for (const line of [
+      "撤下判定器「猜数字」：抄袭",
+      "恢复判定器「猜数字」",
+      "选入精选：判定器「猜数字」第 3 版",
+      "移出精选：判定器「猜数字」",
+      "精选排序：判定器「猜数字」",
+      "精选换成第 4 版：判定器「猜数字」",
+    ])
+      await expect(page.getByText(line, { exact: true })).toBeVisible();
+    await expect(page.getByText("第 0 版 → 第 0 版")).toHaveCount(0);
   });
 });

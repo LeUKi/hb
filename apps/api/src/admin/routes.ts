@@ -1345,6 +1345,26 @@ async function audit(
         activity: { id: String(row.id), title: String(row.title) },
       }),
     },
+    // 判定器广场's 撤下, 恢复 and 精选 (judge-square §15.4).
+    {
+      type: "judge_square" as const,
+      columns: "c.judge_id, c.action, c.name, c.reason, c.n",
+      table: `(SELECT id, actor_user_id, created_at, 0 AS previous_version, 0 AS next_version,
+        judge_id, action, name, reason, n FROM judge_square_changes)`,
+      values: (row: Record<string, unknown>) => ({
+        before: {},
+        after: {},
+        judge: {
+          id: String(row.judge_id),
+          name: String(row.name),
+          action: String(row.action) as NonNullable<
+            AdminAuditEntry["judge"]
+          >["action"],
+          reason: row.reason == null ? null : String(row.reason),
+          n: row.n == null ? null : asInt(row.n),
+        },
+      }),
+    },
     // 停用附带网页 (docs/attached-page-design.md): kept on the 红包's row.
     {
       type: "page_stop" as const,

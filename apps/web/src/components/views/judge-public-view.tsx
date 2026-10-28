@@ -4,14 +4,16 @@ import type {
   JudgePageVersion,
 } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { Check, ChevronRight, Copy, Lock } from "lucide-react";
+import { AlertTriangle, Check, ChevronRight, Copy, Lock } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { paramLine } from "../../../../../kit/runtime/params.mjs";
 import { cn } from "../../lib/cn";
 import { haptic } from "../../lib/haptics";
 import { useJudgeActivities, useJudgePageCode } from "../../lib/judge";
 import { squareRecordOf } from "../../lib/records";
+import { useIdentity } from "../../lib/session";
 import { HongbaoCard } from "../hongbao/hongbao-card";
+import { RestoreDialog, TakeDownDialog } from "../judges/curation-dialogs";
 import {
   dayLabel,
   JudgeSource,
@@ -20,7 +22,7 @@ import {
 } from "../judges/judge-bits";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { LazyListEnd, useQueryLazyList } from "../page/lazy-list";
-import { Page, PageHeader, PageSection, Panel } from "../page/page";
+import { Callout, Page, PageHeader, PageSection, Panel } from "../page/page";
 import { Bone } from "../page/page-state";
 import { Button } from "../ui/button";
 import { ButtonLink } from "../ui/button-link";
@@ -245,6 +247,10 @@ export function PublicJudgePage({
 }) {
   const navigate = useNavigate();
   const { openAccount } = useOmniboxController();
+  const { user } = useIdentity();
+  // The 站长's hand (§15.4): 撤下 while it is in the 广场, 恢复 after.
+  const admin = user?.isAdmin === true;
+  const [asking, setAsking] = useState<"takeDown" | "restore" | null>(null);
   const codeTitle = useId();
   const version = judge.version;
   const params = version?.declarations?.params ?? [];
@@ -291,9 +297,24 @@ export function PublicJudgePage({
           </>
         }
         actions={
-          version && (
+          (version || admin) && (
             <>
-              {viewerId ? (
+              {admin && judge.listed && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-danger"
+                  onClick={() => setAsking("takeDown")}
+                >
+                  撤下
+                </Button>
+              )}
+              {admin && judge.takenDown && (
+                <Button size="sm" onClick={() => setAsking("restore")}>
+                  恢复
+                </Button>
+              )}
+              {version && viewerId ? (
                 <ButtonLink
                   variant="primary"
                   href={`/new?judge=${encodeURIComponent(judge.id)}`}
@@ -304,11 +325,13 @@ export function PublicJudgePage({
                   用它发红包
                 </ButtonLink>
               ) : (
-                <Button variant="primary" size="sm" onClick={openAccount}>
-                  用它发红包
-                </Button>
+                version && (
+                  <Button variant="primary" size="sm" onClick={openAccount}>
+                    用它发红包
+                  </Button>
+                )
               )}
-              {viewerId ? (
+              {version && viewerId ? (
                 <ButtonLink
                   href={`/judges/new?from=${encodeURIComponent(judge.id)}`}
                   onGo={() =>
@@ -321,14 +344,35 @@ export function PublicJudgePage({
                   复制一份来改
                 </ButtonLink>
               ) : (
-                <Button size="sm" onClick={openAccount}>
-                  复制一份来改
-                </Button>
+                version && (
+                  <Button size="sm" onClick={openAccount}>
+                    复制一份来改
+                  </Button>
+                )
               )}
             </>
           )
         }
       />
+      {judge.takenDown && (
+        <Callout tone="danger" icon={AlertTriangle} title="已被站长撤下">
+          原因：{judge.takenDown.reason}
+        </Callout>
+      )}
+      {admin && (
+        <>
+          <TakeDownDialog
+            judgeId={judge.id}
+            open={asking === "takeDown"}
+            onClose={() => setAsking(null)}
+          />
+          <RestoreDialog
+            judgeId={judge.id}
+            open={asking === "restore"}
+            onClose={() => setAsking(null)}
+          />
+        </>
+      )}
       {version && (
         <PageSection title="参数">
           <Panel className="grid px-4">

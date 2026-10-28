@@ -54,6 +54,7 @@ const kinds = {
   code_stop: "停用红包",
   page_stop: "停用附带网页",
   judge_settings: "判定器设置",
+  judge_square: "判定器广场",
 } as const;
 
 /** Only what changed, in words: "首页 8 秒 → 5 秒", "转入 关 → 开". */
@@ -62,6 +63,23 @@ function changesOf(entry: AdminAuditEntry) {
     return [`停用代码判定红包「${entry.activity?.title ?? ""}」`];
   if (entry.type === "page_stop")
     return [`停用红包「${entry.activity?.title ?? ""}」的附带网页`];
+  // 判定器广场 (judge-square §15.4): what the 站长 did, to which.
+  if (entry.type === "judge_square" && entry.judge) {
+    const { name, action, reason, n } = entry.judge;
+    return [
+      action === "take_down"
+        ? `撤下判定器「${name}」：${reason ?? ""}`
+        : action === "restore"
+          ? `恢复判定器「${name}」`
+          : action === "feature"
+            ? `选入精选：判定器「${name}」第 ${n ?? ""} 版`
+            : action === "unfeature"
+              ? `移出精选：判定器「${name}」`
+              : action === "move"
+                ? `精选排序：判定器「${name}」`
+                : `精选换成第 ${n ?? ""} 版：判定器「${name}」`,
+    ];
+  }
   const labels =
     entry.type === "balance_settings"
       ? balanceLabels
@@ -186,7 +204,8 @@ export function AdminAudit() {
                       </p>
                       {/* A 停用 changes a 红包, not a numbered setting. */}
                       {entry.type !== "code_stop" &&
-                        entry.type !== "page_stop" && (
+                        entry.type !== "page_stop" &&
+                        entry.type !== "judge_square" && (
                           <p className="text-xs text-ink-3">
                             第 {entry.previousVersion} 版 → 第{" "}
                             {entry.nextVersion} 版

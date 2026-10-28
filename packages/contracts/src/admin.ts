@@ -86,6 +86,8 @@ export const adminAuditTypeSchema = z.enum([
   "page_stop",
   /** 判定器设置 (redesign/07 §10). */
   "judge_settings",
+  /** 判定器广场's 精选 and 撤下 (docs/judge-square-design.md §15.4). */
+  "judge_square",
 ]);
 export type AdminAuditType = z.infer<typeof adminAuditTypeSchema>;
 
@@ -332,6 +334,20 @@ export type AdminAuditEntry = {
   after: Record<string, boolean | number>;
   /** code_stop, page_stop: the 红包 stopped. */
   activity?: { id: string; title: string };
+  /** judge_square: what was done to which 判定器 (its name then). */
+  judge?: {
+    id: string;
+    name: string;
+    action:
+      | "take_down"
+      | "restore"
+      | "feature"
+      | "unfeature"
+      | "move"
+      | "version";
+    reason: string | null;
+    n: number | null;
+  };
 };
 
 /** 判定器's 用量 (redesign/07 §10): what the 份 were used for. */
@@ -398,7 +414,7 @@ const adminAuditCursorValueSchema = z
   .string()
   .max(512)
   .regex(
-    /^(\d{1,16}):(attempt_rate_limits|balance_settings|code_stop|judge_settings|page_stop):([A-Za-z0-9_-][A-Za-z0-9_-]{0,100}|[a-f0-9-]{36})$/,
+    /^(\d{1,16}):(attempt_rate_limits|balance_settings|code_stop|judge_settings|judge_square|page_stop):([A-Za-z0-9_-][A-Za-z0-9_-]{0,100}|[a-f0-9-]{36})$/,
   )
   .refine((value) => Number.isSafeInteger(Number(value.split(":", 1)[0])));
 

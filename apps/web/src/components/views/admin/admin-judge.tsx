@@ -40,9 +40,12 @@ import { radius, Squircle, SquirclePlate } from "../../ui/squircle";
 import { type ChipTone, StatusChip } from "../../ui/status-chip";
 import { AdminFrame, DetailPart } from "./admin-frame";
 
+import { JudgeCuration } from "./admin-judge-curation";
+
 // 网站管理 · 判定器 (redesign/07 §10, docs/programmable-hongbao-design.md
 // §5, §7): what 代码判定红包's Dynamic Workers cost (用量), who and which
-// 红包 use them (谁在用), and its switch and limits (设置).
+// 红包 use them (谁在用), its switch and limits (设置), and the 判定器广场's
+// 精选 and 已撤下 (docs/judge-square-design.md §15.4).
 
 /** "10月25日", from a UTC day ("2026-10-25"). */
 function dayLabel(day: string) {
@@ -739,6 +742,7 @@ export function AdminJudge() {
             )}
           </DetailPart>
           <SettingsForm data={settings.data} />
+          <JudgeCuration />
         </AdminFrame>
       )}
     </PageLoad>

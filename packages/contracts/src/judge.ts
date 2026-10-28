@@ -641,3 +641,55 @@ export type JudgeSettingChange = {
   next: JudgeSettingsInput;
   createdAt: number;
 };
+
+/** 站长撤下 (§8, §15.4): a reason its author reads. */
+export const judgeTakeDownSchema = z.strictObject({
+  reason: z
+    .string()
+    .trim()
+    .refine((value) => value !== "", "请写原因")
+    .refine((value) => characters(value) <= 100, "原因最多 100 个字"),
+});
+export type JudgeTakeDownInput = z.infer<typeof judgeTakeDownSchema>;
+
+/** 选入精选 (§9): which version of which 判定器. */
+export const judgeFeatureSchema = z.strictObject({
+  judgeId: z.uuid(),
+  n: z.number().int().positive(),
+});
+export type JudgeFeatureInput = z.infer<typeof judgeFeatureSchema>;
+
+/** 上移, 下移 and 换成第 N 版 on a 精选 row. */
+export const judgeFeatureChangeSchema = z.union([
+  z.strictObject({ move: z.enum(["up", "down"]) }),
+  z.strictObject({ n: z.number().int().positive() }),
+]);
+export type JudgeFeatureChange = z.infer<typeof judgeFeatureChangeSchema>;
+
+/** One 精选 row in 网站管理 (§15.4). */
+export type AdminJudgeFeature = {
+  judgeId: string;
+  name: string;
+  author: JudgePerson;
+  bySiteOwner: boolean;
+  basedOn: string | null;
+  n: number;
+  /** A newer version others may use: 作者有第 N 版. */
+  newer: number | null;
+  /** Out of the 广场 (its author left it, or it was taken down): not shown. */
+  listed: boolean;
+};
+
+/** One taken down (已撤下, §15.4). */
+export type AdminTakenDownJudge = {
+  judgeId: string;
+  name: string;
+  author: JudgePerson;
+  reason: string;
+  at: string;
+};
+
+export type AdminJudgeCuration = {
+  features: AdminJudgeFeature[];
+  takenDown: AdminTakenDownJudge[];
+};

@@ -3,6 +3,7 @@ import type {
   AdminActivityListItem,
   AdminAuditEntry,
   AdminCursorList,
+  AdminJudgeCuration,
   AdminJudgeUsage,
   AdminOverview,
   AdminPaymentDetailResponse,
@@ -26,6 +27,7 @@ import { readResponse } from "./activities";
 import { adminIdentity } from "./admin-identity";
 import { useSession } from "./auth";
 import { haptic } from "./haptics";
+import { useIdentity } from "./session";
 
 // 网站管理 (/admin): production's read-only admin API, and the settings
 // an admin can change (尝试间隔, 判定器设置; 🐟额's are in admin-balance.ts).
@@ -335,4 +337,74 @@ export function useSaveJudgeSettings(csrfToken: string) {
       others();
     },
   };
+}
+
+/** 判定器广场's 精选 and 已撤下 (docs/judge-square-design.md §15.4). */
+export function useJudgeCuration() {
+  const identity = useAdminIdentity();
+  return useQuery({
+    queryKey: adminKey(identity, "judge", "curation"),
+    queryFn: ({ signal }) =>
+      readAdmin<AdminJudgeCuration>("judge/curation", {}, signal),
+    retry: false,
+  });
+}
+
+export type JudgeCurationAction =
+  | { kind: "feature"; judgeId: string; n: number }
+  | { kind: "move"; judgeId: string; move: "up" | "down" }
+  | { kind: "version"; judgeId: string; n: number }
+  | { kind: "unfeature"; judgeId: string }
+  | { kind: "takeDown"; judgeId: string; reason: string }
+  | { kind: "restore"; judgeId: string };
+
+/**
+ * 精选's changes, 撤下 and 恢复: the list read again (an answer carries it
+ * for 精选), 操作记录 and the 广场's own reads with it.
+ */
+export function useJudgeCurationWrites() {
+  const identity = useAdminIdentity();
+  const { csrfToken } = useIdentity();
+  const queryClient = useQueryClient();
+  const queryKey = adminKey(identity, "judge", "curation");
+  return useMutation({
+    mutationFn: async (action: JudgeCurationAction) => {
+      const id = encodeURIComponent(action.judgeId);
+      const [method, path, body] =
+        action.kind === "feature"
+          ? ["POST", "judge/features", { judgeId: action.judgeId, n: action.n }]
+          : action.kind === "move"
+            ? ["PUT", `judge/features/${id}`, { move: action.move }]
+            : action.kind === "version"
+              ? ["PUT", `judge/features/${id}`, { n: action.n }]
+              : action.kind === "unfeature"
+                ? ["DELETE", `judge/features/${id}`, undefined]
+                : action.kind === "takeDown"
+                  ? [
+                      "POST",
+                      `judges/${id}/take-down`,
+                      { reason: action.reason },
+                    ]
+                  : ["POST", `judges/${id}/restore`, undefined];
+      return readResponse<AdminJudgeCuration | { ok: true }>(
+        await fetch(`/api/admin/${path}`, {
+          method,
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-Token": csrfToken ?? "",
+          },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+          cache: "no-store",
+        }),
+      );
+    },
+    onSuccess: (answer) => {
+      if ("features" in answer) queryClient.setQueryData(queryKey, answer);
+      void queryClient.invalidateQueries({ queryKey });
+      void queryClient.invalidateQueries({
+        queryKey: adminKey(identity, "audit"),
+      });
+      void queryClient.invalidateQueries({ queryKey: ["judge-square"] });
+    },
+  });
 }
