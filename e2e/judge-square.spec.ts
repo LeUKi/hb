@@ -136,6 +136,7 @@ async function mockSquare(page: Page, user: MockUser | null) {
     lists: [] as string[],
     listings: [] as { listed: boolean; featurable: boolean }[],
     deploys: [] as Record<string, unknown>[],
+    saved: [] as { activity: { judge?: Record<string, unknown> } }[],
   };
   let mine = mineDetail();
   const state = {
@@ -172,6 +173,23 @@ async function mockSquare(page: Page, user: MockUser | null) {
     }
     if (rest === `/${GUESS}`)
       return route.fulfill({ json: { judge: guessPage } });
+    if (rest === `/${NETWORKED}`)
+      return route.fulfill({
+        json: {
+          judge: {
+            ...guessPage,
+            ...networked,
+            version: {
+              n: 1,
+              fingerprint: sha256("networked"),
+              deployedAt,
+              declarations: null,
+              network: ["https://api.example.com/hb/"],
+              code: "export const network = ['https://api.example.com/hb/'];",
+            },
+          } satisfies JudgePage,
+        },
+      });
     if (rest === `/${GUESS}/versions/2`)
       return route.fulfill({
         json: { code: guessCode, fingerprint: sha256(guessCode) },
@@ -214,6 +232,23 @@ async function mockSquare(page: Page, user: MockUser | null) {
         },
       });
     return route.fulfill({ status: 404, json: { error: {} } });
+  });
+  await page.route("**/api/me/merchants", (route) =>
+    route.fulfill({
+      json: {
+        items: [],
+        nextCursor: null,
+        currentMerchantId: null,
+        canCreate: true,
+        canSimulate: false,
+      },
+    }),
+  );
+  // A draft saved: what was sent is all a test looks at.
+  await page.route("**/api/activities", (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    asked.saved.push(route.request().postDataJSON());
+    return route.abort();
   });
   await page.route("**/api/judge/check", (route) => {
     const body = route.request().postDataJSON();
@@ -409,5 +444,116 @@ test.describe("判定器广场", () => {
     await expect(page).toHaveURL(/\/judges\/new$/);
     await expect(page.locator("#hb-judge-name")).toHaveValue("");
     await expect(page.getByText(/^基于 @/)).toHaveCount(0);
+  });
+
+  test("发红包第 2 步：挑站长精选里别人的判定器，收起的卡写站长精选，查看代码是只读弹窗；草稿存判定器和版本，不发测试", async ({
+    page,
+  }) => {
+    const { asked } = await mockSquare(page, member);
+    await openApp(page, "/new");
+    await page.getByRole("button", { name: /^代码判定/ }).click();
+    const featured = page.getByRole("group", { name: "站长精选" });
+    const card = featured.getByRole("button", { name: /猜数字/ });
+    await expect(card).toContainText("@maker");
+    await expect(
+      page.getByRole("button", { name: "去判定器广场挑一个" }),
+    ).toBeVisible();
+    await card.click();
+    await expect(page.getByText("站长精选 · 第 2 版")).toBeVisible();
+    await expect(page.locator("#hb-param-max")).toHaveValue("100");
+    await page.getByRole("button", { name: "查看代码" }).click();
+    const code = page.getByRole("dialog", { name: "代码" });
+    await expect(code).toContainText("判定器「猜数字」· @maker · 第 2 版");
+    await expect(code.getByRole("textbox")).toContainText(
+      "submission.params.answer",
+    );
+    await code.getByRole("button", { name: "关闭" }).click();
+    await expect(code).toBeHidden();
+    await page.locator("#hb-param-answer").fill("42");
+    await expect(page.locator("#hb-param-answer")).toHaveValue("42");
+    await page.getByRole("button", { name: "下一步" }).first().click();
+    // Its ranges and defaults for 发多少 (§4).
+    await expect(page.locator("#hb-code-count")).toHaveValue("5");
+    await expect(page.locator("#hb-code-total")).toHaveValue("5.00");
+    await page.getByRole("button", { name: "下一步" }).first().click();
+    await expect(
+      page.getByText("这个判定器要求每份至少 0.10 LDC", { exact: true }),
+    ).toBeVisible();
+    await page.locator("#hb-code-min").fill("0.10");
+    await page.getByRole("button", { name: "下一步" }).first().click();
+    await page.getByRole("button", { name: "存草稿" }).first().click();
+    await expect.poll(() => asked.saved.length).toBe(1);
+    expect(asked.saved[0]?.activity.judge).toMatchObject({
+      judgeId: GUESS,
+      version: 2,
+      code: guessCode,
+      tests: "",
+      params: { max: 100, answer: 42 },
+    });
+    expect(asked.saved[0]?.activity.judge).not.toHaveProperty("name");
+  });
+
+  test("去判定器广场挑一个：弹窗里挑联网的判定器先问这个判定器会联网，返回就不选；我知道，继续用以后草稿记住确认过的地址", async ({
+    page,
+  }) => {
+    const { asked } = await mockSquare(page, member);
+    await openApp(page, "/new");
+    await page.getByRole("button", { name: /^代码判定/ }).click();
+    await page.getByRole("button", { name: "去判定器广场挑一个" }).click();
+    const square = page.getByRole("dialog", { name: "判定器广场" });
+    await expect(
+      square.getByRole("link", { name: "在新页面看判定器广场 ↗" }),
+    ).toHaveAttribute("target", "_blank");
+    await square.getByRole("button", { name: "大家做的" }).click();
+    const online = square.getByRole("article").filter({ hasText: "联网问答" });
+    await expect(online.getByRole("link", { name: "查看 ↗" })).toBeVisible();
+    await online.getByRole("button", { name: "用这个" }).click();
+    const ask = page.getByRole("dialog", { name: "这个判定器会联网" });
+    await expect(ask).toContainText(
+      "它会把领的人提交的内容发到 https://api.example.com/hb/。那不是本站，也不是你的服务器。",
+    );
+    await expect(ask).toContainText(
+      "判定结果由对方的服务器决定，对方随时能改，可能让奖池被领走，或者谁都领不到。",
+    );
+    await expect(ask).toContainText("只在你信任 @maker 时使用。");
+    await ask.getByRole("button", { name: "返回" }).click();
+    await expect(page.getByText("@maker · 第 1 版")).toHaveCount(0);
+    await page.getByRole("button", { name: "去判定器广场挑一个" }).click();
+    await page
+      .getByRole("dialog", { name: "判定器广场" })
+      .getByRole("button", { name: "大家做的" })
+      .click();
+    await page
+      .getByRole("dialog", { name: "判定器广场" })
+      .getByRole("article")
+      .filter({ hasText: "联网问答" })
+      .getByRole("button", { name: "用这个" })
+      .click();
+    await page
+      .getByRole("dialog", { name: "这个判定器会联网" })
+      .getByRole("button", { name: "我知道，继续用" })
+      .click();
+    await expect(page.getByText("@maker · 第 1 版")).toBeVisible();
+    await page.locator("#hb-code-prompt").click();
+    await page.keyboard.press("Enter");
+    await page.locator("#hb-code-total").fill("1.00");
+    await page.locator("#hb-code-count").fill("5");
+    await page.keyboard.press("Enter");
+    await page.getByRole("button", { name: "存草稿" }).first().click();
+    await expect.poll(() => asked.saved.length).toBe(1);
+    expect(asked.saved[0]?.activity.judge).toMatchObject({
+      judgeId: NETWORKED,
+      version: 1,
+      networkAck: ["https://api.example.com/hb/"],
+    });
+  });
+
+  test("用它发红包（别人的）：/new?judge= 到第 2 步，挑好它，焦点在第一项参数", async ({
+    page,
+  }) => {
+    await mockSquare(page, member);
+    await openApp(page, `/new?judge=${GUESS}`);
+    await expect(page.getByText("站长精选 · 第 2 版")).toBeVisible();
+    await expect(page.locator("#hb-param-max")).toBeFocused();
   });
 });

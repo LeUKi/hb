@@ -18,6 +18,7 @@ import { decryptString, encryptString, sha256Hex } from "../security/crypto";
 import { draftVersionsOf, ownJudge, renameStatement } from "./judges";
 import { JUDGE_PROTOCOL } from "./sandbox";
 import type { FetchRecord } from "./session";
+import { borrowedVersion } from "./square";
 
 export type JudgeRow = typeof activityCode.$inferSelect;
 
@@ -83,10 +84,28 @@ export async function readJudgeInput(
     readParams(env, row),
     row.judgeId === null
       ? null
-      : env.DB.prepare("SELECT name, description FROM judges WHERE id = ?")
-          .bind(row.judgeId)
-          .first<{ name: string; description: string }>(),
+      : env.DB.prepare(
+          `SELECT j.name, j.description, j.author_id = a.author_id AS own
+            FROM judges j JOIN activities a ON a.id = ?2 WHERE j.id = ?1`,
+        )
+          .bind(row.judgeId, row.activityId)
+          .first<{ name: string; description: string; own: number }>(),
   ]);
+  // Another's (§15.3): its version, never its tests nor its other versions.
+  if (judge && judge.own !== 1 && row.judgeId !== null)
+    return {
+      prompt: row.prompt,
+      code,
+      tests: "",
+      judgeId: row.judgeId,
+      name: judge.name,
+      description: judge.description,
+      ...(row.judgeVersion !== null ? { version: row.judgeVersion } : {}),
+      ...(row.networkAck !== null
+        ? { networkAck: JSON.parse(row.networkAck) as string[] }
+        : {}),
+      ...(params === undefined ? {} : { params }),
+    };
   return {
     prompt: row.prompt,
     code,
@@ -146,7 +165,19 @@ export async function saveJudgeStatements(
   money: Extract<LdcMoney, { mode: "code" }>,
   now: number,
 ) {
-  if (judge.judgeId) await ownJudge(env, judge.judgeId, authorId);
+  // Another's (§15.3): its version's code and tests, whatever was sent.
+  const borrowed = judge.judgeId
+    ? await borrowedVersion(
+        env,
+        activityId,
+        authorId,
+        judge.judgeId,
+        judge.version,
+      )
+    : null;
+  if (judge.judgeId && !borrowed) await ownJudge(env, judge.judgeId, authorId);
+  const code = borrowed?.code ?? judge.code;
+  const tests = borrowed?.tests ?? judge.tests;
   const [
     fingerprint,
     testsDigest,
@@ -155,10 +186,10 @@ export async function saveJudgeStatements(
     versionsCiphertext,
     paramsCiphertext,
   ] = await Promise.all([
-    textDigest(judge.code),
-    textDigest(judge.tests),
-    encryptString(judge.code, env, judgeData(activityId, "code")),
-    encryptString(judge.tests, env, judgeData(activityId, "tests")),
+    textDigest(code),
+    textDigest(tests),
+    encryptString(code, env, judgeData(activityId, "code")),
+    encryptString(tests, env, judgeData(activityId, "tests")),
     judge.judgeId ? null : encryptVersions(env, activityId, judge.versions),
     judge.params === undefined
       ? null
@@ -169,7 +200,7 @@ export async function saveJudgeStatements(
         ),
   ]);
   return [
-    ...(judge.judgeId && judge.name !== undefined
+    ...(judge.judgeId && !borrowed && judge.name !== undefined
       ? [
           renameStatement(
             env,
@@ -182,15 +213,16 @@ export async function saveJudgeStatements(
       : []),
     env.DB.prepare(`INSERT INTO activity_code
     (activity_id, protocol, prompt, fingerprint, code_ciphertext, tests_ciphertext, tests_digest, min_each_minor,
-      versions_ciphertext, judge_id, judge_version, params_ciphertext, created_at, updated_at)
+      versions_ciphertext, judge_id, judge_version, params_ciphertext, network_ack, created_at, updated_at)
     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
-      (SELECT n FROM judge_versions WHERE judge_id = ?10 AND fingerprint = ?4), ?11, ?12, ?12)
+      (SELECT n FROM judge_versions WHERE judge_id = ?10 AND fingerprint = ?4), ?11, ?13, ?12, ?12)
     ON CONFLICT(activity_id) DO UPDATE SET protocol = excluded.protocol, prompt = excluded.prompt,
       fingerprint = excluded.fingerprint, code_ciphertext = excluded.code_ciphertext,
       tests_ciphertext = excluded.tests_ciphertext, tests_digest = excluded.tests_digest,
       min_each_minor = excluded.min_each_minor, versions_ciphertext = excluded.versions_ciphertext,
       judge_id = excluded.judge_id, judge_version = excluded.judge_version,
-      params_ciphertext = excluded.params_ciphertext, updated_at = excluded.updated_at`).bind(
+      params_ciphertext = excluded.params_ciphertext, network_ack = excluded.network_ack,
+      updated_at = excluded.updated_at`).bind(
       activityId,
       JUDGE_PROTOCOL,
       judge.prompt.trim(),
@@ -203,6 +235,7 @@ export async function saveJudgeStatements(
       judge.judgeId ?? null,
       paramsCiphertext,
       now,
+      borrowed && judge.networkAck ? JSON.stringify(judge.networkAck) : null,
     ),
   ];
 }
@@ -223,10 +256,15 @@ export async function sameJudge(
   row: JudgeRow,
   judge: JudgeInput,
 ) {
+  // Another's (§15.3) is held by its version: its tests are never sent.
+  const sameCode =
+    judge.version !== undefined
+      ? row.judgeId === judge.judgeId && row.judgeVersion === judge.version
+      : row.fingerprint === (await textDigest(judge.code)) &&
+        row.testsDigest === (await textDigest(judge.tests));
   return (
     row.prompt === judge.prompt.trim() &&
-    row.fingerprint === (await textDigest(judge.code)) &&
-    row.testsDigest === (await textDigest(judge.tests)) &&
+    sameCode &&
     sameJson((await readParams(env, row)) ?? null, judge.params ?? null)
   );
 }
@@ -265,7 +303,8 @@ function sameJson(left: unknown, right: unknown): boolean {
 /**
  * Opening: the secret seed, sealed; its 封存值 is public from now on. The
  * 红包 takes the current protocol, and the addresses its code exports as
- * the run of this code and these tests that passed found them (§9.2).
+ * the run of this code and these tests that passed found them (§9.2) —
+ * its 判定器 author's run, for another's (judge-square §15.3).
  */
 export async function sealSeedStatement(
   env: ApiBindings,
@@ -279,7 +318,8 @@ export async function sealSeedStatement(
   ).join("");
   return env.DB.prepare(`UPDATE activity_code SET seed_commitment = ?1, seed_ciphertext = ?2,
       protocol = ?4, network = (SELECT k.network FROM judge_checks k JOIN activities a ON a.id = activity_code.activity_id
-        WHERE k.user_id = a.author_id AND k.protocol = ?4 AND k.fingerprint = activity_code.fingerprint
+        WHERE k.user_id = COALESCE((SELECT author_id FROM judges WHERE id = activity_code.judge_id), a.author_id)
+          AND k.protocol = ?4 AND k.fingerprint = activity_code.fingerprint
           AND k.tests_digest = activity_code.tests_digest AND k.passed = 1
         ORDER BY k.created_at DESC LIMIT 1),
       updated_at = ${databaseNow}

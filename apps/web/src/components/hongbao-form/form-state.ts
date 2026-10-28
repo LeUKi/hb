@@ -8,7 +8,9 @@ import {
   DEFAULT_DRAW_COUNTDOWN_SECONDS,
   JUDGE_LIMITS,
   JUDGE_NAME_LIMITS,
+  type JudgeDeclarations,
   type JudgeHongbaoRules,
+  type JudgeSource,
   type JudgeVersions,
   type LdcMoney,
   type ManagedActivity,
@@ -80,6 +82,8 @@ export type FormState = {
     name: string;
     description: string;
     params: Record<string, unknown>;
+    /** Another's 判定器 picked from the 广场 (§15.3); null for one's own. */
+    borrowed: BorrowedJudge | null;
   };
   /** Not asked for 代码判定, which its code judges. */
   participation: "password" | "direct";
@@ -112,6 +116,20 @@ export type FormState = {
 };
 
 /** Someone added to 指定的人: their face once found (the server notes their ID). */
+/**
+ * Another's 判定器 in a draft (docs/judge-square-design.md §15.3, §15.4):
+ * its version, whose it is and how it stands, what that version declares,
+ * and the 联网 addresses its sender confirmed. Its code is public; its
+ * tests are never here.
+ */
+export type BorrowedJudge = {
+  n: number;
+  source: Omit<JudgeSource, "declarations" | "network">;
+  declarations: JudgeDeclarations | null;
+  network: string[] | null;
+  networkAck: string[] | null;
+};
+
 export type ScopePerson = {
   username: string;
   displayName?: string;
@@ -182,6 +200,7 @@ export function emptyForm(now = Date.now()): FormState {
       name: "",
       description: "",
       params: {},
+      borrowed: null,
     },
     participation: "password",
     passwords: [""],
@@ -629,6 +648,21 @@ const participationOf = (
 ): FormState["participation"] => (mode === "direct" ? "direct" : "password");
 
 /** A saved 红包 back into the form (📝 编辑). */
+/** Another's 判定器 as a saved draft has it (§15.4), else null. */
+function borrowedOf(activity: ManagedActivity): BorrowedJudge | null {
+  const version = activity.config.judge?.version;
+  const source = activity.judgeSource;
+  if (version === undefined || !source) return null;
+  const { declarations, network, ...rest } = source;
+  return {
+    n: version,
+    source: rest,
+    declarations,
+    network,
+    networkAck: activity.config.judge?.networkAck ?? null,
+  };
+}
+
 export function formOf(activity: ManagedActivity, now = Date.now()): FormState {
   const base = emptyForm(now);
   const config = activity.config;
@@ -701,6 +735,7 @@ export function formOf(activity: ManagedActivity, now = Date.now()): FormState {
             name: config.judge?.name ?? "",
             description: config.judge?.description ?? "",
             params: config.judge?.params ?? {},
+            borrowed: borrowedOf(activity),
           }
         : base.judge,
     participation: participationOf(
@@ -834,18 +869,27 @@ export function inputOf(form: FormState, merchantId: string): ActivityInput {
     money,
     ...(coded
       ? {
-          // Its versions are its 判定器's: never sent.
+          // Its versions are its 判定器's: never sent. Another's is its
+          // version: its code and tests are the server's to put in.
           judge: {
             prompt: form.judge.prompt.trim(),
             code: form.judge.code,
-            tests: form.judge.tests,
-            ...(form.judge.judgeId
+            tests: form.judge.borrowed ? "" : form.judge.tests,
+            ...(form.judge.judgeId && form.judge.borrowed
               ? {
                   judgeId: form.judge.judgeId,
-                  name: form.judge.name.trim(),
-                  description: form.judge.description.trim(),
+                  version: form.judge.borrowed.n,
+                  ...(form.judge.borrowed.networkAck
+                    ? { networkAck: form.judge.borrowed.networkAck }
+                    : {}),
                 }
-              : {}),
+              : form.judge.judgeId
+                ? {
+                    judgeId: form.judge.judgeId,
+                    name: form.judge.name.trim(),
+                    description: form.judge.description.trim(),
+                  }
+                : {}),
             ...(Object.keys(form.judge.params).length > 0
               ? { params: form.judge.params }
               : {}),
@@ -906,6 +950,8 @@ export function sameInput(saved: ActivityInput, sent: ActivityInput) {
             code: input.judge.code,
             tests: input.judge.tests,
             judgeId: input.judge.judgeId ?? null,
+            version: input.judge.version ?? null,
+            networkAck: input.judge.networkAck ?? null,
             params: input.judge.params ?? null,
           }
         : null,

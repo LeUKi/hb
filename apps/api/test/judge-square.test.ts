@@ -7,9 +7,15 @@ import type {
 } from "@hb/contracts";
 import { beforeEach, describe, expect, it } from "vitest";
 import { claimActivity } from "../src/activities/claim-service";
-import { createActivity, openActivity } from "../src/activities/service";
+import {
+  createActivity,
+  getManagedActivity,
+  getPublicActivity,
+  openActivity,
+  updateActivity,
+} from "../src/activities/service";
 import { app } from "../src/app";
-import { getMyJudge } from "../src/judge/judges";
+import { getMyJudge, tryMyJudge } from "../src/judge/judges";
 import {
   judgePage,
   refreshJudgeStats,
@@ -293,5 +299,116 @@ describe("判定器广场", () => {
     expect(
       (await get<{ judge: JudgePage }>(`/judges/${id}`)).body.judge.basedOn,
     ).toMatchObject({ id: source.id, listed: true });
+  });
+});
+
+describe("another's 判定器 (§15.3)", () => {
+  /** The author's 判定器 in the 广场, its 第 1 版 opened once by them. */
+  async function shared() {
+    const judge = await made();
+    await listed(judge.id);
+    await opened(judge);
+    return judge;
+  }
+
+  /** A sender with 🐟额 and a draft of it: no code of theirs, no tests. */
+  async function borrow(judgeId: string, sender: Actor, version = 1) {
+    return createActivity(bindings, sender.id, {
+      requestId: crypto.randomUUID(),
+      activity: coded({}, { judgeId, version, code: "// 不用这份", tests: "" }),
+    });
+  }
+
+  async function sender() {
+    const person = await actor();
+    await give(admin, person, "5.00");
+    return person;
+  }
+
+  it("keeps the version's code and tests with the draft, reads its tests back to nobody, and opens with its author's run", async () => {
+    const judge = await shared();
+    const someone = await sender();
+    const draft = await borrow(judge.id, someone);
+    expect(draft.config.judge).toMatchObject({
+      judgeId: judge.id,
+      version: 1,
+      code: judge.code,
+      tests: "",
+    });
+    expect(draft.config.judge?.versions).toBeUndefined();
+    expect(draft.judgePassed).toBe(true);
+    expect(draft.judgeSource).toMatchObject({
+      author: { username: expect.stringMatching(/^code_/) },
+      listed: true,
+      takenDown: false,
+      newer: null,
+    });
+    const hongbao = await openActivity(
+      bindings,
+      draft.id,
+      someone.id,
+      draft.version,
+    );
+    expect(
+      (await getPublicActivity(bindings, hongbao.id)).judge?.judge,
+    ).toMatchObject({
+      id: judge.id,
+      version: 1,
+      listed: true,
+      featured: false,
+    });
+    // Its title still changes once open; its 判定器 does not.
+    const managed = await getManagedActivity(bindings, hongbao.id, someone.id);
+    const renamed = await updateActivity(bindings, hongbao.id, someone.id, {
+      version: managed.version,
+      activity: { ...managed.config, title: "借来的判定器" },
+    });
+    expect(renamed.title).toBe("借来的判定器");
+    // 试一试 on it is theirs to run too.
+    const tried = await tryMyJudge(bindings, someone.id, judge.id, 1, {
+      params: {},
+      hongbao: { title: "试", total: 100, count: 1, minEach: 1 },
+      input: "flag{ok}",
+    });
+    expect(tried).toMatchObject({ ok: true });
+  });
+
+  it("is not found out of the 广场 or for a version others may not use; a draft that has it keeps it, and none opens once it is taken down", async () => {
+    const judge = await made();
+    await opened(judge);
+    const someone = await sender();
+    await expect(borrow(judge.id, someone)).rejects.toMatchObject({
+      code: "JUDGE_NOT_FOUND",
+    });
+    await listed(judge.id);
+    // 第 2 版 never opened a 红包: not others' to use.
+    await check(author, unique(), TESTS, { id: judge.id });
+    await expect(borrow(judge.id, someone, 2)).rejects.toMatchObject({
+      code: "JUDGE_NOT_FOUND",
+    });
+    const draft = await borrow(judge.id, someone);
+    await setMyJudgeListing(bindings, author.id, judge.id, {
+      listed: false,
+      featurable: true,
+    });
+    // Kept: saved again, and its sender still sees why it stands.
+    const saved = await updateActivity(bindings, draft.id, someone.id, {
+      version: draft.version,
+      activity: { ...draft.config, title: "还在用" },
+    });
+    expect(saved.judgeSource?.listed).toBe(false);
+    await env.DB.prepare(
+      "UPDATE judges SET taken_down_at = ?, taken_down_reason = '违规', taken_down_by = ? WHERE id = ?",
+    )
+      .bind(Date.now(), admin.id, judge.id)
+      .run();
+    const blocked = await getManagedActivity(bindings, draft.id, someone.id);
+    expect(blocked.openingBlockedReason).toBe("JUDGE_TAKEN_DOWN");
+    expect(blocked.judgeSource?.takenDown).toBe(true);
+    await expect(
+      openActivity(bindings, draft.id, someone.id, blocked.version),
+    ).rejects.toMatchObject({
+      message: "这个判定器已被站长撤下，换一个判定器才能开放，草稿已保存。",
+    });
   });
 });

@@ -2025,6 +2025,11 @@ export const activityCode = sqliteTable(
     paramsSalt: text("params_salt"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
+    /**
+     * 联网 (judge-square §7): the addresses of another's 判定器 its sender
+     * confirmed, as JSON; asked again once they change.
+     */
+    networkAck: text("network_ack"),
   },
   (table) => [
     // 判定器广场 (judge-square §8): the 红包 each 判定器 and version opened.

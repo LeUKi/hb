@@ -7,6 +7,7 @@ import { seedCommitment } from "../../../../kit/runtime/index.mjs";
 import { databaseNow } from "../activities/lifecycle";
 import { activityStatus } from "../activities/service";
 import type { ActivityRow } from "../activities/storage";
+import { isAdministrator } from "../admin/authorization";
 import type { ApiBindings } from "../env";
 import { decryptString } from "../security/crypto";
 import { declarationsFor, revealedParams } from "./params";
@@ -83,14 +84,20 @@ async function revealed(
 }
 
 /**
- * Its 判定器 (judge-square §10): name, version and whose — and whether its
- * author made its code public all along (§2 代码公开).
+ * Its 判定器 (judge-square §10, §15.4): name, version and whose; whether
+ * it is in the 广场 (its page open to anyone) and 站长精选 — and whether
+ * its author made its code public all along (§2 代码公开).
  */
 async function judgeOf(env: ApiBindings, judge: JudgeRow) {
   if (!judge.judgeId) return undefined;
   const row = await env.DB.prepare(
-    `SELECT j.name, j.code_public AS codePublic, u.username, u.display_name AS displayName
-      FROM judges j JOIN users u ON u.id = j.author_id WHERE j.id = ?`,
+    `SELECT j.name, j.code_public AS codePublic, u.username, u.display_name AS displayName,
+        u.provider, u.external_id AS externalId, bu.username AS basedOn,
+        (j.listed_at IS NOT NULL AND j.taken_down_at IS NULL) AS listed,
+        EXISTS(SELECT 1 FROM judge_features f WHERE f.judge_id = j.id) AS featured
+      FROM judges j JOIN users u ON u.id = j.author_id
+        LEFT JOIN judges b ON b.id = j.based_on_judge_id LEFT JOIN users bu ON bu.id = b.author_id
+      WHERE j.id = ?`,
   )
     .bind(judge.judgeId)
     .first<{
@@ -98,13 +105,23 @@ async function judgeOf(env: ApiBindings, judge: JudgeRow) {
       codePublic: "ended" | "always";
       username: string;
       displayName: string;
+      provider: string;
+      externalId: string;
+      basedOn: string | null;
+      listed: number;
+      featured: number;
     }>();
   return row
     ? {
         shown: {
+          id: judge.judgeId,
           name: row.name,
           version: judge.judgeVersion,
           author: { username: row.username, displayName: row.displayName },
+          listed: row.listed === 1,
+          featured: row.featured === 1,
+          bySiteOwner: isAdministrator(env, row.provider, row.externalId),
+          basedOn: row.basedOn,
         },
         always: row.codePublic === "always",
       }

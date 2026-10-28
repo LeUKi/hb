@@ -65,4 +65,6 @@ export const publicationMessages = {
   CODE_HONGBAO_DAILY_LIMIT: "今天开放代码判定红包的次数用完了，草稿已保存。",
   CODE_NETWORK_PAUSED: "代码判定暂时不能联网，草稿已保存。",
   JUDGE_PARAMS_INVALID: "判定器的参数还没填好，草稿已保存。",
+  JUDGE_TAKEN_DOWN:
+    "这个判定器已被站长撤下，换一个判定器才能开放，草稿已保存。",
 } as const;

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "219d2e00-a332-4063-97a0-7c5e47ecf00f",
+  "id": "41e3d098-2c4b-406d-b9d9-6023a996d982",
   "prevId": "aadfdd4d-7c1a-4cba-ae5a-a33bd41d7b4a",
   "tables": {
     "account_attempt_cooldowns": {
@@ -663,6 +663,13 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
+          "autoincrement": false
+        },
+        "network_ack": {
+          "name": "network_ack",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         }
       },

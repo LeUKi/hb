@@ -1066,9 +1066,14 @@ test.describe("代码判定红包", () => {
     const commitment = sha256(`{"answer":"flag{ok}"}\n${salt}`);
     const open: Partial<PublicJudge> = {
       judge: {
+        id: "77777777-8888-4999-8aaa-bbbbbbbbbbbb",
         name: "猜数字",
         version: 3,
         author: { username: "author", displayName: "小满" },
+        listed: false,
+        featured: false,
+        bySiteOwner: false,
+        basedOn: null,
       },
       params: [
         {

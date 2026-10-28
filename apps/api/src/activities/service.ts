@@ -58,6 +58,7 @@ import {
   sealParamsStatement,
 } from "../judge/params";
 import { publicJudge } from "../judge/public";
+import { judgeAuthorOf, judgeSourceOf } from "../judge/square";
 import {
   dropJudgeStatement,
   findJudgeRow,
@@ -438,12 +439,19 @@ async function managed(
       : {}),
     ...(judgeRow
       ? {
+          // Another's 判定器 passed its author's run (judge-square §15.3).
           judgePassed: await passedCheck(
             env,
-            row.authorId,
+            (await judgeAuthorOf(env, judgeRow.judgeId)) ?? row.authorId,
             judgeRow.fingerprint,
             judgeRow.testsDigest,
           ),
+          ...(await judgeSourceOf(
+            env,
+            row.authorId,
+            judgeRow.judgeId,
+            judgeRow.judgeVersion,
+          ).then((judgeSource) => (judgeSource ? { judgeSource } : {}))),
           ...(judgeRow.pausedAt !== null ? { judgePaused: true as const } : {}),
         }
       : {}),

@@ -159,6 +159,8 @@ export type LdcOpeningBlockedReason =
   | "CODE_NETWORK_PAUSED"
   /** 判定器's params (docs/judge-square-design.md §3) not as declared. */
   | "JUDGE_PARAMS_INVALID"
+  /** Another's 判定器, taken down by the 站长 (judge-square §15.3). */
+  | "JUDGE_TAKEN_DOWN"
   | "TIMED_DRAW_NOT_ENABLED"
   | "MERCHANT_LEGACY"
   | "MERCHANT_CREDENTIALS_UNVERIFIED"

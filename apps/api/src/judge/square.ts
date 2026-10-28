@@ -9,6 +9,7 @@ import {
   type JudgeListingInput,
   type JudgePage,
   type JudgePageVersion,
+  type JudgeSource,
   type JudgeStats,
   type SquareJudge,
   type SquareJudgeList,
@@ -350,8 +351,9 @@ export async function judgePage(
 }
 
 /**
- * One version's code on 判定器页 (§8 版本): one that opened a 红包, of a
- * 判定器 whose code is public; any of one's own.
+ * One version's code on 判定器页 (§8 版本), and what it declares: one that
+ * opened a 红包 or the 精选 one, of a 判定器 whose code is public; any of
+ * one's own.
  */
 export async function judgePageCode(
   env: ApiBindings,
@@ -362,12 +364,18 @@ export async function judgePageCode(
   const { row, own } = await visibleJudge(env, judgeId, viewer);
   const opened =
     own ||
-    (await openedVersions(env, judgeId)).some((version) => version.n === n);
+    (await openedVersions(env, judgeId)).some((version) => version.n === n) ||
+    (await publicVersionOf(env, judgeId)) === n;
   const version = await env.DB.prepare(
-    "SELECT fingerprint, code_ciphertext FROM judge_versions WHERE judge_id = ? AND n = ?",
+    "SELECT fingerprint, code_ciphertext, declarations, network FROM judge_versions WHERE judge_id = ? AND n = ?",
   )
     .bind(judgeId, n)
-    .first<{ fingerprint: string; code_ciphertext: string }>();
+    .first<{
+      fingerprint: string;
+      code_ciphertext: string;
+      declarations: string | null;
+      network: string | null;
+    }>();
   if (!version || !opened || !(own || row.codePublic === "always"))
     throw new ActivityError(404, "JUDGE_NOT_FOUND", "未找到判定器");
   return {
@@ -377,6 +385,14 @@ export async function judgePageCode(
       env,
       versionData(judgeId, n, "code"),
     ),
+    declarations:
+      version.declarations === null
+        ? null
+        : (JSON.parse(version.declarations) as JudgeDeclarations),
+    network:
+      version.network === null
+        ? null
+        : (JSON.parse(version.network) as string[]),
   };
 }
 
@@ -419,4 +435,153 @@ export async function setMyJudgeListing(
   )
     .bind(Number(input.featurable), Number(input.listed), now, judge.id)
     .run();
+}
+
+/**
+ * Whether others may use this version (§15.3): one that passed on the
+ * current protocol, and is the 精选 one or opened a 红包 that counts.
+ */
+export async function usableByOthers(
+  env: ApiBindings,
+  judgeId: string,
+  n: number,
+) {
+  return Boolean(
+    await env.DB.prepare(
+      `SELECT 1 FROM judge_versions v WHERE v.judge_id = ?1 AND v.n = ?2 AND v.passed = 1
+        AND v.protocol = ${JUDGE_PROTOCOL}
+        AND (EXISTS(SELECT 1 FROM judge_features f WHERE f.judge_id = v.judge_id AND f.n = v.n)
+          OR EXISTS(SELECT 1 FROM activity_code c JOIN activities a ON a.id = c.activity_id
+            WHERE c.judge_id = v.judge_id AND c.judge_version = v.n AND ${COUNTED}))`,
+    )
+      .bind(judgeId, n)
+      .first(),
+  );
+}
+
+/** Who wrote a 红包's 判定器, whose passing run it opens with; null before 判定器. */
+export async function judgeAuthorOf(env: ApiBindings, judgeId: string | null) {
+  if (!judgeId) return null;
+  return env.DB.prepare("SELECT author_id FROM judges WHERE id = ?")
+    .bind(judgeId)
+    .first<string>("author_id");
+}
+
+/**
+ * Another's 判定器 for a draft (§15.3): the version's code and tests, to
+ * be kept with it — in the 广场 and a version others may use, or the one
+ * this draft has already (its author since left the 广场, or the 站长
+ * took it down: kept, though it will not open). Null for one's own.
+ */
+export async function borrowedVersion(
+  env: ApiBindings,
+  activityId: string,
+  authorId: string,
+  judgeId: string,
+  n: number | undefined,
+) {
+  const judge = await env.DB.prepare(
+    "SELECT author_id, listed_at, taken_down_at FROM judges WHERE id = ?",
+  )
+    .bind(judgeId)
+    .first<{
+      author_id: string;
+      listed_at: number | null;
+      taken_down_at: number | null;
+    }>();
+  if (judge?.author_id === authorId) return null;
+  const kept =
+    n !== undefined &&
+    (await env.DB.prepare(
+      "SELECT 1 FROM activity_code WHERE activity_id = ? AND judge_id = ? AND judge_version = ?",
+    )
+      .bind(activityId, judgeId, n)
+      .first());
+  const usable =
+    judge &&
+    n !== undefined &&
+    judge.listed_at !== null &&
+    judge.taken_down_at === null &&
+    (await usableByOthers(env, judgeId, n));
+  if (!judge || n === undefined || !(kept || usable))
+    throw new ActivityError(404, "JUDGE_NOT_FOUND", "未找到判定器");
+  const version = await env.DB.prepare(
+    "SELECT code_ciphertext, tests_ciphertext FROM judge_versions WHERE judge_id = ? AND n = ?",
+  )
+    .bind(judgeId, n)
+    .first<{ code_ciphertext: string; tests_ciphertext: string }>();
+  if (!version) throw new ActivityError(404, "JUDGE_NOT_FOUND", "未找到判定器");
+  const [code, tests] = await Promise.all([
+    decryptString(
+      version.code_ciphertext,
+      env,
+      versionData(judgeId, n, "code"),
+    ),
+    decryptString(
+      version.tests_ciphertext,
+      env,
+      versionData(judgeId, n, "tests"),
+    ),
+  ]);
+  return { n, code, tests };
+}
+
+/**
+ * Another's 判定器 as its sender's form shows it (§15.4): whose, whether
+ * it is still in the 广场 or taken down, a newer version others use, and
+ * what this draft's version declares. Undefined for one's own.
+ */
+export async function judgeSourceOf(
+  env: ApiBindings,
+  authorId: string,
+  judgeId: string | null,
+  n: number | null,
+): Promise<JudgeSource | undefined> {
+  if (!judgeId || n === null) return undefined;
+  const row =
+    await env.DB.prepare(`SELECT j.author_id AS authorId, j.listed_at AS listedAt,
+      j.taken_down_at AS takenDownAt, u.username, u.display_name AS displayName,
+      u.avatar_url AS avatarUrl, u.provider, u.external_id AS externalId, bu.username AS basedOn,
+      EXISTS(SELECT 1 FROM judge_features f WHERE f.judge_id = j.id) AS featured,
+      v.declarations, v.network
+    FROM judges j JOIN users u ON u.id = j.author_id
+      LEFT JOIN judges b ON b.id = j.based_on_judge_id LEFT JOIN users bu ON bu.id = b.author_id
+      LEFT JOIN judge_versions v ON v.judge_id = j.id AND v.n = ?2
+    WHERE j.id = ?1`)
+      .bind(judgeId, n)
+      .first<{
+        authorId: string;
+        listedAt: number | null;
+        takenDownAt: number | null;
+        username: string;
+        displayName: string;
+        avatarUrl: string | null;
+        provider: string;
+        externalId: string;
+        basedOn: string | null;
+        featured: number;
+        declarations: string | null;
+        network: string | null;
+      }>();
+  if (!row || row.authorId === authorId) return undefined;
+  const current = await publicVersionOf(env, judgeId);
+  return {
+    author: {
+      username: row.username,
+      displayName: row.displayName,
+      avatarUrl: row.avatarUrl,
+    },
+    featured: row.featured === 1,
+    bySiteOwner: isAdministrator(env, row.provider, row.externalId),
+    basedOn: row.basedOn,
+    listed: row.listedAt !== null && row.takenDownAt === null,
+    takenDown: row.takenDownAt !== null,
+    newer: current !== null && current > n ? current : null,
+    declarations:
+      row.declarations === null
+        ? null
+        : (JSON.parse(row.declarations) as JudgeDeclarations),
+    network:
+      row.network === null ? null : (JSON.parse(row.network) as string[]),
+  };
 }

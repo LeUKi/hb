@@ -236,6 +236,17 @@ export function useJudgePage(
   });
 }
 
+/** 判定器页 read once (picking another's 判定器 for a draft, §15.4). */
+export async function fetchJudgePage(judgeId: string) {
+  return (
+    await readResponse<{ judge: JudgePage }>(
+      await fetch(`/api/judges/${encodeURIComponent(judgeId)}`, {
+        cache: "no-store",
+      }),
+    )
+  ).judge;
+}
+
 /** A version's code on another's 判定器页 (版本, opened). It never changes. */
 export function useJudgePageCode(judgeId: string, n: number | null) {
   return useQuery({
@@ -244,7 +255,12 @@ export function useJudgePageCode(judgeId: string, n: number | null) {
     staleTime: Number.POSITIVE_INFINITY,
     retry: false,
     queryFn: async ({ signal }) =>
-      readResponse<{ code: string; fingerprint: string }>(
+      readResponse<{
+        code: string;
+        fingerprint: string;
+        declarations: JudgeDeclarations | null;
+        network: string[] | null;
+      }>(
         await fetch(
           `/api/judges/${encodeURIComponent(judgeId)}/versions/${n ?? 0}`,
           { signal, cache: "no-store" },

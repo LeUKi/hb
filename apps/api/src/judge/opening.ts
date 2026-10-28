@@ -8,6 +8,7 @@ import { startOfBeijingDay } from "../balance/day";
 import type { ApiBindings } from "../env";
 import { codeHongbaoAccess, passedCheck, testsChanged } from "./check";
 import { openingParams } from "./params";
+import { judgeAuthorOf } from "./square";
 import { findJudgeRow } from "./storage";
 
 async function openedToday(env: ApiBindings, authorId: string) {
@@ -27,9 +28,21 @@ export async function codeOpeningBlocked(
   if (!access.enabled) return "CODE_HONGBAO_PAUSED";
   const judge = await findJudgeRow(env, row.id);
   if (!judge) return "JUDGE_CHECK_REQUIRED";
+  // Another's 判定器 (judge-square §15.3): not once the 站长 took it
+  // down; it opens with its author's run.
+  if (
+    judge.judgeId &&
+    (await env.DB.prepare(
+      "SELECT 1 FROM judges WHERE id = ? AND taken_down_at IS NOT NULL",
+    )
+      .bind(judge.judgeId)
+      .first())
+  )
+    return "JUDGE_TAKEN_DOWN";
+  const runBy = (await judgeAuthorOf(env, judge.judgeId)) ?? row.authorId;
   const { fingerprint, testsDigest } = judge;
-  if (!(await passedCheck(env, row.authorId, fingerprint, testsDigest)))
-    return (await testsChanged(env, row.authorId, fingerprint, testsDigest))
+  if (!(await passedCheck(env, runBy, fingerprint, testsDigest)))
+    return (await testsChanged(env, runBy, fingerprint, testsDigest))
       ? "JUDGE_RERUN_REQUIRED"
       : "JUDGE_CHECK_REQUIRED";
   // 联网 (§9.7): code that goes online opens only while it is on.
@@ -39,7 +52,7 @@ export async function codeOpeningBlocked(
       `SELECT 1 FROM judge_checks WHERE user_id = ? AND protocol = ? AND fingerprint = ? AND tests_digest = ?
         AND passed = 1 AND network IS NOT NULL LIMIT 1`,
     )
-      .bind(row.authorId, JUDGE_PROTOCOL, fingerprint, testsDigest)
+      .bind(runBy, JUDGE_PROTOCOL, fingerprint, testsDigest)
       .first())
   )
     return "CODE_NETWORK_PAUSED";

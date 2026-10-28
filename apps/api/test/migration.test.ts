@@ -1460,6 +1460,8 @@ it("0049 keeps a 代码判定红包's code and its 用量 as they were, with no 
     params_salt_ciphertext: null,
     params_secret: null,
     params_salt: null,
+    // 0050: 联网 confirmed for another's 判定器.
+    network_ack: null,
   });
   expect(await db.prepare("SELECT * FROM judge_usage").first()).toEqual({
     ...usage,

@@ -1,15 +1,10 @@
-import type { MyJudge, SquareJudge } from "@hb/contracts";
+import type { MyJudge } from "@hb/contracts";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
 import { useMyJudges, useSquareJudges } from "../../lib/judge";
 import { useIdentity } from "../../lib/session";
-import {
-  dayLabel,
-  JudgeMark,
-  JudgeSource,
-  JudgeTags,
-  statsLine,
-} from "../judges/judge-bits";
+import { dayLabel, JudgeMark } from "../judges/judge-bits";
+import { SquareJudgeCard } from "../judges/square-card";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { LazyListEnd, useQueryLazyList } from "../page/lazy-list";
 import { EmptyNote, Page, PageHeader, Panel } from "../page/page";
@@ -74,71 +69,6 @@ function MyJudgeRow({ judge }: { judge: MyJudge }) {
         </Link>
       </Squircle>
     </li>
-  );
-}
-
-/**
- * A 判定器 in the 广场 (§8 卡片): what it is, whose, its numbers and tags;
- * 用它发红包 and 查看.
- */
-export function SquareJudgeCard({
-  judge,
-  signedIn,
-}: {
-  judge: SquareJudge;
-  signedIn: boolean;
-}) {
-  const navigate = useNavigate();
-  const { openAccount } = useOmniboxController();
-  return (
-    <Squircle radius={radius.card}>
-      <article className="panel grid h-full content-start gap-2.5 p-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <JudgeMark />
-          <div className="grid min-w-0 flex-1 gap-0.5">
-            <h3 className="truncate text-base font-semibold text-ink">
-              {judge.name}
-            </h3>
-            <span className="text-xs text-ink-3">
-              <JudgeSource judge={judge} />
-            </span>
-          </div>
-        </div>
-        {judge.description && (
-          <p className="line-clamp-2 text-sm text-ink-2">{judge.description}</p>
-        )}
-        <p className="text-xs text-ink-3">{statsLine(judge.stats)}</p>
-        <JudgeTags judge={judge} />
-        <div className="mt-1 flex flex-wrap gap-2 self-end">
-          {signedIn ? (
-            <ButtonLink
-              variant="primary"
-              href={`/new?judge=${encodeURIComponent(judge.id)}`}
-              onGo={() =>
-                void navigate({ to: "/new", search: { judge: judge.id } })
-              }
-            >
-              用它发红包
-            </ButtonLink>
-          ) : (
-            <Button variant="primary" size="sm" onClick={openAccount}>
-              用它发红包
-            </Button>
-          )}
-          <ButtonLink
-            href={`/judges/${encodeURIComponent(judge.id)}`}
-            onGo={() =>
-              void navigate({
-                to: "/judges/$judgeId",
-                params: { judgeId: judge.id },
-              })
-            }
-          >
-            查看
-          </ButtonLink>
-        </div>
-      </article>
-    </Squircle>
   );
 }
 

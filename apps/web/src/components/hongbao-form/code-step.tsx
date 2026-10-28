@@ -11,6 +11,7 @@ import {
   Bot,
   Check,
   ClipboardPaste,
+  Copy,
   FileUp,
   FolderGit2,
   Info,
@@ -19,8 +20,17 @@ import {
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { refused } from "../../lib/activities";
 import { cn } from "../../lib/cn";
-import { fetchJudgeVersion, KIT_URL, useMyJudges } from "../../lib/judge";
+import { haptic } from "../../lib/haptics";
+import {
+  fetchJudgeVersion,
+  fetchMyJudge,
+  KIT_URL,
+  useMyJudges,
+  useSquareJudges,
+} from "../../lib/judge";
+import { SquarePicker } from "../judges/square-picker";
 import { Callout } from "../page/page";
+import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
 import { CodeEditor } from "../ui/code-editor";
 import { Field, TextInput } from "../ui/field";
@@ -33,7 +43,10 @@ import { noVersions } from "./judge-versions";
 import { ParamsFields, paramsFor } from "./params-fields";
 import { testCount } from "./steps";
 import { TryJudge } from "./try-judge";
+import type { useBorrowJudge } from "./use-borrow-judge";
 import type { JudgeDeploy } from "./use-judge-deploy";
+
+type BorrowJudge = ReturnType<typeof useBorrowJudge>;
 
 /**
  * tests.json: still a plain box (07 §5) with line numbers and colours (05
@@ -535,6 +548,89 @@ export function JudgeWriter({
 }
 
 /**
+ * 查看代码 for another's 判定器 (§15.4): its code, read only, over the form.
+ */
+function BorrowedCode({
+  open,
+  onClose,
+  name,
+  author,
+  n,
+  code,
+}: {
+  open: boolean;
+  onClose: () => void;
+  name: string;
+  author: string;
+  n: number;
+  code: string;
+}) {
+  const titleId = useId();
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), 1400);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+  return (
+    <WindowDialog
+      open={open}
+      onClose={onClose}
+      labelledBy={titleId}
+      width="40rem"
+    >
+      <div className="flex max-h-[min(44rem,85dvh)] flex-col">
+        <header className="grid gap-1 px-5 pt-4 pb-3">
+          <div className="flex items-center justify-between gap-3">
+            <h2 id={titleId} className="text-lg font-semibold text-ink">
+              代码
+            </h2>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="关闭"
+              className="-mr-2"
+              onClick={onClose}
+            >
+              <X />
+            </Button>
+          </div>
+          <p className="flex items-center justify-between gap-3 text-sm text-ink-2">
+            <span className="min-w-0 truncate">
+              判定器「{name}」· @{author} · 第 {n} 版
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="-mr-2 shrink-0"
+              onClick={() => {
+                void navigator.clipboard?.writeText(code).then(() => {
+                  haptic("light");
+                  setCopied(true);
+                });
+              }}
+            >
+              {copied ? <Check /> : <Copy />}
+              {copied ? "已复制" : "复制代码"}
+            </Button>
+          </p>
+        </header>
+        <div className="view-scroll min-h-0 flex-1 overflow-y-auto px-5 pb-5">
+          <CodeEditor
+            value={code}
+            language="js"
+            readOnly
+            labelledBy={titleId}
+            rows={6}
+            maxRows={30}
+          />
+        </div>
+      </div>
+    </WindowDialog>
+  );
+}
+
+/**
  * ② 判定器 (代码判定红包, in place of 怎么领; docs/judge-square-design.md
  * §6): pick one of one's own 判定器, or write one — its name, judge.js as a
  * 判定器 card, tests.json as typed and 部署 into the sandbox the claims will
@@ -559,6 +655,7 @@ export function CodeStep({
   declarations,
   paramErrorOf,
   tried,
+  borrow,
 }: {
   form: FormState;
   update: Update;
@@ -582,19 +679,27 @@ export function CodeStep({
   paramErrorOf: (key: string) => string | undefined;
   /** The 红包 试一试 judges on, as filled in so far, in 分. */
   tried: { title: string; total: number; count: number; minEach: number };
+  /** Another's 判定器 from the 广场 (§15.4): picked, 联网 asked first. */
+  borrow: BorrowJudge;
 }) {
   const set = (key: "prompt") => (value: string) =>
     update((current) => ({
       ...current,
       judge: { ...current.judge, [key]: value },
     }));
-  const named = judge.version ? `判定器 第 ${judge.version.n} 版 ` : "判定器";
-  // 我的判定器 with a version a 红包 can open with (§6 挑之前).
+  const borrowed = form.judge.borrowed;
+  const usedN = borrowed?.n ?? judge.version?.n;
+  const named = usedN !== undefined ? `判定器 第 ${usedN} 版 ` : "判定器";
+  // 站长精选 and 我的判定器 with a version a 红包 can open with (§6 挑之前).
+  const featured =
+    useSquareJudges("featured", "recent", !locked).data?.pages[0]?.items ?? [];
   const mine = useMyJudges(userId, !locked);
   const usable = (mine.data ?? []).filter((item) => item.usable !== null);
   const [view, setView] = useState<"pick" | "card" | "write" | null>(null);
   const [picking, setPicking] = useState(false);
   const [pickError, setPickError] = useState<string | null>(null);
+  const [browsing, setBrowsing] = useState(false);
+  const [viewing, setViewing] = useState(false);
   const empty = !form.judge.code.trim() && !form.judge.judgeId;
   // Once there is code, how it shows stays put: a draft opened on a
   // version of its 判定器 that passed folded, one being written — or one
@@ -604,20 +709,25 @@ export function CodeStep({
   const folded = Boolean(form.judge.judgeId && judge.version && judge.ready);
   // Until one is chosen: the cards when there are some (or may be), else
   // straight to writing one; a deployed version of a 判定器 shows folded.
-  const shown = locked
-    ? "write"
-    : (view ??
-      (empty
-        ? usable.length > 0 || mine.isPending
-          ? "pick"
-          : "write"
-        : folded
-          ? "card"
-          : "write"));
+  // Another's shows as its card: it is never written here.
+  const shown = borrowed
+    ? !locked && view === "pick"
+      ? "pick"
+      : "card"
+    : locked
+      ? "write"
+      : (view ??
+        (empty
+          ? usable.length > 0 || featured.length > 0 || mine.isPending
+            ? "pick"
+            : "write"
+          : folded
+            ? "card"
+            : "write"));
   useEffect(() => {
-    if (view !== null || locked || empty || !known) return;
+    if (view !== null || locked || empty || !known || borrowed) return;
     setView(folded ? "card" : "write");
-  }, [view, locked, empty, known, folded]);
+  }, [view, locked, empty, known, folded, borrowed]);
   const mineNow = usable.find((item) => item.id === form.judge.judgeId);
   const newer =
     mineNow?.usable && judge.version && mineNow.usable.n > judge.version.n
@@ -647,6 +757,7 @@ export function CodeStep({
                 version.declarations?.params ?? [],
                 current.judge.params,
               ),
+              borrowed: null,
             },
           },
           version.declarations?.hongbao,
@@ -676,9 +787,30 @@ export function CodeStep({
         tests: "",
         versions: noVersions(),
         params: {},
+        borrowed: null,
       },
     }));
     setView("write");
+  };
+  /**
+   * Another's from the 广场 (§15.4), or one's own met there: the version
+   * others use, 联网 asked first; the same one again keeps its answer.
+   */
+  const pickOther = async (judgeId: string) => {
+    setBrowsing(false);
+    setPickError(null);
+    const outcome = await borrow.pick(judgeId, {
+      acked:
+        form.judge.judgeId === judgeId ? (borrowed?.networkAck ?? null) : null,
+      commit: update,
+    });
+    if ("picked" in outcome) setView("card");
+    if ("own" in outcome) {
+      const own =
+        usable.find((item) => item.id === judgeId) ??
+        (await fetchMyJudge(judgeId).catch(() => null));
+      if (own) await pick(own);
+    }
   };
   const params = declarations?.params ?? [];
   const writing = (
@@ -707,10 +839,45 @@ export function CodeStep({
     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5">
       {shown === "pick" ? (
         <JudgePicker
+          featured={featured}
           judges={usable}
-          busy={picking}
+          busy={picking || borrow.busy}
+          onPickFeatured={(picked) => void pickOther(picked.id)}
           onPick={(picked) => void pick(picked)}
+          onBrowse={() => setBrowsing(true)}
           onWrite={write}
+        />
+      ) : shown === "card" && borrowed ? (
+        <PickedJudge
+          name={form.judge.name}
+          description={form.judge.description}
+          source={
+            borrowed.source.featured
+              ? "站长精选"
+              : `@${borrowed.source.author.username}`
+          }
+          n={borrowed.n}
+          newer={borrowed.source.newer ?? undefined}
+          notice={
+            borrowed.source.takenDown
+              ? {
+                  tone: "danger",
+                  text: "这个判定器已被站长撤下，换一个才能开放。",
+                }
+              : !borrowed.source.listed
+                ? {
+                    tone: "quiet",
+                    text: "作者已经不在广场提供它，已经选好的照样能开放。",
+                  }
+                : undefined
+          }
+          locked={locked}
+          busy={borrow.busy || frozen}
+          onView={() => setViewing(true)}
+          onSwap={() => setView("pick")}
+          onNewer={() => {
+            if (form.judge.judgeId) void pickOther(form.judge.judgeId);
+          }}
         />
       ) : shown === "card" && judge.version ? (
         <PickedJudge
@@ -729,7 +896,26 @@ export function CodeStep({
       ) : (
         writing
       )}
-      {pickError && <p className="text-sm text-danger">{pickError}</p>}
+      {(pickError ?? borrow.error) && (
+        <p className="text-sm text-danger">{pickError ?? borrow.error}</p>
+      )}
+      <SquarePicker
+        open={browsing}
+        onClose={() => setBrowsing(false)}
+        userId={userId}
+        busy={picking || borrow.busy}
+        onPick={(judgeId) => void pickOther(judgeId)}
+      />
+      {borrowed && (
+        <BorrowedCode
+          open={viewing}
+          onClose={() => setViewing(false)}
+          name={form.judge.name}
+          author={borrowed.source.author.username}
+          n={borrowed.n}
+          code={form.judge.code}
+        />
+      )}
       {shown !== "pick" && params.length > 0 && (
         <ParamsFields
           params={params}
@@ -766,16 +952,19 @@ export function CodeStep({
           />
         </Field>
       )}
-      {shown !== "pick" && !locked && form.judge.judgeId && judge.version && (
-        <TryJudge
-          judgeId={form.judge.judgeId}
-          n={judge.version.n}
-          params={form.judge.params}
-          hongbao={tried}
-          prompt={form.judge.prompt}
-          disabled={frozen}
-        />
-      )}
+      {shown !== "pick" &&
+        !locked &&
+        form.judge.judgeId &&
+        usedN !== undefined && (
+          <TryJudge
+            judgeId={form.judge.judgeId}
+            n={usedN}
+            params={form.judge.params}
+            hongbao={tried}
+            prompt={form.judge.prompt}
+            disabled={frozen}
+          />
+        )}
       {/* In a new tab: the form stays as it is. */}
       {shown === "write" && (
         <div className="flex flex-wrap gap-x-4 gap-y-1">

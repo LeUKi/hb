@@ -183,8 +183,34 @@ export const judgeInputSchema = z.strictObject({
   description: judgeDescriptionSchema.optional(),
   /** The params filled (§3); checked against its version at opening. */
   params: paramsSchema.optional(),
+  /**
+   * Another's 判定器 picked from the 广场 (§15.3): the version used. Its
+   * code and tests come from that version; the tests are never sent here,
+   * nor read back.
+   */
+  version: z.number().int().positive().optional(),
+  /** 联网 (§7): the addresses its sender confirmed (这个判定器会联网). */
+  networkAck: z.array(z.string().max(200)).max(3).optional(),
 });
 export type JudgeInput = z.infer<typeof judgeInputSchema>;
+
+/**
+ * Another's 判定器 a draft uses (§15.4), as its sender's form shows it:
+ * whose, whether it is still in the 广场 or taken down, a newer version
+ * others use, and what the draft's version declares.
+ */
+export type JudgeSource = {
+  author: JudgePerson;
+  featured: boolean;
+  bySiteOwner: boolean;
+  /** 基于 @作者: whose it was copied from. */
+  basedOn: string | null;
+  listed: boolean;
+  takenDown: boolean;
+  newer: number | null;
+  declarations: JudgeDeclarations | null;
+  network: string[] | null;
+};
 
 /**
  * 部署 (§5): the code and tests to run, saved or not, into a 判定器
@@ -486,9 +512,16 @@ export type PublicJudge = {
    * Absent for one with none (sent before 判定器 and not read since).
    */
   judge?: {
+    id: string;
     name: string;
     version: number | null;
     author: { username: string; displayName: string };
+    /** In the 广场 (its page opens to anyone): the name is a link. */
+    listed: boolean;
+    /** 站长精选 (§10): as chosen, or the 站长's copy of another's. */
+    featured: boolean;
+    bySiteOwner: boolean;
+    basedOn: string | null;
   };
   /**
    * Its params from opening (§3): the ones everyone sees, as declared, and

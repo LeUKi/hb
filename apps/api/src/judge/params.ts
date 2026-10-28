@@ -34,6 +34,16 @@ export async function declarationsFor(
   authorId: string,
   judge: JudgeRow,
 ): Promise<JudgeDeclarations | null> {
+  // Its very version first: another's too (judge-square §15.3).
+  const exact =
+    judge.judgeId !== null && judge.judgeVersion !== null
+      ? await env.DB.prepare(
+          "SELECT declarations FROM judge_versions WHERE judge_id = ? AND n = ? AND fingerprint = ? AND declarations IS NOT NULL",
+        )
+          .bind(judge.judgeId, judge.judgeVersion, judge.fingerprint)
+          .first<{ declarations: string }>()
+      : null;
+  if (exact) return JSON.parse(exact.declarations) as JudgeDeclarations;
   const row = await env.DB.prepare(
     `SELECT v.declarations FROM judge_versions v JOIN judges j ON j.id = v.judge_id
       WHERE v.fingerprint = ?1 AND v.declarations IS NOT NULL AND j.author_id = ?2

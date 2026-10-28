@@ -2,6 +2,7 @@ import { z } from "zod";
 import { claimScopeSchema, type PublicClaimScope } from "./claim-scope";
 import {
   type JudgeNote,
+  type JudgeSource,
   judgeAnswerSchema,
   judgeInputSchema,
   type PublicJudge,
@@ -848,6 +849,8 @@ export type ManagedActivity = ActivitySummary & {
   judgePassed?: boolean;
   /** 代码判定: its code failed five times running; it may end early. */
   judgePaused?: true;
+  /** 代码判定 with another's 判定器 (judge-square §15.4): whose, and how it stands. */
+  judgeSource?: JudgeSource;
 };
 
 export type PublicQuantity =

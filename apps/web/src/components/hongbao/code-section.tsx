@@ -1,11 +1,12 @@
 import type { JudgeParam, PublicJudge } from "@hb/contracts";
-import { useRouter } from "@tanstack/react-router";
+import { Link, useRouter } from "@tanstack/react-router";
 import { Braces, Check, ChevronRight, Copy, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { sortedJson } from "../../../../../kit/runtime/params.mjs";
 import { haptic } from "../../lib/haptics";
 import { textDigest } from "../../lib/judge";
 import { switchOverlay } from "../../lib/overlay";
+import { useIdentity } from "../../lib/session";
 import { PanelDialog } from "../shell/panel-dialog";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
@@ -129,6 +130,38 @@ function ParamsFact({
         )}
       </ul>
     </div>
+  );
+}
+
+/**
+ * 判定器「猜数字」· @作者 · 第 3 版 (judge-square §10, §15.4): 站长精选
+ * said as chosen or as the 站长's copy of another's; its name a link to
+ * its page while it is in the 广场, or for its author.
+ */
+function JudgeLine({ judge }: { judge: NonNullable<PublicJudge["judge"]> }) {
+  const { user } = useIdentity();
+  const improved = judge.featured && judge.bySiteOwner && judge.basedOn;
+  const linked = judge.listed || user?.username === judge.author.username;
+  const version = judge.version !== null ? ` · 第 ${judge.version} 版` : "";
+  return (
+    <p className="text-sm text-ink">
+      判定器「
+      {linked ? (
+        <Link
+          to="/judges/$judgeId"
+          params={{ judgeId: judge.id }}
+          className="text-accent-ink hover:underline"
+        >
+          {judge.name}
+        </Link>
+      ) : (
+        judge.name
+      )}
+      」
+      {improved
+        ? `· 站长精选 · 基于 @${judge.basedOn}${version}`
+        : `· @${judge.author.username}${version}${judge.featured ? " · 站长精选" : ""}`}
+    </p>
   );
 }
 
@@ -302,11 +335,7 @@ function CodeBody({
         {judge.judge && (
           <div className="grid gap-1">
             <span className="text-xs text-ink-3">判定器</span>
-            <p className="text-sm text-ink">
-              判定器「{judge.judge.name}」· @{judge.judge.author.username}
-              {judge.judge.version !== null &&
-                ` · 第 ${judge.judge.version} 版`}
-            </p>
+            <JudgeLine judge={judge.judge} />
           </div>
         )}
         {judge.params && judge.params.length > 0 && (

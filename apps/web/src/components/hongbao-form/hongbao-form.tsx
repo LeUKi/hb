@@ -14,6 +14,7 @@ import { useBalanceFunding } from "../../lib/balance";
 import { cn } from "../../lib/cn";
 import { haptic } from "../../lib/haptics";
 import {
+  fetchJudgePage,
   fetchJudgeVersion,
   fetchMyJudge,
   useMyJudge,
@@ -74,6 +75,7 @@ import {
   stepTitle,
   summaryOf,
 } from "./steps";
+import { useBorrowJudge } from "./use-borrow-judge";
 import { useJudgeDeploy } from "./use-judge-deploy";
 import { useLinearSteps } from "./use-step-flow";
 import { useSubmit } from "./use-submit";
@@ -183,20 +185,30 @@ export function HongbaoForm({
     say: (text) => say(text),
   });
   const [codeGate, setCodeGate] = useState(false);
-  const codeBlocked = form.mode === "code" && !judge.ready;
+  // Another's 判定器 (judge-square §15.3) needs no deploy: it opens unless
+  // the 站长 took it down (the server says the rest as it opens).
+  const borrowed = form.judge.borrowed;
+  const borrow = useBorrowJudge();
+  const codeBlocked =
+    form.mode === "code" &&
+    (borrowed ? borrowed.source.takenDown : !judge.ready);
+  const codeGateText = borrowed ? "这个判定器已被站长撤下" : judge.gate;
+  const usedN = borrowed?.n ?? judge.version?.n;
 
   // 判定器 (docs/judge-square-design.md §3, §4): what the version the code
   // is declares — its params, checked here and by its check(), and its
   // ranges for 发多少.
   const coded = form.mode === "code";
   const judgeDetail = useMyJudge(
-    coded ? user.id : null,
-    coded ? form.judge.judgeId : null,
+    coded && !borrowed ? user.id : null,
+    coded && !borrowed ? form.judge.judgeId : null,
   );
   const declarations = coded
-    ? (judgeDetail.data?.versions.find(
-        (version) => version.n === judge.version?.n,
-      )?.declarations ?? null)
+    ? borrowed
+      ? borrowed.declarations
+      : (judgeDetail.data?.versions.find(
+          (version) => version.n === judge.version?.n,
+        )?.declarations ?? null)
     : null;
   // check()'s word on these very params and numbers, once asked.
   const paramsCheck = useParamsCheck();
@@ -320,6 +332,29 @@ export function HongbaoForm({
     started.current = true;
     void (async () => {
       try {
+        // Another's (§15.4): on to ② 判定器, then picked there, 联网
+        // asked first.
+        const page = await fetchJudgePage(startJudge);
+        if (touched.current) return;
+        if (!page.own) {
+          if (!page.version?.code) return;
+          const coded = (current: FormState) => withMode(current, "code");
+          setBaseline(coded);
+          setForm(coded);
+          linear.next();
+          const outcome = await borrow.pick(startJudge, {
+            acked: null,
+            commit: (change) => {
+              setBaseline(change);
+              setForm(change);
+            },
+          });
+          if ("picked" in outcome)
+            setStartParam(
+              outcome.picked.version?.declarations?.params[0]?.key ?? null,
+            );
+          return;
+        }
         const picked = await fetchMyJudge(startJudge);
         if (!picked.usable || touched.current) return;
         const version = await fetchJudgeVersion(picked.id, picked.usable.n);
@@ -338,6 +373,7 @@ export function HongbaoForm({
                 tests: version.tests,
                 versions: version.versions,
                 params: paramsFor(params, current.judge.params),
+                borrowed: null,
               },
             },
             version.declarations?.hongbao,
@@ -355,7 +391,7 @@ export function HongbaoForm({
         });
       }
     })();
-  }, [editing, startJudge, linear.next, submit.setNotice]);
+  }, [editing, startJudge, linear.next, submit.setNotice, borrow.pick]);
   useEffect(() => {
     if (startParam === null || currentIndex !== placeOf("claim")) return;
     if (!judge.known) return;
@@ -371,7 +407,7 @@ export function HongbaoForm({
    */
   const paramsPassCheck = async () => {
     const judgeId = form.judge.judgeId;
-    const n = judge.version?.n;
+    const n = usedN;
     if (!coded || !declarations?.check || !judgeId || n === undefined)
       return true;
     const key = checkKey;
@@ -439,11 +475,17 @@ export function HongbaoForm({
       if (open && codeBlocked) {
         setCodeGate(true);
         haptic("error");
-        say(`${judge.gate ?? ""}。`);
+        say(`${codeGateText ?? ""}。`);
         // Back on its 判定器 step (/new keeps it folded): 部署 in view.
         if (!editing) {
           linear.back(placeOf("claim") + 1);
-          window.setTimeout(() => jumpTo("hb-code-check"), 400);
+          window.setTimeout(
+            () => jumpTo(borrowed ? "hb-judge-picked" : "hb-code-check"),
+            400,
+          );
+        } else if (borrowed) {
+          if (openStep !== "claim") flushSync(() => setOpenStep("claim"));
+          jumpTo("hb-judge-picked");
         } else showIssue("hb-code-check");
         return;
       }
@@ -567,6 +609,7 @@ export function HongbaoForm({
               declarations={declarations}
               paramErrorOf={(key) => errorOf(`hb-param-${key}`)}
               tried={tried}
+              borrow={borrow}
             />
           );
         return (
@@ -693,6 +736,7 @@ export function HongbaoForm({
             {announced.text}
           </p>
         )}
+        {borrow.dialog}
         <LeaveGuard
           when={dirty && !submit.busy}
           message={
@@ -747,11 +791,13 @@ export function HongbaoForm({
                       deadline,
                       // Opened, a code not among its versions is the
                       // 判定器 it opened with, as its card says.
-                      judge.known
-                        ? opened && !judge.version
-                          ? "判定器"
-                          : judge.name
-                        : undefined,
+                      borrowed
+                        ? `${form.judge.name} · 第 ${borrowed.n} 版`
+                        : judge.known
+                          ? opened && !judge.version
+                            ? "判定器"
+                            : judge.name
+                          : undefined,
                     )}
                     open={open}
                     current={!editing && open}

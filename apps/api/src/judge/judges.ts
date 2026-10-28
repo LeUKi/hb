@@ -33,7 +33,7 @@ import type { ApiBindings } from "../env";
 import { decryptString, encryptString } from "../security/crypto";
 import { checkJudge, RUNS_PER_DAY, runsToday } from "./check";
 import { checkParamsInJudge, runJudge } from "./sandbox";
-import { publicVersionOf } from "./square";
+import { publicVersionOf, usableByOthers } from "./square";
 import { judgeData, textDigest } from "./storage";
 import { usageStatement } from "./usage";
 
@@ -444,7 +444,8 @@ export async function myJudgeVersion(
 }
 
 /**
- * A version of one's own 判定器 to run on a sender's behalf (check, 试一试):
+ * A version of a 判定器 to run on a sender's behalf (check, 试一试) — their
+ * own, or another's they may use:
  * its code, what it declares, and the params given, as the code would get
  * them — or the first thing wrong with them.
  */
@@ -455,7 +456,33 @@ async function versionToRun(
   n: number,
   params: Record<string, unknown>,
 ) {
-  await ownJudge(env, judgeId, userId);
+  // Another's (judge-square §15.3): a version others may use, or the one a
+  // draft of theirs has.
+  const judge = await env.DB.prepare(
+    "SELECT author_id, listed_at, taken_down_at FROM judges WHERE id = ?",
+  )
+    .bind(judgeId)
+    .first<{
+      author_id: string;
+      listed_at: number | null;
+      taken_down_at: number | null;
+    }>();
+  if (!judge) notFound();
+  if (
+    judge.author_id !== userId &&
+    !(await env.DB.prepare(
+      `SELECT 1 FROM activity_code c JOIN activities a ON a.id = c.activity_id
+        WHERE c.judge_id = ? AND c.judge_version = ? AND a.author_id = ? AND a.deleted_at IS NULL LIMIT 1`,
+    )
+      .bind(judgeId, n, userId)
+      .first()) &&
+    !(
+      judge.listed_at !== null &&
+      judge.taken_down_at === null &&
+      (await usableByOthers(env, judgeId, n))
+    )
+  )
+    notFound();
   const row = await env.DB.prepare(
     "SELECT * FROM judge_versions WHERE judge_id = ? AND n = ?",
   )

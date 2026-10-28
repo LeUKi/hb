@@ -2,8 +2,10 @@
 -- 判定器 joins the 广场 (its code public for good) and may be chosen for
 -- 精选; the 站长 takes one down, with a reason its author reads, and may
 -- restore it. Its numbers are worked out by the maintenance task. A 红包
--- may use another's 判定器 while it is in the 广场; it opens with the run
--- that passed for that 判定器's author, and not once the 站长 took it down.
+-- may use another's 判定器 while it is in the 广场 (a draft that has it
+-- keeps it, its upsert passing the insert guard too); it opens with the
+-- run that passed for that 判定器's author, and not once the 站长 took it
+-- down.
 CREATE TABLE `judge_features` (
 	`judge_id` text PRIMARY KEY NOT NULL,
 	`n` integer NOT NULL,
@@ -43,12 +45,13 @@ CREATE TABLE `judge_stats` (
 --> statement-breakpoint
 CREATE INDEX `judge_stats_used_idx` ON `judge_stats` (`hongbao`,`last_opened_at`);--> statement-breakpoint
 CREATE INDEX `judge_stats_recent_idx` ON `judge_stats` (`last_opened_at`);--> statement-breakpoint
+ALTER TABLE `activity_code` ADD `network_ack` text;--> statement-breakpoint
+CREATE INDEX `activity_code_judge_idx` ON `activity_code` (`judge_id`,`judge_version`);--> statement-breakpoint
 ALTER TABLE `judges` ADD `listed_at` integer;--> statement-breakpoint
 ALTER TABLE `judges` ADD `featurable` integer DEFAULT true NOT NULL;--> statement-breakpoint
 ALTER TABLE `judges` ADD `taken_down_at` integer;--> statement-breakpoint
 ALTER TABLE `judges` ADD `taken_down_reason` text;--> statement-breakpoint
-ALTER TABLE `judges` ADD `taken_down_by` text REFERENCES users(id);--> statement-breakpoint
-CREATE INDEX `activity_code_judge_idx` ON `activity_code` (`judge_id`,`judge_version`);
+ALTER TABLE `judges` ADD `taken_down_by` text REFERENCES users(id);
 --> statement-breakpoint
 DROP TRIGGER activity_code_insert_guard;
 --> statement-breakpoint
@@ -60,7 +63,8 @@ WHEN NOT EXISTS(SELECT 1 FROM activities WHERE id=NEW.activity_id AND participat
  OR NEW.network IS NOT NULL OR NEW.params_public IS NOT NULL OR NEW.params_commitment IS NOT NULL
  OR NEW.params_secret IS NOT NULL
  OR (NEW.judge_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM judges j JOIN activities a ON a.id=NEW.activity_id
-   WHERE j.id=NEW.judge_id AND (j.author_id=a.author_id OR (j.listed_at IS NOT NULL AND j.taken_down_at IS NULL))))
+   WHERE j.id=NEW.judge_id AND (j.author_id=a.author_id OR (j.listed_at IS NOT NULL AND j.taken_down_at IS NULL)
+     OR EXISTS(SELECT 1 FROM activity_code k WHERE k.activity_id=NEW.activity_id AND k.judge_id=NEW.judge_id))))
  OR (NEW.judge_version IS NOT NULL AND NOT EXISTS(SELECT 1 FROM judge_versions v
    WHERE v.judge_id=NEW.judge_id AND v.n=NEW.judge_version AND v.fingerprint=NEW.fingerprint))
 BEGIN SELECT RAISE(ABORT,'invalid_activity_code'); END;
