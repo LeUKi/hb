@@ -10,6 +10,7 @@ import { useAttachedPageOpener } from "../shell/attached-page";
 import { useWindowInfo } from "../shell/window-info";
 import { Avatar } from "../ui/avatar";
 import { EmojiText } from "../ui/emoji-text";
+import { LinuxDoMark } from "../ui/linux-do-mark";
 import { markdownText, NoteMarkdown } from "../ui/markdown";
 import { PersonName } from "../ui/person";
 import { radius, Squircle } from "../ui/squircle";
@@ -421,6 +422,7 @@ export function CoverHead({
                   rel="noopener noreferrer"
                   className="hb-chip-red hb-chip-link inline-flex h-7 items-center gap-1 px-2.5 text-xs"
                 >
+                  <LinuxDoMark className="size-3.5" />
                   来自帖子
                   <ArrowUpRight className="size-3.5" aria-hidden="true" />
                 </a>

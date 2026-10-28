@@ -7,6 +7,7 @@ import { clockLabel } from "../../lib/roster-time";
 import { sealGlyphs } from "../../lib/seal";
 import { Avatar } from "../ui/avatar";
 import { EmojiText } from "../ui/emoji-text";
+import { LinuxDoMark } from "../ui/linux-do-mark";
 import { radius, Squircle } from "../ui/squircle";
 import { type ChipTone, StatusChip } from "../ui/status-chip";
 import { coverCells } from "./cover-cells";
@@ -141,7 +142,12 @@ export function HongbaoCard({
               <StatusChip tone="neutral">关闭首页领取</StatusChip>
             )}
             {/* Its post's link is on its page: the whole card is one button. */}
-            {activity.topic && <StatusChip tone="neutral">来自帖子</StatusChip>}
+            {activity.topic && (
+              <StatusChip tone="neutral" className="gap-1">
+                <LinuxDoMark className="size-3.5" />
+                来自帖子
+              </StatusChip>
+            )}
             {/* Its 附带网页 opens on its page, as the post's link does. */}
             {activity.page && (
               <StatusChip tone="neutral" className="gap-1">

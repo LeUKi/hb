@@ -265,10 +265,13 @@ test.describe("红包广场", () => {
     await expect(
       page.getByRole("button", { name: /已经领完/ }),
     ).not.toContainText("关闭首页领取");
-    // One linked to a post says where it comes from.
-    await expect(page.getByRole("button", { name: /周末红包/ })).toContainText(
-      "来自帖子",
-    );
+    // One linked to a post says where it comes from, LINUX DO's logo
+    // before it.
+    const post = page
+      .getByRole("button", { name: /周末红包/ })
+      .getByText("来自帖子", { exact: true });
+    await expect(post).toBeVisible();
+    await expect(post.locator("svg.linux-do-mark")).toHaveCount(1);
     await expect(
       page.getByRole("button", { name: /已经领完/ }),
     ).not.toContainText("来自帖子");
