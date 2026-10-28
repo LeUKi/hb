@@ -200,6 +200,8 @@ export const judgeCheckInputSchema = z.strictObject({
       z.strictObject({
         name: judgeNameSchema,
         description: judgeDescriptionSchema.optional(),
+        /** 复制一份来改 (§8): the 判定器 it was copied from. */
+        basedOn: z.uuid().optional(),
       }),
     ])
     .optional(),
@@ -326,9 +328,96 @@ export type MyJudge = {
   } | null;
   /** 红包 opened with it, any version. */
   opened: number;
+  /** 判定器广场 (docs/judge-square-design.md §8): in it now. */
+  listed: boolean;
+  /** 允许站长选入精选. */
+  featurable: boolean;
+  /** 站长撤下: when, and why. */
+  takenDown: { at: string; reason: string } | null;
+  /** The version 站长精选 has, if it has one. */
+  featured: number | null;
+  /** Its numbers, as the 广场 shows them (§8). */
+  stats: JudgeStats;
 };
 
-export type MyJudgeDetail = MyJudge & { versions: MyJudgeVersion[] };
+export type MyJudgeDetail = MyJudge & {
+  versions: MyJudgeVersion[];
+  /** The version others use in the 广场 (§15.3), if any. */
+  publicN: number | null;
+};
+
+/**
+ * A 判定器's numbers (§8 卡片): 红包 opened with it (not those the 站长
+ * stopped), its judgments, and claims, worked out every few minutes.
+ */
+export type JudgeStats = { hongbao: number; judged: number; claimed: number };
+
+/** Whoever made a 判定器, as the 广场 names them. */
+export type JudgePerson = {
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+};
+
+/** A 判定器 as the 广场 lists it (§8 卡片, §15.4). */
+export type SquareJudge = {
+  id: string;
+  name: string;
+  description: string;
+  author: JudgePerson;
+  /** 复制一份来改 (§8): whose it was, and whether that one is in the 广场. */
+  basedOn: (JudgePerson & { id: string; listed: boolean }) | null;
+  /** In 站长精选 (§9). */
+  featured: boolean;
+  /** Made by the 站长: with basedOn, a 精选 改进后选入 (§9). */
+  bySiteOwner: boolean;
+  /** The version others use goes online (§7). */
+  network: boolean;
+  stats: JudgeStats;
+};
+
+export type SquareJudgeList = {
+  items: SquareJudge[];
+  nextCursor: string | null;
+};
+
+/** One version of another's 判定器, as its page lists it (§8 版本). */
+export type JudgePageVersion = {
+  n: number;
+  deployedAt: string;
+  opened: number;
+};
+
+/**
+ * 判定器页 for anyone it is open to (§8, §15.3): the version others use,
+ * its code when public, and the versions that opened a 红包.
+ */
+export type JudgePage = SquareJudge & {
+  own: boolean;
+  /** In the 广场 now. */
+  listed: boolean;
+  /** Code public all along (§2): what others see of it. */
+  codePublic: "ended" | "always";
+  version: {
+    n: number;
+    fingerprint: string;
+    deployedAt: string;
+    declarations: JudgeDeclarations | null;
+    network: string[] | null;
+    /** Only when its code is public. */
+    code: string | null;
+  } | null;
+  versions: JudgePageVersion[];
+  /** For the 站长 only: taken down, when and why. */
+  takenDown?: { at: string; reason: string };
+};
+
+/** 加入判定器广场 and 允许站长选入精选 (§8, §15.4). */
+export const judgeListingSchema = z.strictObject({
+  listed: z.boolean(),
+  featurable: z.boolean(),
+});
+export type JudgeListingInput = z.infer<typeof judgeListingSchema>;
 
 /** The 红包 a 判定器 is tried on (§3 check, §6 试一试), in 分. */
 const triedHongbaoSchema = z.strictObject({

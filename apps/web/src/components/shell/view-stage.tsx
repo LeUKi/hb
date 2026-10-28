@@ -31,6 +31,7 @@ import { HelpView } from "../views/help-view";
 import { HistoryView } from "../views/history-view";
 import { HongbaoView } from "../views/hongbao-view";
 import { InviteView } from "../views/invite-view";
+import { JudgeNewView } from "../views/judge-new-view";
 import { JudgeView } from "../views/judge-view";
 import { JudgesView } from "../views/judges-view";
 import { MeView } from "../views/me-view";
@@ -165,6 +166,8 @@ function renderView(leaf: NonNullable<Leaf>): ReactNode {
           page={<PaymentView id={params.paymentId ?? ""} />}
         />
       );
+    case "/judges/new":
+      return <JudgeNewView />;
     case "/judges/$judgeId":
       return (
         <CommandPageView

@@ -7,13 +7,15 @@ import {
   type MyJudgeVersion,
 } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronRight } from "lucide-react";
+import { AlertTriangle, ChevronRight } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { ActivityRequestError, refused } from "../../lib/activities";
 import { cn } from "../../lib/cn";
 import {
+  useJudgePage,
   useMyJudge,
   useMyJudgeVersion,
+  useSetJudgeListing,
   useUpdateMyJudge,
 } from "../../lib/judge";
 import { type SessionUser, useIdentity } from "../../lib/session";
@@ -25,7 +27,8 @@ import {
   issuesOf,
 } from "../hongbao-form/form-state";
 import { useJudgeDeploy } from "../hongbao-form/use-judge-deploy";
-import { Page, PageHeader, PageSection, Panel } from "../page/page";
+import { dayLabel, statsLine } from "../judges/judge-bits";
+import { Callout, Page, PageHeader, PageSection, Panel } from "../page/page";
 import { Bone, PageLoad, queryLoad } from "../page/page-state";
 import { ConfirmDialog } from "../shell/confirm-dialog";
 import { LeaveGuard } from "../shell/leave-guard";
@@ -33,15 +36,16 @@ import { Button } from "../ui/button";
 import { ButtonLink } from "../ui/button-link";
 import { CodeEditor } from "../ui/code-editor";
 import { CopyButton } from "../ui/copy-button";
-import { Field, Segmented, TextInput } from "../ui/field";
+import { Field, Segmented, Switch, TextInput } from "../ui/field";
 import { Reveal } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
-import { dayLabel } from "./judges-view";
+import { PublicJudgePage } from "./judge-public-view";
 import { MessageView } from "./message-view";
 
-// 判定器页 /judges/<编号> (docs/judge-square-design.md §8, §14.4), one's
-// own for now: its name and line, 代码公开, every version, and 部署新版本
-// with the 发红包 form's own card; 用它发红包 at the top.
+// 判定器页 /judges/<编号> (docs/judge-square-design.md §8, §14.4, §15.4):
+// one's own — its name and line, 代码公开, 判定器广场, every version, and
+// 部署新版本 with the 发红包 form's own card; 用它发红包 at the top — or,
+// for anyone else it is open to, what the 广场 shows of it.
 
 /** "10月28日 20:00", a version's deploy. */
 function deployedLabel(at: number) {
@@ -222,6 +226,154 @@ function Settings({
               }}
             >
               {write.isPending ? "正在保存…" : "一直公开"}
+            </Button>
+          </>
+        }
+      />
+    </Panel>
+  );
+}
+
+/**
+ * 判定器广场 (§8, §15.4): joining it (its code public for good) and
+ * leaving, each asked first; 允许站长选入精选; where it stands. Taken down,
+ * the 站长's reason instead.
+ */
+function SquareSettings({
+  judge,
+  userId,
+}: {
+  judge: MyJudgeDetail;
+  userId: string;
+}) {
+  const write = useSetJudgeListing(userId, judge.id);
+  const [asking, setAsking] = useState<"join" | "leave" | null>(null);
+  const [featurable, setFeaturable] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [askError, setAskError] = useState<string | null>(null);
+  const hint = "站长可以原样选入，或者改进后选入，署名保留。";
+  const answer = (listed: boolean, allow: boolean) => {
+    if (write.isPending) return;
+    setAskError(null);
+    write.mutate(
+      { listed, featurable: allow },
+      {
+        onSuccess: () => setAsking(null),
+        onError: (failure) => setAskError(failedSave(failure)),
+      },
+    );
+  };
+  return (
+    <Panel className="grid gap-4 p-4">
+      {judge.takenDown && (
+        <Callout tone="danger" icon={AlertTriangle} title="已被站长撤下">
+          <span className="block">原因：{judge.takenDown.reason}</span>
+          <span className="block">
+            新的红包选不到它，已经选进草稿的也不能开放；已经开放的照常。
+          </span>
+        </Callout>
+      )}
+      <Switch
+        checked={judge.listed}
+        disabled={Boolean(judge.takenDown)}
+        label="加入判定器广场"
+        description="加入后别人能看代码、用它发红包。"
+        onChange={(on) => {
+          setAskError(null);
+          setFeaturable(true);
+          setAsking(on ? "join" : "leave");
+        }}
+      />
+      {judge.listed && (
+        <>
+          <Switch
+            checked={judge.featurable}
+            label="允许站长选入精选"
+            description={
+              judge.featured === null
+                ? hint
+                : `${hint}取消只影响以后，已经选入的留着。`
+            }
+            onChange={(allow) => {
+              if (write.isPending) return;
+              setError(null);
+              write.mutate(
+                { listed: true, featurable: allow },
+                { onError: (failure) => setError(failedSave(failure)) },
+              );
+            }}
+          />
+          <p className="text-sm text-ink-2">
+            {judge.featured !== null
+              ? `站长精选了第 ${judge.featured} 版。`
+              : judge.publicN !== null
+                ? `广场上用的是第 ${judge.publicN} 版。`
+                : "还没有开放过红包的版本，广场上暂时看不到它。"}
+          </p>
+        </>
+      )}
+      <Reveal show={Boolean(error)}>
+        <p role="alert" className="text-sm text-danger">
+          {error}
+        </p>
+      </Reveal>
+      <ConfirmDialog
+        open={asking === "join"}
+        onClose={() => setAsking(null)}
+        busy={write.isPending}
+        title="加入判定器广场？"
+        text={
+          judge.codePublic === "always"
+            ? "别人能看代码、用它发红包。"
+            : "代码会一直公开，改不回来；别人能看代码、用它发红包。"
+        }
+        error={askError}
+        actions={
+          <>
+            <Button
+              onClick={() => setAsking(null)}
+              aria-disabled={write.isPending || undefined}
+            >
+              返回
+            </Button>
+            <Button
+              variant="primary"
+              aria-disabled={write.isPending || undefined}
+              onClick={() => answer(true, featurable)}
+            >
+              {write.isPending ? "正在保存…" : "加入"}
+            </Button>
+          </>
+        }
+      >
+        <Switch
+          checked={featurable}
+          label="允许站长选入精选"
+          description={hint}
+          onChange={setFeaturable}
+        />
+      </ConfirmDialog>
+      <ConfirmDialog
+        open={asking === "leave"}
+        onClose={() => setAsking(null)}
+        busy={write.isPending}
+        title="退出判定器广场？"
+        text="新的红包不能再选它；已经开放的照旧，已经选进草稿的照样能开放。代码照旧一直公开。"
+        error={askError}
+        actions={
+          <>
+            <Button
+              onClick={() => setAsking(null)}
+              aria-disabled={write.isPending || undefined}
+            >
+              返回
+            </Button>
+            <Button
+              variant="primary"
+              aria-disabled={write.isPending || undefined}
+              onClick={() => answer(false, judge.featurable)}
+            >
+              {write.isPending ? "正在保存…" : "退出"}
             </Button>
           </>
         }
@@ -456,9 +608,10 @@ function JudgePage({
 }) {
   const navigate = useNavigate();
   const [changed, setChanged] = useState({ settings: false, deploy: false });
+  // Its numbers as the 广场 says them (§15.4).
   const line = [
     judge.latest && `第 ${judge.latest.n} 版`,
-    judge.opened > 0 && `开放过 ${judge.opened} 个红包`,
+    statsLine(judge.stats),
   ]
     .filter(Boolean)
     .join(" · ");
@@ -503,6 +656,9 @@ function JudgePage({
           }
         />
       </PageSection>
+      <PageSection title="判定器广场">
+        <SquareSettings judge={judge} userId={user.id} />
+      </PageSection>
       <PageSection title="版本">
         <Panel as="ul" className="flex flex-col gap-0.5 p-1.5">
           {judge.versions.map((version) => (
@@ -534,18 +690,33 @@ function JudgePage({
   );
 }
 
-export function JudgeView({ id }: { id: string }) {
-  const { user } = useIdentity();
-  const query = useMyJudge(user?.id ?? null, id);
-  const error = query.error;
-  if (!user) return null;
-  if (error instanceof ActivityRequestError && error.status === 404)
-    return (
-      <MessageView title="未找到判定器" text="判定器不存在，或者不是你的。" />
-    );
+/** One's own, read as its author reads it. */
+function OwnJudge({ id, user }: { id: string; user: SessionUser }) {
+  const query = useMyJudge(user.id, id);
   return (
     <PageLoad load={queryLoad(query)}>
       {query.data && <JudgePage judge={query.data} user={user} />}
+    </PageLoad>
+  );
+}
+
+export function JudgeView({ id }: { id: string }) {
+  const { user, ready } = useIdentity();
+  const viewerId = user?.id ?? null;
+  // Whoever looks: its author gets their own page.
+  const query = useJudgePage(viewerId, id, ready);
+  const error = query.error;
+  if (error instanceof ActivityRequestError && error.status === 404)
+    return (
+      <MessageView
+        title="未找到判定器"
+        text="判定器不存在，或者不在判定器广场里。"
+      />
+    );
+  if (query.data?.own && user) return <OwnJudge id={id} user={user} />;
+  return (
+    <PageLoad load={queryLoad(query)}>
+      {query.data && <PublicJudgePage judge={query.data} viewerId={viewerId} />}
     </PageLoad>
   );
 }

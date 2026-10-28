@@ -5,6 +5,7 @@
 import {
   ACTIVITY_LIMITS,
   judgeCheckInputSchema,
+  judgeListingSchema,
   judgeParamsCheckSchema,
   judgeTrySchema,
   updateJudgeSchema,
@@ -16,11 +17,13 @@ import { validator } from "hono/validator";
 import { ActivityError } from "../activities/errors";
 import { ActivityValidationError } from "../activities/routes";
 import {
+  getOptionalSession,
   requireAdmin,
   requireAdminMutation,
   requireAuth,
   requireProtectedMutation,
 } from "../auth/session";
+import { listJudgeActivities } from "../discovery/service";
 import type { ApiContext } from "../env";
 import { activityObject } from "../runtime/objects";
 import { listChallengers, readChallengerCursor } from "./challengers";
@@ -40,6 +43,13 @@ import {
   recentJudgeSettingChanges,
   updateJudgeSettings,
 } from "./settings";
+import {
+  canSeeJudge,
+  judgePage,
+  judgePageCode,
+  listSquareJudges,
+  setMyJudgeListing,
+} from "./square";
 import { judgeUsageReport } from "./usage";
 
 /** A version's number in a path. */
@@ -104,6 +114,74 @@ export const judgeRoutes = new Hono<ApiContext>()
       const session = await requireProtectedMutation(c);
       return c.json({
         check: await deployJudge(c.env, session.user.id, c.req.valid("json")),
+      });
+    },
+  )
+  // 判定器广场 (docs/judge-square-design.md §8, §15): anyone may look.
+  .get("/judges", async (c) => {
+    const tab = c.req.query("tab") === "all" ? "all" : "featured";
+    const sort = c.req.query("sort") === "used" ? "used" : "recent";
+    return c.json(
+      await listSquareJudges(c.env, {
+        tab,
+        sort,
+        cursor: c.req.query("cursor") || undefined,
+      }),
+    );
+  })
+  .get("/judges/:id", async (c) => {
+    const session = await getOptionalSession(c);
+    return c.json({
+      judge: await judgePage(
+        c.env,
+        c.req.param("id"),
+        session ? { id: session.user.id, isAdmin: session.user.isAdmin } : null,
+      ),
+    });
+  })
+  .get("/judges/:id/versions/:n", async (c) => {
+    const session = await getOptionalSession(c);
+    return c.json(
+      await judgePageCode(
+        c.env,
+        c.req.param("id"),
+        versionNumber(c.req.param("n")),
+        session ? { id: session.user.id, isAdmin: session.user.isAdmin } : null,
+      ),
+    );
+  })
+  // 用它的红包: those listed in 红包广场.
+  .get("/judges/:id/activities", async (c) => {
+    const session = await getOptionalSession(c);
+    const judgeId = c.req.param("id");
+    await canSeeJudge(
+      c.env,
+      judgeId,
+      session ? { id: session.user.id, isAdmin: session.user.isAdmin } : null,
+    );
+    return c.json(
+      await listJudgeActivities(
+        c.env,
+        judgeId,
+        session?.user.id,
+        c.req.query("cursor") || undefined,
+      ),
+    );
+  })
+  // 加入判定器广场, 允许站长选入精选 (§8, §15.4).
+  .put(
+    "/me/judges/:id/listing",
+    validator("json", parsedWith(judgeListingSchema)),
+    async (c) => {
+      const session = await requireProtectedMutation(c);
+      await setMyJudgeListing(
+        c.env,
+        session.user.id,
+        c.req.param("id"),
+        c.req.valid("json"),
+      );
+      return c.json({
+        judge: await getMyJudge(c.env, session.user.id, c.req.param("id")),
       });
     },
   )

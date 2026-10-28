@@ -76,6 +76,7 @@ export function useJudgeDeploy({
   userId,
   update,
   say,
+  basedOn,
 }: {
   form: FormState;
   activity?: ManagedActivity;
@@ -83,6 +84,8 @@ export function useJudgeDeploy({
   update: Update;
   /** Read out once (the form's alert region). */
   say: (text: string) => void;
+  /** 复制一份来改 (judge-square §8): the 判定器 its first deploy copies. */
+  basedOn?: string;
 }) {
   const mutation = useJudgeCheck(userId);
   // The form's own read: whether 代码判定 is offered, and deploys left.
@@ -203,6 +206,7 @@ export function useJudgeDeploy({
           : {
               name: form.judge.name.trim(),
               description: form.judge.description.trim(),
+              ...(basedOn ? { basedOn } : {}),
             },
       });
       // Seen before the form changes, which draws it.

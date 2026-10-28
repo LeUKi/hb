@@ -351,6 +351,13 @@
       "when": 1793193896251,
       "tag": "0049_judges",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "6",
+      "when": 1793200465437,
+      "tag": "0050_judge_square",
+      "breakpoints": true
     }
   ]
 }

@@ -294,23 +294,24 @@ export const commands: Command[] = [
     keys: ["help", "帮助", "说明", "bangzhu", "bz", "shuoming", "sm"],
   },
   {
-    // 我的判定器 (docs/judge-square-design.md §8, §14.1): one's own for
-    // now; the 广场 comes with step 3.
+    // 判定器广场 (docs/judge-square-design.md §8, §15.4): anyone may look.
     id: "judges",
     path: "/judges",
     name: "judges",
-    title: "我的判定器",
+    title: "判定器广场",
     icon: FolderCode,
-    requires: "standard",
-    visibleTo: (role) => role !== "guest",
+    requires: "guest",
     keys: [
       "judges",
       "judge",
       "判定器",
+      "判定器广场",
       "我的判定器",
       "代码判定",
       "pandingqi",
       "pdq",
+      "pandingqiguangchang",
+      "pdqgc",
       "wodepandingqi",
       "wdpdq",
     ],

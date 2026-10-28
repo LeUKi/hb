@@ -44,11 +44,14 @@ function TestsBox({
   error,
   disabled,
   frozen,
+  note,
   onChange,
 }: {
   value: string;
   error?: string;
   disabled: boolean;
+  /** One more line under its own (复制一份来改: 别人的测试不公开). */
+  note?: string;
   /**
    * Saving, or waiting on 重试原提交: the step's fieldset stops native
    * controls only, so the editor is told too.
@@ -97,7 +100,7 @@ function TestsBox({
         )}
       </div>
       <p id={noteId} className="text-xs text-ink-3">
-        只是数据，不算进代码，不公开。
+        只是数据，不算进代码，不公开。{note}
       </p>
       <CodeEditor
         id={id}
@@ -375,7 +378,7 @@ function DeployArea({
  * The 判定器's name and line (docs/judge-square-design.md §1): first on
  * its card, the name needed before the first deploy makes it.
  */
-function JudgeNameFields({
+export function JudgeNameFields({
   form,
   update,
   errorOf,
@@ -446,6 +449,7 @@ export function JudgeWriter({
   frozen,
   judge,
   gated,
+  testsNote,
 }: {
   form: FormState;
   update: Update;
@@ -454,6 +458,7 @@ export function JudgeWriter({
   frozen: boolean;
   judge: JudgeDeploy;
   gated: boolean;
+  testsNote?: string;
 }) {
   const check = judge.result?.check;
   const problemLines =
@@ -521,6 +526,7 @@ export function JudgeWriter({
         error={errorOf("hb-code-tests")}
         disabled={locked}
         frozen={frozen}
+        note={testsNote}
         onChange={setTests}
       />
       {!locked && <DeployArea judge={judge} frozen={frozen} gated={gated} />}

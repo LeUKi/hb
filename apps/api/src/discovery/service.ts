@@ -270,6 +270,27 @@ export function listSquare(
   );
 }
 
+/**
+ * 用它的红包 (judge-square §8): the 红包 a 判定器 opened that their senders
+ * listed in 红包广场, as the 红包广场 lists them.
+ */
+export function listJudgeActivities(
+  env: ApiBindings,
+  judgeId: string,
+  viewerId?: string,
+  cursor?: string,
+) {
+  const kept = sql`COALESCE(${activities.endReason}, '') NOT IN ('manual', 'stopped')`;
+  return list(
+    env,
+    sql`${activities.joinSquare} = 1 AND ${kept} AND ${activities.id} IN
+      (SELECT activity_id FROM activity_code WHERE judge_id = ${judgeId})`,
+    `judge:${judgeId}`,
+    viewerId,
+    cursor,
+  );
+}
+
 export function listTopic(
   env: ApiBindings,
   topicId: string,

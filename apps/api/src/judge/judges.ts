@@ -33,6 +33,7 @@ import type { ApiBindings } from "../env";
 import { decryptString, encryptString } from "../security/crypto";
 import { checkJudge, RUNS_PER_DAY, runsToday } from "./check";
 import { checkParamsInJudge, runJudge } from "./sandbox";
+import { publicVersionOf } from "./square";
 import { judgeData, textDigest } from "./storage";
 import { usageStatement } from "./usage";
 
@@ -54,6 +55,11 @@ type JudgeRecord = {
   name: string;
   description: string;
   code_public: "ended" | "always";
+  based_on_judge_id: string | null;
+  listed_at: number | null;
+  featurable: number;
+  taken_down_at: number | null;
+  taken_down_reason: string | null;
   created_at: number;
   updated_at: number;
 };
@@ -95,6 +101,20 @@ export async function ownJudge(
     .bind(judgeId, userId)
     .first<JudgeRecord>();
   return row ?? notFound();
+}
+
+/**
+ * The 判定器 a copy is based on (§8 复制一份来改): one in the 广场, or the
+ * copier's own; 未找到 otherwise.
+ */
+async function copiedFrom(env: ApiBindings, judgeId: string, userId: string) {
+  const row = await env.DB.prepare(
+    `SELECT id FROM judges WHERE id = ? AND (author_id = ?
+      OR (listed_at IS NOT NULL AND taken_down_at IS NULL))`,
+  )
+    .bind(judgeId, userId)
+    .first<{ id: string }>();
+  return row?.id ?? notFound();
 }
 
 /** The version this code is in this 判定器, if it was deployed there. */
@@ -171,6 +191,12 @@ export async function deployJudge(
   const target = input.judge;
   const existing =
     target && "id" in target ? await ownJudge(env, target.id, userId) : null;
+  // 复制一份来改 (§8): from one this person may see — its source kept.
+  // Asked before the run, which counts.
+  const basedOn =
+    target && !existing && "basedOn" in target && target.basedOn
+      ? await copiedFrom(env, target.basedOn, userId)
+      : null;
   const check = await checkJudge(env, userId, {
     code: input.code,
     tests: input.tests,
@@ -212,8 +238,8 @@ export async function deployJudge(
           judgeId,
         )
       : env.DB.prepare(
-          "INSERT INTO judges (id, author_id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-        ).bind(judgeId, userId, name, description, now, now),
+          "INSERT INTO judges (id, author_id, name, description, based_on_judge_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        ).bind(judgeId, userId, name, description, basedOn, now, now),
     known !== null
       ? env.DB.prepare(`UPDATE judge_versions SET protocol = ?, tests_ciphertext = ?, tests_digest = ?,
           passed = ?, declarations = ?, network = ?, checked_at = ? WHERE judge_id = ? AND n = ?`).bind(
@@ -266,14 +292,19 @@ type ListedJudge = JudgeRecord & {
   latest_at: number | null;
   latest_passed: number | null;
   usable_n: number | null;
+  stat_hongbao: number | null;
+  stat_judged: number | null;
+  stat_claimed: number | null;
+  featured_n: number | null;
 };
 
 const SUMMARY = `SELECT j.*, ${OPENED} AS opened,
     (SELECT n FROM judge_versions WHERE judge_id = j.id ORDER BY n DESC LIMIT 1) AS latest_n,
     (SELECT deployed_at FROM judge_versions WHERE judge_id = j.id ORDER BY n DESC LIMIT 1) AS latest_at,
     (SELECT passed FROM judge_versions WHERE judge_id = j.id ORDER BY n DESC LIMIT 1) AS latest_passed,
-    (SELECT n FROM judge_versions WHERE judge_id = j.id AND passed = 1 ORDER BY n DESC LIMIT 1) AS usable_n
-  FROM judges j`;
+    (SELECT n FROM judge_versions WHERE judge_id = j.id AND passed = 1 ORDER BY n DESC LIMIT 1) AS usable_n,
+    s.hongbao AS stat_hongbao, s.judged AS stat_judged, s.claimed AS stat_claimed, f.n AS featured_n
+  FROM judges j LEFT JOIN judge_stats s ON s.judge_id = j.id LEFT JOIN judge_features f ON f.judge_id = j.id`;
 
 async function summaryOf(env: ApiBindings, row: ListedJudge): Promise<MyJudge> {
   const usable =
@@ -310,6 +341,18 @@ async function summaryOf(env: ApiBindings, row: ListedJudge): Promise<MyJudge> {
             network: listOf(usable.network),
           },
     opened: row.opened,
+    listed: row.listed_at !== null,
+    featurable: row.featurable === 1,
+    takenDown:
+      row.taken_down_at !== null && row.taken_down_reason !== null
+        ? { at: iso(row.taken_down_at), reason: row.taken_down_reason }
+        : null,
+    featured: row.featured_n,
+    stats: {
+      hongbao: row.stat_hongbao ?? 0,
+      judged: row.stat_judged ?? 0,
+      claimed: row.stat_claimed ?? 0,
+    },
   };
 }
 
@@ -352,6 +395,7 @@ export async function getMyJudge(
   ).results;
   return {
     ...(await summaryOf(env, row)),
+    publicN: await publicVersionOf(env, judgeId),
     versions: versions.map(
       (version): MyJudgeVersion => ({
         n: version.n,

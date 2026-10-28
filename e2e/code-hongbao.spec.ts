@@ -1423,6 +1423,12 @@ test.describe("发红包 · 代码判定", () => {
       }),
     );
     await mockNoMerchant(page);
+    // 判定器广场: empty, and no 判定器 page but one's own (mockMyJudges).
+    await page.route("**/api/judges**", (route) =>
+      new URL(route.request().url()).pathname === "/api/judges"
+        ? route.fulfill({ json: { items: [], nextCursor: null } })
+        : route.fulfill({ status: 404, json: { error: {} } }),
+    );
     // 我的判定器: none with a version to use unless a test deploys one.
     await page.route("**/api/me/judges**", (route) => {
       const path = new URL(route.request().url()).pathname;
@@ -1443,6 +1449,12 @@ test.describe("发红包 · 代码判定", () => {
             latest: null,
             usable: null,
             opened: 0,
+            listed: false,
+            featurable: true,
+            takenDown: null,
+            featured: null,
+            stats: { hongbao: 0, judged: 0, claimed: 0 },
+            publicN: null,
             versions: kept.versions.map((version) => ({
               n: version.n,
               fingerprint: version.fingerprint,
@@ -2561,7 +2573,30 @@ test.describe("发红包 · 代码判定", () => {
       latest: { n: 3, deployedAt: openedAt, passed: true },
       usable: { n: 3, declarations: guessDeclarations, network: null },
       opened: 2,
+      listed: false,
+      featurable: true,
+      takenDown: null,
+      featured: null,
+      stats: { hongbao: 2, judged: 9, claimed: 3 },
+      publicN: null,
     };
+    // Its 判定器页 is its author's own.
+    await page.route(`**/api/judges/${GUESS_ID}`, (route) =>
+      route.fulfill({
+        json: {
+          judge: {
+            ...judge,
+            author: { username: "e2e", displayName: "测", avatarUrl: null },
+            basedOn: null,
+            bySiteOwner: false,
+            network: false,
+            own: true,
+            version: null,
+            versions: [],
+          },
+        },
+      }),
+    );
     await page.route("**/api/me/judges**", (route) => {
       const url = new URL(route.request().url());
       const rest = url.pathname.slice("/api/me/judges".length);
@@ -2768,9 +2803,9 @@ test.describe("发红包 · 代码判定", () => {
   }) => {
     await mockDeploys(page);
     await mockMyJudges(page);
-    await openApp(page, "/judges");
+    await openApp(page, "/judges?tab=mine");
     await expect(
-      page.getByRole("heading", { name: "我的判定器", level: 1 }),
+      page.getByRole("heading", { name: "判定器广场", level: 1 }),
     ).toBeVisible();
     const day = `${new Date(openedAt).getMonth() + 1}月${new Date(openedAt).getDate()}日`;
     const row = page.getByRole("link", { name: /猜数字/ });
@@ -2781,7 +2816,9 @@ test.describe("发红包 · 代码判定", () => {
     await expect(
       page.getByRole("heading", { name: "猜数字", level: 1 }),
     ).toBeVisible();
-    await expect(page.getByText("第 3 版 · 开放过 2 个红包")).toBeVisible();
+    await expect(
+      page.getByText("第 3 版 · 发过 2 个红包 · 判定 9 次 · 领到 3 人次"),
+    ).toBeVisible();
     await page.getByRole("link", { name: "用它发红包" }).click();
     await expect(page).toHaveURL(new RegExp(`/new\\?judge=${GUESS_ID}$`));
     await expect(page.getByText("我的 · 第 3 版")).toBeVisible();
@@ -2898,7 +2935,7 @@ test.describe("发红包 · 代码判定", () => {
     page,
   }) => {
     await mockDeploys(page);
-    await openApp(page, "/judges");
+    await openApp(page, "/judges?tab=mine");
     await expect(page.getByText("还没有判定器")).toBeVisible();
     await expect(
       page.getByText("在发红包第 2 步选“自己写一个”，部署以后就在这里。"),

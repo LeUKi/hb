@@ -2,6 +2,7 @@ import { sweepActivityLifecycle } from "./activities/lifecycle";
 import { settleEndedWithdrawals } from "./balance/withdrawal-settlement";
 import type { ApiBindings } from "./env";
 import { migrateJudgesOf } from "./judge/judges";
+import { refreshJudgeStats } from "./judge/square";
 import { pruneJudgeUsage } from "./judge/usage";
 import { endLapsedResends } from "./payments/resend";
 import { sweepPayments } from "./payments/scheduler";
@@ -60,6 +61,8 @@ export async function runMaintenance(env: ApiBindings, scheduledAt: number) {
     { name: "judge_usage", run: () => pruneJudgeUsage(env, scheduledAt) },
     // 红包 sent before 判定器, moved over a few at a time (judge-square §14.3).
     { name: "judge_migration", run: () => migrateJudgesOf(env) },
+    // 判定器广场's numbers (judge-square §15.2), at most a run behind.
+    { name: "judge_stats", run: () => refreshJudgeStats(env, scheduledAt) },
   ]);
 }
 

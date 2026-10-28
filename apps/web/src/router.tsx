@@ -216,6 +216,16 @@ const balanceCheckoutRoute = subRoute(
   "付款详情",
 );
 const judgeRoute = subRoute("/judges/$judgeId", "judges", "判定器");
+// 写一个判定器 (judge-square §15.4); ?from=<编号> is 复制一份来改.
+const judgeNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/judges/new",
+  staticData: { chrome: "docked", command: "judges", subpage: "写一个判定器" },
+  validateSearch: (search: Record<string, unknown>): { from?: string } => ({
+    from:
+      typeof search.from === "string" && search.from ? search.from : undefined,
+  }),
+});
 const paymentDetailRoute = subRoute(
   "/payments/$paymentId",
   "payments",
@@ -327,6 +337,7 @@ const routeTree = rootRoute.addChildren([
   paymentsRoute,
   paymentDetailRoute,
   judgesRoute,
+  judgeNewRoute,
   judgeRoute,
   balanceRoute,
   balanceTopupRoute,

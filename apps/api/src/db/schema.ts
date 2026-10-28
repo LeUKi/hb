@@ -1817,6 +1817,16 @@ export const judges = sqliteTable(
     basedOnJudgeId: text("based_on_judge_id").references(
       (): AnySQLiteColumn => judges.id,
     ),
+    /** 加入判定器广场 (§8): when; null while it is not in it. */
+    listedAt: integer("listed_at"),
+    /** 允许站长选入精选 (§8, §9): on by default. */
+    featurable: integer("featurable", { mode: "boolean" })
+      .notNull()
+      .default(true),
+    /** 站长撤下 (§8): when, why (its author reads it) and by whom. */
+    takenDownAt: integer("taken_down_at"),
+    takenDownReason: text("taken_down_reason"),
+    takenDownBy: text("taken_down_by").references(() => users.id),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
@@ -1830,6 +1840,77 @@ export const judges = sqliteTable(
         AND typeof(${table.createdAt}) = 'integer' AND typeof(${table.updatedAt}) = 'integer'`,
     ),
   ],
+);
+
+/**
+ * A 判定器's numbers (§8 卡片, §15.2): 红包 opened with it (the 站长's
+ * 停用 ones not counted), its judgments, its claims, the latest opening,
+ * and the version others use — the newest that passed on the current
+ * protocol and opened a 红包. Worked out again by the maintenance task.
+ */
+export const judgeStats = sqliteTable(
+  "judge_stats",
+  {
+    judgeId: text("judge_id")
+      .primaryKey()
+      .references(() => judges.id),
+    hongbao: integer("hongbao").notNull(),
+    judged: integer("judged").notNull(),
+    claimed: integer("claimed").notNull(),
+    lastOpenedAt: integer("last_opened_at"),
+    publicN: integer("public_n"),
+    refreshedAt: integer("refreshed_at").notNull(),
+  },
+  (table) => [
+    index("judge_stats_used_idx").on(table.hongbao, table.lastOpenedAt),
+    index("judge_stats_recent_idx").on(table.lastOpenedAt),
+  ],
+);
+
+/**
+ * 站长精选 (§9): one version of a 判定器 in the 广场, in the 站长's order.
+ */
+export const judgeFeatures = sqliteTable(
+  "judge_features",
+  {
+    judgeId: text("judge_id")
+      .primaryKey()
+      .references(() => judges.id),
+    n: integer("n").notNull(),
+    position: integer("position").notNull(),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [index("judge_features_position_idx").on(table.position)],
+);
+
+/**
+ * The 站长's changes to the 广场 (§9, §15.4 操作记录): 撤下, 恢复, and
+ * 精选 put in, taken out, moved or moved on to another version.
+ */
+export const judgeSquareChanges = sqliteTable(
+  "judge_square_changes",
+  {
+    id: text("id").primaryKey(),
+    actorUserId: text("actor_user_id")
+      .notNull()
+      .references(() => users.id),
+    judgeId: text("judge_id")
+      .notNull()
+      .references(() => judges.id),
+    action: text("action", {
+      enum: ["take_down", "restore", "feature", "unfeature", "move", "version"],
+    }).notNull(),
+    /** The 判定器's name then; the reason, the version, the place. */
+    name: text("name").notNull(),
+    reason: text("reason"),
+    n: integer("n"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [index("judge_square_changes_time_idx").on(table.createdAt)],
 );
 
 /**
@@ -1946,6 +2027,8 @@ export const activityCode = sqliteTable(
     updatedAt: integer("updated_at").notNull(),
   },
   (table) => [
+    // 判定器广场 (judge-square §8): the 红包 each 判定器 and version opened.
+    index("activity_code_judge_idx").on(table.judgeId, table.judgeVersion),
     check(
       "activity_code_shape",
       sql`${table.protocol} IN (1, 2, 3) AND length(${table.fingerprint}) = 64 AND length(${table.testsDigest}) = 64

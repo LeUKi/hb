@@ -1,9 +1,12 @@
 import type {
   CodeFailureList,
+  DiscoveryList,
   JudgeChallengerList,
   JudgeCheck,
   JudgeCheckInput,
   JudgeDeclarations,
+  JudgeListingInput,
+  JudgePage,
   JudgeParamsCheck,
   JudgeParamsCheckInput,
   JudgeTry,
@@ -12,6 +15,7 @@ import type {
   MyJudge,
   MyJudgeDetail,
   MyJudgmentList,
+  SquareJudgeList,
   UpdateJudgeInput,
 } from "@hb/contracts";
 import {
@@ -181,6 +185,112 @@ export function useMyJudge(userId: string | null, judgeId: string | null) {
           ),
         )
       ).judge,
+  });
+}
+
+/** 判定器广场 (docs/judge-square-design.md §8, §15): public reads. */
+export const judgeSquareKey = ["judge-square"] as const;
+
+/**
+ * 站长精选 (one list, in the 站长's order) or 大家做的 (最近, 用得最多),
+ * twenty a page.
+ */
+export function useSquareJudges(
+  tab: "featured" | "all",
+  sort: "recent" | "used",
+  enabled = true,
+) {
+  return useInfiniteQuery({
+    queryKey: [...judgeSquareKey, tab, tab === "all" ? sort : null] as const,
+    enabled,
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam, signal }) =>
+      readResponse<SquareJudgeList>(
+        await fetch(
+          `/api/judges?tab=${tab}&sort=${sort}${pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : ""}`,
+          { signal, cache: "no-store" },
+        ),
+      ),
+    getNextPageParam: (last) => last.nextCursor,
+  });
+}
+
+/** 判定器页 as this viewer may see it (`own` says it is theirs). */
+export function useJudgePage(
+  viewerId: string | null,
+  judgeId: string,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: [...judgeSquareKey, "page", judgeId, viewerId] as const,
+    enabled,
+    queryFn: async ({ signal }) =>
+      (
+        await readResponse<{ judge: JudgePage }>(
+          await fetch(`/api/judges/${encodeURIComponent(judgeId)}`, {
+            signal,
+            cache: "no-store",
+          }),
+        )
+      ).judge,
+  });
+}
+
+/** A version's code on another's 判定器页 (版本, opened). It never changes. */
+export function useJudgePageCode(judgeId: string, n: number | null) {
+  return useQuery({
+    queryKey: [...judgeSquareKey, "code", judgeId, n] as const,
+    enabled: n !== null,
+    staleTime: Number.POSITIVE_INFINITY,
+    retry: false,
+    queryFn: async ({ signal }) =>
+      readResponse<{ code: string; fingerprint: string }>(
+        await fetch(
+          `/api/judges/${encodeURIComponent(judgeId)}/versions/${n ?? 0}`,
+          { signal, cache: "no-store" },
+        ),
+      ),
+  });
+}
+
+/** 用它的红包: those in 红包广场, as it lists them. */
+export function useJudgeActivities(judgeId: string, viewerId: string | null) {
+  return useInfiniteQuery({
+    queryKey: [...judgeSquareKey, "activities", judgeId, viewerId] as const,
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam, signal }) =>
+      readResponse<DiscoveryList>(
+        await fetch(
+          `/api/judges/${encodeURIComponent(judgeId)}/activities${pageParam ? `?cursor=${encodeURIComponent(pageParam)}` : ""}`,
+          { signal, cache: "no-store" },
+        ),
+      ),
+    getNextPageParam: (last) => last.nextCursor,
+  });
+}
+
+/** 加入判定器广场 and 允许站长选入精选 (§8, §15.4). */
+export function useSetJudgeListing(userId: string, judgeId: string) {
+  const queryClient = useQueryClient();
+  const { csrfToken } = useIdentity();
+  return useMutation({
+    mutationFn: async (json: JudgeListingInput) =>
+      (
+        await readResponse<{ judge: MyJudgeDetail }>(
+          await api.api.me.judges[":id"].listing.$put(
+            { param: { id: judgeId }, json },
+            { headers: { "X-CSRF-Token": csrfToken ?? "" } },
+          ),
+        )
+      ).judge,
+    onSuccess: (judge) => {
+      queryClient.setQueryData(myJudgeKey(userId, judgeId), judge);
+      void queryClient.invalidateQueries({
+        queryKey: myJudgesKey(userId),
+        exact: true,
+      });
+      void queryClient.invalidateQueries({ queryKey: judgeSquareKey });
+    },
   });
 }
 
