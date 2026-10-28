@@ -14,6 +14,7 @@ import { ActivityError } from "../activities/errors";
 import { type ActivityRow, ownedActivity } from "../activities/storage";
 import type { ApiBindings } from "../env";
 import { decryptString } from "../security/crypto";
+import { declarationsFor, judgedParams } from "./params";
 import { publicJudge } from "./public";
 import { fetchesOf, findJudgeRow, judgeData } from "./storage";
 
@@ -165,9 +166,26 @@ async function recordsOf(
       };
     }),
   );
+  // 协议第三版: what it was sent with, and the secret ones' seal (§3).
+  const params = judge.protocol >= 3 ? await judgedParams(env, judge) : null;
   return {
     // The protocol it opened with: what a replay runs (§4.7).
     protocol: judge.protocol,
+    ...(params ? { params } : {}),
+    ...(judge.paramsCommitment && open?.sealedParams
+      ? {
+          paramsSealed: {
+            keys: (
+              (await declarationsFor(env, activity.authorId, judge))?.params ??
+              []
+            )
+              .filter((param) => param.secret)
+              .map((param) => param.key),
+            commitment: judge.paramsCommitment,
+            salt: open.sealedParams.salt ?? null,
+          },
+        }
+      : {}),
     ...(judge.network !== null
       ? { network: JSON.parse(judge.network) as string[] }
       : {}),

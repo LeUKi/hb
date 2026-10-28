@@ -258,6 +258,12 @@ export type Declarations = {
   problems: string[];
 };
 export function readDeclarations(answer: unknown): Declarations;
+export function sortedJson(value: unknown): string;
+export function splitParams(
+  list: readonly ParamDeclaration[],
+  values: Params,
+): { shown: Params; secret: Params };
+export function paramsCommitment(secret: Params, salt: string): string;
 
 // testing.mjs
 export function fetchProblem(list: unknown): string | null;

@@ -51,6 +51,12 @@ import {
   codeOpeningBlocked,
   codeOpeningDay,
 } from "../judge/opening";
+import {
+  openingParams,
+  paramsRejected,
+  paramsRejectedError,
+  sealParamsStatement,
+} from "../judge/params";
 import { publicJudge } from "../judge/public";
 import {
   dropJudgeStatement,
@@ -1131,6 +1137,21 @@ export async function openActivity(
   const codeBlocked = coded ? await codeOpeningBlocked(env, row) : undefined;
   if (codeBlocked)
     throw new ActivityError(409, codeBlocked, publicationMessages[codeBlocked]);
+  // 判定器's params (judge-square §3): past its check() once more, then
+  // sealed as it opens.
+  const opening =
+    coded && judgeRow
+      ? await openingParams(env, row.authorId, judgeRow)
+      : undefined;
+  if (coded && judgeRow) {
+    const rejected = await paramsRejected(
+      env,
+      row,
+      judgeRow,
+      checked.data as LdcActivityInput,
+    );
+    if (rejected) throw paramsRejectedError(rejected);
+  }
   if (coded && ldcRewardCount(checked.data) !== row.totalCount)
     invalidActivity("红包金额与库存不一致，无法开放");
   if (
@@ -1238,7 +1259,18 @@ export async function openActivity(
     await env.DB.batch([
       activityWriteGuard(env.DB, id, authorId, version),
       ...(sealed?.before ?? []),
-      // 代码判定's seed is sealed now; the opening checks it is there.
+      // 代码判定's params and seed are sealed now; the opening checks the
+      // seed is there.
+      ...(opening?.declarations && "values" in opening.read
+        ? [
+            await sealParamsStatement(
+              env,
+              id,
+              opening.declarations.params,
+              opening.read.values,
+            ),
+          ]
+        : []),
       ...(coded
         ? [
             await sealSeedStatement(env, id, (secret) =>

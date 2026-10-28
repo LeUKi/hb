@@ -1051,6 +1051,89 @@ test.describe("代码判定红包", () => {
     }
   });
 
+  test("判定器和参数（judge-square §10）：开放时写判定器、公开参数和几项保密的封存值；结束后保密参数和盐公开，在这里核对", async ({
+    page,
+  }) => {
+    await mockSession(page, null);
+    const state = await mockCodeHongbao(page);
+    const answer = {
+      key: "answer",
+      label: "答案",
+      type: "text" as const,
+      secret: true,
+    };
+    const salt = "5a17".repeat(16);
+    const commitment = sha256(`{"answer":"flag{ok}"}\n${salt}`);
+    const open: Partial<PublicJudge> = {
+      judge: {
+        name: "猜数字",
+        version: 3,
+        author: { username: "author", displayName: "小满" },
+      },
+      params: [
+        {
+          param: { key: "max", label: "最大", type: "integer", min: 2 },
+          value: 100,
+        },
+        {
+          param: {
+            key: "words",
+            label: "提示",
+            type: "list",
+          },
+          value: ["一", "二"],
+        },
+        {
+          param: { key: "prize", label: "奖金", type: "money" },
+          value: 150,
+        },
+      ],
+      sealedParams: { count: 1, commitment },
+    };
+    state.judge = { ...publicJudge(), protocol: 3, ...open };
+    await openApp(page, path);
+    await page.locator("#code-entry").click();
+    const dialog = page.getByRole("dialog", { name: "代码" });
+    await expect(
+      dialog.getByText("判定器「猜数字」· @author · 第 3 版"),
+    ).toBeVisible();
+    await expect(dialog.getByText("最大：100")).toBeVisible();
+    await expect(dialog.getByText("奖金：1.50 LDC")).toBeVisible();
+    const list = dialog.getByText("提示：2 项");
+    await list.click();
+    await expect(dialog.getByText("二", { exact: true })).toBeVisible();
+    await expect(
+      dialog.getByText("另有 1 项保密参数，结束后公开"),
+    ).toBeVisible();
+    await expect(dialog.getByText(commitment)).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    // Over: the secret one and the salt, checked here.
+    state.activity = { ...state.activity, status: "ended" };
+    state.judge = {
+      ...publicJudge(),
+      protocol: 3,
+      code: judgeCode,
+      seed,
+      ...open,
+      params: [...(open.params ?? []), { param: answer, value: "flag{ok}" }],
+      sealedParams: { count: 1, commitment, salt },
+    };
+    await openApp(page, path);
+    await page.locator("#code-entry").click();
+    await expect(dialog.getByText("答案：flag{ok}")).toBeVisible();
+    await expect(dialog.getByText(salt)).toBeVisible();
+    await expect(
+      dialog.getByText(
+        "参数封存值 = SHA-256（按键排序的保密参数 JSON、换行、盐）",
+      ),
+    ).toBeVisible();
+    await expect(dialog.getByText("和封存值一致")).toHaveCount(2);
+    await expect(dialog.getByText("另有 1 项保密参数，结束后公开")).toHaveCount(
+      0,
+    );
+  });
+
   test("已结束（参与过）：我的提交照样留着，输入直接显示，没有眼睛", async ({
     page,
   }) => {

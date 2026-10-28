@@ -8,6 +8,7 @@ export {
   PARAM_LIMITS,
   PARAM_TYPES,
   paramLine,
+  paramsCommitment,
   paramValues,
   readCheckAnswer,
   readDeclarations,
@@ -15,4 +16,6 @@ export {
   readMeta,
   readParams,
   secretKeys,
+  sortedJson,
+  splitParams,
 } from "./index.mjs";

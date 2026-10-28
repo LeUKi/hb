@@ -1,7 +1,8 @@
-import type { PublicJudge } from "@hb/contracts";
+import type { JudgeParam, PublicJudge } from "@hb/contracts";
 import { useRouter } from "@tanstack/react-router";
 import { Braces, Check, ChevronRight, Copy, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { sortedJson } from "../../../../../kit/runtime/params.mjs";
 import { haptic } from "../../lib/haptics";
 import { textDigest } from "../../lib/judge";
 import { switchOverlay } from "../../lib/overlay";
@@ -12,6 +13,10 @@ import { CodeEditor } from "../ui/code-editor";
 import { CopyButton } from "../ui/copy-button";
 import { radius, Squircle } from "../ui/squircle";
 import { useHongbaoPageData } from "./use-hongbao-data";
+
+/** 2000 → "20.00". */
+const ldc = (minor: number) =>
+  `${Math.floor(minor / 100)}.${String(minor % 100).padStart(2, "0")}`;
 
 /** One public value with its line: the fingerprint, the seed's 封存值. */
 function Fact({
@@ -46,23 +51,117 @@ function Fact({
   );
 }
 
+/** A param's value as the page says it (§14.4): amounts in LDC, lists by count. */
+function valueText(param: JudgeParam, value: unknown) {
+  if (value === null || value === undefined) return "未填";
+  switch (param.type) {
+    case "money":
+      return typeof value === "number" ? `${ldc(value)} LDC` : String(value);
+    case "switch":
+      return value === true ? "开" : "关";
+    case "choice":
+      return (
+        param.options.find((option) => option.value === value)?.label ??
+        String(value)
+      );
+    case "list":
+    case "table":
+      return `${Array.isArray(value) ? value.length : 0} 项`;
+    default:
+      return String(value);
+  }
+}
+
+/** A list's or a table's entries, one line each. */
+function entryText(param: JudgeParam, entry: unknown) {
+  if (param.type !== "table" || entry === null || typeof entry !== "object")
+    return String(entry);
+  const row = entry as Record<string, unknown>;
+  return param.columns
+    .map((column) => {
+      const cell = row[column.key];
+      return `${column.label}：${
+        column.type === "money" && typeof cell === "number"
+          ? `${ldc(cell)} LDC`
+          : (cell ?? "")
+      }`;
+    })
+    .join(" · ");
+}
+
+/**
+ * 参数 (judge-square §3, §10): the params everyone sees from opening, a
+ * line each, lists and tables by count with their entries a press away;
+ * once over, the secret ones among them.
+ */
+function ParamsFact({
+  params,
+}: {
+  params: NonNullable<PublicJudge["params"]>;
+}) {
+  return (
+    <div className="grid gap-1">
+      <span className="text-xs text-ink-3">参数</span>
+      <ul className="grid gap-0.5 text-sm text-ink">
+        {params.map(({ param, value }) =>
+          (param.type === "list" || param.type === "table") &&
+          Array.isArray(value) &&
+          value.length > 0 ? (
+            <li key={param.key}>
+              <details>
+                <summary className="cursor-pointer">
+                  {param.label}：{valueText(param, value)}
+                </summary>
+                <ul className="mt-1 grid gap-0.5 pl-4 text-ink-2">
+                  {value.map((entry, index) => (
+                    // Entries are whatever was filled: their place is them.
+                    // biome-ignore lint/suspicious/noArrayIndexKey: see above
+                    <li key={index}>{entryText(param, entry)}</li>
+                  ))}
+                </ul>
+              </details>
+            </li>
+          ) : (
+            <li key={param.key} className="break-all">
+              {param.label}：{valueText(param, value)}
+            </li>
+          ),
+        )}
+      </ul>
+    </div>
+  );
+}
+
 /** Whether the published code and seed are what was sealed at opening. */
 function useChecks(activityId: string, judge?: PublicJudge) {
-  const [checks, setChecks] = useState<{ code: boolean; seed: boolean }>();
+  const [checks, setChecks] = useState<{
+    code: boolean;
+    seed: boolean;
+    params: boolean;
+  }>();
   const code = judge?.code;
   useEffect(() => {
     if (!judge || !code) return;
     let live = true;
+    // The secret params as published, against their 封存值 (§3).
+    const salt = judge.sealedParams?.salt;
+    const secret = Object.fromEntries(
+      (judge.params ?? [])
+        .filter(({ param }) => param.secret)
+        .map(({ param, value }) => [param.key, value]),
+    );
     void Promise.all([
       textDigest(code),
       judge.seed
         ? textDigest(`hb.lafi.sh/judge/v1\n${activityId}\n${judge.seed}`)
         : null,
-    ]).then(([fingerprint, commitment]) => {
+      salt ? textDigest(`${sortedJson(secret)}\n${salt}`) : null,
+    ]).then(([fingerprint, commitment, sealed]) => {
       if (live)
         setChecks({
           code: fingerprint === judge.fingerprint,
           seed: commitment !== null && commitment === judge.seedCommitment,
+          params: sealed !== null && sealed === judge.sealedParams?.commitment,
         });
     });
     return () => {
@@ -200,6 +299,45 @@ function CodeBody({
             </p>
           )}
         </div>
+        {judge.judge && (
+          <div className="grid gap-1">
+            <span className="text-xs text-ink-3">判定器</span>
+            <p className="text-sm text-ink">
+              判定器「{judge.judge.name}」· @{judge.judge.author.username}
+              {judge.judge.version !== null &&
+                ` · 第 ${judge.judge.version} 版`}
+            </p>
+          </div>
+        )}
+        {judge.params && judge.params.length > 0 && (
+          <ParamsFact params={judge.params} />
+        )}
+        {judge.sealedParams && (
+          <>
+            {!judge.sealedParams.salt && (
+              <p className="text-sm text-ink">
+                另有 {judge.sealedParams.count} 项保密参数，结束后公开
+              </p>
+            )}
+            <Fact
+              label="参数封存值"
+              value={judge.sealedParams.commitment}
+              note={
+                judge.sealedParams.salt
+                  ? "参数封存值 = SHA-256（按键排序的保密参数 JSON、换行、盐）"
+                  : "保密参数结束后和盐一起公开，和这个封存值对得上，就说明开放后没换过。"
+              }
+              matched={checks?.params ? "和封存值一致" : undefined}
+            />
+            {judge.sealedParams.salt && (
+              <Fact
+                label="盐"
+                value={judge.sealedParams.salt}
+                note="开放时随机取的，和保密参数一起算出上面的封存值。"
+              />
+            )}
+          </>
+        )}
         {judge.fingerprint && (
           <Fact
             label="代码指纹"

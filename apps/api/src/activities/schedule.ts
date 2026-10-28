@@ -19,6 +19,8 @@ import {
 } from "../balance/hongbao";
 import type { ApiBindings } from "../env";
 import { codeOpeningBlocked } from "../judge/opening";
+import { paramsRejected, paramsRejectedError } from "../judge/params";
+import { findJudgeRow } from "../judge/storage";
 import { ownedMerchant } from "../payments/merchants";
 import {
   publicationEligibility,
@@ -96,6 +98,14 @@ export async function scheduleActivity(
         ? await insufficientMessage(env, authorId)
         : publicationMessages[blocked],
     );
+  // 判定器's params past its check() too, as opening will ask (judge-square §3).
+  if (row.participationMode === "code") {
+    const judge = await findJudgeRow(env, id);
+    const rejected =
+      judge &&
+      (await paramsRejected(env, row, judge, config as LdcActivityInput));
+    if (rejected) throw paramsRejectedError(rejected);
+  }
   try {
     await env.DB.batch([
       activityWriteGuard(env.DB, id, authorId, input.version),

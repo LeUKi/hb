@@ -392,6 +392,22 @@ export type PublicJudge = {
   /** Once it is over: the code and the seed, to check the fingerprints. */
   code?: string;
   seed?: string;
+  /**
+   * Its 判定器 (docs/judge-square-design.md §10): name, version, whose.
+   * Absent for one with none (sent before 判定器 and not read since).
+   */
+  judge?: {
+    name: string;
+    version: number | null;
+    author: { username: string; displayName: string };
+  };
+  /**
+   * Its params from opening (§3): the ones everyone sees, as declared, and
+   * once it is over the secret ones too (marked).
+   */
+  params?: { param: ParamDeclaration; value: unknown }[];
+  /** 保密参数 (§3): how many, their 封存值 from opening, the salt once over. */
+  sealedParams?: { count: number; commitment: string; salt?: string };
 };
 
 /**

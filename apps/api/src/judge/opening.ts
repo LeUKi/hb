@@ -7,6 +7,7 @@ import type { ActivityRow } from "../activities/storage";
 import { startOfBeijingDay } from "../balance/day";
 import type { ApiBindings } from "../env";
 import { codeHongbaoAccess, passedCheck, testsChanged } from "./check";
+import { openingParams } from "./params";
 import { findJudgeRow } from "./storage";
 
 async function openedToday(env: ApiBindings, authorId: string) {
@@ -42,6 +43,10 @@ export async function codeOpeningBlocked(
       .first())
   )
     return "CODE_NETWORK_PAUSED";
+  // Its params as its version declares them (judge-square §3); check()
+  // runs as it opens (service.ts), not on every read.
+  if ("problems" in (await openingParams(env, row.authorId, judge)).read)
+    return "JUDGE_PARAMS_INVALID";
   if ((await openedToday(env, row.authorId)) >= access.settings.dailyOpenLimit)
     return "CODE_HONGBAO_DAILY_LIMIT";
   return undefined;

@@ -440,6 +440,11 @@ export interface JudgeRecords {
   network?: string[];
   /** 第三版：发红包时填的参数，保密的也在（这份记录只给红包作者） */
   params?: Params;
+  /**
+   * 第三版：保密参数的封存值，开放时公布；结束后有盐，npm run replay 拿 params 里
+   * 这几项核对：SHA-256（按键排序的保密参数 JSON、换行、盐）
+   */
+  paramsSealed?: { keys: string[]; commitment: string; salt: string | null };
   hongbao: {
     id: string;
     total: number;

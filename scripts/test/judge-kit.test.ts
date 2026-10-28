@@ -18,6 +18,7 @@ import {
 import type { JudgeRecords } from "../../kit/judge";
 import {
   allowedBy,
+  paramsCommitment,
   readNetwork,
   requestProblem,
   seedCommitment,
@@ -1005,6 +1006,43 @@ export function judge() { return { ok: false }; }`,
       args: ["judge-records-x.json"],
     });
     expect(replayed.lines.at(-1)).toBe("2 次判定全部一致");
+    // Its secret params against their 封存值, once it is over.
+    const salt = "c".repeat(64);
+    const sealed = kit({
+      "judge-records-x.json": {
+        ...records,
+        paramsSealed: {
+          keys: ["answer"],
+          commitment: paramsCommitment({ answer: 42 }, salt),
+          salt,
+        },
+      },
+    });
+    const checked = await run(replayCommand, {
+      dir,
+      cwd: sealed,
+      args: ["judge-records-x.json"],
+    });
+    expect(checked.lines).toContain("✓ 保密参数和封存值对得上");
+    const forged = kit({
+      "judge-records-x.json": {
+        ...records,
+        paramsSealed: {
+          keys: ["answer"],
+          commitment: paramsCommitment({ answer: 7 }, salt),
+          salt,
+        },
+      },
+    });
+    const caught = await run(replayCommand, {
+      dir,
+      cwd: forged,
+      args: ["judge-records-x.json"],
+    });
+    expect(caught.lines.at(-1)).toBe(
+      "✗ 保密参数和封存值对不上：记录里的参数不是开放时封存的那份",
+    );
+    expect(caught.exitCode).toBe(1);
     // Another answer: the replay is given it, and the judgments differ.
     const other = kit({
       "judge-records-x.json": { ...records, params: { answer: 7, max: 50 } },

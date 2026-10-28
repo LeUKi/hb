@@ -9,6 +9,7 @@
 import { resolve } from "node:path";
 import {
   answersOf,
+  paramsCommitment,
   readVerdict,
   sameJson,
   seedCommitment,
@@ -173,6 +174,20 @@ export async function replayCommand({
     return { exitCode: 1 };
   }
   print("✓ 种子和封存值对得上");
+  // 协议第三版: the secret params against their 封存值 (opening's).
+  const sealed = records.paramsSealed;
+  if (sealed?.salt) {
+    const secret = Object.fromEntries(
+      sealed.keys
+        .filter((key) => Object.hasOwn(records.params ?? {}, key))
+        .map((key) => [key, records.params[key]]),
+    );
+    if (paramsCommitment(secret, sealed.salt) !== sealed.commitment) {
+      print("✗ 保密参数和封存值对不上：记录里的参数不是开放时封存的那份");
+      return { exitCode: 1 };
+    }
+    print("✓ 保密参数和封存值对得上");
+  }
   if (records.judgments.length === 0) {
     print("记录里还没有判定");
     return { exitCode: 0 };

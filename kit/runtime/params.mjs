@@ -5,6 +5,7 @@
 // params must be together). The rules are here once: the site's deploy and
 // form, and the kit's commands, all read them from this file. Nothing here
 // runs in the sandbox.
+import { sha256Text } from "./hash.mjs";
 import { formatAmount } from "./money.mjs";
 
 export const PARAM_TYPES = Object.freeze([
@@ -787,4 +788,37 @@ export function readDeclarations(answer) {
   const hongbao = read("hongbao", readHongbaoRules)?.rules ?? null;
   if (answer?.check === false) problems.push("check 要是一个函数");
   return { meta, params, hongbao, check: answer?.check === true, problems };
+}
+
+/** JSON with every object's keys sorted: what a commitment is taken over. */
+export function sortedJson(value) {
+  if (Array.isArray(value)) return `[${value.map(sortedJson).join(",")}]`;
+  if (value !== null && typeof value === "object")
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${sortedJson(value[key])}`)
+      .join(",")}}`;
+  return JSON.stringify(value);
+}
+
+/**
+ * A 红包's params at opening (§3): those everyone sees from then on, and
+ * the secret ones, kept back until it is over.
+ */
+export function splitParams(list, values) {
+  const shown = {};
+  const secret = {};
+  for (const item of list)
+    if (Object.hasOwn(values, item.key))
+      (item.secret ? secret : shown)[item.key] = values[item.key];
+  return { shown, secret };
+}
+
+/**
+ * 参数封存值 (§3 保密参数): SHA-256 of the secret params as JSON with sorted
+ * keys, a newline and the salt, in hex — published at opening, checked by
+ * anyone once the params and the salt are out.
+ */
+export function paramsCommitment(secret, salt) {
+  return sha256Text(`${sortedJson(secret)}\n${salt}`);
 }

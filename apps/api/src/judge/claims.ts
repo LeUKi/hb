@@ -40,6 +40,7 @@ import {
   digestPassword,
   encryptString,
 } from "../security/crypto";
+import { judgedParams } from "./params";
 import {
   JUDGE_WAIT_MS,
   NETWORK_WAIT_MS,
@@ -346,7 +347,7 @@ export async function claimByCode(
     share,
     claims,
     state,
-    ...(row.protocol >= 3 ? { params: {} } : {}),
+    ...(row.protocol >= 3 ? { params: await judgedParams(env, row) } : {}),
   } as Submission;
   // 联网: the requests this judgment sends are kept as the gateway saw
   // them; one the gateway failed on makes it count for nothing.

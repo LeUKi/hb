@@ -157,6 +157,8 @@ export type LdcOpeningBlockedReason =
   | "CODE_HONGBAO_DAILY_LIMIT"
   /** 代码判定红包: its code goes online, and 联网 is off (§9.7). */
   | "CODE_NETWORK_PAUSED"
+  /** 判定器's params (docs/judge-square-design.md §3) not as declared. */
+  | "JUDGE_PARAMS_INVALID"
   | "TIMED_DRAW_NOT_ENABLED"
   | "MERCHANT_LEGACY"
   | "MERCHANT_CREDENTIALS_UNVERIFIED"
