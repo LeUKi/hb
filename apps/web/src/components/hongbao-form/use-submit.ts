@@ -4,6 +4,7 @@ import type {
   UpdateActivityInput,
 } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
+import { useSetAtom } from "jotai";
 import { useIsPresent } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../api";
@@ -18,6 +19,7 @@ import { activityCode } from "../../lib/activity-route";
 import { hapticForTone } from "../../lib/haptics";
 import { useCurrentMerchant } from "../../lib/merchants";
 import type { SessionUser } from "../../lib/session";
+import { savedDraftAtom } from "../../lib/store";
 import {
   type FormState,
   inputOf,
@@ -36,7 +38,7 @@ export const phaseLabels: Record<Exclude<Phase, "idle">, string> = {
   opening: "正在开放…",
 };
 
-/** "草稿已保存", carried from /new to the 📝 page it lands on. */
+/** A notice carried from /new to the 📝 page it lands on (开放没有完成). */
 let carried: Notice | null = null;
 
 /** A save as sent: kept to send again, unchanged, when its answer was lost. */
@@ -73,6 +75,7 @@ export function useSubmit({
   onSettled: (saved: FormState) => void;
 }) {
   const navigate = useNavigate();
+  const setSavedDraft = useSetAtom(savedDraftAtom);
   const writes = useActivityWrites(user.id, csrfToken, activity?.id);
   const opener = useActivityOpening(user.id, csrfToken);
   const { merchant } = useCurrentMerchant(user.id);
@@ -181,11 +184,11 @@ export function useSubmit({
         { tone: "success", text: opened ? "已保存修改" : "草稿已保存" },
         pending.form,
       );
-    else
-      goTo(saved, "edit", {
-        tone: "success",
-        text: "草稿已保存。开放前只有你能看到它。",
-      });
+    else {
+      // Its 红包 page, not 📝: shared or not, that is the page (07 §5).
+      setSavedDraft(saved.id);
+      goTo(saved, "activity");
+    }
   };
 
   /** Save (open: 保存并开放). The form has been checked unless retrying. */

@@ -149,6 +149,19 @@ async function mockCreate(page: Page, fail = 0) {
   return sent;
 }
 
+/**
+ * A new draft saved: on its 红包 page (07 §5), whose draft note says so
+ * this once.
+ */
+async function expectDraftSaved(page: Page) {
+  await expectPath(page, `/🧧/${encodeActivityEmoji(createdId)}`);
+  await expect(
+    page.locator("[data-hb-part=author]").getByText("草稿已保存", {
+      exact: true,
+    }),
+  ).toBeVisible();
+}
+
 /** 拼手气, 0.30 LDC in 3 shares, one 口令: the four steps of /new. */
 async function fillRandom(page: Page) {
   await page
@@ -176,10 +189,7 @@ test.describe("发红包", () => {
     await openApp(page, "/new");
     await fillRandom(page);
     await page.getByRole("button", { name: "存草稿" }).first().click();
-    await expectPath(page, `/🧧/${encodeActivityEmoji(createdId)}/📝`);
-    await expect(
-      shown(page, "草稿已保存。开放前只有你能看到它。").first(),
-    ).toBeVisible();
+    await expectDraftSaved(page);
     expect(sent).toHaveLength(1);
     expect(sent[0]?.activity).toMatchObject({
       title: "拼手气红包 · 3 份",
@@ -305,9 +315,7 @@ test.describe("发红包", () => {
       "领取前人机验证",
     );
     await page.getByRole("button", { name: "存草稿" }).first().click();
-    await expect(
-      shown(page, "草稿已保存。开放前只有你能看到它。").first(),
-    ).toBeVisible();
+    await expectDraftSaved(page);
     expect(sent[0]?.activity).toMatchObject({ humanCheck: true });
   });
 
@@ -377,9 +385,7 @@ test.describe("发红包", () => {
     await page.keyboard.type("看题");
     await expect(note).toHaveValue("今天的题在旁边，[看题](#附带网页)");
     await page.getByRole("button", { name: "存草稿" }).first().click();
-    await expect(
-      shown(page, "草稿已保存。开放前只有你能看到它。").first(),
-    ).toBeVisible();
+    await expectDraftSaved(page);
     // Only a warning: it is saved all the same.
     expect(sent[0]?.activity).toMatchObject({
       pageUrl: "https://puzzle.example.com/other",
@@ -435,9 +441,7 @@ test.describe("发红包", () => {
     await expect(sheet.locator("#hb-page")).toHaveCount(0);
     await sheet.getByRole("button", { name: "完成" }).click();
     await page.getByRole("button", { name: "存草稿" }).first().click();
-    await expect(
-      shown(page, "草稿已保存。开放前只有你能看到它。").first(),
-    ).toBeVisible();
+    await expectDraftSaved(page);
     expect(sent[0]?.activity).not.toHaveProperty("pageUrl");
   });
 
@@ -478,9 +482,7 @@ test.describe("发红包", () => {
     ]);
     await sheet.getByRole("button", { name: "完成" }).click();
     await page.getByRole("button", { name: "存草稿" }).first().click();
-    await expect(
-      shown(page, "草稿已保存。开放前只有你能看到它。").first(),
-    ).toBeVisible();
+    await expectDraftSaved(page);
     expect((await felt()).at(-1)).toEqual(haptics.success);
   });
 
@@ -541,9 +543,7 @@ test.describe("发红包", () => {
     );
     await sheet.getByRole("button", { name: "完成" }).click();
     await page.getByRole("button", { name: "存草稿" }).first().click();
-    await expect(
-      shown(page, "草稿已保存。开放前只有你能看到它。").first(),
-    ).toBeVisible();
+    await expectDraftSaved(page);
     expect(sent[0]?.activity.scope).toEqual({
       levels: [2, 3, 4],
       users: [
@@ -581,9 +581,7 @@ test.describe("发红包", () => {
     await expect(scope).not.toContainText("等级全选就等于所有人");
     await sheet.getByRole("button", { name: "完成" }).click();
     await page.getByRole("button", { name: "存草稿" }).first().click();
-    await expect(
-      shown(page, "草稿已保存。开放前只有你能看到它。").first(),
-    ).toBeVisible();
+    await expectDraftSaved(page);
     expect(sent[0]?.activity.scope).toEqual({ levels: [0, 1, 3, 4] });
   });
 
@@ -619,9 +617,7 @@ test.describe("发红包", () => {
       "关闭首页领取",
     );
     await page.getByRole("button", { name: "存草稿" }).first().click();
-    await expect(
-      shown(page, "草稿已保存。开放前只有你能看到它。").first(),
-    ).toBeVisible();
+    await expectDraftSaved(page);
     expect(sent[0]?.activity).toMatchObject({
       forceDedicated: true,
       joinSquare: true,
@@ -694,7 +690,7 @@ test.describe("发红包", () => {
       shown(page, "尚未确认保存结果，请重试原提交，避免重复提交。").first(),
     ).toBeVisible();
     await page.getByRole("button", { name: "重试原提交" }).first().click();
-    await expectPath(page, `/🧧/${encodeActivityEmoji(createdId)}/📝`);
+    await expectPath(page, `/🧧/${encodeActivityEmoji(createdId)}`);
     expect(sent).toHaveLength(2);
     expect(sent[1]?.requestId).toBe(sent[0]?.requestId);
   });

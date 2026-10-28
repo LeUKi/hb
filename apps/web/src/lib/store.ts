@@ -47,3 +47,9 @@ export const verifyNoticeAtom = atom<{
   password: string;
   token: number;
 } | null>(null);
+
+/**
+ * The draft just saved from /new, by id: its 红包 page, where saving lands
+ * (07 §5), says 草稿已保存 once instead of 草稿预览.
+ */
+export const savedDraftAtom = atom<string | null>(null);

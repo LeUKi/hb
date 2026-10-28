@@ -1,10 +1,13 @@
 import { useNavigate } from "@tanstack/react-router";
+import { useAtom } from "jotai";
 import { Download, Eye, PauseCircle, Share2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { activityCode, senderPagePath } from "../../lib/activity-route";
 import type { HongbaoActivity } from "../../lib/hongbao";
 import { judgeRecordsUrl, useCodeFailures } from "../../lib/judge";
 import { clockLabel } from "../../lib/roster-time";
 import { useSessionUser } from "../../lib/session";
+import { savedDraftAtom } from "../../lib/store";
 import { Callout, Panel } from "../page/page";
 import { buttonVariants } from "../ui/button";
 import { MoreLink } from "../ui/button-link";
@@ -63,6 +66,12 @@ export function AuthorTools({
   const navigate = useNavigate();
   const draft = Boolean(activity.draft);
   const code = activity.participation === "code";
+  // Saved from /new a moment ago: said once, here where saving landed.
+  const [savedDraft, setSavedDraft] = useAtom(savedDraftAtom);
+  const [justSaved] = useState(() => savedDraft === activity.id);
+  useEffect(() => {
+    if (justSaved) setSavedDraft(null);
+  }, [justSaved, setSavedDraft]);
   return (
     <section
       aria-label="管理这个红包"
@@ -70,8 +79,12 @@ export function AuthorTools({
       data-hb-part="author"
     >
       {draft && (
-        <Callout tone="warning" icon={Eye} title="草稿预览">
-          只有你能看到这一页。开放后大家才能领取，链接也才能分享。
+        <Callout
+          tone="warning"
+          icon={Eye}
+          title={justSaved ? "草稿已保存" : "草稿预览"}
+        >
+          还没开放：拿到链接的人能看到这一页，开放后才能领取。
         </Callout>
       )}
       {activity.pageOnly && !code && !draft && !ended && (
@@ -86,7 +99,11 @@ export function AuthorTools({
           title="红包的代码连续出错，已暂停领取"
         >
           <span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-            <span>开放后代码不能改。提前结束后，剩下的退回你的🐟额。</span>
+            <span>
+              {activity.fish
+                ? "开放后代码不能改。提前结束后，剩下的退回你的🐟额。"
+                : "开放后代码不能改。提前结束后，没领的份不再发。"}
+            </span>
             <MoreLink
               href={senderPagePath(activity.id, "edit")}
               onGo={() =>

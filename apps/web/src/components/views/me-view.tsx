@@ -1,12 +1,20 @@
 import { useLocation, useRouter } from "@tanstack/react-router";
 import { useAtom } from "jotai";
-import { AlertTriangle, LogOut, RotateCw } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronRight,
+  LogOut,
+  PauseCircle,
+  RotateCw,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAccountProfile } from "../../lib/account-profile";
 import { useHistorySummary } from "../../lib/activities";
 import { getLoginHref } from "../../lib/auth";
 import { authErrorOf } from "../../lib/auth-errors";
 import { useBalancePages } from "../../lib/balance";
+import { useCurrentMerchant } from "../../lib/merchants";
+import { merchantPause } from "../../lib/payment-display";
 import { useRankVisibility, useSetRankVisibility } from "../../lib/rank";
 import { sentCounts, useSentPages } from "../../lib/records";
 import {
@@ -36,6 +44,7 @@ import { Fish } from "../ui/fish";
 import { MorphLabel } from "../ui/morph-label";
 import { Reveal } from "../ui/reveal";
 import { StatusChip } from "../ui/status-chip";
+import { CredentialLine } from "./merchant-credential";
 import { rankSwitchLabel, rankVisibilityNote } from "./rank-view";
 
 /** Back from 刷新资料's round trip, the address carries this once. */
@@ -162,6 +171,59 @@ function Me({ user }: { user: SessionUser }) {
           </div>
         </Reveal>
 
+        <PageSection
+          title="红包"
+          id="me-records"
+          action={
+            <MoreLink
+              href="/history"
+              onGo={() => void leaveTo({ to: "/history" })}
+            >
+              红包记录
+            </MoreLink>
+          }
+        >
+          <Panel className="p-5">
+            {/* Two by two on a phone: what went out, then what came in. */}
+            <Facts
+              items={[
+                {
+                  label: "发出的红包",
+                  value: `${totals?.initiatedCount ?? 0} 个`,
+                  note:
+                    drafts > 0 ? (
+                      <DraftsLink count={drafts} />
+                    ) : (
+                      `草稿 ${drafts} 个`
+                    ),
+                },
+                {
+                  label: "发出的金额",
+                  value: `${totals?.sentAmount ?? "0.00"} LDC`,
+                  note: "大家领到的合计",
+                },
+                {
+                  label: "参与的红包",
+                  value: `${totals?.participatedCount ?? 0} 个`,
+                },
+                {
+                  label: "领到",
+                  value: `${totals?.receivedAmount ?? "0.00"} LDC`,
+                  note: "领取和中奖的合计",
+                },
+              ]}
+            />
+          </Panel>
+        </PageSection>
+
+        {user.balance && <MeBalance user={user} />}
+
+        <MeMerchant user={user} />
+
+        {/* Its own read: the page does not wait for it, and without it
+            the section stays away. */}
+        <MeRank user={user} />
+
         <PageSection title="资料" id="me-profile">
           <InfoList
             items={[
@@ -201,52 +263,6 @@ function Me({ user }: { user: SessionUser }) {
           />
         </PageSection>
 
-        <PageSection
-          title="红包"
-          id="me-records"
-          action={
-            <MoreLink
-              href="/history"
-              onGo={() => void leaveTo({ to: "/history" })}
-            >
-              红包记录
-            </MoreLink>
-          }
-        >
-          <Panel className="p-5">
-            {/* Two by two on a phone: what went out, then what came in. */}
-            <Facts
-              items={[
-                {
-                  label: "发出的红包",
-                  value: `${totals?.initiatedCount ?? 0} 个`,
-                  note: `草稿 ${drafts} 个`,
-                },
-                {
-                  label: "发出的金额",
-                  value: `${totals?.sentAmount ?? "0.00"} LDC`,
-                  note: "大家领到的合计",
-                },
-                {
-                  label: "参与的红包",
-                  value: `${totals?.participatedCount ?? 0} 个`,
-                },
-                {
-                  label: "领到",
-                  value: `${totals?.receivedAmount ?? "0.00"} LDC`,
-                  note: "领取和中奖的合计",
-                },
-              ]}
-            />
-          </Panel>
-        </PageSection>
-
-        {user.balance && <MeBalance user={user} />}
-
-        {/* Its own read: the page does not wait for it, and without it
-            the section stays away. */}
-        <MeRank user={user} />
-
         <div className="grid justify-items-start gap-2 px-1">
           {signOut.error && (
             <p role="alert" className="text-sm text-danger">
@@ -265,6 +281,77 @@ function Me({ user }: { user: SessionUser }) {
         </div>
       </Page>
     </PageLoad>
+  );
+}
+
+const draftsHref = "/history?filter=draft";
+
+/** 草稿 N 个, the way to them: 红包记录, 我发的, its 草稿 filter. */
+function DraftsLink({ count }: { count: number }) {
+  const router = useRouter();
+  return (
+    <a
+      href={draftsHref}
+      onClick={(event) => {
+        if (
+          event.metaKey ||
+          event.ctrlKey ||
+          event.shiftKey ||
+          event.altKey ||
+          event.button !== 0
+        )
+          return;
+        event.preventDefault();
+        void router.navigate({ href: draftsHref });
+      }}
+      className="inline-flex items-center text-accent-ink hover:underline"
+    >
+      草稿 {count} 个
+      <ChevronRight className="size-3" aria-hidden="true" />
+    </a>
+  );
+}
+
+/**
+ * LDC 商户 (07 §4), for accounts with one: whether it can pay now. A
+ * failed credential or a pause holds payments, unseen from here before.
+ */
+function MeMerchant({ user }: { user: SessionUser }) {
+  const { leaveTo } = useOmniboxController();
+  const { merchant } = useCurrentMerchant(user.id);
+  const pause = merchant?.pausedReason
+    ? merchantPause(merchant.pausedReason, {
+        resumeAt: merchant.quotaResumeAt,
+      })
+    : null;
+  return (
+    <Reveal show={Boolean(merchant)}>
+      {merchant && (
+        <PageSection
+          title="LDC 商户"
+          id="me-merchant"
+          action={
+            <MoreLink
+              href="/merchant"
+              onGo={() => void leaveTo({ to: "/merchant" })}
+            >
+              商户
+            </MoreLink>
+          }
+        >
+          <Panel className="grid gap-2 p-5">
+            <p className="truncate font-semibold text-ink">{merchant.label}</p>
+            <CredentialLine merchant={merchant} />
+            {pause && (
+              <p className="flex items-center gap-1.5 text-sm text-warning">
+                <PauseCircle className="size-4 shrink-0" aria-hidden="true" />
+                {pause.title}
+              </p>
+            )}
+          </Panel>
+        </PageSection>
+      )}
+    </Reveal>
   );
 }
 

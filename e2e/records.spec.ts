@@ -6,6 +6,8 @@ import {
   type DiscoveryCard,
   type DiscoveryList,
   encodeActivityEmoji,
+  type Merchant,
+  type MerchantList,
   type ParticipationList,
 } from "../packages/contracts/src";
 import {
@@ -324,7 +326,7 @@ test.describe("红包记录", () => {
     await expect(
       page.getByText("已发 3 个，发出 11.00 LDC · 参与过 2 个，领到 3.54 LDC"),
     ).toBeVisible();
-    await expect(page.getByText("还没开放，只有你能看到")).toBeVisible();
+    await expect(page.getByText("还没开放，拿到链接的人能看到")).toBeVisible();
     // Each opened 红包 has its 名单 (opened in place); a draft has nobody yet.
     await expect(
       page.getByRole("button", { name: "名单「周末红包」" }),
@@ -383,12 +385,57 @@ test.describe("账号资料", () => {
         headers: { Location: "/me?profile=refreshed" },
       });
     });
+    // LDC 商户: whether it can pay now, its pause said (07 §4).
+    const merchant = {
+      id: "m-e2e",
+      label: "我的商户",
+      usageStatus: "current",
+      clientId: "client_e2e",
+      pausedReason: "funds",
+      credentialVerification: {
+        status: "passed",
+        credentialVersion: 1,
+        checkedAt: new Date().toISOString(),
+        nextCheckAt: null,
+        reason: null,
+      },
+    } as unknown as Merchant;
+    await page.route("**/api/me/merchants", (route) =>
+      route.fulfill({
+        json: {
+          items: [merchant],
+          nextCursor: null,
+          currentMerchantId: merchant.id,
+          canCreate: true,
+          canSimulate: false,
+        } satisfies MerchantList,
+      }),
+    );
     await openApp(page, "/me");
     await expect(page.getByText(viewer.id)).toBeVisible();
+    // The often used first, 资料 after them (2026-10-28).
+    await expect(page.locator("main h2")).toHaveText([
+      "红包",
+      "LDC 商户",
+      "排行榜",
+      "资料",
+    ]);
+    const shop = page.getByRole("region", { name: "LDC 商户" });
+    await expect(shop).toContainText("我的商户");
+    await expect(shop).toContainText("凭证检查通过");
+    await expect(shop).toContainText("付款已暂停：商户资金不足");
+    await expect(shop.getByRole("link", { name: "商户" })).toHaveAttribute(
+      "href",
+      "/merchant",
+    );
     await expect(page.getByText("viewer@example.test")).toBeVisible();
     await expect(page.getByText("11.00 LDC")).toBeVisible();
     await expect(page.getByText("3.54 LDC")).toBeVisible();
-    await expect(page.getByText("草稿 1 个")).toBeVisible();
+    // 草稿 is the way to them.
+    await expect(page.getByRole("link", { name: "草稿 1 个" })).toHaveAttribute(
+      "href",
+      "/history?filter=draft",
+    );
     // 排行榜: the two switches as chosen (07 §4).
     await expect(
       page.getByRole("switch", { name: "在发出榜上显示我" }),

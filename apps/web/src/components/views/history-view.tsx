@@ -1,9 +1,7 @@
 import { PAYMENT_LABELS } from "@hb/contracts";
-import { useNavigate } from "@tanstack/react-router";
 import { ChevronRight, LayoutGrid, Plus } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { useHistorySummary } from "../../lib/activities";
-import { activityCode } from "../../lib/activity-route";
 import { cn } from "../../lib/cn";
 import { paymentTone } from "../../lib/hongbao-text";
 import {
@@ -56,17 +54,11 @@ function sentStatus({ activity, view, archived }: SentRecord) {
 function SentRow({ record }: { record: SentRecord }) {
   const { leaveTo } = useOmniboxController();
   const { compact } = useWindowInfo();
-  const navigate = useNavigate();
   const { activity, view } = record;
   const status = sentStatus(record);
   const draw = activity.mode === "timed_draw";
-  const open = () =>
-    activity.draft
-      ? void navigate({
-          to: "/🧧/$code/📝",
-          params: { code: activityCode(activity.id) },
-        })
-      : void leaveTo({ to: "activity", id: activity.id });
+  // A draft too: its 红包 page comes first, 继续编辑 is on it (07 §3).
+  const open = () => void leaveTo({ to: "activity", id: activity.id });
   return (
     <ListItem
       className={cn(
@@ -100,7 +92,7 @@ function SentRow({ record }: { record: SentRecord }) {
             </span>
             <span className="truncate text-xs text-ink-3">
               {activity.draft
-                ? "还没开放，只有你能看到"
+                ? "还没开放，拿到链接的人能看到"
                 : view.endReason
                   ? `${clockLabel(view.openedAt)} 开放`
                   : `${clockLabel(view.openedAt)} 开放 · ${draw ? "开奖" : "截止"} ${clockLabel(view.deadlineAt)}`}
