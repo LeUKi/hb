@@ -194,9 +194,11 @@ function EditPage({
 }) {
   const draft = activity.status === "draft";
   const { view } = sentRecordOf(activity, activity.author);
+  const scheduled = draft && Boolean(activity.scheduledOpenAt);
   const status = statusOf(view, {
     draft,
     archived: activity.status === "archived",
+    scheduled,
   });
   // Nobody in yet (production's rule): ending early takes nothing away.
   const canEnd =
@@ -216,9 +218,11 @@ function EditPage({
             {/* What can still change, on the tag that says why. */}
             <HoverNote
               note={
-                draft
-                  ? "开放前什么都能改；拿到链接的人能看到，还不能领。"
-                  : "开放后还能改标题、关联帖子、加入红包广场、说明、数量展示和领取前人机验证。"
+                scheduled
+                  ? "和开放后一样，只能改标题、说明这些文字；要改别的，先取消定时。"
+                  : draft
+                    ? "开放前什么都能改；拿到链接的人能看到，还不能领。"
+                    : "开放后还能改标题、关联帖子、加入红包广场、说明、数量展示和领取前人机验证。"
               }
             >
               <StatusChip tone={status.tone} dot>

@@ -21,7 +21,7 @@ import { useSearchChoice } from "../shell/use-search-choice";
 import { Segmented } from "../ui/field";
 import { radius } from "../ui/squircle";
 
-const filters: readonly SquareFilter[] = ["all", "active", "ended"];
+const filters: readonly SquareFilter[] = ["all", "upcoming", "active", "ended"];
 
 /**
  * /square 红包广场: the 红包 their senders chose to list (加入红包广场),
@@ -46,6 +46,7 @@ function Square({ userId }: { userId: string | null }) {
   );
   // Each filter's first page carries its count; only the shown list polls.
   const lists = {
+    upcoming: useSquarePages("upcoming", userId, filter === "upcoming"),
     active: useSquarePages("active", userId, filter === "active"),
     ended: useSquarePages("ended", userId, filter === "ended"),
     all: useSquarePages("all", userId, filter === "all"),
@@ -85,6 +86,12 @@ function Square({ userId }: { userId: string | null }) {
               onChange={setFilter}
               options={[
                 { value: "all", label: "全部", count: countOf("all") },
+                // 定时开放 before its time (scheduled-opening §7).
+                {
+                  value: "upcoming",
+                  label: "即将开放",
+                  count: countOf("upcoming"),
+                },
                 { value: "active", label: "进行中", count: countOf("active") },
                 // Only for 72 hours after the end (archived after): 最近.
                 { value: "ended", label: "最近结束", count: countOf("ended") },
@@ -100,11 +107,13 @@ function Square({ userId }: { userId: string | null }) {
           {items.length === 0 ? (
             <EmptyNote
               title={
-                filter === "active"
-                  ? "现在没有进行中的红包"
-                  : filter === "ended"
-                    ? "最近没有结束的红包"
-                    : "还没有红包"
+                filter === "upcoming"
+                  ? "现在没有即将开放的红包"
+                  : filter === "active"
+                    ? "现在没有进行中的红包"
+                    : filter === "ended"
+                      ? "最近没有结束的红包"
+                      : "还没有红包"
               }
               text={
                 filter === "ended"

@@ -56,6 +56,7 @@ import {
   redemptionIntentAtom,
   rewardAnimationAtom,
 } from "../../lib/redemption-intent";
+import { openingLabel } from "../../lib/roster-time";
 import { detectScheme, type EntryScheme } from "../../lib/scheme";
 import { askSelfClaim } from "../../lib/self-claim";
 import { sessionUserOf, useSessionUser } from "../../lib/session";
@@ -725,9 +726,19 @@ export function useOmniboxController() {
             if (store.get(editDraftAtom) === (password ?? ""))
               store.set(editDraftAtom, "");
             return;
-          case "draft":
-            say({ tone: "neutral", text: `红包还没开放，暂时不能${verb}。` });
+          case "draft": {
+            // 定时开放: when it opens (scheduled-opening §6).
+            const at = queryClient.getQueryData<PublicActivityDetail>(
+              activityKeys.public(activityId, account.id),
+            )?.activity.scheduledOpenAt;
+            say({
+              tone: "neutral",
+              text: at
+                ? `红包 ${openingLabel(Date.parse(at))} 开放，暂时不能${verb}。`
+                : `红包还没开放，暂时不能${verb}。`,
+            });
             return;
+          }
           default:
             say({ tone: "neutral", text: "红包已结束。" });
         }

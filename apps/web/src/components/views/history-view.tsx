@@ -13,7 +13,7 @@ import {
   useJoinedPages,
   useSentPages,
 } from "../../lib/records";
-import { clockLabel } from "../../lib/roster-time";
+import { clockLabel, openingLabel } from "../../lib/roster-time";
 import { type SessionUser, useSessionUser } from "../../lib/session";
 import { quantityLine, statusOf } from "../hongbao/hongbao-card";
 import { SenderLinks } from "../hongbao/sender-links";
@@ -44,7 +44,11 @@ type SentFilter = "all" | "active" | "draft" | "ended";
 
 /** 草稿 / 进行中 / 开奖中 / 已领完 … / 已归档 for a 红包 this account sent. */
 function sentStatus({ activity, view, archived }: SentRecord) {
-  const tag = statusOf(view, { draft: activity.draft, archived });
+  const tag = statusOf(view, {
+    draft: activity.draft,
+    archived,
+    scheduled: activity.scheduledOpenAt !== undefined,
+  });
   // 开奖中 is still running (its result is to come), as on the square.
   const ended =
     !activity.draft && Boolean(view.endReason) && view.endReason !== "settling";
@@ -54,7 +58,7 @@ function sentStatus({ activity, view, archived }: SentRecord) {
 function SentRow({ record }: { record: SentRecord }) {
   const { leaveTo } = useOmniboxController();
   const { compact } = useWindowInfo();
-  const { activity, view } = record;
+  const { activity, view, scheduleFailure } = record;
   const status = sentStatus(record);
   const draw = activity.mode === "timed_draw";
   // A draft too: its 红包 page comes first, 继续编辑 is on it (07 §3).
@@ -92,7 +96,11 @@ function SentRow({ record }: { record: SentRecord }) {
             </span>
             <span className="truncate text-xs text-ink-3">
               {activity.draft
-                ? "还没开放，拿到链接的人能看到"
+                ? activity.scheduledOpenAt !== undefined
+                  ? `${openingLabel(activity.scheduledOpenAt)} 开放`
+                  : scheduleFailure
+                    ? `定时开放没有成功：${scheduleFailure.reason}`
+                    : "还没开放，拿到链接的人能看到"
                 : view.endReason
                   ? `${clockLabel(view.openedAt)} 开放`
                   : `${clockLabel(view.openedAt)} 开放 · ${draw ? "开奖" : "截止"} ${clockLabel(view.deadlineAt)}`}

@@ -1,6 +1,6 @@
 import type { ManagedActivity } from "@hb/contracts";
 import { useLocation, useRouter } from "@tanstack/react-router";
-import { AlertTriangle, ChevronRight, Trash2 } from "lucide-react";
+import { AlertTriangle, CalendarX2, ChevronRight, Trash2 } from "lucide-react";
 import {
   type KeyboardEvent,
   useEffect,
@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { flushSync } from "react-dom";
+import { useActivityWrites } from "../../lib/activities";
 import { useBalanceFunding } from "../../lib/balance";
 import { cn } from "../../lib/cn";
 import { haptic } from "../../lib/haptics";
@@ -22,6 +23,7 @@ import { useWindowInfo } from "../shell/window-info";
 import { Button } from "../ui/button";
 import { Reveal, Swap } from "../ui/reveal";
 import { ActionBar, SaveButtons } from "./action-bar";
+import { CancelScheduleDialog } from "./cancel-schedule-dialog";
 import { CodeStep } from "./code-step";
 import { DeleteDraftDialog } from "./delete-draft-dialog";
 import {
@@ -29,6 +31,7 @@ import {
   IssueList,
   jumpTo,
   justJumped,
+  LockedBy,
   markJumped,
   QuietLine,
   type Update,
@@ -46,6 +49,7 @@ import {
   withDefaultTitle,
   withMode,
 } from "./form-state";
+import { ScheduleDialog, ScheduleLine } from "./schedule-fields";
 import { scopeLine } from "./scope-fields";
 import { groupsOf, SettingsSheet } from "./settings-sheet";
 import { AmountStep, ClaimStep, ModeStep, TitleStep } from "./step-bodies";
@@ -106,6 +110,17 @@ export function HongbaoForm({
   const editing = Boolean(activity);
   const draft = activity?.status === "draft";
   const opened = Boolean(activity && !draft);
+  // 定时开放 (docs/scheduled-opening-design.md): timed, a draft changes as
+  // an opened one does (§2); untimed, its time is chosen here and set by
+  // the primary press (§1).
+  const timedAt = draft ? activity?.scheduledOpenAt : undefined;
+  const scheduledAt = timedAt ? Date.parse(timedAt) : null;
+  const scheduled = scheduledAt !== null;
+  const fixed = opened || scheduled;
+  const [scheduleAt, setScheduleAt] = useState<number | null>(null);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [cancelSchedule, setCancelSchedule] = useState(false);
+  const scheduleWrites = useActivityWrites(user.id, csrfToken, activity?.id);
   // What is saved: the form is dirty when it differs; a save moves it.
   const [baseline, setBaseline] = useState<FormState>(() =>
     activity ? formOf(activity) : emptyForm(),
@@ -138,6 +153,7 @@ export function HongbaoForm({
     csrfToken,
     form,
     dirty,
+    scheduleAt: scheduled ? null : scheduleAt,
     onSaved,
     onSettled: setBaseline,
   });
@@ -208,7 +224,7 @@ export function HongbaoForm({
 
   const [confirmDelete, setConfirmDelete] = useState(false);
   // 加入广场 locks once it is on and the 红包 is open (07 §5).
-  const listedLocked = Boolean(opened && activity?.config.joinSquare);
+  const listedLocked = Boolean(fixed && activity?.config.joinSquare);
   const deadlineAt = activity?.draw?.deadlineAt ?? activity?.deadlineAt;
   const deadline =
     opened && deadlineAt
@@ -216,7 +232,7 @@ export function HongbaoForm({
           form.mode === "timed_draw" ? "最晚开奖" : "截止"
         }`
       : undefined;
-  const lockedStep = (step: StepId) => opened && step !== "title";
+  const lockedStep = (step: StepId) => fixed && step !== "title";
 
   /**
    * Show a problem where it can be fixed: its field, or for one kept in
@@ -424,6 +440,14 @@ export function HongbaoForm({
             openSheet={(group) => openSheet(group)}
             moreLine={moreLine}
             moreError={groupError(["scope", "notes", "public"])}
+            schedule={
+              opened ? undefined : (
+                <ScheduleLine
+                  at={scheduledAt ?? scheduleAt}
+                  onOpen={() => setScheduleOpen(true)}
+                />
+              )
+            }
           />
         );
     }
@@ -457,7 +481,8 @@ export function HongbaoForm({
     ) : (
       <SaveButtons
         submit={submit}
-        opened={opened}
+        opened={fixed}
+        scheduled={scheduleAt !== null}
         onSave={save}
         small={small}
       />
@@ -511,195 +536,259 @@ export function HongbaoForm({
   }, []);
 
   return (
-    <div ref={root} className="grid gap-5 [overflow-anchor:none]">
-      {announced && (
-        <p key={announced.at} role="alert" className="sr-only">
-          {announced.text}
+    <LockedBy.Provider value={scheduled ? "scheduled" : "opened"}>
+      <div ref={root} className="grid gap-5 [overflow-anchor:none]">
+        {announced && (
+          <p key={announced.at} role="alert" className="sr-only">
+            {announced.text}
+          </p>
+        )}
+        <LeaveGuard
+          when={dirty && !submit.busy}
+          message={
+            activity
+              ? "这个红包改过的内容还没保存，离开后会丢失。"
+              : "这个红包还没保存，离开后填的内容会丢失。可以先存草稿。"
+          }
+        />
+        {!editing && <StepProgress step={linear.current} />}
+        {/* Lasting, so each save result is said wherever it is shown. */}
+        <p role="status" className="sr-only">
+          {submit.notice?.text ?? ""}
         </p>
-      )}
-      <LeaveGuard
-        when={dirty && !submit.busy}
-        message={
-          activity
-            ? "这个红包改过的内容还没保存，离开后会丢失。"
-            : "这个红包还没保存，离开后填的内容会丢失。可以先存草稿。"
-        }
-      />
-      {!editing && <StepProgress step={linear.current} />}
-      {/* Lasting, so each save result is said wherever it is shown. */}
-      <p role="status" className="sr-only">
-        {submit.notice?.text ?? ""}
-      </p>
-      <form
-        noValidate
-        className="flex flex-col gap-5"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!editing) advance();
-        }}
-        onKeyDown={(event: KeyboardEvent<HTMLFormElement>) => {
-          // Enter that ends a word in an input method is not 下一步.
-          if (
-            event.key === "Enter" &&
-            (event.nativeEvent.isComposing || event.keyCode === 229)
-          )
+        <form
+          noValidate
+          className="flex flex-col gap-5"
+          onSubmit={(event) => {
             event.preventDefault();
-        }}
-      >
-        <div ref={stack}>
-          <StepStack>
-            {visible.map((step, index) => {
-              const open = index === currentIndex;
-              const problems = checked.has(step.id)
-                ? stepIssues(issues, step.id).length +
-                  (step.id === "claim" && codeGate && codeBlocked ? 1 : 0)
-                : 0;
-              return (
-                <StepCard
-                  key={step.id}
-                  index={index}
-                  title={stepTitle(step.id, form)}
-                  summary={summaryOf(
-                    step.id,
-                    form,
-                    deadline,
-                    // Opened, a code not among its versions is the
-                    // 判定器 it opened with, as its card says.
-                    judge.known
-                      ? opened && !judge.version
-                        ? "判定器"
-                        : judge.name
-                      : undefined,
-                  )}
-                  open={open}
-                  current={!editing && open}
-                  afterOpen={editing && index - 1 === currentIndex}
-                  grow={mounted.current}
-                  collapsible={editing}
-                  locked={lockedStep(step.id)}
-                  problems={problems}
-                  headingRef={open ? heading : undefined}
-                  onToggle={() => {
-                    if (editing) setOpenStep(open ? null : step.id);
-                    else linear.back(index + 1);
-                  }}
-                >
-                  <fieldset disabled={locks} className="grid min-w-0 gap-5">
-                    {body(step.id)}
-                  </fieldset>
-                  {/* Wide /new: the step's own way on, under it. */}
-                  {!editing && roomy && (
-                    <div className="flex flex-col gap-3 border-line border-t pt-4">
-                      {last && status}
-                      <div className="flex flex-wrap items-center justify-end gap-2">
-                        {last && !opened && (
-                          <span className="mr-auto text-xs text-ink-3">
-                            {form.mode === "code"
-                              ? "开放后奖励、代码和时间都不能再改。"
-                              : "开放后奖励、参与方式、口令和时间都不能再改。"}
-                          </span>
-                        )}
-                        {buttons(false)}
+            if (!editing) advance();
+          }}
+          onKeyDown={(event: KeyboardEvent<HTMLFormElement>) => {
+            // Enter that ends a word in an input method is not 下一步.
+            if (
+              event.key === "Enter" &&
+              (event.nativeEvent.isComposing || event.keyCode === 229)
+            )
+              event.preventDefault();
+          }}
+        >
+          <div ref={stack}>
+            <StepStack>
+              {visible.map((step, index) => {
+                const open = index === currentIndex;
+                const problems = checked.has(step.id)
+                  ? stepIssues(issues, step.id).length +
+                    (step.id === "claim" && codeGate && codeBlocked ? 1 : 0)
+                  : 0;
+                return (
+                  <StepCard
+                    key={step.id}
+                    index={index}
+                    title={stepTitle(step.id, form)}
+                    summary={summaryOf(
+                      step.id,
+                      form,
+                      deadline,
+                      // Opened, a code not among its versions is the
+                      // 判定器 it opened with, as its card says.
+                      judge.known
+                        ? opened && !judge.version
+                          ? "判定器"
+                          : judge.name
+                        : undefined,
+                    )}
+                    open={open}
+                    current={!editing && open}
+                    afterOpen={editing && index - 1 === currentIndex}
+                    grow={mounted.current}
+                    collapsible={editing}
+                    locked={lockedStep(step.id)}
+                    problems={problems}
+                    headingRef={open ? heading : undefined}
+                    onToggle={() => {
+                      if (editing) setOpenStep(open ? null : step.id);
+                      else linear.back(index + 1);
+                    }}
+                  >
+                    <fieldset disabled={locks} className="grid min-w-0 gap-5">
+                      {body(step.id)}
+                    </fieldset>
+                    {/* Wide /new: the step's own way on, under it. */}
+                    {!editing && roomy && (
+                      <div className="flex flex-col gap-3 border-line border-t pt-4">
+                        {last && status}
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          {last && !fixed && (
+                            // A long note wraps; the buttons stay together.
+                            <span className="mr-auto min-w-0 flex-1 basis-48 text-xs text-ink-3">
+                              {scheduleAt !== null
+                                ? form.mode === "code"
+                                  ? "定时以后奖励、代码和时间就不能再改，要改先取消定时。"
+                                  : "定时以后奖励、参与方式、口令和时间就不能再改，要改先取消定时。"
+                                : form.mode === "code"
+                                  ? "开放后奖励、代码和时间都不能再改。"
+                                  : "开放后奖励、参与方式、口令和时间都不能再改。"}
+                            </span>
+                          )}
+                          <div className="flex shrink-0 gap-2">
+                            {buttons(false)}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </StepCard>
-              );
-            })}
-          </StepStack>
-        </div>
+                    )}
+                  </StepCard>
+                );
+              })}
+            </StepStack>
+          </div>
 
-        {/* 📝: the rarely changed settings, without opening a step. */}
-        {editing && (
-          <QuietLine
-            id="hb-quiet-settings"
-            text={
-              <span className="grid">
-                <span className="text-ink">更多设置</span>
-                <span className="truncate text-xs text-ink-3">{moreLine}</span>
-              </span>
-            }
-            error={groupError(["timing", "scope", "notes", "public"])}
-            onOpen={() => openSheet(groupsOf(form, opened)[0] ?? "notes")}
+          {/* 📝: the rarely changed settings, without opening a step. */}
+          {editing && (
+            <QuietLine
+              id="hb-quiet-settings"
+              text={
+                <span className="grid">
+                  <span className="text-ink">更多设置</span>
+                  <span className="truncate text-xs text-ink-3">
+                    {moreLine}
+                  </span>
+                </span>
+              }
+              error={groupError(["timing", "scope", "notes", "public"])}
+              onOpen={() => openSheet(groupsOf(form, fixed)[0] ?? "notes")}
+            />
+          )}
+
+          {/* 📝 on a wide window: the actions under the steps. */}
+          {editing && roomy && (
+            <div className="flex flex-col gap-3">
+              {status}
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {draft && (
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    className="mr-auto"
+                    aria-disabled={submit.busy || undefined}
+                    data-disabled={submit.busy || undefined}
+                    onClick={() => {
+                      if (submit.busy) return;
+                      // Timed, it is taken back first (scheduled-opening §1).
+                      if (scheduled) setCancelSchedule(true);
+                      else setConfirmDelete(true);
+                    }}
+                  >
+                    {scheduled ? <CalendarX2 /> : <Trash2 />}
+                    {scheduled ? "取消定时" : "删除草稿"}
+                  </Button>
+                )}
+                {buttons(false)}
+              </div>
+            </div>
+          )}
+
+          {!roomy && (
+            <>
+              {(editing || last) && status}
+              {editing && draft && (
+                <div>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    aria-disabled={submit.busy || undefined}
+                    data-disabled={submit.busy || undefined}
+                    onClick={() => {
+                      if (submit.busy) return;
+                      if (scheduled) setCancelSchedule(true);
+                      else setConfirmDelete(true);
+                    }}
+                  >
+                    {scheduled ? <CalendarX2 /> : <Trash2 />}
+                    {scheduled ? "取消定时" : "删除草稿"}
+                  </Button>
+                </div>
+              )}
+              <ActionBar left={<Swap id={barKind}>{barLeft}</Swap>}>
+                {buttons(true)}
+              </ActionBar>
+            </>
+          )}
+        </form>
+
+        <SettingsSheet
+          key={sheet.key}
+          open={sheetOpen}
+          target={sheet.group}
+          field={sheet.field}
+          onClose={() => closeOverlay(router)}
+          form={form}
+          update={update}
+          errorOf={liveErrorOf}
+          opened={fixed}
+          merchantId={activity?.config.merchantId}
+          listedLocked={listedLocked}
+          pageOffered={funding?.page === true}
+          pageStopped={activity?.pageStopped === true}
+        />
+        {activity && draft && (
+          <DeleteDraftDialog
+            activity={activity}
+            user={user}
+            csrfToken={csrfToken}
+            open={confirmDelete}
+            onClose={() => setConfirmDelete(false)}
+            here={submit.here}
           />
         )}
-
-        {/* 📝 on a wide window: the actions under the steps. */}
-        {editing && roomy && (
-          <div className="flex flex-col gap-3">
-            {status}
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              {draft && (
-                <Button
-                  variant="danger"
-                  size="sm"
-                  className="mr-auto"
-                  aria-disabled={submit.busy || undefined}
-                  data-disabled={submit.busy || undefined}
-                  onClick={() => {
-                    if (!submit.busy) setConfirmDelete(true);
-                  }}
-                >
-                  <Trash2 />
-                  删除草稿
-                </Button>
-              )}
-              {buttons(false)}
-            </div>
-          </div>
-        )}
-
-        {!roomy && (
-          <>
-            {(editing || last) && status}
-            {editing && draft && (
-              <div>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  aria-disabled={submit.busy || undefined}
-                  data-disabled={submit.busy || undefined}
-                  onClick={() => {
-                    if (!submit.busy) setConfirmDelete(true);
-                  }}
-                >
-                  <Trash2 />
-                  删除草稿
-                </Button>
-              </div>
-            )}
-            <ActionBar left={<Swap id={barKind}>{barLeft}</Swap>}>
-              {buttons(true)}
-            </ActionBar>
-          </>
-        )}
-      </form>
-
-      <SettingsSheet
-        key={sheet.key}
-        open={sheetOpen}
-        target={sheet.group}
-        field={sheet.field}
-        onClose={() => closeOverlay(router)}
-        form={form}
-        update={update}
-        errorOf={liveErrorOf}
-        opened={opened}
-        merchantId={activity?.config.merchantId}
-        listedLocked={listedLocked}
-        pageOffered={funding?.page === true}
-        pageStopped={activity?.pageStopped === true}
-      />
-      {activity && draft && (
-        <DeleteDraftDialog
-          activity={activity}
-          user={user}
-          csrfToken={csrfToken}
-          open={confirmDelete}
-          onClose={() => setConfirmDelete(false)}
-          here={submit.here}
+        <ScheduleDialog
+          open={scheduleOpen}
+          at={scheduledAt ?? scheduleAt}
+          fish={form.funding === "balance"}
+          deadline={
+            form.timing.kind === "at"
+              ? new Date(form.timing.at).getTime()
+              : undefined
+          }
+          onClose={() => setScheduleOpen(false)}
+          onDone={(at) => {
+            setScheduleOpen(false);
+            if (!scheduled || !activity) {
+              setScheduleAt(at);
+              return;
+            }
+            // Timed already: 不定时了 asks first; another time is set at once.
+            if (at === null) {
+              setCancelSchedule(true);
+              return;
+            }
+            scheduleWrites.schedule.mutate(
+              {
+                activityId: activity.id,
+                version: activity.version,
+                at: new Date(at).toISOString(),
+              },
+              {
+                onError: (failure) =>
+                  submit.setNotice({
+                    tone: "danger",
+                    text: `定时没有完成：${failure.message}`,
+                  }),
+              },
+            );
+          }}
         />
-      )}
-    </div>
+        {activity && scheduled && (
+          <CancelScheduleDialog
+            userId={user.id}
+            csrfToken={csrfToken}
+            activityId={activity.id}
+            version={activity.version}
+            fish={activity.funding === "balance"}
+            open={cancelSchedule}
+            onClose={() => setCancelSchedule(false)}
+          />
+        )}
+      </div>
+    </LockedBy.Provider>
   );
 }

@@ -19,6 +19,7 @@ import {
   redemptionIntentAtom,
   rewardAnimationAtom,
 } from "../../lib/redemption-intent";
+import { openingLabel } from "../../lib/roster-time";
 import { sealGlyphs } from "../../lib/seal";
 import { useSessionUser } from "../../lib/session";
 import { loadTurnstile } from "../../lib/turnstile";
@@ -238,7 +239,9 @@ export function useHongbao(data: HongbaoData) {
       : draft
         ? preview
           ? `草稿预览，开放后才能${verb}`
-          : `还没开放，开放后才能${verb}`
+          : activity.scheduledOpenAt !== undefined
+            ? `${openingLabel(activity.scheduledOpenAt)} 开放`
+            : `还没开放，开放后才能${verb}`
         : paused
           ? "红包的代码连续出错，暂停领取"
           : spinning

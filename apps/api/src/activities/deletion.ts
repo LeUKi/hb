@@ -2,7 +2,12 @@ import { and, eq } from "drizzle-orm";
 import { createDb } from "../db/client";
 import { activities } from "../db/schema";
 import type { ApiBindings } from "../env";
-import { activityConflict, activityNotFound, invalidActivity } from "./errors";
+import {
+  ActivityError,
+  activityConflict,
+  activityNotFound,
+  invalidActivity,
+} from "./errors";
 import { databaseNow } from "./lifecycle";
 import { type ActivityRow, activityWriteGuard } from "./storage";
 
@@ -40,6 +45,13 @@ export async function deleteActivity(
   if (row.version !== version) activityConflict();
   if (row.openedAt !== null || row.claimedCount !== 0)
     invalidActivity("只能删除从未开放且没有领取记录的草稿");
+  // 定时开放: its timing (and a 🐟额红包's lock) goes first (scheduled-opening §1).
+  if (row.scheduledOpenAt !== null)
+    throw new ActivityError(
+      409,
+      "ACTIVITY_SCHEDULED",
+      "定时开放的草稿要先取消定时，才能删除。",
+    );
   try {
     await env.DB.batch([
       activityWriteGuard(env.DB, id, authorId, version),

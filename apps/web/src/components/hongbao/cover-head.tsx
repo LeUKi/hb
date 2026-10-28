@@ -413,7 +413,11 @@ export function CoverHead({
             ))}
             {activity.draft && (
               <CoverChip
-                hint={`还没开放，开放后才能${activity.mode === "timed_draw" ? "报名" : "领取"}；开放前红包作者还能改。`}
+                hint={
+                  activity.scheduledOpenAt !== undefined
+                    ? "到点自动开放。金额和份数已经定了，不会再改。"
+                    : `还没开放，开放后才能${activity.mode === "timed_draw" ? "报名" : "领取"}；开放前红包作者还能改。`
+                }
               >
                 未开放
               </CoverChip>

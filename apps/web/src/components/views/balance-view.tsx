@@ -205,6 +205,7 @@ function AdjustmentRow({
 export const hongbaoWords = {
   sent: "发红包",
   refund: "红包结束退回",
+  untimed: "取消定时退回",
   received: "领到红包",
 } as const;
 

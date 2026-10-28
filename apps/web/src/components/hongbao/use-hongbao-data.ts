@@ -37,6 +37,16 @@ const POLL_MS = 5_000;
 const LIST_POLL_MS = 15_000;
 const DRAWING_POLL_MS = 1_000;
 
+/** Past its time, a timed draft is asked this often until it opens. */
+const DUE_POLL_MS = 1_000;
+
+/** When a timed draft opens (scheduled-opening §4); null otherwise. */
+function opensBy(activity: PublicActivity | undefined) {
+  return activity?.status === "draft" && activity.scheduledOpenAt
+    ? Date.parse(activity.scheduledOpenAt)
+    : null;
+}
+
 /** A draw in its seconds between closing and its result: read every second until 30 s past its round. */
 function drawing(activity: PublicActivity | undefined) {
   if (activity?.draw?.state !== "settling") return false;
@@ -83,16 +93,30 @@ export function useHongbaoPageData(id: string) {
     (activity) =>
       publicSettled(activity)
         ? false
-        : // Being drawn (开奖证明): each step as it comes, pushed or not.
-          drawing(activity)
-          ? DRAWING_POLL_MS
-          : // Past the deadline the push should say so; until it has, ask.
-            live && !pastDeadline(activity)
-            ? false
-            : POLL_MS,
+        : // 定时开放 past its time: every second until it has opened.
+          (opensBy(activity) ?? Number.POSITIVE_INFINITY) <= Date.now()
+          ? DUE_POLL_MS
+          : // Being drawn (开奖证明): each step as it comes, pushed or not.
+            drawing(activity)
+            ? DRAWING_POLL_MS
+            : // Past the deadline the push should say so; until it has, ask.
+              live && !pastDeadline(activity)
+              ? false
+              : POLL_MS,
   );
   const activity = publicQuery.data?.activity;
   const settled = publicSettled(activity);
+  // 定时开放 (scheduled-opening §4): read again right at its time, so all
+  // watching turn together; then the poll above asks every second.
+  const opensAt = opensBy(activity);
+  const refetchPublic = publicQuery.refetch;
+  useEffect(() => {
+    if (opensAt === null) return;
+    const left = opensAt - Date.now();
+    if (left <= 0) return;
+    const timer = setTimeout(() => void refetchPublic(), left + 50);
+    return () => clearTimeout(timer);
+  }, [opensAt, refetchPublic]);
   // Only the clock ends a 红包 at its deadline: the page turns over then.
   useBefore(
     activity && !activity.draw && activity.deadlineAt && !settled

@@ -63,13 +63,15 @@ export async function balanceOpeningBlocked(
   env: ApiBindings,
   authorId: string,
   config: Pick<LdcActivityInput, "money">,
+  /** Timed to open, it holds its 🐟 already (scheduled-opening §3). */
+  held = false,
 ): Promise<LdcOpeningBlockedReason | undefined> {
   const [settings, available] = await Promise.all([
     readBalanceSettings(env),
     availableMinor(env, authorId),
   ]);
   if (!settings.hongbaoEnabled) return "BALANCE_HONGBAO_PAUSED";
-  if (available < ldcTotalMinor(config as LdcActivityInput))
+  if (!held && available < ldcTotalMinor(config as LdcActivityInput))
     return "BALANCE_INSUFFICIENT";
   return undefined;
 }
@@ -179,6 +181,23 @@ export function drawStatements(
         json_extract(w.value,'$.claimId'),${databaseNow}
       FROM json_each(?) w`).bind(payload),
   ];
+}
+
+/**
+ * 定时开放 taken back, or failed (scheduled-opening §1, §5): the 🐟 it
+ * locked when timed goes back to 可用. Only once the draft is no longer
+ * timed: the write that clears its time carries this after it.
+ */
+export function releaseStatement(env: ApiBindings, activityId: string) {
+  return env.DB.prepare(`INSERT INTO balance_entries
+    (id,user_id,kind,available_delta_minor,locked_delta_minor,lock_id,created_at)
+    SELECT ?,l.user_id,'unlock',l.remaining_minor,-l.remaining_minor,l.id,${databaseNow}
+    FROM balance_locks l JOIN activities a ON a.id=l.activity_id
+    WHERE l.activity_id=? AND l.purpose='activity' AND l.status='active' AND l.remaining_minor>0
+      AND a.opened_at IS NULL AND a.scheduled_open_at IS NULL`).bind(
+    crypto.randomUUID(),
+    activityId,
+  );
 }
 
 /**

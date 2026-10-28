@@ -262,6 +262,10 @@ it("upgrades a populated step-3 database without changing IDs, encrypted content
       // 0046: no 附带网页 stopped.
       page_stopped_at: null,
       page_stopped_by_user_id: null,
+      // 0048: not timed to open.
+      scheduled_open_at: null,
+      schedule_failed_at: null,
+      schedule_failure: null,
       version: Number(row.version) + 1,
       config: JSON.stringify({
         ...oldConfig,
@@ -585,6 +589,10 @@ it("upgrades populated simulated LDC payment data from 0008 through acceptance m
       // 0046: no 附带网页 stopped.
       page_stopped_at: null,
       page_stopped_by_user_id: null,
+      // 0048: not timed to open.
+      scheduled_open_at: null,
+      schedule_failed_at: null,
+      schedule_failure: null,
       version: Number(row.version) + 1,
       config: JSON.stringify({
         ...JSON.parse(String(row.config)),

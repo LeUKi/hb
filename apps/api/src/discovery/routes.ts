@@ -156,12 +156,17 @@ export const discoveryRoutes = new Hono<ApiContext>()
       (
         value,
       ): {
-        status: "all" | "active" | "ended";
+        status: "all" | "upcoming" | "active" | "ended";
         type: ActivityRewardFilter;
         cursor?: string;
       } => {
         const status = value.status ?? "all";
-        if (status !== "all" && status !== "active" && status !== "ended")
+        if (
+          status !== "all" &&
+          status !== "upcoming" &&
+          status !== "active" &&
+          status !== "ended"
+        )
           throw new ActivityError(400, "INVALID_STATUS", "红包状态无效");
         if (value.cursor !== undefined && typeof value.cursor !== "string")
           throw new ActivityError(400, "INVALID_CURSOR", "分页标识无效");

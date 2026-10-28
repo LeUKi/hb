@@ -6,6 +6,7 @@ import type {
   AuthorClaim,
   ClaimDetail,
   DrawProof,
+  LdcOpeningBlockedReason,
   ManagedActivity,
   PaymentView,
   PublicActivity,
@@ -30,8 +31,16 @@ export type HongbaoActivity = {
   mode: RewardMode;
   /** 代码判定: its code judges what is typed (no 口令). */
   participation: "password" | "direct" | "code";
-  /** Saved but not opened (草稿): only its sender can see it. */
+  /** Saved but not opened (草稿): 未开放 to whoever has its link. */
   draft: boolean;
+  /** 定时开放 (docs/scheduled-opening-design.md): when it opens by itself. */
+  scheduledOpenAt?: number;
+  /** Its last timing did not open it (its sender's read only). */
+  scheduleFailure?: { at: number; reason: string };
+  /** The sender's read's version, for what they change from its page. */
+  version?: number;
+  /** Why it could not open now (the sender's read of a draft). */
+  openingBlocked?: LdcOpeningBlockedReason;
   topic?: { topicId: string; postNumber: number };
   totalAmount: string;
   unitAmount?: string;
@@ -204,6 +213,21 @@ export function hongbaoOf(
     mode: reward?.mode ?? "fixed",
     participation: activity.participationMode ?? "password",
     draft: activity.status === "draft",
+    ...(activity.scheduledOpenAt
+      ? { scheduledOpenAt: Date.parse(activity.scheduledOpenAt) }
+      : {}),
+    ...(managed ? { version: managed.version } : {}),
+    ...(managed?.openingBlockedReason
+      ? { openingBlocked: managed.openingBlockedReason }
+      : {}),
+    ...(managed?.scheduleFailure
+      ? {
+          scheduleFailure: {
+            at: Date.parse(managed.scheduleFailure.at),
+            reason: managed.scheduleFailure.reason,
+          },
+        }
+      : {}),
     topic: topicOf(activity.topicUrl),
     totalAmount: reward?.totalAmount ?? "",
     unitAmount: reward?.unitAmount,

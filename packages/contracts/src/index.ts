@@ -645,6 +645,18 @@ export const deleteActivitySchema = z.strictObject({
   version: z.number().int().positive(),
 });
 export type DeleteActivityInput = z.infer<typeof deleteActivitySchema>;
+/**
+ * 定时开放 (docs/scheduled-opening-design.md §1): `at` a time 5 minutes to
+ * 30 days on; null takes the timing back.
+ */
+export const scheduleActivitySchema = z.strictObject({
+  version: z.number().int().positive(),
+  at: z.iso.datetime({ offset: true }).nullable(),
+});
+export type ScheduleActivityInput = z.infer<typeof scheduleActivitySchema>;
+/** 定时开放's window: from 5 minutes on, at most 30 days on (§1). */
+export const SCHEDULE_MIN_LEAD_MS = 5 * 60_000;
+export const SCHEDULE_MAX_LEAD_MS = 30 * 86_400_000;
 
 export type CreateActivityInput = z.infer<typeof createActivitySchema>;
 export type UpdateActivityInput = z.infer<typeof updateActivitySchema>;
@@ -820,6 +832,10 @@ export type ActivitySummary = {
   draw?: DrawSummary;
   /** 代码判定红包 the 站长 stopped (停用): ended, for that reason. */
   stopped?: true;
+  /** 定时开放 (docs/scheduled-opening-design.md): a draft opening then. */
+  scheduledOpenAt?: string;
+  /** Its last timing did not open it: when, and why in words. */
+  scheduleFailure?: { at: string; reason: string };
 };
 
 export type ManagedActivity = ActivitySummary & {
@@ -883,6 +899,8 @@ export type PublicActivity = {
    */
   draftDeadline?: ActivityInput["deadline"];
   draftCountdownSeconds?: number;
+  /** 定时开放: a draft its ActivityDO opens then (scheduled-opening-design §6). */
+  scheduledOpenAt?: string;
   /**
    * Up to five people for the 名单入口, read with the rest so they match the
    * numbers: the latest claims; while a draw is open, the latest sign-ups;

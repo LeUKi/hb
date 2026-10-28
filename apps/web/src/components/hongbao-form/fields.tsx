@@ -16,7 +16,7 @@ import {
   Trash2,
   Wallet,
 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { createContext, type ReactNode, useContext, useState } from "react";
 import { useBalanceFunding } from "../../lib/balance";
 import { cn } from "../../lib/cn";
 import { haptic } from "../../lib/haptics";
@@ -71,6 +71,19 @@ export function LockNote({ children }: { children: ReactNode }) {
       <Lock className="size-3.5 shrink-0" aria-hidden="true" />
       {children}
     </p>
+  );
+}
+
+/** What locked the form's steps: opening, or a 定时开放 (scheduled-opening §2). */
+export const LockedBy = createContext<"opened" | "scheduled">("opened");
+
+/** “开放后不能修改” on a locked step; “定时以后不能修改” when timed. */
+export function LockedNote() {
+  const by = useContext(LockedBy);
+  return (
+    <LockNote>
+      {by === "scheduled" ? "定时以后不能修改。" : "开放后不能修改。"}
+    </LockNote>
   );
 }
 
@@ -159,11 +172,14 @@ export function QuietLine({
   id,
   text,
   error,
+  action = "改",
   onOpen,
 }: {
   id: string;
   text: ReactNode;
   error?: string;
+  /** What pressing it does, after the line: 改, or 定时 (scheduled-opening §1). */
+  action?: string;
   onOpen: () => void;
 }) {
   return (
@@ -183,7 +199,7 @@ export function QuietLine({
           {error && <span className="text-xs">{error}</span>}
         </span>
         <span className="flex shrink-0 items-center text-accent-ink">
-          改
+          {action}
           <ChevronRight className="size-4" aria-hidden="true" />
         </span>
       </button>

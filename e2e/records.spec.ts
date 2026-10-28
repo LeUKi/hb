@@ -88,6 +88,14 @@ function sent(
   };
 }
 
+/** Tomorrow at 20:00, on this device. */
+function tomorrowAt20() {
+  const at = new Date();
+  at.setDate(at.getDate() + 1);
+  at.setHours(20, 0, 0, 0);
+  return at;
+}
+
 const statusCounts = { all: 3, draft: 1, active: 1, ended: 0, archived: 1 };
 
 /** Answers the account's lists; records the status filters asked for. */
@@ -113,6 +121,22 @@ async function mockHistory(page: Page) {
               status: "draft",
               openedAt: null,
               claimedCount: 0,
+            }),
+            // 定时开放: one timed, and one whose timing did not open it.
+            sent("44444444-4444-4444-8444-444444444444", "明晚的红包", {
+              status: "draft",
+              openedAt: null,
+              claimedCount: 0,
+              scheduledOpenAt: tomorrowAt20().toISOString(),
+            }),
+            sent("55555555-5555-4555-8555-555555555555", "没开成的", {
+              status: "draft",
+              openedAt: null,
+              claimedCount: 0,
+              scheduleFailure: {
+                at: new Date().toISOString(),
+                reason: "🐟额可用不够",
+              },
             }),
           ];
     return route.fulfill({
@@ -298,6 +322,61 @@ test.describe("红包广场", () => {
       `/🧧/${encodeActivityEmoji("66666666-6666-4666-8666-666666666666")}`,
     );
   });
+  test("即将开放：加入广场的定时红包单独一栏，卡片写几点开放；空着时这样写", async ({
+    page,
+  }) => {
+    await mockSession(page, null);
+    let upcoming = [
+      card("88888888-8888-4888-8888-888888888888", "明晚的红包", {
+        status: "draft",
+        openedAt: null,
+        deadlineAt: null,
+        scheduledOpenAt: tomorrowAt20().toISOString(),
+      }),
+    ];
+    const asked: string[] = [];
+    await page.route("**/api/discovery/activities?**", (route) => {
+      const status = new URL(route.request().url()).searchParams.get("status");
+      asked.push(status ?? "");
+      const items =
+        status === "upcoming"
+          ? upcoming
+          : [card("77777777-7777-4777-8777-777777777777", "周末红包")];
+      return route.fulfill({
+        json: {
+          items,
+          nextCursor: null,
+          total: items.length,
+        } satisfies DiscoveryList,
+      });
+    });
+    await openApp(page, "/square");
+    const filter = page.getByRole("group", { name: "筛选" });
+    // 全部 / 即将开放 / 进行中 / 最近结束, in that order.
+    await expect(filter.getByRole("button")).toHaveText([
+      /全部/,
+      /即将开放/,
+      /进行中/,
+      /最近结束/,
+    ]);
+    await expect(
+      filter.getByRole("button", { name: /即将开放\s*1/ }),
+    ).toBeVisible();
+    // 全部 is the opened ones.
+    await expect(page.getByRole("button", { name: /明晚的红包/ })).toHaveCount(
+      0,
+    );
+    await filter.getByRole("button", { name: /即将开放/ }).click();
+    await expect(page).toHaveURL(/\/square\?filter=upcoming$/);
+    const timed = page.getByRole("button", { name: /明晚的红包/ });
+    await expect(timed).toContainText("即将开放");
+    await expect(timed).toContainText("明天 20:00 开放");
+    expect(asked).toContain("upcoming");
+    // Nothing timed: said so.
+    upcoming = [];
+    await page.reload();
+    await expect(page.getByText("现在没有即将开放的红包")).toBeVisible();
+  });
 });
 
 test.describe("红包记录", () => {
@@ -327,6 +406,13 @@ test.describe("红包记录", () => {
       page.getByText("已发 3 个，发出 11.00 LDC · 参与过 2 个，领到 3.54 LDC"),
     ).toBeVisible();
     await expect(page.getByText("还没开放，拿到链接的人能看到")).toBeVisible();
+    // 定时开放: 待开放 and when; one that did not open says why.
+    const timed = page.getByRole("listitem").filter({ hasText: "明晚的红包" });
+    await expect(timed).toContainText("待开放");
+    await expect(timed).toContainText("明天 20:00 开放");
+    await expect(
+      page.getByText("定时开放没有成功：🐟额可用不够"),
+    ).toBeVisible();
     // Each opened 红包 has its 名单 (opened in place); a draft has nobody yet.
     await expect(
       page.getByRole("button", { name: "名单「周末红包」" }),

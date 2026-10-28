@@ -58,6 +58,7 @@ export type SentRecord = {
   activity: HongbaoActivity;
   view: PublicView;
   archived: boolean;
+  scheduleFailure?: { at: string; reason: string };
 };
 
 export function sentRecordOf(
@@ -87,11 +88,18 @@ export function sentRecordOf(
     ...(summary.paymentMode ? { paymentMode: summary.paymentMode } : {}),
     ...(summary.draw ? { draw: summary.draw } : {}),
     ...(summary.stopped ? { stopped: true as const } : {}),
+    ...(summary.scheduledOpenAt
+      ? { scheduledOpenAt: summary.scheduledOpenAt }
+      : {}),
   };
   return {
     activity: hongbaoOf(activity),
     view: publicViewOf(activity),
     archived: summary.status === "archived",
+    // 定时开放 that did not open (scheduled-opening §5): said on its row.
+    ...(summary.scheduleFailure
+      ? { scheduleFailure: summary.scheduleFailure }
+      : {}),
   };
 }
 
@@ -166,7 +174,8 @@ export function joinedRecordOf(item: Participation): JoinedRecord {
   };
 }
 
-export type SquareFilter = "active" | "ended" | "all";
+/** 即将开放: timed drafts, nearest first (scheduled-opening §7). */
+export type SquareFilter = "upcoming" | "active" | "ended" | "all";
 
 /** The 红包广场, newest first, 20 at a time; `live` polls (the shown list). */
 export function useSquarePages(

@@ -295,13 +295,18 @@ export function activityImageInput(input: {
     line(paused ? "红包的代码连续出错，暂停领取" : remainingLine(activity));
   const open = { ...base, muted: false };
   const over = { ...base, muted: true, live: false };
-  // Not open yet, for anyone: it changes when it opens (05 §6).
+  // Not open yet, for anyone: it changes when it opens (05 §6); timed, it
+  // says when (scheduled-opening §6).
   if (activity.status === "draft")
     return {
       ...open,
       seal: "未开放",
       unopened: true,
-      body: line("还没开放"),
+      body: line(
+        activity.scheduledOpenAt
+          ? `${openingLabel(new Date(activity.scheduledOpenAt), renderedAt, base.timeZone)} 开放`
+          : "还没开放",
+      ),
       live: true,
     };
   switch (viewer.kind) {
@@ -425,6 +430,23 @@ function timeParts(at: Date, timeZone: string) {
 function clock(at: Date, timeZone: string) {
   const parts = timeParts(at, timeZone);
   return `${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
+/** “今天 20:00”, “明天 20:00”, “10月30日 20:00”, in the viewer's zone. */
+function openingLabel(at: Date, now: Date, timeZone: string) {
+  const parts = timeParts(at, timeZone);
+  const day = (value: Date) => {
+    const [y, m, d] = new Intl.DateTimeFormat("en-CA", { timeZone })
+      .format(value)
+      .split("-")
+      .map(Number);
+    return Date.UTC(y ?? 0, (m ?? 1) - 1, d ?? 1);
+  };
+  const days = Math.round((day(at) - day(now)) / 86_400_000);
+  const clock = `${parts.hour}:${parts.minute}`;
+  if (days === 0) return `今天 ${clock}`;
+  if (days === 1) return `明天 ${clock}`;
+  return `${parts.month}月${parts.day}日 ${clock}`;
 }
 
 function dateTime(at: Date, timeZone: string) {

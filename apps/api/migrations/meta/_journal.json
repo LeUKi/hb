@@ -337,6 +337,13 @@
       "when": 1793179143147,
       "tag": "0047_code_for_everyone",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "6",
+      "when": 1793188172094,
+      "tag": "0048_scheduled_opening",
+      "breakpoints": true
     }
   ]
 }

@@ -1,15 +1,23 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom } from "jotai";
-import { Download, Eye, PauseCircle, Share2 } from "lucide-react";
+import {
+  AlertTriangle,
+  CalendarClock,
+  Download,
+  Eye,
+  PauseCircle,
+  Share2,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { activityCode, senderPagePath } from "../../lib/activity-route";
 import type { HongbaoActivity } from "../../lib/hongbao";
 import { judgeRecordsUrl, useCodeFailures } from "../../lib/judge";
-import { clockLabel } from "../../lib/roster-time";
-import { useSessionUser } from "../../lib/session";
+import { clockLabel, openingLabel } from "../../lib/roster-time";
+import { useIdentity, useSessionUser } from "../../lib/session";
 import { savedDraftAtom } from "../../lib/store";
+import { CancelScheduleDialog } from "../hongbao-form/cancel-schedule-dialog";
 import { Callout, Panel } from "../page/page";
-import { buttonVariants } from "../ui/button";
+import { Button, buttonVariants } from "../ui/button";
 import { MoreLink } from "../ui/button-link";
 import { SenderLinks } from "./sender-links";
 
@@ -66,9 +74,25 @@ export function AuthorTools({
   const navigate = useNavigate();
   const draft = Boolean(activity.draft);
   const code = activity.participation === "code";
+  const user = useSessionUser();
+  const { csrfToken } = useIdentity();
+  const [cancelling, setCancelling] = useState(false);
+  // 定时开放 (docs/scheduled-opening-design.md §5, §6).
+  const scheduled = draft ? activity.scheduledOpenAt : undefined;
+  const verb = activity.mode === "timed_draw" ? "报名" : "领取";
+  const credential =
+    scheduled !== undefined
+      ? activity.openingBlocked === "MERCHANT_CREDENTIALS_REJECTED"
+        ? "凭证认证未通过"
+        : activity.openingBlocked === "MERCHANT_CREDENTIALS_UNAVAILABLE"
+          ? "暂时无法检查凭证"
+          : null
+      : null;
   // Saved from /new a moment ago: said once, here where saving landed.
   const [savedDraft, setSavedDraft] = useAtom(savedDraftAtom);
-  const [justSaved] = useState(() => savedDraft === activity.id);
+  const [justSaved] = useState(() =>
+    savedDraft?.id === activity.id ? savedDraft : null,
+  );
   useEffect(() => {
     if (justSaved) setSavedDraft(null);
   }, [justSaved, setSavedDraft]);
@@ -78,7 +102,50 @@ export function AuthorTools({
       className="grid gap-2"
       data-hb-part="author"
     >
-      {draft && (
+      {scheduled !== undefined && (
+        <Callout
+          tone="warning"
+          icon={CalendarClock}
+          title={justSaved?.scheduled ? "已定时" : "待开放"}
+        >
+          <span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <span>
+              {openingLabel(scheduled)}{" "}
+              自动开放。开放前，拿到链接的人能看到这一页，到点才能{verb}。
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCancelling(true)}
+            >
+              取消定时
+            </Button>
+          </span>
+        </Callout>
+      )}
+      {credential && (
+        <Callout tone="warning" icon={AlertTriangle}>
+          <span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <span>
+              开放前检查商户凭证没有通过：{credential}
+              。到点前更新密钥，还能按时开放。
+            </span>
+            <MoreLink
+              href="/merchant"
+              onGo={() => void navigate({ to: "/merchant" })}
+            >
+              去更新密钥
+            </MoreLink>
+          </span>
+        </Callout>
+      )}
+      {draft && scheduled === undefined && activity.scheduleFailure && (
+        <Callout tone="danger" icon={AlertTriangle} title="定时开放没有成功">
+          {activity.scheduleFailure.reason}
+          。已退回草稿，可以重新定时，或者直接开放。
+        </Callout>
+      )}
+      {draft && scheduled === undefined && (
         <Callout
           tone="warning"
           icon={Eye}
@@ -150,6 +217,17 @@ export function AuthorTools({
             下载完整记录
           </a>
         </Panel>
+      )}
+      {scheduled !== undefined && user && activity.version !== undefined && (
+        <CancelScheduleDialog
+          userId={user.id}
+          csrfToken={csrfToken ?? ""}
+          activityId={activity.id}
+          version={activity.version}
+          fish={activity.fish}
+          open={cancelling}
+          onClose={() => setCancelling(false)}
+        />
       )}
     </section>
   );

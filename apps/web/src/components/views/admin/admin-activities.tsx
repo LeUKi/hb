@@ -55,7 +55,11 @@ type Row = AdminActivityListItem & { record: SentRecord };
 /** As the sender's own lists say it: 草稿 / 进行中 / 开奖中 / 已领完 … */
 function statusLine({ record }: Row) {
   const { activity, view, archived } = record;
-  const tag = statusOf(view, { draft: activity.draft, archived });
+  const tag = statusOf(view, {
+    draft: activity.draft,
+    archived,
+    scheduled: activity.scheduledOpenAt !== undefined,
+  });
   // 开奖中 is still running (its result is to come).
   const ended =
     !activity.draft && Boolean(view.endReason) && view.endReason !== "settling";

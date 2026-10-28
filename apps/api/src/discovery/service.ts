@@ -8,7 +8,7 @@ import {
   type GlobalRedemptionResult,
   type PublicActivity,
 } from "@hb/contracts";
-import { and, desc, eq, lt, or, type SQL, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, lt, or, type SQL, sql } from "drizzle-orm";
 import { getClaimDetail } from "../activities/claim-queries";
 import { submissionPasswordMatched } from "../activities/claim-service";
 import { registrationStatus } from "../activities/draw-storage";
@@ -68,6 +68,17 @@ function parseCursor(value: string | undefined, scope: string) {
   }
 }
 
+/**
+ * 即将开放 (docs/scheduled-opening-design.md §7): drafts timed to open,
+ * nearest first; nothing else of a draft is ever listed.
+ */
+function upcoming() {
+  return sql`${activities.rewardType} = 'ldc'
+    AND ${activities.openedAt} IS NULL
+    AND ${activities.deletedAt} IS NULL
+    AND ${activities.scheduledOpenAt} IS NOT NULL`;
+}
+
 // A delayed lifecycle sweep must not keep expired archives discoverable.
 function discoverable(now: number) {
   return sql`${activities.rewardType} = 'ldc'
@@ -103,10 +114,13 @@ async function list(
   scope: string,
   viewerId?: string,
   cursorValue?: string,
+  /** Opened ones newest first; 即将开放 by its time, nearest first. */
+  order: "opened" | "scheduled" = "opened",
 ): Promise<DiscoveryList> {
   const cursor = parseCursor(cursorValue, scope);
   const db = createDb(env.DB);
-  const base = and(discoverable(Date.now()), filter);
+  const scheduled = order === "scheduled";
+  const base = and(scheduled ? upcoming() : discoverable(Date.now()), filter);
   const count = await db
     .select({ total: sql<number>`COUNT(*)` })
     .from(activities)
@@ -148,17 +162,29 @@ async function list(
       and(
         base,
         cursor
-          ? or(
-              lt(activities.openedAt, cursor.time),
-              and(
-                eq(activities.openedAt, cursor.time),
-                lt(activities.id, cursor.id),
-              ),
-            )
+          ? scheduled
+            ? or(
+                gt(activities.scheduledOpenAt, cursor.time),
+                and(
+                  eq(activities.scheduledOpenAt, cursor.time),
+                  gt(activities.id, cursor.id),
+                ),
+              )
+            : or(
+                lt(activities.openedAt, cursor.time),
+                and(
+                  eq(activities.openedAt, cursor.time),
+                  lt(activities.id, cursor.id),
+                ),
+              )
           : undefined,
       ),
     )
-    .orderBy(desc(activities.openedAt), desc(activities.id))
+    .orderBy(
+      ...(scheduled
+        ? [asc(activities.scheduledOpenAt), asc(activities.id)]
+        : [desc(activities.openedAt), desc(activities.id)]),
+    )
     .limit(PAGE_SIZE + 1);
   const page = rows.slice(0, PAGE_SIZE);
   const last = page.at(-1)?.activity;
@@ -193,7 +219,13 @@ async function list(
     items: await withPageSwitches(env, items),
     nextCursor:
       rows.length > PAGE_SIZE && last
-        ? btoa(JSON.stringify({ scope, time: last.openedAt, id: last.id }))
+        ? btoa(
+            JSON.stringify({
+              scope,
+              time: scheduled ? last.scheduledOpenAt : last.openedAt,
+              id: last.id,
+            }),
+          )
         : null,
   };
 }
@@ -210,11 +242,20 @@ async function withPageSwitches(env: ApiBindings, items: DiscoveryCard[]) {
 
 export function listSquare(
   env: ApiBindings,
-  status: "all" | "active" | "ended",
+  status: "all" | "upcoming" | "active" | "ended",
   viewerId?: string,
   cursor?: string,
   type: ActivityRewardFilter = "all",
 ) {
+  if (status === "upcoming")
+    return list(
+      env,
+      sql`${activities.joinSquare} = 1 AND ${rewardFilterSql(type)}`,
+      type === "all" ? "square:upcoming" : `square:upcoming:${type}`,
+      viewerId,
+      cursor,
+      "scheduled",
+    );
   const state =
     status === "all" ? sql`1 = 1` : sql`${activityListStatusSql()} = ${status}`;
   // Not the ones ended early, by their sender or the 站长 (07 §2): they

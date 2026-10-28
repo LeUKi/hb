@@ -3,7 +3,7 @@ import { Braces, Globe } from "lucide-react";
 import { cn } from "../../lib/cn";
 import type { HongbaoActivity } from "../../lib/hongbao";
 import { endLabels, type PublicView } from "../../lib/hongbao";
-import { clockLabel } from "../../lib/roster-time";
+import { clockLabel, openingLabel } from "../../lib/roster-time";
 import { sealGlyphs } from "../../lib/seal";
 import { Avatar } from "../ui/avatar";
 import { EmojiText } from "../ui/emoji-text";
@@ -28,8 +28,11 @@ export function statusOf(
   {
     draft = false,
     archived = false,
-  }: { draft?: boolean; archived?: boolean } = {},
+    scheduled = false,
+  }: { draft?: boolean; archived?: boolean; scheduled?: boolean } = {},
 ) {
+  // 定时开放 (scheduled-opening §1): a draft timed to open.
+  if (draft && scheduled) return { text: "待开放", tone: "warning" as const };
   if (draft) return { text: "草稿", tone: "neutral" as const };
   if (!view.endReason) return { text: "进行中", tone: "success" as const };
   if (view.endReason === "settling")
@@ -56,7 +59,12 @@ export function HongbaoCard({
   mine?: { text: string; tone: ChipTone } | null;
 }) {
   const ended = view.ended && view.endReason !== "settling";
-  const status = statusOf(view);
+  // 即将开放 (scheduled-opening §7): a draft timed to open.
+  const upcoming = activity.draft ? activity.scheduledOpenAt : undefined;
+  const status =
+    upcoming !== undefined
+      ? { text: "即将开放", tone: "warning" as const }
+      : statusOf(view);
   const draw = activity.mode === "timed_draw";
   const seal = sealGlyphs;
   const glyph = ended
@@ -112,8 +120,10 @@ export function HongbaoCard({
           </span>
           <span className="truncate text-xs text-ink-3">
             {quantityLine(activity, view)}
-            {!view.endReason &&
-              ` · ${draw ? "开奖" : "截止"} ${clockLabel(view.deadlineAt)}`}
+            {upcoming !== undefined
+              ? ` · ${openingLabel(upcoming)} 开放`
+              : !view.endReason &&
+                ` · ${draw ? "开奖" : "截止"} ${clockLabel(view.deadlineAt)}`}
           </span>
           <span className="mt-2 flex flex-wrap items-center gap-1.5">
             <StatusChip tone={status.tone} dot>

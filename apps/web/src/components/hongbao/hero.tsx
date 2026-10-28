@@ -27,7 +27,7 @@ import { MyResult } from "./my-result";
 import { Seal } from "./parts";
 import { useCoverHeight } from "./use-cover-height";
 import { COVER_RESERVE, scrollerOf, useCoverState } from "./use-cover-state";
-import type { Hongbao } from "./use-hongbao";
+import { countdown, type Hongbao, useNow } from "./use-hongbao";
 
 const clamp = (min: number, value: number, max: number) =>
   Math.min(max, Math.max(min, value));
@@ -36,6 +36,16 @@ const clamp = (min: number, value: number, max: number) =>
  * The page's geometry in px, from the window (not the viewport), so the CSS
  * and the animations use the same numbers.
  */
+/** “还有 02:13:05”, by the second, to a timed draft's opening. */
+function OpensIn({ at }: { at: number }) {
+  const now = useNow(1000);
+  return (
+    <p className="text-sm text-ink-2 tabular-nums">
+      还有 {countdown(Math.max(1000, at - now))}
+    </p>
+  );
+}
+
 export function hongbaoSizes({ width, height, compact }: WindowInfo) {
   const seal = clamp(76, width * 0.2, 112);
   const curve = clamp(36, height * 0.06, 64);
@@ -93,6 +103,12 @@ function ActionHint({
           )}
         </MorphLabel>
       </p>
+      {/* 定时开放 (scheduled-opening §6): how long until it opens. */}
+      {hongbao.draft &&
+        !hongbao.author &&
+        activity.scheduledOpenAt !== undefined && (
+          <OpensIn at={activity.scheduledOpenAt} />
+        )}
       {/* Said by the command box's own announcer (one for every result). */}
       {message && phase === "closed" && (
         <p

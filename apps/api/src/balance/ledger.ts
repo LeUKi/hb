@@ -68,11 +68,12 @@ export async function ownerHolding(env: ApiBindings) {
 
 /**
  * A 🐟额红包 in 明细: 发红包 (its total locked), 红包结束退回 (what was left),
- * or 领到红包 (a share). The amount is signed as 可用 moved.
+ * 取消定时退回 (its 定时开放 taken back or failed, before it opened), or
+ * 领到红包 (a share). The amount is signed as 可用 moved.
  */
 export type BalanceHongbaoView = {
   id: string;
-  kind: "sent" | "refund" | "received";
+  kind: "sent" | "refund" | "untimed" | "received";
   amountMinor: number;
   activityId: string;
   title: string;
@@ -162,7 +163,8 @@ export async function listRecords(
       page("withdrawals"),
       page("adjustments"),
       env.DB.prepare(
-        `SELECT e.id,e.kind,e.available_delta_minor,e.created_at,a.id AS activity_id,a.title
+        `SELECT e.id,e.kind,e.available_delta_minor,e.created_at,a.id AS activity_id,a.title,
+        (e.kind='unlock' AND (a.opened_at IS NULL OR e.created_at<a.opened_at)) AS untimed
       FROM balance_entries e JOIN balance_locks l ON l.id=e.lock_id JOIN activities a ON a.id=l.activity_id
       WHERE e.user_id=? AND l.purpose='activity' AND e.kind IN ('lock','unlock','hongbao')
         AND (?=0 OR e.created_at<? OR (e.created_at=? AND e.id<?))
@@ -222,7 +224,9 @@ export async function listRecords(
             row.kind === "lock"
               ? "sent"
               : row.kind === "unlock"
-                ? "refund"
+                ? Number(row.untimed) === 1
+                  ? "untimed"
+                  : "refund"
                 : "received",
           amountMinor: Number(row.available_delta_minor),
           activityId: String(row.activity_id),

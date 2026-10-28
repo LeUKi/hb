@@ -173,7 +173,7 @@ function activityTopicUrl(row: ActivityRow) {
     : null;
 }
 
-function configuration(row: ActivityRow): StoredConfig {
+export function configuration(row: ActivityRow): StoredConfig {
   const saved = JSON.parse(row.config) as StoredConfig;
   return {
     ...saved,
@@ -284,7 +284,39 @@ export function projectActivitySummary(row: ActivityRow): ActivitySummary {
     ...(row.paymentMode ? { paymentMode: row.paymentMode } : {}),
     ...(drawSummary(row) ? { draw: drawSummary(row) } : {}),
     ...(row.endReason === "stopped" ? { stopped: true as const } : {}),
+    ...scheduleOf(row),
   };
+}
+
+/** 定时开放 (docs/scheduled-opening-design.md): its time, or why it failed. */
+function scheduleOf(row: ActivityRow) {
+  return {
+    ...(row.openedAt === null && row.scheduledOpenAt !== null
+      ? { scheduledOpenAt: new Date(row.scheduledOpenAt).toISOString() }
+      : {}),
+    ...(row.openedAt === null &&
+    row.scheduledOpenAt === null &&
+    row.scheduleFailedAt !== null &&
+    row.scheduleFailure
+      ? {
+          scheduleFailure: {
+            at: new Date(row.scheduleFailedAt).toISOString(),
+            reason: row.scheduleFailure,
+          },
+        }
+      : {}),
+  };
+}
+
+/** A 🐟额红包 timed to open holds its 🐟 already (scheduled-opening §3). */
+export async function holdsBalance(env: ApiBindings, activityId: string) {
+  return Boolean(
+    await env.DB.prepare(
+      "SELECT 1 FROM balance_locks WHERE activity_id = ? AND purpose = 'activity' AND status = 'active'",
+    )
+      .bind(activityId)
+      .first(),
+  );
 }
 
 async function openingBlockedReason(
@@ -304,6 +336,7 @@ async function openingBlockedReason(
       env,
       row.authorId,
       configuration(row),
+      await holdsBalance(env, row.id),
     );
     if (balance === "BALANCE_HONGBAO_PAUSED") return balance;
     return (
@@ -518,9 +551,13 @@ export function projectPublicActivity(
     ...(config.pageUrl && row.pageStoppedAt === null
       ? { page: attachedPageOf(config.pageUrl) }
       : {}),
-    // Not open yet: its deadline as set, for whoever has its link (05 §13).
+    // Not open yet: its deadline as set, for whoever has its link (05 §13),
+    // and the time it opens by itself (scheduled-opening §6).
     ...(status === "draft"
       ? {
+          ...(row.scheduledOpenAt !== null
+            ? { scheduledOpenAt: new Date(row.scheduledOpenAt).toISOString() }
+            : {}),
           draftDeadline: config.deadline,
           ...(config.money.mode === "timed_draw" &&
           config.money.countdownSeconds !== undefined
@@ -745,6 +782,8 @@ export async function updateActivity(
 ) {
   const row = await ownedActivity(env, id, authorId);
   if (row.version !== input.version) activityConflict();
+  // Timed to open, it changes as an opened one does (scheduled-opening §2).
+  const fixed = row.openedAt !== null || row.scheduledOpenAt !== null;
   if (
     row.participationMode === "direct" &&
     input.activity.participationMode === undefined
@@ -755,7 +794,7 @@ export async function updateActivity(
       "此红包使用新的参与方式，请刷新页面后再编辑",
     );
   if (
-    row.openedAt !== null &&
+    fixed &&
     (input.activity.participationMode ?? "password") !== row.participationMode
   )
     invalidActivity("开放后不能修改参与方式");
@@ -767,13 +806,13 @@ export async function updateActivity(
   const config = storedConfig(input.activity);
   // 领取范围 is fixed once opened (docs/claim-scope-design.md §1).
   const storedScope = configuration(row).scope;
-  if (row.openedAt !== null) {
+  if (fixed) {
     if (!sameScope(input.activity.scope, storedScope))
       invalidActivity("开放后不能修改领取范围");
     config.scope = storedScope;
   } else config.scope = await resolveScope(env, input.activity.scope);
   const balance = fundingOf(input.activity) === "balance";
-  if (row.openedAt !== null && balance !== (row.funding === "balance"))
+  if (fixed && balance !== (row.funding === "balance"))
     invalidActivity("开放后不能修改从哪发");
   if (balance && row.openedAt === null && row.funding !== "balance")
     await requireBalanceFunding(env, authorId);
@@ -804,17 +843,17 @@ export async function updateActivity(
     : (merchant?.mode ?? row.paymentMode);
   if (row.paymentMode && nextPaymentMode !== row.paymentMode)
     invalidActivity("红包付款模式已固定，不能更换为不同模式的商户");
-  if (row.openedAt !== null && config.forceDedicated !== row.forceDedicated)
+  if (fixed && config.forceDedicated !== row.forceDedicated)
     invalidActivity("开放后不能修改首页领取");
   // A draft is on no list yet: only an opened 红包 keeps 加入广场 (06 §9).
-  if (row.openedAt !== null && row.joinSquare && !config.joinSquare)
+  if (fixed && row.joinSquare && !config.joinSquare)
     invalidActivity("加入红包广场后不能撤回");
   const oldConfig = configuration(row);
   if (config.humanCheck && !oldConfig.humanCheck && !humanCheckAvailable(env))
     humanCheckUnavailable();
   // 附带网页 is fixed once opened (docs/attached-page-design.md §1).
   if ((config.pageUrl ?? "") !== (oldConfig.pageUrl ?? "")) {
-    if (row.openedAt !== null) attachedPageLocked();
+    if (fixed) attachedPageLocked();
     if (config.pageUrl) await requireAttachedPage(env, authorId);
   }
   const old = await privateRows(env, id);
@@ -841,7 +880,7 @@ export async function updateActivity(
     invalidActivity(`最多 ${ACTIVITY_LIMITS.passwords} 条有效口令`);
   const deadline = row.deadline;
 
-  if (row.openedAt !== null) {
+  if (fixed) {
     const oldContent = await readPrivateContent(env, id);
     if (
       input.activity.rewardType !== row.rewardType ||
@@ -1043,6 +1082,8 @@ export async function openActivity(
   if (inventory.length !== (timed || coded ? 0 : row.totalCount))
     invalidActivity("红包库存不完整，无法开放");
   const balance = row.funding === "balance";
+  // Timed, it locked its 🐟 then: opening keeps that lock (scheduled-opening §3).
+  const held = balance && (await holdsBalance(env, id));
   if (balance) {
     if (row.paymentMode !== balancePaymentMode(env))
       invalidActivity("红包付款模式与环境不一致，无法开放");
@@ -1056,7 +1097,12 @@ export async function openActivity(
         "REAL_LDC_NOT_ENABLED",
         publicationMessages.REAL_LDC_NOT_ENABLED,
       );
-    const blocked = await balanceOpeningBlocked(env, authorId, checked.data);
+    const blocked = await balanceOpeningBlocked(
+      env,
+      authorId,
+      checked.data,
+      held,
+    );
     if (blocked)
       throw new ActivityError(
         409,
@@ -1206,6 +1252,7 @@ export async function openActivity(
           WHERE m.id=activities.merchant_id AND c.version=? AND c.verification_status='passed' AND c.verification_checked_at>=${databaseNow}-600000))))
       THEN version + 1 ELSE NULL END,
       config = ?, opened_at = CASE WHEN json_extract(config,'$.money.mode')='timed_draw' THEN ${databaseNow} ELSE ? END,
+      scheduled_open_at = NULL, schedule_failed_at = NULL, schedule_failure = NULL,
       updated_at = ?, deadline = ${openingDeadlineSql}, random_version = ? WHERE id = ?`).bind(
         version,
         authorId,
@@ -1225,7 +1272,7 @@ export async function openActivity(
       ...(sealed ? [sealed.after] : []),
       // A 🐟额红包 locks its total in the same write (docs/balance-design.md
       // §14): not enough 可用 fails the whole opening.
-      ...(balance
+      ...(balance && !held
         ? lockStatements(env, id, authorId, ldcTotalMinor(checked.data), now)
         : []),
     ]);

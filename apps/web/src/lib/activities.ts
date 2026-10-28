@@ -11,6 +11,7 @@ import type {
   ManagedActivity,
   OpenActivityInput,
   PublicActivity,
+  ScheduleActivityInput,
   UpdateActivityInput,
 } from "@hb/contracts";
 import {
@@ -377,6 +378,22 @@ export function useActivityWrites(
           ),
         );
       },
+      onSuccess,
+      onError,
+    }),
+    // 定时开放 (scheduled-opening §1): by its own id, as /new saves first.
+    schedule: useMutation({
+      onMutate: account.captureIdentity,
+      mutationFn: async ({
+        activityId,
+        ...json
+      }: ScheduleActivityInput & { activityId: string }) =>
+        readResponse<{ activity: ManagedActivity }>(
+          await api.api.me.activities[":id"].schedule.$post(
+            { param: { id: activityId }, json: json as never },
+            options,
+          ),
+        ),
       onSuccess,
       onError,
     }),

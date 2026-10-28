@@ -10,6 +10,7 @@ import {
   openActivitySchema,
   type PublicActivity,
   passwordSolveSchema,
+  scheduleActivitySchema,
   updateActivitySchema,
 } from "@hb/contracts";
 import { eq } from "drizzle-orm";
@@ -43,6 +44,12 @@ import {
 } from "./activities/live";
 import { solveActivityPassword } from "./activities/password-service";
 import { drawRetryAt } from "./activities/random-proof";
+import {
+  openScheduled,
+  precheckScheduled,
+  SCHEDULE_PRECHECK_MS,
+  scheduleActivity,
+} from "./activities/schedule";
 import {
   createActivity,
   deleteActivity,
@@ -510,10 +517,70 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     });
   }
 
+  /**
+   * 定时开放 (docs/scheduled-opening-design.md §3, §4): its alarm, a few
+   * minutes early for a merchant's credential check, then at its time.
+   */
+  private async armSchedule(id: string) {
+    const row = await findActivity(this.env, id);
+    if (!row || row.openedAt !== null || row.scheduledOpenAt === null) {
+      await this.ctx.storage.delete("scheduledOpenId");
+      return;
+    }
+    await this.ctx.storage.put("scheduledOpenId", id);
+    const at = row.scheduledOpenAt;
+    const precheck =
+      row.paymentMode === "real" &&
+      row.merchantId !== null &&
+      Date.now() < at - SCHEDULE_PRECHECK_MS;
+    await this.armAt(precheck ? at - SCHEDULE_PRECHECK_MS : at);
+  }
+
+  private async armAt(due: number) {
+    await this.ctx.storage.transaction(async (txn) => {
+      const current = await txn.getAlarm();
+      if (current === null || due < current) await txn.setAlarm(due);
+    });
+  }
+
+  /**
+   * A timed draft's moment: its credential checked a few minutes before,
+   * then opened; a pause tried again, anything else ends its timing (§5).
+   * Run inside `serialize`, as every other write of this 红包.
+   */
+  private async runSchedule(id: string) {
+    const row = await findActivity(this.env, id);
+    if (!row || row.openedAt !== null || row.scheduledOpenAt === null) {
+      await this.ctx.storage.delete("scheduledOpenId");
+      return;
+    }
+    const now = Date.now();
+    if (now < row.scheduledOpenAt) {
+      if (now < row.scheduledOpenAt - SCHEDULE_PRECHECK_MS)
+        return this.armSchedule(id);
+      try {
+        await precheckScheduled(this.env, id);
+      } catch {
+        console.error("activity_schedule_precheck_failed", { activityId: id });
+      }
+      return this.armAt(row.scheduledOpenAt);
+    }
+    const outcome = await openScheduled(this.env, id);
+    if (outcome.kind === "retry" || outcome.kind === "early")
+      return this.armAt(outcome.at);
+    await this.ctx.storage.delete("scheduledOpenId");
+    if (outcome.kind === "opened") {
+      await this.scheduleDraw(id);
+      this.announce(id);
+    }
+  }
+
   async alarm() {
     // 维护模式: a deadline or draw comes back once it is over.
     if (inMaintenanceMode(this.env))
       return this.ctx.storage.setAlarm(Date.now() + MAINTENANCE_ALARM_DELAY_MS);
+    const scheduled = await this.ctx.storage.get<string>("scheduledOpenId");
+    if (scheduled) await this.serialize(() => this.runSchedule(scheduled));
     const id = await this.ctx.storage.get<string>("drawActivityId");
     if (!id) return this.deadlinePassed();
     await this.serialize(async () => {
@@ -596,7 +663,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       url.pathname === "/internal/redemptions/discover" ||
       url.pathname === "/internal/redemptions/refresh";
     const route =
-      /^\/internal\/activities\/([a-f0-9-]{36})\/(manage|update|open|claim|solve|delete|end|refresh|stop)$/i.exec(
+      /^\/internal\/activities\/([a-f0-9-]{36})\/(manage|update|open|schedule|claim|solve|delete|end|refresh|stop)$/i.exec(
         url.pathname,
       );
     if (
@@ -796,6 +863,15 @@ export class ActivityDO extends DurableObject<ApiBindings> {
             const parsed = claimActivitySchema.safeParse(input);
             if (!parsed.success || typeof userId !== "string")
               throw new ActivityError(400, "INVALID_ACTIVITY", "领取请求无效");
+            // Its time has come and the alarm is not in yet: opened now,
+            // so the first to try is not told it is not open (§4).
+            const due = await findActivity(this.env, id);
+            if (
+              due?.openedAt === null &&
+              due.scheduledOpenAt !== null &&
+              due.scheduledOpenAt <= Date.now()
+            )
+              await this.runSchedule(id);
             const result = await claimActivity(
               this.env,
               id,
@@ -894,6 +970,17 @@ export class ActivityDO extends DurableObject<ApiBindings> {
               parsed.data.version,
             );
             this.announce(id);
+          } else if (operation === "schedule") {
+            const parsed = scheduleActivitySchema.safeParse(input);
+            if (!parsed.success)
+              throw new ActivityError(400, "INVALID_ACTIVITY", "定时请求无效");
+            activity = await scheduleActivity(
+              this.env,
+              id,
+              authorId,
+              parsed.data,
+            );
+            await this.armSchedule(id);
           } else {
             const parsed = openActivitySchema.safeParse(input);
             if (!parsed.success)

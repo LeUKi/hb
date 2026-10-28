@@ -54,6 +54,15 @@ export function clockLabel(at: number, now = Date.now()) {
   return `${date.getMonth() + 1}月${date.getDate()}日 ${clock}`;
 }
 
+/**
+ * When a timed draft opens (scheduled-opening §1): as clockLabel, but today
+ * says so — “今天 20:00”, “明天 20:00”, “10月30日 20:00”.
+ */
+export function openingLabel(at: number, now = Date.now()) {
+  const label = clockLabel(at, now);
+  return /^\d\d:\d\d$/.test(label) ? `今天 ${label}` : label;
+}
+
 /** clockLabel with seconds: "23:15:02", "昨天 09:01:44", "10月1日 08:00:03". */
 export function clockSeconds(at: number, now = Date.now()) {
   return `${clockLabel(at, now)}:${pad(new Date(at).getSeconds())}`;

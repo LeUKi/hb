@@ -149,7 +149,6 @@ export type LdcOpeningBlockedReason =
   | "BALANCE_INSUFFICIENT"
   /** 代码判定红包 (docs/programmable-hongbao-design.md §1): its switch is off. */
   | "CODE_HONGBAO_PAUSED"
-  /** 代码判定红包: only 🐟额 PLUS (and the 站长) send it. */
   /** 代码判定红包: no 判定器 of this code passed these tests (部署, §5). */
   | "JUDGE_CHECK_REQUIRED"
   /** 代码判定红包: this code is deployed, but tests.json changed since: rerun it. */

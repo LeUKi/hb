@@ -15,6 +15,7 @@ import { type ReactNode, useEffect, useId, useState } from "react";
 import { activityShareUrl } from "../../lib/emoji-links";
 import { haptic } from "../../lib/haptics";
 import type { HongbaoActivity, PasswordView } from "../../lib/hongbao";
+import { openingLabel } from "../../lib/roster-time";
 import { PanelDialog } from "../shell/panel-dialog";
 import { WindowDialog } from "../shell/window-dialog";
 import { useWindowInfo } from "../shell/window-info";
@@ -324,8 +325,9 @@ function ShareForm({
       {/* A draft is shared too (05 §5): what the link shows until then. */}
       {activity.draft && (
         <p className="px-5 pb-3 text-sm text-ink-2">
-          还没开放：拿到链接的人现在就能看到，开放后才能
-          {activity.mode === "timed_draw" ? "报名" : "领取"}。
+          {activity.scheduledOpenAt !== undefined
+            ? `定时开放：${openingLabel(activity.scheduledOpenAt)} 开放，拿到链接的人现在就能看到。`
+            : `还没开放：拿到链接的人现在就能看到，开放后才能${activity.mode === "timed_draw" ? "报名" : "领取"}。`}
         </p>
       )}
       <div

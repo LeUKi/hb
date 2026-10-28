@@ -1,6 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import {
   type CreateActivityInput,
+  emptyActivityInput,
   encodeActivityEmoji,
   type ManagedActivity,
   type Merchant,
@@ -124,6 +125,18 @@ async function mockCreate(page: Page, fail = 0) {
   await page.route(`**/api/me/activities/${createdId}`, (route) =>
     route.fulfill({ json: { activity: saved } }),
   );
+  // 定时开放: timed, and read as timed from then on.
+  await page.route(`**/api/me/activities/${createdId}/schedule`, (route) => {
+    const { at } = route.request().postDataJSON() as { at: string | null };
+    if (!saved) return route.fulfill({ status: 404, json: { error: {} } });
+    const { scheduledOpenAt: _, ...rest } = saved;
+    saved = {
+      ...rest,
+      version: saved.version + 1,
+      ...(at ? { scheduledOpenAt: at } : {}),
+    };
+    return route.fulfill({ json: { activity: saved } });
+  });
   await page.route(`**/api/activities/${createdId}`, (route) =>
     saved
       ? route.fulfill({
@@ -141,6 +154,9 @@ async function mockCreate(page: Page, fail = 0) {
               deadlineAt: null,
               quantity: { mode: "exact", total: 3, claimed: 0, remaining: 3 },
               beforeInfo: "",
+              ...(saved.scheduledOpenAt
+                ? { scheduledOpenAt: saved.scheduledOpenAt }
+                : {}),
             },
           },
         })
@@ -816,6 +832,166 @@ test.describe("发红包", () => {
     await expectPath(page, `/🧧/${encodeActivityEmoji(createdId)}`);
     expect(sent).toHaveLength(2);
     expect(sent[1]?.requestId).toBe(sent[0]?.requestId);
+  });
+
+  test("定时开放：按钮上方一行灰字点开选时间；定了以后主按钮是保存并定时，存下再定时，落到红包页写已定时", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    await mockMerchants(page, [merchant]);
+    const sent = await mockCreate(page);
+    await openApp(page, "/new");
+    await fillRandom(page);
+    const line = page.locator("#hb-schedule");
+    await expect(line).toHaveText("开放：保存后马上开放定时");
+    await expect(
+      page.getByText("开放后奖励、参与方式、口令和时间都不能再改。"),
+    ).toBeVisible();
+    await line.click();
+    const dialog = page.getByRole("dialog", { name: "定时开放" });
+    await expect(
+      dialog.getByText("按这台设备的时区。最早 5 分钟后，最晚 30 天后。"),
+    ).toBeVisible();
+    await expect(
+      dialog.getByText(
+        "到点自动开放。开放前，拿到链接的人能看到红包，但不能领。",
+      ),
+    ).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "不定时了" })).toHaveCount(
+      0,
+    );
+    // datetime-local's value, in this device's zone.
+    const local = (at: Date) =>
+      new Date(at.getTime() - at.getTimezoneOffset() * 60_000)
+        .toISOString()
+        .slice(0, 16);
+    const input = dialog.locator("#hb-schedule-at");
+    await input.fill(local(new Date(Date.now() + 2 * 60_000)));
+    await dialog.getByRole("button", { name: "好" }).click();
+    await expect(shown(page, "开放时间要在 5 分钟以后。")).toBeVisible();
+    await input.fill(local(new Date(Date.now() + 31 * 86_400_000)));
+    await dialog.getByRole("button", { name: "好" }).click();
+    await expect(shown(page, "最晚定到 30 天以后。")).toBeVisible();
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(20, 0, 0, 0);
+    await input.fill(local(tomorrow));
+    await dialog.getByRole("button", { name: "好" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(line).toHaveText("开放：明天 20:00改");
+    await expect(
+      page.getByText(
+        "定时以后奖励、参与方式、口令和时间就不能再改，要改先取消定时。",
+      ),
+    ).toBeVisible();
+    // 改 opens it again, with 不定时了.
+    await line.click();
+    await expect(
+      dialog.getByRole("button", { name: "不定时了" }),
+    ).toBeVisible();
+    await dialog.getByRole("button", { name: "取消" }).click();
+    const timing = page.waitForRequest((request) =>
+      request.url().endsWith(`/api/me/activities/${createdId}/schedule`),
+    );
+    await page.getByRole("button", { name: "保存并定时" }).first().click();
+    // Saved as a draft, then timed.
+    expect((await timing).postDataJSON()).toEqual({
+      version: 1,
+      at: tomorrow.toISOString(),
+    });
+    await expectPath(page, `/🧧/${encodeActivityEmoji(createdId)}`);
+    expect(sent).toHaveLength(1);
+    const author = page.locator("[data-hb-part=author]");
+    await expect(author.getByText("已定时", { exact: true })).toBeVisible();
+    await expect(
+      author.getByText(
+        "明天 20:00 自动开放。开放前，拿到链接的人能看到这一页，到点才能领取。",
+      ),
+    ).toBeVisible();
+    await expect(
+      author.getByRole("button", { name: "取消定时" }),
+    ).toBeVisible();
+  });
+
+  test("定时开放的草稿在编辑页：待开放，钱和规则锁住，删除草稿换成取消定时", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    await mockMerchants(page, [merchant]);
+    const at = new Date();
+    at.setDate(at.getDate() + 1);
+    at.setHours(20, 0, 0, 0);
+    const timed: ManagedActivity = {
+      ...managed({
+        ...emptyActivityInput(),
+        title: "明晚的红包",
+        merchantId,
+        passwords: ["表单口令2026"],
+        money: { mode: "fixed", totalAmount: "0.30", count: 3 },
+      }),
+      version: 4,
+      scheduledOpenAt: at.toISOString(),
+    };
+    await page.route(`**/api/me/activities/${createdId}`, (route) =>
+      route.fulfill({ json: { activity: timed } }),
+    );
+    await page.route(`**/api/activities/${createdId}`, (route) =>
+      route.fulfill({
+        json: {
+          activity: {
+            id: createdId,
+            title: timed.title,
+            rewardType: "ldc",
+            participationMode: "password",
+            status: "draft",
+            author: timed.author,
+            forceDedicated: false,
+            topicUrl: null,
+            openedAt: null,
+            deadlineAt: null,
+            quantity: { mode: "exact", total: 3, claimed: 0, remaining: 3 },
+            beforeInfo: "",
+            scheduledOpenAt: at.toISOString(),
+          },
+        },
+      }),
+    );
+    const cancels: unknown[] = [];
+    await page.route(`**/api/me/activities/${createdId}/schedule`, (route) => {
+      cancels.push(route.request().postDataJSON());
+      return route.fulfill({ status: 503, json: { error: {} } });
+    });
+    await openApp(page, `/🧧/${encodeActivityEmoji(createdId)}/📝`);
+    const tag = page.getByText("待开放", { exact: true });
+    await expect(tag).toBeVisible();
+    await tag.hover();
+    await expect(
+      shown(
+        page,
+        "和开放后一样，只能改标题、说明这些文字；要改别的，先取消定时。",
+      ),
+    ).toBeVisible();
+    // The money and the rules: as once it is open.
+    await expect(
+      page.getByRole("button", { name: /^第 2 步 .*，定时以后不能修改/ }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "删除草稿" })).toHaveCount(0);
+    await page.getByRole("button", { name: "取消定时" }).first().click();
+    const confirm = page.getByRole("dialog", { name: "取消定时？" });
+    await expect(
+      confirm.getByText("取消后退回草稿，到点不会自动开放。"),
+    ).toBeVisible();
+    // Not taken back: the timing stays, and it can be tried again.
+    await confirm.getByRole("button", { name: "取消定时" }).click();
+    await expect(
+      confirm.getByText(
+        "取消没有完成：网络或服务出了问题，定时还在。可以再试一次。",
+      ),
+    ).toBeVisible();
+    await expect(
+      confirm.getByRole("button", { name: "再试一次" }),
+    ).toBeVisible();
+    expect(cancels).toEqual([{ version: 4, at: null }]);
   });
 
   test("从哪发：没有商户、有🐟额就默认🐟额，商户那张变灰并给入口，超过可用当场说，存下的输入不带商户", async ({

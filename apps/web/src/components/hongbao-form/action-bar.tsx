@@ -67,11 +67,15 @@ export function ActionBar({
 export function SaveButtons({
   submit,
   opened,
+  scheduled = false,
   onSave,
   small = false,
 }: {
   submit: Submit;
+  /** Opened, or timed to open: only 保存修改 (scheduled-opening §2). */
   opened: boolean;
+  /** A time chosen: the primary press times it, 保存并定时 (§1). */
+  scheduled?: boolean;
   onSave: (open: boolean) => void;
   small?: boolean;
 }) {
@@ -113,7 +117,9 @@ export function SaveButtons({
           ? phaseLabels[phase]
           : uncertain?.open
             ? "重试原提交"
-            : "保存并开放"}
+            : scheduled
+              ? "保存并定时"
+              : "保存并开放"}
       </Button>
     </>
   );

@@ -11,6 +11,7 @@ import {
   type ManagedActivity,
   normalizePageUrl,
   openActivitySchema,
+  scheduleActivitySchema,
   type UpdateActivityInput,
 } from "@hb/contracts";
 import { Hono, type MiddlewareHandler, type TypedResponse } from "hono";
@@ -394,6 +395,32 @@ export const activityRoutes = new Hono<ApiContext>()
       const stub = activityObject(c.env, id);
       const response = await stub.fetch(
         `https://activity.internal/internal/activities/${encodeURIComponent(id)}/open`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            authorId: session.user.id,
+            ...c.req.valid("json"),
+          }),
+        },
+      );
+      return managedResponse(response);
+    },
+  )
+  // 定时开放 (docs/scheduled-opening-design.md §1): `at`, or null to take it back.
+  .post(
+    "/me/activities/:id/schedule",
+    bodySizeLimit,
+    validator("json", (value) =>
+      validated(scheduleActivitySchema.safeParse(value)),
+    ),
+    async (c) => {
+      const session = await requireProtectedMutation(c);
+      const id = c.req.param("id");
+      await requireOwnedLdcActivity(c.env, id, session.user.id);
+      const stub = activityObject(c.env, id);
+      const response = await stub.fetch(
+        `https://activity.internal/internal/activities/${encodeURIComponent(id)}/schedule`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

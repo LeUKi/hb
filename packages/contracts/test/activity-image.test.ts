@@ -142,6 +142,21 @@ describe("activity image", () => {
     expect(lacquer).toContain('fill="url(#steel)"');
   });
 
+  it("says when a timed draft opens, in the viewer's zone (定时开放)", () => {
+    const draft = {
+      status: "draft",
+      openedAt: null,
+      deadlineAt: null,
+    } as const;
+    // renderedAt is 16:00 in Shanghai.
+    const at = (iso: string) =>
+      image({ kind: "public" }, { ...draft, scheduledOpenAt: iso });
+    expect(at("2026-10-13T12:00:00.000Z")).toContain("今天 20:00 开放");
+    expect(at("2026-10-14T01:30:00.000Z")).toContain("明天 09:30 开放");
+    expect(at("2026-10-20T12:00:00.000Z")).toContain("10月20日 20:00 开放");
+    expect(at("2026-10-13T12:00:00.000Z")).not.toContain("还没开放");
+  });
+
   it("opens for the viewer who took part, with the payment and when", () => {
     const claimed = image({
       kind: "claimed",

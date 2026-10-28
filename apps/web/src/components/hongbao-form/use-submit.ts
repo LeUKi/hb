@@ -30,12 +30,13 @@ import {
 
 export type Notice = { tone: "success" | "warning" | "danger"; text: string };
 
-export type Phase = "idle" | "saving" | "checking" | "opening";
+export type Phase = "idle" | "saving" | "checking" | "opening" | "scheduling";
 
 export const phaseLabels: Record<Exclude<Phase, "idle">, string> = {
   saving: "正在保存…",
   checking: "正在检查商户凭证…",
   opening: "正在开放…",
+  scheduling: "正在定时…",
 };
 
 /** A notice carried from /new to the 📝 page it lands on (开放没有完成). */
@@ -61,6 +62,7 @@ export function useSubmit({
   csrfToken,
   form,
   dirty,
+  scheduleAt = null,
   onSaved,
   onSettled,
 }: {
@@ -69,6 +71,8 @@ export function useSubmit({
   csrfToken: string;
   form: FormState;
   dirty: boolean;
+  /** 定时开放 (scheduled-opening §1): the primary press times it instead. */
+  scheduleAt?: number | null;
   /** After a save that stays on the page (📝): the header shows the change. */
   onSaved?: () => void;
   /** The saved form becomes the page's new baseline (📝). */
@@ -79,8 +83,12 @@ export function useSubmit({
   const writes = useActivityWrites(user.id, csrfToken, activity?.id);
   const opener = useActivityOpening(user.id, csrfToken);
   const { merchant } = useCurrentMerchant(user.id);
-  const opened = Boolean(activity && activity.status !== "draft");
+  // Opened, or timed to open: it changes as an opened one (scheduled-opening §2).
+  const opened = Boolean(
+    activity && (activity.status !== "draft" || activity.scheduledOpenAt),
+  );
   const [saving, setSaving] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
   // Which button started it: that one says what is happening.
   const [opening, setOpening] = useState(false);
   const [uncertain, setUncertain] = useState<{
@@ -114,9 +122,11 @@ export function useSubmit({
     ? opener.phase === "checking"
       ? "checking"
       : "opening"
-    : saving
-      ? "saving"
-      : "idle";
+    : scheduling
+      ? "scheduling"
+      : saving
+        ? "saving"
+        : "idle";
   const busy = phase !== "idle";
   // An opened 红包 with no edits: 保存修改 has nothing to send.
   const nothingToSave = opened && !busy && !dirty && !uncertain;
@@ -160,6 +170,31 @@ export function useSubmit({
     pending: Pending,
     open: boolean,
   ) => {
+    // 保存并定时 (scheduled-opening §1): timed, then its 红包 page.
+    if (open && saved.status === "draft" && scheduleAt !== null) {
+      setScheduling(true);
+      try {
+        const result = await writes.schedule.mutateAsync({
+          activityId: saved.id,
+          version: saved.version,
+          at: new Date(scheduleAt).toISOString(),
+        });
+        setSavedDraft({ id: saved.id, scheduled: true });
+        goTo(result.activity, "activity");
+      } catch (error) {
+        const reason =
+          error instanceof Error ? error.message : "网络或服务出了问题。";
+        const note: Notice = {
+          tone: "danger",
+          text: `定时没有完成：${reason}${reason.includes("草稿已保存") ? "" : "草稿已保存，可以再试一次。"}`,
+        };
+        if (activity) settle(note, pending.form);
+        else goTo(saved, "edit", note);
+      } finally {
+        setScheduling(false);
+      }
+      return;
+    }
     if (open && saved.status === "draft") {
       try {
         const result = await opener.open(saved);
@@ -186,7 +221,7 @@ export function useSubmit({
       );
     else {
       // Its 红包 page, not 📝: shared or not, that is the page (07 §5).
-      setSavedDraft(saved.id);
+      setSavedDraft({ id: saved.id, scheduled: false });
       goTo(saved, "activity");
     }
   };

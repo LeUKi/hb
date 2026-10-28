@@ -1595,6 +1595,179 @@ test.describe("红包页", () => {
     ).toBeVisible();
   });
 
+  /** The 红包 as a draft timed to open at `at`. */
+  const timed = (opened: PublicActivity, at: number): PublicActivity => ({
+    ...opened,
+    status: "draft",
+    openedAt: null,
+    deadlineAt: null,
+    quantity: { mode: "exact", total: 3, claimed: 0, remaining: 3 },
+    draftDeadline: { mode: "duration", value: 7, unit: "days" },
+    scheduledOpenAt: new Date(at).toISOString(),
+  });
+
+  test("别人打开定时开放的草稿：几点开放、倒计时，领不了；分享弹窗说几点开放", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await mockSession(page, viewer);
+    const state = await mockHongbao(page);
+    state.activity = timed(state.activity, Date.now() + 2 * 3_600_000);
+    state.recipients = [];
+    await page.route(`**/api/activities/${id}/claim`, (route) =>
+      route.fulfill({ json: { result: "draft" } satisfies ClaimResult }),
+    );
+    await openApp(page);
+    // Its share, 口令 and all, pasted on the start page: the 口令 goes in
+    // once the 红包 is open, and is told when that is.
+    const shared = forumShareWithPassword(
+      { id, title: "周末红包", draw: false, pageOnly: true },
+      passwordOf.mine,
+      { page: `https://hb.lafi.sh/🧧/${code}` },
+    );
+    await page.evaluate((text) => navigator.clipboard.writeText(text), shared);
+    await omniboxInput(page).click();
+    await page.keyboard.press("ControlOrMeta+V");
+    await page.keyboard.press("Enter");
+    await expectPath(page, path);
+    await expect(
+      shown(page, /^红包 (今天|明天) \d{2}:\d{2} 开放，暂时不能领取。$/),
+    ).toBeVisible();
+    const tag = page.getByRole("button", { name: "未开放" });
+    await expect(tag).toHaveAccessibleDescription(
+      "到点自动开放。金额和份数已经定了，不会再改。",
+    );
+    // Under the seal: when, then how long; the seal says when too.
+    const seal = page.getByRole("button", {
+      name: /^(今天|明天) \d{2}:\d{2} 开放$/,
+    });
+    await expect(seal).toHaveText("开");
+    await expect(seal).toHaveAttribute("aria-disabled", "true");
+    await expect(page.getByText(/^还有 0[12]:\d{2}:\d{2}$/)).toBeVisible();
+    await page.getByRole("button", { name: "分享" }).click();
+    const share = page.getByRole("dialog", { name: "分享红包" });
+    await expect(
+      share.getByText(
+        /^定时开放：(今天|明天) \d{2}:\d{2} 开放，拿到链接的人现在就能看到。$/,
+      ),
+    ).toBeVisible();
+  });
+
+  test("红包作者看定时开放的草稿：待开放，取消定时先确认，退回草稿；没开成的写原因", async ({
+    page,
+  }) => {
+    await mockSession(page, author);
+    const state = await mockHongbao(page);
+    const at = new Date();
+    at.setDate(at.getDate() + 1);
+    at.setHours(20, 0, 0, 0);
+    state.activity = timed(state.activity, at.getTime());
+    state.recipients = [];
+    let managed: ManagedActivity = {
+      id,
+      title: "周末红包",
+      rewardType: "ldc",
+      participationMode: "password",
+      forceDedicated: false,
+      status: "draft",
+      version: 3,
+      createdAt: openedAt,
+      openedAt: null,
+      deadlineAt: null,
+      topicUrl: null,
+      totalCount: 3,
+      claimedCount: 0,
+      author: publicActivity().author,
+      config: {
+        ...emptyActivityInput(),
+        title: "周末红包",
+        passwords: [passwordOf.mine, passwordOf.other],
+        merchantId: "55555555-6666-4777-8888-999999999999",
+        money: { mode: "fixed", totalAmount: "0.30", count: 3 },
+      },
+      scheduledOpenAt: at.toISOString(),
+    };
+    await page.route(`**/api/me/activities/${id}`, (route) =>
+      route.fulfill({ json: { activity: managed } }),
+    );
+    const cancels: unknown[] = [];
+    await page.route(`**/api/me/activities/${id}/schedule`, (route) => {
+      cancels.push(route.request().postDataJSON());
+      const { scheduledOpenAt: _, ...rest } = managed;
+      managed = { ...rest, version: managed.version + 1 };
+      const { scheduledOpenAt: __, ...draft } = state.activity;
+      state.activity = draft;
+      return route.fulfill({ json: { activity: managed } });
+    });
+    await openApp(page, path);
+    const tools = page.locator("[data-hb-part=author]");
+    await expect(tools.getByText("待开放", { exact: true })).toBeVisible();
+    await expect(
+      tools.getByText(
+        "明天 20:00 自动开放。开放前，拿到链接的人能看到这一页，到点才能领取。",
+      ),
+    ).toBeVisible();
+    // The sender has no countdown under the seal: theirs is the note.
+    await expect(page.getByText(/^还有 /)).toHaveCount(0);
+    await tools.getByRole("button", { name: "取消定时" }).click();
+    const confirm = page.getByRole("dialog", { name: "取消定时？" });
+    await expect(
+      confirm.getByText("取消后退回草稿，到点不会自动开放。"),
+    ).toBeVisible();
+    await confirm.getByRole("button", { name: "返回" }).click();
+    await expect(confirm).toBeHidden();
+    expect(cancels).toEqual([]);
+    await tools.getByRole("button", { name: "取消定时" }).click();
+    await confirm.getByRole("button", { name: "取消定时" }).click();
+    await expect(confirm).toBeHidden();
+    expect(cancels).toEqual([{ version: 3, at: null }]);
+    // A draft again: its usual note, and no timing.
+    await expect(tools.getByText("待开放", { exact: true })).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "未开放" }),
+    ).toHaveAccessibleDescription(
+      "还没开放，开放后才能领取；开放前红包作者还能改。",
+    );
+
+    // A timing that did not open: why, in red, on its page.
+    managed = {
+      ...managed,
+      scheduleFailure: {
+        at: new Date().toISOString(),
+        reason: "🐟额可用不够",
+      },
+    };
+    await page.reload();
+    await expect(
+      tools.getByText("定时开放没有成功", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      tools.getByText("🐟额可用不够。已退回草稿，可以重新定时，或者直接开放。"),
+    ).toBeVisible();
+  });
+
+  test("定时开放的草稿到点：打开着的页面自己翻成可以领取，不等 5 秒一次的读取", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    const state = await mockHongbao(page);
+    const opened = state.activity;
+    const at = Date.now() + 3_000;
+    state.activity = timed(opened, at);
+    state.recipients = [];
+    await openApp(page, path);
+    await expect(page.getByRole("button", { name: "未开放" })).toBeVisible();
+    // The server opens it at its time; the page reads it then.
+    state.activity = opened;
+    await expect(page.getByRole("button", { name: "未开放" })).toHaveCount(0, {
+      timeout: Math.max(1_000, at - Date.now() + 1_500),
+    });
+    await expect(
+      page.getByRole("button", { name: /输入口令领取/ }),
+    ).toBeVisible();
+  });
+
   test("不存在的红包：未找到", async ({ page }) => {
     await mockSession(page, null);
     await page.route(`**/api/activities/${id}**`, (route) =>

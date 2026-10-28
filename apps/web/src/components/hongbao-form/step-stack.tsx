@@ -5,10 +5,11 @@ import {
   motion,
   useIsPresent,
 } from "motion/react";
-import { type ReactNode, type Ref, useRef } from "react";
+import { type ReactNode, type Ref, useContext, useRef } from "react";
 import { cn } from "../../lib/cn";
 import { durations, ease, useReducedMotionPref } from "../../lib/motion";
 import { radius, Squircle, SquirclePlate } from "../ui/squircle";
+import { LockedBy } from "./fields";
 import { steps } from "./steps";
 import { useMorphHeight } from "./use-morph-height";
 
@@ -61,6 +62,7 @@ export function StepCard({
   headingRef,
   children,
 }: StepCardProps) {
+  const lockedBy = useContext(LockedBy);
   const reduced = useReducedMotionPref();
   const present = useIsPresent();
   const inner = useRef<HTMLDivElement>(null);
@@ -180,7 +182,11 @@ export function StepCard({
                   className={headClass}
                   aria-expanded={collapsible ? open : false}
                   aria-label={`${label}：${summary}${
-                    locked ? "，开放后不能修改" : ""
+                    locked
+                      ? lockedBy === "scheduled"
+                        ? "，定时以后不能修改"
+                        : "，开放后不能修改"
+                      : ""
                   }${problems > 0 ? `，有 ${problems} 处要改` : ""}${
                     open ? "" : collapsible ? "" : "，修改"
                   }`}

@@ -1,6 +1,6 @@
 import { normalizePageUrl } from "@hb/contracts";
 import { DoorOpen, KeyRound, Plus } from "lucide-react";
-import { useId, useRef, useState } from "react";
+import { type ReactNode, useId, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { cn } from "../../lib/cn";
 import { ChoiceCards, Field, TextInput } from "../ui/field";
@@ -12,7 +12,7 @@ import {
   counter,
   type ErrorOf,
   FundingChoice,
-  LockNote,
+  LockedNote,
   modeOptions,
   PasswordList,
   QuietLine,
@@ -164,7 +164,7 @@ export function ModeStep({
           )}
         </div>
       </fieldset>
-      {locked && <LockNote>开放后不能修改。</LockNote>}
+      {locked && <LockedNote />}
     </div>
   );
 }
@@ -219,7 +219,7 @@ export function AmountStep({
             onOpen={() => openSheet("split")}
           />
         ))}
-      {locked && <LockNote>开放后不能修改。</LockNote>}
+      {locked && <LockedNote />}
     </div>
   );
 }
@@ -296,7 +296,7 @@ export function ClaimStep({
         <>
           <p className="px-1 text-sm text-ink-2">{time}</p>
           <p className="px-1 text-sm text-ink-2">{scopeLine(form)}</p>
-          <LockNote>开放后不能修改。</LockNote>
+          <LockedNote />
         </>
       ) : (
         <>
@@ -326,6 +326,7 @@ export function TitleStep({
   openSheet,
   moreLine,
   moreError,
+  schedule,
 }: {
   form: FormState;
   update: Update;
@@ -334,6 +335,8 @@ export function TitleStep({
   /** What 更多设置 holds now ("附言未填 · 不加入广场 · …"). */
   moreLine: string;
   moreError?: string;
+  /** 定时开放's line (scheduled-opening §1), last, over the buttons. */
+  schedule?: ReactNode;
 }) {
   const [note, setNote] = useState(form.beforeInfo.trim().length > 0);
   const noteRef = useRef<HTMLDivElement>(null);
@@ -401,6 +404,7 @@ export function TitleStep({
         error={moreError}
         onOpen={() => openSheet("notes")}
       />
+      {schedule}
     </div>
   );
 }

@@ -50,6 +50,9 @@ export const verifyNoticeAtom = atom<{
 
 /**
  * The draft just saved from /new, by id: its 红包 page, where saving lands
- * (07 §5), says 草稿已保存 once instead of 草稿预览.
+ * (07 §5), says 草稿已保存 once instead of 草稿预览 — 已定时 once timed
+ * (scheduled-opening §6).
  */
-export const savedDraftAtom = atom<string | null>(null);
+export const savedDraftAtom = atom<{ id: string; scheduled: boolean } | null>(
+  null,
+);

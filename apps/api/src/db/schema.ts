@@ -228,6 +228,14 @@ export const activities = sqliteTable(
     pageStoppedByUserId: text("page_stopped_by_user_id").references(
       () => users.id,
     ),
+    /**
+     * 定时开放 (docs/scheduled-opening-design.md): a draft its ActivityDO
+     * opens at this time; cleared when it opens or the timing is taken back.
+     */
+    scheduledOpenAt: integer("scheduled_open_at"),
+    /** The last timing that could not open it: when, and why in words. */
+    scheduleFailedAt: integer("schedule_failed_at"),
+    scheduleFailure: text("schedule_failure"),
   },
   (table) => [
     uniqueIndex("activities_author_request_unique").on(
@@ -254,6 +262,10 @@ export const activities = sqliteTable(
       .where(
         sql`${table.deletedAt} IS NULL AND ${table.archivedAt} IS NULL AND ${table.openedAt} IS NOT NULL`,
       ),
+    // 即将开放 on the 红包广场: drafts with a time, nearest first.
+    index("activities_scheduled_idx")
+      .on(table.scheduledOpenAt, table.id)
+      .where(sql`${table.scheduledOpenAt} IS NOT NULL`),
     index("activities_square_opened_idx")
       .on(table.joinSquare, sql`${table.openedAt} DESC`, sql`${table.id} DESC`)
       .where(
@@ -1763,7 +1775,11 @@ export const balanceLocks = sqliteTable(
   },
   (table) => [
     uniqueIndex("balance_locks_withdrawal_unique").on(table.withdrawalId),
-    uniqueIndex("balance_locks_activity_unique").on(table.activityId),
+    // One lock holding a 红包's 🐟 at a time: a 定时开放 taken back gave
+    // its lock back, and timing it again makes another.
+    uniqueIndex("balance_locks_activity_unique")
+      .on(table.activityId)
+      .where(sql`${table.status} = 'active'`),
     index("balance_locks_user_status_idx").on(table.userId, table.status),
     check(
       "balance_locks_purpose_valid",
