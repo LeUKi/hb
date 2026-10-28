@@ -7,21 +7,29 @@ import { useMemo, useState } from "react";
 import { ActivityRequestError, refused } from "../../lib/activities";
 import { useBalanceFunding } from "../../lib/balance";
 import { haptic } from "../../lib/haptics";
-import { textDigest, useJudgeCheck, useJudgeDigests } from "../../lib/judge";
+import {
+  metaOf,
+  textDigest,
+  useJudgeCheck,
+  useJudgeDigests,
+} from "../../lib/judge";
 import type { Update } from "./fields";
-import type { FormState } from "./form-state";
+import { type FormState, withJudgeDefaults } from "./form-state";
 import {
   changedLines,
   type JudgeVersion,
   versionOf,
   withCodeChange,
-  withRun,
 } from "./judge-versions";
+import { paramsFor } from "./params-fields";
 
 // 部署 on the 发红包 form (07 §5, docs/programmable-hongbao-design.md §5):
-// which 判定器 the code as typed is, where its tests stand, and the three
-// ways the code changes — pasted, picked from a file, edited in 改代码 —
-// and 换回, which only puts back a version deployed before.
+// which version of its 判定器 (docs/judge-square-design.md §1) the code as
+// typed is, where its tests stand, and the three ways the code changes —
+// pasted, picked from a file, edited in 改代码 — and 换回, which only puts
+// back a version deployed before. A deploy goes into the form's 判定器; the
+// first makes it, by the name typed. Its versions are the 判定器's, as the
+// server says.
 
 /**
  * Runs seen in this tab, by person, code and tests: a draft first saved on
@@ -175,29 +183,57 @@ export function useJudgeDeploy({
   const deploysLeft =
     left && left.at > funding.dataUpdatedAt ? left.value : offered?.deploysLeft;
 
+  // A new 判定器 is made by its first deploy, by the name typed (§1).
+  const { judgeId } = form.judge;
+  const unnamed = !judgeId && !form.judge.name.trim();
+
   /** 部署并跑测试 for a new version, 重新跑测试 on one deployed before. */
   const deploy = async () => {
-    if (mutation.isPending || !fingerprint || !runOf || !code.trim()) return;
+    if (mutation.isPending || !fingerprint || !runOf || !code.trim() || unnamed)
+      return;
     const kind = version ? "rerun" : "deploy";
     setSent({ fingerprint, kind });
     setError(null);
     try {
-      const done = await mutation.mutateAsync({ code, tests });
+      const done = await mutation.mutateAsync({
+        code,
+        tests,
+        judge: judgeId
+          ? { id: judgeId }
+          : {
+              name: form.judge.name.trim(),
+              description: form.judge.description.trim(),
+            },
+      });
       // Seen before the form changes, which draws it.
       seen.set(runKey(userId, done.fingerprint, done.testsDigest), done);
       setLeft({ value: done.deploysLeft, at: Date.now() });
-      update((current) => ({
-        ...current,
-        judge: {
-          ...current.judge,
-          versions: withRun(current.judge.versions, done),
-        },
-      }));
+      const into = done.judge;
+      // Into its 判定器; its params and ranges as this version declares
+      // them, filling what is still blank (judge-square §3, §4).
+      if (into)
+        update((current) =>
+          withJudgeDefaults(
+            {
+              ...current,
+              judge: {
+                ...current.judge,
+                judgeId: into.id,
+                versions: into.versions,
+                params: paramsFor(
+                  done.declarations.params,
+                  current.judge.params,
+                ),
+              },
+            },
+            done.declarations.hongbao,
+          ),
+        );
       haptic(done.passed ? "success" : "error");
       const outcome = done.passed ? "测试全过" : "测试没过";
       say(
         kind === "deploy"
-          ? `判定器 第 ${versionOf(versions, done.fingerprint)?.n ?? versions.next} 版部署好了，${outcome}。`
+          ? `判定器 第 ${into?.version ?? versions.next} 版部署好了，${outcome}。`
           : `重新跑完了，${outcome}。`,
       );
       // The button pressed may be gone (passed, or the rerun's callout
@@ -225,10 +261,17 @@ export function useJudgeDeploy({
     }
   };
 
-  /** The code replaced: pasted, picked, edited, or 换回 (no deploy). */
+  /**
+   * The code replaced: pasted, picked, edited, or 换回 (no deploy). A
+   * 判定器 not made yet takes its name and line from the code's `meta`
+   * when none is typed (§1).
+   */
   const replaceCode = async (next: string, how?: "paste" | "edit") => {
     const previous = code;
     if (next === previous) return;
+    const meta = metaOf(next);
+    // Leaving a version whose tests as they are passed: it can be put back
+    // (换回) whatever its last run on the server said.
     const passing = result?.passed === true;
     const testsDigest = digests.tests;
     const leftFingerprint = await textDigest(previous);
@@ -250,6 +293,14 @@ export function useJudgeDeploy({
                 },
                 next,
               ),
+              ...(!current.judge.judgeId && !current.judge.name.trim()
+                ? {
+                    name: meta.name ?? current.judge.name,
+                    description: current.judge.description.trim()
+                      ? current.judge.description
+                      : (meta.description ?? current.judge.description),
+                  }
+                : {}),
             },
           },
     );
@@ -290,8 +341,12 @@ export function useJudgeDeploy({
     /** Lines changed from the version 换回 would put back. */
     changed,
     placed: placed && placed.code === code ? placed : null,
-    /** The card's name: 判定器 第 3 版, or 新代码 before it is deployed. */
-    name: version ? `判定器 第 ${version.n} 版` : "新代码",
+    /** A new 判定器 waits for its name before its first deploy. */
+    unnamed,
+    /** The card's name: 猜数字 · 第 3 版, or 新代码 before it is deployed. */
+    name: version
+      ? `${form.judge.name.trim() || "判定器"} · 第 ${version.n} 版`
+      : "新代码",
     deploy,
     replaceCode,
     restoreCode: () => {

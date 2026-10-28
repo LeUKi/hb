@@ -1396,3 +1396,73 @@ it.each([true, false])(
     ).toEqual([{ id: "lite" }, { id: "official" }]);
   },
 );
+
+it("0049 keeps a 代码判定红包's code and its 用量 as they were, with no 判定器 or params yet", async () => {
+  const testEnv = env as typeof env & {
+    TEST_LEGACY_DB: D1Database;
+    TEST_MIGRATIONS: D1Migration[];
+  };
+  const db = testEnv.TEST_LEGACY_DB;
+  await resetLegacyDb(db);
+  await applyD1Migrations(
+    db,
+    testEnv.TEST_MIGRATIONS.filter((migration) => migration.name < "0049"),
+  );
+  const userId = crypto.randomUUID();
+  const activityId = crypto.randomUUID();
+  const now = Date.now();
+  const fingerprint = "a".repeat(64);
+  await db.batch([
+    db
+      .prepare(
+        "INSERT INTO users(id,provider,external_id,username,display_name,created_at,updated_at,last_login_at) VALUES(?,'linux_do','740049','Coder','写代码的',?,?,?)",
+      )
+      .bind(userId, now, now, now),
+    db
+      .prepare(
+        `INSERT INTO activities(id,author_id,creation_request_id,creation_digest,title,reward_type,participation_mode,
+          payment_mode,funding,force_dedicated,join_square,topic_id,allocation,config,total_count,created_at,updated_at)
+          VALUES(?,?,?,'digest','代码判定','ldc','code','simulation','balance',1,1,NULL,'sequential',
+            '{"participationMode":"code","money":{"mode":"code"}}',3,?,?)`,
+      )
+      .bind(activityId, userId, crypto.randomUUID(), now, now),
+    db
+      .prepare(
+        `INSERT INTO activity_code(activity_id,protocol,prompt,fingerprint,code_ciphertext,tests_ciphertext,tests_digest,
+          min_each_minor,versions_ciphertext,created_at,updated_at) VALUES(?,2,'输入 flag',?,'code','tests',?,1,'versions',?,?)`,
+      )
+      .bind(activityId, fingerprint, "b".repeat(64), now, now),
+    db
+      .prepare(
+        `INSERT INTO judge_usage(day,sandbox_id,protocol,fingerprint,networked,fresh,user_id,deploys,first_at,last_at)
+          VALUES(strftime('%Y-%m-%d',?/1000,'unixepoch'),?,2,?,0,0,?,1,?,?)`,
+      )
+      .bind(now, `judge:v2:${fingerprint}`, fingerprint, userId, now, now),
+  ]);
+  const code = await db
+    .prepare("SELECT * FROM activity_code WHERE activity_id=?")
+    .bind(activityId)
+    .first();
+  const usage = await db.prepare("SELECT * FROM judge_usage").first();
+  await applyD1Migrations(db, testEnv.TEST_MIGRATIONS);
+  expect(
+    await db
+      .prepare("SELECT * FROM activity_code WHERE activity_id=?")
+      .bind(activityId)
+      .first(),
+  ).toEqual({
+    ...code,
+    judge_id: null,
+    judge_version: null,
+    params_ciphertext: null,
+    params_public: null,
+    params_commitment: null,
+    params_salt_ciphertext: null,
+    params_secret: null,
+    params_salt: null,
+  });
+  expect(await db.prepare("SELECT * FROM judge_usage").first()).toEqual({
+    ...usage,
+    tries: 0,
+  });
+});

@@ -7,6 +7,8 @@ import {
   type ClaimScope,
   DEFAULT_DRAW_COUNTDOWN_SECONDS,
   JUDGE_LIMITS,
+  JUDGE_NAME_LIMITS,
+  type JudgeHongbaoRules,
   type JudgeVersions,
   type LdcMoney,
   type ManagedActivity,
@@ -68,6 +70,16 @@ export type FormState = {
     code: string;
     tests: string;
     versions: JudgeVersions;
+    /**
+     * 判定器 (docs/judge-square-design.md §1): the one the code is written
+     * in or picked from (null until the first deploy makes it), its name
+     * and line as typed, and the params filled (§3), as the form holds
+     * them: text as typed, money in LDC.
+     */
+    judgeId: string | null;
+    name: string;
+    description: string;
+    params: Record<string, unknown>;
   };
   /** Not asked for 代码判定, which its code judges. */
   participation: "password" | "direct";
@@ -166,6 +178,10 @@ export function emptyForm(now = Date.now()): FormState {
       code: "",
       tests: "",
       versions: noVersions(),
+      judgeId: null,
+      name: "",
+      description: "",
+      params: {},
     },
     participation: "password",
     passwords: [""],
@@ -260,7 +276,7 @@ function positiveInteger(value: string) {
   );
 }
 
-function count(value: string) {
+export function count(value: string) {
   const text = value.trim();
   if (!/^\d+$/.test(text)) return null;
   const result = Number(text);
@@ -486,6 +502,16 @@ export function issuesOf(form: FormState, now = Date.now()): Issue[] {
           "hb-code-prompt",
           `领取时的提示最多 ${JUDGE_LIMITS.promptCharacters} 个字`,
         );
+      if (Array.from(form.judge.name.trim()).length > JUDGE_NAME_LIMITS.name)
+        add("hb-judge-name", `名字最多 ${JUDGE_NAME_LIMITS.name} 个字`);
+      if (
+        Array.from(form.judge.description.trim()).length >
+        JUDGE_NAME_LIMITS.description
+      )
+        add(
+          "hb-judge-description",
+          `说明最多 ${JUDGE_NAME_LIMITS.description} 个字`,
+        );
       if (!form.judge.code.trim()) add("hb-code-code", "请粘贴代码");
       else if (bytes(form.judge.code) > JUDGE_LIMITS.codeBytes)
         add("hb-code-code", `代码超过 ${JUDGE_LIMITS.codeBytes / 1024} KB`);
@@ -671,6 +697,10 @@ export function formOf(activity: ManagedActivity, now = Date.now()): FormState {
             code: config.judge?.code ?? "",
             tests: config.judge?.tests ?? "",
             versions: config.judge?.versions ?? noVersions(),
+            judgeId: config.judge?.judgeId ?? null,
+            name: config.judge?.name ?? "",
+            description: config.judge?.description ?? "",
+            params: config.judge?.params ?? {},
           }
         : base.judge,
     participation: participationOf(
@@ -804,11 +834,21 @@ export function inputOf(form: FormState, merchantId: string): ActivityInput {
     money,
     ...(coded
       ? {
+          // Its versions are its 判定器's: never sent.
           judge: {
             prompt: form.judge.prompt.trim(),
             code: form.judge.code,
             tests: form.judge.tests,
-            versions: form.judge.versions,
+            ...(form.judge.judgeId
+              ? {
+                  judgeId: form.judge.judgeId,
+                  name: form.judge.name.trim(),
+                  description: form.judge.description.trim(),
+                }
+              : {}),
+            ...(Object.keys(form.judge.params).length > 0
+              ? { params: form.judge.params }
+              : {}),
           },
         }
       : {}),
@@ -859,7 +899,16 @@ export function sameInput(saved: ActivityInput, sent: ActivityInput) {
       funding: input.funding ?? "merchant",
       humanCheck: input.humanCheck === true,
       pageUrl: input.pageUrl ?? "",
-      judge: input.judge ?? null,
+      // What a save sends of its code (its versions come back with it).
+      judge: input.judge
+        ? {
+            prompt: input.judge.prompt.trim(),
+            code: input.judge.code,
+            tests: input.judge.tests,
+            judgeId: input.judge.judgeId ?? null,
+            params: input.judge.params ?? null,
+          }
+        : null,
       scope: input.scope
         ? {
             levels: input.scope.levels ?? null,
@@ -873,4 +922,48 @@ export function sameInput(saved: ActivityInput, sent: ActivityInput) {
     comparable(savedRest) === comparable(sentRest) &&
     sameLdcMoney(savedMoney, sentMoney)
   );
+}
+
+/**
+ * A picked 判定器's `hongbao` (docs/judge-square-design.md §4): its
+ * defaults on whatever is still as a new form has it — the amounts left
+ * empty, 24 hours to the deadline, no prompt — and 领取前人机验证 on when
+ * it suggests it.
+ */
+export function withJudgeDefaults(
+  form: FormState,
+  rules: JudgeHongbaoRules | null | undefined,
+): FormState {
+  if (!rules) return form;
+  const blank = (value: string) => value.trim() === "";
+  const judge = { ...form.judge };
+  if (rules.count?.default !== undefined && blank(judge.count))
+    judge.count = String(rules.count.default);
+  if (rules.total?.default !== undefined && blank(judge.total))
+    judge.total = ldc(rules.total.default);
+  if (
+    rules.minEach?.default !== undefined &&
+    (blank(judge.minEach) || judge.minEach === "0.01")
+  )
+    judge.minEach = ldc(rules.minEach.default);
+  if (rules.prompt !== undefined && blank(judge.prompt))
+    judge.prompt = rules.prompt;
+  const untouched =
+    form.timing.kind === "duration" &&
+    form.timing.value === "24" &&
+    form.timing.unit === "hours";
+  return {
+    ...form,
+    judge,
+    ...(rules.deadline && untouched
+      ? {
+          timing: {
+            ...form.timing,
+            value: String(rules.deadline.value),
+            unit: rules.deadline.unit,
+          },
+        }
+      : {}),
+    ...(rules.humanCheck ? { humanCheck: true } : {}),
+  };
 }

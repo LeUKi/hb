@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "cee99eaa-c0ee-48c9-a055-7becad6622ae",
+  "id": "aadfdd4d-7c1a-4cba-ae5a-a33bd41d7b4a",
   "prevId": "dd120645-9bce-44c4-8ac0-0c4b7c1b9e88",
   "tables": {
     "account_attempt_cooldowns": {
@@ -595,6 +595,62 @@
           "notNull": false,
           "autoincrement": false
         },
+        "judge_id": {
+          "name": "judge_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "judge_version": {
+          "name": "judge_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "params_ciphertext": {
+          "name": "params_ciphertext",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "params_public": {
+          "name": "params_public",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "params_commitment": {
+          "name": "params_commitment",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "params_salt_ciphertext": {
+          "name": "params_salt_ciphertext",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "params_secret": {
+          "name": "params_secret",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "params_salt": {
+          "name": "params_salt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -629,6 +685,15 @@
           "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
+        },
+        "activity_code_judge_id_judges_id_fk": {
+          "name": "activity_code_judge_id_judges_id_fk",
+          "tableFrom": "activity_code",
+          "tableTo": "judges",
+          "columnsFrom": ["judge_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -636,7 +701,7 @@
       "checkConstraints": {
         "activity_code_shape": {
           "name": "activity_code_shape",
-          "value": "\"activity_code\".\"protocol\" IN (1, 2, 3) AND length(\"activity_code\".\"fingerprint\") = 64 AND length(\"activity_code\".\"tests_digest\") = 64\n        AND (\"activity_code\".\"network\" IS NULL OR (\"activity_code\".\"protocol\" >= 2 AND json_valid(\"activity_code\".\"network\")\n          AND json_type(\"activity_code\".\"network\") = 'array' AND json_array_length(\"activity_code\".\"network\") BETWEEN 1 AND 3))\n        AND length(\"activity_code\".\"prompt\") <= 40\n        AND typeof(\"activity_code\".\"min_each_minor\") = 'integer' AND \"activity_code\".\"min_each_minor\" > 0\n        AND (\"activity_code\".\"seed_commitment\" IS NULL) = (\"activity_code\".\"seed_ciphertext\" IS NULL)\n        AND (\"activity_code\".\"seed_commitment\" IS NULL OR length(\"activity_code\".\"seed_commitment\") = 64)\n        AND typeof(\"activity_code\".\"failures_in_row\") = 'integer' AND \"activity_code\".\"failures_in_row\" BETWEEN 0 AND 5\n        AND typeof(\"activity_code\".\"sandbox\") = 'integer' AND \"activity_code\".\"sandbox\" BETWEEN 0 AND 3\n        AND (\"activity_code\".\"stopped_at\" IS NULL) = (\"activity_code\".\"stopped_by_user_id\" IS NULL)\n        AND (\"activity_code\".\"code\" IS NULL) = (\"activity_code\".\"revealed_at\" IS NULL)\n        AND (\"activity_code\".\"seed\" IS NULL) = (\"activity_code\".\"revealed_at\" IS NULL)\n        AND (\"activity_code\".\"seed\" IS NULL OR length(\"activity_code\".\"seed\") = 64)"
+          "value": "\"activity_code\".\"protocol\" IN (1, 2, 3) AND length(\"activity_code\".\"fingerprint\") = 64 AND length(\"activity_code\".\"tests_digest\") = 64\n        AND (\"activity_code\".\"network\" IS NULL OR (\"activity_code\".\"protocol\" >= 2 AND json_valid(\"activity_code\".\"network\")\n          AND json_type(\"activity_code\".\"network\") = 'array' AND json_array_length(\"activity_code\".\"network\") BETWEEN 1 AND 3))\n        AND length(\"activity_code\".\"prompt\") <= 40\n        AND typeof(\"activity_code\".\"min_each_minor\") = 'integer' AND \"activity_code\".\"min_each_minor\" > 0\n        AND (\"activity_code\".\"seed_commitment\" IS NULL) = (\"activity_code\".\"seed_ciphertext\" IS NULL)\n        AND (\"activity_code\".\"seed_commitment\" IS NULL OR length(\"activity_code\".\"seed_commitment\") = 64)\n        AND typeof(\"activity_code\".\"failures_in_row\") = 'integer' AND \"activity_code\".\"failures_in_row\" BETWEEN 0 AND 5\n        AND typeof(\"activity_code\".\"sandbox\") = 'integer' AND \"activity_code\".\"sandbox\" BETWEEN 0 AND 3\n        AND (\"activity_code\".\"stopped_at\" IS NULL) = (\"activity_code\".\"stopped_by_user_id\" IS NULL)\n        AND (\"activity_code\".\"code\" IS NULL) = (\"activity_code\".\"revealed_at\" IS NULL)\n        AND (\"activity_code\".\"seed\" IS NULL) = (\"activity_code\".\"revealed_at\" IS NULL)\n        AND (\"activity_code\".\"seed\" IS NULL OR length(\"activity_code\".\"seed\") = 64)\n        AND (\"activity_code\".\"judge_version\" IS NULL OR (\"activity_code\".\"judge_id\" IS NOT NULL\n          AND typeof(\"activity_code\".\"judge_version\") = 'integer' AND \"activity_code\".\"judge_version\" >= 1))\n        AND (\"activity_code\".\"params_public\" IS NULL OR json_valid(\"activity_code\".\"params_public\"))\n        AND (\"activity_code\".\"params_commitment\" IS NULL) = (\"activity_code\".\"params_salt_ciphertext\" IS NULL)\n        AND (\"activity_code\".\"params_commitment\" IS NULL OR length(\"activity_code\".\"params_commitment\") = 64)\n        AND (\"activity_code\".\"params_secret\" IS NULL) = (\"activity_code\".\"params_salt\" IS NULL)\n        AND (\"activity_code\".\"params_secret\" IS NULL OR (\"activity_code\".\"params_commitment\" IS NOT NULL\n          AND \"activity_code\".\"revealed_at\" IS NOT NULL AND json_valid(\"activity_code\".\"params_secret\")))"
         }
       }
     },
@@ -4054,6 +4119,65 @@
         }
       }
     },
+    "judge_tries": {
+      "name": "judge_tries",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "judge_tries_user_time_idx": {
+          "name": "judge_tries_user_time_idx",
+          "columns": ["user_id", "created_at"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "judge_tries_user_id_users_id_fk": {
+          "name": "judge_tries_user_id_users_id_fk",
+          "tableFrom": "judge_tries",
+          "tableTo": "users",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "judge_tries_shape": {
+          "name": "judge_tries_shape",
+          "value": "\"judge_tries\".\"kind\" IN ('check', 'try') AND typeof(\"judge_tries\".\"created_at\") = 'integer'"
+        }
+      }
+    },
     "judge_usage": {
       "name": "judge_usage",
       "columns": {
@@ -4163,6 +4287,14 @@
           "autoincrement": false,
           "default": 0
         },
+        "tries": {
+          "name": "tries",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
         "first_at": {
           "name": "first_at",
           "type": "integer",
@@ -4209,7 +4341,225 @@
       "checkConstraints": {
         "judge_usage_shape": {
           "name": "judge_usage_shape",
-          "value": "length(\"judge_usage\".\"fingerprint\") = 64\n        AND \"judge_usage\".\"protocol\" IN (1, 2, 3) AND \"judge_usage\".\"networked\" IN (0, 1)\n        AND (\"judge_usage\".\"networked\" = 0 OR (\"judge_usage\".\"protocol\" >= 2 AND \"judge_usage\".\"activity_id\" IS NOT NULL))\n        AND typeof(\"judge_usage\".\"fresh\") = 'integer' AND \"judge_usage\".\"fresh\" BETWEEN 0 AND 3\n        AND \"judge_usage\".\"sandbox_id\" = 'judge:v' || \"judge_usage\".\"protocol\" || ':' || \"judge_usage\".\"fingerprint\"\n          || CASE WHEN \"judge_usage\".\"networked\" = 1 THEN ':' || \"judge_usage\".\"activity_id\" ELSE '' END\n          || CASE WHEN \"judge_usage\".\"fresh\" > 0 THEN ':' || \"judge_usage\".\"fresh\" ELSE '' END\n        AND typeof(\"judge_usage\".\"fetches\") = 'integer' AND \"judge_usage\".\"fetches\" >= 0\n        AND typeof(\"judge_usage\".\"first_at\") = 'integer' AND typeof(\"judge_usage\".\"last_at\") = 'integer' AND \"judge_usage\".\"first_at\" <= \"judge_usage\".\"last_at\"\n        AND \"judge_usage\".\"day\" = strftime('%Y-%m-%d', \"judge_usage\".\"first_at\" / 1000, 'unixepoch')\n        AND typeof(\"judge_usage\".\"deploys\") = 'integer' AND \"judge_usage\".\"deploys\" >= 0\n        AND typeof(\"judge_usage\".\"reruns\") = 'integer' AND \"judge_usage\".\"reruns\" >= 0\n        AND typeof(\"judge_usage\".\"claims\") = 'integer' AND \"judge_usage\".\"claims\" >= 0\n        AND typeof(\"judge_usage\".\"timeouts\") = 'integer' AND \"judge_usage\".\"timeouts\" >= 0\n        AND typeof(\"judge_usage\".\"switches\") = 'integer' AND \"judge_usage\".\"switches\" BETWEEN 0 AND \"judge_usage\".\"timeouts\""
+          "value": "length(\"judge_usage\".\"fingerprint\") = 64\n        AND \"judge_usage\".\"protocol\" IN (1, 2, 3) AND \"judge_usage\".\"networked\" IN (0, 1)\n        AND (\"judge_usage\".\"networked\" = 0 OR (\"judge_usage\".\"protocol\" >= 2 AND \"judge_usage\".\"activity_id\" IS NOT NULL))\n        AND typeof(\"judge_usage\".\"fresh\") = 'integer' AND \"judge_usage\".\"fresh\" BETWEEN 0 AND 3\n        AND \"judge_usage\".\"sandbox_id\" = 'judge:v' || \"judge_usage\".\"protocol\" || ':' || \"judge_usage\".\"fingerprint\"\n          || CASE WHEN \"judge_usage\".\"networked\" = 1 THEN ':' || \"judge_usage\".\"activity_id\" ELSE '' END\n          || CASE WHEN \"judge_usage\".\"fresh\" > 0 THEN ':' || \"judge_usage\".\"fresh\" ELSE '' END\n        AND typeof(\"judge_usage\".\"fetches\") = 'integer' AND \"judge_usage\".\"fetches\" >= 0\n        AND typeof(\"judge_usage\".\"tries\") = 'integer' AND \"judge_usage\".\"tries\" >= 0\n        AND typeof(\"judge_usage\".\"first_at\") = 'integer' AND typeof(\"judge_usage\".\"last_at\") = 'integer' AND \"judge_usage\".\"first_at\" <= \"judge_usage\".\"last_at\"\n        AND \"judge_usage\".\"day\" = strftime('%Y-%m-%d', \"judge_usage\".\"first_at\" / 1000, 'unixepoch')\n        AND typeof(\"judge_usage\".\"deploys\") = 'integer' AND \"judge_usage\".\"deploys\" >= 0\n        AND typeof(\"judge_usage\".\"reruns\") = 'integer' AND \"judge_usage\".\"reruns\" >= 0\n        AND typeof(\"judge_usage\".\"claims\") = 'integer' AND \"judge_usage\".\"claims\" >= 0\n        AND typeof(\"judge_usage\".\"timeouts\") = 'integer' AND \"judge_usage\".\"timeouts\" >= 0\n        AND typeof(\"judge_usage\".\"switches\") = 'integer' AND \"judge_usage\".\"switches\" BETWEEN 0 AND \"judge_usage\".\"timeouts\""
+        }
+      }
+    },
+    "judge_versions": {
+      "name": "judge_versions",
+      "columns": {
+        "judge_id": {
+          "name": "judge_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "n": {
+          "name": "n",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "fingerprint": {
+          "name": "fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "code_ciphertext": {
+          "name": "code_ciphertext",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "protocol": {
+          "name": "protocol",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tests_ciphertext": {
+          "name": "tests_ciphertext",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tests_digest": {
+          "name": "tests_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "passed": {
+          "name": "passed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "declarations": {
+          "name": "declarations",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "network": {
+          "name": "network",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "deployed_at": {
+          "name": "deployed_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "checked_at": {
+          "name": "checked_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "judge_versions_code_unique": {
+          "name": "judge_versions_code_unique",
+          "columns": ["judge_id", "fingerprint"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "judge_versions_judge_id_judges_id_fk": {
+          "name": "judge_versions_judge_id_judges_id_fk",
+          "tableFrom": "judge_versions",
+          "tableTo": "judges",
+          "columnsFrom": ["judge_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "judge_versions_judge_id_n_pk": {
+          "columns": ["judge_id", "n"],
+          "name": "judge_versions_judge_id_n_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "judge_versions_shape": {
+          "name": "judge_versions_shape",
+          "value": "typeof(\"judge_versions\".\"n\") = 'integer' AND \"judge_versions\".\"n\" >= 1\n        AND length(\"judge_versions\".\"fingerprint\") = 64 AND length(\"judge_versions\".\"tests_digest\") = 64\n        AND \"judge_versions\".\"protocol\" IN (1, 2, 3) AND \"judge_versions\".\"passed\" IN (0, 1)\n        AND (\"judge_versions\".\"declarations\" IS NULL OR (\"judge_versions\".\"protocol\" >= 3 AND json_valid(\"judge_versions\".\"declarations\")))\n        AND (\"judge_versions\".\"network\" IS NULL OR (\"judge_versions\".\"protocol\" >= 2 AND json_valid(\"judge_versions\".\"network\")\n          AND json_type(\"judge_versions\".\"network\") = 'array' AND json_array_length(\"judge_versions\".\"network\") BETWEEN 1 AND 3))\n        AND typeof(\"judge_versions\".\"deployed_at\") = 'integer' AND typeof(\"judge_versions\".\"checked_at\") = 'integer'\n        AND \"judge_versions\".\"deployed_at\" <= \"judge_versions\".\"checked_at\""
+        }
+      }
+    },
+    "judges": {
+      "name": "judges",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "author_id": {
+          "name": "author_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "code_public": {
+          "name": "code_public",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'ended'"
+        },
+        "based_on_judge_id": {
+          "name": "based_on_judge_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "judges_author_idx": {
+          "name": "judges_author_idx",
+          "columns": ["author_id", "updated_at"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "judges_author_id_users_id_fk": {
+          "name": "judges_author_id_users_id_fk",
+          "tableFrom": "judges",
+          "tableTo": "users",
+          "columnsFrom": ["author_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "judges_based_on_judge_id_judges_id_fk": {
+          "name": "judges_based_on_judge_id_judges_id_fk",
+          "tableFrom": "judges",
+          "tableTo": "judges",
+          "columnsFrom": ["based_on_judge_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "judges_shape": {
+          "name": "judges_shape",
+          "value": "length(\"judges\".\"name\") BETWEEN 1 AND 20 AND \"judges\".\"name\" = trim(\"judges\".\"name\")\n        AND length(\"judges\".\"description\") <= 60 AND \"judges\".\"description\" = trim(\"judges\".\"description\")\n        AND \"judges\".\"code_public\" IN ('ended', 'always')\n        AND typeof(\"judges\".\"created_at\") = 'integer' AND typeof(\"judges\".\"updated_at\") = 'integer'"
         }
       }
     },

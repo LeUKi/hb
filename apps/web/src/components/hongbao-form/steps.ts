@@ -21,8 +21,21 @@ export const steps: { id: StepId; title: string }[] = [
   { id: "title", title: "起个标题" },
 ];
 
-export const stepIndex = (step: StepId) =>
-  steps.findIndex((item) => item.id === step);
+/**
+ * The steps in the order a form takes them: 代码判定 picks its 判定器
+ * second, before 发多少, whose defaults and ranges it sets
+ * (docs/judge-square-design.md §6).
+ */
+export function stepsOf(mode: FormState["mode"]) {
+  if (mode !== "code") return steps;
+  const [first, amount, claim, title] = steps;
+  return [first, claim, amount, title].filter(
+    (step): step is (typeof steps)[number] => step !== undefined,
+  );
+}
+
+export const stepIndex = (step: StepId, mode?: FormState["mode"]) =>
+  stepsOf(mode ?? "fixed").findIndex((item) => item.id === step);
 
 /** The 更多设置 panel's groups, in the order they are shown. */
 export type SettingsGroup =
@@ -34,10 +47,10 @@ export type SettingsGroup =
   | "public"
   | "payment";
 
-/** A step's title: 代码判定's third step is 代码, in place of 怎么领. */
+/** A step's title: 代码判定's second step is 判定器, in place of 怎么领. */
 export function stepTitle(step: StepId, form: FormState) {
-  if (step === "claim" && form.mode === "code") return "代码";
-  return steps[stepIndex(step)]?.title ?? "";
+  if (step === "claim" && form.mode === "code") return "判定器";
+  return steps.find((item) => item.id === step)?.title ?? "";
 }
 
 /** The step a field belongs to (fields in the panel count for theirs). */
@@ -48,6 +61,9 @@ export function stepOfField(field: string): StepId {
     field === "hb-draw-limit" ||
     field === "hb-code-prompt" ||
     field === "hb-code-code" ||
+    field === "hb-judge-name" ||
+    field === "hb-judge-description" ||
+    field.startsWith("hb-param-") ||
     field === "hb-code-tests" ||
     field === "hb-code-check"
   )
@@ -135,10 +151,11 @@ export function summaryOf(
     }
     case "claim": {
       const time = deadline ?? timingLine(form);
+      // 判定器 (docs/judge-square-design.md §14.4): 猜数字 · 第 3 版.
       if (form.mode === "code")
         return form.judge.code.trim()
-          ? `${judgeName ?? `judge.js ${sizeOf(form.judge.code)}`} · ${testCount(form.judge.tests)} · ${time}`
-          : `代码还没贴 · ${time}`;
+          ? (judgeName ?? `judge.js ${sizeOf(form.judge.code)}`)
+          : "还没选判定器";
       if (form.participation === "direct") return `无需口令 · ${time}`;
       const count = form.passwords.filter((item) => item.trim()).length;
       return `${count > 0 ? `口令 ${count} 个` : "口令还没填"} · ${time}`;

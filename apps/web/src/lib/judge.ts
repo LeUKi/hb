@@ -3,6 +3,14 @@ import type {
   JudgeChallengerList,
   JudgeCheck,
   JudgeCheckInput,
+  JudgeDeclarations,
+  JudgeParamsCheck,
+  JudgeParamsCheckInput,
+  JudgeTry,
+  JudgeTryInput,
+  JudgeVersions,
+  MyJudge,
+  MyJudgeDetail,
   MyJudgmentList,
 } from "@hb/contracts";
 import {
@@ -77,6 +85,26 @@ function useTextDigest(text: string) {
  * judge.js's fingerprint and tests.json's digest as typed, each on its own:
  * typing in the tests leaves the code's fingerprint known.
  */
+/**
+ * What judge.js's `meta` says (docs/judge-square-design.md §1), read from
+ * the text as written — a plain object of quoted strings — so the
+ * 判定器's name is filled in when the code is pasted, before it ever runs.
+ */
+export function metaOf(code: string): { name?: string; description?: string } {
+  const block = /export\s+const\s+meta\s*=\s*\{([^}]*)\}/.exec(code)?.[1];
+  if (!block) return {};
+  const field = (key: string) =>
+    new RegExp(`(?:^|[\\s,{])${key}\\s*:\\s*(["'])([^"'\\\\]*)\\1`)
+      .exec(block)?.[2]
+      ?.trim();
+  const name = field("name");
+  const description = field("description");
+  return {
+    ...(name ? { name } : {}),
+    ...(description ? { description } : {}),
+  };
+}
+
 export function useJudgeDigests(code: string, tests: string) {
   return { code: useTextDigest(code), tests: useTextDigest(tests) };
 }
@@ -102,12 +130,107 @@ export function useJudgeCheck(userId: string) {
         );
         return check;
       } finally {
-        if (session.isCurrentIdentity(identity))
+        if (session.isCurrentIdentity(identity)) {
           void queryClient.invalidateQueries({
             queryKey: balanceKeys.hongbao(identity),
           });
+          // A deploy makes a 判定器, or a version of one.
+          void queryClient.invalidateQueries({
+            queryKey: myJudgesKey(identity),
+          });
+        }
       }
     },
+  });
+}
+
+/** 我的判定器 (docs/judge-square-design.md §1): a private read. */
+export const myJudgesKey = (userId: string) =>
+  ["judge-private", userId, "mine"] as const;
+export const myJudgeKey = (userId: string, judgeId: string) =>
+  ["judge-private", userId, "mine", judgeId] as const;
+
+/** 我的判定器, the newest first (第 2 步's cards, /judges). */
+export function useMyJudges(userId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: myJudgesKey(userId ?? ""),
+    enabled: Boolean(userId) && enabled,
+    queryFn: async ({ signal }) =>
+      (
+        await readResponse<{ items: MyJudge[] }>(
+          await api.api.me.judges.$get(undefined, {
+            init: { signal, cache: "no-store" },
+          }),
+        )
+      ).items,
+  });
+}
+
+/** One of mine with every version, what each declares among it. */
+export function useMyJudge(userId: string | null, judgeId: string | null) {
+  return useQuery({
+    queryKey: myJudgeKey(userId ?? "", judgeId ?? ""),
+    enabled: Boolean(userId && judgeId),
+    queryFn: async ({ signal }) =>
+      (
+        await readResponse<{ judge: MyJudgeDetail }>(
+          await api.api.me.judges[":id"].$get(
+            { param: { id: judgeId ?? "" } },
+            { init: { signal, cache: "no-store" } },
+          ),
+        )
+      ).judge,
+  });
+}
+
+/** A version's code and tests, to put in a draft (picking it, 换成第 N 版). */
+export async function fetchJudgeVersion(judgeId: string, n: number) {
+  return readResponse<{
+    code: string;
+    tests: string;
+    versions: JudgeVersions;
+    declarations: JudgeDeclarations | null;
+  }>(
+    await api.api.me.judges[":id"].versions[":n"].$get(
+      { param: { id: judgeId, n: String(n) } },
+      { init: { cache: "no-store" } },
+    ),
+  );
+}
+
+/** check(params, hongbao) on a version (§3 校验). */
+export function useParamsCheck() {
+  const { csrfToken } = useIdentity();
+  return useMutation({
+    mutationFn: async ({
+      judgeId,
+      n,
+      ...json
+    }: JudgeParamsCheckInput & { judgeId: string; n: number }) =>
+      readResponse<JudgeParamsCheck>(
+        await api.api.me.judges[":id"].versions[":n"].check.$post(
+          { param: { id: judgeId, n: String(n) }, json },
+          { headers: { "X-CSRF-Token": csrfToken ?? "" } },
+        ),
+      ),
+  });
+}
+
+/** 试一试 (§6): one judgment, no money, no record. */
+export function useJudgeTry() {
+  const { csrfToken } = useIdentity();
+  return useMutation({
+    mutationFn: async ({
+      judgeId,
+      n,
+      ...json
+    }: JudgeTryInput & { judgeId: string; n: number }) =>
+      readResponse<JudgeTry>(
+        await api.api.me.judges[":id"].versions[":n"].try.$post(
+          { param: { id: judgeId, n: String(n) }, json },
+          { headers: { "X-CSRF-Token": csrfToken ?? "" } },
+        ),
+      ),
   });
 }
 

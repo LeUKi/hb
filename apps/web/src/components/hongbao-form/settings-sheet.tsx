@@ -140,6 +140,7 @@ export function SettingsSheet({
   listedLocked,
   pageOffered,
   pageStopped,
+  humanCheckSuggested = false,
 }: {
   open: boolean;
   /** The group to show first. */
@@ -159,6 +160,8 @@ export function SettingsSheet({
   pageOffered: boolean;
   /** The 站长 stopped this 红包's 附带网页. */
   pageStopped: boolean;
+  /** Its 判定器 suggests 领取前人机验证 (judge-square §4). */
+  humanCheckSuggested?: boolean;
 }) {
   const titleId = useId();
   const noteTitleId = useId();
@@ -371,7 +374,7 @@ export function SettingsSheet({
             <Setting>
               <Switch
                 label="领取前人机验证"
-                description="领取前先通过 Cloudflare 人机验证，挡住抢红包脚本；部分网络或浏览器可能加载不出，这些人会领不了。开放后也能改。"
+                description={`领取前先通过 Cloudflare 人机验证，挡住抢红包脚本；部分网络或浏览器可能加载不出，这些人会领不了。开放后也能改。${humanCheckSuggested ? "这个判定器建议打开。" : ""}`}
                 checked={form.humanCheck}
                 onChange={(humanCheck) =>
                   update((current) => ({ ...current, humanCheck }))

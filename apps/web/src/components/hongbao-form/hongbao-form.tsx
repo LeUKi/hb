@@ -1,4 +1,4 @@
-import type { ManagedActivity } from "@hb/contracts";
+import type { JudgeParamProblem, ManagedActivity } from "@hb/contracts";
 import { useLocation, useRouter } from "@tanstack/react-router";
 import { AlertTriangle, CalendarX2, ChevronRight, Trash2 } from "lucide-react";
 import {
@@ -13,6 +13,7 @@ import { useActivityWrites } from "../../lib/activities";
 import { useBalanceFunding } from "../../lib/balance";
 import { cn } from "../../lib/cn";
 import { haptic } from "../../lib/haptics";
+import { useMyJudge, useParamsCheck } from "../../lib/judge";
 import { useCurrentMerchant } from "../../lib/merchants";
 import { scrollBehavior } from "../../lib/motion";
 import { closeOverlay, openOverlay } from "../../lib/overlay";
@@ -49,6 +50,7 @@ import {
   withDefaultTitle,
   withMode,
 } from "./form-state";
+import { declaredParams, judgeIssuesOf, triedHongbao } from "./judge-issues";
 import { ScheduleDialog, ScheduleLine } from "./schedule-fields";
 import { scopeLine } from "./scope-fields";
 import { groupsOf, SettingsSheet } from "./settings-sheet";
@@ -59,10 +61,9 @@ import {
   groupOfField,
   type SettingsGroup,
   type StepId,
-  stepIndex,
   stepIssues,
   stepOfField,
-  steps,
+  stepsOf,
   stepTitle,
   summaryOf,
 } from "./steps";
@@ -174,7 +175,34 @@ export function HongbaoForm({
   const [codeGate, setCodeGate] = useState(false);
   const codeBlocked = form.mode === "code" && !judge.ready;
 
-  const issues = issuesOf(withDefaultTitle(form));
+  // 判定器 (docs/judge-square-design.md §3, §4): what the version the code
+  // is declares — its params, checked here and by its check(), and its
+  // ranges for 发多少.
+  const coded = form.mode === "code";
+  const judgeDetail = useMyJudge(
+    coded ? user.id : null,
+    coded ? form.judge.judgeId : null,
+  );
+  const declarations = coded
+    ? (judgeDetail.data?.versions.find(
+        (version) => version.n === judge.version?.n,
+      )?.declarations ?? null)
+    : null;
+  // check()'s word on these very params and numbers, once asked.
+  const paramsCheck = useParamsCheck();
+  const [checkedParams, setCheckedParams] = useState<{
+    key: string;
+    problems: JudgeParamProblem[];
+  } | null>(null);
+  const tried = triedHongbao(form, declarations?.hongbao);
+  const checkKey = JSON.stringify([form.judge.params, tried]);
+  const judgeIssues = judgeIssuesOf(
+    form,
+    declarations,
+    checkedParams?.key === checkKey ? checkedParams.problems : [],
+  );
+
+  const issues = [...issuesOf(withDefaultTitle(form)), ...judgeIssues];
   // A step's problems show once it was checked (下一步, or a save).
   const [checked, setChecked] = useState<ReadonlySet<StepId>>(() => new Set());
   const check = (ids: StepId[]) =>
@@ -194,16 +222,19 @@ export function HongbaoForm({
   const [announced, setAnnounced] = useState<{ at: number; text: string }>();
   const say = (text: string) => setAnnounced({ at: Date.now(), text });
 
+  // The steps in this 玩法's order (代码判定 picks its 判定器 second).
+  const order = stepsOf(form.mode);
+  const placeOf = (step: StepId) => order.findIndex((item) => item.id === step);
   // The furthest step /new may show: every step before it is answered.
-  const firstInvalid = steps.findIndex(
+  const firstInvalid = order.findIndex(
     (step) => stepIssues(issues, step.id).length > 0,
   );
-  const openable = firstInvalid === -1 ? steps.length : firstInvalid + 1;
+  const openable = firstInvalid === -1 ? order.length : firstInvalid + 1;
   const linear = useLinearSteps(openable, !editing);
   const [openStep, setOpenStep] = useState<StepId | null>(null);
   const currentIndex = editing
     ? openStep
-      ? stepIndex(openStep)
+      ? placeOf(openStep)
       : -1
     : linear.current - 1;
 
@@ -255,15 +286,58 @@ export function HongbaoForm({
     update((current) => withMode(current, mode));
     // A beat for the pressed card to show, then on to 发多少.
     if (editing) {
-      if (changed) window.setTimeout(() => setOpenStep("amount"), 120);
+      if (changed)
+        window.setTimeout(
+          () => setOpenStep(mode === "code" ? "claim" : "amount"),
+          120,
+        );
       return;
     }
     if (changed) linear.restart();
     window.setTimeout(linear.next, 120);
   };
 
-  const advance = () => {
-    const step = steps[linear.current - 1]?.id;
+  /**
+   * The params asked of the version's check() (§3 校验), when it has one:
+   * what it says shows under each; false when it found something.
+   */
+  const paramsPassCheck = async () => {
+    const judgeId = form.judge.judgeId;
+    const n = judge.version?.n;
+    if (!coded || !declarations?.check || !judgeId || n === undefined)
+      return true;
+    const key = checkKey;
+    try {
+      const answer = await paramsCheck.mutateAsync({
+        judgeId,
+        n,
+        params: declaredParams(declarations, form.judge.params),
+        hongbao: tried,
+      });
+      const problems =
+        "problems" in answer
+          ? answer.problems
+          : [
+              {
+                key: declarations.params[0]?.key ?? "",
+                message: `判定器检查参数时出错：${answer.failure}`,
+              },
+            ];
+      setCheckedParams({ key, problems });
+      const [first] = problems;
+      if (!first) return true;
+      haptic("error");
+      say(`参数没有通过判定器的检查：${first.message}`);
+      showIssue(`hb-param-${first.key}`);
+      return false;
+    } catch {
+      // Not asked after all: opening asks again.
+      return true;
+    }
+  };
+
+  const advance = async () => {
+    const step = order[linear.current - 1]?.id;
     if (!step || step === "title") return;
     check([step]);
     const problems = stepIssues(issues, step);
@@ -274,15 +348,17 @@ export function HongbaoForm({
       showIssue(first.field);
       return;
     }
+    // Its params past check() too (§3 校验), before going on.
+    if (step === "claim" && !(await paramsPassCheck())) return;
     setAnnounced(undefined);
     linear.next();
   };
 
-  const save = (open: boolean) => {
+  const save = async (open: boolean) => {
     if (submit.idle(open)) return;
     // 重试原提交 sends what was sent, checked back then.
     if (!submit.retries(open)) {
-      check(steps.map((step) => step.id));
+      check(order.map((step) => step.id));
       const first = issues[0];
       if (first) {
         haptic("error");
@@ -296,13 +372,15 @@ export function HongbaoForm({
         setCodeGate(true);
         haptic("error");
         say(`${judge.gate ?? ""}。`);
-        // Back on step 3 (/new keeps it folded): its 部署 in view.
+        // Back on its 判定器 step (/new keeps it folded): 部署 in view.
         if (!editing) {
-          linear.back(stepIndex("claim") + 1);
+          linear.back(placeOf("claim") + 1);
           window.setTimeout(() => jumpTo("hb-code-check"), 400);
         } else showIssue("hb-code-check");
         return;
       }
+      // And params its check() lets through (§3 校验); opening asks again.
+      if (open && !(await paramsPassCheck())) return;
     }
     setAnnounced(undefined);
     submit.run(open);
@@ -417,6 +495,10 @@ export function HongbaoForm({
               scopeError={groupError(["scope"])}
               timeLine={timingLine(form)}
               scopeLine={scopeLine(form)}
+              userId={user.id}
+              declarations={declarations}
+              paramErrorOf={(key) => errorOf(`hb-param-${key}`)}
+              tried={tried}
             />
           );
         return (
@@ -453,7 +535,7 @@ export function HongbaoForm({
     }
   };
 
-  const allChecked = checked.size === steps.length;
+  const allChecked = checked.size === order.length;
   // The notice shows once: in the page on wide windows, in the 吸底条
   // otherwise. Read out by the lasting region at the form's top.
   const status = (
@@ -471,7 +553,7 @@ export function HongbaoForm({
       </Reveal>
     </>
   );
-  const last = linear.current === steps.length;
+  const last = linear.current === order.length;
   const buttons = (small: boolean) =>
     !editing && !last ? (
       // The bar's buttons are all one height, on every step.
@@ -529,7 +611,7 @@ export function HongbaoForm({
       </span>
     );
 
-  const visible = editing ? steps : steps.slice(0, linear.current);
+  const visible = editing ? order : order.slice(0, linear.current);
   const mounted = useRef(false);
   useLayoutEffect(() => {
     mounted.current = true;
@@ -551,7 +633,13 @@ export function HongbaoForm({
               : "这个红包还没保存，离开后填的内容会丢失。可以先存草稿。"
           }
         />
-        {!editing && <StepProgress step={linear.current} />}
+        {!editing && (
+          <StepProgress
+            step={linear.current}
+            count={order.length}
+            title={stepTitle(order[linear.current - 1]?.id ?? "mode", form)}
+          />
+        )}
         {/* Lasting, so each save result is said wherever it is shown. */}
         <p role="status" className="sr-only">
           {submit.notice?.text ?? ""}
@@ -561,7 +649,7 @@ export function HongbaoForm({
           className="flex flex-col gap-5"
           onSubmit={(event) => {
             event.preventDefault();
-            if (!editing) advance();
+            if (!editing) void advance();
           }}
           onKeyDown={(event: KeyboardEvent<HTMLFormElement>) => {
             // Enter that ends a word in an input method is not 下一步.
@@ -729,6 +817,7 @@ export function HongbaoForm({
           listedLocked={listedLocked}
           pageOffered={funding?.page === true}
           pageStopped={activity?.pageStopped === true}
+          humanCheckSuggested={declarations?.hongbao?.humanCheck === true}
         />
         {activity && draft && (
           <DeleteDraftDialog

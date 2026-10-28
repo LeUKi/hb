@@ -1,14 +1,11 @@
-import {
-  JUDGE_LIMITS,
-  type JudgeCheck,
-  type JudgeVersions,
-} from "@hb/contracts";
+import type { JudgeVersions } from "@hb/contracts";
 
 // 版本 and 换回 (docs/programmable-hongbao-design.md §5, 07 §5): each new
-// code this draft deploys is 第 n 版, numbered here in the order deployed;
-// a code pasted back is known by its fingerprint and keeps its number. The
-// latest passing version's code is kept while the code is another, so it
-// can be put back without a deploy. Saved with the draft, encrypted.
+// code deployed into the form's 判定器 is its 第 n 版, numbered by the
+// server in the order deployed (docs/judge-square-design.md §1); a code
+// pasted back is known by its fingerprint and keeps its number. The newest
+// passing version's code comes with them, so it can be put back without a
+// deploy.
 
 export type JudgeVersion = JudgeVersions["versions"][number];
 
@@ -22,63 +19,6 @@ export function versionOf(
   return fingerprint
     ? versions.versions.find((version) => version.fingerprint === fingerprint)
     : undefined;
-}
-
-/**
- * After a run: a new fingerprint becomes 第 next 版, a known one keeps its
- * number and takes this run's outcome. The latest ten are kept, and always
- * the one 换回 names, which the server checks against its code.
- */
-/** The protocol a run was on, and the addresses it read (§9). */
-const ranOn = (check: JudgeCheck) => ({
-  protocol: check.protocol,
-  ...(check.network ? { network: check.network } : {}),
-});
-
-export function withRun(
-  versions: JudgeVersions,
-  check: JudgeCheck,
-): JudgeVersions {
-  const known = versionOf(versions, check.fingerprint);
-  const list = known
-    ? versions.versions.map((version) =>
-        version === known
-          ? {
-              ...version,
-              testsDigest: check.testsDigest,
-              passed: check.passed,
-              ...ranOn(check),
-            }
-          : version,
-      )
-    : [
-        ...versions.versions,
-        {
-          n: versions.next,
-          fingerprint: check.fingerprint,
-          at: check.checkedAt,
-          testsDigest: check.testsDigest,
-          passed: check.passed,
-          ...ranOn(check),
-        },
-      ];
-  // 换回 only ever names a version whose tests passed.
-  const restore = list.some(
-    (version) => version.n === versions.restore?.n && version.passed,
-  )
-    ? versions.restore
-    : undefined;
-  let over = list.length - JUDGE_LIMITS.versions;
-  const kept = list.filter((version) => {
-    if (over <= 0 || version.n === restore?.n) return true;
-    over -= 1;
-    return false;
-  });
-  return {
-    next: known ? versions.next : versions.next + 1,
-    versions: kept,
-    ...(restore ? { restore } : {}),
-  };
 }
 
 /**

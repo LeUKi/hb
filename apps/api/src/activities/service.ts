@@ -45,6 +45,7 @@ import { createDb } from "../db/client";
 import { activities, users } from "../db/schema";
 import type { ApiBindings } from "../env";
 import { passedCheck, requireCodeHongbao } from "../judge/check";
+import { migrateJudgesOf } from "../judge/judges";
 import {
   CODE_OPENING_ALLOWED,
   codeOpeningBlocked,
@@ -56,7 +57,7 @@ import {
   findJudgeRow,
   readJudgeInput,
   sameJudge,
-  saveJudgeStatement,
+  saveJudgeStatements,
   sealSeedStatement,
 } from "../judge/storage";
 import { ownedMerchant } from "../payments/merchants";
@@ -408,6 +409,10 @@ async function managed(
   env: ApiBindings,
   row: ActivityRow,
 ): Promise<ManagedActivity> {
+  // One sent before 判定器 gets its own as its sender first reads it
+  // (docs/judge-square-design.md §14.3).
+  if (row.participationMode === "code")
+    await migrateJudgesOf(env, { activityId: row.id });
   const [snapshot, activityAuthor, judgeRow] = await Promise.all([
     privateSnapshot(env, row.id),
     author(env, row.authorId),
@@ -714,9 +719,10 @@ export async function createActivity(
     preparePasswords(env, id, input.activity.passwords, [], now),
     prepareLdcInventory(id, input.activity, [], now),
     input.activity.money.mode === "code" && input.activity.judge
-      ? saveJudgeStatement(
+      ? saveJudgeStatements(
           env,
           id,
+          authorId,
           input.activity.judge,
           input.activity.money,
           now,
@@ -753,7 +759,7 @@ export async function createActivity(
       ),
       insertPasswordRows(env.DB, passwords),
       insertInventoryRows(env.DB, inventory),
-      ...(judge ? [judge] : []),
+      ...(judge ?? []),
     ]);
   } catch (error) {
     // A parallel retry may have won the unique (author, request) constraint.
@@ -905,7 +911,7 @@ export async function updateActivity(
       if (
         !judgeRow ||
         !input.activity.judge ||
-        !(await sameJudge(judgeRow, input.activity.judge))
+        !(await sameJudge(env, judgeRow, input.activity.judge))
       )
         invalidActivity("开放后不能修改代码、测试和提示");
     }
@@ -975,13 +981,14 @@ export async function updateActivity(
     // After the activity's own row, which says whether it is 代码判定.
     if (input.activity.money.mode === "code" && input.activity.judge)
       statements.push(
-        await saveJudgeStatement(
+        ...(await saveJudgeStatements(
           env,
           id,
+          authorId,
           input.activity.judge,
           input.activity.money,
           now,
-        ),
+        )),
       );
     else if (row.participationMode === "code")
       statements.push(dropJudgeStatement(env, id));

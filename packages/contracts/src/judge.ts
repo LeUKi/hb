@@ -132,6 +132,32 @@ export const judgeVersionsSchema = z
   });
 export type JudgeVersions = z.infer<typeof judgeVersionsSchema>;
 
+/** 判定器's name and line (docs/judge-square-design.md §1, §14.4). */
+export const JUDGE_NAME_LIMITS = { name: 20, description: 60 } as const;
+export const judgeNameSchema = z
+  .string()
+  .trim()
+  .refine((value) => value !== "", "先给判定器起个名字")
+  .refine(
+    (value) => characters(value) <= JUDGE_NAME_LIMITS.name,
+    `名字最多 ${JUDGE_NAME_LIMITS.name} 个字`,
+  );
+export const judgeDescriptionSchema = z
+  .string()
+  .trim()
+  .refine(
+    (value) => characters(value) <= JUDGE_NAME_LIMITS.description,
+    `说明最多 ${JUDGE_NAME_LIMITS.description} 个字`,
+  );
+
+/** The params a sender filled (§3): checked against the version it opens with. */
+const paramsSchema = z
+  .record(z.string(), z.unknown())
+  .refine(
+    (value) => bytes(JSON.stringify(value)) <= 16 * 1024,
+    "参数一共最多 16 KB",
+  );
+
 /** Step 3 of 发红包 (代码): the prompt, judge.js and tests.json as pasted. */
 export const judgeInputSchema = z.strictObject({
   prompt: z
@@ -143,15 +169,40 @@ export const judgeInputSchema = z.strictObject({
     ),
   code: codeSchema,
   tests: testsSchema,
-  /** A draft's deployed versions; back in its sender's own read. */
+  /**
+   * A draft's deployed versions: its 判定器's, back in its sender's own read
+   * (a draft no longer keeps its own; sent back, they are not read).
+   */
   versions: judgeVersionsSchema.optional(),
+  /**
+   * 判定器 (docs/judge-square-design.md §1): the one this code is deployed
+   * into or picked from; its name and line as typed, saved onto it.
+   */
+  judgeId: z.uuid().optional(),
+  name: judgeNameSchema.optional(),
+  description: judgeDescriptionSchema.optional(),
+  /** The params filled (§3); checked against its version at opening. */
+  params: paramsSchema.optional(),
 });
 export type JudgeInput = z.infer<typeof judgeInputSchema>;
 
-/** 部署 (§5): the code and tests to run, saved or not. */
+/**
+ * 部署 (§5): the code and tests to run, saved or not, into a 判定器
+ * (docs/judge-square-design.md §1): one of the sender's, or a new one by
+ * this name.
+ */
 export const judgeCheckInputSchema = z.strictObject({
   code: codeSchema,
   tests: testsSchema,
+  judge: z
+    .union([
+      z.strictObject({ id: z.uuid() }),
+      z.strictObject({
+        name: judgeNameSchema,
+        description: judgeDescriptionSchema.optional(),
+      }),
+    ])
+    .optional(),
 });
 export type JudgeCheckInput = z.infer<typeof judgeCheckInputSchema>;
 
@@ -225,7 +276,99 @@ export type JudgeCheck = {
   kind: "deploy" | "rerun";
   /** New versions this sender may still deploy today (判定器设置). */
   deploysLeft: number;
+  /**
+   * The 判定器 it was deployed into (docs/judge-square-design.md §1): its
+   * name, which version this code is, and its versions as a draft shows them.
+   */
+  judge?: {
+    id: string;
+    name: string;
+    description: string;
+    version: number;
+    versions: JudgeVersions;
+  };
 };
+
+/** One version of a sender's own 判定器 (docs/judge-square-design.md §1). */
+export type MyJudgeVersion = {
+  n: number;
+  fingerprint: string;
+  deployedAt: string;
+  /** Its last run: when, on which protocol, of which tests, and how. */
+  checkedAt: string;
+  protocol: number;
+  testsDigest: string;
+  passed: boolean;
+  network: string[] | null;
+  declarations: JudgeDeclarations | null;
+  /** 红包 opened with it. */
+  opened: number;
+};
+
+/** A sender's own 判定器, as 我的判定器 lists it. */
+export type MyJudge = {
+  id: string;
+  name: string;
+  description: string;
+  codePublic: "ended" | "always";
+  createdAt: string;
+  updatedAt: string;
+  /** The last version deployed. */
+  latest: { n: number; deployedAt: string; passed: boolean } | null;
+  /**
+   * The newest version a 红包 can open with now: tests passed on the
+   * current protocol.
+   */
+  usable: {
+    n: number;
+    declarations: JudgeDeclarations | null;
+    network: string[] | null;
+  } | null;
+  /** 红包 opened with it, any version. */
+  opened: number;
+};
+
+export type MyJudgeDetail = MyJudge & { versions: MyJudgeVersion[] };
+
+/** The 红包 a 判定器 is tried on (§3 check, §6 试一试), in 分. */
+const triedHongbaoSchema = z.strictObject({
+  title: z.string().max(100),
+  total: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  count: z.number().int().min(1).max(1000),
+  minEach: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+});
+
+/** check(params, hongbao) on a version (docs/judge-square-design.md §3). */
+export const judgeParamsCheckSchema = z.strictObject({
+  params: paramsSchema,
+  hongbao: triedHongbaoSchema,
+});
+export type JudgeParamsCheckInput = z.infer<typeof judgeParamsCheckSchema>;
+/** What it said, item by item; or that it failed (and why). */
+export type JudgeParamsCheck =
+  | { problems: ParamProblem[] }
+  | { failure: string };
+
+/** 试一试 (§6): one judgment with these params, no money, no record. */
+export const judgeTrySchema = z.strictObject({
+  params: paramsSchema,
+  hongbao: triedHongbaoSchema,
+  input: judgeAnswerSchema,
+});
+export type JudgeTryInput = z.infer<typeof judgeTrySchema>;
+export type JudgeTry =
+  | { ok: true; amount: number; message?: string }
+  | { ok: false; message?: string }
+  | { failure: "timeout" | "error"; detail: string };
+
+/** 判定器页's settings (docs/judge-square-design.md §2, §14.4). */
+export const updateJudgeSchema = z.strictObject({
+  name: judgeNameSchema,
+  description: judgeDescriptionSchema,
+  /** Only ever from 结束后公开 to 一直公开. */
+  codePublic: z.enum(["ended", "always"]),
+});
+export type UpdateJudgeInput = z.infer<typeof updateJudgeSchema>;
 
 /** Why a claimant's share differs from what the code asked for. */
 export type JudgeNote = "floor" | "cap" | "last";

@@ -15,6 +15,7 @@ import { createDb } from "../db/client";
 import { activityCode } from "../db/schema";
 import type { ApiBindings } from "../env";
 import { decryptString, encryptString, sha256Hex } from "../security/crypto";
+import { draftVersionsOf, ownJudge, renameStatement } from "./judges";
 import { JUDGE_PROTOCOL } from "./sandbox";
 import type { FetchRecord } from "./session";
 
@@ -23,7 +24,15 @@ export type JudgeRow = typeof activityCode.$inferSelect;
 /** What each encrypted part is bound to. */
 export const judgeData = (
   activityId: string,
-  part: "code" | "tests" | "seed" | "state" | "versions" | "fetches",
+  part:
+    | "code"
+    | "tests"
+    | "seed"
+    | "state"
+    | "versions"
+    | "fetches"
+    | "params"
+    | "params-salt",
 ) => `judge:${activityId}:${part}`;
 
 /** The fingerprint (judge.js) and the tests' digest: SHA-256 of the text. */
@@ -37,29 +46,60 @@ export function findJudgeRow(env: ApiBindings, activityId: string) {
     .get();
 }
 
-/** The code, the tests and the prompt as the sender pasted them. */
+/** The params its sender filled (docs/judge-square-design.md §3), or none. */
+export async function readParams(env: ApiBindings, row: JudgeRow) {
+  if (row.paramsCiphertext === null) return undefined;
+  return JSON.parse(
+    await decryptString(
+      row.paramsCiphertext,
+      env,
+      judgeData(row.activityId, "params"),
+    ),
+  ) as Record<string, unknown>;
+}
+
+/**
+ * The code, the tests and the prompt as the sender pasted them; the
+ * 判定器 they are in (docs/judge-square-design.md §1) with its name and
+ * versions, and the params filled. One from before 判定器 still shows the
+ * versions it kept (until it is moved over, judges.ts).
+ */
 export async function readJudgeInput(
   env: ApiBindings,
   row: JudgeRow,
 ): Promise<JudgeInput> {
-  const [code, tests, versions] = await Promise.all([
+  const [code, tests, versions, params, judge] = await Promise.all([
     decryptString(row.codeCiphertext, env, judgeData(row.activityId, "code")),
     decryptString(row.testsCiphertext, env, judgeData(row.activityId, "tests")),
-    row.versionsCiphertext === null
+    row.judgeId !== null
+      ? draftVersionsOf(env, row.judgeId)
+      : row.versionsCiphertext === null
+        ? null
+        : decryptString(
+            row.versionsCiphertext,
+            env,
+            judgeData(row.activityId, "versions"),
+          ).then((text) => JSON.parse(text) as JudgeVersions),
+    readParams(env, row),
+    row.judgeId === null
       ? null
-      : decryptString(
-          row.versionsCiphertext,
-          env,
-          judgeData(row.activityId, "versions"),
-        ),
+      : env.DB.prepare("SELECT name, description FROM judges WHERE id = ?")
+          .bind(row.judgeId)
+          .first<{ name: string; description: string }>(),
   ]);
   return {
     prompt: row.prompt,
     code,
     tests,
-    ...(versions === null
-      ? {}
-      : { versions: JSON.parse(versions) as JudgeVersions }),
+    ...(versions === null ? {} : { versions }),
+    ...(row.judgeId !== null && judge
+      ? {
+          judgeId: row.judgeId,
+          name: judge.name,
+          description: judge.description,
+        }
+      : {}),
+    ...(params === undefined ? {} : { params }),
   };
 }
 
@@ -92,49 +132,79 @@ async function encryptVersions(
 }
 
 /**
- * A draft's code and its versions, saved with the rest of it: written over
- * each time, as its 口令 are. Opening fixes it (activity_code_update_guard).
+ * A draft's code, saved with the rest of it: written over each time, as its
+ * 口令 are. Opening fixes it (activity_code_update_guard). It names its
+ * 判定器 (docs/judge-square-design.md §1) — the sender's own, whose name
+ * and line are saved onto it as typed — and the version its code is there;
+ * a draft from a page before 判定器 still keeps its versions itself.
  */
-export async function saveJudgeStatement(
+export async function saveJudgeStatements(
   env: ApiBindings,
   activityId: string,
+  authorId: string,
   judge: JudgeInput,
   money: Extract<LdcMoney, { mode: "code" }>,
   now: number,
 ) {
+  if (judge.judgeId) await ownJudge(env, judge.judgeId, authorId);
   const [
     fingerprint,
     testsDigest,
     codeCiphertext,
     testsCiphertext,
     versionsCiphertext,
+    paramsCiphertext,
   ] = await Promise.all([
     textDigest(judge.code),
     textDigest(judge.tests),
     encryptString(judge.code, env, judgeData(activityId, "code")),
     encryptString(judge.tests, env, judgeData(activityId, "tests")),
-    encryptVersions(env, activityId, judge.versions),
+    judge.judgeId ? null : encryptVersions(env, activityId, judge.versions),
+    judge.params === undefined
+      ? null
+      : encryptString(
+          JSON.stringify(judge.params),
+          env,
+          judgeData(activityId, "params"),
+        ),
   ]);
-  return env.DB.prepare(`INSERT INTO activity_code
-    (activity_id, protocol, prompt, fingerprint, code_ciphertext, tests_ciphertext, tests_digest, min_each_minor, versions_ciphertext, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  return [
+    ...(judge.judgeId && judge.name !== undefined
+      ? [
+          renameStatement(
+            env,
+            judge.judgeId,
+            authorId,
+            judge.name,
+            judge.description ?? "",
+          ),
+        ]
+      : []),
+    env.DB.prepare(`INSERT INTO activity_code
+    (activity_id, protocol, prompt, fingerprint, code_ciphertext, tests_ciphertext, tests_digest, min_each_minor,
+      versions_ciphertext, judge_id, judge_version, params_ciphertext, created_at, updated_at)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+      (SELECT n FROM judge_versions WHERE judge_id = ?10 AND fingerprint = ?4), ?11, ?12, ?12)
     ON CONFLICT(activity_id) DO UPDATE SET protocol = excluded.protocol, prompt = excluded.prompt,
       fingerprint = excluded.fingerprint, code_ciphertext = excluded.code_ciphertext,
       tests_ciphertext = excluded.tests_ciphertext, tests_digest = excluded.tests_digest,
       min_each_minor = excluded.min_each_minor, versions_ciphertext = excluded.versions_ciphertext,
-      updated_at = excluded.updated_at`).bind(
-    activityId,
-    JUDGE_PROTOCOL,
-    judge.prompt.trim(),
-    fingerprint,
-    codeCiphertext,
-    testsCiphertext,
-    testsDigest,
-    amountToMinor(money.minEach),
-    versionsCiphertext,
-    now,
-    now,
-  );
+      judge_id = excluded.judge_id, judge_version = excluded.judge_version,
+      params_ciphertext = excluded.params_ciphertext, updated_at = excluded.updated_at`).bind(
+      activityId,
+      JUDGE_PROTOCOL,
+      judge.prompt.trim(),
+      fingerprint,
+      codeCiphertext,
+      testsCiphertext,
+      testsDigest,
+      amountToMinor(money.minEach),
+      versionsCiphertext,
+      judge.judgeId ?? null,
+      paramsCiphertext,
+      now,
+    ),
+  ];
 }
 
 /** A draft that is no longer 代码判定 drops its code. */
@@ -144,13 +214,52 @@ export function dropJudgeStatement(env: ApiBindings, activityId: string) {
   );
 }
 
-/** Whether a saved draft holds this code, these tests and this prompt. */
-export async function sameJudge(row: JudgeRow, judge: JudgeInput) {
+/**
+ * Whether a saved draft holds this code, these tests and this prompt, and
+ * (from 判定器 on) the same params.
+ */
+export async function sameJudge(
+  env: ApiBindings,
+  row: JudgeRow,
+  judge: JudgeInput,
+) {
   return (
     row.prompt === judge.prompt.trim() &&
     row.fingerprint === (await textDigest(judge.code)) &&
-    row.testsDigest === (await textDigest(judge.tests))
+    row.testsDigest === (await textDigest(judge.tests)) &&
+    sameJson((await readParams(env, row)) ?? null, judge.params ?? null)
   );
+}
+
+/** JSON alike whatever order its keys were written in. */
+function sameJson(left: unknown, right: unknown): boolean {
+  if (Array.isArray(left) || Array.isArray(right))
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => sameJson(value, right[index]))
+    );
+  if (
+    left !== null &&
+    right !== null &&
+    typeof left === "object" &&
+    typeof right === "object"
+  ) {
+    const keys = Object.keys(left);
+    return (
+      keys.length === Object.keys(right).length &&
+      keys.every(
+        (key) =>
+          Object.hasOwn(right, key) &&
+          sameJson(
+            (left as Record<string, unknown>)[key],
+            (right as Record<string, unknown>)[key],
+          ),
+      )
+    );
+  }
+  return left === right;
 }
 
 /**

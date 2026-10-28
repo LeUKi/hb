@@ -1,4 +1,10 @@
-import { JUDGE_LIMITS, type JudgeCheck } from "@hb/contracts";
+import {
+  JUDGE_LIMITS,
+  JUDGE_NAME_LIMITS,
+  type JudgeCheck,
+  type JudgeDeclarations,
+  type MyJudge,
+} from "@hb/contracts";
 import {
   AlertTriangle,
   BookOpen,
@@ -10,18 +16,23 @@ import {
   Info,
   X,
 } from "lucide-react";
-import { type ReactNode, useId, useRef } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { refused } from "../../lib/activities";
 import { cn } from "../../lib/cn";
-import { KIT_URL } from "../../lib/judge";
+import { fetchJudgeVersion, KIT_URL, useMyJudges } from "../../lib/judge";
 import { Callout } from "../page/page";
 import { Button } from "../ui/button";
 import { CodeEditor } from "../ui/code-editor";
 import { Field, TextInput } from "../ui/field";
 import { Reveal } from "../ui/reveal";
 import { counter, type ErrorOf, QuietLine, type Update } from "./fields";
-import type { FormState } from "./form-state";
+import { type FormState, withJudgeDefaults } from "./form-state";
 import { FilePicker, fromClipboard, JudgeCard } from "./judge-card";
+import { JudgePicker, PickedJudge } from "./judge-picker";
+import { noVersions } from "./judge-versions";
+import { ParamsFields, paramsFor } from "./params-fields";
 import { testCount } from "./steps";
+import { TryJudge } from "./try-judge";
 import type { JudgeDeploy } from "./use-judge-deploy";
 
 /**
@@ -256,8 +267,10 @@ function DeployArea({
   // rerun, free, brings them back.
   const unseen = failed && !check;
   const fresh = !judge.version && judge.status !== "empty";
-  // Grey but focusable while it runs (07 §1): it was just pressed.
-  const held = !fresh || used || judge.busy || frozen || !judge.known;
+  // Grey but focusable while it runs (07 §1): it was just pressed. A new
+  // 判定器 waits for its name (docs/judge-square-design.md §1).
+  const held =
+    !fresh || used || judge.busy || frozen || !judge.known || judge.unnamed;
   return (
     <fieldset
       id="hb-code-check"
@@ -320,9 +333,15 @@ function DeployArea({
                 </Button>
               )}
               <span className="min-w-0 flex-1 text-xs text-ink-2">
-                {failed && "改出新版本才能再部署"}
-                {failed && quotaText(judge) && " · "}
-                {quotaText(judge)}
+                {fresh && judge.unnamed ? (
+                  "先给判定器起个名字"
+                ) : (
+                  <>
+                    {failed && "改出新版本才能再部署"}
+                    {failed && quotaText(judge) && " · "}
+                    {quotaText(judge)}
+                  </>
+                )}
               </span>
             </div>
             {unseen && (
@@ -353,9 +372,73 @@ function DeployArea({
 }
 
 /**
- * ③ 代码 (代码判定红包, in place of 怎么领): the prompt shown to claimants,
- * judge.js as a 判定器 card, tests.json as typed, and 部署 into the sandbox
- * the claims will use (docs/programmable-hongbao-design.md §5).
+ * The 判定器's name and line (docs/judge-square-design.md §1): first on
+ * its card, the name needed before the first deploy makes it.
+ */
+function JudgeNameFields({
+  form,
+  update,
+  errorOf,
+  locked,
+}: {
+  form: FormState;
+  update: Update;
+  errorOf: ErrorOf;
+  locked: boolean;
+}) {
+  const set = (key: "name" | "description") => (value: string) =>
+    update((current) => ({
+      ...current,
+      judge: { ...current.judge, [key]: value },
+    }));
+  return (
+    // Side by side when there is room for both.
+    <div className="@container/naming">
+      <div className="grid gap-4 @min-[30rem]/naming:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+        <Field
+          label="名字"
+          htmlFor="hb-judge-name"
+          hint="最多 20 个字，在“我的判定器”里靠它认出来。"
+          error={errorOf("hb-judge-name")}
+          aside={counter(form.judge.name, JUDGE_NAME_LIMITS.name)}
+        >
+          <TextInput
+            id="hb-judge-name"
+            value={form.judge.name}
+            placeholder="比如：猜数字"
+            disabled={locked}
+            invalid={Boolean(errorOf("hb-judge-name"))}
+            autoComplete="off"
+            onChange={(event) => set("name")(event.target.value)}
+          />
+        </Field>
+        <Field
+          label="一句说明（选填）"
+          htmlFor="hb-judge-description"
+          error={errorOf("hb-judge-description")}
+          aside={counter(form.judge.description, JUDGE_NAME_LIMITS.description)}
+        >
+          <TextInput
+            id="hb-judge-description"
+            value={form.judge.description}
+            placeholder="比如：猜 1–100 之间的数，猜中的领"
+            disabled={locked}
+            invalid={Boolean(errorOf("hb-judge-description"))}
+            autoComplete="off"
+            onChange={(event) => set("description")(event.target.value)}
+          />
+        </Field>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ② 判定器 (代码判定红包, in place of 怎么领; docs/judge-square-design.md
+ * §6): pick one of one's own 判定器, or write one — its name, judge.js as a
+ * 判定器 card, tests.json as typed and 部署 into the sandbox the claims will
+ * use (docs/programmable-hongbao-design.md §5). Then the params its version
+ * declares, the prompt shown to claimants and 试一试.
  */
 export function CodeStep({
   form,
@@ -371,6 +454,10 @@ export function CodeStep({
   scopeError,
   timeLine,
   scopeLine,
+  userId,
+  declarations,
+  paramErrorOf,
+  tried,
 }: {
   form: FormState;
   update: Update;
@@ -387,6 +474,13 @@ export function CodeStep({
   scopeError?: string;
   timeLine: string;
   scopeLine: string;
+  userId: string;
+  /** What the version the code is declares (§3, §4); null before it is known. */
+  declarations: JudgeDeclarations | null;
+  /** A param's problem: its declaration's rules, then the code's check(). */
+  paramErrorOf: (key: string) => string | undefined;
+  /** The 红包 试一试 judges on, as filled in so far, in 分. */
+  tried: { title: string; total: number; count: number; minEach: number };
 }) {
   const set = (key: "prompt" | "tests") => (value: string) =>
     update((current) => ({
@@ -399,28 +493,106 @@ export function CodeStep({
       ? (check?.problems.map((problem) => problem.line) ?? [])
       : [];
   const named = judge.version ? `判定器 第 ${judge.version.n} 版 ` : "判定器";
-  return (
-    // A grid of one shrinkable column: the long lines of the code and the
-    // tests stay in their editors and never widen the step. Its children
-    // are no Reveals; the columns inside that hold one are flex.
-    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5">
-      <Field
-        label="领取时的提示"
-        htmlFor="hb-code-prompt"
-        hint="显示在领取的人的输入框上方。"
-        error={errorOf("hb-code-prompt")}
-        aside={counter(form.judge.prompt, JUDGE_LIMITS.promptCharacters)}
-      >
-        <TextInput
-          id="hb-code-prompt"
-          value={form.judge.prompt}
-          placeholder="例如：输入你解出的 flag"
-          disabled={locked}
-          invalid={Boolean(errorOf("hb-code-prompt"))}
-          autoComplete="off"
-          onChange={(event) => set("prompt")(event.target.value)}
-        />
-      </Field>
+  // 我的判定器 with a version a 红包 can open with (§6 挑之前).
+  const mine = useMyJudges(userId, !locked);
+  const usable = (mine.data ?? []).filter((item) => item.usable !== null);
+  const [view, setView] = useState<"pick" | "card" | "write" | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [pickError, setPickError] = useState<string | null>(null);
+  const empty = !form.judge.code.trim() && !form.judge.judgeId;
+  // Once there is code, how it shows stays put: a draft opened on a
+  // version of its 判定器 that passed folded, one being written — or one
+  // whose version failed or waits for a rerun — open (a deploy does not
+  // fold it).
+  const known = judge.known;
+  const folded = Boolean(form.judge.judgeId && judge.version && judge.ready);
+  // Until one is chosen: the cards when there are some (or may be), else
+  // straight to writing one; a deployed version of a 判定器 shows folded.
+  const shown = locked
+    ? "write"
+    : (view ??
+      (empty
+        ? usable.length > 0 || mine.isPending
+          ? "pick"
+          : "write"
+        : folded
+          ? "card"
+          : "write"));
+  useEffect(() => {
+    if (view !== null || locked || empty || !known) return;
+    setView(folded ? "card" : "write");
+  }, [view, locked, empty, known, folded]);
+  const mineNow = usable.find((item) => item.id === form.judge.judgeId);
+  const newer =
+    mineNow?.usable && judge.version && mineNow.usable.n > judge.version.n
+      ? mineNow.usable.n
+      : undefined;
+
+  /** Its newest usable version, put in: code, tests, params and defaults. */
+  const pick = async (picked: MyJudge) => {
+    if (!picked.usable) return;
+    setPicking(true);
+    setPickError(null);
+    try {
+      const version = await fetchJudgeVersion(picked.id, picked.usable.n);
+      update((current) =>
+        withJudgeDefaults(
+          {
+            ...current,
+            judge: {
+              ...current.judge,
+              judgeId: picked.id,
+              name: picked.name,
+              description: picked.description,
+              code: version.code,
+              tests: version.tests,
+              versions: version.versions,
+              params: paramsFor(
+                version.declarations?.params ?? [],
+                current.judge.params,
+              ),
+            },
+          },
+          version.declarations?.hongbao,
+        ),
+      );
+      setView("card");
+    } catch (failure) {
+      setPickError(
+        refused(failure)
+          ? failure.message
+          : "没有取到这个判定器：网络或服务出了问题。可以再试一次。",
+      );
+    } finally {
+      setPicking(false);
+    }
+  };
+  /** 自己写一个: an empty card, its name first. */
+  const write = () => {
+    update((current) => ({
+      ...current,
+      judge: {
+        ...current.judge,
+        judgeId: null,
+        name: "",
+        description: "",
+        code: "",
+        tests: "",
+        versions: noVersions(),
+        params: {},
+      },
+    }));
+    setView("write");
+  };
+  const params = declarations?.params ?? [];
+  const writing = (
+    <>
+      <JudgeNameFields
+        form={form}
+        update={update}
+        errorOf={errorOf}
+        locked={locked}
+      />
       <div className="flex flex-col gap-2.5">
         {/* 换回 (§5): the latest passing version, put back with no deploy. */}
         <Reveal show={!locked && Boolean(judge.restore)}>
@@ -478,25 +650,105 @@ export function CodeStep({
         onChange={set("tests")}
       />
       {!locked && <DeployArea judge={judge} frozen={frozen} gated={gated} />}
+    </>
+  );
+  return (
+    // A grid of one shrinkable column: the long lines of the code and the
+    // tests stay in their editors and never widen the step. Its children
+    // are no Reveals; the columns inside that hold one are flex.
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5">
+      {shown === "pick" ? (
+        <JudgePicker
+          judges={usable}
+          busy={picking}
+          onPick={(picked) => void pick(picked)}
+          onWrite={write}
+        />
+      ) : shown === "card" && judge.version ? (
+        <PickedJudge
+          name={form.judge.name}
+          description={form.judge.description}
+          n={judge.version.n}
+          newer={newer}
+          locked={locked}
+          busy={picking || frozen}
+          onView={() => setView("write")}
+          onSwap={() => setView("pick")}
+          onNewer={() => {
+            if (mineNow) void pick(mineNow);
+          }}
+        />
+      ) : (
+        writing
+      )}
+      {pickError && <p className="text-sm text-danger">{pickError}</p>}
+      {shown !== "pick" && params.length > 0 && (
+        <ParamsFields
+          params={params}
+          values={form.judge.params}
+          errorOf={paramErrorOf}
+          locked={locked}
+          onChange={(key, value) =>
+            update((current) => ({
+              ...current,
+              judge: {
+                ...current.judge,
+                params: { ...current.judge.params, [key]: value },
+              },
+            }))
+          }
+        />
+      )}
+      {shown !== "pick" && (
+        <Field
+          label="领取时的提示"
+          htmlFor="hb-code-prompt"
+          hint="显示在领取的人的输入框上方。"
+          error={errorOf("hb-code-prompt")}
+          aside={counter(form.judge.prompt, JUDGE_LIMITS.promptCharacters)}
+        >
+          <TextInput
+            id="hb-code-prompt"
+            value={form.judge.prompt}
+            placeholder="例如：输入你解出的 flag"
+            disabled={locked}
+            invalid={Boolean(errorOf("hb-code-prompt"))}
+            autoComplete="off"
+            onChange={(event) => set("prompt")(event.target.value)}
+          />
+        </Field>
+      )}
+      {shown !== "pick" && !locked && form.judge.judgeId && judge.version && (
+        <TryJudge
+          judgeId={form.judge.judgeId}
+          n={judge.version.n}
+          params={form.judge.params}
+          hongbao={tried}
+          prompt={form.judge.prompt}
+          disabled={frozen}
+        />
+      )}
       {/* In a new tab: the form stays as it is. */}
-      <div className="flex flex-wrap gap-x-4 gap-y-1">
-        {[
-          { href: "/help/code", icon: BookOpen, label: "开发文档" },
-          { href: "/help/code#ai", icon: Bot, label: "给 AI 的说明" },
-          { href: KIT_URL, icon: FolderGit2, label: "本地开发包" },
-        ].map((entry) => (
-          <a
-            key={entry.href}
-            href={entry.href}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-sm text-accent-ink hover:underline"
-          >
-            <entry.icon className="size-4" aria-hidden="true" />
-            {entry.label} ↗
-          </a>
-        ))}
-      </div>
+      {shown === "write" && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          {[
+            { href: "/help/code", icon: BookOpen, label: "开发文档" },
+            { href: "/help/code#ai", icon: Bot, label: "给 AI 的说明" },
+            { href: KIT_URL, icon: FolderGit2, label: "本地开发包" },
+          ].map((entry) => (
+            <a
+              key={entry.href}
+              href={entry.href}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-sm text-accent-ink hover:underline"
+            >
+              <entry.icon className="size-4" aria-hidden="true" />
+              {entry.label} ↗
+            </a>
+          ))}
+        </div>
+      )}
       {locked ? (
         <>
           <p className="px-1 text-sm text-ink-2">{deadline ?? timeLine}</p>

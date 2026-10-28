@@ -116,7 +116,7 @@ export function HelpCodeView() {
       <PageSection
         id="ai"
         title="给 AI 的说明"
-        description="整段复制给聊天 AI，把最后一行换成你的玩法。它写出的 judge.js 和 tests.json，先在本地开发包里跑测试，再贴到发红包的第 3 步部署。"
+        description="整段复制给聊天 AI，把最后一行换成你的玩法。它写出的 judge.js 和 tests.json，先在本地开发包里跑测试，再贴到发红包的第 2 步部署。"
       >
         <Block label="提示词" code={aiPrompt(window.location.origin)} wrap />
       </PageSection>
@@ -146,7 +146,8 @@ export function HelpCodeView() {
             ：照网站的规则查一遍，最后写“可以去网站部署了”再往下。
           </p>
           <p>
-            4. 发红包选“代码判定”，第 3 步贴上 judge.js 和
+            4. 发红包选“代码判定”，第 2 步选“自己写一个”，起个名字，贴上
+            judge.js 和
             tests.json，点“部署并跑测试”：把这一版代码做成判定器，在线上跑你的测试。部署新版本才算次数，每人每天有限；只改测试再跑、换回部署过的版本都不算。
           </p>
           <p>

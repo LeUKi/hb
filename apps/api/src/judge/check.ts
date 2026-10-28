@@ -93,10 +93,15 @@ export async function codeHongbaoOffer(env: ApiBindings, userId: string) {
   };
 }
 
-/** Today's runs (北京时间) by this person, and how many were deploys. */
-async function runsToday(env: ApiBindings, userId: string) {
+/**
+ * Today's runs (北京时间) by this person — check() and 试一试 among them
+ * (docs/judge-square-design.md §3, §6) — and how many were deploys.
+ */
+export async function runsToday(env: ApiBindings, userId: string) {
   const row = await env.DB.prepare(
-    "SELECT COUNT(*) AS runs, COALESCE(SUM(kind = 'deploy'), 0) AS deploys FROM judge_checks WHERE user_id = ? AND created_at >= ?",
+    `SELECT (SELECT COUNT(*) FROM judge_checks WHERE user_id = ?1 AND created_at >= ?2)
+        + (SELECT COUNT(*) FROM judge_tries WHERE user_id = ?1 AND created_at >= ?2) AS runs,
+      (SELECT COUNT(*) FROM judge_checks WHERE user_id = ?1 AND created_at >= ?2 AND kind = 'deploy') AS deploys`,
   )
     .bind(userId, startOfBeijingDay())
     .first<{ runs: number; deploys: number }>();

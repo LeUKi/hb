@@ -1,5 +1,9 @@
 import { env } from "cloudflare:test";
-import { type JudgeVersions, judgeVersionsSchema } from "@hb/contracts";
+import {
+  JUDGE_PROTOCOL,
+  type JudgeVersions,
+  judgeVersionsSchema,
+} from "@hb/contracts";
 import { beforeEach, describe, expect, it } from "vitest";
 import { claimActivity } from "../src/activities/claim-service";
 import {
@@ -748,10 +752,20 @@ export function judge() { return { ok: false }; }
   });
 });
 
+/** Tests that pass on JUDGE but not on the same code as TESTS. */
+const OTHER_TESTS = JSON.stringify({
+  tests: [{ name: "答错", input: "x", expect: { ok: false, message: "不对" } }],
+});
+
 describe("代码判定红包: 版本 and 换回", () => {
-  it("keeps the draft's deployed versions with its code, encrypted, back to its sender, fixed once open", async () => {
+  // A draft saved by a page from before 判定器 keeps its versions itself,
+  // checked as ever, until it is read: then they move into a 判定器 of its
+  // own (docs/judge-square-design.md §14.3; judges.test.ts has the rest).
+  it("takes a page from before 判定器's versions, checked, into a 判定器 as it is read back, fixed once open", async () => {
     const first = unique();
     const second = unique();
+    await check(author, first);
+    await check(author, second, OTHER_TESTS);
     const at = new Date().toISOString();
     const versions: JudgeVersions = {
       next: 3,
@@ -760,49 +774,30 @@ describe("代码判定红包: 版本 and 换回", () => {
           n: 1,
           fingerprint: await sha256Hex(first),
           at,
-          testsDigest: await sha256Hex("{}"),
+          testsDigest: await sha256Hex(TESTS),
           passed: true,
+          protocol: JUDGE_PROTOCOL,
         },
         {
           n: 2,
           fingerprint: await sha256Hex(second),
           at,
-          testsDigest: await sha256Hex("{}"),
-          passed: false,
+          testsDigest: await sha256Hex(OTHER_TESTS),
+          passed: true,
+          protocol: JUDGE_PROTOCOL,
         },
       ],
       restore: { n: 1, code: first },
     };
-    const saved = await createActivity(bindings, author.id, {
-      requestId: crypto.randomUUID(),
-      activity: coded({}, { code: second, versions }),
-    });
-    expect(saved.config.judge?.versions).toEqual(versions);
-    const stored = await env.DB.prepare(
-      "SELECT versions_ciphertext AS versions FROM activity_code WHERE activity_id = ?",
-    )
-      .bind(saved.id)
-      .first<string>("versions");
-    expect(stored).toBeTypeOf("string");
-    expect(stored).not.toContain(versions.versions[0]?.fingerprint);
-    expect(stored).not.toContain("restore");
-
-    // 换回第 1 版: the code back, nothing left to restore.
-    const back: JudgeVersions = { next: 3, versions: versions.versions };
-    const restored = await updateActivity(bindings, saved.id, author.id, {
-      version: saved.version,
-      activity: coded({}, { code: first, versions: back }),
-    });
-    expect(restored.config.judge?.versions).toEqual(back);
     // What is kept to restore is the very version it names.
     await rejects(
-      updateActivity(bindings, saved.id, author.id, {
-        version: restored.version,
+      createActivity(bindings, author.id, {
+        requestId: crypto.randomUUID(),
         activity: coded(
           {},
           {
             code: second,
-            versions: { ...back, restore: { n: 1, code: second } },
+            versions: { ...versions, restore: { n: 1, code: second } },
           },
         ),
       }),
@@ -812,38 +807,47 @@ describe("代码判定红包: 版本 and 换回", () => {
     await rejects(
       createActivity(bindings, author.id, {
         requestId: crypto.randomUUID(),
-        activity: coded({}, { code: second, versions: { ...back, next: 2 } }),
+        activity: coded(
+          {},
+          { code: second, versions: { ...versions, next: 2 } },
+        ),
       }),
       "INVALID_ACTIVITY",
     );
-
-    await check(author, first);
+    const saved = await createActivity(bindings, author.id, {
+      requestId: crypto.randomUUID(),
+      activity: coded({}, { code: second, versions }),
+    });
+    const judgeId = saved.config.judge?.judgeId;
+    expect(judgeId).toBeTypeOf("string");
+    expect(saved.config.judge?.versions).toMatchObject({
+      next: 3,
+      versions: [
+        { n: 1, passed: true },
+        { n: 2, passed: false },
+      ],
+      restore: { n: 1, code: first },
+    });
+    // Its own code with the draft's tests, run: it opens.
+    await check(author, second);
     const opened = await openActivity(
       bindings,
       saved.id,
       author.id,
-      restored.version,
+      saved.version,
     );
-    expect(opened.config.judge?.versions).toEqual(back);
     const judge = opened.config.judge;
     if (!judge) throw new Error("No judge");
-    // Edits once open leave them as they were.
+    // Edits once open leave its 判定器 as it was.
     const edited = await updateActivity(bindings, saved.id, author.id, {
       version: opened.version,
-      activity: {
-        ...opened.config,
-        title: "改个标题",
-        judge: { ...judge, versions },
-      },
+      activity: { ...opened.config, title: "改个标题", judge },
     });
     expect(edited.title).toBe("改个标题");
-    expect(
-      (await getManagedActivity(bindings, saved.id, author.id)).config.judge
-        ?.versions,
-    ).toEqual(back);
+    expect(edited.config.judge?.judgeId).toBe(judgeId);
     await expect(
       env.DB.prepare(
-        "UPDATE activity_code SET versions_ciphertext = NULL WHERE activity_id = ?",
+        "UPDATE activity_code SET judge_id = NULL WHERE activity_id = ?",
       )
         .bind(saved.id)
         .run(),

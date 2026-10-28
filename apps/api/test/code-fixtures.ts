@@ -136,8 +136,16 @@ export function coded(
   };
 }
 
-/** 部署: POST /api/judge/check as this person. */
-export async function check(user: Actor, code = JUDGE, tests = TESTS) {
+/**
+ * 部署: POST /api/judge/check as this person, into a 判定器 when one is
+ * named (docs/judge-square-design.md §1).
+ */
+export async function check(
+  user: Actor,
+  code = JUDGE,
+  tests = TESTS,
+  judge?: { id: string } | { name: string; description?: string },
+) {
   const response = await app.request(
     `${origin}/api/judge/check`,
     {
@@ -148,7 +156,7 @@ export async function check(user: Actor, code = JUDGE, tests = TESTS) {
         "Content-Type": "application/json",
         "X-CSRF-Token": user.csrf,
       },
-      body: JSON.stringify({ code, tests }),
+      body: JSON.stringify({ code, tests, ...(judge ? { judge } : {}) }),
     },
     bindings,
   );

@@ -1796,6 +1796,89 @@ export const balanceLocks = sqliteTable(
 );
 
 /**
+ * 判定器 (docs/judge-square-design.md §1): code made to be used again, by
+ * its author for now — a name and a line, whether its code is public before
+ * a 红包 ends (§2), and the versions deployed into it (judgeVersions).
+ */
+export const judges = sqliteTable(
+  "judges",
+  {
+    id: text("id").primaryKey(),
+    authorId: text("author_id")
+      .notNull()
+      .references(() => users.id),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    /** 结束后公开 or 一直公开 (§2): only ever from the first to the second. */
+    codePublic: text("code_public", { enum: ["ended", "always"] })
+      .notNull()
+      .default("ended"),
+    /** 复制一份来改 (§8): the one it was copied from. */
+    basedOnJudgeId: text("based_on_judge_id").references(
+      (): AnySQLiteColumn => judges.id,
+    ),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    index("judges_author_idx").on(table.authorId, table.updatedAt),
+    check(
+      "judges_shape",
+      sql`length(${table.name}) BETWEEN 1 AND 20 AND ${table.name} = trim(${table.name})
+        AND length(${table.description}) <= 60 AND ${table.description} = trim(${table.description})
+        AND ${table.codePublic} IN ('ended', 'always')
+        AND typeof(${table.createdAt}) = 'integer' AND typeof(${table.updatedAt}) = 'integer'`,
+    ),
+  ],
+);
+
+/**
+ * A 判定器's versions (§1): each code deployed into it, numbered in order,
+ * kept encrypted with the tests of its last run, as that run read it — on
+ * which protocol, whether it passed, and what the code declares (meta,
+ * params, hongbao, check; 联网's addresses). The code never changes; a
+ * rerun of other tests moves the rest on.
+ */
+export const judgeVersions = sqliteTable(
+  "judge_versions",
+  {
+    judgeId: text("judge_id")
+      .notNull()
+      .references(() => judges.id),
+    n: integer("n").notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    codeCiphertext: text("code_ciphertext").notNull(),
+    protocol: integer("protocol").notNull(),
+    testsCiphertext: text("tests_ciphertext").notNull(),
+    testsDigest: text("tests_digest").notNull(),
+    passed: integer("passed", { mode: "boolean" }).notNull(),
+    /** JudgeDeclarations as JSON, from a run on protocol 3 on. */
+    declarations: text("declarations"),
+    network: text("network"),
+    deployedAt: integer("deployed_at").notNull(),
+    checkedAt: integer("checked_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.judgeId, table.n] }),
+    uniqueIndex("judge_versions_code_unique").on(
+      table.judgeId,
+      table.fingerprint,
+    ),
+    check(
+      "judge_versions_shape",
+      sql`typeof(${table.n}) = 'integer' AND ${table.n} >= 1
+        AND length(${table.fingerprint}) = 64 AND length(${table.testsDigest}) = 64
+        AND ${table.protocol} IN (1, 2, 3) AND ${table.passed} IN (0, 1)
+        AND (${table.declarations} IS NULL OR (${table.protocol} >= 3 AND json_valid(${table.declarations})))
+        AND (${table.network} IS NULL OR (${table.protocol} >= 2 AND json_valid(${table.network})
+          AND json_type(${table.network}) = 'array' AND json_array_length(${table.network}) BETWEEN 1 AND 3))
+        AND typeof(${table.deployedAt}) = 'integer' AND typeof(${table.checkedAt}) = 'integer'
+        AND ${table.deployedAt} <= ${table.checkedAt}`,
+    ),
+  ],
+);
+
+/**
  * 代码判定红包 (docs/programmable-hongbao-design.md): its judge.js and
  * tests.json (encrypted, like 口令), the prompt and 每份至少; from opening
  * its sealed seed, the code's state and how its judgments go. The code and
@@ -1841,6 +1924,24 @@ export const activityCode = sqliteTable(
      * prefixes), set at opening from its deploy; null without network.
      */
     network: text("network"),
+    /**
+     * Its 判定器 (docs/judge-square-design.md §1), and the version its code
+     * is, when it is one deployed there (fixed from opening).
+     */
+    judgeId: text("judge_id").references(() => judges.id),
+    judgeVersion: integer("judge_version"),
+    /** The params its sender filled (§3, encrypted JSON); null without. */
+    paramsCiphertext: text("params_ciphertext"),
+    /**
+     * From opening on protocol 3 (§3 保密参数): the params everyone sees
+     * (JSON), and the secret ones sealed — their 封存值 and salt — kept in
+     * the clear once it is over.
+     */
+    paramsPublic: text("params_public"),
+    paramsCommitment: text("params_commitment"),
+    paramsSaltCiphertext: text("params_salt_ciphertext"),
+    paramsSecret: text("params_secret"),
+    paramsSalt: text("params_salt"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
@@ -1859,7 +1960,15 @@ export const activityCode = sqliteTable(
         AND (${table.stoppedAt} IS NULL) = (${table.stoppedByUserId} IS NULL)
         AND (${table.code} IS NULL) = (${table.revealedAt} IS NULL)
         AND (${table.seed} IS NULL) = (${table.revealedAt} IS NULL)
-        AND (${table.seed} IS NULL OR length(${table.seed}) = 64)`,
+        AND (${table.seed} IS NULL OR length(${table.seed}) = 64)
+        AND (${table.judgeVersion} IS NULL OR (${table.judgeId} IS NOT NULL
+          AND typeof(${table.judgeVersion}) = 'integer' AND ${table.judgeVersion} >= 1))
+        AND (${table.paramsPublic} IS NULL OR json_valid(${table.paramsPublic}))
+        AND (${table.paramsCommitment} IS NULL) = (${table.paramsSaltCiphertext} IS NULL)
+        AND (${table.paramsCommitment} IS NULL OR length(${table.paramsCommitment}) = 64)
+        AND (${table.paramsSecret} IS NULL) = (${table.paramsSalt} IS NULL)
+        AND (${table.paramsSecret} IS NULL OR (${table.paramsCommitment} IS NOT NULL
+          AND ${table.revealedAt} IS NOT NULL AND json_valid(${table.paramsSecret})))`,
     ),
   ],
 );
@@ -2017,6 +2126,29 @@ export const judgeRunLeases = sqliteTable(
 );
 
 /**
+ * A 判定器's check() or 试一试 run for a sender (docs/judge-square-design.md
+ * §3, §6): counted with runs toward the 50 a day nobody is shown (§5).
+ */
+export const judgeTries = sqliteTable(
+  "judge_tries",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    kind: text("kind", { enum: ["check", "try"] }).notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    index("judge_tries_user_time_idx").on(table.userId, table.createdAt),
+    check(
+      "judge_tries_shape",
+      sql`${table.kind} IN ('check', 'try') AND typeof(${table.createdAt}) = 'integer'`,
+    ),
+  ],
+);
+
+/**
  * 判定器设置 (redesign/07 §10): 代码判定红包's switch, openings and deploys a
  * person may make a day, and the 判定器 a month; one versioned row, written
  * as 🐟额's settings are.
@@ -2110,6 +2242,8 @@ export const judgeUsage = sqliteTable(
     switches: integer("switches").notNull().default(0),
     /** 联网: requests its judgments sent out. */
     fetches: integer("fetches").notNull().default(0),
+    /** 判定器's check() and 试一试 (docs/judge-square-design.md §3, §6). */
+    tries: integer("tries").notNull().default(0),
     firstAt: integer("first_at").notNull(),
     lastAt: integer("last_at").notNull(),
   },
@@ -2126,6 +2260,7 @@ export const judgeUsage = sqliteTable(
           || CASE WHEN ${table.networked} = 1 THEN ':' || ${table.activityId} ELSE '' END
           || CASE WHEN ${table.fresh} > 0 THEN ':' || ${table.fresh} ELSE '' END
         AND typeof(${table.fetches}) = 'integer' AND ${table.fetches} >= 0
+        AND typeof(${table.tries}) = 'integer' AND ${table.tries} >= 0
         AND typeof(${table.firstAt}) = 'integer' AND typeof(${table.lastAt}) = 'integer' AND ${table.firstAt} <= ${table.lastAt}
         AND ${table.day} = strftime('%Y-%m-%d', ${table.firstAt} / 1000, 'unixepoch')
         AND typeof(${table.deploys}) = 'integer' AND ${table.deploys} >= 0

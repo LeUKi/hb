@@ -5,6 +5,9 @@
 import {
   ACTIVITY_LIMITS,
   judgeCheckInputSchema,
+  judgeParamsCheckSchema,
+  judgeTrySchema,
+  updateJudgeSchema,
   updateJudgeSettingsSchema,
 } from "@hb/contracts";
 import { Hono } from "hono";
@@ -21,7 +24,15 @@ import {
 import type { ApiContext } from "../env";
 import { activityObject } from "../runtime/objects";
 import { listChallengers, readChallengerCursor } from "./challengers";
-import { checkJudge } from "./check";
+import {
+  checkMyParams,
+  deployJudge,
+  getMyJudge,
+  listMyJudges,
+  myJudgeVersion,
+  tryMyJudge,
+  updateMyJudge,
+} from "./judges";
 import { myJudgments } from "./mine";
 import { judgeRecords, listFailures } from "./records";
 import {
@@ -30,6 +41,36 @@ import {
   updateJudgeSettings,
 } from "./settings";
 import { judgeUsageReport } from "./usage";
+
+/** A version's number in a path. */
+function versionNumber(value: string) {
+  const n = Number(value);
+  if (!Number.isSafeInteger(n) || n < 1)
+    throw new ActivityValidationError([{ path: "n", message: "版本号无效" }]);
+  return n;
+}
+
+/** A body read by a schema, its problems as the activity routes give them. */
+function parsedWith<T>(schema: {
+  safeParse: (value: unknown) =>
+    | { success: true; data: T }
+    | {
+        success: false;
+        error: { issues: { path: PropertyKey[]; message: string }[] };
+      };
+}) {
+  return (value: unknown) => {
+    const parsed = schema.safeParse(value);
+    if (!parsed.success)
+      throw new ActivityValidationError(
+        parsed.error.issues.map((issue) => ({
+          path: issue.path.join("."),
+          message: issue.message,
+        })),
+      );
+    return parsed.data;
+  };
+}
 
 export const judgeRoutes = new Hono<ApiContext>()
   .use("*", async (c, next) => {
@@ -62,7 +103,89 @@ export const judgeRoutes = new Hono<ApiContext>()
     async (c) => {
       const session = await requireProtectedMutation(c);
       return c.json({
-        check: await checkJudge(c.env, session.user.id, c.req.valid("json")),
+        check: await deployJudge(c.env, session.user.id, c.req.valid("json")),
+      });
+    },
+  )
+  // 我的判定器 (docs/judge-square-design.md §1, §8).
+  .get("/me/judges", async (c) => {
+    const session = await requireAuth(c);
+    return c.json({ items: await listMyJudges(c.env, session.user.id) });
+  })
+  .get("/me/judges/:id", async (c) => {
+    const session = await requireAuth(c);
+    return c.json({
+      judge: await getMyJudge(c.env, session.user.id, c.req.param("id")),
+    });
+  })
+  // One version's code and tests: 查看代码, or picking it for a draft.
+  .get("/me/judges/:id/versions/:n", async (c) => {
+    const session = await requireAuth(c);
+    return c.json(
+      await myJudgeVersion(
+        c.env,
+        session.user.id,
+        c.req.param("id"),
+        versionNumber(c.req.param("n")),
+      ),
+    );
+  })
+  // check(params, hongbao) on what a sender filled (§3 校验).
+  .post(
+    "/me/judges/:id/versions/:n/check",
+    validator("json", parsedWith(judgeParamsCheckSchema)),
+    async (c) => {
+      const session = await requireProtectedMutation(c);
+      return c.json(
+        await checkMyParams(
+          c.env,
+          session.user.id,
+          c.req.param("id"),
+          versionNumber(c.req.param("n")),
+          c.req.valid("json"),
+        ),
+      );
+    },
+  )
+  // 试一试 (§6): one judgment, no money, no record.
+  .post(
+    "/me/judges/:id/versions/:n/try",
+    validator("json", parsedWith(judgeTrySchema)),
+    async (c) => {
+      const session = await requireProtectedMutation(c);
+      return c.json(
+        await tryMyJudge(
+          c.env,
+          session.user.id,
+          c.req.param("id"),
+          versionNumber(c.req.param("n")),
+          c.req.valid("json"),
+        ),
+      );
+    },
+  )
+  .put(
+    "/me/judges/:id",
+    validator("json", (value) => {
+      const parsed = updateJudgeSchema.safeParse(value);
+      if (!parsed.success)
+        throw new ActivityValidationError(
+          parsed.error.issues.map((issue) => ({
+            path: issue.path.join("."),
+            message: issue.message,
+          })),
+        );
+      return parsed.data;
+    }),
+    async (c) => {
+      const session = await requireProtectedMutation(c);
+      return c.json({
+        judge: await updateMyJudge(
+          c.env,
+          session.user.id,
+          c.req.param("id"),
+          c.req.valid("json"),
+        ),
       });
     },
   )

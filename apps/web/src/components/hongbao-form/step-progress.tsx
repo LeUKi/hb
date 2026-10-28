@@ -1,16 +1,23 @@
 import { motion } from "motion/react";
 import { durations, ease, useReducedMotionPref } from "../../lib/motion";
 import { Squircle } from "../ui/squircle";
-import { steps } from "./steps";
 
 /**
  * How far the 发红包 flow is: the boot loader's bar (a 6px track, gold to
  * red). The gradient stays put along the track and is uncovered as the
  * steps go by, so the bar turns from gold to red on the way.
  */
-export function StepProgress({ step }: { step: number }) {
+export function StepProgress({
+  step,
+  count,
+  title,
+}: {
+  step: number;
+  count: number;
+  /** This step's title (a 玩法 may name it its own way). */
+  title: string;
+}) {
   const reduced = useReducedMotionPref();
-  const count = steps.length;
   const covered = 100 - (step / count) * 100;
   return (
     <div className="flex items-center gap-3 px-1">
@@ -21,7 +28,7 @@ export function StepProgress({ step }: { step: number }) {
           aria-valuemin={1}
           aria-valuemax={count}
           aria-valuenow={step}
-          aria-valuetext={`第 ${step} 步，共 ${count} 步：${steps[step - 1]?.title ?? ""}`}
+          aria-valuetext={`第 ${step} 步，共 ${count} 步：${title}`}
           className="step-track relative min-w-0 flex-1"
         >
           <motion.span
