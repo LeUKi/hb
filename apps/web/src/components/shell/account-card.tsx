@@ -23,6 +23,7 @@ import { PlusMark } from "../balance/plus";
 import { Callout } from "../page/page";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
+import { LinuxDoMark } from "../ui/linux-do-mark";
 import { radius, Squircle, SquirclePlate } from "../ui/squircle";
 import { CommandLink } from "./command-link";
 import { useIdentityRetry, useSignOut } from "./identity-check";
@@ -108,6 +109,7 @@ function LoginContent() {
           signIn();
         }}
       >
+        <LinuxDoMark />
         {error?.unavailable
           ? "登录暂时不可用"
           : error

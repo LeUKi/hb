@@ -12,6 +12,7 @@ import { createPortal } from "react-dom";
 import { cn } from "../../lib/cn";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { Avatar } from "./avatar";
+import { LinuxDoMark } from "./linux-do-mark";
 import { radius, Squircle, SquirclePlate } from "./squircle";
 
 const CARD_WIDTH = 256;
@@ -215,7 +216,9 @@ function ProfileCard({
                     rel="noopener noreferrer"
                     className="flex h-9 items-center justify-between gap-2 bg-fill px-3 text-sm text-ink-2 transition-colors hover:bg-fill-2 hover:text-ink"
                   >
-                    在 LINUX DO 查看
+                    <span className="flex items-center gap-2">
+                      <LinuxDoMark className="size-4" />在 LINUX DO 查看
+                    </span>
                     <ArrowUpRight className="size-4" aria-hidden="true" />
                   </a>
                 </Squircle>
