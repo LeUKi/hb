@@ -278,6 +278,33 @@ test.describe("发红包", () => {
     await expect(page.getByText("进阶玩法")).toHaveCount(0);
   });
 
+  test("更多设置：窗口在宽和手机宽之间来回拉，它一直开着，表单也停在原来那一步", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    await mockMerchants(page, [merchant]);
+    await openApp(page, "/new");
+    await page.getByRole("button", { name: /^拼手气/ }).click();
+    await page.locator("#hb-random-total").fill("0.30");
+    await page.locator("#hb-random-count").fill("3");
+    await page.keyboard.press("Enter");
+    await page.getByLabel("口令 1").fill("表单口令2026");
+    await page.keyboard.press("Enter");
+    const title = page.locator("#hb-title");
+    await expect(title).toBeVisible();
+    await page.getByRole("button", { name: /更多设置/ }).click();
+    const sheet = page.getByRole("dialog", { name: "更多设置" });
+    await expect(sheet).toBeVisible();
+    // A phone's square window used to swap the page's layer, losing both.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(sheet).toBeVisible();
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(sheet).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(sheet).toBeHidden();
+    await expect(title).toBeVisible();
+  });
+
   test("四步填完存草稿：发出去的就是生产要的输入", async ({ page }) => {
     await mockSession(page, viewer);
     await mockMerchants(page, [merchant]);

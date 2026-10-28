@@ -26,7 +26,10 @@ export function WindowClip({
 }) {
   const { width, height, radius } = useWindowInfo();
   const native = useNativeSquircle();
-  if (radius <= 0) return children;
+  // Square (a phone's full-bleed window): unshaped, but still in a Slot,
+  // so crossing to or from it keeps the layer's element and all the page's
+  // state below it (更多设置 open, the form's step).
+  if (radius <= 0) return <Slot>{children}</Slot>;
   if (native) {
     const shape = cornerShape(width, height, radius, SMOOTHING);
     const style: CSSProperties = top
