@@ -31,6 +31,8 @@ import { HelpView } from "../views/help-view";
 import { HistoryView } from "../views/history-view";
 import { HongbaoView } from "../views/hongbao-view";
 import { InviteView } from "../views/invite-view";
+import { JudgeView } from "../views/judge-view";
+import { JudgesView } from "../views/judges-view";
 import { MeView } from "../views/me-view";
 import { MerchantView } from "../views/merchant-view";
 import { CommandPageView, MessageView } from "../views/message-view";
@@ -60,6 +62,7 @@ const commandPages: Record<
   me: <MeView />,
   merchant: <MerchantView />,
   payments: <PaymentsView />,
+  judges: <JudgesView />,
 };
 
 /**
@@ -160,6 +163,13 @@ function renderView(leaf: NonNullable<Leaf>): ReactNode {
         <CommandPageView
           id="payments"
           page={<PaymentView id={params.paymentId ?? ""} />}
+        />
+      );
+    case "/judges/$judgeId":
+      return (
+        <CommandPageView
+          id="judges"
+          page={<JudgeView id={params.judgeId ?? ""} />}
         />
       );
     case "/status":

@@ -12,6 +12,7 @@ import type {
   MyJudge,
   MyJudgeDetail,
   MyJudgmentList,
+  UpdateJudgeInput,
 } from "@hb/contracts";
 import {
   useInfiniteQuery,
@@ -136,7 +137,7 @@ export function useJudgeCheck(userId: string) {
           });
           // A deploy makes a 判定器, or a version of one.
           void queryClient.invalidateQueries({
-            queryKey: myJudgesKey(identity),
+            queryKey: myJudgesKey(userId),
           });
         }
       }
@@ -180,6 +181,60 @@ export function useMyJudge(userId: string | null, judgeId: string | null) {
           ),
         )
       ).judge,
+  });
+}
+
+/** One of mine, read once (/new?judge=<编号> picks its newest usable version). */
+export async function fetchMyJudge(judgeId: string) {
+  return (
+    await readResponse<{ judge: MyJudgeDetail }>(
+      await api.api.me.judges[":id"].$get(
+        { param: { id: judgeId } },
+        { init: { cache: "no-store" } },
+      ),
+    )
+  ).judge;
+}
+
+/**
+ * A version's code and tests (判定器页: a version's row opened, and the
+ * newest one to 部署新版本 from). Its code never changes.
+ */
+export function useMyJudgeVersion(
+  userId: string,
+  judgeId: string,
+  n: number | null,
+) {
+  return useQuery({
+    queryKey: [...myJudgeKey(userId, judgeId), "version", n] as const,
+    enabled: n !== null,
+    queryFn: () => fetchJudgeVersion(judgeId, n ?? 0),
+    staleTime: Number.POSITIVE_INFINITY,
+    retry: false,
+  });
+}
+
+/** 判定器页's settings (§2, §14.4): name, line and 代码公开 together. */
+export function useUpdateMyJudge(userId: string, judgeId: string) {
+  const queryClient = useQueryClient();
+  const { csrfToken } = useIdentity();
+  return useMutation({
+    mutationFn: async (json: UpdateJudgeInput) =>
+      (
+        await readResponse<{ judge: MyJudgeDetail }>(
+          await api.api.me.judges[":id"].$put(
+            { param: { id: judgeId }, json },
+            { headers: { "X-CSRF-Token": csrfToken ?? "" } },
+          ),
+        )
+      ).judge,
+    onSuccess: (judge) => {
+      queryClient.setQueryData(myJudgeKey(userId, judgeId), judge);
+      void queryClient.invalidateQueries({
+        queryKey: myJudgesKey(userId),
+        exact: true,
+      });
+    },
   });
 }
 

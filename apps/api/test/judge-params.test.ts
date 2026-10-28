@@ -9,6 +9,7 @@ import {
   getPublicActivity,
   openActivity,
 } from "../src/activities/service";
+import { updateMyJudge } from "../src/judge/judges";
 import { judgeRecords } from "../src/judge/records";
 import { findJudgeRow } from "../src/judge/storage";
 import { advanceAttemptCooldown } from "./advance-attempt-cooldown";
@@ -182,5 +183,28 @@ describe("判定器's params as it opens", () => {
     expect(
       (await judgeRecords(bindings, opened.id, author.id)).paramsSealed?.salt,
     ).toBe(salt);
+  });
+
+  it("shows the code from opening on once its 判定器 is made 一直公开 (§2), the seed still at the end", async () => {
+    const saved = await draft({ answer: 42 });
+    const opened = await openActivity(
+      bindings,
+      saved.id,
+      author.id,
+      saved.version,
+    );
+    const before = (await getPublicActivity(bindings, opened.id)).judge;
+    expect(before?.code).toBeUndefined();
+    const judgeId = (await findJudgeRow(env, opened.id))?.judgeId ?? "";
+    await updateMyJudge(bindings, author.id, judgeId, {
+      name: "猜数字",
+      description: "",
+      codePublic: "always",
+    });
+    const after = (await getPublicActivity(bindings, opened.id)).judge;
+    expect(after?.code).toContain("export function judge");
+    expect(after?.seed).toBeUndefined();
+    expect(after?.seedCommitment).toMatch(/^[0-9a-f]{64}$/);
+    expect(after?.sealedParams?.salt).toBeUndefined();
   });
 });

@@ -342,7 +342,11 @@ function CodeBody({
           <Fact
             label="代码指纹"
             value={judge.fingerprint}
-            note="开放时记下的 SHA-256。结束后公开代码，谁都能核对它没有换过。"
+            note={
+              published && !view.ended
+                ? "开放时记下的 SHA-256。代码一直公开，谁都能核对它没有换过。"
+                : "开放时记下的 SHA-256。结束后公开代码，谁都能核对它没有换过。"
+            }
             matched={checks?.code ? "和开放时一致" : undefined}
           />
         )}

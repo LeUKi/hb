@@ -2541,6 +2541,7 @@ test.describe("发红包 · 代码判定", () => {
       saved: [] as {
         activity: { judge?: Record<string, unknown>; money: unknown };
       }[],
+      updates: [] as Record<string, unknown>[],
     };
     const version = {
       n: 3,
@@ -2565,6 +2566,12 @@ test.describe("发红包 · 代码判定", () => {
       const url = new URL(route.request().url());
       const rest = url.pathname.slice("/api/me/judges".length);
       if (rest === "") return route.fulfill({ json: { items: [judge] } });
+      // 判定器页's settings: name, line and 代码公开 together.
+      if (rest === `/${GUESS_ID}` && route.request().method() === "PUT") {
+        const body = route.request().postDataJSON();
+        asked.updates.push(body);
+        Object.assign(judge, body);
+      }
       if (rest === `/${GUESS_ID}`)
         return route.fulfill({
           json: {
@@ -2753,5 +2760,152 @@ test.describe("发红包 · 代码判定", () => {
     await expect(page.locator("#hb-code-check")).not.toContainText(
       "先给判定器起个名字",
     );
+  });
+
+  // 我的判定器 and 判定器页 (docs/judge-square-design.md §8, §14.4).
+  test("我的判定器：一行写名字、说明、第几版和部署日期、开放过几个；点进判定器页，用它发红包回到第 2 步，焦点在第一项参数", async ({
+    page,
+  }) => {
+    await mockDeploys(page);
+    await mockMyJudges(page);
+    await openApp(page, "/judges");
+    await expect(
+      page.getByRole("heading", { name: "我的判定器", level: 1 }),
+    ).toBeVisible();
+    const day = `${new Date(openedAt).getMonth() + 1}月${new Date(openedAt).getDate()}日`;
+    const row = page.getByRole("link", { name: /猜数字/ });
+    await expect(row).toContainText("猜中的领");
+    await expect(row).toContainText(`第 3 版 · ${day}部署 · 开放过 2 个`);
+    await row.click();
+    await expect(page).toHaveURL(new RegExp(`/judges/${GUESS_ID}$`));
+    await expect(
+      page.getByRole("heading", { name: "猜数字", level: 1 }),
+    ).toBeVisible();
+    await expect(page.getByText("第 3 版 · 开放过 2 个红包")).toBeVisible();
+    await page.getByRole("link", { name: "用它发红包" }).click();
+    await expect(page).toHaveURL(new RegExp(`/new\\?judge=${GUESS_ID}$`));
+    await expect(page.getByText("我的 · 第 3 版")).toBeVisible();
+    await expect(page.locator("#hb-param-max")).toBeFocused();
+    await expect(page.locator("#hb-param-max")).toHaveValue("100");
+    // A starting point, not a change: leaving asks nothing.
+    await page.goBack();
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`/judges/${GUESS_ID}$`));
+  });
+
+  test("判定器页：改名字和说明，保存后写已保存；改成一直公开先确认，改了就改不回来", async ({
+    page,
+  }) => {
+    await mockDeploys(page);
+    const asked = await mockMyJudges(page);
+    await openApp(page, `/judges/${GUESS_ID}`);
+    const name = page.getByRole("textbox", { name: "名字" });
+    await expect(name).toHaveValue("猜数字");
+    await name.fill("猜大小");
+    await page.getByRole("button", { name: "保存" }).click();
+    await expect(page.getByText("已保存")).toBeVisible();
+    expect(asked.updates.at(-1)).toEqual({
+      name: "猜大小",
+      description: "猜中的领",
+      codePublic: "ended",
+    });
+    await expect(
+      page.getByRole("heading", { name: "猜大小", level: 1 }),
+    ).toBeVisible();
+    await name.fill("");
+    await page.getByRole("button", { name: "保存" }).click();
+    await expect(page.getByText("先给判定器起个名字")).toBeVisible();
+    expect(asked.updates).toHaveLength(1);
+    await name.fill("猜大小");
+    const shown = page.getByRole("group", { name: "代码公开" });
+    await shown.getByText("一直公开").click();
+    const dialog = page.getByRole("dialog", { name: "改成一直公开？" });
+    await expect(dialog).toContainText(
+      "所有人都能看到这个判定器的代码。改了就改不回来。",
+    );
+    await dialog.getByRole("button", { name: "返回" }).click();
+    await expect(dialog).toBeHidden();
+    expect(asked.updates).toHaveLength(1);
+    await shown.getByText("一直公开").click();
+    await page
+      .getByRole("dialog", { name: "改成一直公开？" })
+      .getByRole("button", { name: "一直公开" })
+      .click();
+    await expect(page.getByRole("dialog")).toBeHidden();
+    expect(asked.updates.at(-1)).toEqual({
+      name: "猜大小",
+      description: "猜中的领",
+      codePublic: "always",
+    });
+    await expect(shown).toHaveAttribute("disabled", "");
+  });
+
+  test("判定器页：版本一行写第几版、部署时间、测试和开放过几个，展开看指纹和代码；部署新版本从最新一版的代码改起", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    const deploys = await mockDeploys(page, {
+      judge: {
+        id: GUESS_ID,
+        name: "猜数字",
+        versions: {
+          next: 4,
+          versions: [
+            {
+              n: 3,
+              fingerprint: sha256(firstCode),
+              at: openedAt,
+              testsDigest: sha256(testsFile),
+              passed: true,
+              protocol: JUDGE_PROTOCOL,
+            },
+          ],
+        },
+        codes: { 3: firstCode },
+      },
+    });
+    await mockMyJudges(page);
+    await openApp(page, `/judges/${GUESS_ID}`);
+    const at = new Date(openedAt);
+    const clock = `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
+    const version = page.getByRole("button", { name: /^第 3 版/ });
+    await expect(version).toContainText(
+      `第 3 版 · ${at.getMonth() + 1}月${at.getDate()}日 ${clock} 部署`,
+    );
+    await expect(version).toContainText("测试全过 · 开放过 2 个红包");
+    await version.click();
+    await expect(version).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByText(sha256(firstCode))).toBeVisible();
+    await expect(page.getByRole("textbox", { name: /^第 3 版/ })).toContainText(
+      "猜对 42 的人领一份",
+    );
+    // 部署新版本: the form's own card, on 第 3 版's code and tests.
+    await expect(card(page)).toBeVisible();
+    await expect(cardName(page)).toHaveText("判定器 第 3 版");
+    await pasteCode(page, secondCode, "粘贴新版本");
+    await expect(cardName(page)).toHaveText("新代码");
+    await deployButton(page).click();
+    await expect(cardName(page)).toHaveText("判定器 第 4 版");
+    expect(deploys.requests.at(-1)).toEqual({
+      code: secondCode,
+      tests: testsFile,
+      judge: { id: GUESS_ID },
+    });
+  });
+
+  test("我的判定器还没有：写在发红包第 2 步自己写一个；别人的判定器：未找到判定器", async ({
+    page,
+  }) => {
+    await mockDeploys(page);
+    await openApp(page, "/judges");
+    await expect(page.getByText("还没有判定器")).toBeVisible();
+    await expect(
+      page.getByText("在发红包第 2 步选“自己写一个”，部署以后就在这里。"),
+    ).toBeVisible();
+    await openApp(page, `/judges/${GUESS_ID}`);
+    await expect(
+      page.getByRole("heading", { name: "未找到判定器" }),
+    ).toBeVisible();
   });
 });

@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   CircleHelp,
   Fish,
+  FolderCode,
   History,
   LayoutGrid,
   LogIn,
@@ -42,6 +43,7 @@ export type CommandPath =
   | "/merchant"
   | "/payments"
   | "/admin"
+  | "/judges"
   | "/help";
 
 export type CommandId =
@@ -54,6 +56,7 @@ export type CommandId =
   | "merchant"
   | "payments"
   | "admin"
+  | "judges"
   | "help"
   | "login";
 
@@ -289,6 +292,28 @@ export const commands: Command[] = [
     icon: CircleHelp,
     requires: "guest",
     keys: ["help", "帮助", "说明", "bangzhu", "bz", "shuoming", "sm"],
+  },
+  {
+    // 我的判定器 (docs/judge-square-design.md §8, §14.1): one's own for
+    // now; the 广场 comes with step 3.
+    id: "judges",
+    path: "/judges",
+    name: "judges",
+    title: "我的判定器",
+    icon: FolderCode,
+    requires: "standard",
+    visibleTo: (role) => role !== "guest",
+    keys: [
+      "judges",
+      "judge",
+      "判定器",
+      "我的判定器",
+      "代码判定",
+      "pandingqi",
+      "pdq",
+      "wodepandingqi",
+      "wdpdq",
+    ],
   },
   {
     id: "login",

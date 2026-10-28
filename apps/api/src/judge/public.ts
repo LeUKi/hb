@@ -1,7 +1,7 @@
 // A 代码判定红包's public side (docs/programmable-hongbao-design.md §6): the
 // prompt, the code's fingerprint and the seed's 封存值 from opening; once it
 // is over, the code and the seed, written out once and checked against
-// both. Nobody's input and none of the code's state are ever here.
+// both. A 判定器 made 一直公开 shows its code from opening on. Nobody's input and none of the code's state are ever here.
 import type { JudgeDeclarations, PublicJudge } from "@hb/contracts";
 import { seedCommitment } from "../../../../kit/runtime/index.mjs";
 import { databaseNow } from "../activities/lifecycle";
@@ -82,20 +82,31 @@ async function revealed(
   return { code, seed, ...(params ?? {}) };
 }
 
-/** Its 判定器 (judge-square §10): name, version and whose. */
+/**
+ * Its 判定器 (judge-square §10): name, version and whose — and whether its
+ * author made its code public all along (§2 代码公开).
+ */
 async function judgeOf(env: ApiBindings, judge: JudgeRow) {
   if (!judge.judgeId) return undefined;
   const row = await env.DB.prepare(
-    `SELECT j.name, u.username, u.display_name AS displayName FROM judges j
-      JOIN users u ON u.id = j.author_id WHERE j.id = ?`,
+    `SELECT j.name, j.code_public AS codePublic, u.username, u.display_name AS displayName
+      FROM judges j JOIN users u ON u.id = j.author_id WHERE j.id = ?`,
   )
     .bind(judge.judgeId)
-    .first<{ name: string; username: string; displayName: string }>();
+    .first<{
+      name: string;
+      codePublic: "ended" | "always";
+      username: string;
+      displayName: string;
+    }>();
   return row
     ? {
-        name: row.name,
-        version: judge.judgeVersion,
-        author: { username: row.username, displayName: row.displayName },
+        shown: {
+          name: row.name,
+          version: judge.judgeVersion,
+          author: { username: row.username, displayName: row.displayName },
+        },
+        always: row.codePublic === "always",
       }
     : undefined;
 }
@@ -131,6 +142,16 @@ export async function publicJudge(
     judgedCount(env, row.id),
     judgeOf(env, judge),
   ]);
+  // 一直公开 (§2): the code from opening on; the seed still waits.
+  const code =
+    out?.code ??
+    (by?.always && row.openedAt !== null
+      ? await decryptString(
+          judge.codeCiphertext,
+          env,
+          judgeData(row.id, "code"),
+        )
+      : undefined);
   const shown =
     judge.paramsPublic !== null
       ? (JSON.parse(judge.paramsPublic) as Record<string, unknown>)
@@ -158,8 +179,9 @@ export async function publicJudge(
       ? { paused: true as const }
       : {}),
     ...(judge.stoppedAt !== null ? { stopped: true as const } : {}),
-    ...(out ? { code: out.code, seed: out.seed } : {}),
-    ...(by ? { judge: by } : {}),
+    ...(code !== undefined ? { code } : {}),
+    ...(out ? { seed: out.seed } : {}),
+    ...(by ? { judge: by.shown } : {}),
     ...(params.length > 0 ? { params } : {}),
     ...(judge.paramsCommitment
       ? {

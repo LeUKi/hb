@@ -134,6 +134,13 @@ const newRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/new",
   staticData: { chrome: "docked", command: "new" },
+  // 用它发红包 (docs/judge-square-design.md §6): a 判定器 picked already.
+  validateSearch: (search: Record<string, unknown>): { judge?: string } => ({
+    judge:
+      typeof search.judge === "string" && search.judge
+        ? search.judge
+        : undefined,
+  }),
 });
 const historyRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -170,6 +177,11 @@ const paymentsRoute = createRoute({
   path: "/payments",
   staticData: { chrome: "docked", command: "payments" },
 });
+const judgesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/judges",
+  staticData: { chrome: "docked", command: "judges" },
+});
 const adminRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/admin",
@@ -203,6 +215,7 @@ const balanceCheckoutRoute = subRoute(
   "balance",
   "付款详情",
 );
+const judgeRoute = subRoute("/judges/$judgeId", "judges", "判定器");
 const paymentDetailRoute = subRoute(
   "/payments/$paymentId",
   "payments",
@@ -313,6 +326,8 @@ const routeTree = rootRoute.addChildren([
   merchantDetailRoute,
   paymentsRoute,
   paymentDetailRoute,
+  judgesRoute,
+  judgeRoute,
   balanceRoute,
   balanceTopupRoute,
   balanceWithdrawalRoute,

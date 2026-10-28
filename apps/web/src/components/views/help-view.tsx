@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Braces, ChevronRight, Globe } from "lucide-react";
+import { Braces, ChevronRight, FolderCode, Globe } from "lucide-react";
 import { RED_PACKET } from "../../lib/activity-route";
 import {
   commands,
@@ -166,6 +166,27 @@ export function HelpView() {
             </Link>
           </Squircle>
         </li>
+        {/* 我的判定器 (docs/judge-square-design.md §8 入口): beside the
+            docs it is written with; the 广场 opens it to everyone. */}
+        {user && (
+          <li>
+            <Squircle radius={radius.row}>
+              <Link
+                to="/judges"
+                className="flex min-h-12 items-center gap-3 px-3 py-2 transition-colors hover:bg-fill-2"
+              >
+                <FolderCode className="size-[18px] shrink-0 text-ink-2" />
+                <span className="min-w-0 flex-1 truncate text-ink">
+                  我的判定器
+                </span>
+                <ChevronRight
+                  className="size-4 shrink-0 text-ink-3"
+                  aria-hidden="true"
+                />
+              </Link>
+            </Squircle>
+          </li>
+        )}
         {user?.balancePlus && (
           <li>
             <Squircle radius={radius.row}>

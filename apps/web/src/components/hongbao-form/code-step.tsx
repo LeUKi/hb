@@ -434,6 +434,101 @@ function JudgeNameFields({
 }
 
 /**
+ * judge.js as a 判定器 card with 换回 above it, tests.json, and 部署 (07
+ * §5): the form's ② 判定器 when writing one, and 判定器页's 部署新版本
+ * (docs/judge-square-design.md §8).
+ */
+export function JudgeWriter({
+  form,
+  update,
+  errorOf,
+  locked,
+  frozen,
+  judge,
+  gated,
+}: {
+  form: FormState;
+  update: Update;
+  errorOf: ErrorOf;
+  locked: boolean;
+  frozen: boolean;
+  judge: JudgeDeploy;
+  gated: boolean;
+}) {
+  const check = judge.result?.check;
+  const problemLines =
+    check?.fingerprint === judge.fingerprint
+      ? (check?.problems.map((problem) => problem.line) ?? [])
+      : [];
+  const setTests = (value: string) =>
+    update((current) => ({
+      ...current,
+      judge: { ...current.judge, tests: value },
+    }));
+  return (
+    <>
+      <div className="flex flex-col gap-2.5">
+        {/* 换回 (§5): the latest passing version, put back with no deploy. */}
+        <Reveal show={!locked && Boolean(judge.restore)}>
+          {judge.restore && (
+            <Callout
+              tone="warning"
+              icon={AlertTriangle}
+              className="items-center [&>div:last-child]:flex-1"
+            >
+              <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                {/* A version deployed already takes no second deploy:
+                    the deploy area says what it waits for. */}
+                <span className="min-w-0 flex-1">
+                  {judge.version ? (
+                    <>
+                      代码换了：判定器 第 {judge.version.n}{" "}
+                      版还没有测试全过，可以换回测试全过的第 {judge.restore.n}{" "}
+                      版。
+                    </>
+                  ) : (
+                    <>
+                      代码换了：和测试全过的判定器 第 {judge.restore.n}{" "}
+                      版不一样，要部署这一版才能开放；或者换回去。
+                    </>
+                  )}
+                </span>
+                <Button
+                  size="xs"
+                  aria-disabled={judge.busy || frozen || undefined}
+                  data-disabled={judge.busy || frozen || undefined}
+                  onClick={() => {
+                    if (!judge.busy && !frozen) judge.restoreCode();
+                  }}
+                >
+                  换回第 {judge.restore.n} 版
+                </Button>
+              </span>
+            </Callout>
+          )}
+        </Reveal>
+        <JudgeCard
+          code={form.judge.code}
+          judge={judge}
+          locked={locked}
+          busy={frozen || judge.busy}
+          problemLines={problemLines}
+          error={errorOf("hb-code-code")}
+        />
+      </div>
+      <TestsBox
+        value={form.judge.tests}
+        error={errorOf("hb-code-tests")}
+        disabled={locked}
+        frozen={frozen}
+        onChange={setTests}
+      />
+      {!locked && <DeployArea judge={judge} frozen={frozen} gated={gated} />}
+    </>
+  );
+}
+
+/**
  * ② 判定器 (代码判定红包, in place of 怎么领; docs/judge-square-design.md
  * §6): pick one of one's own 判定器, or write one — its name, judge.js as a
  * 判定器 card, tests.json as typed and 部署 into the sandbox the claims will
@@ -482,16 +577,11 @@ export function CodeStep({
   /** The 红包 试一试 judges on, as filled in so far, in 分. */
   tried: { title: string; total: number; count: number; minEach: number };
 }) {
-  const set = (key: "prompt" | "tests") => (value: string) =>
+  const set = (key: "prompt") => (value: string) =>
     update((current) => ({
       ...current,
       judge: { ...current.judge, [key]: value },
     }));
-  const check = judge.result?.check;
-  const problemLines =
-    check?.fingerprint === judge.fingerprint
-      ? (check?.problems.map((problem) => problem.line) ?? [])
-      : [];
   const named = judge.version ? `判定器 第 ${judge.version.n} 版 ` : "判定器";
   // 我的判定器 with a version a 红包 can open with (§6 挑之前).
   const mine = useMyJudges(userId, !locked);
@@ -593,63 +683,15 @@ export function CodeStep({
         errorOf={errorOf}
         locked={locked}
       />
-      <div className="flex flex-col gap-2.5">
-        {/* 换回 (§5): the latest passing version, put back with no deploy. */}
-        <Reveal show={!locked && Boolean(judge.restore)}>
-          {judge.restore && (
-            <Callout
-              tone="warning"
-              icon={AlertTriangle}
-              className="items-center [&>div:last-child]:flex-1"
-            >
-              <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                {/* A version deployed already takes no second deploy:
-                    the deploy area says what it waits for. */}
-                <span className="min-w-0 flex-1">
-                  {judge.version ? (
-                    <>
-                      代码换了：判定器 第 {judge.version.n}{" "}
-                      版还没有测试全过，可以换回测试全过的第 {judge.restore.n}{" "}
-                      版。
-                    </>
-                  ) : (
-                    <>
-                      代码换了：和测试全过的判定器 第 {judge.restore.n}{" "}
-                      版不一样，要部署这一版才能开放；或者换回去。
-                    </>
-                  )}
-                </span>
-                <Button
-                  size="xs"
-                  aria-disabled={judge.busy || frozen || undefined}
-                  data-disabled={judge.busy || frozen || undefined}
-                  onClick={() => {
-                    if (!judge.busy && !frozen) judge.restoreCode();
-                  }}
-                >
-                  换回第 {judge.restore.n} 版
-                </Button>
-              </span>
-            </Callout>
-          )}
-        </Reveal>
-        <JudgeCard
-          code={form.judge.code}
-          judge={judge}
-          locked={locked}
-          busy={frozen || judge.busy}
-          problemLines={problemLines}
-          error={errorOf("hb-code-code")}
-        />
-      </div>
-      <TestsBox
-        value={form.judge.tests}
-        error={errorOf("hb-code-tests")}
-        disabled={locked}
+      <JudgeWriter
+        form={form}
+        update={update}
+        errorOf={errorOf}
+        locked={locked}
         frozen={frozen}
-        onChange={set("tests")}
+        judge={judge}
+        gated={gated}
       />
-      {!locked && <DeployArea judge={judge} frozen={frozen} gated={gated} />}
     </>
   );
   return (

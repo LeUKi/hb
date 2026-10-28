@@ -9,11 +9,16 @@ import {
   useState,
 } from "react";
 import { flushSync } from "react-dom";
-import { useActivityWrites } from "../../lib/activities";
+import { refused, useActivityWrites } from "../../lib/activities";
 import { useBalanceFunding } from "../../lib/balance";
 import { cn } from "../../lib/cn";
 import { haptic } from "../../lib/haptics";
-import { useMyJudge, useParamsCheck } from "../../lib/judge";
+import {
+  fetchJudgeVersion,
+  fetchMyJudge,
+  useMyJudge,
+  useParamsCheck,
+} from "../../lib/judge";
 import { useCurrentMerchant } from "../../lib/merchants";
 import { scrollBehavior } from "../../lib/motion";
 import { closeOverlay, openOverlay } from "../../lib/overlay";
@@ -48,9 +53,11 @@ import {
   type RewardMode,
   timingLine,
   withDefaultTitle,
+  withJudgeDefaults,
   withMode,
 } from "./form-state";
 import { declaredParams, judgeIssuesOf, triedHongbao } from "./judge-issues";
+import { paramsFor } from "./params-fields";
 import { ScheduleDialog, ScheduleLine } from "./schedule-fields";
 import { scopeLine } from "./scope-fields";
 import { groupsOf, SettingsSheet } from "./settings-sheet";
@@ -99,12 +106,15 @@ export function HongbaoForm({
   user,
   csrfToken,
   onSaved,
+  startJudge,
 }: {
   activity?: ManagedActivity;
   user: SessionUser;
   csrfToken: string;
   /** After a save that stays on the page (📝): the header shows the change. */
   onSaved?: () => void;
+  /** /new?judge=<编号>: one's own 判定器 to start with (judge-square §6). */
+  startJudge?: string;
 }) {
   const router = useRouter();
   const { roomy } = useWindowInfo();
@@ -296,6 +306,64 @@ export function HongbaoForm({
     if (changed) linear.restart();
     window.setTimeout(linear.next, 120);
   };
+
+  // 用它发红包 (judge-square §6): /new?judge=<编号> starts on 代码判定
+  // with that 判定器's newest usable version picked, at ② 判定器, focus
+  // on its first param. As a starting point, not an unsaved change; a form
+  // already being filled in is left as it is.
+  const touched = useRef(dirty);
+  touched.current = dirty;
+  const started = useRef(false);
+  const [startParam, setStartParam] = useState<string | null>(null);
+  useEffect(() => {
+    if (editing || !startJudge || started.current) return;
+    started.current = true;
+    void (async () => {
+      try {
+        const picked = await fetchMyJudge(startJudge);
+        if (!picked.usable || touched.current) return;
+        const version = await fetchJudgeVersion(picked.id, picked.usable.n);
+        if (touched.current) return;
+        const params = version.declarations?.params ?? [];
+        const start = (current: FormState) =>
+          withJudgeDefaults(
+            {
+              ...withMode(current, "code"),
+              judge: {
+                ...current.judge,
+                judgeId: picked.id,
+                name: picked.name,
+                description: picked.description,
+                code: version.code,
+                tests: version.tests,
+                versions: version.versions,
+                params: paramsFor(params, current.judge.params),
+              },
+            },
+            version.declarations?.hongbao,
+          );
+        setBaseline(start);
+        setForm(start);
+        setStartParam(params[0]?.key ?? null);
+        linear.next();
+      } catch (failure) {
+        submit.setNotice({
+          tone: "danger",
+          text: refused(failure)
+            ? failure.message
+            : "没有取到这个判定器：网络或服务出了问题。可以再试一次。",
+        });
+      }
+    })();
+  }, [editing, startJudge, linear.next, submit.setNotice]);
+  useEffect(() => {
+    if (startParam === null || currentIndex !== placeOf("claim")) return;
+    if (!judge.known) return;
+    const key = startParam;
+    setStartParam(null);
+    // After the step's title took focus, as a new step's does.
+    window.setTimeout(() => jumpTo(`hb-param-${key}`), 400);
+  });
 
   /**
    * The params asked of the version's check() (§3 校验), when it has one:
