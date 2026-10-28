@@ -767,6 +767,7 @@ describe("LDC activity management", () => {
       expect(shown.status).toBe("draft");
       expect(shown).not.toHaveProperty("openingBlockedReason");
       expect(shown).not.toHaveProperty("rosterPreview");
+      expect(shown.draftDeadline).toEqual(activity.config.deadline);
       for (const secret of ["口令ABC123", "only-after-claim", "only-after-end"])
         expect(JSON.stringify(shown)).not.toContain(secret);
     }

@@ -518,6 +518,16 @@ export function projectPublicActivity(
     ...(config.pageUrl && row.pageStoppedAt === null
       ? { page: attachedPageOf(config.pageUrl) }
       : {}),
+    // Not open yet: its deadline as set, for whoever has its link (05 §13).
+    ...(status === "draft"
+      ? {
+          draftDeadline: config.deadline,
+          ...(config.money.mode === "timed_draw" &&
+          config.money.countdownSeconds !== undefined
+            ? { draftCountdownSeconds: config.money.countdownSeconds }
+            : {}),
+        }
+      : {}),
   };
 }
 

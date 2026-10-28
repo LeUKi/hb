@@ -1559,6 +1559,7 @@ test.describe("红包页", () => {
       openedAt: null,
       deadlineAt: null,
       quantity: { mode: "exact", total: 3, claimed: 0, remaining: 3 },
+      draftDeadline: { mode: "duration", value: 7, unit: "days" },
     };
     state.recipients = [];
     await openApp(page, path);
@@ -1574,6 +1575,8 @@ test.describe("红包页", () => {
     });
     await expect(seal).toHaveText("开");
     await expect(seal).toHaveAttribute("aria-disabled", "true");
+    // Its deadline as set, counted from opening.
+    await expect(page.getByText("开放后 7 天")).toBeVisible();
     // Not the sender's: no 草稿预览, no tools.
     await expect(page.locator("[data-hb-part=author]")).toHaveCount(0);
     await page.getByRole("button", { name: "分享" }).click();

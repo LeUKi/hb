@@ -1,4 +1,5 @@
 import type {
+  ActivityInput,
   ActivityParticipationResponse,
   ActivityPasswords,
   AttachedPage,
@@ -166,6 +167,20 @@ function topicOf(url: string | null) {
     : undefined;
 }
 
+/** A draft's deadline as set: a fixed time, or counted from opening. */
+function timingOf(
+  deadline: ActivityInput["deadline"] | undefined,
+  countdown: number | undefined,
+): HongbaoActivity["draftTiming"] {
+  if (!deadline) return undefined;
+  if (deadline.mode === "at") return { kind: "at", at: deadline.at };
+  if ("value" in deadline)
+    return { kind: "duration", value: deadline.value, unit: deadline.unit };
+  return countdown
+    ? { kind: "duration", ...durationOfSeconds(countdown) }
+    : undefined;
+}
+
 /** The 红包 as its components draw it; the sender's own read adds its setup. */
 export function hongbaoOf(
   activity: PublicActivity,
@@ -173,7 +188,10 @@ export function hongbaoOf(
 ): HongbaoActivity {
   const reward = activity.reward;
   const config = managed?.config;
-  const deadline = config?.deadline;
+  const countdown =
+    config?.money.mode === "timed_draw"
+      ? config.money.countdownSeconds
+      : activity.draftCountdownSeconds;
   return {
     id: activity.id,
     title: activity.title,
@@ -203,20 +221,11 @@ export function hongbaoOf(
       config && config.money.mode === "custom"
         ? { allocation: config.allocation }
         : undefined,
+    // Anyone's read of a draft carries its deadline as set (05 §13).
     draftTiming:
-      activity.status !== "draft" || !deadline
-        ? undefined
-        : deadline.mode === "at"
-          ? { kind: "at", at: deadline.at }
-          : "value" in deadline
-            ? { kind: "duration", value: deadline.value, unit: deadline.unit }
-            : config?.money.mode === "timed_draw" &&
-                config.money.countdownSeconds
-              ? {
-                  kind: "duration",
-                  ...durationOfSeconds(config.money.countdownSeconds),
-                }
-              : undefined,
+      activity.status === "draft"
+        ? timingOf(config?.deadline ?? activity.draftDeadline, countdown)
+        : undefined,
     passwords: config?.passwords ?? [],
     ...(activity.judge ? { judge: activity.judge } : {}),
     ...(reward?.minEach ? { minEach: reward.minEach } : {}),

@@ -878,6 +878,12 @@ export type PublicActivity = {
    */
   page?: AttachedPage;
   /**
+   * A draft's deadline as set, for its 未开放 page (05 §13): counted from
+   * opening, or a fixed time; a timed draw's countdown too, when it has one.
+   */
+  draftDeadline?: ActivityInput["deadline"];
+  draftCountdownSeconds?: number;
+  /**
    * Up to five people for the 名单入口, read with the rest so they match the
    * numbers: the latest claims; while a draw is open, the latest sign-ups;
    * once it is drawn, the biggest prizes. Only on a single 红包's read.
