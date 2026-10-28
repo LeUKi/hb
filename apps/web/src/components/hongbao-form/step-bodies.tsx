@@ -1,6 +1,6 @@
 import { normalizePageUrl } from "@hb/contracts";
-import { ChevronDown, DoorOpen, KeyRound, Plus } from "lucide-react";
-import { useRef, useState } from "react";
+import { DoorOpen, KeyRound, Plus } from "lucide-react";
+import { useId, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { cn } from "../../lib/cn";
 import { ChoiceCards, Field, TextInput } from "../ui/field";
@@ -50,12 +50,12 @@ function ModeCard({
         aria-pressed={selected}
         disabled={disabled && !selected}
         onClick={onPick}
-        className="choice grid content-start gap-2 p-4 text-left"
+        className="choice flex h-full items-center gap-2.5 p-3 text-left"
       >
         <Squircle radius={10}>
           <span
             className={cn(
-              "choice-icon grid size-9 place-items-center",
+              "choice-icon grid size-8 shrink-0 place-items-center",
               // 代码判定: black lacquer and gold (05 §14), picked or not.
               option.value === "code"
                 ? "hb-lacquer-chip"
@@ -65,11 +65,13 @@ function ModeCard({
             <Icon className="size-[18px]" aria-hidden="true" />
           </span>
         </Squircle>
-        <span className="grid gap-0.5">
-          <span className="flex items-center gap-1.5 text-base font-semibold text-ink">
+        <span className="grid min-w-0 gap-0.5">
+          <span className="text-base font-semibold text-ink">
             {option.title}
           </span>
-          <span className="text-sm text-ink-3">{option.description}</span>
+          <span className="text-sm text-balance text-ink-3">
+            {option.description}
+          </span>
         </span>
       </button>
     </Squircle>
@@ -77,8 +79,10 @@ function ModeCard({
 }
 
 /**
- * ① 玩法: the two most used as big cards; the others behind 更多玩法,
- * 代码判定 among them while it can be sent (not even grey otherwise).
+ * ① 玩法 (07 §5, 2026-10-28): 经典玩法 two by two; 代码判定 apart as 进阶玩法
+ * while it can be sent (not even grey otherwise). Side by side, two to
+ * one, where they fit, their first rows one height (a subgrid); one above
+ * the other where they do not.
  */
 export function ModeStep({
   form,
@@ -92,53 +96,71 @@ export function ModeStep({
   /** 代码判定红包 can be sent now (its switch). */
   codeOffered: boolean;
 }) {
-  const offered = modeOptions.filter(
-    (option) => !option.code || codeOffered || option.value === form.mode,
+  const classicId = useId();
+  const advancedId = useId();
+  const card = (option: (typeof modeOptions)[number]) => (
+    <ModeCard
+      key={option.value}
+      option={option}
+      selected={form.mode === option.value}
+      disabled={locked}
+      onPick={() => onPick(option.value)}
+    />
   );
-  const rare = offered.some(
-    (option) => option.more && option.value === form.mode,
+  const classic = modeOptions.filter((option) => !option.code);
+  const advanced = modeOptions.filter(
+    (option) => option.code && (codeOffered || option.value === form.mode),
   );
-  const [more, setMore] = useState(rare);
-  const cards = (rareOnes: boolean) => (
-    <fieldset
-      aria-label={rareOnes ? "更多玩法" : "玩法"}
-      className="grid grid-cols-2 gap-2.5"
-    >
-      {offered
-        .filter((option) => Boolean(option.more) === rareOnes)
-        .map((option) => (
-          <ModeCard
-            key={option.value}
-            option={option}
-            selected={form.mode === option.value}
-            disabled={locked}
-            onPick={() => onPick(option.value)}
-          />
-        ))}
-    </fieldset>
-  );
+  const split = advanced.length > 0;
   return (
     <div className="flex flex-col gap-2.5">
-      {cards(false)}
-      {!locked && (
-        <button
-          type="button"
-          aria-expanded={more || rare}
-          onClick={() => setMore((value) => !value)}
-          disabled={rare}
-          className="flex w-fit items-center gap-1 px-1 text-sm text-ink-2 hover:text-ink disabled:cursor-default disabled:hover:text-ink-2"
+      <div role="group" aria-label="玩法" className="@container/modes">
+        <div
+          className={cn(
+            "grid gap-2.5",
+            split &&
+              "@min-[34rem]/modes:grid-cols-[2fr_auto_1fr] @min-[34rem]/modes:grid-rows-[auto_auto_auto] @min-[34rem]/modes:gap-x-3",
+          )}
         >
-          更多玩法
-          <ChevronDown
+          <div
+            role="group"
+            aria-labelledby={split ? classicId : undefined}
             className={cn(
-              "size-4 transition-transform",
-              (more || rare) && "rotate-180",
+              "grid gap-2.5 @min-[22rem]/modes:grid-cols-2",
+              split &&
+                "@min-[34rem]/modes:row-span-3 @min-[34rem]/modes:grid-rows-subgrid",
             )}
-            aria-hidden="true"
-          />
-        </button>
-      )}
-      <Reveal show={more || rare}>{cards(true)}</Reveal>
+          >
+            {split && (
+              <p
+                id={classicId}
+                className="col-span-full px-1 text-xs text-ink-3"
+              >
+                经典玩法
+              </p>
+            )}
+            {classic.map(card)}
+          </div>
+          {split && (
+            <>
+              <span
+                aria-hidden="true"
+                className="hidden w-px bg-line @min-[34rem]/modes:col-start-2 @min-[34rem]/modes:row-span-2 @min-[34rem]/modes:row-start-2 @min-[34rem]/modes:my-4 @min-[34rem]/modes:block"
+              />
+              <div
+                role="group"
+                aria-labelledby={advancedId}
+                className="mt-2.5 grid gap-2.5 @min-[34rem]/modes:col-start-3 @min-[34rem]/modes:row-span-3 @min-[34rem]/modes:row-start-1 @min-[34rem]/modes:mt-0 @min-[34rem]/modes:grid-rows-subgrid"
+              >
+                <p id={advancedId} className="px-1 text-xs text-ink-3">
+                  进阶玩法
+                </p>
+                {advanced.map(card)}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
       {locked && <LockNote>开放后不能修改。</LockNote>}
     </div>
   );

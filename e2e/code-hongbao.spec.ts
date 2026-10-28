@@ -1360,7 +1360,6 @@ test.describe("发红包 · 代码判定", () => {
   /** /new, 代码判定, 1.00 over 5 shares, on to ③ 代码. */
   async function toCodeStep(page: Page) {
     await openApp(page, "/new");
-    await page.getByRole("button", { name: "更多玩法" }).click();
     await page.getByRole("button", { name: /^代码判定/ }).click();
     await expect(page.locator("#hb-code-total")).toBeVisible();
     await page.locator("#hb-code-total").fill("1.00");
@@ -1441,7 +1440,6 @@ test.describe("发红包 · 代码判定", () => {
       }),
     );
     await openApp(page, "/new");
-    await page.getByRole("button", { name: "更多玩法" }).click();
     const pick = page.getByRole("button", { name: /^代码判定/ });
     await expect(pick).toBeVisible();
     await expect(pick).not.toContainText("PLUS");

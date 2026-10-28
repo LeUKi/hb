@@ -84,15 +84,14 @@ export function counter(text: string, max: number) {
 }
 
 /**
- * The 玩法: the two most used first (拼手气, 限时开奖); the rest wait
- * behind 更多玩法, 代码判定 while its switch is on (07 §5).
+ * The 玩法, the most used first (拼手气, 限时开奖); 代码判定 while its
+ * switch is on (07 §5).
  */
 export const modeOptions: {
   value: RewardMode;
   title: string;
   description: string;
   icon: typeof Equal;
-  more?: boolean;
   /** Only while 代码判定红包 can be sent (its switch). */
   code?: boolean;
 }[] = [
@@ -113,21 +112,18 @@ export const modeOptions: {
     title: "固定均分",
     description: "每人金额一样",
     icon: Equal,
-    more: true,
   },
   {
     value: "custom",
     title: "自定义金额",
     description: "一行一份，自己定",
     icon: ListOrdered,
-    more: true,
   },
   {
     value: "code",
     title: "代码判定",
     description: "写一段代码，决定谁领多少",
     icon: Braces,
-    more: true,
     code: true,
   },
 ];

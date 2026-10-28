@@ -182,6 +182,79 @@ async function fillRandom(page: Page) {
 }
 
 test.describe("发红包", () => {
+  test("玩法：经典玩法 2 × 2，进阶玩法的代码判定在右边，两组第一行对齐；窄了上下排", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    await mockMerchants(page, [merchant]);
+    // 代码判定 can be sent: its presence offers it.
+    await page.route("**/api/me/balance/hongbao", (route) =>
+      route.fulfill({
+        json: {
+          enabled: false,
+          available: false,
+          availableMinor: 0,
+          code: { deploysLeft: 2, deployLimit: 2 },
+        },
+      }),
+    );
+    await openApp(page, "/new");
+    const classic = page.getByRole("group", { name: "经典玩法" });
+    const advanced = page.getByRole("group", { name: "进阶玩法" });
+    await expect(classic.getByRole("button")).toHaveText([
+      /拼手气/,
+      /限时开奖/,
+      /固定均分/,
+      /自定义金额/,
+    ]);
+    await expect(advanced.getByRole("button")).toHaveText([/代码判定/]);
+    await expect(page.getByRole("button", { name: "更多玩法" })).toHaveCount(0);
+    const box = async (name: RegExp) =>
+      (await page.getByRole("button", { name }).boundingBox()) ?? {
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+      };
+    const [first, second, third, code] = await Promise.all([
+      box(/^拼手气/),
+      box(/^限时开奖/),
+      box(/^固定均分/),
+      box(/^代码判定/),
+    ]);
+    // Two by two, 代码判定 to their right, on their first row's line and height.
+    expect(Math.round(third.x)).toBe(Math.round(first.x));
+    expect(second.x).toBeGreaterThan(first.x + first.width);
+    expect(code.x).toBeGreaterThan(second.x + second.width);
+    expect(Math.abs(code.y - first.y)).toBeLessThan(1);
+    expect(Math.abs(code.height - first.height)).toBeLessThan(1);
+    // The icon beside the words, not above them.
+    const card = page.getByRole("button", { name: /^拼手气/ });
+    const icon = await card.locator(".choice-icon").boundingBox();
+    const title = await card.getByText("拼手气").boundingBox();
+    expect(Math.abs((icon?.y ?? 0) - (title?.y ?? 0))).toBeLessThan(20);
+    expect(title?.x ?? 0).toBeGreaterThan((icon?.x ?? 0) + (icon?.width ?? 0));
+
+    // A phone: one above the other, 经典玩法 one to a row.
+    await page.setViewportSize({ width: 375, height: 812 });
+    await expect
+      .poll(async () => Math.round((await box(/^限时开奖/)).x))
+      .toBe(Math.round((await box(/^拼手气/)).x));
+    const last = await box(/^自定义金额/);
+    expect((await box(/^代码判定/)).y).toBeGreaterThan(last.y + last.height);
+  });
+
+  test("玩法：不能发代码判定时只有经典玩法，不写小标题", async ({ page }) => {
+    await mockSession(page, viewer);
+    await mockMerchants(page, [merchant]);
+    await openApp(page, "/new");
+    await expect(
+      page.getByRole("group", { name: "玩法" }).getByRole("button"),
+    ).toHaveCount(4);
+    await expect(page.getByText("经典玩法")).toHaveCount(0);
+    await expect(page.getByText("进阶玩法")).toHaveCount(0);
+  });
+
   test("四步填完存草稿：发出去的就是生产要的输入", async ({ page }) => {
     await mockSession(page, viewer);
     await mockMerchants(page, [merchant]);
