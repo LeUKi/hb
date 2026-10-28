@@ -82,7 +82,8 @@ curl --fail -X POST 'http://127.0.0.1:5173/cdn-cgi/local/explorer/api/local/sche
 - [外观重构](docs/redesign/README.md)：现行的界面与交互规范（八篇）。
 - [业务规格 v1](docs/business-spec-v1.md)、[一期技术方案](docs/technical-design-phase-1.md)：业务规则和技术方案的基线。
 - [🐟额](docs/balance-design.md)、[开奖证明](docs/draw-proof-design.md)、[领取范围](docs/claim-scope-design.md)、[排行榜](docs/leaderboard-design.md)、[震动反馈](docs/haptics-design.md)：各个功能的设计。
-- [代码判定红包](docs/programmable-hongbao-design.md)：还没做的新玩法，设计和调研。
+- [代码判定红包](docs/programmable-hongbao-design.md)：红包作者写代码判定谁领多少，设计、协议和调研。
+- [判定器复用与判定器广场](docs/judge-square-design.md)：参数表单、站长精选和判定器广场，讨论中。
 - [本地模拟付款与故障恢复](docs/local-payment-operations.md)：本地怎么模拟付款和各种故障。
 - [管理员后台](docs/admin-operations.md)、[D1 迁往亚太](docs/d1-apac-migration.md)、[动态活动图片](docs/activity-images.md)。
 - [历史修订记录](docs/design-history.md)、[原型指南](docs/visual-prototype.md)：旧界面时期的记录。

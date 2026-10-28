@@ -390,7 +390,7 @@ interface Random {
 
 ## 11 相关文档
 
-业务规格文末“2026-10-24 代码判定红包”、[🐟额设计](balance-design.md) 第 13、14 节（PLUS 多出一项）、[07](redesign/07-pages.md) 第 10 节（判定器页签）、界面规范（第 8 节）、[03](redesign/03-commands-routes.md) 的路由表（`/help/code`）。发布时在运维文档的部署准备里补上 Dynamic Workers 绑定和迁移顺序。
+[判定器复用与判定器广场](judge-square-design.md)（协议第三版，讨论中）、业务规格文末“2026-10-24 代码判定红包”、[🐟额设计](balance-design.md) 第 13、14 节（PLUS 多出一项）、[07](redesign/07-pages.md) 第 10 节（判定器页签）、界面规范（第 8 节）、[03](redesign/03-commands-routes.md) 的路由表（`/help/code`）。发布时在运维文档的部署准备里补上 Dynamic Workers 绑定和迁移顺序。
 
 ## 附录：调研（2026-10-24）
 
