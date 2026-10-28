@@ -421,8 +421,8 @@ export async function getCurrentClaim(
   userId: string,
 ) {
   const activity = await findActivity(env, activityId);
-  if (!activity || (activity.openedAt === null && activity.authorId !== userId))
-    activityNotFound();
+  // A draft too (05 §5): nobody has claimed it yet.
+  if (!activity) activityNotFound();
   const claim = await findUserClaim(env, activityId, userId);
   return claim ? getClaimDetail(env, claim.id, userId) : null;
 }
@@ -513,15 +513,11 @@ export async function listAuthorClaims(
 export async function listPublicRecipients(
   env: ApiBindings,
   activityId: string,
-  viewerId?: string,
   cursor?: string,
 ): Promise<PublicRecipientList> {
   const activity = await findActivity(env, activityId);
-  if (
-    !activity ||
-    (activity.openedAt === null && activity.authorId !== viewerId)
-  )
-    activityNotFound();
+  // A draft too (05 §5): its roster is empty.
+  if (!activity) activityNotFound();
   // Claims can be allocated while a timed draw settles; publish only its completed results.
   if (drawPending(activity))
     return { items: [], nextCursor: null, titles: noTitles() };

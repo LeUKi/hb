@@ -1547,6 +1547,51 @@ test.describe("红包页", () => {
     ).toHaveCount(1);
   });
 
+  test("别人打开草稿：未开放，「开」变淡点不了；能分享；开放后自己变成可以领取", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    const state = await mockHongbao(page);
+    const opened = state.activity;
+    state.activity = {
+      ...opened,
+      status: "draft",
+      openedAt: null,
+      deadlineAt: null,
+      quantity: { mode: "exact", total: 3, claimed: 0, remaining: 3 },
+    };
+    state.recipients = [];
+    await openApp(page, path);
+    await expect(
+      page.getByRole("heading", { name: "周末红包", level: 1 }),
+    ).toBeVisible();
+    const tag = page.getByRole("button", { name: "未开放" });
+    await expect(tag).toHaveAccessibleDescription(
+      "还没开放，开放后才能领取；开放前红包作者还能改。",
+    );
+    const seal = page.getByRole("button", {
+      name: "还没开放，开放后才能领取",
+    });
+    await expect(seal).toHaveText("开");
+    await expect(seal).toHaveAttribute("aria-disabled", "true");
+    // Not the sender's: no 草稿预览, no tools.
+    await expect(page.locator("[data-hb-part=author]")).toHaveCount(0);
+    await page.getByRole("button", { name: "分享" }).click();
+    const share = page.getByRole("dialog", { name: "分享红包" });
+    await expect(
+      share.getByText("还没开放：拿到链接的人现在就能看到，开放后才能领取。"),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    // It opens: the next read (every 5 s for a draft) turns it.
+    state.activity = opened;
+    await expect(page.getByRole("button", { name: "未开放" })).toHaveCount(0, {
+      timeout: 8_000,
+    });
+    await expect(
+      page.getByRole("button", { name: /输入口令领取/ }),
+    ).toBeVisible();
+  });
+
   test("不存在的红包：未找到", async ({ page }) => {
     await mockSession(page, null);
     await page.route(`**/api/activities/${id}**`, (route) =>

@@ -212,8 +212,7 @@ export function CoverHead({
   // The big cover's name line and title keep clear of 分享 (and 附带网页
   // under it) over the cover's right edge, on both sides to stay centred:
   // a long name ran under 分享. The small cover's padding already does.
-  const clear =
-    small || activity.draft ? 0 : compact ? 4 : page.available ? 14 : 11;
+  const clear = small ? 0 : compact ? 4 : page.available ? 14 : 11;
   const author = activity.author.displayName;
   const note = activity.beforeInfo.trim();
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -412,6 +411,13 @@ export function CoverHead({
                 {tag.text}
               </CoverChip>
             ))}
+            {activity.draft && (
+              <CoverChip
+                hint={`还没开放，开放后才能${activity.mode === "timed_draw" ? "报名" : "领取"}；开放前红包作者还能改。`}
+              >
+                未开放
+              </CoverChip>
+            )}
             {ended && <CoverChip>已结束</CoverChip>}
             {drawing && <CoverChip>开奖中</CoverChip>}
             {activity.topic && (

@@ -118,6 +118,30 @@ describe("activity image", () => {
     ).toContain("限时开奖");
   });
 
+  it("draws a draft as 未开放 for everyone: the cover as it will be, the seal grey", () => {
+    const draft = {
+      status: "draft",
+      openedAt: null,
+      deadlineAt: null,
+    } as const;
+    for (const viewer of [
+      { kind: "public" },
+      { kind: "eligible", action: "claim" },
+    ] as const) {
+      const svg = image(viewer, draft);
+      expect(sealOf(svg)).toBe("未开放");
+      expect(svg).toContain("还没开放");
+      expect(svg).toContain('fill="url(#pewter)"');
+      expect(svg).not.toContain('filter="url(#muted)"');
+    }
+    const lacquer = image(
+      { kind: "public" },
+      { ...draft, participationMode: "code" },
+    );
+    expect(sealOf(lacquer)).toBe("未开放");
+    expect(lacquer).toContain('fill="url(#steel)"');
+  });
+
   it("opens for the viewer who took part, with the payment and when", () => {
     const claimed = image({
       kind: "claimed",

@@ -84,7 +84,8 @@ export function AuthorTools({
           icon={Eye}
           title={justSaved ? "草稿已保存" : "草稿预览"}
         >
-          还没开放：拿到链接的人能看到这一页，开放后才能领取。
+          还没开放：拿到链接的人能看到这一页，开放后才能
+          {activity.mode === "timed_draw" ? "报名" : "领取"}。
         </Callout>
       )}
       {activity.pageOnly && !code && !draft && !ended && (

@@ -12,7 +12,7 @@ import {
   renderActivityImage,
   renderUnavailableActivityImage,
 } from "@hb/contracts";
-import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
@@ -163,7 +163,8 @@ async function renderImage(
         ? urlTimeZone
         : DEFAULT_ACTIVITY_IMAGE_TIME_ZONE);
     const activity = await readPublicActivity(context.env, id);
-    if (!activity || activity.row.openedAt === null)
+    // A draft too: 未开放 until it opens (05 §6).
+    if (!activity)
       return svgResponse(
         context,
         method,
@@ -258,7 +259,6 @@ async function readPublicActivity(env: ApiContext["Bindings"], id: string) {
         eq(activities.id, id),
         eq(activities.rewardType, "ldc"),
         isNull(activities.deletedAt),
-        isNotNull(activities.openedAt),
       ),
     )
     .get();
@@ -458,7 +458,7 @@ async function readPreferences(
   let available = false;
   if (visibleRecent) {
     const row = await c.env.DB.prepare(
-      "SELECT 1 FROM activities WHERE id=? AND reward_type='ldc' AND deleted_at IS NULL AND opened_at IS NOT NULL",
+      "SELECT 1 FROM activities WHERE id=? AND reward_type='ldc' AND deleted_at IS NULL",
     )
       .bind(visibleRecent.activityId)
       .first();

@@ -940,9 +940,10 @@ describe("deleted activity exclusion", () => {
   it("rejects replay and reads after draft deletion", async () => {
     const activity = await create(ldcConfig(), false);
     const input = { submissionId: crypto.randomUUID(), password: "claim123" };
+    // A draft answers 还没开放 to anyone with its link (05 §5).
     await expect(
       prepareClaimSubmission(bindings, activity.id, alice.id, input),
-    ).rejects.toMatchObject({ status: 404 });
+    ).resolves.toMatchObject({ outcome: "draft" });
     expect(
       (
         await request(`/api/me/activities/${activity.id}`, owner, "DELETE", {

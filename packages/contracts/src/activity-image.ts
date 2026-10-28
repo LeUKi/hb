@@ -93,6 +93,11 @@ export type ActivityImageInput = {
    * the page (.hb-code .hb-seal[data-state="disabled"]).
    */
   faded?: true;
+  /**
+   * A draft (05 §5, §6): the cover as it will be, the seal grey (pewter,
+   * or steel on the lacquer) with 未开放.
+   */
+  unopened?: true;
   body:
     | { kind: "line"; text: string }
     | {
@@ -290,6 +295,15 @@ export function activityImageInput(input: {
     line(paused ? "红包的代码连续出错，暂停领取" : remainingLine(activity));
   const open = { ...base, muted: false };
   const over = { ...base, muted: true, live: false };
+  // Not open yet, for anyone: it changes when it opens (05 §6).
+  if (activity.status === "draft")
+    return {
+      ...open,
+      seal: "未开放",
+      unopened: true,
+      body: line("还没开放"),
+      live: true,
+    };
   switch (viewer.kind) {
     case "claimed": {
       const status = viewer.paymentStatus ?? null;
@@ -689,7 +703,13 @@ export function renderActivityImage(input: ActivityImageInput) {
     : "";
   const seal =
     input.seal !== null
-      ? sealMarkup(input.seal, input.muted, face, "", faded)
+      ? sealMarkup(
+          input.seal,
+          input.muted || input.unopened === true,
+          face,
+          "",
+          faded,
+        )
       : input.body.kind === "opened"
         ? `${sealMarkup(input.body.opens, false, face, "pop motion")}
   <circle class="ring motion" cx="${SEAL.cx}" cy="${SEAL.cy}" r="${SEAL.r}" fill="none" stroke="${face.rim}" stroke-width="3"/>`

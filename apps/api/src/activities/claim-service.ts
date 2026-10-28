@@ -177,8 +177,8 @@ export async function admitClaim(
     return { row: previous };
   }
   const activity = await findActivity(env, activityId);
-  if (!activity || (activity.openedAt === null && activity.authorId !== userId))
-    activityNotFound();
+  // A draft answers 还没开放 to anyone with its link (05 §5), as to its sender.
+  if (!activity) activityNotFound();
   assertParticipationMode(activity, mode);
   const existingClaim = await findUserClaim(env, activityId, userId);
   if (existingClaim)

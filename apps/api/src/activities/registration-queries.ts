@@ -490,15 +490,11 @@ export async function accountHistorySummary(
 export async function listPublicRegistrations(
   env: ApiBindings,
   activityId: string,
-  viewerId?: string,
   cursorValue?: string,
 ): Promise<PublicRegistrationList> {
   const activity = await findActivity(env, activityId);
-  if (
-    !activity ||
-    (activity.openedAt === null && activity.authorId !== viewerId)
-  )
-    activityNotFound();
+  // A draft too (05 §5): its roster is empty.
+  if (!activity) activityNotFound();
   // The roster is always public (06 §2), oldest first (06 §3).
   let after: Cursor | undefined;
   if (cursorValue) {

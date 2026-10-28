@@ -136,8 +136,7 @@ function HongbaoPage({
       data-phase={phase}
       data-cover-pinned={opened || undefined}
     >
-      {/* A 草稿's link opens for nobody else, so there is nothing to share. */}
-      {!activity.draft && <PageActions />}
+      <PageActions />
       <LiveViewers activityId={activity.id} running={running} />
       <p className="sr-only" role="status">
         {hongbao.announcement}

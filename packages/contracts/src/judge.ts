@@ -204,7 +204,8 @@ export type JudgeNote = "floor" | "cap" | "last";
 export type PublicJudge = {
   protocol: number;
   prompt: string;
-  fingerprint: string;
+  /** Absent on a draft read by anyone but its sender: not fixed yet. */
+  fingerprint?: string;
   /** 联网 (§9): the addresses its code may ask; absent without network. */
   network?: string[];
   /** Published at opening (null on a draft). */

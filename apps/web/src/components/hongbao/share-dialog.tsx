@@ -321,6 +321,13 @@ function ShareForm({
           <X />
         </Button>
       </header>
+      {/* A draft is shared too (05 §5): what the link shows until then. */}
+      {activity.draft && (
+        <p className="px-5 pb-3 text-sm text-ink-2">
+          还没开放：拿到链接的人现在就能看到，开放后才能
+          {activity.mode === "timed_draw" ? "报名" : "领取"}。
+        </p>
+      )}
       <div
         className={`view-scroll grid min-h-0 flex-1 content-start gap-5 overflow-y-auto overscroll-contain px-5 pb-4 ${
           compact

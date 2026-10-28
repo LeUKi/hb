@@ -424,12 +424,17 @@ describe("activity image APIs", () => {
     }
   });
 
-  it("excludes drafts and retired text activities without writing recent records", async () => {
+  it("draws a draft as 未开放 until it opens; excludes retired text activities without writing recent records", async () => {
     const draft = await saveActivity(directInput(), false);
     const draftImage = await request(imagePath(draft.id));
-    expect(draftImage.status).toBe(404);
-    expect(cookieValue(draftImage, "__Host-hb_image_recent")).toBeNull();
-    expect(await draftImage.text()).toContain("红包不存在，或链接已经失效");
+    expect(draftImage.status).toBe(200);
+    const unopened = await draftImage.text();
+    expect(unopened).toContain(">未开放</text>");
+    expect(unopened).toContain("还没开放");
+    await openActivity(bindings, draft.id, owner.id, draft.version);
+    expect(await (await request(imagePath(draft.id))).text()).not.toContain(
+      "未开放",
+    );
 
     const legacyId = crypto.randomUUID();
     const now = Date.now();

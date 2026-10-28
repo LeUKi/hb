@@ -25,6 +25,7 @@ import {
   normalizePageUrl,
   normalizeTopicLink,
   type PublicActivity,
+  type PublicJudge,
   type PublicQuantity,
   readClaimScope,
   sameLdcMoney,
@@ -438,8 +439,9 @@ export async function getPublicActivity(
   viewerId?: string,
 ): Promise<PublicActivity> {
   const row = await findActivity(env, id);
-  if (!row || (row.openedAt === null && row.authorId !== viewerId))
-    activityNotFound();
+  // A draft too, for whoever has its link (05 §5): 未开放.
+  if (!row) activityNotFound();
+  const sender = row.authorId === viewerId;
   const [drawProof, scope, judge] = await Promise.all([
     publicDrawProof(env, row),
     publicScopeWithPeople(env, configuration(row).scope),
@@ -451,12 +453,25 @@ export async function getPublicActivity(
       projectPublicActivity(row, await author(env, row.authorId)),
     )),
     ...(drawProof ? { drawProof } : {}),
-    ...(judge ? { judge } : {}),
+    ...(judge ? { judge: sender ? judge : publicJudgeOf(row, judge) } : {}),
     ...(scope ? { scope } : {}),
-    ...(row.openedAt === null
-      ? { openingBlockedReason: await openingBlockedReason(env, row) }
-      : { rosterPreview: await rosterPreview(env, row) }),
+    // Why it cannot open yet is its sender's.
+    ...(row.openedAt !== null
+      ? { rosterPreview: await rosterPreview(env, row) }
+      : sender
+        ? { openingBlockedReason: await openingBlockedReason(env, row) }
+        : {}),
   };
+}
+
+/**
+ * A draft's code to anyone but its sender: no fingerprint or 联网 yet, as
+ * the code may still change; both are public from its opening (§6, §9.5).
+ */
+function publicJudgeOf(row: ActivityRow, judge: PublicJudge): PublicJudge {
+  if (row.openedAt !== null) return judge;
+  const { fingerprint: _fingerprint, network: _network, ...rest } = judge;
+  return rest;
 }
 
 export function projectPublicActivity(

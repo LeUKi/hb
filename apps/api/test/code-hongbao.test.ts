@@ -82,9 +82,17 @@ describe("代码判定红包: sending one", () => {
       .bind(saved.id)
       .first<string>("config");
     expect(config).not.toContain("flag{ok}");
-    expect(
-      JSON.stringify(await getPublicActivity(bindings, saved.id, author.id)),
-    ).not.toContain("flag{ok}");
+    const own = await getPublicActivity(bindings, saved.id, author.id);
+    expect(JSON.stringify(own)).not.toContain("flag{ok}");
+    expect(own.judge?.fingerprint).toBe(await sha256Hex(JUDGE));
+    // Anyone with its link (05 §5): the prompt, but no fingerprint while
+    // the code may still change, nor why it cannot open yet.
+    const shown = await getPublicActivity(bindings, saved.id);
+    expect(shown.status).toBe("draft");
+    expect(shown.judge?.prompt).toBe("输入 flag");
+    expect(shown.judge).not.toHaveProperty("fingerprint");
+    expect(shown).not.toHaveProperty("openingBlockedReason");
+    expect(JSON.stringify(shown)).not.toContain("flag{ok}");
 
     // A draft may change its code, or stop being 代码判定.
     const changed = await updateActivity(bindings, saved.id, author.id, {

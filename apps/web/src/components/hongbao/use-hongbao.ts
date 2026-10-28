@@ -184,9 +184,10 @@ export function useHongbao(data: HongbaoData) {
   const gate = user ? null : "login";
   // The sender sees their own 红包 as it is, and may take part too (自领,
   // asked first: docs/self-claim-design.md); a draft is a preview, nobody
-  // can yet.
+  // can yet. Anyone else with its link sees it 未开放: its 开 there, faded.
   const author = data.author;
   const draft = activity.draft;
+  const preview = draft && author;
   const seal = sealGlyphs;
   // 开奖中 is the draw's last step, not its end: the cover stays red and
   // its seal turns until the result comes (开奖证明, 05 §7).
@@ -195,7 +196,7 @@ export function useHongbao(data: HongbaoData) {
     ? seal.drawing
     : phase === "ended"
       ? seal.ended
-      : draft
+      : preview
         ? seal.draft
         : isDraw
           ? seal.draw
@@ -235,7 +236,9 @@ export function useHongbao(data: HongbaoData) {
     phase === "ended"
       ? (drawStep?.hint ?? endHint(view))
       : draft
-        ? `草稿预览，开放后才能${verb}`
+        ? preview
+          ? `草稿预览，开放后才能${verb}`
+          : `还没开放，开放后才能${verb}`
         : paused
           ? "红包的代码连续出错，暂停领取"
           : spinning

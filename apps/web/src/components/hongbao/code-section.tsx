@@ -200,12 +200,14 @@ function CodeBody({
             </p>
           )}
         </div>
-        <Fact
-          label="代码指纹"
-          value={judge.fingerprint}
-          note="开放时记下的 SHA-256。结束后公开代码，谁都能核对它没有换过。"
-          matched={checks?.code ? "和开放时一致" : undefined}
-        />
+        {judge.fingerprint && (
+          <Fact
+            label="代码指纹"
+            value={judge.fingerprint}
+            note="开放时记下的 SHA-256。结束后公开代码，谁都能核对它没有换过。"
+            matched={checks?.code ? "和开放时一致" : undefined}
+          />
+        )}
         {judge.seedCommitment && (
           <Fact
             label={judge.seed ? "随机种子" : "随机种子的封存值"}

@@ -284,17 +284,15 @@ export const activityRoutes = new Hono<ApiContext>()
       ),
     );
   })
-  .get("/activities/:id/registrations", cursorQuery, async (c) => {
-    const session = await getOptionalSession(c);
-    return c.json(
+  .get("/activities/:id/registrations", cursorQuery, async (c) =>
+    c.json(
       await listPublicRegistrations(
         c.env,
         c.req.param("id"),
-        session?.user.id,
         c.req.valid("query").cursor,
       ),
-    );
-  })
+    ),
+  )
   .get("/me/activities/:id/registrations", cursorQuery, async (c) => {
     const session = await requireAuth(c);
     return c.json(
@@ -310,11 +308,8 @@ export const activityRoutes = new Hono<ApiContext>()
     const session = await requireAuth(c);
     const id = c.req.param("id");
     const activity = await findActivity(c.env, id);
-    if (
-      !activity ||
-      (activity.openedAt === null && activity.authorId !== session.user.id)
-    )
-      activityNotFound();
+    // A draft too (05 §5): nobody has taken part in it yet.
+    if (!activity) activityNotFound();
     const object = activityObject(c.env, id);
     await object.fetch(
       `https://activity.internal/internal/activities/${id}/refresh`,
@@ -328,11 +323,8 @@ export const activityRoutes = new Hono<ApiContext>()
     const session = await requireAuth(c);
     const id = c.req.param("id");
     const activity = await findActivity(c.env, id);
-    if (
-      !activity ||
-      (activity.openedAt === null && activity.authorId !== session.user.id)
-    )
-      activityNotFound();
+    // A draft too (05 §5): nobody has taken part in it yet.
+    if (!activity) activityNotFound();
 
     if (activity.drawState && c.req.valid("query").refresh) {
       const object = activityObject(c.env, id);
@@ -585,17 +577,15 @@ export const activityRoutes = new Hono<ApiContext>()
       ),
     );
   })
-  .get("/activities/:id/recipients", cursorQuery, async (c) => {
-    const session = await getOptionalSession(c);
-    return c.json(
+  .get("/activities/:id/recipients", cursorQuery, async (c) =>
+    c.json(
       await listPublicRecipients(
         c.env,
         c.req.param("id"),
-        session?.user.id,
         c.req.valid("query").cursor,
       ),
-    );
-  })
+    ),
+  )
   .post(
     "/me/activities/:id/end",
     bodySizeLimit,

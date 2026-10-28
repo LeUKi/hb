@@ -287,10 +287,13 @@ describe("LDC claiming and private history", () => {
       (await request(`/api/activities/${draft.id}/participation`, owner))
         .status,
     ).toBe(200);
-    expect(
-      (await request(`/api/activities/${draft.id}/participation`, alice))
-        .status,
-    ).toBe(404);
+    // Anyone with its link reads it (05 §5): nobody has taken part yet.
+    const others = await request(
+      `/api/activities/${draft.id}/participation`,
+      alice,
+    );
+    expect(others.status).toBe(200);
+    expect(await others.json()).toMatchObject({ claim: null });
   });
 
   it("allocates sequentially and retains one immutable reward per account", async () => {
@@ -436,7 +439,11 @@ describe("LDC claiming and private history", () => {
       result: "draft",
       passwordMatched: null,
     });
-    expect((await submit(draft.id, alice)).status).toBe(404);
+    // Nor to anyone with its link (05 §5).
+    expect(await claim(draft.id, alice)).toEqual({
+      result: "draft",
+      passwordMatched: null,
+    });
     expect(await stats(activity.id)).toMatchObject({
       claims: 0,
       attempts: 0,

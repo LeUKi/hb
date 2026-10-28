@@ -755,12 +755,28 @@ describe("LDC activity management", () => {
     expect((await request("/api/me/activities")).status).toBe(401);
   });
 
-  it("never discloses drafts or management records to another account or anonymous user", async () => {
+  it("shows a draft to whoever has its link as 未开放, never its management records", async () => {
     const activity = await create();
-    expect((await request(`/api/activities/${activity.id}`)).status).toBe(404);
+    // Its page, for a guest and for another account (05 §5): no reason it
+    // cannot open yet, no roster.
+    for (const viewer of [undefined, other]) {
+      const read = await request(`/api/activities/${activity.id}`, viewer);
+      expect(read.status).toBe(200);
+      const shown = ((await read.json()) as { activity: PublicActivity })
+        .activity;
+      expect(shown.status).toBe("draft");
+      expect(shown).not.toHaveProperty("openingBlockedReason");
+      expect(shown).not.toHaveProperty("rosterPreview");
+      for (const secret of ["口令ABC123", "only-after-claim", "only-after-end"])
+        expect(JSON.stringify(shown)).not.toContain(secret);
+    }
     expect(
-      (await request(`/api/activities/${activity.id}`, other)).status,
-    ).toBe(404);
+      (
+        (await (
+          await request(`/api/activities/${activity.id}/recipients`, other)
+        ).json()) as { items: unknown[] }
+      ).items,
+    ).toEqual([]);
     expect(
       (await request(`/api/me/activities/${activity.id}`, other)).status,
     ).toBe(404);
