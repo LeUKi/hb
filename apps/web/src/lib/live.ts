@@ -12,9 +12,13 @@ import {
   type PublicActivityDetail,
 } from "./activities";
 import {
+  ANNOUNCEMENTS_KEPT,
   liveActivityAtom,
+  liveAnnouncementsAtom,
   liveJudgedAtom,
+  liveViewAtom,
   liveViewersAtom,
+  mergeAnnouncements,
   participationOpen,
   paymentOpen,
 } from "./live-state";
@@ -112,6 +116,8 @@ export function useActivityLive(
   const setLive = useSetAtom(liveActivityAtom);
   const setViewers = useSetAtom(liveViewersAtom);
   const setJudged = useSetAtom(liveJudgedAtom);
+  const setView = useSetAtom(liveViewAtom);
+  const setAnnounced = useSetAtom(liveAnnouncementsAtom);
   const wantNow = useRef(want);
   wantNow.current = want;
   const on = want !== null;
@@ -203,6 +209,24 @@ export function useActivityLive(
           setJudged({ id, count: message.count });
           return;
         }
+        if (message?.type === "view") {
+          setView({ id, view: message.view });
+          return;
+        }
+        if (message?.type === "announce") {
+          setAnnounced((current) => ({
+            id,
+            total: Math.max(
+              message.total,
+              current?.id === id ? current.total : 0,
+            ),
+            items: mergeAnnouncements(
+              current?.id === id ? current.items : [],
+              message.items,
+            ).slice(0, ANNOUNCEMENTS_KEPT),
+          }));
+          return;
+        }
         if (message?.type !== "activity" || !message.activity) return;
         // A poll already on its way could land after this, with older data.
         void client.cancelQueries({ queryKey: key, exact: true }).then(() =>
@@ -273,7 +297,20 @@ export function useActivityLive(
       settle();
       // Kept across a dropped line: a pushed count is never above the truth,
       // and the read alone may be older (a turn-down pushes nothing else).
+      // So are the view and 动态 pushed with it.
       setJudged((current) => (current?.id === id ? null : current));
+      setView((current) => (current?.id === id ? null : current));
+      setAnnounced((current) => (current?.id === id ? null : current));
     };
-  }, [id, userId, on, client, setLive, setViewers, setJudged]);
+  }, [
+    id,
+    userId,
+    on,
+    client,
+    setLive,
+    setViewers,
+    setJudged,
+    setView,
+    setAnnounced,
+  ]);
 }

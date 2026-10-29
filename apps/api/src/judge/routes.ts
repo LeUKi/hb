@@ -29,6 +29,7 @@ import {
 import { listJudgeActivities } from "../discovery/service";
 import type { ApiContext } from "../env";
 import { activityObject } from "../runtime/objects";
+import { listAnnouncements } from "./announcements";
 import { listChallengers, readChallengerCursor } from "./challengers";
 import {
   changeFeature,
@@ -303,6 +304,29 @@ export const judgeRoutes = new Hono<ApiContext>()
         ),
       );
     },
+  )
+  // 动态 (protocol 4): every line, public, the latest first.
+  .get(
+    "/activities/:id/announcements",
+    validator("query", (value) => {
+      const cursor = value.cursor;
+      if (
+        cursor !== undefined &&
+        (typeof cursor !== "string" || !/^(0|[1-9]\d{0,8})$/.test(cursor))
+      )
+        throw new ActivityValidationError([
+          { path: "cursor", message: "分页位置无效" },
+        ]);
+      return { cursor: cursor === undefined ? null : Number(cursor) };
+    }),
+    async (c) =>
+      c.json(
+        await listAnnouncements(
+          c.env,
+          c.req.param("id"),
+          c.req.valid("query").cursor,
+        ),
+      ),
   )
   // 参与名单 · 挑战: everyone judged, public, the latest first.
   .get(

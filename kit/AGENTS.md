@@ -1,6 +1,6 @@
 # 代码判定红包 · 写代码的说明
 
-这个目录是“代码判定红包”（lafish的红包站）的本地开发包。红包作者写一个 `judge.js`：每次有人在红包页提交一行输入，平台调用它一次，按它的返回决定发不发、发多少。你要帮他写的是 `judge.js` 和它的测试 `tests.json`，需要时再改 `simulate.json`。下面是代码协议第三版（第二版加上参数；第二版是第一版加上联网）的全部规则。
+这个目录是“代码判定红包”（lafish的红包站）的本地开发包。红包作者写一个 `judge.js`：每次有人在红包页提交一行输入，平台调用它一次，按它的返回决定发不发、发多少。你要帮他写的是 `judge.js` 和它的测试 `tests.json`，需要时再改 `simulate.json`。下面是代码协议第四版（第三版加上公开数据、动态和提前结束；第三版是第二版加上参数；第二版是第一版加上联网）的全部规则。
 
 ## 怎么干活
 
@@ -9,7 +9,7 @@
 3. 写完先跑 `npm test`，再跑 `npm run check`。两个都过了（最后一行分别是“测试 N / N 通过”和“可以去网站部署了”）才算写完，才让人把两个文件贴到网站。没过就按输出改代码或测试，不要删掉不过的测试来凑数。
 4. 改了玩法就同时改测试：每条规则至少一条测试，靠状态或先后顺序的玩法写多步场景（`steps`）。
 
-## 代码协议（第三版）
+## 代码协议（第四版）
 
 `judge.js` 是一个 ES 模块，导出 `judge(submission, tools)`，可以是 async。类型在 `judge.d.ts`；`judge.js` 里用 JSDoc 标上类型，编辑器就能检查：
 
@@ -40,13 +40,14 @@ export function judge(submission, tools) { … }
 ### 返回的判定
 
 ```js
-{ ok, amount, message, state }
+{ ok, amount, message, state, view, announce, end }
 ```
 
 - `ok`：发还是不发，必填，`true` 或 `false`
 - `amount`：`ok` 为 `true` 时必填，整数分
 - `message`：给提交的人的一句话，发不发都用；纯文字，最多 100 个字，换行和连续空白会合成一个空格
-- `state`：写了就整个换掉（发不发都存），不写就不变；要能转成 JSON，最大 16 KB，最多嵌套 100 层
+- `state`：写了就整个换掉（发不发都存），不写就不变；要能转成 JSON，最大 16 KB，最多嵌套 100 层；只有代码看得到
+- `view`、`announce`、`end`：公开数据、一条动态、结束红包，见下面的“公开数据和动态”
 
 不认识的字段会被忽略，但测试里算不通过，免得拼错了没发现。
 
@@ -138,6 +139,43 @@ export async function judge(submission) {
 - `export const meta = { name, description }`（可选）：判定器的名字（最多 20 个字）和一句说明（最多 60 个字），贴代码时自动填好，之后以网站上的为准。
 - 这几个导出写得不对，`npm test` 不跑，`npm run check` 写“参数声明写得不对”和哪里不对。
 
+### 公开数据和动态（可选）
+
+让所有人看到红包现在是什么样，比如安全区间、刮开了哪些格子、谁猜了什么。秘密照旧放在 `state` 里，只有代码看得到。
+
+- `view`：公开数据 `{ summary, data }`，所有人都看得到，游客也是。`summary` 是一句话，最多 200 个字，网站显示在红包页的“红包状态”里；`data` 是任意 JSON，最大 16 KB、最多嵌套 100 层，给附带网页用。写了就整个换掉，不写不变，`null` 是清空。放进 `view` 的就是公开的：保密参数的值出现在里面，`npm run check` 会提醒。
+- `announce`：一条动态，纯文字，最多 100 个字，每次判定最多一条。显示在红包页的“动态”里，最新的在上面；网站在前面写上判定的人的头像和昵称，代码冒充不了别人。
+- `end`：`true` 就在这次判定后结束红包：这次照常结算（领到的先发），然后结束，没发出的照提前结束退回。红包页写“判定器结束了这个红包”。出错、超时的判定不算。
+- `export function setup(params, hongbao)`（可选）：开放时跑一次，返回 `{ state, view }`，是最开始的 state 和公开数据；不写就是 state 为 `null`、没有公开数据。`hongbao` 是 `{ title, total, count, minEach }`。里面的 `Math.random()` 来自开放时封存的种子，结束后 `npm run replay` 能核对；不能联网。出错红包就开放不了。
+
+```js
+// 数字炸弹：1–100 里藏一个炸弹，大家轮流猜，踩中的领一份，红包结束。
+export function setup() {
+  const bomb = 1 + Math.floor(Math.random() * 100);
+  return {
+    state: { bomb, low: 1, high: 100 },
+    view: { summary: "安全区间 1–100", data: { low: 1, high: 100 } },
+  };
+}
+
+export function judge({ input, state, user, share }) {
+  const guess = Number(input);
+  if (!Number.isInteger(guess) || guess < state.low || guess > state.high)
+    return { ok: false, message: `要猜 ${state.low}–${state.high} 的整数` };
+  if (guess === state.bomb)
+    return { ok: true, amount: share.max, announce: `@${user.username} 踩中了炸弹`, end: true };
+  const low = guess < state.bomb ? guess + 1 : state.low;
+  const high = guess > state.bomb ? guess - 1 : state.high;
+  return {
+    ok: false,
+    message: "安全",
+    state: { ...state, low, high },
+    view: { summary: `安全区间 ${low}–${high}`, data: { low, high } },
+    announce: `@${user.username} 猜了 ${guess}，安全`,
+  };
+}
+```
+
 ### 限制
 
 - 每次判定 CPU 最多 50 毫秒。本地不限 CPU，超过 1 秒算超时，超过 50 毫秒的标“慢”（线上可能超时）。
@@ -200,7 +238,7 @@ export async function judge(submission) {
 
 - 每一步 `{ "who", "input", "expect" }`，可选 `level`（默认 2）、`at`（默认上一步往后 1 分钟，第一步是 `now`；要按先后写）和 `fetch`（这一步的请求拿到的返回，见下）。
 - 同一个 `who` 是同一个人（`username` 就是它，`id` 按第一次出现的先后从 10001 编）。状态、已领记录、每人被判定过几次、剩余奖池都像线上一样一步步往下传，和 `npm run simulate`、`npm run replay` 同一套推进。
-- 已经领过的人、或者份已经领完了还要提交，这一步算不通过（线上根本不会交给代码）。
+- 已经领过的人、份已经领完了、或者前面有一步结束了红包还要提交，这一步算不通过（线上根本不会交给代码）。
 - `hongbao`、`claims`、`state`、`seed` 写在测试上，是第一步之前的样子。
 - 一步不通过，后面的步就不跑了。
 
@@ -230,6 +268,7 @@ export async function judge(submission) {
 - `amount`：实际发的（拉进范围以后）；`asked`：代码自己给的；`note`：拉进范围的原因，`"cap"`（按上限发）、`"floor"`（按每份至少发）、`"last"`（最后一份，发完剩下的），没拉写 `null`。`ok` 为 `false` 时这三项都不能写。
 - `message`（逐字比）或 `messageIncludes`（含这几个字），只能写一个。
 - `state`（这次判定以后的状态，整份比，键的顺序不算）或 `stateIncludes`（只比写了的键，数组整个比），只能写一个。
+- `view`（这次判定以后的公开数据，整份比，没有写 `null`）或 `viewIncludes`（只比写了的键），只能写一个；`announce`（这次的动态，逐字比，没有写 `""`）；`end`（这次有没有结束红包）。
 - 代码返回协议以外的字段也算不通过。
 
 测试不通过时，`npm test` 会写出 `实际：{ … }`，字段和 `expect` 一一对应，照着改。
@@ -253,14 +292,14 @@ export async function judge(submission) {
 }
 ```
 
-`hongbao` 和 `now`、`seed` 的写法同 `tests.json`，声明了参数的代码在顶层写 `params`；每次提交的写法同多步场景的一步（联网的代码写 `fetch`），只是没有 `expect`。和多步场景不同，已经领过的人、领完以后的提交不算错，照实写“已领过”“已领完”。
+`hongbao` 和 `now`、`seed` 的写法同 `tests.json`，声明了参数的代码在顶层写 `params`；每次提交的写法同多步场景的一步（联网的代码写 `fetch`），只是没有 `expect`。和多步场景不同，已经领过的人、领完以后、红包被判定器结束以后的提交不算错，照实写“已领过”“已领完”“已结束”。代码导出了 `setup` 时，先跑它，写“开放时 setup”。
 
 ## 四个命令
 
 - `npm test`：先按网站部署的规则查 import，不过就列出第几行什么问题、不跑测试；然后每条一行 `✓ 名字（3 毫秒）` 或 `✗ 名字：哪里不对`，`console` 的输出缩进跟在那一条下面；最后 `测试 N / M 通过`。`npm test -- 名字` 只跑名字里含这几个字的。
-- `npm run check`：网站部署时同样的几行（import 都在清单里、代码能加载、导出了 judge、联网的写出白名单、测试 N / M 通过），每条测试跑两遍，结果不一样的提醒用了真随机；再写文件大小和代码指纹（和网站上展开代码时显示的一致）；最后 `可以去网站部署了` 或 `还不能开放`。
-- `npm run simulate`：一行一次提交：第几次、谁、输入、结果、代码的回复；最后发出多少、领了几份。`npm run simulate -- --seed 别的` 换一个种子，`npm run simulate -- 别的.json` 换一个文件，`npm run simulate -- --live` 让请求真的从这台电脑发出去（照样只许白名单里的地址）。
-- `npm run replay -- judge-records-xxx.json`：用网站上下载的完整记录逐条重放，先核对指纹和种子；联网的红包用记录里的返回，先比请求再比判定。第一版开放的红包用第一版的运行时重放。
+- `npm run check`：网站部署时同样的几行（import 都在清单里、代码能加载、导出了 judge、联网的写出白名单、测试 N / M 通过），每条测试跑两遍，结果不一样的提醒用了真随机，公开数据里出现保密参数的值也提醒；再写文件大小和代码指纹（和网站上展开代码时显示的一致）；最后 `可以去网站部署了` 或 `还不能开放`。
+- `npm run simulate`：一行一次提交：第几次、谁、输入、结果、代码的回复；公开数据变了跟一行“公开：……”，有动态跟一行“动态：……”，结束了写“判定器结束了这个红包”；最后发出多少、领了几份。`npm run simulate -- --seed 别的` 换一个种子，`npm run simulate -- 别的.json` 换一个文件，`npm run simulate -- --live` 让请求真的从这台电脑发出去（照样只许白名单里的地址）。
+- `npm run replay -- judge-records-xxx.json`：用网站上下载的完整记录逐条重放，先核对指纹和种子，再核对开放时的 setup；联网的红包用记录里的返回，先比请求再比判定（第四版还比公开数据、动态和结束）。早先几版开放的红包用那一版的运行时重放。
 
 失败时退出码都不是 0。
 

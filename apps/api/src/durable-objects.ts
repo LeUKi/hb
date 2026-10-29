@@ -30,12 +30,14 @@ import {
   LIVE_PONG,
   LIVE_TAG,
   LIVE_USER_HEADER,
+  liveAnnounce,
   liveEnded,
   liveFingerprint,
   liveJudged,
   liveMessage,
   liveMine,
   liveUserTag,
+  liveView,
   liveViewers,
   liveWaiting,
   MAX_LIVE_PER_USER,
@@ -68,7 +70,7 @@ import {
   refreshGlobalResult,
 } from "./discovery/service";
 import type { ApiBindings } from "./env";
-import { judgedCount } from "./judge/public";
+import { judgedNews } from "./judge/announcements";
 import { type FetchRecord, NetworkSession } from "./judge/session";
 import { stopCodeActivity } from "./judge/stop";
 import { flushPaymentOutbox, runMerchantCycle } from "./payments/scheduler";
@@ -164,6 +166,9 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   private judgedTimer: ReturnType<typeof setTimeout> | null = null;
   private judgedPushedAt = 0;
   private judgedSent = -1;
+  /** With it (protocol 4): the view's time and 动态's count last sent. */
+  private viewSent: string | null = null;
+  private announcedSent = -1;
   /** The deadline alarm this instance already set (one write per deadline). */
   private liveDeadline = 0;
 
@@ -414,7 +419,9 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   /**
    * 代码判定: its code judged again (paid or not). Everyone hears how many
    * times so far, at most once per LIVE_JUDGED_MS, and only when it moved;
-   * a turn-down changes nothing else public, so nothing else goes out.
+   * from protocol 4 also what everyone sees, when it changed, and the new
+   * lines in 动态 (docs/judge-page-design.md §2). A turn-down changes
+   * nothing else public, so nothing else goes out.
    */
   private announceJudged(id: string) {
     if (this.judgedTimer || this.ctx.getWebSockets(LIVE_TAG).length === 0)
@@ -423,18 +430,29 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     this.judgedTimer = setTimeout(() => {
       this.judgedTimer = null;
       this.judgedPushedAt = Date.now();
-      void judgedCount(this.env, id)
-        .then((count) => {
-          if (count === this.judgedSent) return;
-          this.judgedSent = count;
-          const message = liveJudged(count);
+      void judgedNews(this.env, id, this.announcedSent)
+        .then(({ count, view, total, items }) => {
+          const messages: string[] = [];
+          if (count !== this.judgedSent) {
+            this.judgedSent = count;
+            messages.push(liveJudged(count));
+          }
+          if (view && view.at !== this.viewSent) {
+            this.viewSent = view.at;
+            messages.push(liveView(view));
+          }
+          if (total !== undefined && items && total > this.announcedSent) {
+            this.announcedSent = total;
+            if (items.length > 0) messages.push(liveAnnounce(items, total));
+          }
           for (const socket of this.ctx.getWebSockets(LIVE_TAG)) {
             if (socket.readyState !== WebSocket.OPEN) continue;
-            try {
-              socket.send(message);
-            } catch {
-              // Already closing: nothing to tell it.
-            }
+            for (const message of messages)
+              try {
+                socket.send(message);
+              } catch {
+                // Already closing: nothing to tell it.
+              }
           }
         })
         .catch(() => {

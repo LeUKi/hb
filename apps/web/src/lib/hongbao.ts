@@ -115,7 +115,9 @@ export type EndReason =
   | "settling"
   | "closed"
   /** 代码判定红包 stopped by the 站长 (07 §10). */
-  | "stopped";
+  | "stopped"
+  /** 代码判定红包 its code ended (docs/judge-page-design.md §11.3). */
+  | "judge";
 
 export const endLabels: Record<EndReason, string> = {
   sold_out: "已领完",
@@ -125,6 +127,7 @@ export const endLabels: Record<EndReason, string> = {
   settling: "开奖中",
   closed: "已提前结束",
   stopped: "已停用",
+  judge: "判定器结束",
 };
 
 export type FuzzyLevel = "plenty" | "limited" | "low" | "empty";
@@ -276,6 +279,7 @@ function endReasonOf(activity: PublicActivity, now: number): EndReason | null {
     return activity.status === "active" ? null : "drawn";
   }
   if (activity.stopped || activity.judge?.stopped) return "stopped";
+  if (activity.judge?.endedByCode) return "judge";
   if (soldOut(activity)) return "sold_out";
   const deadline = activity.deadlineAt ? Date.parse(activity.deadlineAt) : null;
   if (deadline !== null && deadline <= now) return "expired";
@@ -346,6 +350,7 @@ export function endHint(view: PublicView) {
     empty: "无人报名",
     closed: "红包已提前结束",
     stopped: "红包已被站长停用",
+    judge: "判定器结束了这个红包",
   }[view.endReason ?? "expired"];
 }
 

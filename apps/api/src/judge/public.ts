@@ -2,7 +2,12 @@
 // prompt, the code's fingerprint and the seed's 封存值 from opening; once it
 // is over, the code and the seed, written out once and checked against
 // both. A 判定器 made 一直公开 shows its code from opening on. Nobody's input and none of the code's state are ever here.
-import type { JudgeDeclarations, PublicJudge } from "@hb/contracts";
+// From protocol 4 what everyone sees and 动态 too (announcements.ts).
+import type {
+  JudgeAnnouncement,
+  JudgeDeclarations,
+  PublicJudge,
+} from "@hb/contracts";
 import { seedCommitment } from "../../../../kit/runtime/index.mjs";
 import { databaseNow } from "../activities/lifecycle";
 import { activityStatus } from "../activities/service";
@@ -10,6 +15,12 @@ import type { ActivityRow } from "../activities/storage";
 import { isAdministrator } from "../admin/authorization";
 import type { ApiBindings } from "../env";
 import { decryptString } from "../security/crypto";
+import {
+  ANNOUNCEMENTS_ON_PAGE,
+  announcementTotal,
+  latestAnnouncements,
+  viewOf,
+} from "./announcements";
 import { declarationsFor, revealedParams } from "./params";
 import {
   findJudgeRow,
@@ -154,11 +165,18 @@ export async function publicJudge(
     judge.paramsPublic !== null
       ? await declarationsFor(env, row.authorId, judge)
       : null;
-  const [out, judged, by] = await Promise.all([
+  // Protocol 4: 动态's count and latest lines (announcements.ts).
+  const lines = judge.protocol >= 4 && row.openedAt !== null;
+  const [out, judged, by, total, latest] = await Promise.all([
     revealed(env, row, judge, declarations),
     judgedCount(env, row.id),
     judgeOf(env, judge),
+    lines ? announcementTotal(env, row.id) : 0,
+    lines
+      ? latestAnnouncements(env, row.id, ANNOUNCEMENTS_ON_PAGE)
+      : ([] as JudgeAnnouncement[]),
   ]);
+  const view = row.openedAt !== null ? viewOf(judge) : undefined;
   // 一直公开 (§2): the code from opening on; the seed still waits.
   const code =
     out?.code ??
@@ -209,5 +227,8 @@ export async function publicJudge(
           },
         }
       : {}),
+    ...(view ? { view } : {}),
+    ...(total > 0 ? { announcements: { total, latest } } : {}),
+    ...(row.endReason === "judge" ? { endedByCode: true as const } : {}),
   };
 }

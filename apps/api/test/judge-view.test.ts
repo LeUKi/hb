@@ -1,12 +1,18 @@
 import { env } from "cloudflare:test";
-import type { ClaimResult, JudgeInput } from "@hb/contracts";
-import { beforeEach, describe, expect, it } from "vitest";
+import type {
+  ActivityLiveMessage,
+  ClaimResult,
+  JudgeAnnouncementList,
+  JudgeInput,
+} from "@hb/contracts";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { claimActivity } from "../src/activities/claim-service";
 import {
   createActivity,
   getPublicActivity,
   openActivity,
 } from "../src/activities/service";
+import { app } from "../src/app";
 import { judgeRecords } from "../src/judge/records";
 import { findJudgeRow } from "../src/judge/storage";
 import { sha256Hex } from "../src/security/crypto";
@@ -19,6 +25,7 @@ import {
   coded,
   give,
   judgeSettings,
+  origin,
   plus,
   settings,
   unique,
@@ -278,5 +285,115 @@ export function judge() { return { ok: false }; }
       viewSummary: null,
       viewAt: null,
     });
+  });
+
+  it("shows what everyone sees and 动态 on the public read, pages 动态, and pushes both with 已判定", async () => {
+    const opened = await open(unique(COUNTER));
+    const viewer = await actor();
+    const response = await app.request(
+      `${origin}/api/activities/${opened.id}/live`,
+      {
+        headers: {
+          Upgrade: "websocket",
+          Origin: origin,
+          Cookie: viewer.cookie,
+        },
+      },
+      bindings,
+    );
+    expect(response.status).toBe(101);
+    const socket = response.webSocket;
+    if (!socket) throw new Error("no WebSocket");
+    const heard: ActivityLiveMessage[] = [];
+    socket.addEventListener("message", (event) => {
+      const data = String(event.data);
+      if (data !== "pong") heard.push(JSON.parse(data));
+    });
+    socket.accept();
+    // On connecting: the read, setup()'s view on it, no 动态 yet.
+    await vi.waitFor(() =>
+      expect(heard[0]).toMatchObject({
+        type: "activity",
+        activity: {
+          judge: { view: { summary: "开局：3 份", data: { n: 0 } } },
+        },
+      }),
+    );
+    expect(
+      heard[0]?.type === "activity" && heard[0].activity.judge?.announcements,
+    ).toBeFalsy();
+
+    // Through the site, so the 红包's Durable Object judges it and pushes.
+    const first = await actor();
+    const claimed = await app.request(
+      `${origin}/api/activities/${opened.id}/claim`,
+      {
+        method: "POST",
+        headers: {
+          Origin: origin,
+          Cookie: first.cookie,
+          "X-CSRF-Token": first.csrf,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          submissionId: crypto.randomUUID(),
+          participationMode: "code",
+          input: "x",
+        }),
+      },
+      bindings,
+    );
+    expect(claimed.status).toBe(200);
+    await advanceAttemptCooldown(env.DB, first.id);
+    await vi.waitFor(
+      () => {
+        expect(heard).toContainEqual({ type: "judged", count: 1 });
+        expect(heard).toContainEqual({
+          type: "view",
+          view: expect.objectContaining({ summary: "第 1 次", data: { n: 1 } }),
+        });
+        expect(heard).toContainEqual({
+          type: "announce",
+          total: 1,
+          items: [
+            expect.objectContaining({
+              n: 0,
+              text: expect.stringMatching(/ 试了一次$/),
+              user: expect.objectContaining({
+                username: expect.stringMatching(/^code_/),
+              }),
+            }),
+          ],
+        });
+      },
+      { timeout: 3000 },
+    );
+    socket.close();
+
+    // The read, for guests too, and 动态 a page at a time.
+    // Under 20 a second (claims.ts PER_SECOND).
+    for (const _ of Array.from({ length: 22 })) {
+      expect((await submit(opened.id, first, "x")).result).toBe("rejected");
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    }
+    const read = await getPublicActivity(bindings, opened.id);
+    expect(read.judge?.view).toMatchObject({ summary: "第 23 次" });
+    expect(read.judge?.announcements?.total).toBe(23);
+    expect(read.judge?.announcements?.latest.map((line) => line.n)).toEqual([
+      22, 21, 20, 19, 18,
+    ]);
+    const page = async (cursor?: string) =>
+      app.request(
+        `${origin}/api/activities/${opened.id}/announcements${cursor === undefined ? "" : `?cursor=${cursor}`}`,
+        {},
+        bindings,
+      );
+    const one = (await (await page()).json()) as JudgeAnnouncementList;
+    expect(one.items).toHaveLength(20);
+    expect(one).toMatchObject({ total: 23, nextCursor: "3" });
+    const two = (await (await page("3")).json()) as JudgeAnnouncementList;
+    expect(two.items.map((line) => line.n)).toEqual([2, 1, 0]);
+    expect(two.nextCursor).toBeNull();
+    expect((await page("x")).status).toBe(400);
   });
 });

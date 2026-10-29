@@ -1,4 +1,8 @@
-import type { PublicActivity } from "@hb/contracts";
+import type {
+  JudgeAnnouncement,
+  JudgeView,
+  PublicActivity,
+} from "@hb/contracts";
 import { atom } from "jotai";
 import type { ParticipationCache } from "./participation-cache";
 
@@ -17,6 +21,31 @@ export const liveViewersAtom = atom<{ id: string; count: number } | null>(null);
  * a second. The public read says it too; the page shows the larger.
  */
 export const liveJudgedAtom = atom<{ id: string; count: number } | null>(null);
+
+/**
+ * 代码判定, protocol 4 (docs/judge-page-design.md §2), pushed with it: what
+ * everyone sees (the read's or this, whichever is later), and the lines
+ * added to 动态 since the page connected, newest first, the latest
+ * ANNOUNCEMENTS_KEPT of them.
+ */
+export const liveViewAtom = atom<{ id: string; view: JudgeView } | null>(null);
+export const liveAnnouncementsAtom = atom<{
+  id: string;
+  total: number;
+  items: JudgeAnnouncement[];
+} | null>(null);
+/** 动态 the page holds on to, however long it stays open (§2). */
+export const ANNOUNCEMENTS_KEPT = 100;
+
+/** Lines from a read and from pushes as one list: each once, newest first. */
+export function mergeAnnouncements(
+  ...lists: (readonly JudgeAnnouncement[] | undefined)[]
+) {
+  const byNumber = new Map<number, JudgeAnnouncement>();
+  for (const list of lists)
+    for (const item of list ?? []) byNumber.set(item.n, item);
+  return [...byNumber.values()].sort((a, b) => b.n - a.n);
+}
 
 /**
  * Nothing public about this 红包 will change anymore (api: live.ts

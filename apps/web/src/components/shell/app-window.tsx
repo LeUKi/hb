@@ -7,6 +7,7 @@ import { ease, useReducedMotionPref } from "../../lib/motion";
 import { windowDialogsAtom } from "../../lib/store";
 import { CodeDialog } from "../hongbao/code-section";
 import { HumanCheckDialog } from "../hongbao/human-check-dialog";
+import { AnnouncementsDialog } from "../hongbao/judge-board";
 import { MyJudgmentsDialog } from "../hongbao/my-judgments";
 import { NoteDialog } from "../hongbao/note-dialog";
 import { RosterDialog } from "../hongbao/roster-dialog";
@@ -192,6 +193,7 @@ export function AppWindow() {
           <RosterDialog />
           <NoteDialog />
           <MyJudgmentsDialog />
+          <AnnouncementsDialog />
           <CodeDialog />
           <ShareDialog />
           <HumanCheckDialog />

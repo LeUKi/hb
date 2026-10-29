@@ -1,4 +1,9 @@
-import type { ActivityLiveMessage, PublicActivity } from "@hb/contracts";
+import type {
+  ActivityLiveMessage,
+  JudgeAnnouncement,
+  JudgeView,
+  PublicActivity,
+} from "@hb/contracts";
 import type { ApiBindings } from "../env";
 import { activityObject } from "../runtime/objects";
 import type { ActivityRow } from "./storage";
@@ -7,7 +12,8 @@ import type { ActivityRow } from "./storage";
 // WebSockets, hibernating between changes. It pushes the public read after
 // each change, tells a person when only their own part moved (a payment),
 // and tells everyone how many people are watching (and, for 代码判定, how
-// many times its code has judged). Signed-in viewers only;
+// many times its code has judged, and from protocol 4 what everyone sees
+// and the new lines in 动态). Signed-in viewers only;
 // everyone else polls. The channel lasts while the 红包 runs, and after
 // that for whoever still waits on a payment.
 
@@ -61,6 +67,16 @@ export const liveViewers = (count: number) =>
 
 export const liveJudged = (count: number) =>
   JSON.stringify({ type: "judged", count } satisfies ActivityLiveMessage);
+
+export const liveView = (view: JudgeView) =>
+  JSON.stringify({ type: "view", view } satisfies ActivityLiveMessage);
+
+export const liveAnnounce = (items: JudgeAnnouncement[], total: number) =>
+  JSON.stringify({
+    type: "announce",
+    items,
+    total,
+  } satisfies ActivityLiveMessage);
 
 /** What a refresh may have moved: pushed only when something did. */
 export function liveFingerprint(row: ActivityRow | null | undefined) {

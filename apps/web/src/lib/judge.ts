@@ -1,6 +1,7 @@
 import type {
   CodeFailureList,
   DiscoveryList,
+  JudgeAnnouncementList,
   JudgeChallengerList,
   JudgeCheck,
   JudgeCheckInput,
@@ -477,6 +478,28 @@ export function useMyJudgments(userId: string, activityId: string) {
         throw new DOMException("身份已变化", "AbortError");
       return list;
     },
+    getNextPageParam: (last) => last.nextCursor,
+    retry: false,
+  });
+}
+
+/**
+ * 动态 (docs/judge-page-design.md §11.3): every line a 代码判定红包's code
+ * wrote, public, newest first, twenty a page; what is pushed meanwhile
+ * goes on top (live-state.ts).
+ */
+export function useAnnouncements(activityId: string, enabled: boolean) {
+  return useInfiniteQuery({
+    queryKey: ["activity-announcements", activityId] as const,
+    enabled,
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam, signal }) =>
+      readResponse<JudgeAnnouncementList>(
+        await fetch(
+          `/api/activities/${encodeURIComponent(activityId)}/announcements${pageParam ? `?cursor=${encodeURIComponent(pageParam)}` : ""}`,
+          { signal, cache: "no-store" },
+        ),
+      ),
     getNextPageParam: (last) => last.nextCursor,
     retry: false,
   });

@@ -11,6 +11,8 @@ import {
   emptyActivityInput,
   encodeActivityEmoji,
   JUDGE_PROTOCOL,
+  type JudgeAnnouncement,
+  type JudgeAnnouncementList,
   type JudgeChallenger,
   type JudgeChallengerList,
   type JudgeCheck,
@@ -142,6 +144,9 @@ type CodeState = {
   judgmentReads: (string | null)[];
   /** 参与名单 · 挑战: everyone judged, the latest first. */
   challengers: JudgeChallenger[];
+  /** 动态 (protocol 4): every line, newest first; the cursors read. */
+  announcements: JudgeAnnouncement[];
+  announcementReads: (string | null)[];
   reads: { public: number; participation: number };
 };
 
@@ -194,6 +199,8 @@ async function mockCodeHongbao(page: Page, judgments: MyJudgment[] = []) {
         claimed: true,
       },
     ],
+    announcements: [],
+    announcementReads: [],
     reads: { public: 0, participation: 0 },
   };
   await page.route(`**/api/activities/${id}**`, (route) => {
@@ -234,6 +241,20 @@ async function mockCodeHongbao(page: Page, judgments: MyJudgment[] = []) {
           nextCursor: null,
         } satisfies JudgeChallengerList,
       });
+    if (rest === "/announcements") {
+      const cursor = url.searchParams.get("cursor");
+      state.announcementReads.push(cursor);
+      const below = cursor === null ? Number.POSITIVE_INFINITY : Number(cursor);
+      const older = state.announcements.filter((item) => item.n < below);
+      const items = older.slice(0, 20);
+      return route.fulfill({
+        json: {
+          items,
+          total: state.announcements.length,
+          nextCursor: older.length > 20 ? String(items.at(-1)?.n ?? 0) : null,
+        } satisfies JudgeAnnouncementList,
+      });
+    }
     if (rest === "/judgments") {
       const cursor = url.searchParams.get("cursor");
       state.judgmentReads.push(cursor);
@@ -1287,6 +1308,135 @@ test.describe("代码判定红包", () => {
     await expect(mine.getByText("api.example.com · 200")).toBeVisible();
     await expect(mine.getByText('{"right":false,"say":"小了"}')).toBeVisible();
     await expect(mine.getByText("api.example.com · 超时")).toBeVisible();
+  });
+
+  test("公开数据和动态（judge-page §11.3）：印章那句话下面是红包状态和最近 5 条动态；推送来的换掉那句话、从上面滑进新动态；全部 N 条的弹窗滚到底再读，读完写已全部加载", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    const state = await mockCodeHongbao(page);
+    const line = (n: number, name: string, text: string) => ({
+      n,
+      at: new Date(Date.parse(openedAt) + n * 30_000).toISOString(),
+      text,
+      user: { username: name, displayName: name, avatarUrl: null },
+    });
+    state.announcements = Array.from({ length: 26 }, (_, index) =>
+      line(
+        25 - index,
+        `玩家${25 - index}`,
+        `@玩家${25 - index} 猜了 ${50 - index}，安全`,
+      ),
+    );
+    state.judge = {
+      ...state.judge,
+      protocol: JUDGE_PROTOCOL,
+      view: {
+        at: new Date(Date.parse(openedAt) + 60_000).toISOString(),
+        summary: "安全区间 23–67，还剩 3 颗炸弹",
+        data: { low: 23, high: 67 },
+      },
+      announcements: {
+        total: state.announcements.length,
+        latest: state.announcements.slice(0, 5),
+      },
+    };
+    const sockets = await mockLive(page);
+    await openApp(page, path);
+    const board = page.locator("[data-hb-part=judge-board]");
+    await expect(
+      board.getByRole("heading", { name: "红包状态" }),
+    ).toBeVisible();
+    await expect(
+      board.getByText("安全区间 23–67，还剩 3 颗炸弹"),
+    ).toBeVisible();
+    const rows = board.getByRole("listitem");
+    await expect(rows).toHaveCount(5);
+    await expect(rows.first()).toContainText("玩家25");
+    await expect(rows.first()).toContainText("@玩家25 猜了 50，安全");
+    // It sits right under the seal's line, before anything else on the page.
+    const hint = await page.locator("[data-hb-part=hint]").boundingBox();
+    const top = await board.boundingBox();
+    expect(top && hint && top.y > hint.y).toBe(true);
+
+    // Pushed with 已判定: the sentence changes, a new line slides in on top.
+    await expect.poll(() => sockets.length).toBe(1);
+    const before = { ...state.reads };
+    sockets[0]?.send(
+      JSON.stringify({
+        type: "view",
+        view: {
+          at: new Date().toISOString(),
+          summary: "安全区间 23–40，还剩 3 颗炸弹",
+        },
+      }),
+    );
+    sockets[0]?.send(
+      JSON.stringify({
+        type: "announce",
+        items: [line(26, "新来的", "@新来的 猜了 41，安全")],
+        total: 27,
+      }),
+    );
+    await expect(
+      board.getByText("安全区间 23–40，还剩 3 颗炸弹"),
+    ).toBeVisible();
+    await expect(rows.first()).toContainText("@新来的 猜了 41，安全");
+    await expect(rows).toHaveCount(5);
+    expect(state.reads).toEqual(before);
+
+    // 全部 27 条: the dialog, twenty at a time.
+    state.announcements.unshift(line(26, "新来的", "@新来的 猜了 41，安全"));
+    await board.getByRole("button", { name: "全部 27 条" }).click();
+    const dialog = page.getByRole("dialog", { name: "动态 · 27 条" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("listitem").first()).toContainText(
+      "@新来的 猜了 41，安全",
+    );
+    await expect(dialog.getByRole("listitem")).toHaveCount(20);
+    await dialog
+      .locator(".view-scroll")
+      .evaluate((element) => element.scrollTo({ top: element.scrollHeight }));
+    await expect(dialog.getByRole("listitem")).toHaveCount(27);
+    await expect(
+      dialog.getByText("已全部加载").and(page.locator(":not(.sr-only)")),
+    ).toBeVisible();
+    expect(state.announcementReads.filter((cursor) => cursor !== null)).toEqual(
+      ["7"],
+    );
+  });
+
+  test("判定器结束：状态写判定器结束，印章下面写判定器结束了这个红包，红包状态照样在", async ({
+    page,
+  }) => {
+    await mockSession(page, null);
+    const state = await mockCodeHongbao(page);
+    state.activity = { ...state.activity, status: "ended" };
+    state.judge = {
+      ...state.judge,
+      protocol: JUDGE_PROTOCOL,
+      endedByCode: true,
+      code: judgeCode,
+      seed,
+      view: { at: openedAt, summary: "炸弹在 42，被玩家1 踩中了" },
+    };
+    await openApp(page, path);
+    await expect(
+      page
+        .locator("[data-hb-part=stats]")
+        .getByText("判定器结束", { exact: true }),
+    ).toBeVisible();
+    await expect(seal(page)).toHaveAccessibleName("判定器结束了这个红包");
+    await expect(
+      page.locator("[data-hb-part=hint]").getByText("判定器结束了这个红包"),
+    ).toBeVisible();
+    await expect(page.locator("[data-hb-part=hero]")).toHaveClass(
+      /\bhb-ended\b/,
+    );
+    // Guests see what everyone sees; no 动态 yet, no such part.
+    const board = page.locator("[data-hb-part=judge-board]");
+    await expect(board.getByText("炸弹在 42，被玩家1 踩中了")).toBeVisible();
+    await expect(board.getByRole("heading", { name: "动态" })).toHaveCount(0);
   });
 
   test("站长停用：状态写已停用，印章下面写红包已被站长停用", async ({

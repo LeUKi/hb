@@ -27,6 +27,7 @@ export type Panel =
   | "note"
   | "settings"
   | "judgments"
+  | "announcements"
   | "code"
   | "share";
 

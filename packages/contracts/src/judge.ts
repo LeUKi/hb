@@ -4,6 +4,7 @@
 import { z } from "zod";
 import type {
   HongbaoRules,
+  Json,
   Meta,
   ParamDeclaration,
   ParamProblem,
@@ -543,6 +544,34 @@ export type PublicJudge = {
   params?: { param: ParamDeclaration; value: unknown }[];
   /** 保密参数 (§3): how many, their 封存值 from opening, the salt once over. */
   sealedParams?: { count: number; commitment: string; salt?: string };
+  /** Protocol 4: what everyone sees now, once its code wrote any. */
+  view?: JudgeView;
+  /** 动态 (protocol 4): how many lines in all, and the latest five. */
+  announcements?: { total: number; latest: JudgeAnnouncement[] };
+  /** Its code ended the 红包 (docs/judge-page-design.md §2 end). */
+  endedByCode?: true;
+};
+
+/**
+ * 公开数据 (docs/judge-page-design.md §2): what its code (or setup())
+ * last wrote for everyone, guests too, and when. Neither part when it was
+ * cleared. The later `at` is the newer: a read and a push each have one.
+ */
+export type JudgeView = { at: string; summary?: string; data?: Json };
+
+/** One line in 动态: numbered from 0, who was judged, when, what it says. */
+export type JudgeAnnouncement = {
+  n: number;
+  at: string;
+  text: string;
+  user: PublicUserProfile;
+};
+
+/** 动态 in full, newest first, twenty at a time. */
+export type JudgeAnnouncementList = {
+  items: JudgeAnnouncement[];
+  total: number;
+  nextCursor: string | null;
 };
 
 /**

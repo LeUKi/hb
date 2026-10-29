@@ -4,9 +4,10 @@ import { Page, PageHeader, PageSection, Panel } from "../page/page";
 import { Code } from "../ui/code";
 import { Block, Fields } from "./help-api-view";
 
-// /help/code: 代码判定红包's code protocol, third version, in words
-// (docs/programmable-hongbao-design.md §4–5; kit/judge.d.ts is the same in
-// types). Keep the three together when any of them changes.
+// /help/code: 代码判定红包's code protocol, fourth version, in words
+// (docs/programmable-hongbao-design.md §4–5, docs/judge-page-design.md §2;
+// kit/judge.d.ts is the same in types). Keep them together when any of
+// them changes.
 
 const MODULES = [
   "node:crypto",
@@ -28,7 +29,7 @@ const MODULES = [
  */
 const aiPrompt = (
   origin: string,
-) => `你要帮我写一个“代码判定红包”的判定代码 judge.js 和它的测试 tests.json（lafish的红包站，代码协议第三版）。
+) => `你要帮我写一个“代码判定红包”的判定代码 judge.js 和它的测试 tests.json（lafish的红包站，代码协议第四版）。
 
 资料（下面的规则是摘要，细节以这些为准）：
 - 本地开发包：${KIT_URL} ，用 npx degit LeUKi/hb/kit 我的红包 取到本地，里面有能跑通的模板、npm test 和 npm run check。
@@ -47,11 +48,15 @@ const aiPrompt = (
   - claims：已领到的，按先后，每条 { user: { id, username }, amount, input, at }
   - state：代码上次存的 JSON，最开始是 null
   - params：发红包的人填的参数，没声明参数时是 {}
-- 返回 { ok, amount, message, state }：
+- 返回 { ok, amount, message, state, view, announce, end }：
   - ok：发还是不发，必填
   - amount：ok 为 true 时必填，整数分。平台把它拉进 share 的范围：低于 min 按 min 发，高于 max 按 max 发；最后一份发完剩下的
   - message：给提交的人的一句话，发不发都用；纯文字，最多 100 个字，换行会合成空格
-  - state：写了就整个换掉（发不发都存），不写就不变；能转成 JSON，最大 16 KB，最多嵌套 100 层
+  - state：写了就整个换掉（发不发都存），不写就不变；能转成 JSON，最大 16 KB，最多嵌套 100 层；只有代码看得到
+  - view：公开数据，所有人都看得到（游客也是）。{ summary, data }：summary 是一句话，最多 200 个字，本站显示在红包页的“红包状态”里；data 是任意 JSON，最大 16 KB，给附带网页用。写了就整个换掉，不写不变，null 是清空。秘密放 state，别放 view
+  - announce：一条动态，纯文字，最多 100 个字，显示在红包页的“动态”里，本站在前面写上判定的人
+  - end：true 就在这次判定后结束红包：这次照常结算，没发出的照提前结束退回
+- 开放时的样子（可选）：导出 setup(params, hongbao)，开放时跑一次，返回 { state, view }，是最开始的 state 和公开数据；hongbao 是 { title, total, count, minEach }。里面的 Math.random() 来自开放时封存的种子，结束后能核对；出错红包就开放不了。
 - 每次判定可能在不同的沙箱里，不要靠全局变量记东西；要记的放进 state。
 - 能用：Web 标准（完整的 crypto、Intl、TextEncoder、URL、atob、btoa 等）。Node 模块只能在文件开头静态 import，必须带 node: 前缀：${MODULES.join("、")}。
 - 不能用：别的 Node 模块、npm 包、import 别的文件、动态 import()、require、caches。console 的输出线上丢弃。
@@ -73,7 +78,7 @@ tests.json 是一个对象 { "tests": [ … ] }，只是数据：
 - 只能写线上可能出现的情况：now 在开放和截止之间；已领的按先后、不早于开放、不晚于 now，每份不少于每份至少，剩下的够剩下每份都拿到每份至少，还有没领的份；同一个人只领一份，这个人不在里面；state 不超过 16 KB、嵌套不超过 100 层；总奖池够每份都拿到每份至少。不然这条测试不通过。
 - 联网的代码，测试里写 fetch：这次判定的请求拿到的返回，最多 3 个，每个 { url, method（默认 GET）, status（默认 200）, headers, json 或 text }，或者 { url, method, error: "timeout" | "unreachable" | "too-big" }。请求按方法和完整地址对上；有请求没写返回、写了没用上，这条测试都不通过。测试从不真的联网。
 - 要测靠状态往下传的玩法，不写 input，写 steps，几个人依次提交：每一步 { who, input, expect }，可选 level（默认 2）、at（默认上一步往后 1 分钟，第一步是 now）、fetch。同一个 who 是同一个人；状态、已领记录、每人被判定过几次、剩余奖池都像线上一样一步步往下传。已经领过的人、或者份领完了还提交，这一步不通过。
-- expect：ok 必填；其余写了才比：amount（拉进范围以后实际发的）、asked（代码自己给的）、note（拉进范围的原因 "cap"、"floor"、"last"，没拉写 null）、message（逐字）或 messageIncludes（含这几个字）、state（整份，键的顺序不算）或 stateIncludes（只比写了的键，数组整个比）。ok 为 false 时不写 amount、asked、note。代码返回协议以外的字段也算不通过。
+- expect：ok 必填；其余写了才比：amount（拉进范围以后实际发的）、asked（代码自己给的）、note（拉进范围的原因 "cap"、"floor"、"last"，没拉写 null）、message（逐字）或 messageIncludes（含这几个字）、state（整份，键的顺序不算）或 stateIncludes（只比写了的键，数组整个比）、view（这次以后的公开数据，整份，没有写 null）或 viewIncludes（只比写了的键）、announce（这次的动态，逐字，没有写 ""）、end（这次有没有结束红包）。ok 为 false 时不写 amount、asked、note。代码返回协议以外的字段也算不通过。多步测试里有一步结束了红包，后面的提交不通过。
 - 声明了参数的代码：tests.json 顶层写 params，是每条测试默认用的一份，测试自己也能写 params，没写的项用 default；每条测试的参数都要过声明的校验和 check。要覆盖几组不同的参数。
 - 所有测试加起来最多判定 ${JUDGE_LIMITS.tests} 次（多步的一步算一次）。
 
@@ -89,6 +94,32 @@ export function judge(submission, tools) {
   if (submission.claims.length < 3)
     return { ok: true, amount: 2000, message: "前三名！" };
   return { ok: true, amount: tools.money.even(), message: "答对了" };
+}`;
+
+const VIEW_EXAMPLE = `// 数字炸弹：1–100 里藏一个炸弹，大家轮流猜，踩中的领一份，红包结束。
+export function setup() {
+  const bomb = 1 + Math.floor(Math.random() * 100);
+  return {
+    state: { bomb, low: 1, high: 100 },
+    view: { summary: "安全区间 1–100", data: { low: 1, high: 100 } },
+  };
+}
+
+export function judge({ input, state, user, share }) {
+  const guess = Number(input);
+  if (!Number.isInteger(guess) || guess < state.low || guess > state.high)
+    return { ok: false, message: \`要猜 \${state.low}–\${state.high} 的整数\` };
+  if (guess === state.bomb)
+    return { ok: true, amount: share.max, announce: \`@\${user.username} 踩中了炸弹\`, end: true };
+  const low = guess < state.bomb ? guess + 1 : state.low;
+  const high = guess > state.bomb ? guess - 1 : state.high;
+  return {
+    ok: false,
+    message: "安全",
+    state: { ...state, low, high },
+    view: { summary: \`安全区间 \${low}–\${high}\`, data: { low, high } },
+    announce: \`@\${user.username} 猜了 \${guess}，安全\`,
+  };
 }`;
 
 const TESTS = `{
@@ -236,8 +267,24 @@ export function HelpCodeView() {
             },
             {
               name: "state",
-              note: `写了就整个换掉（发不发都存），不写就不变；最大 ${JUDGE_LIMITS.stateBytes / 1024} KB`,
+              note: `写了就整个换掉（发不发都存），不写就不变；最大 ${JUDGE_LIMITS.stateBytes / 1024} KB，只有代码看得到`,
             },
+            {
+              name: "view",
+              note: (
+                <>
+                  公开数据，所有人都看得到；见
+                  <a
+                    href="#public-view"
+                    className="text-accent-ink hover:underline"
+                  >
+                    公开数据和动态
+                  </a>
+                </>
+              ),
+            },
+            { name: "announce", note: "一条动态，同上" },
+            { name: "end", note: "true 就在这次判定后结束红包，同上" },
           ]}
         />
         <Block label="judge.js" code={EXAMPLE} />
@@ -421,6 +468,63 @@ export function judge(submission, tools) {
         />
       </PageSection>
       <PageSection
+        id="public-view"
+        title="公开数据和动态"
+        description="可选：让所有人看到红包现在是什么样，比如安全区间、刮开了哪些格子、谁猜了什么。秘密照旧放在 state 里，只有代码看得到。"
+      >
+        <Block label="judge.js" code={VIEW_EXAMPLE} />
+        <Fields
+          items={[
+            {
+              name: "view",
+              note: (
+                <>
+                  <Code>{"{ summary, data }"}</Code>：summary 是一句话，最多 200
+                  个字，本站显示在红包页红包皮下面的“红包状态”里；data 是任意
+                  JSON，最大 16 KB、最多嵌套 100
+                  层，给附带网页用。写了就整个换掉，不写不变，
+                  <Code>null</Code> 是清空。所有人都看得到，游客也是：放进 view
+                  的就是公开的
+                </>
+              ),
+            },
+            {
+              name: "announce",
+              note: "一条动态，纯文字，最多 100 个字，每次判定最多一条。红包页的“动态”里最新的在上面，本站在前面写上判定的人的头像和昵称，代码冒充不了别人",
+            },
+            {
+              name: "end",
+              note: "true 就在这次判定后结束红包：这次照常结算，然后结束，没发出的照提前结束退回。红包页写“判定器结束了这个红包”。出错、超时的判定不算",
+            },
+            {
+              name: "setup(params, hongbao)",
+              note: (
+                <>
+                  可选：开放时跑一次，返回 <Code>{"{ state, view }"}</Code>
+                  ，是最开始的 state 和公开数据；不写就是 state 为
+                  null、没有公开数据。hongbao 是{" "}
+                  <Code>{"{ title, total, count, minEach }"}</Code>。里面的{" "}
+                  <Code>Math.random()</Code>{" "}
+                  来自开放时封存的种子，结束后能核对；不能联网。出错红包就开放不了，草稿留着
+                </>
+              ),
+            },
+            {
+              name: "测试",
+              note: (
+                <>
+                  expect 里写 <Code>view</Code> 或 <Code>viewIncludes</Code>、
+                  <Code>announce</Code>、<Code>end</Code>。
+                  <Code>npm run simulate</Code> 先跑
+                  setup，每一步打出公开数据和动态；
+                  <Code>npm run check</Code> 在公开数据里出现保密参数的值时提醒
+                </>
+              ),
+            },
+          ]}
+        />
+      </PageSection>
+      <PageSection
         title="随机数"
         description="本站开放时生成一个秘密种子，只公布它的封存值，结束后公开种子。同一个种子、同一个人、同一个第几次，本地和线上取出来的数一模一样。"
       >
@@ -581,7 +685,11 @@ export function judge(submission, tools) {
                   （逐字）或 <Code>messageIncludes</Code>（含这几个字）、
                   <Code>state</Code>（整份，键的顺序不算）或{" "}
                   <Code>stateIncludes</Code>
-                  （只比写了的键，数组整个比）。没发就不写金额几项；代码返回协议以外的字段也算不通过；不一样的地方一起列出来
+                  （只比写了的键，数组整个比）、<Code>view</Code>
+                  （这次以后的公开数据，没有写 null）或{" "}
+                  <Code>viewIncludes</Code>、<Code>announce</Code>
+                  （这次的动态，没有写 ""）、<Code>end</Code>
+                  。没发就不写金额几项；代码返回协议以外的字段也算不通过；不一样的地方一起列出来
                 </>
               ),
             },

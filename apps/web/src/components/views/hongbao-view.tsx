@@ -8,6 +8,7 @@ import { CodeEntry } from "../hongbao/code-section";
 import { InfoNote } from "../hongbao/details";
 import { HongbaoHero, hongbaoSizes, sizeVars } from "../hongbao/hero";
 import { HongbaoSkeleton } from "../hongbao/hongbao-skeleton";
+import { JudgeBoard } from "../hongbao/judge-board";
 import { LiveViewers } from "../hongbao/live-viewers";
 import { MyJudgments } from "../hongbao/my-judgments";
 import { PageActions } from "../hongbao/page-actions";
@@ -147,6 +148,10 @@ function HongbaoPage({
         data-morph-children="move"
       >
         <RefreshNotice />
+        {/* 红包状态 and 动态, under the seal's line (judge-page §11.3). */}
+        {activity.judge && !activity.draft && (
+          <JudgeBoard activity={activity} />
+        )}
         {hongbao.author && (
           <AuthorTools activity={activity} ended={view.ended} />
         )}

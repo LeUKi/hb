@@ -1,8 +1,10 @@
 import { z } from "zod";
 import { claimScopeSchema, type PublicClaimScope } from "./claim-scope";
 import {
+  type JudgeAnnouncement,
   type JudgeNote,
   type JudgeSource,
+  type JudgeView,
   judgeAnswerSchema,
   judgeInputSchema,
   type PublicJudge,
@@ -927,7 +929,14 @@ export type ActivityLiveMessage =
   | { type: "mine" }
   | { type: "viewers"; count: number }
   /** 代码判定: how many verdicts its code has given (PublicJudge.judged). */
-  | { type: "judged"; count: number };
+  | { type: "judged"; count: number }
+  /** 代码判定, protocol 4: what everyone sees changed (PublicJudge.view). */
+  | { type: "view"; view: JudgeView }
+  /**
+   * 代码判定, protocol 4: lines added to 动态 (newest first, at most twenty)
+   * and how many in all (PublicJudge.announcements).
+   */
+  | { type: "announce"; items: JudgeAnnouncement[]; total: number };
 
 export type ActivityList = {
   items: ActivitySummary[];
