@@ -413,6 +413,11 @@ export type SquareJudge = {
   bySiteOwner: boolean;
   /** The version others use goes online (§7). */
   network: boolean;
+  /**
+   * The 附带网页 the version others use carries (meta.page, docs/judge-
+   * page-design.md §4): absent when none, or while its switch is off.
+   */
+  page?: string;
   stats: JudgeStats;
 };
 

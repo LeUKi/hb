@@ -7,6 +7,7 @@ export {
   META_LIMITS,
   PARAM_LIMITS,
   PARAM_TYPES,
+  pageProblem,
   paramLine,
   paramsCommitment,
   paramValues,

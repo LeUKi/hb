@@ -1,4 +1,8 @@
-import type { JudgeParamProblem, ManagedActivity } from "@hb/contracts";
+import {
+  type JudgeParamProblem,
+  type ManagedActivity,
+  normalizePageUrl,
+} from "@hb/contracts";
 import { useLocation, useRouter } from "@tanstack/react-router";
 import { AlertTriangle, CalendarX2, ChevronRight, Trash2 } from "lucide-react";
 import {
@@ -216,6 +220,29 @@ export function HongbaoForm({
           (version) => version.n === judge.version?.n,
         )?.declarations ?? null)
     : null;
+  // 判定器带的附带网页 (judge-page §4, §11.9), with the switch on: filled
+  // in when a 判定器 (or another version) is picked, and followed while
+  // left as it came; a draft read back keeps what it was saved with.
+  // Undefined: the version's declarations are not known yet.
+  const pagesOn = funding?.page === true || funding?.pageEnabled === true;
+  const carried = !coded
+    ? null
+    : declarations
+      ? normalizePageUrl(declarations.meta?.page ?? "")
+      : undefined;
+  const pageCarried = pagesOn && carried ? carried : null;
+  const followed = useRef({ known: !activity, page: null as string | null });
+  useEffect(() => {
+    if (carried === undefined || !pagesOn) return;
+    const before = followed.current;
+    followed.current = { known: true, page: carried };
+    if (!before.known || before.page === carried || fixed) return;
+    update((current) =>
+      current.page === (before.page ?? "")
+        ? { ...current, page: carried ?? "" }
+        : current,
+    );
+  });
   // check()'s word on these very params and numbers, once asked.
   const paramsCheck = useParamsCheck();
   const [checkedParams, setCheckedParams] = useState<{
@@ -918,6 +945,7 @@ export function HongbaoForm({
           merchantId={activity?.config.merchantId}
           listedLocked={listedLocked}
           pageOffered={funding?.page === true}
+          pageCarried={pageCarried}
           pageStopped={activity?.pageStopped === true}
           humanCheckSuggested={declarations?.hongbao?.humanCheck === true}
           covered={scheduleOpen}

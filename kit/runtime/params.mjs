@@ -42,7 +42,11 @@ export const PARAM_LIMITS = Object.freeze({
   checkMessageCharacters: 100,
 });
 
-export const META_LIMITS = Object.freeze({ name: 20, description: 60 });
+export const META_LIMITS = Object.freeze({
+  name: 20,
+  description: 60,
+  page: 500,
+});
 
 /** The 红包's own limits, which `hongbao` can only narrow. */
 export const HONGBAO_LIMITS = Object.freeze({
@@ -679,13 +683,51 @@ export function hongbaoRuleProblems(rules, { count, total, minEach }) {
   return problems;
 }
 
-/** judge.js's `meta` export (§1): `{ meta }` (null when none) or `{ problems }`. */
+const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
+
+/**
+ * Why `meta.page` is not a page a 红包 may carry (docs/judge-page-design.md
+ * §4): the 附带网页's rules, as packages/contracts/src/page-url.ts has them
+ * for the form and the API (a test holds the two together).
+ */
+export function pageProblem(value) {
+  if (typeof value !== "string" || !value.trim()) return "要是不空的字符串";
+  const text = value.trim();
+  if (characters(text) > META_LIMITS.page)
+    return `最多 ${META_LIMITS.page} 个字`;
+  let url;
+  try {
+    url = new URL(text);
+  } catch {
+    return "不是有效的地址";
+  }
+  if (url.protocol !== "https:") return "只能用 https:// 开头的地址";
+  if (url.username || url.password) return "不能带用户名和密码";
+  if (url.port) return "不能带端口";
+  const host = url.hostname;
+  if (host.startsWith("[") || IPV4.test(host)) return "不能写 IP 地址";
+  if (host === "localhost" || host.endsWith(".localhost"))
+    return "不能写 localhost";
+  if (!host.includes(".") || host.endsWith("."))
+    return "要写完整的域名（比如 example.com）";
+  if (host === "linux.do" || host.endsWith(".linux.do"))
+    return "不能用 linux.do 和它的子域名";
+  if (host === "hb.lafi.sh" || host.endsWith(".hb.lafi.sh"))
+    return "不能用本站的地址";
+  return null;
+}
+
+/**
+ * judge.js's `meta` export (§1): `{ meta }` (null when none) or `{ problems }`.
+ * `page` (judge-page §4) is kept as the URL standard writes it back.
+ */
 export function readMeta(value) {
   if (value === undefined || value === null) return { meta: null };
   if (!isObject(value))
-    return { problems: ["meta 要是 { name, description }"] };
-  const extra = unknownField(value, ["name", "description"], "meta 里");
-  if (extra) return { problems: [`${extra}：只能写 name 和 description`] };
+    return { problems: ["meta 要是 { name, description, page }"] };
+  const extra = unknownField(value, ["name", "description", "page"], "meta 里");
+  if (extra)
+    return { problems: [`${extra}：只能写 name、description 和 page`] };
   const problems = [];
   const name = textProblem(value.name, META_LIMITS.name, "meta.name");
   if (name) problems.push(name);
@@ -697,12 +739,19 @@ export function readMeta(value) {
     );
     if (description) problems.push(description);
   }
+  if (value.page !== undefined) {
+    const page = pageProblem(value.page);
+    if (page) problems.push(`meta.page：${page}`);
+  }
   if (problems.length > 0) return { problems };
   return {
     meta: {
       name: value.name.trim(),
       ...(value.description !== undefined
         ? { description: value.description.trim() }
+        : {}),
+      ...(value.page !== undefined
+        ? { page: new URL(value.page.trim()).href }
         : {}),
     },
   };

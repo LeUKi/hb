@@ -243,7 +243,13 @@ export const PARAM_LIMITS: Readonly<{
   checkProblems: number;
   checkMessageCharacters: number;
 }>;
-export const META_LIMITS: Readonly<{ name: number; description: number }>;
+export const META_LIMITS: Readonly<{
+  name: number;
+  description: number;
+  page: number;
+}>;
+/** Why meta.page is not a page a 红包 may carry, or null. */
+export function pageProblem(value: unknown): string | null;
 export const HONGBAO_LIMITS: Readonly<{
   count: number;
   promptCharacters: number;

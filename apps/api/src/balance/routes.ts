@@ -198,6 +198,8 @@ export const balanceRoutes = new Hono<ApiContext>()
       ...(code ? { code } : {}),
       /** 附带网页 may be set (docs/attached-page-design.md §2.1). */
       ...(page ? { page: true as const } : {}),
+      /** Its switch is on: a 判定器's own page may be kept by anyone. */
+      ...(settings.pageEnabled ? { pageEnabled: true as const } : {}),
     });
   })
   .post(

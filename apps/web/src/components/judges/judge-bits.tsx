@@ -1,5 +1,5 @@
 import type { JudgeStats, SquareJudge } from "@hb/contracts";
-import { Braces } from "lucide-react";
+import { Braces, Globe } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { Avatar } from "../ui/avatar";
 import { radius, Squircle } from "../ui/squircle";
@@ -58,9 +58,9 @@ export function JudgeSource({ judge }: { judge: SquareJudge }) {
 const tagClass =
   "inline-flex h-6 shrink-0 items-center px-2 text-xs font-medium whitespace-nowrap";
 
-/** 精选 and 联网, each explaining itself (§15.4). */
+/** 精选, 联网 and 带附带网页, each explaining itself (§15.4; judge-page §11.3). */
 export function JudgeTags({ judge }: { judge: SquareJudge }) {
-  if (!judge.featured && !judge.network) return null;
+  if (!judge.featured && !judge.network && !judge.page) return null;
   return (
     <span className="flex flex-wrap gap-1.5">
       {judge.featured && (
@@ -80,6 +80,17 @@ export function JudgeTags({ judge }: { judge: SquareJudge }) {
             className={cn(tagClass, "bg-warning-soft text-warning")}
           >
             联网
+          </TagHint>
+        </Squircle>
+      )}
+      {judge.page && (
+        <Squircle radius={radius.tag}>
+          <TagHint
+            hint="用它发红包时，判定器带的网页一起带上。"
+            className={cn(tagClass, "gap-1 bg-fill-2 text-ink-2")}
+          >
+            <Globe className="size-3" aria-hidden="true" />
+            带附带网页
           </TagHint>
         </Squircle>
       )}

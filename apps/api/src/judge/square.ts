@@ -16,6 +16,7 @@ import {
 } from "@hb/contracts";
 import { ActivityError } from "../activities/errors";
 import { isAdministrator } from "../admin/authorization";
+import { readBalanceSettings } from "../balance/settings";
 import type { ApiBindings } from "../env";
 import { decryptString } from "../security/crypto";
 import { ownJudge, versionData } from "./judges";
@@ -79,6 +80,7 @@ type CardRow = {
   basedOnListed: number | null;
   featured: number;
   network: number;
+  page: string | null;
   hongbao: number | null;
   judged: number | null;
   claimed: number | null;
@@ -94,6 +96,8 @@ const CARD = (version: string) => `j.id, j.name, j.description,
   EXISTS(SELECT 1 FROM judge_features ff WHERE ff.judge_id = j.id) AS featured,
   EXISTS(SELECT 1 FROM judge_versions nv WHERE nv.judge_id = j.id AND nv.n = ${version}
     AND nv.network IS NOT NULL) AS network,
+  (SELECT json_extract(pv.declarations, '$.meta.page') FROM judge_versions pv
+    WHERE pv.judge_id = j.id AND pv.n = ${version}) AS page,
   s.hongbao, s.judged, s.claimed, s.last_opened_at AS lastOpenedAt`;
 const CARD_JOINS = `JOIN users u ON u.id = j.author_id
   LEFT JOIN judges b ON b.id = j.based_on_judge_id LEFT JOIN users bu ON bu.id = b.author_id
@@ -109,7 +113,8 @@ const statsOf = (row: {
   claimed: row.claimed ?? 0,
 });
 
-function cardOf(env: ApiBindings, row: CardRow): SquareJudge {
+/** `pages`: 附带网页's switch is on (a carried page is shown). */
+function cardOf(env: ApiBindings, row: CardRow, pages: boolean): SquareJudge {
   return {
     id: row.id,
     name: row.name,
@@ -132,6 +137,7 @@ function cardOf(env: ApiBindings, row: CardRow): SquareJudge {
     featured: row.featured === 1,
     bySiteOwner: isAdministrator(env, row.provider, row.externalId),
     network: row.network === 1,
+    ...(pages && row.page ? { page: row.page } : {}),
     stats: statsOf(row),
   };
 }
@@ -166,7 +172,10 @@ export async function listSquareJudges(
   env: ApiBindings,
   query: { tab: "featured" | "all"; sort: "recent" | "used"; cursor?: string },
 ): Promise<SquareJudgeList> {
-  const { networkEnabled } = await readJudgeSettings(env);
+  const [{ networkEnabled }, { pageEnabled }] = await Promise.all([
+    readJudgeSettings(env),
+    readBalanceSettings(env),
+  ]);
   if (query.tab === "featured") {
     const rows = (
       await env.DB.prepare(`SELECT ${CARD("f.n")} FROM judge_features f JOIN judges j ON j.id = f.judge_id
@@ -175,7 +184,7 @@ export async function listSquareJudges(
     return {
       items: rows
         .filter((row) => networkEnabled || row.network !== 1)
-        .map((row) => cardOf(env, row)),
+        .map((row) => cardOf(env, row, pageEnabled)),
       nextCursor: null,
     };
   }
@@ -205,7 +214,7 @@ export async function listSquareJudges(
   const page = rows.slice(0, PAGE_SIZE);
   const last = page.at(-1);
   return {
-    items: page.map((row) => cardOf(env, row)),
+    items: page.map((row) => cardOf(env, row, pageEnabled)),
     nextCursor:
       rows.length > PAGE_SIZE && last
         ? btoa(
@@ -288,9 +297,10 @@ export async function judgePage(
   viewer: Viewer,
 ): Promise<JudgePage> {
   const { row, listed, own } = await visibleJudge(env, judgeId, viewer);
-  const [n, versions] = await Promise.all([
+  const [n, versions, { pageEnabled }] = await Promise.all([
     publicVersionOf(env, judgeId),
     openedVersions(env, judgeId),
+    readBalanceSettings(env),
   ]);
   const version =
     n === null
@@ -310,7 +320,7 @@ export async function judgePage(
   // Its code only when public (§2), or to its author.
   const shown = own || row.codePublic === "always";
   return {
-    ...cardOf(env, row),
+    ...cardOf(env, row, pageEnabled),
     own,
     listed,
     codePublic: row.codePublic,

@@ -16,7 +16,7 @@
 
 ## 1 规则
 
-- **谁能附带**：🐟额 PLUS（和站长），同代码判定红包（`transferAccess`）。所有玩法都能附带。
+- **谁能附带**：🐟额 PLUS（和站长），同代码判定红包（`transferAccess`）。所有玩法都能附带。代码判定红包用的判定器带了网页（`meta.page`）时，那一个人人都能用（[判定器的公开数据和附带网页 SDK](judge-page-design.md) 第 4 节、11.9）。
   - 表单里只有能附带的人看得到这一项；草稿里已经填了的，照样显示（好删掉）。
   - 新建、保存草稿时，填了地址却不能附带：接口拒绝（`PAGE_NOT_ALLOWED`）；开关关着：拒绝（`PAGE_PAUSED`）。
   - 已经附带的红包，红包作者后来没了 PLUS，网页照常显示（同已开放的代码判定红包）。
@@ -126,7 +126,7 @@
   - `balance_settings.page_enabled`（默认关）；
   - `activities.page_stopped_at`（站长停用的时间，空就是没停用）。
 - 红包页数据 `PublicActivity.page`：`{ url, host }` 或 `null`（没填、开关关着、被停用都是 `null`）。红包广场的卡片（`DiscoveryCard`，首页口令匹配到的也是）同样带它，一页只在有卡片带网页时读一次开关。红包作者的 `ManagedActivity.pageStopped`。
-- `GET /api/me/balance/hongbao` 多给 `page: true`（PLUS 且开关开着），表单据此显示这一项。
+- `GET /api/me/balance/hongbao` 多给 `page: true`（PLUS 且开关开着），表单据此显示这一项；`pageEnabled: true`（开关开着），没开通 PLUS 的人据此留着判定器带的网页。
 - `POST /api/admin/activities/:id/stop-page`：站长停用（只停有附带网页、还没停用的）。
 - `GET /api/me/attached-page/check?url=…`：能附带网页的人用，返回 `{ embeddable: "yes" | "no" | "unknown" }`；跟随跳转（和网页窗口一样），只读返回头，不留内容。
 - 🐟额 PLUS 能做的事（`plus-features.ts`）加一行“附带网页”。

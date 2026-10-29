@@ -140,6 +140,7 @@ export function SettingsSheet({
   merchantId,
   listedLocked,
   pageOffered,
+  pageCarried = null,
   pageStopped,
   humanCheckSuggested = false,
   openAt,
@@ -161,6 +162,11 @@ export function SettingsSheet({
   listedLocked: boolean;
   /** 附带网页 may be set: 🐟额 PLUS, its switch on. */
   pageOffered: boolean;
+  /**
+   * The page its 判定器 carries, its switch on (judge-page §11.9): anyone
+   * may keep or delete it; only who may set one changes it.
+   */
+  pageCarried?: string | null;
   /** The 站长 stopped this 红包's 附带网页. */
   pageStopped: boolean;
   /** Its 判定器 suggests 领取前人机验证 (judge-square §4). */
@@ -483,11 +489,16 @@ export function SettingsSheet({
               </Field>
             </Setting>
             {/* 附带网页 (docs/attached-page-design.md §2.1): for those who
-                may set one, or a draft that has one (to take it off). */}
-            {(pageOffered || form.page !== "") && (
+                may set one, a draft that has one (to take it off), or the
+                one its 判定器 carries (judge-page §11.9). */}
+            {(pageOffered || form.page !== "" || pageCarried !== null) && (
               <Setting
                 title="附带网页"
-                badge={<PlusBadge />}
+                badge={
+                  pageOffered || pageCarried === null ? (
+                    <PlusBadge />
+                  ) : undefined
+                }
                 action={
                   // In a new tab: the form stays as it is.
                   <a
@@ -512,7 +523,9 @@ export function SettingsSheet({
                       <>
                         {opened
                           ? "开放后不能改。"
-                          : "选填。红包页旁边会显示这个网页（手机上在底部），比如题目、规则或排行榜。开放后不能改。"}
+                          : pageCarried !== null && form.page === pageCarried
+                            ? `${pageOffered ? "判定器带的网页，可以改成别的，也可以删掉。" : "判定器带的网页，可以删掉。"}开放后不能改。`
+                            : "选填。红包页旁边会显示这个网页（手机上在底部），比如题目、规则或排行榜。开放后不能改。"}
                         说明里写{" "}
                         <code className="font-mono text-ink-2">
                           [文字](#附带网页)
@@ -524,24 +537,58 @@ export function SettingsSheet({
                   error={errorOf("hb-page")}
                   live
                 >
-                  <TextInput
-                    id="hb-page"
-                    inputMode="url"
-                    placeholder="https://example.com/…"
-                    value={form.page}
-                    readOnly={opened}
-                    invalid={Boolean(errorOf("hb-page"))}
-                    onChange={(event) => {
-                      const page = event.target.value;
-                      update((current) => ({ ...current, page }));
-                    }}
-                    onBlur={() => {
-                      const page = normalizePageUrl(form.page);
-                      if (page && page !== form.page)
+                  {pageOffered || opened ? (
+                    <TextInput
+                      id="hb-page"
+                      inputMode="url"
+                      placeholder="https://example.com/…"
+                      value={form.page}
+                      readOnly={opened}
+                      invalid={Boolean(errorOf("hb-page"))}
+                      onChange={(event) => {
+                        const page = event.target.value;
                         update((current) => ({ ...current, page }));
-                      setCheckedPage(page);
-                    }}
-                  />
+                      }}
+                      onBlur={() => {
+                        const page = normalizePageUrl(form.page);
+                        if (page && page !== form.page)
+                          update((current) => ({ ...current, page }));
+                        setCheckedPage(page);
+                      }}
+                    />
+                  ) : form.page !== "" ? (
+                    // Not theirs to change: kept or deleted.
+                    <div className="flex items-center gap-2">
+                      <TextInput
+                        id="hb-page"
+                        className="min-w-0 flex-1"
+                        value={form.page}
+                        readOnly
+                      />
+                      <Button
+                        onClick={() =>
+                          update((current) => ({ ...current, page: "" }))
+                        }
+                      >
+                        删掉
+                      </Button>
+                    </div>
+                  ) : (
+                    pageCarried !== null && (
+                      // Its own words name it, not the field's label.
+                      <Button
+                        className="w-fit"
+                        onClick={() =>
+                          update((current) => ({
+                            ...current,
+                            page: pageCarried,
+                          }))
+                        }
+                      >
+                        加回判定器带的网页
+                      </Button>
+                    )
+                  )}
                 </Field>
                 {/* Read from the page's own headers when the field is left:
                     a page that refuses frames shows nothing here. */}

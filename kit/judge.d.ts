@@ -260,6 +260,11 @@ export interface Meta {
   name: string;
   /** 最多 60 个字 */
   description?: string;
+  /**
+   * 判定器带的附带网页（https，规则同附带网页，最多 500 个字）：用它发红包时
+   * 替发红包的人填好，没开通 PLUS 也能用。
+   */
+  page?: string;
 }
 
 /** check() 说的一个问题：哪个参数、错在哪（最多 100 个字）。 */

@@ -135,9 +135,13 @@ export async function checkCommand({ dir, print = console.log }) {
       if (!declaredOk) {
         print(row(false, "参数声明写得不对"));
         for (const problem of declared.problems) print(`  ${problem}`);
-      } else if (declared.params.length > 0) {
-        print(row(true, "参数表单预览"));
-        for (const item of declared.params) print(`  ${paramLine(item)}`);
+      } else {
+        if (declared.meta?.page)
+          print(row(true, `附带网页：${declared.meta.page}`));
+        if (declared.params.length > 0) {
+          print(row(true, "参数表单预览"));
+          for (const item of declared.params) print(`  ${paramLine(item)}`);
+        }
       }
       const good = all.results.filter((result) => result.passed).length;
       passed = networkOk && declaredOk && good === read.tests.length;

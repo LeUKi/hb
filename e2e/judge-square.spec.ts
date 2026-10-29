@@ -130,6 +130,8 @@ function mineDetail(): MyJudgeDetail {
   };
 }
 
+type Asked = Awaited<ReturnType<typeof mockSquare>>["asked"];
+
 /** The 广场's reads and one's own 判定器, as the server would answer them. */
 async function mockSquare(page: Page, user: MockUser | null) {
   const asked = {
@@ -610,5 +612,144 @@ test.describe("判定器广场", () => {
       .click();
     await expect(page.getByRole("button", { name: "撤下" })).toBeVisible();
     expect(sent.at(-1)?.path).toBe(`/api/admin/judges/${GUESS}/restore`);
+  });
+});
+
+test.describe("判定器带的附带网页（judge-page §4、§11.9）", () => {
+  const carried = "https://game.example.com/play";
+
+  /** 猜数字 carrying a page; 附带网页's switch on, PLUS or not. */
+  async function mockCarried(page: Page, user: MockUser) {
+    const { asked } = await mockSquare(page, user);
+    const version = guessPage.version;
+    if (!version?.declarations) throw new Error("GUESS_VERSION_MISSING");
+    const withPage: JudgePage = {
+      ...guessPage,
+      page: carried,
+      version: {
+        ...version,
+        declarations: {
+          ...version.declarations,
+          meta: { name: "猜数字", page: carried },
+        },
+      },
+    };
+    await page.route("**/api/judges**", (route) => {
+      const url = new URL(route.request().url());
+      const rest = url.pathname.slice("/api/judges".length);
+      if (rest === "")
+        return route.fulfill({
+          json: { items: [{ ...guess, page: carried }], nextCursor: null },
+        });
+      if (rest === `/${GUESS}`)
+        return route.fulfill({ json: { judge: withPage } });
+      return route.fallback();
+    });
+    await page.route("**/api/me/balance/hongbao", (route) =>
+      route.fulfill({
+        json: {
+          enabled: true,
+          available: true,
+          availableMinor: 1_000_000,
+          code: { deploysLeft: 7, deployLimit: 10 },
+          ...(user.balancePlus ? { page: true } : {}),
+          pageEnabled: true,
+        },
+      }),
+    );
+    return asked;
+  }
+
+  /** From /new?judge=: 猜数字 picked, its params and 发多少 filled. */
+  async function pickGuess(page: Page) {
+    await openApp(page, `/new?judge=${GUESS}`);
+    await expect(page.getByText("站长精选 · 第 2 版")).toBeVisible();
+    await page.locator("#hb-param-answer").fill("42");
+    await page.getByRole("button", { name: "下一步" }).first().click();
+    await page.getByRole("button", { name: "下一步" }).first().click();
+    await page.locator("#hb-code-min").fill("0.10");
+    await page.getByRole("button", { name: "下一步" }).first().click();
+  }
+
+  const saveDraft = async (page: Page, count: number, asked: Asked) => {
+    await page.getByRole("button", { name: "存草稿" }).first().click();
+    await expect.poll(() => asked.saved.length).toBe(count);
+    return asked.saved[count - 1]?.activity as { pageUrl?: string };
+  };
+
+  test("广场的卡上写带附带网页，判定器页参数下面一行地址，新标签页打开", async ({
+    page,
+  }) => {
+    await mockCarried(page, member);
+    await openApp(page, "/judges");
+    const card = page.getByRole("article").filter({ hasText: "猜数字" });
+    await expect(
+      card.getByRole("button", { name: "带附带网页" }),
+    ).toHaveAccessibleDescription("用它发红包时，判定器带的网页一起带上。");
+    await card.getByRole("link", { name: "查看" }).click();
+    const link = page.getByRole("link", { name: "game.example.com ↗" });
+    await expect(link).toHaveAttribute("href", carried);
+    await expect(link).toHaveAttribute("target", "_blank");
+    await expect(page.getByText(/^附带网页：/)).toBeVisible();
+  });
+
+  test("没开通 PLUS：挑了带网页的判定器，更多设置里替你填好、只读、没有 PLUS 标签；删掉能加回来；草稿带上它", async ({
+    page,
+  }) => {
+    const asked = await mockCarried(page, { ...viewer, balance: true });
+    await pickGuess(page);
+    await page.getByRole("button", { name: /更多设置/ }).click();
+    const sheet = page.getByRole("dialog", { name: "更多设置" });
+    const field = sheet.locator("#hb-page");
+    await expect(field).toHaveValue(carried);
+    await expect(field).toHaveAttribute("readonly", "");
+    await expect(
+      sheet.getByText("判定器带的网页，可以删掉。开放后不能改。", {
+        exact: false,
+      }),
+    ).toBeVisible();
+    await expect(sheet.getByText("PLUS", { exact: true })).toHaveCount(0);
+    await sheet.getByRole("button", { name: "删掉" }).click();
+    const back = sheet.getByRole("button", { name: "加回判定器带的网页" });
+    await expect(back).toBeVisible();
+    await back.click();
+    await expect(field).toHaveValue(carried);
+    await sheet.getByRole("button", { name: "完成" }).click();
+    expect((await saveDraft(page, 1, asked)).pageUrl).toBe(carried);
+  });
+
+  test("没开通 PLUS：删掉判定器带的网页，草稿就不带", async ({ page }) => {
+    const asked = await mockCarried(page, { ...viewer, balance: true });
+    await pickGuess(page);
+    await page.getByRole("button", { name: /更多设置/ }).click();
+    const sheet = page.getByRole("dialog", { name: "更多设置" });
+    await sheet.getByRole("button", { name: "删掉" }).click();
+    await sheet.getByRole("button", { name: "完成" }).click();
+    expect(await saveDraft(page, 1, asked)).not.toHaveProperty("pageUrl");
+  });
+
+  test("开通了 PLUS：替你填好，照旧能改，下面写可以改成别的", async ({
+    page,
+  }) => {
+    const asked = await mockCarried(page, member);
+    await pickGuess(page);
+    await page.getByRole("button", { name: /更多设置/ }).click();
+    const sheet = page.getByRole("dialog", { name: "更多设置" });
+    const field = sheet.locator("#hb-page");
+    await expect(field).toHaveValue(carried);
+    await expect(field).not.toHaveAttribute("readonly", "");
+    await expect(
+      sheet.getByText(
+        "判定器带的网页，可以改成别的，也可以删掉。开放后不能改。",
+        {
+          exact: false,
+        },
+      ),
+    ).toBeVisible();
+    await field.fill("https://my.example.com/");
+    await sheet.getByRole("button", { name: "完成" }).click();
+    expect((await saveDraft(page, 1, asked)).pageUrl).toBe(
+      "https://my.example.com/",
+    );
   });
 });

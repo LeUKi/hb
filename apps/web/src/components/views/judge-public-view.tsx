@@ -409,6 +409,20 @@ export function PublicJudgePage({
               ))
             )}
           </Panel>
+          {/* 判定器带的附带网页 (judge-page §11.3), in a new tab. */}
+          {judge.page && (
+            <p className="px-1 text-sm text-ink-2">
+              附带网页：
+              <a
+                href={judge.page}
+                target="_blank"
+                rel="noreferrer"
+                className="text-accent-ink underline-offset-2 hover:underline"
+              >
+                {new URL(judge.page).hostname} ↗
+              </a>
+            </p>
+          )}
         </PageSection>
       )}
       {rules.length > 0 && (

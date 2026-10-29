@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { pageProblem, readMeta } from "../../../kit/runtime/params.mjs";
 import {
   activityInputSchema,
   attachedPageOf,
@@ -69,5 +70,56 @@ describe("附带网页: the address", () => {
     expect(pageIssues("http://example.com")).toEqual([
       "只能用 https:// 开头的地址",
     ]);
+  });
+});
+
+// 判定器带的附带网页 (docs/judge-page-design.md §4, §11.9): judge.js's
+// meta.page, read by the kit and the site's deploy, under the same rules.
+describe("附带网页: a 判定器's meta.page", () => {
+  const addresses = [
+    "https://example.com",
+    " https://Game.Example.com/玩?x=1#a ",
+    "example.com",
+    "http://example.com",
+    "https://user:pw@example.com",
+    "https://example.com:8443",
+    "https://127.0.0.1",
+    "https://[::1]",
+    "https://localhost",
+    "https://a.localhost",
+    "https://intranet",
+    "https://example.com.",
+    "https://linux.do/t/1",
+    "https://connect.linux.do",
+    "https://hb.lafi.sh/help",
+    "https://x.hb.lafi.sh",
+    `https://example.com/${"a".repeat(500)}`,
+  ];
+
+  it("holds the kit to the form's and the API's rules", () => {
+    for (const address of addresses)
+      expect(pageProblem(address), address).toBe(pageUrlProblem(address));
+    expect(pageProblem("")).toBe("要是不空的字符串");
+    expect(pageProblem(42)).toBe("要是不空的字符串");
+  });
+
+  it("keeps it as the URL standard writes it, and says what is wrong", () => {
+    expect(
+      readMeta({ name: "猜数字", page: " https://Game.Example.com/玩 " }),
+    ).toEqual({
+      meta: { name: "猜数字", page: "https://game.example.com/%E7%8E%A9" },
+    });
+    expect(normalizePageUrl("https://Game.Example.com/玩")).toBe(
+      "https://game.example.com/%E7%8E%A9",
+    );
+    expect(readMeta({ name: "猜数字", page: "http://example.com" })).toEqual({
+      problems: ["meta.page：只能用 https:// 开头的地址"],
+    });
+    expect(readMeta({ name: "猜数字", url: "https://example.com" })).toEqual({
+      problems: ["meta 里不认识 url：只能写 name、description 和 page"],
+    });
+    expect(readMeta("猜数字")).toEqual({
+      problems: ["meta 要是 { name, description, page }"],
+    });
   });
 });

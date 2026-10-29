@@ -972,6 +972,35 @@ export function judge() { return { ok: false }; }`,
     expect(failed.exitCode).toBe(1);
   }, 20_000);
 
+  it("npm run check shows the 附带网页 meta.page carries, and says what is wrong with it (judge-page §11.9)", async () => {
+    const tests = {
+      tests: [{ name: "一条", input: "x", expect: { ok: false } }],
+    };
+    const judge = (
+      page: string,
+    ) => `export const meta = { name: "炸弹", page: "${page}" };
+export function judge() { return { ok: false }; }`;
+    const good = await run(checkCommand, {
+      dir: kit({
+        "judge.js": judge("https://Bomb.Example.com/play"),
+        "tests.json": tests,
+      }),
+    });
+    expect(good.lines).toContain("✓ 附带网页：https://bomb.example.com/play");
+    expect(good.exitCode).toBe(0);
+    const bad = await run(checkCommand, {
+      dir: kit({
+        "judge.js": judge("https://127.0.0.1/play"),
+        "tests.json": tests,
+      }),
+    });
+    expect(bad.lines.slice(2, 4)).toEqual([
+      "✗ 参数声明写得不对",
+      "  meta.page：不能写 IP 地址",
+    ]);
+    expect(bad.exitCode).toBe(1);
+  }, 20_000);
+
   it("npm run simulate sends the params in, and stops at ones that do not pass", async () => {
     const dir = kit({
       "judge.js": GUESS,

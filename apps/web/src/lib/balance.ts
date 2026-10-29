@@ -299,6 +299,11 @@ export type BalanceFunding = {
   code?: { deploysLeft: number; deployLimit: number };
   /** 附带网页 may be set (PLUS, its switch on; docs/attached-page-design.md). */
   page?: true;
+  /**
+   * 附带网页's switch is on: the page a 判定器 carries may be kept by
+   * anyone (docs/judge-page-design.md §11.9).
+   */
+  pageEnabled?: true;
 };
 
 /**
