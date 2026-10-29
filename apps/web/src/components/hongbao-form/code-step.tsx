@@ -34,7 +34,7 @@ import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
 import { CodeEditor } from "../ui/code-editor";
 import { Field, TextInput } from "../ui/field";
-import { Reveal } from "../ui/reveal";
+import { Reveal, Swap } from "../ui/reveal";
 import { counter, type ErrorOf, QuietLine, type Update } from "./fields";
 import { type FormState, withJudgeDefaults } from "./form-state";
 import { FilePicker, fromClipboard, JudgeCard } from "./judge-card";
@@ -707,7 +707,11 @@ export function CodeStep({
   const mine = useMyJudges(userId, !locked);
   const usable = (mine.data ?? []).filter((item) => item.usable !== null);
   const [view, setView] = useState<"pick" | "card" | "write" | null>(null);
-  const [starting, setStarting] = useState(Boolean(start));
+  // A pick on its way (§6): its card, named when the name is known, until
+  // the 判定器 is in.
+  const [loading, setLoading] = useState<{ name: string | null } | null>(
+    start ? { name: null } : null,
+  );
   const [picking, setPicking] = useState(false);
   const [pickError, setPickError] = useState<string | null>(null);
   const [browsing, setBrowsing] = useState(false);
@@ -722,7 +726,7 @@ export function CodeStep({
   // Until one is chosen: the cards when there are some (or may be), else
   // straight to writing one; a deployed version of a 判定器 shows folded.
   // Another's shows as its card: it is never written here.
-  const shown = starting
+  const shown = loading
     ? "loading"
     : borrowed
       ? !locked && view === "pick"
@@ -755,6 +759,7 @@ export function CodeStep({
   const pick = async (picked: MyJudge, commit: Update = update) => {
     if (!picked.usable) return null;
     setPicking(true);
+    setLoading({ name: picked.name });
     setPickError(null);
     try {
       const version = await fetchJudgeVersion(picked.id, picked.usable.n);
@@ -791,6 +796,7 @@ export function CodeStep({
       return null;
     } finally {
       setPicking(false);
+      setLoading(null);
     }
   };
   /** 自己写一个: an empty card, its name first. */
@@ -815,25 +821,36 @@ export function CodeStep({
    * Another's from the 广场 (§15.4), or one's own met there: the version
    * others use, 联网 asked first; the same one again keeps its answer.
    */
-  const pickOther = async (judgeId: string, commit: Update = update) => {
+  const pickOther = async (
+    judgeId: string,
+    commit: Update = update,
+    name: string | null = null,
+  ) => {
     setBrowsing(false);
     setPickError(null);
-    const outcome = await borrow.pick(judgeId, {
-      acked:
-        form.judge.judgeId === judgeId ? (borrowed?.networkAck ?? null) : null,
-      commit,
-    });
-    if ("picked" in outcome) {
-      setView("card");
-      return outcome.picked.version?.declarations?.params[0]?.key ?? null;
+    setLoading({ name });
+    try {
+      const outcome = await borrow.pick(judgeId, {
+        acked:
+          form.judge.judgeId === judgeId
+            ? (borrowed?.networkAck ?? null)
+            : null,
+        commit,
+      });
+      if ("picked" in outcome) {
+        setView("card");
+        return outcome.picked.version?.declarations?.params[0]?.key ?? null;
+      }
+      if ("own" in outcome) {
+        const own =
+          usable.find((item) => item.id === judgeId) ??
+          (await fetchMyJudge(judgeId).catch(() => null));
+        if (own) return await pick(own, commit);
+      }
+      return null;
+    } finally {
+      setLoading(null);
     }
-    if ("own" in outcome) {
-      const own =
-        usable.find((item) => item.id === judgeId) ??
-        (await fetchMyJudge(judgeId).catch(() => null));
-      if (own) return pick(own, commit);
-    }
-    return null;
   };
   // 用它发红包 (§6): one's own (its newest version that passed) or
   // another's (the version others use), picked as the step opens; a
@@ -859,7 +876,7 @@ export function CodeStep({
               : "没有取到这个判定器：网络或服务出了问题。可以再试一次。",
           );
       } finally {
-        setStarting(false);
+        setLoading(null);
         start.done(first);
       }
     })();
@@ -889,67 +906,71 @@ export function CodeStep({
     // tests stay in their editors and never widen the step. Its children
     // are no Reveals; the columns inside that hold one are flex.
     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5">
-      {shown === "loading" ? (
-        <LoadingJudge />
-      ) : shown === "pick" ? (
-        <JudgePicker
-          featured={featured}
-          judges={usable}
-          busy={picking || borrow.busy}
-          onPickFeatured={(picked) => void pickOther(picked.id)}
-          onPick={(picked) => void pick(picked)}
-          onBrowse={() => setBrowsing(true)}
-          onWrite={write}
-        />
-      ) : shown === "card" && borrowed ? (
-        <PickedJudge
-          name={form.judge.name}
-          description={form.judge.description}
-          source={
-            borrowed.source.featured
-              ? "站长精选"
-              : `@${borrowed.source.author.username}`
-          }
-          n={borrowed.n}
-          newer={borrowed.source.newer ?? undefined}
-          notice={
-            borrowed.source.takenDown
-              ? {
-                  tone: "danger",
-                  text: "这个判定器已被站长撤下，换一个才能开放。",
-                }
-              : !borrowed.source.listed
+      <Swap id={shown}>
+        {shown === "loading" ? (
+          <LoadingJudge name={loading?.name ?? null} />
+        ) : shown === "pick" ? (
+          <JudgePicker
+            featured={featured}
+            judges={usable}
+            busy={picking || borrow.busy}
+            onPickFeatured={(picked) =>
+              void pickOther(picked.id, update, picked.name)
+            }
+            onPick={(picked) => void pick(picked)}
+            onBrowse={() => setBrowsing(true)}
+            onWrite={write}
+          />
+        ) : shown === "card" && borrowed ? (
+          <PickedJudge
+            name={form.judge.name}
+            description={form.judge.description}
+            source={
+              borrowed.source.featured
+                ? "站长精选"
+                : `@${borrowed.source.author.username}`
+            }
+            n={borrowed.n}
+            newer={borrowed.source.newer ?? undefined}
+            notice={
+              borrowed.source.takenDown
                 ? {
-                    tone: "quiet",
-                    text: "作者已经不在广场提供它，已经选好的照样能开放。",
+                    tone: "danger",
+                    text: "这个判定器已被站长撤下，换一个才能开放。",
                   }
-                : undefined
-          }
-          locked={locked}
-          busy={borrow.busy || frozen}
-          onView={() => setViewing(true)}
-          onSwap={() => setView("pick")}
-          onNewer={() => {
-            if (form.judge.judgeId) void pickOther(form.judge.judgeId);
-          }}
-        />
-      ) : shown === "card" && judge.version ? (
-        <PickedJudge
-          name={form.judge.name}
-          description={form.judge.description}
-          n={judge.version.n}
-          newer={newer}
-          locked={locked}
-          busy={picking || frozen}
-          onView={() => setView("write")}
-          onSwap={() => setView("pick")}
-          onNewer={() => {
-            if (mineNow) void pick(mineNow);
-          }}
-        />
-      ) : (
-        writing
-      )}
+                : !borrowed.source.listed
+                  ? {
+                      tone: "quiet",
+                      text: "作者已经不在广场提供它，已经选好的照样能开放。",
+                    }
+                  : undefined
+            }
+            locked={locked}
+            busy={borrow.busy || frozen}
+            onView={() => setViewing(true)}
+            onSwap={() => setView("pick")}
+            onNewer={() => {
+              if (form.judge.judgeId) void pickOther(form.judge.judgeId);
+            }}
+          />
+        ) : shown === "card" && judge.version ? (
+          <PickedJudge
+            name={form.judge.name}
+            description={form.judge.description}
+            n={judge.version.n}
+            newer={newer}
+            locked={locked}
+            busy={picking || frozen}
+            onView={() => setView("write")}
+            onSwap={() => setView("pick")}
+            onNewer={() => {
+              if (mineNow) void pick(mineNow);
+            }}
+          />
+        ) : (
+          writing
+        )}
+      </Swap>
       {(pickError ?? borrow.error) && (
         <p className="text-sm text-danger">{pickError ?? borrow.error}</p>
       )}
@@ -958,7 +979,7 @@ export function CodeStep({
         onClose={() => setBrowsing(false)}
         userId={userId}
         busy={picking || borrow.busy}
-        onPick={(judgeId) => void pickOther(judgeId)}
+        onPick={(judgeId, name) => void pickOther(judgeId, update, name)}
       />
       {borrowed && (
         <BorrowedCode

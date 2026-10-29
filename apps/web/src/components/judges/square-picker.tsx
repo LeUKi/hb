@@ -27,7 +27,7 @@ export function SquarePicker({
   userId: string;
   /** A pick on its way: the cards wait. */
   busy: boolean;
-  onPick: (judgeId: string) => void;
+  onPick: (judgeId: string, name: string) => void;
 }) {
   const titleId = useId();
   const [tab, setTab] = useState<Tab>("featured");
@@ -120,7 +120,7 @@ export function SquarePicker({
                       type="button"
                       aria-disabled={busy || undefined}
                       onClick={() => {
-                        if (!busy) onPick(judge.id);
+                        if (!busy) onPick(judge.id, judge.name);
                       }}
                       className="choice flex h-full w-full items-center gap-3 p-3 text-left"
                     >
@@ -149,7 +149,7 @@ export function SquarePicker({
                       judge={judge}
                       signedIn
                       busy={busy}
-                      onPick={() => onPick(judge.id)}
+                      onPick={() => onPick(judge.id, judge.name)}
                     />
                   </li>
                 ))}

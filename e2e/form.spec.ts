@@ -283,15 +283,53 @@ test.describe("发红包", () => {
       .toBe(true);
   });
 
-  test("玩法：不能发代码判定时只有经典玩法，不写小标题", async ({ page }) => {
+  test("玩法：不能发代码判定时，代码判定留在原处，灰着，写暂时关闭", async ({
+    page,
+  }) => {
     await mockSession(page, viewer);
     await mockMerchants(page, [merchant]);
     await openApp(page, "/new");
-    await expect(
-      page.getByRole("group", { name: "玩法" }).getByRole("button"),
-    ).toHaveCount(4);
-    await expect(page.getByText("经典玩法")).toHaveCount(0);
-    await expect(page.getByText("进阶玩法")).toHaveCount(0);
+    const modes = page.getByRole("group", { name: "玩法" });
+    await expect(modes.getByRole("button")).toHaveCount(5);
+    await expect(page.getByText("经典玩法")).toBeVisible();
+    await expect(page.getByText("进阶玩法")).toBeVisible();
+    const code = modes.getByRole("button", { name: /代码判定/ });
+    await expect(code).toBeDisabled();
+    await expect(code).toContainText("暂时关闭");
+  });
+
+  test("玩法：开关读回来以前代码判定就在原处，灰着、扫着光；读回来开着就能点，什么都不挪", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    await mockMerchants(page, [merchant]);
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/api/me/balance/hongbao", async (route) => {
+      await held;
+      return route.fulfill({
+        json: {
+          enabled: false,
+          available: false,
+          availableMinor: 0,
+          code: { deploysLeft: 2, deployLimit: 2 },
+        },
+      });
+    });
+    await openApp(page, "/new");
+    const code = page
+      .getByRole("group", { name: "玩法" })
+      .getByRole("button", { name: /代码判定/ });
+    await expect(code).toBeDisabled();
+    await expect(code).toHaveAttribute("aria-busy", "true");
+    await expect(code).toHaveClass(/loading-sheen/);
+    const before = await code.boundingBox();
+    release();
+    await expect(code).toBeEnabled();
+    await expect(code).not.toHaveAttribute("aria-busy");
+    expect(await code.boundingBox()).toEqual(before);
   });
 
   test("更多设置：窗口在宽和手机宽之间来回拉，它一直开着，表单也停在原来那一步", async ({

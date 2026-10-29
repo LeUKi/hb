@@ -2835,7 +2835,7 @@ test.describe("发红包 · 代码判定", () => {
     await expect(page).toHaveURL(new RegExp(`/judges/${GUESS_ID}$`));
   });
 
-  test("用它发红包：一进来就是代码判定的第 2 步，判定器读到以前写正在读取判定器…；没有测试全过的版本，就在第 2 步说出来，下面照常能挑", async ({
+  test("用它发红包：一进来就是代码判定的第 2 步，判定器读到以前那张卡写正在读取…；没有测试全过的版本，就在第 2 步说出来，下面照常能挑", async ({
     page,
   }) => {
     await mockDeploys(page);
@@ -2854,8 +2854,8 @@ test.describe("发红包 · 代码判定", () => {
     );
     await openApp(page, `/new?judge=${GUESS_ID}`);
     await expect(
-      page.getByRole("status").filter({ hasText: "正在读取判定器…" }),
-    ).toBeVisible();
+      page.getByRole("status").filter({ hasText: "猜数字" }),
+    ).toContainText("正在读取…");
     await expect(
       page.getByText("代码判定", { exact: true }).first(),
     ).toBeVisible();

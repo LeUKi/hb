@@ -54,7 +54,13 @@ import { declaredParams, judgeIssuesOf, triedHongbao } from "./judge-issues";
 import { ScheduleDialog, ScheduleLine } from "./schedule-fields";
 import { scopeLine } from "./scope-fields";
 import { groupsOf, SettingsSheet } from "./settings-sheet";
-import { AmountStep, ClaimStep, ModeStep, TitleStep } from "./step-bodies";
+import {
+  AmountStep,
+  ClaimStep,
+  type CodeOffer,
+  ModeStep,
+  TitleStep,
+} from "./step-bodies";
 import { StepProgress } from "./step-progress";
 import { OVERLAP, STRIP_HEIGHT, StepCard, StepStack } from "./step-stack";
 import {
@@ -137,7 +143,15 @@ export function HongbaoForm({
   // is typed, so it is not an unsaved change.
   const { merchant, loaded: merchantLoaded } = useCurrentMerchant(user.id);
   // Also says whether 代码判定红包 may be sent, and deploys left today.
-  const funding = useBalanceFunding(user.id).data;
+  const fundingRead = useBalanceFunding(user.id);
+  const funding = fundingRead.data;
+  const codeOffer: CodeOffer = funding
+    ? funding.code
+      ? "open"
+      : "closed"
+    : fundingRead.isError
+      ? "unknown"
+      : "checking";
   const fishReady = funding?.available === true;
   const fishDefault = useRef(false);
   useEffect(() => {
@@ -526,7 +540,7 @@ export function HongbaoForm({
             form={form}
             onPick={pickMode}
             locked={locked}
-            codeOffered={Boolean(funding?.code)}
+            codeOffer={codeOffer}
           />
         );
       case "amount":

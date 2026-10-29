@@ -163,17 +163,31 @@ export function JudgePicker({
   );
 }
 
-/** 用它发红包 (§6): the card while the 判定器 it names is read. */
-export function LoadingJudge() {
+/**
+ * A 判定器 on its way (§6): the picked card's place, its name when known,
+ * 正在读取… where its buttons go, the loading sheen across it.
+ */
+export function LoadingJudge({ name }: { name: string | null }) {
   return (
     <Squircle radius={radius.card}>
-      <p
+      <div
         role="status"
-        className="flex min-w-0 items-center gap-2.5 bg-fill p-3.5 text-sm text-ink-3"
+        className="loading-sheen flex min-w-0 items-center gap-2.5 bg-fill p-3.5"
       >
         <Mark />
-        正在读取判定器…
-      </p>
+        {name ? (
+          <>
+            <span className="min-w-0 flex-1 truncate text-base font-semibold text-ink">
+              {name}
+            </span>
+            <span className="shrink-0 text-sm text-ink-3">正在读取…</span>
+          </>
+        ) : (
+          <span className="min-w-0 flex-1 text-sm text-ink-3">
+            正在读取判定器…
+          </span>
+        )}
+      </div>
     </Squircle>
   );
 }

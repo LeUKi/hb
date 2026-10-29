@@ -508,6 +508,31 @@
   .hb-arrive [data-hb-part="seal"] {
     animation: var(--hb-arrive);
   }
+  /* A card waiting on a read (代码判定 while its switch is checked, a
+     判定器 being read): the skeleton's sheen sweeping across it. */
+  .loading-sheen {
+    position: relative;
+  }
+  .loading-sheen::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      transparent 38%,
+      rgb(255 255 255 / 0.6) 50%,
+      transparent 62%,
+      transparent 100%
+    );
+    background-size: 220% 100%;
+    animation: skeleton-sheen 1.6s ease-in-out infinite;
+  }
+  [data-motion="reduce"] .loading-sheen::after {
+    animation: none;
+    background: none;
+  }
   [data-motion="reduce"] .skeleton {
     animation: none;
   }
@@ -517,6 +542,10 @@
   @media (prefers-reduced-motion: reduce) {
     .skeleton {
       animation: none;
+    }
+    .loading-sheen::after {
+      animation: none;
+      background: none;
     }
     .hb-arrive {
       --hb-arrive: none;
@@ -735,6 +764,13 @@
   .choice:disabled {
     opacity: 0.45;
     cursor: not-allowed;
+  }
+  /* 代码判定 turning clickable once its switch is known: no snap. */
+  .choice-settle {
+    transition:
+      background-color 150ms,
+      box-shadow 150ms var(--ease-snappy),
+      opacity 240ms var(--ease-snappy);
   }
 
   /* Floating glass: user card, suggestion lists, menus; shadow on .pop-plate. */

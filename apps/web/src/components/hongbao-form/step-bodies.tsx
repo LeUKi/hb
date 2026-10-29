@@ -37,6 +37,8 @@ function ModeCard({
   onPick,
   disabled,
   stacked = false,
+  checking = false,
+  note,
 }: {
   option: (typeof modeOptions)[number];
   selected: boolean;
@@ -44,6 +46,10 @@ function ModeCard({
   disabled: boolean;
   /** Its words under its icon, where the two groups sit side by side. */
   stacked?: boolean;
+  /** Whether it can be sent is being read: grey, the sheen across it. */
+  checking?: boolean;
+  /** Why it cannot be picked now, in place of its line. */
+  note?: string;
 }) {
   const Icon = option.icon;
   return (
@@ -51,10 +57,13 @@ function ModeCard({
       <button
         type="button"
         aria-pressed={selected}
+        aria-busy={checking || undefined}
         disabled={disabled && !selected}
         onClick={onPick}
         className={cn(
           "choice flex h-full items-center gap-2.5 p-3 text-left",
+          option.code && "choice-settle",
+          checking && "loading-sheen",
           stacked &&
             "@min-[34rem]/modes:flex-col @min-[34rem]/modes:items-start @min-[34rem]/modes:justify-center @min-[34rem]/modes:gap-3 @min-[34rem]/modes:p-4",
         )}
@@ -77,8 +86,9 @@ function ModeCard({
             {option.title}
           </span>
           <span className="text-sm text-balance text-ink-3">
-            {option.description}
+            {note ?? option.description}
           </span>
+          {checking && <span className="sr-only">正在确认能不能发</span>}
         </span>
       </button>
     </Squircle>
@@ -86,8 +96,14 @@ function ModeCard({
 }
 
 /**
- * ① 玩法 (07 §5, 2026-10-28): 经典玩法 two by two; 代码判定 apart as 进阶玩法
- * while it can be sent (not even grey otherwise). Side by side, two to
+ * Whether 代码判定红包 can be sent now (its switch): being read, open,
+ * closed, or not read.
+ */
+export type CodeOffer = "checking" | "open" | "closed" | "unknown";
+
+/**
+ * ① 玩法 (07 §5, 2026-10-28): 经典玩法 two by two; 代码判定 apart as 进阶玩法,
+ * always in its place (2026-10-29), clickable once it can be sent. Side by side, two to
  * one, where they fit, 代码判定 standing as tall as the two rows; one above
  * the other where they do not.
  */
@@ -95,73 +111,76 @@ export function ModeStep({
   form,
   onPick,
   locked,
-  codeOffered,
+  codeOffer,
 }: {
   form: FormState;
   onPick: (mode: RewardMode) => void;
   locked: boolean;
-  /** 代码判定红包 can be sent now (its switch). */
-  codeOffered: boolean;
+  /** Whether 代码判定红包 can be sent now (its switch). */
+  codeOffer: CodeOffer;
 }) {
   const classicId = useId();
   const advancedId = useId();
-  const card = (option: (typeof modeOptions)[number], stacked = false) => (
+  const card = (option: (typeof modeOptions)[number]) => (
     <ModeCard
       key={option.value}
       option={option}
       selected={form.mode === option.value}
       disabled={locked}
       onPick={() => onPick(option.value)}
-      stacked={stacked}
     />
   );
   const classic = modeOptions.filter((option) => !option.code);
-  const advanced = modeOptions.filter(
-    (option) => option.code && (codeOffered || option.value === form.mode),
-  );
-  const split = advanced.length > 0;
+  const advanced = modeOptions.filter((option) => option.code);
   return (
     <div className="flex flex-col gap-2.5">
       <fieldset aria-label="玩法" className="@container/modes min-w-0">
-        <div
-          className={cn(
-            "grid",
-            split &&
-              "@min-[34rem]/modes:grid-cols-[2fr_auto_1fr] @min-[34rem]/modes:gap-x-3",
-          )}
-        >
+        <div className="grid @min-[34rem]/modes:grid-cols-[2fr_auto_1fr] @min-[34rem]/modes:gap-x-3">
           <fieldset
-            aria-labelledby={split ? classicId : undefined}
+            aria-labelledby={classicId}
             className="flex min-w-0 flex-col gap-2.5"
           >
-            {split && (
-              <p id={classicId} className="px-1 text-xs text-ink-3">
-                经典玩法
-              </p>
-            )}
+            <p id={classicId} className="px-1 text-xs text-ink-3">
+              经典玩法
+            </p>
             <div className="grid gap-2.5 @min-[22rem]/modes:grid-cols-2">
               {classic.map((option) => card(option))}
             </div>
           </fieldset>
-          {split && (
-            <>
-              <span
-                aria-hidden="true"
-                className="hidden w-px bg-line @min-[34rem]/modes:mt-10 @min-[34rem]/modes:mb-4 @min-[34rem]/modes:block"
-              />
-              <fieldset
-                aria-labelledby={advancedId}
-                className="mt-5 flex min-w-0 flex-col gap-2.5 @min-[34rem]/modes:mt-0"
-              >
-                <p id={advancedId} className="px-1 text-xs text-ink-3">
-                  进阶玩法
-                </p>
-                <div className="grid flex-1">
-                  {advanced.map((option) => card(option, true))}
-                </div>
-              </fieldset>
-            </>
-          )}
+          <span
+            aria-hidden="true"
+            className="hidden w-px bg-line @min-[34rem]/modes:mt-10 @min-[34rem]/modes:mb-4 @min-[34rem]/modes:block"
+          />
+          <fieldset
+            aria-labelledby={advancedId}
+            className="mt-5 flex min-w-0 flex-col gap-2.5 @min-[34rem]/modes:mt-0"
+          >
+            <p id={advancedId} className="px-1 text-xs text-ink-3">
+              进阶玩法
+            </p>
+            {/* Always in its place: grey while its switch is read, then
+                clickable, or grey with why (07 §5, 2026-10-29). */}
+            <div className="grid flex-1">
+              {advanced.map((option) => (
+                <ModeCard
+                  key={option.value}
+                  option={option}
+                  selected={form.mode === option.value}
+                  disabled={locked || codeOffer !== "open"}
+                  checking={codeOffer === "checking"}
+                  note={
+                    codeOffer === "closed"
+                      ? "暂时关闭"
+                      : codeOffer === "unknown"
+                        ? "没有确认到能不能发，刷新再试"
+                        : undefined
+                  }
+                  onPick={() => onPick(option.value)}
+                  stacked
+                />
+              ))}
+            </div>
+          </fieldset>
         </div>
       </fieldset>
       {locked && <LockedNote />}
