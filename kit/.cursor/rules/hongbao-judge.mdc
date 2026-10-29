@@ -1,6 +1,6 @@
 ---
-description: 写、改、测代码判定红包的 judge.js、tests.json 和 simulate.json
-globs: judge.js,tests.json,simulate.json
+description: 写、改、测代码判定红包的 judge.js、tests.json、simulate.json 和附带网页 page/
+globs: judge.js,tests.json,simulate.json,page/**
 alwaysApply: false
 ---
 

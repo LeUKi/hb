@@ -4,7 +4,7 @@
 
 ## 怎么干活
 
-1. 只改 `judge.js`、`tests.json`、`simulate.json`。`runtime/`、`cli/`、`*.d.ts`、`*.schema.json`、`package.json` 都不要动：`runtime/` 和网站上跑的是同一份。
+1. 只改 `judge.js`、`tests.json`、`simulate.json`，带附带网页的玩法再加 `page/` 里的网页。`runtime/`、`cli/`、`*.d.ts`、`*.schema.json`、`package.json` 都不要动：`runtime/` 和网站上跑的是同一份。
 2. 不装 npm 包。`judge.js` 只能是一个文件。
 3. 写完先跑 `npm test`，再跑 `npm run check`。两个都过了（最后一行分别是“测试 N / N 通过”和“可以去网站部署了”）才算写完，才让人把两个文件贴到网站。没过就按输出改代码或测试，不要删掉不过的测试来凑数。
 4. 改了玩法就同时改测试：每条规则至少一条测试，靠状态或先后顺序的玩法写多步场景（`steps`）。
@@ -294,11 +294,29 @@ export function judge({ input, state, user, share }) {
 
 `hongbao` 和 `now`、`seed` 的写法同 `tests.json`，声明了参数的代码在顶层写 `params`；每次提交的写法同多步场景的一步（联网的代码写 `fetch`），只是没有 `expect`。和多步场景不同，已经领过的人、领完以后、红包被判定器结束以后的提交不算错，照实写“已领过”“已领完”“已结束”。代码导出了 `setup` 时，先跑它，写“开放时 setup”。
 
-## 四个命令
+## 附带网页（可选）
+
+代码判定红包可以带一个自己的网页，显示在红包页旁边（手机上在底部抽屉里），用来做格子、按钮、动画这些输入框做不了的玩法。网页接上红包站的 SDK，能读红包的公开信息和判定器的公开数据（`view`）、收新的动态、替看的人提交、读他自己的提交；判定照旧只认 `judge.js`，网页最坏只是显示得不对。
+
+- 模板 `page/index.html`：一个 HTML 文件，接好了 SDK，照着改。类型在 `page/hb.d.ts`。
+- 引用：`<script src="https://hb.lafi.sh/sdk/v1.js"></script>`，网页里就有全局的 `hb`：
+  - `await hb.ready()`：`{ hongbao, viewer, theme }`。`hongbao` 有 `title`、`status`（`draft`、`active`、`ended`）、`shares`、`pool`、`judged` 等；`viewer` 是 `{ signedIn: true, name }` 或 `{ signedIn: false }`。单独打开网页时它会报错，照常显示一段说明就行。
+  - `await hb.view()`：公开数据 `{ summary, data, at }`，没有时 `null`。`hb.on("view" | "hongbao" | "announce", fn)` 订阅变化，返回取消订阅的函数；`announce` 每次一条 `{ n, at, user: { name, avatar }, text }`。
+  - `await hb.submit(input)`：替看的人提交一次，同一个红包第一次红包页会问他允不允许。判定了是 `{ judged: true, claimed, amount, unit, reply }`；没判定是 `{ judged: false, reason, seconds, message }`，`reason` 有 `denied`、`login`、`cooldown`（`seconds` 是还剩几秒）、`busy`、`human_check`、`not_in_scope`、`already_claimed`、`not_open`、`ended`、`paused`、`judge_failed`、`try_later`、`invalid_input`、`unconfirmed`、`away`、`not_code`、`error`，意思见 `page/hb.d.ts`。给玩的人看的话由网页自己写。
+  - `await hb.mine(next)`：他自己的提交，新的在前，一次 20 条，`{ total, items: [{ n, at, input, claimed, amount, reply }], next }`；没登录时 `null`。
+  - 做不到：读红包站的 Cookie 和登录信息、看别人的输入、转账、发红包、改红包、绕过冷却和人机验证。
+- 网页要显示的东西都从 `view.data` 来：判定器在 `view` 里写清楚格子、区间、猜过的数，网页照着画，不要在网页里自己算谁赢了。秘密照旧放在 `state`。
+- `npm run page`：在本地打开一个假红包页（下面“五个命令”），提交交给本地的 `judge.js` 跑。
+- 放到网上：网页放到静态托管上，比如 Cloudflare Workers、GitHub Pages、Netlify、Vercel 的正式部署（默认域名都能嵌进红包页）；Cloudflare Drop 拖上去的页面要先认领，没认领会先弹安全验证，嵌不进来。然后把地址写进 `meta.page`（见“参数”上面的 `meta`），部署判定器：用它发红包时网页一起带上，没开通 PLUS 也能用。
+- 网页的规则同附带网页：https、不带端口，不能放收钱、交易或让人输账号密码的东西。更多见 https://hb.lafi.sh/help/page。
+- 样例：`examples/number-bomb`（数字炸弹）和 `examples/scratch-card`（刮刮乐），判定器和网页都有。
+
+## 五个命令
 
 - `npm test`：先按网站部署的规则查 import，不过就列出第几行什么问题、不跑测试；然后每条一行 `✓ 名字（3 毫秒）` 或 `✗ 名字：哪里不对`，`console` 的输出缩进跟在那一条下面；最后 `测试 N / M 通过`。`npm test -- 名字` 只跑名字里含这几个字的。
 - `npm run check`：网站部署时同样的几行（import 都在清单里、代码能加载、导出了 judge、联网的写出白名单、测试 N / M 通过），每条测试跑两遍，结果不一样的提醒用了真随机，公开数据里出现保密参数的值也提醒；再写文件大小和代码指纹（和网站上展开代码时显示的一致）；最后 `可以去网站部署了` 或 `还不能开放`。
 - `npm run simulate`：一行一次提交：第几次、谁、输入、结果、代码的回复；公开数据变了跟一行“公开：……”，有动态跟一行“动态：……”，结束了写“判定器结束了这个红包”；最后发出多少、领了几份。`npm run simulate -- --seed 别的` 换一个种子，`npm run simulate -- 别的.json` 换一个文件，`npm run simulate -- --live` 让请求真的从这台电脑发出去（照样只许白名单里的地址）。
+- `npm run page`：假红包页。浏览器打开它写的地址（`http://127.0.0.1:8730`），左边是模拟的红包页（换人、红包状态、动态、我的提交、记录），右边是 `page/` 里的网页，从另一个地址打开，和线上一样；网页里的 `https://hb.lafi.sh/sdk/v1.js` 在本地自动换成假红包页的那一份。提交交给本地的 `judge.js` 跑，同 `npm run simulate`（先跑 setup，state、份数、奖池接着往下算；红包和参数取 `simulate.json`）。每个人第一次提交会问允不允许，选“没登录”能测 `login`。`npm run page -- examples/number-bomb` 打开一个样例；`--cooldown 3` 每人提交后要等 3 秒，用来测 `cooldown`；`--port` 换端口；`--live` 让联网的请求真的发出去。改了网页刷新就行，改了 `judge.js` 要 Ctrl+C 再运行一次。
 - `npm run replay -- judge-records-xxx.json`：用网站上下载的完整记录逐条重放，先核对指纹和种子，再核对开放时的 setup；联网的红包用记录里的返回，先比请求再比判定（第四版还比公开数据、动态和结束）。早先几版开放的红包用那一版的运行时重放。
 
 失败时退出码都不是 0。
@@ -307,7 +325,7 @@ export function judge({ input, state, user, share }) {
 
 开发包里的模板就是一个能跑通的玩法：猜暗号，每人最多猜 3 次，前三个猜中的各 20.00，之后的拼手气。`tests.json` 有它的单条测试和一个多步场景，`simulate.json` 有一批人来领、份领完。照着改成自己的玩法。
 
-`examples/` 里还有六个带参数的判定器（猜数字、答题、每日一题、按等级发、前 N 个答对的、限时口令），参数、`check` 和 `hongbao` 怎么写都在里面，见 `examples/README.md`。
+`examples/` 里还有六个带参数的判定器（猜数字、答题、每日一题、按等级发、前 N 个答对的、限时口令），参数、`check` 和 `hongbao` 怎么写都在里面；还有两个带附带网页的（数字炸弹、刮刮乐），`setup`、`view`、`announce`、`end` 和网页怎么配合都在里面。见 `examples/README.md`。
 
 ```js
 const ANSWER = "flag{n0t_s0_s1mpl3}";

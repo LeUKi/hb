@@ -1,0 +1,58 @@
+{
+  "$schema": "../../simulate.schema.json",
+  "hongbao": {
+    "title": "刮刮乐",
+    "total": 1000,
+    "count": 5
+  },
+  "submissions": [
+    {
+      "who": "小明",
+      "input": "13"
+    },
+    {
+      "who": "小红",
+      "input": "1"
+    },
+    {
+      "who": "小刚",
+      "input": "25"
+    },
+    {
+      "who": "小李",
+      "input": "7"
+    },
+    {
+      "who": "小王",
+      "input": "19"
+    },
+    {
+      "who": "小赵",
+      "input": "3"
+    },
+    {
+      "who": "小钱",
+      "input": "21"
+    },
+    {
+      "who": "小孙",
+      "input": "9"
+    },
+    {
+      "who": "小周",
+      "input": "5"
+    },
+    {
+      "who": "小吴",
+      "input": "11"
+    },
+    {
+      "who": "小郑",
+      "input": "17"
+    },
+    {
+      "who": "小冯",
+      "input": "23"
+    }
+  ]
+}

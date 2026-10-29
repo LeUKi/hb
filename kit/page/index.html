@@ -1,0 +1,153 @@
+<!doctype html>
+<!--
+  附带网页模板：红包页旁边显示的网页，接好了红包站的 SDK。
+  - 本地看效果：npm run page，浏览器打开它写的地址（左边是假红包页）。
+  - 能做的：读红包的公开信息和判定器的公开数据（view）、收新的动态、替看的人提交、读他自己的提交。
+    类型见 hb.d.ts，说明见 AGENTS.md 的“附带网页”。
+  - 改完放到静态托管上（比如 Cloudflare Workers、GitHub Pages），把地址写进 judge.js 的 meta.page。
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>猜暗号</title>
+    <script src="https://hb.lafi.sh/sdk/v1.js"></script>
+    <style>
+      body { margin: 0; padding: 24px 20px; font-family: system-ui, -apple-system, "PingFang SC", sans-serif; color: #2a1a1c; background: #fff; }
+      main { max-width: 480px; margin: 0 auto; display: grid; gap: 16px; }
+      h1 { margin: 0; font-size: 22px; }
+      .muted { color: #9a8689; font-size: 13px; }
+      .panel { background: #f7efef; border-radius: 12px; padding: 12px 14px; }
+      form { display: flex; gap: 8px; }
+      input { flex: 1; min-width: 0; font: inherit; padding: 10px 12px; border: 1px solid #e3d3d5; border-radius: 10px; }
+      button { font: inherit; padding: 10px 16px; border: 0; border-radius: 10px; background: #d0213a; color: #fff; cursor: pointer; }
+      button:disabled { opacity: 0.5; cursor: default; }
+      ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 14px; }
+      #said { min-height: 1.5em; font-size: 15px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>
+        <h1 id="title">猜暗号</h1>
+        <div class="muted" id="facts">正在接上红包页…</div>
+      </div>
+      <div class="panel" id="summary" hidden></div>
+      <form id="form">
+        <input id="input" placeholder="输入暗号" autocomplete="off" />
+        <button id="submit" type="submit" disabled>提交</button>
+      </form>
+      <div id="said"></div>
+      <section>
+        <div class="muted">动态</div>
+        <ul id="lines"></ul>
+      </section>
+      <section>
+        <div class="muted" id="mine-title">我的提交</div>
+        <ul id="mine"></ul>
+      </section>
+    </main>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      let open = false;
+
+      // 没判定时，按原因说一句话（原因的全表见 hb.d.ts 的 HbReason）。
+      const reasons = {
+        denied: "你没允许这个网页替你提交。",
+        login: "请先在红包页上登录。",
+        busy: "上一次还没有结果。",
+        human_check: "没有通过人机验证。",
+        not_in_scope: "你不在这个红包的领取范围里。",
+        already_claimed: "你已经领到了。",
+        not_open: "红包还没开放。",
+        ended: "红包已结束。",
+        paused: "红包的代码出错了，暂停领取。",
+        judge_failed: "代码出错了，这次不算，再试一次。",
+        try_later: "提交的人太多，稍后再试。",
+        unconfirmed: "没收到结果，看看下面的“我的提交”。",
+        away: "回到红包页再提交。",
+        not_code: "这个红包不能在这里提交。",
+      };
+
+      function showHongbao(hongbao) {
+        $("title").textContent = hongbao.title;
+        const parts = [];
+        if (hongbao.shares)
+          parts.push(`剩 ${hongbao.shares.remaining} / ${hongbao.shares.total} 份`);
+        if (hongbao.judged !== null) parts.push(`已判定 ${hongbao.judged} 次`);
+        if (hongbao.status === "ended")
+          parts.push(hongbao.endedByCode ? "判定器结束了这个红包" : "已结束");
+        $("facts").textContent = parts.join(" · ");
+        open = hongbao.status === "active";
+        $("submit").disabled = !open;
+      }
+
+      function showView(view) {
+        $("summary").hidden = !view?.summary;
+        $("summary").textContent = view?.summary ?? "";
+      }
+
+      function addLine(line) {
+        const item = document.createElement("li");
+        item.textContent = `${line.user.name}：${line.text}`;
+        $("lines").prepend(item);
+      }
+
+      async function showMine() {
+        const mine = await hb.mine();
+        $("mine-title").textContent = mine ? `我的提交 · ${mine.total} 次` : "我的提交（登录后看得到）";
+        $("mine").replaceChildren(
+          ...(mine?.items ?? []).map((item) =>
+            Object.assign(document.createElement("li"), {
+              textContent: `第 ${item.n} 次「${item.input}」${item.claimed ? `领到 ${item.amount}` : "没领到"}${item.reply ? `：${item.reply}` : ""}`,
+            }),
+          ),
+        );
+      }
+
+      $("form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const input = $("input").value.trim();
+        if (!input) return;
+        $("submit").disabled = true;
+        $("said").textContent = "正在判定…";
+        try {
+          const result = await hb.submit(input);
+          if (result.judged) {
+            $("said").textContent = result.claimed
+              ? `领到 ${result.amount} ${result.unit}！${result.reply ?? ""}`
+              : (result.reply ?? "没领到。");
+            $("input").value = "";
+            await showMine();
+          } else if (result.reason === "cooldown") {
+            $("said").textContent = `${result.seconds} 秒后再试。`;
+          } else {
+            $("said").textContent = result.message ?? reasons[result.reason] ?? "没有提交。";
+          }
+        } finally {
+          $("submit").disabled = !open;
+        }
+      });
+
+      // 没加载到 SDK（离线、被拦截）：照常显示，只是不能提交。
+      if (!window.hb) {
+        $("facts").textContent = "没有加载到红包站的 SDK，刷新试试。";
+      } else {
+        hb.ready().then(
+          async ({ hongbao }) => {
+            showHongbao(hongbao);
+            showView(await hb.view());
+            hb.on("hongbao", showHongbao);
+            hb.on("view", showView);
+            hb.on("announce", addLine);
+            await showMine();
+          },
+          () => {
+            // 单独打开（不在红包页里）：照常显示一段说明。
+            $("facts").textContent = "这是红包的附带网页，要在红包页里打开才能提交。";
+          },
+        );
+      }
+    </script>
+  </body>
+</html>

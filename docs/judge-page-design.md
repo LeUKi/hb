@@ -355,3 +355,45 @@ return {
 - 没开通 PLUS 的：只有判定器带了网页（总开关开着）才有这一项，标题旁边没有 PLUS 标签。输入框只读，右边一个“删掉”；下面一句“判定器带的网页，可以删掉。”，后面同上。删掉以后输入框换成一个按钮“加回判定器带的网页”，下面照旧是“选填。红包页旁边会显示这个网页……”。
 
 **判定器广场和判定器页**：卡片上“带附带网页”（地球图标）和说明照 11.3；判定器页参数下面一行“附带网页：example.workers.dev ↗”。总开关关着时两处都不显示。
+
+### 11.10 第 6 部分做时定的（2026-10-29，待用户看）
+
+**开发包里多的**：
+
+- `page/index.html`：网页模板，一个 HTML 文件，引用 `https://hb.lafi.sh/sdk/v1.js`，接好了 SDK：红包标题和状态、红包状态那句话、最近的动态、输入框和“提交”、提交的结果（每种原因都写成一句话）、我的提交。照着改成自己的玩法。
+- `page/hb.d.ts`：SDK 的类型，给编辑器和 AI 看。
+- `npm run page`：本地的“假红包页”（下面）。
+- `examples/number-bomb`（数字炸弹）、`examples/scratch-card`（刮刮乐）：判定器（`judge.js`、`tests.json`、`simulate.json`）加网页（`page/index.html`）。
+
+**`npm run page`**：
+
+- 命令行写“假红包页：http://127.0.0.1:8730”“网页：page/index.html”“改了网页刷新就行；改了 judge.js 要 Ctrl+C 再运行一次”。judge.js 有问题照 `npm run simulate` 的说法，不起服务。
+- 浏览器打开那个地址：左边是模拟的红包页，右边是 `page/` 里的网页。网页从另一个地址（`http://localhost:8731`）打开，和线上一样是另一个网站；网页里引用的 `https://hb.lafi.sh/sdk/v1.js` 在本地自动换成假红包页自己的那一份，不用改。
+- 提交交给本地的 `judge.js` 跑，同 `npm run simulate`：先跑 setup，state、份数、奖池接着往下算；红包和参数取 `simulate.json` 的 `hongbao` 和 `params`（没有这个文件就用测试的默认红包）。时间从 `simulate.json` 的 `now` 起，跟着真实时间走。
+- 左边从上到下：“现在是 [小明 ▾]”（`simulate.json` 里出现的人，没有就是小明、小红、小刚，最后一项“没登录”）和“重新开始”；奖池、已领几份、已判定几次、状态；红包状态；动态；我的提交 · N 次；记录（每次判定一行，同 `npm run simulate`，`console` 的输出跟在下面）。
+- 每个人第一次提交，弹出和网站一样的“让这个网页替你提交？”。“没登录”时提交，网页拿到 `login`，记录里写“（网站上这时会弹出登录卡片）”。
+- 冷却默认没有；`npm run page -- --cooldown 3` 每人每次提交后要等 3 秒，用来测网页怎么处理 `cooldown`。联网的判定器和 simulate 一样，请求默认没有返回，`--live` 真的发出去。
+- “重新开始”：清空提交、动态和记录，重新跑 setup。
+- `npm run page -- examples/number-bomb`：打开一个样例（用它的 `judge.js`、`simulate.json` 和 `page/`）。
+
+**两个样例**：
+
+- 数字炸弹：参数“最大”（默认 100）。1 到最大里埋一颗炸弹，大家轮流猜；猜过的数和安全区间公开。踩中的领一份（剩下的平均分），接着埋下一颗、区间重来；份数领完红包就结束。动态“@小明 猜了 50，安全”“@小红 踩中了炸弹，领到一份，第 2 颗已经埋好”。网页是一排数字格子：猜过的划掉，区间外的变灰，点一格就是猜它。
+- 刮刮乐：一张 5×5 的卡，份数（最多 25 份）个格子有奖，金额开放时随机分好、封存，其余是“谢谢参与”；每人刮一格；公开数据是刮开了哪些格子、刮出了什么；奖刮完或格子刮完 `end`。网页是那张卡，点一格刮开。
+- `examples/README.md` 多一节“带附带网页的例子”。
+
+**文档**：开发包的 `AGENTS.md` 多一节“附带网页（可选）”：SDK 怎么用（同 `/help/page` 第 5 节）、`npm run page`、模板和样例、`meta.page`、托管；“四个命令”改成“五个命令”。`README.md` 同步，写清做完以后：网页放到静态托管上，把地址写进 `meta.page`，部署判定器。`/help/code`、`/help/page` 的“给 AI 的说明”加一句开发包里有网页模板、假红包页和两个样例。
+
+**托管实测**（2026-10-29，用户同意部署一个 demo worker：`hb-page-demo`，放着两个样例的网页）：
+
+- 看返回头，再在真浏览器（Chrome）里放进红包页的附带网页：
+  - Cloudflare Workers 的静态资源（`*.workers.dev`，demo worker）；
+  - GitHub Pages（`*.github.io`）；
+  - Netlify（`*.netlify.app`）；
+  - Vercel（`*.vercel.app` 的正式部署）。
+- 这四家的默认域名都不带 `X-Frame-Options` 和 `frame-ancestors`，都能显示，也没有安全验证页。
+- Vercel 的预览部署默认要登录才能看（文档上这么写，没测），只能用正式部署。
+- Cloudflare Drop 拖上去、还没认领的页面会先弹安全验证（第 6 节），嵌不进红包页；认领以后就是普通的 Workers 网站，按上面的结果应该能嵌入，但没实测过。
+- 网页里的 SDK 来自 hb.lafi.sh，第 4 部分发上线以前，托管上的网页连不上；本地用 `npm run page` 测。
+
+`/help/page` 第 1 节后面多一段（新文案）：“还没有网站：把网页放到静态托管上就行。实测（2026-10-29）Cloudflare Workers、GitHub Pages、Netlify、Vercel 的默认域名都能直接嵌进红包页；Vercel 只用正式部署（预览部署默认要登录才能看）。Cloudflare Drop 拖上去还没认领的页面会先弹安全验证，嵌不进来，要先认领。代码判定红包的网页可以从开发包的模板改起（第 5 节）。” “给 AI 的说明”第 8 条写同样的话。第 5 节“读自己的提交”下面多一段：“开发包（npx degit LeUKi/hb/kit）里有网页模板 page/index.html、SDK 的类型 page/hb.d.ts，npm run page 在本地打开一个假红包页，提交交给本地的 judge.js 跑；还有数字炸弹、刮刮乐两个带网页的样例。”

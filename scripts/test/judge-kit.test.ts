@@ -12,6 +12,7 @@ import {
   replayCommand,
   SANDBOX_MODULES,
   simulateCommand,
+  startPage,
   TESTS_BYTES,
   testCommand,
 } from "../../kit/cli/index.mjs";
@@ -1365,4 +1366,106 @@ describe("kit/examples", () => {
     expect(checked.lines).toContain("✓ 参数表单预览");
     expect(checked.exitCode).toBe(0);
   });
+});
+
+// 附带网页 (docs/judge-page-design.md §11.10): the two samples with a page,
+// the SDK the kit serves, and npm run page's 假红包页.
+describe("附带网页", () => {
+  it.each(["number-bomb", "scratch-card"])(
+    "examples/%s passes npm test and npm run check, and has a page",
+    async (name) => {
+      const dir = join(kitDir, "examples", name);
+      const tested = await run(testCommand, { dir, cwd: dir, args: [] });
+      expect(tested.lines.at(-1)).toMatch(/^测试 (\d+) \/ \1 通过$/);
+      const checked = await run(checkCommand, { dir, cwd: dir, args: [] });
+      expect(checked.lines.at(-1)).toBe("可以去网站部署了");
+      expect(readFileSync(join(dir, "page/index.html"), "utf8")).toContain(
+        '<script src="https://hb.lafi.sh/sdk/v1.js"></script>',
+      );
+    },
+    40_000,
+  );
+
+  it("serves the site's own SDK", () => {
+    expect(readFileSync(join(kitDir, "cli/page/sdk-v1.js"), "utf8")).toBe(
+      readFileSync(join(root, "apps/web/public/sdk/v1.js"), "utf8"),
+    );
+  });
+
+  it("npm run page: the 红包 page and the page on two addresses, the SDK pointed here, submissions judged by judge.js", async () => {
+    const lines: string[] = [];
+    const page = await startPage({
+      root: join(kitDir, "examples/number-bomb"),
+      port: 0,
+      cooldown: 60,
+      print: (line) => lines.push(line),
+    });
+    try {
+      expect(new URL(page.hostUrl).hostname).toBe("127.0.0.1");
+      expect(new URL(page.pageUrl).hostname).toBe("localhost");
+      const host = await (await fetch(page.hostUrl)).text();
+      expect(host).toContain("<title>假红包页</title>");
+      expect(host).toContain(`"pageOrigin":"${page.pageUrl}"`);
+      const html = await (await fetch(`${page.pageUrl}/`)).text();
+      expect(html).toContain(`<script src="${page.hostUrl}/sdk/v1.js">`);
+      expect(html).not.toContain("https://hb.lafi.sh/sdk/v1.js");
+      expect(await (await fetch(`${page.hostUrl}/sdk/v1.js`)).text()).toBe(
+        readFileSync(join(kitDir, "cli/page/sdk-v1.js"), "utf8"),
+      );
+      // Nothing outside page/.
+      expect(
+        (await fetch(`${page.pageUrl}/..%2Fjudge.js`)).status,
+      ).toBeGreaterThanOrEqual(400);
+      const state = await (await fetch(`${page.hostUrl}/api/state`)).json();
+      expect(state.hongbao).toMatchObject({
+        title: "数字炸弹",
+        code: true,
+        status: "active",
+        shares: { total: 3, claimed: 0, remaining: 3 },
+        pool: "30.00",
+        judged: 0,
+      });
+      expect(state.view.summary).toBe("第 1 颗炸弹 · 安全区间 1–100");
+      const submit = async (who: string, input: string) =>
+        (
+          await fetch(`${page.hostUrl}/api/submit`, {
+            method: "POST",
+            body: JSON.stringify({ who, input }),
+          })
+        ).json();
+      expect((await submit("小明", "500")).result).toEqual({
+        judged: true,
+        claimed: false,
+        reply: "请猜 1 到 100 之间的整数",
+      });
+      expect((await submit("小明", "7")).result).toMatchObject({
+        judged: false,
+        reason: "cooldown",
+      });
+      expect((await submit("没登录", "7")).result).toEqual({
+        judged: false,
+        reason: "login",
+      });
+      expect((await submit("小红", "第一行\n第二行")).result).toEqual({
+        judged: false,
+        reason: "invalid_input",
+        message: "只能输入一行",
+      });
+      const mine = await (
+        await fetch(
+          `${page.hostUrl}/api/mine?who=${encodeURIComponent("小明")}`,
+        )
+      ).json();
+      expect(mine).toMatchObject({
+        total: 1,
+        items: [{ n: 1, input: "500", claimed: false }],
+        next: null,
+      });
+      expect(lines).toContain(
+        '小明  "500"  没领到  代码的回复：请猜 1 到 100 之间的整数',
+      );
+    } finally {
+      await page.close();
+    }
+  }, 40_000);
 });

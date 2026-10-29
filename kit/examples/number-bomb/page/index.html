@@ -1,0 +1,153 @@
+<!doctype html>
+<!--
+  数字炸弹的附带网页：一排数字格子，猜过的划掉，区间外的变灰，点一格就是猜它。
+  数据全来自判定器的公开数据（view.data：max、low、high、guessed、round），
+  提交用 hb.submit()。本地看：npm run page -- examples/number-bomb
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>数字炸弹</title>
+    <script src="https://hb.lafi.sh/sdk/v1.js"></script>
+    <style>
+      body { margin: 0; padding: 20px 16px; font-family: system-ui, -apple-system, "PingFang SC", sans-serif; color: #241a12; background: #fbf6ef; }
+      main { max-width: 560px; margin: 0 auto; display: grid; gap: 14px; }
+      h1 { margin: 0; font-size: 22px; }
+      .muted { color: #8f8072; font-size: 13px; }
+      .summary { font-size: 17px; font-weight: 600; }
+      .grid { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 6px; }
+      .grid button { min-width: 0; padding: 0; aspect-ratio: 1; border: 0; border-radius: 8px; font: 600 14px/1 ui-monospace, "SF Mono", Menlo, monospace; background: #fff; color: #241a12; box-shadow: inset 0 0 0 1px #eadfd2; cursor: pointer; transition: transform 0.12s, background 0.12s; }
+      .grid button:hover:not(:disabled) { background: #ffe9c7; transform: translateY(-1px); }
+      .grid button.out { background: transparent; color: #cbbfb2; box-shadow: none; }
+      .grid button.guessed { text-decoration: line-through; color: #b8a99a; background: #f1e9df; box-shadow: none; }
+      .grid button.last { box-shadow: inset 0 0 0 2px #e0a33a; }
+      .grid button:disabled { cursor: default; }
+      #said { min-height: 1.5em; font-size: 15px; }
+      #said.won { color: #c0392b; font-weight: 600; }
+      ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 14px; color: #5c4f43; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>
+        <h1 id="title">数字炸弹</h1>
+        <div class="muted" id="facts">正在接上红包页…</div>
+      </div>
+      <div class="summary" id="summary">1 到 100 里藏着一颗炸弹，踩中的领一份。</div>
+      <div class="grid" id="grid"></div>
+      <div id="said"></div>
+      <section>
+        <div class="muted">动态</div>
+        <ul id="lines"></ul>
+      </section>
+    </main>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      let field = { max: 100, low: 1, high: 100, guessed: [], round: 1 };
+      let open = false;
+      let busy = false;
+      /** The number this viewer just guessed, ringed until the next. */
+      let last = null;
+
+      const reasons = {
+        denied: "你没允许这个网页替你提交。",
+        login: "请先在红包页上登录。",
+        busy: "上一次还没有结果。",
+        human_check: "没有通过人机验证。",
+        not_in_scope: "你不在这个红包的领取范围里。",
+        already_claimed: "你已经踩中过一颗了，把机会留给别人吧。",
+        ended: "炸弹都踩完了。",
+        not_open: "红包还没开放。",
+        judge_failed: "代码出错了，这次不算，再试一次。",
+        try_later: "猜的人太多，稍后再试。",
+        unconfirmed: "没收到结果，等一下看看动态。",
+        away: "回到红包页再猜。",
+      };
+
+      function drawGrid() {
+        const cells = [];
+        for (let n = 1; n <= field.max; n += 1) {
+          const cell = document.createElement("button");
+          cell.textContent = n;
+          const guessed = field.guessed.includes(n);
+          const out = n < field.low || n > field.high;
+          if (guessed) cell.className = "guessed";
+          else if (out) cell.className = "out";
+          if (n === last) cell.classList.add("last");
+          cell.disabled = !open || busy || guessed || out;
+          cell.addEventListener("click", () => guess(n));
+          cells.push(cell);
+        }
+        $("grid").replaceChildren(...cells);
+      }
+
+      function showHongbao(hongbao) {
+        $("title").textContent = hongbao.title;
+        const parts = [];
+        if (hongbao.shares) parts.push(`还有 ${hongbao.shares.remaining} 颗炸弹能领`);
+        if (hongbao.judged !== null) parts.push(`大家猜了 ${hongbao.judged} 次`);
+        if (hongbao.status === "ended") parts.push("已结束");
+        $("facts").textContent = parts.join(" · ");
+        open = hongbao.status === "active";
+        drawGrid();
+      }
+
+      function showView(view) {
+        if (view?.data) field = view.data;
+        if (view?.summary) $("summary").textContent = view.summary;
+        drawGrid();
+      }
+
+      function addLine(line) {
+        const item = document.createElement("li");
+        item.textContent = line.text;
+        $("lines").prepend(item);
+        while ($("lines").children.length > 8) $("lines").lastChild.remove();
+      }
+
+      async function guess(n) {
+        busy = true;
+        last = n;
+        drawGrid();
+        $("said").className = "";
+        $("said").textContent = `猜 ${n}…`;
+        try {
+          const result = await hb.submit(String(n));
+          if (result.judged && result.claimed) {
+            $("said").className = "won";
+            $("said").textContent = `💥 踩中了！领到 ${result.amount} ${result.unit}`;
+          } else if (result.judged) {
+            $("said").textContent = result.reply ?? "安全。";
+          } else if (result.reason === "cooldown") {
+            $("said").textContent = `${result.seconds} 秒后再猜。`;
+          } else {
+            $("said").textContent = result.message ?? reasons[result.reason] ?? "没有猜成。";
+          }
+        } finally {
+          busy = false;
+          drawGrid();
+        }
+      }
+
+      drawGrid();
+      // 没加载到 SDK（离线、被拦截）：照常显示，只是不能猜。
+      if (!window.hb) {
+        $("facts").textContent = "没有加载到红包站的 SDK，刷新试试。";
+      } else {
+        hb.ready().then(
+          async ({ hongbao }) => {
+            showView(await hb.view());
+            showHongbao(hongbao);
+            hb.on("view", showView);
+            hb.on("hongbao", showHongbao);
+            hb.on("announce", addLine);
+          },
+          () => {
+            $("facts").textContent = "这是红包的附带网页，要在红包页里打开才能猜。";
+          },
+        );
+      }
+    </script>
+  </body>
+</html>

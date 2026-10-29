@@ -1,0 +1,165 @@
+<!doctype html>
+<!--
+  刮刮乐的附带网页：一张 5×5 的卡，点一格刮开。
+  刮开了哪些、刮出了什么来自判定器的公开数据（view.data.cells：没刮开是 null，
+  刮开是那一格的奖，0 是谢谢参与；奖都刮完以后 view.data.prizes 是整张卡）。
+  本地看：npm run page -- examples/scratch-card
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>刮刮乐</title>
+    <script src="https://hb.lafi.sh/sdk/v1.js"></script>
+    <style>
+      body { margin: 0; padding: 20px 16px; font-family: system-ui, -apple-system, "PingFang SC", sans-serif; color: #2b1d10; background: #fff8ee; }
+      main { max-width: 440px; margin: 0 auto; display: grid; gap: 14px; }
+      h1 { margin: 0; font-size: 22px; }
+      .muted { color: #8f7a63; font-size: 13px; }
+      .summary { font-size: 17px; font-weight: 600; }
+      .card { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; padding: 12px; border-radius: 18px; background: linear-gradient(135deg, #e94b3c, #b81d2e); box-shadow: 0 10px 30px rgb(160 20 30 / 0.25); }
+      .card button { min-width: 0; aspect-ratio: 1; border: 0; border-radius: 10px; font: 600 13px/1.1 system-ui, sans-serif; cursor: pointer; padding: 2px; }
+      .card button.closed { background: repeating-linear-gradient(135deg, #d9d9d9 0 6px, #c7c7c7 6px 12px); color: #777; }
+      .card button.closed:hover:not(:disabled) { filter: brightness(1.08); transform: scale(1.04); }
+      .card button.prize { background: #fff3cf; color: #b8730d; }
+      .card button.blank { background: #fff; color: #b9a99a; font-weight: 400; font-size: 11px; }
+      .card button.hidden-prize { background: #fff3cf; color: #b8730d; opacity: 0.55; }
+      .card button:disabled { cursor: default; }
+      #said { min-height: 1.5em; font-size: 15px; }
+      #said.won { color: #c0392b; font-weight: 600; }
+      ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 14px; color: #5f4b37; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>
+        <h1 id="title">刮刮乐</h1>
+        <div class="muted" id="facts">正在接上红包页…</div>
+      </div>
+      <div class="summary" id="summary">每人刮一格，刮到奖的领那一格的钱。</div>
+      <div class="card" id="card"></div>
+      <div id="said"></div>
+      <section>
+        <div class="muted">动态</div>
+        <ul id="lines"></ul>
+      </section>
+    </main>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const CELLS = 25;
+      let cells = Array(CELLS).fill(null);
+      /** Once every prize is out: the whole card. */
+      let prizes = null;
+      let open = false;
+      let busy = false;
+      const money = (minor) => (minor / 100).toFixed(2);
+
+      const reasons = {
+        denied: "你没允许这个网页替你刮。",
+        login: "请先在红包页上登录。",
+        busy: "上一格还没刮开。",
+        human_check: "没有通过人机验证。",
+        not_in_scope: "你不在这个红包的领取范围里。",
+        already_claimed: "你已经刮中过了。",
+        ended: "奖都刮完了。",
+        not_open: "红包还没开放。",
+        judge_failed: "代码出错了，这次不算，再试一次。",
+        try_later: "刮的人太多，稍后再试。",
+        unconfirmed: "没收到结果，等一下看看动态。",
+        away: "回到红包页再刮。",
+      };
+
+      function drawCard() {
+        const buttons = cells.map((cell, index) => {
+          const button = document.createElement("button");
+          if (cell === null && prizes) {
+            // Over: what was under the cells nobody scratched.
+            button.className = prizes[index] > 0 ? "hidden-prize" : "blank";
+            button.textContent = prizes[index] > 0 ? money(prizes[index]) : "谢谢参与";
+            button.disabled = true;
+          } else if (cell === null) {
+            button.className = "closed";
+            button.textContent = index + 1;
+            button.disabled = !open || busy;
+            button.addEventListener("click", () => scratch(index + 1));
+          } else {
+            button.className = cell > 0 ? "prize" : "blank";
+            button.textContent = cell > 0 ? money(cell) : "谢谢参与";
+            button.disabled = true;
+          }
+          return button;
+        });
+        $("card").replaceChildren(...buttons);
+      }
+
+      function showHongbao(hongbao) {
+        $("title").textContent = hongbao.title;
+        const parts = [];
+        if (hongbao.pool) parts.push(`奖池 ${hongbao.pool} ${hongbao.unit}`);
+        if (hongbao.shares) parts.push(`${hongbao.shares.total} 个奖`);
+        if (hongbao.status === "ended") parts.push("已结束");
+        $("facts").textContent = parts.join(" · ");
+        open = hongbao.status === "active";
+        drawCard();
+      }
+
+      function showView(view) {
+        if (view?.data) {
+          cells = view.data.cells;
+          prizes = view.data.prizes ?? null;
+        }
+        if (view?.summary) $("summary").textContent = view.summary;
+        drawCard();
+      }
+
+      function addLine(line) {
+        const item = document.createElement("li");
+        item.textContent = line.text;
+        $("lines").prepend(item);
+        while ($("lines").children.length > 8) $("lines").lastChild.remove();
+      }
+
+      async function scratch(n) {
+        busy = true;
+        drawCard();
+        $("said").className = "";
+        $("said").textContent = `刮第 ${n} 格…`;
+        try {
+          const result = await hb.submit(String(n));
+          if (result.judged && result.claimed) {
+            $("said").className = "won";
+            $("said").textContent = `🎉 刮中了 ${result.amount} ${result.unit}！`;
+          } else if (result.judged) {
+            $("said").textContent = result.reply ?? "谢谢参与";
+          } else if (result.reason === "cooldown") {
+            $("said").textContent = `${result.seconds} 秒后再刮。`;
+          } else {
+            $("said").textContent = result.message ?? reasons[result.reason] ?? "没有刮成。";
+          }
+        } finally {
+          busy = false;
+          drawCard();
+        }
+      }
+
+      drawCard();
+      // 没加载到 SDK（离线、被拦截）：照常显示，只是不能刮。
+      if (!window.hb) {
+        $("facts").textContent = "没有加载到红包站的 SDK，刷新试试。";
+      } else {
+        hb.ready().then(
+          async ({ hongbao }) => {
+            showView(await hb.view());
+            showHongbao(hongbao);
+            hb.on("view", showView);
+            hb.on("hongbao", showHongbao);
+            hb.on("announce", addLine);
+          },
+          () => {
+            $("facts").textContent = "这是红包的附带网页，要在红包页里打开才能刮。";
+          },
+        );
+      }
+    </script>
+  </body>
+</html>

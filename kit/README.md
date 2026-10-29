@@ -15,27 +15,31 @@ npm test
 
 不用 degit 也行：下载仓库的压缩包，取出里面的 `kit` 目录，进去运行 `npm install`。
 
-`npm install` 只装 `wrangler`（版本和网站一致）。四个命令靠它自带的 Miniflare 在本地起 workerd：兼容日期、`nodejs_compat`、外层和 `tools` 都和线上一样。代码导出 `network` 才能联网；测试里的请求拿 `tests.json` 写的返回，从不真的联网，`npm run simulate -- --live` 才真的发出去。本地不限 CPU，每次判定超过 1 秒算超时，超过 50 毫秒的标“慢”（线上每次判定只有 50 毫秒 CPU）。
+`npm install` 只装 `wrangler`（版本和网站一致）。五个命令靠它自带的 Miniflare 在本地起 workerd：兼容日期、`nodejs_compat`、外层和 `tools` 都和线上一样。代码导出 `network` 才能联网；测试里的请求拿 `tests.json` 写的返回，从不真的联网，`npm run simulate -- --live` 才真的发出去。本地不限 CPU，每次判定超过 1 秒算超时，超过 50 毫秒的标“慢”（线上每次判定只有 50 毫秒 CPU）。
 
-## 四个命令
+## 五个命令
 
 - `npm test`：跑 `tests.json`，每条一行，`console` 的输出跟在下面。`npm test -- 名字` 只跑名字里含这几个字的。
 - `npm run check`：照网站部署时的规则查一遍，最后写“可以去网站部署了”或“还不能开放”，还有代码指纹，和网站上展开代码时显示的对得上。
 - `npm run simulate`：让 `simulate.json` 里的人依次来领，看钱怎么发出去。`npm run simulate -- --seed 别的` 换一个种子，`--live` 让联网的请求真的发出去。
 - `npm run replay -- judge-records-xxx.json`：红包结束后，用网站上下载的完整记录逐条重放核对。
+- `npm run page`：本地的假红包页，看附带网页（`page/`）和 `judge.js` 配合起来是什么样：浏览器打开它写的地址，左边模拟红包页，右边是你的网页，提交交给本地的 `judge.js` 跑。`npm run page -- examples/number-bomb` 打开一个样例。
 
 失败时退出码都不是 0，脚本和 AI 都能据此判断。
 
 ## 文件
 
 - `judge.js`、`tests.json`、`simulate.json`：模板，一个能跑通的示例玩法（猜暗号），改成你自己的。
+- `page/index.html`、`page/hb.d.ts`：附带网页的模板（接好了红包站的 SDK）和 SDK 的类型。不需要网页就不用管它。
 - `tests.schema.json`、`simulate.schema.json`：两个 JSON 的格式，编辑器据此补全、标错。
 - `judge.d.ts`、`modules.d.ts`、`jsconfig.json`：类型。`tools` 和能用的 Node 模块，编辑器和 AI 都看得到。
 - `AGENTS.md`：完整的规则和常见错误，给 AI 也给人看。`.claude/skills/` 和 `.cursor/rules/` 只是指向它。
 - `runtime/`：沙箱里和代码一起跑的那部分，网站上用的是同一份。
-- `cli/`：四个命令。
+- `cli/`：五个命令。
 
 ## 写完以后
+
+带网页的玩法：网页改好、`npm run page` 里试过以后，放到静态托管上（Cloudflare Workers、GitHub Pages、Netlify、Vercel 的正式部署都行；Cloudflare Drop 拖上去的要先认领），把地址写进 `judge.js` 的 `meta.page`。
 
 `npm test` 和 `npm run check` 都过了，就去网站发红包：选“代码判定”，在第 2 步“判定器”选“自己写一个”，起个名字，贴上 `judge.js` 和 `tests.json`。用 AI 写也一样：告诉它你的玩法，让它照 `AGENTS.md` 写，两个命令都过了再贴。
 

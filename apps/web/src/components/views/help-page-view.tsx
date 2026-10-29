@@ -109,6 +109,8 @@ const aiPrompt = (
    - await hb.submit(input) 替看的人提交一次，同一个红包第一次会先问他。判定了是 { judged: true, claimed, amount, unit, reply }，没判定是 { judged: false, reason, seconds, message }；reason 有 ${reasons.map(([name]) => name).join("、")}。给玩的人看的提示由网页自己写。
    - await hb.mine(next) 读他自己的提交 { total, items: [{ n, at, input, claimed, amount, reply }], next }，没登录时 null。
    - 做不到：读红包站的 Cookie 和登录信息、看别人的输入、转账、发红包、改红包、绕过冷却和人机验证。
+   - 开发包（npx degit LeUKi/hb/kit）里有网页模板 page/index.html、SDK 的类型 page/hb.d.ts、本地的假红包页（npm run page）和数字炸弹、刮刮乐两个样例。
+8. 还没有网站：把网页放到静态托管上就行。Cloudflare Workers、GitHub Pages、Netlify、Vercel 的默认域名都能直接嵌进红包页；Vercel 只用正式部署（预览部署默认要登录才能看）。Cloudflare Drop 拖上去还没认领的页面会先弹安全验证，嵌不进来，要先认领。
 
 我的网站：（在这里写技术栈和现在的登录方式，比如用 LINUX DO Connect 登录、会话 Cookie 叫什么）`;
 
@@ -151,6 +153,16 @@ export function HelpPageView() {
           code={`Content-Security-Policy: frame-ancestors 'self' ${origin}`}
           wrap
         />
+        <Panel className={text}>
+          <p>
+            还没有网站：把网页放到静态托管上就行。实测（2026-10-29）Cloudflare
+            Workers、GitHub Pages、Netlify、Vercel
+            的默认域名都能直接嵌进红包页；Vercel
+            只用正式部署（预览部署默认要登录才能看）。Cloudflare Drop
+            拖上去还没认领的页面会先弹安全验证，嵌不进来，要先认领。代码判定红包的网页可以从开发包的模板改起（第
+            5 节）。
+          </p>
+        </Panel>
       </PageSection>
       <PageSection
         id="login"
@@ -232,6 +244,14 @@ export function HelpPageView() {
         </Panel>
         <Fields items={reasons.map(([name, note]) => ({ name, note }))} />
         <Block label="读自己的提交" code={mineCode} />
+        <Panel className={text}>
+          <p>
+            开发包（<Code>npx degit LeUKi/hb/kit</Code>）里有网页模板{" "}
+            <Code>page/index.html</Code>、SDK 的类型 <Code>page/hb.d.ts</Code>，
+            <Code>npm run page</Code> 在本地打开一个假红包页，提交交给本地的
+            judge.js 跑；还有数字炸弹、刮刮乐两个带网页的样例。
+          </p>
+        </Panel>
         <Panel className={text}>
           <p>
             做不到：读红包站的 Cookie

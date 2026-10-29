@@ -1,0 +1,285 @@
+<!doctype html>
+<!--
+  npm run page 的假红包页（docs/judge-page-design.md §11.10）：左边模拟红包页，
+  右边是 page/ 里的网页。网页通过 SDK 发来的消息在这里回答，和网站上一样：
+  只听这个 iframe、来源是网页的地址；提交交给本地的 judge.js。
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>假红包页</title>
+    <style>
+      :root {
+        --ink: #2a1a1c;
+        --ink-2: #6b5457;
+        --ink-3: #9a8689;
+        --line: #ecdfe0;
+        --panel: #fff;
+        --ground: #f7efef;
+        --accent: #d0213a;
+        --gold: #b07a1f;
+        font-family: system-ui, -apple-system, "PingFang SC", sans-serif;
+        color: var(--ink);
+      }
+      * { box-sizing: border-box; }
+      section[hidden] { display: none; }
+      body { margin: 0; height: 100vh; display: grid; grid-template-columns: minmax(320px, 380px) 1fr; background: var(--ground); }
+      aside { overflow-y: auto; padding: 16px; display: grid; gap: 12px; align-content: start; border-right: 1px solid var(--line); }
+      main { position: relative; }
+      iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; }
+      header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      header strong { font-size: 15px; margin-right: auto; }
+      select, button { font: inherit; font-size: 13px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 6px; }
+      h2 { margin: 0; font-size: 12px; font-weight: 500; color: var(--ink-3); }
+      h1 { margin: 0; font-size: 17px; }
+      .facts { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--ink-2); }
+      .summary { font-size: 15px; }
+      ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+      li { font-size: 13px; color: var(--ink-2); display: grid; gap: 1px; }
+      li b { font-weight: 500; color: var(--ink); }
+      li small, .muted { color: var(--ink-3); font-size: 12px; }
+      .claimed { color: var(--gold); }
+      pre { margin: 0; font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace; white-space: pre-wrap; word-break: break-all; color: var(--ink-2); max-height: 260px; overflow-y: auto; }
+      dialog { border: 0; border-radius: 16px; padding: 20px; max-width: 360px; box-shadow: 0 20px 60px rgb(40 0 10 / 0.25); }
+      dialog::backdrop { background: rgb(30 0 6 / 0.3); }
+      dialog h3 { margin: 0 0 6px; font-size: 16px; }
+      dialog p { margin: 0 0 16px; font-size: 14px; color: var(--ink-2); line-height: 1.6; }
+      dialog form { display: flex; justify-content: flex-end; gap: 8px; }
+    </style>
+  </head>
+  <body>
+    <aside>
+      <header>
+        <strong>假红包页</strong>
+        <label class="muted">现在是 <select id="who"></select></label>
+        <button id="reset" type="button">重新开始</button>
+      </header>
+      <section>
+        <h1 id="title">红包</h1>
+        <div class="facts" id="facts"></div>
+      </section>
+      <section id="state-box" hidden>
+        <h2>红包状态</h2>
+        <div class="summary" id="summary"></div>
+      </section>
+      <section>
+        <h2>动态</h2>
+        <ul id="lines"></ul>
+      </section>
+      <section>
+        <h2 id="mine-title">我的提交</h2>
+        <ul id="mine"></ul>
+      </section>
+      <section>
+        <h2>记录</h2>
+        <pre id="log"></pre>
+      </section>
+    </aside>
+    <main><iframe id="page" title="附带网页"></iframe></main>
+    <dialog id="allow" aria-labelledby="allow-title">
+      <h3 id="allow-title">让这个网页替你提交？</h3>
+      <p id="allow-text"></p>
+      <form method="dialog">
+        <button type="submit" value="no">不允许</button>
+        <button type="submit" value="yes" class="primary">允许</button>
+      </form>
+    </dialog>
+    <script>
+      // Filled in by npm run page as the page is served.
+      const config = __CONFIG__;
+      // The SDK answers only the address it came from: opened as localhost, go there.
+      if (location.origin !== config.hostUrl) location.replace(config.hostUrl);
+      const frame = document.getElementById("page");
+      const whoSelect = document.getElementById("who");
+      const $ = (id) => document.getElementById(id);
+      let state = null;
+      let who = config.people[0];
+      /** Who said 允许 (this load only, as the site asks each account once). */
+      const allowed = new Set();
+      let busy = false;
+      /** Said hello: what the page has been sent, to push only what changed. */
+      let link = null;
+
+      for (const name of config.people) whoSelect.append(new Option(name, name));
+      whoSelect.addEventListener("change", () => {
+        who = whoSelect.value;
+        log(`换成 ${who}：网页重新加载`);
+        reload();
+        renderMine();
+      });
+      $("reset").addEventListener("click", async () => {
+        const answer = await api("/api/reset", {});
+        state = answer.state;
+        allowed.clear();
+        $("log").textContent = "";
+        log("重新开始");
+        render();
+        reload();
+      });
+
+      async function api(path, body) {
+        const response = await fetch(path, body === undefined ? {} : {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const value = await response.json();
+        if (!response.ok) throw new Error(value.error ?? "出错了");
+        return value;
+      }
+
+      function log(line) {
+        const box = $("log");
+        box.textContent += `${line}\n`;
+        box.scrollTop = box.scrollHeight;
+      }
+
+      function reload() {
+        link = null;
+        frame.src = config.pageUrl;
+      }
+
+      const viewer = () =>
+        who === config.guest ? { signedIn: false } : { signedIn: true, name: who };
+      const time = (at) => new Date(at).toLocaleTimeString("zh-CN", { hour12: false });
+
+      function render() {
+        const { hongbao, view, announcements, paid } = state;
+        $("title").textContent = hongbao.title;
+        const status =
+          hongbao.status === "ended"
+            ? hongbao.endedByCode ? "判定器结束了这个红包" : "已结束"
+            : "进行中";
+        $("facts").replaceChildren(
+          ...[
+            `奖池 ${hongbao.pool} LDC`,
+            `已领 ${hongbao.shares.claimed} / ${hongbao.shares.total} 份`,
+            `发出 ${paid} LDC`,
+            `已判定 ${hongbao.judged} 次`,
+            status,
+          ].map((text) => Object.assign(document.createElement("span"), { textContent: text })),
+        );
+        $("state-box").hidden = !view?.summary;
+        $("summary").textContent = view?.summary ?? "";
+        $("lines").replaceChildren(
+          ...(announcements.length === 0
+            ? [Object.assign(document.createElement("li"), { textContent: "还没有动态", className: "muted" })]
+            : announcements.map((line) => {
+                const item = document.createElement("li");
+                item.innerHTML = "<b></b><span></span><small></small>";
+                item.children[0].textContent = line.user.name;
+                item.children[1].textContent = line.text;
+                item.children[2].textContent = time(line.at);
+                return item;
+              })),
+        );
+        renderMine();
+      }
+
+      async function renderMine() {
+        const mine = await api(`/api/mine?who=${encodeURIComponent(who)}`);
+        $("mine-title").textContent = mine ? `我的提交 · ${mine.total} 次` : "我的提交（没登录）";
+        $("mine").replaceChildren(
+          ...(mine?.items ?? []).map((item) => {
+            const row = document.createElement("li");
+            row.innerHTML = "<b></b><span></span><small></small>";
+            row.children[0].textContent = `第 ${item.n} 次 · ${time(item.at)}  ${item.claimed ? `领到 ${item.amount}` : "没领到"}`;
+            if (item.claimed) row.children[0].className = "claimed";
+            row.children[1].textContent = item.reply ?? "";
+            row.children[2].textContent = item.input;
+            return row;
+          }),
+        );
+      }
+
+      /** The page's view, 红包 and new lines of 动态 (oldest first). */
+      function push() {
+        if (!link) return;
+        const send = (event, value) =>
+          frame.contentWindow.postMessage({ hb: 1, event, value }, config.pageOrigin);
+        const view = JSON.stringify(state.view);
+        if (view !== link.view) {
+          link.view = view;
+          send("view", state.view);
+        }
+        const hongbao = JSON.stringify(state.hongbao);
+        if (hongbao !== link.hongbao) {
+          link.hongbao = hongbao;
+          send("hongbao", state.hongbao);
+        }
+        const fresh = state.announcements.filter((line) => line.n > link.line).reverse();
+        if (fresh.length > 0) {
+          link.line = fresh[fresh.length - 1].n;
+          send("announce", fresh);
+        }
+      }
+
+      /** 让这个网页替你提交？ as the site asks it: true for 允许. */
+      function askAllow() {
+        const dialog = $("allow");
+        $("allow-text").textContent = `${new URL(config.pageOrigin).hostname} 会替你提交输入，提交的内容和结果会出现在你的「我的提交」里，冷却和人机验证照旧。只对这个红包有效。`;
+        dialog.returnValue = "";
+        dialog.showModal();
+        return new Promise((done) =>
+          dialog.addEventListener("close", () => done(dialog.returnValue === "yes"), { once: true }),
+        );
+      }
+
+      window.addEventListener("message", async (event) => {
+        if (event.source !== frame.contentWindow || event.origin !== config.pageOrigin) return;
+        const ask = event.data;
+        if (ask?.hb !== 1 || !Number.isSafeInteger(ask.id)) return;
+        const reply = (answer) =>
+          frame.contentWindow.postMessage({ hb: 1, re: ask.id, ...answer }, config.pageOrigin);
+        if (ask.type === "hello") {
+          link = {
+            view: JSON.stringify(state.view),
+            hongbao: JSON.stringify(state.hongbao),
+            line: state.announcements[0]?.n ?? -1,
+          };
+          reply({ value: { hongbao: state.hongbao, viewer: viewer(), theme: "light", view: state.view } });
+          return;
+        }
+        if (ask.type === "mine") {
+          const next = typeof ask.next === "string" ? `&next=${encodeURIComponent(ask.next)}` : "";
+          reply({ value: await api(`/api/mine?who=${encodeURIComponent(who)}${next}`) });
+          return;
+        }
+        if (ask.type !== "submit" || typeof ask.input !== "string") return;
+        if (busy) return reply({ value: { judged: false, reason: "busy" } });
+        busy = true;
+        try {
+          if (who !== config.guest && !allowed.has(who)) {
+            if (!(await askAllow())) {
+              log(`${who} 没允许网页替他提交：网页拿到 denied`);
+              return reply({ value: { judged: false, reason: "denied" } });
+            }
+            allowed.add(who);
+          }
+          const answer = await api("/api/submit", { who, input: ask.input });
+          log(answer.line);
+          for (const line of answer.logs ?? []) log(`    ${line}`);
+          state = answer.state;
+          render();
+          push();
+          reply({ value: answer.result });
+        } catch (error) {
+          log(`出错：${error.message}`);
+          reply({ value: { judged: false, reason: "error", message: error.message } });
+        } finally {
+          busy = false;
+        }
+      });
+
+      (async () => {
+        state = await api("/api/state");
+        render();
+        reload();
+        if (config.cooldown > 0) log(`冷却：每人每次提交后等 ${config.cooldown} 秒`);
+      })();
+    </script>
+  </body>
+</html>

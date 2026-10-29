@@ -1,4 +1,4 @@
-// How each of the four commands runs from npm: on the kit's own directory,
+// How each of the five commands runs from npm: on the kit's own directory,
 // a file argument read from where npm was started, and the exit code non-0
 // on failure so AI tools and scripts can tell.
 import { fileURLToPath } from "node:url";

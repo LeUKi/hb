@@ -80,7 +80,31 @@ export function replayCommand(
   options: CommandOptions,
 ): Promise<{ exitCode: number }>;
 
+/** npm run page's viewer who has not signed in. */
+export const GUEST: string;
+
+/** npm run page: the 假红包页 for the kit at `root` (judge.js, simulate.json, page/). */
+export function startPage(options: {
+  root: string;
+  /** The 红包 page's; the page's is the next one (0: any two). */
+  port?: number;
+  /** Seconds each person waits after a submission. */
+  cooldown?: number;
+  live?: boolean;
+  print?: Print;
+}): Promise<{
+  hostUrl: string;
+  pageUrl: string;
+  network: string[] | null;
+  close(): Promise<void>;
+}>;
+export function pageCommand(
+  options: CommandOptions,
+): Promise<{ exitCode: number }>;
+
 export type SimulationPlan = {
+  /** simulate.json's now (ms), or the tests' default. */
+  now: number;
   hongbao: Omit<Submission["hongbao"], "remaining" | "remainingCount">;
   seed: string;
   submissions: {

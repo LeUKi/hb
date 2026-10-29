@@ -1,6 +1,7 @@
-// The four commands as functions, for scripts that drive them: hb's own
+// The five commands as functions, for scripts that drive them: hb's own
 // tests run them on files of their own. Authors use npm test and the rest.
 export { checkCommand, TESTS_BYTES } from "./lib/check.mjs";
+export { GUEST, pageCommand, startPage } from "./lib/page.mjs";
 export { replayCommand } from "./lib/replay.mjs";
 export {
   COMPATIBILITY_DATE,

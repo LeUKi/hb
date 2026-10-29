@@ -182,6 +182,7 @@ export function readSimulation(text, file = "simulate.json") {
   }
   return {
     plan: {
+      now,
       hongbao,
       seed: data.seed ?? TEST_SEED,
       // Checked against judge.js's params once it is loaded.

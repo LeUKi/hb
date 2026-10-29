@@ -69,13 +69,13 @@ function viewText(view) {
 }
 
 /** A view and a line in 动态 it wrote, under the line they belong to. */
-function printPublic(print, { view, announce }) {
+export function printPublic(print, { view, announce }) {
   if (view && !view.keep) say(print, `  公开：${viewText(view.value)}`, "    ");
   if (announce !== undefined) say(print, `  动态：${announce}`, "    ");
 }
 
-/** What one submission came to, in words. */
-function outcome(judged) {
+/** What one submission came to, in words (npm run page says the same). */
+export function outcome(judged) {
   if ("refused" in judged) return REFUSED[judged.refused];
   const { answer, reading } = judged;
   if ("failure" in answer)
@@ -91,7 +91,7 @@ function outcome(judged) {
 }
 
 /** simulate.json's params against what judge.js declares, and its check(). */
-async function paramsOf(given, hongbao, sandbox) {
+export async function paramsOf(given, hongbao, sandbox) {
   const { declarations } = sandbox;
   const read = paramValues(declarations.params, given);
   if ("problems" in read) {
