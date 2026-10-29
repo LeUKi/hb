@@ -586,9 +586,17 @@ test.describe("发红包", () => {
       "2. 沿用网站自己的登录",
       "3. 没登录过：在新窗口里登录",
       "4. 知道是哪个红包",
-      "5. 能做和不能做的",
+      "5. 接上红包站的 SDK",
+      "6. 能做和不能做的",
     ])
       await expect(page.getByRole("heading", { name: title })).toBeVisible();
+    // 接上 SDK (judge-page §11.8): the one line, from this site.
+    await expect(
+      page.getByText(/^<script src="https?:\/\/\S+\/sdk\/v1\.js"><\/script>$/),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/7\. 代码判定红包可以接红包站的 SDK/),
+    ).toBeVisible();
     // The prompt says where this page is; the steps carry the lines.
     await expect(page.getByText(/说明文档：.*\/help\/page/)).toBeVisible();
     await expect(
@@ -600,7 +608,7 @@ test.describe("发红包", () => {
       page.getByText("Set-Cookie: session=…; Path=/; Secure; HttpOnly"),
     ).toBeVisible();
     // The anchors the form's links open at.
-    for (const id of ["ai", "embed", "login"])
+    for (const id of ["ai", "embed", "login", "sdk"])
       await expect(page.locator(`#${id}`)).toHaveCount(1);
   });
 

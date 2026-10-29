@@ -3334,3 +3334,332 @@ test.describe("发红包 · 代码判定", () => {
     ).toBeVisible();
   });
 });
+
+test.describe("附带网页 SDK（judge-page §3、§11.8）", () => {
+  const gameUrl = "https://game.example.com/play";
+  const gameFrame = "iframe[title='game.example.com 的网页']";
+  type Hb = {
+    ready(): Promise<unknown>;
+    view(): Promise<unknown>;
+    on(kind: string, listener: (value: unknown) => void): () => void;
+    submit(input: string): Promise<Record<string, unknown>>;
+    mine(next?: string | null): Promise<unknown>;
+  };
+  type GameWindow = { hb: Hb; heard?: [string, unknown][] };
+
+  /** The 猜数字 红包 with a page that loads the SDK from this site. */
+  async function mockGame(page: Page, user: MockUser | null = viewer) {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    // Here the SDK comes from this machine's dev server, which Chrome keeps
+    // from a public page unless allowed (hb.lafi.sh is not local).
+    await page.context().grantPermissions(["local-network-access"]);
+    await mockSession(page, user);
+    const sockets = await mockLive(page);
+    const state = await mockCodeHongbao(page);
+    state.activity = {
+      ...state.activity,
+      page: { url: gameUrl, host: "game.example.com" },
+    };
+    // The context's: a page of its own opens it too.
+    await page.context().route("https://game.example.com/**", (route) =>
+      route.fulfill({
+        contentType: "text/html; charset=utf-8",
+        body: `<!doctype html><title>猜数字</title><h1>猜数字</h1><script src="${new URL(page.url()).origin}/sdk/v1.js"></script>`,
+      }),
+    );
+    return { state, sockets };
+  }
+
+  /** Opens the page beside the 红包 and hands back its frame. */
+  async function openGame(page: Page) {
+    await page.locator("#page-button").click();
+    await expect(
+      page.frameLocator(gameFrame).getByRole("heading", { name: "猜数字" }),
+    ).toBeVisible();
+    const frame = page.frame({ url: gameUrl });
+    if (!frame) throw new Error("GAME_FRAME_MISSING");
+    return frame;
+  }
+
+  const allowDialog = (page: Page) =>
+    page.getByRole("dialog", { name: "让这个网页替你提交？" });
+
+  test("hb.ready() 给红包的公开信息和看的人的昵称；第一次提交先问，允许以后拿到结果，判定中的那一行在页面上的我的提交最上面；冷却中给秒数，之后不再问；hb.mine() 读自己的提交", async ({
+    page,
+  }) => {
+    const { state } = await mockGame(page);
+    await openApp(page, path);
+    const frame = await openGame(page);
+    const ready = await frame.evaluate(() =>
+      (window as unknown as GameWindow).hb.ready(),
+    );
+    expect(ready).toEqual({
+      hongbao: {
+        id,
+        title,
+        url: expect.stringContaining(path),
+        code: true,
+        status: "active",
+        endedByCode: false,
+        unit: "🐟",
+        shares: { total: 5, claimed: 1, remaining: 4 },
+        pool: "1.00",
+        deadlineAt: state.activity.deadlineAt,
+        judged: 7,
+      },
+      viewer: { signedIn: true, name: viewer.displayName },
+      theme: "light",
+    });
+    expect(
+      await frame.evaluate(() => (window as unknown as GameWindow).hb.view()),
+    ).toBeNull();
+
+    // The first: asked on the 红包's side, nothing sent until 允许.
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/api/activities/*/claim", async (route) => {
+      await held;
+      await route.fallback();
+    });
+    const first = frame.evaluate(() =>
+      (window as unknown as GameWindow).hb.submit("50"),
+    );
+    const dialog = allowDialog(page);
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText(
+      "game.example.com 会替你提交输入，提交的内容和结果会出现在你的「我的提交」里，冷却和人机验证照旧。只对这个红包有效。",
+    );
+    expect(state.submissions).toEqual([]);
+    await dialog.getByRole("button", { name: "允许", exact: true }).click();
+    // On its way: the page's 我的提交 appears with it on top.
+    const record = page.locator("[data-hb-part=my-judgments]");
+    await expect(record.getByText("正在判定…")).toBeVisible();
+    await expect(record.getByText("50", { exact: true })).toBeVisible();
+    release();
+    expect(await first).toEqual({
+      judged: true,
+      claimed: false,
+      reply: "大了",
+    });
+    expect(state.submissions).toMatchObject([
+      { participationMode: "code", input: "50" },
+    ]);
+    await expect(record).toContainText("我的提交 · 1 次");
+    await expect(record.getByText("正在判定…")).toBeHidden();
+
+    // Within the cooldown the claim answered: the seconds left, not sent.
+    const cooling = await frame.evaluate(() =>
+      (window as unknown as GameWindow).hb.submit("42"),
+    );
+    expect(cooling).toMatchObject({ judged: false, reason: "cooldown" });
+    expect(Number(cooling.seconds)).toBeGreaterThan(0);
+    expect(state.submissions).toHaveLength(1);
+
+    // After it, not asked again; paid in 🐟.
+    await page.waitForTimeout(2_100);
+    expect(
+      await frame.evaluate(() =>
+        (window as unknown as GameWindow).hb.submit("42"),
+      ),
+    ).toEqual({
+      judged: true,
+      claimed: true,
+      amount: "0.30",
+      unit: "🐟",
+      reply: "猜对了！",
+    });
+    await expect(dialog).toBeHidden();
+    expect(state.submissions).toHaveLength(2);
+
+    expect(
+      await frame.evaluate(() => (window as unknown as GameWindow).hb.mine()),
+    ).toEqual({
+      total: 2,
+      items: [
+        {
+          n: 2,
+          at: expect.any(String),
+          input: "42",
+          claimed: true,
+          amount: "0.30",
+          reply: "猜对了！",
+        },
+        {
+          n: 1,
+          at: expect.any(String),
+          input: "50",
+          claimed: false,
+          reply: "大了",
+        },
+      ],
+      next: null,
+    });
+  });
+
+  test("不允许：这次不提交、网页拿到 denied，下次再问；输入不合规则不问；离开红包页后网页还开着也不能提交", async ({
+    page,
+  }) => {
+    const { state } = await mockGame(page);
+    await openApp(page, path);
+    const frame = await openGame(page);
+    const dialog = allowDialog(page);
+    for (let round = 0; round < 2; round += 1) {
+      const denied = frame.evaluate(() =>
+        (window as unknown as GameWindow).hb.submit("50"),
+      );
+      await expect(dialog).toBeVisible();
+      await dialog.getByRole("button", { name: "不允许" }).click();
+      expect(await denied).toEqual({ judged: false, reason: "denied" });
+      await expect(dialog).toBeHidden();
+    }
+    expect(
+      await frame.evaluate(() =>
+        (window as unknown as GameWindow).hb.submit("第一行\n第二行"),
+      ),
+    ).toMatchObject({ judged: false, reason: "invalid_input" });
+    await expect(dialog).toBeHidden();
+    expect(state.submissions).toEqual([]);
+
+    // The start page: the page stays loaded, hidden, and may not submit.
+    await page.getByRole("link", { name: "首页" }).click();
+    await expect(page).toHaveURL(/\/$/);
+    expect(
+      await frame.evaluate(() =>
+        (window as unknown as GameWindow).hb.submit("50"),
+      ),
+    ).toEqual({ judged: false, reason: "away" });
+    await expect(dialog).toBeHidden();
+    expect(state.submissions).toEqual([]);
+  });
+
+  test("没登录：hb.ready() 说没登录，hb.mine() 是 null；提交弹出登录卡片，网页拿到 login", async ({
+    page,
+  }) => {
+    const { state } = await mockGame(page, null);
+    await openApp(page, path);
+    const frame = await openGame(page);
+    expect(
+      await frame.evaluate(() =>
+        (window as unknown as GameWindow).hb
+          .ready()
+          .then((ready) => (ready as { viewer: unknown }).viewer),
+      ),
+    ).toEqual({ signedIn: false });
+    expect(
+      await frame.evaluate(() => (window as unknown as GameWindow).hb.mine()),
+    ).toBeNull();
+    expect(
+      await frame.evaluate(() =>
+        (window as unknown as GameWindow).hb.submit("50"),
+      ),
+    ).toEqual({ judged: false, reason: "login" });
+    await expect(page.getByRole("dialog", { name: "登录" })).toBeVisible();
+    await expect(allowDialog(page)).toBeHidden();
+    expect(state.submissions).toEqual([]);
+  });
+
+  test("推送：公开数据变了、来了新动态，网页的 hb.on 一条一条收到，从旧到新", async ({
+    page,
+  }) => {
+    const { state, sockets } = await mockGame(page);
+    state.judge = { ...state.judge, protocol: JUDGE_PROTOCOL };
+    await openApp(page, path);
+    const frame = await openGame(page);
+    await frame.evaluate(async () => {
+      const game = window as unknown as GameWindow;
+      game.heard = [];
+      for (const kind of ["view", "announce", "hongbao"])
+        game.hb.on(kind, (value) => game.heard?.push([kind, value]));
+      await game.hb.ready();
+    });
+    await expect.poll(() => sockets.length).toBe(1);
+    const at = new Date().toISOString();
+    sockets[0]?.send(
+      JSON.stringify({
+        type: "view",
+        view: { at, summary: "安全区间 1–49", data: { high: 49 } },
+      }),
+    );
+    const line = (n: number, text: string) => ({
+      n,
+      at,
+      text,
+      user: { username: "p", displayName: "玩家", avatarUrl: null },
+    });
+    sockets[0]?.send(
+      JSON.stringify({
+        type: "announce",
+        items: [line(1, "@玩家 猜了 30，安全"), line(0, "@玩家 猜了 50，大了")],
+        total: 2,
+      }),
+    );
+    sockets[0]?.send(JSON.stringify({ type: "judged", count: 9 }));
+    // Each kind in the order it came; kinds pushed together may interleave.
+    const heard = async (kind: string) =>
+      (
+        (await frame.evaluate(() => (window as unknown as GameWindow).heard)) ??
+        []
+      )
+        .filter(([each]) => each === kind)
+        .map(([, value]) => value);
+    await expect.poll(() => heard("hongbao")).toHaveLength(1);
+    expect(await heard("hongbao")).toEqual([
+      expect.objectContaining({ judged: 9 }),
+    ]);
+    expect(await heard("view")).toEqual([
+      { summary: "安全区间 1–49", data: { high: 49 }, at },
+    ]);
+    expect(await heard("announce")).toEqual([
+      {
+        n: 0,
+        at,
+        user: { name: "玩家", avatar: null },
+        text: "@玩家 猜了 50，大了",
+      },
+      {
+        n: 1,
+        at,
+        user: { name: "玩家", avatar: null },
+        text: "@玩家 猜了 30，安全",
+      },
+    ]);
+    expect(
+      await frame.evaluate(() => (window as unknown as GameWindow).hb.view()),
+    ).toEqual({ summary: "安全区间 1–49", data: { high: 49 }, at });
+  });
+
+  test("宽屏全屏时网页要提交：先退出全屏让确认露出来，答完回到全屏；单独打开网页时 hb.ready() 报错", async ({
+    page,
+  }) => {
+    await mockGame(page);
+    await openApp(page, path);
+    const frame = await openGame(page);
+    const enter = page.getByRole("button", { name: "全屏", exact: true });
+    await enter.click();
+    const exit = page.getByRole("button", { name: "退出全屏", exact: true });
+    await expect(exit).toBeVisible();
+    const asked = frame.evaluate(() =>
+      (window as unknown as GameWindow).hb.submit("50"),
+    );
+    const dialog = allowDialog(page);
+    await expect(dialog).toBeVisible();
+    await expect(exit).toBeHidden();
+    await dialog.getByRole("button", { name: "不允许" }).click();
+    expect(await asked).toEqual({ judged: false, reason: "denied" });
+    await expect(exit).toBeVisible();
+
+    // On its own: nobody answers.
+    const alone = await page.context().newPage();
+    await alone.goto(gameUrl);
+    expect(
+      await alone.evaluate(() =>
+        (window as unknown as GameWindow).hb
+          .ready()
+          .then(() => "connected")
+          .catch((error: { code?: string }) => error.code),
+      ),
+    ).toBe("not_embedded");
+  });
+});

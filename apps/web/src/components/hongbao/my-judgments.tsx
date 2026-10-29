@@ -331,8 +331,22 @@ export function MyJudgments({ activityId }: { activityId: string }) {
   const user = useSessionUser();
   const router = useRouter();
   const query = useMyJudgments(user?.id ?? "", activityId);
+  const judging = useAtomValue(judgingAtom);
   const first = query.data?.pages[0];
-  if (!user || !first || first.total === 0) return null;
+  const pending = judging?.activityId === activityId ? judging : null;
+  if (!user || !first || (first.total === 0 && !pending)) return null;
+  // On its way (from the box, or the 附带网页 with the box closed, judge-
+  // page §11.3): on top already, as in the box's record.
+  const rows: MyJudgment[] = pending
+    ? [
+        {
+          attempt: first.total + 1,
+          at: new Date(pending.at).toISOString(),
+          input: pending.input,
+        },
+        ...first.items,
+      ]
+    : first.items;
   return (
     <section className="grid gap-2" data-hb-part="my-judgments">
       <div className="flex min-h-9 items-center justify-between gap-3">
@@ -345,8 +359,12 @@ export function MyJudgments({ activityId }: { activityId: string }) {
       </div>
       <ul className="flex flex-col gap-1.5">
         <AnimatePresence initial={false}>
-          {first.items.slice(0, ON_PAGE).map((item) => (
-            <JudgmentRow key={item.attempt} item={item} />
+          {rows.slice(0, ON_PAGE).map((item, index) => (
+            <JudgmentRow
+              key={item.attempt}
+              item={item}
+              pending={pending !== null && index === 0}
+            />
           ))}
         </AnimatePresence>
       </ul>

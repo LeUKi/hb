@@ -51,6 +51,7 @@ import { windowDialogsAtom } from "../../lib/store";
 import { useOmniboxMode } from "../omnibox/state";
 import { Button } from "../ui/button";
 import { radius, Squircle, SquirclePlate } from "../ui/squircle";
+import { usePageBridge } from "./page-bridge";
 
 /**
  * The page held: the 红包 it is for and its address (null: none), open
@@ -444,10 +445,11 @@ const PAGE_FEATURES = [
 ].join("; ");
 
 /**
- * The page itself: its own origin, never this site's; nothing here listens
- * to it. It loads the first time it is opened (beside the 红包, or the
- * sheet pulled up), not before: only then does its site learn of the
- * visit (the title bar says so), and then it stays.
+ * The page itself: its own origin, never this site's; only what the SDK
+ * asks is heard from it (page-bridge.ts). It loads the first time it is
+ * opened (beside the 红包, or the sheet pulled up), not before: only then
+ * does its site learn of the visit (the title bar says so), and then it
+ * stays.
  */
 function Page({ url, active }: { url: string; active: boolean }) {
   const reload = useAtomValue(reloadAtom);
@@ -463,6 +465,8 @@ function Page({ url, active }: { url: string; active: boolean }) {
 function PageFrame({ url }: { url: string }) {
   const [ready, setReady] = useState(false);
   const host = hostOf(url);
+  const frame = useRef<HTMLIFrameElement>(null);
+  usePageBridge(frame, url, useAtomValue(heldAtom).forId);
   return (
     <>
       {!ready && (
@@ -474,6 +478,7 @@ function PageFrame({ url }: { url: string }) {
         </div>
       )}
       <iframe
+        ref={frame}
         title={`${host} 的网页`}
         className={`absolute inset-0 size-full border-0 ${ready ? "bg-white" : ""}`}
         src={url}
@@ -1239,17 +1244,27 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
   // Full screen, beside the 红包 window only: closed (leaving the 红包
   // page, the browser window narrowed to the sheet), it is over.
   const [fullAsked, setFullAsked] = useState(false);
-  const full = split && fullAsked;
+  // A dialog of the 红包 window's comes over it (the SDK's 让这个网页替你提交,
+  // a human check, the login card): out of full screen until it closes.
+  const windowCovered = useWindowCovered();
+  const full = split && fullAsked && !windowCovered;
   const [fullTick, setFullTick] = useState(0);
   const setPageFull = useSetAtom(pageFullAtom);
   useEffect(() => setPageFull(full), [full, setPageFull]);
-  const [last, setLast] = useState({ split, sheetBelow });
-  if (last.split !== split || last.sheetBelow !== sheetBelow) {
-    setLast({ split, sheetBelow });
+  const [last, setLast] = useState({ split, sheetBelow, full });
+  if (
+    last.split !== split ||
+    last.sheetBelow !== sheetBelow ||
+    last.full !== full
+  ) {
+    setLast({ split, sheetBelow, full });
     if (!split && fullAsked) setFullAsked(false);
     if (!reduced) {
       if (last.split !== split) {
         setTick((count) => count + 1);
+        setMoving(true);
+      } else if (last.full !== full) {
+        setFullTick((count) => count + 1);
         setMoving(true);
       }
       if (last.sheetBelow !== sheetBelow) setLifting(true);
@@ -1279,15 +1294,11 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
     const leave = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
       event.preventDefault();
-      if (!reduced) {
-        setFullTick((count) => count + 1);
-        setMoving(true);
-      }
       setFullAsked(false);
     };
     window.addEventListener("keydown", leave);
     return () => window.removeEventListener("keydown", leave);
-  }, [full, reduced]);
+  }, [full]);
   // Asked from the 红包 page (附带网页 under 分享, the cover's tag, a
   // note's button).
   const request = useAtomValue(requestAtom);
@@ -1356,13 +1367,7 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
             closing={armed}
             full={full}
             veilTick={tick + fullTick}
-            onToggleFull={() => {
-              if (!reduced) {
-                setFullTick((count) => count + 1);
-                setMoving(true);
-              }
-              setFullAsked(!full);
-            }}
+            onToggleFull={() => setFullAsked(!full)}
             onToggleWidth={() =>
               change(() =>
                 setHeld((current) => ({

@@ -47,6 +47,11 @@ import { myJudgmentsKey } from "../../lib/judge";
 import { maintenanceAtom } from "../../lib/maintenance";
 import { closeOverlay, openOverlay, switchOverlay } from "../../lib/overlay";
 import {
+  askPageSubmit,
+  notJudged,
+  type PageSubmitResult,
+} from "../../lib/page-submit";
+import {
   type ParticipationCache,
   participationKey,
 } from "../../lib/participation-cache";
@@ -858,6 +863,145 @@ export function useOmniboxController() {
   );
 
   /**
+   * 网页替你提交 (docs/judge-page-design.md §3.3, §11.8): `hb.submit()` from
+   * a 代码判定红包's 附带网页, asked once per 红包 and site, then sent as
+   * the box sends it — cooldown, human check, 自领 — its card on top of 我的
+   * 提交. The page gets the outcome to word itself; the box's text and
+   * message stay as they were, and a lost answer is not kept to retry (the
+   * page reads hb.mine()).
+   */
+  const submitForPage = useCallback(
+    async (
+      activityId: string,
+      typed: string,
+      origin: string,
+    ): Promise<PageSubmitResult> => {
+      const account = sessionUserOf(queryClient);
+      if (!account) {
+        if (!store.get(maintenanceAtom)) openAccount();
+        return notJudged("login");
+      }
+      const activity = queryClient.getQueryData<PublicActivityDetail>(
+        activityKeys.public(activityId, account.id),
+      )?.activity;
+      if (activity?.participationMode !== "code") return notJudged("not_code");
+      const checked = judgeAnswerSchema.safeParse(typed);
+      if (!checked.success)
+        return notJudged("invalid_input", {
+          message: checked.error.issues[0]?.message ?? "请检查输入",
+        });
+      const waiting = () => {
+        const left = attemptCooldownRemainingMs(account.id);
+        return left > 0
+          ? notJudged("cooldown", { seconds: Math.ceil(left / 1000) })
+          : store.get(pendingAtom)
+            ? notJudged("busy")
+            : null;
+      };
+      const before = waiting();
+      if (before) return before;
+      if (
+        !(await askPageSubmit(store, {
+          userId: account.id,
+          activityId,
+          origin,
+        })) ||
+        (ownOf(activityId, account.id) && !(await askSelfClaim(store, false)))
+      )
+        return notJudged("denied");
+      // Asked meanwhile: the box may have sent one, or the account changed.
+      if (sessionUserOf(queryClient)?.id !== account.id)
+        return notJudged("login");
+      const after = waiting();
+      if (after) return after;
+      const input: ClaimActivityInput = {
+        participationMode: "code",
+        submissionId: crypto.randomUUID(),
+        input: checked.data,
+      };
+      const href = router.history.location.href;
+      const stale = () =>
+        router.history.location.href !== href ||
+        sessionUserOf(queryClient)?.id !== account.id;
+      store.set(pendingAtom, true);
+      store.set(rewardAnimationAtom, {
+        activityId,
+        token: input.submissionId,
+      });
+      store.set(judgingAtom, {
+        activityId,
+        input: checked.data,
+        at: Date.now(),
+      });
+      try {
+        const result = await claimWithHumanCheck(activityId, input, stale);
+        if (!result) return notJudged("human_check");
+        if (result.result === "claimed" || result.result === "rejected")
+          await queryClient.invalidateQueries({
+            queryKey: myJudgmentsKey(account.id, activityId),
+          });
+        switch (result.result) {
+          case "claimed": {
+            const balance = result.claim.activity.funding === "balance";
+            if (balance)
+              void queryClient.invalidateQueries({
+                queryKey: sessionQueryKey,
+              });
+            const reply = result.claim.judge?.message;
+            return {
+              judged: true,
+              claimed: true,
+              amount: result.claim.amount,
+              unit: balance ? "🐟" : "LDC",
+              ...(reply ? { reply } : {}),
+            };
+          }
+          case "rejected":
+            return {
+              judged: true,
+              claimed: false,
+              ...(result.message ? { reply: result.message } : {}),
+            };
+          case "already_claimed":
+            return notJudged("already_claimed");
+          case "draft":
+            return notJudged("not_open");
+          default:
+            return notJudged("ended");
+        }
+      } catch (error) {
+        if (!(error instanceof ActivityRequestError))
+          return notJudged("unconfirmed");
+        switch (error.code) {
+          case "JUDGE_FAILED":
+            return notJudged("judge_failed");
+          case "CODE_PAUSED":
+            void queryClient.invalidateQueries({
+              queryKey: activityKeys.public(activityId, account.id),
+            });
+            return notJudged("paused");
+          case "JUDGE_UNAVAILABLE":
+          case "CODE_BUSY":
+            return notJudged("try_later");
+          case "NOT_IN_SCOPE":
+            noteOutOfScope(store, activityId);
+            return notJudged("not_in_scope");
+          case "HUMAN_CHECK_REQUIRED":
+            return notJudged("human_check");
+        }
+        if (error.status === 429) return notJudged("try_later");
+        if (error.status === 401) return notJudged("login");
+        if (!refused(error)) return notJudged("unconfirmed");
+        return notJudged("error", { message: error.message });
+      } finally {
+        store.set(pendingAtom, false);
+        store.set(judgingAtom, null);
+      }
+    },
+    [claimWithHumanCheck, openAccount, ownOf, queryClient, router, store],
+  );
+
+  /**
    * 验证其他口令: for someone who already took part. A correct 口令 is only
    * revealed to them (已解出); it never claims again. Shares the cooldown
    * with claiming, except for answers that need no check (06 §4).
@@ -970,6 +1114,7 @@ export function useOmniboxController() {
     submit,
     runCommand,
     redeemIn,
+    submitForPage,
     verifyIn,
     openAccount,
     goHome,

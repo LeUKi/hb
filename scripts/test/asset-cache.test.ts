@@ -2,7 +2,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { assetCacheHeaders, FRAMING_RULE } from "../../apps/web/asset-cache";
+import {
+  assetCacheHeaders,
+  FRAMING_RULE,
+  SDK_RULE,
+} from "../../apps/web/asset-cache";
 import { inspectAssetCache } from "../release";
 
 const temporary: string[] = [];
@@ -25,6 +29,7 @@ describe("fingerprinted static asset caching", () => {
     ]);
     expect(headers.split("\n").filter((line) => line.startsWith("/"))).toEqual([
       "/*",
+      "/sdk/*",
       "/assets/app-1234abcd.css",
       "/assets/app-ABCDEFGH.js",
       "/assets/font-1234abcd.woff2",
@@ -48,15 +53,15 @@ describe("fingerprinted static asset caching", () => {
   });
 
   it("fails the build instead of silently exceeding Cloudflare's rule limit", () => {
-    // 99 chunks and the framing rule fit; one more does not.
+    // 98 chunks, the framing rule and the SDK's fit; one more does not.
     expect(() =>
       assetCacheHeaders(
-        Array.from({ length: 99 }, (_, i) => `assets/chunk${i}-1234abcd.js`),
+        Array.from({ length: 98 }, (_, i) => `assets/chunk${i}-1234abcd.js`),
       ),
     ).not.toThrow();
     expect(() =>
       assetCacheHeaders(
-        Array.from({ length: 100 }, (_, i) => `assets/chunk${i}-1234abcd.js`),
+        Array.from({ length: 99 }, (_, i) => `assets/chunk${i}-1234abcd.js`),
       ),
     ).toThrow("ASSET_CACHE_RULE_LIMIT_EXCEEDED");
   });
@@ -65,6 +70,14 @@ describe("fingerprinted static asset caching", () => {
     expect(assetCacheHeaders(["assets/app-ABCDEFGH.js"])).toContain(
       "/*\n  Content-Security-Policy: frame-ancestors 'self'\n  X-Frame-Options: SAMEORIGIN\n",
     );
+  });
+
+  it("lets any site load the 附带网页 SDK, kept an hour", () => {
+    const headers = assetCacheHeaders(["assets/app-ABCDEFGH.js"]);
+    expect(headers).toContain(SDK_RULE);
+    expect(SDK_RULE).toContain("Access-Control-Allow-Origin: *");
+    expect(SDK_RULE).toContain("Cache-Control: public, max-age=3600");
+    expect(SDK_RULE).not.toContain("immutable");
   });
 
   it("release verification rejects missing, broad or incomplete cache policies", () => {

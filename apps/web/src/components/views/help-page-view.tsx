@@ -29,6 +29,59 @@ const loginCode = `function openLogin() {
   window.open("https://你的网站/login", "login", "popup,width=520,height=720");
 }`;
 
+/** 接上红包站的 SDK (docs/judge-page-design.md §11.8): public/sdk/v1.js. */
+const readCode = `const { hongbao, viewer } = await hb.ready();
+// hongbao：id、title、url、code、status、endedByCode、
+//   unit、shares、pool、deadlineAt、judged
+// viewer：{ signedIn: true, name } 或 { signedIn: false }
+
+// 判定器的公开数据：{ summary, data, at }，没有时是 null
+show(await hb.view());
+hb.on("view", show); // 公开数据变了
+hb.on("hongbao", update); // 状态、剩余份数、已判定次数变了
+// 新的一条动态：{ n, at, user: { name, avatar }, text }
+hb.on("announce", addLine);`;
+
+const submitCode = `const result = await hb.submit("50");
+if (result.judged) {
+  // claimed：领到没有；amount、unit：领了多少
+  // reply：代码的回复（没有就不带）
+  say(
+    result.claimed
+      ? \`领到 \${result.amount} \${result.unit}\`
+      : (result.reply ?? "没领到"),
+  );
+} else if (result.reason === "cooldown") {
+  say(\`\${result.seconds} 秒后再试\`);
+} else {
+  say(reasons[result.reason] ?? "没有提交"); // 原因见下面
+}`;
+
+const mineCode = `const mine = await hb.mine(); // 没登录时是 null
+// { total, items: [{ n, at, input, claimed, amount, reply }], next }
+if (mine?.next) more(await hb.mine(mine.next)); // 再读 20 条`;
+
+/** Why a submission was not judged: `reason`, and what it means. */
+const reasons = [
+  ["denied", "看的人没允许网页替他提交（领自己的红包时点了返回也是）"],
+  ["login", "没登录：红包页弹出了登录卡片，登录回来以后网页再提交"],
+  ["cooldown", "冷却中，seconds 是还剩几秒"],
+  ["busy", "上一次提交还没有结果"],
+  ["human_check", "没完成或没通过人机验证"],
+  ["not_in_scope", "不在领取范围"],
+  ["already_claimed", "已经领到过（每人领一次）"],
+  ["not_open", "还没开放"],
+  ["ended", "红包已结束"],
+  ["paused", "代码连续出错，暂停领取"],
+  ["judge_failed", "这次代码出错了，不算次数"],
+  ["try_later", "提交的人太多、太频繁，或判定暂时不可用"],
+  ["invalid_input", "输入不合规则（空、超过 200 字、有换行），message 是原因"],
+  ["unconfirmed", "没收到回应，可能已经提交了，用 hb.mine() 看"],
+  ["away", "看的人不在这个红包页上（网页还开着，但没在显示）"],
+  ["not_code", "不是代码判定红包"],
+  ["error", "其他错误，message 是原因"],
+] as const;
+
 /**
  * For a chat AI, whole: where this page is, then what to change. The page
  * is drawn in the browser, so an AI that fetches it reads nothing: the
@@ -50,6 +103,12 @@ const aiPrompt = (
 4. 红包页给 iframe 的权限：脚本、表单、自己的 Cookie 和存储、新窗口、提示框、下载、全屏、写剪贴板、自动播放；没有整页跳转、摄像头、麦克风、定位、支付、读剪贴板，不要用这些。
 5. 想知道是哪个红包，读 document.referrer（红包页的地址）。
 6. 网页里不要收钱、交易，不要让人输账号密码。
+7. 代码判定红包可以接红包站的 SDK：页面里加 <script src="${origin}/sdk/v1.js"></script>，就有全局的 hb。
+   - await hb.ready() 返回 { hongbao, viewer, theme }：hongbao 有 id、title、url、code、status（draft、active、ended）、endedByCode、unit（LDC 或 🐟）、shares（{ total, claimed, remaining } 或 null）、pool、deadlineAt、judged；viewer 是 { signedIn: true, name } 或 { signedIn: false }。单独打开网页时它会报错，照常显示一段说明即可。
+   - await hb.view() 是判定器的公开数据 { summary, data, at }，没有时 null；hb.on("view" | "hongbao" | "announce", fn) 订阅变化，返回取消订阅的函数；announce 每次一条 { n, at, user: { name, avatar }, text }。
+   - await hb.submit(input) 替看的人提交一次，同一个红包第一次会先问他。判定了是 { judged: true, claimed, amount, unit, reply }，没判定是 { judged: false, reason, seconds, message }；reason 有 ${reasons.map(([name]) => name).join("、")}。给玩的人看的提示由网页自己写。
+   - await hb.mine(next) 读他自己的提交 { total, items: [{ n, at, input, claimed, amount, reply }], next }，没登录时 null。
+   - 做不到：读红包站的 Cookie 和登录信息、看别人的输入、转账、发红包、改红包、绕过冷却和人机验证。
 
 我的网站：（在这里写技术栈和现在的登录方式，比如用 LINUX DO Connect 登录、会话 Cookie 叫什么）`;
 
@@ -146,7 +205,41 @@ export function HelpPageView() {
           </p>
         </Panel>
       </PageSection>
-      <PageSection id="limits" title="5. 能做和不能做的">
+      <PageSection
+        id="sdk"
+        title="5. 接上红包站的 SDK"
+        description="代码判定红包的网页可以读红包的公开数据、替看的人提交。"
+      >
+        <Block
+          label="引用"
+          code={`<script src="${origin}/sdk/v1.js"></script>`}
+          wrap
+        />
+        <Panel className={text}>
+          <p>
+            红包页接上以后，<Code>hb.ready()</Code>{" "}
+            给你红包的公开信息和看的人（登录了只给昵称）；单独打开网页时它会报错，网页可以照常显示一段说明。
+          </p>
+        </Panel>
+        <Block label="读公开数据和动态" code={readCode} />
+        <Block label="替看的人提交" code={submitCode} />
+        <Panel className={text}>
+          <p>
+            同一个红包第一次提交时，红包页会问看的人允不允许这个网页替他提交，不允许时{" "}
+            <Code>reason</Code> 是 <Code>denied</Code>
+            。提交照样有冷却和人机验证，每一次都出现在他的「我的提交」里。怎么跟玩的人说，由网页自己写。
+          </p>
+        </Panel>
+        <Fields items={reasons.map(([name, note]) => ({ name, note }))} />
+        <Block label="读自己的提交" code={mineCode} />
+        <Panel className={text}>
+          <p>
+            做不到：读红包站的 Cookie
+            和登录信息、看别人的输入、转账、发红包、改红包、绕过冷却和人机验证。
+          </p>
+        </Panel>
+      </PageSection>
+      <PageSection id="limits" title="6. 能做和不能做的">
         <Fields
           items={[
             {
