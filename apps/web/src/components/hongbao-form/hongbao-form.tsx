@@ -359,11 +359,23 @@ export function HongbaoForm({
       : undefined;
   useEffect(() => {
     if (startParam === null || currentIndex !== placeOf("claim")) return;
-    if (!judge.known) return;
+    // One's own waits for its code to be placed; another's is in already.
+    if (!borrowed && !judge.known) return;
     const key = startParam;
     setStartParam(null);
-    // After the step's title took focus, as a new step's does.
-    window.setTimeout(() => jumpTo(`hb-param-${key}`), 400);
+    const field = `hb-param-${key}`;
+    // After the step's title took focus, as a new step's does; once more
+    // if the page took it back meanwhile (its title, the page itself),
+    // never from something the person chose.
+    window.setTimeout(() => jumpTo(field), 400);
+    window.setTimeout(() => {
+      const now = document.activeElement;
+      if (
+        now?.id !== field &&
+        (now === document.body || now?.id === "view" || now === heading.current)
+      )
+        jumpTo(field);
+    }, 1200);
   });
 
   /**
