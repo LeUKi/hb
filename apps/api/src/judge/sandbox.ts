@@ -6,13 +6,14 @@ import { JUDGE_PROTOCOL } from "@hb/contracts";
 import type { FetchAnswer, Submission } from "../../../../kit/judge";
 import frozenV1 from "../../../../kit/runtime/frozen/v1.json";
 import frozenV2 from "../../../../kit/runtime/frozen/v2.json";
+import frozenV3 from "../../../../kit/runtime/frozen/v3.json";
 import { NETWORK_LIMITS } from "../../../../kit/runtime/index.mjs";
 import type { ApiBindings } from "../env";
 import runtime from "./runtime.generated.json";
 
 /**
- * Protocol v3: this runtime on this compatibility date with nodejs_compat.
- * v1's and v2's runtimes are kept as 红包 opened with them.
+ * Protocol v4: this runtime on this compatibility date with nodejs_compat.
+ * v1's, v2's and v3's runtimes are kept as 红包 opened with them.
  */
 export { JUDGE_PROTOCOL };
 
@@ -78,6 +79,7 @@ const modulesOf = (copy: Record<string, string>) =>
 const runtimeModules: Record<number, Record<string, { js: string }>> = {
   1: modulesOf(frozenV1),
   2: modulesOf(frozenV2),
+  3: modulesOf(frozenV3),
   [JUDGE_PROTOCOL]: modulesOf(runtime),
 };
 
@@ -245,20 +247,21 @@ export async function describeJudge(
 }
 
 /**
- * check(params, hongbao) once (docs/judge-square-design.md §3 校验), in the
- * same 判定器 as its judgments: what it answered (for readCheckAnswer), or
- * how it failed.
+ * One request main.mjs answers with `{ answer }` once judge.js is loaded:
+ * what it answered, or how it failed, cut off after JUDGE_WAIT_MS. `name`
+ * says what timed out.
  */
-export async function checkParamsInJudge(
+async function askJudge(
   env: ApiBindings,
-  run: Pick<JudgeRun, "code" | "fingerprint" | "fresh">,
-  input: { params: unknown; hongbao: unknown },
+  run: Pick<JudgeRun, "code" | "fingerprint" | "fresh" | "protocol">,
+  body: Record<string, unknown>,
+  name: string,
 ): Promise<
   { answer: unknown } | { failure: SandboxFailure; detail: string; hung?: true }
 > {
   const request = judgeEntrypoint(env, run).fetch("http://judge/", {
     method: "POST",
-    body: JSON.stringify({ check: { ...input, now: Date.now() } }),
+    body: JSON.stringify(body),
   });
   request.catch(() => {});
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -270,20 +273,20 @@ export async function checkParamsInJudge(
     if (response === "late")
       return {
         failure: "timeout",
-        detail: `check 超过 ${JUDGE_WAIT_MS} 毫秒没有返回`,
+        detail: `${name} 超过 ${JUDGE_WAIT_MS} 毫秒没有返回`,
       };
-    const body = (await response.json()) as {
+    const read = (await response.json()) as {
       answer?: unknown;
       error?: { kind: SandboxFailure; detail: string };
     };
-    if (body.error) {
-      const kind = REPORTED.has(body.error.kind) ? body.error.kind : "invalid";
+    if (read.error) {
+      const kind = REPORTED.has(read.error.kind) ? read.error.kind : "invalid";
       return {
         failure: kind,
-        detail: String(body.error.detail ?? "").slice(0, 500),
+        detail: String(read.error.detail ?? "").slice(0, 500),
       };
     }
-    return { answer: body.answer ?? null };
+    return { answer: read.answer ?? null };
   } catch (error) {
     const outcome = classify(error, true);
     return "failure" in outcome
@@ -292,10 +295,36 @@ export async function checkParamsInJudge(
           detail: outcome.detail,
           ...(outcome.hung ? { hung: true as const } : {}),
         }
-      : { failure: "unavailable", detail: "check 没有返回" };
+      : { failure: "unavailable", detail: `${name} 没有返回` };
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * check(params, hongbao) once (docs/judge-square-design.md §3 校验), in the
+ * same 判定器 as its judgments: what it answered (for readCheckAnswer), or
+ * how it failed.
+ */
+export function checkParamsInJudge(
+  env: ApiBindings,
+  run: Pick<JudgeRun, "code" | "fingerprint" | "fresh">,
+  input: { params: unknown; hongbao: unknown },
+) {
+  return askJudge(env, run, { check: { ...input, now: Date.now() } }, "check");
+}
+
+/**
+ * setup(params, hongbao) once at opening (docs/judge-page-design.md §2,
+ * protocol 4), at `now`, Math.random() drawn from `seed` (setupSeed): what
+ * it answered (for readSetup), or how it failed.
+ */
+export function setupInJudge(
+  env: ApiBindings,
+  run: Pick<JudgeRun, "code" | "fingerprint" | "fresh" | "protocol">,
+  input: { params: unknown; hongbao: unknown; now: number; seed: string },
+) {
+  return askJudge(env, run, { setup: input }, "setup");
 }
 
 /**

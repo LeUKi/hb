@@ -33,7 +33,8 @@ export const judgeData = (
     | "versions"
     | "fetches"
     | "params"
-    | "params-salt",
+    | "params-salt"
+    | "setup",
 ) => `judge:${activityId}:${part}`;
 
 /** The fingerprint (judge.js) and the tests' digest: SHA-256 of the text. */
@@ -300,22 +301,27 @@ function sameJson(left: unknown, right: unknown): boolean {
   return left === right;
 }
 
+/** A 红包's secret seed (64 hex digits), made as it opens. */
+export function newSeed() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
 /**
  * Opening: the secret seed, sealed; its 封存值 is public from now on. The
- * 红包 takes the current protocol, and the addresses its code exports as
- * the run of this code and these tests that passed found them (§9.2) —
- * its 判定器 author's run, for another's (judge-square §15.3).
+ * 红包 takes the protocol it opens on (opening.ts codeOpeningRun), and the
+ * addresses its code exports as the run of this code and these tests on
+ * it that passed found them (§9.2) — its 判定器 author's run, for
+ * another's (judge-square §15.3).
  */
 export async function sealSeedStatement(
   env: ApiBindings,
   activityId: string,
-  commitment: (secret: string) => string,
+  secret: string,
+  commitment: string,
+  protocol: number,
 ) {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  const secret = Array.from(bytes, (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("");
   return env.DB.prepare(`UPDATE activity_code SET seed_commitment = ?1, seed_ciphertext = ?2,
       protocol = ?4, network = (SELECT k.network FROM judge_checks k JOIN activities a ON a.id = activity_code.activity_id
         WHERE k.user_id = COALESCE((SELECT author_id FROM judges WHERE id = activity_code.judge_id), a.author_id)
@@ -324,10 +330,10 @@ export async function sealSeedStatement(
         ORDER BY k.created_at DESC LIMIT 1),
       updated_at = ${databaseNow}
     WHERE activity_id = ?3 AND seed_commitment IS NULL`).bind(
-    commitment(secret),
+    commitment,
     await encryptString(secret, env, judgeData(activityId, "seed")),
     activityId,
-    JUDGE_PROTOCOL,
+    protocol,
   );
 }
 

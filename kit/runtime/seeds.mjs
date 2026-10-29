@@ -43,3 +43,13 @@ export function userSeed(hongbaoId, secret, userId) {
     ].join("\n"),
   );
 }
+
+/**
+ * Math.random() in setup() (protocol 4), at opening: the same for anyone
+ * with the secret, so a replay draws what it drew.
+ */
+export function setupSeed(hongbaoId, secret) {
+  return sha256Text(
+    ["hb.lafi.sh/judge/v1/setup", hongbaoId, checked(secret)].join("\n"),
+  );
+}

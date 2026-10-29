@@ -358,6 +358,13 @@
       "when": 1793201613624,
       "tag": "0050_judge_square",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "6",
+      "when": 1793253003467,
+      "tag": "0051_judge_view",
+      "breakpoints": true
     }
   ]
 }

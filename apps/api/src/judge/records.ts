@@ -47,6 +47,9 @@ type JudgmentRow = {
   message: string | null;
   stateCiphertext: string | null;
   fetchesCiphertext: string | null;
+  view: string | null;
+  ends: number;
+  announce: string | null;
   at: number;
   externalId: string;
   displayName: string;
@@ -57,13 +60,14 @@ type JudgmentRow = {
 
 const JUDGMENTS = `SELECT j.submission_row_id AS rowId, j.sequence, j.attempt, j.title, j.username, j.level,
     j.ok, j.asked_minor AS asked, j.paid_minor AS paid, j.note, j.message, j.state_ciphertext AS stateCiphertext,
-    j.fetches_ciphertext AS fetchesCiphertext,
+    j.fetches_ciphertext AS fetchesCiphertext, j.view, j.ends, n.text AS announce,
     j.judged_at AS at, u.external_id AS externalId, u.display_name AS displayName, u.avatar_url AS avatarUrl,
     e.ciphertext, c.claimed_at AS claimedAt
   FROM code_judgments j JOIN users u ON u.id = j.user_id
   JOIN attempt_events e ON e.submission_row_id = j.submission_row_id
   JOIN redemption_submissions s ON s.id = j.submission_row_id
-  LEFT JOIN claims c ON c.id = s.claim_id AND s.outcome = 'claimed'`;
+  LEFT JOIN claims c ON c.id = s.claim_id AND s.outcome = 'claimed'
+  LEFT JOIN activity_announcements n ON n.submission_row_id = j.submission_row_id`;
 
 const inputOf = (env: ApiBindings, activityId: string, row: JudgmentRow) =>
   decryptString(
@@ -158,6 +162,16 @@ async function recordsOf(
           ...(row.asked !== null ? { amount: row.asked } : {}),
           ...(row.message ? { message: row.message } : {}),
           ...(state !== undefined ? { state } : {}),
+          // 协议第四版 (docs/judge-page-design.md §2).
+          ...(row.view !== null
+            ? {
+                view: JSON.parse(
+                  row.view,
+                ) as JudgeRecords["judgments"][number]["verdict"]["view"],
+              }
+            : {}),
+          ...(row.announce !== null ? { announce: row.announce } : {}),
+          ...(row.ends === 1 ? { end: true as const } : {}),
         },
         ...(row.paid !== null ? { paid: row.paid } : {}),
         ...(row.note ? { note: row.note } : {}),
@@ -168,6 +182,17 @@ async function recordsOf(
   );
   // 协议第三版: what it was sent with, and the secret ones' seal (§3).
   const params = judge.protocol >= 3 ? await judgedParams(env, judge) : null;
+  // 协议第四版: what setup() answered at opening.
+  const setup =
+    judge.setupCiphertext === null
+      ? null
+      : (JSON.parse(
+          await decryptString(
+            judge.setupCiphertext,
+            env,
+            judgeData(activity.id, "setup"),
+          ),
+        ) as NonNullable<JudgeRecords["setup"]>);
   return {
     // The protocol it opened with: what a replay runs (§4.7).
     protocol: judge.protocol,
@@ -200,6 +225,7 @@ async function recordsOf(
       seedCommitment: judge.seedCommitment,
       seed: open?.seed ?? null,
     },
+    ...(setup ? { setup } : {}),
     judgments,
   };
 }

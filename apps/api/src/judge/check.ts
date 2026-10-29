@@ -4,13 +4,15 @@
 // npm test and npm run check share), its requests answered from what the
 // tests wrote, never the network (§9.6). A sender's first run of a code
 // deploys it, on whichever protocol; later runs rerun its tests. A 红包
-// opens only with code and tests that passed on the current protocol.
-import type {
-  JudgeCheck,
-  JudgeCheckInput,
-  JudgeDeclarations,
-  JudgeSettings,
-  JudgeTestOutcome,
+// opens only with code and tests that passed, on the newest protocol they
+// passed on from JUDGE_OLDEST_PROTOCOL.
+import {
+  JUDGE_OLDEST_PROTOCOL,
+  type JudgeCheck,
+  type JudgeCheckInput,
+  type JudgeDeclarations,
+  type JudgeSettings,
+  type JudgeTestOutcome,
 } from "@hb/contracts";
 import type { FetchAnswer } from "../../../../kit/judge";
 import {
@@ -126,6 +128,26 @@ async function deployedBefore(
   );
 }
 
+/**
+ * The protocol a 红包 with this code and these tests opens on (docs/judge-
+ * page-design.md §11.1): the newest a passing run of them by this sender
+ * was on, from JUDGE_OLDEST_PROTOCOL — so a 判定器 tested on v3 opens on
+ * v3's runtime, as it was tested. Null when none passed.
+ */
+export async function openingProtocol(
+  env: ApiBindings,
+  userId: string,
+  fingerprint: string,
+  testsDigest: string,
+) {
+  return env.DB.prepare(
+    `SELECT MAX(protocol) AS protocol FROM judge_checks WHERE user_id = ? AND protocol >= ? AND fingerprint = ?
+      AND tests_digest = ? AND passed = 1`,
+  )
+    .bind(userId, JUDGE_OLDEST_PROTOCOL, fingerprint, testsDigest)
+    .first<number | null>("protocol");
+}
+
 /** Whether this code and these tests passed a run by this sender. */
 export async function passedCheck(
   env: ApiBindings,
@@ -133,12 +155,8 @@ export async function passedCheck(
   fingerprint: string,
   testsDigest: string,
 ) {
-  return Boolean(
-    await env.DB.prepare(
-      "SELECT 1 FROM judge_checks WHERE user_id = ? AND protocol = ? AND fingerprint = ? AND tests_digest = ? AND passed = 1 LIMIT 1",
-    )
-      .bind(userId, JUDGE_PROTOCOL, fingerprint, testsDigest)
-      .first(),
+  return (
+    (await openingProtocol(env, userId, fingerprint, testsDigest)) !== null
   );
 }
 
@@ -155,12 +173,12 @@ export async function testsChanged(
 ) {
   return (
     (await env.DB.prepare(
-      `SELECT EXISTS(SELECT 1 FROM judge_checks WHERE user_id = ?1 AND protocol = ?2 AND fingerprint = ?3
+      `SELECT EXISTS(SELECT 1 FROM judge_checks WHERE user_id = ?1 AND protocol >= ?2 AND fingerprint = ?3
           AND finished_at IS NOT NULL)
-        AND NOT EXISTS(SELECT 1 FROM judge_checks WHERE user_id = ?1 AND protocol = ?2 AND fingerprint = ?3
+        AND NOT EXISTS(SELECT 1 FROM judge_checks WHERE user_id = ?1 AND protocol >= ?2 AND fingerprint = ?3
           AND tests_digest = ?4 AND finished_at IS NOT NULL) AS changed`,
     )
-      .bind(userId, JUDGE_PROTOCOL, fingerprint, testsDigest)
+      .bind(userId, JUDGE_OLDEST_PROTOCOL, fingerprint, testsDigest)
       .first<number>("changed")) === 1
   );
 }

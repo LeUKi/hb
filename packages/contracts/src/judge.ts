@@ -27,14 +27,23 @@ export type JudgeDeclarations = {
   hongbao: HongbaoRules | null;
   /** It exports check(params, hongbao). */
   check: boolean;
+  /** v4: it exports setup(params, hongbao); absent from a v3 run. */
+  setup?: boolean;
 };
 
 /**
- * The protocol a 红包 opens with now (§4.7, §9; docs/judge-square-design.md
- * §5): v2 is v1 with 联网, v3 is v2 with params. An opened 红包 keeps the
- * one it opened with.
+ * The protocol code is run on now (§4.7, §9; docs/judge-square-design.md
+ * §5; docs/judge-page-design.md §2): v2 is v1 with 联网, v3 is v2 with
+ * params, v4 is v3 with view, announce, end and setup(). An opened 红包
+ * keeps the one it opened with.
  */
-export const JUDGE_PROTOCOL = 3;
+export const JUDGE_PROTOCOL = 4;
+/**
+ * The oldest protocol a 红包 still opens on: code whose tests passed on it
+ * opens on the newest protocol they passed on, as it was run; code last
+ * run on an older one runs again first (free, a rerun).
+ */
+export const JUDGE_OLDEST_PROTOCOL = 3;
 
 export const JUDGE_LIMITS = {
   promptCharacters: 40,
@@ -263,6 +272,10 @@ export type JudgeTestOutcome = {
     note?: JudgeNote | null;
     message?: string;
     state?: unknown;
+    /** Protocol 4: what everyone sees after it, its line in 动态, its end. */
+    view?: unknown;
+    announce?: string;
+    end?: true;
   };
   ms?: number;
 };

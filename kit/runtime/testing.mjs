@@ -257,6 +257,10 @@ function expectProblem(expect) {
       "messageIncludes",
       "state",
       "stateIncludes",
+      "view",
+      "viewIncludes",
+      "announce",
+      "end",
     ],
     "expect 里",
   );
@@ -295,6 +299,21 @@ function expectProblem(expect) {
     return "expect.state 和 expect.stateIncludes 只能写一个";
   if (expect.stateIncludes !== undefined && !isObject(expect.stateIncludes))
     return "expect.stateIncludes 要是一个对象（只比写了的键）";
+  // 协议第四版: what everyone sees, the line in 动态, the end.
+  if (expect.view !== undefined && expect.viewIncludes !== undefined)
+    return "expect.view 和 expect.viewIncludes 只能写一个";
+  if (
+    expect.view !== undefined &&
+    expect.view !== null &&
+    (!isObject(expect.view) || !writable(expect.view))
+  )
+    return "expect.view 要是一个对象（summary、data）或 null";
+  if (expect.viewIncludes !== undefined && !isObject(expect.viewIncludes))
+    return "expect.viewIncludes 要是一个对象（只比写了的键）";
+  if (expect.announce !== undefined && typeof expect.announce !== "string")
+    return "expect.announce 要是字符串";
+  if (expect.end !== undefined && typeof expect.end !== "boolean")
+    return "expect.end 要是 true 或 false";
   return null;
 }
 
@@ -680,7 +699,7 @@ const noteText = (note) =>
   note === null ? "null（没拉进范围）" : `"${note}"（${NOTE_WORDS[note]}）`;
 
 /** Every way a read answer differs from what was expected (§5 expect). */
-function differences(expect, reading, state) {
+function differences(expect, reading, state, view) {
   const found = [];
   if (expect.ok !== reading.ok)
     found.push(expect.ok ? "应该发，实际没发" : "不应该发，实际发了");
@@ -717,10 +736,33 @@ function differences(expect, reading, state) {
         `state 里的 ${paths.join("、")} 和 expect.stateIncludes 不一样`,
       );
   }
+  if (expect.view !== undefined && !sameJson(expect.view, view))
+    found.push("view 和 expect.view 不一样");
+  if (expect.viewIncludes !== undefined) {
+    const paths = unmatched(expect.viewIncludes, view);
+    if (paths.includes("")) found.push("view 和 expect.viewIncludes 不一样");
+    else if (paths.length > 0)
+      found.push(`view 里的 ${paths.join("、")} 和 expect.viewIncludes 不一样`);
+  }
+  const announce = reading.announce ?? "";
+  if (expect.announce !== undefined && expect.announce !== announce)
+    found.push(
+      `动态应该是“${expect.announce}”，${announce ? `实际是“${announce}”` : "实际没有动态"}`,
+    );
+  if (expect.end !== undefined && expect.end !== (reading.end === true))
+    found.push(
+      expect.end ? "应该结束红包，实际没结束" : "不应该结束红包，实际结束了",
+    );
   if (reading.unknown.length > 0)
     found.push(`代码返回了协议以外的字段：${reading.unknown.join("、")}`);
   return found;
 }
+
+const REFUSALS = {
+  ended: "红包已经被判定器结束了，线上不会交给代码",
+  claimed: "已经领过了，线上不会交给代码",
+  "sold-out": "份已经领完了，线上不会交给代码",
+};
 
 const failureWords = {
   load: "代码加载不了",
@@ -746,15 +788,15 @@ function networkDifferences(answer) {
   return found;
 }
 
-/** One submission of a test, as it went (judgeNext's result). */
-function stepOutcome(step, judged) {
+/**
+ * One submission of a test, as it went (judgeNext's result); `view` is the
+ * 红包's after it.
+ */
+function stepOutcome(step, judged, view) {
   if ("refused" in judged)
     return {
       passed: false,
-      problem:
-        judged.refused === "claimed"
-          ? "已经领过了，线上不会交给代码"
-          : "份已经领完了，线上不会交给代码",
+      problem: REFUSALS[judged.refused],
       ms: 0,
     };
   const { answer, ms, reading, submission } = judged;
@@ -782,9 +824,12 @@ function stepOutcome(step, judged) {
       : {}),
     ...(reading.message !== undefined ? { message: reading.message } : {}),
     state,
+    ...(view !== null ? { view } : {}),
+    ...(reading.announce !== undefined ? { announce: reading.announce } : {}),
+    ...(reading.end ? { end: true } : {}),
   };
   const found = [
-    ...differences(step.expect, reading, state),
+    ...differences(step.expect, reading, state, view),
     ...networkDifferences(answer),
   ];
   return {
@@ -866,7 +911,11 @@ export async function runTest(
         answers: step.fetch,
         verdict: judged.answer.verdict,
       });
-    const { failure: failed, ...outcome } = stepOutcome(step, judged);
+    const { failure: failed, ...outcome } = stepOutcome(
+      step,
+      judged,
+      scenario.view,
+    );
     ms += outcome.ms;
     failure = failed;
     steps.push({

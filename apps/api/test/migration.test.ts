@@ -36,6 +36,16 @@ async function resetLegacyDb(db: D1Database) {
     "payment_acceptances",
     "merchant_credentials",
     "global_redemptions",
+    // 代码判定 (0040 on): before the 红包, people and 判定器 they name.
+    "activity_announcements",
+    "code_judgments",
+    "code_failures",
+    "activity_code",
+    "judge_usage",
+    "judge_features",
+    "judge_versions",
+    "judges",
+    "judge_checks",
     "attempt_events",
     "redemption_submissions",
     "claims",
@@ -1462,9 +1472,152 @@ it("0049 keeps a 代码判定红包's code and its 用量 as they were, with no 
     params_salt: null,
     // 0050: 联网 confirmed for another's 判定器.
     network_ack: null,
+    // 0051: what everyone sees, and setup()'s answer.
+    view_summary: null,
+    view_data: null,
+    view_at: null,
+    setup_ciphertext: null,
   });
   expect(await db.prepare("SELECT * FROM judge_usage").first()).toEqual({
     ...usage,
     tries: 0,
   });
+});
+
+it("0051 keeps a third-protocol 判定器, its 红包, judgments and 用量 as they were, and takes the fourth", async () => {
+  const testEnv = env as typeof env & {
+    TEST_LEGACY_DB: D1Database;
+    TEST_MIGRATIONS: D1Migration[];
+  };
+  const db = testEnv.TEST_LEGACY_DB;
+  await resetLegacyDb(db);
+  await applyD1Migrations(
+    db,
+    testEnv.TEST_MIGRATIONS.filter((migration) => migration.name < "0051"),
+  );
+  const userId = crypto.randomUUID();
+  const judgeId = crypto.randomUUID();
+  const activityId = crypto.randomUUID();
+  const now = Date.now();
+  const fingerprint = "c".repeat(64);
+  const digest = "d".repeat(64);
+  await db.batch([
+    db
+      .prepare(
+        "INSERT INTO users(id,provider,external_id,username,display_name,created_at,updated_at,last_login_at) VALUES(?,'linux_do','740051','Coder','写代码的',?,?,?)",
+      )
+      .bind(userId, now, now, now),
+    db
+      .prepare(
+        "INSERT INTO judge_checks (id, user_id, protocol, fingerprint, tests_digest, passed, kind, created_at, finished_at) VALUES (?, ?, 3, ?, ?, 1, 'deploy', ?, ?)",
+      )
+      .bind(crypto.randomUUID(), userId, fingerprint, digest, now, now),
+    db
+      .prepare(
+        "INSERT INTO judges (id, author_id, name, created_at, updated_at) VALUES (?, ?, '猜数字', ?, ?)",
+      )
+      .bind(judgeId, userId, now, now),
+    db
+      .prepare(
+        `INSERT INTO judge_versions (judge_id, n, fingerprint, code_ciphertext, protocol, tests_ciphertext, tests_digest,
+          passed, declarations, deployed_at, checked_at) VALUES (?, 1, ?, 'code', 3, 'tests', ?, 1, ?, ?, ?)`,
+      )
+      .bind(
+        judgeId,
+        fingerprint,
+        digest,
+        JSON.stringify({ meta: null, params: [], hongbao: null, check: false }),
+        now,
+        now,
+      ),
+    db
+      .prepare(
+        `INSERT INTO activities(id,author_id,creation_request_id,creation_digest,title,reward_type,participation_mode,
+          payment_mode,funding,force_dedicated,join_square,topic_id,allocation,config,total_count,created_at,updated_at)
+          VALUES(?,?,?,'digest','代码判定','ldc','code','simulation','balance',1,1,NULL,'sequential',
+            '{"participationMode":"code","money":{"mode":"code"}}',3,?,?)`,
+      )
+      .bind(activityId, userId, crypto.randomUUID(), now, now),
+    db
+      .prepare(
+        `INSERT INTO activity_code(activity_id,protocol,prompt,fingerprint,code_ciphertext,tests_ciphertext,tests_digest,
+          min_each_minor,judge_id,judge_version,created_at,updated_at) VALUES(?,3,'输入 flag',?,'code','tests',?,1,?,1,?,?)`,
+      )
+      .bind(activityId, fingerprint, digest, judgeId, now, now),
+    db
+      .prepare(
+        `INSERT INTO judge_usage(day,sandbox_id,protocol,fingerprint,networked,fresh,user_id,deploys,first_at,last_at)
+          VALUES(strftime('%Y-%m-%d',?/1000,'unixepoch'),?,3,?,0,0,?,1,?,?)`,
+      )
+      .bind(now, `judge:v3:${fingerprint}`, fingerprint, userId, now, now),
+  ]);
+  const before = async () => ({
+    code: await db
+      .prepare("SELECT * FROM activity_code WHERE activity_id=?")
+      .bind(activityId)
+      .first(),
+    version: await db
+      .prepare("SELECT * FROM judge_versions WHERE judge_id=?")
+      .bind(judgeId)
+      .first(),
+    usage: await db.prepare("SELECT * FROM judge_usage").first(),
+  });
+  const kept = await before();
+  await applyD1Migrations(db, testEnv.TEST_MIGRATIONS);
+  const after = await before();
+  expect(after).toEqual({
+    code: {
+      ...kept.code,
+      view_summary: null,
+      view_data: null,
+      view_at: null,
+      setup_ciphertext: null,
+    },
+    version: kept.version,
+    usage: kept.usage,
+  });
+  // The fourth protocol now: a run, a version and 用量 on it.
+  const later = now + 1;
+  await db.batch([
+    db
+      .prepare(
+        "INSERT INTO judge_checks (id, user_id, protocol, fingerprint, tests_digest, passed, kind, created_at, finished_at) VALUES (?, ?, 4, ?, ?, 1, 'rerun', ?, ?)",
+      )
+      .bind(crypto.randomUUID(), userId, fingerprint, digest, later, later),
+    db
+      .prepare(
+        "UPDATE judge_versions SET protocol = 4, checked_at = ? WHERE judge_id = ?",
+      )
+      .bind(later, judgeId),
+    db
+      .prepare(
+        `INSERT INTO judge_usage(day,sandbox_id,protocol,fingerprint,networked,fresh,user_id,tries,first_at,last_at)
+          VALUES(strftime('%Y-%m-%d',?/1000,'unixepoch'),?,4,?,0,0,?,1,?,?)`,
+      )
+      .bind(
+        later,
+        `judge:v4:${fingerprint}`,
+        fingerprint,
+        userId,
+        later,
+        later,
+      ),
+  ]);
+  // A draft on a third-protocol run takes no view; a fifth is no protocol.
+  await expect(
+    db
+      .prepare(
+        "UPDATE activity_code SET view_summary = '看得到', view_at = ? WHERE activity_id = ?",
+      )
+      .bind(later, activityId)
+      .run(),
+  ).rejects.toThrow();
+  await expect(
+    db
+      .prepare(
+        "INSERT INTO judge_checks (id, user_id, protocol, fingerprint, tests_digest, passed, kind, created_at) VALUES (?, ?, 5, ?, ?, 0, 'rerun', ?)",
+      )
+      .bind(crypto.randomUUID(), userId, fingerprint, digest, later)
+      .run(),
+  ).rejects.toThrow(/invalid_judge_check/);
 });

@@ -215,9 +215,12 @@ export const activities = sqliteTable(
     openedAt: integer("opened_at"),
     deadline: integer("deadline"),
     endedAt: integer("ended_at"),
-    /** stopped: a 代码判定红包's 停用 by the 站长. */
+    /**
+     * stopped: a 代码判定红包's 停用 by the 站长; judge: its code ended it
+     * (docs/judge-page-design.md §2 end).
+     */
     endReason: text("end_reason", {
-      enum: ["expired", "exhausted", "manual", "stopped"],
+      enum: ["expired", "exhausted", "manual", "stopped", "judge"],
     }),
     archivedAt: integer("archived_at"),
     /**
@@ -1949,7 +1952,7 @@ export const judgeVersions = sqliteTable(
       "judge_versions_shape",
       sql`typeof(${table.n}) = 'integer' AND ${table.n} >= 1
         AND length(${table.fingerprint}) = 64 AND length(${table.testsDigest}) = 64
-        AND ${table.protocol} IN (1, 2, 3) AND ${table.passed} IN (0, 1)
+        AND ${table.protocol} IN (1, 2, 3, 4) AND ${table.passed} IN (0, 1)
         AND (${table.declarations} IS NULL OR (${table.protocol} >= 3 AND json_valid(${table.declarations})))
         AND (${table.network} IS NULL OR (${table.protocol} >= 2 AND json_valid(${table.network})
           AND json_type(${table.network}) = 'array' AND json_array_length(${table.network}) BETWEEN 1 AND 3))
@@ -2030,13 +2033,26 @@ export const activityCode = sqliteTable(
      * confirmed, as JSON; asked again once they change.
      */
     networkAck: text("network_ack"),
+    /**
+     * Protocol 4 (docs/judge-page-design.md §2): what everyone sees, as the
+     * last judgment (or setup()) wrote it — its line and its data as JSON,
+     * null for none — and when it was written.
+     */
+    viewSummary: text("view_summary"),
+    viewData: text("view_data"),
+    viewAt: integer("view_at"),
+    /**
+     * setup()'s answer at opening, as JudgeRecords["setup"] (encrypted
+     * JSON: its state is the code's own until the end); null without one.
+     */
+    setupCiphertext: text("setup_ciphertext"),
   },
   (table) => [
     // 判定器广场 (judge-square §8): the 红包 each 判定器 and version opened.
     index("activity_code_judge_idx").on(table.judgeId, table.judgeVersion),
     check(
       "activity_code_shape",
-      sql`${table.protocol} IN (1, 2, 3) AND length(${table.fingerprint}) = 64 AND length(${table.testsDigest}) = 64
+      sql`${table.protocol} IN (1, 2, 3, 4) AND length(${table.fingerprint}) = 64 AND length(${table.testsDigest}) = 64
         AND (${table.network} IS NULL OR (${table.protocol} >= 2 AND json_valid(${table.network})
           AND json_type(${table.network}) = 'array' AND json_array_length(${table.network}) BETWEEN 1 AND 3))
         AND length(${table.prompt}) <= 40
@@ -2056,7 +2072,12 @@ export const activityCode = sqliteTable(
         AND (${table.paramsCommitment} IS NULL OR length(${table.paramsCommitment}) = 64)
         AND (${table.paramsSecret} IS NULL) = (${table.paramsSalt} IS NULL)
         AND (${table.paramsSecret} IS NULL OR (${table.paramsCommitment} IS NOT NULL
-          AND ${table.revealedAt} IS NOT NULL AND json_valid(${table.paramsSecret})))`,
+          AND ${table.revealedAt} IS NOT NULL AND json_valid(${table.paramsSecret})))
+        AND (${table.viewSummary} IS NULL OR length(${table.viewSummary}) BETWEEN 1 AND 200)
+        AND (${table.viewData} IS NULL OR (json_valid(${table.viewData}) AND length(CAST(${table.viewData} AS BLOB)) <= 16384))
+        AND (${table.viewAt} IS NULL OR (${table.protocol} >= 4 AND typeof(${table.viewAt}) = 'integer'))
+        AND ((${table.viewSummary} IS NULL AND ${table.viewData} IS NULL) OR ${table.viewAt} IS NOT NULL)
+        AND (${table.setupCiphertext} IS NULL OR ${table.protocol} >= 4)`,
     ),
   ],
 );
@@ -2100,6 +2121,14 @@ export const codeJudgments = sqliteTable(
     fetchesCiphertext: text("fetches_ciphertext"),
     /** Submission.now. */
     judgedAt: integer("judged_at").notNull(),
+    /**
+     * Protocol 4 (docs/judge-page-design.md §2): the view it wrote, as JSON
+     * (`null` cleared it); null when it kept the one there. Its line in 动态
+     * is in activity_announcements. Held by code_judgments_insert_guard.
+     */
+    view: text("view"),
+    /** It ended the 红包 (end). */
+    ends: integer("ends", { mode: "boolean" }).notNull().default(false),
   },
   (table) => [
     uniqueIndex("code_judgments_attempt_unique").on(
@@ -2111,6 +2140,10 @@ export const codeJudgments = sqliteTable(
       table.activityId,
       table.sequence,
     ),
+    // The ones that end their 红包, for the sweep to finish any it missed.
+    index("code_judgments_ends_idx")
+      .on(table.activityId)
+      .where(sql`${table.ends} = 1`),
     check(
       "code_judgments_shape",
       sql`typeof(${table.attempt}) = 'integer' AND ${table.attempt} >= 0
@@ -2121,6 +2154,41 @@ export const codeJudgments = sqliteTable(
             AND typeof(${table.paidMinor}) = 'integer' AND ${table.paidMinor} > 0
             AND (${table.note} IS NULL OR ${table.note} IN ('floor','cap','last')))
           OR (${table.ok} = 0 AND ${table.askedMinor} IS NULL AND ${table.paidMinor} IS NULL AND ${table.note} IS NULL))`,
+    ),
+  ],
+);
+
+/**
+ * 动态 (docs/judge-page-design.md §2 announce, protocol 4): the lines a
+ * 代码判定红包's judgments wrote for everyone, numbered from 0 in order,
+ * each with who was judged and which judgment. Only ever added to.
+ */
+export const activityAnnouncements = sqliteTable(
+  "activity_announcements",
+  {
+    activityId: text("activity_id")
+      .notNull()
+      .references(() => activities.id),
+    n: integer("n").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    submissionRowId: text("submission_row_id")
+      .notNull()
+      .references(() => codeJudgments.submissionRowId),
+    text: text("text").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.activityId, table.n] }),
+    uniqueIndex("activity_announcements_judgment_unique").on(
+      table.submissionRowId,
+    ),
+    check(
+      "activity_announcements_shape",
+      sql`typeof(${table.n}) = 'integer' AND ${table.n} >= 0
+        AND length(${table.text}) BETWEEN 1 AND 100
+        AND typeof(${table.createdAt}) = 'integer'`,
     ),
   ],
 );
@@ -2341,7 +2409,7 @@ export const judgeUsage = sqliteTable(
     check(
       "judge_usage_shape",
       sql`length(${table.fingerprint}) = 64
-        AND ${table.protocol} IN (1, 2, 3) AND ${table.networked} IN (0, 1)
+        AND ${table.protocol} IN (1, 2, 3, 4) AND ${table.networked} IN (0, 1)
         AND (${table.networked} = 0 OR (${table.protocol} >= 2 AND ${table.activityId} IS NOT NULL))
         AND typeof(${table.fresh}) = 'integer' AND ${table.fresh} BETWEEN 0 AND 3
         AND ${table.sandboxId} = 'judge:v' || ${table.protocol} || ':' || ${table.fingerprint}

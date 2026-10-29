@@ -212,7 +212,7 @@ describe("判定器广场", () => {
         .version?.n,
     ).toBe(1);
     await env.DB.prepare(
-      "UPDATE judge_versions SET network = '[\"https://api.example.com/\"]', protocol = 3 WHERE judge_id = ?",
+      "UPDATE judge_versions SET network = '[\"https://api.example.com/\"]' WHERE judge_id = ?",
     )
       .bind(first.id)
       .run();

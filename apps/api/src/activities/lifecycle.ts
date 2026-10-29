@@ -10,7 +10,12 @@ import { activityWriteGuard, ownedActivity } from "./storage";
 export const databaseNow =
   "CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)";
 
-/** Rechecks the current deadline; a Cron candidate is never an authority to end. */
+/**
+ * Rechecks the current deadline; a Cron candidate is never an authority to
+ * end. A 代码判定红包 one of whose judgments ended it (docs/judge-page-
+ * design.md §2 end) ends once no claim is still going in: that judgment's
+ * own share is paid first.
+ */
 export async function refreshActivityLifecycle(
   env: ApiBindings,
   activityId: string,
@@ -21,6 +26,11 @@ export async function refreshActivityLifecycle(
       WHERE id = ? AND reward_type = 'ldc' AND deleted_at IS NULL AND opened_at IS NOT NULL AND ended_at IS NULL AND draw_state IS NULL AND deadline <= ${databaseNow}`).bind(
       activityId,
     ),
+    env.DB.prepare(`UPDATE activities SET ended_at = ${databaseNow}, end_reason = 'judge', version = version + 1, updated_at = ${databaseNow}
+      WHERE id = ? AND participation_mode = 'code' AND deleted_at IS NULL AND opened_at IS NOT NULL AND ended_at IS NULL
+        AND EXISTS(SELECT 1 FROM code_judgments WHERE activity_id = activities.id AND ends = 1)
+        AND NOT EXISTS(SELECT 1 FROM redemption_submissions WHERE activity_id = activities.id AND purpose = 'claim'
+          AND outcome = 'pending')`).bind(activityId),
     // A 🐟额红包 that has ended gives back what nobody took.
     refundStatement(env, activityId),
     env.DB.prepare(`UPDATE activities SET archived_at = ended_at + ?, version = version + 1, updated_at = ${databaseNow}
@@ -95,6 +105,7 @@ export async function sweepActivityLifecycle(env: ApiBindings) {
       ((ended_at IS NULL AND deadline <= ${databaseNow}) OR (ended_at IS NOT NULL AND archived_at IS NULL AND ended_at + ? <= ${databaseNow})
         OR draw_state='settling'
         OR id IN (SELECT activity_id FROM redemption_submissions WHERE outcome = 'pending' AND purpose = 'claim')
+        OR (ended_at IS NULL AND id IN (SELECT activity_id FROM code_judgments WHERE ends = 1))
         OR (ended_at IS NOT NULL AND id IN (SELECT activity_id FROM balance_locks WHERE purpose = 'activity' AND status = 'active')))
       ORDER BY id LIMIT 50`)
         .bind(cursor, ARCHIVE_DELAY_MS)

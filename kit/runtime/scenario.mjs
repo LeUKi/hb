@@ -1,36 +1,44 @@
 // A 红包 judged one submission after another, carried forward as the site
 // does (协议第 5 节, 多步场景): each judgment leaves the state it wrote (or
 // keeps the one it had), one more judgment for that person, and, when it
-// paid, a claim with what was paid at its time. tests.json's steps, npm run
-// simulate and npm run replay all go through here.
+// paid, a claim with what was paid at its time. From protocol 4 it leaves
+// its view too, and one that ends the 红包 is the last. tests.json's steps,
+// npm run simulate and npm run replay all go through here.
 import { shareRange } from "./money.mjs";
 import { submissionSeed, userSeed } from "./seeds.mjs";
-import { readVerdict } from "./verdict.mjs";
+import { readVerdict, VIEW_PROTOCOL } from "./verdict.mjs";
 
 const copyClaim = (claim) => ({ ...claim, user: { ...claim.user } });
 
 /**
  * A 红包 before its first submission here: `hongbao` its fixed numbers
- * (title, total, count, minEach, openedAt, endsAt), the claims already in
- * and the code's state. `hongbaoId` and `secret` make each submission's
- * seeds; a replay before the seed is out has no secret. `params`, from the
- * third protocol, is submission.params (none before it: an earlier
- * 红包's submissions stay as they were).
+ * (title, total, count, minEach, openedAt, endsAt), the claims already in,
+ * the code's state and its view (protocol 4, null for none). `hongbaoId`
+ * and `secret` make each submission's seeds; a replay before the seed is
+ * out has no secret. `params`, from the third protocol, is
+ * submission.params (none before it: an earlier 红包's submissions stay
+ * as they were). `protocol` is how its answers are read.
  */
 export function startScenario({
   hongbao,
   claims = [],
   state = null,
+  view = null,
   hongbaoId,
   secret = null,
   params,
+  protocol = VIEW_PROTOCOL,
 }) {
   return {
     ...(params !== undefined ? { params } : {}),
+    protocol,
     hongbao: { ...hongbao },
     claims: claims.map(copyClaim),
     paid: claims.reduce((sum, claim) => sum + claim.amount, 0),
     state,
+    view,
+    /** A judgment ended it (protocol 4, end). */
+    ended: false,
     /** User ID → how many times the code judged them here. */
     judged: new Map(),
     hongbaoId,
@@ -40,10 +48,11 @@ export function startScenario({
 
 /**
  * Why the site would not hand this person's submission to the code
- * (协议第 4.1 节): "claimed" when they have a share, "sold-out" when no
- * share is left; null when it would.
+ * (协议第 4.1 节): "ended" once a judgment ended it, "claimed" when they
+ * have a share, "sold-out" when no share is left; null when it would.
  */
 export function refusalOf(scenario, user) {
+  if (scenario.ended) return "ended";
   if (scenario.claims.some((claim) => claim.user.id === user.id))
     return "claimed";
   if (scenario.claims.length >= scenario.hongbao.count) return "sold-out";
@@ -87,14 +96,16 @@ export function nextSubmission(scenario, { input, now, user, title }) {
 }
 
 /**
- * One judgment's mark on the 红包: `state` as readVerdict gives it
- * (`{ keep: true }` or `{ keep: false, value }`), and `paid` with `at` when
- * a share was claimed.
+ * One judgment's mark on the 红包: `state` and `view` as readVerdict gives
+ * them (`{ keep: true }` or `{ keep: false, value }`), `end`, and `paid`
+ * with `at` when a share was claimed (before it ends, as on the site).
  */
-export function advance(scenario, submission, { state, paid, at }) {
+export function advance(scenario, submission, { state, view, end, paid, at }) {
   const { user } = submission;
   scenario.judged.set(user.id, (scenario.judged.get(user.id) ?? 0) + 1);
   if (!state.keep) scenario.state = state.value;
+  if (view && !view.keep) scenario.view = view.value;
+  if (end) scenario.ended = true;
   if (paid === undefined) return;
   scenario.claims.push({
     user: { id: user.id, username: user.username },
@@ -132,10 +143,16 @@ export async function judgeNext(scenario, { user, input, at, fetch }, run) {
   const answer = await run(submission, seeds, fetch);
   const ms = Date.now() - started;
   if ("failure" in answer) return { submission, seeds, answer, ms };
-  const reading = readVerdict(answer.verdict, submission.share);
+  const reading = readVerdict(
+    answer.verdict,
+    submission.share,
+    scenario.protocol,
+  );
   if (!("error" in reading))
     advance(scenario, submission, {
       state: reading.state,
+      view: reading.view,
+      end: reading.end,
       ...(reading.ok ? { paid: reading.paid, at } : {}),
     });
   return { submission, seeds, answer, ms, reading };

@@ -1,5 +1,5 @@
 import {
-  JUDGE_PROTOCOL,
+  JUDGE_OLDEST_PROTOCOL,
   type JudgeCheck,
   type ManagedActivity,
 } from "@hb/contracts";
@@ -130,10 +130,11 @@ export function useJudgeDeploy({
       : activity?.openingBlockedReason === "JUDGE_CHECK_REQUIRED" && version
         ? { passed: false }
         : undefined;
-  // A version last run on an earlier protocol runs again on this one
-  // before it opens (§9.1): free, as a rerun.
+  // A version last run on a protocol 红包 no longer open on runs again on
+  // this one before it opens (§9.1): free, as a rerun. One run on v3
+  // opens on v3 as it was tested (docs/judge-page-design.md §11.1).
   const upgraded =
-    version !== undefined && (version.protocol ?? 1) < JUDGE_PROTOCOL;
+    version !== undefined && (version.protocol ?? 1) < JUDGE_OLDEST_PROTOCOL;
   // A version's last run, kept with the draft, when it ran these tests: a
   // version put back (换回, or pasted) on a draft opened again.
   const last =

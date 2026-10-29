@@ -2,7 +2,9 @@ import type { Submission } from "../judge";
 import type {
   SandboxAnswer,
   Seeds,
+  StateChange,
   VerdictReading,
+  ViewChange,
 } from "../runtime/index.mjs";
 
 export type Print = (line: string) => void;
@@ -52,7 +54,7 @@ export type SimulatedSubmission = {
   input: string;
   at: number;
 } & (
-  | { refused: "claimed" | "sold-out" }
+  | { refused: "ended" | "claimed" | "sold-out" }
   | {
       submission: Submission;
       seeds: Seeds;
@@ -68,6 +70,8 @@ export function simulateCommand(options: CommandOptions): Promise<{
     hongbao: Omit<Submission["hongbao"], "remaining" | "remainingCount">;
     hongbaoId: string;
     seed: string;
+    /** 协议第四版: setup()'s answer, when judge.js exports setup. */
+    setup?: { state: StateChange; view: ViewChange };
     judged: SimulatedSubmission[];
   };
 }>;

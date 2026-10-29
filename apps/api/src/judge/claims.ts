@@ -4,7 +4,10 @@
 // claimed. The 红包's Durable Object runs these one at a time, so the pool,
 // the claims and the code's state it was given are the ones it changes. A
 // 联网 红包's judgment goes out through the gateway, and what it asked and
-// got is kept with it (§9).
+// got is kept with it (§9). From protocol 4 a judgment may also change what
+// everyone sees, add a line to 动态 and end the 红包 (docs/judge-page-
+// design.md §2): the view and the line go in with it, the end once its own
+// share is in (lifecycle.ts).
 import {
   type ClaimActivityInput,
   type ClaimResult,
@@ -30,7 +33,7 @@ import {
 import { ActivityError } from "../activities/errors";
 import type { ActivityExecutionPolicy } from "../activities/execution-policy";
 import { requireHumanCheck } from "../activities/human-check";
-import { databaseNow } from "../activities/lifecycle";
+import { databaseNow, refreshActivityLifecycle } from "../activities/lifecycle";
 import { participationRequest } from "../activities/participation";
 import type { ActivityRow } from "../activities/storage";
 import type { ApiBindings } from "../env";
@@ -251,8 +254,17 @@ export async function claimByCode(
     "claim",
   );
   // Judged and not yet claimed (an interrupted write): finished first, so
-  // the pool this judgment sees has it out.
+  // the pool this judgment sees has it out; then a judgment that ended it
+  // and was cut off before the end ends it now.
   await resumePendingActivityClaims(env, activityId);
+  if (
+    await env.DB.prepare(
+      "SELECT 1 FROM code_judgments WHERE activity_id = ? AND ends = 1 LIMIT 1",
+    )
+      .bind(activityId)
+      .first()
+  )
+    await refreshActivityLifecycle(env, activityId);
   const admission = await admitClaim(
     env,
     activityId,
@@ -419,7 +431,8 @@ export async function claimByCode(
       hooks.paused?.();
     throw failed();
   }
-  reading = readVerdict(outcome.verdict, share);
+  // An earlier protocol's code is read as it was then: no view or end.
+  reading = readVerdict(outcome.verdict, share, row.protocol);
   if ("error" in reading) {
     if (
       await recordFailure(
@@ -445,6 +458,8 @@ export async function claimByCode(
   const stateText = reading.state.keep
     ? null
     : JSON.stringify(reading.state.value);
+  // Protocol 4: what everyone sees, when it changed it (null clears it).
+  const view = reading.view && !reading.view.keep ? reading.view : null;
   const [
     inputCiphertext,
     digest,
@@ -496,8 +511,8 @@ export async function claimByCode(
       rowId,
     ),
     env.DB.prepare(`INSERT INTO code_judgments
-      (submission_row_id, activity_id, user_id, sequence, attempt, title, username, level, ok, asked_minor, paid_minor, note, message, state_ciphertext, fetches_ciphertext, judged_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+      (submission_row_id, activity_id, user_id, sequence, attempt, title, username, level, ok, asked_minor, paid_minor, note, message, state_ciphertext, fetches_ciphertext, judged_at, view, ends)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
       rowId,
       activityId,
       userId,
@@ -514,14 +529,37 @@ export async function claimByCode(
       judgmentState,
       fetchesCiphertext,
       submission.now,
+      view ? JSON.stringify(view.value) : null,
+      Number(reading.end === true),
     ),
     env.DB.prepare(`UPDATE activity_code SET failures_in_row = 0,
-      state_ciphertext = CASE WHEN ? THEN state_ciphertext ELSE ? END, updated_at = ${databaseNow}
-      WHERE activity_id = ?`).bind(
+      state_ciphertext = CASE WHEN ?1 THEN state_ciphertext ELSE ?2 END,
+      view_summary = CASE WHEN ?3 THEN view_summary ELSE ?4 END,
+      view_data = CASE WHEN ?3 THEN view_data ELSE ?5 END,
+      view_at = CASE WHEN ?3 THEN view_at ELSE ?6 END, updated_at = ${databaseNow}
+      WHERE activity_id = ?7`).bind(
       Number(stateText === null),
       stateCiphertext,
+      Number(view === null),
+      view?.value?.summary ?? null,
+      view?.value?.data === undefined ? null : JSON.stringify(view.value.data),
+      submission.now,
       activityId,
     ),
+    // 动态: its line, after the ones before (numbered from 0).
+    ...(reading.announce !== undefined
+      ? [
+          env.DB.prepare(`INSERT INTO activity_announcements
+            (activity_id, n, user_id, submission_row_id, text, created_at)
+            VALUES (?1, (SELECT COUNT(*) FROM activity_announcements WHERE activity_id = ?1), ?2, ?3, ?4, ?5)`).bind(
+            activityId,
+            userId,
+            rowId,
+            reading.announce,
+            submission.now,
+          ),
+        ]
+      : []),
     // 用量记录 (§7): the 判定器 it ran in, on its sender's row.
     usageStatement(env, {
       now: submission.now,
@@ -550,6 +588,13 @@ export async function claimByCode(
   }
   const saved = await findSubmission(env, userId, input.submissionId);
   if (!saved) throw new Error("Judgment was not persisted");
-  if (!reading.ok) return resultOfSubmission(env, saved);
-  return completeClaimSubmission(env, saved, executionPolicy);
+  const result = reading.ok
+    ? await completeClaimSubmission(env, saved, executionPolicy)
+    : await resultOfSubmission(env, saved);
+  // It ended the 红包: its own share is in, the rest goes back (§2 end).
+  if (reading.end) {
+    await refreshActivityLifecycle(env, activityId);
+    hooks.ended?.();
+  }
+  return result;
 }

@@ -12,6 +12,7 @@ import type {
   Submission,
   TestCase,
   Tools,
+  View,
 } from "../judge";
 
 export type Fill = (bytes: Uint8Array) => void;
@@ -47,6 +48,7 @@ export function userSeed(
   secret: string,
   userId: number | string,
 ): string;
+export function setupSeed(hongbaoId: string, secret: string): string;
 
 // money.mjs
 export interface Share {
@@ -123,16 +125,30 @@ export const LIMITS: Readonly<{
   stateBytes: number;
   stateDepth: number;
   messageCharacters: number;
+  summaryCharacters: number;
+  viewBytes: number;
+  announceCharacters: number;
   inputCharacters: number;
   promptCharacters: number;
   tests: number;
 }>;
+/** The protocol whose answers have view, announce and end. */
+export const VIEW_PROTOCOL: 4;
 export function nestsDeeper(value: unknown, limit: number): boolean;
 export type StateChange = { keep: true } | { keep: false; value: Json };
+/** A view as read: null clears it. */
+export type ViewChange = { keep: true } | { keep: false; value: View | null };
+/** From protocol 4 (VIEW_PROTOCOL); absent before it. */
+type Public = { view?: ViewChange; announce?: string; end?: boolean };
 export type VerdictReading =
   | { error: { kind: "invalid"; detail: string } }
-  | { ok: false; message?: string; state: StateChange; unknown: string[] }
-  | {
+  | ({
+      ok: false;
+      message?: string;
+      state: StateChange;
+      unknown: string[];
+    } & Public)
+  | ({
       ok: true;
       asked: number;
       paid: number;
@@ -140,8 +156,17 @@ export type VerdictReading =
       message?: string;
       state: StateChange;
       unknown: string[];
-    };
-export function readVerdict(raw: unknown, share: Share): VerdictReading;
+    } & Public);
+export function readVerdict(
+  raw: unknown,
+  share: Share,
+  protocol?: number,
+): VerdictReading;
+export function readSetup(
+  raw: unknown,
+):
+  | { error: { kind: "invalid"; detail: string } }
+  | { state: StateChange; view: ViewChange; unknown: string[] };
 
 // imports.mjs
 export const ALLOWED_MODULES: readonly string[];
@@ -255,6 +280,8 @@ export type Declarations = {
   params: ParamDeclaration[];
   hongbao: HongbaoRules | null;
   check: boolean;
+  /** Protocol 4: it exports setup(params, hongbao). */
+  setup: boolean;
   problems: string[];
 };
 export function readDeclarations(answer: unknown): Declarations;
@@ -264,6 +291,11 @@ export function splitParams(
   values: Params,
 ): { shown: Params; secret: Params };
 export function paramsCommitment(secret: Params, salt: string): string;
+export function secretsInView(
+  list: readonly ParamDeclaration[],
+  values: Params,
+  view: View | null | undefined,
+): string[];
 
 // testing.mjs
 export function fetchProblem(list: unknown): string | null;
@@ -323,6 +355,10 @@ export type TestActual = {
   message?: string;
   /** The state after this judgment: what it wrote, or the one it kept. */
   state: Json;
+  /** Protocol 4: the view after it, when there is one; its line in 动态; it ended it. */
+  view?: View;
+  announce?: string;
+  end?: true;
 };
 export type StepRun = {
   who?: string;
@@ -381,6 +417,11 @@ export type Scenario = {
   claims: Submission["claims"];
   paid: number;
   state: Json;
+  /** Protocol 4: what everyone sees, and whether a judgment ended it. */
+  view: View | null;
+  ended: boolean;
+  /** How its answers are read (readVerdict). */
+  protocol: number;
   judged: Map<number, number>;
   hongbaoId?: string;
   secret: string | null;
@@ -391,14 +432,16 @@ export function startScenario(input: {
   hongbao: Scenario["hongbao"];
   claims?: Submission["claims"];
   state?: Json;
+  view?: View | null;
   hongbaoId?: string;
   secret?: string | null;
   params?: Params;
+  protocol?: number;
 }): Scenario;
 export function refusalOf(
   scenario: Scenario,
   user: { id: number },
-): "claimed" | "sold-out" | null;
+): "ended" | "claimed" | "sold-out" | null;
 export function nextSubmission(
   scenario: Scenario,
   next: {
@@ -411,7 +454,13 @@ export function nextSubmission(
 export function advance(
   scenario: Scenario,
   submission: Submission,
-  change: { state: StateChange; paid?: number; at?: number },
+  change: {
+    state: StateChange;
+    view?: ViewChange;
+    end?: boolean;
+    paid?: number;
+    at?: number;
+  },
 ): void;
 export function judgeNext(
   scenario: Scenario,
@@ -423,7 +472,7 @@ export function judgeNext(
   },
   run: RunSandbox,
 ): Promise<
-  | { refused: "claimed" | "sold-out" }
+  | { refused: "ended" | "claimed" | "sold-out" }
   | {
       submission: Submission;
       seeds: Seeds;

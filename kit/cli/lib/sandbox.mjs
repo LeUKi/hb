@@ -16,11 +16,13 @@ import {
   readCheckAnswer,
   readDeclarations,
   readNetwork,
+  readSetup,
+  VIEW_PROTOCOL,
 } from "../../runtime/index.mjs";
 import { fingerprintOf, KitError } from "./files.mjs";
 
-/** Protocol v3: this runtime on this compatibility date with nodejs_compat. */
-export const PROTOCOL = 3;
+/** Protocol v4: this runtime on this compatibility date with nodejs_compat. */
+export const PROTOCOL = 4;
 export const COMPATIBILITY_DATE = "2026-09-01";
 /** What runs beside judge.js, as hb's scripts/judge-runtime.ts copies it to the site. */
 export const SANDBOX_MODULES = Object.freeze([
@@ -196,7 +198,7 @@ export async function openSandbox(
           () => null,
         );
   const network = networkOf(answer);
-  // The third protocol's meta, params, hongbao and check.
+  // The third protocol's meta, params, hongbao and check; the fourth's setup.
   const declarations = readDeclarations(
     protocol >= 3 ? described(answer) : null,
   );
@@ -321,12 +323,57 @@ export async function openSandbox(
     }
   }
 
+  /**
+   * setup(params, hongbao) once (协议第四版), at `now`, Math.random() drawn
+   * from `seed`: `{ state, view, unknown, logs? }` as readSetup reads it,
+   * or `{ failure, detail, logs? }`. Null before the fourth protocol.
+   */
+  async function setup(params, hongbao, { now, seed }) {
+    if (protocol < VIEW_PROTOCOL) return null;
+    if (hung)
+      return {
+        failure: "timeout",
+        detail: `judge.js 顶层的代码超过 ${TIMEOUT_MS / 1000} 秒还没跑完`,
+      };
+    try {
+      const body = await ask(
+        runtime,
+        JSON.stringify({
+          setup: { params, hongbao, now, seed },
+          capture: true,
+        }),
+      );
+      if (body === LATE) {
+        await restart();
+        return {
+          failure: "timeout",
+          detail: `setup 超过 ${TIMEOUT_MS / 1000} 秒没有返回`,
+        };
+      }
+      if (typeof body.host === "string") return failureOf(body.host);
+      const logs = body.logs?.length ? { logs: body.logs } : {};
+      if (body.error)
+        return { failure: body.error.kind, detail: body.error.detail, ...logs };
+      const reading = readSetup(body.answer);
+      return "error" in reading
+        ? { failure: "invalid", detail: reading.error.detail, ...logs }
+        : { ...reading, ...logs };
+    } catch (error) {
+      await restart();
+      return {
+        failure: "unavailable",
+        detail: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   return {
     run,
     check,
+    setup,
     /** What judge.js exports as `network`: `{ list }` or `{ problems }`. */
     network,
-    /** 协议第三版: meta, params, hongbao and check, with their problems. */
+    /** 协议第三版: meta, params, hongbao and check, with their problems; 第四版's setup. */
     declarations,
     /** How many times workerd was started afresh after a timeout. */
     get restarts() {

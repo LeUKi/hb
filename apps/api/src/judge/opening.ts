@@ -2,14 +2,52 @@
 // switch is on, its sender's openings today are not used up
 // and this very code, deployed, passed these very tests. The SQL below
 // holds the same inside the opening write.
-import { JUDGE_PROTOCOL, type LdcOpeningBlockedReason } from "@hb/contracts";
+import {
+  type JudgeDeclarations,
+  type JudgeParams,
+  type LdcActivityInput,
+  type LdcOpeningBlockedReason,
+  ldcTotalMinor,
+} from "@hb/contracts";
+import {
+  readSetup,
+  setupSeed,
+  VIEW_PROTOCOL,
+} from "../../../../kit/runtime/index.mjs";
+import { ActivityError } from "../activities/errors";
+import { databaseNow } from "../activities/lifecycle";
 import type { ActivityRow } from "../activities/storage";
 import { startOfBeijingDay } from "../balance/day";
 import type { ApiBindings } from "../env";
-import { codeHongbaoAccess, passedCheck, testsChanged } from "./check";
+import { decryptString, encryptString } from "../security/crypto";
+import { codeHongbaoAccess, openingProtocol, testsChanged } from "./check";
 import { openingParams } from "./params";
+import { setupInJudge } from "./sandbox";
 import { judgeAuthorOf } from "./square";
-import { findJudgeRow } from "./storage";
+import { findJudgeRow, type JudgeRow, judgeData } from "./storage";
+import { usageStatement } from "./usage";
+
+/**
+ * Whose run a 红包's code opens with — its own sender's, or for another's
+ * 判定器 its author's (judge-square §15.3) — and the protocol it opens on
+ * (check.ts openingProtocol); null when no run of it passed.
+ */
+export async function codeOpeningRun(
+  env: ApiBindings,
+  authorId: string,
+  judge: JudgeRow,
+) {
+  const runBy = (await judgeAuthorOf(env, judge.judgeId)) ?? authorId;
+  return {
+    runBy,
+    protocol: await openingProtocol(
+      env,
+      runBy,
+      judge.fingerprint,
+      judge.testsDigest,
+    ),
+  };
+}
 
 async function openedToday(env: ApiBindings, authorId: string) {
   const row = await env.DB.prepare(
@@ -39,9 +77,9 @@ export async function codeOpeningBlocked(
       .first())
   )
     return "JUDGE_TAKEN_DOWN";
-  const runBy = (await judgeAuthorOf(env, judge.judgeId)) ?? row.authorId;
+  const { runBy, protocol } = await codeOpeningRun(env, row.authorId, judge);
   const { fingerprint, testsDigest } = judge;
-  if (!(await passedCheck(env, runBy, fingerprint, testsDigest)))
+  if (protocol === null)
     return (await testsChanged(env, runBy, fingerprint, testsDigest))
       ? "JUDGE_RERUN_REQUIRED"
       : "JUDGE_CHECK_REQUIRED";
@@ -52,7 +90,7 @@ export async function codeOpeningBlocked(
       `SELECT 1 FROM judge_checks WHERE user_id = ? AND protocol = ? AND fingerprint = ? AND tests_digest = ?
         AND passed = 1 AND network IS NOT NULL LIMIT 1`,
     )
-      .bind(runBy, JUDGE_PROTOCOL, fingerprint, testsDigest)
+      .bind(runBy, protocol, fingerprint, testsDigest)
       .first())
   )
     return "CODE_NETWORK_PAUSED";
@@ -77,3 +115,101 @@ export const CODE_OPENING_ALLOWED = `(participation_mode != 'code' OR (
     AND o.opened_at>=?) < (SELECT daily_open_limit FROM judge_settings WHERE id='global')))`;
 
 export const codeOpeningDay = () => startOfBeijingDay();
+
+/** Opening refused for setup()'s failure (docs/judge-page-design.md §2). */
+export function setupFailedError(detail: string) {
+  return new ActivityError(
+    409,
+    "JUDGE_SETUP_FAILED",
+    `判定器开放时出错：${detail}，草稿已保存。`,
+  );
+}
+
+/**
+ * setup(params, hongbao) as a 红包 on protocol 4 opens (docs/judge-page-
+ * design.md §2): once, a sandbox use as check() is, at `now`, Math.random()
+ * drawn from its seed, so a replay draws the same. What it answered goes
+ * in after the opening's UPDATE, the seed sealed as `commitment`: the
+ * first state, what everyone sees and, for the records, setup()'s answer
+ * itself. Null for code without setup() or an earlier protocol. Code not
+ * deployed into a 判定器 has no declarations: the sandbox is asked, and
+ * says nothing (null) when there is no setup().
+ */
+export async function openingSetup(
+  env: ApiBindings,
+  activity: ActivityRow,
+  judge: JudgeRow,
+  input: {
+    protocol: number;
+    declarations: JudgeDeclarations | null;
+    params: JudgeParams;
+    config: LdcActivityInput;
+    secret: string;
+    commitment: string;
+    now: number;
+  },
+) {
+  const { protocol, now, declarations } = input;
+  if (protocol < VIEW_PROTOCOL || (declarations && !declarations.setup))
+    return null;
+  const code = await decryptString(
+    judge.codeCiphertext,
+    env,
+    judgeData(activity.id, "code"),
+  );
+  await usageStatement(env, {
+    now,
+    fingerprint: judge.fingerprint,
+    fresh: 0,
+    protocol,
+    userId: activity.authorId,
+    tries: 1,
+  }).run();
+  const outcome = await setupInJudge(
+    env,
+    { code, fingerprint: judge.fingerprint, fresh: 0, protocol },
+    {
+      params: input.params,
+      hongbao: {
+        title: activity.title,
+        total: ldcTotalMinor(input.config),
+        count: activity.totalCount,
+        minEach: judge.minEachMinor,
+      },
+      now,
+      seed: setupSeed(activity.id, input.secret),
+    },
+  );
+  if ("failure" in outcome) throw setupFailedError(outcome.detail);
+  if (outcome.answer === null && !declarations) return null;
+  const read = readSetup(outcome.answer);
+  if ("error" in read) throw setupFailedError(read.error.detail);
+  const view = read.view.keep ? undefined : read.view.value;
+  const record = {
+    at: now,
+    title: activity.title,
+    ...(read.state.keep ? {} : { state: read.state.value }),
+    ...(read.view.keep ? {} : { view: read.view.value }),
+  };
+  return env.DB.prepare(`UPDATE activity_code SET state_ciphertext = ?1, view_summary = ?2, view_data = ?3,
+      view_at = ?4, setup_ciphertext = ?5, updated_at = ${databaseNow}
+    WHERE activity_id = ?6 AND seed_commitment = ?7`).bind(
+    read.state.keep
+      ? null
+      : await encryptString(
+          JSON.stringify(read.state.value),
+          env,
+          judgeData(activity.id, "state"),
+        ),
+    view?.summary ?? null,
+    view?.data === undefined ? null : JSON.stringify(view.data),
+    view === undefined ? null : now,
+    await encryptString(
+      JSON.stringify(record),
+      env,
+      judgeData(activity.id, "setup"),
+    ),
+    activity.id,
+    input.commitment,
+  );
+}

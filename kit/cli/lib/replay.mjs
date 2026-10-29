@@ -4,8 +4,10 @@
 // sealed at opening (its commitment); then every judgment, given what the
 // site gave it (runtime/records.mjs) and its requests the answers the site
 // got (第 9 节), compared on the requests, ok, the amount the code asked,
-// the reply and the state. A 红包 runs the protocol it opened with: an
-// earlier protocol's records replay on its runtime, kept frozen.
+// the reply and the state; from the fourth protocol setup() at opening
+// first, and each view, line in 动态 and end too. A 红包 runs the protocol
+// it opened with: an earlier protocol's records replay on its runtime,
+// kept frozen.
 import { resolve } from "node:path";
 import {
   answersOf,
@@ -13,6 +15,7 @@ import {
   readVerdict,
   sameJson,
   seedCommitment,
+  setupSeed,
   submissionSeed,
   submissionsOf,
   userSeed,
@@ -46,6 +49,12 @@ function recordsProblem(records) {
     return "hongbao.seed 要是字符串或 null";
   if (records.params !== undefined && !isObject(records.params))
     return "params 要是一个对象";
+  const { setup } = records;
+  if (
+    setup !== undefined &&
+    (!isObject(setup) || !isWhole(setup.at) || typeof setup.title !== "string")
+  )
+    return "开放时 setup 的记录不全";
   if (!Array.isArray(judgments)) return "缺 judgments";
   for (const [index, judgment] of judgments.entries()) {
     const { user, verdict } = judgment ?? {};
@@ -98,6 +107,32 @@ function requestDifferences(recorded = [], answer) {
   return found;
 }
 
+/** Where a replayed state or view (`name`) differs from the recorded one. */
+function changeDifferences(name, recorded, change) {
+  const wrote = !change.keep;
+  if (Object.hasOwn(recorded, name) !== wrote)
+    return [
+      wrote ? `记录里没写 ${name}，重放写了` : `记录里写了 ${name}，重放没写`,
+    ];
+  if (wrote && !sameJson(recorded[name] ?? null, change.value))
+    return [
+      `${name} 记录是 ${shortJson(recorded[name] ?? null, 300)}，重放是 ${shortJson(change.value, 300)}`,
+    ];
+  return [];
+}
+
+/** setup()'s answer at opening against the recorded one (协议第四版). */
+function setupDifferences(recorded, opened) {
+  if ("failure" in opened)
+    return [`重放时${failureText(opened.failure, opened.detail)}`];
+  return [
+    ...changeDifferences("state", recorded, opened.state),
+    ...changeDifferences("view", recorded, opened.view),
+  ];
+}
+
+const announced = (text) => (text === undefined ? "没有动态" : `“${text}”`);
+
 /** Where the replay's answer differs from the recorded one. */
 function differences(recorded, reading) {
   const found = [];
@@ -111,15 +146,21 @@ function differences(recorded, reading) {
     found.push(
       `回复 记录是${said(recorded.message)}，重放是${said(reading.message)}`,
     );
-  const wrote = !reading.state.keep;
-  if ("state" in recorded !== wrote)
-    found.push(
-      wrote ? "记录里没写 state，重放写了" : "记录里写了 state，重放没写",
-    );
-  else if (wrote && !sameJson(recorded.state, reading.state.value))
-    found.push(
-      `state 记录是 ${shortJson(recorded.state, 300)}，重放是 ${shortJson(reading.state.value, 300)}`,
-    );
+  found.push(...changeDifferences("state", recorded, reading.state));
+  // 协议第四版: an earlier protocol's reading has none of them.
+  if (reading.view) {
+    found.push(...changeDifferences("view", recorded, reading.view));
+    if (recorded.announce !== reading.announce)
+      found.push(
+        `动态 记录是${announced(recorded.announce)}，重放是${announced(reading.announce)}`,
+      );
+    if ((recorded.end === true) !== reading.end)
+      found.push(
+        recorded.end
+          ? "记录里结束了红包，重放没结束"
+          : "记录里没结束红包，重放结束了",
+      );
+  }
   return found;
 }
 
@@ -188,7 +229,8 @@ export async function replayCommand({
     }
     print("✓ 保密参数和封存值对得上");
   }
-  if (records.judgments.length === 0) {
+  const { setup } = records;
+  if (records.judgments.length === 0 && !setup) {
     print("记录里还没有判定");
     return { exitCode: 0 };
   }
@@ -197,7 +239,31 @@ export async function replayCommand({
   const sandbox = await openSandbox(code, { protocol: records.protocol });
   let differing = 0;
   let replayed = 0;
+  let setupDiffers = false;
   try {
+    // 协议第四版: what setup() answered at opening, with the same seed.
+    if (setup) {
+      const opened = await sandbox.setup(
+        records.params ?? {},
+        {
+          title: setup.title,
+          total: hongbao.total,
+          count: hongbao.count,
+          minEach: hongbao.minEach,
+        },
+        { now: setup.at, seed: setupSeed(hongbao.id, hongbao.seed) },
+      );
+      const found = opened
+        ? setupDifferences(setup, opened)
+        : ["重放的协议没有 setup"];
+      setupDiffers = found.length > 0;
+      if (!setupDiffers) print("开放时 setup 一致");
+      else say(print, `开放时 setup 不一致：${found.join("；")}`);
+      if (records.judgments.length === 0) {
+        print("记录里还没有判定");
+        return { exitCode: Number(setupDiffers) };
+      }
+    }
     for (const [index, submission] of submissions.entries()) {
       const { id, attempts } = submission.user;
       const judgment = records.judgments[index];
@@ -214,7 +280,11 @@ export async function replayCommand({
       if ("failure" in answer)
         found.push(`重放时${failureText(answer.failure, answer.detail)}`);
       else {
-        const reading = readVerdict(answer.verdict, submission.share);
+        const reading = readVerdict(
+          answer.verdict,
+          submission.share,
+          records.protocol,
+        );
         found.push(
           ...("error" in reading
             ? [`重放时返回不对：${reading.error.detail}`]
@@ -245,5 +315,8 @@ export async function replayCommand({
         ? `${total} 次判定全部一致`
         : `${total} 次判定里 ${differing} 次不一致`,
     );
-  return { exitCode: differing === 0 && replayed === total ? 0 : 1 };
+  // A setup that differs is said above, and fails the replay.
+  return {
+    exitCode: differing === 0 && replayed === total && !setupDiffers ? 0 : 1,
+  };
 }

@@ -50,6 +50,8 @@ import {
   CODE_OPENING_ALLOWED,
   codeOpeningBlocked,
   codeOpeningDay,
+  codeOpeningRun,
+  openingSetup,
 } from "../judge/opening";
 import {
   openingParams,
@@ -62,6 +64,7 @@ import { judgeAuthorOf, judgeSourceOf } from "../judge/square";
 import {
   dropJudgeStatement,
   findJudgeRow,
+  newSeed,
   readJudgeInput,
   sameJudge,
   saveJudgeStatements,
@@ -1263,6 +1266,32 @@ export async function openActivity(
       ) !== BigInt(ldcTotalMinor(checked.data)))
   )
     invalidActivity("红包金额与库存不一致，无法开放");
+  // 代码判定: its seed, the protocol it opens on, and from protocol 4
+  // setup() once (docs/judge-page-design.md §2), all before the write.
+  const seed = coded && judgeRow ? newSeed() : null;
+  const codeRun =
+    coded && judgeRow
+      ? await codeOpeningRun(env, row.authorId, judgeRow)
+      : undefined;
+  // No run passed since codeOpeningBlocked looked: the guard would refuse.
+  if (seed && codeRun?.protocol == null)
+    throw new ActivityError(
+      409,
+      "JUDGE_CHECK_REQUIRED",
+      publicationMessages.JUDGE_CHECK_REQUIRED,
+    );
+  const setup =
+    seed && judgeRow && codeRun?.protocol != null && opening
+      ? await openingSetup(env, row, judgeRow, {
+          protocol: codeRun.protocol,
+          declarations: opening.declarations,
+          params: "values" in opening.read ? opening.read.values : {},
+          config: checked.data as LdcActivityInput,
+          secret: seed,
+          commitment: seedCommitment(id, seed),
+          now,
+        })
+      : null;
   try {
     await env.DB.batch([
       activityWriteGuard(env.DB, id, authorId, version),
@@ -1279,10 +1308,14 @@ export async function openActivity(
             ),
           ]
         : []),
-      ...(coded
+      ...(seed && codeRun?.protocol != null
         ? [
-            await sealSeedStatement(env, id, (secret) =>
-              seedCommitment(id, secret),
+            await sealSeedStatement(
+              env,
+              id,
+              seed,
+              seedCommitment(id, seed),
+              codeRun.protocol,
             ),
           ]
         : []),
@@ -1317,6 +1350,8 @@ export async function openActivity(
         id,
       ),
       ...(sealed ? [sealed.after] : []),
+      // setup()'s state and view, once opened (activity_code_update_guard).
+      ...(setup ? [setup] : []),
       // A 🐟额红包 locks its total in the same write (docs/balance-design.md
       // §14): not enough 可用 fails the whole opening.
       ...(balance && !held

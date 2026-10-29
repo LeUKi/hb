@@ -764,9 +764,10 @@ export function paramLine(item) {
 
 /**
  * What main.mjs answered to { describe: true }, beside `network` (read by
- * readNetwork): `meta`, `params`, `hongbao` and `check`, each by its rules —
- * `{ meta, params, hongbao, check, problems }`, problems one line each.
- * An answer from an earlier protocol has none of them.
+ * readNetwork): `meta`, `params`, `hongbao`, `check` and, from protocol 4,
+ * `setup`, each by its rules — `{ meta, params, hongbao, check, setup,
+ * problems }`, problems one line each. An answer from an earlier protocol
+ * has none of them.
  */
 export function readDeclarations(answer) {
   const unreadable = new Set(answer?.unreadable ?? []);
@@ -787,7 +788,49 @@ export function readDeclarations(answer) {
   const params = read("params", readParams)?.list ?? [];
   const hongbao = read("hongbao", readHongbaoRules)?.rules ?? null;
   if (answer?.check === false) problems.push("check 要是一个函数");
-  return { meta, params, hongbao, check: answer?.check === true, problems };
+  if (answer?.setup === false) problems.push("setup 要是一个函数");
+  return {
+    meta,
+    params,
+    hongbao,
+    check: answer?.check === true,
+    setup: answer?.setup === true,
+    problems,
+  };
+}
+
+/** Every string in a value, however deep (written without recursion). */
+function textsOf(value) {
+  const found = [];
+  const todo = [value];
+  while (todo.length > 0) {
+    const item = todo.pop();
+    if (typeof item === "string") found.push(item);
+    else if (item !== null && typeof item === "object")
+      todo.push(...(Array.isArray(item) ? item : Object.values(item)));
+  }
+  return found;
+}
+
+/**
+ * The secret params (§3 保密参数) whose value shows in a view (judge-page
+ * §2): a text of two characters or more found in its summary or any text
+ * in its data. Numbers are left out: a guess shown is not a leak.
+ */
+export function secretsInView(list, values, view) {
+  if (view === null || view === undefined) return [];
+  const shown = textsOf(view);
+  return list
+    .filter((item) => item.secret && Object.hasOwn(values, item.key))
+    .filter((item) =>
+      textsOf(values[item.key])
+        .map((text) => text.trim())
+        .some(
+          (text) =>
+            [...text].length >= 2 && shown.some((line) => line.includes(text)),
+        ),
+    )
+    .map((item) => item.key);
 }
 
 /** JSON with every object's keys sorted: what a commitment is taken over. */

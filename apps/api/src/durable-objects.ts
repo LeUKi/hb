@@ -883,6 +883,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
               // a 联网 红包's judgment goes out through the gateway.
               {
                 paused: () => this.announce(id),
+                ended: () => this.announce(id),
                 network: {
                   start: () => {
                     this.judging = new NetworkSession();

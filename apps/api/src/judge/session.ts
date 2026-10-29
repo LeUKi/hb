@@ -31,6 +31,8 @@ export type FetchRecord = {
  */
 export type JudgeHooks = {
   paused?: () => void;
+  /** Its code ended the 红包 (docs/judge-page-design.md §2 end). */
+  ended?: () => void;
   network?: {
     start(): NetworkSession;
     end(): void;

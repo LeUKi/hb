@@ -1,7 +1,7 @@
 // The sender's full records (JudgeRecords in judge.d.ts) back into what
 // each judgment was given: the claims so far, the pool left and the state
-// all follow from the judgments before it, stepped on as the site did
-// (scenario.mjs).
+// all follow from the judgments before it (from protocol 4, the first
+// state from setup()'s), stepped on as the site did (scenario.mjs).
 import { advance, nextSubmission, startScenario } from "./scenario.mjs";
 
 /**
@@ -39,6 +39,10 @@ export function submissionsOf(records) {
     secret: hongbao.seed,
     // 协议第三版: what the sender filled, the same for every judgment.
     ...(records.protocol >= 3 ? { params: records.params ?? {} } : {}),
+    ...(records.setup && "state" in records.setup
+      ? { state: records.setup.state ?? null }
+      : {}),
+    protocol: records.protocol,
   });
   return records.judgments.map((judgment) => {
     const submission = nextSubmission(scenario, {
@@ -50,11 +54,17 @@ export function submissionsOf(records) {
     // A share judged but never claimed (the 红包 ended first) is no claim.
     const claimed =
       judgment.claimedAt !== undefined && judgment.paid !== undefined;
+    const { verdict } = judgment;
     advance(scenario, submission, {
       state:
-        "state" in judgment.verdict
-          ? { keep: false, value: judgment.verdict.state ?? null }
+        "state" in verdict
+          ? { keep: false, value: verdict.state ?? null }
           : { keep: true },
+      view:
+        "view" in verdict
+          ? { keep: false, value: verdict.view ?? null }
+          : { keep: true },
+      end: verdict.end === true,
       ...(claimed ? { paid: judgment.paid, at: judgment.claimedAt } : {}),
     });
     return submission;

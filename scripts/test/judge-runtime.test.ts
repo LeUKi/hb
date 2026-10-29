@@ -16,12 +16,14 @@ import {
   nestsDeeper,
   normalizeText,
   personalCode,
+  readSetup,
   readVerdict,
   sameCode,
   scanImports,
   seedCommitment,
   seedStream,
   settle,
+  setupSeed,
   sha1,
   sha256,
   shareRange,
@@ -36,6 +38,7 @@ import { generateRandomAmounts } from "../../packages/contracts/src/random";
 import {
   FROZEN_V1,
   FROZEN_V2,
+  FROZEN_V3,
   RUNTIME_COPY,
   runtimeCopy,
 } from "../judge-runtime";
@@ -138,6 +141,10 @@ describe("seeds.mjs", () => {
     );
     expect(userSeed("hb-1", secret, 42)).toBe(
       sha(["hb.lafi.sh/judge/v1/user-random", "hb-1", secret, "42"]),
+    );
+    // setup()'s Math.random() at opening (protocol 4).
+    expect(setupSeed("hb-1", secret)).toBe(
+      sha(["hb.lafi.sh/judge/v1/setup", "hb-1", secret]),
     );
     expect(submissionSeed("hb-1", secret, 42, 3)).not.toBe(
       submissionSeed("hb-1", secret, 42, 4),
@@ -344,7 +351,11 @@ describe("verdict.mjs", () => {
 
   it("reads an answer the way the protocol says", () => {
     expect(
-      readVerdict({ ok: true, amount: 5000, message: "  前三名！\n" }, share),
+      readVerdict(
+        { ok: true, amount: 5000, message: "  前三名！\n" },
+        share,
+        3,
+      ),
     ).toEqual({
       ok: true,
       asked: 5000,
@@ -365,7 +376,7 @@ describe("verdict.mjs", () => {
       note: "last",
     });
     expect(
-      readVerdict({ ok: false, state: { tried: ["a"] }, amout: 1 }, share),
+      readVerdict({ ok: false, state: { tried: ["a"] }, amout: 1 }, share, 3),
     ).toEqual({
       ok: false,
       message: undefined,
@@ -374,6 +385,83 @@ describe("verdict.mjs", () => {
     });
     expect(readVerdict({ ok: false, state: null }, share)).toMatchObject({
       state: { keep: false, value: null },
+    });
+  });
+
+  it("reads what everyone sees, a line in 动态 and an end from protocol 4 on", () => {
+    expect(
+      readVerdict(
+        {
+          ok: false,
+          view: { summary: " 安全区间\n23–67 ", data: { low: 23 } },
+          announce: " @a 猜了 50 ",
+          end: true,
+        },
+        share,
+      ),
+    ).toEqual({
+      ok: false,
+      message: undefined,
+      state: { keep: true },
+      view: {
+        keep: false,
+        value: { summary: "安全区间 23–67", data: { low: 23 } },
+      },
+      announce: "@a 猜了 50",
+      end: true,
+      unknown: [],
+    });
+    expect(readVerdict({ ok: true, amount: 100 }, share)).toMatchObject({
+      view: { keep: true },
+      end: false,
+    });
+    expect(readVerdict({ ok: false, view: null }, share)).toMatchObject({
+      view: { keep: false, value: null },
+    });
+    expect(
+      readVerdict({ ok: false, view: { summary: " " } }, share),
+    ).toMatchObject({ view: { keep: false, value: {} } });
+    // Before it, they are fields that protocol does not have.
+    expect(
+      readVerdict({ ok: false, view: {}, announce: "x", end: true }, share, 3),
+    ).toEqual({
+      ok: false,
+      message: undefined,
+      state: { keep: true },
+      unknown: ["view", "announce", "end"],
+    });
+    for (const raw of [
+      { ok: false, view: [] },
+      { ok: false, view: "x" },
+      { ok: false, view: { title: "x" } },
+      { ok: false, view: { summary: 1 } },
+      { ok: false, view: { summary: "字".repeat(201) } },
+      { ok: false, view: { data: { big: "x".repeat(17000) } } },
+      { ok: false, view: { data: () => 1 } },
+      { ok: false, announce: 1 },
+      { ok: false, announce: "字".repeat(101) },
+      { ok: false, end: "yes" },
+    ])
+      expect(readVerdict(raw, share)).toHaveProperty("error.kind", "invalid");
+  });
+
+  it("reads setup()'s answer at opening", () => {
+    for (const raw of [undefined, null])
+      expect(readSetup(raw)).toEqual({
+        state: { keep: true },
+        view: { keep: true },
+        unknown: [],
+      });
+    expect(
+      readSetup({ state: { card: [1] }, view: { summary: "开局" }, more: 1 }),
+    ).toEqual({
+      state: { keep: false, value: { card: [1] } },
+      view: { keep: false, value: { summary: "开局" } },
+      unknown: ["more"],
+    });
+    expect(readSetup([])).toHaveProperty("error.kind", "invalid");
+    expect(readSetup({ view: { summary: 2 } })).toEqual({
+      error: { kind: "invalid", detail: "setup 的 view.summary 要是字符串" },
     });
   });
 
@@ -493,8 +581,10 @@ describe("the API's copy of the sandbox runtime", () => {
   // Protocol v1 is frozen: a 代码判定红包 opened with it on 2026-10-25, and
   // an opened 红包 keeps the runtime it opened with (docs/programmable-
   // hongbao-design.md §4.7). So is v2 (联网, §9), live since 2026-10-26,
-  // frozen as v3 (docs/judge-square-design.md §5) came. v3 is kit/runtime
-  // as it is now; v1 and v2 stay beside it as they were, never edited.
+  // frozen as v3 (docs/judge-square-design.md §5) came, and v3, live since
+  // 2026-10-29, frozen as v4 (docs/judge-page-design.md §2) came. v4 is
+  // kit/runtime as it is now; v1–v3 stay beside it as they were, never
+  // edited.
   it("keeps protocol v1 as opened, unchanged", () => {
     expect(
       createHash("sha256").update(readFileSync(FROZEN_V1)).digest("hex"),
@@ -504,5 +594,10 @@ describe("the API's copy of the sandbox runtime", () => {
     expect(
       createHash("sha256").update(readFileSync(FROZEN_V2)).digest("hex"),
     ).toBe("954cf46722c9789aee36a297d9cc393e29a502e1183c0633eb04cbf70bd8cd0f");
+  });
+  it("keeps protocol v3 as opened, unchanged", () => {
+    expect(
+      createHash("sha256").update(readFileSync(FROZEN_V3)).digest("hex"),
+    ).toBe("508bcaaf33c1b2ba003d593b6ebe0f61849f84ba55dffb39b8a829e7583479cd");
   });
 });

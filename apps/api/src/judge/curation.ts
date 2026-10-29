@@ -313,7 +313,7 @@ export async function judgeCuration(
         // The newest others may use (精选 aside): 作者有第 N 版.
         const current = await env.DB.prepare(
           `SELECT MAX(v.n) AS n FROM judge_versions v WHERE v.judge_id = ? AND v.n > ? AND v.passed = 1
-            AND v.protocol = 3 AND EXISTS(SELECT 1 FROM activity_code c JOIN activities a ON a.id = c.activity_id
+            AND v.protocol >= 3 AND EXISTS(SELECT 1 FROM activity_code c JOIN activities a ON a.id = c.activity_id
               WHERE c.judge_id = v.judge_id AND c.judge_version = v.n AND a.opened_at IS NOT NULL AND c.stopped_at IS NULL)`,
         )
           .bind(row.judgeId, row.n)

@@ -1,8 +1,9 @@
 /**
- * 代码判定红包 · 代码协议第三版（第二版加上参数）。
+ * 代码判定红包 · 代码协议第四版（第三版加上公开数据、动态和提前结束）。
  * 金额都是整数，单位是分（0.01）；时间都是毫秒。
  * 规则见 hb 仓库的 docs/programmable-hongbao-design.md 第 4 节，联网见第 9 节，
- * 参数（meta、params、hongbao、check）见 docs/judge-square-design.md 第 3、4 节。
+ * 参数（meta、params、hongbao、check）见 docs/judge-square-design.md 第 3、4 节，
+ * 公开数据（view、announce、end、setup）见 docs/judge-page-design.md 第 2 节。
  */
 
 export type Json =
@@ -70,6 +71,23 @@ export interface Verdict {
   message?: string;
   /** 写了就整个换掉（发不发都存），不写就不变；最大 16 KB，最多嵌套 100 层 */
   state?: Json;
+  /**
+   * 第四版：公开数据，所有人都看得到（游客也是）。写了就整个换掉，不写不变，
+   * null 是清空。秘密照旧放在 state 里
+   */
+  view?: View | null;
+  /** 第四版：一条动态，纯文字，最多 100 个字；网站在前面写上判定的人 */
+  announce?: string;
+  /** 第四版：true 就在这次判定后结束红包（这次照常结算，没发的照提前结束退回） */
+  end?: boolean;
+}
+
+/** 第四版：公开数据。 */
+export interface View {
+  /** 给所有人看的一句话，网站自己显示；纯文字，最多 200 个字 */
+  summary?: string;
+  /** 给附带网页的，什么结构都行；最大 16 KB，最多嵌套 100 层 */
+  data?: Json;
 }
 
 /** 可复现的随机数：同一个种子、同一个人、同一个第几次，取出来的都一样。 */
@@ -261,6 +279,19 @@ export type Check = (
 ) => ParamProblem[] | Promise<ParamProblem[]>;
 
 /**
+ * 第四版：judge.js 可以导出 `setup(params, hongbao)`，开放时跑一次（算一次沙箱使用），
+ * 返回最开始的 state 和公开数据；不导出就是 state 为 null、没有公开数据。
+ * Math.random() 来自开放时封存的种子，结束后能重放核对；不能联网。出错红包就开放不了。
+ */
+export type Setup = (
+  params: Params,
+  hongbao: Pick<Submission["hongbao"], "title" | "total" | "count" | "minEach">,
+) =>
+  | { state?: Json; view?: View | null }
+  | undefined
+  | Promise<{ state?: Json; view?: View | null } | undefined>;
+
+/**
  * 联网：judge.js 导出 network，列出能请求的地址前缀，最多 3 个；不导出就不联网。
  * 写法：https:// 开头的完整域名加路径前缀，比如 "https://api.example.com/hongbao/"；
  * 不带端口、? 和 #，不能是 IP 地址、linux.do 和本站。
@@ -426,7 +457,24 @@ export type TestExpect = (
         /** 只比写了的键，数组整个比 */
         stateIncludes: { [key: string]: Json };
       }
-  );
+  ) &
+  (
+    | {
+        /** 第四版：这次判定后的公开数据，整份比；没有公开数据写 null */
+        view?: View | null;
+        viewIncludes?: never;
+      }
+    | {
+        view?: never;
+        /** 只比写了的键，同 stateIncludes */
+        viewIncludes: { summary?: string; data?: Json };
+      }
+  ) & {
+    /** 第四版：这次的动态，逐字比；没有动态写 "" */
+    announce?: string;
+    /** 第四版：这次判定有没有结束红包 */
+    end?: boolean;
+  };
 
 /**
  * 红包作者下载的完整领取记录（网站上“下载完整记录”）：每次判定交给代码的
@@ -434,7 +482,7 @@ export type TestExpect = (
  * 已领记录、剩余奖池和状态都由前面的判定推出来，不重复写。
  */
 export interface JudgeRecords {
-  /** 红包开放时用的协议版本：1、2 或 3 */
+  /** 红包开放时用的协议版本：1、2、3 或 4 */
   protocol: number;
   /** 第二版起联网的红包：白名单 */
   network?: string[];
@@ -458,6 +506,11 @@ export interface JudgeRecords {
     /** 结束后才有 */
     seed: string | null;
   };
+  /**
+   * 第四版：开放时 setup() 的回答（导出了 setup 才有）：那时的时间和标题，
+   * 写了才有 state、view
+   */
+  setup?: { at: number; title: string; state?: Json; view?: View | null };
   /** 按判定的先后 */
   judgments: {
     /** Submission.now */
@@ -466,8 +519,19 @@ export interface JudgeRecords {
     user: Submission["user"];
     /** 那时的红包标题 */
     title: string;
-    /** 代码的回答（读过以后：message 合并了空白）；写了 state 才有 state */
-    verdict: { ok: boolean; amount?: number; message?: string; state?: Json };
+    /**
+     * 代码的回答（读过以后：message 合并了空白）；写了 state 才有 state。
+     * 第四版：写了 view 才有 view，有动态才有 announce，结束了红包才有 end
+     */
+    verdict: {
+      ok: boolean;
+      amount?: number;
+      message?: string;
+      state?: Json;
+      view?: View | null;
+      announce?: string;
+      end?: true;
+    };
     /** 实际发的，和拉进范围的原因 */
     paid?: number;
     note?: "floor" | "cap" | "last";

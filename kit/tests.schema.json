@@ -323,11 +323,28 @@
         "stateIncludes": {
           "description": "这次判定以后的状态，只比写了的键，数组整个比",
           "type": "object"
+        },
+        "view": {
+          "description": "第四版：这次判定以后的公开数据（summary、data），整份比；没有公开数据写 null",
+          "type": ["object", "null"]
+        },
+        "viewIncludes": {
+          "description": "第四版：这次判定以后的公开数据，只比写了的键，同 stateIncludes",
+          "type": "object"
+        },
+        "announce": {
+          "description": "第四版：这次写的动态，逐字比（换行和连续空白已合成一个空格）；没有动态写 \"\"",
+          "type": "string"
+        },
+        "end": {
+          "description": "第四版：这次判定有没有结束红包",
+          "type": "boolean"
         }
       },
       "allOf": [
         { "not": { "required": ["message", "messageIncludes"] } },
         { "not": { "required": ["state", "stateIncludes"] } },
+        { "not": { "required": ["view", "viewIncludes"] } },
         {
           "if": { "properties": { "ok": { "const": false } } },
           "then": {

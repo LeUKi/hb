@@ -1,10 +1,10 @@
 // 判定器广场 (docs/judge-square-design.md §8, §15): 判定器 their authors
 // put in it, each with its numbers and the version others use — the one
-// 站长精选 has, else the newest that passed on the current protocol and
+// 站长精选 has, else the newest that passed on protocol 3 or later and
 // opened a 红包. Anyone may look; a 判定器 out of it opens only to its
 // author, the 站长, and whoever has a 红包 with it.
 import {
-  JUDGE_PROTOCOL,
+  JUDGE_OLDEST_PROTOCOL,
   type JudgeDeclarations,
   type JudgeListingInput,
   type JudgePage,
@@ -29,7 +29,7 @@ const COUNTED = `a.opened_at IS NOT NULL AND c.stopped_at IS NULL`;
 
 /** The version others use: newest that passed and opened a 红包 that counts. */
 const PUBLIC_N = (judge: string) => `(SELECT MAX(v.n) FROM judge_versions v
-  WHERE v.judge_id = ${judge} AND v.passed = 1 AND v.protocol = ${JUDGE_PROTOCOL}
+  WHERE v.judge_id = ${judge} AND v.passed = 1 AND v.protocol >= ${JUDGE_OLDEST_PROTOCOL}
     AND EXISTS(SELECT 1 FROM activity_code c JOIN activities a ON a.id = c.activity_id
       WHERE c.judge_id = v.judge_id AND c.judge_version = v.n AND ${COUNTED}))`;
 
@@ -438,8 +438,9 @@ export async function setMyJudgeListing(
 }
 
 /**
- * Whether others may use this version (§15.3): one that passed on the
- * current protocol, and is the 精选 one or opened a 红包 that counts.
+ * Whether others may use this version (§15.3): one that passed on a
+ * protocol 红包 still open on (JUDGE_OLDEST_PROTOCOL on), and is the 精选
+ * one or opened a 红包 that counts.
  */
 export async function usableByOthers(
   env: ApiBindings,
@@ -449,7 +450,7 @@ export async function usableByOthers(
   return Boolean(
     await env.DB.prepare(
       `SELECT 1 FROM judge_versions v WHERE v.judge_id = ?1 AND v.n = ?2 AND v.passed = 1
-        AND v.protocol = ${JUDGE_PROTOCOL}
+        AND v.protocol >= ${JUDGE_OLDEST_PROTOCOL}
         AND (EXISTS(SELECT 1 FROM judge_features f WHERE f.judge_id = v.judge_id AND f.n = v.n)
           OR EXISTS(SELECT 1 FROM activity_code c JOIN activities a ON a.id = c.activity_id
             WHERE c.judge_id = v.judge_id AND c.judge_version = v.n AND ${COUNTED}))`,

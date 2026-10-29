@@ -472,6 +472,13 @@ function recordsOf(
         ...(reading.ok ? { amount: reading.asked } : {}),
         ...(reading.message ? { message: reading.message } : {}),
         ...(reading.state.keep ? {} : { state: reading.state.value }),
+        ...(reading.view && !reading.view.keep
+          ? { view: reading.view.value }
+          : {}),
+        ...(reading.announce !== undefined
+          ? { announce: reading.announce }
+          : {}),
+        ...(reading.end ? { end: true as const } : {}),
       },
       ...(reading.ok
         ? {
@@ -495,6 +502,20 @@ function recordsOf(
       seedCommitment: seedCommitment(hongbaoId, seed),
       seed,
     },
+    ...(simulated.setup
+      ? {
+          setup: {
+            at: hongbao.openedAt,
+            title: hongbao.title,
+            ...(simulated.setup.state.keep
+              ? {}
+              : { state: simulated.setup.state.value }),
+            ...(simulated.setup.view.keep
+              ? {}
+              : { view: simulated.setup.view.value }),
+          },
+        }
+      : {}),
     judgments,
   };
 }
@@ -560,8 +581,8 @@ describe("npm run replay", () => {
       "✗ 记录里还没有种子：红包结束后才公开，到时候再下载一次完整记录",
     ]);
     expect(unsealed.exitCode).toBe(1);
-    await expect(replayWith({ ...records, protocol: 4 })).rejects.toThrow(
-      "记录是第 4 版协议，这个开发包只认第 1 到第 3 版：换一个新的开发包再重放",
+    await expect(replayWith({ ...records, protocol: 5 })).rejects.toThrow(
+      "记录是第 5 版协议，这个开发包只认第 1 到第 4 版：换一个新的开发包再重放",
     );
 
     const second = records.judgments[1];
@@ -1073,6 +1094,225 @@ export function judge() { return { ok: false }; }`,
     });
     expect(old.lines.at(-1)).toMatch(/^\d+ 次判定全部一致$/);
     expect(old.exitCode).toBe(0);
+  }, 40_000);
+});
+
+// 数字炸弹, small (docs/judge-page-design.md §7): setup() hides the bomb,
+// each guess narrows what everyone sees and says so in 动态, the one who
+// steps on it is paid and ends the 红包.
+const BOMB = `export const params = [{ key: "word", label: "暗号", type: "text", secret: true, required: false }];
+export function setup() {
+  const bomb = 1 + Math.floor(Math.random() * 100);
+  return {
+    state: { bomb, low: 1, high: 100 },
+    view: { summary: "安全区间 1–100", data: { low: 1, high: 100 } },
+  };
+}
+export function judge({ input, state, user, params, share }) {
+  const guess = Number(input);
+  if (!Number.isInteger(guess) || guess < state.low || guess > state.high)
+    return { ok: false, message: \`要猜 \${state.low}–\${state.high} 的整数\` };
+  if (guess === state.bomb)
+    return { ok: true, amount: share.max, announce: \`@\${user.username} 踩中了炸弹\`, end: true };
+  const low = guess < state.bomb ? guess + 1 : state.low;
+  const high = guess > state.bomb ? guess - 1 : state.high;
+  const said = params.word ? \`\${params.word}：\` : "";
+  return {
+    ok: false,
+    message: "安全",
+    state: { ...state, low, high },
+    view: { summary: \`\${said}安全区间 \${low}–\${high}\`, data: { low, high } },
+    announce: \`@\${user.username} 猜了 \${guess}，安全\`,
+  };
+}`;
+const BOMB_STATE = { bomb: 50, low: 1, high: 100 };
+
+describe("协议第四版：公开数据、动态和结束", () => {
+  it("npm test checks view, announce and end, and turns away whoever comes after the end", async () => {
+    const dir = kit({
+      "judge.js": BOMB,
+      "tests.json": {
+        tests: [
+          {
+            name: "安全",
+            state: BOMB_STATE,
+            input: "30",
+            expect: {
+              ok: false,
+              viewIncludes: { summary: "安全区间 31–100" },
+              announce: "@tester 猜了 30，安全",
+              end: false,
+            },
+          },
+          {
+            name: "踩中",
+            state: BOMB_STATE,
+            input: "50",
+            expect: { ok: true, announce: "@tester 踩中了炸弹", end: true },
+          },
+          {
+            name: "说错了",
+            state: BOMB_STATE,
+            input: "30",
+            expect: {
+              ok: false,
+              view: { summary: "安全区间 1–29" },
+              announce: "猜了 30",
+              end: true,
+            },
+          },
+          {
+            name: "结束以后",
+            state: BOMB_STATE,
+            steps: [
+              { who: "小明", input: "50", expect: { ok: true, end: true } },
+              { who: "小红", input: "10", expect: { ok: false } },
+            ],
+          },
+        ],
+      },
+    });
+    const { exitCode, lines } = await run(testCommand, { dir });
+    expect(lines[0]).toMatch(/^✓ 安全（/);
+    expect(lines[1]).toMatch(/^✓ 踩中（/);
+    expect(lines).toContain(
+      "✗ 说错了：view 和 expect.view 不一样；动态应该是“猜了 30”，实际是“@tester 猜了 30，安全”；应该结束红包，实际没结束",
+    );
+    expect(lines).toContain(
+      "✗ 结束以后：第 2 步（小红）：红包已经被判定器结束了，线上不会交给代码",
+    );
+    expect(lines.at(-1)).toBe("测试 2 / 4 通过");
+    expect(exitCode).toBe(1);
+  }, 20_000);
+
+  it("npm run check warns when a secret param shows in what everyone sees", async () => {
+    const dir = kit({
+      "judge.js": BOMB,
+      "tests.json": {
+        params: { word: "芝麻开门" },
+        tests: [
+          {
+            name: "安全",
+            state: BOMB_STATE,
+            input: "30",
+            expect: { ok: false },
+          },
+        ],
+      },
+    });
+    const { exitCode, lines } = await run(checkCommand, { dir });
+    expect(lines).toContain(
+      "提醒：公开数据里出现了保密参数 word 的值，开放后所有人都看得到。",
+    );
+    expect(lines.at(-1)).toBe("可以去网站部署了");
+    expect(exitCode).toBe(0);
+  }, 20_000);
+
+  it("npm run simulate opens with setup() and says what everyone sees, 动态 and the end", async () => {
+    // 1, 2, 3, … : someone steps on the bomb, wherever setup() hid it.
+    const dir = kit({
+      "judge.js": BOMB,
+      "simulate.json": {
+        hongbao: { total: 1000, count: 5 },
+        submissions: Array.from({ length: 100 }, (_, index) => ({
+          who: `第${index + 1}人`,
+          input: String(index + 1),
+        })),
+      },
+    });
+    const { lines, simulation } = await run(simulateCommand, { dir });
+    expect(lines.slice(2, 4)).toEqual([
+      "开放时 setup",
+      '  公开：安全区间 1–100  data {"low":1,"high":100}',
+    ]);
+    const state = simulation?.setup?.state;
+    if (!state || state.keep) throw new Error("No state from setup()");
+    const { bomb } = state.value as { bomb: number };
+    if (bomb > 1) {
+      expect(lines.slice(4, 7)).toEqual([
+        '第 1 次  第1人  "1"  没领到  代码的回复：安全',
+        '  公开：安全区间 2–100  data {"low":2,"high":100}',
+        "  动态：@第1人 猜了 1，安全",
+      ]);
+    }
+    const hit = lines.findIndex((line) =>
+      line.startsWith(`第 ${bomb} 次  第${bomb}人  "${bomb}"  领到 `),
+    );
+    expect(lines.slice(hit + 1, hit + 3)).toEqual([
+      `  动态：@第${bomb}人 踩中了炸弹`,
+      "判定器结束了这个红包",
+    ]);
+    if (bomb < 100)
+      expect(lines[hit + 3]).toBe(
+        `第 ${bomb + 1} 次  第${bomb + 1}人  "${bomb + 1}"  已结束`,
+      );
+  }, 30_000);
+
+  it("npm run replay checks setup() and each view, line in 动态 and end", async () => {
+    const dir = kit({
+      "judge.js": BOMB,
+      "simulate.json": {
+        hongbao: { total: 1000, count: 5 },
+        submissions: Array.from({ length: 100 }, (_, index) => ({
+          who: `第${index + 1}人`,
+          input: String(index + 1),
+        })),
+      },
+    });
+    const { simulation } = await run(simulateCommand, { dir });
+    if (!simulation) throw new Error("No simulation");
+    const records = recordsOf(simulation, BOMB);
+    expect(records.setup?.state).toMatchObject({ low: 1, high: 100 });
+    expect(records.judgments.at(-1)?.verdict.end).toBe(true);
+    const downloads = kit({ "judge-records-x.json": records });
+    const replayed = await run(replayCommand, {
+      dir,
+      cwd: downloads,
+      args: ["judge-records-x.json"],
+    });
+    expect(replayed.lines[2]).toBe("开放时 setup 一致");
+    expect(replayed.lines.at(-1)).toBe(
+      `${records.judgments.length} 次判定全部一致`,
+    );
+    expect(replayed.exitCode).toBe(0);
+    // Another bomb at opening: setup() differs.
+    const forged = kit({
+      "judge-records-x.json": {
+        ...records,
+        setup: { ...records.setup, state: { bomb: 101, low: 1, high: 100 } },
+      },
+    });
+    const caught = await run(replayCommand, {
+      dir,
+      cwd: forged,
+      args: ["judge-records-x.json"],
+    });
+    expect(caught.lines[2]).toMatch(/^开放时 setup 不一致：state 记录是 /);
+    expect(caught.exitCode).toBe(1);
+    // A line in 动态 the code never wrote, and an end it never made.
+    const [first, ...rest] = records.judgments;
+    if (!first) throw new Error("No judgments");
+    const said = kit({
+      "judge-records-x.json": {
+        ...records,
+        judgments: [
+          {
+            ...first,
+            verdict: { ...first.verdict, announce: "别人写的", end: true },
+          },
+          ...rest,
+        ],
+      },
+    });
+    const differing = await run(replayCommand, {
+      dir,
+      cwd: said,
+      args: ["judge-records-x.json"],
+    });
+    expect(differing.lines[3]).toMatch(
+      /^第 1 次判定 不一致：动态 记录是“别人写的”，重放是“@第1人 猜了 1，安全”；记录里结束了红包，重放没结束$|^第 1 次判定 不一致：动态 记录是“别人写的”，重放是“@第1人 踩中了炸弹”$/,
+    );
+    expect(differing.exitCode).toBe(1);
   }, 40_000);
 });
 

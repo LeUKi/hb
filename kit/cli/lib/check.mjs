@@ -8,8 +8,10 @@ import {
   checkSource,
   LIMITS,
   paramLine,
+  paramValues,
   readTests,
   runTest,
+  secretsInView,
 } from "../../runtime/index.mjs";
 import { bytesOf, fingerprintOf, readProjectFile, sizeText } from "./files.mjs";
 import { openSandbox, SLOW_MS } from "./sandbox.mjs";
@@ -42,6 +44,8 @@ async function runAll(code, tests) {
   };
   const results = [];
   const unstable = [];
+  /** 协议第四版: secret params a test's view showed, by key. */
+  const leaked = new Set();
   let loadProblem = null;
   const { network, declarations } = sandbox;
   // 协议第三版: each test's params, held to what is declared and to check().
@@ -67,6 +71,15 @@ async function runAll(code, tests) {
       }
       results.push({ name: test.name, ...result });
       if (result.unstable) unstable.push(test.name);
+      const read = paramValues(declarations.params, test.params);
+      if ("values" in read)
+        for (const run of result.steps ?? [result])
+          for (const key of secretsInView(
+            declarations.params,
+            read.values,
+            run.actual?.view,
+          ))
+            leaked.add(key);
     }
   } finally {
     await sandbox.close();
@@ -75,6 +88,7 @@ async function runAll(code, tests) {
   return {
     results,
     unstable,
+    leaked: [...leaked],
     loadProblem,
     slowest,
     loadNote,
@@ -98,12 +112,13 @@ export async function checkCommand({ dir, print = console.log }) {
     print(`  第 ${line} 行：${message}`);
   let passed = false;
   let unstable = [];
+  let leaked = [];
   let slowest = null;
   let loadNote = null;
   if ("problem" in read) print(row(false, read.problem));
   else if (problems.length === 0) {
     const all = await runAll(code, read.tests);
-    ({ unstable, slowest, loadNote } = all);
+    ({ unstable, leaked, slowest, loadNote } = all);
     print(row(!all.loadProblem, "代码能加载、导出了 judge"));
     if (all.loadProblem) say(print, `  ${all.loadProblem}`, "    ");
     else {
@@ -136,6 +151,8 @@ export async function checkCommand({ dir, print = console.log }) {
     print(
       `提醒：两次跑出的结果不一样：${unstable.join("、")}。用了真随机，线上没法重放`,
     );
+  for (const key of leaked)
+    print(`提醒：公开数据里出现了保密参数 ${key} 的值，开放后所有人都看得到。`);
   if (slowest !== null)
     print(
       isSlow(slowest)

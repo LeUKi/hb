@@ -5,12 +5,15 @@
 // submission, then what was paid out. The seed is fixed, so a file always
 // gives the same result; --seed changes it. Requests get the answers each
 // submission wrote (`fetch`); --live sends them out from this computer
-// (协议第 9 节).
+// (协议第 9 节). From the fourth protocol setup() opens it, and each
+// submission says what everyone then sees and its line in 动态
+// (docs/judge-page-design.md §2).
 import { resolve } from "node:path";
 import {
   checkSource,
   judgeNext,
   paramValues,
+  setupSeed,
   sha256Text,
   startScenario,
   TEST_HONGBAO_ID,
@@ -25,6 +28,7 @@ import {
   printLogs,
   SLOW_NOTE,
   say,
+  shortJson,
   unloadable,
   yuan,
 } from "./words.mjs";
@@ -53,10 +57,26 @@ function readArgs(args) {
 const seedOf = (text) =>
   HEX64.test(text) ? text : sha256Text(`hb.lafi.sh/judge/v1/simulate\n${text}`);
 
+const REFUSED = { ended: "已结束", claimed: "已领过", "sold-out": "已领完" };
+
+/** What everyone sees now (协议第四版), in a line. */
+function viewText(view) {
+  if (view === null) return "清空了";
+  const parts = [];
+  if (view.summary !== undefined) parts.push(view.summary);
+  if (view.data !== undefined) parts.push(`data ${shortJson(view.data, 200)}`);
+  return parts.length > 0 ? parts.join("  ") : "空的";
+}
+
+/** A view and a line in 动态 it wrote, under the line they belong to. */
+function printPublic(print, { view, announce }) {
+  if (view && !view.keep) say(print, `  公开：${viewText(view.value)}`, "    ");
+  if (announce !== undefined) say(print, `  动态：${announce}`, "    ");
+}
+
 /** What one submission came to, in words. */
 function outcome(judged) {
-  if ("refused" in judged)
-    return judged.refused === "claimed" ? "已领过" : "已领完";
+  if ("refused" in judged) return REFUSED[judged.refused];
   const { answer, reading } = judged;
   if ("failure" in answer)
     return `出错：${failureText(answer.failure, answer.detail)}`;
@@ -155,11 +175,32 @@ export async function simulateCommand({
     await sandbox.close();
     return { exitCode: 1 };
   }
+  // 协议第四版: setup(params, hongbao) opens it, as on the site.
+  const { title, total, count, minEach } = hongbao;
+  const opened = await sandbox.setup(
+    params.values,
+    { title, total, count, minEach },
+    { now: hongbao.openedAt, seed: setupSeed(TEST_HONGBAO_ID, seed) },
+  );
+  if (opened && "failure" in opened) {
+    say(print, `✗ setup 出错：${failureText(opened.failure, opened.detail)}`);
+    printLogs(print, opened.logs);
+    print("线上红包会开放不了，模拟没跑");
+    await sandbox.close();
+    return { exitCode: 1 };
+  }
+  if (opened && declarations.setup) {
+    print("开放时 setup");
+    printLogs(print, opened.logs);
+    printPublic(print, opened);
+  }
   const scenario = startScenario({
     hongbao,
     hongbaoId: TEST_HONGBAO_ID,
     secret: seed,
     params: params.values,
+    ...(opened && !opened.state.keep ? { state: opened.state.value } : {}),
+    ...(opened && !opened.view.keep ? { view: opened.view.value } : {}),
   });
   if (sandbox.network.list)
     print(
@@ -185,6 +226,10 @@ export async function simulateCommand({
       if ("answer" in result) printLogs(print, result.answer.logs);
       if ("refused" in result) continue;
       if ("failure" in result.answer || "error" in result.reading) failed += 1;
+      else {
+        printPublic(print, result.reading);
+        if (result.reading.end) print("判定器结束了这个红包");
+      }
       if ("failure" in result.answer && unloadable(result.answer.failure)) {
         if (index < submissions.length - 1)
           print("代码加载不了，后面的提交没跑");
@@ -202,6 +247,15 @@ export async function simulateCommand({
   );
   return {
     exitCode: failed > 0 ? 1 : 0,
-    simulation: { hongbao, hongbaoId: TEST_HONGBAO_ID, seed, judged },
+    simulation: {
+      hongbao,
+      hongbaoId: TEST_HONGBAO_ID,
+      seed,
+      // 协议第四版: what setup() answered, when judge.js has one.
+      ...(opened && declarations.setup
+        ? { setup: { state: opened.state, view: opened.view } }
+        : {}),
+      judged,
+    },
   };
 }

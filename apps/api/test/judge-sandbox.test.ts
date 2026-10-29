@@ -290,6 +290,7 @@ export function judge(submission) {
       ],
       hongbao: { count: { min: 1, max: 10, default: 5 } },
       check: true,
+      setup: false,
       problems: [],
     });
     const checked = await checkParamsInJudge(env, run, {
