@@ -1,18 +1,21 @@
 import type { JudgeFetchAnswer, JudgeNote, MyJudgment } from "@hb/contracts";
 import { useRouter } from "@tanstack/react-router";
+import { useAtomValue } from "jotai";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
+import { cn } from "../../lib/cn";
 import { useMyJudgments } from "../../lib/judge";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { switchOverlay } from "../../lib/overlay";
 import { clockSeconds } from "../../lib/roster-time";
 import { useSessionUser } from "../../lib/session";
+import { judgingAtom } from "../omnibox/state";
 import { LazyListEnd, useQueryLazyList } from "../page/lazy-list";
 import { PanelDialog } from "../shell/panel-dialog";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
-import { RollingText } from "../ui/morph-label";
+import { MorphLabel, RollingText } from "../ui/morph-label";
 import { ListItem, Reveal } from "../ui/reveal";
 import { Squircle } from "../ui/squircle";
 import { useHongbaoPageData } from "./use-hongbao-data";
@@ -135,10 +138,39 @@ const spoken = (item: MyJudgment) =>
   }`;
 
 /**
+ * 判定中 for 2 s (`since` the press, null once answered): why it is taking
+ * longer, under its card (02 §4), folding away with the answer.
+ */
+function StillJudging({
+  since,
+  network,
+}: {
+  since: number | null;
+  network: boolean;
+}) {
+  const [late, setLate] = useState(false);
+  useEffect(() => {
+    setLate(false);
+    if (since === null) return;
+    const timer = window.setTimeout(() => setLate(true), 2000);
+    return () => window.clearTimeout(timer);
+  }, [since]);
+  return (
+    <Reveal show={since !== null && late}>
+      <p className="px-2.5 text-xs text-ink-3">
+        {network ? "判定器在联网，最多等 5 秒" : "还在判定…"}
+      </p>
+    </Reveal>
+  );
+}
+
+/**
  * Under the 指令框 in a 代码判定红包's scope (02 §4): the latest judged
  * submission as a card — 第 N 次, what was typed, the result, the code's
  * reply in larger type — then the earlier ones, all of them as one
- * scrolls. Before the first, what taking part makes public.
+ * scrolls. Before the first, what taking part makes public. A submission
+ * on its way is that card already (正在判定…, the gold sheen sweeping it)
+ * and turns into its result in place.
  */
 export function JudgmentRecord({ activityId }: { activityId: string }) {
   const user = useSessionUser();
@@ -152,11 +184,17 @@ export function JudgmentRecord({ activityId }: { activityId: string }) {
     pageCount: query.data?.pages.length ?? 0,
   });
   const network = useHongbaoPageData(activityId).data?.activity.judge?.network;
+  const judging = useAtomValue(judgingAtom);
   const total = query.data?.pages[0]?.total ?? 0;
-  const [latest, ...earlier] =
+  const [newest, ...older] =
     query.data?.pages.flatMap((batch) => batch.items) ?? [];
   if (!user || !query.data) return null;
-  if (!latest)
+  const pending = judging?.activityId === activityId ? judging : null;
+  // On its way, it heads the record; the newest judged one moves down.
+  const latest = pending ? null : newest;
+  const earlier = pending && newest ? [newest, ...older] : older;
+  const attempt = pending ? total + 1 : (latest?.attempt ?? 0);
+  if (!latest && !pending)
     return (
       <p className="px-2.5 pb-2 text-xs text-ink-3">
         提交后，你的昵称和判定次数会出现在参与名单里。
@@ -164,14 +202,19 @@ export function JudgmentRecord({ activityId }: { activityId: string }) {
           `这个红包会联网：你的提交（数字 ID、用户名、等级和输入）可能被发到 ${hostsOf(network)}。`}
       </p>
     );
+  const won = Boolean(latest?.amount);
   return (
-    <section aria-label="我的提交" className="grid gap-1.5 px-0.5 pb-1">
+    <section
+      aria-label="我的提交"
+      className="flex flex-col gap-1.5 px-0.5 pb-1"
+    >
       <p role="status" className="sr-only">
-        {spoken(latest)}
+        {latest ? spoken(latest) : "正在判定…"}
       </p>
       <AnimatePresence initial={false} mode="popLayout">
         <motion.div
-          key={latest.attempt}
+          // One key from 正在判定… to its result: the same card turns.
+          key={attempt}
           initial={{ opacity: 0, y: reduced ? 0 : -8 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0 }}
@@ -179,35 +222,52 @@ export function JudgmentRecord({ activityId }: { activityId: string }) {
         >
           <Squircle radius={14}>
             <div
-              className={`grid gap-1.5 px-4 py-3 ${
-                latest.amount ? "bg-success-soft" : "bg-fill-2"
-              }`}
+              className={cn(
+                "flex flex-col gap-1.5 px-4 py-3 transition-colors duration-300",
+                won ? "bg-success-soft" : "bg-fill-2",
+                pending && "loading-sheen loading-sheen-gold",
+              )}
             >
               <div className="flex items-baseline justify-between gap-3">
                 <span className="text-xs text-ink-3 tabular-nums">
-                  第 {latest.attempt} 次 · {clockSeconds(Date.parse(latest.at))}
+                  {/* The press's time, then the judgment's: its digits roll. */}
+                  <RollingText
+                    text={`第 ${attempt} 次 · ${clockSeconds(
+                      pending ? pending.at : Date.parse(latest?.at ?? ""),
+                    )}`}
+                  />
                 </span>
-                {latest.amount ? (
-                  <span className="shrink-0 text-sm font-medium text-success tabular-nums">
-                    领到 {latest.amount} LDC
-                  </span>
-                ) : (
-                  <span className="shrink-0 text-sm text-ink-2">没领到</span>
-                )}
+                <span
+                  className={cn(
+                    "shrink-0 text-sm tabular-nums",
+                    won ? "font-medium text-success" : "text-ink-2",
+                  )}
+                >
+                  <MorphLabel align="start">
+                    {pending
+                      ? "正在判定…"
+                      : won
+                        ? `领到 ${latest?.amount} LDC`
+                        : "没领到"}
+                  </MorphLabel>
+                </span>
               </div>
               <p className="font-mono text-sm break-all whitespace-pre-wrap text-ink-2">
-                {latest.input}
+                {pending ? pending.input : latest?.input}
               </p>
-              <p className="text-lg leading-snug font-medium text-ink">
-                {latest.message ?? "代码没有回复。"}
-              </p>
-              {latest.note && (
+              <Reveal show={!pending}>
+                <p className="text-lg leading-snug font-medium text-ink">
+                  {latest?.message ?? "代码没有回复。"}
+                </p>
+              </Reveal>
+              {latest?.note && (
                 <p className="text-sm text-ink-2">{notes[latest.note]}</p>
               )}
             </div>
           </Squircle>
         </motion.div>
       </AnimatePresence>
+      <StillJudging since={pending?.at ?? null} network={Boolean(network)} />
       <ul className="flex flex-col gap-1.5">
         <AnimatePresence initial={false}>
           {earlier.map((item) => (

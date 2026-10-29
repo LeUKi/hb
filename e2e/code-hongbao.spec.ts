@@ -683,6 +683,61 @@ test.describe("代码判定红包", () => {
     expect(state.judgmentReads.length).toBeGreaterThanOrEqual(3);
   });
 
+  test("判定中：一提交输入就进到最上面的卡里，写正在判定…、扫着金色的光，过 2 秒说还在判定；判定完同一张卡变成结果；没交给代码的卡收起，输入回到框里", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    await mockCodeHongbao(page);
+    await mockLive(page);
+    // The first answer is lost; the second waits until let go.
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let calls = 0;
+    await page.route("**/api/activities/*/claim", async (route) => {
+      calls += 1;
+      if (calls === 1)
+        return route.fulfill({
+          status: 503,
+          json: { error: { code: "HTTP_503", message: "unavailable" } },
+        });
+      await held;
+      return route.fallback();
+    });
+    await openApp(page, path);
+    await seal(page).click();
+    const input = omniboxInput(page);
+    const panel = page.locator(".glass-pop");
+    const action = page.locator("search button.btn-lacquer");
+    await input.fill("50");
+    await page.keyboard.press("Enter");
+    // Never judged: the card folds, the input is back for 重试原提交.
+    await expect(action).toHaveText("重试原提交");
+    await expect(input).toHaveValue("50");
+    await expect(
+      panel.getByText("提交后，你的昵称和判定次数会出现在参与名单里。"),
+    ).toBeVisible();
+    await page.keyboard.press("Enter");
+    const record = panel.getByRole("region", { name: "我的提交" });
+    await expect(input).toHaveValue("");
+    await expect(record).toContainText("第 1 次");
+    await expect(record).toContainText("正在判定…");
+    await expect(record.getByText("50", { exact: true })).toBeVisible();
+    await expect(record.locator(".loading-sheen-gold")).toHaveCount(1);
+    await expect(
+      page.locator("search").getByRole("button", { name: "正在判定…" }),
+    ).toBeVisible();
+    await expect(panel.getByText("还在判定…")).toBeVisible();
+    release();
+    // The same card turns into its result.
+    await expect(record).toContainText("没领到");
+    await expect(record.getByText("大了", { exact: true })).toBeVisible();
+    await expect(record.locator(".loading-sheen-gold")).toHaveCount(0);
+    await expect(panel.getByText("还在判定…")).toBeHidden();
+    await expect(input).toHaveValue("");
+  });
+
   // A share text of several lines pasted whole (programmable-hongbao-design
   // §3), as a daily Bingo's: the code gets it as one line.
   test("粘贴多行文字：换行换成空格，插在光标处，框下说一句；提交的是接起来的一行", async ({

@@ -45,6 +45,15 @@ export const pastedPasswordAtom = atom<{
 /** Bumped when a 口令 matched nothing; the field then flashes its text red. */
 export const mismatchAtom = atom(0);
 export const pendingAtom = atom(false);
+/**
+ * A 代码判定 submission on its way (02 §4 判定中): what was typed, moved
+ * out of the box into its card in 我的提交, and when it was sent.
+ */
+export const judgingAtom = atom<{
+  activityId: string;
+  input: string;
+  at: number;
+} | null>(null);
 /** A submission whose answer was lost, to be sent again as it was. */
 export type Unconfirmed = { password: string; submissionId: string };
 type UnconfirmedState = {

@@ -65,6 +65,7 @@ import { useBefore } from "../../lib/use-before";
 import { phoneLikeNow } from "../shell/window-info";
 import {
   editDraftAtom,
+  judgingAtom,
   messageAtom,
   mismatchAtom,
   type OmniMessage,
@@ -668,6 +669,18 @@ export function useOmniboxController() {
         activityId,
         token: input.submissionId,
       });
+      // 代码判定 (02 §4 判定中): what was typed leaves the box for its card
+      // at once, and comes back if the code never judges it.
+      const typed = password ?? "";
+      let judged = false;
+      if (code && "input" in input) {
+        store.set(judgingAtom, {
+          activityId,
+          input: input.input,
+          at: Date.now(),
+        });
+        if (store.get(editDraftAtom) === typed) store.set(editDraftAtom, "");
+      }
       const say = (message: OmniMessage) => {
         hapticForTone(message.tone);
         store.set(messageAtom, { activityId, ...message });
@@ -687,9 +700,12 @@ export function useOmniboxController() {
           withClaim(store.get(unconfirmedAtom), activityId, null),
         );
         if (stale()) return;
-        // 代码判定: this one joins 我的提交 (05 §3).
-        if (code)
-          void queryClient.invalidateQueries({
+        // 代码判定: this one joins 我的提交 (05 §3), read before its card
+        // turns into it.
+        judged =
+          code && (result.result === "claimed" || result.result === "rejected");
+        if (judged)
+          await queryClient.invalidateQueries({
             queryKey: myJudgmentsKey(account.id, activityId),
           });
         switch (result.result) {
@@ -822,6 +838,11 @@ export function useOmniboxController() {
         say({ tone: "warning", text: error.message });
       } finally {
         store.set(pendingAtom, false);
+        if (code) {
+          store.set(judgingAtom, null);
+          if (!judged && !stale() && store.get(editDraftAtom) === "")
+            store.set(editDraftAtom, typed);
+        }
       }
     },
     [

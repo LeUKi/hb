@@ -529,6 +529,18 @@
     background-size: 220% 100%;
     animation: skeleton-sheen 1.6s ease-in-out infinite;
   }
+  /* 代码判定 judging (02 §4): the same sweep in its gold. */
+  .loading-sheen-gold::after {
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      transparent 36%,
+      rgb(237 203 134 / 0.55) 50%,
+      transparent 64%,
+      transparent 100%
+    );
+    background-size: 220% 100%;
+  }
   [data-motion="reduce"] .loading-sheen::after {
     animation: none;
     background: none;

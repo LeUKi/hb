@@ -777,7 +777,11 @@ export function Omnibox() {
   const claimFacts = useActivityFacts(claimTarget ?? null);
   const claimVerb = claimFacts?.timedDraw ? "报名" : "领取";
   const actionLabel = pending ? (
-    "正在确认…"
+    codeScope ? (
+      "正在判定…"
+    ) : (
+      "正在确认…"
+    )
   ) : activeItem?.kind === "optimize" ? (
     "优化"
   ) : commandMode ? (
@@ -807,11 +811,14 @@ export function Omnibox() {
     ""
   );
   const showAction =
-    value.length > 0 &&
-    !(panelOpen && activeItem?.kind === "recent") &&
-    !(commandMode && !activeItem) &&
-    // An expanded box with nothing to run (a 口令 that cannot be fixed).
-    !(expanded && scheme.kind === "password" && !activeItem);
+    // 代码判定 judging: the box is emptied into its card, the button stays
+    // to say 正在判定… (02 §4).
+    (pending && codeScope) ||
+    (value.length > 0 &&
+      !(panelOpen && activeItem?.kind === "recent") &&
+      !(commandMode && !activeItem) &&
+      // An expanded box with nothing to run (a 口令 that cannot be fixed).
+      !(expanded && scheme.kind === "password" && !activeItem));
   const actionDisabled = pending || (usesCooldown && cooldown > 0 && !retryRow);
 
   const actionSize = compact ? "bar" : "md";

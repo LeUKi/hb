@@ -245,7 +245,9 @@ export function useHongbao(data: HongbaoData) {
         : paused
           ? "红包的代码连续出错，暂停领取"
           : spinning
-            ? "正在确认…"
+            ? code
+              ? "正在判定…"
+              : "正在确认…"
             : gate === "login"
               ? `登录后${verb}`
               : retry
