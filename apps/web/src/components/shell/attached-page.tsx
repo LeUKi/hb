@@ -6,7 +6,6 @@
 // narrow one it is a sheet pulled up from the bottom. The layout changes
 // behind a passing blur, the windows' widths moving. Full screen, the
 // page's window covers the whole page, the 红包 window still under it.
-import { skipToken, useQuery } from "@tanstack/react-query";
 import { useLocation, useRouter } from "@tanstack/react-router";
 import { atom, useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
@@ -44,6 +43,7 @@ import {
 } from "react";
 import { activityKeys, type PublicActivityDetail } from "../../lib/activities";
 import { useCurrentActivityId } from "../../lib/activity-route";
+import { useCachedQueryData } from "../../lib/cached-query";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { closeOverlay } from "../../lib/overlay";
 import { useIdentity } from "../../lib/session";
@@ -196,18 +196,13 @@ const hostOf = (url: string) => new URL(url).hostname;
  */
 function useCurrentPage(activityId: string | null) {
   const userId = useIdentity().user?.id ?? null;
-  const { data } = useQuery({
-    queryKey: activityKeys.public(activityId ?? "", userId),
-    queryFn: skipToken,
-    select: (detail: PublicActivityDetail) =>
-      detail.activity.page
-        ? {
-            url: detail.activity.page.url,
-            author: detail.activity.author.username,
-          }
-        : null,
-  });
-  return activityId ? (data ?? null) : null;
+  // Not as one of its readers: their options become the query's.
+  const activity = useCachedQueryData<PublicActivityDetail>(
+    activityId ? activityKeys.public(activityId, userId) : null,
+  )?.activity;
+  return activity?.page
+    ? { url: activity.page.url, author: activity.author.username }
+    : null;
 }
 
 /** Whose page this is, said wherever it is named. */

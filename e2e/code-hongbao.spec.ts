@@ -3390,6 +3390,7 @@ test.describe("附带网页 SDK（judge-page §3、§11.8）", () => {
     const { state } = await mockGame(page);
     await openApp(page, path);
     const frame = await openGame(page);
+    const readsBefore = state.reads.public;
     const ready = await frame.evaluate(() =>
       (window as unknown as GameWindow).hb.ready(),
     );
@@ -3448,6 +3449,11 @@ test.describe("附带网页 SDK（judge-page §3、§11.8）", () => {
     ]);
     await expect(record).toContainText("我的提交 · 1 次");
     await expect(record.getByText("正在判定…")).toBeHidden();
+    // The page reads the 红包 again after it, with its own way to read it
+    // (2026-10-29: the frame's bridge, a reader of the same query, had left
+    // it none, and the read failed: 刷新失败).
+    await expect.poll(() => state.reads.public).toBeGreaterThan(readsBefore);
+    await expect(page.getByText("刷新失败，当前内容已保留。")).toHaveCount(0);
 
     // Within the cooldown the claim answered: the seconds left, not sent.
     const cooling = await frame.evaluate(() =>

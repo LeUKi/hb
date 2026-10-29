@@ -4,7 +4,6 @@ import type {
   MyJudgmentList,
   PublicActivity,
 } from "@hb/contracts";
-import { skipToken, useQuery } from "@tanstack/react-query";
 import { useAtomValue } from "jotai";
 import { type RefObject, useEffect, useRef } from "react";
 import {
@@ -13,6 +12,7 @@ import {
   readResponse,
 } from "../../lib/activities";
 import { activityPath, useCurrentActivityId } from "../../lib/activity-route";
+import { useCachedQueryData } from "../../lib/cached-query";
 import { liveJudgedAtom } from "../../lib/live-state";
 import { notJudged } from "../../lib/page-submit";
 import { useSessionUser } from "../../lib/session";
@@ -123,11 +123,11 @@ export function usePageBridge(
   const origin = new URL(url).origin;
   const user = useSessionUser();
   const onPage = useCurrentActivityId() === activityId;
-  const { data: activity } = useQuery({
-    queryKey: activityKeys.public(activityId ?? "", user?.id ?? null),
-    queryFn: skipToken,
-    select: (detail: PublicActivityDetail) => detail.activity,
-  });
+  // Read as the 红包 page has it, not as one of its readers: a reader's
+  // options become the query's, and this one has no way to read it.
+  const activity = useCachedQueryData<PublicActivityDetail>(
+    activityId ? activityKeys.public(activityId, user?.id ?? null) : null,
+  )?.activity;
   const board = useJudgeBoard({ id: activityId ?? "", judge: activity?.judge });
   const pushed = useAtomValue(liveJudgedAtom);
   const judged = activity?.judge
