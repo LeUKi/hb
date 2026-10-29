@@ -37,7 +37,7 @@ import { ButtonLink } from "../ui/button-link";
 import { CodeEditor } from "../ui/code-editor";
 import { CopyButton } from "../ui/copy-button";
 import { Field, Segmented, Switch, TextInput } from "../ui/field";
-import { Reveal } from "../ui/reveal";
+import { Reveal, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import { PublicJudgePage } from "./judge-public-view";
 import { MessageView } from "./message-view";
@@ -284,10 +284,15 @@ function SquareSettings({
           setAsking(on ? "join" : "leave");
         }}
       />
-      {judge.listed && (
-        <>
+      <Reveal show={judge.listed}>
+        <div className="flex min-w-0 flex-col gap-4">
           <Switch
-            checked={judge.featurable}
+            // Turned at once; back if the save fails.
+            checked={
+              write.isPending
+                ? (write.variables?.featurable ?? judge.featurable)
+                : judge.featurable
+            }
             label="允许站长选入精选"
             description={
               judge.featured === null
@@ -310,8 +315,8 @@ function SquareSettings({
                 ? `广场上用的是第 ${judge.publicN} 版。`
                 : "还没有开放过红包的版本，广场上暂时看不到它。"}
           </p>
-        </>
-      )}
+        </div>
+      </Reveal>
       <Reveal show={Boolean(error)}>
         <p role="alert" className="text-sm text-danger">
           {error}
@@ -452,34 +457,38 @@ function VersionRow({
               </span>
             </p>
           )}
-          {detail.data ? (
-            <CodeEditor
-              value={detail.data.code}
-              language="js"
-              readOnly
-              labelledBy={head}
-              rows={4}
-              maxRows={22}
-            />
-          ) : detail.isError ? (
-            <p className="flex items-center gap-3 text-sm text-danger">
-              读取失败
-              <Button size="xs" onClick={() => void detail.refetch()}>
-                重试
-              </Button>
-            </p>
-          ) : (
-            open && (
-              <div className="grid gap-2">
-                <p role="status" className="sr-only">
-                  正在读取…
-                </p>
-                <Bone className="h-3 w-full" />
-                <Bone className="h-3 w-5/6" />
-                <Bone className="h-3 w-2/3" />
-              </div>
-            )
-          )}
+          <Swap
+            id={detail.data ? "code" : detail.isError ? "failed" : "loading"}
+          >
+            {detail.data ? (
+              <CodeEditor
+                value={detail.data.code}
+                language="js"
+                readOnly
+                labelledBy={head}
+                rows={4}
+                maxRows={22}
+              />
+            ) : detail.isError ? (
+              <p className="flex items-center gap-3 text-sm text-danger">
+                读取失败
+                <Button size="xs" onClick={() => void detail.refetch()}>
+                  重试
+                </Button>
+              </p>
+            ) : (
+              open && (
+                <div className="grid gap-2">
+                  <p role="status" className="sr-only">
+                    正在读取…
+                  </p>
+                  <Bone className="h-3 w-full" />
+                  <Bone className="h-3 w-5/6" />
+                  <Bone className="h-3 w-2/3" />
+                </div>
+              )
+            )}
+          </Swap>
         </div>
       </Reveal>
     </li>
@@ -569,6 +578,30 @@ function DeployNew({
   // The newest version as the page opened: a deploy here adds the next.
   const [from] = useState(judge.latest?.n ?? null);
   const seed = useMyJudgeVersion(userId, judge.id, from);
+  return (
+    <Swap id={seed.data ? "form" : seed.isError ? "failed" : "loading"}>
+      <DeployState
+        judge={judge}
+        userId={userId}
+        seed={seed}
+        onChanged={onChanged}
+      />
+    </Swap>
+  );
+}
+
+/** 部署新版本 as its seed reads: the form, a failed read, or bones. */
+function DeployState({
+  judge,
+  userId,
+  seed,
+  onChanged,
+}: {
+  judge: MyJudgeDetail;
+  userId: string;
+  seed: ReturnType<typeof useMyJudgeVersion>;
+  onChanged: (changed: boolean) => void;
+}) {
   if (seed.data)
     return (
       <DeployForm

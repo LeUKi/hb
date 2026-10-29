@@ -432,9 +432,12 @@ function rowEdge(row: HTMLElement) {
 export function ListItem({
   children,
   className,
+  layout = false,
 }: {
   children: ReactNode;
   className?: string;
+  /** Its list is reordered too: it slides to its new place. */
+  layout?: boolean;
 }) {
   const reduced = useReducedMotionPref();
   const present = useIsPresent();
@@ -472,6 +475,7 @@ export function ListItem({
     <motion.li
       ref={row}
       className={className}
+      layout={layout && !reduced ? "position" : undefined}
       variants={variants}
       initial={{ height: 0, opacity: 0, overflow: "hidden" }}
       animate={{

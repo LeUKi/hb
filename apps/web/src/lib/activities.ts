@@ -394,7 +394,14 @@ export function useActivityWrites(
             options,
           ),
         ),
-      onSuccess,
+      // Its 红包 page says 待开放 from the public read: done once that is
+      // read again, so a dialog closes on the page as it now is.
+      onSuccess: async (answer, variables, identity) => {
+        await onSuccess(answer, variables, identity);
+        await queryClient.invalidateQueries({
+          queryKey: ["activity-public", answer.activity.id],
+        });
+      },
       onError,
     }),
     end: useMutation({

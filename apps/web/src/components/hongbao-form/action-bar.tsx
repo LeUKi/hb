@@ -68,6 +68,7 @@ export function SaveButtons({
   submit,
   opened,
   scheduled = false,
+  checking = false,
   onSave,
   small = false,
 }: {
@@ -76,10 +77,20 @@ export function SaveButtons({
   opened: boolean;
   /** A time chosen: the primary press times it, 保存并定时 (§1). */
   scheduled?: boolean;
+  /** The 判定器's check() asked before opening: said on 保存并开放. */
+  checking?: boolean;
   onSave: (open: boolean) => void;
   small?: boolean;
 }) {
-  const { busy, opening, phase, uncertain, waits, nothingToSave } = submit;
+  const {
+    busy: saving,
+    opening,
+    phase,
+    uncertain,
+    waits,
+    nothingToSave,
+  } = submit;
+  const busy = saving || checking;
   if (opened)
     return (
       <Button
@@ -113,13 +124,15 @@ export function SaveButtons({
         data-disabled={waits(true) || undefined}
         onClick={() => onSave(true)}
       >
-        {busy && opening && phase !== "idle"
-          ? phaseLabels[phase]
-          : uncertain?.open
-            ? "重试原提交"
-            : scheduled
-              ? "保存并定时"
-              : "保存并开放"}
+        {checking
+          ? "正在检查参数…"
+          : busy && opening && phase !== "idle"
+            ? phaseLabels[phase]
+            : uncertain?.open
+              ? "重试原提交"
+              : scheduled
+                ? "保存并定时"
+                : "保存并开放"}
       </Button>
     </>
   );

@@ -5,6 +5,7 @@ import {
   type JudgeDeclarations,
   type MyJudge,
 } from "@hb/contracts";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   BookOpen,
@@ -25,6 +26,7 @@ import {
   fetchJudgeVersion,
   fetchMyJudge,
   KIT_URL,
+  myJudgeKey,
   useMyJudges,
   useSquareJudges,
 } from "../../lib/judge";
@@ -702,10 +704,14 @@ export function CodeStep({
   const usedN = borrowed?.n ?? judge.version?.n;
   const named = usedN !== undefined ? `判定器 第 ${usedN} 版 ` : "判定器";
   // 站长精选 and 我的判定器 with a version a 红包 can open with (§6 挑之前).
-  const featured =
-    useSquareJudges("featured", "recent", !locked).data?.pages[0]?.items ?? [];
+  const featuredRead = useSquareJudges("featured", "recent", !locked);
+  const featured = featuredRead.data?.pages[0]?.items ?? [];
   const mine = useMyJudges(userId, !locked);
+  // Both read before the cards show (a skeleton till then), so neither
+  // group pushes the other, and none at all is known before writing one.
+  const cardsLoading = featuredRead.isPending || mine.isPending;
   const usable = (mine.data ?? []).filter((item) => item.usable !== null);
+  const queryClient = useQueryClient();
   const [view, setView] = useState<"pick" | "card" | "write" | null>(null);
   // A pick on its way (§6): its card, named when the name is known, until
   // the 判定器 is in.
@@ -736,7 +742,7 @@ export function CodeStep({
         ? "write"
         : (view ??
           (empty
-            ? usable.length > 0 || featured.length > 0 || mine.isPending
+            ? usable.length > 0 || featured.length > 0 || cardsLoading
               ? "pick"
               : "write"
             : folded
@@ -762,7 +768,15 @@ export function CodeStep({
     setLoading({ name: picked.name });
     setPickError(null);
     try {
-      const version = await fetchJudgeVersion(picked.id, picked.usable.n);
+      // Its declarations come with it (the form reads them from its
+      // detail), so its params open with its card, not after.
+      const [version] = await Promise.all([
+        fetchJudgeVersion(picked.id, picked.usable.n),
+        queryClient.fetchQuery({
+          queryKey: myJudgeKey(userId, picked.id),
+          queryFn: () => fetchMyJudge(picked.id),
+        }),
+      ]);
       commit((current) =>
         withJudgeDefaults(
           {
@@ -864,6 +878,7 @@ export function CodeStep({
       let first: string | null = null;
       try {
         const own = await fetchMyJudge(start.judgeId);
+        queryClient.setQueryData(myJudgeKey(userId, own.id), own);
         if (own.usable) first = await pick(own, start.commit);
         else setPickError("这个判定器还没有测试全过的版本。");
       } catch (failure) {
@@ -911,6 +926,7 @@ export function CodeStep({
           <LoadingJudge name={loading?.name ?? null} />
         ) : shown === "pick" ? (
           <JudgePicker
+            loading={cardsLoading}
             featured={featured}
             judges={usable}
             busy={picking || borrow.busy}
@@ -971,9 +987,9 @@ export function CodeStep({
           writing
         )}
       </Swap>
-      {(pickError ?? borrow.error) && (
+      <Reveal show={Boolean(pickError ?? borrow.error)} className="min-w-0">
         <p className="text-sm text-danger">{pickError ?? borrow.error}</p>
-      )}
+      </Reveal>
       <SquarePicker
         open={browsing}
         onClose={() => setBrowsing(false)}
@@ -991,55 +1007,63 @@ export function CodeStep({
           code={form.judge.code}
         />
       )}
-      {shown !== "pick" && params.length > 0 && (
-        <ParamsFields
-          params={params}
-          values={form.judge.params}
-          errorOf={paramErrorOf}
-          locked={locked}
-          onChange={(key, value) =>
-            update((current) => ({
-              ...current,
-              judge: {
-                ...current.judge,
-                params: { ...current.judge.params, [key]: value },
-              },
-            }))
-          }
-        />
-      )}
-      {shown !== "pick" && (
-        <Field
-          label="领取时的提示"
-          htmlFor="hb-code-prompt"
-          hint="显示在领取的人的输入框上方。"
-          error={errorOf("hb-code-prompt")}
-          aside={counter(form.judge.prompt, JUDGE_LIMITS.promptCharacters)}
-        >
-          <TextInput
-            id="hb-code-prompt"
-            value={form.judge.prompt}
-            placeholder="例如：输入你解出的 flag"
-            disabled={locked}
-            invalid={Boolean(errorOf("hb-code-prompt"))}
-            autoComplete="off"
-            onChange={(event) => set("prompt")(event.target.value)}
-          />
-        </Field>
-      )}
-      {shown !== "pick" &&
-        !locked &&
-        form.judge.judgeId &&
-        usedN !== undefined && (
-          <TryJudge
-            judgeId={form.judge.judgeId}
-            n={usedN}
-            params={form.judge.params}
-            hongbao={tried}
-            prompt={form.judge.prompt}
-            disabled={frozen}
-          />
-        )}
+      {/* Under the 判定器, once it is in: opening with it, not before. */}
+      <Reveal
+        show={shown !== "pick" && shown !== "loading"}
+        className="min-w-0"
+      >
+        <div className="flex min-w-0 flex-col gap-5">
+          <Reveal show={params.length > 0} className="min-w-0">
+            <ParamsFields
+              params={params}
+              values={form.judge.params}
+              errorOf={paramErrorOf}
+              locked={locked}
+              onChange={(key, value) =>
+                update((current) => ({
+                  ...current,
+                  judge: {
+                    ...current.judge,
+                    params: { ...current.judge.params, [key]: value },
+                  },
+                }))
+              }
+            />
+          </Reveal>
+          <Field
+            label="领取时的提示"
+            htmlFor="hb-code-prompt"
+            hint="显示在领取的人的输入框上方。"
+            error={errorOf("hb-code-prompt")}
+            aside={counter(form.judge.prompt, JUDGE_LIMITS.promptCharacters)}
+          >
+            <TextInput
+              id="hb-code-prompt"
+              value={form.judge.prompt}
+              placeholder="例如：输入你解出的 flag"
+              disabled={locked}
+              invalid={Boolean(errorOf("hb-code-prompt"))}
+              autoComplete="off"
+              onChange={(event) => set("prompt")(event.target.value)}
+            />
+          </Field>
+          <Reveal
+            show={Boolean(!locked && form.judge.judgeId && usedN !== undefined)}
+            className="min-w-0"
+          >
+            {form.judge.judgeId && usedN !== undefined && (
+              <TryJudge
+                judgeId={form.judge.judgeId}
+                n={usedN}
+                params={form.judge.params}
+                hongbao={tried}
+                prompt={form.judge.prompt}
+                disabled={frozen}
+              />
+            )}
+          </Reveal>
+        </div>
+      </Reveal>
       {/* In a new tab: the form stays as it is. */}
       {shown === "write" && (
         <div className="flex flex-wrap gap-x-4 gap-y-1">

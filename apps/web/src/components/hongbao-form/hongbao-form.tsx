@@ -405,9 +405,11 @@ export function HongbaoForm({
     }
   };
 
+  // check() asked (§3 校验): 下一步 or 保存并开放 says so till it answers.
+  const checkingParams = paramsCheck.isPending;
   const advance = async () => {
     const step = order[linear.current - 1]?.id;
-    if (!step || step === "title") return;
+    if (!step || step === "title" || checkingParams) return;
     check([step]);
     const problems = stepIssues(issues, step);
     const first = problems[0];
@@ -424,7 +426,7 @@ export function HongbaoForm({
   };
 
   const save = async (open: boolean) => {
-    if (submit.idle(open)) return;
+    if (submit.idle(open) || checkingParams) return;
     // 重试原提交 sends what was sent, checked back then.
     if (!submit.retries(open)) {
       check(order.map((step) => step.id));
@@ -634,14 +636,20 @@ export function HongbaoForm({
   const buttons = (small: boolean) =>
     !editing && !last ? (
       // The bar's buttons are all one height, on every step.
-      <Button type="submit" variant="primary" size={small ? "sm" : "md"}>
-        下一步
+      <Button
+        type="submit"
+        variant="primary"
+        size={small ? "sm" : "md"}
+        aria-disabled={checkingParams || undefined}
+      >
+        {checkingParams ? "正在检查参数…" : "下一步"}
       </Button>
     ) : (
       <SaveButtons
         submit={submit}
         opened={fixed}
         scheduled={scheduleAt !== null}
+        checking={checkingParams}
         onSave={save}
         small={small}
       />
@@ -919,14 +927,17 @@ export function HongbaoForm({
               : undefined
           }
           onClose={() => setScheduleOpen(false)}
+          busy={scheduleWrites.schedule.isPending}
           onDone={(at) => {
-            setScheduleOpen(false);
             if (!scheduled || !activity) {
+              setScheduleOpen(false);
               setScheduleAt(at);
               return;
             }
-            // Timed already: 不定时了 asks first; another time is set at once.
+            // Timed already: 不定时了 asks first; another time is set at
+            // once, the dialog open till it is (好 says 正在保存…).
             if (at === null) {
+              setScheduleOpen(false);
               setCancelSchedule(true);
               return;
             }
@@ -937,6 +948,7 @@ export function HongbaoForm({
                 at: new Date(at).toISOString(),
               },
               {
+                onSettled: () => setScheduleOpen(false),
                 onError: (failure) =>
                   submit.setNotice({
                     tone: "danger",

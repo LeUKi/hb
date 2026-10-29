@@ -2,9 +2,11 @@ import { X } from "lucide-react";
 import { useId, useState } from "react";
 import { useMyJudges, useSquareJudges } from "../../lib/judge";
 import { LazyListEnd, useQueryLazyList } from "../page/lazy-list";
+import { Bone } from "../page/page-state";
 import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
 import { Segmented } from "../ui/field";
+import { Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import { JudgeMark } from "./judge-bits";
 import { SquareJudgeCard } from "./square-card";
@@ -105,58 +107,81 @@ export function SquarePicker({
           </div>
         </header>
         <div className="view-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4">
-          {shown.data === undefined ? (
-            <p role="status" className="py-10 text-center text-sm text-ink-3">
-              {shown.isError ? "读取失败" : "正在读取…"}
-            </p>
-          ) : (tab === "mine" ? own.length : cards.length) === 0 ? (
-            <p className="py-10 text-center text-sm text-ink-3">{empty}</p>
-          ) : tab === "mine" ? (
-            <ul className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-2.5">
-              {own.map((judge) => (
-                <li key={judge.id}>
-                  <Squircle radius={radius.card}>
-                    <button
-                      type="button"
-                      aria-disabled={busy || undefined}
-                      onClick={() => {
-                        if (!busy) onPick(judge.id, judge.name);
-                      }}
-                      className="choice flex h-full w-full items-center gap-3 p-3 text-left"
-                    >
-                      <JudgeMark />
-                      <span className="grid min-w-0 flex-1 gap-0.5">
-                        <span className="truncate text-base font-semibold text-ink">
-                          {judge.name}
-                        </span>
-                        {judge.description && (
-                          <span className="truncate text-sm text-ink-2">
-                            {judge.description}
-                          </span>
-                        )}
-                      </span>
-                    </button>
-                  </Squircle>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <>
-              <ul className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-3">
-                {cards.map((judge) => (
-                  <li key={judge.id}>
-                    <SquareJudgeCard
-                      judge={judge}
-                      signedIn
-                      busy={busy}
-                      onPick={() => onPick(judge.id, judge.name)}
+          <Swap
+            id={`${tab}-${sort}-${shown.data !== undefined ? "cards" : shown.isError ? "failed" : "loading"}`}
+          >
+            {shown.data === undefined ? (
+              shown.isError ? (
+                <p className="flex items-center justify-center gap-3 py-10 text-sm text-danger">
+                  读取失败
+                  <Button size="xs" onClick={() => void shown.refetch()}>
+                    重试
+                  </Button>
+                </p>
+              ) : (
+                <div
+                  role="status"
+                  className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-3"
+                >
+                  <span className="sr-only">正在读取…</span>
+                  {[0, 1, 2].map((card) => (
+                    <Bone
+                      key={card}
+                      className="h-40 w-full"
+                      radius={radius.card}
                     />
+                  ))}
+                </div>
+              )
+            ) : (tab === "mine" ? own.length : cards.length) === 0 ? (
+              <p className="py-10 text-center text-sm text-ink-3">{empty}</p>
+            ) : tab === "mine" ? (
+              <ul className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-2.5">
+                {own.map((judge) => (
+                  <li key={judge.id}>
+                    <Squircle radius={radius.card}>
+                      <button
+                        type="button"
+                        aria-disabled={busy || undefined}
+                        onClick={() => {
+                          if (!busy) onPick(judge.id, judge.name);
+                        }}
+                        className="choice flex h-full w-full items-center gap-3 p-3 text-left"
+                      >
+                        <JudgeMark />
+                        <span className="grid min-w-0 flex-1 gap-0.5">
+                          <span className="truncate text-base font-semibold text-ink">
+                            {judge.name}
+                          </span>
+                          {judge.description && (
+                            <span className="truncate text-sm text-ink-2">
+                              {judge.description}
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    </Squircle>
                   </li>
                 ))}
               </ul>
-              {tab === "all" && <LazyListEnd list={list} done="已全部加载" />}
-            </>
-          )}
+            ) : (
+              <>
+                <ul className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-3">
+                  {cards.map((judge) => (
+                    <li key={judge.id}>
+                      <SquareJudgeCard
+                        judge={judge}
+                        signedIn
+                        busy={busy}
+                        onPick={() => onPick(judge.id, judge.name)}
+                      />
+                    </li>
+                  ))}
+                </ul>
+                {tab === "all" && <LazyListEnd list={list} done="已全部加载" />}
+              </>
+            )}
+          </Swap>
         </div>
         <footer className="border-line border-t px-5 py-3">
           <a

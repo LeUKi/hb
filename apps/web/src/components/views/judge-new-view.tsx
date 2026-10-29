@@ -1,8 +1,9 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { FolderCode } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ActivityRequestError } from "../../lib/activities";
-import { useJudgePage } from "../../lib/judge";
+import { prefetchOwnJudgePage, useJudgePage } from "../../lib/judge";
 import { type SessionUser, useIdentity } from "../../lib/session";
 import { JudgeNameFields, JudgeWriter } from "../hongbao-form/code-step";
 import type { Update } from "../hongbao-form/fields";
@@ -90,16 +91,29 @@ function NewJudge({
     shownFields.has(field)
       ? issues.find((issue) => issue.field === field)?.message
       : undefined;
-  // Its first deploy made it: on to its page, the results there.
+  // Its first deploy made it: on to its page, the results there — read
+  // whole first, so it opens at once rather than in steps.
+  const queryClient = useQueryClient();
   const made = form.judge.judgeId;
+  const madeN = form.judge.versions.versions.at(-1)?.n ?? 1;
   useEffect(() => {
     if (!made) return;
-    void navigate({
-      to: "/judges/$judgeId",
-      params: { judgeId: made },
-      replace: true,
-    }).then(focusResults);
-  }, [made, navigate]);
+    let gone = false;
+    void prefetchOwnJudgePage(queryClient, user.id, made, madeN).then(
+      async () => {
+        if (gone) return;
+        await navigate({
+          to: "/judges/$judgeId",
+          params: { judgeId: made },
+          replace: true,
+        });
+        focusResults();
+      },
+    );
+    return () => {
+      gone = true;
+    };
+  }, [made, madeN, navigate, queryClient, user.id]);
   const changed =
     !made &&
     (form.judge.code !== start.judge.code ||

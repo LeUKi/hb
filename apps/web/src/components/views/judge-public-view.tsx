@@ -5,7 +5,7 @@ import type {
 } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { AlertTriangle, Check, ChevronRight, Copy, Lock } from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { paramLine } from "../../../../../kit/runtime/params.mjs";
 import { cn } from "../../lib/cn";
 import { haptic } from "../../lib/haptics";
@@ -28,7 +28,7 @@ import { Button } from "../ui/button";
 import { ButtonLink } from "../ui/button-link";
 import { CodeEditor } from "../ui/code-editor";
 import { CopyButton } from "../ui/copy-button";
-import { Reveal } from "../ui/reveal";
+import { Reveal, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 
 // 判定器页 for anyone it is open to (docs/judge-square-design.md §8,
@@ -130,41 +130,43 @@ function VersionRow({
       </Squircle>
       <Reveal show={open}>
         <div id={panel} className="grid gap-3 px-3 pt-1 pb-3">
-          {code.data ? (
-            <>
-              <span className="flex items-center gap-2">
-                <span className="min-w-0 flex-1 font-mono text-sm break-all text-ink-2">
-                  代码指纹 {code.data.fingerprint}
+          <Swap id={code.data ? "code" : code.isError ? "failed" : "loading"}>
+            {code.data ? (
+              <div className="grid gap-3">
+                <span className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 font-mono text-sm break-all text-ink-2">
+                    代码指纹 {code.data.fingerprint}
+                  </span>
+                  <CopyButton value={code.data.fingerprint} label="代码指纹" />
                 </span>
-                <CopyButton value={code.data.fingerprint} label="代码指纹" />
-              </span>
-              <CodeEditor
-                value={code.data.code}
-                language="js"
-                readOnly
-                labelledBy={head}
-                rows={4}
-                maxRows={22}
-              />
-            </>
-          ) : code.isError ? (
-            <p className="flex items-center gap-3 text-sm text-danger">
-              读取失败
-              <Button size="xs" onClick={() => void code.refetch()}>
-                重试
-              </Button>
-            </p>
-          ) : (
-            open && (
-              <div className="grid gap-2">
-                <p role="status" className="sr-only">
-                  正在读取…
-                </p>
-                <Bone className="h-3 w-full" />
-                <Bone className="h-3 w-2/3" />
+                <CodeEditor
+                  value={code.data.code}
+                  language="js"
+                  readOnly
+                  labelledBy={head}
+                  rows={4}
+                  maxRows={22}
+                />
               </div>
-            )
-          )}
+            ) : code.isError ? (
+              <p className="flex items-center gap-3 text-sm text-danger">
+                读取失败
+                <Button size="xs" onClick={() => void code.refetch()}>
+                  重试
+                </Button>
+              </p>
+            ) : (
+              open && (
+                <div className="grid gap-2">
+                  <p role="status" className="sr-only">
+                    正在读取…
+                  </p>
+                  <Bone className="h-3 w-full" />
+                  <Bone className="h-3 w-2/3" />
+                </div>
+              )
+            )}
+          </Swap>
         </div>
       </Reveal>
     </li>
@@ -215,26 +217,28 @@ function UsedBy({
     fetchNextPage: query.fetchNextPage,
     pageCount: query.data?.pages.length ?? 0,
   });
-  if (items.length === 0) return null;
+  // At the page's foot: it opens in place once there is something in it.
   return (
-    <PageSection title="用它的红包">
-      <ul className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-3">
-        {items.map((card) => {
-          const record = squareRecordOf(card, viewerId);
-          return (
-            <li key={card.id}>
-              <HongbaoCard
-                activity={record.activity}
-                view={record.view}
-                mine={record.mine}
-                onOpen={() => void leaveTo({ to: "activity", id: card.id })}
-              />
-            </li>
-          );
-        })}
-      </ul>
-      <LazyListEnd list={list} done="已全部加载" />
-    </PageSection>
+    <Reveal show={items.length > 0}>
+      <PageSection title="用它的红包">
+        <ul className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-3">
+          {items.map((card) => {
+            const record = squareRecordOf(card, viewerId);
+            return (
+              <li key={card.id}>
+                <HongbaoCard
+                  activity={record.activity}
+                  view={record.view}
+                  mine={record.mine}
+                  onOpen={() => void leaveTo({ to: "activity", id: card.id })}
+                />
+              </li>
+            );
+          })}
+        </ul>
+        <LazyListEnd list={list} done="已全部加载" />
+      </PageSection>
+    </Reveal>
   );
 }
 
@@ -251,6 +255,10 @@ export function PublicJudgePage({
   // The 站长's hand (§15.4): 撤下 while it is in the 广场, 恢复 after.
   const admin = user?.isAdmin === true;
   const [asking, setAsking] = useState<"takeDown" | "restore" | null>(null);
+  // Kept while the callout closes after 恢复.
+  const reason = useRef("");
+  if (judge.takenDown) reason.current = judge.takenDown.reason;
+  const takenDownReason = reason.current;
   const codeTitle = useId();
   const version = judge.version;
   const params = version?.declarations?.params ?? [];
@@ -354,11 +362,11 @@ export function PublicJudgePage({
           )
         }
       />
-      {judge.takenDown && (
+      <Reveal show={Boolean(judge.takenDown)}>
         <Callout tone="danger" icon={AlertTriangle} title="已被站长撤下">
-          原因：{judge.takenDown.reason}
+          原因：{takenDownReason}
         </Callout>
-      )}
+      </Reveal>
       {admin && (
         <>
           <TakeDownDialog

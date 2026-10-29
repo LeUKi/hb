@@ -398,13 +398,17 @@ export function useJudgeCurationWrites() {
         }),
       );
     },
-    onSuccess: (answer) => {
+    // Done once what shows it is read again: a dialog closes on the page
+    // as it now is, a row moves when the list has.
+    onSuccess: async (answer) => {
       if ("features" in answer) queryClient.setQueryData(queryKey, answer);
-      void queryClient.invalidateQueries({ queryKey });
       void queryClient.invalidateQueries({
         queryKey: adminKey(identity, "audit"),
       });
-      void queryClient.invalidateQueries({ queryKey: ["judge-square"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey }),
+        queryClient.invalidateQueries({ queryKey: ["judge-square"] }),
+      ]);
     },
   });
 }

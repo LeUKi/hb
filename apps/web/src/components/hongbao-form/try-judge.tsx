@@ -5,7 +5,7 @@ import { refused } from "../../lib/activities";
 import { useJudgeTry } from "../../lib/judge";
 import { Button } from "../ui/button";
 import { TextInput } from "../ui/field";
-import { Reveal } from "../ui/reveal";
+import { Reveal, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 
 // 试一试 (docs/judge-square-design.md §6, §14.4): one judgment with the
@@ -53,7 +53,10 @@ export function TryJudge({
 }) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
-  const [outcome, setOutcome] = useState<JudgeTry | null>(null);
+  // Each answer numbered: a new one fades in over the last.
+  const [outcome, setOutcome] = useState<{ n: number; try: JudgeTry } | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const run = useJudgeTry();
   const panel = useId();
@@ -63,7 +66,8 @@ export function TryJudge({
     run.mutate(
       { judgeId, n, params, hongbao, input },
       {
-        onSuccess: setOutcome,
+        onSuccess: (answer) =>
+          setOutcome((last) => ({ n: (last?.n ?? 0) + 1, try: answer })),
         onError: (failure) => {
           setOutcome(null);
           setError(
@@ -124,8 +128,16 @@ export function TryJudge({
                 {run.isPending ? "正在判定…" : "判定"}
               </Button>
             </div>
-            {outcome && <Outcome outcome={outcome} />}
-            {error && <p className="text-sm text-danger">{error}</p>}
+            <Reveal show={Boolean(outcome)}>
+              {outcome && (
+                <Swap id={String(outcome.n)}>
+                  <Outcome outcome={outcome.try} />
+                </Swap>
+              )}
+            </Reveal>
+            <Reveal show={Boolean(error)}>
+              <p className="text-sm text-danger">{error}</p>
+            </Reveal>
           </div>
         </Reveal>
       </div>

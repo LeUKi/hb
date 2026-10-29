@@ -19,6 +19,7 @@ import type {
   UpdateJudgeInput,
 } from "@hb/contracts";
 import {
+  type QueryClient,
   useInfiniteQuery,
   useMutation,
   useQuery,
@@ -139,8 +140,10 @@ export function useJudgeCheck(userId: string) {
           void queryClient.invalidateQueries({
             queryKey: balanceKeys.hongbao(identity),
           });
-          // A deploy makes a 判定器, or a version of one.
-          void queryClient.invalidateQueries({
+          // A deploy makes a 判定器, or a version of one: read again before
+          // the deploy is done, so its result and the new version's params
+          // show together.
+          await queryClient.invalidateQueries({
             queryKey: myJudgesKey(userId),
           });
         }
@@ -215,6 +218,9 @@ export function useSquareJudges(
   });
 }
 
+const judgePageKey = (judgeId: string, viewerId: string | null) =>
+  [...judgeSquareKey, "page", judgeId, viewerId] as const;
+
 /** 判定器页 as this viewer may see it (`own` says it is theirs). */
 export function useJudgePage(
   viewerId: string | null,
@@ -222,7 +228,7 @@ export function useJudgePage(
   enabled = true,
 ) {
   return useQuery({
-    queryKey: [...judgeSquareKey, "page", judgeId, viewerId] as const,
+    queryKey: judgePageKey(judgeId, viewerId),
     enabled,
     queryFn: async ({ signal }) =>
       (
@@ -332,12 +338,42 @@ export function useMyJudgeVersion(
   n: number | null,
 ) {
   return useQuery({
-    queryKey: [...myJudgeKey(userId, judgeId), "version", n] as const,
+    queryKey: myJudgeVersionKey(userId, judgeId, n),
     enabled: n !== null,
     queryFn: () => fetchJudgeVersion(judgeId, n ?? 0),
     staleTime: Number.POSITIVE_INFINITY,
     retry: false,
   });
+}
+
+const myJudgeVersionKey = (userId: string, judgeId: string, n: number | null) =>
+  [...myJudgeKey(userId, judgeId), "version", n] as const;
+
+/**
+ * One's own 判定器页 read whole before going to it — its page, its detail
+ * and version `n` (部署新版本's seed) — so it opens at once, not in steps.
+ */
+export function prefetchOwnJudgePage(
+  queryClient: QueryClient,
+  userId: string,
+  judgeId: string,
+  n: number,
+) {
+  return Promise.all([
+    queryClient.prefetchQuery({
+      queryKey: judgePageKey(judgeId, userId),
+      queryFn: () => fetchJudgePage(judgeId),
+    }),
+    queryClient.prefetchQuery({
+      queryKey: myJudgeKey(userId, judgeId),
+      queryFn: () => fetchMyJudge(judgeId),
+    }),
+    queryClient.prefetchQuery({
+      queryKey: myJudgeVersionKey(userId, judgeId, n),
+      queryFn: () => fetchJudgeVersion(judgeId, n),
+      staleTime: Number.POSITIVE_INFINITY,
+    }),
+  ]);
 }
 
 /** 判定器页's settings (§2, §14.4): name, line and 代码公开 together. */

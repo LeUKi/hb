@@ -51,6 +51,7 @@ export function ScheduleDialog({
   deadline,
   onClose,
   onDone,
+  busy = false,
 }: {
   open: boolean;
   at: number | null;
@@ -60,6 +61,8 @@ export function ScheduleDialog({
   deadline?: number;
   onClose: () => void;
   onDone: (at: number | null) => void;
+  /** A timed draft's new time on its way: 好 says 正在保存…, it stays open. */
+  busy?: boolean;
 }) {
   const titleId = useId();
   return (
@@ -72,6 +75,7 @@ export function ScheduleDialog({
           deadline={deadline}
           onClose={onClose}
           onDone={onDone}
+          busy={busy}
         />
       )}
     </WindowDialog>
@@ -85,6 +89,7 @@ function ScheduleBody({
   deadline,
   onClose,
   onDone,
+  busy,
 }: {
   titleId: string;
   at: number | null;
@@ -92,12 +97,14 @@ function ScheduleBody({
   deadline?: number;
   onClose: () => void;
   onDone: (at: number | null) => void;
+  busy: boolean;
 }) {
   const [value, setValue] = useState(() =>
     localInput(at ?? suggested(Date.now())),
   );
   const [error, setError] = useState<string | null>(null);
   const done = () => {
+    if (busy) return;
     const chosen = new Date(value).getTime();
     const now = Date.now();
     const problem = Number.isNaN(chosen)
@@ -160,16 +167,32 @@ function ScheduleBody({
             variant="ghost"
             size="sm"
             className="mr-auto"
-            onClick={() => onDone(null)}
+            aria-disabled={busy || undefined}
+            data-disabled={busy || undefined}
+            onClick={() => {
+              if (!busy) onDone(null);
+            }}
           >
             不定时了
           </Button>
         )}
-        <Button size="sm" onClick={onClose}>
+        <Button
+          size="sm"
+          aria-disabled={busy || undefined}
+          data-disabled={busy || undefined}
+          onClick={() => {
+            if (!busy) onClose();
+          }}
+        >
           取消
         </Button>
-        <Button variant="primary" size="sm" onClick={done}>
-          好
+        <Button
+          variant="primary"
+          size="sm"
+          aria-disabled={busy || undefined}
+          onClick={done}
+        >
+          {busy ? "正在保存…" : "好"}
         </Button>
       </footer>
     </div>
