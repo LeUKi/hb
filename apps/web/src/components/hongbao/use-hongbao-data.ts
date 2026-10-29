@@ -240,12 +240,15 @@ export function useHongbaoPageData(id: string) {
       author,
     };
   }
-  // What the live channel is for: the 红包 running, or after it a payment
-  // this person sees (theirs; for the sender, any in the 名单).
+  // What the live channel is for: the 红包 running, or timed to open (its
+  // waiters counted, its opening heard: scheduled-opening §6), or after it
+  // a payment this person sees (theirs; for the sender, any in the 名单).
+  const timed =
+    activity?.status === "draft" && activity.scheduledOpenAt !== undefined;
   const liveWant: LiveWant =
-    !user || !activity || activity.status === "draft"
+    !user || !activity || (activity.status === "draft" && !timed)
       ? null
-      : running
+      : running || timed
         ? "running"
         : (
               author

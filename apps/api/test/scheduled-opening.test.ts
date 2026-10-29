@@ -4,7 +4,7 @@ import {
   type DiscoveryList,
   emptyActivityInput,
 } from "@hb/contracts";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { deleteActivity } from "../src/activities/deletion";
 import {
   openScheduled,
@@ -335,6 +335,55 @@ describe("定时开放: its time", () => {
     expect(await runDurableObjectAlarm(stub)).toBe(true);
     const opened = await getPublicActivity(bindings, saved.id);
     expect(opened.status).toBe("active");
+  });
+
+  it("has its waiters on the live channel, who hear it open; a draft not timed lets no one on", async () => {
+    const viewer = await actor();
+    const live = (id: string) =>
+      app.request(
+        `${origin}/api/activities/${id}/live`,
+        {
+          headers: {
+            Upgrade: "websocket",
+            Origin: origin,
+            Cookie: viewer.cookie,
+          },
+        },
+        bindings,
+      );
+    const plain = await draft();
+    expect((await live(plain.id)).status).toBe(410);
+    const saved = await draft();
+    await request(`/api/me/activities/${saved.id}/schedule`, author, "POST", {
+      version: saved.version,
+      at: inMinutes(60),
+    });
+    const response = await live(saved.id);
+    expect(response.status).toBe(101);
+    const socket = response.webSocket;
+    if (!socket) throw new Error("no WebSocket");
+    const heard: { type: string; activity?: { status: string } }[] = [];
+    socket.addEventListener("message", (event) => {
+      const data = String(event.data);
+      if (data !== "pong") heard.push(JSON.parse(data));
+    });
+    socket.accept();
+    await vi.waitFor(() =>
+      expect(heard.some((message) => message.type === "viewers")).toBe(true),
+    );
+    expect(
+      heard.find((message) => message.type === "activity")?.activity?.status,
+    ).toBe("draft");
+    await due(saved.id);
+    const stub = env.ACTIVITY_DO.get(env.ACTIVITY_DO.idFromName(saved.id));
+    expect(await runDurableObjectAlarm(stub)).toBe(true);
+    await vi.waitFor(() =>
+      expect(
+        heard.filter((message) => message.type === "activity").at(-1)?.activity
+          ?.status,
+      ).toBe("active"),
+    );
+    socket.close();
   });
 
   it("opens at the first claim after its time, the alarm not in yet", async () => {

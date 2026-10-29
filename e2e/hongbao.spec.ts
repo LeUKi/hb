@@ -1768,6 +1768,34 @@ test.describe("红包页", () => {
     ).toBeVisible();
   });
 
+  test("定时开放的草稿：左上角也写着多少人在看；开放推过来，页面马上翻成能领", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    const state = await mockHongbao(page);
+    const opened = state.activity;
+    state.activity = timed(opened, Date.now() + 60 * 60_000);
+    state.recipients = [];
+    const sockets: WebSocketRoute[] = [];
+    await page.routeWebSocket(/\/api\/activities\/[^/]+\/live$/, (ws) => {
+      sockets.push(ws);
+      ws.onMessage((message) => {
+        if (message === "ping") ws.send("pong");
+      });
+    });
+    await openApp(page, path);
+    await expect(page.getByRole("button", { name: "未开放" })).toBeVisible();
+    await expect.poll(() => sockets.length).toBe(1);
+    const viewers = page.locator('[data-hb-part="viewers"]');
+    sockets[0]?.send(JSON.stringify({ type: "viewers", count: 7 }));
+    await expect(viewers).toHaveText("7 人在看");
+    // Its opening, pushed: no waiting for a read.
+    sockets[0]?.send(JSON.stringify({ type: "activity", activity: opened }));
+    await expect(
+      page.getByRole("button", { name: /输入口令领取/ }),
+    ).toBeVisible();
+  });
+
   test("不存在的红包：未找到", async ({ page }) => {
     await mockSession(page, null);
     await page.route(`**/api/activities/${id}**`, (route) =>

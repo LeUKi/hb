@@ -31,8 +31,14 @@ export const LIVE_DEADLINE_MARGIN_MS = 250;
 export const LIVE_PING = "ping";
 export const LIVE_PONG = "pong";
 
-/** Nothing more will change for anyone watching: the result is out. */
+/**
+ * Nothing more will change for anyone watching: the result is out. A draft
+ * is not on the channel, unless it is timed to open: people wait for it
+ * (N 人在看) and hear it open (scheduled-opening §6).
+ */
 export function liveEnded(activity: PublicActivity) {
+  if (activity.status === "draft")
+    return activity.scheduledOpenAt === undefined;
   if (activity.draw)
     return (
       activity.draw.state === "completed" || activity.draw.state === "empty"
