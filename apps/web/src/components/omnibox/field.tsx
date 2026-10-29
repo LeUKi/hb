@@ -156,6 +156,7 @@ export function OmniboxField({
   mono = false,
   joinLines = false,
   onLinesJoined,
+  corner,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -191,6 +192,8 @@ export function OmniboxField({
   joinLines?: boolean;
   /** Lines were joined: the text that went in for them. */
   onLinesJoined?: (text: string) => void;
+  /** Small, under the text at its right end: 代码判定's count (02 §4). */
+  corner?: ReactNode;
 }) {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const mirrorRef = useRef<HTMLDivElement | null>(null);
@@ -334,6 +337,11 @@ export function OmniboxField({
           onKeyDown?.(event);
         }}
       />
+      {corner && (
+        <span className="pointer-events-none absolute top-full right-0 mt-px text-[11px] leading-[11px] tabular-nums">
+          {corner}
+        </span>
+      )}
     </div>
   );
 }

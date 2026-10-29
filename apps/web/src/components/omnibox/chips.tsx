@@ -161,10 +161,9 @@ export function ScopeChip({
             ? compact
               ? "验证口令"
               : `验证 · ${title}`
-            : code
-              ? compact
-                ? "代码判定"
-                : `代码判定 · ${title}`
+            : // 代码判定: the braces say what it is (judge-page §11.3).
+              code
+              ? title
               : compact
                 ? "本红包"
                 : title}

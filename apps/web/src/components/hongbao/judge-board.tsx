@@ -28,8 +28,11 @@ import { useHongbaoPageData } from "./use-hongbao-data";
 /** On the page; the rest in 动态's dialog. */
 const ON_PAGE = 5;
 
-/** What the read and the pushes say together: the view, 动态's count and lines. */
-function useBoard(activity: PublicActivity) {
+/**
+ * What the read and the pushes say together: the view, 动态's count and
+ * lines. The 指令框's 红包状态 reads it too (my-judgments.tsx).
+ */
+export function useJudgeBoard(activity: PublicActivity) {
   const pushedView = useAtomValue(liveViewAtom);
   const pushedLines = useAtomValue(liveAnnouncementsAtom);
   const read = activity.judge?.view;
@@ -83,7 +86,7 @@ function AnnouncementRow({ item }: { item: JudgeAnnouncement }) {
  */
 export function JudgeBoard({ activity }: { activity: PublicActivity }) {
   const router = useRouter();
-  const { view, total, lines } = useBoard(activity);
+  const { view, total, lines } = useJudgeBoard(activity);
   const summary = view?.summary;
   if (!summary && total === 0) return null;
   return (
@@ -203,7 +206,9 @@ function AnnouncementsBody({
       </header>
       <div className="view-scroll relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5">
         <ul className="flex flex-col">
-          <AnimatePresence initial={false}>
+          {/* The first page replaces the page's lines at once; only lines
+              that come after it slide in. */}
+          <AnimatePresence initial={false} key={query.data ? "read" : "page"}>
             {items.map((item) => (
               <AnnouncementRow key={item.n} item={item} />
             ))}

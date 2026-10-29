@@ -337,6 +337,10 @@ async function mockCodeHongbao(page: Page, judgments: MyJudgment[] = []) {
   return state;
 }
 
+/** 代码判定's count, in the box under what is typed (judge-page §11.3). */
+const boxCount = (page: Page) =>
+  page.locator("search").getByText(/^\d+ \/ 200$/);
+
 /** The live channel, open and answering pings; the sockets it opened. */
 async function mockLive(page: Page) {
   const sockets: WebSocketRoute[] = [];
@@ -617,10 +621,15 @@ test.describe("代码判定红包", () => {
     await expect(input).toHaveAttribute("placeholder", prompt);
     await expect(input).toHaveClass(/\bfont-mono\b/);
     const chip = page.locator(".chip.hb-lacquer-button");
-    await expect(chip).toContainText(`代码判定 · ${title}`);
+    // Only the title by the braces; the rules on ⓘ, the count in the box
+    // (judge-page §11.3).
+    await expect(chip).toHaveText(title);
     await expect(
-      shown(page, "原样提交：区分大小写，符号都算，首尾空格会去掉 · 0 / 200"),
-    ).toBeVisible();
+      page.locator("search").getByRole("button", { name: "提交规则" }),
+    ).toHaveAccessibleDescription(
+      "原样提交：区分大小写，符号都算，首尾空格会去掉",
+    );
+    await expect(boxCount(page)).toHaveText("0 / 200");
     // Nothing typed, nothing to run.
     await expect(page.getByRole("option")).toHaveCount(0);
     // Before the first: taking part puts one's name in 参与名单 (02 §4).
@@ -629,9 +638,7 @@ test.describe("代码判定红包", () => {
       panel.getByText("提交后，你的昵称和判定次数会出现在参与名单里。"),
     ).toBeVisible();
     await input.fill("50");
-    await expect(
-      shown(page, "原样提交：区分大小写，符号都算，首尾空格会去掉 · 2 / 200"),
-    ).toBeVisible();
+    await expect(boxCount(page)).toHaveText("2 / 200");
     // No rows: what is typed goes straight to the code.
     await expect(page.getByRole("option")).toHaveCount(0);
     await expect(page.getByText("在全部红包中查找")).toHaveCount(0);
@@ -665,7 +672,8 @@ test.describe("代码判定红包", () => {
     await expect(first).toHaveCount(1);
     await expect(first).toContainText("第 1 次");
     await expect(first).toContainText("没领到");
-    await expect(first).toContainText("代码的回复：大了");
+    await expect(first).toContainText("大了");
+    await expect(first).not.toContainText("代码的回复");
     // What was typed shows as typed (05 §3).
     await expect(first.getByText("50", { exact: true })).toBeVisible();
     // Nothing is said about 口令 here.
@@ -699,7 +707,7 @@ test.describe("代码判定红包", () => {
     const latest = mine.getByRole("listitem").first();
     await expect(latest).toContainText("第 2 次");
     await expect(latest).toContainText("领到 0.30 LDC");
-    await expect(latest).toContainText("代码的回复：猜对了！");
+    await expect(latest).toContainText("猜对了！");
     await expect(latest).toContainText("按上限发");
     expect(state.judgmentReads.length).toBeGreaterThanOrEqual(3);
   });
@@ -786,15 +794,16 @@ test.describe("代码判定红包", () => {
     await page.keyboard.press("ArrowLeft");
     await paste("第一行  \r\n\r\n \t第二行\n第三  行");
     await expect(input).toHaveValue("[第一行 第二行 第三  行]");
-    await expect(shown(page, "粘贴的换行已换成空格 · 15 / 200")).toBeVisible();
+    await expect(shown(page, "粘贴的换行已换成空格")).toBeVisible();
+    await expect(boxCount(page)).toHaveText("15 / 200");
     // Typing on: still said; cleared, the usual line again.
     await page.keyboard.press("End");
     await page.keyboard.type("!");
-    await expect(shown(page, "粘贴的换行已换成空格 · 16 / 200")).toBeVisible();
+    await expect(shown(page, "粘贴的换行已换成空格")).toBeVisible();
+    await expect(boxCount(page)).toHaveText("16 / 200");
     await input.fill("");
-    await expect(
-      shown(page, "原样提交：区分大小写，符号都算，首尾空格会去掉 · 0 / 200"),
-    ).toBeVisible();
+    await expect(shown(page, "粘贴的换行已换成空格")).toHaveCount(0);
+    await expect(boxCount(page)).toHaveText("0 / 200");
     // Dropped in, as a drag of text from elsewhere puts it: the same, the
     // caret after what was dropped.
     await input.evaluate((element: HTMLTextAreaElement) => {
@@ -814,7 +823,8 @@ test.describe("代码判定红包", () => {
         (element: HTMLTextAreaElement) => element.selectionStart,
       ),
     ).toBe(3);
-    await expect(shown(page, "粘贴的换行已换成空格 · 4 / 200")).toBeVisible();
+    await expect(shown(page, "粘贴的换行已换成空格")).toBeVisible();
+    await expect(boxCount(page)).toHaveText("4 / 200");
     await input.fill("");
 
     // Seven lines, the last a link: one line, its ends trimmed on submit.
@@ -831,9 +841,10 @@ test.describe("代码判定红包", () => {
     const joined = bingo.trim().split("\n").join(" ");
     await paste(bingo);
     await expect(input).toHaveValue(`${joined} `);
-    await expect(
-      shown(page, `粘贴的换行已换成空格 · ${Array.from(joined).length} / 200`),
-    ).toBeVisible();
+    await expect(shown(page, "粘贴的换行已换成空格")).toBeVisible();
+    await expect(boxCount(page)).toHaveText(
+      `${Array.from(joined).length} / 200`,
+    );
     await page.keyboard.press("Enter");
     await expect(
       page.locator(".glass-pop").getByRole("region", { name: "我的提交" }),
@@ -858,7 +869,7 @@ test.describe("代码判定红包", () => {
     await expect(rows.nth(0)).toContainText("第 25 次");
     await expect(rows.nth(2)).toContainText("第 23 次");
     await expect(rows.nth(0)).toContainText("没领到");
-    await expect(rows.nth(0)).toContainText("代码的回复：小了");
+    await expect(rows.nth(0)).toContainText("小了");
     // As typed, no eye (05 §3, 2026-10-25).
     await expect(mine.getByText("答案-25")).toBeVisible();
     await expect(mine.getByText("已隐藏")).toHaveCount(0);
@@ -1393,7 +1404,7 @@ test.describe("代码判定红包", () => {
     await expect(dialog.getByRole("listitem").first()).toContainText(
       "@新来的 猜了 41，安全",
     );
-    await expect(dialog.getByRole("listitem")).toHaveCount(20);
+    // Short rows: the next twenty are read ahead (600 px before the end).
     await dialog
       .locator(".view-scroll")
       .evaluate((element) => element.scrollTo({ top: element.scrollHeight }));
@@ -1404,6 +1415,77 @@ test.describe("代码判定红包", () => {
     expect(state.announcementReads.filter((cursor) => cursor !== null)).toEqual(
       ["7"],
     );
+  });
+
+  test("指令框（judge-page §11.3）：框下面先是红包状态和最新一条动态，再是我的提交 · N 次，每次一样排：第几次和时间、结果，代码的回复，输入；最新一次只是底色不同", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    const state = await mockCodeHongbao(page, rejected(3));
+    state.judge = {
+      ...state.judge,
+      protocol: JUDGE_PROTOCOL,
+      view: { at: openedAt, summary: "安全区间 23–67，还剩 3 颗炸弹" },
+      announcements: {
+        total: 1,
+        latest: [
+          {
+            n: 0,
+            at: openedAt,
+            text: "猜了 22，安全",
+            user: { username: "p1", displayName: "玩家1", avatarUrl: null },
+          },
+        ],
+      },
+    };
+    const sockets = await mockLive(page);
+    await openApp(page, path);
+    await seal(page).click();
+    const panel = page.locator(".glass-pop");
+    const status = panel.getByRole("region", { name: "红包状态" });
+    await expect(status).toContainText("红包状态");
+    await expect(status).toContainText("安全区间 23–67，还剩 3 颗炸弹");
+    await expect(status).toContainText("@玩家1：猜了 22，安全");
+    const record = panel.getByRole("region", { name: "我的提交" });
+    await expect(record.getByRole("heading")).toHaveText("我的提交 · 3 次");
+    const rows = record.getByRole("listitem");
+    await expect(rows).toHaveCount(3);
+    // In order: 第几次 and when with the result; the reply; what was typed.
+    await expect(rows.first()).toHaveText(/^第 3 次 · [\d:]+没领到小了答案-3$/);
+    await expect(rows.nth(1)).toHaveText(/^第 2 次 · [\d:]+没领到小了答案-2$/);
+    // The newest differs in its ground alone.
+    const ground = (index: number) =>
+      rows
+        .nth(index)
+        .locator(".grid")
+        .first()
+        .evaluate((element) => getComputedStyle(element).backgroundColor);
+    expect(await ground(0)).not.toBe(await ground(1));
+    expect(await ground(1)).toBe(await ground(2));
+    // A push changes the sentence and the line under it.
+    await expect.poll(() => sockets.length).toBe(1);
+    sockets[0]?.send(
+      JSON.stringify({
+        type: "view",
+        view: { at: new Date().toISOString(), summary: "安全区间 23–40" },
+      }),
+    );
+    sockets[0]?.send(
+      JSON.stringify({
+        type: "announce",
+        total: 2,
+        items: [
+          {
+            n: 1,
+            at: new Date().toISOString(),
+            text: "猜了 41，安全",
+            user: { username: "p2", displayName: "玩家2", avatarUrl: null },
+          },
+        ],
+      }),
+    );
+    await expect(status).toContainText("安全区间 23–40");
+    await expect(status).toContainText("@玩家2：猜了 41，安全");
   });
 
   test("判定器结束：状态写判定器结束，印章下面写判定器结束了这个红包，红包状态照样在", async ({

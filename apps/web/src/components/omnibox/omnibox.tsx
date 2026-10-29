@@ -1,7 +1,7 @@
 import { activityPath, readShareText } from "@hb/contracts";
 import { useLocation } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useStore } from "jotai";
-import { X } from "lucide-react";
+import { Info, X } from "lucide-react";
 import {
   AnimatePresence,
   type AnimationPlaybackControls,
@@ -51,6 +51,7 @@ import {
 import { ShortcutKbd, Spinner } from "../ui/kbd";
 import { MorphLabel, RollingNumber } from "../ui/morph-label";
 import { Squircle, SquircleFill, SquirclePlate } from "../ui/squircle";
+import { TagHint } from "../ui/tag-hint";
 import { AddressRoller, useAddress } from "./address";
 import { SchemeChip, ScopeChip } from "./chips";
 import { OmniboxField } from "./field";
@@ -507,14 +508,16 @@ export function Omnibox() {
     message?.activityId && message.activityId !== scope?.id ? null : message;
   const typed = Array.from(value.trim()).length;
   // 代码判定 joins pasted lines (02 §4): said while what went in for them
-  // is still in the box.
+  // is still in the box. Its rules hang on the ⓘ and its count sits in the
+  // box (judge-page §11.3), so the line is left for what happened.
   const [joined, setJoined] = useState<string | null>(null);
   const linesJoined = codeScope && joined !== null && value.includes(joined);
+  const overLong = /[\r\n]/.test(value) || typed > 200;
   const shownMessage = codeScope
-    ? (ownMessage ?? {
-        tone: /[\r\n]/.test(value) || typed > 200 ? "warning" : "neutral",
-        text: `${linesJoined ? "粘贴的换行已换成空格" : "原样提交：区分大小写，符号都算，首尾空格会去掉"} · ${typed} / 200`,
-      })
+    ? (ownMessage ??
+      (linesJoined
+        ? ({ tone: "neutral", text: "粘贴的换行已换成空格" } as const)
+        : null))
     : offScope
       ? ({
           tone: "warning",
@@ -953,6 +956,13 @@ export function Omnibox() {
               readOnly={locked || pending}
               inactive={docked}
               mono={codeScope}
+              corner={
+                codeScope && (
+                  <span className={overLong ? "text-warning" : "text-ink-3"}>
+                    {typed} / 200
+                  </span>
+                )
+              }
               placeholder={
                 codeScope
                   ? scopeFacts?.code?.prompt || "输入要提交的内容"
@@ -988,6 +998,17 @@ export function Omnibox() {
               }
               mismatch={mismatch}
             />
+            {/* 代码判定's rules, on hover or a tap (judge-page §11.3). */}
+            {codeScope && (
+              <TagHint
+                hint="原样提交：区分大小写，符号都算，首尾空格会去掉"
+                aria-label="提交规则"
+                onMouseDown={(event) => event.preventDefault()}
+                className="grid size-9 shrink-0 place-items-center rounded-full text-ink-3 transition-colors hover:bg-fill-2 hover:text-ink-2"
+              >
+                <Info className="size-[18px]" aria-hidden="true" />
+              </TagHint>
+            )}
             <AnimatePresence initial={false}>
               {value.length > 0 && !locked && (
                 <motion.button
