@@ -52,6 +52,7 @@ export function ScheduleDialog({
   onClose,
   onDone,
   busy = false,
+  nested = false,
 }: {
   open: boolean;
   at: number | null;
@@ -63,10 +64,17 @@ export function ScheduleDialog({
   onDone: (at: number | null) => void;
   /** A timed draft's new time on its way: 好 says 正在保存…, it stays open. */
   busy?: boolean;
+  /** Opened from 更多设置: over it, with its own 压暗层. */
+  nested?: boolean;
 }) {
   const titleId = useId();
   return (
-    <WindowDialog open={open} onClose={onClose} labelledBy={titleId}>
+    <WindowDialog
+      open={open}
+      onClose={onClose}
+      labelledBy={titleId}
+      nested={nested}
+    >
       {open && (
         <ScheduleBody
           titleId={titleId}

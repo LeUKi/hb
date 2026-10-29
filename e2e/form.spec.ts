@@ -872,7 +872,7 @@ test.describe("发红包", () => {
     expect(sent[1]?.requestId).toBe(sent[0]?.requestId);
   });
 
-  test("定时开放：按钮上方一行灰字点开选时间；定了以后主按钮是保存并定时，存下再定时，落到红包页写已定时", async ({
+  test("定时开放：保存并开放的下拉选时间，更多设置里也有开放时间；定了以后主按钮是保存并定时，按钮上方写时间，存下再定时，落到红包页写已定时", async ({
     page,
   }) => {
     await mockSession(page, viewer);
@@ -881,11 +881,15 @@ test.describe("发红包", () => {
     await openApp(page, "/new");
     await fillRandom(page);
     const line = page.locator("#hb-schedule");
-    await expect(line).toHaveText("开放：保存后马上开放定时");
+    // Not timed: no line; the way in is 保存并开放's arrow.
+    await expect(line).toHaveCount(0);
     await expect(
       page.getByText("开放后奖励、参与方式、口令和时间都不能再改。"),
     ).toBeVisible();
-    await line.click();
+    const arrow = page.getByRole("button", { name: "更多开放方式" }).first();
+    await arrow.click();
+    await expect(page.getByRole("menuitem")).toHaveText(["定时开放…"]);
+    await page.getByRole("menuitem", { name: "定时开放…" }).click();
     const dialog = page.getByRole("dialog", { name: "定时开放" });
     await expect(
       dialog.getByText("按这台设备的时区。最早 5 分钟后，最晚 30 天后。"),
@@ -916,6 +920,33 @@ test.describe("发红包", () => {
     await input.fill(local(tomorrow));
     await dialog.getByRole("button", { name: "好" }).click();
     await expect(dialog).toBeHidden();
+    await expect(line).toHaveText("开放：明天 20:00改");
+    // The arrow now changes it or drops it; dropping it needs no asking.
+    await arrow.click();
+    await expect(page.getByRole("menuitem")).toHaveText([
+      "改开放时间…",
+      "不定时了",
+    ]);
+    await page.getByRole("menuitem", { name: "不定时了" }).click();
+    await expect(line).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "保存并开放" }).first(),
+    ).toBeVisible();
+    // 更多设置's 开放时间: the same dialog, over it.
+    await page
+      .getByRole("button", { name: /更多设置/ })
+      .first()
+      .click();
+    const sheet = page.getByRole("dialog", { name: "更多设置" });
+    const openAt = sheet.getByRole("button", { name: /开放时间/ });
+    await expect(openAt).toContainText("保存后马上开放");
+    await openAt.click();
+    await input.fill(local(tomorrow));
+    await dialog.getByRole("button", { name: "好" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(openAt).toContainText("明天 20:00");
+    await page.keyboard.press("Escape");
+    await expect(sheet).toBeHidden();
     await expect(line).toHaveText("开放：明天 20:00改");
     await expect(
       page.getByText(

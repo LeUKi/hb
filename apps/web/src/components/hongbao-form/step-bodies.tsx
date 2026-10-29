@@ -354,7 +354,7 @@ export function TitleStep({
   /** What 更多设置 holds now ("附言未填 · 不加入广场 · …"). */
   moreLine: string;
   moreError?: string;
-  /** 定时开放's line (scheduled-opening §1), last, over the buttons. */
+  /** 定时开放's line once a time is chosen (scheduled-opening §1), last. */
   schedule?: ReactNode;
 }) {
   const [note, setNote] = useState(form.beforeInfo.trim().length > 0);
@@ -423,7 +423,8 @@ export function TitleStep({
         error={moreError}
         onOpen={() => openSheet("notes")}
       />
-      {schedule}
+      {/* Once a time is chosen: it opens in place (the arrow chooses it). */}
+      <Reveal show={Boolean(schedule)}>{schedule}</Reveal>
     </div>
   );
 }

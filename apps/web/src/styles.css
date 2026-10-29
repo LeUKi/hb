@@ -954,6 +954,44 @@
   .btn:active:not(:disabled, [data-disabled]) {
     transform: translateY(1px);
   }
+  /* A button with a menu (04 §4): one face, two halves, a thin line
+     between; each half lights and presses on its own. */
+  .split-half {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    outline: none;
+    transition: transform 90ms var(--ease-snappy);
+  }
+  .split-half::before {
+    content: "";
+    position: absolute;
+    inset: 3px;
+    border-radius: calc(var(--btn-radius, 14px) - 3px);
+    pointer-events: none;
+    transition: background-color 120ms;
+  }
+  .split-half:hover:not([aria-disabled])::before {
+    background: rgb(255 255 255 / 0.12);
+  }
+  .split-half:active:not([aria-disabled]) {
+    transform: translateY(1px);
+  }
+  .split-half:focus-visible::before {
+    box-shadow:
+      0 0 0 2px var(--focus-ring-color),
+      0 0 0 4px var(--focus-band-color);
+  }
+  .split-button.btn:active:not(:disabled, [data-disabled]) {
+    transform: none;
+  }
+  .split-line {
+    align-self: center;
+    width: 1px;
+    height: 55%;
+    background: rgb(255 255 255 / 0.3);
+  }
   .btn-primary {
     color: var(--color-on-accent);
     --btn-top: var(--color-button-top);

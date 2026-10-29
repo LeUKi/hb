@@ -2,6 +2,7 @@ import { normalizePageUrl } from "@hb/contracts";
 import { BookOpen, ChevronRight, X } from "lucide-react";
 import { type ReactNode, useId, useRef, useState } from "react";
 import { useAttachedPageCheck } from "../../lib/activities";
+import { openingLabel } from "../../lib/roster-time";
 import { PlusBadge } from "../balance/plus";
 import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
@@ -141,6 +142,8 @@ export function SettingsSheet({
   pageOffered,
   pageStopped,
   humanCheckSuggested = false,
+  openAt,
+  covered = false,
 }: {
   open: boolean;
   /** The group to show first. */
@@ -162,6 +165,13 @@ export function SettingsSheet({
   pageStopped: boolean;
   /** Its 判定器 suggests 领取前人机验证 (judge-square §4). */
   humanCheckSuggested?: boolean;
+  /**
+   * 开放时间 (scheduled-opening §1): the time chosen or set, and 定时开放's
+   * dialog; none once it opened.
+   */
+  openAt?: { at: number | null; onOpen: () => void };
+  /** A dialog opened from here is over it (定时开放's): this one waits. */
+  covered?: boolean;
 }) {
   const titleId = useId();
   const noteTitleId = useId();
@@ -220,7 +230,7 @@ export function SettingsSheet({
         labelledBy={titleId}
         width="32rem"
         initialFocus={showTarget}
-        inert={note !== null}
+        inert={note !== null || covered}
       >
         <div className="flex h-[min(40rem,80cqh)] min-h-0 flex-col">
           <header className="flex items-center justify-between gap-3 px-5 pt-4 pb-2">
@@ -317,6 +327,33 @@ export function SettingsSheet({
                   />
                 </Setting>
               </>
+            )}
+            {openAt && (
+              <Setting group={groups.includes("timing") ? undefined : "timing"}>
+                <Squircle radius={radius.row}>
+                  <button
+                    type="button"
+                    aria-haspopup="dialog"
+                    onClick={openAt.onOpen}
+                    className="-mx-3 flex min-h-12 items-center gap-3 px-3 text-left transition-colors hover:bg-fill-2"
+                  >
+                    <span className="grid min-w-0 flex-1">
+                      <span className="text-sm font-medium text-ink">
+                        开放时间
+                      </span>
+                      <span className="truncate text-xs text-ink-3">
+                        {openAt.at === null
+                          ? "保存后马上开放"
+                          : openingLabel(openAt.at)}
+                      </span>
+                    </span>
+                    <span className="flex shrink-0 items-center text-sm text-accent-ink">
+                      改
+                      <ChevronRight className="size-4" aria-hidden="true" />
+                    </span>
+                  </button>
+                </Squircle>
+              </Setting>
             )}
             {groups.includes("timing") && (
               <>

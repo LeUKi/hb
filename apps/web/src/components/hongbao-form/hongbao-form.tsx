@@ -614,7 +614,7 @@ export function HongbaoForm({
             moreLine={moreLine}
             moreError={groupError(["scope", "notes", "public"])}
             schedule={
-              opened ? undefined : (
+              opened || (scheduledAt ?? scheduleAt) === null ? undefined : (
                 <ScheduleLine
                   at={scheduledAt ?? scheduleAt}
                   onOpen={() => setScheduleOpen(true)}
@@ -663,6 +663,8 @@ export function HongbaoForm({
         scheduled={scheduleAt !== null}
         checking={checkingParams}
         onSave={save}
+        onSchedule={() => setScheduleOpen(true)}
+        onUnschedule={() => setScheduleAt(null)}
         small={small}
       />
     );
@@ -918,6 +920,15 @@ export function HongbaoForm({
           pageOffered={funding?.page === true}
           pageStopped={activity?.pageStopped === true}
           humanCheckSuggested={declarations?.hongbao?.humanCheck === true}
+          covered={scheduleOpen}
+          openAt={
+            opened
+              ? undefined
+              : {
+                  at: scheduledAt ?? scheduleAt,
+                  onOpen: () => setScheduleOpen(true),
+                }
+          }
         />
         {activity && draft && (
           <DeleteDraftDialog
@@ -931,6 +942,7 @@ export function HongbaoForm({
         )}
         <ScheduleDialog
           open={scheduleOpen}
+          nested={sheetOpen}
           at={scheduledAt ?? scheduleAt}
           fish={form.funding === "balance"}
           deadline={

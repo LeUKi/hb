@@ -1,5 +1,6 @@
 import { type ReactNode, useLayoutEffect, useRef } from "react";
 import { Button } from "../ui/button";
+import { SplitButton } from "../ui/split-button";
 import { radius, Squircle, SquirclePlate } from "../ui/squircle";
 import { phaseLabels, type useSubmit } from "./use-submit";
 
@@ -70,6 +71,8 @@ export function SaveButtons({
   scheduled = false,
   checking = false,
   onSave,
+  onSchedule,
+  onUnschedule,
   small = false,
 }: {
   submit: Submit;
@@ -80,6 +83,12 @@ export function SaveButtons({
   /** The 判定器's check() asked before opening: said on 保存并开放. */
   checking?: boolean;
   onSave: (open: boolean) => void;
+  /**
+   * 保存并开放 ▾ (scheduled-opening §1): the time's dialog, and dropping a
+   * time chosen but not saved yet. Without them, no arrow.
+   */
+  onSchedule?: () => void;
+  onUnschedule?: () => void;
   small?: boolean;
 }) {
   const {
@@ -91,6 +100,15 @@ export function SaveButtons({
     nothingToSave,
   } = submit;
   const busy = saving || checking;
+  const openLabel = checking
+    ? "正在检查参数…"
+    : busy && opening && phase !== "idle"
+      ? phaseLabels[phase]
+      : uncertain?.open
+        ? "重试原提交"
+        : scheduled
+          ? "保存并定时"
+          : "保存并开放";
   if (opened)
     return (
       <Button
@@ -117,23 +135,35 @@ export function SaveButtons({
             ? "重试原提交"
             : "存草稿"}
       </Button>
-      <Button
-        variant="primary"
-        size={small ? "sm" : "md"}
-        aria-disabled={busy || waits(true) || undefined}
-        data-disabled={waits(true) || undefined}
-        onClick={() => onSave(true)}
-      >
-        {checking
-          ? "正在检查参数…"
-          : busy && opening && phase !== "idle"
-            ? phaseLabels[phase]
-            : uncertain?.open
-              ? "重试原提交"
-              : scheduled
-                ? "保存并定时"
-                : "保存并开放"}
-      </Button>
+      {onSchedule && !uncertain ? (
+        <SplitButton
+          size={small ? "sm" : "md"}
+          disabled={waits(true)}
+          paused={busy}
+          onClick={() => onSave(true)}
+          menuLabel="更多开放方式"
+          items={
+            scheduled
+              ? [
+                  { label: "改开放时间…", onSelect: onSchedule },
+                  { label: "不定时了", onSelect: () => onUnschedule?.() },
+                ]
+              : [{ label: "定时开放…", onSelect: onSchedule }]
+          }
+        >
+          {openLabel}
+        </SplitButton>
+      ) : (
+        <Button
+          variant="primary"
+          size={small ? "sm" : "md"}
+          aria-disabled={busy || waits(true) || undefined}
+          data-disabled={waits(true) || undefined}
+          onClick={() => onSave(true)}
+        >
+          {openLabel}
+        </Button>
+      )}
     </>
   );
 }
