@@ -243,6 +243,35 @@ export function HongbaoForm({
         : current,
     );
   });
+  // Its title and 说明 to start with (judge-square §4.1), the same way.
+  const startWith = !coded
+    ? { title: "", note: "" }
+    : declarations
+      ? {
+          title: declarations.hongbao?.title ?? "",
+          note: declarations.hongbao?.note ?? "",
+        }
+      : undefined;
+  const startedWith = useRef({ known: !activity, title: "", note: "" });
+  useEffect(() => {
+    if (startWith === undefined) return;
+    const before = startedWith.current;
+    if (
+      before.known &&
+      before.title === startWith.title &&
+      before.note === startWith.note
+    )
+      return;
+    startedWith.current = { known: true, ...startWith };
+    if (!before.known || fixed) return;
+    update((current) => ({
+      ...current,
+      ...(current.title === before.title ? { title: startWith.title } : {}),
+      ...(current.beforeInfo === before.note
+        ? { beforeInfo: startWith.note }
+        : {}),
+    }));
+  });
   // check()'s word on these very params and numbers, once asked.
   const paramsCheck = useParamsCheck();
   const [checkedParams, setCheckedParams] = useState<{

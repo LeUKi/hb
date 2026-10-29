@@ -52,6 +52,10 @@ export const META_LIMITS = Object.freeze({
 export const HONGBAO_LIMITS = Object.freeze({
   count: 1000,
   promptCharacters: 40,
+  /** The 红包's own title limit. */
+  titleCharacters: 100,
+  /** A start on its 说明 (the 红包's own allows 10000). */
+  noteCharacters: 2000,
 });
 
 const KEY = /^[A-Za-z0-9_]+$/;
@@ -582,6 +586,8 @@ export function readHongbaoRules(value) {
     "deadline",
     "prompt",
     "humanCheck",
+    "title",
+    "note",
   ];
   const extra = unknownField(value, keys, "hongbao 里");
   if (extra) return { problems: [`${extra}：只能写 ${keys.join("、")}`] };
@@ -631,11 +637,22 @@ export function readHongbaoRules(value) {
     );
   if (value.humanCheck !== undefined && typeof value.humanCheck !== "boolean")
     add("hongbao.humanCheck 要是 true 或 false");
+  // The 红包's title and 说明 to start with (judge-square §4.1).
+  if (value.title !== undefined)
+    add(
+      textProblem(value.title, HONGBAO_LIMITS.titleCharacters, "hongbao.title"),
+    );
+  if (value.note !== undefined)
+    add(textProblem(value.note, HONGBAO_LIMITS.noteCharacters, "hongbao.note"));
   if (problems.length > 0) return { problems };
   return {
     rules: {
       ...value,
       ...(value.prompt !== undefined ? { prompt: value.prompt.trim() } : {}),
+      ...(value.title !== undefined ? { title: value.title.trim() } : {}),
+      ...(value.note !== undefined
+        ? { note: value.note.replace(/\r\n?/g, "\n").trim() }
+        : {}),
     },
   };
 }

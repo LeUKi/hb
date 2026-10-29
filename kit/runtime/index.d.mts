@@ -253,6 +253,8 @@ export function pageProblem(value: unknown): string | null;
 export const HONGBAO_LIMITS: Readonly<{
   count: number;
   promptCharacters: number;
+  titleCharacters: number;
+  noteCharacters: number;
 }>;
 export function readParams(
   value: unknown,

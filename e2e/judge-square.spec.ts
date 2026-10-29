@@ -631,6 +631,11 @@ test.describe("判定器带的附带网页（judge-page §4、§11.9）", () => 
         declarations: {
           ...version.declarations,
           meta: { name: "猜数字", page: carried },
+          hongbao: {
+            ...version.declarations.hongbao,
+            title: "猜数字红包",
+            note: "猜 1 到 100 之间的数。\n\n[打开网页参与游戏](#附带网页)",
+          },
         },
       },
     };
@@ -676,6 +681,24 @@ test.describe("判定器带的附带网页（judge-page §4、§11.9）", () => 
     await expect.poll(() => asked.saved.length).toBe(count);
     return asked.saved[count - 1]?.activity as { pageUrl?: string };
   };
+
+  test("判定器带的标题和说明（judge-square §4.1）：挑了就替你填好，说明自己展开；判定器页写默认标题，自带说明悬停看全文", async ({
+    page,
+  }) => {
+    await mockCarried(page, member);
+    await pickGuess(page);
+    await expect(page.locator("#hb-title")).toHaveValue("猜数字红包");
+    await expect(page.locator("#hb-before-info")).toHaveValue(
+      "猜 1 到 100 之间的数。\n\n[打开网页参与游戏](#附带网页)",
+    );
+    await openApp(page, `/judges/${GUESS}`);
+    await expect(page.getByText("默认标题：猜数字红包")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "自带说明" }),
+    ).toHaveAccessibleDescription(
+      "猜 1 到 100 之间的数。 [打开网页参与游戏](#附带网页)",
+    );
+  });
 
   test("广场的卡上写带附带网页，判定器页参数下面一行地址，新标签页打开", async ({
     page,

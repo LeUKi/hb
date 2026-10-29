@@ -252,6 +252,13 @@ export interface HongbaoRules {
   prompt?: string;
   /** 建议打开领取前人机验证（发红包的人能关） */
   humanCheck?: boolean;
+  /** 红包标题的默认值，最多 100 个字 */
+  title?: string;
+  /**
+   * 说明的默认值，最多 2000 个字。写法同发红包时的说明：一个回车就换行，
+   * `[文字](#附带网页)` 是打开附带网页的按钮（没有网页时只剩文字）。
+   */
+  note?: string;
 }
 
 /** judge.js 导出 `meta`：贴代码时填好判定器的名字和说明，之后以网站上的为准。 */

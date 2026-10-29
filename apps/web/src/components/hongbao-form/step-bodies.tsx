@@ -358,6 +358,8 @@ export function TitleStep({
   schedule?: ReactNode;
 }) {
   const [note, setNote] = useState(form.beforeInfo.trim().length > 0);
+  // Filled in from elsewhere (a 判定器's 说明, judge-square §4.1): shown.
+  if (!note && form.beforeInfo.trim().length > 0) setNote(true);
   const noteRef = useRef<HTMLDivElement>(null);
   return (
     <div className="flex flex-col gap-4">

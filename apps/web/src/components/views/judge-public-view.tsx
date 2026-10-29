@@ -30,6 +30,7 @@ import { CodeEditor } from "../ui/code-editor";
 import { CopyButton } from "../ui/copy-button";
 import { Reveal, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
+import { TagHint } from "../ui/tag-hint";
 
 // 判定器页 for anyone it is open to (docs/judge-square-design.md §8,
 // §15.4): what its 广场 version asks of a sender — its params and the
@@ -87,6 +88,7 @@ function ruleLines(rules: JudgeHongbaoRules | null | undefined) {
     rules.deadline &&
       `截止默认 ${rules.deadline.value} ${units[rules.deadline.unit]}`,
     rules.humanCheck && "建议打开领取前人机验证",
+    rules.title && `默认标题：${rules.title}`,
   ].filter((item): item is string => Boolean(item));
 }
 
@@ -263,6 +265,8 @@ export function PublicJudgePage({
   const version = judge.version;
   const params = version?.declarations?.params ?? [];
   const rules = ruleLines(version?.declarations?.hongbao);
+  // Its 说明 to start with (judge-square §4.1): whole, on its hint.
+  const note = version?.declarations?.hongbao?.note;
   // The 站长's copy says so where its source does (JudgeSource).
   const improved = judge.featured && judge.bySiteOwner;
   return (
@@ -425,7 +429,7 @@ export function PublicJudgePage({
           )}
         </PageSection>
       )}
-      {rules.length > 0 && (
+      {(rules.length > 0 || note) && (
         <PageSection title="发多少">
           <Panel as="ul" className="grid px-4">
             {rules.map((rule) => (
@@ -436,6 +440,17 @@ export function PublicJudgePage({
                 {rule}
               </li>
             ))}
+            {note && (
+              <li className="border-line border-b py-3 text-base text-ink last:border-b-0">
+                <TagHint
+                  hint={note}
+                  width={360}
+                  className="cursor-help text-ink underline decoration-dotted underline-offset-4"
+                >
+                  自带说明
+                </TagHint>
+              </li>
+            )}
           </Panel>
         </PageSection>
       )}

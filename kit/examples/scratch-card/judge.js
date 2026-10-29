@@ -19,6 +19,8 @@ const CELLS = 25;
 export const hongbao = {
   count: { min: 1, max: CELLS, default: 5 },
   prompt: "选一格刮开（1–25）",
+  title: "刮刮乐",
+  note: "一张 5×5 的卡，有几格藏着奖，每人刮一格，刮到奖的领那一格的钱。\n\n[打开网页参与游戏](#附带网页)",
 };
 
 /**

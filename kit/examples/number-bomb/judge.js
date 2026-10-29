@@ -28,6 +28,8 @@ export const params = [
 export const hongbao = {
   count: { default: 5 },
   prompt: "猜一个数",
+  title: "数字炸弹",
+  note: "1 到最大里藏着一颗炸弹，大家轮流猜，猜过的数和安全区间都公开。踩中的领一份，接着埋下一颗。\n\n[打开网页参与游戏](#附带网页)",
 };
 
 /**

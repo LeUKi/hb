@@ -20,6 +20,7 @@ import type { JudgeRecords } from "../../kit/judge";
 import {
   allowedBy,
   paramsCommitment,
+  readHongbaoRules,
   readNetwork,
   requestProblem,
   seedCommitment,
@@ -1365,6 +1366,39 @@ describe("kit/examples", () => {
     const checked = await run(checkCommand, { dir, cwd: dir, args: [] });
     expect(checked.lines).toContain("✓ 参数表单预览");
     expect(checked.exitCode).toBe(0);
+  });
+});
+
+// 判定器带的标题和说明 (docs/judge-square-design.md §4.1).
+describe("hongbao.title 和 hongbao.note", () => {
+  it("keeps them trimmed, line ends as LF, and says what is wrong", () => {
+    expect(
+      readHongbaoRules({
+        title: " 数字炸弹 ",
+        note: "第一行\r\n\n[打开网页参与游戏](#附带网页)\n",
+      }),
+    ).toEqual({
+      rules: {
+        title: "数字炸弹",
+        note: "第一行\n\n[打开网页参与游戏](#附带网页)",
+      },
+    });
+    expect(
+      readHongbaoRules({ title: "字".repeat(101), note: "字".repeat(2001) }),
+    ).toEqual({
+      problems: ["hongbao.title 最多 100 个字", "hongbao.note 最多 2000 个字"],
+    });
+    expect(readHongbaoRules({ title: "", note: 3 })).toEqual({
+      problems: [
+        "hongbao.title 要是不空的字符串",
+        "hongbao.note 要是不空的字符串",
+      ],
+    });
+    expect(readHongbaoRules({ name: "x" })).toEqual({
+      problems: [
+        "hongbao 里不认识 name：只能写 count、total、minEach、deadline、prompt、humanCheck、title、note",
+      ],
+    });
   });
 });
 
