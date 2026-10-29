@@ -163,6 +163,21 @@ export function JudgePicker({
   );
 }
 
+/** 用它发红包 (§6): the card while the 判定器 it names is read. */
+export function LoadingJudge() {
+  return (
+    <Squircle radius={radius.card}>
+      <p
+        role="status"
+        className="flex min-w-0 items-center gap-2.5 bg-fill p-3.5 text-sm text-ink-3"
+      >
+        <Mark />
+        正在读取判定器…
+      </p>
+    </Squircle>
+  );
+}
+
 /**
  * The pick, folded into one card (§6 挑好以后): its name, whose it is,
  * which version and its line; 查看代码 and 换一个 on its right, and a
@@ -207,8 +222,9 @@ export function PickedJudge({
           <span className="flex min-w-0 flex-1 items-center gap-2.5">
             <Mark />
             <span className="grid min-w-0">
-              <span className="flex min-w-0 items-baseline gap-2">
-                <span className="truncate text-base font-semibold text-ink">
+              {/* Narrow, whose and which version go under its name. */}
+              <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                <span className="max-w-full truncate text-base font-semibold text-ink">
                   {name}
                 </span>
                 <span className="shrink-0 text-xs text-ink-3">

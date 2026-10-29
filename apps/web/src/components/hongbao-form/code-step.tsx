@@ -18,7 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
-import { refused } from "../../lib/activities";
+import { ActivityRequestError, refused } from "../../lib/activities";
 import { cn } from "../../lib/cn";
 import { haptic } from "../../lib/haptics";
 import {
@@ -38,7 +38,7 @@ import { Reveal } from "../ui/reveal";
 import { counter, type ErrorOf, QuietLine, type Update } from "./fields";
 import { type FormState, withJudgeDefaults } from "./form-state";
 import { FilePicker, fromClipboard, JudgeCard } from "./judge-card";
-import { JudgePicker, PickedJudge } from "./judge-picker";
+import { JudgePicker, LoadingJudge, PickedJudge } from "./judge-picker";
 import { noVersions } from "./judge-versions";
 import { ParamsFields, paramsFor } from "./params-fields";
 import { testCount } from "./steps";
@@ -656,6 +656,7 @@ export function CodeStep({
   paramErrorOf,
   tried,
   borrow,
+  start,
 }: {
   form: FormState;
   update: Update;
@@ -681,6 +682,16 @@ export function CodeStep({
   tried: { title: string; total: number; count: number; minEach: number };
   /** Another's 判定器 from the 广场 (§15.4): picked, 联网 asked first. */
   borrow: BorrowJudge;
+  /**
+   * 用它发红包 (/new?judge=, §6): the 判定器 to pick as the step opens,
+   * put in by `commit` as the form's starting point; `done` with its
+   * first param, to take the focus.
+   */
+  start?: {
+    judgeId: string;
+    commit: Update;
+    done: (firstParam: string | null) => void;
+  };
 }) {
   const set = (key: "prompt") => (value: string) =>
     update((current) => ({
@@ -696,6 +707,7 @@ export function CodeStep({
   const mine = useMyJudges(userId, !locked);
   const usable = (mine.data ?? []).filter((item) => item.usable !== null);
   const [view, setView] = useState<"pick" | "card" | "write" | null>(null);
+  const [starting, setStarting] = useState(Boolean(start));
   const [picking, setPicking] = useState(false);
   const [pickError, setPickError] = useState<string | null>(null);
   const [browsing, setBrowsing] = useState(false);
@@ -710,20 +722,22 @@ export function CodeStep({
   // Until one is chosen: the cards when there are some (or may be), else
   // straight to writing one; a deployed version of a 判定器 shows folded.
   // Another's shows as its card: it is never written here.
-  const shown = borrowed
-    ? !locked && view === "pick"
-      ? "pick"
-      : "card"
-    : locked
-      ? "write"
-      : (view ??
-        (empty
-          ? usable.length > 0 || featured.length > 0 || mine.isPending
-            ? "pick"
-            : "write"
-          : folded
-            ? "card"
-            : "write"));
+  const shown = starting
+    ? "loading"
+    : borrowed
+      ? !locked && view === "pick"
+        ? "pick"
+        : "card"
+      : locked
+        ? "write"
+        : (view ??
+          (empty
+            ? usable.length > 0 || featured.length > 0 || mine.isPending
+              ? "pick"
+              : "write"
+            : folded
+              ? "card"
+              : "write"));
   useEffect(() => {
     if (view !== null || locked || empty || !known || borrowed) return;
     setView(folded ? "card" : "write");
@@ -734,14 +748,17 @@ export function CodeStep({
       ? mineNow.usable.n
       : undefined;
 
-  /** Its newest usable version, put in: code, tests, params and defaults. */
-  const pick = async (picked: MyJudge) => {
-    if (!picked.usable) return;
+  /**
+   * Its newest usable version, put in: code, tests, params and defaults.
+   * The first param's key once it is in.
+   */
+  const pick = async (picked: MyJudge, commit: Update = update) => {
+    if (!picked.usable) return null;
     setPicking(true);
     setPickError(null);
     try {
       const version = await fetchJudgeVersion(picked.id, picked.usable.n);
-      update((current) =>
+      commit((current) =>
         withJudgeDefaults(
           {
             ...current,
@@ -764,12 +781,14 @@ export function CodeStep({
         ),
       );
       setView("card");
+      return version.declarations?.params[0]?.key ?? null;
     } catch (failure) {
       setPickError(
         refused(failure)
           ? failure.message
           : "没有取到这个判定器：网络或服务出了问题。可以再试一次。",
       );
+      return null;
     } finally {
       setPicking(false);
     }
@@ -796,22 +815,55 @@ export function CodeStep({
    * Another's from the 广场 (§15.4), or one's own met there: the version
    * others use, 联网 asked first; the same one again keeps its answer.
    */
-  const pickOther = async (judgeId: string) => {
+  const pickOther = async (judgeId: string, commit: Update = update) => {
     setBrowsing(false);
     setPickError(null);
     const outcome = await borrow.pick(judgeId, {
       acked:
         form.judge.judgeId === judgeId ? (borrowed?.networkAck ?? null) : null,
-      commit: update,
+      commit,
     });
-    if ("picked" in outcome) setView("card");
+    if ("picked" in outcome) {
+      setView("card");
+      return outcome.picked.version?.declarations?.params[0]?.key ?? null;
+    }
     if ("own" in outcome) {
       const own =
         usable.find((item) => item.id === judgeId) ??
         (await fetchMyJudge(judgeId).catch(() => null));
-      if (own) await pick(own);
+      if (own) return pick(own, commit);
     }
+    return null;
   };
+  // 用它发红包 (§6): one's own (its newest version that passed) or
+  // another's (the version others use), picked as the step opens; a
+  // card says it is on its way, and what went wrong stays here, the
+  // cards to pick another below it.
+  const begun = useRef(false);
+  useEffect(() => {
+    if (!start || begun.current) return;
+    begun.current = true;
+    void (async () => {
+      let first: string | null = null;
+      try {
+        const own = await fetchMyJudge(start.judgeId);
+        if (own.usable) first = await pick(own, start.commit);
+        else setPickError("这个判定器还没有测试全过的版本。");
+      } catch (failure) {
+        if (failure instanceof ActivityRequestError && failure.status === 404)
+          first = await pickOther(start.judgeId, start.commit);
+        else
+          setPickError(
+            refused(failure)
+              ? failure.message
+              : "没有取到这个判定器：网络或服务出了问题。可以再试一次。",
+          );
+      } finally {
+        setStarting(false);
+        start.done(first);
+      }
+    })();
+  });
   const params = declarations?.params ?? [];
   const writing = (
     <>
@@ -837,7 +889,9 @@ export function CodeStep({
     // tests stay in their editors and never widen the step. Its children
     // are no Reveals; the columns inside that hold one are flex.
     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5">
-      {shown === "pick" ? (
+      {shown === "loading" ? (
+        <LoadingJudge />
+      ) : shown === "pick" ? (
         <JudgePicker
           featured={featured}
           judges={usable}

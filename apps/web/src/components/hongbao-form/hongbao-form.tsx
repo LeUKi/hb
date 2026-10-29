@@ -9,17 +9,11 @@ import {
   useState,
 } from "react";
 import { flushSync } from "react-dom";
-import { refused, useActivityWrites } from "../../lib/activities";
+import { useActivityWrites } from "../../lib/activities";
 import { useBalanceFunding } from "../../lib/balance";
 import { cn } from "../../lib/cn";
 import { haptic } from "../../lib/haptics";
-import {
-  fetchJudgePage,
-  fetchJudgeVersion,
-  fetchMyJudge,
-  useMyJudge,
-  useParamsCheck,
-} from "../../lib/judge";
+import { useMyJudge, useParamsCheck } from "../../lib/judge";
 import { useCurrentMerchant } from "../../lib/merchants";
 import { scrollBehavior } from "../../lib/motion";
 import { closeOverlay, openOverlay } from "../../lib/overlay";
@@ -54,11 +48,9 @@ import {
   type RewardMode,
   timingLine,
   withDefaultTitle,
-  withJudgeDefaults,
   withMode,
 } from "./form-state";
 import { declaredParams, judgeIssuesOf, triedHongbao } from "./judge-issues";
-import { paramsFor } from "./params-fields";
 import { ScheduleDialog, ScheduleLine } from "./schedule-fields";
 import { scopeLine } from "./scope-fields";
 import { groupsOf, SettingsSheet } from "./settings-sheet";
@@ -319,79 +311,38 @@ export function HongbaoForm({
     window.setTimeout(linear.next, 120);
   };
 
-  // 用它发红包 (judge-square §6): /new?judge=<编号> starts on 代码判定
-  // with that 判定器's newest usable version picked, at ② 判定器, focus
-  // on its first param. As a starting point, not an unsaved change; a form
-  // already being filled in is left as it is.
-  const touched = useRef(dirty);
-  touched.current = dirty;
+  // 用它发红包 (judge-square §6): /new?judge=<编号> opens on 代码判定 at
+  // ② 判定器 at once; the step picks that 判定器 there (its newest version
+  // that passed, or the version others use), focus then on its first
+  // param. As a starting point, not an unsaved change.
   const started = useRef(false);
+  const [starting, setStarting] = useState(!editing && Boolean(startJudge));
   const [startParam, setStartParam] = useState<string | null>(null);
   useEffect(() => {
     if (editing || !startJudge || started.current) return;
     started.current = true;
-    void (async () => {
-      try {
-        // Another's (§15.4): on to ② 判定器, then picked there, 联网
-        // asked first.
-        const page = await fetchJudgePage(startJudge);
-        if (touched.current) return;
-        if (!page.own) {
-          if (!page.version?.code) return;
-          const coded = (current: FormState) => withMode(current, "code");
-          setBaseline(coded);
-          setForm(coded);
-          linear.next();
-          const outcome = await borrow.pick(startJudge, {
-            acked: null,
-            commit: (change) => {
-              setBaseline(change);
-              setForm(change);
-            },
-          });
-          if ("picked" in outcome)
-            setStartParam(
-              outcome.picked.version?.declarations?.params[0]?.key ?? null,
-            );
-          return;
+    const coded = (current: FormState) => withMode(current, "code");
+    setBaseline(coded);
+    setForm(coded);
+    linear.next();
+  }, [editing, startJudge, linear.next]);
+  const start =
+    starting && startJudge
+      ? {
+          judgeId: startJudge,
+          // Into what is saved too; left alone once 玩法 was changed.
+          commit: (change: (current: FormState) => FormState) => {
+            const kept = (current: FormState) =>
+              current.mode === "code" ? change(current) : current;
+            setBaseline(kept);
+            setForm(kept);
+          },
+          done: (firstParam: string | null) => {
+            setStarting(false);
+            setStartParam(firstParam);
+          },
         }
-        const picked = await fetchMyJudge(startJudge);
-        if (!picked.usable || touched.current) return;
-        const version = await fetchJudgeVersion(picked.id, picked.usable.n);
-        if (touched.current) return;
-        const params = version.declarations?.params ?? [];
-        const start = (current: FormState) =>
-          withJudgeDefaults(
-            {
-              ...withMode(current, "code"),
-              judge: {
-                ...current.judge,
-                judgeId: picked.id,
-                name: picked.name,
-                description: picked.description,
-                code: version.code,
-                tests: version.tests,
-                versions: version.versions,
-                params: paramsFor(params, current.judge.params),
-                borrowed: null,
-              },
-            },
-            version.declarations?.hongbao,
-          );
-        setBaseline(start);
-        setForm(start);
-        setStartParam(params[0]?.key ?? null);
-        linear.next();
-      } catch (failure) {
-        submit.setNotice({
-          tone: "danger",
-          text: refused(failure)
-            ? failure.message
-            : "没有取到这个判定器：网络或服务出了问题。可以再试一次。",
-        });
-      }
-    })();
-  }, [editing, startJudge, linear.next, submit.setNotice, borrow.pick]);
+      : undefined;
   useEffect(() => {
     if (startParam === null || currentIndex !== placeOf("claim")) return;
     if (!judge.known) return;
@@ -610,6 +561,7 @@ export function HongbaoForm({
               paramErrorOf={(key) => errorOf(`hb-param-${key}`)}
               tried={tried}
               borrow={borrow}
+              start={start}
             />
           );
         return (

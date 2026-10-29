@@ -61,7 +61,10 @@ export function useBorrowJudge() {
       if (page.own) return { own: page };
       const version = page.version;
       const code = version?.code;
-      if (!version || !code) throw new Error("no version to use");
+      if (!version || !code) {
+        setError("这个判定器现在没有能用的版本。");
+        return { failed: true };
+      }
       const network = version.network;
       if (network && !sameAddresses(network, acked)) {
         const go = await new Promise<boolean>((resolve) =>

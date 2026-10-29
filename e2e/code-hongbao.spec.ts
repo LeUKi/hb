@@ -2835,6 +2835,55 @@ test.describe("发红包 · 代码判定", () => {
     await expect(page).toHaveURL(new RegExp(`/judges/${GUESS_ID}$`));
   });
 
+  test("用它发红包：一进来就是代码判定的第 2 步，判定器读到以前写正在读取判定器…；没有测试全过的版本，就在第 2 步说出来，下面照常能挑", async ({
+    page,
+  }) => {
+    await mockDeploys(page);
+    await mockMyJudges(page);
+    // Its version held until the card has been seen.
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(
+      `**/api/me/judges/${GUESS_ID}/versions/3`,
+      async (route) => {
+        await held;
+        return route.fallback();
+      },
+    );
+    await openApp(page, `/new?judge=${GUESS_ID}`);
+    await expect(
+      page.getByRole("status").filter({ hasText: "正在读取判定器…" }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("代码判定", { exact: true }).first(),
+    ).toBeVisible();
+    release();
+    await expect(page.getByText("我的 · 第 3 版")).toBeVisible();
+    await expect(page.locator("#hb-param-max")).toBeFocused();
+
+    const NONE = "33333333-4444-4555-8666-777777777777";
+    await page.route(`**/api/me/judges/${NONE}`, (route) =>
+      route.fulfill({
+        json: {
+          judge: {
+            id: NONE,
+            name: "还在改",
+            description: "",
+            usable: null,
+            versions: [],
+          },
+        },
+      }),
+    );
+    await openApp(page, `/new?judge=${NONE}`);
+    await expect(
+      page.getByText("这个判定器还没有测试全过的版本。"),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: /猜数字/ })).toBeVisible();
+  });
+
   test("判定器页：改名字和说明，保存后写已保存；改成一直公开先确认，改了就改不回来", async ({
     page,
   }) => {
