@@ -15,11 +15,9 @@ import { ScopeDialog } from "../hongbao/scope-dialog";
 import { SelfClaimDialog } from "../hongbao/self-claim-dialog";
 import { ShareDialog } from "../hongbao/share-dialog";
 import { Omnibox } from "../omnibox/omnibox";
-import { scopeTagSpace } from "../omnibox/scope-tag";
 import {
   editLinesAtom,
   omniboxMetrics,
-  scopeAtom,
   useOmniboxMode,
   wrapLinesAtom,
 } from "../omnibox/state";
@@ -70,14 +68,6 @@ function CommandSlot({ compact }: { compact: boolean }) {
     useAtomValue(wrapLinesAtom),
   );
   const metrics = omniboxMetrics(compact);
-  // 作用域标签's 主标签 sits above the box: it moves down for it (02 §4).
-  // Only its place moves, which no observer sees: measured at once.
-  const tagged = useAtomValue(scopeAtom) !== null;
-  const measure = useMeasureSlots();
-  // biome-ignore lint/correctness/useExhaustiveDependencies: measured again as the 主标签 comes or goes
-  useLayoutEffect(() => {
-    measure();
-  }, [tagged, measure]);
   return (
     <div
       ref={slot}
@@ -86,9 +76,9 @@ function CommandSlot({ compact }: { compact: boolean }) {
         compact ? "w-[calc(100%-1rem)]" : "w-[min(40rem,calc(100%-3rem))]"
       }`}
       style={{
-        top: `calc(${compact ? "0.5rem" : "clamp(4.5rem, 15cqh, 9rem)"} + var(--safe-top) + ${
-          tagged ? scopeTagSpace(compact) : 0
-        }px)`,
+        top: compact
+          ? "calc(0.5rem + var(--safe-top))"
+          : "calc(clamp(4.5rem, 15cqh, 9rem) + var(--safe-top))",
         height: metrics.base + (lines - 1) * metrics.line,
       }}
     />

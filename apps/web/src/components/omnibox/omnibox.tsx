@@ -6,6 +6,7 @@ import {
   AnimatePresence,
   type AnimationPlaybackControls,
   animate,
+  type MotionValue,
   motion,
   useMotionValue,
   useTransform,
@@ -57,7 +58,13 @@ import { SchemeChip } from "./chips";
 import { OmniboxField } from "./field";
 import { IdleHintText, useIdleHint } from "./idle-hint";
 import { MessageLine, resolveMessage } from "./message";
-import { boxInset, ScopeBadgeSpace, ScopeTag } from "./scope-tag";
+import {
+  boxInset,
+  ScopeBadgeSpace,
+  ScopeTag,
+  scopeTagSpace,
+  useScopeGrowth,
+} from "./scope-tag";
 import {
   editDraftAtom,
   editLinesAtom,
@@ -122,6 +129,8 @@ function useSlotGeometry(
   target: SlotRect | undefined,
   modeKey: string,
   cornerRadius: number,
+  /** Moves the box down off its slot: the 作用域标签 growing above it. */
+  offsetY?: MotionValue<number>,
 ) {
   const reduced = useReducedMotionPref();
   // Where the slot is, and the jump still fading out after a crossing.
@@ -134,7 +143,9 @@ function useSlotGeometry(
   const shiftWidth = useMotionValue(0);
   const shiftHeight = useMotionValue(0);
   const x = useTransform(() => baseX.get() + shiftX.get());
-  const y = useTransform(() => baseY.get() + shiftY.get());
+  const y = useTransform(
+    () => baseY.get() + shiftY.get() + (offsetY?.get() ?? 0),
+  );
   const width = useTransform(() => baseWidth.get() + shiftWidth.get());
   const height = useTransform(() => baseHeight.get() + shiftHeight.get());
   const radius = useMotionValue(cornerRadius);
@@ -175,7 +186,8 @@ function useSlotGeometry(
       const box = element.current;
       if (!box) return;
       // From the values themselves: the sums are worked out a frame later.
-      box.style.transform = `translateX(${baseX.get() + shiftX.get()}px) translateY(${baseY.get() + shiftY.get()}px)`;
+      const lift = offsetY ? offsetY.get() : 0;
+      box.style.transform = `translateX(${baseX.get() + shiftX.get()}px) translateY(${baseY.get() + shiftY.get() + lift}px)`;
       box.style.width = `${baseWidth.get() + shiftWidth.get()}px`;
       box.style.height = `${baseHeight.get() + shiftHeight.get()}px`;
     };
@@ -285,6 +297,7 @@ function useSlotGeometry(
     shiftWidth,
     shiftHeight,
     radius,
+    offsetY,
   ]);
 
   return { x, y, width, height, radius, placed, element };
@@ -478,13 +491,26 @@ export function Omnibox() {
   const chrome: Chrome = mode === "docked" ? "docked-top" : mode;
   const slotName = mode === "start" ? "start" : expanded ? "command" : "dock";
   const target = useSlotRect(slotName);
-  // 作用域标签 (02 §4): the box makes way for its 主标签 above it, and comes
-  // back as it goes, moving as it does between places (a flight).
+  // 作用域标签 (02 §4): it grows in and away in stages, and the box moves
+  // down for its 主标签 as the 主标签 buds, and back up as it sinks. What it
+  // was is kept while it goes.
   const scopeShown = expanded && scope !== null && !commandMode;
+  const scopeWait = useRef(0);
+  const growth = useScopeGrowth(scopeShown, scopeWait);
+  const shownScope = useRef(scope);
+  const shownTitle = useRef<string | null>(null);
+  if (scopeShown && scope) {
+    shownScope.current = scope;
+    shownTitle.current = scopeFacts ? scopeFacts.title : null;
+  }
+  const tagOffset = useTransform(
+    () => growth.rise.get() * scopeTagSpace(compact),
+  );
   const geometry = useSlotGeometry(
     target,
-    scopeShown ? `${mode}:scope` : mode,
+    mode,
     chromeRadius(chrome, compact),
+    tagOffset,
   );
 
   // Waiting on the same request again, each only in its own place: a
@@ -559,8 +585,11 @@ export function Omnibox() {
   // Leaving a mode resets transient state; focus follows the visible control:
   // closing the box returns to the bar, arriving somewhere new goes to the view.
   const previousMode = useRef(mode);
-  // Opened with the scope: the 主标签 waits for the box to be halfway there.
-  const scopeArrives = expanded && previousMode.current !== "expanded";
+  // Opened with the scope: it grows once the box is nearly there.
+  scopeWait.current =
+    expanded && previousMode.current !== "expanded"
+      ? durations.travel * 0.6
+      : 0;
   const previousPath = useRef(pathname);
   const latest = useRef({ editDraft, phoneLike });
   latest.current = { editDraft, phoneLike };
@@ -862,7 +891,11 @@ export function Omnibox() {
   const panelMaxHeight = target
     ? Math.max(
         160,
-        windowInfo.height - keyboardInset - (target.y + target.height) - 20,
+        windowInfo.height -
+          keyboardInset -
+          (target.y + target.height) -
+          (scopeShown ? scopeTagSpace(compact) : 0) -
+          20,
       )
     : undefined;
 
@@ -914,8 +947,12 @@ export function Omnibox() {
             aria-hidden={docked || undefined}
           >
             <AnimatePresence initial={false} mode="popLayout">
-              {scopeShown && scope ? (
-                <ScopeBadgeSpace key="scope" compact={compact} />
+              {growth.rendered ? (
+                <ScopeBadgeSpace
+                  key="scope"
+                  compact={compact}
+                  growth={growth}
+                />
               ) : (
                 <SchemeChip
                   key="scheme"
@@ -1132,23 +1169,20 @@ export function Omnibox() {
         </search>
       </Squircle>
 
-      {/* 作用域标签's 主标签 and 连杆, over the box (02 §4). */}
-      <AnimatePresence>
-        {scopeShown && scope && (
-          <ScopeTag
-            key={`${scope.purpose}:${scope.id}`}
-            purpose={scope.purpose}
-            title={scopeFacts ? scopeFacts.title : null}
-            compact={compact}
-            delay={scopeArrives ? durations.travel / 2 : 0}
-            maxWidth={target?.width ?? 0}
-            onRemove={() => {
-              setScope(null);
-              focusOmniboxInput();
-            }}
-          />
-        )}
-      </AnimatePresence>
+      {/* 作用域标签 over the box (02 §4), growing in and away. */}
+      {growth.rendered && shownScope.current && (
+        <ScopeTag
+          purpose={shownScope.current.purpose}
+          title={shownTitle.current}
+          compact={compact}
+          maxWidth={target?.width ?? 0}
+          growth={growth}
+          onRemove={() => {
+            setScope(null);
+            focusOmniboxInput();
+          }}
+        />
+      )}
 
       {/* Start page: the message line lives in the page's own flow. With
           no list there, a valid 口令's length stays where the rules had it. */}
