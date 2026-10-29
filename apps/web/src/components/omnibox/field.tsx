@@ -16,6 +16,9 @@ const invisible = /^[\p{White_Space}\p{Cc}\p{Cf}]$/u;
 
 const commandPrefix = /^\s*[/／、]+/u;
 
+/** 代码判定's box grows to this many lines (02 §4). */
+const WRAP_LINES = 3;
+
 /** Mirror text: invalid 口令 characters are marked without changing widths. */
 function mirror(value: string, markInvalid: boolean, command: boolean) {
   if (command) {
@@ -157,6 +160,8 @@ export function OmniboxField({
   joinLines = false,
   onLinesJoined,
   corner,
+  wrap = false,
+  onWrapLines,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -194,6 +199,12 @@ export function OmniboxField({
   onLinesJoined?: (text: string) => void;
   /** Small, under the text at its right end: 代码判定's count (02 §4). */
   corner?: ReactNode;
+  /**
+   * 代码判定's box (02 §4): what is typed wraps, up to WRAP_LINES lines
+   * (`onWrapLines` hears how many), and scrolls in the box past them.
+   */
+  wrap?: boolean;
+  onWrapLines?: (lines: number) => void;
 }) {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const mirrorRef = useRef<HTMLDivElement | null>(null);
@@ -223,6 +234,24 @@ export function OmniboxField({
   }, []);
 
   const typography = `${compact ? "text-lg" : "text-xl"}${mono ? " font-mono" : ""}`;
+  const flow = wrap ? "whitespace-pre-wrap break-all" : "whitespace-pre";
+
+  // How many lines the wrapped text takes, as the mirror lays it out.
+  useLayoutEffect(() => {
+    const layer = mirrorRef.current;
+    if (!wrap || !layer || !onWrapLines) return;
+    const read = () =>
+      onWrapLines(
+        Math.min(
+          WRAP_LINES,
+          Math.max(1, Math.round(layer.offsetHeight / lineHeight)),
+        ),
+      );
+    read();
+    const observer = new ResizeObserver(read);
+    observer.observe(layer);
+    return () => observer.disconnect();
+  }, [wrap, onWrapLines, lineHeight]);
 
   return (
     <div
@@ -235,13 +264,24 @@ export function OmniboxField({
       >
         <div
           ref={mirrorRef}
-          className={`whitespace-pre text-ink ${typography}`}
+          className={`${flow} text-ink ${typography}`}
           style={{ lineHeight: `${lineHeight}px` }}
         >
           {mirror(value, markInvalid, command)}
           {"\u200b"}
         </div>
       </div>
+      {/* A long prompt stays on one line, cut short (02 §4): the box's own
+          placeholder would wrap. */}
+      {wrap && !hint && value === "" && (
+        <div
+          aria-hidden="true"
+          className={`pointer-events-none absolute inset-x-0 top-0 truncate text-ink-3 ${typography}`}
+          style={{ lineHeight: `${lineHeight}px` }}
+        >
+          {placeholder}
+        </div>
+      )}
       {hint && value === "" && (
         <div
           aria-hidden="true"
@@ -254,7 +294,7 @@ export function OmniboxField({
       <textarea
         ref={setInput}
         rows={1}
-        wrap="off"
+        wrap={wrap ? "soft" : "off"}
         value={value}
         readOnly={readOnly}
         tabIndex={inactive ? -1 : 0}
@@ -272,7 +312,7 @@ export function OmniboxField({
         enterKeyHint="go"
         data-1p-ignore=""
         data-lpignore="true"
-        className={`absolute inset-0 block h-full w-full resize-none overflow-hidden whitespace-pre border-0 bg-transparent p-0 text-transparent caret-ink outline-none placeholder:text-ink-3 ${typography}`}
+        className={`absolute inset-0 block h-full w-full resize-none overflow-hidden ${flow} border-0 bg-transparent p-0 text-transparent caret-ink outline-none ${wrap ? "placeholder:text-transparent" : "placeholder:text-ink-3"} ${typography}`}
         style={{ lineHeight: `${lineHeight}px` }}
         onChange={(event) => {
           const input = event.target;

@@ -1,9 +1,4 @@
-import type {
-  JudgeFetchAnswer,
-  JudgeNote,
-  MyJudgment,
-  PublicActivity,
-} from "@hb/contracts";
+import type { JudgeFetchAnswer, JudgeNote, MyJudgment } from "@hb/contracts";
 import { useRouter } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
@@ -22,7 +17,7 @@ import { Button } from "../ui/button";
 import { MorphLabel, RollingText } from "../ui/morph-label";
 import { ListItem, Reveal, Swap } from "../ui/reveal";
 import { Squircle } from "../ui/squircle";
-import { useJudgeBoard } from "./judge-board";
+import { type BoardActivity, useJudgeBoard } from "./judge-board";
 import { useHongbaoPageData } from "./use-hongbao-data";
 
 /** On the page; the rest are in the dialog (05 §3). */
@@ -206,7 +201,7 @@ function StillJudging({
  * 红包状态 in the 指令框 (judge-page §11.3): the code's sentence, as on the
  * 红包 page, and the latest line in 动态 under it; nothing without either.
  */
-function JudgeState({ activity }: { activity: PublicActivity }) {
+function JudgeState({ activity }: { activity: BoardActivity }) {
   const { view, lines } = useJudgeBoard(activity);
   const summary = view?.summary;
   const line = lines[0];

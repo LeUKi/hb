@@ -53,10 +53,11 @@ import { MorphLabel, RollingNumber } from "../ui/morph-label";
 import { Squircle, SquircleFill, SquirclePlate } from "../ui/squircle";
 import { TagHint } from "../ui/tag-hint";
 import { AddressRoller, useAddress } from "./address";
-import { SchemeChip, ScopeChip } from "./chips";
+import { SchemeChip } from "./chips";
 import { OmniboxField } from "./field";
 import { IdleHintText, useIdleHint } from "./idle-hint";
 import { MessageLine, resolveMessage } from "./message";
+import { boxInset, ScopeBadgeSpace, ScopeTag } from "./scope-tag";
 import {
   editDraftAtom,
   editLinesAtom,
@@ -73,6 +74,7 @@ import {
   startLinesAtom,
   unconfirmedAtom,
   useOmniboxMode,
+  wrapLinesAtom,
 } from "./state";
 import {
   buildSuggestions,
@@ -339,6 +341,7 @@ export function Omnibox() {
   const value = docked ? frozen.current : liveValue;
   const setValue = expanded ? setEditDraft : setStartDraft;
   const lines = expanded ? editLines : startLines;
+  const [wrapLines, setWrapLines] = useAtom(wrapLinesAtom);
 
   const pathname = useLocation({ select: (location) => location.pathname });
   const overlayPanel = useLocation({
@@ -475,7 +478,14 @@ export function Omnibox() {
   const chrome: Chrome = mode === "docked" ? "docked-top" : mode;
   const slotName = mode === "start" ? "start" : expanded ? "command" : "dock";
   const target = useSlotRect(slotName);
-  const geometry = useSlotGeometry(target, mode, chromeRadius(chrome, compact));
+  // 作用域标签 (02 §4): the box makes way for its 主标签 above it, and comes
+  // back as it goes, moving as it does between places (a flight).
+  const scopeShown = expanded && scope !== null && !commandMode;
+  const geometry = useSlotGeometry(
+    target,
+    scopeShown ? `${mode}:scope` : mode,
+    chromeRadius(chrome, compact),
+  );
 
   // Waiting on the same request again, each only in its own place: a
   // lookup (再次确认) in the plain box, a claim (重试原提交) in the box
@@ -513,6 +523,10 @@ export function Omnibox() {
   const [joined, setJoined] = useState<string | null>(null);
   const linesJoined = codeScope && joined !== null && value.includes(joined);
   const overLong = /[\r\n]/.test(value) || typed > 200;
+  // Out of 代码判定's box, no wrapped lines hold its slot open.
+  useEffect(() => {
+    if (!codeScope) setWrapLines(1);
+  }, [codeScope, setWrapLines]);
   const shownMessage = codeScope
     ? (ownMessage ??
       (linesJoined
@@ -545,6 +559,8 @@ export function Omnibox() {
   // Leaving a mode resets transient state; focus follows the visible control:
   // closing the box returns to the bar, arriving somewhere new goes to the view.
   const previousMode = useRef(mode);
+  // Opened with the scope: the 主标签 waits for the box to be halfway there.
+  const scopeArrives = expanded && previousMode.current !== "expanded";
   const previousPath = useRef(pathname);
   const latest = useRef({ editDraft, phoneLike });
   latest.current = { editDraft, phoneLike };
@@ -800,10 +816,17 @@ export function Omnibox() {
       "再次确认"
     )
   ) : usesCooldown && cooldown > 0 ? (
-    // One piece whose number rolls, not a new label each second.
-    <>
-      还需等待 <RollingNumber value={cooldown} /> 秒
-    </>
+    // One piece whose number rolls, not a new label each second; on a narrow
+    // window only the seconds (02 §4), said in full to a screen reader.
+    compact ? (
+      <>
+        <RollingNumber value={cooldown} /> 秒
+      </>
+    ) : (
+      <>
+        还需等待 <RollingNumber value={cooldown} /> 秒
+      </>
+    )
   ) : activeItem?.kind === "verify" ? (
     "验证"
   ) : activeItem?.kind === "claim" || scheme.kind === "password" ? (
@@ -813,6 +836,14 @@ export function Omnibox() {
   ) : (
     ""
   );
+  // The cooldown's own label is on the button (not a retry, not judging).
+  const waitShown =
+    !pending &&
+    activeItem?.kind !== "optimize" &&
+    !commandMode &&
+    !retryRow &&
+    usesCooldown &&
+    cooldown > 0;
   const showAction =
     // 代码判定 judging: the box is emptied into its card, the button stays
     // to say 正在判定… (02 §4).
@@ -827,7 +858,6 @@ export function Omnibox() {
   const actionSize = compact ? "bar" : "md";
   const actionRadius = buttonRadius[actionSize];
   const actionShape = useButtonShape(actionRadius, buttonHeight[actionSize]);
-  const scopeActivity = expanded && scope && !commandMode ? scopeFacts : null;
   // The list stops above the on-screen keyboard.
   const panelMaxHeight = target
     ? Math.max(
@@ -867,28 +897,25 @@ export function Omnibox() {
         >
           {/* Edit layer: start page and the expanded command box. */}
           <motion.div
-            className="absolute inset-0 flex items-center gap-2 pr-2 pl-2.5"
+            // Even either side: the 图标标签 and the 提交 button as far from
+            // the edges as from the top and bottom (02 §4).
+            className="absolute inset-0 flex items-center gap-2"
+            style={{
+              pointerEvents: docked ? "none" : "auto",
+              paddingLeft: boxInset(compact),
+              paddingRight: boxInset(compact),
+            }}
             initial={false}
             animate={{ opacity: docked ? 0 : 1 }}
             transition={{
               duration: reduced ? 0 : docked ? durations.exit : 0.2,
               delay: reduced || docked ? 0 : 0.1,
             }}
-            style={{ pointerEvents: docked ? "none" : "auto" }}
             aria-hidden={docked || undefined}
           >
             <AnimatePresence initial={false} mode="popLayout">
-              {scopeActivity ? (
-                <ScopeChip
-                  key="scope"
-                  title={scopeActivity.title}
-                  purpose={scope?.purpose ?? "claim"}
-                  compact={compact}
-                  onRemove={() => {
-                    setScope(null);
-                    focusOmniboxInput();
-                  }}
-                />
+              {scopeShown && scope ? (
+                <ScopeBadgeSpace key="scope" compact={compact} />
               ) : (
                 <SchemeChip
                   key="scheme"
@@ -950,16 +977,30 @@ export function Omnibox() {
                 composeBase === null
               }
               command={commandMode}
-              lines={lines}
+              lines={codeScope ? Math.max(lines, wrapLines) : lines}
               lineHeight={metrics.line}
               compact={compact}
               readOnly={locked || pending}
               inactive={docked}
               mono={codeScope}
+              wrap={codeScope}
+              onWrapLines={setWrapLines}
               corner={
                 codeScope && (
-                  <span className={overLong ? "text-warning" : "text-ink-3"}>
-                    {typed} / 200
+                  // The count, then 代码判定's rules on hover or a tap
+                  // (02 §4).
+                  <span className="flex items-center gap-1">
+                    <span className={overLong ? "text-warning" : "text-ink-3"}>
+                      {typed} / 200
+                    </span>
+                    <TagHint
+                      hint="原样提交：区分大小写，符号都算，首尾空格会去掉"
+                      aria-label="提交规则"
+                      onMouseDown={(event) => event.preventDefault()}
+                      className="pointer-events-auto -m-1 grid size-5 place-items-center rounded-full text-ink-3 transition-colors hover:text-ink-2"
+                    >
+                      <Info className="size-3" aria-hidden="true" />
+                    </TagHint>
                   </span>
                 )
               }
@@ -998,17 +1039,6 @@ export function Omnibox() {
               }
               mismatch={mismatch}
             />
-            {/* 代码判定's rules, on hover or a tap (judge-page §11.3). */}
-            {codeScope && (
-              <TagHint
-                hint="原样提交：区分大小写，符号都算，首尾空格会去掉"
-                aria-label="提交规则"
-                onMouseDown={(event) => event.preventDefault()}
-                className="grid size-9 shrink-0 place-items-center rounded-full text-ink-3 transition-colors hover:bg-fill-2 hover:text-ink-2"
-              >
-                <Info className="size-[18px]" aria-hidden="true" />
-              </TagHint>
-            )}
             <AnimatePresence initial={false}>
               {value.length > 0 && !locked && (
                 <motion.button
@@ -1047,6 +1077,12 @@ export function Omnibox() {
                   <button
                     type="button"
                     disabled={actionDisabled}
+                    // Only the seconds on a narrow window: said in full.
+                    aria-label={
+                      compact && waitShown
+                        ? `还需等待 ${cooldown} 秒`
+                        : undefined
+                    }
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={execute}
                     className={buttonVariants({
@@ -1095,6 +1131,24 @@ export function Omnibox() {
           </motion.button>
         </search>
       </Squircle>
+
+      {/* 作用域标签's 主标签 and 连杆, over the box (02 §4). */}
+      <AnimatePresence>
+        {scopeShown && scope && (
+          <ScopeTag
+            key={`${scope.purpose}:${scope.id}`}
+            purpose={scope.purpose}
+            title={scopeFacts ? scopeFacts.title : null}
+            compact={compact}
+            delay={scopeArrives ? durations.travel / 2 : 0}
+            maxWidth={target?.width ?? 0}
+            onRemove={() => {
+              setScope(null);
+              focusOmniboxInput();
+            }}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Start page: the message line lives in the page's own flow. With
           no list there, a valid 口令's length stays where the rules had it. */}

@@ -620,10 +620,14 @@ test.describe("代码判定红包", () => {
     // The sender's prompt as its placeholder, typed in fixed width.
     await expect(input).toHaveAttribute("placeholder", prompt);
     await expect(input).toHaveClass(/\bfont-mono\b/);
-    const chip = page.locator(".chip.hb-lacquer-button");
+    // 作用域标签 (02 §4): its 主标签 above the box, in lacquer.
+    const chip = page.locator("[data-scope-tag=code]");
     // Only the title by the braces; the rules on ⓘ, the count in the box
     // (judge-page §11.3).
-    await expect(chip).toHaveText(title);
+    await expect(
+      chip.getByText(title, { exact: true }).filter({ visible: true }),
+    ).toHaveCount(1);
+    await expect(chip).not.toContainText("代码判定");
     await expect(
       page.locator("search").getByRole("button", { name: "提交规则" }),
     ).toHaveAccessibleDescription(
@@ -652,7 +656,8 @@ test.describe("代码判定红包", () => {
     await expect(record).toContainText("第 1 次");
     await expect(record).toContainText("没领到");
     await expect(record.getByText("大了", { exact: true })).toBeVisible();
-    await expect(record.getByText("50", { exact: true })).toBeVisible();
+    // What was typed, its own line (the time's digits may read 50 too).
+    await expect(record.locator("p", { hasText: /^50$/ })).toBeVisible();
     await expect(
       page
         .getByRole("status")
@@ -752,7 +757,8 @@ test.describe("代码判定红包", () => {
     await expect(input).toHaveValue("");
     await expect(record).toContainText("第 1 次");
     await expect(record).toContainText("正在判定…");
-    await expect(record.getByText("50", { exact: true })).toBeVisible();
+    // What was typed, its own line (the time's digits may read 50 too).
+    await expect(record.locator("p", { hasText: /^50$/ })).toBeVisible();
     await expect(record.locator(".loading-sheen-gold")).toHaveCount(1);
     await expect(
       page.locator("search").getByRole("button", { name: "正在判定…" }),
@@ -1043,7 +1049,7 @@ test.describe("代码判定红包", () => {
     // Pressed anyway: nothing opens, nothing is sent.
     await button.click({ force: true });
     await page.waitForTimeout(300);
-    await expect(page.locator(".chip.hb-lacquer-button")).toHaveCount(0);
+    await expect(page.locator("[data-scope-tag]")).toHaveCount(0);
     expect(state.submissions).toEqual([]);
   });
 
@@ -1519,6 +1525,47 @@ test.describe("代码判定红包", () => {
     const board = page.locator("[data-hb-part=judge-board]");
     await expect(board.getByText("炸弹在 42，被玩家1 踩中了")).toBeVisible();
     await expect(board.getByRole("heading", { name: "动态" })).toHaveCount(0);
+  });
+
+  test("作用域标签（02 §4）：主标签在框上方、左边和框对齐，框让出位置；不比框宽，太长省略、悬停看全名；点 × 去掉作用域，框回到原位", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    const state = await mockCodeHongbao(page);
+    const long =
+      "2026 年终抽奖 · 数字炸弹大挑战（第二季）请大家踊跃参与，规则见红包说明，猜中的人领一份，没猜中的明天还有机会再来";
+    state.activity = { ...state.activity, title: long };
+    await mockLive(page);
+    await openApp(page, path);
+    await seal(page).click();
+    const input = omniboxInput(page);
+    await expect(input).toBeFocused();
+    const tag = page.locator("[data-scope-tag=code]");
+    const box = page.locator("search");
+    // Settled: the box below the 主标签, 6px apart, their left edges as one.
+    await page.waitForTimeout(800);
+    const tagBox = await tag.boundingBox();
+    const boxBox = await box.boundingBox();
+    if (!tagBox || !boxBox) throw new Error("No tag or box");
+    expect(Math.abs(tagBox.x - boxBox.x)).toBeLessThan(1);
+    expect(boxBox.y - (tagBox.y + 26)).toBeCloseTo(6, 0);
+    // Never wider than the box; cut short, its whole name on hover.
+    const shown = tag.getByRole("button", { name: long });
+    const shownBox = await shown.boundingBox();
+    expect((shownBox?.x ?? 0) + (shownBox?.width ?? 0)).toBeLessThanOrEqual(
+      boxBox.x + boxBox.width,
+    );
+    await expect(shown).toHaveAccessibleDescription(long);
+    // The input starts past the 图标标签, nearly the whole row.
+    const inputBox = await input.boundingBox();
+    expect((inputBox?.x ?? 0) - boxBox.x).toBeLessThan(70);
+    // ×: the scope goes, and the box moves back up by the 主标签's room.
+    await tag.getByRole("button", { name: "改为查找全部红包" }).click();
+    await expect(tag).toHaveCount(0);
+    await expect(input).toBeFocused();
+    await expect
+      .poll(async () => (await box.boundingBox())?.y ?? 0)
+      .toBeCloseTo(boxBox.y - 32, 0);
   });
 
   test("站长停用：状态写已停用，印章下面写红包已被站长停用", async ({

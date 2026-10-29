@@ -1,4 +1,4 @@
-import type { JudgeAnnouncement, PublicActivity } from "@hb/contracts";
+import type { JudgeAnnouncement, PublicJudge } from "@hb/contracts";
 import { useRouter } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
 import { ChevronRight, X } from "lucide-react";
@@ -25,6 +25,9 @@ import { useHongbaoPageData } from "./use-hongbao-data";
 // first. Read with the page; while it is open on the live channel, pushed
 // with 已判定 N 次 (lib/live-state.ts), the later of the two shown.
 
+/** What the board reads of a 红包: the page's or the read as it came. */
+export type BoardActivity = { id: string; judge?: PublicJudge };
+
 /** On the page; the rest in 动态's dialog. */
 const ON_PAGE = 5;
 
@@ -32,7 +35,7 @@ const ON_PAGE = 5;
  * What the read and the pushes say together: the view, 动态's count and
  * lines. The 指令框's 红包状态 reads it too (my-judgments.tsx).
  */
-export function useJudgeBoard(activity: PublicActivity) {
+export function useJudgeBoard(activity: BoardActivity) {
   const pushedView = useAtomValue(liveViewAtom);
   const pushedLines = useAtomValue(liveAnnouncementsAtom);
   const read = activity.judge?.view;
@@ -84,7 +87,7 @@ function AnnouncementRow({ item }: { item: JudgeAnnouncement }) {
  * Under the seal's line: 红包状态 when the code wrote a sentence for it,
  * 动态 when it wrote any line; nothing for a 红包 with neither.
  */
-export function JudgeBoard({ activity }: { activity: PublicActivity }) {
+export function JudgeBoard({ activity }: { activity: BoardActivity }) {
   const router = useRouter();
   const { view, total, lines } = useJudgeBoard(activity);
   const summary = view?.summary;

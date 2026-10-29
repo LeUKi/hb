@@ -88,6 +88,11 @@ function lineCount(value: string) {
 }
 export const startLinesAtom = atom((get) => lineCount(get(startDraftAtom)));
 export const editLinesAtom = atom((get) => lineCount(get(editDraftAtom)));
+/**
+ * 代码判定's input as it wraps in the expanded box, 1–3 lines (02 §4); 1
+ * anywhere else. The box and its slot grow by it.
+ */
+export const wrapLinesAtom = atom(1);
 
 export function useOmniboxMode(): OmniMode {
   const chrome = useMatches({
