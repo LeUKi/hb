@@ -13,8 +13,10 @@ import {
   hmacSha1,
   hmacSha256,
   luckyAmount,
+  moveMoney,
   nestsDeeper,
   normalizeText,
+  othersProblem,
   personalCode,
   readSetup,
   readVerdict,
@@ -31,6 +33,7 @@ import {
   timeParts,
   timeWindow,
   totp,
+  uncountedShares,
   userSeed,
 } from "../../kit/runtime/index.mjs";
 import { seedStream as contractsSeedStream } from "../../packages/contracts/src/draw-proof";
@@ -39,6 +42,7 @@ import {
   FROZEN_V1,
   FROZEN_V2,
   FROZEN_V3,
+  FROZEN_V4,
   RUNTIME_COPY,
   runtimeCopy,
 } from "../judge-runtime";
@@ -46,14 +50,16 @@ import {
 const seed = "a".repeat(64);
 const secret = "0123456789abcdef".repeat(4);
 
+/** A protocol 5 submission: 100 LDC, nobody paid, nothing pending. */
 function submission(overrides: Partial<Submission> = {}): Submission {
   const hongbao = {
     title: "测试红包",
     total: 10000,
-    count: 10,
-    minEach: 1,
+    unclaimed: 10000,
     remaining: 10000,
-    remainingCount: 10,
+    count: 100,
+    minEach: 1,
+    remainingCount: 100,
     openedAt: Date.UTC(2026, 9, 24),
     endsAt: Date.UTC(2026, 9, 25),
   };
@@ -62,10 +68,11 @@ function submission(overrides: Partial<Submission> = {}): Submission {
     now: Date.UTC(2026, 9, 24, 0, 30),
     user: { id: 1, username: "tester", level: 2, attempts: 0 },
     hongbao,
-    share: shareRange(hongbao),
+    share: { min: 1, max: 10000, last: false },
     claims: [],
     state: null,
     params: {},
+    player: { pending: 0, state: null, view: null },
     ...overrides,
   };
 }
@@ -339,7 +346,9 @@ describe("tools.mjs", () => {
     expect(later.tools.random.next()).not.toBe(
       createTools(submission(), seeds).tools.random.next(),
     );
-    expect(a.tools.money.even()).toBe(1000);
+    // Protocol 5: n defaults to the pool in whole LDC (§3.5).
+    expect(a.tools.money.even()).toBe(100);
+    expect(a.tools.money.even(10)).toBe(1000);
     expect(a.tools.money.format(1234)).toBe("12.34");
     expect(a.tools.time.parts().hour).toBe(8);
     expect(Object.isFrozen(a.tools)).toBe(true);
@@ -349,7 +358,7 @@ describe("tools.mjs", () => {
 describe("verdict.mjs", () => {
   const share = { min: 100, max: 2000, last: false };
 
-  it("reads an answer the way the protocol says", () => {
+  it("reads an answer the way protocols 1–4 say", () => {
     expect(
       readVerdict(
         { ok: true, amount: 5000, message: "  前三名！\n" },
@@ -365,12 +374,12 @@ describe("verdict.mjs", () => {
       state: { keep: true },
       unknown: [],
     });
-    expect(readVerdict({ ok: true, amount: 0 }, share)).toMatchObject({
+    expect(readVerdict({ ok: true, amount: 0 }, share, 4)).toMatchObject({
       paid: 100,
       note: "floor",
     });
     expect(
-      readVerdict({ ok: true, amount: 7 }, { min: 91, max: 91, last: true }),
+      readVerdict({ ok: true, amount: 7 }, { min: 91, max: 91, last: true }, 4),
     ).toMatchObject({
       paid: 91,
       note: "last",
@@ -383,7 +392,7 @@ describe("verdict.mjs", () => {
       state: { keep: false, value: { tried: ["a"] } },
       unknown: ["amout"],
     });
-    expect(readVerdict({ ok: false, state: null }, share)).toMatchObject({
+    expect(readVerdict({ ok: false, state: null }, share, 4)).toMatchObject({
       state: { keep: false, value: null },
     });
   });
@@ -398,6 +407,7 @@ describe("verdict.mjs", () => {
           end: true,
         },
         share,
+        4,
       ),
     ).toEqual({
       ok: false,
@@ -411,15 +421,15 @@ describe("verdict.mjs", () => {
       end: true,
       unknown: [],
     });
-    expect(readVerdict({ ok: true, amount: 100 }, share)).toMatchObject({
+    expect(readVerdict({ ok: true, amount: 100 }, share, 4)).toMatchObject({
       view: { keep: true },
       end: false,
     });
-    expect(readVerdict({ ok: false, view: null }, share)).toMatchObject({
+    expect(readVerdict({ ok: false, view: null }, share, 4)).toMatchObject({
       view: { keep: false, value: null },
     });
     expect(
-      readVerdict({ ok: false, view: { summary: " " } }, share),
+      readVerdict({ ok: false, view: { summary: " " } }, share, 4),
     ).toMatchObject({ view: { keep: false, value: {} } });
     // Before it, they are fields that protocol does not have.
     expect(
@@ -442,7 +452,10 @@ describe("verdict.mjs", () => {
       { ok: false, announce: "字".repeat(101) },
       { ok: false, end: "yes" },
     ])
-      expect(readVerdict(raw, share)).toHaveProperty("error.kind", "invalid");
+      expect(readVerdict(raw, share, 4)).toHaveProperty(
+        "error.kind",
+        "invalid",
+      );
   });
 
   it("reads setup()'s answer at opening", () => {
@@ -479,17 +492,22 @@ describe("verdict.mjs", () => {
       { ok: false, state: { big: "x".repeat(17000) } },
       { ok: false, state: () => 1 },
     ])
-      expect(readVerdict(raw, share)).toHaveProperty("error.kind", "invalid");
+      expect(readVerdict(raw, share, 4)).toHaveProperty(
+        "error.kind",
+        "invalid",
+      );
   });
 
   it("holds state to 100 levels, however deep it goes and on any stack", () => {
     const nested = (depth: number) =>
       JSON.parse("[".repeat(depth) + "]".repeat(depth));
-    expect(readVerdict({ ok: false, state: nested(100) }, share)).toMatchObject(
-      { ok: false, state: { keep: false } },
-    );
+    expect(
+      readVerdict({ ok: false, state: nested(100) }, share, 4),
+    ).toMatchObject({ ok: false, state: { keep: false } });
     for (const depth of [101, 100_000])
-      expect(readVerdict({ ok: false, state: nested(depth) }, share)).toEqual({
+      expect(
+        readVerdict({ ok: false, state: nested(depth) }, share, 4),
+      ).toEqual({
         error: { kind: "invalid", detail: "state 嵌套超过 100 层" },
       });
     expect(nestsDeeper(1, 0)).toBe(false);
@@ -507,6 +525,241 @@ describe("verdict.mjs", () => {
     const loop: { self?: unknown } = {};
     loop.self = loop;
     expect(nestsDeeper(loop, 100)).toBe(true);
+  });
+});
+
+describe("protocol 5 (docs/multi-prize-design.md §3)", () => {
+  const share = { min: 1, max: 10000, last: false };
+  const kept = { keep: true };
+
+  it("reads add, settle, the one judged's own and others", () => {
+    expect(
+      readVerdict(
+        {
+          add: -20,
+          settle: true,
+          player: { state: { tries: 1 }, view: { summary: " 还剩\n1 次 " } },
+          others: [
+            { id: 7, add: 50, view: null, message: " 轮到你 " },
+            { id: 8, settle: true },
+          ],
+          message: "炸了",
+        },
+        share,
+      ),
+    ).toEqual({
+      add: -20,
+      settle: true,
+      shorthand: false,
+      player: {
+        state: { keep: false, value: { tries: 1 } },
+        view: { keep: false, value: { summary: "还剩 1 次" } },
+      },
+      others: [
+        {
+          id: 7,
+          add: 50,
+          settle: false,
+          state: kept,
+          view: { keep: false, value: null },
+          message: "轮到你",
+        },
+        {
+          id: 8,
+          add: 0,
+          settle: true,
+          state: kept,
+          view: kept,
+          message: undefined,
+        },
+      ],
+      message: "炸了",
+      state: kept,
+      view: kept,
+      announce: undefined,
+      end: false,
+      unknown: [],
+    });
+    // Nothing written is nothing done: the one judged plays on.
+    expect(readVerdict({}, share)).toMatchObject({
+      add: 0,
+      settle: false,
+      others: [],
+    });
+  });
+
+  it("reads { ok, amount } as short for an add settled at once", () => {
+    expect(readVerdict({ ok: true, amount: 100 }, share)).toMatchObject({
+      add: 100,
+      settle: true,
+      shorthand: true,
+    });
+    expect(readVerdict({ ok: false, amount: 100 }, share)).toMatchObject({
+      add: 0,
+      settle: false,
+      shorthand: true,
+    });
+    for (const [raw, detail] of [
+      [
+        { ok: true, amount: 1, add: 1 },
+        "ok 和 add 不能一起写：{ ok: true, amount } 是 { add: amount, settle: true } 的简写",
+      ],
+      [
+        { ok: false, settle: true },
+        "ok 和 settle 不能一起写：{ ok: true, amount } 是 { add: amount, settle: true } 的简写",
+      ],
+      [{ amount: 100 }, "amount 只和 ok: true 一起写；给这个人加钱写 add"],
+      [{ ok: true }, "ok 为 true 时 amount 要是整数，单位是分"],
+    ] as const)
+      expect(readVerdict(raw, share)).toEqual({
+        error: { kind: "invalid", detail },
+      });
+  });
+
+  it("calls anything else an error", () => {
+    for (const [raw, detail] of [
+      [null, "返回的要是一个对象，比如 { add: 50 } 或 {}"],
+      [{ add: 1.5 }, "add 要是整数，单位是分，可以是负数"],
+      [{ settle: 1 }, "settle 要是 true 或 false"],
+      [{ player: [] }, "player 要是一个对象，比如 { state, view }"],
+      [{ player: { pending: 1 } }, "player 只能有 state 和 view，多了 pending"],
+      [
+        { player: { state: { big: "x".repeat(4100) } } },
+        "player.state 超过 4 KB",
+      ],
+      [
+        { player: { view: { data: "x".repeat(4100) } } },
+        "player.view.data 超过 4 KB",
+      ],
+      [
+        { others: {} },
+        "others 要是一个数组，每一项是一个人，比如 [{ id, add }]",
+      ],
+      [
+        { others: Array.from({ length: 11 }, (_, id) => ({ id: id + 1 })) },
+        "others 最多 10 个人",
+      ],
+      [
+        { others: [{ id: "7" }] },
+        "others 第 1 项的 id 要是 LINUX DO 数字 ID（同 submission.user.id）",
+      ],
+      [{ others: [{ id: 7 }, { id: 7 }] }, "others 里 7 写了两次"],
+      [
+        { others: [{ id: 7, pending: 1 }] },
+        "others 第 1 项只能有 id、add、settle、state、view、message，多了 pending",
+      ],
+      [
+        { others: [{ id: 7, state: { big: "x".repeat(4100) } }] },
+        "others 第 1 项的 state 超过 4 KB",
+      ],
+      [
+        { others: [{ id: 7, message: "字".repeat(101) }] },
+        "others 第 1 项的 message 超过 100 个字",
+      ],
+    ] as const)
+      expect(readVerdict(raw, share)).toEqual({
+        error: { kind: "invalid", detail },
+      });
+  });
+
+  it("moves each add so pending stays at least 0 and the pool is not overtaken", () => {
+    expect(
+      moveMoney(100, [
+        { id: 1, pending: 30, add: -50 },
+        { id: 2, pending: 0, add: 80 },
+        { id: 3, pending: 10, add: 200 },
+      ]),
+    ).toEqual({
+      moves: [
+        // Taken off to 0: the 30 goes back to the pool.
+        { id: 1, before: 30, after: 0 },
+        { id: 2, before: 0, after: 80 },
+        // Only what is left: 100 + 30 − 80.
+        { id: 3, before: 10, after: 60 },
+      ],
+      unclaimed: 0,
+    });
+  });
+
+  it("names who others may not name", () => {
+    const standing = (id: number) =>
+      id === 1 ? null : id === 2 ? "settled" : id === 3 ? "out" : "unknown";
+    expect(othersProblem([{ id: 1 }], 9, standing)).toBeNull();
+    expect(othersProblem([{ id: 9 }], 9, standing)).toBe(
+      "others 第 1 项（9）是这次提交的人自己：给他的写在 add、settle、player 里",
+    );
+    expect(othersProblem([{ id: 1 }, { id: 2 }], 9, standing)).toBe(
+      "others 第 2 项（2）已经结算了",
+    );
+    expect(othersProblem([{ id: 3 }], 9, standing)).toBe(
+      "others 第 1 项（3）不在这个红包的领取范围以内",
+    );
+    expect(othersProblem([{ id: 4 }], 9, standing)).toBe(
+      "others 第 1 项（4）没有在这个红包里被判定过",
+    );
+  });
+
+  it("shares what is unclaimed into n, less those paid (§3.5)", () => {
+    const seeds = {
+      submission: submissionSeed("hb-1", secret, 1, 0),
+      user: userSeed("hb-1", secret, 1),
+    };
+    const paid = (count: number) =>
+      Array.from({ length: count }, (_, index) => ({
+        user: { id: 100 + index, username: `p${index}` },
+        amount: 100,
+        input: "x",
+        at: 0,
+      }));
+    // 20 LDC with the old code: 1.00 each, as 20 shares were (§5.3).
+    const twenty = (claims: number) =>
+      createTools(
+        submission({
+          hongbao: {
+            ...submission().hongbao,
+            total: 2000,
+            count: 20,
+            unclaimed: 2000 - claims * 100,
+            remaining: 2000 - claims * 100,
+            remainingCount: 20 - claims,
+          },
+          claims: paid(claims),
+        }),
+        seeds,
+      ).tools.money;
+    expect(twenty(0).even()).toBe(100);
+    expect(twenty(19).even()).toBe(100);
+    // n given: shared out by it, the last of n taking all.
+    expect(twenty(0).even(4)).toBe(500);
+    expect(twenty(3).even(4)).toBe(1700);
+    expect(twenty(5).even(4)).toBe(1500);
+    expect(twenty(19).lucky("double", 20)).toBe(100);
+    const lucky = twenty(0).lucky("double", 4);
+    expect(lucky).toBeGreaterThanOrEqual(1);
+    expect(lucky).toBeLessThanOrEqual(1000);
+    expect(() => twenty(0).even(0)).toThrow("even 的 n 要是正整数（按几份分）");
+    expect(() => twenty(0).lucky("double", 1.5)).toThrow(
+      "lucky 的 n 要是正整数（按几份分）",
+    );
+  });
+
+  it("finds even() and lucky() called without n", () => {
+    expect(
+      uncountedShares(
+        [
+          "const a = tools.money.even();",
+          "const b = tools.money.even(5);",
+          'const c = tools.money.lucky("double");',
+          'const d = tools.money.lucky("double", n);',
+          "// tools.money.even()",
+          'const e = "tools.money.even()";',
+          "const f = money?.even(/* n */);",
+        ].join("\n"),
+      ).map((found) => found.line),
+    ).toEqual([1, 3, 7]);
+    expect(uncountedShares("tools.money.even()")[0]?.message).toBe(
+      "even() 没传 n：按总奖池分，每份约 1 LDC；要分成几份就写 even(10)",
+    );
   });
 });
 
@@ -582,9 +835,10 @@ describe("the API's copy of the sandbox runtime", () => {
   // an opened 红包 keeps the runtime it opened with (docs/programmable-
   // hongbao-design.md §4.7). So is v2 (联网, §9), live since 2026-10-26,
   // frozen as v3 (docs/judge-square-design.md §5) came, and v3, live since
-  // 2026-10-29, frozen as v4 (docs/judge-page-design.md §2) came. v4 is
-  // kit/runtime as it is now; v1–v3 stay beside it as they were, never
-  // edited.
+  // 2026-10-29, frozen as v4 (docs/judge-page-design.md §2) came, and v4,
+  // live since 2026-10-29, frozen as v5 (docs/multi-prize-design.md) came.
+  // v5 is kit/runtime as it is now; v1–v4 stay beside it as they were,
+  // never edited.
   it("keeps protocol v1 as opened, unchanged", () => {
     expect(
       createHash("sha256").update(readFileSync(FROZEN_V1)).digest("hex"),
@@ -594,6 +848,11 @@ describe("the API's copy of the sandbox runtime", () => {
     expect(
       createHash("sha256").update(readFileSync(FROZEN_V2)).digest("hex"),
     ).toBe("954cf46722c9789aee36a297d9cc393e29a502e1183c0633eb04cbf70bd8cd0f");
+  });
+  it("keeps protocol v4 as opened, unchanged", () => {
+    expect(
+      createHash("sha256").update(readFileSync(FROZEN_V4)).digest("hex"),
+    ).toBe("5f34fc53db4c4d2733d5e3e679a5e3cc192019507a883125d7d95bb4401aac3f");
   });
   it("keeps protocol v3 as opened, unchanged", () => {
     expect(

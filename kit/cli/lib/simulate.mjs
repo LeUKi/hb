@@ -1,8 +1,10 @@
 // npm run simulate (协议第 5 节, 四个命令的输出): the submissions in
 // simulate.json (or a file given) made one after another, carried forward
-// as the site does (runtime/scenario.mjs): state, claims and the pool left
-// pass on, amounts are pulled into each share's range. One line a
-// submission, then what was paid out. The seed is fixed, so a file always
+// as the site does (runtime/scenario.mjs): state, each person's pending and
+// own state, and the pool pass on (docs/multi-prize-design.md). One line
+// a submission — what it added and the pending after, or what was settled
+// — then those it moved besides; at the end, everyone not settled by the
+// deadline is, and what was paid out. The seed is fixed, so a file always
 // gives the same result; --seed changes it. Requests get the answers each
 // submission wrote (`fetch`); --live sends them out from this computer
 // (协议第 9 节). From the fourth protocol setup() opens it, and each
@@ -11,6 +13,7 @@
 import { resolve } from "node:path";
 import {
   checkSource,
+  endScenario,
   judgeNext,
   paramValues,
   setupSeed,
@@ -24,7 +27,6 @@ import { readSimulation } from "./simulation.mjs";
 import {
   failureText,
   isSlow,
-  NOTE_WORDS,
   printLogs,
   SLOW_NOTE,
   say,
@@ -57,7 +59,75 @@ function readArgs(args) {
 const seedOf = (text) =>
   HEX64.test(text) ? text : sha256Text(`hb.lafi.sh/judge/v1/simulate\n${text}`);
 
-const REFUSED = { ended: "已结束", claimed: "已领过", "sold-out": "已领完" };
+const REFUSED = { ended: "已结束", settled: "已结算" };
+
+/** An amount with its sign: "+0.50", "−0.20". */
+const signed = (amount) => `${amount < 0 ? "−" : "+"}${yuan(Math.abs(amount))}`;
+
+/**
+ * One person's move in words: "+0.50 · 待结算 1.20", "结算 1.20", and
+ * why it moved less than the code said.
+ */
+function moveText(move, settled) {
+  const moved = move.after - move.before;
+  const parts = moved === 0 ? [] : [signed(moved)];
+  if (settled !== undefined)
+    parts.push(settled > 0 ? `结算 ${yuan(settled)}` : "结算，没领到钱");
+  else if (moved !== 0 || move.after > 0)
+    parts.push(`待结算 ${yuan(move.after)}`);
+  else parts.push("没加钱");
+  const pulled =
+    moved === move.add
+      ? ""
+      : `（代码给 ${signed(move.add)}，${moved > move.add ? "扣到 0 为止" : "奖池不够，只加上这些"}）`;
+  return `${parts.join(" · ")}${pulled}`;
+}
+
+/** Who was settled with money, in words: "小明 1.20、小红 0.30". */
+const settledText = (settled) =>
+  settled
+    .filter((person) => person.amount > 0)
+    .map((person) => `${person.username} ${yuan(person.amount)}`)
+    .join("、");
+
+const ENDED = {
+  judge: "判定器结束了这个红包",
+  empty: "奖池占满了，红包结束",
+};
+
+/**
+ * Under a submission's line: those its others moved, what only one
+ * person sees (their own view), and everyone settled as it ended it.
+ */
+export function printLedger(print, judged) {
+  const { ledger, reading } = judged;
+  const [self, ...others] = ledger.moves;
+  const settledOf = (id) =>
+    ledger.settled.find((person) => person.id === id)?.amount;
+  const own = (who, view) => {
+    if (!view.keep)
+      say(print, `  只给${who}看：${viewText(view.value)}`, "    ");
+  };
+  own(self.username, reading.player.view);
+  for (const [index, move] of others.entries()) {
+    const told = move.message ? `  判定器对他说：${move.message}` : "";
+    say(
+      print,
+      `  ${move.username}：${moveText(move, settledOf(move.id))}${told}`,
+      "    ",
+    );
+    own(move.username, reading.others[index].view);
+  }
+  if (!ledger.ended) return;
+  const moved = new Set(ledger.moves.map((move) => move.id));
+  const rest = settledText(
+    ledger.settled.filter((person) => !moved.has(person.id)),
+  );
+  say(
+    print,
+    `${ENDED[ledger.ended]}${rest ? `，还没结算的人一起结算：${rest}` : ""}`,
+  );
+}
 
 /** What everyone sees now (协议第四版), in a line. */
 function viewText(view) {
@@ -82,12 +152,17 @@ export function outcome(judged) {
     return `出错：${failureText(answer.failure, answer.detail)}`;
   if ("error" in reading) return `出错：返回不对：${reading.error.detail}`;
   const said = reading.message ? `  代码的回复：${reading.message}` : "";
-  if (!reading.ok) return `没领到${said}`;
-  const pulled =
-    reading.note === null
-      ? ""
-      : `（代码给 ${yuan(reading.asked)}，${NOTE_WORDS[reading.note]}）`;
-  return `领到 ${yuan(reading.paid)}${pulled}${said}`;
+  const [self] = judged.ledger.moves;
+  const settled = judged.ledger.settled.find((person) => person.id === self.id);
+  return `${moveText(self, settled?.amount)}${said}`;
+}
+
+/** What the one judged was paid by this submission, or null. */
+export function paidNow(judged) {
+  if (!judged.ledger) return null;
+  const [self] = judged.ledger.moves;
+  const settled = judged.ledger.settled.find((person) => person.id === self.id);
+  return settled && settled.amount > 0 ? settled.amount : null;
 }
 
 /** simulate.json's params against what judge.js declares, and its check(). */
@@ -149,9 +224,7 @@ export async function simulateCommand({
   const { hongbao, submissions } = read.plan;
   const seed =
     options.seed === undefined ? read.plan.seed : seedOf(options.seed);
-  print(
-    `${hongbao.title}：总奖池 ${yuan(hongbao.total)}，${hongbao.count} 份，每份至少 ${yuan(hongbao.minEach)}`,
-  );
+  print(`${hongbao.title}：总奖池 ${yuan(hongbao.total)}`);
   print(`种子 ${seed}`);
 
   const sandbox = await openSandbox(code, { live: options.live });
@@ -228,7 +301,7 @@ export async function simulateCommand({
       if ("failure" in result.answer || "error" in result.reading) failed += 1;
       else {
         printPublic(print, result.reading);
-        if (result.reading.end) print("判定器结束了这个红包");
+        printLedger(print, result);
       }
       if ("failure" in result.answer && unloadable(result.answer.failure)) {
         if (index < submissions.length - 1)
@@ -241,9 +314,16 @@ export async function simulateCommand({
   }
   if (slow) print(SLOW_NOTE);
   if (failed > 0) print(`出错 ${failed} 次：线上连续出错 5 次会暂停领取`);
+  // The deadline: whoever is not settled by then is, as on the site.
+  if (!scenario.ended) {
+    const settled = settledText(
+      endScenario(scenario, "deadline", hongbao.endsAt),
+    );
+    if (settled) say(print, `到截止时间，还没结算的人一起结算：${settled}`);
+  }
   const left = hongbao.total - scenario.paid;
   print(
-    `发出 ${yuan(scenario.paid)} / 总奖池 ${yuan(hongbao.total)}，领了 ${scenario.claims.length} / ${hongbao.count} 份${left > 0 ? `，剩下的 ${yuan(left)} 退回` : ""}`,
+    `发出 ${yuan(scenario.paid)} / 总奖池 ${yuan(hongbao.total)}，${scenario.claims.length} 人领到钱${left > 0 ? `，剩下的 ${yuan(left)} 退回` : ""}`,
   );
   return {
     exitCode: failed > 0 ? 1 : 0,

@@ -1,11 +1,20 @@
 import type { Submission } from "../judge";
 import type {
+  LedgerMoves,
+  LedgerReading,
+  Refusal,
   SandboxAnswer,
   Seeds,
   StateChange,
   VerdictReading,
   ViewChange,
 } from "../runtime/index.mjs";
+
+/** The 红包 a run plays: shares (count, minEach) as protocol 5 tells check() and setup(). */
+export type PlayedHongbao = Pick<
+  Submission["hongbao"],
+  "title" | "total" | "count" | "minEach" | "openedAt" | "endsAt"
+>;
 
 export type Print = (line: string) => void;
 
@@ -35,7 +44,11 @@ export type Sandbox = {
   readonly loadMs: number | null;
   close(): Promise<void>;
 };
-export function openSandbox(code: string): Promise<Sandbox>;
+/** `protocol` below the kit's runs that protocol's runtime, kept frozen. */
+export function openSandbox(
+  code: string,
+  options?: { live?: boolean; protocol?: number },
+): Promise<Sandbox>;
 
 export function testCommand(
   options: CommandOptions,
@@ -54,20 +67,25 @@ export type SimulatedSubmission = {
   input: string;
   at: number;
 } & (
-  | { refused: "ended" | "claimed" | "sold-out" }
+  | { refused: Refusal }
   | {
       submission: Submission;
       seeds: Seeds;
       answer: SandboxAnswer;
       ms: number;
-      reading?: VerdictReading;
+      reading?:
+        | VerdictReading
+        | LedgerReading
+        | { error: { kind: "invalid"; detail: string } };
+      /** Protocol 5: what it moved. */
+      ledger?: LedgerMoves;
     }
 );
 
 export function simulateCommand(options: CommandOptions): Promise<{
   exitCode: number;
   simulation?: {
-    hongbao: Omit<Submission["hongbao"], "remaining" | "remainingCount">;
+    hongbao: PlayedHongbao;
     hongbaoId: string;
     seed: string;
     /** 协议第四版: setup()'s answer, when judge.js exports setup. */
@@ -105,7 +123,7 @@ export function pageCommand(
 export type SimulationPlan = {
   /** simulate.json's now (ms), or the tests' default. */
   now: number;
-  hongbao: Omit<Submission["hongbao"], "remaining" | "remainingCount">;
+  hongbao: PlayedHongbao;
   seed: string;
   submissions: {
     who: string;

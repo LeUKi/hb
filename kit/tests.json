@@ -4,40 +4,39 @@
     {
       "name": "第一个猜中",
       "input": "flag{n0t_s0_s1mpl3}",
-      "expect": { "ok": true, "amount": 2000, "message": "第 1 个猜中！" }
+      "expect": { "settled": 2000, "message": "第 1 个猜中！" }
     },
     {
       "name": "猜错，还能猜 2 次",
       "input": "flag{guess}",
-      "expect": { "ok": false, "message": "不对，还能猜 2 次" }
+      "expect": {
+        "pending": 0,
+        "settled": null,
+        "message": "不对，还能猜 2 次"
+      }
     },
     {
-      "name": "第三次也猜错",
+      "name": "第三次也猜错，结算了，没领到",
       "input": "flag{guess}",
       "user": { "attempts": 2 },
-      "expect": { "ok": false, "message": "不对，次数用完了" }
+      "expect": { "settled": 0, "message": "不对，次数用完了" }
     },
     {
       "name": "猜满 3 次以后猜中也不发",
       "input": "flag{n0t_s0_s1mpl3}",
       "user": { "attempts": 3 },
-      "expect": { "ok": false, "messageIncludes": "不能再猜" }
+      "expect": { "settled": null, "messageIncludes": "不能再猜" }
     },
     {
       "name": "第 4 个猜中，拼手气",
       "input": "flag{n0t_s0_s1mpl3}",
       "claims": 3,
-      "expect": {
-        "ok": true,
-        "amount": 336,
-        "note": null,
-        "message": "猜中了，拼手气"
-      }
+      "expect": { "settled": 2384, "message": "猜中了，拼手气" }
     },
     {
-      "name": "最后一份发完剩下的",
+      "name": "奖池只剩一点：加满就结束",
       "input": "flag{n0t_s0_s1mpl3}",
-      "hongbao": { "total": 5000, "count": 3 },
+      "hongbao": { "total": 5000 },
       "claims": [
         {
           "user": { "id": 20001, "username": "小王" },
@@ -52,7 +51,7 @@
           "at": "2026-10-24T11:40:00+08:00"
         }
       ],
-      "expect": { "ok": true, "asked": 2000, "amount": 1000, "note": "last" }
+      "expect": { "add": 2000, "settled": 1000, "end": true }
     },
     {
       "name": "几个人依次猜",
@@ -60,38 +59,33 @@
         {
           "who": "小明",
           "input": "flag{guess}",
-          "expect": { "ok": false, "message": "不对，还能猜 2 次" }
+          "expect": { "settled": null, "message": "不对，还能猜 2 次" }
         },
         {
           "who": "小明",
           "input": "flag{n0t_s0_s1mpl3}",
-          "expect": { "ok": true, "amount": 2000, "message": "第 1 个猜中！" }
+          "expect": { "settled": 2000, "message": "第 1 个猜中！" }
         },
         {
           "who": "小红",
           "input": "flag{n0t_s0_s1mpl3}",
           "level": 1,
-          "expect": { "ok": true, "amount": 2000, "message": "第 2 个猜中！" }
+          "expect": { "settled": 2000, "message": "第 2 个猜中！" }
         },
         {
           "who": "小刚",
           "input": "flag{1}",
-          "expect": { "ok": false, "message": "不对，还能猜 2 次" }
+          "expect": { "settled": null, "message": "不对，还能猜 2 次" }
         },
         {
           "who": "小刚",
           "input": "flag{2}",
-          "expect": { "ok": false, "message": "不对，还能猜 1 次" }
+          "expect": { "settled": null, "message": "不对，还能猜 1 次" }
         },
         {
           "who": "小刚",
           "input": "flag{3}",
-          "expect": { "ok": false, "message": "不对，次数用完了" }
-        },
-        {
-          "who": "小刚",
-          "input": "flag{n0t_s0_s1mpl3}",
-          "expect": { "ok": false, "message": "已经猜了 3 次，不能再猜了" }
+          "expect": { "settled": 0, "message": "不对，次数用完了" }
         }
       ]
     }

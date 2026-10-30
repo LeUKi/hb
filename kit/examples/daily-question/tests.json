@@ -19,24 +19,22 @@
       "name": "开放当天答对第一题",
       "input": "4",
       "hongbao": {
-        "openedAt": "2026-10-24T09:00:00+08:00",
-        "count": 4
+        "openedAt": "2026-10-24T09:00:00+08:00"
       },
       "expect": {
-        "ok": true,
-        "message": "答对了！"
+        "message": "答对了！",
+        "settled": 2500
       }
     },
     {
       "name": "答错时告诉他今天的题",
       "input": "5",
       "hongbao": {
-        "openedAt": "2026-10-24T09:00:00+08:00",
-        "count": 4
+        "openedAt": "2026-10-24T09:00:00+08:00"
       },
       "expect": {
-        "ok": false,
-        "message": "不对。今天的题：一年有几个季度？"
+        "message": "不对。今天的题：一年有几个季度？",
+        "settled": null
       }
     },
     {
@@ -45,19 +43,17 @@
       "now": "2026-10-25T08:00:00+08:00",
       "hongbao": {
         "openedAt": "2026-10-24T23:00:00+08:00",
-        "endsAt": "2026-10-31T23:00:00+08:00",
-        "count": 4
+        "endsAt": "2026-10-31T23:00:00+08:00"
       },
       "expect": {
-        "ok": true
+        "settled": 2500
       }
     },
     {
       "name": "今天的名额发完了",
       "input": "4",
       "hongbao": {
-        "openedAt": "2026-10-24T09:00:00+08:00",
-        "count": 4
+        "openedAt": "2026-10-24T09:00:00+08:00"
       },
       "claims": [
         {
@@ -80,8 +76,8 @@
         }
       ],
       "expect": {
-        "ok": false,
-        "message": "今天的 2 份发完了，明天再来"
+        "message": "今天的 2 份发完了，明天再来",
+        "settled": null
       }
     },
     {
@@ -90,12 +86,11 @@
       "now": "2026-10-27T12:00:00+08:00",
       "hongbao": {
         "openedAt": "2026-10-24T09:00:00+08:00",
-        "endsAt": "2026-10-31T09:00:00+08:00",
-        "count": 4
+        "endsAt": "2026-10-31T09:00:00+08:00"
       },
       "expect": {
-        "ok": false,
-        "message": "题都出完了"
+        "message": "题都出完了",
+        "settled": null
       }
     },
     {
@@ -105,12 +100,25 @@
         "attempts": 3
       },
       "hongbao": {
-        "openedAt": "2026-10-24T09:00:00+08:00",
-        "count": 4
+        "openedAt": "2026-10-24T09:00:00+08:00"
       },
       "expect": {
-        "ok": false,
-        "messageIncludes": "不能再答"
+        "messageIncludes": "不能再答",
+        "settled": null
+      }
+    },
+    {
+      "name": "答满了就结算，没领到",
+      "input": "5",
+      "user": {
+        "attempts": 2
+      },
+      "hongbao": {
+        "openedAt": "2026-10-24T09:00:00+08:00"
+      },
+      "expect": {
+        "settled": 0,
+        "message": "不对。今天的题：一年有几个季度？"
       }
     }
   ]

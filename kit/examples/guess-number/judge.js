@@ -1,7 +1,9 @@
 // 猜数字：发红包的人定最大值和答案，从 1 猜到最大，猜中的领一份。
 // - 答案是保密参数：开放时只公布封存值，结束后公开。
-// - 每人最多猜几次也是参数：平台不限次数，代码按 user.attempts 自己数。
-// - 回复“大了”“小了”和还能猜几次；钱平均分。
+// - 每人最多猜几次也是参数：平台不限次数，代码按 user.attempts 自己数；
+//   次数用完就给他结算（没领到）。
+// - 回复“大了”“小了”和还能猜几次；奖池按“几个人能领”平均分，猜中就结算，
+//   分完红包自动结束。
 // 金额都是整数，单位是分。
 
 export const meta = {
@@ -36,14 +38,24 @@ export const params = [
     max: 100,
     default: 5,
   },
+  {
+    key: "winners",
+    label: "几个人能领",
+    hint: "奖池按这么多份平均分",
+    type: "integer",
+    min: 1,
+    max: 1000,
+    default: 5,
+  },
 ];
 
 export const hongbao = {
-  count: { default: 5 },
   prompt: "猜一个整数",
 };
 
-/** @typedef {{ max: number, answer: number, tries: number }} Guess */
+/**
+ * @typedef {{ max: number, answer: number, tries: number, winners: number }} Guess
+ */
 
 /** @param {import("../../judge").Params} params */
 export function check(params) {
@@ -60,18 +72,22 @@ export function check(params) {
  */
 export function judge(submission, tools) {
   const { input, user } = submission;
-  const { max, answer, tries } = /** @type {Guess} */ (submission.params);
+  const { max, answer, tries, winners } = /** @type {Guess} */ (
+    submission.params
+  );
   if (user.attempts >= tries)
-    return { ok: false, message: `已经猜了 ${tries} 次，不能再猜了` };
+    return { message: `已经猜了 ${tries} 次，不能再猜了` };
   const guess = /^\d+$/.test(input) ? Number(input) : 0;
   if (guess < 1 || guess > max)
-    return { ok: false, message: `请输入 1 到 ${max} 之间的整数` };
+    return { message: `请输入 1 到 ${max} 之间的整数` };
   if (guess === answer)
-    return { ok: true, amount: tools.money.even(), message: "猜中了！" };
+    return {
+      add: tools.money.even(winners),
+      settle: true,
+      message: "猜中了！",
+    };
   const left = tries - user.attempts - 1;
   const hint = guess > answer ? "大了" : "小了";
-  return {
-    ok: false,
-    message: left > 0 ? `${hint}，还能猜 ${left} 次` : `${hint}，次数用完了`,
-  };
+  if (left > 0) return { message: `${hint}，还能猜 ${left} 次` };
+  return { settle: true, message: `${hint}，次数用完了` };
 }

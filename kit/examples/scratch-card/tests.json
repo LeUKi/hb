@@ -5,8 +5,7 @@
       "name": "刮到奖：领那一格的钱，写一条动态",
       "input": "1",
       "hongbao": {
-        "total": 1000,
-        "count": 3
+        "total": 1000
       },
       "state": {
         "prizes": [
@@ -39,26 +38,23 @@
           null,
           null,
           null
-        ],
-        "players": []
+        ]
       },
       "expect": {
-        "ok": true,
-        "amount": 200,
         "message": "刮中了 2.00！",
         "announce": "@tester 刮开第 1 格：2.00",
         "viewIncludes": {
           "summary": "刮开了 1 格，还剩 2 个奖"
         },
-        "end": false
+        "end": false,
+        "settled": 200
       }
     },
     {
-      "name": "谢谢参与",
+      "name": "谢谢参与：结算 0，不能再刮",
       "input": "2",
       "hongbao": {
-        "total": 1000,
-        "count": 3
+        "total": 1000
       },
       "state": {
         "prizes": [
@@ -91,21 +87,19 @@
           null,
           null,
           null
-        ],
-        "players": []
+        ]
       },
       "expect": {
-        "ok": false,
         "message": "谢谢参与",
-        "announce": "@tester 刮开第 2 格：谢谢参与"
+        "announce": "@tester 刮开第 2 格：谢谢参与",
+        "settled": 0
       }
     },
     {
       "name": "这格已经刮开了",
       "input": "2",
       "hongbao": {
-        "total": 1000,
-        "count": 3
+        "total": 1000
       },
       "state": {
         "prizes": [
@@ -138,67 +132,19 @@
           null,
           null,
           null
-        ],
-        "players": [10001]
+        ]
       },
       "expect": {
-        "ok": false,
         "message": "第 2 格已经刮开了",
-        "announce": ""
-      }
-    },
-    {
-      "name": "每人只能刮一格",
-      "input": "7",
-      "hongbao": {
-        "total": 1000,
-        "count": 3
-      },
-      "state": {
-        "prizes": [
-          200, 0, 0, 0, 0, 0, 300, 0, 0, 0, 0, 0, 500, 0, 0, 0, 0, 0, 0, 0, 0,
-          0, 0, 0, 0
-        ],
-        "open": [
-          null,
-          0,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null
-        ],
-        "players": [10000]
-      },
-      "expect": {
-        "ok": false,
-        "message": "每人只能刮一格"
+        "announce": "",
+        "settled": null
       }
     },
     {
       "name": "没有这一格",
       "input": "26",
       "hongbao": {
-        "total": 1000,
-        "count": 3
+        "total": 1000
       },
       "state": {
         "prizes": [
@@ -231,19 +177,17 @@
           null,
           null,
           null
-        ],
-        "players": []
+        ]
       },
       "expect": {
-        "ok": false,
-        "message": "请选 1 到 25 中的一格"
+        "message": "请选 1 到 25 中的一格",
+        "settled": null
       }
     },
     {
       "name": "奖都刮完了：结束红包，整张卡公开",
       "hongbao": {
-        "total": 1000,
-        "count": 3
+        "total": 1000
       },
       "state": {
         "prizes": [
@@ -276,39 +220,35 @@
           null,
           null,
           null
-        ],
-        "players": []
+        ]
       },
       "steps": [
         {
           "who": "小明",
           "input": "1",
           "expect": {
-            "ok": true,
-            "amount": 200
+            "settled": 200
           }
         },
         {
           "who": "小红",
           "input": "7",
           "expect": {
-            "ok": true,
-            "amount": 300
+            "settled": 300
           }
         },
         {
           "who": "小刚",
           "input": "2",
           "expect": {
-            "ok": false,
-            "message": "谢谢参与"
+            "message": "谢谢参与",
+            "settled": 0
           }
         },
         {
           "who": "小李",
           "input": "13",
           "expect": {
-            "ok": true,
             "end": true,
             "viewIncludes": {
               "summary": "奖都刮完了",
@@ -351,5 +291,8 @@
         }
       ]
     }
-  ]
+  ],
+  "params": {
+    "prizes": 3
+  }
 }

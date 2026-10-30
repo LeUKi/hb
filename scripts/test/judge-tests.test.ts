@@ -15,7 +15,12 @@ import {
 } from "../../kit/runtime/index.mjs";
 
 // tests.json v1 (docs/programmable-hongbao-design.md §5): one set of rules
-// for the kit's npm test and npm run check and the site's 部署.
+// for the kit's npm test and npm run check and the site's 部署. Most of
+// these are protocols 1–4's rules, with shares (OLD); protocol 5's
+// (docs/multi-prize-design.md) are at the end.
+
+/** Protocol 4: shares, as 红包 opened before protocol 5 have them. */
+const OLD = 4;
 
 const seed = "a".repeat(64);
 const NOW = Date.parse("2026-10-24T12:00:00+08:00");
@@ -41,19 +46,16 @@ function sandbox(judge: Judge) {
   return { run, seen };
 }
 
-function problemOf(file: unknown) {
+function problemOf(file: unknown, protocol = OLD) {
   const read = readTests(
     typeof file === "string" ? file : JSON.stringify(file),
+    { protocol },
   );
   return "problem" in read ? read.problem : null;
 }
 
-function tests(...list: unknown[]): TestCase[] {
-  return readTestsOrThrow(JSON.stringify({ tests: list }));
-}
-
-function readTestsOrThrow(text: string): TestCase[] {
-  const read = readTests(text);
+function readTestsOrThrow(text: string, protocol = OLD): TestCase[] {
+  const read = readTests(text, { protocol });
   if ("problem" in read) throw new Error(read.problem);
   return read.tests;
 }
@@ -61,12 +63,16 @@ function readTestsOrThrow(text: string): TestCase[] {
 async function runOne(
   test: unknown,
   judge: Judge,
-  options?: { twice?: boolean },
+  options?: { twice?: boolean; protocol?: number },
 ) {
-  const [only] = tests(test);
+  const protocol = options?.protocol ?? OLD;
+  const [only] = readTestsOrThrow(JSON.stringify({ tests: [test] }), protocol);
   if (!only) throw new Error("No test");
   const box = sandbox(judge);
-  return { result: await runTest(only, box.run, options), seen: box.seen };
+  return {
+    result: await runTest(only, box.run, { ...options, protocol }),
+    seen: box.seen,
+  };
 }
 
 const pays: Judge = () => ({ ok: true, amount: 30, message: "对了" });
@@ -600,10 +606,10 @@ describe("tests.json: expect", () => {
     );
     if (!whole || !part) throw new Error("No test");
     const shallow = sandbox(() => ({ ok: false, state: { a: { a: 2 } } }));
-    expect((await runTest(whole, shallow.run)).problem).toBe(
+    expect((await runTest(whole, shallow.run, { protocol: OLD })).problem).toBe(
       "state 和 expect.state 不一样",
     );
-    expect((await runTest(part, shallow.run)).problem).toBe(
+    expect((await runTest(part, shallow.run, { protocol: OLD })).problem).toBe(
       "state 里的 a.a 和 expect.stateIncludes 不一样",
     );
     // The code's own state compares at the deepest it may nest (100); past
@@ -617,14 +623,17 @@ describe("tests.json: expect", () => {
       ok: false,
       state: JSON.parse(nested(100)),
     }));
-    const result = await runTest(same, deep.run, { twice: true });
+    const result = await runTest(same, deep.run, {
+      twice: true,
+      protocol: OLD,
+    });
     expect(result.passed).toBe(true);
     expect(result.unstable).toBeUndefined();
     const deeper = sandbox(() => ({
       ok: false,
       state: JSON.parse(nested(5_000)),
     }));
-    expect((await runTest(same, deeper.run)).problem).toBe(
+    expect((await runTest(same, deeper.run, { protocol: OLD })).problem).toBe(
       "返回不对：state 嵌套超过 100 层",
     );
   });
@@ -923,6 +932,7 @@ describe("scenario.mjs", () => {
         { user: { id: 1, username: "a" }, amount: 40, input: "x", at: 0 },
       ],
       state: { a: 1 },
+      protocol: OLD,
     });
     expect(scenario).toMatchObject({ paid: 40, state: { a: 1 } });
     expect(
@@ -930,5 +940,252 @@ describe("scenario.mjs", () => {
         { at: 0, input: "x", amount: 40, user: { username: "a", id: 1 } },
       ]),
     ).toBe(true);
+  });
+});
+
+describe("tests.json: protocol 5 (docs/multi-prize-design.md)", () => {
+  const NEW = 5;
+  const run = (test: unknown, judge: Judge) =>
+    runOne(test, judge, { protocol: NEW });
+  /** 刮一格: +50, a try used, what is left shown only to them. */
+  const scratch: Judge = (submission) => {
+    const own = submission.player.state as { tries?: number } | null;
+    const tries = own?.tries ?? 3;
+    if (submission.input === "收手") return { settle: true, message: "收好" };
+    if (submission.input === "炸") return { add: -20 };
+    return {
+      add: 50,
+      player: {
+        state: { tries: tries - 1 },
+        view: { summary: `还剩 ${tries - 1} 次` },
+      },
+      message: "刮到了",
+    };
+  };
+
+  it("has a pool and no shares", () => {
+    expect(
+      problemOf(
+        {
+          tests: [{ name: "a", input: "x", hongbao: { count: 5 }, expect: {} }],
+        },
+        NEW,
+      ),
+    ).toBe(
+      "第 1 条测试（a）：第五版没有份数和每份至少，只有总奖池：去掉 hongbao.count",
+    );
+    expect(
+      problemOf(
+        {
+          tests: [{ name: "a", input: "x", expect: { ok: true, note: "cap" } }],
+        },
+        NEW,
+      ),
+    ).toBe(
+      "第 1 条测试（a）：第五版没有 note：判定器给的写 add，加上以后的待结算写 pending",
+    );
+    expect(
+      problemOf(
+        {
+          tests: [
+            {
+              name: "a",
+              input: "x",
+              players: { 小明: { pending: -1 } },
+              expect: {},
+            },
+          ],
+        },
+        NEW,
+      ),
+    ).toBe(
+      "第 1 条测试（a）：players 里的“小明”的 pending 要是 0 或正整数（分）",
+    );
+    expect(
+      problemOf({
+        tests: [{ name: "a", input: "x", players: {}, expect: {} }],
+      }),
+    ).toBe("第 1 条测试（a）：没有 players 这一项");
+  });
+
+  it("gives the one judged their pending and own state, and keeps what moved", async () => {
+    const { result, seen } = await run(
+      {
+        name: "接着刮",
+        input: "刮",
+        players: { tester: { pending: 120, state: { tries: 2 } } },
+        expect: {
+          add: 50,
+          pending: 170,
+          settled: null,
+          player: { state: { tries: 1 }, view: { summary: "还剩 1 次" } },
+          message: "刮到了",
+        },
+      },
+      scratch,
+    );
+    expect(result.passed).toBe(true);
+    const [first] = seen;
+    expect(first?.submission.player).toEqual({
+      pending: 120,
+      state: { tries: 2 },
+      view: null,
+    });
+    expect(first?.submission.user.attempts).toBe(1);
+    expect(first?.submission.hongbao).toMatchObject({
+      total: 10000,
+      count: 100,
+      minEach: 1,
+      remaining: 10000,
+      unclaimed: 9880,
+      remainingCount: 100,
+    });
+    expect(first?.submission.share).toEqual({
+      min: 1,
+      max: 9880,
+      last: false,
+    });
+  });
+
+  it("takes off to 0, settles once, and reads { ok, amount } as short for it", async () => {
+    expect(
+      (
+        await run(
+          {
+            name: "扣到 0",
+            input: "炸",
+            players: { tester: { pending: 10 } },
+            expect: { add: -20, pending: 0 },
+          },
+          scratch,
+        )
+      ).result.passed,
+    ).toBe(true);
+    expect(
+      (
+        await run(
+          {
+            name: "收手",
+            input: "收手",
+            players: { tester: { pending: 120 } },
+            expect: {
+              ok: true,
+              amount: 120,
+              settle: true,
+              settled: 120,
+              pending: 0,
+            },
+          },
+          scratch,
+        )
+      ).result.passed,
+    ).toBe(true);
+    const old = await run(
+      { name: "旧写法", input: "x", expect: { ok: true, amount: 30 } },
+      pays,
+    );
+    expect(old.result.passed).toBe(true);
+    expect(old.result.actual).toMatchObject({
+      ok: true,
+      amount: 30,
+      add: 30,
+      settle: true,
+      settled: 30,
+    });
+  });
+
+  it("ends as the pool is taken, settling everyone", async () => {
+    const { result } = await run(
+      {
+        name: "占满",
+        input: "刮",
+        hongbao: { total: 120 },
+        players: { 小红: { pending: 100 } },
+        expect: {
+          pending: 0,
+          settled: 20,
+          end: true,
+          people: { 小红: { settled: 100, pending: 0 } },
+        },
+      },
+      scratch,
+    );
+    expect(result.problem).toBeUndefined();
+    expect(result.passed).toBe(true);
+  });
+
+  it("moves others at the same table, and refuses the settled", async () => {
+    const table: Judge = (submission) => {
+      const first = (submission.state as { first?: number } | null)?.first;
+      if (!first) return { state: { first: submission.user.id } };
+      return {
+        add: 30,
+        settle: true,
+        others: [{ id: first, add: 20, settle: true, message: "开桌了" }],
+      };
+    };
+    const { result } = await run(
+      {
+        name: "两人一桌",
+        steps: [
+          { who: "小明", input: "坐", expect: { pending: 0 } },
+          {
+            who: "小红",
+            input: "坐",
+            expect: {
+              settled: 30,
+              people: { 小明: { settled: 20, message: "开桌了" } },
+            },
+          },
+          { who: "小明", input: "坐", expect: {} },
+        ],
+      },
+      table,
+    );
+    expect(result.steps?.[1]?.passed).toBe(true);
+    expect(result.steps?.[1]?.actual?.others).toEqual([
+      { who: "小明", settled: 20, message: "开桌了" },
+    ]);
+    expect(result.problem).toBe(
+      "第 3 步（小明）：已经结算了，线上不会交给代码",
+    );
+    // Naming someone never judged here is the code's error.
+    const stranger = await run(
+      { name: "外人", input: "x", expect: {} },
+      () => ({ others: [{ id: 42, add: 1 }] }),
+    );
+    expect(stranger.result.problem).toBe(
+      "返回不对：others 第 1 项（42）没有在这个红包里被判定过",
+    );
+  });
+
+  it("lists every difference in pending, settling and each person", async () => {
+    const { result } = await run(
+      {
+        name: "都不对",
+        input: "刮",
+        players: { 小红: { pending: 5 } },
+        expect: {
+          ok: true,
+          add: 40,
+          settle: true,
+          pending: 10,
+          playerIncludes: { state: { tries: 9 } },
+          people: { 小红: { pending: 6 }, 小刚: {} },
+        },
+      },
+      scratch,
+    );
+    expect(result.problem).toBe(
+      [
+        "应该结算并领到钱，实际没有",
+        "add 应该是 40，实际是 50",
+        "应该说结算（settle: true），实际没说",
+        "待结算应该是 10，实际是 50",
+        "player.state 里的 tries 和 expect.playerIncludes.state 不一样",
+        "“小红”的待结算应该是 6，实际是 5",
+        "“小刚”没有在这个红包里玩过",
+      ].join("；"),
+    );
   });
 });

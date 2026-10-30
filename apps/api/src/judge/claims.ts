@@ -20,6 +20,7 @@ import {
   shareRange,
   submissionSeed,
   userSeed,
+  type VerdictReading,
 } from "../../../../kit/runtime/index.mjs";
 import {
   admitClaim,
@@ -407,7 +408,7 @@ export async function claimByCode(
   } finally {
     online?.end();
   }
-  let reading: ReturnType<typeof readVerdict>;
+  let reading: VerdictReading;
   if ("failure" in outcome) {
     // Not the code's fault: nothing counts, nothing is noted.
     if (outcome.failure === "unavailable")
@@ -436,7 +437,11 @@ export async function claimByCode(
     throw failed();
   }
   // An earlier protocol's code is read as it was then: no view or end.
-  reading = readVerdict(outcome.verdict, share, row.protocol);
+  const read = readVerdict(outcome.verdict, share, row.protocol);
+  // Protocol 5 (docs/multi-prize-design.md) is served with its per-person
+  // table: no 红包 opens on it before then.
+  if ("add" in read) throw new Error("代码判定 protocol 5 is not served yet");
+  reading = read;
   if ("error" in reading) {
     if (
       await recordFailure(

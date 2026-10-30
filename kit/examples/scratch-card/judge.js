@@ -1,8 +1,9 @@
-// 刮刮乐：一张 5×5 的卡，份数个格子有奖，其余是“谢谢参与”。每人刮一格。
-// - 哪格有奖、各是多少，开放时由 setup() 随机分好，放在 state 里只有代码知道；
-//   Math.random() 来自封存的种子，结束后谁都能核对。
-// - 刮开了哪些格子、刮出了什么公开（view），每一格写一条动态（announce）；
-//   奖都刮完了就结束红包（end），这时整张卡公开。
+// 刮刮乐：一张 5×5 的卡，几个格子有奖（参数），其余是“谢谢参与”。每人刮一格。
+// - 哪格有奖、各是多少，开放时由 setup() 随机分好（加起来正好是总奖池），放在
+//   state 里只有代码知道；Math.random() 来自封存的种子，结束后谁都能核对。
+// - 刮开了哪些格子、刮出了什么公开（view），每一格写一条动态（announce）。
+// - 刮一格就结算：刮到奖的领那一格的钱，谢谢参与的结算 0；每人只结算一次，
+//   所以每人只能刮一格。奖都刮完了奖池就空了，红包自动结束，这时整张卡公开。
 // - 配套的网页在 page/index.html。
 // 金额都是整数，单位是分。
 
@@ -16,15 +17,26 @@ export const meta = {
 /** 卡上一共几格。 */
 const CELLS = 25;
 
+export const params = [
+  {
+    key: "prizes",
+    label: "几格有奖",
+    hint: "奖池随机分成这么多个奖",
+    type: "integer",
+    min: 1,
+    max: CELLS,
+    default: 5,
+  },
+];
+
 export const hongbao = {
-  count: { min: 1, max: CELLS, default: 5 },
   prompt: "选一格刮开（1–25）",
   title: "刮刮乐",
   note: "一张 5×5 的卡，有几格藏着奖，每人刮一格，刮到奖的领那一格的钱。\n\n[打开网页参与游戏](#附带网页)",
 };
 
 /**
- * @typedef {{ prizes: number[], open: (number | null)[], players: number[] }} Card
+ * @typedef {{ prizes: number[], open: (number | null)[] }} Card
  * prizes：每格的奖（分），0 是谢谢参与；open：刮开的格子是它的奖，没刮开是 null。
  */
 
@@ -45,18 +57,18 @@ function viewOf(/** @type {Card} */ card) {
   };
 }
 
-/** 开放时：把奖池分成份数个奖（每个至少“每份至少”），放进随机的格子。 */
+/** 开放时：把奖池分成几个奖（每个至少 0.01），放进随机的格子。 */
 export function setup(
-  /** @type {import("../../judge").Params} */ _params,
-  /** @type {{ total: number, count: number, minEach: number }} */ hongbao,
+  /** @type {import("../../judge").Params} */ params,
+  /** @type {{ total: number }} */ hongbao,
 ) {
-  const { total, count, minEach } = hongbao;
-  const spare = total - minEach * count;
+  const count = Number(params.prizes);
+  const spare = hongbao.total - count;
   const cuts = Array.from({ length: count - 1 }, () =>
     Math.floor(Math.random() * (spare + 1)),
   ).sort((a, b) => a - b);
   const amounts = [...cuts, spare].map(
-    (cut, index) => minEach + cut - (index === 0 ? 0 : cuts[index - 1]),
+    (cut, index) => 1 + cut - (index === 0 ? 0 : cuts[index - 1]),
   );
   const order = Array.from({ length: CELLS }, (_, index) => index);
   for (let index = order.length - 1; index > 0; index -= 1) {
@@ -67,8 +79,18 @@ export function setup(
   for (const [index, amount] of amounts.entries())
     prizes[order[index]] = amount;
   /** @type {Card} */
-  const card = { prizes, open: Array(CELLS).fill(null), players: [] };
+  const card = { prizes, open: Array(CELLS).fill(null) };
   return { state: card, view: viewOf(card) };
+}
+
+/** 奖池不够每个奖 0.01，就分不出这么多个奖。 */
+export function check(
+  /** @type {import("../../judge").Params} */ params,
+  /** @type {{ total: number }} */ hongbao,
+) {
+  return Number(params.prizes) > hongbao.total
+    ? [{ key: "prizes", message: "奖池不够每个奖 0.01" }]
+    : [];
 }
 
 /**
@@ -79,37 +101,23 @@ export function setup(
 export function judge(submission, tools) {
   const { input, user } = submission;
   const card = /** @type {Card} */ (submission.state);
-  if (card.players.includes(user.id))
-    return { ok: false, message: "每人只能刮一格" };
   const cell = /^\d+$/.test(input) ? Number(input) : 0;
   if (cell < 1 || cell > CELLS)
-    return { ok: false, message: `请选 1 到 ${CELLS} 中的一格` };
+    return { message: `请选 1 到 ${CELLS} 中的一格` };
   if (card.open[cell - 1] !== null)
-    return { ok: false, message: `第 ${cell} 格已经刮开了` };
+    return { message: `第 ${cell} 格已经刮开了` };
   const prize = card.prizes[cell - 1];
   /** @type {Card} */
   const state = {
     ...card,
     open: card.open.map((open, index) => (index === cell - 1 ? prize : open)),
-    players: [...card.players, user.id],
   };
-  const view = viewOf(state);
-  const done = view.data.left === 0;
-  if (prize === 0)
-    return {
-      ok: false,
-      message: "谢谢参与",
-      state,
-      view,
-      announce: `@${user.username} 刮开第 ${cell} 格：谢谢参与`,
-    };
   return {
-    ok: true,
-    amount: prize,
-    message: `刮中了 ${tools.money.format(prize)}！`,
+    add: prize,
+    settle: true,
+    message: prize > 0 ? `刮中了 ${tools.money.format(prize)}！` : "谢谢参与",
     state,
-    view,
-    announce: `@${user.username} 刮开第 ${cell} 格：${tools.money.format(prize)}`,
-    ...(done ? { end: true } : {}),
+    view: viewOf(state),
+    announce: `@${user.username} 刮开第 ${cell} 格：${prize > 0 ? tools.money.format(prize) : "谢谢参与"}`,
   };
 }

@@ -1,16 +1,49 @@
 {
   "$schema": "../../simulate.schema.json",
-  "hongbao": { "title": "数字炸弹", "total": 3000, "count": 3 },
-  "params": { "max": 100 },
+  "hongbao": {
+    "title": "数字炸弹",
+    "total": 3000
+  },
+  "params": {
+    "max": 100,
+    "bombs": 3
+  },
   "submissions": [
-    { "who": "小明", "input": "50" },
-    { "who": "小红", "input": "25" },
-    { "who": "小刚", "input": "12" },
-    { "who": "小明", "input": "6" },
-    { "who": "小红", "input": "9" },
-    { "who": "小刚", "input": "10" },
-    { "who": "小明", "input": "11" },
-    { "who": "小红", "input": "50" },
-    { "who": "小刚", "input": "70" }
+    {
+      "who": "小明",
+      "input": "50"
+    },
+    {
+      "who": "小红",
+      "input": "25"
+    },
+    {
+      "who": "小刚",
+      "input": "12"
+    },
+    {
+      "who": "小明",
+      "input": "6"
+    },
+    {
+      "who": "小红",
+      "input": "9"
+    },
+    {
+      "who": "小刚",
+      "input": "10"
+    },
+    {
+      "who": "小明",
+      "input": "11"
+    },
+    {
+      "who": "小红",
+      "input": "50"
+    },
+    {
+      "who": "小刚",
+      "input": "70"
+    }
   ]
 }

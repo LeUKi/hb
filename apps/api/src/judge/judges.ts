@@ -32,7 +32,7 @@ import { ActivityError } from "../activities/errors";
 import type { ApiBindings } from "../env";
 import { decryptString, encryptString } from "../security/crypto";
 import { checkJudge, RUNS_PER_DAY, runsToday } from "./check";
-import { checkParamsInJudge, runJudge } from "./sandbox";
+import { checkParamsInJudge, JUDGE_PROTOCOL, runJudge } from "./sandbox";
 import { publicVersionOf, usableByOthers } from "./square";
 import { judgeData, textDigest } from "./storage";
 import { usageStatement } from "./usage";
@@ -618,6 +618,7 @@ export async function tryMyJudge(
     hongbaoId: "try",
     secret,
     params: run.read.values,
+    protocol: JUDGE_PROTOCOL,
   });
   const user = { id: 10000, username: "tester", level: 2 as const };
   const submission = nextSubmission(scenario, {
@@ -643,7 +644,14 @@ export async function tryMyJudge(
     return outcome.failure === "timeout"
       ? { failure: "timeout", detail: outcome.detail }
       : { failure: "error", detail: outcome.detail };
-  const reading = readVerdict(outcome.verdict, submission.share);
+  const reading = readVerdict(
+    outcome.verdict,
+    submission.share,
+    JUDGE_PROTOCOL,
+  );
+  // Protocol 5 (docs/multi-prize-design.md) comes with its per-person table.
+  if ("add" in reading)
+    throw new Error("代码判定 protocol 5 is not served yet");
   if ("error" in reading)
     return { failure: "error", detail: reading.error.detail };
   return reading.ok

@@ -11,6 +11,8 @@
 // { setup: { params, hongbao, now, seed } } runs setup(params, hongbao)
 // once, at opening, Math.random() drawn from `seed` (seeds.mjs).
 // Fourth protocol: an answer's view.data is one level below its state.
+// Fifth (docs/multi-prize-design.md §3): submission.player is this
+// person's own; an answer's others[i].view.data is three below its state.
 import { begin, finish } from "./prelude.mjs";
 import { createRandom } from "./random.mjs";
 import { createTools } from "./tools.mjs";
@@ -62,6 +64,21 @@ function exported(code) {
   return answer;
 }
 
+/** The JSON parts of an answer, where they are, deepest first. */
+function partsOf(answer) {
+  const others = Array.isArray(answer.others) ? answer.others : [];
+  return [
+    ...others.flatMap((other, index) => [
+      [`others 第 ${index + 1} 项的 view.data`, other?.view?.data],
+      [`others 第 ${index + 1} 项的 state`, other?.state],
+    ]),
+    ["player.view.data", answer.player?.view?.data],
+    ["player.state", answer.player?.state],
+    ["view.data", answer.view?.data],
+    ["state", answer.state],
+  ];
+}
+
 /**
  * An answer nested too deep for JSON.stringify here on one machine and
  * not another: the same refusal for all (verdict.mjs, state's depth), or
@@ -71,14 +88,15 @@ function tooDeep(answer, name) {
   if (
     answer === null ||
     typeof answer !== "object" ||
-    !nestsDeeper(answer, LIMITS.stateDepth + 2)
+    !nestsDeeper(answer, LIMITS.stateDepth + 4)
   )
     return null;
-  const detail = nestsDeeper(answer.state, LIMITS.stateDepth)
-    ? `state 嵌套超过 ${LIMITS.stateDepth} 层`
-    : nestsDeeper(answer.view?.data, LIMITS.stateDepth)
-      ? `view.data 嵌套超过 ${LIMITS.stateDepth} 层`
-      : "返回的值转不成 JSON";
+  const [where] =
+    partsOf(answer).find(([, part]) => nestsDeeper(part, LIMITS.stateDepth)) ??
+    [];
+  const detail = where
+    ? `${where} 嵌套超过 ${LIMITS.stateDepth} 层`
+    : "返回的值转不成 JSON";
   return { kind: "invalid", detail: name ? `${name} 的 ${detail}` : detail };
 }
 

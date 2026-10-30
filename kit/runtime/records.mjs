@@ -1,8 +1,16 @@
 // The sender's full records (JudgeRecords in judge.d.ts) back into what
 // each judgment was given: the claims so far, the pool left and the state
 // all follow from the judgments before it (from protocol 4, the first
-// state from setup()'s), stepped on as the site did (scenario.mjs).
-import { advance, nextSubmission, startScenario } from "./scenario.mjs";
+// state from setup()'s), stepped on as the site did (scenario.mjs). From
+// protocol 5 each person's pending and own state follow too, moved by each
+// recorded answer as the site moved them (ledger.mjs).
+import {
+  advance,
+  advanceLedger,
+  nextSubmission,
+  startScenario,
+} from "./scenario.mjs";
+import { LEDGER_PROTOCOL, readVerdict } from "./verdict.mjs";
 
 /**
  * What a judgment's requests got (协议第 9 节), as a test writes its answers
@@ -30,8 +38,9 @@ export function submissionsOf(records) {
   const scenario = startScenario({
     hongbao: {
       total: hongbao.total,
-      count: hongbao.count,
-      minEach: hongbao.minEach,
+      ...(records.protocol < LEDGER_PROTOCOL
+        ? { count: hongbao.count, minEach: hongbao.minEach }
+        : {}),
       openedAt: hongbao.openedAt,
       endsAt: hongbao.endsAt,
     },
@@ -51,6 +60,17 @@ export function submissionsOf(records) {
       user: judgment.user,
       title: judgment.title,
     });
+    if (records.protocol >= LEDGER_PROTOCOL) {
+      // The site kept only answers it took: read as it read them.
+      const reading = readVerdict(
+        judgment.verdict,
+        submission.share,
+        records.protocol,
+      );
+      if (!("error" in reading))
+        advanceLedger(scenario, submission, reading, judgment.at);
+      return submission;
+    }
     // A share judged but never claimed (the 红包 ended first) is no claim.
     const claimed =
       judgment.claimedAt !== undefined && judgment.paid !== undefined;

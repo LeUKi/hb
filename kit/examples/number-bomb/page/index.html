@@ -82,10 +82,12 @@
         $("grid").replaceChildren(...cells);
       }
 
+      let shown = null;
       function showHongbao(hongbao) {
+        shown = hongbao;
         $("title").textContent = hongbao.title;
         const parts = [];
-        if (hongbao.shares) parts.push(`还有 ${hongbao.shares.remaining} 颗炸弹能领`);
+        if (field?.bombs) parts.push(`还有 ${field.bombs - field.round + 1} 颗炸弹能领`);
         if (hongbao.judged !== null) parts.push(`大家猜了 ${hongbao.judged} 次`);
         if (hongbao.status === "ended") parts.push("已结束");
         $("facts").textContent = parts.join(" · ");
@@ -96,7 +98,8 @@
       function showView(view) {
         if (view?.data) field = view.data;
         if (view?.summary) $("summary").textContent = view.summary;
-        drawGrid();
+        if (shown) showHongbao(shown);
+        else drawGrid();
       }
 
       function addLine(line) {

@@ -19,12 +19,16 @@ import {
 import type { JudgeRecords } from "../../kit/judge";
 import {
   allowedBy,
+  judgeNext,
   paramsCommitment,
   readHongbaoRules,
   readNetwork,
   requestProblem,
   seedCommitment,
-  shareRange,
+  sha256Text,
+  startScenario,
+  TEST_DEFAULTS,
+  TEST_HONGBAO_ID,
   TEST_SEED,
 } from "../../kit/runtime/index.mjs";
 import {
@@ -71,27 +75,28 @@ async function run<T extends { exitCode: number }>(
 
 const ANSWER = "flag{n0t_s0_s1mpl3}";
 
-/** One submission straight to a sandbox, as runTest would make it. */
+/** One submission straight to a sandbox, as runTest would make it (protocol 5). */
 function submissionOf(input: string) {
-  const hongbao = {
-    title: "测试红包",
-    total: 10000,
-    count: 10,
-    minEach: 1,
-    remaining: 10000,
-    remainingCount: 10,
-    openedAt: 0,
-    endsAt: Date.UTC(2027, 0, 1),
-  };
   return {
     input,
     now: Date.UTC(2026, 9, 24),
     user: { id: 1, username: "tester", level: 2 as const, attempts: 0 },
-    hongbao,
-    share: shareRange(hongbao),
+    hongbao: {
+      title: "测试红包",
+      total: 10000,
+      unclaimed: 10000,
+      remaining: 10000,
+      count: 100,
+      minEach: 1,
+      remainingCount: 100,
+      openedAt: 0,
+      endsAt: Date.UTC(2027, 0, 1),
+    },
+    share: { min: 1, max: 10000, last: false },
     claims: [],
     state: null,
     params: {},
+    player: { pending: 0, state: null, view: null },
   };
 }
 const SEEDS = { submission: TEST_SEED, user: TEST_SEED };
@@ -104,7 +109,9 @@ describe("the kit's sandbox", () => {
     );
     expect(SANDBOX_MODULES).toEqual(SITE_MODULES);
     expect(site).toContain(`COMPATIBILITY_DATE = "${COMPATIBILITY_DATE}"`);
-    expect(PROTOCOL).toBe(JUDGE_PROTOCOL);
+    // The kit is on protocol 5 (docs/multi-prize-design.md) a step before
+    // the site, which moves with its per-person table (step 2).
+    expect(PROTOCOL).toBe(JUDGE_PROTOCOL + 1);
     expect(TESTS_BYTES).toBe(JUDGE_LIMITS.testsBytes);
     // Authors run the workerd and Miniflare the site is built with.
     const wrangler = (path: string) =>
@@ -176,7 +183,7 @@ describe("npm test", () => {
     const { exitCode, lines } = await run(testCommand, { dir: kitDir });
     expect(lines.at(-1)).toMatch(/^测试 (\d+) \/ \1 通过$/);
     expect(lines).toContainEqual(
-      expect.stringMatching(/^✓ 几个人依次猜（7 步，\d+ 毫秒/),
+      expect.stringMatching(/^✓ 几个人依次猜（6 步，\d+ 毫秒/),
     );
     expect(lines).not.toContainEqual(expect.stringMatching(/慢|提醒/));
     expect(exitCode).toBe(0);
@@ -199,8 +206,8 @@ describe("npm test", () => {
     expect(lines).toEqual([
       expect.stringMatching(/^✓ 对了（\d+ 毫秒）$/),
       "  收到 x",
-      "✗ 给多了：应该发 50，实际发 30",
-      '  实际：{"ok":true,"amount":30,"asked":30,"note":null,"message":"对了","state":null}',
+      "✗ 给多了：应该领到 50，实际领到 30",
+      '  实际：{"ok":true,"amount":30,"add":30,"settle":true,"pending":0,"settled":30,"player":{"state":null,"view":null},"message":"对了","state":null}',
       "  收到 y",
       "测试 1 / 2 通过",
     ]);
@@ -373,53 +380,120 @@ describe("npm run check", () => {
   }, 20_000);
 });
 
-/** A 拼手气 after the first: the seed decides every amount. */
+/**
+ * A 拼手气 for each who gets it right, the pool in 3: the seed decides
+ * every amount, and the third takes what is left.
+ */
 const LUCKY = `export function judge(submission, tools) {
+  if (submission.input !== "${ANSWER}") return { message: "不对" };
+  return { add: tools.money.lucky("double", 3), settle: true, state: { last: submission.user.username } };
+}`;
+/** The same, as written before protocol 5: shares decide. */
+const LUCKY_OLD = `export function judge(submission, tools) {
   if (submission.input !== "${ANSWER}") return { ok: false, message: "不对" };
   return { ok: true, amount: tools.money.lucky(), state: { last: submission.user.username } };
 }`;
 
-function simulation(count: number, people: string[]) {
-  return {
-    hongbao: { total: 1000, count },
-    submissions: [
-      { who: people[0], input: "flag{guess}" },
-      ...people.map((who) => ({ who, input: ANSWER })),
-      { who: people[0], input: ANSWER },
-    ],
+/** One wrong, each right in turn, then the first again. */
+const turns = (people: string[]) => [
+  { who: people[0] ?? "", input: "flag{guess}" },
+  ...people.map((who) => ({ who, input: ANSWER })),
+  { who: people[0] ?? "", input: ANSWER },
+];
+
+function simulation(people: string[]) {
+  return { hongbao: { total: 1000 }, submissions: turns(people) };
+}
+
+const HOUR = 3_600_000;
+const DAY = 86_400_000;
+const MINUTE = 60_000;
+
+/**
+ * A run as npm run simulate made it before protocol 5 (`count` shares), on
+ * that protocol's runtime: what 红包 opened then left in their records.
+ */
+async function simulateOld(
+  code: string,
+  {
+    count,
+    people,
+    seed: text,
+  }: { count: number; people: string[]; seed: string },
+  protocol: number,
+) {
+  const seed = sha256Text(`hb.lafi.sh/judge/v1/simulate\n${text}`);
+  const now = TEST_DEFAULTS.now;
+  const hongbao = {
+    title: "测试红包",
+    total: 1000,
+    count,
+    minEach: 1,
+    openedAt: now - HOUR,
+    endsAt: now + DAY,
   };
+  const scenario = startScenario({
+    hongbao,
+    hongbaoId: TEST_HONGBAO_ID,
+    secret: seed,
+    protocol,
+    ...(protocol >= 3 ? { params: {} } : {}),
+  });
+  const sandbox = await openSandbox(code, { protocol });
+  const ids = new Map<string, number>();
+  const judged = [];
+  try {
+    for (const [index, { who, input }] of turns(people).entries()) {
+      ids.set(who, ids.get(who) ?? 10001 + ids.size);
+      const at = now + index * MINUTE;
+      const user = { id: ids.get(who) ?? 0, username: who, level: 2 as const };
+      judged.push({
+        who,
+        user,
+        input,
+        at,
+        fetch: [],
+        ...(await judgeNext(scenario, { user, input, at }, sandbox.run)),
+      });
+    }
+  } finally {
+    await sandbox.close();
+  }
+  return { hongbao, hongbaoId: TEST_HONGBAO_ID, seed, judged };
 }
 
 describe("npm run simulate", () => {
   it("runs the template", async () => {
     const { exitCode, lines } = await run(simulateCommand, { dir: kitDir });
-    expect(lines.at(-1)).toMatch(/^发出 .+ \/ 总奖池 .+，领了 \d+ \/ \d+ 份/);
+    expect(lines.at(-1)).toMatch(/^发出 .+ \/ 总奖池 .+，\d+ 人领到钱/);
     expect(exitCode).toBe(0);
   }, 20_000);
 
-  it("is the same for a seed, and stops judging when the shares run out", async () => {
+  it("is the same for a seed, and stops judging once the pool is taken", async () => {
     const dir = kit({
       "judge.js": LUCKY,
-      "simulate.json": simulation(3, ["小明", "小红", "小刚", "小李", "小王"]),
+      "simulate.json": simulation(["小明", "小红", "小刚", "小李", "小王"]),
     });
     const first = await run(simulateCommand, { dir });
     const again = await run(simulateCommand, { dir });
     const other = await run(simulateCommand, { dir, args: ["--seed", "2"] });
     expect(again.lines).toEqual(first.lines);
     expect(other.lines.slice(2)).not.toEqual(first.lines.slice(2));
+    expect(first.lines.slice(0, 1)).toEqual(["测试红包：总奖池 10.00"]);
     expect(first.lines.slice(2)).toEqual([
-      '第 1 次  小明  "flag{guess}"  没领到  代码的回复：不对',
+      '第 1 次  小明  "flag{guess}"  没加钱  代码的回复：不对',
       expect.stringMatching(
-        /^第 2 次 {2}小明 {2}"flag\{n0t_s0_s1mpl3\}" {2}领到 \d+\.\d\d$/,
+        /^第 2 次 {2}小明 {2}"flag\{n0t_s0_s1mpl3\}" {2}\+\d+\.\d\d · 结算 \d+\.\d\d$/,
       ),
-      expect.stringMatching(/^第 3 次 {2}小红 .* 领到 \d+\.\d\d$/),
-      expect.stringMatching(/^第 4 次 {2}小刚 .* 领到 \d+\.\d\d$/),
-      '第 5 次  小李  "flag{n0t_s0_s1mpl3}"  已领完',
-      '第 6 次  小王  "flag{n0t_s0_s1mpl3}"  已领完',
-      '第 7 次  小明  "flag{n0t_s0_s1mpl3}"  已领过',
-      "发出 10.00 / 总奖池 10.00，领了 3 / 3 份",
+      expect.stringMatching(/^第 3 次 {2}小红 .* · 结算 \d+\.\d\d$/),
+      expect.stringMatching(/^第 4 次 {2}小刚 .* · 结算 \d+\.\d\d$/),
+      "奖池占满了，红包结束",
+      '第 5 次  小李  "flag{n0t_s0_s1mpl3}"  已结束',
+      '第 6 次  小王  "flag{n0t_s0_s1mpl3}"  已结束',
+      '第 7 次  小明  "flag{n0t_s0_s1mpl3}"  已结束',
+      "发出 10.00 / 总奖池 10.00，3 人领到钱",
     ]);
-    // The code is never asked once the shares are gone.
+    // The code is never asked once it has ended.
     expect(
       first.simulation?.judged.map((entry) =>
         "refused" in entry ? entry.refused : "judged",
@@ -429,34 +503,67 @@ describe("npm run simulate", () => {
       "judged",
       "judged",
       "judged",
-      "sold-out",
-      "sold-out",
-      "claimed",
+      "ended",
+      "ended",
+      "ended",
     ]);
     expect(first.exitCode).toBe(0);
 
-    const claimed = await run(simulateCommand, {
+    const settled = await run(simulateCommand, {
       dir,
       args: ["more.json"],
-      cwd: kit({
-        "more.json": simulation(10, ["小明", "小红"]),
-      }),
+      cwd: kit({ "more.json": simulation(["小明", "小红"]) }),
     });
-    expect(claimed.lines.at(-2)).toBe(
-      '第 4 次  小明  "flag{n0t_s0_s1mpl3}"  已领过',
+    expect(settled.lines.at(-2)).toBe(
+      '第 4 次  小明  "flag{n0t_s0_s1mpl3}"  已结算',
     );
-    expect(claimed.lines.at(-1)).toMatch(
-      /，领了 2 \/ 10 份，剩下的 \d+\.\d\d 退回$/,
+    expect(settled.lines.at(-1)).toMatch(
+      /，2 人领到钱，剩下的 \d+\.\d\d 退回$/,
     );
   }, 30_000);
+
+  it("settles at the deadline whoever the code has not", async () => {
+    const dir = kit({
+      "judge.js": `export function judge(submission) {
+  return { add: 30, message: "攒着" };
+}`,
+      "simulate.json": {
+        hongbao: { total: 1000 },
+        submissions: [
+          { who: "小明", input: "a" },
+          { who: "小红", input: "b" },
+          { who: "小明", input: "c" },
+        ],
+      },
+    });
+    const { lines } = await run(simulateCommand, { dir });
+    expect(lines.slice(2)).toEqual([
+      '第 1 次  小明  "a"  +0.30 · 待结算 0.30  代码的回复：攒着',
+      '第 2 次  小红  "b"  +0.30 · 待结算 0.30  代码的回复：攒着',
+      '第 3 次  小明  "c"  +0.30 · 待结算 0.60  代码的回复：攒着',
+      "到截止时间，还没结算的人一起结算：小明 0.60、小红 0.30",
+      "发出 0.90 / 总奖池 10.00，2 人领到钱，剩下的 9.10 退回",
+    ]);
+  }, 20_000);
 });
 
-/** The full records the site would give for a simulated run (records.ts). */
-function recordsOf(
-  simulated: NonNullable<
+type Simulated = Pick<
+  NonNullable<Awaited<ReturnType<typeof simulateCommand>>["simulation"]>,
+  "hongbao" | "hongbaoId" | "seed" | "judged"
+> & {
+  setup?: NonNullable<
     Awaited<ReturnType<typeof simulateCommand>>["simulation"]
-  >,
+  >["setup"];
+};
+
+/**
+ * The full records the site would give for a simulated run (records.ts),
+ * opened on `protocol`: from 5, each answer as the code wrote it.
+ */
+function recordsOf(
+  simulated: Simulated,
   code: string,
+  protocol = PROTOCOL,
 ): JudgeRecords {
   const { hongbao, hongbaoId, seed } = simulated;
   const judgments: JudgeRecords["judgments"] = [];
@@ -464,6 +571,18 @@ function recordsOf(
     if ("refused" in entry || !entry.reading || "error" in entry.reading)
       continue;
     const { reading, submission } = entry;
+    if ("add" in reading) {
+      if (!("verdict" in entry.answer)) continue;
+      judgments.push({
+        at: submission.now,
+        input: submission.input,
+        user: submission.user,
+        title: submission.hongbao.title,
+        verdict: entry.answer
+          .verdict as JudgeRecords["judgments"][number]["verdict"],
+      });
+      continue;
+    }
     judgments.push({
       at: submission.now,
       input: submission.input,
@@ -492,12 +611,13 @@ function recordsOf(
     });
   }
   return {
-    protocol: PROTOCOL,
+    protocol,
     hongbao: {
       id: hongbaoId,
       total: hongbao.total,
-      count: hongbao.count,
-      minEach: hongbao.minEach,
+      ...(protocol < 5
+        ? { count: hongbao.count, minEach: hongbao.minEach }
+        : {}),
       openedAt: hongbao.openedAt,
       endsAt: hongbao.endsAt,
       fingerprint: createHash("sha256").update(code).digest("hex"),
@@ -526,7 +646,7 @@ describe("npm run replay", () => {
   it("agrees with a simulated run, and says where it does not", async () => {
     const dir = kit({
       "judge.js": LUCKY,
-      "simulate.json": simulation(3, ["小明", "小红", "小刚", "小李"]),
+      "simulate.json": simulation(["小明", "小红", "小刚", "小李"]),
     });
     const { simulation: simulated } = await run(simulateCommand, {
       dir,
@@ -583,17 +703,18 @@ describe("npm run replay", () => {
       "✗ 记录里还没有种子：红包结束后才公开，到时候再下载一次完整记录",
     ]);
     expect(unsealed.exitCode).toBe(1);
-    await expect(replayWith({ ...records, protocol: 5 })).rejects.toThrow(
-      "记录是第 5 版协议，这个开发包只认第 1 到第 4 版：换一个新的开发包再重放",
+    await expect(replayWith({ ...records, protocol: 6 })).rejects.toThrow(
+      "记录是第 6 版协议，这个开发包只认第 1 到第 5 版：换一个新的开发包再重放",
     );
 
-    const second = records.judgments[1];
-    if (!second) throw new Error("No second judgment");
-    second.verdict = { ...second.verdict, amount: 1, state: { last: "别人" } };
+    // The last, so the pool before the others is as it was.
+    const last = records.judgments[3];
+    if (!last) throw new Error("No fourth judgment");
+    last.verdict = { ...last.verdict, add: 1, state: { last: "别人" } };
     const tampered = await replayWith(records);
     expect(tampered.lines).toContainEqual(
       expect.stringMatching(
-        /^第 2 次判定 不一致：代码给的金额 记录是 1，重放是 \d+；state 记录是 \{"last":"别人"\}，重放是 \{"last":"小明"\}$/,
+        /^第 4 次判定 不一致：add 记录是 1，重放是 \d+；state 记录是 \{"last":"别人"\}，重放是 \{"last":"小刚"\}$/,
       ),
     );
     expect(tampered.lines.at(-1)).toBe("4 次判定里 1 次不一致");
@@ -851,16 +972,13 @@ export function judge() { return { ok: false }; }`,
   }, 30_000);
 
   it("replays a 红包 opened on the first protocol with its own runtime", async () => {
-    const dir = kit({
-      "judge.js": LUCKY,
-      "simulate.json": simulation(3, ["小明", "小红"]),
-    });
-    const { simulation: simulated } = await run(simulateCommand, {
-      dir,
-      args: ["--seed", "v1"],
-    });
-    if (!simulated) throw new Error("No simulation");
-    const records = { ...recordsOf(simulated, LUCKY), protocol: 1 };
+    const dir = kit({ "judge.js": LUCKY_OLD });
+    const simulated = await simulateOld(
+      LUCKY_OLD,
+      { count: 3, people: ["小明", "小红"], seed: "v1" },
+      1,
+    );
+    const records = recordsOf(simulated, LUCKY_OLD, 1);
     const downloads = kit({ "judge-records-x.json": records });
     const replayed = await run(replayCommand, {
       dir,
@@ -1008,7 +1126,7 @@ export function judge() { return { ok: false }; }`;
       "judge.js": GUESS,
       "simulate.json": {
         params: { answer: 42 },
-        hongbao: { total: 1000, count: 2 },
+        hongbao: { total: 1000 },
         submissions: [
           { who: "小明", input: "7" },
           { who: "小红", input: "42" },
@@ -1018,11 +1136,11 @@ export function judge() { return { ok: false }; }`;
     const simulated = await run(simulateCommand, { dir });
     expect(simulated.lines).toContainEqual(
       expect.stringMatching(
-        /^第 1 次 {2}小明 {2}"7" {2}没领到 {2}代码的回复：不对，范围 1–100/,
+        /^第 1 次 {2}小明 {2}"7" {2}没加钱 {2}代码的回复：不对，范围 1–100/,
       ),
     );
     expect(simulated.lines).toContainEqual(
-      expect.stringMatching(/^第 2 次 {2}小红 {2}"42" {2}领到 /),
+      expect.stringMatching(/^第 2 次 {2}小红 {2}"42" {2}\+0\.01 · 结算 0\.01/),
     );
     const missing = kit({
       "judge.js": GUESS,
@@ -1038,7 +1156,7 @@ export function judge() { return { ok: false }; }`;
       "judge.js": GUESS,
       "simulate.json": {
         params: { answer: 42, max: 50 },
-        hongbao: { total: 1000, count: 2 },
+        hongbao: { total: 1000 },
         submissions: [
           { who: "小明", input: "7" },
           { who: "小红", input: "42" },
@@ -1106,17 +1224,14 @@ export function judge() { return { ok: false }; }`;
     });
     expect(differing.exitCode).toBe(1);
 
-    const lucky = kit({
-      "judge.js": LUCKY,
-      "simulate.json": simulation(3, ["小明", "小红"]),
-    });
-    const { simulation: second } = await run(simulateCommand, {
-      dir: lucky,
-      args: ["--seed", "v2"],
-    });
-    if (!second) throw new Error("No simulation");
+    const lucky = kit({ "judge.js": LUCKY_OLD });
+    const second = await simulateOld(
+      LUCKY_OLD,
+      { count: 3, people: ["小明", "小红"], seed: "v2" },
+      2,
+    );
     const v2 = kit({
-      "judge-records-x.json": { ...recordsOf(second, LUCKY), protocol: 2 },
+      "judge-records-x.json": recordsOf(second, LUCKY_OLD, 2),
     });
     const old = await run(replayCommand, {
       dir: lucky,
@@ -1210,7 +1325,7 @@ describe("协议第四版：公开数据、动态和结束", () => {
       "✗ 说错了：view 和 expect.view 不一样；动态应该是“猜了 30”，实际是“@tester 猜了 30，安全”；应该结束红包，实际没结束",
     );
     expect(lines).toContain(
-      "✗ 结束以后：第 2 步（小红）：红包已经被判定器结束了，线上不会交给代码",
+      "✗ 结束以后：第 2 步（小红）：红包已经结束了，线上不会交给代码",
     );
     expect(lines.at(-1)).toBe("测试 2 / 4 通过");
     expect(exitCode).toBe(1);
@@ -1244,7 +1359,7 @@ describe("协议第四版：公开数据、动态和结束", () => {
     const dir = kit({
       "judge.js": BOMB,
       "simulate.json": {
-        hongbao: { total: 1000, count: 5 },
+        hongbao: { total: 1000 },
         submissions: Array.from({ length: 100 }, (_, index) => ({
           who: `第${index + 1}人`,
           input: String(index + 1),
@@ -1261,13 +1376,15 @@ describe("协议第四版：公开数据、动态和结束", () => {
     const { bomb } = state.value as { bomb: number };
     if (bomb > 1) {
       expect(lines.slice(4, 7)).toEqual([
-        '第 1 次  第1人  "1"  没领到  代码的回复：安全',
+        '第 1 次  第1人  "1"  没加钱  代码的回复：安全',
         '  公开：安全区间 2–100  data {"low":2,"high":100}',
         "  动态：@第1人 猜了 1，安全",
       ]);
     }
     const hit = lines.findIndex((line) =>
-      line.startsWith(`第 ${bomb} 次  第${bomb}人  "${bomb}"  领到 `),
+      line.startsWith(
+        `第 ${bomb} 次  第${bomb}人  "${bomb}"  +10.00 · 结算 10.00`,
+      ),
     );
     expect(lines.slice(hit + 1, hit + 3)).toEqual([
       `  动态：@第${bomb}人 踩中了炸弹`,
@@ -1283,7 +1400,7 @@ describe("协议第四版：公开数据、动态和结束", () => {
     const dir = kit({
       "judge.js": BOMB,
       "simulate.json": {
-        hongbao: { total: 1000, count: 5 },
+        hongbao: { total: 1000 },
         submissions: Array.from({ length: 100 }, (_, index) => ({
           who: `第${index + 1}人`,
           input: String(index + 1),
@@ -1455,8 +1572,10 @@ describe("附带网页", () => {
         title: "数字炸弹",
         code: true,
         status: "active",
-        shares: { total: 3, claimed: 0, remaining: 3 },
+        // No shares from protocol 5: what is left unclaimed instead.
+        shares: null,
         pool: "30.00",
+        unclaimed: "30.00",
         judged: 0,
       });
       expect(state.view.summary).toBe("第 1 颗炸弹 · 安全区间 1–100");
@@ -1496,7 +1615,7 @@ describe("附带网页", () => {
         next: null,
       });
       expect(lines).toContain(
-        '小明  "500"  没领到  代码的回复：请猜 1 到 100 之间的整数',
+        '小明  "500"  没加钱  代码的回复：请猜 1 到 100 之间的整数',
       );
     } finally {
       await page.close();

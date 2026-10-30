@@ -257,7 +257,7 @@ async function runChecks(
       `今天的 ${deployLimit} 次部署用完了，明天再来。`,
     );
   const problems = checkSource(input.code);
-  const read = readTests(input.tests);
+  const read = readTests(input.tests, { protocol: JUDGE_PROTOCOL });
   const testsProblem = "problem" in read ? read.problem : undefined;
   // 每月上限 (§7) holds whatever would make another 份 today.
   if (
@@ -433,6 +433,7 @@ async function runChecks(
       // ones and to check() (协议第三版); none to check while those are wrong.
       if (declarationProblems.length > 0) break;
       const result = await runTest(test, run, {
+        protocol: JUDGE_PROTOCOL,
         twice: true,
         params: declarations.params,
         ...(declarations.check ? { check } : {}),

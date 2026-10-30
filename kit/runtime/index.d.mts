@@ -79,6 +79,35 @@ export function luckyAmount(
   share: Share,
   fill: Fill,
 ): number;
+/** Protocol 5's n when the code gives none: the pool in whole LDC, at least 1. */
+export function defaultCount(total: number): number;
+/** even(n), protocol 5: `settled` is how many were paid (claims). */
+export function evenOf(
+  hongbao: Pick<Submission["hongbao"], "total" | "count" | "unclaimed">,
+  settled: number,
+  n?: number,
+): number;
+export function luckyOf(
+  kind: "double" | "bounded",
+  hongbao: Pick<Submission["hongbao"], "total" | "count" | "unclaimed">,
+  settled: number,
+  n: number | undefined,
+  fill: Fill,
+): number;
+
+// ledger.mjs
+export function othersProblem(
+  others: readonly { id: number }[],
+  self: number,
+  standing: (id: number) => "unknown" | "settled" | "out" | null,
+): string | null;
+export function moveMoney(
+  unclaimed: number,
+  moves: readonly { id: number; pending: number; add: number }[],
+): {
+  moves: { id: number; before: number; after: number }[];
+  unclaimed: number;
+};
 
 // codes.mjs
 export function crockford(bytes: Uint8Array): string;
@@ -128,12 +157,17 @@ export const LIMITS: Readonly<{
   summaryCharacters: number;
   viewBytes: number;
   announceCharacters: number;
+  playerStateBytes: number;
+  playerViewBytes: number;
+  others: number;
   inputCharacters: number;
   promptCharacters: number;
   tests: number;
 }>;
 /** The protocol whose answers have view, announce and end. */
 export const VIEW_PROTOCOL: 4;
+/** The protocol where each person has pending, settled once (multi-prize). */
+export const LEDGER_PROTOCOL: 5;
 export function nestsDeeper(value: unknown, limit: number): boolean;
 export type StateChange = { keep: true } | { keep: false; value: Json };
 /** A view as read: null clears it. */
@@ -157,11 +191,39 @@ export type VerdictReading =
       state: StateChange;
       unknown: string[];
     } & Public);
+/** A person's own state and view as read (protocol 5). */
+export type OwnChange = { state: StateChange; view: ViewChange };
+/** Protocol 5's answer, read (docs/multi-prize-design.md §3.2). */
+export type LedgerReading = {
+  add: number;
+  settle: boolean;
+  /** It was written { ok, amount }. */
+  shorthand: boolean;
+  player: OwnChange;
+  others: ({
+    id: number;
+    add: number;
+    settle: boolean;
+    message?: string;
+  } & OwnChange)[];
+  message?: string;
+  state: StateChange;
+  view: ViewChange;
+  announce?: string;
+  end: boolean;
+  unknown: string[];
+};
+export function readVerdict(
+  raw: unknown,
+  share: Share,
+  protocol: 1 | 2 | 3 | 4,
+): VerdictReading;
 export function readVerdict(
   raw: unknown,
   share: Share,
   protocol?: number,
-): VerdictReading;
+): VerdictReading | LedgerReading;
+export function ownProblem(raw: unknown, where: string): string | null;
 export function readSetup(
   raw: unknown,
 ):
@@ -177,6 +239,10 @@ export function scanImports(
   | { kind: "dynamic"; at: number }
 )[];
 export function checkSource(
+  source: string,
+): { line: number; message: string }[];
+/** Protocol 5: each even() or lucky() called without n. */
+export function uncountedShares(
   source: string,
 ): { line: number; message: string }[];
 
@@ -318,6 +384,7 @@ export const TEST_DEFAULTS: Readonly<{
 }>;
 export function readTests(
   text: string,
+  options?: { protocol?: number },
 ): { tests: TestCase[] } | { problem: string };
 export function sameJson(left: unknown, right: unknown): boolean;
 export type SandboxFailureKind =
@@ -360,6 +427,20 @@ export type TestActual = {
   amount?: number;
   asked?: number;
   note?: JudgeNote | null;
+  /** Protocol 5: the add and settle written, the one judged after it. */
+  add?: number;
+  settle?: boolean;
+  pending?: number;
+  settled?: number | null;
+  player?: { state: Json; view: View | null };
+  /** Protocol 5: those its others moved. */
+  others?: {
+    who: string;
+    /** Settled with, or else pending after. */
+    settled?: number;
+    pending?: number;
+    message?: string;
+  }[];
   message?: string;
   /** The state after this judgment: what it wrote, or the one it kept. */
   state: Json;
@@ -411,17 +492,45 @@ export function runTest(
     /** 协议第三版: the declared params, each test's checked against them. */
     params?: readonly ParamDeclaration[];
     check?: RunCheck;
+    /** How the test is read and run (the newest by default). */
+    protocol?: number;
   },
 ): Promise<TestRun>;
 
 // scenario.mjs
+/** Protocol 5: one person's part in a 红包. */
+export type Person = {
+  user: { id: number; username: string };
+  pending: number;
+  /** What they were settled with, or null. */
+  settled: number | null;
+  state: Json;
+  view: View | null;
+  /** Their latest input (a claim says it). */
+  input: string;
+};
+/** Protocol 5: what one judgment moved (advanceLedger). */
+export type LedgerMoves = {
+  /** The one judged first, then others in order. */
+  moves: {
+    id: number;
+    username: string;
+    before: number;
+    after: number;
+    add: number;
+    settle: boolean;
+    /** What others told them. */
+    message?: string;
+  }[];
+  settled: { id: number; username: string; amount: number }[];
+  ended: "judge" | "empty" | null;
+};
 export type Scenario = {
-  hongbao: Omit<
-    Submission["hongbao"],
-    "remaining" | "remainingCount" | "title"
-  > & {
-    title?: string;
-  };
+  /** Shares (count, minEach) before protocol 5 only. */
+  hongbao: Pick<Submission["hongbao"], "total" | "openedAt" | "endsAt"> &
+    Partial<Pick<Submission["hongbao"], "count" | "minEach">> & {
+      title?: string;
+    };
   claims: Submission["claims"];
   paid: number;
   state: Json;
@@ -435,10 +544,24 @@ export type Scenario = {
   secret: string | null;
   /** 协议第三版: submission.params. */
   params?: Params;
+  /** Protocol 5: each person, in the order first judged. */
+  people?: Map<number, Person>;
+  /** Protocol 5: everyone's pending, together. */
+  pending?: number;
+  endedBy?: "judge" | "empty" | "deadline" | null;
 };
 export function startScenario(input: {
   hongbao: Scenario["hongbao"];
   claims?: Submission["claims"];
+  /** Protocol 5: people judged before and not settled. */
+  players?: {
+    user: { id: number; username: string };
+    pending?: number;
+    state?: Json;
+    view?: View | null;
+    judged?: number;
+    input?: string;
+  }[];
   state?: Json;
   view?: View | null;
   hongbaoId?: string;
@@ -446,10 +569,27 @@ export function startScenario(input: {
   params?: Params;
   protocol?: number;
 }): Scenario;
+export type Refusal = "ended" | "claimed" | "sold-out" | "settled";
 export function refusalOf(
   scenario: Scenario,
   user: { id: number },
-): "ended" | "claimed" | "sold-out" | null;
+): Refusal | null;
+export function unclaimedOf(scenario: Scenario): number;
+export function standingOf(
+  scenario: Scenario,
+  id: number,
+): "unknown" | "settled" | null;
+export function endScenario(
+  scenario: Scenario,
+  by: "judge" | "empty" | "deadline",
+  at: number,
+): LedgerMoves["settled"];
+export function advanceLedger(
+  scenario: Scenario,
+  submission: Submission,
+  reading: LedgerReading,
+  at: number,
+): LedgerMoves;
 export function nextSubmission(
   scenario: Scenario,
   next: {
@@ -480,13 +620,18 @@ export function judgeNext(
   },
   run: RunSandbox,
 ): Promise<
-  | { refused: "ended" | "claimed" | "sold-out" }
+  | { refused: Refusal }
   | {
       submission: Submission;
       seeds: Seeds;
       answer: SandboxAnswer;
       ms: number;
-      reading?: VerdictReading;
+      reading?:
+        | VerdictReading
+        | LedgerReading
+        | { error: { kind: "invalid"; detail: string } };
+      /** Protocol 5: what it moved. */
+      ledger?: LedgerMoves;
     }
 >;
 

@@ -224,6 +224,63 @@ export function scanImports(source) {
   return found;
 }
 
+const CLOSERS = { "(": ")", "[": "]", "{": "}" };
+
+/** How many arguments the call whose "(" is at `open` has. */
+function argumentCount(tokens, open) {
+  const stack = [];
+  let count = 0;
+  let filled = false;
+  for (let j = open; j < tokens.length; j += 1) {
+    const token = tokens[j];
+    if (token.type === "punct" && CLOSERS[token.value]) {
+      stack.push(CLOSERS[token.value]);
+      if (stack.length === 1) continue;
+    } else if (token.type === "punct" && token.value === stack.at(-1)) {
+      stack.pop();
+      if (stack.length === 0) return count + Number(filled);
+    } else if (stack.length === 1 && isPunct(token, ",")) {
+      count += Number(filled);
+      filled = false;
+      continue;
+    }
+    filled = true;
+  }
+  return count + Number(filled);
+}
+
+/** Each money function and the arguments it takes before n (protocol 5). */
+const COUNTED = {
+  even: { before: 0, example: "even(10)" },
+  lucky: { before: 1, example: 'lucky("double", 10)' },
+};
+
+/**
+ * Where judge.js calls tools.money.even() or lucky() without n (protocol
+ * 5, docs/multi-prize-design.md §3.5): `{ line, message }` each, a
+ * reminder that the pool is then shared about 1 LDC a share.
+ */
+export function uncountedShares(source) {
+  const tokens = tokenize(source);
+  const found = [];
+  for (let i = 1; i < tokens.length; i += 1) {
+    const token = tokens[i];
+    const counted =
+      token.type === "name" && Object.hasOwn(COUNTED, token.value)
+        ? COUNTED[token.value]
+        : null;
+    if (!counted) continue;
+    if (!isPunct(tokens[i - 1], ".") && !isPunct(tokens[i - 1], "?.")) continue;
+    if (!isPunct(tokens[i + 1], "(")) continue;
+    if (argumentCount(tokens, i + 1) > counted.before) continue;
+    found.push({
+      line: lineOf(source, token.at),
+      message: `${token.value}() 没传 n：按总奖池分，每份约 1 LDC；要分成几份就写 ${counted.example}`,
+    });
+  }
+  return found;
+}
+
 function lineOf(source, at) {
   let line = 1;
   for (let i = 0; i < at; i += 1) if (source.charCodeAt(i) === 10) line += 1;

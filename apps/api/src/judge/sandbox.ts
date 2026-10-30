@@ -7,6 +7,7 @@ import type { FetchAnswer, Submission } from "../../../../kit/judge";
 import frozenV1 from "../../../../kit/runtime/frozen/v1.json";
 import frozenV2 from "../../../../kit/runtime/frozen/v2.json";
 import frozenV3 from "../../../../kit/runtime/frozen/v3.json";
+import frozenV4 from "../../../../kit/runtime/frozen/v4.json";
 import { NETWORK_LIMITS } from "../../../../kit/runtime/index.mjs";
 import type { ApiBindings } from "../env";
 import runtime from "./runtime.generated.json";
@@ -80,7 +81,10 @@ const runtimeModules: Record<number, Record<string, { js: string }>> = {
   1: modulesOf(frozenV1),
   2: modulesOf(frozenV2),
   3: modulesOf(frozenV3),
-  [JUDGE_PROTOCOL]: modulesOf(runtime),
+  4: modulesOf(frozenV4),
+  // Protocol 5 (docs/multi-prize-design.md) is kit/runtime as it is now;
+  // the site moves to it with its per-person table (step 2).
+  5: modulesOf(runtime),
 };
 
 /**

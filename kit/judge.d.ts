@@ -1,9 +1,14 @@
 /**
- * 代码判定红包 · 代码协议第四版（第三版加上公开数据、动态和提前结束）。
+ * 代码判定红包 · 代码协议第五版（第四版加上每个人的待结算、自己的状态、
+ * 只给自己看的数据和同桌的人）。
  * 金额都是整数，单位是分（0.01）；时间都是毫秒。
  * 规则见 hb 仓库的 docs/programmable-hongbao-design.md 第 4 节，联网见第 9 节，
  * 参数（meta、params、hongbao、check）见 docs/judge-square-design.md 第 3、4 节，
- * 公开数据（view、announce、end、setup）见 docs/judge-page-design.md 第 2 节。
+ * 公开数据（view、announce、end、setup）见 docs/judge-page-design.md 第 2 节，
+ * 待结算和结算（add、settle、player、others）见 docs/multi-prize-design.md 第 3 节。
+ *
+ * 一句话规则：每个人在一个红包里最后只结算一次。每次判定，判定器说给他加或减多少；
+ * 判定器说“结算”，或者红包结束，他那时的待结算一次发给他。没有份数，只有总奖池。
  */
 
 export type Json =
@@ -33,28 +38,45 @@ export interface Submission {
     title: string;
     /** 总奖池 */
     total: number;
-    /** 总份数 */
-    count: number;
-    /** 每份至少 */
-    minEach: number;
-    /** 剩余奖池 */
+    /**
+     * 奖池里还没被占的：总奖池减去已经结算的，再减去大家的待结算。加钱加不过它；
+     * 变成 0 时红包马上结束，所有还没结算的人一起结算
+     */
+    unclaimed: number;
+    /** 剩余奖池：总奖池减去已经结算的（还没减大家的待结算） */
     remaining: number;
-    /** 剩余份数（含这一份） */
+    /** 兼容旧代码：没有份数了，这里是总奖池按 LDC 取整（最少 1），也是 even() 缺省的 n */
+    count: number;
+    /** 兼容旧代码：一律 1（0.01） */
+    minEach: number;
+    /** 兼容旧代码：count 减去已经领到钱的人数，最少 1 */
     remainingCount: number;
     openedAt: number;
     endsAt: number;
   };
-  /** 这一份能发的范围；last 时 min 和 max 都是剩余奖池 */
+  /** 兼容旧代码：min 是 1，max 是 hongbao.unclaimed，last 一律 false */
   share: { min: number; max: number; last: boolean };
-  /** 已领到的，按先后 */
+  /**
+   * 已经结算、领到钱的，按结算的先后（结算 0 的不在里面）。input 是这个人最后一次
+   * 提交的，at 是结算的时间
+   */
   claims: {
     user: { id: number; username: string };
     amount: number;
     input: string;
     at: number;
   }[];
-  /** 代码上次存的，最开始是 null */
+  /** 代码上次存的，整个红包共用一份，最开始是 null */
   state: Json;
+  /** 这次提交的人自己的：待结算、判定器给他存的状态和只给他看的数据 */
+  player: {
+    /** 待结算（分），从 0 开始 */
+    pending: number;
+    /** 判定器上次给他存的，最开始是 null；只有判定器看得到 */
+    state: Json;
+    /** 只给他看的数据，最开始是 null */
+    view: View | null;
+  };
   /**
    * 发红包的人在参数表单里填的（按 params 的声明校验过；没声明 params 是 {}）。
    * 金额是整数分；没填的选填项：开关是 false，列表和表格是 []，其他是 null。
@@ -62,12 +84,37 @@ export interface Submission {
   params: Params;
 }
 
-/** judge() 的返回：发还是不发。 */
+/**
+ * judge() 的返回：给这次提交的人加减多少、结算不结算，写哪些状态。都不写（{}）就是
+ * 什么都不变，他接着能玩。
+ *
+ * 平台怎么算：先加减这次提交的人，再按顺序加减 others 里的人；每个人扣到 0 为止，
+ * 加的不超过奖池里还没被占的（hongbao.unclaimed）；然后结算说了要结算的人。
+ */
 export interface Verdict {
-  ok: boolean;
-  /** ok 时必填：整数（分），平台再拉进 share 的范围 */
+  /** 给这次提交的人加多少，整数（分），可以是负数；不写就是 0 */
+  add?: number;
+  /** true：现在给这次提交的人结算（可以和这次的 add 一起写），之后他不能再提交 */
+  settle?: boolean;
+  /**
+   * 这次提交的人自己的：state 最大 4 KB，只有判定器看得到；view 只给他看
+   * （summary 最多 200 个字，data 最大 4 KB）。写了哪样就整个换掉哪样，不写不变，
+   * view 写 null 是清空
+   */
+  player?: { state?: Json; view?: View | null };
+  /**
+   * 同桌的人，最多 10 个：只能写给在这个红包里被判定过、还没结算、在领取范围以内的人，
+   * 不能写给自己。写了不能写的人，这次判定算出错
+   */
+  others?: Other[];
+  /**
+   * 旧写法，是简写：{ ok: true, amount } 等于 { add: amount, settle: true }，
+   * { ok: false } 等于什么都不加、不结算。不能和 add、settle 一起写
+   */
+  ok?: boolean;
+  /** 旧写法：ok 为 true 时必填，整数（分） */
   amount?: number;
-  /** 给领的人的一句话，发不发都用它；纯文字，最多 100 个字 */
+  /** 给提交的人的一句话；纯文字，最多 100 个字 */
   message?: string;
   /** 写了就整个换掉（发不发都存），不写就不变；最大 16 KB，最多嵌套 100 层 */
   state?: Json;
@@ -78,8 +125,24 @@ export interface Verdict {
   view?: View | null;
   /** 第四版：一条动态，纯文字，最多 100 个字；网站在前面写上判定的人 */
   announce?: string;
-  /** 第四版：true 就在这次判定后结束红包（这次照常结算，没发的照提前结束退回） */
+  /** 第四版：true 就在这次判定后结束红包：还没结算的人一起结算，没发的照提前结束退回 */
   end?: boolean;
+}
+
+/** 第五版：给同桌的一个人的。 */
+export interface Other {
+  /** LINUX DO 数字 ID，同 submission.user.id */
+  id: number;
+  /** 给他加多少，整数（分），可以是负数 */
+  add?: number;
+  /** true：现在给他结算 */
+  settle?: boolean;
+  /** 他的状态，整个换掉；最大 4 KB */
+  state?: Json;
+  /** 只给他看的数据，整个换掉；null 是清空 */
+  view?: View | null;
+  /** 给他看的一句话，纯文字，最多 100 个字 */
+  message?: string;
 }
 
 /** 第四版：公开数据。 */
@@ -107,12 +170,16 @@ export interface Tools {
   random: Random;
   /** 这个人固定的随机流：同一个人每次提交都一样 */
   userRandom: Random;
-  /** 都按这一份的范围算，返回整数（分） */
+  /**
+   * 按“奖池里还没被占的分成 n 份”算，返回整数（分）。n 是正整数，不传就是
+   * hongbao.count（总奖池按 LDC 取整，每份约 1 LDC）；已经领到钱的人算用掉的份，
+   * 剩下最后一份时给全部
+   */
   money: {
-    /** 剩余平均：剩余奖池 ÷ 剩余份数，向下取整 */
-    even(): number;
+    /** 平均：没被占的 ÷（n − 已经领到钱的人数），向下取整 */
+    even(n?: number): number;
     /** 拼手气：double 是微信同款（二倍均值），bounded 是支付宝同款（均值上下 50%），用 random */
-    lucky(kind?: "double" | "bounded"): number;
+    lucky(kind?: "double" | "bounded", n?: number): number;
     /** 2000 → "20.00" */
     format(amount: number): string;
   };
@@ -240,11 +307,11 @@ export type ParamDeclaration = ParamBase &
  * 只能收窄平台的规则。金额是整数分。
  */
 export interface HongbaoRules {
-  /** 份数，1–1000 之内 */
+  /** 不起作用了：第五版没有份数 */
   count?: { min?: number; max?: number; default?: number };
   /** 总奖池 */
   total?: { min?: number; max?: number; default?: number };
-  /** 每份至少 */
+  /** 不起作用了：第五版没有每份至少 */
   minEach?: { min?: number; default?: number };
   /** 默认的截止时长（从开放算起） */
   deadline?: { value: number; unit: "minutes" | "hours" | "days" };
@@ -282,7 +349,7 @@ export interface ParamProblem {
 
 /**
  * judge.js 可以导出 `check(params, hongbao)`：查单看每一项查不出来的，比如最小
- * 不能大于最大、题目不能比份数少。返回问题的数组，没问题返回 []。
+ * 不能大于最大、题目至少要有一道。返回问题的数组，没问题返回 []。
  * 发红包的人填参数时在判定器里跑，Math.random() 每次都一样，不能联网。
  */
 export type Check = (
@@ -357,7 +424,7 @@ export type TestCase = SingleTest | StepsTest;
 
 /**
  * 两种测试都能写的：第一次提交之前红包的样子。没写的用默认值；
- * 剩余奖池、剩余份数和这一份的范围由 claims 推出来，不能直接写。
+ * 剩余奖池、奖池里还没被占的由 claims 和 players 推出来，不能直接写。
  * 只能写线上可能出现的情况，不然这条测试本身不通过。
  */
 interface TestBase {
@@ -365,12 +432,25 @@ interface TestBase {
   name: string;
   /** 这次提交的时间（多步的是第一步的），默认 2026-10-24 12:00（北京时间） */
   now?: TestTime;
-  /** 默认：测试红包、10000、10 份、每份至少 1、now 前 1 小时开放、now 后 1 天截止 */
-  hongbao?: Partial<
-    Pick<Submission["hongbao"], "title" | "total" | "count" | "minEach">
-  > & { openedAt?: TestTime; endsAt?: TestTime };
-  /** 前面已领的份：数字（补上占位记录，每份平均）或完整列表；默认没人领 */
+  /**
+   * 默认：测试红包、总奖池 10000、now 前 1 小时开放、now 后 1 天截止。
+   * 第五版没有份数和每份至少，写 count、minEach 这条测试不通过
+   */
+  hongbao?: Partial<Pick<Submission["hongbao"], "title" | "total">> & {
+    openedAt?: TestTime;
+    endsAt?: TestTime;
+  };
+  /**
+   * 前面已经结算、领到钱的人：数字（补上占位记录，每人约 1 LDC）或完整列表；
+   * 默认没有。加起来要少于总奖池
+   */
   claims?: number | TestClaim[];
+  /**
+   * 前面已经玩过、还没结算的人：名字对应他的待结算、状态和只给他看的数据，比如
+   * { "小明": { "pending": 50, "state": { "tries": 2 } } }。这次提交的人（单次测试的
+   * user.username、多步的 who）也可以在里面
+   */
+  players?: { [name: string]: TestPlayer };
   /** 代码之前存的状态，默认 null；最大 16 KB，最多嵌套 100 层 */
   state?: Json;
   /** 种子（64 位小写十六进制），默认固定的测试种子 */
@@ -382,10 +462,20 @@ interface TestBase {
   params?: Params;
 }
 
-/** 前面已领的一份：按先后，不早于开放，不晚于这次提交，同一个人只有一份。 */
+/** 第五版：前面已经玩过、还没结算的一个人。 */
+export interface TestPlayer {
+  /** 待结算（分），默认 0 */
+  pending?: number;
+  /** 判定器给他存的，默认 null；最大 4 KB */
+  state?: Json;
+  /** 只给他看的数据，默认 null */
+  view?: View | null;
+}
+
+/** 前面已经领到钱的一个人：按先后，不早于开放，不晚于这次提交，同一个人只有一条。 */
 export interface TestClaim {
   user: { id: number; username: string };
-  /** 不少于每份至少 */
+  /** 正整数（分） */
   amount: number;
   input: string;
   at: TestTime;
@@ -404,8 +494,8 @@ export interface SingleTest extends TestBase {
 }
 
 /**
- * 几个人依次提交：状态、已领记录、每人被判定过几次、剩余奖池都像线上一样
- * 一步步往下传。已经领过的人、或者份已经领完了还要提交，这一步算不通过。
+ * 几个人依次提交：状态、每个人的待结算和状态、已经结算的、奖池都像线上一样
+ * 一步步往下传。已经结算的人、或者红包结束了还要提交，这一步算不通过。
  */
 export interface StepsTest extends TestBase {
   steps: TestStep[];
@@ -427,37 +517,65 @@ export interface TestStep {
   expect: TestExpect;
 }
 
-/** 拉进范围的原因：封顶、保底、最后一份，发完剩下的。 */
+/** 第四版以前：拉进范围的原因：封顶、保底、最后一份，发完剩下的。 */
 export type JudgeNote = "cap" | "floor" | "last";
 
+/** 第五版：一个人这次判定以后的样子。 */
+export interface TestPart {
+  /** 待结算（分）；结算以后是 0 */
+  pending?: number;
+  /** 结算的金额（分），可以是 0；还没结算写 null */
+  settled?: number | null;
+  /** 他的状态，整份比 */
+  state?: Json;
+  /** 只比写了的键 */
+  stateIncludes?: { [key: string]: Json };
+  /** 只给他看的数据，整份比；没有写 null */
+  view?: View | null;
+  viewIncludes?: { summary?: string; data?: Json };
+}
+
 /**
- * 期望：ok 必填，其余写了才比，不一样的地方一起列出来。
+ * 期望：写了才比，不一样的地方一起列出来（什么都不写，就只看能不能跑通）。
  * 代码返回协议以外的字段也算不通过。
  */
-export type TestExpect = (
+export type TestExpect = {
+  /** 简写：这次判定有没有给提交的人结算、并且领到钱（结算 0 不算） */
+  ok?: boolean;
+  /** 简写：这次结算领到的（分） */
+  amount?: number;
+  /** 判定器给提交的人的 add（{ ok: true, amount } 的 add 就是 amount） */
+  add?: number;
+  /** 判定器有没有说给提交的人结算 */
+  settle?: boolean;
+  /** 提交的人这次以后的待结算 */
+  pending?: number;
+  /** 提交的人结算的金额，还没结算写 null */
+  settled?: number | null;
+  /** 提交的人这次以后自己的状态和只给他看的数据，写了的那项整份比 */
+  player?: { state?: Json; view?: View | null };
+  /** 同上，只比写了的键 */
+  playerIncludes?: {
+    state?: { [key: string]: Json };
+    view?: { summary?: string; data?: Json };
+  };
+  /**
+   * 按名字（who、username）：这些人这次以后的样子，message 是 others 这次写给他的话
+   * （没写给他写 ""）
+   */
+  people?: { [name: string]: TestPart & { message?: string } };
+} & (
   | {
-      ok: true;
-      /** 实际发的（拉进范围以后） */
-      amount?: number;
-      /** 代码自己给的 */
-      asked?: number;
-      /** 拉进范围的原因，没拉写 null */
-      note?: JudgeNote | null;
+      /** 逐字比 */
+      message?: string;
+      messageIncludes?: never;
     }
-  | { ok: false; amount?: never; asked?: never; note?: never }
+  | {
+      message?: never;
+      /** 含这几个字 */
+      messageIncludes: string;
+    }
 ) &
-  (
-    | {
-        /** 逐字比 */
-        message?: string;
-        messageIncludes?: never;
-      }
-    | {
-        message?: never;
-        /** 含这几个字 */
-        messageIncludes: string;
-      }
-  ) &
   (
     | {
         /** 整份比，键的顺序不算 */
@@ -484,7 +602,7 @@ export type TestExpect = (
   ) & {
     /** 第四版：这次的动态，逐字比；没有动态写 "" */
     announce?: string;
-    /** 第四版：这次判定有没有结束红包 */
+    /** 这次判定以后红包结束了没有（end 结束的，或者奖池被占满了） */
     end?: boolean;
   };
 
@@ -494,7 +612,7 @@ export type TestExpect = (
  * 已领记录、剩余奖池和状态都由前面的判定推出来，不重复写。
  */
 export interface JudgeRecords {
-  /** 红包开放时用的协议版本：1、2、3 或 4 */
+  /** 红包开放时用的协议版本：1 到 5 */
   protocol: number;
   /** 第二版起联网的红包：白名单 */
   network?: string[];
@@ -508,8 +626,9 @@ export interface JudgeRecords {
   hongbao: {
     id: string;
     total: number;
-    count: number;
-    minEach: number;
+    /** 第四版以前才有：份数、每份至少 */
+    count?: number;
+    minEach?: number;
     openedAt: number;
     endsAt: number;
     /** judge.js 的 SHA-256 */
@@ -533,21 +652,27 @@ export interface JudgeRecords {
     title: string;
     /**
      * 代码的回答（读过以后：message 合并了空白）；写了 state 才有 state。
-     * 第四版：写了 view 才有 view，有动态才有 announce，结束了红包才有 end
+     * 第四版：写了 view 才有 view，有动态才有 announce，结束了红包才有 end。
+     * 第五版：写了什么就有什么（add、settle、player、others，或者旧写法 ok、amount）；
+     * 每个人的待结算和结算由前面的判定推出来
      */
     verdict: {
-      ok: boolean;
+      ok?: boolean;
       amount?: number;
+      add?: number;
+      settle?: true;
+      player?: { state?: Json; view?: View | null };
+      others?: Other[];
       message?: string;
       state?: Json;
       view?: View | null;
       announce?: string;
       end?: true;
     };
-    /** 实际发的，和拉进范围的原因 */
+    /** 第四版以前：实际发的，和拉进范围的原因 */
     paid?: number;
     note?: "floor" | "cap" | "last";
-    /** 这一份领到的时间；没领成（比如到点结束了）就没有 */
+    /** 第四版以前：这一份领到的时间；没领成（比如到点结束了）就没有 */
     claimedAt?: number;
     /** 联网（第二版）：这次判定发出的请求和拿到的返回，按先后；返回按 UTF-8 文本记 */
     fetches?: {

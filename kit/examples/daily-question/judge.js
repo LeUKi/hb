@@ -1,7 +1,8 @@
 // 每日一题：一天一道题，当天答对的领，每天有几份名额。
 // - 第 1 行是开放当天（北京时间）的题，往后一天一行；题目和答案保密。
-// - 当天的名额按已领记录里当天领的数；领过的人平台不会再交给代码。
-// - 答错时回复里告诉他今天的题；每人最多答几次是参数。
+// - 奖池按“题数 × 每天几份”平均分；答对就加钱并且马上结算。
+// - 当天的名额按已领记录里当天领的数；结算过的人平台不会再交给代码。
+// - 答错时回复里告诉他今天的题；每人最多答几次是参数，答满了就给他结算（没领到）。
 // 金额都是整数，单位是分。
 
 export const meta = {
@@ -53,15 +54,15 @@ export const hongbao = {
 
 /**
  * @param {import("../../judge").Params} params
- * @param {{ count: number }} hongbao
+ * @param {{ total: number }} hongbao
  */
 export function check(params, hongbao) {
   const { questions, perDay } = /** @type {Daily} */ (params);
-  return questions.length * perDay < hongbao.count
+  return questions.length * perDay > hongbao.total
     ? [
         {
           key: "perDay",
-          message: `${questions.length} 道题、每天 ${perDay} 份，发不完 ${hongbao.count} 份`,
+          message: `${questions.length} 道题、每天 ${perDay} 份，奖池不够每份 0.01`,
         },
       ]
     : [];
@@ -82,12 +83,19 @@ export function judge(submission, tools) {
   const { questions, perDay, tries } = /** @type {Daily} */ (submission.params);
   const today = dayOf(now);
   const row = questions[today - dayOf(hongbao.openedAt)];
-  if (!row) return { ok: false, message: "题都出完了" };
+  if (!row) return { message: "题都出完了" };
   if (claims.filter((claim) => dayOf(claim.at) === today).length >= perDay)
-    return { ok: false, message: `今天的 ${perDay} 份发完了，明天再来` };
+    return { message: `今天的 ${perDay} 份发完了，明天再来` };
   if (user.attempts >= tries)
-    return { ok: false, message: `已经答了 ${tries} 次，不能再答了` };
+    return { message: `已经答了 ${tries} 次，不能再答了` };
   if (tools.text.normalize(input) === tools.text.normalize(row.answer))
-    return { ok: true, amount: tools.money.even(), message: "答对了！" };
-  return { ok: false, message: `不对。今天的题：${row.question}` };
+    return {
+      add: tools.money.even(questions.length * perDay),
+      settle: true,
+      message: "答对了！",
+    };
+  return {
+    settle: user.attempts + 1 >= tries,
+    message: `不对。今天的题：${row.question}`,
+  };
 }

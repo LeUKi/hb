@@ -5,12 +5,15 @@
 // site gave it (runtime/records.mjs) and its requests the answers the site
 // got (第 9 节), compared on the requests, ok, the amount the code asked,
 // the reply and the state; from the fourth protocol setup() at opening
-// first, and each view, line in 动态 and end too. A 红包 runs the protocol
-// it opened with: an earlier protocol's records replay on its runtime,
-// kept frozen.
+// first, and each view, line in 动态 and end too; from the fifth, each add
+// and settle, what it wrote for the one judged (player) and for others. A
+// 红包 runs the protocol it opened with: an earlier protocol's records
+// replay on its runtime, kept frozen.
 import { resolve } from "node:path";
 import {
   answersOf,
+  defaultCount,
+  LEDGER_PROTOCOL,
   paramsCommitment,
   readVerdict,
   sameJson,
@@ -41,7 +44,14 @@ function recordsProblem(records) {
   const { hongbao, judgments } = records;
   if (!isObject(hongbao)) return "缺 hongbao";
   if (typeof hongbao.id !== "string") return "缺 hongbao.id";
-  for (const key of ["total", "count", "minEach", "openedAt", "endsAt"])
+  // Protocol 5 has no shares.
+  const ledger = records.protocol >= LEDGER_PROTOCOL;
+  for (const key of [
+    "total",
+    ...(ledger ? [] : ["count", "minEach"]),
+    "openedAt",
+    "endsAt",
+  ])
     if (!isWhole(hongbao[key])) return `缺 hongbao.${key}`;
   for (const key of ["fingerprint", "seedCommitment"])
     if (typeof hongbao[key] !== "string") return `缺 hongbao.${key}`;
@@ -66,7 +76,7 @@ function recordsProblem(records) {
       !isWhole(user.id) ||
       !isWhole(user.attempts) ||
       !isObject(verdict) ||
-      typeof verdict.ok !== "boolean"
+      (!ledger && typeof verdict.ok !== "boolean")
     )
       return `第 ${index + 1} 次判定的记录不全`;
   }
@@ -107,16 +117,19 @@ function requestDifferences(recorded = [], answer) {
   return found;
 }
 
-/** Where a replayed state or view (`name`) differs from the recorded one. */
-function changeDifferences(name, recorded, change) {
+/**
+ * Where a replayed state or view (`name` in `recorded`) differs from the
+ * recorded one; `label` says where it was ("player.state").
+ */
+function changeDifferences(name, recorded, change, label = name) {
   const wrote = !change.keep;
   if (Object.hasOwn(recorded, name) !== wrote)
     return [
-      wrote ? `记录里没写 ${name}，重放写了` : `记录里写了 ${name}，重放没写`,
+      wrote ? `记录里没写 ${label}，重放写了` : `记录里写了 ${label}，重放没写`,
     ];
   if (wrote && !sameJson(recorded[name] ?? null, change.value))
     return [
-      `${name} 记录是 ${shortJson(recorded[name] ?? null, 300)}，重放是 ${shortJson(change.value, 300)}`,
+      `${label} 记录是 ${shortJson(recorded[name] ?? null, 300)}，重放是 ${shortJson(change.value, 300)}`,
     ];
   return [];
 }
@@ -132,6 +145,56 @@ function setupDifferences(recorded, opened) {
 }
 
 const announced = (text) => (text === undefined ? "没有动态" : `“${text}”`);
+
+/** others as read, comparable: what each was written, kept or not. */
+const othersOf = (others) =>
+  others.map(({ id, add, settle, state, view, message }) => ({
+    id,
+    add,
+    settle,
+    state: state.keep ? "不变" : state.value,
+    view: view.keep ? "不变" : view.value,
+    message: message ?? null,
+  }));
+
+/**
+ * Protocol 5's differences: the recorded answer, read as the site read it,
+ * against the replay's — add, settle, the reply, the shared state and
+ * view, the one judged's own, others, the line in 动态 and end.
+ */
+function ledgerDifferences(recorded, reading, share) {
+  const was = readVerdict(recorded, share, LEDGER_PROTOCOL);
+  if ("error" in was) return [`记录里的返回读不了：${was.error.detail}`];
+  const found = [];
+  if (was.add !== reading.add)
+    found.push(`add 记录是 ${was.add}，重放是 ${reading.add}`);
+  if (was.settle !== reading.settle)
+    found.push(`settle 记录是 ${was.settle}，重放是 ${reading.settle}`);
+  if (was.message !== reading.message)
+    found.push(
+      `回复 记录是${said(was.message)}，重放是${said(reading.message)}`,
+    );
+  found.push(...changeDifferences("state", recorded, reading.state));
+  found.push(...changeDifferences("view", recorded, reading.view));
+  const player = isObject(recorded.player) ? recorded.player : {};
+  found.push(
+    ...changeDifferences("state", player, reading.player.state, "player.state"),
+    ...changeDifferences("view", player, reading.player.view, "player.view"),
+  );
+  if (!sameJson(othersOf(was.others), othersOf(reading.others)))
+    found.push(
+      `others 记录是 ${shortJson(recorded.others ?? [], 300)}，重放是 ${shortJson(othersOf(reading.others), 300)}`,
+    );
+  if (was.announce !== reading.announce)
+    found.push(
+      `动态 记录是${announced(was.announce)}，重放是${announced(reading.announce)}`,
+    );
+  if (was.end !== reading.end)
+    found.push(
+      was.end ? "记录里结束了红包，重放没结束" : "记录里没结束红包，重放结束了",
+    );
+  return found;
+}
 
 /** Where the replay's answer differs from the recorded one. */
 function differences(recorded, reading) {
@@ -236,6 +299,7 @@ export async function replayCommand({
   }
 
   const submissions = submissionsOf(records);
+  const ledger = records.protocol >= LEDGER_PROTOCOL;
   const sandbox = await openSandbox(code, { protocol: records.protocol });
   let differing = 0;
   let replayed = 0;
@@ -248,8 +312,9 @@ export async function replayCommand({
         {
           title: setup.title,
           total: hongbao.total,
-          count: hongbao.count,
-          minEach: hongbao.minEach,
+          // Protocol 5 tells setup() n and 0.01 (no shares).
+          count: ledger ? defaultCount(hongbao.total) : hongbao.count,
+          minEach: ledger ? 1 : hongbao.minEach,
         },
         { now: setup.at, seed: setupSeed(hongbao.id, hongbao.seed) },
       );
@@ -288,7 +353,9 @@ export async function replayCommand({
         found.push(
           ...("error" in reading
             ? [`重放时返回不对：${reading.error.detail}`]
-            : differences(judgment.verdict, reading)),
+            : ledger
+              ? ledgerDifferences(judgment.verdict, reading, submission.share)
+              : differences(judgment.verdict, reading)),
         );
       }
       replayed += 1;

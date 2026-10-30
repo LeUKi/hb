@@ -1,6 +1,8 @@
 {
   "$schema": "../../tests.schema.json",
-  "params": { "max": 100 },
+  "params": {
+    "max": 100
+  },
   "tests": [
     {
       "name": "安全，区间变小，写一条动态",
@@ -11,12 +13,16 @@
         "low": 1,
         "high": 100,
         "guessed": [],
-        "round": 1
+        "round": 1,
+        "bombs": 5
       },
       "expect": {
-        "ok": false,
         "message": "安全！炸弹在 1–49 之间",
-        "stateIncludes": { "low": 1, "high": 49, "guessed": [50] },
+        "stateIncludes": {
+          "low": 1,
+          "high": 49,
+          "guessed": [50]
+        },
         "view": {
           "summary": "第 1 颗炸弹 · 安全区间 1–49",
           "data": {
@@ -24,10 +30,12 @@
             "low": 1,
             "high": 49,
             "guessed": [50],
-            "round": 1
+            "round": 1,
+            "bombs": 5
           }
         },
-        "announce": "@tester 猜了 50，安全"
+        "announce": "@tester 猜了 50，安全",
+        "settled": null
       }
     },
     {
@@ -39,21 +47,31 @@
         "low": 30,
         "high": 49,
         "guessed": [29, 50],
-        "round": 1
+        "round": 1,
+        "bombs": 5
       },
       "expect": {
-        "ok": true,
         "message": "踩中了炸弹！",
-        "stateIncludes": { "low": 1, "high": 100, "guessed": [], "round": 2 },
-        "viewIncludes": { "summary": "第 2 颗炸弹 · 安全区间 1–100" },
+        "stateIncludes": {
+          "low": 1,
+          "high": 100,
+          "guessed": [],
+          "round": 2
+        },
+        "viewIncludes": {
+          "summary": "第 2 颗炸弹 · 安全区间 1–100"
+        },
         "announce": "@tester 踩中了炸弹，领到一份，第 2 颗已经埋好",
-        "end": false
+        "end": false,
+        "settle": true
       }
     },
     {
-      "name": "最后一份：不再埋",
+      "name": "最后一颗：不再埋，奖池分完，红包结束",
       "input": "42",
-      "hongbao": { "total": 1000, "count": 3 },
+      "hongbao": {
+        "total": 1000
+      },
       "claims": 2,
       "state": {
         "max": 100,
@@ -61,13 +79,21 @@
         "low": 40,
         "high": 45,
         "guessed": [39, 46],
-        "round": 3
+        "round": 3,
+        "bombs": 3
       },
       "expect": {
-        "ok": true,
         "message": "踩中了最后一颗炸弹！",
-        "viewIncludes": { "summary": "第 3 颗炸弹被踩中，红包领完了" },
-        "announce": "@tester 踩中了最后一颗炸弹"
+        "viewIncludes": {
+          "summary": "第 3 颗炸弹被踩中，红包领完了"
+        },
+        "announce": "@tester 踩中了最后一颗炸弹",
+        "settled": 800,
+        "end": true
+      },
+      "params": {
+        "max": 100,
+        "bombs": 3
       }
     },
     {
@@ -79,12 +105,13 @@
         "low": 1,
         "high": 49,
         "guessed": [50],
-        "round": 1
+        "round": 1,
+        "bombs": 5
       },
       "expect": {
-        "ok": false,
         "message": "请猜 1 到 49 之间的整数",
-        "announce": ""
+        "announce": "",
+        "settled": null
       }
     },
     {
@@ -96,9 +123,13 @@
         "low": 1,
         "high": 100,
         "guessed": [],
-        "round": 1
+        "round": 1,
+        "bombs": 5
       },
-      "expect": { "ok": false, "message": "请猜 1 到 100 之间的整数" }
+      "expect": {
+        "message": "请猜 1 到 100 之间的整数",
+        "settled": null
+      }
     },
     {
       "name": "几个人轮流猜，区间一步步收窄，最后有人踩中",
@@ -108,25 +139,32 @@
         "low": 1,
         "high": 100,
         "guessed": [],
-        "round": 1
+        "round": 1,
+        "bombs": 5
       },
       "steps": [
         {
           "who": "小明",
           "input": "50",
-          "expect": { "ok": false, "message": "安全！炸弹在 1–49 之间" }
+          "expect": {
+            "message": "安全！炸弹在 1–49 之间",
+            "settled": null
+          }
         },
         {
           "who": "小红",
           "input": "30",
-          "expect": { "ok": false, "message": "安全！炸弹在 31–49 之间" }
+          "expect": {
+            "message": "安全！炸弹在 31–49 之间",
+            "settled": null
+          }
         },
         {
           "who": "小明",
           "input": "42",
           "expect": {
-            "ok": true,
-            "announce": "@小明 踩中了炸弹，领到一份，第 2 颗已经埋好"
+            "announce": "@小明 踩中了炸弹，领到一份，第 2 颗已经埋好",
+            "settle": true
           }
         }
       ]

@@ -2,12 +2,21 @@
 // and compared the same way by the kit's npm test and npm run check and by
 // the site's 部署. A test is one submission, or steps: several people
 // in turn, carried forward as the site does (scenario.mjs). Each test says
-// only what matters to it; everything else takes the defaults below.
+// only what matters to it; everything else takes the defaults below. From
+// protocol 5 (docs/multi-prize-design.md §6) a 红包 has no shares: a test
+// writes the pool, the people already playing (`players`) and expects
+// what each add, settle and own state came to.
 import { sha256Text } from "./hash.mjs";
+import { defaultCount } from "./money.mjs";
 import { NETWORK_LIMITS, NETWORK_METHODS } from "./network.mjs";
 import { paramValues } from "./params.mjs";
 import { judgeNext, startScenario } from "./scenario.mjs";
-import { LIMITS, nestsDeeper } from "./verdict.mjs";
+import {
+  LEDGER_PROTOCOL,
+  LIMITS,
+  nestsDeeper,
+  ownProblem,
+} from "./verdict.mjs";
 
 /** The 红包 ID tests run as, for their seeds. */
 export const TEST_HONGBAO_ID = "test";
@@ -114,13 +123,20 @@ function userProblem(user) {
   return null;
 }
 
-function hongbaoProblem(hongbao) {
+function hongbaoProblem(hongbao, protocol) {
   if (hongbao === undefined) return null;
   if (!isObject(hongbao)) return "hongbao 要是一个对象";
   // The table in §5: what follows from claims is never written.
-  for (const key of ["remaining", "remainingCount"])
+  for (const key of ["remaining", "remainingCount", "unclaimed"])
     if (Object.hasOwn(hongbao, key))
       return `hongbao.${key} 由 claims 推出来，不能直接写`;
+  if (protocol >= LEDGER_PROTOCOL) {
+    const shares = ["count", "minEach"].filter((key) =>
+      Object.hasOwn(hongbao, key),
+    );
+    if (shares.length > 0)
+      return `第五版没有份数和每份至少，只有总奖池：去掉 ${shares.map((key) => `hongbao.${key}`).join("、")}`;
+  }
   const extra = only(
     hongbao,
     ["title", "total", "count", "minEach", "openedAt", "endsAt"],
@@ -176,6 +192,39 @@ function claimsProblem(claims) {
     const input = inputProblem(claim.input, `${where}的 input`);
     if (input) return input;
     if (!isTime(claim.at)) return `${where}的 at ${TIME_WORDS}`;
+  }
+  return null;
+}
+
+/**
+ * players (protocol 5): the people judged before the test and not settled,
+ * by name, each with what they have: pending, their own state and view.
+ */
+function playersProblem(players) {
+  if (players === undefined) return null;
+  if (!isObject(players))
+    return 'players 要是一个对象：名字对应这个人的 { pending, state, view }，比如 { "小明": { "pending": 50 } }';
+  for (const [name, player] of Object.entries(players)) {
+    const where = `players 里的“${name}”`;
+    if (!isName(name)) return `players 里的名字要是 1–60 个字`;
+    if (!isObject(player))
+      return `${where}要是一个对象，比如 { "pending": 50 }`;
+    const extra = only(player, ["pending", "state", "view"], `${where}`);
+    if (extra) return extra;
+    if (
+      player.pending !== undefined &&
+      (!isWhole(player.pending) || player.pending < 0)
+    )
+      return `${where}的 pending 要是 0 或正整数（分）`;
+    if (player.state !== undefined && !writable(player.state))
+      return `${where}的 state 要能转成 JSON`;
+    if (player.view !== undefined && !writable(player.view))
+      return `${where}的 view 要能转成 JSON`;
+    const own = ownProblem(
+      { state: player.state, view: player.view },
+      `${where}的 `,
+    );
+    if (own) return own;
   }
   return null;
 }
@@ -243,9 +292,122 @@ export function fetchProblem(list) {
   return null;
 }
 
+/** What a person comes to (protocol 5): expect's own, or one of its people. */
+function partProblem(part, where) {
+  if (
+    part.pending !== undefined &&
+    (!isWhole(part.pending) || part.pending < 0)
+  )
+    return `${where}pending 要是 0 或正整数（分）`;
+  if (
+    part.settled !== undefined &&
+    part.settled !== null &&
+    (!isWhole(part.settled) || part.settled < 0)
+  )
+    return `${where}settled 要是结算的金额（分），还没结算写 null`;
+  for (const name of ["state", "view"]) {
+    const includes = `${name}Includes`;
+    if (part[name] !== undefined && part[includes] !== undefined)
+      return `${where}${name} 和 ${includes} 只能写一个`;
+    if (part[name] !== undefined && !writable(part[name]))
+      return `${where}${name} 要能转成 JSON`;
+    if (part[includes] !== undefined && !isObject(part[includes]))
+      return `${where}${includes} 要是一个对象（只比写了的键）`;
+  }
+  return null;
+}
+
+/** expect, protocol 5's (docs/multi-prize-design.md §6). */
+function ledgerExpectProblem(expect) {
+  const old = ["asked", "note"].filter((key) => Object.hasOwn(expect, key));
+  if (old.length > 0)
+    return `第五版没有 ${old.join("、")}：判定器给的写 add，加上以后的待结算写 pending`;
+  const extra = only(
+    expect,
+    [
+      "ok",
+      "amount",
+      "add",
+      "settle",
+      "pending",
+      "settled",
+      "player",
+      "playerIncludes",
+      "people",
+      "message",
+      "messageIncludes",
+      "state",
+      "stateIncludes",
+      "view",
+      "viewIncludes",
+      "announce",
+      "end",
+    ],
+    "expect 里",
+  );
+  if (extra) return extra;
+  if (expect.ok !== undefined && typeof expect.ok !== "boolean")
+    return "expect.ok 要是 true 或 false";
+  if (expect.ok === false && expect.amount !== undefined)
+    return "expect.ok 是 false 时不能写 amount";
+  if (
+    expect.amount !== undefined &&
+    (!isWhole(expect.amount) || expect.amount < 1)
+  )
+    return "expect.amount 要是正整数（分）";
+  if (expect.add !== undefined && !isWhole(expect.add))
+    return "expect.add 要是整数（分），可以是负数";
+  if (expect.settle !== undefined && typeof expect.settle !== "boolean")
+    return "expect.settle 要是 true 或 false";
+  const own = partProblem(
+    { pending: expect.pending, settled: expect.settled },
+    "expect.",
+  );
+  if (own) return own;
+  if (expect.player !== undefined && expect.playerIncludes !== undefined)
+    return "expect.player 和 expect.playerIncludes 只能写一个";
+  for (const name of ["player", "playerIncludes"]) {
+    const value = expect[name];
+    if (value === undefined) continue;
+    if (!isObject(value))
+      return `expect.${name} 要是一个对象，写 state、view 里要比的`;
+    const more = only(value, ["state", "view"], `expect.${name} 里`);
+    if (more) return more;
+    if (!writable(value)) return `expect.${name} 要能转成 JSON`;
+  }
+  if (expect.people !== undefined) {
+    if (!isObject(expect.people))
+      return 'expect.people 要是一个对象：名字对应这个人判定后的样子，比如 { "小明": { "pending": 50 } }';
+    for (const [name, part] of Object.entries(expect.people)) {
+      const where = `expect.people 里的“${name}”`;
+      if (!isObject(part)) return `${where}要是一个对象`;
+      const more = only(
+        part,
+        [
+          "pending",
+          "settled",
+          "state",
+          "stateIncludes",
+          "view",
+          "viewIncludes",
+          "message",
+        ],
+        where,
+      );
+      if (more) return more;
+      if (part.message !== undefined && typeof part.message !== "string")
+        return `${where}的 message 要是字符串`;
+      const problem = partProblem(part, `${where}的 `);
+      if (problem) return problem;
+    }
+  }
+  return sharedExpectProblem(expect);
+}
+
 /** expect, one test's or one step's. */
-function expectProblem(expect) {
+function expectProblem(expect, protocol) {
   if (!isObject(expect)) return "要有 expect";
+  if (protocol >= LEDGER_PROTOCOL) return ledgerExpectProblem(expect);
   const extra = only(
     expect,
     [
@@ -286,6 +448,11 @@ function expectProblem(expect) {
     !NOTES.includes(expect.note)
   )
     return 'expect.note 要是 "cap"、"floor"、"last" 或 null';
+  return sharedExpectProblem(expect);
+}
+
+/** expect's reply, state, view, line in 动态 and end: every protocol's. */
+function sharedExpectProblem(expect) {
   if (expect.message !== undefined && expect.messageIncludes !== undefined)
     return "expect.message 和 expect.messageIncludes 只能写一个";
   if (expect.message !== undefined && typeof expect.message !== "string")
@@ -317,7 +484,7 @@ function expectProblem(expect) {
   return null;
 }
 
-function stepProblem(step) {
+function stepProblem(step, protocol) {
   if (!isObject(step)) return "要是一个对象";
   const extra = only(
     step,
@@ -335,7 +502,7 @@ function stepProblem(step) {
       : null) ??
     timeProblem(step.at, "at") ??
     fetchProblem(step.fetch) ??
-    expectProblem(step.expect)
+    expectProblem(step.expect, protocol)
   );
 }
 
@@ -345,7 +512,7 @@ const named = (value, key) =>
     : "";
 
 /** Whether one test is written the way tests.json says: its problem, or null. */
-function shapeProblem(test) {
+function shapeProblem(test, protocol) {
   if (!isObject(test)) return "要是一个对象";
   if (typeof test.name !== "string" || !test.name.trim())
     return "要有 name（测试的名字）";
@@ -371,6 +538,7 @@ function shapeProblem(test) {
       "state",
       "seed",
       "params",
+      ...(protocol >= LEDGER_PROTOCOL ? ["players"] : []),
       ...(multi ? ["steps"] : ["input", "user", "fetch", "expect"]),
     ],
     "",
@@ -380,8 +548,9 @@ function shapeProblem(test) {
     return "params 要是一个对象（参数的 key 对应填的值）";
   const common =
     timeProblem(test.now, "now") ??
-    hongbaoProblem(test.hongbao) ??
+    hongbaoProblem(test.hongbao, protocol) ??
     claimsProblem(test.claims) ??
+    playersProblem(test.players) ??
     (test.state !== undefined && !writable(test.state)
       ? "state 要能转成 JSON"
       : null) ??
@@ -395,12 +564,12 @@ function shapeProblem(test) {
       inputProblem(test.input) ??
       userProblem(test.user) ??
       fetchProblem(test.fetch) ??
-      expectProblem(test.expect)
+      expectProblem(test.expect, protocol)
     );
   if (!Array.isArray(test.steps) || test.steps.length === 0)
     return "steps 要是一个数组，至少一步";
   for (const [index, step] of test.steps.entries()) {
-    const problem = stepProblem(step);
+    const problem = stepProblem(step, protocol);
     if (problem) return `第 ${index + 1} 步${named(step, "who")}：${problem}`;
   }
   return null;
@@ -409,9 +578,10 @@ function shapeProblem(test) {
 /**
  * tests.json, read: `{ tests }`, or `{ problem }` saying what is wrong
  * with the file or which test. Whether each test could happen on the site
- * is runTest's to say: such a test fails, the others still run.
+ * is runTest's to say: such a test fails, the others still run. Read as
+ * `protocol` has it (a 红包's rules: no shares from 5).
  */
-export function readTests(text) {
+export function readTests(text, { protocol = LEDGER_PROTOCOL } = {}) {
   if (typeof text !== "string" || !text.trim())
     return { problem: "至少写一条测试" };
   let file;
@@ -439,7 +609,7 @@ export function readTests(text) {
   const names = new Set();
   let judgments = 0;
   for (const [index, test] of file.tests.entries()) {
-    const problem = shapeProblem(test);
+    const problem = shapeProblem(test, protocol);
     if (problem)
       return {
         problem: `第 ${index + 1} 条测试${named(test, "name")}：${problem}`,
@@ -467,9 +637,17 @@ export function readTests(text) {
 const multiStep = (test) => Array.isArray(test.steps);
 const stepName = (index, who) => `第 ${index + 1} 步（${who}）`;
 
-/** A number of claims: placeholders, each the even share, up to `until`. */
-function placeholders(count, hongbao, until) {
-  const each = Math.floor(hongbao.total / hongbao.count);
+/**
+ * A number of claims: placeholders, each the even share, up to `until`.
+ * Protocol 5's are each about 1 LDC, leaving something in the pool.
+ */
+function placeholders(count, hongbao, until, ledger) {
+  const each = ledger
+    ? Math.min(
+        Math.floor(hongbao.total / hongbao.count),
+        Math.floor((hongbao.total - 1) / Math.max(1, count)),
+      )
+    : Math.floor(hongbao.total / hongbao.count);
   // A minute apart, closer when that would start before the opening.
   const gap = Math.min(
     MINUTE,
@@ -485,11 +663,15 @@ function placeholders(count, hongbao, until) {
 
 const samePerson = (a, b) => a.id === b.id || a.username === b.username;
 
-/** The claims before the first submission, as the site could have them. */
-function claimsInconsistency(claims, hongbao, until, multi) {
+/**
+ * The claims before the first submission, as the site could have them.
+ * Protocol 5 (`ledger`) has no shares: only the pool, which they leave
+ * something of, with the players' pending (`held`).
+ */
+function claimsInconsistency(claims, hongbao, until, multi, ledger, held) {
   for (const [index, claim] of claims.entries()) {
     const where = `已领的第 ${index + 1} 份`;
-    if (claim.amount < hongbao.minEach)
+    if (!ledger && claim.amount < hongbao.minEach)
       return `${where}少于每份至少（${hongbao.minEach}）`;
     if (claim.at < hongbao.openedAt)
       return `${where}早于开放（hongbao.openedAt）`;
@@ -503,6 +685,10 @@ function claimsInconsistency(claims, hongbao, until, multi) {
       return `${where}和第 ${earlier + 1} 份是同一个人（${claim.user.username}）`;
   }
   const paid = claims.reduce((sum, claim) => sum + claim.amount, 0);
+  if (ledger)
+    return paid + held >= hongbao.total
+      ? "已领的加上 players 的待结算，要少于总奖池：奖池占满了，红包就结束了"
+      : null;
   if (hongbao.total - paid < (hongbao.count - claims.length) * hongbao.minEach)
     return "已领的加起来太多，剩下的不够剩下每份都拿到每份至少";
   return null;
@@ -514,8 +700,9 @@ function claimsInconsistency(claims, hongbao, until, multi) {
  * submission and each submission with who makes it, when and what is
  * expected.
  */
-function planOf(test) {
+function planOf(test, protocol) {
   const multi = multiStep(test);
+  const ledger = protocol >= LEDGER_PROTOCOL;
   const now = toMs(test.now) ?? TEST_DEFAULTS.now;
   const hongbao = {
     ...TEST_DEFAULTS.hongbao,
@@ -523,6 +710,11 @@ function planOf(test) {
     openedAt: toMs(test.hongbao?.openedAt) ?? now - HOUR,
     endsAt: toMs(test.hongbao?.endsAt) ?? now + DAY,
   };
+  // Protocol 5: no shares; check() and setup() are told n and 0.01.
+  if (ledger) {
+    hongbao.count = defaultCount(hongbao.total);
+    hongbao.minEach = 1;
+  }
   const fail = (problem) => ({ problem });
   if (hongbao.minEach * hongbao.count > hongbao.total)
     return fail("总奖池不够每份都拿到每份至少");
@@ -550,21 +742,40 @@ function planOf(test) {
   // test that cannot happen, not ten billion records.
   const written =
     typeof test.claims === "number" ? test.claims : (test.claims ?? []).length;
-  if (written >= hongbao.count)
+  if (ledger ? written >= hongbao.total : written >= hongbao.count)
     return fail(
-      `claims 写了 ${written} 份，红包一共 ${hongbao.count} 份，要留至少一份没领`,
+      ledger
+        ? `claims 写了 ${written} 份，总奖池不够每份至少 0.01 以后还剩一点`
+        : `claims 写了 ${written} 份，红包一共 ${hongbao.count} 份，要留至少一份没领`,
     );
   const claims =
     typeof test.claims === "number"
-      ? placeholders(test.claims, hongbao, start)
+      ? placeholders(test.claims, hongbao, start, ledger)
       : (test.claims ?? []).map((claim) => ({
           user: { id: claim.user.id, username: claim.user.username },
           amount: claim.amount,
           input: claim.input.trim(),
           at: toMs(claim.at),
         }));
-  const inconsistent = claimsInconsistency(claims, hongbao, start, multi);
+  const writtenPlayers = Object.entries(test.players ?? {});
+  const held = writtenPlayers.reduce(
+    (sum, [, player]) => sum + (player.pending ?? 0),
+    0,
+  );
+  const inconsistent = claimsInconsistency(
+    claims,
+    hongbao,
+    start,
+    multi,
+    ledger,
+    held,
+  );
   if (inconsistent) return fail(inconsistent);
+  for (const [name] of writtenPlayers)
+    if (claims.some((claim) => claim.user.username === name))
+      return fail(
+        `players 里的“${name}”已经在 claims 里领过了：结算过的人不能再玩`,
+      );
   const state = test.state ?? null;
   if (nestsDeeper(state, LIMITS.stateDepth))
     return fail(`state 嵌套超过 ${LIMITS.stateDepth} 层`);
@@ -576,10 +787,33 @@ function planOf(test) {
     state,
     secret: test.seed ?? TEST_SEED,
   };
+  // Protocol 5's players, numbered as steps' people are: judged once.
+  const taken = new Set(claims.map((claim) => claim.user.id));
+  let next = FIRST_PERSON;
+  const numbered = () => {
+    while (taken.has(next)) next += 1;
+    taken.add(next);
+    return next;
+  };
+  const playersWith = (idOf) =>
+    writtenPlayers.map(([name, player]) => ({
+      user: { id: idOf(name), username: name },
+      pending: player.pending ?? 0,
+      state: player.state ?? null,
+      view: player.view ?? null,
+      judged: 1,
+    }));
   if (!multi) {
     const user = { ...TEST_DEFAULTS.user, ...test.user };
     if (claims.some((claim) => samePerson(claim.user, user)))
       return fail(`这个人（${user.username}）已经领过了，线上不会交给代码`);
+    taken.add(user.id);
+    const playing = writtenPlayers.some(([name]) => name === user.username);
+    // Among the players, they were judged before.
+    if (playing && test.user?.attempts === undefined) user.attempts = 1;
+    plan.players = playersWith((name) =>
+      name === user.username ? user.id : numbered(),
+    );
     return {
       ...plan,
       steps: [
@@ -593,21 +827,22 @@ function planOf(test) {
       ],
     };
   }
-  // The same who is the same person: someone in claims by that name, or
-  // the next number nobody has.
-  const taken = new Set(claims.map((claim) => claim.user.id));
+  // The same who is the same person: someone in claims or players by
+  // that name, or the next number nobody has.
   const people = new Map(
     claims.map((claim) => [claim.user.username, claim.user.id]),
   );
-  let next = FIRST_PERSON;
+  plan.players = playersWith((name) => {
+    const id = numbered();
+    people.set(name, id);
+    return id;
+  });
   return {
     ...plan,
     steps: test.steps.map((step, index) => {
       let id = people.get(step.who);
       if (id === undefined) {
-        while (taken.has(next)) next += 1;
-        id = next;
-        taken.add(id);
+        id = numbered();
         people.set(step.who, id);
       }
       return {
@@ -698,6 +933,115 @@ function unmatched(expected, actual) {
 const noteText = (note) =>
   note === null ? "null（没拉进范围）" : `"${note}"（${NOTE_WORDS[note]}）`;
 
+/** Where `actual` differs from an Includes object, in words, or none. */
+function includesDifference(name, label, expected, actual) {
+  const paths = unmatched(expected, actual);
+  if (paths.includes("")) return [`${name} 和 ${label} 不一样`];
+  if (paths.length > 0)
+    return [`${name} 里的 ${paths.join("、")} 和 ${label} 不一样`];
+  return [];
+}
+
+const settledText = (settled) =>
+  settled === null || settled === undefined ? "还没结算" : `结算了 ${settled}`;
+
+/**
+ * What one person came to against what was expected of them (protocol
+ * 5): `part` their pending, settled, state and view after, `what` how they
+ * are named ("待结算", "小明的待结算").
+ */
+function partDifferences(expect, part, who) {
+  const found = [];
+  if (expect.pending !== undefined && expect.pending !== part.pending)
+    found.push(`${who}待结算应该是 ${expect.pending}，实际是 ${part.pending}`);
+  if (expect.settled !== undefined && expect.settled !== part.settled)
+    found.push(
+      `${who}应该${settledText(expect.settled)}，实际${settledText(part.settled)}`,
+    );
+  for (const name of ["state", "view"]) {
+    const includes = `${name}Includes`;
+    if (expect[name] !== undefined && !sameJson(expect[name], part[name]))
+      found.push(`${who}${name} 和期望的不一样`);
+    if (expect[includes] !== undefined)
+      found.push(
+        ...includesDifference(
+          `${who}${name}`,
+          includes,
+          expect[includes],
+          part[name],
+        ),
+      );
+  }
+  return found;
+}
+
+/**
+ * Protocol 5's differences (docs/multi-prize-design.md §6): `actual` is
+ * what stepOutcome found — the add and settle written, the one judged's
+ * part after, each named person's.
+ */
+function ledgerDifferences(expect, reading, actual) {
+  const found = [];
+  if (expect.ok !== undefined && expect.ok !== actual.ok)
+    found.push(
+      expect.ok
+        ? "应该结算并领到钱，实际没有"
+        : `不应该领到钱，实际结算领到 ${actual.amount}`,
+    );
+  else if (expect.amount !== undefined && expect.amount !== actual.amount)
+    found.push(
+      actual.ok
+        ? `应该领到 ${expect.amount}，实际领到 ${actual.amount}`
+        : `应该领到 ${expect.amount}，实际没领到`,
+    );
+  if (expect.add !== undefined && expect.add !== reading.add)
+    found.push(`add 应该是 ${expect.add}，实际是 ${reading.add}`);
+  if (expect.settle !== undefined && expect.settle !== reading.settle)
+    found.push(
+      expect.settle
+        ? "应该说结算（settle: true），实际没说"
+        : "不应该说结算，实际说了 settle: true",
+    );
+  found.push(
+    ...partDifferences(
+      { pending: expect.pending, settled: expect.settled },
+      actual,
+      "",
+    ),
+  );
+  const player = expect.player ?? expect.playerIncludes;
+  if (player) {
+    const label = expect.player ? "expect.player" : "expect.playerIncludes";
+    for (const name of ["state", "view"]) {
+      if (!Object.hasOwn(player, name)) continue;
+      if (expect.player && !sameJson(player[name], actual.player[name]))
+        found.push(`player.${name} 和 ${label}.${name} 不一样`);
+      if (expect.playerIncludes)
+        found.push(
+          ...includesDifference(
+            `player.${name}`,
+            `${label}.${name}`,
+            player[name],
+            actual.player[name],
+          ),
+        );
+    }
+  }
+  for (const [name, wanted] of Object.entries(expect.people ?? {})) {
+    const part = actual.people?.[name];
+    if (!part) {
+      found.push(`“${name}”没有在这个红包里玩过`);
+      continue;
+    }
+    found.push(...partDifferences(wanted, part, `“${name}”的`));
+    if (wanted.message !== undefined && wanted.message !== (part.message ?? ""))
+      found.push(
+        `给“${name}”的话应该是“${wanted.message}”，${part.message ? `实际是“${part.message}”` : "实际没有"}`,
+      );
+  }
+  return found;
+}
+
 /** Every way a read answer differs from what was expected (§5 expect). */
 function differences(expect, reading, state, view) {
   const found = [];
@@ -717,6 +1061,22 @@ function differences(expect, reading, state, view) {
         `note 应该是 ${noteText(expect.note)}，实际是 ${noteText(reading.note)}`,
       );
   }
+  return [...found, ...sharedDifferences(expect, reading, state, view)];
+}
+
+/**
+ * Where the reply, state, view, line in 动态 and end differ, and fields
+ * the protocol does not have: every protocol's. `ended` is whether the
+ * 红包 ended with it (protocol 5: by end or with the pool taken).
+ */
+function sharedDifferences(
+  expect,
+  reading,
+  state,
+  view,
+  ended = reading.end === true,
+) {
+  const found = [];
   const message = reading.message ?? "";
   const said = message ? `实际是“${message}”` : "实际没有回复";
   if (expect.message !== undefined && expect.message !== message)
@@ -728,28 +1088,32 @@ function differences(expect, reading, state, view) {
     found.push(`回复应该含“${expect.messageIncludes}”，${said}`);
   if (expect.state !== undefined && !sameJson(expect.state, state))
     found.push("state 和 expect.state 不一样");
-  if (expect.stateIncludes !== undefined) {
-    const paths = unmatched(expect.stateIncludes, state);
-    if (paths.includes("")) found.push("state 和 expect.stateIncludes 不一样");
-    else if (paths.length > 0)
-      found.push(
-        `state 里的 ${paths.join("、")} 和 expect.stateIncludes 不一样`,
-      );
-  }
+  if (expect.stateIncludes !== undefined)
+    found.push(
+      ...includesDifference(
+        "state",
+        "expect.stateIncludes",
+        expect.stateIncludes,
+        state,
+      ),
+    );
   if (expect.view !== undefined && !sameJson(expect.view, view))
     found.push("view 和 expect.view 不一样");
-  if (expect.viewIncludes !== undefined) {
-    const paths = unmatched(expect.viewIncludes, view);
-    if (paths.includes("")) found.push("view 和 expect.viewIncludes 不一样");
-    else if (paths.length > 0)
-      found.push(`view 里的 ${paths.join("、")} 和 expect.viewIncludes 不一样`);
-  }
+  if (expect.viewIncludes !== undefined)
+    found.push(
+      ...includesDifference(
+        "view",
+        "expect.viewIncludes",
+        expect.viewIncludes,
+        view,
+      ),
+    );
   const announce = reading.announce ?? "";
   if (expect.announce !== undefined && expect.announce !== announce)
     found.push(
       `动态应该是“${expect.announce}”，${announce ? `实际是“${announce}”` : "实际没有动态"}`,
     );
-  if (expect.end !== undefined && expect.end !== (reading.end === true))
+  if (expect.end !== undefined && expect.end !== ended)
     found.push(
       expect.end ? "应该结束红包，实际没结束" : "不应该结束红包，实际结束了",
     );
@@ -759,9 +1123,10 @@ function differences(expect, reading, state, view) {
 }
 
 const REFUSALS = {
-  ended: "红包已经被判定器结束了，线上不会交给代码",
+  ended: "红包已经结束了，线上不会交给代码",
   claimed: "已经领过了，线上不会交给代码",
   "sold-out": "份已经领完了，线上不会交给代码",
+  settled: "已经结算了，线上不会交给代码",
 };
 
 const failureWords = {
@@ -789,10 +1154,70 @@ function networkDifferences(answer) {
 }
 
 /**
- * One submission of a test, as it went (judgeNext's result); `view` is the
- * 红包's after it.
+ * Protocol 5: each person by name, as they are after a judgment — those
+ * settled before the test as claims have them — and what `others` told
+ * those it named.
  */
-function stepOutcome(step, judged, view) {
+function peopleOf(scenario, ledger) {
+  const people = {};
+  for (const claim of scenario.claims)
+    people[claim.user.username] = {
+      pending: 0,
+      settled: claim.amount,
+      state: null,
+      view: null,
+    };
+  for (const person of scenario.people.values())
+    people[person.user.username] = {
+      pending: person.pending,
+      settled: person.settled,
+      state: person.state,
+      view: person.view,
+    };
+  for (const move of ledger.moves.slice(1))
+    if (move.message !== undefined)
+      people[move.username].message = move.message;
+  return people;
+}
+
+/** What a protocol 5 judgment came to (stepOutcome's `actual`). */
+function ledgerActual(scenario, judged) {
+  const { reading, submission, ledger } = judged;
+  const self = scenario.people.get(submission.user.id);
+  const settledNow = ledger.settled.find(
+    (settled) => settled.id === submission.user.id,
+  );
+  const ok = settledNow !== undefined && settledNow.amount > 0;
+  const others = ledger.moves.slice(1).map((move) => {
+    const settled = ledger.settled.find((person) => person.id === move.id);
+    return {
+      who: move.username,
+      ...(settled ? { settled: settled.amount } : { pending: move.after }),
+      ...(move.message !== undefined ? { message: move.message } : {}),
+    };
+  });
+  return {
+    ok,
+    ...(ok ? { amount: settledNow.amount } : {}),
+    add: reading.add,
+    settle: reading.settle,
+    pending: self.pending,
+    settled: self.settled,
+    player: { state: self.state, view: self.view },
+    ...(others.length > 0 ? { others } : {}),
+    ...(reading.message !== undefined ? { message: reading.message } : {}),
+    state: scenario.state,
+    ...(scenario.view !== null ? { view: scenario.view } : {}),
+    ...(reading.announce !== undefined ? { announce: reading.announce } : {}),
+    ...(scenario.ended ? { end: true } : {}),
+  };
+}
+
+/**
+ * One submission of a test, as it went (judgeNext's result), on
+ * `scenario` as it is after it.
+ */
+function stepOutcome(step, judged, scenario) {
   if ("refused" in judged)
     return {
       passed: false,
@@ -816,6 +1241,31 @@ function stepOutcome(step, judged, view) {
       ms,
       ...logs,
     };
+  if (judged.ledger) {
+    const actual = ledgerActual(scenario, judged);
+    const found = [
+      ...ledgerDifferences(step.expect, reading, {
+        ...actual,
+        people: peopleOf(scenario, judged.ledger),
+      }),
+      ...sharedDifferences(
+        step.expect,
+        reading,
+        actual.state,
+        scenario.view,
+        scenario.ended,
+      ),
+      ...networkDifferences(answer),
+    ];
+    return {
+      passed: found.length === 0,
+      ...(found.length > 0 ? { problem: found.join("；") } : {}),
+      actual,
+      ms,
+      ...logs,
+    };
+  }
+  const { view } = scenario;
   const state = reading.state.keep ? submission.state : reading.state.value;
   const actual = {
     ok: reading.ok,
@@ -858,9 +1308,9 @@ function stepOutcome(step, judged, view) {
 export async function runTest(
   test,
   run,
-  { twice = false, params: declared, check } = {},
+  { twice = false, params: declared, check, protocol = LEDGER_PROTOCOL } = {},
 ) {
-  const plan = planOf(test);
+  const plan = planOf(test, protocol);
   if ("problem" in plan) return { passed: false, problem: plan.problem, ms: 0 };
   // 协议第三版: the params it is judged with, as the site would take them
   // from a sender, and as check() would let them through.
@@ -893,10 +1343,12 @@ export async function runTest(
   const scenario = startScenario({
     hongbao: plan.hongbao,
     claims: plan.claims,
+    players: plan.players,
     state: plan.state,
     hongbaoId: TEST_HONGBAO_ID,
     secret: plan.secret,
     ...(params !== undefined ? { params } : {}),
+    protocol,
   });
   const steps = [];
   const answered = [];
@@ -911,11 +1363,7 @@ export async function runTest(
         answers: step.fetch,
         verdict: judged.answer.verdict,
       });
-    const { failure: failed, ...outcome } = stepOutcome(
-      step,
-      judged,
-      scenario.view,
-    );
+    const { failure: failed, ...outcome } = stepOutcome(step, judged, scenario);
     ms += outcome.ms;
     failure = failed;
     steps.push({

@@ -42,14 +42,20 @@
         },
         "hongbao": { "$ref": "#/$defs/hongbao" },
         "claims": {
-          "description": "前面已领的份：写数字，补上这么多份占位记录（每份平均）；或者写完整列表。默认没人领；要留至少一份没领。",
+          "description": "前面已经结算、领到钱的人：写数字，补上这么多条占位记录（每人约 1 LDC）；或者写完整列表。默认没有；加起来要少于总奖池。",
           "anyOf": [
             { "type": "integer", "minimum": 0 },
             { "type": "array", "items": { "$ref": "#/$defs/claim" } }
           ]
         },
+        "players": {
+          "description": "第五版：前面已经玩过、还没结算的人。名字对应他的待结算、状态和只给他看的数据，比如 { \"小明\": { \"pending\": 50 } }。这次提交的人（单次测试的 user.username、多步的 who）也可以在里面；他们的待结算加上 claims 要少于总奖池。",
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/username" },
+          "additionalProperties": { "$ref": "#/$defs/player" }
+        },
         "state": {
-          "description": "代码之前存的状态（任意 JSON），默认 null；最大 16 KB，最多嵌套 100 层"
+          "description": "代码之前存的共用状态（任意 JSON），默认 null；最大 16 KB，最多嵌套 100 层"
         },
         "seed": {
           "description": "种子（64 位小写十六进制）：tools.random 和 tools.userRandom 由它推出来。默认固定的测试种子",
@@ -70,22 +76,19 @@
         },
         "expect": { "$ref": "#/$defs/expect" },
         "steps": {
-          "description": "几个人依次提交。状态、已领记录、每人被判定过几次、剩余奖池都像线上一样一步步往下传；hongbao、claims、state、seed 是第一步之前的样子。写了 steps 就不写 input、user、fetch、expect。",
+          "description": "几个人依次提交。共用的状态、每个人的待结算和状态、已经结算的、奖池都像线上一样一步步往下传；hongbao、claims、players、state、seed 是第一步之前的样子。写了 steps 就不写 input、user、fetch、expect。",
           "type": "array",
           "minItems": 1,
           "maxItems": 200,
           "items": { "$ref": "#/$defs/step" }
         },
         "share": {
-          "description": "这一份的范围由 claims 推出来，不能直接写",
+          "description": "兼容旧代码的 share 由 claims 和 players 推出来，不能直接写",
           "not": {}
         }
       },
       "oneOf": [
-        {
-          "required": ["input", "expect"],
-          "not": { "required": ["steps"] }
-        },
+        { "required": ["input", "expect"], "not": { "required": ["steps"] } },
         {
           "required": ["steps"],
           "not": {
@@ -126,7 +129,7 @@
       "default": 2
     },
     "hongbao": {
-      "description": "第一次提交之前红包的样子。默认：测试红包、总奖池 10000、10 份、每份至少 1、now 前 1 小时开放、now 后 1 天截止。总奖池要够每份都拿到每份至少。",
+      "description": "第一次提交之前红包的样子。默认：测试红包、总奖池 10000、now 前 1 小时开放、now 后 1 天截止。第五版没有份数和每份至少，只有总奖池。",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -144,19 +147,8 @@
           "minimum": 1,
           "default": 10000
         },
-        "count": {
-          "description": "总份数，最多 1000",
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 1000,
-          "default": 10
-        },
-        "minEach": {
-          "description": "每份至少（分）",
-          "type": "integer",
-          "minimum": 1,
-          "default": 1
-        },
+        "count": { "description": "第五版没有份数，不能写", "not": {} },
+        "minEach": { "description": "第五版没有每份至少，不能写", "not": {} },
         "openedAt": {
           "$ref": "#/$defs/time",
           "description": "开放的时间；默认 now 前 1 小时"
@@ -170,13 +162,17 @@
           "not": {}
         },
         "remainingCount": {
-          "description": "剩余份数由 claims 推出来，不能直接写",
+          "description": "兼容旧代码的剩余份数由 claims 推出来，不能直接写",
+          "not": {}
+        },
+        "unclaimed": {
+          "description": "奖池里还没被占的由 claims 和 players 推出来，不能直接写",
           "not": {}
         }
       }
     },
     "claim": {
-      "description": "已领的一份。按先后写，不早于开放、不晚于这次提交（多步的是第一步）；每份不少于每份至少，剩下的够剩下每份都拿到每份至少；同一个人只有一份，提交的人不在里面。",
+      "description": "前面已经结算、领到钱的一个人。按先后写，不早于开放、不晚于这次提交（多步的是第一步）；同一个人只有一条，提交的人不在里面。",
       "type": "object",
       "required": ["user", "amount", "input", "at"],
       "additionalProperties": false,
@@ -191,12 +187,12 @@
           }
         },
         "amount": {
-          "description": "领到的（分）",
+          "description": "结算领到的（分）",
           "type": "integer",
           "minimum": 1
         },
         "input": { "$ref": "#/$defs/input" },
-        "at": { "$ref": "#/$defs/time", "description": "领到的时间" }
+        "at": { "$ref": "#/$defs/time", "description": "结算的时间" }
       }
     },
     "user": {
@@ -292,21 +288,92 @@
       }
     },
     "expect": {
-      "description": "期望：ok 必填，其余写了才比，不一样的地方一起列出来。代码返回协议以外的字段也算不通过。",
+      "description": "期望：写了才比，不一样的地方一起列出来（什么都不写，就只看能不能跑通）。代码返回协议以外的字段也算不通过。",
       "type": "object",
-      "required": ["ok"],
       "additionalProperties": false,
       "properties": {
-        "ok": { "description": "发还是不发", "type": "boolean" },
+        "ok": {
+          "description": "简写：这次判定有没有给提交的人结算、并且领到钱（结算 0 不算）",
+          "type": "boolean"
+        },
         "amount": {
-          "description": "实际发的（分），拉进这一份的范围以后",
+          "description": "简写：这次结算领到的（分）",
           "type": "integer",
           "minimum": 1
         },
-        "asked": { "description": "代码自己给的（分）", "type": "integer" },
-        "note": {
-          "description": "拉进范围的原因：cap 按上限发，floor 按每份至少发，last 最后一份，发完剩下的；没拉写 null",
-          "enum": ["cap", "floor", "last", null]
+        "add": {
+          "description": "判定器给提交的人的 add（分）；{ ok: true, amount } 的 add 就是 amount",
+          "type": "integer"
+        },
+        "settle": {
+          "description": "判定器有没有说给提交的人结算",
+          "type": "boolean"
+        },
+        "pending": {
+          "description": "这次以后的待结算（分）；结算以后是 0",
+          "type": "integer",
+          "minimum": 0
+        },
+        "settled": {
+          "description": "结算的金额（分），可以是 0；还没结算写 null",
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "player": {
+          "description": "提交的人这次以后自己的状态和只给他看的数据：写了 state、view 的哪项，那项整份比",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "state": {}, "view": { "type": ["object", "null"] } }
+        },
+        "playerIncludes": {
+          "description": "同 player，只比写了的键",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "state": { "type": "object" },
+            "view": { "type": "object" }
+          }
+        },
+        "people": {
+          "description": "按名字（who、username）：这些人这次以后的样子",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "pending": {
+                "description": "这次以后的待结算（分）；结算以后是 0",
+                "type": "integer",
+                "minimum": 0
+              },
+              "settled": {
+                "description": "结算的金额（分），可以是 0；还没结算写 null",
+                "type": ["integer", "null"],
+                "minimum": 0
+              },
+              "state": { "description": "他的状态，整份比" },
+              "stateIncludes": {
+                "description": "他的状态，只比写了的键",
+                "type": "object"
+              },
+              "view": {
+                "description": "只给他看的数据，整份比；没有写 null",
+                "type": ["object", "null"]
+              },
+              "viewIncludes": {
+                "description": "只给他看的数据，只比写了的键",
+                "type": "object"
+              },
+              "message": {
+                "description": "others 这次写给他的话，逐字比；没写给他写 \"\"",
+                "type": "string"
+              }
+            },
+            "allOf": [
+              { "not": { "required": ["state", "stateIncludes"] } },
+              { "not": { "required": ["view", "viewIncludes"] } }
+            ]
+          }
         },
         "message": {
           "description": "代码的回复，逐字比（换行和连续空白已合成一个空格）",
@@ -318,10 +385,10 @@
           "minLength": 1
         },
         "state": {
-          "description": "这次判定以后的状态，整份比，键的顺序不算"
+          "description": "这次判定以后共用的状态，整份比，键的顺序不算"
         },
         "stateIncludes": {
-          "description": "这次判定以后的状态，只比写了的键，数组整个比",
+          "description": "这次判定以后共用的状态，只比写了的键，数组整个比",
           "type": "object"
         },
         "view": {
@@ -337,27 +404,50 @@
           "type": "string"
         },
         "end": {
-          "description": "第四版：这次判定有没有结束红包",
+          "description": "这次判定以后红包结束了没有（end 结束的，或者奖池被占满了）",
           "type": "boolean"
+        },
+        "asked": {
+          "description": "第五版没有 asked：判定器给的写 add",
+          "not": {}
+        },
+        "note": {
+          "description": "第五版没有 note：加上以后的待结算写 pending",
+          "not": {}
         }
       },
       "allOf": [
         { "not": { "required": ["message", "messageIncludes"] } },
         { "not": { "required": ["state", "stateIncludes"] } },
         { "not": { "required": ["view", "viewIncludes"] } },
+        { "not": { "required": ["player", "playerIncludes"] } },
         {
-          "if": { "properties": { "ok": { "const": false } } },
-          "then": {
-            "not": {
-              "anyOf": [
-                { "required": ["amount"] },
-                { "required": ["asked"] },
-                { "required": ["note"] }
-              ]
-            }
-          }
+          "if": {
+            "properties": { "ok": { "const": false } },
+            "required": ["ok"]
+          },
+          "then": { "not": { "required": ["amount"] } }
         }
       ]
+    },
+    "player": {
+      "description": "第五版：一个还没结算的人在第一次提交之前的样子。",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pending": {
+          "description": "待结算（分），默认 0",
+          "type": "integer",
+          "minimum": 0
+        },
+        "state": {
+          "description": "判定器给他存的状态（任意 JSON），默认 null；最大 4 KB"
+        },
+        "view": {
+          "description": "只给他看的数据：{ summary, data }，summary 最多 200 个字，data 最大 4 KB；没有写 null",
+          "type": ["object", "null"]
+        }
+      }
     }
   }
 }

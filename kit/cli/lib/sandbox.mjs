@@ -21,8 +21,8 @@ import {
 } from "../../runtime/index.mjs";
 import { fingerprintOf, KitError } from "./files.mjs";
 
-/** Protocol v4: this runtime on this compatibility date with nodejs_compat. */
-export const PROTOCOL = 4;
+/** Protocol v5: this runtime on this compatibility date with nodejs_compat. */
+export const PROTOCOL = 5;
 export const COMPATIBILITY_DATE = "2026-09-01";
 /** What runs beside judge.js, as hb's scripts/judge-runtime.ts copies it to the site. */
 export const SANDBOX_MODULES = Object.freeze([

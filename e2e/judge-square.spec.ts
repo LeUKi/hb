@@ -387,7 +387,7 @@ test.describe("判定器广场", () => {
     for (const [name, href] of [
       ["开发文档 ↗", "/help/code"],
       ["给 AI 的说明 ↗", "/help/code#ai"],
-    ]) {
+    ] as const) {
       const link = page.getByRole("link", { name, exact: true });
       await expect(link).toHaveAttribute("href", href);
       await expect(link).toHaveAttribute("target", "_blank");

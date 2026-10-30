@@ -1,11 +1,13 @@
 // simulate.json (协议第 5 节): a 红包, the params it was sent with (协议第三
 // 版) and the submissions made to it, in
 // order, each written like a step of a multi-step test in tests.json (with
-// the answers its requests get, `fetch`), only without expect. Unlike a step, someone who already has a share or a
-// submission after the last share is no mistake here: npm run simulate
-// says 已领过 or 已领完, as the site would turn them away. The 红包 and the
-// times follow tests.json's rules and defaults (runtime/testing.mjs).
+// the answers its requests get, `fetch`), only without expect. Unlike a
+// step, someone already settled or a submission after the 红包 ended is no
+// mistake here: npm run simulate says 已结算 or 已结束, as the site would
+// turn them away. The 红包 and the times follow tests.json's rules and
+// defaults (runtime/testing.mjs): a pool, no shares (protocol 5).
 import {
+  defaultCount,
   fetchProblem,
   LIMITS,
   TEST_DEFAULTS,
@@ -53,9 +55,14 @@ function timeProblem(value, label) {
 function hongbaoProblem(hongbao) {
   if (hongbao === undefined) return null;
   if (!isObject(hongbao)) return "hongbao 要是一个对象";
+  const shares = ["count", "minEach"].filter((key) =>
+    Object.hasOwn(hongbao, key),
+  );
+  if (shares.length > 0)
+    return `第五版没有份数和每份至少，只有总奖池：去掉 ${shares.map((key) => `hongbao.${key}`).join("、")}`;
   const extra = extraKey(
     hongbao,
-    ["title", "total", "count", "minEach", "openedAt", "endsAt"],
+    ["title", "total", "openedAt", "endsAt"],
     "hongbao 里",
   );
   if (extra) return extra;
@@ -65,14 +72,11 @@ function hongbaoProblem(hongbao) {
     (typeof title !== "string" || !title.trim() || characters(title) > 100)
   )
     return "hongbao.title 要是 1–100 个字";
-  for (const key of ["total", "count", "minEach"])
-    if (
-      hongbao[key] !== undefined &&
-      (!Number.isSafeInteger(hongbao[key]) || hongbao[key] < 1)
-    )
-      return `hongbao.${key} 要是正整数`;
-  if (hongbao.count !== undefined && hongbao.count > 1000)
-    return "hongbao.count 最多 1000";
+  if (
+    hongbao.total !== undefined &&
+    (!Number.isSafeInteger(hongbao.total) || hongbao.total < 1)
+  )
+    return "hongbao.total 要是正整数";
   return (
     timeProblem(hongbao.openedAt, "hongbao.openedAt") ??
     timeProblem(hongbao.endsAt, "hongbao.endsAt")
@@ -151,8 +155,9 @@ export function readSimulation(text, file = "simulate.json") {
     openedAt: toMs(data.hongbao?.openedAt) ?? now - HOUR,
     endsAt: toMs(data.hongbao?.endsAt) ?? now + DAY,
   };
-  if (hongbao.minEach * hongbao.count > hongbao.total)
-    return fail("总奖池不够每份都拿到每份至少");
+  // check() and setup() are told n and 0.01 (protocol 5).
+  hongbao.count = defaultCount(hongbao.total);
+  hongbao.minEach = 1;
   if (hongbao.endsAt <= hongbao.openedAt)
     return fail("hongbao.endsAt 要晚于 hongbao.openedAt");
   const people = new Map();

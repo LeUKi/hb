@@ -165,7 +165,9 @@
         $("facts").replaceChildren(
           ...[
             `奖池 ${hongbao.pool} LDC`,
-            `已领 ${hongbao.shares.claimed} / ${hongbao.shares.total} 份`,
+            hongbao.shares
+              ? `已领 ${hongbao.shares.claimed} / ${hongbao.shares.total} 份`
+              : `奖池还剩 ${hongbao.unclaimed} LDC`,
             `发出 ${paid} LDC`,
             `已判定 ${hongbao.judged} 次`,
             status,

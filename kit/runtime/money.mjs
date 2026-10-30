@@ -1,6 +1,9 @@
 // Money for one share, in whole 分 (0.01). The platform, not the code,
 // decides what is finally paid: whatever the code asks is pulled into the
-// share's range, and the last share takes everything left.
+// share's range, and the last share takes everything left. From protocol 5
+// (docs/multi-prize-design.md §3.5) there are no shares: even(n) and
+// lucky(kind, n) share out what is unclaimed as if into n, less those
+// already paid, by the same formulas.
 import { randomIntegerInclusive } from "./random.mjs";
 
 /**
@@ -70,4 +73,43 @@ export function luckyAmount(kind, hongbao, share, fill) {
   // the share's range below still holds.
   if (high < low) high = low;
   return settle(Number(randomIntegerInclusive(low, high, fill)), share);
+}
+
+/**
+ * Protocol 5's n when the code gives none: the pool in whole LDC, at least
+ * 1 — about 1 LDC a share (§3.5). submission.hongbao.count says it.
+ */
+export function defaultCount(total) {
+  return Math.max(1, Math.floor(total / 100));
+}
+
+/**
+ * Protocol 5: the numbers the share formulas take, for `n` shares of what
+ * is unclaimed, `settled` of them already paid out (claims): at least 0.01
+ * each, and at least one share left, which, the last, takes it all.
+ */
+function sharesOf(hongbao, settled, n, name) {
+  if (n !== undefined && (!Number.isSafeInteger(n) || n < 1))
+    throw new RangeError(`${name} 的 n 要是正整数（按几份分）`);
+  const count = n ?? hongbao.count;
+  const numbers = {
+    total: hongbao.total,
+    count,
+    minEach: 1,
+    remaining: hongbao.unclaimed,
+    remainingCount: Math.max(1, count - settled),
+  };
+  return { numbers, share: shareRange(numbers) };
+}
+
+/** even(n), protocol 5: what is unclaimed ÷ (n − those paid), at least ÷ 1. */
+export function evenOf(hongbao, settled, n) {
+  const { numbers, share } = sharesOf(hongbao, settled, n, "even");
+  return evenAmount(numbers, share);
+}
+
+/** lucky(kind, n), protocol 5: lucky's step on the same numbers as evenOf. */
+export function luckyOf(kind, hongbao, settled, n, fill) {
+  const { numbers, share } = sharesOf(hongbao, settled, n, "lucky");
+  return luckyAmount(kind, numbers, share, fill);
 }

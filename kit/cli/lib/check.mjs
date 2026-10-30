@@ -4,6 +4,8 @@
 // catch true randomness, then the sizes and the fingerprint the site shows
 // beside the code. Like a deployment, after a
 // timeout it goes on in a new sandbox once; a second one stops the rest.
+// Protocol 5 (docs/multi-prize-design.md §3.5): a reminder for each even()
+// or lucky() without n, and for share rules that no longer count.
 import {
   checkSource,
   LIMITS,
@@ -12,6 +14,7 @@ import {
   readTests,
   runTest,
   secretsInView,
+  uncountedShares,
 } from "../../runtime/index.mjs";
 import { bytesOf, fingerprintOf, readProjectFile, sizeText } from "./files.mjs";
 import { openSandbox, SLOW_MS } from "./sandbox.mjs";
@@ -115,6 +118,7 @@ export async function checkCommand({ dir, print = console.log }) {
   let leaked = [];
   let slowest = null;
   let loadNote = null;
+  let shareRules = [];
   if ("problem" in read) print(row(false, read.problem));
   else if (problems.length === 0) {
     const all = await runAll(code, read.tests);
@@ -138,6 +142,9 @@ export async function checkCommand({ dir, print = console.log }) {
       } else {
         if (declared.meta?.page)
           print(row(true, `附带网页：${declared.meta.page}`));
+        shareRules = ["count", "minEach"].filter(
+          (key) => declared.hongbao?.[key] !== undefined,
+        );
         if (declared.params.length > 0) {
           print(row(true, "参数表单预览"));
           for (const item of declared.params) print(`  ${paramLine(item)}`);
@@ -157,6 +164,13 @@ export async function checkCommand({ dir, print = console.log }) {
     );
   for (const key of leaked)
     print(`提醒：公开数据里出现了保密参数 ${key} 的值，开放后所有人都看得到。`);
+  if (problems.length === 0)
+    for (const { line, message } of uncountedShares(code))
+      print(`提醒：第 ${line} 行 ${message}`);
+  if (shareRules.length > 0)
+    print(
+      `提醒：hongbao 里的 ${shareRules.join("、")} 不起作用了：现在没有份数和每份至少，只有总奖池`,
+    );
   if (slowest !== null)
     print(
       isSlow(slowest)

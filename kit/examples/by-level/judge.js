@@ -54,15 +54,13 @@ export function judge(submission, tools) {
     password &&
     tools.text.normalize(input) !== tools.text.normalize(password)
   )
-    return { ok: false, message: "口令不对" };
-  if (user.level === null)
-    return { ok: false, message: "看不到你的信任等级，发不了" };
+    return { message: "口令不对" };
+  if (user.level === null) return { message: "看不到你的信任等级，发不了" };
   const amount = /** @type {number | null} */ (params[`lv${user.level}`]);
-  if (amount === null)
-    return { ok: false, message: `${user.level} 级没有这个红包` };
+  if (amount === null) return { message: `${user.level} 级没有这个红包` };
   return {
-    ok: true,
-    amount,
+    add: amount,
+    settle: true,
     message: `${user.level} 级，发 ${tools.money.format(amount)}`,
   };
 }

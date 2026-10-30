@@ -10,24 +10,37 @@
     {
       "name": "第一个答对，大小写不算",
       "input": "hello world",
-      "expect": { "ok": true, "amount": 2000, "message": "第 1 个答对！" }
+      "expect": {
+        "message": "第 1 个答对！",
+        "settled": 2000
+      }
     },
     {
       "name": "答错，还能答 2 次",
       "input": "hi",
-      "expect": { "ok": false, "message": "不对，还能答 2 次" }
+      "expect": {
+        "message": "不对，还能答 2 次",
+        "settled": null
+      }
     },
     {
       "name": "前两个以后拼手气",
       "input": "Hello World",
       "claims": 2,
-      "expect": { "ok": true, "message": "答对了，拼手气" }
+      "expect": {
+        "message": "答对了，拼手气"
+      }
     },
     {
       "name": "答满了",
       "input": "Hello World",
-      "user": { "attempts": 3 },
-      "expect": { "ok": false, "messageIncludes": "不能再答" }
+      "user": {
+        "attempts": 3
+      },
+      "expect": {
+        "messageIncludes": "不能再答",
+        "settled": null
+      }
     }
   ]
 }

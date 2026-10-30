@@ -5,7 +5,7 @@
 // This is the current protocol's; an opened 红包 keeps the runtime it
 // opened with, so an earlier protocol's copy is kept as it was, frozen, in
 // kit/runtime/frozen (v1.json: protocol v1; v2.json: protocol v2;
-// v3.json: protocol v3).
+// v3.json: protocol v3; v4.json: protocol v4).
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -34,6 +34,8 @@ export const FROZEN_V1 = join(root, "kit/runtime/frozen/v1.json");
 export const FROZEN_V2 = join(root, "kit/runtime/frozen/v2.json");
 /** Protocol v3's (参数, 判定器), frozen as v4 came (2026-10-29). */
 export const FROZEN_V3 = join(root, "kit/runtime/frozen/v3.json");
+/** Protocol v4's (公开数据, setup), frozen as v5 came (2026-10-30). */
+export const FROZEN_V4 = join(root, "kit/runtime/frozen/v4.json");
 
 export function runtimeCopy() {
   const modules: Record<string, string> = {};

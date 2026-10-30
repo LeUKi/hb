@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "simulate.json",
-  "description": "npm run simulate 用的：一个红包，和依次来提交的人。状态、已领记录、剩余奖池都像线上一样往下传。随机数用固定的种子，同一份文件每次结果一样；npm run simulate -- --seed 别的 换一个。",
+  "description": "npm run simulate 用的：一个红包，和依次来提交的人。共用的状态、每个人的待结算和状态、已经结算的、奖池都像线上一样往下传；最后到截止时间，还没结算的人一起结算。随机数用固定的种子，同一份文件每次结果一样；npm run simulate -- --seed 别的 换一个。",
   "type": "object",
   "required": ["submissions"],
   "additionalProperties": false,
@@ -25,7 +25,7 @@
       "type": "object"
     },
     "submissions": {
-      "description": "依次来提交的，写法同 tests.json 多步场景的一步，只是没有 expect。已经领过的人、领完以后的提交不算错，照实写“已领过”“已领完”。",
+      "description": "依次来提交的，写法同 tests.json 多步场景的一步，只是没有 expect。已经结算的人、红包结束以后的提交不算错，照实写“已结算”“已结束”。",
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/$defs/submission" }
@@ -112,7 +112,6 @@
         ]
       }
     },
-
     "time": {
       "description": "毫秒（整数），或带时区的 ISO 时间，比如 \"2026-10-24T12:00:00+08:00\"；不带时区的不认",
       "anyOf": [
@@ -124,7 +123,7 @@
       ]
     },
     "hongbao": {
-      "description": "红包，写法同 tests.json。默认：测试红包、总奖池 10000、10 份、每份至少 1、now 前 1 小时开放、now 后 1 天截止。总奖池要够每份都拿到每份至少。",
+      "description": "红包的样子。默认：测试红包、总奖池 10000、now 前 1 小时开放、now 后 1 天截止。第五版没有份数和每份至少，只有总奖池。",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -142,19 +141,8 @@
           "minimum": 1,
           "default": 10000
         },
-        "count": {
-          "description": "总份数，最多 1000",
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 1000,
-          "default": 10
-        },
-        "minEach": {
-          "description": "每份至少（分）",
-          "type": "integer",
-          "minimum": 1,
-          "default": 1
-        },
+        "count": { "description": "第五版没有份数，不能写", "not": {} },
+        "minEach": { "description": "第五版没有每份至少，不能写", "not": {} },
         "openedAt": {
           "$ref": "#/$defs/time",
           "description": "开放的时间；默认 now 前 1 小时"

@@ -2,8 +2,7 @@
   "$schema": "../../simulate.schema.json",
   "hongbao": {
     "title": "刮刮乐",
-    "total": 1000,
-    "count": 5
+    "total": 1000
   },
   "submissions": [
     {
@@ -54,5 +53,8 @@
       "who": "小冯",
       "input": "23"
     }
-  ]
+  ],
+  "params": {
+    "prizes": 5
+  }
 }

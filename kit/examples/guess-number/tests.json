@@ -1,50 +1,94 @@
 {
   "$schema": "../../tests.schema.json",
-  "params": { "max": 100, "answer": 42, "tries": 3 },
+  "params": {
+    "max": 100,
+    "answer": 42,
+    "tries": 3
+  },
   "tests": [
     {
       "name": "猜中",
       "input": "42",
-      "expect": { "ok": true, "message": "猜中了！" }
+      "expect": {
+        "message": "猜中了！",
+        "settled": 2000
+      }
     },
     {
       "name": "大了",
       "input": "50",
-      "expect": { "ok": false, "message": "大了，还能猜 2 次" }
+      "expect": {
+        "message": "大了，还能猜 2 次",
+        "settled": null
+      }
     },
     {
-      "name": "最后一次也没中",
+      "name": "最后一次也没中：结算了，没领到",
       "input": "7",
-      "user": { "attempts": 2 },
-      "expect": { "ok": false, "message": "小了，次数用完了" }
+      "user": {
+        "attempts": 2
+      },
+      "expect": {
+        "message": "小了，次数用完了",
+        "settled": 0
+      }
     },
     {
       "name": "猜满了，猜中也不发",
       "input": "42",
-      "user": { "attempts": 3 },
-      "expect": { "ok": false, "messageIncludes": "不能再猜" }
+      "user": {
+        "attempts": 3
+      },
+      "expect": {
+        "messageIncludes": "不能再猜",
+        "settled": null
+      }
     },
     {
       "name": "不是整数",
       "input": "四十二",
-      "expect": { "ok": false, "message": "请输入 1 到 100 之间的整数" }
+      "expect": {
+        "message": "请输入 1 到 100 之间的整数",
+        "settled": null
+      }
     },
     {
       "name": "超出范围",
       "input": "500",
-      "expect": { "ok": false, "message": "请输入 1 到 100 之间的整数" }
+      "expect": {
+        "message": "请输入 1 到 100 之间的整数",
+        "settled": null
+      }
     },
     {
       "name": "另一组参数：1 到 10，只能猜 1 次",
       "input": "3",
-      "params": { "max": 10, "answer": 3, "tries": 1 },
-      "expect": { "ok": true, "message": "猜中了！" }
+      "params": {
+        "max": 10,
+        "answer": 3,
+        "tries": 1,
+        "winners": 5
+      },
+      "expect": {
+        "message": "猜中了！",
+        "settled": 2000
+      }
     },
     {
-      "name": "钱平均分",
+      "name": "钱按几个人能领平均分",
       "input": "42",
-      "hongbao": { "total": 1000, "count": 4 },
-      "expect": { "ok": true, "amount": 250 }
+      "hongbao": {
+        "total": 1000
+      },
+      "expect": {
+        "settled": 250
+      },
+      "params": {
+        "max": 100,
+        "answer": 42,
+        "tries": 3,
+        "winners": 4
+      }
     }
   ]
 }

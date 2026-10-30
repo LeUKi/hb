@@ -92,11 +92,14 @@
         $("card").replaceChildren(...buttons);
       }
 
+      let shown = null;
+      let left = null;
       function showHongbao(hongbao) {
+        shown = hongbao;
         $("title").textContent = hongbao.title;
         const parts = [];
         if (hongbao.pool) parts.push(`奖池 ${hongbao.pool} ${hongbao.unit}`);
-        if (hongbao.shares) parts.push(`${hongbao.shares.total} 个奖`);
+        if (left !== null) parts.push(`还剩 ${left} 个奖`);
         if (hongbao.status === "ended") parts.push("已结束");
         $("facts").textContent = parts.join(" · ");
         open = hongbao.status === "active";
@@ -107,6 +110,8 @@
         if (view?.data) {
           cells = view.data.cells;
           prizes = view.data.prizes ?? null;
+          left = view.data.left;
+          if (shown) showHongbao(shown);
         }
         if (view?.summary) $("summary").textContent = view.summary;
         drawCard();

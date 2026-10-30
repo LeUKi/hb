@@ -21,7 +21,7 @@ npm test
 
 - `npm test`：跑 `tests.json`，每条一行，`console` 的输出跟在下面。`npm test -- 名字` 只跑名字里含这几个字的。
 - `npm run check`：照网站部署时的规则查一遍，最后写“可以去网站部署了”或“还不能开放”，还有代码指纹，和网站上展开代码时显示的对得上。
-- `npm run simulate`：让 `simulate.json` 里的人依次来领，看钱怎么发出去。`npm run simulate -- --seed 别的` 换一个种子，`--live` 让联网的请求真的发出去。
+- `npm run simulate`：让 `simulate.json` 里的人依次来领，看每个人的待结算怎么变、钱怎么发出去。`npm run simulate -- --seed 别的` 换一个种子，`--live` 让联网的请求真的发出去。
 - `npm run replay -- judge-records-xxx.json`：红包结束后，用网站上下载的完整记录逐条重放核对。
 - `npm run page`：本地的假红包页，看附带网页（`page/`）和 `judge.js` 配合起来是什么样：浏览器打开它写的地址，左边模拟红包页，右边是你的网页，提交交给本地的 `judge.js` 跑。`npm run page -- examples/number-bomb` 打开一个样例。
 
@@ -43,4 +43,4 @@ npm test
 
 `npm test` 和 `npm run check` 都过了，就去网站写判定器：判定器广场右上的“自己写一个”（`https://hb.lafi.sh/judges/new`），起个名字，贴上 `judge.js` 和 `tests.json`，部署。测试全过以后，在它的判定器页按“用它发红包”，或者发红包时在第 2 步从判定器广场的“我的”里挑它。用 AI 写也一样：告诉它你的玩法，让它照 `AGENTS.md` 写，两个命令都过了再贴。
 
-开发包按协议版本发布，这一份是第四版（第三版加上公开数据、动态和提前结束，第三版是第二版加上参数，第二版是第一版加上联网；兼容日期 2026-09-01 + `nodejs_compat`），也能重放第一到第三版开放的红包（`runtime/frozen/`）。协议的来龙去脉见仓库的 `docs/programmable-hongbao-design.md` 第 4、5、9 节，参数见 `docs/judge-square-design.md` 第 3–5 节，公开数据见 `docs/judge-page-design.md` 第 2 节。
+开发包按协议版本发布，这一份是第五版（第四版加上每个人的待结算、自己的状态、只给自己看的数据和同桌的人，没有份数，只有总奖池；第四版是第三版加上公开数据、动态和提前结束，第三版是第二版加上参数，第二版是第一版加上联网；兼容日期 2026-09-01 + `nodejs_compat`），也能重放第一到第四版开放的红包（`runtime/frozen/`）。用第四版以前写的判定器，要先按第五版重新跑一遍测试才能发新红包，`AGENTS.md` 写了改什么。协议的来龙去脉见仓库的 `docs/programmable-hongbao-design.md` 第 4、5、9 节，参数见 `docs/judge-square-design.md` 第 3–5 节，公开数据见 `docs/judge-page-design.md` 第 2 节，待结算和结算见 `docs/multi-prize-design.md`。

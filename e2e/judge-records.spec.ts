@@ -55,7 +55,9 @@ function publicActivity(): PublicActivity {
     quantity: { mode: "exact", total: 3, claimed: 1, remaining: 2 },
     beforeInfo: "",
     judge: {
+      protocol: 4,
       prompt: "猜 1 到 100",
+      seedCommitment: "a".repeat(64),
       judged: 3,
     },
   } as PublicActivity;

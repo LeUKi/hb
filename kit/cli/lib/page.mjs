@@ -4,13 +4,15 @@
 // page's folder on localhost — another site, as online — where
 // https://hb.lafi.sh/sdk/v1.js is pointed at the first. Submissions are
 // judged by judge.js as npm run simulate judges them (runtime/scenario.mjs):
-// setup() first, then state, shares and the pool carried forward.
+// setup() first, then state, each person's pending and the pool carried
+// forward.
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join, resolve, sep } from "node:path";
 import {
   checkSource,
+  defaultCount,
   judgeNext,
   LIMITS,
   setupSeed,
@@ -18,10 +20,11 @@ import {
   TEST_DEFAULTS,
   TEST_HONGBAO_ID,
   TEST_SEED,
+  unclaimedOf,
 } from "../../runtime/index.mjs";
 import { KitError, readText } from "./files.mjs";
 import { openSandbox } from "./sandbox.mjs";
-import { outcome, paramsOf } from "./simulate.mjs";
+import { outcome, paidNow, paramsOf, printLedger } from "./simulate.mjs";
 import { readSimulation } from "./simulation.mjs";
 import { failureText, say, yuan } from "./words.mjs";
 
@@ -95,6 +98,8 @@ async function planOf(root) {
       now,
       hongbao: {
         ...TEST_DEFAULTS.hongbao,
+        count: defaultCount(TEST_DEFAULTS.hongbao.total),
+        minEach: 1,
         openedAt: now - HOUR,
         endsAt: now + DAY,
       },
@@ -114,17 +119,18 @@ function resultOf(judged) {
   if ("refused" in judged)
     return {
       judged: false,
-      reason: judged.refused === "claimed" ? "already_claimed" : "ended",
+      reason: judged.refused === "settled" ? "already_claimed" : "ended",
     };
   if ("failure" in judged.answer || "error" in judged.reading)
     return { judged: false, reason: "judge_failed" };
   const { reading } = judged;
   const reply = reading.message ? { reply: reading.message } : {};
-  return reading.ok
+  const paid = paidNow(judged);
+  return paid !== null
     ? {
         judged: true,
         claimed: true,
-        amount: yuan(reading.paid),
+        amount: yuan(paid),
         unit: "LDC",
         ...reply,
       }
@@ -180,10 +186,7 @@ async function openGame({ sandbox, plan, params, hostUrl, cooldown }) {
     clock: () => plan.now + (Date.now() - started),
   };
 
-  const ended = () =>
-    scenario.ended ||
-    scenario.claims.length >= count ||
-    game.clock() >= plan.hongbao.endsAt;
+  const ended = () => scenario.ended || game.clock() >= plan.hongbao.endsAt;
 
   const viewOf = () =>
     scenario.view === null
@@ -203,12 +206,10 @@ async function openGame({ sandbox, plan, params, hostUrl, cooldown }) {
       status: ended() ? "ended" : "active",
       endedByCode: scenario.ended,
       unit: "LDC",
-      shares: {
-        total: count,
-        claimed: scenario.claims.length,
-        remaining: count - scenario.claims.length,
-      },
+      // No shares from protocol 5: what is left unclaimed instead.
+      shares: null,
       pool: yuan(total),
+      unclaimed: yuan(unclaimedOf(scenario)),
       deadlineAt: iso(plan.hongbao.endsAt),
       judged: game.judged,
     },
@@ -267,13 +268,15 @@ async function openGame({ sandbox, plan, params, hostUrl, cooldown }) {
     if (result.judged) {
       game.judged += 1;
       const { reading } = judged;
+      printLedger(print, judged);
+      const paid = paidNow(judged);
       game.judgments.push({
         who,
         n: game.judgments.filter((item) => item.who === who).length + 1,
         at: iso(at),
         input: input.trim(),
-        claimed: reading.ok,
-        ...(reading.ok ? { amount: yuan(reading.paid) } : {}),
+        claimed: paid !== null,
+        ...(paid !== null ? { amount: yuan(paid) } : {}),
         ...(reading.message ? { reply: reading.message } : {}),
       });
       if (reading.view && !reading.view.keep) game.viewAt = at;
@@ -284,7 +287,6 @@ async function openGame({ sandbox, plan, params, hostUrl, cooldown }) {
           user: { name: who, avatar: null },
           text: reading.announce,
         });
-      if (reading.end) lines.push("判定器结束了这个红包");
     }
     return {
       result,

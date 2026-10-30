@@ -1,6 +1,6 @@
 {
   "$schema": "./simulate.schema.json",
-  "hongbao": { "title": "猜暗号", "total": 10000, "count": 5 },
+  "hongbao": { "title": "猜暗号", "total": 10000 },
   "submissions": [
     { "who": "小明", "input": "flag{guess}" },
     { "who": "小明", "input": "flag{n0t_s0_s1mpl3}" },
