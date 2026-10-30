@@ -496,7 +496,7 @@ test.describe("发红包", () => {
     expect(sent[0]?.activity).toMatchObject({ humanCheck: true });
   });
 
-  test("更多设置：附带网页只给 PLUS，地址按规矩检查、整理，存草稿时带上", async ({
+  test("更多设置：附带网页的地址按规矩检查、整理，能选自动打开，存草稿时带上", async ({
     page,
   }) => {
     await mockSession(page, viewer);
@@ -524,6 +524,11 @@ test.describe("发红包", () => {
       "选填。红包页旁边会显示这个网页（手机上在底部），比如题目、规则或排行榜。开放后不能改。说明里写 [文字](#附带网页) 会显示成打开它的按钮。",
     );
     const input = sheet.locator("#hb-page");
+    const byItself = sheet.getByRole("switch", {
+      name: "打开红包页时自动打开",
+    });
+    // With an address only (attached-page §2.7).
+    await expect(byItself).toHaveCount(0);
     await input.fill("http://example.com/题目");
     await expect(field).toContainText("只能用 https:// 开头的地址");
     await input.fill("https://Puzzle.Example.com/题目?day=3");
@@ -548,6 +553,12 @@ test.describe("发红包", () => {
     await input.fill("https://puzzle.example.com/other");
     await expect(field).not.toContainText(refused);
     await input.blur();
+    await expect(byItself).not.toBeChecked();
+    await expect(field).toContainText(
+      "进入红包页就打开这个网页：宽屏在旁边，手机拉起抽屉。第一次打开某个网站照样先确认；看的人自己关掉过的，下次不再自动打开。开放后不能改。",
+    );
+    await byItself.click();
+    await expect(byItself).toBeChecked();
     await sheet.getByRole("button", { name: "完成" }).click();
     // With a page, the 说明 offers 插入网页按钮: the link at the cursor,
     // its words selected to type over.
@@ -566,6 +577,7 @@ test.describe("发红包", () => {
     // Only a warning: it is saved all the same.
     expect(sent[0]?.activity).toMatchObject({
       pageUrl: "https://puzzle.example.com/other",
+      pageAutoOpen: true,
       beforeInfo: "今天的题在旁边，[看题](#附带网页)",
     });
   });

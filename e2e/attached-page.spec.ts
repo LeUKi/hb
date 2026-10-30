@@ -54,6 +54,7 @@ async function mock(
   attached = true,
   beforeInfo = note,
   accepted = true,
+  autoOpen = false,
 ) {
   const loads: string[] = [];
   referrers = [];
@@ -73,7 +74,13 @@ async function mock(
       return route.fulfill({
         json: {
           activity: activity(
-            attached ? { url: pageUrl, host: "puzzle.example.com" } : undefined,
+            attached
+              ? {
+                  url: pageUrl,
+                  host: "puzzle.example.com",
+                  ...(autoOpen ? { autoOpen: true } : {}),
+                }
+              : undefined,
             beforeInfo,
           ),
         },
@@ -500,6 +507,58 @@ test.describe("附带网页", () => {
     ).toHaveCount(0);
     await expect(page.getByText("打开谜题")).toBeVisible();
     await expect(page.getByRole("button", { name: "打开谜题" })).toHaveCount(0);
+  });
+
+  test("打开红包页时自动打开（§2.7），宽屏：一进来网页窗口就开着；自己收起以后，刷新不再自动打开", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await mockSession(page, viewer);
+    const loads = await mock(page, true, note, true, true);
+    await openApp(page, path);
+    const toggle = page.locator("#page-button");
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      page
+        .frameLocator("iframe[title='puzzle.example.com 的网页']")
+        .getByText("今日第 3 题"),
+    ).toBeVisible();
+    expect(loads).toEqual([pageUrl]);
+    await page.getByRole("button", { name: "隐藏（不会卸载）" }).click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await page.reload();
+    await expect(toggle).toBeVisible();
+    await page.waitForTimeout(600);
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(loads).toEqual([pageUrl]);
+  });
+
+  test("打开红包页时自动打开（§2.7），手机：一进来抽屉就拉满；没确认过的网站先问；自己拉回去以后，刷新不再拉起", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await mockSession(page, viewer);
+    const loads = await mock(page, true, note, false, true);
+    await openApp(page, path);
+    const ask = page.getByRole("dialog", { name: "打开附带网页？" });
+    await expect(ask).toBeVisible();
+    await ask.getByRole("button", { name: "打开" }).click();
+    await expect(
+      page
+        .frameLocator("iframe[title='puzzle.example.com 的网页']")
+        .getByText("今日第 3 题"),
+    ).toBeVisible();
+    expect(loads).toEqual([pageUrl]);
+    await page.getByRole("button", { name: "收起" }).click();
+    const bar = page.getByRole("button", {
+      name: "上拉查看附带网页：puzzle.example.com",
+    });
+    await expect(bar).toBeVisible();
+    await page.reload();
+    await expect(bar).toBeVisible();
+    await page.waitForTimeout(600);
+    await expect(page.getByRole("button", { name: "收起" })).toHaveCount(0);
+    await expect(ask).toHaveCount(0);
   });
 
   test("手机：第一次拉起抽屉先确认，抽屉让开；打开后抽屉拉满再加载，取消就回到横栏", async ({

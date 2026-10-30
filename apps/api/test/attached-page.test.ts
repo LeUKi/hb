@@ -131,6 +131,38 @@ describe("附带网页", () => {
     expect(added.config.pageUrl).toBe("https://example.com/b");
   });
 
+  it("opens by itself when asked (§2.7): kept with a page only, said on the 红包 page, fixed once opened", async () => {
+    const auto = await draft(author, {
+      ...withPage("https://example.com/game"),
+      pageAutoOpen: true,
+    });
+    expect(auto.config.pageAutoOpen).toBe(true);
+    expect(
+      (await getPublicActivity(bindings, auto.id, author.id)).page,
+    ).toEqual({
+      url: "https://example.com/game",
+      host: "example.com",
+      autoOpen: true,
+    });
+    // Without a page there is nothing to open.
+    const none = await draft(author, { ...withPage(), pageAutoOpen: true });
+    expect(none.config.pageAutoOpen).toBeUndefined();
+    const opened = await openActivity(
+      bindings,
+      auto.id,
+      author.id,
+      auto.version,
+    );
+    const managed = await getManagedActivity(bindings, opened.id, author.id);
+    await rejects(
+      updateActivity(bindings, opened.id, author.id, {
+        version: managed.version,
+        activity: { ...managed.config, pageAutoOpen: false },
+      }),
+      "PAGE_LOCKED",
+    );
+  });
+
   it("is fixed once opened: the same page is kept, another refused", async () => {
     const activity = await opened("https://example.com/a");
     const managed = await getManagedActivity(bindings, activity.id, author.id);

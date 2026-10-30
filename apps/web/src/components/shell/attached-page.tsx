@@ -123,9 +123,18 @@ export function useAttachedPageOpener() {
 const REMEMBERED = "hb.attached-page";
 const REMEMBERED_MAX = 50;
 
-function rememberedOpen(): string[] {
+const rememberedOpen = () => rememberedIds(REMEMBERED);
+
+/**
+ * The 红包 whose page the viewer closed (beside it, the sheet pulled back,
+ * or 取消 at 打开附带网页？): one that opens by itself does not again
+ * (§2.7) until opened by hand.
+ */
+const CLOSED = "hb.attached-page-closed";
+
+function rememberedIds(key: string): string[] {
   try {
-    const saved: unknown = JSON.parse(localStorage.getItem(REMEMBERED) ?? "[]");
+    const saved: unknown = JSON.parse(localStorage.getItem(key) ?? "[]");
     return Array.isArray(saved)
       ? saved.filter((id): id is string => typeof id === "string")
       : [];
@@ -134,15 +143,21 @@ function rememberedOpen(): string[] {
   }
 }
 
+const rememberedClosed = () => rememberedIds(CLOSED);
+
 function rememberOpen(activityId: string, open: boolean) {
   try {
-    const rest = rememberedOpen().filter((id) => id !== activityId);
-    localStorage.setItem(
-      REMEMBERED,
-      JSON.stringify(
-        open ? [...rest, activityId].slice(-REMEMBERED_MAX) : rest,
-      ),
-    );
+    const keep = (key: string, on: boolean) => {
+      const rest = rememberedIds(key).filter((id) => id !== activityId);
+      localStorage.setItem(
+        key,
+        JSON.stringify(
+          on ? [...rest, activityId].slice(-REMEMBERED_MAX) : rest,
+        ),
+      );
+    };
+    keep(REMEMBERED, open);
+    keep(CLOSED, !open);
   } catch {
     // Not kept (a private window): next time it starts hidden.
   }
@@ -198,9 +213,17 @@ function useCurrentPage(activityId: string | null) {
     activityId ? activityKeys.public(activityId, userId) : null,
   )?.activity;
   return activity?.page
-    ? { url: activity.page.url, author: activity.author.username }
+    ? {
+        url: activity.page.url,
+        author: activity.author.username,
+        autoOpen: activity.page.autoOpen === true,
+      }
     : null;
 }
+
+/** Opens by itself as its 红包 page is entered (§2.7), unless closed before. */
+const opensByItself = (activityId: string, autoOpen: boolean) =>
+  autoOpen && !rememberedClosed().includes(activityId);
 
 /** Whose page this is, said wherever it is named. */
 const fromLine = (author: string | null) =>
@@ -391,8 +414,11 @@ function Page({ url, active }: { url: string; active: boolean }) {
     // steps aside for it — answered whenever it comes, while this page is
     // still the one held; then back where it was asked: open, or not.
     void askPageRisk(store, { site, author }).then((open) => {
-      if (store.get(heldAtom).url !== url) return;
+      const now = store.get(heldAtom);
+      if (now.url !== url) return;
       if (open) setHeld((current) => ({ ...current, loaded: true }));
+      // 取消 is the viewer closing it (§2.7).
+      else if (now.forId !== null) rememberOpen(now.forId, false);
       request((current) => ({ n: current.n + 1, open }));
     });
   }, [active, loaded, url, author, setHeld, store, request]);
@@ -959,6 +985,13 @@ function Sheet({
   const host = hostOf(url);
   const full = Math.round(height * 0.92);
   const [stop, go] = useAtom(sheetStopAtom);
+  const forId = useAtomValue(heldAtom).forId;
+  // The viewer's own moves: pulled back is closed, for a 红包 that opens
+  // by itself (§2.7); pulled up, open again.
+  const settle = (next: Stop) => {
+    if (forId !== null && next !== stop) rememberOpen(forId, next === "full");
+    go(next);
+  };
   const covered = useWindowCovered() && shown;
   const setAway = useSetAtom(sheetAwayAtom);
   // Until it is touched (or a dialog has come over it), it nods up once
@@ -1000,7 +1033,7 @@ function Sheet({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: reduced ? 0 : 0.28, ease }}
-            onClick={() => go("peek")}
+            onClick={() => settle("peek")}
           />
         )}
       </AnimatePresence>
@@ -1047,7 +1080,7 @@ function Sheet({
           let next: Stop = at < (full - SHEET_PEEK) / 2 ? "full" : "peek";
           if (info.velocity.y > 500) next = "peek";
           if (info.velocity.y < -500) next = "full";
-          go(next);
+          settle(next);
         }}
       >
         <motion.div
@@ -1087,7 +1120,7 @@ function Sheet({
                   }}
                   onToggle={() => {
                     setTouched(true);
-                    if (!dragged.current) go(up ? "peek" : "full");
+                    if (!dragged.current) settle(up ? "peek" : "full");
                   }}
                 />
                 <div className="relative min-h-0 flex-1 bg-white/60 select-text">
@@ -1123,22 +1156,37 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
   // On a wide screen it opens again where this browser left it open.
   const pageUrl = page?.url ?? null;
   const pageAuthor = page?.author ?? null;
+  const pageAuto = page?.autoOpen === true;
+  const store = useStore();
+  const pullSheet = useSetAtom(sheetStopAtom);
   useLayoutEffect(() => {
     if (activityId === null) return;
-    setHeld((current) =>
-      current.forId === activityId && current.url === pageUrl
-        ? current
-        : {
-            forId: activityId,
-            url: pageUrl,
-            author: pageAuthor,
-            open:
-              pageUrl !== null && wide && rememberedOpen().includes(activityId),
-            loaded: false,
-            mainWidth: current.mainWidth,
-          },
-    );
-  }, [activityId, pageUrl, pageAuthor, wide, setHeld]);
+    const current = store.get(heldAtom);
+    if (current.forId === activityId && current.url === pageUrl) return;
+    // 打开红包页时自动打开 (§2.7): beside it, or the sheet pulled up.
+    const byItself = pageUrl !== null && opensByItself(activityId, pageAuto);
+    setHeld({
+      forId: activityId,
+      url: pageUrl,
+      author: pageAuthor,
+      open:
+        pageUrl !== null &&
+        wide &&
+        (rememberedOpen().includes(activityId) || byItself),
+      loaded: false,
+      mainWidth: current.mainWidth,
+    });
+    if (byItself && !wide) pullSheet("full");
+  }, [
+    activityId,
+    pageUrl,
+    pageAuthor,
+    pageAuto,
+    wide,
+    setHeld,
+    store,
+    pullSheet,
+  ]);
   const url = held.url;
   const onPage =
     url !== null && activityId !== null && held.forId === activityId;

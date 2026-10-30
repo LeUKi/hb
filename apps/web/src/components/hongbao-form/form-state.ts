@@ -107,6 +107,8 @@ export type FormState = {
   topic: string;
   /** 附带网页 (docs/attached-page-design.md): an https page; empty for none. */
   page: string;
+  /** Opened as the 红包 page is entered (§2.7). */
+  pageAutoOpen: boolean;
   listed: boolean;
   quantity: "exact" | "fuzzy";
   /** 领取前人机验证: Turnstile in a dialog before each claim or sign-up. */
@@ -216,6 +218,7 @@ export function emptyForm(now = Date.now()): FormState {
     afterEndInfo: "",
     topic: "",
     page: "",
+    pageAutoOpen: false,
     listed: false,
     humanCheck: false,
     quantity: "exact",
@@ -749,6 +752,7 @@ export function formOf(activity: ManagedActivity, now = Date.now()): FormState {
     afterEndInfo: config.afterEndInfo,
     topic: config.topicUrl,
     page: config.pageUrl ?? "",
+    pageAutoOpen: config.pageAutoOpen === true,
     listed: config.joinSquare,
     quantity: config.quantityVisibility === "fuzzy" ? "fuzzy" : "exact",
     humanCheck: config.humanCheck === true,
@@ -858,7 +862,10 @@ export function inputOf(form: FormState, merchantId: string): ActivityInput {
     // Left out when off, so older saved forms keep their shape (idempotency).
     ...(form.humanCheck ? { humanCheck: true } : {}),
     ...(normalizePageUrl(form.page)
-      ? { pageUrl: normalizePageUrl(form.page) ?? "" }
+      ? {
+          pageUrl: normalizePageUrl(form.page) ?? "",
+          ...(form.pageAutoOpen ? { pageAutoOpen: true } : {}),
+        }
       : {}),
     ...(scopeInputOf(form) ? { scope: scopeInputOf(form) } : {}),
     rewardType: "ldc",
@@ -943,6 +950,7 @@ export function sameInput(saved: ActivityInput, sent: ActivityInput) {
       funding: input.funding ?? "merchant",
       humanCheck: input.humanCheck === true,
       pageUrl: input.pageUrl ?? "",
+      pageAutoOpen: input.pageUrl ? input.pageAutoOpen === true : false,
       // What a save sends of its code (its versions come back with it).
       judge: input.judge
         ? {

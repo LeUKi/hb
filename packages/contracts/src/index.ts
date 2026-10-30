@@ -219,7 +219,8 @@ const baseActivitySchema = z.strictObject({
   scope: claimScopeSchema.optional(),
   /**
    * 附带网页 (docs/attached-page-design.md): an https page shown beside the
-   * 红包's own. Absent (or empty): none. 🐟额 PLUS; fixed once opened.
+   * 红包's own. Absent (or empty): none. Anyone's while its switch is on;
+   * fixed once opened.
    */
   pageUrl: z
     .string()
@@ -230,6 +231,8 @@ const baseActivitySchema = z.strictObject({
       const problem = value ? pageUrlProblem(value) : null;
       if (problem) ctx.addIssue({ code: "custom", message: problem });
     }),
+  /** 附带网页 opens as the 红包 page is entered (§2.7); with a page only. */
+  pageAutoOpen: z.boolean().optional(),
 });
 
 export const ldcMoneySchema = z.discriminatedUnion("mode", [

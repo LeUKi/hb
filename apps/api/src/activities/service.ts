@@ -159,8 +159,13 @@ function storedConfig(input: ActivityInput): StoredConfig {
         }
       : {}),
     topicUrl: topic?.topicUrl ?? "",
-    // 附带网页: kept as the URL standard writes it, not at all when empty.
+    // 附带网页: kept as the URL standard writes it, not at all when empty;
+    // opened on entering only with a page (attached-page §2.7).
     pageUrl: normalizePageUrl(config.pageUrl ?? "") ?? undefined,
+    pageAutoOpen:
+      normalizePageUrl(config.pageUrl ?? "") && config.pageAutoOpen
+        ? true
+        : undefined,
     // The roster is always public (redesign 06 §2): no switches are kept.
     showRecipientList: undefined,
     showRecipientUsername: undefined,
@@ -571,7 +576,7 @@ export function projectPublicActivity(
     // 附带网页: not once the 站长 stopped it; the switch is the reader's
     // (withPageSwitch).
     ...(config.pageUrl && row.pageStoppedAt === null
-      ? { page: attachedPageOf(config.pageUrl) }
+      ? { page: attachedPageOf(config.pageUrl, config.pageAutoOpen === true) }
       : {}),
     // Not open yet: its deadline as set, for whoever has its link (05 §13),
     // and the time it opens by itself (scheduled-opening §6).
@@ -875,9 +880,13 @@ export async function updateActivity(
   if (config.humanCheck && !oldConfig.humanCheck && !humanCheckAvailable(env))
     humanCheckUnavailable();
   // 附带网页 is fixed once opened (docs/attached-page-design.md §1).
-  if ((config.pageUrl ?? "") !== (oldConfig.pageUrl ?? "")) {
+  if (
+    (config.pageUrl ?? "") !== (oldConfig.pageUrl ?? "") ||
+    Boolean(config.pageAutoOpen) !== Boolean(oldConfig.pageAutoOpen)
+  ) {
     if (fixed) attachedPageLocked();
-    if (config.pageUrl) await requirePageSwitch(env);
+    if (config.pageUrl && config.pageUrl !== oldConfig.pageUrl)
+      await requirePageSwitch(env);
   }
   const old = await privateRows(env, id);
   if (

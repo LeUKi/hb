@@ -49,9 +49,13 @@ export function normalizePageUrl(value: string): string | null {
  */
 export type AttachedPageCheck = { embeddable: "yes" | "no" | "unknown" };
 
-/** A 红包's page as its viewers get it. */
-export type AttachedPage = { url: string; host: string };
+/** A 红包's page as its viewers get it; `autoOpen`: opened on entering (§2.7). */
+export type AttachedPage = { url: string; host: string; autoOpen?: true };
 
-export function attachedPageOf(url: string): AttachedPage {
-  return { url, host: new URL(url).hostname };
+export function attachedPageOf(url: string, autoOpen = false): AttachedPage {
+  return {
+    url,
+    host: new URL(url).hostname,
+    ...(autoOpen ? { autoOpen: true as const } : {}),
+  };
 }

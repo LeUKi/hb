@@ -566,6 +566,23 @@ export function SettingsSheet({
                     </div>
                   )}
                 </Field>
+                {/* 打开红包页时自动打开 (§2.7): only with a page; fixed once
+                    opened, as the page is. */}
+                <Reveal
+                  show={normalizePageUrl(form.page) !== null && !pageStopped}
+                >
+                  <div className="pt-2">
+                    <Switch
+                      label="打开红包页时自动打开"
+                      description="进入红包页就打开这个网页：宽屏在旁边，手机拉起抽屉。第一次打开某个网站照样先确认；看的人自己关掉过的，下次不再自动打开。开放后不能改。"
+                      checked={form.pageAutoOpen}
+                      disabled={opened}
+                      onChange={(pageAutoOpen) =>
+                        update((current) => ({ ...current, pageAutoOpen }))
+                      }
+                    />
+                  </div>
+                </Reveal>
                 {/* Read from the page's own headers when the field is left:
                     a page that refuses frames shows nothing here. */}
                 {pageCheck.data?.embeddable === "no" &&
