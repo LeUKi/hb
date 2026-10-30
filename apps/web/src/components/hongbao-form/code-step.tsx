@@ -6,6 +6,7 @@ import {
   type MyJudge,
 } from "@hb/contracts";
 import { useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import {
   AlertTriangle,
   Check,
@@ -20,25 +21,24 @@ import { ActivityRequestError, refused } from "../../lib/activities";
 import { cn } from "../../lib/cn";
 import { haptic } from "../../lib/haptics";
 import {
+  carryNewJudge,
   fetchJudgeVersion,
   fetchMyJudge,
   myJudgeKey,
   useMyJudges,
-  useSquareJudges,
 } from "../../lib/judge";
-import { JudgeHelpLinks } from "../judges/judge-bits";
 import { SquarePicker } from "../judges/square-picker";
 import { Callout } from "../page/page";
 import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
+import { ButtonLink } from "../ui/button-link";
 import { CodeEditor } from "../ui/code-editor";
 import { Field, TextInput } from "../ui/field";
 import { Reveal, Swap } from "../ui/reveal";
 import { counter, type ErrorOf, QuietLine, type Update } from "./fields";
 import { type FormState, withJudgeDefaults } from "./form-state";
 import { FilePicker, fromClipboard, JudgeCard } from "./judge-card";
-import { JudgePicker, LoadingJudge, PickedJudge } from "./judge-picker";
-import { noVersions } from "./judge-versions";
+import { JudgeEntries, LoadingJudge, PickedJudge } from "./judge-picker";
 import { ParamsFields, paramsFor } from "./params-fields";
 import { testCount } from "./steps";
 import { TryJudge } from "./try-judge";
@@ -551,21 +551,27 @@ export function JudgeWriter({
 }
 
 /**
- * 查看代码 for another's 判定器 (§15.4): its code, read only, over the form.
+ * 查看代码 (§15.4, §16.3): the picked version's code, read only, over the
+ * form; for one's own, its 判定器页 in a new tab, where it is changed.
  */
-function BorrowedCode({
+function CodeDialog({
   open,
   onClose,
   name,
   author,
+  ownId,
   n,
   code,
 }: {
   open: boolean;
   onClose: () => void;
   name: string;
-  author: string;
-  n: number;
+  /** Another's: whose. */
+  author?: string;
+  /** One's own: its 判定器页. */
+  ownId?: string;
+  /** None for an opened 红包's code from before 判定器. */
+  n?: number;
   code: string;
 }) {
   const titleId = useId();
@@ -600,22 +606,35 @@ function BorrowedCode({
           </div>
           <p className="flex items-center justify-between gap-3 text-sm text-ink-2">
             <span className="min-w-0 truncate">
-              判定器「{name}」· @{author} · 第 {n} 版
+              判定器「{name}」
+              {[author && `@${author}`, n !== undefined && `第 ${n} 版`]
+                .filter(Boolean)
+                .map((part) => `· ${part}`)
+                .join(" ")}
             </span>
-            <Button
-              variant="quiet"
-              size="sm"
-              className="-mr-2 shrink-0"
-              onClick={() => {
-                void navigator.clipboard?.writeText(code).then(() => {
-                  haptic("light");
-                  setCopied(true);
-                });
-              }}
-            >
-              {copied ? <Check /> : <Copy />}
-              {copied ? "已复制" : "复制代码"}
-            </Button>
+            <span className="-mr-2 flex shrink-0 gap-1.5">
+              {ownId && (
+                <ButtonLink
+                  size="sm"
+                  href={`/judges/${encodeURIComponent(ownId)}`}
+                >
+                  去判定器页改 ↗
+                </ButtonLink>
+              )}
+              <Button
+                variant="quiet"
+                size="sm"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(code).then(() => {
+                    haptic("light");
+                    setCopied(true);
+                  });
+                }}
+              >
+                {copied ? <Check /> : <Copy />}
+                {copied ? "已复制" : "复制代码"}
+              </Button>
+            </span>
           </p>
         </header>
         <div className="view-scroll min-h-0 flex-1 overflow-y-auto px-5 pb-5">
@@ -634,10 +653,111 @@ function BorrowedCode({
 }
 
 /**
+ * A draft's code that is no 判定器's version that passed (§16.3): written
+ * here before 发红包 stopped taking code. What it is, and the ways on: to
+ * /judges/new with it, back to the version that passed, a rerun that is
+ * no deploy, its 判定器页, or another 判定器.
+ */
+function UnsavedCode({
+  form,
+  judge,
+  frozen,
+  onSwap,
+}: {
+  form: FormState;
+  judge: JudgeDeploy;
+  frozen: boolean;
+  onSwap: () => void;
+}) {
+  const navigate = useNavigate();
+  const version = judge.version;
+  const busy = frozen || judge.busy;
+  const text = !version
+    ? "这份草稿里的代码还没有部署成判定器。发红包这里不再写代码：去写一个判定器部署它，或者换一个判定器。"
+    : judge.rerun
+      ? `这份草稿里的判定器 第 ${version.n} 版要在线上重新跑一遍测试才能开放，不算部署。`
+      : `这份草稿里的判定器 第 ${version.n} 版测试没过。去判定器页部署新版本，或者换一个判定器。`;
+  return (
+    // Where 保存并开放 sends one it stopped (as to the picked card).
+    <div id="hb-judge-picked" tabIndex={-1} className="grid gap-2 outline-none">
+      <Callout
+        tone="warning"
+        icon={AlertTriangle}
+        className="items-center [&>div:last-child]:flex-1"
+      >
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <span className="min-w-0 basis-full">{text}</span>
+          {!version && (
+            <Button
+              size="xs"
+              aria-disabled={busy || undefined}
+              onClick={() => {
+                if (busy) return;
+                carryNewJudge({
+                  name: form.judge.name.trim(),
+                  description: form.judge.description.trim(),
+                  code: form.judge.code,
+                  tests: form.judge.tests,
+                });
+                void navigate({ to: "/judges/new" });
+              }}
+            >
+              去写一个判定器
+            </Button>
+          )}
+          {version && judge.rerun && (
+            <Button
+              size="xs"
+              aria-disabled={busy || undefined}
+              onClick={() => {
+                if (!busy) void judge.deploy();
+              }}
+            >
+              {judge.pending ? "正在跑测试…" : "重新跑测试"}
+            </Button>
+          )}
+          {judge.restore && (
+            <Button
+              size="xs"
+              aria-disabled={busy || undefined}
+              onClick={() => {
+                if (!busy) judge.restoreCode();
+              }}
+            >
+              换回第 {judge.restore.n} 版
+            </Button>
+          )}
+          {version && !judge.rerun && form.judge.judgeId && (
+            <ButtonLink
+              size="xs"
+              variant="secondary"
+              href={`/judges/${encodeURIComponent(form.judge.judgeId)}`}
+            >
+              去判定器页 ↗
+            </ButtonLink>
+          )}
+          <Button
+            size="xs"
+            aria-disabled={busy || undefined}
+            onClick={() => {
+              if (!busy) onSwap();
+            }}
+          >
+            换一个
+          </Button>
+        </span>
+      </Callout>
+      <Reveal show={Boolean(judge.error)}>
+        <p className="text-sm text-danger">{judge.error}</p>
+      </Reveal>
+    </div>
+  );
+}
+
+/**
  * ② 判定器 (代码判定红包, in place of 怎么领; docs/judge-square-design.md
- * §6): pick one of one's own 判定器, or write one — its name, judge.js as a
- * 判定器 card, tests.json as typed and 部署 into the sandbox the claims will
- * use (docs/programmable-hongbao-design.md §5). Then the params its version
+ * §6, §16.3): picked, never written — from the 判定器广场 (its 我的 too),
+ * or written at /judges/new and picked after. Then the params its version
  * declares, the prompt shown to claimants and 试一试.
  */
 export function CodeStep({
@@ -647,7 +767,6 @@ export function CodeStep({
   locked,
   frozen,
   judge,
-  gated,
   openSheet,
   deadline,
   timingError,
@@ -668,8 +787,6 @@ export function CodeStep({
   /** Saving, or waiting on 重试原提交 (the form's fieldset lock). */
   frozen: boolean;
   judge: JudgeDeploy;
-  /** 保存并开放 was stopped by it: said in red in the deploy area. */
-  gated: boolean;
   openSheet: (group: "timing" | "scope") => void;
   deadline?: string;
   timingError?: string;
@@ -696,6 +813,7 @@ export function CodeStep({
     done: (firstParam: string | null) => void;
   };
 }) {
+  const navigate = useNavigate();
   const set = (key: "prompt") => (value: string) =>
     update((current) => ({
       ...current,
@@ -704,16 +822,12 @@ export function CodeStep({
   const borrowed = form.judge.borrowed;
   const usedN = borrowed?.n ?? judge.version?.n;
   const named = usedN !== undefined ? `判定器 第 ${usedN} 版 ` : "判定器";
-  // 站长精选 and 我的判定器 with a version a 红包 can open with (§6 挑之前).
-  const featuredRead = useSquareJudges("featured", "recent", !locked);
-  const featured = featuredRead.data?.pages[0]?.items ?? [];
+  // 我的判定器, for a newer version of the one picked (有第 4 版).
   const mine = useMyJudges(userId, !locked);
-  // Both read before the cards show (a skeleton till then), so neither
-  // group pushes the other, and none at all is known before writing one.
-  const cardsLoading = featuredRead.isPending || mine.isPending;
   const usable = (mine.data ?? []).filter((item) => item.usable !== null);
   const queryClient = useQueryClient();
-  const [view, setView] = useState<"pick" | "card" | "write" | null>(null);
+  // 换一个: the two ways to pick again, over what was picked.
+  const [swapping, setSwapping] = useState(false);
   // A pick on its way (§6): its card, named when the name is known, until
   // the 判定器 is in.
   const [loading, setLoading] = useState<{ name: string | null } | null>(
@@ -723,36 +837,25 @@ export function CodeStep({
   const [pickError, setPickError] = useState<string | null>(null);
   const [browsing, setBrowsing] = useState(false);
   const [viewing, setViewing] = useState(false);
-  const empty = !form.judge.code.trim() && !form.judge.judgeId;
-  // Once there is code, how it shows stays put: a draft opened on a
-  // version of its 判定器 that passed folded, one being written — or one
-  // whose version failed or waits for a rerun — open (a deploy does not
-  // fold it).
-  const known = judge.known;
-  const folded = Boolean(form.judge.judgeId && judge.version && judge.ready);
-  // Until one is chosen: the cards when there are some (or may be), else
-  // straight to writing one; a deployed version of a 判定器 shows folded.
-  // Another's shows as its card: it is never written here.
+  const hasCode = Boolean(form.judge.code.trim());
+  // One's own as a card: a version of it that passed, or whatever an
+  // opened 红包 keeps (from before 判定器, with no version); other code is
+  // a draft's from before (§16.3).
+  const ownCard =
+    locked || Boolean(form.judge.judgeId && judge.version && judge.ready);
   const shown = loading
     ? "loading"
-    : borrowed
-      ? !locked && view === "pick"
-        ? "pick"
-        : "card"
-      : locked
-        ? "write"
-        : (view ??
-          (empty
-            ? usable.length > 0 || featured.length > 0 || cardsLoading
-              ? "pick"
-              : "write"
-            : folded
+    : swapping && !locked
+      ? "pick"
+      : borrowed
+        ? "card"
+        : !hasCode
+          ? "pick"
+          : !judge.known
+            ? "loading"
+            : ownCard
               ? "card"
-              : "write"));
-  useEffect(() => {
-    if (view !== null || locked || empty || !known || borrowed) return;
-    setView(folded ? "card" : "write");
-  }, [view, locked, empty, known, folded, borrowed]);
+              : "unsaved";
   const mineNow = usable.find((item) => item.id === form.judge.judgeId);
   const newer =
     mineNow?.usable && judge.version && mineNow.usable.n > judge.version.n
@@ -800,7 +903,7 @@ export function CodeStep({
           version.declarations?.hongbao,
         ),
       );
-      setView("card");
+      setSwapping(false);
       return version.declarations?.params[0]?.key ?? null;
     } catch (failure) {
       setPickError(
@@ -813,24 +916,6 @@ export function CodeStep({
       setPicking(false);
       setLoading(null);
     }
-  };
-  /** 自己写一个: an empty card, its name first. */
-  const write = () => {
-    update((current) => ({
-      ...current,
-      judge: {
-        ...current.judge,
-        judgeId: null,
-        name: "",
-        description: "",
-        code: "",
-        tests: "",
-        versions: noVersions(),
-        params: {},
-        borrowed: null,
-      },
-    }));
-    setView("write");
   };
   /**
    * Another's from the 广场 (§15.4), or one's own met there: the version
@@ -853,7 +938,7 @@ export function CodeStep({
         commit,
       });
       if ("picked" in outcome) {
-        setView("card");
+        setSwapping(false);
         return outcome.picked.version?.declarations?.params[0]?.key ?? null;
       }
       if ("own" in outcome) {
@@ -870,7 +955,7 @@ export function CodeStep({
   // 用它发红包 (§6): one's own (its newest version that passed) or
   // another's (the version others use), picked as the step opens; a
   // card says it is on its way, and what went wrong stays here, the
-  // cards to pick another below it.
+  // ways to pick another below it.
   const begun = useRef(false);
   useEffect(() => {
     if (!start || begun.current) return;
@@ -898,45 +983,24 @@ export function CodeStep({
     })();
   });
   const params = declarations?.params ?? [];
-  const writing = (
-    <>
-      <JudgeNameFields
-        form={form}
-        update={update}
-        errorOf={errorOf}
-        locked={locked}
-      />
-      <JudgeWriter
-        form={form}
-        update={update}
-        errorOf={errorOf}
-        locked={locked}
-        frozen={frozen}
-        judge={judge}
-        gated={gated}
-      />
-    </>
-  );
+  const picked = shown === "card";
   return (
-    // A grid of one shrinkable column: the long lines of the code and the
-    // tests stay in their editors and never widen the step. Its children
-    // are no Reveals; the columns inside that hold one are flex.
+    // A grid of one shrinkable column: the long lines of the code stay in
+    // their editors and never widen the step. Its children are no Reveals;
+    // the columns inside that hold one are flex.
     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5">
       <Swap id={shown}>
         {shown === "loading" ? (
-          <LoadingJudge name={loading?.name ?? null} />
+          <LoadingJudge
+            name={loading ? loading.name : form.judge.name || null}
+          />
         ) : shown === "pick" ? (
-          <JudgePicker
-            loading={cardsLoading}
-            featured={featured}
-            judges={usable}
+          <JudgeEntries
             busy={picking || borrow.busy}
-            onPickFeatured={(picked) =>
-              void pickOther(picked.id, update, picked.name)
-            }
-            onPick={(picked) => void pick(picked)}
+            error={errorOf("hb-code-code")}
             onBrowse={() => setBrowsing(true)}
-            onWrite={write}
+            onWrite={() => void navigate({ to: "/judges/new" })}
+            onBack={swapping && hasCode ? () => setSwapping(false) : undefined}
           />
         ) : shown === "card" && borrowed ? (
           <PickedJudge
@@ -965,27 +1029,32 @@ export function CodeStep({
             locked={locked}
             busy={borrow.busy || frozen}
             onView={() => setViewing(true)}
-            onSwap={() => setView("pick")}
+            onSwap={() => setSwapping(true)}
             onNewer={() => {
               if (form.judge.judgeId) void pickOther(form.judge.judgeId);
             }}
           />
-        ) : shown === "card" && judge.version ? (
+        ) : shown === "card" ? (
           <PickedJudge
-            name={form.judge.name}
+            name={form.judge.name || "判定器"}
             description={form.judge.description}
-            n={judge.version.n}
+            n={judge.version?.n}
             newer={newer}
             locked={locked}
             busy={picking || frozen}
-            onView={() => setView("write")}
-            onSwap={() => setView("pick")}
+            onView={() => setViewing(true)}
+            onSwap={() => setSwapping(true)}
             onNewer={() => {
               if (mineNow) void pick(mineNow);
             }}
           />
         ) : (
-          writing
+          <UnsavedCode
+            form={form}
+            judge={judge}
+            frozen={frozen}
+            onSwap={() => setSwapping(true)}
+          />
         )}
       </Swap>
       <Reveal show={Boolean(pickError ?? borrow.error)} className="min-w-0">
@@ -998,21 +1067,19 @@ export function CodeStep({
         busy={picking || borrow.busy}
         onPick={(judgeId, name) => void pickOther(judgeId, update, name)}
       />
-      {borrowed && (
-        <BorrowedCode
+      {shown === "card" && (
+        <CodeDialog
           open={viewing}
           onClose={() => setViewing(false)}
-          name={form.judge.name}
-          author={borrowed.source.author.username}
-          n={borrowed.n}
+          name={form.judge.name || "判定器"}
+          author={borrowed?.source.author.username}
+          ownId={borrowed ? undefined : (form.judge.judgeId ?? undefined)}
+          n={usedN}
           code={form.judge.code}
         />
       )}
       {/* Under the 判定器, once it is in: opening with it, not before. */}
-      <Reveal
-        show={shown !== "pick" && shown !== "loading"}
-        className="min-w-0"
-      >
+      <Reveal show={picked} className="min-w-0">
         <div className="flex min-w-0 flex-col gap-5">
           <Reveal show={params.length > 0} className="min-w-0">
             <ParamsFields
@@ -1065,7 +1132,6 @@ export function CodeStep({
           </Reveal>
         </div>
       </Reveal>
-      {shown === "write" && <JudgeHelpLinks />}
       {locked ? (
         <>
           <p className="px-1 text-sm text-ink-2">{deadline ?? timeLine}</p>

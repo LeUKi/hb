@@ -1,26 +1,12 @@
-import type { MyJudge, SquareJudge } from "@hb/contracts";
-import { Braces, ChevronRight } from "lucide-react";
-import { useId } from "react";
+import { Braces, PenLine } from "lucide-react";
 import { cn } from "../../lib/cn";
-import { Bone } from "../page/page-state";
 import { Button } from "../ui/button";
-import { Swap } from "../ui/reveal";
+import { Reveal } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 
-// 发红包第 2 步“判定器” (docs/judge-square-design.md §6, §14.4, §15.4):
-// before a pick, 站长精选 and 我的判定器 as cards, then 去判定器广场挑一个
-// and 自己写一个; after it, one card with 查看代码 and 换一个.
-
-/** 我的判定器 shown here: the newest three (the rest from the 广场 picker). */
-const SHOWN = 3;
-/** 站长精选 shown here: six at most, three a row. */
-const FEATURED = 6;
-
-/** 第 3 版 · 开放过 2 个: a card's second line. */
-const usedLine = (judge: MyJudge) =>
-  judge.usable
-    ? `第 ${judge.usable.n} 版${judge.opened > 0 ? ` · 开放过 ${judge.opened} 个` : ""}`
-    : "";
+// 发红包第 2 步“判定器” (docs/judge-square-design.md §6, §15.4, §16.3):
+// before a pick, 去判定器广场挑一个 and 自己写一个; after it, one card with
+// 查看代码 and 换一个.
 
 /** No icon of its own (§6): 代码判定's braces, in its lacquer. */
 function Mark() {
@@ -33,165 +19,130 @@ function Mark() {
   );
 }
 
-/** 精选's third line: whose, or the 站长's copy of whose (§15.4). */
-const sourceLine = (judge: SquareJudge) =>
-  judge.bySiteOwner && judge.basedOn
-    ? `站长精选 · 基于 @${judge.basedOn.username}`
-    : `@${judge.author.username}`;
-
-export function JudgePicker({
-  loading,
-  featured,
-  judges,
+/**
+ * 挑之前 (§16.3): two ways, as 第 1 步 lays its 玩法 — the 广场 over the
+ * form (its 我的 too), or /judges/new to write one and come back. Under
+ * them, why 下一步 waits; after 换一个, back to the one picked.
+ */
+export function JudgeEntries({
   busy,
-  onPickFeatured,
-  onPick,
+  error,
   onBrowse,
   onWrite,
+  onBack,
 }: {
-  /** 站长精选 and 我的判定器 still being read: a skeleton in their place. */
-  loading: boolean;
-  /** 站长精选, in the 站长's order. */
-  featured: SquareJudge[];
-  /** One's own with a version to use, newest first. */
-  judges: MyJudge[];
   /** A pick on its way: the cards wait. */
   busy: boolean;
-  onPickFeatured: (judge: SquareJudge) => void;
-  onPick: (judge: MyJudge) => void;
-  /** 去判定器广场挑一个: the 广场 over the form. */
+  /** 下一步 with none picked. */
+  error?: string;
   onBrowse: () => void;
   onWrite: () => void;
+  /** 换一个 opened these: keep the one picked. */
+  onBack?: () => void;
 }) {
-  const labelId = useId();
-  const featuredId = useId();
+  const entries = [
+    {
+      key: "browse",
+      title: "去判定器广场挑一个",
+      line: "站长精选、大家做的，还有我的判定器",
+      icon: Braces,
+      lacquer: true,
+      href: undefined,
+      go: onBrowse,
+    },
+    {
+      key: "write",
+      title: "自己写一个",
+      line: "在新页面写好、部署，再回来挑",
+      icon: PenLine,
+      lacquer: false,
+      href: "/judges/new",
+      go: onWrite,
+    },
+  ] as const;
   return (
-    <div className="flex flex-col gap-3">
-      <Swap id={loading ? "loading" : "cards"}>
-        {loading ? (
-          <CardsSkeleton />
-        ) : (
-          <div className="flex flex-col gap-3">
-            {featured.length > 0 && (
-              <fieldset
-                aria-labelledby={featuredId}
-                className="@container/featured flex min-w-0 flex-col gap-2.5"
-              >
-                <p id={featuredId} className="px-1 text-xs text-ink-3">
-                  站长精选
-                </p>
-                <div className="grid gap-2.5 @min-[22rem]/featured:grid-cols-2 @min-[40rem]/featured:grid-cols-3">
-                  {featured.slice(0, FEATURED).map((judge) => (
-                    <Squircle key={judge.id} radius={radius.card}>
-                      <button
-                        type="button"
-                        aria-disabled={busy || undefined}
-                        onClick={() => {
-                          if (!busy) onPickFeatured(judge);
-                        }}
-                        className="choice grid h-full content-start gap-1.5 p-3 text-left"
-                      >
-                        <span className="flex min-w-0 items-center gap-2.5">
-                          <Mark />
-                          <span className="truncate text-base font-semibold text-ink">
-                            {judge.name}
-                          </span>
-                        </span>
-                        {judge.description && (
-                          <span className="line-clamp-2 text-sm text-ink-2">
-                            {judge.description}
-                          </span>
-                        )}
-                        <span className="flex min-w-0 items-center gap-1.5 text-xs text-ink-3">
-                          <span className="truncate">{sourceLine(judge)}</span>
-                          {judge.network && (
-                            <Squircle radius={radius.tag}>
-                              <span className="inline-flex h-5 shrink-0 items-center bg-warning-soft px-1.5 text-xs font-medium text-warning">
-                                联网
-                              </span>
-                            </Squircle>
-                          )}
-                        </span>
-                      </button>
-                    </Squircle>
-                  ))}
-                </div>
-              </fieldset>
-            )}
-            {judges.length > 0 && (
-              <fieldset
-                aria-labelledby={labelId}
-                className="@container/judges flex min-w-0 flex-col gap-2.5"
-              >
-                <p id={labelId} className="px-1 text-xs text-ink-3">
-                  我的判定器
-                </p>
-                <div className="grid gap-2.5 @min-[22rem]/judges:grid-cols-2 @min-[40rem]/judges:grid-cols-3">
-                  {judges.slice(0, SHOWN).map((judge) => (
-                    <Squircle key={judge.id} radius={radius.card}>
-                      <button
-                        type="button"
-                        aria-disabled={busy || undefined}
-                        onClick={() => {
-                          if (!busy) onPick(judge);
-                        }}
-                        className="choice grid h-full content-start gap-1.5 p-3 text-left"
-                      >
-                        <span className="flex min-w-0 items-center gap-2.5">
-                          <Mark />
-                          <span className="truncate text-base font-semibold text-ink">
-                            {judge.name}
-                          </span>
-                        </span>
-                        {judge.description && (
-                          <span className="line-clamp-2 text-sm text-ink-2">
-                            {judge.description}
-                          </span>
-                        )}
-                        <span className="text-xs text-ink-3">
-                          {usedLine(judge)}
-                        </span>
-                      </button>
-                    </Squircle>
-                  ))}
-                </div>
-              </fieldset>
-            )}
-          </div>
-        )}
-      </Swap>
-      <div className="flex flex-wrap gap-x-2">
-        <Button
-          variant="quiet"
-          size="sm"
-          className="-ml-2 gap-0.5"
-          onClick={onBrowse}
-        >
-          去判定器广场挑一个
-          <ChevronRight aria-hidden="true" />
-        </Button>
-        <Button variant="quiet" size="sm" onClick={onWrite}>
-          自己写一个
-        </Button>
+    <div className="flex flex-col gap-2.5">
+      <div
+        id="hb-code-code"
+        tabIndex={-1}
+        className="@container/entries outline-none"
+      >
+        <div className="grid gap-2.5 @min-[30rem]/entries:grid-cols-2">
+          {entries.map((entry) => {
+            const Icon = entry.icon;
+            const inner = (
+              <>
+                <Squircle radius={10}>
+                  <span
+                    className={cn(
+                      "choice-icon grid size-8 shrink-0 place-items-center",
+                      entry.lacquer
+                        ? "hb-lacquer-chip"
+                        : "bg-fill-2 text-ink-2",
+                    )}
+                  >
+                    <Icon className="size-[18px]" aria-hidden="true" />
+                  </span>
+                </Squircle>
+                <span className="grid min-w-0 gap-0.5">
+                  <span className="text-base font-semibold text-ink">
+                    {entry.title}
+                  </span>
+                  <span className="text-sm text-balance text-ink-3">
+                    {entry.line}
+                  </span>
+                </span>
+              </>
+            );
+            const look =
+              "choice flex h-full items-center gap-2.5 p-3 text-left";
+            return (
+              <Squircle key={entry.key} radius={radius.card}>
+                {entry.href ? (
+                  // A real link: a modified click opens it in a new tab.
+                  <a
+                    href={entry.href}
+                    className={look}
+                    onClick={(event) => {
+                      if (
+                        event.metaKey ||
+                        event.ctrlKey ||
+                        event.shiftKey ||
+                        event.altKey ||
+                        event.button !== 0
+                      )
+                        return;
+                      event.preventDefault();
+                      entry.go();
+                    }}
+                  >
+                    {inner}
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    aria-disabled={busy || undefined}
+                    onClick={() => {
+                      if (!busy) entry.go();
+                    }}
+                    className={look}
+                  >
+                    {inner}
+                  </button>
+                )}
+              </Squircle>
+            );
+          })}
+        </div>
       </div>
-    </div>
-  );
-}
-
-/** The cards' place while they are read: a label and two cards. */
-function CardsSkeleton() {
-  return (
-    <div
-      role="status"
-      className="@container/judges flex min-w-0 flex-col gap-2.5"
-    >
-      <Bone className="ml-1 h-3 w-16" />
-      <div className="grid gap-2.5 @min-[22rem]/judges:grid-cols-2 @min-[40rem]/judges:grid-cols-3">
-        {[0, 1].map((card) => (
-          <Bone key={card} className="h-[4.5rem] w-full" radius={radius.card} />
-        ))}
-      </div>
-      <span className="sr-only">正在读取…</span>
+      <Reveal show={Boolean(error)}>
+        <p className="px-1 text-sm text-danger">{error}</p>
+      </Reveal>
+      {onBack && (
+        <Button variant="quiet" size="sm" className="w-fit" onClick={onBack}>
+          不换了
+        </Button>
+      )}
     </div>
   );
 }
@@ -247,7 +198,8 @@ export function PickedJudge({
   description: string;
   /** Whose (§15.4): 我的, 站长精选 or @作者. */
   source?: string;
-  n: number;
+  /** None for an opened 红包's code from before 判定器. */
+  n?: number;
   /** Another's left the 广场, or was taken down (§15.4). */
   notice?: { tone: "quiet" | "danger"; text: string };
   /** A newer version of it that a 红包 can open with. */
@@ -275,7 +227,8 @@ export function PickedJudge({
                   {name}
                 </span>
                 <span className="shrink-0 text-xs text-ink-3">
-                  {source} · 第 {n} 版
+                  {source}
+                  {n !== undefined && ` · 第 ${n} 版`}
                 </span>
               </span>
               {description && (

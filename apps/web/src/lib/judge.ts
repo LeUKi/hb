@@ -555,3 +555,46 @@ export function useCodeFailures(
 /** 下载完整记录: the sender's file for the kit's npm run replay. */
 export const judgeRecordsUrl = (activityId: string) =>
   `/api/me/activities/${encodeURIComponent(activityId)}/judge-records`;
+
+/** What a draft's code carries to /judges/new (§16.3): this tab's only. */
+export type CarriedJudge = {
+  name: string;
+  description: string;
+  code: string;
+  tests: string;
+};
+
+const CARRIED = "hb.judge-new";
+
+export function carryNewJudge(judge: CarriedJudge) {
+  try {
+    sessionStorage.setItem(CARRIED, JSON.stringify(judge));
+  } catch {
+    // Not kept: /judges/new opens empty.
+  }
+}
+
+/** Read as /judges/new opens; cleared once it has (clearNewJudge). */
+export function peekNewJudge(): CarriedJudge | null {
+  try {
+    const read: unknown = JSON.parse(sessionStorage.getItem(CARRIED) ?? "null");
+    if (typeof read !== "object" || read === null) return null;
+    const { name, description, code, tests } = read as Record<string, unknown>;
+    return typeof name === "string" &&
+      typeof description === "string" &&
+      typeof code === "string" &&
+      typeof tests === "string"
+      ? { name, description, code, tests }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearNewJudge() {
+  try {
+    sessionStorage.removeItem(CARRIED);
+  } catch {
+    // Nothing kept.
+  }
+}

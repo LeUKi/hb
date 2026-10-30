@@ -174,18 +174,19 @@ function cellInput(
 /** One declared item's control. */
 function ParamControl({
   item,
+  id,
   value,
   onChange,
   disabled,
   invalid,
 }: {
   item: JudgeParam;
+  id: string;
   value: unknown;
   onChange: (value: unknown) => void;
   disabled: boolean;
   invalid: boolean;
 }) {
-  const id = `hb-param-${item.key}`;
   switch (item.type) {
     case "text":
       return (
@@ -366,12 +367,19 @@ export function ParamsFields({
   onChange,
   errorOf,
   locked,
+  idPrefix = "hb-param-",
 }: {
   params: JudgeParam[];
   values: Values;
   onChange: (key: string, value: unknown) => void;
   errorOf: (key: string) => string | undefined;
   locked: boolean;
+  /**
+   * The form's own ids (its problems go to them) unless another place
+   * shows these too: the 判定器页's 试一试, beside the form while the pages
+   * change.
+   */
+  idPrefix?: string;
 }) {
   const short = (item: JudgeParam) =>
     item.type === "integer" ||
@@ -399,7 +407,7 @@ export function ParamsFields({
             return (
               <div
                 key={item.key}
-                id={`hb-param-${item.key}`}
+                id={`${idPrefix}${item.key}`}
                 tabIndex={-1}
                 className="outline-none @min-[30rem]/params:col-span-2"
               >
@@ -426,13 +434,14 @@ export function ParamsFields({
                 htmlFor={
                   item.type === "list" || item.type === "table"
                     ? undefined
-                    : `hb-param-${item.key}`
+                    : `${idPrefix}${item.key}`
                 }
                 hint={item.hint}
                 error={error}
               >
                 <ParamControl
                   item={item}
+                  id={`${idPrefix}${item.key}`}
                   value={values[item.key]}
                   disabled={locked}
                   invalid={Boolean(error)}

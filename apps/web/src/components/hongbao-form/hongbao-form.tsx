@@ -511,17 +511,15 @@ export function HongbaoForm({
         setCodeGate(true);
         haptic("error");
         say(`${codeGateText ?? ""}。`);
-        // Back on its 判定器 step (/new keeps it folded): 部署 in view.
+        // Back on its 判定器 step (/new keeps it folded): the picked card,
+        // or what a draft's code from before still needs (§16.3), in view.
         if (!editing) {
           linear.back(placeOf("claim") + 1);
-          window.setTimeout(
-            () => jumpTo(borrowed ? "hb-judge-picked" : "hb-code-check"),
-            400,
-          );
-        } else if (borrowed) {
+          window.setTimeout(() => jumpTo("hb-judge-picked"), 400);
+        } else {
           if (openStep !== "claim") flushSync(() => setOpenStep("claim"));
           jumpTo("hb-judge-picked");
-        } else showIssue("hb-code-check");
+        }
         return;
       }
       // And params its check() lets through (§3 校验); opening asks again.
@@ -633,7 +631,6 @@ export function HongbaoForm({
               locked={locked}
               frozen={locks}
               judge={judge}
-              gated={codeGate}
               openSheet={(group) => openSheet(group)}
               deadline={deadline}
               timingError={groupError(["timing"])}

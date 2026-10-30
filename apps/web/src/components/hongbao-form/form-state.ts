@@ -534,7 +534,7 @@ export function issuesOf(form: FormState, now = Date.now()): Issue[] {
           "hb-judge-description",
           `说明最多 ${JUDGE_NAME_LIMITS.description} 个字`,
         );
-      if (!form.judge.code.trim()) add("hb-code-code", "请粘贴代码");
+      if (!form.judge.code.trim()) add("hb-code-code", "先挑一个判定器");
       else if (bytes(form.judge.code) > JUDGE_LIMITS.codeBytes)
         add("hb-code-code", `代码超过 ${JUDGE_LIMITS.codeBytes / 1024} KB`);
       if (bytes(form.judge.tests) > JUDGE_LIMITS.testsBytes)

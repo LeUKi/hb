@@ -41,6 +41,6 @@ npm test
 
 带网页的玩法：网页改好、`npm run page` 里试过以后，放到静态托管上（Cloudflare Workers、GitHub Pages、Netlify、Vercel 的正式部署都行；Cloudflare Drop 拖上去的要先认领），把地址写进 `judge.js` 的 `meta.page`。
 
-`npm test` 和 `npm run check` 都过了，就去网站发红包：选“代码判定”，在第 2 步“判定器”选“自己写一个”，起个名字，贴上 `judge.js` 和 `tests.json`。用 AI 写也一样：告诉它你的玩法，让它照 `AGENTS.md` 写，两个命令都过了再贴。
+`npm test` 和 `npm run check` 都过了，就去网站写判定器：判定器广场右上的“自己写一个”（`https://hb.lafi.sh/judges/new`），起个名字，贴上 `judge.js` 和 `tests.json`，部署。测试全过以后，在它的判定器页按“用它发红包”，或者发红包时在第 2 步从判定器广场的“我的”里挑它。用 AI 写也一样：告诉它你的玩法，让它照 `AGENTS.md` 写，两个命令都过了再贴。
 
 开发包按协议版本发布，这一份是第四版（第三版加上公开数据、动态和提前结束，第三版是第二版加上参数，第二版是第一版加上联网；兼容日期 2026-09-01 + `nodejs_compat`），也能重放第一到第三版开放的红包（`runtime/frozen/`）。协议的来龙去脉见仓库的 `docs/programmable-hongbao-design.md` 第 4、5、9 节，参数见 `docs/judge-square-design.md` 第 3–5 节，公开数据见 `docs/judge-page-design.md` 第 2 节。

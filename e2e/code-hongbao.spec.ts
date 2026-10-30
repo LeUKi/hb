@@ -10,6 +10,7 @@ import {
   type DiscoveryList,
   emptyActivityInput,
   encodeActivityEmoji,
+  JUDGE_OLDEST_PROTOCOL,
   JUDGE_PROTOCOL,
   type JudgeAnnouncement,
   type JudgeAnnouncementList,
@@ -1708,6 +1709,8 @@ test.describe("发红包 · 代码判定", () => {
         name: string;
         versions: JudgeVersions;
         codes?: Record<number, string>;
+        /** Each version's tests as last run (testsFile when not given). */
+        tests?: Record<number, string>;
       };
     } = {},
   ) {
@@ -1716,13 +1719,16 @@ test.describe("发红包 · 代码判定", () => {
       description: string;
       versions: JudgeVersions["versions"];
       codes: Map<number, string>;
+      tests: Map<number, string>;
     };
     const state = {
       deploysLeft,
       requests: [] as {
         code: string;
         tests: string;
-        judge?: { id: string } | { name: string; description?: string };
+        judge?:
+          | { id: string }
+          | { name: string; description?: string; codePublic?: string };
       }[],
       ran: new Set<string>(),
       judges: new Map<string, Kept>(),
@@ -1736,6 +1742,12 @@ test.describe("发红包 · 代码判定", () => {
           Object.entries(judge.codes ?? {}).map(([n, code]) => [
             Number(n),
             code,
+          ]),
+        ),
+        tests: new Map(
+          Object.entries(judge.tests ?? {}).map(([n, tests]) => [
+            Number(n),
+            tests,
           ]),
         ),
       });
@@ -1762,37 +1774,100 @@ test.describe("发红包 · 代码判定", () => {
       }),
     );
     await mockNoMerchant(page);
-    // 判定器广场: empty, and no 判定器 page but one's own (mockMyJudges).
-    await page.route("**/api/judges**", (route) =>
-      new URL(route.request().url()).pathname === "/api/judges"
-        ? route.fulfill({ json: { items: [], nextCursor: null } })
-        : route.fulfill({ status: 404, json: { error: {} } }),
-    );
-    // 我的判定器: none with a version to use unless a test deploys one.
-    await page.route("**/api/me/judges**", (route) => {
+    /** 我的判定器 as the 广场's 我的 and the 判定器页 read it. */
+    const declarations = {
+      meta: null,
+      params: [],
+      hongbao: null,
+      check: false,
+    };
+    const mineOf = (judgeId: string, kept: Kept) => {
+      const latest = kept.versions.at(-1);
+      const usable = [...kept.versions]
+        .reverse()
+        .find((v) => v.passed && (v.protocol ?? 1) >= JUDGE_OLDEST_PROTOCOL);
+      return {
+        id: judgeId,
+        name: kept.name,
+        description: kept.description,
+        codePublic: "ended" as const,
+        createdAt: openedAt,
+        updatedAt: openedAt,
+        latest: latest
+          ? { n: latest.n, deployedAt: latest.at, passed: latest.passed }
+          : null,
+        usable: usable
+          ? { n: usable.n, declarations, network: usable.network ?? null }
+          : null,
+        opened: 0,
+        listed: false,
+        featurable: true,
+        takenDown: null,
+        featured: null,
+        stats: { hongbao: 0, judged: 0, claimed: 0 },
+      };
+    };
+    // 判定器广场: empty; a 判定器页 only for one's own (made here).
+    await page.route("**/api/judges**", (route) => {
       const path = new URL(route.request().url()).pathname;
-      if (path === "/api/me/judges")
-        return route.fulfill({ json: { items: [] } });
-      const [, , , , judgeId] = path.split("/");
-      const kept = state.judges.get(judgeId ?? "");
-      if (!kept) return route.fulfill({ status: 404, json: { error: {} } });
+      if (path === "/api/judges")
+        return route.fulfill({ json: { items: [], nextCursor: null } });
+      const judgeId = path.split("/")[3] ?? "";
+      const kept = state.judges.get(judgeId);
+      if (!kept || path !== `/api/judges/${judgeId}`)
+        return route.fulfill({ status: 404, json: { error: {} } });
       return route.fulfill({
         json: {
           judge: {
-            id: judgeId,
-            name: kept.name,
-            description: kept.description,
-            codePublic: "ended",
-            createdAt: openedAt,
-            updatedAt: openedAt,
-            latest: null,
-            usable: null,
-            opened: 0,
-            listed: false,
-            featurable: true,
-            takenDown: null,
-            featured: null,
-            stats: { hongbao: 0, judged: 0, claimed: 0 },
+            ...mineOf(judgeId, kept),
+            author: {
+              username: user.username,
+              displayName: user.displayName,
+              avatarUrl: null,
+            },
+            basedOn: null,
+            featured: false,
+            bySiteOwner: false,
+            network: false,
+            own: true,
+            version: null,
+            versions: [],
+          },
+        },
+      });
+    });
+    // 我的判定器: those deployed here (or given), each version's code and
+    // tests as the 判定器页's 部署新版本 starts from.
+    await page.route("**/api/me/judges**", (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path === "/api/me/judges")
+        return route.fulfill({
+          json: {
+            items: [...state.judges].map(([judgeId, kept]) =>
+              mineOf(judgeId, kept),
+            ),
+          },
+        });
+      const [, , , , judgeId, more, n] = path.split("/");
+      const kept = state.judges.get(judgeId ?? "");
+      if (!kept) return route.fulfill({ status: 404, json: { error: {} } });
+      if (more === "versions" && n) {
+        const code = kept.codes.get(Number(n));
+        if (code === undefined)
+          return route.fulfill({ status: 404, json: { error: {} } });
+        return route.fulfill({
+          json: {
+            code,
+            tests: kept.tests.get(Number(n)) ?? testsFile,
+            versions: versionsOf(kept),
+            declarations,
+          },
+        });
+      }
+      return route.fulfill({
+        json: {
+          judge: {
+            ...mineOf(judgeId ?? "", kept),
             publicN: null,
             versions: kept.versions.map((version) => ({
               n: version.n,
@@ -1803,12 +1878,7 @@ test.describe("发红包 · 代码判定", () => {
               testsDigest: version.testsDigest,
               passed: version.passed,
               network: version.network ?? null,
-              declarations: {
-                meta: null,
-                params: [],
-                hongbao: null,
-                check: false,
-              },
+              declarations,
               opened: 0,
             })),
           },
@@ -1851,6 +1921,7 @@ test.describe("发红包 · 代码判定", () => {
           target && "name" in target ? (target.description ?? "") : "",
         versions: [],
         codes: new Map(),
+        tests: new Map(),
       };
       state.judges.set(judgeId, kept);
       const known = kept.versions.find((v) => v.fingerprint === fingerprint);
@@ -1868,6 +1939,7 @@ test.describe("发红包 · 代码判定", () => {
             { n, fingerprint, at: new Date().toISOString(), ...run },
           ];
       kept.codes.set(n, input.code);
+      kept.tests.set(n, input.tests);
       return route.fulfill({
         json: {
           check: {
@@ -1929,27 +2001,21 @@ test.describe("发红包 · 代码判定", () => {
     );
   }
 
-  /** /new, 代码判定, 1.00 over 5 shares, on to ③ 代码. */
   /**
-   * /new to 代码判定's second step, 判定器 (judge-square §6): with none of
-   * one's own, straight to writing one, its name typed.
+   * /judges/new (judge-square §16.1), where a 判定器 is written now (发红包
+   * only picks one, §16.3): its name typed. Its first deploy goes on to
+   * its 判定器页, whose 部署新版本 is the same card.
    */
-  async function toCodeStep(page: Page, name = "猜数字") {
-    await openApp(page, "/new");
-    await page.getByRole("button", { name: /^代码判定/ }).click();
+  async function toWriter(page: Page, name = "猜数字") {
+    await openApp(page, "/judges/new");
     await expect(page.locator("#hb-code-code")).toBeVisible();
     if (name) await page.locator("#hb-judge-name").fill(name);
   }
 
-  /** From 判定器 on to 起个标题, 发多少 filled in on the way. */
-  async function toTitleStep(page: Page) {
-    await page.locator("#hb-code-prompt").click();
-    await page.keyboard.press("Enter");
-    await expect(page.locator("#hb-code-total")).toBeVisible();
-    await page.locator("#hb-code-total").fill("1.00");
-    await page.locator("#hb-code-count").fill("5");
-    await page.keyboard.press("Enter");
-    await expect(page.locator("#hb-title")).toBeVisible();
+  /** The first deploy made it: its 判定器页, one card again (not two). */
+  async function onJudgePage(page: Page, judgeId = "judge-1") {
+    await expect(page).toHaveURL(new RegExp(`/judges/${judgeId}$`));
+    await expect(page.locator("#hb-code-code")).toHaveCount(1);
   }
 
   async function pasteCode(page: Page, code: string, button: string) {
@@ -1979,20 +2045,22 @@ test.describe("发红包 · 代码判定", () => {
   const deployButton = (page: Page) =>
     page.getByRole("button", { name: "部署并跑测试" });
 
-  /** Pasted, deployed and passed: 判定器 第 1 版. */
+  /**
+   * Pasted, deployed and passed: 判定器 第 1 版, on its 判定器页 now, where
+   * 部署新版本 starts from it.
+   */
   async function deployFirst(page: Page) {
     await pasteCode(page, firstCode, "粘贴代码");
     await typeTests(page, testsFile);
     await deployButton(page).click();
+    await onJudgePage(page);
     await expect(cardName(page)).toHaveText("判定器 第 1 版");
     await expect(cardState(page)).toHaveText("已部署 · 测试全过");
   }
 
   test("没开通 PLUS、只有商户也能发（2026-10-28）：卡上没有 PLUS；从商户直发，说明写分发费", async ({
     page,
-    context,
   }) => {
-    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await mockDeploys(page, {
       deploysLeft: 2,
       deployLimit: 2,
@@ -2025,14 +2093,14 @@ test.describe("发红包 · 代码判定", () => {
         },
       }),
     );
+    await mockMyJudges(page);
     await openApp(page, "/new");
     const pick = page.getByRole("button", { name: /^代码判定/ });
     await expect(pick).toBeVisible();
     await expect(pick).not.toContainText("PLUS");
-    await pick.click();
     // 判定器 first (judge-square §6), then 发多少.
-    await page.locator("#hb-judge-name").fill("猜数字");
-    await pasteCode(page, firstCode, "粘贴代码");
+    await pickMine(page);
+    await page.locator("#hb-param-answer").fill("42");
     await page.getByRole("button", { name: "下一步" }).first().click();
     await expect(page.locator("#hb-code-total")).toBeVisible();
     await expect(
@@ -2041,11 +2109,11 @@ test.describe("发红包 · 代码判定", () => {
     await expect(page.getByText("代码判定红包只能从🐟额发。")).toHaveCount(0);
   });
 
-  test("第 3 步：judge.js 是判定器卡，不是编辑框；tests.json 还是 CodeMirror 编辑器，能打字，条数跟着变，空的时候光标只有一行高", async ({
+  test("/judges/new：judge.js 是判定器卡，不是编辑框；tests.json 还是 CodeMirror 编辑器，能打字，条数跟着变，空的时候光标只有一行高", async ({
     page,
   }) => {
     await mockDeploys(page);
-    await toCodeStep(page);
+    await toWriter(page);
     // Nothing to type judge.js into: the card is pasted into, deployed.
     await expect(page.getByRole("textbox", { name: /^judge\.js/ })).toHaveCount(
       0,
@@ -2079,11 +2147,11 @@ test.describe("发红包 · 代码判定", () => {
     ).toHaveText(["1", "2"]);
   });
 
-  test("还没有代码：卡里只有粘贴代码和从文件选；部署并跑测试灰着，旁边写今天还能部署几次", async ({
+  test("/judges/new 还没有代码：卡里只有粘贴代码和从文件选；部署并跑测试灰着，旁边写今天还能部署几次", async ({
     page,
   }) => {
     await mockDeploys(page);
-    await toCodeStep(page);
+    await toWriter(page);
     await expect(card(page)).toContainText(
       "在本地开发包里写好 judge.js，跑过 npm test 再贴过来。贴上就是一个新的判定器，部署以后才能开放。",
     );
@@ -2100,13 +2168,13 @@ test.describe("发红包 · 代码判定", () => {
     );
   });
 
-  test("部署新代码：贴上是新代码、未部署，折起只露前 6 行；部署并跑测试以后是判定器 第 1 版，测试全过，展开看得到指纹", async ({
+  test("部署新代码：贴上是新代码、未部署，折起只露前 6 行；部署并跑测试以后到它的判定器页，是判定器 第 1 版，测试全过，展开看得到指纹", async ({
     page,
     context,
   }) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     const server = await mockDeploys(page);
-    await toCodeStep(page);
+    await toWriter(page);
     await pasteCode(page, firstCode, "粘贴代码");
     await expect(cardName(page)).toHaveText("新代码");
     await expect(cardState(page)).toHaveText("未部署");
@@ -2129,15 +2197,18 @@ test.describe("发红包 · 代码判定", () => {
 
     await typeTests(page, testsFile);
     await deployButton(page).click();
+    // Made: on to its 判定器页 (§15.4), whose 部署新版本 starts from it.
+    await onJudgePage(page);
     await expect(cardName(page)).toHaveText("判定器 第 1 版");
     await expect(cardState(page)).toHaveText("已部署 · 测试全过");
     await expect(card(page)).toContainText(/\d\d:\d\d 部署/);
-    // Into a new 判定器, by the name typed (judge-square §1).
+    // Into a new 判定器, by the name typed (judge-square §1), with its
+    // 设置 (§16.1).
     expect(server.requests).toEqual([
       {
         code: firstCode,
         tests: testsFile,
-        judge: { name: "猜数字", description: "" },
+        judge: { name: "猜数字", description: "", codePublic: "ended" },
       },
     ]);
     const rows = page.getByRole("list", { name: "测试结果" });
@@ -2147,11 +2218,6 @@ test.describe("发红包 · 代码判定", () => {
     // Deployed and passed: nothing more to deploy, focus on the rows.
     await expect(deployButton(page)).toHaveCount(0);
     await expect(page.locator("#hb-code-check")).toBeFocused();
-    await expect(
-      page.getByText(
-        "开放后由判定器 第 1 版 判定每次提交，不能再换；结束后所有人都能看到代码。",
-      ),
-    ).toBeVisible();
 
     await card(page).getByRole("button", { name: "展开全部 8 行" }).click();
     await expect(lines).toHaveCount(8);
@@ -2166,11 +2232,12 @@ test.describe("发红包 · 代码判定", () => {
   }) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await mockDeploys(page);
-    await toCodeStep(page);
+    await toWriter(page);
     const networked = `export const network = ["https://api.example.com/hb/"];\n${firstCode}`;
     await pasteCode(page, networked, "粘贴代码");
     await typeTests(page, testsFile);
     await deployButton(page).click();
+    await onJudgePage(page);
     await expect(cardState(page)).toHaveText("已部署 · 测试全过");
     const area = page.locator("#hb-code-check");
     await expect(area).toContainText("联网：https://api.example.com/hb/");
@@ -2189,7 +2256,7 @@ test.describe("发红包 · 代码判定", () => {
   }) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     const server = await mockDeploys(page);
-    await toCodeStep(page);
+    await toWriter(page);
     await deployFirst(page);
 
     // A new version, from a file this time.
@@ -2238,13 +2305,13 @@ test.describe("发红包 · 代码判定", () => {
     expect(server.requests).toHaveLength(1);
   });
 
-  test("只改了测试：同一版换成提示和重新跑测试，不算部署；保存并开放被拦住时写测试改过了", async ({
+  test("只改了测试：同一版换成提示和重新跑测试，不算部署", async ({
     page,
     context,
   }) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     const server = await mockDeploys(page);
-    await toCodeStep(page);
+    await toWriter(page);
     await deployFirst(page);
 
     const changedTests = testsFile.replace("答对", "猜中");
@@ -2257,20 +2324,14 @@ test.describe("发红包 · 代码判定", () => {
     // The version's own last run still shows on the card.
     await expect(cardState(page)).toHaveText("已部署 · 测试全过");
 
-    // 保存并开放 waits for the rerun, and says so on step 3.
-    await toTitleStep(page);
-    await page.getByRole("button", { name: "保存并开放" }).click();
-    await expect(area.getByText("测试改过了，要重新跑一遍")).toBeVisible();
-
     await area.getByRole("button", { name: "重新跑测试" }).click();
     await expect(area).not.toContainText("tests.json 改过了");
     await expect(area).toBeFocused();
-    await expect(area.getByText("测试改过了，要重新跑一遍")).toHaveCount(0);
     expect(server.requests).toEqual([
       {
         code: firstCode,
         tests: testsFile,
-        judge: { name: "猜数字", description: "" },
+        judge: { name: "猜数字", description: "", codePublic: "ended" },
       },
       // Into the 判定器 the first made.
       { code: firstCode, tests: changedTests, judge: { id: "judge-1" } },
@@ -2280,19 +2341,31 @@ test.describe("发红包 · 代码判定", () => {
     await expect(cardName(page)).toHaveText("判定器 第 1 版");
   });
 
-  test("没有部署过的代码：保存并开放被拦住，第 3 步写还没有测试全过的判定器", async ({
+  // A draft whose code was written on 发红包 before it only picked (§16.3).
+  const unsaved = (page: Page) => page.locator("#hb-judge-picked");
+
+  test("草稿里没部署过的代码（§16.3）：第 2 步是一条琥珀提示，没有判定器卡；保存并开放被拦住，回到这条提示", async ({
     page,
-    context,
   }) => {
-    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-    const server = await mockDeploys(page);
-    await toCodeStep(page);
-    await pasteCode(page, firstCode, "粘贴代码");
-    await toTitleStep(page);
+    await mockCodeHongbao(page);
+    const server = await mockDeploys(page, { user: author });
+    await mockSenderReads(page, {
+      draft: { code: firstCode, tests: testsFile },
+    });
+    await openApp(page, `${path}/📝`);
+    await page.getByRole("button", { name: /^第 2 步 判定器：新代码/ }).click();
+    await expect(unsaved(page)).toContainText(
+      "这份草稿里的代码还没有部署成判定器。发红包这里不再写代码：去写一个判定器部署它，或者换一个判定器。",
+    );
+    await expect(unsaved(page).getByRole("button")).toHaveText([
+      "去写一个判定器",
+      "换一个",
+    ]);
+    // Nothing to write or deploy here.
+    await expect(page.locator(".hb-judge-name")).toHaveCount(0);
+    await expect(deployButton(page)).toHaveCount(0);
     await page.getByRole("button", { name: "保存并开放" }).click();
-    await expect(
-      page.locator("#hb-code-check").getByText("还没有测试全过的判定器"),
-    ).toBeVisible();
+    await expect(unsaved(page)).toBeFocused();
     expect(server.requests).toHaveLength(0);
   });
 
@@ -2302,7 +2375,7 @@ test.describe("发红包 · 代码判定", () => {
   }) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     const server = await mockDeploys(page, { deploysLeft: 0 });
-    await toCodeStep(page);
+    await toWriter(page);
     await pasteCode(page, firstCode, "粘贴代码");
     const area = page.locator("#hb-code-check");
     await expect(deployButton(page)).toBeDisabled();
@@ -2330,7 +2403,7 @@ test.describe("发红包 · 代码判定", () => {
         },
       }),
     );
-    await toCodeStep(page);
+    await toWriter(page);
     await pasteCode(page, firstCode, "粘贴代码");
     await deployButton(page).click();
     await expect(page.locator("#hb-code-check")).toContainText(
@@ -2357,7 +2430,7 @@ test.describe("发红包 · 代码判定", () => {
         },
       }),
     );
-    await toCodeStep(page);
+    await toWriter(page);
     await pasteCode(page, firstCode, "粘贴代码");
     await deployButton(page).click();
     const area = page.locator("#hb-code-check");
@@ -2373,7 +2446,7 @@ test.describe("发红包 · 代码判定", () => {
   }) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     const server = await mockDeploys(page);
-    await toCodeStep(page);
+    await toWriter(page);
     await deployFirst(page);
 
     const open = card(page).getByRole("button", { name: "在这里改" });
@@ -2426,7 +2499,7 @@ test.describe("发红包 · 代码判定", () => {
     expect(server.requests).toHaveLength(1);
   });
 
-  test("部署了测试没过：卡上写已部署 · 测试没过，折起的代码也露出标红的行号；按钮灰着，写改出新版本才能再部署", async ({
+  test("部署了测试没过：到它的判定器页，卡上写已部署 · 测试没过，折起的代码也露出标红的行号；按钮灰着，写改出新版本才能再部署", async ({
     page,
     context,
   }) => {
@@ -2439,11 +2512,13 @@ test.describe("发红包 · 代码判定", () => {
       "}",
       "// 完",
     ].join("\n");
-    await toCodeStep(page);
+    await toWriter(page);
     await pasteCode(page, brokenCode, "粘贴代码");
     await typeTests(page, testsFile);
     const button = deployButton(page);
     await button.click();
+    // Made, though its tests failed: on to its 判定器页.
+    await onJudgePage(page);
     await expect(cardName(page)).toHaveText("判定器 第 1 版");
     await expect(cardState(page)).toHaveText("已部署 · 测试没过");
     const rows = page.getByRole("list", { name: "测试结果" });
@@ -2469,9 +2544,10 @@ test.describe("发红包 · 代码判定", () => {
     await expect(
       card(page).getByRole("button", { name: "展开全部 10 行" }),
     ).toBeVisible();
-    // The same version takes no second deploy; the button keeps focus.
+    // The same version takes no second deploy; its results have focus
+    // on the 判定器页 it went on to.
     await expect(button).toHaveAttribute("aria-disabled", "true");
-    await expect(button).toBeFocused();
+    await expect(page.locator("#hb-code-check")).toBeFocused();
     await expect(page.locator("#hb-code-check")).toContainText(
       "改出新版本才能再部署 · 今天还能部署 6 次",
     );
@@ -2486,7 +2562,7 @@ test.describe("发红包 · 代码判定", () => {
   }) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await mockDeploys(page);
-    await toCodeStep(page);
+    await toWriter(page);
     await deployFirst(page);
     await pasteCode(
       page,
@@ -2516,7 +2592,7 @@ test.describe("发红包 · 代码判定", () => {
   }) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     const server = await mockDeploys(page);
-    await toCodeStep(page);
+    await toWriter(page);
     await deployFirst(page);
     const area = page.locator("#hb-code-check");
 
@@ -2537,46 +2613,7 @@ test.describe("发红包 · 代码判定", () => {
     expect(server.requests).toHaveLength(2);
   });
 
-  test("存草稿：带上它的判定器、名字和说明，不带版本（版本在判定器上）", async ({
-    page,
-    context,
-  }) => {
-    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-    await mockDeploys(page);
-    const sent: {
-      activity: {
-        judge?: {
-          judgeId?: string;
-          name?: string;
-          description?: string;
-          versions?: JudgeVersions;
-        };
-      };
-    }[] = [];
-    await page.route("**/api/activities", (route) => {
-      if (route.request().method() !== "POST") return route.fallback();
-      sent.push(route.request().postDataJSON());
-      return route.abort();
-    });
-    await toCodeStep(page);
-    await page.locator("#hb-judge-description").fill("猜中的领");
-    await deployFirst(page);
-    await pasteCode(page, secondCode, "粘贴新版本");
-    await expect(cardName(page)).toHaveText("新代码");
-    // On to the last step, where the form saves.
-    await toTitleStep(page);
-    await page.getByRole("button", { name: "存草稿" }).click();
-    await expect.poll(() => sent.length).toBe(1);
-    expect(sent[0]?.activity.judge).toMatchObject({
-      judgeId: "judge-1",
-      name: "猜数字",
-      description: "猜中的领",
-      code: secondCode,
-    });
-    expect(sent[0]?.activity.judge?.versions).toBeUndefined();
-  });
-
-  test("草稿重新打开（新的页面）：换回第 1 版不说测试改过了，保存并开放不被拦住，由服务器说", async ({
+  test("草稿重新打开（新的页面）：代码不是测试全过的版本，换回第 1 版就是那张卡，不说测试改过了，保存并开放不被拦住，由服务器说", async ({
     page,
   }) => {
     await mockCodeHongbao(page);
@@ -2607,29 +2644,33 @@ test.describe("发红包 · 代码判定", () => {
     });
     await openApp(page, `${path}/📝`);
     await page.getByRole("button", { name: /^第 2 步 判定器：新代码/ }).click();
-    await expect(cardName(page)).toHaveText("新代码");
-    await page.getByRole("button", { name: "换回第 1 版" }).click();
-    await expect(cardName(page)).toHaveText("判定器 第 1 版");
-    await expect(cardState(page)).toHaveText("已部署 · 测试全过");
-    const area = page.locator("#hb-code-check");
-    await expect(area).not.toContainText("tests.json 改过了");
-    await expect(area.getByRole("button", { name: "重新跑测试" })).toHaveCount(
-      0,
+    await expect(unsaved(page)).toContainText(
+      "这份草稿里的代码还没有部署成判定器。",
     );
+    await expect(unsaved(page).getByRole("button")).toHaveText([
+      "去写一个判定器",
+      "换回第 1 版",
+      "换一个",
+    ]);
+    await unsaved(page).getByRole("button", { name: "换回第 1 版" }).click();
+    // The version that passed, picked: its card.
+    await expect(page.getByText("我的 · 第 1 版")).toBeVisible();
+    await expect(page.getByText(/还没有部署成判定器/)).toHaveCount(0);
+    await expect(page.getByText(/重新跑一遍测试/)).toHaveCount(0);
 
     await page.getByRole("button", { name: "保存并开放" }).click();
     await expect.poll(() => saves.length).toBe(1);
     expect(saves[0]?.activity.judge?.code).toBe(firstCode);
-    await expect(area).not.toContainText("测试改过了，要重新跑一遍");
-    await expect(area).not.toContainText("还没有测试全过的判定器");
     expect(server.requests).toHaveLength(0);
   });
 
-  test("草稿重新打开：第 1 版上次跑的是另一份测试，换回后要重新跑", async ({
+  test("草稿重新打开：第 1 版上次跑的是另一份测试，换回后提示要在线上重新跑，重新跑就是那张卡，不算部署", async ({
     page,
   }) => {
     await mockCodeHongbao(page);
-    await mockDeploys(page, { user: author });
+    const server = await mockDeploys(page, { user: author });
+    // Its 第 1 版 is on the server: running it again is a rerun.
+    server.ran.add(sha256(firstCode));
     await mockSenderReads(page, {
       draft: { code: secondCode, tests: testsFile },
       versions: {
@@ -2649,15 +2690,25 @@ test.describe("发红包 · 代码判定", () => {
     });
     await openApp(page, `${path}/📝`);
     await page.getByRole("button", { name: /^第 2 步 判定器：新代码/ }).click();
-    await page.getByRole("button", { name: "换回第 1 版" }).click();
-    await expect(cardName(page)).toHaveText("判定器 第 1 版");
-    const area = page.locator("#hb-code-check");
-    await expect(area).toContainText(
-      "tests.json 改过了：在判定器 第 1 版 上重新跑一遍才能开放。",
+    await unsaved(page).getByRole("button", { name: "换回第 1 版" }).click();
+    await expect(unsaved(page)).toContainText(
+      "这份草稿里的判定器 第 1 版要在线上重新跑一遍测试才能开放，不算部署。",
     );
-    await expect(
-      area.getByRole("button", { name: "重新跑测试" }),
-    ).toBeVisible();
+    await expect(unsaved(page).getByRole("button")).toHaveText([
+      "重新跑测试",
+      "换一个",
+    ]);
+    // 保存并开放 waits for the rerun, back on this callout.
+    await page.getByRole("button", { name: "保存并开放" }).click();
+    await expect(unsaved(page)).toBeFocused();
+    expect(server.requests).toHaveLength(0);
+    await unsaved(page).getByRole("button", { name: "重新跑测试" }).click();
+    await expect(page.getByText("我的 · 第 1 版")).toBeVisible();
+    // Its rerun, in the 判定器 the draft is in: no deploy counted.
+    expect(server.requests).toEqual([
+      { code: firstCode, tests: testsFile, judge: { id: E2E_JUDGE } },
+    ]);
+    expect(server.deploysLeft).toBe(7);
   });
 
   test("草稿重新打开：旧协议上部署过、测试全过的版本，换回后要在第三版上重新跑一遍，不算部署", async ({
@@ -2684,28 +2735,24 @@ test.describe("发红包 · 代码判定", () => {
     });
     await openApp(page, `${path}/📝`);
     await page.getByRole("button", { name: /^第 2 步 判定器：新代码/ }).click();
-    await page.getByRole("button", { name: "换回第 1 版" }).click();
-    await expect(cardName(page)).toHaveText("判定器 第 1 版");
-    const area = page.locator("#hb-code-check");
-    await expect(area).toContainText(
-      "判定器升级到第三版了：在判定器 第 1 版 上重新跑一遍测试才能开放。不算部署，不扣次数。",
+    await unsaved(page).getByRole("button", { name: "换回第 1 版" }).click();
+    await expect(unsaved(page)).toContainText(
+      "这份草稿里的判定器 第 1 版要在线上重新跑一遍测试才能开放，不算部署。",
     );
-    await area.getByRole("button", { name: "重新跑测试" }).click();
-    await expect(cardState(page)).toHaveText("已部署 · 测试全过");
+    await unsaved(page).getByRole("button", { name: "重新跑测试" }).click();
+    await expect(page.getByText("我的 · 第 1 版")).toBeVisible();
     // Its rerun, in the 判定器 the draft is in.
     expect(server.requests).toEqual([
       { code: firstCode, tests: testsFile, judge: { id: E2E_JUDGE } },
     ]);
   });
 
-  test("草稿重新打开：测试没过的那一版没留下是哪几条，重新跑测试就看得到，不算部署", async ({
+  test("草稿重新打开：草稿里的那一版测试没过，提示去判定器页部署新版本或者换一个", async ({
     page,
   }) => {
     await mockCodeHongbao(page);
     const failing = firstCode.replace("猜对了！", "BROKEN");
     const server = await mockDeploys(page, { user: author });
-    // Deployed before, on the page that saved the draft.
-    server.ran.add(sha256(failing));
     await mockSenderReads(page, {
       draft: { code: failing, tests: testsFile },
       versions: {
@@ -2717,6 +2764,7 @@ test.describe("发红包 · 代码判定", () => {
             at: openedAt,
             testsDigest: sha256(testsFile),
             passed: false,
+            protocol: JUDGE_PROTOCOL,
           },
         ],
       },
@@ -2725,6 +2773,53 @@ test.describe("发红包 · 代码判定", () => {
     await page
       .getByRole("button", { name: /^第 2 步 判定器：猜数字 · 第 1 版/ })
       .click();
+    await expect(unsaved(page)).toContainText(
+      "这份草稿里的判定器 第 1 版测试没过。去判定器页部署新版本，或者换一个判定器。",
+    );
+    const there = unsaved(page).getByRole("link", { name: "去判定器页 ↗" });
+    await expect(there).toHaveAttribute("href", `/judges/${E2E_JUDGE}`);
+    await expect(there).toHaveAttribute("target", "_blank");
+    await expect(
+      unsaved(page).getByRole("button", { name: "换一个" }),
+    ).toBeVisible();
+    // 换一个: the two ways to pick, and back to this callout.
+    await unsaved(page).getByRole("button", { name: "换一个" }).click();
+    await expect(
+      page.getByRole("button", { name: /^去判定器广场挑一个/ }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "不换了" }).click();
+    await expect(unsaved(page)).toContainText("测试没过");
+    expect(server.requests).toHaveLength(0);
+  });
+
+  test("判定器页：最新一版测试没过、没留下是哪几条，重新跑测试就看得到，不算部署", async ({
+    page,
+  }) => {
+    const failing = firstCode.replace("猜对了！", "BROKEN");
+    const server = await mockDeploys(page, {
+      judge: {
+        id: "judge-9",
+        name: "猜数字",
+        versions: {
+          next: 2,
+          versions: [
+            {
+              n: 1,
+              fingerprint: sha256(failing),
+              at: openedAt,
+              testsDigest: sha256(testsFile),
+              passed: false,
+              protocol: JUDGE_PROTOCOL,
+            },
+          ],
+        },
+        codes: { 1: failing },
+      },
+    });
+    // Deployed before, on the page that made it.
+    server.ran.add(sha256(failing));
+    await openApp(page, "/judges/judge-9");
+    await expect(cardName(page)).toHaveText("判定器 第 1 版");
     await expect(cardState(page)).toHaveText("已部署 · 测试没过");
     const area = page.locator("#hb-code-check");
     await expect(area).toContainText(
@@ -2736,14 +2831,16 @@ test.describe("发红包 · 代码判定", () => {
       "应该发，实际没发",
     );
     await expect(area).toContainText("今天还能部署 7 次");
-    expect(server.requests).toHaveLength(1);
+    expect(server.requests).toEqual([
+      { code: failing, tests: testsFile, judge: { id: "judge-9" } },
+    ]);
     // The rows are back: nothing more to bring back.
     await expect(area.getByRole("button", { name: "重新跑测试" })).toHaveCount(
       0,
     );
   });
 
-  test("草稿重新打开：这份代码在别处测试全过过，但不是这个红包的版本：还是新代码 · 未部署，部署后是第 1 版，不扣次数", async ({
+  test("草稿重新打开：从判定器以前写在这里、没部署的代码，去写一个判定器把代码和测试带到 /judges/new；在别处测试全过过的部署后是第 1 版，不扣次数", async ({
     page,
   }) => {
     await mockCodeHongbao(page);
@@ -2756,10 +2853,18 @@ test.describe("发红包 · 代码判定", () => {
     });
     await openApp(page, `${path}/📝`);
     await page.getByRole("button", { name: /^第 2 步 判定器：新代码/ }).click();
+    await unsaved(page).getByRole("button", { name: "去写一个判定器" }).click();
+    await expect(page).toHaveURL(/\/judges\/new$/);
+    await expect(
+      page.getByRole("heading", { name: "写一个判定器", level: 1 }),
+    ).toBeVisible();
+    // Its code and tests came along (this tab only); no name before 判定器.
     await expect(cardName(page)).toHaveText("新代码");
     await expect(cardState(page)).toHaveText("未部署");
-    // A draft from before 判定器, never deployed here: it has none yet,
-    // and waits for a name (judge-square §1).
+    await expect(
+      page.getByRole("textbox", { name: /^tests\.json/ }),
+    ).toHaveAccessibleName(/1 条测试$/);
+    await expect(page.locator("#hb-judge-name")).toHaveValue("");
     await expect(deployButton(page)).toHaveAttribute("aria-disabled", "true");
     await expect(page.locator("#hb-code-check")).toContainText(
       "先给判定器起个名字",
@@ -2770,16 +2875,27 @@ test.describe("发红包 · 代码判定", () => {
       "true",
     );
     await deployButton(page).click();
+    await onJudgePage(page);
     await expect(cardName(page)).toHaveText("判定器 第 1 版");
     await expect(cardState(page)).toHaveText("已部署 · 测试全过");
+    expect(server.requests).toEqual([
+      {
+        code: firstCode,
+        tests: testsFile,
+        judge: { name: "猜数字", description: "", codePublic: "ended" },
+      },
+    ]);
     expect(server.deploysLeft).toBe(7);
+    // Taken once: /judges/new opens empty again.
+    await openApp(page, "/judges/new");
+    await expect(card(page)).toContainText("在本地开发包里写好 judge.js");
   });
 
   test("Windows 换行的 judge.js：在这里改打一个字再删掉，还是没有改动，用这份代码不能按", async ({
     page,
   }) => {
     await mockDeploys(page);
-    await toCodeStep(page);
+    await toWriter(page);
     const chooser = page.waitForEvent("filechooser");
     await card(page).getByRole("button", { name: "从文件选" }).click();
     await (await chooser).setFiles({
@@ -2805,7 +2921,7 @@ test.describe("发红包 · 代码判定", () => {
     ).toHaveAttribute("aria-disabled", "true");
   });
 
-  test("编辑页（开放后，没有存下版本）：条上和卡上都写判定器，不写新代码", async ({
+  test("编辑页（开放后，没有存下版本）：条上和卡上都写判定器，不写新代码，也不提示去部署", async ({
     page,
   }) => {
     await mockSession(page, author);
@@ -2814,7 +2930,18 @@ test.describe("发红包 · 代码判定", () => {
     await mockSenderReads(page);
     await openApp(page, `${path}/📝`);
     await page.getByRole("button", { name: /^第 2 步 判定器：判定器/ }).click();
-    await expect(cardName(page)).toHaveText("判定器");
+    const picked = page.locator("#hb-judge-picked");
+    await expect(picked).toContainText("判定器");
+    await expect(picked).toContainText("我的");
+    await expect(picked).not.toContainText("第");
+    await expect(picked).not.toContainText("新代码");
+    await expect(picked).not.toContainText("还没有部署成判定器");
+    await expect(picked.getByRole("button")).toHaveText(["查看代码"]);
+    await picked.getByRole("button", { name: "查看代码" }).click();
+    const dialog = page.getByRole("dialog", { name: "代码" });
+    await expect(dialog).toContainText("判定器「判定器」");
+    await expect(dialog).not.toContainText("第 ");
+    await expect(dialog.getByRole("textbox")).toContainText("export function");
   });
 
   test("编辑页（开放后）：判定器卡锁住，只能展开代码，写开放后不能再换", async ({
@@ -2842,14 +2969,22 @@ test.describe("发红包 · 代码判定", () => {
     await page
       .getByRole("button", { name: /^第 2 步 判定器：猜数字 · 第 2 版/ })
       .click();
-    await expect(cardName(page)).toHaveText("判定器 第 2 版");
-    await expect(card(page)).toContainText("开放时部署的这一版 · 测试全过");
-    await expect(card(page)).toContainText("开放后不能再换");
-    await expect(card(page).getByRole("button")).toHaveText(["展开代码"]);
-    await expect(card(page).locator(".cm-editor")).toHaveCount(0);
-    await card(page).getByRole("button", { name: "展开代码" }).click();
-    await expect(card(page)).toContainText(`代码指纹 ${fingerprint}`);
+    // The folded card (§16.3), 查看代码 only: no 换一个, no writer.
+    const picked = page.locator("#hb-judge-picked");
+    await expect(picked).toContainText("猜数字");
+    await expect(picked).toContainText("我的 · 第 2 版");
+    await expect(picked.getByRole("button")).toHaveText(["查看代码"]);
+    await expect(page.locator(".hb-judge-name")).toHaveCount(0);
     await expect(page.locator("#hb-code-check")).toHaveCount(0);
+    await picked.getByRole("button", { name: "查看代码" }).click();
+    const dialog = page.getByRole("dialog", { name: "代码" });
+    await expect(dialog).toContainText("判定器「猜数字」· 第 2 版");
+    await expect(dialog.getByRole("textbox")).toContainText("export function");
+    // One's own: changed on its 判定器页, in a new tab.
+    const there = dialog.getByRole("link", { name: "去判定器页改 ↗" });
+    await expect(there).toHaveAttribute("href", `/judges/${E2E_JUDGE}`);
+    await expect(there).toHaveAttribute("target", "_blank");
+    await dialog.getByRole("button", { name: "关闭" }).click();
     await expect(
       page.getByText(
         "由判定器 第 2 版 判定每次提交，不能再换；结束后所有人都能看到代码。",
@@ -3011,23 +3146,47 @@ test.describe("发红包 · 代码判定", () => {
     return asked;
   }
 
-  test("我的判定器：挑一个收起成一张卡，参数按它的声明、过它的 check，发多少按它的默认值和范围", async ({
+  /**
+   * /new to 代码判定's 第 2 步 (§16.3): its two ways — the 广场 over the
+   * form, /judges/new — and 猜数字 picked from the 广场's 我的.
+   */
+  async function pickMine(page: Page) {
+    await openApp(page, "/new");
+    await page.getByRole("button", { name: /^代码判定/ }).click();
+    await page.getByRole("button", { name: /^去判定器广场挑一个/ }).click();
+    const square = page.getByRole("dialog", { name: "判定器广场" });
+    await square.getByRole("button", { name: "我的" }).click();
+    const mine = square.getByRole("button", { name: /猜数字/ });
+    await expect(mine).toContainText("猜中的领");
+    await mine.click();
+    await expect(square).toBeHidden();
+    // Folded into one card; its params under it.
+    await expect(page.getByText("我的 · 第 3 版")).toBeVisible();
+  }
+
+  test("我的判定器：在广场弹窗的我的里挑一个收起成一张卡，参数按它的声明、过它的 check，发多少按它的默认值和范围；存草稿带上它的判定器、名字和说明，不带版本", async ({
     page,
   }) => {
     await mockDeploys(page);
     const asked = await mockMyJudges(page);
     await openApp(page, "/new");
     await page.getByRole("button", { name: /^代码判定/ }).click();
-    const mine = page.getByRole("group", { name: "我的判定器" });
-    const card = mine.getByRole("button", { name: /猜数字/ });
-    await expect(card).toContainText("猜中的领");
-    await expect(card).toContainText("第 3 版 · 开放过 2 个");
+    // Two ways only (§16.3): no list of one's own on the step.
+    await expect(page.getByRole("group", { name: "我的判定器" })).toHaveCount(
+      0,
+    );
     await expect(
-      page.getByRole("button", { name: "自己写一个" }),
+      page.getByRole("button", { name: /^去判定器广场挑一个/ }),
+    ).toContainText("站长精选、大家做的，还有我的判定器");
+    await expect(page.getByRole("link", { name: /^自己写一个/ })).toContainText(
+      "在新页面写好、部署，再回来挑",
+    );
+    // 下一步 with none picked: said under the two.
+    await page.getByRole("button", { name: "下一步" }).first().click();
+    await expect(
+      page.getByText("先挑一个判定器", { exact: true }),
     ).toBeVisible();
-    await card.click();
-    // Folded into one card; its params under it.
-    await expect(page.getByText("我的 · 第 3 版")).toBeVisible();
+    await pickMine(page);
     await expect(page.getByRole("button", { name: "查看代码" })).toBeVisible();
     await expect(page.locator("#hb-param-max")).toHaveValue("100");
     const lock = page.getByRole("button", { name: "保密" });
@@ -3061,9 +3220,12 @@ test.describe("发红包 · 代码判定", () => {
     expect(asked.saved[0]?.activity.judge).toMatchObject({
       judgeId: GUESS_ID,
       name: "猜数字",
+      description: "猜中的领",
       code: firstCode,
       params: { max: 100, answer: 42 },
     });
+    // Its versions are the 判定器's (judge-square §1), not the draft's.
+    expect(asked.saved[0]?.activity.judge).not.toHaveProperty("versions");
   });
 
   test("试一试：默认折起，按现在的参数判定一次，写会发多少和回复，超时写判定超时", async ({
@@ -3071,12 +3233,7 @@ test.describe("发红包 · 代码判定", () => {
   }) => {
     await mockDeploys(page);
     const asked = await mockMyJudges(page);
-    await openApp(page, "/new");
-    await page.getByRole("button", { name: /^代码判定/ }).click();
-    await page
-      .getByRole("group", { name: "我的判定器" })
-      .getByRole("button", { name: /猜数字/ })
-      .click();
+    await pickMine(page);
     await page.locator("#hb-param-answer").fill("42");
     const toggle = page.getByRole("button", { name: /^试一试/ });
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
@@ -3101,22 +3258,28 @@ test.describe("发红包 · 代码判定", () => {
     await expect(page.getByText("判定超时")).toBeVisible();
   });
 
-  test("换一个回到卡片；自己写一个是空的，名字在最前；贴上带 meta 的代码就填好名字和说明", async ({
+  test("换一个回到两张卡，不换了回到原来那张；自己写一个去 /judges/new（先问没保存的修改），那里是空的，贴上带 meta 的代码就填好名字和说明", async ({
     page,
     context,
   }) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await mockDeploys(page);
     await mockMyJudges(page);
-    await openApp(page, "/new");
-    await page.getByRole("button", { name: /^代码判定/ }).click();
-    await page
-      .getByRole("group", { name: "我的判定器" })
-      .getByRole("button", { name: /猜数字/ })
-      .click();
+    await pickMine(page);
+    await page.locator("#hb-param-answer").fill("42");
     await page.getByRole("button", { name: "换一个" }).click();
-    await expect(page.getByRole("group", { name: "我的判定器" })).toBeVisible();
-    await page.getByRole("button", { name: "自己写一个" }).click();
+    await expect(
+      page.getByRole("button", { name: /^去判定器广场挑一个/ }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "不换了" }).click();
+    await expect(page.getByText("我的 · 第 3 版")).toBeVisible();
+    await expect(page.locator("#hb-param-answer")).toHaveValue("42");
+    await page.getByRole("button", { name: "换一个" }).click();
+    await page.getByRole("link", { name: /^自己写一个/ }).click();
+    // What was filled in is not saved: asked first, as any link is.
+    const leave = page.getByRole("dialog", { name: "还有没保存的修改" });
+    await leave.getByRole("button", { name: "放弃修改并离开" }).click();
+    await expect(page).toHaveURL(/\/judges\/new$/);
     await expect(page.locator("#hb-judge-name")).toHaveValue("");
     await expect(page.locator("#hb-param-max")).toHaveCount(0);
     // Code without a name: its deploy waits for one.
@@ -3169,7 +3332,7 @@ test.describe("发红包 · 代码判定", () => {
     await expect(page).toHaveURL(new RegExp(`/judges/${GUESS_ID}$`));
   });
 
-  test("用它发红包：一进来就是代码判定的第 2 步，判定器读到以前那张卡写正在读取…；没有测试全过的版本，就在第 2 步说出来，下面照常能挑", async ({
+  test("用它发红包：一进来就是代码判定的第 2 步，判定器读到以前那张卡写正在读取…；没有测试全过的版本，就在第 2 步说出来，下面照常是两条挑法", async ({
     page,
   }) => {
     await mockDeploys(page);
@@ -3215,7 +3378,10 @@ test.describe("发红包 · 代码判定", () => {
     await expect(
       page.getByText("这个判定器还没有测试全过的版本。"),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: /猜数字/ })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /^去判定器广场挑一个/ }),
+    ).toBeVisible();
+    await expect(page.getByRole("link", { name: /^自己写一个/ })).toBeVisible();
   });
 
   test("判定器页：改名字和说明，保存后写已保存；改成一直公开先确认，改了就改不回来", async ({
@@ -3326,7 +3492,7 @@ test.describe("发红包 · 代码判定", () => {
     await openApp(page, "/judges?tab=mine");
     await expect(page.getByText("还没有判定器")).toBeVisible();
     await expect(
-      page.getByText("在发红包第 2 步选“自己写一个”，部署以后就在这里。"),
+      page.getByText("按右上的“自己写一个”，部署以后就在这里。"),
     ).toBeVisible();
     await openApp(page, `/judges/${GUESS_ID}`);
     await expect(
@@ -3385,6 +3551,8 @@ test.describe("附带网页 SDK（judge-page §3、§11.8）", () => {
     ).toBeVisible();
     const frame = page.frame({ url: gameUrl });
     if (!frame) throw new Error("GAME_FRAME_MISSING");
+    // The heading shows before the SDK has loaded.
+    await frame.waitForFunction(() => "hb" in window);
     return frame;
   }
 

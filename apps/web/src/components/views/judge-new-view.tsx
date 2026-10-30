@@ -3,7 +3,13 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import { FolderCode } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { ActivityRequestError } from "../../lib/activities";
-import { prefetchOwnJudgePage, useJudgePage } from "../../lib/judge";
+import {
+  type CarriedJudge,
+  clearNewJudge,
+  peekNewJudge,
+  prefetchOwnJudgePage,
+  useJudgePage,
+} from "../../lib/judge";
 import { type SessionUser, useIdentity } from "../../lib/session";
 import { JudgeNameFields, JudgeWriter } from "../hongbao-form/code-step";
 import type { Update } from "../hongbao-form/fields";
@@ -171,8 +177,14 @@ function NewSettings({
 function focusResults() {
   let tries = 0;
   const step = () => {
-    const results = document.getElementById("hb-code-check");
-    if (results) results.focus({ preventScroll: false });
+    // This page's own results go with it as it leaves: wait for the one
+    // left, its 判定器页's (the newest, should it be slow to go).
+    const results = document.querySelectorAll<HTMLElement>(
+      "[id='hb-code-check']",
+    );
+    const last = results[results.length - 1];
+    if (results.length === 1 || (last && tries >= 40))
+      last?.focus({ preventScroll: false });
     else if (tries++ < 40) window.setTimeout(step, 50);
   };
   window.setTimeout(step, 50);
@@ -181,8 +193,10 @@ function focusResults() {
 function NewJudge({
   user,
   seed,
+  carried,
 }: {
   user: SessionUser;
+  /** 复制一份来改: another's, its source kept. */
   seed?: {
     id: string;
     name: string;
@@ -190,6 +204,8 @@ function NewJudge({
     code: string;
     author: string;
   };
+  /** A 发红包 draft's code from before (§16.3), its tests too. */
+  carried?: CarriedJudge;
 }) {
   const navigate = useNavigate();
   const [start] = useState<FormState>(() => {
@@ -200,10 +216,10 @@ function NewJudge({
       judge: {
         ...base.judge,
         judgeId: null,
-        name: seed?.name ?? "",
-        description: seed?.description ?? "",
-        code: seed?.code ?? "",
-        tests: "",
+        name: seed?.name ?? carried?.name ?? "",
+        description: seed?.description ?? carried?.description ?? "",
+        code: seed?.code ?? carried?.code ?? "",
+        tests: carried?.tests ?? "",
         versions: noVersions(),
       },
     };
@@ -346,6 +362,11 @@ export function JudgeNewView() {
     select: (search) => (search as { from?: string }).from,
   });
   const [from] = useState(asked);
+  // A draft's code brought from 发红包 (§16.3), read as the page opens.
+  const [carried] = useState(() => (asked ? null : peekNewJudge()));
+  useEffect(() => {
+    if (carried) clearNewJudge();
+  }, [carried]);
   if (!user)
     return (
       <MessageView
@@ -359,5 +380,9 @@ export function JudgeNewView() {
         }
       />
     );
-  return from ? <CopyOf user={user} from={from} /> : <NewJudge user={user} />;
+  return from ? (
+    <CopyOf user={user} from={from} />
+  ) : (
+    <NewJudge user={user} carried={carried ?? undefined} />
+  );
 }

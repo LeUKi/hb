@@ -471,15 +471,15 @@ test.describe("判定器广场", () => {
     await expect(
       page.getByText("第 1 版测试全过，用它发红包时是这样。"),
     ).toBeVisible();
-    await expect(page.locator("#hb-param-max")).toHaveValue("100");
-    await expect(page.locator("#hb-param-answer")).toHaveValue("");
+    await expect(page.locator("#hb-try-param-max")).toHaveValue("100");
+    await expect(page.locator("#hb-try-param-answer")).toHaveValue("");
     for (const line of ["份数 1–10，默认 5", "默认标题：猜一猜"])
       await expect(page.getByText(line, { exact: true })).toBeVisible();
     await expect(page.getByText("自带说明", { exact: true })).toBeVisible();
     await expect(
       page.getByRole("link", { name: "game.example.com ↗" }),
     ).toHaveAttribute("href", "https://game.example.com/play");
-    await page.locator("#hb-param-answer").fill("42");
+    await page.locator("#hb-try-param-answer").fill("42");
     await page.getByRole("button", { name: /^试一试/ }).click();
     await page.getByRole("textbox", { name: "试一试的输入" }).fill("42");
     await page.getByRole("button", { name: "判定", exact: true }).click();
@@ -556,19 +556,27 @@ test.describe("判定器广场", () => {
     await expect(page.getByText(/^基于 @/)).toHaveCount(0);
   });
 
-  test("发红包第 2 步：挑站长精选里别人的判定器，收起的卡写站长精选，查看代码是只读弹窗；草稿存判定器和版本，不发测试", async ({
+  test("发红包第 2 步：在广场弹窗的站长精选里挑别人的判定器，收起的卡写站长精选，查看代码是只读弹窗；草稿存判定器和版本，不发测试", async ({
     page,
   }) => {
     const { asked } = await mockSquare(page, member);
     await openApp(page, "/new");
     await page.getByRole("button", { name: /^代码判定/ }).click();
-    const featured = page.getByRole("group", { name: "站长精选" });
-    const card = featured.getByRole("button", { name: /猜数字/ });
-    await expect(card).toContainText("@maker");
+    // Two ways only (§16.3): no cards of the 广场 or of one's own here.
+    await expect(page.getByRole("group", { name: "站长精选" })).toHaveCount(0);
     await expect(
-      page.getByRole("button", { name: "去判定器广场挑一个" }),
-    ).toBeVisible();
-    await card.click();
+      page.getByRole("link", { name: /^自己写一个/ }),
+    ).toHaveAttribute("href", "/judges/new");
+    await page.getByRole("button", { name: /^去判定器广场挑一个/ }).click();
+    const square = page.getByRole("dialog", { name: "判定器广场" });
+    // It opens on 站长精选 (§8).
+    await expect(
+      square.getByRole("button", { name: "站长精选" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    const card = square.getByRole("article").filter({ hasText: "猜数字" });
+    await expect(card).toContainText("@maker");
+    await card.getByRole("button", { name: "用这个" }).click();
+    await expect(square).toBeHidden();
     await expect(page.getByText("站长精选 · 第 2 版")).toBeVisible();
     await expect(page.locator("#hb-param-max")).toHaveValue("100");
     await page.getByRole("button", { name: "查看代码" }).click();

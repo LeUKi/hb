@@ -173,7 +173,7 @@ function Square({ userId }: { userId: string | null }) {
             {own.length === 0 ? (
               <EmptyNote
                 title="还没有判定器"
-                text="在发红包第 2 步选“自己写一个”，部署以后就在这里。"
+                text="按右上的“自己写一个”，部署以后就在这里。"
               />
             ) : (
               <Panel as="ul" className="grid gap-0.5 p-1.5">
