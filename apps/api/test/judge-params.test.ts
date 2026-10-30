@@ -1,5 +1,5 @@
 import { env } from "cloudflare:test";
-import type { ClaimDetail, ClaimResult, JudgeInput } from "@hb/contracts";
+import type { JudgeInput } from "@hb/contracts";
 import { beforeEach, describe, expect, it } from "vitest";
 import { paramsCommitment } from "../../../kit/runtime/index.mjs";
 import { claimActivity } from "../src/activities/claim-service";
@@ -149,13 +149,11 @@ describe("判定器's params as it opens", () => {
       message: string;
     };
     expect(wrong.message).toBe("不对，范围 1–100");
-    const right = (await submit(opened.id, await actor(), "42")) as {
-      result: string;
-    };
-    expect(right.result).toBe("claimed");
-    expect(
-      (right as unknown as ClaimResult & { claim: ClaimDetail }).claim.amount,
-    ).toBe("0.01");
+    // Protocol 5: judged, and settled at once ({ ok: true, amount }).
+    expect(await submit(opened.id, await actor(), "42")).toMatchObject({
+      result: "judged",
+      settled: { claim: { amount: "0.01" } },
+    });
     // Its sender's records carry them, and the seal.
     const records = await judgeRecords(bindings, opened.id, author.id);
     expect(records.params).toEqual({ max: 100, answer: 42 });

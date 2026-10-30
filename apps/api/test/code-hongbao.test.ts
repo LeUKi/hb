@@ -153,7 +153,9 @@ describe("代码判定红包: sending one", () => {
       }),
     );
     expect(failing.body.check.passed).toBe(false);
-    expect(failing.body.check.tests[0]?.problem).toBe("应该发 50，实际发 30");
+    expect(failing.body.check.tests[0]?.problem).toBe(
+      "应该领到 50，实际领到 30",
+    );
 
     const imports = await check(author, `import fs from "node:fs";\n${JUDGE}`);
     expect(imports.body.check).toMatchObject({
@@ -199,7 +201,7 @@ describe("代码判定红包: sending one", () => {
         tests: [
           {
             name: "两个人",
-            hongbao: { total: 100, count: 3 },
+            hongbao: { total: 100 },
             steps: [
               {
                 who: "小明",
@@ -242,11 +244,11 @@ describe("代码判定红包: sending one", () => {
       scenario({ ok: true, amount: 50 }),
     );
     expect(failing.body.check.tests[0]?.problem).toBe(
-      "第 3 步（小红）：应该发 50，实际发 30",
+      "第 3 步（小红）：应该领到 50，实际领到 30",
     );
     const twice = await check(author, code, scenario({ ok: true }, "小明"));
     expect(twice.body.check.tests[0]?.problem).toBe(
-      "第 3 步（小明）：已经领过了，线上不会交给代码",
+      "第 3 步（小明）：已经结算了，线上不会交给代码",
     );
 
     const random = await check(
@@ -374,7 +376,8 @@ describe("代码判定红包: sending one", () => {
       author.id,
       saved.version,
     );
-    // No 口令, and a share only as judged, within its range.
+    // No 口令; a share (protocol 5: a settlement) of 0.01 up to what the
+    // pool holds, and a claim only for someone settled with their pending.
     await expect(
       env.DB.prepare(
         "INSERT INTO activity_passwords (id, activity_id, digest, ciphertext, position, created_at) VALUES (?, ?, 'd', 'c', 0, 0)",
@@ -382,7 +385,7 @@ describe("代码判定红包: sending one", () => {
         .bind(crypto.randomUUID(), opened.id)
         .run(),
     ).rejects.toThrow(/direct_activity_has_no_passwords/);
-    for (const amount of [0, 99, 100])
+    for (const amount of [0, 101])
       await expect(
         env.DB.prepare(
           "INSERT INTO reward_inventory (id, activity_id, position, kind, amount_minor, created_at) VALUES (?, ?, 0, 'ldc', ?, 0)",
@@ -390,12 +393,28 @@ describe("代码判定红包: sending one", () => {
           .bind(crypto.randomUUID(), opened.id, amount)
           .run(),
       ).rejects.toThrow();
-    // 1.00 in 3 shares of at least 0.01: the first may take up to 0.98.
+    const share = crypto.randomUUID();
     await env.DB.prepare(
       "INSERT INTO reward_inventory (id, activity_id, position, kind, amount_minor, created_at) VALUES (?, ?, 0, 'ldc', 98, 0)",
     )
-      .bind(crypto.randomUUID(), opened.id)
+      .bind(share, opened.id)
       .run();
+    // Nobody here has 0.98 pending: no claim takes it.
+    await expect(
+      env.DB.prepare(
+        "INSERT INTO claims (id, activity_id, user_id, inventory_id, password_id, claimed_at) VALUES (?, ?, ?, ?, NULL, 0)",
+      )
+        .bind(crypto.randomUUID(), opened.id, author.id, share)
+        .run(),
+    ).rejects.toThrow(/invalid_claim_participation/);
+    // Nor can anyone's pending outgrow the pool.
+    await expect(
+      env.DB.prepare(
+        "INSERT INTO code_judge_people (activity_id, user_id, judged, claimed, first_at, last_at, pending_minor) VALUES (?, ?, 1, 0, 0, 0, 101)",
+      )
+        .bind(opened.id, author.id)
+        .run(),
+    ).rejects.toThrow(/immutable_activity_code/);
     await expect(
       env.DB.prepare(
         "UPDATE reward_inventory SET amount_minor = 1 WHERE activity_id = ?",

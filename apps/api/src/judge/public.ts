@@ -3,12 +3,16 @@
 // is over, the code and the seed, written out once and checked against
 // both. A 判定器 made 一直公开 shows its code from opening on. Nobody's input and none of the code's state are ever here.
 // From protocol 4 what everyone sees and 动态 too (announcements.ts).
-import type {
-  JudgeAnnouncement,
-  JudgeDeclarations,
-  PublicJudge,
+import {
+  formatSignedAmount,
+  type JudgeAnnouncement,
+  type JudgeDeclarations,
+  type PublicJudge,
 } from "@hb/contracts";
-import { seedCommitment } from "../../../../kit/runtime/index.mjs";
+import {
+  LEDGER_PROTOCOL,
+  seedCommitment,
+} from "../../../../kit/runtime/index.mjs";
 import { databaseNow } from "../activities/lifecycle";
 import { activityStatus } from "../activities/service";
 import type { ActivityRow } from "../activities/storage";
@@ -21,6 +25,7 @@ import {
   latestAnnouncements,
   viewOf,
 } from "./announcements";
+import { ledgerPool } from "./ledger";
 import { declarationsFor, revealedParams } from "./params";
 import {
   findJudgeRow,
@@ -192,6 +197,16 @@ export async function publicJudge(
       ? (JSON.parse(judge.paramsPublic) as Record<string, unknown>)
       : null;
   const secrets = (declarations?.params ?? []).filter((item) => item.secret);
+  // Protocol 5: what the pool has left, and whether it is settling.
+  const left =
+    judge.protocol >= LEDGER_PROTOCOL ? await ledgerPool(env, row.id) : null;
+  const ledger =
+    left === null
+      ? null
+      : {
+          unclaimed: left,
+          settling: row.endedAt !== null && judge.settledAt === null,
+        };
   const params = shown
     ? (declarations?.params ?? []).flatMap((param) => {
         const from = param.secret ? out?.secret : shown;
@@ -210,6 +225,8 @@ export async function publicJudge(
       : {}),
     seedCommitment: judge.seedCommitment,
     judged,
+    ...(ledger ? { unclaimed: formatSignedAmount(ledger.unclaimed) } : {}),
+    ...(ledger?.settling ? { settling: true as const } : {}),
     ...(judge.pausedAt !== null && activityStatus(row) === "active"
       ? { paused: true as const }
       : {}),

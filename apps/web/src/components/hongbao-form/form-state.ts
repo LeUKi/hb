@@ -728,8 +728,11 @@ export function formOf(activity: ManagedActivity, now = Date.now()): FormState {
       money.mode === "code"
         ? {
             total: money.totalAmount,
-            count: String(money.count),
-            minEach: money.minEach,
+            count:
+              money.count === undefined
+                ? base.judge.count
+                : String(money.count),
+            minEach: money.minEach ?? base.judge.minEach,
             prompt: config.judge?.prompt ?? "",
             code: config.judge?.code ?? "",
             tests: config.judge?.tests ?? "",

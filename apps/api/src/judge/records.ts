@@ -9,6 +9,7 @@ import {
   ldcTotalMinor,
 } from "@hb/contracts";
 import type { Json, JudgeRecords } from "../../../../kit/judge";
+import { LEDGER_PROTOCOL } from "../../../../kit/runtime/index.mjs";
 import { attemptAssociatedData } from "../activities/claim-service";
 import { ActivityError } from "../activities/errors";
 import { type ActivityRow, ownedActivity } from "../activities/storage";
@@ -49,6 +50,8 @@ type JudgmentRow = {
   fetchesCiphertext: string | null;
   view: string | null;
   ends: number;
+  /** Protocol 5: what it wrote besides the shared state and view. */
+  ledgerCiphertext: string | null;
   announce: string | null;
   at: number;
   externalId: string;
@@ -60,7 +63,7 @@ type JudgmentRow = {
 
 const JUDGMENTS = `SELECT j.submission_row_id AS rowId, j.sequence, j.attempt, j.title, j.username, j.level,
     j.ok, j.asked_minor AS asked, j.paid_minor AS paid, j.note, j.message, j.state_ciphertext AS stateCiphertext,
-    j.fetches_ciphertext AS fetchesCiphertext, j.view, j.ends, n.text AS announce,
+    j.fetches_ciphertext AS fetchesCiphertext, j.view, j.ends, j.ledger_ciphertext AS ledgerCiphertext, n.text AS announce,
     j.judged_at AS at, u.external_id AS externalId, u.display_name AS displayName, u.avatar_url AS avatarUrl,
     e.ciphertext, c.claimed_at AS claimedAt
   FROM code_judgments j JOIN users u ON u.id = j.user_id
@@ -115,6 +118,8 @@ export async function listFailures(
   };
 }
 
+type Verdict = JudgeRecords["judgments"][number]["verdict"];
+
 async function recordsOf(
   env: ApiBindings,
   activity: ActivityRow,
@@ -147,6 +152,44 @@ async function recordsOf(
         row.rowId,
         row.fetchesCiphertext,
       );
+      // Protocol 5 (docs/multi-prize-design.md §3.2): as it was written —
+      // add and settle, or { ok, amount } — with player and others.
+      const ledger =
+        row.ledgerCiphertext === null
+          ? null
+          : (JSON.parse(
+              await decryptString(
+                row.ledgerCiphertext,
+                env,
+                `${judgeData(activity.id, "ledger")}:${row.rowId}`,
+              ),
+            ) as {
+              add: number;
+              settle: boolean;
+              shorthand: boolean;
+              player: NonNullable<Verdict["player"]>;
+              others: NonNullable<Verdict["others"]>;
+            });
+      const written: Verdict = ledger
+        ? {
+            ...(ledger.shorthand
+              ? {
+                  ok: ledger.settle,
+                  ...(ledger.settle ? { amount: ledger.add } : {}),
+                }
+              : {
+                  ...(ledger.add !== 0 ? { add: ledger.add } : {}),
+                  ...(ledger.settle ? { settle: true as const } : {}),
+                }),
+            ...(Object.keys(ledger.player).length > 0
+              ? { player: ledger.player }
+              : {}),
+            ...(ledger.others.length > 0 ? { others: ledger.others } : {}),
+          }
+        : {
+            ok: row.ok === 1,
+            ...(row.asked !== null ? { amount: row.asked } : {}),
+          };
       return {
         at: row.at,
         input: await inputOf(env, activity.id, row),
@@ -158,8 +201,7 @@ async function recordsOf(
         },
         title: row.title,
         verdict: {
-          ok: row.ok === 1,
-          ...(row.asked !== null ? { amount: row.asked } : {}),
+          ...written,
           ...(row.message ? { message: row.message } : {}),
           ...(state !== undefined ? { state } : {}),
           // 协议第四版 (docs/judge-page-design.md §2).
@@ -217,8 +259,10 @@ async function recordsOf(
     hongbao: {
       id: activity.id,
       total: ldcTotalMinor(config),
-      count: activity.totalCount,
-      minEach: judge.minEachMinor,
+      // Shares before protocol 5 only.
+      ...(judge.protocol < LEDGER_PROTOCOL
+        ? { count: activity.totalCount, minEach: judge.minEachMinor }
+        : {}),
       openedAt: activity.openedAt,
       endsAt: activity.deadline ?? 0,
       fingerprint: judge.fingerprint,

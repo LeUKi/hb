@@ -249,7 +249,11 @@ describe("网站管理 · 判定器: 用量", () => {
       participationMode: "code",
       input: "flag{ok}",
     });
-    expect(claimed.result).toBe("claimed");
+    // Protocol 5: judged, and settled at once ({ ok: true, amount }).
+    expect(claimed).toMatchObject({
+      result: "judged",
+      settled: { claim: { amount: "0.30" } },
+    });
     const someone = await actor();
     await plus(someone);
     await check(someone, unique());

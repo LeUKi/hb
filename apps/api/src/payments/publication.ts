@@ -62,6 +62,8 @@ export const publicationMessages = {
   CODE_HONGBAO_PAUSED: "代码判定红包暂时关闭，草稿已保存。",
   JUDGE_CHECK_REQUIRED: "还没有测试全过的判定器，草稿已保存。",
   JUDGE_RERUN_REQUIRED: "测试改过了，要重新跑一遍，草稿已保存。",
+  JUDGE_OLD_PROTOCOL:
+    "这是按旧规则写的判定器，要按新规则重新跑一遍测试才能发新红包，草稿已保存。",
   CODE_HONGBAO_DAILY_LIMIT: "今天开放代码判定红包的次数用完了，草稿已保存。",
   CODE_NETWORK_PAUSED: "代码判定暂时不能联网，草稿已保存。",
   JUDGE_PARAMS_INVALID: "判定器的参数还没填好，草稿已保存。",

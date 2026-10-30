@@ -102,7 +102,7 @@ async function draft(judge: Partial<JudgeInput>) {
 
 async function open(code: string, tests = COUNTER_TESTS) {
   const passed = await check(author, code, tests);
-  expect(passed.body.check).toMatchObject({ passed: true, protocol: 4 });
+  expect(passed.body.check).toMatchObject({ passed: true, protocol: 5 });
   const saved = await draft({ code, tests });
   return openActivity(bindings, saved.id, author.id, saved.version);
 }
@@ -133,20 +133,21 @@ const ending = (activityId: string) =>
     .bind(activityId)
     .first<{ endedAt: number | null; reason: string | null }>();
 
-describe("判定器的公开数据 (protocol 4)", () => {
+describe("判定器的公开数据 (protocol 4 on)", () => {
   it("opens with setup()'s state and view, and keeps each judgment's view and line in 动态", async () => {
     const opened = await open(unique(COUNTER));
     const row = await findJudgeRow(bindings, opened.id);
     expect(row).toMatchObject({
-      protocol: 4,
-      viewSummary: "开局：3 份",
+      // Protocol 5 tells setup() the compatible count (§3.5): 1 for 1.00.
+      protocol: 5,
+      viewSummary: "开局：1 份",
       viewData: '{"n":0}',
     });
     expect(row?.stateCiphertext).not.toBeNull();
     expect(row?.setupCiphertext).not.toBeNull();
 
     const first = await actor();
-    expect((await submit(opened.id, first, "x")).result).toBe("rejected");
+    expect((await submit(opened.id, first, "x")).result).toBe("judged");
     const after = await findJudgeRow(bindings, opened.id);
     expect(after).toMatchObject({
       viewSummary: "第 1 次",
@@ -175,11 +176,11 @@ describe("判定器的公开数据 (protocol 4)", () => {
 
     // The records give setup()'s answer and each judgment's.
     const records = await judgeRecords(bindings, opened.id, author.id);
-    expect(records.protocol).toBe(4);
+    expect(records.protocol).toBe(5);
     expect(records.setup).toMatchObject({
       title: "代码判定 · 3 份",
       state: { n: 0 },
-      view: { summary: "开局：3 份", data: { n: 0 } },
+      view: { summary: "开局：1 份", data: { n: 0 } },
     });
     expect(records.judgments[0]?.verdict).toMatchObject({
       ok: false,
@@ -191,12 +192,10 @@ describe("判定器的公开数据 (protocol 4)", () => {
 
   it("ends the 红包 after paying the share of the judgment that ends it, and gives back the rest", async () => {
     const opened = await open(unique(COUNTER));
-    expect((await submit(opened.id, await actor(), "x")).result).toBe(
-      "rejected",
-    );
+    expect((await submit(opened.id, await actor(), "x")).result).toBe("judged");
     const winner = await actor();
     const won = await submit(opened.id, winner, "win");
-    expect(won.result).toBe("claimed");
+    expect(won).toMatchObject({ result: "judged", settled: { claim: {} } });
     expect(await ending(opened.id)).toMatchObject({ reason: "judge" });
     expect((await getPublicActivity(bindings, opened.id)).status).toBe("ended");
     // 1.00 locked, 0.10 paid: the rest is no longer held.
@@ -217,7 +216,7 @@ describe("判定器的公开数据 (protocol 4)", () => {
   it("ends it on a turn-down too, with nothing paid", async () => {
     const opened = await open(unique(COUNTER));
     expect((await submit(opened.id, await actor(), "stop")).result).toBe(
-      "rejected",
+      "judged",
     );
     expect(await ending(opened.id)).toMatchObject({ reason: "judge" });
     // view: null cleared what everyone saw.
@@ -243,9 +242,9 @@ export function judge() { return { ok: false }; }
     });
   });
 
-  it("opens code tested on v3 on v3's runtime, where view, announce and end are no part of it", async () => {
+  it("waits for a 旧判定器, tested only on an earlier protocol, to run its tests on the new rules (multi-prize §3.6)", async () => {
     const code = unique(`export function judge({ user }) {
-  return { ok: false, message: "继续", view: { summary: "看得到吗" }, announce: \`@\${user.username} 试了一次\`, end: true };
+  return { ok: false, message: "继续", view: { summary: "看得到吗" }, announce: \`@\${user.username} 试了一次\` };
 }
 `);
     const tests = JSON.stringify({
@@ -253,7 +252,7 @@ export function judge() { return { ok: false }; }
     });
     const at = Date.now();
     await env.DB.prepare(
-      "INSERT INTO judge_checks (id, user_id, protocol, fingerprint, tests_digest, passed, kind, created_at, finished_at) VALUES (?, ?, 3, ?, ?, 1, 'deploy', ?, ?)",
+      "INSERT INTO judge_checks (id, user_id, protocol, fingerprint, tests_digest, passed, kind, created_at, finished_at) VALUES (?, ?, 4, ?, ?, 1, 'deploy', ?, ?)",
     )
       .bind(
         crypto.randomUUID(),
@@ -265,25 +264,28 @@ export function judge() { return { ok: false }; }
       )
       .run();
     const saved = await draft({ code, tests });
+    await expect(
+      openActivity(bindings, saved.id, author.id, saved.version),
+    ).rejects.toMatchObject({
+      code: "JUDGE_OLD_PROTOCOL",
+      message:
+        "这是按旧规则写的判定器，要按新规则重新跑一遍测试才能发新红包，草稿已保存。",
+    });
+    // The run on the new rules is a rerun of the same code: then it opens on 5.
+    expect((await check(author, code, tests)).body.check).toMatchObject({
+      passed: true,
+      protocol: 5,
+      kind: "rerun",
+    });
+    const reread = await draft({ code, tests });
     const opened = await openActivity(
       bindings,
-      saved.id,
+      reread.id,
       author.id,
-      saved.version,
+      reread.version,
     );
-    const row = await findJudgeRow(bindings, opened.id);
-    expect(row).toMatchObject({ protocol: 3, viewSummary: null });
-    expect((await submit(opened.id, await actor(), "x")).result).toBe(
-      "rejected",
-    );
-    expect(await ending(opened.id)).toMatchObject({
-      endedAt: null,
-      reason: null,
-    });
-    expect(await lines(opened.id)).toEqual([]);
     expect(await findJudgeRow(bindings, opened.id)).toMatchObject({
-      viewSummary: null,
-      viewAt: null,
+      protocol: 5,
     });
   });
 
@@ -315,7 +317,7 @@ export function judge() { return { ok: false }; }
       expect(heard[0]).toMatchObject({
         type: "activity",
         activity: {
-          judge: { view: { summary: "开局：3 份", data: { n: 0 } } },
+          judge: { view: { summary: "开局：1 份", data: { n: 0 } } },
         },
       }),
     );
@@ -379,7 +381,7 @@ export function judge() { return { ok: false }; }
     // The read, for guests too, and 动态 a page at a time.
     // Under 20 a second (claims.ts PER_SECOND).
     for (const _ of Array.from({ length: 22 })) {
-      expect((await submit(opened.id, first, "x")).result).toBe("rejected");
+      expect((await submit(opened.id, first, "x")).result).toBe("judged");
       await new Promise((resolve) => setTimeout(resolve, 80));
     }
     const read = await getPublicActivity(bindings, opened.id);

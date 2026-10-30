@@ -72,7 +72,7 @@ function moveText(move, settled) {
   const moved = move.after - move.before;
   const parts = moved === 0 ? [] : [signed(moved)];
   if (settled !== undefined)
-    parts.push(settled > 0 ? `结算 ${yuan(settled)}` : "结算，没领到钱");
+    parts.push(settled > 0 ? `结算 ${yuan(settled)}` : "结算，没有领到");
   else if (moved !== 0 || move.after > 0)
     parts.push(`待结算 ${yuan(move.after)}`);
   else parts.push("没加钱");

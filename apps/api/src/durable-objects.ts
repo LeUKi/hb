@@ -71,6 +71,7 @@ import {
 } from "./discovery/service";
 import type { ApiBindings } from "./env";
 import { judgedNews } from "./judge/announcements";
+import { isSettling } from "./judge/ledger";
 import { type FetchRecord, NetworkSession } from "./judge/session";
 import { stopCodeActivity } from "./judge/stop";
 import { flushPaymentOutbox, runMerchantCycle } from "./payments/scheduler";
@@ -541,6 +542,21 @@ export class ActivityDO extends DurableObject<ApiBindings> {
 
   private async scheduleDraw(activityId: string) {
     const row = await findActivity(this.env, activityId);
+    // 结算中 (docs/multi-prize-design.md §2): a protocol 5 红包 that has
+    // ended settles a few pages a wake, until everyone is.
+    if (
+      row?.participationMode === "code" &&
+      row.endedAt !== null &&
+      (await isSettling(this.env, activityId))
+    ) {
+      await this.ctx.storage.put("drawActivityId", activityId);
+      const due = Date.now() + 100;
+      await this.ctx.storage.transaction(async (txn) => {
+        const current = await txn.getAlarm();
+        if (current === null || due < current) await txn.setAlarm(due);
+      });
+      return;
+    }
     if (
       !row ||
       row.openedAt === null ||
@@ -930,6 +946,8 @@ export class ActivityDO extends DurableObject<ApiBindings> {
               {
                 paused: () => this.announce(id),
                 ended: () => this.announce(id),
+                // Protocol 5: the others it moved read their part again.
+                moved: (userIds) => this.tellMine(userIds),
                 network: {
                   start: () => {
                     this.judging = new NetworkSession();
@@ -947,11 +965,18 @@ export class ActivityDO extends DurableObject<ApiBindings> {
               },
             );
             if ("registration" in result) await this.scheduleDraw(id);
-            if (result.result === "claimed" || result.result === "registered")
+            // Protocol 5: each judgment moves what the pool has left.
+            if (
+              result.result === "claimed" ||
+              result.result === "registered" ||
+              result.result === "judged"
+            )
               this.announce(id);
             if (
               parsed.data.participationMode === "code" &&
-              (result.result === "claimed" || result.result === "rejected")
+              (result.result === "claimed" ||
+                result.result === "rejected" ||
+                result.result === "judged")
             ) {
               this.announceJudged(id);
               // Their other tabs and devices read their own part again
@@ -960,7 +985,11 @@ export class ActivityDO extends DurableObject<ApiBindings> {
             }
             // A 🐟额红包's claim has no payment: its 🐟 is in already.
             const payment =
-              "claim" in result ? result.claim.payment : undefined;
+              "claim" in result
+                ? result.claim.payment
+                : result.result === "judged"
+                  ? result.settled?.claim?.payment
+                  : undefined;
             if (payment) {
               this.ctx.waitUntil(
                 flushPaymentOutbox(this.env, payment.id).catch(() => {

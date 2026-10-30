@@ -55,7 +55,7 @@ const ECHO = `export function judge(s) {
   const seen = (s.state?.seen ?? 0) + 1;
   const said = [s.claims.map((c) => c.input).join(","), s.hongbao.remaining,
     s.hongbao.remainingCount, s.share.max, s.user.attempts, JSON.stringify(s.state)].join("|");
-  if (s.input.startsWith("go")) return { ok: true, amount: 5000, message: said, state: { seen } };
+  if (s.input.startsWith("go")) return { ok: true, amount: 40, message: said, state: { seen } };
   return { ok: false, message: said, ...(seen % 2 ? { state: { seen } } : {}) };
 }`;
 const echo = (s: {
@@ -122,7 +122,7 @@ async function get<T>(
 }
 
 describe("代码判定红包: records", () => {
-  it("shows its sender each claim's input and both amounts, and the failures", async () => {
+  it("shows its sender each claim's input and amount, and the failures", async () => {
     const opened = await open();
     const first = await actor();
     const second = await actor();
@@ -130,7 +130,8 @@ describe("代码判定红包: records", () => {
     await submit(opened.id, first, "go 1");
     await submit(opened.id, second, "boom");
     await submit(opened.id, second, "go 2");
-    // The roster's sender view: 代码给 50.00，按上限发 0.98.
+    // The roster's sender view: protocol 5 settles them with what they had,
+    // no share's range to pull it into (docs/multi-prize-design.md §2).
     const roster = await get<AuthorClaimList>(
       `/me/activities/${opened.id}/claims`,
       author,
@@ -144,15 +145,14 @@ describe("代码判定红包: records", () => {
         note: judge?.note,
       })),
     ).toEqual([
-      { amount: "0.98", input: "go 1", asked: "50.00", note: "cap" },
-      { amount: "0.01", input: "go 2", asked: "50.00", note: "cap" },
+      { amount: "0.40", input: "go 1", asked: undefined, note: undefined },
+      { amount: "0.40", input: "go 2", asked: undefined, note: undefined },
     ]);
-    // The claimant's own read has the reason, not the code's number.
     const own = await get<{ claim: ClaimDetail }>(
       `/activities/${opened.id}/claim`,
       first,
     );
-    expect(own.body.claim.judge).toMatchObject({ input: "go 1", note: "cap" });
+    expect(own.body.claim.judge).toMatchObject({ input: "go 1", attempt: 2 });
     expect(own.body.claim.judge).not.toHaveProperty("asked");
 
     const failures = await get<CodeFailureList>(
@@ -198,11 +198,11 @@ describe("代码判定红包: records", () => {
     expect(records.hongbao).toMatchObject({
       id: opened.id,
       total: 100,
-      count: 3,
-      minEach: 1,
-      // Over (all three claimed): the seed is out too.
+      // Over (the third took what was left): the seed is out too.
       seed: expect.stringMatching(/^[0-9a-f]{64}$/),
     });
+    // Protocol 5 has no shares.
+    expect(records.hongbao).not.toHaveProperty("count");
     const rebuilt = submissionsOf(records);
     expect(rebuilt.map(echo)).toEqual(
       records.judgments.map((judgment) => judgment.verdict.message),
@@ -210,10 +210,12 @@ describe("代码判定红包: records", () => {
     expect(rebuilt[8]).toMatchObject({
       input: "go 2",
       claims: [
-        { input: "go 0", amount: 98 },
-        { input: "go 1", amount: 1 },
+        { input: "go 0", amount: 40 },
+        { input: "go 1", amount: 40 },
       ],
-      share: { min: 1, max: 1, last: true },
+      hongbao: { unclaimed: 20 },
+      share: { min: 1, max: 20, last: false },
+      player: { pending: 0 },
     });
     expect(
       (
@@ -251,7 +253,7 @@ describe("代码判定红包: records", () => {
     expect(page.judge).toMatchObject({ stopped: true, code: ECHO });
     expect(page.stopped).toBe(true);
     expect(await readAccount(bindings, author.id)).toMatchObject({
-      availableMinor: 402,
+      availableMinor: 460,
       lockedMinor: 0,
     });
     const late = await submit(opened.id, await actor(), "go");

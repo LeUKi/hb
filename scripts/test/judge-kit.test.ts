@@ -109,9 +109,7 @@ describe("the kit's sandbox", () => {
     );
     expect(SANDBOX_MODULES).toEqual(SITE_MODULES);
     expect(site).toContain(`COMPATIBILITY_DATE = "${COMPATIBILITY_DATE}"`);
-    // The kit is on protocol 5 (docs/multi-prize-design.md) a step before
-    // the site, which moves with its per-person table (step 2).
-    expect(PROTOCOL).toBe(JUDGE_PROTOCOL + 1);
+    expect(PROTOCOL).toBe(JUDGE_PROTOCOL);
     expect(TESTS_BYTES).toBe(JUDGE_LIMITS.testsBytes);
     // Authors run the workerd and Miniflare the site is built with.
     const wrangler = (path: string) =>

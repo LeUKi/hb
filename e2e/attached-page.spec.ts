@@ -253,6 +253,21 @@ test.describe("附带网页", () => {
       ),
     ).toBe("no_gesture");
     await expect(page.getByRole("dialog")).toHaveCount(0);
+    // Chrome drops a click's activation on a cross-origin frame that has
+    // just moved (its window sliding in after the reload): click once it
+    // has stayed put a while.
+    const frameBox = page.locator(`iframe[src^="${pageUrl}"]`);
+    await expect
+      .poll(async () => {
+        const before = await frameBox.boundingBox();
+        await page.waitForTimeout(400);
+        return (
+          JSON.stringify(before) ===
+          JSON.stringify(await frameBox.boundingBox())
+        );
+      })
+      .toBe(true);
+    await page.waitForTimeout(600);
     await frameLocator.getByRole("button", { name: "登录后开始" }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
     await expect

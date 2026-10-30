@@ -664,7 +664,8 @@ describe("activity image of a 代码判定红包", () => {
     const guest = await (await request(path)).text();
     lacquer(guest);
     expect(guest).toContain("查看");
-    expect(guest).toContain("剩余 3 份");
+    // Protocol 5 has no shares (docs/multi-prize-design.md §4.5).
+    expect(guest).toContain("奖池还剩 1.00 🐟");
     await claimActivity(bindings, activity.id, claimant.id, {
       submissionId: crypto.randomUUID(),
       participationMode: "code",

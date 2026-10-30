@@ -274,7 +274,8 @@ export function rewardSummary(
           distributeFullPool: money.distributeFullPool,
         }
       : {}),
-    ...(money.mode === "code"
+    // A draft from before protocol 5 still says its 每份至少.
+    ...(money.mode === "code" && money.minEach
       ? { minEach: formatAmount(amountToMinor(money.minEach)) }
       : {}),
   };
@@ -518,6 +519,10 @@ export async function getPublicActivity(
       env,
       projectPublicActivity(row, await author(env, row.authorId)),
     )),
+    // Protocol 5 has no shares: 奖池还剩 instead.
+    ...(judge?.unclaimed !== undefined
+      ? { quantity: { mode: "pool" as const, left: judge.unclaimed } }
+      : {}),
     ...(drawProof ? { drawProof } : {}),
     ...(judge ? { judge: sender ? judge : publicJudgeOf(row, judge) } : {}),
     ...(scope ? { scope } : {}),

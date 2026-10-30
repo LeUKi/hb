@@ -35,16 +35,19 @@ export type JudgeDeclarations = {
 /**
  * The protocol code is run on now (§4.7, §9; docs/judge-square-design.md
  * §5; docs/judge-page-design.md §2): v2 is v1 with 联网, v3 is v2 with
- * params, v4 is v3 with view, announce, end and setup(). An opened 红包
- * keeps the one it opened with.
+ * params, v4 is v3 with view, announce, end and setup(), v5 has no shares:
+ * each person's pending, settled once (docs/multi-prize-design.md). An
+ * opened 红包 keeps the one it opened with.
  */
-export const JUDGE_PROTOCOL = 4;
+export const JUDGE_PROTOCOL = 5;
 /**
  * The oldest protocol a 红包 still opens on: code whose tests passed on it
  * opens on the newest protocol they passed on, as it was run; code last
- * run on an older one runs again first (free, a rerun).
+ * run on an older one runs again first (free, a rerun). From 5 there are
+ * no shares, so a 旧判定器 (on 4 or before) runs its tests on 5 first
+ * (docs/multi-prize-design.md §3.6).
  */
-export const JUDGE_OLDEST_PROTOCOL = 3;
+export const JUDGE_OLDEST_PROTOCOL = 5;
 
 export const JUDGE_LIMITS = {
   promptCharacters: 40,
@@ -470,11 +473,16 @@ export const judgeListingSchema = z.strictObject({
 export type JudgeListingInput = z.infer<typeof judgeListingSchema>;
 
 /** The 红包 a 判定器 is tried on (§3 check, §6 试一试), in 分. */
+/**
+ * The 红包 as filled in. From protocol 5 there are no shares: the code is
+ * told the compatible count and 0.01 (docs/multi-prize-design.md §3.5),
+ * whatever an older page sends.
+ */
 const triedHongbaoSchema = z.strictObject({
   title: z.string().max(100),
   total: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-  count: z.number().int().min(1).max(1000),
-  minEach: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  count: z.number().int().min(1).max(1000).optional(),
+  minEach: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
 });
 
 /** check(params, hongbao) on a version (docs/judge-square-design.md §3). */
@@ -498,6 +506,11 @@ export type JudgeTryInput = z.infer<typeof judgeTrySchema>;
 export type JudgeTry =
   | { ok: true; amount: number; message?: string }
   | { ok: false; message?: string }
+  /**
+   * Protocol 5 (docs/multi-prize-design.md §4.1): what it added for the
+   * one trying (as moved, in 分) and whether it settled them.
+   */
+  | { judged: true; added: number; settled: boolean; message?: string }
   | { failure: "timeout" | "error"; detail: string };
 
 /** 判定器页's settings (docs/judge-square-design.md §2, §14.4). */
@@ -524,6 +537,13 @@ export type PublicJudge = {
   seedCommitment: string | null;
   /** How many times the code gave a verdict, paid or not (05 §3). */
   judged: number;
+  /**
+   * Protocol 5 (docs/multi-prize-design.md §4.1): 奖池还剩, the pool less
+   * what was paid and everyone's pending; once opened.
+   */
+  unclaimed?: string;
+  /** Protocol 5: it has ended and is settling everyone (结算中). */
+  settling?: true;
   /** The code failed five judgments running: claims wait. */
   paused?: true;
   /** 站长 stopped it. */
@@ -617,6 +637,11 @@ export type MyJudgment = {
   /** Paid, not what the code asked: 按上限发, 按每份至少发, 最后一份. */
   note?: JudgeNote;
   /**
+   * Protocol 5 (docs/multi-prize-design.md §4.1): what it moved (signed),
+   * their pending after, and whether it settled them.
+   */
+  moved?: { added: string; pending: string; settled: boolean };
+  /**
    * 联网 (§9.4), once the 红包 is over: what each request of this judgment
    * got back — the site, the status and the body — never the request.
    */
@@ -675,6 +700,12 @@ export type JudgeRecordRow =
       amount?: string;
       asked?: string;
       note?: JudgeNote;
+      /**
+       * Protocol 5 (docs/multi-prize-design.md §4.2): what it moved for the
+       * one judged (signed) and their pending after (“+0.50 → 1.20”), and
+       * whether it settled them.
+       */
+      moved?: { added: string; pending: string; settled: boolean };
       message?: string;
       /** Its line in 动态. */
       announce?: string;
@@ -702,6 +733,10 @@ export type JudgeRecordPeopleRow = {
   judged: number;
   /** Paid, as "0.50", if one judgment was a share. */
   amount?: string;
+  /** Protocol 5 (§4.2): 待结算, as "1.20", while not settled. */
+  pending?: string;
+  /** Protocol 5: settled (with `amount`, or nothing: 结算 0). */
+  settled?: true;
   lastAt: string;
 };
 
@@ -719,6 +754,8 @@ export type JudgeRecordFacts = {
   claimedPeople: number;
   /** Paid in all, as "1.20". */
   paid: string;
+  /** Protocol 5 (§4.2): everyone's pending together, as "1.20". */
+  pending?: string;
   failed: number;
 };
 

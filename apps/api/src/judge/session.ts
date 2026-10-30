@@ -33,6 +33,8 @@ export type JudgeHooks = {
   paused?: () => void;
   /** Its code ended the 红包 (docs/judge-page-design.md §2 end). */
   ended?: () => void;
+  /** Protocol 5: the others a judgment moved (docs/multi-prize-design.md §4.3). */
+  moved?: (userIds: string[]) => void;
   network?: {
     start(): NetworkSession;
     end(): void;

@@ -161,6 +161,27 @@ export async function passedCheck(
 }
 
 /**
+ * A 旧判定器 (docs/multi-prize-design.md §3.6): this code and these tests
+ * passed a run by this sender, but only on a protocol new 红包 no longer
+ * open on — a run on the new rules is what it waits for.
+ */
+export async function passedBefore(
+  env: ApiBindings,
+  userId: string,
+  fingerprint: string,
+  testsDigest: string,
+) {
+  return Boolean(
+    await env.DB.prepare(
+      `SELECT 1 FROM judge_checks WHERE user_id = ? AND protocol < ? AND fingerprint = ?
+        AND tests_digest = ? AND passed = 1 LIMIT 1`,
+    )
+      .bind(userId, JUDGE_OLDEST_PROTOCOL, fingerprint, testsDigest)
+      .first(),
+  );
+}
+
+/**
  * Whether this sender deployed this code but never ran these tests on it:
  * tests.json changed since, and a rerun is what it waits for (redesign/07
  * §5 “测试改过了，要重新跑一遍”). A run cut off before its end ran nothing.

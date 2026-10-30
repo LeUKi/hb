@@ -489,6 +489,19 @@ BEGIN
   SELECT RAISE(ABORT, 'balance lock entry mismatch');
 END;
 --> statement-breakpoint
+-- A run may be on protocol 5.
+DROP TRIGGER judge_checks_insert_guard;
+--> statement-breakpoint
+CREATE TRIGGER judge_checks_insert_guard BEFORE INSERT ON judge_checks
+WHEN NEW.protocol NOT IN (1,2,3,4,5) OR length(NEW.fingerprint)!=64 OR length(NEW.tests_digest)!=64 OR NEW.passed NOT IN (0,1)
+ OR (NEW.passed=1 AND NEW.finished_at IS NULL)
+ OR (NEW.finished_at IS NOT NULL AND (typeof(NEW.finished_at)!='integer' OR NEW.finished_at<NEW.created_at))
+ OR (NEW.network IS NOT NULL AND (NEW.protocol<2 OR NOT json_valid(NEW.network) OR json_type(NEW.network)!='array'
+   OR json_array_length(NEW.network) NOT BETWEEN 1 AND 3))
+ OR NEW.kind IS NOT (CASE WHEN EXISTS(SELECT 1 FROM judge_checks WHERE user_id=NEW.user_id
+   AND fingerprint=NEW.fingerprint) THEN 'rerun' ELSE 'deploy' END)
+BEGIN SELECT RAISE(ABORT,'invalid_judge_check'); END;
+--> statement-breakpoint
 -- Protocol 5: each person's part moves only on a protocol 5 红包; it
 -- starts unsettled, moves while the 红包 is open, and once settled, with
 -- exactly the pending it had (and the claim that paid it, when not 0),

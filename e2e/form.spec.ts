@@ -94,7 +94,7 @@ function managed(input: CreateActivityInput["activity"]): ManagedActivity {
     totalCount:
       input.money.mode === "custom"
         ? input.money.amounts.length
-        : input.money.count,
+        : (input.money.count ?? 1),
     claimedCount: 0,
     author: {
       id: viewer.id,

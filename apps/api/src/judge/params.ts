@@ -11,6 +11,7 @@ import type {
 import { ldcTotalMinor } from "@hb/contracts";
 import type { Params } from "../../../../kit/judge";
 import {
+  defaultCount,
   paramsCommitment,
   paramValues,
   readCheckAnswer,
@@ -112,11 +113,12 @@ export async function paramsRejected(
     { code, fingerprint: judge.fingerprint, fresh: 0 },
     {
       params: read.values,
+      // Protocol 5 has no shares: the compatible n and 0.01 (§3.5).
       hongbao: {
         title: activity.title,
         total: ldcTotalMinor(config),
-        count: activity.totalCount,
-        minEach: judge.minEachMinor,
+        count: defaultCount(ldcTotalMinor(config)),
+        minEach: 1,
       },
     },
   );

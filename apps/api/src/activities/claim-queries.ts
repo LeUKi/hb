@@ -333,12 +333,24 @@ async function judgmentsBatch(env: ApiBindings, rows: ClaimActivityRow[]) {
   const found =
     // From attempt_events.claim_id (indexed; set on the paying judgment's
     // row when its claim completes): never a scan of every submission.
+    // Protocol 5's claims settle a person, not a judgment: their last
+    // judgment says what they typed (code_judge_people, by its key).
     await env.DB.prepare(`SELECT e.claim_id AS claimId, s.activity_id AS activityId, s.id AS rowId,
       j.message, j.note, j.asked_minor AS asked, j.attempt, e.ciphertext
     FROM attempt_events e JOIN redemption_submissions s ON s.id = e.submission_row_id
     JOIN code_judgments j ON j.submission_row_id = s.id
-    WHERE e.claim_id IN (SELECT value FROM json_each(?)) AND s.participation_mode = 'code'`)
-      .bind(JSON.stringify(coded.map(({ claim }) => claim.id)))
+    WHERE e.claim_id IN (SELECT value FROM json_each(?1)) AND s.participation_mode = 'code'
+    UNION ALL
+    SELECT p.claim_id AS claimId, j.activity_id AS activityId, j.submission_row_id AS rowId,
+      j.message, j.note, j.asked_minor AS asked, j.attempt, e.ciphertext
+    FROM code_judge_people p
+    JOIN code_judgments j ON j.activity_id = p.activity_id AND j.user_id = p.user_id AND j.attempt = p.judged - 1
+    JOIN attempt_events e ON e.submission_row_id = j.submission_row_id
+    WHERE p.activity_id IN (SELECT value FROM json_each(?2)) AND p.claim_id IN (SELECT value FROM json_each(?1))`)
+      .bind(
+        JSON.stringify(coded.map(({ claim }) => claim.id)),
+        JSON.stringify([...new Set(coded.map(({ activity }) => activity.id))]),
+      )
       .all<{
         claimId: string;
         activityId: string;
@@ -606,10 +618,14 @@ async function claimAttempts(
 ) {
   if (activity.participationMode !== "code" || claimIds.length === 0)
     return new Map<string, number>();
+  // Protocol 5: settled after their last judgment.
   const found = await env.DB.prepare(`SELECT e.claim_id AS claimId, j.attempt
     FROM attempt_events e JOIN code_judgments j ON j.submission_row_id = e.submission_row_id
-    WHERE e.claim_id IN (SELECT value FROM json_each(?))`)
-    .bind(JSON.stringify(claimIds))
+    WHERE e.claim_id IN (SELECT value FROM json_each(?1))
+    UNION ALL
+    SELECT p.claim_id AS claimId, p.judged - 1 AS attempt FROM code_judge_people p
+    WHERE p.activity_id = ?2 AND p.claim_id IN (SELECT value FROM json_each(?1))`)
+    .bind(JSON.stringify(claimIds), activity.id)
     .all<{ claimId: string; attempt: number }>();
   return new Map(
     found.results.map((row) => [row.claimId, row.attempt + 1] as const),

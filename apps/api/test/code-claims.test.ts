@@ -44,8 +44,10 @@ import {
 } from "./code-fixtures";
 
 // Claims on a 代码判定红包 (docs/programmable-hongbao-design.md §2–§4, §6):
-// judged one at a time, paid within each share's range, paused by failing
-// code, and its code and seed published once it is over.
+// judged one at a time, paused by failing code, and its code and seed
+// published once it is over. From protocol 5 (docs/multi-prize-design.md)
+// no shares: each person's pending, settled once — { ok: true, amount } is
+// an add settled at once.
 
 let admin: Actor;
 let author: Actor;
@@ -84,11 +86,18 @@ async function submit(activityId: string, user: Actor, input: string) {
   return result;
 }
 
-const detail = (result: ClaimResult) =>
-  (result as { claim: ClaimDetail }).claim;
+/** The claim a judgment settled them with (protocol 5), or a claim's. */
+function detail(result: ClaimResult) {
+  if (result.result !== "judged")
+    return (result as { claim: ClaimDetail }).claim;
+  const claim = result.settled?.claim;
+  if (!claim)
+    throw new Error(`Not settled with money: ${JSON.stringify(result)}`);
+  return claim;
+}
 
 describe("代码判定红包: from a 商户 (2026-10-28)", () => {
-  it("pays each share by the 商户's payments, its range counted from the total less the shares made", async () => {
+  it("pays each settlement by the 商户's payments, up to what the total less those paid holds", async () => {
     const sender = await actor();
     const merchant = await createMerchant(bindings, sender.id, {
       requestId: crypto.randomUUID(),
@@ -121,23 +130,25 @@ describe("代码判定红包: from a 商户 (2026-10-28)", () => {
     const amounts = [];
     for (const _ of [1, 2, 3]) {
       const claimed = await submit(opened.id, await actor(), "flag{ok}");
-      expect(claimed.result).toBe("claimed");
+      expect(claimed.result).toBe("judged");
       amounts.push(detail(claimed).amount);
       expect(detail(claimed).payment).toBeTruthy();
     }
-    // 30 twice; the last share takes what is left of 1.00.
-    expect(amounts).toEqual(["0.30", "0.30", "0.40"]);
+    // No last share taking the rest: 0.30 each, 0.10 left.
+    expect(amounts).toEqual(["0.30", "0.30", "0.30"]);
     const payments = await env.DB.prepare(
       "SELECT t.amount_minor AS amount FROM payment_tasks t JOIN claims c ON c.id = t.claim_id WHERE c.activity_id = ? ORDER BY c.claimed_at",
     )
       .bind(opened.id)
       .all<{ amount: number }>();
-    expect(payments.results.map((row) => row.amount)).toEqual([30, 30, 40]);
-    expect((await getPublicActivity(bindings, opened.id)).status).toBe("ended");
-    // The database counts the range the same way: past it, no share.
+    expect(payments.results.map((row) => row.amount)).toEqual([30, 30, 30]);
+    const page = await getPublicActivity(bindings, opened.id);
+    expect(page.status).toBe("active");
+    expect(page.quantity).toEqual({ mode: "pool", left: "0.10" });
+    // The database counts what is left the same way: past it, no share.
     await expect(
       env.DB.prepare(
-        "INSERT INTO reward_inventory (id, activity_id, position, kind, amount_minor) VALUES (?, ?, 3, 'ldc', 1)",
+        "INSERT INTO reward_inventory (id, activity_id, position, kind, amount_minor) VALUES (?, ?, 3, 'ldc', 11)",
       )
         .bind(crypto.randomUUID(), opened.id)
         .run(),
@@ -146,18 +157,22 @@ describe("代码判定红包: from a 商户 (2026-10-28)", () => {
 });
 
 describe("代码判定红包: claims", () => {
-  it("pays what the code says to a right answer, and turns a wrong one down with its reply", async () => {
+  it("settles what the code says on a right answer, and answers a wrong one with its reply", async () => {
     const opened = await open();
     expect((await getPublicActivity(bindings, opened.id)).judge?.judged).toBe(
       0,
     );
     const claimant = await actor();
     expect(await submit(opened.id, claimant, "nope")).toEqual({
-      result: "rejected",
+      result: "judged",
       message: "不对",
+      moved: { added: "0.00", pending: "0.00" },
     });
     const claimed = await submit(opened.id, claimant, "flag{ok}");
-    expect(claimed.result).toBe("claimed");
+    expect(claimed).toMatchObject({
+      result: "judged",
+      moved: { added: "0.30", pending: "0.30" },
+    });
     expect(detail(claimed)).toMatchObject({
       amount: "0.30",
       judge: { input: "flag{ok}", message: "对了" },
@@ -186,8 +201,8 @@ describe("代码判定红包: claims", () => {
       "already_claimed",
     );
     expect(await submit(opened.id, author, "flag{ok}")).toMatchObject({
-      result: "claimed",
-      claim: { self: true },
+      result: "judged",
+      settled: { claim: { self: true } },
     });
     // Every input is in the sender's 尝试统计, the claims' marked.
     expect(
@@ -227,7 +242,7 @@ describe("代码判定红包: claims", () => {
     });
   });
 
-  it("pulls what the code asks into each share's range, the last taking what is left", async () => {
+  it("adds no more than the pool holds, and ends it, everyone settled, once it is taken", async () => {
     const opened = await open({
       code: `export const judge = () => ({ ok: true, amount: 5000 });`,
       tests: JSON.stringify({
@@ -236,33 +251,31 @@ describe("代码判定红包: claims", () => {
         ],
       }),
     });
-    const people = [await actor(), await actor(), await actor()];
-    const paid = [];
-    for (const person of people) {
-      const claim = detail(await submit(opened.id, person, "x"));
-      paid.push([claim.amount, claim.judge?.note]);
-    }
-    // 1.00 in 3, at least 0.01 each: 0.98 (封顶), 0.01 (封顶), 0.01 (最后一份).
-    expect(paid).toEqual([
-      ["0.98", "cap"],
-      ["0.01", "cap"],
-      ["0.01", "last"],
-    ]);
+    const people = [await actor(), await actor()];
+    // 50.00 asked of 1.00: 1.00 added, settled; the pool is taken.
+    expect(
+      detail(await submit(opened.id, people[0] as Actor, "x")),
+    ).toMatchObject({
+      amount: "1.00",
+    });
+    expect(await submit(opened.id, people[1] as Actor, "x")).toMatchObject({
+      result: "ended",
+    });
     expect(await readAccount(bindings, author.id)).toMatchObject({
       availableMinor: 400,
       lockedMinor: 0,
     });
-    const asked = await env.DB.prepare(
-      "SELECT asked_minor AS asked, paid_minor AS paid FROM code_judgments WHERE activity_id = ? ORDER BY judged_at",
+    const moves = await env.DB.prepare(
+      "SELECT add_minor AS added, before_minor AS before, after_minor AS after, settles FROM code_judgment_moves WHERE activity_id = ?",
     )
       .bind(opened.id)
       .all();
-    expect(asked.results).toEqual([
-      { asked: 5000, paid: 98 },
-      { asked: 5000, paid: 1 },
-      { asked: 5000, paid: 1 },
+    expect(moves.results).toEqual([
+      { added: 5000, before: 0, after: 100, settles: 1 },
     ]);
-    expect((await getPublicActivity(bindings, opened.id)).status).toBe("ended");
+    const page = await getPublicActivity(bindings, opened.id);
+    expect(page.status).toBe("ended");
+    expect(page.quantity).toEqual({ mode: "pool", left: "0.00" });
   });
 
   it("does not count a failing judgment, and pauses after five in a row", async () => {
@@ -280,7 +293,7 @@ describe("代码判定红包: claims", () => {
     await rejects(submit(opened.id, claimant, "boom"), "JUDGE_FAILED");
     await rejects(submit(opened.id, claimant, "bad"), "JUDGE_FAILED");
     // A good judgment in between starts the count again.
-    expect((await submit(opened.id, claimant, "x")).result).toBe("rejected");
+    expect((await submit(opened.id, claimant, "x")).result).toBe("judged");
     for (let failures = 0; failures < 4; failures += 1)
       await rejects(submit(opened.id, claimant, "boom"), "JUDGE_FAILED");
     expect((await getPublicActivity(bindings, opened.id)).judge?.paused).toBe(
@@ -354,13 +367,21 @@ describe("代码判定红包: claims", () => {
         input: "flag{ok}",
         message: "对了",
         amount: "0.30",
+        // Protocol 5: what each moved (docs/multi-prize-design.md §4.1).
+        moved: { added: "0.30", pending: "0.30", settled: true },
       },
-      { attempt: 21, at: expect.any(String), input: "quiet" },
+      {
+        attempt: 21,
+        at: expect.any(String),
+        input: "quiet",
+        moved: { added: "0.00", pending: "0.00", settled: false },
+      },
       {
         attempt: 20,
         at: expect.any(String),
         input: "guess 19",
         message: "不对",
+        moved: { added: "0.00", pending: "0.00", settled: false },
       },
     ]);
     expect(first.nextCursor).toBe("3");
@@ -628,7 +649,7 @@ describe("代码判定红包: claims", () => {
         undefined,
         true,
       ),
-    ).toMatchObject({ result: "rejected" });
+    ).toMatchObject({ result: "judged" });
     await advanceAttemptCooldown(env.DB, claimant.id);
     // A turn-down passed the check once; the next try asks again.
     await rejects(
@@ -686,7 +707,7 @@ describe("代码判定红包: claims", () => {
     });
     const before = await getPublicActivity(bindings, opened.id);
     expect(before.judge).toMatchObject({
-      protocol: 4,
+      protocol: 5,
       prompt: "输入 flag",
       seedCommitment: expect.stringMatching(/^[0-9a-f]{64}$/),
     });

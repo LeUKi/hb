@@ -16,6 +16,17 @@ import { radius, Squircle } from "../ui/squircle";
 const ldc = (minor: number) =>
   `${Math.floor(minor / 100)}.${String(minor % 100).padStart(2, "0")}`;
 
+/**
+ * What it would do for the one trying, as the 红包 page says it (docs/
+ * multi-prize-design.md §4.1): “+0.50 · 待结算 0.50 LDC”, settled or not.
+ */
+function verdictLine(outcome: Exclude<JudgeTry, { failure: string }>) {
+  if (!("judged" in outcome))
+    return outcome.ok ? `会发 ${ldc(outcome.amount)} LDC` : "不发";
+  if (outcome.added === 0) return outcome.settled ? "结算，没有领到" : "没加钱";
+  return `+${ldc(outcome.added)} · ${outcome.settled ? "结算" : "待结算"} ${ldc(outcome.added)} LDC`;
+}
+
 function Outcome({ outcome }: { outcome: JudgeTry }) {
   if ("failure" in outcome)
     return (
@@ -27,9 +38,7 @@ function Outcome({ outcome }: { outcome: JudgeTry }) {
     );
   return (
     <div className="grid gap-0.5 text-sm">
-      <p className="font-medium text-ink">
-        {outcome.ok ? `会发 ${ldc(outcome.amount)} LDC` : "不发"}
-      </p>
+      <p className="font-medium text-ink">{verdictLine(outcome)}</p>
       {outcome.message && <p className="text-ink-2">回复：{outcome.message}</p>}
     </div>
   );

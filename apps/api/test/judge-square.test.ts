@@ -393,7 +393,8 @@ describe("another's 判定器 (§15.3)", () => {
       hongbao: { title: "试", total: 100, count: 1, minEach: 1 },
       input: "flag{ok}",
     });
-    expect(tried).toMatchObject({ ok: true });
+    // Protocol 5: what it added, settled at once ({ ok: true, amount }).
+    expect(tried).toMatchObject({ judged: true, settled: true });
   });
 
   it("is not found out of the 广场 or for a version others may not use; a draft that has it keeps it, and none opens once it is taken down", async () => {

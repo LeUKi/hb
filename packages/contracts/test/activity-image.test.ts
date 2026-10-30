@@ -351,7 +351,7 @@ describe("activity image", () => {
     // 开 is there but a faded, solid gold with no sheen; a guest's 查看
     // still offers a look.
     const eligible = paused({ kind: "eligible", action: "claim" });
-    expect(eligible).toContain("红包的代码连续出错，暂停领取");
+    expect(eligible).toContain("判定器连续出错，暂停领取");
     expect(eligible).not.toContain("剩余 2 份");
     expect(sealOf(eligible)).toBe("开");
     expect(eligible).toContain('fill="url(#faded)"');
@@ -360,7 +360,7 @@ describe("activity image", () => {
     expect(eligible).not.toContain('opacity=".6"');
     expect(eligible).toContain("数据可能过期");
     const guest = paused({ kind: "public" });
-    expect(guest).toContain("红包的代码连续出错，暂停领取");
+    expect(guest).toContain("判定器连续出错，暂停领取");
     expect(sealOf(guest)).toBe("查看");
     expect(guest).not.toContain("url(#faded)");
     expect(guest).toContain('class="sheen"');
@@ -370,7 +370,7 @@ describe("activity image", () => {
         { kind: "public" },
         { ...coded, judge: { ...judge, paused: true } },
       ),
-    ).toContain("红包的代码连续出错，暂停领取");
+    ).toContain("判定器连续出错，暂停领取");
     expect(image({ kind: "public" }, coded)).toContain("剩余 2 份");
   });
 

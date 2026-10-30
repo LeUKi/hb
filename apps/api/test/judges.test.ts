@@ -472,12 +472,19 @@ export function judge(submission, tools) {
           input,
         })
       ).json()) as unknown;
+    // Protocol 5: what it added for the one trying, and whether it settled.
     expect(await tried("7")).toEqual({
-      ok: true,
-      amount: 100,
+      judged: true,
+      added: 100,
+      settled: true,
       message: "对了，3 份",
     });
-    expect(await tried("8")).toEqual({ ok: false, message: "不对" });
+    expect(await tried("8")).toEqual({
+      judged: true,
+      added: 0,
+      settled: false,
+      message: "不对",
+    });
     const missing = await request(`${base}/try`, author, "POST", {
       params: {},
       hongbao,

@@ -42,7 +42,7 @@ beforeEach(async () => {
 const GAME = `export function judge(s) {
   if (s.input === "boom") throw new Error("炸了");
   if (s.input === "go")
-    return { ok: true, amount: 5000, message: "领到了", announce: "有人领到了" };
+    return { ok: true, amount: 30, message: "领到了", announce: "有人领到了" };
   return { ok: false, message: "不对" };
 }`;
 
@@ -119,7 +119,7 @@ describe("判定记录", () => {
       ),
     ).toEqual([
       "乙#1 no 2 - 不对",
-      "甲#2 go 0.98 领到了",
+      "甲#2 go 0.30 领到了",
       "乙 出错 threw",
       "甲#1 no 1 - 不对",
     ]);
@@ -127,8 +127,9 @@ describe("判定记录", () => {
     expect(claimed).toMatchObject({
       kind: "judged",
       announce: "有人领到了",
-      asked: "50.00",
-      note: "cap",
+      amount: "0.30",
+      // Protocol 5 (docs/multi-prize-design.md §4.2): what it moved.
+      moved: { added: "0.30", pending: "0.30", settled: true },
     });
     const shares = await all(
       `/me/activities/${opened.id}/judge-timeline?filter=claimed`,
@@ -199,7 +200,7 @@ describe("判定记录", () => {
     );
     expect(
       people.body.items.find((item) => item.user.id === lucky.id),
-    ).toMatchObject({ judged: 1, amount: "0.98" });
+    ).toMatchObject({ judged: 1, amount: "0.30", settled: true });
     const record = await all(
       `/me/activities/${opened.id}/judge-people/${busy.id}`,
     );
@@ -215,7 +216,8 @@ describe("判定记录", () => {
       judged: 4,
       people: 3,
       claimedPeople: 1,
-      paid: "0.98",
+      paid: "0.30",
+      pending: "0.00",
       failed: 1,
     });
     // 参与名单 · 挑战 reads the same table: the same people, publicly.

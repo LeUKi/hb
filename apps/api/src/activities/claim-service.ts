@@ -13,6 +13,7 @@ import {
   users,
 } from "../db/schema";
 import type { ApiBindings } from "../env";
+import { judgedResult } from "../judge/ledger";
 import type { JudgeHooks } from "../judge/session";
 import { paymentBusinessNo } from "../payments/business-no";
 import { claimPaymentParameterDigest } from "../payments/policy";
@@ -148,7 +149,7 @@ async function registerFinished(
   return row;
 }
 
-type Admitted = {
+export type Admitted = {
   activity: ActivityRow;
   testPermission: boolean;
   realActivityPermitted: boolean;
@@ -246,7 +247,9 @@ export async function admitClaim(
 /**
  * In a submission's batch: the 红包 is still open to this person, as the
  * write sees it (a failed precondition rolls the whole batch back). A
- * 代码判定红包 paused or stopped takes none.
+ * 代码判定红包 paused or stopped takes none, nor anyone it settled
+ * (protocol 5, docs/multi-prize-design.md §2: settled once, with or
+ * without a claim).
  */
 export function claimGuardStatement(
   env: ApiBindings,
@@ -260,6 +263,7 @@ export function claimGuardStatement(
     AND reward_type = 'ldc' AND EXISTS(SELECT 1 FROM users WHERE id=? AND active=1) AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
     AND NOT EXISTS (SELECT 1 FROM claims WHERE activity_id = ? AND user_id = ?)
     AND NOT EXISTS (SELECT 1 FROM activity_code WHERE activity_id = activities.id AND (paused_at IS NOT NULL OR stopped_at IS NOT NULL))
+    AND NOT EXISTS (SELECT 1 FROM code_judge_people WHERE activity_id = activities.id AND user_id = ? AND settled_at IS NOT NULL)
     THEN version ELSE NULL END WHERE id = ?`).bind(
     activity.version,
     mode,
@@ -268,6 +272,7 @@ export function claimGuardStatement(
     Number(admitted.realActivityPermitted),
     Number(admitted.testPermission),
     activity.id,
+    userId,
     userId,
     activity.id,
   );
@@ -416,16 +421,20 @@ export async function resultOfSubmission(
   }
   if (submission.outcome === "pending")
     throw new Error("Submission still requires allocation");
-  // 代码判定 turned it down: its reply, if it gave one.
+  // 代码判定 turned it down: its reply, if it gave one. From protocol 5
+  // it was judged: what it moved and settled (judge/ledger.ts).
   if (
     submission.participationMode === "code" &&
     submission.outcome === "incorrect"
   ) {
-    const message = await env.DB.prepare(
-      "SELECT message FROM code_judgments WHERE submission_row_id = ?",
+    const judgment = await env.DB.prepare(
+      "SELECT message, ledger_ciphertext IS NOT NULL AS ledgered FROM code_judgments WHERE submission_row_id = ?",
     )
       .bind(submission.id)
-      .first<string | null>("message");
+      .first<{ message: string | null; ledgered: number }>();
+    if (judgment?.ledgered)
+      return judgedResult(env, submission.id, submission.userId);
+    const message = judgment?.message;
     return { result: "rejected", ...(message ? { message } : {}) };
   }
   return {
@@ -497,6 +506,113 @@ export async function paymentRecipient(
     );
   }
   return { id: user.externalId, username: user.username };
+}
+
+/**
+ * A share's way to its claimant, in the batch that makes the claim: a
+ * 🐟额红包's moves inside 🐟额; a 商户直发 one's payment and its outbox;
+ * nothing for 自领 of a 商户直发 红包. `merchantVersion` is the merchant's
+ * as read, so a retry can tell it moved. Shared by a claim and by a
+ * protocol 5 settlement (judge/ledger.ts).
+ */
+export async function shareStatements(
+  env: ApiBindings,
+  activity: ActivityRow,
+  share: {
+    claimId: string;
+    taskId: string;
+    userId: string;
+    inventoryId: string;
+    amountMinor: number | null;
+  },
+) {
+  let merchantVersion: number | null = null;
+  const statements: D1PreparedStatement[] = [];
+  // A 🐟额红包's share moves inside 🐟额 in this same batch, with no
+  // payment (docs/balance-design.md §14).
+  if (activity.funding === "balance")
+    statements.push(
+      ...claimStatements(
+        env,
+        activity.id,
+        share.claimId,
+        share.userId,
+        share.inventoryId,
+      ),
+    );
+  // 自领 of a 商户直发 红包: no payment, its share never leaves the
+  // merchant (docs/self-claim-design.md; payment_claim_policy_insert
+  // refuses one to the sender anyway).
+  else if (
+    activity.rewardType === "ldc" &&
+    activity.authorId !== share.userId
+  ) {
+    if (!activity.paymentMode)
+      throw new Error("LDC activity has no payment mode");
+    const recipient = await paymentRecipient(
+      env,
+      share.userId,
+      activity.paymentMode,
+    );
+    const merchant = await env.DB.prepare(
+      "SELECT client_id,version FROM merchants WHERE id=? AND author_id=? AND mode=?",
+    )
+      .bind(activity.merchantId, activity.authorId, activity.paymentMode)
+      .first<{ client_id: string; version: number }>();
+    if (!merchant || share.amountMinor === null || !activity.merchantId)
+      throw new Error("LDC claim identity is incomplete");
+    merchantVersion = merchant.version;
+    const businessNo = paymentBusinessNo(share.claimId);
+    const recoveryPolicy =
+      activity.paymentMode === "real" ? ("claim_same_order_v1" as const) : null;
+    const parameterDigest =
+      recoveryPolicy === null
+        ? null
+        : await claimPaymentParameterDigest({
+            id: share.taskId,
+            claimId: share.claimId,
+            source: "claim",
+            acceptanceId: null,
+            merchantId: activity.merchantId,
+            clientId: merchant.client_id,
+            businessNo,
+            recipientId: recipient.id,
+            recipientUsername: recipient.username,
+            amountMinor: share.amountMinor,
+            mode: "real",
+            recoveryPolicy,
+          });
+    // Missing merchant, user, or amount fails NOT NULL constraints, rolling back
+    // the reward allocation rather than leaving an unfunded claim behind.
+    statements.push(
+      env.DB.prepare(`INSERT INTO payment_tasks
+        (id, claim_id, source, acceptance_id, merchant_id, client_id, business_no, recipient_id, recipient_username, amount_minor, mode, status, next_run_at, created_at, updated_at, recovery_policy, parameter_digest)
+        VALUES (?, ?, 'claim', NULL, ?,
+          (SELECT client_id FROM merchants WHERE id = ? AND author_id = ? AND mode = ? AND version = ?), ?, ?, ?,
+          (SELECT amount_minor FROM reward_inventory WHERE activity_id = ? AND id = ? AND kind = 'ldc'),
+          ?, 'pending', ${databaseNow}, ${databaseNow}, ${databaseNow}, ?, ?)`).bind(
+        share.taskId,
+        share.claimId,
+        activity.merchantId,
+        activity.merchantId,
+        activity.authorId,
+        activity.paymentMode,
+        merchant.version,
+        businessNo,
+        recipient.id,
+        recipient.username,
+        activity.id,
+        share.inventoryId,
+        activity.paymentMode,
+        recoveryPolicy,
+        parameterDigest,
+      ),
+      env.DB.prepare(
+        `INSERT INTO payment_outbox (id, task_id, created_at) VALUES (?, ?, ${databaseNow})`,
+      ).bind(crypto.randomUUID(), share.taskId),
+    );
+  }
+  return { statements, merchantVersion };
 }
 
 export async function completeClaimSubmission(
@@ -652,93 +768,15 @@ export async function completeClaimSubmission(
         "UPDATE attempt_events SET claim_id = ? WHERE submission_row_id = ? AND matched = 1",
       ).bind(claimId, submission.id),
     ];
-    let paymentMerchantVersion: number | null = null;
-    // A 🐟额红包's share moves inside 🐟额 in this same batch, with no
-    // payment (docs/balance-design.md §14).
-    if (activity.funding === "balance")
-      statements.push(
-        ...claimStatements(
-          env,
-          activity.id,
-          claimId,
-          submission.userId,
-          reward.id,
-        ),
-      );
-    // 自领 of a 商户直发 红包: no payment, its share never leaves the
-    // merchant (docs/self-claim-design.md; payment_claim_policy_insert
-    // refuses one to the sender anyway).
-    else if (
-      activity.rewardType === "ldc" &&
-      activity.authorId !== submission.userId
-    ) {
-      if (!activity.paymentMode)
-        throw new Error("LDC activity has no payment mode");
-      const recipient = await paymentRecipient(
-        env,
-        submission.userId,
-        activity.paymentMode,
-      );
-      const merchant = await env.DB.prepare(
-        "SELECT client_id,version FROM merchants WHERE id=? AND author_id=? AND mode=?",
-      )
-        .bind(activity.merchantId, activity.authorId, activity.paymentMode)
-        .first<{ client_id: string; version: number }>();
-      if (!merchant || reward.amount_minor === null || !activity.merchantId)
-        throw new Error("LDC claim identity is incomplete");
-      paymentMerchantVersion = merchant.version;
-      const businessNo = paymentBusinessNo(claimId);
-      const recoveryPolicy =
-        activity.paymentMode === "real"
-          ? ("claim_same_order_v1" as const)
-          : null;
-      const parameterDigest =
-        recoveryPolicy === null
-          ? null
-          : await claimPaymentParameterDigest({
-              id: taskId,
-              claimId,
-              source: "claim",
-              acceptanceId: null,
-              merchantId: activity.merchantId,
-              clientId: merchant.client_id,
-              businessNo,
-              recipientId: recipient.id,
-              recipientUsername: recipient.username,
-              amountMinor: reward.amount_minor,
-              mode: "real",
-              recoveryPolicy,
-            });
-      // Missing merchant, user, or amount fails NOT NULL constraints, rolling back
-      // the reward allocation rather than leaving an unfunded claim behind.
-      statements.push(
-        env.DB.prepare(`INSERT INTO payment_tasks
-          (id, claim_id, source, acceptance_id, merchant_id, client_id, business_no, recipient_id, recipient_username, amount_minor, mode, status, next_run_at, created_at, updated_at, recovery_policy, parameter_digest)
-          VALUES (?, ?, 'claim', NULL, ?,
-            (SELECT client_id FROM merchants WHERE id = ? AND author_id = ? AND mode = ? AND version = ?), ?, ?, ?,
-            (SELECT amount_minor FROM reward_inventory WHERE activity_id = ? AND id = ? AND kind = 'ldc'),
-            ?, 'pending', ${databaseNow}, ${databaseNow}, ${databaseNow}, ?, ?)`).bind(
-          taskId,
-          claimId,
-          activity.merchantId,
-          activity.merchantId,
-          activity.authorId,
-          activity.paymentMode,
-          merchant.version,
-          businessNo,
-          recipient.id,
-          recipient.username,
-          activity.id,
-          reward.id,
-          activity.paymentMode,
-          recoveryPolicy,
-          parameterDigest,
-        ),
-        env.DB.prepare(
-          `INSERT INTO payment_outbox (id, task_id, created_at) VALUES (?, ?, ${databaseNow})`,
-        ).bind(crypto.randomUUID(), taskId),
-      );
-    }
+    const way = await shareStatements(env, activity, {
+      claimId,
+      taskId,
+      userId: submission.userId,
+      inventoryId: reward.id,
+      amountMinor: reward.amount_minor,
+    });
+    statements.push(...way.statements);
+    const paymentMerchantVersion = way.merchantVersion;
     try {
       await env.DB.batch(statements);
     } catch (error) {

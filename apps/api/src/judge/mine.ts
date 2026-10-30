@@ -33,8 +33,10 @@ export async function myJudgments(
     activityNotFound();
   const [found, total] = await Promise.all([
     env.DB.prepare(`SELECT j.submission_row_id AS rowId, j.attempt, j.judged_at AS at,
-        j.paid_minor AS paid, j.note, j.message, e.ciphertext, j.fetches_ciphertext AS fetchesCiphertext
+        j.paid_minor AS paid, j.note, j.message, e.ciphertext, j.fetches_ciphertext AS fetchesCiphertext,
+        m.before_minor AS moveBefore, m.after_minor AS moveAfter, m.settles AS moveSettles
       FROM code_judgments j JOIN attempt_events e ON e.submission_row_id = j.submission_row_id
+      LEFT JOIN code_judgment_moves m ON m.submission_row_id = j.submission_row_id AND m.position = 0
       WHERE j.activity_id = ? AND j.user_id = ? AND j.attempt < ?
       ORDER BY j.attempt DESC LIMIT ?`)
       .bind(
@@ -52,6 +54,9 @@ export async function myJudgments(
         message: string | null;
         ciphertext: string;
         fetchesCiphertext: string | null;
+        moveBefore: number | null;
+        moveAfter: number | null;
+        moveSettles: number | null;
       }>(),
     env.DB.prepare(
       "SELECT COUNT(*) AS count FROM code_judgments WHERE activity_id = ? AND user_id = ?",
@@ -84,7 +89,20 @@ export async function myJudgments(
       ),
       ...(row.message ? { message: row.message } : {}),
       ...(row.paid !== null ? { amount: formatSignedAmount(row.paid) } : {}),
+      // Protocol 5: settled with money by this judgment.
+      ...(row.moveSettles === 1 && (row.moveAfter ?? 0) > 0
+        ? { amount: formatSignedAmount(row.moveAfter ?? 0) }
+        : {}),
       ...(row.note ? { note: row.note } : {}),
+      ...(row.moveAfter !== null && row.moveBefore !== null
+        ? {
+            moved: {
+              added: formatSignedAmount(row.moveAfter - row.moveBefore),
+              pending: formatSignedAmount(row.moveAfter),
+              settled: row.moveSettles === 1,
+            },
+          }
+        : {}),
       ...(over && row.fetchesCiphertext !== null
         ? { fetches: await answersOf(row) }
         : {}),

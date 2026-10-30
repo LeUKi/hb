@@ -202,7 +202,8 @@ export function releaseStatement(env: ApiBindings, activityId: string) {
 
 /**
  * The end: what nobody took goes back to 可用 (红包结束退回). Only once the
- * 红包 has ended, a draw's prizes being out; a no-op otherwise, and when
+ * 红包 has ended, a draw's prizes being out, a protocol 5 红包's people all
+ * settled (docs/multi-prize-design.md §2); a no-op otherwise, and when
  * done before, so any write that may end a 红包 can carry it.
  */
 export function refundStatement(env: ApiBindings, activityId: string) {
@@ -211,7 +212,8 @@ export function refundStatement(env: ApiBindings, activityId: string) {
     SELECT ?,l.user_id,'unlock',l.remaining_minor,-l.remaining_minor,l.id,${databaseNow}
     FROM balance_locks l JOIN activities a ON a.id=l.activity_id
     WHERE l.activity_id=? AND l.purpose='activity' AND l.status='active' AND l.remaining_minor>0
-      AND a.ended_at IS NOT NULL AND (a.draw_state IS NULL OR a.draw_state IN ('completed','empty'))`).bind(
+      AND a.ended_at IS NOT NULL AND (a.draw_state IS NULL OR a.draw_state IN ('completed','empty'))
+      AND NOT EXISTS(SELECT 1 FROM activity_code c WHERE c.activity_id = a.id AND c.protocol >= 5 AND c.settled_at IS NULL)`).bind(
     crypto.randomUUID(),
     activityId,
   );

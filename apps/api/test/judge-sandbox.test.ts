@@ -6,7 +6,6 @@ import {
   readCheckAnswer,
   readDeclarations,
   sha256Text,
-  shareRange,
   submissionSeed,
   userSeed,
 } from "../../../kit/runtime/index.mjs";
@@ -22,26 +21,28 @@ const seeds = {
   user: userSeed("hb-test", secret, 7),
 };
 
+/** A protocol 5 submission: 100 LDC, nobody paid, nothing pending. */
 function submission(): Submission {
-  const hongbao = {
-    title: "测试红包",
-    total: 10000,
-    count: 10,
-    minEach: 1,
-    remaining: 10000,
-    remainingCount: 10,
-    openedAt: Date.UTC(2026, 9, 24),
-    endsAt: Date.UTC(2026, 9, 25),
-  };
   return {
     input: "flag{x}",
     now: Date.UTC(2026, 9, 24, 0, 30),
     user: { id: 7, username: "tester", level: 2, attempts: 0 },
-    hongbao,
-    share: shareRange(hongbao),
+    hongbao: {
+      title: "测试红包",
+      total: 10000,
+      unclaimed: 10000,
+      remaining: 10000,
+      count: 100,
+      minEach: 1,
+      remainingCount: 100,
+      openedAt: Date.UTC(2026, 9, 24),
+      endsAt: Date.UTC(2026, 9, 25),
+    },
+    share: { min: 1, max: 10000, last: false },
     claims: [],
     state: null,
     params: {},
+    player: { pending: 0, state: null, view: null },
   };
 }
 
@@ -69,7 +70,7 @@ describe("the judge sandbox", () => {
 export function judge(submission, tools) {
   return {
     ok: true,
-    amount: tools.money.even(),
+    amount: tools.money.even(10),
     message: createHash("sha256").update(submission.input).digest("hex").slice(0, 8),
     state: { user: submission.user.username, hour: tools.time.parts().hour },
   };

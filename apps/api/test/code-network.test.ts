@@ -117,7 +117,7 @@ async function open(
   expect(passed.body.check).toMatchObject({
     passed: true,
     network: [API],
-    protocol: 4,
+    protocol: 5,
   });
   const saved = await createActivity(bindings, author.id, {
     requestId: crypto.randomUUID(),
@@ -156,14 +156,18 @@ describe("代码判定联网", () => {
   it("asks the address through the gateway and keeps what it got", async () => {
     const opened = await open();
     expect((await getPublicActivity(bindings, opened.id)).judge).toMatchObject({
-      protocol: 4,
+      protocol: 5,
       network: [API],
     });
     answer = async () => Response.json({ right: true, say: "服务器说对" });
     const claimant = await actor();
     const result = await claim(opened.id, claimant, "flag");
     expect(result.status).toBe(200);
-    expect(result.body).toMatchObject({ result: "claimed" });
+    // Protocol 5: judged, and settled at once ({ ok: true, amount }).
+    expect(result.body).toMatchObject({
+      result: "judged",
+      settled: { claim: { amount: "0.30" } },
+    });
     expect(outside).toHaveLength(1);
     const sent = outside[0] as Sent;
     expect(sent.method).toBe("POST");
@@ -187,13 +191,14 @@ describe("代码判定联网", () => {
   });
 
   it("shows the claimant what came back once it is over, and gives the sender all of it", async () => {
-    // One share: claimed, it is over.
-    const opened = await open({}, { count: 1, totalAmount: "0.30" });
+    // The pool taken at once: settled, it is over.
+    const opened = await open({}, { totalAmount: "0.30" });
     answer = async () =>
       Response.json({ right: true, say: "服务器说对" }, { status: 201 });
     const claimant = await actor();
     expect((await claim(opened.id, claimant, "flag")).body).toMatchObject({
-      result: "claimed",
+      result: "judged",
+      settled: { claim: { amount: "0.30" } },
     });
     const mine = await app.request(
       `${origin}/api/activities/${opened.id}/judgments`,
@@ -217,7 +222,7 @@ describe("代码判定联网", () => {
       network: string[];
       judgments: { fetches?: Record<string, unknown>[] }[];
     };
-    expect(body.protocol).toBe(4);
+    expect(body.protocol).toBe(5);
     expect(body.network).toEqual([API]);
     expect(body.judgments[0]?.fetches).toEqual([
       expect.objectContaining({
@@ -256,7 +261,7 @@ export async function judge(submission) {
       claimant,
       "https://api.example.com/other https://evil.example.com/hb/",
     );
-    expect(outsideList.body).toMatchObject({ result: "rejected" });
+    expect(outsideList.body).toMatchObject({ result: "judged" });
     expect(String(outsideList.body.message)).toContain(
       "联网失败：这个地址不在白名单里",
     );
@@ -410,6 +415,10 @@ describe("代码判定联网: a slow answer", () => {
     };
     const claimant = await actor();
     const result = await claim(opened.id, claimant, "flag");
-    expect(result.body).toMatchObject({ result: "claimed" });
+    // Protocol 5: judged, and settled at once ({ ok: true, amount }).
+    expect(result.body).toMatchObject({
+      result: "judged",
+      settled: { claim: { amount: "0.30" } },
+    });
   });
 });

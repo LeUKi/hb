@@ -6,6 +6,7 @@ import {
   decodeActivityEmoji,
   encodeActivityEmoji,
   formatAmount,
+  formatSignedAmount,
   isImageTimeZone,
   type PublicActivity,
   type PublicQuantity,
@@ -28,6 +29,7 @@ import {
 import { createDb } from "../db/client";
 import { activities, users } from "../db/schema";
 import type { ApiContext } from "../env";
+import { ledgerPool } from "../judge/ledger";
 import { decryptString, encryptString } from "../security/crypto";
 import { requireAppOrigin } from "../security/http";
 
@@ -275,9 +277,21 @@ async function readPublicActivity(env: ApiContext["Bindings"], id: string) {
     .get();
   if (!author) return null;
   const activityRow = row as ActivityImageActivityRow;
+  // Protocol 5 has no shares: 奖池还剩 instead (multi-prize §4.5).
+  const pool =
+    activityRow.participationMode === "code"
+      ? await ledgerPool(env, activityRow.id)
+      : null;
+  const activity = imagePublicActivity(activityRow, author);
   return {
     row: activityRow,
-    activity: imagePublicActivity(activityRow, author),
+    activity:
+      pool === null
+        ? activity
+        : {
+            ...activity,
+            quantity: { mode: "pool" as const, left: formatSignedAmount(pool) },
+          },
   };
 }
 

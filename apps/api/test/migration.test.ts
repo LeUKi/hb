@@ -1608,7 +1608,7 @@ it("0051 keeps a third-protocol 判定器, its 红包, judgments and 用量 as t
         later,
       ),
   ]);
-  // A draft on a third-protocol run takes no view; a fifth is no protocol.
+  // A draft on a third-protocol run takes no view; a sixth is no protocol.
   await expect(
     db
       .prepare(
@@ -1620,7 +1620,7 @@ it("0051 keeps a third-protocol 判定器, its 红包, judgments and 用量 as t
   await expect(
     db
       .prepare(
-        "INSERT INTO judge_checks (id, user_id, protocol, fingerprint, tests_digest, passed, kind, created_at) VALUES (?, ?, 5, ?, ?, 0, 'rerun', ?)",
+        "INSERT INTO judge_checks (id, user_id, protocol, fingerprint, tests_digest, passed, kind, created_at) VALUES (?, ?, 6, ?, ?, 0, 'rerun', ?)",
       )
       .bind(crypto.randomUUID(), userId, fingerprint, digest, later)
       .run(),

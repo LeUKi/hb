@@ -649,10 +649,12 @@ export function judge() { return { ok: false }; }
       submit(opened.id, claimant, "flag{ok}", stuck),
       "JUDGE_FAILED",
     );
-    expect((await submit(opened.id, claimant, "nope")).result).toBe("rejected");
-    expect((await submit(opened.id, claimant, "flag{ok}")).result).toBe(
-      "claimed",
-    );
+    // Protocol 5: judged either way; the right one settles.
+    expect((await submit(opened.id, claimant, "nope")).result).toBe("judged");
+    expect(await submit(opened.id, claimant, "flag{ok}")).toMatchObject({
+      result: "judged",
+      settled: { claim: { amount: "0.30" } },
+    });
     expect(await usageOf(fingerprint, 0)).toMatchObject({
       user_id: author.id,
       activity_id: opened.id,
@@ -698,7 +700,7 @@ export function judge() { return { ok: false }; }
         .first(),
     ).toEqual({ sandbox: 0, failures: 1 });
     expect((await submit(opened.id, claimant, "flag{ok}")).result).toBe(
-      "claimed",
+      "judged",
     );
     expect(await usageOf(fingerprint, 0)).toMatchObject({
       claims: 1,
@@ -742,7 +744,7 @@ export function judge() { return { ok: false }; }
     expect(imports.body.check.problems).toHaveLength(1);
     // Claims go on.
     expect((await submit(opened.id, await actor(), "flag{ok}")).result).toBe(
-      "claimed",
+      "judged",
     );
     expect(await usageOf(await sha256Hex(code))).toMatchObject({
       deploys: 1,

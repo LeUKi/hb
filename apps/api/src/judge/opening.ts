@@ -10,6 +10,8 @@ import {
   ldcTotalMinor,
 } from "@hb/contracts";
 import {
+  defaultCount,
+  LEDGER_PROTOCOL,
   readSetup,
   setupSeed,
   VIEW_PROTOCOL,
@@ -20,7 +22,12 @@ import type { ActivityRow } from "../activities/storage";
 import { startOfBeijingDay } from "../balance/day";
 import type { ApiBindings } from "../env";
 import { decryptString, encryptString } from "../security/crypto";
-import { codeHongbaoAccess, openingProtocol, testsChanged } from "./check";
+import {
+  codeHongbaoAccess,
+  openingProtocol,
+  passedBefore,
+  testsChanged,
+} from "./check";
 import { openingParams } from "./params";
 import { setupInJudge } from "./sandbox";
 import { judgeAuthorOf } from "./square";
@@ -79,10 +86,15 @@ export async function codeOpeningBlocked(
     return "JUDGE_TAKEN_DOWN";
   const { runBy, protocol } = await codeOpeningRun(env, row.authorId, judge);
   const { fingerprint, testsDigest } = judge;
-  if (protocol === null)
+  if (protocol === null) {
+    // A 旧判定器 (docs/multi-prize-design.md §3.6): passed, but only on a
+    // protocol new 红包 no longer open on.
+    if (await passedBefore(env, runBy, fingerprint, testsDigest))
+      return "JUDGE_OLD_PROTOCOL";
     return (await testsChanged(env, runBy, fingerprint, testsDigest))
       ? "JUDGE_RERUN_REQUIRED"
       : "JUDGE_CHECK_REQUIRED";
+  }
   // 联网 (§9.7): code that goes online opens only while it is on.
   if (
     !access.settings.networkEnabled &&
@@ -170,11 +182,15 @@ export async function openingSetup(
     { code, fingerprint: judge.fingerprint, fresh: 0, protocol },
     {
       params: input.params,
+      // Protocol 5 has no shares: the compatible n and 0.01 (§3.5).
       hongbao: {
         title: activity.title,
         total: ldcTotalMinor(input.config),
-        count: activity.totalCount,
-        minEach: judge.minEachMinor,
+        count:
+          protocol >= LEDGER_PROTOCOL
+            ? defaultCount(ldcTotalMinor(input.config))
+            : activity.totalCount,
+        minEach: protocol >= LEDGER_PROTOCOL ? 1 : judge.minEachMinor,
       },
       now,
       seed: setupSeed(activity.id, input.secret),

@@ -322,32 +322,17 @@ export const ldcMoneySchema = z.discriminatedUnion("mode", [
         });
     }),
   /**
-   * 代码判定: a pool and a number of shares; each share's amount is the
-   * code's to say, within its range, never under 每份至少 (minEach).
+   * 代码判定: a pool only (docs/multi-prize-design.md §2, protocol 5): each
+   * person's pending is the code's to say, settled once. A draft from
+   * before still carries a number of shares and 每份至少; they no longer
+   * count.
    */
-  z
-    .strictObject({
-      mode: z.literal("code"),
-      totalAmount: moneySchema,
-      count: z.number().int().min(1).max(ACTIVITY_LIMITS.rewards),
-      minEach: moneySchema,
-    })
-    .superRefine((value, ctx) => {
-      if (
-        !moneySchema.safeParse(value.totalAmount).success ||
-        !moneySchema.safeParse(value.minEach).success
-      )
-        return;
-      if (
-        BigInt(amountToMinor(value.minEach)) * BigInt(value.count) >
-        BigInt(amountToMinor(value.totalAmount))
-      )
-        ctx.addIssue({
-          code: "custom",
-          path: ["totalAmount"],
-          message: "总奖池要够每份都拿到“每份至少”",
-        });
-    }),
+  z.strictObject({
+    mode: z.literal("code"),
+    totalAmount: moneySchema,
+    count: z.number().int().min(1).max(ACTIVITY_LIMITS.rewards).optional(),
+    minEach: moneySchema.optional(),
+  }),
 ]);
 export type LdcMoney = z.infer<typeof ldcMoneySchema>;
 export type RandomLdcMoney = Extract<LdcMoney, { mode: "random" }>;
@@ -547,10 +532,15 @@ export function ldcAmounts(input: LdcActivityInput): number[] {
     : input.money.amounts.map(amountToMinor);
 }
 
+/**
+ * How many claims it can have: its shares; a 代码判定红包, which has none
+ * (protocol 5), one per 0.01 of its pool.
+ */
 export function ldcRewardCount(input: LdcActivityInput): number {
-  return input.money.mode === "custom"
-    ? input.money.amounts.length
-    : input.money.count;
+  if (input.money.mode === "custom") return input.money.amounts.length;
+  if (input.money.mode === "code")
+    return amountToMinor(input.money.totalAmount);
+  return input.money.count;
 }
 
 export function ldcTotalMinor(input: LdcActivityInput): number {
@@ -582,9 +572,8 @@ export function sameLdcMoney(left: LdcMoney, right: LdcMoney): boolean {
     amountToMinor(left.totalAmount) === amountToMinor(right.totalAmount) &&
     (left.mode !== "random" ||
       (right.mode === "random" && left.algorithm === right.algorithm)) &&
-    (left.mode !== "code" ||
-      (right.mode === "code" &&
-        amountToMinor(left.minEach) === amountToMinor(right.minEach))) &&
+    // 代码判定's 每份至少 no longer counts (protocol 5): the pool alone.
+    (left.mode !== "code" || right.mode === "code") &&
     (left.mode !== "timed_draw" ||
       (right.mode === "timed_draw" &&
         left.algorithm === right.algorithm &&
@@ -863,7 +852,12 @@ export type PublicQuantity =
   | { mode: "hidden" }
   | { mode: "exact"; total: number; claimed: number; remaining: number }
   | { mode: "availability"; available: boolean }
-  | { mode: "fuzzy"; level: "plenty" | "limited" | "low" | "empty" };
+  | { mode: "fuzzy"; level: "plenty" | "limited" | "low" | "empty" }
+  /**
+   * 代码判定, protocol 5 (docs/multi-prize-design.md §4.5): no shares, so
+   * 奖池还剩 — the pool less what was paid and everyone's pending.
+   */
+  | { mode: "pool"; left: string };
 
 /** One face on the 名单入口. */
 export type RosterPreviewPerson = PublicUserProfile & { id: string };
@@ -1146,6 +1140,18 @@ export type ClaimResult = (
   | { result: "incorrect" | "draft" | "ended" | "archived" }
   /** 代码判定 said no; its reply, if any. */
   | { result: "rejected"; message?: string }
+  /**
+   * 代码判定, protocol 5 (docs/multi-prize-design.md §4.1): judged — its
+   * reply, what it moved (signed, as added) and the pending after; and
+   * `settled` when this judgment settled them: the claim when it paid,
+   * null for nothing (结算 0).
+   */
+  | {
+      result: "judged";
+      message?: string;
+      moved: { added: string; pending: string };
+      settled?: { claim: ClaimDetail | null };
+    }
 ) & { attemptCooldown?: AttemptCooldown; passwordMatched?: boolean | null };
 export type ClaimList = { items: ClaimSummary[]; nextCursor: string | null };
 export type RegistrationStatus = "registered" | "drawing" | "won" | "not_won";

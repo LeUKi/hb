@@ -153,6 +153,11 @@ export type LdcOpeningBlockedReason =
   | "JUDGE_CHECK_REQUIRED"
   /** 代码判定红包: this code is deployed, but tests.json changed since: rerun it. */
   | "JUDGE_RERUN_REQUIRED"
+  /**
+   * 代码判定红包: a 旧判定器, its tests passed only on a protocol before 5
+   * (docs/multi-prize-design.md §3.6): rerun them on the new rules.
+   */
+  | "JUDGE_OLD_PROTOCOL"
   /** 代码判定红包: today's openings are used up. */
   | "CODE_HONGBAO_DAILY_LIMIT"
   /** 代码判定红包: its code goes online, and 联网 is off (§9.7). */

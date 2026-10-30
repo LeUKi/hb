@@ -34,7 +34,9 @@ export const judgeData = (
     | "fetches"
     | "params"
     | "params-salt"
-    | "setup",
+    | "setup"
+    | "ledger"
+    | "player",
 ) => `judge:${activityId}:${part}`;
 
 /** The fingerprint (judge.js) and the tests' digest: SHA-256 of the text. */
@@ -231,7 +233,8 @@ export async function saveJudgeStatements(
       codeCiphertext,
       testsCiphertext,
       testsDigest,
-      amountToMinor(money.minEach),
+      // Protocol 5 has no 每份至少: 0.01 (a draft from before keeps its own).
+      money.minEach ? amountToMinor(money.minEach) : 1,
       versionsCiphertext,
       judge.judgeId ?? null,
       paramsCiphertext,

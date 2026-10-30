@@ -37,6 +37,10 @@ type JudgedRow = {
   ends: number;
   announce: string | null;
   ciphertext: string;
+  /** Protocol 5: the one judged's move (code_judgment_moves, position 0). */
+  moveBefore: number | null;
+  moveAfter: number | null;
+  moveSettles: number | null;
 };
 
 type FailedRow = {
@@ -53,11 +57,17 @@ type FailedRow = {
 const JUDGED = `SELECT j.submission_row_id AS rowId, j.sequence, j.attempt, j.judged_at AS at,
     j.user_id AS userId, j.username, j.level, u.display_name AS displayName, u.avatar_url AS avatarUrl,
     j.ok, j.asked_minor AS asked, j.paid_minor AS paid, j.note, j.message, j.ends,
-    a.text AS announce, e.ciphertext
+    a.text AS announce, e.ciphertext, m.before_minor AS moveBefore, m.after_minor AS moveAfter,
+    m.settles AS moveSettles
   FROM code_judgments j
   JOIN users u ON u.id = j.user_id
   JOIN attempt_events e ON e.submission_row_id = j.submission_row_id
-  LEFT JOIN activity_announcements a ON a.submission_row_id = j.submission_row_id`;
+  LEFT JOIN activity_announcements a ON a.submission_row_id = j.submission_row_id
+  LEFT JOIN code_judgment_moves m ON m.submission_row_id = j.submission_row_id AND m.position = 0`;
+
+/** A judgment that paid the one judged: a share, or (protocol 5) settling them with money. */
+const PAID = `(j.ok = 1 OR EXISTS(SELECT 1 FROM code_judgment_moves paid WHERE paid.submission_row_id = j.submission_row_id
+  AND paid.position = 0 AND paid.settles = 1 AND paid.after_minor > 0))`;
 
 const FAILED = `SELECT f.id, f.created_at AS at, f.user_id AS userId, u.username,
     u.display_name AS displayName, u.avatar_url AS avatarUrl, f.kind, f.detail
@@ -69,6 +79,17 @@ async function judgedRow(
   row: JudgedRow,
 ): Promise<JudgeRecordRow> {
   const pulled = row.ok === 1 && row.note !== null;
+  // Protocol 5: what it moved, and settled with, when it did.
+  const moved =
+    row.moveAfter === null || row.moveBefore === null
+      ? null
+      : {
+          added: formatAmount(row.moveAfter - row.moveBefore),
+          pending: formatAmount(row.moveAfter),
+          settled: row.moveSettles === 1,
+        };
+  const paid =
+    row.paid ?? (moved?.settled && row.moveAfter ? row.moveAfter : null);
   return {
     kind: "judged",
     at: new Date(row.at).toISOString(),
@@ -85,10 +106,11 @@ async function judgedRow(
       env,
       attemptAssociatedData(activityId, row.rowId),
     ),
-    claimed: row.ok === 1,
-    ...(row.paid !== null ? { amount: formatAmount(row.paid) } : {}),
+    claimed: paid !== null,
+    ...(paid !== null ? { amount: formatAmount(paid) } : {}),
     ...(pulled && row.asked !== null ? { asked: formatAmount(row.asked) } : {}),
     ...(pulled && row.note ? { note: row.note } : {}),
+    ...(moved ? { moved } : {}),
     ...(row.message ? { message: row.message } : {}),
     ...(row.announce ? { announce: row.announce } : {}),
     ...(row.ends === 1 ? { ends: true as const } : {}),
@@ -218,9 +240,9 @@ export async function judgeTimeline(
     (filter === "all" || filter === "failed") && cursor.failed !== "done";
   const okClause =
     filter === "claimed"
-      ? " AND j.ok = 1"
+      ? ` AND ${PAID}`
       : filter === "unclaimed"
-        ? " AND j.ok = 0"
+        ? ` AND NOT ${PAID}`
         : "";
   const before =
     cursor.failed && cursor.failed !== "done" ? cursor.failed : null;
@@ -304,6 +326,7 @@ export async function judgePeople(
     : "";
   const found = await env.DB.prepare(
     `SELECT p.user_id AS userId, p.judged, p.claimed, p.paid_minor AS paid, p.last_at AS lastAt,
+        p.pending_minor AS pending, p.settled_at AS settledAt,
         u.username, u.display_name AS displayName, u.avatar_url AS avatarUrl
       FROM code_judge_people p JOIN users u ON u.id = p.user_id
       WHERE p.activity_id = ?1${after}
@@ -322,6 +345,8 @@ export async function judgePeople(
       claimed: number;
       paid: number | null;
       lastAt: number;
+      pending: number;
+      settledAt: number | null;
       username: string;
       displayName: string;
       avatarUrl: string | null;
@@ -338,6 +363,10 @@ export async function judgePeople(
       },
       judged: row.judged,
       ...(row.paid !== null ? { amount: formatAmount(row.paid) } : {}),
+      ...(row.settledAt === null && row.pending > 0
+        ? { pending: formatAmount(row.pending) }
+        : {}),
+      ...(row.settledAt !== null ? { settled: true as const } : {}),
       lastAt: new Date(row.lastAt).toISOString(),
     })),
     nextCursor:
@@ -414,7 +443,7 @@ export async function judgeRecordFacts(
   authorId: string,
 ): Promise<JudgeRecordFacts> {
   await ownedCode(env, activityId, authorId);
-  const [people, failed] = await Promise.all([
+  const [people, failed, pending] = await Promise.all([
     env.DB.prepare(
       `SELECT COUNT(*) AS people, COALESCE(SUM(judged), 0) AS judged,
         COALESCE(SUM(claimed), 0) AS claimedPeople, COALESCE(SUM(paid_minor), 0) AS paid
@@ -432,12 +461,19 @@ export async function judgeRecordFacts(
     )
       .bind(activityId)
       .first<number>("count"),
+    // Protocol 5: everyone's pending together.
+    env.DB.prepare(
+      "SELECT pending_minor FROM activity_code WHERE activity_id = ? AND protocol >= 5",
+    )
+      .bind(activityId)
+      .first<number>("pending_minor"),
   ]);
   return {
     judged: people?.judged ?? 0,
     people: people?.people ?? 0,
     claimedPeople: people?.claimedPeople ?? 0,
     paid: formatAmount(people?.paid ?? 0),
+    ...(pending !== null ? { pending: formatAmount(pending) } : {}),
     failed: failed ?? 0,
   };
 }

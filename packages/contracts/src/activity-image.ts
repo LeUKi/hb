@@ -216,6 +216,7 @@ function soldOut(activity: PublicActivity) {
   if (quantity.mode === "exact") return quantity.remaining <= 0;
   if (quantity.mode === "fuzzy") return quantity.level === "empty";
   if (quantity.mode === "availability") return !quantity.available;
+  if (quantity.mode === "pool") return quantity.left === "0.00";
   return false;
 }
 
@@ -229,6 +230,8 @@ function remainingLine(activity: PublicActivity) {
       ? `已报名 ${draw.registeredCount} 人`
       : "限时开奖";
   if (quantity.mode === "exact") return `剩余 ${quantity.remaining} 份`;
+  if (quantity.mode === "pool")
+    return `奖池还剩 ${quantity.left} ${activity.funding === "balance" ? "🐟" : "LDC"}`;
   if (quantity.mode === "fuzzy")
     return quantity.level === "empty"
       ? "已领完"

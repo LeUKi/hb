@@ -20,7 +20,10 @@ import type {
   UpdateJudgeInput,
 } from "@hb/contracts";
 import {
+  defaultCount,
+  moveMoney,
   nextSubmission,
+  othersProblem,
   paramValues,
   readCheckAnswer,
   readVerdict,
@@ -574,7 +577,7 @@ export async function checkMyParams(
   const outcome = await checkParamsInJudge(
     env,
     { code: await run.code(), fingerprint: run.row.fingerprint, fresh: 0 },
-    { params: run.read.values, hongbao: input.hongbao },
+    { params: run.read.values, hongbao: triedHongbao(input.hongbao) },
   );
   if ("failure" in outcome) return { failure: outcome.detail };
   const answer = readCheckAnswer(outcome.answer, run.declarations.params);
@@ -611,7 +614,7 @@ export async function tryMyJudge(
   ).join("");
   const scenario = startScenario({
     hongbao: {
-      ...input.hongbao,
+      ...triedHongbao(input.hongbao),
       openedAt: now - 3_600_000,
       endsAt: now + 86_400_000,
     },
@@ -649,11 +652,23 @@ export async function tryMyJudge(
     submission.share,
     JUDGE_PROTOCOL,
   );
-  // Protocol 5 (docs/multi-prize-design.md) comes with its per-person table.
-  if ("add" in reading)
-    throw new Error("代码判定 protocol 5 is not served yet");
   if ("error" in reading)
     return { failure: "error", detail: reading.error.detail };
+  // Protocol 5: nobody else has played here, so others name no one.
+  if ("add" in reading) {
+    const problem = othersProblem(reading.others, user.id, () => "unknown");
+    if (problem) return { failure: "error", detail: problem };
+    const { unclaimed } = submission.hongbao;
+    const after =
+      moveMoney(unclaimed, [{ id: 0, pending: 0, add: reading.add }]).moves[0]
+        ?.after ?? 0;
+    return {
+      judged: true,
+      added: after,
+      settled: reading.settle || reading.end || after === unclaimed,
+      ...(reading.message ? { message: reading.message } : {}),
+    };
+  }
   return reading.ok
     ? {
         ok: true,
@@ -661,6 +676,19 @@ export async function tryMyJudge(
         ...(reading.message ? { message: reading.message } : {}),
       }
     : { ok: false, ...(reading.message ? { message: reading.message } : {}) };
+}
+
+/**
+ * The 红包 as filled in, as protocol 5 tells the code (§3.5): no shares,
+ * the compatible count and 0.01, whatever the page sent.
+ */
+function triedHongbao(hongbao: JudgeTryInput["hongbao"]) {
+  return {
+    title: hongbao.title,
+    total: hongbao.total,
+    count: defaultCount(hongbao.total),
+    minEach: 1,
+  };
 }
 
 /** 判定器页's settings (§2, §14.4): its code only ever goes public. */
