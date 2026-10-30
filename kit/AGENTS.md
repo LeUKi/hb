@@ -304,6 +304,9 @@ export function judge({ input, state, user, share }) {
   - `await hb.view()`：公开数据 `{ summary, data, at }`，没有时 `null`。`hb.on("view" | "hongbao" | "announce", fn)` 订阅变化，返回取消订阅的函数；`announce` 每次一条 `{ n, at, user: { name, avatar }, text }`。
   - `await hb.submit(input)`：替看的人提交一次，同一个红包第一次红包页会问他允不允许。判定了是 `{ judged: true, claimed, amount, unit, reply }`；没判定是 `{ judged: false, reason, seconds, message }`，`reason` 有 `denied`、`login`、`cooldown`（`seconds` 是还剩几秒）、`busy`、`human_check`、`not_in_scope`、`already_claimed`、`not_open`、`ended`、`paused`、`judge_failed`、`try_later`、`invalid_input`、`unconfirmed`、`away`、`not_code`、`error`，意思见 `page/hb.d.ts`。给玩的人看的话由网页自己写。
   - `await hb.fill(text)`：把内容填进这个红包的指令框，不提交，按提交的是看的人自己，所以不用问他；所有红包都能用。填好是 `{ filled: true }`；没填是 `{ filled: false, reason, message }`，`reason` 有 `no_input`（直接领的红包不用输入）、`login`、`not_open`、`ended`、`paused`、`already_claimed`、`not_in_scope`、`busy`、`invalid_input`（超过 200 字或有换行）、`away`。
+  - `await hb.me()`：看的人自己的情况，`hb.on("me", fn)` 订阅变化。没登录是 `{ signedIn: false }`；登录了是 `{ signedIn: true, name, open, why, cooldownUntil, claim, registered }`：`open` 现在能不能参加，不能时 `why` 是原因（`not_open`、`ended`、`paused`、`already_claimed`、`not_in_scope`）；`cooldownUntil` 冷却到什么时候（服务器时间，毫秒），没在冷却时 `null`；`claim` 领到的 `{ amount, unit, payment }`，`payment` 是 `paid`、`paying`、`failed` 或 `none`。
+  - `hb.now()`：按服务器校准过的当前时间（毫秒），倒计时用它；没登录时是本机时间。
+  - `await hb.login()`：请红包页弹出登录卡片，要在看的人点了网页里的按钮时调用。
   - `await hb.mine(next)`：他自己的提交，新的在前，一次 20 条，`{ total, items: [{ n, at, input, claimed, amount, reply }], next }`；没登录时 `null`。
   - 做不到：读红包站的 Cookie 和登录信息、看别人的输入、转账、发红包、改红包、绕过冷却和人机验证。
 - 网页要显示的东西都从 `view.data` 来：判定器在 `view` 里写清楚格子、区间、猜过的数，网页照着画，不要在网页里自己算谁赢了。秘密照旧放在 `state`。

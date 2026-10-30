@@ -12,9 +12,18 @@ import {
   readResponse,
 } from "../../lib/activities";
 import { activityPath, useCurrentActivityId } from "../../lib/activity-route";
+import {
+  attemptCooldownSnapshot,
+  useAttemptCooldown,
+} from "../../lib/attempt-cooldown";
 import { useCachedQueryData } from "../../lib/cached-query";
 import { liveJudgedAtom } from "../../lib/live-state";
+import { pageStanding } from "../../lib/page-standing";
 import { notFilled, notJudged } from "../../lib/page-submit";
+import {
+  type ParticipationCache,
+  participationKey,
+} from "../../lib/participation-cache";
 import { useSessionUser } from "../../lib/session";
 import { useJudgeBoard } from "../hongbao/judge-board";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
@@ -46,6 +55,52 @@ function hongbaoOf(activity: PublicActivity, judged: number | null) {
     pool: activity.reward?.totalAmount ?? null,
     deadlineAt: activity.draw?.deadlineAt ?? activity.deadlineAt,
     judged,
+  };
+}
+
+/**
+ * hb.me() (§11.12): the viewer's own standing — whether they can take part
+ * now and why not, until when their cooldown runs (the server's clock),
+ * what they got and whether it was paid. Only their name, never an id.
+ */
+function meOf(
+  activity: PublicActivity | undefined,
+  user: {
+    displayName: string;
+    username: string;
+    trustLevel: number | null;
+  } | null,
+  participation: ParticipationCache | undefined,
+  cooldownUntil: number | null,
+) {
+  if (!user) return { signedIn: false as const };
+  const standing = activity
+    ? pageStanding(activity, user, participation)
+    : null;
+  const claim = participation?.claim;
+  const unit = activity?.funding === "balance" ? "🐟" : "LDC";
+  const status = claim?.payment?.status;
+  return {
+    signedIn: true as const,
+    name: user.displayName,
+    open: standing === null,
+    ...(standing ? { why: standing } : {}),
+    cooldownUntil,
+    claim: claim?.amount
+      ? {
+          amount: claim.amount,
+          unit,
+          // 自领 is never paid; a 🐟额红包's is in the 🐟额 at once.
+          payment: claim.self
+            ? ("none" as const)
+            : !claim.payment || status === "confirmed"
+              ? ("paid" as const)
+              : status === "failed"
+                ? ("failed" as const)
+                : ("paying" as const),
+        }
+      : null,
+    registered: Boolean(participation?.registration),
   };
 }
 
@@ -87,13 +142,14 @@ type Ask =
   | { hb: 1; id: number; type: "hello" }
   | { hb: 1; id: number; type: "submit"; input: string }
   | { hb: 1; id: number; type: "fill"; text: string }
+  | { hb: 1; id: number; type: "login" }
   | { hb: 1; id: number; type: "mine"; next: string | null };
 
 function askOf(data: unknown): Ask | null {
   if (typeof data !== "object" || data === null) return null;
   const ask = data as Record<string, unknown>;
   if (ask.hb !== 1 || !Number.isSafeInteger(ask.id)) return null;
-  if (ask.type === "hello") return ask as Ask;
+  if (ask.type === "hello" || ask.type === "login") return ask as Ask;
   // Longer than any answer could be: not worth reading.
   if (
     ask.type === "submit" &&
@@ -120,7 +176,8 @@ function askOf(data: unknown): Ask | null {
  * Answers the page in `frame` (at `url`, the 附带网页 of `activityId`):
  * hello with the 红包 as it is, then its changes pushed; a submission
  * while its 红包 page is the one shown, one at a time; text for the box
- * (any 红包); the viewer's own record.
+ * (any 红包); the viewer's own record; their standing (hb.me()) and the
+ * server's clock, pushed as they move; the login card, asked for.
  */
 export function usePageBridge(
   frame: RefObject<HTMLIFrameElement | null>,
@@ -145,7 +202,27 @@ export function usePageBridge(
     : null;
   const hongbao = activity ? hongbaoOf(activity, judged) : null;
   const view = viewOf(board.view);
-  const { submitForPage, fillForPage } = useOmniboxController();
+  const participation = useCachedQueryData<ParticipationCache>(
+    activityId && user ? participationKey(user.id, activityId) : null,
+  );
+  // Read so it re-renders as the cooldown moves; the snapshot has the clock.
+  useAttemptCooldown(user?.id ?? null);
+  const cooldown = attemptCooldownSnapshot(user?.id ?? null);
+  const serverNow = cooldown
+    ? cooldown.serverTime + (Date.now() - cooldown.receivedAt)
+    : null;
+  const me = meOf(
+    activity,
+    user,
+    participation,
+    cooldown && serverNow !== null && cooldown.nextAllowedAt > serverNow
+      ? cooldown.nextAllowedAt
+      : null,
+  );
+  // How far the server's clock is from this one (hb.now()): known once
+  // signed in; 0 otherwise.
+  const clock = cooldown ? cooldown.serverTime - cooldown.receivedAt : 0;
+  const { submitForPage, fillForPage, openAccount } = useOmniboxController();
   // What the listener reads when a message comes, as of the last render.
   const now = useRef({
     hongbao,
@@ -155,6 +232,9 @@ export function usePageBridge(
     user,
     submitForPage,
     fillForPage,
+    openAccount,
+    me,
+    clock,
   });
   now.current = {
     hongbao,
@@ -164,11 +244,20 @@ export function usePageBridge(
     user,
     submitForPage,
     fillForPage,
+    openAccount,
+    me,
+    clock,
   };
   /** Said hello: what it has been sent, to push only what changed. */
-  const link = useRef<{ view: string; hongbao: string; line: number } | null>(
-    null,
-  );
+  const link = useRef<{
+    view: string;
+    hongbao: string;
+    line: number;
+    me: string;
+    clock: number;
+  } | null>(null);
+  /** hb.login(): once in a few seconds at most, whatever the page asks. */
+  const loginAt = useRef(0);
   const busy = useRef({ submit: false, mine: false });
 
   useEffect(() => {
@@ -188,6 +277,8 @@ export function usePageBridge(
           view: JSON.stringify(state.view),
           hongbao: JSON.stringify(state.hongbao),
           line: state.board.lines[0]?.n ?? -1,
+          me: JSON.stringify(state.me),
+          clock: state.clock,
         };
         reply({
           value: {
@@ -197,9 +288,21 @@ export function usePageBridge(
               : { signedIn: false },
             theme: "light",
             view: state.view,
+            me: state.me,
+            clock: state.clock,
           },
         });
         return;
+      }
+      if (ask.type === "login") {
+        if (state.user) return reply({ value: { signedIn: true } });
+        const at = Date.now();
+        const open = state.onPage && at - loginAt.current > 3_000;
+        if (open) {
+          loginAt.current = at;
+          state.openAccount();
+        }
+        return reply({ value: { signedIn: false, opened: open } });
       }
       if (ask.type === "submit") {
         if (!state.onPage) return reply({ value: notJudged("away") });
@@ -249,6 +352,7 @@ export function usePageBridge(
   // Pushes: the view, the 红包, new lines of 动态 (oldest first).
   const viewText = JSON.stringify(view);
   const hongbaoText = JSON.stringify(hongbao);
+  const meText = JSON.stringify(me);
   const lines = board.lines;
   useEffect(() => {
     const sent = link.current;
@@ -264,10 +368,18 @@ export function usePageBridge(
       sent.hongbao = hongbaoText;
       push("hongbao", JSON.parse(hongbaoText));
     }
+    if (meText !== sent.me) {
+      sent.me = meText;
+      push("me", JSON.parse(meText));
+    }
+    if (clock !== sent.clock) {
+      sent.clock = clock;
+      push("clock", clock);
+    }
     const fresh = lines.filter((line) => line.n > sent.line).reverse();
     if (fresh.length > 0) {
       sent.line = fresh[fresh.length - 1]?.n ?? sent.line;
       push("announce", fresh.map(lineOf));
     }
-  }, [viewText, hongbaoText, lines, frame, origin]);
+  }, [viewText, hongbaoText, meText, clock, lines, frame, origin]);
 }

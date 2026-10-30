@@ -77,6 +77,20 @@ if (result.judged) {
   say(reasons[result.reason] ?? "没有提交"); // 原因见下面
 }`;
 
+const meCode = `const me = await hb.me();
+// 没登录：{ signedIn: false }
+// 登录了：{ signedIn: true, name, open, why, cooldownUntil, claim, registered }
+//   open：现在能不能参加；不能时 why 是原因（ended、already_claimed……）
+//   cooldownUntil：冷却到什么时候（毫秒，同 hb.now()），没在冷却时 null
+//   claim：领到的 { amount, unit, payment }
+hb.on("me", show); // 变了就通知
+
+// 倒计时用 hb.now()：按服务器校准过的时间（没登录时是本机时间）
+const left = Date.parse(hongbao.deadlineAt) - hb.now();
+
+// 没登录时放一个按钮，点了请红包页弹出登录卡片
+loginButton.onclick = () => hb.login();`;
+
 const mineCode = `const mine = await hb.mine(); // 没登录时是 null
 // { total, items: [{ n, at, input, claimed, amount, reply }], next }
 if (mine?.next) more(await hb.mine(mine.next)); // 再读 20 条`;
@@ -128,6 +142,7 @@ const aiPrompt = (
    - await hb.view() 是判定器的公开数据 { summary, data, at }，没有时 null；hb.on("view" | "hongbao" | "announce", fn) 订阅变化，返回取消订阅的函数；announce 每次一条 { n, at, user: { name, avatar }, text }。
    - await hb.fill(text) 把内容填进这个红包的指令框，不提交，所有红包都能用。填好是 { filled: true }，没填是 { filled: false, reason, message }；reason 有 ${fillReasons.map(([name]) => name).join("、")}。
    - 代码判定红包才能用 await hb.submit(input)：替看的人提交一次，同一个红包第一次会先问他。判定了是 { judged: true, claimed, amount, unit, reply }，没判定是 { judged: false, reason, seconds, message }；reason 有 ${reasons.map(([name]) => name).join("、")}。给玩的人看的提示由网页自己写。
+   - await hb.me() 是看的人自己的情况：没登录 { signedIn: false }；登录了 { signedIn: true, name, open, why, cooldownUntil, claim, registered }（open 能不能参加，why 不能的原因，cooldownUntil 冷却到什么时候，claim 领到的 { amount, unit, payment }）；hb.on("me", fn) 订阅变化。hb.now() 是按服务器校准过的当前时间（毫秒）。hb.login() 请红包页弹出登录卡片，要在看的人点按钮时调用。
    - await hb.mine(next) 读他自己的提交 { total, items: [{ n, at, input, claimed, amount, reply }], next }，没登录时 null。
    - 做不到：读红包站的 Cookie 和登录信息、看别人的输入、转账、发红包、改红包、绕过冷却和人机验证。
    - 开发包（npx degit LeUKi/hb/kit）里有网页模板 page/index.html、SDK 的类型 page/hb.d.ts、本地的假红包页（npm run page）和数字炸弹、刮刮乐两个样例。
@@ -269,6 +284,14 @@ export function HelpPageView() {
         </Panel>
         <Fields items={reasons.map(([name, note]) => ({ name, note }))} />
         <Block label="读自己的提交" code={mineCode} />
+        <Block label="看的人自己的情况、时间和登录" code={meCode} />
+        <Panel className={text}>
+          <p>
+            <Code>hb.login()</Code>{" "}
+            要在看的人点了网页里的按钮时调用，网页一打开就调用会报错。这三样是后来加的，网页想用时先看{" "}
+            <Code>typeof hb.me === "function"</Code>（SDK 文件缓存一小时）。
+          </p>
+        </Panel>
         <Panel className={text}>
           <p>
             开发包（<Code>npx degit LeUKi/hb/kit</Code>）里有网页模板{" "}

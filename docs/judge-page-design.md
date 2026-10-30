@@ -455,7 +455,7 @@ return {
 
 **不做**：`hongbao` 里不加玩法（口令、直接领）：直接领的网页 `fill` 一次就知道（`no_input`）。
 
-### 11.12 SDK 补三样（2026-10-30，用户：“很好”，还没做）
+### 11.12 SDK 补三样（2026-10-30，用户：“很好”；同一天做了）
 
 对照现有玩法和能赢好几次的玩法（[multi-prize-design](multi-prize-design.md)），SDK 现在缺三样，都是新加的，旧网页不受影响：
 
@@ -468,3 +468,10 @@ return {
 - 网页想用新写法时，先看 `typeof hb.me === "function"`（文件缓存一小时），帮助页写清楚。
 - 看的人的编号照旧不给，只给昵称；多人玩法要知道“哪个座位是我”，由判定器写在只给他看的数据里。
 - 能赢好几次的玩法要的字段（待结算、`myView` 等）在 multi-prize-design 4.4。
+
+做的时候定的：
+
+- `hb.me()` 登录了是 `{ signedIn: true, name, open, why, cooldownUntil, claim, registered }`；`why` 同“填进指令框”的原因（`not_open`、`ended`、`paused`、`already_claimed`、`not_in_scope`）；`claim.payment` 是 `paid`（已到账，🐟额红包领到就算）、`paying`、`failed`、`none`（发红包的人自己领的，不付款）。判断“能不能参加”和 `hb.fill()` 用同一段代码。
+- `hb.now()`：红包页知道和服务器差多少（登录时拿到的冷却信息里有服务器时间），打招呼时告诉网页，变了再推；没登录时是本机时间。
+- `hb.login()`：SDK 先看网页里有没有刚被点过（浏览器的 `navigator.userActivation`），没有就报 `no_gesture`；红包页三秒内最多弹一次，已经登录就直接回 `{ signedIn: true }`。
+- `/help/page` 第 5 节加“看的人自己的情况、时间和登录”一块，给 AI 的说明、开发包的类型和 `AGENTS.md` 都写了；假红包页也会给 `me`，`login` 只记一行。

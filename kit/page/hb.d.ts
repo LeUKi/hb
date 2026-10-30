@@ -128,6 +128,35 @@ export type HbFillResult =
   | { filled: true }
   | { filled: false; reason: HbFillReason; message?: string };
 
+/** hb.me()：看的人自己的情况。 */
+export type HbMe =
+  | { signedIn: false }
+  | {
+      signedIn: true;
+      /** 昵称 */
+      name: string;
+      /** 现在能不能参加（领取、报名或提交给判定器） */
+      open: boolean;
+      /** 不能参加的原因 */
+      why?:
+        | "not_open"
+        | "ended"
+        | "paused"
+        | "already_claimed"
+        | "not_in_scope";
+      /** 冷却到什么时候（服务器时间，毫秒，同 hb.now()）；没在冷却时 null */
+      cooldownUntil: number | null;
+      /** 领到的；没领到时 null */
+      claim: {
+        amount: string;
+        unit: "LDC" | "🐟";
+        /** paid 已到账，paying 正在付，failed 没发出，none 不付款（发红包的人自己领的） */
+        payment: "paid" | "paying" | "failed" | "none";
+      } | null;
+      /** 限时开奖：已经报了名 */
+      registered: boolean;
+    };
+
 /** 看的人自己的一次提交。 */
 export interface HbMyJudgment {
   /** 第几次，从 1 起 */
@@ -156,6 +185,16 @@ export interface Hb {
     kind: "announce",
     listener: (announcement: HbAnnouncement) => void,
   ): () => void;
+  on(kind: "me", listener: (me: HbMe) => void): () => void;
+  /** 看的人自己的情况，变了用 hb.on("me", fn) 订阅。 */
+  me(): Promise<HbMe>;
+  /** 按服务器校准过的当前时间（毫秒）；看的人没登录时是本机时间。 */
+  now(): number;
+  /**
+   * 请红包页弹出登录卡片。要在看的人点了网页里的按钮时调用，否则报错
+   * （error.code 是 no_gesture）。已经登录时 { signedIn: true }。
+   */
+  login(): Promise<{ signedIn: true } | { signedIn: false; opened: boolean }>;
   /** 替看的人提交一次，只有代码判定红包能用；同一个红包第一次会先问他允不允许。 */
   submit(input: string): Promise<HbSubmitResult>;
   /**

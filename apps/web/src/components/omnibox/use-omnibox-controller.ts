@@ -3,7 +3,6 @@ import {
   type ClaimActivityInput,
   judgeAnswerSchema,
   passwordSchema,
-  publicScopeAllows,
 } from "@hb/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate, useRouter } from "@tanstack/react-router";
@@ -47,6 +46,7 @@ import { askHumanCheck, endHumanCheck } from "../../lib/human-check";
 import { myJudgmentsKey } from "../../lib/judge";
 import { maintenanceAtom } from "../../lib/maintenance";
 import { closeOverlay, openOverlay, switchOverlay } from "../../lib/overlay";
+import { pageStanding } from "../../lib/page-standing";
 import {
   askPageSubmit,
   notFilled,
@@ -1026,27 +1026,15 @@ export function useOmniboxController() {
         return notFilled("login");
       }
       if (!activity) return notFilled("away");
-      if (activity.status === "draft") return notFilled("not_open");
-      const deadline = activity.draw?.deadlineAt ?? activity.deadlineAt;
-      if (
-        activity.status !== "active" ||
-        (deadline && Date.parse(deadline) <= Date.now())
-      )
-        return notFilled("ended");
-      const code = activity.participationMode === "code";
-      if (code && activity.judge?.paused) return notFilled("paused");
-      const participation = queryClient.getQueryData<ParticipationCache>(
-        participationKey(account.id, activityId),
+      const standing = pageStanding(
+        activity,
+        account,
+        queryClient.getQueryData<ParticipationCache>(
+          participationKey(account.id, activityId),
+        ),
       );
-      if (participation?.claim || participation?.registration)
-        return notFilled("already_claimed");
-      if (
-        !publicScopeAllows(activity.scope, {
-          username: account.username,
-          trustLevel: account.trustLevel,
-        })
-      )
-        return notFilled("not_in_scope");
+      if (standing) return notFilled(standing);
+      const code = activity.participationMode === "code";
       if (store.get(pendingAtom)) return notFilled("busy");
       expand({ id: activityId, purpose: code ? "code" : "claim" }, text);
       return { filled: true };

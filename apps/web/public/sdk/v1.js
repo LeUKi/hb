@@ -16,7 +16,7 @@
       ? new URL(script.src).origin
       : "https://hb.lafi.sh";
   const host = window.parent;
-  const kinds = ["view", "hongbao", "announce"];
+  const kinds = ["view", "hongbao", "announce", "me"];
   const listeners = new Map(kinds.map((kind) => [kind, new Set()]));
   /** Asks sent and not yet answered, by number. */
   const waiting = new Map();
@@ -61,7 +61,13 @@
       else pending.resolve(message.value);
       return;
     }
-    if (!state || !kinds.includes(message.event)) return;
+    if (!state) return;
+    // How far the 红包 page's clock (the server's) is from this one.
+    if (message.event === "clock") {
+      if (typeof message.value === "number") state.clock = message.value;
+      return;
+    }
+    if (!kinds.includes(message.event)) return;
     if (message.event === "announce") {
       // Several at once: oldest first, one by one.
       for (const line of message.value) tell("announce", line);
@@ -127,11 +133,30 @@
       await ready();
       return state.view;
     },
-    /** view、hongbao、announce 有变化时调用 listener；返回取消订阅的函数。 */
+    /** 看的人自己的情况：能不能参加、冷却到什么时候、领到多少。 */
+    async me() {
+      await ready();
+      return state.me;
+    },
+    /** 按服务器校准过的当前时间（毫秒）；看的人没登录时是本机时间。 */
+    now() {
+      return Date.now() + (state?.clock ?? 0);
+    },
+    /** 请红包页弹出登录卡片；要在看的人点了网页里的按钮时调用。 */
+    async login() {
+      if (navigator.userActivation && !navigator.userActivation.isActive)
+        throw failure(
+          "no_gesture",
+          "hb.login 要在看的人点了网页里的按钮时调用",
+        );
+      await ready();
+      return ask("login", {});
+    },
+    /** view、hongbao、announce、me 有变化时调用 listener；返回取消订阅的函数。 */
     on(kind, listener) {
       if (!listeners.has(kind))
         throw new TypeError(
-          `hb.on：没有“${kind}”，只有 view、hongbao、announce`,
+          `hb.on：没有“${kind}”，只有 view、hongbao、announce、me`,
         );
       if (typeof listener !== "function")
         throw new TypeError("hb.on：第二个参数要是函数");

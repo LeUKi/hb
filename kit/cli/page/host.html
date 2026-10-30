@@ -204,8 +204,28 @@
         );
       }
 
+      /**
+       * hb.me() as the site gives it: the fake page has no cooldown to tell
+       * and pays at once.
+       */
+      async function meNow() {
+        if (who === config.guest) return { signedIn: false };
+        const mine = await api(`/api/mine?who=${encodeURIComponent(who)}`);
+        const won = mine?.items.find((item) => item.claimed);
+        const ended = state.hongbao.status === "ended";
+        return {
+          signedIn: true,
+          name: who,
+          open: !ended && !won,
+          ...(ended ? { why: "ended" } : won ? { why: "already_claimed" } : {}),
+          cooldownUntil: null,
+          claim: won ? { amount: won.amount, unit: "LDC", payment: "paid" } : null,
+          registered: false,
+        };
+      }
+
       /** The page's view, 红包 and new lines of 动态 (oldest first). */
-      function push() {
+      async function push() {
         if (!link) return;
         const send = (event, value) =>
           frame.contentWindow.postMessage({ hb: 1, event, value }, config.pageOrigin);
@@ -218,6 +238,11 @@
         if (hongbao !== link.hongbao) {
           link.hongbao = hongbao;
           send("hongbao", state.hongbao);
+        }
+        const me = JSON.stringify(await meNow());
+        if (link && me !== link.me) {
+          link.me = me;
+          send("me", JSON.parse(me));
         }
         const fresh = state.announcements.filter((line) => line.n > link.line).reverse();
         if (fresh.length > 0) {
@@ -244,13 +269,20 @@
         const reply = (answer) =>
           frame.contentWindow.postMessage({ hb: 1, re: ask.id, ...answer }, config.pageOrigin);
         if (ask.type === "hello") {
+          const me = await meNow();
           link = {
             view: JSON.stringify(state.view),
             hongbao: JSON.stringify(state.hongbao),
             line: state.announcements[0]?.n ?? -1,
+            me: JSON.stringify(me),
           };
-          reply({ value: { hongbao: state.hongbao, viewer: viewer(), theme: "light", view: state.view } });
+          reply({ value: { hongbao: state.hongbao, viewer: viewer(), theme: "light", view: state.view, me, clock: 0 } });
           return;
+        }
+        if (ask.type === "login") {
+          if (who !== config.guest) return reply({ value: { signedIn: true } });
+          log("网页请看的人登录（网站上这时会弹出登录卡片；这里在左上角换个人）");
+          return reply({ value: { signedIn: false, opened: true } });
         }
         if (ask.type === "mine") {
           const next = typeof ask.next === "string" ? `&next=${encodeURIComponent(ask.next)}` : "";

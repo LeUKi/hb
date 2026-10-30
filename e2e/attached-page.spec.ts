@@ -183,6 +183,87 @@ test.describe("附带网页", () => {
     ).toEqual({ filled: false, reason: "no_input" });
   });
 
+  test("hb.me()、hb.now()、hb.login()（judge-page §11.12）：登录的人读到自己的情况和服务器时间；游客 me() 是没登录，login() 要点按钮才弹登录卡片", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.context().grantPermissions(["local-network-access"]);
+    await mockSession(page, viewer);
+    await mock(page);
+    await page.route("https://puzzle.example.com/**", (route) =>
+      route.fulfill({
+        contentType: "text/html; charset=utf-8",
+        body: `<!doctype html><title>谜题</title><h1>今日第 3 题</h1><button id="go" style="margin-top: 240px" onclick="hb.login().then((r) => { window.result = r; })">登录后开始</button><script src="${new URL(page.url()).origin}/sdk/v1.js"></script><script>hb.login().then(() => { window.early = "opened"; }, (error) => { window.early = error.code; });</script>`,
+      }),
+    );
+    await openApp(page, path);
+    await page.locator("#page-button").click();
+    const frameLocator = page.frameLocator(
+      "iframe[title='puzzle.example.com 的网页']",
+    );
+    await expect(frameLocator.getByText("今日第 3 题")).toBeVisible();
+    const frame = page.frame({ url: pageUrl });
+    if (!frame) throw new Error("PAGE_FRAME_MISSING");
+    await frame.waitForFunction(() => "hb" in window);
+    type PageWindow = {
+      hb: {
+        ready(): Promise<unknown>;
+        me(): Promise<unknown>;
+        now(): number;
+        login(): Promise<unknown>;
+      };
+    };
+    expect(
+      await frame.evaluate(() => (window as unknown as PageWindow).hb.me()),
+    ).toEqual({
+      signedIn: true,
+      name: viewer.displayName,
+      open: true,
+      cooldownUntil: null,
+      claim: null,
+      registered: false,
+    });
+    const skew = await frame.evaluate(
+      () => (window as unknown as PageWindow).hb.now() - Date.now(),
+    );
+    expect(Math.abs(skew)).toBeLessThan(5_000);
+    expect(
+      await frame.evaluate(() => (window as unknown as PageWindow).hb.login()),
+    ).toEqual({ signedIn: true });
+    // A guest: no standing, and the login card only from a click.
+    await mockSession(page, null);
+    await page.reload();
+    await page.waitForFunction(
+      () =>
+        (window as unknown as { hbBoot?: { done: boolean } }).hbBoot?.done ===
+        true,
+    );
+    // Still open: this browser remembers the window was.
+    await expect(frameLocator.getByText("今日第 3 题")).toBeVisible();
+    const guest = page.frame({ url: pageUrl });
+    if (!guest) throw new Error("PAGE_FRAME_MISSING");
+    await guest.waitForFunction(() => "hb" in window);
+    expect(
+      await guest.evaluate(() => (window as unknown as PageWindow).hb.me()),
+    ).toEqual({ signedIn: false });
+    // Called as the page loads, with nobody's click: refused, no card.
+    expect(
+      await guest.evaluate(
+        () => (window as unknown as { early?: string }).early,
+      ),
+    ).toBe("no_gesture");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await frameLocator.getByRole("button", { name: "登录后开始" }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect
+      .poll(() =>
+        guest.evaluate(
+          () => (window as unknown as { result?: unknown }).result,
+        ),
+      )
+      .toEqual({ signedIn: false, opened: true });
+  });
+
   test("口令红包，手机：hb.fill() 把内容填进指令框、不提交，抽屉让开；指令框关上，抽屉回来（judge-page §11.11）", async ({
     page,
   }) => {
