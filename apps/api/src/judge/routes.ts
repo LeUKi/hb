@@ -49,6 +49,12 @@ import {
   updateMyJudge,
 } from "./judges";
 import { myJudgments } from "./mine";
+import {
+  judgePeople,
+  judgePerson,
+  judgeRecordFacts,
+  judgeTimeline,
+} from "./record-views";
 import { judgeRecords, listFailures } from "./records";
 import {
   readJudgeSettings,
@@ -93,6 +99,10 @@ function parsedWith<T>(schema: {
     return parsed.data;
   };
 }
+
+/** A page's cursor that is no 判定记录 cursor. */
+const badCursor = () =>
+  new ActivityValidationError([{ path: "cursor", message: "分页位置无效" }]);
 
 export const judgeRoutes = new Hono<ApiContext>()
   .use("*", async (c, next) => {
@@ -357,6 +367,76 @@ export const judgeRoutes = new Hono<ApiContext>()
       await listFailures(c.env, c.req.param("id"), session.user.id),
     );
   })
+  // 判定记录 (docs/judge-records-design.md): the sender's, page by page.
+  .get("/me/activities/:id/judge-facts", async (c) => {
+    const session = await requireAuth(c);
+    return c.json(
+      await judgeRecordFacts(c.env, c.req.param("id"), session.user.id),
+    );
+  })
+  .get(
+    "/me/activities/:id/judge-timeline",
+    validator("query", (value) => ({
+      filter:
+        (["claimed", "unclaimed", "failed"] as const).find(
+          (filter) => filter === value.filter,
+        ) ?? ("all" as const),
+      cursor: typeof value.cursor === "string" ? value.cursor : null,
+    })),
+    async (c) => {
+      const session = await requireAuth(c);
+      const { filter, cursor } = c.req.valid("query");
+      const list = await judgeTimeline(
+        c.env,
+        c.req.param("id"),
+        session.user.id,
+        filter,
+        cursor,
+      );
+      if (!list) throw badCursor();
+      return c.json(list);
+    },
+  )
+  .get(
+    "/me/activities/:id/judge-people",
+    validator("query", (value) => ({
+      sort:
+        (["most", "claimed"] as const).find((sort) => sort === value.sort) ??
+        ("recent" as const),
+      cursor: typeof value.cursor === "string" ? value.cursor : null,
+    })),
+    async (c) => {
+      const session = await requireAuth(c);
+      const { sort, cursor } = c.req.valid("query");
+      const list = await judgePeople(
+        c.env,
+        c.req.param("id"),
+        session.user.id,
+        sort,
+        cursor,
+      );
+      if (!list) throw badCursor();
+      return c.json(list);
+    },
+  )
+  .get(
+    "/me/activities/:id/judge-people/:userId",
+    validator("query", (value) => ({
+      cursor: typeof value.cursor === "string" ? value.cursor : null,
+    })),
+    async (c) => {
+      const session = await requireAuth(c);
+      const list = await judgePerson(
+        c.env,
+        c.req.param("id"),
+        session.user.id,
+        c.req.param("userId"),
+        c.req.valid("query").cursor,
+      );
+      if (!list) throw badCursor();
+      return c.json(list);
+    },
+  )
   // 下载完整记录: for the kit's npm run replay.
   .get("/me/activities/:id/judge-records", async (c) => {
     const session = await requireAuth(c);

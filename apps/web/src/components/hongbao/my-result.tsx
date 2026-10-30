@@ -231,11 +231,12 @@ const judgeNotes = {
  * 我的结果: what only the viewer sees after taking part — the amount in
  * green with a plus, the payment, own titles, 奖励附言.
  */
-/** What on this card only the viewer sees, as it is shown. */
+/**
+ * What on this card only the viewer sees, as it is shown: not the
+ * 判定器's reply, which its sender reads in 判定记录 too.
+ */
 function privateNote(mine: Mine, won: boolean) {
   const parts = won ? ["金额", "发放状态"] : ["报名记录"];
-  if (mine.kind === "claimed" && mine.judge?.message)
-    parts.push("判定器的回复");
   if (mine.afterClaimInfo) parts.push("附言");
   const last = parts.pop();
   return `${parts.length > 0 ? `${parts.join("、")}和` : ""}${last}仅你可见`;

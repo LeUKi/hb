@@ -316,9 +316,14 @@ export function JudgmentRecord({ activityId }: { activityId: string }) {
   );
 }
 
-/** “仅你可见”, beside the title on the page and in the dialog. */
+/**
+ * Who sees these, beside the title on the page and in the dialog: the
+ * sender too, in 判定记录 (docs/judge-records-design.md §3).
+ */
 function Privacy() {
-  return <span className="shrink-0 text-xs text-ink-3">仅你可见</span>;
+  return (
+    <span className="shrink-0 text-xs text-ink-3">你和红包作者看得到</span>
+  );
 }
 
 /**

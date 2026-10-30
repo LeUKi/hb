@@ -1,6 +1,6 @@
 // 参与名单 · 挑战 (docs/redesign/05-hongbao.md §7): everyone a 代码判定红包's
 // code has judged, the latest judged first, with how many times, when last
-// and whether they took a share. Public like the 名单; never what anyone
+// and whether they took a share (code_judge_people). Public like the 名单; never what anyone
 // typed or what the code said to them (its replies may give hints away).
 import type { JudgeChallengerList } from "@hb/contracts";
 import { activityNotFound } from "../activities/errors";
@@ -32,13 +32,14 @@ export async function listChallengers(
   )
     activityNotFound();
   const [found, total] = await Promise.all([
-    env.DB.prepare(`SELECT j.user_id AS userId, COUNT(*) AS judged, MAX(j.judged_at) AS lastAt,
-        MAX(j.ok) AS claimed, u.username, u.display_name AS displayName, u.avatar_url AS avatarUrl
-      FROM code_judgments j JOIN users u ON u.id = j.user_id
-      WHERE j.activity_id = ?1
-      GROUP BY j.user_id
-      HAVING ?2 IS NULL OR MAX(j.judged_at) < ?2 OR (MAX(j.judged_at) = ?2 AND j.user_id < ?3)
-      ORDER BY lastAt DESC, j.user_id DESC
+    // Each person's count, kept as they are judged (code_judge_people):
+    // a page of people read, not every judgment.
+    env.DB.prepare(`SELECT p.user_id AS userId, p.judged, p.last_at AS lastAt, p.claimed,
+        u.username, u.display_name AS displayName, u.avatar_url AS avatarUrl
+      FROM code_judge_people p JOIN users u ON u.id = p.user_id
+      WHERE p.activity_id = ?1
+        AND (?2 IS NULL OR p.last_at < ?2 OR (p.last_at = ?2 AND p.user_id < ?3))
+      ORDER BY p.last_at DESC, p.user_id DESC
       LIMIT ?4`)
       .bind(
         activityId,
@@ -56,7 +57,7 @@ export async function listChallengers(
         avatarUrl: string | null;
       }>(),
     env.DB.prepare(
-      "SELECT COUNT(DISTINCT user_id) AS count FROM code_judgments WHERE activity_id = ?",
+      "SELECT COUNT(*) AS count FROM code_judge_people WHERE activity_id = ?",
     )
       .bind(activityId)
       .first<number>("count"),

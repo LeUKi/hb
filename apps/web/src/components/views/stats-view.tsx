@@ -18,6 +18,7 @@ import {
 import { PageLoad, queriesLoad, queryLoad } from "../page/page-state";
 import { Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
+import { JudgeRecordsView } from "./judge-records-view";
 import { MessageView } from "./message-view";
 
 /** What people typed, the most frequent first; 20 more as its end nears. */
@@ -105,7 +106,11 @@ export function StatsView({ id, userId }: { id: string; userId: string }) {
       activity.status !== "draft" &&
       activity.participationMode !== "direct",
   );
-  const stats = useStatisticsPages(userId, id, available);
+  const stats = useStatisticsPages(
+    userId,
+    id,
+    available && activity?.participationMode !== "code",
+  );
   const list = useQueryLazyList({
     hasNextPage: stats.hasNextPage,
     isFetchingNextPage: stats.isFetchingNextPage,
@@ -124,6 +129,15 @@ export function StatsView({ id, userId }: { id: string; userId: string }) {
               : "红包开放之后才有人提交口令。"
             : "无需口令的红包没有口令尝试。"
         }
+      />
+    );
+  // 代码判定: 判定记录 in its place (docs/judge-records-design.md).
+  if (activity?.participationMode === "code" && available)
+    return (
+      <JudgeRecordsView
+        userId={userId}
+        activity={activity}
+        attemptList={(props) => <AttemptList {...props} draw={false} code />}
       />
     );
   const first = stats.data?.pages[0];

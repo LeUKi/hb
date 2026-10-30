@@ -18,7 +18,7 @@ import { declarationsFor, judgedParams } from "./params";
 import { publicJudge } from "./public";
 import { fetchesOf, findJudgeRow, judgeData } from "./storage";
 
-async function ownedCode(
+export async function ownedCode(
   env: ApiBindings,
   activityId: string,
   authorId: string,

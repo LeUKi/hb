@@ -10,6 +10,11 @@ import type {
   JudgePage,
   JudgeParamsCheck,
   JudgeParamsCheckInput,
+  JudgeRecordFacts,
+  JudgeRecordFilter,
+  JudgeRecordList,
+  JudgeRecordPeople,
+  JudgeRecordPeopleSort,
   JudgeTry,
   JudgeTryInput,
   JudgeVersions,
@@ -20,6 +25,7 @@ import type {
   UpdateJudgeInput,
 } from "@hb/contracts";
 import {
+  keepPreviousData,
   type QueryClient,
   useInfiniteQuery,
   useMutation,
@@ -520,6 +526,105 @@ export function useChallengers(activityId: string, enabled: boolean) {
           `/api/activities/${encodeURIComponent(activityId)}/challengers${pageParam ? `?cursor=${encodeURIComponent(pageParam)}` : ""}`,
           { signal, cache: "no-store" },
         ),
+      ),
+    getNextPageParam: (last) => last.nextCursor,
+    retry: false,
+  });
+}
+
+/**
+ * 判定记录 (docs/judge-records-design.md): a 代码判定红包's, for its sender.
+ * Plain reads (no RPC types): the numbers over it, the timeline by filter,
+ * 按人 by sort, and one person's whole record.
+ */
+const judgeRecordsKey = (userId: string, activityId: string) =>
+  ["activity-private", userId, "judge-records", activityId] as const;
+
+const readJson = async <T>(path: string, signal: AbortSignal) =>
+  readResponse<T>(await fetch(path, { signal, cache: "no-store" }));
+
+const recordsPath = (activityId: string, rest: string) =>
+  `/api/me/activities/${encodeURIComponent(activityId)}/${rest}`;
+
+export function useJudgeRecordFacts(userId: string, activityId: string) {
+  return useQuery({
+    queryKey: [...judgeRecordsKey(userId, activityId), "facts"],
+    queryFn: ({ signal }) =>
+      readJson<JudgeRecordFacts>(
+        recordsPath(activityId, "judge-facts"),
+        signal,
+      ),
+    retry: false,
+    // New submissions are told of, not put in (§1.1): read every 15 s.
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
+  });
+}
+
+export function useJudgeTimeline(
+  userId: string,
+  activityId: string,
+  filter: JudgeRecordFilter,
+  enabled: boolean,
+) {
+  return useInfiniteQuery({
+    queryKey: [...judgeRecordsKey(userId, activityId), "timeline", filter],
+    enabled,
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) =>
+      readJson<JudgeRecordList>(
+        recordsPath(
+          activityId,
+          `judge-timeline?filter=${filter}${pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : ""}`,
+        ),
+        signal,
+      ),
+    getNextPageParam: (last) => last.nextCursor,
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+}
+
+export function useJudgePeople(
+  userId: string,
+  activityId: string,
+  sort: JudgeRecordPeopleSort,
+  enabled: boolean,
+) {
+  return useInfiniteQuery({
+    queryKey: [...judgeRecordsKey(userId, activityId), "people", sort],
+    enabled,
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) =>
+      readJson<JudgeRecordPeople>(
+        recordsPath(
+          activityId,
+          `judge-people?sort=${sort}${pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : ""}`,
+        ),
+        signal,
+      ),
+    getNextPageParam: (last) => last.nextCursor,
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+}
+
+export function useJudgePersonRecord(
+  userId: string,
+  activityId: string,
+  personId: string | null,
+) {
+  return useInfiniteQuery({
+    queryKey: [...judgeRecordsKey(userId, activityId), "person", personId],
+    enabled: personId !== null,
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) =>
+      readJson<JudgeRecordList>(
+        recordsPath(
+          activityId,
+          `judge-people/${encodeURIComponent(personId ?? "")}${pageParam ? `?cursor=${encodeURIComponent(pageParam)}` : ""}`,
+        ),
+        signal,
       ),
     getNextPageParam: (last) => last.nextCursor,
     retry: false,

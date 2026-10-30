@@ -536,6 +536,20 @@ export async function claimByCode(
       view ? JSON.stringify(view.value) : null,
       Number(reading.end === true),
     ),
+    // 判定记录 · 按人 (docs/judge-records-design.md §4): this person's count.
+    env.DB.prepare(`INSERT INTO code_judge_people
+      (activity_id, user_id, judged, claimed, paid_minor, first_at, last_at)
+      VALUES (?1, ?2, 1, ?3, ?4, ?5, ?5)
+      ON CONFLICT (activity_id, user_id) DO UPDATE SET judged = judged + 1,
+        claimed = MAX(claimed, excluded.claimed),
+        paid_minor = COALESCE(paid_minor, excluded.paid_minor),
+        last_at = MAX(last_at, excluded.last_at)`).bind(
+      activityId,
+      userId,
+      Number(reading.ok),
+      reading.ok ? reading.paid : null,
+      submission.now,
+    ),
     env.DB.prepare(`UPDATE activity_code SET failures_in_row = 0,
       state_ciphertext = CASE WHEN ?1 THEN state_ciphertext ELSE ?2 END,
       view_summary = CASE WHEN ?3 THEN view_summary ELSE ?4 END,

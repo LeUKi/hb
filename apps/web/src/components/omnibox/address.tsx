@@ -9,6 +9,7 @@ import {
   activityIdFromCode,
   RED_PACKET,
   senderPages,
+  senderPageTitle,
 } from "../../lib/activity-route";
 import { commandById } from "../../lib/commands";
 import { useDrawDataName } from "../../lib/draw-check";
@@ -95,10 +96,13 @@ export function useAddress(compact: boolean): Address {
     const id = activityIdFromCode(params.code ?? "");
     if (!id) return missing;
     const page = senderPage ? senderPages[senderPage] : null;
+    const pageTitle = senderPage
+      ? senderPageTitle(senderPage, activity?.code !== undefined)
+      : null;
     return {
       key: page ? `activity:${id}:${senderPage}` : `activity:${id}`,
       label: page
-        ? `${page.title}「${activity?.title ?? "红包"}」`
+        ? `${pageTitle}「${activity?.title ?? "红包"}」`
         : activity
           ? `红包「${activity.title}」`
           : "红包",
@@ -124,7 +128,7 @@ export function useAddress(compact: boolean): Address {
               <span className="shrink-0 font-emoji">{page.emoji}</span>
               {!compact && (
                 <span className="ml-2 shrink-0 font-sans text-sm text-ink-3">
-                  {page.title}
+                  {pageTitle}
                 </span>
               )}
             </>

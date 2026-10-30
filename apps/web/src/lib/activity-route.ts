@@ -27,6 +27,14 @@ export const senderPages = {
 
 export type SenderPage = keyof typeof senderPages;
 
+/**
+ * A sender page's name for this 红包: a 代码判定红包's 尝试统计 is its
+ * 判定记录 (docs/judge-records-design.md §2).
+ */
+export function senderPageTitle(page: SenderPage, code: boolean) {
+  return page === "stats" && code ? "判定记录" : senderPages[page].title;
+}
+
 export function senderPagePath(id: string, page: SenderPage) {
   return `${activityPath(id)}/${senderPages[page].emoji}`;
 }

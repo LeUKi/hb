@@ -2144,6 +2144,10 @@ export const codeJudgments = sqliteTable(
     index("code_judgments_ends_idx")
       .on(table.activityId)
       .where(sql`${table.ends} = 1`),
+    // 判定记录 · 领到的 (docs/judge-records-design.md §1.1): shares only.
+    index("code_judgments_claimed_idx")
+      .on(table.activityId, table.sequence)
+      .where(sql`${table.ok} = 1`),
     check(
       "code_judgments_shape",
       sql`typeof(${table.attempt}) = 'integer' AND ${table.attempt} >= 0
@@ -2189,6 +2193,56 @@ export const activityAnnouncements = sqliteTable(
       sql`typeof(${table.n}) = 'integer' AND ${table.n} >= 0
         AND length(${table.text}) BETWEEN 1 AND 100
         AND typeof(${table.createdAt}) = 'integer'`,
+    ),
+  ],
+);
+
+/**
+ * 判定记录 · 按人 (docs/judge-records-design.md §4): each person a 代码判定红包
+ * judged, kept as each judgment is written (claims.ts) — how many times,
+ * whether one was a share and how much, the first and the latest — so the
+ * list and 参与名单 · 挑战 read a page of people, not every judgment.
+ */
+export const codeJudgePeople = sqliteTable(
+  "code_judge_people",
+  {
+    activityId: text("activity_id")
+      .notNull()
+      .references(() => activities.id),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    judged: integer("judged").notNull(),
+    claimed: integer("claimed", { mode: "boolean" }).notNull(),
+    paidMinor: integer("paid_minor"),
+    firstAt: integer("first_at").notNull(),
+    lastAt: integer("last_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.activityId, table.userId] }),
+    index("code_judge_people_recent_idx").on(
+      table.activityId,
+      table.lastAt,
+      table.userId,
+    ),
+    index("code_judge_people_most_idx").on(
+      table.activityId,
+      table.judged,
+      table.lastAt,
+      table.userId,
+    ),
+    index("code_judge_people_claimed_idx").on(
+      table.activityId,
+      table.claimed,
+      table.lastAt,
+      table.userId,
+    ),
+    check(
+      "code_judge_people_shape",
+      sql`typeof(${table.judged}) = 'integer' AND ${table.judged} >= 1
+        AND ((${table.claimed} = 1 AND typeof(${table.paidMinor}) = 'integer' AND ${table.paidMinor} > 0)
+          OR (${table.claimed} = 0 AND ${table.paidMinor} IS NULL))
+        AND typeof(${table.firstAt}) = 'integer' AND ${table.lastAt} >= ${table.firstAt}`,
     ),
   ],
 );

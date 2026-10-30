@@ -653,6 +653,75 @@ export type CodeFailureList = {
   pausedAt: string | null;
 };
 
+/** 判定记录 (docs/judge-records-design.md): who, as the judgment saw them. */
+export type JudgeRecordPerson = PublicUserProfile & {
+  /** To open their whole record (§1.2). */
+  id: string;
+  /** 信任等级 when judged; null when not known. */
+  level: number | null;
+};
+
+/** One row of 判定记录 · 时间线 (§1.1), the newest first. */
+export type JudgeRecordRow =
+  | {
+      kind: "judged";
+      at: string;
+      user: JudgeRecordPerson;
+      /** 第 N 次, from 1. */
+      attempt: number;
+      input: string;
+      claimed: boolean;
+      /** Paid, as "0.50"; what the 判定器 gave when it was pulled in. */
+      amount?: string;
+      asked?: string;
+      note?: JudgeNote;
+      message?: string;
+      /** Its line in 动态. */
+      announce?: string;
+      /** It ended the 红包. */
+      ends?: true;
+    }
+  | {
+      kind: "failed";
+      at: string;
+      user: JudgeRecordPerson;
+      failure: CodeFailure["kind"];
+      detail: string;
+    };
+
+export type JudgeRecordFilter = "all" | "claimed" | "unclaimed" | "failed";
+
+export type JudgeRecordList = {
+  items: JudgeRecordRow[];
+  nextCursor: string | null;
+};
+
+/** 判定记录 · 按人 (§1.2): one person, kept as they are judged. */
+export type JudgeRecordPeopleRow = {
+  user: Omit<JudgeRecordPerson, "level">;
+  judged: number;
+  /** Paid, as "0.50", if one judgment was a share. */
+  amount?: string;
+  lastAt: string;
+};
+
+export type JudgeRecordPeopleSort = "recent" | "most" | "claimed";
+
+export type JudgeRecordPeople = {
+  items: JudgeRecordPeopleRow[];
+  nextCursor: string | null;
+};
+
+/** The numbers over it all (§1): 提交、提交的人、领到的人、出错. */
+export type JudgeRecordFacts = {
+  judged: number;
+  people: number;
+  claimedPeople: number;
+  /** Paid in all, as "1.20". */
+  paid: string;
+  failed: number;
+};
+
 /**
  * 判定器设置 (redesign/07 §10, docs/programmable-hongbao-design.md §1, §5,
  * §7): 代码判定红包's switch, 每人每天最多开放几个, 每人每天部署几次 (new

@@ -1031,7 +1031,7 @@ export function Omnibox() {
                       {typed} / 200
                     </span>
                     <TagHint
-                      hint="原样提交：区分大小写，符号都算，首尾空格会去掉"
+                      hint="原样提交：区分大小写，符号都算，首尾空格会去掉。你的每次提交和判定器的回复，红包作者都看得到。"
                       aria-label="提交规则"
                       onMouseDown={(event) => event.preventDefault()}
                       className="pointer-events-auto -m-1 grid size-5 place-items-center rounded-full text-ink-3 transition-colors hover:text-ink-2"

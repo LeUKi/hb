@@ -632,7 +632,7 @@ test.describe("代码判定红包", () => {
     await expect(
       page.locator("search").getByRole("button", { name: "提交规则" }),
     ).toHaveAccessibleDescription(
-      "原样提交：区分大小写，符号都算，首尾空格会去掉",
+      "原样提交：区分大小写，符号都算，首尾空格会去掉。你的每次提交和判定器的回复，红包作者都看得到。",
     );
     await expect(boxCount(page)).toHaveText("0 / 200");
     // Nothing typed, nothing to run.
@@ -704,7 +704,7 @@ test.describe("代码判定红包", () => {
     const result = page.locator("[data-hb-part=result]");
     await expect(result).toContainText("判定器的回复：猜对了！");
     await expect(result).toContainText("按上限发");
-    await expect(result).toContainText("金额、发放状态和判定器的回复仅你可见");
+    await expect(result).toContainText("金额和发放状态仅你可见");
     // What was typed is in 我的提交, not again here (05 §3).
     await expect(result).not.toContainText("口令");
     await expect(result).not.toContainText("输入");
@@ -870,7 +870,7 @@ test.describe("代码判定红包", () => {
     await openApp(page, path);
     const mine = page.locator("[data-hb-part=my-judgments]");
     await expect(mine.getByRole("heading")).toHaveText("我的提交 · 25 次");
-    await expect(mine.getByText("仅你可见")).toBeVisible();
+    await expect(mine.getByText("你和红包作者看得到")).toBeVisible();
     const rows = mine.getByRole("listitem");
     await expect(rows).toHaveCount(3);
     await expect(rows.nth(0)).toContainText("第 25 次");
@@ -887,7 +887,7 @@ test.describe("代码判定红包", () => {
     const dialog = page.getByRole("dialog", { name: "我的提交 · 25 次" });
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText(`小满的红包 · ${title}`);
-    await expect(dialog.getByText("仅你可见")).toBeVisible();
+    await expect(dialog.getByText("你和红包作者看得到")).toBeVisible();
     const all = dialog.getByRole("listitem");
     await expect(all).toHaveCount(20);
     await expect(dialog.getByText("答案-6", { exact: true })).toBeVisible();
@@ -1242,7 +1242,7 @@ test.describe("代码判定红包", () => {
     await openApp(page, path);
     const mine = page.locator("[data-hb-part=my-judgments]");
     await expect(mine.getByRole("heading")).toHaveText("我的提交 · 5 次");
-    await expect(mine.getByText("仅你可见")).toBeVisible();
+    await expect(mine.getByText("你和红包作者看得到")).toBeVisible();
     await expect(mine.getByRole("listitem")).toHaveCount(3);
     await expect(mine.getByText("答案-5", { exact: true })).toBeVisible();
     await expect(mine.getByText("答案-3", { exact: true })).toBeVisible();

@@ -3,7 +3,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { AnimatePresence, motion, useIsPresent } from "motion/react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef } from "react";
 import { useActivityFacts } from "../../lib/activity-facts";
-import { activityIdFromCode, senderPages } from "../../lib/activity-route";
+import { activityIdFromCode, senderPageTitle } from "../../lib/activity-route";
 import { documentTitle } from "../../lib/brand";
 import { type CommandId, commandById } from "../../lib/commands";
 import { durations, ease, useReducedMotionPref } from "../../lib/motion";
@@ -211,14 +211,16 @@ function leafActivityId(leaf: Leaf) {
   return code ? activityIdFromCode(code) : null;
 }
 
-function titleFor(leaf: NonNullable<Leaf>, activityTitle: string | null) {
+function titleFor(
+  leaf: NonNullable<Leaf>,
+  activityTitle: string | null,
+  code: boolean,
+) {
   const senderPage = leaf.staticData.senderPage;
-  if (senderPage)
-    return documentTitle(
-      activityTitle
-        ? `${senderPages[senderPage].title} · ${activityTitle}`
-        : senderPages[senderPage].title,
-    );
+  if (senderPage) {
+    const page = senderPageTitle(senderPage, code);
+    return documentTitle(activityTitle ? `${page} · ${activityTitle}` : page);
+  }
   if (leaf.routeId === "/🧧/$code")
     return documentTitle(activityTitle ?? "红包");
   const { command, subpage } = leaf.staticData;
@@ -410,12 +412,13 @@ export function ViewStage() {
   // The 红包 the route names, as its page has read it.
   const activity = useActivityFacts(leafActivityId(leaf));
   const activityTitle = activity?.title ?? null;
+  const code = activity?.code !== undefined;
   useEffect(() => {
     if (leaf)
       document.title = pageTitle
         ? documentTitle(pageTitle.title)
-        : titleFor(leaf, activityTitle);
-  }, [leaf, pageTitle, activityTitle]);
+        : titleFor(leaf, activityTitle, code);
+  }, [leaf, pageTitle, activityTitle, code]);
   if (!leaf) return null;
   const start = leaf.routeId === "/";
   const admin = leaf.staticData.command === "admin";

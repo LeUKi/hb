@@ -22,6 +22,12 @@ const labels: Record<SenderPage, string> = {
   payments: "付款记录",
 };
 
+/** 代码判定红包's 尝试统计 is its 判定记录 (docs/judge-records-design.md §2). */
+const labelOf = (page: SenderPage, activity: HongbaoActivity) =>
+  page === "stats" && activity.participation === "code"
+    ? "判定记录"
+    : labels[page];
+
 /**
  * A draft has only 编辑; every 口令红包 and 代码判定红包 has 尝试统计
  * (07 §7); a 🐟额红包 pays nothing out, so it has no 付款记录
@@ -80,13 +86,19 @@ export function SenderLinks({
         size={size}
         aria-label={
           iconsOnly
-            ? `${senderPages[page].title}「${activity.title}」`
+            ? `${page === "stats" ? labelOf(page, activity) : senderPages[page].title}「${activity.title}」`
             : undefined
         }
-        title={iconsOnly ? senderPages[page].title : undefined}
+        title={
+          iconsOnly
+            ? page === "stats"
+              ? labelOf(page, activity)
+              : senderPages[page].title
+            : undefined
+        }
       >
         <Icon aria-hidden="true" />
-        {!iconsOnly && (primary ? "继续编辑" : labels[page])}
+        {!iconsOnly && (primary ? "继续编辑" : labelOf(page, activity))}
       </ButtonLink>
     );
   });
