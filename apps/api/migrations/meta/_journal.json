@@ -379,6 +379,13 @@
       "when": 1793349710803,
       "tag": "0053_roadmap",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "6",
+      "when": 1793365193600,
+      "tag": "0054_multi_prize",
+      "breakpoints": true
     }
   ]
 }

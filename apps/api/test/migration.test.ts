@@ -1477,6 +1477,9 @@ it("0049 keeps a 代码判定红包's code and its 用量 as they were, with no 
     view_data: null,
     view_at: null,
     setup_ciphertext: null,
+    // 0054: everyone's pending, and when they were all settled.
+    pending_minor: 0,
+    settled_at: null,
   });
   expect(await db.prepare("SELECT * FROM judge_usage").first()).toEqual({
     ...usage,
@@ -1572,6 +1575,8 @@ it("0051 keeps a third-protocol 判定器, its 红包, judgments and 用量 as t
       view_data: null,
       view_at: null,
       setup_ciphertext: null,
+      pending_minor: 0,
+      settled_at: null,
     },
     version: kept.version,
     usage: kept.usage,

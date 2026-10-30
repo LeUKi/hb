@@ -1952,7 +1952,7 @@ export const judgeVersions = sqliteTable(
       "judge_versions_shape",
       sql`typeof(${table.n}) = 'integer' AND ${table.n} >= 1
         AND length(${table.fingerprint}) = 64 AND length(${table.testsDigest}) = 64
-        AND ${table.protocol} IN (1, 2, 3, 4) AND ${table.passed} IN (0, 1)
+        AND ${table.protocol} IN (1, 2, 3, 4, 5) AND ${table.passed} IN (0, 1)
         AND (${table.declarations} IS NULL OR (${table.protocol} >= 3 AND json_valid(${table.declarations})))
         AND (${table.network} IS NULL OR (${table.protocol} >= 2 AND json_valid(${table.network})
           AND json_type(${table.network}) = 'array' AND json_array_length(${table.network}) BETWEEN 1 AND 3))
@@ -2046,13 +2046,28 @@ export const activityCode = sqliteTable(
      * JSON: its state is the code's own until the end); null without one.
      */
     setupCiphertext: text("setup_ciphertext"),
+    /**
+     * Protocol 5 (docs/multi-prize-design.md §2): everyone's pending
+     * together, kept with each move, so what is unclaimed (the pool less
+     * what was paid and this) is read in one row.
+     */
+    pendingMinor: integer("pending_minor").notNull().default(0),
+    /**
+     * Protocol 5: when everyone was settled after it ended (结算中 until
+     * then) and the rest went back; null while open or settling.
+     */
+    settledAt: integer("settled_at"),
   },
   (table) => [
     // 判定器广场 (judge-square §8): the 红包 each 判定器 and version opened.
     index("activity_code_judge_idx").on(table.judgeId, table.judgeVersion),
+    // 结算中: the ended protocol 5 红包 the sweep still settles.
+    index("activity_code_settling_idx")
+      .on(table.activityId)
+      .where(sql`${table.protocol} >= 5 AND ${table.settledAt} IS NULL`),
     check(
       "activity_code_shape",
-      sql`${table.protocol} IN (1, 2, 3, 4) AND length(${table.fingerprint}) = 64 AND length(${table.testsDigest}) = 64
+      sql`${table.protocol} IN (1, 2, 3, 4, 5) AND length(${table.fingerprint}) = 64 AND length(${table.testsDigest}) = 64
         AND (${table.network} IS NULL OR (${table.protocol} >= 2 AND json_valid(${table.network})
           AND json_type(${table.network}) = 'array' AND json_array_length(${table.network}) BETWEEN 1 AND 3))
         AND length(${table.prompt}) <= 40
@@ -2077,7 +2092,10 @@ export const activityCode = sqliteTable(
         AND (${table.viewData} IS NULL OR (json_valid(${table.viewData}) AND length(CAST(${table.viewData} AS BLOB)) <= 16384))
         AND (${table.viewAt} IS NULL OR (${table.protocol} >= 4 AND typeof(${table.viewAt}) = 'integer'))
         AND ((${table.viewSummary} IS NULL AND ${table.viewData} IS NULL) OR ${table.viewAt} IS NOT NULL)
-        AND (${table.setupCiphertext} IS NULL OR ${table.protocol} >= 4)`,
+        AND (${table.setupCiphertext} IS NULL OR ${table.protocol} >= 4)
+        AND typeof(${table.pendingMinor}) = 'integer' AND ${table.pendingMinor} >= 0
+        AND (${table.protocol} >= 5 OR (${table.pendingMinor} = 0 AND ${table.settledAt} IS NULL))
+        AND (${table.settledAt} IS NULL OR (typeof(${table.settledAt}) = 'integer' AND ${table.pendingMinor} = 0))`,
     ),
   ],
 );
@@ -2129,6 +2147,13 @@ export const codeJudgments = sqliteTable(
     view: text("view"),
     /** It ended the 红包 (end). */
     ends: integer("ends", { mode: "boolean" }).notNull().default(false),
+    /**
+     * Protocol 5 (docs/multi-prize-design.md §3.2): what it wrote besides
+     * the shared state and view — { add, settle, shorthand, player,
+     * others } as written (encrypted JSON: the own states are the code's).
+     * What each move came to is in code_judgment_moves.
+     */
+    ledgerCiphertext: text("ledger_ciphertext"),
   },
   (table) => [
     uniqueIndex("code_judgments_attempt_unique").on(
@@ -2217,6 +2242,19 @@ export const codeJudgePeople = sqliteTable(
     paidMinor: integer("paid_minor"),
     firstAt: integer("first_at").notNull(),
     lastAt: integer("last_at").notNull(),
+    /** Protocol 5 (docs/multi-prize-design.md §2): their pending now. */
+    pendingMinor: integer("pending_minor").notNull().default(0),
+    /** Protocol 5: player.state (encrypted JSON), the code's own. */
+    ownStateCiphertext: text("own_state_ciphertext"),
+    /** Protocol 5: player.view, only theirs to see (encrypted JSON). */
+    ownViewCiphertext: text("own_view_ciphertext"),
+    /**
+     * Protocol 5: settled, once — by the code or as the 红包 ended — with
+     * what (0: nothing paid), and the claim when it paid.
+     */
+    settledAt: integer("settled_at"),
+    settledMinor: integer("settled_minor"),
+    claimId: text("claim_id").references(() => claims.id),
   },
   (table) => [
     primaryKey({ columns: [table.activityId, table.userId] }),
@@ -2237,12 +2275,75 @@ export const codeJudgePeople = sqliteTable(
       table.lastAt,
       table.userId,
     ),
+    // 结算中: who is left to settle, first judged first.
+    index("code_judge_people_unsettled_idx")
+      .on(table.activityId, table.firstAt, table.userId)
+      .where(sql`${table.settledAt} IS NULL`),
     check(
       "code_judge_people_shape",
       sql`typeof(${table.judged}) = 'integer' AND ${table.judged} >= 1
         AND ((${table.claimed} = 1 AND typeof(${table.paidMinor}) = 'integer' AND ${table.paidMinor} > 0)
           OR (${table.claimed} = 0 AND ${table.paidMinor} IS NULL))
-        AND typeof(${table.firstAt}) = 'integer' AND ${table.lastAt} >= ${table.firstAt}`,
+        AND typeof(${table.firstAt}) = 'integer' AND ${table.lastAt} >= ${table.firstAt}
+        AND typeof(${table.pendingMinor}) = 'integer' AND ${table.pendingMinor} >= 0
+        AND ((${table.settledAt} IS NULL AND ${table.settledMinor} IS NULL AND ${table.claimId} IS NULL)
+          OR (typeof(${table.settledAt}) = 'integer' AND typeof(${table.settledMinor}) = 'integer'
+            AND ${table.settledMinor} >= 0 AND ${table.pendingMinor} = 0
+            AND (${table.settledMinor} > 0) = (${table.claimId} IS NOT NULL)
+            AND ${table.claimed} = (${table.settledMinor} > 0)
+            AND ${table.paidMinor} IS NULLIF(${table.settledMinor}, 0)))`,
+    ),
+  ],
+);
+
+/**
+ * Protocol 5 (docs/multi-prize-design.md §4.1, §4.2): each person a
+ * judgment moved — the one judged (position 0), then its others in order —
+ * with what the code said to add, their pending before and after, whether
+ * it settled them and what it told them. 我的记录 and the 判定记录
+ * timeline read these; written once, with the judgment.
+ */
+export const codeJudgmentMoves = sqliteTable(
+  "code_judgment_moves",
+  {
+    submissionRowId: text("submission_row_id")
+      .notNull()
+      .references(() => codeJudgments.submissionRowId),
+    position: integer("position").notNull(),
+    activityId: text("activity_id")
+      .notNull()
+      .references(() => activities.id),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    addMinor: integer("add_minor").notNull(),
+    beforeMinor: integer("before_minor").notNull(),
+    afterMinor: integer("after_minor").notNull(),
+    settles: integer("settles", { mode: "boolean" }).notNull(),
+    /** What others[] told them (null for the one judged: theirs is the reply). */
+    message: text("message"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.submissionRowId, table.position] }),
+    uniqueIndex("code_judgment_moves_person_unique").on(
+      table.submissionRowId,
+      table.userId,
+    ),
+    // 我的记录: one person's moves, theirs and others', newest first.
+    index("code_judgment_moves_person_idx").on(
+      table.activityId,
+      table.userId,
+      table.createdAt,
+    ),
+    check(
+      "code_judgment_moves_shape",
+      sql`typeof(${table.position}) = 'integer' AND ${table.position} BETWEEN 0 AND 10
+        AND typeof(${table.addMinor}) = 'integer'
+        AND typeof(${table.beforeMinor}) = 'integer' AND ${table.beforeMinor} >= 0
+        AND typeof(${table.afterMinor}) = 'integer' AND ${table.afterMinor} >= 0
+        AND (${table.message} IS NULL OR (${table.position} > 0 AND length(${table.message}) BETWEEN 1 AND 100))
+        AND typeof(${table.createdAt}) = 'integer'`,
     ),
   ],
 );
@@ -2463,7 +2564,7 @@ export const judgeUsage = sqliteTable(
     check(
       "judge_usage_shape",
       sql`length(${table.fingerprint}) = 64
-        AND ${table.protocol} IN (1, 2, 3, 4) AND ${table.networked} IN (0, 1)
+        AND ${table.protocol} IN (1, 2, 3, 4, 5) AND ${table.networked} IN (0, 1)
         AND (${table.networked} = 0 OR (${table.protocol} >= 2 AND ${table.activityId} IS NOT NULL))
         AND typeof(${table.fresh}) = 'integer' AND ${table.fresh} BETWEEN 0 AND 3
         AND ${table.sandboxId} = 'judge:v' || ${table.protocol} || ':' || ${table.fingerprint}
