@@ -1,0 +1,326 @@
+<!doctype html>
+<!--
+  施工中（docs/roadmap-design.md）的原型：只为看排法和颜色，数据是编的。
+  颜色取自 apps/web/src/styles.css 的设计变量；圆角用普通圆角代替超椭圆。
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>施工中 · 原型</title>
+    <style>
+      :root {
+        --ink: #2a1519;
+        --ink-2: #745c61;
+        --ink-3: #9a7f85;
+        --fill: rgb(42 21 25 / 0.045);
+        --fill-2: rgb(42 21 25 / 0.08);
+        --line: rgb(42 21 25 / 0.08);
+        --accent: #d3282f;
+        --accent-ink: #b4232d;
+        --accent-soft: rgb(229 69 60 / 0.1);
+        --button-top: #d4352e;
+        --button-bottom: #b51925;
+        --on-accent: #fff6ee;
+        --gold: #e6be72;
+        --gold-ink: #6a4510;
+        --gold-soft: rgb(237 203 134 / 0.28);
+        --gold-mark: #b7862f;
+        font-family: -apple-system, "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+        color: var(--ink);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: linear-gradient(160deg, #9f1d2b, #3b0a12 70%);
+        padding: 32px 40px;
+      }
+      .window {
+        max-width: 1200px;
+        margin: 0 auto;
+        border-radius: 28px;
+        overflow: hidden;
+        background: linear-gradient(180deg, #f9e9ea 0%, #ecdfdf 100%);
+        box-shadow: 0 30px 80px rgb(20 0 4 / 0.45);
+      }
+      .bar {
+        height: 64px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-bottom: 1px solid var(--line);
+      }
+      .omnibox {
+        width: min(540px, 70%);
+        height: 40px;
+        border-radius: 12px;
+        background: var(--fill-2);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 14px;
+        font: 15px ui-monospace, "SF Mono", Menlo, monospace;
+      }
+      .omnibox span { color: var(--ink-3); font-size: 13px; font-family: -apple-system, "PingFang SC", sans-serif; }
+      main {
+        max-width: 680px;
+        margin: 0 auto;
+        padding: 40px 20px 64px;
+        display: grid;
+        gap: 32px;
+      }
+      header.page { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 0 4px; }
+      header.page h1 { margin: 0; font-size: 22px; }
+      header.page p { margin: 6px 0 0; font-size: 14px; color: var(--ink-2); line-height: 1.6; }
+      .btn {
+        height: 36px;
+        padding: 0 14px;
+        border-radius: 11px;
+        border: 0;
+        font: inherit;
+        font-size: 14px;
+        font-weight: 500;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      .btn.primary {
+        color: var(--on-accent);
+        background: linear-gradient(180deg, var(--button-top), var(--button-bottom));
+        box-shadow: 0 6px 16px rgb(181 25 37 / 0.28);
+      }
+      .btn.quiet { background: var(--fill-2); color: var(--ink); height: 30px; font-size: 13px; padding: 0 10px; border-radius: 9px; }
+      section { display: grid; gap: 12px; }
+      .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 4px; }
+      .section-head h2 { margin: 0; font-size: 16px; }
+      .section-head h2 small { margin-left: 6px; font-size: 13px; font-weight: 400; color: var(--ink-3); }
+      .panel {
+        background: rgb(255 255 255 / 0.62);
+        border: 1px solid rgb(255 255 255 / 0.7);
+        box-shadow: 0 1px 2px rgb(42 21 25 / 0.06);
+        border-radius: 16px;
+      }
+      .grid2 { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+      /* 正在施工: the gold of 代码判定's judging, its sheen slow. */
+      .building {
+        position: relative;
+        overflow: hidden;
+        border-radius: 20px;
+        padding: 16px;
+        background: var(--gold-soft);
+        border: 1px solid rgb(183 134 47 / 0.22);
+        display: grid;
+        gap: 10px;
+        align-content: start;
+      }
+      .building::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: linear-gradient(90deg, transparent 0%, transparent 36%, rgb(255 236 190 / 0.6) 50%, transparent 64%, transparent 100%);
+        background-size: 220% 100%;
+        animation: sheen 3s ease-in-out infinite;
+      }
+      @keyframes sheen { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+      @media (prefers-reduced-motion: reduce) { .building::after { animation: none; background: none; } }
+      .tag {
+        justify-self: start;
+        height: 22px;
+        padding: 0 8px;
+        border-radius: 7px;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--gold-ink);
+        background: rgb(237 203 134 / 0.5);
+      }
+      .building h3 { margin: 0; font-size: 18px; }
+      .building p.detail { margin: 0; font-size: 14px; color: var(--ink-2); line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+      .stages { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+      .stage { display: grid; gap: 4px; font-size: 11px; color: var(--ink-3); }
+      .stage i { display: block; height: 6px; border-radius: 3px; background: var(--fill-2); position: relative; overflow: hidden; }
+      .stage.done i { background: var(--gold-mark); }
+      .stage.now i { background: rgb(237 203 134 / 0.55); box-shadow: inset 0 0 0 1.5px var(--gold-mark); }
+      .stage.done, .stage.now { color: var(--gold-ink); font-weight: 500; }
+      .note { margin: 0; font-size: 13px; color: var(--ink); line-height: 1.5; }
+      .note .when { font-size: 12px; color: var(--ink-3); margin-left: 4px; }
+      .foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--ink-2); }
+      .vote {
+        height: 30px;
+        padding: 0 10px;
+        border-radius: 9px;
+        border: 0;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--ink);
+        background: var(--fill-2);
+        cursor: pointer;
+        position: relative;
+        z-index: 1;
+      }
+      .vote svg { width: 15px; height: 15px; }
+      .vote.on { color: var(--accent-ink); background: var(--accent-soft); }
+      .vote.on svg path { fill: currentColor; }
+      .building .vote { background: rgb(255 255 255 / 0.55); }
+      .building .vote.on { background: var(--accent-soft); }
+      /* 已完成: a changelog's line. */
+      .timeline { padding: 6px 16px; }
+      .done-row { display: grid; grid-template-columns: 14px 1fr auto; gap: 12px; padding: 12px 0; position: relative; }
+      .done-row + .done-row { border-top: 1px solid var(--line); }
+      .done-row .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ink-3); margin-top: 6px; position: relative; }
+      .done-row .dot::before { content: ""; position: absolute; left: 4px; top: 9px; width: 1px; height: 52px; background: var(--line); }
+      .done-row:last-child .dot::before { display: none; }
+      .done-row time { font-size: 12px; color: var(--ink-3); }
+      .done-row strong { display: block; font-size: 15px; font-weight: 500; margin-top: 1px; }
+      .done-row span.line { font-size: 13px; color: var(--ink-2); }
+      .done-row .count { font-size: 12px; color: var(--ink-3); display: inline-flex; gap: 4px; align-items: center; margin-top: 4px; }
+      .done-row .count svg { width: 13px; height: 13px; }
+      .more { padding: 10px 4px 0; font-size: 13px; color: var(--ink-2); }
+      .seg { display: inline-flex; padding: 3px; border-radius: 11px; background: var(--fill-2); }
+      .seg button { height: 26px; padding: 0 12px; border: 0; border-radius: 8px; font: inherit; font-size: 13px; color: var(--ink-2); background: transparent; }
+      .seg button.on { background: #fff; color: var(--ink); font-weight: 500; box-shadow: 0 1px 3px rgb(42 21 25 / 0.12); }
+      .request { padding: 14px; display: grid; gap: 6px; align-content: start; }
+      .request h3 { margin: 0; font-size: 15px; }
+      .request .text { margin: 0; font-size: 13px; color: var(--ink-2); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+      .request .foot { color: var(--ink-3); margin-top: 4px; }
+      .declined { padding: 0 4px; font-size: 13px; color: var(--ink-3); }
+      .label { padding: 0 4px; font-size: 12px; color: var(--ink-3); }
+      @media (max-width: 640px) {
+        body { padding: 0; background: none; }
+        .window { border-radius: 0; box-shadow: none; min-height: 100vh; }
+        .bar { height: 56px; }
+        .omnibox { width: calc(100% - 120px); }
+        main { padding: 24px 16px 48px; gap: 28px; }
+        header.page { flex-direction: column; align-items: stretch; }
+        header.page .btn { justify-self: start; align-self: flex-start; }
+        .grid2 { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="thumb" viewBox="0 0 24 24">
+        <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z" />
+      </symbol>
+    </svg>
+    <div class="window">
+      <div class="bar"><div class="omnibox">/roadmap <span>施工中</span></div></div>
+      <main>
+        <header class="page">
+          <div>
+            <h1>施工中</h1>
+            <p>站长正在做的、做完了的，还有大家想要的。想要哪个，就给它点个赞。</p>
+          </div>
+          <button class="btn primary" type="button">提一个需求</button>
+        </header>
+
+        <section>
+          <div class="section-head"><h2>正在施工<small>2 件</small></h2></div>
+          <div class="grid2">
+            <article class="building">
+              <span class="tag">施工中 · 开发</span>
+              <h3>代码判定红包的判定记录</h3>
+              <p class="detail">按时间线看每一次提交和判定器的判定，按人看一个人的全部。</p>
+              <div class="stages">
+                <span class="stage done"><i></i>设计</span>
+                <span class="stage now"><i></i>开发</span>
+                <span class="stage"><i></i>测试</span>
+                <span class="stage"><i></i>上线</span>
+              </div>
+              <p class="note">“按人的列表在加一张汇总表，挑战名单也一起变快。”<span class="when">2 小时前</span></p>
+              <div class="foot">
+                <span>开工 3 天 · @小明 提的</span>
+                <button class="vote on" type="button"><svg aria-hidden="true"><use href="#thumb" /></svg>27</button>
+              </div>
+            </article>
+            <article class="building">
+              <span class="tag">施工中 · 设计</span>
+              <h3>多次领奖的代码判定红包</h3>
+              <p class="detail">一个人能领好几次，判定器决定还能不能接着玩，红包结束时一起结算。</p>
+              <div class="stages">
+                <span class="stage now"><i></i>设计</span>
+                <span class="stage"><i></i>开发</span>
+                <span class="stage"><i></i>测试</span>
+                <span class="stage"><i></i>上线</span>
+              </div>
+              <p class="note">“在想负数格子怎么算才不会把钱扣回去。”<span class="when">昨天</span></p>
+              <div class="foot">
+                <span>开工 1 天</span>
+                <button class="vote" type="button"><svg aria-hidden="true"><use href="#thumb" /></svg>41</button>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section>
+          <div class="section-head"><h2>已完成</h2></div>
+          <div class="panel timeline">
+            <div class="done-row">
+              <span class="dot"></span>
+              <div><time>10月30日</time><strong>附带网页人人都能用</strong><span class="line">不用开通 PLUS，打开前先确认风险。</span></div>
+              <span class="count"><svg aria-hidden="true"><use href="#thumb" /></svg>18</span>
+            </div>
+            <div class="done-row">
+              <span class="dot"></span>
+              <div><time>10月29日</time><strong>定时开放</strong><span class="line">草稿定好时间，到点自己开放。</span></div>
+              <span class="count"><svg aria-hidden="true"><use href="#thumb" /></svg>33</span>
+            </div>
+            <div class="done-row">
+              <span class="dot"></span>
+              <div><time>10月29日</time><strong>判定器广场</strong><span class="line">挑一个判定器，填几项参数就能发红包。</span></div>
+              <span class="count"><svg aria-hidden="true"><use href="#thumb" /></svg>52</span>
+            </div>
+            <div class="done-row">
+              <span class="dot"></span>
+              <div><time>10月24日</time><strong>排行榜</strong><span class="line">领到的、发出的，前 100 名。</span></div>
+              <span class="count"><svg aria-hidden="true"><use href="#thumb" /></svg>12</span>
+            </div>
+            <div class="done-row">
+              <span class="dot"></span>
+              <div><time>10月22日</time><strong>开奖证明</strong><span class="line">每一步怎么抽的，谁都能自己重算一遍。</span></div>
+              <span class="count"><svg aria-hidden="true"><use href="#thumb" /></svg>9</span>
+            </div>
+          </div>
+          <div class="more">全部 14 件 ›</div>
+        </section>
+
+        <section>
+          <div class="section-head">
+            <h2>功能请求</h2>
+            <div class="seg"><button class="on" type="button">最热</button><button type="button">最新</button></div>
+          </div>
+          <div class="grid2">
+            <article class="panel request">
+              <h3>红包记录能按金额排序</h3>
+              <p class="text">发过的红包多了，想看看哪个发得最多，现在只能按时间翻。</p>
+              <div class="foot"><span>@小红 · 3 天前</span><button class="vote on" type="button"><svg aria-hidden="true"><use href="#thumb" /></svg>24</button></div>
+            </article>
+            <article class="panel request">
+              <h3>深色模式</h3>
+              <p class="text">晚上打开太亮了。</p>
+              <div class="foot"><span>@小刚 · 5 天前</span><button class="vote" type="button"><svg aria-hidden="true"><use href="#thumb" /></svg>19</button></div>
+            </article>
+            <article class="panel request">
+              <h3>红包能换一张封面图</h3>
+              <p class="text">节日的时候想用自己的图，比如中秋的月亮。</p>
+              <div class="foot"><span>@小明 · 1 周前</span><button class="vote" type="button"><svg aria-hidden="true"><use href="#thumb" /></svg>11</button></div>
+            </article>
+            <article class="panel request">
+              <h3>领到以后能在帖子里自动回复</h3>
+              <p class="text">领完了自动在论坛帖子下面回一句谢谢。</p>
+              <div class="foot"><span>@小红 · 2 周前</span><button class="vote" type="button"><svg aria-hidden="true"><use href="#thumb" /></svg>6</button></div>
+            </article>
+          </div>
+          <div class="declined">不做的 2 件 ›</div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
