@@ -7,7 +7,7 @@
 // behind a passing blur, the windows' widths moving. Full screen, the
 // page's window covers the whole page, the 红包 window still under it.
 import { useLocation, useRouter } from "@tanstack/react-router";
-import { atom, useAtom, useAtomValue, useSetAtom } from "jotai";
+import { atom, useAtom, useAtomValue, useSetAtom, useStore } from "jotai";
 import {
   ArrowUpRight,
   ChevronUp,
@@ -18,7 +18,6 @@ import {
   PanelRightClose,
   PanelRightOpen,
   RotateCw,
-  ShieldAlert,
   X,
 } from "lucide-react";
 import {
@@ -46,6 +45,7 @@ import { useCurrentActivityId } from "../../lib/activity-route";
 import { useCachedQueryData } from "../../lib/cached-query";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { closeOverlay } from "../../lib/overlay";
+import { askPageRisk, siteAccepted } from "../../lib/page-risk";
 import { useIdentity } from "../../lib/session";
 import { windowDialogsAtom } from "../../lib/store";
 import { useOmniboxMode } from "../omnibox/state";
@@ -64,8 +64,6 @@ type Held = {
   url: string | null;
   /** The 红包 author's LINUX DO username: whose page this is. */
   author: string | null;
-  /** Its notice closed: for this 红包 until the site is reloaded. */
-  noticeClosed: boolean;
   open: boolean;
   loaded: boolean;
   mainWidth: number;
@@ -74,7 +72,6 @@ const heldAtom = atom<Held>({
   forId: null,
   url: null,
   author: null,
-  noticeClosed: false,
   open: false,
   loaded: false,
   mainWidth: 460,
@@ -209,9 +206,6 @@ function useCurrentPage(activityId: string | null) {
 const fromLine = (author: string | null) =>
   author ? `来自 @${author} 的红包` : "红包作者附带的网页";
 
-/** The 站长's LINUX DO username: whom to tell about a page that breaks the rules. */
-const OWNER = "lafish";
-
 /** The page's mark wherever it is named: a globe on the 红包's red. */
 function PageMark() {
   return (
@@ -221,71 +215,6 @@ function PageMark() {
     >
       <Globe className="size-4" />
     </span>
-  );
-}
-
-/**
- * Under the title bar (docs/attached-page-design.md §2.5, the user's
- * words, 2026-10-26): not this site's page, what it sees, no dealings in
- * it, and whom to tell. It can be closed for a while: it is back on the
- * site's next load, or on another 红包's page.
- */
-function PageNotice({ onClose }: { onClose: () => void }) {
-  return (
-    <div className="flex shrink-0 items-start gap-2 border-line border-b bg-warning-soft py-2 pr-2 pl-4 text-xs leading-5 text-warning">
-      <ShieldAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-      <p className="min-w-0 flex-1">
-        不是红包站的网页，它能看到你的 IP
-        和浏览器信息。不要在里面付款、转账或做任何交易；发现违规推广，请联系站长{" "}
-        <a
-          href={`https://linux.do/u/${OWNER}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="font-medium underline underline-offset-2"
-        >
-          @{OWNER}
-        </a>
-        。
-      </p>
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label="关闭提醒"
-        title="关闭提醒"
-        className="-my-0.5 grid size-6 shrink-0 place-items-center rounded-full transition-colors hover:bg-warning/10"
-      >
-        <X className="size-3.5" aria-hidden="true" />
-      </button>
-    </div>
-  );
-}
-
-/**
- * The notice where it goes, until closed: it folds away, and opens again
- * where it is shown anew (the sheet pulled up).
- */
-function NoticeSlot({ shown = true }: { shown?: boolean }) {
-  const [held, setHeld] = useAtom(heldAtom);
-  const reduced = useReducedMotionPref();
-  return (
-    <AnimatePresence initial={false}>
-      {shown && !held.noticeClosed && (
-        <motion.div
-          key="notice"
-          className="shrink-0 overflow-hidden"
-          initial={{ height: 0, opacity: 0 }}
-          animate={{ height: "auto", opacity: 1 }}
-          exit={{ height: 0, opacity: 0 }}
-          transition={{ duration: reduced ? 0 : 0.26, ease }}
-        >
-          <PageNotice
-            onClose={() =>
-              setHeld((current) => ({ ...current, noticeClosed: true }))
-            }
-          />
-        </motion.div>
-      )}
-    </AnimatePresence>
   );
 }
 
@@ -448,10 +377,25 @@ const PAGE_FEATURES = [
  */
 function Page({ url, active }: { url: string; active: boolean }) {
   const reload = useAtomValue(reloadAtom);
-  const [{ loaded }, setHeld] = useAtom(heldAtom);
+  const [{ loaded, author }, setHeld] = useAtom(heldAtom);
+  const store = useStore();
+  const request = useSetAtom(requestAtom);
   useEffect(() => {
-    if (active && !loaded) setHeld((current) => ({ ...current, loaded: true }));
-  }, [active, loaded, setHeld]);
+    if (!active || loaded) return;
+    const site = hostOf(url);
+    if (siteAccepted(site)) {
+      setHeld((current) => ({ ...current, loaded: true }));
+      return;
+    }
+    // 打开附带网页？ (§2.5) over the 红包 window — on a phone the sheet
+    // steps aside for it — answered whenever it comes, while this page is
+    // still the one held; then back where it was asked: open, or not.
+    void askPageRisk(store, { site, author }).then((open) => {
+      if (store.get(heldAtom).url !== url) return;
+      if (open) setHeld((current) => ({ ...current, loaded: true }));
+      request((current) => ({ n: current.n + 1, open }));
+    });
+  }, [active, loaded, url, author, setHeld, store, request]);
   if (!loaded) return null;
   return <PageFrame key={`${url}-${reload}`} url={url} />;
 }
@@ -748,7 +692,6 @@ function SideWindow({
                   </BarButton>
                 </Fold>
               </TitleBar>
-              <NoticeSlot />
               {/* While the line is dragged the page takes no pointer: over
                 its frame the moves would go to it, not to the line. */}
               <div
@@ -1147,7 +1090,6 @@ function Sheet({
                     if (!dragged.current) go(up ? "peek" : "full");
                   }}
                 />
-                <NoticeSlot shown={up} />
                 <div className="relative min-h-0 flex-1 bg-white/60 select-text">
                   <Page url={url} active={up} />
                 </div>
@@ -1190,7 +1132,6 @@ export function AttachedPageLayout({ children }: { children: ReactNode }) {
             forId: activityId,
             url: pageUrl,
             author: pageAuthor,
-            noticeClosed: false,
             open:
               pageUrl !== null && wide && rememberedOpen().includes(activityId),
             loaded: false,

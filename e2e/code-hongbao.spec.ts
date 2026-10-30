@@ -3353,6 +3353,13 @@ test.describe("附带网页 SDK（judge-page §3、§11.8）", () => {
     // Here the SDK comes from this machine's dev server, which Chrome keeps
     // from a public page unless allowed (hb.lafi.sh is not local).
     await page.context().grantPermissions(["local-network-access"]);
+    // 打开附带网页？ answered before (attached-page §2.5).
+    await page.addInitScript(() =>
+      localStorage.setItem(
+        "hb.page-sites",
+        JSON.stringify(["game.example.com"]),
+      ),
+    );
     await mockSession(page, user);
     const sockets = await mockLive(page);
     const state = await mockCodeHongbao(page);

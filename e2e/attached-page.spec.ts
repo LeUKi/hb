@@ -49,9 +49,22 @@ function activity(page?: { url: string; host: string }, beforeInfo = note) {
 /** Who the page was told sent it (the Referer of each load). */
 let referrers: (string | undefined)[] = [];
 
-async function mock(page: Page, attached = true, beforeInfo = note) {
+async function mock(
+  page: Page,
+  attached = true,
+  beforeInfo = note,
+  accepted = true,
+) {
   const loads: string[] = [];
   referrers = [];
+  // 打开附带网页？ (§2.5) answered before, unless a test asks it.
+  if (accepted)
+    await page.addInitScript(() =>
+      localStorage.setItem(
+        "hb.page-sites",
+        JSON.stringify(["puzzle.example.com"]),
+      ),
+    );
   await page.route(`**/api/activities/${id}**`, (route) => {
     const rest = new URL(route.request().url()).pathname.slice(
       `/api/activities/${id}`.length,
@@ -94,9 +107,6 @@ const frameWidth = (page: Page) =>
   page
     .locator(".app-window-frame")
     .evaluate((element) => element.getBoundingClientRect().width);
-
-const notice =
-  "不是红包站的网页，它能看到你的 IP 和浏览器信息。不要在里面付款、转账或做任何交易；发现违规推广，请联系站长 @lafish。";
 
 const frameHeight = (page: Page) =>
   page
@@ -178,13 +188,7 @@ test.describe("附带网页", () => {
     // The 红包 window narrows beside it; the page loads, nothing asked,
     // the title bar saying whose it is and what it sees.
     await expect.poll(() => frameWidth(page)).toBeCloseTo(460, 0);
-    await expect(page.getByText(notice)).toBeVisible();
     await expect(page.getByRole("separator")).toBeVisible();
-    // Whose 红包 it comes from; the 站长 to tell, at his LINUX DO page.
-    await expect(page.getByRole("link", { name: "@lafish" })).toHaveAttribute(
-      "href",
-      "https://linux.do/u/lafish",
-    );
     // As tall as the 红包 window's 顶栏, in line with it.
     const bar = await page.locator("header.window-bar").boundingBox();
     const title = await page
@@ -263,23 +267,48 @@ test.describe("附带网页", () => {
     expect(loads.length).toBe(2);
   });
 
-  test("提醒条可以关掉，只到刷新页面为止", async ({ page }) => {
+  test("第一次打开某个网站先确认（§2.5）：取消就不加载、窗口收起；打开后记住这个网站，刷新再打开不问", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await mockSession(page, viewer);
-    await mock(page);
+    const loads = await mock(page, true, note, false);
     await openApp(page, path);
-    await page.locator("#page-button").click();
-    await expect(page.getByText(notice)).toBeVisible();
-    await page.getByRole("button", { name: "关闭提醒" }).click();
-    await expect(page.getByText(notice)).toHaveCount(0);
-    // Hidden and shown again on this 红包: still closed.
-    await page.locator("#page-button").click();
-    await page.locator("#page-button").click();
-    await expect(page.getByText("来自 @xiaoman 的红包")).toBeVisible();
-    await expect(page.getByText(notice)).toHaveCount(0);
-    // The site loaded again: back (the page window remembered open).
+    const toggle = page.locator("#page-button");
+    await toggle.click();
+    const ask = page.getByRole("dialog", { name: "打开附带网页？" });
+    await expect(ask).toBeVisible();
+    await expect(ask).toContainText(
+      "puzzle.example.com 不是红包站的网页，是 @xiaoman 附带的。它能看到你的 IP 和浏览器信息。不要在里面付款、转账或做任何交易；发现违规推广，请联系站长 @lafish。",
+    );
+    await expect(ask).toContainText("确认后，这个网站下次直接打开。");
+    await expect(ask.getByRole("link", { name: "@lafish" })).toHaveAttribute(
+      "href",
+      "https://linux.do/u/lafish",
+    );
+    expect(loads).toEqual([]);
+    await ask.getByRole("button", { name: "取消" }).click();
+    await expect(ask).toBeHidden();
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(loads).toEqual([]);
+    // Asked again; 打开 loads it.
+    await toggle.click();
+    await ask.getByRole("button", { name: "打开" }).click();
+    await expect(
+      page
+        .frameLocator("iframe[title='puzzle.example.com 的网页']")
+        .getByText("今日第 3 题"),
+    ).toBeVisible();
+    expect(loads).toEqual([pageUrl]);
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    // Remembered: the window opens again as it was left, unasked.
     await page.reload();
-    await expect(page.getByText(notice)).toBeVisible();
+    await expect(
+      page
+        .frameLocator("iframe[title='puzzle.example.com 的网页']")
+        .getByText("今日第 3 题"),
+    ).toBeVisible();
+    await expect(ask).toHaveCount(0);
   });
 
   test("宽屏：两扇窗合起来最宽 1680", async ({ page }) => {
@@ -349,11 +378,10 @@ test.describe("附带网页", () => {
     expect(await moves).toEqual([
       `${before.x},${before.y},${before.width},${before.height}`,
     ]);
-    // To the page's edges, its title bar and notice still on top.
+    // To the page's edges, its title bar still on top.
     await expect.poll(box).toEqual({ left: 0, right: 1440, bottom: 900 });
     const title = await page.getByText("来自 @xiaoman 的红包").boundingBox();
     expect(title?.y ?? 99).toBeLessThan(32);
-    await expect(page.getByText(notice)).toBeVisible();
     // Only what is for the page itself: 刷新 and 退出全屏.
     await expect(page.getByRole("button", { name: "刷新" })).toBeVisible();
     for (const name of ["在新标签页打开", "收窄", "放宽", "隐藏（不会卸载）"])
@@ -474,6 +502,33 @@ test.describe("附带网页", () => {
     await expect(page.getByRole("button", { name: "打开谜题" })).toHaveCount(0);
   });
 
+  test("手机：第一次拉起抽屉先确认，抽屉让开；打开后抽屉拉满再加载，取消就回到横栏", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await mockSession(page, viewer);
+    const loads = await mock(page, true, note, false);
+    await openApp(page, path);
+    const bar = page.getByRole("button", {
+      name: "上拉查看附带网页：puzzle.example.com",
+    });
+    await bar.click();
+    const ask = page.getByRole("dialog", { name: "打开附带网页？" });
+    await expect(ask).toBeVisible();
+    await ask.getByRole("button", { name: "取消" }).click();
+    await expect(bar).toBeVisible();
+    expect(loads).toEqual([]);
+    await bar.click();
+    await ask.getByRole("button", { name: "打开" }).click();
+    await expect(
+      page
+        .frameLocator("iframe[title='puzzle.example.com 的网页']")
+        .getByText("今日第 3 题"),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "收起" })).toBeVisible();
+    expect(loads).toEqual([pageUrl]);
+  });
+
   test("手机：点底部横栏拉满抽屉才加载，收起回到横栏", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await mockSession(page, viewer);
@@ -487,7 +542,6 @@ test.describe("附带网页", () => {
     const elsewhere = page.getByRole("button", { name: "在新标签页打开" });
     await expect(elsewhere).toHaveCount(0);
     await bar.click();
-    await expect(page.getByText(notice)).toBeVisible();
     await expect(
       page
         .frameLocator("iframe[title='puzzle.example.com 的网页']")
@@ -514,7 +568,6 @@ test.describe("附带网页", () => {
     expect(loads).toEqual([pageUrl]);
     // The button under 分享 pulls it up too.
     await page.locator("#page-button").click();
-    await expect(page.getByText(notice)).toBeVisible();
   });
 
   test("手机：弹窗打开时抽屉让到屏幕下面，红包窗口铺到底、压暗盖满；关上弹窗抽屉回来", async ({
@@ -566,7 +619,6 @@ test.describe("附带网页", () => {
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "打开谜题" }).click();
     await expect(dialog).toHaveCount(0);
-    await expect(page.getByText(notice)).toBeVisible();
     await expect.poll(() => loads).toEqual([pageUrl]);
   });
 });
