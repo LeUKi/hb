@@ -661,7 +661,8 @@ test.describe("判定器带的附带网页（judge-page §4、§11.9）", () => 
           available: true,
           availableMinor: 1_000_000,
           code: { deploysLeft: 7, deployLimit: 10 },
-          ...(user.balancePlus ? { page: true } : {}),
+          // Everyone's while the switch is on (2026-10-30).
+          page: true,
           pageEnabled: true,
         },
       }),
@@ -720,7 +721,7 @@ test.describe("判定器带的附带网页（judge-page §4、§11.9）", () => 
     await expect(page.getByText(/^附带网页：/)).toBeVisible();
   });
 
-  test("没开通 PLUS：挑了带网页的判定器，更多设置里替你填好、只读、没有 PLUS 标签；删掉能加回来；草稿带上它", async ({
+  test("没开通 PLUS 也一样（附带网页人人都能用）：替你填好、能改，没有 PLUS 标签；清空就不带", async ({
     page,
   }) => {
     const asked = await mockCarried(page, { ...viewer, balance: true });
@@ -729,28 +730,15 @@ test.describe("判定器带的附带网页（judge-page §4、§11.9）", () => 
     const sheet = page.getByRole("dialog", { name: "更多设置" });
     const field = sheet.locator("#hb-page");
     await expect(field).toHaveValue(carried);
-    await expect(field).toHaveAttribute("readonly", "");
+    await expect(field).not.toHaveAttribute("readonly", "");
     await expect(
-      sheet.getByText("判定器带的网页，可以删掉。开放后不能改。", {
-        exact: false,
-      }),
+      sheet.getByText(
+        "判定器带的网页，可以改成别的，也可以删掉。开放后不能改。",
+        { exact: false },
+      ),
     ).toBeVisible();
     await expect(sheet.getByText("PLUS", { exact: true })).toHaveCount(0);
-    await sheet.getByRole("button", { name: "删掉" }).click();
-    const back = sheet.getByRole("button", { name: "加回判定器带的网页" });
-    await expect(back).toBeVisible();
-    await back.click();
-    await expect(field).toHaveValue(carried);
-    await sheet.getByRole("button", { name: "完成" }).click();
-    expect((await saveDraft(page, 1, asked)).pageUrl).toBe(carried);
-  });
-
-  test("没开通 PLUS：删掉判定器带的网页，草稿就不带", async ({ page }) => {
-    const asked = await mockCarried(page, { ...viewer, balance: true });
-    await pickGuess(page);
-    await page.getByRole("button", { name: /更多设置/ }).click();
-    const sheet = page.getByRole("dialog", { name: "更多设置" });
-    await sheet.getByRole("button", { name: "删掉" }).click();
+    await field.fill("");
     await sheet.getByRole("button", { name: "完成" }).click();
     expect(await saveDraft(page, 1, asked)).not.toHaveProperty("pageUrl");
   });

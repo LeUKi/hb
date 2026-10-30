@@ -1,4 +1,3 @@
-import { PlusBadge } from "../balance/plus";
 import { Page, PageHeader, PageSection, Panel } from "../page/page";
 import { Code } from "../ui/code";
 import { Block, Fields } from "./help-api-view";
@@ -121,12 +120,7 @@ export function HelpPageView() {
   return (
     <Page>
       <PageHeader
-        title={
-          <span className="inline-flex items-center gap-2">
-            附带网页 · 接入说明
-            <PlusBadge />
-          </span>
-        }
+        title="附带网页 · 接入说明"
         description="发红包时可以附带一个自己的网页，显示在红包页旁边（手机上在底部抽屉里）。按下面改一改你的网站，让它能在红包页里显示、沿用网站自己的登录。"
       />
       <PageSection

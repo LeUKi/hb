@@ -612,7 +612,7 @@ test.describe("发红包", () => {
       await expect(page.locator(`#${id}`)).toHaveCount(1);
   });
 
-  test("更多设置：不能附带网页的人看不到这一项，存草稿不带", async ({
+  test("更多设置：附带网页的开关关着时看不到这一项，存草稿不带", async ({
     page,
   }) => {
     await mockSession(page, viewer);

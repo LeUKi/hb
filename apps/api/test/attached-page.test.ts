@@ -105,16 +105,14 @@ describe("附带网页", () => {
     ).toBeUndefined();
   });
 
-  it("is refused without PLUS, while the switch is off, and for an address outside the rules", async () => {
+  it("is anyone's (since 2026-10-30), refused while the switch is off and for an address outside the rules", async () => {
     const other = await actor();
     await give(admin, other, "5.00");
-    await rejects(
-      draft(other, withPage("https://example.com/")),
-      "PAGE_NOT_ALLOWED",
-    );
+    const theirs = await draft(other, withPage("https://example.com/"));
+    expect(theirs.config.pageUrl).toBe("https://example.com/");
     await settings({ page_enabled: 0 });
     await rejects(
-      draft(author, withPage("https://example.com/")),
+      draft(other, withPage("https://example.com/")),
       "PAGE_PAUSED",
     );
     await settings({ page_enabled: 1 });
@@ -124,15 +122,13 @@ describe("附带网页", () => {
       code: "INVALID_ACTIVITY",
       message: "只能用 https:// 开头的地址",
     });
-    // Adding one to a draft later asks the same.
+    // Added to a draft later, by anyone, as long as the switch is on.
     const plainDraft = await draft(other, withPage());
-    await rejects(
-      updateActivity(bindings, plainDraft.id, other.id, {
-        version: plainDraft.version,
-        activity: withPage("https://example.com/"),
-      }),
-      "PAGE_NOT_ALLOWED",
-    );
+    const added = await updateActivity(bindings, plainDraft.id, other.id, {
+      version: plainDraft.version,
+      activity: withPage("https://example.com/b"),
+    });
+    expect(added.config.pageUrl).toBe("https://example.com/b");
   });
 
   it("is fixed once opened: the same page is kept, another refused", async () => {
@@ -242,18 +238,15 @@ describe("附带网页", () => {
     expect(await cardOf(attached.id)).not.toHaveProperty("page");
   });
 
-  it("is offered to the form for PLUS while the switch is on", async () => {
-    const offer = () =>
-      call<{ page?: true }>("GET", "/me/balance/hongbao", author);
-    expect((await offer()).body.page).toBe(true);
-    await settings({ page_enabled: 0 });
-    expect((await offer()).body.page).toBeUndefined();
-    await settings({ page_enabled: 1 });
+  it("is offered to the form for anyone while the switch is on", async () => {
     const other = await actor();
-    expect(
-      (await call<{ page?: true }>("GET", "/me/balance/hongbao", other)).body
-        .page,
-    ).toBeUndefined();
+    const offer = (user: Actor) =>
+      call<{ page?: true }>("GET", "/me/balance/hongbao", user);
+    expect((await offer(author)).body.page).toBe(true);
+    expect((await offer(other)).body.page).toBe(true);
+    await settings({ page_enabled: 0 });
+    expect((await offer(author)).body.page).toBeUndefined();
+    expect((await offer(other)).body.page).toBeUndefined();
   });
 });
 
@@ -306,7 +299,7 @@ describe("附带网页: may this site frame it", () => {
     ).toBe("no");
   });
 
-  it("asks the page for those who may set one, and says unknown when it cannot", async () => {
+  it("asks the page for anyone signed in while the switch is on, and says unknown when it cannot", async () => {
     const answers: (Response | Error)[] = [
       new Response("<p>no</p>", {
         headers: {
@@ -345,8 +338,14 @@ describe("附带网页: may this site frame it", () => {
       "https://example.com/down",
     ]);
     expect((await check(author, "http://example.com/")).status).toBe(400);
+    // Anyone may ask; with the switch off, nobody (and nothing is fetched).
+    answers.push(new Response("<p>yes</p>"));
     const other = await actor();
-    expect((await check(other, "https://example.com/")).status).toBe(403);
-    expect(asked).toHaveLength(3);
+    expect((await check(other, "https://example.com/other")).body).toEqual({
+      embeddable: "yes",
+    });
+    await settings({ page_enabled: 0 });
+    expect((await check(other, "https://example.com/off")).status).toBe(409);
+    expect(asked).toHaveLength(4);
   });
 });

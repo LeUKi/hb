@@ -269,7 +269,7 @@ export interface Meta {
   description?: string;
   /**
    * 判定器带的附带网页（https，规则同附带网页，最多 500 个字）：用它发红包时
-   * 替发红包的人填好，没开通 PLUS 也能用。
+   * 替发红包的人填好。
    */
   page?: string;
 }

@@ -30,7 +30,7 @@ import {
 import { resendClaimPayment } from "../payments/resend";
 import { activityObject, creationObject } from "../runtime/objects";
 import { assertExactOrigin } from "../security/http";
-import { attachedPageAccess, checkAttachedPage } from "./attached-page";
+import { attachedPagesOn, checkAttachedPage } from "./attached-page";
 import {
   getClaimDetail,
   getCurrentClaim,
@@ -512,15 +512,11 @@ export const activityRoutes = new Hono<ApiContext>()
   // 领取范围's 指定的人 (docs/claim-scope-design.md §5): someone by name, as
   // the form adds them; null when they have not been here.
   // 附带网页 (docs/attached-page-design.md §2.1): may this site show the
-  // page in a frame, by its own headers; for those who may set one.
+  // page in a frame, by its own headers; signed in, while the switch is on.
   .get("/me/attached-page/check", async (c) => {
-    const session = await requireAuth(c);
-    if (!(await attachedPageAccess(c.env, session.user.id)).allowed)
-      throw new ActivityError(
-        403,
-        "PAGE_NOT_ALLOWED",
-        "开通🐟额 PLUS 才能附带网页。",
-      );
+    await requireAuth(c);
+    if (!(await attachedPagesOn(c.env)))
+      throw new ActivityError(409, "PAGE_PAUSED", "附带网页暂时关闭。");
     const url = normalizePageUrl(c.req.query("url") ?? "");
     if (!url) throw new ActivityError(400, "INVALID_PAGE_URL", "地址无效");
     c.header("Cache-Control", "no-store");

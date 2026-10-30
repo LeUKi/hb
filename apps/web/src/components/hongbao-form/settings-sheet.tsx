@@ -3,7 +3,6 @@ import { BookOpen, ChevronRight, X } from "lucide-react";
 import { type ReactNode, useId, useRef, useState } from "react";
 import { useAttachedPageCheck } from "../../lib/activities";
 import { openingLabel } from "../../lib/roster-time";
-import { PlusBadge } from "../balance/plus";
 import { WindowDialog } from "../shell/window-dialog";
 import { Button } from "../ui/button";
 import { ChoiceCards, Field, Switch, TextInput } from "../ui/field";
@@ -160,12 +159,9 @@ export function SettingsSheet({
   /** An opened 红包's merchant (it keeps paying it). */
   merchantId?: string;
   listedLocked: boolean;
-  /** 附带网页 may be set: 🐟额 PLUS, its switch on. */
+  /** 附带网页 may be set: anyone, while its switch is on. */
   pageOffered: boolean;
-  /**
-   * The page its 判定器 carries, its switch on (judge-page §11.9): anyone
-   * may keep or delete it; only who may set one changes it.
-   */
+  /** The page its 判定器 carries (judge-page §11.9): said so under it. */
   pageCarried?: string | null;
   /** The 站长 stopped this 红包's 附带网页. */
   pageStopped: boolean;
@@ -488,17 +484,12 @@ export function SettingsSheet({
                 />
               </Field>
             </Setting>
-            {/* 附带网页 (docs/attached-page-design.md §2.1): for those who
-                may set one, a draft that has one (to take it off), or the
-                one its 判定器 carries (judge-page §11.9). */}
-            {(pageOffered || form.page !== "" || pageCarried !== null) && (
+            {/* 附带网页 (docs/attached-page-design.md §2.1): anyone's while
+                its switch is on; with it off, a draft that has one may only
+                take it off. */}
+            {(pageOffered || form.page !== "") && (
               <Setting
                 title="附带网页"
-                badge={
-                  pageOffered || pageCarried === null ? (
-                    <PlusBadge />
-                  ) : undefined
-                }
                 action={
                   // In a new tab: the form stays as it is.
                   <a
@@ -524,7 +515,7 @@ export function SettingsSheet({
                         {opened
                           ? "开放后不能改。"
                           : pageCarried !== null && form.page === pageCarried
-                            ? `${pageOffered ? "判定器带的网页，可以改成别的，也可以删掉。" : "判定器带的网页，可以删掉。"}开放后不能改。`
+                            ? "判定器带的网页，可以改成别的，也可以删掉。开放后不能改。"
                             : "选填。红包页旁边会显示这个网页（手机上在底部），比如题目、规则或排行榜。开放后不能改。"}
                         说明里写{" "}
                         <code className="font-mono text-ink-2">
@@ -556,8 +547,8 @@ export function SettingsSheet({
                         setCheckedPage(page);
                       }}
                     />
-                  ) : form.page !== "" ? (
-                    // Not theirs to change: kept or deleted.
+                  ) : (
+                    // The switch off: kept or taken off, not changed.
                     <div className="flex items-center gap-2">
                       <TextInput
                         id="hb-page"
@@ -573,21 +564,6 @@ export function SettingsSheet({
                         删掉
                       </Button>
                     </div>
-                  ) : (
-                    pageCarried !== null && (
-                      // Its own words name it, not the field's label.
-                      <Button
-                        className="w-fit"
-                        onClick={() =>
-                          update((current) => ({
-                            ...current,
-                            page: pageCarried,
-                          }))
-                        }
-                      >
-                        加回判定器带的网页
-                      </Button>
-                    )
                   )}
                 </Field>
                 {/* Read from the page's own headers when the field is left:

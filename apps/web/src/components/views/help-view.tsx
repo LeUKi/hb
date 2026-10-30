@@ -10,7 +10,6 @@ import {
 } from "../../lib/commands";
 import { schemeLabels } from "../../lib/scheme";
 import { useSessionUser } from "../../lib/session";
-import { PlusBadge } from "../balance/plus";
 import { GateChip } from "../omnibox/suggestions";
 import { Page, PageHeader, PageSection, Panel } from "../page/page";
 import { CommandLink } from "../shell/command-link";
@@ -146,8 +145,8 @@ export function HelpView() {
           })}
         </Panel>
       </PageSection>
-      {/* The docs for senders (07 §12): 代码判定's for everyone (since
-          2026-10-28), 附带网页's for 🐟额 PLUS, who can use it. */}
+      {/* The docs for senders (07 §12): 代码判定's and 附带网页's, both
+          everyone's (since 2026-10-28 and 2026-10-30). */}
       <Panel as="ul" className="grid gap-0.5 p-1.5">
         <li>
           <Squircle radius={radius.row}>
@@ -185,26 +184,23 @@ export function HelpView() {
             </Link>
           </Squircle>
         </li>
-        {user?.balancePlus && (
-          <li>
-            <Squircle radius={radius.row}>
-              <Link
-                to="/help/page"
-                className="flex min-h-12 items-center gap-3 px-3 py-2 transition-colors hover:bg-fill-2"
-              >
-                <Globe className="size-[18px] shrink-0 text-ink-2" />
-                <span className="min-w-0 flex-1 truncate text-ink">
-                  附带网页 · 接入说明
-                </span>
-                <PlusBadge />
-                <ChevronRight
-                  className="size-4 shrink-0 text-ink-3"
-                  aria-hidden="true"
-                />
-              </Link>
-            </Squircle>
-          </li>
-        )}
+        <li>
+          <Squircle radius={radius.row}>
+            <Link
+              to="/help/page"
+              className="flex min-h-12 items-center gap-3 px-3 py-2 transition-colors hover:bg-fill-2"
+            >
+              <Globe className="size-[18px] shrink-0 text-ink-2" />
+              <span className="min-w-0 flex-1 truncate text-ink">
+                附带网页 · 接入说明
+              </span>
+              <ChevronRight
+                className="size-4 shrink-0 text-ink-3"
+                aria-hidden="true"
+              />
+            </Link>
+          </Squircle>
+        </li>
       </Panel>
       <PageSection title="常见问题">
         <Panel as="dl" className="grid px-4">

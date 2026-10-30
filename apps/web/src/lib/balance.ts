@@ -297,12 +297,9 @@ export type BalanceFunding = {
    * to deploy today, of 每人每天部署几次.
    */
   code?: { deploysLeft: number; deployLimit: number };
-  /** 附带网页 may be set (PLUS, its switch on; docs/attached-page-design.md). */
+  /** 附带网页 may be set: anyone, its switch on (docs/attached-page-design.md). */
   page?: true;
-  /**
-   * 附带网页's switch is on: the page a 判定器 carries may be kept by
-   * anyone (docs/judge-page-design.md §11.9).
-   */
+  /** The same switch (kept for forms from before it was everyone's). */
   pageEnabled?: true;
 };
 

@@ -1,11 +1,6 @@
 import type { JudgePage, SquareJudgeList } from "@hb/contracts";
 import { beforeEach, describe, expect, it } from "vitest";
-import {
-  createActivity,
-  getManagedActivity,
-  openActivity,
-  updateActivity,
-} from "../src/activities/service";
+import { createActivity, openActivity } from "../src/activities/service";
 import { app } from "../src/app";
 import { refreshJudgeStats, setMyJudgeListing } from "../src/judge/square";
 import {
@@ -106,7 +101,7 @@ describe("判定器带的附带网页", () => {
     );
   });
 
-  it("lets anyone give a 代码判定红包 the page its 判定器 carries; another page is still PLUS's", async () => {
+  it("lets anyone keep, change or drop the page its 判定器 carries (pages are everyone's since 2026-10-30)", async () => {
     const judge = await shared();
     const someone = await sender();
     const kept = await createActivity(bindings, someone.id, {
@@ -114,38 +109,11 @@ describe("判定器带的附带网页", () => {
       activity: { ...borrowed(judge.id), pageUrl: page },
     });
     expect(kept.config.pageUrl).toBe(page);
-    await rejects(
-      createActivity(bindings, someone.id, {
-        requestId: crypto.randomUUID(),
-        activity: { ...borrowed(judge.id), pageUrl: "https://example.com/" },
-      }),
-      "PAGE_NOT_ALLOWED",
-    );
-    // Deleted and put back on the draft: still the 判定器's.
-    const managed = await getManagedActivity(bindings, kept.id, someone.id);
-    const { pageUrl: _page, ...without } = managed.config;
-    const gone = await updateActivity(bindings, kept.id, someone.id, {
-      version: managed.version,
-      activity: { ...without, judge: borrowed(judge.id).judge },
+    const changed = await createActivity(bindings, someone.id, {
+      requestId: crypto.randomUUID(),
+      activity: { ...borrowed(judge.id), pageUrl: "https://example.com/" },
     });
-    expect(gone.config.pageUrl).toBeUndefined();
-    const back = await updateActivity(bindings, kept.id, someone.id, {
-      version: gone.version,
-      activity: { ...without, judge: borrowed(judge.id).judge, pageUrl: page },
-    });
-    expect(back.config.pageUrl).toBe(page);
-    // Its code changed to one that carries none: the page goes too.
-    await rejects(
-      updateActivity(bindings, back.id, someone.id, {
-        version: back.version,
-        activity: {
-          ...without,
-          pageUrl: page,
-          judge: { prompt: "输入 flag", code: JUDGE, tests: TESTS },
-        },
-      }),
-      "PAGE_NOT_ALLOWED",
-    );
+    expect(changed.config.pageUrl).toBe("https://example.com/");
     // While the switch is off, none is newly set, not even this one.
     await settings({ page_enabled: 0 });
     await rejects(

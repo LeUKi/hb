@@ -14,7 +14,7 @@ import {
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { validator } from "hono/validator";
-import { attachedPageOffered } from "../activities/attached-page";
+
 import { ActivityError } from "../activities/errors";
 import {
   getOptionalSession,
@@ -183,11 +183,10 @@ export const balanceRoutes = new Hono<ApiContext>()
   // while 🐟额红包 are on and there is something to send.
   .get("/me/balance/hongbao", async (c) => {
     const session = await requireAuth(c);
-    const [settings, account, code, page] = await Promise.all([
+    const [settings, account, code] = await Promise.all([
       readBalanceSettings(c.env),
       readAccount(c.env, session.user.id),
       codeHongbaoOffer(c.env, session.user.id),
-      attachedPageOffered(c.env, session.user.id),
     ]);
     return c.json({
       /** 🐟额红包 are on at all. */
@@ -196,10 +195,14 @@ export const balanceRoutes = new Hono<ApiContext>()
       availableMinor: account.availableMinor,
       /** 代码判定红包 may be sent: new versions left to deploy today. */
       ...(code ? { code } : {}),
-      /** 附带网页 may be set (docs/attached-page-design.md §2.1). */
-      ...(page ? { page: true as const } : {}),
-      /** Its switch is on: a 判定器's own page may be kept by anyone. */
-      ...(settings.pageEnabled ? { pageEnabled: true as const } : {}),
+      /**
+       * 附带网页 may be set: anyone, while its switch is on (docs/attached-
+       * page-design.md §1, §2.1). pageEnabled says the same, for forms
+       * from before it was everyone's.
+       */
+      ...(settings.pageEnabled
+        ? { page: true as const, pageEnabled: true as const }
+        : {}),
     });
   })
   .post(

@@ -1,94 +1,25 @@
-// 附带网页 (docs/attached-page-design.md): who may give a 红包 one (🐟额
-// PLUS or the 站长, while its switch is on), the 红包 page's read of it
-// (none while the switch is off), the 站长's 停用 of one, and whether a page
-// lets this site show it at all.
-import {
-  type AttachedPageCheck,
-  type JudgeDeclarations,
-  type JudgeInput,
-  normalizePageUrl,
-  type PublicActivity,
-} from "@hb/contracts";
+// 附带网页 (docs/attached-page-design.md): anyone may give a 红包 one
+// while its switch is on (since 2026-10-30, the user: “完全放开”; it was
+// 🐟额 PLUS's), the 红包 page's read of it (none while the switch is off),
+// the 站长's 停用 of one, and whether a page lets this site show it at all.
+import type { AttachedPageCheck, PublicActivity } from "@hb/contracts";
 import { readBalanceSettings } from "../balance/settings";
-import { transferAccess } from "../balance/transfers";
 import type { ApiBindings } from "../env";
-import { sha256Hex } from "../security/crypto";
 import { ActivityError } from "./errors";
 
-export async function attachedPageAccess(env: ApiBindings, userId: string) {
-  const [settings, access] = await Promise.all([
-    readBalanceSettings(env),
-    transferAccess(env, userId),
-  ]);
-  return { enabled: settings.pageEnabled, allowed: access.allowed };
+/** 附带网页's switch (网站管理 · 🐟额设置). */
+export async function attachedPagesOn(env: ApiBindings) {
+  return (await readBalanceSettings(env)).pageEnabled;
 }
 
-/**
- * The page a 代码判定红包's 判定器 carries (meta.page, docs/judge-page-
- * design.md §4, §11.9): of the version its code is — another's by the
- * version picked, the sender's own by its code. Null: none.
- */
-export async function carriedPage(
-  env: ApiBindings,
-  authorId: string,
-  judge: JudgeInput | undefined,
-) {
-  if (!judge?.judgeId) return null;
-  const row = await env.DB.prepare(
-    `SELECT v.declarations FROM judge_versions v JOIN judges j ON j.id = v.judge_id
-      WHERE v.judge_id = ?1 AND v.declarations IS NOT NULL
-        AND CASE WHEN j.author_id = ?2 THEN v.fingerprint = ?3 ELSE v.n = ?4 END`,
-  )
-    .bind(
-      judge.judgeId,
-      authorId,
-      await sha256Hex(judge.code),
-      judge.version ?? null,
-    )
-    .first<{ declarations: string }>();
-  const page = row
-    ? (JSON.parse(row.declarations) as JudgeDeclarations).meta?.page
-    : undefined;
-  return page ? normalizePageUrl(page) : null;
-}
-
-/**
- * Who may give a 红包 this page: anyone the one its 判定器 carries, on a
- * 代码判定红包 (judge-page §4); any other 🐟额 PLUS and the 站长 only.
- * Newly set, it also waits while the switch is off.
- */
-export async function requirePageFor(
-  env: ApiBindings,
-  userId: string,
-  pageUrl: string,
-  judge: JudgeInput | undefined,
-  newlySet: boolean,
-) {
-  const [access, carried] = await Promise.all([
-    attachedPageAccess(env, userId),
-    carriedPage(env, userId, judge),
-  ]);
-  if (
-    !access.allowed &&
-    (carried === null || normalizePageUrl(pageUrl) !== carried)
-  )
-    throw new ActivityError(
-      403,
-      "PAGE_NOT_ALLOWED",
-      "开通🐟额 PLUS 才能附带网页。",
-    );
-  if (newlySet && !access.enabled)
+/** A page newly given to a 红包 waits while the switch is off. */
+export async function requirePageSwitch(env: ApiBindings) {
+  if (!(await attachedPagesOn(env)))
     throw new ActivityError(409, "PAGE_PAUSED", "附带网页暂时关闭。");
 }
 
 export function attachedPageLocked(): never {
   throw new ActivityError(409, "PAGE_LOCKED", "开放后不能改附带网页。");
-}
-
-/** The 发红包 form shows the field: this person may set one now. */
-export async function attachedPageOffered(env: ApiBindings, userId: string) {
-  const access = await attachedPageAccess(env, userId);
-  return access.allowed && access.enabled;
 }
 
 /**

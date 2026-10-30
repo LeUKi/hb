@@ -88,7 +88,7 @@ import {
 import { digestPassword } from "../security/crypto";
 import {
   attachedPageLocked,
-  requirePageFor,
+  requirePageSwitch,
   withPageSwitch,
 } from "./attached-page";
 import {
@@ -707,14 +707,7 @@ export async function createActivity(
   const balance = fundingOf(input.activity) === "balance";
   if (input.activity.money.mode === "code")
     await requireCodeHongbao(env, authorId);
-  if (input.activity.pageUrl)
-    await requirePageFor(
-      env,
-      authorId,
-      input.activity.pageUrl,
-      input.activity.money.mode === "code" ? input.activity.judge : undefined,
-      true,
-    );
+  if (input.activity.pageUrl) await requirePageSwitch(env);
   if (balance) await requireBalanceFunding(env, authorId);
   const merchant = balance
     ? null
@@ -882,16 +875,10 @@ export async function updateActivity(
   if (config.humanCheck && !oldConfig.humanCheck && !humanCheckAvailable(env))
     humanCheckUnavailable();
   // 附带网页 is fixed once opened (docs/attached-page-design.md §1).
-  // The page a 判定器 carries is anyone's (judge-page §11.9): a draft whose
-  // code changed keeps its page only while still allowed.
-  const codeJudge =
-    input.activity.money.mode === "code" ? input.activity.judge : undefined;
   if ((config.pageUrl ?? "") !== (oldConfig.pageUrl ?? "")) {
     if (fixed) attachedPageLocked();
-    if (config.pageUrl)
-      await requirePageFor(env, authorId, config.pageUrl, codeJudge, true);
-  } else if (config.pageUrl && !fixed && codeJudge)
-    await requirePageFor(env, authorId, config.pageUrl, codeJudge, false);
+    if (config.pageUrl) await requirePageSwitch(env);
+  }
   const old = await privateRows(env, id);
   if (
     old.passwords.length > ACTIVITY_LIMITS.passwords &&

@@ -136,7 +136,7 @@ export async function judge(submission) {
 - 保密参数（`secret: true`）：开放时只公布参数封存值，结束后和代码、种子一起公开。回复里会不会透露它，要看代码怎么写。
 - `export function check(params, hongbao)`（可选）：查几项合起来对不对，比如“最小不能大于最大”“题目不能比份数少”。`hongbao` 是 `{ title, total, count, minEach }`。返回问题的数组 `[{ key, message }]`（`key` 是参数的 `key`，`message` 最多 100 个字），没问题返回 `[]`。发红包的人填参数时在判定器里跑，不能联网，`Math.random()` 每次都一样。
 - `export const hongbao = { … }`（可选）：用它发的红包在“发多少”的默认值和范围，只能收窄网站的规则：`count: { min, max, default }`（份数，1–1000 之内）、`total: { min, max, default }`、`minEach: { min, default }`（金额都是整数分）、`deadline: { value, unit }`（默认截止时长，`unit` 是 `"minutes"`、`"hours"` 或 `"days"`）、`prompt`（领取提示的默认值，最多 40 个字）、`humanCheck`（建议打开领取前人机验证）、`title`（红包标题的默认值，最多 100 个字）、`note`（说明的默认值，最多 2000 个字，写法同发红包时的说明：一个回车就换行，`[文字](#附带网页)` 是打开附带网页的按钮，没有网页时只剩文字）。标题和说明是挑了这个判定器时替发红包的人填好的，他没改过的才跟着判定器换。
-- `export const meta = { name, description, page }`（可选）：判定器的名字（最多 20 个字）和一句说明（最多 60 个字），贴代码时自动填好，之后以网站上的为准。page 是判定器带的附带网页（https，规则同附带网页），用它发红包时替发红包的人填好，没开通 PLUS 也能用；怎么接见 https://hb.lafi.sh/help/page。
+- `export const meta = { name, description, page }`（可选）：判定器的名字（最多 20 个字）和一句说明（最多 60 个字），贴代码时自动填好，之后以网站上的为准。page 是判定器带的附带网页（https，规则同附带网页），用它发红包时替发红包的人填好；怎么接见 https://hb.lafi.sh/help/page。
 - 这几个导出写得不对，`npm test` 不跑，`npm run check` 写“参数声明写得不对”和哪里不对。
 
 ### 公开数据和动态（可选）
@@ -307,7 +307,7 @@ export function judge({ input, state, user, share }) {
   - 做不到：读红包站的 Cookie 和登录信息、看别人的输入、转账、发红包、改红包、绕过冷却和人机验证。
 - 网页要显示的东西都从 `view.data` 来：判定器在 `view` 里写清楚格子、区间、猜过的数，网页照着画，不要在网页里自己算谁赢了。秘密照旧放在 `state`。
 - `npm run page`：在本地打开一个假红包页（下面“五个命令”），提交交给本地的 `judge.js` 跑。
-- 放到网上：网页放到静态托管上，比如 Cloudflare Workers、GitHub Pages、Netlify、Vercel 的正式部署（默认域名都能嵌进红包页）；Cloudflare Drop 拖上去的页面要先认领，没认领会先弹安全验证，嵌不进来。然后把地址写进 `meta.page`（见“参数”上面的 `meta`），部署判定器：用它发红包时网页一起带上，没开通 PLUS 也能用。
+- 放到网上：网页放到静态托管上，比如 Cloudflare Workers、GitHub Pages、Netlify、Vercel 的正式部署（默认域名都能嵌进红包页）；Cloudflare Drop 拖上去的页面要先认领，没认领会先弹安全验证，嵌不进来。然后把地址写进 `meta.page`（见“参数”上面的 `meta`），部署判定器：用它发红包时网页一起带上。
 - 网页的规则同附带网页：https、不带端口，不能放收钱、交易或让人输账号密码的东西。更多见 https://hb.lafi.sh/help/page。
 - 样例：`examples/number-bomb`（数字炸弹）和 `examples/scratch-card`（刮刮乐），判定器和网页都有。
 
