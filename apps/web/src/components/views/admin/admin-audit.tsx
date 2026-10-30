@@ -66,7 +66,7 @@ const roadmapMoves = {
   done: "完成",
   decline: "不做",
   back: "退回",
-  merge: "合并",
+  merge: "标为重复",
   hide: "隐藏",
   unhide: "取消隐藏",
   edit: "改",
@@ -99,7 +99,7 @@ function changesOf(entry: AdminAuditEntry) {
     const { title, action, reason } = entry.roadmap;
     return [
       action === "merge"
-        ? `施工：合并「${title}」到「${reason ?? ""}」`
+        ? `施工：「${title}」标为「${reason ?? ""}」的重复`
         : `施工：${roadmapMoves[action]}「${title}」${reason ? `：${reason}` : ""}`,
     ];
   }

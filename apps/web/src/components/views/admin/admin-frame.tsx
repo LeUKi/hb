@@ -86,7 +86,7 @@ const tabs: {
     to: "/admin/roadmap",
     label: "施工",
     description:
-      "施工页上的每一件：开工、写进展、完成、不做、合并。改了马上生效。",
+      "管理施工页上的需求：开工、写进展、完成、不做、标为重复。改了马上生效。",
     refreshable: true,
   },
   {

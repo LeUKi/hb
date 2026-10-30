@@ -119,7 +119,7 @@ function VoteButton({
       </Squircle>
       <Reveal show={failed}>
         <span role="alert" className="text-xs text-danger">
-          没有点上，再试一次。
+          点赞没成功，再试一次。
         </span>
       </Reveal>
     </span>
@@ -487,7 +487,7 @@ function RequestDialog({
         </Field>
         <Reveal show={like.length > 0}>
           <div className="grid gap-2">
-            <p className="px-1 text-xs text-ink-3">可能已经有人提了</p>
+            <p className="px-1 text-xs text-ink-3">可能有人提过了</p>
             <Panel className="grid gap-0.5 p-1.5">
               {like.map((item) => (
                 <div
@@ -507,7 +507,7 @@ function RequestDialog({
               ))}
             </Panel>
             <p className="px-1 text-xs text-ink-3">
-              一样的话，给它点个赞就行。
+              如果是同一件事，给它点个赞就行，不用再提。
             </p>
           </div>
         </Reveal>
@@ -677,7 +677,7 @@ function ItemDialog({
         onClose={() => setAsking(false)}
         busy={remove.isPending}
         title="删掉这个需求？"
-        text="它和大家给它的赞一起删掉。"
+        text="删掉后，这个需求和它收到的赞都会消失。"
         error={error}
         actions={
           <>

@@ -219,7 +219,7 @@ test.describe("施工中", () => {
     expect(sent).toEqual([]);
   });
 
-  test("点赞：按下就变朱红、数字加一，再点取消；存不上弹回去并写没有点上", async ({
+  test("点赞：按下就变朱红、数字加一，再点取消；存不上弹回去并写点赞没成功", async ({
     page,
   }) => {
     const { sent, state } = await mockRoadmap(page, viewer);
@@ -235,7 +235,7 @@ test.describe("施工中", () => {
     });
     state.voteFails = true;
     await voted.click();
-    await expect(page.getByText("没有点上，再试一次。")).toBeVisible();
+    await expect(page.getByText("点赞没成功，再试一次。")).toBeVisible();
     await expect(
       page.getByRole("button", { name: /^点赞，现在 20 个/ }),
     ).toHaveAttribute("aria-pressed", "true");
@@ -249,8 +249,10 @@ test.describe("施工中", () => {
     await page.getByRole("button", { name: "提一个需求" }).first().click();
     const dialog = page.getByRole("dialog", { name: "提一个需求" });
     await dialog.getByLabel("想要什么").fill("深色模式");
-    await expect(dialog.getByText("可能已经有人提了")).toBeVisible();
-    await expect(dialog.getByText("一样的话，给它点个赞就行。")).toBeVisible();
+    await expect(dialog.getByText("可能有人提过了")).toBeVisible();
+    await expect(
+      dialog.getByText("如果是同一件事，给它点个赞就行，不用再提。"),
+    ).toBeVisible();
     await dialog.getByLabel("想要什么").fill("导出领取记录");
     await dialog.getByLabel("说明").fill("想做表格");
     await dialog.getByRole("button", { name: "提交" }).click();
@@ -267,7 +269,9 @@ test.describe("施工中", () => {
     await expect(opened).toBeVisible();
     await opened.getByRole("button", { name: "删掉" }).click();
     const confirm = page.getByRole("dialog", { name: "删掉这个需求？" });
-    await expect(confirm).toContainText("它和大家给它的赞一起删掉。");
+    await expect(confirm).toContainText(
+      "删掉后，这个需求和它收到的赞都会消失。",
+    );
     await confirm.getByRole("button", { name: "删掉" }).click();
     await expect(confirm).toBeHidden();
     expect(sent.at(-1)).toMatchObject({
@@ -323,7 +327,7 @@ test.describe("施工中", () => {
     await openApp(page, "/admin/roadmap");
     await expect(
       page.getByText(
-        "施工页上的每一件：开工、写进展、完成、不做、合并。改了马上生效。",
+        "管理施工页上的需求：开工、写进展、完成、不做、标为重复。改了马上生效。",
       ),
     ).toBeVisible();
     await page.getByRole("button", { name: /深色模式/ }).click();

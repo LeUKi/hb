@@ -102,7 +102,7 @@ function ActDialog({
   );
 }
 
-/** 合并到… (§4): the one it goes into, found by its title. */
+/** 标为重复 (§4): the one it duplicates, found by its title. */
 function MergePicker({
   item,
   busy,
@@ -119,18 +119,18 @@ function MergePicker({
   );
   return (
     <div className="grid gap-3">
-      <Field label="合并到哪一件" htmlFor="roadmap-merge">
+      <Field label="搜索需求" htmlFor="roadmap-merge">
         <TextInput
           id="roadmap-merge"
           value={q}
           autoComplete="off"
-          placeholder="输入标题找一找"
+          placeholder="输入标题搜索"
           onChange={(event) => setQ(event.target.value)}
         />
       </Field>
       <Panel className="grid gap-0.5 p-1.5">
         {choices.length === 0 ? (
-          <p className="px-2.5 py-2 text-sm text-ink-3">没有找到像的</p>
+          <p className="px-2.5 py-2 text-sm text-ink-3">没有找到相似的需求</p>
         ) : (
           choices.map((other) => (
             <div
@@ -149,7 +149,7 @@ function MergePicker({
                   if (!busy) onPick(other);
                 }}
               >
-                合并到这一件
+                就是这个
               </Button>
             </div>
           ))
@@ -194,7 +194,7 @@ function Row({
       ? [
           move("开工", () => onAct({ action: "start" }), true),
           move("不做", () => onAsk("decline")),
-          move("合并到…", () => onAsk("merge")),
+          move("标为重复…", () => onAsk("merge")),
           edit,
           hide,
         ]
@@ -411,7 +411,7 @@ export function AdminRoadmap() {
           <Field
             label="原因"
             htmlFor="roadmap-reason"
-            hint="施工页上写在这一件下面"
+            hint="会显示在施工页上这个需求的下面"
             aside={counter(text.trim(), ROADMAP_LIMITS.reason)}
           >
             <TextInput
@@ -424,7 +424,7 @@ export function AdminRoadmap() {
         </ActDialog>
         <ActDialog
           open={asking?.kind === "merge"}
-          title={`合并「${item?.title ?? ""}」`}
+          title={`「${item?.title ?? ""}」和哪个需求重复？`}
           busy={busy}
           error={error}
           onClose={close}
@@ -439,7 +439,8 @@ export function AdminRoadmap() {
             />
           )}
           <p className="text-sm text-ink-3">
-            赞合到那一件，同一个人只算一次；这一件不再显示。
+            选好以后，「{item?.title}
+            」不再显示，它收到的赞加到你选的那个需求上；两个都点过赞的人只算一个赞。
           </p>
         </ActDialog>
         <ActDialog
