@@ -58,7 +58,7 @@ const aiPrompt = (
   - player：{ state, view }，他自己的状态和只给他看的数据。state 最大 4 KB、最多嵌套 100 层，只有代码看得到，适合记他还剩几次机会；view 是只给他看的 { summary, data }：summary 最多 200 个字，红包页上他自己在“我的结果”上面看得到，data 是任意 JSON，最大 4 KB，给附带网页用。写了哪样就整个换掉哪样，不写不变，view 写 null 是清空。别人看不到；发红包的人在下载的完整记录里看得到
   - others：同桌的人，最多 10 个，每项 { id, add, settle, state, view, message }：id 是 LINUX DO 数字 ID（要记的时候存进 state），add、settle 同上，state、view 是他的 player.state、player.view（整个换掉），message 是给他看的一句话，最多 100 个字。只能写给在这个红包里被判定过、还没结算、在领取范围以内的人，不能写给自己，同一个人不能写两次，不然这次判定算出错。代码读不到别人的 player.state 和 player.view，要互相看的东西（比如几家的手牌）放在共用的 state 里
   - message：给提交的人的一句话；纯文字，最多 100 个字，换行和连续空白会合成一个空格
-  - state：共用的状态，写了就整个换掉，不写就不变；能转成 JSON，最大 16 KB，最多嵌套 100 层；只有代码看得到
+  - state：共用的状态，写了就整个换掉，不写就不变；能转成 JSON，最大 64 KB，最多嵌套 100 层；只有代码看得到
   - view：公开数据，所有人都看得到（游客也是）。{ summary, data }：summary 是一句话，最多 200 个字，本站显示在红包页的“红包状态”里；data 是任意 JSON，最大 16 KB，给附带网页用。写了就整个换掉，不写不变，null 是清空。秘密放 state，别放 view
   - announce：一条动态，纯文字，最多 100 个字，显示在红包页的“动态”里，本站在前面写上判定的人
   - end：true 就在这次判定后结束红包：这次照常加减、结算，然后还没结算的人一起结算，没发出的照提前结束退回
@@ -69,7 +69,7 @@ const aiPrompt = (
 - 每次判定可能在不同的沙箱里，不要靠全局变量记东西；要记的放进 state。
 - 能用：Web 标准（完整的 crypto、Intl、TextEncoder、URL、atob、btoa 等）。Node 模块只能在文件开头静态 import，必须带 node: 前缀：${MODULES.join("、")}。
 - 不能用：别的 Node 模块、npm 包、import 别的文件、动态 import()、require、caches。console 的输出线上丢弃。
-- 联网（可选）：judge.js 导出 network，列出能请求的地址前缀，最多 3 个，比如 export const network = ["https://api.example.com/hongbao/"]；写法是 https:// 加完整域名和路径，不带端口、? 和 #，不能是 IP、linux.do 和本站。不导出就不联网，fetch 会失败。判定里直接用 fetch()：每次判定最多 3 个请求，只许 GET 和 POST，请求体最大 16 KB，单个请求 3 秒，返回最大 64 KB，不跟随跳转；等请求的时间不算进 50 毫秒，整次判定最多 5 秒；不行时 fetch() 抛 TypeError（“联网失败：…”），可以接住。领的人可以绕过本站直接请求你的接口，要防就在代码里放一个只有你知道的令牌，请求时带上；红包结束后代码公开，令牌也会公开，结束后要作废。红包结束后，领的人能看到自己那几次判定的返回内容。
+- 联网（可选）：judge.js 导出 network，列出能请求的地址前缀，最多 3 个，比如 export const network = ["https://api.example.com/hongbao/"]；写法是 https:// 加完整域名和路径，不带端口、? 和 #，不能是 IP、linux.do 和本站。不导出就不联网，fetch 会失败。判定里直接用 fetch()：每次判定最多 3 个请求，只许 GET 和 POST，请求体最大 16 KB，单个请求 10 秒，返回最大 64 KB，不跟随跳转；等请求的时间不算进 50 毫秒，整次判定最多 15 秒；不行时 fetch() 抛 TypeError（“联网失败：…”），可以接住。领的人可以绕过本站直接请求你的接口，要防就在代码里放一个只有你知道的令牌，请求时带上；红包结束后代码公开，令牌也会公开，结束后要作废。红包结束后，领的人能看到自己那几次判定的返回内容。
 - 参数（可选）：会变的东西（答案、范围、次数、几个人能领、题目）写成参数，发红包的人在网站上填，判定时在 submission.params 里。export const params = [ … ]，最多 20 项，每项 { key（字母、数字、下划线）, label（最多 20 个字）, hint（最多 60 个字）, type, default, required（默认 true）, secret（默认 false） } 加上类型自己的限制。type：text（单行，minLength、maxLength ≤ 200）、textarea（多行，maxLength ≤ 2000）、integer（min、max、step）、money（整数分，min ≥ 1、max）、switch、choice（options：2–20 个 { value, label }）、list（一行一个，minItems、maxItems ≤ 100、maxLength）、table（columns：1–6 列 { key, label, type: text | integer | money }，minRows、maxRows ≤ 100）。网站按声明校验；没填的选填项，开关是 false，列表和表格是 []，其他是 null。secret 的参数开放时只公布封存值，结束后公开。几项合起来的检查写 export function check(params, hongbao)，返回 [{ key, message }]，没问题返回 []；hongbao 同 setup 的。export const hongbao = { total: { min, max, default }, deadline: { value, unit }, prompt, humanCheck, title, note } 给“发多少”设默认值和范围（金额是整数分），prompt 是领取提示（最多 ${JUDGE_LIMITS.promptCharacters} 个字），title、note 是红包标题（最多 100 个字）和说明（最多 2000 个字，一个回车就换行，[文字](#附带网页) 是打开附带网页的按钮）的默认值；没有份数，要几个人能领就做成参数。export const meta = { name, description, page } 是判定器的名字（最多 20 个字）、说明（最多 60 个字）和带的附带网页（page，https，规则同附带网页，用它发红包时替发红包的人填好；怎么接见 ${origin}/help/page；开发包里有网页模板 page/index.html、本地的假红包页 npm run page 和数字炸弹、刮刮乐两个带网页的样例）。
 - 随机数用 tools.random（这一次提交的，Math.random() 也是它）或 tools.userRandom（这个人固定的，提交几次都一样）。都能复现：红包结束后公开种子，谁都能核对。crypto.getRandomValues 是真随机，能用但没法核对。
 - tools 全是同步的：
@@ -84,7 +84,7 @@ const aiPrompt = (
 
 tests.json 是一个对象 { "tests": [ … ] }，只是数据：
 - 一条测试就是一次提交 { name, input, expect }，字段和 submission 同名，可选 now（毫秒或带时区的 ISO 时间，比如 2026-10-24T12:00:00+08:00）、user（id、username、level、attempts）、hongbao（title、total、openedAt、endsAt；不能写 count、minEach）、claims（前面已经结算、领到钱的人：写数字补上这么多条占位记录，每人约 1 LDC，或者完整列表，每条 { user: { id, username }, amount, input, at }）、players（前面已经玩过、还没结算的人：名字对应 { pending, state, view }，比如 { "小明": { "pending": 50, "state": { "tries": 2 } } }；这次提交的人也可以在里面，单次测试按 user.username）、state、seed（64 位十六进制）。没写的用默认：2026-10-24 12:00（北京时间）提交、测试用户 tester（ID 10000、Lv2、之前没被判定过）、总奖池 10000、提交前 1 小时开放、后 1 天截止、还没人领、没有玩过的人、状态 null、固定的种子。remaining、unclaimed 和兼容旧代码的几项由 claims 和 players 推出来，不能写。
-- 只能写线上可能出现的情况：now 在开放和截止之间；已领的按先后、不早于开放、不晚于 now；已领的加上 players 的待结算要少于总奖池；已领的人不重复，提交的人和 players 里的人都不在已领的里面；state 不超过 16 KB、嵌套不超过 100 层，players 每人的 state、view.data 不超过 4 KB。不然这条测试不通过。
+- 只能写线上可能出现的情况：now 在开放和截止之间；已领的按先后、不早于开放、不晚于 now；已领的加上 players 的待结算要少于总奖池；已领的人不重复，提交的人和 players 里的人都不在已领的里面；state 不超过 64 KB、嵌套不超过 100 层，players 每人的 state、view.data 不超过 4 KB。不然这条测试不通过。
 - 联网的代码，测试里写 fetch：这次判定的请求拿到的返回，最多 3 个，每个 { url, method（默认 GET）, status（默认 200）, headers, json 或 text }，或者 { url, method, error: "timeout" | "unreachable" | "too-big" }。请求按方法和完整地址对上；有请求没写返回、写了没用上，这条测试都不通过。测试从不真的联网。
 - 要测靠状态往下传的玩法，不写 input，写 steps，几个人依次提交：每一步 { who, input, expect }，可选 level（默认 2）、at（默认上一步往后 1 分钟，第一步是 now）、fetch。同一个 who 是同一个人；共用的状态、每个人的待结算和状态、已经结算的、每人被判定过几次、奖池都像线上一样一步步往下传。已经结算的人、或者红包已经结束了还提交，这一步不通过。
 - expect 写了才比（什么都不写就只看能不能跑通）：add（代码给提交的人的）、settle（代码有没有说给他结算）、pending（他这次以后的待结算，结算以后是 0）、settled（他结算的金额，可以是 0，还没结算写 null）、player（他这次以后的 state、view，写了哪项那项整份比）或 playerIncludes（只比写了的键）、people（按名字，这些人这次以后的 pending、settled、state 或 stateIncludes、view 或 viewIncludes，和 others 这次写给他的 message，没写给他写 ""）、message（逐字）或 messageIncludes（含这几个字）、state（共用的状态，整份，键的顺序不算）或 stateIncludes（只比写了的键，数组整个比）、view（这次以后的公开数据，整份，没有写 null）或 viewIncludes（只比写了的键）、announce（这次的动态，逐字，没有写 ""）、end（这次以后红包结束了没有：end 结束的，或者奖池占满了）。ok、amount 是简写：这次有没有给他结算并且领到钱（结算 0 不算）、领到多少。add 是代码给的数，实际加上的看 pending。代码返回协议以外的字段也算不通过。
@@ -598,7 +598,7 @@ export async function judge(submission) {
             },
             {
               name: "fetch()",
-              note: "判定里直接用。每次判定最多 3 个请求，只许 GET 和 POST，请求体最大 16 KB；单个请求 3 秒，返回最大 64 KB，不跟随跳转。等请求的时间不算进 50 毫秒的计算时间，整次判定最多 5 秒。",
+              note: "判定里直接用。每次判定最多 3 个请求，只许 GET 和 POST，请求体最大 16 KB；单个请求 10 秒，返回最大 64 KB，不跟随跳转。等请求的时间不算进 50 毫秒的计算时间，整次判定最多 15 秒。",
             },
             {
               name: "失败",
@@ -733,7 +733,7 @@ export function judge(submission, tools) {
                 <>
                   <Code>{"{ summary, data }"}</Code>：summary 是一句话，最多 200
                   个字，本站显示在红包页红包皮下面的“红包状态”里；data 是任意
-                  JSON，最大 16 KB、最多嵌套 100
+                  JSON，最大 64 KB、最多嵌套 100
                   层，给附带网页用。写了就整个换掉，不写不变，
                   <Code>null</Code> 是清空。所有人都看得到，游客也是：放进 view
                   的就是公开的
@@ -913,7 +913,7 @@ export function judge(submission, tools) {
             },
             {
               name: "只能写",
-              note: "线上可能出现的情况：now 在开放和截止之间；已领的按先后、不早于开放、不晚于 now；已领的加上 players 的待结算要少于总奖池（占满了红包就结束了）；已领的人不重复，提交的人和 players 里的人都不在已领的里面；state 不超过 16 KB、嵌套不超过 100 层，players 每人的 state、view.data 不超过 4 KB。不然这条测试本身不通过",
+              note: "线上可能出现的情况：now 在开放和截止之间；已领的按先后、不早于开放、不晚于 now；已领的加上 players 的待结算要少于总奖池（占满了红包就结束了）；已领的人不重复，提交的人和 players 里的人都不在已领的里面；state 不超过 64 KB、嵌套不超过 100 层，players 每人的 state、view.data 不超过 4 KB。不然这条测试本身不通过",
             },
             {
               name: "steps",

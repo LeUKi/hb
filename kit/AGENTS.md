@@ -56,7 +56,7 @@ export function judge(submission, tools) { … }
 - `player`：`{ state, view }`，他自己的状态和只给他看的数据，见下面的“每个人自己的”
 - `others`：同桌的人，见下面的“同桌的人”
 - `message`：给提交的人的一句话；纯文字，最多 100 个字，换行和连续空白会合成一个空格
-- `state`：整个红包共用的状态，写了就整个换掉，不写就不变；要能转成 JSON，最大 16 KB，最多嵌套 100 层；只有代码看得到
+- `state`：整个红包共用的状态，写了就整个换掉，不写就不变；要能转成 JSON，最大 64 KB，最多嵌套 100 层；只有代码看得到
 - `view`、`announce`、`end`：公开数据、一条动态、结束红包，见下面的“公开数据和动态”
 
 旧写法是简写：`{ ok: true, amount }` 等于 `{ add: amount, settle: true }`，`{ ok: false }` 等于什么都不加、不结算。`ok` 不能和 `add`、`settle` 一起写，`amount` 只和 `ok: true` 一起写。
@@ -152,7 +152,7 @@ export async function judge(submission) {
 ```
 
 - 地址写法：`https://` 加完整域名和路径前缀，不带端口、`?` 和 `#`，主机名小写；不能是 IP、`localhost`、`linux.do` 和它的子域名、`hb.lafi.sh` 和它的子域名。前缀 `https://a.com/api` 放行 `/api`、`/api/x`、`/api?x`，不放行 `/apix`；路径里编码过的斜杠（`%2F`、`%5C`）一律拒绝。
-- 每次判定最多 3 个请求（可以并发），只许 GET 和 POST，请求体最大 16 KB；单个请求 3 秒，返回最大 64 KB，跳转不跟随（3xx 原样给代码）。等请求的时间不算进 50 毫秒的计算时间，整次判定最多 5 秒。判定结束以后再发的请求都会被拒。
+- 每次判定最多 3 个请求（可以并发），只许 GET 和 POST，请求体最大 16 KB；单个请求 10 秒，返回最大 64 KB，跳转不跟随（3xx 原样给代码）。等请求的时间不算进 50 毫秒的计算时间，整次判定最多 15 秒。判定结束以后再发的请求都会被拒。
 - 不行时 `fetch()` 抛 `TypeError`，信息以“联网失败：”开头，写明原因。可以接住，自己在 `message` 里回复；没接住就算代码出错。对方返回 4xx、5xx 不算失败。
 - 本站给每个请求加 `X-Hb-Hongbao`（红包 ID，不保密）和自己的 `User-Agent`；代码不能设 `Host` 和 `X-Hb-` 开头的请求头。
 - 领的人可以绕过本站直接请求接口（那样没有尝试间隔和人机验证）：要防，就在代码里放一个只有红包作者知道的令牌，请求时带上，接口只认它。代码结束后公开，令牌也会公开，结束后要作废。
@@ -220,7 +220,7 @@ export function judge({ input, state, user, hongbao }) {
 
 - 每次判定 CPU 最多 50 毫秒。本地不限 CPU，超过 1 秒算超时，超过 50 毫秒的标“慢”（线上可能超时）。
 - `judge` 外面、文件顶层的代码，线上算在每个沙箱的第一次判定里，别在那里做大量计算；跑了超过 50 毫秒，`npm test` 和 `npm run check` 会提醒。
-- `judge.js` 最大 64 KB，`tests.json` 最大 256 KB，`state` 最大 16 KB、最多嵌套 100 层，`player.state` 最大 4 KB，`player.view.data` 最大 4 KB，`others` 最多 10 个人，`message` 最多 100 个字，输入最多 200 个字，所有测试加起来最多判定 200 次。
+- `judge.js` 最大 256 KB，`tests.json` 最大 256 KB，`state` 最大 64 KB、最多嵌套 100 层，`player.state` 最大 4 KB，`player.view.data` 最大 4 KB，`others` 最多 10 个人，`message` 最多 100 个字，输入最多 200 个字，所有测试加起来最多判定 200 次。
 
 ### 出错
 
@@ -268,7 +268,7 @@ export function judge({ input, state, user, hongbao }) {
 - `now` 在开放和截止之间（不早于 `openedAt`，早于 `endsAt`），截止晚于开放；
 - 已领的按先后写，不早于开放，不晚于 `now`；已领的加上 `players` 的待结算要少于总奖池（占满了红包就结束了）；
 - 已领的人不重复，提交的人不在里面，`players` 里的人也不在里面；
-- `state` 不超过 16 KB、嵌套不超过 100 层；`players` 每人的 `state`、`view.data` 不超过 4 KB。
+- `state` 不超过 64 KB、嵌套不超过 100 层；`players` 每人的 `state`、`view.data` 不超过 4 KB。
 
 ### 多步场景
 
@@ -441,7 +441,7 @@ export function judge({ player }, tools) {
 - **返回小数金额**：金额是整数分，0.30 要写 `30`，不是 `0.3`；算出来的数用 `Math.floor` 取整。
 - **加了钱却一直不结算**：没问题，红包结束时会一起结算；但玩的人一直只看到待结算。规则里该结束的时候（机会用完、牌打完）写 `settle: true`。
 - **`even()`、`lucky()` 不传 n**：按每份约 1 LDC 分，大奖池会被分得很碎。要分成几份就传 n，最好做成参数。
-- **状态写太大**：`state` 最大 16 KB，别把每次的输入原样全存进去；只存要用的，比如计数、名单的一部分。
+- **状态写太大**：`state` 最大 64 KB，别把每次的输入原样全存进去；只存要用的，比如计数、名单的一部分。
 - **靠全局变量记东西**：下一次判定可能在新的沙箱里，变量没了。要记的放进 `state`，或者从 `claims`、`user.attempts` 算出来。
 - **拼错返回的字段**：`mesage`、`ad` 会被忽略，测试里算不通过。
 - **`ok` 和 `add` 一起写、`ok: true` 不写 `amount`**，或者 `message` 超过 100 个字：都算出错。

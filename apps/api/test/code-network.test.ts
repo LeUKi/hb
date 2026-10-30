@@ -403,14 +403,14 @@ describe("代码判定联网: the judgment's clock", () => {
     const records = await session.close();
     expect(records).toEqual([]);
     expect(session.broken).toBe(true);
-  }, 10_000);
+  }, 20_000);
 });
 
 describe("代码判定联网: a slow answer", () => {
-  it("is waited for past the 300 ms a judgment computes in", async () => {
+  it("is waited for past the 1 s a judgment computes in", async () => {
     const opened = await open();
     answer = async () => {
-      await new Promise((resolve) => setTimeout(resolve, 700));
+      await new Promise((resolve) => setTimeout(resolve, 1300));
       return Response.json({ right: true, say: "慢慢来" });
     };
     const claimant = await actor();

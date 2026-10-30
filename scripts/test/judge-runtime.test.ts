@@ -489,7 +489,7 @@ describe("verdict.mjs", () => {
       { ok: true, amount: "100" },
       { ok: false, message: 3 },
       { ok: false, message: "字".repeat(101) },
-      { ok: false, state: { big: "x".repeat(17000) } },
+      { ok: false, state: { big: "x".repeat(66_000) } },
       { ok: false, state: () => 1 },
     ])
       expect(readVerdict(raw, share, 4)).toHaveProperty(

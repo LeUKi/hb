@@ -48,8 +48,8 @@ import { overMonthlyLimit, usageStatement } from "./usage";
 const SANDBOXES = 2;
 /** Runs a day per person, deploys and reruns alike: unshown, against abuse. */
 export const RUNS_PER_DAY = 50;
-/** Longer than the longest run: 200 judgments twice, each given up at 300 ms. */
-const RUN_LEASE_MS = 3 * 60_000;
+/** Longer than the longest run: 200 judgments twice, each given up at 1 s. */
+const RUN_LEASE_MS = 8 * 60_000;
 
 /**
  * 代码判定红包 for anyone signed in while its switch is on (§1, 2026-10-28):

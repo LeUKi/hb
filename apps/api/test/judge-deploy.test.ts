@@ -335,7 +335,7 @@ describe("代码判定红包: 部署", () => {
 
   it("moves to a fresh 判定器 after a late answer once, then leaves the rest: 2 份 at most", async () => {
     const code = unique(`export async function judge(s) {
-  if (s.input === "slow") await new Promise((done) => setTimeout(done, 1000));
+  if (s.input === "slow") await new Promise((done) => setTimeout(done, 1500));
   return { ok: false, message: "不对" };
 }
 `);
@@ -356,12 +356,12 @@ describe("代码判定红包: 部署", () => {
         problem,
       })),
     ).toEqual([
-      { name: "太慢", passed: false, problem: "超时：超过 300 毫秒没有判定完" },
+      { name: "太慢", passed: false, problem: "超时：超过 1 秒没有判定完" },
       { name: "换了实例", passed: true, problem: undefined },
       {
         name: "又太慢",
         passed: false,
-        problem: "超时：超过 300 毫秒没有判定完",
+        problem: "超时：超过 1 秒没有判定完",
       },
       { name: "没跑", passed: false, problem: "前面超时，这条没跑" },
     ]);
@@ -490,7 +490,7 @@ describe("代码判定红包: 部署", () => {
         )
         .run(),
     ).rejects.toThrow(/invalid_judge_check/);
-  });
+  }, 15_000);
 
   it("takes only main.mjs's own failures from the sandbox: code that forges one is a wrong answer, and counts", async () => {
     await judgeSettings({ daily_deploy_limit_plus: 1 });

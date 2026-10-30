@@ -73,7 +73,7 @@ export const FAILURES_TO_PAUSE = 5;
 /** Submissions a 红包 takes a second (§3, 暂定); more wait, unjudged. */
 const PER_SECOND = 20;
 /** A 联网 红包's claims waiting at once, the one judged too (§9.3). */
-const NETWORK_WAITING = 5;
+const NETWORK_WAITING = 3;
 const SANDBOXES = 4;
 
 /** A 红包's addresses (activity_code.network), or null without network. */

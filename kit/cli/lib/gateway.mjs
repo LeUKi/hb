@@ -1,6 +1,6 @@
 // `npm run simulate -- --live` (协议第 9 节): the sandbox's fetch() goes out
 // from this computer through here, held to the site's rules (network.mjs):
-// only the addresses judge.js lists, GET and POST, 16 KB out, 3 seconds,
+// only the addresses judge.js lists, GET and POST, 16 KB out, 10 seconds,
 // 64 KB back, no redirect followed. The site's gateway also counts each
 // judgment's requests; here the sandbox's own fetch() does.
 import { NETWORK_LIMITS, NETWORK_REASONS, requestProblem } from "./network.mjs";

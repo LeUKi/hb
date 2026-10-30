@@ -116,7 +116,7 @@ export interface Verdict {
   amount?: number;
   /** 给提交的人的一句话；纯文字，最多 100 个字 */
   message?: string;
-  /** 写了就整个换掉（发不发都存），不写就不变；最大 16 KB，最多嵌套 100 层 */
+  /** 写了就整个换掉（发不发都存），不写就不变；最大 64 KB，最多嵌套 100 层 */
   state?: Json;
   /**
    * 第四版：公开数据，所有人都看得到（游客也是）。写了就整个换掉，不写不变，
@@ -375,7 +375,7 @@ export type Setup = (
  * 写法：https:// 开头的完整域名加路径前缀，比如 "https://api.example.com/hongbao/"；
  * 不带端口、? 和 #，不能是 IP 地址、linux.do 和本站。
  * 判定里直接用 fetch()：每次判定最多 3 个请求，只许 GET 和 POST，请求体最大 16 KB，
- * 单个请求 3 秒、返回最大 64 KB，不跟随跳转；不行时 fetch() 抛 TypeError（“联网失败：…”）。
+ * 单个请求 10 秒、返回最大 64 KB，不跟随跳转；不行时 fetch() 抛 TypeError（“联网失败：…”）。
  * 代码结束后公开，写在里面的令牌也会公开；红包结束后，领的人能看到自己那几次判定的返回内容。
  */
 export type Network = readonly string[];
@@ -451,7 +451,7 @@ interface TestBase {
    * user.username、多步的 who）也可以在里面
    */
   players?: { [name: string]: TestPlayer };
-  /** 代码之前存的状态，默认 null；最大 16 KB，最多嵌套 100 层 */
+  /** 代码之前存的状态，默认 null；最大 64 KB，最多嵌套 100 层 */
   state?: Json;
   /** 种子（64 位小写十六进制），默认固定的测试种子 */
   seed?: string;

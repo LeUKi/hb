@@ -3243,7 +3243,7 @@ test.describe("发红包 · 代码判定", () => {
         return route.fulfill({
           json:
             body.input === "慢"
-              ? { failure: "timeout", detail: "超过 300 毫秒没有判定完" }
+              ? { failure: "timeout", detail: "超过 1 秒没有判定完" }
               : Number(body.input) === body.params.answer
                 ? { ok: true, amount: 100, message: "猜中了" }
                 : { ok: false, message: "不对" },

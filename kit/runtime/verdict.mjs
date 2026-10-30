@@ -11,8 +11,8 @@
 import { settle } from "./money.mjs";
 
 export const LIMITS = Object.freeze({
-  codeBytes: 64 * 1024,
-  stateBytes: 16 * 1024,
+  codeBytes: 256 * 1024,
+  stateBytes: 64 * 1024,
   /**
    * How deep state may nest. JSON.stringify recurses, and how deep it gets
    * depends on the machine's stack: past this, every machine refuses it.

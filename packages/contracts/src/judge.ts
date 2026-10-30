@@ -51,12 +51,12 @@ export const JUDGE_OLDEST_PROTOCOL = 5;
 
 export const JUDGE_LIMITS = {
   promptCharacters: 40,
-  codeBytes: 64 * 1024,
+  codeBytes: 256 * 1024,
   testsBytes: 256 * 1024,
   tests: 200,
   inputCharacters: 200,
   messageCharacters: 100,
-  stateBytes: 16 * 1024,
+  stateBytes: 64 * 1024,
   /** Deployed versions a draft keeps (§5 换回). */
   versions: 10,
 } as const;

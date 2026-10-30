@@ -21,12 +21,16 @@ export { JUDGE_PROTOCOL };
 const COMPATIBILITY_DATE = "2026-09-01";
 /** The sandbox is killed past about cpuMs + 2 s; the caller stops waiting first. */
 const CPU_MS = 50;
-export const JUDGE_WAIT_MS = 300;
+export const JUDGE_WAIT_MS = 1000;
 /**
  * A 联网 judgment, all of it (§9.3). Its requests are waited for; the rest
  * of it still has JUDGE_WAIT_MS (session.ts's deadline).
  */
 export const NETWORK_WAIT_MS = NETWORK_LIMITS.judgmentMs;
+
+/** A wait in words: "1 秒", "15 秒", "50 毫秒". */
+const waitText = (ms: number) =>
+  ms % 1000 === 0 ? `${ms / 1000} 秒` : `${ms} 毫秒`;
 
 export type SandboxFailure =
   /** judge.js would not load: a syntax error or a throw at its top level. */
@@ -277,7 +281,7 @@ async function askJudge(
     if (response === "late")
       return {
         failure: "timeout",
-        detail: `${name} 超过 ${JUDGE_WAIT_MS} 毫秒没有返回`,
+        detail: `${name} 超过 ${waitText(JUDGE_WAIT_MS)}没有返回`,
       };
     const read = (await response.json()) as {
       answer?: unknown;
@@ -368,16 +372,19 @@ export async function runJudge(
   try {
     const response = await Promise.race([request, late]);
     if (response === "late")
-      return { failure: "timeout", detail: `超过 ${waitMs} 毫秒没有判定完` };
+      return {
+        failure: "timeout",
+        detail: `超过 ${waitText(waitMs)}没有判定完`,
+      };
     if (response === "compute")
       return {
         failure: "timeout",
-        detail: `除了等网络，超过 ${JUDGE_WAIT_MS} 毫秒没有判定完`,
+        detail: `除了等网络，超过 ${waitText(JUDGE_WAIT_MS)}没有判定完`,
       };
     if (response === "total")
       return {
         failure: "timeout",
-        detail: `超过 ${NETWORK_WAIT_MS / 1000} 秒没有判定完`,
+        detail: `超过 ${waitText(NETWORK_WAIT_MS)}没有判定完`,
       };
     const body = (await response.json()) as {
       verdict?: unknown;

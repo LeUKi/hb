@@ -14,9 +14,9 @@ export const NETWORK_LIMITS = Object.freeze({
   requestBytes: 16 * 1024,
   responseBytes: 64 * 1024,
   /** One request, from sending it to the end of its answer. */
-  requestMs: 3000,
+  requestMs: 10_000,
   /** A judgment with network, all of it, on the site. */
-  judgmentMs: 5000,
+  judgmentMs: 15_000,
 });
 
 export const NETWORK_METHODS = Object.freeze(["GET", "POST"]);

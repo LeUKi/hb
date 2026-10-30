@@ -440,7 +440,7 @@ describe("tests.json: one submission", () => {
         { claims: [claim(10000, NOW)] },
         "这个人（tester）已经领过了，线上不会交给代码",
       ],
-      [{ state: { big: "x".repeat(17_000) } }, "state 超过 16 KB"],
+      [{ state: { big: "x".repeat(66_000) } }, "state 超过 64 KB"],
       [
         { state: JSON.parse(`${"[".repeat(101)}${"]".repeat(101)}`) },
         "state 嵌套超过 100 层",

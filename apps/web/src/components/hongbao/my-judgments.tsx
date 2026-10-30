@@ -4,6 +4,7 @@ import { useAtomValue } from "jotai";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { type ReactNode, useEffect, useId, useState } from "react";
+import { NETWORK_LIMITS } from "../../../../../kit/runtime/network.mjs";
 import { cn } from "../../lib/cn";
 import { moveLabel, useMyJudgments } from "../../lib/judge";
 import { switchOverlay } from "../../lib/overlay";
@@ -207,7 +208,9 @@ function StillJudging({
   return (
     <Reveal show={since !== null && late}>
       <p className="px-2.5 text-xs text-ink-3">
-        {network ? "判定器在联网，最多等 5 秒" : "还在判定…"}
+        {network
+          ? `判定器在联网，最多等 ${NETWORK_LIMITS.judgmentMs / 1000} 秒`
+          : "还在判定…"}
       </p>
     </Reveal>
   );
