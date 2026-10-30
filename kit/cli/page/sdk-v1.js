@@ -1,7 +1,7 @@
 /*!
  * lafish的红包站 · 附带网页 SDK v1
  * 说明：https://hb.lafi.sh/help/page#sdk
- * v1 不改行为，只修错。
+ * v1 已有的写法不改，只修错、加新的。
  */
 
 // The page beside a 红包 talks to the 红包 page around it (docs/judge-page-
@@ -148,6 +148,13 @@
         throw new TypeError("hb.submit：输入要是字符串");
       await ready();
       return ask("submit", { input });
+    },
+    /** 把内容填进这个红包的指令框，不提交；所有红包都能用。 */
+    async fill(text) {
+      if (typeof text !== "string")
+        throw new TypeError("hb.fill：内容要是字符串");
+      await ready();
+      return ask("fill", { text });
     },
     /** 看的人自己的提交，新的在前，一次 20 条；没登录时 null。 */
     async mine(next) {

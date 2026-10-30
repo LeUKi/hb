@@ -14,7 +14,7 @@ import {
 import { activityPath, useCurrentActivityId } from "../../lib/activity-route";
 import { useCachedQueryData } from "../../lib/cached-query";
 import { liveJudgedAtom } from "../../lib/live-state";
-import { notJudged } from "../../lib/page-submit";
+import { notFilled, notJudged } from "../../lib/page-submit";
 import { useSessionUser } from "../../lib/session";
 import { useJudgeBoard } from "../hongbao/judge-board";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
@@ -86,6 +86,7 @@ async function readMine(activityId: string, next: string | null) {
 type Ask =
   | { hb: 1; id: number; type: "hello" }
   | { hb: 1; id: number; type: "submit"; input: string }
+  | { hb: 1; id: number; type: "fill"; text: string }
   | { hb: 1; id: number; type: "mine"; next: string | null };
 
 function askOf(data: unknown): Ask | null {
@@ -101,6 +102,12 @@ function askOf(data: unknown): Ask | null {
   )
     return ask as Ask;
   if (
+    ask.type === "fill" &&
+    typeof ask.text === "string" &&
+    ask.text.length <= 4000
+  )
+    return ask as Ask;
+  if (
     ask.type === "mine" &&
     (ask.next === null ||
       (typeof ask.next === "string" && ask.next.length < 200))
@@ -112,8 +119,8 @@ function askOf(data: unknown): Ask | null {
 /**
  * Answers the page in `frame` (at `url`, the 附带网页 of `activityId`):
  * hello with the 红包 as it is, then its changes pushed; a submission
- * while its 红包 page is the one shown, one at a time; the viewer's own
- * record.
+ * while its 红包 page is the one shown, one at a time; text for the box
+ * (any 红包); the viewer's own record.
  */
 export function usePageBridge(
   frame: RefObject<HTMLIFrameElement | null>,
@@ -138,10 +145,26 @@ export function usePageBridge(
     : null;
   const hongbao = activity ? hongbaoOf(activity, judged) : null;
   const view = viewOf(board.view);
-  const { submitForPage } = useOmniboxController();
+  const { submitForPage, fillForPage } = useOmniboxController();
   // What the listener reads when a message comes, as of the last render.
-  const now = useRef({ hongbao, view, board, onPage, user, submitForPage });
-  now.current = { hongbao, view, board, onPage, user, submitForPage };
+  const now = useRef({
+    hongbao,
+    view,
+    board,
+    onPage,
+    user,
+    submitForPage,
+    fillForPage,
+  });
+  now.current = {
+    hongbao,
+    view,
+    board,
+    onPage,
+    user,
+    submitForPage,
+    fillForPage,
+  };
   /** Said hello: what it has been sent, to push only what changed. */
   const link = useRef<{ view: string; hongbao: string; line: number } | null>(
     null,
@@ -191,6 +214,12 @@ export function usePageBridge(
         }
         return;
       }
+      if (ask.type === "fill")
+        return reply({
+          value: state.onPage
+            ? state.fillForPage(activityId, ask.text)
+            : notFilled("away"),
+        });
       if (!state.user) return reply({ value: null });
       // Only a 代码判定红包 keeps submissions: none here.
       if (state.hongbao && !state.hongbao.code)

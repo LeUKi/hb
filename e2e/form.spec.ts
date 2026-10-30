@@ -607,7 +607,14 @@ test.describe("发红包", () => {
       page.getByText(/^<script src="https?:\/\/\S+\/sdk\/v1\.js"><\/script>$/),
     ).toBeVisible();
     await expect(
-      page.getByText(/7\. 代码判定红包可以接红包站的 SDK/),
+      page.getByText(/7\. 附带网页可以接红包站的 SDK/),
+    ).toBeVisible();
+    // 只填不交 (§11.11): any 红包's page; submitting is 代码判定's only.
+    await expect(
+      page.getByText(/hb\.fill\(text\) 把内容填进这个红包的指令框/),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/代码判定红包才能用 await hb\.submit\(input\)/),
     ).toBeVisible();
     // The prompt says where this page is; the steps carry the lines.
     await expect(page.getByText(/说明文档：.*\/help\/page/)).toBeVisible();

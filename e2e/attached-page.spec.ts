@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { encodeActivityEmoji } from "../packages/contracts/src";
-import { mockSession, openApp, viewer } from "./support/app";
+import { mockSession, omniboxInput, openApp, viewer } from "./support/app";
 
 // 附带网页 (docs/attached-page-design.md §2): the page beside a 红包 on a
 // wide screen and in a sheet on a narrow one, loaded once opened (not
@@ -120,15 +120,19 @@ const frameHeight = (page: Page) =>
     .locator(".app-window-frame")
     .evaluate((element) => Math.round(element.getBoundingClientRect().height));
 
-/** The sheet's top edge on the screen. */
-const sheetTop = (page: Page) =>
+/** The sheet's top edge on the screen; `up`: pulled up, its bar says 收起. */
+const sheetTop = (page: Page, up = false) =>
   page
     // Not by its role: under a dialog the sheet is inert.
-    .locator("button[aria-label^='上拉查看附带网页']")
+    .locator(
+      up
+        ? "button[aria-label='收起']"
+        : "button[aria-label^='上拉查看附带网页']",
+    )
     .evaluate((bar) => Math.round(bar.getBoundingClientRect().top));
 
 test.describe("附带网页", () => {
-  test("不是代码判定的红包：网页接得上 SDK，hb.mine() 是空的，hb.submit() 拿到 not_code（judge-page §11.8）", async ({
+  test("不是代码判定的红包：网页接得上 SDK，hb.mine() 是空的，hb.submit() 拿到 not_code（judge-page §11.8），直接领的 hb.fill() 拿到 no_input（§11.11）", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -151,11 +155,14 @@ test.describe("附带网页", () => {
     ).toBeVisible();
     const frame = page.frame({ url: pageUrl });
     if (!frame) throw new Error("PAGE_FRAME_MISSING");
+    // The heading shows before the SDK has loaded.
+    await frame.waitForFunction(() => "hb" in window);
     type PageWindow = {
       hb: {
         ready(): Promise<unknown>;
         mine(): Promise<unknown>;
         submit(input: string): Promise<unknown>;
+        fill(text: string): Promise<unknown>;
       };
     };
     expect(
@@ -169,6 +176,78 @@ test.describe("附带网页", () => {
         (window as unknown as PageWindow).hb.submit("答案"),
       ),
     ).toEqual({ judged: false, reason: "not_code" });
+    expect(
+      await frame.evaluate(() =>
+        (window as unknown as PageWindow).hb.fill("答案"),
+      ),
+    ).toEqual({ filled: false, reason: "no_input" });
+  });
+
+  test("口令红包，手机：hb.fill() 把内容填进指令框、不提交，抽屉让开；指令框关上，抽屉回来（judge-page §11.11）", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.context().grantPermissions(["local-network-access"]);
+    await mockSession(page, viewer);
+    await mock(page);
+    await page.route(
+      (url) => url.pathname === `/api/activities/${id}`,
+      (route) =>
+        route.fulfill({
+          json: {
+            activity: {
+              ...activity({ url: pageUrl, host: "puzzle.example.com" }),
+              participationMode: "password",
+            },
+          },
+        }),
+    );
+    await page.route("https://puzzle.example.com/**", (route) =>
+      route.fulfill({
+        contentType: "text/html; charset=utf-8",
+        body: `<!doctype html><title>谜题</title><h1>今日第 3 题</h1><script src="${new URL(page.url()).origin}/sdk/v1.js"></script>`,
+      }),
+    );
+    const sent: string[] = [];
+    page.on("request", (request) => {
+      if (request.method() === "POST") sent.push(request.url());
+    });
+    await openApp(page, path);
+    await page
+      .getByRole("button", { name: "上拉查看附带网页：puzzle.example.com" })
+      .click();
+    await expect(
+      page
+        .frameLocator("iframe[title='puzzle.example.com 的网页']")
+        .getByText("今日第 3 题"),
+    ).toBeVisible();
+    const pulled = await sheetTop(page, true);
+    const frame = page.frame({ url: pageUrl });
+    if (!frame) throw new Error("PAGE_FRAME_MISSING");
+    // The heading shows before the SDK has loaded.
+    await frame.waitForFunction(() => "hb" in window);
+    type PageWindow = { hb: { fill(text: string): Promise<unknown> } };
+    expect(
+      await frame.evaluate(() =>
+        (window as unknown as PageWindow).hb.fill("一\n二"),
+      ),
+    ).toEqual({
+      filled: false,
+      reason: "invalid_input",
+      message: "不能有换行",
+    });
+    expect(
+      await frame.evaluate(() =>
+        (window as unknown as PageWindow).hb.fill("芝麻开门"),
+      ),
+    ).toEqual({ filled: true });
+    await expect(omniboxInput(page)).toHaveValue("芝麻开门");
+    await expect.poll(() => sheetTop(page)).toBeGreaterThan(844);
+    await page.keyboard.press("Escape");
+    await expect(omniboxInput(page)).toHaveCount(0);
+    await expect.poll(() => sheetTop(page, true)).toBe(pulled);
+    expect(sent).toEqual([]);
   });
 
   test("宽屏：分享下面的“附带网页”打开右边的网页窗口，打开才加载，再点收起、还在", async ({
@@ -338,7 +417,7 @@ test.describe("附带网页", () => {
     await expect.poll(both).toBeCloseTo(1680, 0);
   });
 
-  test("宽屏：全屏贴满浏览器，标题栏、提醒条还在，只留刷新和退出全屏；红包窗口原地不动、点不到；退出或 Esc 缩回原处", async ({
+  test("宽屏：全屏贴满浏览器，标题栏还在，只留刷新和退出全屏；红包窗口原地不动、点不到；退出或 Esc 缩回原处", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 });

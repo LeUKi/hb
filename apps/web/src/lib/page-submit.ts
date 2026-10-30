@@ -121,3 +121,32 @@ export const notJudged = (
   reason: PageSubmitReason,
   more: { seconds?: number; message?: string } = {},
 ): PageSubmitResult => ({ judged: false, reason, ...more });
+
+/**
+ * Why `hb.fill()` did not fill the box (§11.11): what the 红包 page can
+ * tell by itself, without asking the server.
+ */
+export type PageFillReason =
+  | "no_input"
+  | "login"
+  | "not_open"
+  | "ended"
+  | "paused"
+  | "already_claimed"
+  | "not_in_scope"
+  | "busy"
+  | "invalid_input"
+  | "away";
+
+export type PageFillResult =
+  | { filled: true }
+  | { filled: false; reason: PageFillReason; message?: string };
+
+export const notFilled = (
+  reason: PageFillReason,
+  message?: string,
+): PageFillResult => ({
+  filled: false,
+  reason,
+  ...(message ? { message } : {}),
+});

@@ -100,6 +100,34 @@ export type HbSubmitResult =
       message?: string;
     };
 
+/** hb.fill() 没填进去的原因。 */
+export type HbFillReason =
+  /** 直接领的红包不用输入，点红包上的「开」就领（限时开奖点「报」就报名） */
+  | "no_input"
+  /** 没登录：红包页弹出了登录卡片 */
+  | "login"
+  /** 还没开放 */
+  | "not_open"
+  /** 红包已结束 */
+  | "ended"
+  /** 代码连续出错，暂停领取 */
+  | "paused"
+  /** 已经领到过或报过名 */
+  | "already_claimed"
+  /** 不在领取范围 */
+  | "not_in_scope"
+  /** 指令框正在提交，等有了结果再填 */
+  | "busy"
+  /** 超过 200 字或有换行，message 是原因 */
+  | "invalid_input"
+  /** 看的人不在这个红包页上（网页还开着，但没在显示） */
+  | "away";
+
+/** hb.fill() 的结果。 */
+export type HbFillResult =
+  | { filled: true }
+  | { filled: false; reason: HbFillReason; message?: string };
+
 /** 看的人自己的一次提交。 */
 export interface HbMyJudgment {
   /** 第几次，从 1 起 */
@@ -128,8 +156,13 @@ export interface Hb {
     kind: "announce",
     listener: (announcement: HbAnnouncement) => void,
   ): () => void;
-  /** 替看的人提交一次；同一个红包第一次会先问他允不允许。 */
+  /** 替看的人提交一次，只有代码判定红包能用；同一个红包第一次会先问他允不允许。 */
   submit(input: string): Promise<HbSubmitResult>;
+  /**
+   * 把内容填进这个红包的指令框（和点红包打开的一样），不提交，按提交的是看的人
+   * 自己；所有红包都能用。text 可以是空的，最多 200 个字，不能有换行。
+   */
+  fill(text: string): Promise<HbFillResult>;
   /** 看的人自己的提交，新的在前，一次 20 条；没登录时 null。 */
   mine(next?: string | null): Promise<{
     total: number;

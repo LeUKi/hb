@@ -41,6 +41,27 @@ hb.on("hongbao", update); // 状态、剩余份数、已判定次数变了
 // 新的一条动态：{ n, at, user: { name, avatar }, text }
 hb.on("announce", addLine);`;
 
+const fillCode = `const result = await hb.fill("芝麻开门");
+if (!result.filled) say(fillReasons[result.reason] ?? "没有填进去");
+// 填好了：指令框打开，内容在里面，看的人自己按提交`;
+
+/** Why `hb.fill()` did not fill the box (§11.11). */
+const fillReasons = [
+  [
+    "no_input",
+    "直接领的红包不用输入，点红包上的「开」就领（限时开奖点「报」就报名）",
+  ],
+  ["login", "没登录：红包页弹出了登录卡片"],
+  ["not_open", "还没开放"],
+  ["ended", "红包已结束"],
+  ["paused", "代码连续出错，暂停领取"],
+  ["already_claimed", "已经领到过或报过名"],
+  ["not_in_scope", "不在领取范围"],
+  ["busy", "指令框正在提交，等有了结果再填"],
+  ["invalid_input", "超过 200 字或有换行，message 是原因"],
+  ["away", "看的人不在这个红包页上（网页还开着，但没在显示）"],
+] as const;
+
 const submitCode = `const result = await hb.submit("50");
 if (result.judged) {
   // claimed：领到没有；amount、unit：领了多少
@@ -102,10 +123,11 @@ const aiPrompt = (
 4. 红包页给 iframe 的权限：脚本、表单、自己的 Cookie 和存储、新窗口、提示框、下载、全屏、写剪贴板、自动播放；没有整页跳转、摄像头、麦克风、定位、支付、读剪贴板，不要用这些。
 5. 想知道是哪个红包，读 document.referrer（红包页的地址）。
 6. 网页里不要收钱、交易，不要让人输账号密码。
-7. 代码判定红包可以接红包站的 SDK：页面里加 <script src="${origin}/sdk/v1.js"></script>，就有全局的 hb。
+7. 附带网页可以接红包站的 SDK：页面里加 <script src="${origin}/sdk/v1.js"></script>，就有全局的 hb。
    - await hb.ready() 返回 { hongbao, viewer, theme }：hongbao 有 id、title、url、code、status（draft、active、ended）、endedByCode、unit（LDC 或 🐟）、shares（{ total, claimed, remaining } 或 null）、pool、deadlineAt、judged；viewer 是 { signedIn: true, name } 或 { signedIn: false }。单独打开网页时它会报错，照常显示一段说明即可。
    - await hb.view() 是判定器的公开数据 { summary, data, at }，没有时 null；hb.on("view" | "hongbao" | "announce", fn) 订阅变化，返回取消订阅的函数；announce 每次一条 { n, at, user: { name, avatar }, text }。
-   - await hb.submit(input) 替看的人提交一次，同一个红包第一次会先问他。判定了是 { judged: true, claimed, amount, unit, reply }，没判定是 { judged: false, reason, seconds, message }；reason 有 ${reasons.map(([name]) => name).join("、")}。给玩的人看的提示由网页自己写。
+   - await hb.fill(text) 把内容填进这个红包的指令框，不提交，所有红包都能用。填好是 { filled: true }，没填是 { filled: false, reason, message }；reason 有 ${fillReasons.map(([name]) => name).join("、")}。
+   - 代码判定红包才能用 await hb.submit(input)：替看的人提交一次，同一个红包第一次会先问他。判定了是 { judged: true, claimed, amount, unit, reply }，没判定是 { judged: false, reason, seconds, message }；reason 有 ${reasons.map(([name]) => name).join("、")}。给玩的人看的提示由网页自己写。
    - await hb.mine(next) 读他自己的提交 { total, items: [{ n, at, input, claimed, amount, reply }], next }，没登录时 null。
    - 做不到：读红包站的 Cookie 和登录信息、看别人的输入、转账、发红包、改红包、绕过冷却和人机验证。
    - 开发包（npx degit LeUKi/hb/kit）里有网页模板 page/index.html、SDK 的类型 page/hb.d.ts、本地的假红包页（npm run page）和数字炸弹、刮刮乐两个样例。
@@ -214,7 +236,7 @@ export function HelpPageView() {
       <PageSection
         id="sdk"
         title="5. 接上红包站的 SDK"
-        description="代码判定红包的网页可以读红包的公开数据、替看的人提交。"
+        description="附带网页可以读红包的公开数据、把内容填进指令框；代码判定红包的网页还能替看的人提交。"
       >
         <Block
           label="引用"
@@ -228,10 +250,19 @@ export function HelpPageView() {
           </p>
         </Panel>
         <Block label="读公开数据和动态" code={readCode} />
+        <Block label="填进指令框" code={fillCode} />
+        <Panel className={text}>
+          <p>
+            所有红包都能用：内容填进这个红包的指令框，和点红包打开的一样，按提交的是看的人自己，所以不用先问他。直接领的红包不用输入，
+            <Code>reason</Code> 是 <Code>no_input</Code>
+            。填进去会换掉指令框里原来打的字。
+          </p>
+        </Panel>
+        <Fields items={fillReasons.map(([name, note]) => ({ name, note }))} />
         <Block label="替看的人提交" code={submitCode} />
         <Panel className={text}>
           <p>
-            同一个红包第一次提交时，红包页会问看的人允不允许这个网页替他提交，不允许时{" "}
+            只有代码判定红包能用。同一个红包第一次提交时，红包页会问看的人允不允许这个网页替他提交，不允许时{" "}
             <Code>reason</Code> 是 <Code>denied</Code>
             。提交照样有冷却和人机验证，每一次都出现在他的「我的提交」里。怎么跟玩的人说，由网页自己写。
           </p>
@@ -266,7 +297,7 @@ export function HelpPageView() {
             },
             {
               name: "不要做",
-              note: "红包页上一直提醒看的人这不是红包站的网页、不要在里面交易。网页里不要收钱、卖东西或让人输账号密码，违规的会被站长停用。",
+              note: "红包页打开网页前会提醒看的人这不是红包站的网页、不要在里面交易。网页里不要收钱、卖东西或让人输账号密码，违规的会被站长停用。",
             },
           ]}
         />

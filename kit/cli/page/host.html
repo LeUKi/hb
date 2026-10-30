@@ -43,6 +43,8 @@
       li small, .muted { color: var(--ink-3); font-size: 12px; }
       .claimed { color: var(--gold); }
       pre { margin: 0; font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace; white-space: pre-wrap; word-break: break-all; color: var(--ink-2); max-height: 260px; overflow-y: auto; }
+      #box { display: flex; gap: 6px; }
+      #box input { flex: 1; min-width: 0; font: inherit; font-size: 14px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); }
       dialog { border: 0; border-radius: 16px; padding: 20px; max-width: 360px; box-shadow: 0 20px 60px rgb(40 0 10 / 0.25); }
       dialog::backdrop { background: rgb(30 0 6 / 0.3); }
       dialog h3 { margin: 0 0 6px; font-size: 16px; }
@@ -64,6 +66,13 @@
       <section id="state-box" hidden>
         <h2>红包状态</h2>
         <div class="summary" id="summary"></div>
+      </section>
+      <section>
+        <h2>指令框</h2>
+        <form id="box">
+          <input id="box-input" aria-label="指令框" placeholder="网页 hb.fill() 的内容填在这里" />
+          <button type="submit" class="primary">提交</button>
+        </form>
       </section>
       <section>
         <h2>动态</h2>
@@ -248,6 +257,10 @@
           reply({ value: await api(`/api/mine?who=${encodeURIComponent(who)}${next}`) });
           return;
         }
+        if (ask.type === "fill" && typeof ask.text === "string") {
+          reply({ value: fill(ask.text) });
+          return;
+        }
         if (ask.type !== "submit" || typeof ask.input !== "string") return;
         if (busy) return reply({ value: { judged: false, reason: "busy" } });
         busy = true;
@@ -259,16 +272,52 @@
             }
             allowed.add(who);
           }
-          const answer = await api("/api/submit", { who, input: ask.input });
-          log(answer.line);
-          for (const line of answer.logs ?? []) log(`    ${line}`);
-          state = answer.state;
-          render();
-          push();
-          reply({ value: answer.result });
+          reply({ value: await send(ask.input) });
         } catch (error) {
           log(`出错：${error.message}`);
           reply({ value: { judged: false, reason: "error", message: error.message } });
+        } finally {
+          busy = false;
+        }
+      });
+
+      /** Judged by the local judge.js, as a submission from the box or the page. */
+      async function send(input) {
+        const answer = await api("/api/submit", { who, input });
+        log(answer.line);
+        for (const line of answer.logs ?? []) log(`    ${line}`);
+        state = answer.state;
+        render();
+        push();
+        return answer.result;
+      }
+
+      /** hb.fill(): into the box, as the site does, for the viewer to send. */
+      function fill(text) {
+        const not = (reason, message) => {
+          log(`网页想把 ${JSON.stringify(text)} 填进指令框：拿到 ${reason}${message ? `（${message}）` : ""}`);
+          return { filled: false, reason, ...(message ? { message } : {}) };
+        };
+        if ([...text].length > 200) return not("invalid_input", "最多 200 个字");
+        if (/[\r\n]/.test(text)) return not("invalid_input", "不能有换行");
+        if (who === config.guest) return not("login", "网站上这时会弹出登录卡片");
+        if (state.hongbao.status === "ended") return not("ended");
+        if (busy) return not("busy");
+        $("box-input").value = text;
+        $("box-input").focus();
+        log(`网页把 ${JSON.stringify(text)} 填进了指令框`);
+        return { filled: true };
+      }
+
+      $("box").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (busy) return;
+        busy = true;
+        try {
+          await send($("box-input").value);
+          $("box-input").value = "";
+        } catch (error) {
+          log(`出错：${error.message}`);
         } finally {
           busy = false;
         }

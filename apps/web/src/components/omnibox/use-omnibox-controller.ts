@@ -3,6 +3,7 @@ import {
   type ClaimActivityInput,
   judgeAnswerSchema,
   passwordSchema,
+  publicScopeAllows,
 } from "@hb/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate, useRouter } from "@tanstack/react-router";
@@ -48,7 +49,9 @@ import { maintenanceAtom } from "../../lib/maintenance";
 import { closeOverlay, openOverlay, switchOverlay } from "../../lib/overlay";
 import {
   askPageSubmit,
+  notFilled,
   notJudged,
+  type PageFillResult,
   type PageSubmitResult,
 } from "../../lib/page-submit";
 import {
@@ -1002,6 +1005,56 @@ export function useOmniboxController() {
   );
 
   /**
+   * 只填不交 (docs/judge-page-design.md §11.11): `hb.fill()` from any
+   * 红包's 附带网页 puts its text in the box as the seal opens it, the
+   * viewer sending it themselves. Nothing is asked of the server: what the
+   * 红包 page can tell says why not, the rest waits for the send.
+   */
+  const fillForPage = useCallback(
+    (activityId: string, text: string): PageFillResult => {
+      if ([...text].length > 200)
+        return notFilled("invalid_input", "最多 200 个字");
+      if (/[\r\n]/.test(text)) return notFilled("invalid_input", "不能有换行");
+      const account = sessionUserOf(queryClient);
+      const activity = queryClient.getQueryData<PublicActivityDetail>(
+        activityKeys.public(activityId, account?.id ?? null),
+      )?.activity;
+      if (activity?.participationMode === "direct")
+        return notFilled("no_input");
+      if (!account) {
+        if (!store.get(maintenanceAtom)) openAccount();
+        return notFilled("login");
+      }
+      if (!activity) return notFilled("away");
+      if (activity.status === "draft") return notFilled("not_open");
+      const deadline = activity.draw?.deadlineAt ?? activity.deadlineAt;
+      if (
+        activity.status !== "active" ||
+        (deadline && Date.parse(deadline) <= Date.now())
+      )
+        return notFilled("ended");
+      const code = activity.participationMode === "code";
+      if (code && activity.judge?.paused) return notFilled("paused");
+      const participation = queryClient.getQueryData<ParticipationCache>(
+        participationKey(account.id, activityId),
+      );
+      if (participation?.claim || participation?.registration)
+        return notFilled("already_claimed");
+      if (
+        !publicScopeAllows(activity.scope, {
+          username: account.username,
+          trustLevel: account.trustLevel,
+        })
+      )
+        return notFilled("not_in_scope");
+      if (store.get(pendingAtom)) return notFilled("busy");
+      expand({ id: activityId, purpose: code ? "code" : "claim" }, text);
+      return { filled: true };
+    },
+    [expand, openAccount, queryClient, store],
+  );
+
+  /**
    * 验证其他口令: for someone who already took part. A correct 口令 is only
    * revealed to them (已解出); it never claims again. Shares the cooldown
    * with claiming, except for answers that need no check (06 §4).
@@ -1115,6 +1168,7 @@ export function useOmniboxController() {
     runCommand,
     redeemIn,
     submitForPage,
+    fillForPage,
     verifyIn,
     openAccount,
     goHome,

@@ -963,8 +963,8 @@ function useWindowCovered() {
  * Phones: the page in a sheet pulled up from the bottom. It comes up from
  * below with a bounce and, once, nods up as if pulled, until touched. Off
  * a 红包 page it goes below the screen, still loaded. While the 红包
- * window's dialog is open it steps aside, below the screen, and the window
- * reaches the bottom: the dialog's 压暗层 alone covers the screen, one blur
+ * window's dialog is open it steps aside, below the screen, and comes back
+ * where it was after; the window reaches the bottom meanwhile: the dialog's 压暗层 alone covers the screen, one blur
  * (a 压暗层 of the sheet's own blurred only the sheet, a block of its own).
  * The window grows and shrinks under the sheet, out of sight.
  */
@@ -997,14 +997,27 @@ function Sheet({
   // Until it is touched (or a dialog has come over it), it nods up once
   // after coming in.
   const [touched, setTouched] = useState(false);
+  // Where it was when covered: what comes over a pulled-up sheet is the
+  // page's own (its hb.submit()'s dialogs, the box its hb.fill() opens),
+  // so it goes back up after. An answer to 打开附带网页？ says where itself.
+  // Read when it is covered, not followed: asked up meanwhile (the 说明弹窗's
+  // button), it stays up.
+  const coveredFrom = useRef<Stop | null>(null);
+  const stopNow = useRef(stop);
+  stopNow.current = stop;
   // Before the frame is painted: the window reaches down while the sheet
   // still covers the bottom.
   useLayoutEffect(() => {
-    if (!covered) return;
+    if (!covered) {
+      if (shown && coveredFrom.current === "full") go("full");
+      coveredFrom.current = null;
+      return;
+    }
+    coveredFrom.current = stopNow.current;
     go("peek");
     setAway(true);
     setTouched(true);
-  }, [covered, go, setAway]);
+  }, [covered, shown, go, setAway]);
   const hidden = !shown || covered;
   const offsetOf = (at: Stop) =>
     hidden ? full + 24 : at === "full" ? 0 : full - SHEET_PEEK;

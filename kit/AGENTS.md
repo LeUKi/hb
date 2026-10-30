@@ -296,13 +296,14 @@ export function judge({ input, state, user, share }) {
 
 ## 附带网页（可选）
 
-代码判定红包可以带一个自己的网页，显示在红包页旁边（手机上在底部抽屉里），用来做格子、按钮、动画这些输入框做不了的玩法。网页接上红包站的 SDK，能读红包的公开信息和判定器的公开数据（`view`）、收新的动态、替看的人提交、读他自己的提交；判定照旧只认 `judge.js`，网页最坏只是显示得不对。
+代码判定红包可以带一个自己的网页，显示在红包页旁边（手机上在底部抽屉里），用来做格子、按钮、动画这些输入框做不了的玩法。网页接上红包站的 SDK，能读红包的公开信息和判定器的公开数据（`view`）、收新的动态、替看的人提交、把内容填进指令框、读他自己的提交；判定照旧只认 `judge.js`，网页最坏只是显示得不对。
 
 - 模板 `page/index.html`：一个 HTML 文件，接好了 SDK，照着改。类型在 `page/hb.d.ts`。
 - 引用：`<script src="https://hb.lafi.sh/sdk/v1.js"></script>`，网页里就有全局的 `hb`：
   - `await hb.ready()`：`{ hongbao, viewer, theme }`。`hongbao` 有 `title`、`status`（`draft`、`active`、`ended`）、`shares`、`pool`、`judged` 等；`viewer` 是 `{ signedIn: true, name }` 或 `{ signedIn: false }`。单独打开网页时它会报错，照常显示一段说明就行。
   - `await hb.view()`：公开数据 `{ summary, data, at }`，没有时 `null`。`hb.on("view" | "hongbao" | "announce", fn)` 订阅变化，返回取消订阅的函数；`announce` 每次一条 `{ n, at, user: { name, avatar }, text }`。
   - `await hb.submit(input)`：替看的人提交一次，同一个红包第一次红包页会问他允不允许。判定了是 `{ judged: true, claimed, amount, unit, reply }`；没判定是 `{ judged: false, reason, seconds, message }`，`reason` 有 `denied`、`login`、`cooldown`（`seconds` 是还剩几秒）、`busy`、`human_check`、`not_in_scope`、`already_claimed`、`not_open`、`ended`、`paused`、`judge_failed`、`try_later`、`invalid_input`、`unconfirmed`、`away`、`not_code`、`error`，意思见 `page/hb.d.ts`。给玩的人看的话由网页自己写。
+  - `await hb.fill(text)`：把内容填进这个红包的指令框，不提交，按提交的是看的人自己，所以不用问他；所有红包都能用。填好是 `{ filled: true }`；没填是 `{ filled: false, reason, message }`，`reason` 有 `no_input`（直接领的红包不用输入）、`login`、`not_open`、`ended`、`paused`、`already_claimed`、`not_in_scope`、`busy`、`invalid_input`（超过 200 字或有换行）、`away`。
   - `await hb.mine(next)`：他自己的提交，新的在前，一次 20 条，`{ total, items: [{ n, at, input, claimed, amount, reply }], next }`；没登录时 `null`。
   - 做不到：读红包站的 Cookie 和登录信息、看别人的输入、转账、发红包、改红包、绕过冷却和人机验证。
 - 网页要显示的东西都从 `view.data` 来：判定器在 `view` 里写清楚格子、区间、猜过的数，网页照着画，不要在网页里自己算谁赢了。秘密照旧放在 `state`。
