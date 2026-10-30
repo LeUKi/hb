@@ -89,7 +89,7 @@ async function all(path: string) {
   let cursor: string | null = null;
   for (let page = 0; page < 20; page += 1) {
     const sep = path.includes("?") ? "&" : "?";
-    const read = await get<JudgeRecordList>(
+    const read: { status: number; body: JudgeRecordList } = await get(
       cursor ? `${path}${sep}cursor=${encodeURIComponent(cursor)}` : path,
     );
     expect(read.status).toBe(200);
