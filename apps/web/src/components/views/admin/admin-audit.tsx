@@ -55,6 +55,21 @@ const kinds = {
   page_stop: "停用附带网页",
   judge_settings: "判定器设置",
   judge_square: "判定器广场",
+  roadmap: "施工",
+} as const;
+
+/** 施工中 (roadmap-design §4): the 站长's move, in the tab's words. */
+const roadmapMoves = {
+  create: "新建",
+  start: "开工",
+  note: "写进展",
+  done: "完成",
+  decline: "不做",
+  back: "退回",
+  merge: "合并",
+  hide: "隐藏",
+  unhide: "取消隐藏",
+  edit: "改",
 } as const;
 
 /** Only what changed, in words: "首页 8 秒 → 5 秒", "转入 关 → 开". */
@@ -78,6 +93,14 @@ function changesOf(entry: AdminAuditEntry) {
               : action === "move"
                 ? `精选排序：判定器「${name}」`
                 : `精选换成第 ${n ?? ""} 版：判定器「${name}」`,
+    ];
+  }
+  if (entry.type === "roadmap" && entry.roadmap) {
+    const { title, action, reason } = entry.roadmap;
+    return [
+      action === "merge"
+        ? `施工：合并「${title}」到「${reason ?? ""}」`
+        : `施工：${roadmapMoves[action]}「${title}」${reason ? `：${reason}` : ""}`,
     ];
   }
   const labels =
@@ -205,7 +228,8 @@ export function AdminAudit() {
                       {/* A 停用 changes a 红包, not a numbered setting. */}
                       {entry.type !== "code_stop" &&
                         entry.type !== "page_stop" &&
-                        entry.type !== "judge_square" && (
+                        entry.type !== "judge_square" &&
+                        entry.type !== "roadmap" && (
                           <p className="text-xs text-ink-3">
                             第 {entry.previousVersion} 版 → 第{" "}
                             {entry.nextVersion} 版

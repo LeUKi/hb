@@ -1365,6 +1365,25 @@ async function audit(
         },
       }),
     },
+    // 施工中 (docs/roadmap-design.md §4): the 站长's moves on its items.
+    {
+      type: "roadmap" as const,
+      columns: "c.item_id, c.action, c.title, c.reason",
+      table: `(SELECT id, actor_user_id, created_at, 0 AS previous_version, 0 AS next_version,
+        item_id, action, title, reason FROM roadmap_changes)`,
+      values: (row: Record<string, unknown>) => ({
+        before: {},
+        after: {},
+        roadmap: {
+          id: String(row.item_id),
+          title: String(row.title),
+          action: String(row.action) as NonNullable<
+            AdminAuditEntry["roadmap"]
+          >["action"],
+          reason: row.reason == null ? null : String(row.reason),
+        },
+      }),
+    },
     // 停用附带网页 (docs/attached-page-design.md): kept on the 红包's row.
     {
       type: "page_stop" as const,

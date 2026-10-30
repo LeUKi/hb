@@ -17,6 +17,7 @@ import { AdminArea } from "../views/admin/admin-frame";
 import { AdminJudge } from "../views/admin/admin-judge";
 import { AdminOverview } from "../views/admin/admin-overview";
 import { AdminPayments } from "../views/admin/admin-payments";
+import { AdminRoadmap } from "../views/admin/admin-roadmap";
 import { AdminSettings } from "../views/admin/admin-settings";
 import { AdminUsers } from "../views/admin/admin-users";
 import { BalanceCheckoutView } from "../views/balance-checkout-view";
@@ -42,6 +43,7 @@ import { PaymentView } from "../views/payment-view";
 import { PaymentsView } from "../views/payments-view";
 import { RankView } from "../views/rank-view";
 import { ResultsView } from "../views/results-view";
+import { RoadmapView } from "../views/roadmap-view";
 import { SenderView } from "../views/sender-view";
 import { SquareView } from "../views/square-view";
 import { StartView } from "../views/start-view";
@@ -64,6 +66,7 @@ const commandPages: Record<
   merchant: <MerchantView />,
   payments: <PaymentsView />,
   judges: <JudgesView />,
+  roadmap: <RoadmapView />,
 };
 
 /**
@@ -79,6 +82,7 @@ const adminPages: Record<string, (search: AdminSearch) => ReactNode> = {
   "/admin/payments": (search) => <AdminPayments search={search} />,
   "/admin/balance": (search) => <AdminBalance search={search} />,
   "/admin/judge": () => <AdminJudge />,
+  "/admin/roadmap": () => <AdminRoadmap />,
   "/admin/settings": () => <AdminSettings />,
   "/admin/audit": () => <AdminAudit />,
 };

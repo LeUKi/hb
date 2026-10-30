@@ -177,6 +177,11 @@ const paymentsRoute = createRoute({
   path: "/payments",
   staticData: { chrome: "docked", command: "payments" },
 });
+const roadmapRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/roadmap",
+  staticData: { chrome: "docked", command: "roadmap" },
+});
 const judgesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/judges",
@@ -279,6 +284,7 @@ const adminUsersRoute = adminRoute2("/admin/users", "用户");
 const adminPaymentsRoute = adminRoute2("/admin/payments", "付款");
 const adminBalanceRoute = adminRoute2("/admin/balance", "🐟额");
 const adminJudgeRoute = adminRoute2("/admin/judge", "判定器");
+const adminRoadmapRoute = adminRoute2("/admin/roadmap", "施工");
 const adminSettingsRoute = adminRoute2("/admin/settings", "网站设置");
 const adminAuditRoute = adminRoute2("/admin/audit", "操作记录");
 const helpRoute = createRoute({
@@ -339,6 +345,7 @@ const routeTree = rootRoute.addChildren([
   judgesRoute,
   judgeNewRoute,
   judgeRoute,
+  roadmapRoute,
   balanceRoute,
   balanceTopupRoute,
   balanceWithdrawalRoute,
@@ -349,6 +356,7 @@ const routeTree = rootRoute.addChildren([
   adminPaymentsRoute,
   adminBalanceRoute,
   adminJudgeRoute,
+  adminRoadmapRoute,
   adminSettingsRoute,
   adminAuditRoute,
   helpRoute,

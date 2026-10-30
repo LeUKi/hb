@@ -88,6 +88,8 @@ export const adminAuditTypeSchema = z.enum([
   "judge_settings",
   /** 判定器广场's 精选 and 撤下 (docs/judge-square-design.md §15.4). */
   "judge_square",
+  /** 施工中's moves by the 站长 (docs/roadmap-design.md §4). */
+  "roadmap",
 ]);
 export type AdminAuditType = z.infer<typeof adminAuditTypeSchema>;
 
@@ -347,6 +349,24 @@ export type AdminAuditEntry = {
       | "version";
     reason: string | null;
     n: number | null;
+  };
+  /** roadmap: what was done to which 施工中 item (its title then). */
+  roadmap?: {
+    id: string;
+    title: string;
+    action:
+      | "create"
+      | "start"
+      | "note"
+      | "done"
+      | "decline"
+      | "back"
+      | "merge"
+      | "hide"
+      | "unhide"
+      | "edit";
+    /** 不做's reason, the line written, or the title it went into. */
+    reason: string | null;
   };
 };
 

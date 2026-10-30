@@ -39,6 +39,7 @@ export * from "./random";
 export * from "./rank";
 export * from "./rate-limits";
 export * from "./recipient-speed";
+export * from "./roadmap";
 export * from "./share-text";
 
 export const ACTIVITY_LIMITS = {

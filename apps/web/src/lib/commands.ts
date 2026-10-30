@@ -3,6 +3,7 @@ import {
   CircleHelp,
   Fish,
   FolderCode,
+  HardHat,
   History,
   LayoutGrid,
   LogIn,
@@ -44,6 +45,7 @@ export type CommandPath =
   | "/payments"
   | "/admin"
   | "/judges"
+  | "/roadmap"
   | "/help";
 
 export type CommandId =
@@ -57,6 +59,7 @@ export type CommandId =
   | "payments"
   | "admin"
   | "judges"
+  | "roadmap"
   | "help"
   | "login";
 
@@ -316,6 +319,29 @@ export const commands: Command[] = [
       "pdqgc",
       "wodepandingqi",
       "wdpdq",
+    ],
+  },
+  {
+    // 施工中 (docs/roadmap-design.md §1): anyone may look.
+    id: "roadmap",
+    path: "/roadmap",
+    name: "roadmap",
+    title: "施工中",
+    icon: HardHat,
+    requires: "guest",
+    quick: true,
+    keys: [
+      "roadmap",
+      "施工",
+      "施工中",
+      "需求",
+      "功能请求",
+      "shigong",
+      "sg",
+      "shigongzhong",
+      "sgz",
+      "xuqiu",
+      "xq",
     ],
   },
   {

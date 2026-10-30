@@ -16,6 +16,7 @@ import { judgeRoutes } from "./judge/routes";
 import { MerchantChangeConfirmationError } from "./payments/configuration";
 import { merchantRoutes } from "./payments/routes";
 import { rankRoutes } from "./rank/routes";
+import { roadmapRoutes } from "./roadmap/routes";
 import { AttemptCooldownError } from "./runtime/attempt-cooldown";
 import {
   inMaintenanceMode,
@@ -51,6 +52,7 @@ export const app = new Hono<ApiContext>()
   .route("/api", passwordRoutes)
   .route("/api", discoveryRoutes)
   .route("/api", rankRoutes)
+  .route("/api", roadmapRoutes)
   .route("/api", judgeRoutes)
   .route("/api", merchantRoutes)
   .route("/api", balanceRoutes)

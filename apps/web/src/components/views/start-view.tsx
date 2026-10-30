@@ -94,6 +94,8 @@ const tints: Partial<Record<CommandId, string>> = {
   rank: "bg-warning-soft text-warning",
   // The 判定器's own lacquer and gold (JudgeMark).
   judges: "bg-[#2c2724] text-[#f3d38b]",
+  // 施工中's gold (roadmap-design §1), a shade over 红包广场's.
+  roadmap: "bg-gold-soft-strong text-gold-ink",
 };
 
 /**

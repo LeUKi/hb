@@ -2481,3 +2481,115 @@ export const judgeUsage = sqliteTable(
     ),
   ],
 );
+
+/**
+ * 施工中 (docs/roadmap-design.md §6): each thing asked for, being built,
+ * done or declined, and who asked; a merged one points at the one it went
+ * into. Its votes are counted here as they are given (roadmap_votes).
+ */
+export const roadmapItems = sqliteTable(
+  "roadmap_items",
+  {
+    id: text("id").primaryKey(),
+    status: text("status", {
+      enum: ["request", "building", "done", "declined", "merged"],
+    }).notNull(),
+    title: text("title").notNull(),
+    detail: text("detail").notNull().default(""),
+    authorId: text("author_id")
+      .notNull()
+      .references(() => users.id),
+    /** 不做's reason. */
+    reason: text("reason"),
+    mergedInto: text("merged_into").references(
+      (): AnySQLiteColumn => roadmapItems.id,
+    ),
+    hidden: integer("hidden", { mode: "boolean" }).notNull().default(false),
+    votes: integer("votes").notNull().default(0),
+    startedAt: integer("started_at"),
+    doneAt: integer("done_at"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    index("roadmap_items_hot_idx").on(
+      table.status,
+      table.votes,
+      table.createdAt,
+    ),
+    index("roadmap_items_new_idx").on(table.status, table.createdAt),
+    index("roadmap_items_done_idx").on(table.status, table.doneAt),
+    check(
+      "roadmap_items_shape",
+      sql`length(${table.title}) BETWEEN 1 AND 40 AND ${table.title} = trim(${table.title})
+        AND length(${table.detail}) <= 500 AND typeof(${table.votes}) = 'integer' AND ${table.votes} >= 0
+        AND (${table.reason} IS NULL OR length(${table.reason}) BETWEEN 1 AND 100)
+        AND ((${table.status} = 'merged') = (${table.mergedInto} IS NOT NULL))`,
+    ),
+  ],
+);
+
+/** The 站长's lines on one being built (§2.1), the latest on its card. */
+export const roadmapNotes = sqliteTable(
+  "roadmap_notes",
+  {
+    id: text("id").primaryKey(),
+    itemId: text("item_id")
+      .notNull()
+      .references(() => roadmapItems.id),
+    text: text("text").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    index("roadmap_notes_item_idx").on(table.itemId, table.createdAt),
+    check("roadmap_notes_shape", sql`length(${table.text}) BETWEEN 1 AND 100`),
+  ],
+);
+
+/** 点赞 (§2.4): one a person a thing. */
+export const roadmapVotes = sqliteTable(
+  "roadmap_votes",
+  {
+    itemId: text("item_id")
+      .notNull()
+      .references(() => roadmapItems.id),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.itemId, table.userId] })],
+);
+
+/** 网站管理 · 施工 (§4): what the 站长 did, for 操作记录. */
+export const roadmapChanges = sqliteTable(
+  "roadmap_changes",
+  {
+    id: text("id").primaryKey(),
+    actorUserId: text("actor_user_id")
+      .notNull()
+      .references(() => users.id),
+    itemId: text("item_id")
+      .notNull()
+      .references(() => roadmapItems.id),
+    action: text("action", {
+      enum: [
+        "create",
+        "start",
+        "note",
+        "done",
+        "decline",
+        "back",
+        "merge",
+        "hide",
+        "unhide",
+        "edit",
+      ],
+    }).notNull(),
+    /** Its title then; the reason, the line, or what it went into. */
+    title: text("title").notNull(),
+    reason: text("reason"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [index("roadmap_changes_time_idx").on(table.createdAt)],
+);

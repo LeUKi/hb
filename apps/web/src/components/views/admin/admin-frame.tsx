@@ -83,6 +83,13 @@ const tabs: {
     refreshable: true,
   },
   {
+    to: "/admin/roadmap",
+    label: "施工",
+    description:
+      "施工页上的每一件：开工、写进展、完成、不做、合并。改了马上生效。",
+    refreshable: true,
+  },
+  {
     to: "/admin/settings",
     label: "网站设置",
     description: "口令尝试间隔、🐟额和它的平台应用，保存后立即生效。",
@@ -92,7 +99,7 @@ const tabs: {
     to: "/admin/audit",
     label: "操作记录",
     description:
-      "尝试间隔、🐟额设置和判定器设置的每一次修改，以及停用代码判定红包。记录一直保留。",
+      "尝试间隔、🐟额设置和判定器设置的每一次修改，停用代码判定红包，以及施工页的处理。记录一直保留。",
     refreshable: true,
   },
 ];
