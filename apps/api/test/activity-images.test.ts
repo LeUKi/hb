@@ -687,12 +687,12 @@ describe("activity image of a 代码判定红包", () => {
       await request(path, { cookie: stranger.cookie })
     ).text();
     lacquer(paused);
-    expect(paused).toContain("红包的代码连续出错，暂停领取");
+    expect(paused).toContain("判定器连续出错，暂停领取");
     expect(paused).toMatch(
       /fill="url\(#faded\)"[\s\S]*class="glyph faded"[^>]*>开</,
     );
     expect(await (await request(path)).text()).toContain(
-      "红包的代码连续出错，暂停领取",
+      "判定器连续出错，暂停领取",
     );
 
     await stopCodeActivity(bindings, activity.id, admin.id);

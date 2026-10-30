@@ -225,9 +225,9 @@ export function CodeEntry({ published }: { published: boolean }) {
             aria-hidden="true"
           />
           <span className="flex min-w-0 flex-1 items-baseline gap-2">
-            <span className="text-base font-medium text-ink">代码</span>
+            <span className="text-base font-medium text-ink">判定器</span>
             <span className="truncate text-xs text-ink-3">
-              {published ? "已公开" : "结束后公开"}
+              {published ? "代码已公开" : "代码结束后公开"}
             </span>
           </span>
           <ChevronRight
@@ -270,7 +270,7 @@ function CodeBody({
       <header className="grid gap-1 px-5 pt-4 pb-3">
         <div className="flex items-center justify-between gap-3">
           <h2 id="code-title" className="text-lg font-semibold text-ink">
-            代码
+            判定器
           </h2>
           <Button
             variant="ghost"
@@ -297,7 +297,7 @@ function CodeBody({
         <div className="grid grid-cols-[minmax(0,1fr)] gap-2">
           <div className="flex min-h-9 items-center justify-between gap-3">
             <span className="text-sm font-medium text-ink-3">
-              {published ? "代码 · 已公开" : "代码 · 结束后公开"}
+              {published ? "判定器代码 · 已公开" : "判定器代码 · 结束后公开"}
             </span>
             {code && (
               <Button
@@ -385,8 +385,8 @@ function CodeBody({
             value={judge.seed ?? judge.seedCommitment}
             note={
               judge.seed
-                ? "代码里的随机数都从它算出。和开放时公布的封存值一致，就说明开放后没换过。"
-                : "代码里的随机数都从这个种子算出。种子结束后公开，和这个封存值对得上，就说明开放后没换过。"
+                ? "判定器用的随机数都从它算出。和开放时公布的封存值一致，就说明开放后没换过。"
+                : "判定器用的随机数都从这个种子算出。种子结束后公开，和这个封存值对得上，就说明开放后没换过。"
             }
             matched={checks?.seed ? "和封存值一致" : undefined}
           />
@@ -405,7 +405,7 @@ function CodeBody({
               ))}
             </ul>
             <p className="text-xs text-ink-3">
-              判定时代码会请求这些地址，你的提交（数字
+              判定时判定器会请求这些地址，你的提交（数字
               ID、用户名、等级和输入）可能随请求发送给对方。判定结果取决于对方的回答，开放后对方的回答可能变化，本站无法核对。
             </p>
           </div>
@@ -415,7 +415,7 @@ function CodeBody({
               <span className="text-xs text-ink-3">联网</span>
               <p className="text-sm text-ink">不联网</p>
               <p className="text-xs text-ink-3">
-                代码碰不到网络，只拿得到你的输入、用户名和等级。
+                判定器碰不到网络，只拿得到你的输入、用户名和等级。
               </p>
             </div>
           )

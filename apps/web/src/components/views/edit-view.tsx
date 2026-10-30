@@ -72,7 +72,7 @@ function EndEarly({
         done
           ? undefined
           : activity.judgePaused
-            ? `红包的代码连续出错，已暂停领取，所以现在可以提前结束。已经领到的不受影响，${activity.config.funding === "balance" ? "剩下的退回你的🐟额" : "没领的份不再发"}。结束后不能重新开放。`
+            ? `判定器连续出错，已暂停领取，所以现在可以提前结束。已经领到的不受影响，${activity.config.funding === "balance" ? "剩下的退回你的🐟额" : "没领的份不再发"}。结束后不能重新开放。`
             : "还没有人领取或报名，所以现在可以提前结束。结束后不能再领取或报名，也不能重新开放。"
       }
     >

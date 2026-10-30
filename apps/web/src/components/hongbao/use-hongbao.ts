@@ -243,7 +243,7 @@ export function useHongbao(data: HongbaoData) {
             ? `${openingLabel(activity.scheduledOpenAt)} 开放`
             : `还没开放，开放后才能${verb}`
         : paused
-          ? "红包的代码连续出错，暂停领取"
+          ? "判定器连续出错，暂停领取"
           : spinning
             ? code
               ? "正在判定…"
@@ -253,7 +253,7 @@ export function useHongbao(data: HongbaoData) {
               : retry
                 ? `点「${glyph}」重试原提交`
                 : code
-                  ? `点「${glyph}」，输入后提交，由红包作者的代码判定`
+                  ? `点「${glyph}」，输入后提交，由判定器判定`
                   : activity.participation === "password"
                     ? `点「${glyph}」，输入口令${verb}`
                     : `点「${glyph}」${verb}`;

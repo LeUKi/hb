@@ -164,13 +164,13 @@ export function AuthorTools({
         <Callout
           tone="warning"
           icon={PauseCircle}
-          title="红包的代码连续出错，已暂停领取"
+          title="判定器连续出错，已暂停领取"
         >
           <span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
             <span>
               {activity.fish
-                ? "开放后代码不能改。提前结束后，剩下的退回你的🐟额。"
-                : "开放后代码不能改。提前结束后，没领的份不再发。"}
+                ? "开放后判定器不能换。提前结束后，剩下的退回你的🐟额。"
+                : "开放后判定器不能换。提前结束后，没领的份不再发。"}
             </span>
             <MoreLink
               href={senderPagePath(activity.id, "edit")}
@@ -206,7 +206,7 @@ export function AuthorTools({
       {code && ended && (
         <Panel className="flex flex-wrap items-center justify-between gap-3 p-4">
           <p className="min-w-0 flex-1 text-sm text-ink-2">
-            每份领到时交给代码的数据，含输入和状态，用本地开发包重放。
+            每份领到时交给判定器的数据，含输入和状态，用本地开发包重放。
           </p>
           <a
             href={judgeRecordsUrl(activity.id)}

@@ -97,7 +97,7 @@ function coverTags(activity: HongbaoActivity) {
     random: split ? `${splitRules[split]}。` : "每份金额随机。",
     custom: "每份的金额由红包作者定好。",
     timed_draw: split ? `${draw}奖金分法是${splitRules[split]}。` : draw,
-    code: "每次领多少由红包作者的代码判定；开放时公布代码的指纹，结束后公开代码。",
+    code: "每次领多少由判定器判定；开放时公布它的代码指纹，结束后公开代码。",
   }[activity.mode];
   const splitName =
     split && (activity.mode === "random" || activity.mode === "timed_draw")

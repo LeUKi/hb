@@ -576,7 +576,7 @@ function SettingsForm({ data }: { data: JudgeSettingsResponse }) {
           />
           <Switch
             label="代码判定联网"
-            description="关着时联网的代码不能部署、不能开放；已经开放的照常领。"
+            description="关着时联网的判定器不能部署、不能开放；已经开放的照常领。"
             checked={values.networkEnabled}
             onChange={(networkEnabled) => edit({ networkEnabled })}
           />

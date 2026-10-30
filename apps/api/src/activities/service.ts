@@ -939,7 +939,7 @@ export async function updateActivity(
         !input.activity.judge ||
         !(await sameJudge(env, judgeRow, input.activity.judge))
       )
-        invalidActivity("开放后不能修改代码、测试和提示");
+        invalidActivity("开放后不能换判定器");
     }
     if (timedDrawMoney(row)) {
       if (!sameDeadlineConfig(config.deadline, oldConfig.deadline))

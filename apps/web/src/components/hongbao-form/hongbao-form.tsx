@@ -866,10 +866,10 @@ export function HongbaoForm({
                             <span className="mr-auto min-w-0 flex-1 basis-48 text-xs text-ink-3">
                               {scheduleAt !== null
                                 ? form.mode === "code"
-                                  ? "定时以后奖励、代码和时间就不能再改，要改先取消定时。"
+                                  ? "定时以后奖励、判定器和时间就不能再改，要改先取消定时。"
                                   : "定时以后奖励、参与方式、口令和时间就不能再改，要改先取消定时。"
                                 : form.mode === "code"
-                                  ? "开放后奖励、代码和时间都不能再改。"
+                                  ? "开放后奖励、判定器和时间都不能再改。"
                                   : "开放后奖励、参与方式、口令和时间都不能再改。"}
                             </span>
                           )}

@@ -532,7 +532,7 @@ test.describe("代码判定红包", () => {
     await expect(
       page.getByRole("button", { name: "代码判定", exact: true }),
     ).toHaveAccessibleDescription(
-      "每次领多少由红包作者的代码判定；开放时公布代码的指纹，结束后公开代码。",
+      "每次领多少由判定器判定；开放时公布它的代码指纹，结束后公开代码。",
     );
     await expect(page.getByRole("button", { name: "🐟额" })).toBeVisible();
     // 奖池 over 每份至少; 已领 over 已判定 N 次, no bar.
@@ -550,7 +550,7 @@ test.describe("代码判定红包", () => {
     await expect(page.locator("[data-hb-part=passwords]")).toHaveCount(0);
     await expect(page.locator("[data-hb-part=my-judgments]")).toHaveCount(0);
     const entry = page.locator("#code-entry");
-    await expect(entry).toHaveText(/^代码结束后公开$/);
+    await expect(entry).toHaveText(/^判定器代码结束后公开$/);
     await expect(entry).toHaveAttribute("aria-haspopup", "dialog");
 
     // 参与名单 (05 §7): 领到, on which of their judged submissions each one
@@ -602,7 +602,7 @@ test.describe("代码判定红包", () => {
     expect(state.reads).toEqual(before);
   });
 
-  test("开：黑漆的代码判定作用域和等宽输入；没领到写代码的回复，领到后结果里不再写输入；我的提交随之更新", async ({
+  test("开：黑漆的代码判定作用域和等宽输入；没领到写判定器的回复，领到后结果里不再写输入；我的提交随之更新", async ({
     page,
   }) => {
     await mockSession(page, viewer);
@@ -610,7 +610,7 @@ test.describe("代码判定红包", () => {
     await mockLive(page);
     await openApp(page, path);
     await expect(
-      page.getByText("点「开」，输入后提交，由红包作者的代码判定"),
+      page.getByText("点「开」，输入后提交，由判定器判定"),
     ).toBeVisible();
     // Nothing judged yet: no 我的提交.
     await expect(page.locator("[data-hb-part=my-judgments]")).toHaveCount(0);
@@ -662,7 +662,7 @@ test.describe("代码判定红包", () => {
     await expect(
       page
         .getByRole("status")
-        .filter({ hasText: "第 1 次：没领到。代码的回复：大了" }),
+        .filter({ hasText: "第 1 次：没领到。判定器的回复：大了" }),
     ).toHaveCount(1);
     await expect(input).toHaveValue("");
     expect(state.submissions).toMatchObject([
@@ -679,7 +679,7 @@ test.describe("代码判定红包", () => {
     await expect(first).toContainText("第 1 次");
     await expect(first).toContainText("没领到");
     await expect(first).toContainText("大了");
-    await expect(first).not.toContainText("代码的回复");
+    await expect(first).not.toContainText("判定器的回复");
     // What was typed shows as typed (05 §3).
     await expect(first.getByText("50", { exact: true })).toBeVisible();
     // Nothing is said about 口令 here.
@@ -702,9 +702,9 @@ test.describe("代码判定红包", () => {
       input: answer,
     });
     const result = page.locator("[data-hb-part=result]");
-    await expect(result).toContainText("代码的回复：猜对了！");
+    await expect(result).toContainText("判定器的回复：猜对了！");
     await expect(result).toContainText("按上限发");
-    await expect(result).toContainText("金额、发放状态和代码的回复仅你可见");
+    await expect(result).toContainText("金额、发放状态和判定器的回复仅你可见");
     // What was typed is in 我的提交, not again here (05 §3).
     await expect(result).not.toContainText("口令");
     await expect(result).not.toContainText("输入");
@@ -925,10 +925,10 @@ test.describe("代码判定红包", () => {
 
     const entry = page.locator("#code-entry");
     await entry.click();
-    const dialog = page.getByRole("dialog", { name: "代码" });
+    const dialog = page.getByRole("dialog", { name: "判定器" });
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText(`小满的红包 · ${title}`);
-    await expect(dialog.getByText("代码 · 结束后公开")).toBeVisible();
+    await expect(dialog.getByText("判定器代码 · 结束后公开")).toBeVisible();
     await expect(
       dialog.getByText("只有你看得到：别人要等红包结束后才看得到代码。"),
     ).toBeVisible();
@@ -958,7 +958,7 @@ test.describe("代码判定红包", () => {
     await expect(dialog.getByText("联网", { exact: true })).toBeVisible();
     await expect(dialog.getByText("不联网", { exact: true })).toBeVisible();
     await expect(
-      dialog.getByText("代码碰不到网络，只拿得到你的输入、用户名和等级。"),
+      dialog.getByText("判定器碰不到网络，只拿得到你的输入、用户名和等级。"),
     ).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
@@ -970,7 +970,7 @@ test.describe("代码判定红包", () => {
     const roster = page.getByRole("dialog", { name: "参与名单" });
     const row = roster.getByRole("listitem").filter({ hasText: "早到的人" });
     await expect(row).toContainText("第 3 次领到");
-    await expect(row).toContainText("代码给 0.50，按上限发 0.20");
+    await expect(row).toContainText("判定器给 0.50，按上限发 0.20");
     await expect(row).toContainText("输入");
     await expect(row.getByText(answer, { exact: true })).toHaveCount(1);
     await expect(row).not.toContainText("已隐藏");
@@ -980,7 +980,7 @@ test.describe("代码判定红包", () => {
   });
 
   // The sender's 名单 line under a name (roster.tsx, the detail span) holds
-  // 第 N 次领到, the 输入, 代码给 …，按上限发 … and 已存入🐟额: in the 480px
+  // 第 N 次领到, the 输入, 判定器给 …，按上限发 … and 已存入🐟额: in the 480px
   // dialog it wraps rather than squeezing the input or running over the
   // time and the amount (07 §6 “写他的输入和发了多少”).
   test("名单（红包作者）：输入看得见，那行小字不压到右边的时间和金额", async ({
@@ -1013,8 +1013,8 @@ test.describe("代码判定红包", () => {
     await mockLive(page);
     await openApp(page, path);
     await page.locator("#code-entry").click();
-    const dialog = page.getByRole("dialog", { name: "代码" });
-    await expect(dialog.getByText("代码 · 结束后公开")).toBeVisible();
+    const dialog = page.getByRole("dialog", { name: "判定器" });
+    await expect(dialog.getByText("判定器代码 · 结束后公开")).toBeVisible();
     await expect(dialog.locator(".cm-editor")).toHaveCount(0);
     await expect(
       dialog.getByRole("button", { name: "复制代码", exact: true }),
@@ -1024,7 +1024,7 @@ test.describe("代码判定红包", () => {
     await expect(dialog.getByText("不联网", { exact: true })).toBeVisible();
   });
 
-  test("已暂停：印章变淡但不透明、不能点，提示代码连续出错", async ({
+  test("已暂停：印章变淡但不透明、不能点，提示判定器连续出错", async ({
     page,
   }) => {
     await mockSession(page, viewer);
@@ -1033,7 +1033,7 @@ test.describe("代码判定红包", () => {
     await mockLive(page);
     await openApp(page, path);
     const button = seal(page);
-    await expect(button).toHaveAccessibleName("红包的代码连续出错，暂停领取");
+    await expect(button).toHaveAccessibleName("判定器连续出错，暂停领取");
     await expect(button).toHaveAttribute("aria-disabled", "true");
     await expect(button).toHaveAttribute("data-state", "disabled");
     // On the lacquer a see-through seal turns muddy: a faded, solid gold.
@@ -1043,9 +1043,7 @@ test.describe("代码判定红包", () => {
       )
       .toBe("1");
     await expect(
-      page
-        .locator("[data-hb-part=hint]")
-        .getByText("红包的代码连续出错，暂停领取"),
+      page.locator("[data-hb-part=hint]").getByText("判定器连续出错，暂停领取"),
     ).toBeVisible();
     // Pressed anyway: nothing opens, nothing is sent.
     await button.click({ force: true });
@@ -1091,10 +1089,10 @@ test.describe("代码判定红包", () => {
 
     // The code and the seed are public now, each checked against opening.
     const entry = page.locator("#code-entry");
-    await expect(entry).toHaveText(/^代码已公开$/);
+    await expect(entry).toHaveText(/^判定器代码已公开$/);
     await entry.click();
-    const dialog = page.getByRole("dialog", { name: "代码" });
-    await expect(dialog.getByText("代码 · 已公开")).toBeVisible();
+    const dialog = page.getByRole("dialog", { name: "判定器" });
+    await expect(dialog.getByText("判定器代码 · 已公开")).toBeVisible();
     await expect(dialog.locator(".cm-editor .cm-content")).toContainText(
       "export function judge(submission",
     );
@@ -1133,7 +1131,7 @@ test.describe("代码判定红包", () => {
       state.judge = { ...publicJudge(), ...judge };
       await openApp(page, path);
       await page.locator("#code-entry").click();
-      const dialog = page.getByRole("dialog", { name: "代码" });
+      const dialog = page.getByRole("dialog", { name: "判定器" });
       await expect(dialog.locator(".cm-editor .cm-content")).toContainText(
         judge.code === judgeCode ? "export function judge" : "换过",
       );
@@ -1192,7 +1190,7 @@ test.describe("代码判定红包", () => {
     state.judge = { ...publicJudge(), protocol: 3, ...open };
     await openApp(page, path);
     await page.locator("#code-entry").click();
-    const dialog = page.getByRole("dialog", { name: "代码" });
+    const dialog = page.getByRole("dialog", { name: "判定器" });
     await expect(
       dialog.getByText("判定器「猜数字」· @author · 第 3 版"),
     ).toBeVisible();
@@ -1273,11 +1271,11 @@ test.describe("代码判定红包", () => {
       page.getByRole("button", { name: "联网", exact: true }),
     ).toBeVisible();
     await page.locator("#code-entry").click();
-    const dialog = page.getByRole("dialog", { name: "代码" });
+    const dialog = page.getByRole("dialog", { name: "判定器" });
     await expect(dialog.getByText("https://api.example.com/hb/")).toBeVisible();
     await expect(dialog.getByText("不联网", { exact: true })).toHaveCount(0);
     await expect(dialog).toContainText(
-      "判定时代码会请求这些地址，你的提交（数字 ID、用户名、等级和输入）可能随请求发送给对方。判定结果取决于对方的回答，开放后对方的回答可能变化，本站无法核对。",
+      "判定时判定器会请求这些地址，你的提交（数字 ID、用户名、等级和输入）可能随请求发送给对方。判定结果取决于对方的回答，开放后对方的回答可能变化，本站无法核对。",
     );
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
@@ -1424,7 +1422,7 @@ test.describe("代码判定红包", () => {
     );
   });
 
-  test("指令框（judge-page §11.3）：框下面先是红包状态和最新一条动态，再是我的提交 · N 次，每次一样排：第几次和时间、结果，代码的回复，输入；最新一次只是底色不同", async ({
+  test("指令框（judge-page §11.3）：框下面先是红包状态和最新一条动态，再是我的提交 · N 次，每次一样排：第几次和时间、结果，判定器的回复，输入；最新一次只是底色不同", async ({
     page,
   }) => {
     await mockSession(page, viewer);

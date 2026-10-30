@@ -22,7 +22,7 @@ function Outcome({ outcome }: { outcome: JudgeTry }) {
       <p className="text-sm text-danger">
         {outcome.failure === "timeout"
           ? "判定超时"
-          : `代码出错：${outcome.detail}`}
+          : `判定器出错：${outcome.detail}`}
       </p>
     );
   return (

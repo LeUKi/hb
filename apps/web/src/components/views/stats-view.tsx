@@ -198,7 +198,7 @@ export function StatsView({ id, userId }: { id: string; userId: string }) {
             title="提交的内容"
             description={
               code
-                ? "按次数从多到少。发没发按那一次代码的判定。"
+                ? "按次数从多到少。发没发按那一次判定器的判定。"
                 : "按次数从多到少。是否猜中按提交那一刻的口令判断。"
             }
           >

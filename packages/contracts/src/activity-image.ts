@@ -292,7 +292,7 @@ export function activityImageInput(input: {
   const line = (text: string) => ({ kind: "line" as const, text });
   // What is left, or, while paused, that nothing can be taken (05 §13).
   const running = () =>
-    line(paused ? "红包的代码连续出错，暂停领取" : remainingLine(activity));
+    line(paused ? "判定器连续出错，暂停领取" : remainingLine(activity));
   const open = { ...base, muted: false };
   const over = { ...base, muted: true, live: false };
   // Not open yet, for anyone: it changes when it opens (05 §6); timed, it

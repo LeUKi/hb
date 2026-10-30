@@ -64,9 +64,9 @@ export type HbReason =
   | "not_open"
   /** 红包已结束 */
   | "ended"
-  /** 代码连续出错，暂停领取 */
+  /** 判定器连续出错，暂停领取 */
   | "paused"
-  /** 这次代码出错了，不算次数 */
+  /** 判定器出错了，这次没有判定，可以再提交 */
   | "judge_failed"
   /** 提交的人太多、太频繁，或判定暂时不可用 */
   | "try_later"
@@ -89,7 +89,7 @@ export type HbSubmitResult =
       /** 领到多少，比如 "0.30" */
       amount: string;
       unit: "LDC" | "🐟";
-      /** 代码的回复，没有就不带 */
+      /** 判定器的回复，没有就不带 */
       reply?: string;
     }
   | { judged: true; claimed: false; reply?: string }
@@ -110,7 +110,7 @@ export type HbFillReason =
   | "not_open"
   /** 红包已结束 */
   | "ended"
-  /** 代码连续出错，暂停领取 */
+  /** 判定器连续出错，暂停领取 */
   | "paused"
   /** 已经领到过或报过名 */
   | "already_claimed"

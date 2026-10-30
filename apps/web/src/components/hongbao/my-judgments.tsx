@@ -167,7 +167,7 @@ const hostsOf = (network: string[]) =>
 /** What a screen reader hears of a judgment as it comes in. */
 const spoken = (item: MyJudgment) =>
   `第 ${item.attempt} 次：${item.amount ? `领到 ${item.amount} LDC` : "没领到"}${
-    item.message ? `。代码的回复：${item.message}` : ""
+    item.message ? `。判定器的回复：${item.message}` : ""
   }`;
 
 /**

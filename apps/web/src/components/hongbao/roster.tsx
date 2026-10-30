@@ -75,7 +75,7 @@ export type RowDetail = {
   judge?: RosterRow["judge"];
 };
 
-/** 代码判定: "代码给 30.00，按上限发 20.00" (07 §6). */
+/** 代码判定: "判定器给 30.00，按上限发 20.00" (07 §6). */
 const pulledIn = {
   cap: "按上限发",
   floor: "按每份至少发",
@@ -165,7 +165,7 @@ function Row({
                 )}
                 {detail?.judge?.asked && detail.judge.note && (
                   <span className="shrink-0">
-                    代码给 {detail.judge.asked}，{pulledIn[detail.judge.note]}{" "}
+                    判定器给 {detail.judge.asked}，{pulledIn[detail.judge.note]}{" "}
                     {row.amount}
                   </span>
                 )}

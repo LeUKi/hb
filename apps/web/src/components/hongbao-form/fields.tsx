@@ -135,7 +135,7 @@ export const modeOptions: {
   {
     value: "code",
     title: "代码判定",
-    description: "写一段代码，决定谁领多少",
+    description: "挑一个判定器，决定谁领多少",
     icon: Braces,
     code: true,
   },
@@ -361,7 +361,7 @@ export function AmountFields({
           <Field
             label="每份至少"
             htmlFor="hb-code-min"
-            hint="每份最少发多少，最少 0.01。代码给得更少时按它发。"
+            hint="每份最少发多少，最少 0.01。判定器给得更少时按它发。"
             error={errorOf("hb-code-min")}
           >
             <TextInput
@@ -435,14 +435,14 @@ export function AmountFields({
             : "份数未填"}
           {unit !== null && ` · 每份 ${ldc(unit)} LDC`}
           {form.mode === "code" &&
-            ` · 每份至少 ${cents(form.judge.minEach) !== null ? ldc(cents(form.judge.minEach) ?? 0) : "—"} LDC · 每份发多少由代码定`}
+            ` · 每份至少 ${cents(form.judge.minEach) !== null ? ldc(cents(form.judge.minEach) ?? 0) : "—"} LDC · 每份发多少由判定器定`}
         </span>
       </p>
       <div className="-mt-3 flex flex-col gap-1">
         {form.mode === "code" ? (
           <p className="text-xs text-ink-3">
             最多 1,000
-            份，金额最多两位小数；总奖池要够每份都拿到“每份至少”。每份发多少由你的代码定，多了按上限发，少了按每份至少发，最后一份发完剩下的。
+            份，金额最多两位小数；总奖池要够每份都拿到“每份至少”。每份发多少由判定器定，多了按上限发，少了按每份至少发，最后一份发完剩下的。
             {fundingNote(form)}
           </p>
         ) : (

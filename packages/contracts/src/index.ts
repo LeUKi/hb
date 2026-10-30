@@ -399,8 +399,8 @@ function validateActivity(
       code: "custom",
       path: ["participationMode"],
       message: coded
-        ? "代码判定红包由代码判定，不用口令"
-        : "只有代码判定红包由代码判定",
+        ? "代码判定红包由判定器判定，不用口令"
+        : "只有代码判定红包由判定器判定",
     });
   if (coded) {
     if (!activity.forceDedicated)
@@ -413,13 +413,13 @@ function validateActivity(
       context.addIssue({
         code: "custom",
         path: ["judge"],
-        message: "请粘贴代码",
+        message: "先挑一个判定器",
       });
   } else if (activity.judge)
     context.addIssue({
       code: "custom",
       path: ["judge"],
-      message: "只有代码判定红包有代码",
+      message: "只有代码判定红包有判定器",
     });
   if (activity.participationMode === "direct") {
     if (activity.passwords.length > 0)
@@ -461,7 +461,7 @@ function validateActivity(
     context.addIssue({
       code: "custom",
       path: ["allocation"],
-      message: "代码判定红包的金额由代码定，不预先排序",
+      message: "代码判定红包的金额由判定器定，不预先排序",
     });
   if (activity.money.mode === "timed_draw") {
     if (

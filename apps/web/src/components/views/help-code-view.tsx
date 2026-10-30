@@ -69,7 +69,7 @@ const aiPrompt = (
   - tools.code：personal(key, parts, length?)（HMAC-SHA256 转 Crockford Base32，默认 10 位，比如按用户名生成个人口令）、totp(secret, { step, digits, offset })（RFC 6238，兼容验证器 App）、window(seconds)（now 落在第几个时间段）、same(input, code)（按 Crockford 比：不分大小写，O=0、I/L=1，忽略空格和横线）
   - tools.text.normalize(text)：NFKC、去零宽字符、合并空白、转小写
   - tools.time.parts(timeZone?)：now 在某个时区的 year、month、day、hour、minute、second、weekday（1 是周一），默认 Asia/Shanghai
-- 每次判定 CPU 最多 50 毫秒。超时、抛错、返回不对都算出错：这次不算数，连续出错 5 次红包会暂停领取。
+- 每次判定 CPU 最多 50 毫秒。超时、抛错、返回不对都算出错：这次没有判定，领的人可以再提交；连续出错 5 次红包会暂停领取。
 - 每人只能领到一次；领过的人和领取范围以外的人走不到代码（红包作者自己也能领）。平台不限提交次数，要限次数就按 user.attempts 自己拒绝，并在 message 里说清楚。
 - 网站上每部署一份新代码算一次，每人每天有限，所以给我的代码要先能在本地开发包里跑过 npm test 和 npm run check。
 
@@ -721,7 +721,7 @@ export function judge(submission, tools) {
         <Panel className="grid gap-1.5 px-4 py-3 text-sm text-ink-2">
           <p>
             每次判定 CPU 最多 50
-            毫秒。抛错、超时、返回不对都算出错：这次不算领取，也不算被判定过一次；领的人看到“红包的代码出错了，请稍后再试”，你在出错记录里看到原因。连续出错
+            毫秒。抛错、超时、返回不对都算出错：这次没有判定，不算领取，也不算被判定过一次；领的人看到“判定器出错了，这次没有判定，可以再提交一次。”，你在出错记录里看到原因。连续出错
             5 次自动暂停领取，暂停后可以提前结束。
           </p>
           <p>

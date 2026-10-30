@@ -212,9 +212,13 @@ async function recordFailure(
 }
 
 const failed = () =>
-  new ActivityError(503, "JUDGE_FAILED", "红包的代码出错了，请稍后再试。");
+  new ActivityError(
+    503,
+    "JUDGE_FAILED",
+    "判定器出错了，这次没有判定，可以再提交一次。",
+  );
 const paused = () =>
-  new ActivityError(409, "CODE_PAUSED", "红包的代码连续出错，暂停领取。");
+  new ActivityError(409, "CODE_PAUSED", "判定器连续出错，暂停领取。");
 
 /**
  * What is left of its pool (§2): the 🐟额 still locked, or for 商户直发,

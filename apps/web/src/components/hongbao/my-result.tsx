@@ -234,7 +234,8 @@ const judgeNotes = {
 /** What on this card only the viewer sees, as it is shown. */
 function privateNote(mine: Mine, won: boolean) {
   const parts = won ? ["金额", "发放状态"] : ["报名记录"];
-  if (mine.kind === "claimed" && mine.judge?.message) parts.push("代码的回复");
+  if (mine.kind === "claimed" && mine.judge?.message)
+    parts.push("判定器的回复");
   if (mine.afterClaimInfo) parts.push("附言");
   const last = parts.pop();
   return `${parts.length > 0 ? `${parts.join("、")}和` : ""}${last}仅你可见`;
@@ -297,7 +298,7 @@ export function MyResult({
         <div className="grid gap-1">
           {mine.judge.message && (
             <p className="text-base text-ink">
-              <span className="text-ink-3">代码的回复：</span>
+              <span className="text-ink-3">判定器的回复：</span>
               {mine.judge.message}
             </p>
           )}
