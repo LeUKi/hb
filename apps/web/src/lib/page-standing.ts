@@ -27,7 +27,12 @@ export function pageStanding(
     return "ended";
   if (activity.participationMode === "code" && activity.judge?.paused)
     return "paused";
-  if (participation?.claim || participation?.registration)
+  // Protocol 5: settled, with or without money (multi-prize §4.1).
+  if (
+    participation?.claim ||
+    participation?.registration ||
+    participation?.standing?.settled
+  )
     return "already_claimed";
   if (
     !publicScopeAllows(activity.scope, {

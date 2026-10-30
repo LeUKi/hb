@@ -1,6 +1,7 @@
 import { env } from "cloudflare:test";
-import type { ActivityInput, ClaimResult } from "@hb/contracts";
+import type { ActivityInput, ClaimResult, MyJudgmentList } from "@hb/contracts";
 import { beforeEach, describe, expect, it } from "vitest";
+import { listPublicRecipients } from "../src/activities/claim-queries";
 import { claimActivity } from "../src/activities/claim-service";
 import {
   endActivity,
@@ -11,6 +12,7 @@ import {
   getPublicActivity,
   openActivity,
 } from "../src/activities/service";
+import { app } from "../src/app";
 import { readAccount } from "../src/balance/ledger";
 import { stopCodeActivity } from "../src/judge/stop";
 import { createMerchant } from "../src/payments/merchants";
@@ -23,6 +25,7 @@ import {
   coded,
   give,
   judgeSettings,
+  origin,
   plus,
   rejects,
   settings,
@@ -149,6 +152,10 @@ describe("能赢好几次 (protocol 5)", () => {
     expect((await submit(opened.id, player, "add 1")).result).toBe(
       "already_claimed",
     );
+    // No 手速王: most are settled as it ends (§4.5).
+    const roster = await listPublicRecipients(bindings, opened.id);
+    expect(roster.items).toHaveLength(1);
+    expect(roster.items[0]?.speedTitle).toBeUndefined();
   });
 
   it("answers the same submission sent again with the same judgment", async () => {
@@ -227,6 +234,31 @@ describe("能赢好几次 (protocol 5)", () => {
         after: 15,
         settles: 1,
         message: "开桌了",
+      },
+    ]);
+    // 我的记录: the first sees the second's judgment that moved them, whose
+    // and what it told them, never what the second typed.
+    const response = await app.request(
+      `${origin}/api/activities/${opened.id}/judgments`,
+      { headers: { Cookie: first.cookie } },
+      bindings,
+    );
+    const mine = (await response.json()) as MyJudgmentList;
+    expect(mine).toMatchObject({ total: 2, attempts: 1 });
+    expect(mine.items).toEqual([
+      {
+        attempt: 1,
+        at: expect.any(String),
+        by: { name: expect.any(String) },
+        message: "开桌了",
+        moved: { added: "0.05", pending: "0.15", settled: true },
+        amount: "0.15",
+      },
+      {
+        attempt: 1,
+        at: expect.any(String),
+        input: "seat 10",
+        moved: { added: "0.10", pending: "0.10", settled: false },
       },
     ]);
     await rejects(submit(opened.id, stranger, "poke 123"), "JUDGE_FAILED");

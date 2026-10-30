@@ -222,6 +222,9 @@ test.describe("附带网页", () => {
       cooldownUntil: null,
       claim: null,
       registered: false,
+      // Not a 红包 one wins at several times (multi-prize §4.4).
+      pending: null,
+      settled: false,
     });
     const skew = await frame.evaluate(
       () => (window as unknown as PageWindow).hb.now() - Date.now(),

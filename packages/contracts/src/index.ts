@@ -1167,6 +1167,20 @@ export type RegistrationDetail = {
 export type ActivityParticipationResponse = {
   claim: ClaimDetail | null;
   registration: RegistrationDetail | null;
+  /**
+   * 代码判定, protocol 5 (docs/multi-prize-design.md §3.4, §4.1): their own
+   * part once judged — 待结算, whether settled, and what only they see.
+   */
+  standing?: MyStanding;
+};
+/** One's own part in a protocol 5 代码判定红包 (§4.1). */
+export type MyStanding = {
+  /** 待结算, as "1.20"; "0.00" once settled. */
+  pending: string;
+  /** Settled: what with is the claim's (none: 没有领到). */
+  settled: boolean;
+  /** What only they see (player.view), null when the code wrote none. */
+  view: { summary?: string; data?: unknown } | null;
 };
 export type Participation =
   | { kind: "claim"; claim: ClaimSummary }

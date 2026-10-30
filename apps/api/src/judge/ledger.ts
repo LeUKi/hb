@@ -84,6 +84,44 @@ export async function ownPart(
   };
 }
 
+/**
+ * Their own part as they see it (§3.4, §4.1): pending, settled, their view
+ * — never the code's own state. Null before their first judgment, or on a
+ * 红包 before protocol 5.
+ */
+export async function ownStanding(
+  env: ApiBindings,
+  activityId: string,
+  userId: string,
+) {
+  const row = await env.DB.prepare(
+    `SELECT p.pending_minor AS pending, p.settled_at AS settledAt, p.own_view_ciphertext AS ownView
+      FROM code_judge_people p JOIN activity_code c ON c.activity_id = p.activity_id AND c.protocol >= 5
+      WHERE p.activity_id = ? AND p.user_id = ?`,
+  )
+    .bind(activityId, userId)
+    .first<{
+      pending: number;
+      settledAt: number | null;
+      ownView: string | null;
+    }>();
+  if (!row) return null;
+  return {
+    pending: formatSignedAmount(row.pending),
+    settled: row.settledAt !== null,
+    view:
+      row.ownView === null
+        ? null
+        : (JSON.parse(
+            await decryptString(
+              row.ownView,
+              env,
+              ownData(activityId, userId, "view"),
+            ),
+          ) as { summary?: string; data?: unknown }),
+  };
+}
+
 /** Decrypted once per isolate: a settled person's input never changes. */
 const settledInputs = new Map<string, string>();
 

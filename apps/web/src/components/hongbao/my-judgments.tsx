@@ -5,7 +5,7 @@ import { ChevronDown, ChevronRight, X } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { cn } from "../../lib/cn";
-import { useMyJudgments } from "../../lib/judge";
+import { moveLabel, useMyJudgments } from "../../lib/judge";
 import { switchOverlay } from "../../lib/overlay";
 import { clockSeconds } from "../../lib/roster-time";
 import { useSessionUser } from "../../lib/session";
@@ -93,6 +93,24 @@ function FetchAnswers({ answers }: { answers: JudgeFetchAnswer[] }) {
  * (`pending`) it says 正在判定… under the gold sheen and turns into its
  * result in place; `after` hangs under it (还在判定…).
  */
+/**
+ * What one judgment came to, on its right: protocol 5's move (docs/multi-
+ * prize-design.md §4.1) — “+0.50 · 待结算 1.20 LDC”, in a list “+0.50 →
+ * 1.20”, or what it settled with — or else 领到 or 没领到.
+ */
+function resultOf(item: MyJudgment, short = false) {
+  if (!item.moved) return item.amount ? `领到 ${item.amount} LDC` : "没领到";
+  return moveLabel(item.moved, item.amount, !short);
+}
+
+/** 第 N 次, or (protocol 5) whose judgment it was that moved them. */
+const whoseOf = (item: MyJudgment) =>
+  item.by ? `${item.by.name}的第 ${item.attempt} 次` : `第 ${item.attempt} 次`;
+
+/** One key from 正在判定… to its result: the same row turns. */
+const keyOf = (item: MyJudgment) =>
+  item.by ? `${item.at} ${item.by.name} ${item.attempt}` : String(item.attempt);
+
 export function JudgmentRow({
   item,
   latest = false,
@@ -105,12 +123,8 @@ export function JudgmentRow({
   after?: ReactNode;
 }) {
   const won = Boolean(item.amount);
-  const label = `第 ${item.attempt} 次 · ${clockSeconds(Date.parse(item.at))}`;
-  const result = pending
-    ? "正在判定…"
-    : won
-      ? `领到 ${item.amount} LDC`
-      : "没领到";
+  const label = `${whoseOf(item)} · ${clockSeconds(Date.parse(item.at))}`;
+  const result = pending ? "正在判定…" : resultOf(item, !latest);
   return (
     <ListItem className="flex flex-col gap-1.5">
       <Squircle radius={12}>
@@ -147,9 +161,11 @@ export function JudgmentRow({
           {item.note && (
             <p className="text-sm text-ink-2">{notes[item.note]}</p>
           )}
-          <p className="font-mono text-xs break-all whitespace-pre-wrap text-ink-3">
-            {item.input}
-          </p>
+          {item.input !== undefined && (
+            <p className="font-mono text-xs break-all whitespace-pre-wrap text-ink-3">
+              {item.input}
+            </p>
+          )}
           {item.fetches && item.fetches.length > 0 && (
             <FetchAnswers answers={item.fetches} />
           )}
@@ -166,7 +182,7 @@ const hostsOf = (network: string[]) =>
 
 /** What a screen reader hears of a judgment as it comes in. */
 const spoken = (item: MyJudgment) =>
-  `第 ${item.attempt} 次：${item.amount ? `领到 ${item.amount} LDC` : "没领到"}${
+  `${whoseOf(item)}：${resultOf(item)}${
     item.message ? `。判定器的回复：${item.message}` : ""
   }`;
 
@@ -233,7 +249,7 @@ function JudgeState({ activity }: { activity: BoardActivity }) {
 
 /**
  * Under the 指令框 in a 代码判定红包's scope (02 §4, judge-page §11.3):
- * 红包状态, then 我的提交 · N 次, every submission in one way, the newest
+ * 红包状态, then 我的记录 · N 条, every submission in one way, the newest
  * on top, all of them as one scrolls. Before the first, what taking part
  * makes public. A submission on its way is the top row already (正在判定…,
  * the gold sheen sweeping it) and turns into its result in place.
@@ -252,6 +268,7 @@ export function JudgmentRecord({ activityId }: { activityId: string }) {
   const network = activity?.judge?.network;
   const judging = useAtomValue(judgingAtom);
   const total = query.data?.pages[0]?.total ?? 0;
+  const attempts = query.data?.pages[0]?.attempts ?? 0;
   const items = query.data?.pages.flatMap((batch) => batch.items) ?? [];
   if (!user || !query.data) return null;
   const pending = judging?.activityId === activityId ? judging : null;
@@ -259,7 +276,7 @@ export function JudgmentRecord({ activityId }: { activityId: string }) {
   const rows: MyJudgment[] = pending
     ? [
         {
-          attempt: total + 1,
+          attempt: attempts + 1,
           at: new Date(pending.at).toISOString(),
           input: pending.input,
         },
@@ -277,19 +294,18 @@ export function JudgmentRecord({ activityId }: { activityId: string }) {
             `这个红包会联网：你的提交（数字 ID、用户名、等级和输入）可能被发到 ${hostsOf(network)}。`}
         </p>
       ) : (
-        <section aria-label="我的提交" className="flex flex-col gap-1.5">
+        <section aria-label="我的记录" className="flex flex-col gap-1.5">
           <p role="status" className="sr-only">
             {pending ? "正在判定…" : latest ? spoken(latest) : ""}
           </p>
           <h3 className="px-2.5 text-xs font-medium text-ink-3">
-            <RollingText text={`我的提交 · ${total} 次`} />
+            <RollingText text={`我的记录 · ${total} 条`} />
           </h3>
           <ul className="flex flex-col gap-1.5">
             <AnimatePresence initial={false}>
               {rows.map((item, index) => (
                 <JudgmentRow
-                  // One key from 正在判定… to its result: the same row turns.
-                  key={item.attempt}
+                  key={keyOf(item)}
                   item={item}
                   latest={index === 0}
                   pending={pending !== null && index === 0}
@@ -307,7 +323,7 @@ export function JudgmentRecord({ activityId }: { activityId: string }) {
           </ul>
           <LazyListEnd
             list={list}
-            done={`共 ${total} 次`}
+            done={`共 ${total} 条`}
             className="px-2 pt-0.5 text-xs"
           />
         </section>
@@ -327,9 +343,10 @@ function Privacy() {
 }
 
 /**
- * 我的提交 (05 §3): a 代码判定红包's claimant looks back on what they typed
- * and what the code said, newest first, theirs only. The page keeps the
- * latest three; 全部 N 次 opens the rest. What was typed shows as typed
+ * 我的记录 (05 §3; multi-prize §4.1): a 代码判定红包's claimant looks back on
+ * what they typed and what the code said, and others' judgments that moved
+ * them, newest first, theirs only. The page keeps the latest three; 全部 N
+ * 条 opens the rest. What was typed shows as typed
  * (2026-10-25: to look back on it; a 口令 still hides, 05 §9).
  */
 export function MyJudgments({ activityId }: { activityId: string }) {
@@ -345,7 +362,7 @@ export function MyJudgments({ activityId }: { activityId: string }) {
   const rows: MyJudgment[] = pending
     ? [
         {
-          attempt: first.total + 1,
+          attempt: first.attempts + 1,
           at: new Date(pending.at).toISOString(),
           input: pending.input,
         },
@@ -356,7 +373,7 @@ export function MyJudgments({ activityId }: { activityId: string }) {
     <section className="grid gap-2" data-hb-part="my-judgments">
       <div className="flex min-h-9 items-center justify-between gap-3">
         <h2 className="text-sm font-medium text-ink-3">
-          <RollingText text={`我的提交 · ${first.total} 次`} />
+          <RollingText text={`我的记录 · ${first.total} 条`} />
         </h2>
         <span className="-mr-2 flex items-center">
           <Privacy />
@@ -366,7 +383,7 @@ export function MyJudgments({ activityId }: { activityId: string }) {
         <AnimatePresence initial={false}>
           {rows.slice(0, ON_PAGE).map((item, index) => (
             <JudgmentRow
-              key={item.attempt}
+              key={keyOf(item)}
               item={item}
               pending={pending !== null && index === 0}
             />
@@ -382,7 +399,7 @@ export function MyJudgments({ activityId }: { activityId: string }) {
           className="gap-0.5 justify-self-center pr-1.5"
           onClick={() => switchOverlay(router, { panel: "judgments" })}
         >
-          全部 {first.total} 次
+          全部 {first.total} 条
           <ChevronRight aria-hidden="true" />
         </Button>
       )}
@@ -415,7 +432,7 @@ function JudgmentsBody({
       <header className="grid gap-1 px-5 pt-4 pb-3">
         <div className="flex items-center justify-between gap-3">
           <h2 id="judgments-title" className="text-lg font-semibold text-ink">
-            我的提交 · {total} 次
+            我的记录 · {total} 条
           </h2>
           <Button
             variant="ghost"
@@ -449,17 +466,17 @@ function JudgmentsBody({
         <ul className="flex flex-col gap-1.5">
           <AnimatePresence initial={false}>
             {items.map((item) => (
-              <JudgmentRow key={item.attempt} item={item} />
+              <JudgmentRow key={keyOf(item)} item={item} />
             ))}
           </AnimatePresence>
         </ul>
-        <LazyListEnd list={list} done={`共 ${total} 次`} />
+        <LazyListEnd list={list} done={`共 ${total} 条`} />
       </div>
     </>
   );
 }
 
-/** 我的提交 in full: every judged submission, twenty more as it scrolls. */
+/** 我的记录 in full: every judged submission, twenty more as it scrolls. */
 export function MyJudgmentsDialog() {
   return (
     <PanelDialog

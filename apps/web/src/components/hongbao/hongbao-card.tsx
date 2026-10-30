@@ -37,6 +37,8 @@ export function statusOf(
   if (!view.endReason) return { text: "进行中", tone: "success" as const };
   if (view.endReason === "settling")
     return { text: "开奖中", tone: "warning" as const };
+  if (view.endReason === "settle")
+    return { text: "结算中", tone: "warning" as const };
   if (archived) return { text: "已归档", tone: "neutral" as const };
   return { text: endLabels[view.endReason], tone: "neutral" as const };
 }

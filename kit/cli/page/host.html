@@ -79,11 +79,11 @@
         <ul id="lines"></ul>
       </section>
       <section>
-        <h2 id="mine-title">我的提交</h2>
+        <h2 id="mine-title">我的记录</h2>
         <ul id="mine"></ul>
       </section>
       <section>
-        <h2>记录</h2>
+        <h2>日志</h2>
         <pre id="log"></pre>
       </section>
     </aside>
@@ -192,37 +192,52 @@
 
       async function renderMine() {
         const mine = await api(`/api/mine?who=${encodeURIComponent(who)}`);
-        $("mine-title").textContent = mine ? `我的提交 · ${mine.total} 次` : "我的提交（没登录）";
+        $("mine-title").textContent = mine ? `我的记录 · ${mine.total} 条` : "我的记录（没登录）";
         $("mine").replaceChildren(
           ...(mine?.items ?? []).map((item) => {
             const row = document.createElement("li");
             row.innerHTML = "<b></b><span></span><small></small>";
-            row.children[0].textContent = `第 ${item.n} 次 · ${time(item.at)}  ${item.claimed ? `领到 ${item.amount}` : "没领到"}`;
+            const whose = item.by ? `${item.by}的第 ${item.n} 次` : `第 ${item.n} 次`;
+            row.children[0].textContent = `${whose} · ${time(item.at)}  ${moveText(item)}`;
             if (item.claimed) row.children[0].className = "claimed";
             row.children[1].textContent = item.reply ?? "";
-            row.children[2].textContent = item.input;
+            row.children[2].textContent = item.input ?? "";
             return row;
           }),
         );
       }
 
+      /** One record's move, as the site's 我的记录 says it: “+0.50 → 1.20”. */
+      function moveText(item) {
+        if (item.settled) return item.claimed ? `结算 ${item.amount} LDC` : "结算，没有领到";
+        const added = Number(item.added);
+        if (added === 0) return Number(item.pending) > 0 ? `待结算 ${item.pending} LDC` : "没加钱";
+        return `${added > 0 ? "+" : "−"}${item.added.replace("-", "")} → ${item.pending}`;
+      }
+
       /**
-       * hb.me() as the site gives it: the fake page has no cooldown to tell
-       * and pays at once.
+       * hb.me() and hb.myView() as the site gives them: the fake page has no
+       * cooldown to tell and pays at once.
        */
       async function meNow() {
-        if (who === config.guest) return { signedIn: false };
-        const mine = await api(`/api/mine?who=${encodeURIComponent(who)}`);
-        const won = mine?.items.find((item) => item.claimed);
+        if (who === config.guest) return { me: { signedIn: false }, myView: null };
+        const own = await api(`/api/me?who=${encodeURIComponent(who)}`);
         const ended = state.hongbao.status === "ended";
+        const settled = own?.settled ?? null;
+        const won = settled !== null && Number(settled) > 0;
         return {
-          signedIn: true,
-          name: who,
-          open: !ended && !won,
-          ...(ended ? { why: "ended" } : won ? { why: "already_claimed" } : {}),
-          cooldownUntil: null,
-          claim: won ? { amount: won.amount, unit: "LDC", payment: "paid" } : null,
-          registered: false,
+          me: {
+            signedIn: true,
+            name: who,
+            open: !ended && settled === null,
+            ...(ended ? { why: "ended" } : settled !== null ? { why: "already_claimed" } : {}),
+            cooldownUntil: null,
+            claim: won ? { amount: settled, unit: "LDC", payment: "paid" } : null,
+            registered: false,
+            pending: own?.pending ?? null,
+            settled: settled !== null,
+          },
+          myView: own?.myView ?? null,
         };
       }
 
@@ -241,10 +256,16 @@
           link.hongbao = hongbao;
           send("hongbao", state.hongbao);
         }
-        const me = JSON.stringify(await meNow());
+        const own = await meNow();
+        const me = JSON.stringify(own.me);
         if (link && me !== link.me) {
           link.me = me;
-          send("me", JSON.parse(me));
+          send("me", own.me);
+        }
+        const myView = JSON.stringify(own.myView);
+        if (link && myView !== link.myView) {
+          link.myView = myView;
+          send("myView", own.myView);
         }
         const fresh = state.announcements.filter((line) => line.n > link.line).reverse();
         if (fresh.length > 0) {
@@ -256,7 +277,7 @@
       /** 让这个网页替你提交？ as the site asks it: true for 允许. */
       function askAllow() {
         const dialog = $("allow");
-        $("allow-text").textContent = `${new URL(config.pageOrigin).hostname} 会替你提交输入，提交的内容和结果会出现在你的「我的提交」里，冷却和人机验证照旧。只对这个红包有效。`;
+        $("allow-text").textContent = `${new URL(config.pageOrigin).hostname} 会替你提交输入，提交的内容和结果会出现在你的「我的记录」里，冷却和人机验证照旧。只对这个红包有效。`;
         dialog.returnValue = "";
         dialog.showModal();
         return new Promise((done) =>
@@ -271,14 +292,15 @@
         const reply = (answer) =>
           frame.contentWindow.postMessage({ hb: 1, re: ask.id, ...answer }, config.pageOrigin);
         if (ask.type === "hello") {
-          const me = await meNow();
+          const { me, myView } = await meNow();
           link = {
             view: JSON.stringify(state.view),
             hongbao: JSON.stringify(state.hongbao),
             line: state.announcements[0]?.n ?? -1,
             me: JSON.stringify(me),
+            myView: JSON.stringify(myView),
           };
-          reply({ value: { hongbao: state.hongbao, viewer: viewer(), theme: "light", view: state.view, me, clock: 0 } });
+          reply({ value: { hongbao: state.hongbao, viewer: viewer(), theme: "light", view: state.view, me, myView, clock: 0 } });
           return;
         }
         if (ask.type === "login") {

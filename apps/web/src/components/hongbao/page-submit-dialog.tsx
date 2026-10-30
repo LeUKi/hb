@@ -20,7 +20,7 @@ export function PageSubmitDialog() {
       open={request !== null}
       onClose={() => request?.resolve(false)}
       title="让这个网页替你提交？"
-      text={`${site} 会替你提交输入，提交的内容和结果会出现在你的「我的提交」里，冷却和人机验证照旧。只对这个红包有效。`}
+      text={`${site} 会替你提交输入，提交的内容和结果会出现在你的「我的记录」里，冷却和人机验证照旧。只对这个红包有效。`}
       actions={
         <>
           <Button onClick={() => request?.resolve(false)}>不允许</Button>

@@ -397,6 +397,39 @@ describe("another's 判定器 (§15.3)", () => {
     expect(tried).toMatchObject({ judged: true, settled: true });
   });
 
+  it("shows a 旧判定器 in the 广场, marked, and lets no one else use it until its author runs it on the new rules (multi-prize §3.6)", async () => {
+    const judge = await shared();
+    // As if 第 1 版 last ran on protocol 4, before shares went away.
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO judge_checks (id, user_id, protocol, fingerprint, tests_digest, passed, kind, created_at, finished_at)
+        SELECT ?, j.author_id, 4, v.fingerprint, v.tests_digest, 1, 'rerun', v.checked_at, v.checked_at
+        FROM judge_versions v JOIN judges j ON j.id = v.judge_id WHERE v.judge_id = ? AND v.n = 1`).bind(
+        crypto.randomUUID(),
+        judge.id,
+      ),
+      env.DB.prepare(
+        "UPDATE judge_versions SET protocol = 4 WHERE judge_id = ? AND n = 1",
+      ).bind(judge.id),
+    ]);
+    await refreshJudgeStats(bindings);
+    const all = await get<SquareJudgeList>("/judges?tab=all");
+    expect(all.body.items.find((item) => item.id === judge.id)).toMatchObject({
+      old: true,
+    });
+    expect(
+      (await get<{ judge: JudgePage }>(`/judges/${judge.id}`)).body.judge,
+    ).toMatchObject({
+      old: true,
+      version: { n: 1 },
+    });
+    expect(
+      (await getMyJudge(bindings, author.id, judge.id)).usable,
+    ).toMatchObject({ n: 1, old: true });
+    await expect(borrow(judge.id, await sender())).rejects.toMatchObject({
+      code: "JUDGE_NOT_FOUND",
+    });
+  });
+
   it("is not found out of the 广场 or for a version others may not use; a draft that has it keeps it, and none opens once it is taken down", async () => {
     const judge = await made();
     await opened(judge);

@@ -384,7 +384,7 @@ describe("代码判定红包: claims", () => {
         moved: { added: "0.00", pending: "0.00", settled: false },
       },
     ]);
-    expect(first.nextCursor).toBe("3");
+    expect(first.nextCursor).toMatch(/^\d+-0-[\w-]+$/);
     const rest = await read(claimant, first.nextCursor ?? "");
     expect(rest.items.map((item) => item.input)).toEqual([
       "guess 1",

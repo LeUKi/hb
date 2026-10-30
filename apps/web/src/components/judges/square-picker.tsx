@@ -170,6 +170,12 @@ export function SquarePicker({
                               {judge.description}
                             </span>
                           )}
+                          {/* Multi-prize §3.6: its tests run again first. */}
+                          {judge.usable?.old && (
+                            <span className="text-xs text-ink-3">
+                              旧判定器，用之前要按新规则重新跑一遍测试
+                            </span>
+                          )}
                         </span>
                       </button>
                     </Squircle>

@@ -21,6 +21,7 @@ import {
   type ManagedActivity,
   type MyJudgment,
   type MyJudgmentList,
+  type MyStanding,
   type ParticipationList,
   type PublicActivity,
   type PublicJudge,
@@ -37,7 +38,7 @@ import {
 
 // 代码判定红包 (docs/programmable-hongbao-design.md) on the web, against a
 // mocked API that keeps its own state: the lacquer cover and its counts,
-// the 代码判定 scope in the 指令框, 我的提交, the 代码 dialog, the paused,
+// the 代码判定 scope in the 指令框, 我的记录, the 代码 dialog, the paused,
 // ended and stopped looks, the lists, and the code step of 发红包.
 
 const id = "51515151-6262-4737-8848-595959595959";
@@ -137,11 +138,13 @@ type CodeState = {
   judge: PublicJudge;
   recipients: PublicRecipient[];
   claim: ClaimDetail | null;
-  /** 我的提交, newest first. */
+  /** Protocol 5: the viewer's 待结算 and what only they see. */
+  standing?: MyStanding;
+  /** 我的记录, newest first. */
   judgments: MyJudgment[];
   /** What each claim sent. */
   submissions: { participationMode?: string; input?: string }[];
-  /** The cursor of each read of 我的提交 (null: the first page). */
+  /** The cursor of each read of 我的记录 (null: the first page). */
   judgmentReads: (string | null)[];
   /** 参与名单 · 挑战: everyone judged, the latest first. */
   challengers: JudgeChallenger[];
@@ -166,7 +169,7 @@ const publicRead = (state: CodeState): PublicActivity => ({
 });
 
 /**
- * One 代码判定红包's server, mocked: its reads, 我的提交 twenty at a time,
+ * One 代码判定红包's server, mocked: its reads, 我的记录 twenty at a time,
  * and claims judged as the code above would (42 pays 0.30, capped).
  */
 async function mockCodeHongbao(page: Page, judgments: MyJudgment[] = []) {
@@ -215,7 +218,11 @@ async function mockCodeHongbao(page: Page, judgments: MyJudgment[] = []) {
     if (rest === "/participation") {
       state.reads.participation += 1;
       return route.fulfill({
-        json: { claim: state.claim, registration: null },
+        json: {
+          claim: state.claim,
+          registration: null,
+          ...(state.standing ? { standing: state.standing } : {}),
+        },
       });
     }
     if (rest === "/passwords")
@@ -265,6 +272,7 @@ async function mockCodeHongbao(page: Page, judgments: MyJudgment[] = []) {
         json: {
           items,
           total: state.judgments.length,
+          attempts: state.judgments.filter((item) => !item.by).length,
           nextCursor:
             from + 20 < state.judgments.length ? String(from + 20) : null,
         } satisfies MyJudgmentList,
@@ -276,7 +284,7 @@ async function mockCodeHongbao(page: Page, judgments: MyJudgment[] = []) {
         input?: string;
       };
       state.submissions.push(body);
-      const attempt = state.judgments.length + 1;
+      const attempt = state.judgments.filter((item) => !item.by).length + 1;
       const at = new Date().toISOString();
       state.judge = { ...state.judge, judged: state.judge.judged + 1 };
       // The 红包's DO puts the account's cooldown on every claim answer: a
@@ -286,6 +294,33 @@ async function mockCodeHongbao(page: Page, judgments: MyJudgment[] = []) {
         serverTime: Date.now(),
         nextAllowedAt: Date.now() + 2_000,
       };
+      // Protocol 5 (multi-prize §2): each adds 0.20 to their 待结算.
+      if (state.judge.protocol >= 5) {
+        const pending = (Number(state.standing?.pending ?? "0") + 0.2).toFixed(
+          2,
+        );
+        state.standing = {
+          pending,
+          settled: false,
+          view: { summary: `抽了 ${attempt} 张牌` },
+        };
+        const moved = { added: "0.20", pending };
+        state.judgments.unshift({
+          attempt,
+          at,
+          input: body.input ?? "",
+          message: "抽到一张",
+          moved: { ...moved, settled: false },
+        });
+        return route.fulfill({
+          json: {
+            result: "judged",
+            message: "抽到一张",
+            moved,
+            attemptCooldown,
+          } satisfies ClaimResult,
+        });
+      }
       if (body.input === answer) {
         state.judgments.unshift({
           attempt,
@@ -602,7 +637,7 @@ test.describe("代码判定红包", () => {
     expect(state.reads).toEqual(before);
   });
 
-  test("开：黑漆的代码判定作用域和等宽输入；没领到写判定器的回复，领到后结果里不再写输入；我的提交随之更新", async ({
+  test("开：黑漆的代码判定作用域和等宽输入；没领到写判定器的回复，领到后结果里不再写输入；我的记录随之更新", async ({
     page,
   }) => {
     await mockSession(page, viewer);
@@ -612,7 +647,7 @@ test.describe("代码判定红包", () => {
     await expect(
       page.getByText("点「开」，输入后提交，由判定器判定"),
     ).toBeVisible();
-    // Nothing judged yet: no 我的提交.
+    // Nothing judged yet: no 我的记录.
     await expect(page.locator("[data-hb-part=my-judgments]")).toHaveCount(0);
     await seal(page).click();
     await expect(seal(page)).toHaveAccessibleName("输入后提交");
@@ -653,7 +688,7 @@ test.describe("代码判定红包", () => {
 
     // Turned down: the record under the box leads with it, the code's own
     // words large; the box empties for the next try.
-    const record = panel.getByRole("region", { name: "我的提交" });
+    const record = panel.getByRole("region", { name: "我的记录" });
     await expect(record).toContainText("第 1 次");
     await expect(record).toContainText("没领到");
     await expect(record.getByText("大了", { exact: true })).toBeVisible();
@@ -673,7 +708,7 @@ test.describe("代码判定红包", () => {
     const waiting = page.getByRole("button", { name: /还需等待 \d 秒/ });
     await expect(waiting).toBeVisible();
     const mine = page.locator("[data-hb-part=my-judgments]");
-    await expect(mine.getByRole("heading")).toHaveText("我的提交 · 1 次");
+    await expect(mine.getByRole("heading")).toHaveText("我的记录 · 1 条");
     const first = mine.getByRole("listitem");
     await expect(first).toHaveCount(1);
     await expect(first).toContainText("第 1 次");
@@ -705,11 +740,11 @@ test.describe("代码判定红包", () => {
     await expect(result).toContainText("判定器的回复：猜对了！");
     await expect(result).toContainText("按上限发");
     await expect(result).toContainText("金额和发放状态仅你可见");
-    // What was typed is in 我的提交, not again here (05 §3).
+    // What was typed is in 我的记录, not again here (05 §3).
     await expect(result).not.toContainText("口令");
     await expect(result).not.toContainText("输入");
     await expect(result.getByText(answer, { exact: true })).toHaveCount(0);
-    await expect(mine.getByRole("heading")).toHaveText("我的提交 · 2 次");
+    await expect(mine.getByRole("heading")).toHaveText("我的记录 · 2 条");
     const latest = mine.getByRole("listitem").first();
     await expect(latest).toContainText("第 2 次");
     await expect(latest).toContainText("领到 0.30 LDC");
@@ -754,7 +789,7 @@ test.describe("代码判定红包", () => {
       panel.getByText("提交后，你的昵称和判定次数会出现在参与名单里。"),
     ).toBeVisible();
     await page.keyboard.press("Enter");
-    const record = panel.getByRole("region", { name: "我的提交" });
+    const record = panel.getByRole("region", { name: "我的记录" });
     await expect(input).toHaveValue("");
     await expect(record).toContainText("第 1 次");
     await expect(record).toContainText("正在判定…");
@@ -854,14 +889,92 @@ test.describe("代码判定红包", () => {
     );
     await page.keyboard.press("Enter");
     await expect(
-      page.locator(".glass-pop").getByRole("region", { name: "我的提交" }),
+      page.locator(".glass-pop").getByRole("region", { name: "我的记录" }),
     ).toContainText("第 1 次");
     expect(state.submissions).toMatchObject([
       { participationMode: "code", input: joined },
     ]);
   });
 
-  test("我的提交：页面上最近 3 次，输入直接显示；全部 N 次的弹窗滚到底再读", async ({
+  test("能赢好几次（multi-prize §4.1）：红包皮写奖池还剩；玩过没结算的人看到只给他看的一句和待结算；我的记录写加减，别人改到他的写是谁的第几次；提交以后待结算马上更新", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    const at = (seconds: number) =>
+      new Date(Date.parse(openedAt) + seconds * 1000).toISOString();
+    const state = await mockCodeHongbao(page, [
+      {
+        attempt: 2,
+        at: at(20),
+        by: { name: "小红" },
+        message: "小红出了一张大牌",
+        moved: { added: "-0.10", pending: "0.30", settled: false },
+      },
+      {
+        attempt: 1,
+        at: at(10),
+        input: "抽一张",
+        message: "抽到 4",
+        moved: { added: "0.40", pending: "0.40", settled: false },
+      },
+    ]);
+    state.activity = {
+      ...state.activity,
+      quantity: { mode: "pool", left: "0.70" },
+      reward: { mode: "code", totalAmount: "1.00" },
+    };
+    state.judge = { ...state.judge, protocol: 5, unclaimed: "0.70" };
+    state.standing = {
+      pending: "0.30",
+      settled: false,
+      view: { summary: "手里 3 张牌" },
+    };
+    await mockLive(page);
+    await openApp(page, path);
+    // 奖池还剩, not 已领 x / y 份; no 每份至少 under the pool.
+    await expect(page.getByText("奖池还剩", { exact: true })).toBeVisible();
+    await expect(page.getByText("0.70 LDC", { exact: true })).toBeVisible();
+    await expect(page.getByText(/每份至少/)).toHaveCount(0);
+    await expect(page.getByText(/ 份$/)).toHaveCount(0);
+    // Played and not settled: go on; what only they see, and 待结算.
+    await expect(page.getByText("点「开」接着玩")).toBeVisible();
+    const standing = page.locator("[data-hb-part=standing]");
+    await expect(standing).toContainText("手里 3 张牌");
+    await expect(standing).toContainText(
+      "待结算 0.30 LDC · 判定器结算或红包结束时发",
+    );
+    // 我的记录: each move; another's, whose and what it told them.
+    const mine = page.locator("[data-hb-part=my-judgments]");
+    await expect(mine.getByRole("heading")).toHaveText("我的记录 · 2 条");
+    const rows = mine.getByRole("listitem");
+    await expect(rows.nth(0)).toContainText("小红的第 2 次");
+    await expect(rows.nth(0)).toContainText("−0.10 → 0.30");
+    await expect(rows.nth(0)).toContainText("小红出了一张大牌");
+    await expect(rows.nth(1)).toContainText("第 1 次");
+    await expect(rows.nth(1)).toContainText("+0.40 → 0.40");
+    await expect(
+      rows.nth(1).getByText("抽一张", { exact: true }),
+    ).toBeVisible();
+
+    // A submission: its move in full under the box, 待结算 at once.
+    await seal(page).click();
+    await omniboxInput(page).fill("再抽");
+    await page.keyboard.press("Enter");
+    const record = page
+      .locator(".glass-pop")
+      .getByRole("region", { name: "我的记录" });
+    await expect(record).toContainText("第 2 次");
+    await expect(record).toContainText("+0.20 · 待结算 0.50 LDC");
+    await expect(record).toContainText("抽到一张");
+    expect(state.submissions).toMatchObject([
+      { participationMode: "code", input: "再抽" },
+    ]);
+    await page.keyboard.press("Escape");
+    await expect(standing).toContainText("待结算 0.50 LDC");
+    await expect(standing).toContainText("抽了 2 张牌");
+  });
+
+  test("我的记录：页面上最近 3 次，输入直接显示；全部 N 条的弹窗滚到底再读", async ({
     page,
   }) => {
     await mockSession(page, viewer);
@@ -869,7 +982,7 @@ test.describe("代码判定红包", () => {
     await mockLive(page);
     await openApp(page, path);
     const mine = page.locator("[data-hb-part=my-judgments]");
-    await expect(mine.getByRole("heading")).toHaveText("我的提交 · 25 次");
+    await expect(mine.getByRole("heading")).toHaveText("我的记录 · 25 条");
     await expect(mine.getByText("你和红包作者看得到")).toBeVisible();
     const rows = mine.getByRole("listitem");
     await expect(rows).toHaveCount(3);
@@ -882,9 +995,9 @@ test.describe("代码判定红包", () => {
     await expect(mine.getByText("已隐藏")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "显示输入" })).toHaveCount(0);
 
-    // 全部 25 次: the dialog, twenty more as it scrolls.
-    await mine.getByRole("button", { name: "全部 25 次" }).click();
-    const dialog = page.getByRole("dialog", { name: "我的提交 · 25 次" });
+    // 全部 25 条: the dialog, twenty more as it scrolls.
+    await mine.getByRole("button", { name: "全部 25 条" }).click();
+    const dialog = page.getByRole("dialog", { name: "我的记录 · 25 条" });
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText(`小满的红包 · ${title}`);
     await expect(dialog.getByText("你和红包作者看得到")).toBeVisible();
@@ -898,7 +1011,7 @@ test.describe("代码判定红包", () => {
       .evaluate((element) => element.scrollTo({ top: element.scrollHeight }));
     await expect(all).toHaveCount(25);
     await expect(
-      dialog.getByText("共 25 次").and(page.locator(":not(.sr-only)")),
+      dialog.getByText("共 25 条").and(page.locator(":not(.sr-only)")),
     ).toBeVisible();
     expect(state.judgmentReads.filter((cursor) => cursor !== null)).toEqual([
       "20",
@@ -916,7 +1029,7 @@ test.describe("代码判定红包", () => {
     await mockLive(page);
     await mockSenderReads(page);
     await openApp(page, path);
-    // Its sender may try it too (自领, docs/self-claim-design.md); 我的提交
+    // Its sender may try it too (自领, docs/self-claim-design.md); 我的记录
     // shows once they have.
     await expect(
       page.getByRole("button", { name: "输入后提交" }),
@@ -1231,7 +1344,7 @@ test.describe("代码判定红包", () => {
     );
   });
 
-  test("已结束（参与过）：我的提交照样留着，输入直接显示，没有眼睛", async ({
+  test("已结束（参与过）：我的记录照样留着，输入直接显示，没有眼睛", async ({
     page,
   }) => {
     await mockSession(page, viewer);
@@ -1241,7 +1354,7 @@ test.describe("代码判定红包", () => {
     await mockLive(page);
     await openApp(page, path);
     const mine = page.locator("[data-hb-part=my-judgments]");
-    await expect(mine.getByRole("heading")).toHaveText("我的提交 · 5 次");
+    await expect(mine.getByRole("heading")).toHaveText("我的记录 · 5 条");
     await expect(mine.getByText("你和红包作者看得到")).toBeVisible();
     await expect(mine.getByRole("listitem")).toHaveCount(3);
     await expect(mine.getByText("答案-5", { exact: true })).toBeVisible();
@@ -1249,8 +1362,8 @@ test.describe("代码判定红包", () => {
     await expect(mine.getByText("已隐藏")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "显示输入" })).toHaveCount(0);
     // The dialog the same: all of them, plain.
-    await mine.getByRole("button", { name: "全部 5 次" }).click();
-    const dialog = page.getByRole("dialog", { name: "我的提交 · 5 次" });
+    await mine.getByRole("button", { name: "全部 5 条" }).click();
+    const dialog = page.getByRole("dialog", { name: "我的记录 · 5 条" });
     await expect(dialog.getByRole("listitem")).toHaveCount(5);
     await expect(dialog.getByText("答案-1", { exact: true })).toBeVisible();
     await expect(dialog.getByText("已隐藏")).toHaveCount(0);
@@ -1289,7 +1402,7 @@ test.describe("代码判定红包", () => {
     ).toBeVisible();
   });
 
-  test("已结束（联网，参与过）：我的提交里展开看得到每个请求的返回，看不到请求", async ({
+  test("已结束（联网，参与过）：我的记录里展开看得到每个请求的返回，看不到请求", async ({
     page,
   }) => {
     await mockSession(page, viewer);
@@ -1422,7 +1535,7 @@ test.describe("代码判定红包", () => {
     );
   });
 
-  test("指令框（judge-page §11.3）：框下面先是红包状态和最新一条动态，再是我的提交 · N 次，每次一样排：第几次和时间、结果，判定器的回复，输入；最新一次只是底色不同", async ({
+  test("指令框（judge-page §11.3）：框下面先是红包状态和最新一条动态，再是我的记录 · N 次，每次一样排：第几次和时间、结果，判定器的回复，输入；最新一次只是底色不同", async ({
     page,
   }) => {
     await mockSession(page, viewer);
@@ -1451,8 +1564,8 @@ test.describe("代码判定红包", () => {
     await expect(status).toContainText("红包状态");
     await expect(status).toContainText("安全区间 23–67，还剩 3 颗炸弹");
     await expect(status).toContainText("@玩家1：猜了 22，安全");
-    const record = panel.getByRole("region", { name: "我的提交" });
-    await expect(record.getByRole("heading")).toHaveText("我的提交 · 3 次");
+    const record = panel.getByRole("region", { name: "我的记录" });
+    await expect(record.getByRole("heading")).toHaveText("我的记录 · 3 条");
     const rows = record.getByRole("listitem");
     await expect(rows).toHaveCount(3);
     // In order: 第几次 and when with the result; the reply; what was typed.
@@ -2709,7 +2822,7 @@ test.describe("发红包 · 代码判定", () => {
     expect(server.deploysLeft).toBe(7);
   });
 
-  test("草稿重新打开：旧协议上部署过、测试全过的版本，换回后要在第三版上重新跑一遍，不算部署", async ({
+  test("草稿重新打开：旧协议上部署过、测试全过的版本（旧判定器），换回后要按新规则重新跑一遍，不算部署", async ({
     page,
   }) => {
     await mockCodeHongbao(page);
@@ -2720,7 +2833,7 @@ test.describe("发红包 · 代码判定", () => {
         next: 2,
         versions: [
           {
-            // Run before 第二版: no protocol written (v1), now on 第三版.
+            // Run before 第二版: no protocol written (v1), a 旧判定器 now.
             n: 1,
             fingerprint: sha256(firstCode),
             at: openedAt,
@@ -2735,9 +2848,11 @@ test.describe("发红包 · 代码判定", () => {
     await page.getByRole("button", { name: /^第 2 步 判定器：新代码/ }).click();
     await unsaved(page).getByRole("button", { name: "换回第 1 版" }).click();
     await expect(unsaved(page)).toContainText(
-      "这份草稿里的判定器 第 1 版要在线上重新跑一遍测试才能开放，不算部署。",
+      "这份草稿里的判定器 第 1 版是按旧规则（有份数）写的，要按新规则重新跑一遍测试才能开放，不算部署。",
     );
-    await unsaved(page).getByRole("button", { name: "重新跑测试" }).click();
+    await unsaved(page)
+      .getByRole("button", { name: "按新规则重新跑测试" })
+      .click();
     await expect(page.getByText("我的 · 第 1 版")).toBeVisible();
     // Its rerun, in the 判定器 the draft is in.
     expect(server.requests).toEqual([
@@ -3202,16 +3317,10 @@ test.describe("发红包 · 代码判定", () => {
     ).toBeVisible();
     await page.locator("#hb-param-answer").fill("42");
     await page.getByRole("button", { name: "下一步" }).first().click();
-    // 发多少: its defaults, its range said when left.
-    await expect(page.locator("#hb-code-count")).toHaveValue("5");
+    // 发多少: its default pool; no 份数 any more (multi-prize §4.2).
     await expect(page.locator("#hb-code-total")).toHaveValue("5.00");
+    await expect(page.locator("#hb-code-count")).toHaveCount(0);
     expect(asked.checks.at(-1)?.params).toEqual({ max: 100, answer: 42 });
-    await page.locator("#hb-code-count").fill("20");
-    await page.getByRole("button", { name: "下一步" }).first().click();
-    await expect(
-      page.getByText("这个判定器要求 1–10 份", { exact: true }),
-    ).toBeVisible();
-    await page.locator("#hb-code-count").fill("5");
     await page.getByRole("button", { name: "下一步" }).first().click();
     await page.getByRole("button", { name: "存草稿" }).first().click();
     await expect.poll(() => asked.saved.length).toBe(1);
@@ -3557,7 +3666,7 @@ test.describe("附带网页 SDK（judge-page §3、§11.8）", () => {
   const allowDialog = (page: Page) =>
     page.getByRole("dialog", { name: "让这个网页替你提交？" });
 
-  test("hb.ready() 给红包的公开信息和看的人的昵称；第一次提交先问，允许以后拿到结果，判定中的那一行在页面上的我的提交最上面；冷却中给秒数，之后不再问；hb.mine() 读自己的提交", async ({
+  test("hb.ready() 给红包的公开信息和看的人的昵称；第一次提交先问，允许以后拿到结果，判定中的那一行在页面上的我的记录最上面；冷却中给秒数，之后不再问；hb.mine() 读自己的提交", async ({
     page,
   }) => {
     const { state } = await mockGame(page);
@@ -3578,6 +3687,8 @@ test.describe("附带网页 SDK（judge-page §3、§11.8）", () => {
         unit: "🐟",
         shares: { total: 5, claimed: 1, remaining: 4 },
         pool: "1.00",
+        // A protocol 4 红包: shares, no 奖池还剩 (multi-prize §4.4).
+        unclaimed: null,
         deadlineAt: state.activity.deadlineAt,
         judged: 7,
       },
@@ -3603,11 +3714,11 @@ test.describe("附带网页 SDK（judge-page §3、§11.8）", () => {
     const dialog = allowDialog(page);
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText(
-      "game.example.com 会替你提交输入，提交的内容和结果会出现在你的「我的提交」里，冷却和人机验证照旧。只对这个红包有效。",
+      "game.example.com 会替你提交输入，提交的内容和结果会出现在你的「我的记录」里，冷却和人机验证照旧。只对这个红包有效。",
     );
     expect(state.submissions).toEqual([]);
     await dialog.getByRole("button", { name: "允许", exact: true }).click();
-    // On its way: the page's 我的提交 appears with it on top.
+    // On its way: the page's 我的记录 appears with it on top.
     const record = page.locator("[data-hb-part=my-judgments]");
     await expect(record.getByText("正在判定…")).toBeVisible();
     await expect(record.getByText("50", { exact: true })).toBeVisible();
@@ -3620,7 +3731,7 @@ test.describe("附带网页 SDK（judge-page §3、§11.8）", () => {
     expect(state.submissions).toMatchObject([
       { participationMode: "code", input: "50" },
     ]);
-    await expect(record).toContainText("我的提交 · 1 次");
+    await expect(record).toContainText("我的记录 · 1 条");
     await expect(record.getByText("正在判定…")).toBeHidden();
     // The page reads the 红包 again after it, with its own way to read it
     // (2026-10-29: the frame's bridge, a reader of the same query, had left

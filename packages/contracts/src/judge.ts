@@ -373,6 +373,11 @@ export type MyJudge = {
     n: number;
     declarations: JudgeDeclarations | null;
     network: string[] | null;
+    /**
+     * A 旧判定器 (docs/multi-prize-design.md §3.6): passed only on the old
+     * rules; its tests run again on the new ones before it opens a 红包.
+     */
+    old?: true;
   } | null;
   /** 红包 opened with it, any version. */
   opened: number;
@@ -426,6 +431,12 @@ export type SquareJudge = {
    * page-design.md §4): absent when none, or while its switch is off.
    */
   page?: string;
+  /**
+   * A 旧判定器 (docs/multi-prize-design.md §3.6): the version others use
+   * passed only on the old rules (shares); not usable until its author
+   * runs it again on the new ones.
+   */
+  old?: true;
   stats: JudgeStats;
 };
 
@@ -625,11 +636,16 @@ export type JudgeChallengerList = {
 
 /** 我的提交 (05 §3): one of the viewer's own judged submissions. */
 export type MyJudgment = {
-  /** 第 N 次, from 1. */
+  /** 第 N 次, from 1: theirs, or (by) the other person's. */
   attempt: number;
   at: string;
-  /** What they typed, as the code got it. */
-  input: string;
+  /**
+   * 我的记录, protocol 5 (docs/multi-prize-design.md §4.1): someone else's
+   * judgment that moved them (others), whose; message is what it told them.
+   */
+  by?: { name: string };
+  /** What they typed, as the code got it; never on someone else's (by). */
+  input?: string;
   /** 代码的回复, if it gave one. */
   message?: string;
   /** Paid: how much, as "0.30". */
@@ -658,9 +674,11 @@ export type JudgeFetchAnswer = {
   error?: "timeout" | "unreachable" | "too-big";
 };
 export type MyJudgmentList = {
-  /** Newest first, twenty at a time. */
+  /** Newest first, twenty at a time; their own and others' moves on them. */
   items: MyJudgment[];
   total: number;
+  /** Their own judged submissions (第 N 次), of the total. */
+  attempts: number;
   nextCursor: string | null;
 };
 

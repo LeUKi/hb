@@ -60,14 +60,17 @@ export type FormState = {
     fillPool: boolean;
   };
   /**
-   * 代码判定 (docs/programmable-hongbao-design.md): a pool, shares and
-   * 每份至少, then the prompt, judge.js and tests.json as pasted, and the
+   * 代码判定 (docs/programmable-hongbao-design.md): a pool (protocol 5 has
+   * no shares), then the prompt, judge.js and tests.json as pasted, and the
    * versions deployed (§5 版本, 换回: judge-versions.ts).
    */
   judge: {
     total: string;
-    count: string;
-    minEach: string;
+    /**
+     * A draft saved before protocol 5 had 份数 and 每份至少; they no longer
+     * count (docs/multi-prize-design.md §4.2), and the form says so.
+     */
+    sharesBefore: boolean;
     prompt: string;
     code: string;
     tests: string;
@@ -192,8 +195,7 @@ export function emptyForm(now = Date.now()): FormState {
     },
     judge: {
       total: "",
-      count: "",
-      minEach: "0.01",
+      sharesBefore: false,
       prompt: "",
       code: "",
       tests: "",
@@ -347,12 +349,9 @@ export function plan(form: FormState) {
         shares: count(form.draw.winners),
         unit: null,
       };
+    // Protocol 5: no shares, only the pool (multi-prize §4.2).
     case "code":
-      return {
-        total: cents(form.judge.total),
-        shares: count(form.judge.count),
-        unit: null,
-      };
+      return { total: cents(form.judge.total), shares: null, unit: null };
   }
 }
 
@@ -391,7 +390,7 @@ export function defaultTitle(form: FormState) {
     case "timed_draw":
       return shares ? `限时开奖 · ${shares} 个名额` : "限时开奖";
     case "code":
-      return shares ? `代码判定 · ${shares} 份` : "代码判定";
+      return "代码判定";
   }
 }
 
@@ -502,20 +501,7 @@ export function issuesOf(form: FormState, now = Date.now()): Issue[] {
         add("hb-draw-limit", "报名上限要是正整数，或者留空不限");
       break;
     case "code": {
-      const minEach = cents(form.judge.minEach);
       if (total === null) add("hb-code-total", "总奖池要大于 0，最多两位小数");
-      if (shares === null)
-        add(
-          "hb-code-count",
-          `份数要在 1 到 ${LIMITS.shares.toLocaleString("en")} 之间`,
-        );
-      if (minEach === null)
-        add("hb-code-min", "每份至少要大于 0，最多两位小数");
-      else if (total !== null && shares !== null && total < minEach * shares)
-        add(
-          "hb-code-total",
-          `总奖池不够：${shares} 份每份至少 ${ldc(minEach)}，要 ${ldc(minEach * shares)} LDC`,
-        );
       if (
         Array.from(form.judge.prompt.trim()).length >
         JUDGE_LIMITS.promptCharacters
@@ -728,11 +714,8 @@ export function formOf(activity: ManagedActivity, now = Date.now()): FormState {
       money.mode === "code"
         ? {
             total: money.totalAmount,
-            count:
-              money.count === undefined
-                ? base.judge.count
-                : String(money.count),
-            minEach: money.minEach ?? base.judge.minEach,
+            sharesBefore:
+              money.count !== undefined || money.minEach !== undefined,
             prompt: config.judge?.prompt ?? "",
             code: config.judge?.code ?? "",
             tests: config.judge?.tests ?? "",
@@ -804,12 +787,7 @@ export function inputOf(form: FormState, merchantId: string): ActivityInput {
               amounts: customLines(form).map((line) => ldc(cents(line) ?? 0)),
             }
           : form.mode === "code"
-            ? {
-                mode: "code",
-                totalAmount: pool,
-                count,
-                minEach: ldc(cents(form.judge.minEach) ?? 0),
-              }
+            ? { mode: "code", totalAmount: pool }
             : {
                 mode: "timed_draw",
                 algorithm: algorithm(form.draw.algorithm),
@@ -994,15 +972,8 @@ export function withJudgeDefaults(
   if (!rules) return form;
   const blank = (value: string) => value.trim() === "";
   const judge = { ...form.judge };
-  if (rules.count?.default !== undefined && blank(judge.count))
-    judge.count = String(rules.count.default);
   if (rules.total?.default !== undefined && blank(judge.total))
     judge.total = ldc(rules.total.default);
-  if (
-    rules.minEach?.default !== undefined &&
-    (blank(judge.minEach) || judge.minEach === "0.01")
-  )
-    judge.minEach = ldc(rules.minEach.default);
   if (rules.prompt !== undefined && blank(judge.prompt))
     judge.prompt = rules.prompt;
   const untouched =

@@ -41,7 +41,6 @@ import { Reveal, RevealInline, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import {
   type Algorithm,
-  cents,
   customLines,
   type FormState,
   type Issue,
@@ -334,51 +333,32 @@ export function AmountFields({
             }),
           ],
         )}
+      {/* Protocol 5: only the pool (docs/multi-prize-design.md §4.2). */}
       {form.mode === "code" && (
-        <>
-          {pair(
-            [
-              "hb-code-total",
-              "总奖池",
-              "100.00",
-              form.judge.total,
-              (current, total) => ({
+        <Field
+          label="总奖池"
+          htmlFor="hb-code-total"
+          hint={
+            form.judge.sharesBefore
+              ? "新规则下不再有份数和每份至少，只按总奖池。"
+              : undefined
+          }
+          error={errorOf("hb-code-total")}
+        >
+          <TextInput
+            {...amountProps("hb-code-total")}
+            className="@wide/window:w-[calc(50%-0.5rem)]"
+            placeholder="100.00"
+            value={form.judge.total}
+            onChange={(event) => {
+              const total = event.target.value;
+              update((current) => ({
                 ...current,
                 judge: { ...current.judge, total },
-              }),
-            ],
-            [
-              "hb-code-count",
-              "份数",
-              "10",
-              form.judge.count,
-              (current, count) => ({
-                ...current,
-                judge: { ...current.judge, count },
-              }),
-            ],
-          )}
-          <Field
-            label="每份至少"
-            htmlFor="hb-code-min"
-            hint="每份最少发多少，最少 0.01。判定器给得更少时按它发。"
-            error={errorOf("hb-code-min")}
-          >
-            <TextInput
-              {...amountProps("hb-code-min")}
-              className="@wide/window:w-[calc(50%-0.5rem)]"
-              placeholder="0.01"
-              value={form.judge.minEach}
-              onChange={(event) => {
-                const minEach = event.target.value;
-                update((current) => ({
-                  ...current,
-                  judge: { ...current.judge, minEach },
-                }));
-              }}
-            />
-          </Field>
-        </>
+              }));
+            }}
+          />
+        </Field>
       )}
       {form.mode === "custom" && (
         <Field
@@ -430,19 +410,19 @@ export function AmountFields({
         )}
         <span className="text-ink-3">
           ·{" "}
-          {shares !== null
-            ? `${shares} ${form.mode === "timed_draw" ? "个名额" : "份"}`
-            : "份数未填"}
+          {form.mode === "code"
+            ? "谁领多少由判定器定"
+            : shares !== null
+              ? `${shares} ${form.mode === "timed_draw" ? "个名额" : "份"}`
+              : "份数未填"}
           {unit !== null && ` · 每份 ${ldc(unit)} LDC`}
-          {form.mode === "code" &&
-            ` · 每份至少 ${cents(form.judge.minEach) !== null ? ldc(cents(form.judge.minEach) ?? 0) : "—"} LDC · 每份发多少由判定器定`}
         </span>
       </p>
       <div className="-mt-3 flex flex-col gap-1">
         {form.mode === "code" ? (
           <p className="text-xs text-ink-3">
-            最多 1,000
-            份，金额最多两位小数；总奖池要够每份都拿到“每份至少”。每份发多少由判定器定，多了按上限发，少了按每份至少发，最后一份发完剩下的。
+            金额最多两位小数。每个人赢多少、什么时候结算由判定器定；红包结束时，还没结算的人按各自的待结算发，剩下的
+            {form.funding === "balance" ? "退回你的🐟额" : "不再发"}。
             {fundingNote(form)}
           </p>
         ) : (

@@ -101,15 +101,22 @@ export type PageSubmitReason =
   | "error";
 
 /** What the page gets back: the outcome only, for it to word itself. */
+/**
+ * Protocol 5 (docs/multi-prize-design.md §4.4): what a judgment moved for
+ * the one judged — signed, as "-0.20" — their 待结算 after, and whether it
+ * settled them.
+ */
+export type PageMoved = { added: string; pending: string; settled: boolean };
+
 export type PageSubmitResult =
-  | {
+  | ({
       judged: true;
       claimed: true;
       amount: string;
       unit: "LDC" | "🐟";
       reply?: string;
-    }
-  | { judged: true; claimed: false; reply?: string }
+    } & Partial<PageMoved>)
+  | ({ judged: true; claimed: false; reply?: string } & Partial<PageMoved>)
   | {
       judged: false;
       reason: PageSubmitReason;

@@ -341,7 +341,7 @@ export function useJudgeDeploy({
       ? null
       : rerun
         ? upgraded
-          ? "判定器升级到第三版了，要重新跑一遍测试"
+          ? "这是按旧规则写的判定器，要按新规则重新跑一遍测试"
           : "测试改过了，要重新跑一遍"
         : "还没有测试全过的判定器",
     pending,

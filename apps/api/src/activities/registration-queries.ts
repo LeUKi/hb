@@ -15,6 +15,7 @@ import { and, asc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { createDb } from "../db/client";
 import { activities, activityRegistrations, claims, users } from "../db/schema";
 import type { ApiBindings } from "../env";
+import { ownStanding } from "../judge/ledger";
 import { decryptString, encryptString } from "../security/crypto";
 import {
   claimDetailsBatch,
@@ -203,9 +204,13 @@ export async function getCurrentParticipationForActivity(
   activity: ActivityRow,
   userId: string,
 ): Promise<ActivityParticipationResponse> {
-  const [claim, registration] = await Promise.all([
+  const [claim, registration, standing] = await Promise.all([
     findUserClaim(env, activity.id, userId),
     findRegistration(env, activity.id, userId),
+    // Protocol 5: their own part (docs/multi-prize-design.md §4.1).
+    activity.participationMode === "code"
+      ? ownStanding(env, activity.id, userId)
+      : null,
   ]);
   const claimDetails = claim
     ? await claimDetailsBatch(env, [{ claim, activity }])
@@ -229,6 +234,7 @@ export async function getCurrentParticipationForActivity(
     registration: registration
       ? (registrationDetails.get(registration.id) ?? activityNotFound())
       : null,
+    ...(standing ? { standing } : {}),
   };
 }
 

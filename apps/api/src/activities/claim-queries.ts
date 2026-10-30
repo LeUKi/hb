@@ -642,6 +642,17 @@ async function recipientSpeedTitles(
     activity.drawState
   )
     return new Map();
+  // 能赢好几次 (protocol 5): most are settled as it ends, so none is the
+  // fastest (docs/multi-prize-design.md §4.5).
+  if (
+    activity.participationMode === "code" &&
+    (await env.DB.prepare(
+      "SELECT 1 FROM activity_code WHERE activity_id = ? AND protocol >= 5",
+    )
+      .bind(activity.id)
+      .first())
+  )
+    return new Map();
   // 自领 takes no title but its own (docs/self-claim-design.md).
   const fastest = await env.DB.prepare(
     `SELECT MIN(claimed_at) AS claimedAt FROM claims WHERE activity_id=? AND claimed_at>=? AND user_id!=?`,

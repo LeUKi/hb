@@ -711,7 +711,10 @@ export function useOmniboxController() {
         // 代码判定: this one joins 我的提交 (05 §3), read before its card
         // turns into it.
         judged =
-          code && (result.result === "claimed" || result.result === "rejected");
+          code &&
+          (result.result === "claimed" ||
+            result.result === "rejected" ||
+            result.result === "judged");
         if (judged)
           await queryClient.invalidateQueries({
             queryKey: myJudgmentsKey(account.id, activityId),
@@ -750,6 +753,25 @@ export function useOmniboxController() {
             if (store.get(editDraftAtom) === (password ?? ""))
               store.set(editDraftAtom, "");
             return;
+          // Protocol 5 (docs/multi-prize-design.md §4.1): judged, its reply
+          // and what it moved head the record under the box; settled with
+          // money, it is a claim like any other.
+          case "judged": {
+            const claim = result.settled?.claim;
+            if (claim) {
+              if (claim.activity.funding === "balance")
+                void queryClient.invalidateQueries({
+                  queryKey: sessionQueryKey,
+                });
+              if (router.history.location.state.omnibox) collapse();
+              return;
+            }
+            const added = Number(result.moved.added);
+            hapticForTone(added > 0 ? "success" : added < 0 ? "danger" : "");
+            if (store.get(editDraftAtom) === (password ?? ""))
+              store.set(editDraftAtom, "");
+            return;
+          }
           case "draft": {
             // 定时开放: when it opens (scheduled-opening §6).
             const at = queryClient.getQueryData<PublicActivityDetail>(
@@ -939,7 +961,11 @@ export function useOmniboxController() {
       try {
         const result = await claimWithHumanCheck(activityId, input, stale);
         if (!result) return notJudged("human_check");
-        if (result.result === "claimed" || result.result === "rejected")
+        if (
+          result.result === "claimed" ||
+          result.result === "rejected" ||
+          result.result === "judged"
+        )
           await queryClient.invalidateQueries({
             queryKey: myJudgmentsKey(account.id, activityId),
           });
@@ -965,6 +991,31 @@ export function useOmniboxController() {
               claimed: false,
               ...(result.message ? { reply: result.message } : {}),
             };
+          // Protocol 5: claimed when it settled them with money; what it
+          // moved either way (multi-prize §4.4).
+          case "judged": {
+            const claim = result.settled?.claim;
+            const balance = claim?.activity.funding === "balance";
+            if (balance)
+              void queryClient.invalidateQueries({
+                queryKey: sessionQueryKey,
+              });
+            const said = {
+              ...(result.message ? { reply: result.message } : {}),
+              added: result.moved.added,
+              pending: result.settled ? "0.00" : result.moved.pending,
+              settled: Boolean(result.settled),
+            };
+            return claim
+              ? {
+                  judged: true,
+                  claimed: true,
+                  amount: claim.amount,
+                  unit: balance ? "🐟" : "LDC",
+                  ...said,
+                }
+              : { judged: true, claimed: false, ...said };
+          }
           case "already_claimed":
             return notJudged("already_claimed");
           case "draft":
@@ -991,6 +1042,9 @@ export function useOmniboxController() {
             return notJudged("not_in_scope");
           case "HUMAN_CHECK_REQUIRED":
             return notJudged("human_check");
+          // Protocol 5: settled already, with or without money.
+          case "CODE_SETTLED":
+            return notJudged("already_claimed");
         }
         if (error.status === 429) return notJudged("try_later");
         if (error.status === 401) return notJudged("login");

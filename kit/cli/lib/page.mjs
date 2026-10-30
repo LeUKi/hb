@@ -114,6 +114,24 @@ async function planOf(root) {
   return { ...read.plan, people: people.length > 0 ? people : DEFAULT_PEOPLE };
 }
 
+/** An amount with its sign as the site writes it: "0.50", "-0.20". */
+const signedYuan = (amount) =>
+  `${amount < 0 ? "-" : ""}${yuan(Math.abs(amount))}`;
+
+/**
+ * What one judgment moved for one person (`settled`: what they were
+ * settled with, if they were), as `hb.submit()` and `hb.mine()` say it.
+ */
+const movedOf = (move, settled) => ({
+  added: signedYuan(move.after - move.before),
+  pending: yuan(settled === undefined ? move.after : 0),
+  settled: settled !== undefined,
+});
+
+/** What one judgment settled this person with, if it did. */
+const settledIn = (judged, id) =>
+  judged.ledger.settled.find((person) => person.id === id)?.amount;
+
 /** What `hb.submit()` gets back, from what npm run simulate reads of it. */
 function resultOf(judged) {
   if ("refused" in judged)
@@ -124,7 +142,11 @@ function resultOf(judged) {
   if ("failure" in judged.answer || "error" in judged.reading)
     return { judged: false, reason: "judge_failed" };
   const { reading } = judged;
-  const reply = reading.message ? { reply: reading.message } : {};
+  const [self] = judged.ledger.moves;
+  const said = {
+    ...(reading.message ? { reply: reading.message } : {}),
+    ...movedOf(self, settledIn(judged, self.id)),
+  };
   const paid = paidNow(judged);
   return paid !== null
     ? {
@@ -132,9 +154,9 @@ function resultOf(judged) {
         claimed: true,
         amount: yuan(paid),
         unit: "LDC",
-        ...reply,
+        ...said,
       }
-    : { judged: true, claimed: false, ...reply };
+    : { judged: true, claimed: false, ...said };
 }
 
 /** The input as the site takes it: one line, ends trimmed, 1–200 字. */
@@ -270,15 +292,34 @@ async function openGame({ sandbox, plan, params, hostUrl, cooldown }) {
       const { reading } = judged;
       printLedger(print, judged);
       const paid = paidNow(judged);
+      const [self, ...others] = judged.ledger.moves;
+      const n =
+        game.judgments.filter((item) => item.who === who && !item.by).length +
+        1;
       game.judgments.push({
         who,
-        n: game.judgments.filter((item) => item.who === who).length + 1,
+        n,
         at: iso(at),
         input: input.trim(),
         claimed: paid !== null,
         ...(paid !== null ? { amount: yuan(paid) } : {}),
         ...(reading.message ? { reply: reading.message } : {}),
+        ...movedOf(self, settledIn(judged, self.id)),
       });
+      // 我的记录: those its others moved see whose judgment it was.
+      for (const move of others) {
+        const settled = settledIn(judged, move.id);
+        game.judgments.push({
+          who: move.username,
+          n,
+          at: iso(at),
+          by: who,
+          claimed: Boolean(settled),
+          ...(settled ? { amount: yuan(settled) } : {}),
+          ...(move.message ? { reply: move.message } : {}),
+          ...movedOf(move, settled),
+        });
+      }
       if (reading.view && !reading.view.keep) game.viewAt = at;
       if (reading.announce !== undefined)
         game.announcements.push({
@@ -292,6 +333,28 @@ async function openGame({ sandbox, plan, params, hostUrl, cooldown }) {
       result,
       line: lines.join("\n"),
       logs: "answer" in judged ? (judged.answer.logs ?? []) : [],
+    };
+  };
+
+  /**
+   * hb.me()'s part of protocol 5 and hb.myView(): this person's 待结算,
+   * whether they were settled and with what, and what only they see.
+   */
+  game.me = (who) => {
+    if (who === GUEST) return null;
+    const person = [...scenario.people.values()].find(
+      (item) => item.user.username === who,
+    );
+    if (!person) return { pending: null, settled: null, myView: null };
+    return {
+      pending: yuan(person.pending),
+      settled: person.settled === null ? null : yuan(person.settled),
+      myView: person.view
+        ? {
+            summary: person.view.summary ?? null,
+            data: person.view.data ?? null,
+          }
+        : null,
     };
   };
 
@@ -442,6 +505,8 @@ export async function startPage({
           .end(sdk);
       if (request.method === "GET" && url.pathname === "/api/state")
         return json(response, game.state());
+      if (request.method === "GET" && url.pathname === "/api/me")
+        return json(response, game.me(url.searchParams.get("who")));
       if (request.method === "GET" && url.pathname === "/api/mine")
         return json(
           response,

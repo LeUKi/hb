@@ -19,6 +19,7 @@ import type {
   MyJudgeVersion,
   UpdateJudgeInput,
 } from "@hb/contracts";
+import { JUDGE_OLDEST_PROTOCOL } from "@hb/contracts";
 import {
   defaultCount,
   moveMoney,
@@ -366,6 +367,9 @@ async function summaryOf(env: ApiBindings, row: ListedJudge): Promise<MyJudge> {
             n: row.usable_n,
             declarations: declarationsOf(usable.declarations),
             network: listOf(usable.network),
+            ...(usable.protocol < JUDGE_OLDEST_PROTOCOL
+              ? { old: true as const }
+              : {}),
           },
     opened: row.opened,
     listed: row.listed_at !== null,

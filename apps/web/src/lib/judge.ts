@@ -458,13 +458,35 @@ export function useJudgeTry() {
   });
 }
 
-/** 我的提交: the viewer's own; a private read, gone at sign-out. */
+/**
+ * What a protocol 5 judgment moved for one person (docs/multi-prize-design.md
+ * §4.1, §4.2): “+0.50 → 1.20”, in full “+0.50 · 待结算 1.20 LDC”; what it
+ * settled them with; 没加钱.
+ */
+export function moveLabel(
+  moved: { added: string; pending: string; settled: boolean },
+  /** Settled with money: how much. */
+  amount: string | undefined,
+  full = false,
+) {
+  if (moved.settled) return amount ? `结算 ${amount} LDC` : "结算，没有领到";
+  const added = Number(moved.added);
+  if (added === 0)
+    return Number(moved.pending) > 0 ? `待结算 ${moved.pending} LDC` : "没加钱";
+  const change = `${added > 0 ? "+" : "−"}${moved.added.replace("-", "")}`;
+  return full
+    ? `${change} · 待结算 ${moved.pending} LDC`
+    : `${change} → ${moved.pending}`;
+}
+
+/** 我的记录: the viewer's own; a private read, gone at sign-out. */
 export const myJudgmentsKey = (userId: string, activityId: string) =>
   ["claim-private", userId, "judgments", activityId] as const;
 
 /**
- * 我的提交 (05 §3): the viewer's own judged submissions, newest first,
- * twenty a page. Read again after each submission (omnibox).
+ * 我的记录 (05 §3): the viewer's own judged submissions and (protocol 5)
+ * others' judgments that moved them, newest first, twenty a page. Read
+ * again after each submission (omnibox).
  */
 export function useMyJudgments(userId: string, activityId: string) {
   const account = useAccountSession(userId, "session");

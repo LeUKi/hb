@@ -92,6 +92,8 @@ export function judge(submission, tools) { … }
 // 两人一桌：第二个人坐下就开桌，两人各加 30，一起结算。
 export function judge({ user, state }) {
   if (!state?.waiting) return { state: { waiting: user.id }, message: "等另一个人" };
+  // 等着的人自己再提交：others 不能写自己。
+  if (state.waiting === user.id) return { message: "还在等另一个人" };
   return {
     add: 30,
     settle: true,
@@ -348,18 +350,19 @@ export function judge({ input, state, user, hongbao }) {
 
 ## 附带网页（可选）
 
-代码判定红包可以带一个自己的网页，显示在红包页旁边（手机上在底部抽屉里），用来做格子、按钮、动画这些输入框做不了的玩法。网页接上红包站的 SDK，能读红包的公开信息和判定器的公开数据（`view`）、收新的动态、替看的人提交、把内容填进指令框、读他自己的提交；判定照旧只认 `judge.js`，网页最坏只是显示得不对。
+代码判定红包可以带一个自己的网页，显示在红包页旁边（手机上在底部抽屉里），用来做格子、按钮、动画这些输入框做不了的玩法。网页接上红包站的 SDK，能读红包的公开信息和判定器的公开数据（`view`）、收新的动态、替看的人提交、把内容填进指令框、读他自己的记录和只给他看的数据；判定照旧只认 `judge.js`，网页最坏只是显示得不对。
 
 - 模板 `page/index.html`：一个 HTML 文件，接好了 SDK，照着改。类型在 `page/hb.d.ts`。
 - 引用：`<script src="https://hb.lafi.sh/sdk/v1.js"></script>`，网页里就有全局的 `hb`：
-  - `await hb.ready()`：`{ hongbao, viewer, theme }`。`hongbao` 有 `title`、`status`（`draft`、`active`、`ended`）、`shares`（代码判定红包没有份数，是 `null`）、`pool`、`judged` 等；`viewer` 是 `{ signedIn: true, name }` 或 `{ signedIn: false }`。单独打开网页时它会报错，照常显示一段说明就行。
+  - `await hb.ready()`：`{ hongbao, viewer, theme }`。`hongbao` 有 `title`、`status`（`draft`、`active`、`ended`）、`shares`（代码判定红包没有份数，是 `null`）、`pool`、`unclaimed`（代码判定红包的奖池还剩多少，比如 `"12.50"`）、`judged` 等；`viewer` 是 `{ signedIn: true, name }` 或 `{ signedIn: false }`。单独打开网页时它会报错，照常显示一段说明就行。
   - `await hb.view()`：公开数据 `{ summary, data, at }`，没有时 `null`。`hb.on("view" | "hongbao" | "announce", fn)` 订阅变化，返回取消订阅的函数；`announce` 每次一条 `{ n, at, user: { name, avatar }, text }`。
-  - `await hb.submit(input)`：替看的人提交一次，同一个红包第一次红包页会问他允不允许。判定了是 `{ judged: true, claimed, amount, unit, reply }`；没判定是 `{ judged: false, reason, seconds, message }`，`reason` 有 `denied`、`login`、`cooldown`（`seconds` 是还剩几秒）、`busy`、`human_check`、`not_in_scope`、`already_claimed`、`not_open`、`ended`、`paused`、`judge_failed`、`try_later`、`invalid_input`、`unconfirmed`、`away`、`not_code`、`error`，意思见 `page/hb.d.ts`。给玩的人看的话由网页自己写。
+  - `await hb.submit(input)`：替看的人提交一次，同一个红包第一次红包页会问他允不允许。判定了是 `{ judged: true, claimed, amount, unit, reply, added, pending, settled }`：`claimed` 结算了、领到了钱，`added` 这次加减了多少（`"0.50"`、`"-0.20"`），`pending` 之后的待结算，`settled` 这次结算了他；没判定是 `{ judged: false, reason, seconds, message }`，`reason` 有 `denied`、`login`、`cooldown`（`seconds` 是还剩几秒）、`busy`、`human_check`、`not_in_scope`、`already_claimed`、`not_open`、`ended`、`paused`、`judge_failed`、`try_later`、`invalid_input`、`unconfirmed`、`away`、`not_code`、`error`，意思见 `page/hb.d.ts`。给玩的人看的话由网页自己写。
   - `await hb.fill(text)`：把内容填进这个红包的指令框，不提交，按提交的是看的人自己，所以不用问他；所有红包都能用。填好是 `{ filled: true }`；没填是 `{ filled: false, reason, message }`，`reason` 有 `no_input`（直接领的红包不用输入）、`login`、`not_open`、`ended`、`paused`、`already_claimed`、`not_in_scope`、`busy`、`invalid_input`（超过 200 字或有换行）、`away`。
-  - `await hb.me()`：看的人自己的情况，`hb.on("me", fn)` 订阅变化。没登录是 `{ signedIn: false }`；登录了是 `{ signedIn: true, name, open, why, cooldownUntil, claim, registered }`：`open` 现在能不能参加，不能时 `why` 是原因（`not_open`、`ended`、`paused`、`already_claimed`、`not_in_scope`）；`cooldownUntil` 冷却到什么时候（服务器时间，毫秒），没在冷却时 `null`；`claim` 领到的 `{ amount, unit, payment }`，`payment` 是 `paid`、`paying`、`failed` 或 `none`。
+  - `await hb.me()`：看的人自己的情况，`hb.on("me", fn)` 订阅变化。没登录是 `{ signedIn: false }`；登录了是 `{ signedIn: true, name, open, why, cooldownUntil, claim, registered, pending, settled }`：`open` 现在能不能参加，不能时 `why` 是原因（`not_open`、`ended`、`paused`、`already_claimed`、`not_in_scope`）；`cooldownUntil` 冷却到什么时候（服务器时间，毫秒），没在冷却时 `null`；`claim` 领到的 `{ amount, unit, payment }`，`payment` 是 `paid`、`paying`、`failed` 或 `none`；`pending` 他的待结算，还没被判定过时 `null`；`settled` 结算了没有。
+  - `await hb.myView()`：判定器写给他自己的数据（`player.view`）`{ summary, data }`，没有时 `null`；`hb.on("myView", fn)` 订阅变化。
   - `hb.now()`：按服务器校准过的当前时间（毫秒），倒计时用它；没登录时是本机时间。
   - `await hb.login()`：请红包页弹出登录卡片，要在看的人点了网页里的按钮时调用。
-  - `await hb.mine(next)`：他自己的提交，新的在前，一次 20 条，`{ total, items: [{ n, at, input, claimed, amount, reply }], next }`；没登录时 `null`。
+  - `await hb.mine(next)`：他自己的记录，新的在前，一次 20 条，`{ total, items: [{ n, at, input, claimed, amount, reply, added, pending, settled, by }], next }`；别人的判定通过 `others` 改到他的那条带 `by`（那个人的昵称，`n` 是那个人的第几次），没有 `input`，`reply` 是判定器写给他的话；没登录时 `null`。
   - 做不到：读红包站的 Cookie 和登录信息、看别人的输入、转账、发红包、改红包、绕过冷却和人机验证。
 - 网页要显示的东西都从 `view.data` 来：判定器在 `view` 里写清楚格子、区间、猜过的数，网页照着画，不要在网页里自己算谁赢了。秘密照旧放在 `state`。
 - `npm run page`：在本地打开一个假红包页（下面“五个命令”），提交交给本地的 `judge.js` 跑。
@@ -372,7 +375,7 @@ export function judge({ input, state, user, hongbao }) {
 - `npm test`：先按网站部署的规则查 import，不过就列出第几行什么问题、不跑测试；然后每条一行 `✓ 名字（3 毫秒）` 或 `✗ 名字：哪里不对`，`console` 的输出缩进跟在那一条下面；最后 `测试 N / M 通过`。`npm test -- 名字` 只跑名字里含这几个字的。
 - `npm run check`：网站部署时同样的几行（import 都在清单里、代码能加载、导出了 judge、联网的写出白名单、测试 N / M 通过），每条测试跑两遍，结果不一样的提醒用了真随机，公开数据里出现保密参数的值也提醒；再写文件大小和代码指纹（和网站上展开代码时显示的一致）；最后 `可以去网站部署了` 或 `还不能开放`。
 - `npm run simulate`：一行一次提交：第几次、谁、输入、加减了多少和之后的待结算（比如“+0.50 · 待结算 1.20”，结算了写“结算 1.20”，什么都没加写“没加钱”）、代码的回复；`others` 改到的人、只给某人看的数据、公开数据（“公开：……”）、动态（“动态：……”）各跟一行；结束了写“判定器结束了这个红包”或“奖池占满了，红包结束”和一起结算的人；最后到截止时间还没结算的人一起结算，写发出多少、几个人领到钱。`npm run simulate -- --seed 别的` 换一个种子，`npm run simulate -- 别的.json` 换一个文件，`npm run simulate -- --live` 让请求真的从这台电脑发出去（照样只许白名单里的地址）。
-- `npm run page`：假红包页。浏览器打开它写的地址（`http://127.0.0.1:8730`），左边是模拟的红包页（换人、红包状态、动态、我的提交、记录），右边是 `page/` 里的网页，从另一个地址打开，和线上一样；网页里的 `https://hb.lafi.sh/sdk/v1.js` 在本地自动换成假红包页的那一份。提交交给本地的 `judge.js` 跑，同 `npm run simulate`（先跑 setup，共用的 state、每个人的待结算、奖池接着往下算；红包和参数取 `simulate.json`）。每个人第一次提交会问允不允许，选“没登录”能测 `login`。`npm run page -- examples/number-bomb` 打开一个样例；`--cooldown 3` 每人提交后要等 3 秒，用来测 `cooldown`；`--port` 换端口；`--live` 让联网的请求真的发出去。改了网页刷新就行，改了 `judge.js` 要 Ctrl+C 再运行一次。
+- `npm run page`：假红包页。浏览器打开它写的地址（`http://127.0.0.1:8730`），左边是模拟的红包页（换人、红包状态、动态、我的记录、日志），右边是 `page/` 里的网页，从另一个地址打开，和线上一样；网页里的 `https://hb.lafi.sh/sdk/v1.js` 在本地自动换成假红包页的那一份。提交交给本地的 `judge.js` 跑，同 `npm run simulate`（先跑 setup，共用的 state、每个人的待结算、奖池接着往下算；红包和参数取 `simulate.json`）。每个人第一次提交会问允不允许，选“没登录”能测 `login`。`npm run page -- examples/number-bomb` 打开一个样例；`--cooldown 3` 每人提交后要等 3 秒，用来测 `cooldown`；`--port` 换端口；`--live` 让联网的请求真的发出去。改了网页刷新就行，改了 `judge.js` 要 Ctrl+C 再运行一次。
 - `npm run replay -- judge-records-xxx.json`：用网站上下载的完整记录逐条重放，先核对指纹和种子，再核对开放时的 setup；联网的红包用记录里的返回，先比请求再比判定（第四版起还比公开数据、动态和结束，第五版起还比 `add`、`settle`、`player` 和 `others`）。早先几版开放的红包用那一版的运行时重放。
 
 失败时退出码都不是 0。
@@ -418,7 +421,7 @@ return { message: `不对，大家一共猜错了 ${wrong} 次`, state: { wrong 
 能赢好几次的玩法，钱先记在待结算里，最后一起发。比如刮刮乐，每人 3 次机会，刮到的钱累加，机会用完就结算：
 
 ```js
-export function judge({ player, tools }) {
+export function judge({ player }, tools) {
   const tries = player.state?.tries ?? 3;
   const prize = tools.random.pick([0, 0, 20, 50, -10]);
   const left = tries - 1;

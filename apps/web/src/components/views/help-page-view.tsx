@@ -31,13 +31,14 @@ const loginCode = `function openLogin() {
 /** 接上红包站的 SDK (docs/judge-page-design.md §11.8): public/sdk/v1.js. */
 const readCode = `const { hongbao, viewer } = await hb.ready();
 // hongbao：id、title、url、code、status、endedByCode、
-//   unit、shares、pool、deadlineAt、judged
+//   unit、shares、pool、unclaimed、deadlineAt、judged
+//   （代码判定红包没有份数：shares 是 null，unclaimed 是奖池还剩多少）
 // viewer：{ signedIn: true, name } 或 { signedIn: false }
 
 // 判定器的公开数据：{ summary, data, at }，没有时是 null
 show(await hb.view());
 hb.on("view", show); // 公开数据变了
-hb.on("hongbao", update); // 状态、剩余份数、已判定次数变了
+hb.on("hongbao", update); // 状态、奖池还剩、已判定次数变了
 // 新的一条动态：{ n, at, user: { name, avatar }, text }
 hb.on("announce", addLine);`;
 
@@ -55,7 +56,7 @@ const fillReasons = [
   ["not_open", "还没开放"],
   ["ended", "红包已结束"],
   ["paused", "判定器连续出错，暂停领取"],
-  ["already_claimed", "已经领到过或报过名"],
+  ["already_claimed", "已经领到过、报过名或已经结算了"],
   ["not_in_scope", "不在领取范围"],
   ["busy", "指令框正在提交，等有了结果再填"],
   ["invalid_input", "超过 200 字或有换行，message 是原因"],
@@ -64,12 +65,14 @@ const fillReasons = [
 
 const submitCode = `const result = await hb.submit("50");
 if (result.judged) {
-  // claimed：领到没有；amount、unit：领了多少
+  // claimed：结算了、领到了钱；amount、unit：领了多少
+  // added：这次加减了多少（"0.50"、"-0.20"）；pending：之后的待结算
+  // settled：这次结算了他（之后不能再提交）
   // reply：判定器的回复（没有就不带）
   say(
     result.claimed
       ? \`领到 \${result.amount} \${result.unit}\`
-      : (result.reply ?? "没领到"),
+      : (result.reply ?? \`待结算 \${result.pending} \${hongbao.unit}\`),
   );
 } else if (result.reason === "cooldown") {
   say(\`\${result.seconds} 秒后再试\`);
@@ -79,11 +82,18 @@ if (result.judged) {
 
 const meCode = `const me = await hb.me();
 // 没登录：{ signedIn: false }
-// 登录了：{ signedIn: true, name, open, why, cooldownUntil, claim, registered }
+// 登录了：{ signedIn: true, name, open, why, cooldownUntil, claim,
+//   registered, pending, settled }
 //   open：现在能不能参加；不能时 why 是原因（ended、already_claimed……）
 //   cooldownUntil：冷却到什么时候（毫秒，同 hb.now()），没在冷却时 null
 //   claim：领到的 { amount, unit, payment }
+//   pending：代码判定红包里他的待结算（"1.20"），还没被判定过时 null
+//   settled：已经结算了（结算时是 0 则 claim 是 null）
 hb.on("me", show); // 变了就通知
+
+// 判定器写给他自己的数据（player.view）：{ summary, data }，没有时 null
+showMine(await hb.myView());
+hb.on("myView", showMine);
 
 // 倒计时用 hb.now()：按服务器校准过的时间（没登录时是本机时间）
 const left = Date.parse(hongbao.deadlineAt) - hb.now();
@@ -92,7 +102,10 @@ const left = Date.parse(hongbao.deadlineAt) - hb.now();
 loginButton.onclick = () => hb.login();`;
 
 const mineCode = `const mine = await hb.mine(); // 没登录时是 null
-// { total, items: [{ n, at, input, claimed, amount, reply }], next }
+// { total, items: [{ n, at, input, claimed, amount, reply,
+//   added, pending, settled, by }], next }
+// 别人的判定通过 others 改到了他：by 是那个人的昵称，n 是那个人的第几次，
+//   没有 input，reply 是判定器写给他的话
 if (mine?.next) more(await hb.mine(mine.next)); // 再读 20 条`;
 
 /** Why a submission was not judged: `reason`, and what it means. */
@@ -103,7 +116,7 @@ const reasons = [
   ["busy", "上一次提交还没有结果"],
   ["human_check", "没完成或没通过人机验证"],
   ["not_in_scope", "不在领取范围"],
-  ["already_claimed", "已经领到过（每人领一次）"],
+  ["already_claimed", "已经领到过或已经结算了"],
   ["not_open", "还没开放"],
   ["ended", "红包已结束"],
   ["paused", "判定器连续出错，暂停领取"],
@@ -138,12 +151,12 @@ const aiPrompt = (
 5. 想知道是哪个红包，读 document.referrer（红包页的地址）。
 6. 网页里不要收钱、交易，不要让人输账号密码。
 7. 附带网页可以接红包站的 SDK：页面里加 <script src="${origin}/sdk/v1.js"></script>，就有全局的 hb。
-   - await hb.ready() 返回 { hongbao, viewer, theme }：hongbao 有 id、title、url、code、status（draft、active、ended）、endedByCode、unit（LDC 或 🐟）、shares（{ total, claimed, remaining } 或 null）、pool、deadlineAt、judged；viewer 是 { signedIn: true, name } 或 { signedIn: false }。单独打开网页时它会报错，照常显示一段说明即可。
+   - await hb.ready() 返回 { hongbao, viewer, theme }：hongbao 有 id、title、url、code、status（draft、active、ended）、endedByCode、unit（LDC 或 🐟）、shares（{ total, claimed, remaining } 或 null，代码判定红包没有份数，是 null）、pool、unclaimed（代码判定红包的奖池还剩多少，别的红包 null）、deadlineAt、judged；viewer 是 { signedIn: true, name } 或 { signedIn: false }。单独打开网页时它会报错，照常显示一段说明即可。
    - await hb.view() 是判定器的公开数据 { summary, data, at }，没有时 null；hb.on("view" | "hongbao" | "announce", fn) 订阅变化，返回取消订阅的函数；announce 每次一条 { n, at, user: { name, avatar }, text }。
    - await hb.fill(text) 把内容填进这个红包的指令框，不提交，所有红包都能用。填好是 { filled: true }，没填是 { filled: false, reason, message }；reason 有 ${fillReasons.map(([name]) => name).join("、")}。
-   - 代码判定红包才能用 await hb.submit(input)：替看的人提交一次，同一个红包第一次会先问他。判定了是 { judged: true, claimed, amount, unit, reply }，没判定是 { judged: false, reason, seconds, message }；reason 有 ${reasons.map(([name]) => name).join("、")}。给玩的人看的提示由网页自己写。
-   - await hb.me() 是看的人自己的情况：没登录 { signedIn: false }；登录了 { signedIn: true, name, open, why, cooldownUntil, claim, registered }（open 能不能参加，why 不能的原因，cooldownUntil 冷却到什么时候，claim 领到的 { amount, unit, payment }）；hb.on("me", fn) 订阅变化。hb.now() 是按服务器校准过的当前时间（毫秒）。hb.login() 请红包页弹出登录卡片，要在看的人点按钮时调用。
-   - await hb.mine(next) 读他自己的提交 { total, items: [{ n, at, input, claimed, amount, reply }], next }，没登录时 null。
+   - 代码判定红包才能用 await hb.submit(input)：替看的人提交一次，同一个红包第一次会先问他。判定了是 { judged: true, claimed, amount, unit, reply, added, pending, settled }（added 这次加减了多少，pending 之后的待结算，settled 这次结算了他），没判定是 { judged: false, reason, seconds, message }；reason 有 ${reasons.map(([name]) => name).join("、")}。给玩的人看的提示由网页自己写。
+   - await hb.me() 是看的人自己的情况：没登录 { signedIn: false }；登录了 { signedIn: true, name, open, why, cooldownUntil, claim, registered, pending, settled }（open 能不能参加，why 不能的原因，cooldownUntil 冷却到什么时候，claim 领到的 { amount, unit, payment }，pending 他的待结算，settled 结算了没有）；hb.on("me", fn) 订阅变化。await hb.myView() 是判定器写给他自己的数据 { summary, data }，没有时 null，hb.on("myView", fn) 订阅变化。hb.now() 是按服务器校准过的当前时间（毫秒）。hb.login() 请红包页弹出登录卡片，要在看的人点按钮时调用。
+   - await hb.mine(next) 读他自己的记录 { total, items: [{ n, at, input, claimed, amount, reply, added, pending, settled, by }], next }，没登录时 null；别人的判定通过 others 改到他的那条带 by（那个人的昵称），没有 input。
    - 做不到：读红包站的 Cookie 和登录信息、看别人的输入、转账、发红包、改红包、绕过冷却和人机验证。
    - 开发包（npx degit LeUKi/hb/kit）里有网页模板 page/index.html、SDK 的类型 page/hb.d.ts、本地的假红包页（npm run page）和数字炸弹、刮刮乐两个样例。
 8. 还没有网站：把网页放到静态托管上就行。Cloudflare Workers、GitHub Pages、Netlify、Vercel 的默认域名都能直接嵌进红包页；Vercel 只用正式部署（预览部署默认要登录才能看）。Cloudflare Drop 拖上去还没认领的页面会先弹安全验证，嵌不进来，要先认领。
@@ -279,17 +292,19 @@ export function HelpPageView() {
           <p>
             只有代码判定红包能用。同一个红包第一次提交时，红包页会问看的人允不允许这个网页替他提交，不允许时{" "}
             <Code>reason</Code> 是 <Code>denied</Code>
-            。提交照样有冷却和人机验证，每一次都出现在他的「我的提交」里。怎么跟玩的人说，由网页自己写。
+            。提交照样有冷却和人机验证，每一次都出现在他的「我的记录」里。怎么跟玩的人说，由网页自己写。
           </p>
         </Panel>
         <Fields items={reasons.map(([name, note]) => ({ name, note }))} />
-        <Block label="读自己的提交" code={mineCode} />
+        <Block label="读自己的记录" code={mineCode} />
         <Block label="看的人自己的情况、时间和登录" code={meCode} />
         <Panel className={text}>
           <p>
             <Code>hb.login()</Code>{" "}
-            要在看的人点了网页里的按钮时调用，网页一打开就调用会报错。这三样是后来加的，网页想用时先看{" "}
-            <Code>typeof hb.me === "function"</Code>（SDK 文件缓存一小时）。
+            要在看的人点了网页里的按钮时调用，网页一打开就调用会报错。
+            <Code>hb.me()</Code>、<Code>hb.now()</Code>、<Code>hb.login()</Code>{" "}
+            和 <Code>hb.myView()</Code> 是后来加的，网页想用时先看{" "}
+            <Code>typeof hb.myView === "function"</Code>（SDK 文件缓存一小时）。
           </p>
         </Panel>
         <Panel className={text}>

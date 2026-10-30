@@ -59,11 +59,29 @@ export function JudgeSource({ judge }: { judge: SquareJudge }) {
 const tagClass =
   "inline-flex h-6 shrink-0 items-center px-2 text-xs font-medium whitespace-nowrap";
 
-/** 精选, 联网 and 带附带网页, each explaining itself (§15.4; judge-page §11.3). */
+/** What a 旧判定器 is (docs/multi-prize-design.md §3.6). */
+export const OLD_JUDGE_HINT =
+  "按旧规则（有份数）写的判定器，要按新规则重新跑一遍测试才能发新红包。";
+
+/**
+ * 精选, 联网, 带附带网页 and 旧判定器, each explaining itself (§15.4;
+ * judge-page §11.3; multi-prize §3.6).
+ */
 export function JudgeTags({ judge }: { judge: SquareJudge }) {
-  if (!judge.featured && !judge.network && !judge.page) return null;
+  if (!judge.featured && !judge.network && !judge.page && !judge.old)
+    return null;
   return (
     <span className="flex flex-wrap gap-1.5">
+      {judge.old && (
+        <Squircle radius={radius.tag}>
+          <TagHint
+            hint={OLD_JUDGE_HINT}
+            className={cn(tagClass, "bg-fill-2 text-ink-2")}
+          >
+            旧判定器
+          </TagHint>
+        </Squircle>
+      )}
       {judge.featured && (
         <Squircle radius={radius.tag}>
           <TagHint

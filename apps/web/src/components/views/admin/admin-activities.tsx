@@ -66,11 +66,16 @@ function statusLine({ record }: Row) {
   return { ...tag, ended };
 }
 
-/** Taken so far: shares claimed, or people signed up for a draw. */
-function takenLine(item: AdminActivityListItem, draw: boolean) {
-  return draw
-    ? `报名 ${item.registeredCount} 人`
-    : `参与 ${item.claimedCount} / ${item.totalCount}`;
+/**
+ * Taken so far: shares claimed, people signed up for a draw, or (protocol
+ * 5, no shares) what is left of the pool.
+ */
+function takenLine({ record, ...item }: Row) {
+  const { activity, view } = record;
+  if (activity.mode === "timed_draw") return `报名 ${item.registeredCount} 人`;
+  if (view.quantity.kind === "pool")
+    return `${item.claimedCount} 人领到 · 奖池还剩 ${view.quantity.left}`;
+  return `参与 ${item.claimedCount} / ${item.totalCount}`;
 }
 
 function RowBody({ row }: { row: Row }) {
@@ -93,8 +98,7 @@ function RowBody({ row }: { row: Row }) {
           </StatusChip>
         </span>
         <span className="truncate text-xs text-ink-3">
-          {row.author.displayName || row.authorDisplayName} ·{" "}
-          {takenLine(row, activity.mode === "timed_draw")} ·{" "}
+          {row.author.displayName || row.authorDisplayName} · {takenLine(row)} ·{" "}
           {clockLabel(row.createdAt)} 创建
         </span>
       </span>

@@ -48,7 +48,7 @@ import {
   tryMyJudge,
   updateMyJudge,
 } from "./judges";
-import { myJudgments } from "./mine";
+import { myJudgmentCursor, myJudgments } from "./mine";
 import {
   judgePeople,
   judgePerson,
@@ -294,14 +294,13 @@ export const judgeRoutes = new Hono<ApiContext>()
     "/activities/:id/judgments",
     validator("query", (value) => {
       const cursor = value.cursor;
-      if (
-        cursor !== undefined &&
-        (typeof cursor !== "string" || !/^[1-9]\d{0,8}$/.test(cursor))
-      )
+      const parsed =
+        typeof cursor === "string" ? myJudgmentCursor(cursor) : null;
+      if (cursor !== undefined && !parsed)
         throw new ActivityValidationError([
           { path: "cursor", message: "分页位置无效" },
         ]);
-      return { cursor: cursor === undefined ? null : Number(cursor) };
+      return { cursor: parsed };
     }),
     async (c) => {
       const session = await requireAuth(c);

@@ -19,7 +19,8 @@ import {
 import { MORPH_MS } from "../shell/layout-morph";
 import { useWindowInfo, type WindowInfo } from "../shell/window-info";
 import { ShortcutKbd } from "../ui/kbd";
-import { MorphLabel, RollingNumber } from "../ui/morph-label";
+import { MorphLabel, RollingNumber, RollingText } from "../ui/morph-label";
+import { Reveal } from "../ui/reveal";
 import { CoverData } from "./cover-data";
 import { CoverHead } from "./cover-head";
 import { coverMotion } from "./cover-motion";
@@ -87,7 +88,7 @@ function ActionHint({
 }) {
   const { compact } = useWindowInfo();
   const reduced = useReducedMotionPref();
-  const { phase, message } = hongbao;
+  const { phase, message, standing } = hongbao;
   return (
     <div
       className="grid justify-items-center gap-1.5 px-6 text-center"
@@ -103,6 +104,27 @@ function ActionHint({
           )}
         </MorphLabel>
       </p>
+      {/* 代码判定, protocol 5 (docs/multi-prize-design.md §4.1): what only
+          they see, and their 待结算 until it is settled. */}
+      <Reveal show={Boolean(standing && !standing.settled)}>
+        {standing && (
+          <div
+            className="grid justify-items-center gap-1"
+            data-hb-part="standing"
+          >
+            <Reveal show={Boolean(standing.view?.summary)}>
+              <p className="text-base break-words text-ink">
+                {standing.view?.summary}
+              </p>
+            </Reveal>
+            {/* Its figure rolls as each judgment moves it. */}
+            <p className="text-sm text-ink-2">
+              <RollingText text={`待结算 ${standing.pending} LDC`} /> ·
+              判定器结算或红包结束时发
+            </p>
+          </div>
+        )}
+      </Reveal>
       {/* 定时开放 (scheduled-opening §6): how long until it opens. */}
       {hongbao.draft &&
         !hongbao.author &&

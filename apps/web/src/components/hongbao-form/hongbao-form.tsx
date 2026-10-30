@@ -729,7 +729,8 @@ export function HongbaoForm({
       ? "issues"
       : submit.notice
         ? `notice:${submit.notice.tone}`
-        : planned.total === null || planned.shares === null
+        : planned.total === null ||
+            (planned.shares === null && form.mode !== "code")
           ? "mode"
           : "total";
   const barLeft =
@@ -748,7 +749,8 @@ export function HongbaoForm({
       <p className={cn("line-clamp-2 text-xs", notice[submit.notice.tone])}>
         {submit.notice.text}
       </p>
-    ) : planned.total === null || planned.shares === null ? (
+    ) : planned.total === null ||
+      (planned.shares === null && form.mode !== "code") ? (
       <span className="text-sm text-ink-2">{modeLabels[form.mode]}</span>
     ) : (
       <span className="grid min-w-0">
@@ -757,8 +759,10 @@ export function HongbaoForm({
           <span className="ml-1 text-xs font-medium text-ink-3">LDC</span>
         </span>
         <span className="truncate text-xs text-ink-3">
-          {modeLabels[form.mode]} · {planned.shares}{" "}
-          {form.mode === "timed_draw" ? "个名额" : "份"}
+          {modeLabels[form.mode]}
+          {/* Protocol 5: no shares, only the pool (multi-prize §4.2). */}
+          {planned.shares !== null &&
+            ` · ${planned.shares} ${form.mode === "timed_draw" ? "个名额" : "份"}`}
         </span>
       </span>
     );

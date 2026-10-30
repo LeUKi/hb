@@ -43,7 +43,7 @@
         <ul id="lines"></ul>
       </section>
       <section>
-        <div class="muted" id="mine-title">我的提交</div>
+        <div class="muted" id="mine-title">我的记录</div>
         <ul id="mine"></ul>
       </section>
     </main>
@@ -64,7 +64,7 @@
         paused: "判定器连续出错，暂停领取。",
         judge_failed: "判定器出错了，这次没有判定，可以再提交一次。",
         try_later: "提交的人太多，稍后再试。",
-        unconfirmed: "没收到结果，看看下面的“我的提交”。",
+        unconfirmed: "没收到结果，看看下面的“我的记录”。",
         away: "回到红包页再提交。",
         not_code: "这个红包不能在这里提交。",
       };
@@ -95,13 +95,18 @@
 
       async function showMine() {
         const mine = await hb.mine();
-        $("mine-title").textContent = mine ? `我的提交 · ${mine.total} 次` : "我的提交（登录后看得到）";
+        $("mine-title").textContent = mine ? `我的记录 · ${mine.total} 条` : "我的记录（登录后看得到）";
         $("mine").replaceChildren(
-          ...(mine?.items ?? []).map((item) =>
-            Object.assign(document.createElement("li"), {
-              textContent: `第 ${item.n} 次「${item.input}」${item.claimed ? `领到 ${item.amount}` : "没领到"}${item.reply ? `：${item.reply}` : ""}`,
-            }),
-          ),
+          ...(mine?.items ?? []).map((item) => {
+            // 别人的判定改到了他：by 是那个人，没有输入。
+            const what = item.by ? `${item.by}的第 ${item.n} 次` : `第 ${item.n} 次「${item.input}」`;
+            const moved = item.settled
+              ? item.claimed ? `结算 ${item.amount}` : "结算，没有领到"
+              : `待结算 ${item.pending ?? "0.00"}`;
+            return Object.assign(document.createElement("li"), {
+              textContent: `${what} ${moved}${item.reply ? `：${item.reply}` : ""}`,
+            });
+          }),
         );
       }
 
@@ -116,7 +121,7 @@
           if (result.judged) {
             $("said").textContent = result.claimed
               ? `领到 ${result.amount} ${result.unit}！${result.reply ?? ""}`
-              : (result.reply ?? "没领到。");
+              : (result.reply ?? `待结算 ${result.pending ?? "0.00"}`);
             $("input").value = "";
             await showMine();
           } else if (result.reason === "cooldown") {

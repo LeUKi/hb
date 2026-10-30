@@ -100,6 +100,44 @@ function sameKey(left: readonly unknown[], right: readonly unknown[]) {
   );
 }
 
+/**
+ * 代码判定, protocol 5 (docs/multi-prize-design.md §4.1): a judgment's 待结算
+ * and settlement show at once; what only they see comes with the reread.
+ */
+async function syncStanding(
+  client: QueryClient,
+  userId: string,
+  activityId: string,
+  result: Extract<ClaimResult, { result: "judged" }>,
+  isCurrentIdentity: () => boolean,
+) {
+  const key = participationKey(userId, activityId);
+  await client.cancelQueries({ queryKey: key, exact: true });
+  if (!isCurrentIdentity()) return false;
+  const previous = client.getQueryData<ParticipationCache>(key);
+  const claim = result.settled?.claim ?? null;
+  if (previous)
+    client.setQueryData<ParticipationCache>(key, {
+      ...previous,
+      ...(claim ? { claim } : {}),
+      standing: {
+        pending: result.settled ? "0.00" : result.moved.pending,
+        settled: Boolean(result.settled),
+        view: previous.standing?.view ?? null,
+      },
+    });
+  if (claim) client.setQueryData(claimDetailKey(userId, claim.id), { claim });
+  void client.invalidateQueries({ queryKey: key, exact: true });
+  if (claim) {
+    void client.invalidateQueries({ queryKey: ["claim-private", userId] });
+    void client.invalidateQueries({ queryKey: ["history-private", userId] });
+  }
+  void client.invalidateQueries({
+    queryKey: ["participation-private", userId],
+  });
+  return true;
+}
+
 /** Both activity submission paths share cancellation, identity and cache rules. */
 export async function syncParticipationResult(
   client: QueryClient,
@@ -109,6 +147,8 @@ export async function syncParticipationResult(
   isCurrentIdentity: () => boolean,
 ) {
   if (!isCurrentIdentity()) return false;
+  if (result.result === "judged")
+    return syncStanding(client, userId, activityId, result, isCurrentIdentity);
   if (!("claim" in result) && !("registration" in result)) return true;
   const key = participationKey(userId, activityId);
   const claim = "claim" in result ? result.claim : result.registration.claim;

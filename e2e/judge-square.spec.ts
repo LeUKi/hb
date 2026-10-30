@@ -357,9 +357,7 @@ test.describe("判定器广场", () => {
     await expect(page.getByText("猜的范围", { exact: true })).toBeVisible();
     await expect(page.getByText("答案（整数，保密）")).toBeVisible();
     for (const line of [
-      "份数 1–10，默认 5",
       "总奖池默认 5 LDC",
-      "每份至少 0.10 LDC",
       "截止默认 3 天",
       "建议打开领取前人机验证",
     ])
@@ -473,8 +471,11 @@ test.describe("判定器广场", () => {
     ).toBeVisible();
     await expect(page.locator("#hb-try-param-max")).toHaveValue("100");
     await expect(page.locator("#hb-try-param-answer")).toHaveValue("");
-    for (const line of ["份数 1–10，默认 5", "默认标题：猜一猜"])
-      await expect(page.getByText(line, { exact: true })).toBeVisible();
+    // 份数 no longer counts (multi-prize §3.6): not listed.
+    await expect(
+      page.getByText("默认标题：猜一猜", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText(/^份数/)).toHaveCount(0);
     await expect(page.getByText("自带说明", { exact: true })).toBeVisible();
     await expect(
       page.getByRole("link", { name: "game.example.com ↗" }),
@@ -590,14 +591,8 @@ test.describe("判定器广场", () => {
     await page.locator("#hb-param-answer").fill("42");
     await expect(page.locator("#hb-param-answer")).toHaveValue("42");
     await page.getByRole("button", { name: "下一步" }).first().click();
-    // Its ranges and defaults for 发多少 (§4).
-    await expect(page.locator("#hb-code-count")).toHaveValue("5");
+    // Its default pool for 发多少 (§4); 份数 and 每份至少 no longer count.
     await expect(page.locator("#hb-code-total")).toHaveValue("5.00");
-    await page.getByRole("button", { name: "下一步" }).first().click();
-    await expect(
-      page.getByText("这个判定器要求每份至少 0.10 LDC", { exact: true }),
-    ).toBeVisible();
-    await page.locator("#hb-code-min").fill("0.10");
     await page.getByRole("button", { name: "下一步" }).first().click();
     await page.getByRole("button", { name: "存草稿" }).first().click();
     await expect.poll(() => asked.saved.length).toBe(1);
@@ -655,7 +650,6 @@ test.describe("判定器广场", () => {
     await page.locator("#hb-code-prompt").click();
     await page.keyboard.press("Enter");
     await page.locator("#hb-code-total").fill("1.00");
-    await page.locator("#hb-code-count").fill("5");
     await page.keyboard.press("Enter");
     await page.getByRole("button", { name: "存草稿" }).first().click();
     await expect.poll(() => asked.saved.length).toBe(1);
@@ -788,8 +782,6 @@ test.describe("判定器带的附带网页（judge-page §4、§11.9）", () => 
     await expect(page.getByText("站长精选 · 第 2 版")).toBeVisible();
     await page.locator("#hb-param-answer").fill("42");
     await page.getByRole("button", { name: "下一步" }).first().click();
-    await page.getByRole("button", { name: "下一步" }).first().click();
-    await page.locator("#hb-code-min").fill("0.10");
     await page.getByRole("button", { name: "下一步" }).first().click();
   }
 

@@ -15,10 +15,15 @@ export interface HbHongbao {
   /** 判定器用 end 结束了它 */
   endedByCode: boolean;
   unit: "LDC" | "🐟";
-  /** 红包没公开份数时是 null */
+  /** 红包没公开份数时是 null；代码判定红包没有份数，也是 null */
   shares: { total: number; claimed: number; remaining: number } | null;
   /** 奖池总额，比如 "10.00"；没有时 null */
   pool: string | null;
+  /**
+   * 代码判定红包的奖池还剩多少，比如 "12.50"：总奖池减去已经结算的和大家的
+   * 待结算；别的红包是 null
+   */
+  unclaimed: string | null;
   deadlineAt: string | null;
   /** 已判定几次 */
   judged: number | null;
@@ -58,7 +63,7 @@ export type HbReason =
   | "human_check"
   /** 不在领取范围 */
   | "not_in_scope"
-  /** 已经领到过（每人领一次） */
+  /** 已经领到过或已经结算了 */
   | "already_claimed"
   /** 还没开放 */
   | "not_open"
@@ -81,18 +86,29 @@ export type HbReason =
   /** 其他错误，message 是原因 */
   | "error";
 
+/** 代码判定红包的一次判定给提交的人带来的变化。 */
+export interface HbMoved {
+  /** 这次加减了多少，比如 "0.50"、"-0.20"、"0.00" */
+  added: string;
+  /** 这次以后的待结算，比如 "1.20"；结算以后是 "0.00" */
+  pending: string;
+  /** 这次结算了他（之后不能再提交） */
+  settled: boolean;
+}
+
 /** hb.submit() 的结果。 */
 export type HbSubmitResult =
-  | {
+  | ({
       judged: true;
+      /** 结算了，领到了钱 */
       claimed: true;
       /** 领到多少，比如 "0.30" */
       amount: string;
       unit: "LDC" | "🐟";
       /** 判定器的回复，没有就不带 */
       reply?: string;
-    }
-  | { judged: true; claimed: false; reply?: string }
+    } & Partial<HbMoved>)
+  | ({ judged: true; claimed: false; reply?: string } & Partial<HbMoved>)
   | {
       judged: false;
       reason: HbReason;
@@ -112,7 +128,7 @@ export type HbFillReason =
   | "ended"
   /** 判定器连续出错，暂停领取 */
   | "paused"
-  /** 已经领到过或报过名 */
+  /** 已经领到过、报过名或已经结算了 */
   | "already_claimed"
   /** 不在领取范围 */
   | "not_in_scope"
@@ -155,16 +171,34 @@ export type HbMe =
       } | null;
       /** 限时开奖：已经报了名 */
       registered: boolean;
+      /** 代码判定红包：待结算，比如 "1.20"；还没被判定过、别的红包时 null */
+      pending: string | null;
+      /** 代码判定红包：已经结算了（领到的钱在 claim 里，结算时是 0 则 claim 是 null） */
+      settled: boolean;
     };
 
-/** 看的人自己的一次提交。 */
-export interface HbMyJudgment {
-  /** 第几次，从 1 起 */
+/** 判定器写给看的人自己的数据（判定结果的 player.view），只有他看得到。 */
+export interface HbMyView {
+  summary: string | null;
+  data: unknown;
+}
+
+/**
+ * 看的人自己的一条记录：他的一次提交，或者别人的一次判定通过 others 改到了他
+ * （这时有 by，没有 input）。
+ */
+export interface HbMyJudgment extends Partial<HbMoved> {
+  /** 第几次，从 1 起；by 时是那个人的第几次 */
   n: number;
   at: string;
-  input: string;
+  /** 他提交的输入；by 时没有 */
+  input?: string;
+  /** 别人的判定改到了他：那个人的昵称 */
+  by?: string;
+  /** 结算了，领到了钱 */
   claimed: boolean;
   amount?: string;
+  /** 判定器的回复；by 时是判定器写给他的话 */
   reply?: string;
 }
 
@@ -186,8 +220,14 @@ export interface Hb {
     listener: (announcement: HbAnnouncement) => void,
   ): () => void;
   on(kind: "me", listener: (me: HbMe) => void): () => void;
+  on(kind: "myView", listener: (myView: HbMyView | null) => void): () => void;
   /** 看的人自己的情况，变了用 hb.on("me", fn) 订阅。 */
   me(): Promise<HbMe>;
+  /**
+   * 代码判定红包里判定器写给看的人自己的数据，没有、没登录时 null；变了用
+   * hb.on("myView", fn) 订阅。
+   */
+  myView(): Promise<HbMyView | null>;
   /** 按服务器校准过的当前时间（毫秒）；看的人没登录时是本机时间。 */
   now(): number;
   /**
@@ -202,7 +242,7 @@ export interface Hb {
    * 自己；所有红包都能用。text 可以是空的，最多 200 个字，不能有换行。
    */
   fill(text: string): Promise<HbFillResult>;
-  /** 看的人自己的提交，新的在前，一次 20 条；没登录时 null。 */
+  /** 看的人自己的记录（他的提交和别人的判定改到他的），新的在前，一次 20 条；没登录时 null。 */
   mine(next?: string | null): Promise<{
     total: number;
     items: HbMyJudgment[];

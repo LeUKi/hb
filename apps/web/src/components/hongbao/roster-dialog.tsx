@@ -39,6 +39,8 @@ function metaLine(activity: HongbaoActivity, view: PublicView) {
   if (draw) {
     if (draw.registered === null) parts.push("名额不公开");
     else parts.push(`报名 ${draw.registered} 人`, `抽 ${activity.shares} 人`);
+  } else if (quantity.kind === "pool") {
+    parts.push(`奖池还剩 ${quantity.left} LDC`);
   } else if (quantity.kind === "fuzzy") {
     parts.push(
       quantity.level === "empty"
@@ -56,7 +58,7 @@ function metaLine(activity: HongbaoActivity, view: PublicView) {
 
 /** How many people a list holds, as the public counts say (none if fuzzy). */
 function totalOf(view: PublicView, kind: RosterKind) {
-  if (view.quantity.kind === "fuzzy") return null;
+  if (view.quantity.kind !== "exact") return null;
   if (kind === "claims") return view.quantity.taken;
   if (kind === "winners") return view.draw?.winners ?? null;
   return view.draw?.registered ?? null;

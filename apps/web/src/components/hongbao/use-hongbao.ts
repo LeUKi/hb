@@ -1,3 +1,4 @@
+import type { MyStanding } from "@hb/contracts";
 import { publicScopeAllows } from "@hb/contracts";
 import { useRouter } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
@@ -46,6 +47,11 @@ export type HongbaoData = {
   roster: Roster;
   passwords: PasswordView;
   mine: Mine | null;
+  /**
+   * 代码判定, protocol 5 (docs/multi-prize-design.md §4.1): their own part
+   * once judged — 待结算, settled or not, what only they see.
+   */
+  standing?: MyStanding | null;
   /** The viewer sent it: they see every 口令 and cannot take part. */
   author: boolean;
 };
@@ -124,6 +130,7 @@ export function countdown(ms: number) {
  */
 export function useHongbao(data: HongbaoData) {
   const { activity, view, roster, passwords, mine } = data;
+  const standing = data.standing ?? null;
   const user = useSessionUser();
   const pending = useAtomValue(pendingAtom);
   const scope = useAtomValue(scopeAtom);
@@ -213,13 +220,15 @@ export function useHongbao(data: HongbaoData) {
   // 代码判定: its code failed five times running, claims wait (05 §13).
   const code = activity.participation === "code";
   const paused = code && activity.judge?.paused === true;
+  // Protocol 5: settled with nothing (no claim), they are done here.
+  const settledEmpty = Boolean(standing?.settled) && !mine;
   const sealState = drawing
     ? "pending"
     : phase === "ended"
       ? "muted"
       : spinning
         ? "pending"
-        : cooldown || draft || paused
+        : cooldown || draft || paused || settledEmpty
           ? "disabled"
           : "idle";
   const drawStep = useDrawStep(view);
@@ -244,21 +253,25 @@ export function useHongbao(data: HongbaoData) {
             : `还没开放，开放后才能${verb}`
         : paused
           ? "判定器连续出错，暂停领取"
-          : spinning
-            ? code
-              ? "正在判定…"
-              : "正在确认…"
-            : gate === "login"
-              ? `登录后${verb}`
-              : retry
-                ? `点「${glyph}」重试原提交`
-                : code
-                  ? `点「${glyph}」，输入后提交，由判定器判定`
-                  : activity.participation === "password"
-                    ? `点「${glyph}」，输入口令${verb}`
-                    : `点「${glyph}」${verb}`;
+          : settledEmpty
+            ? "已经结算了，没有领到"
+            : spinning
+              ? code
+                ? "正在判定…"
+                : "正在确认…"
+              : gate === "login"
+                ? `登录后${verb}`
+                : retry
+                  ? `点「${glyph}」重试原提交`
+                  : code && standing
+                    ? `点「${glyph}」接着玩`
+                    : code
+                      ? `点「${glyph}」，输入后提交，由判定器判定`
+                      : activity.participation === "password"
+                        ? `点「${glyph}」，输入口令${verb}`
+                        : `点「${glyph}」${verb}`;
   const sealLabel =
-    phase === "ended" || draft || paused
+    phase === "ended" || draft || paused || settledEmpty
       ? hint
       : gate === "login"
         ? "登录"
@@ -377,6 +390,7 @@ export function useHongbao(data: HongbaoData) {
     openRoster,
     openNote,
     mine,
+    standing,
     phase,
     fresh,
     reveal,

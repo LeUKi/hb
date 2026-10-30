@@ -28,11 +28,18 @@ const PAGE_SIZE = 20;
 /** 红包 that count (§15.3): opened, and not stopped by the 站长. */
 const COUNTED = `a.opened_at IS NOT NULL AND c.stopped_at IS NULL`;
 
-/** The version others use: newest that passed and opened a 红包 that counts. */
-const PUBLIC_N = (judge: string) => `(SELECT MAX(v.n) FROM judge_versions v
-  WHERE v.judge_id = ${judge} AND v.passed = 1 AND v.protocol >= ${JUDGE_OLDEST_PROTOCOL}
-    AND EXISTS(SELECT 1 FROM activity_code c JOIN activities a ON a.id = c.activity_id
-      WHERE c.judge_id = v.judge_id AND c.judge_version = v.n AND ${COUNTED}))`;
+/**
+ * The version others use: newest that passed and opened a 红包 that counts,
+ * one run on the protocol 红包 open on first; else a 旧判定器's (docs/multi-
+ * prize-design.md §3.6), shown but not used until its author runs it again.
+ */
+const PUBLIC_N = (judge: string) => {
+  const opened = (protocol: string) => `(SELECT MAX(v.n) FROM judge_versions v
+    WHERE v.judge_id = ${judge} AND v.passed = 1 ${protocol}
+      AND EXISTS(SELECT 1 FROM activity_code c JOIN activities a ON a.id = c.activity_id
+        WHERE c.judge_id = v.judge_id AND c.judge_version = v.n AND ${COUNTED}))`;
+  return `COALESCE(${opened(`AND v.protocol >= ${JUDGE_OLDEST_PROTOCOL}`)}, ${opened("")})`;
+};
 
 /**
  * Every 判定器's numbers worked out again (the maintenance task): adding
@@ -81,6 +88,7 @@ type CardRow = {
   featured: number;
   network: number;
   page: string | null;
+  old: number | null;
   hongbao: number | null;
   judged: number | null;
   claimed: number | null;
@@ -98,6 +106,8 @@ const CARD = (version: string) => `j.id, j.name, j.description,
     AND nv.network IS NOT NULL) AS network,
   (SELECT json_extract(pv.declarations, '$.meta.page') FROM judge_versions pv
     WHERE pv.judge_id = j.id AND pv.n = ${version}) AS page,
+  (SELECT ov.protocol < ${JUDGE_OLDEST_PROTOCOL} FROM judge_versions ov
+    WHERE ov.judge_id = j.id AND ov.n = ${version}) AS old,
   s.hongbao, s.judged, s.claimed, s.last_opened_at AS lastOpenedAt`;
 const CARD_JOINS = `JOIN users u ON u.id = j.author_id
   LEFT JOIN judges b ON b.id = j.based_on_judge_id LEFT JOIN users bu ON bu.id = b.author_id
@@ -138,6 +148,7 @@ function cardOf(env: ApiBindings, row: CardRow, pages: boolean): SquareJudge {
     bySiteOwner: isAdministrator(env, row.provider, row.externalId),
     network: row.network === 1,
     ...(pages && row.page ? { page: row.page } : {}),
+    ...(row.old === 1 ? { old: true as const } : {}),
     stats: statsOf(row),
   };
 }

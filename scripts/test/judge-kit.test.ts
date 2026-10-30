@@ -1584,10 +1584,14 @@ describe("附带网页", () => {
             body: JSON.stringify({ who, input }),
           })
         ).json();
+      // What it moved for them too (multi-prize §4.4).
       expect((await submit("小明", "500")).result).toEqual({
         judged: true,
         claimed: false,
         reply: "请猜 1 到 100 之间的整数",
+        added: "0.00",
+        pending: "0.00",
+        settled: false,
       });
       expect((await submit("小明", "7")).result).toMatchObject({
         judged: false,
@@ -1609,9 +1613,26 @@ describe("附带网页", () => {
       ).json();
       expect(mine).toMatchObject({
         total: 1,
-        items: [{ n: 1, input: "500", claimed: false }],
+        items: [
+          { n: 1, input: "500", claimed: false, added: "0.00", settled: false },
+        ],
         next: null,
       });
+      // hb.me()'s 待结算 and hb.myView(), as the site gives them.
+      expect(
+        await (
+          await fetch(
+            `${page.hostUrl}/api/me?who=${encodeURIComponent("小明")}`,
+          )
+        ).json(),
+      ).toEqual({ pending: "0.00", settled: null, myView: null });
+      expect(
+        await (
+          await fetch(
+            `${page.hostUrl}/api/me?who=${encodeURIComponent("小红")}`,
+          )
+        ).json(),
+      ).toEqual({ pending: null, settled: null, myView: null });
       expect(lines).toContain(
         '小明  "500"  没加钱  代码的回复：请猜 1 到 100 之间的整数',
       );

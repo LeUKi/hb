@@ -1,5 +1,6 @@
 import {
   JUDGE_NAME_LIMITS,
+  JUDGE_OLDEST_PROTOCOL,
   type JudgeDeclarations,
   type JudgeVersions,
   judgeDescriptionSchema,
@@ -548,6 +549,13 @@ function VersionRow({
               <span className={version.passed ? "text-success" : "text-danger"}>
                 {version.passed ? "测试全过" : "测试没过"}
               </span>
+              {/* A 旧判定器 (multi-prize §3.6): passed on the old rules. */}
+              {version.passed && version.protocol < JUDGE_OLDEST_PROTOCOL && (
+                <span className="text-ink-3">
+                  {" "}
+                  · 旧判定器，要按新规则重新跑测试
+                </span>
+              )}
               {version.opened > 0 && (
                 <span className="text-ink-3">
                   {" "}

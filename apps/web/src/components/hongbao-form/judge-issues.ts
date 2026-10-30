@@ -9,7 +9,6 @@ import {
 } from "../../../../../kit/runtime/params.mjs";
 import {
   cents,
-  count,
   type FormState,
   type Issue,
   withDefaultTitle,
@@ -18,12 +17,6 @@ import {
 // 判定器 on the 发红包 form (docs/judge-square-design.md §3, §4): its params
 // held to what its version declares — by the same rules the site keeps,
 // kit/runtime/params.mjs — and to its check(), and 发多少 to its ranges.
-
-const AMOUNT_FIELDS = {
-  count: "hb-code-count",
-  total: "hb-code-total",
-  minEach: "hb-code-min",
-} as const;
 
 /** Only the params this version declares: older ones are let go. */
 export function declaredParams(
@@ -59,36 +52,27 @@ export function judgeIssuesOf(
       field: `hb-param-${problem.key || declarations.params[0]?.key || ""}`,
       message: problem.message,
     });
+  // Protocol 5 has no shares: only the pool's range still counts (multi-
+  // prize §3.6).
   for (const problem of hongbaoRuleProblems(declarations.hongbao, {
-    count: count(form.judge.count),
+    count: null,
     total: cents(form.judge.total),
-    minEach: cents(form.judge.minEach),
+    minEach: null,
   }))
-    issues.push({
-      field: AMOUNT_FIELDS[problem.field],
-      message: problem.message,
-    });
+    issues.push({ field: "hb-code-total", message: problem.message });
   return issues;
 }
 
 /**
- * The 红包 试一试 and check() judge on (§6): as filled in, the 判定器's
- * defaults where it is not, else one 分 each of a share's worth.
+ * The 红包 试一试 and check() judge on (§6): its pool as filled in, else
+ * the 判定器's default, else 1 LDC.
  */
 export function triedHongbao(
   form: FormState,
   rules: JudgeHongbaoRules | null | undefined,
 ) {
-  const shares = count(form.judge.count) ?? rules?.count?.default ?? 1;
-  const minEach = cents(form.judge.minEach) ?? rules?.minEach?.default ?? 1;
-  const total =
-    cents(form.judge.total) ??
-    rules?.total?.default ??
-    Math.max(shares * minEach, shares * 100);
   return {
     title: withDefaultTitle(form).title,
-    total,
-    count: shares,
-    minEach,
+    total: cents(form.judge.total) ?? rules?.total?.default ?? 100,
   };
 }

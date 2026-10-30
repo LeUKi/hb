@@ -42,11 +42,15 @@ function averageNote(activity: HongbaoActivity) {
 function poolCell(activity: HongbaoActivity, view: PublicView): CoverCell {
   const fuzzy = view.quantity.kind === "fuzzy";
   // 代码判定: the pool and 每份至少 (05 §4); each share is the code's to say.
+  // On protocol 5 there are no shares (multi-prize §4.1).
   if (activity.mode === "code")
     return {
       label: "奖池",
       value: `${activity.totalAmount} LDC`,
-      note: activity.minEach ? `每份至少 ${activity.minEach} LDC` : undefined,
+      note:
+        activity.minEach && view.quantity.kind !== "pool"
+          ? `每份至少 ${activity.minEach} LDC`
+          : undefined,
     };
   if (activity.mode === "fixed")
     return fuzzy
@@ -92,6 +96,14 @@ function quantityCell(view: PublicView, judged?: number): CoverCell {
         }
       : { label: "报名", value: `${draw.registered} 人`, note: "不限人数" };
   }
+  // 代码判定, protocol 5: the pool less what was paid and everyone's
+  // pending (multi-prize §4.1), and how often its code judged.
+  if (quantity.kind === "pool")
+    return {
+      label: "奖池还剩",
+      value: `${quantity.left} LDC`,
+      ...(judged !== undefined ? { judged } : {}),
+    };
   // 代码判定: how often its code judged says more than a bar (05 §4).
   if (quantity.kind === "fuzzy")
     return {

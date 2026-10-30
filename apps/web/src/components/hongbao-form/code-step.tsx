@@ -304,7 +304,7 @@ function DeployArea({
           <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <span className="min-w-0 flex-1">
               {judge.upgraded
-                ? `判定器升级到第三版了：在判定器 第 ${judge.version.n} 版 上重新跑一遍测试才能开放。不算部署，不扣次数。`
+                ? `判定器 第 ${judge.version.n} 版 是按旧规则（有份数）写的：按新规则重新跑一遍测试才能开放。不算部署，不扣次数。`
                 : `tests.json 改过了：在判定器 第 ${judge.version.n} 版 上重新跑一遍才能开放。不算部署，不扣次数。`}
             </span>
             <Button
@@ -315,7 +315,11 @@ function DeployArea({
                 if (!judge.busy && !frozen) void judge.deploy();
               }}
             >
-              {judge.pending === "rerun" ? "正在跑测试…" : "重新跑测试"}
+              {judge.pending === "rerun"
+                ? "正在跑测试…"
+                : judge.upgraded
+                  ? "按新规则重新跑测试"
+                  : "重新跑测试"}
             </Button>
           </span>
         </Callout>
@@ -674,9 +678,11 @@ function UnsavedCode({
   const busy = frozen || judge.busy;
   const text = !version
     ? "这份草稿里的代码还没有部署成判定器。发红包这里不再写代码：去写一个判定器部署它，或者换一个判定器。"
-    : judge.rerun
-      ? `这份草稿里的判定器 第 ${version.n} 版要在线上重新跑一遍测试才能开放，不算部署。`
-      : `这份草稿里的判定器 第 ${version.n} 版测试没过。去判定器页部署新版本，或者换一个判定器。`;
+    : judge.rerun && judge.upgraded
+      ? `这份草稿里的判定器 第 ${version.n} 版是按旧规则（有份数）写的，要按新规则重新跑一遍测试才能开放，不算部署。`
+      : judge.rerun
+        ? `这份草稿里的判定器 第 ${version.n} 版要在线上重新跑一遍测试才能开放，不算部署。`
+        : `这份草稿里的判定器 第 ${version.n} 版测试没过。去判定器页部署新版本，或者换一个判定器。`;
   return (
     // Where 保存并开放 sends one it stopped (as to the picked card).
     <div id="hb-judge-picked" tabIndex={-1} className="grid gap-2 outline-none">
@@ -713,7 +719,11 @@ function UnsavedCode({
                 if (!busy) void judge.deploy();
               }}
             >
-              {judge.pending ? "正在跑测试…" : "重新跑测试"}
+              {judge.pending
+                ? "正在跑测试…"
+                : judge.upgraded
+                  ? "按新规则重新跑测试"
+                  : "重新跑测试"}
             </Button>
           )}
           {judge.restore && (
@@ -799,7 +809,7 @@ export function CodeStep({
   /** A param's problem: its declaration's rules, then the code's check(). */
   paramErrorOf: (key: string) => string | undefined;
   /** The 红包 试一试 judges on, as filled in so far, in 分. */
-  tried: { title: string; total: number; count: number; minEach: number };
+  tried: { title: string; total: number };
   /** Another's 判定器 from the 广场 (§15.4): picked, 联网 asked first. */
   borrow: BorrowJudge;
   /**

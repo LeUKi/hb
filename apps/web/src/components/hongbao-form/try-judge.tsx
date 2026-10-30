@@ -56,7 +56,7 @@ export function TryJudge({
   n: number;
   params: Record<string, unknown>;
   /** The 红包 as filled in (its judge's defaults where empty), in 分. */
-  hongbao: { title: string; total: number; count: number; minEach: number };
+  hongbao: { title: string; total: number };
   prompt: string;
   disabled: boolean;
 }) {

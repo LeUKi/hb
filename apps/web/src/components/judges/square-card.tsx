@@ -8,7 +8,7 @@ import { JudgeMark, JudgeSource, JudgeTags, statsLine } from "./judge-bits";
 
 /**
  * A 判定器 in the 广场 (§8 卡片): what it is, whose, its numbers and tags;
- * 用它发红包 and 查看.
+ * 用它发红包 and 查看; a 旧判定器 says it waits for its author.
  */
 export function SquareJudgeCard({
   judge,
@@ -43,8 +43,11 @@ export function SquareJudgeCard({
         )}
         <p className="text-xs text-ink-3">{statsLine(judge.stats)}</p>
         <JudgeTags judge={judge} />
-        <div className="mt-1 flex flex-wrap gap-2 self-end">
-          {onPick ? (
+        <div className="mt-1 flex flex-wrap items-center gap-2 self-end">
+          {/* A 旧判定器 waits for its author (multi-prize §3.6). */}
+          {judge.old ? (
+            <span className="text-sm text-ink-3">作者还没按新规则更新</span>
+          ) : onPick ? (
             <>
               <Button
                 variant="primary"
@@ -74,6 +77,11 @@ export function SquareJudgeCard({
             <Button variant="primary" size="sm" onClick={openAccount}>
               用它发红包
             </Button>
+          )}
+          {onPick && judge.old && (
+            <ButtonLink href={`/judges/${encodeURIComponent(judge.id)}`}>
+              查看 ↗
+            </ButtonLink>
           )}
           {!onPick && (
             <ButtonLink

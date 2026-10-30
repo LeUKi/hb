@@ -53,6 +53,8 @@ function hongbaoOf(activity: PublicActivity, judged: number | null) {
           }
         : null,
     pool: activity.reward?.totalAmount ?? null,
+    // Protocol 5: 奖池还剩 (multi-prize §4.4).
+    unclaimed: quantity.mode === "pool" ? quantity.left : null,
     deadlineAt: activity.draw?.deadlineAt ?? activity.deadlineAt,
     judged,
   };
@@ -101,8 +103,19 @@ function meOf(
         }
       : null,
     registered: Boolean(participation?.registration),
+    // Protocol 5 (multi-prize §4.4): 待结算 once judged, and settled or not.
+    pending: participation?.standing?.pending ?? null,
+    settled: participation?.standing?.settled === true,
   };
 }
+
+/** hb.myView() (multi-prize §3.4, §4.4): what only the viewer sees. */
+const myViewOf = (participation: ParticipationCache | undefined) => {
+  const view = participation?.standing?.view;
+  return view
+    ? { summary: view.summary ?? null, data: view.data ?? null }
+    : null;
+};
 
 const viewOf = (view: JudgeView | undefined) =>
   view
@@ -129,10 +142,18 @@ async function readMine(activityId: string, next: string | null) {
     items: list.items.map((item) => ({
       n: item.attempt,
       at: item.at,
-      input: item.input,
+      // Protocol 5: someone else's judgment that moved them, whose.
+      ...(item.by ? { by: item.by.name } : { input: item.input ?? "" }),
       claimed: item.amount !== undefined,
       ...(item.amount !== undefined ? { amount: item.amount } : {}),
       ...(item.message ? { reply: item.message } : {}),
+      // Its 待结算 after: 0 once it settled them (as hb.submit() says it).
+      ...(item.moved
+        ? {
+            ...item.moved,
+            pending: item.moved.settled ? "0.00" : item.moved.pending,
+          }
+        : {}),
     })),
     next: list.nextCursor,
   };
@@ -219,6 +240,7 @@ export function usePageBridge(
       ? cooldown.nextAllowedAt
       : null,
   );
+  const myView = user ? myViewOf(participation) : null;
   // How far the server's clock is from this one (hb.now()): known once
   // signed in; 0 otherwise.
   const clock = cooldown ? cooldown.serverTime - cooldown.receivedAt : 0;
@@ -234,6 +256,7 @@ export function usePageBridge(
     fillForPage,
     openAccount,
     me,
+    myView,
     clock,
   });
   now.current = {
@@ -246,6 +269,7 @@ export function usePageBridge(
     fillForPage,
     openAccount,
     me,
+    myView,
     clock,
   };
   /** Said hello: what it has been sent, to push only what changed. */
@@ -254,6 +278,7 @@ export function usePageBridge(
     hongbao: string;
     line: number;
     me: string;
+    myView: string;
     clock: number;
   } | null>(null);
   /** hb.login(): once in a few seconds at most, whatever the page asks. */
@@ -278,6 +303,7 @@ export function usePageBridge(
           hongbao: JSON.stringify(state.hongbao),
           line: state.board.lines[0]?.n ?? -1,
           me: JSON.stringify(state.me),
+          myView: JSON.stringify(state.myView),
           clock: state.clock,
         };
         reply({
@@ -289,6 +315,7 @@ export function usePageBridge(
             theme: "light",
             view: state.view,
             me: state.me,
+            myView: state.myView,
             clock: state.clock,
           },
         });
@@ -353,6 +380,7 @@ export function usePageBridge(
   const viewText = JSON.stringify(view);
   const hongbaoText = JSON.stringify(hongbao);
   const meText = JSON.stringify(me);
+  const myViewText = JSON.stringify(myView);
   const lines = board.lines;
   useEffect(() => {
     const sent = link.current;
@@ -372,6 +400,10 @@ export function usePageBridge(
       sent.me = meText;
       push("me", JSON.parse(meText));
     }
+    if (myViewText !== sent.myView) {
+      sent.myView = myViewText;
+      push("myView", JSON.parse(myViewText));
+    }
     if (clock !== sent.clock) {
       sent.clock = clock;
       push("clock", clock);
@@ -381,5 +413,5 @@ export function usePageBridge(
       sent.line = fresh[fresh.length - 1]?.n ?? sent.line;
       push("announce", fresh.map(lineOf));
     }
-  }, [viewText, hongbaoText, meText, clock, lines, frame, origin]);
+  }, [viewText, hongbaoText, meText, myViewText, clock, lines, frame, origin]);
 }

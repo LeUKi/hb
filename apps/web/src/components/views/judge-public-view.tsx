@@ -65,26 +65,15 @@ export function ruleLines(rules: JudgeHongbaoRules | null | undefined) {
         : fallback
           ? `${name}默认 ${fallback}`
           : null;
-  const count = rules.count;
+  // 份数 and 每份至少 no longer count (docs/multi-prize-design.md §3.6).
   const total = rules.total;
-  const minEach = rules.minEach;
   return [
-    line(
-      "份数",
-      span(count, String),
-      count?.default === undefined ? null : String(count.default),
-    ),
     line(
       "总奖池",
       span(total, (value) => ldc(value)) &&
         `${span(total, (value) => ldc(value))} LDC`,
       total?.default === undefined ? null : `${ldc(total.default)} LDC`,
     ),
-    minEach?.min !== undefined
-      ? `每份至少 ${ldc(minEach.min)} LDC${minEach.default === undefined ? "" : `，默认 ${ldc(minEach.default)} LDC`}`
-      : minEach?.default !== undefined
-        ? `每份至少默认 ${ldc(minEach.default)} LDC`
-        : null,
     rules.deadline &&
       `截止默认 ${rules.deadline.value} ${units[rules.deadline.unit]}`,
     rules.humanCheck && "建议打开领取前人机验证",
@@ -362,7 +351,10 @@ export function PublicJudgePage({
                   恢复
                 </Button>
               )}
-              {version && viewerId ? (
+              {/* A 旧判定器 waits for its author (multi-prize §3.6). */}
+              {version && judge.old && !judge.own ? (
+                <span className="text-sm text-ink-3">作者还没按新规则更新</span>
+              ) : version && viewerId ? (
                 <ButtonLink
                   variant="primary"
                   href={`/new?judge=${encodeURIComponent(judge.id)}`}

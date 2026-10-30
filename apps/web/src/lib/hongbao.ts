@@ -117,7 +117,9 @@ export type EndReason =
   /** 代码判定红包 stopped by the 站长 (07 §10). */
   | "stopped"
   /** 代码判定红包 its code ended (docs/judge-page-design.md §11.3). */
-  | "judge";
+  | "judge"
+  /** 代码判定, protocol 5: ended, everyone being settled (multi-prize §2). */
+  | "settle";
 
 export const endLabels: Record<EndReason, string> = {
   sold_out: "已领完",
@@ -128,6 +130,7 @@ export const endLabels: Record<EndReason, string> = {
   closed: "已提前结束",
   stopped: "已停用",
   judge: "判定器结束",
+  settle: "结算中",
 };
 
 export type FuzzyLevel = "plenty" | "limited" | "low" | "empty";
@@ -149,7 +152,9 @@ export type PublicView = {
   /** Fuzzy shows only a level: no share count, no fixed-split total. */
   quantity:
     | { kind: "exact"; taken: number; total: number }
-    | { kind: "fuzzy"; level: FuzzyLevel };
+    | { kind: "fuzzy"; level: FuzzyLevel }
+    /** 代码判定, protocol 5: no shares, 奖池还剩 (multi-prize §4.1). */
+    | { kind: "pool"; left: string };
   draw: {
     state: DrawState;
     /** Sign-ups, winners and 报名上限 are hidden when quantity is fuzzy. */
@@ -266,6 +271,7 @@ function soldOut(activity: PublicActivity) {
   if (quantity.mode === "exact") return quantity.remaining <= 0;
   if (quantity.mode === "fuzzy") return quantity.level === "empty";
   if (quantity.mode === "availability") return !quantity.available;
+  if (quantity.mode === "pool") return quantity.left === "0.00";
   return false;
 }
 
@@ -278,6 +284,7 @@ function endReasonOf(activity: PublicActivity, now: number): EndReason | null {
     if (draw.state === "empty") return "empty";
     return activity.status === "active" ? null : "drawn";
   }
+  if (activity.judge?.settling) return "settle";
   if (activity.stopped || activity.judge?.stopped) return "stopped";
   if (activity.judge?.endedByCode) return "judge";
   if (soldOut(activity)) return "sold_out";
@@ -317,7 +324,9 @@ export function publicViewOf(
             taken: activity.quantity.claimed,
             total: activity.quantity.total,
           }
-        : { kind: "fuzzy", level: fuzzyLevelOf(activity) },
+        : activity.quantity.mode === "pool"
+          ? { kind: "pool", left: activity.quantity.left }
+          : { kind: "fuzzy", level: fuzzyLevelOf(activity) },
     draw: draw
       ? {
           state: draw.state,
@@ -351,6 +360,7 @@ export function endHint(view: PublicView) {
     closed: "红包已提前结束",
     stopped: "红包已被站长停用",
     judge: "判定器结束了这个红包",
+    settle: "红包已结束，正在给大家结算…",
   }[view.endReason ?? "expired"];
 }
 

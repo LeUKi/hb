@@ -16,7 +16,7 @@
       ? new URL(script.src).origin
       : "https://hb.lafi.sh";
   const host = window.parent;
-  const kinds = ["view", "hongbao", "announce", "me"];
+  const kinds = ["view", "hongbao", "announce", "me", "myView"];
   const listeners = new Map(kinds.map((kind) => [kind, new Set()]));
   /** Asks sent and not yet answered, by number. */
   const waiting = new Map();
@@ -133,10 +133,15 @@
       await ready();
       return state.view;
     },
-    /** 看的人自己的情况：能不能参加、冷却到什么时候、领到多少。 */
+    /** 看的人自己的情况：能不能参加、冷却到什么时候、领到多少、待结算。 */
     async me() {
       await ready();
       return state.me;
+    },
+    /** 判定器写给看的人自己的数据：{ summary, data }，没有时 null。 */
+    async myView() {
+      await ready();
+      return state.myView ?? null;
     },
     /** 按服务器校准过的当前时间（毫秒）；看的人没登录时是本机时间。 */
     now() {
@@ -152,11 +157,11 @@
       await ready();
       return ask("login", {});
     },
-    /** view、hongbao、announce、me 有变化时调用 listener；返回取消订阅的函数。 */
+    /** view、hongbao、announce、me、myView 有变化时调用 listener；返回取消订阅的函数。 */
     on(kind, listener) {
       if (!listeners.has(kind))
         throw new TypeError(
-          `hb.on：没有“${kind}”，只有 view、hongbao、announce、me`,
+          `hb.on：没有“${kind}”，只有 view、hongbao、announce、me、myView`,
         );
       if (typeof listener !== "function")
         throw new TypeError("hb.on：第二个参数要是函数");
@@ -181,7 +186,7 @@
       await ready();
       return ask("fill", { text });
     },
-    /** 看的人自己的提交，新的在前，一次 20 条；没登录时 null。 */
+    /** 看的人自己的记录（他的提交和别人的判定改到他的），新的在前，一次 20 条；没登录时 null。 */
     async mine(next) {
       if (next !== undefined && next !== null && typeof next !== "string")
         throw new TypeError("hb.mine：参数是上一次拿到的 next");

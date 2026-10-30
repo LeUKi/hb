@@ -237,6 +237,7 @@ export function useHongbaoPageData(id: string) {
           : null,
       ),
       mine: mineOf(participationQuery.data, view, roster),
+      standing: participationQuery.data?.standing ?? null,
       author,
     };
   }

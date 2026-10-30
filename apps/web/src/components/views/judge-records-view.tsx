@@ -11,6 +11,7 @@ import { X } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import { useStatisticsPages } from "../../lib/discovery";
 import {
+  moveLabel,
   useJudgePeople,
   useJudgePersonRecord,
   useJudgeRecordFacts,
@@ -128,7 +129,18 @@ function RecordRow({
             {row.input}
           </p>
           <p className="text-sm">
-            {row.claimed ? (
+            {/* Protocol 5: what it moved for them (multi-prize §4.2). */}
+            {row.moved ? (
+              row.claimed ? (
+                <StatusChip tone="success">
+                  {moveLabel(row.moved, row.amount)}
+                </StatusChip>
+              ) : (
+                <span className="text-ink-2 tabular-nums">
+                  {moveLabel(row.moved, row.amount)}
+                </span>
+              )
+            ) : row.claimed ? (
               <StatusChip tone="success">
                 {row.asked && row.note
                   ? `判定器给 ${row.asked}，${pulledIn[row.note]} ${row.amount}`
@@ -275,7 +287,14 @@ function PeopleList({
               />
               <span className="flex items-center gap-2 text-sm text-ink-2">
                 提交 {row.judged} 次
-                {row.amount ? (
+                {/* Protocol 5: 待结算 until settled (multi-prize §4.2). */}
+                {row.pending !== undefined ? (
+                  <span className="tabular-nums">待结算 {row.pending}</span>
+                ) : row.settled && row.amount ? (
+                  <StatusChip tone="success">已结算 {row.amount}</StatusChip>
+                ) : row.settled ? (
+                  <span className="text-ink-3">已结算，没有领到</span>
+                ) : row.amount ? (
                   <StatusChip tone="success">领到 {row.amount}</StatusChip>
                 ) : (
                   <span className="text-ink-3">没领到</span>
@@ -424,6 +443,10 @@ export function JudgeRecordsView({
                   value: `${facts.data.claimedPeople} 人`,
                   note: `发出 ${facts.data.paid} LDC`,
                 },
+                // Protocol 5: everyone's pending together (§4.2).
+                ...(facts.data.pending !== undefined
+                  ? [{ label: "待结算", value: `${facts.data.pending} LDC` }]
+                  : []),
                 { label: "出错", value: `${facts.data.failed} 次` },
               ]}
             />
