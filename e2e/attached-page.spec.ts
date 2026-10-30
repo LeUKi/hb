@@ -249,7 +249,11 @@ test.describe("附带网页", () => {
     expect(
       await guest.evaluate(() => (window as unknown as PageWindow).hb.me()),
     ).toEqual({ signedIn: false });
-    // Called as the page loads, with nobody's click: refused, no card.
+    // Called as the page loads, with nobody's click: refused, no card
+    // (its answer may still be on the way under load).
+    await guest.waitForFunction(
+      () => (window as unknown as { early?: string }).early !== undefined,
+    );
     expect(
       await guest.evaluate(
         () => (window as unknown as { early?: string }).early,
