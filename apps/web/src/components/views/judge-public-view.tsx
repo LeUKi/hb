@@ -44,7 +44,7 @@ const ldc = (minor: number) =>
 const units = { minutes: "分钟", hours: "小时", days: "天" } as const;
 
 /** The ranges and defaults it sets on 发多少, a line each (§15.4). */
-function ruleLines(rules: JudgeHongbaoRules | null | undefined) {
+export function ruleLines(rules: JudgeHongbaoRules | null | undefined) {
   if (!rules) return [];
   const span = (
     range: { min?: number; max?: number } | undefined,
@@ -90,6 +90,42 @@ function ruleLines(rules: JudgeHongbaoRules | null | undefined) {
     rules.humanCheck && "建议打开领取前人机验证",
     rules.title && `默认标题：${rules.title}`,
   ].filter((item): item is string => Boolean(item));
+}
+
+/**
+ * 发多少 as a version sets it (§15.4), a line each, and its 说明 to start
+ * with (§4.1) whole on a hint; one's own 判定器页 shows it too (§16.2).
+ */
+export function RulesList({
+  rules,
+  note,
+}: {
+  rules: string[];
+  note: string | undefined;
+}) {
+  return (
+    <Panel as="ul" className="grid px-4">
+      {rules.map((rule) => (
+        <li
+          key={rule}
+          className="border-line border-b py-3 text-base text-ink last:border-b-0"
+        >
+          {rule}
+        </li>
+      ))}
+      {note && (
+        <li className="border-line border-b py-3 text-base text-ink last:border-b-0">
+          <TagHint
+            hint={note}
+            width={360}
+            className="cursor-help text-ink underline decoration-dotted underline-offset-4"
+          >
+            自带说明
+          </TagHint>
+        </li>
+      )}
+    </Panel>
+  );
 }
 
 /** A version that opened a 红包, its code on demand (§8 版本). */
@@ -431,27 +467,7 @@ export function PublicJudgePage({
       )}
       {(rules.length > 0 || note) && (
         <PageSection title="发多少">
-          <Panel as="ul" className="grid px-4">
-            {rules.map((rule) => (
-              <li
-                key={rule}
-                className="border-line border-b py-3 text-base text-ink last:border-b-0"
-              >
-                {rule}
-              </li>
-            ))}
-            {note && (
-              <li className="border-line border-b py-3 text-base text-ink last:border-b-0">
-                <TagHint
-                  hint={note}
-                  width={360}
-                  className="cursor-help text-ink underline decoration-dotted underline-offset-4"
-                >
-                  自带说明
-                </TagHint>
-              </li>
-            )}
-          </Panel>
+          <RulesList rules={rules} note={note} />
         </PageSection>
       )}
       {version?.code && (

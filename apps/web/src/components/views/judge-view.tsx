@@ -1,14 +1,17 @@
 import {
   JUDGE_NAME_LIMITS,
+  type JudgeDeclarations,
   type JudgeVersions,
   judgeDescriptionSchema,
   judgeNameSchema,
   type MyJudgeDetail,
   type MyJudgeVersion,
+  normalizePageUrl,
 } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { AlertTriangle, ChevronRight } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { paramValues } from "../../../../../kit/runtime/params.mjs";
 import { ActivityRequestError, refused } from "../../lib/activities";
 import { cn } from "../../lib/cn";
 import {
@@ -26,6 +29,8 @@ import {
   type FormState,
   issuesOf,
 } from "../hongbao-form/form-state";
+import { ParamsFields, paramsFor } from "../hongbao-form/params-fields";
+import { TryJudge } from "../hongbao-form/try-judge";
 import { useJudgeDeploy } from "../hongbao-form/use-judge-deploy";
 import { dayLabel, JudgeHelpLinks, statsLine } from "../judges/judge-bits";
 import { Callout, Page, PageHeader, PageSection, Panel } from "../page/page";
@@ -39,7 +44,7 @@ import { CopyButton } from "../ui/copy-button";
 import { Field, Segmented, Switch, TextInput } from "../ui/field";
 import { Reveal, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
-import { PublicJudgePage } from "./judge-public-view";
+import { PublicJudgePage, RulesList, ruleLines } from "./judge-public-view";
 import { MessageView } from "./message-view";
 
 // 判定器页 /judges/<编号> (docs/judge-square-design.md §8, §14.4, §15.4):
@@ -387,6 +392,127 @@ function SquareSettings({
   );
 }
 
+/**
+ * 参数和试一试 (§16.2): the newest version that passed — the one 用它发红包
+ * takes — as a sender gets it: its params with their defaults, to change
+ * and try; what it sets on 发多少; 试一试 on a 红包 of its defaults. A new
+ * one that passes takes its place, from its own defaults.
+ */
+function TryVersion({ judge }: { judge: MyJudgeDetail }) {
+  const usable = judge.usable;
+  return (
+    <PageSection
+      title="参数和试一试"
+      description={
+        usable ? `第 ${usable.n} 版测试全过，用它发红包时是这样。` : undefined
+      }
+    >
+      <Swap id={usable ? `n${usable.n}` : "none"}>
+        {usable ? (
+          <Trying
+            judgeId={judge.id}
+            n={usable.n}
+            declarations={usable.declarations}
+          />
+        ) : (
+          <Panel className="px-4 py-3 text-sm text-ink-2">
+            还没有测试全过的版本。部署一版测试全过的，就能在这里看参数、试一试。
+          </Panel>
+        )}
+      </Swap>
+    </PageSection>
+  );
+}
+
+function Trying({
+  judgeId,
+  n,
+  declarations,
+}: {
+  judgeId: string;
+  n: number;
+  declarations: JudgeDeclarations | null;
+}) {
+  const params = declarations?.params ?? [];
+  const [values, setValues] = useState(() => paramsFor(params, {}));
+  // A param's problem shows once it was changed: one with no default is
+  // not wrong before anyone touched it.
+  const [touched, setTouched] = useState<ReadonlySet<string>>(new Set());
+  const read = paramValues(params, values);
+  const errorOf = (key: string) =>
+    touched.has(key) && "problems" in read
+      ? read.problems.find((problem) => (problem.key || params[0]?.key) === key)
+          ?.message
+      : undefined;
+  const hongbao = declarations?.hongbao;
+  const rules = ruleLines(hongbao);
+  const page = normalizePageUrl(declarations?.meta?.page ?? "");
+  // A 红包 of its defaults; without one, the least it allows.
+  const count = hongbao?.count?.default ?? hongbao?.count?.min ?? 1;
+  const minEach = hongbao?.minEach?.default ?? hongbao?.minEach?.min ?? 1;
+  const tried = {
+    title: hongbao?.title ?? "试一试",
+    count,
+    minEach,
+    total:
+      hongbao?.total?.default ??
+      Math.max(hongbao?.total?.min ?? 0, count * minEach, count * 100),
+  };
+  return (
+    <div className="grid min-w-0 gap-4">
+      <div className="grid gap-2">
+        <p className="px-1 text-xs text-ink-3">参数</p>
+        <Panel className="p-4">
+          {params.length === 0 ? (
+            <p className="text-sm text-ink-2">没有参数，挑了就能发。</p>
+          ) : (
+            <ParamsFields
+              params={params}
+              values={values}
+              errorOf={errorOf}
+              locked={false}
+              onChange={(key, value) => {
+                setValues((current) => ({ ...current, [key]: value }));
+                setTouched((current) => new Set(current).add(key));
+              }}
+            />
+          )}
+        </Panel>
+      </div>
+      {(rules.length > 0 || hongbao?.note || page) && (
+        <div className="grid gap-2">
+          <p className="px-1 text-xs text-ink-3">发多少</p>
+          {(rules.length > 0 || hongbao?.note) && (
+            <RulesList rules={rules} note={hongbao?.note} />
+          )}
+          {/* 判定器带的附带网页 (judge-page §11.3), in a new tab. */}
+          {page && (
+            <p className="px-1 text-sm text-ink-2">
+              附带网页：
+              <a
+                href={page}
+                target="_blank"
+                rel="noreferrer"
+                className="text-accent-ink underline-offset-2 hover:underline"
+              >
+                {new URL(page).hostname} ↗
+              </a>
+            </p>
+          )}
+        </div>
+      )}
+      <TryJudge
+        judgeId={judgeId}
+        n={n}
+        params={values}
+        hongbao={tried}
+        prompt=""
+        disabled={false}
+      />
+    </div>
+  );
+}
+
 /** A version's row: when, whether its tests passed, 红包 it opened; its code. */
 function VersionRow({
   judgeId,
@@ -692,6 +818,7 @@ function JudgePage({
       <PageSection title="判定器广场">
         <SquareSettings judge={judge} userId={user.id} />
       </PageSection>
+      <TryVersion judge={judge} />
       <PageSection title="版本">
         <Panel as="ul" className="flex flex-col gap-0.5 p-1.5">
           {judge.versions.map((version) => (

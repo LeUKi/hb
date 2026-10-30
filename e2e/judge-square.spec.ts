@@ -435,6 +435,72 @@ test.describe("判定器广场", () => {
     });
   });
 
+  test("自己的判定器页：参数和试一试（§16.2）用测试全过的最新一版，参数带默认值，发多少照判定器写，试一试按默认值的红包判定；没有测试全过的版本时只写一句", async ({
+    page,
+  }) => {
+    const { state } = await mockSquare(page, member);
+    const declarations = guessPage.version?.declarations;
+    if (!declarations) throw new Error("NO_DECLARATIONS");
+    state.mine = {
+      ...mineDetail(),
+      usable: {
+        n: 1,
+        declarations: {
+          ...declarations,
+          meta: { name: "我的猜谜", page: "https://game.example.com/play" },
+          hongbao: {
+            ...declarations.hongbao,
+            title: "猜一猜",
+            note: "猜中就领，[开始](#附带网页)",
+          },
+        },
+        network: null,
+      },
+    };
+    const tried: Record<string, unknown>[] = [];
+    await page.route(`**/api/me/judges/${MINE}/versions/1/try`, (route) => {
+      tried.push(route.request().postDataJSON());
+      return route.fulfill({
+        json: { ok: true, amount: 30, message: "猜对了" },
+      });
+    });
+    await openApp(page, `/judges/${MINE}`);
+    await expect(
+      page.getByRole("heading", { name: "参数和试一试" }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("第 1 版测试全过，用它发红包时是这样。"),
+    ).toBeVisible();
+    await expect(page.locator("#hb-param-max")).toHaveValue("100");
+    await expect(page.locator("#hb-param-answer")).toHaveValue("");
+    for (const line of ["份数 1–10，默认 5", "默认标题：猜一猜"])
+      await expect(page.getByText(line, { exact: true })).toBeVisible();
+    await expect(page.getByText("自带说明", { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "game.example.com ↗" }),
+    ).toHaveAttribute("href", "https://game.example.com/play");
+    await page.locator("#hb-param-answer").fill("42");
+    await page.getByRole("button", { name: /^试一试/ }).click();
+    await page.getByRole("textbox", { name: "试一试的输入" }).fill("42");
+    await page.getByRole("button", { name: "判定", exact: true }).click();
+    await expect(page.getByText("会发 0.30 LDC")).toBeVisible();
+    await expect(page.getByText("回复：猜对了")).toBeVisible();
+    expect(tried).toEqual([
+      {
+        params: { max: 100, answer: 42 },
+        hongbao: { title: "猜一猜", count: 5, minEach: 10, total: 500 },
+        input: "42",
+      },
+    ]);
+    state.mine = { ...mineDetail(), usable: null };
+    await page.reload();
+    await expect(
+      page.getByText(
+        "还没有测试全过的版本。部署一版测试全过的，就能在这里看参数、试一试。",
+      ),
+    ).toBeVisible();
+  });
+
   test("自己的判定器页：加入判定器广场先确认，能不勾允许精选；退出也先确认；被站长撤下时写原因，开关灰掉；顶上能自己写一个", async ({
     page,
   }) => {
