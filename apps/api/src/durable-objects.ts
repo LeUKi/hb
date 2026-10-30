@@ -171,6 +171,9 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   private announcedSent = -1;
   /** The deadline alarm this instance already set (one write per deadline). */
   private liveDeadline = 0;
+  /** The channel's number (live.ts), read back once after hibernating. */
+  private liveSeq = 0;
+  private liveSeqRead: Promise<void> | null = null;
 
   constructor(ctx: DurableObjectState, env: ApiBindings) {
     super(ctx, env);
@@ -178,6 +181,26 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     ctx.setWebSocketAutoResponse(
       new WebSocketRequestResponsePair(LIVE_PING, LIVE_PONG),
     );
+  }
+
+  /** Where the channel's numbering stands, read once per wake. */
+  private async liveSeqNow() {
+    this.liveSeqRead ??= this.ctx.storage
+      .get<number>("liveSeq")
+      .then((kept) => {
+        this.liveSeq = Math.max(this.liveSeq, kept ?? 0);
+      });
+    await this.liveSeqRead;
+    return this.liveSeq;
+  }
+
+  /** The next number for a message to everyone, kept for the next wake. */
+  private async nextLiveSeq() {
+    await this.liveSeqNow();
+    // After the read: each caller its own number.
+    this.liveSeq += 1;
+    void this.ctx.storage.put("liveSeq", this.liveSeq);
+    return this.liveSeq;
   }
 
   /** A signed-in viewer of this running 红包 joins its live channel. */
@@ -227,10 +250,12 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       since: Date.now(),
       userId,
     } satisfies LiveAttachment);
-    // What changed between the page's own read and now, and who is here.
-    server.send(liveMessage(activity));
+    // What changed between the page's own read and now, and who is here,
+    // at the number the channel stands at.
+    const seq = await this.liveSeqNow();
+    server.send(liveMessage(activity, seq));
     const people = livePeople(this.ctx.getWebSockets(LIVE_TAG));
-    server.send(liveViewers(people));
+    server.send(liveViewers(people, seq));
     if (people !== this.viewersSent) this.announceViewers();
     if (!activity.draw && activity.status === "active" && activity.deadlineAt)
       await this.watchDeadline(id, Date.parse(activity.deadlineAt));
@@ -397,14 +422,14 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       0,
       this.viewersPushedAt + LIVE_COALESCE_MS - Date.now(),
     );
-    this.viewersTimer = setTimeout(() => {
+    this.viewersTimer = setTimeout(async () => {
       this.viewersTimer = null;
       this.viewersPushedAt = Date.now();
       const sockets = this.ctx.getWebSockets(LIVE_TAG);
       const people = livePeople(sockets);
       if (people === this.viewersSent) return;
       this.viewersSent = people;
-      const message = liveViewers(people);
+      const message = liveViewers(people, await this.nextLiveSeq());
       for (const socket of sockets) {
         if (socket.readyState !== WebSocket.OPEN) continue;
         try {
@@ -431,19 +456,22 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       this.judgedTimer = null;
       this.judgedPushedAt = Date.now();
       void judgedNews(this.env, id, this.announcedSent)
-        .then(({ count, view, total, items }) => {
+        .then(async ({ count, view, total, items }) => {
           const messages: string[] = [];
           if (count !== this.judgedSent) {
             this.judgedSent = count;
-            messages.push(liveJudged(count));
+            messages.push(liveJudged(count, await this.nextLiveSeq()));
           }
           if (view && view.at !== this.viewSent) {
             this.viewSent = view.at;
-            messages.push(liveView(view));
+            messages.push(liveView(view, await this.nextLiveSeq()));
           }
           if (total !== undefined && items && total > this.announcedSent) {
             this.announcedSent = total;
-            if (items.length > 0) messages.push(liveAnnounce(items, total));
+            if (items.length > 0)
+              messages.push(
+                liveAnnounce(items, total, await this.nextLiveSeq()),
+              );
           }
           for (const socket of this.ctx.getWebSockets(LIVE_TAG)) {
             if (socket.readyState !== WebSocket.OPEN) continue;
@@ -471,7 +499,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       // The next change, or the page's slower polling, catches up.
       return;
     }
-    const message = liveMessage(activity);
+    const message = liveMessage(activity, await this.nextLiveSeq());
     for (const socket of sockets) {
       try {
         socket.send(message);
@@ -924,8 +952,12 @@ export class ActivityDO extends DurableObject<ApiBindings> {
             if (
               parsed.data.participationMode === "code" &&
               (result.result === "claimed" || result.result === "rejected")
-            )
+            ) {
               this.announceJudged(id);
+              // Their other tabs and devices read their own part again
+              // (§4.3); the one that sent it has the answer already.
+              this.tellMine([userId]);
+            }
             // A 🐟额红包's claim has no payment: its 🐟 is in already.
             const payment =
               "claim" in result ? result.claim.payment : undefined;

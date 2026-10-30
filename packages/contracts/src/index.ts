@@ -929,18 +929,28 @@ export type PublicActivity = {
  * tabs; sent on connecting and whenever it changes.
  */
 export type ActivityLiveMessage =
-  | { type: "activity"; activity: PublicActivity }
   | { type: "mine" }
-  | { type: "viewers"; count: number }
-  /** 代码判定: how many verdicts its code has given (PublicJudge.judged). */
-  | { type: "judged"; count: number }
-  /** 代码判定, protocol 4: what everyone sees changed (PublicJudge.view). */
-  | { type: "view"; view: JudgeView }
-  /**
-   * 代码判定, protocol 4: lines added to 动态 (newest first, at most twenty)
-   * and how many in all (PublicJudge.announcements).
-   */
-  | { type: "announce"; items: JudgeAnnouncement[]; total: number };
+  | ((
+      | { type: "activity"; activity: PublicActivity }
+      | { type: "viewers"; count: number }
+      /** 代码判定: how many verdicts its code has given (PublicJudge.judged). */
+      | { type: "judged"; count: number }
+      /** 代码判定, protocol 4: what everyone sees changed (PublicJudge.view). */
+      | { type: "view"; view: JudgeView }
+      /**
+       * 代码判定, protocol 4: lines added to 动态 (newest first, at most
+       * twenty) and how many in all (PublicJudge.announcements).
+       */
+      | { type: "announce"; items: JudgeAnnouncement[]; total: number }
+    ) & {
+      /**
+       * Sent to everyone: one up each time on this 红包's channel; a
+       * connection's first messages carry the number it stands at
+       * (docs/multi-prize-design.md §4.3). A page that sees one skipped
+       * reads the 红包 whole again.
+       */
+      seq: number;
+    });
 
 export type ActivityList = {
   items: ActivitySummary[];

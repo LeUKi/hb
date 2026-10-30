@@ -500,6 +500,38 @@ test.describe("红包页", () => {
     expect(state.reads.passwords).toBe(beforeMine.passwords);
   });
 
+  test("推送带序号（multi-prize §4.3）：接着的号不重读，跳了号就把红包整份读一次", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    const state = await mockHongbao(page);
+    const sockets: WebSocketRoute[] = [];
+    await page.routeWebSocket(/\/api\/activities\/[^/]+\/live$/, (ws) => {
+      sockets.push(ws);
+      ws.onMessage((message) => {
+        if (message === "ping") ws.send("pong");
+      });
+    });
+    await openApp(page, path);
+    await expect.poll(() => sockets.length).toBe(1);
+    const viewers = page.locator('[data-hb-part="viewers"]');
+    sockets[0]?.send(
+      JSON.stringify({ type: "activity", activity: publicRead(state), seq: 7 }),
+    );
+    sockets[0]?.send(JSON.stringify({ type: "viewers", count: 3, seq: 8 }));
+    await expect(viewers).toHaveText("3 人在看");
+    await page.waitForTimeout(500);
+    const before = state.reads.public;
+    sockets[0]?.send(JSON.stringify({ type: "viewers", count: 4, seq: 9 }));
+    await expect(viewers).toHaveText("4 人在看");
+    await page.waitForTimeout(500);
+    expect(state.reads.public).toBe(before);
+    // 10 and 11 never came: the 红包 read once, whole.
+    sockets[0]?.send(JSON.stringify({ type: "viewers", count: 5, seq: 12 }));
+    await expect(viewers).toHaveText("5 人在看");
+    await expect.poll(() => state.reads.public).toBe(before + 1);
+  });
+
   test("登录后：进行中的红包左上角写着多少人在看，随推送变化，断线时收起", async ({
     page,
   }) => {

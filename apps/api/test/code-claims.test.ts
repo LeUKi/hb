@@ -433,7 +433,7 @@ describe("代码判定红包: claims", () => {
     expect((await read("?cursor=nonsense")).status).toBe(400);
   });
 
-  it("tells its live viewers how many times the code has judged, at most once a second", async () => {
+  it("tells its live viewers how many times the code has judged, at most once in 300 ms (multi-prize §4.3), each push numbered one up", async () => {
     const opened = await open();
     const viewer = await actor();
     const response = await app.request(
@@ -498,13 +498,67 @@ describe("代码判定红包: claims", () => {
     await vi.waitFor(() => expect(counts().at(-1)?.count).toBe(3), {
       timeout: 3000,
     });
-    // Each count larger than the last, a second or so apart however busy.
+    // Each count larger than the last, 300 ms or so apart however busy.
     for (const [index, { count, at }] of counts().entries()) {
       const before = counts()[index - 1];
       if (!before) continue;
       expect(count).toBeGreaterThan(before.count);
-      expect(at - before.at).toBeGreaterThanOrEqual(900);
+      expect(at - before.at).toBeGreaterThanOrEqual(250);
     }
+    // Everything to everyone numbered, one up each time, none skipped.
+    const numbers = heard.flatMap(({ message }) =>
+      "seq" in message ? [message.seq] : [],
+    );
+    const pushed = numbers.slice(2);
+    expect(pushed).toEqual(
+      pushed.map((_, index) => (numbers[1] ?? 0) + 1 + index),
+    );
+    socket.close();
+  });
+
+  it("tells the one judged on their other tabs that their own part moved (multi-prize §4.3)", async () => {
+    const opened = await open();
+    const claimant = await actor();
+    const response = await app.request(
+      `${origin}/api/activities/${opened.id}/live`,
+      {
+        headers: {
+          Upgrade: "websocket",
+          Origin: origin,
+          Cookie: claimant.cookie,
+        },
+      },
+      bindings,
+    );
+    const socket = response.webSocket;
+    if (!socket) throw new Error("no WebSocket");
+    const heard: ActivityLiveMessage[] = [];
+    socket.addEventListener("message", (event) => {
+      const data = String(event.data);
+      if (data !== "pong") heard.push(JSON.parse(data));
+    });
+    socket.accept();
+    await vi.waitFor(() => expect(heard[0]?.type).toBe("activity"));
+    const claimed = await app.request(
+      `${origin}/api/activities/${opened.id}/claim`,
+      {
+        method: "POST",
+        headers: {
+          Origin: origin,
+          Cookie: claimant.cookie,
+          "X-CSRF-Token": claimant.csrf,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          submissionId: crypto.randomUUID(),
+          participationMode: "code",
+          input: "nope",
+        }),
+      },
+      bindings,
+    );
+    expect(claimed.status).toBe(200);
+    await vi.waitFor(() => expect(heard).toContainEqual({ type: "mine" }));
     socket.close();
   });
 

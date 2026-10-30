@@ -11,6 +11,7 @@ import {
   nextPublicActivityReadGeneration,
   type PublicActivityDetail,
 } from "./activities";
+import { myJudgmentsKey } from "./judge";
 import {
   ANNOUNCEMENTS_KEPT,
   liveActivityAtom,
@@ -61,6 +62,8 @@ function ownKeys(id: string, userId: string) {
     participation: participationKey(userId, id),
     roster: ["activity-roster", id, userId, "author"] as const,
     managed: activityKeys.detail(userId, id),
+    // 代码判定: a judgment sent from another tab or device of theirs.
+    judgments: myJudgmentsKey(userId, id),
   };
 }
 
@@ -97,8 +100,10 @@ function readOwn(
       )
   )
     void client.invalidateQueries({ queryKey: keys.roster });
-  if (!onlyOpen)
+  if (!onlyOpen) {
     void client.invalidateQueries({ queryKey: keys.managed, exact: true });
+    void client.invalidateQueries({ queryKey: keys.judgments });
+  }
 }
 
 /**
@@ -132,6 +137,11 @@ export function useActivityLive(
     let finished = false;
     let attempts = 0;
     let opens = 0;
+    /**
+     * The last number heard from the channel (to everyone), kept across
+     * reconnects: one skipped means a push was missed (multi-prize §4.3).
+     */
+    let seq: number | null = null;
     /** When the current line opened. */
     let since = 0;
     let retry: number | undefined;
@@ -200,6 +210,17 @@ export function useActivityLive(
         if (message?.type === "mine") {
           readOwn(client, id, userId, false);
           return;
+        }
+        if (typeof message?.seq === "number") {
+          // Missed one: the 红包 and its 动态 whole again; what comes in
+          // this message is current either way.
+          if (seq !== null && message.seq > seq + 1) {
+            void client.invalidateQueries({ queryKey: key, exact: true });
+            void client.invalidateQueries({
+              queryKey: ["activity-announcements", id],
+            });
+          }
+          seq = Math.max(seq ?? 0, message.seq);
         }
         if (message?.type === "viewers") {
           setViewers({ id, count: message.count });

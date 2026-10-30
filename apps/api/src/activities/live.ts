@@ -29,8 +29,11 @@ export const MAX_LIVE_PER_USER = 4;
 export const MAX_LIVE_SOCKETS = 5_000;
 /** At most one push per window: a rush of claims goes out together. */
 export const LIVE_COALESCE_MS = 300;
-/** 代码判定's 已判定 N 次: at most once a second, however busy (05 §3). */
-export const LIVE_JUDGED_MS = 1_000;
+/**
+ * 代码判定's 已判定 N 次, its view and 动态: as a claim's, at most one push
+ * per window (docs/multi-prize-design.md §4.3; once a second before).
+ */
+export const LIVE_JUDGED_MS = LIVE_COALESCE_MS;
 /** Past the deadline by this much, the DO's clock and D1's agree it is. */
 export const LIVE_DEADLINE_MARGIN_MS = 250;
 /** What the browser sends to keep the line open; answered without waking. */
@@ -52,30 +55,40 @@ export function liveEnded(activity: PublicActivity) {
   return activity.status !== "active";
 }
 
-export function liveMessage(activity: PublicActivity) {
+// Everything sent to everyone carries the channel's number (`seq`, one
+// up each time, kept by the 红包's object): a page that sees one skipped
+// reads the 红包 whole again. What goes to one person carries none.
+
+export function liveMessage(activity: PublicActivity, seq: number) {
   return JSON.stringify({
     type: "activity",
     activity,
+    seq,
   } satisfies ActivityLiveMessage);
 }
 
 export const liveMine = () =>
   JSON.stringify({ type: "mine" } satisfies ActivityLiveMessage);
 
-export const liveViewers = (count: number) =>
-  JSON.stringify({ type: "viewers", count } satisfies ActivityLiveMessage);
+export const liveViewers = (count: number, seq: number) =>
+  JSON.stringify({ type: "viewers", count, seq } satisfies ActivityLiveMessage);
 
-export const liveJudged = (count: number) =>
-  JSON.stringify({ type: "judged", count } satisfies ActivityLiveMessage);
+export const liveJudged = (count: number, seq: number) =>
+  JSON.stringify({ type: "judged", count, seq } satisfies ActivityLiveMessage);
 
-export const liveView = (view: JudgeView) =>
-  JSON.stringify({ type: "view", view } satisfies ActivityLiveMessage);
+export const liveView = (view: JudgeView, seq: number) =>
+  JSON.stringify({ type: "view", view, seq } satisfies ActivityLiveMessage);
 
-export const liveAnnounce = (items: JudgeAnnouncement[], total: number) =>
+export const liveAnnounce = (
+  items: JudgeAnnouncement[],
+  total: number,
+  seq: number,
+) =>
   JSON.stringify({
     type: "announce",
     items,
     total,
+    seq,
   } satisfies ActivityLiveMessage);
 
 /** What a refresh may have moved: pushed only when something did. */
