@@ -229,7 +229,7 @@ function EditPage({
                 {status.text}
               </StatusChip>
             </HoverNote>
-            <Button variant="ghost" size="sm" onClick={onOpen}>
+            <Button variant="quiet" size="sm" onClick={onOpen}>
               <Eye />
               {draft ? "预览红包页" : "查看红包页"}
             </Button>

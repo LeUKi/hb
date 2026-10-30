@@ -301,7 +301,7 @@ function CodeBody({
             </span>
             {code && (
               <Button
-                variant="ghost"
+                variant="quiet"
                 size="sm"
                 className="-mr-2"
                 onClick={() => {

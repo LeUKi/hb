@@ -1243,7 +1243,7 @@ export function Omnibox() {
                     {!compact && " · Shift+Delete 删除选中的一条"}
                   </p>
                   <Button
-                    variant="ghost"
+                    variant="quiet"
                     size="xs"
                     className="-my-1"
                     onClick={() => {

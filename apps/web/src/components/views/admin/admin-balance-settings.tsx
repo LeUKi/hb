@@ -226,7 +226,7 @@ export function BalanceSettingsSection({
             </Button>
             <RevealInline show={changed && !busy}>
               <Button
-                variant="ghost"
+                variant="quiet"
                 onClick={() => {
                   setBase(null);
                   setDraft({});
@@ -359,7 +359,7 @@ export function PlatformAppSection({
               {status !== "passed" && status !== "checking" && (
                 <Button
                   size="sm"
-                  variant="ghost"
+                  variant="quiet"
                   aria-disabled={busy !== null || undefined}
                   onClick={async () => {
                     if (busy) return;

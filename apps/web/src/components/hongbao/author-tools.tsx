@@ -114,7 +114,7 @@ export function AuthorTools({
               自动开放。开放前，拿到链接的人能看到这一页，到点才能{verb}。
             </span>
             <Button
-              variant="ghost"
+              variant="quiet"
               size="sm"
               onClick={() => setCancelling(true)}
             >

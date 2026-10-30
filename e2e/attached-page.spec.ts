@@ -111,6 +111,49 @@ const sheetTop = (page: Page) =>
     .evaluate((bar) => Math.round(bar.getBoundingClientRect().top));
 
 test.describe("附带网页", () => {
+  test("不是代码判定的红包：网页接得上 SDK，hb.mine() 是空的，hb.submit() 拿到 not_code（judge-page §11.8）", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    // The SDK comes from this machine's dev server here (hb.lafi.sh is not).
+    await page.context().grantPermissions(["local-network-access"]);
+    await mockSession(page, viewer);
+    await mock(page);
+    await page.route("https://puzzle.example.com/**", (route) =>
+      route.fulfill({
+        contentType: "text/html; charset=utf-8",
+        body: `<!doctype html><title>谜题</title><h1>今日第 3 题</h1><script src="${new URL(page.url()).origin}/sdk/v1.js"></script>`,
+      }),
+    );
+    await openApp(page, path);
+    await page.locator("#page-button").click();
+    await expect(
+      page
+        .frameLocator("iframe[title='puzzle.example.com 的网页']")
+        .getByText("今日第 3 题"),
+    ).toBeVisible();
+    const frame = page.frame({ url: pageUrl });
+    if (!frame) throw new Error("PAGE_FRAME_MISSING");
+    type PageWindow = {
+      hb: {
+        ready(): Promise<unknown>;
+        mine(): Promise<unknown>;
+        submit(input: string): Promise<unknown>;
+      };
+    };
+    expect(
+      await frame.evaluate(() => (window as unknown as PageWindow).hb.ready()),
+    ).toMatchObject({ hongbao: { code: false, title: "谜题红包" } });
+    expect(
+      await frame.evaluate(() => (window as unknown as PageWindow).hb.mine()),
+    ).toEqual({ total: 0, items: [], next: null });
+    expect(
+      await frame.evaluate(() =>
+        (window as unknown as PageWindow).hb.submit("答案"),
+      ),
+    ).toEqual({ judged: false, reason: "not_code" });
+  });
+
   test("宽屏：分享下面的“附带网页”打开右边的网页窗口，打开才加载，再点收起、还在", async ({
     page,
   }) => {

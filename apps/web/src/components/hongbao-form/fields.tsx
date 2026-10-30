@@ -839,7 +839,7 @@ export function PasswordList({
                 <RevealInline show={!locked && fixable}>
                   <Button
                     size="sm"
-                    variant="ghost"
+                    variant="quiet"
                     title="一键优化：全角字母数字转半角，去掉不能用的字符"
                     aria-label={`优化口令 ${index + 1}`}
                     onClick={() => {

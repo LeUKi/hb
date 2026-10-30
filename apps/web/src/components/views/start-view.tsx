@@ -87,12 +87,42 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** Each 常用命令 its own colour, so the three read apart at a glance. */
+/** Each 常用命令 its own colour, so they read apart at a glance. */
 const tints: Partial<Record<CommandId, string>> = {
   history: "bg-accent-soft text-accent-ink",
   square: "bg-gold-soft text-gold-ink",
   rank: "bg-warning-soft text-warning",
+  // The 判定器's own lacquer and gold (JudgeMark).
+  judges: "bg-[#2c2724] text-[#f3d38b]",
 };
+
+/**
+ * How the cards lie (07 §1): up to four in one line on a wide window, then
+ * three a line; two a line on a phone. 全部命令, last, widens to fill its
+ * line, so no line ends in a gap.
+ */
+const wideColumns = {
+  2: "@wide/window:grid-cols-2",
+  3: "@wide/window:grid-cols-3",
+  4: "@wide/window:grid-cols-4",
+} as const;
+const wideSpan = {
+  1: "@wide/window:col-span-1",
+  2: "@wide/window:col-span-2",
+  3: "@wide/window:col-span-3",
+} as const;
+function cardGrid(cards: number) {
+  const columns = Math.min(4, Math.max(2, cards + 1 <= 4 ? cards + 1 : 3));
+  const lastWide = columns - (cards % columns);
+  const lastNarrow = 2 - (cards % 2);
+  return {
+    grid: wideColumns[columns as 2 | 3 | 4],
+    last: cn(
+      lastNarrow === 2 && "col-span-2",
+      wideSpan[lastWide as 1 | 2 | 3] ?? "",
+    ),
+  };
+}
 
 /**
  * A 常用命令 as a card: its icon on a tinted tile, its name, and what to
@@ -152,6 +182,7 @@ export function StartView() {
   const quick = commands.filter(
     (command) => command.quick && isVisible(command, role),
   );
+  const layout = cardGrid(quick.length);
 
   return (
     <div className="flex min-h-full flex-col items-center px-4 pb-6 @wide/window:px-8">
@@ -207,7 +238,7 @@ export function StartView() {
                 theirs (a screen reader still hears its name). */}
             <nav
               aria-label="常用命令"
-              className="grid grid-cols-2 gap-2 @wide/window:grid-cols-4"
+              className={cn("grid grid-cols-2 gap-2", layout.grid)}
             >
               {quick.map((command) => (
                 <Squircle key={command.id} radius={radius.choice}>
@@ -228,7 +259,7 @@ export function StartView() {
               <Squircle radius={radius.choice}>
                 <button
                   type="button"
-                  className={cardClass}
+                  className={cn(cardClass, layout.last)}
                   title="全部命令 · /"
                   onClick={() => {
                     setDraft("/");

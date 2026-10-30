@@ -1064,6 +1064,21 @@
     --btn-top: var(--color-fill-2);
     --btn-bottom: var(--color-fill-2);
   }
+  /* Low-priority actions (04 §4): a soft tint at rest, so it reads as a
+     button without hovering (a phone has none); no line, no shadow. */
+  .btn-quiet {
+    color: var(--color-ink-2);
+    --btn-top: var(--color-fill-2);
+    --btn-bottom: var(--color-fill-2);
+  }
+  .btn-quiet:hover {
+    color: var(--color-ink);
+    --btn-top: rgb(42 21 25 / 0.12);
+    --btn-bottom: rgb(42 21 25 / 0.12);
+  }
+  .btn-quiet:active:not(:disabled, [data-disabled]) {
+    --btn-inset: inset 0 1px 2px rgb(42 21 25 / 0.12);
+  }
   /* 代码判定红包's (05 §14): black lacquer, gold words. */
   .btn-lacquer {
     color: #f3d38b;
@@ -1101,6 +1116,7 @@
   }
   .btn-secondary:is(:disabled, [data-disabled]),
   .btn-ghost:is(:disabled, [data-disabled]),
+  .btn-quiet:is(:disabled, [data-disabled]),
   .btn-danger:is(:disabled, [data-disabled]) {
     opacity: 0.5;
   }

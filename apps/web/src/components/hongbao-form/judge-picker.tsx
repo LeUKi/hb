@@ -162,7 +162,7 @@ export function JudgePicker({
       </Swap>
       <div className="flex flex-wrap gap-x-2">
         <Button
-          variant="ghost"
+          variant="quiet"
           size="sm"
           className="-ml-2 gap-0.5"
           onClick={onBrowse}
@@ -170,7 +170,7 @@ export function JudgePicker({
           去判定器广场挑一个
           <ChevronRight aria-hidden="true" />
         </Button>
-        <Button variant="ghost" size="sm" onClick={onWrite}>
+        <Button variant="quiet" size="sm" onClick={onWrite}>
           自己写一个
         </Button>
       </div>

@@ -185,7 +185,7 @@ function CopyCode({ code }: { code: string }) {
   }, [copied]);
   return (
     <Button
-      variant="ghost"
+      variant="quiet"
       size="sm"
       className="-mr-2"
       onClick={() => {
@@ -313,7 +313,7 @@ export function PublicJudgePage({
             <>
               {admin && judge.listed && (
                 <Button
-                  variant="ghost"
+                  variant="quiet"
                   size="sm"
                   className="text-danger"
                   onClick={() => setAsking("takeDown")}

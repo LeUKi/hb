@@ -338,7 +338,7 @@ function Detail({ user }: { user: AdminUserListItem }) {
         {(read?.counts.paymentTasks ?? 0) > 0 && (
           <Button
             size="sm"
-            variant="ghost"
+            variant="quiet"
             onClick={() =>
               void navigate({
                 to: "/admin/payments",
@@ -502,7 +502,7 @@ function FilterDialog({
             {countLine(total, "人")}
           </span>
           <RevealInline show={changed}>
-            <Button variant="ghost" onClick={() => onChange(defaults)}>
+            <Button variant="quiet" onClick={() => onChange(defaults)}>
               清除
             </Button>
           </RevealInline>

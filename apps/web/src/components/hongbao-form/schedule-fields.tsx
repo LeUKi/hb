@@ -172,7 +172,7 @@ function ScheduleBody({
       <footer className="flex flex-wrap items-center justify-end gap-2 px-5 pt-4 pb-4">
         {at !== null && (
           <Button
-            variant="ghost"
+            variant="quiet"
             size="sm"
             className="mr-auto"
             aria-disabled={busy || undefined}

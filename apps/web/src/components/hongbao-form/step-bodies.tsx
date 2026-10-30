@@ -3,6 +3,7 @@ import { DoorOpen, KeyRound, Plus } from "lucide-react";
 import { type ReactNode, useId, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { cn } from "../../lib/cn";
+import { Button } from "../ui/button";
 import { ChoiceCards, Field, TextInput } from "../ui/field";
 import { Reveal } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
@@ -385,18 +386,19 @@ export function TitleStep({
       </Field>
       {/* The button folds away as the 说明 opens in its place. */}
       <Reveal show={!note}>
-        <button
-          type="button"
+        <Button
+          variant="quiet"
+          size="sm"
+          className="w-fit"
           onClick={() => {
             // Shown and focused within the tap, so a phone's keyboard opens.
             flushSync(() => setNote(true));
             noteRef.current?.querySelector("textarea")?.focus();
           }}
-          className="flex w-fit items-center gap-1 px-1 text-sm text-accent-ink"
         >
-          <Plus className="size-4" aria-hidden="true" />
+          <Plus aria-hidden="true" />
           加一段红包说明
-        </button>
+        </Button>
       </Reveal>
       <Reveal show={note}>
         <div ref={noteRef} className="pb-1">

@@ -12,6 +12,9 @@ export const buttonVariants = cva("btn", {
     variant: {
       primary: "btn-primary",
       secondary: "btn-secondary",
+      /** Low-priority, standalone (04 §4): a soft tint at rest. */
+      quiet: "btn-quiet",
+      /** Icon buttons in bars, and “全部 N 条 ›” links in section heads. */
       ghost: "btn-ghost",
       danger: "btn-danger",
       /** 代码判定红包's action (05 §14). */

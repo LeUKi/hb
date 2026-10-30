@@ -134,7 +134,19 @@ export function SquarePicker({
                 </div>
               )
             ) : (tab === "mine" ? own.length : cards.length) === 0 ? (
-              <p className="py-10 text-center text-sm text-ink-3">{empty}</p>
+              <div className="grid justify-items-center gap-3 py-10">
+                <p className="text-center text-sm text-ink-3">{empty}</p>
+                {/* None chosen yet: the rest of the 广场 is one tap away. */}
+                {tab === "featured" && (
+                  <Button
+                    variant="quiet"
+                    size="sm"
+                    onClick={() => setTab("all")}
+                  >
+                    看看大家做的
+                  </Button>
+                )}
+              </div>
             ) : tab === "mine" ? (
               <ul className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-2.5">
                 {own.map((judge) => (

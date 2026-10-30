@@ -192,6 +192,9 @@ export function usePageBridge(
         return;
       }
       if (!state.user) return reply({ value: null });
+      // Only a 代码判定红包 keeps submissions: none here.
+      if (state.hongbao && !state.hongbao.code)
+        return reply({ value: { total: 0, items: [], next: null } });
       if (busy.current.mine)
         return reply({
           error: { code: "busy", message: "上一次 hb.mine() 还没读完" },

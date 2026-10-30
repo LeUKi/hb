@@ -98,7 +98,8 @@ function Square({ userId }: { userId: string | null }) {
   const tabs: Tab[] = userId
     ? ["featured", "all", "mine"]
     : ["featured", "all"];
-  const [tab, setTab] = useSearchChoice<Tab>("tab", "featured", tabs);
+  // 大家做的 first (2026-10-30, the user); 发红包's dialog opens on 精选.
+  const [tab, setTab] = useSearchChoice<Tab>("tab", "all", tabs);
   const [sort, setSort] = useSearchChoice<Sort>("sort", "recent", [
     "recent",
     "used",
@@ -134,7 +135,7 @@ function Square({ userId }: { userId: string | null }) {
                 自己写一个
               </ButtonLink>
             ) : (
-              <Button size="sm" onClick={openAccount}>
+              <Button variant="quiet" size="sm" onClick={openAccount}>
                 自己写一个
               </Button>
             )
@@ -190,7 +191,18 @@ function Square({ userId }: { userId: string | null }) {
           >
             {cards.length === 0 ? (
               tab === "featured" ? (
-                <EmptyNote title="还没有精选的判定器" />
+                <EmptyNote
+                  title="还没有精选的判定器"
+                  action={
+                    <Button
+                      variant="quiet"
+                      size="sm"
+                      onClick={() => setTab("all")}
+                    >
+                      看看大家做的
+                    </Button>
+                  }
+                />
               ) : (
                 <EmptyNote
                   title="广场上还没有判定器"

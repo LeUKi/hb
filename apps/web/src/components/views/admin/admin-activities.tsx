@@ -407,7 +407,7 @@ function Detail({ row }: { row: Row }) {
         {(more?.payments.total ?? 0) > 0 && (
           <Button
             size="sm"
-            variant="ghost"
+            variant="quiet"
             onClick={() =>
               void navigate({
                 to: "/admin/payments",

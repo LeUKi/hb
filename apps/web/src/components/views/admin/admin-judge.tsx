@@ -664,7 +664,7 @@ function SettingsForm({ data }: { data: JudgeSettingsResponse }) {
             </Button>
             <RevealInline show={changed && !busy}>
               <Button
-                variant="ghost"
+                variant="quiet"
                 onClick={() => {
                   reset();
                   setError(null);

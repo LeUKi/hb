@@ -94,13 +94,13 @@ function TestsBox({
         </span>
         {!disabled && (
           <span className="flex items-center gap-1">
-            <Button size="sm" variant="ghost" onClick={() => void paste()}>
+            <Button size="sm" variant="quiet" onClick={() => void paste()}>
               <ClipboardPaste />
               粘贴
             </Button>
             <Button
               size="sm"
-              variant="ghost"
+              variant="quiet"
               onClick={() => file.current?.click()}
             >
               <FileUp />
@@ -602,7 +602,7 @@ function BorrowedCode({
               判定器「{name}」· @{author} · 第 {n} 版
             </span>
             <Button
-              variant="ghost"
+              variant="quiet"
               size="sm"
               className="-mr-2 shrink-0"
               onClick={() => {

@@ -90,7 +90,7 @@ function DataHeader({
         description={description}
         actions={
           <Button
-            variant="ghost"
+            variant="quiet"
             size="sm"
             onClick={() => void leaveTo({ to: "activity", id })}
           >

@@ -300,7 +300,7 @@ async function mockSquare(page: Page, user: MockUser | null) {
 const member: MockUser = { ...viewer, balance: true, balancePlus: true };
 
 test.describe("判定器广场", () => {
-  test("游客：站长精选和大家做的，卡上写作者、数据和标签；大家做的能按用得最多排；没有我的", async ({
+  test("游客：一进来是大家做的，能按用得最多排；站长精选另一个页签；卡上写作者、数据和标签；没有我的", async ({
     page,
   }) => {
     const { asked } = await mockSquare(page, null);
@@ -311,6 +311,21 @@ test.describe("判定器广场", () => {
     await expect(
       page.getByText("挑一个判定器，填几项参数就能发红包。"),
     ).toBeVisible();
+    // 大家做的 first (2026-10-30).
+    await expect(
+      page.getByRole("button", { name: "大家做的" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    const online = page.getByRole("article").filter({ hasText: "联网问答" });
+    await expect(
+      online.getByRole("button", { name: "联网" }),
+    ).toHaveAccessibleDescription(
+      "会把领的人提交的内容发到别的服务器，由对方决定发不发、发多少。",
+    );
+    await page.getByRole("button", { name: "用得最多" }).click();
+    await expect.poll(() => asked.lists.at(-1)).toContain("sort=used");
+    await expect(page.getByRole("button", { name: "我的" })).toHaveCount(0);
+    await page.getByRole("button", { name: "站长精选" }).click();
+    await expect(page).toHaveURL(/[?&]tab=featured(&|$)/);
     const card = page.getByRole("article").filter({ hasText: "猜数字" });
     await expect(card).toContainText("@maker");
     await expect(card).toContainText("猜 1–100 之间的数，猜中的领");
@@ -320,17 +335,6 @@ test.describe("判定器广场", () => {
     await expect(
       card.getByRole("button", { name: "精选" }),
     ).toHaveAccessibleDescription("站长挑选或改进过的判定器。");
-    await expect(page.getByRole("button", { name: "我的" })).toHaveCount(0);
-    await page.getByRole("button", { name: "大家做的" }).click();
-    await expect(page).toHaveURL(/\/judges\?tab=all$/);
-    const online = page.getByRole("article").filter({ hasText: "联网问答" });
-    await expect(
-      online.getByRole("button", { name: "联网" }),
-    ).toHaveAccessibleDescription(
-      "会把领的人提交的内容发到别的服务器，由对方决定发不发、发多少。",
-    );
-    await page.getByRole("button", { name: "用得最多" }).click();
-    await expect.poll(() => asked.lists.at(-1)).toContain("sort=used");
   });
 
   test("别人的判定器页：参数、发多少、代码、版本；复制一份来改带着代码和名字，测试自己写，部署后到它的判定器页", async ({

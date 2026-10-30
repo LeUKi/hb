@@ -121,7 +121,7 @@ export function LazyListEnd({
           )}
           <Button
             size="sm"
-            variant="ghost"
+            variant="quiet"
             aria-disabled={state === "loading" || undefined}
             onClick={() => {
               if (state !== "failed") return;

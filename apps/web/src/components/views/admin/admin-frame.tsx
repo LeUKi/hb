@@ -540,7 +540,7 @@ export function DetailRetry({
       <span role="alert">{what}读取失败。</span>
       <Button
         size="sm"
-        variant="ghost"
+        variant="quiet"
         className="-my-1"
         aria-disabled={query.isFetching || undefined}
         onClick={() => {

@@ -163,7 +163,7 @@ export function ApiKeysSection({ user }: { user: SessionUser }) {
       )}
       {stopped.length > 0 && (
         <Button
-          variant="ghost"
+          variant="quiet"
           size="xs"
           aria-haspopup="dialog"
           className="-mt-1 gap-0.5 justify-self-center pr-1.5"

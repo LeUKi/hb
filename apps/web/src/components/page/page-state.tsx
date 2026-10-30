@@ -175,7 +175,7 @@ export function ResultError({ onRetry }: { onRetry: () => void }) {
             : "网络或服务暂时出了问题，稍后再试。"}
         </p>
       </div>
-      <Button size="sm" variant="ghost" onClick={onRetry}>
+      <Button size="sm" variant="quiet" onClick={onRetry}>
         <RotateCw aria-hidden="true" />
         重试
       </Button>

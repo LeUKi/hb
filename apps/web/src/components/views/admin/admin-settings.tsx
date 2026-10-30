@@ -227,7 +227,7 @@ function SettingsForm({ data }: { data: AttemptRateLimitsResponse }) {
             </Button>
             <RevealInline show={changed && !busy}>
               <Button
-                variant="ghost"
+                variant="quiet"
                 onClick={() => {
                   reset();
                   setError(null);

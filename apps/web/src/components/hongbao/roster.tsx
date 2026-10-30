@@ -403,7 +403,7 @@ export function RosterRetry({ onRetry }: { onRetry: () => void }) {
   return (
     <div className="grid justify-items-center gap-2 px-6 py-8 text-center text-sm text-ink-3">
       <p role="alert">名单读取失败。</p>
-      <Button size="sm" variant="ghost" onClick={onRetry}>
+      <Button size="sm" variant="quiet" onClick={onRetry}>
         <RotateCw aria-hidden="true" />
         重试
       </Button>

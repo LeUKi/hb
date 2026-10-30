@@ -209,7 +209,7 @@ export function PasswordSection({
       </div>
       {total > FOLDED && (
         <Button
-          variant="ghost"
+          variant="quiet"
           size="sm"
           className="self-center"
           aria-expanded={expanded}

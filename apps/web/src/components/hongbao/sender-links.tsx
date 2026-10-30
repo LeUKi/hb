@@ -76,7 +76,7 @@ export function SenderLinks({
           })
         }
         stopPropagation={inRow}
-        variant={primary ? "primary" : "ghost"}
+        variant={primary ? "primary" : iconsOnly ? "ghost" : "quiet"}
         size={size}
         aria-label={
           iconsOnly
@@ -96,7 +96,7 @@ export function SenderLinks({
     <Button
       key="roster"
       id={`roster-entry-${activity.id}`}
-      variant="ghost"
+      variant={iconsOnly ? "ghost" : "quiet"}
       size={size}
       aria-haspopup="dialog"
       aria-label={iconsOnly ? `名单「${activity.title}」` : undefined}

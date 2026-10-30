@@ -60,7 +60,7 @@ export function MerchantGuide() {
   return (
     <>
       <Button
-        variant="ghost"
+        variant="quiet"
         size="xs"
         aria-haspopup="dialog"
         className="-mr-1 shrink-0 text-ink-2"

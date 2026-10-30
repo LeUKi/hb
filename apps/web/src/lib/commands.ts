@@ -301,6 +301,8 @@ export const commands: Command[] = [
     title: "判定器广场",
     icon: FolderCode,
     requires: "guest",
+    // On the start page too (2026-10-30, the user).
+    quick: true,
     keys: [
       "judges",
       "judge",

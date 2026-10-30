@@ -120,7 +120,7 @@ export function NoteEditor({
         />
         {pageLink && (
           <Button
-            variant="ghost"
+            variant="quiet"
             size="xs"
             title="插入 [打开网页](#附带网页)，红包页上是打开附带网页的按钮"
             onClick={() => {

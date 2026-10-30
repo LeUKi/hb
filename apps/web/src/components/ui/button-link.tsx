@@ -18,7 +18,7 @@ import { SquircleFill } from "./squircle";
 export function ButtonLink({
   href,
   onGo,
-  variant = "ghost",
+  variant = "quiet",
   size = "sm",
   className,
   children,
@@ -27,7 +27,7 @@ export function ButtonLink({
 }: {
   href: string;
   onGo?: () => void;
-  variant?: "primary" | "secondary" | "ghost";
+  variant?: "primary" | "secondary" | "quiet" | "ghost";
   size?: ButtonSize;
   className?: string;
   children: ReactNode;
@@ -83,6 +83,7 @@ export function MoreLink({
     <ButtonLink
       href={href}
       onGo={onGo}
+      variant="ghost"
       size="xs"
       className={cn("shrink-0 gap-0.5 pr-1.5", className)}
     >

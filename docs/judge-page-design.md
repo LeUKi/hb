@@ -299,7 +299,7 @@ return {
 | `hb.view()` | 判定器的公开数据 `{ summary, data, at }`，没有时 null |
 | `hb.on(名字, fn)` | `view`（公开数据变了）、`hongbao`（红包公开信息变了）、`announce`（新的一条动态 `{ n, at, user: { name, avatar }, text }`，几条同时来时从旧到新一条一条给）；返回取消订阅的函数 |
 | `hb.submit(input)` | 判定了：`{ judged: true, claimed: true, amount: "0.30", unit: "LDC", reply }` 或 `{ judged: true, claimed: false, reply }`（`reply` 是代码的回复，没有就不带）；没判定：`{ judged: false, reason, seconds?, message? }` |
-| `hb.mine(next?)` | 自己的提交，新的在前，一次 20 条：`{ total, items: [{ n, at, input, claimed, amount?, reply? }], next }`，再读传 `next`；没登录时 null |
+| `hb.mine(next?)` | 自己的提交，新的在前，一次 20 条：`{ total, items: [{ n, at, input, claimed, amount?, reply? }], next }`，再读传 `next`；没登录时 null；不是代码判定红包时是空的（`total` 为 0，2026-10-30 补：原来会报错） |
 
 **没判定的原因**（`reason`）：
 

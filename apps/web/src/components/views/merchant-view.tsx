@@ -450,7 +450,7 @@ function MerchantForm({
           </Button>
           {/* They grow in beside 保存配置 and fold away again. */}
           <RevealInline show={changed && !busy}>
-            <Button variant="ghost" onClick={undo}>
+            <Button variant="quiet" onClick={undo}>
               撤销修改
             </Button>
           </RevealInline>

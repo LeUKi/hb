@@ -65,7 +65,7 @@ export function RefreshButton() {
   return (
     <Button
       size="sm"
-      variant="ghost"
+      variant="quiet"
       // Not disabled: a disabled button drops focus, and focus stays here.
       aria-disabled={state.retrying}
       onClick={() => {
@@ -106,7 +106,7 @@ export function RefreshNotice() {
           <span>下面可能不是最新的。</span>
           <Button
             size="sm"
-            variant="ghost"
+            variant="quiet"
             className="-my-1"
             // Not disabled, so focus stays on it while it reads again.
             aria-disabled={state?.retrying || undefined}

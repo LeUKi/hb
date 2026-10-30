@@ -285,7 +285,7 @@ function DetailBody({
       {payment.activityId && (
         <Button
           size="sm"
-          variant="ghost"
+          variant="quiet"
           className="justify-self-start"
           onClick={() =>
             void navigate({
