@@ -238,7 +238,6 @@ async function drawing(page: Page, registered: boolean) {
     drawProof: {
       kind: "draw",
       round: drawData.drand.round,
-      roundAt: iso(Date.now() + 3_500),
       rosterHash: drawData.roster.hash,
     } as Record<string, unknown>,
   };
@@ -247,6 +246,13 @@ async function drawing(page: Page, registered: boolean) {
     const rest = new URL(route.request().url()).pathname.slice(
       `/api/activities/${id}`.length,
     );
+    // The round comes 3.5 s after the page first reads the 红包, however
+    // long a slow machine took to get there.
+    if (rest === "" && !activity.drawProof.roundAt)
+      activity = {
+        ...activity,
+        drawProof: { ...activity.drawProof, roundAt: iso(Date.now() + 3_500) },
+      };
     if (rest === "") return route.fulfill({ json: { activity } });
     if (rest.startsWith("/participation"))
       return route.fulfill({
