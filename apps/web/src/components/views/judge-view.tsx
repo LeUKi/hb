@@ -27,7 +27,7 @@ import {
   issuesOf,
 } from "../hongbao-form/form-state";
 import { useJudgeDeploy } from "../hongbao-form/use-judge-deploy";
-import { dayLabel, statsLine } from "../judges/judge-bits";
+import { dayLabel, JudgeHelpLinks, statsLine } from "../judges/judge-bits";
 import { Callout, Page, PageHeader, PageSection, Panel } from "../page/page";
 import { Bone, PageLoad, queryLoad } from "../page/page-state";
 import { ConfirmDialog } from "../shell/confirm-dialog";
@@ -704,7 +704,7 @@ function JudgePage({
           ))}
         </Panel>
       </PageSection>
-      <PageSection title="部署新版本">
+      <PageSection title="部署新版本" action={<JudgeHelpLinks />}>
         <DeployNew
           judge={judge}
           userId={user.id}

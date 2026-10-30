@@ -337,7 +337,7 @@ test.describe("判定器广场", () => {
     ).toHaveAccessibleDescription("站长挑选或改进过的判定器。");
   });
 
-  test("别人的判定器页：参数、发多少、代码、版本；复制一份来改带着代码和名字，测试自己写，部署后到它的判定器页", async ({
+  test("别人的判定器页：参数、发多少、代码、版本；复制一份来改带着代码和名字，测试自己写，有帮助入口，能选加入广场（§16.1），部署后到它的判定器页", async ({
     page,
   }) => {
     const { asked } = await mockSquare(page, member);
@@ -383,6 +383,35 @@ test.describe("判定器广场", () => {
     await expect(
       page.getByText("基于 @maker 的判定器，署名会一直留着。"),
     ).toBeVisible();
+    // Where writing one is told, in new tabs (§16.1).
+    for (const [name, href] of [
+      ["开发文档 ↗", "/help/code"],
+      ["给 AI 的说明 ↗", "/help/code#ai"],
+    ]) {
+      const link = page.getByRole("link", { name, exact: true });
+      await expect(link).toHaveAttribute("href", href);
+      await expect(link).toHaveAttribute("target", "_blank");
+    }
+    // 设置, made with its first deploy: the 广场 asked as on its page.
+    const join = page.getByRole("switch", { name: "加入判定器广场" });
+    await join.click();
+    const asking = page.getByRole("dialog", { name: "加入判定器广场？" });
+    await expect(asking).toContainText(
+      "代码会一直公开，改不回来；别人能看代码、用它发红包。",
+    );
+    await asking.getByRole("switch", { name: "允许站长选入精选" }).click();
+    await asking.getByRole("button", { name: "加入" }).click();
+    await expect(asking).toBeHidden();
+    await expect(join).toHaveAttribute("aria-checked", "true");
+    // In the 广场 is public for good: 一直公开, not to be changed here.
+    const always = page
+      .getByRole("group", { name: "代码公开" })
+      .getByRole("button", { name: "一直公开" });
+    await expect(always).toHaveAttribute("aria-pressed", "true");
+    await expect(always).toBeDisabled();
+    await expect(
+      page.getByText("第一次部署时一起保存，以后在判定器页改。"),
+    ).toBeVisible();
     await expect(
       page.getByText(
         "只是数据，不算进代码，不公开。别人的测试不公开，要自己写。",
@@ -397,7 +426,12 @@ test.describe("判定器广场", () => {
     await expect(page).toHaveURL(new RegExp(`/judges/${COPIED}$`));
     expect(asked.deploys.at(-1)).toMatchObject({
       code: guessCode,
-      judge: { name: "猜数字", basedOn: GUESS },
+      judge: {
+        name: "猜数字",
+        basedOn: GUESS,
+        codePublic: "always",
+        listing: { listed: true, featurable: false },
+      },
     });
   });
 
@@ -407,6 +441,10 @@ test.describe("判定器广场", () => {
     const { asked, state } = await mockSquare(page, member);
     await openApp(page, `/judges/${MINE}`);
     await expect(page.getByText("第 1 版 · 还没发过红包")).toBeVisible();
+    // 部署新版本 says where writing one is told too (§16.2).
+    await expect(
+      page.getByRole("link", { name: "本地开发包 ↗", exact: true }),
+    ).toBeVisible();
     const join = page.getByRole("switch", { name: "加入判定器广场" });
     await expect(join).toHaveAccessibleDescription(
       "加入后别人能看代码、用它发红包。",

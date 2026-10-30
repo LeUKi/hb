@@ -222,6 +222,29 @@ describe("判定器广场", () => {
     ).not.toContain(first.id);
   });
 
+  it("is made with its settings on its first deploy (§16.1): in the 广场 is public for good, 结束后公开 and out of it by default", async () => {
+    const joined = await check(author, unique(), TESTS, {
+      name: "猜数字",
+      listing: { listed: true, featurable: false },
+    });
+    expect(
+      await getMyJudge(bindings, author.id, joined.body.check.judge?.id ?? ""),
+    ).toMatchObject({ listed: true, featurable: false, codePublic: "always" });
+    const open = await check(author, unique(), TESTS, {
+      name: "答题",
+      codePublic: "always",
+    });
+    expect(
+      await getMyJudge(bindings, author.id, open.body.check.judge?.id ?? ""),
+    ).toMatchObject({ listed: false, featurable: true, codePublic: "always" });
+    const plain = await made("每日一题");
+    expect(await getMyJudge(bindings, author.id, plain.id)).toMatchObject({
+      listed: false,
+      featurable: true,
+      codePublic: "ended",
+    });
+  });
+
   it("orders 大家做的 by the latest opening, or by 红包 sent (用得最多); a 红包 the 站长 stopped counts for nothing", async () => {
     const busy = await made("常用");
     const recent = await made("最近");

@@ -238,6 +238,11 @@ export const judgeCheckInputSchema = z.strictObject({
         description: judgeDescriptionSchema.optional(),
         /** 复制一份来改 (§8): the 判定器 it was copied from. */
         basedOn: z.uuid().optional(),
+        /** Made with these (§16.1); else 结束后公开 and not in the 广场. */
+        codePublic: z.enum(["ended", "always"]).optional(),
+        listing: z
+          .strictObject({ listed: z.boolean(), featurable: z.boolean() })
+          .optional(),
       }),
     ])
     .optional(),

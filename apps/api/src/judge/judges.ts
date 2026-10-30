@@ -208,6 +208,11 @@ export async function deployJudge(
   const description =
     existing?.description ??
     ("name" in target ? (target.description ?? "") : "");
+  // Made with its settings (§16.1): in the 广场 is public for good, as
+  // joining it later is. Made outside it and joined in the same batch
+  // (the database's rule: judges_insert_guard).
+  const made = "name" in target ? target : null;
+  const listed = made?.listing?.listed === true;
   const known = existing
     ? await versionNumberOf(env, judgeId, check.fingerprint)
     : null;
@@ -238,8 +243,27 @@ export async function deployJudge(
           judgeId,
         )
       : env.DB.prepare(
-          "INSERT INTO judges (id, author_id, name, description, based_on_judge_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        ).bind(judgeId, userId, name, description, basedOn, now, now),
+          `INSERT INTO judges (id, author_id, name, description, based_on_judge_id, code_public,
+            featurable, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).bind(
+          judgeId,
+          userId,
+          name,
+          description,
+          basedOn,
+          listed || made?.codePublic === "always" ? "always" : "ended",
+          Number(made?.listing?.featurable ?? true),
+          now,
+          now,
+        ),
+    ...(!existing && listed
+      ? [
+          env.DB.prepare("UPDATE judges SET listed_at = ? WHERE id = ?").bind(
+            now,
+            judgeId,
+          ),
+        ]
+      : []),
     known !== null
       ? env.DB.prepare(`UPDATE judge_versions SET protocol = ?, tests_ciphertext = ?, tests_digest = ?,
           passed = ?, declarations = ?, network = ?, checked_at = ? WHERE judge_id = ? AND n = ?`).bind(

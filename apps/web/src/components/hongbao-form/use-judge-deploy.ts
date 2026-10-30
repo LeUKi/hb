@@ -1,6 +1,7 @@
 import {
   JUDGE_OLDEST_PROTOCOL,
   type JudgeCheck,
+  type JudgeCheckInput,
   type ManagedActivity,
 } from "@hb/contracts";
 import { useMemo, useState } from "react";
@@ -77,6 +78,7 @@ export function useJudgeDeploy({
   update,
   say,
   basedOn,
+  made,
 }: {
   form: FormState;
   activity?: ManagedActivity;
@@ -86,6 +88,11 @@ export function useJudgeDeploy({
   say: (text: string) => void;
   /** 复制一份来改 (judge-square §8): the 判定器 its first deploy copies. */
   basedOn?: string;
+  /** /judges/new's 设置 (§16.1): what its first deploy makes it with. */
+  made?: Pick<
+    Extract<NonNullable<JudgeCheckInput["judge"]>, { name: string }>,
+    "codePublic" | "listing"
+  >;
 }) {
   const mutation = useJudgeCheck(userId);
   // The form's own read: whether 代码判定 is offered, and deploys left.
@@ -208,6 +215,7 @@ export function useJudgeDeploy({
               name: form.judge.name.trim(),
               description: form.judge.description.trim(),
               ...(basedOn ? { basedOn } : {}),
+              ...made,
             },
       });
       // Seen before the form changes, which draws it.

@@ -4,6 +4,7 @@ import {
   type CodeMoney,
   emptyActivityInput,
   type JudgeCheck,
+  type JudgeCheckInput,
   type JudgeInput,
 } from "@hb/contracts";
 import { expect } from "vitest";
@@ -144,7 +145,7 @@ export async function check(
   user: Actor,
   code = JUDGE,
   tests = TESTS,
-  judge?: { id: string } | { name: string; description?: string },
+  judge?: JudgeCheckInput["judge"],
 ) {
   const response = await app.request(
     `${origin}/api/judge/check`,

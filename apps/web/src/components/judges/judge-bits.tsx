@@ -1,13 +1,14 @@
 import type { JudgeStats, SquareJudge } from "@hb/contracts";
-import { Braces, Globe } from "lucide-react";
+import { BookOpen, Bot, Braces, FolderGit2, Globe } from "lucide-react";
 import { cn } from "../../lib/cn";
+import { KIT_URL } from "../../lib/judge";
 import { Avatar } from "../ui/avatar";
 import { radius, Squircle } from "../ui/squircle";
 import { TagHint } from "../ui/tag-hint";
 
 // What every list of 判定器 shares (docs/judge-square-design.md §8,
 // §15.4): its mark, the day it was deployed, whose it is, its numbers and
-// its tags.
+// its tags; and where writing one is told (§16.1).
 
 /** "10月28日" (another year's: "2025年10月28日"). */
 export function dayLabel(at: number, now = Date.now()) {
@@ -95,5 +96,32 @@ export function JudgeTags({ judge }: { judge: SquareJudge }) {
         </Squircle>
       )}
     </span>
+  );
+}
+
+/**
+ * 开发文档, 给 AI 的说明 and 本地开发包 (§16.1), where a 判定器 is
+ * written: in a new tab, so what is half written stays.
+ */
+export function JudgeHelpLinks({ className }: { className?: string }) {
+  return (
+    <div className={cn("flex flex-wrap gap-x-4 gap-y-1", className)}>
+      {[
+        { href: "/help/code", icon: BookOpen, label: "开发文档" },
+        { href: "/help/code#ai", icon: Bot, label: "给 AI 的说明" },
+        { href: KIT_URL, icon: FolderGit2, label: "本地开发包" },
+      ].map((entry) => (
+        <a
+          key={entry.href}
+          href={entry.href}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-sm text-accent-ink hover:underline"
+        >
+          <entry.icon className="size-4" aria-hidden="true" />
+          {entry.label} ↗
+        </a>
+      ))}
+    </div>
   );
 }

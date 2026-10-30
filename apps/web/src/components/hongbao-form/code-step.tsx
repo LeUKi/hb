@@ -8,13 +8,10 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
-  BookOpen,
-  Bot,
   Check,
   ClipboardPaste,
   Copy,
   FileUp,
-  FolderGit2,
   Info,
   X,
 } from "lucide-react";
@@ -25,11 +22,11 @@ import { haptic } from "../../lib/haptics";
 import {
   fetchJudgeVersion,
   fetchMyJudge,
-  KIT_URL,
   myJudgeKey,
   useMyJudges,
   useSquareJudges,
 } from "../../lib/judge";
+import { JudgeHelpLinks } from "../judges/judge-bits";
 import { SquarePicker } from "../judges/square-picker";
 import { Callout } from "../page/page";
 import { WindowDialog } from "../shell/window-dialog";
@@ -465,6 +462,7 @@ export function JudgeWriter({
   judge,
   gated,
   testsNote,
+  beforeDeploy,
 }: {
   form: FormState;
   update: Update;
@@ -474,6 +472,8 @@ export function JudgeWriter({
   judge: JudgeDeploy;
   gated: boolean;
   testsNote?: string;
+  /** Between tests.json and 部署: /judges/new's 设置 (§16.1). */
+  beforeDeploy?: ReactNode;
 }) {
   const check = judge.result?.check;
   const problemLines =
@@ -544,6 +544,7 @@ export function JudgeWriter({
         note={testsNote}
         onChange={setTests}
       />
+      {beforeDeploy}
       {!locked && <DeployArea judge={judge} frozen={frozen} gated={gated} />}
     </>
   );
@@ -1064,27 +1065,7 @@ export function CodeStep({
           </Reveal>
         </div>
       </Reveal>
-      {/* In a new tab: the form stays as it is. */}
-      {shown === "write" && (
-        <div className="flex flex-wrap gap-x-4 gap-y-1">
-          {[
-            { href: "/help/code", icon: BookOpen, label: "开发文档" },
-            { href: "/help/code#ai", icon: Bot, label: "给 AI 的说明" },
-            { href: KIT_URL, icon: FolderGit2, label: "本地开发包" },
-          ].map((entry) => (
-            <a
-              key={entry.href}
-              href={entry.href}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-sm text-accent-ink hover:underline"
-            >
-              <entry.icon className="size-4" aria-hidden="true" />
-              {entry.label} ↗
-            </a>
-          ))}
-        </div>
-      )}
+      {shown === "write" && <JudgeHelpLinks />}
       {locked ? (
         <>
           <p className="px-1 text-sm text-ink-2">{deadline ?? timeLine}</p>
