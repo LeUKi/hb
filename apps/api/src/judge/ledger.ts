@@ -11,6 +11,7 @@ import {
   formatSignedAmount,
   type LdcActivityInput,
   ldcTotalMinor,
+  type PublicQuantity,
 } from "@hb/contracts";
 import type { Json, Submission } from "../../../../kit/judge";
 import {
@@ -195,20 +196,76 @@ export async function poolLeft(env: ApiBindings, activity: ActivityRow) {
 }
 
 /**
- * What a protocol 5 红包 that has opened has left (奖池还剩, §4.1): the
- * pool less what was paid and everyone's pending, in one read; null for
- * one on an earlier protocol, or a draft.
+ * 奖池还剩 (§4.1, §4.5) of these 红包, in 分, in one read: for a protocol
+ * 5 红包 that has opened, the pool less what was paid and everyone's
+ * pending; for a 代码判定 draft (it opens on protocol 5), its whole pool.
+ * Others are not in it: they have shares.
  */
+export async function ledgerPools(
+  env: ApiBindings,
+  activityIds: string[],
+): Promise<Map<string, number>> {
+  if (activityIds.length === 0) return new Map();
+  const total = `CAST(ROUND(CAST(json_extract(a.config, '$.money.totalAmount') AS REAL) * 100) AS INTEGER)`;
+  const found = await env.DB.prepare(`SELECT a.id, MAX(0, CASE
+        WHEN a.opened_at IS NULL THEN ${total}
+        WHEN a.funding = 'balance'
+          THEN COALESCE((SELECT remaining_minor FROM balance_locks WHERE activity_id = a.id AND purpose = 'activity' AND status = 'active'), 0)
+            - c.pending_minor
+        ELSE ${total} - COALESCE((SELECT SUM(amount_minor) FROM reward_inventory WHERE activity_id = a.id), 0)
+          - c.pending_minor END) AS left
+    FROM activities a LEFT JOIN activity_code c ON c.activity_id = a.id
+    WHERE a.id IN (SELECT value FROM json_each(?)) AND a.participation_mode = 'code'
+      AND (a.opened_at IS NULL OR c.protocol >= 5)`)
+    .bind(JSON.stringify(activityIds))
+    .all<{ id: string; left: number | null }>();
+  return new Map(
+    found.results.flatMap((row) =>
+      row.left === null ? [] : [[row.id, row.left] as const],
+    ),
+  );
+}
+
+/** Only 代码判定 may have a pool: a list without one reads nothing more. */
+const codeIds = (items: { id: string; participationMode?: string }[]) =>
+  items.flatMap((item) => (item.participationMode === "code" ? [item.id] : []));
+
+/**
+ * Public reads of a list (广场, a topic's): 奖池还剩 for quantity where
+ * one has it, never shares it has not.
+ */
+export async function withPoolQuantities<
+  T extends {
+    id: string;
+    participationMode?: string;
+    quantity: PublicQuantity;
+  },
+>(env: ApiBindings, items: T[]): Promise<T[]> {
+  const pools = await ledgerPools(env, codeIds(items));
+  return items.map((item) => {
+    const left = pools.get(item.id);
+    return left === undefined
+      ? item
+      : { ...item, quantity: { mode: "pool", left: formatSignedAmount(left) } };
+  });
+}
+
+/** Summaries (one's own lists, payments, the 站长's): 奖池还剩 beside them. */
+export async function withPoolLeft<
+  T extends { id: string; participationMode?: string },
+>(env: ApiBindings, items: T[]): Promise<(T & { poolLeft?: string })[]> {
+  const pools = await ledgerPools(env, codeIds(items));
+  return items.map((item) => {
+    const left = pools.get(item.id);
+    return left === undefined
+      ? item
+      : { ...item, poolLeft: formatSignedAmount(left) };
+  });
+}
+
+/** One 红包's 奖池还剩 (ledgerPools); null when it has shares instead. */
 export async function ledgerPool(env: ApiBindings, activityId: string) {
-  return env.DB.prepare(`SELECT MAX(0, (CASE WHEN a.funding = 'balance'
-        THEN COALESCE((SELECT remaining_minor FROM balance_locks WHERE activity_id = a.id AND purpose = 'activity' AND status = 'active'), 0)
-        ELSE CAST(ROUND(CAST(json_extract(a.config, '$.money.totalAmount') AS REAL) * 100) AS INTEGER)
-          - COALESCE((SELECT SUM(amount_minor) FROM reward_inventory WHERE activity_id = a.id), 0) END)
-      - c.pending_minor) AS left
-    FROM activity_code c JOIN activities a ON a.id = c.activity_id
-    WHERE c.activity_id = ? AND c.protocol >= 5 AND a.opened_at IS NOT NULL`)
-    .bind(activityId)
-    .first<number>("left");
+  return (await ledgerPools(env, [activityId])).get(activityId) ?? null;
 }
 
 /** Everyone's pending together (protocol 5). */

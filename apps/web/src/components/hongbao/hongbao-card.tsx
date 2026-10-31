@@ -14,6 +14,9 @@ import { coverCells } from "./cover-cells";
 
 /** One line for how much is left, the way the cover's quantity cell says it. */
 export function quantityLine(activity: HongbaoActivity, view: PublicView) {
+  // Protocol 5: "奖池还剩 17.92 LDC（30%）".
+  if (view.quantity.kind === "pool")
+    return `奖池还剩 ${view.quantity.left} LDC${view.quantity.share ? `（${view.quantity.share}）` : ""}`;
   const cell = coverCells(activity, view)[1];
   // "已领 3 / 10 份", but "余量有限": a space only before a number.
   return `${cell.label}${/^\d/.test(cell.value) ? " " : ""}${cell.value}`;

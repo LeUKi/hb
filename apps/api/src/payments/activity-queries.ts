@@ -16,6 +16,7 @@ import { ownedActivity } from "../activities/storage";
 import { createDb } from "../db/client";
 import { activities, claims, paymentTasks, users } from "../db/schema";
 import type { ApiBindings } from "../env";
+import { withPoolLeft } from "../judge/ledger";
 
 type Status = "all" | Exclude<ActivityStatus, "draft">;
 type TargetStatus = "all" | "pending" | "confirmed";
@@ -111,14 +112,17 @@ export async function listPaymentActivities(
   const page = rows.slice(0, 20);
   const last = page.at(-1);
   return {
-    items: page.map((row) => {
-      const summary = projectActivitySummary(row);
-      return {
-        ...summary,
-        ...activityListFields(row, summary.status),
-        merchantId: row.merchantId ?? activityNotFound(),
-      };
-    }),
+    items: await withPoolLeft(
+      env,
+      page.map((row) => {
+        const summary = projectActivitySummary(row);
+        return {
+          ...summary,
+          ...activityListFields(row, summary.status),
+          merchantId: row.merchantId ?? activityNotFound(),
+        };
+      }),
+    ),
     total: Number(count?.count ?? 0),
     nextCursor:
       rows.length > 20 && last

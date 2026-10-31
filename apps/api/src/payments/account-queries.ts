@@ -15,6 +15,7 @@ import { projectActivitySummary } from "../activities/service";
 import { createDb } from "../db/client";
 import { activities } from "../db/schema";
 import type { ApiBindings } from "../env";
+import { ledgerPools } from "../judge/ledger";
 import { getMerchant } from "./merchants";
 import { merchantPaymentDetail } from "./queries";
 
@@ -205,7 +206,7 @@ export async function listAccountPayments(
   const ids = [...new Set(items.map((row) => row.activity_id))];
   const groups: Record<string, AccountPaymentGroup> = {};
   if (ids.length > 0) {
-    const [activityRows, paid] = await Promise.all([
+    const [activityRows, paid, pools] = await Promise.all([
       createDb(env.DB)
         .select()
         .from(activities)
@@ -218,15 +219,19 @@ export async function listAccountPayments(
       )
         .bind(...ids)
         .all<{ id: string; minor: number }>(),
+      // Protocol 5 has no shares: 奖池还剩 instead (multi-prize §4.5).
+      ledgerPools(env, ids),
     ]);
     const confirmed = new Map(
       paid.results.map((row) => [row.id, Number(row.minor)]),
     );
     for (const row of activityRows) {
       const activity = projectActivitySummary(row);
+      const left = pools.get(row.id);
       groups[row.id] = {
         ...activity,
         ...activityListFields(row, activity.status),
+        ...(left !== undefined ? { poolLeft: formatAmount(left) } : {}),
         confirmedAmount: formatAmount(confirmed.get(row.id) ?? 0),
       };
     }

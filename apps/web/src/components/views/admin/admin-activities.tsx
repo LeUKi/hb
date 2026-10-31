@@ -74,7 +74,7 @@ function takenLine({ record, ...item }: Row) {
   const { activity, view } = record;
   if (activity.mode === "timed_draw") return `报名 ${item.registeredCount} 人`;
   if (view.quantity.kind === "pool")
-    return `${item.claimedCount} 人领到 · 奖池还剩 ${view.quantity.left}`;
+    return `${item.claimedCount} 人领到 · 奖池还剩 ${view.quantity.left}${view.quantity.share ? `（${view.quantity.share}）` : ""}`;
   return `参与 ${item.claimedCount} / ${item.totalCount}`;
 }
 

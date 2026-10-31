@@ -14,6 +14,7 @@ import {
   type CreateActivityInput,
   DEFAULT_DURATION_MS,
   formatAmount,
+  formatSignedAmount,
   fundingOf,
   type LdcActivityInput,
   type LdcOpeningBlockedReason,
@@ -46,6 +47,7 @@ import { activities, users } from "../db/schema";
 import type { ApiBindings } from "../env";
 import { passedCheck, requireCodeHongbao } from "../judge/check";
 import { migrateJudgesOf } from "../judge/judges";
+import { ledgerPool, withPoolLeft } from "../judge/ledger";
 import {
   CODE_OPENING_ALLOWED,
   codeOpeningBlocked,
@@ -434,8 +436,12 @@ async function managed(
     author(env, row.authorId),
     row.participationMode === "code" ? findJudgeRow(env, row.id) : undefined,
   ]);
+  const pool =
+    row.participationMode === "code" ? await ledgerPool(env, row.id) : null;
   return {
     ...projectActivitySummary(snapshot.row),
+    // Protocol 5 has no shares: 奖池还剩 instead (multi-prize §4.5).
+    ...(pool !== null ? { poolLeft: formatSignedAmount(pool) } : {}),
     author: activityAuthor,
     config: storedActivitySchema.parse({
       ...configuration(snapshot.row),
@@ -509,19 +515,20 @@ export async function getPublicActivity(
   // A draft too, for whoever has its link (05 §5): 未开放.
   if (!row) activityNotFound();
   const sender = row.authorId === viewerId;
-  const [drawProof, scope, judge] = await Promise.all([
+  const [drawProof, scope, judge, pool] = await Promise.all([
     publicDrawProof(env, row),
     publicScopeWithPeople(env, configuration(row).scope),
     publicJudge(env, row),
+    row.participationMode === "code" ? ledgerPool(env, row.id) : null,
   ]);
   return {
     ...(await withPageSwitch(
       env,
       projectPublicActivity(row, await author(env, row.authorId)),
     )),
-    // Protocol 5 has no shares: 奖池还剩 instead.
-    ...(judge?.unclaimed !== undefined
-      ? { quantity: { mode: "pool" as const, left: judge.unclaimed } }
+    // Protocol 5 has no shares: 奖池还剩 instead, a draft's whole pool too.
+    ...(pool !== null
+      ? { quantity: { mode: "pool" as const, left: formatSignedAmount(pool) } }
       : {}),
     ...(drawProof ? { drawProof } : {}),
     ...(judge ? { judge: sender ? judge : publicJudgeOf(row, judge) } : {}),
@@ -662,10 +669,13 @@ export async function listActivities(
   const page = rows.slice(0, 20);
   const last = page.at(-1);
   return {
-    items: page.map((row) => {
-      const summary = projectActivitySummary(row);
-      return { ...summary, ...activityListFields(row, summary.status) };
-    }),
+    items: await withPoolLeft(
+      env,
+      page.map((row) => {
+        const summary = projectActivitySummary(row);
+        return { ...summary, ...activityListFields(row, summary.status) };
+      }),
+    ),
     total: historyStatusTotal(statusCounts, status),
     statusCounts,
     nextCursor:

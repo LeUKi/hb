@@ -77,12 +77,16 @@ export function sentRecordOf(
     topicUrl: summary.topicUrl,
     openedAt: summary.openedAt,
     deadlineAt: summary.deadlineAt,
-    quantity: {
-      mode: "exact",
-      total: summary.totalCount,
-      claimed: summary.claimedCount,
-      remaining: Math.max(0, summary.totalCount - summary.claimedCount),
-    },
+    // Protocol 5 has no shares: totalCount is the pool in 分 there.
+    quantity:
+      summary.poolLeft !== undefined
+        ? { mode: "pool", left: summary.poolLeft }
+        : {
+            mode: "exact",
+            total: summary.totalCount,
+            claimed: summary.claimedCount,
+            remaining: Math.max(0, summary.totalCount - summary.claimedCount),
+          },
     reward: summary.reward,
     beforeInfo: "",
     ...(summary.paymentMode ? { paymentMode: summary.paymentMode } : {}),

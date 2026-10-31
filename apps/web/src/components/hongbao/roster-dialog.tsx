@@ -40,7 +40,9 @@ function metaLine(activity: HongbaoActivity, view: PublicView) {
     if (draw.registered === null) parts.push("名额不公开");
     else parts.push(`报名 ${draw.registered} 人`, `抽 ${activity.shares} 人`);
   } else if (quantity.kind === "pool") {
-    parts.push(`奖池还剩 ${quantity.left} LDC`);
+    parts.push(
+      `奖池还剩 ${quantity.left} LDC${quantity.share ? `（${quantity.share}）` : ""}`,
+    );
   } else if (quantity.kind === "fuzzy") {
     parts.push(
       quantity.level === "empty"

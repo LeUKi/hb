@@ -932,7 +932,7 @@ test.describe("代码判定红包", () => {
     await mockLive(page);
     await openApp(page, path);
     // 奖池还剩, not 已领 x / y 份; no 每份至少 under the pool.
-    await expect(page.getByText("奖池还剩", { exact: true })).toBeVisible();
+    await expect(page.getByText("奖池还剩 70%", { exact: true })).toBeVisible();
     await expect(page.getByText("0.70 LDC", { exact: true })).toBeVisible();
     await expect(page.getByText(/每份至少/)).toHaveCount(0);
     await expect(page.getByText(/ 份$/)).toHaveCount(0);

@@ -823,6 +823,11 @@ export type ActivitySummary = {
   topicUrl: string | null;
   totalCount: number;
   claimedCount: number;
+  /**
+   * 代码判定, protocol 5 (docs/multi-prize-design.md §4.5): no shares, so
+   * 奖池还剩 — totalCount there is the pool in 分, not a count.
+   */
+  poolLeft?: string;
   reward?: ActivityRewardSummary;
   paymentMode?: PaymentMode;
   draw?: DrawSummary;

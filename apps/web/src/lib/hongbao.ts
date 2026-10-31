@@ -153,8 +153,11 @@ export type PublicView = {
   quantity:
     | { kind: "exact"; taken: number; total: number }
     | { kind: "fuzzy"; level: FuzzyLevel }
-    /** 代码判定, protocol 5: no shares, 奖池还剩 (multi-prize §4.1). */
-    | { kind: "pool"; left: string };
+    /**
+     * 代码判定, protocol 5: no shares, 奖池还剩 (multi-prize §4.1), and
+     * how much of the whole that is ("30%").
+     */
+    | { kind: "pool"; left: string; share: string };
   draw: {
     state: DrawState;
     /** Sign-ups, winners and 报名上限 are hidden when quantity is fuzzy. */
@@ -302,6 +305,20 @@ const fuzzyLevelOf = (activity: PublicActivity): FuzzyLevel => {
   return "plenty";
 };
 
+/**
+ * What 奖池还剩 is of the whole pool: "30%", "不到 1%" while any is left,
+ * "100%" only when none was taken.
+ */
+export function poolShare(left: string, total: string | undefined) {
+  const whole = Number(total);
+  const part = Number(left);
+  if (!(whole > 0)) return "";
+  if (part <= 0) return "0%";
+  const percent = (part / whole) * 100;
+  if (percent < 1) return "不到 1%";
+  return `${part >= whole ? 100 : Math.min(99, Math.floor(percent))}%`;
+}
+
 /** The public tier: anyone may see this. */
 export function publicViewOf(
   activity: PublicActivity,
@@ -325,7 +342,14 @@ export function publicViewOf(
             total: activity.quantity.total,
           }
         : activity.quantity.mode === "pool"
-          ? { kind: "pool", left: activity.quantity.left }
+          ? {
+              kind: "pool",
+              left: activity.quantity.left,
+              share: poolShare(
+                activity.quantity.left,
+                activity.reward?.totalAmount,
+              ),
+            }
           : { kind: "fuzzy", level: fuzzyLevelOf(activity) },
     draw: draw
       ? {

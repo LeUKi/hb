@@ -52,6 +52,7 @@ import { balanceAttentionCounts } from "../balance/admin";
 import { createDb } from "../db/client";
 import { activities } from "../db/schema";
 import type { ApiBindings, ApiContext } from "../env";
+import { withPoolLeft } from "../judge/ledger";
 import { merchantPaymentDetail } from "../payments/queries";
 import {
   allowsRealClaim,
@@ -310,7 +311,9 @@ async function activitySummaries(env: ApiBindings, ids: string[]) {
     .select()
     .from(activities)
     .where(inArray(activities.id, ids));
-  return new Map(rows.map((row) => [row.id, adminSummary(row)] as const));
+  // Protocol 5 has no shares: 奖池还剩 instead (multi-prize §4.5).
+  const summaries = await withPoolLeft(env, rows.map(adminSummary));
+  return new Map(summaries.map((summary) => [summary.id, summary] as const));
 }
 
 function activityAuthor(row: Record<string, unknown>) {

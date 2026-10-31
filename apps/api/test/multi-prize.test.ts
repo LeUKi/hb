@@ -10,10 +10,12 @@ import {
 import {
   createActivity,
   getPublicActivity,
+  listActivities,
   openActivity,
 } from "../src/activities/service";
 import { app } from "../src/app";
 import { readAccount } from "../src/balance/ledger";
+import { listSquare } from "../src/discovery/service";
 import { judgeTimeline } from "../src/judge/record-views";
 import { stopCodeActivity } from "../src/judge/stop";
 import { createMerchant } from "../src/payments/merchants";
@@ -172,6 +174,31 @@ describe("能赢好几次 (protocol 5)", () => {
     const roster = await listPublicRecipients(bindings, opened.id);
     expect(roster.items).toHaveLength(1);
     expect(roster.items[0]?.speedTitle).toBeUndefined();
+  });
+
+  it("says 奖池还剩 everywhere, never shares: the 广场's cards, one's own list, a draft (its whole pool) — 2026-10-31, the 广场 said 已领 38 / 6000 份", async () => {
+    const input = { ...coded({}, { code: GAME, tests: TESTS }) };
+    const draft = await createActivity(bindings, author.id, {
+      requestId: crypto.randomUUID(),
+      activity: input,
+    });
+    expect((await getPublicActivity(bindings, draft.id)).quantity).toEqual({
+      mode: "pool",
+      left: "1.00",
+    });
+    const opened = await open();
+    await submit(opened.id, await actor(), "add 30");
+    const square = await listSquare(bindings, "all");
+    expect(
+      square.items.find((item) => item.id === opened.id)?.quantity,
+    ).toEqual({ mode: "pool", left: "0.70" });
+    const mine = await listActivities(bindings, author.id);
+    expect(mine.items.find((item) => item.id === opened.id)?.poolLeft).toBe(
+      "0.70",
+    );
+    expect(mine.items.find((item) => item.id === draft.id)?.poolLeft).toBe(
+      "1.00",
+    );
   });
 
   it("answers the same submission sent again with the same judgment", async () => {

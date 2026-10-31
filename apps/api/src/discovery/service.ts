@@ -34,6 +34,7 @@ import {
   users,
 } from "../db/schema";
 import type { ApiBindings } from "../env";
+import { withPoolQuantities } from "../judge/ledger";
 import {
   AttemptCooldownError,
   assertAttemptAllowed,
@@ -216,7 +217,7 @@ async function list(
   );
   return {
     total: Number(count?.total ?? 0),
-    items: await withPageSwitches(env, items),
+    items: await withPoolQuantities(env, await withPageSwitches(env, items)),
     nextCursor:
       rows.length > PAGE_SIZE && last
         ? btoa(

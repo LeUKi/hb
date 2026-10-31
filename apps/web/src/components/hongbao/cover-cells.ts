@@ -100,7 +100,7 @@ function quantityCell(view: PublicView, judged?: number): CoverCell {
   // pending (multi-prize §4.1), and how often its code judged.
   if (quantity.kind === "pool")
     return {
-      label: "奖池还剩",
+      label: quantity.share ? `奖池还剩 ${quantity.share}` : "奖池还剩",
       value: `${quantity.left} LDC`,
       ...(judged !== undefined ? { judged } : {}),
     };
