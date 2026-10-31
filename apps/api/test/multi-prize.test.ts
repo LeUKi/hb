@@ -14,6 +14,7 @@ import {
 } from "../src/activities/service";
 import { app } from "../src/app";
 import { readAccount } from "../src/balance/ledger";
+import { judgeTimeline } from "../src/judge/record-views";
 import { stopCodeActivity } from "../src/judge/stop";
 import { createMerchant } from "../src/payments/merchants";
 import { advanceAttemptCooldown } from "./advance-attempt-cooldown";
@@ -124,6 +125,21 @@ describe("能赢好几次 (protocol 5)", () => {
     expect(await submit(opened.id, player, "add 20")).toMatchObject({
       moved: { added: "0.20", pending: "0.20" },
     });
+    // 判定记录 reads a judgment that took off (2026-10-31: it answered 500).
+    const timeline = await judgeTimeline(
+      bindings,
+      opened.id,
+      author.id,
+      "all",
+      null,
+    );
+    expect(
+      timeline?.items.map((row) => row.kind === "judged" && row.moved),
+    ).toEqual([
+      { added: "0.20", pending: "0.20", settled: false },
+      { added: "-0.30", pending: "0.00", settled: false },
+      { added: "0.30", pending: "0.30", settled: false },
+    ]);
     // The code is given their pending and their own state and view back.
     const mine = (await submit(opened.id, player, "mine")) as Extract<
       ClaimResult,

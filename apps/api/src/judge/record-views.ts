@@ -4,6 +4,7 @@
 // typed is decrypted here as for 我的提交 (mine.ts); none of it is public.
 import {
   formatAmount,
+  formatSignedAmount,
   type JudgeNote,
   type JudgeRecordFacts,
   type JudgeRecordFilter,
@@ -84,7 +85,8 @@ async function judgedRow(
     row.moveAfter === null || row.moveBefore === null
       ? null
       : {
-          added: formatAmount(row.moveAfter - row.moveBefore),
+          // Signed: protocol 5 takes off too (formatAmount refuses it).
+          added: formatSignedAmount(row.moveAfter - row.moveBefore),
           pending: formatAmount(row.moveAfter),
           settled: row.moveSettles === 1,
         };
