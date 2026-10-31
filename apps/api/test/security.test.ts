@@ -73,6 +73,12 @@ describe("sensitive value protection", () => {
     ).rejects.toThrow();
   });
 
+  it("round-trips text far larger than one call's arguments (a 256 KB judge.js, its tests)", async () => {
+    const large = `${"判定器".repeat(60_000)}${"x".repeat(200_000)}`;
+    const ciphertext = await encryptString(large, secrets, "judge:code");
+    expect(await decryptString(ciphertext, secrets, "judge:code")).toBe(large);
+  });
+
   it("reads old values after rotation and rejects missing keys or tampering", async () => {
     const ciphertext = await encryptString("secret", secrets, "purpose");
     const rotated = { ...secrets, ENCRYPTION_KEY_VERSION: "second" };

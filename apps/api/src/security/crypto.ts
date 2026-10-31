@@ -240,7 +240,12 @@ function hexEncode(bytes: Uint8Array) {
 }
 
 function base64UrlEncode(bytes: Uint8Array) {
-  return btoa(String.fromCharCode(...bytes))
+  // A piece at a time: spreading a large array (a 200 KB tests.json) into
+  // one call overflows the stack.
+  let binary = "";
+  for (let at = 0; at < bytes.length; at += 0x8000)
+    binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
+  return btoa(binary)
     .replaceAll("+", "-")
     .replaceAll("/", "_")
     .replaceAll("=", "");
