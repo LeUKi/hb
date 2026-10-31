@@ -502,6 +502,54 @@ test.describe("判定器广场", () => {
     ).toBeVisible();
   });
 
+  test("金额参数删到 0、删空、前导零、超长都不让页面出错，删到 0 时说要大于 0（2026-10-31，用户：删到 0 整个页面崩溃）", async ({
+    page,
+  }) => {
+    const { state } = await mockSquare(page, member);
+    const declarations = guessPage.version?.declarations;
+    if (!declarations) throw new Error("NO_DECLARATIONS");
+    state.mine = {
+      ...mineDetail(),
+      usable: {
+        n: 1,
+        declarations: {
+          ...declarations,
+          params: [
+            ...declarations.params,
+            {
+              key: "small",
+              label: "小奖金额",
+              type: "money",
+              default: 10,
+              min: 1,
+            },
+          ],
+        },
+        network: null,
+      },
+    };
+    await openApp(page, `/judges/${MINE}`);
+    const small = page.locator("#hb-try-param-small");
+    await expect(small).toHaveValue("0.10");
+    // As one deletes it a key at a time.
+    await small.click();
+    await small.press("End");
+    for (const left of ["0.1", "0.", "0"]) {
+      await small.press("Backspace");
+      await expect(small).toHaveValue(left);
+    }
+    await expect(
+      page.getByText("小奖金额要大于 0，最多两位小数"),
+    ).toBeVisible();
+    for (const typed of ["", "00.5", "9".repeat(20), "0.05"]) {
+      await small.fill(typed);
+      await expect(small).toHaveValue(typed);
+    }
+    await expect(
+      page.getByRole("heading", { name: "参数和试一试" }),
+    ).toBeVisible();
+  });
+
   test("自己的判定器页：加入判定器广场先确认，能不勾允许精选；退出也先确认；被站长撤下时写原因，开关灰掉；顶上能自己写一个", async ({
     page,
   }) => {

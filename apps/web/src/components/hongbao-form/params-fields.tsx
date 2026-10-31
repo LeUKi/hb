@@ -27,11 +27,18 @@ function integerOf(text: string): number | string {
     : text;
 }
 
-/** What an LDC box holds: 分, or the text when it is no amount. */
+/**
+ * What an LDC box holds: 分, or the text when it is no amount — the rule
+ * (amountToMinor) throws on 0 and the like, and is read as it renders, so
+ * it is caught here and the field says what is wrong under its box.
+ */
 function moneyOf(text: string): number | string {
-  return /^\d+(\.\d{1,2})?$/.test(text.trim())
-    ? amountToMinor(text.trim())
-    : text;
+  if (!/^\d+(\.\d{1,2})?$/.test(text.trim())) return text;
+  try {
+    return amountToMinor(text.trim());
+  } catch {
+    return text;
+  }
 }
 
 /** A value shown in its box: amounts in LDC. */
