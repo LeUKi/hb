@@ -70,6 +70,9 @@ export function liveMessage(activity: PublicActivity, seq: number) {
 export const liveMine = () =>
   JSON.stringify({ type: "mine" } satisfies ActivityLiveMessage);
 
+export const liveQueued = (ahead: number) =>
+  JSON.stringify({ type: "queued", ahead } satisfies ActivityLiveMessage);
+
 export const liveViewers = (count: number, seq: number) =>
   JSON.stringify({ type: "viewers", count, seq } satisfies ActivityLiveMessage);
 

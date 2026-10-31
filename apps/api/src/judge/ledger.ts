@@ -18,7 +18,6 @@ import {
   defaultCount,
   type LedgerReading,
   moveMoney,
-  othersProblem,
 } from "../../../../kit/runtime/index.mjs";
 import { getClaimDetail } from "../activities/claim-queries";
 import {
@@ -310,45 +309,6 @@ export function ledgerHongbao(
 }
 
 /**
- * The people a judgment's others name, and the first that may not be
- * named (ledger.mjs othersProblem): judged here and not settled.
- */
-export async function othersOf(
-  env: ApiBindings,
-  activityId: string,
-  reading: LedgerReading,
-  self: number,
-): Promise<
-  { problem: string } | { people: Omit<PartRow, "ownState" | "ownView">[] }
-> {
-  const ids = reading.others.map((other) => String(other.id));
-  const rows =
-    ids.length === 0
-      ? []
-      : (
-          await env.DB.prepare(`SELECT p.user_id AS userId, u.external_id AS externalId, p.pending_minor AS pending,
-            p.settled_at AS settledAt FROM code_judge_people p JOIN users u ON u.id = p.user_id
-            WHERE p.activity_id = ? AND u.external_id IN (${ids.map(() => "?").join(",")})`)
-            .bind(activityId, ...ids)
-            .all<Omit<PartRow, "ownState" | "ownView">>()
-        ).results;
-  const byId = new Map(rows.map((row) => [Number(row.externalId), row]));
-  const problem = othersProblem(reading.others, self, (id) => {
-    const row = byId.get(id);
-    if (!row) return "unknown";
-    return row.settledAt !== null ? "settled" : null;
-  });
-  if (problem) return { problem };
-  return {
-    people: reading.others.map((other) => {
-      const row = byId.get(other.id);
-      if (!row) throw new Error("A named other has no part");
-      return row;
-    }),
-  };
-}
-
-/**
  * Settles one person (§2), in a batch: their pending is what they get, a
  * claim when it is not 0 — its share next in line, the way it reaches them
  * (🐟额 or a payment, shareStatements) — and their part marked settled at
@@ -539,16 +499,18 @@ const sealed = (env: ApiBindings, value: Json, data: string) =>
   encryptString(JSON.stringify(value), env, data);
 
 /**
- * A protocol 5 judgment, written (§2, §3.2): the submission and its input,
- * the judgment with what it wrote (ledger_ciphertext), each person it
- * moved (code_judgment_moves, written before their pending moves), the
- * one judged's part and the others' (pending as ledger.mjs moves it, own
- * state and view as written), the shared state and view, its line in 动态,
- * 用量, then whoever it settles, the one judged first; and when it ends the
- * 红包 (end, or the pool taken), the end, last. All or nothing. What moved
- * comes back for the answer and for telling the others.
+ * A protocol 5 judgment's batch (§2, §3.2), not yet written: the submission
+ * and its input, the judgment with what it wrote (ledger_ciphertext), each
+ * person it moved (code_judgment_moves, written before their pending
+ * moves), the one judged's part and the others' (pending as ledger.mjs
+ * moves it, own state and view as written), the shared state and view,
+ * its line in 动态, 用量, then whoever it settles, the one judged first;
+ * and when it ends the 红包 (end, or the pool taken), the end, last.
+ * Several of one 红包 go in one batch (batch.ts), each as it would on its
+ * own. What moved and settled comes back, for the answer, for telling the
+ * others, and for the next one judged after it.
  */
-export async function writeLedgerJudgment(
+export async function ledgerJudgmentStatements(
   env: ApiBindings,
   judgment: LedgerJudgment,
 ) {
@@ -673,7 +635,7 @@ export async function writeLedgerJudgment(
     ),
   ]);
   // Whoever it settles, the one judged first, with what they then have.
-  const settling = [];
+  const settling: Awaited<ReturnType<typeof settlementStatements>>[] = [];
   for (const [index, write] of writes.entries()) {
     if (!write.settle) continue;
     const after = moved.moves[index]?.after ?? 0;
@@ -842,11 +804,34 @@ export async function writeLedgerJudgment(
         ]
       : []),
   ];
-  await env.DB.batch(statements);
   return {
+    statements,
     rowId,
     ended,
     /** Those it moved besides the one judged, to tell. */
     others: writes.slice(1).map((write) => write.userId),
+    /** Each one moved, the one judged first: pending before and after. */
+    moves: writes.map((write, index) => ({
+      userId: write.userId,
+      before: moved.moves[index]?.before ?? 0,
+      after: moved.moves[index]?.after ?? 0,
+      settles: write.settle,
+      state: write.state,
+      view: write.view,
+    })),
+    /** Whoever it settled, with what, and the claim when it paid. */
+    settled: writes.flatMap((write, index) =>
+      write.settle
+        ? [
+            {
+              userId: write.userId,
+              amount: moved.moves[index]?.after ?? 0,
+              claimId:
+                settling[writes.slice(0, index).filter((w) => w.settle).length]
+                  ?.claimId ?? null,
+            },
+          ]
+        : [],
+    ),
   };
 }

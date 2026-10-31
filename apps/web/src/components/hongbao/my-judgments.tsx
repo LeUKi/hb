@@ -3,10 +3,11 @@ import { useRouter } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
 import { AnimatePresence } from "motion/react";
-import { type ReactNode, useEffect, useId, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { NETWORK_LIMITS } from "../../../../../kit/runtime/network.mjs";
 import { cn } from "../../lib/cn";
 import { moveLabel, useMyJudgments } from "../../lib/judge";
+import { liveJudgedAtom, liveQueuedAtom } from "../../lib/live-state";
 import { switchOverlay } from "../../lib/overlay";
 import { clockSeconds } from "../../lib/roster-time";
 import { useSessionUser } from "../../lib/session";
@@ -188,16 +189,51 @@ const spoken = (item: MyJudgment) =>
   }`;
 
 /**
+ * How many are judged before this submission (docs/programmable-hongbao-
+ * design.md §3 一批一起写): where it joined the queue, less those judged
+ * since, as 已判定 N 次 counts them; 0 once it is its turn.
+ */
+function useAhead(
+  activityId: string,
+  since: number | null,
+  judgedRead: number,
+) {
+  const queued = useAtomValue(liveQueuedAtom);
+  const pushed = useAtomValue(liveJudgedAtom);
+  const judged = Math.max(
+    judgedRead,
+    pushed?.id === activityId ? pushed.count : 0,
+  );
+  const joined =
+    queued?.id === activityId && since !== null && queued.at >= since
+      ? queued
+      : null;
+  // The count when it joined: those judged after it are the ones ahead.
+  const base = useRef<{ at: number; judged: number } | null>(null);
+  if (joined && base.current?.at !== joined.at)
+    base.current = { at: joined.at, judged };
+  if (!joined || !base.current) return 0;
+  return Math.max(0, joined.ahead - (judged - base.current.judged));
+}
+
+/**
  * 判定中 for 2 s (`since` the press, null once answered): why it is taking
- * longer, under its card (02 §4), folding away with the answer.
+ * longer, under its card (02 §4), folding away with the answer. Waiting
+ * behind others, at once: 前面还有 3 个人.
  */
 function StillJudging({
+  activityId,
   since,
   network,
+  judged,
 }: {
+  activityId: string;
   since: number | null;
   network: boolean;
+  /** 已判定 N 次 as the 红包 was read. */
+  judged: number;
 }) {
+  const ahead = useAhead(activityId, since, judged);
   const [late, setLate] = useState(false);
   useEffect(() => {
     setLate(false);
@@ -206,11 +242,15 @@ function StillJudging({
     return () => window.clearTimeout(timer);
   }, [since]);
   return (
-    <Reveal show={since !== null && late}>
+    <Reveal show={since !== null && (late || ahead > 0)}>
       <p className="px-2.5 text-xs text-ink-3">
-        {network
-          ? `判定器在联网，最多等 ${NETWORK_LIMITS.judgmentMs / 1000} 秒`
-          : "还在判定…"}
+        <MorphLabel align="start" fit={false}>
+          {ahead > 0
+            ? `前面还有 ${ahead} 个人`
+            : network
+              ? `判定器在联网，最多等 ${NETWORK_LIMITS.judgmentMs / 1000} 秒`
+              : "还在判定…"}
+        </MorphLabel>
       </p>
     </Reveal>
   );
@@ -315,8 +355,10 @@ export function JudgmentRecord({ activityId }: { activityId: string }) {
                   after={
                     index === 0 ? (
                       <StillJudging
+                        activityId={activityId}
                         since={pending?.at ?? null}
                         network={Boolean(network)}
+                        judged={activity?.judge?.judged ?? 0}
                       />
                     ) : undefined
                   }

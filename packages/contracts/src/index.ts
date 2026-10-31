@@ -929,6 +929,12 @@ export type PublicActivity = {
  */
 export type ActivityLiveMessage =
   | { type: "mine" }
+  /**
+   * 代码判定, to the one who sent it (docs/programmable-hongbao-design.md
+   * §3 一批一起写): how many are judged before their submission, once, as
+   * it joins the queue; the page counts down by 已判定 N 次.
+   */
+  | { type: "queued"; ahead: number }
   | ((
       | { type: "activity"; activity: PublicActivity }
       | { type: "viewers"; count: number }

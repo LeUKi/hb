@@ -17,6 +17,7 @@ import {
   liveActivityAtom,
   liveAnnouncementsAtom,
   liveJudgedAtom,
+  liveQueuedAtom,
   liveViewAtom,
   liveViewersAtom,
   mergeAnnouncements,
@@ -121,6 +122,7 @@ export function useActivityLive(
   const setLive = useSetAtom(liveActivityAtom);
   const setViewers = useSetAtom(liveViewersAtom);
   const setJudged = useSetAtom(liveJudgedAtom);
+  const setQueued = useSetAtom(liveQueuedAtom);
   const setView = useSetAtom(liveViewAtom);
   const setAnnounced = useSetAtom(liveAnnouncementsAtom);
   const wantNow = useRef(want);
@@ -209,6 +211,10 @@ export function useActivityLive(
         }
         if (message?.type === "mine") {
           readOwn(client, id, userId, false);
+          return;
+        }
+        if (message?.type === "queued") {
+          setQueued({ id, ahead: message.ahead, at: Date.now() });
           return;
         }
         if (typeof message?.seq === "number") {
@@ -320,6 +326,7 @@ export function useActivityLive(
       // and the read alone may be older (a turn-down pushes nothing else).
       // So are the view and 动态 pushed with it.
       setJudged((current) => (current?.id === id ? null : current));
+      setQueued((current) => (current?.id === id ? null : current));
       setView((current) => (current?.id === id ? null : current));
       setAnnounced((current) => (current?.id === id ? null : current));
     };
@@ -331,6 +338,7 @@ export function useActivityLive(
     setLive,
     setViewers,
     setJudged,
+    setQueued,
     setView,
     setAnnounced,
   ]);

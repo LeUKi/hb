@@ -23,6 +23,17 @@ export const liveViewersAtom = atom<{ id: string; count: number } | null>(null);
 export const liveJudgedAtom = atom<{ id: string; count: number } | null>(null);
 
 /**
+ * 代码判定 (docs/programmable-hongbao-design.md §3 一批一起写): the viewer's
+ * submission joined the queue with `ahead` before it, at `at`; the page
+ * counts down by 已判定 N 次 from there.
+ */
+export const liveQueuedAtom = atom<{
+  id: string;
+  ahead: number;
+  at: number;
+} | null>(null);
+
+/**
  * 代码判定, protocol 4 (docs/judge-page-design.md §2), pushed with it: what
  * everyone sees (the read's or this, whichever is later), and the lines
  * added to 动态 since the page connected, newest first, the latest

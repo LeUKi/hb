@@ -45,16 +45,8 @@ import {
   digestPassword,
   encryptString,
 } from "../security/crypto";
-import {
-  judgedResult,
-  ledgerClaimsOf,
-  ledgerHongbao,
-  othersOf,
-  ownPart,
-  pendingTotal,
-  poolLeft,
-  writeLedgerJudgment,
-} from "./ledger";
+import { judgeBatch, type QueuedJudgment } from "./batch";
+import { poolLeft } from "./ledger";
 import { judgedParams } from "./params";
 import {
   JUDGE_WAIT_MS,
@@ -70,33 +62,19 @@ type CodeClaim = Extract<ClaimActivityInput, { participationMode: "code" }>;
 
 /** Failures in a row that pause claims (§3). */
 export const FAILURES_TO_PAUSE = 5;
-/** Submissions a 红包 takes a second (§3, 暂定); more wait, unjudged. */
-const PER_SECOND = 20;
 /** A 联网 红包's claims waiting at once, the one judged too (§9.3). */
 const NETWORK_WAITING = 3;
-const SANDBOXES = 4;
+export const SANDBOXES = 4;
 
 /** A 红包's addresses (activity_code.network), or null without network. */
 export const networkOf = (row: JudgeRow) =>
   row.network === null ? null : (JSON.parse(row.network) as string[]);
 
-const recent = new Map<string, number[]>();
-
-function busy(activityId: string, now = Date.now()) {
-  const times = (recent.get(activityId) ?? []).filter(
-    (time) => time > now - 1000,
-  );
-  if (times.length >= PER_SECOND) return true;
-  times.push(now);
-  recent.set(activityId, times);
-  return false;
-}
-
 /** Decrypted once per isolate: claimed inputs never change. */
 const claimedInputs = new Map<string, string>();
 const codes = new Map<string, string>();
 
-async function codeOf(env: ApiBindings, row: JudgeRow) {
+export async function codeOf(env: ApiBindings, row: JudgeRow) {
   const cached = codes.get(row.activityId);
   if (cached !== undefined) return cached;
   const code = await decryptString(
@@ -108,7 +86,7 @@ async function codeOf(env: ApiBindings, row: JudgeRow) {
   return code;
 }
 
-async function stateOf(env: ApiBindings, row: JudgeRow) {
+export async function stateOf(env: ApiBindings, row: JudgeRow) {
   if (row.stateCiphertext === null) return null;
   return JSON.parse(
     await decryptString(
@@ -162,10 +140,63 @@ async function claimsOf(env: ApiBindings, activityId: string) {
   );
 }
 
-const failureKind = (
+export const failureKind = (
   failure: Exclude<SandboxFailure, "unavailable" | "load">,
 ): "threw" | "timeout" | "invalid" | "memory" =>
   failure === "no-judge" ? "invalid" : failure;
+
+const tooMany = () =>
+  new ActivityError(429, "CODE_BUSY", "这个红包同时提交的人太多，请稍后再试。");
+
+/**
+ * 排队以前 (docs/programmable-hongbao-design.md §3, 一批一起写): the checks
+ * of this person alone, made before the 红包's queue so several make
+ * theirs at once. `{ item }` waits for a batch (batch.ts); `{ alone }` is
+ * judged on its own (claimByCode): an answer to an earlier submission, an
+ * earlier protocol, 联网.
+ */
+export async function admitCodeClaim(
+  env: ApiBindings,
+  activityId: string,
+  userId: string,
+  input: CodeClaim,
+  humanVerified: boolean,
+): Promise<{ item: QueuedJudgment } | { alone: true }> {
+  const { fingerprint } = await participationRequest(
+    env,
+    activityId,
+    input,
+    "claim",
+  );
+  const admission = await admitClaim(
+    env,
+    activityId,
+    userId,
+    input.submissionId,
+    fingerprint,
+    "code",
+    undefined,
+  );
+  if ("row" in admission) return { alone: true };
+  const row = await findJudgeRow(env, activityId);
+  if (!row?.seedCiphertext || row.protocol < LEDGER_PROTOCOL || networkOf(row))
+    return { alone: true };
+  if (row.pausedAt !== null || row.stoppedAt !== null) throw paused();
+  // Every submission, before the code runs (§3).
+  requireHumanCheck(env, admission.activity, humanVerified);
+  return {
+    item: {
+      userId,
+      input,
+      fingerprint,
+      admission: {
+        testPermission: admission.testPermission,
+        realActivityPermitted: admission.realActivityPermitted,
+      },
+      humanVerified,
+    },
+  };
+}
 
 /**
  * The code failed this judgment: noted for its sender, and the fifth in a
@@ -173,7 +204,7 @@ const failureKind = (
  * may still be stuck, unless the runtime cut it short (`hung`): then
  * nothing holds it. The sandbox was used all the same (用量记录).
  */
-async function recordFailure(
+export async function recordFailure(
   env: ApiBindings,
   row: JudgeRow,
   sender: string,
@@ -223,13 +254,13 @@ async function recordFailure(
   return row.failuresInRow + 1 >= FAILURES_TO_PAUSE;
 }
 
-const failed = () =>
+export const failed = () =>
   new ActivityError(
     503,
     "JUDGE_FAILED",
     "判定器出错了，这次没有判定，可以再提交一次。",
   );
-const paused = () =>
+export const paused = () =>
   new ActivityError(409, "CODE_PAUSED", "判定器连续出错，暂停领取。");
 
 export async function claimByCode(
@@ -240,6 +271,8 @@ export async function claimByCode(
   executionPolicy?: ActivityExecutionPolicy,
   humanVerified = false,
   hooks: JudgeHooks = {},
+  /** Protocol 5: asked again once, the 红包 having moved meanwhile. */
+  again = false,
 ): Promise<ClaimResult> {
   const { fingerprint } = await participationRequest(
     env,
@@ -289,80 +322,99 @@ export async function claimByCode(
       "JUDGE_UNAVAILABLE",
       "暂时领不了，请稍后再试。",
     );
-  if (busy(activityId) || (online && online.waiting() > NETWORK_WAITING))
-    throw new ActivityError(
-      429,
-      "CODE_BUSY",
-      "这个红包同时提交的人太多，请稍后再试。",
-    );
+  if (online && online.waiting() > NETWORK_WAITING) throw tooMany();
 
-  // Protocol 5: each person's own part, and everyone's pending.
-  const ledgered = row.protocol >= LEDGER_PROTOCOL;
-  const [
-    user,
-    attempts,
-    sequence,
-    lock,
-    claims,
-    state,
-    code,
-    secret,
-    own,
-    pending,
-  ] = await Promise.all([
-    env.DB.prepare(
-      "SELECT external_id AS externalId, username, trust_level AS level FROM users WHERE id = ?",
-    )
-      .bind(userId)
-      .first<{
-        externalId: string;
-        username: string;
-        level: number | null;
-      }>(),
-    env.DB.prepare(
-      "SELECT COUNT(*) AS count FROM code_judgments WHERE activity_id = ? AND user_id = ?",
-    )
-      .bind(activityId, userId)
-      .first<number>("count"),
-    // Sequences run 0…N-1: the next is the last plus one (public.ts).
-    env.DB.prepare(
-      "SELECT COALESCE(MAX(sequence) + 1, 0) AS count FROM code_judgments WHERE activity_id = ?",
-    )
-      .bind(activityId)
-      .first<number>("count"),
-    poolLeft(env, activity),
-    ledgered ? ledgerClaimsOf(env, activityId) : claimsOf(env, activityId),
-    stateOf(env, row),
-    codeOf(env, row),
-    readSeed(env, row),
-    ledgered ? ownPart(env, activityId, userId) : null,
-    ledgered ? pendingTotal(env, activityId) : 0,
-  ]);
+  // Protocol 5: judged as batch.ts does, on its own here (the 红包's
+  // Durable Object queues the rest, durable-objects.ts).
+  if (row.protocol >= LEDGER_PROTOCOL) {
+    const [outcome] = await judgeBatch(
+      env,
+      activityId,
+      [
+        {
+          userId,
+          input,
+          fingerprint,
+          admission,
+          humanVerified,
+        },
+      ],
+      hooks,
+      { single: true },
+    );
+    if (outcome && "result" in outcome) return outcome.result;
+    if (outcome && "error" in outcome) {
+      // Turned away, or the code's own failure: as it is.
+      if (outcome.error instanceof ActivityError) throw outcome.error;
+      // The write was refused: the same submission won, or it paused.
+      const winner = await findSubmission(env, userId, input.submissionId);
+      if (winner) return resultOfSubmission(env, winner);
+      const current = await findJudgeRow(env, activityId);
+      if (current && (current.pausedAt !== null || current.stoppedAt !== null))
+        throw paused();
+      throw outcome.error;
+    }
+    // It ended, or began ending, meanwhile: answered as such, once.
+    if (again)
+      throw new ActivityError(
+        503,
+        "ACTIVITY_BUSY",
+        "红包正在更新，请使用原提交重试",
+      );
+    return claimByCode(
+      env,
+      activityId,
+      userId,
+      input,
+      executionPolicy,
+      humanVerified,
+      hooks,
+      true,
+    );
+  }
+
+  const [user, attempts, sequence, lock, claims, state, code, secret] =
+    await Promise.all([
+      env.DB.prepare(
+        "SELECT external_id AS externalId, username, trust_level AS level FROM users WHERE id = ?",
+      )
+        .bind(userId)
+        .first<{
+          externalId: string;
+          username: string;
+          level: number | null;
+        }>(),
+      env.DB.prepare(
+        "SELECT COUNT(*) AS count FROM code_judgments WHERE activity_id = ? AND user_id = ?",
+      )
+        .bind(activityId, userId)
+        .first<number>("count"),
+      // Sequences run 0…N-1: the next is the last plus one (public.ts).
+      env.DB.prepare(
+        "SELECT COALESCE(MAX(sequence) + 1, 0) AS count FROM code_judgments WHERE activity_id = ?",
+      )
+        .bind(activityId)
+        .first<number>("count"),
+      poolLeft(env, activity),
+      claimsOf(env, activityId),
+      stateOf(env, row),
+      codeOf(env, row),
+      readSeed(env, row),
+    ]);
   if (!user || attempts === null || sequence === null || lock === null)
     throw new Error("代码判定红包 claim is missing its parts");
-  // Settled once (protocol 5), with or without a claim: no more turns.
-  if (own?.settled)
-    throw new ActivityError(
-      409,
-      "CODE_SETTLED",
-      "你在这个红包里已经结算了，不能再提交。",
-    );
   const config = JSON.parse(activity.config) as LdcActivityInput;
-  const { hongbao, share } = ledgered
-    ? ledgerHongbao(activity, lock, pending, claims.length)
-    : (() => {
-        const numbers = {
-          title: activity.title,
-          total: ldcTotalMinor(config),
-          count: activity.totalCount,
-          minEach: row.minEachMinor,
-          remaining: lock,
-          remainingCount: activity.totalCount - activity.claimedCount,
-          openedAt: activity.openedAt ?? 0,
-          endsAt: activity.deadline ?? 0,
-        };
-        return { hongbao: numbers, share: shareRange(numbers) };
-      })();
+  const hongbao = {
+    title: activity.title,
+    total: ldcTotalMinor(config),
+    count: activity.totalCount,
+    minEach: row.minEachMinor,
+    remaining: lock,
+    remainingCount: activity.totalCount - activity.claimedCount,
+    openedAt: activity.openedAt ?? 0,
+    endsAt: activity.deadline ?? 0,
+  };
+  const share = shareRange(hongbao);
   const linuxDoId = Number(user.externalId);
   // An earlier protocol's code is given what it was given then: no params.
   const submission = {
@@ -379,9 +431,6 @@ export async function claimByCode(
     claims,
     state,
     ...(row.protocol >= 3 ? { params: await judgedParams(env, row) } : {}),
-    ...(own
-      ? { player: { pending: own.pending, state: own.state, view: own.view } }
-      : {}),
   } as Submission;
   // 联网: the requests this judgment sends are kept as the gateway saw
   // them; one the gateway failed on makes it count for nothing.
@@ -454,13 +503,7 @@ export async function claimByCode(
   }
   // An earlier protocol's code is read as it was then: no view or end.
   const read = readVerdict(outcome.verdict, share, row.protocol);
-  // Protocol 5: naming someone who may not be named is the code's error.
-  const named =
-    "add" in read ? await othersOf(env, activityId, read, linuxDoId) : null;
-  let invalid: string | null = null;
-  if ("error" in read) invalid = read.error.detail;
-  else if (named && "problem" in named) invalid = named.problem;
-  if (invalid !== null) {
+  if ("error" in read) {
     if (
       await recordFailure(
         env,
@@ -468,7 +511,7 @@ export async function claimByCode(
         activity.authorId,
         userId,
         "invalid",
-        invalid,
+        read.error.detail,
         submission.now,
         false,
         fetches.length,
@@ -477,42 +520,7 @@ export async function claimByCode(
       hooks.paused?.();
     throw failed();
   }
-  if ("add" in read && named && "people" in named) {
-    let written: Awaited<ReturnType<typeof writeLedgerJudgment>>;
-    try {
-      written = await writeLedgerJudgment(env, {
-        activity,
-        row,
-        admission,
-        userId,
-        input,
-        fingerprint,
-        submission,
-        reading: read,
-        people: named.people,
-        sequence,
-        fetches,
-        networked: network !== null,
-      });
-    } catch (error) {
-      const winner = await findSubmission(env, userId, input.submissionId);
-      if (winner) return resultOfSubmission(env, winner);
-      const current = await findJudgeRow(env, activityId);
-      if (current && (current.pausedAt !== null || current.stoppedAt !== null))
-        throw paused();
-      throw error;
-    }
-    // Those its others moved see their part again on their pages (§4.3).
-    if (written.others.length > 0) hooks.moved?.(written.others);
-    // It ended the 红包: everyone not settled now is, as 结算中 (§2).
-    if (written.ended) {
-      await refreshActivityLifecycle(env, activityId);
-      hooks.ended?.();
-    }
-    return judgedResult(env, written.rowId, userId);
-  }
-  if ("error" in read || "add" in read)
-    throw new Error("A judgment was read as neither protocol");
+  if ("add" in read) throw new Error("A judgment was read as neither protocol");
   const reading: VerdictReading = read;
 
   // A judgment: the submission, its input for the sender's 尝试统计, the

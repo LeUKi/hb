@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import {
   ACTIVITY_LIMITS,
+  type ClaimActivityInput,
   claimActivitySchema,
   createActivitySchema,
   deleteActivitySchema,
@@ -36,6 +37,7 @@ import {
   liveJudged,
   liveMessage,
   liveMine,
+  liveQueued,
   liveUserTag,
   liveView,
   liveViewers,
@@ -71,8 +73,19 @@ import {
 } from "./discovery/service";
 import type { ApiBindings } from "./env";
 import { judgedNews } from "./judge/announcements";
+import {
+  type BatchOutcome,
+  JUDGE_BATCH,
+  judgeBatch,
+  type QueuedJudgment,
+} from "./judge/batch";
+import { admitCodeClaim } from "./judge/claims";
 import { isSettling } from "./judge/ledger";
-import { type FetchRecord, NetworkSession } from "./judge/session";
+import {
+  type FetchRecord,
+  type JudgeHooks,
+  NetworkSession,
+} from "./judge/session";
 import { stopCodeActivity } from "./judge/stop";
 import { flushPaymentOutbox, runMerchantCycle } from "./payments/scheduler";
 import {
@@ -149,12 +162,69 @@ function livePeople(sockets: WebSocket[]) {
   return people.size;
 }
 
+/** At most this many waiting on one 红包 (§3); more are asked to try later. */
+const CODE_QUEUE = 200;
+
+/** A 代码判定 submission in the queue, and once judged, its outcome. */
+type CodeTurn = {
+  item: QueuedJudgment;
+  taken: boolean;
+  outcome?: BatchOutcome;
+  answered: Promise<void>;
+  answer: () => void;
+};
+
+/** A mutation's failure, as its answer: never provider errors, SQL or private text. */
+function mutationError(error: unknown) {
+  if (error instanceof ActivityError) {
+    return Response.json(
+      {
+        error: { code: error.code, message: error.message },
+        ...(error instanceof AttemptCooldownError
+          ? { attemptCooldown: error.attemptCooldown }
+          : {}),
+        ...(error instanceof HumanCheckRequiredError
+          ? { humanCheck: error.humanCheck }
+          : {}),
+      },
+      {
+        status: error.status,
+        headers: {
+          "Cache-Control": "no-store",
+          ...(error instanceof AttemptCooldownError
+            ? { "Retry-After": String(error.retryAfter) }
+            : {}),
+        },
+      },
+    );
+  }
+  // Never serialize provider errors, SQL parameters or private reward text.
+  console.error("activity_mutation_error", {
+    errorName: error instanceof Error ? error.name : typeof error,
+  });
+  return Response.json(
+    {
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "红包保存失败，请重试",
+      },
+    },
+    { status: 500, headers: { "Cache-Control": "no-store" } },
+  );
+}
+
 export class ActivityDO extends DurableObject<ApiBindings> {
   private mutationTail: Promise<void> = Promise.resolve();
   /** 代码判定联网: the judgment under way's requests (judge/session.ts). */
   private judging: NetworkSession | null = null;
   /** Claims waiting their turn here, the one being judged among them. */
   private claimsWaiting = 0;
+  /**
+   * 一批一起写 (docs/programmable-hongbao-design.md §3): protocol 5
+   * submissions let in and waiting, in order; each one's turn judges it
+   * and those behind it (judge/batch.ts).
+   */
+  private codeQueue: CodeTurn[] = [];
   /** A change waiting to go out on the live channel (live.ts). */
   private liveTimer: ReturnType<typeof setTimeout> | null = null;
   private livePushedAt = 0;
@@ -526,6 +596,201 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     this.announceViewers();
   }
 
+  /**
+   * A 代码判定 submission (§3 一批一起写): its own checks first, outside the
+   * line, so several make theirs at once; then its place in the queue, told
+   * to whoever sent it; its turn judges it with up to JUDGE_BATCH behind it.
+   * One the batch could not take, an earlier protocol's, or a 联网 one is
+   * judged on its own, in line as before.
+   */
+  private async claimCode(
+    id: string,
+    userId: string,
+    input: Extract<ClaimActivityInput, { participationMode: "code" }>,
+    humanVerified: boolean,
+  ) {
+    // Its time has come and the alarm is not in yet: opened now, so the
+    // first to try is not told it is not open (§4).
+    const due = await findActivity(this.env, id);
+    if (
+      due?.openedAt === null &&
+      due.scheduledOpenAt !== null &&
+      due.scheduledOpenAt <= Date.now()
+    )
+      await this.serialize(() => this.runSchedule(id));
+    const alone = () =>
+      this.serialize(() =>
+        claimActivity(
+          this.env,
+          id,
+          userId,
+          input,
+          undefined,
+          humanVerified,
+          this.claimHooks(id),
+        ),
+      );
+    const admitted = await admitCodeClaim(
+      this.env,
+      id,
+      userId,
+      input,
+      humanVerified,
+    );
+    if ("alone" in admitted)
+      return this.claimed(id, userId, input, await alone());
+    const ahead = this.codeQueue.filter((turn) => !turn.taken).length;
+    if (ahead >= CODE_QUEUE)
+      throw new ActivityError(
+        429,
+        "CODE_BUSY",
+        "这个红包同时提交的人太多，请稍后再试。",
+      );
+    let answered: () => void = () => {};
+    const turn: CodeTurn = {
+      item: admitted.item,
+      taken: false,
+      answered: new Promise<void>((resolve) => {
+        answered = resolve;
+      }),
+      answer: () => answered(),
+    };
+    this.codeQueue.push(turn);
+    if (ahead > 0) this.tellQueued(userId, ahead);
+    await this.serialize(async () => {
+      // Judged already, in the batch of one ahead of it.
+      if (turn.taken) return;
+      const batch = [turn];
+      turn.taken = true;
+      const people = new Set([turn.item.userId]);
+      for (const behind of this.codeQueue) {
+        if (batch.length >= JUDGE_BATCH) break;
+        // One person once a batch: a second turn waits for the next.
+        if (behind.taken || people.has(behind.item.userId)) continue;
+        behind.taken = true;
+        people.add(behind.item.userId);
+        batch.push(behind);
+      }
+      let outcomes: BatchOutcome[];
+      try {
+        outcomes = await judgeBatch(
+          this.env,
+          id,
+          batch.map((each) => each.item),
+          this.claimHooks(id),
+        );
+      } catch (error) {
+        outcomes = batch.map(() => ({ error }));
+      }
+      for (const [index, each] of batch.entries()) {
+        each.outcome = outcomes[index] ?? { alone: true };
+        each.answer();
+      }
+      this.codeQueue = this.codeQueue.filter((each) => !each.outcome);
+    });
+    await turn.answered;
+    const outcome = turn.outcome ?? { alone: true };
+    if ("error" in outcome) throw outcome.error;
+    return this.claimed(
+      id,
+      userId,
+      input,
+      "result" in outcome ? outcome.result : await alone(),
+    );
+  }
+
+  /** Where a submission joined the queue, to whoever sent it (§3). */
+  private tellQueued(userId: string, ahead: number) {
+    const message = liveQueued(ahead);
+    for (const socket of this.ctx.getWebSockets(liveUserTag(userId)))
+      try {
+        socket.send(message);
+      } catch {
+        // Already closing: nothing to tell it.
+      }
+  }
+
+  /**
+   * 代码判定: its code failed five times running, claims wait; a 联网 红包's
+   * judgment goes out through the gateway; protocol 5: the others it moved
+   * read their part again.
+   */
+  private claimHooks(id: string): JudgeHooks {
+    return {
+      paused: () => this.announce(id),
+      ended: () => this.announce(id),
+      moved: (userIds) => this.tellMine(userIds),
+      network: {
+        start: () => {
+          this.judging = new NetworkSession();
+          return this.judging;
+        },
+        end: () => {
+          this.judging = null;
+        },
+        outbound: (activityId, network) =>
+          this.ctx.exports.JudgeGateway({
+            props: { activityId, network },
+          }),
+        waiting: () => this.claimsWaiting,
+      },
+    };
+  }
+
+  /** After a claim: who hears of it, a payment woken, the answer. */
+  private async claimed(
+    id: string,
+    userId: string,
+    input: ClaimActivityInput,
+    result: Awaited<ReturnType<typeof claimActivity>>,
+  ) {
+    if ("registration" in result) await this.scheduleDraw(id);
+    // Protocol 5: each judgment moves what the pool has left.
+    if (
+      result.result === "claimed" ||
+      result.result === "registered" ||
+      result.result === "judged"
+    )
+      this.announce(id);
+    if (
+      input.participationMode === "code" &&
+      (result.result === "claimed" ||
+        result.result === "rejected" ||
+        result.result === "judged")
+    ) {
+      this.announceJudged(id);
+      // Their other tabs and devices read their own part again
+      // (§4.3); the one that sent it has the answer already.
+      this.tellMine([userId]);
+    }
+    // A 🐟额红包's claim has no payment: its 🐟 is in already.
+    const payment =
+      "claim" in result
+        ? result.claim.payment
+        : result.result === "judged"
+          ? result.settled?.claim?.payment
+          : undefined;
+    if (payment) {
+      this.ctx.waitUntil(
+        flushPaymentOutbox(this.env, payment.id).catch(() => {
+          // The committed Outbox and Cron retain responsibility if this wake fails.
+          console.error("payment_claim_wake_failed", {
+            activityId: id,
+          });
+        }),
+      );
+    }
+    return Response.json(
+      {
+        ...result,
+        attemptCooldown: await readAttemptCooldown(this.env, userId),
+      },
+      {
+        headers: { "Cache-Control": "no-store" },
+      },
+    );
+  }
+
   private async serialize<T>(action: () => Promise<T>) {
     const previous = this.mutationTail;
     let release: () => void = () => {};
@@ -751,6 +1016,35 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       const done = () => {
         if (claiming) this.claimsWaiting -= 1;
       };
+      // 代码判定 (§3 一批一起写): let in outside the line, then queued.
+      let claimBody: unknown;
+      if (claiming) {
+        try {
+          claimBody = await request.json();
+        } catch {
+          done();
+          return mutationError(
+            new ActivityError(
+              400,
+              "INVALID_ACTIVITY",
+              "提交内容必须为有效 JSON",
+            ),
+          );
+        }
+        const { userId, humanVerified, ...input } = (claimBody ?? {}) as Record<
+          string,
+          unknown
+        >;
+        const parsed = claimActivitySchema.safeParse(input);
+        if (
+          parsed.success &&
+          parsed.data.participationMode === "code" &&
+          typeof userId === "string"
+        )
+          return this.claimCode(id, userId, parsed.data, humanVerified === true)
+            .catch(mutationError)
+            .finally(done);
+      }
       return this.serialize(async () => {
         try {
           if (operation === "refresh") {
@@ -775,12 +1069,13 @@ export class ActivityDO extends DurableObject<ApiBindings> {
             );
             return Response.json({ status: "ok" });
           }
-          let body: unknown;
+          let body: unknown = claimBody;
           try {
-            body =
-              operation === "create" || operation === "update"
-                ? await readActivityJson(request)
-                : await request.json();
+            if (!claiming)
+              body =
+                operation === "create" || operation === "update"
+                  ? await readActivityJson(request)
+                  : await request.json();
           } catch (error) {
             if (error instanceof ActivityError) throw error;
             throw new ActivityError(
@@ -941,74 +1236,9 @@ export class ActivityDO extends DurableObject<ApiBindings> {
               parsed.data,
               undefined,
               humanVerified === true,
-              // 代码判定: its code failed five times running, claims wait;
-              // a 联网 红包's judgment goes out through the gateway.
-              {
-                paused: () => this.announce(id),
-                ended: () => this.announce(id),
-                // Protocol 5: the others it moved read their part again.
-                moved: (userIds) => this.tellMine(userIds),
-                network: {
-                  start: () => {
-                    this.judging = new NetworkSession();
-                    return this.judging;
-                  },
-                  end: () => {
-                    this.judging = null;
-                  },
-                  outbound: (activityId, network) =>
-                    this.ctx.exports.JudgeGateway({
-                      props: { activityId, network },
-                    }),
-                  waiting: () => this.claimsWaiting,
-                },
-              },
+              this.claimHooks(id),
             );
-            if ("registration" in result) await this.scheduleDraw(id);
-            // Protocol 5: each judgment moves what the pool has left.
-            if (
-              result.result === "claimed" ||
-              result.result === "registered" ||
-              result.result === "judged"
-            )
-              this.announce(id);
-            if (
-              parsed.data.participationMode === "code" &&
-              (result.result === "claimed" ||
-                result.result === "rejected" ||
-                result.result === "judged")
-            ) {
-              this.announceJudged(id);
-              // Their other tabs and devices read their own part again
-              // (§4.3); the one that sent it has the answer already.
-              this.tellMine([userId]);
-            }
-            // A 🐟额红包's claim has no payment: its 🐟 is in already.
-            const payment =
-              "claim" in result
-                ? result.claim.payment
-                : result.result === "judged"
-                  ? result.settled?.claim?.payment
-                  : undefined;
-            if (payment) {
-              this.ctx.waitUntil(
-                flushPaymentOutbox(this.env, payment.id).catch(() => {
-                  // The committed Outbox and Cron retain responsibility if this wake fails.
-                  console.error("payment_claim_wake_failed", {
-                    activityId: id,
-                  });
-                }),
-              );
-            }
-            return Response.json(
-              {
-                ...result,
-                attemptCooldown: await readAttemptCooldown(this.env, userId),
-              },
-              {
-                headers: { "Cache-Control": "no-store" },
-              },
-            );
+            return this.claimed(id, userId, parsed.data, result);
           }
           // 站长's 停用 of a 代码判定红包 (judge/stop.ts); the route checked who.
           if (operation === "stop") {
@@ -1082,41 +1312,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
             { headers: { "Cache-Control": "no-store" } },
           );
         } catch (error) {
-          if (error instanceof ActivityError) {
-            return Response.json(
-              {
-                error: { code: error.code, message: error.message },
-                ...(error instanceof AttemptCooldownError
-                  ? { attemptCooldown: error.attemptCooldown }
-                  : {}),
-                ...(error instanceof HumanCheckRequiredError
-                  ? { humanCheck: error.humanCheck }
-                  : {}),
-              },
-              {
-                status: error.status,
-                headers: {
-                  "Cache-Control": "no-store",
-                  ...(error instanceof AttemptCooldownError
-                    ? { "Retry-After": String(error.retryAfter) }
-                    : {}),
-                },
-              },
-            );
-          }
-          // Never serialize provider errors, SQL parameters or private reward text.
-          console.error("activity_mutation_error", {
-            errorName: error instanceof Error ? error.name : typeof error,
-          });
-          return Response.json(
-            {
-              error: {
-                code: "INTERNAL_SERVER_ERROR",
-                message: "红包保存失败，请重试",
-              },
-            },
-            { status: 500, headers: { "Cache-Control": "no-store" } },
-          );
+          return mutationError(error);
         }
       }).finally(done);
     }

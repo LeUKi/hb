@@ -809,6 +809,41 @@ test.describe("代码判定红包", () => {
     await expect(input).toHaveValue("");
   });
 
+  test("排队（一批一起写）：前面有人时马上写前面还有 N 个人，按推来的已判定次数往下减，轮到了回到还在判定…", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    await mockCodeHongbao(page);
+    const sockets = await mockLive(page);
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/api/activities/*/claim", async (route) => {
+      await held;
+      return route.fallback();
+    });
+    await openApp(page, path);
+    await expect.poll(() => sockets.length).toBe(1);
+    await seal(page).click();
+    await omniboxInput(page).fill("50");
+    await page.keyboard.press("Enter");
+    const panel = page.locator(".glass-pop");
+    // The 红包's DO: it joined behind three (judged 7 so far).
+    sockets[0]?.send(JSON.stringify({ type: "queued", ahead: 3 }));
+    await expect(panel.getByText("前面还有 3 个人")).toBeVisible();
+    // Two judged ahead of it, pushed together.
+    sockets[0]?.send(JSON.stringify({ type: "judged", count: 9, seq: 1 }));
+    await expect(panel.getByText("前面还有 1 个人")).toBeVisible();
+    sockets[0]?.send(JSON.stringify({ type: "judged", count: 10, seq: 2 }));
+    await expect(panel.getByText("还在判定…")).toBeVisible();
+    release();
+    await expect(panel.getByRole("region", { name: "我的记录" })).toContainText(
+      "没领到",
+    );
+    await expect(panel.getByText("还在判定…")).toBeHidden();
+  });
+
   // A share text of several lines pasted whole (programmable-hongbao-design
   // §3), as a daily Bingo's: the code gets it as one line.
   test("粘贴多行文字：换行换成空格，插在光标处，框下说一句；提交的是接起来的一行", async ({
