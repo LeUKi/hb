@@ -398,11 +398,15 @@
 
   /* 玻璃层: frosted white glass with a top light edge, the same size as the
      window. Its long shadow is on .window-plate (the squircle clip would cut
-     it), and the 内容区 is a separate layer on top. */
+     it), and the 内容区 is a separate layer on top.
+     What lies behind it is only the base and the three drifting glows, all
+     smooth gradients, so a blur changes nothing you can see, but the glows
+     move every frame and a window-sized 22px blur is redone with them
+     (about twice the GPU work in a bench). Saturation alone keeps the look. */
   .window-glass {
     background: rgb(255 250 248 / 0.84);
-    -webkit-backdrop-filter: blur(22px) saturate(1.4);
-    backdrop-filter: blur(22px) saturate(1.4);
+    -webkit-backdrop-filter: saturate(1.4);
+    backdrop-filter: saturate(1.4);
     --sq-ring: rgb(255 255 255 / 0.5);
     box-shadow:
       var(--sq-ring-shadow),
