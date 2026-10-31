@@ -185,6 +185,24 @@ describe("站长精选 and 撤下", () => {
     expect(square.body.items.map((item) => item.name)).toEqual(["第一个"]);
   });
 
+  it("puts in the 站长's own version that passed on the current protocol, opened or not (2026-10-31: refused, it wanted protocol 3)", async () => {
+    const code = unique();
+    const deployed = await check(admin, code, TESTS, { name: "站长自己的" });
+    const id = deployed.body.check.judge?.id ?? "";
+    await setMyJudgeListing(bindings, admin.id, id, {
+      listed: true,
+      featurable: true,
+    });
+    const featured = await call<AdminJudgeCuration>(
+      "POST",
+      "/admin/judge/features",
+      admin,
+      { judgeId: id, n: 1 },
+    );
+    expect(featured.status).toBe(200);
+    expect(names(featured.body)).toContainEqual(["站长自己的", 1]);
+  });
+
   it("takes one down with a reason its author reads, and restores it; both in 操作记录", async () => {
     const id = await shared(author, "猜数字");
     expect(

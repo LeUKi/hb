@@ -550,6 +550,24 @@ test.describe("判定器广场", () => {
     ).toBeVisible();
   });
 
+  test("自己的判定器页：新部署的一版还没开过红包时，说广场要等它开过红包才换成它（2026-10-31，用户：明明更新了第 3 版）", async ({
+    page,
+  }) => {
+    const { state } = await mockSquare(page, member);
+    state.mine = {
+      ...mineDetail(),
+      listed: true,
+      publicN: 2,
+      usable: { n: 3, declarations: null, network: null },
+    };
+    await openApp(page, `/judges/${MINE}`);
+    await expect(
+      page.getByText(
+        "广场上用的是第 2 版。第 3 版用它开放过红包以后，广场就换成它。",
+      ),
+    ).toBeVisible();
+  });
+
   test("自己的判定器页：加入判定器广场先确认，能不勾允许精选；退出也先确认；被站长撤下时写原因，开关灰掉；顶上能自己写一个", async ({
     page,
   }) => {

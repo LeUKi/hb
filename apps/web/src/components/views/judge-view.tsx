@@ -318,7 +318,14 @@ function SquareSettings({
             {judge.featured !== null
               ? `站长精选了第 ${judge.featured} 版。`
               : judge.publicN !== null
-                ? `广场上用的是第 ${judge.publicN} 版。`
+                ? `广场上用的是第 ${judge.publicN} 版。${
+                    // A newer version waits for a 红包 of its own (§15.3).
+                    judge.usable &&
+                    !judge.usable.old &&
+                    judge.usable.n > judge.publicN
+                      ? `第 ${judge.usable.n} 版用它开放过红包以后，广场就换成它。`
+                      : ""
+                  }`
                 : "还没有开放过红包的版本，广场上暂时看不到它。"}
           </p>
         </div>

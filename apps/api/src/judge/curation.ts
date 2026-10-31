@@ -2,11 +2,12 @@
 // §15.4): 撤下 with a reason its author reads, 恢复, and 站长精选 — a
 // version of a 判定器 in the 广场 its author lets be chosen (or the 站长's
 // own), in the 站长's order. Every change is written down for 操作记录.
-import type {
-  AdminJudgeCuration,
-  JudgeFeatureChange,
-  JudgeFeatureInput,
-  JudgeTakeDownInput,
+import {
+  type AdminJudgeCuration,
+  JUDGE_OLDEST_PROTOCOL,
+  type JudgeFeatureChange,
+  type JudgeFeatureInput,
+  type JudgeTakeDownInput,
 } from "@hb/contracts";
 import { ActivityError } from "../activities/errors";
 import { isAdministrator } from "../admin/authorization";
@@ -140,9 +141,9 @@ async function featurableVersion(
   const ok =
     judge.author_id === adminId
       ? await env.DB.prepare(
-          "SELECT 1 FROM judge_versions WHERE judge_id = ? AND n = ? AND passed = 1 AND protocol = 3",
+          "SELECT 1 FROM judge_versions WHERE judge_id = ? AND n = ? AND passed = 1 AND protocol >= ?",
         )
-          .bind(judge.id, n)
+          .bind(judge.id, n, JUDGE_OLDEST_PROTOCOL)
           .first()
       : await usableByOthers(env, judge.id, n);
   if (!ok)
