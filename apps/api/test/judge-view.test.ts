@@ -349,9 +349,11 @@ export function judge() { return { ok: false }; }
     await advanceAttemptCooldown(env.DB, first.id);
     await vi.waitFor(
       () => {
+        // Protocol 5: the pool with it (multi-prize §4.3).
         expect(heard).toContainEqual({
           type: "judged",
           count: 1,
+          unclaimed: expect.stringMatching(/^\d+\.\d{2}$/),
           seq: expect.any(Number),
         });
         expect(heard).toContainEqual({

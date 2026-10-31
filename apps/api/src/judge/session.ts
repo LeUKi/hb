@@ -30,6 +30,12 @@ export type FetchRecord = {
  * many claims wait their turn (this one too).
  */
 export type JudgeHooks = {
+  /**
+   * When the submission reached its 红包 (its Durable Object): kept as the
+   * submission's created_at, so how long it waited can be told
+   * (docs/programmable-hongbao-design.md §3, 热点).
+   */
+  arrivedAt?: number;
   paused?: () => void;
   /** Its code ended the 红包 (docs/judge-page-design.md §2 end). */
   ended?: () => void;

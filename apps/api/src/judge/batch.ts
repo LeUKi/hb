@@ -33,7 +33,6 @@ import { findActivity } from "../activities/storage";
 import type { ApiBindings } from "../env";
 import { assertAttemptAllowed } from "../runtime/attempt-cooldown";
 import {
-  codeOf,
   FAILURES_TO_PAUSE,
   failed,
   failureKind,
@@ -54,7 +53,7 @@ import {
 import { judgedParams } from "./params";
 import { JUDGE_WAIT_MS, NETWORK_WAIT_MS, runJudge } from "./sandbox";
 import type { FetchRecord, JudgeHooks } from "./session";
-import { findJudgeRow, readSeed } from "./storage";
+import { codeOf, findJudgeRow, readSeed } from "./storage";
 
 type CodeClaim = Extract<ClaimActivityInput, { participationMode: "code" }>;
 
@@ -68,6 +67,8 @@ export type QueuedJudgment = {
   fingerprint: string;
   admission: Pick<Admitted, "testPermission" | "realActivityPermitted">;
   humanVerified: boolean;
+  /** When it reached the 红包 (JudgeHooks.arrivedAt). */
+  arrivedAt: number;
 };
 
 export type BatchOutcome =
@@ -477,6 +478,7 @@ export async function judgeBatch(
       userId: item.userId,
       input: item.input,
       fingerprint: item.fingerprint,
+      arrivedAt: item.arrivedAt,
       submission,
       reading: read,
       people: named.map((person) => ({ ...person, settledAt: null })),

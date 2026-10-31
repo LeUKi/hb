@@ -3,15 +3,18 @@
 // added, each with who was judged. Public, guests too, as the 名单 is;
 // never what anyone typed. Lines run 0…N-1 (activity_announcements'
 // insert guard, no updates, no deletes), so the last says how many.
-import type {
-  JudgeAnnouncement,
-  JudgeAnnouncementList,
-  JudgeView,
+import {
+  formatSignedAmount,
+  type JudgeAnnouncement,
+  type JudgeAnnouncementList,
+  type JudgeView,
 } from "@hb/contracts";
 import type { Json } from "../../../../kit/judge";
+import { LEDGER_PROTOCOL } from "../../../../kit/runtime/index.mjs";
 import { activityNotFound } from "../activities/errors";
 import { findActivity } from "../activities/storage";
 import type { ApiBindings } from "../env";
+import { ledgerPool } from "./ledger";
 import type { JudgeRow } from "./storage";
 
 /** On the 红包 page (§11.3); the rest in 动态's dialog. */
@@ -125,21 +128,33 @@ export async function listAnnouncements(
 }
 
 /**
- * What a push after judgments says (live.ts, at most once a second): how
+ * What a push after judgments says (live.ts, 300 ms at most apart): how
  * many judged, what everyone sees, and the lines since the last sent
- * (`from`; the latest few when unknown, after hibernating).
+ * (`from`; the latest few when unknown, after hibernating). Protocol 5
+ * also what the pool has left, and how many are paid and whether it ended
+ * (`claims`): when that moves, the whole 红包 goes out (multi-prize §4.3).
  */
 export async function judgedNews(
   env: ApiBindings,
   activityId: string,
   from: number,
-) {
-  const [judged, code] = await env.DB.batch<Record<string, unknown>>([
+): Promise<{
+  count: number;
+  unclaimed?: string;
+  claims?: string;
+  view?: JudgeView;
+  total?: number;
+  items?: JudgeAnnouncement[];
+}> {
+  const [judged, code, activity] = await env.DB.batch<Record<string, unknown>>([
     env.DB.prepare(
       "SELECT COALESCE(MAX(sequence) + 1, 0) AS count FROM code_judgments WHERE activity_id = ?",
     ).bind(activityId),
     env.DB.prepare(
       "SELECT protocol, view_at AS viewAt, view_summary AS viewSummary, view_data AS viewData FROM activity_code WHERE activity_id = ?",
+    ).bind(activityId),
+    env.DB.prepare(
+      "SELECT claimed_count AS claimed, ended_at AS endedAt FROM activities WHERE id = ?",
     ).bind(activityId),
   ]);
   const count = Number(judged?.results[0]?.count ?? 0);
@@ -152,11 +167,26 @@ export async function judgedNews(
       }
     | undefined;
   if (!row || row.protocol < 4) return { count };
-  const [total, items] = await Promise.all([
+  const paid = activity?.results[0] as
+    | { claimed: number; endedAt: number | null }
+    | undefined;
+  const [total, items, pool] = await Promise.all([
     announcementTotal(env, activityId),
     from < 0
       ? latestAnnouncements(env, activityId, ANNOUNCEMENTS_ON_PAGE)
       : announcementsSince(env, activityId, from),
+    row.protocol >= LEDGER_PROTOCOL ? ledgerPool(env, activityId) : null,
   ]);
-  return { count, view: viewOf(row), total, items };
+  return {
+    count,
+    view: viewOf(row),
+    total,
+    items,
+    ...(pool !== null && paid
+      ? {
+          unclaimed: formatSignedAmount(pool),
+          claims: `${paid.claimed}:${paid.endedAt !== null}`,
+        }
+      : {}),
+  };
 }

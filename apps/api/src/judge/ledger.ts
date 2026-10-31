@@ -486,6 +486,8 @@ export type LedgerJudgment = {
   userId: string;
   input: Extract<ClaimActivityInput, { participationMode: "code" }>;
   fingerprint: string;
+  /** When it reached the 红包: the submission's created_at. */
+  arrivedAt: number;
   submission: Submission;
   reading: LedgerReading;
   /** The people its others name, in order (othersOf). */
@@ -661,12 +663,13 @@ export async function ledgerJudgmentStatements(
     claimGuardStatement(env, activity, "code", userId, judgment.admission),
     env.DB.prepare(`INSERT INTO redemption_submissions
       (id, activity_id, user_id, submission_id, fingerprint, purpose, participation_mode, outcome, matched_password_id, created_at, validated_at, finished_at)
-      VALUES (?, ?, ?, ?, ?, 'claim', 'code', 'incorrect', NULL, ${databaseNow}, ${databaseNow}, ${databaseNow})`).bind(
+      VALUES (?, ?, ?, ?, ?, 'claim', 'code', 'incorrect', NULL, ?, ${databaseNow}, ${databaseNow})`).bind(
       rowId,
       activityId,
       userId,
       judgment.input.submissionId,
       judgment.fingerprint,
+      judgment.arrivedAt,
     ),
     env.DB.prepare(`INSERT INTO attempt_events
       (id, submission_row_id, activity_id, user_id, ciphertext, digest, matched, matched_password_id, validated_at)

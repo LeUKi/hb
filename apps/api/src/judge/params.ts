@@ -22,7 +22,7 @@ import type { ActivityRow } from "../activities/storage";
 import type { ApiBindings } from "../env";
 import { decryptString, encryptString } from "../security/crypto";
 import { checkParamsInJudge } from "./sandbox";
-import { type JudgeRow, judgeData, readParams } from "./storage";
+import { type JudgeRow, judgeData, readCode, readParams } from "./storage";
 import { usageStatement } from "./usage";
 
 /**
@@ -95,11 +95,7 @@ export async function paramsRejected(
     judge,
   );
   if (!declarations?.check || "problems" in read) return null;
-  const code = await decryptString(
-    judge.codeCiphertext,
-    env,
-    judgeData(activity.id, "code"),
-  );
+  const code = await readCode(env, activity.id);
   const now = Date.now();
   await usageStatement(env, {
     now,

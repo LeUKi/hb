@@ -55,7 +55,13 @@ import {
   type SandboxFailure,
 } from "./sandbox";
 import type { FetchRecord, JudgeHooks } from "./session";
-import { findJudgeRow, type JudgeRow, judgeData, readSeed } from "./storage";
+import {
+  codeOf,
+  findJudgeRow,
+  type JudgeRow,
+  judgeData,
+  readSeed,
+} from "./storage";
 import { usageStatement } from "./usage";
 
 type CodeClaim = Extract<ClaimActivityInput, { participationMode: "code" }>;
@@ -72,19 +78,6 @@ export const networkOf = (row: JudgeRow) =>
 
 /** Decrypted once per isolate: claimed inputs never change. */
 const claimedInputs = new Map<string, string>();
-const codes = new Map<string, string>();
-
-export async function codeOf(env: ApiBindings, row: JudgeRow) {
-  const cached = codes.get(row.activityId);
-  if (cached !== undefined) return cached;
-  const code = await decryptString(
-    row.codeCiphertext,
-    env,
-    judgeData(row.activityId, "code"),
-  );
-  codes.set(row.activityId, code);
-  return code;
-}
 
 export async function stateOf(env: ApiBindings, row: JudgeRow) {
   if (row.stateCiphertext === null) return null;
@@ -161,6 +154,7 @@ export async function admitCodeClaim(
   userId: string,
   input: CodeClaim,
   humanVerified: boolean,
+  arrivedAt: number,
 ): Promise<{ item: QueuedJudgment } | { alone: true }> {
   const { fingerprint } = await participationRequest(
     env,
@@ -194,6 +188,7 @@ export async function admitCodeClaim(
         realActivityPermitted: admission.realActivityPermitted,
       },
       humanVerified,
+      arrivedAt,
     },
   };
 }
@@ -274,6 +269,8 @@ export async function claimByCode(
   /** Protocol 5: asked again once, the 红包 having moved meanwhile. */
   again = false,
 ): Promise<ClaimResult> {
+  // When it came: from the 红包's Durable Object, else now (tests).
+  const arrivedAt = hooks.arrivedAt ?? Date.now();
   const { fingerprint } = await participationRequest(
     env,
     activityId,
@@ -337,6 +334,7 @@ export async function claimByCode(
           fingerprint,
           admission,
           humanVerified,
+          arrivedAt,
         },
       ],
       hooks,
@@ -564,13 +562,14 @@ export async function claimByCode(
     claimGuardStatement(env, activity, "code", userId, admission),
     env.DB.prepare(`INSERT INTO redemption_submissions
       (id, activity_id, user_id, submission_id, fingerprint, purpose, participation_mode, outcome, matched_password_id, created_at, validated_at, finished_at)
-      VALUES (?, ?, ?, ?, ?, 'claim', 'code', ?, NULL, ${databaseNow}, ${databaseNow}, CASE WHEN ? = 'incorrect' THEN ${databaseNow} ELSE NULL END)`).bind(
+      VALUES (?, ?, ?, ?, ?, 'claim', 'code', ?, NULL, ?, ${databaseNow}, CASE WHEN ? = 'incorrect' THEN ${databaseNow} ELSE NULL END)`).bind(
       rowId,
       activityId,
       userId,
       input.submissionId,
       fingerprint,
       outcomeName,
+      arrivedAt,
       outcomeName,
     ),
     env.DB.prepare(`INSERT INTO attempt_events

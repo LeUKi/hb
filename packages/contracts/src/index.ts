@@ -938,8 +938,13 @@ export type ActivityLiveMessage =
   | ((
       | { type: "activity"; activity: PublicActivity }
       | { type: "viewers"; count: number }
-      /** 代码判定: how many verdicts its code has given (PublicJudge.judged). */
-      | { type: "judged"; count: number }
+      /**
+       * 代码判定: how many verdicts its code has given (PublicJudge.judged);
+       * protocol 5, what the pool has left with it (PublicJudge.unclaimed),
+       * the whole 红包 coming only when someone settles or it ends
+       * (docs/multi-prize-design.md §4.3).
+       */
+      | { type: "judged"; count: number; unclaimed?: string }
       /** 代码判定, protocol 4: what everyone sees changed (PublicJudge.view). */
       | { type: "view"; view: JudgeView }
       /**

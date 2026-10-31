@@ -18,7 +18,6 @@ import { activityStatus } from "../activities/service";
 import type { ActivityRow } from "../activities/storage";
 import { isAdministrator } from "../admin/authorization";
 import type { ApiBindings } from "../env";
-import { decryptString } from "../security/crypto";
 import {
   ANNOUNCEMENTS_ON_PAGE,
   announcementTotal,
@@ -28,9 +27,9 @@ import {
 import { ledgerPool } from "./ledger";
 import { declarationsFor, revealedParams } from "./params";
 import {
+  codeOf,
   findJudgeRow,
   type JudgeRow,
-  judgeData,
   readSeed,
   textDigest,
 } from "./storage";
@@ -69,7 +68,7 @@ async function revealed(
   if (row.openedAt === null || !isOver(row) || !judge.seedCommitment)
     return null;
   const [code, seed, params] = await Promise.all([
-    decryptString(judge.codeCiphertext, env, judgeData(row.id, "code")),
+    codeOf(env, judge),
     readSeed(env, judge),
     revealedParams(env, judge, declarations),
   ]);
@@ -186,11 +185,7 @@ export async function publicJudge(
   const code =
     out?.code ??
     (by?.always && row.openedAt !== null
-      ? await decryptString(
-          judge.codeCiphertext,
-          env,
-          judgeData(row.id, "code"),
-        )
+      ? await codeOf(env, judge)
       : undefined);
   const shown =
     judge.paramsPublic !== null

@@ -234,6 +234,24 @@ export function useActivityLive(
         }
         if (message?.type === "judged") {
           setJudged({ id, count: message.count });
+          // Protocol 5: the pool moved with it (multi-prize §4.3), as the
+          // cover and the 附带网页 read it.
+          const { unclaimed } = message;
+          if (unclaimed !== undefined)
+            client.setQueryData<PublicActivityDetail>(key, (previous) => {
+              const activity = previous?.activity;
+              if (!previous || !activity?.judge) return previous;
+              return {
+                ...previous,
+                activity: {
+                  ...activity,
+                  judge: { ...activity.judge, unclaimed },
+                  ...(activity.quantity.mode === "pool"
+                    ? { quantity: { ...activity.quantity, left: unclaimed } }
+                    : {}),
+                },
+              };
+            });
           return;
         }
         if (message?.type === "view") {

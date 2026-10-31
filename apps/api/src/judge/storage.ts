@@ -8,7 +8,7 @@ import {
   type JudgeVersions,
   type LdcMoney,
 } from "@hb/contracts";
-import { eq } from "drizzle-orm";
+import { eq, getTableColumns } from "drizzle-orm";
 import { ActivityError } from "../activities/errors";
 import { databaseNow } from "../activities/lifecycle";
 import { createDb } from "../db/client";
@@ -20,7 +20,23 @@ import { JUDGE_PROTOCOL } from "./sandbox";
 import type { FetchRecord } from "./session";
 import { borrowedVersion } from "./square";
 
-export type JudgeRow = typeof activityCode.$inferSelect;
+/**
+ * Its row without the code, the tests and the versions kept: those are
+ * large (judge.js up to 256 KB, tests.json often more) and read where they
+ * are used (judgeTexts), not with every claim and public read
+ * (docs/programmable-hongbao-design.md §3, 热点).
+ */
+const {
+  codeCiphertext: _code,
+  testsCiphertext: _tests,
+  versionsCiphertext: _versions,
+  ...lightColumns
+} = getTableColumns(activityCode);
+
+export type JudgeRow = Omit<
+  typeof activityCode.$inferSelect,
+  "codeCiphertext" | "testsCiphertext" | "versionsCiphertext"
+>;
 
 /** What each encrypted part is bound to. */
 export const judgeData = (
@@ -42,12 +58,40 @@ export const judgeData = (
 /** The fingerprint (judge.js) and the tests' digest: SHA-256 of the text. */
 export const textDigest = sha256Hex;
 
-export function findJudgeRow(env: ApiBindings, activityId: string) {
+export function findJudgeRow(
+  env: ApiBindings,
+  activityId: string,
+): Promise<JudgeRow | undefined> {
   return createDb(env.DB)
-    .select()
+    .select(lightColumns)
     .from(activityCode)
     .where(eq(activityCode.activityId, activityId))
     .get();
+}
+
+const codes = new Map<string, string>();
+
+/**
+ * An opened 红包's judge.js: read and decrypted once per isolate, as it
+ * never changes once open.
+ */
+export async function codeOf(env: ApiBindings, row: JudgeRow) {
+  const cached = codes.get(row.activityId);
+  if (cached !== undefined) return cached;
+  const code = await readCode(env, row.activityId);
+  codes.set(row.activityId, code);
+  return code;
+}
+
+/** judge.js as kept, decrypted: read on its own (a draft's may change). */
+export async function readCode(env: ApiBindings, activityId: string) {
+  const row = await env.DB.prepare(
+    "SELECT code_ciphertext AS code FROM activity_code WHERE activity_id = ?",
+  )
+    .bind(activityId)
+    .first<{ code: string }>();
+  if (!row) throw new Error("JUDGE_ROW_MISSING");
+  return decryptString(row.code, env, judgeData(activityId, "code"));
 }
 
 /** The params its sender filled (docs/judge-square-design.md §3), or none. */
@@ -72,15 +116,22 @@ export async function readJudgeInput(
   env: ApiBindings,
   row: JudgeRow,
 ): Promise<JudgeInput> {
+  const texts = await env.DB.prepare(
+    `SELECT code_ciphertext AS code, tests_ciphertext AS tests,
+      versions_ciphertext AS versions FROM activity_code WHERE activity_id = ?`,
+  )
+    .bind(row.activityId)
+    .first<{ code: string; tests: string; versions: string | null }>();
+  if (!texts) throw new Error("JUDGE_ROW_MISSING");
   const [code, tests, versions, params, judge] = await Promise.all([
-    decryptString(row.codeCiphertext, env, judgeData(row.activityId, "code")),
-    decryptString(row.testsCiphertext, env, judgeData(row.activityId, "tests")),
+    decryptString(texts.code, env, judgeData(row.activityId, "code")),
+    decryptString(texts.tests, env, judgeData(row.activityId, "tests")),
     row.judgeId !== null
       ? draftVersionsOf(env, row.judgeId)
-      : row.versionsCiphertext === null
+      : texts.versions === null
         ? null
         : decryptString(
-            row.versionsCiphertext,
+            texts.versions,
             env,
             judgeData(row.activityId, "versions"),
           ).then((text) => JSON.parse(text) as JudgeVersions),

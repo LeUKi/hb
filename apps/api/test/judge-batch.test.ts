@@ -1,5 +1,5 @@
 import { env } from "cloudflare:test";
-import type { ActivityInput } from "@hb/contracts";
+import type { ActivityInput, ActivityLiveMessage } from "@hb/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createActivity, openActivity } from "../src/activities/service";
 import { app } from "../src/app";
@@ -62,7 +62,11 @@ async function open(extra: Partial<ActivityInput> = {}) {
 }
 
 /** Let in as the Durable Object lets them in, before the queue. */
-async function queued(activityId: string, people: [Actor, string][]) {
+async function queued(
+  activityId: string,
+  people: [Actor, string][],
+  arrivedAt = Date.now(),
+) {
   const items: QueuedJudgment[] = [];
   for (const [person, input] of people) {
     const admitted = await admitCodeClaim(
@@ -75,6 +79,7 @@ async function queued(activityId: string, people: [Actor, string][]) {
         input,
       },
       false,
+      arrivedAt,
     );
     if (!("item" in admitted)) throw new Error("NOT_QUEUED");
     items.push(admitted.item);
@@ -181,6 +186,33 @@ describe("一批一起写", () => {
     expect(pending).toBe(55);
   });
 
+  // 热点 (§3): how long each waited is told from when it came.
+  it("keeps when each came as the submission's created_at, the write's time beside it", async () => {
+    const opened = await open();
+    const [one, two] = [await actor(), await actor()];
+    const came = Date.now() - 4_000;
+    const items = await queued(
+      opened.id,
+      [
+        [one, "add 1"],
+        [two, "add 2"],
+      ],
+      came,
+    );
+    await judgeBatch(bindings, opened.id, items);
+    const rows = await env.DB.prepare(
+      "SELECT created_at AS came, validated_at AS judged, finished_at AS written FROM redemption_submissions WHERE activity_id = ?",
+    )
+      .bind(opened.id)
+      .all<{ came: number; judged: number; written: number }>();
+    expect(rows.results).toHaveLength(2);
+    for (const row of rows.results) {
+      expect(row.came).toBe(came);
+      expect(row.written).toBeGreaterThanOrEqual(came + 4_000 - 50);
+      expect(row.judged).toBe(row.written);
+    }
+  });
+
   it("leaves those after the pool is taken to be judged on their own", async () => {
     const opened = await open();
     const [taker, late] = [await actor(), await actor()];
@@ -262,6 +294,76 @@ describe("一批一起写, through the 红包's Durable Object", () => {
       pending: one.status === 200 ? 1 : 2,
     });
     await advanceAttemptCooldown(env.DB, player.id);
+  });
+
+  // 热点 (§3, multi-prize §4.3): a judgment that only moves the pool
+  // pushes it with the count; the whole 红包 when someone is paid.
+  it("pushes the pool with the count, and the whole 红包 only when someone is paid", async () => {
+    const opened = await open();
+    const viewer = await actor();
+    const response = await app.request(
+      `${origin}/api/activities/${opened.id}/live`,
+      {
+        headers: {
+          Upgrade: "websocket",
+          Origin: origin,
+          Cookie: viewer.cookie,
+        },
+      },
+      bindings,
+    );
+    const socket = response.webSocket;
+    if (!socket) throw new Error("no WebSocket");
+    const heard: ActivityLiveMessage[] = [];
+    socket.addEventListener("message", (event) => {
+      const data = String(event.data);
+      if (data !== "pong") heard.push(JSON.parse(data));
+    });
+    socket.accept();
+    await vi.waitFor(() => expect(heard[0]?.type).toBe("activity"));
+    const [first, second, third] = [
+      await actor(),
+      await actor(),
+      await actor(),
+    ];
+    // The first after connecting may send it whole once (nothing pushed yet).
+    expect((await send(opened.id, first, "add 10")).status).toBe(200);
+    await vi.waitFor(() =>
+      expect(heard).toContainEqual(
+        expect.objectContaining({ type: "judged", count: 1 }),
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    heard.length = 0;
+    expect((await send(opened.id, second, "add 20")).status).toBe(200);
+    await vi.waitFor(() =>
+      expect(heard).toContainEqual({
+        type: "judged",
+        count: 2,
+        unclaimed: "0.70",
+        seq: expect.any(Number),
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    expect(heard.filter((message) => message.type === "activity")).toEqual([]);
+    // Two at a table: one settles the other, so the 名单 changes.
+    expect((await send(opened.id, third, "seat 5")).status).toBe(200);
+    await advanceAttemptCooldown(env.DB, first.id);
+    expect((await send(opened.id, first, "seat 5")).status).toBe(200);
+    await vi.waitFor(
+      () =>
+        expect(heard).toContainEqual(
+          expect.objectContaining({
+            type: "activity",
+            activity: expect.objectContaining({
+              quantity: { mode: "pool", left: "0.55" },
+              rosterPreview: [expect.anything(), expect.anything()],
+            }),
+          }),
+        ),
+      { timeout: 3000 },
+    );
+    socket.close();
   });
 
   it("answers those after the pool is taken that it has ended", async () => {

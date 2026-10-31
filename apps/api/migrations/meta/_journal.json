@@ -386,6 +386,13 @@
       "when": 1793365193600,
       "tag": "0054_multi_prize",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "6",
+      "when": 1793461800000,
+      "tag": "0055_judgment_guards",
+      "breakpoints": true
     }
   ]
 }

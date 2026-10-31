@@ -358,7 +358,14 @@ describe("判定器: 红包 from before (§14.3)", () => {
       versions: { next: 3, versions: [{ n: 1 }, { n: 2 }] },
     });
     const row = await findJudgeRow(env, saved.id);
-    expect(row).toMatchObject({ judgeVersion: 2, versionsCiphertext: null });
+    expect(row).toMatchObject({ judgeVersion: 2 });
+    expect(
+      await env.DB.prepare(
+        "SELECT versions_ciphertext AS versions FROM activity_code WHERE activity_id = ?",
+      )
+        .bind(saved.id)
+        .first("versions"),
+    ).toBeNull();
     const id = row?.judgeId ?? "";
     // Each with the draft's tests now: passed if that run did.
     const detail = await getMyJudge(bindings, author.id, id);

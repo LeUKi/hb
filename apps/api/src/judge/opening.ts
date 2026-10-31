@@ -21,7 +21,7 @@ import { databaseNow } from "../activities/lifecycle";
 import type { ActivityRow } from "../activities/storage";
 import { startOfBeijingDay } from "../balance/day";
 import type { ApiBindings } from "../env";
-import { decryptString, encryptString } from "../security/crypto";
+import { encryptString } from "../security/crypto";
 import {
   codeHongbaoAccess,
   openingProtocol,
@@ -31,7 +31,7 @@ import {
 import { openingParams } from "./params";
 import { setupInJudge } from "./sandbox";
 import { judgeAuthorOf } from "./square";
-import { findJudgeRow, type JudgeRow, judgeData } from "./storage";
+import { findJudgeRow, type JudgeRow, judgeData, readCode } from "./storage";
 import { usageStatement } from "./usage";
 
 /**
@@ -164,11 +164,7 @@ export async function openingSetup(
   const { protocol, now, declarations } = input;
   if (protocol < VIEW_PROTOCOL || (declarations && !declarations.setup))
     return null;
-  const code = await decryptString(
-    judge.codeCiphertext,
-    env,
-    judgeData(activity.id, "code"),
-  );
+  const code = await readCode(env, activity.id);
   await usageStatement(env, {
     now,
     fingerprint: judge.fingerprint,

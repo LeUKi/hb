@@ -1000,13 +1000,22 @@ test.describe("代码判定红包", () => {
       settled: false,
       view: { summary: "手里 3 张牌" },
     };
-    await mockLive(page);
+    const sockets = await mockLive(page);
     await openApp(page, path);
     // 奖池还剩, not 已领 x / y 份; no 每份至少 under the pool.
     await expect(page.getByText("奖池还剩 70%", { exact: true })).toBeVisible();
     await expect(page.getByText("0.70 LDC", { exact: true })).toBeVisible();
     await expect(page.getByText(/每份至少/)).toHaveCount(0);
     await expect(page.getByText(/ 份$/)).toHaveCount(0);
+    // Someone else judged: the pool comes with the count (multi-prize
+    // §4.3), the 红包 not read again.
+    const readsBefore = state.reads.public;
+    sockets[0]?.send(
+      JSON.stringify({ type: "judged", count: 13, unclaimed: "0.55", seq: 1 }),
+    );
+    await expect(page.getByText("奖池还剩 55%", { exact: true })).toBeVisible();
+    await expect(page.getByText("0.55 LDC", { exact: true })).toBeVisible();
+    expect(state.reads.public).toBe(readsBefore);
     // Played and not settled: go on; what only they see, and 待结算.
     await expect(page.getByText("点「开」接着玩")).toBeVisible();
     const standing = page.locator("[data-hb-part=standing]");
@@ -1640,8 +1649,12 @@ test.describe("代码判定红包", () => {
     const rows = record.getByRole("listitem");
     await expect(rows).toHaveCount(3);
     // In order: 第几次 and when with the result; the reply; what was typed.
-    await expect(rows.first()).toHaveText(/^第 3 次 · [\d:]+没领到小了答案-3$/);
-    await expect(rows.nth(1)).toHaveText(/^第 2 次 · [\d:]+没领到小了答案-2$/);
+    await expect(rows.first()).toHaveText(
+      /^第 3 次 · (昨天 )?[\d:]+没领到小了答案-3$/,
+    );
+    await expect(rows.nth(1)).toHaveText(
+      /^第 2 次 · (昨天 )?[\d:]+没领到小了答案-2$/,
+    );
     // The newest differs in its ground alone.
     const ground = (index: number) =>
       rows

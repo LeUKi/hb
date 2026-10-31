@@ -76,8 +76,17 @@ export const liveQueued = (ahead: number) =>
 export const liveViewers = (count: number, seq: number) =>
   JSON.stringify({ type: "viewers", count, seq } satisfies ActivityLiveMessage);
 
-export const liveJudged = (count: number, seq: number) =>
-  JSON.stringify({ type: "judged", count, seq } satisfies ActivityLiveMessage);
+export const liveJudged = (
+  count: number,
+  seq: number,
+  unclaimed: string | undefined,
+) =>
+  JSON.stringify({
+    type: "judged",
+    count,
+    ...(unclaimed !== undefined ? { unclaimed } : {}),
+    seq,
+  } satisfies ActivityLiveMessage);
 
 export const liveView = (view: JudgeView, seq: number) =>
   JSON.stringify({ type: "view", view, seq } satisfies ActivityLiveMessage);

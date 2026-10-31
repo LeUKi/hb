@@ -240,6 +240,8 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   /** With it (protocol 4): the view's time and 动态's count last sent. */
   private viewSent: string | null = null;
   private announcedSent = -1;
+  /** Protocol 5: how many paid and whether it ended, as last pushed whole. */
+  private claimsSent: string | null = null;
   /** The deadline alarm this instance already set (one write per deadline). */
   private liveDeadline = 0;
   /** The channel's number (live.ts), read back once after hibernating. */
@@ -527,11 +529,20 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       this.judgedTimer = null;
       this.judgedPushedAt = Date.now();
       void judgedNews(this.env, id, this.announcedSent)
-        .then(async ({ count, view, total, items }) => {
+        .then(async ({ count, unclaimed, claims, view, total, items }) => {
+          // Someone paid, or it ended (protocol 5): the 名单 and the rest
+          // change, so the whole 红包 goes out; otherwise the pool is all
+          // that moved, and it rides with the count.
+          if (claims !== undefined && claims !== this.claimsSent) {
+            this.claimsSent = claims;
+            this.announce(id);
+          }
           const messages: string[] = [];
           if (count !== this.judgedSent) {
             this.judgedSent = count;
-            messages.push(liveJudged(count, await this.nextLiveSeq()));
+            messages.push(
+              liveJudged(count, await this.nextLiveSeq(), unclaimed),
+            );
           }
           if (view && view.at !== this.viewSent) {
             this.viewSent = view.at;
@@ -611,6 +622,9 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   ) {
     // Its time has come and the alarm is not in yet: opened now, so the
     // first to try is not told it is not open (§4).
+    // When it came, before anything is read: how long it waits is told
+    // from this (§3, 热点).
+    const arrivedAt = Date.now();
     const due = await findActivity(this.env, id);
     if (
       due?.openedAt === null &&
@@ -620,15 +634,10 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       await this.serialize(() => this.runSchedule(id));
     const alone = () =>
       this.serialize(() =>
-        claimActivity(
-          this.env,
-          id,
-          userId,
-          input,
-          undefined,
-          humanVerified,
-          this.claimHooks(id),
-        ),
+        claimActivity(this.env, id, userId, input, undefined, humanVerified, {
+          ...this.claimHooks(id),
+          arrivedAt,
+        }),
       );
     const admitted = await admitCodeClaim(
       this.env,
@@ -636,6 +645,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       userId,
       input,
       humanVerified,
+      arrivedAt,
     );
     if ("alone" in admitted)
       return this.claimed(id, userId, input, await alone());
@@ -745,12 +755,9 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     result: Awaited<ReturnType<typeof claimActivity>>,
   ) {
     if ("registration" in result) await this.scheduleDraw(id);
-    // Protocol 5: each judgment moves what the pool has left.
-    if (
-      result.result === "claimed" ||
-      result.result === "registered" ||
-      result.result === "judged"
-    )
+    // Protocol 5's judgments go out with the count (announceJudged): the
+    // pool with it, the whole 红包 when someone was paid or it ended.
+    if (result.result === "claimed" || result.result === "registered")
       this.announce(id);
     if (
       input.participationMode === "code" &&
