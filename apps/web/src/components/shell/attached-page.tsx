@@ -35,6 +35,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   useContext,
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -45,7 +46,7 @@ import { useCurrentActivityId } from "../../lib/activity-route";
 import { useCachedQueryData } from "../../lib/cached-query";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { closeOverlay } from "../../lib/overlay";
-import { askPageRisk, siteAccepted } from "../../lib/page-risk";
+import { acceptSite, siteAccepted } from "../../lib/page-risk";
 import { useIdentity } from "../../lib/session";
 import { windowDialogsAtom } from "../../lib/store";
 import { useOmniboxMode } from "../omnibox/state";
@@ -127,7 +128,7 @@ const rememberedOpen = () => rememberedIds(REMEMBERED);
 
 /**
  * The 红包 whose page the viewer closed (beside it, the sheet pulled back,
- * or 取消 at 打开附带网页？): one that opens by itself does not again
+ * or 收起 at 打开附带网页？): one that opens by itself does not again
  * (§2.7) until opened by hand.
  */
 const CLOSED = "hb.attached-page-closed";
@@ -391,39 +392,106 @@ const PAGE_FEATURES = [
   "storage-access",
 ].join("; ");
 
+/** The 站长's LINUX DO username: whom to tell about a page that breaks the rules. */
+const OWNER = "lafish";
+
 /**
  * The page itself: its own origin, never this site's; only what the SDK
  * asks is heard from it (page-bridge.ts). It loads the first time it is
  * opened (beside the 红包, or the sheet pulled up), not before: only then
  * does its site learn of the visit (the title bar says so), and then it
- * stays.
+ * stays. A site not yet accepted in this browser waits for 打开 in its
+ * window first (§2.5).
  */
 function Page({ url, active }: { url: string; active: boolean }) {
   const reload = useAtomValue(reloadAtom);
   const [{ loaded, author }, setHeld] = useAtom(heldAtom);
   const store = useStore();
   const request = useSetAtom(requestAtom);
+  const site = hostOf(url);
+  const accepted = siteAccepted(site);
   useEffect(() => {
-    if (!active || loaded) return;
-    const site = hostOf(url);
-    if (siteAccepted(site)) {
+    if (active && !loaded && accepted)
       setHeld((current) => ({ ...current, loaded: true }));
-      return;
-    }
-    // 打开附带网页？ (§2.5) over the 红包 window — on a phone the sheet
-    // steps aside for it — answered whenever it comes, while this page is
-    // still the one held; then back where it was asked: open, or not.
-    void askPageRisk(store, { site, author }).then((open) => {
-      const now = store.get(heldAtom);
-      if (now.url !== url) return;
-      if (open) setHeld((current) => ({ ...current, loaded: true }));
-      // 取消 is the viewer closing it (§2.7).
-      else if (now.forId !== null) rememberOpen(now.forId, false);
-      request((current) => ({ n: current.n + 1, open }));
-    });
-  }, [active, loaded, url, author, setHeld, store, request]);
-  if (!loaded) return null;
-  return <PageFrame key={`${url}-${reload}`} url={url} />;
+  }, [active, loaded, accepted, setHeld]);
+  if (loaded) return <PageFrame key={`${url}-${reload}`} url={url} />;
+  if (accepted) return null;
+  return (
+    <PageRisk
+      site={site}
+      author={author}
+      shown={active}
+      onOpen={() => {
+        acceptSite(site);
+        setHeld((current) => ({ ...current, loaded: true }));
+      }}
+      onHide={() => {
+        // The viewer closing it (§2.7).
+        const forId = store.get(heldAtom).forId;
+        if (forId !== null) rememberOpen(forId, false);
+        request((current) => ({ n: current.n + 1, open: false }));
+      }}
+    />
+  );
+}
+
+/**
+ * 打开附带网页？ (§2.5), where the page will be: what it is, before it
+ * loads. Closed (or closing), it stays as it was, out of reach.
+ */
+function PageRisk({
+  site,
+  author,
+  shown,
+  onOpen,
+  onHide,
+}: {
+  site: string;
+  author: string | null;
+  shown: boolean;
+  onOpen: () => void;
+  onHide: () => void;
+}) {
+  const titleId = useId();
+  return (
+    <section
+      aria-labelledby={titleId}
+      aria-hidden={!shown}
+      inert={!shown}
+      className="absolute inset-0 overflow-y-auto"
+    >
+      <div className="grid min-h-full place-items-center px-6 py-8">
+        <div className="flex w-full max-w-sm flex-col gap-4">
+          <div className="grid gap-1">
+            <h2 id={titleId} className="text-lg font-semibold text-ink">
+              打开附带网页？
+            </h2>
+            <p className="text-sm text-ink-2">
+              {site} 不是红包站的网页
+              {author ? `，是 @${author} 附带的` : ""}。它能看到你的 IP
+              和浏览器信息。不要在里面付款、转账或做任何交易；发现违规推广，请联系站长{" "}
+              <a
+                href={`https://linux.do/u/${OWNER}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-accent-ink underline underline-offset-2"
+              >
+                @{OWNER}
+              </a>
+              。
+            </p>
+          </div>
+          <p className="text-xs text-ink-3">确认后，这个网站下次直接打开。</p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button onClick={onHide}>收起</Button>
+            <Button variant="primary" onClick={onOpen}>
+              打开
+            </Button>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 /** The frame, clear until its page has loaded (a spinner under it). */
@@ -999,7 +1067,7 @@ function Sheet({
   const [touched, setTouched] = useState(false);
   // Where it was when covered: what comes over a pulled-up sheet is the
   // page's own (its hb.submit()'s dialogs, the box its hb.fill() opens),
-  // so it goes back up after. An answer to 打开附带网页？ says where itself.
+  // so it goes back up after.
   // Read when it is covered, not followed: asked up meanwhile (the 说明弹窗's
   // button), it stays up.
   const coveredFrom = useRef<Stop | null>(null);

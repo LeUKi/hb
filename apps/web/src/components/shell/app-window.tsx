@@ -10,7 +10,6 @@ import { HumanCheckDialog } from "../hongbao/human-check-dialog";
 import { AnnouncementsDialog } from "../hongbao/judge-board";
 import { MyJudgmentsDialog } from "../hongbao/my-judgments";
 import { NoteDialog } from "../hongbao/note-dialog";
-import { PageRiskDialog } from "../hongbao/page-risk-dialog";
 import { PageSubmitDialog } from "../hongbao/page-submit-dialog";
 import { RosterDialog } from "../hongbao/roster-dialog";
 import { ScopeDialog } from "../hongbao/scope-dialog";
@@ -205,7 +204,6 @@ export function AppWindow() {
           <HumanCheckDialog />
           <SelfClaimDialog />
           <PageSubmitDialog />
-          <PageRiskDialog />
           <ScopeDialog />
           <UpdatePrompt />
           <KeyboardLayer />

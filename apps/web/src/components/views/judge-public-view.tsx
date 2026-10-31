@@ -77,6 +77,7 @@ export function ruleLines(rules: JudgeHongbaoRules | null | undefined) {
     rules.deadline &&
       `截止默认 ${rules.deadline.value} ${units[rules.deadline.unit]}`,
     rules.humanCheck && "建议打开领取前人机验证",
+    rules.pageAutoOpen && "建议打开红包页时自动打开附带网页",
     rules.title && `默认标题：${rules.title}`,
   ].filter((item): item is string => Boolean(item));
 }

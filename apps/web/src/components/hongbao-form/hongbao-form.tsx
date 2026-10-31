@@ -978,6 +978,7 @@ export function HongbaoForm({
           pageCarried={pageCarried}
           pageStopped={activity?.pageStopped === true}
           humanCheckSuggested={declarations?.hongbao?.humanCheck === true}
+          pageAutoOpenSuggested={declarations?.hongbao?.pageAutoOpen === true}
           covered={scheduleOpen}
           openAt={
             opened

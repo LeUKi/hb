@@ -319,6 +319,11 @@ export interface HongbaoRules {
   prompt?: string;
   /** 建议打开领取前人机验证（发红包的人能关） */
   humanCheck?: boolean;
+  /**
+   * 建议打开红包页时自动打开附带网页（发红包的人能关）：适合主要在网页里玩的
+   * 红包。有附带网页（`meta.page` 或发红包的人自己填的）才起作用。
+   */
+  pageAutoOpen?: boolean;
   /** 红包标题的默认值，最多 100 个字 */
   title?: string;
   /**

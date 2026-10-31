@@ -456,7 +456,7 @@ test.describe("附带网页", () => {
     expect(loads.length).toBe(2);
   });
 
-  test("第一次打开某个网站先确认（§2.5）：取消就不加载、窗口收起；打开后记住这个网站，刷新再打开不问", async ({
+  test("第一次打开某个网站先确认（§2.5），在网页窗口里：收起就不加载、窗口收起；打开后在原地加载，记住这个网站，刷新再打开不问", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -464,9 +464,14 @@ test.describe("附带网页", () => {
     const loads = await mock(page, true, note, false);
     await openApp(page, path);
     const toggle = page.locator("#page-button");
+    await expect(
+      page.getByRole("region", { name: "打开附带网页？" }),
+    ).toHaveCount(0);
     await toggle.click();
-    const ask = page.getByRole("dialog", { name: "打开附带网页？" });
+    const ask = page.getByRole("region", { name: "打开附带网页？" });
     await expect(ask).toBeVisible();
+    // Not a dialog over the 红包 window: it stays usable beside it.
+    await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(ask).toContainText(
       "puzzle.example.com 不是红包站的网页，是 @xiaoman 附带的。它能看到你的 IP 和浏览器信息。不要在里面付款、转账或做任何交易；发现违规推广，请联系站长 @lafish。",
     );
@@ -476,7 +481,7 @@ test.describe("附带网页", () => {
       "https://linux.do/u/lafish",
     );
     expect(loads).toEqual([]);
-    await ask.getByRole("button", { name: "取消" }).click();
+    await ask.getByRole("button", { name: "收起" }).click();
     await expect(ask).toBeHidden();
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
     expect(loads).toEqual([]);
@@ -715,15 +720,17 @@ test.describe("附带网页", () => {
     expect(loads).toEqual([pageUrl]);
   });
 
-  test("打开红包页时自动打开（§2.7），手机：一进来抽屉就拉满；没确认过的网站先问；自己拉回去以后，刷新不再拉起", async ({
+  test("打开红包页时自动打开（§2.7），手机：一进来抽屉就拉满；没确认过的网站在抽屉里先问；自己拉回去以后，刷新不再拉起", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await mockSession(page, viewer);
     const loads = await mock(page, true, note, false, true);
     await openApp(page, path);
-    const ask = page.getByRole("dialog", { name: "打开附带网页？" });
+    const ask = page.getByRole("region", { name: "打开附带网页？" });
     await expect(ask).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(loads).toEqual([]);
     await ask.getByRole("button", { name: "打开" }).click();
     await expect(
       page
@@ -743,7 +750,7 @@ test.describe("附带网页", () => {
     await expect(ask).toHaveCount(0);
   });
 
-  test("手机：第一次拉起抽屉先确认，抽屉让开；打开后抽屉拉满再加载，取消就回到横栏", async ({
+  test("手机：第一次拉起抽屉先确认，在抽屉里；打开后在原地加载，收起就回到横栏", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
@@ -753,11 +760,14 @@ test.describe("附带网页", () => {
     const bar = page.getByRole("button", {
       name: "上拉查看附带网页：puzzle.example.com",
     });
+    const ask = page.getByRole("region", { name: "打开附带网页？" });
+    // Out of reach while the sheet is down.
+    await expect(ask).toHaveCount(0);
     await bar.click();
-    const ask = page.getByRole("dialog", { name: "打开附带网页？" });
     await expect(ask).toBeVisible();
-    await ask.getByRole("button", { name: "取消" }).click();
+    await ask.getByRole("button", { name: "收起" }).click();
     await expect(bar).toBeVisible();
+    await expect(ask).toHaveCount(0);
     expect(loads).toEqual([]);
     await bar.click();
     await ask.getByRole("button", { name: "打开" }).click();

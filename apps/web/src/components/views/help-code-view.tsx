@@ -685,7 +685,7 @@ export function judge(submission, tools) {
             },
             {
               name: "hongbao",
-              note: `可选：用它发的红包在“发多少”的默认值和范围，只能收窄本站的规则。total 是 { min, max, default }（金额是整数分）；deadline 是默认截止时长 { value, unit }，unit 是 minutes、hours 或 days；prompt 是领取提示的默认值，最多 ${JUDGE_LIMITS.promptCharacters} 个字；humanCheck 建议打开领取前人机验证；title、note 是红包标题（最多 100 个字）和说明（最多 2000 个字，一个回车就换行，[文字](#附带网页) 是打开附带网页的按钮）的默认值，挑了这个判定器时替发红包的人填好。没有份数：要几个人能领，做成参数，比如上面的 winners。`,
+              note: `可选：用它发的红包在“发多少”的默认值和范围，只能收窄本站的规则。total 是 { min, max, default }（金额是整数分）；deadline 是默认截止时长 { value, unit }，unit 是 minutes、hours 或 days；prompt 是领取提示的默认值，最多 ${JUDGE_LIMITS.promptCharacters} 个字；humanCheck 建议打开领取前人机验证；pageAutoOpen 建议打开红包页时自动打开附带网页（有附带网页才起作用）；title、note 是红包标题（最多 100 个字）和说明（最多 2000 个字，一个回车就换行，[文字](#附带网页) 是打开附带网页的按钮）的默认值，挑了这个判定器时替发红包的人填好。没有份数：要几个人能领，做成参数，比如上面的 winners。`,
             },
             {
               name: "meta",

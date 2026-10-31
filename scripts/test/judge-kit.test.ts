@@ -1509,9 +1509,16 @@ describe("hongbao.title 和 hongbao.note", () => {
         "hongbao.note 要是不空的字符串",
       ],
     });
+    // 打开红包页时自动打开, suggested (attached-page §2.7).
+    expect(readHongbaoRules({ pageAutoOpen: true })).toEqual({
+      rules: { pageAutoOpen: true },
+    });
+    expect(readHongbaoRules({ pageAutoOpen: "yes" })).toEqual({
+      problems: ["hongbao.pageAutoOpen 要是 true 或 false"],
+    });
     expect(readHongbaoRules({ name: "x" })).toEqual({
       problems: [
-        "hongbao 里不认识 name：只能写 count、total、minEach、deadline、prompt、humanCheck、title、note",
+        "hongbao 里不认识 name：只能写 count、total、minEach、deadline、prompt、humanCheck、pageAutoOpen、title、note",
       ],
     });
   });

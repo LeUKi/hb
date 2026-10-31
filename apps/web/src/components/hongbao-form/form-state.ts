@@ -962,8 +962,8 @@ export function sameInput(saved: ActivityInput, sent: ActivityInput) {
 /**
  * A picked 判定器's `hongbao` (docs/judge-square-design.md §4): its
  * defaults on whatever is still as a new form has it — the amounts left
- * empty, 24 hours to the deadline, no prompt — and 领取前人机验证 on when
- * it suggests it.
+ * empty, 24 hours to the deadline, no prompt — and 领取前人机验证 and
+ * 打开红包页时自动打开 (attached-page §2.7) on when it suggests them.
  */
 export function withJudgeDefaults(
   form: FormState,
@@ -993,5 +993,6 @@ export function withJudgeDefaults(
         }
       : {}),
     ...(rules.humanCheck ? { humanCheck: true } : {}),
+    ...(rules.pageAutoOpen ? { pageAutoOpen: true } : {}),
   };
 }

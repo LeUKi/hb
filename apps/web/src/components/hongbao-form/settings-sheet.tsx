@@ -142,6 +142,7 @@ export function SettingsSheet({
   pageCarried = null,
   pageStopped,
   humanCheckSuggested = false,
+  pageAutoOpenSuggested = false,
   openAt,
   covered = false,
 }: {
@@ -167,6 +168,8 @@ export function SettingsSheet({
   pageStopped: boolean;
   /** Its 判定器 suggests 领取前人机验证 (judge-square §4). */
   humanCheckSuggested?: boolean;
+  /** Its 判定器 suggests 打开红包页时自动打开 (attached-page §2.7). */
+  pageAutoOpenSuggested?: boolean;
   /**
    * 开放时间 (scheduled-opening §1): the time chosen or set, and 定时开放's
    * dialog; none once it opened.
@@ -574,7 +577,7 @@ export function SettingsSheet({
                   <div className="pt-2">
                     <Switch
                       label="打开红包页时自动打开"
-                      description="进入红包页就打开这个网页：宽屏在旁边，手机拉起抽屉。第一次打开某个网站照样先确认；看的人自己关掉过的，下次不再自动打开。开放后不能改。"
+                      description={`进入红包页就打开这个网页：宽屏在旁边，手机拉起抽屉。第一次打开某个网站照样先确认；看的人自己关掉过的，下次不再自动打开。开放后不能改。${pageAutoOpenSuggested ? "这个判定器建议打开。" : ""}`}
                       checked={form.pageAutoOpen}
                       disabled={opened}
                       onChange={(pageAutoOpen) =>

@@ -1506,7 +1506,7 @@ test.describe("红包页", () => {
       ),
     ).toBeVisible();
 
-    // 自领: asked once before it goes; 返回 sends nothing, the 口令 stays.
+    // 自领: asked before it goes; 返回 sends nothing, the 口令 stays.
     const sent: unknown[] = [];
     await page.route(`**/api/activities/${id}/claim`, (route) => {
       sent.push(route.request().postDataJSON());
@@ -1555,6 +1555,7 @@ test.describe("红包页", () => {
     await page.keyboard.press("Enter");
     const confirm = page.getByRole("dialog", { name: "领自己的红包" });
     await expect(confirm).toContainText("会占掉一份，名单里显示「自领的屑」。");
+    await expect(confirm).toContainText("确认后，这个红包不再问。");
     await confirm.getByRole("button", { name: "返回" }).click();
     await expect(confirm).toBeHidden();
     expect(sent).toHaveLength(0);

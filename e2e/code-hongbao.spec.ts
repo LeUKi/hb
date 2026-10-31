@@ -637,6 +637,42 @@ test.describe("代码判定红包", () => {
     expect(state.reads).toEqual(before);
   });
 
+  // 自领 (docs/self-claim-design.md): asked the first time for each 红包,
+  // kept in this browser once said yes to.
+  test("红包作者自己试玩：第一次提交前确认一次，返回什么都不发；确认后这个红包不再问，记在这个浏览器里", async ({
+    page,
+  }) => {
+    await mockSession(page, author);
+    const state = await mockCodeHongbao(page);
+    await mockLive(page);
+    await mockSenderReads(page);
+    await openApp(page, path);
+    await seal(page).click();
+    const input = omniboxInput(page);
+    await input.fill("50");
+    await page.keyboard.press("Enter");
+    const confirm = page.getByRole("dialog", { name: "领自己的红包" });
+    await expect(confirm).toContainText("会占掉一份，名单里显示「自领的屑」。");
+    await expect(confirm).toContainText("确认后，这个红包不再问。");
+    await confirm.getByRole("button", { name: "返回" }).click();
+    await expect(confirm).toBeHidden();
+    expect(state.submissions).toHaveLength(0);
+    await expect(input).toHaveValue("50");
+    await input.press("Enter");
+    await confirm.getByRole("button", { name: "领取" }).click();
+    await expect.poll(() => state.submissions.length).toBe(1);
+    // Past the attempt interval: straight on.
+    await page.waitForTimeout(2_100);
+    await input.fill("40");
+    await input.press("Enter");
+    await expect.poll(() => state.submissions.length).toBe(2);
+    await expect(confirm).toHaveCount(0);
+    // Kept in this browser, for this 红包 alone.
+    expect(
+      await page.evaluate(() => localStorage.getItem("hb.self-claim")),
+    ).toBe(JSON.stringify([state.activity.id]));
+  });
+
   test("开：黑漆的代码判定作用域和等宽输入；没领到写判定器的回复，领到后结果里不再写输入；我的记录随之更新", async ({
     page,
   }) => {

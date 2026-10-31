@@ -811,6 +811,7 @@ test.describe("判定器带的附带网页（judge-page §4、§11.9）", () => 
             ...version.declarations.hongbao,
             title: "猜数字红包",
             note: "猜 1 到 100 之间的数。\n\n[打开网页参与游戏](#附带网页)",
+            pageAutoOpen: true,
           },
         },
       },
@@ -936,5 +937,35 @@ test.describe("判定器带的附带网页（judge-page §4、§11.9）", () => 
     expect((await saveDraft(page, 1, asked)).pageUrl).toBe(
       "https://my.example.com/",
     );
+  });
+
+  test("判定器建议打开红包页时自动打开（attached-page §2.7）：挑了就替你打开，开关下写这个判定器建议打开，能关；判定器页也写", async ({
+    page,
+  }) => {
+    const asked = await mockCarried(page, member);
+    await pickGuess(page);
+    await page.getByRole("button", { name: /更多设置/ }).click();
+    const sheet = page.getByRole("dialog", { name: "更多设置" });
+    const byItself = sheet.getByRole("switch", {
+      name: "打开红包页时自动打开",
+    });
+    await expect(byItself).toBeChecked();
+    await expect(
+      sheet.getByText(
+        "进入红包页就打开这个网页：宽屏在旁边，手机拉起抽屉。第一次打开某个网站照样先确认；看的人自己关掉过的，下次不再自动打开。开放后不能改。这个判定器建议打开。",
+      ),
+    ).toBeVisible();
+    await byItself.click();
+    await expect(byItself).not.toBeChecked();
+    await byItself.click();
+    await sheet.getByRole("button", { name: "完成" }).click();
+    expect(await saveDraft(page, 1, asked)).toMatchObject({
+      pageUrl: carried,
+      pageAutoOpen: true,
+    });
+    await openApp(page, `/judges/${GUESS}`);
+    await expect(
+      page.getByText("建议打开红包页时自动打开附带网页", { exact: true }),
+    ).toBeVisible();
   });
 });

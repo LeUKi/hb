@@ -659,12 +659,12 @@ export function useOmniboxController() {
           input = { submissionId: crypto.randomUUID(), password: checked.data };
         }
       }
-      // 自领: asked once before it is sent (not again for a retry of it);
-      // 返回 sends nothing and leaves the box as it was.
+      // 自领: asked once for each 红包 before it is sent (not for a retry
+      // of it); 返回 sends nothing and leaves the box as it was.
       if (
         !retrying &&
         ownOf(activityId, account.id) &&
-        !(await askSelfClaim(store, verb === "报名"))
+        !(await askSelfClaim(store, activityId, verb === "报名"))
       )
         return;
       const href = router.history.location.href;
@@ -931,7 +931,8 @@ export function useOmniboxController() {
           activityId,
           origin,
         })) ||
-        (ownOf(activityId, account.id) && !(await askSelfClaim(store, false)))
+        (ownOf(activityId, account.id) &&
+          !(await askSelfClaim(store, activityId, false)))
       )
         return notJudged("denied");
       // Asked meanwhile: the box may have sent one, or the account changed.

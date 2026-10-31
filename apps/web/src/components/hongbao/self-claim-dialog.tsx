@@ -5,9 +5,9 @@ import { ConfirmDialog } from "../shell/confirm-dialog";
 import { Button } from "../ui/button";
 
 /**
- * 自领 (docs/self-claim-design.md): before the sender takes a share of
- * their own 红包, once, however it was asked for (the seal, the box, a
- * 口令 from the start page). 返回 sends nothing.
+ * 自领 (docs/self-claim-design.md): before the sender first takes a share
+ * of their own 红包, however it was asked for (the seal, the box, a 口令
+ * from the start page). 返回 sends nothing.
  */
 export function SelfClaimDialog() {
   const request = useAtomValue(selfClaimAtom);
@@ -33,6 +33,8 @@ export function SelfClaimDialog() {
           </Button>
         </>
       }
-    />
+    >
+      <p className="text-xs text-ink-3">确认后，这个红包不再问。</p>
+    </ConfirmDialog>
   );
 }

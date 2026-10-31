@@ -586,6 +586,7 @@ export function readHongbaoRules(value) {
     "deadline",
     "prompt",
     "humanCheck",
+    "pageAutoOpen",
     "title",
     "note",
   ];
@@ -637,6 +638,12 @@ export function readHongbaoRules(value) {
     );
   if (value.humanCheck !== undefined && typeof value.humanCheck !== "boolean")
     add("hongbao.humanCheck 要是 true 或 false");
+  // 打开红包页时自动打开 (attached-page §2.7), suggested.
+  if (
+    value.pageAutoOpen !== undefined &&
+    typeof value.pageAutoOpen !== "boolean"
+  )
+    add("hongbao.pageAutoOpen 要是 true 或 false");
   // The 红包's title and 说明 to start with (judge-square §4.1).
   if (value.title !== undefined)
     add(
