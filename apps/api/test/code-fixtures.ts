@@ -27,13 +27,16 @@ export type Actor = {
   externalId: string;
 };
 
+/** LINUX DO ids, one after another: random ones met in a test of many. */
+let nextExternalId = 800_000 + Math.floor(Math.random() * 1_000_000);
+
 export async function actor(): Promise<Actor> {
   const id = crypto.randomUUID();
   const token = crypto.randomUUID();
   const csrf = crypto.randomUUID();
   const now = new Date();
   const db = createDb(env.DB);
-  const externalId = String(800_000 + Math.floor(Math.random() * 1_000_000));
+  const externalId = String(nextExternalId++);
   await db.insert(users).values({
     id,
     externalId,
