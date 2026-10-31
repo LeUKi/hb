@@ -1,3 +1,4 @@
+import type { MyJudgment } from "@hb/contracts";
 import { useLocation, useMatches } from "@tanstack/react-router";
 import { atom } from "jotai";
 import type { TermMark } from "../ui/term";
@@ -47,12 +48,17 @@ export const mismatchAtom = atom(0);
 export const pendingAtom = atom(false);
 /**
  * A 代码判定 submission on its way (02 §4 判定中): what was typed, moved
- * out of the box into its card in 我的提交, and when it was sent.
+ * out of the box into its card in 我的提交, and when it was sent. Once
+ * judged, its `answer` draws the card as its result, until 我的记录, read
+ * again behind it, has the same row.
  */
 export const judgingAtom = atom<{
   activityId: string;
+  /** The submission's own id: which one an answer is for. */
+  id: string;
   input: string;
   at: number;
+  answer?: Pick<MyJudgment, "message" | "amount" | "note" | "moved">;
 } | null>(null);
 /** A submission whose answer was lost, to be sent again as it was. */
 export type Unconfirmed = { password: string; submissionId: string };

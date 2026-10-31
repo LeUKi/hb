@@ -146,6 +146,8 @@ type CodeState = {
   submissions: { participationMode?: string; input?: string }[];
   /** The cursor of each read of 我的记录 (null: the first page). */
   judgmentReads: (string | null)[];
+  /** While set, reads of 我的记录 wait for it. */
+  holdJudgments?: Promise<void>;
   /** 参与名单 · 挑战: everyone judged, the latest first. */
   challengers: JudgeChallenger[];
   /** 动态 (protocol 4): every line, newest first; the cursors read. */
@@ -207,7 +209,7 @@ async function mockCodeHongbao(page: Page, judgments: MyJudgment[] = []) {
     announcementReads: [],
     reads: { public: 0, participation: 0 },
   };
-  await page.route(`**/api/activities/${id}**`, (route) => {
+  await page.route(`**/api/activities/${id}**`, async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     const rest = url.pathname.slice(`/api/activities/${id}`.length);
@@ -266,6 +268,7 @@ async function mockCodeHongbao(page: Page, judgments: MyJudgment[] = []) {
     if (rest === "/judgments") {
       const cursor = url.searchParams.get("cursor");
       state.judgmentReads.push(cursor);
+      if (state.holdJudgments) await state.holdJudgments;
       const from = Number(cursor ?? 0);
       const items = state.judgments.slice(from, from + 20);
       return route.fulfill({
@@ -671,6 +674,47 @@ test.describe("代码判定红包", () => {
     expect(
       await page.evaluate(() => localStorage.getItem("hb.self-claim")),
     ).toBe(JSON.stringify([state.activity.id]));
+  });
+
+  // §3 热点 (2026-11-01): the answer shows as it comes, not after 我的记录
+  // is read again; read, the same row stays, once.
+  test("判定结果一回来就显示，不等我的记录重读完；读到以后还是那一行", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    const state = await mockCodeHongbao(page);
+    await mockLive(page);
+    await openApp(page, path);
+    await seal(page).click();
+    const input = omniboxInput(page);
+    await input.fill("50");
+    let release = () => {};
+    state.holdJudgments = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const readsBefore = state.judgmentReads.length;
+    await page.keyboard.press("Enter");
+    const record = page
+      .locator(".glass-pop")
+      .getByRole("region", { name: "我的记录" });
+    await expect(record.getByText("大了", { exact: true })).toBeVisible();
+    await expect(record).toContainText("第 1 次");
+    await expect(record).toContainText("没领到");
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "第 1 次：没领到。判定器的回复：大了" }),
+    ).toHaveCount(1);
+    // 我的记录 is being read again, held: the answer did not wait for it.
+    await expect
+      .poll(() => state.judgmentReads.length)
+      .toBeGreaterThan(readsBefore);
+    await expect(input).toHaveValue("");
+    release();
+    state.holdJudgments = undefined;
+    await expect(record.getByRole("heading")).toHaveText("我的记录 · 1 条");
+    await expect(record.getByRole("listitem")).toHaveCount(1);
+    await expect(record.getByText("大了", { exact: true })).toBeVisible();
   });
 
   test("开：黑漆的代码判定作用域和等宽输入；没领到写判定器的回复，领到后结果里不再写输入；我的记录随之更新", async ({
@@ -3831,13 +3875,19 @@ test.describe("附带网页 SDK（judge-page §3、§11.8）", () => {
     expect(Number(cooling.seconds)).toBeGreaterThan(0);
     expect(state.submissions).toHaveLength(1);
 
-    // After it, not asked again; paid in 🐟.
+    // After it, not asked again; paid in 🐟. The page has its answer
+    // without waiting for 我的记录 to be read again (§3 热点).
     await page.waitForTimeout(2_100);
-    expect(
-      await frame.evaluate(() =>
-        (window as unknown as GameWindow).hb.submit("42"),
-      ),
-    ).toEqual({
+    let letRead = () => {};
+    state.holdJudgments = new Promise<void>((resolve) => {
+      letRead = resolve;
+    });
+    const answered = await frame.evaluate(() =>
+      (window as unknown as GameWindow).hb.submit("42"),
+    );
+    letRead();
+    state.holdJudgments = undefined;
+    expect(answered).toEqual({
       judged: true,
       claimed: true,
       amount: "0.30",

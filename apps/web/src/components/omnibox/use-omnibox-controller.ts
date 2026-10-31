@@ -1,7 +1,9 @@
 import {
   type ActivityPasswords,
   type ClaimActivityInput,
+  type ClaimResult,
   judgeAnswerSchema,
+  type MyJudgment,
   passwordSchema,
 } from "@hb/contracts";
 import { useQueryClient } from "@tanstack/react-query";
@@ -99,6 +101,32 @@ export type Destination =
   | { to: "/🔑/$resultId"; resultId: string }
   | { to: "/💬/$topicId/$postNumber"; topicId: string; postNumber: number }
   | { to: CommandPath };
+
+/**
+ * A 代码判定 answer as its row in 我的提交 will read (judge/mine.ts): the
+ * reply, what was paid and why it differs, and (protocol 5) what it moved.
+ */
+function answerOf(
+  result: ClaimResult,
+): Pick<MyJudgment, "message" | "amount" | "note" | "moved"> {
+  if (result.result === "claimed") {
+    const { amount, judge } = result.claim;
+    return {
+      amount,
+      ...(judge?.message ? { message: judge.message } : {}),
+      ...(judge?.note ? { note: judge.note } : {}),
+    };
+  }
+  if (result.result === "rejected")
+    return result.message ? { message: result.message } : {};
+  if (result.result !== "judged") return {};
+  const claim = result.settled?.claim;
+  return {
+    ...(result.message ? { message: result.message } : {}),
+    moved: { ...result.moved, settled: Boolean(result.settled) },
+    ...(claim ? { amount: claim.amount } : {}),
+  };
+}
 
 export function focusOmniboxInput(select = false) {
   const input = omniboxElements.input;
@@ -550,6 +578,29 @@ export function useOmniboxController() {
    * same submission goes again with a Turnstile token from the dialog.
    * Null: the dialog was closed, or the page moved on meanwhile.
    */
+  // 代码判定 (02 §4 判定中): the card of the one on its way is let go only
+  // if it is still that one (another may have followed).
+  const dropJudging = useCallback(
+    (id: string) => {
+      if (store.get(judgingAtom)?.id === id) store.set(judgingAtom, null);
+    },
+    [store],
+  );
+  // Judged: the card shows the answer at once (to the page as well), and
+  // 我的提交 is read behind it; read, the same row takes its place
+  // (programmable-hongbao §3 热点, 2026-11-01: it used to wait for that read).
+  const showAnswer = useCallback(
+    (userId: string, activityId: string, id: string, result: ClaimResult) => {
+      const current = store.get(judgingAtom);
+      if (current?.id === id)
+        store.set(judgingAtom, { ...current, answer: answerOf(result) });
+      void queryClient
+        .invalidateQueries({ queryKey: myJudgmentsKey(userId, activityId) })
+        .finally(() => dropJudging(id));
+    },
+    [dropJudging, queryClient, store],
+  );
+
   const claimWithHumanCheck = useCallback(
     async (
       activityId: string,
@@ -684,6 +735,7 @@ export function useOmniboxController() {
       if (code && "input" in input) {
         store.set(judgingAtom, {
           activityId,
+          id: input.submissionId,
           input: input.input,
           at: Date.now(),
         });
@@ -708,17 +760,15 @@ export function useOmniboxController() {
           withClaim(store.get(unconfirmedAtom), activityId, null),
         );
         if (stale()) return;
-        // 代码判定: this one joins 我的提交 (05 §3), read before its card
-        // turns into it.
+        // 代码判定: its card turns into the answer at once, and 我的提交
+        // (05 §3) is read again behind it.
         judged =
           code &&
           (result.result === "claimed" ||
             result.result === "rejected" ||
             result.result === "judged");
         if (judged)
-          await queryClient.invalidateQueries({
-            queryKey: myJudgmentsKey(account.id, activityId),
-          });
+          showAnswer(account.id, activityId, input.submissionId, result);
         switch (result.result) {
           case "claimed":
           case "registered":
@@ -869,7 +919,7 @@ export function useOmniboxController() {
       } finally {
         store.set(pendingAtom, false);
         if (code) {
-          store.set(judgingAtom, null);
+          if (!judged) dropJudging(input.submissionId);
           if (!judged && !stale() && store.get(editDraftAtom) === "")
             store.set(editDraftAtom, typed);
         }
@@ -878,10 +928,12 @@ export function useOmniboxController() {
     [
       claimWithHumanCheck,
       collapse,
+      dropJudging,
       guard,
       ownOf,
       queryClient,
       router,
+      showAnswer,
       store,
       verbOf,
     ],
@@ -956,20 +1008,21 @@ export function useOmniboxController() {
       });
       store.set(judgingAtom, {
         activityId,
+        id: input.submissionId,
         input: checked.data,
         at: Date.now(),
       });
+      let judged = false;
       try {
         const result = await claimWithHumanCheck(activityId, input, stale);
         if (!result) return notJudged("human_check");
-        if (
+        // The page has its answer now; 我的提交 is read behind it.
+        judged =
           result.result === "claimed" ||
           result.result === "rejected" ||
-          result.result === "judged"
-        )
-          await queryClient.invalidateQueries({
-            queryKey: myJudgmentsKey(account.id, activityId),
-          });
+          result.result === "judged";
+        if (judged)
+          showAnswer(account.id, activityId, input.submissionId, result);
         switch (result.result) {
           case "claimed": {
             const balance = result.claim.activity.funding === "balance";
@@ -1053,10 +1106,19 @@ export function useOmniboxController() {
         return notJudged("error", { message: error.message });
       } finally {
         store.set(pendingAtom, false);
-        store.set(judgingAtom, null);
+        if (!judged) dropJudging(input.submissionId);
       }
     },
-    [claimWithHumanCheck, openAccount, ownOf, queryClient, router, store],
+    [
+      claimWithHumanCheck,
+      dropJudging,
+      openAccount,
+      ownOf,
+      queryClient,
+      router,
+      showAnswer,
+      store,
+    ],
   );
 
   /**

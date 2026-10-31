@@ -257,6 +257,43 @@ function StillJudging({
 }
 
 /**
+ * The submission on its way, or judged and not yet in what was read, on
+ * top as the next row (02 §4 判定中): numbered from the record as it stood
+ * when it was sent, drawn as its answer once judged, and gone once the
+ * record read again counts it (the same row, by its number). `pending`:
+ * still on its way.
+ */
+function useOursOnTop(
+  activityId: string,
+  attempts: number | undefined,
+  items: MyJudgment[],
+) {
+  const judging = useAtomValue(judgingAtom);
+  const ours = judging?.activityId === activityId ? judging : null;
+  const base = useRef<{ id: string; attempts: number } | null>(null);
+  if (ours && attempts !== undefined && base.current?.id !== ours.id)
+    base.current = { id: ours.id, attempts };
+  const from =
+    ours && base.current?.id === ours.id ? base.current.attempts : attempts;
+  const shown = ours !== null && from !== undefined && (attempts ?? 0) <= from;
+  if (!shown || from === undefined)
+    return { ours: null, pending: null, rows: items };
+  return {
+    ours,
+    pending: ours.answer ? null : ours,
+    rows: [
+      {
+        attempt: from + 1,
+        at: new Date(ours.at).toISOString(),
+        input: ours.input,
+        ...ours.answer,
+      },
+      ...items,
+    ] satisfies MyJudgment[],
+  };
+}
+
+/**
  * 红包状态 in the 指令框 (judge-page §11.3): the code's sentence, as on the
  * 红包 page, and the latest line in 动态 under it; nothing without either.
  */
@@ -309,23 +346,14 @@ export function JudgmentRecord({ activityId }: { activityId: string }) {
   });
   const activity = useHongbaoPageData(activityId).data?.activity;
   const network = activity?.judge?.network;
-  const judging = useAtomValue(judgingAtom);
   const total = query.data?.pages[0]?.total ?? 0;
-  const attempts = query.data?.pages[0]?.attempts ?? 0;
   const items = query.data?.pages.flatMap((batch) => batch.items) ?? [];
+  const { ours, pending, rows } = useOursOnTop(
+    activityId,
+    query.data?.pages[0]?.attempts,
+    items,
+  );
   if (!user || !query.data) return null;
-  const pending = judging?.activityId === activityId ? judging : null;
-  // On its way, it heads the record as the next one.
-  const rows: MyJudgment[] = pending
-    ? [
-        {
-          attempt: attempts + 1,
-          at: new Date(pending.at).toISOString(),
-          input: pending.input,
-        },
-        ...items,
-      ]
-    : items;
   const latest = items[0];
   return (
     <div className="flex flex-col gap-3 px-0.5 pb-1">
@@ -339,7 +367,13 @@ export function JudgmentRecord({ activityId }: { activityId: string }) {
       ) : (
         <section aria-label="我的记录" className="flex flex-col gap-1.5">
           <p role="status" className="sr-only">
-            {pending ? "正在判定…" : latest ? spoken(latest) : ""}
+            {pending
+              ? "正在判定…"
+              : ours?.answer && rows[0]
+                ? spoken(rows[0])
+                : latest
+                  ? spoken(latest)
+                  : ""}
           </p>
           <h3 className="px-2.5 text-xs font-medium text-ink-3">
             <RollingText text={`我的记录 · ${total} 条`} />
@@ -398,22 +432,15 @@ export function MyJudgments({ activityId }: { activityId: string }) {
   const user = useSessionUser();
   const router = useRouter();
   const query = useMyJudgments(user?.id ?? "", activityId);
-  const judging = useAtomValue(judgingAtom);
   const first = query.data?.pages[0];
-  const pending = judging?.activityId === activityId ? judging : null;
-  if (!user || !first || (first.total === 0 && !pending)) return null;
   // On its way (from the box, or the 附带网页 with the box closed, judge-
   // page §11.3): on top already, as in the box's record.
-  const rows: MyJudgment[] = pending
-    ? [
-        {
-          attempt: first.attempts + 1,
-          at: new Date(pending.at).toISOString(),
-          input: pending.input,
-        },
-        ...first.items,
-      ]
-    : first.items;
+  const { ours, pending, rows } = useOursOnTop(
+    activityId,
+    first?.attempts,
+    first?.items ?? [],
+  );
+  if (!user || !first || (first.total === 0 && !ours)) return null;
   return (
     <section className="grid gap-2" data-hb-part="my-judgments">
       <div className="flex min-h-9 items-center justify-between gap-3">
