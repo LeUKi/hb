@@ -216,8 +216,15 @@ async function openGame({ sandbox, plan, params, hostUrl, cooldown }) {
     last: new Map(),
     /** 快进到截止 moves the clock on by this much. */
     skipped: 0,
-    /** The red packet's clock: simulate.json's now, moving on. */
-    clock: () => plan.now + (Date.now() - started) + game.skipped,
+    /**
+     * How far the red packet's clock is from this computer's: simulate.json's
+     * now, moving on. The page and the simulator share this computer's
+     * clock, so hb.now() is Date.now() and this, as the site's is
+     * calibrated to its server.
+     */
+    offset: () => plan.now - started + game.skipped,
+    /** The red packet's clock now. */
+    clock: () => Date.now() + game.offset(),
   };
 
   const ended = () => scenario.ended || game.clock() >= plan.hongbao.endsAt;
@@ -253,6 +260,8 @@ async function openGame({ sandbox, plan, params, hostUrl, cooldown }) {
     paid: yuan(scenario.paid),
     /** The red packet's clock now (simulate.json's now, moving on). */
     now: game.clock(),
+    /** And how far it is from this computer's, for hb.now(). */
+    clock: game.offset(),
     /** How it ended: judge (its code), empty (the pool taken), deadline. */
     endedBy: scenario.ended
       ? (scenario.endedBy ?? null)
@@ -381,10 +390,11 @@ async function openGame({ sandbox, plan, params, hostUrl, cooldown }) {
     const person = [...scenario.people.values()].find(
       (item) => item.user.username === who,
     );
+    // Counted on this computer's clock, given on the red packet's (hb.now()).
     const last = game.last.get(who);
     const cooldownUntil =
       cooldown > 0 && last !== undefined && last + cooldown * 1000 > Date.now()
-        ? last + cooldown * 1000
+        ? last + cooldown * 1000 + game.offset()
         : null;
     if (!person)
       return { pending: null, settled: null, myView: null, cooldownUntil };
@@ -604,7 +614,12 @@ export async function startPage({
           nonce: typeof nonce === "string" ? nonce : undefined,
         });
         print(`${who} 的身份令牌签给了网页（10 分钟）`);
-        return json(response, identity);
+        // The token's iat and exp stay this computer's, as a server checks
+        // them; expiresAt is on the red packet's clock, like hb.now().
+        return json(response, {
+          ...identity,
+          expiresAt: iso(Date.parse(identity.expiresAt) + game.offset()),
+        });
       }
       if (request.method === "POST" && url.pathname === "/api/end") {
         const settled = game.end();

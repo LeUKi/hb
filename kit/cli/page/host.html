@@ -157,6 +157,8 @@
       const site = new URL(config.pageOrigin).hostname;
       const author = config.hongbao.author;
       let state = null;
+      /** The red packet's clock (simulate.json's now, moving on), as hb.now() in the page. */
+      const now = () => Date.now() + (state?.clock ?? 0);
       /** One per person on screen: their 红包 window, their page, their link to it. */
       let seats = [];
       /** For npm run page --shot: whose page said hello. */
@@ -208,7 +210,7 @@
       }
       function remaining() {
         if (state.hongbao.status === "ended") return "已结束";
-        const left = Date.parse(state.hongbao.deadlineAt) - state.now - (Date.now() - state.readAt);
+        const left = Date.parse(state.hongbao.deadlineAt) - now();
         if (left <= 0) return "已结束";
         const s = Math.floor(left / 1000);
         const two = (n) => String(n).padStart(2, "0");
@@ -356,7 +358,7 @@
 
       /** The box's button: 领取, 正在判定…, 还需等待 N 秒. */
       function refreshButton(seat) {
-        const left = seat.me?.cooldownUntil ? Math.ceil((seat.me.cooldownUntil - Date.now()) / 1000) : 0;
+        const left = seat.me?.cooldownUntil ? Math.ceil((seat.me.cooldownUntil - now()) / 1000) : 0;
         seat.submit.textContent = seat.pending ? "正在判定…" : left > 0 ? `还需等待 ${left} 秒` : "领取";
         seat.submit.disabled = seat.pending || left > 0;
       }
@@ -467,12 +469,17 @@
         seat.mine = mine;
       }
 
-      /** What changed, to the page: view, 红包, me, myView, new lines of 动态 (oldest first). */
+      /** What changed, to the page: the clock, view, 红包, me, myView, new lines of 动态 (oldest first). */
       function push(seat) {
         const link = seat.link;
         const target = seat.iframe?.contentWindow;
         if (!link || !target) return;
         const send = (event, value) => target.postMessage({ hb: 1, event, value }, config.pageOrigin);
+        // 重新开始 and 快进到截止 move the clock: hb.now() with it, before what is counted on it.
+        if (state.clock !== link.clock) {
+          link.clock = state.clock;
+          send("clock", state.clock);
+        }
         for (const [key, value] of [["view", state.view], ["hongbao", state.hongbao], ["me", seat.me], ["myView", seat.myView]]) {
           const text = JSON.stringify(value);
           if (text !== link[key]) {
@@ -490,7 +497,6 @@
       /** After anything moved: everyone's 红包 window, everyone's page. */
       async function refreshAll() {
         state = await api("/api/state");
-        state.readAt = Date.now();
         await Promise.all(seats.map(refreshMe));
         for (const seat of seats) {
           render(seat);
@@ -523,12 +529,13 @@
             me: JSON.stringify(seat.me),
             myView: JSON.stringify(seat.myView),
             line: state.announcements[0]?.n ?? -1,
+            clock: state.clock,
           };
           window.__sim.connected[who] = true;
           reply({ value: {
             hongbao: state.hongbao,
             viewer: who === config.guest ? { signedIn: false } : { signedIn: true, name: who },
-            theme: "light", view: state.view, me: seat.me, myView: seat.myView, clock: 0,
+            theme: "light", view: state.view, me: seat.me, myView: seat.myView, clock: state.clock,
           } });
           return;
         }

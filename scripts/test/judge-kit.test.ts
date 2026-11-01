@@ -1,5 +1,11 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -1720,6 +1726,149 @@ describe("附带网页", () => {
       await page.close();
     }
   }, 40_000);
+});
+
+// The simulator's time (docs/kit-simulator-design.md §2): the red packet's
+// clock starts at simulate.json's now, wherever that is from today, and
+// hb.now(), cooldownUntil and expiresAt are on it, as the site's are on its
+// server's. A developer found hb.now() on this computer's clock instead
+// (2026-11-01): every countdown in a page was off.
+describe("npm run page: the red packet's clock", () => {
+  /** number-bomb with simulate.json's now moved, or as it is (2026-10-24). */
+  function bombAt(now?: string) {
+    const dir = mkdtempSync(join(tmpdir(), "hb-clock-"));
+    made.push(dir);
+    cpSync(join(kitDir, "examples/number-bomb"), dir, { recursive: true });
+    if (now) {
+      const file = join(dir, "simulate.json");
+      writeFileSync(
+        file,
+        JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), now }),
+      );
+    }
+    return dir;
+  }
+  const post = async (url: string, body: unknown) =>
+    (await fetch(url, { method: "POST", body: JSON.stringify(body) })).json();
+
+  it.each([
+    ["before today", undefined],
+    ["after today", "2027-06-01T12:00:00+08:00"],
+  ])(
+    "%s: the clock moves on from now; cooldownUntil, expiresAt and 快进到截止 on it",
+    async (_, now) => {
+      const page = await startPage({
+        root: bombAt(now),
+        port: 0,
+        cooldown: 3,
+        print: () => {},
+      });
+      try {
+        const state = await (await fetch(`${page.hostUrl}/api/state`)).json();
+        expect(Math.abs(Date.now() + state.clock - state.now)).toBeLessThan(
+          1000,
+        );
+        expect(state.now).toBeGreaterThanOrEqual(
+          Date.parse(now ?? "2026-10-24T12:00:00+08:00"),
+        );
+        expect(state.now).toBeLessThan(
+          Date.parse(now ?? "2026-10-24T12:00:00+08:00") + 60_000,
+        );
+        const answer = await post(`${page.hostUrl}/api/submit`, {
+          who: "小明",
+          input: "50",
+        });
+        expect(answer.result.judged).toBe(true);
+        const me = await (
+          await fetch(
+            `${page.hostUrl}/api/me?who=${encodeURIComponent("小明")}`,
+          )
+        ).json();
+        const left = me.cooldownUntil - (Date.now() + state.clock);
+        expect(left).toBeGreaterThan(2000);
+        expect(left).toBeLessThanOrEqual(3000);
+        const identity = await post(`${page.hostUrl}/api/identity`, {
+          who: "小明",
+        });
+        const lasts =
+          Date.parse(identity.expiresAt) - (Date.now() + state.clock);
+        expect(lasts).toBeGreaterThan(590_000);
+        expect(lasts).toBeLessThanOrEqual(600_000);
+        // The token itself stays on this computer's clock, as a server
+        // checks it.
+        const claims = JSON.parse(
+          Buffer.from(identity.token.split(".")[1], "base64url").toString(),
+        );
+        expect(Math.abs(claims.exp * 1000 - Date.now() - 600_000)).toBeLessThan(
+          2000,
+        );
+        const ended = (await post(`${page.hostUrl}/api/end`, {})).state;
+        expect(ended.clock).toBeGreaterThan(state.clock);
+        expect(
+          Math.abs(
+            Date.now() + ended.clock - Date.parse(ended.hongbao.deadlineAt),
+          ),
+        ).toBeLessThan(1000);
+        const reset = (await post(`${page.hostUrl}/api/reset`, {})).state;
+        expect(Math.abs(Date.now() + reset.clock - reset.now)).toBeLessThan(
+          1000,
+        );
+        expect(reset.clock).toBeLessThan(ended.clock);
+      } finally {
+        await page.close();
+      }
+    },
+    40_000,
+  );
+
+  it("hb.now() in the page is on it, from hello and after 快进到截止", async () => {
+    const page = await startPage({
+      root: bombAt("2027-06-01T12:00:00+08:00"),
+      port: 0,
+      cooldown: 3,
+      print: () => {},
+    });
+    let browser: import("@playwright/test").Browser | undefined;
+    try {
+      const { chromium } = await import("@playwright/test");
+      for (const channel of ["chrome", "msedge", undefined])
+        try {
+          browser = await chromium.launch(channel ? { channel } : {});
+          break;
+        } catch {
+          // The next one.
+        }
+      // No browser here: nothing to open it in.
+      if (!browser) return;
+      const tab = await browser.newPage();
+      await tab.goto(`${page.hostUrl}/?layout=wide&open=1&accept=1`);
+      await tab.waitForFunction(
+        () =>
+          Object.keys(
+            (window as unknown as { __sim: { connected: object } }).__sim
+              .connected,
+          ).length > 0,
+      );
+      const frame = tab
+        .frames()
+        .find((one) => one.url().startsWith(page.pageUrl));
+      if (!frame) throw new Error("the page is not open");
+      const gap = async () => {
+        const state = await (await fetch(`${page.hostUrl}/api/state`)).json();
+        const shown = await frame.evaluate(() =>
+          (window as unknown as { hb: { now(): number } }).hb.now(),
+        );
+        return shown - state.now;
+      };
+      expect(Math.abs(await gap())).toBeLessThan(1000);
+      await tab.getByRole("button", { name: "快进到截止" }).click();
+      await expect.poll(gap, { timeout: 5000 }).toBeGreaterThan(-1000);
+      expect(Math.abs(await gap())).toBeLessThan(1000);
+    } finally {
+      await browser?.close();
+      await page.close();
+    }
+  }, 60_000);
 });
 
 // 让开发者的 Agent 默认就写对 (docs/kit-guide-design.md): the key points,
