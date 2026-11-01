@@ -427,6 +427,12 @@ export function ParamsFields({
                 />
               </div>
             );
+          // 选项联动 (judge-square §3): the chosen option's own hint, and
+          // the params it sets, set as it is chosen.
+          const chosen =
+            item.type === "choice"
+              ? item.options.find((option) => option.value === values[item.key])
+              : undefined;
           return (
             <div
               key={item.key}
@@ -443,7 +449,7 @@ export function ParamsFields({
                     ? undefined
                     : `${idPrefix}${item.key}`
                 }
-                hint={item.hint}
+                hint={chosen?.hint ?? item.hint}
                 error={error}
               >
                 <ParamControl
@@ -452,7 +458,16 @@ export function ParamsFields({
                   value={values[item.key]}
                   disabled={locked}
                   invalid={Boolean(error)}
-                  onChange={(value) => onChange(item.key, value)}
+                  onChange={(value) => {
+                    onChange(item.key, value);
+                    if (item.type !== "choice") return;
+                    const set = item.options.find(
+                      (option) => option.value === value,
+                    )?.set;
+                    for (const [key, next] of Object.entries(set ?? {}))
+                      if (params.some((other) => other.key === key))
+                        onChange(key, next);
+                  }}
                 />
               </Field>
             </div>
@@ -465,7 +480,9 @@ export function ParamsFields({
 
 /**
  * The values a version's params start from: those still declared as they
- * were, the rest their defaults (§14.4: changing versions keeps what fits).
+ * were, the rest their defaults (§14.4: changing versions keeps what fits),
+ * or what the option chosen to start with sets (选项联动, judge-square §3;
+ * the two agree where both are written).
  */
 export function paramsFor(params: JudgeParam[], current: Values): Values {
   const next: Values = {};
@@ -473,5 +490,17 @@ export function paramsFor(params: JudgeParam[], current: Values): Values {
     if (Object.hasOwn(current, item.key)) next[item.key] = current[item.key];
     else if (item.default !== undefined) next[item.key] = item.default;
     else if (item.type === "list" || item.type === "table") next[item.key] = [];
+  for (const item of params) {
+    if (item.type !== "choice" || Object.hasOwn(current, item.key)) continue;
+    const set = item.options.find(
+      (option) => option.value === item.default,
+    )?.set;
+    for (const [key, value] of Object.entries(set ?? {}))
+      if (
+        !Object.hasOwn(current, key) &&
+        params.some((other) => other.key === key)
+      )
+        next[key] = value;
+  }
   return next;
 }

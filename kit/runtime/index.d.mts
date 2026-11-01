@@ -349,6 +349,11 @@ export function readMeta(
   value: unknown,
 ): { meta: Meta | null } | { problems: string[] };
 export function paramLine(item: ParamDeclaration): string;
+/** 选项联动 in the params preview: “选简单：炸弹 3、最大 50。说明”, one per option. */
+export function optionLines(
+  item: ParamDeclaration,
+  list: ParamDeclaration[],
+): string[];
 export type Declarations = {
   meta: Meta | null;
   params: ParamDeclaration[];

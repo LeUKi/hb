@@ -735,6 +735,67 @@ test.describe("判定器广场", () => {
     await expect(page.locator("#hb-param-max")).toBeFocused();
   });
 
+  // 选项联动 (judge-square §3): an option sets other params and says more.
+  test("选项联动：选了难度，最大跟着变、说明换成这一项的；之后还能手动改；判定器页写每个选项改什么", async ({
+    page,
+  }) => {
+    await mockSquare(page, member);
+    const version = guessPage.version;
+    if (!version?.declarations) throw new Error("GUESS_VERSION_MISSING");
+    const linked: JudgePage = {
+      ...guessPage,
+      version: {
+        ...version,
+        declarations: {
+          ...version.declarations,
+          params: [
+            {
+              key: "level",
+              label: "难度",
+              type: "choice",
+              default: "easy",
+              hint: "选一个难度",
+              options: [
+                {
+                  value: "easy",
+                  label: "简单",
+                  hint: "范围小，适合新手",
+                  set: { max: 100 },
+                },
+                { value: "hard", label: "困难", set: { max: 500 } },
+              ],
+            },
+            ...version.declarations.params,
+          ],
+        },
+      },
+    };
+    await page.route(`**/api/judges/${GUESS}`, (route) =>
+      route.fulfill({ json: { judge: linked } }),
+    );
+    await openApp(page, `/new?judge=${GUESS}`);
+    await expect(page.getByText("站长精选 · 第 2 版")).toBeVisible();
+    const max = page.locator("#hb-param-max");
+    // As it came: the defaults; the chosen option's hint.
+    await expect(max).toHaveValue("100");
+    await expect(page.getByText("范围小，适合新手")).toBeVisible();
+    await page.getByRole("button", { name: "困难" }).click();
+    await expect(max).toHaveValue("500");
+    await expect(page.getByText("选一个难度")).toBeVisible();
+    await expect(page.getByText("范围小，适合新手")).toHaveCount(0);
+    await max.fill("300");
+    await expect(max).toHaveValue("300");
+    await page.getByRole("button", { name: "简单" }).click();
+    await expect(max).toHaveValue("100");
+    await openApp(page, `/judges/${GUESS}`);
+    await expect(
+      page.getByText("选简单：最大 100。范围小，适合新手", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("选困难：最大 500", { exact: true }),
+    ).toBeVisible();
+  });
+
   test("站长在别人的判定器页撤下它：原因必填，撤下后页上写原因，能恢复", async ({
     page,
   }) => {

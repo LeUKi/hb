@@ -1,8 +1,10 @@
 <!doctype html>
 <!--
-  npm run page 的假红包页（docs/judge-page-design.md §11.10）：左边模拟红包页，
-  右边是 page/ 里的网页。网页通过 SDK 发来的消息在这里回答，和网站上一样：
-  只听这个 iframe、来源是网页的地址；提交交给本地的 judge.js。
+  npm run page 的模拟器（docs/kit-simulator-design.md）：红包页的布局和提示大致照网站来，
+  宽屏（红包窗口在左、网页窗口在右）、手机（底部抽屉）、多人（并排几个手机）。
+  网页通过 SDK 发来的消息在这里回答，和网站上一样：只听这个 iframe、来源是网页的地址；
+  提交交给本地的 judge.js。地址参数：layout=wide|phone|multi、players=2–4、who=名字、
+  open=1（一进来就打开网页）或 open=0（不打开）、accept=1（当作“打开附带网页？”已经确认过）。
 -->
 <html lang="zh-CN">
   <head>
@@ -15,119 +17,165 @@
         --ink-2: #6b5457;
         --ink-3: #9a8689;
         --line: #ecdfe0;
-        --panel: #fff;
-        --ground: #f7efef;
-        --accent: #d0213a;
-        --gold: #b07a1f;
+        --glass: #fbf5f5;
+        --fill: #f3e9ea;
+        --red: #c8102e;
+        --red-ink: #a30d25;
+        --gold: #e5bd5f;
         font-family: system-ui, -apple-system, "PingFang SC", sans-serif;
         color: var(--ink);
       }
       * { box-sizing: border-box; }
-      section[hidden] { display: none; }
-      body { margin: 0; height: 100vh; display: grid; grid-template-columns: minmax(320px, 380px) 1fr; background: var(--ground); }
-      aside { overflow-y: auto; padding: 16px; display: grid; gap: 12px; align-content: start; border-right: 1px solid var(--line); }
-      main { position: relative; }
-      iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; }
-      header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-      header strong { font-size: 15px; margin-right: auto; }
-      select, button { font: inherit; font-size: 13px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
-      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-      section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 6px; }
-      h2 { margin: 0; font-size: 12px; font-weight: 500; color: var(--ink-3); }
-      h1 { margin: 0; font-size: 17px; }
-      .facts { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--ink-2); }
-      .summary { font-size: 15px; }
+      /* Above every rule that sets display (two classes and an element). */
+      html [hidden][hidden] { display: none; }
+      body { margin: 0; min-height: 100vh; background: linear-gradient(160deg, #a3162d, #5a0b18 70%); }
+      button, select, input { font: inherit; }
+      button { cursor: pointer; }
+      .bar { position: sticky; top: 0; z-index: 50; height: 48px; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: rgb(255 255 255 / 0.94); border-bottom: 1px solid var(--line); font-size: 13px; }
+      .bar strong { font-size: 14px; margin-right: 8px; white-space: nowrap; }
+      .bar .grow { flex: 1; }
+      .seg { display: inline-flex; background: var(--fill); border-radius: 9px; padding: 2px; }
+      .seg button { border: 0; background: transparent; padding: 4px 10px; border-radius: 7px; color: var(--ink-2); }
+      .seg button[aria-pressed="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); }
+      .bar select, .quiet { border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 4px 10px; color: var(--ink); }
+      #stage { padding: 16px 16px 64px; }
+      /* 宽屏：红包窗口 460 宽，网页窗口在右边。 */
+      .desk { position: relative; display: flex; gap: 16px; height: calc(100vh - 48px - 32px - 48px); min-height: 560px; max-width: 1680px; margin: 0 auto; }
+      .window { position: relative; background: var(--glass); border-radius: 24px; overflow: hidden; box-shadow: 0 20px 60px rgb(40 0 10 / 0.35); }
+      .hb-window { display: flex; flex-direction: column; }
+      .desk .hb-window { width: 460px; flex: none; }
+      .desk .page-window { flex: 1; min-width: 360px; display: flex; flex-direction: column; }
+      .desk .page-closed { flex: 1; min-width: 360px; display: grid; place-items: center; color: rgb(255 255 255 / 0.75); font-size: 14px; border: 1px dashed rgb(255 255 255 / 0.35); border-radius: 24px; padding: 16px; text-align: center; }
+      /* 手机：390×844，底部抽屉露一条，拉起占九成。 */
+      .phones { display: flex; gap: 20px; justify-content: center; align-items: flex-start; }
+      .phone { flex: none; display: grid; gap: 10px; justify-items: center; }
+      .phone-name { color: #fff; font-size: 13px; }
+      .phone-screen { position: relative; width: 390px; height: 844px; border-radius: 40px; overflow: hidden; background: var(--glass); box-shadow: 0 0 0 10px #1c0d10, 0 30px 80px rgb(0 0 0 / 0.4); }
+      .phone-screen .hb-window { position: absolute; inset: 0 0 64px; border-radius: 0; box-shadow: none; }
+      .scrim { position: absolute; inset: 0; background: rgb(30 0 6 / 0.28); z-index: 5; }
+      .sheet { position: absolute; left: 0; right: 0; bottom: 0; height: 64px; z-index: 6; background: var(--glass); border-radius: 22px 22px 0 0; box-shadow: 0 -8px 30px rgb(40 0 10 / 0.18); display: flex; flex-direction: column; overflow: hidden; }
+      .sheet.up { height: 92%; }
+      .handle { width: 40px; height: 4px; border-radius: 4px; background: rgb(154 134 137 / 0.4); margin: 6px auto 0; flex: none; }
+      /* 红包窗口 */
+      .top { height: 52px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--line); }
+      .logo { width: 28px; height: 28px; border-radius: 9px; background: var(--red); flex: none; }
+      .address { flex: 1; min-width: 0; height: 32px; border-radius: 10px; background: #fff; border: 1px solid var(--line); display: flex; align-items: center; padding: 0 10px; font-size: 13px; color: var(--ink-3); white-space: nowrap; overflow: hidden; }
+      .avatar { width: 30px; height: 30px; border-radius: 50%; background: #f1d68f; display: grid; place-items: center; font-size: 13px; flex: none; }
+      .page-toggle { border: 1px solid var(--line); background: #fff; border-radius: 10px; height: 32px; padding: 0 10px; font-size: 13px; color: var(--ink); white-space: nowrap; }
+      .page-toggle[aria-pressed="true"] { background: var(--fill); }
+      .scroll { flex: 1; overflow-y: auto; padding: 14px; display: grid; gap: 12px; align-content: start; }
+      .stack { display: grid; gap: 12px; }
+      .cover { background: linear-gradient(170deg, #d4213b, #b20f28); color: #fff; border-radius: 20px; padding: 16px; display: grid; gap: 10px; text-align: center; }
+      .cover .who { font-size: 13px; color: rgb(255 255 255 / 0.85); }
+      .cover h1 { margin: 0; font-size: 21px; }
+      .note { background: rgb(255 255 255 / 0.14); border-radius: 14px; padding: 10px 12px; text-align: left; font-size: 14px; line-height: 1.6; }
+      .note p { margin: 0; min-height: 1.6em; }
+      .note-button { display: inline-flex; align-items: center; gap: 4px; border: 0; border-radius: 999px; background: #fff; color: var(--red-ink); padding: 1px 10px; font-size: 13px; font-weight: 600; }
+      .fold { border: 0; background: transparent; color: #fff; text-decoration: underline; font-size: 13px; padding: 2px 0 0; }
+      .cells { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; text-align: left; }
+      .cell small { display: block; font-size: 11px; color: rgb(255 255 255 / 0.75); }
+      .cell b { font-size: 17px; }
+      .cell span { display: block; font-size: 11px; color: rgb(255 255 255 / 0.8); }
+      .seal { width: 84px; height: 84px; border-radius: 50%; border: 0; margin: 0 auto; background: radial-gradient(circle at 35% 30%, #fbe7a8, var(--gold)); color: var(--red-ink); font-size: 34px; font-weight: 700; box-shadow: 0 6px 18px rgb(80 40 0 / 0.35); }
+      .seal:disabled { opacity: 0.45; cursor: default; }
+      .caption { font-size: 14px; color: var(--ink-2); text-align: center; }
+      .card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 10px 12px; display: grid; gap: 6px; }
+      .card h3 { margin: 0; font-size: 12px; font-weight: 500; color: var(--ink-3); }
+      .card .big { font-size: 15px; }
+      .muted { font-size: 12px; color: var(--ink-3); }
+      .ended { background: var(--fill); border-radius: 14px; padding: 10px 12px; font-size: 14px; display: grid; gap: 4px; }
+      .box { display: grid; gap: 6px; }
+      .box form { display: flex; gap: 6px; }
+      .box input { flex: 1; min-width: 0; padding: 9px 12px; border-radius: 12px; border: 1px solid var(--line); font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 14px; }
+      .lacquer { border: 0; border-radius: 12px; padding: 0 14px; background: #241316; color: var(--gold); font-weight: 600; white-space: nowrap; }
+      .lacquer:disabled { opacity: 0.55; cursor: default; }
+      .say { font-size: 13px; color: var(--red-ink); }
       ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
-      li { font-size: 13px; color: var(--ink-2); display: grid; gap: 1px; }
-      li b { font-weight: 500; color: var(--ink); }
-      li small, .muted { color: var(--ink-3); font-size: 12px; }
-      .claimed { color: var(--gold); }
-      pre { margin: 0; font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace; white-space: pre-wrap; word-break: break-all; color: var(--ink-2); max-height: 260px; overflow-y: auto; }
-      #box { display: flex; gap: 6px; }
-      #box input { flex: 1; min-width: 0; font: inherit; font-size: 14px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); }
-      dialog { border: 0; border-radius: 16px; padding: 20px; max-width: 360px; box-shadow: 0 20px 60px rgb(40 0 10 / 0.25); }
-      dialog::backdrop { background: rgb(30 0 6 / 0.3); }
-      dialog h3 { margin: 0 0 6px; font-size: 16px; }
-      dialog p { margin: 0 0 16px; font-size: 14px; color: var(--ink-2); line-height: 1.6; }
-      dialog form { display: flex; justify-content: flex-end; gap: 8px; }
+      .record { background: var(--fill); border-radius: 12px; padding: 8px 10px; display: grid; gap: 2px; font-size: 13px; }
+      .record.won { background: #e8f5ec; }
+      .record .head { display: flex; justify-content: space-between; gap: 8px; color: var(--ink-3); font-size: 12px; }
+      .record .head b { color: var(--ink); font-weight: 500; }
+      .record .reply { font-size: 15px; color: var(--ink); }
+      .record .input { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--ink-3); }
+      .line { font-size: 13px; color: var(--ink-2); }
+      /* 网页窗口 */
+      .titlebar { height: 52px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-bottom: 1px solid var(--line); }
+      .globe { width: 30px; height: 30px; border-radius: 50%; background: var(--red); color: #fff; display: grid; place-items: center; font-size: 15px; flex: none; }
+      .titles { flex: 1; min-width: 0; display: grid; }
+      .titles strong { font-size: 14px; }
+      .titles span { font-size: 12px; color: var(--ink-3); font-family: ui-monospace, Menlo, monospace; }
+      .peek { height: 54px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 14px; border: 0; background: transparent; text-align: left; width: 100%; }
+      .page-body { position: relative; flex: 1; background: rgb(255 255 255 / 0.6); }
+      .page-body iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; }
+      .risk { position: absolute; inset: 0; overflow-y: auto; display: grid; place-items: center; padding: 24px; }
+      .risk > div, .dialog > div { max-width: 360px; display: grid; gap: 12px; }
+      .risk h2, .dialog h2 { margin: 0; font-size: 17px; }
+      .risk p, .dialog p { margin: 0; font-size: 14px; color: var(--ink-2); line-height: 1.6; }
+      .actions { display: flex; justify-content: flex-end; gap: 8px; }
+      .actions button { border: 1px solid var(--line); background: #fff; border-radius: 12px; padding: 8px 16px; }
+      .actions .primary { background: var(--red); border-color: var(--red); color: #fff; }
+      .dialog { position: absolute; inset: 0; z-index: 20; background: rgb(30 0 6 / 0.35); display: grid; place-items: center; padding: 16px; }
+      .dialog > div { background: #fff; border-radius: 20px; padding: 20px; box-shadow: 0 20px 60px rgb(40 0 10 / 0.3); }
+      /* 日志 */
+      #log { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; background: rgb(255 255 255 / 0.96); border-top: 1px solid var(--line); }
+      #log summary { cursor: pointer; padding: 8px 12px; font-size: 13px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #log pre { margin: 0; padding: 0 12px 10px; max-height: 30vh; overflow-y: auto; font: 12px/1.5 ui-monospace, Menlo, monospace; white-space: pre-wrap; color: var(--ink-2); }
     </style>
   </head>
   <body>
-    <aside>
-      <header>
-        <strong>假红包页</strong>
-        <label class="muted">现在是 <select id="who"></select></label>
-        <button id="reset" type="button">重新开始</button>
-      </header>
-      <section>
-        <h1 id="title">红包</h1>
-        <div class="facts" id="facts"></div>
-      </section>
-      <section id="state-box" hidden>
-        <h2>红包状态</h2>
-        <div class="summary" id="summary"></div>
-      </section>
-      <section>
-        <h2>指令框</h2>
-        <form id="box">
-          <input id="box-input" aria-label="指令框" placeholder="网页 hb.fill() 的内容填在这里" />
-          <button type="submit" class="primary">提交</button>
-        </form>
-      </section>
-      <section>
-        <h2>动态</h2>
-        <ul id="lines"></ul>
-      </section>
-      <section>
-        <h2 id="mine-title">我的记录</h2>
-        <ul id="mine"></ul>
-      </section>
-      <section>
-        <h2>日志</h2>
-        <pre id="log"></pre>
-      </section>
-    </aside>
-    <main><iframe id="page" title="附带网页"></iframe></main>
-    <dialog id="allow" aria-labelledby="allow-title">
-      <h3 id="allow-title">让这个网页知道你是谁、替你提交？</h3>
-      <p id="allow-text"></p>
-      <form method="dialog">
-        <button type="submit" value="no">不允许</button>
-        <button type="submit" value="yes" class="primary">允许</button>
-      </form>
-    </dialog>
+    <div class="bar">
+      <strong>模拟器</strong>
+      <span class="seg" id="layouts">
+        <button type="button" data-layout="wide">宽屏</button>
+        <button type="button" data-layout="phone">手机</button>
+        <button type="button" data-layout="multi">多人</button>
+      </span>
+      <label id="who-label">玩家 <select id="who"></select></label>
+      <label id="count-label">人数 <select id="count"><option>2</option><option>3</option><option>4</option></select></label>
+      <span class="grow"></span>
+      <button type="button" class="quiet" id="end">快进到截止</button>
+      <button type="button" class="quiet" id="reset">重新开始</button>
+    </div>
+    <main id="stage"></main>
+    <details id="log"><summary id="log-last">日志</summary><pre id="log-lines"></pre></details>
     <script>
       // Filled in by npm run page as the page is served.
       const config = __CONFIG__;
       // The SDK answers only the address it came from: opened as localhost, go there.
-      if (location.origin !== config.hostUrl) location.replace(config.hostUrl);
-      const frame = document.getElementById("page");
-      const whoSelect = document.getElementById("who");
-      const $ = (id) => document.getElementById(id);
+      if (location.origin !== config.hostUrl)
+        location.replace(`${config.hostUrl}${location.pathname}${location.search}`);
+      const query = new URLSearchParams(location.search);
+      const LAYOUTS = ["wide", "phone", "multi"];
+      let layout = LAYOUTS.includes(query.get("layout")) ? query.get("layout") : "wide";
+      let count = Math.min(4, Math.max(2, Number(query.get("players")) || 2));
+      let single = config.people.includes(query.get("who")) ? query.get("who") : config.people[0];
+      const forceOpen = query.get("open") === "1";
+      const keepShut = query.get("open") === "0";
+      /** accept=1: 打开附带网页？ answered before (npm run page --shot). */
+      const acceptedBefore = query.get("accept") === "1";
+      const host = new URL(config.pageOrigin).host;
+      const site = new URL(config.pageOrigin).hostname;
+      const author = config.hongbao.author;
       let state = null;
-      let who = config.people[0];
-      /** Who said 允许 (this load only, as the site asks each account once). */
-      const allowed = new Set();
-      let busy = false;
-      /** Said hello: what the page has been sent, to push only what changed. */
-      let link = null;
+      /** One per person on screen: their 红包 window, their page, their link to it. */
+      let seats = [];
+      /** For npm run page --shot: whose page said hello. */
+      window.__sim = { connected: {}, built: false };
 
-      for (const name of config.people) whoSelect.append(new Option(name, name));
-      whoSelect.addEventListener("change", () => {
-        who = whoSelect.value;
-        log(`换成 ${who}：网页重新加载`);
-        reload();
-        renderMine();
-      });
-      $("reset").addEventListener("click", async () => {
-        const answer = await api("/api/reset", {});
-        state = answer.state;
-        allowed.clear();
-        $("log").textContent = "";
-        log("重新开始");
-        render();
-        reload();
-      });
+      const $ = (id) => document.getElementById(id);
+      function h(tag, props, ...children) {
+        const el = document.createElement(tag);
+        for (const [key, value] of Object.entries(props ?? {})) {
+          if (value === undefined || value === null || value === false) continue;
+          if (key === "class") el.className = value;
+          else if (key.startsWith("on")) el.addEventListener(key.slice(2), value);
+          else el.setAttribute(key, value === true ? "" : value);
+        }
+        for (const child of children.flat())
+          if (child !== null && child !== undefined && child !== false)
+            el.append(child instanceof Node ? child : String(child));
+        return el;
+      }
 
       async function api(path, body) {
         const response = await fetch(path, body === undefined ? {} : {
@@ -141,131 +189,296 @@
       }
 
       function log(line) {
-        const box = $("log");
+        const box = $("log-lines");
         box.textContent += `${line}\n`;
         box.scrollTop = box.scrollHeight;
+        $("log-last").textContent = `日志：${line}`;
       }
 
-      function reload() {
-        link = null;
-        frame.src = config.pageUrl;
-      }
-
-      const viewer = () =>
-        who === config.guest ? { signedIn: false } : { signedIn: true, name: who };
       const time = (at) => new Date(at).toLocaleTimeString("zh-CN", { hour12: false });
-
-      function render() {
-        const { hongbao, view, announcements, paid } = state;
-        $("title").textContent = hongbao.title;
-        const status =
-          hongbao.status === "ended"
-            ? hongbao.endedByCode ? "判定器结束了这个红包" : "已结束"
-            : "进行中";
-        $("facts").replaceChildren(
-          ...[
-            `奖池 ${hongbao.pool} LDC`,
-            hongbao.shares
-              ? `已领 ${hongbao.shares.claimed} / ${hongbao.shares.total} 份`
-              : `奖池还剩 ${hongbao.unclaimed} LDC`,
-            `发出 ${paid} LDC`,
-            `已判定 ${hongbao.judged} 次`,
-            status,
-          ].map((text) => Object.assign(document.createElement("span"), { textContent: text })),
-        );
-        $("state-box").hidden = !view?.summary;
-        $("summary").textContent = view?.summary ?? "";
-        $("lines").replaceChildren(
-          ...(announcements.length === 0
-            ? [Object.assign(document.createElement("li"), { textContent: "还没有动态", className: "muted" })]
-            : announcements.map((line) => {
-                const item = document.createElement("li");
-                item.innerHTML = "<b></b><span></span><small></small>";
-                item.children[0].textContent = line.user.name;
-                item.children[1].textContent = line.text;
-                item.children[2].textContent = time(line.at);
-                return item;
-              })),
-        );
-        renderMine();
+      /** 奖池还剩 as a share, as the site words it. */
+      function share() {
+        const left = Number(state.hongbao.unclaimed);
+        const total = Number(state.hongbao.pool);
+        if (!(total > 0)) return "";
+        if (left <= 0) return "0%";
+        if (left >= total) return "100%";
+        const part = Math.floor((left / total) * 100);
+        return part < 1 ? "不到 1%" : `${Math.min(part, 99)}%`;
       }
-
-      async function renderMine() {
-        const mine = await api(`/api/mine?who=${encodeURIComponent(who)}`);
-        $("mine-title").textContent = mine ? `我的记录 · ${mine.total} 条` : "我的记录（没登录）";
-        $("mine").replaceChildren(
-          ...(mine?.items ?? []).map((item) => {
-            const row = document.createElement("li");
-            row.innerHTML = "<b></b><span></span><small></small>";
-            const whose = item.by ? `${item.by}的第 ${item.n} 次` : `第 ${item.n} 次`;
-            row.children[0].textContent = `${whose} · ${time(item.at)}  ${moveText(item)}`;
-            if (item.claimed) row.children[0].className = "claimed";
-            row.children[1].textContent = item.reply ?? "";
-            row.children[2].textContent = item.input ?? "";
-            return row;
-          }),
-        );
+      function remaining() {
+        if (state.hongbao.status === "ended") return "已结束";
+        const left = Date.parse(state.hongbao.deadlineAt) - state.now - (Date.now() - state.readAt);
+        if (left <= 0) return "已结束";
+        const s = Math.floor(left / 1000);
+        const two = (n) => String(n).padStart(2, "0");
+        return `${two(Math.floor(s / 3600))}:${two(Math.floor((s % 3600) / 60))}:${two(s % 60)}`;
       }
 
       /** One record's move, as the site's 我的记录 says it: “+0.50 → 1.20”. */
       function moveText(item) {
         if (item.settled) return item.claimed ? `结算 ${item.amount} LDC` : "结算，没有领到";
         const added = Number(item.added);
-        if (added === 0) return Number(item.pending) > 0 ? `待结算 ${item.pending} LDC` : "没加钱";
+        if (added === 0) return Number(item.pending) > 0 ? `待结算 ${item.pending} LDC` : "没领到";
         return `${added > 0 ? "+" : "−"}${item.added.replace("-", "")} → ${item.pending}`;
       }
 
-      /**
-       * hb.me() and hb.myView() as the site gives them: the fake page has no
-       * cooldown to tell and pays at once.
-       */
-      async function meNow() {
-        if (who === config.guest) return { me: { signedIn: false }, myView: null };
-        const own = await api(`/api/me?who=${encodeURIComponent(who)}`);
-        const ended = state.hongbao.status === "ended";
-        const settled = own?.settled ?? null;
-        const won = settled !== null && Number(settled) > 0;
-        return {
-          me: {
-            signedIn: true,
-            name: who,
-            open: !ended && settled === null,
-            ...(ended ? { why: "ended" } : settled !== null ? { why: "already_claimed" } : {}),
-            cooldownUntil: null,
-            claim: won ? { amount: settled, unit: "LDC", payment: "paid" } : null,
-            registered: false,
-            pending: own?.pending ?? null,
-            settled: settled !== null,
-          },
-          myView: own?.myView ?? null,
-        };
+      /** What the box says when it was not judged, in the site's words. */
+      const notJudged = {
+        login: "请先登录。",
+        ended: "红包已结束。",
+        already_claimed: "你已领过这个红包。",
+        judge_failed: "判定器出错了，这次没有判定，可以再提交一次。",
+        paused: "判定器连续出错，暂停领取。",
+        busy: "上一次还没有结果。",
+      };
+
+      // ---- the 红包 window ----
+
+      /** The 说明, as the site draws it: a line per Enter, [文字](#附带网页) a button, more than 4 lines folded. */
+      function noteOf(seat) {
+        if (!config.hongbao.note) return null;
+        const lines = config.hongbao.note.split("\n");
+        const folded = lines.length > 4 && !seat.noteOpen;
+        return h("div", { class: "note" },
+          (folded ? lines.slice(0, 4) : lines).map((line) => {
+            const parts = [];
+            let rest = line;
+            for (;;) {
+              const found = rest.match(/\[([^\]\n]+)\]\(#附带网页\)/);
+              if (!found) break;
+              parts.push(rest.slice(0, found.index));
+              parts.push(h("button", { type: "button", class: "note-button", onclick: () => openPage(seat) }, "🌐 ", found[1]));
+              rest = rest.slice(found.index + found[0].length);
+            }
+            parts.push(rest);
+            return h("p", {}, parts);
+          }),
+          folded && h("button", { type: "button", class: "fold", onclick: () => { seat.noteOpen = true; render(seat); } }, "展开"),
+        );
       }
 
-      /** The page's view, 红包 and new lines of 动态 (oldest first). */
-      async function push() {
-        if (!link) return;
-        const send = (event, value) =>
-          frame.contentWindow.postMessage({ hb: 1, event, value }, config.pageOrigin);
-        const view = JSON.stringify(state.view);
-        if (view !== link.view) {
-          link.view = view;
-          send("view", state.view);
+      function coverOf(seat) {
+        const hongbao = state.hongbao;
+        return h("div", { class: "cover" },
+          h("div", { class: "who" }, `@${author} 的红包`),
+          h("h1", {}, hongbao.title),
+          noteOf(seat),
+          h("div", { class: "cells" },
+            h("div", { class: "cell" }, h("small", {}, `奖池还剩 ${share()}`), h("b", {}, hongbao.unclaimed), h("span", {}, "LDC")),
+            h("div", { class: "cell" }, h("small", {}, "已判定"), h("b", {}, hongbao.judged), h("span", {}, "次")),
+            h("div", { class: "cell" }, h("small", {}, "剩余"), h("b", { "data-left": "" }, remaining()), h("span", {}, `截止 ${time(hongbao.deadlineAt)}`)),
+          ),
+        );
+      }
+
+      /** What only they see, and their 待结算. */
+      function standingOf(seat) {
+        const me = seat.me;
+        if (!me?.signedIn || (me.pending === null && !seat.myView)) return null;
+        return h("div", { class: "card" },
+          seat.myView?.summary && h("div", { class: "big" }, seat.myView.summary),
+          me.settled
+            ? h("div", { class: "muted" }, me.claim ? `结算了 ${me.claim.amount} LDC` : "结算了，没有领到")
+            : me.pending !== null && h("div", { class: "muted" }, `待结算 ${me.pending} LDC · 判定器结算或红包结束时发`),
+        );
+      }
+
+      function endedOf() {
+        if (state.hongbao.status !== "ended") return null;
+        return h("div", { class: "ended" },
+          h("b", {}, state.endedBy === "judge" ? "判定器结束了这个红包" : "红包已结束"),
+          h("div", { class: "muted" }, state.settled.length > 0
+            ? `结算：${state.settled.map((one) => `${one.name} ${one.amount} LDC`).join("、")}`
+            : "没有人结算"),
+          h("div", { class: "muted" }, `发出 ${state.paid} LDC`),
+        );
+      }
+
+      /** 红包状态: the code's sentence and the latest line of 动态. */
+      function boardOf() {
+        const line = state.announcements[0];
+        if (!state.view?.summary && !line) return null;
+        return h("div", { class: "card" },
+          h("h3", {}, "红包状态"),
+          state.view?.summary && h("div", { class: "big" }, state.view.summary),
+          line && h("div", { class: "line" }, `@${line.user.name}：${line.text}`),
+        );
+      }
+
+      function recordsOf(seat) {
+        if (!seat.mine) return null;
+        return h("div", { class: "card" },
+          h("h3", {}, `我的记录 · ${seat.mine.total} 条`),
+          seat.mine.items.length === 0
+            ? h("div", { class: "muted" }, "提交后，你的昵称和判定次数会出现在参与名单里。")
+            : h("ul", {}, seat.mine.items.slice(0, 5).map((item) =>
+                h("li", { class: `record${item.claimed ? " won" : ""}` },
+                  h("div", { class: "head" },
+                    h("span", {}, `${item.by ? `${item.by}的第 ${item.n} 次` : `第 ${item.n} 次`} · ${time(item.at)}`),
+                    h("b", {}, moveText(item))),
+                  item.reply && h("div", { class: "reply" }, item.reply),
+                  item.input && h("div", { class: "input" }, item.input),
+                ))),
+        );
+      }
+
+      function linesOf() {
+        if (state.announcements.length === 0) return null;
+        return h("div", { class: "card" },
+          h("h3", {}, "动态"),
+          h("ul", {}, state.announcements.slice(0, 5).map((line) =>
+            h("li", { class: "line" }, `@${line.user.name}：${line.text}  `, h("span", { class: "muted" }, time(line.at))))),
+        );
+      }
+
+      function captionOf(seat) {
+        if (state.hongbao.status === "ended" || seat.me?.settled) return null;
+        if (!seat.me?.signedIn) return "登录后参与";
+        return seat.me.pending !== null ? "点「开」接着玩" : "点「开」，输入后提交，由判定器判定";
+      }
+
+      /** The 红包 window's changing parts; the box itself stays (typing goes on). */
+      function render(seat) {
+        const top = seat.scroll.scrollTop;
+        seat.coverSlot.replaceChildren(coverOf(seat), endedOf() ?? "", standingOf(seat) ?? "");
+        const caption = captionOf(seat);
+        seat.seal.disabled = state.hongbao.status === "ended" || Boolean(seat.me?.settled);
+        seat.caption.textContent = caption ?? "";
+        seat.caption.hidden = !caption;
+        seat.belowSlot.replaceChildren(boardOf() ?? "", recordsOf(seat) ?? "", linesOf() ?? "");
+        seat.say.textContent = seat.message ?? "";
+        seat.say.hidden = !seat.message;
+        seat.avatar.textContent = seat.who === config.guest ? "?" : seat.who.slice(0, 1);
+        refreshButton(seat);
+        seat.scroll.scrollTop = top;
+      }
+
+      /** The box's button: 领取, 正在判定…, 还需等待 N 秒. */
+      function refreshButton(seat) {
+        const left = seat.me?.cooldownUntil ? Math.ceil((seat.me.cooldownUntil - Date.now()) / 1000) : 0;
+        seat.submit.textContent = seat.pending ? "正在判定…" : left > 0 ? `还需等待 ${left} 秒` : "领取";
+        seat.submit.disabled = seat.pending || left > 0;
+      }
+
+      // ---- the page: beside it (wide) or in the sheet (phone) ----
+
+      /** 打开附带网页？ in the page's own window, before it first loads. */
+      function riskOf(seat) {
+        return h("div", { class: "risk" }, h("div", { role: "region", "aria-label": "打开附带网页？" },
+          h("h2", {}, "打开附带网页？"),
+          h("p", {}, `${site} 不是红包站的网页，是 @${author} 附带的。它能看到你的 IP 和浏览器信息。不要在里面付款、转账或做任何交易；发现违规推广，请联系站长 @lafish。`),
+          h("p", { class: "muted" }, "确认后，这个网站下次直接打开。"),
+          h("div", { class: "actions" },
+            h("button", { type: "button", onclick: () => closePage(seat) }, "收起"),
+            h("button", { type: "button", class: "primary", onclick: () => { seat.accepted = true; layoutPage(seat); } }, "打开")),
+        ));
+      }
+
+      function layoutPage(seat) {
+        const open = seat.pageOpen;
+        if (seat.kind === "wide") {
+          seat.pageWindow.hidden = !open;
+          seat.pageClosed.hidden = open;
+          seat.toggle.setAttribute("aria-pressed", String(open));
+        } else {
+          seat.sheet.classList.toggle("up", open);
+          seat.scrim.hidden = !open;
+          seat.peek.hidden = open;
+          seat.sheetTitle.hidden = !open;
         }
-        const hongbao = JSON.stringify(state.hongbao);
-        if (hongbao !== link.hongbao) {
-          link.hongbao = hongbao;
-          send("hongbao", state.hongbao);
+        if (!open) return;
+        if (!seat.accepted) {
+          if (!seat.pageBody.querySelector(".risk")) seat.pageBody.replaceChildren(riskOf(seat));
+          return;
         }
-        const own = await meNow();
-        const me = JSON.stringify(own.me);
-        if (link && me !== link.me) {
-          link.me = me;
-          send("me", own.me);
+        if (!seat.iframe) {
+          seat.iframe = h("iframe", { title: `${host} 的网页`, src: config.pageUrl });
+          seat.pageBody.replaceChildren(seat.iframe);
         }
-        const myView = JSON.stringify(own.myView);
-        if (link && myView !== link.myView) {
-          link.myView = myView;
-          send("myView", own.myView);
+      }
+
+      function openPage(seat) {
+        seat.pageOpen = true;
+        layoutPage(seat);
+      }
+
+      function closePage(seat) {
+        seat.pageOpen = false;
+        layoutPage(seat);
+      }
+
+      function reloadPage(seat) {
+        if (!seat.iframe) return;
+        seat.link = null;
+        seat.iframe.src = config.pageUrl;
+      }
+
+      // ---- dialogs, over the person's own screen ----
+
+      function dialog(seat, title, text, buttons) {
+        return new Promise((done) => {
+          const box = h("div", { class: "dialog" }, h("div", { role: "dialog", "aria-label": title },
+            h("h2", {}, title),
+            h("p", {}, text),
+            h("div", { class: "actions" }, buttons.map(([label, value, primary]) =>
+              h("button", { type: "button", class: primary ? "primary" : null, onclick: () => { box.remove(); done(value); } }, label))),
+          ));
+          seat.el.append(box);
+        });
+      }
+
+      /** 让这个网页知道你是谁、替你提交？ once per person here, as the site asks once per 红包. */
+      async function allow(seat) {
+        if (seat.allowed) return true;
+        seat.allowed = await dialog(seat, "让这个网页知道你是谁、替你提交？",
+          `${site} 会知道你的用户名和 ID，并能替你提交输入；提交的内容和结果会出现在你的「我的记录」里，冷却和人机验证照旧。只对这个红包有效。`,
+          [["不允许", false], ["允许", true, true]]);
+        return seat.allowed;
+      }
+
+      // ---- what each person sees of themselves ----
+
+      async function refreshMe(seat) {
+        if (seat.who === config.guest) {
+          seat.me = { signedIn: false };
+          seat.myView = null;
+          seat.mine = null;
+          return;
+        }
+        const [own, mine] = await Promise.all([
+          api(`/api/me?who=${encodeURIComponent(seat.who)}`),
+          api(`/api/mine?who=${encodeURIComponent(seat.who)}`),
+        ]);
+        const ended = state.hongbao.status === "ended";
+        const settled = own?.settled ?? null;
+        seat.me = {
+          signedIn: true,
+          name: seat.who,
+          open: !ended && settled === null,
+          ...(ended ? { why: "ended" } : settled !== null ? { why: "already_claimed" } : {}),
+          cooldownUntil: own?.cooldownUntil ?? null,
+          claim: settled !== null && Number(settled) > 0 ? { amount: settled, unit: "LDC", payment: "paid" } : null,
+          registered: false,
+          pending: own?.pending ?? null,
+          settled: settled !== null,
+        };
+        seat.myView = own?.myView ?? null;
+        seat.mine = mine;
+      }
+
+      /** What changed, to the page: view, 红包, me, myView, new lines of 动态 (oldest first). */
+      function push(seat) {
+        const link = seat.link;
+        const target = seat.iframe?.contentWindow;
+        if (!link || !target) return;
+        const send = (event, value) => target.postMessage({ hb: 1, event, value }, config.pageOrigin);
+        for (const [key, value] of [["view", state.view], ["hongbao", state.hongbao], ["me", seat.me], ["myView", seat.myView]]) {
+          const text = JSON.stringify(value);
+          if (text !== link[key]) {
+            link[key] = text;
+            send(key, value);
+          }
         }
         const fresh = state.announcements.filter((line) => line.n > link.line).reverse();
         if (fresh.length > 0) {
@@ -274,60 +487,68 @@
         }
       }
 
-      /**
-       * 让这个网页知道你是谁、替你提交？ as the site asks it, the first time the
-       * page wants either: true for 允许.
-       */
-      function askAllow() {
-        const dialog = $("allow");
-        $("allow-text").textContent = `${new URL(config.pageOrigin).hostname} 会知道你的用户名和 ID，并能替你提交输入；提交的内容和结果会出现在你的「我的记录」里，冷却和人机验证照旧。只对这个红包有效。`;
-        dialog.returnValue = "";
-        dialog.showModal();
-        return new Promise((done) =>
-          dialog.addEventListener("close", () => done(dialog.returnValue === "yes"), { once: true }),
-        );
+      /** After anything moved: everyone's 红包 window, everyone's page. */
+      async function refreshAll() {
+        state = await api("/api/state");
+        state.readAt = Date.now();
+        await Promise.all(seats.map(refreshMe));
+        for (const seat of seats) {
+          render(seat);
+          push(seat);
+        }
       }
 
+      /** Judged by the local judge.js, as a submission from the box or the page. */
+      async function send(seat, input) {
+        const answer = await api("/api/submit", { who: seat.who, input });
+        log(answer.line);
+        for (const line of answer.logs ?? []) log(`    ${line}`);
+        await refreshAll();
+        return answer.result;
+      }
+
+      // ---- the SDK, answered for whichever person's page asked ----
+
       window.addEventListener("message", async (event) => {
-        if (event.source !== frame.contentWindow || event.origin !== config.pageOrigin) return;
+        if (event.origin !== config.pageOrigin) return;
+        const seat = seats.find((one) => one.iframe && one.iframe.contentWindow === event.source);
         const ask = event.data;
-        if (ask?.hb !== 1 || !Number.isSafeInteger(ask.id)) return;
-        const reply = (answer) =>
-          frame.contentWindow.postMessage({ hb: 1, re: ask.id, ...answer }, config.pageOrigin);
+        if (!seat || ask?.hb !== 1 || !Number.isSafeInteger(ask.id)) return;
+        const reply = (answer) => event.source.postMessage({ hb: 1, re: ask.id, ...answer }, config.pageOrigin);
+        const who = seat.who;
         if (ask.type === "hello") {
-          const { me, myView } = await meNow();
-          link = {
+          seat.link = {
             view: JSON.stringify(state.view),
             hongbao: JSON.stringify(state.hongbao),
+            me: JSON.stringify(seat.me),
+            myView: JSON.stringify(seat.myView),
             line: state.announcements[0]?.n ?? -1,
-            me: JSON.stringify(me),
-            myView: JSON.stringify(myView),
           };
-          reply({ value: { hongbao: state.hongbao, viewer: viewer(), theme: "light", view: state.view, me, myView, clock: 0 } });
+          window.__sim.connected[who] = true;
+          reply({ value: {
+            hongbao: state.hongbao,
+            viewer: who === config.guest ? { signedIn: false } : { signedIn: true, name: who },
+            theme: "light", view: state.view, me: seat.me, myView: seat.myView, clock: 0,
+          } });
           return;
         }
         if (ask.type === "login") {
           if (who !== config.guest) return reply({ value: { signedIn: true } });
-          log("网页请看的人登录（网站上这时会弹出登录卡片；这里在左上角换个人）");
+          dialog(seat, "登录", "这是模拟器：在上面的“玩家”里换一个人，就是登录了。", [["知道了", true, true]]);
+          log("网页请看的人登录（网站上这时会弹出登录卡片）");
           return reply({ value: { signedIn: false, opened: true } });
         }
         if (ask.type === "mine") {
+          if (who === config.guest) return reply({ value: null });
           const next = typeof ask.next === "string" ? `&next=${encodeURIComponent(ask.next)}` : "";
-          reply({ value: await api(`/api/mine?who=${encodeURIComponent(who)}${next}`) });
-          return;
+          return reply({ value: await api(`/api/mine?who=${encodeURIComponent(who)}${next}`) });
         }
-        if (ask.type === "fill" && typeof ask.text === "string") {
-          reply({ value: fill(ask.text) });
-          return;
-        }
+        if (ask.type === "fill" && typeof ask.text === "string") return reply({ value: fill(seat, ask.text) });
         if (ask.type === "identity") {
           if (who === config.guest) return reply({ value: { identified: false, reason: "login" } });
-          if (!allowed.has(who)) {
-            if (!(await askAllow())) {
-              log(`${who} 没允许网页知道他是谁：网页拿到 denied`);
-              return reply({ value: { identified: false, reason: "denied" } });
-            }
-            allowed.add(who);
+          if (!(await allow(seat))) {
+            log(`${who} 没允许网页知道他是谁：网页拿到 denied`);
+            return reply({ value: { identified: false, reason: "denied" } });
           }
           const nonce = typeof ask.nonce === "string" ? ask.nonce : undefined;
           const identity = await api("/api/identity", { who, nonce });
@@ -335,73 +556,196 @@
           return reply({ value: { identified: true, ...identity } });
         }
         if (ask.type !== "submit" || typeof ask.input !== "string") return;
-        if (busy) return reply({ value: { judged: false, reason: "busy" } });
-        busy = true;
+        if (seat.pending) return reply({ value: { judged: false, reason: "busy" } });
+        if (who === config.guest) return reply({ value: { judged: false, reason: "login" } });
+        seat.pending = true;
+        refreshButton(seat);
         try {
-          if (who !== config.guest && !allowed.has(who)) {
-            if (!(await askAllow())) {
-              log(`${who} 没允许网页替他提交：网页拿到 denied`);
-              return reply({ value: { judged: false, reason: "denied" } });
-            }
-            allowed.add(who);
+          if (!(await allow(seat))) {
+            log(`${who} 没允许网页替他提交：网页拿到 denied`);
+            return reply({ value: { judged: false, reason: "denied" } });
           }
-          reply({ value: await send(ask.input) });
+          reply({ value: await send(seat, ask.input) });
         } catch (error) {
           log(`出错：${error.message}`);
           reply({ value: { judged: false, reason: "error", message: error.message } });
         } finally {
-          busy = false;
+          seat.pending = false;
+          refreshButton(seat);
         }
       });
 
-      /** Judged by the local judge.js, as a submission from the box or the page. */
-      async function send(input) {
-        const answer = await api("/api/submit", { who, input });
-        log(answer.line);
-        for (const line of answer.logs ?? []) log(`    ${line}`);
-        state = answer.state;
-        render();
-        push();
-        return answer.result;
-      }
-
-      /** hb.fill(): into the box, as the site does, for the viewer to send. */
-      function fill(text) {
+      /** hb.fill(): into the person's box, as the site does, for them to send. */
+      function fill(seat, text) {
         const not = (reason, message) => {
           log(`网页想把 ${JSON.stringify(text)} 填进指令框：拿到 ${reason}${message ? `（${message}）` : ""}`);
           return { filled: false, reason, ...(message ? { message } : {}) };
         };
         if ([...text].length > 200) return not("invalid_input", "最多 200 个字");
         if (/[\r\n]/.test(text)) return not("invalid_input", "不能有换行");
-        if (who === config.guest) return not("login", "网站上这时会弹出登录卡片");
+        if (seat.who === config.guest) return not("login", "网站上这时会弹出登录卡片");
         if (state.hongbao.status === "ended") return not("ended");
-        if (busy) return not("busy");
-        $("box-input").value = text;
-        $("box-input").focus();
-        log(`网页把 ${JSON.stringify(text)} 填进了指令框`);
+        if (seat.pending) return not("busy");
+        seat.boxSlot.hidden = false;
+        seat.input.value = text;
+        seat.input.focus();
+        log(`网页把 ${JSON.stringify(text)} 填进了 ${seat.who} 的指令框`);
         return { filled: true };
       }
 
-      $("box").addEventListener("submit", async (event) => {
-        event.preventDefault();
-        if (busy) return;
-        busy = true;
-        try {
-          await send($("box-input").value);
-          $("box-input").value = "";
-        } catch (error) {
-          log(`出错：${error.message}`);
-        } finally {
-          busy = false;
-        }
-      });
+      // ---- building the screen ----
 
-      (async () => {
-        state = await api("/api/state");
-        render();
-        reload();
-        if (config.cooldown > 0) log(`冷却：每人每次提交后等 ${config.cooldown} 秒`);
-      })();
+      function seatOf(who, kind) {
+        const seat = { who, kind, me: null, myView: null, mine: null, link: null, allowed: false, accepted: acceptedBefore, pageOpen: false, iframe: null, pending: false, message: null, noteOpen: false };
+        seat.avatar = h("div", { class: "avatar" });
+        seat.coverSlot = h("div", { class: "stack" });
+        seat.seal = h("button", { type: "button", class: "seal", "aria-label": "开", onclick: () => { seat.boxSlot.hidden = false; seat.input.focus(); } }, "开");
+        seat.caption = h("div", { class: "caption" });
+        seat.input = h("input", { "aria-label": "指令框", placeholder: config.hongbao.prompt || "输入后提交", autocomplete: "off" });
+        seat.submit = h("button", { type: "submit", class: "lacquer" }, "领取");
+        seat.say = h("div", { class: "say", role: "status" });
+        seat.boxSlot = h("div", { class: "box", hidden: true },
+          h("form", { onsubmit: async (event) => {
+            event.preventDefault();
+            if (seat.pending) return;
+            seat.pending = true;
+            seat.message = null;
+            render(seat);
+            try {
+              const result = await send(seat, seat.input.value);
+              if (result.judged) seat.input.value = "";
+              else if (result.reason !== "cooldown")
+                seat.message = notJudged[result.reason] ?? result.message ?? "没有提交。";
+            } catch (error) {
+              seat.message = `出错：${error.message}`;
+            } finally {
+              seat.pending = false;
+              render(seat);
+            }
+          } }, seat.input, seat.submit),
+          seat.say,
+        );
+        seat.belowSlot = h("div", { class: "stack" });
+        seat.scroll = h("div", { class: "scroll" }, seat.coverSlot, seat.seal, seat.caption, seat.boxSlot, seat.belowSlot);
+        seat.toggle = h("button", { type: "button", class: "page-toggle", onclick: () => (seat.pageOpen ? closePage(seat) : openPage(seat)) }, "🌐 附带网页");
+        const hbWindow = h("div", { class: "window hb-window" },
+          h("div", { class: "top" },
+            h("div", { class: "logo" }),
+            h("div", { class: "address" }, "/🧧/…"),
+            kind === "wide" && seat.toggle,
+            seat.avatar),
+          seat.scroll,
+        );
+        seat.pageBody = h("div", { class: "page-body" });
+        const titles = () => h("div", { class: "titles" }, h("strong", {}, `来自 @${author} 的红包`), h("span", {}, host));
+        if (kind === "wide") {
+          seat.pageWindow = h("div", { class: "window page-window", hidden: true },
+            h("div", { class: "titlebar" }, h("div", { class: "globe" }, "🌐"), titles(),
+              h("button", { type: "button", class: "quiet", onclick: () => reloadPage(seat) }, "刷新"),
+              h("button", { type: "button", class: "quiet", onclick: () => closePage(seat) }, "隐藏")),
+            seat.pageBody);
+          seat.pageClosed = h("div", { class: "page-closed" }, "网页窗口收起了：点红包窗口上的“附带网页”，或说明里的按钮打开");
+          seat.el = h("div", { class: "desk" }, hbWindow, seat.pageWindow, seat.pageClosed);
+        } else {
+          seat.scrim = h("div", { class: "scrim", hidden: true, onclick: () => closePage(seat) });
+          seat.peek = h("button", { type: "button", class: "peek", "aria-label": `上拉查看附带网页：${host}`, onclick: () => openPage(seat) },
+            h("div", { class: "globe" }, "🌐"),
+            h("div", { class: "titles" }, h("strong", {}, "上拉查看附带网页"), h("span", {}, host)),
+            h("span", {}, "↑"));
+          seat.sheetTitle = h("div", { class: "titlebar", hidden: true }, h("div", { class: "globe" }, "🌐"), titles(),
+            h("button", { type: "button", class: "quiet", onclick: () => closePage(seat) }, "收起"));
+          seat.sheet = h("div", { class: "sheet" }, h("div", { class: "handle" }), seat.peek, seat.sheetTitle, seat.pageBody);
+          seat.el = h("div", { class: "phone-screen" }, hbWindow, seat.scrim, seat.sheet);
+        }
+        return seat;
+      }
+
+      async function build() {
+        window.__sim.built = false;
+        seats = [];
+        window.__sim.connected = {};
+        const stage = $("stage");
+        stage.replaceChildren();
+        const people = config.people.filter((name) => name !== config.guest);
+        if (layout === "wide") {
+          seats.push(seatOf(single, "wide"));
+          stage.append(seats[0].el);
+        } else {
+          const names = layout === "multi" ? people.slice(0, count) : [single];
+          while (layout === "multi" && names.length < count) names.push(`玩家${names.length + 1}`);
+          const row = h("div", { class: "phones" });
+          for (const name of names) {
+            const seat = seatOf(name, "phone");
+            seats.push(seat);
+            row.append(h("div", { class: "phone" }, seat.el, layout === "multi" && h("div", { class: "phone-name" }, name)));
+          }
+          stage.append(row);
+          fit(row);
+        }
+        for (const button of $("layouts").children)
+          button.setAttribute("aria-pressed", String(button.dataset.layout === layout));
+        $("who-label").hidden = layout === "multi";
+        $("count-label").hidden = layout !== "multi";
+        await refreshAll();
+        // 打开红包页时自动打开 (pageAutoOpen), or open=1 in the address.
+        for (const seat of seats)
+          if (!keepShut && (config.hongbao.pageAutoOpen || forceOpen)) openPage(seat);
+          else layoutPage(seat);
+        window.__sim.built = true;
+      }
+
+      /** Phones too many for the window: all of them smaller, together. */
+      function fit(row) {
+        const width = row.children.length * 410 + 32;
+        const scale = Math.min(1, (window.innerWidth - 32) / width, (window.innerHeight - 48 - 48 - 40) / 880);
+        row.style.zoom = String(Math.max(0.45, scale));
+      }
+
+      // ---- the bar ----
+
+      for (const name of config.people) $("who").append(new Option(name, name));
+      $("who").value = single;
+      $("count").value = String(count);
+      $("who").addEventListener("change", () => {
+        single = $("who").value;
+        log(`换成 ${single}`);
+        build();
+      });
+      $("count").addEventListener("change", () => {
+        count = Number($("count").value);
+        build();
+      });
+      for (const button of $("layouts").children)
+        button.addEventListener("click", () => {
+          layout = button.dataset.layout;
+          build();
+        });
+      $("reset").addEventListener("click", async () => {
+        await api("/api/reset", {});
+        $("log-lines").textContent = "";
+        log("重新开始");
+        build();
+      });
+      $("end").addEventListener("click", async () => {
+        const answer = await api("/api/end", {});
+        log(answer.settled.length > 0 ? `快进到截止：还没结算的人一起结算：${answer.settled.join("、")}` : "快进到截止");
+        await refreshAll();
+      });
+      window.addEventListener("resize", () => {
+        const row = document.querySelector(".phones");
+        if (row) fit(row);
+      });
+      setInterval(() => {
+        if (!state) return;
+        for (const seat of seats) {
+          refreshButton(seat);
+          const left = seat.coverSlot.querySelector("[data-left]");
+          if (left) left.textContent = remaining();
+        }
+      }, 500);
+
+      if (config.cooldown > 0) log(`冷却：每人每次提交后等 ${config.cooldown} 秒`);
+      build();
     </script>
   </body>
 </html>

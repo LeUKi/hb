@@ -23,7 +23,7 @@ npm test
 - `npm run check`：照网站部署时的规则查一遍，最后写“可以去网站部署了”或“还不能开放”，还有代码指纹，和网站上展开代码时显示的对得上。
 - `npm run simulate`：让 `simulate.json` 里的人依次来领，看每个人的待结算怎么变、钱怎么发出去。`npm run simulate -- --seed 别的` 换一个种子，`--live` 让联网的请求真的发出去。
 - `npm run replay -- judge-records-xxx.json`：红包结束后，用网站上下载的完整记录逐条重放核对。
-- `npm run page`：本地的假红包页，看附带网页（`page/`）和 `judge.js` 配合起来是什么样：浏览器打开它写的地址，左边模拟红包页，右边是你的网页，提交交给本地的 `judge.js` 跑。`npm run page -- examples/number-bomb` 打开一个样例。
+- `npm run page`：本地的模拟器，看附带网页（`page/`）和 `judge.js` 配合起来是什么样：宽屏、手机、多人三种布局，红包窗口和提示大致照网站，提交交给本地的 `judge.js` 跑。`npm run page -- examples/number-bomb` 打开一个样例。`npm run page -- --shot` 不开窗口，截宽屏和手机三张图到 `shots/`，列出网页报错，给 AI 用。
 
 失败时退出码都不是 0，脚本和 AI 都能据此判断。
 

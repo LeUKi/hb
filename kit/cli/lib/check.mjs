@@ -9,6 +9,7 @@
 import {
   checkSource,
   LIMITS,
+  optionLines,
   paramLine,
   paramValues,
   readTests,
@@ -179,7 +180,11 @@ export async function checkCommand({ dir, print = console.log }) {
         defaults = defaultsReminders(declared);
         if (declared.params.length > 0) {
           print(row(true, "参数表单预览"));
-          for (const item of declared.params) print(`  ${paramLine(item)}`);
+          for (const item of declared.params) {
+            print(`  ${paramLine(item)}`);
+            for (const line of optionLines(item, declared.params))
+              print(`    ${line}`);
+          }
         }
       }
       const good = all.results.filter((result) => result.passed).length;

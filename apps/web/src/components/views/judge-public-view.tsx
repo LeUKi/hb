@@ -6,7 +6,7 @@ import type {
 import { useNavigate } from "@tanstack/react-router";
 import { AlertTriangle, Check, ChevronRight, Copy, Lock } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
-import { paramLine } from "../../../../../kit/runtime/params.mjs";
+import { optionLines, paramLine } from "../../../../../kit/runtime/params.mjs";
 import { cn } from "../../lib/cn";
 import { haptic } from "../../lib/haptics";
 import { useJudgeActivities, useJudgePageCode } from "../../lib/judge";
@@ -438,6 +438,12 @@ export function PublicJudgePage({
                   {item.hint && (
                     <p className="text-sm text-ink-3">{item.hint}</p>
                   )}
+                  {/* 选项联动 (judge-square §3): what each option sets. */}
+                  {optionLines(item, params).map((line) => (
+                    <p key={line} className="text-sm text-ink-3">
+                      {line}
+                    </p>
+                  ))}
                 </div>
               ))
             )}

@@ -128,11 +128,24 @@ export function startPage(options: {
   hostUrl: string;
   pageUrl: string;
   network: string[] | null;
+  /** --play: simulate.json's submissions, judged in order. */
+  play(say?: Print): Promise<void>;
   close(): Promise<void>;
 }>;
 export function pageCommand(
   options: CommandOptions,
 ): Promise<{ exitCode: number }>;
+/**
+ * npm run page --shot: the simulator in a browser no one sees, three shots
+ * into `out` and what went wrong in the page; not 0 when something did.
+ */
+export function shotCommand(options: {
+  root: string;
+  out: string;
+  play: boolean;
+  live: boolean;
+  print: Print;
+}): Promise<{ exitCode: number }>;
 
 export type SimulationPlan = {
   /** simulate.json's now (ms), or the tests' default. */

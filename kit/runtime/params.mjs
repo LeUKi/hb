@@ -175,7 +175,11 @@ function optionsProblem(options) {
   for (const [index, option] of options.entries()) {
     const where = `options 第 ${index + 1} 个`;
     if (!isObject(option)) return `${where}要是 { value, label }`;
-    const extra = unknownField(option, ["value", "label"], `${where}`);
+    const extra = unknownField(
+      option,
+      ["value", "label", "hint", "set"],
+      `${where}`,
+    );
     if (extra) return extra;
     const problem =
       textProblem(
@@ -187,7 +191,19 @@ function optionsProblem(options) {
         option.label,
         PARAM_LIMITS.labelCharacters,
         `${where}的 label`,
-      );
+      ) ??
+      // 选项联动 (judge-square §3): the hint it shows, the params it sets.
+      (option.hint !== undefined
+        ? textProblem(
+            option.hint,
+            PARAM_LIMITS.hintCharacters,
+            `${where}的 hint`,
+          )
+        : null) ??
+      (option.set !== undefined &&
+      (!isObject(option.set) || Object.keys(option.set).length === 0)
+        ? `${where}的 set 要是 { 参数的 key: 值 }`
+        : null);
     if (problem) return problem;
     if (values.has(option.value)) return `${where}的 value 重复了`;
     values.add(option.value);
@@ -306,6 +322,8 @@ function tidy(item) {
     kept.options = item.options.map((option) => ({
       value: option.value,
       label: option.label.trim(),
+      ...(option.hint !== undefined ? { hint: option.hint.trim() } : {}),
+      ...(option.set !== undefined ? { set: option.set } : {}),
     }));
   return kept;
 }
@@ -345,7 +363,66 @@ export function readParams(value) {
     }
     list.push(kept);
   }
+  // 选项联动: what an option sets is another param, as that one takes it.
+  for (const item of list) {
+    if (item.type !== "choice") continue;
+    for (const [index, option] of item.options.entries())
+      for (const [key, value] of Object.entries(option.set ?? {})) {
+        const where = `params（${item.key}）的 options 第 ${index + 1} 个的 set`;
+        const target = list.find((other) => other.key === key);
+        if (key === item.key) problems.push(`${where}：不能改自己`);
+        else if (!target) problems.push(`${where}：没有参数 ${key}`);
+        else {
+          const checked = readValue(target, value, target.label);
+          if ("problem" in checked)
+            problems.push(`${where}：${checked.problem}`);
+          // The option chosen to start with: the two starting values agree.
+          else if (
+            item.default === option.value &&
+            target.default !== undefined &&
+            sortedJson(target.default) !== sortedJson(checked.value)
+          )
+            problems.push(
+              `${where}：默认选“${option.label}”，它把${target.label}改成 ${setText(target, checked.value)}，和${target.label}的 default 不一样，改成一样的`,
+            );
+        }
+      }
+  }
   return problems.length > 0 ? { problems } : { list };
+}
+
+/** A value an option sets, as the form would show it. */
+function setText(item, value) {
+  if (item.type === "money") return `${formatAmount(value)} LDC`;
+  if (item.type === "switch") return value ? "开" : "关";
+  if (item.type === "choice")
+    return (
+      item.options.find((option) => option.value === value)?.label ?? value
+    );
+  if (item.type === "list") return value.join("、");
+  if (item.type === "table") return `${value.length} 行`;
+  return String(value);
+}
+
+/**
+ * 选项联动 in the params preview (judge-square §3): a line for each option
+ * of a choice that sets others or says more — “选简单：炸弹 3、最大 50。炸弹
+ * 少、范围小，适合新手”.
+ */
+export function optionLines(item, list) {
+  if (item.type !== "choice") return [];
+  return item.options
+    .filter((option) => option.set || option.hint)
+    .map((option) => {
+      const sets = Object.entries(option.set ?? {})
+        .map(([key, value]) => {
+          const target = list.find((other) => other.key === key);
+          return target ? `${target.label} ${setText(target, value)}` : null;
+        })
+        .filter(Boolean)
+        .join("、");
+      return `选${option.label}：${[sets, option.hint].filter(Boolean).join("。")}`;
+    });
 }
 
 const isEmpty = (value) =>

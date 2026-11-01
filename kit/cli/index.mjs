@@ -5,7 +5,12 @@ export {
   defaultsReminders,
   TESTS_BYTES,
 } from "./lib/check.mjs";
-export { GUEST, pageCommand, startPage } from "./lib/page.mjs";
+export {
+  GUEST,
+  pageCommand,
+  shotCommand,
+  startPage,
+} from "./lib/page.mjs";
 export { replayCommand } from "./lib/replay.mjs";
 export {
   COMPATIBILITY_DATE,

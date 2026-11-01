@@ -14,7 +14,7 @@
 7. 联网失败要在代码里接住，回一句话、不加钱；没接住算出错，连续出错 5 次红包会暂停领取。
 8. 网页的后端要认人，用 `hb.identity()` 拿令牌、在后端验证；`hb.ready()` 里的昵称只能用来显示。
 9. 会变的东西（答案、范围、次数、几个人能领）做成参数，别写死。
-10. 写完跑 `npm test` 和 `npm run check`，照输出改，“提醒”也要看；不删测试凑数。
+10. 写完跑 `npm test` 和 `npm run check`，带网页的再跑 `npm run page -- --shot` 看宽屏和手机的截图；照输出改，“提醒”也要看；不删测试凑数。
 <!-- 要点到这里 -->
 
 按情况读下面的几节：每次都读“代码协议（第五版）”“`tests.json`”“常见错误”；带网页读“带网页的玩法”；网页的后端要知道是谁读“认人（鉴权）”；有自己的后端读“自有后端”；人多、热闹的玩法读“热闹的玩法”；要发出去之前读“上线前”。
@@ -187,7 +187,7 @@ export async function judge(submission) {
   - `integer`：整数，`min`、`max`、`step`（要是 `step` 的倍数，从 `min` 算起）
   - `money`：金额，整数分，`min`（至少 1）、`max`
   - `switch`：开关，`true` 或 `false`
-  - `choice`：选一个，`options` 是 2–20 个 `{ value, label }`，值是 `value`
+  - `choice`：选一个，`options` 是 2–20 个 `{ value, label, hint, set }`，值是 `value`。选项联动：`set` 是选了这一项时把别的参数改成的值（写法同 `default`，金额是整数分），比如难度选“简单”就 `set: { bombs: 3, max: 50 }`，发红包的人之后还能改；`hint` 是选了这一项时下面显示的说明（最多 60 个字），代替这个参数自己的 `hint`。默认选中的那一项改的值，要和那个参数自己的 `default` 一样（或者那个参数不写 `default`）
   - `list`：一行一个的文字，`minItems`、`maxItems`（最多 100）、`maxLength`（每项最多几个字，最多 200）
   - `table`：每行几格，`columns` 是 1–6 列 `{ key, label, type, required }`，`type` 是 `text`、`integer` 或 `money`（带各自的限制），`minRows`、`maxRows`（最多 100）
 - 网站按声明校验，代码收到的都是对的：文字去掉了首尾空白；没填的选填项，开关是 `false`，列表和表格是 `[]`，其他是 `null`。整份最大 16 KB。
@@ -266,7 +266,7 @@ export function judge({ input, state, user, hongbao }) {
 ### 发布顺序
 
 1. 写 `judge.js` 和测试，`npm test` 过。
-2. 改 `page/index.html`（模板接好了 SDK），`npm run page` 打开假红包页试：换几个人、`npm run page -- --cooldown 3` 试冷却、选“没登录”试登录。
+2. 改 `page/index.html`（模板接好了 SDK），每改一次跑 `npm run page -- --shot`：它在后台打开模拟器，截宽屏、手机、手机抽屉拉起三张图存到 `shots/`，列出网页报错、加载失败的请求、接没接上 SDK。看图、照报告改，宽屏和手机都要对；`--play` 先按 `simulate.json` 提交完再截，看玩到一半的样子。人要自己点着试，就运行 `npm run page` 打开模拟器：宽屏、手机、多人（并排几个手机，一人提交其他人同步）三种布局，换几个人、`--cooldown 3` 试冷却、选“没登录”试登录、“快进到截止”看结束。
 3. 网页放到静态托管上：Cloudflare Workers、GitHub Pages、Netlify、Vercel 的正式部署都能嵌进红包页；Cloudflare Drop 拖上去的要先认领，没认领会先弹安全验证，嵌不进来。地址写进 `meta.page`。
 4. `npm run check` 过，去网站部署判定器。
 
@@ -507,7 +507,8 @@ export async function whoIs(request) {
 - `npm test`：先按网站部署的规则查 import，不过就列出第几行什么问题、不跑测试；然后每条一行 `✓ 名字（3 毫秒）` 或 `✗ 名字：哪里不对`，`console` 的输出缩进跟在那一条下面；最后 `测试 N / M 通过`。`npm test -- 名字` 只跑名字里含这几个字的。
 - `npm run check`：网站部署时同样的几行（import 都在清单里、代码能加载、导出了 judge、联网的写出白名单、测试 N / M 通过），每条测试跑两遍，结果不一样的提醒用了真随机，公开数据里出现保密参数的值也提醒；再写文件大小和代码指纹（和网站上展开代码时显示的一致）；最后 `可以去网站部署了` 或 `还不能开放`。
 - `npm run simulate`：一行一次提交：第几次、谁、输入、加减了多少和之后的待结算（比如“+0.50 · 待结算 1.20”，结算了写“结算 1.20”，什么都没加写“没加钱”）、代码的回复；`others` 改到的人、只给某人看的数据、公开数据（“公开：……”）、动态（“动态：……”）各跟一行；结束了写“判定器结束了这个红包”或“奖池占满了，红包结束”和一起结算的人；最后到截止时间还没结算的人一起结算，写发出多少、几个人领到钱。`npm run simulate -- --seed 别的` 换一个种子，`npm run simulate -- 别的.json` 换一个文件，`npm run simulate -- --live` 让请求真的从这台电脑发出去（照样只许白名单里的地址）。
-- `npm run page`：假红包页。浏览器打开它写的地址（`http://127.0.0.1:8730`），左边是模拟的红包页（换人、红包状态、动态、我的记录、日志），右边是 `page/` 里的网页，从另一个地址打开，和线上一样；网页里的 `https://hb.lafi.sh/sdk/v1.js` 在本地自动换成假红包页的那一份。提交交给本地的 `judge.js` 跑，同 `npm run simulate`（先跑 setup，共用的 state、每个人的待结算、奖池接着往下算；红包和参数取 `simulate.json`）。每个人第一次提交会问允不允许，选“没登录”能测 `login`。`npm run page -- examples/number-bomb` 打开一个样例；`--cooldown 3` 每人提交后要等 3 秒，用来测 `cooldown`；`--port` 换端口；`--live` 让联网的请求真的发出去。改了网页刷新就行，改了 `judge.js` 要 Ctrl+C 再运行一次。
+- `npm run page`：模拟器。浏览器打开它写的地址（`http://127.0.0.1:8730`），布局和提示大致照网站：宽屏是左边红包窗口、右边网页窗口；手机是底部抽屉；多人是并排几个手机，每个是不同的人，一人提交其他人同步更新。红包窗口里有红包皮（说明里的按钮、奖池还剩、已判定次数）、“开”和指令框、红包状态、我的记录、待结算；判定器写了 `pageAutoOpen` 就一进来打开网页，第一次打开网页先确认，网页第一次提交或要身份时先问许可，都用网站上的原话。工具栏能换布局、换人、“快进到截止”（还没结算的人一起结算）、重新开始。网页从另一个地址打开，和线上一样；网页里的 `https://hb.lafi.sh/sdk/v1.js` 在本地自动换成假红包页的那一份。提交交给本地的 `judge.js` 跑，同 `npm run simulate`（先跑 setup，共用的 state、每个人的待结算、奖池接着往下算；红包和参数取 `simulate.json`）。每个人第一次提交会问允不允许，选“没登录”能测 `login`。`npm run page -- examples/number-bomb` 打开一个样例；`--cooldown 3` 每人提交后要等 3 秒，用来测 `cooldown`；`--port` 换端口；`--live` 让联网的请求真的发出去。改了网页刷新就行，改了 `judge.js` 要 Ctrl+C 再运行一次。
+  - `npm run page -- --shot`：给 AI 用的。不开浏览器窗口，在后台打开模拟器，截三张图存到 `shots/`（`wide.png` 宽屏网页打开、`phone.png` 手机抽屉露一条、`phone-open.png` 手机抽屉拉起），再列出网页里的报错、加载失败的请求、接没接上 SDK；有问题时退出码不是 0。`--play` 先按 `simulate.json` 提交完再截。要一个浏览器：先找这台电脑的 Chrome，再找 Edge，再找 Playwright 下载过的 Chromium；都没有就照提示运行 `npx playwright install chromium`。
 - `npm run replay -- judge-records-xxx.json`：用网站上下载的完整记录逐条重放，先核对指纹和种子，再核对开放时的 setup；联网的红包用记录里的返回，先比请求再比判定（第四版起还比公开数据、动态和结束，第五版起还比 `add`、`settle`、`player` 和 `others`）。早先几版开放的红包用那一版的运行时重放。
 
 失败时退出码都不是 0。

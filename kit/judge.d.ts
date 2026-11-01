@@ -278,8 +278,17 @@ export type ParamDeclaration = ParamBase &
     | { type: "switch"; default?: boolean }
     | {
         type: "choice";
-        /** 2–20 个 */
-        options: { value: string; label: string }[];
+        /**
+         * 2–20 个。选项联动：`set` 是选了这一项时改成的别的参数的值（写法同
+         * `default`，金额是整数分），发红包的人之后还能改；`hint` 是选了这一项时
+         * 下拉框下面的说明（最多 60 个字），代替这个参数自己的 `hint`。
+         */
+        options: {
+          value: string;
+          label: string;
+          hint?: string;
+          set?: Record<string, unknown>;
+        }[];
         default?: string;
       }
     | {

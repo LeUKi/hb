@@ -5,6 +5,7 @@ export {
   HONGBAO_LIMITS,
   hongbaoRuleProblems,
   META_LIMITS,
+  optionLines,
   PARAM_LIMITS,
   PARAM_TYPES,
   pageProblem,

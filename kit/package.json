@@ -10,6 +10,7 @@
     "page": "node cli/page.mjs"
   },
   "devDependencies": {
+    "playwright-core": "1.63.0",
     "wrangler": "4.147.0"
   }
 }

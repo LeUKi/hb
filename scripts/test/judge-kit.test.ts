@@ -12,6 +12,7 @@ import {
   PROTOCOL,
   replayCommand,
   SANDBOX_MODULES,
+  shotCommand,
   simulateCommand,
   startPage,
   TESTS_BYTES,
@@ -1633,17 +1634,38 @@ describe("附带网页", () => {
             `${page.hostUrl}/api/me?who=${encodeURIComponent("小明")}`,
           )
         ).json(),
-      ).toEqual({ pending: "0.00", settled: null, myView: null });
+      ).toEqual({
+        pending: "0.00",
+        settled: null,
+        myView: null,
+        // The simulator counts the cooldown down (docs/kit-simulator-design.md).
+        cooldownUntil: expect.any(Number),
+      });
       expect(
         await (
           await fetch(
             `${page.hostUrl}/api/me?who=${encodeURIComponent("小红")}`,
           )
         ).json(),
-      ).toEqual({ pending: null, settled: null, myView: null });
+      ).toEqual({
+        pending: null,
+        settled: null,
+        myView: null,
+        cooldownUntil: null,
+      });
       expect(lines).toContain(
         '小明  "500"  没加钱  代码的回复：请猜 1 到 100 之间的整数',
       );
+      // 快进到截止 (kit-simulator-design §2): everyone left settled then.
+      const ended = await (
+        await fetch(`${page.hostUrl}/api/end`, { method: "POST", body: "{}" })
+      ).json();
+      expect(ended.settled).toEqual(["小明 0.00"]);
+      expect(ended.state).toMatchObject({
+        hongbao: { status: "ended" },
+        endedBy: "deadline",
+        settled: [{ name: "小明", amount: "0.00" }],
+      });
       // 认人 (docs/page-identity-design.md §4): signed with this run's key,
       // iss this fake page, aud the page; its keys check it.
       const identity = await (
@@ -1758,4 +1780,123 @@ describe("开发文档的要点", () => {
       expect(code).toMatch(/note: "\[[^\]]+\]\(#附带网页\)\\n/);
     }
   });
+});
+
+// 选项联动 (docs/judge-square-design.md §3): an option sets other params
+// and says more, checked as those params take values.
+describe("选项联动", () => {
+  const level = (options: unknown[]) => ({
+    key: "level",
+    label: "难度",
+    type: "choice",
+    options,
+  });
+  const bombs = { key: "bombs", label: "炸弹", type: "integer", max: 20 };
+
+  it("keeps hint and set, and previews what each option sets", async () => {
+    const { readParams, optionLines } = await import(
+      "../../kit/runtime/index.mjs"
+    );
+    const read = readParams([
+      level([
+        { value: "easy", label: "简单", hint: " 炸弹少 ", set: { bombs: 3 } },
+        { value: "hard", label: "困难", set: { bombs: 10 } },
+      ]),
+      bombs,
+    ]);
+    if (!("list" in read)) throw new Error("NOT_READ");
+    expect(read.list[0]).toMatchObject({
+      options: [
+        { value: "easy", label: "简单", hint: "炸弹少", set: { bombs: 3 } },
+        { value: "hard", label: "困难", set: { bombs: 10 } },
+      ],
+    });
+    const [choice] = read.list;
+    if (!choice) throw new Error("NO_CHOICE");
+    expect(optionLines(choice, read.list)).toEqual([
+      "选简单：炸弹 3。炸弹少",
+      "选困难：炸弹 10",
+    ]);
+  });
+
+  it("refuses a set of itself, of a param not declared, or a value that param refuses", async () => {
+    const { readParams } = await import("../../kit/runtime/index.mjs");
+    expect(
+      readParams([
+        level([
+          { value: "a", label: "A", set: { bombs: 99, nope: 1, level: "a" } },
+          { value: "b", label: "B" },
+        ]),
+        bombs,
+      ]),
+    ).toEqual({
+      problems: [
+        "params（level）的 options 第 1 个的 set：炸弹最大是 20",
+        "params（level）的 options 第 1 个的 set：没有参数 nope",
+        "params（level）的 options 第 1 个的 set：不能改自己",
+      ],
+    });
+    // The option chosen to start with and the default it sets agree.
+    expect(
+      readParams([
+        {
+          ...level([
+            { value: "a", label: "A", set: { bombs: 3 } },
+            { value: "b", label: "B" },
+          ]),
+          default: "a",
+        },
+        { ...bombs, default: 5 },
+      ]),
+    ).toEqual({
+      problems: [
+        "params（level）的 options 第 1 个的 set：默认选“A”，它把炸弹改成 3，和炸弹的 default 不一样，改成一样的",
+      ],
+    });
+    expect(
+      readParams([
+        level([
+          { value: "a", label: "A", set: [] },
+          { value: "b", label: "B" },
+        ]),
+      ]),
+    ).toEqual({
+      problems: [
+        "params 第 1 项（level）：options 第 1 个的 set 要是 { 参数的 key: 值 }",
+      ],
+    });
+  });
+});
+
+// npm run page --shot (docs/kit-simulator-design.md §4): the simulator in a
+// browser no one sees, three shots and what went wrong in the page. Only
+// where a browser can be started (Chrome, Edge or Playwright's Chromium).
+describe("npm run page --shot", () => {
+  it("shoots wide and the phone's sheet down and up, and says the page reached the SDK without errors", async () => {
+    const out = mkdtempSync(join(tmpdir(), "hb-shots-"));
+    made.push(out);
+    const lines: string[] = [];
+    let answer: { exitCode: number };
+    try {
+      answer = await shotCommand({
+        root: join(kitDir, "examples/number-bomb"),
+        out,
+        play: true,
+        live: false,
+        print: (line: string) => lines.push(line),
+      });
+    } catch (error) {
+      // No browser here: nothing to shoot with.
+      if (String(error).includes("没找到浏览器")) return;
+      throw error;
+    }
+    expect(answer.exitCode).toBe(0);
+    for (const file of ["wide.png", "phone.png", "phone-open.png"])
+      expect(readFileSync(join(out, file)).subarray(1, 4).toString()).toBe(
+        "PNG",
+      );
+    expect(lines).toContain("✓ 网页接上了红包站的 SDK");
+    expect(lines).toContain("✓ 网页没有报错，请求都加载成功");
+    expect(lines.at(-1)).toBe("没有发现问题：看看三张图，宽屏和手机都对就行");
+  }, 120_000);
 });
