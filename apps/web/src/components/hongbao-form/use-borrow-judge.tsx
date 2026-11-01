@@ -1,7 +1,9 @@
 import type { JudgePage } from "@hb/contracts";
 import { useState } from "react";
+import { fixedAddresses } from "../../../../../kit/runtime/network.mjs";
 import { refused } from "../../lib/activities";
 import { fetchJudgePage } from "../../lib/judge";
+import { addressLabel } from "../judges/judge-bits";
 import { ConfirmDialog } from "../shell/confirm-dialog";
 import { Button } from "../ui/button";
 import { type FormState, withJudgeDefaults } from "./form-state";
@@ -11,7 +13,8 @@ import { paramsFor } from "./params-fields";
 // Another's 判定器 for a draft (docs/judge-square-design.md §7, §15.3,
 // §15.4): the version others use, read from its page, put in as the
 // form's — no deploy — after 这个判定器会联网 is answered when it goes
-// online to addresses not confirmed yet.
+// online to addresses not confirmed yet: those written in its code, not an
+// 地址参数, which its sender fills in (docs/judge-address-design.md §4).
 
 /** The same addresses, whatever their order. */
 const sameAddresses = (left: string[], right: string[] | null) =>
@@ -29,6 +32,8 @@ export function useBorrowJudge() {
   const [asking, setAsking] = useState<{
     page: JudgePage;
     network: string[];
+    /** Its 地址参数 it also asks, by name. */
+    filled: string[];
     answer: (go: boolean) => void;
   } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -71,9 +76,14 @@ export function useBorrowJudge() {
         return { failed: true };
       }
       const network = version.network;
-      if (network && !sameAddresses(network, acked)) {
+      const fixed = network ? fixedAddresses(network) : null;
+      if (fixed && fixed.length > 0 && !sameAddresses(fixed, acked)) {
+        const params = version.declarations?.params ?? [];
+        const filled = (network ?? []).flatMap((entry) =>
+          typeof entry === "string" ? [] : [addressLabel(params, entry.param)],
+        );
         const go = await new Promise<boolean>((resolve) =>
-          setAsking({ page, network, answer: resolve }),
+          setAsking({ page, network: fixed, filled, answer: resolve }),
         );
         if (!go) return { cancelled: true };
       }
@@ -106,7 +116,7 @@ export function useBorrowJudge() {
                 },
                 declarations: version.declarations,
                 network,
-                networkAck: network,
+                networkAck: fixed && fixed.length > 0 ? fixed : null,
               },
             },
           },
@@ -131,7 +141,7 @@ export function useBorrowJudge() {
       open={asking !== null}
       onClose={() => answer(false)}
       title="这个判定器会联网"
-      text={`它会把领的人提交的内容发到 ${asking?.network.join("、") ?? ""}。那不是本站，也不是你的服务器。`}
+      text={`它会把领的人提交的内容发到 ${asking?.network.join("、") ?? ""}。那不是本站，也不是你的服务器。${asking?.filled.length ? `也会发到你自己填的${asking.filled.join("、")}。` : ""}`}
       actions={
         <>
           <Button onClick={() => answer(false)}>返回</Button>

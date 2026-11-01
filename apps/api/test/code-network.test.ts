@@ -579,3 +579,119 @@ export async function judge(submission) {
     ]);
   });
 });
+
+describe("代码判定联网: 地址参数", () => {
+  // docs/judge-address-design.md: each sender's own service, its address
+  // filled in at opening, its 密钥 sent there only.
+  const OWN = `export const network = [{ param: "server" }];
+export const params = [
+  { key: "server", label: "服务地址", type: "url" },
+  { key: "token", label: "服务密钥", type: "key", to: { param: "server" } },
+];
+export const meta = { name: "自建", page: { param: "server", path: "play/" } };
+export async function judge(submission) {
+  await fetch(new URL("check", submission.params.server), { method: "POST", body: "{}" });
+  return { message: submission.params.server };
+}
+`;
+  const OWN_TESTS = JSON.stringify({
+    params: { server: "https://example.com/" },
+    tests: [
+      {
+        name: "问自己填的地址",
+        input: "x",
+        fetch: [{ url: "https://example.com/check", method: "POST", json: {} }],
+        expect: { message: "https://example.com/" },
+      },
+    ],
+  });
+
+  it("deploys with each test's own address, opens on the address filled, and sends its 密钥 there only", async () => {
+    const code = unique(OWN);
+    const deployed = await check(author, code, OWN_TESTS, { name: "自建" });
+    expect(deployed.body.check).toMatchObject({
+      passed: true,
+      network: [{ param: "server" }],
+    });
+    expect(deployed.body.check.reminders ?? []).toEqual([]);
+    const judgeId = deployed.body.check.judge?.id ?? "";
+    const draft = await createActivity(bindings, author.id, {
+      requestId: crypto.randomUUID(),
+      activity: coded(
+        {},
+        {
+          code,
+          tests: OWN_TESTS,
+          judgeId,
+          params: { server: "https://API.example.com/mine" },
+        },
+      ),
+    });
+    const managed = await getManagedActivity(bindings, draft.id, author.id);
+    const saved = await updateActivity(bindings, managed.id, author.id, {
+      version: managed.version,
+      activity: {
+        ...managed.config,
+        judge: managed.config.judge && {
+          ...managed.config.judge,
+          keys: { token: "t-1" },
+        },
+      },
+    });
+    const opened = await openActivity(
+      bindings,
+      draft.id,
+      author.id,
+      saved.version,
+    );
+    const row = await env.DB.prepare(
+      "SELECT network FROM activity_code WHERE activity_id = ?",
+    )
+      .bind(opened.id)
+      .first<{ network: string }>();
+    expect(JSON.parse(row?.network ?? "null")).toEqual([
+      "https://api.example.com/mine/",
+    ]);
+    const first = await claim(opened.id, await actor(), "x");
+    expect(first.body).toMatchObject({ result: "judged" });
+    expect(
+      outside.map((sent) => [sent.url, sent.headers.authorization]),
+    ).toEqual([["https://api.example.com/mine/check", "Bearer t-1"]]);
+    const shown = await getPublicActivity(bindings, opened.id);
+    expect(shown.judge).toMatchObject({
+      network: ["https://api.example.com/mine/"],
+      networkFilled: ["https://api.example.com/mine/"],
+      keys: [{ label: "服务密钥", to: "https://api.example.com/mine/" }],
+    });
+    expect(
+      shown.judge?.params?.find((item) => item.param.key === "server")?.value,
+    ).toBe("https://api.example.com/mine/");
+  }, 20_000);
+
+  it("is not deployed with a { param } that names no 地址参数, and is reminded of an address with no 密钥 to it", async () => {
+    const wrong = await check(
+      author,
+      unique(OWN.replace('[{ param: "server" }]', '[{ param: "other" }]')),
+      OWN_TESTS,
+    );
+    expect(wrong.body.check.passed).toBe(false);
+    expect(wrong.body.check.declarationProblems).toEqual([
+      "network 第 1 个：没有参数 other",
+      'params（token）的 to：network 里没有 { param: "server" }',
+    ]);
+    const unkeyed = await check(
+      author,
+      unique(
+        OWN.replace(
+          '  { key: "token", label: "服务密钥", type: "key", to: { param: "server" } },\n',
+          "",
+        ),
+      ),
+      OWN_TESTS,
+    );
+    expect(unkeyed.body.check.passed).toBe(true);
+    expect(unkeyed.body.check.reminders).toEqual([
+      '地址参数 server 写进了 network：建议加一项密钥（type: "key", to: { param: "server" }），让那个服务认得出请求来自这个红包',
+    ]);
+  });
+});

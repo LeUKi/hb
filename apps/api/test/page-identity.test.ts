@@ -138,6 +138,8 @@ describe("附带网页认人", () => {
       username: expect.stringMatching(/^code_/),
       level: 2,
       hongbao: activity.id,
+      // Its sender (docs/judge-address-design.md §6).
+      sender: author.externalId,
       nonce: "abc12345-xyz",
       jti: expect.any(String),
     });

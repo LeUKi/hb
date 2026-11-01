@@ -1,5 +1,7 @@
 // params.mjs on its own (the site's form imports just it).
 export {
+  addressParams,
+  addressReminders,
   COLUMN_TYPES,
   type Declarations,
   HONGBAO_LIMITS,
@@ -8,10 +10,13 @@ export {
   keyLikeParams,
   keyNetworkProblems,
   keyParams,
+  keyTarget,
   META_LIMITS,
+  networkParamProblems,
   optionLines,
   PARAM_LIMITS,
   PARAM_TYPES,
+  pageOf,
   pageProblem,
   paramLine,
   paramsCommitment,

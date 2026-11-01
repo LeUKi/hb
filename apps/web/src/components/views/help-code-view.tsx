@@ -85,8 +85,8 @@ ${keyPoints}
 - 每次判定可能在不同的沙箱里，不要靠全局变量记东西；要记的放进 state。
 - 能用：Web 标准（完整的 crypto、Intl、TextEncoder、URL、atob、btoa 等）。Node 模块只能在文件开头静态 import，必须带 node: 前缀：${MODULES.join("、")}。
 - 不能用：别的 Node 模块、npm 包、import 别的文件、动态 import()、require、caches。console 的输出线上丢弃。
-- 联网（可选）：judge.js 导出 network，列出能请求的地址前缀，最多 3 个，比如 export const network = ["https://api.example.com/hongbao/"]；写法是 https:// 加完整域名和路径，不带端口、? 和 #，不能是 IP、linux.do 和本站。不导出就不联网，fetch 会失败。判定里直接用 fetch()：每次判定最多 3 个请求，只许 GET 和 POST，请求体最大 16 KB，单个请求 10 秒，返回最大 64 KB，不跟随跳转；等请求的时间不算进 50 毫秒，整次判定最多 15 秒；不行时 fetch() 抛 TypeError（“联网失败：…”），可以接住。领的人可以绕过本站直接请求你的接口，要防就在代码里放一个只有你知道的令牌，请求时带上；红包结束后代码公开，令牌也会公开，结束后要作废。红包结束后，领的人能看到自己那几次判定的返回内容。
-- 参数（可选）：会变的东西（答案、范围、次数、几个人能领、题目）写成参数，发红包的人在网站上填，判定时在 submission.params 里。export const params = [ … ]，最多 20 项，每项 { key（字母、数字、下划线）, label（最多 20 个字）, hint（最多 60 个字）, type, default, required（默认 true）, revealAtEnd（默认 false） } 加上类型自己的限制。type：text（单行，minLength、maxLength ≤ 200）、textarea（多行，maxLength ≤ 2000）、integer（min、max、step）、money（整数分，min ≥ 1、max）、switch、choice（options：2–20 个 { value, label, hint, set }；选项联动：set 是选了这一项时把别的参数改成的值，比如 { bombs: 3, max: 50 }，hint 是选了这一项时的说明）、list（一行一个，minItems、maxItems ≤ 100、maxLength）、table（columns：1–6 列 { key, label, type: text | integer | money }，minRows、maxRows ≤ 100）。网站按声明校验；没填的选填项，开关是 false，列表和表格是 []，其他是 null。revealAtEnd 的参数（旧写法 secret）开放时只公布封存值，结束后公开，代码读得到，放答案、谜底。密钥：{ key, label, hint, type: "key", to, header, prefix }，发红包的人自己填（比如 AI 服务的），代码读不到（submission.params 里没有），永远不公开；代码请求 to 开头的地址（要在 network 里）时，本站把它加进请求头 header（默认 Authorization），值是 prefix（默认 "Bearer "）加密钥；最多 3 项。要发红包的人的密钥就用它，别放进普通参数。几项合起来的检查写 export function check(params, hongbao)，返回 [{ key, message }]，没问题返回 []；hongbao 同 setup 的。export const hongbao = { total: { min, max, default }, deadline: { value, unit }, prompt, humanCheck, pageAutoOpen, title, note } 给“发多少”设默认值和范围（金额是整数分），prompt 是领取提示（最多 ${JUDGE_LIMITS.promptCharacters} 个字），humanCheck 建议打开领取前人机验证（默认别写，见要点第 2 条），pageAutoOpen 建议打开红包页时自动打开附带网页（带网页的都写上），title、note 是红包标题（最多 100 个字）和说明（最多 2000 个字，一个回车就换行，[文字](#附带网页) 是打开附带网页的按钮，带网页的第一行就放它）的默认值；没有份数，要几个人能领就做成参数。export const meta = { name, description, page } 是判定器的名字（最多 20 个字）、说明（最多 60 个字）和带的附带网页（page，https，规则同附带网页，用它发红包时替发红包的人填好；怎么接见 ${origin}/help/page；开发包里有网页模板 page/index.html、本地的模拟器 npm run page（npm run page -- --shot 截图给 AI 看）和数字炸弹、刮刮乐两个带网页的样例）。
+- 联网（可选）：judge.js 导出 network，列出能请求的地址前缀，最多 3 个，比如 export const network = ["https://api.example.com/hongbao/"]；写法是 https:// 加完整域名和路径，不带端口、? 和 #，不能是 IP、linux.do 和本站；也能写 { param: "server" }，是发红包的人在地址参数 server 填的地址，开放时定下。不导出就不联网，fetch 会失败。判定里直接用 fetch()：每次判定最多 3 个请求，只许 GET 和 POST，请求体最大 16 KB，单个请求 10 秒，返回最大 64 KB，不跟随跳转；等请求的时间不算进 50 毫秒，整次判定最多 15 秒；不行时 fetch() 抛 TypeError（“联网失败：…”），可以接住。领的人可以绕过本站直接请求你的接口，要防就在代码里放一个只有你知道的令牌，请求时带上；红包结束后代码公开，令牌也会公开，结束后要作废。红包结束后，领的人能看到自己那几次判定的返回内容。
+- 参数（可选）：会变的东西（答案、范围、次数、几个人能领、题目）写成参数，发红包的人在网站上填，判定时在 submission.params 里。export const params = [ … ]，最多 20 项，每项 { key（字母、数字、下划线）, label（最多 20 个字）, hint（最多 60 个字）, guide（https 链接，表单上显示“怎么填 ↗”）, type, default, required（默认 true）, revealAtEnd（默认 false） } 加上类型自己的限制。type：text（单行，minLength、maxLength ≤ 200）、textarea（多行，maxLength ≤ 2000）、integer（min、max、step）、money（整数分，min ≥ 1、max）、switch、choice（options：2–20 个 { value, label, hint, set }；选项联动：set 是选了这一项时把别的参数改成的值，比如 { bombs: 3, max: 50 }，hint 是选了这一项时的说明）、list（一行一个，minItems、maxItems ≤ 100、maxLength）、table（columns：1–6 列 { key, label, type: text | integer | money }，minRows、maxRows ≤ 100）、url（地址：发红包的人填一个 https 地址，比如他自己部署的服务，规则同 network 的地址，代码收到的以 / 结尾，公开，最多 3 项，不能写 default 和 revealAtEnd；network、密钥的 to 和 meta.page 写 { param: key } 指向它）。网站按声明校验；没填的选填项，开关是 false，列表和表格是 []，其他是 null。revealAtEnd 的参数（旧写法 secret）开放时只公布封存值，结束后公开，代码读得到，放答案、谜底。密钥：{ key, label, hint, type: "key", to, header, prefix }，发红包的人自己填（比如 AI 服务的），代码读不到（submission.params 里没有），永远不公开；代码请求 to 开头的地址（要在 network 里；to 写 { param: "server" } 就只发给发红包的人在地址参数 server 填的地址）时，本站把它加进请求头 header（默认 Authorization），值是 prefix（默认 "Bearer "）加密钥；最多 3 项。要发红包的人的密钥就用它，别放进普通参数。几项合起来的检查写 export function check(params, hongbao)，返回 [{ key, message }]，没问题返回 []；hongbao 同 setup 的。export const hongbao = { total: { min, max, default }, deadline: { value, unit }, prompt, humanCheck, pageAutoOpen, title, note } 给“发多少”设默认值和范围（金额是整数分），prompt 是领取提示（最多 ${JUDGE_LIMITS.promptCharacters} 个字），humanCheck 建议打开领取前人机验证（默认别写，见要点第 2 条），pageAutoOpen 建议打开红包页时自动打开附带网页（带网页的都写上），title、note 是红包标题（最多 100 个字）和说明（最多 2000 个字，一个回车就换行，[文字](#附带网页) 是打开附带网页的按钮，带网页的第一行就放它）的默认值；没有份数，要几个人能领就做成参数。export const meta = { name, description, page } 是判定器的名字（最多 20 个字）、说明（最多 60 个字）和带的附带网页（page，https，规则同附带网页，用它发红包时替发红包的人填好；放在发红包的人自己的服务上时写 { param: "server", path: "play/" }，跟着他填的地址填好；怎么接见 ${origin}/help/page；开发包里有网页模板 page/index.html、本地的模拟器 npm run page（npm run page -- --shot 截图给 AI 看）和数字炸弹、刮刮乐两个带网页的样例）。
 - 随机数用 tools.random（这一次提交的，Math.random() 也是它）或 tools.userRandom（这个人固定的，提交几次都一样）。都能复现：红包结束后公开种子，谁都能核对。crypto.getRandomValues 是真随机，能用但没法核对。
 - tools 全是同步的：
   - tools.random、tools.userRandom：next()（[0, 1)）、int(min, max)（含两端）、pick(items)、shuffle(items)
@@ -104,7 +104,7 @@ tests.json 是一个对象 { "tests": [ … ] }，只是数据：
 - 联网的代码，测试里写 fetch：这次判定的请求拿到的返回，最多 3 个，每个 { url, method（默认 GET）, status（默认 200）, headers, json 或 text }，或者 { url, method, error: "timeout" | "unreachable" | "too-big" }。请求按方法和完整地址对上；有请求没写返回、写了没用上，这条测试都不通过。测试从不真的联网。
 - 要测靠状态往下传的玩法，不写 input，写 steps，几个人依次提交：每一步 { who, input, expect }，可选 level（默认 2）、at（默认上一步往后 1 分钟，第一步是 now）、fetch。同一个 who 是同一个人；共用的状态、每个人的待结算和状态、已经结算的、每人被判定过几次、奖池都像线上一样一步步往下传。已经结算的人、或者红包已经结束了还提交，这一步不通过。
 - expect 写了才比（什么都不写就只看能不能跑通）：add（代码给提交的人的）、settle（代码有没有说给他结算）、pending（他这次以后的待结算，结算以后是 0）、settled（他结算的金额，可以是 0，还没结算写 null）、player（他这次以后的 state、view，写了哪项那项整份比）或 playerIncludes（只比写了的键）、people（按名字，这些人这次以后的 pending、settled、state 或 stateIncludes、view 或 viewIncludes，和 others 这次写给他的 message，没写给他写 ""）、message（逐字）或 messageIncludes（含这几个字）、state（共用的状态，整份，键的顺序不算）或 stateIncludes（只比写了的键，数组整个比）、view（这次以后的公开数据，整份，没有写 null）或 viewIncludes（只比写了的键）、announce（这次的动态，逐字，没有写 ""）、end（这次以后红包结束了没有：end 结束的，或者奖池占满了）。ok、amount 是简写：这次有没有给他结算并且领到钱（结算 0 不算）、领到多少。add 是代码给的数，实际加上的看 pending。代码返回协议以外的字段也算不通过。
-- 声明了参数的代码：tests.json 顶层写 params，是每条测试默认用的一份，测试自己也能写 params，没写的项用 default；每条测试的参数都要过声明的校验和 check。要覆盖几组不同的参数。
+- 声明了参数的代码：tests.json 顶层写 params，是每条测试默认用的一份，测试自己也能写 params，没写的项用 default；每条测试的参数都要过声明的校验和 check。要覆盖几组不同的参数。地址参数写一个地址（比如 https://example.com/），fetch 按它写。
 - 所有测试加起来最多判定 ${JUDGE_LIMITS.tests} 次（多步的一步算一次）。
 
 我的玩法是：（在这里写清楚：什么输入算对、每次加多少减多少、什么时候结算、每人能试几次、有没有时间限制……）`;
@@ -614,7 +614,7 @@ export async function judge(submission) {
           items={[
             {
               name: "network",
-              note: "能请求的地址前缀，最多 3 个：https:// 加完整域名和路径，不带端口、? 和 #；不能是 IP、linux.do 和本站。前缀 https://a.com/api 放行 /api、/api/x，不放行 /apix。写在代码里：改它就是改代码，开放后不能改，结束后跟代码一起公开。",
+              note: '能请求的地址前缀，最多 3 个：https:// 加完整域名和路径，不带端口、? 和 #；不能是 IP、linux.do 和本站。前缀 https://a.com/api 放行 /api、/api/x，不放行 /apix。写在代码里：改它就是改代码，开放后不能改，结束后跟代码一起公开。也能写 { param: "server" }：发红包的人在地址参数 server 里填的地址（比如他自己部署的服务），开放时定下，红包页上写着“发红包的人填的”。',
             },
             {
               name: "fetch()",
@@ -685,11 +685,11 @@ export function judge(submission, tools) {
           items={[
             {
               name: "params",
-              note: "最多 20 项，每项 { key, label, hint, type, default, required, revealAtEnd } 加上类型自己的限制。key 只用字母、数字和下划线；label 是表单上的名字，最多 20 个字；hint 是一句说明，最多 60 个字；required 默认 true，revealAtEnd 默认 false。",
+              note: "最多 20 项，每项 { key, label, hint, guide, type, default, required, revealAtEnd } 加上类型自己的限制。key 只用字母、数字和下划线；label 是表单上的名字，最多 20 个字；hint 是一句说明，最多 60 个字；guide 是一个 https 链接，表单和判定器页在这一项旁边显示“怎么填 ↗”（部署说明、去哪拿密钥）；required 默认 true，revealAtEnd 默认 false。",
             },
             {
               name: "type",
-              note: "text 单行文字（minLength、maxLength，最多 200）；textarea 多行文字（maxLength，最多 2000）；integer 整数（min、max、step）；money 金额，整数分（min 至少 1、max）；switch 开关；choice 选一个（options：2–20 个 { value, label, hint, set }：选了某一项，set 把别的参数改成这些值，hint 换成这一项的说明）；list 一行一个（minItems、maxItems 最多 100、maxLength）；table 每行几格（columns：1–6 列，每列 text、integer 或 money；minRows、maxRows 最多 100）；key 密钥（见下面）。",
+              note: "text 单行文字（minLength、maxLength，最多 200）；textarea 多行文字（maxLength，最多 2000）；integer 整数（min、max、step）；money 金额，整数分（min 至少 1、max）；switch 开关；choice 选一个（options：2–20 个 { value, label, hint, set }：选了某一项，set 把别的参数改成这些值，hint 换成这一项的说明）；list 一行一个（minItems、maxItems 最多 100、maxLength）；table 每行几格（columns：1–6 列，每列 text、integer 或 money；minRows、maxRows 最多 100）；key 密钥（见下面）；url 地址（见下面）。",
             },
             {
               name: "submission.params",
@@ -701,7 +701,11 @@ export function judge(submission, tools) {
             },
             {
               name: "密钥",
-              note: '{ key, label, hint, type: "key", to, header, prefix, required }：发红包的人自己填（比如 AI 服务的密钥），代码读不到（submission.params 里没有它），永远不公开，红包结束后删除。代码请求 to 开头的地址时，本站把它加进请求头 header（默认 Authorization），值是 prefix（默认 "Bearer "）加密钥；to 要在 network 里。最多 3 项，不能写 default 和 revealAtEnd。领的人每提交一次就可能调一次服务，费用从发红包的人的密钥扣：限制每人能试几次。',
+              note: '{ key, label, hint, type: "key", to, header, prefix, required }：发红包的人自己填（比如 AI 服务的密钥），代码读不到（submission.params 里没有它），永远不公开，红包结束后删除。代码请求 to 开头的地址时，本站把它加进请求头 header（默认 Authorization），值是 prefix（默认 "Bearer "）加密钥；to 要在 network 里。to 写 { param: "server" } 就只发给发红包的人在地址参数 server 填的地址。最多 3 项，不能写 default 和 revealAtEnd。领的人每提交一次就可能调一次服务，费用从发红包的人的密钥扣：限制每人能试几次。',
+            },
+            {
+              name: "地址",
+              note: '{ key, label, hint, type: "url", guide, required }：发红包的人填一个 https 地址，比如他照你的部署说明在自己的 Cloudflare 账号部署的服务（他自己的 AI、存储和数据，费用归他）。规则同 network 的地址；代码收到的以 / 结尾，比如 https://a.workers.dev/，用 new URL("api/x", params.server) 拼。公开，开放后不能改；最多 3 项，不能写 default 和 revealAtEnd。network 里写 { param: "server" } 判定器才能请求它；密钥的 to 写 { param: "server" } 只发给它；meta.page 写 { param: "server" } 附带网页就放在它下面。怎么搭见开发包 AGENTS.md 的“发红包的人自己部署的服务”。',
             },
             {
               name: "check(params, hongbao)",

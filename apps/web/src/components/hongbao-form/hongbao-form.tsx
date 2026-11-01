@@ -1,8 +1,4 @@
-import {
-  type JudgeParamProblem,
-  type ManagedActivity,
-  normalizePageUrl,
-} from "@hb/contracts";
+import type { JudgeParamProblem, ManagedActivity } from "@hb/contracts";
 import { useLocation, useRouter } from "@tanstack/react-router";
 import { AlertTriangle, CalendarX2, ChevronRight, Trash2 } from "lucide-react";
 import {
@@ -42,6 +38,7 @@ import {
   type Update,
 } from "./fields";
 import {
+  carriedPage,
   emptyForm,
   type FormState,
   formOf,
@@ -227,14 +224,15 @@ export function HongbaoForm({
         )?.declarations ?? null)
     : null;
   // 判定器带的附带网页 (judge-page §4, §11.9), with the switch on: filled
-  // in when a 判定器 (or another version) is picked, and followed while
-  // left as it came; a draft read back keeps what it was saved with.
+  // in when a 判定器 (or another version) is picked — or, under an 地址参数,
+  // its address typed (docs/judge-address-design.md §4) — and followed
+  // while left as it came; a draft read back keeps what it was saved with.
   // Undefined: the version's declarations are not known yet.
   const pagesOn = funding?.page === true || funding?.pageEnabled === true;
   const carried = !coded
     ? null
     : declarations
-      ? normalizePageUrl(declarations.meta?.page ?? "")
+      ? carriedPage(declarations.meta, form.judge.params)
       : undefined;
   const pageCarried = pagesOn && carried ? carried : null;
   const followed = useRef({ known: !activity, page: null as string | null });

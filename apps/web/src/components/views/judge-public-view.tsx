@@ -15,9 +15,11 @@ import { useIdentity } from "../../lib/session";
 import { HongbaoCard } from "../hongbao/hongbao-card";
 import { RestoreDialog, TakeDownDialog } from "../judges/curation-dialogs";
 import {
+  addressLabel,
   dayLabel,
   JudgeSource,
   JudgeTags,
+  networkWords,
   statsLine,
 } from "../judges/judge-bits";
 import { waitingWords } from "../judges/square-card";
@@ -437,10 +439,26 @@ export function PublicJudgePage({
                 >
                   {/* Its line says when it is shown (结束后公开, 不公开). */}
                   <p className="text-base break-all text-ink">
-                    {paramLine(item)}
+                    {paramLine(item, {
+                      params,
+                      network: version.network,
+                    })}
                   </p>
                   {item.hint && (
                     <p className="text-sm text-ink-3">{item.hint}</p>
+                  )}
+                  {/* 怎么填 (docs/judge-address-design.md §3), in a new tab. */}
+                  {item.guide && (
+                    <p className="text-sm">
+                      <a
+                        href={item.guide}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-accent-ink underline-offset-2 hover:underline"
+                      >
+                        怎么填 ↗
+                      </a>
+                    </p>
                   )}
                   {/* 选项联动 (judge-square §3): what each option sets. */}
                   {optionLines(item, params).map((line) => (
@@ -452,8 +470,15 @@ export function PublicJudgePage({
               ))
             )}
           </Panel>
-          {/* 判定器带的附带网页 (judge-page §11.3), in a new tab. */}
-          {judge.page && (
+          {/* 判定器带的附带网页 (judge-page §11.3), in a new tab; under an
+              地址参数, where it will be (judge-address §4). */}
+          {typeof judge.page === "object" && (
+            <p className="px-1 text-sm text-ink-2">
+              附带网页：放在发红包的人填的
+              {addressLabel(params, judge.page.param)}下
+            </p>
+          )}
+          {typeof judge.page === "string" && (
             <p className="px-1 text-sm text-ink-2">
               附带网页：
               <a
@@ -502,14 +527,20 @@ export function PublicJudgePage({
         <PageSection title="联网">
           <Panel className="grid gap-2 p-4">
             <ul className="grid gap-0.5">
-              {version.network.map((address) => (
-                <li
-                  key={address}
-                  className="font-mono text-sm break-all text-ink"
-                >
-                  {address}
-                </li>
-              ))}
+              {version.network.map((entry) =>
+                typeof entry === "string" ? (
+                  <li
+                    key={entry}
+                    className="font-mono text-sm break-all text-ink"
+                  >
+                    {entry}
+                  </li>
+                ) : (
+                  <li key={entry.param} className="text-sm text-ink">
+                    {networkWords(entry, params)}
+                  </li>
+                ),
+              )}
             </ul>
             <p className="text-sm text-ink-2">
               领的人提交的内容会发到这些地址，由对方的服务器决定发不发、发多少，对方随时能改。

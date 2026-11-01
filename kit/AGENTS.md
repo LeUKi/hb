@@ -17,7 +17,7 @@
 10. 写完跑 `npm test` 和 `npm run check`，带网页的再跑 `npm run page -- --shot` 看宽屏和手机的截图；照输出改，“提醒”也要看；不删测试凑数。
 <!-- 要点到这里 -->
 
-按情况读下面的几节：每次都读“代码协议（第五版）”“`tests.json`”“常见错误”；带网页读“带网页的玩法”；网页的后端要知道是谁读“认人（鉴权）”；有自己的后端读“自有后端”；人多、热闹的玩法读“热闹的玩法”；要发出去之前读“上线前”。
+按情况读下面的几节：每次都读“代码协议（第五版）”“`tests.json`”“常见错误”；带网页读“带网页的玩法”；网页的后端要知道是谁读“认人（鉴权）”；有自己的后端读“自有后端”；每个发红包的人部署自己的一份服务读“发红包的人自己部署的服务”；人多、热闹的玩法读“热闹的玩法”；要发出去之前读“上线前”。
 
 ## 怎么干活
 
@@ -173,6 +173,7 @@ export async function judge(submission) {
 - 不行时 `fetch()` 抛 `TypeError`，信息以“联网失败：”开头，写明原因。可以接住，自己在 `message` 里回复；没接住就算代码出错。对方返回 4xx、5xx 不算失败。
 - 本站给每个请求加 `X-Hb-Hongbao`（红包 ID，是公开的）和自己的 `User-Agent`；代码不能设 `Host` 和 `X-Hb-` 开头的请求头。
 - 领的人可以绕过本站直接请求接口（那样没有尝试间隔和人机验证）：要防，就让接口只认一把密钥，用密钥参数（`type: "key"`，`to` 写接口的地址）放它：代码读不到，也不会公开。
+- 地址也能由发红包的人填：`network` 里写 `{ param: "server" }`，是他在地址参数 `server`（`type: "url"`）里填的地址，开放时定下，算在 3 个里；没填的选填地址不算，`network` 里一个都没有就是不联网。见“发红包的人自己部署的服务”。
 - 红包结束后，领的人能看到自己那几次判定的返回内容：别在返回里放不想公开的东西。
 - 测试里写 `fetch`（见 `tests.json`），测试从不真的联网；`npm run simulate -- --live` 才从这台电脑真的发出去。
 
@@ -180,8 +181,8 @@ export async function judge(submission) {
 
 同一份代码能发出不同的红包：代码声明要填什么，发红包的人在网站上填，判定时在 `submission.params` 里。会变的东西（答案、范围、次数、题目）写成参数，别写死在代码里。
 
-- `export const params = [ … ]`：最多 20 项，每项 `{ key, label, hint, type, default, required, revealAtEnd }` 加上这种类型自己的限制。`key` 只用字母、数字和下划线；`label` 是表单上的名字，最多 20 个字；`hint` 是一句说明，最多 60 个字；`required` 默认 `true`；`revealAtEnd` 默认 `false`。
-- 九种 `type`：
+- `export const params = [ … ]`：最多 20 项，每项 `{ key, label, hint, guide, type, default, required, revealAtEnd }` 加上这种类型自己的限制。`key` 只用字母、数字和下划线；`label` 是表单上的名字，最多 20 个字；`hint` 是一句说明，最多 60 个字；`guide` 是一个 https 链接，表单和判定器页在这一项旁边显示“怎么填 ↗”（部署说明、去哪拿密钥）；`required` 默认 `true`；`revealAtEnd` 默认 `false`。
+- 十种 `type`：
   - `text`：单行文字，`minLength`、`maxLength`（最多 200）
   - `textarea`：多行文字，`maxLength`（最多 2000）
   - `integer`：整数，`min`、`max`、`step`（要是 `step` 的倍数，从 `min` 算起）
@@ -191,6 +192,7 @@ export async function judge(submission) {
   - `list`：一行一个的文字，`minItems`、`maxItems`（最多 100）、`maxLength`（每项最多几个字，最多 200）
   - `table`：每行几格，`columns` 是 1–6 列 `{ key, label, type, required }`，`type` 是 `text`、`integer` 或 `money`（带各自的限制），`minRows`、`maxRows`（最多 100）
   - `key`：密钥（比如 AI 服务的），见下面“密钥”
+  - `url`：地址，发红包的人填一个 https 地址（比如他自己部署的服务）。规则同 `network` 的地址；代码收到的以 `/` 结尾（填 `https://a.workers.dev` 收到 `https://a.workers.dev/`），用 `new URL("api/x", params.server)` 拼。公开，开放后不能改。最多 3 项，不能写 `default` 和 `revealAtEnd`。写进 `network`（`{ param: key }`）判定器才能请求它；密钥的 `to`、`meta.page` 也能指向它。
 - 网站按声明校验，代码收到的都是对的：文字去掉了首尾空白；没填的选填项，开关是 `false`，列表和表格是 `[]`，其他是 `null`。整份最大 16 KB。
 - 参数分三种，按什么时候公开选：
 
@@ -201,10 +203,10 @@ export async function judge(submission) {
   | `type: "key"` | 不能 | 不公开 | 不公开，结束后删除 | AI 等服务的密钥 |
 
 - 结束后公开（`revealAtEnd: true`；旧写法 `secret: true` 同样认）：开放时只公布参数封存值，结束后和代码、种子一起公开。回复里会不会透露它，要看代码怎么写。
-- 密钥（`type: "key"`）：`{ key, label, hint, type: "key", to, header, prefix, required }`。发红包的人自己填，代码读不到（`submission.params` 里没有它），代码请求 `to` 开头的地址时，网站把它加进请求头 `header`（默认 `Authorization`），值是 `prefix`（默认 `"Bearer "`）加密钥；Anthropic 这类写 `header: "x-api-key", prefix: ""`。`to` 要在 `network` 里。最多 3 项，不能写 `default` 和 `revealAtEnd`。领的人每提交一次就可能调一次服务，费用从发红包的人的密钥扣：限制每人能试几次，提醒他在服务商那边设消费上限。本地 `--live` 时密钥从 judge.js 旁边的 `keys.local.json`（`{ "ai": "sk-…" }`，不提交）读；`npm test` 用不到密钥。会联网的判定器里有文字参数像密钥（名字里有 key、token、密钥这类字样），`npm run check` 会提醒改用 `type: "key"`。
+- 密钥（`type: "key"`）：`{ key, label, hint, type: "key", to, header, prefix, required }`。发红包的人自己填，代码读不到（`submission.params` 里没有它），代码请求 `to` 开头的地址时，网站把它加进请求头 `header`（默认 `Authorization`），值是 `prefix`（默认 `"Bearer "`）加密钥；Anthropic 这类写 `header: "x-api-key", prefix: ""`。`to` 要在 `network` 里；`to` 写 `{ param: "server" }` 就只发给发红包的人在地址参数 `server` 填的地址（`network` 里也要有 `{ param: "server" }`）。最多 3 项，不能写 `default` 和 `revealAtEnd`。领的人每提交一次就可能调一次服务，费用从发红包的人的密钥扣：限制每人能试几次，提醒他在服务商那边设消费上限。本地 `--live` 时密钥从 judge.js 旁边的 `keys.local.json`（`{ "ai": "sk-…" }`，不提交）读；`npm test` 用不到密钥。会联网的判定器里有文字参数像密钥（名字里有 key、token、密钥这类字样），`npm run check` 会提醒改用 `type: "key"`。
 - `export function check(params, hongbao)`（可选）：查几项合起来对不对，比如“最小不能大于最大”“奖池够不够每份 0.01”。`hongbao` 是 `{ title, total, count, minEach }`（`count`、`minEach` 同 `submission.hongbao` 的兼容值）。返回问题的数组 `[{ key, message }]`（`key` 是参数的 `key`，`message` 最多 100 个字），没问题返回 `[]`。发红包的人填参数时在判定器里跑，不能联网，`Math.random()` 每次都一样。
 - `export const hongbao = { … }`（可选）：用它发的红包在“发多少”的默认值和范围，只能收窄网站的规则：`total: { min, max, default }`（金额是整数分）、`deadline: { value, unit }`（默认截止时长，`unit` 是 `"minutes"`、`"hours"` 或 `"days"`）、`prompt`（领取提示的默认值，最多 40 个字）、`humanCheck`（建议打开领取前人机验证；默认别写，见要点第 2 条）、`pageAutoOpen`（建议打开红包页时自动打开附带网页；带网页的玩法都写上，有附带网页才起作用）、`title`（红包标题的默认值，最多 100 个字）、`note`（说明的默认值，最多 2000 个字，写法同发红包时的说明：一个回车就换行，`[文字](#附带网页)` 是打开附带网页的按钮，没有网页时只剩文字；带网页的第一行就放这个按钮）。标题和说明是挑了这个判定器时替发红包的人填好的，他没改过的才跟着判定器换。以前的 `count`（份数）和 `minEach`（每份至少）不起作用了，`npm run check` 会提醒；要几个人能领，做成参数。
-- `export const meta = { name, description, page }`（可选）：判定器的名字（最多 20 个字）和一句说明（最多 60 个字），贴代码时自动填好，之后以网站上的为准。`page` 是判定器带的附带网页（https，规则同附带网页），用它发红包时替发红包的人填好；怎么做见“带网页的玩法”。
+- `export const meta = { name, description, page }`（可选）：判定器的名字（最多 20 个字）和一句说明（最多 60 个字），贴代码时自动填好，之后以网站上的为准。`page` 是判定器带的附带网页（https，规则同附带网页），用它发红包时替发红包的人填好；怎么做见“带网页的玩法”。网页放在发红包的人自己的服务上时写 `page: { param: "server", path: "play/" }`：跟着他填的地址填好，`path` 选填，接在地址后面（不以 `/` 开头）。
 - 这几个导出写得不对，`npm test` 不跑，`npm run check` 写“参数声明写得不对”和哪里不对。
 
 ### 公开数据和动态（可选）
@@ -269,7 +271,7 @@ export function judge({ input, state, user, hongbao }) {
 
 ### 判定器这边
 
-- `export const meta = { name, description, page }`：`page` 写网页地址（https，不带端口），用它发红包时网页一起带上。
+- `export const meta = { name, description, page }`：`page` 写网页地址（https，不带端口），用它发红包时网页一起带上；网页放在发红包的人自己的服务上时写 `{ param: "server" }`（见“发红包的人自己部署的服务”）。
 - `export const hongbao = { pageAutoOpen: true, note: "[打开数字炸弹，点格子开始猜](#附带网页)\n规则……", … }`：`pageAutoOpen` 让人一进红包页就打开网页；`note` 第一行就是打开网页的按钮，规则写在下面（说明长了会折叠，按钮放在后面要点“展开”才看得到）。
 - `view.data` 写网页要画的、大家都看得到的东西；`player.view.data` 写只给这个人看的（他的手牌、剩几次）。
 
@@ -299,7 +301,7 @@ export function judge({ input, state, user, hongbao }) {
 
 网页里加 `<script src="https://hb.lafi.sh/sdk/v1.js"></script>`，就有全局的 `hb`。每个方法的返回和每种原因写在 `page/hb.d.ts`。
 
-- `await hb.ready()`：`{ hongbao, viewer, theme }`。`hongbao` 有 `id`、`title`、`status`（`draft`、`active`、`ended`）、`unclaimed`（奖池还剩多少，比如 `"12.50"`）、`judged` 等；`viewer` 是 `{ signedIn: true, name }` 或 `{ signedIn: false }`，只有昵称。单独打开网页时它会报错。
+- `await hb.ready()`：`{ hongbao, viewer, theme }`。`hongbao` 有 `id`、`title`、`status`（`draft`、`active`、`ended`）、`unclaimed`（奖池还剩多少，比如 `"12.50"`）、`judged`、`params`（现在公开的参数，同红包页代码一节列出的；结束后公开的结束后才有，密钥永远没有）等；`viewer` 是 `{ signedIn: true, name }` 或 `{ signedIn: false }`，只有昵称。单独打开网页时它会报错。
 - `await hb.view()`：公开数据 `{ summary, data, at }`，没有时 `null`。`hb.on("view" | "hongbao" | "announce" | "me" | "myView", fn)` 订阅变化，返回取消订阅的函数；`announce` 每次一条 `{ n, at, user: { name, avatar }, text }`。
 - `await hb.submit(input)`：替看的人提交一次，同一个红包第一次会先问他（和 `hb.identity()` 一起问）。判定了是 `{ judged: true, claimed, amount, unit, reply, added, pending, settled }`；没判定是 `{ judged: false, reason, seconds, message }`，给玩的人看的话由网页自己写。
 - `await hb.fill(text)`：把内容填进指令框，不提交，按提交的是看的人自己；所有红包都能用。
@@ -320,13 +322,13 @@ export function judge({ input, state, user, hongbao }) {
 ### 令牌
 
 - `await hb.identity({ nonce })`：拿到是 `{ identified: true, token, expiresAt, user: { id, username, name, level } }`；没拿到是 `{ identified: false, reason, message }`，`reason` 有 `login`（没登录）、`denied`（他不允许）、`away`、`busy`、`unavailable`、`error`。`user` 只用来先显示。
-- 令牌是 JWT（ES256），有效 10 分钟，过期了再调一次，不会再问他。内容：`iss`（`https://hb.lafi.sh`）、`aud`（你网页的来源）、`sub`（LINUX DO 数字 ID，和判定器的 `submission.user.id` 是同一个数）、`username`、`name`、`level`、`hongbao`（红包编号）、`iat`、`exp`、`jti`、你带的 `nonce`。
+- 令牌是 JWT（ES256），有效 10 分钟，过期了再调一次，不会再问他。内容：`iss`（`https://hb.lafi.sh`）、`aud`（你网页的来源）、`sub`（LINUX DO 数字 ID，和判定器的 `submission.user.id` 是同一个数）、`username`、`name`、`level`、`hongbao`（红包编号）、`sender`（发这个红包的人的 LINUX DO 数字 ID）、`iat`、`exp`、`jti`、你带的 `nonce`。
 - 公钥：`https://hb.lafi.sh/api/page-identity/keys`（JWKS）。
 
 ### 后端验令牌
 
 - 用公钥验签，按 `kid` 找钥匙（JWT 库读远程公钥时会缓存）。
-- 核对 `iss` 是 `https://hb.lafi.sh`、`aud` 是自己网页的来源、没过期（留 30 秒误差）、`hongbao` 是自己认的红包。
+- 核对 `iss` 是 `https://hb.lafi.sh`、`aud` 是自己网页的来源、没过期（留 30 秒误差）、`hongbao` 是自己认的红包；发红包的人自己部署的服务还要核对 `sender` 是它的主人。
 - 防重放：后端先发一个一次性的 `nonce`（8–128 个字母、数字或 `-_.~`），网页带着它要令牌，后端核对后作废。
 - 用 `sub` 认人，不用用户名（用户名会改）；数据按“红包编号 + 用户 ID”存。
 
@@ -357,7 +359,7 @@ export async function whoIs(request) {
 - 后端的跨域只放行自己网页的来源。
 - 在玩家点“开始”这类按钮时再要，不要一打开网页就要（第一次会弹许可）。
 - 他不允许：降级成只读或游客模式，给一个按钮让他改主意；没登录就在点击里调 `hb.login()`。
-- 本地 `npm run page` 的模拟器也能签：`iss` 是模拟器的地址，公钥在它的 `/api/page-identity/keys`。后端开发时认它，上线后只认 `https://hb.lafi.sh`。
+- 本地 `npm run page` 的模拟器也能签：`iss` 是模拟器的地址，公钥在它的 `/api/page-identity/keys`，`sender` 是 `10000`。后端开发时认它，上线后只认 `https://hb.lafi.sh`。
 
 ## 自有后端
 
@@ -389,6 +391,128 @@ export async function whoIs(request) {
 - 按“红包编号 + LINUX DO 数字 ID”存；对不上时以判定记录为准（红包作者能下载完整记录）；至少保留到核对完。
 - `tests.json` 给后端的每种返回都写一条：通过、不通过、500、超时、连不上，确认失败时不算出错、不加钱。
 - `npm run simulate -- --live` 或 `npm run page -- --live` 真连一次自己的后端；开场前自己压一下。
+
+## 发红包的人自己部署的服务
+
+大家共用一个判定器，每个发红包的人把你给的服务模板部署到自己的 Cloudflare 账号，用他自己的 Workers AI、存储和数据，费用也归他。你写判定器和服务模板；他照部署说明部署，把得到的地址填进红包。“自有后端”的几条照样都要做。
+
+### 分工
+
+| 部分 | 在哪运行 | 做什么 |
+| --- | --- | --- |
+| 判定器 | 红包站，大家共用 | 读玩法参数，向服务核对结果，决定发多少 |
+| 服务（附带网页也放在里面） | 发红包的人的账号 | 放网页；认出玩家，限次数，调 AI，存结果 |
+
+一次提交这样走：网页（在他的服务上）用 `hb.identity()` 要令牌 → 带着令牌把图片传给同一个网站的 `/api/` → 服务认人、调 AI、存下结果，回一个结果编号 → 网页 `hb.submit(结果编号)` → 判定器带着服务密钥问服务这个编号 → 决定发多少。调 AI 这种慢的事在上传时由服务做，判定只查一下结果，很快。
+
+- 网页和服务放在一起：网页是他部署的那一份，进行中的红包不会因为你改了模板而变；网页和接口是同一个网站，不用配跨域。你改了模板，他要重新部署才用得上。
+- 也可以大家共用一个网页：`meta.page` 写固定地址，网页从 `hongbao.params.server` 读服务地址，服务的跨域只放行这个网页的来源。
+- 部署说明写进地址参数的 `guide`，从 Cloudflare 的“Deploy to Cloudflare”按钮开始，写清要设哪几项（服务密钥、`OWNER_ID`）。表单上地址参数下面会告诉他自己的 LINUX DO 数字 ID。
+- 地址开放后不能改：建议他用固定的地址（比如自己的域名），服务更新时地址不变。
+
+### 判定器这边
+
+```js
+export const params = [
+  { key: "server", label: "服务地址", type: "url", hint: "按部署说明部署一份，把地址填在这里", guide: "https://github.com/you/photo-judge#readme" },
+  { key: "token", label: "服务密钥", type: "key", to: { param: "server" }, hint: "部署时设的那串密钥" },
+  { key: "challenge", label: "挑战", type: "text", default: "拍一只猫" },
+  { key: "pass", label: "多少分算过", type: "integer", min: 1, max: 100, default: 60 },
+];
+export const network = [{ param: "server" }];
+export const meta = { name: "拍照挑战", page: { param: "server" } };
+export const hongbao = { pageAutoOpen: true, note: "[打开网页开始拍照](#附带网页)" };
+
+export async function judge(submission) {
+  const id = submission.input;
+  const used = submission.player.state?.used ?? [];
+  if (used.includes(id)) return { message: "这个结果已经交过了" };
+  const address = new URL(`api/results/${encodeURIComponent(id)}`, submission.params.server);
+  address.searchParams.set("user", String(submission.user.id));
+  let result;
+  try {
+    // 不写密钥：网站转发时加上 Authorization: Bearer <服务密钥>
+    const response = await fetch(address);
+    result = await response.json();
+  } catch {
+    return { message: "服务连不上，稍后再试" };
+  }
+  if (!result.found) return { message: "没找到这次的结果" };
+  if (result.challenge !== submission.params.challenge)
+    return { message: "这个结果不是这次挑战的" };
+  const player = { state: { used: [...used, id] } };
+  return result.score >= submission.params.pass
+    ? { add: 100, settle: true, player, message: `${result.score} 分，过了` }
+    : { player, message: `${result.score} 分，再试一次` };
+}
+```
+
+- 判定器不信网页交来的分数，只信服务核对的结果：服务存下的结果带红包编号、玩家（令牌的 `sub`）和这次用的挑战，服务核对前两样，判定器核对挑战，再在 `player.state` 里记下用过的结果编号，同一个结果不能领两次。
+- 判定器发给服务的请求带 `X-Hb-Hongbao`（红包编号）和服务密钥，服务靠它们认出请求来自他自己的红包。
+
+### 服务这边
+
+一个 Cloudflare Worker：根路径放附带网页（静态文件），`/api/` 下是接口。
+
+```js
+// npm install jose；wrangler.jsonc 里绑 AI、一个 KV（RESULTS）和静态文件（ASSETS），
+// 设 OWNER_ID（发红包的人的 LINUX DO 数字 ID）和 SERVICE_KEY（服务密钥，用 Secrets）
+import { createRemoteJWKSet, jwtVerify } from "jose";
+
+const SITE = "https://hb.lafi.sh"; // 本地对着模拟器开发时是 http://127.0.0.1:8730
+const keys = createRemoteJWKSet(new URL(`${SITE}/api/page-identity/keys`));
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    if (url.pathname === "/api/upload" && request.method === "POST")
+      return upload(request, env, url);
+    if (url.pathname.startsWith("/api/results/")) return result(request, env, url);
+    return env.ASSETS.fetch(request);
+  },
+};
+
+// 网页传图片：认人、认红包的主人、限次数，再调 AI。
+async function upload(request, env, url) {
+  const token = request.headers.get("Authorization")?.replace(/^Bearer /, "") ?? "";
+  let claims;
+  try {
+    ({ payload: claims } = await jwtVerify(token, keys, {
+      issuer: SITE,
+      audience: url.origin,
+      algorithms: ["ES256"],
+      clockTolerance: 30,
+    }));
+  } catch {
+    return Response.json({ error: "身份过期了，再试一次" }, { status: 401 });
+  }
+  if (claims.sender !== env.OWNER_ID)
+    return Response.json({ error: "这个服务只给它主人的红包用" }, { status: 403 });
+  // 限次数：按 claims.hongbao + claims.sub 计数，超了就拒绝（略）
+  const form = await request.formData();
+  const challenge = String(form.get("challenge"));
+  const score = await rate(env, form.get("photo"), challenge); // 调 env.AI，0–100
+  const id = crypto.randomUUID();
+  await env.RESULTS.put(id, JSON.stringify({ hongbao: claims.hongbao, user: claims.sub, challenge, score }), {
+    expirationTtl: 7 * 86400,
+  });
+  return Response.json({ id, score });
+}
+
+// 判定器来核对：只认服务密钥，结果要是这个红包、这个人的。
+async function result(request, env, url) {
+  if (request.headers.get("Authorization") !== `Bearer ${env.SERVICE_KEY}`)
+    return new Response(null, { status: 401 });
+  const saved = JSON.parse((await env.RESULTS.get(url.pathname.slice("/api/results/".length))) ?? "null");
+  if (!saved || saved.hongbao !== request.headers.get("X-Hb-Hongbao") || saved.user !== url.searchParams.get("user"))
+    return Response.json({ found: false });
+  return Response.json({ found: true, challenge: saved.challenge, score: saved.score });
+}
+```
+
+- 网页从 `hongbao.params.challenge` 读挑战显示出来，上传时一起发给服务。
+- 存图片要不要、存多久，由服务自己定（比如一个开关写在服务的设置里，开着就放进他自己的 R2）。
+- 本地开发：服务用 `npx wrangler dev` 跑起来，`simulate.json` 的参数里写 `"server": "http://localhost:8787/"`（只有开发包认这种本地地址，网站上要填 https 地址）；`npm run page` 打开的就是这个服务上的网页（经模拟器转一道，换上模拟器的 SDK），令牌的 `aud` 是服务自己的来源、`sender` 是 `10000`，`OWNER_ID` 设成 `10000`。`--live` 时判定器真的去问它，服务密钥从 `keys.local.json` 读。
 
 ## 热闹的玩法
 
@@ -473,6 +597,7 @@ export async function whoIs(request) {
 - 每个 `{ "url", "method", "status", "headers", "json" 或 "text" }`：`method` 默认 `GET`，`status` 默认 200，`json` 的 `content-type` 默认 `application/json`。写 `{ "url", "method", "error": "timeout" | "unreachable" | "too-big" }` 就是这个请求失败（超时、连不上、返回超过 64 KB）。
 - 代码发出的请求按方法和完整地址，对上一个还没用过的返回。有请求没写返回（`fetch()` 会抛“测试里没写这个请求的返回”）、写了的返回没用上，这条测试都不通过。
 - 白名单、次数和大小的限制照线上查。
+- 有地址参数的，参数里给它写一个地址（比如 `"params": { "server": "https://example.com/" }`），`fetch` 的 `url` 按这个地址写；每条测试按自己的参数算出能请求的地址。
 
 ### `expect`
 
@@ -510,14 +635,14 @@ export async function whoIs(request) {
 }
 ```
 
-`hongbao` 和 `now`、`seed` 的写法同 `tests.json`，声明了参数的代码在顶层写 `params`；每次提交的写法同多步场景的一步（联网的代码写 `fetch`），只是没有 `expect`。和多步场景不同，已经结算的人、红包结束以后的提交不算错，照实写“已结算”“已结束”。代码导出了 `setup` 时，先跑它，写“开放时 setup”。最后到截止时间，还没结算的人一起结算。
+`hongbao` 和 `now`、`seed` 的写法同 `tests.json`，声明了参数的代码在顶层写 `params`（地址参数在这里还能写本地地址，比如 `http://localhost:8787/`，对着本地跑的服务开发）；每次提交的写法同多步场景的一步（联网的代码写 `fetch`），只是没有 `expect`。和多步场景不同，已经结算的人、红包结束以后的提交不算错，照实写“已结算”“已结束”。代码导出了 `setup` 时，先跑它，写“开放时 setup”。最后到截止时间，还没结算的人一起结算。
 
 ## 五个命令
 
 - `npm test`：先按网站部署的规则查 import，不过就列出第几行什么问题、不跑测试；然后每条一行 `✓ 名字（3 毫秒）` 或 `✗ 名字：哪里不对`，`console` 的输出缩进跟在那一条下面；最后 `测试 N / M 通过`。`npm test -- 名字` 只跑名字里含这几个字的。
 - `npm run check`：网站部署时同样的几行（import 都在清单里、代码能加载、导出了 judge、联网的写出白名单、测试 N / M 通过），每条测试跑两遍，结果不一样的提醒用了真随机，公开数据里出现保密参数的值也提醒；再写文件大小和代码指纹（和网站上展开代码时显示的一致）；最后 `可以去网站部署了` 或 `还不能开放`。
 - `npm run simulate`：一行一次提交：第几次、谁、输入、加减了多少和之后的待结算（比如“+0.50 · 待结算 1.20”，结算了写“结算 1.20”，什么都没加写“没加钱”）、代码的回复；`others` 改到的人、只给某人看的数据、公开数据（“公开：……”）、动态（“动态：……”）各跟一行；结束了写“判定器结束了这个红包”或“奖池占满了，红包结束”和一起结算的人；最后到截止时间还没结算的人一起结算，写发出多少、几个人领到钱。`npm run simulate -- --seed 别的` 换一个种子，`npm run simulate -- 别的.json` 换一个文件，`npm run simulate -- --live` 让请求真的从这台电脑发出去（照样只许白名单里的地址）。
-- `npm run page`：模拟器。浏览器打开它写的地址（`http://127.0.0.1:8730`），布局和提示大致照网站：宽屏是左边红包窗口、右边网页窗口；手机是底部抽屉；多人是并排几个手机，每个是不同的人，一人提交其他人同步更新。红包窗口里有红包皮（说明里的按钮、奖池还剩、已判定次数）、“开”和指令框、红包状态、我的记录、待结算；判定器写了 `pageAutoOpen` 就一进来打开网页，第一次打开网页先确认，网页第一次提交或要身份时先问许可，都用网站上的原话。工具栏能换布局、换人、“快进到截止”（还没结算的人一起结算）、重新开始。网页从另一个地址打开，和线上一样；网页里的 `https://hb.lafi.sh/sdk/v1.js` 在本地自动换成模拟器的那一份。提交交给本地的 `judge.js` 跑，同 `npm run simulate`（先跑 setup，共用的 state、每个人的待结算、奖池接着往下算；红包和参数取 `simulate.json`）。时间也照 `simulate.json`：从它的 `now` 开始走（默认 2026-10-24 12:00），判定的 `at`、公开数据和动态的时间、截止、`cooldownUntil` 和网页里的 `hb.now()` 都在这条时间上，倒计时照常用 `hb.now()` 算。每个人第一次提交会问允不允许，选“没登录”能测 `login`。`npm run page -- examples/number-bomb` 打开一个样例；`--cooldown 3` 每人提交后要等 3 秒，用来测 `cooldown`；`--port` 换端口；`--live` 让联网的请求真的发出去。改了网页刷新就行，改了 `judge.js` 要 Ctrl+C 再运行一次。
+- `npm run page`：模拟器。浏览器打开它写的地址（`http://127.0.0.1:8730`），布局和提示大致照网站：宽屏是左边红包窗口、右边网页窗口；手机是底部抽屉；多人是并排几个手机，每个是不同的人，一人提交其他人同步更新。红包窗口里有红包皮（说明里的按钮、奖池还剩、已判定次数）、“开”和指令框、红包状态、我的记录、待结算；判定器写了 `pageAutoOpen` 就一进来打开网页，第一次打开网页先确认，网页第一次提交或要身份时先问许可，都用网站上的原话。工具栏能换布局、换人、“快进到截止”（还没结算的人一起结算）、重新开始。网页从另一个地址打开，和线上一样；网页里的 `https://hb.lafi.sh/sdk/v1.js` 在本地自动换成模拟器的那一份。提交交给本地的 `judge.js` 跑，同 `npm run simulate`（先跑 setup，共用的 state、每个人的待结算、奖池接着往下算；红包和参数取 `simulate.json`）。时间也照 `simulate.json`：从它的 `now` 开始走（默认 2026-10-24 12:00），判定的 `at`、公开数据和动态的时间、截止、`cooldownUntil` 和网页里的 `hb.now()` 都在这条时间上，倒计时照常用 `hb.now()` 算。每个人第一次提交会问允不允许，选“没登录”能测 `login`。`npm run page -- examples/number-bomb` 打开一个样例；`--cooldown 3` 每人提交后要等 3 秒，用来测 `cooldown`；`--port` 换端口；`--live` 让联网的请求真的发出去。`meta.page` 放在地址参数下时，打开的是 `simulate.json` 里填的那个地址上的网页（经模拟器转一道，换上模拟器的 SDK），不用 `page/`。改了网页刷新就行，改了 `judge.js` 要 Ctrl+C 再运行一次。
   - `npm run page -- --shot`：给 AI 用的。不开浏览器窗口，在后台打开模拟器，截三张图存到 `shots/`（`wide.png` 宽屏网页打开、`phone.png` 手机抽屉露一条、`phone-open.png` 手机抽屉拉起），再列出网页里的报错、加载失败的请求、接没接上 SDK；有问题时退出码不是 0。`--play` 先按 `simulate.json` 提交完再截。要一个浏览器：先找这台电脑的 Chrome，再找 Edge，再找 Playwright 下载过的 Chromium；都没有就照提示运行 `npx playwright install chromium`。
 - `npm run replay -- judge-records-xxx.json`：用网站上下载的完整记录逐条重放，先核对指纹和种子，再核对开放时的 setup；联网的红包用记录里的返回，先比请求再比判定（第四版起还比公开数据、动态和结束，第五版起还比 `add`、`settle`、`player` 和 `others`）。早先几版开放的红包用那一版的运行时重放。
 

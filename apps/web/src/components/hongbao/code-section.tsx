@@ -407,11 +407,12 @@ function CodeBody({
             <span className="text-xs text-ink-3">联网</span>
             <ul className="grid gap-0.5">
               {judge.network.map((address) => (
-                <li
-                  key={address}
-                  className="font-mono text-sm break-all text-ink"
-                >
-                  {address}
+                <li key={address} className="text-sm break-all text-ink">
+                  <span className="font-mono">{address}</span>
+                  {/* 地址参数 (docs/judge-address-design.md §5). */}
+                  {judge.networkFilled?.includes(address) && (
+                    <span className="text-ink-3"> · 发红包的人填的</span>
+                  )}
                 </li>
               ))}
             </ul>

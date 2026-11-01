@@ -10,6 +10,7 @@ import {
   JUDGE_NAME_LIMITS,
   type JudgeDeclarations,
   type JudgeHongbaoRules,
+  type JudgeNetworkEntry,
   type JudgeSource,
   type JudgeVersions,
   type LdcMoney,
@@ -21,6 +22,8 @@ import {
   TRUST_LEVEL_MAX,
   TRUST_LEVEL_MIN,
 } from "@hb/contracts";
+import { readAddress } from "../../../../../kit/runtime/network.mjs";
+import { pageOf } from "../../../../../kit/runtime/params.mjs";
 import { durationOfSeconds } from "../../lib/hongbao";
 import { inspectPassword } from "../../lib/password-rules";
 import { noVersions } from "./judge-versions";
@@ -128,16 +131,34 @@ export type FormState = {
 
 /** Someone added to 指定的人: their face once found (the server notes their ID). */
 /**
+ * 判定器带的附带网页 for these params (judge-page §4): `meta.page`, or under
+ * the 地址参数 it names as that reads so far (docs/judge-address-design.md
+ * §4); null without one, or while it does not read as an address.
+ */
+export function carriedPage(
+  meta: JudgeDeclarations["meta"] | undefined,
+  params: Readonly<Record<string, unknown>>,
+) {
+  const page = meta?.page;
+  if (!page) return null;
+  if (typeof page === "string") return normalizePageUrl(page);
+  const read = readAddress(params[page.param]);
+  if (!("address" in read)) return null;
+  return normalizePageUrl(pageOf(meta, { [page.param]: read.address }) ?? "");
+}
+
+/**
  * Another's 判定器 in a draft (docs/judge-square-design.md §15.3, §15.4):
  * its version, whose it is and how it stands, what that version declares,
- * and the 联网 addresses its sender confirmed. Its code is public; its
- * tests are never here.
+ * and the 联网 addresses its sender confirmed — those written in its code;
+ * an 地址参数 is their own (docs/judge-address-design.md §4). Its code is
+ * public; its tests are never here.
  */
 export type BorrowedJudge = {
   n: number;
   source: Omit<JudgeSource, "declarations" | "network">;
   declarations: JudgeDeclarations | null;
-  network: string[] | null;
+  network: JudgeNetworkEntry[] | null;
   networkAck: string[] | null;
 };
 

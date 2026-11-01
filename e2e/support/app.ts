@@ -18,6 +18,8 @@ export type MockUser = {
   trustLevel?: number | null;
   /** When that level was read (ms). */
   profileSeenAt?: number | null;
+  /** Their LINUX DO 数字 ID, shown to them only. */
+  linuxDoId?: string;
 };
 
 export const viewer: MockUser = {

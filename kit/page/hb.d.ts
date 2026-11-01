@@ -27,6 +27,11 @@ export interface HbHongbao {
   deadlineAt: string | null;
   /** 已判定几次 */
   judged: number | null;
+  /**
+   * 代码判定红包现在公开的参数（key → 值），同红包页代码一节列出的：结束后公开的
+   * 结束后才有，密钥永远没有；没有参数时是 {}。地址参数是规范后的地址，以 / 结尾
+   */
+  params: Record<string, unknown>;
 }
 
 /** 看的人：登录了只给昵称，不给编号。 */
@@ -196,7 +201,8 @@ export type HbIdentityReason =
  * hb.identity() 的结果。token 是红包站签名的 JWT（ES256，10 分钟），交给网页
  * 自己的后端验证，后端只信它：公钥在 https://hb.lafi.sh/api/page-identity/keys，
  * 要核对 iss（https://hb.lafi.sh）、aud（你网页的来源）、exp、hongbao（红包
- * 编号）和你发的 nonce。user 只是方便网页先显示。
+ * 编号）和你发的 nonce。令牌里的 sender 是发这个红包的人的 LINUX DO 数字 ID：
+ * 发红包的人自己部署的服务只认自己的红包时核对它。user 只是方便网页先显示。
  */
 export type HbIdentityResult =
   | {

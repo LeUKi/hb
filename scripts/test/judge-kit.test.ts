@@ -753,7 +753,7 @@ describe("network", () => {
     });
     const problems = (value: unknown) =>
       (readNetwork(value) as { problems: string[] }).problems;
-    expect(problems("x")[0]).toContain("network 要是字符串数组");
+    expect(problems("x")[0]).toContain("network 要是数组");
     expect(problems([])[0]).toContain("至少写一个地址");
     expect(problems([API, API])).toEqual(["network 第 2 个和前面的重复了"]);
     expect(problems(["a", "b", "c", "d"])).toEqual(["network 最多写 3 个地址"]);
@@ -2045,7 +2045,7 @@ describe("结束后公开和密钥", () => {
       shown: { max: 9 },
       secret: { answer: 7, old: "x" },
     });
-    expect(read.list.map(paramLine)).toEqual([
+    expect(read.list.map((item) => paramLine(item))).toEqual([
       "答案（整数，结束后公开）",
       "旧（文字，结束后公开）",
       "最大（整数）",
@@ -2110,6 +2110,218 @@ describe("结束后公开和密钥", () => {
     expect(keyNetworkProblems(read.list, ["https://example.com/"])).toEqual([
       "params（ai）的 to：https://api.openai.com/v1/ 不在 network 里",
     ]);
+  });
+});
+
+describe("地址参数 (docs/judge-address-design.md)", () => {
+  const server = {
+    key: "server",
+    label: "服务地址",
+    type: "url",
+    guide: "https://github.com/someone/server#readme",
+  };
+  const token = {
+    key: "token",
+    label: "服务密钥",
+    type: "key",
+    to: { param: "server" },
+  };
+
+  it("reads an address as filled, ending in /, and refuses what the network refuses", async () => {
+    const { readParams, paramValues } = await import(
+      "../../kit/runtime/index.mjs"
+    );
+    const read = readParams([server]);
+    if (!("list" in read)) throw new Error("NOT_READ");
+    const value = (given: unknown, local = false) => {
+      const answer = paramValues(read.list, { server: given }, { local });
+      return "values" in answer
+        ? answer.values.server
+        : answer.problems[0]?.message;
+    };
+    expect(value("https://A.workers.dev")).toBe("https://a.workers.dev/");
+    expect(value(" https://a.workers.dev/api ")).toBe(
+      "https://a.workers.dev/api/",
+    );
+    expect(value("http://a.workers.dev/")).toBe(
+      "服务地址只能用 https:// 开头的地址",
+    );
+    expect(value("https://a.workers.dev:8443/")).toBe("服务地址不能带端口");
+    expect(value("https://a.workers.dev/?x=1")).toBe("服务地址不能带 ? 和 #");
+    expect(value("https://1.2.3.4/")).toBe("服务地址不能写 IP 地址");
+    expect(value("https://hb.lafi.sh/")).toBe(
+      "服务地址不能请求 hb.lafi.sh 和它的子域名",
+    );
+    expect(value("")).toBe("请填写服务地址");
+    // The kit's --live only: a service run beside it.
+    expect(value("http://localhost:8787")).toBe(
+      "服务地址只能用 https:// 开头的地址",
+    );
+    expect(value("http://localhost:8787", true)).toBe("http://localhost:8787/");
+  });
+
+  it("refuses an address with a default or revealAtEnd, more than 3, a guide not https, and a 密钥 to what is no address", async () => {
+    const { readParams } = await import("../../kit/runtime/index.mjs");
+    const problems = (items: Record<string, unknown>[]) => {
+      const read = readParams(items);
+      return "problems" in read ? read.problems : [];
+    };
+    expect(problems([{ ...server, default: "https://a.dev/" }])).toEqual([
+      "params 第 1 项（server）：地址不能写 default，由发红包的人自己填",
+    ]);
+    expect(problems([{ ...server, revealAtEnd: true }])).toEqual([
+      "params 第 1 项（server）：地址要公开，领的人要看得到判定器会请求哪里，不能写 revealAtEnd",
+    ]);
+    expect(
+      problems([1, 2, 3, 4].map((n) => ({ ...server, key: `s${n}` }))),
+    ).toEqual(["params 里的地址最多 3 项"]);
+    expect(problems([{ ...server, guide: "http://a.dev/" }])).toEqual([
+      "params 第 1 项（server）：guide 只能用 https:// 开头的地址",
+    ]);
+    expect(problems([token])).toEqual([
+      "params（token）的 to：没有参数 server",
+    ]);
+    expect(
+      problems([{ key: "server", label: "服务地址", type: "text" }, token]),
+    ).toEqual(['params（token）的 to：server 要是地址参数（type: "url"）']);
+  });
+
+  it("takes { param } in network, resolves it per 红包, and says what is wrong or unused", async () => {
+    const {
+      readParams,
+      readNetwork,
+      resolveNetwork,
+      networkParamProblems,
+      keyNetworkProblems,
+      addressReminders,
+      paramLine,
+    } = await import("../../kit/runtime/index.mjs");
+    const read = readParams([server, token]);
+    if (!("list" in read)) throw new Error("NOT_READ");
+    const network = readNetwork([
+      { param: "server" },
+      "https://api.openai.com/v1/",
+    ]);
+    if (!("list" in network) || !network.list) throw new Error("NOT_READ");
+    expect(network.list).toEqual([
+      { param: "server" },
+      "https://api.openai.com/v1/",
+    ]);
+    expect(
+      resolveNetwork(network.list, { server: "https://a.workers.dev/" }),
+    ).toEqual(["https://a.workers.dev/", "https://api.openai.com/v1/"]);
+    // Not filled: left out; nothing left, not online.
+    expect(resolveNetwork([{ param: "server" }], { server: null })).toBe(null);
+    expect(networkParamProblems(read.list, network.list)).toEqual([]);
+    expect(networkParamProblems(read.list, [{ param: "other" }])).toEqual([
+      "network 第 1 个：没有参数 other",
+    ]);
+    expect(keyNetworkProblems(read.list, network.list)).toEqual([]);
+    expect(keyNetworkProblems(read.list, ["https://a.dev/"])).toEqual([
+      'params（token）的 to：network 里没有 { param: "server" }',
+    ]);
+    expect(
+      addressReminders({ meta: null, params: read.list }, network.list),
+    ).toEqual([]);
+    expect(
+      addressReminders(
+        { meta: null, params: [read.list[0] as never] },
+        network.list,
+      ),
+    ).toEqual([
+      '地址参数 server 写进了 network：建议加一项密钥（type: "key", to: { param: "server" }），让那个服务认得出请求来自这个红包',
+    ]);
+    expect(
+      addressReminders({ meta: null, params: [read.list[0] as never] }, null),
+    ).toEqual([
+      "地址参数 server 没用上：判定器请求它会被拦下（附带网页从 hongbao.params 读它的，不用管这条）",
+    ]);
+    expect(
+      read.list.map((item) =>
+        paramLine(item, { params: read.list, network: network.list }),
+      ),
+    ).toEqual([
+      "服务地址（地址，发红包的人自己填，判定器会请求它）",
+      "服务密钥（密钥，发红包的人自己填，不公开，只发给服务地址）",
+    ]);
+    expect(readNetwork([{ param: "server" }, { param: "server" }])).toEqual({
+      problems: ["network 第 2 个和前面的重复了"],
+    });
+    expect(readNetwork([{ url: "x" }])).toEqual({
+      problems: ['network 第 1 个：要是地址，或者 { param: "地址参数的 key" }'],
+    });
+  });
+
+  it("sends a 密钥 to an 地址参数 only to the address filled, and lets the kit's localhost in only under its own entry", async () => {
+    const { readParams, keyHeaders, allowedBy } = await import(
+      "../../kit/runtime/index.mjs"
+    );
+    const read = readParams([server, token]);
+    if (!("list" in read)) throw new Error("NOT_READ");
+    const filled = { server: "https://a.workers.dev/" };
+    expect(
+      keyHeaders(
+        read.list,
+        { token: "t" },
+        "https://a.workers.dev/api/x",
+        filled,
+      ),
+    ).toEqual([["Authorization", "Bearer t"]]);
+    expect(
+      keyHeaders(
+        read.list,
+        { token: "t" },
+        "https://b.workers.dev/api/x",
+        filled,
+      ),
+    ).toEqual([]);
+    expect(
+      keyHeaders(read.list, { token: "t" }, "https://a.workers.dev/api/x", {}),
+    ).toEqual([]);
+    expect(
+      allowedBy(["http://localhost:8787/"], "http://localhost:8787/api"),
+    ).toBe(true);
+    expect(
+      allowedBy(["http://localhost:8787/"], "http://localhost:9999/api"),
+    ).toBe(false);
+    expect(allowedBy(["https://a.dev/"], "http://localhost:8787/api")).toBe(
+      false,
+    );
+    expect(allowedBy(["https://a.dev/"], "https://a.dev:8443/api")).toBe(false);
+  });
+
+  it("puts meta.page under an 地址参数, with a path, and checks it names one", async () => {
+    const { readDeclarations, pageOf } = await import(
+      "../../kit/runtime/index.mjs"
+    );
+    const declared = readDeclarations({
+      meta: { name: "核对", page: { param: "server", path: "play/" } },
+      params: [server],
+    });
+    expect(declared.problems).toEqual([]);
+    expect(declared.meta?.page).toEqual({ param: "server", path: "play/" });
+    expect(pageOf(declared.meta, { server: "https://a.workers.dev/" })).toBe(
+      "https://a.workers.dev/play/",
+    );
+    expect(pageOf(declared.meta, { server: null })).toBe(null);
+    expect(
+      readDeclarations({
+        meta: { name: "核对", page: { param: "x" } },
+        params: [],
+      }).problems,
+    ).toEqual(["meta.page：没有参数 x"]);
+    expect(
+      readDeclarations({
+        meta: { name: "核对", page: { param: "server", path: "/play/" } },
+        params: [server],
+      }).problems,
+    ).toEqual(["meta.page：path 不以 / 开头，接在地址后面"]);
+    expect(
+      readDeclarations({
+        meta: { name: "核对", page: { param: "server", path: "../x" } },
+        params: [server],
+      }).problems,
+    ).toEqual(["meta.page：path 不能带 . 和 .."]);
   });
 });
 

@@ -7,10 +7,12 @@
 // Protocol 5 (docs/multi-prize-design.md §3.5): a reminder for each even()
 // or lucky() without n, and for share rules that no longer count.
 import {
+  addressReminders,
   checkSource,
   keyLikeParams,
   keyNetworkProblems,
   LIMITS,
+  networkParamProblems,
   optionLines,
   paramLine,
   paramValues,
@@ -165,42 +167,59 @@ export async function checkCommand({ dir, print = console.log }) {
         print(row(false, "network 写得不对"));
         for (const problem of all.network.problems) print(`  ${problem}`);
       } else if (all.network.list)
-        print(row(true, `联网：${all.network.list.join("、")}`));
+        print(
+          row(
+            true,
+            `联网：${all.network.list
+              .map((entry) =>
+                typeof entry === "string"
+                  ? entry
+                  : `发红包的人填的${all.declarations.params.find((item) => item.key === entry.param)?.label ?? entry.param}`,
+              )
+              .join("、")}`,
+          ),
+        );
       // 协议第三版: meta, params, hongbao and check, and the form drawn
       // from params as the site draws it.
       const declared = all.declarations;
-      // 密钥 (docs/judge-key-design.md) go only to an address it lists.
+      // 密钥 (docs/judge-key-design.md) go only to an address it lists; a
+      // `{ param }` names an 地址参数 (docs/judge-address-design.md §3).
+      const network = networkOk ? all.network.list : null;
       const declaredProblems = [
         ...declared.problems,
-        ...keyNetworkProblems(
-          declared.params,
-          networkOk ? all.network.list : null,
-        ),
+        ...networkParamProblems(declared.params, network),
+        ...keyNetworkProblems(declared.params, network),
       ];
       const declaredOk = declaredProblems.length === 0;
       if (!declaredOk) {
         print(row(false, "参数声明写得不对"));
         for (const problem of declaredProblems) print(`  ${problem}`);
       } else {
-        if (declared.meta?.page)
-          print(row(true, `附带网页：${declared.meta.page}`));
+        const page = declared.meta?.page;
+        if (typeof page === "string") print(row(true, `附带网页：${page}`));
+        else if (page)
+          print(
+            row(
+              true,
+              `附带网页：放在 ${page.param} 填的地址下${page.path ? `的 ${page.path}` : ""}`,
+            ),
+          );
         shareRules = ["count", "minEach"].filter(
           (key) => declared.hongbao?.[key] !== undefined,
         );
         defaults = [
           ...defaultsReminders(declared),
-          ...keyLikeParams(
-            declared.params,
-            networkOk ? all.network.list : null,
-          ).map(
+          ...keyLikeParams(declared.params, network).map(
             (key) =>
               `params（${key}）像是密钥：放密钥用 type: "key"，判定器代码读不到，也不会公开`,
           ),
+          ...addressReminders(declared, network),
         ];
         if (declared.params.length > 0) {
           print(row(true, "参数表单预览"));
           for (const item of declared.params) {
-            print(`  ${paramLine(item)}`);
+            print(`  ${paramLine(item, { params: declared.params, network })}`);
+            if (item.guide) print(`    怎么填：${item.guide}`);
             for (const line of optionLines(item, declared.params))
               print(`    ${line}`);
           }

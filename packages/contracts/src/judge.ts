@@ -21,6 +21,21 @@ export type {
   Params as JudgeParams,
 };
 
+/**
+ * One entry of a 判定器's `network` (§9; docs/judge-address-design.md §2):
+ * an address prefix, or `{ param }`, the 地址参数 its sender fills in.
+ */
+export type JudgeNetworkEntry = string | { param: string };
+export const judgeNetworkSchema = z
+  .array(
+    z.union([
+      z.string().max(200),
+      z.strictObject({ param: z.string().min(1).max(32) }),
+    ]),
+  )
+  .min(1)
+  .max(3);
+
 /** What a v3 judge.js exports besides judge, as its deploy read it. */
 export type JudgeDeclarations = {
   meta: Meta | null;
@@ -104,7 +119,7 @@ export const judgeVersionsSchema = z
           /** The protocol that run was on; absent: 1. */
           protocol: z.number().int().min(1).max(JUDGE_PROTOCOL).optional(),
           /** 联网 (§9): the addresses that run read from the code. */
-          network: z.array(z.string().max(200)).min(1).max(3).optional(),
+          network: judgeNetworkSchema.optional(),
           /** 撤回 (judge-square §17): it opens no 红包. */
           withdrawn: z.literal(true).optional(),
         }),
@@ -232,7 +247,7 @@ export type JudgeSource = {
   takenDown: boolean;
   newer: number | null;
   declarations: JudgeDeclarations | null;
-  network: string[] | null;
+  network: JudgeNetworkEntry[] | null;
 };
 
 /**
@@ -310,7 +325,7 @@ export type JudgeCheck = {
    * 联网 (§9): the addresses the code exports, as it will ask them; null
    * when it exports none.
    */
-  network: string[] | null;
+  network: JudgeNetworkEntry[] | null;
   /** What is wrong with them, or that 联网 is off: no pass. */
   networkProblems?: string[];
   /** 协议第三版: meta, params, hongbao and check, as declared. */
@@ -364,7 +379,7 @@ export type MyJudgeVersion = {
   protocol: number;
   testsDigest: string;
   passed: boolean;
-  network: string[] | null;
+  network: JudgeNetworkEntry[] | null;
   declarations: JudgeDeclarations | null;
   /** 红包 opened with it. */
   opened: number;
@@ -389,7 +404,7 @@ export type MyJudge = {
   usable: {
     n: number;
     declarations: JudgeDeclarations | null;
-    network: string[] | null;
+    network: JudgeNetworkEntry[] | null;
     /**
      * A 旧判定器 (docs/multi-prize-design.md §3.6): passed only on the old
      * rules; its tests run again on the new ones before it opens a 红包.
@@ -452,9 +467,10 @@ export type SquareJudge = {
   network: boolean;
   /**
    * The 附带网页 the version others use carries (meta.page, docs/judge-
-   * page-design.md §4): absent when none, or while its switch is off.
+   * page-design.md §4): absent when none, or while its switch is off; under
+   * the 地址参数 its sender fills (docs/judge-address-design.md §2).
    */
-  page?: string;
+  page?: Meta["page"];
   /**
    * A 旧判定器 (docs/multi-prize-design.md §3.6): the version others use
    * passed only on the old rules (shares); not usable until its author
@@ -496,7 +512,7 @@ export type JudgePage = SquareJudge & {
     fingerprint: string;
     deployedAt: string;
     declarations: JudgeDeclarations | null;
-    network: string[] | null;
+    network: JudgeNetworkEntry[] | null;
     /** Only when its code is public. */
     code: string | null;
   } | null;
@@ -571,8 +587,13 @@ export type PublicJudge = {
   prompt: string;
   /** Absent on a draft read by anyone but its sender: not fixed yet. */
   fingerprint?: string;
-  /** 联网 (§9): the addresses its code may ask; absent without network. */
+  /**
+   * 联网 (§9): the addresses its code may ask, its 地址参数 filled in
+   * (docs/judge-address-design.md §7); absent without network.
+   */
   network?: string[];
+  /** Those of them its sender filled in (地址参数). */
+  networkFilled?: string[];
   /** Published at opening (null on a draft). */
   seedCommitment: string | null;
   /** How many times the code gave a verdict, paid or not (05 §3). */
@@ -618,7 +639,7 @@ export type PublicJudge = {
    * 密钥 (docs/judge-key-design.md §4): that its sender filled them, and
    * where each goes; never what they are.
    */
-  keys?: { label: string; to: string }[];
+  keys?: { label: string; to: string | null }[];
   /** Protocol 4: what everyone sees now, once its code wrote any. */
   view?: JudgeView;
   /** 动态 (protocol 4): how many lines in all, and the latest five. */

@@ -10,7 +10,9 @@ import {
   type PublicJudge,
 } from "@hb/contracts";
 import {
+  addressParams,
   keyParams,
+  keyTarget,
   LEDGER_PROTOCOL,
   revealsAtEnd,
   seedCommitment,
@@ -197,11 +199,22 @@ export async function publicJudge(
       ? (JSON.parse(judge.paramsPublic) as Record<string, unknown>)
       : null;
   const secrets = (declarations?.params ?? []).filter(revealsAtEnd);
-  // 密钥 (docs/judge-key-design.md §4): that there are, never what.
+  // 密钥 (docs/judge-key-design.md §4): that there are, never what; one to
+  // an 地址参数 goes to the address filled in (judge-address §4).
   const keys = keyParams(declarations?.params ?? []).map((item) => ({
     label: item.label,
-    to: item.to,
+    to: keyTarget(item, shown),
   }));
+  // 联网 (§9.5): public from opening, as the code it belongs to is; those
+  // its sender filled in marked (docs/judge-address-design.md §7).
+  const network =
+    judge.network !== null ? (JSON.parse(judge.network) as string[]) : null;
+  const filled = addressParams(declarations?.params ?? [])
+    .map((item) => shown?.[item.key])
+    .filter(
+      (value): value is string =>
+        typeof value === "string" && (network?.includes(value) ?? false),
+    );
   // Protocol 5: what the pool has left, and whether it is settling.
   const left =
     judge.protocol >= LEDGER_PROTOCOL ? await ledgerPool(env, row.id) : null;
@@ -224,10 +237,8 @@ export async function publicJudge(
     protocol: judge.protocol,
     prompt: judge.prompt,
     fingerprint: judge.fingerprint,
-    // 联网 (§9.5): public from opening, as the code it belongs to is.
-    ...(judge.network !== null
-      ? { network: JSON.parse(judge.network) as string[] }
-      : {}),
+    ...(network ? { network } : {}),
+    ...(filled.length > 0 ? { networkFilled: filled } : {}),
     seedCommitment: judge.seedCommitment,
     judged,
     ...(ledger ? { unclaimed: formatSignedAmount(ledger.unclaimed) } : {}),

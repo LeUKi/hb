@@ -1359,6 +1359,7 @@ export async function openActivity(
               seed,
               seedCommitment(id, seed),
               codeRun.protocol,
+              opening && "values" in opening.read ? opening.read.values : {},
             ),
           ]
         : []),

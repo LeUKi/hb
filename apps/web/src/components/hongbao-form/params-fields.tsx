@@ -1,8 +1,13 @@
-import { amountToMinor, type JudgeParam } from "@hb/contracts";
+import {
+  amountToMinor,
+  type JudgeNetworkEntry,
+  type JudgeParam,
+} from "@hb/contracts";
 import { Plus, X } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
+import { readAddress } from "../../../../../kit/runtime/network.mjs";
 import { cn } from "../../lib/cn";
-import { ParamTags } from "../judges/judge-bits";
+import { addressLabel, ParamTags } from "../judges/judge-bits";
 import { Button } from "../ui/button";
 import { Field, Segmented, Switch, TextArea, TextInput } from "../ui/field";
 
@@ -204,6 +209,27 @@ function ParamControl({
           onChange={(event) => onChange(event.target.value)}
         />
       );
+    case "url":
+      // 地址 (docs/judge-address-design.md §4): put as it is kept, ending
+      // in /, once left; what is wrong is said under it as it is typed.
+      return (
+        <TextInput
+          id={id}
+          inputMode="url"
+          spellCheck={false}
+          autoComplete="off"
+          placeholder="https://…"
+          value={shown(value, "text")}
+          disabled={disabled}
+          invalid={invalid}
+          onChange={(event) => onChange(event.target.value)}
+          onBlur={() => {
+            const read = readAddress(value);
+            if ("address" in read && read.address !== value)
+              onChange(read.address);
+          }}
+        />
+      );
     case "textarea":
       return (
         <TextArea
@@ -362,6 +388,38 @@ function ColumnNames({ item }: { item: JudgeParam }) {
   );
 }
 
+/** 怎么填 ↗ (docs/judge-address-design.md §3): the item's guide, in a new tab. */
+function Guide({ item }: { item: JudgeParam }) {
+  if (!item.guide) return null;
+  return (
+    <a
+      href={item.guide}
+      target="_blank"
+      rel="noreferrer"
+      className="text-accent-ink hover:underline"
+    >
+      怎么填 ↗
+    </a>
+  );
+}
+
+/** An item's hint, then what more it says, a line each. */
+function hintLines(...lines: ReactNode[]) {
+  const shownLines = lines.filter(Boolean);
+  if (shownLines.length === 0) return undefined;
+  return (
+    <>
+      {shownLines.map((line, index) => (
+        // The lines are fixed for the item: their place is it.
+        // biome-ignore lint/suspicious/noArrayIndexKey: see above
+        <span key={index} className="block">
+          {line}
+        </span>
+      ))}
+    </>
+  );
+}
+
 /**
  * 密钥 (docs/judge-key-design.md §3): a password box, or 已填写 once one is
  * kept (never shown again) with 换一个; what it is and where it goes under
@@ -369,6 +427,7 @@ function ColumnNames({ item }: { item: JudgeParam }) {
  */
 function KeyField({
   item,
+  params,
   id,
   error,
   filled,
@@ -376,6 +435,7 @@ function KeyField({
   onType,
 }: {
   item: Extract<JudgeParam, { type: "key" }>;
+  params: readonly JudgeParam[];
   id: string;
   error: string | undefined;
   filled: boolean;
@@ -383,6 +443,11 @@ function KeyField({
   onType: (key: string, value: string | null) => void;
 }) {
   const kept = filled && typed === undefined;
+  // To an 地址参数 (docs/judge-address-design.md §4): the one filled above.
+  const to =
+    typeof item.to === "string"
+      ? item.to
+      : `你填的${addressLabel(params, item.to.param)}`;
   return (
     <div className="grid min-w-0 gap-1.5 @min-[30rem]/params:col-span-2">
       <Field
@@ -392,19 +457,19 @@ function KeyField({
             {item.required === false && (
               <span className="text-ink-3">（选填）</span>
             )}
-            <ParamTags item={item} />
+            <ParamTags item={item} params={params} />
           </span>
         }
         htmlFor={kept ? undefined : id}
-        hint={
+        hint={hintLines(
+          item.hint,
           <>
-            {item.hint && <span className="block">{item.hint}</span>}
-            <span className="block">
-              只会发给 <span className="break-all">{item.to}</span>
-              ，判定器代码看不到；保存后不再显示，红包结束后删除。调用的费用从这个密钥扣。
-            </span>
-          </>
-        }
+            只会发给{typeof item.to === "string" && " "}
+            <span className="break-all">{to}</span>
+            ，判定器代码看不到；保存后不再显示，红包结束后删除。调用的费用从这个密钥扣。
+          </>,
+          item.guide && <Guide item={item} />,
+        )}
         error={error}
       >
         {kept ? (
@@ -459,6 +524,8 @@ export function ParamsFields({
   errorOf,
   locked,
   keys,
+  network = null,
+  ownId,
   idPrefix = "hb-param-",
 }: {
   params: JudgeParam[];
@@ -476,6 +543,13 @@ export function ParamsFields({
     typed: Readonly<Record<string, string>>;
     onType: (key: string, value: string | null) => void;
   };
+  /** Its 联网, for what an 地址参数 is asked for. */
+  network?: readonly JudgeNetworkEntry[] | null;
+  /**
+   * The sender's LINUX DO 数字 ID, under an 地址参数 (a service they deploy
+   * is told it, docs/judge-address-design.md §4); none in 试一试.
+   */
+  ownId?: string;
   /**
    * The form's own ids (its problems go to them) unless another place
    * shows these too: the 判定器页's 试一试, beside the form while the pages
@@ -497,6 +571,7 @@ export function ParamsFields({
               <KeyField
                 key={item.key}
                 item={item}
+                params={params}
                 id={`${idPrefix}${item.key}`}
                 error={error}
                 filled={keys.filled.includes(item.key)}
@@ -510,9 +585,26 @@ export function ParamsFields({
               {item.required === false && (
                 <span className="text-ink-3">（选填）</span>
               )}
-              <ParamTags item={item} />
+              <ParamTags item={item} params={params} />
             </span>
           );
+          // 地址 (docs/judge-address-design.md §4): what it is asked for,
+          // that it is shown, and who the sender is to a service they deploy.
+          const more =
+            item.type === "url"
+              ? [
+                  `${
+                    (network ?? []).some(
+                      (entry) =>
+                        typeof entry !== "string" && entry.param === item.key,
+                    )
+                      ? "判定器会请求这个地址，"
+                      : ""
+                  }领的人看得到它。开放后不能改。`,
+                  ownId &&
+                    `你的 LINUX DO 数字 ID 是 ${ownId}，部署说明要你填时用它。`,
+                ]
+              : [];
           if (item.type === "switch")
             return (
               <div
@@ -523,7 +615,10 @@ export function ParamsFields({
               >
                 <Switch
                   label={label}
-                  description={error ?? item.hint}
+                  description={
+                    error ??
+                    hintLines(item.hint, item.guide && <Guide item={item} />)
+                  }
                   checked={values[item.key] === true}
                   disabled={locked}
                   onChange={(checked) => onChange(item.key, checked)}
@@ -552,7 +647,11 @@ export function ParamsFields({
                     ? undefined
                     : `${idPrefix}${item.key}`
                 }
-                hint={chosen?.hint ?? item.hint}
+                hint={hintLines(
+                  chosen?.hint ?? item.hint,
+                  ...more,
+                  item.guide && <Guide item={item} />,
+                )}
                 error={error}
               >
                 <ParamControl
@@ -594,7 +693,8 @@ export function paramsFor(params: JudgeParam[], current: Values): Values {
     if (item.type === "key") continue;
     else if (Object.hasOwn(current, item.key))
       next[item.key] = current[item.key];
-    else if (item.default !== undefined) next[item.key] = item.default;
+    else if ("default" in item && item.default !== undefined)
+      next[item.key] = item.default;
     else if (item.type === "list" || item.type === "table") next[item.key] = [];
   for (const item of params) {
     if (item.type !== "choice" || Object.hasOwn(current, item.key)) continue;

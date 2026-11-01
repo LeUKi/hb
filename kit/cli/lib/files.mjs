@@ -2,7 +2,7 @@
 // records file, read with plain words when one is missing.
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { sha256Text } from "../../runtime/index.mjs";
+import { keyTarget, sha256Text } from "../../runtime/index.mjs";
 
 /** A problem to say and stop on: printed as it is, exit code 1. */
 export class KitError extends Error {}
@@ -56,14 +56,36 @@ export async function readLocalKeys(dir) {
   return value;
 }
 
-/** What --live goes out with: each 密钥 read, or that it goes without. */
-export function keyLines(params, keys) {
+/**
+ * What --live goes out with: each 密钥 read, or that it goes without; a
+ * `to` that is an 地址参数 as `values` (simulate.json's) fill it.
+ */
+export function keyLines(params, keys, values = {}) {
   return params
     .filter((item) => item.type === "key")
-    .map((item) =>
-      typeof keys[item.key] === "string"
-        ? `密钥 ${item.key}：从 keys.local.json 读，只发给 ${item.to}`
-        : `提醒：keys.local.json 里没有密钥 ${item.key}，请求 ${item.to} 时不带它`,
+    .map((item) => {
+      const to = keyTarget(item, values) ?? `${item.to.param} 填的地址`;
+      return typeof keys[item.key] === "string"
+        ? `密钥 ${item.key}：从 keys.local.json 读，只发给 ${to}`
+        : `提醒：keys.local.json 里没有密钥 ${item.key}，请求 ${to} 时不带它`;
+    });
+}
+
+/**
+ * 地址参数 simulate.json fills with the kit's own http://localhost
+ * (docs/judge-address-design.md §8): a reminder each.
+ */
+export function localAddressLines(params, values) {
+  return params
+    .filter(
+      (item) =>
+        item.type === "url" &&
+        typeof values[item.key] === "string" &&
+        values[item.key].startsWith("http://"),
+    )
+    .map(
+      (item) =>
+        `提醒：地址参数 ${item.key} 用的是本地地址 ${values[item.key]}，网站上要填 https 地址`,
     );
 }
 

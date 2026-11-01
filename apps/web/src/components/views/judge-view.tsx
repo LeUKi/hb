@@ -7,7 +7,6 @@ import {
   judgeNameSchema,
   type MyJudgeDetail,
   type MyJudgeVersion,
-  normalizePageUrl,
 } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { AlertTriangle, ChevronRight } from "lucide-react";
@@ -27,6 +26,7 @@ import { type SessionUser, useIdentity } from "../../lib/session";
 import { JudgeWriter } from "../hongbao-form/code-step";
 import { counter, type Update } from "../hongbao-form/fields";
 import {
+  carriedPage,
   emptyForm,
   type FormState,
   issuesOf,
@@ -34,7 +34,12 @@ import {
 import { ParamsFields, paramsFor } from "../hongbao-form/params-fields";
 import { TryJudge } from "../hongbao-form/try-judge";
 import { useJudgeDeploy } from "../hongbao-form/use-judge-deploy";
-import { dayLabel, JudgeHelpLinks, statsLine } from "../judges/judge-bits";
+import {
+  dayLabel,
+  JudgeHelpLinks,
+  networkWords,
+  statsLine,
+} from "../judges/judge-bits";
 import { Callout, Page, PageHeader, PageSection, Panel } from "../page/page";
 import { Bone, PageLoad, queryLoad } from "../page/page-state";
 import { ConfirmDialog } from "../shell/confirm-dialog";
@@ -430,7 +435,18 @@ function Trying({
 }) {
   const params = declarations?.params ?? [];
   const keys = keyParams(params);
-  const [values, setValues] = useState(() => paramsFor(params, {}));
+  // 地址 (docs/judge-address-design.md §4): filled for trying, as it never
+  // goes online here.
+  const [values, setValues] = useState(() =>
+    paramsFor(
+      params,
+      Object.fromEntries(
+        params
+          .filter((item) => item.type === "url")
+          .map((item) => [item.key, "https://example.com/"]),
+      ),
+    ),
+  );
   // A param's problem shows once it was changed: one with no default is
   // not wrong before anyone touched it.
   const [touched, setTouched] = useState<ReadonlySet<string>>(new Set());
@@ -442,7 +458,7 @@ function Trying({
       : undefined;
   const hongbao = declarations?.hongbao;
   const rules = ruleLines(hongbao);
-  const page = normalizePageUrl(declarations?.meta?.page ?? "");
+  const page = carriedPage(declarations?.meta, values);
   // A 红包 of its defaults; without one, the least it allows.
   const count = hongbao?.count?.default ?? hongbao?.count?.min ?? 1;
   const minEach = hongbao?.minEach?.default ?? hongbao?.minEach?.min ?? 1;
@@ -611,11 +627,13 @@ function VersionRow({
             </span>
           </div>
           {version.network && (
-            <p className="text-sm text-ink">
+            <p className="text-sm break-all text-ink">
               联网：
-              <span className="font-mono break-all">
-                {version.network.join("、")}
-              </span>
+              {version.network
+                .map((entry) =>
+                  networkWords(entry, version.declarations?.params ?? []),
+                )
+                .join("、")}
             </p>
           )}
           <Swap

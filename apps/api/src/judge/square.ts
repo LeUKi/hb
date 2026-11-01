@@ -169,7 +169,14 @@ function cardOf(env: ApiBindings, row: CardRow, pages: boolean): SquareJudge {
     featured: row.featured === 1,
     bySiteOwner: isAdministrator(env, row.provider, row.externalId),
     network: row.network === 1,
-    ...(pages && row.page ? { page: row.page } : {}),
+    // An object (docs/judge-address-design.md §2) comes back as JSON text.
+    ...(pages && row.page
+      ? {
+          page: row.page.startsWith("{")
+            ? (JSON.parse(row.page) as { param: string; path?: string })
+            : row.page,
+        }
+      : {}),
     ...(row.old === 1 ? { old: true as const } : {}),
     ...(row.updating !== null ? { updating: row.updating } : {}),
     stats: statsOf(row),

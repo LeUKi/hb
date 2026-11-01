@@ -34,6 +34,11 @@ export type AuthenticatedUser = {
   /** 信任等级 as of the last sign-in (profileSeenAt); null: not read yet. */
   trustLevel: number | null;
   profileSeenAt: number | null;
+  /**
+   * Their LINUX DO 数字 ID, shown to them only: a service they deploy is
+   * told it (docs/judge-address-design.md §4, §6).
+   */
+  linuxDoId: string;
 };
 
 export type AuthenticatedSession = {
@@ -227,6 +232,7 @@ export async function getOptionalSession(c: Context<ApiContext>) {
       isAdmin: isAdministrator(c.env, row.provider, row.externalId),
       trustLevel: row.trustLevel,
       profileSeenAt: row.profileSeenAt ? row.profileSeenAt.getTime() : null,
+      linuxDoId: String(row.externalId),
     },
     attemptCooldown: {
       revision: row.cooldownRevision ?? 0,

@@ -103,7 +103,7 @@ export async function signPageIdentity(
     nonce?: string;
   },
 ): Promise<PageIdentity> {
-  const [row, person] = await Promise.all([
+  const [row, person, sender] = await Promise.all([
     findActivity(env, input.activityId),
     env.DB.prepare(
       "SELECT external_id AS id, username, display_name AS name, trust_level AS level FROM users WHERE id = ?",
@@ -115,6 +115,13 @@ export async function signPageIdentity(
         name: string;
         level: number | null;
       }>(),
+    // Its sender, for a service that serves only its owner's 红包
+    // (docs/judge-address-design.md §6).
+    env.DB.prepare(
+      "SELECT u.external_id AS id FROM activities a JOIN users u ON u.id = a.author_id WHERE a.id = ?",
+    )
+      .bind(input.activityId)
+      .first<{ id: string }>(),
   ]);
   if (!row) activityNotFound();
   if (!person) throw new ActivityError(401, "UNAUTHORIZED", "请先登录。");
@@ -144,6 +151,7 @@ export async function signPageIdentity(
     name: user.name,
     level: user.level,
     hongbao: row.id,
+    ...(sender ? { sender: String(sender.id) } : {}),
     iat: issuedAt,
     exp: expires,
     jti: crypto.randomUUID(),

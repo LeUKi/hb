@@ -250,6 +250,17 @@ interface ParamBase {
   revealAtEnd?: boolean;
   /** @deprecated 旧写法，同 revealAtEnd */
   secret?: boolean;
+  /**
+   * 一个 https 链接，表单和判定器页在这一项旁边显示“怎么填 ↗”：地址放部署说明，
+   * 密钥放去哪拿密钥。规则同附带网页的地址
+   */
+  guide?: string;
+}
+
+/** 指向一项地址参数（type: "url"）：用发红包的人在那一项填的地址。 */
+export interface ParamRef {
+  /** 地址参数的 key */
+  param: string;
 }
 
 /** 表格的一列。 */
@@ -321,12 +332,25 @@ export type ParamDeclaration = ParamBase &
          * `header: prefix + 密钥`。最多 3 项，不能写 default 和 revealAtEnd。
          */
         type: "key";
-        /** 只发给这个地址开头的请求，要在 network 里，比如 "https://api.openai.com/v1/" */
-        to: string;
+        /**
+         * 只发给这个地址开头的请求，要在 network 里，比如 "https://api.openai.com/v1/"；
+         * 或者 { param: "server" }：只发给发红包的人在地址参数 server 填的地址，
+         * network 里也要有 { param: "server" }
+         */
+        to: string | ParamRef;
         /** 默认 "Authorization"；Anthropic 这类写 "x-api-key" */
         header?: string;
         /** 默认 "Bearer "；不要前缀写 "" */
         prefix?: string;
+      }
+    | {
+        /**
+         * 地址：发红包的人填一个 https 地址（比如他自己部署的服务），公开，开放后不能改。
+         * 代码收到的以 / 结尾，比如 "https://a.workers.dev/"，用 new URL("api/x", 地址)
+         * 拼。写进 network（{ param: key }）判定器才能请求它；密钥的 to、meta.page
+         * 也能指向它。最多 3 项，不能写 default 和 revealAtEnd。
+         */
+        type: "url";
       }
   );
 
@@ -373,9 +397,11 @@ export interface Meta {
   description?: string;
   /**
    * 判定器带的附带网页（https，规则同附带网页，最多 500 个字）：用它发红包时
-   * 替发红包的人填好。
+   * 替发红包的人填好。附带网页放在发红包的人自己的服务上时写
+   * { param: "server", path: "play/" }：跟着他在地址参数 server 填的地址填好，
+   * path 选填，接在地址后面。
    */
-  page?: string;
+  page?: string | (ParamRef & { path?: string });
 }
 
 /** check() 说的一个问题：哪个参数、错在哪（最多 100 个字）。 */
@@ -410,12 +436,13 @@ export type Setup = (
 /**
  * 联网：judge.js 导出 network，列出能请求的地址前缀，最多 3 个；不导出就不联网。
  * 写法：https:// 开头的完整域名加路径前缀，比如 "https://api.example.com/hongbao/"；
- * 不带端口、? 和 #，不能是 IP 地址、linux.do 和本站。
+ * 不带端口、? 和 #，不能是 IP 地址、linux.do 和本站。也能写 { param: "server" }：
+ * 发红包的人在地址参数 server 填的地址，开放时定下。
  * 判定里直接用 fetch()：每次判定最多 3 个请求，只许 GET 和 POST，请求体最大 16 KB，
  * 单个请求 10 秒、返回最大 64 KB，不跟随跳转；不行时 fetch() 抛 TypeError（“联网失败：…”）。
  * 代码结束后公开，写在里面的令牌也会公开；红包结束后，领的人能看到自己那几次判定的返回内容。
  */
-export type Network = readonly string[];
+export type Network = readonly (string | ParamRef)[];
 
 /**
  * 测试里一个请求的返回（tests.json 和 simulate.json 的 fetch）：

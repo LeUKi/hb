@@ -31,8 +31,9 @@ const loginCode = `function openLogin() {
 /** 接上红包站的 SDK (docs/judge-page-design.md §11.8): public/sdk/v1.js. */
 const readCode = `const { hongbao, viewer } = await hb.ready();
 // hongbao：id、title、url、code、status、endedByCode、
-//   unit、shares、pool、unclaimed、deadlineAt、judged
-//   （代码判定红包没有份数：shares 是 null，unclaimed 是奖池还剩多少）
+//   unit、shares、pool、unclaimed、deadlineAt、judged、params
+//   （代码判定红包没有份数：shares 是 null，unclaimed 是奖池还剩多少；
+//   params 是它现在公开的参数，结束后公开的结束后才有，密钥没有）
 // viewer：{ signedIn: true, name } 或 { signedIn: false }
 
 // 判定器的公开数据：{ summary, data, at }，没有时是 null
@@ -145,6 +146,7 @@ export async function whoIs(request, nonceOf) {
   // 只认自己的红包；nonce 要是你刚发的，用过就作废
   if (!myHongbao(payload.hongbao) || !(await nonceOf(payload.nonce))) return null;
   // payload.sub：LINUX DO 数字 ID（认人用它，不用用户名）
+  // payload.sender：发这个红包的人的 LINUX DO 数字 ID（服务只给主人用时核对它）
   return { id: payload.sub, username: payload.username, hongbao: payload.hongbao };
 }`;
 
@@ -201,7 +203,7 @@ const aiPrompt = (
 5. 想知道是哪个红包，读 document.referrer（红包页的地址）。
 6. 网页里不要收钱、交易，不要让人输账号密码。
 7. 附带网页可以接红包站的 SDK：页面里加 <script src="${origin}/sdk/v1.js"></script>，就有全局的 hb。
-   - await hb.ready() 返回 { hongbao, viewer, theme }：hongbao 有 id、title、url、code、status（draft、active、ended）、endedByCode、unit（LDC 或 🐟）、shares（{ total, claimed, remaining } 或 null，代码判定红包没有份数，是 null）、pool、unclaimed（代码判定红包的奖池还剩多少，别的红包 null）、deadlineAt、judged；viewer 是 { signedIn: true, name } 或 { signedIn: false }。单独打开网页时它会报错，照常显示一段说明即可。
+   - await hb.ready() 返回 { hongbao, viewer, theme }：hongbao 有 id、title、url、code、status（draft、active、ended）、endedByCode、unit（LDC 或 🐟）、shares（{ total, claimed, remaining } 或 null，代码判定红包没有份数，是 null）、pool、unclaimed（代码判定红包的奖池还剩多少，别的红包 null）、deadlineAt、judged、params（代码判定红包现在公开的参数，同红包页代码一节列出的；结束后公开的结束后才有，密钥永远没有；没有参数是 {}）；viewer 是 { signedIn: true, name } 或 { signedIn: false }。单独打开网页时它会报错，照常显示一段说明即可。
    - await hb.view() 是判定器的公开数据 { summary, data, at }，没有时 null；hb.on("view" | "hongbao" | "announce", fn) 订阅变化，返回取消订阅的函数；announce 每次一条 { n, at, user: { name, avatar }, text }。
    - await hb.fill(text) 把内容填进这个红包的指令框，不提交，所有红包都能用。填好是 { filled: true }，没填是 { filled: false, reason, message }；reason 有 ${fillReasons.map(([name]) => name).join("、")}。
    - 代码判定红包才能用 await hb.submit(input)：替看的人提交一次，同一个红包第一次会先问他。判定了是 { judged: true, claimed, amount, unit, reply, added, pending, settled }（added 这次加减了多少，pending 之后的待结算，settled 这次结算了他），没判定是 { judged: false, reason, seconds, message }；reason 有 ${reasons.map(([name]) => name).join("、")}。给玩的人看的提示由网页自己写。
@@ -213,7 +215,7 @@ const aiPrompt = (
 8. 后端要知道是谁（存档、排行榜、防冒充）时，不用接 LINUX DO 登录，用 hb.identity()：
    - 在看的人点“开始”这类按钮时再要；后端可以先发一个一次性的 nonce（8–128 个字母、数字或 -_.~），网页带着它要令牌。
    - 令牌放在内存里，用 Authorization: Bearer 请求头发给后端，不放进本地存储、网址和日志；过期（10 分钟）了再调一次 hb.identity()，不会再问他。
-   - 后端用 jose 验：公钥 ${origin}/api/page-identity/keys（createRemoteJWKSet），算法 ES256，issuer ${origin}，audience 是网页自己的来源，clockTolerance 30 秒；再核对 payload.hongbao 是自己认的红包、payload.nonce 是刚发的并且只用一次。
+   - 后端用 jose 验：公钥 ${origin}/api/page-identity/keys（createRemoteJWKSet），算法 ES256，issuer ${origin}，audience 是网页自己的来源，clockTolerance 30 秒；再核对 payload.hongbao 是自己认的红包、payload.nonce 是刚发的并且只用一次。payload.sender 是发这个红包的人的 LINUX DO 数字 ID：发红包的人自己部署的服务只认它主人的红包时核对它。
    - 用 payload.sub（LINUX DO 数字 ID，和判定器的 submission.user.id 是同一个数）认人，不用用户名；数据按“红包编号 + 用户 ID”存。后端的跨域只放行网页自己的来源。
    - 本地 npm run page 的模拟器签的令牌 iss 是模拟器的地址，上线后的后端只认 ${origin}。
    - 钱只经过判定器：后端算出的结果要由判定器联网核对才算数；令牌不能用来替他提交。

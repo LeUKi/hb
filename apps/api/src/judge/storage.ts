@@ -9,6 +9,7 @@ import {
   type LdcMoney,
 } from "@hb/contracts";
 import { eq, getTableColumns } from "drizzle-orm";
+import { resolveNetwork } from "../../../../kit/runtime/index.mjs";
 import { ActivityError } from "../activities/errors";
 import { databaseNow } from "../activities/lifecycle";
 import { createDb } from "../db/client";
@@ -381,7 +382,10 @@ export function newSeed() {
  * 红包 takes the protocol it opens on (opening.ts codeOpeningRun), and the
  * addresses its code exports as the run of this code and these tests on
  * it that passed found them (§9.2) — its 判定器 author's run, for
- * another's (judge-square §15.3).
+ * another's (judge-square §15.3) — each 地址参数 filled in from its
+ * params (docs/judge-address-design.md §7). Read before the batch it goes
+ * in: that run does not change, and the batch's write guard holds the
+ * code it was read for.
  */
 export async function sealSeedStatement(
   env: ApiBindings,
@@ -389,19 +393,26 @@ export async function sealSeedStatement(
   secret: string,
   commitment: string,
   protocol: number,
+  params: Record<string, unknown>,
 ) {
+  const run = await env.DB.prepare(`SELECT k.network FROM activity_code c
+      JOIN activities a ON a.id = c.activity_id
+      JOIN judge_checks k ON k.user_id = COALESCE((SELECT author_id FROM judges WHERE id = c.judge_id), a.author_id)
+        AND k.protocol = ?2 AND k.fingerprint = c.fingerprint AND k.tests_digest = c.tests_digest AND k.passed = 1
+    WHERE c.activity_id = ?1 ORDER BY k.created_at DESC LIMIT 1`)
+    .bind(activityId, protocol)
+    .first<{ network: string | null }>();
+  const network = run?.network
+    ? resolveNetwork(JSON.parse(run.network), params)
+    : null;
   return env.DB.prepare(`UPDATE activity_code SET seed_commitment = ?1, seed_ciphertext = ?2,
-      protocol = ?4, network = (SELECT k.network FROM judge_checks k JOIN activities a ON a.id = activity_code.activity_id
-        WHERE k.user_id = COALESCE((SELECT author_id FROM judges WHERE id = activity_code.judge_id), a.author_id)
-          AND k.protocol = ?4 AND k.fingerprint = activity_code.fingerprint
-          AND k.tests_digest = activity_code.tests_digest AND k.passed = 1
-        ORDER BY k.created_at DESC LIMIT 1),
-      updated_at = ${databaseNow}
+      protocol = ?4, network = ?5, updated_at = ${databaseNow}
     WHERE activity_id = ?3 AND seed_commitment IS NULL`).bind(
     commitment,
     await encryptString(secret, env, judgeData(activityId, "seed")),
     activityId,
     protocol,
+    network ? JSON.stringify(network) : null,
   );
 }
 

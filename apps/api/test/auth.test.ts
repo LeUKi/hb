@@ -678,6 +678,7 @@ describe("Connect authorization and sessions", () => {
         isAdmin: false,
         trustLevel: null,
         profileSeenAt: expect.any(Number),
+        linuxDoId: expect.any(String),
       },
     });
   });

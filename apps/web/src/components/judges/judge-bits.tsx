@@ -1,4 +1,9 @@
-import type { JudgeParam, JudgeStats, SquareJudge } from "@hb/contracts";
+import type {
+  JudgeNetworkEntry,
+  JudgeParam,
+  JudgeStats,
+  SquareJudge,
+} from "@hb/contracts";
 import { BookOpen, Bot, Braces, FolderGit2, Globe } from "lucide-react";
 import { revealsAtEnd } from "../../../../../kit/runtime/params.mjs";
 import { cn } from "../../lib/cn";
@@ -149,20 +154,55 @@ export function JudgeHelpLinks({ className }: { className?: string }) {
 export const REVEAL_HINT =
   "红包进行中不公开，结束后公开；开放时公布的参数封存值能核对它没被换过。回复里会不会透露它，要看判定器的代码。";
 
+/** An 地址参数's name, as the code wrote it. */
+export const addressLabel = (params: readonly JudgeParam[], key: string) =>
+  params.find((other) => other.key === key)?.label ?? "地址";
+
+/**
+ * Where a 密钥 goes, in words: its address, or the 地址参数 it names —
+ * “发红包的人填的服务地址” (docs/judge-address-design.md §4).
+ */
+export function keyTargetWords(
+  item: Extract<JudgeParam, { type: "key" }>,
+  params: readonly JudgeParam[],
+) {
+  if (typeof item.to === "string") return item.to;
+  return `发红包的人填的${addressLabel(params, item.to.param)}`;
+}
+
+/**
+ * One address of a 判定器's 联网, in words: as written, or the 地址参数 it
+ * names (docs/judge-address-design.md §4).
+ */
+export function networkWords(
+  entry: JudgeNetworkEntry,
+  params: readonly JudgeParam[],
+) {
+  if (typeof entry === "string") return entry;
+  return `发红包的人填的${addressLabel(params, entry.param)}`;
+}
+
 /** 密钥 (docs/judge-key-design.md §3): what its tag says on its hint. */
 export const keyHint = (to: string) =>
-  `判定器代码看不到，也不会公开；只会发给 ${to}，红包结束后删除。`;
+  `判定器代码看不到，也不会公开；只会发给${to.startsWith("https://") ? " " : ""}${to}，红包结束后删除。`;
 
 /**
  * When a param is shown (docs/judge-key-design.md §0): 结束后公开, or 不公开
- * for a 密钥; nothing for one shown all along.
+ * for a 密钥; nothing for one shown all along. `params`: the rest, for a
+ * 密钥 to an 地址参数.
  */
-export function ParamTags({ item }: { item: JudgeParam }) {
+export function ParamTags({
+  item,
+  params = [],
+}: {
+  item: JudgeParam;
+  params?: readonly JudgeParam[];
+}) {
   if (item.type === "key")
     return (
       <Squircle radius={radius.tag}>
         <TagHint
-          hint={keyHint(item.to)}
+          hint={keyHint(keyTargetWords(item, params))}
           className={cn(tagClass, "bg-warning-soft text-warning")}
         >
           不公开

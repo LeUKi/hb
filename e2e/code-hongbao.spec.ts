@@ -2970,6 +2970,80 @@ test.describe("发红包 · 代码判定", () => {
     await expect(page.locator("#hb-param-ai")).toContainText("已填写");
   });
 
+  test("地址参数：离开输入框时存成以 / 结尾的样子，写着判定器会请求它和自己的数字 ID；密钥只发给它（judge-address §4）", async ({
+    page,
+  }) => {
+    await mockCodeHongbao(page);
+    const versions: JudgeVersions = {
+      next: 2,
+      versions: [
+        {
+          n: 1,
+          fingerprint: sha256(firstCode),
+          at: openedAt,
+          testsDigest: sha256(testsFile),
+          passed: true,
+          protocol: JUDGE_PROTOCOL,
+          network: [{ param: "server" }],
+        },
+      ],
+    };
+    const sender = { ...author, linuxDoId: "24680" };
+    await mockSession(page, sender);
+    await mockDeploys(page, {
+      user: sender,
+      judge: {
+        id: E2E_JUDGE,
+        name: "自建题库",
+        versions,
+        codes: { 1: firstCode },
+      },
+      params: [
+        {
+          key: "server",
+          label: "服务地址",
+          type: "url",
+          guide: "https://github.com/someone/server#readme",
+        },
+        {
+          key: "token",
+          label: "服务密钥",
+          type: "key",
+          to: { param: "server" },
+        },
+      ],
+    });
+    await mockSenderReads(page, {
+      draft: { code: firstCode, tests: testsFile },
+      versions,
+      passed: true,
+    });
+    await openApp(page, `${path}/📝`);
+    await page.getByRole("button", { name: /^第 2 步 判定器/ }).click();
+    const box = page.locator("#hb-param-server");
+    await box.fill("https://A.workers.dev");
+    await box.blur();
+    await expect(box).toHaveValue("https://a.workers.dev/");
+    await expect(
+      page.getByText("判定器会请求这个地址，领的人看得到它。开放后不能改。"),
+    ).toBeVisible();
+    await expect(
+      page.getByText("你的 LINUX DO 数字 ID 是 24680，部署说明要你填时用它。"),
+    ).toBeVisible();
+    await expect(page.getByRole("link", { name: "怎么填 ↗" })).toHaveAttribute(
+      "href",
+      "https://github.com/someone/server#readme",
+    );
+    await expect(page.getByText(/只会发给你填的服务地址/)).toBeVisible();
+    // Not an address the site takes: said under it once the step is checked.
+    await box.fill("http://a.workers.dev/");
+    await page.getByRole("button", { name: "保存并开放" }).click();
+    await expect(box).toHaveAttribute("aria-invalid", "true");
+    await expect(
+      page.getByRole("button", { name: "服务地址只能用 https:// 开头的地址" }),
+    ).toBeVisible();
+  });
+
   test("草稿重新打开：选着的第 2 版被自己撤回了（judge-square §17），卡上写换一个版本才能开放，能换成第 1 版", async ({
     page,
   }) => {
@@ -3988,6 +4062,8 @@ test.describe("附带网页 SDK（judge-page §3、§11.8）", () => {
         unclaimed: null,
         deadlineAt: state.activity.deadlineAt,
         judged: 7,
+        // No params (judge-address §5).
+        params: {},
       },
       viewer: { signedIn: true, name: viewer.displayName },
       theme: "light",

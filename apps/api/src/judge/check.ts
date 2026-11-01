@@ -11,19 +11,23 @@ import {
   type JudgeCheck,
   type JudgeCheckInput,
   type JudgeDeclarations,
+  type JudgeNetworkEntry,
   type JudgeSettings,
   type JudgeTestOutcome,
 } from "@hb/contracts";
 import type { FetchAnswer } from "../../../../kit/judge";
 import {
+  addressReminders,
   checkSource,
   keyLikeParams,
   keyNetworkProblems,
+  networkParamProblems,
   type RunCheck,
   readCheckAnswer,
   readDeclarations,
   readNetwork,
   readTests,
+  resolveNetwork,
   runTest,
 } from "../../../../kit/runtime/index.mjs";
 import { ActivityError } from "../activities/errors";
@@ -322,8 +326,9 @@ async function runChecks(
   >();
   let sandbox = 0;
   let timeouts = 0;
-  // 联网 (§9.2): what judge.js exports, read once it is loaded.
-  let network: string[] | null = null;
+  // 联网 (§9.2): what judge.js exports, read once it is loaded; a
+  // `{ param }` is each test's own address (docs/judge-address-design.md).
+  let network: JudgeNetworkEntry[] | null = null;
   const networkProblems: string[] = [];
   // 协议第三版: meta, params, hongbao and check, read with it.
   let declarations: JudgeDeclarations = {
@@ -367,7 +372,11 @@ async function runChecks(
         ? described.unreadable
         : [];
       const declared = unreadable.includes("network")
-        ? { problems: ["network 要是字符串数组"] }
+        ? {
+            problems: [
+              'network 要是数组，每项是地址或 { param: "地址参数的 key" }',
+            ],
+          }
         : readNetwork(described.network);
       if ("problems" in declared) networkProblems.push(...declared.problems);
       else network = declared.list;
@@ -376,9 +385,14 @@ async function runChecks(
       const { problems: wrong, ...read } = readDeclarations(described);
       declarations = read;
       declarationProblems.push(...wrong);
-      // 密钥 go only to an address it lists (docs/judge-key-design.md).
+      // 密钥 go only to an address it lists (docs/judge-key-design.md), and
+      // a `{ param }` names an 地址参数 (docs/judge-address-design.md §3).
       if (!("problems" in declared)) {
-        declarationProblems.push(...keyNetworkProblems(read.params, network));
+        declarationProblems.push(
+          ...networkParamProblems(read.params, network),
+          ...keyNetworkProblems(read.params, network),
+        );
+        reminders.push(...addressReminders(read, network));
         reminders.push(
           ...keyLikeParams(read.params, network).map(
             (key) =>
@@ -405,7 +419,11 @@ async function runChecks(
           submission,
           seeds,
           fresh: sandbox,
-          network: { mode: "mock", list: network, answers },
+          network: {
+            mode: "mock",
+            list: resolveNetwork(network, submission.params),
+            answers,
+          },
         },
         true,
       );

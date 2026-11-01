@@ -24,6 +24,7 @@ import {
 import {
   KitError,
   keyLines,
+  localAddressLines,
   readLocalKeys,
   readProjectFile,
   readText,
@@ -171,10 +172,13 @@ export function paidNow(judged) {
   return settled && settled.amount > 0 ? settled.amount : null;
 }
 
-/** simulate.json's params against what judge.js declares, and its check(). */
+/**
+ * simulate.json's params against what judge.js declares, and its check().
+ * An 地址参数 may be the kit's own http://localhost (judge-address §8).
+ */
 export async function paramsOf(given, hongbao, sandbox) {
   const { declarations } = sandbox;
-  const read = paramValues(declarations.params, given);
+  const read = paramValues(declarations.params, given, { local: true });
   if ("problems" in read) {
     const [first] = read.problems;
     return {
@@ -234,7 +238,11 @@ export async function simulateCommand({
   print(`种子 ${seed}`);
 
   const keys = options.live ? await readLocalKeys(dir) : {};
-  const sandbox = await openSandbox(code, { live: options.live, keys });
+  const sandbox = await openSandbox(code, {
+    live: options.live,
+    keys,
+    params: read.plan.params,
+  });
   if ("problems" in sandbox.network) {
     for (const problem of sandbox.network.problems) print(`✗ ${problem}`);
     print("先改好 judge.js 的 network，模拟没跑");
@@ -243,7 +251,8 @@ export async function simulateCommand({
   }
   const { declarations } = sandbox;
   if (options.live)
-    for (const line of keyLines(declarations.params, keys)) print(line);
+    for (const line of keyLines(declarations.params, keys, sandbox.values))
+      print(line);
   if (declarations.problems.length > 0) {
     for (const problem of declarations.problems) print(`✗ ${problem}`);
     print("先改好上面的问题，模拟没跑");
@@ -284,11 +293,13 @@ export async function simulateCommand({
     ...(opened && !opened.state.keep ? { state: opened.state.value } : {}),
     ...(opened && !opened.view.keep ? { view: opened.view.value } : {}),
   });
-  if (sandbox.network.list)
+  for (const line of localAddressLines(declarations.params, params.values))
+    print(line);
+  if (sandbox.addresses)
     print(
       options.live
-        ? `联网：${sandbox.network.list.join("、")}（--live：从这台电脑真的发出去）`
-        : `联网：${sandbox.network.list.join("、")}（请求拿 simulate.json 里写的 fetch 当返回；加 --live 真的发出去）`,
+        ? `联网：${sandbox.addresses.join("、")}（--live：从这台电脑真的发出去）`
+        : `联网：${sandbox.addresses.join("、")}（请求拿 simulate.json 里写的 fetch 当返回；加 --live 真的发出去）`,
     );
   const judged = [];
   let failed = 0;

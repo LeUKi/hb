@@ -7,6 +7,7 @@ import type {
   Meta,
   ParamDeclaration,
   ParamProblem,
+  ParamRef,
   Params,
   Random,
   Submission,
@@ -272,9 +273,26 @@ export const NETWORK_REASONS: Readonly<
   >
 >;
 export function networkError(reason: string): TypeError;
+/** A `network` entry: an address prefix, or an 地址参数 (judge-address §2). */
+export type NetworkEntry = string | ParamRef;
+export function isParamEntry(entry: unknown): entry is ParamRef;
 export function readNetwork(
   value: unknown,
-): { list: string[] | null } | { problems: string[] };
+): { list: NetworkEntry[] | null } | { problems: string[] };
+/** The addresses written out in `network`. */
+export function fixedAddresses(
+  list: readonly NetworkEntry[] | null | undefined,
+): string[];
+/** The addresses one 红包 may ask: its 地址参数 filled in; null with none. */
+export function resolveNetwork(
+  list: readonly NetworkEntry[] | null | undefined,
+  values: Readonly<Record<string, unknown>> | null | undefined,
+): string[] | null;
+/** An 地址参数 as filled: ending in `/`; `local` takes the kit's localhost. */
+export function readAddress(
+  value: unknown,
+  options?: { local?: boolean },
+): { address: string } | { problem: string };
 export function allowedBy(
   list: readonly string[] | null,
   address: string,
@@ -308,6 +326,11 @@ export const PARAM_LIMITS: Readonly<{
   bytes: number;
   checkProblems: number;
   checkMessageCharacters: number;
+  keys: number;
+  keyValueCharacters: number;
+  keyPrefixCharacters: number;
+  urls: number;
+  pagePathCharacters: number;
 }>;
 export const META_LIMITS: Readonly<{
   name: number;
@@ -328,6 +351,7 @@ export function readParams(
 export function paramValues(
   list: readonly ParamDeclaration[],
   given: unknown,
+  options?: { local?: boolean },
 ): { values: Params } | { problems: ParamProblem[] };
 export function secretKeys(list: readonly ParamDeclaration[]): string[];
 /** 结束后公开: revealAtEnd, or secret as it was first written. */
@@ -342,16 +366,36 @@ export function readKeyValue(
 ): { value: string } | { problem: string };
 export function keyNetworkProblems(
   list: readonly ParamDeclaration[],
-  network: readonly string[] | null,
+  network: readonly NetworkEntry[] | null,
 ): string[];
 export function keyLikeParams(
   list: readonly ParamDeclaration[],
-  network: readonly string[] | null,
+  network: readonly NetworkEntry[] | null,
 ): string[];
+/** 地址参数 (docs/judge-address-design.md). */
+export function addressParams(
+  list: readonly ParamDeclaration[],
+): Extract<ParamDeclaration, { type: "url" }>[];
+/** Each `{ param }` in `network` an 地址参数: problems, one line each. */
+export function networkParamProblems(
+  list: readonly ParamDeclaration[],
+  network: readonly NetworkEntry[] | null,
+): string[];
+/** 地址参数 used nowhere, or asked with no 密钥 to them. */
+export function addressReminders(
+  declarations: { meta: Meta | null; params: ParamDeclaration[] },
+  network: readonly NetworkEntry[] | null,
+): string[];
+/** Where a 密钥 goes: its `to`, or the 地址参数 it names; null unfilled. */
+export function keyTarget(
+  item: Extract<ParamDeclaration, { type: "key" }>,
+  params: Readonly<Record<string, unknown>> | null | undefined,
+): string | null;
 export function keyHeaders(
   list: readonly ParamDeclaration[],
   values: Readonly<Record<string, string>> | null | undefined,
   address: string,
+  params?: Readonly<Record<string, unknown>> | null,
 ): [string, string][];
 export function readCheckAnswer(
   value: unknown,
@@ -371,7 +415,19 @@ export function hongbaoRuleProblems(
 export function readMeta(
   value: unknown,
 ): { meta: Meta | null } | { problems: string[] };
-export function paramLine(item: ParamDeclaration): string;
+export function paramLine(
+  item: ParamDeclaration,
+  context?: {
+    params?: readonly ParamDeclaration[];
+    network?: readonly NetworkEntry[] | null;
+  },
+): string;
+/** The 附带网页 a 判定器 carries for one 红包; null while not filled. */
+export function pageOf(
+  meta: Meta | null | undefined,
+  values: Readonly<Record<string, unknown>> | null | undefined,
+  options?: { local?: boolean },
+): string | null;
 /** 选项联动 in the params preview: “选简单：炸弹 3、最大 50。说明”, one per option. */
 export function optionLines(
   item: ParamDeclaration,

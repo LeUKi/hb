@@ -58,6 +58,14 @@ function hongbaoOf(activity: PublicActivity, judged: number | null) {
     unclaimed: quantity.mode === "pool" ? quantity.left : null,
     deadlineAt: activity.draw?.deadlineAt ?? activity.deadlineAt,
     judged,
+    // Its params everyone sees now, 结束后公开 ones once over; never a 密钥
+    // (docs/judge-address-design.md §5).
+    params: Object.fromEntries(
+      (activity.judge?.params ?? []).map(({ param, value }) => [
+        param.key,
+        value,
+      ]),
+    ),
   };
 }
 

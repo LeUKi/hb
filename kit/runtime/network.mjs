@@ -91,15 +91,29 @@ export function readEntry(entry) {
 }
 
 /**
+ * A `network` entry naming an 地址参数 (docs/judge-address-design.md §2):
+ * `{ param }`, the address its sender fills in, taken at opening.
+ */
+export const isParamEntry = (entry) =>
+  entry !== null &&
+  typeof entry === "object" &&
+  !Array.isArray(entry) &&
+  Object.keys(entry).length === 1 &&
+  typeof entry.param === "string" &&
+  entry.param !== "";
+
+/**
  * judge.js's `network` export: `{ list }` (null when it has none: no
- * network, as protocol v1) or `{ problems }`, one line each.
+ * network, as protocol v1) or `{ problems }`, one line each. Each entry is
+ * a canonical prefix or `{ param }`; that it names an 地址参数 is checked
+ * with the params (networkParamProblems).
  */
 export function readNetwork(value) {
   if (value === undefined || value === null) return { list: null };
   if (!Array.isArray(value))
     return {
       problems: [
-        'network 要是字符串数组，比如 ["https://api.example.com/hongbao/"]',
+        'network 要是数组，每项是地址或 { param: "地址参数的 key" }，比如 ["https://api.example.com/hongbao/"]',
       ],
     };
   if (value.length === 0)
@@ -109,6 +123,18 @@ export function readNetwork(value) {
   const problems = [];
   const list = [];
   for (const [index, entry] of value.entries()) {
+    if (isParamEntry(entry)) {
+      if (list.some((kept) => kept.param === entry.param))
+        problems.push(`network 第 ${index + 1} 个和前面的重复了`);
+      else list.push({ param: entry.param });
+      continue;
+    }
+    if (entry !== null && typeof entry === "object") {
+      problems.push(
+        `network 第 ${index + 1} 个：要是地址，或者 { param: "地址参数的 key" }`,
+      );
+      continue;
+    }
     const read = readEntry(entry);
     if ("problem" in read)
       problems.push(
@@ -121,8 +147,69 @@ export function readNetwork(value) {
   return problems.length > 0 ? { problems } : { list };
 }
 
+/** The addresses written out in `network`, its `{ param }` left out. */
+export const fixedAddresses = (list) =>
+  (list ?? []).filter((entry) => typeof entry === "string");
+
 /**
- * Whether `network` (canonical prefixes, readNetwork's list) lets this
+ * The addresses one 红包 (or test) may ask: `network` with each `{ param }`
+ * taken from its params — left out when not filled, once when the same as
+ * another. Null with none: that 红包 is not online.
+ */
+export function resolveNetwork(list, values) {
+  if (!Array.isArray(list)) return null;
+  const resolved = [];
+  for (const entry of list) {
+    const address = typeof entry === "string" ? entry : values?.[entry.param];
+    if (
+      typeof address === "string" &&
+      address !== "" &&
+      !resolved.includes(address)
+    )
+      resolved.push(address);
+  }
+  return resolved.length > 0 ? resolved : null;
+}
+
+/**
+ * The kit's own (docs/judge-address-design.md §8): http on localhost or
+ * 127.0.0.1, any port, for `--live` against a service run beside it. The
+ * site never takes one, so never lets one in.
+ */
+const isLocal = (url) =>
+  url.protocol === "http:" &&
+  (url.hostname === "localhost" || url.hostname === "127.0.0.1");
+
+/**
+ * An 地址参数 as a sender filled it: `{ address }`, as `network` writes
+ * one and ending in `/` — https://A.workers.dev is https://a.workers.dev/
+ * — or `{ problem }`. `local`: the kit's `--live` also takes
+ * http://localhost:8787/.
+ */
+export function readAddress(value, { local = false } = {}) {
+  if (typeof value !== "string" || value.trim() === "")
+    return { problem: "要是不空的地址" };
+  const text = value.trim();
+  let url;
+  try {
+    url = new URL(text);
+  } catch {
+    return { problem: "不是有效的地址" };
+  }
+  if (url.username || url.password) return { problem: "不能带用户名和密码" };
+  if (url.search || url.hash || /[?#]/.test(text))
+    return { problem: "不能带 ? 和 #" };
+  const path = url.pathname.endsWith("/") ? url.pathname : `${url.pathname}/`;
+  if (local && isLocal(url)) return { address: `${url.origin}${path}` };
+  if (url.protocol !== "https:")
+    return { problem: "只能用 https:// 开头的地址" };
+  if (url.port) return { problem: "不能带端口" };
+  const read = readEntry(`${url.origin}${path}`);
+  return "problem" in read ? read : { address: read.prefix };
+}
+
+/**
+ * Whether `network` (canonical prefixes, resolveNetwork's list) lets this
  * address be asked: https on 443, the same host, and a path under the
  * prefix's, cut at a `/` — `https://a.com/api` lets in /api, /api/x and
  * /api?x, not /apix. The address is read by the URL standard first, so
@@ -137,8 +224,7 @@ export function allowedBy(list, address) {
     return false;
   }
   if (
-    url.protocol !== "https:" ||
-    url.port ||
+    (!isLocal(url) && (url.protocol !== "https:" || url.port)) ||
     url.username ||
     url.password ||
     ENCODED_SLASH.test(url.pathname)
@@ -146,7 +232,9 @@ export function allowedBy(list, address) {
     return false;
   return list.some((entry) => {
     const prefix = new URL(entry);
-    if (prefix.hostname !== url.hostname) return false;
+    // A local address only under a local entry, which only the kit has.
+    if (prefix.protocol !== url.protocol || prefix.host !== url.host)
+      return false;
     const base = prefix.pathname;
     return base.endsWith("/")
       ? url.pathname.startsWith(base)

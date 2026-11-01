@@ -3,6 +3,8 @@ import {
   JUDGE_NAME_LIMITS,
   type JudgeCheck,
   type JudgeDeclarations,
+  type JudgeNetworkEntry,
+  type JudgeParam,
   type MyJudge,
 } from "@hb/contracts";
 import { useQueryClient } from "@tanstack/react-query";
@@ -27,6 +29,8 @@ import {
   myJudgeKey,
   useMyJudges,
 } from "../../lib/judge";
+import { useSessionUser } from "../../lib/session";
+import { networkWords } from "../judges/judge-bits";
 import { SquarePicker } from "../judges/square-picker";
 import { Callout } from "../page/page";
 import { WindowDialog } from "../shell/window-dialog";
@@ -236,17 +240,28 @@ function CheckResult({ check }: { check: JudgeCheck }) {
 
 /**
  * 联网 (docs/programmable-hongbao-design.md §9.5): the addresses the code
- * may ask, read from it by its deploy, and what that means for whom.
+ * may ask, read from it by its deploy, and what that means for whom; an
+ * 地址参数 in words (docs/judge-address-design.md §4).
  */
-function NetworkNote({ network }: { network: string[] }) {
+function NetworkNote({
+  network,
+  params,
+}: {
+  network: JudgeNetworkEntry[];
+  params: readonly JudgeParam[];
+}) {
   return (
     <div className="grid gap-1.5 rounded-xl bg-fill px-3.5 py-3">
       <p className="text-sm text-ink">
         联网：
-        {network.map((address, index) => (
-          <span key={address}>
+        {network.map((entry, index) => (
+          <span key={typeof entry === "string" ? entry : entry.param}>
             {index > 0 && "、"}
-            <span className="font-mono break-all">{address}</span>
+            {typeof entry === "string" ? (
+              <span className="font-mono break-all">{entry}</span>
+            ) : (
+              networkWords(entry, params)
+            )}
           </span>
         ))}
       </p>
@@ -312,7 +327,12 @@ function DeployArea({
         {check && <CheckResult check={check} />}
       </Reveal>
       <Reveal show={Boolean(judge.network)}>
-        {judge.network && <NetworkNote network={judge.network} />}
+        {judge.network && (
+          <NetworkNote
+            network={judge.network}
+            params={check?.declarations.params ?? []}
+          />
+        )}
       </Reveal>
       {judge.rerun && judge.version ? (
         <Callout icon={Info} className="items-center [&>div:last-child]:flex-1">
@@ -845,6 +865,7 @@ export function CodeStep({
       judge: { ...current.judge, [key]: value },
     }));
   const borrowed = form.judge.borrowed;
+  const sessionUser = useSessionUser();
   const usedN = borrowed?.n ?? judge.version?.n;
   const named = usedN !== undefined ? `判定器 第 ${usedN} 版 ` : "判定器";
   // 我的判定器, for a newer version of the one picked (有第 4 版).
@@ -1123,6 +1144,8 @@ export function CodeStep({
               values={form.judge.params}
               errorOf={paramErrorOf}
               locked={locked}
+              network={borrowed ? borrowed.network : judge.network}
+              ownId={sessionUser?.linuxDoId}
               keys={{
                 filled: form.judge.keysFilled,
                 typed: form.judge.keys,

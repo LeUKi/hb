@@ -118,8 +118,10 @@ export function missingKeys(
 
 /**
  * What the gateway adds to a request to `address` (judge-key §1): the
- * header of each 密钥 whose own address it is under, read anew each time
- * (a 密钥 changed applies from the next request).
+ * header of each 密钥 whose own address it is under — for a `to` that is
+ * an 地址参数, the address its params published at opening have
+ * (docs/judge-address-design.md §7) — read anew each time (a 密钥 changed
+ * applies from the next request).
  */
 export async function keyHeadersFor(
   env: ApiBindings,
@@ -127,15 +129,21 @@ export async function keyHeadersFor(
   address: string,
 ) {
   const row = await env.DB.prepare(
-    `SELECT v.declarations FROM activity_code c JOIN judge_versions v ON v.judge_id = c.judge_id AND v.n = c.judge_version
+    `SELECT v.declarations, c.params_public AS shown FROM activity_code c
+      JOIN judge_versions v ON v.judge_id = c.judge_id AND v.n = c.judge_version
       WHERE c.activity_id = ? AND EXISTS(SELECT 1 FROM activity_keys k WHERE k.activity_id = c.activity_id)`,
   )
     .bind(activityId)
-    .first<{ declarations: string | null }>();
+    .first<{ declarations: string | null; shown: string | null }>();
   if (!row?.declarations) return [];
   const params = (JSON.parse(row.declarations) as JudgeDeclarations).params;
   if (keyParams(params).length === 0) return [];
-  return keyHeaders(params, await stored(env, activityId), address);
+  return keyHeaders(
+    params,
+    await stored(env, activityId),
+    address,
+    row.shown ? JSON.parse(row.shown) : {},
+  );
 }
 
 /** Gone once the 红包 is over, or deleted (judge-key §1). */

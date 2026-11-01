@@ -13,11 +13,14 @@ import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import {
   keyParams,
+  keyTarget,
   NETWORK_LIMITS,
+  paramValues,
   readCheckAnswer,
   readDeclarations,
   readNetwork,
   readSetup,
+  resolveNetwork,
   VIEW_PROTOCOL,
 } from "../../runtime/index.mjs";
 import { fingerprintOf, KitError } from "./files.mjs";
@@ -124,7 +127,9 @@ function networkOf(answer) {
   if (!read) return { list: null };
   // The second protocol's runtime marked it in place.
   if (read.network?.unreadable || read.unreadable?.includes("network"))
-    return { problems: ["network 要是字符串数组"] };
+    return {
+      problems: ['network 要是数组，每项是地址或 { param: "地址参数的 key" }'],
+    };
   return readNetwork(read.network ?? null);
 }
 
@@ -132,13 +137,15 @@ function networkOf(answer) {
  * A sandbox for this judge.js. `run(submission, seeds, answers)` judges
  * once, the way runTest and judgeNext call it, always keeping console
  * output; fetch() gets `answers` (a test's), or with `live` goes out.
- * `network` is what judge.js exports. `protocol` 1 runs the first
- * protocol's runtime, which has no network. `close()` stops workerd. Call
- * close when done, or the process stays.
+ * `network` is what judge.js exports; `addresses`, what it may ask with
+ * `params` (simulate.json's, docs/judge-address-design.md §8) — the list
+ * going out with `live`. `protocol` 1 runs the first protocol's runtime,
+ * which has no network. `close()` stops workerd. Call close when done, or
+ * the process stays.
  */
 export async function openSandbox(
   code,
-  { live = false, protocol = PROTOCOL, keys = {} } = {},
+  { live = false, protocol = PROTOCOL, keys = {}, params = {} } = {},
 ) {
   const { Miniflare, convertV4MiniflareOptions } = await loadMiniflare();
   // The list the gateway lets out, known once judge.js is read; the 密钥
@@ -209,13 +216,22 @@ export async function openSandbox(
     protocol >= 3 ? described(answer) : null,
   );
   const list = "list" in network ? network.list : null;
+  // Each 地址参数 as simulate.json fills it; one it gets wrong is said
+  // where its params are read.
+  const filled = paramValues(declarations.params, params, { local: true });
+  const values = "values" in filled ? filled.values : {};
+  const addresses = resolveNetwork(list, values);
   // Going out, the gateway knows the list: workerd again, with it.
-  if (live && list) {
-    allowed = list;
+  if (live && addresses) {
+    allowed = addresses;
     keyed = keyParams(declarations.params)
-      .filter((item) => typeof keys[item.key] === "string")
+      .filter(
+        (item) =>
+          typeof keys[item.key] === "string" &&
+          keyTarget(item, values) !== null,
+      )
       .map((item) => ({
-        to: item.to,
+        to: keyTarget(item, values),
         header: item.header ?? "Authorization",
         value: `${item.prefix ?? "Bearer "}${keys[item.key]}`,
       }));
@@ -227,7 +243,9 @@ export async function openSandbox(
   // site, where the clock stops while a request is out. Going out, the
   // judgment has the site's 5 seconds in all.
   const waitMs =
-    live && list ? Math.max(TIMEOUT_MS, NETWORK_LIMITS.judgmentMs) : TIMEOUT_MS;
+    live && addresses
+      ? Math.max(TIMEOUT_MS, NETWORK_LIMITS.judgmentMs)
+      : TIMEOUT_MS;
 
   // A judgment that will not end keeps workerd busy: start a new one.
   const restart = async () => {
@@ -253,9 +271,13 @@ export async function openSandbox(
           seeds,
           capture: true,
           network:
-            live && list
-              ? { list, mode: "live" }
-              : { list, mode: "mock", answers },
+            live && addresses
+              ? { list: addresses, mode: "live" }
+              : {
+                  list: resolveNetwork(list, submission.params),
+                  mode: "mock",
+                  answers,
+                },
         }),
         waitMs,
       );
@@ -386,6 +408,10 @@ export async function openSandbox(
     setup,
     /** What judge.js exports as `network`: `{ list }` or `{ problems }`. */
     network,
+    /** Its addresses with `params` filled in: null when none. */
+    addresses,
+    /** Those params, read as simulate.json may write them. */
+    values,
     /** 协议第三版: meta, params, hongbao and check, with their problems; 第四版's setup. */
     declarations,
     /** How many times workerd was started afresh after a timeout. */
