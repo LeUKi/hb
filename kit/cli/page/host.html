@@ -89,7 +89,7 @@
     </aside>
     <main><iframe id="page" title="附带网页"></iframe></main>
     <dialog id="allow" aria-labelledby="allow-title">
-      <h3 id="allow-title">让这个网页替你提交？</h3>
+      <h3 id="allow-title">让这个网页知道你是谁、替你提交？</h3>
       <p id="allow-text"></p>
       <form method="dialog">
         <button type="submit" value="no">不允许</button>
@@ -274,10 +274,13 @@
         }
       }
 
-      /** 让这个网页替你提交？ as the site asks it: true for 允许. */
+      /**
+       * 让这个网页知道你是谁、替你提交？ as the site asks it, the first time the
+       * page wants either: true for 允许.
+       */
       function askAllow() {
         const dialog = $("allow");
-        $("allow-text").textContent = `${new URL(config.pageOrigin).hostname} 会替你提交输入，提交的内容和结果会出现在你的「我的记录」里，冷却和人机验证照旧。只对这个红包有效。`;
+        $("allow-text").textContent = `${new URL(config.pageOrigin).hostname} 会知道你的用户名和 ID，并能替你提交输入；提交的内容和结果会出现在你的「我的记录」里，冷却和人机验证照旧。只对这个红包有效。`;
         dialog.returnValue = "";
         dialog.showModal();
         return new Promise((done) =>
@@ -316,6 +319,20 @@
         if (ask.type === "fill" && typeof ask.text === "string") {
           reply({ value: fill(ask.text) });
           return;
+        }
+        if (ask.type === "identity") {
+          if (who === config.guest) return reply({ value: { identified: false, reason: "login" } });
+          if (!allowed.has(who)) {
+            if (!(await askAllow())) {
+              log(`${who} 没允许网页知道他是谁：网页拿到 denied`);
+              return reply({ value: { identified: false, reason: "denied" } });
+            }
+            allowed.add(who);
+          }
+          const nonce = typeof ask.nonce === "string" ? ask.nonce : undefined;
+          const identity = await api("/api/identity", { who, nonce });
+          log(`网页拿到 ${who} 的身份令牌（公钥在 ${config.hostUrl}/api/page-identity/keys）`);
+          return reply({ value: { identified: true, ...identity } });
         }
         if (ask.type !== "submit" || typeof ask.input !== "string") return;
         if (busy) return reply({ value: { judged: false, reason: "busy" } });

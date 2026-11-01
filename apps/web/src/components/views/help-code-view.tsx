@@ -1,5 +1,6 @@
 import { JUDGE_LIMITS } from "@hb/contracts";
 import type { ReactNode } from "react";
+import skill from "../../../../../kit/.claude/skills/hongbao-judge/SKILL.md?raw";
 import { KIT_AGENTS_URL, KIT_URL } from "../../lib/judge";
 import { Page, PageHeader, PageSection, Panel } from "../page/page";
 import { Code } from "../ui/code";
@@ -25,8 +26,19 @@ const MODULES = [
 ];
 
 /**
- * For a chat AI, whole: where everything is, the protocol in one go, then
- * the sender's own game. This page is drawn in the browser, so an agent
+ * 要点 (docs/kit-guide-design.md §3): the lines between the Skill's two
+ * marks, the same in kit/AGENTS.md and the Cursor rule (a test holds them).
+ */
+const keyPoints = skill
+  .slice(
+    skill.indexOf("\n", skill.indexOf("<!-- 要点：")) + 1,
+    skill.indexOf("<!-- 要点到这里 -->"),
+  )
+  .trim();
+
+/**
+ * For a chat AI, whole: where everything is, the key points, the protocol
+ * in one go, then the sender's own game. This page is drawn in the browser, so an agent
  * that fetches it reads nothing: AGENTS.md is its text.
  */
 const aiPrompt = (
@@ -37,6 +49,10 @@ const aiPrompt = (
 - 本地开发包：${KIT_URL} ，用 npx degit LeUKi/hb/kit 我的红包 取到本地，里面有能跑通的模板、npm test 和 npm run check。
 - 开发包里写给 AI 的完整说明 AGENTS.md（纯文本，能直接读）：${KIT_AGENTS_URL}
 - 开发文档：${origin}/help/code （网页要用浏览器打开，直接抓取读不到内容）
+- 附带网页、认人和自有后端的做法：AGENTS.md 的“带网页的玩法”“认人（鉴权）”“自有后端”“热闹的玩法”，接入说明 ${origin}/help/page
+
+要点（先读）：
+${keyPoints}
 
 规则：
 - judge.js 是一个 ES 模块，导出函数 judge(submission, tools)，可以是 async。每次有人在红包页提交一行输入，平台调用它一次，按它的返回给这个人加钱、减钱，决定什么时候结算。
@@ -70,7 +86,7 @@ const aiPrompt = (
 - 能用：Web 标准（完整的 crypto、Intl、TextEncoder、URL、atob、btoa 等）。Node 模块只能在文件开头静态 import，必须带 node: 前缀：${MODULES.join("、")}。
 - 不能用：别的 Node 模块、npm 包、import 别的文件、动态 import()、require、caches。console 的输出线上丢弃。
 - 联网（可选）：judge.js 导出 network，列出能请求的地址前缀，最多 3 个，比如 export const network = ["https://api.example.com/hongbao/"]；写法是 https:// 加完整域名和路径，不带端口、? 和 #，不能是 IP、linux.do 和本站。不导出就不联网，fetch 会失败。判定里直接用 fetch()：每次判定最多 3 个请求，只许 GET 和 POST，请求体最大 16 KB，单个请求 10 秒，返回最大 64 KB，不跟随跳转；等请求的时间不算进 50 毫秒，整次判定最多 15 秒；不行时 fetch() 抛 TypeError（“联网失败：…”），可以接住。领的人可以绕过本站直接请求你的接口，要防就在代码里放一个只有你知道的令牌，请求时带上；红包结束后代码公开，令牌也会公开，结束后要作废。红包结束后，领的人能看到自己那几次判定的返回内容。
-- 参数（可选）：会变的东西（答案、范围、次数、几个人能领、题目）写成参数，发红包的人在网站上填，判定时在 submission.params 里。export const params = [ … ]，最多 20 项，每项 { key（字母、数字、下划线）, label（最多 20 个字）, hint（最多 60 个字）, type, default, required（默认 true）, secret（默认 false） } 加上类型自己的限制。type：text（单行，minLength、maxLength ≤ 200）、textarea（多行，maxLength ≤ 2000）、integer（min、max、step）、money（整数分，min ≥ 1、max）、switch、choice（options：2–20 个 { value, label }）、list（一行一个，minItems、maxItems ≤ 100、maxLength）、table（columns：1–6 列 { key, label, type: text | integer | money }，minRows、maxRows ≤ 100）。网站按声明校验；没填的选填项，开关是 false，列表和表格是 []，其他是 null。secret 的参数开放时只公布封存值，结束后公开。几项合起来的检查写 export function check(params, hongbao)，返回 [{ key, message }]，没问题返回 []；hongbao 同 setup 的。export const hongbao = { total: { min, max, default }, deadline: { value, unit }, prompt, humanCheck, title, note } 给“发多少”设默认值和范围（金额是整数分），prompt 是领取提示（最多 ${JUDGE_LIMITS.promptCharacters} 个字），title、note 是红包标题（最多 100 个字）和说明（最多 2000 个字，一个回车就换行，[文字](#附带网页) 是打开附带网页的按钮）的默认值；没有份数，要几个人能领就做成参数。export const meta = { name, description, page } 是判定器的名字（最多 20 个字）、说明（最多 60 个字）和带的附带网页（page，https，规则同附带网页，用它发红包时替发红包的人填好；怎么接见 ${origin}/help/page；开发包里有网页模板 page/index.html、本地的假红包页 npm run page 和数字炸弹、刮刮乐两个带网页的样例）。
+- 参数（可选）：会变的东西（答案、范围、次数、几个人能领、题目）写成参数，发红包的人在网站上填，判定时在 submission.params 里。export const params = [ … ]，最多 20 项，每项 { key（字母、数字、下划线）, label（最多 20 个字）, hint（最多 60 个字）, type, default, required（默认 true）, secret（默认 false） } 加上类型自己的限制。type：text（单行，minLength、maxLength ≤ 200）、textarea（多行，maxLength ≤ 2000）、integer（min、max、step）、money（整数分，min ≥ 1、max）、switch、choice（options：2–20 个 { value, label }）、list（一行一个，minItems、maxItems ≤ 100、maxLength）、table（columns：1–6 列 { key, label, type: text | integer | money }，minRows、maxRows ≤ 100）。网站按声明校验；没填的选填项，开关是 false，列表和表格是 []，其他是 null。secret 的参数开放时只公布封存值，结束后公开。几项合起来的检查写 export function check(params, hongbao)，返回 [{ key, message }]，没问题返回 []；hongbao 同 setup 的。export const hongbao = { total: { min, max, default }, deadline: { value, unit }, prompt, humanCheck, pageAutoOpen, title, note } 给“发多少”设默认值和范围（金额是整数分），prompt 是领取提示（最多 ${JUDGE_LIMITS.promptCharacters} 个字），humanCheck 建议打开领取前人机验证（默认别写，见要点第 2 条），pageAutoOpen 建议打开红包页时自动打开附带网页（带网页的都写上），title、note 是红包标题（最多 100 个字）和说明（最多 2000 个字，一个回车就换行，[文字](#附带网页) 是打开附带网页的按钮，带网页的第一行就放它）的默认值；没有份数，要几个人能领就做成参数。export const meta = { name, description, page } 是判定器的名字（最多 20 个字）、说明（最多 60 个字）和带的附带网页（page，https，规则同附带网页，用它发红包时替发红包的人填好；怎么接见 ${origin}/help/page；开发包里有网页模板 page/index.html、本地的假红包页 npm run page 和数字炸弹、刮刮乐两个带网页的样例）。
 - 随机数用 tools.random（这一次提交的，Math.random() 也是它）或 tools.userRandom（这个人固定的，提交几次都一样）。都能复现：红包结束后公开种子，谁都能核对。crypto.getRandomValues 是真随机，能用但没法核对。
 - tools 全是同步的：
   - tools.random、tools.userRandom：next()（[0, 1)）、int(min, max)（含两端）、pick(items)、shuffle(items)
@@ -685,7 +701,7 @@ export function judge(submission, tools) {
             },
             {
               name: "hongbao",
-              note: `可选：用它发的红包在“发多少”的默认值和范围，只能收窄本站的规则。total 是 { min, max, default }（金额是整数分）；deadline 是默认截止时长 { value, unit }，unit 是 minutes、hours 或 days；prompt 是领取提示的默认值，最多 ${JUDGE_LIMITS.promptCharacters} 个字；humanCheck 建议打开领取前人机验证；pageAutoOpen 建议打开红包页时自动打开附带网页（有附带网页才起作用）；title、note 是红包标题（最多 100 个字）和说明（最多 2000 个字，一个回车就换行，[文字](#附带网页) 是打开附带网页的按钮）的默认值，挑了这个判定器时替发红包的人填好。没有份数：要几个人能领，做成参数，比如上面的 winners。`,
+              note: `可选：用它发的红包在“发多少”的默认值和范围，只能收窄本站的规则。total 是 { min, max, default }（金额是整数分）；deadline 是默认截止时长 { value, unit }，unit 是 minutes、hours 或 days；prompt 是领取提示的默认值，最多 ${JUDGE_LIMITS.promptCharacters} 个字；humanCheck 建议打开领取前人机验证（默认别写，红包作者要求才写）；pageAutoOpen 建议打开红包页时自动打开附带网页（有附带网页才起作用，带网页的都写上）；title、note 是红包标题（最多 100 个字）和说明（最多 2000 个字，一个回车就换行，[文字](#附带网页) 是打开附带网页的按钮）的默认值，挑了这个判定器时替发红包的人填好。没有份数：要几个人能领，做成参数，比如上面的 winners。`,
             },
             {
               name: "meta",

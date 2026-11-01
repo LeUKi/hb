@@ -100,6 +100,36 @@ async function runAll(code, tests) {
   };
 }
 
+/**
+ * What a 红包 from this judge starts with that its sender would not want
+ * by default (docs/kit-guide-design.md §6): 领取前人机验证 on, and with a
+ * 附带网页 not opening by itself or its button not on the note's first
+ * line. Reminders only: the judge can still be deployed.
+ */
+export function defaultsReminders({ meta, hongbao }) {
+  const lines = [];
+  if (hongbao?.humanCheck === true)
+    lines.push(
+      "hongbao.humanCheck 会让用它发的红包默认打开领取前人机验证，有些网络和浏览器加载不出验证，这些人领不了。红包作者没要求就删掉。",
+    );
+  if (meta?.page) {
+    if (hongbao?.pageAutoOpen !== true)
+      lines.push(
+        "带了附带网页，没写 hongbao.pageAutoOpen: true。主要在网页里玩的，写上它，进红包页就打开网页。",
+      );
+    const first = hongbao?.note?.split("\n")[0] ?? null;
+    if (first === null)
+      lines.push(
+        "带了附带网页，没写 hongbao.note。写一段说明，第一行放打开网页的按钮，比如 [打开网页开始玩](#附带网页)。",
+      );
+    else if (!first.includes("](#附带网页)"))
+      lines.push(
+        "hongbao.note 的第一行不是打开网页的按钮。把 [文字](#附带网页) 放在第一行：说明长了会折叠，放在后面要点“展开”才看得到。",
+      );
+  }
+  return lines;
+}
+
 export async function checkCommand({ dir, print = console.log }) {
   const code = await readProjectFile(dir, "judge.js");
   const testsText = await readProjectFile(dir, "tests.json");
@@ -119,6 +149,7 @@ export async function checkCommand({ dir, print = console.log }) {
   let slowest = null;
   let loadNote = null;
   let shareRules = [];
+  let defaults = [];
   if ("problem" in read) print(row(false, read.problem));
   else if (problems.length === 0) {
     const all = await runAll(code, read.tests);
@@ -145,6 +176,7 @@ export async function checkCommand({ dir, print = console.log }) {
         shareRules = ["count", "minEach"].filter(
           (key) => declared.hongbao?.[key] !== undefined,
         );
+        defaults = defaultsReminders(declared);
         if (declared.params.length > 0) {
           print(row(true, "参数表单预览"));
           for (const item of declared.params) print(`  ${paramLine(item)}`);
@@ -171,6 +203,7 @@ export async function checkCommand({ dir, print = console.log }) {
     print(
       `提醒：hongbao 里的 ${shareRules.join("、")} 不起作用了：现在没有份数和每份至少，只有总奖池`,
     );
+  for (const line of defaults) print(`提醒：${line}`);
   if (slowest !== null)
     print(
       isSlow(slowest)

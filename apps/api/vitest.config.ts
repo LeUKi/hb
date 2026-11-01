@@ -25,6 +25,17 @@ export default defineConfig({
           }),
           ENCRYPTION_KEY_VERSION: "test",
           PASSWORD_DIGEST_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+          // 附带网页认人: a key for tests only, never used anywhere else.
+          PAGE_IDENTITY_KEYS: JSON.stringify([
+            {
+              kid: "test",
+              kty: "EC",
+              crv: "P-256",
+              x: "m1XJhR6Y54HlCfN9TMZN8k7qiINV70tR_lzRA315V4o",
+              y: "BSXDROpgS1G6Ag9IuS3U6QI5Ta7JkbSR_ondCD5D9cI",
+              d: "BlBsp0Or0nloxTUphy5bAOi3z76fFn22fcl1SuchufY",
+            },
+          ]),
           // Cloudflare's always-pass test key: it needs no secret (human-check.ts).
           TURNSTILE_SITE_KEY: "1x00000000000000000000AA",
           TURNSTILE_SECRET_KEY: "",

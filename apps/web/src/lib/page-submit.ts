@@ -1,29 +1,39 @@
+import type { PageIdentity } from "@hb/contracts";
 import { atom, type useStore } from "jotai";
 
 /**
- * 网页替你提交 (docs/judge-page-design.md §3.3, §11.8): the 附带网页 of a
- * 代码判定红包 submitting through the SDK, asked once per account, 红包
- * and site in PageSubmitDialog. 不允许 is not kept: the next one asks again.
+ * 网页的许可 (docs/page-identity-design.md §3): the 附带网页 knowing who the
+ * viewer is (hb.identity()) and, on a 代码判定红包, submitting for them
+ * (hb.submit(), docs/judge-page-design.md §3.3), asked together the first
+ * time the page wants either, once per account, 红包 and site, in
+ * PagePermissionDialog. 不允许 is not kept: the next one asks again.
  */
-export type PageSubmitRequest = {
+export type PagePermissionRequest = {
   /** The page's host name, as the dialog names it. */
   site: string;
+  /** A 代码判定红包: submitting is asked too. */
+  code: boolean;
   resolve: (allow: boolean) => void;
 };
 
-export const pageSubmitAtom = atom<PageSubmitRequest | null>(null);
+export const pagePermissionAtom = atom<PagePermissionRequest | null>(null);
 
 type Store = ReturnType<typeof useStore>;
 
 /** Allowed in this browser, newest last. Only this browser's. */
-const ALLOWED = "hb.page-submit";
+const ALLOWED = "hb.page-allow";
+/**
+ * 让这个网页替你提交？ as it was asked before 2026-11-01: submitting only,
+ * never who they are.
+ */
+const SUBMIT_ONLY = "hb.page-submit";
 const ALLOWED_MAX = 200;
 /** Where storage is not kept (a private window): this load's. */
 const allowedNow = new Set<string>();
 
-function allowedList(): string[] {
+function listOf(name: string): string[] {
   try {
-    const saved: unknown = JSON.parse(localStorage.getItem(ALLOWED) ?? "[]");
+    const saved: unknown = JSON.parse(localStorage.getItem(name) ?? "[]");
     return Array.isArray(saved)
       ? saved.filter((key): key is string => typeof key === "string")
       : [];
@@ -38,7 +48,7 @@ function remember(key: string) {
     localStorage.setItem(
       ALLOWED,
       JSON.stringify(
-        [...allowedList().filter((saved) => saved !== key), key].slice(
+        [...listOf(ALLOWED).filter((saved) => saved !== key), key].slice(
           -ALLOWED_MAX,
         ),
       ),
@@ -48,30 +58,43 @@ function remember(key: string) {
   }
 }
 
-/** True once allowed, or when the dialog says 允许; false when it says no. */
-export async function askPageSubmit(
+/**
+ * True once allowed (submitting, also as allowed before 2026-11-01), or
+ * when the dialog says 允许; false when it says no.
+ */
+export async function askPagePermission(
   store: Store,
   {
     userId,
     activityId,
     origin,
+    code,
+    want,
   }: {
     userId: string;
     activityId: string;
     origin: string;
+    code: boolean;
+    want: "identity" | "submit";
   },
 ) {
   const key = `${userId} ${activityId} ${origin}`;
-  if (allowedNow.has(key) || allowedList().includes(key)) return true;
-  store.get(pageSubmitAtom)?.resolve(false);
+  if (
+    allowedNow.has(key) ||
+    listOf(ALLOWED).includes(key) ||
+    (want === "submit" && listOf(SUBMIT_ONLY).includes(key))
+  )
+    return true;
+  store.get(pagePermissionAtom)?.resolve(false);
   const allow = await new Promise<boolean>((resolve) => {
     let settled = false;
-    store.set(pageSubmitAtom, {
+    store.set(pagePermissionAtom, {
       site: new URL(origin).hostname,
+      code,
       resolve: (answer) => {
         if (settled) return;
         settled = true;
-        store.set(pageSubmitAtom, null);
+        store.set(pagePermissionAtom, null);
         resolve(answer);
       },
     });
@@ -154,6 +177,29 @@ export const notFilled = (
   message?: string,
 ): PageFillResult => ({
   filled: false,
+  reason,
+  ...(message ? { message } : {}),
+});
+
+/** Why `hb.identity()` gave no token (docs/page-identity-design.md §4). */
+export type PageIdentityReason =
+  | "login"
+  | "denied"
+  | "away"
+  | "busy"
+  | "unavailable"
+  | "error";
+
+/** A token for the page's own server, or why there is none. */
+export type PageIdentityResult =
+  | ({ identified: true } & PageIdentity)
+  | { identified: false; reason: PageIdentityReason; message?: string };
+
+export const notIdentified = (
+  reason: PageIdentityReason,
+  message?: string,
+): PageIdentityResult => ({
+  identified: false,
   reason,
   ...(message ? { message } : {}),
 });

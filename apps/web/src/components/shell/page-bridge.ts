@@ -1,8 +1,9 @@
-import type {
-  JudgeAnnouncement,
-  JudgeView,
-  MyJudgmentList,
-  PublicActivity,
+import {
+  type JudgeAnnouncement,
+  type JudgeView,
+  type MyJudgmentList,
+  PAGE_IDENTITY_NONCE,
+  type PublicActivity,
 } from "@hb/contracts";
 import { useAtomValue } from "jotai";
 import { type RefObject, useEffect, useRef } from "react";
@@ -19,7 +20,7 @@ import {
 import { useCachedQueryData } from "../../lib/cached-query";
 import { liveJudgedAtom } from "../../lib/live-state";
 import { pageStanding } from "../../lib/page-standing";
-import { notFilled, notJudged } from "../../lib/page-submit";
+import { notFilled, notIdentified, notJudged } from "../../lib/page-submit";
 import {
   type ParticipationCache,
   participationKey,
@@ -164,7 +165,8 @@ type Ask =
   | { hb: 1; id: number; type: "submit"; input: string }
   | { hb: 1; id: number; type: "fill"; text: string }
   | { hb: 1; id: number; type: "login" }
-  | { hb: 1; id: number; type: "mine"; next: string | null };
+  | { hb: 1; id: number; type: "mine"; next: string | null }
+  | { hb: 1; id: number; type: "identity"; nonce?: string };
 
 function askOf(data: unknown): Ask | null {
   if (typeof data !== "object" || data === null) return null;
@@ -190,6 +192,12 @@ function askOf(data: unknown): Ask | null {
       (typeof ask.next === "string" && ask.next.length < 200))
   )
     return ask as Ask;
+  if (
+    ask.type === "identity" &&
+    (ask.nonce === undefined ||
+      (typeof ask.nonce === "string" && PAGE_IDENTITY_NONCE.test(ask.nonce)))
+  )
+    return ask as Ask;
   return null;
 }
 
@@ -198,7 +206,8 @@ function askOf(data: unknown): Ask | null {
  * hello with the 红包 as it is, then its changes pushed; a submission
  * while its 红包 page is the one shown, one at a time; text for the box
  * (any 红包); the viewer's own record; their standing (hb.me()) and the
- * server's clock, pushed as they move; the login card, asked for.
+ * server's clock, pushed as they move; the login card, asked for; a token
+ * saying who they are, for the page's own server (any 红包, allowed first).
  */
 export function usePageBridge(
   frame: RefObject<HTMLIFrameElement | null>,
@@ -244,7 +253,8 @@ export function usePageBridge(
   // How far the server's clock is from this one (hb.now()): known once
   // signed in; 0 otherwise.
   const clock = cooldown ? cooldown.serverTime - cooldown.receivedAt : 0;
-  const { submitForPage, fillForPage, openAccount } = useOmniboxController();
+  const { submitForPage, fillForPage, identityForPage, openAccount } =
+    useOmniboxController();
   // What the listener reads when a message comes, as of the last render.
   const now = useRef({
     hongbao,
@@ -254,6 +264,7 @@ export function usePageBridge(
     user,
     submitForPage,
     fillForPage,
+    identityForPage,
     openAccount,
     me,
     myView,
@@ -267,6 +278,7 @@ export function usePageBridge(
     user,
     submitForPage,
     fillForPage,
+    identityForPage,
     openAccount,
     me,
     myView,
@@ -283,7 +295,7 @@ export function usePageBridge(
   } | null>(null);
   /** hb.login(): once in a few seconds at most, whatever the page asks. */
   const loginAt = useRef(0);
-  const busy = useRef({ submit: false, mine: false });
+  const busy = useRef({ submit: false, mine: false, identity: false });
 
   useEffect(() => {
     if (activityId === null) return;
@@ -350,6 +362,20 @@ export function usePageBridge(
             ? state.fillForPage(activityId, ask.text)
             : notFilled("away"),
         });
+      if (ask.type === "identity") {
+        if (!state.onPage) return reply({ value: notIdentified("away") });
+        if (busy.current.identity)
+          return reply({ value: notIdentified("busy") });
+        busy.current.identity = true;
+        try {
+          reply({
+            value: await state.identityForPage(activityId, origin, ask.nonce),
+          });
+        } finally {
+          busy.current.identity = false;
+        }
+        return;
+      }
       if (!state.user) return reply({ value: null });
       // Only a 代码判定红包 keeps submissions: none here.
       if (state.hongbao && !state.hongbao.code)

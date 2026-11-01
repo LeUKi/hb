@@ -183,6 +183,100 @@ test.describe("附带网页", () => {
     ).toEqual({ filled: false, reason: "no_input" });
   });
 
+  test("hb.identity()（page-identity-design）：第一次先问“让这个网页知道你是谁？”，不允许拿到 denied；允许后拿到令牌，带上网页的 nonce，再要不再问；nonce 不合规矩直接报错", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.context().grantPermissions(["local-network-access"]);
+    await mockSession(page, viewer);
+    await mock(page);
+    const asked: { body: unknown; csrf: string | null }[] = [];
+    await page.route(`**/api/activities/${id}/page-identity`, (route) => {
+      asked.push({
+        body: route.request().postDataJSON(),
+        csrf: route.request().headers()["x-csrf-token"] ?? null,
+      });
+      return route.fulfill({
+        json: {
+          token: "header.claims.signature",
+          expiresAt: iso(now + 600_000),
+          user: { id: "10086", username: "xiaoming", name: "小明", level: 2 },
+        },
+      });
+    });
+    await page.route("https://puzzle.example.com/**", (route) =>
+      route.fulfill({
+        contentType: "text/html; charset=utf-8",
+        body: `<!doctype html><title>谜题</title><h1>今日第 3 题</h1><script src="${new URL(page.url()).origin}/sdk/v1.js"></script>`,
+      }),
+    );
+    await openApp(page, path);
+    await page.locator("#page-button").click();
+    await expect(
+      page
+        .frameLocator("iframe[title='puzzle.example.com 的网页']")
+        .getByText("今日第 3 题"),
+    ).toBeVisible();
+    const frame = page.frame({ url: pageUrl });
+    if (!frame) throw new Error("PAGE_FRAME_MISSING");
+    await frame.waitForFunction(() => "hb" in window);
+    type IdentityWindow = {
+      hb: { identity(options?: { nonce?: string }): Promise<unknown> };
+      answer?: unknown;
+    };
+    const identity = (nonce?: string) =>
+      frame.evaluate((value) => {
+        const win = window as unknown as IdentityWindow;
+        win.answer = undefined;
+        win.hb
+          .identity(value === undefined ? undefined : { nonce: value })
+          .then((answer) => {
+            win.answer = answer;
+          });
+      }, nonce);
+    const answer = async () => {
+      await frame.waitForFunction(
+        () => (window as unknown as IdentityWindow).answer !== undefined,
+      );
+      return frame.evaluate(() => (window as unknown as IdentityWindow).answer);
+    };
+    // Not a 代码判定红包: who they are, only.
+    await identity("nonce-1234");
+    const ask = page.getByRole("dialog", { name: "让这个网页知道你是谁？" });
+    await expect(ask).toContainText(
+      "puzzle.example.com 会知道你的用户名和 ID。只对这个红包有效。",
+    );
+    await ask.getByRole("button", { name: "不允许" }).click();
+    expect(await answer()).toEqual({ identified: false, reason: "denied" });
+    expect(asked).toEqual([]);
+    // Asked again; 允许 gives the token, the nonce signed in.
+    await identity("nonce-1234");
+    await ask.getByRole("button", { name: "允许", exact: true }).click();
+    expect(await answer()).toEqual({
+      identified: true,
+      token: "header.claims.signature",
+      expiresAt: iso(now + 600_000),
+      user: { id: "10086", username: "xiaoming", name: "小明", level: 2 },
+    });
+    expect(asked).toEqual([
+      { body: { nonce: "nonce-1234" }, csrf: expect.any(String) },
+    ]);
+    // Allowed: not asked again.
+    await identity();
+    expect(await answer()).toMatchObject({ identified: true });
+    await expect(ask).toHaveCount(0);
+    expect(asked[1]).toEqual({ body: {}, csrf: expect.any(String) });
+    // A nonce outside the rules never leaves the page.
+    expect(
+      await frame.evaluate(() =>
+        (window as unknown as IdentityWindow).hb.identity({ nonce: "短" }).then(
+          () => "answered",
+          (error: Error) => error.message,
+        ),
+      ),
+    ).toBe("hb.identity：nonce 要是 8–128 个字母、数字或 -_.~");
+  });
+
   test("hb.me()、hb.now()、hb.login()（judge-page §11.12）：登录的人读到自己的情况和服务器时间；游客 me() 是没登录，login() 要点按钮才弹登录卡片", async ({
     page,
   }) => {

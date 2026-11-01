@@ -78,7 +78,7 @@
   - `minEach`：每份至少，`{ min, default }`；
   - `deadline`：截止，默认时长；
   - `prompt`：领取提示的默认值；
-  - `humanCheck`：建议打开领取前人机验证（默认打开，红包作者能关）；
+  - `humanCheck`：建议打开领取前人机验证（挑了判定器就替他打开，红包作者能关）；开发文档让写判定器的 Agent 默认别写（[kit-guide-design](kit-guide-design.md) 第 3 节，2026-11-01）；
   - `title`：红包标题的默认值，最多 100 个字（2026-10-29 用户要，见 4.1）；
   - `note`：说明的默认值，写法同发红包时的说明（一个回车就换行，能放 `[文字](#附带网页)`），最多 2000 个字（同上）。
   - `pageAutoOpen`：建议打开红包页时自动打开附带网页（红包作者能关；有附带网页才起作用，[attached-page-design](attached-page-design.md) 2.7；2026-10-31 用户要）。

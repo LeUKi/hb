@@ -2,8 +2,10 @@
 <!--
   附带网页模板：红包页旁边显示的网页，接好了红包站的 SDK。
   - 本地看效果：npm run page，浏览器打开它写的地址（左边是假红包页）。
-  - 能做的：读红包的公开信息和判定器的公开数据（view）、收新的动态、替看的人提交、读他自己的提交。
-    类型见 hb.d.ts，说明见 AGENTS.md 的“附带网页”。
+  - 能做的：读红包的公开信息和判定器的公开数据（view）、收新的动态、替看的人提交、读他自己的提交、
+    给网页自己的后端拿身份令牌（hb.identity）。类型见 hb.d.ts，做法见 AGENTS.md 的“带网页的玩法”。
+  - 照着做：输赢只由 judge.js 算，网页照着 view.data 画；提交时按钮写“判定中”；冷却倒数；没登录给登录按钮；
+    单独打开时显示说明；先按手机设计（手机上网页在底部抽屉里）。
   - 改完放到静态托管上（比如 Cloudflare Workers、GitHub Pages），把地址写进 judge.js 的 meta.page。
 -->
 <html lang="zh-CN">
@@ -37,6 +39,8 @@
         <input id="input" placeholder="输入暗号" autocomplete="off" />
         <button id="submit" type="submit" disabled>提交</button>
       </form>
+      <!-- 没登录：点了请红包页弹出登录卡片（hb.login 要在点击里调用） -->
+      <button id="login" type="button" hidden>登录后开始</button>
       <div id="said"></div>
       <section>
         <div class="muted">动态</div>
@@ -50,6 +54,17 @@
     <script>
       const $ = (id) => document.getElementById(id);
       let open = false;
+      let pending = false;
+      /** 冷却到什么时候（服务器时间，毫秒，同 hb.now()）。 */
+      let cooldownUntil = 0;
+
+      // 能不能点提交：红包开着、不在判定中、没在冷却。
+      function refreshButton() {
+        const left = Math.ceil((cooldownUntil - (window.hb ? hb.now() : Date.now())) / 1000);
+        $("submit").disabled = !open || pending || left > 0;
+        $("submit").textContent = pending ? "判定中" : left > 0 ? `${left} 秒后再提交` : "提交";
+      }
+      setInterval(refreshButton, 500);
 
       // 没判定时，按原因说一句话（原因的全表见 hb.d.ts 的 HbReason）。
       const reasons = {
@@ -79,12 +94,21 @@
           parts.push(hongbao.endedByCode ? "判定器结束了这个红包" : "已结束");
         $("facts").textContent = parts.join(" · ");
         open = hongbao.status === "active";
-        $("submit").disabled = !open;
+        refreshButton();
+      }
+
+      // 看的人自己的情况：没登录给登录按钮，冷却中倒数。
+      function showMe(me) {
+        $("login").hidden = me.signedIn;
+        cooldownUntil = me.signedIn ? (me.cooldownUntil ?? 0) : 0;
+        refreshButton();
       }
 
       function showView(view) {
         $("summary").hidden = !view?.summary;
         $("summary").textContent = view?.summary ?? "";
+        // 网页要画的东西从 view.data 来，判定器写进去时带个版本号（比如 { v: 2, ... }）：
+        // 改了网页，进行中的红包还跑开放时那一版判定器，网页要能读旧的版本。
       }
 
       function addLine(line) {
@@ -114,8 +138,9 @@
         event.preventDefault();
         const input = $("input").value.trim();
         if (!input) return;
-        $("submit").disabled = true;
-        $("said").textContent = "正在判定…";
+        pending = true;
+        refreshButton();
+        $("said").textContent = "";
         try {
           const result = await hb.submit(input);
           if (result.judged) {
@@ -130,9 +155,12 @@
             $("said").textContent = result.message ?? reasons[result.reason] ?? "没有提交。";
           }
         } finally {
-          $("submit").disabled = !open;
+          pending = false;
+          refreshButton();
         }
       });
+
+      $("login").addEventListener("click", () => hb.login());
 
       // 没加载到 SDK（离线、被拦截）：照常显示，只是不能提交。
       if (!window.hb) {
@@ -142,8 +170,10 @@
           async ({ hongbao }) => {
             showHongbao(hongbao);
             showView(await hb.view());
+            showMe(await hb.me());
             hb.on("hongbao", showHongbao);
             hb.on("view", showView);
+            hb.on("me", showMe);
             hb.on("announce", addLine);
             await showMine();
           },

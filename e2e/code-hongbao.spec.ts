@@ -3745,6 +3745,7 @@ test.describe("附带网页 SDK（judge-page §3、§11.8）", () => {
     on(kind: string, listener: (value: unknown) => void): () => void;
     submit(input: string): Promise<Record<string, unknown>>;
     mine(next?: string | null): Promise<unknown>;
+    identity(options?: { nonce?: string }): Promise<unknown>;
   };
   type GameWindow = { hb: Hb; heard?: [string, unknown][] };
 
@@ -3792,7 +3793,57 @@ test.describe("附带网页 SDK（judge-page §3、§11.8）", () => {
   }
 
   const allowDialog = (page: Page) =>
-    page.getByRole("dialog", { name: "让这个网页替你提交？" });
+    page.getByRole("dialog", { name: "让这个网页知道你是谁、替你提交？" });
+
+  // page-identity-design §3: allowed before 2026-11-01, submitting only.
+  test("以前只允许过替你提交：提交照旧不问；要身份时问合并后的许可", async ({
+    page,
+  }) => {
+    const { state } = await mockGame(page);
+    await page.addInitScript(
+      ([key]) => localStorage.setItem("hb.page-submit", JSON.stringify([key])),
+      [`${viewer.id} ${id} https://game.example.com`],
+    );
+    let signed = 0;
+    await page.route(`**/api/activities/${id}/page-identity`, (route) => {
+      signed += 1;
+      return route.fulfill({
+        json: {
+          token: "a.b.c",
+          expiresAt: new Date(Date.now() + 600_000).toISOString(),
+          user: {
+            id: "10086",
+            username: "viewer",
+            name: "测试领取者",
+            level: 2,
+          },
+        },
+      });
+    });
+    await openApp(page, path);
+    const frame = await openGame(page);
+    expect(
+      await frame.evaluate(() =>
+        (window as unknown as GameWindow).hb.submit("50"),
+      ),
+    ).toMatchObject({ judged: true });
+    await expect(allowDialog(page)).toHaveCount(0);
+    expect(state.submissions).toHaveLength(1);
+    // Who they are was never allowed: asked now, for both.
+    await frame.evaluate(() => {
+      const win = window as unknown as GameWindow & { answer?: unknown };
+      win.hb.identity().then((answer) => {
+        win.answer = answer;
+      });
+    });
+    await allowDialog(page)
+      .getByRole("button", { name: "允许", exact: true })
+      .click();
+    await frame.waitForFunction(
+      () => (window as unknown as { answer?: unknown }).answer !== undefined,
+    );
+    expect(signed).toBe(1);
+  });
 
   test("hb.ready() 给红包的公开信息和看的人的昵称；第一次提交先问，允许以后拿到结果，判定中的那一行在页面上的我的记录最上面；冷却中给秒数，之后不再问；hb.mine() 读自己的提交", async ({
     page,
@@ -3842,7 +3893,7 @@ test.describe("附带网页 SDK（judge-page §3、§11.8）", () => {
     const dialog = allowDialog(page);
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText(
-      "game.example.com 会替你提交输入，提交的内容和结果会出现在你的「我的记录」里，冷却和人机验证照旧。只对这个红包有效。",
+      "game.example.com 会知道你的用户名和 ID，并能替你提交输入；提交的内容和结果会出现在你的「我的记录」里，冷却和人机验证照旧。只对这个红包有效。",
     );
     expect(state.submissions).toEqual([]);
     await dialog.getByRole("button", { name: "允许", exact: true }).click();

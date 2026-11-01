@@ -9,7 +9,11 @@ import {
   judgeInputSchema,
   type PublicJudge,
 } from "./judge";
-import { type AttachedPage, pageUrlProblem } from "./page-url";
+import {
+  type AttachedPage,
+  PAGE_IDENTITY_NONCE,
+  pageUrlProblem,
+} from "./page-url";
 import {
   amountToMinor,
   type LdcOpeningBlockedReason,
@@ -1062,6 +1066,16 @@ export const passwordSolveSchema = z.strictObject({
 export type PasswordClaimInput = z.infer<typeof passwordSolveSchema>;
 /** A Turnstile token, sent once the 红包 asked for it (HUMAN_CHECK_REQUIRED). */
 const humanTokenSchema = z.string().min(1).max(2048).optional();
+/** 附带网页认人 (docs/page-identity-design.md §2): asking for a token. */
+export const pageIdentityRequestSchema = z
+  .object({
+    nonce: z
+      .string()
+      .regex(PAGE_IDENTITY_NONCE, "nonce 要是 8–128 个字母、数字或 -_.~")
+      .optional(),
+  })
+  .strict();
+
 export const claimActivitySchema = z.union([
   z.strictObject({
     ...passwordSolveSchema.shape,

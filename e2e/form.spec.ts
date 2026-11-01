@@ -595,11 +595,12 @@ test.describe("发红包", () => {
     for (const title of [
       "给 AI 的说明",
       "1. 允许红包站嵌入",
-      "2. 沿用网站自己的登录",
-      "3. 没登录过：在新窗口里登录",
-      "4. 知道是哪个红包",
-      "5. 接上红包站的 SDK",
-      "6. 能做和不能做的",
+      "2. 认出看的人：用红包站的身份",
+      "3. 沿用网站自己的登录",
+      "4. 没登录过：在新窗口里登录",
+      "5. 知道是哪个红包",
+      "6. 接上红包站的 SDK",
+      "7. 能做和不能做的",
     ])
       await expect(page.getByRole("heading", { name: title })).toBeVisible();
     // 接上 SDK (judge-page §11.8): the one line, from this site.
@@ -626,8 +627,19 @@ test.describe("发红包", () => {
     await expect(
       page.getByText("Set-Cookie: session=…; Path=/; Secure; HttpOnly"),
     ).toBeVisible();
+    // 认人 (page-identity-design §5): the page asks, its server checks.
+    await expect(
+      page.getByText(
+        /await hb\.identity\(\{ nonce \}\) 拿一个红包站签名的身份令牌/,
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByText(
+        /createRemoteJWKSet\(new URL\("https?:\/\/\S+\/api\/page-identity\/keys"\)\)/,
+      ),
+    ).toBeVisible();
     // The anchors the form's links open at.
-    for (const id of ["ai", "embed", "login", "sdk"])
+    for (const id of ["ai", "embed", "identity", "login", "sdk"])
       await expect(page.locator(`#${id}`)).toHaveCount(1);
   });
 

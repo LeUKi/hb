@@ -32,7 +32,6 @@ export const params = [
 
 export const hongbao = {
   prompt: "输入口令",
-  humanCheck: true,
 };
 
 /** @param {import("../../judge").Params} params */

@@ -2,6 +2,23 @@
 
 这个目录是“代码判定红包”（lafish的红包站）的本地开发包。红包作者写一个 `judge.js`：每次有人在红包页提交一行输入，平台调用它一次，按它的返回给这个人加钱、减钱，决定什么时候结算。你要帮他写的是 `judge.js` 和它的测试 `tests.json`，需要时再改 `simulate.json`。下面是代码协议第五版（第四版加上每个人的待结算、自己的状态、只给自己看的数据和同桌的人；第四版是第三版加上公开数据、动态和提前结束；第三版是第二版加上参数；第二版是第一版加上联网）的全部规则。
 
+## 要点（先读）
+
+<!-- 要点：AGENTS.md 开头、Cursor 规则和网站 /help/code 的“给 AI 的说明”都照这一段，测试核对一字不差 -->
+1. 动手前先问清楚：玩法（输入什么、怎么算输赢）、奖池多大、谁能玩、每人能试几次、什么时候结算、要不要附带网页、要不要自己的后端、要不要联网。没说的按下面的默认做。
+2. 人机验证默认不开：不写 `hongbao.humanCheck`。只有红包作者要求，或者玩法很容易被脚本刷（比如按等级白送），才写，并告诉他代价：有些网络和浏览器加载不出验证，这些人领不了。
+3. 格子、卡牌、棋盘、动画这类玩法做成带附带网页的。带网页的三件事一起做：`meta.page` 写网页地址；`hongbao.pageAutoOpen: true`，进红包页就打开网页；`hongbao.note` 第一行就是打开网页的按钮，比如 `[打开矿洞夺宝，点格子开始挖宝](#附带网页)`，规则写在下面（说明长了会折叠，按钮放在后面要点“展开”才看得到）。
+4. 每个输入都当成手打的来校验：网页可以被绕过，玩家能直接在指令框里提交。
+5. 每个人都要有结算的出口：机会用完、牌打完时写 `settle: true`。平台不限提交次数，要限就按 `user.attempts` 自己拒绝。
+6. 钱和输赢只由 `judge.js` 算：网页只照着 `view.data` 和 `player.view` 画；自己的后端算出的结果，要经判定器联网核对才算数。
+7. 联网失败要在代码里接住，回一句话、不加钱；没接住算出错，连续出错 5 次红包会暂停领取。
+8. 网页的后端要认人，用 `hb.identity()` 拿令牌、在后端验证；`hb.ready()` 里的昵称只能用来显示。
+9. 会变的东西（答案、范围、次数、几个人能领）做成参数，别写死。
+10. 写完跑 `npm test` 和 `npm run check`，照输出改，“提醒”也要看；不删测试凑数。
+<!-- 要点到这里 -->
+
+按情况读下面的几节：每次都读“代码协议（第五版）”“`tests.json`”“常见错误”；带网页读“带网页的玩法”；网页的后端要知道是谁读“认人（鉴权）”；有自己的后端读“自有后端”；人多、热闹的玩法读“热闹的玩法”；要发出去之前读“上线前”。
+
 ## 怎么干活
 
 1. 只改 `judge.js`、`tests.json`、`simulate.json`，带附带网页的玩法再加 `page/` 里的网页。`runtime/`、`cli/`、`*.d.ts`、`*.schema.json`、`package.json` 都不要动：`runtime/` 和网站上跑的是同一份。
@@ -176,8 +193,8 @@ export async function judge(submission) {
 - 网站按声明校验，代码收到的都是对的：文字去掉了首尾空白；没填的选填项，开关是 `false`，列表和表格是 `[]`，其他是 `null`。整份最大 16 KB。
 - 保密参数（`secret: true`）：开放时只公布参数封存值，结束后和代码、种子一起公开。回复里会不会透露它，要看代码怎么写。
 - `export function check(params, hongbao)`（可选）：查几项合起来对不对，比如“最小不能大于最大”“奖池够不够每份 0.01”。`hongbao` 是 `{ title, total, count, minEach }`（`count`、`minEach` 同 `submission.hongbao` 的兼容值）。返回问题的数组 `[{ key, message }]`（`key` 是参数的 `key`，`message` 最多 100 个字），没问题返回 `[]`。发红包的人填参数时在判定器里跑，不能联网，`Math.random()` 每次都一样。
-- `export const hongbao = { … }`（可选）：用它发的红包在“发多少”的默认值和范围，只能收窄网站的规则：`total: { min, max, default }`（金额是整数分）、`deadline: { value, unit }`（默认截止时长，`unit` 是 `"minutes"`、`"hours"` 或 `"days"`）、`prompt`（领取提示的默认值，最多 40 个字）、`humanCheck`（建议打开领取前人机验证）、`pageAutoOpen`（建议打开红包页时自动打开附带网页，适合主要在网页里玩的红包；有附带网页才起作用）、`title`（红包标题的默认值，最多 100 个字）、`note`（说明的默认值，最多 2000 个字，写法同发红包时的说明：一个回车就换行，`[文字](#附带网页)` 是打开附带网页的按钮，没有网页时只剩文字）。标题和说明是挑了这个判定器时替发红包的人填好的，他没改过的才跟着判定器换。以前的 `count`（份数）和 `minEach`（每份至少）不起作用了，`npm run check` 会提醒；要几个人能领，做成参数。
-- `export const meta = { name, description, page }`（可选）：判定器的名字（最多 20 个字）和一句说明（最多 60 个字），贴代码时自动填好，之后以网站上的为准。page 是判定器带的附带网页（https，规则同附带网页），用它发红包时替发红包的人填好；怎么接见 https://hb.lafi.sh/help/page。
+- `export const hongbao = { … }`（可选）：用它发的红包在“发多少”的默认值和范围，只能收窄网站的规则：`total: { min, max, default }`（金额是整数分）、`deadline: { value, unit }`（默认截止时长，`unit` 是 `"minutes"`、`"hours"` 或 `"days"`）、`prompt`（领取提示的默认值，最多 40 个字）、`humanCheck`（建议打开领取前人机验证；默认别写，见要点第 2 条）、`pageAutoOpen`（建议打开红包页时自动打开附带网页；带网页的玩法都写上，有附带网页才起作用）、`title`（红包标题的默认值，最多 100 个字）、`note`（说明的默认值，最多 2000 个字，写法同发红包时的说明：一个回车就换行，`[文字](#附带网页)` 是打开附带网页的按钮，没有网页时只剩文字；带网页的第一行就放这个按钮）。标题和说明是挑了这个判定器时替发红包的人填好的，他没改过的才跟着判定器换。以前的 `count`（份数）和 `minEach`（每份至少）不起作用了，`npm run check` 会提醒；要几个人能领，做成参数。
+- `export const meta = { name, description, page }`（可选）：判定器的名字（最多 20 个字）和一句说明（最多 60 个字），贴代码时自动填好，之后以网站上的为准。`page` 是判定器带的附带网页（https，规则同附带网页），用它发红包时替发红包的人填好；怎么做见“带网页的玩法”。
 - 这几个导出写得不对，`npm test` 不跑，`npm run check` 写“参数声明写得不对”和哪里不对。
 
 ### 公开数据和动态（可选）
@@ -235,6 +252,143 @@ export function judge({ input, state, user, hongbao }) {
 - 代码：`{ ok: true, amount }`、`{ ok: false }` 照旧能用，是简写。`even()`、`lucky()` 传上 n（以前的份数），最好做成参数；用了 `hongbao.count`、`hongbao.remainingCount`、`share` 来数份数的地方，换成自己的参数和 `hongbao.unclaimed`。
 - 导出的 `hongbao` 里删掉 `count` 和 `minEach`。
 - 测试：`hongbao` 里删掉 `count` 和 `minEach`；`expect` 里的 `asked` 换成 `add`，`note` 删掉；“最后一份发完剩下的”这类断言按新规则改（没有最后一份了，`even(n)` 分到第 n 个人时给全部）。
+
+## 带网页的玩法
+
+代码判定红包可以带一个自己的网页，显示在红包页旁边（手机上在底部抽屉里），做格子、卡牌、棋盘、按钮、动画这些输入框做不了的玩法。现在大多数玩法都带网页。判定照旧只认 `judge.js`，网页最坏只是显示得不对。
+
+### 判定器这边
+
+- `export const meta = { name, description, page }`：`page` 写网页地址（https，不带端口），用它发红包时网页一起带上。
+- `export const hongbao = { pageAutoOpen: true, note: "[打开数字炸弹，点格子开始猜](#附带网页)\n规则……", … }`：`pageAutoOpen` 让人一进红包页就打开网页；`note` 第一行就是打开网页的按钮，规则写在下面（说明长了会折叠，按钮放在后面要点“展开”才看得到）。
+- `view.data` 写网页要画的、大家都看得到的东西；`player.view.data` 写只给这个人看的（他的手牌、剩几次）。
+
+### 发布顺序
+
+1. 写 `judge.js` 和测试，`npm test` 过。
+2. 改 `page/index.html`（模板接好了 SDK），`npm run page` 打开假红包页试：换几个人、`npm run page -- --cooldown 3` 试冷却、选“没登录”试登录。
+3. 网页放到静态托管上：Cloudflare Workers、GitHub Pages、Netlify、Vercel 的正式部署都能嵌进红包页；Cloudflare Drop 拖上去的要先认领，没认领会先弹安全验证，嵌不进来。地址写进 `meta.page`。
+4. `npm run check` 过，去网站部署判定器。
+
+### 网页和判定器怎么配合
+
+- 输赢只由判定器算：判定器在 `view` 里写清楚格子、区间、谁猜过什么，网页照着画，不在网页里自己算谁赢了。
+- **网页是活的，判定器代码是冻结的**：改了网页，进行中的红包马上用上新网页，但它们还跑开放时的那一版判定器。所以 `view.data` 里放一个版本号（比如 `{ v: 2, … }`），网页读到旧版本照旧版本画，改网页就不会弄坏还没结束的红包。
+- 每个人自己的东西放 `player.view`，别塞进公开的 `view`：既保密，又不用每次推给所有人。
+- 网页里不存游戏状态，刷新、换设备都以判定器为准（`hb.view()`、`hb.myView()`、`hb.mine()`）。
+
+### 网页这边
+
+- 提交时按钮写“判定中”、不能再点，用 `hb.submit()` 的回答更新界面。没判定的每种原因都给一句提示：冷却用 `hb.me()` 的 `cooldownUntil` 和 `hb.now()` 倒数；没登录放一个按钮，点击时调 `hb.login()`。
+- 用 `hb.on(...)` 订阅变化，不要自己轮询。
+- 先按手机设计：手机上网页在底部抽屉里（屏幕高的九成），宽屏上网页窗口最窄约 360 像素。
+- 单独打开网页（不在红包页里）时 `hb.ready()` 会报错，显示一段说明，告诉他去红包页玩。
+- 网页的规则同附带网页：https、不带端口，不能放收钱、交易或让人输账号密码的东西。更多见 https://hb.lafi.sh/help/page。
+
+### SDK
+
+网页里加 `<script src="https://hb.lafi.sh/sdk/v1.js"></script>`，就有全局的 `hb`。每个方法的返回和每种原因写在 `page/hb.d.ts`。
+
+- `await hb.ready()`：`{ hongbao, viewer, theme }`。`hongbao` 有 `id`、`title`、`status`（`draft`、`active`、`ended`）、`unclaimed`（奖池还剩多少，比如 `"12.50"`）、`judged` 等；`viewer` 是 `{ signedIn: true, name }` 或 `{ signedIn: false }`，只有昵称。单独打开网页时它会报错。
+- `await hb.view()`：公开数据 `{ summary, data, at }`，没有时 `null`。`hb.on("view" | "hongbao" | "announce" | "me" | "myView", fn)` 订阅变化，返回取消订阅的函数；`announce` 每次一条 `{ n, at, user: { name, avatar }, text }`。
+- `await hb.submit(input)`：替看的人提交一次，同一个红包第一次会先问他（和 `hb.identity()` 一起问）。判定了是 `{ judged: true, claimed, amount, unit, reply, added, pending, settled }`；没判定是 `{ judged: false, reason, seconds, message }`，给玩的人看的话由网页自己写。
+- `await hb.fill(text)`：把内容填进指令框，不提交，按提交的是看的人自己；所有红包都能用。
+- `await hb.me()`：看的人自己的情况：能不能参加、冷却到什么时候（`cooldownUntil`）、领到多少、待结算（`pending`）、结算了没有。`await hb.myView()`：判定器写给他自己的数据。`await hb.mine(next)`：他自己的记录，一次 20 条。
+- `hb.now()`：按服务器校准过的当前时间（毫秒），倒计时用它。`await hb.login()`：在看的人点了按钮时请红包页弹出登录卡片。
+- `await hb.identity({ nonce })`：红包站签名的身份令牌，交给网页自己的后端验证，见“认人（鉴权）”。
+- 做不到：读红包站的 Cookie 和登录信息、看别人的输入、转账、发红包、改红包、绕过冷却和人机验证。
+- 样例：`examples/number-bomb`（数字炸弹）和 `examples/scratch-card`（刮刮乐），判定器和网页都有。
+
+## 认人（鉴权）
+
+先分清要不要后端认人：
+
+1. **不需要后端**：每个人自己的数据（进度、手牌、剩几次）放判定器的 `player.state`（只有代码看得到）和 `player.view`（只给他看，网页用 `hb.myView()` 读）。红包站已经按登录的人分开，什么都不用做。
+2. **后端要认人**（存档、排行榜、防冒充）：网页用 `hb.identity()` 拿令牌，后端验证后才信。`hb.ready()` 里的昵称只能用来显示，谁都能伪造。
+3. **后端算出的结果要发钱**：后端不直接发钱，见“自有后端”。
+
+### 令牌
+
+- `await hb.identity({ nonce })`：拿到是 `{ identified: true, token, expiresAt, user: { id, username, name, level } }`；没拿到是 `{ identified: false, reason, message }`，`reason` 有 `login`（没登录）、`denied`（他不允许）、`away`、`busy`、`unavailable`、`error`。`user` 只用来先显示。
+- 令牌是 JWT（ES256），有效 10 分钟，过期了再调一次，不会再问他。内容：`iss`（`https://hb.lafi.sh`）、`aud`（你网页的来源）、`sub`（LINUX DO 数字 ID，和判定器的 `submission.user.id` 是同一个数）、`username`、`name`、`level`、`hongbao`（红包编号）、`iat`、`exp`、`jti`、你带的 `nonce`。
+- 公钥：`https://hb.lafi.sh/api/page-identity/keys`（JWKS）。
+
+### 后端验令牌
+
+- 用公钥验签，按 `kid` 找钥匙（JWT 库读远程公钥时会缓存）。
+- 核对 `iss` 是 `https://hb.lafi.sh`、`aud` 是自己网页的来源、没过期（留 30 秒误差）、`hongbao` 是自己认的红包。
+- 防重放：后端先发一个一次性的 `nonce`（8–128 个字母、数字或 `-_.~`），网页带着它要令牌，后端核对后作废。
+- 用 `sub` 认人，不用用户名（用户名会改）；数据按“红包编号 + 用户 ID”存。
+
+```js
+// Cloudflare Workers 或 Node 18+，npm install jose
+import { createRemoteJWKSet, jwtVerify } from "jose";
+
+const keys = createRemoteJWKSet(
+  new URL("https://hb.lafi.sh/api/page-identity/keys"),
+);
+
+export async function whoIs(request) {
+  const token = request.headers.get("Authorization")?.replace(/^Bearer /, "");
+  if (!token) return null;
+  const { payload } = await jwtVerify(token, keys, {
+    issuer: "https://hb.lafi.sh",
+    audience: "https://game.example.com", // 你网页的来源
+    algorithms: ["ES256"],
+    clockTolerance: 30,
+  });
+  return payload; // payload.sub 是 LINUX DO 数字 ID，payload.hongbao 是红包编号
+}
+```
+
+### 网页这边
+
+- 令牌放在内存里，用 `Authorization: Bearer` 请求头发给后端；不放进本地存储、网址和日志。这样也不依赖第三方 Cookie，各浏览器都能用。
+- 后端的跨域只放行自己网页的来源。
+- 在玩家点“开始”这类按钮时再要，不要一打开网页就要（第一次会弹许可）。
+- 他不允许：降级成只读或游客模式，给一个按钮让他改主意；没登录就在点击里调 `hb.login()`。
+- 本地 `npm run page` 也能签：`iss` 是假红包页的地址，公钥在它的 `/api/page-identity/keys`。后端开发时认它，上线后只认 `https://hb.lafi.sh`。
+
+## 自有后端
+
+网页有自己的服务器时（存档、排行榜、算复杂的结果），记住两条：钱和输赢以判定器为准；后端出问题不能拖垮红包。
+
+### 和判定器的分工
+
+- 后端算出的结果要发钱：后端给一个“核对接口”，网页提交一个凭证（比如通关码），判定器用 `fetch` 联网问后端这个凭证算不算，再决定加多少（见“联网”）。
+- **联网失败要接住**：后端挂了、超时，`fetch()` 会抛错；没接住这次判定算出错，连续 5 次红包暂停领取。接住它，回一句“服务器忙，稍后再试”，不加钱。
+- **核对接口要幂等**：同一个凭证问几次答案都一样，“标记已领”不能在第一次被问时就不可逆地扣掉（判定写库失败时会重判、再问一次）。
+- 判定器和后端之间用一把只有你们知道的密钥（放保密参数里），不用玩家的身份令牌。代码和保密参数在红包结束后公开，结束后换掉这把密钥。
+- 后端的返回在红包结束后会公开给本人（他能看到自己那几次判定拿到的返回），别放别人的数据。
+- 要快要小：单个请求 10 秒，整次判定最多 15 秒，返回最大 64 KB，只许 GET 和 POST，不跟随跳转。
+
+### 扛住开场
+
+- 开放时所有人几乎同时来（`pageAutoOpen` 让网页一起加载）：网页的静态文件放静态托管，后端只处理必要的请求。
+- 按用户（令牌的 `sub`）限流，防一个人狂刷。
+- 后端挂了网页要能降级：显示“服务器暂时连不上”，公开数据照样从红包站来（`hb.view()`）。
+- 读红包的公开信息几秒一次就够，能等判定器来问就别主动轮询。
+
+### 放在哪
+
+- 放在亚太：玩家大多在国内；联网时判定器在亚太调你的后端，每次判定都要等它。
+- https、默认端口；后端的跨域只放行自己网页的来源。
+
+### 数据和测试
+
+- 按“红包编号 + LINUX DO 数字 ID”存；对不上时以判定记录为准（红包作者能下载完整记录）；至少保留到核对完。
+- `tests.json` 给后端的每种返回都写一条：通过、不通过、500、超时、连不上，确认失败时不算出错、不加钱。
+- `npm run simulate -- --live` 或 `npm run page -- --live` 真连一次自己的后端；开场前自己压一下。
+
+## 热闹的玩法
+
+几十上百人同时玩时：
+
+- **别联网**：联网的判定一个一个判，每次最多等 15 秒，人多会排队；不联网的判定能好几个一起判。
+- **`view` 只在公开内容真的变了时写**：写一次就推给所有在看的人、网页重画一次。
+- **`announce` 只写值得看的事**（踩雷、大奖、结束），不要每次都写。
+- `state` 只存要用的，别把每次的输入都存进去。
+- 抽奖类防反复刷：`tools.random` 每次提交都不一样，玩家可以一直提交直到抽到好的。要么限次数，要么用 `tools.userRandom`（同一个人固定一个结果）。
 
 ## `tests.json`
 
@@ -348,28 +502,6 @@ export function judge({ input, state, user, hongbao }) {
 
 `hongbao` 和 `now`、`seed` 的写法同 `tests.json`，声明了参数的代码在顶层写 `params`；每次提交的写法同多步场景的一步（联网的代码写 `fetch`），只是没有 `expect`。和多步场景不同，已经结算的人、红包结束以后的提交不算错，照实写“已结算”“已结束”。代码导出了 `setup` 时，先跑它，写“开放时 setup”。最后到截止时间，还没结算的人一起结算。
 
-## 附带网页（可选）
-
-代码判定红包可以带一个自己的网页，显示在红包页旁边（手机上在底部抽屉里），用来做格子、按钮、动画这些输入框做不了的玩法。网页接上红包站的 SDK，能读红包的公开信息和判定器的公开数据（`view`）、收新的动态、替看的人提交、把内容填进指令框、读他自己的记录和只给他看的数据；判定照旧只认 `judge.js`，网页最坏只是显示得不对。
-
-- 模板 `page/index.html`：一个 HTML 文件，接好了 SDK，照着改。类型在 `page/hb.d.ts`。
-- 引用：`<script src="https://hb.lafi.sh/sdk/v1.js"></script>`，网页里就有全局的 `hb`：
-  - `await hb.ready()`：`{ hongbao, viewer, theme }`。`hongbao` 有 `title`、`status`（`draft`、`active`、`ended`）、`shares`（代码判定红包没有份数，是 `null`）、`pool`、`unclaimed`（代码判定红包的奖池还剩多少，比如 `"12.50"`）、`judged` 等；`viewer` 是 `{ signedIn: true, name }` 或 `{ signedIn: false }`。单独打开网页时它会报错，照常显示一段说明就行。
-  - `await hb.view()`：公开数据 `{ summary, data, at }`，没有时 `null`。`hb.on("view" | "hongbao" | "announce", fn)` 订阅变化，返回取消订阅的函数；`announce` 每次一条 `{ n, at, user: { name, avatar }, text }`。
-  - `await hb.submit(input)`：替看的人提交一次，同一个红包第一次红包页会问他允不允许。判定了是 `{ judged: true, claimed, amount, unit, reply, added, pending, settled }`：`claimed` 结算了、领到了钱，`added` 这次加减了多少（`"0.50"`、`"-0.20"`），`pending` 之后的待结算，`settled` 这次结算了他；没判定是 `{ judged: false, reason, seconds, message }`，`reason` 有 `denied`、`login`、`cooldown`（`seconds` 是还剩几秒）、`busy`、`human_check`、`not_in_scope`、`already_claimed`、`not_open`、`ended`、`paused`、`judge_failed`、`try_later`、`invalid_input`、`unconfirmed`、`away`、`not_code`、`error`，意思见 `page/hb.d.ts`。给玩的人看的话由网页自己写。
-  - `await hb.fill(text)`：把内容填进这个红包的指令框，不提交，按提交的是看的人自己，所以不用问他；所有红包都能用。填好是 `{ filled: true }`；没填是 `{ filled: false, reason, message }`，`reason` 有 `no_input`（直接领的红包不用输入）、`login`、`not_open`、`ended`、`paused`、`already_claimed`、`not_in_scope`、`busy`、`invalid_input`（超过 200 字或有换行）、`away`。
-  - `await hb.me()`：看的人自己的情况，`hb.on("me", fn)` 订阅变化。没登录是 `{ signedIn: false }`；登录了是 `{ signedIn: true, name, open, why, cooldownUntil, claim, registered, pending, settled }`：`open` 现在能不能参加，不能时 `why` 是原因（`not_open`、`ended`、`paused`、`already_claimed`、`not_in_scope`）；`cooldownUntil` 冷却到什么时候（服务器时间，毫秒），没在冷却时 `null`；`claim` 领到的 `{ amount, unit, payment }`，`payment` 是 `paid`、`paying`、`failed` 或 `none`；`pending` 他的待结算，还没被判定过时 `null`；`settled` 结算了没有。
-  - `await hb.myView()`：判定器写给他自己的数据（`player.view`）`{ summary, data }`，没有时 `null`；`hb.on("myView", fn)` 订阅变化。
-  - `hb.now()`：按服务器校准过的当前时间（毫秒），倒计时用它；没登录时是本机时间。
-  - `await hb.login()`：请红包页弹出登录卡片，要在看的人点了网页里的按钮时调用。
-  - `await hb.mine(next)`：他自己的记录，新的在前，一次 20 条，`{ total, items: [{ n, at, input, claimed, amount, reply, added, pending, settled, by }], next }`；别人的判定通过 `others` 改到他的那条带 `by`（那个人的昵称，`n` 是那个人的第几次），没有 `input`，`reply` 是判定器写给他的话；没登录时 `null`。
-  - 做不到：读红包站的 Cookie 和登录信息、看别人的输入、转账、发红包、改红包、绕过冷却和人机验证。
-- 网页要显示的东西都从 `view.data` 来：判定器在 `view` 里写清楚格子、区间、猜过的数，网页照着画，不要在网页里自己算谁赢了。秘密照旧放在 `state`。
-- `npm run page`：在本地打开一个假红包页（下面“五个命令”），提交交给本地的 `judge.js` 跑。
-- 放到网上：网页放到静态托管上，比如 Cloudflare Workers、GitHub Pages、Netlify、Vercel 的正式部署（默认域名都能嵌进红包页）；Cloudflare Drop 拖上去的页面要先认领，没认领会先弹安全验证，嵌不进来。然后把地址写进 `meta.page`（见“参数”上面的 `meta`），部署判定器：用它发红包时网页一起带上。
-- 网页的规则同附带网页：https、不带端口，不能放收钱、交易或让人输账号密码的东西。更多见 https://hb.lafi.sh/help/page。
-- 样例：`examples/number-bomb`（数字炸弹）和 `examples/scratch-card`（刮刮乐），判定器和网页都有。
-
 ## 五个命令
 
 - `npm test`：先按网站部署的规则查 import，不过就列出第几行什么问题、不跑测试；然后每条一行 `✓ 名字（3 毫秒）` 或 `✗ 名字：哪里不对`，`console` 的输出缩进跟在那一条下面；最后 `测试 N / M 通过`。`npm test -- 名字` 只跑名字里含这几个字的。
@@ -452,4 +584,13 @@ export function judge({ player }, tools) {
 - **忘了限次数**：平台不限提交次数，靠猜的玩法要按 `user.attempts` 自己拒绝。
 - **测试写了线上不可能的情况**：比如 `claims` 的时间晚于 `now`、已领的加上 `players` 的待结算达到总奖池、提交的人已经在 `claims` 里。
 - **把 `expect.add` 当成实际加上的**：`add` 是代码给的数，实际加上的看 `pending`（扣到 0 为止、加不过奖池里还没被占的）。
+- **写了 `hongbao.humanCheck: true`**：用它发的红包默认打开人机验证，红包作者常不明白为什么有，有些人还领不了。红包作者没要求就别写。
+- **打开网页的按钮放在说明最后**：说明长了会折叠，要点“展开”才看得到。放第一行。
+- **带网页却没写 `pageAutoOpen: true`**：玩家进了红包页还要自己找网页。
 - **还在测试里写份数**：`hongbao.count`、`hongbao.minEach`、`expect.asked`、`expect.note` 第五版都没有了，测试会不通过。
+
+## 上线前
+
+- 先发一个小红包试一轮：奖池小、截止时间短，自己和朋友玩一遍，看红包页的判定记录和出错记录，再发大的。
+- `npm run simulate` 让几十个人走一遍，看钱的流向对不对、奖池会不会提前被占满。
+- 红包结束后用下载的完整记录 `npm run replay` 核对；联网用过的密钥换掉。

@@ -54,6 +54,20 @@ export function testCommand(
   options: CommandOptions,
 ): Promise<{ exitCode: number }>;
 
+/**
+ * npm run check's reminders of what a 红包 from this judge would start with
+ * that its sender would not want by default (人机验证 on; a 附带网页 not
+ * opening by itself, or its button not on the note's first line).
+ */
+export function defaultsReminders(declared: {
+  meta: { page?: string } | null;
+  hongbao: {
+    humanCheck?: boolean;
+    pageAutoOpen?: boolean;
+    note?: string;
+  } | null;
+}): string[];
+
 export function checkCommand(options: CommandOptions): Promise<{
   exitCode: number;
   fingerprint: string;

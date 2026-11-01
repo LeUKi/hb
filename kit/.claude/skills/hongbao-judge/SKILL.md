@@ -1,6 +1,35 @@
 ---
 name: hongbao-judge
-description: 写、改、测代码判定红包（lafish的红包站）的 judge.js、tests.json、simulate.json 和附带网页 page/，用这个开发包的 npm test、npm run check、npm run simulate、npm run replay、npm run page。
+description: 写、改、测“代码判定红包”（lafish的红包站）的判定器：judge.js、tests.json、simulate.json，带附带网页的玩法（page/、红包站 SDK 的 hb.submit、hb.identity、hb.me）和网页自己的后端。用这个开发包的 npm test、npm run check、npm run simulate、npm run replay、npm run page。
 ---
 
-规则、做法和要跑的命令都在开发包根目录的 `AGENTS.md`：动手前完整读一遍，照它做。
+动手前先读完下面的要点，再按“按情况读”去读开发包根目录 `AGENTS.md` 里对应的几节；代码协议的细节也在 `AGENTS.md`。
+
+<!-- 要点：AGENTS.md 开头、Cursor 规则和网站 /help/code 的“给 AI 的说明”都照这一段，测试核对一字不差 -->
+1. 动手前先问清楚：玩法（输入什么、怎么算输赢）、奖池多大、谁能玩、每人能试几次、什么时候结算、要不要附带网页、要不要自己的后端、要不要联网。没说的按下面的默认做。
+2. 人机验证默认不开：不写 `hongbao.humanCheck`。只有红包作者要求，或者玩法很容易被脚本刷（比如按等级白送），才写，并告诉他代价：有些网络和浏览器加载不出验证，这些人领不了。
+3. 格子、卡牌、棋盘、动画这类玩法做成带附带网页的。带网页的三件事一起做：`meta.page` 写网页地址；`hongbao.pageAutoOpen: true`，进红包页就打开网页；`hongbao.note` 第一行就是打开网页的按钮，比如 `[打开矿洞夺宝，点格子开始挖宝](#附带网页)`，规则写在下面（说明长了会折叠，按钮放在后面要点“展开”才看得到）。
+4. 每个输入都当成手打的来校验：网页可以被绕过，玩家能直接在指令框里提交。
+5. 每个人都要有结算的出口：机会用完、牌打完时写 `settle: true`。平台不限提交次数，要限就按 `user.attempts` 自己拒绝。
+6. 钱和输赢只由 `judge.js` 算：网页只照着 `view.data` 和 `player.view` 画；自己的后端算出的结果，要经判定器联网核对才算数。
+7. 联网失败要在代码里接住，回一句话、不加钱；没接住算出错，连续出错 5 次红包会暂停领取。
+8. 网页的后端要认人，用 `hb.identity()` 拿令牌、在后端验证；`hb.ready()` 里的昵称只能用来显示。
+9. 会变的东西（答案、范围、次数、几个人能领）做成参数，别写死。
+10. 写完跑 `npm test` 和 `npm run check`，照输出改，“提醒”也要看；不删测试凑数。
+<!-- 要点到这里 -->
+
+## 怎么干活
+
+1. 只改 `judge.js`、`tests.json`、`simulate.json`，带网页的玩法再改 `page/` 里的网页。`runtime/`、`cli/`、`*.d.ts`、`*.schema.json`、`package.json` 都不要动。
+2. 不装 npm 包；`judge.js` 只能是一个文件。
+3. 改了玩法就同时改测试：每条规则至少一条测试，靠状态或先后顺序的玩法写多步场景（`steps`）。
+4. `npm test` 最后一行是“测试 N / N 通过”、`npm run check` 最后一行是“可以去网站部署了”，才算写完。
+
+## 按情况读 `AGENTS.md`
+
+- 每次都读：“代码协议（第五版）”“`tests.json`”“常见错误”。
+- 带网页：“带网页的玩法”（发布顺序、网页和判定器怎么配合、SDK）。
+- 网页的后端要知道是谁：“认人（鉴权）”。
+- 有自己的后端（核对接口、存档、排行榜）：“自有后端”。
+- 人多、热闹的玩法：“热闹的玩法”。
+- 要发出去之前：“上线前”。

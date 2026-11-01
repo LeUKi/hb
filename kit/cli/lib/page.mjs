@@ -401,11 +401,12 @@ async function servePage(folder, sdkUrl, request, response) {
     .end(body);
 }
 
-const json = (response, value, status = 200) =>
+const json = (response, value, status = 200, headers = {}) =>
   response
     .writeHead(status, {
       "content-type": "application/json; charset=utf-8",
       "cache-control": "no-store",
+      ...headers,
     })
     .end(JSON.stringify(value));
 
@@ -457,6 +458,7 @@ export async function startPage({
   const params = await paramsOf(plan.params, plan.hongbao, sandbox);
   if ("problem" in params) await fail(params.problem);
 
+  const signer = await localSigner();
   const [host, sdk] = await Promise.all([
     readFile(new URL("../page/host.html", import.meta.url), "utf8"),
     readFile(new URL("../page/sdk-v1.js", import.meta.url), "utf8"),
@@ -520,6 +522,37 @@ export async function startPage({
         print(answer.line);
         for (const line of answer.logs ?? []) print(`    ${line}`);
         return json(response, { ...answer, state: game.state() });
+      }
+      // 认人 (docs/page-identity-design.md §4): signed with this run's own
+      // key, iss this fake page's address; a server under development
+      // checks it against these keys, and only the site's once live.
+      if (
+        request.method === "GET" &&
+        url.pathname === "/api/page-identity/keys"
+      )
+        return json(response, { keys: [signer.publicKey] }, 200, {
+          "access-control-allow-origin": "*",
+        });
+      if (request.method === "POST" && url.pathname === "/api/identity") {
+        const { who, nonce } = await bodyOf(request);
+        if (typeof who !== "string" || who === GUEST)
+          return json(response, { error: "没登录" }, 400);
+        const index = plan.people.indexOf(who);
+        const user = {
+          id: String(FIRST_PERSON + (index < 0 ? plan.people.length : index)),
+          username: who,
+          name: who,
+          level: TEST_DEFAULTS.user.level,
+        };
+        const identity = await signer.sign({
+          iss: hostUrl,
+          aud: pageOrigin,
+          user,
+          hongbao: TEST_HONGBAO_ID,
+          nonce: typeof nonce === "string" ? nonce : undefined,
+        });
+        print(`${who} 的身份令牌签给了网页（10 分钟）`);
+        return json(response, identity);
       }
       if (request.method === "POST" && url.pathname === "/api/reset") {
         await reopen();
@@ -605,4 +638,58 @@ export async function pageCommand({
   });
   await page.close();
   return { exitCode: 0 };
+}
+
+const base64Url = (bytes) =>
+  Buffer.from(bytes)
+    .toString("base64")
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll("=", "");
+
+/**
+ * 认人 on the fake page: a P-256 key made for this run, signing tokens as
+ * the site does (ES256 JWT, ten minutes); its public half is published at
+ * /api/page-identity/keys on the fake page.
+ */
+async function localSigner() {
+  const { privateKey, publicKey } = await crypto.subtle.generateKey(
+    { name: "ECDSA", namedCurve: "P-256" },
+    true,
+    ["sign", "verify"],
+  );
+  const kid = `local-${crypto.randomUUID().slice(0, 8)}`;
+  const { x, y } = await crypto.subtle.exportKey("jwk", publicKey);
+  const part = (value) =>
+    base64Url(new TextEncoder().encode(JSON.stringify(value)));
+  return {
+    publicKey: { kty: "EC", crv: "P-256", x, y, kid, alg: "ES256", use: "sig" },
+    async sign({ iss, aud, user, hongbao, nonce }) {
+      const issuedAt = Math.floor(Date.now() / 1000);
+      const expires = issuedAt + 600;
+      const signing = `${part({ alg: "ES256", typ: "JWT", kid })}.${part({
+        iss,
+        aud,
+        sub: user.id,
+        username: user.username,
+        name: user.name,
+        level: user.level,
+        hongbao,
+        iat: issuedAt,
+        exp: expires,
+        jti: crypto.randomUUID(),
+        ...(nonce ? { nonce } : {}),
+      })}`;
+      const signature = await crypto.subtle.sign(
+        { name: "ECDSA", hash: "SHA-256" },
+        privateKey,
+        new TextEncoder().encode(signing),
+      );
+      return {
+        token: `${signing}.${base64Url(new Uint8Array(signature))}`,
+        expiresAt: new Date(expires * 1000).toISOString(),
+        user,
+      };
+    },
+  };
 }

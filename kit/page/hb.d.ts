@@ -177,6 +177,45 @@ export type HbMe =
       settled: boolean;
     };
 
+/** hb.identity() 没拿到令牌的原因。 */
+export type HbIdentityReason =
+  /** 没登录：在看的人点了网页里的按钮时调 hb.login() */
+  | "login"
+  /** 他不允许 */
+  | "denied"
+  /** 网页不在它的红包页上 */
+  | "away"
+  /** 上一次 hb.identity() 还没回来 */
+  | "busy"
+  /** 这个红包没有附带网页，或者红包站暂时签不了 */
+  | "unavailable"
+  /** 别的错，message 是原因 */
+  | "error";
+
+/**
+ * hb.identity() 的结果。token 是红包站签名的 JWT（ES256，10 分钟），交给网页
+ * 自己的后端验证，后端只信它：公钥在 https://hb.lafi.sh/api/page-identity/keys，
+ * 要核对 iss（https://hb.lafi.sh）、aud（你网页的来源）、exp、hongbao（红包
+ * 编号）和你发的 nonce。user 只是方便网页先显示。
+ */
+export type HbIdentityResult =
+  | {
+      identified: true;
+      token: string;
+      /** 令牌什么时候过期（ISO 时间）；过期了再调一次，不会再问他 */
+      expiresAt: string;
+      user: {
+        /** LINUX DO 数字 ID（字符串），同令牌的 sub、判定器的 submission.user.id */
+        id: string;
+        username: string;
+        /** 昵称 */
+        name: string;
+        /** 信任等级 0–4，没有时 null */
+        level: number | null;
+      };
+    }
+  | { identified: false; reason: HbIdentityReason; message?: string };
+
 /** 判定器写给看的人自己的数据（判定结果的 player.view），只有他看得到。 */
 export interface HbMyView {
   summary: string | null;
@@ -242,6 +281,12 @@ export interface Hb {
    * 自己；所有红包都能用。text 可以是空的，最多 200 个字，不能有换行。
    */
   fill(text: string): Promise<HbFillResult>;
+  /**
+   * 拿一个红包站签名的身份令牌，交给网页自己的后端验证；所有带附带网页的红包都
+   * 能用。同一个红包第一次会先问他（代码判定红包和替你提交一起问）。nonce 可选：
+   * 后端先发的一次性随机串，8–128 个字母、数字或 -_.~，原样签进令牌，防重放。
+   */
+  identity(options?: { nonce?: string }): Promise<HbIdentityResult>;
   /** 看的人自己的记录（他的提交和别人的判定改到他的），新的在前，一次 20 条；没登录时 null。 */
   mine(next?: string | null): Promise<{
     total: number;

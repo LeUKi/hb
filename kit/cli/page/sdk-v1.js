@@ -186,6 +186,22 @@
       await ready();
       return ask("fill", { text });
     },
+    /**
+     * 一个红包站签名的身份令牌，交给网页自己的后端验证（后端只信令牌）；第一次会先问他。
+     * nonce 可选：后端先发的一次性随机串，8–128 个字母、数字或 -_.~，原样签进令牌。
+     */
+    async identity(options) {
+      const nonce = options?.nonce;
+      if (
+        nonce !== undefined &&
+        (typeof nonce !== "string" || !/^[A-Za-z0-9._~-]{8,128}$/.test(nonce))
+      )
+        throw new TypeError(
+          "hb.identity：nonce 要是 8–128 个字母、数字或 -_.~",
+        );
+      await ready();
+      return ask("identity", nonce === undefined ? {} : { nonce });
+    },
     /** 看的人自己的记录（他的提交和别人的判定改到他的），新的在前，一次 20 条；没登录时 null。 */
     async mine(next) {
       if (next !== undefined && next !== null && typeof next !== "string")

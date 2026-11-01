@@ -239,7 +239,7 @@ function hexEncode(bytes: Uint8Array) {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function base64UrlEncode(bytes: Uint8Array) {
+export function base64UrlEncode(bytes: Uint8Array) {
   // A piece at a time: spreading a large array (a 200 KB tests.json) into
   // one call overflows the stack.
   let binary = "";

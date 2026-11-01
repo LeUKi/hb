@@ -25,6 +25,8 @@ type ApiEnvVars = {
   /** Where Durable Objects are created, and new names for long-lived ones (runtime/objects.ts). */
   DO_LOCATION_HINT?: string;
   DO_NAME_PREFIX?: string;
+  /** 附带网页认人: private P-256 JWKs, the first signing (activities/page-identity.ts). */
+  PAGE_IDENTITY_KEYS?: string;
 };
 
 export type ApiBindings = Omit<CloudflareEnv, keyof ApiEnvVars> & ApiEnvVars;

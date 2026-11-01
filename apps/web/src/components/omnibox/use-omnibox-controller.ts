@@ -4,6 +4,7 @@ import {
   type ClaimResult,
   judgeAnswerSchema,
   type MyJudgment,
+  type PageIdentity,
   passwordSchema,
 } from "@hb/contracts";
 import { useQueryClient } from "@tanstack/react-query";
@@ -14,6 +15,7 @@ import {
   ActivityRequestError,
   activityKeys,
   type PublicActivityDetail,
+  readResponse,
   refused,
 } from "../../lib/activities";
 import { passwordKey, useSolvePassword } from "../../lib/activity-passwords";
@@ -50,10 +52,12 @@ import { maintenanceAtom } from "../../lib/maintenance";
 import { closeOverlay, openOverlay, switchOverlay } from "../../lib/overlay";
 import { pageStanding } from "../../lib/page-standing";
 import {
-  askPageSubmit,
+  askPagePermission,
   notFilled,
+  notIdentified,
   notJudged,
   type PageFillResult,
+  type PageIdentityResult,
   type PageSubmitResult,
 } from "../../lib/page-submit";
 import {
@@ -978,10 +982,12 @@ export function useOmniboxController() {
       const before = waiting();
       if (before) return before;
       if (
-        !(await askPageSubmit(store, {
+        !(await askPagePermission(store, {
           userId: account.id,
           activityId,
           origin,
+          code: true,
+          want: "submit",
         })) ||
         (ownOf(activityId, account.id) &&
           !(await askSelfClaim(store, activityId, false)))
@@ -1160,6 +1166,70 @@ export function useOmniboxController() {
   );
 
   /**
+   * 认人 (docs/page-identity-design.md): `hb.identity()` from any 红包's
+   * 附带网页 — a token the site signs for the page's own server, once the
+   * viewer allowed the page (with submitting, on a 代码判定红包). It never
+   * opens the login card: the page asks for that on a click (hb.login()).
+   */
+  const identityForPage = useCallback(
+    async (
+      activityId: string,
+      origin: string,
+      nonce: string | undefined,
+    ): Promise<PageIdentityResult> => {
+      const account = sessionUserOf(queryClient);
+      if (!account) return notIdentified("login");
+      const activity = queryClient.getQueryData<PublicActivityDetail>(
+        activityKeys.public(activityId, account.id),
+      )?.activity;
+      if (!activity) return notIdentified("away");
+      if (!activity.page) return notIdentified("unavailable");
+      if (
+        !(await askPagePermission(store, {
+          userId: account.id,
+          activityId,
+          origin,
+          code: activity.participationMode === "code",
+          want: "identity",
+        }))
+      )
+        return notIdentified("denied");
+      // Asked meanwhile: the account may have changed.
+      if (sessionUserOf(queryClient)?.id !== account.id)
+        return notIdentified("login");
+      try {
+        const identity = await readResponse<PageIdentity>(
+          await fetch(
+            `/api/activities/${encodeURIComponent(activityId)}/page-identity`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-CSRF-Token":
+                  queryClient.getQueryData<SessionResponse>(sessionQueryKey)
+                    ?.csrfToken ?? "",
+              },
+              body: JSON.stringify(nonce === undefined ? {} : { nonce }),
+            },
+          ),
+        );
+        return { identified: true, ...identity };
+      } catch (error) {
+        if (!(error instanceof ActivityRequestError))
+          return notIdentified("error", "没有连上红包站，请稍后再试");
+        if (error.status === 401) return notIdentified("login");
+        if (
+          error.code === "PAGE_NOT_FOUND" ||
+          error.code === "IDENTITY_UNAVAILABLE"
+        )
+          return notIdentified("unavailable", error.message);
+        return notIdentified("error", error.message);
+      }
+    },
+    [queryClient, store],
+  );
+
+  /**
    * 验证其他口令: for someone who already took part. A correct 口令 is only
    * revealed to them (已解出); it never claims again. Shares the cooldown
    * with claiming, except for answers that need no check (06 §4).
@@ -1274,6 +1344,7 @@ export function useOmniboxController() {
     redeemIn,
     submitForPage,
     fillForPage,
+    identityForPage,
     verifyIn,
     openAccount,
     goHome,

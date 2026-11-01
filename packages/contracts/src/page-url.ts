@@ -59,3 +59,20 @@ export function attachedPageOf(url: string, autoOpen = false): AttachedPage {
     ...(autoOpen ? { autoOpen: true as const } : {}),
   };
 }
+
+/**
+ * 附带网页认人 (docs/page-identity-design.md §2): the one-time string a
+ * page may have signed into its token, to stop it being used twice.
+ */
+export const PAGE_IDENTITY_NONCE = /^[A-Za-z0-9._~-]{8,128}$/;
+
+/**
+ * A token the 红包 site signed for the 附带网页's own server (ES256 JWT,
+ * ten minutes), and whom it names, for the page to show; the server
+ * trusts only the token.
+ */
+export type PageIdentity = {
+  token: string;
+  expiresAt: string;
+  user: { id: string; username: string; name: string; level: number | null };
+};

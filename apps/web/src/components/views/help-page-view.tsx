@@ -108,6 +108,56 @@ const mineCode = `const mine = await hb.mine(); // 没登录时是 null
 //   没有 input，reply 是判定器写给他的话
 if (mine?.next) more(await hb.mine(mine.next)); // 再读 20 条`;
 
+/** 认出看的人 (docs/page-identity-design.md): the page asks, its server checks. */
+const identityCode = `// 在看的人点“开始”这类按钮时再要；同一个红包第一次红包页会先问他
+// 可选：后端先发一个一次性的 nonce，防重放
+const nonce = await (await fetch("https://你的后端/nonce")).text();
+const answer = await hb.identity({ nonce });
+if (answer.identified) {
+  // answer.user：{ id, username, name, level }，只用来先显示
+  await fetch("https://你的后端/start", {
+    method: "POST",
+    headers: { Authorization: \`Bearer \${answer.token}\` },
+  });
+} else if (answer.reason === "login") {
+  showLoginButton(); // 按钮的点击里调 hb.login()
+} else {
+  say(identityReasons[answer.reason] ?? "没有拿到身份"); // 原因见下面
+}`;
+
+const verifyCode = (
+  origin: string,
+) => `// Cloudflare Workers 或 Node 18+，npm install jose
+import { createRemoteJWKSet, jwtVerify } from "jose";
+
+// 公钥：jose 会缓存，按 kid 找不到时再读
+const keys = createRemoteJWKSet(new URL("${origin}/api/page-identity/keys"));
+
+export async function whoIs(request, nonceOf) {
+  const token = request.headers.get("Authorization")?.replace(/^Bearer /, "");
+  if (!token) return null;
+  const { payload } = await jwtVerify(token, keys, {
+    issuer: "${origin}",
+    audience: "https://你的网页的来源", // 比如 https://game.example.com
+    algorithms: ["ES256"],
+    clockTolerance: 30,
+  });
+  // 只认自己的红包；nonce 要是你刚发的，用过就作废
+  if (!myHongbao(payload.hongbao) || !(await nonceOf(payload.nonce))) return null;
+  // payload.sub：LINUX DO 数字 ID（认人用它，不用用户名）
+  return { id: payload.sub, username: payload.username, hongbao: payload.hongbao };
+}`;
+
+/** Why `hb.identity()` gave no token: `reason`, and what it means. */
+const identityReasons = [
+  ["login", "没登录：在看的人点了网页里的按钮时调 hb.login()"],
+  ["denied", "看的人没允许"],
+  ["away", "看的人不在这个红包页上（网页还开着，但没在显示）"],
+  ["busy", "上一次 hb.identity() 还没回来"],
+  ["unavailable", "这个红包没有附带网页，或者红包站暂时签不了"],
+  ["error", "其他错误，message 是原因"],
+] as const;
+
 /** Why a submission was not judged: `reason`, and what it means. */
 const reasons = [
   ["denied", "看的人没允许网页替他提交（领自己的红包时点了返回也是）"],
@@ -156,10 +206,18 @@ const aiPrompt = (
    - await hb.fill(text) 把内容填进这个红包的指令框，不提交，所有红包都能用。填好是 { filled: true }，没填是 { filled: false, reason, message }；reason 有 ${fillReasons.map(([name]) => name).join("、")}。
    - 代码判定红包才能用 await hb.submit(input)：替看的人提交一次，同一个红包第一次会先问他。判定了是 { judged: true, claimed, amount, unit, reply, added, pending, settled }（added 这次加减了多少，pending 之后的待结算，settled 这次结算了他），没判定是 { judged: false, reason, seconds, message }；reason 有 ${reasons.map(([name]) => name).join("、")}。给玩的人看的提示由网页自己写。
    - await hb.me() 是看的人自己的情况：没登录 { signedIn: false }；登录了 { signedIn: true, name, open, why, cooldownUntil, claim, registered, pending, settled }（open 能不能参加，why 不能的原因，cooldownUntil 冷却到什么时候，claim 领到的 { amount, unit, payment }，pending 他的待结算，settled 结算了没有）；hb.on("me", fn) 订阅变化。await hb.myView() 是判定器写给他自己的数据 { summary, data }，没有时 null，hb.on("myView", fn) 订阅变化。hb.now() 是按服务器校准过的当前时间（毫秒）。hb.login() 请红包页弹出登录卡片，要在看的人点按钮时调用。
+   - await hb.identity({ nonce }) 拿一个红包站签名的身份令牌（所有带附带网页的红包都能用；同一个红包第一次会先问他，代码判定红包和替你提交一起问）：拿到了是 { identified: true, token, expiresAt, user: { id, username, name, level } }，没拿到是 { identified: false, reason, message }；reason 有 ${identityReasons.map(([name]) => name).join("、")}。user 只用来先显示，后端只信 token。
    - await hb.mine(next) 读他自己的记录 { total, items: [{ n, at, input, claimed, amount, reply, added, pending, settled, by }], next }，没登录时 null；别人的判定通过 others 改到他的那条带 by（那个人的昵称），没有 input。
    - 做不到：读红包站的 Cookie 和登录信息、看别人的输入、转账、发红包、改红包、绕过冷却和人机验证。
    - 开发包（npx degit LeUKi/hb/kit）里有网页模板 page/index.html、SDK 的类型 page/hb.d.ts、本地的假红包页（npm run page）和数字炸弹、刮刮乐两个样例。
-8. 还没有网站：把网页放到静态托管上就行。Cloudflare Workers、GitHub Pages、Netlify、Vercel 的默认域名都能直接嵌进红包页；Vercel 只用正式部署（预览部署默认要登录才能看）。Cloudflare Drop 拖上去还没认领的页面会先弹安全验证，嵌不进来，要先认领。
+8. 后端要知道是谁（存档、排行榜、防冒充）时，不用接 LINUX DO 登录，用 hb.identity()：
+   - 在看的人点“开始”这类按钮时再要；后端可以先发一个一次性的 nonce（8–128 个字母、数字或 -_.~），网页带着它要令牌。
+   - 令牌放在内存里，用 Authorization: Bearer 请求头发给后端，不放进本地存储、网址和日志；过期（10 分钟）了再调一次 hb.identity()，不会再问他。
+   - 后端用 jose 验：公钥 ${origin}/api/page-identity/keys（createRemoteJWKSet），算法 ES256，issuer ${origin}，audience 是网页自己的来源，clockTolerance 30 秒；再核对 payload.hongbao 是自己认的红包、payload.nonce 是刚发的并且只用一次。
+   - 用 payload.sub（LINUX DO 数字 ID，和判定器的 submission.user.id 是同一个数）认人，不用用户名；数据按“红包编号 + 用户 ID”存。后端的跨域只放行网页自己的来源。
+   - 本地 npm run page 签的令牌 iss 是假红包页的地址，上线后的后端只认 ${origin}。
+   - 钱只经过判定器：后端算出的结果要由判定器联网核对才算数；令牌不能用来替他提交。
+9. 还没有网站：把网页放到静态托管上就行。Cloudflare Workers、GitHub Pages、Netlify、Vercel 的默认域名都能直接嵌进红包页；Vercel 只用正式部署（预览部署默认要登录才能看）。Cloudflare Drop 拖上去还没认领的页面会先弹安全验证，嵌不进来，要先认领。
 
 我的网站：（在这里写技术栈和现在的登录方式，比如用 LINUX DO Connect 登录、会话 Cookie 叫什么）`;
 
@@ -171,7 +229,7 @@ export function HelpPageView() {
     <Page>
       <PageHeader
         title="附带网页 · 接入说明"
-        description="发红包时可以附带一个自己的网页，显示在红包页旁边（手机上在底部抽屉里）。按下面改一改你的网站，让它能在红包页里显示、沿用网站自己的登录。"
+        description="发红包时可以附带一个自己的网页，显示在红包页旁边（手机上在底部抽屉里）。按下面改一改你的网站，让它能在红包页里显示；要知道看的人是谁，用红包站的身份（第 2 节），或者沿用网站自己的登录（第 3 节）。"
       />
       <PageSection
         id="ai"
@@ -204,14 +262,62 @@ export function HelpPageView() {
             的默认域名都能直接嵌进红包页；Vercel
             只用正式部署（预览部署默认要登录才能看）。Cloudflare Drop
             拖上去还没认领的页面会先弹安全验证，嵌不进来，要先认领。代码判定红包的网页可以从开发包的模板改起（第
-            5 节）。
+            6 节）。
+          </p>
+        </Panel>
+      </PageSection>
+      <PageSection
+        id="identity"
+        title="2. 认出看的人：用红包站的身份"
+        description="网页有自己的后端（存档、排行榜、防冒充）要知道是谁，不用接 LINUX DO 登录：向红包站要一个身份令牌，交给后端验证。"
+      >
+        <Panel className={text}>
+          <p>
+            只在网页里显示名字，用 <Code>hb.ready()</Code> 给的昵称就够了；
+            代码判定红包里每个人自己的数据（进度、手牌、剩几次），放判定器的{" "}
+            <Code>player.state</Code> 和 <Code>player.view</Code>
+            ，红包站已经按人分开，不用后端。后端要信“这是谁”时，才用下面的令牌：浏览器里的昵称谁都能伪造，令牌是红包站签名的。
+          </p>
+        </Panel>
+        <Block label="网页：要令牌" code={identityCode} />
+        <Fields
+          items={identityReasons.map(([name, note]) => ({ name, note }))}
+        />
+        <Block label="后端：验证" code={verifyCode(origin)} />
+        <Panel className={text}>
+          <p>
+            令牌是 JWT（ES256），有效 10 分钟，过期了网页再调一次{" "}
+            <Code>hb.identity()</Code>，不会再问他。里面有：<Code>sub</Code>
+            （LINUX DO 数字 ID，和判定器的 <Code>submission.user.id</Code>{" "}
+            是同一个数）、<Code>username</Code>、<Code>name</Code>（昵称）、
+            <Code>level</Code>（信任等级）、<Code>hongbao</Code>
+            （红包编号，同 <Code>hongbao.id</Code>）、<Code>aud</Code>
+            （你网页的来源）、<Code>iss</Code>（{origin}）、<Code>exp</Code>
+            、你发的 <Code>nonce</Code>。
+          </p>
+          <p>
+            要核对：签名、<Code>iss</Code>、<Code>aud</Code>
+            、没过期、红包是你认的、
+            <Code>nonce</Code>
+            是你刚发的并且只用一次。数据按“红包编号 + 用户
+            ID”存。令牌放在内存里，用 <Code>Authorization</Code>{" "}
+            请求头发给后端，不放进本地存储、网址和日志；这样也不依赖第三方
+            Cookie。后端的跨域只放行你网页的来源。
+          </p>
+          <p>
+            同一个红包里，网页第一次要令牌或第一次替他提交时，红包页会问一次（代码判定红包是“让这个网页知道你是谁、替你提交？”，别的红包是“让这个网页知道你是谁？”），同意后两样都不再问。本地的假红包页（
+            <Code>npm run page</Code>）也能签，<Code>iss</Code>{" "}
+            是假红包页的地址；上线后的后端只认 {origin}。
+          </p>
+          <p>
+            钱只经过判定器：后端算出的结果要由判定器联网核对才算数，令牌也不能用来替他提交。
           </p>
         </Panel>
       </PageSection>
       <PageSection
         id="login"
-        title="2. 沿用网站自己的登录"
-        description="在你网站登录过的人，打开红包页时网页里就是登录状态。"
+        title="3. 沿用网站自己的登录"
+        description="网站本来就有自己的登录：在你网站登录过的人，打开红包页时网页里就是登录状态。"
       >
         <Panel className={text}>
           <p>
@@ -237,7 +343,7 @@ export function HelpPageView() {
         </Panel>
         <Block label="使用已登录的账号" code={accessCode} />
       </PageSection>
-      <PageSection id="popup" title="3. 没登录过：在新窗口里登录">
+      <PageSection id="popup" title="4. 没登录过：在新窗口里登录">
         <Panel className={text}>
           <p>
             红包页里的网页不能整页跳转，LINUX DO
@@ -249,11 +355,11 @@ export function HelpPageView() {
           <p>
             LINUX DO
             的登录页会断开新窗口和红包页的联系，登录完的窗口没法通知网页。在网页里放一个“我已登录，继续”按钮：这一下点击正好用来请求使用
-            Cookie（第 2 步）并刷新。
+            Cookie（第 3 步）并刷新。
           </p>
         </Panel>
       </PageSection>
-      <PageSection id="which" title="4. 知道是哪个红包">
+      <PageSection id="which" title="5. 知道是哪个红包">
         <Panel className={text}>
           <p>
             <Code>document.referrer</Code> 是红包页的地址（{origin}/🧧/…
@@ -263,7 +369,7 @@ export function HelpPageView() {
       </PageSection>
       <PageSection
         id="sdk"
-        title="5. 接上红包站的 SDK"
+        title="6. 接上红包站的 SDK"
         description="附带网页可以读红包的公开数据、把内容填进指令框；代码判定红包的网页还能替看的人提交。"
       >
         <Block
@@ -322,7 +428,7 @@ export function HelpPageView() {
           </p>
         </Panel>
       </PageSection>
-      <PageSection id="limits" title="6. 能做和不能做的">
+      <PageSection id="limits" title="7. 能做和不能做的">
         <Fields
           items={[
             {

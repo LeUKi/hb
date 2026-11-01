@@ -33,13 +33,13 @@ npm test
 - `page/index.html`、`page/hb.d.ts`：附带网页的模板（接好了红包站的 SDK）和 SDK 的类型。不需要网页就不用管它。
 - `tests.schema.json`、`simulate.schema.json`：两个 JSON 的格式，编辑器据此补全、标错。
 - `judge.d.ts`、`modules.d.ts`、`jsconfig.json`：类型。`tools` 和能用的 Node 模块，编辑器和 AI 都看得到。
-- `AGENTS.md`：完整的规则和常见错误，给 AI 也给人看。`.claude/skills/` 和 `.cursor/rules/` 只是指向它。
+- `AGENTS.md`：完整的规则、最佳做法（带网页的玩法、认人、自有后端、热闹的玩法、上线前）和常见错误，给 AI 也给人看。开头的“要点”和 `.claude/skills/`、`.cursor/rules/` 里的是同一段：AI 一定会先读到它。
 - `runtime/`：沙箱里和代码一起跑的那部分，网站上用的是同一份。
 - `cli/`：五个命令。
 
 ## 写完以后
 
-带网页的玩法：网页改好、`npm run page` 里试过以后，放到静态托管上（Cloudflare Workers、GitHub Pages、Netlify、Vercel 的正式部署都行；Cloudflare Drop 拖上去的要先认领），把地址写进 `judge.js` 的 `meta.page`。
+带网页的玩法：网页改好、`npm run page` 里试过以后，放到静态托管上（Cloudflare Workers、GitHub Pages、Netlify、Vercel 的正式部署都行；Cloudflare Drop 拖上去的要先认领），把地址写进 `judge.js` 的 `meta.page`，`hongbao` 里写上 `pageAutoOpen: true`，说明（`note`）第一行放打开网页的按钮。网页有自己的后端、要知道是谁，用 SDK 的 `hb.identity()`，见 `AGENTS.md` 的“认人（鉴权）”。
 
 `npm test` 和 `npm run check` 都过了，就去网站写判定器：判定器广场右上的“自己写一个”（`https://hb.lafi.sh/judges/new`），起个名字，贴上 `judge.js` 和 `tests.json`，部署。测试全过以后，在它的判定器页按“用它发红包”，或者发红包时在第 2 步从判定器广场的“我的”里挑它。用 AI 写也一样：告诉它你的玩法，让它照 `AGENTS.md` 写，两个命令都过了再贴。
 

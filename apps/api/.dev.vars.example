@@ -22,6 +22,11 @@ MAINTENANCE_MODE=false
 DO_LOCATION_HINT=
 DO_NAME_PREFIX=
 
+# 附带网页认人 (docs/page-identity-design.md): a JSON array of private P-256
+# JWKs [{ "kid", "kty": "EC", "crv": "P-256", "x", "y", "d" }], the first
+# signing. Empty: hb.identity() answers unavailable.
+PAGE_IDENTITY_KEYS='[]'
+
 # Base64-encoded random HMAC key, at least 32 bytes.
 PASSWORD_DIGEST_KEY=""
 

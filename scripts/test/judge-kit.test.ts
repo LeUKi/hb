@@ -7,6 +7,7 @@ import {
   COMPATIBILITY_DATE,
   type CommandOptions,
   checkCommand,
+  defaultsReminders,
   openSandbox,
   PROTOCOL,
   replayCommand,
@@ -1643,8 +1644,118 @@ describe("附带网页", () => {
       expect(lines).toContain(
         '小明  "500"  没加钱  代码的回复：请猜 1 到 100 之间的整数',
       );
+      // 认人 (docs/page-identity-design.md §4): signed with this run's key,
+      // iss this fake page, aud the page; its keys check it.
+      const identity = await (
+        await fetch(`${page.hostUrl}/api/identity`, {
+          method: "POST",
+          body: JSON.stringify({ who: "小明", nonce: "nonce-1234" }),
+        })
+      ).json();
+      expect(identity.user).toEqual({
+        id: "10001",
+        username: "小明",
+        name: "小明",
+        level: 2,
+      });
+      const [header, claims, signature] = identity.token.split(".");
+      const decode = (part: string) =>
+        JSON.parse(Buffer.from(part, "base64url").toString("utf8"));
+      const { keys } = await (
+        await fetch(`${page.hostUrl}/api/page-identity/keys`)
+      ).json();
+      const key = await crypto.subtle.importKey(
+        "jwk",
+        keys.find((item: { kid: string }) => item.kid === decode(header).kid),
+        { name: "ECDSA", namedCurve: "P-256" },
+        false,
+        ["verify"],
+      );
+      expect(
+        await crypto.subtle.verify(
+          { name: "ECDSA", hash: "SHA-256" },
+          key,
+          Buffer.from(signature, "base64url"),
+          new TextEncoder().encode(`${header}.${claims}`),
+        ),
+      ).toBe(true);
+      expect(decode(claims)).toMatchObject({
+        iss: page.hostUrl,
+        aud: page.pageUrl,
+        sub: "10001",
+        hongbao: expect.any(String),
+        nonce: "nonce-1234",
+      });
+      expect(
+        (
+          await fetch(`${page.hostUrl}/api/identity`, {
+            method: "POST",
+            body: JSON.stringify({ who: "没登录" }),
+          })
+        ).status,
+      ).toBe(400);
     } finally {
       await page.close();
     }
   }, 40_000);
+});
+
+// 让开发者的 Agent 默认就写对 (docs/kit-guide-design.md): the key points,
+// one text wherever an agent reads them, and check's reminders.
+describe("开发文档的要点", () => {
+  const between = (text: string) => {
+    const start = text.indexOf("<!-- 要点：");
+    const end = text.indexOf("<!-- 要点到这里 -->");
+    if (start < 0 || end < 0) throw new Error("NO_KEY_POINTS");
+    return text.slice(start, end);
+  };
+  const read = (path: string) => readFileSync(join(root, path), "utf8");
+
+  it("is the same in the Skill, AGENTS.md and the Cursor rule, and /help/code takes it from the Skill", () => {
+    const skill = between(read("kit/.claude/skills/hongbao-judge/SKILL.md"));
+    expect(skill).toContain("人机验证默认不开");
+    expect(between(read("kit/AGENTS.md"))).toBe(skill);
+    expect(between(read("kit/.cursor/rules/hongbao-judge.mdc"))).toBe(skill);
+    expect(read("apps/web/src/components/views/help-code-view.tsx")).toContain(
+      'from "../../../../../kit/.claude/skills/hongbao-judge/SKILL.md?raw"',
+    );
+  });
+
+  it("npm run check reminds of 人机验证 on, and of a page not opening by itself or its button not first", () => {
+    const page = { page: "https://game.example.com/" };
+    expect(defaultsReminders({ meta: null, hongbao: null })).toEqual([]);
+    expect(
+      defaultsReminders({
+        meta: page,
+        hongbao: { pageAutoOpen: true, note: "[开始](#附带网页)\n规则" },
+      }),
+    ).toEqual([]);
+    expect(
+      defaultsReminders({ meta: null, hongbao: { humanCheck: true } }),
+    ).toEqual([
+      "hongbao.humanCheck 会让用它发的红包默认打开领取前人机验证，有些网络和浏览器加载不出验证，这些人领不了。红包作者没要求就删掉。",
+    ]);
+    expect(defaultsReminders({ meta: page, hongbao: null })).toEqual([
+      "带了附带网页，没写 hongbao.pageAutoOpen: true。主要在网页里玩的，写上它，进红包页就打开网页。",
+      "带了附带网页，没写 hongbao.note。写一段说明，第一行放打开网页的按钮，比如 [打开网页开始玩](#附带网页)。",
+    ]);
+    expect(
+      defaultsReminders({
+        meta: page,
+        hongbao: { pageAutoOpen: true, note: "规则\n\n[开始](#附带网页)" },
+      }),
+    ).toEqual([
+      "hongbao.note 的第一行不是打开网页的按钮。把 [文字](#附带网页) 放在第一行：说明长了会折叠，放在后面要点“展开”才看得到。",
+    ]);
+  });
+
+  it("the examples do as the key points say: no 人机验证, the page ones open by themselves with their button first", () => {
+    for (const name of ["by-level", "number-bomb", "scratch-card"])
+      expect(read(`kit/examples/${name}/judge.js`)).not.toContain("humanCheck");
+    for (const name of ["number-bomb", "scratch-card"]) {
+      const code = read(`kit/examples/${name}/judge.js`);
+      expect(code).toContain("pageAutoOpen: true");
+      expect(code).toMatch(/note: "\[[^\]]+\]\(#附带网页\)\\n/);
+    }
+  });
 });
