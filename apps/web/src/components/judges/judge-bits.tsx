@@ -1,5 +1,6 @@
-import type { JudgeStats, SquareJudge } from "@hb/contracts";
+import type { JudgeParam, JudgeStats, SquareJudge } from "@hb/contracts";
 import { BookOpen, Bot, Braces, FolderGit2, Globe } from "lucide-react";
+import { revealsAtEnd } from "../../../../../kit/runtime/params.mjs";
 import { cn } from "../../lib/cn";
 import { KIT_URL } from "../../lib/judge";
 import { Avatar } from "../ui/avatar";
@@ -141,5 +142,42 @@ export function JudgeHelpLinks({ className }: { className?: string }) {
         </a>
       ))}
     </div>
+  );
+}
+
+/** 结束后公开 (docs/judge-key-design.md §0): what the tag says on its hint. */
+export const REVEAL_HINT =
+  "红包进行中不公开，结束后公开；开放时公布的参数封存值能核对它没被换过。回复里会不会透露它，要看判定器的代码。";
+
+/** 密钥 (docs/judge-key-design.md §3): what its tag says on its hint. */
+export const keyHint = (to: string) =>
+  `判定器代码看不到，也不会公开；只会发给 ${to}，红包结束后删除。`;
+
+/**
+ * When a param is shown (docs/judge-key-design.md §0): 结束后公开, or 不公开
+ * for a 密钥; nothing for one shown all along.
+ */
+export function ParamTags({ item }: { item: JudgeParam }) {
+  if (item.type === "key")
+    return (
+      <Squircle radius={radius.tag}>
+        <TagHint
+          hint={keyHint(item.to)}
+          className={cn(tagClass, "bg-warning-soft text-warning")}
+        >
+          不公开
+        </TagHint>
+      </Squircle>
+    );
+  if (!revealsAtEnd(item)) return null;
+  return (
+    <Squircle radius={radius.tag}>
+      <TagHint
+        hint={REVEAL_HINT}
+        className={cn(tagClass, "bg-fill-2 text-ink-2")}
+      >
+        结束后公开
+      </TagHint>
+    </Squircle>
   );
 }

@@ -171,8 +171,8 @@ export async function judge(submission) {
 - 地址写法：`https://` 加完整域名和路径前缀，不带端口、`?` 和 `#`，主机名小写；不能是 IP、`localhost`、`linux.do` 和它的子域名、`hb.lafi.sh` 和它的子域名。前缀 `https://a.com/api` 放行 `/api`、`/api/x`、`/api?x`，不放行 `/apix`；路径里编码过的斜杠（`%2F`、`%5C`）一律拒绝。
 - 每次判定最多 3 个请求（可以并发），只许 GET 和 POST，请求体最大 16 KB；单个请求 10 秒，返回最大 64 KB，跳转不跟随（3xx 原样给代码）。等请求的时间不算进 50 毫秒的计算时间，整次判定最多 15 秒。判定结束以后再发的请求都会被拒。
 - 不行时 `fetch()` 抛 `TypeError`，信息以“联网失败：”开头，写明原因。可以接住，自己在 `message` 里回复；没接住就算代码出错。对方返回 4xx、5xx 不算失败。
-- 本站给每个请求加 `X-Hb-Hongbao`（红包 ID，不保密）和自己的 `User-Agent`；代码不能设 `Host` 和 `X-Hb-` 开头的请求头。
-- 领的人可以绕过本站直接请求接口（那样没有尝试间隔和人机验证）：要防，就在代码里放一个只有红包作者知道的令牌，请求时带上，接口只认它。代码结束后公开，令牌也会公开，结束后要作废。
+- 本站给每个请求加 `X-Hb-Hongbao`（红包 ID，是公开的）和自己的 `User-Agent`；代码不能设 `Host` 和 `X-Hb-` 开头的请求头。
+- 领的人可以绕过本站直接请求接口（那样没有尝试间隔和人机验证）：要防，就让接口只认一把密钥，用密钥参数（`type: "key"`，`to` 写接口的地址）放它：代码读不到，也不会公开。
 - 红包结束后，领的人能看到自己那几次判定的返回内容：别在返回里放不想公开的东西。
 - 测试里写 `fetch`（见 `tests.json`），测试从不真的联网；`npm run simulate -- --live` 才从这台电脑真的发出去。
 
@@ -180,8 +180,8 @@ export async function judge(submission) {
 
 同一份代码能发出不同的红包：代码声明要填什么，发红包的人在网站上填，判定时在 `submission.params` 里。会变的东西（答案、范围、次数、题目）写成参数，别写死在代码里。
 
-- `export const params = [ … ]`：最多 20 项，每项 `{ key, label, hint, type, default, required, secret }` 加上这种类型自己的限制。`key` 只用字母、数字和下划线；`label` 是表单上的名字，最多 20 个字；`hint` 是一句说明，最多 60 个字；`required` 默认 `true`；`secret` 默认 `false`。
-- 八种 `type`：
+- `export const params = [ … ]`：最多 20 项，每项 `{ key, label, hint, type, default, required, revealAtEnd }` 加上这种类型自己的限制。`key` 只用字母、数字和下划线；`label` 是表单上的名字，最多 20 个字；`hint` 是一句说明，最多 60 个字；`required` 默认 `true`；`revealAtEnd` 默认 `false`。
+- 九种 `type`：
   - `text`：单行文字，`minLength`、`maxLength`（最多 200）
   - `textarea`：多行文字，`maxLength`（最多 2000）
   - `integer`：整数，`min`、`max`、`step`（要是 `step` 的倍数，从 `min` 算起）
@@ -190,8 +190,18 @@ export async function judge(submission) {
   - `choice`：选一个，`options` 是 2–20 个 `{ value, label, hint, set }`，值是 `value`。选项联动：`set` 是选了这一项时把别的参数改成的值（写法同 `default`，金额是整数分），比如难度选“简单”就 `set: { bombs: 3, max: 50 }`，发红包的人之后还能改；`hint` 是选了这一项时下面显示的说明（最多 60 个字），代替这个参数自己的 `hint`。默认选中的那一项改的值，要和那个参数自己的 `default` 一样（或者那个参数不写 `default`）
   - `list`：一行一个的文字，`minItems`、`maxItems`（最多 100）、`maxLength`（每项最多几个字，最多 200）
   - `table`：每行几格，`columns` 是 1–6 列 `{ key, label, type, required }`，`type` 是 `text`、`integer` 或 `money`（带各自的限制），`minRows`、`maxRows`（最多 100）
+  - `key`：密钥（比如 AI 服务的），见下面“密钥”
 - 网站按声明校验，代码收到的都是对的：文字去掉了首尾空白；没填的选填项，开关是 `false`，列表和表格是 `[]`，其他是 `null`。整份最大 16 KB。
-- 保密参数（`secret: true`）：开放时只公布参数封存值，结束后和代码、种子一起公开。回复里会不会透露它，要看代码怎么写。
+- 参数分三种，按什么时候公开选：
+
+  | | 代码读得到 | 红包进行中 | 结束后 | 用来放 |
+  | --- | --- | --- | --- | --- |
+  | 普通参数 | 能 | 公开 | 公开 | 范围、次数 |
+  | `revealAtEnd: true` | 能 | 不公开，只公布参数封存值 | 公开，能核对没换过 | 答案、谜底 |
+  | `type: "key"` | 不能 | 不公开 | 不公开，结束后删除 | AI 等服务的密钥 |
+
+- 结束后公开（`revealAtEnd: true`；旧写法 `secret: true` 同样认）：开放时只公布参数封存值，结束后和代码、种子一起公开。回复里会不会透露它，要看代码怎么写。
+- 密钥（`type: "key"`）：`{ key, label, hint, type: "key", to, header, prefix, required }`。发红包的人自己填，代码读不到（`submission.params` 里没有它），代码请求 `to` 开头的地址时，网站把它加进请求头 `header`（默认 `Authorization`），值是 `prefix`（默认 `"Bearer "`）加密钥；Anthropic 这类写 `header: "x-api-key", prefix: ""`。`to` 要在 `network` 里。最多 3 项，不能写 `default` 和 `revealAtEnd`。领的人每提交一次就可能调一次服务，费用从发红包的人的密钥扣：限制每人能试几次，提醒他在服务商那边设消费上限。本地 `--live` 时密钥从 judge.js 旁边的 `keys.local.json`（`{ "ai": "sk-…" }`，不提交）读；`npm test` 用不到密钥。会联网的判定器里有文字参数像密钥（名字里有 key、token、密钥这类字样），`npm run check` 会提醒改用 `type: "key"`。
 - `export function check(params, hongbao)`（可选）：查几项合起来对不对，比如“最小不能大于最大”“奖池够不够每份 0.01”。`hongbao` 是 `{ title, total, count, minEach }`（`count`、`minEach` 同 `submission.hongbao` 的兼容值）。返回问题的数组 `[{ key, message }]`（`key` 是参数的 `key`，`message` 最多 100 个字），没问题返回 `[]`。发红包的人填参数时在判定器里跑，不能联网，`Math.random()` 每次都一样。
 - `export const hongbao = { … }`（可选）：用它发的红包在“发多少”的默认值和范围，只能收窄网站的规则：`total: { min, max, default }`（金额是整数分）、`deadline: { value, unit }`（默认截止时长，`unit` 是 `"minutes"`、`"hours"` 或 `"days"`）、`prompt`（领取提示的默认值，最多 40 个字）、`humanCheck`（建议打开领取前人机验证；默认别写，见要点第 2 条）、`pageAutoOpen`（建议打开红包页时自动打开附带网页；带网页的玩法都写上，有附带网页才起作用）、`title`（红包标题的默认值，最多 100 个字）、`note`（说明的默认值，最多 2000 个字，写法同发红包时的说明：一个回车就换行，`[文字](#附带网页)` 是打开附带网页的按钮，没有网页时只剩文字；带网页的第一行就放这个按钮）。标题和说明是挑了这个判定器时替发红包的人填好的，他没改过的才跟着判定器换。以前的 `count`（份数）和 `minEach`（每份至少）不起作用了，`npm run check` 会提醒；要几个人能领，做成参数。
 - `export const meta = { name, description, page }`（可选）：判定器的名字（最多 20 个字）和一句说明（最多 60 个字），贴代码时自动填好，之后以网站上的为准。`page` 是判定器带的附带网页（https，规则同附带网页），用它发红包时替发红包的人填好；怎么做见“带网页的玩法”。
@@ -274,7 +284,7 @@ export function judge({ input, state, user, hongbao }) {
 
 - 输赢只由判定器算：判定器在 `view` 里写清楚格子、区间、谁猜过什么，网页照着画，不在网页里自己算谁赢了。
 - **网页是活的，判定器代码是冻结的**：改了网页，进行中的红包马上用上新网页，但它们还跑开放时的那一版判定器。所以 `view.data` 里放一个版本号（比如 `{ v: 2, … }`），网页读到旧版本照旧版本画，改网页就不会弄坏还没结束的红包。
-- 每个人自己的东西放 `player.view`，别塞进公开的 `view`：既保密，又不用每次推给所有人。
+- 每个人自己的东西放 `player.view`，别塞进公开的 `view`：只有他自己看得到，又不用每次推给所有人。
 - 网页里不存游戏状态，刷新、换设备都以判定器为准（`hb.view()`、`hb.myView()`、`hb.mine()`）。
 
 ### 网页这边
@@ -358,7 +368,7 @@ export async function whoIs(request) {
 - 后端算出的结果要发钱：后端给一个“核对接口”，网页提交一个凭证（比如通关码），判定器用 `fetch` 联网问后端这个凭证算不算，再决定加多少（见“联网”）。
 - **联网失败要接住**：后端挂了、超时，`fetch()` 会抛错；没接住这次判定算出错，连续 5 次红包暂停领取。接住它，回一句“服务器忙，稍后再试”，不加钱。
 - **核对接口要幂等**：同一个凭证问几次答案都一样，“标记已领”不能在第一次被问时就不可逆地扣掉（判定写库失败时会重判、再问一次）。
-- 判定器和后端之间用一把只有你们知道的密钥（放保密参数里），不用玩家的身份令牌。代码和保密参数在红包结束后公开，结束后换掉这把密钥。
+- 判定器和后端之间用一把只有你们知道的密钥，用密钥参数（`type: "key"`，`to` 写后端的地址）放它：代码读不到，也不会公开；不用玩家的身份令牌。
 - 后端的返回在红包结束后会公开给本人（他能看到自己那几次判定拿到的返回），别放别人的数据。
 - 要快要小：单个请求 10 秒，整次判定最多 15 秒，返回最大 64 KB，只许 GET 和 POST，不跟随跳转。
 

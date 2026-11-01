@@ -7,6 +7,7 @@
 // runs in the sandbox.
 import { sha256Text } from "./hash.mjs";
 import { formatAmount } from "./money.mjs";
+import { allowedBy, readEntry } from "./network.mjs";
 
 export const PARAM_TYPES = Object.freeze([
   "text",
@@ -17,6 +18,7 @@ export const PARAM_TYPES = Object.freeze([
   "choice",
   "list",
   "table",
+  "key",
 ]);
 
 /** What a table's columns may be. */
@@ -40,6 +42,10 @@ export const PARAM_LIMITS = Object.freeze({
   /** What check() may say at once. */
   checkProblems: 20,
   checkMessageCharacters: 100,
+  /** 密钥 (docs/judge-key-design.md): how many, how long, a prefix. */
+  keys: 3,
+  keyValueCharacters: 500,
+  keyPrefixCharacters: 20,
 });
 
 export const META_LIMITS = Object.freeze({
@@ -69,6 +75,7 @@ const TYPE_WORDS = {
   choice: "选项",
   list: "列表",
   table: "表格",
+  key: "密钥",
 };
 
 const isObject = (value) =>
@@ -110,6 +117,8 @@ const SHARED = [
   "type",
   "default",
   "required",
+  "revealAtEnd",
+  // revealAtEnd as it was first written.
   "secret",
 ];
 const OWN = {
@@ -121,7 +130,52 @@ const OWN = {
   choice: ["options"],
   list: ["minItems", "maxItems", "maxLength"],
   table: ["columns", "minRows", "maxRows"],
+  key: ["to", "header", "prefix"],
 };
+
+/** A header a key may go out in: a token, none the gateway sets itself. */
+const HEADER = /^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/;
+const GATEWAY_HEADERS = [
+  "host",
+  "user-agent",
+  "content-length",
+  "content-type",
+  "cookie",
+  "connection",
+  "transfer-encoding",
+  "upgrade",
+];
+
+/**
+ * A 密钥 (docs/judge-key-design.md): where it goes (`to`, one address
+ * prefix), in which header, after what; never shown, so no default and no
+ * revealAtEnd. Its problem, or null.
+ */
+function keyProblem(item) {
+  if (item.revealAtEnd !== undefined || item.secret !== undefined)
+    return "密钥本来就不公开，不用写 revealAtEnd";
+  if (item.default !== undefined)
+    return "密钥不能写 default，由发红包的人自己填";
+  if (typeof item.to !== "string")
+    return 'to 要写密钥发给哪个地址，比如 "https://api.openai.com/v1/"';
+  const to = readEntry(item.to);
+  if ("problem" in to) return `to ${to.problem}`;
+  if (item.header !== undefined) {
+    if (typeof item.header !== "string" || !HEADER.test(item.header))
+      return "header 要是请求头的名字，比如 Authorization";
+    const lower = item.header.toLowerCase();
+    if (GATEWAY_HEADERS.includes(lower) || lower.startsWith("x-hb-"))
+      return `header 不能是 ${item.header}`;
+  }
+  if (
+    item.prefix !== undefined &&
+    (typeof item.prefix !== "string" ||
+      /[\r\n]/.test(item.prefix) ||
+      characters(item.prefix) > PARAM_LIMITS.keyPrefixCharacters)
+  )
+    return `prefix 要是一行文字，最多 ${PARAM_LIMITS.keyPrefixCharacters} 个字，比如 "Bearer "`;
+  return null;
+}
 
 /** A value's own limits (text, integer or money): problem, or null. */
 function limitsProblem(item, type) {
@@ -270,6 +324,10 @@ function itemProblem(item) {
     (item.required !== undefined && typeof item.required !== "boolean"
       ? "required 要是 true 或 false"
       : null) ??
+    (item.type === "key" ? keyProblem(item) : null) ??
+    (item.revealAtEnd !== undefined && typeof item.revealAtEnd !== "boolean"
+      ? "revealAtEnd 要是 true 或 false"
+      : null) ??
     (item.secret !== undefined && typeof item.secret !== "boolean"
       ? "secret 要是 true 或 false"
       : null) ??
@@ -313,6 +371,7 @@ function itemProblem(item) {
 function tidy(item) {
   const kept = { ...item, label: item.label.trim() };
   if (item.hint !== undefined) kept.hint = item.hint.trim();
+  if (item.type === "key") kept.to = readEntry(item.to).prefix;
   if (item.type === "table")
     kept.columns = item.columns.map((column) => ({
       ...column,
@@ -363,6 +422,8 @@ export function readParams(value) {
     }
     list.push(kept);
   }
+  if (keyParams(list).length > PARAM_LIMITS.keys)
+    problems.push(`params 里的密钥最多 ${PARAM_LIMITS.keys} 项`);
   // 选项联动: what an option sets is another param, as that one takes it.
   for (const item of list) {
     if (item.type !== "choice") continue;
@@ -372,6 +433,8 @@ export function readParams(value) {
         const target = list.find((other) => other.key === key);
         if (key === item.key) problems.push(`${where}：不能改自己`);
         else if (!target) problems.push(`${where}：没有参数 ${key}`);
+        else if (target.type === "key")
+          problems.push(`${where}：不能改密钥 ${key}`);
         else {
           const checked = readValue(target, value, target.label);
           if ("problem" in checked)
@@ -567,11 +630,17 @@ export function paramValues(list, given) {
     return { problems: [{ key: "", message: "params 要是一个对象" }] };
   const input = given ?? {};
   const problems = [];
-  for (const key of Object.keys(input))
-    if (!list.some((item) => item.key === key))
+  for (const key of Object.keys(input)) {
+    const item = list.find((each) => each.key === key);
+    if (!item)
       problems.push({ key, message: `这个判定器没有 ${key} 这个参数` });
+    // 密钥 (docs/judge-key-design.md): never among the params the code gets.
+    else if (item.type === "key")
+      problems.push({ key, message: `${item.label}是密钥，不放在参数里` });
+  }
   const values = {};
   for (const item of list) {
+    if (item.type === "key") continue;
     const read = readValue(
       item,
       input[item.key] === undefined ? item.default : input[item.key],
@@ -591,9 +660,83 @@ export function paramValues(list, given) {
   return { values };
 }
 
-/** The keys kept secret until the 红包 is over (§3 保密参数). */
+/**
+ * 结束后公开 (§3; docs/judge-key-design.md §0): revealAtEnd, or secret as
+ * it was first written.
+ */
+export const revealsAtEnd = (item) =>
+  item.revealAtEnd === true || item.secret === true;
+
+/** The keys kept back until the 红包 is over (结束后公开). */
 export const secretKeys = (list) =>
-  list.filter((item) => item.secret === true).map((item) => item.key);
+  list.filter(revealsAtEnd).map((item) => item.key);
+
+/** The 密钥 among the params (docs/judge-key-design.md). */
+export const keyParams = (list) => list.filter((item) => item.type === "key");
+
+/** A 密钥 as a sender typed it: `{ value }`, trimmed, or `{ problem }`. */
+export function readKeyValue(item, given) {
+  if (typeof given !== "string" || given.trim() === "")
+    return { problem: `请填写${item.label}` };
+  const value = given.trim();
+  if (/[\r\n]/.test(value)) return { problem: `${item.label}只能是一行` };
+  if (characters(value) > PARAM_LIMITS.keyValueCharacters)
+    return {
+      problem: `${item.label}最多 ${PARAM_LIMITS.keyValueCharacters} 个字`,
+    };
+  return { value };
+}
+
+/**
+ * Each 密钥's `to` within one of `network`'s addresses (it goes out only
+ * there): problems, one line each, as the deploy and npm run check write
+ * them.
+ */
+export function keyNetworkProblems(list, network) {
+  return keyParams(list)
+    .filter((item) => !allowedBy(network ?? [], item.to))
+    .map((item) =>
+      network?.length
+        ? `params（${item.key}）的 to：${item.to} 不在 network 里`
+        : `params（${item.key}）是密钥，要导出 network，并把 ${item.to} 写进去`,
+    );
+}
+
+const KEY_LIKE = /api[_-]?key|apikey|token|secret|密钥|令牌|口令牌/i;
+
+/**
+ * Text params that look like a 密钥 in a 判定器 that goes online — the
+ * code reads them, and they are shown: their keys, for a reminder to use
+ * type "key" instead.
+ */
+export function keyLikeParams(list, network) {
+  if (!network?.length) return [];
+  return list
+    .filter(
+      (item) =>
+        (item.type === "text" || item.type === "textarea") &&
+        (KEY_LIKE.test(item.key) || KEY_LIKE.test(item.label)),
+    )
+    .map((item) => item.key);
+}
+
+/**
+ * The headers 密钥 add to a request to `address` (both gateways): those
+ * whose `to` it is under, with a value given. `[name, value]` pairs.
+ */
+export function keyHeaders(list, values, address) {
+  return keyParams(list)
+    .filter(
+      (item) =>
+        typeof values?.[item.key] === "string" &&
+        values[item.key] !== "" &&
+        allowedBy([item.to], address),
+    )
+    .map((item) => [
+      item.header ?? "Authorization",
+      `${item.prefix ?? "Bearer "}${values[item.key]}`,
+    ]);
+}
 
 /**
  * What check(params, hongbao) answered: `{ problems }` — `[{ key,
@@ -907,8 +1050,10 @@ export function paramLine(item) {
               : item.default
       }`,
     );
+  if (item.type === "key")
+    parts.push("发红包的人自己填", "不公开", `只发给 ${item.to}`);
   if (item.required === false && item.type !== "switch") parts.push("选填");
-  if (item.secret) parts.push("保密");
+  if (revealsAtEnd(item)) parts.push("结束后公开");
   return `${item.label}（${parts.join("，")}）`;
 }
 
@@ -963,7 +1108,7 @@ function textsOf(value) {
 }
 
 /**
- * The secret params (§3 保密参数) whose value shows in a view (judge-page
+ * The params shown only at the end (§3 结束后公开) whose value shows in a view (judge-page
  * §2): a text of two characters or more found in its summary or any text
  * in its data. Numbers are left out: a guess shown is not a leak.
  */
@@ -971,7 +1116,7 @@ export function secretsInView(list, values, view) {
   if (view === null || view === undefined) return [];
   const shown = textsOf(view);
   return list
-    .filter((item) => item.secret && Object.hasOwn(values, item.key))
+    .filter((item) => revealsAtEnd(item) && Object.hasOwn(values, item.key))
     .filter((item) =>
       textsOf(values[item.key])
         .map((text) => text.trim())
@@ -1003,12 +1148,12 @@ export function splitParams(list, values) {
   const secret = {};
   for (const item of list)
     if (Object.hasOwn(values, item.key))
-      (item.secret ? secret : shown)[item.key] = values[item.key];
+      (revealsAtEnd(item) ? secret : shown)[item.key] = values[item.key];
   return { shown, secret };
 }
 
 /**
- * 参数封存值 (§3 保密参数): SHA-256 of the secret params as JSON with sorted
+ * 参数封存值 (§3 结束后公开): SHA-256 of those params as JSON with sorted
  * keys, a newline and the salt, in hex — published at opening, checked by
  * anyone once the params and the salt are out.
  */

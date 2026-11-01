@@ -327,7 +327,7 @@ export const check = 3;
 export function judge() { return { ok: false }; }`;
     const run = { code, fingerprint: sha256Text(code) };
     expect(readDeclarations(await describeJudge(env, run)).problems).toEqual([
-      "params 第 1 项（a-b）：type 只能是 text、textarea、integer、money、switch、choice、list、table",
+      "params 第 1 项（a-b）：type 只能是 text、textarea、integer、money、switch、choice、list、table、key",
       "hongbao.count.min 不能大于 hongbao.count.max",
       "check 要是一个函数",
     ]);

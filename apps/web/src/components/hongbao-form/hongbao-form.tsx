@@ -52,6 +52,7 @@ import {
   type RewardMode,
   timingLine,
   withDefaultTitle,
+  withKeysKept,
   withMode,
 } from "./form-state";
 import { declaredParams, judgeIssuesOf, triedHongbao } from "./judge-issues";
@@ -178,7 +179,10 @@ export function HongbaoForm({
     dirty,
     scheduleAt: scheduled ? null : scheduleAt,
     onSaved,
-    onSettled: setBaseline,
+    onSettled: (saved) => {
+      setBaseline(withKeysKept(saved));
+      setForm((current) => withKeysKept(current, saved));
+    },
   });
   const update: Update = (change) => {
     setForm((current) => change(current));

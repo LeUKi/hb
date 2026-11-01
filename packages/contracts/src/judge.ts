@@ -199,6 +199,14 @@ export const judgeInputSchema = z.strictObject({
   /** The params filled (§3); checked against its version at opening. */
   params: paramsSchema.optional(),
   /**
+   * 密钥 typed (docs/judge-key-design.md §3): kept apart, encrypted, never
+   * sent back; one left out stays as it was.
+   */
+  keys: z
+    .record(z.string().max(32), z.string().max(500))
+    .refine((value) => Object.keys(value).length <= 3, "密钥最多 3 项")
+    .optional(),
+  /**
    * Another's 判定器 picked from the 广场 (§15.3): the version used. Its
    * code and tests come from that version; the tests are never sent here,
    * nor read back.
@@ -309,6 +317,11 @@ export type JudgeCheck = {
   declarations: JudgeDeclarations;
   /** What is wrong with them: no pass. */
   declarationProblems?: string[];
+  /**
+   * Said, though it passes: a text param that looks like a 密钥 in code
+   * that goes online (docs/judge-key-design.md §0).
+   */
+  reminders?: string[];
   /** Found without running the code: imports, size. */
   problems: { line: number; message: string }[];
   /** tests.json itself: not JSON, or an entry the protocol does not have. */
@@ -601,6 +614,11 @@ export type PublicJudge = {
   params?: { param: ParamDeclaration; value: unknown }[];
   /** 保密参数 (§3): how many, their 封存值 from opening, the salt once over. */
   sealedParams?: { count: number; commitment: string; salt?: string };
+  /**
+   * 密钥 (docs/judge-key-design.md §4): that its sender filled them, and
+   * where each goes; never what they are.
+   */
+  keys?: { label: string; to: string }[];
   /** Protocol 4: what everyone sees now, once its code wrote any. */
   view?: JudgeView;
   /** 动态 (protocol 4): how many lines in all, and the latest five. */

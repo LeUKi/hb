@@ -8,10 +8,14 @@ import type {
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createActivity,
+  getManagedActivity,
   getPublicActivity,
   openActivity,
+  updateActivity,
 } from "../src/activities/service";
 import { app } from "../src/app";
+import { sweepKeys } from "../src/judge/keys";
+import { judgeRecords } from "../src/judge/records";
 import { NetworkSession } from "../src/judge/session";
 import { advanceAttemptCooldown } from "./advance-attempt-cooldown";
 import {
@@ -420,5 +424,158 @@ describe("代码判定联网: a slow answer", () => {
       result: "judged",
       settled: { claim: { amount: "0.30" } },
     });
+  });
+});
+
+// 密钥 (docs/judge-key-design.md): the sender's, kept apart; never given
+// to the code nor read back; added by the gateway to its own address only.
+describe("代码判定联网: 密钥", () => {
+  const KEYED = `export const network = ["${API}"];
+export const params = [{ key: "ai", label: "AI 密钥", type: "key", to: "${API}check" }];
+export async function judge(submission) {
+  await fetch("${API}check", { method: "POST", body: "{}" });
+  await fetch("${API}other", { method: "POST", body: "{}" });
+  return { message: JSON.stringify(submission.params) };
+}
+`;
+  const KEYED_TESTS = JSON.stringify({
+    tests: [
+      {
+        name: "代码拿不到密钥",
+        input: "x",
+        fetch: [
+          { url: `${API}check`, method: "POST", json: {} },
+          { url: `${API}other`, method: "POST", json: {} },
+        ],
+        expect: { message: "{}" },
+      },
+    ],
+  });
+
+  /** The 判定器 with a 密钥, deployed, and a draft of it. */
+  async function keyedDraft() {
+    const code = unique(KEYED);
+    const deployed = await check(author, code, KEYED_TESTS, {
+      name: "AI 判定",
+    });
+    expect(deployed.body.check.passed).toBe(true);
+    const judgeId = deployed.body.check.judge?.id ?? "";
+    const draft = await createActivity(bindings, author.id, {
+      requestId: crypto.randomUUID(),
+      activity: coded({}, { code, tests: KEYED_TESTS, judgeId }),
+    });
+    return { judgeId, draft };
+  }
+
+  const withKeys = (managed: ManagedActivity, keys: Record<string, string>) =>
+    updateActivity(bindings, managed.id, author.id, {
+      version: managed.version,
+      activity: {
+        ...managed.config,
+        judge: managed.config.judge && { ...managed.config.judge, keys },
+      },
+    });
+
+  it("opens only once filled; kept encrypted, read back by name only", async () => {
+    const { draft } = await keyedDraft();
+    const blocked = await getManagedActivity(bindings, draft.id, author.id);
+    expect(blocked.openingBlockedReason).toBe("JUDGE_KEY_MISSING");
+    await expect(
+      openActivity(bindings, draft.id, author.id, blocked.version),
+    ).rejects.toMatchObject({ message: "判定器要的密钥还没填，草稿已保存。" });
+    await expect(withKeys(blocked, { other: "x" })).rejects.toMatchObject({
+      code: "JUDGE_KEY_UNKNOWN",
+    });
+    const saved = await withKeys(blocked, { ai: " sk-first " });
+    expect(saved.judgeKeys).toEqual(["ai"]);
+    expect(JSON.stringify(saved)).not.toContain("sk-first");
+    expect(saved.openingBlockedReason).toBeUndefined();
+    const row = await env.DB.prepare(
+      "SELECT names, ciphertext FROM activity_keys WHERE activity_id = ?",
+    )
+      .bind(draft.id)
+      .first<{ names: string; ciphertext: string }>();
+    expect(row?.names).toBe('["ai"]');
+    expect(row?.ciphertext).not.toContain("sk-first");
+  });
+
+  it("goes to its own address only, the code never sees it, nothing shows it; changed after opening, gone once over", async () => {
+    const { draft } = await keyedDraft();
+    const saved = await withKeys(
+      await getManagedActivity(bindings, draft.id, author.id),
+      { ai: "sk-first" },
+    );
+    const opened = await openActivity(
+      bindings,
+      draft.id,
+      author.id,
+      saved.version,
+    );
+    const first = await claim(opened.id, await actor(), "x");
+    expect(first.body).toMatchObject({ result: "judged" });
+    expect(JSON.stringify(first.body)).not.toContain("sk-first");
+    expect(
+      outside.map((sent) => [sent.url, sent.headers.authorization]),
+    ).toEqual([
+      [`${API}check`, "Bearer sk-first"],
+      [`${API}other`, undefined],
+    ]);
+    // The 红包 page says there is one, never what; the records neither.
+    const shown = await getPublicActivity(bindings, opened.id);
+    expect(shown.judge?.keys).toEqual([
+      { label: "AI 密钥", to: `${API}check` },
+    ]);
+    expect(JSON.stringify(shown)).not.toContain("sk-first");
+    expect(
+      JSON.stringify(await judgeRecords(bindings, opened.id, author.id)),
+    ).not.toContain("sk-first");
+    // A new one, after opening: from the next request on.
+    const managed = await getManagedActivity(bindings, opened.id, author.id);
+    await withKeys(managed, { ai: "sk-second" });
+    outside = [];
+    await claim(opened.id, await actor(), "y");
+    expect(outside[0]?.headers.authorization).toBe("Bearer sk-second");
+    // Over: let go of.
+    await env.DB.prepare("UPDATE activities SET deadline = ? WHERE id = ?")
+      .bind(Date.now() - 1000, opened.id)
+      .run();
+    await sweepKeys(bindings);
+    expect(
+      await env.DB.prepare("SELECT 1 FROM activity_keys WHERE activity_id = ?")
+        .bind(opened.id)
+        .first(),
+    ).toBeNull();
+  }, 20_000);
+
+  it("is deployed only with its address in network; a text param that looks like one is pointed to it", async () => {
+    const outsideList = await check(
+      author,
+      unique(
+        KEYED.replace(`to: "${API}check"`, 'to: "https://other.example.com/"'),
+      ),
+      KEYED_TESTS,
+    );
+    expect(outsideList.body.check.passed).toBe(false);
+    expect(outsideList.body.check.declarationProblems).toEqual([
+      "params（ai）的 to：https://other.example.com/ 不在 network 里",
+    ]);
+    // The code reads every other param: its tests say so.
+    const looksLike = await check(
+      author,
+      unique(
+        KEYED.replace(
+          `to: "${API}check" }]`,
+          `to: "${API}check" }, { key: "api_token", label: "接口令牌", type: "text", required: false }]`,
+        ),
+      ),
+      KEYED_TESTS.replace(
+        '"message":"{}"',
+        `"message":${JSON.stringify(JSON.stringify({ api_token: null }))}`,
+      ),
+    );
+    expect(looksLike.body.check.passed).toBe(true);
+    expect(looksLike.body.check.reminders).toEqual([
+      'params（api_token）像是密钥：放密钥用 type: "key"，判定器代码读不到，也不会公开',
+    ]);
   });
 });

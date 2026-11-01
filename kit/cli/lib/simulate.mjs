@@ -21,7 +21,13 @@ import {
   startScenario,
   TEST_HONGBAO_ID,
 } from "../../runtime/index.mjs";
-import { KitError, readProjectFile, readText } from "./files.mjs";
+import {
+  KitError,
+  keyLines,
+  readLocalKeys,
+  readProjectFile,
+  readText,
+} from "./files.mjs";
 import { openSandbox } from "./sandbox.mjs";
 import { readSimulation } from "./simulation.mjs";
 import {
@@ -227,7 +233,8 @@ export async function simulateCommand({
   print(`${hongbao.title}：总奖池 ${yuan(hongbao.total)}`);
   print(`种子 ${seed}`);
 
-  const sandbox = await openSandbox(code, { live: options.live });
+  const keys = options.live ? await readLocalKeys(dir) : {};
+  const sandbox = await openSandbox(code, { live: options.live, keys });
   if ("problems" in sandbox.network) {
     for (const problem of sandbox.network.problems) print(`✗ ${problem}`);
     print("先改好 judge.js 的 network，模拟没跑");
@@ -235,6 +242,8 @@ export async function simulateCommand({
     return { exitCode: 1 };
   }
   const { declarations } = sandbox;
+  if (options.live)
+    for (const line of keyLines(declarations.params, keys)) print(line);
   if (declarations.problems.length > 0) {
     for (const problem of declarations.problems) print(`✗ ${problem}`);
     print("先改好上面的问题，模拟没跑");

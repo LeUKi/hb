@@ -9,7 +9,10 @@ import {
   ldcTotalMinor,
 } from "@hb/contracts";
 import type { Json, JudgeRecords } from "../../../../kit/judge";
-import { LEDGER_PROTOCOL } from "../../../../kit/runtime/index.mjs";
+import {
+  LEDGER_PROTOCOL,
+  revealsAtEnd,
+} from "../../../../kit/runtime/index.mjs";
 import { attemptAssociatedData } from "../activities/claim-service";
 import { ActivityError } from "../activities/errors";
 import { type ActivityRow, ownedActivity } from "../activities/storage";
@@ -246,7 +249,7 @@ async function recordsOf(
               (await declarationsFor(env, activity.authorId, judge))?.params ??
               []
             )
-              .filter((param) => param.secret)
+              .filter(revealsAtEnd)
               .map((param) => param.key),
             commitment: judge.paramsCommitment,
             salt: open.sealedParams.salt ?? null,

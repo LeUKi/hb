@@ -1,10 +1,10 @@
 import { amountToMinor, type JudgeParam } from "@hb/contracts";
-import { Lock, Plus, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../../lib/cn";
+import { ParamTags } from "../judges/judge-bits";
 import { Button } from "../ui/button";
 import { Field, Segmented, Switch, TextArea, TextInput } from "../ui/field";
-import { TagHint } from "../ui/tag-hint";
 
 // 判定器的参数 (docs/judge-square-design.md §3, §14.4): the form its code
 // declares, drawn by the site. Values are kept as the code gets them —
@@ -13,8 +13,6 @@ import { TagHint } from "../ui/tag-hint";
 
 type Values = Record<string, unknown>;
 type Column = Extract<JudgeParam, { type: "table" }>["columns"][number];
-
-const SECRET = "开放后保密，结束后公开。回复里会不会透露它，要看判定器的代码。";
 
 /** 2000 → "20.00". */
 const ldc = (minor: number) =>
@@ -365,8 +363,94 @@ function ColumnNames({ item }: { item: JudgeParam }) {
 }
 
 /**
+ * 密钥 (docs/judge-key-design.md §3): a password box, or 已填写 once one is
+ * kept (never shown again) with 换一个; what it is and where it goes under
+ * it. It may change after opening too.
+ */
+function KeyField({
+  item,
+  id,
+  error,
+  filled,
+  typed,
+  onType,
+}: {
+  item: Extract<JudgeParam, { type: "key" }>;
+  id: string;
+  error: string | undefined;
+  filled: boolean;
+  typed: string | undefined;
+  onType: (key: string, value: string | null) => void;
+}) {
+  const kept = filled && typed === undefined;
+  return (
+    <div className="grid min-w-0 gap-1.5 @min-[30rem]/params:col-span-2">
+      <Field
+        label={
+          <span className="inline-flex items-center gap-1.5">
+            {item.label}
+            {item.required === false && (
+              <span className="text-ink-3">（选填）</span>
+            )}
+            <ParamTags item={item} />
+          </span>
+        }
+        htmlFor={kept ? undefined : id}
+        hint={
+          <>
+            {item.hint && <span className="block">{item.hint}</span>}
+            <span className="block">
+              只会发给 <span className="break-all">{item.to}</span>
+              ，判定器代码看不到；保存后不再显示，红包结束后删除。调用的费用从这个密钥扣。
+            </span>
+          </>
+        }
+        error={error}
+      >
+        {kept ? (
+          <div
+            id={id}
+            tabIndex={-1}
+            className="flex h-11 items-center gap-3 outline-none"
+          >
+            <span className="text-sm text-ink-2">已填写</span>
+            <Button size="xs" onClick={() => onType(item.key, "")}>
+              换一个
+            </Button>
+          </div>
+        ) : (
+          <div className="flex min-w-0 items-center gap-2">
+            <TextInput
+              id={id}
+              type="password"
+              autoComplete="new-password"
+              spellCheck={false}
+              placeholder="填你自己的密钥"
+              className="min-w-0 flex-1"
+              value={typed ?? ""}
+              invalid={Boolean(error)}
+              onChange={(event) => onType(item.key, event.target.value)}
+            />
+            {filled && (
+              <Button
+                size="xs"
+                variant="quiet"
+                onClick={() => onType(item.key, null)}
+              >
+                不换了
+              </Button>
+            )}
+          </div>
+        )}
+      </Field>
+    </div>
+  );
+}
+
+/**
  * The params form: each item with its name and line as the code wrote
- * them, short ones two to a row; a secret one with its lock.
+ * them, short ones two to a row, each tagged with when it is shown (结束后
+ * 公开, or a 密钥's 不公开).
  */
 export function ParamsFields({
   params,
@@ -374,6 +458,7 @@ export function ParamsFields({
   onChange,
   errorOf,
   locked,
+  keys,
   idPrefix = "hb-param-",
 }: {
   params: JudgeParam[];
@@ -381,6 +466,16 @@ export function ParamsFields({
   onChange: (key: string, value: unknown) => void;
   errorOf: (key: string) => string | undefined;
   locked: boolean;
+  /**
+   * 密钥 (docs/judge-key-design.md §3): those kept, what is typed, and
+   * typing (null: keep the one kept). Without it they are left out (试一试
+   * never goes online).
+   */
+  keys?: {
+    filled: readonly string[];
+    typed: Readonly<Record<string, string>>;
+    onType: (key: string, value: string | null) => void;
+  };
   /**
    * The form's own ids (its problems go to them) unless another place
    * shows these too: the 判定器页's 试一试, beside the form while the pages
@@ -397,17 +492,25 @@ export function ParamsFields({
       <div className="grid gap-4 @min-[30rem]/params:grid-cols-2">
         {params.map((item) => {
           const error = errorOf(item.key);
+          if (item.type === "key")
+            return keys ? (
+              <KeyField
+                key={item.key}
+                item={item}
+                id={`${idPrefix}${item.key}`}
+                error={error}
+                filled={keys.filled.includes(item.key)}
+                typed={keys.typed[item.key]}
+                onType={keys.onType}
+              />
+            ) : null;
           const label = (
-            <span className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center gap-1.5">
               {item.label}
               {item.required === false && (
                 <span className="text-ink-3">（选填）</span>
               )}
-              {item.secret && (
-                <TagHint hint={SECRET} aria-label="保密" className="text-ink-3">
-                  <Lock className="size-3.5" aria-hidden="true" />
-                </TagHint>
-              )}
+              <ParamTags item={item} />
             </span>
           );
           if (item.type === "switch")
@@ -486,8 +589,11 @@ export function ParamsFields({
  */
 export function paramsFor(params: JudgeParam[], current: Values): Values {
   const next: Values = {};
+  // 密钥 are never among the params (docs/judge-key-design.md).
   for (const item of params)
-    if (Object.hasOwn(current, item.key)) next[item.key] = current[item.key];
+    if (item.type === "key") continue;
+    else if (Object.hasOwn(current, item.key))
+      next[item.key] = current[item.key];
     else if (item.default !== undefined) next[item.key] = item.default;
     else if (item.type === "list" || item.type === "table") next[item.key] = [];
   for (const item of params) {

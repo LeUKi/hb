@@ -47,6 +47,7 @@ import { activities, users } from "../db/schema";
 import type { ApiBindings } from "../env";
 import { passedCheck, requireCodeHongbao } from "../judge/check";
 import { migrateJudgesOf } from "../judge/judges";
+import { keyNamesOf, saveKeysStatement } from "../judge/keys";
 import { ledgerPool, withPoolLeft } from "../judge/ledger";
 import {
   CODE_OPENING_ALLOWED,
@@ -56,6 +57,7 @@ import {
   openingSetup,
 } from "../judge/opening";
 import {
+  declarationsFor,
   openingParams,
   paramsRejected,
   paramsRejectedError,
@@ -468,6 +470,9 @@ async function managed(
             judgeRow.judgeVersion,
           ).then((judgeSource) => (judgeSource ? { judgeSource } : {}))),
           ...(judgeRow.pausedAt !== null ? { judgePaused: true as const } : {}),
+          ...(await keyNamesOf(env, row.id).then((judgeKeys) =>
+            judgeKeys.length > 0 ? { judgeKeys } : {},
+          )),
         }
       : {}),
   };
@@ -1018,6 +1023,20 @@ export async function updateActivity(
       id,
     ),
   ];
+  // Opened, its code is fixed; its 密钥 may still change (judge-key §3).
+  if (row.openedAt !== null && coded && input.activity.judge?.keys) {
+    const judgeRow = await findJudgeRow(env, id);
+    const keys =
+      judgeRow &&
+      (await saveKeysStatement(
+        env,
+        id,
+        await declarationsFor(env, authorId, judgeRow),
+        input.activity.judge.keys,
+        now,
+      ));
+    if (keys) statements.push(keys);
+  }
   if (row.openedAt === null) {
     // After the activity's own row, which says whether it is 代码判定.
     if (input.activity.money.mode === "code" && input.activity.judge)

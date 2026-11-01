@@ -26,6 +26,47 @@ export async function readText(path, label = path) {
 /** A file of the kit's own directory, by name. */
 export const readProjectFile = (dir, name) => readText(join(dir, name), name);
 
+/**
+ * 密钥 for going out with --live (docs/judge-key-design.md §5):
+ * keys.local.json beside judge.js, `{ "ai": "sk-…" }`, kept out of git;
+ * none without it.
+ */
+export async function readLocalKeys(dir) {
+  let text;
+  try {
+    text = await readText(join(dir, "keys.local.json"), "keys.local.json");
+  } catch (error) {
+    if (error instanceof KitError) return {};
+    throw error;
+  }
+  const shape = 'keys.local.json 要写成 { "ai": "sk-…" }，每个值是一行文字';
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw new KitError(shape);
+  }
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    Object.values(value).some((key) => typeof key !== "string")
+  )
+    throw new KitError(shape);
+  return value;
+}
+
+/** What --live goes out with: each 密钥 read, or that it goes without. */
+export function keyLines(params, keys) {
+  return params
+    .filter((item) => item.type === "key")
+    .map((item) =>
+      typeof keys[item.key] === "string"
+        ? `密钥 ${item.key}：从 keys.local.json 读，只发给 ${item.to}`
+        : `提醒：keys.local.json 里没有密钥 ${item.key}，请求 ${item.to} 时不带它`,
+    );
+}
+
 /** judge.js's fingerprint: SHA-256 of its text, as the site shows it. */
 export const fingerprintOf = (code) => sha256Text(code);
 

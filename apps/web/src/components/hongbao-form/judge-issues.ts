@@ -5,7 +5,9 @@ import type {
 } from "@hb/contracts";
 import {
   hongbaoRuleProblems,
+  keyParams,
   paramValues,
+  readKeyValue,
 } from "../../../../../kit/runtime/params.mjs";
 import {
   cents,
@@ -52,6 +54,21 @@ export function judgeIssuesOf(
       field: `hb-param-${problem.key || declarations.params[0]?.key || ""}`,
       message: problem.message,
     });
+  // 密钥 (docs/judge-key-design.md §3): one kept, or one typed as it may be.
+  for (const item of keyParams(declarations.params)) {
+    const typed = form.judge.keys[item.key]?.trim() ?? "";
+    if (typed === "") {
+      if (!form.judge.keysFilled.includes(item.key) && item.required !== false)
+        issues.push({
+          field: `hb-param-${item.key}`,
+          message: `还没填${item.label}`,
+        });
+      continue;
+    }
+    const read = readKeyValue(item, typed);
+    if ("problem" in read)
+      issues.push({ field: `hb-param-${item.key}`, message: read.problem });
+  }
   // Protocol 5 has no shares: only the pool's range still counts (multi-
   // prize §3.6).
   for (const problem of hongbaoRuleProblems(declarations.hongbao, {

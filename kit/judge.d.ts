@@ -243,7 +243,12 @@ interface ParamBase {
   hint?: string;
   /** 默认 true */
   required?: boolean;
-  /** 保密：开放时只公布参数封存值，结束后公开。默认 false */
+  /**
+   * 结束后公开：红包进行中不公开，开放时只公布参数封存值，结束后公开，谁都能核对
+   * 没换过。放答案、谜底。代码照样读得到。默认 false
+   */
+  revealAtEnd?: boolean;
+  /** @deprecated 旧写法，同 revealAtEnd */
   secret?: boolean;
 }
 
@@ -308,6 +313,20 @@ export type ParamDeclaration = ParamBase &
         /** 最多 100 */
         maxRows?: number;
         default?: Record<string, string | number | null>[];
+      }
+    | {
+        /**
+         * 密钥（比如 AI 服务的）：发红包的人自己填，不公开，结束后删除。代码读不到它
+         * （submission.params 里没有）；代码请求 `to` 下面的地址时，网站把它加进请求头
+         * `header: prefix + 密钥`。最多 3 项，不能写 default 和 revealAtEnd。
+         */
+        type: "key";
+        /** 只发给这个地址开头的请求，要在 network 里，比如 "https://api.openai.com/v1/" */
+        to: string;
+        /** 默认 "Authorization"；Anthropic 这类写 "x-api-key" */
+        header?: string;
+        /** 默认 "Bearer "；不要前缀写 "" */
+        prefix?: string;
       }
   );
 
@@ -634,11 +653,11 @@ export interface JudgeRecords {
   protocol: number;
   /** 第二版起联网的红包：白名单 */
   network?: string[];
-  /** 第三版：发红包时填的参数，保密的也在（这份记录只给红包作者） */
+  /** 第三版：发红包时填的参数，结束后才公开的也在（这份记录只给红包作者）；密钥不在 */
   params?: Params;
   /**
-   * 第三版：保密参数的封存值，开放时公布；结束后有盐，npm run replay 拿 params 里
-   * 这几项核对：SHA-256（按键排序的保密参数 JSON、换行、盐）
+   * 第三版：结束后公开的参数的封存值，开放时公布；结束后有盐，npm run replay 拿
+   * params 里这几项核对：SHA-256（按键排序的这几项参数 JSON、换行、盐）
    */
   paramsSealed?: { keys: string[]; commitment: string; salt: string | null };
   hongbao: {

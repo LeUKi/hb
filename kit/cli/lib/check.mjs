@@ -8,6 +8,8 @@
 // or lucky() without n, and for share rules that no longer count.
 import {
   checkSource,
+  keyLikeParams,
+  keyNetworkProblems,
   LIMITS,
   optionLines,
   paramLine,
@@ -167,17 +169,34 @@ export async function checkCommand({ dir, print = console.log }) {
       // 协议第三版: meta, params, hongbao and check, and the form drawn
       // from params as the site draws it.
       const declared = all.declarations;
-      const declaredOk = declared.problems.length === 0;
+      // 密钥 (docs/judge-key-design.md) go only to an address it lists.
+      const declaredProblems = [
+        ...declared.problems,
+        ...keyNetworkProblems(
+          declared.params,
+          networkOk ? all.network.list : null,
+        ),
+      ];
+      const declaredOk = declaredProblems.length === 0;
       if (!declaredOk) {
         print(row(false, "参数声明写得不对"));
-        for (const problem of declared.problems) print(`  ${problem}`);
+        for (const problem of declaredProblems) print(`  ${problem}`);
       } else {
         if (declared.meta?.page)
           print(row(true, `附带网页：${declared.meta.page}`));
         shareRules = ["count", "minEach"].filter(
           (key) => declared.hongbao?.[key] !== undefined,
         );
-        defaults = defaultsReminders(declared);
+        defaults = [
+          ...defaultsReminders(declared),
+          ...keyLikeParams(
+            declared.params,
+            networkOk ? all.network.list : null,
+          ).map(
+            (key) =>
+              `params（${key}）像是密钥：放密钥用 type: "key"，判定器代码读不到，也不会公开`,
+          ),
+        ];
         if (declared.params.length > 0) {
           print(row(true, "参数表单预览"));
           for (const item of declared.params) {
@@ -200,7 +219,9 @@ export async function checkCommand({ dir, print = console.log }) {
       `提醒：两次跑出的结果不一样：${unstable.join("、")}。用了真随机，线上没法重放`,
     );
   for (const key of leaked)
-    print(`提醒：公开数据里出现了保密参数 ${key} 的值，开放后所有人都看得到。`);
+    print(
+      `提醒：公开数据里出现了结束后才公开的参数 ${key} 的值，开放后所有人都看得到。`,
+    );
   if (problems.length === 0)
     for (const { line, message } of uncountedShares(code))
       print(`提醒：第 ${line} 行 ${message}`);

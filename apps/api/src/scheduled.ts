@@ -2,6 +2,7 @@ import { sweepActivityLifecycle } from "./activities/lifecycle";
 import { settleEndedWithdrawals } from "./balance/withdrawal-settlement";
 import type { ApiBindings } from "./env";
 import { migrateJudgesOf } from "./judge/judges";
+import { sweepKeys } from "./judge/keys";
 import { refreshJudgeStats } from "./judge/square";
 import { pruneJudgeUsage } from "./judge/usage";
 import { endLapsedResends } from "./payments/resend";
@@ -63,6 +64,8 @@ export async function runMaintenance(env: ApiBindings, scheduledAt: number) {
     { name: "judge_migration", run: () => migrateJudgesOf(env) },
     // 判定器广场's numbers (judge-square §15.2), at most a run behind.
     { name: "judge_stats", run: () => refreshJudgeStats(env, scheduledAt) },
+    // 密钥 let go once their 红包 is over (docs/judge-key-design.md §1).
+    { name: "judge_keys", run: () => sweepKeys(env, scheduledAt) },
   ]);
 }
 

@@ -10,7 +10,9 @@ import {
   type PublicJudge,
 } from "@hb/contracts";
 import {
+  keyParams,
   LEDGER_PROTOCOL,
+  revealsAtEnd,
   seedCommitment,
 } from "../../../../kit/runtime/index.mjs";
 import { databaseNow } from "../activities/lifecycle";
@@ -24,6 +26,7 @@ import {
   latestAnnouncements,
   viewOf,
 } from "./announcements";
+import { dropKeysStatement } from "./keys";
 import { ledgerPool } from "./ledger";
 import { declarationsFor, revealedParams } from "./params";
 import {
@@ -80,17 +83,19 @@ async function revealed(
       "代码判定红包's code or seed does not match what it published",
     );
   try {
-    await env.DB.prepare(`UPDATE activity_code SET code = ?, seed = ?, params_secret = ?, params_salt = ?,
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE activity_code SET code = ?, seed = ?, params_secret = ?, params_salt = ?,
       revealed_at = ${databaseNow}, updated_at = ${databaseNow}
-      WHERE activity_id = ? AND revealed_at IS NULL`)
-      .bind(
+      WHERE activity_id = ? AND revealed_at IS NULL`).bind(
         code,
         seed,
         params ? JSON.stringify(params.secret) : null,
         params?.salt ?? null,
         row.id,
-      )
-      .run();
+      ),
+      // 密钥 are never revealed: let go of them (docs/judge-key-design.md).
+      dropKeysStatement(env, row.id),
+    ]);
   } catch {
     // D1's clock a moment behind the deadline: shown on the next read.
     return null;
@@ -191,7 +196,12 @@ export async function publicJudge(
     judge.paramsPublic !== null
       ? (JSON.parse(judge.paramsPublic) as Record<string, unknown>)
       : null;
-  const secrets = (declarations?.params ?? []).filter((item) => item.secret);
+  const secrets = (declarations?.params ?? []).filter(revealsAtEnd);
+  // 密钥 (docs/judge-key-design.md §4): that there are, never what.
+  const keys = keyParams(declarations?.params ?? []).map((item) => ({
+    label: item.label,
+    to: item.to,
+  }));
   // Protocol 5: what the pool has left, and whether it is settling.
   const left =
     judge.protocol >= LEDGER_PROTOCOL ? await ledgerPool(env, row.id) : null;
@@ -204,7 +214,7 @@ export async function publicJudge(
         };
   const params = shown
     ? (declarations?.params ?? []).flatMap((param) => {
-        const from = param.secret ? out?.secret : shown;
+        const from = revealsAtEnd(param) ? out?.secret : shown;
         return from && Object.hasOwn(from, param.key)
           ? [{ param, value: from[param.key] }]
           : [];
@@ -230,6 +240,7 @@ export async function publicJudge(
     ...(out ? { seed: out.seed } : {}),
     ...(by ? { judge: by.shown } : {}),
     ...(params.length > 0 ? { params } : {}),
+    ...(keys.length > 0 ? { keys } : {}),
     ...(judge.paramsCommitment
       ? {
           sealedParams: {

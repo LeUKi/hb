@@ -3,7 +3,12 @@
 // only the addresses judge.js lists, GET and POST, 16 KB out, 10 seconds,
 // 64 KB back, no redirect followed. The site's gateway also counts each
 // judgment's requests; here the sandbox's own fetch() does.
-import { NETWORK_LIMITS, NETWORK_REASONS, requestProblem } from "./network.mjs";
+import {
+  allowedBy,
+  NETWORK_LIMITS,
+  NETWORK_REASONS,
+  requestProblem,
+} from "./network.mjs";
 
 const USER_AGENT = "hb.lafi.sh-judge (+https://hb.lafi.sh/help/code)";
 
@@ -60,6 +65,9 @@ export default {
     const headers = new Headers(request.headers);
     headers.set("user-agent", USER_AGENT);
     headers.set("x-hb-hongbao", "local");
+    // 密钥 from keys.local.json, to their own address only (judge-key §5).
+    for (const key of JSON.parse(env.KEYS ?? "[]"))
+      if (allowedBy([key.to], request.url)) headers.set(key.header, key.value);
     let response;
     try {
       response = await fetch(request.url, {

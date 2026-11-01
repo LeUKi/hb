@@ -16,6 +16,7 @@ import { activityCode } from "../db/schema";
 import type { ApiBindings } from "../env";
 import { decryptString, encryptString, sha256Hex } from "../security/crypto";
 import { draftVersionsOf, ownJudge, renameStatement } from "./judges";
+import { saveKeysStatement, versionDeclarations } from "./keys";
 import { JUDGE_PROTOCOL } from "./sandbox";
 import type { FetchRecord } from "./session";
 import { borrowedVersion } from "./square";
@@ -52,7 +53,8 @@ export const judgeData = (
     | "params-salt"
     | "setup"
     | "ledger"
-    | "player",
+    | "player"
+    | "keys",
 ) => `judge:${activityId}:${part}`;
 
 /** The fingerprint (judge.js) and the tests' digest: SHA-256 of the text. */
@@ -253,6 +255,16 @@ export async function saveJudgeStatements(
           judgeData(activityId, "params"),
         ),
   ]);
+  // 密钥 typed (judge-key §3): checked against the version's own.
+  const keys = judge.keys
+    ? await saveKeysStatement(
+        env,
+        activityId,
+        await versionDeclarations(env, judge.judgeId ?? null, fingerprint),
+        judge.keys,
+        now,
+      )
+    : null;
   return [
     ...(judge.judgeId && !borrowed && judge.name !== undefined
       ? [
@@ -292,6 +304,8 @@ export async function saveJudgeStatements(
       now,
       borrowed && judge.networkAck ? JSON.stringify(judge.networkAck) : null,
     ),
+    // After the activity_code row its version is read from.
+    ...(keys ? [keys] : []),
   ];
 }
 

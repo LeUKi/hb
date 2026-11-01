@@ -64,7 +64,7 @@ function hostProblem(host) {
  * as the URL standard writes it back — https, a lowercase host, no port,
  * user, `?` or `#` — only a bare site may leave out its last `/`.
  */
-function readEntry(entry) {
+export function readEntry(entry) {
   if (typeof entry !== "string" || entry.trim() === "")
     return { problem: "要是不空的字符串" };
   if ([...entry].length > NETWORK_LIMITS.entryCharacters)

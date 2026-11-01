@@ -23,7 +23,7 @@ import {
   TEST_SEED,
   unclaimedOf,
 } from "../../runtime/index.mjs";
-import { KitError, readText } from "./files.mjs";
+import { KitError, keyLines, readLocalKeys, readText } from "./files.mjs";
 import { openSandbox } from "./sandbox.mjs";
 import { outcome, paidNow, paramsOf, printLedger } from "./simulate.mjs";
 import { readSimulation } from "./simulation.mjs";
@@ -499,7 +499,10 @@ export async function startPage({
   if (!existsSync(join(folder, "index.html")))
     throw new KitError("找不到 page/index.html");
   const plan = await planOf(root);
-  const sandbox = await openSandbox(code, { live });
+  const keys = live ? await readLocalKeys(root) : {};
+  const sandbox = await openSandbox(code, { live, keys });
+  if (live)
+    for (const line of keyLines(sandbox.declarations.params, keys)) print(line);
   const fail = async (problem) => {
     await sandbox.close();
     throw new KitError(problem);

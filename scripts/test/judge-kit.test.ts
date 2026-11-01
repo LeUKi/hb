@@ -1074,7 +1074,7 @@ describe("协议第三版：参数", () => {
       "✓ 代码能加载、导出了 judge",
       "✓ 参数表单预览",
       "  最大（整数，2–1000，默认 100）",
-      "  答案（整数，保密）",
+      "  答案（整数，结束后公开）",
       "  提示（列表，选填）",
     ]);
     expect(passed.lines.at(-1)).toBe("可以去网站部署了");
@@ -1199,7 +1199,7 @@ export function judge() { return { ok: false }; }`;
       cwd: sealed,
       args: ["judge-records-x.json"],
     });
-    expect(checked.lines).toContain("✓ 保密参数和封存值对得上");
+    expect(checked.lines).toContain("✓ 结束后公开的参数和封存值对得上");
     const forged = kit({
       "judge-records-x.json": {
         ...records,
@@ -1216,7 +1216,7 @@ export function judge() { return { ok: false }; }`;
       args: ["judge-records-x.json"],
     });
     expect(caught.lines.at(-1)).toBe(
-      "✗ 保密参数和封存值对不上：记录里的参数不是开放时封存的那份",
+      "✗ 结束后公开的参数和封存值对不上：记录里的参数不是开放时封存的那份",
     );
     expect(caught.exitCode).toBe(1);
     // Another answer: the replay is given it, and the judgments differ.
@@ -1354,7 +1354,7 @@ describe("协议第四版：公开数据、动态和结束", () => {
     });
     const { exitCode, lines } = await run(checkCommand, { dir });
     expect(lines).toContain(
-      "提醒：公开数据里出现了保密参数 word 的值，开放后所有人都看得到。",
+      "提醒：公开数据里出现了结束后才公开的参数 word 的值，开放后所有人都看得到。",
     );
     expect(lines.at(-1)).toBe("可以去网站部署了");
     expect(exitCode).toBe(0);
@@ -2020,6 +2020,99 @@ describe("选项联动", () => {
 // npm run page --shot (docs/kit-simulator-design.md §4): the simulator in a
 // browser no one sees, three shots and what went wrong in the page. Only
 // where a browser can be started (Chrome, Edge or Playwright's Chromium).
+// 三种参数 (docs/judge-key-design.md): revealAtEnd is secret as first
+// written; a 密钥 is never among the params, goes only to its own address.
+describe("结束后公开和密钥", () => {
+  const key = {
+    key: "ai",
+    label: "AI 密钥",
+    type: "key",
+    to: "https://api.openai.com/v1/",
+  };
+
+  it("reads revealAtEnd as secret was read: split off, sealed, previewed", async () => {
+    const { readParams, splitParams, secretKeys, paramLine } = await import(
+      "../../kit/runtime/index.mjs"
+    );
+    const read = readParams([
+      { key: "answer", label: "答案", type: "integer", revealAtEnd: true },
+      { key: "old", label: "旧", type: "text", secret: true },
+      { key: "max", label: "最大", type: "integer" },
+    ]);
+    if (!("list" in read)) throw new Error("NOT_READ");
+    expect(secretKeys(read.list)).toEqual(["answer", "old"]);
+    expect(splitParams(read.list, { answer: 7, old: "x", max: 9 })).toEqual({
+      shown: { max: 9 },
+      secret: { answer: 7, old: "x" },
+    });
+    expect(read.list.map(paramLine)).toEqual([
+      "答案（整数，结束后公开）",
+      "旧（文字，结束后公开）",
+      "最大（整数）",
+    ]);
+  });
+
+  it("keeps a 密钥 out of the params, previews where it goes, and adds it only to its own address", async () => {
+    const { readParams, paramValues, paramLine, keyHeaders } = await import(
+      "../../kit/runtime/index.mjs"
+    );
+    const read = readParams([
+      { ...key, header: "x-api-key", prefix: "" },
+      { key: "max", label: "最大", type: "integer", default: 5 },
+    ]);
+    if (!("list" in read)) throw new Error("NOT_READ");
+    expect(paramValues(read.list, {})).toEqual({ values: { max: 5 } });
+    expect(paramValues(read.list, { ai: "sk" })).toEqual({
+      problems: [{ key: "ai", message: "AI 密钥是密钥，不放在参数里" }],
+    });
+    expect(paramLine(read.list[0] as never)).toBe(
+      "AI 密钥（密钥，发红包的人自己填，不公开，只发给 https://api.openai.com/v1/）",
+    );
+    expect(
+      keyHeaders(read.list, { ai: "sk-1" }, "https://api.openai.com/v1/chat"),
+    ).toEqual([["x-api-key", "sk-1"]]);
+    expect(
+      keyHeaders(read.list, { ai: "sk-1" }, "https://api.openai.com/v2/chat"),
+    ).toEqual([]);
+  });
+
+  it("refuses a 密钥 with revealAtEnd, a default, an address not https, a header the gateway sets, or more than 3", async () => {
+    const { readParams, keyNetworkProblems } = await import(
+      "../../kit/runtime/index.mjs"
+    );
+    const problem = (item: Record<string, unknown>) => {
+      const read = readParams([item]);
+      return "problems" in read ? read.problems[0] : null;
+    };
+    expect(problem({ ...key, revealAtEnd: true })).toBe(
+      "params 第 1 项（ai）：密钥本来就不公开，不用写 revealAtEnd",
+    );
+    expect(problem({ ...key, default: "sk" })).toBe(
+      "params 第 1 项（ai）：密钥不能写 default，由发红包的人自己填",
+    );
+    expect(problem({ ...key, to: "http://api.openai.com/" })).toBe(
+      "params 第 1 项（ai）：to 只能用 https://",
+    );
+    expect(problem({ ...key, header: "Cookie" })).toBe(
+      "params 第 1 项（ai）：header 不能是 Cookie",
+    );
+    const four = readParams(
+      [1, 2, 3, 4].map((n) => ({ ...key, key: `k${n}` })),
+    );
+    expect("problems" in four && four.problems).toEqual([
+      "params 里的密钥最多 3 项",
+    ]);
+    const read = readParams([key]);
+    if (!("list" in read)) throw new Error("NOT_READ");
+    expect(keyNetworkProblems(read.list, ["https://api.openai.com/"])).toEqual(
+      [],
+    );
+    expect(keyNetworkProblems(read.list, ["https://example.com/"])).toEqual([
+      "params（ai）的 to：https://api.openai.com/v1/ 不在 network 里",
+    ]);
+  });
+});
+
 describe("npm run page --shot", () => {
   it("shoots wide and the phone's sheet down and up, and says the page reached the SDK without errors", async () => {
     const out = mkdtempSync(join(tmpdir(), "hb-shots-"));

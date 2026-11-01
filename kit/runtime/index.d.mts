@@ -330,6 +330,29 @@ export function paramValues(
   given: unknown,
 ): { values: Params } | { problems: ParamProblem[] };
 export function secretKeys(list: readonly ParamDeclaration[]): string[];
+/** 结束后公开: revealAtEnd, or secret as it was first written. */
+export function revealsAtEnd(item: ParamDeclaration): boolean;
+/** 密钥 (docs/judge-key-design.md). */
+export function keyParams(
+  list: readonly ParamDeclaration[],
+): Extract<ParamDeclaration, { type: "key" }>[];
+export function readKeyValue(
+  item: ParamDeclaration,
+  given: unknown,
+): { value: string } | { problem: string };
+export function keyNetworkProblems(
+  list: readonly ParamDeclaration[],
+  network: readonly string[] | null,
+): string[];
+export function keyLikeParams(
+  list: readonly ParamDeclaration[],
+  network: readonly string[] | null,
+): string[];
+export function keyHeaders(
+  list: readonly ParamDeclaration[],
+  values: Readonly<Record<string, string>> | null | undefined,
+  address: string,
+): [string, string][];
 export function readCheckAnswer(
   value: unknown,
   list: readonly ParamDeclaration[],

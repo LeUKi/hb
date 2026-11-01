@@ -12,7 +12,7 @@ import {
 import { useNavigate } from "@tanstack/react-router";
 import { AlertTriangle, ChevronRight } from "lucide-react";
 import { useEffect, useId, useState } from "react";
-import { paramValues } from "../../../../../kit/runtime/params.mjs";
+import { keyParams, paramValues } from "../../../../../kit/runtime/params.mjs";
 import { ActivityRequestError, refused } from "../../lib/activities";
 import { cn } from "../../lib/cn";
 import {
@@ -429,6 +429,7 @@ function Trying({
   declarations: JudgeDeclarations | null;
 }) {
   const params = declarations?.params ?? [];
+  const keys = keyParams(params);
   const [values, setValues] = useState(() => paramsFor(params, {}));
   // A param's problem shows once it was changed: one with no default is
   // not wrong before anyone touched it.
@@ -461,17 +462,26 @@ function Trying({
           {params.length === 0 ? (
             <p className="text-sm text-ink-2">没有参数，挑了就能发。</p>
           ) : (
-            <ParamsFields
-              params={params}
-              values={values}
-              errorOf={errorOf}
-              locked={false}
-              idPrefix="hb-try-param-"
-              onChange={(key, value) => {
-                setValues((current) => ({ ...current, [key]: value }));
-                setTouched((current) => new Set(current).add(key));
-              }}
-            />
+            <div className="grid gap-4">
+              <ParamsFields
+                params={params}
+                values={values}
+                errorOf={errorOf}
+                locked={false}
+                idPrefix="hb-try-param-"
+                onChange={(key, value) => {
+                  setValues((current) => ({ ...current, [key]: value }));
+                  setTouched((current) => new Set(current).add(key));
+                }}
+              />
+              {/* 密钥 (judge-key §3): the sender's, never tried here. */}
+              {keys.length > 0 && (
+                <p className="text-sm text-ink-3">
+                  {keys.map((item) => item.label).join("、")}
+                  是密钥，发红包的人自己填。试一试不真的联网，用不到它。
+                </p>
+              )}
+            </div>
           )}
         </Panel>
       </div>

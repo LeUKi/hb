@@ -4,7 +4,7 @@ import type {
   JudgePageVersion,
 } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { AlertTriangle, Check, ChevronRight, Copy, Lock } from "lucide-react";
+import { AlertTriangle, Check, ChevronRight, Copy } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { optionLines, paramLine } from "../../../../../kit/runtime/params.mjs";
 import { cn } from "../../lib/cn";
@@ -435,15 +435,9 @@ export function PublicJudgePage({
                   key={item.key}
                   className="grid gap-0.5 border-line border-b py-3 last:border-b-0"
                 >
-                  <p className="flex items-center gap-1.5 text-base text-ink">
+                  {/* Its line says when it is shown (结束后公开, 不公开). */}
+                  <p className="text-base break-all text-ink">
                     {paramLine(item)}
-                    {/* Its line says 保密; the lock is for the eye. */}
-                    {item.secret && (
-                      <Lock
-                        className="size-3.5 shrink-0 text-ink-3"
-                        aria-hidden="true"
-                      />
-                    )}
                   </p>
                   {item.hint && (
                     <p className="text-sm text-ink-3">{item.hint}</p>

@@ -85,6 +85,12 @@ export type FormState = {
     name: string;
     description: string;
     params: Record<string, unknown>;
+    /**
+     * 密钥 (docs/judge-key-design.md §3): those the server keeps (names
+     * only, never what) and what is typed to keep or change, sent once.
+     */
+    keysFilled: string[];
+    keys: Record<string, string>;
     /** Another's 判定器 picked from the 广场 (§15.3); null for one's own. */
     borrowed: BorrowedJudge | null;
   };
@@ -204,6 +210,8 @@ export function emptyForm(now = Date.now()): FormState {
       name: "",
       description: "",
       params: {},
+      keysFilled: [],
+      keys: {},
       borrowed: null,
     },
     participation: "password",
@@ -724,6 +732,8 @@ export function formOf(activity: ManagedActivity, now = Date.now()): FormState {
             name: config.judge?.name ?? "",
             description: config.judge?.description ?? "",
             params: config.judge?.params ?? {},
+            keysFilled: activity.judgeKeys ?? [],
+            keys: {},
             borrowed: borrowedOf(activity),
           }
         : base.judge,
@@ -881,10 +891,43 @@ export function inputOf(form: FormState, merchantId: string): ActivityInput {
             ...(Object.keys(form.judge.params).length > 0
               ? { params: form.judge.params }
               : {}),
+            ...keysTyped(form),
           },
         }
       : {}),
   };
+}
+
+/**
+ * After a save that stays on the page (📝): the 密钥 it sent are kept now
+ * (已填写) and no longer typed — unless typed anew meanwhile.
+ */
+export function withKeysKept(form: FormState, sent: FormState = form) {
+  const kept = Object.entries(sent.judge.keys)
+    .filter(([, value]) => value.trim() !== "")
+    .map(([key]) => key);
+  if (kept.length === 0) return form;
+  return {
+    ...form,
+    judge: {
+      ...form.judge,
+      keysFilled: [...new Set([...form.judge.keysFilled, ...kept])],
+      keys: Object.fromEntries(
+        Object.entries(form.judge.keys).filter(
+          ([key, value]) =>
+            !(kept.includes(key) && value === sent.judge.keys[key]),
+        ),
+      ),
+    },
+  };
+}
+
+/** 密钥 typed (judge-key §3): sent once, those left blank keep theirs. */
+function keysTyped(form: FormState) {
+  const typed = Object.entries(form.judge.keys)
+    .map(([key, value]) => [key, value.trim()] as const)
+    .filter(([, value]) => value !== "");
+  return typed.length > 0 ? { keys: Object.fromEntries(typed) } : {};
 }
 
 /**
@@ -907,6 +950,10 @@ export function openedInputOf(
     afterClaimInfo: form.afterClaimInfo,
     afterEndInfo: form.afterEndInfo,
     humanCheck: form.humanCheck,
+    // Its 密钥 may still change (judge-key §3).
+    ...(activity.config.judge && "keys" in keysTyped(form)
+      ? { judge: { ...activity.config.judge, ...keysTyped(form) } }
+      : {}),
   };
 }
 

@@ -287,10 +287,12 @@ export async function replayCommand({
         .map((key) => [key, records.params[key]]),
     );
     if (paramsCommitment(secret, sealed.salt) !== sealed.commitment) {
-      print("✗ 保密参数和封存值对不上：记录里的参数不是开放时封存的那份");
+      print(
+        "✗ 结束后公开的参数和封存值对不上：记录里的参数不是开放时封存的那份",
+      );
       return { exitCode: 1 };
     }
-    print("✓ 保密参数和封存值对得上");
+    print("✓ 结束后公开的参数和封存值对得上");
   }
   const { setup } = records;
   if (records.judgments.length === 0 && !setup) {

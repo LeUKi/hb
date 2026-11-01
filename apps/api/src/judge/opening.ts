@@ -28,7 +28,8 @@ import {
   passedBefore,
   testsChanged,
 } from "./check";
-import { openingParams } from "./params";
+import { keyNamesOf, missingKeys } from "./keys";
+import { declarationsFor, openingParams } from "./params";
 import { setupInJudge } from "./sandbox";
 import { judgeAuthorOf } from "./square";
 import { findJudgeRow, type JudgeRow, judgeData, readCode } from "./storage";
@@ -94,6 +95,14 @@ export async function codeOpeningBlocked(
       .first()
   )
     return "JUDGE_VERSION_WITHDRAWN";
+  // 密钥 its version needs, not filled yet (docs/judge-key-design.md §3).
+  if (
+    missingKeys(
+      await declarationsFor(env, row.authorId, judge),
+      await keyNamesOf(env, row.id),
+    ).length > 0
+  )
+    return "JUDGE_KEY_MISSING";
   const { runBy, protocol } = await codeOpeningRun(env, row.authorId, judge);
   const { fingerprint, testsDigest } = judge;
   if (protocol === null) {

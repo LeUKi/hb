@@ -21,7 +21,7 @@ const deployedAt = new Date(Date.now() - 3 * 3_600_000).toISOString();
 const guessCode = [
   "export const params = [",
   '  { key: "max", label: "最大", hint: "猜的范围", type: "integer", min: 2, max: 1000, default: 100 },',
-  '  { key: "answer", label: "答案", type: "integer", secret: true },',
+  '  { key: "answer", label: "答案", type: "integer", revealAtEnd: true },',
   "];",
   "export function judge(submission) {",
   "  return Number(submission.input) === submission.params.answer",
@@ -79,7 +79,7 @@ const guessPage: JudgePage = {
           max: 1000,
           default: 100,
         },
-        { key: "answer", label: "答案", type: "integer", secret: true },
+        { key: "answer", label: "答案", type: "integer", revealAtEnd: true },
       ],
       hongbao: {
         count: { min: 1, max: 10, default: 5 },
@@ -376,7 +376,7 @@ test.describe("判定器广场", () => {
       page.getByText("最大（整数，2–1000，默认 100）"),
     ).toBeVisible();
     await expect(page.getByText("猜的范围", { exact: true })).toBeVisible();
-    await expect(page.getByText("答案（整数，保密）")).toBeVisible();
+    await expect(page.getByText("答案（整数，结束后公开）")).toBeVisible();
     for (const line of [
       "总奖池默认 5 LDC",
       "截止默认 3 天",
@@ -888,6 +888,79 @@ test.describe("判定器广场", () => {
       params: { max: 100, answer: 42 },
     });
     expect(asked.saved[0]?.activity.judge).not.toHaveProperty("name");
+  });
+
+  test("密钥参数（judge-key）：判定器页写发给哪；表单里是密码框，标不公开，写发给哪、代码看不到、结束后删除；没填不能下一步；存草稿时密钥单独发，不在参数里", async ({
+    page,
+  }) => {
+    const { asked } = await mockSquare(page, member);
+    const AI = "https://api.openai.com/v1/";
+    const keyed: JudgePage = {
+      ...guessPage,
+      version: guessPage.version && {
+        ...guessPage.version,
+        declarations: guessPage.version.declarations && {
+          ...guessPage.version.declarations,
+          params: [
+            ...guessPage.version.declarations.params,
+            {
+              key: "ai",
+              label: "AI 密钥",
+              hint: "在服务商后台建一个",
+              type: "key",
+              to: AI,
+            },
+          ],
+        },
+      },
+    };
+    await page.route(`**/api/judges/${GUESS}`, (route) =>
+      route.fulfill({ json: { judge: keyed } }),
+    );
+    await openApp(page, `/judges/${GUESS}`);
+    await expect(
+      page.getByText(`AI 密钥（密钥，发红包的人自己填，不公开，只发给 ${AI}）`),
+    ).toBeVisible();
+    await expect(page.getByText("答案（整数，结束后公开）")).toBeVisible();
+    await openApp(page, "/new");
+    await page.getByRole("button", { name: /^代码判定/ }).click();
+    await page.getByRole("button", { name: /^去判定器广场挑一个/ }).click();
+    const square = page.getByRole("dialog", { name: "判定器广场" });
+    await square
+      .getByRole("article")
+      .filter({ hasText: "猜数字" })
+      .getByRole("button", { name: "用这个" })
+      .click();
+    await expect(square).toBeHidden();
+    const box = page.locator("#hb-param-ai");
+    await expect(box).toHaveAttribute("type", "password");
+    await expect(
+      page.getByRole("button", { name: "不公开" }),
+    ).toHaveAccessibleDescription(
+      `判定器代码看不到，也不会公开；只会发给 ${AI}，红包结束后删除。`,
+    );
+    await expect(
+      page.getByText(
+        `只会发给 ${AI}，判定器代码看不到；保存后不再显示，红包结束后删除。调用的费用从这个密钥扣。`,
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "结束后公开" }),
+    ).toBeVisible();
+    await page.locator("#hb-param-answer").fill("42");
+    await page.getByRole("button", { name: "下一步" }).first().click();
+    await expect(
+      page.getByText("还没填AI 密钥", { exact: true }),
+    ).toBeVisible();
+    await box.fill("sk-test");
+    await page.getByRole("button", { name: "下一步" }).first().click();
+    await page.getByRole("button", { name: "下一步" }).first().click();
+    await page.getByRole("button", { name: "存草稿" }).first().click();
+    await expect.poll(() => asked.saved.length).toBe(1);
+    expect(asked.saved[0]?.activity.judge).toMatchObject({
+      keys: { ai: "sk-test" },
+      params: { max: 100, answer: 42 },
+    });
   });
 
   test("去判定器广场挑一个：弹窗里挑联网的判定器先问这个判定器会联网，返回就不选；我知道，继续用以后草稿记住确认过的地址", async ({

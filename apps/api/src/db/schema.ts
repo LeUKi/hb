@@ -2106,6 +2106,33 @@ export const activityCode = sqliteTable(
 );
 
 /**
+ * 密钥 (docs/judge-key-design.md): a 代码判定红包's, as its sender filled
+ * them — encrypted JSON `{ key: value }`, the names filled beside it — added
+ * by the gateway to requests to their own address, never given to the code
+ * nor shown again. Changed any time; gone once the 红包 is over.
+ */
+export const activityKeys = sqliteTable(
+  "activity_keys",
+  {
+    activityId: text("activity_id")
+      .primaryKey()
+      .references(() => activities.id),
+    /** The keys filled, as a JSON array: what a read may say. */
+    names: text("names").notNull(),
+    ciphertext: text("ciphertext").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    check(
+      "activity_keys_shape",
+      sql`json_valid(${table.names}) AND json_type(${table.names}) = 'array'
+        AND json_array_length(${table.names}) BETWEEN 1 AND 3
+        AND typeof(${table.updatedAt}) = 'integer'`,
+    ),
+  ],
+);
+
+/**
  * One judgment: a claimant's submission and what the code answered. Inputs
  * are in attempt_events, as for 口令. Written once.
  */

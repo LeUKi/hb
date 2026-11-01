@@ -1,5 +1,5 @@
 // 答题：发红包的人写一张题目和答案的表，每人抽一道，答对的领一份。
-// - 题目和答案都是保密参数，结束后公开。
+// - 题目和答案都结束后公开（revealAtEnd）。
 // - 每人的题用 tools.userRandom 抽：同一个人提交几次都是同一道。
 // - 第一次提交时，回复里告诉他题目，题目也写进只给他看的数据（player.view），
 //   红包页上一直看得到；之后最多再答几次是参数，答满了就结算（没领到）。
@@ -18,7 +18,7 @@ export const params = [
     label: "题目和答案",
     hint: "每人随机抽一道；答案不分大小写和全半角",
     type: "table",
-    secret: true,
+    revealAtEnd: true,
     columns: [
       { key: "question", label: "题目", type: "text", maxLength: 60 },
       { key: "answer", label: "答案", type: "text", maxLength: 40 },

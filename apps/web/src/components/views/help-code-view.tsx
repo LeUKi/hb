@@ -86,7 +86,7 @@ ${keyPoints}
 - 能用：Web 标准（完整的 crypto、Intl、TextEncoder、URL、atob、btoa 等）。Node 模块只能在文件开头静态 import，必须带 node: 前缀：${MODULES.join("、")}。
 - 不能用：别的 Node 模块、npm 包、import 别的文件、动态 import()、require、caches。console 的输出线上丢弃。
 - 联网（可选）：judge.js 导出 network，列出能请求的地址前缀，最多 3 个，比如 export const network = ["https://api.example.com/hongbao/"]；写法是 https:// 加完整域名和路径，不带端口、? 和 #，不能是 IP、linux.do 和本站。不导出就不联网，fetch 会失败。判定里直接用 fetch()：每次判定最多 3 个请求，只许 GET 和 POST，请求体最大 16 KB，单个请求 10 秒，返回最大 64 KB，不跟随跳转；等请求的时间不算进 50 毫秒，整次判定最多 15 秒；不行时 fetch() 抛 TypeError（“联网失败：…”），可以接住。领的人可以绕过本站直接请求你的接口，要防就在代码里放一个只有你知道的令牌，请求时带上；红包结束后代码公开，令牌也会公开，结束后要作废。红包结束后，领的人能看到自己那几次判定的返回内容。
-- 参数（可选）：会变的东西（答案、范围、次数、几个人能领、题目）写成参数，发红包的人在网站上填，判定时在 submission.params 里。export const params = [ … ]，最多 20 项，每项 { key（字母、数字、下划线）, label（最多 20 个字）, hint（最多 60 个字）, type, default, required（默认 true）, secret（默认 false） } 加上类型自己的限制。type：text（单行，minLength、maxLength ≤ 200）、textarea（多行，maxLength ≤ 2000）、integer（min、max、step）、money（整数分，min ≥ 1、max）、switch、choice（options：2–20 个 { value, label, hint, set }；选项联动：set 是选了这一项时把别的参数改成的值，比如 { bombs: 3, max: 50 }，hint 是选了这一项时的说明）、list（一行一个，minItems、maxItems ≤ 100、maxLength）、table（columns：1–6 列 { key, label, type: text | integer | money }，minRows、maxRows ≤ 100）。网站按声明校验；没填的选填项，开关是 false，列表和表格是 []，其他是 null。secret 的参数开放时只公布封存值，结束后公开。几项合起来的检查写 export function check(params, hongbao)，返回 [{ key, message }]，没问题返回 []；hongbao 同 setup 的。export const hongbao = { total: { min, max, default }, deadline: { value, unit }, prompt, humanCheck, pageAutoOpen, title, note } 给“发多少”设默认值和范围（金额是整数分），prompt 是领取提示（最多 ${JUDGE_LIMITS.promptCharacters} 个字），humanCheck 建议打开领取前人机验证（默认别写，见要点第 2 条），pageAutoOpen 建议打开红包页时自动打开附带网页（带网页的都写上），title、note 是红包标题（最多 100 个字）和说明（最多 2000 个字，一个回车就换行，[文字](#附带网页) 是打开附带网页的按钮，带网页的第一行就放它）的默认值；没有份数，要几个人能领就做成参数。export const meta = { name, description, page } 是判定器的名字（最多 20 个字）、说明（最多 60 个字）和带的附带网页（page，https，规则同附带网页，用它发红包时替发红包的人填好；怎么接见 ${origin}/help/page；开发包里有网页模板 page/index.html、本地的模拟器 npm run page（npm run page -- --shot 截图给 AI 看）和数字炸弹、刮刮乐两个带网页的样例）。
+- 参数（可选）：会变的东西（答案、范围、次数、几个人能领、题目）写成参数，发红包的人在网站上填，判定时在 submission.params 里。export const params = [ … ]，最多 20 项，每项 { key（字母、数字、下划线）, label（最多 20 个字）, hint（最多 60 个字）, type, default, required（默认 true）, revealAtEnd（默认 false） } 加上类型自己的限制。type：text（单行，minLength、maxLength ≤ 200）、textarea（多行，maxLength ≤ 2000）、integer（min、max、step）、money（整数分，min ≥ 1、max）、switch、choice（options：2–20 个 { value, label, hint, set }；选项联动：set 是选了这一项时把别的参数改成的值，比如 { bombs: 3, max: 50 }，hint 是选了这一项时的说明）、list（一行一个，minItems、maxItems ≤ 100、maxLength）、table（columns：1–6 列 { key, label, type: text | integer | money }，minRows、maxRows ≤ 100）。网站按声明校验；没填的选填项，开关是 false，列表和表格是 []，其他是 null。revealAtEnd 的参数（旧写法 secret）开放时只公布封存值，结束后公开，代码读得到，放答案、谜底。密钥：{ key, label, hint, type: "key", to, header, prefix }，发红包的人自己填（比如 AI 服务的），代码读不到（submission.params 里没有），永远不公开；代码请求 to 开头的地址（要在 network 里）时，本站把它加进请求头 header（默认 Authorization），值是 prefix（默认 "Bearer "）加密钥；最多 3 项。要发红包的人的密钥就用它，别放进普通参数。几项合起来的检查写 export function check(params, hongbao)，返回 [{ key, message }]，没问题返回 []；hongbao 同 setup 的。export const hongbao = { total: { min, max, default }, deadline: { value, unit }, prompt, humanCheck, pageAutoOpen, title, note } 给“发多少”设默认值和范围（金额是整数分），prompt 是领取提示（最多 ${JUDGE_LIMITS.promptCharacters} 个字），humanCheck 建议打开领取前人机验证（默认别写，见要点第 2 条），pageAutoOpen 建议打开红包页时自动打开附带网页（带网页的都写上），title、note 是红包标题（最多 100 个字）和说明（最多 2000 个字，一个回车就换行，[文字](#附带网页) 是打开附带网页的按钮，带网页的第一行就放它）的默认值；没有份数，要几个人能领就做成参数。export const meta = { name, description, page } 是判定器的名字（最多 20 个字）、说明（最多 60 个字）和带的附带网页（page，https，规则同附带网页，用它发红包时替发红包的人填好；怎么接见 ${origin}/help/page；开发包里有网页模板 page/index.html、本地的模拟器 npm run page（npm run page -- --shot 截图给 AI 看）和数字炸弹、刮刮乐两个带网页的样例）。
 - 随机数用 tools.random（这一次提交的，Math.random() 也是它）或 tools.userRandom（这个人固定的，提交几次都一样）。都能复现：红包结束后公开种子，谁都能核对。crypto.getRandomValues 是真随机，能用但没法核对。
 - tools 全是同步的：
   - tools.random、tools.userRandom：next()（[0, 1)）、int(min, max)（含两端）、pick(items)、shuffle(items)
@@ -626,7 +626,7 @@ export async function judge(submission) {
             },
             {
               name: "令牌",
-              note: "领的人可以绕过本站直接请求你的接口，那样没有尝试间隔和人机验证。要防，就在代码里放一个只有你知道的令牌，请求时带上，接口只认它。代码结束后公开，令牌也会公开，结束后要作废。本站给每个请求加 X-Hb-Hongbao（红包 ID，不保密）和自己的 User-Agent。",
+              note: '领的人可以绕过本站直接请求你的接口，那样没有尝试间隔和人机验证。要防，就让接口只认一把密钥，用密钥参数（type: "key"，to 写接口的地址）放它：代码读不到，也不会公开。本站给每个请求加 X-Hb-Hongbao（红包 ID，公开的）和自己的 User-Agent。',
             },
             {
               name: "谁看得到",
@@ -658,7 +658,7 @@ export async function judge(submission) {
 
 export const params = [
   { key: "max", label: "最大", type: "integer", min: 2, max: 1000, default: 100 },
-  { key: "answer", label: "答案", type: "integer", secret: true },
+  { key: "answer", label: "答案", type: "integer", revealAtEnd: true },
   { key: "tries", label: "每人最多猜几次", type: "integer", min: 1, max: 10, default: 5 },
   { key: "winners", label: "几个人能领", hint: "奖池按这么多份平均分", type: "integer", min: 1, max: 100, default: 5 },
 ];
@@ -685,19 +685,23 @@ export function judge(submission, tools) {
           items={[
             {
               name: "params",
-              note: "最多 20 项，每项 { key, label, hint, type, default, required, secret } 加上类型自己的限制。key 只用字母、数字和下划线；label 是表单上的名字，最多 20 个字；hint 是一句说明，最多 60 个字；required 默认 true，secret 默认 false。",
+              note: "最多 20 项，每项 { key, label, hint, type, default, required, revealAtEnd } 加上类型自己的限制。key 只用字母、数字和下划线；label 是表单上的名字，最多 20 个字；hint 是一句说明，最多 60 个字；required 默认 true，revealAtEnd 默认 false。",
             },
             {
               name: "type",
-              note: "text 单行文字（minLength、maxLength，最多 200）；textarea 多行文字（maxLength，最多 2000）；integer 整数（min、max、step）；money 金额，整数分（min 至少 1、max）；switch 开关；choice 选一个（options：2–20 个 { value, label, hint, set }：选了某一项，set 把别的参数改成这些值，hint 换成这一项的说明）；list 一行一个（minItems、maxItems 最多 100、maxLength）；table 每行几格（columns：1–6 列，每列 text、integer 或 money；minRows、maxRows 最多 100）。",
+              note: "text 单行文字（minLength、maxLength，最多 200）；textarea 多行文字（maxLength，最多 2000）；integer 整数（min、max、step）；money 金额，整数分（min 至少 1、max）；switch 开关；choice 选一个（options：2–20 个 { value, label, hint, set }：选了某一项，set 把别的参数改成这些值，hint 换成这一项的说明）；list 一行一个（minItems、maxItems 最多 100、maxLength）；table 每行几格（columns：1–6 列，每列 text、integer 或 money；minRows、maxRows 最多 100）；key 密钥（见下面）。",
             },
             {
               name: "submission.params",
               note: "网站按声明校验过：文字去掉了首尾空白；没填的选填项，开关是 false，列表和表格是 []，其他是 null。整份最大 16 KB。",
             },
             {
-              name: "保密",
-              note: "secret: true 的参数开放时只公布参数封存值，结束后和代码、种子一起公开，谁都能核对。回复里会不会透露它，要看代码怎么写。",
+              name: "结束后公开",
+              note: "revealAtEnd: true（旧写法 secret: true 同样认）：红包进行中不公开，开放时只公布参数封存值，结束后和代码、种子一起公开，谁都能核对没换过。代码读得到它，回复里会不会透露它，要看代码怎么写。放答案、谜底。",
+            },
+            {
+              name: "密钥",
+              note: '{ key, label, hint, type: "key", to, header, prefix, required }：发红包的人自己填（比如 AI 服务的密钥），代码读不到（submission.params 里没有它），永远不公开，红包结束后删除。代码请求 to 开头的地址时，本站把它加进请求头 header（默认 Authorization），值是 prefix（默认 "Bearer "）加密钥；to 要在 network 里。最多 3 项，不能写 default 和 revealAtEnd。领的人每提交一次就可能调一次服务，费用从发红包的人的密钥扣：限制每人能试几次。',
             },
             {
               name: "check(params, hongbao)",
@@ -794,7 +798,8 @@ export function judge(submission, tools) {
                   <Code>announce</Code>、<Code>end</Code>。
                   <Code>npm run simulate</Code> 先跑
                   setup，每一步打出公开数据和动态；
-                  <Code>npm run check</Code> 在公开数据里出现保密参数的值时提醒
+                  <Code>npm run check</Code>{" "}
+                  在公开数据里出现结束后才公开的参数的值时提醒
                 </>
               ),
             },

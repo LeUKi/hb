@@ -17,6 +17,7 @@ import {
   type JudgeChallenger,
   type JudgeChallengerList,
   type JudgeCheck,
+  type JudgeParam,
   type JudgeVersions,
   type ManagedActivity,
   type MyJudgment,
@@ -408,10 +409,13 @@ async function mockSenderReads(
     versions,
     draft,
     passed = !draft,
+    judgeKeys,
   }: {
     versions?: JudgeVersions;
     draft?: { code: string; tests: string };
     passed?: boolean;
+    /** 密钥 kept (judge-key §3): their keys. */
+    judgeKeys?: string[];
   } = {},
 ) {
   const managed: ManagedActivity = {
@@ -431,6 +435,7 @@ async function mockSenderReads(
     claimedCount: draft ? 0 : 1,
     author: authorProfile,
     judgePassed: passed,
+    ...(judgeKeys ? { judgeKeys } : {}),
     ...(passed
       ? {}
       : { openingBlockedReason: "JUDGE_CHECK_REQUIRED" as const }),
@@ -1380,7 +1385,7 @@ test.describe("代码判定红包", () => {
     }
   });
 
-  test("判定器和参数（judge-square §10）：开放时写判定器、公开参数和几项保密的封存值；结束后保密参数和盐公开，在这里核对", async ({
+  test("判定器和参数（judge-square §10）：开放时写判定器、公开参数和几项结束后公开的参数的封存值；结束后这几项参数和盐公开，在这里核对", async ({
     page,
   }) => {
     await mockSession(page, null);
@@ -1423,6 +1428,8 @@ test.describe("代码判定红包", () => {
         },
       ],
       sealedParams: { count: 1, commitment },
+      // 密钥 (docs/judge-key-design.md §4): that there is, never what.
+      keys: [{ label: "AI 密钥", to: "https://api.openai.com/v1/" }],
     };
     state.judge = { ...publicJudge(), protocol: 3, ...open };
     await openApp(page, path);
@@ -1433,12 +1440,13 @@ test.describe("代码判定红包", () => {
     ).toBeVisible();
     await expect(dialog.getByText("最大：100")).toBeVisible();
     await expect(dialog.getByText("奖金：1.50 LDC")).toBeVisible();
+    await expect(
+      dialog.getByText("AI 密钥：发红包的人自己的，不公开"),
+    ).toBeVisible();
     const list = dialog.getByText("提示：2 项");
     await list.click();
     await expect(dialog.getByText("二", { exact: true })).toBeVisible();
-    await expect(
-      dialog.getByText("另有 1 项保密参数，结束后公开"),
-    ).toBeVisible();
+    await expect(dialog.getByText("另有 1 项参数结束后公开")).toBeVisible();
     await expect(dialog.getByText(commitment)).toBeVisible();
     await page.keyboard.press("Escape");
 
@@ -1459,13 +1467,11 @@ test.describe("代码判定红包", () => {
     await expect(dialog.getByText(salt)).toBeVisible();
     await expect(
       dialog.getByText(
-        "参数封存值 = SHA-256（按键排序的保密参数 JSON、换行、盐）",
+        "参数封存值 = SHA-256（按键排序的结束后公开的参数 JSON、换行、盐）",
       ),
     ).toBeVisible();
     await expect(dialog.getByText("和封存值一致")).toHaveCount(2);
-    await expect(dialog.getByText("另有 1 项保密参数，结束后公开")).toHaveCount(
-      0,
-    );
+    await expect(dialog.getByText("另有 1 项参数结束后公开")).toHaveCount(0);
   });
 
   test("已结束（参与过）：我的记录照样留着，输入直接显示，没有眼睛", async ({
@@ -1939,10 +1945,13 @@ test.describe("发红包 · 代码判定", () => {
       deployLimit = 10,
       user = { ...viewer, balance: true, balancePlus: true },
       judge,
+      params = [],
     }: {
       deploysLeft?: number;
       deployLimit?: number;
       user?: MockUser;
+      /** What its versions declare as params (none when not given). */
+      params?: JudgeParam[];
       judge?: {
         id: string;
         name: string;
@@ -2016,7 +2025,7 @@ test.describe("发红包 · 代码判定", () => {
     /** 我的判定器 as the 广场's 我的 and the 判定器页 read it. */
     const declarations = {
       meta: null,
-      params: [],
+      params,
       hongbao: null,
       check: false,
     };
@@ -2908,6 +2917,59 @@ test.describe("发红包 · 代码判定", () => {
     expect(server.requests).toHaveLength(0);
   });
 
+  test("草稿重新打开：密钥存过的写已填写，看不到内容；能换一个，也能不换了（judge-key §3）", async ({
+    page,
+  }) => {
+    await mockCodeHongbao(page);
+    const versions: JudgeVersions = {
+      next: 2,
+      versions: [
+        {
+          n: 1,
+          fingerprint: sha256(firstCode),
+          at: openedAt,
+          testsDigest: sha256(testsFile),
+          passed: true,
+          protocol: JUDGE_PROTOCOL,
+        },
+      ],
+    };
+    await mockDeploys(page, {
+      user: author,
+      judge: {
+        id: E2E_JUDGE,
+        name: "猜数字",
+        versions,
+        codes: { 1: firstCode },
+      },
+      params: [
+        {
+          key: "ai",
+          label: "AI 密钥",
+          type: "key",
+          to: "https://api.openai.com/v1/",
+        },
+      ],
+    });
+    await mockSenderReads(page, {
+      draft: { code: firstCode, tests: testsFile },
+      versions,
+      passed: true,
+      judgeKeys: ["ai"],
+    });
+    await openApp(page, `${path}/📝`);
+    await page.getByRole("button", { name: /^第 2 步 判定器/ }).click();
+    const kept = page.locator("#hb-param-ai");
+    await expect(kept).toContainText("已填写");
+    await expect(page.locator('input[type="password"]')).toHaveCount(0);
+    await kept.getByRole("button", { name: "换一个" }).click();
+    const box = page.locator("#hb-param-ai");
+    await expect(box).toHaveAttribute("type", "password");
+    await expect(box).toHaveValue("");
+    await page.getByRole("button", { name: "不换了" }).click();
+    await expect(page.locator("#hb-param-ai")).toContainText("已填写");
+  });
+
   test("草稿重新打开：选着的第 2 版被自己撤回了（judge-square §17），卡上写换一个版本才能开放，能换成第 1 版", async ({
     page,
   }) => {
@@ -3486,9 +3548,9 @@ test.describe("发红包 · 代码判定", () => {
     await pickMine(page);
     await expect(page.getByRole("button", { name: "查看代码" })).toBeVisible();
     await expect(page.locator("#hb-param-max")).toHaveValue("100");
-    const lock = page.getByRole("button", { name: "保密" });
-    await expect(lock).toHaveAccessibleDescription(
-      "开放后保密，结束后公开。回复里会不会透露它，要看判定器的代码。",
+    const tag = page.getByRole("button", { name: "结束后公开" });
+    await expect(tag).toHaveAccessibleDescription(
+      "红包进行中不公开，结束后公开；开放时公布的参数封存值能核对它没被换过。回复里会不会透露它，要看判定器的代码。",
     );
     // 下一步: its own rules first, then its check().
     await page.getByRole("button", { name: "下一步" }).first().click();

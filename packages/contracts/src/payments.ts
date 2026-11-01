@@ -168,6 +168,8 @@ export type LdcOpeningBlockedReason =
   | "JUDGE_TAKEN_DOWN"
   /** 判定器's version withdrawn by its author (judge-square §17). */
   | "JUDGE_VERSION_WITHDRAWN"
+  /** A 密钥 its version needs is not filled (docs/judge-key-design.md §3). */
+  | "JUDGE_KEY_MISSING"
   | "TIMED_DRAW_NOT_ENABLED"
   | "MERCHANT_LEGACY"
   | "MERCHANT_CREDENTIALS_UNVERIFIED"

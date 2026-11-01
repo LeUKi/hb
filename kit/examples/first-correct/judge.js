@@ -1,5 +1,5 @@
 // 前 N 个答对的：前几个答对的各拿一大份，之后答对的拼手气。
-// - 答案保密，比较前用 tools.text.normalize：不分大小写和全半角。
+// - 答案结束后公开，比较前用 tools.text.normalize：不分大小写和全半角。
 // - 拼手气用 tools.money.lucky("double", n)（微信同款），n 是前几个加上拼手气的
 //   份数；结束后公开种子，谁都能重放。
 // - 答对就加钱并且马上结算；每人最多答几次是参数，答满了结算（没领到）。
@@ -17,7 +17,7 @@ export const params = [
     hint: "不分大小写和全半角",
     type: "text",
     maxLength: 100,
-    secret: true,
+    revealAtEnd: true,
   },
   {
     key: "first",

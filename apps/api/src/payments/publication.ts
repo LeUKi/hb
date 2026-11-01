@@ -71,4 +71,5 @@ export const publicationMessages = {
     "这个判定器已被站长撤下，换一个判定器才能开放，草稿已保存。",
   JUDGE_VERSION_WITHDRAWN:
     "这一版判定器已经撤回了，换一个版本才能开放，草稿已保存。",
+  JUDGE_KEY_MISSING: "判定器要的密钥还没填，草稿已保存。",
 } as const;

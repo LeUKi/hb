@@ -17,6 +17,8 @@ import {
 import type { FetchAnswer } from "../../../../kit/judge";
 import {
   checkSource,
+  keyLikeParams,
+  keyNetworkProblems,
   type RunCheck,
   readCheckAnswer,
   readDeclarations,
@@ -331,6 +333,7 @@ async function runChecks(
     check: false,
   };
   const declarationProblems: string[] = [];
+  const reminders: string[] = [];
   /**
    * A sandbox's first use: its 份 on record before the 判定器 is made (§7:
    * 每月上限 and 用量 see it even if the run goes no further; the run
@@ -373,6 +376,16 @@ async function runChecks(
       const { problems: wrong, ...read } = readDeclarations(described);
       declarations = read;
       declarationProblems.push(...wrong);
+      // 密钥 go only to an address it lists (docs/judge-key-design.md).
+      if (!("problems" in declared)) {
+        declarationProblems.push(...keyNetworkProblems(read.params, network));
+        reminders.push(
+          ...keyLikeParams(read.params, network).map(
+            (key) =>
+              `params（${key}）像是密钥：放密钥用 type: "key"，判定器代码读不到，也不会公开`,
+          ),
+        );
+      }
     }
     const run = async (
       submission: Parameters<typeof runJudge>[1]["submission"],
@@ -530,6 +543,7 @@ async function runChecks(
     ...(networkProblems.length > 0 ? { networkProblems } : {}),
     declarations,
     ...(declarationProblems.length > 0 ? { declarationProblems } : {}),
+    ...(reminders.length > 0 ? { reminders } : {}),
     problems,
     ...(testsProblem ? { testsProblem } : {}),
     ...(loadProblem ? { loadProblem } : {}),

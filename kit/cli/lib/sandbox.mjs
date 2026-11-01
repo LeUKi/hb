@@ -12,6 +12,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import {
+  keyParams,
   NETWORK_LIMITS,
   readCheckAnswer,
   readDeclarations,
@@ -137,11 +138,13 @@ function networkOf(answer) {
  */
 export async function openSandbox(
   code,
-  { live = false, protocol = PROTOCOL } = {},
+  { live = false, protocol = PROTOCOL, keys = {} } = {},
 ) {
   const { Miniflare, convertV4MiniflareOptions } = await loadMiniflare();
-  // The list the gateway lets out, known once judge.js is read.
+  // The list the gateway lets out, known once judge.js is read; the 密钥
+  // it adds (keys.local.json, docs/judge-key-design.md §5).
   let allowed = [];
+  let keyed = [];
   const options = () =>
     convertV4MiniflareOptions({
       // Request.cf is fetched from Cloudflare and cached in the working
@@ -169,7 +172,10 @@ export async function openSandbox(
             { type: "ESModule", path: "network.mjs", contents: networkRules },
           ],
           compatibilityDate: COMPATIBILITY_DATE,
-          bindings: { LIST: JSON.stringify(allowed) },
+          bindings: {
+            LIST: JSON.stringify(allowed),
+            KEYS: JSON.stringify(keyed),
+          },
         },
       ],
     });
@@ -206,6 +212,13 @@ export async function openSandbox(
   // Going out, the gateway knows the list: workerd again, with it.
   if (live && list) {
     allowed = list;
+    keyed = keyParams(declarations.params)
+      .filter((item) => typeof keys[item.key] === "string")
+      .map((item) => ({
+        to: item.to,
+        header: item.header ?? "Authorization",
+        value: `${item.prefix ?? "Bearer "}${keys[item.key]}`,
+      }));
     const first = runtime;
     ({ runtime, hung, loadMs } = await start());
     await first.dispose().catch(() => {});

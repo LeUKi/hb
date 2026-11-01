@@ -855,6 +855,8 @@ export type ManagedActivity = ActivitySummary & {
   judgePaused?: true;
   /** 代码判定 with another's 判定器 (judge-square §15.4): whose, and how it stands. */
   judgeSource?: JudgeSource;
+  /** 密钥 filled (docs/judge-key-design.md §3): their keys, never what. */
+  judgeKeys?: string[];
 };
 
 export type PublicQuantity =

@@ -2,7 +2,10 @@ import type { JudgeParam, PublicJudge } from "@hb/contracts";
 import { Link, useRouter } from "@tanstack/react-router";
 import { Braces, Check, ChevronRight, Copy, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { sortedJson } from "../../../../../kit/runtime/params.mjs";
+import {
+  revealsAtEnd,
+  sortedJson,
+} from "../../../../../kit/runtime/params.mjs";
 import { haptic } from "../../lib/haptics";
 import { textDigest } from "../../lib/judge";
 import { switchOverlay } from "../../lib/overlay";
@@ -97,8 +100,11 @@ function entryText(param: JudgeParam, entry: unknown) {
  */
 function ParamsFact({
   params,
+  keys,
 }: {
   params: NonNullable<PublicJudge["params"]>;
+  /** 密钥 (docs/judge-key-design.md §4): that there are, never what. */
+  keys: NonNullable<PublicJudge["keys"]>;
 }) {
   return (
     <div className="grid gap-1">
@@ -128,6 +134,11 @@ function ParamsFact({
             </li>
           ),
         )}
+        {keys.map((key) => (
+          <li key={key.label} className="text-ink-2">
+            {key.label}：发红包的人自己的，不公开
+          </li>
+        ))}
       </ul>
     </div>
   );
@@ -180,7 +191,7 @@ function useChecks(activityId: string, judge?: PublicJudge) {
     const salt = judge.sealedParams?.salt;
     const secret = Object.fromEntries(
       (judge.params ?? [])
-        .filter(({ param }) => param.secret)
+        .filter(({ param }) => revealsAtEnd(param))
         .map(({ param, value }) => [param.key, value]),
     );
     void Promise.all([
@@ -338,14 +349,14 @@ function CodeBody({
             <JudgeLine judge={judge.judge} />
           </div>
         )}
-        {judge.params && judge.params.length > 0 && (
-          <ParamsFact params={judge.params} />
+        {((judge.params?.length ?? 0) > 0 || (judge.keys?.length ?? 0) > 0) && (
+          <ParamsFact params={judge.params ?? []} keys={judge.keys ?? []} />
         )}
         {judge.sealedParams && (
           <>
             {!judge.sealedParams.salt && (
               <p className="text-sm text-ink">
-                另有 {judge.sealedParams.count} 项保密参数，结束后公开
+                另有 {judge.sealedParams.count} 项参数结束后公开
               </p>
             )}
             <Fact
@@ -353,8 +364,8 @@ function CodeBody({
               value={judge.sealedParams.commitment}
               note={
                 judge.sealedParams.salt
-                  ? "参数封存值 = SHA-256（按键排序的保密参数 JSON、换行、盐）"
-                  : "保密参数结束后和盐一起公开，和这个封存值对得上，就说明开放后没换过。"
+                  ? "参数封存值 = SHA-256（按键排序的结束后公开的参数 JSON、换行、盐）"
+                  : "这几项参数结束后和盐一起公开，和这个封存值对得上，就说明开放后没换过。"
               }
               matched={checks?.params ? "和封存值一致" : undefined}
             />
@@ -362,7 +373,7 @@ function CodeBody({
               <Fact
                 label="盐"
                 value={judge.sealedParams.salt}
-                note="开放时随机取的，和保密参数一起算出上面的封存值。"
+                note="开放时随机取的，和结束后公开的参数一起算出上面的封存值。"
               />
             )}
           </>

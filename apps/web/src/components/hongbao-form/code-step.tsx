@@ -209,6 +209,21 @@ function CheckResult({ check }: { check: JudgeCheck }) {
           ))}
         </Row>
       )}
+      {check.declarationProblems && (
+        <Row ok={false}>
+          参数声明写得不对
+          {check.declarationProblems.map((problem) => (
+            <span key={problem} className="block text-xs break-all">
+              {problem}
+            </span>
+          ))}
+        </Row>
+      )}
+      {check.reminders?.map((reminder) => (
+        <li key={reminder} className="pl-6 text-xs break-all text-warning">
+          {reminder}
+        </li>
+      ))}
       {check.unstable.length > 0 && (
         <li className="pl-6 text-xs text-warning">
           两次跑出的结果不一样：{check.unstable.join("、")}
@@ -1108,6 +1123,21 @@ export function CodeStep({
               values={form.judge.params}
               errorOf={paramErrorOf}
               locked={locked}
+              keys={{
+                filled: form.judge.keysFilled,
+                typed: form.judge.keys,
+                onType: (key, value) =>
+                  update((current) => {
+                    const { [key]: _left, ...rest } = current.judge.keys;
+                    return {
+                      ...current,
+                      judge: {
+                        ...current.judge,
+                        keys: value === null ? rest : { ...rest, [key]: value },
+                      },
+                    };
+                  }),
+              }}
               onChange={(key, value) =>
                 update((current) => ({
                   ...current,
