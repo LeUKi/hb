@@ -21,6 +21,7 @@ import {
   JudgeTags,
   networkWords,
   statsLine,
+  writtenAddress,
 } from "../judges/judge-bits";
 import { waitingWords } from "../judges/square-card";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
@@ -527,20 +528,17 @@ export function PublicJudgePage({
         <PageSection title="联网">
           <Panel className="grid gap-2 p-4">
             <ul className="grid gap-0.5">
-              {version.network.map((entry) =>
-                typeof entry === "string" ? (
-                  <li
-                    key={entry}
-                    className="font-mono text-sm break-all text-ink"
-                  >
-                    {entry}
-                  </li>
-                ) : (
-                  <li key={entry.param} className="text-sm text-ink">
-                    {networkWords(entry, params)}
-                  </li>
-                ),
-              )}
+              {version.network.map((entry) => (
+                <li
+                  key={networkWords(entry, params)}
+                  className={cn(
+                    "text-sm break-all text-ink",
+                    writtenAddress(entry) !== null && "font-mono",
+                  )}
+                >
+                  {networkWords(entry, params)}
+                </li>
+              ))}
             </ul>
             <p className="text-sm text-ink-2">
               领的人提交的内容会发到这些地址，由对方的服务器决定发不发、发多少，对方随时能改。

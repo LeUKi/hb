@@ -3,11 +3,7 @@
 // never read back to anyone. The gateway adds each to requests to its own
 // address; once the 红包 is over they are deleted.
 import type { JudgeDeclarations } from "@hb/contracts";
-import {
-  keyHeaders,
-  keyParams,
-  readKeyValue,
-} from "../../../../kit/runtime/index.mjs";
+import { keyParams, readKeyValue } from "../../../../kit/runtime/index.mjs";
 import { ActivityError } from "../activities/errors";
 import type { ApiBindings } from "../env";
 import { decryptString, encryptString } from "../security/crypto";
@@ -15,7 +11,8 @@ import { judgeData } from "./storage";
 
 type Values = Record<string, string>;
 
-async function stored(env: ApiBindings, activityId: string) {
+/** The 密钥 filled, decrypted: for the gateway only (outgoing.ts). */
+export async function storedKeys(env: ApiBindings, activityId: string) {
   const row = await env.DB.prepare(
     "SELECT ciphertext FROM activity_keys WHERE activity_id = ?",
   )
@@ -53,7 +50,7 @@ export async function saveKeysStatement(
   const given = Object.entries(typed ?? {});
   if (given.length === 0) return null;
   const declared = keyParams(declarations?.params ?? []);
-  const values = await stored(env, activityId);
+  const values = await storedKeys(env, activityId);
   for (const [key, value] of given) {
     const item = declared.find((each) => each.key === key);
     if (!item)
@@ -114,36 +111,6 @@ export function missingKeys(
   return keyParams(declarations?.params ?? [])
     .filter((item) => item.required !== false && !names.includes(item.key))
     .map((item) => item.label);
-}
-
-/**
- * What the gateway adds to a request to `address` (judge-key §1): the
- * header of each 密钥 whose own address it is under — for a `to` that is
- * an 地址参数, the address its params published at opening have
- * (docs/judge-address-design.md §7) — read anew each time (a 密钥 changed
- * applies from the next request).
- */
-export async function keyHeadersFor(
-  env: ApiBindings,
-  activityId: string,
-  address: string,
-) {
-  const row = await env.DB.prepare(
-    `SELECT v.declarations, c.params_public AS shown FROM activity_code c
-      JOIN judge_versions v ON v.judge_id = c.judge_id AND v.n = c.judge_version
-      WHERE c.activity_id = ? AND EXISTS(SELECT 1 FROM activity_keys k WHERE k.activity_id = c.activity_id)`,
-  )
-    .bind(activityId)
-    .first<{ declarations: string | null; shown: string | null }>();
-  if (!row?.declarations) return [];
-  const params = (JSON.parse(row.declarations) as JudgeDeclarations).params;
-  if (keyParams(params).length === 0) return [];
-  return keyHeaders(
-    params,
-    await stored(env, activityId),
-    address,
-    row.shown ? JSON.parse(row.shown) : {},
-  );
 }
 
 /** Gone once the 红包 is over, or deleted (judge-key §1). */

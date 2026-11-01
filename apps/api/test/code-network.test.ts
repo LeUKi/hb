@@ -582,8 +582,13 @@ export async function judge(submission) {
 
 describe("代码判定联网: 地址参数", () => {
   // docs/judge-address-design.md: each sender's own service, its address
-  // filled in at opening, its 密钥 sent there only.
-  const OWN = `export const network = [{ param: "server" }];
+  // filled in at opening; the site's token to it and to an address that
+  // asks for it, a 密钥 to its own address only (§12).
+  const OWN = `export const network = [
+  { param: "server" },
+  { url: "https://api.example.com/author/", token: true },
+  "https://api.example.com/plain/",
+];
 export const params = [
   { key: "server", label: "服务地址", type: "url" },
   { key: "token", label: "服务密钥", type: "key", to: { param: "server" } },
@@ -591,6 +596,8 @@ export const params = [
 export const meta = { name: "自建", page: { param: "server", path: "play/" } };
 export async function judge(submission) {
   await fetch(new URL("check", submission.params.server), { method: "POST", body: "{}" });
+  await fetch("https://api.example.com/author/check");
+  await fetch("https://api.example.com/plain/check");
   return { message: submission.params.server };
 }
 `;
@@ -600,18 +607,57 @@ export async function judge(submission) {
       {
         name: "问自己填的地址",
         input: "x",
-        fetch: [{ url: "https://example.com/check", method: "POST", json: {} }],
+        fetch: [
+          { url: "https://example.com/check", method: "POST", json: {} },
+          { url: "https://api.example.com/author/check", json: {} },
+          { url: "https://api.example.com/plain/check", json: {} },
+        ],
         expect: { message: "https://example.com/" },
       },
     ],
   });
 
-  it("deploys with each test's own address, opens on the address filled, and sends its 密钥 there only", async () => {
+  /** As a service would: the published key by its kid, then the claims. */
+  async function verified(token: string | undefined) {
+    const [header, claims, signature] = (token ?? "").split(".");
+    if (!header || !claims || !signature) return null;
+    const read = (part: string) =>
+      Uint8Array.from(
+        atob(part.replaceAll("-", "+").replaceAll("_", "/")),
+        (c) => c.charCodeAt(0),
+      );
+    const { keys } = (await (
+      await app.request(`${origin}/api/page-identity/keys`, {}, bindings)
+    ).json()) as { keys: (JsonWebKey & { kid: string })[] };
+    const { kid } = JSON.parse(new TextDecoder().decode(read(header)));
+    const jwk = keys.find((key) => key.kid === kid);
+    if (!jwk) return null;
+    const key = await crypto.subtle.importKey(
+      "jwk",
+      jwk,
+      { name: "ECDSA", namedCurve: "P-256" },
+      false,
+      ["verify"],
+    );
+    const ok = await crypto.subtle.verify(
+      { name: "ECDSA", hash: "SHA-256" },
+      key,
+      read(signature),
+      new TextEncoder().encode(`${header}.${claims}`),
+    );
+    return ok ? JSON.parse(new TextDecoder().decode(read(claims))) : null;
+  }
+
+  it("deploys with each test's own address, opens on the address filled, signs its requests there and to the address that asks, and sends its 密钥 there only", async () => {
     const code = unique(OWN);
     const deployed = await check(author, code, OWN_TESTS, { name: "自建" });
     expect(deployed.body.check).toMatchObject({
       passed: true,
-      network: [{ param: "server" }],
+      network: [
+        { param: "server" },
+        { url: "https://api.example.com/author/", token: true },
+        "https://api.example.com/plain/",
+      ],
     });
     expect(deployed.body.check.reminders ?? []).toEqual([]);
     const judgeId = deployed.body.check.judge?.id ?? "";
@@ -651,15 +697,38 @@ export async function judge(submission) {
       .first<{ network: string }>();
     expect(JSON.parse(row?.network ?? "null")).toEqual([
       "https://api.example.com/mine/",
+      "https://api.example.com/author/",
+      "https://api.example.com/plain/",
     ]);
     const first = await claim(opened.id, await actor(), "x");
     expect(first.body).toMatchObject({ result: "judged" });
     expect(
-      outside.map((sent) => [sent.url, sent.headers.authorization]),
-    ).toEqual([["https://api.example.com/mine/check", "Bearer t-1"]]);
+      outside.map((sent) => [
+        sent.url,
+        sent.headers.authorization,
+        Boolean(sent.headers["x-hb-token"]),
+      ]),
+    ).toEqual([
+      ["https://api.example.com/mine/check", "Bearer t-1", true],
+      ["https://api.example.com/author/check", undefined, true],
+      ["https://api.example.com/plain/check", undefined, false],
+    ]);
+    const claims = await verified(outside[0]?.headers["x-hb-token"]);
+    expect(claims).toMatchObject({
+      iss: "https://hb.lafi.sh/judge",
+      aud: "https://api.example.com",
+      hongbao: opened.id,
+      sender: author.externalId,
+      jti: expect.any(String),
+    });
+    expect(claims.exp - claims.iat).toBe(60);
     const shown = await getPublicActivity(bindings, opened.id);
     expect(shown.judge).toMatchObject({
-      network: ["https://api.example.com/mine/"],
+      network: [
+        "https://api.example.com/mine/",
+        "https://api.example.com/author/",
+        "https://api.example.com/plain/",
+      ],
       networkFilled: ["https://api.example.com/mine/"],
       keys: [{ label: "服务密钥", to: "https://api.example.com/mine/" }],
     });
@@ -668,10 +737,15 @@ export async function judge(submission) {
     ).toBe("https://api.example.com/mine/");
   }, 20_000);
 
-  it("is not deployed with a { param } that names no 地址参数, and is reminded of an address with no 密钥 to it", async () => {
+  it("is not deployed with a { param } that names no 地址参数; one asked needs no 密钥", async () => {
     const wrong = await check(
       author,
-      unique(OWN.replace('[{ param: "server" }]', '[{ param: "other" }]')),
+      unique(
+        OWN.replace(
+          '{ param: "server" },\n  { url',
+          '{ param: "other" },\n  { url',
+        ),
+      ),
       OWN_TESTS,
     );
     expect(wrong.body.check.passed).toBe(false);
@@ -690,8 +764,6 @@ export async function judge(submission) {
       OWN_TESTS,
     );
     expect(unkeyed.body.check.passed).toBe(true);
-    expect(unkeyed.body.check.reminders).toEqual([
-      '地址参数 server 写进了 network：建议加一项密钥（type: "key", to: { param: "server" }），让那个服务认得出请求来自这个红包',
-    ]);
+    expect(unkeyed.body.check.reminders ?? []).toEqual([]);
   });
 });

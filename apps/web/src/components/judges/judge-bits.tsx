@@ -171,6 +171,13 @@ export function keyTargetWords(
 }
 
 /**
+ * One address of a 判定器's 联网 as written: null for an 地址参数, which
+ * its sender fills in (docs/judge-address-design.md §2, §12.2).
+ */
+export const writtenAddress = (entry: JudgeNetworkEntry) =>
+  typeof entry === "string" ? entry : "url" in entry ? entry.url : null;
+
+/**
  * One address of a 判定器's 联网, in words: as written, or the 地址参数 it
  * names (docs/judge-address-design.md §4).
  */
@@ -179,6 +186,7 @@ export function networkWords(
   params: readonly JudgeParam[],
 ) {
   if (typeof entry === "string") return entry;
+  if ("url" in entry) return entry.url;
   return `发红包的人填的${addressLabel(params, entry.param)}`;
 }
 

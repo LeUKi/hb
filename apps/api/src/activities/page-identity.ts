@@ -89,6 +89,26 @@ const part = (value: unknown) =>
   base64UrlEncode(encoder.encode(JSON.stringify(value)));
 
 /**
+ * These claims as a JWT signed with the first of PAGE_IDENTITY_KEYS — the
+ * keys published here, also for the token the gateway adds to a 判定器's
+ * requests (docs/judge-address-design.md §12). Null while none is set.
+ */
+export async function signClaims(
+  env: ApiBindings,
+  claims: Record<string, unknown>,
+) {
+  const [key] = keysOf(env);
+  if (!key) return null;
+  const signing = `${part({ alg: "ES256", typ: "JWT", kid: key.kid })}.${part(claims)}`;
+  const signature = await crypto.subtle.sign(
+    { name: "ECDSA", hash: "SHA-256" },
+    await signerOf(key),
+    encoder.encode(signing),
+  );
+  return `${signing}.${base64UrlEncode(new Uint8Array(signature))}`;
+}
+
+/**
  * A token for the viewer on this 红包's 附带网页 (§2): only while it has
  * one that is shown (its switch on, not stopped by the 站长); `aud` is that
  * page's origin, whatever the page says. ES256: Web Crypto signs as JWS
@@ -128,13 +148,6 @@ export async function signPageIdentity(
   const pageUrl = configuration(row).pageUrl;
   if (!pageUrl || row.pageStoppedAt !== null || !(await attachedPagesOn(env)))
     throw new ActivityError(404, "PAGE_NOT_FOUND", "这个红包没有附带网页。");
-  const [key] = keysOf(env);
-  if (!key)
-    throw new ActivityError(
-      503,
-      "IDENTITY_UNAVAILABLE",
-      "身份暂时不可用，请稍后再试。",
-    );
   const issuedAt = Math.floor(Date.now() / 1000);
   const expires = issuedAt + LIFETIME_SECONDS;
   const user = {
@@ -143,7 +156,7 @@ export async function signPageIdentity(
     name: person.name,
     level: person.level,
   };
-  const signing = `${part({ alg: "ES256", typ: "JWT", kid: key.kid })}.${part({
+  const token = await signClaims(env, {
     iss: input.issuer,
     aud: new URL(pageUrl).origin,
     sub: user.id,
@@ -156,14 +169,15 @@ export async function signPageIdentity(
     exp: expires,
     jti: crypto.randomUUID(),
     ...(input.nonce ? { nonce: input.nonce } : {}),
-  })}`;
-  const signature = await crypto.subtle.sign(
-    { name: "ECDSA", hash: "SHA-256" },
-    await signerOf(key),
-    encoder.encode(signing),
-  );
+  });
+  if (!token)
+    throw new ActivityError(
+      503,
+      "IDENTITY_UNAVAILABLE",
+      "身份暂时不可用，请稍后再试。",
+    );
   return {
-    token: `${signing}.${base64UrlEncode(new Uint8Array(signature))}`,
+    token,
     expiresAt: new Date(expires * 1000).toISOString(),
     user,
   };

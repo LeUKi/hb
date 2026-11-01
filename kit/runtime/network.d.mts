@@ -7,4 +7,5 @@ export {
   type NetworkEntry,
   readAddress,
   resolveNetwork,
+  tokenAddresses,
 } from "./index.mjs";

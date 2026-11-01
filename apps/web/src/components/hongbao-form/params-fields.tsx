@@ -596,7 +596,9 @@ export function ParamsFields({
                   `${
                     (network ?? []).some(
                       (entry) =>
-                        typeof entry !== "string" && entry.param === item.key,
+                        typeof entry !== "string" &&
+                        "param" in entry &&
+                        entry.param === item.key,
                     )
                       ? "判定器会请求这个地址，"
                       : ""

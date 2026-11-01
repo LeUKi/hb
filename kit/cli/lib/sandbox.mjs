@@ -21,6 +21,8 @@ import {
   readNetwork,
   readSetup,
   resolveNetwork,
+  TEST_HONGBAO_ID,
+  tokenAddresses,
   VIEW_PROTOCOL,
 } from "../../runtime/index.mjs";
 import { fingerprintOf, KitError } from "./files.mjs";
@@ -139,19 +141,27 @@ function networkOf(answer) {
  * output; fetch() gets `answers` (a test's), or with `live` goes out.
  * `network` is what judge.js exports; `addresses`, what it may ask with
  * `params` (simulate.json's, docs/judge-address-design.md §8) — the list
- * going out with `live`. `protocol` 1 runs the first protocol's runtime,
+ * going out with `live`, those of `tokened` with X-Hb-Token signed with
+ * `token` (`{ iss, sender, kid, jwk }`, §12.5). `protocol` 1 runs the first protocol's runtime,
  * which has no network. `close()` stops workerd. Call close when done, or
  * the process stays.
  */
 export async function openSandbox(
   code,
-  { live = false, protocol = PROTOCOL, keys = {}, params = {} } = {},
+  {
+    live = false,
+    protocol = PROTOCOL,
+    keys = {},
+    params = {},
+    token = null,
+  } = {},
 ) {
   const { Miniflare, convertV4MiniflareOptions } = await loadMiniflare();
   // The list the gateway lets out, known once judge.js is read; the 密钥
   // it adds (keys.local.json, docs/judge-key-design.md §5).
   let allowed = [];
   let keyed = [];
+  let signing = null;
   const options = () =>
     convertV4MiniflareOptions({
       // Request.cf is fetched from Cloudflare and cached in the working
@@ -182,6 +192,8 @@ export async function openSandbox(
           bindings: {
             LIST: JSON.stringify(allowed),
             KEYS: JSON.stringify(keyed),
+            HONGBAO: TEST_HONGBAO_ID,
+            TOKEN: JSON.stringify(signing),
           },
         },
       ],
@@ -221,6 +233,7 @@ export async function openSandbox(
   const filled = paramValues(declarations.params, params, { local: true });
   const values = "values" in filled ? filled.values : {};
   const addresses = resolveNetwork(list, values);
+  const tokened = tokenAddresses(list, values);
   // Going out, the gateway knows the list: workerd again, with it.
   if (live && addresses) {
     allowed = addresses;
@@ -235,6 +248,8 @@ export async function openSandbox(
         header: item.header ?? "Authorization",
         value: `${item.prefix ?? "Bearer "}${keys[item.key]}`,
       }));
+    if (token && tokened.length > 0)
+      signing = { ...token, hongbao: TEST_HONGBAO_ID, addresses: tokened };
     const first = runtime;
     ({ runtime, hung, loadMs } = await start());
     await first.dispose().catch(() => {});
@@ -410,6 +425,8 @@ export async function openSandbox(
     network,
     /** Its addresses with `params` filled in: null when none. */
     addresses,
+    /** Those of them that take X-Hb-Token. */
+    tokened,
     /** Those params, read as simulate.json may write them. */
     values,
     /** 协议第三版: meta, params, hongbao and check, with their problems; 第四版's setup. */

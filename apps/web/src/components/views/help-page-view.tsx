@@ -215,7 +215,7 @@ const aiPrompt = (
 8. 后端要知道是谁（存档、排行榜、防冒充）时，不用接 LINUX DO 登录，用 hb.identity()：
    - 在看的人点“开始”这类按钮时再要；后端可以先发一个一次性的 nonce（8–128 个字母、数字或 -_.~），网页带着它要令牌。
    - 令牌放在内存里，用 Authorization: Bearer 请求头发给后端，不放进本地存储、网址和日志；过期（10 分钟）了再调一次 hb.identity()，不会再问他。
-   - 后端用 jose 验：公钥 ${origin}/api/page-identity/keys（createRemoteJWKSet），算法 ES256，issuer ${origin}，audience 是网页自己的来源，clockTolerance 30 秒；再核对 payload.hongbao 是自己认的红包、payload.nonce 是刚发的并且只用一次。payload.sender 是发这个红包的人的 LINUX DO 数字 ID：发红包的人自己部署的服务只认它主人的红包时核对它。
+   - 后端用 jose 验：公钥 ${origin}/api/page-identity/keys（createRemoteJWKSet），算法 ES256，issuer ${origin}，audience 是网页自己的来源，clockTolerance 30 秒；再核对 payload.hongbao 是自己认的红包、payload.nonce 是刚发的并且只用一次。payload.sender 是发这个红包的人的 LINUX DO 数字 ID：发红包的人自己部署的服务只认它主人的红包时核对它。判定器联网发来的请求不带这个令牌，带的是 X-Hb-Token（issuer ${origin}/judge，同一把公钥，见 ${origin}/help/code 的联网）。
    - 用 payload.sub（LINUX DO 数字 ID，和判定器的 submission.user.id 是同一个数）认人，不用用户名；数据按“红包编号 + 用户 ID”存。后端的跨域只放行网页自己的来源。
    - 本地 npm run page 的模拟器签的令牌 iss 是模拟器的地址，上线后的后端只认 ${origin}。
    - 钱只经过判定器：后端算出的结果要由判定器联网核对才算数；令牌不能用来替他提交。

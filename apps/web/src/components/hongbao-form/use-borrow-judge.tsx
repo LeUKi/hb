@@ -80,7 +80,9 @@ export function useBorrowJudge() {
       if (fixed && fixed.length > 0 && !sameAddresses(fixed, acked)) {
         const params = version.declarations?.params ?? [];
         const filled = (network ?? []).flatMap((entry) =>
-          typeof entry === "string" ? [] : [addressLabel(params, entry.param)],
+          typeof entry !== "string" && "param" in entry
+            ? [addressLabel(params, entry.param)]
+            : [],
         );
         const go = await new Promise<boolean>((resolve) =>
           setAsking({ page, network: fixed, filled, answer: resolve }),

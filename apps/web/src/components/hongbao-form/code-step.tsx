@@ -30,7 +30,7 @@ import {
   useMyJudges,
 } from "../../lib/judge";
 import { useSessionUser } from "../../lib/session";
-import { networkWords } from "../judges/judge-bits";
+import { networkWords, writtenAddress } from "../judges/judge-bits";
 import { SquarePicker } from "../judges/square-picker";
 import { Callout } from "../page/page";
 import { WindowDialog } from "../shell/window-dialog";
@@ -255,10 +255,12 @@ function NetworkNote({
       <p className="text-sm text-ink">
         联网：
         {network.map((entry, index) => (
-          <span key={typeof entry === "string" ? entry : entry.param}>
+          <span key={networkWords(entry, params)}>
             {index > 0 && "、"}
-            {typeof entry === "string" ? (
-              <span className="font-mono break-all">{entry}</span>
+            {writtenAddress(entry) !== null ? (
+              <span className="font-mono break-all">
+                {writtenAddress(entry)}
+              </span>
             ) : (
               networkWords(entry, params)
             )}

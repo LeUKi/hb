@@ -2228,9 +2228,7 @@ describe("地址参数 (docs/judge-address-design.md)", () => {
         { meta: null, params: [read.list[0] as never] },
         network.list,
       ),
-    ).toEqual([
-      '地址参数 server 写进了 network：建议加一项密钥（type: "key", to: { param: "server" }），让那个服务认得出请求来自这个红包',
-    ]);
+    ).toEqual([]);
     expect(
       addressReminders({ meta: null, params: [read.list[0] as never] }, null),
     ).toEqual([
@@ -2247,8 +2245,53 @@ describe("地址参数 (docs/judge-address-design.md)", () => {
     expect(readNetwork([{ param: "server" }, { param: "server" }])).toEqual({
       problems: ["network 第 2 个和前面的重复了"],
     });
-    expect(readNetwork([{ url: "x" }])).toEqual({
-      problems: ['network 第 1 个：要是地址，或者 { param: "地址参数的 key" }'],
+    expect(readNetwork([{ address: "x" }])).toEqual({
+      problems: [
+        'network 第 1 个：要是地址，或者 { param: "地址参数的 key" }、{ url: "地址", token: true }',
+      ],
+    });
+  });
+
+  it("takes { url, token: true } and says which addresses carry the site's token (§12)", async () => {
+    const { readNetwork, resolveNetwork, tokenAddresses, fixedAddresses } =
+      await import("../../kit/runtime/index.mjs");
+    const network = readNetwork([
+      { param: "server" },
+      { url: "https://api.example.com/author", token: true },
+      "https://api.openai.com/v1/",
+    ]);
+    if (!("list" in network) || !network.list) throw new Error("NOT_READ");
+    expect(network.list).toEqual([
+      { param: "server" },
+      { url: "https://api.example.com/author", token: true },
+      "https://api.openai.com/v1/",
+    ]);
+    const filled = { server: "https://a.workers.dev/" };
+    expect(resolveNetwork(network.list, filled)).toEqual([
+      "https://a.workers.dev/",
+      "https://api.example.com/author",
+      "https://api.openai.com/v1/",
+    ]);
+    // Never to one written as a plain address (a third party's).
+    expect(tokenAddresses(network.list, filled)).toEqual([
+      "https://a.workers.dev/",
+      "https://api.example.com/author",
+    ]);
+    expect(tokenAddresses(network.list, {})).toEqual([
+      "https://api.example.com/author",
+    ]);
+    expect(fixedAddresses(network.list)).toEqual([
+      "https://api.example.com/author",
+      "https://api.openai.com/v1/",
+    ]);
+    expect(readNetwork([{ url: "https://a.dev/", token: false }])).toEqual({
+      problems: ["network 第 1 个：token 只能写 true"],
+    });
+    expect(
+      readNetwork(["https://a.dev/", { url: "https://a.dev/", token: true }]),
+    ).toEqual({ problems: ["network 第 2 个和前面的重复了"] });
+    expect(readNetwork([{ url: "http://a.dev/", token: true }])).toEqual({
+      problems: ["network 第 1 个（http://a.dev/）：只能用 https://"],
     });
   });
 

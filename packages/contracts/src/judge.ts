@@ -22,15 +22,23 @@ export type {
 };
 
 /**
- * One entry of a 判定器's `network` (§9; docs/judge-address-design.md §2):
- * an address prefix, or `{ param }`, the 地址参数 its sender fills in.
+ * One entry of a 判定器's `network` (§9; docs/judge-address-design.md §2,
+ * §12.2): an address prefix, `{ param }`, the 地址参数 its sender fills
+ * in, or `{ url, token }`, an address that takes the site's token.
  */
-export type JudgeNetworkEntry = string | { param: string };
+export type JudgeNetworkEntry =
+  | string
+  | { param: string }
+  | { url: string; token?: true };
 export const judgeNetworkSchema = z
   .array(
     z.union([
       z.string().max(200),
       z.strictObject({ param: z.string().min(1).max(32) }),
+      z.strictObject({
+        url: z.string().max(200),
+        token: z.literal(true).optional(),
+      }),
     ]),
   )
   .min(1)

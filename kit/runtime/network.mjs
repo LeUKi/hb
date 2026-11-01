@@ -103,17 +103,32 @@ export const isParamEntry = (entry) =>
   entry.param !== "";
 
 /**
+ * A `network` entry to the 判定器 author's own backend that takes the
+ * site's token (docs/judge-address-design.md §12.2): `{ url, token }`.
+ */
+const isUrlEntry = (entry) =>
+  entry !== null &&
+  typeof entry === "object" &&
+  !Array.isArray(entry) &&
+  "url" in entry &&
+  Object.keys(entry).every((key) => key === "url" || key === "token");
+
+const SHAPE =
+  '要是地址，或者 { param: "地址参数的 key" }、{ url: "地址", token: true }';
+
+/**
  * judge.js's `network` export: `{ list }` (null when it has none: no
  * network, as protocol v1) or `{ problems }`, one line each. Each entry is
- * a canonical prefix or `{ param }`; that it names an 地址参数 is checked
- * with the params (networkParamProblems).
+ * a canonical prefix, `{ param }` or `{ url, token: true }`; that a
+ * `{ param }` names an 地址参数 is checked with the params
+ * (networkParamProblems).
  */
 export function readNetwork(value) {
   if (value === undefined || value === null) return { list: null };
   if (!Array.isArray(value))
     return {
       problems: [
-        'network 要是数组，每项是地址或 { param: "地址参数的 key" }，比如 ["https://api.example.com/hongbao/"]',
+        `network 要是数组，每项${SHAPE}，比如 ["https://api.example.com/hongbao/"]`,
       ],
     };
   if (value.length === 0)
@@ -122,34 +137,60 @@ export function readNetwork(value) {
     return { problems: [`network 最多写 ${NETWORK_LIMITS.entries} 个地址`] };
   const problems = [];
   const list = [];
+  const same = (kept, address) =>
+    kept === address || (typeof kept === "object" && kept.url === address);
   for (const [index, entry] of value.entries()) {
+    const where = `network 第 ${index + 1} 个`;
     if (isParamEntry(entry)) {
       if (list.some((kept) => kept.param === entry.param))
-        problems.push(`network 第 ${index + 1} 个和前面的重复了`);
+        problems.push(`${where}和前面的重复了`);
       else list.push({ param: entry.param });
       continue;
     }
-    if (entry !== null && typeof entry === "object") {
-      problems.push(
-        `network 第 ${index + 1} 个：要是地址，或者 { param: "地址参数的 key" }`,
-      );
+    if (entry !== null && typeof entry === "object" && !isUrlEntry(entry)) {
+      problems.push(`${where}：${SHAPE}`);
       continue;
     }
-    const read = readEntry(entry);
+    const url = isUrlEntry(entry) ? entry.url : entry;
+    if (
+      isUrlEntry(entry) &&
+      entry.token !== undefined &&
+      entry.token !== true
+    ) {
+      problems.push(`${where}：token 只能写 true`);
+      continue;
+    }
+    const read = readEntry(url);
     if ("problem" in read)
       problems.push(
-        `network 第 ${index + 1} 个${typeof entry === "string" ? `（${entry}）` : ""}：${read.problem}`,
+        `${where}${typeof url === "string" ? `（${url}）` : ""}：${read.problem}`,
       );
-    else if (list.includes(read.prefix))
-      problems.push(`network 第 ${index + 1} 个和前面的重复了`);
-    else list.push(read.prefix);
+    else if (list.some((kept) => same(kept, read.prefix)))
+      problems.push(`${where}和前面的重复了`);
+    else
+      list.push(
+        isUrlEntry(entry) && entry.token
+          ? { url: read.prefix, token: true }
+          : read.prefix,
+      );
   }
   return problems.length > 0 ? { problems } : { list };
 }
 
+/** An entry's address as written: null for a `{ param }`. */
+const writtenOf = (entry) =>
+  typeof entry === "string"
+    ? entry
+    : typeof entry?.url === "string"
+      ? entry.url
+      : null;
+
 /** The addresses written out in `network`, its `{ param }` left out. */
 export const fixedAddresses = (list) =>
-  (list ?? []).filter((entry) => typeof entry === "string");
+  (list ?? []).map(writtenOf).filter((address) => address !== null);
+
+/** An entry's address for one 红包: a `{ param }` from its params. */
+const addressOf = (entry, values) => writtenOf(entry) ?? values?.[entry.param];
 
 /**
  * The addresses one 红包 (or test) may ask: `network` with each `{ param }`
@@ -160,7 +201,7 @@ export function resolveNetwork(list, values) {
   if (!Array.isArray(list)) return null;
   const resolved = [];
   for (const entry of list) {
-    const address = typeof entry === "string" ? entry : values?.[entry.param];
+    const address = addressOf(entry, values);
     if (
       typeof address === "string" &&
       address !== "" &&
@@ -169,6 +210,20 @@ export function resolveNetwork(list, values) {
       resolved.push(address);
   }
   return resolved.length > 0 ? resolved : null;
+}
+
+/**
+ * Those of them requests to which carry the site's token, X-Hb-Token
+ * (docs/judge-address-design.md §12.2): each `{ param }` filled in, and
+ * each `{ url, token: true }`; never one written as a plain address.
+ */
+export function tokenAddresses(list, values) {
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((entry) => typeof entry === "object" && entry !== null)
+    .filter((entry) => typeof entry.param === "string" || entry.token === true)
+    .map((entry) => addressOf(entry, values))
+    .filter((address) => typeof address === "string" && address !== "");
 }
 
 /**

@@ -7,7 +7,13 @@
 // runs in the sandbox.
 import { sha256Text } from "./hash.mjs";
 import { formatAmount } from "./money.mjs";
-import { allowedBy, isParamEntry, readAddress, readEntry } from "./network.mjs";
+import {
+  allowedBy,
+  fixedAddresses,
+  isParamEntry,
+  readAddress,
+  readEntry,
+} from "./network.mjs";
 
 export const PARAM_TYPES = Object.freeze([
   "text",
@@ -767,7 +773,7 @@ const inNetwork = (network, key) =>
  */
 export function networkParamProblems(list, network) {
   return (network ?? []).flatMap((entry, index) => {
-    if (typeof entry === "string") return [];
+    if (typeof entry?.param !== "string") return [];
     const problem = addressParamProblem(list, entry.param);
     return problem ? [`network 第 ${index + 1} 个：${problem}`] : [];
   });
@@ -779,7 +785,7 @@ export function networkParamProblems(list, network) {
  * each, as the deploy and npm run check write them.
  */
 export function keyNetworkProblems(list, network) {
-  const fixed = (network ?? []).filter((entry) => typeof entry === "string");
+  const fixed = fixedAddresses(network);
   return keyParams(list).flatMap((item) => {
     if (typeof item.to !== "string") {
       const named = `{ param: "${item.to.param}" }`;
@@ -801,31 +807,25 @@ export function keyNetworkProblems(list, network) {
 
 /**
  * Reminders about 地址参数 (docs/judge-address-design.md §3), not
- * problems: one used nowhere, and one asked with no 密钥 to it.
+ * problems: one used nowhere. One asked needs no 密钥 to know its 红包:
+ * the site's token goes with each request to it (§12).
  */
 export function addressReminders(declarations, network) {
   const list = declarations.params;
   const page = declarations.meta?.page;
-  const reminders = [];
-  for (const item of addressParams(list)) {
-    const keyed = keyParams(list).some(
-      (key) => typeof key.to !== "string" && key.to.param === item.key,
-    );
-    const asked = inNetwork(network, item.key);
-    if (
-      !asked &&
-      !keyed &&
-      !(typeof page === "object" && page?.param === item.key)
+  return addressParams(list)
+    .filter(
+      (item) =>
+        !inNetwork(network, item.key) &&
+        !keyParams(list).some(
+          (key) => typeof key.to !== "string" && key.to.param === item.key,
+        ) &&
+        !(typeof page === "object" && page?.param === item.key),
     )
-      reminders.push(
+    .map(
+      (item) =>
         `地址参数 ${item.key} 没用上：判定器请求它会被拦下（附带网页从 hongbao.params 读它的，不用管这条）`,
-      );
-    else if (asked && !keyed)
-      reminders.push(
-        `地址参数 ${item.key} 写进了 network：建议加一项密钥（type: "key", to: { param: "${item.key}" }），让那个服务认得出请求来自这个红包`,
-      );
-  }
-  return reminders;
+    );
 }
 
 const KEY_LIKE = /api[_-]?key|apikey|token|secret|密钥|令牌|口令牌/i;

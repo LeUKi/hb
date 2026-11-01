@@ -13,7 +13,7 @@ import {
   requestProblem,
 } from "../../../../kit/runtime/index.mjs";
 import type { ApiBindings } from "../env";
-import { keyHeadersFor } from "./keys";
+import { outgoingHeaders } from "./outgoing";
 import type { FetchRecord } from "./session";
 
 /** Fixed by the 红包's 判定器 when it is made (sandbox.ts). */
@@ -117,9 +117,10 @@ export async function gatewayFetch(
     const headers = new Headers(request.headers);
     headers.set("user-agent", USER_AGENT);
     headers.set("x-hb-hongbao", props.activityId);
-    // 密钥 (docs/judge-key-design.md §1): each to its own address only,
-    // never in the record (it keeps no request headers).
-    for (const [name, value] of await keyHeadersFor(
+    // 密钥 (docs/judge-key-design.md §1), each to its own address only, and
+    // the site's token (docs/judge-address-design.md §12): never in the
+    // record (it keeps no request headers).
+    for (const [name, value] of await outgoingHeaders(
       env,
       props.activityId,
       request.url,

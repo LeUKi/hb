@@ -49,10 +49,12 @@ const aiPrompt = (
 - 本地开发包：${KIT_URL} ，用 npx degit LeUKi/hb/kit 我的红包 取到本地，里面有能跑通的模板、npm test 和 npm run check。
 - 开发包里写给 AI 的完整说明 AGENTS.md（纯文本，能直接读）：${KIT_AGENTS_URL}
 - 开发文档：${origin}/help/code （网页要用浏览器打开，直接抓取读不到内容）
-- 附带网页、认人和自有后端的做法：AGENTS.md 的“带网页的玩法”“认人（鉴权）”“自有后端”“热闹的玩法”，接入说明 ${origin}/help/page
+- 附带网页、认人和自有后端的做法：AGENTS.md 的“选做法”“带网页的玩法”“认人（鉴权）”“自有后端”“发红包的人自己部署的服务”“热闹的玩法”，接入说明 ${origin}/help/page
 
 要点（先读）：
 ${keyPoints}
+
+选做法（能简单就简单）：规则写得成代码 → 只用判定器；要格子、按钮、动画 → 加附带网页；要用发红包的人的第三方账号（比如他的 AI 密钥）→ 联网加密钥参数；要后端、作者自己管 → network 写 { url, token: true }，后端验 X-Hb-Token；每个发红包的人要自己的数据、AI 账号或存储 → 地址参数（type: "url"）加 network 里的 { param }，服务由他部署，网页放在服务上。谁信谁：网页发来的请求验 hb.identity() 的令牌（iss ${origin}），判定器发来的请求验 X-Hb-Token（iss ${origin}/judge），两种同一把公钥 ${origin}/api/page-identity/keys，都带 hongbao 和 sender（发红包的人的数字 ID）；昵称、X-Hb-Hongbao 和网页交来的分数都可能是伪造的；钱只由判定器算，后端的结果要判定器联网核对。
 
 规则：
 - judge.js 是一个 ES 模块，导出函数 judge(submission, tools)，可以是 async。每次有人在红包页提交一行输入，平台调用它一次，按它的返回给这个人加钱、减钱，决定什么时候结算。
@@ -85,7 +87,7 @@ ${keyPoints}
 - 每次判定可能在不同的沙箱里，不要靠全局变量记东西；要记的放进 state。
 - 能用：Web 标准（完整的 crypto、Intl、TextEncoder、URL、atob、btoa 等）。Node 模块只能在文件开头静态 import，必须带 node: 前缀：${MODULES.join("、")}。
 - 不能用：别的 Node 模块、npm 包、import 别的文件、动态 import()、require、caches。console 的输出线上丢弃。
-- 联网（可选）：judge.js 导出 network，列出能请求的地址前缀，最多 3 个，比如 export const network = ["https://api.example.com/hongbao/"]；写法是 https:// 加完整域名和路径，不带端口、? 和 #，不能是 IP、linux.do 和本站；也能写 { param: "server" }，是发红包的人在地址参数 server 填的地址，开放时定下。不导出就不联网，fetch 会失败。判定里直接用 fetch()：每次判定最多 3 个请求，只许 GET 和 POST，请求体最大 16 KB，单个请求 10 秒，返回最大 64 KB，不跟随跳转；等请求的时间不算进 50 毫秒，整次判定最多 15 秒；不行时 fetch() 抛 TypeError（“联网失败：…”），可以接住。领的人可以绕过本站直接请求你的接口，要防就在代码里放一个只有你知道的令牌，请求时带上；红包结束后代码公开，令牌也会公开，结束后要作废。红包结束后，领的人能看到自己那几次判定的返回内容。
+- 联网（可选）：judge.js 导出 network，列出能请求的地址前缀，最多 3 个，比如 export const network = ["https://api.example.com/hongbao/"]；写法是 https:// 加完整域名和路径，不带端口、? 和 #，不能是 IP、linux.do 和本站；也能写 { param: "server" }，是发红包的人在地址参数 server 填的地址，开放时定下；自己的后端写成 { url: "https://…", token: true }。发给 { param } 和 token: true 的地址的请求带红包站签的 X-Hb-Token（JWT，ES256，1 分钟：iss ${origin}/judge、aud 对方的来源、hongbao、sender），对方验它就知道请求来自哪个红包；写成字符串的地址不带。不导出就不联网，fetch 会失败。判定里直接用 fetch()：每次判定最多 3 个请求，只许 GET 和 POST，请求体最大 16 KB，单个请求 10 秒，返回最大 64 KB，不跟随跳转；等请求的时间不算进 50 毫秒，整次判定最多 15 秒；不行时 fetch() 抛 TypeError（“联网失败：…”），可以接住。领的人可以绕过本站直接请求你的接口，要防就让接口只认 X-Hb-Token（别把令牌写在代码里：红包结束后代码公开）。红包结束后，领的人能看到自己那几次判定的返回内容。
 - 参数（可选）：会变的东西（答案、范围、次数、几个人能领、题目）写成参数，发红包的人在网站上填，判定时在 submission.params 里。export const params = [ … ]，最多 20 项，每项 { key（字母、数字、下划线）, label（最多 20 个字）, hint（最多 60 个字）, guide（https 链接，表单上显示“怎么填 ↗”）, type, default, required（默认 true）, revealAtEnd（默认 false） } 加上类型自己的限制。type：text（单行，minLength、maxLength ≤ 200）、textarea（多行，maxLength ≤ 2000）、integer（min、max、step）、money（整数分，min ≥ 1、max）、switch、choice（options：2–20 个 { value, label, hint, set }；选项联动：set 是选了这一项时把别的参数改成的值，比如 { bombs: 3, max: 50 }，hint 是选了这一项时的说明）、list（一行一个，minItems、maxItems ≤ 100、maxLength）、table（columns：1–6 列 { key, label, type: text | integer | money }，minRows、maxRows ≤ 100）、url（地址：发红包的人填一个 https 地址，比如他自己部署的服务，规则同 network 的地址，代码收到的以 / 结尾，公开，最多 3 项，不能写 default 和 revealAtEnd；network、密钥的 to 和 meta.page 写 { param: key } 指向它）。网站按声明校验；没填的选填项，开关是 false，列表和表格是 []，其他是 null。revealAtEnd 的参数（旧写法 secret）开放时只公布封存值，结束后公开，代码读得到，放答案、谜底。密钥：{ key, label, hint, type: "key", to, header, prefix }，发红包的人自己填（比如 AI 服务的），代码读不到（submission.params 里没有），永远不公开；代码请求 to 开头的地址（要在 network 里；to 写 { param: "server" } 就只发给发红包的人在地址参数 server 填的地址）时，本站把它加进请求头 header（默认 Authorization），值是 prefix（默认 "Bearer "）加密钥；最多 3 项。要发红包的人的密钥就用它，别放进普通参数。几项合起来的检查写 export function check(params, hongbao)，返回 [{ key, message }]，没问题返回 []；hongbao 同 setup 的。export const hongbao = { total: { min, max, default }, deadline: { value, unit }, prompt, humanCheck, pageAutoOpen, title, note } 给“发多少”设默认值和范围（金额是整数分），prompt 是领取提示（最多 ${JUDGE_LIMITS.promptCharacters} 个字），humanCheck 建议打开领取前人机验证（默认别写，见要点第 2 条），pageAutoOpen 建议打开红包页时自动打开附带网页（带网页的都写上），title、note 是红包标题（最多 100 个字）和说明（最多 2000 个字，一个回车就换行，[文字](#附带网页) 是打开附带网页的按钮，带网页的第一行就放它）的默认值；没有份数，要几个人能领就做成参数。export const meta = { name, description, page } 是判定器的名字（最多 20 个字）、说明（最多 60 个字）和带的附带网页（page，https，规则同附带网页，用它发红包时替发红包的人填好；放在发红包的人自己的服务上时写 { param: "server", path: "play/" }，跟着他填的地址填好；怎么接见 ${origin}/help/page；开发包里有网页模板 page/index.html、本地的模拟器 npm run page（npm run page -- --shot 截图给 AI 看）和数字炸弹、刮刮乐两个带网页的样例）。
 - 随机数用 tools.random（这一次提交的，Math.random() 也是它）或 tools.userRandom（这个人固定的，提交几次都一样）。都能复现：红包结束后公开种子，谁都能核对。crypto.getRandomValues 是真随机，能用但没法核对。
 - tools 全是同步的：
@@ -596,12 +598,13 @@ export function HelpCodeView() {
       >
         <Block
           label="judge.js"
-          code={`export const network = ["https://api.example.com/hongbao/"];
+          code={`// 你自己的后端：token: true，本站转发时加上 X-Hb-Token
+export const network = [{ url: "https://api.example.com/hongbao/", token: true }];
 
 export async function judge(submission) {
   const response = await fetch("https://api.example.com/hongbao/check", {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: "Bearer 只有你知道的令牌" },
+    headers: { "content-type": "application/json" },
     body: JSON.stringify({ id: submission.user.id, input: submission.input }),
   });
   const answer = await response.json();
@@ -614,7 +617,7 @@ export async function judge(submission) {
           items={[
             {
               name: "network",
-              note: '能请求的地址前缀，最多 3 个：https:// 加完整域名和路径，不带端口、? 和 #；不能是 IP、linux.do 和本站。前缀 https://a.com/api 放行 /api、/api/x，不放行 /apix。写在代码里：改它就是改代码，开放后不能改，结束后跟代码一起公开。也能写 { param: "server" }：发红包的人在地址参数 server 里填的地址（比如他自己部署的服务），开放时定下，红包页上写着“发红包的人填的”。',
+              note: '能请求的地址前缀，最多 3 个：https:// 加完整域名和路径，不带端口、? 和 #；不能是 IP、linux.do 和本站。前缀 https://a.com/api 放行 /api、/api/x，不放行 /apix。写在代码里：改它就是改代码，开放后不能改，结束后跟代码一起公开。也能写 { param: "server" }：发红包的人在地址参数 server 里填的地址（比如他自己部署的服务），开放时定下，红包页上写着“发红包的人填的”；你自己的后端写成 { url, token: true }（见下面的“令牌”）。',
             },
             {
               name: "fetch()",
@@ -626,7 +629,7 @@ export async function judge(submission) {
             },
             {
               name: "令牌",
-              note: '领的人可以绕过本站直接请求你的接口，那样没有尝试间隔和人机验证。要防，就让接口只认一把密钥，用密钥参数（type: "key"，to 写接口的地址）放它：代码读不到，也不会公开。本站给每个请求加 X-Hb-Hongbao（红包 ID，公开的）和自己的 User-Agent。',
+              note: '领的人可以绕过本站直接请求你的接口，那样没有尝试间隔和人机验证。要防，就把地址写成 { url: "https://api.example.com/hongbao/", token: true }：本站转发时加上请求头 X-Hb-Token，是本站签的 JWT（ES256，1 分钟），内容是 iss（https://hb.lafi.sh/judge）、aud（对方的来源）、hongbao（红包编号）、sender（发红包的人的 LINUX DO 数字 ID）；公钥同附带网页的身份令牌（/api/page-identity/keys），接口只认验得过的请求。发给 { param } 的请求也带它，写成字符串的地址（第三方服务）不带。本站还给每个请求加 X-Hb-Hongbao（红包 ID，公开的，谁都能伪造）和自己的 User-Agent。',
             },
             {
               name: "谁看得到",

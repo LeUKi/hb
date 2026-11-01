@@ -174,7 +174,9 @@ export async function checkCommand({ dir, print = console.log }) {
               .map((entry) =>
                 typeof entry === "string"
                   ? entry
-                  : `发红包的人填的${all.declarations.params.find((item) => item.key === entry.param)?.label ?? entry.param}`,
+                  : entry.url
+                    ? `${entry.url}（带 X-Hb-Token）`
+                    : `发红包的人填的${all.declarations.params.find((item) => item.key === entry.param)?.label ?? entry.param}（带 X-Hb-Token）`,
               )
               .join("、")}`,
           ),

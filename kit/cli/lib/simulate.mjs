@@ -30,6 +30,7 @@ import {
   readText,
 } from "./files.mjs";
 import { openSandbox } from "./sandbox.mjs";
+import { localSigner, SENDER_ID, serveKeys } from "./signer.mjs";
 import { readSimulation } from "./simulation.mjs";
 import {
   failureText,
@@ -238,15 +239,27 @@ export async function simulateCommand({
   print(`种子 ${seed}`);
 
   const keys = options.live ? await readLocalKeys(dir) : {};
+  // Going out: X-Hb-Token signed with a key of this run, its public half
+  // published while it runs (docs/judge-address-design.md §12.5).
+  const signer = options.live ? await localSigner() : null;
+  const published = signer ? await serveKeys(signer) : null;
   const sandbox = await openSandbox(code, {
     live: options.live,
     keys,
     params: read.plan.params,
+    token:
+      signer && published
+        ? { iss: `${published.origin}/judge`, sender: SENDER_ID, ...signer.key }
+        : null,
   });
+  const close = async () => {
+    await sandbox.close();
+    await published?.close();
+  };
   if ("problems" in sandbox.network) {
     for (const problem of sandbox.network.problems) print(`✗ ${problem}`);
     print("先改好 judge.js 的 network，模拟没跑");
-    await sandbox.close();
+    await close();
     return { exitCode: 1 };
   }
   const { declarations } = sandbox;
@@ -256,14 +269,14 @@ export async function simulateCommand({
   if (declarations.problems.length > 0) {
     for (const problem of declarations.problems) print(`✗ ${problem}`);
     print("先改好上面的问题，模拟没跑");
-    await sandbox.close();
+    await close();
     return { exitCode: 1 };
   }
   // 协议第三版: the params, as the site would take them from a sender.
   const params = await paramsOf(read.plan.params, hongbao, sandbox);
   if ("problem" in params) {
     print(`✗ ${params.problem}`);
-    await sandbox.close();
+    await close();
     return { exitCode: 1 };
   }
   // 协议第四版: setup(params, hongbao) opens it, as on the site.
@@ -277,7 +290,7 @@ export async function simulateCommand({
     say(print, `✗ setup 出错：${failureText(opened.failure, opened.detail)}`);
     printLogs(print, opened.logs);
     print("线上红包会开放不了，模拟没跑");
-    await sandbox.close();
+    await close();
     return { exitCode: 1 };
   }
   if (opened && declarations.setup) {
@@ -295,6 +308,10 @@ export async function simulateCommand({
   });
   for (const line of localAddressLines(declarations.params, params.values))
     print(line);
+  if (published && sandbox.tokened.length > 0)
+    print(
+      `判定器发给 ${sandbox.tokened.join("、")} 的请求带 X-Hb-Token：iss 是 ${published.origin}/judge，公钥在 ${published.origin}/api/page-identity/keys，sender 是 ${SENDER_ID}`,
+    );
   if (sandbox.addresses)
     print(
       options.live
@@ -330,7 +347,7 @@ export async function simulateCommand({
       }
     }
   } finally {
-    await sandbox.close();
+    await close();
   }
   if (slow) print(SLOW_NOTE);
   if (failed > 0) print(`出错 ${failed} 次：线上连续出错 5 次会暂停领取`);

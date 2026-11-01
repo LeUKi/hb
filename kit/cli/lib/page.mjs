@@ -35,6 +35,7 @@ import {
   readText,
 } from "./files.mjs";
 import { openSandbox } from "./sandbox.mjs";
+import { localSigner, SENDER_ID } from "./signer.mjs";
 import { outcome, paidNow, paramsOf, printLedger } from "./simulate.mjs";
 import { readSimulation } from "./simulation.mjs";
 import { failureText, say, yuan } from "./words.mjs";
@@ -47,8 +48,6 @@ const DEFAULT_PEOPLE = ["小明", "小红", "小刚"];
 /** The viewer who has not signed in. */
 export const GUEST = "没登录";
 const FIRST_PERSON = 10001;
-/** The 红包's sender, as the token's `sender` (judge-address §6). */
-export const SENDER_ID = "10000";
 const PAGE_SIZE = 20;
 
 const TYPES = {
@@ -560,42 +559,6 @@ export async function startPage({
   const folder = join(root, "page");
   const plan = await planOf(root);
   const keys = live ? await readLocalKeys(root) : {};
-  const sandbox = await openSandbox(code, { live, keys, params: plan.params });
-  if (live)
-    for (const line of keyLines(
-      sandbox.declarations.params,
-      keys,
-      sandbox.values,
-    ))
-      print(line);
-  const fail = async (problem) => {
-    await sandbox.close();
-    throw new KitError(problem);
-  };
-  if ("problems" in sandbox.network)
-    await fail(sandbox.network.problems.join("\n"));
-  if (sandbox.declarations.problems.length > 0)
-    await fail(sandbox.declarations.problems.join("\n"));
-  const params = await paramsOf(plan.params, plan.hongbao, sandbox);
-  if ("problem" in params) await fail(params.problem);
-  for (const line of localAddressLines(
-    sandbox.declarations.params,
-    params.values,
-  ))
-    print(line);
-  // meta.page under an 地址参数: the service there, not page/.
-  const pageRef = sandbox.declarations.meta?.page;
-  const served =
-    typeof pageRef === "object"
-      ? pageOf(sandbox.declarations.meta, params.values, { local: true })
-      : null;
-  if (typeof pageRef === "object" && !served)
-    await fail(
-      `meta.page 放在地址参数 ${pageRef.param} 下：simulate.json 的 params 里要填 ${pageRef.param}`,
-    );
-  if (!served && !existsSync(join(folder, "index.html")))
-    await fail("找不到 page/index.html");
-
   const signer = await localSigner();
   const [host, sdk] = await Promise.all([
     readFile(new URL("../page/host.html", import.meta.url), "utf8"),
@@ -604,6 +567,11 @@ export async function startPage({
   let hostUrl = "";
   let pageOrigin = "";
   let game;
+  // Opened once the simulator's address is known (the token's issuer):
+  // nothing asks the servers before startPage returns.
+  let sandbox;
+  let params;
+  let served = null;
   const reopen = async () => {
     game = await openGame({
       sandbox,
@@ -693,7 +661,7 @@ export async function startPage({
           name: who,
           level: TEST_DEFAULTS.user.level,
         };
-        const identity = await signer.sign({
+        const identity = await signer.identity({
           iss: hostUrl,
           // A page on its own service: that service's origin, as online.
           aud: served ? new URL(served).origin : pageOrigin,
@@ -753,15 +721,65 @@ export async function startPage({
     );
     hostUrl = `http://127.0.0.1:${hostPort}`;
     pageOrigin = `http://localhost:${pagePort}`;
+  } catch (error) {
+    hostServer.close();
+    pageServer.close();
+    if (error?.code === "EADDRINUSE")
+      throw new KitError(
+        `端口 ${port} 或 ${port + 1} 被占用了：换一个，比如 npm run page -- --port 8740`,
+      );
+    throw error;
+  }
+  sandbox = await openSandbox(code, {
+    live,
+    keys,
+    params: plan.params,
+    // What the judgment's requests carry (judge-address §12.5).
+    token: { iss: `${hostUrl}/judge`, sender: SENDER_ID, ...signer.key },
+  });
+  if (live)
+    for (const line of keyLines(
+      sandbox.declarations.params,
+      keys,
+      sandbox.values,
+    ))
+      print(line);
+  const fail = async (problem) => {
+    await sandbox.close();
+    hostServer.close();
+    pageServer.close();
+    throw new KitError(problem);
+  };
+  if ("problems" in sandbox.network)
+    await fail(sandbox.network.problems.join("\n"));
+  if (sandbox.declarations.problems.length > 0)
+    await fail(sandbox.declarations.problems.join("\n"));
+  params = await paramsOf(plan.params, plan.hongbao, sandbox);
+  if ("problem" in params) await fail(params.problem);
+  for (const line of localAddressLines(
+    sandbox.declarations.params,
+    params.values,
+  ))
+    print(line);
+  // meta.page under an 地址参数: the service there, not page/.
+  const pageRef = sandbox.declarations.meta?.page;
+  served =
+    typeof pageRef === "object"
+      ? pageOf(sandbox.declarations.meta, params.values, { local: true })
+      : null;
+  if (typeof pageRef === "object" && !served)
+    await fail(
+      `meta.page 放在地址参数 ${pageRef.param} 下：simulate.json 的 params 里要填 ${pageRef.param}`,
+    );
+  if (!served && !existsSync(join(folder, "index.html")))
+    await fail("找不到 page/index.html");
+
+  try {
     await reopen();
   } catch (error) {
     hostServer.close();
     pageServer.close();
     await sandbox.close();
-    if (error?.code === "EADDRINUSE")
-      throw new KitError(
-        `端口 ${port} 或 ${port + 1} 被占用了：换一个，比如 npm run page -- --port 8740`,
-      );
     throw error;
   }
   return {
@@ -828,61 +846,6 @@ export async function pageCommand({
   });
   await page.close();
   return { exitCode: 0 };
-}
-
-const base64Url = (bytes) =>
-  Buffer.from(bytes)
-    .toString("base64")
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replaceAll("=", "");
-
-/**
- * 认人 on the fake page: a P-256 key made for this run, signing tokens as
- * the site does (ES256 JWT, ten minutes); its public half is published at
- * /api/page-identity/keys on the fake page.
- */
-async function localSigner() {
-  const { privateKey, publicKey } = await crypto.subtle.generateKey(
-    { name: "ECDSA", namedCurve: "P-256" },
-    true,
-    ["sign", "verify"],
-  );
-  const kid = `local-${crypto.randomUUID().slice(0, 8)}`;
-  const { x, y } = await crypto.subtle.exportKey("jwk", publicKey);
-  const part = (value) =>
-    base64Url(new TextEncoder().encode(JSON.stringify(value)));
-  return {
-    publicKey: { kty: "EC", crv: "P-256", x, y, kid, alg: "ES256", use: "sig" },
-    async sign({ iss, aud, user, hongbao, sender, nonce }) {
-      const issuedAt = Math.floor(Date.now() / 1000);
-      const expires = issuedAt + 600;
-      const signing = `${part({ alg: "ES256", typ: "JWT", kid })}.${part({
-        iss,
-        aud,
-        sub: user.id,
-        username: user.username,
-        name: user.name,
-        level: user.level,
-        hongbao,
-        sender,
-        iat: issuedAt,
-        exp: expires,
-        jti: crypto.randomUUID(),
-        ...(nonce ? { nonce } : {}),
-      })}`;
-      const signature = await crypto.subtle.sign(
-        { name: "ECDSA", hash: "SHA-256" },
-        privateKey,
-        new TextEncoder().encode(signing),
-      );
-      return {
-        token: `${signing}.${base64Url(new Uint8Array(signature))}`,
-        expiresAt: new Date(expires * 1000).toISOString(),
-        user,
-      };
-    },
-  };
 }
 
 /**

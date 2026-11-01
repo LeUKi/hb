@@ -273,8 +273,11 @@ export const NETWORK_REASONS: Readonly<
   >
 >;
 export function networkError(reason: string): TypeError;
-/** A `network` entry: an address prefix, or an 地址参数 (judge-address §2). */
-export type NetworkEntry = string | ParamRef;
+/**
+ * A `network` entry: an address prefix, an 地址参数 (judge-address §2), or
+ * an address that takes the site's token (§12.2).
+ */
+export type NetworkEntry = string | ParamRef | { url: string; token?: true };
 export function isParamEntry(entry: unknown): entry is ParamRef;
 export function readNetwork(
   value: unknown,
@@ -288,6 +291,11 @@ export function resolveNetwork(
   list: readonly NetworkEntry[] | null | undefined,
   values: Readonly<Record<string, unknown>> | null | undefined,
 ): string[] | null;
+/** Those of them requests to which carry X-Hb-Token (judge-address §12.2). */
+export function tokenAddresses(
+  list: readonly NetworkEntry[] | null | undefined,
+  values: Readonly<Record<string, unknown>> | null | undefined,
+): string[];
 /** An 地址参数 as filled: ending in `/`; `local` takes the kit's localhost. */
 export function readAddress(
   value: unknown,

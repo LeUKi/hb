@@ -12,6 +12,46 @@ import {
 
 const USER_AGENT = "hb.lafi.sh-judge (+https://hb.lafi.sh/help/code)";
 
+const base64Url = (bytes) =>
+  btoa(String.fromCharCode(...bytes))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll("=", "");
+const part = (value) =>
+  base64Url(new TextEncoder().encode(JSON.stringify(value)));
+
+/**
+ * X-Hb-Token (docs/judge-address-design.md §12.5): signed as the site's
+ * gateway signs it, with the simulator's key for this run.
+ */
+async function tokenFor(token, address) {
+  const key = await crypto.subtle.importKey(
+    "jwk",
+    token.jwk,
+    { name: "ECDSA", namedCurve: "P-256" },
+    false,
+    ["sign"],
+  );
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const signing = `${part({ alg: "ES256", typ: "JWT", kid: token.kid })}.${part(
+    {
+      iss: token.iss,
+      aud: new URL(address).origin,
+      hongbao: token.hongbao,
+      sender: token.sender,
+      iat: issuedAt,
+      exp: issuedAt + 60,
+      jti: crypto.randomUUID(),
+    },
+  )}`;
+  const signature = await crypto.subtle.sign(
+    { name: "ECDSA", hash: "SHA-256" },
+    key,
+    new TextEncoder().encode(signing),
+  );
+  return `${signing}.${base64Url(new Uint8Array(signature))}`;
+}
+
 /** Turned down: why, for the sandbox's fetch() to throw. */
 const refuse = (reason) =>
   new Response(null, {
@@ -64,10 +104,13 @@ export default {
     if (problem) return refuse(problem);
     const headers = new Headers(request.headers);
     headers.set("user-agent", USER_AGENT);
-    headers.set("x-hb-hongbao", "local");
+    headers.set("x-hb-hongbao", env.HONGBAO ?? "test");
     // 密钥 from keys.local.json, to their own address only (judge-key §5).
     for (const key of JSON.parse(env.KEYS ?? "[]"))
       if (allowedBy([key.to], request.url)) headers.set(key.header, key.value);
+    const token = JSON.parse(env.TOKEN ?? "null");
+    if (token && allowedBy(token.addresses, request.url))
+      headers.set("x-hb-token", await tokenFor(token, request.url));
     let response;
     try {
       response = await fetch(request.url, {
