@@ -166,6 +166,8 @@ export type LdcOpeningBlockedReason =
   | "JUDGE_PARAMS_INVALID"
   /** Another's 判定器, taken down by the 站长 (judge-square §15.3). */
   | "JUDGE_TAKEN_DOWN"
+  /** 判定器's version withdrawn by its author (judge-square §17). */
+  | "JUDGE_VERSION_WITHDRAWN"
   | "TIMED_DRAW_NOT_ENABLED"
   | "MERCHANT_LEGACY"
   | "MERCHANT_CREDENTIALS_UNVERIFIED"

@@ -111,7 +111,7 @@ function Withdrawal({ user, id }: { user: SessionUser; id: string }) {
       {withdrawal && (
         <Page>
           <PageHeader
-            eyebrow="🐟额"
+            back={{ label: "🐟额", href: "/balance" }}
             title="转出"
             description={clockSeconds(withdrawal.createdAt)}
           />

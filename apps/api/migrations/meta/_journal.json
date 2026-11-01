@@ -393,6 +393,13 @@
       "when": 1793461800000,
       "tag": "0055_judgment_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "6",
+      "when": 1793502096703,
+      "tag": "0056_judge_withdraw",
+      "breakpoints": true
     }
   ]
 }

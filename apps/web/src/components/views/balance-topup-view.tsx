@@ -95,7 +95,7 @@ function Topup({ user, id }: { user: SessionUser; id: string }) {
       {topup && (
         <Page>
           <PageHeader
-            eyebrow="🐟额"
+            back={{ label: "🐟额", href: "/balance" }}
             title="转入"
             description={clockSeconds(topup.createdAt)}
           />

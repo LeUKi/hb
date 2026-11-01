@@ -1,11 +1,14 @@
+import { useRouter } from "@tanstack/react-router";
 import { CloudOff, RotateCw, Wrench } from "lucide-react";
 import {
   type ComponentType,
   createContext,
+  type MouseEvent,
   type ReactNode,
   useContext,
 } from "react";
 import { cn } from "../../lib/cn";
+import { cameFrom } from "../../lib/history-trail";
 import { useMaintenance } from "../../lib/maintenance";
 import { useWindowInfo } from "../shell/window-info";
 import { Button } from "../ui/button";
@@ -128,12 +131,52 @@ export function RefreshNotice() {
   );
 }
 
+/**
+ * Where a subpage goes back to (docs/judge-square-design.md §17.5): the
+ * page above it, by name, and its address (with a 页签 in its query).
+ */
+export type PageBack = { label: string; href: string };
+
+/**
+ * ‹ 判定器广场: back a step when the page before is that page (its 页签
+ * and place as left), else that page opened; a real link, so a modified
+ * click opens it in a new tab.
+ */
+function BackLink({ back }: { back: PageBack }) {
+  const router = useRouter();
+  const onClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey ||
+      event.button !== 0
+    )
+      return;
+    event.preventDefault();
+    const index = router.history.location.state.__TSR_index;
+    if (cameFrom(index, back.href.split("?")[0] ?? back.href))
+      router.history.back();
+    else void router.navigate({ href: back.href });
+  };
+  return (
+    <a
+      href={back.href}
+      onClick={onClick}
+      className="w-fit text-sm text-ink-3 transition-colors hover:text-ink"
+    >
+      ‹ {back.label}
+    </a>
+  );
+}
+
 /** The page's title row: what this page is, and its main actions. */
 export function PageHeader({
   title,
   description,
   actions,
   eyebrow,
+  back,
   refreshable = false,
 }: {
   title: ReactNode;
@@ -141,6 +184,8 @@ export function PageHeader({
   actions?: ReactNode;
   /** A small line above the title (where this page belongs). */
   eyebrow?: ReactNode;
+  /** A subpage's way up, in the eyebrow's place (§17.5). */
+  back?: PageBack;
   /** A list read from the server: 刷新 at the end of the actions. */
   refreshable?: boolean;
 }) {
@@ -149,7 +194,11 @@ export function PageHeader({
       <header className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3 px-1">
         {/* Grows, so a long description wraps beside the actions. */}
         <div className="flex min-w-0 flex-1 basis-48 flex-col gap-1">
-          {eyebrow && <div className="text-sm text-ink-3">{eyebrow}</div>}
+          {back ? (
+            <BackLink back={back} />
+          ) : (
+            eyebrow && <div className="text-sm text-ink-3">{eyebrow}</div>
+          )}
           {/* Focusable from code: where reading starts again after 重试. */}
           <h1
             tabIndex={-1}

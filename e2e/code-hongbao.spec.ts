@@ -2024,7 +2024,12 @@ test.describe("发红包 · 代码判定", () => {
       const latest = kept.versions.at(-1);
       const usable = [...kept.versions]
         .reverse()
-        .find((v) => v.passed && (v.protocol ?? 1) >= JUDGE_OLDEST_PROTOCOL);
+        .find(
+          (v) =>
+            v.passed &&
+            !v.withdrawn &&
+            (v.protocol ?? 1) >= JUDGE_OLDEST_PROTOCOL,
+        );
       return {
         id: judgeId,
         name: kept.name,
@@ -2901,6 +2906,57 @@ test.describe("发红包 · 代码判定", () => {
     await expect.poll(() => saves.length).toBe(1);
     expect(saves[0]?.activity.judge?.code).toBe(firstCode);
     expect(server.requests).toHaveLength(0);
+  });
+
+  test("草稿重新打开：选着的第 2 版被自己撤回了（judge-square §17），卡上写换一个版本才能开放，能换成第 1 版", async ({
+    page,
+  }) => {
+    await mockCodeHongbao(page);
+    const versions: JudgeVersions = {
+      next: 3,
+      versions: [
+        {
+          n: 1,
+          fingerprint: sha256(firstCode),
+          at: openedAt,
+          testsDigest: sha256(testsFile),
+          passed: true,
+          protocol: JUDGE_PROTOCOL,
+        },
+        {
+          n: 2,
+          fingerprint: sha256(secondCode),
+          at: openedAt,
+          testsDigest: sha256(testsFile),
+          passed: true,
+          protocol: JUDGE_PROTOCOL,
+          withdrawn: true,
+        },
+      ],
+      restore: { n: 1, code: firstCode },
+    };
+    await mockDeploys(page, {
+      user: author,
+      judge: {
+        id: E2E_JUDGE,
+        name: "猜数字",
+        versions,
+        codes: { 1: firstCode, 2: secondCode },
+      },
+    });
+    await mockSenderReads(page, {
+      draft: { code: secondCode, tests: testsFile },
+      versions,
+      passed: true,
+    });
+    await openApp(page, `${path}/📝`);
+    await page.getByRole("button", { name: /^第 2 步 判定器/ }).click();
+    const card = page.locator("#hb-judge-picked");
+    await expect(card).toContainText("我的 · 第 2 版");
+    await expect(card).toContainText("你撤回了第 2 版，换一个版本才能开放。");
+    await card.getByRole("button", { name: "换成第 1 版" }).click();
+    await expect(page.getByText("我的 · 第 1 版")).toBeVisible();
+    await expect(page.getByText(/你撤回了第/)).toHaveCount(0);
   });
 
   test("草稿重新打开：第 1 版上次跑的是另一份测试，换回后提示要在线上重新跑，重新跑就是那张卡，不算部署", async ({

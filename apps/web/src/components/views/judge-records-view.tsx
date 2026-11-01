@@ -9,6 +9,7 @@ import type {
 } from "@hb/contracts";
 import { X } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
+import { activityPath } from "../../lib/activity-route";
 import { useStatisticsPages } from "../../lib/discovery";
 import {
   moveLabel,
@@ -429,7 +430,7 @@ export function JudgeRecordsView({
         <Page>
           <PageHeader
             refreshable
-            eyebrow={activity.title}
+            back={{ label: activity.title, href: activityPath(activity.id) }}
             title="判定记录"
             description="每一次提交和判定器的判定，只有你看得到。"
           />

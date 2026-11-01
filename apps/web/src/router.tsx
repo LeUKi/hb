@@ -13,6 +13,7 @@ import {
   type SenderPage,
 } from "./lib/activity-route";
 import type { CommandId } from "./lib/commands";
+import { noteEntry } from "./lib/history-trail";
 
 // Routes carry no components: the shell renders views itself so it can run
 // enter/exit animations and keep the single omnibox outside the views.
@@ -377,3 +378,8 @@ export const router = createRouter({
   defaultPreload: false,
   scrollRestoration: false,
 });
+
+// Each entry's page, for a subpage's 返回 (lib/history-trail.ts).
+router.subscribe("onResolved", ({ toLocation }) =>
+  noteEntry(toLocation.state.__TSR_index, toLocation.pathname),
+);

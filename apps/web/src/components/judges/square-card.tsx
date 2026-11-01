@@ -8,7 +8,8 @@ import { JudgeMark, JudgeSource, JudgeTags, statsLine } from "./judge-bits";
 
 /**
  * A 判定器 in the 广场 (§8 卡片): what it is, whose, its numbers and tags;
- * 用它发红包 and 查看; a 旧判定器 says it waits for its author.
+ * 用它发红包 and 查看; one waiting for its author (在更新, §17, or a
+ * 旧判定器) says why instead.
  */
 export function SquareJudgeCard({
   judge,
@@ -24,6 +25,7 @@ export function SquareJudgeCard({
 }) {
   const navigate = useNavigate();
   const { openAccount } = useOmniboxController();
+  const waiting = waitingWords(judge);
   return (
     <Squircle radius={radius.card}>
       <article className="panel grid h-full content-start gap-2.5 p-4">
@@ -44,9 +46,8 @@ export function SquareJudgeCard({
         <p className="text-xs text-ink-3">{statsLine(judge.stats)}</p>
         <JudgeTags judge={judge} />
         <div className="mt-1 flex flex-wrap items-center gap-2 self-end">
-          {/* A 旧判定器 waits for its author (multi-prize §3.6). */}
-          {judge.old ? (
-            <span className="text-sm text-ink-3">作者还没按新规则更新</span>
+          {waiting ? (
+            <span className="text-sm text-ink-3">{waiting}</span>
           ) : onPick ? (
             <>
               <Button
@@ -78,7 +79,7 @@ export function SquareJudgeCard({
               用它发红包
             </Button>
           )}
-          {onPick && judge.old && (
+          {onPick && waiting && (
             <ButtonLink href={`/judges/${encodeURIComponent(judge.id)}`}>
               查看 ↗
             </ButtonLink>
@@ -100,4 +101,15 @@ export function SquareJudgeCard({
       </article>
     </Squircle>
   );
+}
+
+/**
+ * Why others can't use it now, in place of 用它发红包: its author has a
+ * newer version that has not opened a 红包 (在更新, judge-square §17), or
+ * it is a 旧判定器 (multi-prize §3.6); null when they can.
+ */
+export function waitingWords(judge: Pick<SquareJudge, "old" | "updating">) {
+  if (judge.updating !== undefined) return "作者在更新，新版本发过红包后才能用";
+  if (judge.old) return "作者还没按新规则更新";
+  return null;
 }

@@ -5,6 +5,7 @@ import {
   type JudgeCheck,
   type JudgePage,
   type MyJudgeDetail,
+  type MyJudgeVersion,
   type SquareJudge,
 } from "../packages/contracts/src";
 import { type MockUser, mockSession, openApp, viewer } from "./support/app";
@@ -113,6 +114,8 @@ function mineDetail(): MyJudgeDetail {
     featured: null,
     stats: { hongbao: 0, judged: 0, claimed: 0 },
     publicN: null,
+    updating: null,
+    withdrawable: null,
     versions: [
       {
         n: 1,
@@ -125,8 +128,26 @@ function mineDetail(): MyJudgeDetail {
         network: null,
         declarations: null,
         opened: 0,
+        withdrawnAt: null,
       },
     ],
+  };
+}
+
+/** One of mine as a deploy left it: 第 n 版, its tests passed. */
+function mineVersion(n: number, opened: number): MyJudgeVersion {
+  return {
+    n,
+    fingerprint: sha256(`mine ${n}`),
+    deployedAt,
+    checkedAt: deployedAt,
+    protocol: JUDGE_PROTOCOL,
+    testsDigest: sha256("tests"),
+    passed: true,
+    network: null,
+    declarations: null,
+    opened,
+    withdrawnAt: null,
   };
 }
 
@@ -550,21 +571,218 @@ test.describe("判定器广场", () => {
     ).toBeVisible();
   });
 
-  test("自己的判定器页：新部署的一版还没开过红包时，说广场要等它开过红包才换成它（2026-10-31，用户：明明更新了第 3 版）", async ({
+  test("自己的判定器页：新部署的一版还没开过红包时，标题下写别人现在用不了和怎么恢复，版本上写谁在用；撤回最新的一版先确认，撤回后别人回到上一版（§17）", async ({
+    page,
+  }) => {
+    const { state } = await mockSquare(page, member);
+    const versions = [mineVersion(3, 0), mineVersion(2, 1), mineVersion(1, 0)];
+    state.mine = {
+      ...mineDetail(),
+      listed: true,
+      publicN: 2,
+      updating: 3,
+      withdrawable: 3,
+      latest: { n: 3, deployedAt, passed: true },
+      usable: { n: 3, declarations: null, network: null },
+      versions,
+    };
+    const withdrawn: number[] = [];
+    await page.route(
+      `**/api/me/judges/${MINE}/versions/3/withdraw`,
+      (route) => {
+        withdrawn.push(3);
+        state.mine = {
+          ...state.mine,
+          updating: null,
+          withdrawable: null,
+          usable: { n: 2, declarations: null, network: null },
+          versions: versions.map((version) =>
+            version.n === 3 ? { ...version, withdrawnAt: deployedAt } : version,
+          ),
+        };
+        return route.fulfill({ json: { judge: state.mine } });
+      },
+    );
+    await openApp(page, `/judges/${MINE}`);
+    await expect(
+      page.getByText(
+        "别人现在用不了：最新的第 3 版还没开放过红包。用它开放一个红包后，别人就用第 3 版。",
+      ),
+    ).toBeVisible();
+    const row = (n: number) =>
+      page.getByRole("button", { name: new RegExp(`^第 ${n} 版 ·`) });
+    const withdrawButton = page.getByRole("button", {
+      name: "撤回",
+      exact: true,
+    });
+    await expect(row(3)).toContainText("只有你能用");
+    await expect(row(2)).toContainText("别人用的是这一版");
+    // 撤回 only on the newest; asked first.
+    await expect(withdrawButton).toHaveCount(1);
+    await withdrawButton.click();
+    const asking = page.getByRole("dialog", { name: "撤回第 3 版？" });
+    await expect(asking).toContainText(
+      "撤回后这一版不能再用来发红包，也不能恢复，部署次数不退。前面的版本不能再撤回。",
+    );
+    await asking.getByRole("button", { name: "撤回" }).click();
+    await expect(asking).toBeHidden();
+    expect(withdrawn).toEqual([3]);
+    await expect(page.getByText("别人用的是第 2 版。")).toBeVisible();
+    await expect(row(3)).toContainText("已撤回");
+    await expect(withdrawButton).toHaveCount(0);
+  });
+
+  test("自己的判定器页：在广场里时部署按钮上写部署后别人要等；部署好了写第 N 版只有你能用，能直接用它发红包（§17）", async ({
     page,
   }) => {
     const { state } = await mockSquare(page, member);
     state.mine = {
       ...mineDetail(),
       listed: true,
-      publicN: 2,
-      usable: { n: 3, declarations: null, network: null },
+      publicN: 1,
+      versions: [mineVersion(1, 1)],
     };
+    await page.route("**/api/judge/check", (route) => {
+      const body = route.request().postDataJSON();
+      const deployed = {
+        n: 2,
+        fingerprint: sha256(body.code),
+        at: new Date().toISOString(),
+        testsDigest: sha256(body.tests),
+        passed: true,
+        protocol: JUDGE_PROTOCOL,
+      };
+      state.mine = {
+        ...state.mine,
+        updating: 2,
+        withdrawable: 2,
+        latest: { n: 2, deployedAt, passed: true },
+        usable: { n: 2, declarations: null, network: null },
+        versions: [mineVersion(2, 0), mineVersion(1, 1)],
+      };
+      return route.fulfill({
+        json: {
+          check: {
+            fingerprint: deployed.fingerprint,
+            testsDigest: deployed.testsDigest,
+            protocol: JUDGE_PROTOCOL,
+            passed: true,
+            network: null,
+            problems: [],
+            tests: [{ name: "答对", passed: true, ms: 3 }],
+            unstable: [],
+            slowestMs: 3,
+            checkedAt: deployed.at,
+            kind: "deploy",
+            deploysLeft: 6,
+            declarations: {
+              meta: null,
+              params: [],
+              hongbao: null,
+              check: false,
+            },
+            judge: {
+              id: MINE,
+              name: "我的猜谜",
+              description: "",
+              version: 2,
+              versions: { next: 3, versions: [deployed] },
+            },
+          } satisfies JudgeCheck,
+        },
+      });
+    });
     await openApp(page, `/judges/${MINE}`);
     await expect(
       page.getByText(
-        "广场上用的是第 2 版。第 3 版用它开放过红包以后，广场就换成它。",
+        "部署以后，别人要等你用新版本开放一个红包，才能再用这个判定器。",
       ),
+    ).toBeVisible();
+    const code = page.getByRole("textbox", { name: /^judge\.js/ });
+    await code.click();
+    await page.keyboard.press("End");
+    await page.keyboard.insertText("\n// 第 2 版");
+    await page.getByRole("button", { name: "部署并跑测试" }).click();
+    await expect(
+      page.getByText(
+        "第 2 版只有你能用。别人暂时用不了这个判定器，你用第 2 版开放一个红包后就恢复。",
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "用第 2 版发红包" }),
+    ).toHaveAttribute("href", `/new?judge=${MINE}`);
+  });
+
+  test("作者在更新的判定器（§17）：卡上和判定器页把用它发红包换成原因，判定器页写等哪一版；发红包里也挑不了", async ({
+    page,
+  }) => {
+    await mockSquare(page, member);
+    const updating: SquareJudge = { ...guess, featured: false, updating: 3 };
+    await page.route("**/api/judges**", (route) => {
+      const url = new URL(route.request().url());
+      const rest = url.pathname.slice("/api/judges".length);
+      if (rest === "")
+        return route.fulfill({ json: { items: [updating], nextCursor: null } });
+      if (rest === `/${GUESS}`)
+        return route.fulfill({
+          json: { judge: { ...guessPage, ...updating } satisfies JudgePage },
+        });
+      return route.fallback();
+    });
+    await openApp(page, "/judges");
+    const card = page.getByRole("article").filter({ hasText: "猜数字" });
+    await expect(card).toContainText("作者在更新，新版本发过红包后才能用");
+    await expect(card.getByText("用它发红包")).toHaveCount(0);
+    await card.getByRole("link", { name: "查看" }).click();
+    await expect(
+      page.getByText(
+        "作者部署了第 3 版，还没用它开放过红包。作者用第 3 版发过红包以后，大家就能用第 3 版。",
+      ),
+    ).toBeVisible();
+    const header = page.locator("header").filter({
+      has: page.getByRole("heading", { name: "猜数字", level: 1 }),
+    });
+    await expect(
+      header.getByText("作者在更新，新版本发过红包后才能用"),
+    ).toBeVisible();
+    await expect(header.getByRole("link", { name: "用它发红包" })).toHaveCount(
+      0,
+    );
+    // The 发红包 picker says so in place of 用这个.
+    await openApp(page, "/new");
+    await page.getByRole("button", { name: /^代码判定/ }).click();
+    await page.getByRole("button", { name: /去判定器广场挑一个/ }).click();
+    const square = page.getByRole("dialog", { name: "判定器广场" });
+    await square.getByRole("button", { name: "大家做的" }).click();
+    const picked = square.getByRole("article").filter({ hasText: "猜数字" });
+    await expect(picked).toContainText("作者在更新，新版本发过红包后才能用");
+    await expect(picked.getByRole("button", { name: "用这个" })).toHaveCount(0);
+  });
+
+  test("子页面的返回（§17.5）：判定器页标题上面是 ‹ 判定器广场；从广场点进来的退回去，页签照旧；直接打开的去判定器广场", async ({
+    page,
+  }) => {
+    await mockSquare(page, member);
+    await openApp(page, "/judges?tab=featured");
+    await page
+      .getByRole("article")
+      .filter({ hasText: "猜数字" })
+      .getByRole("link", { name: "查看" })
+      .click();
+    await expect(page).toHaveURL(new RegExp(`/judges/${GUESS}$`));
+    const back = page.getByRole("link", { name: "‹ 判定器广场" });
+    await expect(back).toHaveAttribute("href", "/judges");
+    await back.click();
+    await expect(page).toHaveURL(/\/judges\?tab=featured$/);
+    await expect(
+      page.getByRole("button", { name: "站长精选" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    // Opened straight: the 广场 opened, not a step out of the site.
+    await openApp(page, `/judges/${GUESS}`);
+    await page.getByRole("link", { name: "‹ 判定器广场" }).click();
+    await expect(page).toHaveURL(/\/judges$/);
+    await expect(
+      page.getByRole("heading", { name: "判定器广场", level: 1 }),
     ).toBeVisible();
   });
 

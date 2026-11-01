@@ -337,13 +337,15 @@ export function useJudgeDeploy({
     rerun,
     ready,
     /** 保存并开放 waits: why, in the step's words (07 §5). */
-    gate: ready
-      ? null
-      : rerun
-        ? upgraded
-          ? "这是按旧规则写的判定器，要按新规则重新跑一遍测试"
-          : "测试改过了，要重新跑一遍"
-        : "还没有测试全过的判定器",
+    gate: version?.withdrawn
+      ? "这一版判定器已经撤回了，换一个版本"
+      : ready
+        ? null
+        : rerun
+          ? upgraded
+            ? "这是按旧规则写的判定器，要按新规则重新跑一遍测试"
+            : "测试改过了，要重新跑一遍"
+          : "还没有测试全过的判定器",
     pending,
     busy: mutation.isPending,
     error: error && error.key === runOf ? error.text : null,

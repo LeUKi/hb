@@ -98,7 +98,7 @@ function Checkout({ user, id }: { user: SessionUser; id: string }) {
       {checkout && (
         <Page>
           <PageHeader
-            eyebrow="🐟额"
+            back={{ label: "🐟额", href: "/balance" }}
             title={`付给 @${checkout.counterpart.username} 的收银台`}
             description={clockSeconds(checkout.createdAt)}
           />

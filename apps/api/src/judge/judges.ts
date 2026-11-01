@@ -37,7 +37,7 @@ import type { ApiBindings } from "../env";
 import { decryptString, encryptString } from "../security/crypto";
 import { checkJudge, RUNS_PER_DAY, runsToday } from "./check";
 import { checkParamsInJudge, JUDGE_PROTOCOL, runJudge } from "./sandbox";
-import { publicVersionOf, usableByOthers } from "./square";
+import { publicVersionOf, updatingOf, usableByOthers } from "./square";
 import { judgeData, textDigest } from "./storage";
 import { usageStatement } from "./usage";
 
@@ -81,6 +81,7 @@ type VersionRecord = {
   network: string | null;
   deployed_at: number;
   checked_at: number;
+  withdrawn_at: number | null;
 };
 
 const iso = (at: number) => new Date(at).toISOString();
@@ -149,7 +150,9 @@ export async function draftVersionsOf(
       .bind(judgeId, LISTED)
       .all<VersionRecord>()
   ).results;
-  const restore = rows.find((row) => row.passed === 1);
+  const restore = rows.find(
+    (row) => row.passed === 1 && row.withdrawn_at === null,
+  );
   return {
     next: (rows[0]?.n ?? 0) + 1,
     versions: rows
@@ -163,6 +166,7 @@ export async function draftVersionsOf(
           passed: row.passed === 1,
           protocol: row.protocol,
           ...(network ? { network } : {}),
+          ...(row.withdrawn_at !== null ? { withdrawn: true as const } : {}),
         };
       })
       .reverse(),
@@ -220,6 +224,20 @@ export async function deployJudge(
   const known = existing
     ? await versionNumberOf(env, judgeId, check.fingerprint)
     : null;
+  // 撤回 (§17): a withdrawn version stays as it is, run again or not.
+  if (
+    known !== null &&
+    (await env.DB.prepare(
+      "SELECT 1 FROM judge_versions WHERE judge_id = ? AND n = ? AND withdrawn_at IS NOT NULL",
+    )
+      .bind(judgeId, known)
+      .first())
+  )
+    throw new ActivityError(
+      409,
+      "JUDGE_VERSION_WITHDRAWN",
+      `这份代码和撤回的第 ${known} 版一样，撤回的版本不能再部署。改了代码再部署。`,
+    );
   const n =
     known ??
     ((existing
@@ -330,7 +348,8 @@ const SUMMARY = `SELECT j.*, ${OPENED} AS opened,
     (SELECT n FROM judge_versions WHERE judge_id = j.id ORDER BY n DESC LIMIT 1) AS latest_n,
     (SELECT deployed_at FROM judge_versions WHERE judge_id = j.id ORDER BY n DESC LIMIT 1) AS latest_at,
     (SELECT passed FROM judge_versions WHERE judge_id = j.id ORDER BY n DESC LIMIT 1) AS latest_passed,
-    (SELECT n FROM judge_versions WHERE judge_id = j.id AND passed = 1 ORDER BY n DESC LIMIT 1) AS usable_n,
+    (SELECT n FROM judge_versions WHERE judge_id = j.id AND passed = 1 AND withdrawn_at IS NULL
+      ORDER BY n DESC LIMIT 1) AS usable_n,
     s.hongbao AS stat_hongbao, s.judged AS stat_judged, s.claimed AS stat_claimed, f.n AS featured_n
   FROM judges j LEFT JOIN judge_stats s ON s.judge_id = j.id LEFT JOIN judge_features f ON f.judge_id = j.id`;
 
@@ -424,9 +443,16 @@ export async function getMyJudge(
       .bind(judgeId)
       .all<VersionRecord & { opened: number }>()
   ).results;
+  const [publicN, updating, withdrawable] = await Promise.all([
+    publicVersionOf(env, judgeId),
+    updatingOf(env, judgeId),
+    withdrawableOf(env, judgeId),
+  ]);
   return {
     ...(await summaryOf(env, row)),
-    publicN: await publicVersionOf(env, judgeId),
+    publicN,
+    updating,
+    withdrawable,
     versions: versions.map(
       (version): MyJudgeVersion => ({
         n: version.n,
@@ -439,9 +465,59 @@ export async function getMyJudge(
         network: listOf(version.network),
         declarations: declarationsOf(version.declarations),
         opened: version.opened,
+        withdrawnAt:
+          version.withdrawn_at === null ? null : iso(version.withdrawn_at),
       }),
     ),
   };
+}
+
+/**
+ * The version 撤回 takes back (§17): the newest that passed on the protocol
+ * 红包 open on, with none withdrawn after it (one step back at most), not
+ * opened with nor in 站长精选. judge_versions_update_guard holds the same.
+ */
+async function withdrawableOf(env: ApiBindings, judgeId: string) {
+  return env.DB.prepare(
+    `SELECT v.n FROM judge_versions v WHERE v.judge_id = ?1 AND v.passed = 1 AND v.withdrawn_at IS NULL
+      AND v.protocol >= ${JUDGE_OLDEST_PROTOCOL}
+      AND NOT EXISTS(SELECT 1 FROM judge_versions w WHERE w.judge_id = v.judge_id AND w.n > v.n
+        AND (w.passed = 1 OR w.withdrawn_at IS NOT NULL))
+      AND NOT EXISTS(SELECT 1 FROM activity_code c JOIN activities a ON a.id = c.activity_id
+        WHERE c.judge_id = v.judge_id AND c.judge_version = v.n AND a.opened_at IS NOT NULL)
+      AND NOT EXISTS(SELECT 1 FROM judge_features f WHERE f.judge_id = v.judge_id AND f.n = v.n)`,
+  )
+    .bind(judgeId)
+    .first<number>("n");
+}
+
+/** 撤回 (§17): this version opens no 红包 after; others go back a step. */
+export async function withdrawMyJudgeVersion(
+  env: ApiBindings,
+  userId: string,
+  judgeId: string,
+  n: number,
+): Promise<MyJudgeDetail> {
+  await ownJudge(env, judgeId, userId);
+  const refused = () =>
+    new ActivityError(
+      409,
+      "JUDGE_VERSION_NOT_WITHDRAWABLE",
+      "只能撤回最新的、还没开放过红包的那一版。",
+    );
+  if ((await withdrawableOf(env, judgeId)) !== n) throw refused();
+  try {
+    await env.DB.prepare(
+      "UPDATE judge_versions SET withdrawn_at = ? WHERE judge_id = ? AND n = ? AND withdrawn_at IS NULL",
+    )
+      .bind(Date.now(), judgeId, n)
+      .run();
+  } catch (error) {
+    // Opened with or chosen for 精选 meanwhile (the guard).
+    if (String(error).includes("immutable_judge_version")) throw refused();
+    throw error;
+  }
+  return getMyJudge(env, userId, judgeId);
 }
 
 /**

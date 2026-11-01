@@ -407,6 +407,31 @@ export function useUpdateMyJudge(userId: string, judgeId: string) {
   });
 }
 
+/** 撤回 (judge-square §17): the newest version that has not opened a 红包. */
+export function useWithdrawJudgeVersion(userId: string, judgeId: string) {
+  const queryClient = useQueryClient();
+  const { csrfToken } = useIdentity();
+  return useMutation({
+    mutationFn: async (n: number) =>
+      (
+        await readResponse<{ judge: MyJudgeDetail }>(
+          await api.api.me.judges[":id"].versions[":n"].withdraw.$post(
+            { param: { id: judgeId, n: String(n) } },
+            { headers: { "X-CSRF-Token": csrfToken ?? "" } },
+          ),
+        )
+      ).judge,
+    onSuccess: (judge) => {
+      queryClient.setQueryData(myJudgeKey(userId, judgeId), judge);
+      void queryClient.invalidateQueries({
+        queryKey: myJudgesKey(userId),
+        exact: true,
+      });
+      void queryClient.invalidateQueries({ queryKey: judgeSquareKey });
+    },
+  });
+}
+
 /** A version's code and tests, to put in a draft (picking it, 换成第 N 版). */
 export async function fetchJudgeVersion(judgeId: string, n: number) {
   return readResponse<{

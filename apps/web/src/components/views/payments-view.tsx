@@ -289,7 +289,11 @@ function Payments({
         <Page>
           <PageHeader
             refreshable
-            eyebrow={single ? single.title : undefined}
+            back={
+              single && activityId
+                ? { label: single.title, href: activityPath(activityId) }
+                : undefined
+            }
             title="付款记录"
             description={
               activityId

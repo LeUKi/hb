@@ -1941,6 +1941,11 @@ export const judgeVersions = sqliteTable(
     network: text("network"),
     deployedAt: integer("deployed_at").notNull(),
     checkedAt: integer("checked_at").notNull(),
+    /**
+     * 撤回 (§17): the newest that passed, before it opened a 红包; it
+     * opens nothing after, and stays as it is.
+     */
+    withdrawnAt: integer("withdrawn_at"),
   },
   (table) => [
     primaryKey({ columns: [table.judgeId, table.n] }),

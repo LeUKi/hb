@@ -105,6 +105,8 @@ export const judgeVersionsSchema = z
           protocol: z.number().int().min(1).max(JUDGE_PROTOCOL).optional(),
           /** 联网 (§9): the addresses that run read from the code. */
           network: z.array(z.string().max(200)).min(1).max(3).optional(),
+          /** 撤回 (judge-square §17): it opens no 红包. */
+          withdrawn: z.literal(true).optional(),
         }),
       )
       .max(JUDGE_LIMITS.versions),
@@ -353,6 +355,8 @@ export type MyJudgeVersion = {
   declarations: JudgeDeclarations | null;
   /** 红包 opened with it. */
   opened: number;
+  /** 撤回 (§17): when; it opens no 红包 after. */
+  withdrawnAt: string | null;
 };
 
 /** A sender's own 判定器, as 我的判定器 lists it. */
@@ -367,7 +371,7 @@ export type MyJudge = {
   latest: { n: number; deployedAt: string; passed: boolean } | null;
   /**
    * The newest version a 红包 can open with now: tests passed on the
-   * current protocol.
+   * current protocol, not withdrawn.
    */
   usable: {
     n: number;
@@ -397,6 +401,13 @@ export type MyJudgeDetail = MyJudge & {
   versions: MyJudgeVersion[];
   /** The version others use in the 广场 (§15.3), if any. */
   publicN: number | null;
+  /**
+   * 在更新 (§17): a newer version than publicN that has not opened a 红包
+   * yet; others wait for it. Null when none, or 站长精选 has it.
+   */
+  updating: number | null;
+  /** The version 撤回 takes back (§17), if any. */
+  withdrawable: number | null;
 };
 
 /**
@@ -437,6 +448,11 @@ export type SquareJudge = {
    * runs it again on the new ones.
    */
   old?: true;
+  /**
+   * 在更新 (§17): its author deployed this newer version and has not opened
+   * a 红包 with it yet; others wait for it. Absent when not, and for 站长精选.
+   */
+  updating?: number;
   stats: JudgeStats;
 };
 

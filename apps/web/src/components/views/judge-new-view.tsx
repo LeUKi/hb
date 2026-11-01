@@ -282,7 +282,7 @@ function NewJudge({
   return (
     <Page>
       <PageHeader
-        eyebrow="判定器广场"
+        back={{ label: "判定器广场", href: "/judges" }}
         title="写一个判定器"
         description="写好 judge.js 和 tests.json，部署以后测试全过，就能用它发红包。"
       />

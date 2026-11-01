@@ -785,7 +785,7 @@ function OneMerchant({
         <Page>
           <PageHeader
             refreshable
-            eyebrow="LDC 商户配置"
+            back={{ label: "LDC 商户配置", href: "/merchant" }}
             title={merchant.label}
             description={PAGE_NOTE}
           />

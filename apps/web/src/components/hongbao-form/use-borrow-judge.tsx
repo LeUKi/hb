@@ -59,6 +59,11 @@ export function useBorrowJudge() {
     try {
       const page = await fetchJudgePage(judgeId);
       if (page.own) return { own: page };
+      // 在更新 (judge-square §17): none picks it anew meanwhile.
+      if (page.updating !== undefined) {
+        setError("作者在更新这个判定器，新版本发过红包后才能用。");
+        return { failed: true };
+      }
       const version = page.version;
       const code = version?.code;
       if (!version || !code) {

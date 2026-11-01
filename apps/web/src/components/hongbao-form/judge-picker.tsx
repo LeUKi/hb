@@ -187,6 +187,7 @@ export function PickedJudge({
   source = "我的",
   n,
   newer,
+  back,
   notice,
   locked,
   busy,
@@ -200,10 +201,15 @@ export function PickedJudge({
   source?: string;
   /** None for an opened 红包's code from before 判定器. */
   n?: number;
-  /** Another's left the 广场, or was taken down (§15.4). */
+  /** Another's left the 广场, or was taken down (§15.4); withdrawn (§17). */
   notice?: { tone: "quiet" | "danger"; text: string };
   /** A newer version of it that a 红包 can open with. */
   newer?: number;
+  /**
+   * Its version withdrawn (judge-square §17): the one to change to, its
+   * button with the notice; onNewer puts it in.
+   */
+  back?: number;
   locked: boolean;
   busy: boolean;
   onView: () => void;
@@ -256,14 +262,25 @@ export function PickedJudge({
           </span>
         </div>
         {notice && (
-          <p
+          <div
             className={cn(
-              "border-line border-t pt-2 text-sm",
+              "flex flex-wrap items-center gap-x-3 gap-y-1 border-line border-t pt-2 text-sm",
               notice.tone === "danger" ? "text-danger" : "text-ink-2",
             )}
           >
-            {notice.text}
-          </p>
+            <span className="min-w-0 flex-1">{notice.text}</span>
+            {!locked && back !== undefined && (
+              <Button
+                size="xs"
+                aria-disabled={busy || undefined}
+                onClick={() => {
+                  if (!busy) onNewer();
+                }}
+              >
+                换成第 {back} 版
+              </Button>
+            )}
+          </div>
         )}
         {!locked && newer !== undefined && (
           <div

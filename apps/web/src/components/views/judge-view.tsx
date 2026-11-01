@@ -21,6 +21,7 @@ import {
   useMyJudgeVersion,
   useSetJudgeListing,
   useUpdateMyJudge,
+  useWithdrawJudgeVersion,
 } from "../../lib/judge";
 import { type SessionUser, useIdentity } from "../../lib/session";
 import { JudgeWriter } from "../hongbao-form/code-step";
@@ -314,20 +315,6 @@ function SquareSettings({
               );
             }}
           />
-          <p className="text-sm text-ink-2">
-            {judge.featured !== null
-              ? `站长精选了第 ${judge.featured} 版。`
-              : judge.publicN !== null
-                ? `广场上用的是第 ${judge.publicN} 版。${
-                    // A newer version waits for a 红包 of its own (§15.3).
-                    judge.usable &&
-                    !judge.usable.old &&
-                    judge.usable.n > judge.publicN
-                      ? `第 ${judge.usable.n} 版用它开放过红包以后，广场就换成它。`
-                      : ""
-                  }`
-                : "还没有开放过红包的版本，广场上暂时看不到它。"}
-          </p>
         </div>
       </Reveal>
       <Reveal show={Boolean(error)}>
@@ -522,15 +509,22 @@ function Trying({
   );
 }
 
-/** A version's row: when, whether its tests passed, 红包 it opened; its code. */
+/**
+ * A version's row: when, whether its tests passed, 红包 it opened, where
+ * it stands (§17); its code; 撤回 on the one that can be.
+ */
 function VersionRow({
   judgeId,
   userId,
   version,
+  standing,
+  onWithdraw,
 }: {
   judgeId: string;
   userId: string;
   version: MyJudgeVersion;
+  standing: string | null;
+  onWithdraw?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const panel = useId();
@@ -539,46 +533,61 @@ function VersionRow({
   return (
     <li className="flex flex-col">
       <Squircle radius={radius.row}>
-        <button
-          id={head}
-          type="button"
-          aria-expanded={open}
-          aria-controls={panel}
-          onClick={() => setOpen(!open)}
-          className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-fill-2"
-        >
-          <span className="grid min-w-0 flex-1 gap-0.5">
-            <span className="text-base font-medium text-ink">
-              第 {version.n} 版 ·{" "}
-              {deployedLabel(Date.parse(version.deployedAt))} 部署
-            </span>
-            <span className="text-sm">
-              <span className={version.passed ? "text-success" : "text-danger"}>
-                {version.passed ? "测试全过" : "测试没过"}
+        <div className="flex items-center">
+          <button
+            id={head}
+            type="button"
+            aria-expanded={open}
+            aria-controls={panel}
+            onClick={() => setOpen(!open)}
+            className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-fill-2"
+          >
+            <span className="grid min-w-0 flex-1 gap-0.5">
+              <span className="text-base font-medium text-ink">
+                第 {version.n} 版 ·{" "}
+                {deployedLabel(Date.parse(version.deployedAt))} 部署
               </span>
-              {/* A 旧判定器 (multi-prize §3.6): passed on the old rules. */}
-              {version.passed && version.protocol < JUDGE_OLDEST_PROTOCOL && (
-                <span className="text-ink-3">
-                  {" "}
-                  · 旧判定器，要按新规则重新跑测试
+              <span className="text-sm">
+                <span
+                  className={version.passed ? "text-success" : "text-danger"}
+                >
+                  {version.passed ? "测试全过" : "测试没过"}
                 </span>
-              )}
-              {version.opened > 0 && (
-                <span className="text-ink-3">
-                  {" "}
-                  · 开放过 {version.opened} 个红包
-                </span>
-              )}
+                {/* A 旧判定器 (multi-prize §3.6): passed on the old rules. */}
+                {version.passed && version.protocol < JUDGE_OLDEST_PROTOCOL && (
+                  <span className="text-ink-3">
+                    {" "}
+                    · 旧判定器，要按新规则重新跑测试
+                  </span>
+                )}
+                {version.opened > 0 && (
+                  <span className="text-ink-3">
+                    {" "}
+                    · 开放过 {version.opened} 个红包
+                  </span>
+                )}
+                {standing && <span className="text-ink-3"> · {standing}</span>}
+              </span>
             </span>
-          </span>
-          <ChevronRight
-            className={cn(
-              "size-4 shrink-0 text-ink-3 transition-transform",
-              open && "rotate-90",
-            )}
-            aria-hidden="true"
-          />
-        </button>
+            <ChevronRight
+              className={cn(
+                "size-4 shrink-0 text-ink-3 transition-transform",
+                open && "rotate-90",
+              )}
+              aria-hidden="true"
+            />
+          </button>
+          {onWithdraw && (
+            <Button
+              variant="quiet"
+              size="xs"
+              className="mr-2 shrink-0"
+              onClick={onWithdraw}
+            >
+              撤回
+            </Button>
+          )}
+        </div>
       </Squircle>
       <Reveal show={open}>
         <div id={panel} className="grid gap-3 px-3 pt-1 pb-3">
@@ -668,6 +677,7 @@ function DeployForm({
       },
     };
   });
+  const navigate = useNavigate();
   const [form, setForm] = useState(start);
   const update: Update = (change) => setForm(change);
   const [said, setSaid] = useState("");
@@ -690,6 +700,19 @@ function DeployForm({
       form.judge.tests !== start.judge.tests) &&
     (deploy.status === "new" || deploy.rerun);
   useEffect(() => onChanged(changed), [changed, onChanged]);
+  // 在更新 (§17): others wait for a new version to open a 红包 — said
+  // before a deploy, and after one, with the way back.
+  const othersUse =
+    judge.listed &&
+    !judge.takenDown &&
+    judge.featured === null &&
+    judge.publicN !== null;
+  const deployed =
+    deploy.result?.check && deploy.ready && deploy.version
+      ? deploy.version.n
+      : null;
+  const waiting =
+    deployed !== null && judge.updating === deployed ? deployed : null;
   return (
     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5">
       <JudgeWriter
@@ -700,7 +723,35 @@ function DeployForm({
         frozen={false}
         judge={deploy}
         gated={false}
+        beforeDeploy={
+          othersUse && (
+            <p className="text-sm text-ink-2">
+              部署以后，别人要等你用新版本开放一个红包，才能再用这个判定器。
+            </p>
+          )
+        }
       />
+      <Reveal show={waiting !== null}>
+        {waiting !== null && (
+          <Callout tone="neutral">
+            <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <span className="min-w-0 flex-1">
+                第 {waiting} 版只有你能用。别人暂时用不了这个判定器，你用第{" "}
+                {waiting} 版开放一个红包后就恢复。
+              </span>
+              <ButtonLink
+                size="xs"
+                href={`/new?judge=${encodeURIComponent(judge.id)}`}
+                onGo={() =>
+                  void navigate({ to: "/new", search: { judge: judge.id } })
+                }
+              >
+                用第 {waiting} 版发红包
+              </ButtonLink>
+            </span>
+          </Callout>
+        )}
+      </Reveal>
       <p role="status" className="sr-only">
         {said}
       </p>
@@ -783,6 +834,28 @@ function JudgePage({
 }) {
   const navigate = useNavigate();
   const [changed, setChanged] = useState({ settings: false, deploy: false });
+  const withdraw = useWithdrawJudgeVersion(user.id, judge.id);
+  const [withdrawing, setWithdrawing] = useState<number | null>(null);
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
+  // Kept while the dialog closes.
+  const [asked, setAsked] = useState(0);
+  if (withdrawing !== null && withdrawing !== asked) setAsked(withdrawing);
+  const standing = standingOf(judge);
+  // Others use one version while it is in the 广场 (§17).
+  const others = judge.listed && !judge.takenDown ? judge.publicN : null;
+  const rowStanding = (version: MyJudgeVersion) =>
+    version.withdrawnAt !== null
+      ? "已撤回"
+      : others === null
+        ? null
+        : version.n === others
+          ? "别人用的是这一版"
+          : version.n > others &&
+              version.passed &&
+              version.protocol >= JUDGE_OLDEST_PROTOCOL &&
+              version.opened === 0
+            ? "只有你能用"
+            : null;
   // Its numbers as the 广场 says them (§15.4).
   const line = [
     judge.latest && `第 ${judge.latest.n} 版`,
@@ -793,7 +866,7 @@ function JudgePage({
   return (
     <Page>
       <PageHeader
-        eyebrow="我的判定器"
+        back={{ label: "我的判定器", href: "/judges?tab=mine" }}
         title={judge.name}
         description={
           <>
@@ -801,6 +874,9 @@ function JudgePage({
               <span className="block">{judge.description}</span>
             )}
             <span className="block text-ink-3">{line}</span>
+            {standing && (
+              <span className="mt-1 block text-ink-2">{standing}</span>
+            )}
           </>
         }
         actions={
@@ -843,10 +919,51 @@ function JudgePage({
               judgeId={judge.id}
               userId={user.id}
               version={version}
+              standing={rowStanding(version)}
+              onWithdraw={
+                version.n === judge.withdrawable
+                  ? () => {
+                      setWithdrawError(null);
+                      setWithdrawing(version.n);
+                    }
+                  : undefined
+              }
             />
           ))}
         </Panel>
       </PageSection>
+      <ConfirmDialog
+        open={withdrawing !== null}
+        onClose={() => setWithdrawing(null)}
+        busy={withdraw.isPending}
+        title={`撤回第 ${asked} 版？`}
+        text="撤回后这一版不能再用来发红包，也不能恢复，部署次数不退。前面的版本不能再撤回。"
+        error={withdrawError}
+        actions={
+          <>
+            <Button
+              onClick={() => setWithdrawing(null)}
+              aria-disabled={withdraw.isPending || undefined}
+            >
+              返回
+            </Button>
+            <Button
+              variant="primary"
+              aria-disabled={withdraw.isPending || undefined}
+              onClick={() => {
+                if (withdraw.isPending || withdrawing === null) return;
+                setWithdrawError(null);
+                withdraw.mutate(withdrawing, {
+                  onSuccess: () => setWithdrawing(null),
+                  onError: (failure) => setWithdrawError(failedSave(failure)),
+                });
+              }}
+            >
+              {withdraw.isPending ? "正在撤回…" : "撤回"}
+            </Button>
+          </>
+        }
+      />
       <PageSection title="部署新版本" action={<JudgeHelpLinks />}>
         <DeployNew
           judge={judge}
@@ -864,6 +981,19 @@ function JudgePage({
       />
     </Page>
   );
+}
+
+/**
+ * Where it stands in the 广场, under its title (§17): which version others
+ * use, or that they wait for the newest one to open a 红包.
+ */
+function standingOf(judge: MyJudgeDetail) {
+  if (!judge.listed || judge.takenDown) return null;
+  if (judge.featured !== null) return `站长精选了第 ${judge.featured} 版。`;
+  if (judge.updating !== null)
+    return `别人现在用不了：最新的第 ${judge.updating} 版还没开放过红包。用它开放一个红包后，别人就用第 ${judge.updating} 版。`;
+  if (judge.publicN !== null) return `别人用的是第 ${judge.publicN} 版。`;
+  return "还没有开放过红包的版本，广场上暂时看不到它。";
 }
 
 /** One's own, read as its author reads it. */

@@ -47,6 +47,7 @@ import {
   myJudgeVersion,
   tryMyJudge,
   updateMyJudge,
+  withdrawMyJudgeVersion,
 } from "./judges";
 import { myJudgmentCursor, myJudgments } from "./mine";
 import {
@@ -229,6 +230,18 @@ export const judgeRoutes = new Hono<ApiContext>()
         versionNumber(c.req.param("n")),
       ),
     );
+  })
+  // 撤回 (§17): the newest version that has not opened a 红包.
+  .post("/me/judges/:id/versions/:n/withdraw", async (c) => {
+    const session = await requireProtectedMutation(c);
+    return c.json({
+      judge: await withdrawMyJudgeVersion(
+        c.env,
+        session.user.id,
+        c.req.param("id"),
+        versionNumber(c.req.param("n")),
+      ),
+    });
   })
   // check(params, hongbao) on what a sender filled (§3 校验).
   .post(

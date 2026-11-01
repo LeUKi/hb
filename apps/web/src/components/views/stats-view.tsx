@@ -1,5 +1,6 @@
 import type { AttemptStatisticsRow } from "@hb/contracts";
 import { useManagedActivity } from "../../lib/activities";
+import { activityPath } from "../../lib/activity-route";
 import { cn } from "../../lib/cn";
 import { useStatisticsPages } from "../../lib/discovery";
 import {
@@ -160,7 +161,7 @@ export function StatsView({ id, userId }: { id: string; userId: string }) {
         <Page>
           <PageHeader
             refreshable
-            eyebrow={activity.title}
+            back={{ label: activity.title, href: activityPath(activity.id) }}
             title="尝试统计"
             description={
               code

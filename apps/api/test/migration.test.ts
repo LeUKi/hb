@@ -1578,7 +1578,8 @@ it("0051 keeps a third-protocol 判定器, its 红包, judgments and 用量 as t
       pending_minor: 0,
       settled_at: null,
     },
-    version: kept.version,
+    // 0056: 撤回 (judge-square §17).
+    version: { ...kept.version, withdrawn_at: null },
     usage: kept.usage,
   });
   // The fourth protocol now: a run, a version and 用量 on it.

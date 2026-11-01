@@ -42,6 +42,18 @@ const PUBLIC_N = (judge: string) => {
 };
 
 /**
+ * 在更新 (§17): the newest version its author deployed — passed on the
+ * protocol 红包 open on, not withdrawn — when it is newer than the one
+ * others use; they wait until it opens a 红包. Not for 站长精选, which
+ * keeps the version chosen.
+ */
+const UPDATING_N = (judge: string) => `(SELECT CASE
+  WHEN EXISTS(SELECT 1 FROM judge_features uf WHERE uf.judge_id = ${judge}) THEN NULL
+  ELSE (SELECT MAX(uv.n) FROM judge_versions uv WHERE uv.judge_id = ${judge} AND uv.passed = 1
+    AND uv.protocol >= ${JUDGE_OLDEST_PROTOCOL} AND uv.withdrawn_at IS NULL
+    AND uv.n > ${PUBLIC_N(judge)}) END)`;
+
+/**
  * Every 判定器's numbers worked out again (the maintenance task): adding
  * at each claim would have to take a 停用 红包 back out (§15.2).
  */
@@ -71,6 +83,14 @@ export async function publicVersionOf(env: ApiBindings, judgeId: string) {
   return row?.n ?? null;
 }
 
+/** 在更新 (§17), read live: the newer version others wait for, or null. */
+export async function updatingOf(env: ApiBindings, judgeId: string) {
+  const row = await env.DB.prepare(`SELECT ${UPDATING_N("?1")} AS n`)
+    .bind(judgeId)
+    .first<{ n: number | null }>();
+  return row?.n ?? null;
+}
+
 type CardRow = {
   id: string;
   name: string;
@@ -89,6 +109,7 @@ type CardRow = {
   network: number;
   page: string | null;
   old: number | null;
+  updating: number | null;
   hongbao: number | null;
   judged: number | null;
   claimed: number | null;
@@ -108,6 +129,7 @@ const CARD = (version: string) => `j.id, j.name, j.description,
     WHERE pv.judge_id = j.id AND pv.n = ${version}) AS page,
   (SELECT ov.protocol < ${JUDGE_OLDEST_PROTOCOL} FROM judge_versions ov
     WHERE ov.judge_id = j.id AND ov.n = ${version}) AS old,
+  ${UPDATING_N("j.id")} AS updating,
   s.hongbao, s.judged, s.claimed, s.last_opened_at AS lastOpenedAt`;
 const CARD_JOINS = `JOIN users u ON u.id = j.author_id
   LEFT JOIN judges b ON b.id = j.based_on_judge_id LEFT JOIN users bu ON bu.id = b.author_id
@@ -149,6 +171,7 @@ function cardOf(env: ApiBindings, row: CardRow, pages: boolean): SquareJudge {
     network: row.network === 1,
     ...(pages && row.page ? { page: row.page } : {}),
     ...(row.old === 1 ? { old: true as const } : {}),
+    ...(row.updating !== null ? { updating: row.updating } : {}),
     stats: statsOf(row),
   };
 }
@@ -519,6 +542,20 @@ export async function borrowedVersion(
     )
       .bind(activityId, judgeId, n)
       .first());
+  // 在更新 (§17): none picks it anew until the author's newest version
+  // opens a 红包; a draft that has it already keeps it.
+  if (
+    judge &&
+    !kept &&
+    judge.listed_at !== null &&
+    judge.taken_down_at === null &&
+    (await updatingOf(env, judgeId)) !== null
+  )
+    throw new ActivityError(
+      409,
+      "JUDGE_UPDATING",
+      "作者在更新这个判定器，新版本发过红包后才能用。",
+    );
   const usable =
     judge &&
     n !== undefined &&

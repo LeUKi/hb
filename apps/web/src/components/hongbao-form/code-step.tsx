@@ -871,6 +871,8 @@ export function CodeStep({
     mineNow?.usable && judge.version && mineNow.usable.n > judge.version.n
       ? mineNow.usable.n
       : undefined;
+  // Its version withdrawn (judge-square §17): another opens instead.
+  const withdrawn = judge.version?.withdrawn ? judge.version.n : undefined;
 
   /**
    * Its newest usable version, put in: code, tests, params and defaults.
@@ -1049,7 +1051,16 @@ export function CodeStep({
             name={form.judge.name || "判定器"}
             description={form.judge.description}
             n={judge.version?.n}
-            newer={newer}
+            newer={withdrawn === undefined ? newer : undefined}
+            back={withdrawn === undefined ? undefined : mineNow?.usable?.n}
+            notice={
+              withdrawn === undefined
+                ? undefined
+                : {
+                    tone: "danger",
+                    text: `你撤回了第 ${withdrawn} 版，换一个版本才能开放。`,
+                  }
+            }
             locked={locked}
             busy={picking || frozen}
             onView={() => setViewing(true)}

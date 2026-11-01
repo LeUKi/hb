@@ -438,12 +438,12 @@ describe("another's 判定器 (§15.3)", () => {
       code: "JUDGE_NOT_FOUND",
     });
     await listed(judge.id);
-    // 第 2 版 never opened a 红包: not others' to use.
+    const draft = await borrow(judge.id, someone);
+    // 第 2 版 never opened a 红包: none picks it anew meanwhile (§17).
     await check(author, unique(), TESTS, { id: judge.id });
     await expect(borrow(judge.id, someone, 2)).rejects.toMatchObject({
-      code: "JUDGE_NOT_FOUND",
+      code: "JUDGE_UPDATING",
     });
-    const draft = await borrow(judge.id, someone);
     await setMyJudgeListing(bindings, author.id, judge.id, {
       listed: false,
       featurable: true,
@@ -467,5 +467,187 @@ describe("another's 判定器 (§15.3)", () => {
     ).rejects.toMatchObject({
       message: "这个判定器已被站长撤下，换一个判定器才能开放，草稿已保存。",
     });
+  });
+});
+
+// 新版本先由作者发红包 (docs/judge-square-design.md §17): a newer version
+// that has not opened a 红包 holds others off it; 撤回 takes the newest back.
+describe("在更新 and 撤回 (§17)", () => {
+  async function shared() {
+    const judge = await made();
+    await listed(judge.id);
+    await opened(judge);
+    return judge;
+  }
+
+  async function borrow(judgeId: string, sender: Actor, version = 1) {
+    return createActivity(bindings, sender.id, {
+      requestId: crypto.randomUUID(),
+      activity: coded({}, { judgeId, version, code: "// 不用这份", tests: "" }),
+    });
+  }
+
+  async function sender() {
+    const person = await actor();
+    await give(admin, person, "5.00");
+    return person;
+  }
+
+  const FAILING = JSON.stringify({
+    tests: [{ name: "答错也算对", input: "x", expect: { ok: true } }],
+  });
+
+  const withdraw = (judgeId: string, n: number) =>
+    app.request(
+      `${origin}/api/me/judges/${judgeId}/versions/${n}/withdraw`,
+      {
+        method: "POST",
+        headers: {
+          Cookie: author.cookie,
+          Origin: origin,
+          "X-CSRF-Token": author.csrf,
+        },
+      },
+      bindings,
+    );
+
+  it("holds others off it while the newest version has not opened a 红包; a draft that has the old one keeps it; opening the newest lets them in", async () => {
+    const judge = await shared();
+    const keeper = await sender();
+    const kept = await borrow(judge.id, keeper);
+    const second = unique();
+    await check(author, second, TESTS, { id: judge.id });
+    await refreshJudgeStats(bindings);
+    const all = await get<SquareJudgeList>("/judges?tab=all");
+    expect(all.body.items.find((item) => item.id === judge.id)).toMatchObject({
+      updating: 2,
+    });
+    expect(
+      (await get<{ judge: JudgePage }>(`/judges/${judge.id}`)).body.judge,
+    ).toMatchObject({ updating: 2, version: { n: 1 } });
+    expect(await getMyJudge(bindings, author.id, judge.id)).toMatchObject({
+      publicN: 1,
+      updating: 2,
+      withdrawable: 2,
+    });
+    await expect(borrow(judge.id, await sender())).rejects.toMatchObject({
+      code: "JUDGE_UPDATING",
+      message: "作者在更新这个判定器，新版本发过红包后才能用。",
+    });
+    // Picked before: saved again and opened, as it was.
+    await openActivity(bindings, kept.id, keeper.id, kept.version);
+    await opened({ id: judge.id, code: second });
+    expect(await getMyJudge(bindings, author.id, judge.id)).toMatchObject({
+      publicN: 2,
+      updating: null,
+      withdrawable: null,
+    });
+    const page = (await get<{ judge: JudgePage }>(`/judges/${judge.id}`)).body
+      .judge;
+    expect(page.updating).toBeUndefined();
+    expect(page.version?.n).toBe(2);
+    expect(
+      (await borrow(judge.id, await sender(), 2)).config.judge,
+    ).toMatchObject({ version: 2 });
+  });
+
+  it("leaves 站长精选 on the version chosen while its author updates", async () => {
+    const judge = await shared();
+    await env.DB.prepare(
+      "INSERT INTO judge_features (judge_id, n, position, created_by, created_at, updated_at) VALUES (?, 1, 0, ?, ?, ?)",
+    )
+      .bind(judge.id, admin.id, Date.now(), Date.now())
+      .run();
+    await check(author, unique(), TESTS, { id: judge.id });
+    const featured = await get<SquareJudgeList>("/judges");
+    const card = featured.body.items.find((item) => item.id === judge.id);
+    expect(card?.featured).toBe(true);
+    expect(card?.updating).toBeUndefined();
+    expect((await getMyJudge(bindings, author.id, judge.id)).updating).toBe(
+      null,
+    );
+    expect((await borrow(judge.id, await sender())).config.judge).toMatchObject(
+      { version: 1 },
+    );
+  });
+
+  it("takes back only the newest that passed, one step at most; a withdrawn version opens nothing and is not deployed again", async () => {
+    const judge = await shared();
+    const second = unique();
+    await check(author, second, TESTS, { id: judge.id });
+    // A draft of the author's on 第 2 版, before it is withdrawn.
+    const draft = await createActivity(bindings, author.id, {
+      requestId: crypto.randomUUID(),
+      activity: coded({}, { code: second, tests: TESTS, judgeId: judge.id }),
+    });
+    // 第 3 版 failed its tests: 第 2 版 is still the newest that passed.
+    const failed = await check(author, unique(), FAILING, { id: judge.id });
+    expect(failed.body.check.passed).toBe(false);
+    expect((await getMyJudge(bindings, author.id, judge.id)).withdrawable).toBe(
+      2,
+    );
+    const refused = await withdraw(judge.id, 3);
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({
+      error: {
+        code: "JUDGE_VERSION_NOT_WITHDRAWABLE",
+        message: "只能撤回最新的、还没开放过红包的那一版。",
+      },
+    });
+    const done = await withdraw(judge.id, 2);
+    expect(done.status).toBe(200);
+    const { judge: after } = (await done.json()) as { judge: MyJudgeDetail };
+    expect(after).toMatchObject({
+      publicN: 1,
+      updating: null,
+      withdrawable: null,
+      usable: { n: 1 },
+    });
+    expect(
+      after.versions.find((version) => version.n === 2)?.withdrawnAt,
+    ).toEqual(expect.any(String));
+    // Others are back on 第 1 版.
+    expect((await borrow(judge.id, await sender())).config.judge).toMatchObject(
+      { version: 1 },
+    );
+    // Not a second step back, and not by hand either.
+    expect((await withdraw(judge.id, 1)).status).toBe(409);
+    await expect(
+      env.DB.prepare(
+        "UPDATE judge_versions SET withdrawn_at = ? WHERE judge_id = ? AND n = 1",
+      )
+        .bind(Date.now(), judge.id)
+        .run(),
+    ).rejects.toThrow(/immutable_judge_version/);
+    // The draft on it does not open.
+    const blocked = await getManagedActivity(bindings, draft.id, author.id);
+    expect(blocked.openingBlockedReason).toBe("JUDGE_VERSION_WITHDRAWN");
+    expect(
+      blocked.config.judge?.versions?.versions.find(
+        (version) => version.n === 2,
+      ),
+    ).toMatchObject({ withdrawn: true });
+    await expect(
+      openActivity(bindings, draft.id, author.id, blocked.version),
+    ).rejects.toMatchObject({
+      message: "这一版判定器已经撤回了，换一个版本才能开放，草稿已保存。",
+    });
+    // Its code again is the withdrawn version: not deployed.
+    const again = await check(author, second, TESTS, { id: judge.id });
+    expect(again.status).toBe(409);
+    expect(again.body.error).toMatchObject({
+      code: "JUDGE_VERSION_WITHDRAWN",
+      message:
+        "这份代码和撤回的第 2 版一样，撤回的版本不能再部署。改了代码再部署。",
+    });
+    // A new one can be taken back again.
+    await check(author, unique(), TESTS, { id: judge.id });
+    expect((await getMyJudge(bindings, author.id, judge.id)).withdrawable).toBe(
+      4,
+    );
+    expect((await withdraw(judge.id, 4)).status).toBe(200);
+    expect((await getMyJudge(bindings, author.id, judge.id)).updating).toBe(
+      null,
+    );
   });
 });

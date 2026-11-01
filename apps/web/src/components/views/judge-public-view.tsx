@@ -20,6 +20,7 @@ import {
   JudgeTags,
   statsLine,
 } from "../judges/judge-bits";
+import { waitingWords } from "../judges/square-card";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { LazyListEnd, useQueryLazyList } from "../page/lazy-list";
 import { Callout, Page, PageHeader, PageSection, Panel } from "../page/page";
@@ -295,10 +296,11 @@ export function PublicJudgePage({
   const note = version?.declarations?.hongbao?.note;
   // The 站长's copy says so where its source does (JudgeSource).
   const improved = judge.featured && judge.bySiteOwner;
+  const waiting = waitingWords(judge);
   return (
     <Page>
       <PageHeader
-        eyebrow="判定器广场"
+        back={{ label: "判定器广场", href: "/judges" }}
         title={judge.name}
         description={
           <>
@@ -332,6 +334,14 @@ export function PublicJudgePage({
             <span className="mt-1.5 block">
               <JudgeTags judge={judge} />
             </span>
+            {/* 在更新 (judge-square §17): why, and until when. */}
+            {judge.updating !== undefined && !judge.own && (
+              <span className="mt-2 block text-ink-2">
+                作者部署了第 {judge.updating} 版，还没用它开放过红包。作者用第{" "}
+                {judge.updating} 版发过红包以后，大家就能用第 {judge.updating}{" "}
+                版。
+              </span>
+            )}
           </>
         }
         actions={
@@ -352,9 +362,9 @@ export function PublicJudgePage({
                   恢复
                 </Button>
               )}
-              {/* A 旧判定器 waits for its author (multi-prize §3.6). */}
-              {version && judge.old && !judge.own ? (
-                <span className="text-sm text-ink-3">作者还没按新规则更新</span>
+              {/* Waiting for its author (§17 在更新, a 旧判定器). */}
+              {version && waiting && !judge.own ? (
+                <span className="text-sm text-ink-3">{waiting}</span>
               ) : version && viewerId ? (
                 <ButtonLink
                   variant="primary"

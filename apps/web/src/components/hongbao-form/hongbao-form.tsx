@@ -201,7 +201,9 @@ export function HongbaoForm({
   const borrow = useBorrowJudge();
   const codeBlocked =
     form.mode === "code" &&
-    (borrowed ? borrowed.source.takenDown : !judge.ready);
+    (borrowed
+      ? borrowed.source.takenDown
+      : !judge.ready || Boolean(judge.version?.withdrawn));
   const codeGateText = borrowed ? "这个判定器已被站长撤下" : judge.gate;
   const usedN = borrowed?.n ?? judge.version?.n;
 

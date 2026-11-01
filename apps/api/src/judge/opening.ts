@@ -84,6 +84,16 @@ export async function codeOpeningBlocked(
       .first())
   )
     return "JUDGE_TAKEN_DOWN";
+  // 撤回 (judge-square §17): a withdrawn version opens nothing.
+  if (
+    await env.DB.prepare(
+      `SELECT 1 FROM activity_code c JOIN judge_versions v ON v.judge_id = c.judge_id AND v.n = c.judge_version
+        WHERE c.activity_id = ? AND v.withdrawn_at IS NOT NULL`,
+    )
+      .bind(row.id)
+      .first()
+  )
+    return "JUDGE_VERSION_WITHDRAWN";
   const { runBy, protocol } = await codeOpeningRun(env, row.authorId, judge);
   const { fingerprint, testsDigest } = judge;
   if (protocol === null) {
