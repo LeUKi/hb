@@ -209,13 +209,13 @@ const aiPrompt = (
    - await hb.identity({ nonce }) 拿一个红包站签名的身份令牌（所有带附带网页的红包都能用；同一个红包第一次会先问他，代码判定红包和替你提交一起问）：拿到了是 { identified: true, token, expiresAt, user: { id, username, name, level } }，没拿到是 { identified: false, reason, message }；reason 有 ${identityReasons.map(([name]) => name).join("、")}。user 只用来先显示，后端只信 token。
    - await hb.mine(next) 读他自己的记录 { total, items: [{ n, at, input, claimed, amount, reply, added, pending, settled, by }], next }，没登录时 null；别人的判定通过 others 改到他的那条带 by（那个人的昵称），没有 input。
    - 做不到：读红包站的 Cookie 和登录信息、看别人的输入、转账、发红包、改红包、绕过冷却和人机验证。
-   - 开发包（npx degit LeUKi/hb/kit）里有网页模板 page/index.html、SDK 的类型 page/hb.d.ts、本地的假红包页（npm run page）和数字炸弹、刮刮乐两个样例。
+   - 开发包（npx degit LeUKi/hb/kit）里有网页模板 page/index.html、SDK 的类型 page/hb.d.ts、本地的模拟器（npm run page，宽屏、手机、多人三种布局；npm run page -- --shot 截宽屏和手机三张图、列出网页报错，改完网页跑一次）和数字炸弹、刮刮乐两个样例。
 8. 后端要知道是谁（存档、排行榜、防冒充）时，不用接 LINUX DO 登录，用 hb.identity()：
    - 在看的人点“开始”这类按钮时再要；后端可以先发一个一次性的 nonce（8–128 个字母、数字或 -_.~），网页带着它要令牌。
    - 令牌放在内存里，用 Authorization: Bearer 请求头发给后端，不放进本地存储、网址和日志；过期（10 分钟）了再调一次 hb.identity()，不会再问他。
    - 后端用 jose 验：公钥 ${origin}/api/page-identity/keys（createRemoteJWKSet），算法 ES256，issuer ${origin}，audience 是网页自己的来源，clockTolerance 30 秒；再核对 payload.hongbao 是自己认的红包、payload.nonce 是刚发的并且只用一次。
    - 用 payload.sub（LINUX DO 数字 ID，和判定器的 submission.user.id 是同一个数）认人，不用用户名；数据按“红包编号 + 用户 ID”存。后端的跨域只放行网页自己的来源。
-   - 本地 npm run page 签的令牌 iss 是假红包页的地址，上线后的后端只认 ${origin}。
+   - 本地 npm run page 的模拟器签的令牌 iss 是模拟器的地址，上线后的后端只认 ${origin}。
    - 钱只经过判定器：后端算出的结果要由判定器联网核对才算数；令牌不能用来替他提交。
 9. 还没有网站：把网页放到静态托管上就行。Cloudflare Workers、GitHub Pages、Netlify、Vercel 的默认域名都能直接嵌进红包页；Vercel 只用正式部署（预览部署默认要登录才能看）。Cloudflare Drop 拖上去还没认领的页面会先弹安全验证，嵌不进来，要先认领。
 
@@ -305,9 +305,9 @@ export function HelpPageView() {
             Cookie。后端的跨域只放行你网页的来源。
           </p>
           <p>
-            同一个红包里，网页第一次要令牌或第一次替他提交时，红包页会问一次（代码判定红包是“让这个网页知道你是谁、替你提交？”，别的红包是“让这个网页知道你是谁？”），同意后两样都不再问。本地的假红包页（
+            同一个红包里，网页第一次要令牌或第一次替他提交时，红包页会问一次（代码判定红包是“让这个网页知道你是谁、替你提交？”，别的红包是“让这个网页知道你是谁？”），同意后两样都不再问。本地的模拟器（
             <Code>npm run page</Code>）也能签，<Code>iss</Code>{" "}
-            是假红包页的地址；上线后的后端只认 {origin}。
+            是模拟器的地址；上线后的后端只认 {origin}。
           </p>
           <p>
             钱只经过判定器：后端算出的结果要由判定器联网核对才算数，令牌也不能用来替他提交。
@@ -417,8 +417,11 @@ export function HelpPageView() {
           <p>
             开发包（<Code>npx degit LeUKi/hb/kit</Code>）里有网页模板{" "}
             <Code>page/index.html</Code>、SDK 的类型 <Code>page/hb.d.ts</Code>，
-            <Code>npm run page</Code> 在本地打开一个假红包页，提交交给本地的
-            judge.js 跑；还有数字炸弹、刮刮乐两个带网页的样例。
+            <Code>npm run page</Code>{" "}
+            在本地打开一个模拟器（宽屏、手机、多人三种布局），提交交给本地的
+            judge.js 跑；<Code>npm run page -- --shot</Code>{" "}
+            不开窗口，截宽屏和手机三张图到 <Code>shots/</Code>
+            ，列出网页报错，给 AI 用；还有数字炸弹、刮刮乐两个带网页的样例。
           </p>
         </Panel>
         <Panel className={text}>

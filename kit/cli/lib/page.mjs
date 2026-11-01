@@ -1,4 +1,4 @@
-// npm run page (docs/judge-page-design.md §11.10): the 假红包页, a 红包 page
+// npm run page (docs/judge-page-design.md §11.10): the simulator, a 红包 page
 // on this computer to build a 附带网页 against. Two servers: the 红包 page
 // itself (cli/page/host.html and the SDK it serves) on 127.0.0.1, and the
 // page's folder on localhost — another site, as online — where
@@ -31,7 +31,7 @@ import { failureText, say, yuan } from "./words.mjs";
 
 const HOUR = 3_600_000;
 const DAY = 86_400_000;
-/** What a page writes; served from the 假红包页 here. */
+/** What a page writes; served from the simulator here. */
 const SITE_SDK = "https://hb.lafi.sh/sdk/v1.js";
 const DEFAULT_PEOPLE = ["小明", "小红", "小刚"];
 /** The viewer who has not signed in. */
@@ -695,7 +695,7 @@ export async function pageCommand({
       print,
     });
   const page = await startPage({ root, ...options, print });
-  print(`假红包页：${page.hostUrl}`);
+  print(`模拟器：${page.hostUrl}`);
   print(
     `网页：${options.folder ? `${options.folder.replace(/\/$/, "")}/` : ""}page/index.html（从 ${page.pageUrl} 打开）`,
   );

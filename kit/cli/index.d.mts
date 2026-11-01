@@ -115,7 +115,7 @@ export function replayCommand(
 /** npm run page's viewer who has not signed in. */
 export const GUEST: string;
 
-/** npm run page: the 假红包页 for the kit at `root` (judge.js, simulate.json, page/). */
+/** npm run page: the simulator for the kit at `root` (judge.js, simulate.json, page/). */
 export function startPage(options: {
   root: string;
   /** The 红包 page's; the page's is the next one (0: any two). */

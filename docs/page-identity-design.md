@@ -17,7 +17,7 @@
 - 网页调 `await hb.identity()` 或 `await hb.identity({ nonce })`，红包页问过许可（第 3 节）以后向本站要一个令牌，交给网页；网页把它发给自己的后端（放在 `Authorization: Bearer` 请求头里），后端验证后才信。
 - 格式是 JWT，签名算法 ES256（P-256，各语言的 JWT 库都支持）。头部 `{ alg: "ES256", typ: "JWT", kid }`。
 - 内容：
-  - `iss`：签发方，本站的地址（`https://hb.lafi.sh`；Stage 是 `https://staging.hb.lafi.sh`；开发包的假红包页是它自己的本地地址）；
+  - `iss`：签发方，本站的地址（`https://hb.lafi.sh`；Stage 是 `https://staging.hb.lafi.sh`；开发包的模拟器是它自己的本地地址）；
   - `aud`：给谁，这个红包附带网页的来源（比如 `https://game.example.com`），拿到别的网站验证会不通过；
   - `sub`：看的人的 LINUX DO 数字 ID（字符串），和判定器 `submission.user.id` 是同一个数；
   - `username`、`name`（昵称）、`level`（信任等级 0–4，没有时 `null`）；
@@ -61,7 +61,7 @@ const answer = await hb.identity({ nonce }); // nonce 可以不带
   - `unavailable`：这个红包没有附带网页，或者红包站暂时签不了；
   - `error`：别的错，`message` 是原因。
 - 用之前先看 `typeof hb.identity === "function"`（文件缓存一小时）。
-- 开发包的假红包页也能签：启动时生成一把本地密钥，`iss` 是假红包页的地址，公钥在它的 `/api/page-identity/keys`。后端在开发时信它，上线时只信 `https://hb.lafi.sh`。
+- 开发包的模拟器也能签：启动时生成一把本地密钥，`iss` 是模拟器的地址，公钥在它的 `/api/page-identity/keys`。后端在开发时信它，上线时只信 `https://hb.lafi.sh`。
 
 ## 5 文档
 

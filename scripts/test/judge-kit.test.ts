@@ -1527,7 +1527,7 @@ describe("hongbao.title 和 hongbao.note", () => {
 });
 
 // 附带网页 (docs/judge-page-design.md §11.10): the two samples with a page,
-// the SDK the kit serves, and npm run page's 假红包页.
+// the SDK the kit serves, and npm run page's simulator.
 describe("附带网页", () => {
   it.each(["number-bomb", "scratch-card"])(
     "examples/%s passes npm test and npm run check, and has a page",
@@ -1562,7 +1562,7 @@ describe("附带网页", () => {
       expect(new URL(page.hostUrl).hostname).toBe("127.0.0.1");
       expect(new URL(page.pageUrl).hostname).toBe("localhost");
       const host = await (await fetch(page.hostUrl)).text();
-      expect(host).toContain("<title>假红包页</title>");
+      expect(host).toContain("<title>模拟器</title>");
       expect(host).toContain(`"pageOrigin":"${page.pageUrl}"`);
       const html = await (await fetch(`${page.pageUrl}/`)).text();
       expect(html).toContain(`<script src="${page.hostUrl}/sdk/v1.js">`);

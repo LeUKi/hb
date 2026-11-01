@@ -17,7 +17,7 @@
 
 ## 带附带网页的例子
 
-判定器加一个网页（`page/index.html`），网页通过红包站的 SDK 读公开数据、替人提交。在开发包根目录运行 `npm run page -- examples/number-bomb`（或 `examples/scratch-card`），在本地打开假红包页看效果。
+判定器加一个网页（`page/index.html`），网页通过红包站的 SDK 读公开数据、替人提交。在开发包根目录运行 `npm run page -- examples/number-bomb`（或 `examples/scratch-card`），在本地的模拟器里看效果（宽屏、手机、多人三种布局）；`npm run page -- examples/number-bomb --shot` 不开窗口，截宽屏和手机三张图到 `shots/`，列出网页报错，给 AI 用。
 
 | 目录 | 名字 | 玩法 |
 | --- | --- | --- |
