@@ -872,10 +872,15 @@ test.describe("红包页", () => {
       where.getByRole("button", { name: "发到社区" }),
     ).toHaveAttribute("aria-pressed", "true");
     await expect(what.getByRole("button")).toHaveText([
-      "红包链接点链接或整段粘贴都能打开",
       "社区小程序嵌入帖子，在帖子里直接领",
+      "红包链接点链接或整段粘贴都能打开",
       "红包实况图嵌入帖子，实时更新",
     ]);
+    // 社区小程序 first, and chosen until another is.
+    await expect(
+      what.getByRole("button", { name: /^社区小程序/ }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await what.getByRole("button", { name: /^红包链接/ }).click();
     // The preview shows the post, the copy waits behind 原文; 红包页 leads
     // to the site unless asked.
     await expect(share.getByText(`/🧧/${code}`)).toBeVisible();
@@ -900,7 +905,7 @@ test.describe("红包页", () => {
     await expect(
       share.getByText("“红包站”链到社区里的红包站主贴"),
     ).toBeVisible();
-    await expect(what.getByRole("button").first()).toHaveText(
+    await expect(what.getByRole("button").nth(1)).toHaveText(
       "红包链接不直接链到站外，整段粘贴就能打开",
     );
     await share.getByRole("button", { name: "复制红包链接" }).click();
@@ -927,12 +932,12 @@ test.describe("红包页", () => {
     await expect(
       share.getByText("帖子里直接显示这个红包，在帖子里就能领"),
     ).toBeVisible();
-    await expect(share.getByText("宽度和帖子一样，高 720")).toBeVisible();
+    await expect(share.getByText("宽度和帖子一样，高 800")).toBeVisible();
     await share.getByRole("button", { name: "复制小程序代码" }).click();
     await expect
       .poll(() => readClipboard(page))
       .toBe(
-        `<iframe src="https://linux.do/apps/01a19ba5-b9d2-766f-9fb9-b7eddc10e0c7?embed_mode=true&hb=${id}" title="周末红包" width="100%" height="720" frameborder="0" loading="lazy" referrerpolicy="no-referrer" allow="fullscreen; clipboard-write" allowfullscreen style="display:block;width:100%;border:0;"></iframe>`,
+        `<iframe src="https://linux.do/apps/01a19ba5-b9d2-766f-9fb9-b7eddc10e0c7?embed_mode=true&hb=${id}" title="周末红包" width="100%" height="800" frameborder="0" loading="lazy" referrerpolicy="no-referrer" allow="fullscreen; clipboard-write" allowfullscreen style="display:block;width:100%;border:0;"></iframe>`,
       );
 
     // 红包实况图: its sizes, 300 × 400 first; the post's link, or this 红包.
@@ -1175,9 +1180,9 @@ test.describe("红包页", () => {
     const share = page.getByRole("dialog", { name: "分享红包" });
     const what = share.getByRole("group", { name: "发什么" });
     await expect(what.getByRole("button")).toHaveText([
+      "社区小程序嵌入帖子，在帖子里直接领",
       /^红包链接点链接或整段粘贴都能打开/,
       "红包链接与口令整段粘贴到输入框就能领",
-      "社区小程序嵌入帖子，在帖子里直接领",
       "红包实况图嵌入帖子，实时更新",
     ]);
     await what.getByRole("button", { name: /^红包链接与口令/ }).click();

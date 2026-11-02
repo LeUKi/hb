@@ -42,7 +42,7 @@ const whereNames: Record<Where, string> = {
 };
 
 const kindsOf: Record<Where, Kind[]> = {
-  forum: ["link", "password", "mini", "image"],
+  forum: ["mini", "link", "password", "image"],
   elsewhere: ["url", "urlPassword"],
 };
 
@@ -80,7 +80,7 @@ type Choice = {
 const STORE = "hb.share";
 const firstChoice: Choice = {
   where: "forum",
-  kind: "link",
+  kind: "mini",
   width: ACTIVITY_IMAGE_EMBED_SIZES[0].width,
   post: false,
 };

@@ -15,8 +15,8 @@ export const FORUM_ORIGIN = "https://linux.do";
 /** The launch parameter that names the 红包. */
 export const MINI_APP_HONGBAO_PARAM = "hb";
 
-/** How tall the mini app is in a post: the 社区's own embed's height. */
-export const MINI_APP_EMBED_HEIGHT = 720;
+/** How tall the mini app is in a post (the user's 800, not 2048's 720). */
+export const MINI_APP_EMBED_HEIGHT = 800;
 
 const attribute = (value: string) =>
   value
