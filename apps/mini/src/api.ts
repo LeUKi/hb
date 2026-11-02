@@ -32,7 +32,7 @@ function sdkError(error: unknown): HongbaoError {
     code === "TIMEOUT"
       ? "红包站没有及时回答，请再试一次。"
       : code === "PERMISSION_DENIED" || code === "ACCESS_DENIED"
-        ? "论坛没有允许这个小程序联网。"
+        ? "社区没有允许这个小程序联网。"
         : "连不上红包站，请再试一次。",
   );
 }

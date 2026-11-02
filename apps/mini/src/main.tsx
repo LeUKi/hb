@@ -34,7 +34,7 @@ async function start() {
     document.body.appendChild(document.createElement("div"));
   const sdk = getSdk();
   if (!sdk) {
-    showError(element, new Error("要在论坛里打开。"));
+    showError(element, new Error("要在社区里打开。"));
     return;
   }
   const root = createRoot(element, {

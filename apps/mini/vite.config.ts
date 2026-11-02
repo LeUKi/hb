@@ -3,7 +3,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-// 论坛小程序 (docs/mini-app-design.md): the forum runs one IIFE app.js and
+// 社区小程序 (docs/mini-app-design.md): the forum runs one IIFE app.js and
 // one app.css, under a body fragment (index.html) it inserts itself. `vite`
 // serves index.html here with a stand-in SDK (src/dev.tsx); `vite build`
 // writes dist/web/app.js and app.css for scripts/pack.ts.

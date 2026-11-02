@@ -17,6 +17,6 @@ export function readRosterPage({
   signal: AbortSignal;
 }): Promise<RosterPage> {
   const sdk = getSdk();
-  if (!sdk) return Promise.reject(new Error("论坛小程序的 SDK 不在。"));
+  if (!sdk) return Promise.reject(new Error("社区小程序的 SDK 不在。"));
   return readRoster(sdk, activityId, kind, cursor);
 }

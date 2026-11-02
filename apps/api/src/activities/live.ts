@@ -106,7 +106,7 @@ export const liveAnnounce = (
   } satisfies ActivityLiveMessage);
 
 /**
- * 论坛小程序 (docs/mini-app-design.md §7): a mini app's socket is on the
+ * 社区小程序 (docs/mini-app-design.md §7): a mini app's socket is on the
  * same channel (counted with the rest), tagged so it hears the lighter read
  * and none of 代码判定's messages, and closed at its `until`.
  */

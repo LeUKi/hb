@@ -47,7 +47,7 @@ const kindsOf: Record<Where, Kind[]> = {
 const cards: Record<Kind, { title: string; description: string }> = {
   link: { title: "红包链接", description: "点链接或整段粘贴都能打开" },
   password: { title: "红包链接与口令", description: "整段粘贴到输入框就能领" },
-  mini: { title: "论坛小程序", description: "在论坛里打开，直接领" },
+  mini: { title: "社区小程序", description: "在社区里打开，直接领" },
   image: { title: "红包实况图", description: "嵌入帖子，实时更新" },
   url: { title: "网页链接", description: "完整网址，可直接打开" },
   urlPassword: { title: "网页链接与口令", description: "链接下面写着口令" },
@@ -151,7 +151,7 @@ function shareOf(
       );
     case "password":
       return forumShareWithPassword(shared, password ?? "", link);
-    // 论坛小程序 (docs/mini-app-design.md §7): the forum's own link to it.
+    // 社区小程序 (docs/mini-app-design.md §7): the forum's own link to it.
     case "mini":
       return forumMiniAppLink(activity.id);
     case "image":
@@ -368,7 +368,7 @@ function ShareForm({
               // 代码判定 and a human check are claimed on 红包站 itself.
               ...(each === "mini" &&
               (activity.participation === "code" || activity.humanCheck)
-                ? { description: "在论坛里打开，这个红包要到红包站领" }
+                ? { description: "在社区里打开，这个红包要到红包站领" }
                 : {}),
             }))}
             onChange={(next) => choose({ kind: next })}
@@ -441,7 +441,7 @@ function ShareForm({
             <div className="flex min-w-0 items-center justify-between gap-3">
               <span className="min-w-0 text-xs text-ink-3">
                 {kind === "mini"
-                  ? "点链接在论坛里打开这个红包"
+                  ? "点链接在社区里打开这个红包"
                   : kind === "image"
                     ? choice.post
                       ? "点图打开社区里的红包站主贴"

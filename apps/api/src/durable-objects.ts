@@ -609,7 +609,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   }
 
   /**
-   * 论坛小程序: a mini app's socket lives until its `until` (the forum's
+   * 社区小程序: a mini app's socket lives until its `until` (the forum's
    * limit: 300 s, or its token's end); those past it are closed, and the
    * app has opened its next one by then.
    */

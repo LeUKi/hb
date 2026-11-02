@@ -28,7 +28,7 @@ type ApiEnvVars = {
   /** 附带网页认人: private P-256 JWKs, the first signing (activities/page-identity.ts). */
   PAGE_IDENTITY_KEYS?: string;
   /**
-   * 论坛小程序 (mini/platform-token.ts): the forum app's id, the forum
+   * 社区小程序 (mini/platform-token.ts): the forum app's id, the forum
    * (default https://linux.do), which builds this deployment takes
    * ("sandbox" on Stage, "production"), and the forum's public key for
    * their tokens (PEM or JWK). Without all of them the mini app's routes

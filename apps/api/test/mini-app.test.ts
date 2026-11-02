@@ -21,7 +21,7 @@ import { base64UrlEncode } from "../src/security/crypto";
 import { advanceAttemptCooldown } from "./advance-attempt-cooldown";
 import { resetMerchantHistory } from "./reset-merchant-history";
 
-// 论坛小程序 (docs/mini-app-design.md §7): the forum signs each request its
+// 社区小程序 (docs/mini-app-design.md §7): the forum signs each request its
 // mini app makes; 红包站 checks it as the forum's server SDK does, then
 // reads, claims and keeps the live channel for whoever it names.
 
@@ -100,10 +100,10 @@ async function running(extra: Partial<LdcActivityInput> = {}) {
     requestId: crypto.randomUUID(),
     activity: {
       ...emptyActivityInput(),
-      title: "论坛里领的红包",
+      title: "社区里领的红包",
       beforeInfo: "说明写在这里",
       merchantId,
-      passwords: ["论坛里的口令"],
+      passwords: ["社区里的口令"],
       allocation: "sequential",
       money: { mode: "fixed", totalAmount: "3.00", count: 3 },
       ...extra,
@@ -335,7 +335,7 @@ describe("the forum's token", () => {
   });
 });
 
-describe("论坛小程序's routes", () => {
+describe("社区小程序's routes", () => {
   it("are off until the forum's key is set, and answer the forum's CORS", async () => {
     const off = await app.request(
       `${origin}/api/mini/hongbao?id=${crypto.randomUUID()}`,
@@ -379,7 +379,7 @@ describe("论坛小程序's routes", () => {
     const response = await read(activity.id);
     expect(response.status).toBe(200);
     const body = (await response.json()) as MiniHongbaoResponse;
-    expect(body.activity.title).toBe("论坛里领的红包");
+    expect(body.activity.title).toBe("社区里领的红包");
     expect(body.activity.beforeInfo).toBe("说明写在这里");
     expect(body.known).toBe(false);
     expect(body.participation).toEqual({ claim: null, registration: null });
@@ -389,7 +389,7 @@ describe("论坛小程序's routes", () => {
     const activity = await running();
     const nameless = await claim(activity.id, {
       submissionId: crypto.randomUUID(),
-      password: "论坛里的口令",
+      password: "社区里的口令",
     });
     expect(nameless.status).toBe(403);
     expect(
@@ -399,7 +399,7 @@ describe("论坛小程序's routes", () => {
     const wrong = await claim(activity.id, {
       submissionId: crypto.randomUUID(),
       password: "这个口令不对",
-      forumUser: { username: "forum_first", name: "论坛新人" },
+      forumUser: { username: "forum_first", name: "社区新人" },
     });
     expect(((await wrong.json()) as { result: string }).result).toBe(
       "incorrect",
@@ -415,7 +415,7 @@ describe("论坛小程序's routes", () => {
     }>();
     expect(account).toMatchObject({
       username: "forum_first",
-      display_name: "论坛新人",
+      display_name: "社区新人",
       trust_level: null,
       profile_seen_at: null,
     });
@@ -423,8 +423,8 @@ describe("论坛小程序's routes", () => {
 
     const right = await claim(activity.id, {
       submissionId: crypto.randomUUID(),
-      password: "论坛里的口令",
-      forumUser: { username: "forum_first", name: "论坛新人" },
+      password: "社区里的口令",
+      forumUser: { username: "forum_first", name: "社区新人" },
     });
     const result = (await right.json()) as {
       result: string;
@@ -443,7 +443,7 @@ describe("论坛小程序's routes", () => {
     await person("77");
     const taken = await claim(activity.id, {
       submissionId: crypto.randomUUID(),
-      password: "论坛里的口令",
+      password: "社区里的口令",
       forumUser: { username: "MINI_77", name: "冒名" },
     });
     expect(taken.status).toBe(403);
@@ -463,7 +463,7 @@ describe("论坛小程序's routes", () => {
     });
     const body = () => ({
       submissionId: crypto.randomUUID(),
-      password: "论坛里的口令",
+      password: "社区里的口令",
       forumUser: { username: "named_one", name: "被指定的人" },
     });
     const refused = await claim(activity.id, body());
@@ -488,7 +488,7 @@ describe("论坛小程序's routes", () => {
     await person("332940");
     const response = await claim(activity.id, {
       submissionId: crypto.randomUUID(),
-      password: "论坛里的口令",
+      password: "社区里的口令",
     });
     expect(response.status).toBe(200);
     const result = (await response.json()) as {
@@ -514,7 +514,7 @@ describe("论坛小程序's routes", () => {
     await person("332940");
     await claim(activity.id, {
       submissionId: crypto.randomUUID(),
-      password: "论坛里的口令",
+      password: "社区里的口令",
     });
     const response = await roster(activity.id, "claims");
     expect(response.status).toBe(200);
@@ -553,7 +553,7 @@ describe("论坛小程序's routes", () => {
   });
 });
 
-describe("论坛小程序's live channel", () => {
+describe("社区小程序's live channel", () => {
   it("needs the forum's own handshake", async () => {
     const activity = await running();
     expect(
@@ -573,13 +573,13 @@ describe("论坛小程序's live channel", () => {
     );
     const first = heard.find((message) => message.type === "activity");
     if (first?.type !== "activity") throw new Error("no read");
-    expect(first.activity.title).toBe("论坛里领的红包");
+    expect(first.activity.title).toBe("社区里领的红包");
     expect(first.activity).not.toHaveProperty("beforeInfo");
     expect(first.activity).not.toHaveProperty("rosterPreview");
     await person("40");
     await claim(
       activity.id,
-      { submissionId: crypto.randomUUID(), password: "论坛里的口令" },
+      { submissionId: crypto.randomUUID(), password: "社区里的口令" },
       "40",
     );
     await vi.waitFor(

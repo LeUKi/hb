@@ -5,7 +5,7 @@ import type {
   PublicRegistrationList,
 } from "./index";
 
-// 论坛小程序 (docs/mini-app-design.md §7): LINUX DO's mini app for a 红包,
+// 社区小程序 (docs/mini-app-design.md §7): LINUX DO's mini app for a 红包,
 // opened from a forum link that names it, to claim it inside the forum.
 
 /** The forum app's id, as its app page gave it (public: it is in its address). */
@@ -15,7 +15,7 @@ export const FORUM_ORIGIN = "https://linux.do";
 /** The launch parameter that names the 红包. */
 export const MINI_APP_HONGBAO_PARAM = "hb";
 
-/** 论坛小程序链接: this 红包 in the forum's mini app. */
+/** 社区小程序链接: this 红包 in the forum's mini app. */
 export function forumMiniAppLink(activityId: string) {
   return `${FORUM_ORIGIN}/apps/${FORUM_MINI_APP_ID}?${MINI_APP_HONGBAO_PARAM}=${encodeURIComponent(activityId)}`;
 }

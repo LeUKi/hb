@@ -273,7 +273,7 @@ function Detail({ user }: { user: AdminUserListItem }) {
           },
           {
             label: "状态",
-            value: `${user.active ? "可用" : "停用（LINUX DO 账号已停用）"}${user.silenced ? "，论坛禁言中" : ""}`,
+            value: `${user.active ? "可用" : "停用（LINUX DO 账号已停用）"}${user.silenced ? "，社区禁言中" : ""}`,
           },
           { label: "身份", value: user.admin ? "管理员" : "普通" },
           {

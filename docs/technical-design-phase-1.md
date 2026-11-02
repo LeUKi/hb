@@ -454,7 +454,7 @@ LDC_TIMED_DRAW_ENABLED仅控制新限时活动开放；关闭不丢弃已经接�
 
 ## 品牌、构建标记与页面加载（2026-10-06本轮）
 
-名称使用“解meme”，Linux DO只标识论坛和Connect来源，域名及内部资源名不变。Vite启动时确定Unix秒时间；发布脚本统一传入 `HB_BUILD_UNIX_SECONDS`，HTML注入固定右下角的 `build @ <秒数>`，发布清单记录同一 `buildUnixSeconds`。构建后和发布前核对标记、清单及产物摘要，访问和部署时不重新计算。开发服务启动时间只用于开发产物，不冒充生产发布记录。
+名称使用“解meme”，Linux DO只标识社区和Connect来源，域名及内部资源名不变。Vite启动时确定Unix秒时间；发布脚本统一传入 `HB_BUILD_UNIX_SECONDS`，HTML注入固定右下角的 `build @ <秒数>`，发布清单记录同一 `buildUnixSeconds`。构建后和发布前核对标记、清单及产物摘要，访问和部署时不重新计算。开发服务启动时间只用于开发产物，不冒充生产发布记录。
 
 TanStack Router仍按路由拆包，根加载组件同步可用，pending等待及最短展示延迟均为0。导航加载时保留顶栏并显示“正在加载页面…”，组件到位后使用业务Query的现有读取状态。资源失败显示受控错误和重新加载入口。悬停、聚焦及触摸预加载页面代码，不发起业务写操作；完整应用测试使用相同拆包方式验证延迟资源和导航竞争。
 
@@ -484,7 +484,7 @@ TanStack Router仍按路由拆包，根加载组件同步可用，pending等待�
 
 Stage与生产API显式启用 `global_fetch_strictly_public`，发布预检检查该兼容标志。LiteAuth与本站位于同一Cloudflare zone，其公开域名是Web Worker的Custom Domain，而 `/api/*` 由另一API Worker的Route接管；默认同zone `fetch` 会跳过Route、直接到Custom Domain origin，从而令token请求返回前端404。该标志让请求经正常公网入口匹配Route，保持固定OAuth地址、PKCE和issuer规则，无需新增跨应用Service Binding或修改上游。兼容日期本身不会自动启用此标志。依据：[Cloudflare兼容标志](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#global-fetch-strictly-public)、[Custom Domains与Routes](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/#interaction-with-routes)。本站API的其他global fetch仅用于固定OAuth／LDC上游，DO内部请求使用stub.fetch，不依赖绕过同zone路由。
 
-账号命名空间仍为 `users.provider='linux_do'`，由论坛稳定 `id`无损规范化为十进制uint64文本，再按既有provider/external_id唯一键upsert同一个本地UUID。LiteAuth的`sub`和`liteauth_user_id`不能代替论坛ID；用户名和邮箱不能参与合并。更新资料不改变原活动、报名、领取、商户或付款关系。LiteAuth同步有效用户名、昵称和头像，缺失／非法头像使用COALESCE保留原值；其upsert不写Connect邮箱列。官方继续使用现有AES-GCM邮箱同步和AAD。
+账号命名空间仍为 `users.provider='linux_do'`，由社区稳定 `id`无损规范化为十进制uint64文本，再按既有provider/external_id唯一键upsert同一个本地UUID。LiteAuth的`sub`和`liteauth_user_id`不能代替社区ID；用户名和邮箱不能参与合并。更新资料不改变原活动、报名、领取、商户或付款关系。LiteAuth同步有效用户名、昵称和头像，缺失／非法头像使用COALESCE保留原值；其upsert不写Connect邮箱列。官方继续使用现有AES-GCM邮箱同步和AAD。
 
 `0021_gifted_black_tom.sql` 为oauth_attempts增加login_provider、pkce_verifier_ciphertext及expected_user_id，sessions增加login_provider，为users增加official_connect_verified。迁移把既有linux_do账号设置为1，旧会话来源默认connect且继续有效。新LiteAuth账号为0，官方成功登录只升级为1；冲突更新保留原1，数据库触发器拒绝1→0及非0/1值。旧ID、密文、创建幂等依据及业务外键不变。
 
@@ -492,7 +492,7 @@ Stage与生产API显式启用 `global_fetch_strictly_public`，发布预检检�
 
 `/api/me`返回 `accountTier`（standard/lite）、当前会话 `loginProvider`（connect/liteauth）及 `canUseLdc`。每次鉴权从users永久事实读取资格，旧会话在账号升级后立即取得普通资格；会话来源不决定是否可以使用LDC。公共 `PublicUserProfile.accountTier`可为standard/lite/null，null只用于没有本地账号的独立付款等历史资料，不虚构身份。所有公共投影从既有联表查询取齐字段，邮箱和loginProvider不进入公共响应，名单关闭时不返回领取者资料。
 
-显式升级由 `/api/auth/login?intent=upgrade&returnTo=<站内路径>` 发起，expected_user_id绑定当前用户。回调再次验证原会话与论坛ID；ID不符或会话失效则停止，保留原账号，不换号。升级提交在同一个D1 batch中检查原session token摘要、账号、未过期状态及论坛ID，再更新资料／永久资格与该session的login_provider；保留原token、CSRF及到期时间，不插入新会话或追加Set-Cookie。这样退出发生在提交前会使事务拒绝，退出发生在提交后也会删除同一token，迟到回调不能恢复已经退出的会话。
+显式升级由 `/api/auth/login?intent=upgrade&returnTo=<站内路径>` 发起，expected_user_id绑定当前用户。回调再次验证原会话与社区ID；ID不符或会话失效则停止，保留原账号，不换号。升级提交在同一个D1 batch中检查原session token摘要、账号、未过期状态及社区ID，再更新资料／永久资格与该session的login_provider；保留原token、CSRF及到期时间，不插入新会话或追加Set-Cookie。这样退出发生在提交前会使事务拒绝，退出发生在提交后也会删除同一token，迟到回调不能恢复已经退出的会话。
 
 统一服务端 `requireOfficialConnect` 返回403 `OFFICIAL_CONNECT_REQUIRED`。新建、编辑、开放 LDC、商户创建／更新／检查／凭证维护、即时领取与限时报名在HTTP或服务层拒绝青春版；ActivityDO、领取／报名服务和pending补偿亦验证资格，D1原子接纳／保存／开放再约束账号active及official_connect_verified=1，防止检查和提交之间变化。拒绝发生在口令验证、限流尝试事实、库存分配、报名和付款Outbox之前。退役类型在 SQL 层排除，不读取配置、解密、终态回放或恢复；已有正式报名、不可变开奖方案和付款继续履约，MerchantDO付款策略不改为按当前会话入口撤销。
 

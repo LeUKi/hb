@@ -31,7 +31,7 @@ import {
   verifyPlatformUpgrade,
 } from "./platform-token";
 
-// 论坛小程序 (docs/mini-app-design.md §7): the routes the forum's mini app
+// 社区小程序 (docs/mini-app-design.md §7): the routes the forum's mini app
 // calls, each with the forum's token for that endpoint instead of a
 // session. A 红包 and one's own part of it; a claim (or a timed draw's
 // sign-up) by someone 红包站 knows; its live channel. 代码判定 and a
@@ -73,7 +73,7 @@ const claimInputSchema = z.strictObject({
 async function trustOf(env: ApiBindings) {
   const trust = await miniAppTrust(env);
   if (!trust)
-    throw new ActivityError(503, "MINI_APP_OFF", "论坛小程序还没开放。");
+    throw new ActivityError(503, "MINI_APP_OFF", "社区小程序还没开放。");
   return trust;
 }
 
@@ -87,7 +87,7 @@ const refused = () =>
   new ActivityError(
     401,
     "INVALID_PLATFORM_REQUEST",
-    "论坛的凭证不对，请重新打开小程序。",
+    "社区的凭证不对，请重新打开小程序。",
   );
 
 async function identityOf(c: Context<ApiContext>, trust: MiniAppTrust) {
@@ -140,7 +140,7 @@ async function registerFromForum(
   identity: PlatformIdentity,
   forumUser: { username: string; name: string } | undefined,
 ) {
-  if (!forumUser) throw signInFirst("第一次在论坛里领，要先到红包站登录一次。");
+  if (!forumUser) throw signInFirst("第一次在社区里领，要先到红包站登录一次。");
   const taken = await env.DB.prepare(
     "SELECT 1 FROM users WHERE provider='linux_do' AND lower(username)=lower(?) AND external_id<>? LIMIT 1",
   )

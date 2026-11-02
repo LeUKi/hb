@@ -41,7 +41,7 @@ function hongbao(
       algorithm: "double_mean_v1",
     },
     beforeInfo:
-      "论坛里也能领了。口令是「**你好论坛**」，[红包站](https://hb.lafi.sh)上也行。",
+      "社区里也能领了。口令是「**你好社区**」，[红包站](https://hb.lafi.sh)上也行。",
     paymentMode: "simulation",
     ...extra,
   };
@@ -106,7 +106,7 @@ export function caseOf(name: string): Case | null {
       return {
         read: { activity, participation: none, known: true, author: false },
         claim: (password) =>
-          password === "你好论坛"
+          password === "你好社区"
             ? { result: "claimed", claim: claimOf(activity, "13.28") }
             : { result: "incorrect" },
       };
@@ -232,11 +232,11 @@ export function caseOf(name: string): Case | null {
       };
     case "stranger":
     case "taken": {
-      const activity = hongbao(ids[name], { title: "第一次在论坛里领" });
+      const activity = hongbao(ids[name], { title: "第一次在社区里领" });
       return {
         read: { activity, participation: none, known: false, author: false },
         claim: (password) =>
-          password === "你好论坛"
+          password === "你好社区"
             ? { result: "claimed", claim: claimOf(activity, "6.66") }
             : { result: "incorrect" },
       };

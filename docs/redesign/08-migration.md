@@ -68,7 +68,7 @@
   - 会话：`lib/session.ts` 封装 `useSession`；身份检查失败立即显示（会话查询不自动重试、挂载时不重查，否则无数据的查询会反复回到“加载中”）；退出登录等服务器确认后再清会话和私有缓存，失败时仍是登录状态；
   - 兑奖：指令框直接用 `useGlobalRedemptionDiscovery`，沿用提交编号、再次确认、429 冷却、单个匹配带意图跳转；冷却数字按整秒更新；
   - 页面数据的三种状态由查询驱动（`components/page/page-state.tsx` 的 `PageLoad`），列表懒加载用 `useInfiniteQuery`（`useQueryLazyList`）；
-  - 头像：有论坛头像时显示在金环里，加载失败退回首字；
+  - 头像：有社区头像时显示在金环里，加载失败退回首字；
   - 测试：旧的模拟接口端到端测试随旧界面删除，新写 `shell`、`auth`、`redemption` 三组（共 20 个）；完整应用只留 `redemption.flow.ts` 和 `static-cache.flow.ts`，其余随页面迁移重写。
 - **第 2 阶段**（2026-10-15）：红包页接上生产数据：
   - 数据：`lib/hongbao.ts` 把公开读取、红包作者的读取、自己的领取或报名、口令和名单转成红包页要的形状；名单（`lib/roster.ts`）用 `useInfiniteQuery` 懒加载；

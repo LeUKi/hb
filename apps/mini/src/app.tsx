@@ -82,7 +82,7 @@ import { askSelfClaim } from "../../web/src/lib/self-claim";
 import { claimHongbao, HongbaoError, readHongbao, useLive } from "./api";
 import type { MiniSdk } from "./sdk";
 
-// 论坛小程序 (docs/mini-app-design.md §7): the 红包 page of 红包站, its own
+// 社区小程序 (docs/mini-app-design.md §7): the 红包 page of 红包站, its own
 // parts — the cover that folds small once taken part, its head, numbers and
 // 我的结果, 「N 人在看」 — drawn with the forum's data. Only the way to take
 // part is the mini app's: the 口令 under the seal (红包站 has its command
@@ -472,13 +472,13 @@ function Page({
     activity.participation === "code"
       ? "这个红包由判定器判定，要在红包站里领。"
       : activity.humanCheck
-        ? "这个红包要先通过人机验证，论坛小程序里加载不了验证，请到红包站领取。"
+        ? "这个红包要先通过人机验证，社区小程序里加载不了验证，请到红包站领取。"
         : null;
   // Open, but to be taken part in on 红包站: the seal says why, faded.
   const blocked =
     seal.phase === "closed" && !seal.draft
       ? elsewhere
-        ? "在论坛里领不了"
+        ? "在社区里领不了"
         : signIn !== null
           ? "先到红包站登录一次"
           : null
@@ -711,7 +711,7 @@ function NoHongbao() {
     <div className="grid min-h-[60vh] content-center justify-items-center gap-2 px-6 text-center">
       <p className="text-lg text-ink">请从红包站分享的小程序链接打开红包。</p>
       <p className="max-w-[26rem] text-sm text-ink-2">
-        在红包站的红包页点「分享」，选「论坛小程序」，复制链接发到帖子里，大家点开就能在论坛里领。
+        在红包站的红包页点「分享」，选「社区小程序」，复制链接发到帖子里，大家点开就能在社区里领。
       </p>
     </div>
   );

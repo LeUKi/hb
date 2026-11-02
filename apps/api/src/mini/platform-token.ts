@@ -2,7 +2,7 @@ import { FORUM_ORIGIN } from "@hb/contracts";
 import type { ApiBindings } from "../env";
 import { base64UrlDecode, base64UrlEncode } from "../security/crypto";
 
-// 论坛小程序 (docs/mini-app-design.md §7): the forum signs each request its
+// 社区小程序 (docs/mini-app-design.md §7): the forum signs each request its
 // mini app makes, a JWT bound to that endpoint (`iss` the forum, `aud` this
 // site, `sub` the LINUX DO id). Checked here rule by rule as the forum's own
 // server SDK checks it (@discourse-mini-app/sdk/server, which needs
