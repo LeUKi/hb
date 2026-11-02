@@ -34,6 +34,11 @@ export type MiniHongbaoResponse = {
   known: boolean;
   /** They sent it: their first share is asked about first (自领). */
   author: boolean;
+  /**
+   * A sandbox build on the production site (its author or the 社区's
+   * reviewers checking it): it shows the 红包, nobody can claim.
+   */
+  lookOnly: boolean;
 };
 
 /**

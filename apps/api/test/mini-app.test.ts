@@ -551,6 +551,77 @@ describe("社区小程序's routes", () => {
     });
     expect(elsewhere.status).toBe(409);
   });
+
+  it("on the production site, shows a sandbox build the 红包 and lets it claim nothing", async () => {
+    const activity = await running();
+    const production = { ...bindings, MINI_APP_CHANNEL: "production" };
+    const ask = async (
+      path: string,
+      channel: string,
+      init: RequestInit = {},
+      method = "GET",
+    ) => {
+      const jwt = await token(path.split("?")[0] ?? path, {
+        claims: {
+          channel,
+          htm: method,
+          query_keys: ["id", "kind", "cursor"],
+        },
+      });
+      return app.request(
+        `${origin}${path}`,
+        {
+          ...init,
+          method,
+          headers: {
+            Origin: forum,
+            Authorization: `Bearer ${jwt}`,
+            "Content-Type": "application/json",
+          },
+        },
+        production,
+      );
+    };
+    const sandbox = await ask(`/api/mini/hongbao?id=${activity.id}`, "sandbox");
+    expect(sandbox.status).toBe(200);
+    const read = (await sandbox.json()) as MiniHongbaoResponse;
+    expect(read.activity.title).toBe("社区里领的红包");
+    expect(read.lookOnly).toBe(true);
+    expect(
+      (await ask(`/api/mini/roster?id=${activity.id}&kind=claims`, "sandbox"))
+        .status,
+    ).toBe(200);
+    const refused = await ask(
+      `/api/mini/claim?id=${activity.id}`,
+      "sandbox",
+      {
+        body: JSON.stringify({
+          submissionId: crypto.randomUUID(),
+          password: "社区里的口令",
+          forumUser: { username: "sandbox_one", name: "沙箱里的人" },
+        }),
+      },
+      "POST",
+    );
+    expect(refused.status).toBe(403);
+    expect(
+      ((await refused.json()) as { error: { code: string } }).error.code,
+    ).toBe("LOOK_ONLY");
+    // Nothing written: no account made, no claim.
+    expect(
+      await env.DB.prepare(
+        "SELECT COUNT(*) AS n FROM users WHERE external_id='332940'",
+      ).first("n"),
+    ).toBe(0);
+    expect(
+      await env.DB.prepare("SELECT COUNT(*) AS n FROM claims").first("n"),
+    ).toBe(0);
+    // The published version claims as before.
+    const published = (await (
+      await ask(`/api/mini/hongbao?id=${activity.id}`, "production")
+    ).json()) as MiniHongbaoResponse;
+    expect(published.lookOnly).toBe(false);
+  });
 });
 
 describe("社区小程序's live channel", () => {

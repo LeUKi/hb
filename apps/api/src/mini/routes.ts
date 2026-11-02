@@ -23,6 +23,7 @@ import { findActivity } from "../activities/storage";
 import type { ApiBindings, ApiContext } from "../env";
 import { activityObject } from "../runtime/objects";
 import {
+  lookOnly,
   type MiniAppTrust,
   miniAppTrust,
   type PlatformIdentity,
@@ -207,6 +208,7 @@ miniRoutes.get("/mini/hongbao", async (c) => {
     },
     known: user !== null,
     author: user !== null && row.authorId === user.id,
+    lookOnly: lookOnly(trust, identity),
   } satisfies MiniHongbaoResponse);
 });
 
@@ -242,6 +244,13 @@ miniRoutes.post(
   async (c) => {
     const trust = await trustOf(c.env);
     const identity = await identityOf(c, trust);
+    // A sandbox build here writes nothing: no account, no claim.
+    if (lookOnly(trust, identity))
+      throw new ActivityError(
+        403,
+        "LOOK_ONLY",
+        "沙箱里只能看，正式版上线后才能领。",
+      );
     const id = activityIdOf(c);
     const parsed = claimInputSchema.safeParse(
       await c.req.json().catch(() => null),

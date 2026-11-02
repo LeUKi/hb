@@ -75,7 +75,7 @@ LINUX DO 上的 Discourse 小程序：打包成 ZIP 上传，在社区的沙箱�
 - **记来源**：在小程序里领的，领取记录上标 `claims.via = 'mini'`；限时开奖标在报名记录上（`activity_registrations.via`），中奖的那份看报名。迁移 `0058_forum_mini`，上线时先跑迁移。
 - **接口**（红包站，都在 `/api/mini/`）：`GET hongbao?id=` 读红包、自己的领取，以及看的人是不是发红包的人（`author`）；`POST claim?id=`（`submissionId`，口令红包带 `password`）领取或报名；`GET roster?id=&kind=claims|registrations&cursor=` 名单，和红包站公开的名单一样，每页 20 人；`GET live?id=` 实时（WebSocket）。
   - 每个请求都验社区的凭证：ES256，`kid` 是公钥 SPKI 的 SHA-256，`iss` 是 `https://linux.do`，`aud` 是本站地址，应用 ID、`channel`、方法、地址和动态参数（`htm`、`htu`、`query_keys`）都要对上，最长 15 分钟。照社区服务端 SDK 的规则用 WebCrypto 自己验，它的 SDK 只能跑在 Node/Bun。
-  - Stage 只收沙箱（`sandbox`），正式站只收正式版（`production`）。CORS 只给 `https://linux.do`；WebSocket 握手还要看 `Origin`。
+  - Stage 只收沙箱（`sandbox`）。正式站收正式版（`production`），也收沙箱的，但只能看（`lookOnly`）：红包、名单、“N 人在看”都能读，领取在写任何东西以前就回“沙箱里只能看，正式版上线后才能领。”（`LOOK_ONLY`），印章变淡、写着同一句。原因（2026-11-02，用户定）：正式版要从沙箱构建里挑，作者和社区的审核员都在沙箱里检查同一份包；包里的接口地址是写死的，只收正式版的话，指向正式站的包在沙箱里只能看到“社区的凭证不对”。社区的说明要沙箱和正式的数据分开，只读就不会写进正式数据。CORS 只给 `https://linux.do`；WebSocket 握手还要看 `Origin`。
   - 配置：`MINI_APP_ID`、`MINI_APP_ISSUER`、`MINI_APP_CHANNEL` 和 `MINI_APP_PUBLIC_KEY`。公钥是社区的 JWKS（`https://linux.do/mini-app-api/jwks`，原样填进去；按 `kid` 选钥匙，社区换钥匙时把新的加进去），也收单个 JWK 或 PEM。公钥没配，接口回 503。
 - **实时**：小程序的连接进同一个红包的频道，人数和网页的一起算，同一个人只算一次。
   - 推给小程序的是精简过的红包：去掉说明、结束说明、名单头像、代码、附带网页和开奖证明，控制在 4 KiB 以内；超了只说“变了”，小程序再读一次。另外推人数和“你的领取变了”；代码判定的消息不推。

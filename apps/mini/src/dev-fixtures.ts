@@ -65,6 +65,7 @@ const ids = {
   taken: "11111111-2222-4333-8444-555555555510",
   scheduled: "11111111-2222-4333-8444-555555555509",
   self: "11111111-2222-4333-8444-555555555511",
+  preview: "11111111-2222-4333-8444-555555555512",
 } as const;
 
 export type CaseName = keyof typeof ids;
@@ -104,7 +105,13 @@ export function caseOf(name: string): Case | null {
     case "password": {
       const activity = hongbao(ids.password);
       return {
-        read: { activity, participation: none, known: true, author: false },
+        read: {
+          activity,
+          participation: none,
+          known: true,
+          author: false,
+          lookOnly: false,
+        },
         claim: (password) =>
           password === "你好社区"
             ? { result: "claimed", claim: claimOf(activity, "13.28") }
@@ -124,7 +131,13 @@ export function caseOf(name: string): Case | null {
         beforeInfo: "点「开」直接领。",
       });
       return {
-        read: { activity, participation: none, known: true, author: false },
+        read: {
+          activity,
+          participation: none,
+          known: true,
+          author: false,
+          lookOnly: false,
+        },
         claim: () => ({ result: "claimed", claim: claimOf(activity, "2.00") }),
       };
     }
@@ -136,7 +149,13 @@ export function caseOf(name: string): Case | null {
         beforeInfo: "领到的先存进🐟额。",
       });
       return {
-        read: { activity, participation: none, known: true, author: false },
+        read: {
+          activity,
+          participation: none,
+          known: true,
+          author: false,
+          lookOnly: false,
+        },
         claim: () => ({ result: "claimed", claim: claimOf(activity, "8.80") }),
       };
     }
@@ -163,7 +182,13 @@ export function caseOf(name: string): Case | null {
         beforeInfo: "报名后到点抽 5 个人。",
       });
       return {
-        read: { activity, participation: none, known: true, author: false },
+        read: {
+          activity,
+          participation: none,
+          known: true,
+          author: false,
+          lookOnly: false,
+        },
         claim: () => ({
           result: "registered",
           registration: {
@@ -201,6 +226,7 @@ export function caseOf(name: string): Case | null {
           participation: none,
           known: true,
           author: false,
+          lookOnly: false,
         },
       };
     case "human":
@@ -215,6 +241,7 @@ export function caseOf(name: string): Case | null {
           participation: none,
           known: true,
           author: false,
+          lookOnly: false,
         },
       };
     case "ended":
@@ -228,13 +255,20 @@ export function caseOf(name: string): Case | null {
           participation: none,
           known: true,
           author: false,
+          lookOnly: false,
         },
       };
     case "stranger":
     case "taken": {
       const activity = hongbao(ids[name], { title: "第一次在社区里领" });
       return {
-        read: { activity, participation: none, known: false, author: false },
+        read: {
+          activity,
+          participation: none,
+          known: false,
+          author: false,
+          lookOnly: false,
+        },
         claim: (password) =>
           password === "你好社区"
             ? { result: "claimed", claim: claimOf(activity, "6.66") }
@@ -255,6 +289,7 @@ export function caseOf(name: string): Case | null {
           participation: none,
           known: true,
           author: false,
+          lookOnly: false,
         },
       };
     case "self": {
@@ -266,10 +301,27 @@ export function caseOf(name: string): Case | null {
         beforeInfo: "发红包的人自己也能领一份。",
       });
       return {
-        read: { activity, participation: none, known: true, author: true },
+        read: {
+          activity,
+          participation: none,
+          known: true,
+          author: true,
+          lookOnly: false,
+        },
         claim: () => ({ result: "claimed", claim: claimOf(activity, "8.80") }),
       };
     }
+    case "preview":
+      // A sandbox build on the production site: look, not claim.
+      return {
+        read: {
+          activity: hongbao(ids.preview, { title: "沙箱里预览正式站的红包" }),
+          participation: none,
+          known: true,
+          author: false,
+          lookOnly: true,
+        },
+      };
     default:
       return null;
   }

@@ -32,11 +32,27 @@ export type MiniAppTrust = {
   /** This site's origin, which the forum signs each token for. */
   audience: string;
   appId: string;
-  /** Stage takes the sandbox's builds, production the published ones. */
+  /**
+   * Stage takes the sandbox's builds, production the published ones (and
+   * the sandbox's to look at: lookOnly).
+   */
   channel: "production" | "sandbox";
   /** The forum's public keys by `kid`: SHA-256 of each one's SPKI. */
   keys: Map<string, CryptoKey>;
 };
+
+/**
+ * A sandbox build on the production site: it may read, not claim. A
+ * published version is chosen from a sandbox build, which its author and
+ * the forum's reviewers check in the sandbox (docs/mini-app-design.md §7);
+ * nothing it does is written here.
+ */
+export const lookOnly = (trust: MiniAppTrust, identity: PlatformIdentity) =>
+  identity.channel !== trust.channel;
+
+const takesChannel = (trust: MiniAppTrust, channel: unknown) =>
+  channel === trust.channel ||
+  (trust.channel === "production" && channel === "sandbox");
 
 export class PlatformTokenError extends Error {
   constructor() {
@@ -287,7 +303,7 @@ export async function verifyPlatformRequest(
       c.iss !== trust.issuer ||
       c.aud !== trust.audience ||
       c.app_id !== trust.appId ||
-      c.channel !== trust.channel ||
+      !takesChannel(trust, c.channel) ||
       typeof c.sub !== "string" ||
       !/^[1-9][0-9]{0,19}$/.test(c.sub) ||
       typeof c.version !== "string" ||

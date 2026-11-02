@@ -474,14 +474,17 @@ function Page({
       : activity.humanCheck
         ? "这个红包要先通过人机验证，社区小程序里加载不了验证，请到红包站领取。"
         : null;
-  // Open, but to be taken part in on 红包站: the seal says why, faded.
+  // Open, but to be taken part in on 红包站 (or, a sandbox build on the
+  // production site, only looked at): the seal says why, faded.
   const blocked =
     seal.phase === "closed" && !seal.draft
       ? elsewhere
         ? "在社区里领不了"
-        : signIn !== null
-          ? "先到红包站登录一次"
-          : null
+        : data?.lookOnly
+          ? "沙箱里只能看，正式版上线后才能领"
+          : signIn !== null
+            ? "先到红包站登录一次"
+            : null
       : null;
   const open =
     seal.phase === "closed" && !seal.draft && !seal.paused && !blocked;
