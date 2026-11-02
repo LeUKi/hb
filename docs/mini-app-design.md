@@ -31,7 +31,7 @@ LINUX DO 上的 Discourse 小程序：打包成 ZIP 上传，在社区的沙箱�
 小程序在 `apps/mini`，直接用红包站的样式表（`apps/web/src/styles.css`：设计变量、基础、组件）和组件（印章、计数、礼花、按钮、输入框、分段选择、头像……），不另画一套。红包站只用系统字体、图标是打包进去的 SVG，和小程序的限制不冲突；React、motion、Tailwind 打成一个 IIFE 和一个 CSS。
 
 - **红包页本身也是同一套**（2026-11-02，用户：“一处修改处处生效”，不强求）：小程序直接画红包站的 `HongbaoHero`（大小封面和领取后收起、封面头、封面数据、我的结果、提示）、`LiveViewers`（“N 人在看”）、说明弹窗的 `NoteContent`、名单弹窗的 `RosterPanel` 和自领前的确认（`SelfClaimDialog`）。网页的 `useHongbao` 跟命令框、登录状态、路由绑在一起，小程序用自己的数据拼出同样形状的 `Hongbao` 交给它们；两边共用的推导拆了出来：`seal-state.ts`（印章的字和状态、提示、播报、开奖时刻）、`clock.ts`（`useNow`、`countdown`、`useDrawStep`）、`lib/cover-tags.ts`、`lib/markdown-text.ts`、`shell/attached-page-state.ts`、`omnibox/elements.ts`、`omnibox/cooldown.ts`、`lib/route-data.d.ts`。
-  - **剪掉的**：`lib/embedded.ts` 的 `EmbeddedContext` 为真时，链接只留字，人名不弹资料卡，远程头像改首字母，不显示帖子链接、快捷键、小封面的“展开”、🐟额的“转出”、没有 Credit 账户时的“重新发送”。
+  - **剪掉的**：`lib/embedded.ts` 的 `EmbeddedContext` 为真时，链接只留字（大封面的“来自帖子”也是），人名不弹资料卡，远程头像改首字母，不显示帖子链接、快捷键、小封面的“展开”、🐟额的“转出”、没有 Credit 账户时的“重新发送”。
   - **口令**：红包站点印章会打开命令框；小程序里点印章，提示下面展开口令框（`HongbaoHero` 的 `action` 位置），回车或再点“开”领取。
   - **名单弹窗**：红包站的名单弹窗拆成两层，`roster-panel.tsx` 是共用的（红包名、数字、限时开奖的两个页签、表格、往下滚接着读），`roster-dialog.tsx` 再加红包页自己的代码判定“挑战”、开奖证明和点开付款。名单每页怎么读在 `lib/roster-read.ts`，小程序构建里换成走社区接口的那份。小程序里总是大家看到的名单；发红包的人那份（带口令和付款）还在红包站看。
   - **构建时去掉的**：要红包站会话的模块（`lib/session`、`lib/claims`、`lib/activities`）在小程序构建里换成 `apps/mini/src/off-site/` 的空壳，小程序走不到它们，`lib/roster-read` 换成走社区的那份；这样包里没有自己发的 `fetch`、`WebSocket`、`XMLHttpRequest`（社区只许走它的网络接口；包里出现的 `fetch(` 是 react-query 自己的方法名）。类型检查照旧对着真的模块。
@@ -73,7 +73,7 @@ LINUX DO 上的 Discourse 小程序：打包成 ZIP 上传，在社区的沙箱�
     - 用 LINUX DO 登录过以前（`profile_seen_at` 为空），信任等级当作未知，领取范围里“指定的人”只按编号认、不按名字认。限范围的红包请他到红包站登录一次。他登录以后，账号按编号对上，资料换成 LINUX DO 给的。
   - **钱**：Credit 发钱按编号加用户名一起核对（`id = ? AND username = ?`，对不上就“收款人不存在”），钱不会发错人；🐟额只认账号。
 - **记来源**：在小程序里领的，领取记录上标 `claims.via = 'mini'`；限时开奖标在报名记录上（`activity_registrations.via`），中奖的那份看报名。迁移 `0058_forum_mini`，上线时先跑迁移。
-- **接口**（红包站，都在 `/api/mini/`）：`GET hongbao?id=` 读红包、自己的领取，以及看的人是不是发红包的人（`author`）；`POST claim?id=`（`submissionId`，口令红包带 `password`）领取或报名；`GET roster?id=&kind=claims|registrations&cursor=` 名单，和红包站公开的名单一样，每页 20 人；`GET live?id=` 实时（WebSocket）。
+- **接口**（红包站，都在 `/api/mini/`）：`GET hongbao?id=` 读红包、自己的领取，以及看的人是不是发红包的人（`author`）；`POST claim?id=`（`submissionId`，口令红包带 `password`）领取或报名；`GET roster?id=&kind=claims|registrations&cursor=` 名单，和红包站公开的名单一样，每页 20 人（红包站的翻页标识是封好的，近 300 字节，社区每个参数只许 200 字节：小程序带的是里面那段，最后一行的时间和编号，名单上本来就有，接口收到再封回去）；`GET live?id=` 实时（WebSocket）。
   - 每个请求都验社区的凭证：ES256，`kid` 是公钥 SPKI 的 SHA-256，`iss` 是 `https://linux.do`，`aud` 是本站地址，应用 ID、`channel`、方法、地址和动态参数（`htm`、`htu`、`query_keys`）都要对上，最长 15 分钟。照社区服务端 SDK 的规则用 WebCrypto 自己验，它的 SDK 只能跑在 Node/Bun。
   - Stage 只收沙箱（`sandbox`）。正式站收正式版（`production`），也收沙箱的，但只能看（`lookOnly`）：红包、名单、“N 人在看”都能读，领取在写任何东西以前就回“沙箱里只能看，正式版上线后才能领。”（`LOOK_ONLY`），印章变淡、写着同一句。原因（2026-11-02，用户定）：正式版要从沙箱构建里挑，作者和社区的审核员都在沙箱里检查同一份包；包里的接口地址是写死的，只收正式版的话，指向正式站的包在沙箱里只能看到“社区的凭证不对”。社区的说明要沙箱和正式的数据分开，只读就不会写进正式数据。CORS 只给 `https://linux.do`；WebSocket 握手还要看 `Origin`。
   - 配置：`MINI_APP_ID`、`MINI_APP_ISSUER`、`MINI_APP_CHANNEL` 和 `MINI_APP_PUBLIC_KEY`。公钥是社区的 JWKS（`https://linux.do/mini-app-api/jwks`，原样填进去；按 `kid` 选钥匙，社区换钥匙时把新的加进去），也收单个 JWK 或 PEM。公钥没配，接口回 503。

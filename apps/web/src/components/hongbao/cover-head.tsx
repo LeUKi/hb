@@ -322,16 +322,24 @@ export function CoverHead({
             {drawing && <CoverChip>开奖中</CoverChip>}
             {activity.topic && (
               <Squircle radius={10}>
-                <a
-                  href={topicUrl(activity.topic)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hb-chip-red hb-chip-link inline-flex h-7 items-center gap-1 px-2.5 text-xs"
-                >
-                  <LinuxDoMark className="size-3.5" />
-                  来自帖子
-                  <ArrowUpRight className="size-3.5" aria-hidden="true" />
-                </a>
+                {/* The 社区's mini app opens no links: its words stay. */}
+                {embedded ? (
+                  <span className="hb-chip-red inline-flex h-7 items-center gap-1 px-2.5 text-xs">
+                    <LinuxDoMark className="size-3.5" />
+                    来自帖子
+                  </span>
+                ) : (
+                  <a
+                    href={topicUrl(activity.topic)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hb-chip-red hb-chip-link inline-flex h-7 items-center gap-1 px-2.5 text-xs"
+                  >
+                    <LinuxDoMark className="size-3.5" />
+                    来自帖子
+                    <ArrowUpRight className="size-3.5" aria-hidden="true" />
+                  </a>
+                )}
               </Squircle>
             )}
             {page.available && (

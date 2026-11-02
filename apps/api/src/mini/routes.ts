@@ -22,6 +22,7 @@ import { getPublicActivity } from "../activities/service";
 import { findActivity } from "../activities/storage";
 import type { ApiBindings, ApiContext } from "../env";
 import { activityObject } from "../runtime/objects";
+import { decryptString, encryptString } from "../security/crypto";
 import {
   lookOnly,
   type MiniAppTrust,
@@ -213,6 +214,9 @@ miniRoutes.get("/mini/hongbao", async (c) => {
 });
 
 // 名单: 红包站's public one (activities/routes.ts), each page its own call.
+// Its page mark comes sealed, longer than the 200 bytes the 社区 lets a
+// query value have: the mini app carries what is inside it (the last row's
+// time and id, both on the page already), sealed again here.
 miniRoutes.get("/mini/roster", async (c) => {
   const trust = await trustOf(c.env);
   await identityOf(c, trust);
@@ -220,17 +224,23 @@ miniRoutes.get("/mini/roster", async (c) => {
   const kind = c.req.query("kind");
   if (kind !== "claims" && kind !== "registrations")
     throw new ActivityError(400, "INVALID_KIND", "名单种类不对。");
-  const cursor = c.req.query("cursor") || undefined;
-  c.header("Cache-Control", "no-store");
-  return c.json(
-    (kind === "claims"
+  const sealedFor =
+    kind === "claims" ? `recipients:${id}` : `registrations:${id}`;
+  const after = c.req.query("cursor");
+  const cursor = after
+    ? btoa(await encryptString(after, c.env, sealedFor))
+    : undefined;
+  const page =
+    kind === "claims"
       ? await listPublicRecipients(c.env, id, cursor)
-      : await listPublicRegistrations(
-          c.env,
-          id,
-          cursor,
-        )) satisfies MiniRosterPage,
-  );
+      : await listPublicRegistrations(c.env, id, cursor);
+  c.header("Cache-Control", "no-store");
+  return c.json({
+    ...page,
+    nextCursor: page.nextCursor
+      ? await decryptString(atob(page.nextCursor), c.env, sealedFor)
+      : null,
+  } satisfies MiniRosterPage);
 });
 
 miniRoutes.post(

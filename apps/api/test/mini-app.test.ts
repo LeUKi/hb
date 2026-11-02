@@ -148,12 +148,12 @@ async function claim(id: string, body: unknown, sub = "332940") {
   );
 }
 
-function roster(id: string, kind: string) {
+function roster(id: string, kind: string, cursor?: string) {
   return token("/api/mini/roster", {
     claims: { query_keys: ["id", "kind", "cursor"] },
   }).then((jwt) =>
     app.request(
-      `${origin}/api/mini/roster?id=${id}&kind=${kind}`,
+      `${origin}/api/mini/roster?${new URLSearchParams({ id, kind, ...(cursor ? { cursor } : {}) })}`,
       { headers: { Origin: forum, Authorization: `Bearer ${jwt}` } },
       bindings,
     ),
@@ -527,6 +527,39 @@ describe("社区小程序's routes", () => {
     const signups = await roster(activity.id, "registrations");
     expect(((await signups.json()) as { items: unknown[] }).items).toEqual([]);
     expect((await roster(activity.id, "everyone")).status).toBe(400);
+  });
+
+  it("pages the 名单 with a mark the 社区 can send (at most 200 bytes)", async () => {
+    const activity = await running({
+      participationMode: "direct",
+      passwords: [],
+      money: { mode: "fixed", totalAmount: "22.00", count: 22 },
+    });
+    for (let n = 1; n <= 22; n += 1) {
+      await person(`${1000 + n}`);
+      await claim(
+        activity.id,
+        { submissionId: crypto.randomUUID() },
+        `${1000 + n}`,
+      );
+    }
+    const first = (await (
+      await roster(activity.id, "claims")
+    ).json()) as PublicRecipientList;
+    expect(first.items).toHaveLength(20);
+    const mark = first.nextCursor ?? "";
+    expect(new TextEncoder().encode(mark).length).toBeLessThanOrEqual(200);
+    const second = (await (
+      await roster(activity.id, "claims", mark)
+    ).json()) as PublicRecipientList;
+    expect(second.items.map((item) => item.username)).toEqual([
+      "mini_1021",
+      "mini_1022",
+    ]);
+    expect(second.nextCursor).toBeNull();
+    expect((await roster(activity.id, "claims", "not-a-mark")).status).toBe(
+      400,
+    );
   });
 
   it("claims a 红包 without a 口令, and sends a human check's to 红包站", async () => {
