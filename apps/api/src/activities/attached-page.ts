@@ -18,8 +18,12 @@ export async function requirePageSwitch(env: ApiBindings) {
     throw new ActivityError(409, "PAGE_PAUSED", "附带网页暂时关闭。");
 }
 
-export function attachedPageLocked(): never {
-  throw new ActivityError(409, "PAGE_LOCKED", "开放后不能改附带网页。");
+export function attachedPageLocked(stopped: boolean): never {
+  throw new ActivityError(
+    409,
+    "PAGE_LOCKED",
+    stopped ? "站长停用了这个附带网页，不能再改。" : "结束前不能改附带网页。",
+  );
 }
 
 /**

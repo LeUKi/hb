@@ -981,6 +981,9 @@ export function HongbaoForm({
           pageOffered={funding?.page === true}
           pageCarried={pageCarried}
           pageStopped={activity?.pageStopped === true}
+          pageOver={
+            activity?.status === "ended" || activity?.status === "archived"
+          }
           humanCheckSuggested={declarations?.hongbao?.humanCheck === true}
           pageAutoOpenSuggested={declarations?.hongbao?.pageAutoOpen === true}
           covered={scheduleOpen}

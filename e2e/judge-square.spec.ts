@@ -1256,7 +1256,7 @@ test.describe("判定器带的附带网页（judge-page §4、§11.9）", () => 
     await expect(field).not.toHaveAttribute("readonly", "");
     await expect(
       sheet.getByText(
-        "判定器带的网页，可以改成别的，也可以删掉。开放后不能改。",
+        "判定器带的网页，可以改成别的，也可以删掉。开放后到结束前不能改。",
         { exact: false },
       ),
     ).toBeVisible();
@@ -1278,7 +1278,7 @@ test.describe("判定器带的附带网页（judge-page §4、§11.9）", () => 
     await expect(field).not.toHaveAttribute("readonly", "");
     await expect(
       sheet.getByText(
-        "判定器带的网页，可以改成别的，也可以删掉。开放后不能改。",
+        "判定器带的网页，可以改成别的，也可以删掉。开放后到结束前不能改。",
         {
           exact: false,
         },
@@ -1304,7 +1304,7 @@ test.describe("判定器带的附带网页（judge-page §4、§11.9）", () => 
     await expect(byItself).toBeChecked();
     await expect(
       sheet.getByText(
-        "进入红包页就打开这个网页：宽屏在旁边，手机拉起抽屉。第一次打开某个网站照样先确认；看的人自己关掉过的，下次不再自动打开。开放后不能改。这个判定器建议打开。",
+        "进入红包页就打开这个网页：宽屏在旁边，手机拉起抽屉。第一次打开某个网站照样先确认；看的人自己关掉过的，下次不再自动打开。开放后到结束前不能改。这个判定器建议打开。",
       ),
     ).toBeVisible();
     await byItself.click();

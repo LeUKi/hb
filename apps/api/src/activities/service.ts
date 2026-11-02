@@ -899,12 +899,15 @@ export async function updateActivity(
   const oldConfig = configuration(row);
   if (config.humanCheck && !oldConfig.humanCheck && !humanCheckAvailable(env))
     humanCheckUnavailable();
-  // 附带网页 is fixed once opened (docs/attached-page-design.md §1).
+  // 附带网页 is fixed from opening until it is over, and for good once the
+  // 站长 stopped it (docs/attached-page-design.md §1).
   if (
     (config.pageUrl ?? "") !== (oldConfig.pageUrl ?? "") ||
     Boolean(config.pageAutoOpen) !== Boolean(oldConfig.pageAutoOpen)
   ) {
-    if (fixed) attachedPageLocked();
+    const over = ["ended", "archived"].includes(activityStatus(row));
+    if (fixed && (!over || row.pageStoppedAt !== null))
+      attachedPageLocked(row.pageStoppedAt !== null);
     if (config.pageUrl && config.pageUrl !== oldConfig.pageUrl)
       await requirePageSwitch(env);
   }

@@ -521,7 +521,7 @@ test.describe("发红包", () => {
     const sheet = page.getByRole("dialog", { name: "更多设置" });
     const field = sheet.getByRole("region", { name: "附带网页" });
     await expect(field).toContainText(
-      "选填。红包页旁边会显示这个网页（手机上在底部），比如题目、规则或排行榜。开放后不能改。说明里写 [文字](#附带网页) 会显示成打开它的按钮。",
+      "选填。红包页旁边会显示这个网页（手机上在底部），比如题目、规则或排行榜。开放后到结束前不能改。说明里写 [文字](#附带网页) 会显示成打开它的按钮。",
     );
     const input = sheet.locator("#hb-page");
     const byItself = sheet.getByRole("switch", {
@@ -555,7 +555,7 @@ test.describe("发红包", () => {
     await input.blur();
     await expect(byItself).not.toBeChecked();
     await expect(field).toContainText(
-      "进入红包页就打开这个网页：宽屏在旁边，手机拉起抽屉。第一次打开某个网站照样先确认；看的人自己关掉过的，下次不再自动打开。开放后不能改。",
+      "进入红包页就打开这个网页：宽屏在旁边，手机拉起抽屉。第一次打开某个网站照样先确认；看的人自己关掉过的，下次不再自动打开。开放后到结束前不能改。",
     );
     await byItself.click();
     await expect(byItself).toBeChecked();
@@ -1100,6 +1100,86 @@ test.describe("发红包", () => {
       confirm.getByRole("button", { name: "再试一次" }),
     ).toBeVisible();
     expect(cancels).toEqual([{ version: 4, at: null }]);
+  });
+
+  test("附带网页开放后到结束前只读，结束后又能改", async ({ page }) => {
+    await mockSession(page, { ...viewer, balance: true });
+    await mockMerchants(page, [], {
+      enabled: true,
+      available: true,
+      availableMinor: 1000,
+      page: true,
+    });
+    let status: ManagedActivity["status"] = "active";
+    const input = {
+      ...emptyActivityInput(),
+      title: "带网页的红包",
+      funding: "balance" as const,
+      merchantId: "",
+      passwords: ["表单口令2026"],
+      money: { mode: "fixed" as const, totalAmount: "0.30", count: 3 },
+      pageUrl: "https://example.com/a",
+    };
+    const base = managed(input);
+    await page.route(`**/api/me/activities/${createdId}`, (route) =>
+      route.fulfill({
+        json: {
+          activity: { ...base, status, version: 3, openedAt: base.createdAt },
+        },
+      }),
+    );
+    await page.route(`**/api/activities/${createdId}`, (route) =>
+      route.fulfill({
+        json: {
+          activity: {
+            id: createdId,
+            title: input.title,
+            rewardType: "ldc",
+            participationMode: "password",
+            status,
+            author: base.author,
+            forceDedicated: false,
+            topicUrl: null,
+            openedAt: base.createdAt,
+            deadlineAt: null,
+            quantity: { mode: "exact", total: 3, claimed: 0, remaining: 3 },
+            beforeInfo: "",
+          },
+        },
+      }),
+    );
+    await page.route("**/api/me/attached-page/check**", (route) =>
+      route.fulfill({ json: { embeddable: "yes" } }),
+    );
+    const fieldOf = async () => {
+      await page.getByRole("button", { name: /更多设置/ }).click();
+      const sheet = page.getByRole("dialog", { name: "更多设置" });
+      return {
+        field: sheet.getByRole("region", { name: "附带网页" }),
+        input: sheet.locator("#hb-page"),
+        byItself: sheet.getByRole("switch", { name: "打开红包页时自动打开" }),
+      };
+    };
+    await openApp(page, `/🧧/${encodeActivityEmoji(createdId)}/📝`);
+    let { field, input: address, byItself } = await fieldOf();
+    await expect(field).toContainText(
+      "结束后才能改。说明里写 [文字](#附带网页) 会显示成打开它的按钮。",
+    );
+    await expect(address).not.toBeEditable();
+    await expect(byItself).toBeDisabled();
+
+    status = "ended";
+    await page.keyboard.press("Escape");
+    await page.reload();
+    ({ field, input: address, byItself } = await fieldOf());
+    await expect(field).toContainText(
+      "选填。红包页旁边会显示这个网页（手机上在底部），比如题目、规则或排行榜。说明里写 [文字](#附带网页) 会显示成打开它的按钮。",
+    );
+    await expect(field).not.toContainText("不能改");
+    await expect(address).toBeEditable();
+    await expect(byItself).toBeEnabled();
+    await address.fill("https://example.com/b");
+    await expect(address).toHaveValue("https://example.com/b");
   });
 
   test("从哪发：没有商户、有🐟额就默认🐟额，商户那张变灰并给入口，超过可用当场说，存下的输入不带商户", async ({

@@ -141,6 +141,7 @@ export function SettingsSheet({
   pageOffered,
   pageCarried = null,
   pageStopped,
+  pageOver = false,
   humanCheckSuggested = false,
   pageAutoOpenSuggested = false,
   openAt,
@@ -166,6 +167,8 @@ export function SettingsSheet({
   pageCarried?: string | null;
   /** The 站长 stopped this 红包's 附带网页. */
   pageStopped: boolean;
+  /** It is over: its 附带网页 may change again (attached-page §1). */
+  pageOver?: boolean;
   /** Its 判定器 suggests 领取前人机验证 (judge-square §4). */
   humanCheckSuggested?: boolean;
   /** Its 判定器 suggests 打开红包页时自动打开 (attached-page §2.7). */
@@ -190,6 +193,13 @@ export function SettingsSheet({
   const pageCheck = useAttachedPageCheck(
     (pageOffered || opened) && !pageStopped ? checkedPage : null,
   );
+  // Fixed from opening until it is over; for good once the 站长 stopped it.
+  const pageLocked = opened && (!pageOver || pageStopped);
+  const pageLockNote = pageLocked
+    ? "结束后才能改。"
+    : opened
+      ? ""
+      : "开放后到结束前不能改。";
   // 首页领取 off keeps 红包广场 on (07 §6); 代码判定 is only on its page.
   const coded = form.mode === "code";
   const squareRequired =
@@ -515,11 +525,13 @@ export function SettingsSheet({
                       "站长停用了这个网页，红包页上不再显示。"
                     ) : (
                       <>
-                        {opened
-                          ? "开放后不能改。"
-                          : pageCarried !== null && form.page === pageCarried
-                            ? "判定器带的网页，可以改成别的，也可以删掉。开放后不能改。"
-                            : "选填。红包页旁边会显示这个网页（手机上在底部），比如题目、规则或排行榜。开放后不能改。"}
+                        {pageLocked
+                          ? pageLockNote
+                          : `${
+                              pageCarried !== null && form.page === pageCarried
+                                ? "判定器带的网页，可以改成别的，也可以删掉。"
+                                : "选填。红包页旁边会显示这个网页（手机上在底部），比如题目、规则或排行榜。"
+                            }${pageLockNote}`}
                         说明里写{" "}
                         <code className="font-mono text-ink-2">
                           [文字](#附带网页)
@@ -531,13 +543,13 @@ export function SettingsSheet({
                   error={errorOf("hb-page")}
                   live
                 >
-                  {pageOffered || opened ? (
+                  {pageOffered || pageLocked ? (
                     <TextInput
                       id="hb-page"
                       inputMode="url"
                       placeholder="https://example.com/…"
                       value={form.page}
-                      readOnly={opened}
+                      readOnly={pageLocked}
                       invalid={Boolean(errorOf("hb-page"))}
                       onChange={(event) => {
                         const page = event.target.value;
@@ -569,17 +581,17 @@ export function SettingsSheet({
                     </div>
                   )}
                 </Field>
-                {/* 打开红包页时自动打开 (§2.7): only with a page; fixed once
-                    opened, as the page is. */}
+                {/* 打开红包页时自动打开 (§2.7): only with a page; fixed when
+                    the page is. */}
                 <Reveal
                   show={normalizePageUrl(form.page) !== null && !pageStopped}
                 >
                   <div className="pt-2">
                     <Switch
                       label="打开红包页时自动打开"
-                      description={`进入红包页就打开这个网页：宽屏在旁边，手机拉起抽屉。第一次打开某个网站照样先确认；看的人自己关掉过的，下次不再自动打开。开放后不能改。${pageAutoOpenSuggested ? "这个判定器建议打开。" : ""}`}
+                      description={`进入红包页就打开这个网页：宽屏在旁边，手机拉起抽屉。第一次打开某个网站照样先确认；看的人自己关掉过的，下次不再自动打开。${pageLockNote}${pageAutoOpenSuggested ? "这个判定器建议打开。" : ""}`}
                       checked={form.pageAutoOpen}
-                      disabled={opened}
+                      disabled={pageLocked}
                       onChange={(pageAutoOpen) =>
                         update((current) => ({ ...current, pageAutoOpen }))
                       }

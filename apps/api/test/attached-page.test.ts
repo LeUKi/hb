@@ -6,6 +6,7 @@ import {
 } from "@hb/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { framingOf } from "../src/activities/attached-page";
+import { endActivity } from "../src/activities/lifecycle";
 import {
   createActivity,
   getManagedActivity,
@@ -27,7 +28,8 @@ import {
 } from "./code-fixtures";
 
 // 附带网页 (docs/attached-page-design.md): who may give a 红包 one, the
-// address as kept, fixed once opened, the switch, and the 站长's 停用.
+// address as kept, fixed from opening until it is over, the switch, and
+// the 站长's 停用.
 
 let admin: Actor;
 let author: Actor;
@@ -163,7 +165,7 @@ describe("附带网页", () => {
     );
   });
 
-  it("is fixed once opened: the same page is kept, another refused", async () => {
+  it("is fixed once opened: the same page is kept, another refused until it is over", async () => {
     const activity = await opened("https://example.com/a");
     const managed = await getManagedActivity(bindings, activity.id, author.id);
     const kept = await updateActivity(bindings, activity.id, author.id, {
@@ -185,6 +187,34 @@ describe("附带网页", () => {
       }),
       "PAGE_LOCKED",
     );
+    // Over: its site moved, say; changed or taken off again.
+    const ended = await endActivity(
+      bindings,
+      activity.id,
+      author.id,
+      kept.version,
+    );
+    expect(ended.status).toBe("ended");
+    const moved = await updateActivity(bindings, activity.id, author.id, {
+      version: ended.version,
+      activity: {
+        ...ended.config,
+        pageUrl: "https://example.com/b",
+        pageAutoOpen: true,
+      },
+    });
+    expect(moved.config).toMatchObject({
+      pageUrl: "https://example.com/b",
+      pageAutoOpen: true,
+    });
+    expect((await getPublicActivity(bindings, activity.id)).page?.url).toBe(
+      "https://example.com/b",
+    );
+    const none = await updateActivity(bindings, activity.id, author.id, {
+      version: moved.version,
+      activity: { ...moved.config, pageUrl: "", pageAutoOpen: false },
+    });
+    expect(none.config.pageUrl).toBeUndefined();
   });
 
   it("hides while the switch is off, and for good once the 站长 stops it", async () => {
@@ -216,9 +246,24 @@ describe("附带网页", () => {
     expect(
       (await getPublicActivity(bindings, activity.id)).page,
     ).toBeUndefined();
-    expect(
-      await getManagedActivity(bindings, activity.id, author.id),
-    ).toMatchObject({ pageStopped: true });
+    const managed = await getManagedActivity(bindings, activity.id, author.id);
+    expect(managed).toMatchObject({ pageStopped: true });
+    // Over, it stays as the 站长 left it.
+    const ended = await endActivity(
+      bindings,
+      activity.id,
+      author.id,
+      managed.version,
+    );
+    await expect(
+      updateActivity(bindings, activity.id, author.id, {
+        version: ended.version,
+        activity: { ...ended.config, pageUrl: "https://example.com/b" },
+      }),
+    ).rejects.toMatchObject({
+      code: "PAGE_LOCKED",
+      message: "站长停用了这个附带网页，不能再改。",
+    });
 
     const detail = await call<{ activity: AdminActivityDetail }>(
       "GET",
