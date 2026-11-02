@@ -4,15 +4,17 @@ import {
   activityImageUrl,
   createActivityImageEmbed,
   FORUM_POST_URL,
-  forumMiniAppLink,
+  forumMiniAppEmbed,
   forumShareLink,
   forumShareWithPassword,
+  MINI_APP_EMBED_HEIGHT,
   plainShareWithPassword,
   type ShareActivity,
   type ShareLink,
 } from "@hb/contracts";
 import { Check, ChevronRight, Copy, Share, X } from "lucide-react";
 import { type ReactNode, useEffect, useId, useState } from "react";
+import { cn } from "../../lib/cn";
 import { activityShareUrl } from "../../lib/emoji-links";
 import { haptic } from "../../lib/haptics";
 import type { HongbaoActivity, PasswordView } from "../../lib/hongbao";
@@ -47,7 +49,7 @@ const kindsOf: Record<Where, Kind[]> = {
 const cards: Record<Kind, { title: string; description: string }> = {
   link: { title: "红包链接", description: "点链接或整段粘贴都能打开" },
   password: { title: "红包链接与口令", description: "整段粘贴到输入框就能领" },
-  mini: { title: "社区小程序", description: "在社区里打开，直接领" },
+  mini: { title: "社区小程序", description: "嵌入帖子，在帖子里直接领" },
   image: { title: "红包实况图", description: "嵌入帖子，实时更新" },
   url: { title: "网页链接", description: "完整网址，可直接打开" },
   urlPassword: { title: "网页链接与口令", description: "链接下面写着口令" },
@@ -57,7 +59,7 @@ const cards: Record<Kind, { title: string; description: string }> = {
 const copyNames: Record<Kind, string> = {
   link: "红包链接",
   password: "红包链接与口令",
-  mini: "小程序链接",
+  mini: "小程序代码",
   image: "实况图代码",
   url: "网页链接",
   urlPassword: "网页链接与口令",
@@ -151,9 +153,9 @@ function shareOf(
       );
     case "password":
       return forumShareWithPassword(shared, password ?? "", link);
-    // 社区小程序 (docs/mini-app-design.md §7): the forum's own link to it.
+    // 社区小程序 (docs/mini-app-design.md §7): the 社区's own embed of it.
     case "mini":
-      return forumMiniAppLink(activity.id);
+      return forumMiniAppEmbed(activity.id, activity.title);
     case "image":
       return createActivityImageEmbed({
         activityId: activity.id,
@@ -368,7 +370,7 @@ function ShareForm({
               // 代码判定 and a human check are claimed on 红包站 itself.
               ...(each === "mini" &&
               (activity.participation === "code" || activity.humanCheck)
-                ? { description: "在社区里打开，这个红包要到红包站领" }
+                ? { description: "嵌入帖子，这个红包要到红包站领" }
                 : {}),
             }))}
             onChange={(next) => choose({ kind: next })}
@@ -429,6 +431,8 @@ function ShareForm({
           <div className="panel grid min-w-0 gap-2 rounded-2xl px-4 py-3.5">
             {kind === "image" ? (
               <ImagePreview activity={activity} size={size} />
+            ) : kind === "mini" ? (
+              <MiniPreview activity={activity} />
             ) : choice.where === "forum" ? (
               <PostPreview text={text} />
             ) : (
@@ -441,7 +445,9 @@ function ShareForm({
             <div className="flex min-w-0 items-center justify-between gap-3">
               <span className="min-w-0 text-xs text-ink-3">
                 {kind === "mini"
-                  ? "点链接在社区里打开这个红包"
+                  ? activity.participation === "code" || activity.humanCheck
+                    ? "帖子里显示这个红包，要到红包站领"
+                    : "帖子里直接显示这个红包，在帖子里就能领"
                   : kind === "image"
                     ? choice.post
                       ? "点图打开社区里的红包站主贴"
@@ -646,6 +652,41 @@ function PostPreview({ text }: { text: string }) {
  * pane narrower than the largest scales all three alike, so they still
  * differ.
  */
+/**
+ * 社区小程序 in a post, roughly: the 红包's cover across the post's width,
+ * its seal, at the embed's height. The app itself is drawn there.
+ */
+function MiniPreview({ activity }: { activity: HongbaoActivity }) {
+  return (
+    <div className="grid min-w-0 gap-2">
+      <div
+        className={cn(
+          "grid justify-items-center overflow-hidden rounded-xl",
+          activity.mode === "code" && "hb-code",
+        )}
+      >
+        <div className="grid w-full justify-items-center gap-1 bg-[linear-gradient(180deg,var(--color-cover-top),var(--color-cover-bottom))] px-4 pt-4 pb-7 text-center">
+          <span className="text-xs text-cream-2">
+            {activity.author.displayName}的红包
+          </span>
+          <span className="line-clamp-2 text-base font-semibold text-cream">
+            {activity.title}
+          </span>
+        </div>
+        <span
+          aria-hidden="true"
+          className="chip-gold -mt-5 grid size-10 place-items-center rounded-full text-lg font-semibold"
+        >
+          {activity.mode === "timed_draw" ? "报" : "开"}
+        </span>
+      </div>
+      <span className="text-xs text-ink-3 tabular-nums">
+        宽度和帖子一样，高 {MINI_APP_EMBED_HEIGHT}
+      </span>
+    </div>
+  );
+}
+
 function ImagePreview({
   activity,
   size,

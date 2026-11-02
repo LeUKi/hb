@@ -15,9 +15,24 @@ export const FORUM_ORIGIN = "https://linux.do";
 /** The launch parameter that names the 红包. */
 export const MINI_APP_HONGBAO_PARAM = "hb";
 
-/** 社区小程序链接: this 红包 in the forum's mini app. */
-export function forumMiniAppLink(activityId: string) {
-  return `${FORUM_ORIGIN}/apps/${FORUM_MINI_APP_ID}?${MINI_APP_HONGBAO_PARAM}=${encodeURIComponent(activityId)}`;
+/** How tall the mini app is in a post: the 社区's own embed's height. */
+export const MINI_APP_EMBED_HEIGHT = 720;
+
+const attribute = (value: string) =>
+  value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+
+/**
+ * 社区小程序嵌入代码: the iframe the 社区 gives its apps to embed in a post
+ * (as its own 分享 writes it, embed_mode), on this 红包, so it opens right
+ * in the post.
+ */
+export function forumMiniAppEmbed(activityId: string, title: string) {
+  const src = `${FORUM_ORIGIN}/apps/${FORUM_MINI_APP_ID}?embed_mode=true&${MINI_APP_HONGBAO_PARAM}=${encodeURIComponent(activityId)}`;
+  return `<iframe src="${src}" title="${attribute(title)}" width="100%" height="${MINI_APP_EMBED_HEIGHT}" frameborder="0" loading="lazy" referrerpolicy="no-referrer" allow="fullscreen; clipboard-write" allowfullscreen style="display:block;width:100%;border:0;"></iframe>`;
 }
 
 /**

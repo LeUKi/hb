@@ -873,7 +873,7 @@ test.describe("红包页", () => {
     ).toHaveAttribute("aria-pressed", "true");
     await expect(what.getByRole("button")).toHaveText([
       "红包链接点链接或整段粘贴都能打开",
-      "社区小程序在社区里打开，直接领",
+      "社区小程序嵌入帖子，在帖子里直接领",
       "红包实况图嵌入帖子，实时更新",
     ]);
     // The preview shows the post, the copy waits behind 原文; 红包页 leads
@@ -918,18 +918,21 @@ test.describe("红包页", () => {
     await expect(raw).toBeHidden();
     await expect(share).toBeVisible();
 
-    // 社区小程序 (docs/mini-app-design.md §7): the forum's link to its mini
-    // app on this 红包; nothing to say where 红包站 leads.
+    // 社区小程序 (docs/mini-app-design.md §7): the 社区's own embed of its
+    // mini app on this 红包; nothing to say where 红包站 leads.
     await what.getByRole("button", { name: /^社区小程序/ }).click();
     await expect(
       share.getByRole("switch", { name: "改链到社区里的红包站主贴" }),
     ).toHaveCount(0);
-    await expect(share.getByText("点链接在社区里打开这个红包")).toBeVisible();
-    await share.getByRole("button", { name: "复制小程序链接" }).click();
+    await expect(
+      share.getByText("帖子里直接显示这个红包，在帖子里就能领"),
+    ).toBeVisible();
+    await expect(share.getByText("宽度和帖子一样，高 720")).toBeVisible();
+    await share.getByRole("button", { name: "复制小程序代码" }).click();
     await expect
       .poll(() => readClipboard(page))
       .toBe(
-        `https://linux.do/apps/01a19ba5-b9d2-766f-9fb9-b7eddc10e0c7?hb=${id}`,
+        `<iframe src="https://linux.do/apps/01a19ba5-b9d2-766f-9fb9-b7eddc10e0c7?embed_mode=true&hb=${id}" title="周末红包" width="100%" height="720" frameborder="0" loading="lazy" referrerpolicy="no-referrer" allow="fullscreen; clipboard-write" allowfullscreen style="display:block;width:100%;border:0;"></iframe>`,
       );
 
     // 红包实况图: its sizes, 300 × 400 first; the post's link, or this 红包.
@@ -1174,7 +1177,7 @@ test.describe("红包页", () => {
     await expect(what.getByRole("button")).toHaveText([
       /^红包链接点链接或整段粘贴都能打开/,
       "红包链接与口令整段粘贴到输入框就能领",
-      "社区小程序在社区里打开，直接领",
+      "社区小程序嵌入帖子，在帖子里直接领",
       "红包实况图嵌入帖子，实时更新",
     ]);
     await what.getByRole("button", { name: /^红包链接与口令/ }).click();
