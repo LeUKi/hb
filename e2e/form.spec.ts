@@ -1121,13 +1121,17 @@ test.describe("发红包", () => {
       pageUrl: "https://example.com/a",
     };
     const base = managed(input);
-    await page.route(`**/api/me/activities/${createdId}`, (route) =>
-      route.fulfill({
+    const saved: Record<string, unknown>[] = [];
+    await page.route(`**/api/me/activities/${createdId}`, (route) => {
+      const request = route.request();
+      if (request.method() !== "GET")
+        saved.push(request.postDataJSON().activity);
+      return route.fulfill({
         json: {
           activity: { ...base, status, version: 3, openedAt: base.createdAt },
         },
-      }),
-    );
+      });
+    });
     await page.route(`**/api/activities/${createdId}`, (route) =>
       route.fulfill({
         json: {
@@ -1180,6 +1184,14 @@ test.describe("发红包", () => {
     await expect(byItself).toBeEnabled();
     await address.fill("https://example.com/b");
     await expect(address).toHaveValue("https://example.com/b");
+    // Saved, the new address goes with it (it did not, at first).
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "保存修改" }).click();
+    await expect.poll(() => saved.length).toBe(1);
+    expect(saved[0]).toMatchObject({
+      pageUrl: "https://example.com/b",
+      pageAutoOpen: false,
+    });
   });
 
   test("从哪发：没有商户、有🐟额就默认🐟额，商户那张变灰并给入口，超过可用当场说，存下的输入不带商户", async ({

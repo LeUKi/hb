@@ -954,15 +954,23 @@ function keysTyped(form: FormState) {
 /**
  * An opened 红包's input with this form's edits: after opening only its
  * words, the post link, 加入广场, how quantities show and 领取前人机验证
- * may change, so everything else (附带网页 among it) is sent back as it
- * was saved.
+ * may change, and its 附带网页 once it is over (attached-page §1) unless
+ * the 站长 stopped it, so everything else is sent back as it was saved.
  */
 export function openedInputOf(
   activity: ManagedActivity,
   form: FormState,
 ): ActivityInput {
+  const over = activity.status === "ended" || activity.status === "archived";
+  const page = normalizePageUrl(form.page);
   return {
     ...activity.config,
+    ...(over && !activity.pageStopped
+      ? {
+          pageUrl: page ?? "",
+          pageAutoOpen: page !== null && form.pageAutoOpen,
+        }
+      : {}),
     title: form.title.trim(),
     topicUrl: normalizeTopic(form.topic).value,
     joinSquare: form.listed,
