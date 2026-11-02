@@ -1,8 +1,9 @@
-import type {
-  ClaimDetail,
-  MiniHongbaoResponse,
-  MiniLiveMessage,
-  RegistrationDetail,
+import {
+  type ClaimDetail,
+  forumHref,
+  type MiniHongbaoResponse,
+  type MiniLiveMessage,
+  type RegistrationDetail,
 } from "@hb/contracts";
 import {
   QueryClient,
@@ -90,6 +91,13 @@ import type { MiniSdk } from "./sdk";
 
 /** 红包站's origin, for its links (vite.config.ts). */
 const SITE = __HB_ORIGIN__;
+
+/**
+ * A 红包's link on 红包站 to copy: likely pasted into a post here, so as
+ * 分享 writes links into posts, no emoji in it (forumHref; a community iOS
+ * client crashed on them). 红包站 reads either form.
+ */
+const siteLink = (id: string) => forumHref(activityShareUrl(id, SITE));
 
 /**
  * The roster mineOf reads titles from: none (the 名单 is read only once its
@@ -230,7 +238,7 @@ function CopyAddress({ sdk, id }: { sdk: MiniSdk; id: string }) {
     return () => observer.disconnect();
   }, []);
   const copy = () =>
-    void sdk.clipboard.writeText(activityShareUrl(id, SITE)).then(
+    void sdk.clipboard.writeText(siteLink(id)).then(
       () => {
         haptic("light");
         setState("done");
@@ -603,7 +611,7 @@ function Page({
     press,
     message: null,
   };
-  const siteUrl = activityShareUrl(activity.id, SITE);
+  const siteUrl = siteLink(activity.id);
 
   const action = (
     <>
