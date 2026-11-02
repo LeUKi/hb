@@ -411,9 +411,11 @@ function Page({
     ),
     (live: MiniLiveMessage) => {
       if (live.type === "mine") return reread();
-      if (live.seq <= seq.current) return;
+      // As 红包站's own (lib/live.ts): the number only tells of one missed
+      // (read it all again); what each brings is current. A new connection
+      // opens with the read and who is watching at the same number.
       const skipped = seq.current > 0 && live.seq > seq.current + 1;
-      seq.current = live.seq;
+      seq.current = Math.max(seq.current, live.seq);
       if (live.type === "viewers") setViewers({ id, count: live.count });
       else if (live.type === "changed") reread();
       else

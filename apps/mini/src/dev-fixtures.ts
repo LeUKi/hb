@@ -304,11 +304,19 @@ export function rosterPage(
       })),
       nextCursor,
     };
+  // The forum's lafish (dev.tsx) among them, with each 称号 once.
+  const titled = {
+    0: { username: "lafish", displayName: "lafish", self: true },
+    1: { speedTitle: "fastest" },
+    3: { title: "highest" },
+    5: { title: "lowest" },
+  } as const;
   return {
     items: people.map((person, index) => ({
       ...person,
       claimedAt: iso(-500_000 + (start + index) * 7_000),
       amount: ((((start + index) * 37) % 900) / 100 + 1).toFixed(2),
+      ...titled[(start + index) as keyof typeof titled],
     })),
     nextCursor,
   };

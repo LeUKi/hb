@@ -91,6 +91,18 @@ body {
     var(--sq-ring-shadow),
     inset 0 -1px 0 rgb(0 0 0 / 0.3);
 }
+/* Words on gold (an avatar's initial, 「你」, 手气最佳) keep 红包站's dark
+   gold ink: the light one above is for gold words on the dark page. */
+:root[data-mode="dark"]
+:is(.avatar-ring, .chip-gold, .title-badge[data-title="highest"]) {
+  color: #6a4510;
+}
+/* 称号 tinted on the dark page: their words a step lighter to read. */
+:root[data-mode="dark"] {
+  --color-title-low: #aeb8cb;
+  --color-title-fast: #5fd39c;
+  --color-title-self: #dcb59e;
+}
 /* Dialogs (说明, 名单, 自领): their glass is the dark page's, lighter. */
 :root[data-mode="dark"] .glass-pop {
   background: color-mix(in srgb, var(--color-white) 94%, transparent);
