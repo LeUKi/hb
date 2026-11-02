@@ -4,6 +4,7 @@ import {
   type LdcActivityInput,
   type MiniHongbaoResponse,
   type MiniLiveMessage,
+  type PublicRecipientList,
 } from "@hb/contracts";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createActivity, openActivity } from "../src/activities/service";
@@ -144,6 +145,18 @@ async function claim(id: string, body: unknown, sub = "332940") {
       body: JSON.stringify(body),
     },
     bindings,
+  );
+}
+
+function roster(id: string, kind: string) {
+  return token("/api/mini/roster", {
+    claims: { query_keys: ["id", "kind", "cursor"] },
+  }).then((jwt) =>
+    app.request(
+      `${origin}/api/mini/roster?id=${id}&kind=${kind}`,
+      { headers: { Origin: forum, Authorization: `Bearer ${jwt}` } },
+      bindings,
+    ),
   );
 }
 
@@ -488,7 +501,32 @@ describe("论坛小程序's routes", () => {
       await read(activity.id)
     ).json()) as MiniHongbaoResponse;
     expect(body.known).toBe(true);
+    expect(body.author).toBe(false);
     expect(body.participation.claim?.amount).toBe("1.00");
+  });
+
+  it("says when the 红包 is the reader's own, and reads its 名单 as 红包站 shows everyone", async () => {
+    const activity = await running();
+    const own = (await (
+      await read(activity.id, "1")
+    ).json()) as MiniHongbaoResponse;
+    expect(own.author).toBe(true);
+    await person("332940");
+    await claim(activity.id, {
+      submissionId: crypto.randomUUID(),
+      password: "论坛里的口令",
+    });
+    const response = await roster(activity.id, "claims");
+    expect(response.status).toBe(200);
+    const page = (await response.json()) as PublicRecipientList;
+    expect(page.items.map((item) => item.username)).toEqual(["mini_332940"]);
+    // Not the sender's view: no 口令, no payment.
+    expect(page.items[0]).not.toHaveProperty("password");
+    expect(page.items[0]).not.toHaveProperty("payment");
+    expect(page.nextCursor).toBeNull();
+    const signups = await roster(activity.id, "registrations");
+    expect(((await signups.json()) as { items: unknown[] }).items).toEqual([]);
+    expect((await roster(activity.id, "everyone")).status).toBe(400);
   });
 
   it("claims a 红包 without a 口令, and sends a human check's to 红包站", async () => {

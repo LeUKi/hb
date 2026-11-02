@@ -26,6 +26,12 @@
       "method": "POST",
       "query": ["id"],
       "auth": "platform"
+    },
+    "roster": {
+      "url": "https://staging.hb.lafi.sh/api/mini/roster",
+      "method": "GET",
+      "query": ["id", "kind", "cursor"],
+      "auth": "platform"
     }
   },
   "websockets": {

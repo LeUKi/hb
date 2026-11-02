@@ -3,6 +3,8 @@ import type {
   MiniClaimInput,
   MiniHongbaoResponse,
   MiniLiveMessage,
+  MiniRosterKind,
+  MiniRosterPage,
 } from "@hb/contracts";
 import { useEffect, useRef } from "react";
 import type { MiniSdk, MiniSocket } from "./sdk";
@@ -63,6 +65,16 @@ export const readHongbao = (sdk: MiniSdk, id: string) =>
 
 export const claimHongbao = (sdk: MiniSdk, id: string, input: MiniClaimInput) =>
   call<ClaimResult>(sdk, "claim", { query: { id }, json: input });
+
+export const readRoster = (
+  sdk: MiniSdk,
+  id: string,
+  kind: MiniRosterKind,
+  cursor: string | null,
+) =>
+  call<MiniRosterPage>(sdk, "roster", {
+    query: { id, kind, ...(cursor ? { cursor } : {}) },
+  });
 
 /** The forum closes a connection at 300 s: the next one opens before. */
 const RENEW_MS = 270_000;

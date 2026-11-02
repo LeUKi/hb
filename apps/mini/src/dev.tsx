@@ -1,11 +1,11 @@
 // Local only (`vite`, index.html): a stand-in for the forum's SDK, which its
 // own preview does not provide, answering for the sample 红包 in
 // dev-fixtures.ts (`?hb=password`, `direct`, `fish`, `draw`, `code`,
-// `human`, `ended`, `stranger`, `taken`, `scheduled`; none: no 红包), and a bar to
-// switch what the forum would — light or dark, reduced motion. Never in
-// app.js.
+// `human`, `ended`, `stranger`, `taken`, `scheduled`, `self`; none: no
+// 红包), and a bar to switch what the forum would — light or dark, reduced
+// motion. Never in app.js.
 import type { MiniClaimInput, MiniLiveMessage } from "@hb/contracts";
-import { caseNames, caseOf } from "./dev-fixtures";
+import { caseNames, caseOf, rosterPage } from "./dev-fixtures";
 import type { LaunchParameters, MiniSdk, MiniSocket, MiniTheme } from "./sdk";
 
 const query = new URLSearchParams(window.location.search);
@@ -99,6 +99,17 @@ const sdk: MiniSdk = {
         };
       if (endpoint === "hongbao")
         return { status: 200, headers: {}, body: sample.read };
+      if (endpoint === "roster")
+        return {
+          status: 200,
+          headers: {},
+          body: rosterPage(
+            options?.query?.kind === "registrations"
+              ? "registrations"
+              : "claims",
+            options?.query?.cursor,
+          ),
+        };
       const input = options?.json as MiniClaimInput;
       // A first-timer: an account from the forum's name, unless it is taken.
       if (!sample.read.known && (!input.forumUser || picked === "taken"))

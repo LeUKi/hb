@@ -5,13 +5,18 @@ import type {
   RegistrationDetail,
 } from "@hb/contracts";
 import {
+  QueryClient,
+  QueryClientProvider,
+  useQueryClient,
+} from "@tanstack/react-query";
+import {
   createMemoryHistory,
   createRootRoute,
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { useSetAtom } from "jotai";
-import { Check, Copy, RotateCcw } from "lucide-react";
+import { useSetAtom, useStore } from "jotai";
+import { Check, Copy, RotateCcw, X } from "lucide-react";
 import { MotionConfig } from "motion/react";
 import {
   createContext,
@@ -19,6 +24,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -31,21 +37,33 @@ import {
 } from "../../web/src/components/hongbao/hero";
 import { LiveViewers } from "../../web/src/components/hongbao/live-viewers";
 import { NoteContent } from "../../web/src/components/hongbao/note-content";
+import { RosterPanel } from "../../web/src/components/hongbao/roster-panel";
 import {
   sealOf,
   useDrawMoments,
 } from "../../web/src/components/hongbao/seal-state";
+import { SelfClaimDialog } from "../../web/src/components/hongbao/self-claim-dialog";
 import type { Hongbao } from "../../web/src/components/hongbao/use-hongbao";
 import { WindowDialog } from "../../web/src/components/shell/window-dialog";
 import {
   type WindowInfo,
   WindowInfoProvider,
 } from "../../web/src/components/shell/window-info";
-import { Button } from "../../web/src/components/ui/button";
+import {
+  Button,
+  buttonHeight,
+  buttonRadius,
+  useButtonShape,
+} from "../../web/src/components/ui/button";
 import { TextInput } from "../../web/src/components/ui/field";
 import { MorphLabel } from "../../web/src/components/ui/morph-label";
 import { Reveal } from "../../web/src/components/ui/reveal";
-import { radius, Squircle } from "../../web/src/components/ui/squircle";
+import {
+  radius,
+  Squircle,
+  SquircleFill,
+} from "../../web/src/components/ui/squircle";
+import { activityCode, RED_PACKET } from "../../web/src/lib/activity-route";
 import { EmbeddedContext } from "../../web/src/lib/embedded";
 import { activityShareUrl } from "../../web/src/lib/emoji-links";
 import { haptic } from "../../web/src/lib/haptics";
@@ -55,8 +73,11 @@ import {
   type PasswordView,
   publicViewOf,
   type Roster,
+  rosterOf,
 } from "../../web/src/lib/hongbao";
 import { liveViewersAtom } from "../../web/src/lib/live-state";
+import { useRosterList } from "../../web/src/lib/roster";
+import { askSelfClaim } from "../../web/src/lib/self-claim";
 import { claimHongbao, HongbaoError, readHongbao, useLive } from "./api";
 import type { MiniSdk } from "./sdk";
 
@@ -70,7 +91,10 @@ import type { MiniSdk } from "./sdk";
 /** 红包站's origin, for its links (vite.config.ts). */
 const SITE = __HB_ORIGIN__;
 
-/** The roster mineOf reads titles from: none in the forum. */
+/**
+ * The roster mineOf reads titles from: none (the 名单 is read only once its
+ * dialog opens, and 我的结果 should not change when it does).
+ */
 const noRoster: Roster = { kind: "claims", rows: [] };
 const noPasswords: PasswordView = { known: [], hidden: 0, canVerify: false };
 const noop = () => {};
@@ -160,6 +184,107 @@ function CopyLink({
   );
 }
 
+/** The address's slash, darker than 红包站's bar has it: on glass. */
+function Slash() {
+  return <span className="px-0.5 font-medium text-ink-2">/</span>;
+}
+
+/**
+ * Where 分享 is on 红包站 (page-actions.tsx), across from 「N 人在看」: the
+ * 红包's address as 红包站 writes it, /🧧/ and its 表情码, and the copy
+ * icon; pressed, it copies that link. The code shrinks until all 14 fit,
+ * never below 8px (the address bar's FitCode, its room the row's rather
+ * than its own).
+ */
+function CopyAddress({ sdk, id }: { sdk: MiniSdk; id: string }) {
+  const shape = useButtonShape(buttonRadius.sm, buttonHeight.sm);
+  const code = activityCode(id);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const codeRef = useRef<HTMLSpanElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [size, setSize] = useState(15);
+  const [state, setState] = useState<"idle" | "done" | "failed">("idle");
+  useEffect(() => {
+    if (state === "idle") return;
+    const timer = window.setTimeout(() => setState("idle"), 1200);
+    return () => window.clearTimeout(timer);
+  }, [state]);
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    const text = codeRef.current;
+    const button = buttonRef.current;
+    if (!row || !text || !button) return;
+    // Its width at 15px, once. The room is the row's less the button's
+    // padding, slashes, 🧧 and icon: none of them follow the code.
+    text.style.fontSize = "15px";
+    const natural = text.scrollWidth;
+    const fit = () => {
+      const room = row.clientWidth - (button.offsetWidth - text.offsetWidth);
+      const next = Math.max(8, Math.min(15, (15 * room) / natural - 0.1));
+      text.style.fontSize = `${next}px`;
+      setSize(next);
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, []);
+  const copy = () =>
+    void sdk.clipboard.writeText(activityShareUrl(id, SITE)).then(
+      () => {
+        haptic("light");
+        setState("done");
+      },
+      () => setState("failed"),
+    );
+  return (
+    <div
+      className="pointer-events-none sticky top-3 z-20 h-0"
+      data-hb-part="actions"
+    >
+      <div
+        ref={rowRef}
+        className="absolute top-0 right-3 left-[8.5rem] flex justify-end @wide/window:right-5 @wide/window:left-[9.25rem]"
+      >
+        {/* 分享's glass; the icon says what pressing it does. */}
+        <button
+          ref={buttonRef}
+          type="button"
+          className="btn btn-secondary pointer-events-auto h-9 shrink-0 gap-1.5 px-3 text-sm [&_svg]:size-4"
+          style={shape}
+          aria-label="复制红包链接"
+          title="复制红包链接"
+          onClick={copy}
+        >
+          <SquircleFill radius={buttonRadius.sm} />
+          <span aria-hidden="true" className="flex items-center">
+            <Slash />
+            <span className="font-emoji">{RED_PACKET}</span>
+            <Slash />
+            <span
+              ref={codeRef}
+              className="font-emoji whitespace-nowrap"
+              style={{ fontSize: size }}
+            >
+              {code}
+            </span>
+          </span>
+          {state === "done" ? (
+            <Check className="text-success" aria-hidden="true" />
+          ) : state === "failed" ? (
+            <X className="text-danger" aria-hidden="true" />
+          ) : (
+            <Copy aria-hidden="true" />
+          )}
+        </button>
+        <span role="status" className="sr-only">
+          {state === "done" ? "已复制" : state === "failed" ? "没能复制" : ""}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function Page({
   sdk,
   id,
@@ -181,7 +306,12 @@ function Page({
   /** 红包站 asked them to sign in there first: why. */
   const [signIn, setSignIn] = useState<string | null>(null);
   const [noteOpen, setNoteOpen] = useState(false);
+  const [rosterOpen, setRosterOpen] = useState(false);
+  /** The forum's name for them: their own row in the 名单 (for showing). */
+  const [forumName, setForumName] = useState<string | null>(null);
   const field = useRef<HTMLDivElement>(null);
+  const store = useStore();
+  const queryClient = useQueryClient();
   const setViewers = useSetAtom(liveViewersAtom);
   const seq = useRef(0);
   const reading = useRef<Promise<void> | null>(null);
@@ -213,6 +343,14 @@ function Page({
     void read();
   }, [read]);
 
+  useEffect(() => {
+    if (!sdk.permissions.has("user.read")) return;
+    sdk.user.getCurrent().then(
+      (user) => setForumName(user?.username ?? null),
+      () => {},
+    );
+  }, [sdk]);
+
   /** Read again, at most once a second however often it is asked. */
   const readSoon = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reread = useCallback(() => {
@@ -231,6 +369,36 @@ function Page({
   const mine = data ? mineOf(data.participation, view, noRoster) : null;
   const drawStep = useDrawStep(view);
   const reveal = useDrawMoments(mine, drawStep);
+
+  // 名单, read once its dialog is open, as the 红包 page reads it
+  // (use-hongbao-data.ts): a draw's winners once drawn, its sign-ups.
+  const draw = data?.activity.reward?.mode === "timed_draw";
+  const listed = rosterOpen && data?.activity.status !== "draft";
+  const claimsList = useRosterList(id, "claims", {
+    enabled:
+      Boolean(listed) && (!draw || data?.activity.draw?.state === "completed"),
+    viewer: forumName,
+    poll: () => false,
+  });
+  const registrationsList = useRosterList(id, "registrations", {
+    enabled: Boolean(listed) && draw,
+    viewer: forumName,
+    poll: () => false,
+  });
+  // While it is open the lists follow the numbers above them.
+  const counts = data
+    ? JSON.stringify([
+        data.activity.quantity,
+        data.activity.draw,
+        data.activity.status,
+      ])
+    : "";
+  const seenCounts = useRef(counts);
+  useEffect(() => {
+    if (counts === seenCounts.current) return;
+    seenCounts.current = counts;
+    void queryClient.invalidateQueries({ queryKey: ["activity-roster", id] });
+  }, [counts, id, queryClient]);
 
   useLive(
     sdk,
@@ -277,12 +445,13 @@ function Page({
       </div>
     );
 
+  const author = data?.author ?? false;
   const seal = sealOf({
     activity,
     view,
     mine,
     standing: null,
-    author: false,
+    author,
     spinning: claiming,
     gate: null,
     retry: false,
@@ -367,6 +536,13 @@ function Page({
     }
   };
 
+  // 自领 (docs/self-claim-design.md): the sender's first share of their own
+  // 红包 is asked about first, as on 红包站.
+  const send = async () => {
+    if (author && !(await askSelfClaim(store, id, seal.isDraw))) return;
+    await claim();
+  };
+
   // The seal: a 口令 红包 asks for its 口令 first (on 红包站 the command
   // box opens), then sends it; the others claim at once.
   const press = () => {
@@ -381,7 +557,7 @@ function Page({
       field.current?.querySelector("input")?.focus();
       return;
     }
-    void claim();
+    void send();
   };
   // No <form>: the forum's frame submits none (docs/mini-app-design.md §5),
   // so Enter — not while an input method is composing — and 开 claim.
@@ -389,12 +565,14 @@ function Page({
     if (event.key === "Enter" && !event.nativeEvent.isComposing) press();
   };
 
+  // Its kind names the 名单 on the cover (a draw's 报名 or 中奖名单).
+  const roster = rosterOf(view, claimsList.rows, registrationsList.rows);
   const hongbao: Hongbao = {
     view,
-    roster: noRoster,
+    roster,
     passwords: noPasswords,
     openVerify: noop,
-    openRoster: noop,
+    openRoster: () => setRosterOpen(true),
     openNote: () => setNoteOpen(true),
     mine,
     standing: null,
@@ -405,7 +583,7 @@ function Page({
     openDelay: 0.15,
     reduced,
     gate: null,
-    author: false,
+    author,
     draft: seal.draft,
     isDraw: seal.isDraw,
     glyph: seal.glyph,
@@ -476,6 +654,7 @@ function Page({
       data-phase={seal.phase}
     >
       <LiveViewers activityId={id} running={!view.ended} />
+      <CopyAddress sdk={sdk} id={id} />
       <p className="sr-only" role="status">
         {seal.announcement}
       </p>
@@ -488,6 +667,30 @@ function Page({
       >
         <NoteContent activity={activity} onClose={() => setNoteOpen(false)} />
       </WindowDialog>
+      {/* 名单弹窗: 红包站's, everyone's view of it (the sender's own, with
+          口令 and payments, is on 红包站). */}
+      <WindowDialog
+        open={rosterOpen}
+        onClose={() => setRosterOpen(false)}
+        labelledBy="roster-title"
+        width="30rem"
+      >
+        <RosterPanel
+          data={{
+            activity,
+            view,
+            roster,
+            author: false,
+          }}
+          lists={{
+            claims: claimsList.query,
+            registrations: registrationsList.query,
+          }}
+          viewer={forumName}
+          onClose={() => setRosterOpen(false)}
+        />
+      </WindowDialog>
+      <SelfClaimDialog />
     </div>
   );
 }
@@ -567,24 +770,35 @@ export function App({
 }) {
   const info = useFrameInfo();
   const props = useMemo(() => ({ sdk, id, reduced }), [sdk, id, reduced]);
+  // The 名单's lists (lib/roster.ts), read through the forum.
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: { retry: false, refetchOnWindowFocus: false },
+        },
+      }),
+  );
   return (
-    <MotionConfig reducedMotion={reduced ? "always" : "never"}>
-      <EmbeddedContext.Provider value={true}>
-        <WindowInfoProvider value={info}>
-          <PropsContext.Provider value={props}>
-            {/* The 红包 page's window: its dialogs and hints are drawn in it. */}
-            <div
-              data-window-layer
-              className="hb-mini relative"
-              data-mode={mode}
-              data-motion={reduced ? "reduce" : undefined}
-              style={sizeVars(hongbaoSizes(info))}
-            >
-              <RouterProvider router={router} />
-            </div>
-          </PropsContext.Provider>
-        </WindowInfoProvider>
-      </EmbeddedContext.Provider>
-    </MotionConfig>
+    <QueryClientProvider client={queryClient}>
+      <MotionConfig reducedMotion={reduced ? "always" : "never"}>
+        <EmbeddedContext.Provider value={true}>
+          <WindowInfoProvider value={info}>
+            <PropsContext.Provider value={props}>
+              {/* The 红包 page's window: its dialogs and hints are drawn in it. */}
+              <div
+                data-window-layer
+                className="hb-mini relative"
+                data-mode={mode}
+                data-motion={reduced ? "reduce" : undefined}
+                style={sizeVars(hongbaoSizes(info))}
+              >
+                <RouterProvider router={router} />
+              </div>
+            </PropsContext.Provider>
+          </WindowInfoProvider>
+        </EmbeddedContext.Provider>
+      </MotionConfig>
+    </QueryClientProvider>
   );
 }

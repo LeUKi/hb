@@ -2,7 +2,6 @@ import { useAtomValue } from "jotai";
 import { ChevronRight } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { cn } from "../../lib/cn";
-import { useEmbedded } from "../../lib/embedded";
 import type { HongbaoActivity, PublicView, Roster } from "../../lib/hongbao";
 import { liveJudgedAtom } from "../../lib/live-state";
 import { Avatar } from "../ui/avatar";
@@ -174,7 +173,6 @@ function RosterEntry({
       : roster.kind === "draw"
         ? "中奖名单"
         : "报名名单";
-  const embedded = useEmbedded();
   const faces = people.length > 0 && (
     <span aria-hidden="true" className="flex -space-x-1.5">
       {people.map((person) => (
@@ -184,20 +182,6 @@ function RosterEntry({
       ))}
     </span>
   );
-  // In the forum's mini app: who took part lately, no 名单弹窗 to open.
-  if (embedded)
-    return (
-      <motion.span
-        layout="position"
-        layoutDependency={motions.state}
-        transition={motions.leaf.transition}
-        className="hb-roster-entry flex h-8 shrink-0 items-center gap-2 px-1.5"
-        data-morph="move"
-      >
-        {faces}
-        <span className="hb-roster-label text-[15px] font-medium">{label}</span>
-      </motion.span>
-    );
   return (
     // A squircle like every other control: the hover tint and the focus
     // ring follow it.

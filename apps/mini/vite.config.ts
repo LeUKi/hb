@@ -25,6 +25,13 @@ export default defineConfig({
           new URL(`./src/off-site/${name}.ts`, import.meta.url),
         ),
       })),
+      // The 名单, read through the forum instead (lib/roster.ts's own).
+      {
+        find: /^(?:(?:\.\.\/)+lib|\.)\/roster-read$/,
+        replacement: fileURLToPath(
+          new URL("./src/off-site/roster-read.ts", import.meta.url),
+        ),
+      },
     ],
   },
   define: {

@@ -1,4 +1,9 @@
-import type { ActivityParticipationResponse, PublicActivity } from "./index";
+import type {
+  ActivityParticipationResponse,
+  PublicActivity,
+  PublicRecipientList,
+  PublicRegistrationList,
+} from "./index";
 
 // 论坛小程序 (docs/mini-app-design.md §7): LINUX DO's mini app for a 红包,
 // opened from a forum link that names it, to claim it inside the forum.
@@ -27,7 +32,17 @@ export type MiniHongbaoResponse = {
    * earlier claim). Without one the first claim makes it.
    */
   known: boolean;
+  /** They sent it: their first share is asked about first (自领). */
+  author: boolean;
 };
+
+/**
+ * GET /api/mini/roster?id=&kind=claims|registrations&cursor=: the 名单 as
+ * 红包站 shows everyone, 20 at a time (the sender's own view, with 口令 and
+ * payments, stays on 红包站).
+ */
+export type MiniRosterKind = "claims" | "registrations";
+export type MiniRosterPage = PublicRecipientList | PublicRegistrationList;
 
 /**
  * POST /api/mini/claim?id=: a claim, or a timed draw's sign-up. `forumUser`

@@ -2,6 +2,7 @@ import {
   type ClaimResult,
   FORUM_ORIGIN,
   type MiniHongbaoResponse,
+  type MiniRosterPage,
   type PublicActivity,
   passwordSchema,
 } from "@hb/contracts";
@@ -9,10 +10,14 @@ import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { z } from "zod";
+import { listPublicRecipients } from "../activities/claim-queries";
 import { ActivityError, activityNotFound } from "../activities/errors";
 import { humanCheckEnabled } from "../activities/human-check";
 import { LIVE_UNTIL_HEADER, LIVE_USER_HEADER } from "../activities/live";
-import { getCurrentParticipationForActivity } from "../activities/registration-queries";
+import {
+  getCurrentParticipationForActivity,
+  listPublicRegistrations,
+} from "../activities/registration-queries";
 import { getPublicActivity } from "../activities/service";
 import { findActivity } from "../activities/storage";
 import type { ApiBindings, ApiContext } from "../env";
@@ -201,7 +206,29 @@ miniRoutes.get("/mini/hongbao", async (c) => {
       registration: participation?.registration ?? null,
     },
     known: user !== null,
+    author: user !== null && row.authorId === user.id,
   } satisfies MiniHongbaoResponse);
+});
+
+// 名单: 红包站's public one (activities/routes.ts), each page its own call.
+miniRoutes.get("/mini/roster", async (c) => {
+  const trust = await trustOf(c.env);
+  await identityOf(c, trust);
+  const id = activityIdOf(c);
+  const kind = c.req.query("kind");
+  if (kind !== "claims" && kind !== "registrations")
+    throw new ActivityError(400, "INVALID_KIND", "名单种类不对。");
+  const cursor = c.req.query("cursor") || undefined;
+  c.header("Cache-Control", "no-store");
+  return c.json(
+    (kind === "claims"
+      ? await listPublicRecipients(c.env, id, cursor)
+      : await listPublicRegistrations(
+          c.env,
+          id,
+          cursor,
+        )) satisfies MiniRosterPage,
+  );
 });
 
 miniRoutes.post(

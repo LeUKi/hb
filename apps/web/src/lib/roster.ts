@@ -1,32 +1,26 @@
-import type {
-  AuthorClaim,
-  AuthorRegistration,
-  PublicRecipient,
-  PublicRegistration,
-} from "@hb/contracts";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { readResponse } from "./activities";
 import type { RosterRow } from "./hongbao";
 import { paymentOpen } from "./live-state";
+import {
+  type RosterItem,
+  type RosterKind,
+  type RosterPage,
+  readRosterPage,
+} from "./roster-read";
 import type { RosterTitle } from "./titles";
 
 // The 名单: always public (06 §2), oldest first (06 §3), 20 at a time. The
 // sender reads the same lists from their own endpoints, which add the 口令
 // each person used and the payment of each claim.
 
-export type RosterKind = "claims" | "registrations";
-
-type Item =
-  | PublicRecipient
-  | PublicRegistration
-  | AuthorClaim
-  | AuthorRegistration;
-type Page = { items: Item[]; nextCursor: string | null };
-
-const publicPath = { claims: "recipients", registrations: "registrations" };
+export type { RosterKind };
 
 /** One person's row, in list order (rank is the place in the list). */
-function rowOf(item: Item, rank: number, viewer: string | null): RosterRow {
+function rowOf(
+  item: RosterItem,
+  rank: number,
+  viewer: string | null,
+): RosterRow {
   if ("claimant" in item)
     return {
       id: item.id,
@@ -103,17 +97,14 @@ export function useRosterList(
       ? ["activity-roster", activityId, author, "author", kind]
       : ["activity-roster", activityId, "public", "public", kind],
     initialPageParam: null as string | null,
-    queryFn: async ({ pageParam, signal }): Promise<Page> => {
-      const cursor = pageParam
-        ? `?cursor=${encodeURIComponent(pageParam)}`
-        : "";
-      const path = author
-        ? `/api/me/activities/${encodeURIComponent(activityId)}/${kind}`
-        : `/api/activities/${encodeURIComponent(activityId)}/${publicPath[kind]}`;
-      return readResponse<Page>(
-        await fetch(`${path}${cursor}`, { signal, cache: "no-store" }),
-      );
-    },
+    queryFn: ({ pageParam, signal }): Promise<RosterPage> =>
+      readRosterPage({
+        activityId,
+        kind,
+        cursor: pageParam,
+        author: author !== null,
+        signal,
+      }),
     getNextPageParam: (last) => last.nextCursor,
     enabled: options.enabled,
     retry: false,

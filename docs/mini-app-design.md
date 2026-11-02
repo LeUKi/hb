@@ -30,15 +30,16 @@ LINUX DO 上的 Discourse 小程序：打包成 ZIP 上传，在论坛的沙箱�
 
 小程序在 `apps/mini`，直接用红包站的样式表（`apps/web/src/styles.css`：设计变量、基础、组件）和组件（印章、计数、礼花、按钮、输入框、分段选择、头像……），不另画一套。红包站只用系统字体、图标是打包进去的 SVG，和小程序的限制不冲突；React、motion、Tailwind 打成一个 IIFE 和一个 CSS。
 
-- **红包页本身也是同一套**（2026-11-02，用户：“一处修改处处生效”，不强求）：小程序直接画红包站的 `HongbaoHero`（大小封面和领取后收起、封面头、封面数据、我的结果、提示）、`LiveViewers`（“N 人在看”）和说明弹窗的 `NoteContent`。网页的 `useHongbao` 跟命令框、登录状态、路由绑在一起，小程序用自己的数据拼出同样形状的 `Hongbao` 交给它们；两边共用的推导拆了出来：`seal-state.ts`（印章的字和状态、提示、播报、开奖时刻）、`clock.ts`（`useNow`、`countdown`、`useDrawStep`）、`lib/cover-tags.ts`、`lib/markdown-text.ts`、`shell/attached-page-state.ts`、`omnibox/elements.ts`、`omnibox/cooldown.ts`、`lib/route-data.d.ts`。
-  - **剪掉的**：`lib/embedded.ts` 的 `EmbeddedContext` 为真时，链接只留字，人名不弹资料卡，远程头像改首字母，不显示帖子链接、快捷键、小封面的“展开”、🐟额的“转出”、没有 Credit 账户时的“重新发送”，名单入口只显示头像和字、不打开名单弹窗。
+- **红包页本身也是同一套**（2026-11-02，用户：“一处修改处处生效”，不强求）：小程序直接画红包站的 `HongbaoHero`（大小封面和领取后收起、封面头、封面数据、我的结果、提示）、`LiveViewers`（“N 人在看”）、说明弹窗的 `NoteContent`、名单弹窗的 `RosterPanel` 和自领前的确认（`SelfClaimDialog`）。网页的 `useHongbao` 跟命令框、登录状态、路由绑在一起，小程序用自己的数据拼出同样形状的 `Hongbao` 交给它们；两边共用的推导拆了出来：`seal-state.ts`（印章的字和状态、提示、播报、开奖时刻）、`clock.ts`（`useNow`、`countdown`、`useDrawStep`）、`lib/cover-tags.ts`、`lib/markdown-text.ts`、`shell/attached-page-state.ts`、`omnibox/elements.ts`、`omnibox/cooldown.ts`、`lib/route-data.d.ts`。
+  - **剪掉的**：`lib/embedded.ts` 的 `EmbeddedContext` 为真时，链接只留字，人名不弹资料卡，远程头像改首字母，不显示帖子链接、快捷键、小封面的“展开”、🐟额的“转出”、没有 Credit 账户时的“重新发送”。
   - **口令**：红包站点印章会打开命令框；小程序里点印章，提示下面展开口令框（`HongbaoHero` 的 `action` 位置），回车或再点“开”领取。
-  - **构建时去掉的**：要红包站会话的模块（`lib/session`、`lib/claims`、`lib/activities`）在小程序构建里换成 `apps/mini/src/off-site/` 的空壳，小程序走不到它们；这样包里没有 `fetch`、`WebSocket`、`XMLHttpRequest`（论坛只许走它的网络接口）。类型检查照旧对着真的模块。
+  - **名单弹窗**：红包站的名单弹窗拆成两层，`roster-panel.tsx` 是共用的（红包名、数字、限时开奖的两个页签、表格、往下滚接着读），`roster-dialog.tsx` 再加红包页自己的代码判定“挑战”、开奖证明和点开付款。名单每页怎么读在 `lib/roster-read.ts`，小程序构建里换成走论坛接口的那份。小程序里总是大家看到的名单；发红包的人那份（带口令和付款）还在红包站看。
+  - **构建时去掉的**：要红包站会话的模块（`lib/session`、`lib/claims`、`lib/activities`）在小程序构建里换成 `apps/mini/src/off-site/` 的空壳，小程序走不到它们，`lib/roster-read` 换成走论坛的那份；这样包里没有自己发的 `fetch`、`WebSocket`、`XMLHttpRequest`（论坛只许走它的网络接口；包里出现的 `fetch(` 是 react-query 自己的方法名）。类型检查照旧对着真的模块。
   - **路由**：网页的零件会读路由，小程序给一个只在内存里的单页路由。
   - **滚动**：论坛的框跟着内容变高，上限 1000px（2026-11-02 量的），不到 1000px 时滚的是论坛页面，小程序自己不滚。所以领取后封面收成小封面就一直是小的，不会像红包站那样滚回顶部再展开；超过 1000px 时内容在框里滚，小封面钉在顶上。
-- **深色**：红包站只有浅色，论坛要求深浅都能用。深色时页面就用论坛主题给的底色（`theme.background`，默认深色主题是 `#222222`），文字、填充、线是中性的白色加透明度，换哪个深色主题都不会显出一块补丁；整页只有红包是红的。`apps/mini/src/mini.css` 在 `:root[data-mode="dark"]` 下换掉这些和强调色、成功、错误色，写死白色的玻璃（次要按钮、输入框、分段选择的滑块、说明卡）另外覆盖。红包本身的红、金和代码判定的黑漆不变。第一版用的是偏红的深酒红底，放在论坛的中性灰里像一块发闷的补丁，用户觉得难看，就改了。这套深色以后红包站也能用。
+- **深色**：红包站只有浅色，论坛要求深浅都能用。深色时页面就用论坛主题给的底色（`theme.background`，默认深色主题是 `#222222`），文字、填充、线是中性的白色加透明度，换哪个深色主题都不会显出一块补丁；整页只有红包是红的。`apps/mini/src/mini.css` 在 `:root[data-mode="dark"]` 下换掉这些和强调色、成功、错误色，写死白色的玻璃（次要按钮、输入框、分段选择的滑块、说明卡、弹窗和它后面的压暗层）另外覆盖。红包本身的红、金和代码判定的黑漆不变。第一版用的是偏红的深酒红底，放在论坛的中性灰里像一块发闷的补丁，用户觉得难看，就改了。这套深色以后红包站也能用。
 - 不跟论坛的强调色：红包的红和金保持一贯；深浅和减少动画跟论坛走（`theme.get()`、`theme.onChange()`），减少动画时不放扫光、金圈、礼花，金额不滚动。
-- 论坛的框就是窗口：页面自己滚动，封面上面没有顶栏（`--bar-h: 0`），封面在最上面。
+- 论坛的框就是窗口：页面自己滚动，没有顶栏，封面在最上面。红包站给顶栏留的那一条（`--bar-h`，小程序里是 3rem）放左边的“N 人在看”和右边的红包地址（红包站这里是“分享”，用户定的，2026-11-02）：一个按钮，写着 `/🧧/<表情码>` 和复制图标，点了复制红包站的红包链接；不写“复制链接”几个字，图标就够了。斜线用深一档的字色，在玻璃上看得清。表情码窄的时候缩小到 14 个都放得下，最小 8px。放在这一条里，长长的表情码不会挤到发红包的人的名字。
 
 ## 5 验证包
 
@@ -72,7 +73,7 @@ LINUX DO 上的 Discourse 小程序：打包成 ZIP 上传，在论坛的沙箱�
     - 用 LINUX DO 登录过以前（`profile_seen_at` 为空），信任等级当作未知，领取范围里“指定的人”只按编号认、不按名字认。限范围的红包请他到红包站登录一次。他登录以后，账号按编号对上，资料换成 LINUX DO 给的。
   - **钱**：Credit 发钱按编号加用户名一起核对（`id = ? AND username = ?`，对不上就“收款人不存在”），钱不会发错人；🐟额只认账号。
 - **记来源**：在小程序里领的，领取记录上标 `claims.via = 'mini'`；限时开奖标在报名记录上（`activity_registrations.via`），中奖的那份看报名。迁移 `0058_forum_mini`，上线时先跑迁移。
-- **接口**（红包站，都在 `/api/mini/`）：`GET hongbao?id=` 读红包和自己的领取；`POST claim?id=`（`submissionId`，口令红包带 `password`）领取或报名；`GET live?id=` 实时（WebSocket）。
+- **接口**（红包站，都在 `/api/mini/`）：`GET hongbao?id=` 读红包、自己的领取，以及看的人是不是发红包的人（`author`）；`POST claim?id=`（`submissionId`，口令红包带 `password`）领取或报名；`GET roster?id=&kind=claims|registrations&cursor=` 名单，和红包站公开的名单一样，每页 20 人；`GET live?id=` 实时（WebSocket）。
   - 每个请求都验论坛的凭证：ES256，`kid` 是公钥 SPKI 的 SHA-256，`iss` 是 `https://linux.do`，`aud` 是本站地址，应用 ID、`channel`、方法、地址和动态参数（`htm`、`htu`、`query_keys`）都要对上，最长 15 分钟。照论坛服务端 SDK 的规则用 WebCrypto 自己验，它的 SDK 只能跑在 Node/Bun。
   - Stage 只收沙箱（`sandbox`），正式站只收正式版（`production`）。CORS 只给 `https://linux.do`；WebSocket 握手还要看 `Origin`。
   - 配置：`MINI_APP_ID`、`MINI_APP_ISSUER`、`MINI_APP_CHANNEL` 和 `MINI_APP_PUBLIC_KEY`。公钥是论坛的 JWKS（`https://linux.do/mini-app-api/jwks`，原样填进去；按 `kid` 选钥匙，论坛换钥匙时把新的加进去），也收单个 JWK 或 PEM。公钥没配，接口回 503。
@@ -80,6 +81,8 @@ LINUX DO 上的 Discourse 小程序：打包成 ZIP 上传，在论坛的沙箱�
   - 推给小程序的是精简过的红包：去掉说明、结束说明、名单头像、代码、附带网页和开奖证明，控制在 4 KiB 以内；超了只说“变了”，小程序再读一次。另外推人数和“你的领取变了”；代码判定的消息不推。
   - 每条连接活到 min(300 秒, 凭证剩余时间)，到点服务端就关。小程序在快到点时先连上新的，再关旧的（最多同时 2 条），中间不断。
 - **样子**：红包站红包页的那些零件，数据由小程序拼（§4）；数字、标签、结束原因都用红包站自己的 `hongbaoOf`、`publicViewOf`、`mineOf` 算。
+- **名单**：点“领取名单”（限时开奖是“报名名单”，开奖后是“中奖名单”）打开红包站的名单弹窗，开着的时候已领、报名的数字一变就重读。自己那一行按论坛报来的用户名标出（只用来显示）。
+- **自领**：发红包的人领自己的红包，先问一次，和红包站一样（`askSelfClaim`）。论坛的框里没有浏览器存储，“不再问”只记到关掉小程序；领过就不会再问。
 - **上线**：沙箱构建连 Stage。正式发布要过论坛审核，审核过了，分享出去的链接别人才能打开。
-- **本地**：`bun run --cwd apps/mini dev`，替身 SDK 按 `?hb=` 给示例红包（`password`、`direct`、`fish`、`draw`、`code`、`human`、`ended`、`stranger`、`scheduled`，不带就是没有红包），右下角能换示例、深浅和减少动画。
-- **进度（2026-11-02，没提交）**：红包站的三个接口、DO 里的小程序连接、分享里的“论坛小程序”、小程序的红包页都做好了，接口有测试（`apps/api/test/mini-app.test.ts`）。论坛的 JWKS 已经写进 Stage 和正式站的配置（一把 P-256 钥匙，`kid` `217dfe8a…`，核对过就是它 SPKI 的 SHA-256）。已部署 Stage（`c110d34`）。Stage 本来什么红包都开放不了（开放和领取要求生产环境加线上网络，`runtime/controls.ts`），🐟额红包也一样；为了在沙箱里真领，用户同意 Stage 上的 🐟额红包能开放、能领（`stageBalanceHongbao`）。🐟额是站内记账，不碰 Credit；Stage 上的 LDC 红包和生产照旧。
+- **本地**：`bun run --cwd apps/mini dev`，替身 SDK 按 `?hb=` 给示例红包（`password`、`direct`、`fish`、`draw`、`code`、`human`、`ended`、`stranger`、`taken`、`scheduled`、`self`，不带就是没有红包），名单给 26 个领取、12 个报名的示例，右下角能换示例、深浅和减少动画。
+- **进度（2026-11-02）**：红包站的接口、DO 里的小程序连接、分享里的“论坛小程序”、小程序的红包页都做好了，接口有测试（`apps/api/test/mini-app.test.ts`）。论坛的 JWKS 已经写进 Stage 和正式站的配置（一把 P-256 钥匙，`kid` `217dfe8a…`，核对过就是它 SPKI 的 SHA-256）。已部署 Stage（`c110d34`）。Stage 本来什么红包都开放不了（开放和领取要求生产环境加线上网络，`runtime/controls.ts`），🐟额红包也一样；为了在沙箱里真领，用户同意 Stage 上的 🐟额红包能开放、能领（`stageBalanceHongbao`）。🐟额是站内记账，不碰 Credit；Stage 上的 LDC 红包和生产照旧。在论坛沙箱里真领过一次（构建 `8ea8c915`，Stage 的🐟额口令红包，领到 0.50，领取记成 `via='mini'`）。真领时发现、随后补上的：名单点不开、自领没有先问；用户又要右上角放表情码和复制链接；深色下弹窗的玻璃还是浅色；限时开奖的名单入口写成了“领取名单”。

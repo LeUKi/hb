@@ -2,6 +2,8 @@ import type {
   ClaimDetail,
   ClaimResult,
   MiniHongbaoResponse,
+  MiniRosterKind,
+  MiniRosterPage,
   PublicActivity,
 } from "@hb/contracts";
 
@@ -62,6 +64,7 @@ const ids = {
   stranger: "11111111-2222-4333-8444-555555555508",
   taken: "11111111-2222-4333-8444-555555555510",
   scheduled: "11111111-2222-4333-8444-555555555509",
+  self: "11111111-2222-4333-8444-555555555511",
 } as const;
 
 export type CaseName = keyof typeof ids;
@@ -101,7 +104,7 @@ export function caseOf(name: string): Case | null {
     case "password": {
       const activity = hongbao(ids.password);
       return {
-        read: { activity, participation: none, known: true },
+        read: { activity, participation: none, known: true, author: false },
         claim: (password) =>
           password === "你好论坛"
             ? { result: "claimed", claim: claimOf(activity, "13.28") }
@@ -121,7 +124,7 @@ export function caseOf(name: string): Case | null {
         beforeInfo: "点「开」直接领。",
       });
       return {
-        read: { activity, participation: none, known: true },
+        read: { activity, participation: none, known: true, author: false },
         claim: () => ({ result: "claimed", claim: claimOf(activity, "2.00") }),
       };
     }
@@ -133,7 +136,7 @@ export function caseOf(name: string): Case | null {
         beforeInfo: "领到的先存进🐟额。",
       });
       return {
-        read: { activity, participation: none, known: true },
+        read: { activity, participation: none, known: true, author: false },
         claim: () => ({ result: "claimed", claim: claimOf(activity, "8.80") }),
       };
     }
@@ -160,7 +163,7 @@ export function caseOf(name: string): Case | null {
         beforeInfo: "报名后到点抽 5 个人。",
       });
       return {
-        read: { activity, participation: none, known: true },
+        read: { activity, participation: none, known: true, author: false },
         claim: () => ({
           result: "registered",
           registration: {
@@ -197,6 +200,7 @@ export function caseOf(name: string): Case | null {
           }),
           participation: none,
           known: true,
+          author: false,
         },
       };
     case "human":
@@ -210,6 +214,7 @@ export function caseOf(name: string): Case | null {
           }),
           participation: none,
           known: true,
+          author: false,
         },
       };
     case "ended":
@@ -222,13 +227,14 @@ export function caseOf(name: string): Case | null {
           }),
           participation: none,
           known: true,
+          author: false,
         },
       };
     case "stranger":
     case "taken": {
       const activity = hongbao(ids[name], { title: "第一次在论坛里领" });
       return {
-        read: { activity, participation: none, known: false },
+        read: { activity, participation: none, known: false, author: false },
         claim: (password) =>
           password === "你好论坛"
             ? { result: "claimed", claim: claimOf(activity, "6.66") }
@@ -248,9 +254,62 @@ export function caseOf(name: string): Case | null {
           }),
           participation: none,
           known: true,
+          author: false,
         },
       };
+    case "self": {
+      // Their own: the seal asks first (自领).
+      const activity = hongbao(ids.self, {
+        title: "自己发的🐟额红包",
+        participationMode: "direct",
+        funding: "balance",
+        beforeInfo: "发红包的人自己也能领一份。",
+      });
+      return {
+        read: { activity, participation: none, known: true, author: true },
+        claim: () => ({ result: "claimed", claim: claimOf(activity, "8.80") }),
+      };
+    }
     default:
       return null;
   }
+}
+
+const names = ["阿离", "BigFish", "小周", "momo", "老王", "Kiki", "七七"];
+
+/** 名单: 26 people for a claim list (two pages), 12 for a draw's sign-ups. */
+export function rosterPage(
+  kind: MiniRosterKind,
+  cursor: string | undefined,
+): MiniRosterPage {
+  const start = cursor ? Number(cursor) : 0;
+  const total = kind === "claims" ? 26 : 12;
+  const end = Math.min(total, start + 20);
+  const people = Array.from({ length: end - start }, (_, index) => {
+    const n = start + index;
+    const name = `${names[n % names.length]}${n >= names.length ? n : ""}`;
+    return {
+      id: `person-${n}`,
+      username: `user${n}`,
+      displayName: name,
+      avatarUrl: null,
+    };
+  });
+  const nextCursor = end < total ? String(end) : null;
+  if (kind === "registrations")
+    return {
+      items: people.map((person, index) => ({
+        ...person,
+        registeredAt: iso(-500_000 + (start + index) * 9_000),
+      })),
+      nextCursor,
+    };
+  return {
+    items: people.map((person, index) => ({
+      ...person,
+      claimedAt: iso(-500_000 + (start + index) * 7_000),
+      amount: ((((start + index) * 37) % 900) / 100 + 1).toFixed(2),
+    })),
+    nextCursor,
+  };
 }

@@ -3,8 +3,11 @@
 @import "../../web/src/styles.css";
 @source "./";
 
-/* The forum's frame is the window here: the page itself scrolls, nothing
-   sits above the cover (no 顶栏), and the page is plain, not red glass. */
+/* The forum's frame is the window here: the page itself scrolls, and the
+   page is plain, not red glass. No 顶栏: where 红包站 keeps room for it
+   (--bar-h), the cover keeps a strip for 「N 人在看」 and, across from it,
+   the 表情码 and 复制链接 (app.tsx), so a long code never runs into the
+   sender's name. */
 :root {
   --mini-page: #fbf6f5;
 }
@@ -19,7 +22,7 @@ body {
   min-height: 100%;
 }
 .hb-mini {
-  --bar-h: 0px;
+  --bar-h: 3rem;
   /* The site's hongbaoSizes() for a phone: the seal on the curved edge. */
   --seal: 88px;
   --hb-curve: 40px;
@@ -27,6 +30,10 @@ body {
   min-height: 100vh;
   padding-bottom: 2.5rem;
   color: var(--color-ink);
+}
+/* 「N 人在看」 in that strip, not under it as under 红包站's bar. */
+.hb-mini [data-hb-part="viewers"] {
+  top: 0.75rem;
 }
 
 /* 深色 (docs/mini-app-design.md §4): the forum asks for it; the site has
@@ -83,6 +90,20 @@ body {
     inset 0 1px 0 rgb(255 255 255 / 0.08),
     var(--sq-ring-shadow),
     inset 0 -1px 0 rgb(0 0 0 / 0.3);
+}
+/* Dialogs (说明, 名单, 自领): their glass is the dark page's, lighter. */
+:root[data-mode="dark"] .glass-pop {
+  background: color-mix(in srgb, var(--color-white) 94%, transparent);
+  --sq-ring: rgb(255 255 255 / 0.08);
+  box-shadow:
+    var(--sq-ring-shadow),
+    inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+:root[data-mode="dark"] .pop-plate {
+  box-shadow: 0 18px 36px -18px rgb(0 0 0 / 0.7);
+}
+:root[data-mode="dark"] .scrim {
+  background: rgb(0 0 0 / 0.4);
 }
 :root[data-mode="dark"] .hb-note-card {
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
