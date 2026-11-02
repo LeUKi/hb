@@ -29,6 +29,7 @@ import {
   allowsRealClaim,
   isLocalSimulation,
   readPlatformControls,
+  stageBalanceHongbao,
 } from "../runtime/controls";
 import { encryptString } from "../security/crypto";
 import { findUserClaim, getClaimDetail } from "./claim-queries";
@@ -221,7 +222,10 @@ export async function admitClaim(
       "SIMULATION_NOT_AVAILABLE",
       "此环境不支持新的模拟奖励领取。",
     );
-  const testPermission = permitsRealActivity(activity.id, executionPolicy);
+  // Stage's 🐟额红包 are let through as a test's would be (controls.ts).
+  const testPermission =
+    permitsRealActivity(activity.id, executionPolicy) ||
+    stageBalanceHongbao(env, activity.funding);
   const realActivityPermitted =
     testPermission ||
     (activity.paymentMode === "real" &&
@@ -692,7 +696,9 @@ export async function completeClaimSubmission(
         "奖励库存暂时不可用，请使用原提交重试",
       );
     selectedInventoryId = reward.id;
-    const testPermission = permitsRealActivity(activity.id, executionPolicy);
+    const testPermission =
+      permitsRealActivity(activity.id, executionPolicy) ||
+      stageBalanceHongbao(env, activity.funding);
     const realActivityPermitted =
       testPermission ||
       (activity.paymentMode === "real" &&

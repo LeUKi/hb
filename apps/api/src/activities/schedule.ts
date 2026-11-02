@@ -26,7 +26,11 @@ import {
   publicationEligibility,
   publicationMessages,
 } from "../payments/publication";
-import { allowsRealOpening, readPlatformControls } from "../runtime/controls";
+import {
+  allowsRealOpening,
+  readPlatformControls,
+  stageBalanceHongbao,
+} from "../runtime/controls";
 import { timedDrawMoney } from "./draw-storage";
 import { ActivityError, activityConflict } from "./errors";
 import { databaseNow } from "./lifecycle";
@@ -152,6 +156,7 @@ async function scheduleBlocked(
     return "TIMED_DRAW_NOT_ENABLED";
   if (
     row.paymentMode === "real" &&
+    !stageBalanceHongbao(env, row.funding) &&
     !allowsRealOpening(env, await readPlatformControls(env))
   )
     return "REAL_LDC_NOT_ENABLED";

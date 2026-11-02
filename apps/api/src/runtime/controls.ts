@@ -35,6 +35,19 @@ function live(env: ApiBindings) {
   return env.APP_ENV === "production" && env.LDC_NETWORK_MODE === "live";
 }
 
+/**
+ * Stage's 🐟额红包 open and are claimed (2026-11-02, the user, to try the
+ * forum's mini app for real; docs/mini-app-design.md §7): 🐟额 is this
+ * site's own ledger and never reaches Credit, so nothing real moves. Every
+ * LDC 红包 on Stage stays shut, as everything does but production.
+ */
+export function stageBalanceHongbao(
+  env: ApiBindings,
+  funding: string | null | undefined,
+) {
+  return env.APP_ENV === "staging" && funding === "balance";
+}
+
 /** Real Credit calls of any kind (🐟额 转入 too): production, live network. */
 export function reachesCredit(env: ApiBindings) {
   return live(env);

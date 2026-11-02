@@ -408,3 +408,44 @@ describe("🐟额红包", () => {
     expect((await adminBalanceOverview(bindings)).mismatches).toBe(0);
   });
 });
+
+describe("🐟额红包 on Stage", () => {
+  // Stage opens nothing real, but its 🐟额红包 (runtime/controls.ts
+  // stageBalanceHongbao): the forum's mini app is tried there for real.
+  const stage: ApiBindings = {
+    ...bindings,
+    APP_ENV: "staging",
+    LDC_NETWORK_MODE: "disabled",
+  };
+
+  it("opens and is claimed on Stage only", async () => {
+    await give(author, "5.00");
+    const saved = await createActivity(stage, author.id, {
+      requestId: crypto.randomUUID(),
+      activity: fish({ mode: "fixed", totalAmount: "2.00", count: 2 }),
+    });
+    // Anywhere else off a live production: shut, as before.
+    await expect(
+      openActivity(
+        { ...stage, APP_ENV: "production" },
+        saved.id,
+        author.id,
+        saved.version,
+      ),
+    ).rejects.toThrow(/平台暂未开放/);
+    const opened = await openActivity(
+      stage,
+      saved.id,
+      author.id,
+      saved.version,
+    );
+    expect(opened.status).toBe("active");
+    const claimer = await actor();
+    const result = await claimActivity(stage, opened.id, claimer.id, {
+      submissionId: crypto.randomUUID(),
+      password: "FishPassword",
+    });
+    expect(result.result).toBe("claimed");
+    expect((await readAccount(stage, claimer.id)).availableMinor).toBe(100);
+  });
+});

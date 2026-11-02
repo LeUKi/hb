@@ -88,6 +88,7 @@ import {
   allowsRealOpening,
   isLocalSimulation,
   readPlatformControls,
+  stageBalanceHongbao,
 } from "../runtime/controls";
 import { digestPassword } from "../security/crypto";
 import {
@@ -350,6 +351,7 @@ async function openingBlockedReason(
       return "TIMED_DRAW_NOT_ENABLED";
     if (
       row.paymentMode === "real" &&
+      !stageBalanceHongbao(env, row.funding) &&
       !allowsRealOpening(env, await readPlatformControls(env))
     )
       return "REAL_LDC_NOT_ENABLED";
@@ -1102,7 +1104,10 @@ export async function openActivity(
     openingExpectation.merchantId !== row.merchantId
   )
     activityConflict("红包的商户已变更，请刷新后重试");
-  const testPermission = permitsRealActivity(row.id, executionPolicy);
+  // Stage's 🐟额红包 open as a test's would (runtime/controls.ts).
+  const testPermission =
+    permitsRealActivity(row.id, executionPolicy) ||
+    stageBalanceHongbao(env, row.funding);
   const publicationMerchant = row.merchantId
     ? await ownedMerchant(env, row.merchantId, authorId)
     : null;

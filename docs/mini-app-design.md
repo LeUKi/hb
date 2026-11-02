@@ -82,4 +82,4 @@ LINUX DO 上的 Discourse 小程序：打包成 ZIP 上传，在论坛的沙箱�
 - **样子**：红包站红包页的那些零件，数据由小程序拼（§4）；数字、标签、结束原因都用红包站自己的 `hongbaoOf`、`publicViewOf`、`mineOf` 算。
 - **上线**：沙箱构建连 Stage。正式发布要过论坛审核，审核过了，分享出去的链接别人才能打开。
 - **本地**：`bun run --cwd apps/mini dev`，替身 SDK 按 `?hb=` 给示例红包（`password`、`direct`、`fish`、`draw`、`code`、`human`、`ended`、`stranger`、`scheduled`，不带就是没有红包），右下角能换示例、深浅和减少动画。
-- **进度（2026-11-02，没提交）**：红包站的三个接口、DO 里的小程序连接、分享里的“论坛小程序”、小程序的红包页都做好了，接口有测试（`apps/api/test/mini-app.test.ts`）。论坛的 JWKS 已经写进 Stage 和正式站的配置（一把 P-256 钥匙，`kid` `217dfe8a…`，核对过就是它 SPKI 的 SHA-256）。还差把这一版部署到 Stage，才能在沙箱里真领。Stage 现在停着 LDC 领取（`LDC_STOP_NEW_CLAIMS`），在沙箱里试领要用 🐟额红包。
+- **进度（2026-11-02，没提交）**：红包站的三个接口、DO 里的小程序连接、分享里的“论坛小程序”、小程序的红包页都做好了，接口有测试（`apps/api/test/mini-app.test.ts`）。论坛的 JWKS 已经写进 Stage 和正式站的配置（一把 P-256 钥匙，`kid` `217dfe8a…`，核对过就是它 SPKI 的 SHA-256）。已部署 Stage（`c110d34`）。Stage 本来什么红包都开放不了（开放和领取要求生产环境加线上网络，`runtime/controls.ts`），🐟额红包也一样；为了在沙箱里真领，用户同意 Stage 上的 🐟额红包能开放、能领（`stageBalanceHongbao`）。🐟额是站内记账，不碰 Credit；Stage 上的 LDC 红包和生产照旧。
