@@ -45,6 +45,7 @@ import {
 } from "../../web/src/components/hongbao/seal-state";
 import { SelfClaimDialog } from "../../web/src/components/hongbao/self-claim-dialog";
 import type { Hongbao } from "../../web/src/components/hongbao/use-hongbao";
+import { BrandMark } from "../../web/src/components/shell/brand-mark";
 import { WindowDialog } from "../../web/src/components/shell/window-dialog";
 import {
   type WindowInfo,
@@ -708,13 +709,25 @@ function Page({
   );
 }
 
-/** Opened without a 红包: how to open one. */
+/**
+ * Opened without a 红包 (the app's own page in the 社区): how to open one,
+ * and 红包站's mark and address at its foot. Its height is set, not the
+ * frame's: the 社区's frame takes the page's (docs/mini-app-design.md §4).
+ */
 function NoHongbao() {
   return (
-    <div className="grid min-h-[60vh] content-center justify-items-center gap-2 px-6 text-center">
-      <p className="text-lg text-ink">请从红包站分享的小程序链接打开红包。</p>
-      <p className="max-w-[26rem] text-sm text-ink-2">
-        在红包站的红包页点「分享」，选「社区小程序」，复制链接发到帖子里，大家点开就能在社区里领。
+    <div className="flex min-h-[24rem] flex-col px-6 pt-10 pb-6 text-center">
+      <div className="grid flex-1 content-center justify-items-center gap-2">
+        <p className="text-lg text-balance text-ink">
+          请从红包站分享的小程序链接打开红包。
+        </p>
+        <p className="max-w-[26rem] text-sm text-balance text-ink-2">
+          在红包站的红包页点「分享」，选「社区小程序」，复制小程序代码贴进帖子，大家在帖子里就能领。
+        </p>
+      </div>
+      <p className="mt-8 flex items-center justify-center gap-2 text-sm font-medium text-ink-2 select-text">
+        <BrandMark size={22} />
+        {new URL(SITE).host}
       </p>
     </div>
   );
