@@ -1,11 +1,19 @@
 // 红包信息 (docs/judge-address-design.md §13.2): what a page's or a
 // service's own server reads of a 红包 — whether it runs, whose it is, its
-// 判定器 and the params everyone sees — in a shape kept as it is, so no
-// server reads the site's own pages' data. Anyone's to read, as the 红包
-// page is; a draft says only that it is one (its params may still change).
-import type { HongbaoInfo } from "@hb/contracts";
+// 判定器, the params everyone sees, its pool and its times — in a shape
+// kept as it is, so no server reads the site's own pages' data. Anyone's to
+// read, as the 红包 page is; a draft says only that it is one (its params
+// may still change).
+import {
+  formatAmount,
+  formatSignedAmount,
+  type HongbaoInfo,
+  type LdcActivityInput,
+  ldcTotalMinor,
+} from "@hb/contracts";
 import { Hono } from "hono";
 import type { ApiBindings, ApiContext } from "../env";
+import { ledgerPool } from "../judge/ledger";
 import { backendJudge } from "../judge/public";
 import { activityNotFound } from "./errors";
 import { activityStatus } from "./service";
@@ -19,11 +27,13 @@ export async function hongbaoInfo(
   if (!row) activityNotFound();
   const status = activityStatus(row);
   if (status === "draft") return { id: row.id, status };
-  const [sender, code] = await Promise.all([
+  const coded = row.participationMode === "code";
+  const [sender, code, left] = await Promise.all([
     env.DB.prepare("SELECT external_id AS id FROM users WHERE id = ?")
       .bind(row.authorId)
       .first<{ id: string }>(),
-    row.participationMode === "code" ? backendJudge(env, row) : null,
+    coded ? backendJudge(env, row) : null,
+    coded ? ledgerPool(env, row.id) : null,
   ]);
   return {
     id: row.id,
@@ -33,6 +43,16 @@ export async function hongbaoInfo(
     judge: code?.judge ?? null,
     fingerprint: code?.fingerprint ?? null,
     params: code?.params ?? {},
+    // A game's own server budgets with these, and binds what it signs to
+    // this 红包 by openedAt, which its judge is given too (§13.7).
+    unit: row.funding === "balance" ? "🐟" : "LDC",
+    pool: formatAmount(
+      ldcTotalMinor(JSON.parse(row.config) as LdcActivityInput),
+    ),
+    unclaimed: left === null ? null : formatSignedAmount(left),
+    openedAt: new Date(row.openedAt ?? 0).toISOString(),
+    deadlineAt:
+      row.deadline === null ? null : new Date(row.deadline).toISOString(),
   };
 }
 

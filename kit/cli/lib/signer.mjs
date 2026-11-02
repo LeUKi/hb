@@ -7,6 +7,7 @@
 
 import { splitParams, TEST_HONGBAO_ID } from "../../runtime/index.mjs";
 import { fingerprintOf } from "./files.mjs";
+import { yuan } from "./words.mjs";
 
 export const base64Url = (bytes) =>
   Buffer.from(bytes)
@@ -74,9 +75,18 @@ export const INFO_PATH = `/api/hongbao/${TEST_HONGBAO_ID}`;
 
 /**
  * 红包信息 as the kit answers it (judge-address §13.2, §13.4): the params
- * everyone sees — all of them once over, as `values` never has a 密钥.
+ * everyone sees — all of them once over, as `values` never has a 密钥 —
+ * and the played 红包's pool and times (§13.7), `hongbao` as the judge is
+ * given it (分, milliseconds) and `unclaimed` in 分.
  */
-export function localInfo({ code, declarations, values, ended }) {
+export function localInfo({
+  code,
+  declarations,
+  values,
+  ended,
+  hongbao,
+  unclaimed,
+}) {
   return {
     id: TEST_HONGBAO_ID,
     status: ended ? "ended" : "active",
@@ -85,6 +95,11 @@ export function localInfo({ code, declarations, values, ended }) {
     judge: { ...LOCAL_JUDGE },
     fingerprint: fingerprintOf(code),
     params: ended ? values : splitParams(declarations, values).shown,
+    unit: "LDC",
+    pool: yuan(hongbao.total),
+    unclaimed: yuan(unclaimed),
+    openedAt: new Date(hongbao.openedAt).toISOString(),
+    deadlineAt: new Date(hongbao.endsAt).toISOString(),
   };
 }
 

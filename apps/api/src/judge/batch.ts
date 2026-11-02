@@ -254,6 +254,8 @@ export async function judgeBatch(
     userId: string;
     message?: string;
     parts: Awaited<ReturnType<typeof ledgerJudgmentStatements>>;
+    /** What only they see once it is judged, for their answer (§4.4). */
+    view: Own["view"];
   }[] = [];
   const written: typeof unwritten = [];
   /** Writes what is judged; false when the database refused it all. */
@@ -487,12 +489,14 @@ export async function judgeBatch(
       networked: network !== null,
     });
     statements.push(...parts.statements);
-    unwritten.push({
+    const judged: (typeof unwritten)[number] = {
       index,
       userId: item.userId,
       ...(read.message ? { message: read.message } : {}),
       parts,
-    });
+      view: null,
+    };
+    unwritten.push(judged);
 
     // What it leaves for the next one judged.
     next += 1;
@@ -519,6 +523,7 @@ export async function judgeBatch(
           theirs.view = move.view.value as Submission["player"]["view"];
       }
     }
+    judged.view = ownOf.get(item.userId)?.view ?? null;
     let othersPaid = false;
     for (const settled of parts.settled) {
       pendingAll -= settled.amount;
@@ -598,6 +603,7 @@ export async function judgeBatch(
                 },
               }
             : {}),
+          view: judged.view,
         },
       };
     }),

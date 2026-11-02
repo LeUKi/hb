@@ -20,6 +20,7 @@ import {
   sha256Text,
   startScenario,
   TEST_HONGBAO_ID,
+  unclaimedOf,
 } from "../../runtime/index.mjs";
 import {
   KitError,
@@ -248,10 +249,11 @@ export async function simulateCommand({
   // Going out: X-Hb-Token signed with a key of this run, its public half
   // published while it runs (docs/judge-address-design.md §12.5).
   const signer = options.live ? await localSigner() : null;
-  // 红包信息 too (judge-address §13.4), once its params are known.
-  let info = null;
+  // 红包信息 too (judge-address §13.4), once its params are known; its
+  // 奖池还剩 as the run has it when asked.
+  let info = () => null;
   const published = signer
-    ? await serveKeys(signer, { info: () => info })
+    ? await serveKeys(signer, { info: () => info() })
     : null;
   const sandbox = await openSandbox(code, {
     live: options.live,
@@ -318,12 +320,15 @@ export async function simulateCommand({
   });
   for (const line of localAddressLines(declarations.params, params.values))
     print(line);
-  info = localInfo({
-    code,
-    declarations: declarations.params,
-    values: params.values,
-    ended: false,
-  });
+  info = () =>
+    localInfo({
+      code,
+      declarations: declarations.params,
+      values: params.values,
+      ended: false,
+      hongbao,
+      unclaimed: unclaimedOf(scenario),
+    });
   if (published && sandbox.tokened.length > 0)
     print(
       `判定器发给 ${sandbox.tokened.join("、")} 的请求带 X-Hb-Token：iss 是 ${published.origin}/judge，公钥在 ${published.origin}/api/page-identity/keys，sender 是 ${SENDER_ID}；红包信息在 ${published.origin}${INFO_PATH}`,

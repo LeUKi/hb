@@ -372,4 +372,30 @@ describe("shared submission cache synchronization", () => {
     expect(cache.getQueryData(key)).toBe(confirmed);
     expect(confirmed?.readAt).toBe(Date.parse("2026-10-10T00:00:30.000Z"));
   });
+
+  it("writes a protocol 5 answer's pending and own view at once, then reads their part again", async () => {
+    const cache = client();
+    cache.setQueryData(key, {
+      ...empty,
+      standing: { pending: "0.10", settled: false, view: { summary: "旧的" } },
+    });
+    await syncParticipationResult(
+      cache,
+      userId,
+      activityId,
+      {
+        result: "judged",
+        moved: { added: "0.20", pending: "0.30" },
+        view: { summary: "挖到绿宝石", data: { cell: 7 } },
+      },
+      () => true,
+    );
+    expect(cache.getQueryData<ParticipationCache>(key)?.standing).toEqual({
+      pending: "0.30",
+      settled: false,
+      view: { summary: "挖到绿宝石", data: { cell: 7 } },
+    });
+    // Others may have moved theirs too: read again behind it.
+    expect(cache.getQueryState(key)?.isInvalidated).toBe(true);
+  });
 });

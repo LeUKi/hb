@@ -342,7 +342,7 @@ export function judge({ input, state, user, hongbao }) {
 
 - `await hb.ready()`：`{ hongbao, viewer, theme }`。`hongbao` 有 `id`、`title`、`status`（`draft`、`active`、`ended`）、`unclaimed`（奖池还剩多少，比如 `"12.50"`）、`judged`、`params`（现在公开的参数，同红包页代码一节列出的；结束后公开的结束后才有，密钥永远没有；只用来显示，后端要用的从红包信息接口读）等；`viewer` 是 `{ signedIn: true, name }` 或 `{ signedIn: false }`，只有昵称。单独打开网页时它会报错。
 - `await hb.view()`：公开数据 `{ summary, data, at }`，没有时 `null`。`hb.on("view" | "hongbao" | "announce" | "me" | "myView", fn)` 订阅变化，返回取消订阅的函数；`announce` 每次一条 `{ n, at, user: { name, avatar }, text }`。
-- `await hb.submit(input)`：替看的人提交一次，同一个红包第一次会先问他（和 `hb.identity()` 一起问）。判定了是 `{ judged: true, claimed, amount, unit, reply, added, pending, settled }`；没判定是 `{ judged: false, reason, seconds, message }`，给玩的人看的话由网页自己写。
+- `await hb.submit(input)`：替看的人提交一次，同一个红包第一次会先问他（和 `hb.identity()` 一起问）。判定了是 `{ judged: true, claimed, amount, unit, reply, added, pending, settled }`，这时 `hb.me()` 和 `hb.myView()` 已经是这次判定之后的，接着读就行；没判定是 `{ judged: false, reason, seconds, message }`，给玩的人看的话由网页自己写。
 - `await hb.fill(text)`：把内容填进指令框，不提交，按提交的是看的人自己；所有红包都能用。
 - `await hb.me()`：看的人自己的情况：能不能参加、冷却到什么时候（`cooldownUntil`）、领到多少、待结算（`pending`）、结算了没有。`await hb.myView()`：判定器写给他自己的数据。`await hb.mine(next)`：他自己的记录，一次 20 条。
 - `hb.now()`：按服务器校准过的当前时间（毫秒），倒计时用它。`await hb.login()`：在看的人点了按钮时请红包页弹出登录卡片。
@@ -439,7 +439,12 @@ export async function claimsOf(request, kind) {
   "sender": "12345",
   "judge": { "id": "…", "version": 4 },
   "fingerprint": "…",
-  "params": { "challenge": "拍一只猫", "tries": 3 }
+  "params": { "challenge": "拍一只猫", "tries": 3 },
+  "unit": "LDC",
+  "pool": "100.00",
+  "unclaimed": "87.50",
+  "openedAt": "2026-11-02T02:30:00.123Z",
+  "deadlineAt": "2026-11-03T02:30:00.123Z"
 }
 ```
 
@@ -447,6 +452,8 @@ export async function claimsOf(request, kind) {
 - `paused`：判定器连续出错 5 次，领取暂停，这时判定器不判。
 - `judge`：判定器和第几版，没有判定器时是 `null`；`fingerprint`：代码指纹（同红包页上的），不是代码判定时是 `null`。
 - `params`：现在公开的参数，同 `hongbao.params`：结束后公开的结束以后才有，密钥永远没有。
+- `unit`（`LDC`，🐟额红包是 `🐟`）、`pool`（总奖池）、`unclaimed`（奖池还剩，第五版以前的红包是 `null`），金额写成 `"100.00"`：后端要按奖池做预算时读这里，不信网页交来的。
+- `openedAt`、`deadlineAt`：开放和截止时间，ISO 8601，精确到毫秒（没有截止时间是 `null`）。`openedAt` 解析成毫秒，就是判定器拿到的 `submission.hongbao.openedAt`：后端签名、交给判定器核对的东西带上它，就绑在了这个红包上，拿到别的红包用不了。
 - 参数开放后就不变了，按红包编号缓存；`status`、`paused` 几十秒读一次就够。读不到时先用上次的；从没读到过就拒绝这一次，回一句“稍后再试”。
 - `status` 不是 `active` 或者 `paused` 时，别再做花钱的事（比如调 AI）：判定器这时不判，做了也白做。已经存下的结果照样能查。
 
@@ -685,6 +692,7 @@ async function rate(env, photo, challenge) {
 - **别联网**：联网的判定一个一个判，每次最多等 15 秒，人多会排队；不联网的判定能好几个一起判。
 - **`view` 只在公开内容真的变了时写**：写一次就推给所有在看的人、网页重画一次。
 - **`announce` 只写值得看的事**（踩雷、大奖、结束），不要每次都写。
+- **等自己的结果时，别人的变化照常显示**：从提交到结果回来、再到放完自己的动画，只压住自己点的那一处，别的照常按推送更新；换一整块（换卡、换一轮）才等自己的动画放完。整块画面停住的话，人多时这几秒攒下的变化会一下子跳出来，看起来就像卡住了。红包站这边一次判定从收到到写完一般不到半秒，推送最快每 0.3 秒一次；玩的人觉得慢，多半是网页自己在等。
 - `state` 只存要用的，别把每次的输入都存进去。
 - 抽奖类防反复刷：`tools.random` 每次提交都不一样，玩家可以一直提交直到抽到好的。要么限次数，要么用 `tools.userRandom`（同一个人固定一个结果）。
 

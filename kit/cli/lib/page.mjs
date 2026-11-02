@@ -301,7 +301,7 @@ async function openGame({ sandbox, plan, params, hostUrl, cooldown }) {
     );
   };
 
-  game.submit = async (who, input) => {
+  const submitNow = async (who, input) => {
     if (who === GUEST)
       return {
         result: { judged: false, reason: "login" },
@@ -394,6 +394,15 @@ async function openGame({ sandbox, plan, params, hostUrl, cooldown }) {
       line: lines.join("\n"),
       logs: "answer" in judged ? (judged.answer.logs ?? []) : [],
     };
+  };
+  // One at a time, as the site judges a 红包's submissions: two at once both
+  // started from the same state, and the later one's write lost the other's
+  // (2026-11-02, two players digging at once).
+  let line = Promise.resolve();
+  game.submit = (who, input) => {
+    const turn = line.then(() => submitNow(who, input));
+    line = turn.catch(() => {});
+    return turn;
   };
 
   /**
@@ -660,6 +669,8 @@ export async function startPage({
             declarations: sandbox.declarations.params,
             values: params.values,
             ended: game.state().hongbao.status === "ended",
+            hongbao: plan.hongbao,
+            unclaimed: unclaimedOf(game.scenario),
           }),
           200,
           { "access-control-allow-origin": "*" },

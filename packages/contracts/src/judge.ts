@@ -953,4 +953,19 @@ export type HongbaoInfo =
       fingerprint: string | null;
       /** Those everyone sees now (结束后公开 once over); never a 密钥. */
       params: Record<string, unknown>;
+      /**
+       * Its money (§13.7, 2026-11-02): "LDC", or "🐟" for a 🐟额红包; the
+       * whole pool, as "100.00"; and from protocol 5 奖池还剩 (the pool
+       * less what was paid and everyone's 待结算), null before it.
+       */
+      unit: "LDC" | "🐟";
+      pool: string;
+      unclaimed: string | null;
+      /**
+       * When it opened and when it ends (null: no deadline), ISO 8601 to the
+       * millisecond: the judge's submission.hongbao.openedAt and endsAt,
+       * parsed back.
+       */
+      openedAt: string;
+      deadlineAt: string | null;
     };

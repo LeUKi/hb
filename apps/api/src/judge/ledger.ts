@@ -109,17 +109,22 @@ export async function ownStanding(
   return {
     pending: formatSignedAmount(row.pending),
     settled: row.settledAt !== null,
-    view:
-      row.ownView === null
-        ? null
-        : (JSON.parse(
-            await decryptString(
-              row.ownView,
-              env,
-              ownData(activityId, userId, "view"),
-            ),
-          ) as { summary?: string; data?: unknown }),
+    view: await ownViewOf(env, activityId, userId, row.ownView),
   };
+}
+
+/** What only they see (player.view), from its stored cipher; null for none. */
+async function ownViewOf(
+  env: ApiBindings,
+  activityId: string,
+  userId: string,
+  cipher: string | null,
+) {
+  return cipher === null
+    ? null
+    : (JSON.parse(
+        await decryptString(cipher, env, ownData(activityId, userId, "view")),
+      ) as { summary?: string; data?: unknown });
 }
 
 /** Decrypted once per isolate: a settled person's input never changes. */
@@ -437,14 +442,15 @@ export async function judgedResult(
   userId: string,
 ): Promise<Extract<ClaimResult, { result: "judged" }>> {
   const row =
-    await env.DB.prepare(`SELECT j.message, m.add_minor AS added, m.before_minor AS before, m.after_minor AS after,
-      m.settles, p.settled_at AS settledAt, p.claim_id AS claimId, p.settled_minor AS settled,
+    await env.DB.prepare(`SELECT j.activity_id AS activityId, j.message, m.add_minor AS added, m.before_minor AS before, m.after_minor AS after,
+      m.settles, p.settled_at AS settledAt, p.claim_id AS claimId, p.settled_minor AS settled, p.own_view_ciphertext AS ownView,
       (SELECT MAX(sequence) FROM code_judgments WHERE activity_id = j.activity_id AND user_id = j.user_id) = j.sequence AS latest
     FROM code_judgments j JOIN code_judgment_moves m ON m.submission_row_id = j.submission_row_id AND m.position = 0
     JOIN code_judge_people p ON p.activity_id = j.activity_id AND p.user_id = j.user_id
     WHERE j.submission_row_id = ?`)
       .bind(submissionRowId)
       .first<{
+        activityId: string;
         message: string | null;
         added: number;
         before: number;
@@ -453,6 +459,7 @@ export async function judgedResult(
         settledAt: number | null;
         claimId: string | null;
         settled: number | null;
+        ownView: string | null;
         latest: number;
       }>();
   if (!row) throw new Error("A protocol 5 judgment has no move");
@@ -475,6 +482,7 @@ export async function judgedResult(
           },
         }
       : {}),
+    view: await ownViewOf(env, row.activityId, userId, row.ownView),
   };
 }
 

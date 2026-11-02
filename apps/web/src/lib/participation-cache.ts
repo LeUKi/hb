@@ -101,8 +101,9 @@ function sameKey(left: readonly unknown[], right: readonly unknown[]) {
 }
 
 /**
- * 代码判定, protocol 5 (docs/multi-prize-design.md §4.1): a judgment's 待结算
- * and settlement show at once; what only they see comes with the reread.
+ * 代码判定, protocol 5 (docs/multi-prize-design.md §4.1): a judgment's 待结算,
+ * settlement and what only they see show at once, before the 附带网页 hears
+ * its answer (§4.4); the reread still follows, for what others moved.
  */
 async function syncStanding(
   client: QueryClient,
@@ -123,7 +124,11 @@ async function syncStanding(
       standing: {
         pending: result.settled ? "0.00" : result.moved.pending,
         settled: Boolean(result.settled),
-        view: previous.standing?.view ?? null,
+        // An answer from before it carried one: the reread brings it.
+        view:
+          result.view === undefined
+            ? (previous.standing?.view ?? null)
+            : result.view,
       },
     });
   if (claim) client.setQueryData(claimDetailKey(userId, claim.id), { claim });

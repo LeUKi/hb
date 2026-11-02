@@ -120,6 +120,7 @@ describe("能赢好几次 (protocol 5)", () => {
       result: "judged",
       message: "加了",
       moved: { added: "0.30", pending: "0.30" },
+      view: { summary: "我加了 30" },
     });
     expect(await submit(opened.id, player, "take 50")).toMatchObject({
       moved: { added: "-0.30", pending: "0.00" },
@@ -155,6 +156,15 @@ describe("能赢好几次 (protocol 5)", () => {
     const page = await getPublicActivity(bindings, opened.id);
     expect(page.quantity).toEqual({ mode: "pool", left: "0.80" });
     expect(page.judge?.unclaimed).toBe("0.80");
+    // 红包信息 tells a game's own server the same (judge-address §13.7).
+    const info = await (
+      await app.request(`${origin}/api/hongbao/${opened.id}`, {}, bindings)
+    ).json();
+    expect(info).toMatchObject({
+      unit: page.funding === "balance" ? "🐟" : "LDC",
+      pool: page.reward?.totalAmount,
+      unclaimed: "0.80",
+    });
     // Settled: their pending, once, into their 🐟额.
     expect(await submit(opened.id, player, "cash")).toMatchObject({
       result: "judged",

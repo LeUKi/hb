@@ -9,6 +9,7 @@ import {
   getPublicActivity,
   openActivity,
 } from "../src/activities/service";
+import { findActivity } from "../src/activities/storage";
 import { app } from "../src/app";
 import { updateMyJudge } from "../src/judge/judges";
 import { judgeRecords } from "../src/judge/records";
@@ -210,7 +211,8 @@ describe("判定器's params as it opens", () => {
       author.id,
       saved.version,
     );
-    const by = (await getPublicActivity(bindings, opened.id)).judge;
+    const shown = await getPublicActivity(bindings, opened.id);
+    const by = shown.judge;
     const running = await read(opened.id);
     expect(running.body).toEqual({
       id: opened.id,
@@ -220,7 +222,18 @@ describe("判定器's params as it opens", () => {
       judge: { id: by?.judge?.id, version: 1 },
       fingerprint: by?.fingerprint,
       params: { max: 100 },
+      // Its money and times (§13.7), as the 红包 page shows them: a 🐟额红包,
+      // nobody judged yet, so all of it still unclaimed.
+      unit: "🐟",
+      pool: "1.00",
+      unclaimed: "1.00",
+      openedAt: shown.openedAt,
+      deadlineAt: shown.deadlineAt,
     });
+    // To the millisecond, as its judge is given them.
+    expect(Date.parse(String(running.body.openedAt))).toBe(
+      (await findActivity(env, opened.id))?.openedAt,
+    );
     await env.DB.prepare("UPDATE activities SET deadline = ? WHERE id = ?")
       .bind(Date.now() - 1000, opened.id)
       .run();

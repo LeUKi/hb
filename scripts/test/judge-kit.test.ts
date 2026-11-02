@@ -1729,6 +1729,13 @@ describe("附带网页", () => {
         judge: { id: "test", version: 0 },
         fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
         params: expect.any(Object),
+        // Its pool and times (§13.7): simulate.json's 红包, nobody won, and
+        // the default clock (12:00 Beijing time, opened an hour before).
+        unit: "LDC",
+        pool: "30.00",
+        unclaimed: "30.00",
+        openedAt: "2026-10-24T03:00:00.000Z",
+        deadlineAt: "2026-10-25T04:00:00.000Z",
       });
       expect(
         (
@@ -1738,6 +1745,39 @@ describe("附带网页", () => {
           })
         ).status,
       ).toBe(400);
+    } finally {
+      await page.close();
+    }
+  }, 40_000);
+
+  // 2026-11-02: two players at once both started from the same state, and
+  // the later write lost the other's (a dig gone from 矿洞夺宝's board).
+  it("npm run page: two submissions at once are judged one after the other, as on the site", async () => {
+    const page = await startPage({
+      root: join(kitDir, "examples/number-bomb"),
+      port: 0,
+      cooldown: 0,
+      print: () => {},
+    });
+    try {
+      const submit = async (who: string, input: string) =>
+        (
+          await fetch(`${page.hostUrl}/api/submit`, {
+            method: "POST",
+            body: JSON.stringify({ who, input }),
+          })
+        ).json();
+      const together = await Promise.all([
+        submit("小明", "60"),
+        submit("小红", "60"),
+      ]);
+      // The second sees the first's guess: never both safe at 60.
+      expect(
+        together.filter((answer) => answer.result.reply?.startsWith("安全"))
+          .length,
+      ).toBeLessThanOrEqual(1);
+      const state = await (await fetch(`${page.hostUrl}/api/state`)).json();
+      expect(state.hongbao.judged).toBe(2);
     } finally {
       await page.close();
     }

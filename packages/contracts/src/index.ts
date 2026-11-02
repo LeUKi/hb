@@ -1176,13 +1176,16 @@ export type ClaimResult = (
    * 代码判定, protocol 5 (docs/multi-prize-design.md §4.1): judged — its
    * reply, what it moved (signed, as added) and the pending after; and
    * `settled` when this judgment settled them: the claim when it paid,
-   * null for nothing (结算 0).
+   * null for nothing (结算 0). `view`: what only they see after it, as
+   * MyStanding's, so the page has it without reading their part again
+   * (§4.4).
    */
   | {
       result: "judged";
       message?: string;
       moved: { added: string; pending: string };
       settled?: { claim: ClaimDetail | null };
+      view: MyStanding["view"];
     }
 ) & { attemptCooldown?: AttemptCooldown; passwordMatched?: boolean | null };
 export type ClaimList = { items: ClaimSummary[]; nextCursor: string | null };

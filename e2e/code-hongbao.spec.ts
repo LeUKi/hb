@@ -149,6 +149,8 @@ type CodeState = {
   judgmentReads: (string | null)[];
   /** While set, reads of 我的记录 wait for it. */
   holdJudgments?: Promise<void>;
+  /** While set, reads of their own part wait for it. */
+  holdParticipation?: Promise<void>;
   /** 参与名单 · 挑战: everyone judged, the latest first. */
   challengers: JudgeChallenger[];
   /** 动态 (protocol 4): every line, newest first; the cursors read. */
@@ -220,6 +222,7 @@ async function mockCodeHongbao(page: Page, judgments: MyJudgment[] = []) {
     }
     if (rest === "/participation") {
       state.reads.participation += 1;
+      if (state.holdParticipation) await state.holdParticipation;
       return route.fulfill({
         json: {
           claim: state.claim,
@@ -321,6 +324,7 @@ async function mockCodeHongbao(page: Page, judgments: MyJudgment[] = []) {
             result: "judged",
             message: "抽到一张",
             moved,
+            view: state.standing.view,
             attemptCooldown,
           } satisfies ClaimResult,
         });
@@ -3938,6 +3942,8 @@ test.describe("附带网页 SDK（judge-page §3、§11.8）", () => {
     submit(input: string): Promise<Record<string, unknown>>;
     mine(next?: string | null): Promise<unknown>;
     identity(options?: { nonce?: string }): Promise<unknown>;
+    me(): Promise<unknown>;
+    myView(): Promise<unknown>;
   };
   type GameWindow = { hb: Hb; heard?: [string, unknown][] };
 
@@ -4035,6 +4041,45 @@ test.describe("附带网页 SDK（judge-page §3、§11.8）", () => {
       () => (window as unknown as { answer?: unknown }).answer !== undefined,
     );
     expect(signed).toBe(1);
+  });
+
+  // multi-prize §4.4: a page that redraws from hb.myView() as soon as its
+  // answer is in (矿洞夺宝, 2026-11-02) waited a read for its own result.
+  test("第五版：hb.submit() 回来时，hb.myView() 和 hb.me() 已经是这次判定之后的，不等重读自己的那部分", async ({
+    page,
+  }) => {
+    const { state } = await mockGame(page);
+    state.activity = {
+      ...state.activity,
+      quantity: { mode: "pool", left: "1.00" },
+      reward: { mode: "code", totalAmount: "1.00" },
+    };
+    state.judge = { ...state.judge, protocol: 5, unclaimed: "1.00" };
+    await page.addInitScript(
+      ([key]) => localStorage.setItem("hb.page-submit", JSON.stringify([key])),
+      [`${viewer.id} ${id} https://game.example.com`],
+    );
+    await openApp(page, path);
+    const frame = await openGame(page);
+    let letRead = () => {};
+    state.holdParticipation = new Promise<void>((resolve) => {
+      letRead = resolve;
+    });
+    const seen = await frame.evaluate(async () => {
+      const { hb } = window as unknown as GameWindow;
+      const answer = await hb.submit("再抽");
+      return { answer, myView: await hb.myView(), me: await hb.me() };
+    });
+    letRead();
+    state.holdParticipation = undefined;
+    expect(seen.answer).toMatchObject({
+      judged: true,
+      added: "0.20",
+      pending: "0.20",
+      settled: false,
+    });
+    expect(seen.myView).toEqual({ summary: "抽了 1 张牌", data: null });
+    expect(seen.me).toMatchObject({ pending: "0.20", settled: false });
   });
 
   test("hb.ready() 给红包的公开信息和看的人的昵称；第一次提交先问，允许以后拿到结果，判定中的那一行在页面上的我的记录最上面；冷却中给秒数，之后不再问；hb.mine() 读自己的提交", async ({

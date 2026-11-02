@@ -70,6 +70,7 @@ if (result.judged) {
   // added：这次加减了多少（"0.50"、"-0.20"）；pending：之后的待结算
   // settled：这次结算了他（之后不能再提交）
   // reply：判定器的回复（没有就不带）
+  // 这时 hb.me()、hb.myView() 已经是这次判定之后的
   say(
     result.claimed
       ? \`领到 \${result.amount} \${result.unit}\`
@@ -207,7 +208,7 @@ const aiPrompt = (
    - await hb.ready() 返回 { hongbao, viewer, theme }：hongbao 有 id、title、url、code、status（draft、active、ended）、endedByCode、unit（LDC 或 🐟）、shares（{ total, claimed, remaining } 或 null，代码判定红包没有份数，是 null）、pool、unclaimed（代码判定红包的奖池还剩多少，别的红包 null）、deadlineAt、judged、params（代码判定红包现在公开的参数，同红包页代码一节列出的；结束后公开的结束后才有，密钥永远没有；没有参数是 {}）；viewer 是 { signedIn: true, name } 或 { signedIn: false }。单独打开网页时它会报错，照常显示一段说明即可。
    - await hb.view() 是判定器的公开数据 { summary, data, at }，没有时 null；hb.on("view" | "hongbao" | "announce", fn) 订阅变化，返回取消订阅的函数；announce 每次一条 { n, at, user: { name, avatar }, text }。
    - await hb.fill(text) 把内容填进这个红包的指令框，不提交，所有红包都能用。填好是 { filled: true }，没填是 { filled: false, reason, message }；reason 有 ${fillReasons.map(([name]) => name).join("、")}。
-   - 代码判定红包才能用 await hb.submit(input)：替看的人提交一次，同一个红包第一次会先问他。判定了是 { judged: true, claimed, amount, unit, reply, added, pending, settled }（added 这次加减了多少，pending 之后的待结算，settled 这次结算了他），没判定是 { judged: false, reason, seconds, message }；reason 有 ${reasons.map(([name]) => name).join("、")}。给玩的人看的提示由网页自己写。
+   - 代码判定红包才能用 await hb.submit(input)：替看的人提交一次，同一个红包第一次会先问他。判定了是 { judged: true, claimed, amount, unit, reply, added, pending, settled }（added 这次加减了多少，pending 之后的待结算，settled 这次结算了他），这时 hb.me() 和 hb.myView() 已经是这次判定之后的；没判定是 { judged: false, reason, seconds, message }；reason 有 ${reasons.map(([name]) => name).join("、")}。给玩的人看的提示由网页自己写。
    - await hb.me() 是看的人自己的情况：没登录 { signedIn: false }；登录了 { signedIn: true, name, open, why, cooldownUntil, claim, registered, pending, settled }（open 能不能参加，why 不能的原因，cooldownUntil 冷却到什么时候，claim 领到的 { amount, unit, payment }，pending 他的待结算，settled 结算了没有）；hb.on("me", fn) 订阅变化。await hb.myView() 是判定器写给他自己的数据 { summary, data }，没有时 null，hb.on("myView", fn) 订阅变化。hb.now() 是按服务器校准过的当前时间（毫秒）。hb.login() 请红包页弹出登录卡片，要在看的人点按钮时调用。
    - await hb.identity({ nonce }) 拿一个红包站签名的身份令牌（所有带附带网页的红包都能用；同一个红包第一次会先问他，代码判定红包和替你提交一起问）：拿到了是 { identified: true, token, expiresAt, user: { id, username, name, level } }，没拿到是 { identified: false, reason, message }；reason 有 ${identityReasons.map(([name]) => name).join("、")}。user 只用来先显示，后端只信 token。
    - await hb.mine(next) 读他自己的记录 { total, items: [{ n, at, input, claimed, amount, reply, added, pending, settled, by }], next }，没登录时 null；别人的判定通过 others 改到他的那条带 by（那个人的昵称），没有 input。
@@ -218,7 +219,7 @@ const aiPrompt = (
    - 令牌放在内存里，用 Authorization: Bearer 请求头发给后端，不放进本地存储、网址和日志；过期（10 分钟）了再调一次 hb.identity()，不会再问他。
    - 后端用 jose 验：公钥 ${origin}/api/page-identity/keys（createRemoteJWKSet），算法 ES256，issuer ${origin}，audience 是网页自己的来源，clockTolerance 30 秒；再核对 payload.hongbao 是自己认的红包、payload.nonce 是刚发的并且只用一次。payload.sender 是发这个红包的人的 LINUX DO 数字 ID：发红包的人自己部署的服务只认它主人的红包时核对它；payload.judge、payload.judgeVersion 是代码判定红包的判定器编号和第几版：大家共用的后端只给自己的判定器用时核对它。判定器联网发来的请求不带这个令牌，带的是 X-Hb-Token（issuer ${origin}/judge，同一把公钥，见 ${origin}/help/code 的联网）。
    - 用 payload.sub（LINUX DO 数字 ID，和判定器的 submission.user.id 是同一个数）认人，不用用户名；数据按“红包编号 + 用户 ID”存。后端的跨域只放行网页自己的来源。
-   - 后端要红包的情况和玩法参数时，读红包信息 ${origin}/api/hongbao/<红包编号>：{ id, status（active、ended；草稿只有 { id, status: "draft" }）, paused, sender, judge（{ id, version } 或 null）, fingerprint, params（现在公开的参数）}，谁都能读；参数开放后不变，可以缓存，状态几十秒读一次。别信网页交来的参数，也别用本站别的接口（结构会改）。本地模拟器在它自己的 /api/hongbao/test 答。
+   - 后端要红包的情况和玩法参数时，读红包信息 ${origin}/api/hongbao/<红包编号>：{ id, status（active、ended；草稿只有 { id, status: "draft" }）, paused, sender, judge（{ id, version } 或 null）, fingerprint, params（现在公开的参数）, unit（LDC 或 🐟）, pool（总奖池）, unclaimed（奖池还剩，第五版以前是 null）, openedAt, deadlineAt（ISO，精确到毫秒；openedAt 就是判定器拿到的 submission.hongbao.openedAt）}，谁都能读；参数开放后不变，可以缓存，状态几十秒读一次。别信网页交来的参数，也别用本站别的接口（结构会改）。本地模拟器在它自己的 /api/hongbao/test 答。
    - 本地 npm run page 的模拟器签的令牌 iss 是模拟器的地址，上线后的后端只认 ${origin}。
    - 钱只经过判定器：后端算出的结果要由判定器联网核对才算数；令牌不能用来替他提交。
 9. 还没有网站：把网页放到静态托管上就行。Cloudflare Workers、GitHub Pages、Netlify、Vercel 的默认域名都能直接嵌进红包页；Vercel 只用正式部署（预览部署默认要登录才能看）。Cloudflare Drop 拖上去还没认领的页面会先弹安全验证，嵌不进来，要先认领。
@@ -380,7 +381,10 @@ export function HelpPageView() {
             ；草稿只有这一项）、<Code>paused</Code>（领取暂停）、
             <Code>sender</Code>、<Code>judge</Code>（判定器和第几版）、
             <Code>fingerprint</Code>、<Code>params</Code>
-            （现在公开的参数）。参数开放后不变，可以缓存。别信网页交来的参数，也别用本站别的接口，它们的结构会改。
+            （现在公开的参数）、<Code>unit</Code>、<Code>pool</Code>
+            （总奖池）、<Code>unclaimed</Code>（奖池还剩）、
+            <Code>openedAt</Code>、<Code>deadlineAt</Code>
+            （开放和截止时间）。参数开放后不变，可以缓存。别信网页交来的参数，也别用本站别的接口，它们的结构会改。
           </p>
         </Panel>
       </PageSection>

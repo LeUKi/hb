@@ -285,7 +285,12 @@ hongbao.params.server; // https://a.workers.dev/，共用的网页拿它决定�
   "sender": "12345",
   "judge": { "id": "…", "version": 4 },
   "fingerprint": "…",
-  "params": { "challenge": "拍一只猫", "tries": 3 }
+  "params": { "challenge": "拍一只猫", "tries": 3 },
+  "unit": "LDC",
+  "pool": "100.00",
+  "unclaimed": "87.50",
+  "openedAt": "2026-11-02T02:30:00.123Z",
+  "deadlineAt": "2026-11-03T02:30:00.123Z"
 }
 ```
 
@@ -293,6 +298,8 @@ hongbao.params.server; // https://a.workers.dev/，共用的网页拿它决定�
 - `paused`：判定器连续出错 5 次，领取暂停；只在 `active` 时可能是 `true`。
 - `judge`：没有判定器时是 `null`；`fingerprint`：代码指纹，不是代码判定时是 `null`。
 - `params`：现在公开的参数，同 SDK 的 `hongbao.params`：普通参数；`revealAtEnd` 的结束以后才有；密钥永远没有；不是代码判定时是 `{}`。
+- `unit`：`LDC`，🐟额红包是 `🐟`；`pool`：总奖池；`unclaimed`：奖池还剩（第五版起：总奖池减去已经结算的和大家的待结算），第五版以前是 `null`。金额同 SDK，写成 `"100.00"`。
+- `openedAt`、`deadlineAt`：开放和截止时间，ISO 8601，精确到毫秒，和判定器拿到的 `submission.hongbao.openedAt`、`endsAt` 是同一个时刻；没有截止时间时 `deadlineAt` 是 `null`。（13.7）
 - 草稿：`{ "id": "…", "status": "draft" }`，参数还会改，不答。没有这个红包（或删掉了）：404。
 
 参数不放进令牌：整份参数最大 16 KB，签进令牌放在请求头里能到 20 多 KB，超过 Node 默认的请求头上限（16 KB）和 nginx 的每行上限（8 KB），有的后端会直接拒；草稿的参数还会变。参数开放时就锁住了，后端按红包编号缓存到结束就行；`status`、`paused` 几十秒读一次。
@@ -326,3 +333,12 @@ hongbao.params.server; // https://a.workers.dev/，共用的网页拿它决定�
 - **令牌**：两处签名共用 `judgeClaims`（`page-identity.ts`），网页的令牌多读一次 `activity_code` 的 `judge_id`、`judge_version`（和读发红包的人在同一条查询里）。
 - **开发包**：`signer.mjs` 的 `localInfo` 按模拟器的状态答红包信息，模拟器和 `serveKeys` 都在 `/api/hongbao/test` 答；`npm run simulate -- --live` 开头那行加上红包信息的地址。实测：本地起一个服务，判定器带 `X-Hb-Token` 去问它，它按令牌的 `iss` 读红包信息，读到 `active` 和公开的参数（结束后公开的那项不在里面），令牌里 `judge` 是 `test`、`judgeVersion` 是 0。
 - **文档**：拍照挑战的例子加了参数“每人能传几次”；网页上传时只传照片，服务从红包信息读挑战和次数、看 `status` 和 `paused`、按人计次数（写明 KV 不保证马上一致，要严格用 Durable Object）；判定器不再核对挑战（结果绑了红包编号，一个红包的参数开放后不变）。打分的 `rate()` 只留了函数头：模型和提示词是玩法自己的。“常见错误”加一条“后端读红包站别的接口、信网页交来的参数”。
+
+### 13.7 红包的钱和时间（2026-11-02）
+
+新版矿洞夺宝把游戏放在自己的服务上：服务记每个人的分，玩的人收手、机会用完或者奖池分完时，服务签一张凭证，网页交给判定器，判定器验签后一次加上并结算。钱仍然只在领取那一下经判定器动，没领的分在红包结束时作废。为此服务要两样它以前读不到的东西：
+
+- 可信的总奖池，用来做预算：网页的 `hb.ready()` 是玩家自己的，能改；按它做预算，有人报大了，前面的人能把奖池领空。
+- 把凭证绑在这个红包上：同一个判定器、同一把签名钥匙，别的红包里签的凭证能拿来领。判定器不知道自己的红包编号，但知道开放时间（毫秒）；服务从红包信息读到同一个开放时间，写进凭证，判定器核对。
+
+所以红包信息加了 `unit`、`pool`、`unclaimed`、`openedAt`、`deadlineAt`（写法见 13.2）。只是把红包站本来就有的读出来，不是新机制；另一个办法（判定器加一个“游戏预算”参数，用 `check()` 要求它等于总奖池）要发红包的人把金额填两遍，没用。开发包的模拟器和 `npm run simulate -- --live` 照样答这几项：`pool` 和时间取 `simulate.json` 的红包，`unclaimed` 跟着模拟的进度。

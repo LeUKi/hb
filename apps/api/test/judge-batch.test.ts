@@ -28,7 +28,7 @@ const GAME = `export function judge(s) {
   const n = Number(arg ?? 0);
   if (verb === "boom") throw new Error("炸了");
   if (verb === "add")
-    return { add: n, state: { last: s.user.username, count: (s.state?.count ?? 0) + 1 } };
+    return { add: n, player: { view: { summary: "加了 " + n } }, state: { last: s.user.username, count: (s.state?.count ?? 0) + 1 } };
   if (verb === "seat") {
     const waiting = s.state?.waiting;
     if (!waiting) return { add: n, state: { waiting: s.user.id } };
@@ -110,9 +110,14 @@ describe("一批一起写", () => {
       [fourth, "add 7"],
     ]);
     const outcomes = await judgeBatch(bindings, opened.id, items);
+    // Each answer has what only they see after it (multi-prize §4.4).
     expect(outcomes).toEqual([
       {
-        result: { result: "judged", moved: { added: "0.10", pending: "0.10" } },
+        result: {
+          result: "judged",
+          moved: { added: "0.10", pending: "0.10" },
+          view: null,
+        },
       },
       {
         error: expect.objectContaining({ code: "JUDGE_FAILED" }),
@@ -122,10 +127,15 @@ describe("一批一起写", () => {
           result: "judged",
           moved: { added: "0.20", pending: "0.20" },
           settled: { claim: expect.objectContaining({ amount: "0.20" }) },
+          view: null,
         },
       },
       {
-        result: { result: "judged", moved: { added: "0.07", pending: "0.07" } },
+        result: {
+          result: "judged",
+          moved: { added: "0.07", pending: "0.07" },
+          view: { summary: "加了 7" },
+        },
       },
     ]);
     // The first, by the second's judgment in the same batch: 0.10 + 0.05.

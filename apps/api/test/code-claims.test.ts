@@ -167,6 +167,7 @@ describe("代码判定红包: claims", () => {
       result: "judged",
       message: "不对",
       moved: { added: "0.00", pending: "0.00" },
+      view: null,
     });
     const claimed = await submit(opened.id, claimant, "flag{ok}");
     expect(claimed).toMatchObject({
