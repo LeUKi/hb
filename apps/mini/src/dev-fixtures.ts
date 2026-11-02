@@ -66,6 +66,7 @@ const ids = {
   scheduled: "11111111-2222-4333-8444-555555555509",
   self: "11111111-2222-4333-8444-555555555511",
   preview: "11111111-2222-4333-8444-555555555512",
+  long: "11111111-2222-4333-8444-555555555513",
 } as const;
 
 export type CaseName = keyof typeof ids;
@@ -309,6 +310,31 @@ export function caseOf(name: string): Case | null {
           lookOnly: false,
         },
         claim: () => ({ result: "claimed", claim: claimOf(activity, "8.80") }),
+      };
+    }
+    case "long": {
+      // A long title and a 说明 longer than the cover keeps: it gives way.
+      const activity = hongbao(ids.long, {
+        title: "周末红包：解开三道谜题的人都有份，第四道谜题的口令在说明最后",
+        beforeInfo: [
+          "第一道：去社区首页找到置顶帖里那张图，图里藏着第一个词。",
+          "第二道：把第一个词倒过来念，再加上今天的日期。",
+          "第三道：去帖子里第 42 楼，看那位的签名档。",
+          "第四道：前三道的答案连起来，就是口令的前半段。",
+          "后半段在红包站的说明笺里，自己找找看。",
+          "提示：口令一共八个字，没有空格。",
+          "祝大家周末愉快！",
+        ].join("\n"),
+      });
+      return {
+        read: {
+          activity,
+          participation: none,
+          known: true,
+          author: false,
+          lookOnly: false,
+        },
+        claim: () => ({ result: "incorrect" }),
       };
     }
     case "preview":

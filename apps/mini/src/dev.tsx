@@ -1,7 +1,7 @@
 // Local only (`vite`, index.html): a stand-in for the forum's SDK, which its
 // own preview does not provide, answering for the sample 红包 in
 // dev-fixtures.ts (`?hb=password`, `direct`, `fish`, `draw`, `code`,
-// `human`, `ended`, `stranger`, `taken`, `scheduled`, `self`, `preview`;
+// `human`, `ended`, `stranger`, `taken`, `scheduled`, `self`, `preview`, `long`;
 // none: no 红包), and a bar to switch what the forum would — light or dark,
 // reduced motion. Never in app.js.
 import type { MiniClaimInput, MiniLiveMessage } from "@hb/contracts";

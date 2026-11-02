@@ -157,8 +157,8 @@ function CopyLink({
   }, [state]);
   return (
     <Squircle radius={radius.card}>
-      <div className="hb-note-card mt-2 grid w-full max-w-[26rem] gap-2.5 px-4 py-3 text-left">
-        <p className="text-base text-ink">{children}</p>
+      <div className="hb-note-card mt-2 grid w-full max-w-[36rem] gap-2.5 px-4 py-3 text-left">
+        <p className="text-sm text-ink">{children}</p>
         {/* Not copied (the forum asks first): the link to select by hand. */}
         {state === "failed" && (
           <p className="text-sm break-all text-ink-2 select-all">{url}</p>
@@ -663,7 +663,7 @@ function Page({
 
   return (
     <div
-      className="relative flex flex-col pb-14 [overflow-anchor:none]"
+      className="relative flex flex-col pb-4 [overflow-anchor:none]"
       data-phase={seal.phase}
     >
       <LiveViewers activityId={id} running={!view.ended} />
