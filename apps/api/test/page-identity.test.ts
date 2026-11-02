@@ -143,6 +143,8 @@ describe("附带网页认人", () => {
       nonce: "abc12345-xyz",
       jti: expect.any(String),
     });
+    // Not 代码判定: no 判定器 to name (judge-address §13.1).
+    expect(claims).not.toHaveProperty("judge");
     expect(claims.exp - claims.iat).toBe(600);
     expect(Date.parse(String(answer.body.expiresAt))).toBe(claims.exp * 1000);
     // Tampered, it no longer checks.

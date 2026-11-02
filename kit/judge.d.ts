@@ -439,7 +439,7 @@ export type Setup = (
  * 不带端口、? 和 #，不能是 IP 地址、linux.do 和本站。也能写 { param: "server" }：
  * 发红包的人在地址参数 server 填的地址，开放时定下。发给它的请求带红包站签的
  * X-Hb-Token（JWT：iss 是 https://hb.lafi.sh/judge，aud 是对方的来源，hongbao、
- * sender），对方验它就知道请求来自哪个红包、谁发的；你自己的后端也要它，就写成
+ * sender、judge、judgeVersion），对方验它就知道请求来自哪个红包、谁发的、哪个判定器；你自己的后端也要它，就写成
  * { url: "https://你的后端/", token: true }。写成字符串的地址不带。
  * 判定里直接用 fetch()：每次判定最多 3 个请求，只许 GET 和 POST，请求体最大 16 KB，
  * 单个请求 10 秒、返回最大 64 KB，不跟随跳转；不行时 fetch() 抛 TypeError（“联网失败：…”）。

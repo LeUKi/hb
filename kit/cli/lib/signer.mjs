@@ -2,7 +2,11 @@
 // design.md §12.5): a P-256 key made for this run, signing as the site does
 // (ES256 JWT) — the page's hb.identity() tokens here, the X-Hb-Token on a
 // judgment's requests in the gateway (gateway.mjs, with `key`); its public
-// half is published at /api/page-identity/keys.
+// half is published at /api/page-identity/keys, and 红包信息 (§13.4) at
+// /api/hongbao/test.
+
+import { splitParams, TEST_HONGBAO_ID } from "../../runtime/index.mjs";
+import { fingerprintOf } from "./files.mjs";
 
 export const base64Url = (bytes) =>
   Buffer.from(bytes)
@@ -38,6 +42,8 @@ export async function localSigner() {
         level: user.level,
         hongbao,
         sender,
+        judge: LOCAL_JUDGE.id,
+        judgeVersion: LOCAL_JUDGE.version,
         iat: issuedAt,
         exp: expires,
         jti: crypto.randomUUID(),
@@ -60,22 +66,52 @@ export async function localSigner() {
 /** The 红包's sender in the kit, as the tokens' `sender` (judge-address §6). */
 export const SENDER_ID = "10000";
 
+/** Its 判定器 in the kit, as the tokens' `judge` (judge-address §13.4). */
+export const LOCAL_JUDGE = Object.freeze({ id: "test", version: 0 });
+
+/** Where the kit answers 红包信息, as the site's /api/hongbao/:id. */
+export const INFO_PATH = `/api/hongbao/${TEST_HONGBAO_ID}`;
+
+/**
+ * 红包信息 as the kit answers it (judge-address §13.2, §13.4): the params
+ * everyone sees — all of them once over, as `values` never has a 密钥.
+ */
+export function localInfo({ code, declarations, values, ended }) {
+  return {
+    id: TEST_HONGBAO_ID,
+    status: ended ? "ended" : "active",
+    paused: false,
+    sender: SENDER_ID,
+    judge: { ...LOCAL_JUDGE },
+    fingerprint: fingerprintOf(code),
+    params: ended ? values : splitParams(declarations, values).shown,
+  };
+}
+
 /**
  * `npm run simulate -- --live` (judge-address §12.5): the public half
  * published at http://127.0.0.1:8730/api/page-identity/keys while it runs,
- * as the simulator publishes it — another port when that one is taken.
- * `{ origin, close }`.
+ * as the simulator publishes it — another port when that one is taken —
+ * and 红包信息 from `info()` once it has some (§13.4). `{ origin, close }`.
  */
-export async function serveKeys(signer, port = 8730) {
+export async function serveKeys(
+  signer,
+  { port = 8730, info = () => null } = {},
+) {
   const { createServer } = await import("node:http");
+  const answer = (response, body) =>
+    response
+      .writeHead(200, {
+        "content-type": "application/json; charset=utf-8",
+        "access-control-allow-origin": "*",
+      })
+      .end(JSON.stringify(body));
   const server = createServer((request, response) => {
     if (request.method === "GET" && request.url === "/api/page-identity/keys")
-      return response
-        .writeHead(200, {
-          "content-type": "application/json; charset=utf-8",
-          "access-control-allow-origin": "*",
-        })
-        .end(JSON.stringify({ keys: [signer.publicKey] }));
+      return answer(response, { keys: [signer.publicKey] });
+    const shown = info();
+    if (request.method === "GET" && request.url === INFO_PATH && shown)
+      return answer(response, shown);
     response.writeHead(404).end();
   });
   const listen = (at) =>

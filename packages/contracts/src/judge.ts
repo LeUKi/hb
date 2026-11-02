@@ -932,3 +932,25 @@ export type AdminJudgeCuration = {
   features: AdminJudgeFeature[];
   takenDown: AdminTakenDownJudge[];
 };
+
+/**
+ * 红包信息 (docs/judge-address-design.md §13.2): what a page's or a
+ * service's own server reads at GET /api/hongbao/:id, anyone's to read.
+ * Fields are only ever added; a draft says no more than that it is one.
+ */
+export type HongbaoInfo =
+  | { id: string; status: "draft" }
+  | {
+      id: string;
+      status: "active" | "ended";
+      /** The code failed five judgments running: claims wait. */
+      paused: boolean;
+      /** Its sender's LINUX DO id. */
+      sender: string;
+      /** Its 判定器 and version; null for one with none. */
+      judge: { id: string; version: number } | null;
+      /** judge.js's fingerprint; null for one not 代码判定. */
+      fingerprint: string | null;
+      /** Those everyone sees now (结束后公开 once over); never a 密钥. */
+      params: Record<string, unknown>;
+    };

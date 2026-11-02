@@ -39,6 +39,8 @@ async function tokenFor(token, address) {
       aud: new URL(address).origin,
       hongbao: token.hongbao,
       sender: token.sender,
+      judge: token.judge,
+      judgeVersion: token.judgeVersion,
       iat: issuedAt,
       exp: issuedAt + 60,
       jti: crypto.randomUUID(),

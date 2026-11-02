@@ -164,6 +164,56 @@ export async function judgedCount(env: ApiBindings, activityId: string) {
   return row?.count ?? 0;
 }
 
+/**
+ * Its params everyone sees now: from opening those not sealed, once it is
+ * over the sealed ones too; never a 密钥 (they are in neither).
+ */
+function shownParams(
+  declarations: JudgeDeclarations | null,
+  shown: Record<string, unknown> | null,
+  out: { secret?: Record<string, unknown> } | null,
+) {
+  if (!shown) return [];
+  return (declarations?.params ?? []).flatMap((param) => {
+    const from = revealsAtEnd(param) ? out?.secret : shown;
+    return from && Object.hasOwn(from, param.key)
+      ? [{ param, value: from[param.key] }]
+      : [];
+  });
+}
+
+/**
+ * A 代码判定红包 as a page's or a service's own server reads it (docs/
+ * judge-address-design.md §13.2): its 判定器 and version, the code's
+ * fingerprint, whether claims wait, and its params everyone sees now.
+ */
+export async function backendJudge(env: ApiBindings, row: ActivityRow) {
+  const judge = await findJudgeRow(env, row.id);
+  if (!judge) return null;
+  const declarations =
+    judge.paramsPublic !== null
+      ? await declarationsFor(env, row.authorId, judge)
+      : null;
+  const out = await revealed(env, row, judge, declarations);
+  const shown =
+    judge.paramsPublic !== null
+      ? (JSON.parse(judge.paramsPublic) as Record<string, unknown>)
+      : null;
+  return {
+    judge: judge.judgeId
+      ? { id: judge.judgeId, version: judge.judgeVersion ?? 0 }
+      : null,
+    fingerprint: judge.fingerprint,
+    paused: judge.pausedAt !== null && activityStatus(row) === "active",
+    params: Object.fromEntries(
+      shownParams(declarations, shown, out).map(({ param, value }) => [
+        param.key,
+        value,
+      ]),
+    ),
+  };
+}
+
 export async function publicJudge(
   env: ApiBindings,
   row: ActivityRow,
@@ -225,14 +275,7 @@ export async function publicJudge(
           unclaimed: left,
           settling: row.endedAt !== null && judge.settledAt === null,
         };
-  const params = shown
-    ? (declarations?.params ?? []).flatMap((param) => {
-        const from = revealsAtEnd(param) ? out?.secret : shown;
-        return from && Object.hasOwn(from, param.key)
-          ? [{ param, value: from[param.key] }]
-          : [];
-      })
-    : [];
+  const params = shownParams(declarations, shown, out);
   return {
     protocol: judge.protocol,
     prompt: judge.prompt,

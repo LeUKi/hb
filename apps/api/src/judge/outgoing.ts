@@ -3,7 +3,7 @@
 // (docs/judge-key-design.md §1; a 密钥 changed applies from the next
 // request), and, to an address its sender filled in or one that asks for
 // it, the site's token, X-Hb-Token (docs/judge-address-design.md §12): who
-// sent the 红包 and which one, signed with the keys a page's server checks
+// sent the 红包, which one and with which 判定器 (§13.1), signed with the keys a page's server checks
 // hb.identity() with, under an issuer of its own.
 import type { JudgeDeclarations, JudgeNetworkEntry } from "@hb/contracts";
 import {
@@ -12,7 +12,7 @@ import {
   keyParams,
   tokenAddresses,
 } from "../../../../kit/runtime/index.mjs";
-import { signClaims } from "../activities/page-identity";
+import { judgeClaims, signClaims } from "../activities/page-identity";
 import type { ApiBindings } from "../env";
 import { storedKeys } from "./keys";
 
@@ -26,6 +26,7 @@ export async function outgoingHeaders(
 ): Promise<[string, string][]> {
   const row = await env.DB.prepare(
     `SELECT v.declarations, v.network, c.params_public AS shown, u.external_id AS sender,
+        c.judge_id AS judge, c.judge_version AS judgeVersion,
         EXISTS(SELECT 1 FROM activity_keys k WHERE k.activity_id = c.activity_id) AS keyed
       FROM activity_code c JOIN activities a ON a.id = c.activity_id JOIN users u ON u.id = a.author_id
         JOIN judge_versions v ON v.judge_id = c.judge_id AND v.n = c.judge_version
@@ -37,6 +38,8 @@ export async function outgoingHeaders(
       network: string | null;
       shown: string | null;
       sender: string;
+      judge: string | null;
+      judgeVersion: number | null;
       keyed: number;
     }>();
   if (!row) return [];
@@ -60,6 +63,7 @@ export async function outgoingHeaders(
       aud: new URL(address).origin,
       hongbao: activityId,
       sender: String(row.sender),
+      ...judgeClaims(row),
       iat: issuedAt,
       exp: issuedAt + TOKEN_SECONDS,
       jti: crypto.randomUUID(),

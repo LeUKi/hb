@@ -109,6 +109,18 @@ export async function signClaims(
 }
 
 /**
+ * Its 判定器 and version, in both tokens (docs/judge-address-design.md
+ * §13.1); none for a 红包 without one.
+ */
+export function judgeClaims(
+  row: { judge: string | null; judgeVersion: number | null } | null,
+) {
+  return row?.judge
+    ? { judge: row.judge, judgeVersion: row.judgeVersion ?? 0 }
+    : {};
+}
+
+/**
  * A token for the viewer on this 红包's 附带网页 (§2): only while it has
  * one that is shown (its switch on, not stopped by the 站长); `aud` is that
  * page's origin, whatever the page says. ES256: Web Crypto signs as JWS
@@ -136,12 +148,20 @@ export async function signPageIdentity(
         level: number | null;
       }>(),
     // Its sender, for a service that serves only its owner's 红包
-    // (docs/judge-address-design.md §6).
+    // (docs/judge-address-design.md §6), and its 判定器, for a server that
+    // serves only its own (§13.1).
     env.DB.prepare(
-      "SELECT u.external_id AS id FROM activities a JOIN users u ON u.id = a.author_id WHERE a.id = ?",
+      `SELECT u.external_id AS id, c.judge_id AS judge, c.judge_version AS judgeVersion
+        FROM activities a JOIN users u ON u.id = a.author_id
+          LEFT JOIN activity_code c ON c.activity_id = a.id
+        WHERE a.id = ?`,
     )
       .bind(input.activityId)
-      .first<{ id: string }>(),
+      .first<{
+        id: string;
+        judge: string | null;
+        judgeVersion: number | null;
+      }>(),
   ]);
   if (!row) activityNotFound();
   if (!person) throw new ActivityError(401, "UNAUTHORIZED", "请先登录。");
@@ -165,6 +185,7 @@ export async function signPageIdentity(
     level: user.level,
     hongbao: row.id,
     ...(sender ? { sender: String(sender.id) } : {}),
+    ...judgeClaims(sender),
     iat: issuedAt,
     exp: expires,
     jti: crypto.randomUUID(),

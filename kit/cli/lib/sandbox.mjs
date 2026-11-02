@@ -26,6 +26,7 @@ import {
   VIEW_PROTOCOL,
 } from "../../runtime/index.mjs";
 import { fingerprintOf, KitError } from "./files.mjs";
+import { LOCAL_JUDGE } from "./signer.mjs";
 
 /** Protocol v5: this runtime on this compatibility date with nodejs_compat. */
 export const PROTOCOL = 5;
@@ -249,7 +250,13 @@ export async function openSandbox(
         value: `${item.prefix ?? "Bearer "}${keys[item.key]}`,
       }));
     if (token && tokened.length > 0)
-      signing = { ...token, hongbao: TEST_HONGBAO_ID, addresses: tokened };
+      signing = {
+        ...token,
+        hongbao: TEST_HONGBAO_ID,
+        judge: LOCAL_JUDGE.id,
+        judgeVersion: LOCAL_JUDGE.version,
+        addresses: tokened,
+      };
     const first = runtime;
     ({ runtime, hung, loadMs } = await start());
     await first.dispose().catch(() => {});

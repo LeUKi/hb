@@ -9,6 +9,7 @@ import {
   getPublicActivity,
   openActivity,
 } from "../src/activities/service";
+import { app } from "../src/app";
 import { updateMyJudge } from "../src/judge/judges";
 import { judgeRecords } from "../src/judge/records";
 import { findJudgeRow } from "../src/judge/storage";
@@ -21,6 +22,7 @@ import {
   coded,
   give,
   judgeSettings,
+  origin,
   plus,
   rejects,
   settings,
@@ -181,6 +183,52 @@ describe("判定器's params as it opens", () => {
     expect(
       (await judgeRecords(bindings, opened.id, author.id)).paramsSealed?.salt,
     ).toBe(salt);
+  });
+
+  it("tells a server about it (judge-address §13.2): a draft only that it is one; then whose it is, its 判定器 and the params everyone sees, the sealed ones once it is over", async () => {
+    const read = async (id: string) => {
+      const response = await app.request(
+        `${origin}/api/hongbao/${id}`,
+        {},
+        bindings,
+      );
+      return {
+        status: response.status,
+        open: response.headers.get("Access-Control-Allow-Origin"),
+        body: (await response.json()) as Record<string, unknown>,
+      };
+    };
+    const saved = await draft({ answer: 42 });
+    expect(await read(saved.id)).toEqual({
+      status: 200,
+      open: "*",
+      body: { id: saved.id, status: "draft" },
+    });
+    const opened = await openActivity(
+      bindings,
+      saved.id,
+      author.id,
+      saved.version,
+    );
+    const by = (await getPublicActivity(bindings, opened.id)).judge;
+    const running = await read(opened.id);
+    expect(running.body).toEqual({
+      id: opened.id,
+      status: "active",
+      paused: false,
+      sender: author.externalId,
+      judge: { id: by?.judge?.id, version: 1 },
+      fingerprint: by?.fingerprint,
+      params: { max: 100 },
+    });
+    await env.DB.prepare("UPDATE activities SET deadline = ? WHERE id = ?")
+      .bind(Date.now() - 1000, opened.id)
+      .run();
+    expect((await read(opened.id)).body).toMatchObject({
+      status: "ended",
+      params: { max: 100, answer: 42 },
+    });
+    expect((await read(crypto.randomUUID())).status).toBe(404);
   });
 
   it("shows the code from opening on once its 判定器 is made 一直公开 (§2), the seed still at the end", async () => {

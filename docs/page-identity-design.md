@@ -23,6 +23,7 @@
   - `username`、`name`（昵称）、`level`（信任等级 0–4，没有时 `null`）；
   - `hongbao`：红包编号，同 `hb.ready()` 的 `hongbao.id`；
   - `sender`：发这个红包的人的 LINUX DO 数字 ID（2026-11-01 加，发红包的人自己部署的服务只认它主人的红包，见 [judge-address-design](judge-address-design.md) 第 6 节）；
+  - `judge`、`judgeVersion`：代码判定红包的判定器编号和第几版，没有判定器的红包没有（2026-11-02 加，大家共用的后端只给自己的判定器用，见 judge-address-design 第 13.1 节）；
   - `iat`、`exp`：签发和过期时间（秒），有效 10 分钟；
   - `jti`：令牌自己的随机编号；
   - `nonce`：网页带来的一次性随机串，原样签进去（没带就没有）。8–128 个字符，只能是字母、数字和 `-_.~`。

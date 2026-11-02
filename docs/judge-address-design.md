@@ -261,3 +261,68 @@ hongbao.params.server; // https://a.workers.dev/，共用的网页拿它决定�
 - **开发包**：模拟器的钥匙放到 `cli/lib/signer.mjs`，本地网关在 workerd 里用同一把签。`npm run page` 先起服务、知道自己的地址以后再开沙箱（令牌的 `iss` 要用这个地址）。`npm run simulate -- --live` 跑的时候在 `127.0.0.1:8730`（被占用就换一个）放公钥，开头写“判定器发给 … 的请求带 X-Hb-Token：iss 是 …，公钥在 …，sender 是 10000”。`npm run check` 的联网一行在带令牌的地址后面写“（带 X-Hb-Token）”。
 - **实测**：在本地起一个服务，用 WebCrypto 按公钥验 `X-Hb-Token`（签名、`iss`、`aud`、过期、`sender`）；`simulate --live` 和 `page --live` 发来的请求都验得过，`hongbao` 是 `test`，`X-Hb-Hongbao` 也是 `test`。
 - **文档**：`AGENTS.md` 加“选做法”（五种做法的表、谁信谁、最佳做法），“联网”的例子改成 `{ url, token: true }`、不再把令牌写在代码里，“自有后端”改成认 `X-Hb-Token`，“发红包的人自己部署的服务”的例子去掉服务密钥（`claimsOf` 一个函数验两种令牌、核对 `sender`）；要点第 1、8 条照第 12.6 节改；Skill 的“按情况读”先读“选做法”；`/help/code` 的给 AI 的说明加精简的“选做法”和“谁信谁”，联网一节写 `X-Hb-Token`；`/help/page` 说判定器的请求带的是 `X-Hb-Token`。
+
+## 13 后端读红包（2026-11-02）
+
+开发者的 Agent 照文档做样例以后提了两件事：一是自建后端的接入文档和能直接跑的 Cloudflare 示例，分清 `author.id`（它去读了红包详情接口，那里是站内编号）和 `sender`，说清怎么读、怎么核对公开参数；二是后端能验证的玩法参数：令牌只证明谁在哪个红包里，挑战、评分区间、次数上限还要另去读红包详情，各个作者都得自己研究那份数据。评估时还发现一个现有的口子：判定器作者自己的共用后端分不出一个红包用的是不是他的判定器——别人写一个判定器，`meta.page` 指向他的网页、`network` 写上他的后端加 `token: true`，令牌照样签得出、验得过，花的是作者的 AI 费用。用户定：都做；参数走单独的接口，不放进令牌；草稿只答状态；顺带把开发文档里的各种做法再整理一遍。
+
+### 13.1 令牌里加判定器
+
+- 网页的令牌和 `X-Hb-Token` 都加 `judge`（判定器编号，判定器页地址里的那串）和 `judgeVersion`（第几版）。红包没有判定器（不是代码判定，或判定器出现以前发的）时没有这两项；草稿是现在挑的那一版。
+- 作者的共用后端核对 `judge` 是自己的判定器；复制一份来改的是另一个判定器，编号不同。发红包的人自己部署的服务核对 `sender` 就够了。
+
+### 13.2 红包信息接口
+
+`GET https://hb.lafi.sh/api/hongbao/<红包编号>`：给后端读。谁都能读（不用登录，跨域放开），不缓存（`no-store`，后端自己缓存）。结构固定：以后只加字段，不改、不删；要改含义就换新地址。
+
+开放以后：
+
+```json
+{
+  "id": "…",
+  "status": "active",
+  "paused": false,
+  "sender": "12345",
+  "judge": { "id": "…", "version": 4 },
+  "fingerprint": "…",
+  "params": { "challenge": "拍一只猫", "tries": 3 }
+}
+```
+
+- `status`：`active` 或 `ended`（到截止、奖池占满、提前结束、站长停用都是 `ended`）。
+- `paused`：判定器连续出错 5 次，领取暂停；只在 `active` 时可能是 `true`。
+- `judge`：没有判定器时是 `null`；`fingerprint`：代码指纹，不是代码判定时是 `null`。
+- `params`：现在公开的参数，同 SDK 的 `hongbao.params`：普通参数；`revealAtEnd` 的结束以后才有；密钥永远没有；不是代码判定时是 `{}`。
+- 草稿：`{ "id": "…", "status": "draft" }`，参数还会改，不答。没有这个红包（或删掉了）：404。
+
+参数不放进令牌：整份参数最大 16 KB，签进令牌放在请求头里能到 20 多 KB，超过 Node 默认的请求头上限（16 KB）和 nginx 的每行上限（8 KB），有的后端会直接拒；草稿的参数还会变。参数开放时就锁住了，后端按红包编号缓存到结束就行；`status`、`paused` 几十秒读一次。
+
+### 13.3 编号
+
+| 编号 | 是什么 | 在哪 |
+| --- | --- | --- |
+| `sub` | 看网页的人的 LINUX DO 数字 ID，同判定器的 `submission.user.id` | 网页的令牌 |
+| `sender` | 发红包的人的 LINUX DO 数字 ID | 两种令牌、红包信息 |
+| `hongbao` | 红包编号，同 `X-Hb-Hongbao` 和 `hb.ready()` 的 `hongbao.id` | 两种令牌；红包信息的 `id` |
+| `judge` | 判定器编号 | 两种令牌、红包信息 |
+
+红包站别的接口（`/api/activities/…` 这些）是给本站的页面用的，结构会改，里面的 `author.id` 是站内编号、不是 LINUX DO ID：后端只用令牌和红包信息接口。
+
+### 13.4 开发包
+
+- 两种令牌的 `judge` 是 `test`、`judgeVersion` 是 0（同 `hongbao` 的 `test`）。
+- 模拟器（`npm run page`）和 `npm run simulate -- --live` 在 `http://127.0.0.1:8730/api/hongbao/test` 答红包信息：`status` 跟着模拟器（快进到截止以后是 `ended`），`sender` 是 `10000`，`judge` 是 `{ "id": "test", "version": 0 }`，`fingerprint` 是 judge.js 的指纹，`params` 取 `simulate.json` 的（规则同上）。服务开发时把红包站的地址设成 `http://127.0.0.1:8730`，令牌、公钥和红包信息都从它来。
+
+### 13.5 开发文档
+
+- `AGENTS.md` 的“认人（鉴权）”改成“后端认人和读红包”，一处写全：要不要后端；编号；两种令牌（一张表）；验令牌（一个函数验两种）；红包信息接口（带缓存的读法）；网页这边；本地开发。“联网”里的令牌只留一句，指到这里；“选做法”的“谁信谁”加一行“后端要玩法参数、红包状态 → 红包信息接口”，最佳做法加“后端用到的参数从红包信息读，不信网页交来的；作者的共用后端核对 `judge`”。
+- “自有后端”加核对 `judge` 和从红包信息读参数。“发红包的人自己部署的服务”的例子：上传时从红包信息读挑战和次数上限、看 `status` 和 `paused`，按人计次数写出来；网页不再把挑战交给服务。
+- 要点第 8 条加“要玩法参数和红包状态读红包信息接口”，可能伪造的加上 `hb.ready()` 里的参数（三处一字不差）。
+- `/help/code` 的给 AI 的说明、`/help/page` 跟着改；`page-identity-design.md` 的令牌内容加 `judge`、`judgeVersion`。
+
+### 13.6 做的时候补的（2026-11-02）
+
+- **接口**：`activities/hongbao-info.ts`，和身份令牌的接口一样挂在链外（`app.ts`，免得类型推到 TS2589）。代码判定的部分在 `judge/public.ts` 的 `backendJudge`：和红包页的公开读取共用“现在公开的参数”的算法（`shownParams`），结束以后同样先公开封存的参数再给。合同里的类型是 `HongbaoInfo`。
+- **令牌**：两处签名共用 `judgeClaims`（`page-identity.ts`），网页的令牌多读一次 `activity_code` 的 `judge_id`、`judge_version`（和读发红包的人在同一条查询里）。
+- **开发包**：`signer.mjs` 的 `localInfo` 按模拟器的状态答红包信息，模拟器和 `serveKeys` 都在 `/api/hongbao/test` 答；`npm run simulate -- --live` 开头那行加上红包信息的地址。实测：本地起一个服务，判定器带 `X-Hb-Token` 去问它，它按令牌的 `iss` 读红包信息，读到 `active` 和公开的参数（结束后公开的那项不在里面），令牌里 `judge` 是 `test`、`judgeVersion` 是 0。
+- **文档**：拍照挑战的例子加了参数“每人能传几次”；网页上传时只传照片，服务从红包信息读挑战和次数、看 `status` 和 `paused`、按人计次数（写明 KV 不保证马上一致，要严格用 Durable Object）；判定器不再核对挑战（结果绑了红包编号，一个红包的参数开放后不变）。打分的 `rate()` 只留了函数头：模型和提示词是玩法自己的。“常见错误”加一条“后端读红包站别的接口、信网页交来的参数”。

@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { ActivityError } from "./activities/errors";
+import { hongbaoInfoRoutes } from "./activities/hongbao-info";
 import { pageIdentityRoutes } from "./activities/page-identity";
 import { passwordRoutes } from "./activities/password-routes";
 import { ActivityValidationError, activityRoutes } from "./activities/routes";
@@ -128,8 +129,10 @@ export const app = new Hono<ApiContext>()
 
 export type AppType = typeof app;
 
-// 附带网页认人 (docs/page-identity-design.md): mounted outside the chain and
+// 附带网页认人 (docs/page-identity-design.md) and 红包信息 (docs/judge-
+// address-design.md §13.2), for a page's own server: mounted outside the chain and
 // on a plain Hono, so neither AppType nor this call merges its schema with
 // theirs, past what TypeScript can instantiate (TS2589); the web calls
 // these with plain fetch.
 (app as unknown as Hono<ApiContext>).route("/api", pageIdentityRoutes);
+(app as unknown as Hono<ApiContext>).route("/api", hongbaoInfoRoutes);

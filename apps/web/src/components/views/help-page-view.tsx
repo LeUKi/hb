@@ -147,6 +147,7 @@ export async function whoIs(request, nonceOf) {
   if (!myHongbao(payload.hongbao) || !(await nonceOf(payload.nonce))) return null;
   // payload.sub：LINUX DO 数字 ID（认人用它，不用用户名）
   // payload.sender：发这个红包的人的 LINUX DO 数字 ID（服务只给主人用时核对它）
+  // payload.judge：代码判定红包的判定器编号（后端只给自己的判定器用时核对它）
   return { id: payload.sub, username: payload.username, hongbao: payload.hongbao };
 }`;
 
@@ -215,8 +216,9 @@ const aiPrompt = (
 8. 后端要知道是谁（存档、排行榜、防冒充）时，不用接 LINUX DO 登录，用 hb.identity()：
    - 在看的人点“开始”这类按钮时再要；后端可以先发一个一次性的 nonce（8–128 个字母、数字或 -_.~），网页带着它要令牌。
    - 令牌放在内存里，用 Authorization: Bearer 请求头发给后端，不放进本地存储、网址和日志；过期（10 分钟）了再调一次 hb.identity()，不会再问他。
-   - 后端用 jose 验：公钥 ${origin}/api/page-identity/keys（createRemoteJWKSet），算法 ES256，issuer ${origin}，audience 是网页自己的来源，clockTolerance 30 秒；再核对 payload.hongbao 是自己认的红包、payload.nonce 是刚发的并且只用一次。payload.sender 是发这个红包的人的 LINUX DO 数字 ID：发红包的人自己部署的服务只认它主人的红包时核对它。判定器联网发来的请求不带这个令牌，带的是 X-Hb-Token（issuer ${origin}/judge，同一把公钥，见 ${origin}/help/code 的联网）。
+   - 后端用 jose 验：公钥 ${origin}/api/page-identity/keys（createRemoteJWKSet），算法 ES256，issuer ${origin}，audience 是网页自己的来源，clockTolerance 30 秒；再核对 payload.hongbao 是自己认的红包、payload.nonce 是刚发的并且只用一次。payload.sender 是发这个红包的人的 LINUX DO 数字 ID：发红包的人自己部署的服务只认它主人的红包时核对它；payload.judge、payload.judgeVersion 是代码判定红包的判定器编号和第几版：大家共用的后端只给自己的判定器用时核对它。判定器联网发来的请求不带这个令牌，带的是 X-Hb-Token（issuer ${origin}/judge，同一把公钥，见 ${origin}/help/code 的联网）。
    - 用 payload.sub（LINUX DO 数字 ID，和判定器的 submission.user.id 是同一个数）认人，不用用户名；数据按“红包编号 + 用户 ID”存。后端的跨域只放行网页自己的来源。
+   - 后端要红包的情况和玩法参数时，读红包信息 ${origin}/api/hongbao/<红包编号>：{ id, status（active、ended；草稿只有 { id, status: "draft" }）, paused, sender, judge（{ id, version } 或 null）, fingerprint, params（现在公开的参数）}，谁都能读；参数开放后不变，可以缓存，状态几十秒读一次。别信网页交来的参数，也别用本站别的接口（结构会改）。本地模拟器在它自己的 /api/hongbao/test 答。
    - 本地 npm run page 的模拟器签的令牌 iss 是模拟器的地址，上线后的后端只认 ${origin}。
    - 钱只经过判定器：后端算出的结果要由判定器联网核对才算数；令牌不能用来替他提交。
 9. 还没有网站：把网页放到静态托管上就行。Cloudflare Workers、GitHub Pages、Netlify、Vercel 的默认域名都能直接嵌进红包页；Vercel 只用正式部署（预览部署默认要登录才能看）。Cloudflare Drop 拖上去还没认领的页面会先弹安全验证，嵌不进来，要先认领。
@@ -293,7 +295,10 @@ export function HelpPageView() {
             （LINUX DO 数字 ID，和判定器的 <Code>submission.user.id</Code>{" "}
             是同一个数）、<Code>username</Code>、<Code>name</Code>（昵称）、
             <Code>level</Code>（信任等级）、<Code>hongbao</Code>
-            （红包编号，同 <Code>hongbao.id</Code>）、<Code>aud</Code>
+            （红包编号，同 <Code>hongbao.id</Code>）、<Code>sender</Code>
+            （发红包的人的 LINUX DO 数字 ID）、<Code>judge</Code> 和{" "}
+            <Code>judgeVersion</Code>（代码判定红包的判定器编号和第几版）、
+            <Code>aud</Code>
             （你网页的来源）、<Code>iss</Code>（{origin}）、<Code>exp</Code>
             、你发的 <Code>nonce</Code>。
           </p>
@@ -366,6 +371,16 @@ export function HelpPageView() {
           <p>
             <Code>document.referrer</Code> 是红包页的地址（{origin}/🧧/…
             ，公开的，不含口令）；也可以在附带的地址里自己带参数。
+          </p>
+          <p>
+            后端用令牌里的 <Code>hongbao</Code>
+            。要这个红包现在的情况，读红包信息{" "}
+            <Code>GET {origin}/api/hongbao/红包编号</Code>，谁都能读：
+            <Code>status</Code>（<Code>active</Code> 或 <Code>ended</Code>
+            ；草稿只有这一项）、<Code>paused</Code>（领取暂停）、
+            <Code>sender</Code>、<Code>judge</Code>（判定器和第几版）、
+            <Code>fingerprint</Code>、<Code>params</Code>
+            （现在公开的参数）。参数开放后不变，可以缓存。别信网页交来的参数，也别用本站别的接口，它们的结构会改。
           </p>
         </Panel>
       </PageSection>

@@ -1711,8 +1711,24 @@ describe("附带网页", () => {
         iss: page.hostUrl,
         aud: page.pageUrl,
         sub: "10001",
-        hongbao: expect.any(String),
+        hongbao: "test",
+        sender: "10000",
+        judge: "test",
+        judgeVersion: 0,
         nonce: "nonce-1234",
+      });
+      // 红包信息 (docs/judge-address-design.md §13.4), as the site's: ended
+      // once fast-forwarded, its params as simulate.json has them.
+      const info = await fetch(`${page.hostUrl}/api/hongbao/test`);
+      expect(info.headers.get("access-control-allow-origin")).toBe("*");
+      expect(await info.json()).toEqual({
+        id: "test",
+        status: "ended",
+        paused: false,
+        sender: "10000",
+        judge: { id: "test", version: 0 },
+        fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
+        params: expect.any(Object),
       });
       expect(
         (

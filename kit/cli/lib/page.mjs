@@ -35,7 +35,7 @@ import {
   readText,
 } from "./files.mjs";
 import { openSandbox } from "./sandbox.mjs";
-import { localSigner, SENDER_ID } from "./signer.mjs";
+import { INFO_PATH, localInfo, localSigner, SENDER_ID } from "./signer.mjs";
 import { outcome, paidNow, paramsOf, printLedger } from "./simulate.mjs";
 import { readSimulation } from "./simulation.mjs";
 import { failureText, say, yuan } from "./words.mjs";
@@ -650,6 +650,20 @@ export async function startPage({
         return json(response, { keys: [signer.publicKey] }, 200, {
           "access-control-allow-origin": "*",
         });
+      // 红包信息 (docs/judge-address-design.md §13.4), as the simulator
+      // plays the 红包: ended once fast-forwarded to its deadline.
+      if (request.method === "GET" && url.pathname === INFO_PATH)
+        return json(
+          response,
+          localInfo({
+            code,
+            declarations: sandbox.declarations.params,
+            values: params.values,
+            ended: game.state().hongbao.status === "ended",
+          }),
+          200,
+          { "access-control-allow-origin": "*" },
+        );
       if (request.method === "POST" && url.pathname === "/api/identity") {
         const { who, nonce } = await bodyOf(request);
         if (typeof who !== "string" || who === GUEST)
@@ -828,7 +842,7 @@ export async function pageCommand({
   print(`模拟器：${page.hostUrl}`);
   print(
     page.served
-      ? `网页：${page.served}（经 ${page.pageUrl} 打开；身份令牌的 aud 是 ${new URL(page.served).origin}，sender 是 ${SENDER_ID}）`
+      ? `网页：${page.served}（经 ${page.pageUrl} 打开；身份令牌的 aud 是 ${new URL(page.served).origin}，sender 是 ${SENDER_ID}，红包信息在 ${page.hostUrl}${INFO_PATH}）`
       : `网页：${options.folder ? `${options.folder.replace(/\/$/, "")}/` : ""}page/index.html（从 ${page.pageUrl} 打开）`,
   );
   if (page.network)

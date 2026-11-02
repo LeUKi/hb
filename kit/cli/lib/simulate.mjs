@@ -30,7 +30,13 @@ import {
   readText,
 } from "./files.mjs";
 import { openSandbox } from "./sandbox.mjs";
-import { localSigner, SENDER_ID, serveKeys } from "./signer.mjs";
+import {
+  INFO_PATH,
+  localInfo,
+  localSigner,
+  SENDER_ID,
+  serveKeys,
+} from "./signer.mjs";
 import { readSimulation } from "./simulation.mjs";
 import {
   failureText,
@@ -242,7 +248,11 @@ export async function simulateCommand({
   // Going out: X-Hb-Token signed with a key of this run, its public half
   // published while it runs (docs/judge-address-design.md §12.5).
   const signer = options.live ? await localSigner() : null;
-  const published = signer ? await serveKeys(signer) : null;
+  // 红包信息 too (judge-address §13.4), once its params are known.
+  let info = null;
+  const published = signer
+    ? await serveKeys(signer, { info: () => info })
+    : null;
   const sandbox = await openSandbox(code, {
     live: options.live,
     keys,
@@ -308,9 +318,15 @@ export async function simulateCommand({
   });
   for (const line of localAddressLines(declarations.params, params.values))
     print(line);
+  info = localInfo({
+    code,
+    declarations: declarations.params,
+    values: params.values,
+    ended: false,
+  });
   if (published && sandbox.tokened.length > 0)
     print(
-      `判定器发给 ${sandbox.tokened.join("、")} 的请求带 X-Hb-Token：iss 是 ${published.origin}/judge，公钥在 ${published.origin}/api/page-identity/keys，sender 是 ${SENDER_ID}`,
+      `判定器发给 ${sandbox.tokened.join("、")} 的请求带 X-Hb-Token：iss 是 ${published.origin}/judge，公钥在 ${published.origin}/api/page-identity/keys，sender 是 ${SENDER_ID}；红包信息在 ${published.origin}${INFO_PATH}`,
     );
   if (sandbox.addresses)
     print(

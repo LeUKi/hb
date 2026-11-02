@@ -661,17 +661,22 @@ export async function judge(submission) {
     });
     expect(deployed.body.check.reminders ?? []).toEqual([]);
     const judgeId = deployed.body.check.judge?.id ?? "";
+    // Its page under the address, as the form fills it in.
+    await settings({ page_enabled: 1 });
     const draft = await createActivity(bindings, author.id, {
       requestId: crypto.randomUUID(),
-      activity: coded(
-        {},
-        {
-          code,
-          tests: OWN_TESTS,
-          judgeId,
-          params: { server: "https://API.example.com/mine" },
-        },
-      ),
+      activity: {
+        ...coded(
+          {},
+          {
+            code,
+            tests: OWN_TESTS,
+            judgeId,
+            params: { server: "https://API.example.com/mine" },
+          },
+        ),
+        pageUrl: "https://api.example.com/mine/play/",
+      },
     });
     const managed = await getManagedActivity(bindings, draft.id, author.id);
     const saved = await updateActivity(bindings, managed.id, author.id, {
@@ -719,9 +724,38 @@ export async function judge(submission) {
       aud: "https://api.example.com",
       hongbao: opened.id,
       sender: author.externalId,
+      // Its 判定器 (§13.1), for a server that serves only its own.
+      judge: judgeId,
+      judgeVersion: 1,
       jti: expect.any(String),
     });
     expect(claims.exp - claims.iat).toBe(60);
+    // The page's token names them too.
+    const viewer = await actor();
+    const asked = await app.request(
+      `${origin}/api/activities/${opened.id}/page-identity`,
+      {
+        method: "POST",
+        headers: {
+          Origin: origin,
+          "Content-Type": "application/json",
+          Cookie: viewer.cookie,
+          "X-CSRF-Token": viewer.csrf,
+        },
+        body: "{}",
+      },
+      bindings,
+    );
+    const identity = (await asked.json()) as { token?: string };
+    expect(await verified(identity.token)).toMatchObject({
+      iss: origin,
+      aud: "https://api.example.com",
+      sub: viewer.externalId,
+      hongbao: opened.id,
+      sender: author.externalId,
+      judge: judgeId,
+      judgeVersion: 1,
+    });
     const shown = await getPublicActivity(bindings, opened.id);
     expect(shown.judge).toMatchObject({
       network: [
