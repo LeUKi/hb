@@ -22,10 +22,10 @@ import { haptic } from "../../lib/haptics";
 import { splitOf } from "../../lib/hongbao-text";
 import { clockSeconds } from "../../lib/roster-time";
 import verifyScript from "../../lib/verify-draw.mjs?raw";
+import { roundText } from "../hongbao/clock";
 import {
   ProofOutcome,
   type ProofStep,
-  roundText,
   StepList,
   useProofCheck,
 } from "../hongbao/draw-proof";

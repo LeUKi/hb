@@ -4,7 +4,8 @@ import { memo, type ReactNode } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "../../lib/cn";
-import { useAttachedPageOpener } from "../shell/attached-page";
+import { useEmbedded } from "../../lib/embedded";
+import { useAttachedPageOpener } from "../shell/attached-page-state";
 import { radius, Squircle } from "./squircle";
 
 // The notes a sender writes (说明, 附言, 结束说明) are Markdown. No raw HTML,
@@ -111,7 +112,8 @@ export function PageButton({
 
 function NoteLink({ href, children }: { href?: string; children: ReactNode }) {
   const navigate = useNavigate();
-  if (!href) return <span>{children}</span>;
+  const embedded = useEmbedded();
+  if (!href || embedded) return <span>{children}</span>;
   if (isPageLink(href)) return <PageButton>{children}</PageButton>;
   const url = new URL(href, window.location.href);
   const own =
@@ -186,20 +188,3 @@ export const NoteMarkdown = memo(function NoteMarkdown({
     </div>
   );
 });
-
-/**
- * The note as one line of plain text (the small cover's summary): links
- * keep their words, marks and images drop away.
- */
-export function markdownText(source: string) {
-  return source
-    .replace(/```[\s\S]*?```/gu, " ")
-    .replace(/!\[([^\]]*)\]\([^)]*\)/gu, "$1")
-    .replace(/\[([^\]]+)\]\([^)]*\)/gu, "$1")
-    .replace(/<[^>]+>/gu, " ")
-    .replace(/^\s{0,3}(?:#{1,6}|>|[-*+]|\d+[.)])\s+/gmu, "")
-    .replace(/[*_~`]+/gu, "")
-    .replace(/\|/gu, " ")
-    .replace(/\s+/gu, " ")
-    .trim();
-}

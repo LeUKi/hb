@@ -293,7 +293,10 @@ it("upgrades a populated step-3 database without changing IDs, encrypted content
       amount_minor: null,
     })),
   );
-  expect(upgraded[3]?.results).toEqual(snapshots[3]?.results);
+  expect(upgraded[3]?.results).toEqual(
+    // 0058: taken on 红包站, not in the forum's mini app.
+    snapshots[3]?.results.map((row) => ({ ...row, via: null })),
+  );
   expect(upgraded[4]?.results).toEqual(
     snapshots[4]?.results.map((row) => ({
       ...row,
@@ -615,7 +618,10 @@ it("upgrades populated simulated LDC payment data from 0008 through acceptance m
     })),
   );
   expect(after[3]?.results).toEqual(before[3]?.results);
-  expect(after[4]?.results).toEqual(before[4]?.results);
+  expect(after[4]?.results).toEqual(
+    // 0058: taken on 红包站, not in the forum's mini app.
+    before[4]?.results.map((row) => ({ ...row, via: null })),
+  );
   expect(after[5]?.results).toEqual(
     before[5]?.results.map((row) => ({
       ...(row as Record<string, unknown>),

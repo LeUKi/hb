@@ -15,6 +15,7 @@ import { balanceRoutes } from "./balance/routes";
 import { discoveryRoutes } from "./discovery/routes";
 import type { ApiContext } from "./env";
 import { judgeRoutes } from "./judge/routes";
+import { miniCors, miniRoutes } from "./mini/routes";
 import { MerchantChangeConfirmationError } from "./payments/configuration";
 import { merchantRoutes } from "./payments/routes";
 import { rankRoutes } from "./rank/routes";
@@ -26,6 +27,8 @@ import {
 } from "./runtime/maintenance-mode";
 
 export const app = new Hono<ApiContext>()
+  // 论坛小程序: the forum's CORS on every answer, 维护模式's too.
+  .use("/api/mini/*", miniCors)
   // 维护模式: everything but the health check waits (runtime/maintenance-mode.ts).
   // A page opened at the API itself (signing in, the way back from LINUX DO)
   // goes to the start page instead, which says 系统维护中.
@@ -136,3 +139,5 @@ export type AppType = typeof app;
 // these with plain fetch.
 (app as unknown as Hono<ApiContext>).route("/api", pageIdentityRoutes);
 (app as unknown as Hono<ApiContext>).route("/api", hongbaoInfoRoutes);
+// 论坛小程序 (docs/mini-app-design.md §7), the same way.
+(app as unknown as Hono<ApiContext>).route("/api", miniRoutes);

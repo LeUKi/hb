@@ -27,9 +27,11 @@ import {
   LIVE_COALESCE_MS,
   LIVE_DEADLINE_MARGIN_MS,
   LIVE_JUDGED_MS,
+  LIVE_MINI_TAG,
   LIVE_PING,
   LIVE_PONG,
   LIVE_TAG,
+  LIVE_UNTIL_HEADER,
   LIVE_USER_HEADER,
   liveAnnounce,
   liveEnded,
@@ -37,6 +39,7 @@ import {
   liveJudged,
   liveMessage,
   liveMine,
+  liveMiniMessage,
   liveQueued,
   liveUserTag,
   liveView,
@@ -140,7 +143,17 @@ async function readActivityJson(request: Request): Promise<unknown> {
   }
 }
 
-type LiveAttachment = { since?: number; userId?: string };
+type LiveAttachment = {
+  since?: number;
+  userId?: string;
+  /** A mini app's socket: closed by then (ms; live.ts LIVE_MINI_TAG). */
+  until?: number;
+};
+
+/** A mini app's socket, and until when it may stay. */
+function liveUntil(socket: WebSocket) {
+  return (socket.deserializeAttachment() as LiveAttachment | null)?.until;
+}
 
 /** When a live socket joined, to find a person's oldest one. */
 function liveSince(socket: WebSocket) {
@@ -244,6 +257,9 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   private claimsSent: string | null = null;
   /** The deadline alarm this instance already set (one write per deadline). */
   private liveDeadline = 0;
+  /** When the next mini app's socket is due to close (live.ts). */
+  private miniTimer: ReturnType<typeof setTimeout> | null = null;
+  private miniDue = 0;
   /** The channel's number (live.ts), read back once after hibernating. */
   private liveSeq = 0;
   private liveSeqRead: Promise<void> | null = null;
@@ -281,7 +297,13 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket")
       return new Response("Expected a WebSocket", { status: 426 });
     const userId = request.headers.get(LIVE_USER_HEADER);
-    if (!userId || !this.ctx.id.equals(this.env.ACTIVITY_DO.idFromName(id)))
+    const untilHeader = request.headers.get(LIVE_UNTIL_HEADER);
+    const until = untilHeader === null ? undefined : Number(untilHeader);
+    if (
+      !userId ||
+      (until !== undefined && !Number.isSafeInteger(until)) ||
+      !this.ctx.id.equals(this.env.ACTIVITY_DO.idFromName(id))
+    )
       return Response.json(
         { error: { code: "INVALID_OBJECT", message: "红包标识不匹配" } },
         { status: 400 },
@@ -317,16 +339,28 @@ export class ActivityDO extends DurableObject<ApiBindings> {
           liveSince(socket) < liveSince(oldest) ? socket : oldest,
         )
         .close(4001, "replaced");
+    this.expireMini();
     const { 0: client, 1: server } = new WebSocketPair();
-    this.ctx.acceptWebSocket(server, [LIVE_TAG, liveUserTag(userId)]);
+    this.ctx.acceptWebSocket(
+      server,
+      until === undefined
+        ? [LIVE_TAG, liveUserTag(userId)]
+        : [LIVE_TAG, liveUserTag(userId), LIVE_MINI_TAG],
+    );
     server.serializeAttachment({
       since: Date.now(),
       userId,
+      ...(until === undefined ? {} : { until }),
     } satisfies LiveAttachment);
+    if (until !== undefined) this.armMiniExpiry(until);
     // What changed between the page's own read and now, and who is here,
     // at the number the channel stands at.
     const seq = await this.liveSeqNow();
-    server.send(liveMessage(activity, seq));
+    server.send(
+      until === undefined
+        ? liveMessage(activity, seq)
+        : liveMiniMessage(activity, seq),
+    );
     const people = livePeople(this.ctx.getWebSockets(LIVE_TAG));
     server.send(liveViewers(people, seq));
     if (people !== this.viewersSent) this.announceViewers();
@@ -498,6 +532,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     this.viewersTimer = setTimeout(async () => {
       this.viewersTimer = null;
       this.viewersPushedAt = Date.now();
+      this.expireMini();
       const sockets = this.ctx.getWebSockets(LIVE_TAG);
       const people = livePeople(sockets);
       if (people === this.viewersSent) return;
@@ -557,6 +592,8 @@ export class ActivityDO extends DurableObject<ApiBindings> {
           }
           for (const socket of this.ctx.getWebSockets(LIVE_TAG)) {
             if (socket.readyState !== WebSocket.OPEN) continue;
+            // A mini app shows 代码判定 elsewhere: none of this for it.
+            if (liveUntil(socket) !== undefined) continue;
             for (const message of messages)
               try {
                 socket.send(message);
@@ -571,6 +608,44 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     }, wait);
   }
 
+  /**
+   * 论坛小程序: a mini app's socket lives until its `until` (the forum's
+   * limit: 300 s, or its token's end); those past it are closed, and the
+   * app has opened its next one by then.
+   */
+  private expireMini() {
+    const now = Date.now();
+    let next = 0;
+    for (const socket of this.ctx.getWebSockets(LIVE_MINI_TAG)) {
+      const until = liveUntil(socket);
+      if (until === undefined) continue;
+      if (until <= now) {
+        try {
+          socket.close(4000, "expired");
+        } catch {
+          // Already closing.
+        }
+      } else if (next === 0 || until < next) next = until;
+    }
+    if (next) this.armMiniExpiry(next);
+  }
+
+  /** Wakes at the earliest mini app's socket's `until` to close it. */
+  private armMiniExpiry(until: number) {
+    if (this.miniTimer && this.miniDue <= until) return;
+    if (this.miniTimer) clearTimeout(this.miniTimer);
+    this.miniDue = until;
+    this.miniTimer = setTimeout(
+      () => {
+        this.miniTimer = null;
+        this.miniDue = 0;
+        this.expireMini();
+        this.announceViewers();
+      },
+      Math.max(0, until - Date.now()),
+    );
+  }
+
   private async broadcast(id: string) {
     const sockets = this.ctx.getWebSockets(LIVE_TAG);
     if (sockets.length === 0) return;
@@ -581,10 +656,16 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       // The next change, or the page's slower polling, catches up.
       return;
     }
-    const message = liveMessage(activity, await this.nextLiveSeq());
-    for (const socket of sockets) {
+    this.expireMini();
+    const seq = await this.nextLiveSeq();
+    const message = liveMessage(activity, seq);
+    const mini =
+      this.ctx.getWebSockets(LIVE_MINI_TAG).length > 0
+        ? liveMiniMessage(activity, seq)
+        : message;
+    for (const socket of this.ctx.getWebSockets(LIVE_TAG)) {
       try {
-        socket.send(message);
+        socket.send(liveUntil(socket) === undefined ? message : mini);
       } catch {
         // Already closing: nothing to tell it.
       }

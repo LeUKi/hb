@@ -23,14 +23,19 @@ LINUX DO 上的 Discourse 小程序：打包成 ZIP 上传，在论坛的沙箱�
 ## 3 身份
 
 - 论坛账号 ID 就是 LINUX DO Connect 的 ID：论坛的能力测试台给 `lafish` 的 `id` 是 332940，红包站库里也是。
-- 服务端只信 JWT：`sub` 是论坛账号 ID，没有用户名和信任等级。SDK 给小程序的用户资料能被玩家改，只能显示用。
+- 服务端只信 JWT：`sub` 是论坛账号 ID，没有用户名和信任等级。2026-11-02 在沙箱里看了一张真凭证（构建 `3cd27d6a` 请求 Stage 时论坛签的），字段正好是 `iss`、`sub`、`aud`、`iat`、`nbf`、`exp`、`jti`、`app_id`、`version`、`channel`、`scopes`、`htm`、`htu`、`query_keys`。`nbf` 比 `iat` 早 5 秒，有效 900 秒，签名用 JWKS 里那把钥匙验得过。凭证是论坛顶层页面里的 loader 向论坛要来再加到请求头上的，小程序自己碰不到。SDK 给小程序的用户资料（`id`、`username`、`name`、`initials`）没有签名，玩家改得了，只能显示用。
 - 在红包站登录过的人用库里的用户名和信任等级；没登录过的，用户名取小程序发来的（只用来显示和付款，身份以 `sub` 为准），限信任等级的红包请他到红包站登录一次。付款时 Credit 会不会核对用户名，还要确认。
 
 ## 4 样子：同一套代码
 
 小程序在 `apps/mini`，直接用红包站的样式表（`apps/web/src/styles.css`：设计变量、基础、组件）和组件（印章、计数、礼花、按钮、输入框、分段选择、头像……），不另画一套。红包站只用系统字体、图标是打包进去的 SVG，和小程序的限制不冲突；React、motion、Tailwind 打成一个 IIFE 和一个 CSS。
 
-- 封面头、封面数据、我的结果这几块直接读了红包站的窗口外壳、附带网页按钮、实时状态和路由，验证包里先照它们的样式类和结构拼了一个简化版；做正式版时拆成“只管显示、数据从参数进来”的组件，两边共用。
+- **红包页本身也是同一套**（2026-11-02，用户：“一处修改处处生效”，不强求）：小程序直接画红包站的 `HongbaoHero`（大小封面和领取后收起、封面头、封面数据、我的结果、提示）、`LiveViewers`（“N 人在看”）和说明弹窗的 `NoteContent`。网页的 `useHongbao` 跟命令框、登录状态、路由绑在一起，小程序用自己的数据拼出同样形状的 `Hongbao` 交给它们；两边共用的推导拆了出来：`seal-state.ts`（印章的字和状态、提示、播报、开奖时刻）、`clock.ts`（`useNow`、`countdown`、`useDrawStep`）、`lib/cover-tags.ts`、`lib/markdown-text.ts`、`shell/attached-page-state.ts`、`omnibox/elements.ts`、`omnibox/cooldown.ts`、`lib/route-data.d.ts`。
+  - **剪掉的**：`lib/embedded.ts` 的 `EmbeddedContext` 为真时，链接只留字，人名不弹资料卡，远程头像改首字母，不显示帖子链接、快捷键、小封面的“展开”、🐟额的“转出”、没有 Credit 账户时的“重新发送”，名单入口只显示头像和字、不打开名单弹窗。
+  - **口令**：红包站点印章会打开命令框；小程序里点印章，提示下面展开口令框（`HongbaoHero` 的 `action` 位置），回车或再点“开”领取。
+  - **构建时去掉的**：要红包站会话的模块（`lib/session`、`lib/claims`、`lib/activities`）在小程序构建里换成 `apps/mini/src/off-site/` 的空壳，小程序走不到它们；这样包里没有 `fetch`、`WebSocket`、`XMLHttpRequest`（论坛只许走它的网络接口）。类型检查照旧对着真的模块。
+  - **路由**：网页的零件会读路由，小程序给一个只在内存里的单页路由。
+  - **滚动**：论坛的框跟着内容变高，上限 1000px（2026-11-02 量的），不到 1000px 时滚的是论坛页面，小程序自己不滚。所以领取后封面收成小封面就一直是小的，不会像红包站那样滚回顶部再展开；超过 1000px 时内容在框里滚，小封面钉在顶上。
 - **深色**：红包站只有浅色，论坛要求深浅都能用。深色时页面就用论坛主题给的底色（`theme.background`，默认深色主题是 `#222222`），文字、填充、线是中性的白色加透明度，换哪个深色主题都不会显出一块补丁；整页只有红包是红的。`apps/mini/src/mini.css` 在 `:root[data-mode="dark"]` 下换掉这些和强调色、成功、错误色，写死白色的玻璃（次要按钮、输入框、分段选择的滑块、说明卡）另外覆盖。红包本身的红、金和代码判定的黑漆不变。第一版用的是偏红的深酒红底，放在论坛的中性灰里像一块发闷的补丁，用户觉得难看，就改了。这套深色以后红包站也能用。
 - 不跟论坛的强调色：红包的红和金保持一贯；深浅和减少动画跟论坛走（`theme.get()`、`theme.onChange()`），减少动画时不放扫光、金圈、礼花，金额不滚动。
 - 论坛的框就是窗口：页面自己滚动，封面上面没有顶栏（`--bar-h: 0`），封面在最上面。
@@ -50,9 +55,31 @@ LINUX DO 上的 Discourse 小程序：打包成 ZIP 上传，在论坛的沙箱�
 ## 6 打包和上传
 
 1. 在论坛个人资料的应用页建一个应用，复制应用 ID。
-2. `bun run --cwd apps/mini pack`：构建，再用论坛 SDK 的 `pack` 打出 `apps/mini/dist/package/app.zip`。SDK 不在本仓库：`MINI_APP_SDK` 指向它的 `sdk/` 目录，默认是下载的开发包。应用 ID 和版本取 `manifest.json`（ID 是 `01a19ba5-b9d2-766f-9fb9-b7eddc10e0c7`，2026-11-02 建的应用），`MINI_APP_ID`、`MINI_APP_VERSION` 能改；同一个版本可以反复上传新构建。要在沙箱的 DevTools 里看源码，加 `MINI_APP_DEBUG=1`。
+2. `bun run --cwd apps/mini pack`：构建，再用论坛 SDK 的 `pack` 打出 `apps/mini/dist/package/app.zip`。SDK 不在本仓库：`MINI_APP_SDK` 指向它的 `sdk/` 目录，默认是下载的开发包。应用 ID 和版本取 `manifest.json`（ID 是 `01a19ba5-b9d2-766f-9fb9-b7eddc10e0c7`，2026-11-02 建的应用），`MINI_APP_ID`、`MINI_APP_VERSION` 能改；同一个版本可以反复上传新构建。要在沙箱的 DevTools 里看源码，加 `MINI_APP_DEBUG=1`。红包站的地址用 `MINI_APP_HB_ORIGIN`，默认是 Stage（`https://staging.hb.lafi.sh`），会同时写进 manifest 的接口和小程序里的链接；正式版用 `https://hb.lafi.sh`。
 3. 在应用页的沙箱页签上传这个 ZIP，等“沙箱就绪”私信，打开沙箱地址检查。
 
-## 7 下一步
+## 7 经典玩法版（2026-11-02）
 
-验证包在沙箱里没问题以后：红包站加认论坛 JWT 的入口和小程序专用的接口（读红包、领取或提交、查结果、我的记录），沙箱的请求只放行到 Stage；封面拆成共用组件；从启动参数读红包编号打开真的红包。
+用户定的：小程序就是一个红包页的入口，大家在论坛里直接把红包领了；没有别的页面，不要声音和全屏；先只做经典玩法，代码判定先不上，显示一个复制链接就行；小游戏另算。
+
+- **打开哪个红包**：启动参数 `hb` 是红包编号。红包站红包页的分享在“发到社区”里多一项“论坛小程序”，复制 `https://linux.do/apps/<应用 ID>?hb=<红包编号>`。没带编号就说请从红包站分享的小程序链接打开。
+- **在论坛里能领的**：直接领、口令；拼手气、固定均分、自定义金额、限时开奖（报名）；LDC 和 🐟额。领到以后显示金额和发放情况。
+- **在论坛里领不了的**：代码判定、要人机验证的，说明为什么，给一个“复制链接”（剪贴板要用户点），到红包站领。
+- **谁能领**：凭证的 `sub` 就是 LINUX DO 编号，对上红包站的用户（`provider='linux_do'`、`external_id`、账号没停用）。真凭证里没有用户名和信任等级（§3）。
+  - **在红包站登录过的**：直接领，信任等级、领取范围、冷却都照红包站的规则。
+  - **没来过的，第一次领时自动注册**：账号按编号建，用户名和昵称用小程序报来的（`sdk.user.getCurrent()`，没有签名）。用户的定（2026-11-02）：编号一定准，用户名社区里不常改，不要太复杂的兜底。只加两条：
+    - 这个名字已经属于本站另一个账号，就不收，请他到红包站登录一次。这样冒充不了来过的人。
+    - 用 LINUX DO 登录过以前（`profile_seen_at` 为空），信任等级当作未知，领取范围里“指定的人”只按编号认、不按名字认。限范围的红包请他到红包站登录一次。他登录以后，账号按编号对上，资料换成 LINUX DO 给的。
+  - **钱**：Credit 发钱按编号加用户名一起核对（`id = ? AND username = ?`，对不上就“收款人不存在”），钱不会发错人；🐟额只认账号。
+- **记来源**：在小程序里领的，领取记录上标 `claims.via = 'mini'`；限时开奖标在报名记录上（`activity_registrations.via`），中奖的那份看报名。迁移 `0058_forum_mini`，上线时先跑迁移。
+- **接口**（红包站，都在 `/api/mini/`）：`GET hongbao?id=` 读红包和自己的领取；`POST claim?id=`（`submissionId`，口令红包带 `password`）领取或报名；`GET live?id=` 实时（WebSocket）。
+  - 每个请求都验论坛的凭证：ES256，`kid` 是公钥 SPKI 的 SHA-256，`iss` 是 `https://linux.do`，`aud` 是本站地址，应用 ID、`channel`、方法、地址和动态参数（`htm`、`htu`、`query_keys`）都要对上，最长 15 分钟。照论坛服务端 SDK 的规则用 WebCrypto 自己验，它的 SDK 只能跑在 Node/Bun。
+  - Stage 只收沙箱（`sandbox`），正式站只收正式版（`production`）。CORS 只给 `https://linux.do`；WebSocket 握手还要看 `Origin`。
+  - 配置：`MINI_APP_ID`、`MINI_APP_ISSUER`、`MINI_APP_CHANNEL` 和 `MINI_APP_PUBLIC_KEY`。公钥是论坛的 JWKS（`https://linux.do/mini-app-api/jwks`，原样填进去；按 `kid` 选钥匙，论坛换钥匙时把新的加进去），也收单个 JWK 或 PEM。公钥没配，接口回 503。
+- **实时**：小程序的连接进同一个红包的频道，人数和网页的一起算，同一个人只算一次。
+  - 推给小程序的是精简过的红包：去掉说明、结束说明、名单头像、代码、附带网页和开奖证明，控制在 4 KiB 以内；超了只说“变了”，小程序再读一次。另外推人数和“你的领取变了”；代码判定的消息不推。
+  - 每条连接活到 min(300 秒, 凭证剩余时间)，到点服务端就关。小程序在快到点时先连上新的，再关旧的（最多同时 2 条），中间不断。
+- **样子**：红包站红包页的那些零件，数据由小程序拼（§4）；数字、标签、结束原因都用红包站自己的 `hongbaoOf`、`publicViewOf`、`mineOf` 算。
+- **上线**：沙箱构建连 Stage。正式发布要过论坛审核，审核过了，分享出去的链接别人才能打开。
+- **本地**：`bun run --cwd apps/mini dev`，替身 SDK 按 `?hb=` 给示例红包（`password`、`direct`、`fish`、`draw`、`code`、`human`、`ended`、`stranger`、`scheduled`，不带就是没有红包），右下角能换示例、深浅和减少动画。
+- **进度（2026-11-02，没提交）**：红包站的三个接口、DO 里的小程序连接、分享里的“论坛小程序”、小程序的红包页都做好了，接口有测试（`apps/api/test/mini-app.test.ts`）。论坛的 JWKS 已经写进 Stage 和正式站的配置（一把 P-256 钥匙，`kid` `217dfe8a…`，核对过就是它 SPKI 的 SHA-256）。还差把这一版部署到 Stage，才能在沙箱里真领。Stage 现在停着 LDC 领取（`LDC_STOP_NEW_CLAIMS`），在沙箱里试领要用 🐟额红包。

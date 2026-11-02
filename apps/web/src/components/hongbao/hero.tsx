@@ -1,6 +1,7 @@
 import { AnimatePresence, motion, type Transition } from "motion/react";
 import {
   type CSSProperties,
+  type ReactNode,
   useEffect,
   useId,
   useLayoutEffect,
@@ -8,19 +9,19 @@ import {
   useState,
 } from "react";
 import { cn } from "../../lib/cn";
+import { useEmbedded } from "../../lib/embedded";
 import { haptic } from "../../lib/haptics";
 import type { HongbaoActivity } from "../../lib/hongbao";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { isApple } from "../../lib/platform";
-import {
-  omniboxElements,
-  useCooldownSeconds,
-} from "../omnibox/use-omnibox-controller";
+import { useCooldownSeconds } from "../omnibox/cooldown";
+import { omniboxElements } from "../omnibox/elements";
 import { MORPH_MS } from "../shell/layout-morph";
 import { useWindowInfo, type WindowInfo } from "../shell/window-info";
 import { ShortcutKbd } from "../ui/kbd";
 import { MorphLabel, RollingNumber, RollingText } from "../ui/morph-label";
 import { Reveal } from "../ui/reveal";
+import { countdown, useNow } from "./clock";
 import { CoverData } from "./cover-data";
 import { CoverHead } from "./cover-head";
 import { coverMotion } from "./cover-motion";
@@ -28,7 +29,7 @@ import { MyResult } from "./my-result";
 import { Seal } from "./parts";
 import { useCoverHeight } from "./use-cover-height";
 import { COVER_RESERVE, scrollerOf, useCoverState } from "./use-cover-state";
-import { countdown, type Hongbao, useNow } from "./use-hongbao";
+import type { Hongbao } from "./use-hongbao";
 
 const clamp = (min: number, value: number, max: number) =>
   Math.min(max, Math.max(min, value));
@@ -81,12 +82,15 @@ function ActionHint({
   activity,
   hongbao,
   hintId,
+  action,
 }: {
   activity: HongbaoActivity;
   hongbao: Hongbao;
   hintId: string;
+  action?: ReactNode;
 }) {
   const { compact } = useWindowInfo();
+  const embedded = useEmbedded();
   const reduced = useReducedMotionPref();
   const { phase, message, standing } = hongbao;
   return (
@@ -143,10 +147,14 @@ function ActionHint({
           {message.text}
         </p>
       )}
+      {/* The forum's mini app's own way to take part (its 口令 field, a
+          link to 红包站), where the command box is on 红包站. */}
+      {action}
       {/* Only beside a keyboard's room: the window turning narrow or wide
           folds it away or opens it (布局补间), the page below following. */}
       <AnimatePresence initial={false}>
         {!compact &&
+          !embedded &&
           phase === "closed" &&
           activity.participation !== "direct" &&
           hongbao.sealState === "idle" &&
@@ -189,9 +197,12 @@ export function HongbaoHero({
   hongbao,
   arriveFrom = null,
   fromRed = false,
+  action,
 }: {
   activity: HongbaoActivity;
   hongbao: Hongbao;
+  /** Under the hint: the forum's mini app's own way to take part. */
+  action?: ReactNode;
   /** The skeleton's cover height, when the page arrived after one. */
   arriveFrom?: number | null;
   /** That skeleton was red: a 代码判定红包's lacquer fades in from it. */
@@ -413,7 +424,12 @@ export function HongbaoHero({
             key="hint"
             exit={{ opacity: 0, transition: { duration: reduced ? 0 : 0.15 } }}
           >
-            <ActionHint activity={activity} hongbao={hongbao} hintId={hintId} />
+            <ActionHint
+              activity={activity}
+              hongbao={hongbao}
+              hintId={hintId}
+              action={action}
+            />
           </motion.div>
         )}
       </AnimatePresence>

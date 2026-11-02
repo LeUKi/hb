@@ -23,13 +23,11 @@ import { Button } from "../ui/button";
 import { MoreLink } from "../ui/button-link";
 import { CopyButton } from "../ui/copy-button";
 import { Reveal } from "../ui/reveal";
+import { roundText } from "./clock";
 
 // 开奖证明 (docs/draw-proof-design.md): a 限时开奖 drawn from one drand
 // round after closing, or a 拼手气's queue sealed at opening; either can be
 // checked again here. The same for everyone, whoever won.
-
-export const roundText = (round: number) =>
-  `drand 第 ${round.toLocaleString("en-US")} 轮`;
 
 /** 🎲: the 红包's data and the rule, for whoever wants every detail. */
 export const drawDataPath = (activityId: string) =>

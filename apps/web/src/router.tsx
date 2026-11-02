@@ -22,17 +22,8 @@ import { noteEntry } from "./lib/history-trail";
 // "/" command path. The retired /activities/…, /e/…, /redeem/… and /topics/…
 // addresses fall to "not found".
 
+// Each route's static data: lib/route-data.d.ts.
 declare module "@tanstack/react-router" {
-  interface StaticDataRouteOption {
-    /** "start": omnibox centred on the start page; "docked": in the bar. */
-    chrome?: "start" | "docked";
-    /** The command whose page this route shows. */
-    command?: CommandId;
-    /** A sender's page under a 红包 (📝 / 📊 / 🧾). */
-    senderPage?: SenderPage;
-    /** A page without a command of its own (/payments/<编号>, /status): its title. */
-    subpage?: string;
-  }
   interface Register {
     router: typeof router;
   }

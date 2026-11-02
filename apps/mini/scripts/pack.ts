@@ -23,9 +23,24 @@ const { pack } = (await import(pathToFileURL(join(sdk, "pack.mjs")).href)) as {
 const manifest = JSON.parse(await readFile("manifest.json", "utf8")) as {
   id: string;
   version: string;
+  endpoints?: Record<string, { url: string }>;
+  websockets?: Record<string, { url: string }>;
 };
 manifest.id = process.env.MINI_APP_ID || manifest.id;
 manifest.version = process.env.MINI_APP_VERSION || manifest.version;
+// 红包站's endpoints: Stage (sandbox builds) as written, or the one the
+// build was made for (vite.config.ts takes the same for its links).
+const site = new URL(
+  process.env.MINI_APP_HB_ORIGIN || "https://staging.hb.lafi.sh",
+);
+for (const endpoint of [
+  ...Object.values(manifest.endpoints ?? {}),
+  ...Object.values(manifest.websockets ?? {}),
+]) {
+  const url = new URL(endpoint.url);
+  url.host = site.host;
+  endpoint.url = url.href;
+}
 const files = {
   "index.html": await readFile("src/template.html"),
   "app.js": await readFile("dist/web/app.js"),
@@ -34,5 +49,5 @@ const files = {
 };
 const result = await pack({ manifest, files, outputDirectory: "dist/package" });
 console.log(
-  `${result.file}：${result.size} 字节，应用 ${manifest.id}，版本 ${manifest.version}，SHA-256 ${result.zipSha256}`,
+  `${result.file}：${result.size} 字节，应用 ${manifest.id}，版本 ${manifest.version}，红包站 ${site.origin}，SHA-256 ${result.zipSha256}`,
 );

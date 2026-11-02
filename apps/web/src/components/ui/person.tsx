@@ -10,6 +10,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "../../lib/cn";
+import { useEmbedded } from "../../lib/embedded";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { Avatar } from "./avatar";
 import { LinuxDoMark } from "./linux-do-mark";
@@ -44,6 +45,10 @@ export function PersonName({
 }) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
+  const embedded = useEmbedded();
+  // In the forum's mini app: the name, no card leading off the page.
+  if (embedded)
+    return <span className={cn("max-w-full truncate", className)}>{name}</span>;
   return (
     <>
       <button

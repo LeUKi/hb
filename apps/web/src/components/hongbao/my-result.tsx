@@ -9,6 +9,7 @@ import { motion } from "motion/react";
 import { type Ref, useState } from "react";
 import { ActivityRequestError } from "../../lib/activities";
 import { useResendPayment } from "../../lib/claims";
+import { useEmbedded } from "../../lib/embedded";
 import type { HongbaoActivity, Mine } from "../../lib/hongbao";
 import { paymentTone } from "../../lib/hongbao-text";
 import { paymentReason, quotaResumeWords } from "../../lib/payment-display";
@@ -25,22 +26,29 @@ import { MorphLabel } from "../ui/morph-label";
 import { PersonName } from "../ui/person";
 import { Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
+import { useNow } from "./clock";
 import { Countdown } from "./cover-data";
 import { CountUp } from "./parts";
 import { TitleBadges } from "./title-badge";
-import { useNow } from "./use-hongbao";
 
 /** A 🐟额红包's share: in 🐟额 already, and the way on to Credit. */
 function FishStored() {
   const navigate = useNavigate();
+  // In the forum's mini app: 转出 is on 红包站.
+  const embedded = useEmbedded();
   return (
     <span className="inline-flex items-center gap-1">
       <StatusChip size="md" tone="success" dot>
         已存入🐟额
       </StatusChip>
-      <MoreLink href="/balance" onGo={() => void navigate({ to: "/balance" })}>
-        转出
-      </MoreLink>
+      {!embedded && (
+        <MoreLink
+          href="/balance"
+          onGo={() => void navigate({ to: "/balance" })}
+        >
+          转出
+        </MoreLink>
+      )}
     </span>
   );
 }
@@ -266,6 +274,7 @@ export function MyResult({
   const payment = mine.payment;
   // Sent again from here: until it lands, the note says so.
   const [resent, setResent] = useState(false);
+  const embedded = useEmbedded();
   return (
     <div
       ref={ref}
@@ -350,7 +359,8 @@ export function MyResult({
       ) : /* A 🐟额红包's share is in 🐟额 already: nothing to follow (under
           1 🐟 it goes to Credit all at once, balance-design §5). */
       amount && activity.fish ? null : amount && payment ? (
-        heldForAccount(payment) && mine.claimId ? (
+        // 重新发送 needs this site's session: not in the forum's mini app.
+        heldForAccount(payment) && mine.claimId && !embedded ? (
           <NoCreditAccount
             activityId={activity.id}
             claimId={mine.claimId}

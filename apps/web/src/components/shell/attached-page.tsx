@@ -52,69 +52,26 @@ import { windowDialogsAtom } from "../../lib/store";
 import { useOmniboxMode } from "../omnibox/state";
 import { Button } from "../ui/button";
 import { radius, Squircle, SquirclePlate } from "../ui/squircle";
+import {
+  heldAtom,
+  requestAtom,
+  type Stop,
+  sheetStopAtom,
+  useAttachedPageOpener,
+  useMedia,
+  WIDE,
+} from "./attached-page-state";
 import { usePageBridge } from "./page-bridge";
 
-/**
- * The page held: the 红包 it is for and its address (null: none), open
- * beside the 红包 (or pulled up), loaded once first opened, and the split. Off its
- * 红包's page (its 📝 page, the start page) it stays, hidden; another
- * 红包's page lets it go.
- */
-type Held = {
-  forId: string | null;
-  url: string | null;
-  /** The 红包 author's LINUX DO username: whose page this is. */
-  author: string | null;
-  open: boolean;
-  loaded: boolean;
-  mainWidth: number;
-};
-const heldAtom = atom<Held>({
-  forId: null,
-  url: null,
-  author: null,
-  open: false,
-  loaded: false,
-  mainWidth: 460,
-});
+export { useAttachedPageOpener };
+
 /** Bumped to reload the page (刷新). */
 const reloadAtom = atom(0);
-/**
- * Asked from the 红包 page (附带网页 under 分享, the cover's tag, a note's
- * button): `n` moves on with each ask, `open` says which way.
- */
-const requestAtom = atom({ n: 0, open: true });
 /**
  * The page's window covers the whole page (wide screens, open beside the
  * 红包 window only): nothing of the 背景 shows.
  */
 export const pageFullAtom = atom(false);
-
-/** Wide enough for the page beside the 红包 window. */
-const WIDE = "(min-width: 900px) and (min-height: 560px)";
-
-/**
- * The page of the 红包 page shown, when it has one: open beside it on a
- * wide screen, or its sheet pulled up on a narrow one.
- */
-export function useAttachedPageOpener() {
-  const activityId = useCurrentActivityId();
-  const held = useAtomValue(heldAtom);
-  const stop = useAtomValue(sheetStopAtom);
-  const wide = useMedia(WIDE);
-  const request = useSetAtom(requestAtom);
-  const available =
-    held.url !== null && activityId !== null && held.forId === activityId;
-  const isOpen = available && (wide ? held.open : stop === "full");
-  const ask = (open: boolean) =>
-    request((current) => ({ n: current.n + 1, open }));
-  return {
-    available,
-    isOpen,
-    open: () => ask(true),
-    toggle: () => ask(!isOpen),
-  };
-}
 
 /**
  * The 红包 whose page this browser left open beside it, newest last (the
@@ -177,17 +134,6 @@ const PULL_CLOSE = 96;
 const pullGive = (pull: number) => Math.min(pull, 240) * 0.35;
 const MOVE_MS = 520;
 const MOVE = `${MOVE_MS}ms cubic-bezier(0.2, 0, 0, 1)`;
-
-function useMedia(query: string) {
-  return useSyncExternalStore(
-    (onChange) => {
-      const list = matchMedia(query);
-      list.addEventListener("change", onChange);
-      return () => list.removeEventListener("change", onChange);
-    },
-    () => matchMedia(query).matches,
-  );
-}
 
 function useViewport() {
   return useSyncExternalStore(
@@ -900,8 +846,6 @@ function Divider({
 }
 
 const SHEET_PEEK = 68;
-type Stop = "peek" | "full";
-const sheetStopAtom = atom<Stop>("peek");
 /**
  * The sheet has stepped aside for the 红包 window's dialog: it is below the
  * screen, and the window reaches the screen's bottom until it is back.

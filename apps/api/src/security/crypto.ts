@@ -251,7 +251,7 @@ export function base64UrlEncode(bytes: Uint8Array) {
     .replaceAll("=", "");
 }
 
-function base64UrlDecode(value: string) {
+export function base64UrlDecode(value: string) {
   return base64Decode(value.replaceAll("-", "+").replaceAll("_", "/"));
 }
 

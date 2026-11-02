@@ -1,407 +1,590 @@
-import { Braces, RotateCcw } from "lucide-react";
-import { AnimatePresence, MotionConfig, motion } from "motion/react";
+import type {
+  ClaimDetail,
+  MiniHongbaoResponse,
+  MiniLiveMessage,
+  RegistrationDetail,
+} from "@hb/contracts";
 import {
-  type CSSProperties,
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+  RouterProvider,
+} from "@tanstack/react-router";
+import { useSetAtom } from "jotai";
+import { Check, Copy, RotateCcw } from "lucide-react";
+import { MotionConfig } from "motion/react";
+import {
+  createContext,
   type KeyboardEvent,
-  type ReactNode,
+  useCallback,
+  useContext,
   useEffect,
-  useId,
+  useMemo,
+  useRef,
   useState,
 } from "react";
+import { useDrawStep } from "../../web/src/components/hongbao/clock";
 import {
-  CountUp,
-  Seal,
-  type SealState,
-  Sparks,
-} from "../../web/src/components/hongbao/parts";
-import { Avatar } from "../../web/src/components/ui/avatar";
+  HongbaoHero,
+  hongbaoSizes,
+  sizeVars,
+} from "../../web/src/components/hongbao/hero";
+import { LiveViewers } from "../../web/src/components/hongbao/live-viewers";
+import { NoteContent } from "../../web/src/components/hongbao/note-content";
+import {
+  sealOf,
+  useDrawMoments,
+} from "../../web/src/components/hongbao/seal-state";
+import type { Hongbao } from "../../web/src/components/hongbao/use-hongbao";
+import { WindowDialog } from "../../web/src/components/shell/window-dialog";
+import {
+  type WindowInfo,
+  WindowInfoProvider,
+} from "../../web/src/components/shell/window-info";
 import { Button } from "../../web/src/components/ui/button";
 import { TextInput } from "../../web/src/components/ui/field";
-import {
-  MorphLabel,
-  RollingText,
-} from "../../web/src/components/ui/morph-label";
-import { Segmented } from "../../web/src/components/ui/segmented";
+import { MorphLabel } from "../../web/src/components/ui/morph-label";
+import { Reveal } from "../../web/src/components/ui/reveal";
 import { radius, Squircle } from "../../web/src/components/ui/squircle";
-import { cn } from "../../web/src/lib/cn";
-import { type Sample, type SampleKind, samples } from "./samples";
+import { EmbeddedContext } from "../../web/src/lib/embedded";
+import { activityShareUrl } from "../../web/src/lib/emoji-links";
+import { haptic } from "../../web/src/lib/haptics";
+import {
+  hongbaoOf,
+  mineOf,
+  type PasswordView,
+  publicViewOf,
+  type Roster,
+} from "../../web/src/lib/hongbao";
+import { liveViewersAtom } from "../../web/src/lib/live-state";
+import { claimHongbao, HongbaoError, readHongbao, useLive } from "./api";
+import type { MiniSdk } from "./sdk";
 
-// 验证包 (docs/mini-app-design.md §5): one 红包 screen drawn with the
-// site's own tokens and parts, to see them run inside the forum's frame —
-// the cover, the seal, the open with its sweep and sparks, the result —
-// in light and dark. Sample data only.
+// 论坛小程序 (docs/mini-app-design.md §7): the 红包 page of 红包站, its own
+// parts — the cover that folds small once taken part, its head, numbers and
+// 我的结果, 「N 人在看」 — drawn with the forum's data. Only the way to take
+// part is the mini app's: the 口令 under the seal (红包站 has its command
+// box), and 复制链接 where the forum cannot (代码判定, a human check, a name
+// 红包站 cannot take). What leads off the page is left out (lib/embedded.ts).
 
-/** “01:59:41”, by the second. */
-function useCountdown(to: number) {
-  const [now, setNow] = useState(() => Date.now());
+/** 红包站's origin, for its links (vite.config.ts). */
+const SITE = __HB_ORIGIN__;
+
+/** The roster mineOf reads titles from: none in the forum. */
+const noRoster: Roster = { kind: "claims", rows: [] };
+const noPasswords: PasswordView = { known: [], hidden: 0, canVerify: false };
+const noop = () => {};
+
+/** A payment still on its way: its changes come on the live channel. */
+const paying = (payment: ClaimDetail["payment"] | null | undefined) =>
+  Boolean(
+    payment &&
+      ["pending", "sending", "reconciling", "waiting"].includes(payment.status),
+  );
+
+/** A submission's id: crypto.randomUUID, or the same from random bytes. */
+function submissionId() {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40;
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
+  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, "0"));
+  return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
+}
+
+/** A read with nothing in it, for the hooks before the first one lands. */
+const emptyRead = {
+  id: "",
+  title: "",
+  rewardType: "ldc",
+  status: "active",
+  author: { id: "", username: "", displayName: "", avatarUrl: null },
+  forceDedicated: false,
+  topicUrl: null,
+  openedAt: null,
+  deadlineAt: null,
+  quantity: { mode: "hidden" },
+  beforeInfo: "",
+} satisfies MiniHongbaoResponse["activity"];
+
+/** 复制链接: the forum asks first; not copied, the link shows to select. */
+function CopyLink({
+  sdk,
+  url,
+  children,
+}: {
+  sdk: MiniSdk;
+  url: string;
+  children: string;
+}) {
+  const [state, setState] = useState<"idle" | "done" | "failed">("idle");
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-  const left = Math.max(0, Math.floor((to - now) / 1000));
-  const two = (value: number) => String(value).padStart(2, "0");
-  return `${two(Math.floor(left / 3600))}:${two(Math.floor(left / 60) % 60)}:${two(left % 60)}`;
-}
-
-function Chip({ text }: { text: string }) {
-  const code = text === "代码判定";
+    if (state !== "done") return;
+    const timer = window.setTimeout(() => setState("idle"), 1200);
+    return () => window.clearTimeout(timer);
+  }, [state]);
   return (
-    <Squircle radius={10}>
-      <span
-        className={cn(
-          "hb-chip-red inline-flex h-7 items-center px-2.5 text-xs",
-          code && "hb-chip-code gap-1",
+    <Squircle radius={radius.card}>
+      <div className="hb-note-card mt-2 grid w-full max-w-[26rem] gap-2.5 px-4 py-3 text-left">
+        <p className="text-base text-ink">{children}</p>
+        {/* Not copied (the forum asks first): the link to select by hand. */}
+        {state === "failed" && (
+          <p className="text-sm break-all text-ink-2 select-all">{url}</p>
         )}
-      >
-        {code && <Braces className="size-3.5" aria-hidden="true" />}
-        {text}
-      </span>
-    </Squircle>
-  );
-}
-
-function Cell({
-  label,
-  value,
-  note,
-}: {
-  label: string;
-  value: string;
-  note?: ReactNode;
-}) {
-  const unit = / LDC$/.exec(value);
-  return (
-    <div className="grid min-w-0 content-start justify-items-start gap-1">
-      <dt className="hb-data-label w-fit max-w-full truncate">{label}</dt>
-      <dd className="hb-data-value w-fit max-w-full truncate">
-        {unit ? (
-          <>
-            <RollingText text={value.slice(0, unit.index)} />
-            <span className="hb-data-unit"> LDC</span>
-          </>
-        ) : (
-          <RollingText text={value} />
-        )}
-      </dd>
-      {note && (
-        <dd className="hb-data-note flex w-full items-center truncate">
-          {note}
-        </dd>
-      )}
-    </div>
-  );
-}
-
-function Meter({ share }: { share: number }) {
-  return (
-    <Squircle radius={3}>
-      <span className="hb-data-meter block h-1.5 w-full overflow-hidden">
-        <span
-          className="block h-full"
-          style={{ width: `${Math.min(1, share) * 100}%` }}
-        />
-      </span>
-    </Squircle>
-  );
-}
-
-function Cover({
-  sample,
-  opened,
-  play,
-  sealState,
-  glyph,
-  onPress,
-  hintId,
-  deadline,
-}: {
-  sample: Sample;
-  opened: boolean;
-  /** Opened, and motion is not reduced: the light, the flash, the sparks. */
-  play: boolean;
-  sealState: SealState;
-  glyph: string;
-  onPress: () => void;
-  hintId: string;
-  deadline: number;
-}) {
-  const left = useCountdown(deadline);
-  const shares = sample.shares;
-  return (
-    <div
-      className={cn(
-        "hb-cover-frame relative z-10",
-        sample.kind === "code" && "hb-code",
-      )}
-      data-hb-part="hero"
-    >
-      <div className="hb-cover relative">
-        <div className="relative flex flex-col items-center gap-5 px-5 pt-6 pb-[calc(var(--seal)/2+1.5rem)] text-center">
-          <p className="flex max-w-full items-center gap-2 text-cream-2">
-            <Avatar name={sample.author} size={28} />
-            <span className="truncate text-[15px] leading-[1.4]">
-              {sample.author} 的红包
-            </span>
-          </p>
-          <h1 className="hb-cover-title max-w-[16em] text-[clamp(1.375rem,6.4cqw,2rem)] leading-[1.3] font-semibold text-balance text-cream">
-            {sample.title}
-          </h1>
-          <div className="flex w-full flex-wrap justify-center gap-2">
-            {sample.tags.map((tag) => (
-              <Chip key={tag} text={tag} />
-            ))}
-          </div>
-          <div className="hb-cover-note relative flex w-fit max-w-[min(30rem,100%)] flex-col text-[15px] leading-6">
-            <Squircle radius={radius.card}>
-              <div className="hb-cover-note-card px-3.5 py-2.5 text-left text-pretty">
-                {sample.note}
-              </div>
-            </Squircle>
-          </div>
-          <dl className="grid w-full max-w-[34rem] grid-cols-[repeat(3,minmax(0,auto))] justify-between gap-x-4 px-1">
-            <Cell label="奖池" value={`${sample.pool} LDC`} />
-            {shares ? (
-              <Cell
-                label="已领"
-                value={`${shares.taken} / ${shares.total} 份`}
-                note={<Meter share={shares.taken / shares.total} />}
-              />
-            ) : (
-              <Cell
-                label="奖池还剩"
-                value={`${sample.left} LDC`}
-                note={
-                  <Meter share={Number(sample.left) / Number(sample.pool)} />
-                }
-              />
-            )}
-            <Cell label="剩余" value={left} />
-          </dl>
-        </div>
-        <span
-          aria-hidden="true"
-          className="hb-cover-sweep"
-          data-play={play || undefined}
-          style={{ "--sweep-delay": "0.18s" } as CSSProperties}
-        />
+        <Button
+          variant="secondary"
+          size="sm"
+          className="justify-self-start"
+          onClick={() =>
+            void sdk.clipboard.writeText(url).then(
+              () => setState("done"),
+              () => setState("failed"),
+            )
+          }
+        >
+          {state === "done" ? (
+            <Check aria-hidden="true" />
+          ) : (
+            <Copy aria-hidden="true" />
+          )}
+          <MorphLabel fit={false}>
+            {state === "done"
+              ? "已复制"
+              : state === "failed"
+                ? "没能复制，请手动选中链接"
+                : "复制链接"}
+          </MorphLabel>
+        </Button>
       </div>
-
-      {play && (
-        <motion.span
-          aria-hidden="true"
-          className="hb-ring-flash pointer-events-none absolute top-full left-1/2 size-(--seal) -translate-x-1/2 -translate-y-1/2"
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: [0.9, 2.4], opacity: [0.8, 0] }}
-          transition={{ duration: 0.46, delay: 0.14 }}
-        />
-      )}
-      {play && <Sparks delay={0.2} count={36} />}
-
-      <AnimatePresence>
-        {!opened && (
-          <motion.div
-            key="seal"
-            className="absolute top-full left-1/2 z-10 -translate-x-1/2 -translate-y-1/2"
-            exit={{
-              scale: [1, 1.12, 0.5],
-              opacity: [1, 1, 0],
-              transition: { duration: 0.36, times: [0, 0.4, 1] },
-            }}
-          >
-            <Seal
-              glyph={glyph}
-              label="开红包"
-              state={sealState}
-              onPress={onPress}
-              describedBy={hintId}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+    </Squircle>
   );
 }
 
-function HongbaoScreen({
-  sample,
+function Page({
+  sdk,
+  id,
   reduced,
-  onReplay,
 }: {
-  sample: Sample;
+  sdk: MiniSdk;
+  id: string;
   reduced: boolean;
-  onReplay: () => void;
 }) {
-  const hintId = useId();
-  const [deadline] = useState(() => Date.now() + 2 * 3600_000 - 19_000);
-  const [phase, setPhase] = useState<"closed" | "pending" | "open">("closed");
+  const [data, setData] = useState<MiniHongbaoResponse | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [claiming, setClaiming] = useState(false);
+  /** A claim made here, now: the opening plays. */
+  const [fresh, setFresh] = useState(false);
   const [typed, setTyped] = useState("");
+  /** The seal was pressed on a 口令 红包: its field is out. */
+  const [asking, setAsking] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  /** 红包站 asked them to sign in there first: why. */
+  const [signIn, setSignIn] = useState<string | null>(null);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const field = useRef<HTMLDivElement>(null);
+  const setViewers = useSetAtom(liveViewersAtom);
+  const seq = useRef(0);
+  const reading = useRef<Promise<void> | null>(null);
+  const readAt = useRef(0);
 
-  const open = () => {
+  const read = useCallback(() => {
+    reading.current ??= readHongbao(sdk, id)
+      .then((next) => {
+        setData(next);
+        setFailure(null);
+      })
+      .catch((error: unknown) => {
+        setFailure(
+          error instanceof HongbaoError
+            ? error.code === "ACTIVITY_NOT_FOUND"
+              ? "没有找到这个红包，可能已经删除了。"
+              : error.message
+            : "连不上红包站，请再试一次。",
+        );
+      })
+      .finally(() => {
+        reading.current = null;
+        readAt.current = Date.now();
+      });
+    return reading.current;
+  }, [sdk, id]);
+
+  useEffect(() => {
+    void read();
+  }, [read]);
+
+  /** Read again, at most once a second however often it is asked. */
+  const readSoon = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reread = useCallback(() => {
+    if (readSoon.current) return;
+    readSoon.current = setTimeout(
+      () => {
+        readSoon.current = null;
+        void read();
+      },
+      Math.max(0, readAt.current + 1000 - Date.now()),
+    );
+  }, [read]);
+
+  const activity = data ? hongbaoOf(data.activity) : null;
+  const view = publicViewOf(data?.activity ?? emptyRead);
+  const mine = data ? mineOf(data.participation, view, noRoster) : null;
+  const drawStep = useDrawStep(view);
+  const reveal = useDrawMoments(mine, drawStep);
+
+  useLive(
+    sdk,
+    id,
+    // Running, or over with their payment still on its way.
+    Boolean(
+      activity &&
+        activity.participation !== "code" &&
+        (!view.ended || paying(mine?.payment)),
+    ),
+    (live: MiniLiveMessage) => {
+      if (live.type === "mine") return reread();
+      if (live.seq <= seq.current) return;
+      const skipped = seq.current > 0 && live.seq > seq.current + 1;
+      seq.current = live.seq;
+      if (live.type === "viewers") setViewers({ id, count: live.count });
+      else if (live.type === "changed") reread();
+      else
+        setData((current: MiniHongbaoResponse | null) =>
+          current
+            ? {
+                ...current,
+                activity: { ...current.activity, ...live.activity },
+              }
+            : current,
+        );
+      if (skipped) reread();
+    },
+    reread,
+  );
+
+  if (!activity)
+    return (
+      <div className="grid min-h-[60vh] content-center justify-items-center gap-3 px-6 text-center">
+        <p className="text-lg text-ink">
+          <MorphLabel fit={false}>{failure ?? "正在读取红包…"}</MorphLabel>
+        </p>
+        {failure && (
+          <Button variant="secondary" size="sm" onClick={() => void read()}>
+            <RotateCcw aria-hidden="true" />
+            再试一次
+          </Button>
+        )}
+      </div>
+    );
+
+  const seal = sealOf({
+    activity,
+    view,
+    mine,
+    standing: null,
+    author: false,
+    spinning: claiming,
+    gate: null,
+    retry: false,
+    cooling: false,
+    drawStep,
+  });
+  const elsewhere =
+    activity.participation === "code"
+      ? "这个红包由判定器判定，要在红包站里领。"
+      : activity.humanCheck
+        ? "这个红包要先通过人机验证，论坛小程序里加载不了验证，请到红包站领取。"
+        : null;
+  // Open, but to be taken part in on 红包站: the seal says why, faded.
+  const blocked =
+    seal.phase === "closed" && !seal.draft
+      ? elsewhere
+        ? "在论坛里领不了"
+        : signIn !== null
+          ? "先到红包站登录一次"
+          : null
+      : null;
+  const open =
+    seal.phase === "closed" && !seal.draft && !seal.paused && !blocked;
+  const password = activity.participation === "password";
+
+  const claim = async () => {
+    const typedPassword = typed.trim();
+    setClaiming(true);
     setMessage(null);
-    setPhase("pending");
-    // What a claim's answer takes on the site; here, a stand-in.
-    window.setTimeout(() => setPhase("open"), 900);
+    try {
+      // A first-timer's account is named as the forum says (§7).
+      const forumUser =
+        !data?.known && sdk.permissions.has("user.read")
+          ? await sdk.user.getCurrent().catch(() => null)
+          : null;
+      const result = await claimHongbao(sdk, id, {
+        submissionId: submissionId(),
+        ...(password ? { password: typedPassword } : {}),
+        ...(forumUser
+          ? {
+              forumUser: { username: forumUser.username, name: forumUser.name },
+            }
+          : {}),
+      });
+      const keep = (
+        claimDetail: ClaimDetail | null,
+        registration: RegistrationDetail | null,
+      ) =>
+        setData((current: MiniHongbaoResponse | null) =>
+          current
+            ? {
+                ...current,
+                known: true,
+                participation: { claim: claimDetail, registration },
+              }
+            : current,
+        );
+      if (result.result === "claimed" || result.result === "already_claimed") {
+        setFresh(result.result === "claimed");
+        keep(result.claim, null);
+      } else if (
+        result.result === "registered" ||
+        result.result === "already_registered"
+      ) {
+        setFresh(result.result === "registered");
+        keep(null, result.registration);
+      } else if (result.result === "incorrect")
+        setMessage("口令不对，再试一次。");
+      else if (result.result === "draft") setMessage("这个红包还没开放。");
+      else void read();
+    } catch (error) {
+      if (error instanceof HongbaoError && error.code === "SIGN_IN_FIRST")
+        setSignIn(error.message);
+      else
+        setMessage(
+          error instanceof HongbaoError
+            ? error.message
+            : "没能领取，请再试一次。",
+        );
+    } finally {
+      setClaiming(false);
+    }
   };
+
+  // The seal: a 口令 红包 asks for its 口令 first (on 红包站 the command
+  // box opens), then sends it; the others claim at once.
   const press = () => {
-    if (sample.elsewhere || phase !== "closed") return;
-    if (sample.password && typed.trim() !== sample.password) {
-      setMessage(typed.trim() ? "口令不对，再试一次。" : "先输入口令。");
+    if (!open || claiming) return;
+    haptic("light");
+    if (password && !asking) {
+      setAsking(true);
       return;
     }
-    open();
+    if (password && !typed.trim()) {
+      setMessage("先输入口令。");
+      field.current?.querySelector("input")?.focus();
+      return;
+    }
+    void claim();
   };
-  // No <form>: the forum's frame may not submit one (no submit event at all),
-  // so Enter — not while an input method is composing — and 开 call press().
+  // No <form>: the forum's frame submits none (docs/mini-app-design.md §5),
+  // so Enter — not while an input method is composing — and 开 claim.
   const enter = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter" && !event.nativeEvent.isComposing) press();
   };
 
-  const sealState: SealState = sample.elsewhere
-    ? "muted"
-    : phase === "pending"
-      ? "pending"
-      : "idle";
-  const hint = sample.elsewhere
-    ? "在论坛里领不了"
-    : phase === "pending"
-      ? "正在领取…"
-      : sample.password
-        ? "输入口令，再点「开」"
-        : "点「开」领取";
+  const hongbao: Hongbao = {
+    view,
+    roster: noRoster,
+    passwords: noPasswords,
+    openVerify: noop,
+    openRoster: noop,
+    openNote: () => setNoteOpen(true),
+    mine,
+    standing: null,
+    phase: seal.phase,
+    fresh,
+    reveal,
+    // As a page's own claim on 红包站 (no command box to fly back first).
+    openDelay: 0.15,
+    reduced,
+    gate: null,
+    author: false,
+    draft: seal.draft,
+    isDraw: seal.isDraw,
+    glyph: seal.glyph,
+    sealState: blocked ? "muted" : seal.sealState,
+    sealLabel: blocked ?? seal.sealLabel,
+    hint:
+      blocked ??
+      (open && password && asking && !claiming
+        ? `输入口令，再点「${seal.glyph}」`
+        : seal.hint),
+    drawing: seal.drawing,
+    drawStep,
+    cooldown: false,
+    announcement: seal.announcement,
+    press,
+    message: null,
+  };
+  const siteUrl = activityShareUrl(activity.id, SITE);
+
+  const action = (
+    <>
+      <Reveal show={open && password && asking}>
+        <div
+          ref={field}
+          className="mx-auto mt-2 flex w-[min(22rem,100%)] items-center gap-2"
+        >
+          <div className="min-w-0 flex-1">
+            <TextInput
+              aria-label="口令"
+              placeholder="口令"
+              value={typed}
+              invalid={Boolean(message)}
+              autoFocus
+              onChange={(event) => {
+                setTyped(event.target.value);
+                setMessage(null);
+              }}
+              onKeyDown={enter}
+            />
+          </div>
+          <Button
+            type="button"
+            variant="primary"
+            disabled={claiming}
+            onClick={press}
+          >
+            {seal.glyph}
+          </Button>
+        </div>
+      </Reveal>
+      {message && <p className="text-sm text-danger">{message}</p>}
+      {blocked && elsewhere && (
+        <CopyLink sdk={sdk} url={siteUrl}>
+          {elsewhere}
+        </CopyLink>
+      )}
+      {blocked && !elsewhere && signIn !== null && (
+        <CopyLink sdk={sdk} url={siteUrl}>
+          {signIn}
+        </CopyLink>
+      )}
+    </>
+  );
 
   return (
-    <>
-      <Cover
-        sample={sample}
-        opened={phase === "open"}
-        play={phase === "open" && !reduced}
-        sealState={sealState}
-        glyph="开"
-        onPress={press}
-        hintId={hintId}
-        deadline={deadline}
-      />
-      <AnimatePresence initial={false} mode="popLayout">
-        {phase === "open" ? (
-          <motion.div
-            key="result"
-            className="mx-auto grid w-full max-w-[36rem] justify-items-center gap-3 px-5 pt-12 text-center"
-            initial={reduced ? false : { opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.36, delay: 0.62 }}
-            data-hb-part="result"
-          >
-            <p className="flex items-baseline gap-2 text-success">
-              <span className="text-[clamp(2.75rem,12cqw,4.5rem)] leading-none font-semibold tracking-tight">
-                <CountUp
-                  value={sample.amount}
-                  play={!reduced}
-                  delay={0.7}
-                  prefix="+"
-                />
-              </span>
-              <span className="text-xl font-medium">LDC</span>
-            </p>
-            <p className="text-sm text-ink-2">
-              示例：真的领取时，LDC 会发到你的 Credit 账户。
-            </p>
-            <Button variant="secondary" size="sm" onClick={onReplay}>
-              <RotateCcw aria-hidden="true" />
-              再开一次
-            </Button>
-          </motion.div>
-        ) : (
-          <motion.div
-            key="hint"
-            className="grid justify-items-center gap-3 px-6 text-center"
-            style={{ paddingTop: "calc(var(--seal) / 2 + 0.875rem)" }}
-            exit={{ opacity: 0, transition: { duration: 0.15 } }}
-          >
-            <p id={hintId} className="text-lg text-ink">
-              <MorphLabel fit={false}>{hint}</MorphLabel>
-            </p>
-            {sample.password && phase === "closed" && (
-              <div className="flex w-full max-w-[22rem] items-center gap-2">
-                <div className="min-w-0 flex-1">
-                  <TextInput
-                    aria-label="口令"
-                    placeholder="口令"
-                    value={typed}
-                    invalid={Boolean(message)}
-                    onChange={(event) => {
-                      setTyped(event.target.value);
-                      setMessage(null);
-                    }}
-                    onKeyDown={enter}
-                  />
-                </div>
-                <Button type="button" variant="primary" onClick={press}>
-                  开
-                </Button>
-              </div>
-            )}
-            {message && <p className="text-sm text-danger">{message}</p>}
-            {sample.elsewhere && (
-              <Squircle radius={radius.card}>
-                <div className="hb-note-card grid w-full max-w-[26rem] gap-1.5 px-4 py-3 text-left">
-                  <p className="text-base text-ink">{sample.elsewhere}</p>
-                  <p className="text-sm break-all text-ink-2 select-all">
-                    https://hb.lafi.sh/🧧/示例
-                  </p>
-                </div>
-              </Squircle>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </>
+    <div
+      className="relative flex flex-col pb-14 [overflow-anchor:none]"
+      data-phase={seal.phase}
+    >
+      <LiveViewers activityId={id} running={!view.ended} />
+      <p className="sr-only" role="status">
+        {seal.announcement}
+      </p>
+      <HongbaoHero activity={activity} hongbao={hongbao} action={action} />
+      <WindowDialog
+        open={noteOpen}
+        onClose={() => setNoteOpen(false)}
+        labelledBy="note-title"
+        width="34rem"
+      >
+        <NoteContent activity={activity} onClose={() => setNoteOpen(false)} />
+      </WindowDialog>
+    </div>
+  );
+}
+
+/** Opened without a 红包: how to open one. */
+function NoHongbao() {
+  return (
+    <div className="grid min-h-[60vh] content-center justify-items-center gap-2 px-6 text-center">
+      <p className="text-lg text-ink">请从红包站分享的小程序链接打开红包。</p>
+      <p className="max-w-[26rem] text-sm text-ink-2">
+        在红包站的红包页点「分享」，选「论坛小程序」，复制链接发到帖子里，大家点开就能在论坛里领。
+      </p>
+    </div>
+  );
+}
+
+type Props = {
+  sdk: MiniSdk;
+  /** The 红包 the forum link names (`?hb=`), if any. */
+  id: string | null;
+  reduced: boolean;
+};
+const PropsContext = createContext<Props | null>(null);
+
+function Root() {
+  const props = useContext(PropsContext);
+  if (!props) return null;
+  return props.id ? (
+    <Page sdk={props.sdk} id={props.id} reduced={props.reduced} />
+  ) : (
+    <NoHongbao />
+  );
+}
+
+/**
+ * The site's parts read the router (links, the 附带网页's 红包): one page
+ * in memory, nothing to go to.
+ */
+export function createMiniRouter() {
+  return createRouter({
+    routeTree: createRootRoute({ component: Root }),
+    history: createMemoryHistory({ initialEntries: ["/"] }),
+  });
+}
+
+/** The frame as the 红包 page's window (its sizes, its narrow layout). */
+function useFrameInfo(): WindowInfo {
+  const [width, setWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const resize = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
+  // The frame grows with the page (up to the forum's limit): a fixed height
+  // keeps the cover's size from following it round.
+  return useMemo(
+    () => ({
+      width,
+      height: 720,
+      compact: width < 640,
+      roomy: width >= 960,
+      radius: 0,
+    }),
+    [width],
   );
 }
 
 export function App({
+  sdk,
+  id,
   mode,
   reduced,
-}: {
+  router,
+}: Props & {
   mode: "light" | "dark";
-  reduced: boolean;
+  router: ReturnType<typeof createMiniRouter>;
 }) {
-  const [kind, setKind] = useState<SampleKind>("direct");
-  const [round, setRound] = useState(0);
+  const info = useFrameInfo();
+  const props = useMemo(() => ({ sdk, id, reduced }), [sdk, id, reduced]);
   return (
     <MotionConfig reducedMotion={reduced ? "always" : "never"}>
-      <div
-        className="hb-mini"
-        data-mode={mode}
-        data-motion={reduced ? "reduce" : undefined}
-      >
-        <HongbaoScreen
-          key={`${kind}-${round}`}
-          sample={samples[kind]}
-          reduced={reduced}
-          onReplay={() => setRound((value) => value + 1)}
-        />
-        {/* Below, not above: the cover is the top of the page, as on the
-            site (its red runs on up when pulled past the top). */}
-        <footer className="mt-10 grid justify-items-center gap-2 px-4">
-          <p className="text-xs text-ink-3">验证包 · 示例红包，不会真的领取</p>
-          <Segmented
-            label="示例"
-            size="sm"
-            value={kind}
-            onChange={(next) => {
-              setKind(next);
-              setRound((value) => value + 1);
-            }}
-            options={[
-              { value: "direct", label: "直接领" },
-              { value: "password", label: "口令" },
-              { value: "code", label: "代码判定" },
-              { value: "human", label: "人机验证" },
-            ]}
-          />
-        </footer>
-      </div>
+      <EmbeddedContext.Provider value={true}>
+        <WindowInfoProvider value={info}>
+          <PropsContext.Provider value={props}>
+            {/* The 红包 page's window: its dialogs and hints are drawn in it. */}
+            <div
+              data-window-layer
+              className="hb-mini relative"
+              data-mode={mode}
+              data-motion={reduced ? "reduce" : undefined}
+              style={sizeVars(hongbaoSizes(info))}
+            >
+              <RouterProvider router={router} />
+            </div>
+          </PropsContext.Provider>
+        </WindowInfoProvider>
+      </EmbeddedContext.Provider>
     </MotionConfig>
   );
 }

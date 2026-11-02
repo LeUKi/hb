@@ -6,5 +6,33 @@
   "entry": "index.html",
   "script": "app.js",
   "style": "app.css",
-  "permissions": ["theme.read", "launch.read"]
+  "permissions": [
+    "user.read",
+    "theme.read",
+    "launch.read",
+    "clipboard.write",
+    "network.request",
+    "network.websocket"
+  ],
+  "endpoints": {
+    "hongbao": {
+      "url": "https://staging.hb.lafi.sh/api/mini/hongbao",
+      "method": "GET",
+      "query": ["id"],
+      "auth": "platform"
+    },
+    "claim": {
+      "url": "https://staging.hb.lafi.sh/api/mini/claim",
+      "method": "POST",
+      "query": ["id"],
+      "auth": "platform"
+    }
+  },
+  "websockets": {
+    "live": {
+      "url": "wss://staging.hb.lafi.sh/api/mini/live",
+      "query": ["id"],
+      "auth": "platform"
+    }
+  }
 }

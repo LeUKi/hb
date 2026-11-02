@@ -376,6 +376,8 @@ export const claims = sqliteTable(
     inventoryId: text("inventory_id").notNull(),
     passwordId: text("password_id").references(() => activityPasswords.id),
     claimedAt: integer("claimed_at").notNull(),
+    /** Where it was taken: "mini" in the forum's mini app; null on 红包站. */
+    via: text("via", { enum: ["mini"] }),
   },
   (table) => [
     foreignKey({
@@ -485,6 +487,8 @@ export const activityRegistrations = sqliteTable(
     ordinal: integer("ordinal").notNull(),
     recipientId: text("recipient_id").notNull(),
     registeredAt: integer("registered_at").notNull(),
+    /** Where they signed up: "mini" in the forum's mini app; null on 红包站. */
+    via: text("via", { enum: ["mini"] }),
   },
   (table) => [
     uniqueIndex("activity_registrations_user_unique").on(

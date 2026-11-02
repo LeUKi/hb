@@ -89,19 +89,22 @@ export async function assertInScope(
   const scope = scopeOf(row);
   if (!scope) return;
   const viewer = await env.DB.prepare(
-    "SELECT external_id, username, trust_level FROM users WHERE id = ?",
+    "SELECT external_id, username, trust_level, profile_seen_at FROM users WHERE id = ?",
   )
     .bind(userId)
     .first<{
       external_id: string;
       username: string;
       trust_level: number | null;
+      profile_seen_at: number | null;
     }>();
   if (
     viewer &&
     scopeAllows(scope, {
       linuxDoId: viewer.external_id,
-      username: viewer.username,
+      // A name LINUX DO has not vouched for (an account the forum's mini
+      // app made, docs/mini-app-design.md §7) is not matched: by id only.
+      username: viewer.profile_seen_at === null ? "" : viewer.username,
       trustLevel: viewer.trust_level,
     })
   )

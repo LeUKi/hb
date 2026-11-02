@@ -1,0 +1,134 @@
+import type {
+  ClaimResult,
+  MiniClaimInput,
+  MiniHongbaoResponse,
+  MiniLiveMessage,
+} from "@hb/contracts";
+import { useEffect, useRef } from "react";
+import type { MiniSdk, MiniSocket } from "./sdk";
+
+// 红包站's mini app routes (docs/mini-app-design.md §7), through the SDK:
+// the endpoints are manifest.json's, each request signed by the forum.
+
+/** 红包站's answer when it says no, in its own words. */
+export class HongbaoError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/** The SDK's own failures (no network, a timeout) in plain words. */
+function sdkError(error: unknown): HongbaoError {
+  const code = (error as { code?: string } | null)?.code ?? "NETWORK";
+  return new HongbaoError(
+    0,
+    code,
+    code === "TIMEOUT"
+      ? "红包站没有及时回答，请再试一次。"
+      : code === "PERMISSION_DENIED" || code === "ACCESS_DENIED"
+        ? "论坛没有允许这个小程序联网。"
+        : "连不上红包站，请再试一次。",
+  );
+}
+
+async function call<T>(
+  sdk: MiniSdk,
+  endpoint: string,
+  options: { query?: Record<string, string>; json?: unknown },
+): Promise<T> {
+  let response: Awaited<ReturnType<MiniSdk["http"]["request"]>>;
+  try {
+    response = await sdk.http.request(endpoint, options);
+  } catch (error) {
+    throw sdkError(error);
+  }
+  if (response.status >= 200 && response.status < 300)
+    return response.body as T;
+  const error = (
+    response.body as { error?: { code?: string; message?: string } } | null
+  )?.error;
+  throw new HongbaoError(
+    response.status,
+    error?.code ?? `HTTP_${response.status}`,
+    error?.message ?? "红包站出了点问题，请再试一次。",
+  );
+}
+
+export const readHongbao = (sdk: MiniSdk, id: string) =>
+  call<MiniHongbaoResponse>(sdk, "hongbao", { query: { id } });
+
+export const claimHongbao = (sdk: MiniSdk, id: string, input: MiniClaimInput) =>
+  call<ClaimResult>(sdk, "claim", { query: { id }, json: input });
+
+/** The forum closes a connection at 300 s: the next one opens before. */
+const RENEW_MS = 270_000;
+
+/**
+ * The 红包's live channel while `on`: each connection lives at most 300 s,
+ * so the next opens a little before and the old one closes once it is up
+ * (the forum allows two); a lost one comes back after a pause. One that
+ * cannot connect (over since, say) asks for a fresh read (`onLost`).
+ */
+export function useLive(
+  sdk: MiniSdk,
+  id: string,
+  on: boolean,
+  onMessage: (message: MiniLiveMessage) => void,
+  onLost: () => void,
+) {
+  const listener = useRef(onMessage);
+  listener.current = onMessage;
+  const lost = useRef(onLost);
+  lost.current = onLost;
+  useEffect(() => {
+    if (!on) return;
+    let stopped = false;
+    let current: MiniSocket | null = null;
+    let renew: ReturnType<typeof setTimeout> | undefined;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let failures = 0;
+    const open = async () => {
+      if (stopped) return;
+      let socket: MiniSocket;
+      try {
+        socket = await sdk.webSocket.connect("live", { query: { id } });
+        await socket.ready;
+      } catch {
+        failures += 1;
+        lost.current();
+        retry = setTimeout(open, Math.min(30_000, 2_000 * 2 ** (failures - 1)));
+        return;
+      }
+      if (stopped) {
+        void socket.close();
+        return;
+      }
+      failures = 0;
+      const previous = current;
+      current = socket;
+      socket.on("message", (value) =>
+        listener.current(value as MiniLiveMessage),
+      );
+      socket.on("close", () => {
+        if (stopped || current !== socket) return;
+        current = null;
+        clearTimeout(renew);
+        retry = setTimeout(open, 1_000);
+      });
+      if (previous) void previous.close().catch(() => {});
+      clearTimeout(renew);
+      renew = setTimeout(open, RENEW_MS);
+    };
+    void open();
+    return () => {
+      stopped = true;
+      clearTimeout(renew);
+      clearTimeout(retry);
+      void current?.close().catch(() => {});
+    };
+  }, [sdk, id, on]);
+}

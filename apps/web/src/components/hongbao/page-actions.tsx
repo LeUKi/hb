@@ -1,7 +1,7 @@
 import { useRouter } from "@tanstack/react-router";
 import { Globe, Share2 } from "lucide-react";
 import { openOverlay } from "../../lib/overlay";
-import { useAttachedPageOpener } from "../shell/attached-page";
+import { useAttachedPageOpener } from "../shell/attached-page-state";
 import { useWindowInfo } from "../shell/window-info";
 import { Button } from "../ui/button";
 import { Reveal } from "../ui/reveal";

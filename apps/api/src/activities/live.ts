@@ -1,8 +1,10 @@
-import type {
-  ActivityLiveMessage,
-  JudgeAnnouncement,
-  JudgeView,
-  PublicActivity,
+import {
+  type ActivityLiveMessage,
+  type JudgeAnnouncement,
+  type JudgeView,
+  MINI_LIVE_LIMIT,
+  type MiniLiveMessage,
+  type PublicActivity,
 } from "@hb/contracts";
 import type { ApiBindings } from "../env";
 import { activityObject } from "../runtime/objects";
@@ -102,6 +104,39 @@ export const liveAnnounce = (
     total,
     seq,
   } satisfies ActivityLiveMessage);
+
+/**
+ * 论坛小程序 (docs/mini-app-design.md §7): a mini app's socket is on the
+ * same channel (counted with the rest), tagged so it hears the lighter read
+ * and none of 代码判定's messages, and closed at its `until`.
+ */
+export const LIVE_MINI_TAG = "mini";
+/** The mini route's word for until when (ms) its socket may stay. */
+export const LIVE_UNTIL_HEADER = "X-HB-Live-Until";
+
+/**
+ * The read a mini app's socket hears: the public read without what does
+ * not move while it runs, under the forum's limit; past it, `changed`.
+ */
+export function liveMiniMessage(activity: PublicActivity, seq: number) {
+  const {
+    beforeInfo: _before,
+    afterEndInfo: _after,
+    rosterPreview: _roster,
+    judge: _judge,
+    page: _page,
+    drawProof: _proof,
+    ...light
+  } = activity;
+  const message = JSON.stringify({
+    type: "activity",
+    activity: light,
+    seq,
+  } satisfies MiniLiveMessage);
+  return new TextEncoder().encode(message).length <= MINI_LIVE_LIMIT
+    ? message
+    : JSON.stringify({ type: "changed", seq } satisfies MiniLiveMessage);
+}
 
 /** What a refresh may have moved: pushed only when something did. */
 export function liveFingerprint(row: ActivityRow | null | undefined) {

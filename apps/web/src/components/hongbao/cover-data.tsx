@@ -2,14 +2,15 @@ import { useAtomValue } from "jotai";
 import { ChevronRight } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { cn } from "../../lib/cn";
+import { useEmbedded } from "../../lib/embedded";
 import type { HongbaoActivity, PublicView, Roster } from "../../lib/hongbao";
 import { liveJudgedAtom } from "../../lib/live-state";
 import { Avatar } from "../ui/avatar";
 import { RollingNumber, RollingText } from "../ui/morph-label";
 import { Squircle } from "../ui/squircle";
+import { countdown, useNow } from "./clock";
 import { type CoverCell, coverCells } from "./cover-cells";
 import type { CoverMotion } from "./cover-motion";
-import { countdown, useNow } from "./use-hongbao";
 
 /** Ticks on its own, so the page around it does not re-render every second. */
 export function Countdown({ to }: { to: number }) {
@@ -173,6 +174,30 @@ function RosterEntry({
       : roster.kind === "draw"
         ? "中奖名单"
         : "报名名单";
+  const embedded = useEmbedded();
+  const faces = people.length > 0 && (
+    <span aria-hidden="true" className="flex -space-x-1.5">
+      {people.map((person) => (
+        <span key={person.id} className="hb-data-avatar flex rounded-full">
+          <Avatar name={person.name} src={person.avatarUrl} size={22} />
+        </span>
+      ))}
+    </span>
+  );
+  // In the forum's mini app: who took part lately, no 名单弹窗 to open.
+  if (embedded)
+    return (
+      <motion.span
+        layout="position"
+        layoutDependency={motions.state}
+        transition={motions.leaf.transition}
+        className="hb-roster-entry flex h-8 shrink-0 items-center gap-2 px-1.5"
+        data-morph="move"
+      >
+        {faces}
+        <span className="hb-roster-label text-[15px] font-medium">{label}</span>
+      </motion.span>
+    );
   return (
     // A squircle like every other control: the hover tint and the focus
     // ring follow it.
@@ -188,18 +213,7 @@ function RosterEntry({
         className="hb-roster-entry flex h-8 shrink-0 items-center gap-2 px-1.5"
         data-morph="move"
       >
-        {people.length > 0 && (
-          <span aria-hidden="true" className="flex -space-x-1.5">
-            {people.map((person) => (
-              <span
-                key={person.id}
-                className="hb-data-avatar flex rounded-full"
-              >
-                <Avatar name={person.name} src={person.avatarUrl} size={22} />
-              </span>
-            ))}
-          </span>
-        )}
+        {faces}
         <span className="hb-roster-label text-[15px] font-medium">{label}</span>
         <ChevronRight className="size-4 opacity-70" aria-hidden="true" />
       </motion.button>

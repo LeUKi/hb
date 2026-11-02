@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { cn } from "../../lib/cn";
+import { useEmbedded } from "../../lib/embedded";
 
 /**
  * A person on the gold ring, the same treatment for everyone: their forum
@@ -18,7 +19,9 @@ export function Avatar({
   className?: string;
 }) {
   const [failed, setFailed] = useState<string | null>(null);
-  const picture = src && failed !== src ? src : null;
+  // The forum's mini app loads no pictures from elsewhere: the character.
+  const embedded = useEmbedded();
+  const picture = src && failed !== src && !embedded ? src : null;
   return (
     <span
       aria-hidden="true"

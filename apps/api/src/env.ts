@@ -27,6 +27,17 @@ type ApiEnvVars = {
   DO_NAME_PREFIX?: string;
   /** 附带网页认人: private P-256 JWKs, the first signing (activities/page-identity.ts). */
   PAGE_IDENTITY_KEYS?: string;
+  /**
+   * 论坛小程序 (mini/platform-token.ts): the forum app's id, the forum
+   * (default https://linux.do), which builds this deployment takes
+   * ("sandbox" on Stage, "production"), and the forum's public key for
+   * their tokens (PEM or JWK). Without all of them the mini app's routes
+   * answer 503.
+   */
+  MINI_APP_ID?: string;
+  MINI_APP_ISSUER?: string;
+  MINI_APP_CHANNEL?: string;
+  MINI_APP_PUBLIC_KEY?: string;
 };
 
 export type ApiBindings = Omit<CloudflareEnv, keyof ApiEnvVars> & ApiEnvVars;

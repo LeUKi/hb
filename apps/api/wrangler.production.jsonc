@@ -18,6 +18,9 @@
     "MAINTENANCE_MODE": "false",
     "DO_LOCATION_HINT": "apac",
     "DO_NAME_PREFIX": "apac:",
+    "MINI_APP_ID": "01a19ba5-b9d2-766f-9fb9-b7eddc10e0c7",
+    "MINI_APP_CHANNEL": "production",
+    "MINI_APP_PUBLIC_KEY": "{\"keys\":[{\"kty\":\"EC\",\"crv\":\"P-256\",\"use\":\"sig\",\"alg\":\"ES256\",\"kid\":\"217dfe8a1dd6eaa1047673483e345d6808c171af4f66a6da98c580f36c003a88\",\"x\":\"pbVvvJPTHPqaWFO_BfVQU9ZsJ1cR-MNQfVQyGFgwyOI\",\"y\":\"T2EVZVbVR4xjnxZUxCFAYkj1yTQI5LruEs8umXxrwf4\"}]}",
     "LDC_TIMED_DRAW_ENABLED": "true"
   },
   "d1_databases": [

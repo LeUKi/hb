@@ -20,10 +20,7 @@ import {
 } from "../../lib/activities";
 import { passwordKey, useSolvePassword } from "../../lib/activity-passwords";
 import { activityCode } from "../../lib/activity-route";
-import {
-  attemptCooldownRemainingMs,
-  useAttemptCooldown,
-} from "../../lib/attempt-cooldown";
+import { attemptCooldownRemainingMs } from "../../lib/attempt-cooldown";
 import {
   type SessionResponse,
   sessionQueryKey,
@@ -77,6 +74,7 @@ import { sessionUserOf, useSessionUser } from "../../lib/session";
 import { verifyNoticeAtom } from "../../lib/store";
 import { useBefore } from "../../lib/use-before";
 import { phoneLikeNow } from "../shell/window-info";
+import { omniboxElements } from "./elements";
 import {
   editDraftAtom,
   judgingAtom,
@@ -93,11 +91,7 @@ import {
   withClaim,
 } from "./state";
 
-/** DOM handles shared by the single omnibox instance. */
-export const omniboxElements = {
-  input: null as HTMLTextAreaElement | null,
-  address: null as HTMLButtonElement | null,
-};
+export { omniboxElements };
 
 export type Destination =
   | { to: "/" }
@@ -140,14 +134,7 @@ export function focusOmniboxInput(select = false) {
   else input.setSelectionRange(input.value.length, input.value.length);
 }
 
-/**
- * Whole seconds left of the account's attempt cooldown (shared by the start
- * page and every 红包, set by the server). It changes exactly on the second.
- */
-export function useCooldownSeconds() {
-  const user = useSessionUser();
-  return useAttemptCooldown(user?.id ?? null).seconds;
-}
+export { useCooldownSeconds } from "./cooldown";
 
 /**
  * What the viewer could do with a 口令 inside this 红包 right now: claim

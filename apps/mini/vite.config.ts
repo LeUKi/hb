@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
@@ -8,7 +9,32 @@ import { defineConfig } from "vite";
 // writes dist/web/app.js and app.css for scripts/pack.ts.
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  define: { "process.env.NODE_ENV": JSON.stringify("production") },
+  // The site's own source, as the site resolves it (apps/web/vite.config.ts).
+  resolve: {
+    alias: [
+      {
+        find: "@",
+        replacement: fileURLToPath(new URL("../web/src", import.meta.url)),
+      },
+      // What needs a session on 红包站 (its own requests, 重新发送) is not
+      // built in: the parts drawn here never reach it (lib/embedded.ts), and
+      // the forum allows no network but its own (docs/mini-app-design.md).
+      ...["session", "claims", "activities"].map((name) => ({
+        find: new RegExp(`^(?:\\.\\./)+lib/${name}$`),
+        replacement: fileURLToPath(
+          new URL(`./src/off-site/${name}.ts`, import.meta.url),
+        ),
+      })),
+    ],
+  },
+  define: {
+    "process.env.NODE_ENV": JSON.stringify("production"),
+    // 红包站, for its links: Stage for sandbox builds, as manifest.json's
+    // endpoints (scripts/pack.ts writes both from MINI_APP_HB_ORIGIN).
+    __HB_ORIGIN__: JSON.stringify(
+      process.env.MINI_APP_HB_ORIGIN || "https://staging.hb.lafi.sh",
+    ),
+  },
   build: {
     outDir: "dist/web",
     emptyOutDir: true,
