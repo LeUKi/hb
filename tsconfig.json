@@ -5,6 +5,8 @@
     "playwright.config.ts",
     "playwright.full-app.config.ts",
     "e2e/**/*.ts",
-    "scripts/**/*.ts"
+    "scripts/**/*.ts",
+    "apps/mini/scripts/**/*.ts",
+    "apps/mini/vite.config.ts"
   ]
 }

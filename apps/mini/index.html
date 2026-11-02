@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>红包 · 论坛小程序（本地预览）</title>
+    <style>
+      #dev-bar {
+        position: fixed;
+        right: 8px;
+        bottom: 8px;
+        z-index: 100;
+        display: flex;
+        gap: 6px;
+        font: 12px system-ui, sans-serif;
+      }
+      #dev-bar button {
+        padding: 4px 8px;
+        border: 1px solid #8884;
+        border-radius: 6px;
+        background: #fffc;
+        color: #222;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="dev-bar"></div>
+    <!-- What the package's index.html (src/template.html) is: -->
+    <div id="hb-mini-root"></div>
+    <script type="module" src="/src/dev.tsx"></script>
+  </body>
+</html>
