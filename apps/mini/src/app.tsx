@@ -488,7 +488,7 @@ function Page({
     activity.participation === "code"
       ? "这个红包由判定器判定，要在红包站里领。"
       : activity.humanCheck
-        ? "这个红包要先通过人机验证，社区小程序里加载不了验证，请到红包站领取。"
+        ? "这个红包要先通过人机验证，要在红包站里领。"
         : null;
   // Open, but to be taken part in on 红包站 (or, a sandbox build on the
   // production site, only looked at): the seal says why, faded.
@@ -818,6 +818,19 @@ function useFrameInfo(): WindowInfo {
   );
 }
 
+/**
+ * The 红包's sizes in a post: the site's for that window, with a lower big
+ * cover and a smaller seal, as the type (mini.css) is a step smaller where
+ * it is drawn big (docs/mini-app-design.md §4).
+ */
+function postSizes(info: WindowInfo) {
+  return {
+    ...hongbaoSizes(info),
+    cover: info.compact ? 368 : 392,
+    seal: info.compact ? 72 : 80,
+  };
+}
+
 export function App({
   sdk,
   id,
@@ -853,7 +866,7 @@ export function App({
                   className="hb-mini relative"
                   data-mode={mode}
                   data-motion={reduced ? "reduce" : undefined}
-                  style={sizeVars(hongbaoSizes(info))}
+                  style={sizeVars(postSizes(info))}
                 >
                   <RouterProvider router={router} />
                 </div>

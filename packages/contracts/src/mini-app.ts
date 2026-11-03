@@ -21,6 +21,93 @@ export const MINI_APP_HONGBAO_PARAM = "hb";
  */
 export const MINI_APP_EMBED_HEIGHT = 900;
 
+/**
+ * The 社区's published mini app draws a 红包 compact (0.1.1 or later), so
+ * each embed can be as tall as its own 红包 needs (fittedEmbedHeight); until
+ * then every one is MINI_APP_EMBED_HEIGHT.
+ */
+export const MINI_APP_COMPACT_LIVE = false;
+
+/** What decides how tall a 红包 is in a post. */
+export type MiniEmbedShape = {
+  participation: "password" | "direct" | "code";
+  humanCheck: boolean;
+  /** A 领取范围: a first-timer may be asked to sign in on 红包站 first. */
+  scoped: boolean;
+  title: string;
+  beforeInfo: string;
+  /** The cover's tags (coverTags), which wrap on a phone. */
+  tags: string[];
+};
+
+/** Width in em at the cover's type: a wide character 1, a narrow one ½. */
+const ems = (text: string) => {
+  let width = 0;
+  for (const character of text)
+    width += (character.codePointAt(0) ?? 0) < 0x2e80 ? 0.5 : 1;
+  return width;
+};
+
+/**
+ * Rows of tags (13px chips, 11px padding each side, 8px apart) across 277px,
+ * the cover's room in a 360px phone's post.
+ */
+function tagRows(tags: string[]) {
+  let rows = 1;
+  let used = 0;
+  for (const tag of tags) {
+    const width = ems(tag) * 13 + 22;
+    if (used > 0 && used + 8 + width > 277) {
+      rows += 1;
+      used = width;
+    } else used += (used > 0 ? 8 : 0) + width;
+  }
+  return rows;
+}
+
+/**
+ * A 红包's height in a post: the 社区's bar and its page at its tallest (at
+ * a desktop post's width, where it is tallest), from measured parts (0.1.1,
+ * docs/mini-app-design.md §4): the page with no 说明 and a one-line title;
+ * the 说明's lines (29 wide characters a line, two and 展开全文 at most); a
+ * title of 16 or more wraps; a 口令's field and a wrong 口令's line; the
+ * card that sends 代码判定 or a human check to 红包站; the card that asks a
+ * first-timer in a 领取范围 to sign in there; on a phone, each further row of
+ * tags (there the page is otherwise lower). Never lower than its page once
+ * claimed.
+ */
+export function fittedEmbedHeight(shape: MiniEmbedShape) {
+  const lines = shape.beforeInfo
+    .split("\n")
+    .filter((line) => line.trim())
+    .reduce((sum, line) => sum + Math.max(1, Math.ceil(ems(line) / 29)), 0);
+  const elsewhere = shape.participation === "code" || shape.humanCheck;
+  const page =
+    490 +
+    (lines > 2 ? 100 : lines === 2 ? 72 : lines === 1 ? 48 : 0) +
+    (ems(shape.title) >= 16 ? 34 : 0) +
+    (tagRows(shape.tags) - 1) * 34 +
+    (elsewhere
+      ? 106
+      : shape.participation === "password"
+        ? shape.scoped
+          ? 116
+          : 86
+        : shape.scoped
+          ? 58
+          : 0);
+  // Once claimed here: the small cover and 我的结果, a 附言 at its three
+  // lines and 展开全文 (616–620, phone or desktop). 代码判定 and a human
+  // check are not claimed here.
+  const claimed = elsewhere ? 0 : 620;
+  // The 社区's bar above, and a little room for what is not measured.
+  return Math.ceil((Math.max(page, claimed) + 68 + 12) / 10) * 10;
+}
+
+/** The height a 红包's embed code gives it. */
+export const miniAppEmbedHeight = (shape: MiniEmbedShape) =>
+  MINI_APP_COMPACT_LIVE ? fittedEmbedHeight(shape) : MINI_APP_EMBED_HEIGHT;
+
 const attribute = (value: string) =>
   value
     .replaceAll("&", "&amp;")
@@ -33,9 +120,13 @@ const attribute = (value: string) =>
  * (as its own 分享 writes it, embed_mode), on this 红包, so it opens right
  * in the post.
  */
-export function forumMiniAppEmbed(activityId: string, title: string) {
+export function forumMiniAppEmbed(
+  activityId: string,
+  title: string,
+  height: number,
+) {
   const src = `${FORUM_ORIGIN}/apps/${FORUM_MINI_APP_ID}?embed_mode=true&${MINI_APP_HONGBAO_PARAM}=${encodeURIComponent(activityId)}`;
-  return `<iframe src="${src}" title="${attribute(title)}" width="100%" height="${MINI_APP_EMBED_HEIGHT}" frameborder="0" loading="lazy" referrerpolicy="no-referrer" allow="fullscreen; clipboard-write" allowfullscreen style="display:block;width:100%;border:0;"></iframe>`;
+  return `<iframe src="${src}" title="${attribute(title)}" width="100%" height="${height}" frameborder="0" loading="lazy" referrerpolicy="no-referrer" allow="fullscreen; clipboard-write" allowfullscreen style="display:block;width:100%;border:0;"></iframe>`;
 }
 
 /**

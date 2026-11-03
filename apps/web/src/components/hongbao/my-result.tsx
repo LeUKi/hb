@@ -4,9 +4,9 @@ import {
   type PaymentView,
 } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowUpRight, Lock, UserRoundX } from "lucide-react";
+import { ArrowUpRight, Lock, UserRoundX, X } from "lucide-react";
 import { motion } from "motion/react";
-import { type Ref, useState } from "react";
+import { type Ref, useLayoutEffect, useRef, useState } from "react";
 import { ActivityRequestError } from "../../lib/activities";
 import { useResendPayment } from "../../lib/claims";
 import { useEmbedded } from "../../lib/embedded";
@@ -17,6 +17,7 @@ import { clockLabel, clockSeconds } from "../../lib/roster-time";
 import { useIdentity } from "../../lib/session";
 import { useBefore } from "../../lib/use-before";
 import { Callout } from "../page/page";
+import { WindowDialog } from "../shell/window-dialog";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { ButtonLink, MoreLink } from "../ui/button-link";
@@ -236,6 +237,76 @@ const judgeNotes = {
 } as const;
 
 /**
+ * 奖励附言 in its card. In the 社区's mini app, three lines at most and the
+ * rest in a dialog (展开全文): a post's frame is only as tall as the 红包's
+ * tallest page (docs/mini-app-design.md §4), and a 附言 runs to 10,000 字.
+ */
+function AfterClaimNote({ text }: { text: string }) {
+  const embedded = useEmbedded();
+  const ref = useRef<HTMLDivElement>(null);
+  const [cut, setCut] = useState(false);
+  const [open, setOpen] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: measure again when the 附言 changes.
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!embedded || !element) return;
+    const measure = () =>
+      setCut(element.scrollHeight > element.clientHeight + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [embedded, text]);
+  if (!embedded)
+    return <NoteMarkdown className="text-base">{text}</NoteMarkdown>;
+  return (
+    <>
+      <div
+        ref={ref}
+        data-cut={cut || undefined}
+        className="hb-after-note grid max-h-[4.5rem] overflow-hidden"
+      >
+        <NoteMarkdown className="text-base">{text}</NoteMarkdown>
+      </div>
+      {cut && (
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          onClick={() => setOpen(true)}
+          className="justify-self-end text-sm text-gold-ink underline decoration-1.5 underline-offset-4"
+        >
+          展开全文
+        </button>
+      )}
+      <WindowDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        labelledBy="after-note-title"
+        width="34rem"
+      >
+        <header className="flex items-center justify-between gap-3 px-5 pt-4 pb-3">
+          <h2 id="after-note-title" className="text-lg font-semibold text-ink">
+            附言
+          </h2>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="关闭"
+            className="-mr-2 shrink-0"
+            onClick={() => setOpen(false)}
+          >
+            <X />
+          </Button>
+        </header>
+        <div className="view-scroll relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5">
+          <NoteMarkdown className="text-base">{text}</NoteMarkdown>
+        </div>
+      </WindowDialog>
+    </>
+  );
+}
+
+/**
  * 我的结果: what only the viewer sees after taking part — the amount in
  * green with a plus, the payment, own titles, 奖励附言.
  */
@@ -284,7 +355,7 @@ export function MyResult({
     >
       {amount ? (
         <p className="flex items-baseline gap-2 text-success">
-          <span className="text-[clamp(2.75rem,12cqw,4.5rem)] leading-none font-semibold tracking-tight">
+          <span className="hb-result-amount text-[clamp(2.75rem,12cqw,4.5rem)] leading-none font-semibold tracking-tight">
             <CountUp value={amount} play={play} delay={delay} prefix="+" />
           </span>
           <span className="text-xl font-medium">
@@ -384,9 +455,7 @@ export function MyResult({
         <Squircle radius={16}>
           <div className="hb-note-card grid w-full gap-1.5 px-4 py-3 text-left">
             <p className="text-xs font-medium text-gold-ink">附言</p>
-            <NoteMarkdown className="text-base">
-              {mine.afterClaimInfo}
-            </NoteMarkdown>
+            <AfterClaimNote text={mine.afterClaimInfo} />
             <p className="flex items-center justify-end gap-1.5 text-xs text-ink-3">
               来自
               <Avatar

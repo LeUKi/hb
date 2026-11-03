@@ -27,9 +27,6 @@ html[data-hold-scroll] {
 }
 .hb-mini {
   --bar-h: 3rem;
-  /* The site's hongbaoSizes() for a phone: the seal on the curved edge. */
-  --seal: 88px;
-  --hb-curve: 40px;
   container: window / inline-size;
   /* As tall as its content and no taller: the 社区 sizes its frame to it
      (100vh there is that frame, so a min-height would never let it shrink),
@@ -43,6 +40,21 @@ html[data-hold-scroll] {
    §4); only what cannot give way may make it taller. */
 .hb-mini [data-cover="big"] [data-hb-part="cover"] > div:first-child {
   max-height: max(var(--hb-cover), var(--hb-cover-least, 0px));
+}
+/* In a post, text as big as the post's (16px, as 红包站's): only what is
+   drawn big for a whole window — the title, the figures, the amount — a
+   step smaller, with the cover and seal (postSizes in app.tsx), so the
+   embed is no taller than it needs to be (docs/mini-app-design.md §4). */
+.hb-mini [data-cover="big"] .hb-cover-title {
+  font-size: clamp(1.25rem, 3.2cqw, 1.625rem);
+}
+@container window (width >= 40rem) {
+  .hb-mini [data-cover="big"] .hb-data-value {
+    font-size: 1.375rem;
+  }
+}
+.hb-mini .hb-result-amount {
+  font-size: clamp(2.25rem, 8cqw, 3rem);
 }
 /* 「N 人在看」 in that strip, not under it as under 红包站's bar. */
 .hb-mini [data-hb-part="viewers"] {

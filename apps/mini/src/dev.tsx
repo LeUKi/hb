@@ -2,7 +2,7 @@
 // own preview does not provide, answering for the sample 红包 in
 // dev-fixtures.ts (`?hb=password`, `direct`, `fish`, `draw`, `code`,
 // `human`, `ended`, `stranger`, `taken`, `scheduled`, `self`, `preview`, `long`;
-// none: no 红包; `?guest`: not signed in), people's pictures, and a bar to switch what the forum would — light or dark,
+// none: no 红包; `?guest`: not signed in; `&title=`, `&note=`), people's pictures, and a bar to switch what the forum would — light or dark,
 // reduced motion. Never in app.js.
 import type { MiniClaimInput, MiniLiveMessage } from "@hb/contracts";
 import { caseNames, caseOf, rosterPage } from "./dev-fixtures";
@@ -11,6 +11,23 @@ import type { LaunchParameters, MiniSdk, MiniSocket, MiniTheme } from "./sdk";
 const query = new URLSearchParams(window.location.search);
 const picked = query.get("hb");
 const sample = picked ? caseOf(picked) : null;
+// `&title=` and `&note=` try a sample with another title or 说明 (`&note=`
+// empty: none), `&after=` another 附言, to see how tall the page gets.
+if (sample) {
+  const title = query.get("title");
+  const note = query.get("note");
+  if (title !== null) sample.read.activity.title = title;
+  if (note !== null) sample.read.activity.beforeInfo = note;
+  // `&after=`: the 附言 a claim here shows.
+  const after = query.get("after");
+  const claim = sample.claim;
+  if (after !== null && claim)
+    sample.claim = (password) => {
+      const result = claim(password);
+      if (result.result === "claimed") result.claim.afterClaimInfo = after;
+      return result;
+    };
+}
 // The forum's default light and dark backgrounds and text.
 const forum = {
   light: { background: "#ffffff", text: "#222222" },

@@ -7,7 +7,7 @@ import {
   forumMiniAppEmbed,
   forumShareLink,
   forumShareWithPassword,
-  MINI_APP_EMBED_HEIGHT,
+  miniAppEmbedHeight,
   plainShareWithPassword,
   type ShareActivity,
   type ShareLink,
@@ -15,6 +15,7 @@ import {
 import { Check, ChevronRight, Copy, Share, X } from "lucide-react";
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { cn } from "../../lib/cn";
+import { coverTags } from "../../lib/cover-tags";
 import { activityShareUrl } from "../../lib/emoji-links";
 import { haptic } from "../../lib/haptics";
 import type { HongbaoActivity, PasswordView } from "../../lib/hongbao";
@@ -155,7 +156,11 @@ function shareOf(
       return forumShareWithPassword(shared, password ?? "", link);
     // 社区小程序 (docs/mini-app-design.md §7): the 社区's own embed of it.
     case "mini":
-      return forumMiniAppEmbed(activity.id, activity.title);
+      return forumMiniAppEmbed(
+        activity.id,
+        activity.title,
+        miniAppEmbedHeight(embedShape(activity)),
+      );
     case "image":
       return createActivityImageEmbed({
         activityId: activity.id,
@@ -652,6 +657,18 @@ function PostPreview({ text }: { text: string }) {
  * pane narrower than the largest scales all three alike, so they still
  * differ.
  */
+/** What sets this 红包's height in a post (miniAppEmbedHeight). */
+const embedShape = (activity: HongbaoActivity) => ({
+  participation: activity.participation,
+  humanCheck: activity.humanCheck,
+  scoped: Boolean(
+    activity.scope?.levels?.length || activity.scope?.users?.length,
+  ),
+  title: activity.title,
+  beforeInfo: activity.beforeInfo,
+  tags: coverTags(activity).map((tag) => tag.text),
+});
+
 /**
  * 社区小程序 in a post, roughly: the 红包's cover across the post's width,
  * its seal, at the embed's height. The app itself is drawn there.
@@ -681,7 +698,7 @@ function MiniPreview({ activity }: { activity: HongbaoActivity }) {
         </span>
       </div>
       <span className="text-xs text-ink-3 tabular-nums">
-        宽度和帖子一样，高 {MINI_APP_EMBED_HEIGHT}
+        宽度和帖子一样，高 {miniAppEmbedHeight(embedShape(activity))}
       </span>
     </div>
   );
