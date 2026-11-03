@@ -28,7 +28,35 @@ function showError(element: HTMLElement, error: unknown) {
   element.replaceChildren(message);
 }
 
+/**
+ * In a post a page that can scroll takes a phone's whole swipe, and the
+ * post under it stops (docs/mini-app-design.md §4). The 社区 grows the frame
+ * to the page, so the page scrolls only once the frame has stopped short of
+ * it (the 社区's limit), not in the moment before the frame catches up.
+ */
+function holdScrollWhileItFits() {
+  const page = document.documentElement;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const cut = () => page.scrollHeight - window.innerHeight > 2;
+  const check = () => {
+    clearTimeout(timer);
+    if (!cut()) {
+      page.dataset.holdScroll = "";
+      return;
+    }
+    timer = setTimeout(() => {
+      if (cut()) delete page.dataset.holdScroll;
+    }, 500);
+  };
+  const observer = new ResizeObserver(check);
+  observer.observe(page);
+  observer.observe(document.body);
+  window.addEventListener("resize", check);
+  check();
+}
+
 async function start() {
+  holdScrollWhileItFits();
   const element =
     document.getElementById("hb-mini-root") ??
     document.body.appendChild(document.createElement("div"));

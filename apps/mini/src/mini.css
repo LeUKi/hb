@@ -18,6 +18,10 @@ body {
   overflow: visible;
   background: var(--mini-page);
 }
+/* While the frame holds the whole page, the page cannot scroll (main.tsx). */
+html[data-hold-scroll] {
+  overflow: hidden;
+}
 #hb-mini-root {
   min-height: 100%;
 }
