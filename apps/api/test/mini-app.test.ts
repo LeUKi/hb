@@ -547,17 +547,15 @@ describe("社区小程序's routes", () => {
     ).json()) as PublicRecipientList;
     expect(page.items[0]?.avatarUrl).toBe(forumAvatar("332940"));
     // A name two accounts share: no picture rather than someone else's.
-    await createDb(env.DB)
-      .insert(users)
-      .values({
-        id: crypto.randomUUID(),
-        externalId: "332941",
-        username: "mini_332940",
-        displayName: "Another",
-        avatarUrl: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+    await createDb(env.DB).insert(users).values({
+      id: crypto.randomUUID(),
+      externalId: "332941",
+      username: "mini_332940",
+      displayName: "Another",
+      avatarUrl: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
     const shared = (await (
       await roster(activity.id, "claims")
     ).json()) as PublicRecipientList;
