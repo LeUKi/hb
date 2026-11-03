@@ -6,10 +6,10 @@ import {
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowUpRight, Lock, UserRoundX, X } from "lucide-react";
 import { motion } from "motion/react";
-import { type Ref, useLayoutEffect, useRef, useState } from "react";
+import { type Ref, useContext, useLayoutEffect, useRef, useState } from "react";
 import { ActivityRequestError } from "../../lib/activities";
 import { useResendPayment } from "../../lib/claims";
-import { useEmbedded } from "../../lib/embedded";
+import { SiteLinkContext, useEmbedded } from "../../lib/embedded";
 import type { HongbaoActivity, Mine } from "../../lib/hongbao";
 import { paymentTone } from "../../lib/hongbao-text";
 import { paymentReason, quotaResumeWords } from "../../lib/payment-display";
@@ -140,17 +140,7 @@ function NoCreditAccount({
     identity.csrfToken ?? "",
     activityId,
   );
-  if (!open || !identity.user || !identity.csrfToken)
-    return (
-      <Callout
-        icon={UserRoundX}
-        title="这笔没能发出"
-        className="w-full text-left"
-      >
-        Credit 站里找不到你的 LINUX DO Credit 账户。被拒后 5
-        分钟内可以重新发送一次，现在已经不能再发，这笔不再补发。
-      </Callout>
-    );
+  if (!open || !identity.user || !identity.csrfToken) return <NotResent />;
   const error = resend.error
     ? resend.error instanceof ActivityRequestError
       ? resend.error.message
@@ -192,6 +182,58 @@ function NoCreditAccount({
           {error}
         </p>
       )}
+    </Callout>
+  );
+}
+
+/** Past its one 重新发送: it is not paid. */
+function NotResent() {
+  return (
+    <Callout
+      icon={UserRoundX}
+      title="这笔没能发出"
+      className="w-full text-left"
+    >
+      Credit 站里找不到你的 LINUX DO Credit 账户。被拒后 5
+      分钟内可以重新发送一次，现在已经不能再发，这笔不再补发。
+    </Callout>
+  );
+}
+
+/**
+ * The same in the 社区's mini app: 重新发送 is on 红包站 alone (the user's
+ * rule), so it says how to get there in time and copies this 红包's link
+ * there (SiteLinkContext).
+ */
+function NoCreditAccountHere({
+  payment,
+  amount,
+}: {
+  payment: PaymentView;
+  amount: string;
+}) {
+  const until = payment.resendUntil ? Date.parse(payment.resendUntil) : 0;
+  const open = useBefore(until);
+  const SiteLink = useContext(SiteLinkContext);
+  if (!open || !SiteLink) return <NotResent />;
+  return (
+    <Callout
+      tone="warning"
+      icon={UserRoundX}
+      title="还没有 LINUX DO Credit 账户"
+      className="w-full text-left"
+    >
+      <p>
+        这笔 {amount} LDC 发不出去。先在 credit.linux.do
+        注册，再到红包站打开这个红包，登录后点“重新发送”，只能发一次。
+      </p>
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+        <SiteLink />
+        <span className="text-xs">
+          还剩 <ResendCountdown to={until} />
+          ，过时不再补发
+        </span>
+      </div>
     </Callout>
   );
 }
@@ -238,10 +280,18 @@ const judgeNotes = {
 
 /**
  * 奖励附言 in its card. In the 社区's mini app, three lines at most and the
- * rest in a dialog (展开全文): a post's frame is only as tall as the 红包's
- * tallest page (docs/mini-app-design.md §4), and a 附言 runs to 10,000 字.
+ * rest in a dialog (展开全文); folded, while a card says the payment did not
+ * go out, only a button to that dialog. A post's frame is only as tall as
+ * the 红包's tallest page (docs/mini-app-design.md §4), and a 附言 runs to
+ * 10,000 字.
  */
-function AfterClaimNote({ text }: { text: string }) {
+function AfterClaimNote({
+  text,
+  folded = false,
+}: {
+  text: string;
+  folded?: boolean;
+}) {
   const embedded = useEmbedded();
   const ref = useRef<HTMLDivElement>(null);
   const [cut, setCut] = useState(false);
@@ -259,24 +309,31 @@ function AfterClaimNote({ text }: { text: string }) {
   }, [embedded, text]);
   if (!embedded)
     return <NoteMarkdown className="text-base">{text}</NoteMarkdown>;
+  const more = (label: string) => (
+    <button
+      type="button"
+      aria-haspopup="dialog"
+      onClick={() => setOpen(true)}
+      className="justify-self-end text-sm text-gold-ink underline decoration-1.5 underline-offset-4"
+    >
+      {label}
+    </button>
+  );
   return (
     <>
-      <div
-        ref={ref}
-        data-cut={cut || undefined}
-        className="hb-after-note grid max-h-[4.5rem] overflow-hidden"
-      >
-        <NoteMarkdown className="text-base">{text}</NoteMarkdown>
-      </div>
-      {cut && (
-        <button
-          type="button"
-          aria-haspopup="dialog"
-          onClick={() => setOpen(true)}
-          className="justify-self-end text-sm text-gold-ink underline decoration-1.5 underline-offset-4"
-        >
-          展开全文
-        </button>
+      {folded ? (
+        more("看红包作者的附言")
+      ) : (
+        <>
+          <div
+            ref={ref}
+            data-cut={cut || undefined}
+            className="hb-after-note grid max-h-[4.5rem] overflow-hidden"
+          >
+            <NoteMarkdown className="text-base">{text}</NoteMarkdown>
+          </div>
+          {cut && more("展开全文")}
+        </>
       )}
       <WindowDialog
         open={open}
@@ -430,8 +487,10 @@ export function MyResult({
       ) : /* A 🐟额红包's share is in 🐟额 already: nothing to follow (under
           1 🐟 it goes to Credit all at once, balance-design §5). */
       amount && activity.fish ? null : amount && payment ? (
-        // 重新发送 needs this site's session: not in the forum's mini app.
-        heldForAccount(payment) && mine.claimId && !embedded ? (
+        // 重新发送 needs this site's session: the mini app leads here.
+        heldForAccount(payment) && embedded ? (
+          <NoCreditAccountHere payment={payment} amount={amount} />
+        ) : heldForAccount(payment) && mine.claimId ? (
           <NoCreditAccount
             activityId={activity.id}
             claimId={mine.claimId}
@@ -451,7 +510,9 @@ export function MyResult({
         )
       )}
 
-      {mine.afterClaimInfo && (
+      {mine.afterClaimInfo && embedded && payment && heldForAccount(payment) ? (
+        <AfterClaimNote text={mine.afterClaimInfo} folded />
+      ) : mine.afterClaimInfo ? (
         <Squircle radius={16}>
           <div className="hb-note-card grid w-full gap-1.5 px-4 py-3 text-left">
             <p className="text-xs font-medium text-gold-ink">附言</p>
@@ -471,7 +532,7 @@ export function MyResult({
             </p>
           </div>
         </Squircle>
-      )}
+      ) : null}
 
       <p className="flex items-center gap-1.5 text-xs text-ink-3">
         <Lock className="size-3.5" aria-hidden="true" />

@@ -2,7 +2,7 @@
 // own preview does not provide, answering for the sample 红包 in
 // dev-fixtures.ts (`?hb=password`, `direct`, `fish`, `draw`, `code`,
 // `human`, `ended`, `stranger`, `taken`, `scheduled`, `self`, `preview`, `long`;
-// none: no 红包; `?guest`: not signed in; `&title=`, `&note=`), people's pictures, and a bar to switch what the forum would — light or dark,
+// none: no 红包; `?guest`: not signed in; `&title=`, `&note=`, `&after=`, `&pay=`), people's pictures, and a bar to switch what the forum would — light or dark,
 // reduced motion. Never in app.js.
 import type { MiniClaimInput, MiniLiveMessage } from "@hb/contracts";
 import { caseNames, caseOf, rosterPage } from "./dev-fixtures";
@@ -18,13 +18,26 @@ if (sample) {
   const note = query.get("note");
   if (title !== null) sample.read.activity.title = title;
   if (note !== null) sample.read.activity.beforeInfo = note;
-  // `&after=`: the 附言 a claim here shows.
+  // `&after=`: the 附言 a claim here shows. `&pay=recipient`: its payment
+  // refused, no Credit account (5 minutes to send it again); `&pay=unsent`:
+  // past that, 未发出.
   const after = query.get("after");
+  const pay = query.get("pay");
   const claim = sample.claim;
-  if (after !== null && claim)
+  if ((after !== null || pay) && claim)
     sample.claim = (password) => {
       const result = claim(password);
-      if (result.result === "claimed") result.claim.afterClaimInfo = after;
+      if (result.result !== "claimed") return result;
+      if (after !== null) result.claim.afterClaimInfo = after;
+      if (result.claim.payment && (pay === "recipient" || pay === "unsent"))
+        result.claim.payment = {
+          ...result.claim.payment,
+          status: pay === "recipient" ? "attention" : "failed",
+          reason: "recipient",
+          ...(pay === "recipient"
+            ? { resendUntil: new Date(Date.now() + 300_000).toISOString() }
+            : {}),
+        };
       return result;
     };
 }

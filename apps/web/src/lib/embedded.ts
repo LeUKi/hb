@@ -1,4 +1,4 @@
-import { createContext, useContext } from "react";
+import { type ComponentType, createContext, useContext } from "react";
 
 /**
  * Drawn inside the forum's mini app (docs/mini-app-design.md §7), not on
@@ -10,3 +10,9 @@ import { createContext, useContext } from "react";
 export const EmbeddedContext = createContext(false);
 
 export const useEmbedded = () => useContext(EmbeddedContext);
+
+/**
+ * In the mini app: a button that copies this 红包's link on 红包站, for what
+ * only 红包站 does (重新发送 a payment). Its frame opens no links.
+ */
+export const SiteLinkContext = createContext<ComponentType | null>(null);

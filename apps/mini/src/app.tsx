@@ -67,7 +67,7 @@ import {
 } from "../../web/src/components/ui/squircle";
 import { activityCode, RED_PACKET } from "../../web/src/lib/activity-route";
 import { AvatarSourceContext } from "../../web/src/lib/avatar-source";
-import { EmbeddedContext } from "../../web/src/lib/embedded";
+import { EmbeddedContext, SiteLinkContext } from "../../web/src/lib/embedded";
 import { activityShareUrl } from "../../web/src/lib/emoji-links";
 import { haptic } from "../../web/src/lib/haptics";
 import {
@@ -143,6 +143,48 @@ const emptyRead = {
 } satisfies MiniHongbaoResponse["activity"];
 
 /** 复制链接: the forum asks first; not copied, the link shows to select. */
+function CopyUrl({ sdk, url }: { sdk: MiniSdk; url: string }) {
+  const [state, setState] = useState<"idle" | "done" | "failed">("idle");
+  useEffect(() => {
+    if (state !== "done") return;
+    const timer = window.setTimeout(() => setState("idle"), 1200);
+    return () => window.clearTimeout(timer);
+  }, [state]);
+  return (
+    <>
+      {/* Not copied (the forum asks first): the link to select by hand. */}
+      {state === "failed" && (
+        <p className="text-sm break-all text-ink-2 select-all">{url}</p>
+      )}
+      <Button
+        variant="secondary"
+        size="sm"
+        className="justify-self-start"
+        onClick={() =>
+          void sdk.clipboard.writeText(url).then(
+            () => setState("done"),
+            () => setState("failed"),
+          )
+        }
+      >
+        {state === "done" ? (
+          <Check aria-hidden="true" />
+        ) : (
+          <Copy aria-hidden="true" />
+        )}
+        <MorphLabel fit={false}>
+          {state === "done"
+            ? "已复制"
+            : state === "failed"
+              ? "没能复制，请手动选中链接"
+              : "复制链接"}
+        </MorphLabel>
+      </Button>
+    </>
+  );
+}
+
+/** Why this is done on 红包站, and its link there to copy. */
 function CopyLink({
   sdk,
   url,
@@ -152,44 +194,11 @@ function CopyLink({
   url: string;
   children: string;
 }) {
-  const [state, setState] = useState<"idle" | "done" | "failed">("idle");
-  useEffect(() => {
-    if (state !== "done") return;
-    const timer = window.setTimeout(() => setState("idle"), 1200);
-    return () => window.clearTimeout(timer);
-  }, [state]);
   return (
     <Squircle radius={radius.card}>
       <div className="hb-note-card mt-2 grid w-full max-w-[36rem] gap-2.5 px-4 py-3 text-left">
         <p className="text-sm text-ink">{children}</p>
-        {/* Not copied (the forum asks first): the link to select by hand. */}
-        {state === "failed" && (
-          <p className="text-sm break-all text-ink-2 select-all">{url}</p>
-        )}
-        <Button
-          variant="secondary"
-          size="sm"
-          className="justify-self-start"
-          onClick={() =>
-            void sdk.clipboard.writeText(url).then(
-              () => setState("done"),
-              () => setState("failed"),
-            )
-          }
-        >
-          {state === "done" ? (
-            <Check aria-hidden="true" />
-          ) : (
-            <Copy aria-hidden="true" />
-          )}
-          <MorphLabel fit={false}>
-            {state === "done"
-              ? "已复制"
-              : state === "failed"
-                ? "没能复制，请手动选中链接"
-                : "复制链接"}
-          </MorphLabel>
-        </Button>
+        <CopyUrl sdk={sdk} url={url} />
       </div>
     </Squircle>
   );
@@ -380,6 +389,14 @@ function Page({
     );
   }, [read]);
 
+  // 重新发送 and the like, on 红包站: the result card copies this link.
+  const SiteLink = useMemo(
+    () =>
+      function SiteLink() {
+        return <CopyUrl sdk={sdk} url={siteLink(id)} />;
+      },
+    [sdk, id],
+  );
   const activity = data ? hongbaoOf(data.activity) : null;
   const view = publicViewOf(data?.activity ?? emptyRead);
   const mine = data ? mineOf(data.participation, view, noRoster) : null;
@@ -678,49 +695,51 @@ function Page({
   );
 
   return (
-    <div
-      className="relative flex flex-col pb-4 [overflow-anchor:none]"
-      data-phase={seal.phase}
-    >
-      <LiveViewers activityId={id} running={!view.ended} />
-      <CopyAddress sdk={sdk} id={id} />
-      <p className="sr-only" role="status">
-        {seal.announcement}
-      </p>
-      <HongbaoHero activity={activity} hongbao={hongbao} action={action} />
-      <WindowDialog
-        open={noteOpen}
-        onClose={() => setNoteOpen(false)}
-        labelledBy="note-title"
-        width="34rem"
+    <SiteLinkContext.Provider value={SiteLink}>
+      <div
+        className="relative flex flex-col pb-4 [overflow-anchor:none]"
+        data-phase={seal.phase}
       >
-        <NoteContent activity={activity} onClose={() => setNoteOpen(false)} />
-      </WindowDialog>
-      {/* 名单弹窗: 红包站's, everyone's view of it (the sender's own, with
+        <LiveViewers activityId={id} running={!view.ended} />
+        <CopyAddress sdk={sdk} id={id} />
+        <p className="sr-only" role="status">
+          {seal.announcement}
+        </p>
+        <HongbaoHero activity={activity} hongbao={hongbao} action={action} />
+        <WindowDialog
+          open={noteOpen}
+          onClose={() => setNoteOpen(false)}
+          labelledBy="note-title"
+          width="34rem"
+        >
+          <NoteContent activity={activity} onClose={() => setNoteOpen(false)} />
+        </WindowDialog>
+        {/* 名单弹窗: 红包站's, everyone's view of it (the sender's own, with
           口令 and payments, is on 红包站). */}
-      <WindowDialog
-        open={rosterOpen}
-        onClose={() => setRosterOpen(false)}
-        labelledBy="roster-title"
-        width="30rem"
-      >
-        <RosterPanel
-          data={{
-            activity,
-            view,
-            roster,
-            author: false,
-          }}
-          lists={{
-            claims: claimsList.query,
-            registrations: registrationsList.query,
-          }}
-          viewer={forumName}
+        <WindowDialog
+          open={rosterOpen}
           onClose={() => setRosterOpen(false)}
-        />
-      </WindowDialog>
-      <SelfClaimDialog />
-    </div>
+          labelledBy="roster-title"
+          width="30rem"
+        >
+          <RosterPanel
+            data={{
+              activity,
+              view,
+              roster,
+              author: false,
+            }}
+            lists={{
+              claims: claimsList.query,
+              registrations: registrationsList.query,
+            }}
+            viewer={forumName}
+            onClose={() => setRosterOpen(false)}
+          />
+        </WindowDialog>
+        <SelfClaimDialog />
+      </div>
+    </SiteLinkContext.Provider>
   );
 }
 
