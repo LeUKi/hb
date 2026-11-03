@@ -774,6 +774,81 @@ describe("durable same-business-number recovery", () => {
     });
   });
 
+  it("waits on short funds until its next send, looking nothing up meanwhile", async () => {
+    const f = await fixture(false);
+    const a = adapter(
+      { kind: "not_found" },
+      {
+        kind: "waiting",
+        reason: "funds",
+        httpStatus: 400,
+        noOrderEvidence: "protocol_rejection_v1",
+      },
+    );
+    await cycle(f, a);
+    const waiting = await task(f);
+    expect(waiting).toMatchObject({
+      status: "waiting",
+      reason: "funds",
+      sendBlockReason: "funds",
+      unknownOutcome: false,
+    });
+    const resume = waiting.nextSendAt ?? 0;
+    expect(resume).toBeGreaterThanOrEqual(now + 300_000);
+    expect(waiting.nextQueryAt).toBe(resume);
+    expect(waiting.nextRunAt).toBe(resume);
+    expect(
+      await env.DB.prepare(
+        "SELECT active_task_id,paused_reason FROM merchants WHERE id=?",
+      )
+        .bind(f.merchant.id)
+        .first(),
+    ).toEqual({ active_task_id: f.taskId, paused_reason: "funds" });
+    now = resume - 60_000;
+    await cycle(f, a);
+    expect(a.query).not.toHaveBeenCalled();
+    expect(a.send).toHaveBeenCalledOnce();
+    // When it is due, the original order is looked up first, then sent again.
+    now = resume;
+    await grant(f);
+    await cycle(f, a);
+    expect(a.query).toHaveBeenCalledOnce();
+    expect(await task(f)).toMatchObject({
+      nextAction: "send",
+      sendBlockReason: null,
+    });
+  });
+
+  it("a payment held by short funds and looked up early says so again", async () => {
+    // As the release before left it: each lookup turned it into 核对中.
+    const f = await fixture(false);
+    const resume = now + 600_000;
+    await env.DB.batch([
+      env.DB.prepare(
+        "UPDATE payment_acceptances SET send_consumed_at=? WHERE id=?",
+      ).bind(now - 1, f.acceptanceId),
+      env.DB.prepare(
+        `UPDATE payment_tasks SET status='reconciling',reason='checking_not_found',send_block_reason='funds',attempt_count=1,
+          next_action='query',next_send_at=?,next_query_at=0,next_run_at=0 WHERE id=?`,
+      ).bind(resume, f.taskId),
+    ]);
+    const a = adapter({ kind: "not_found" });
+    await cycle(f, a);
+    expect(a.query).toHaveBeenCalledOnce();
+    expect(await task(f)).toMatchObject({
+      status: "waiting",
+      reason: "funds",
+      sendBlockReason: "funds",
+      nextQueryAt: resume,
+      nextRunAt: resume,
+    });
+    expect(
+      await env.DB.prepare("SELECT paused_reason FROM merchants WHERE id=?")
+        .bind(f.merchant.id)
+        .first(),
+    ).toEqual({ paused_reason: "funds" });
+  });
+
   it.each(["funds", "quota", "credentials"] as const)(
     "first explicit %s rejection retains a business wait without inventing an unknown payment",
     async (reason) => {

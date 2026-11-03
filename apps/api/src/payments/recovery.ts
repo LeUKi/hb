@@ -878,16 +878,18 @@ async function finishAttempt(
     }
   }
   if (status === "failed") nextAction = "none";
-  // Stopped by the daily limit with nothing sent: there is nothing to look up
-  // before the day turns, so it sleeps until then, still saying why.
+  // Stopped by the daily limit or the paying account's funds with nothing
+  // sent: there is nothing to look up before its next send (for the limit,
+  // once the day turns), so it sleeps until then, still saying why. A lookup
+  // in between would only find no order and say that instead.
   if (
     !unknown &&
-    sendBlock === "quota" &&
+    (sendBlock === "quota" || sendBlock === "funds") &&
     nextSend !== null &&
     nextSend > now
   ) {
     status = "waiting";
-    reason = "quota";
+    reason = sendBlock;
     nextQuery = Math.max(nextQuery, nextSend);
   }
   const retryAfterAt =
