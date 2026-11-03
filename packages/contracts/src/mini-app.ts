@@ -15,19 +15,6 @@ export const FORUM_ORIGIN = "https://linux.do";
 /** The launch parameter that names the 红包. */
 export const MINI_APP_HONGBAO_PARAM = "hb";
 
-/**
- * How tall the mini app is in a post: what the published 0.1.0 needs, its
- * tallest 红包 (a human check's) included (docs/mini-app-design.md §4).
- */
-export const MINI_APP_EMBED_HEIGHT = 900;
-
-/**
- * The 社区's published mini app draws a 红包 compact (0.1.1 or later), so
- * each embed can be as tall as its own 红包 needs (fittedEmbedHeight); until
- * then every one is MINI_APP_EMBED_HEIGHT.
- */
-export const MINI_APP_COMPACT_LIVE = false;
-
 /** What decides how tall a 红包 is in a post. */
 export type MiniEmbedShape = {
   participation: "password" | "direct" | "code";
@@ -66,7 +53,8 @@ function tagRows(tags: string[]) {
 }
 
 /**
- * A 红包's height in a post: the 社区's bar and its page at its tallest (at
+ * A 红包's height in a post, as its embed code gives it: the 社区's bar and
+ * its page at its tallest (at
  * a desktop post's width, where it is tallest), from measured parts (0.1.1,
  * docs/mini-app-design.md §4): the page with no 说明 and a one-line title;
  * the 说明's lines (29 wide characters a line, two and 展开全文 at most); a
@@ -76,7 +64,7 @@ function tagRows(tags: string[]) {
  * tags (there the page is otherwise lower). Never lower than its page once
  * claimed.
  */
-export function fittedEmbedHeight(shape: MiniEmbedShape) {
+export function miniAppEmbedHeight(shape: MiniEmbedShape) {
   const lines = shape.beforeInfo
     .split("\n")
     .filter((line) => line.trim())
@@ -103,10 +91,6 @@ export function fittedEmbedHeight(shape: MiniEmbedShape) {
   // The 社区's bar above, and a little room for what is not measured.
   return Math.ceil((Math.max(page, claimed) + 68 + 12) / 10) * 10;
 }
-
-/** The height a 红包's embed code gives it. */
-export const miniAppEmbedHeight = (shape: MiniEmbedShape) =>
-  MINI_APP_COMPACT_LIVE ? fittedEmbedHeight(shape) : MINI_APP_EMBED_HEIGHT;
 
 const attribute = (value: string) =>
   value

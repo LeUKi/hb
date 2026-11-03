@@ -932,12 +932,13 @@ test.describe("红包页", () => {
     await expect(
       share.getByText("帖子里直接显示这个红包，在帖子里就能领"),
     ).toBeVisible();
-    await expect(share.getByText("宽度和帖子一样，高 900")).toBeVisible();
+    // As tall as this 红包 needs: a 口令's field and a long 说明 (§4).
+    await expect(share.getByText("宽度和帖子一样，高 760")).toBeVisible();
     await share.getByRole("button", { name: "复制小程序代码" }).click();
     await expect
       .poll(() => readClipboard(page))
       .toBe(
-        `<iframe src="https://linux.do/apps/01a19ba5-b9d2-766f-9fb9-b7eddc10e0c7?embed_mode=true&hb=${id}" title="周末红包" width="100%" height="900" frameborder="0" loading="lazy" referrerpolicy="no-referrer" allow="fullscreen; clipboard-write" allowfullscreen style="display:block;width:100%;border:0;"></iframe>`,
+        `<iframe src="https://linux.do/apps/01a19ba5-b9d2-766f-9fb9-b7eddc10e0c7?embed_mode=true&hb=${id}" title="周末红包" width="100%" height="760" frameborder="0" loading="lazy" referrerpolicy="no-referrer" allow="fullscreen; clipboard-write" allowfullscreen style="display:block;width:100%;border:0;"></iframe>`,
       );
 
     // 红包实况图: its sizes, 300 × 400 first; the post's link, or this 红包.
