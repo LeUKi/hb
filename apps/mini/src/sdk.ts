@@ -37,6 +37,17 @@ export type MiniSocket = {
   ): () => void;
 };
 
+export type MiniUser = {
+  id: number;
+  username: string;
+  name: string;
+  initials: string;
+  /** 0–4, or null; for showing only, never what 红包站 trusts. */
+  trustLevel: number | null;
+  /** Their picture (288px), a Blob address for this run only, or null. */
+  avatarUrl: string | null;
+};
+
 export type MiniSdk = {
   readonly ready: Promise<void>;
   readonly permissions: { has(permission: string): boolean };
@@ -46,14 +57,13 @@ export type MiniSdk = {
     onChange(listener: (theme: MiniTheme) => void): () => void;
   };
   readonly launch: { getParameters(): Promise<LaunchParameters> };
-  /** Null for a guest. Not signed: for showing, and a first-timer's name. */
+  /**
+   * Null for a guest. Not signed: for showing, and a first-timer's name.
+   * getById (user.lookup) is another member as the 社区 shows them.
+   */
   readonly user: {
-    getCurrent(): Promise<{
-      id: number;
-      username: string;
-      name: string;
-      initials: string;
-    } | null>;
+    getCurrent(): Promise<MiniUser | null>;
+    getById(id: number): Promise<MiniUser | null>;
   };
   /** Only to the endpoints manifest.json declares, signed by the forum. */
   readonly http: {

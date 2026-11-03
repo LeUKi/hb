@@ -66,6 +66,7 @@ import {
   SquircleFill,
 } from "../../web/src/components/ui/squircle";
 import { activityCode, RED_PACKET } from "../../web/src/lib/activity-route";
+import { AvatarSourceContext } from "../../web/src/lib/avatar-source";
 import { EmbeddedContext } from "../../web/src/lib/embedded";
 import { activityShareUrl } from "../../web/src/lib/emoji-links";
 import { haptic } from "../../web/src/lib/haptics";
@@ -81,6 +82,7 @@ import { liveViewersAtom } from "../../web/src/lib/live-state";
 import { useRosterList } from "../../web/src/lib/roster";
 import { askSelfClaim } from "../../web/src/lib/self-claim";
 import { claimHongbao, HongbaoError, readHongbao, useLive } from "./api";
+import { forumAvatars } from "./avatars";
 import type { MiniSdk } from "./sdk";
 
 // 社区小程序 (docs/mini-app-design.md §7): the 红包 page of 红包站, its own
@@ -318,6 +320,8 @@ function Page({
   const [rosterOpen, setRosterOpen] = useState(false);
   /** The forum's name for them: their own row in the 名单 (for showing). */
   const [forumName, setForumName] = useState<string | null>(null);
+  /** Not signed in to the 社区: it lets the app reach nothing. */
+  const [guest, setGuest] = useState(false);
   const field = useRef<HTMLDivElement>(null);
   const store = useStore();
   const queryClient = useQueryClient();
@@ -355,7 +359,10 @@ function Page({
   useEffect(() => {
     if (!sdk.permissions.has("user.read")) return;
     sdk.user.getCurrent().then(
-      (user) => setForumName(user?.username ?? null),
+      (user) => {
+        setForumName(user?.username ?? null);
+        setGuest(user === null);
+      },
       () => {},
     );
   }, [sdk]);
@@ -432,7 +439,14 @@ function Page({
           current
             ? {
                 ...current,
-                activity: { ...current.activity, ...live.activity },
+                // Its people as the read had them: their pictures the
+                // 社区's (forumAvatar), which the live channel does not say.
+                activity: {
+                  ...current.activity,
+                  ...live.activity,
+                  author: current.activity.author,
+                  scope: current.activity.scope,
+                },
               }
             : current,
         );
@@ -441,6 +455,7 @@ function Page({
     reread,
   );
 
+  if (!activity && guest) return <SignInFirst />;
   if (!activity)
     return (
       <div className="grid min-h-[60vh] content-center justify-items-center gap-3 px-6 text-center">
@@ -710,19 +725,17 @@ function Page({
 }
 
 /**
- * Opened without a 红包 (the app's own page in the 社区): how to open one,
- * and 红包站's mark and address at its foot. Its height is set, not the
- * frame's: the 社区's frame takes the page's (docs/mini-app-design.md §4).
+ * A page of the app's own, no 红包 on it: its words, and 红包站's mark and
+ * address at its foot. Its height is set, not the frame's: the 社区's frame
+ * takes the page's (docs/mini-app-design.md §4).
  */
-function NoHongbao() {
+function Notice({ title, children }: { title: string; children: string }) {
   return (
     <div className="flex min-h-[24rem] flex-col px-6 pt-10 pb-6 text-center">
       <div className="grid flex-1 content-center justify-items-center gap-2">
-        <p className="text-lg text-balance text-ink">
-          请从红包站分享的小程序链接打开红包。
-        </p>
+        <p className="text-lg text-balance text-ink">{title}</p>
         <p className="max-w-[26rem] text-sm text-balance text-ink-2">
-          在红包站的红包页点「分享」，选「社区小程序」，复制小程序代码贴进帖子，大家在帖子里就能领。
+          {children}
         </p>
       </div>
       <p className="mt-8 flex items-center justify-center gap-2 text-sm font-medium text-ink-2 select-text">
@@ -730,6 +743,27 @@ function NoHongbao() {
         {new URL(SITE).host}
       </p>
     </div>
+  );
+}
+
+/** Opened without a 红包 (the app's own page in the 社区): how to open one. */
+function NoHongbao() {
+  return (
+    <Notice title="请从红包站分享的小程序链接打开红包。">
+      在红包站的红包页点「分享」，选「社区小程序」，复制小程序代码贴进帖子，大家在帖子里就能领。
+    </Notice>
+  );
+}
+
+/**
+ * Someone not signed in to the 社区, as a post's reader may be: the 社区
+ * lets the app reach nothing for them (no network, no copying).
+ */
+function SignInFirst() {
+  return (
+    <Notice title="登录社区后就能看到这个红包。">
+      没登录时，社区不让小程序连到红包站。登录以后，红包就显示在这里，在帖子里就能领。
+    </Notice>
   );
 }
 
@@ -796,6 +830,7 @@ export function App({
 }) {
   const info = useFrameInfo();
   const props = useMemo(() => ({ sdk, id, reduced }), [sdk, id, reduced]);
+  const [avatars] = useState(() => forumAvatars(sdk));
   // The 名单's lists (lib/roster.ts), read through the forum.
   const [queryClient] = useState(
     () =>
@@ -809,20 +844,22 @@ export function App({
     <QueryClientProvider client={queryClient}>
       <MotionConfig reducedMotion={reduced ? "always" : "never"}>
         <EmbeddedContext.Provider value={true}>
-          <WindowInfoProvider value={info}>
-            <PropsContext.Provider value={props}>
-              {/* The 红包 page's window: its dialogs and hints are drawn in it. */}
-              <div
-                data-window-layer
-                className="hb-mini relative"
-                data-mode={mode}
-                data-motion={reduced ? "reduce" : undefined}
-                style={sizeVars(hongbaoSizes(info))}
-              >
-                <RouterProvider router={router} />
-              </div>
-            </PropsContext.Provider>
-          </WindowInfoProvider>
+          <AvatarSourceContext.Provider value={avatars}>
+            <WindowInfoProvider value={info}>
+              <PropsContext.Provider value={props}>
+                {/* The 红包 page's window: its dialogs and hints are drawn in it. */}
+                <div
+                  data-window-layer
+                  className="hb-mini relative"
+                  data-mode={mode}
+                  data-motion={reduced ? "reduce" : undefined}
+                  style={sizeVars(hongbaoSizes(info))}
+                >
+                  <RouterProvider router={router} />
+                </div>
+              </PropsContext.Provider>
+            </WindowInfoProvider>
+          </AvatarSourceContext.Provider>
         </EmbeddedContext.Provider>
       </MotionConfig>
     </QueryClientProvider>

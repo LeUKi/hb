@@ -2,7 +2,7 @@
 // own preview does not provide, answering for the sample 红包 in
 // dev-fixtures.ts (`?hb=password`, `direct`, `fish`, `draw`, `code`,
 // `human`, `ended`, `stranger`, `taken`, `scheduled`, `self`, `preview`, `long`;
-// none: no 红包), and a bar to switch what the forum would — light or dark,
+// none: no 红包; `?guest`: not signed in), people's pictures, and a bar to switch what the forum would — light or dark,
 // reduced motion. Never in app.js.
 import type { MiniClaimInput, MiniLiveMessage } from "@hb/contracts";
 import { caseNames, caseOf, rosterPage } from "./dev-fixtures";
@@ -28,6 +28,21 @@ let theme: MiniTheme = {
 };
 const listeners = new Set<(theme: MiniTheme) => void>();
 const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
+/** `?guest`: not signed in to the 社区, which then lets the app reach nothing. */
+const guest = query.has("guest");
+const denied = () =>
+  Object.assign(new Error("Permission denied"), { code: "PERMISSION_DENIED" });
+
+/**
+ * A member's picture, as the 社区 lends it (a Blob address): a tile in a
+ * colour of their own; every seventh has none.
+ */
+function picture(id: number) {
+  if (id % 7 === 3) return null;
+  const hue = (id * 47) % 360;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><rect width="96" height="96" fill="hsl(${hue} 55% 55%)"/><circle cx="48" cy="38" r="18" fill="hsl(${hue} 60% 85%)"/><ellipse cx="48" cy="92" rx="34" ry="28" fill="hsl(${hue} 60% 85%)"/></svg>`;
+  return URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+}
 
 /** The live channel: who is watching, a claim now and then. */
 function liveSocket(): MiniSocket {
@@ -79,15 +94,32 @@ const sdk: MiniSdk = {
     },
   },
   user: {
-    getCurrent: async () => ({
-      id: 332940,
-      username: "lafish",
-      name: "lafish",
-      initials: "L",
-    }),
+    getCurrent: async () =>
+      guest
+        ? null
+        : {
+            id: 332940,
+            username: "lafish",
+            name: "lafish",
+            initials: "L",
+            trustLevel: 2,
+            avatarUrl: picture(332940),
+          },
+    getById: async (id) => {
+      await wait(150 + Math.random() * 300);
+      return {
+        id,
+        username: `user${id}`,
+        name: `user${id}`,
+        initials: "U",
+        trustLevel: 1,
+        avatarUrl: picture(id),
+      };
+    },
   },
   http: {
     request: async (endpoint, options) => {
+      if (guest) throw denied();
       await wait(endpoint === "claim" ? 900 : 500);
       if (!sample)
         return {
@@ -131,7 +163,12 @@ const sdk: MiniSdk = {
       };
     },
   },
-  webSocket: { connect: async () => liveSocket() },
+  webSocket: {
+    connect: async () => {
+      if (guest) throw denied();
+      return liveSocket();
+    },
+  },
   clipboard: {
     writeText: async (text) => {
       await navigator.clipboard?.writeText(text);

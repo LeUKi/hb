@@ -39,6 +39,21 @@ export function forumMiniAppEmbed(activityId: string, title: string) {
 }
 
 /**
+ * A person's picture in what 红包站 answers the mini app: the 社区's own,
+ * by their LINUX DO id (the 社区's user id), for the app to ask the 社区
+ * for (sdk.user.getById); its frame loads no pictures from elsewhere.
+ */
+export const FORUM_AVATAR_PREFIX = "forum-user:";
+export const forumAvatar = (forumUserId: string) =>
+  `${FORUM_AVATAR_PREFIX}${forumUserId}`;
+/** The 社区 user id a picture names, or null for any other. */
+export function forumUserIdOf(src: string): number | null {
+  if (!src.startsWith(FORUM_AVATAR_PREFIX)) return null;
+  const id = Number(src.slice(FORUM_AVATAR_PREFIX.length));
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+/**
  * GET /api/mini/hongbao?id=: the 红包, without what the mini app never
  * shows (its code, its page, its proof), and the viewer's own part.
  */

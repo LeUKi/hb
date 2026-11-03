@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useContext, useEffect, useReducer, useState } from "react";
+import { AvatarSourceContext } from "../../lib/avatar-source";
 import { cn } from "../../lib/cn";
 import { useEmbedded } from "../../lib/embedded";
 
@@ -19,9 +20,27 @@ export function Avatar({
   className?: string;
 }) {
   const [failed, setFailed] = useState<string | null>(null);
-  // The forum's mini app loads no pictures from elsewhere: the character.
+  // The 社区's mini app loads no pictures from elsewhere: the 社区's own
+  // when it has lent one (AvatarSource), else the character.
   const embedded = useEmbedded();
-  const picture = src && failed !== src && !embedded ? src : null;
+  const source = useContext(AvatarSourceContext);
+  const [, loaded] = useReducer((count: number) => count + 1, 0);
+  useEffect(() => {
+    if (!embedded || !source || !src || source.peek(src) !== undefined) return;
+    let live = true;
+    void source.load(src).then(() => {
+      if (live) loaded();
+    });
+    return () => {
+      live = false;
+    };
+  }, [embedded, source, src]);
+  const shown = embedded
+    ? source && src
+      ? (source.peek(src) ?? null)
+      : null
+    : (src ?? null);
+  const picture = shown && failed !== shown ? shown : null;
   return (
     <span
       aria-hidden="true"

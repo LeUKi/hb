@@ -23,6 +23,7 @@ import { findActivity } from "../activities/storage";
 import type { ApiBindings, ApiContext } from "../env";
 import { activityObject } from "../runtime/objects";
 import { decryptString, encryptString } from "../security/crypto";
+import { withForumAvatars } from "./forum-avatars";
 import {
   lookOnly,
   type MiniAppTrust,
@@ -201,16 +202,18 @@ miniRoutes.get("/mini/hongbao", async (c) => {
     ? await getCurrentParticipationForActivity(c.env, row, user.id)
     : null;
   c.header("Cache-Control", "no-store");
-  return c.json({
-    activity: forMiniApp(activity),
-    participation: {
-      claim: participation?.claim ?? null,
-      registration: participation?.registration ?? null,
-    },
-    known: user !== null,
-    author: user !== null && row.authorId === user.id,
-    lookOnly: lookOnly(trust, identity),
-  } satisfies MiniHongbaoResponse);
+  return c.json(
+    await withForumAvatars(c.env, {
+      activity: forMiniApp(activity),
+      participation: {
+        claim: participation?.claim ?? null,
+        registration: participation?.registration ?? null,
+      },
+      known: user !== null,
+      author: user !== null && row.authorId === user.id,
+      lookOnly: lookOnly(trust, identity),
+    } satisfies MiniHongbaoResponse),
+  );
 });
 
 // 名单: 红包站's public one (activities/routes.ts), each page its own call.
@@ -235,12 +238,14 @@ miniRoutes.get("/mini/roster", async (c) => {
       ? await listPublicRecipients(c.env, id, cursor)
       : await listPublicRegistrations(c.env, id, cursor);
   c.header("Cache-Control", "no-store");
-  return c.json({
-    ...page,
-    nextCursor: page.nextCursor
-      ? await decryptString(atob(page.nextCursor), c.env, sealedFor)
-      : null,
-  } satisfies MiniRosterPage);
+  return c.json(
+    await withForumAvatars(c.env, {
+      ...page,
+      nextCursor: page.nextCursor
+        ? await decryptString(atob(page.nextCursor), c.env, sealedFor)
+        : null,
+    } satisfies MiniRosterPage),
+  );
 });
 
 miniRoutes.post(
@@ -327,7 +332,7 @@ miniRoutes.post(
       )
         .bind(result.registration.id, user.id)
         .run();
-    return c.json(result);
+    return c.json(await withForumAvatars(c.env, result));
   },
 );
 

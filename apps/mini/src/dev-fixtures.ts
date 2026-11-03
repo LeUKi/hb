@@ -1,21 +1,25 @@
-import type {
-  ClaimDetail,
-  ClaimResult,
-  MiniHongbaoResponse,
-  MiniRosterKind,
-  MiniRosterPage,
-  PublicActivity,
+import {
+  type ClaimDetail,
+  type ClaimResult,
+  forumAvatar,
+  type MiniHongbaoResponse,
+  type MiniRosterKind,
+  type MiniRosterPage,
+  type PublicActivity,
 } from "@hb/contracts";
 
 // Local only (src/dev.tsx): 红包 the stand-in SDK answers for, one per case
-// the page draws, picked by the link's `?hb=`. Never in app.js.
+// the page draws, picked by the link's `?hb=`. Never in app.js. People are
+// named by 社区 id as 红包站 names them for the app (forumAvatar).
 
 const iso = (offset: number) => new Date(Date.now() + offset).toISOString();
+/** The forum's lafish (dev.tsx), by their 社区 id as 红包站 names it. */
+const lafish = forumAvatar("332940");
 const author = {
   id: "author",
   username: "lafish",
   displayName: "lafish",
-  avatarUrl: null,
+  avatarUrl: lafish,
 };
 
 function hongbao(
@@ -370,7 +374,7 @@ export function rosterPage(
       id: `person-${n}`,
       username: `user${n}`,
       displayName: name,
-      avatarUrl: null,
+      avatarUrl: forumAvatar(String(1000 + n)),
     };
   });
   const nextCursor = end < total ? String(end) : null;
@@ -384,7 +388,12 @@ export function rosterPage(
     };
   // The forum's lafish (dev.tsx) among them, with each 称号 once.
   const titled = {
-    0: { username: "lafish", displayName: "lafish", self: true },
+    0: {
+      username: "lafish",
+      displayName: "lafish",
+      avatarUrl: lafish,
+      self: true,
+    },
     1: { speedTitle: "fastest" },
     3: { title: "highest" },
     5: { title: "lowest" },

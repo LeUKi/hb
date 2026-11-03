@@ -1,6 +1,7 @@
 import { env } from "cloudflare:test";
 import {
   emptyActivityInput,
+  forumAvatar,
   type LdcActivityInput,
   type MiniHongbaoResponse,
   type MiniLiveMessage,
@@ -527,6 +528,40 @@ describe("社区小程序's routes", () => {
     const signups = await roster(activity.id, "registrations");
     expect(((await signups.json()) as { items: unknown[] }).items).toEqual([]);
     expect((await roster(activity.id, "everyone")).status).toBe(400);
+  });
+
+  it("names each person's picture by their 社区 id, for the 社区 to lend", async () => {
+    const activity = await running();
+    await person("332940");
+    await claim(activity.id, {
+      submissionId: crypto.randomUUID(),
+      password: "社区里的口令",
+    });
+    const body = (await (
+      await read(activity.id)
+    ).json()) as MiniHongbaoResponse;
+    // The sender is LINUX DO's 1 (ownerId); the claimer has no picture here.
+    expect(body.activity.author.avatarUrl).toBe(forumAvatar("1"));
+    const page = (await (
+      await roster(activity.id, "claims")
+    ).json()) as PublicRecipientList;
+    expect(page.items[0]?.avatarUrl).toBe(forumAvatar("332940"));
+    // A name two accounts share: no picture rather than someone else's.
+    await createDb(env.DB)
+      .insert(users)
+      .values({
+        id: crypto.randomUUID(),
+        externalId: "332941",
+        username: "mini_332940",
+        displayName: "Another",
+        avatarUrl: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    const shared = (await (
+      await roster(activity.id, "claims")
+    ).json()) as PublicRecipientList;
+    expect(shared.items[0]?.avatarUrl).toBeNull();
   });
 
   it("pages the 名单 with a mark the 社区 can send (at most 200 bytes)", async () => {
