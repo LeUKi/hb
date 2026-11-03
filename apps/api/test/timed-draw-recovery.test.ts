@@ -249,7 +249,11 @@ describe("persisted timed-draw recovery and participation pagination", () => {
           alarm: await state.storage.getAlarm(),
         }),
       );
-      expect(recovery.data).toEqual({ drawActivityId: draft.id });
+      // Its own retry, kept apart from 社区小程序 sockets' times.
+      expect(recovery.data).toEqual({
+        drawActivityId: draft.id,
+        activityAlarm: recovery.alarm,
+      });
       expect(recovery.alarm).toBeGreaterThanOrEqual(failedAt + 5_000);
       expect(recovery.alarm).toBeLessThanOrEqual(Date.now() + 5_000);
     } finally {

@@ -108,11 +108,17 @@ export const liveAnnounce = (
 /**
  * 社区小程序 (docs/mini-app-design.md §7): a mini app's socket is on the
  * same channel (counted with the rest), tagged so it hears the lighter read
- * and none of 代码判定's messages, and closed at its `until`.
+ * and none of 代码判定's messages, and closed at its `until` by the
+ * object's alarm (a timer would keep the object from hibernating).
  */
 export const LIVE_MINI_TAG = "mini";
 /** The mini route's word for until when (ms) its socket may stay. */
 export const LIVE_UNTIL_HEADER = "X-HB-Live-Until";
+/**
+ * The alarm may come late: it is set this much before a socket's `until`,
+ * and closes those due within it. The app has renewed by 270 s.
+ */
+export const LIVE_MINI_EARLY_MS = 1_000;
 
 /**
  * The read a mini app's socket hears: the public read without what does

@@ -1,4 +1,8 @@
-import { env } from "cloudflare:test";
+import {
+  env,
+  runDurableObjectAlarm,
+  runInDurableObject,
+} from "cloudflare:test";
 import {
   emptyActivityInput,
   forumAvatar,
@@ -187,7 +191,37 @@ async function connect(id: string, claims: Claims = {}) {
   );
   socket.addEventListener("close", (event) => closed.push(event.code));
   socket.accept();
-  return { heard, closed };
+  return { heard, closed, socket };
+}
+
+/** A 红包's object: its alarm, and its own time apart from sockets'. */
+function objectOf(id: string) {
+  return env.ACTIVITY_DO.get(env.ACTIVITY_DO.idFromName(id));
+}
+
+function alarmOf(id: string) {
+  return runInDurableObject(objectOf(id), async (_instance, state) => ({
+    alarm: await state.storage.getAlarm(),
+    own: await state.storage.get<number>("activityAlarm"),
+  }));
+}
+
+/** The object's alarm run now, its 红包's own part watched. */
+function wake(id: string, own?: () => Promise<void>) {
+  return runInDurableObject(objectOf(id), async (instance) => {
+    const object = instance as unknown as {
+      alarm(): Promise<void>;
+      activityAlarm(): Promise<void>;
+    };
+    const ran = vi.spyOn(object, "activityAlarm");
+    if (own) ran.mockImplementation(own);
+    try {
+      await object.alarm();
+      return ran.mock.calls.length;
+    } finally {
+      ran.mockRestore();
+    }
+  });
 }
 
 beforeAll(async () => {
@@ -734,14 +768,124 @@ describe("社区小程序's live channel", () => {
     );
   });
 
-  it("closes a socket when its token ends", async () => {
+  it("closes sockets when their tokens end, by the object's alarm", async () => {
     const activity = await running();
     const now = Math.floor(Date.now() / 1000);
-    const { closed } = await connect(activity.id, {
-      iat: now - 1,
-      nbf: now - 1,
-      exp: now + 2,
+    const ending = { iat: now - 1, nbf: now - 1, exp: now + 2 };
+    const first = await connect(activity.id, ending);
+    const second = await connect(activity.id, ending);
+    // No timer holds the object awake: its alarm wakes it a second early.
+    const { alarm, own } = await alarmOf(activity.id);
+    expect(alarm).toBe((now + 2) * 1000 - 1000);
+    expect(own).toBeGreaterThan(Date.now() + 60_000);
+    await vi.waitFor(
+      () => {
+        expect(first.closed).toEqual([4000]);
+        expect(second.closed).toEqual([4000]);
+      },
+      { timeout: 5000 },
+    );
+    // Then only the 红包's own deadline is waited for.
+    await vi.waitFor(async () =>
+      expect(await alarmOf(activity.id)).toEqual({ alarm: own, own }),
+    );
+  });
+
+  it("moves the alarm on as the app renews its socket, so it never wakes for one", async () => {
+    const activity = await running();
+    const old = await connect(activity.id);
+    const before = (await alarmOf(activity.id)).alarm ?? 0;
+    expect(before).toBeGreaterThan(Date.now() + 290_000);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await connect(activity.id);
+    // The new one's time is later: the alarm stays.
+    expect((await alarmOf(activity.id)).alarm).toBe(before);
+    old.socket.close(1000, "renewed");
+    await vi.waitFor(async () =>
+      expect((await alarmOf(activity.id)).alarm).toBeGreaterThan(before),
+    );
+  });
+
+  it("wakes for a socket's time without running the 红包's own, which still comes at its time", async () => {
+    const activity = await running();
+    await connect(activity.id);
+    const set = await alarmOf(activity.id);
+    expect(set.alarm).toBeLessThan(set.own ?? 0);
+    expect(await wake(activity.id)).toBe(0);
+    expect(await alarmOf(activity.id)).toEqual(set);
+    // Its own time first: it runs, as on any wake before.
+    await runInDurableObject(objectOf(activity.id), (_instance, state) =>
+      state.storage.put("activityAlarm", Date.now() - 1),
+    );
+    expect(await wake(activity.id)).toBe(1);
+  });
+
+  it("runs an alarm set before the 红包's own time was kept, after a socket came", async () => {
+    const activity = await running();
+    const viewer = await connect(activity.id);
+    const earlier = Date.now() + 60_000;
+    await runInDurableObject(
+      objectOf(activity.id),
+      async (_instance, state) => {
+        await state.storage.delete("activityAlarm");
+        await state.storage.setAlarm(earlier);
+      },
+    );
+    await connect(activity.id, { sub: "40" });
+    expect(await alarmOf(activity.id)).toEqual({
+      alarm: earlier,
+      own: earlier,
     });
-    await vi.waitFor(() => expect(closed).toEqual([4000]), { timeout: 5000 });
+    await env.DB.prepare("UPDATE activities SET deadline=? WHERE id=?")
+      .bind(Date.now() - 1000, activity.id)
+      .run();
+    expect(await runDurableObjectAlarm(objectOf(activity.id))).toBe(true);
+    expect(
+      (
+        await env.DB.prepare(
+          "SELECT end_reason AS reason FROM activities WHERE id=?",
+        )
+          .bind(activity.id)
+          .first<{ reason: string | null }>()
+      )?.reason,
+    ).toBe("expired");
+    await vi.waitFor(() => expect(viewer.closed).toEqual([1000]));
+  });
+
+  it("lets go of a socket's time once it is due, even with its socket gone", async () => {
+    const activity = await running();
+    await connect(activity.id);
+    const { alarm, own } = await runInDurableObject(
+      objectOf(activity.id),
+      async (instance, state) => {
+        const object = instance as unknown as {
+          minis: Map<string, number>;
+          alarm(): Promise<void>;
+        };
+        // Closed and never heard of again.
+        object.minis.set("gone", Date.now() - 10);
+        await object.alarm();
+        expect(object.minis.has("gone")).toBe(false);
+        return {
+          alarm: await state.storage.getAlarm(),
+          own: await state.storage.get<number>("activityAlarm"),
+        };
+      },
+    );
+    expect(alarm).toBeGreaterThan(Date.now() + 290_000);
+    expect(alarm).toBeLessThan(own ?? 0);
+  });
+
+  it("keeps the 红包's own time due when it fails, for the runtime to try again", async () => {
+    const activity = await running();
+    await runInDurableObject(objectOf(activity.id), (_instance, state) =>
+      state.storage.put("activityAlarm", Date.now() - 1),
+    );
+    await expect(
+      wake(activity.id, () => Promise.reject(new Error("D1 unavailable"))),
+    ).rejects.toThrow("D1 unavailable");
+    const { own } = await alarmOf(activity.id);
+    expect(own).toBeGreaterThan(0);
+    expect(own).toBeLessThanOrEqual(Date.now());
   });
 });
