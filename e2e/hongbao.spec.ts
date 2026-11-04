@@ -1988,6 +1988,43 @@ test.describe("红包页", () => {
     ).toBeVisible();
   });
 
+  test("别人打开口令草稿：不读口令，页面不会在“未找到红包”之间来回闪；开放后才读", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    const state = await mockHongbao(page);
+    const opened = state.activity;
+    state.activity = timed(opened, Date.now() + 60 * 60_000);
+    state.recipients = [];
+    // As the API answered before: a draft's 口令 were 404 to anyone else.
+    const asked: string[] = [];
+    await page.route(`**/api/activities/${id}/passwords`, (route) => {
+      asked.push(state.activity.status);
+      return state.activity.status === "draft"
+        ? route.fulfill({
+            status: 404,
+            json: {
+              error: { code: "ACTIVITY_NOT_FOUND", message: "未找到红包" },
+            },
+          })
+        : route.fallback();
+    });
+    await openApp(page, path);
+    await expect(page.getByRole("button", { name: "未开放" })).toBeVisible();
+    // Past a 5-second read of the draft: still the 红包, never 未找到.
+    await page.waitForTimeout(6_500);
+    await expect(page.getByText("未找到红包")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "未开放" })).toBeVisible();
+    expect(asked).toEqual([]);
+    // Opened, its 口令 are read.
+    state.activity = opened;
+    await expect(
+      page.getByRole("button", { name: /输入口令领取/ }),
+    ).toBeVisible({ timeout: 10_000 });
+    await expect.poll(() => asked.length).toBeGreaterThan(0);
+    expect(asked.every((status) => status !== "draft")).toBe(true);
+  });
+
   test("定时开放的草稿：左上角也写着多少人在看；开放推过来，页面马上翻成能领", async ({
     page,
   }) => {

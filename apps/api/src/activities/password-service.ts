@@ -31,7 +31,12 @@ import { assertParticipationMode } from "./participation";
 import { activityStatus } from "./service";
 import { findActivity, passwordAssociatedData } from "./storage";
 
-/** Visibility is decided in the database snapshot, before any answer is decrypted. */
+/**
+ * Visibility is decided in the database snapshot, before any answer is
+ * decrypted. A draft is read by whoever has its link (redesign 05 §5), so
+ * it answers too, with no 口令 for anyone but its sender: a 404 here would
+ * tell the page the 红包 is gone.
+ */
 export async function getActivityPasswords(
   env: ApiBindings,
   activityId: string,
@@ -50,7 +55,7 @@ export async function getActivityPasswords(
       FROM activity_passwords p JOIN activities a ON a.id = p.activity_id
       LEFT JOIN claims c ON c.activity_id = a.id AND c.user_id = ?
       LEFT JOIN activity_registrations r ON r.activity_id = a.id AND r.user_id = ?
-      WHERE a.id = ? AND a.reward_type = 'ldc' AND a.deleted_at IS NULL AND (a.opened_at IS NOT NULL OR a.author_id = ?)
+      WHERE a.id = ? AND a.reward_type = 'ldc' AND a.deleted_at IS NULL
       AND (a.author_id = ? OR (a.opened_at IS NOT NULL AND
         (a.ended_at IS NOT NULL OR a.archived_at IS NOT NULL OR a.claimed_count >= a.total_count OR a.deadline <= ${databaseNow}))
         OR ((c.id IS NOT NULL OR r.id IS NOT NULL) AND (c.password_id = p.id OR r.password_id = p.id OR ${solved})))
@@ -59,7 +64,6 @@ export async function getActivityPasswords(
       viewer,
       viewer,
       activityId,
-      viewer,
       viewer,
       viewer,
     ),
@@ -71,12 +75,10 @@ export async function getActivityPasswords(
           AND (EXISTS (SELECT 1 FROM claims WHERE activity_id = a.id AND user_id = ?)
             OR EXISTS (SELECT 1 FROM activity_registrations WHERE activity_id=a.id AND user_id=?))
           THEN 1 ELSE 0 END AS canSolve
-      FROM activities a WHERE a.id = ? AND a.reward_type = 'ldc' AND a.deleted_at IS NULL
-        AND (a.opened_at IS NOT NULL OR a.author_id = ?)`).bind(
+      FROM activities a WHERE a.id = ? AND a.reward_type = 'ldc' AND a.deleted_at IS NULL`).bind(
       viewer,
       viewer,
       activityId,
-      viewer,
     ),
   ]);
   const state = metadata?.results[0] as

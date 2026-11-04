@@ -275,7 +275,10 @@ export function useHongbaoPageData(id: string) {
     activity?.draw?.state,
     live,
   );
-  const passwordsEnabled = Boolean(activity && !author);
+  // A draft shows no 口令 to others: they are read once it opens.
+  const passwordsEnabled = Boolean(
+    activity && !author && activity.status !== "draft",
+  );
   const passwordsQuery = useActivityPasswords(
     userId,
     id,

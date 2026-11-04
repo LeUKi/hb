@@ -255,7 +255,7 @@ beforeEach(async () => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("dedicated-page password visibility", () => {
-  it("reveals draft answers only to the author without personal badges", async () => {
+  it("reveals draft answers only to the author, and answers others with none", async () => {
     const activity = await create(ldcConfig(), false);
     expect(await passwords(activity.id, owner)).toEqual({
       passwords: validPasswords.map((text) => ({
@@ -266,11 +266,20 @@ describe("dedicated-page password visibility", () => {
       hiddenCount: 0,
       canSolve: false,
     });
-    for (const viewer of [undefined, alice])
-      expect(
-        (await request(`/api/activities/${activity.id}/passwords`, viewer))
-          .status,
-      ).toBe(404);
+    // Anyone with its link reads a draft (05 §5): it answers with no 口令,
+    // never a 404, which the page takes for a 红包 that is gone.
+    for (const viewer of [undefined, alice]) {
+      const response = await request(
+        `/api/activities/${activity.id}/passwords`,
+        viewer,
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        passwords: [],
+        hiddenCount: validPasswords.length,
+        canSolve: false,
+      });
+    }
   });
 
   it("reveals only the viewer's own award and solved answers while active", async () => {
