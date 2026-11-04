@@ -12,9 +12,11 @@ import {
 } from "@hb/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  allocateClaimBatch,
   attemptAssociatedData,
   completeClaimSubmission,
   prepareClaimSubmission,
+  resumePendingActivityClaims,
 } from "../src/activities/claim-service";
 import {
   refreshActivityLifecycle,
@@ -1351,5 +1353,200 @@ describe("the claim line (2026-11-04)", () => {
       claims: 2,
       endReason: "exhausted",
     });
+  });
+
+  it("writes waiting shares together: one each, none past the total, the 名单 in line order", async () => {
+    const activity = await create({
+      money: { mode: "fixed", totalAmount: "25.00", count: 25 },
+    });
+    const people = await Promise.all(
+      Array.from({ length: 30 }, (_, index) => actor(`batch${index}`)),
+    );
+    const url = `https://activity.internal/internal/activities/${activity.id}/claim`;
+    await runInDurableObject(
+      activityObject(bindings, activity.id),
+      async (instance) => {
+        const object = instance as unknown as {
+          fetch(request: Request): Promise<Response>;
+          serialize(action: () => Promise<void>): Promise<void>;
+        };
+        let release = () => {};
+        const held = object.serialize(
+          () =>
+            new Promise<void>((resolve) => {
+              release = resolve;
+            }),
+        );
+        const answers = people.map((person) =>
+          object
+            .fetch(
+              new Request(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  userId: person.id,
+                  submissionId: crypto.randomUUID(),
+                  password: "正确口令123",
+                }),
+              }),
+            )
+            .then((response) => response.json() as Promise<ClaimResult>),
+        );
+        // All checked while the line is held, then written in turns of 20.
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        release();
+        await held;
+        const results = (await Promise.all(answers)).map(
+          (answer) => answer.result,
+        );
+        expect(results.filter((result) => result === "claimed")).toHaveLength(
+          25,
+        );
+        expect(results.filter((result) => result === "ended")).toHaveLength(5);
+      },
+    );
+    expect(await stats(activity.id)).toMatchObject({
+      claimed: 25,
+      claims: 25,
+      endReason: "exhausted",
+    });
+    const rows = await env.DB.prepare(
+      `SELECT c.user_id AS userId, r.position FROM claims c
+        JOIN reward_inventory r ON r.activity_id = c.activity_id AND r.id = c.inventory_id
+        WHERE c.activity_id = ? ORDER BY c.claimed_at, c.id`,
+    )
+      .bind(activity.id)
+      .all<{ userId: string; position: number }>();
+    expect(new Set(rows.results.map((row) => row.userId)).size).toBe(25);
+    expect(rows.results.map((row) => row.position)).toEqual(
+      Array.from({ length: 25 }, (_, index) => index),
+    );
+    const tasks = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM payment_tasks p JOIN claims c ON c.id = p.claim_id WHERE c.activity_id = ?",
+    )
+      .bind(activity.id)
+      .first<number>("n");
+    expect(tasks).toBe(25);
+  }, 30_000);
+
+  it("writes each alone when one of a batch cannot go along", async () => {
+    const activity = await create({
+      money: { mode: "fixed", totalAmount: "5.00", count: 5 },
+    });
+    const people = await Promise.all(
+      Array.from({ length: 4 }, (_, index) => actor(`alone${index}`)),
+    );
+    const submissions = [];
+    for (const person of people)
+      submissions.push(
+        await prepareClaimSubmission(bindings, activity.id, person.id, {
+          submissionId: crypto.randomUUID(),
+          password: "正确口令123",
+        }),
+      );
+    // The third is turned off after its check: its guard fails the batch.
+    await env.DB.prepare("UPDATE users SET active = 0 WHERE id = ?")
+      .bind(people[2]?.id)
+      .run();
+    const written = await allocateClaimBatch(bindings, submissions);
+    expect(
+      written.map((one) => (typeof one === "string" ? one : "other")),
+    ).toEqual(["allocated", "allocated", "other", "allocated"]);
+    expect(await stats(activity.id)).toMatchObject({ claimed: 3, claims: 3 });
+  });
+
+  it("lets a waiting claim leave the line: nothing taken, never finished later", async () => {
+    const activity = await create({
+      money: { mode: "fixed", totalAmount: "2.00", count: 2 },
+    });
+    const submissionId = crypto.randomUUID();
+    const base = `https://activity.internal/internal/activities/${activity.id}`;
+    await runInDurableObject(
+      activityObject(bindings, activity.id),
+      async (instance) => {
+        const object = instance as unknown as {
+          fetch(request: Request): Promise<Response>;
+          serialize(action: () => Promise<void>): Promise<void>;
+        };
+        let release = () => {};
+        const held = object.serialize(
+          () =>
+            new Promise<void>((resolve) => {
+              release = resolve;
+            }),
+        );
+        const waiting = object
+          .fetch(
+            new Request(`${base}/claim`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                userId: alice.id,
+                submissionId,
+                password: "正确口令123",
+              }),
+            }),
+          )
+          .then((response) => response.json() as Promise<ClaimResult>);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        const participation = (await (
+          await request(`/api/activities/${activity.id}/participation`, alice)
+        ).json()) as { waiting?: { submissionId: string } };
+        expect(participation.waiting?.submissionId).toBe(submissionId);
+        const cancel = (body: unknown) =>
+          object.fetch(
+            new Request(`${base}/claim/cancel`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            }),
+          );
+        // Someone else's submission, or one not waiting: not cancelled.
+        expect((await cancel({ userId: bob.id, submissionId })).status).toBe(
+          409,
+        );
+        const cancelled = await cancel({ userId: alice.id, submissionId });
+        expect(await cancelled.json()).toEqual({ result: "cancelled" });
+        expect((await waiting).result).toBe("cancelled");
+        expect((await cancel({ userId: alice.id, submissionId })).status).toBe(
+          409,
+        );
+        release();
+        await held;
+      },
+    );
+    expect(await resumePendingActivityClaims(bindings, activity.id)).toBe(0);
+    expect(await stats(activity.id)).toMatchObject({ claimed: 0, claims: 0 });
+    const outcome = await env.DB.prepare(
+      "SELECT outcome FROM redemption_submissions WHERE user_id = ? AND submission_id = ?",
+    )
+      .bind(alice.id, submissionId)
+      .first<string>("outcome");
+    expect(outcome).toBe("cancelled");
+    const after = (await (
+      await request(`/api/activities/${activity.id}/participation`, alice)
+    ).json()) as { waiting?: unknown };
+    expect(after.waiting).toBeUndefined();
+    // The public route: signed in, with a submission id.
+    expect(
+      (
+        await request(
+          `/api/activities/${activity.id}/claim/cancel`,
+          alice,
+          "POST",
+          { submissionId: "not-a-uuid" },
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await request(
+          `/api/activities/${activity.id}/claim/cancel`,
+          undefined,
+          "POST",
+          { submissionId },
+        )
+      ).status,
+    ).toBe(401);
   });
 });

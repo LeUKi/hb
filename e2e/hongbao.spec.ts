@@ -1952,3 +1952,85 @@ test.describe("红包页 · 手机", () => {
     await expect(bubble).toBeHidden();
   });
 });
+
+test.describe("红包页 · 排队", () => {
+  test("排着队：说前面几人、大约几秒，可以关页面，也可以取消排队", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    await mockHongbao(page);
+    const sockets: WebSocketRoute[] = [];
+    await page.routeWebSocket(/\/api\/activities\/[^/]+\/live$/, (ws) => {
+      sockets.push(ws);
+      ws.onMessage((message) => {
+        if (message === "ping") ws.send("pong");
+      });
+    });
+    // The claim waits in the line until it is cancelled.
+    let answer: (body: unknown) => void = () => {};
+    let submissionId = "";
+    await page.route(`**/api/activities/*/claim`, async (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      submissionId = (
+        route.request().postDataJSON() as { submissionId: string }
+      ).submissionId;
+      const body = await new Promise<unknown>((resolve) => {
+        answer = resolve;
+      });
+      await route.fulfill({ json: body });
+    });
+    const cancels: unknown[] = [];
+    await page.route(`**/api/activities/*/claim/cancel`, async (route) => {
+      cancels.push(route.request().postDataJSON());
+      answer({ result: "cancelled" });
+      await route.fulfill({ json: { result: "cancelled" } });
+    });
+    await openApp(page, path);
+    await expect.poll(() => sockets.length).toBe(1);
+    await page.getByRole("button", { name: "输入口令领取" }).click();
+    await omniboxInput(page).fill(passwordOf.mine);
+    await page.keyboard.press("Enter");
+    await expect.poll(() => submissionId).not.toBe("");
+    sockets[0]?.send(
+      JSON.stringify({ type: "queued", ahead: 5, seconds: 3, submissionId }),
+    );
+    const hint = page.locator('[data-hb-part="hint"]');
+    await expect(hint).toContainText("排队中，前面还有 5 人，大约 3 秒");
+    await expect(hint).toContainText(
+      "可以关掉页面，领到后在红包记录里看得到。",
+    );
+    await hint.getByRole("button", { name: "取消排队" }).click();
+    await expect(shown(page, /^已取消排队，这次没有领取。/)).toBeVisible();
+    expect(cancels).toEqual([{ submissionId }]);
+    await expect(hint.getByRole("button", { name: "取消排队" })).toHaveCount(0);
+  });
+
+  test("刷新后还在排：显示领取中，可以取消", async ({ page }) => {
+    await mockSession(page, viewer);
+    await mockHongbao(page);
+    const submissionId = crypto.randomUUID();
+    let waiting = true;
+    await page.route(`**/api/activities/*/participation**`, (route) =>
+      route.fulfill({
+        json: {
+          claim: null,
+          registration: null,
+          ...(waiting ? { waiting: { submissionId } } : {}),
+        },
+      }),
+    );
+    const cancels: unknown[] = [];
+    await page.route(`**/api/activities/*/claim/cancel`, async (route) => {
+      cancels.push(route.request().postDataJSON());
+      waiting = false;
+      await route.fulfill({ json: { result: "cancelled" } });
+    });
+    await openApp(page, path);
+    const hint = page.locator('[data-hb-part="hint"]');
+    await expect(hint).toContainText("领取中，马上就好");
+    await hint.getByRole("button", { name: "取消排队" }).click();
+    expect(cancels).toEqual([{ submissionId }]);
+    await expect(hint).toContainText("输入口令领取");
+    await expect(hint.getByRole("button", { name: "取消排队" })).toHaveCount(0);
+  });
+});

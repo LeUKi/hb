@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { claimCancelRoutes } from "./activities/cancel-routes";
 import { ActivityError } from "./activities/errors";
 import { hongbaoInfoRoutes } from "./activities/hongbao-info";
 import { pageIdentityRoutes } from "./activities/page-identity";
@@ -142,5 +143,7 @@ export type AppType = typeof app;
 (app as unknown as Hono<ApiContext>).route("/api", hongbaoInfoRoutes);
 // 社区小程序 (docs/mini-app-design.md §7), the same way.
 (app as unknown as Hono<ApiContext>).route("/api", miniRoutes);
+// 取消排队 (docs/claim-capacity-design.md §3 第 1 期), the same way.
+(app as unknown as Hono<ApiContext>).route("/api", claimCancelRoutes);
 // 压测 accounts (docs/claim-capacity-design.md §3), on Stage only: 404 elsewhere.
 (app as unknown as Hono<ApiContext>).route("/api", stageLoadTestRoutes);

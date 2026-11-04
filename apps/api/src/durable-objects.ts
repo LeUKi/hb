@@ -18,12 +18,16 @@ import { eq } from "drizzle-orm";
 import { NETWORK_REASONS } from "../../../kit/runtime/index.mjs";
 import {
   admitActivityClaim,
-  allocateClaimSubmission,
+  allocateClaimBatch,
+  type BatchAllocation,
+  CLAIM_BATCH,
+  cancelClaimSubmission,
   claimActivity,
   claimAnswer,
   claimDecided,
   completeClaimSubmission,
   resumePendingActivityClaims,
+  type SubmissionRow,
 } from "./activities/claim-service";
 import { ActivityError, activityNotFound } from "./activities/errors";
 import { HumanCheckRequiredError } from "./activities/human-check";
@@ -246,14 +250,10 @@ function mutationError(error: unknown) {
 }
 
 /**
- * A direct or 口令 claim's turn: the share handed out, the answer of one
- * that went the whole way in the line, its error, or decided (null).
+ * A claim that goes the whole way in the line (not open yet, a timed draw):
+ * its answer, its error, or decided while it waited (null).
  */
-type ClaimTurn =
-  | { result: Awaited<ReturnType<typeof allocateClaimSubmission>> }
-  | { response: Response }
-  | { error: unknown }
-  | null;
+type ClaimTurn = { response: Response } | { error: unknown } | null;
 
 export class ActivityDO extends DurableObject<ApiBindings> {
   private mutationTail: Promise<void> = Promise.resolve();
@@ -263,6 +263,15 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   private claimsWaiting = 0;
   /** A direct or 口令 claimant's latest request (claimInLine). */
   private claimants = new Map<string, Promise<Response>>();
+  /** Checked direct and 口令 submissions waiting for their shares (allocate). */
+  private allocations: {
+    submission: SubmissionRow;
+    settle: (written: BatchAllocation | "cancelled") => void;
+  }[] = [];
+  /** A turn for them is in the line already. */
+  private allocationTurn = false;
+  /** About how long a turn takes, for the waiting's estimate. */
+  private allocationMs = 800;
   /**
    * 一批一起写 (docs/programmable-hongbao-design.md §3): protocol 5
    * submissions let in and waiting, in order; each one's turn judges it
@@ -399,6 +408,11 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     );
     const people = livePeople(this.ctx.getWebSockets(LIVE_TAG));
     server.send(liveViewers(people, seq));
+    // Its share still waiting (a page reloaded meanwhile): where it is.
+    const waiting = this.allocations.findIndex(
+      (item) => item.submission.userId === userId,
+    );
+    if (waiting >= 0) this.tellPlace(waiting);
     if (people !== this.viewersSent) this.announceViewers();
     if (!activity.draw && activity.status === "active" && activity.deadlineAt)
       await this.watchDeadline(id, Date.parse(activity.deadlineAt));
@@ -890,8 +904,12 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   }
 
   /** Where a submission joined the queue, to whoever sent it (§3). */
-  private tellQueued(userId: string, ahead: number) {
-    const message = liveQueued(ahead);
+  private tellQueued(
+    userId: string,
+    ahead: number,
+    waiting?: Parameters<typeof liveQueued>[1],
+  ) {
+    const message = liveQueued(ahead, waiting);
     for (const socket of this.ctx.getWebSockets(liveUserTag(userId)))
       try {
         socket.send(message);
@@ -978,6 +996,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
         ),
       );
     if (await claimDecided(this.env, id, userId)) return answer();
+    const startedAt = Date.now();
     const submission = await admitActivityClaim(
       this.env,
       id,
@@ -985,6 +1004,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       input,
       humanVerified,
     );
+    const checkedAt = Date.now();
     // Decided by its checks (a wrong 口令, a share already, over): no turn.
     if (submission && submission.outcome !== "pending")
       return this.claimed(
@@ -993,12 +1013,40 @@ export class ActivityDO extends DurableObject<ApiBindings> {
         input,
         await completeClaimSubmission(this.env, submission),
       );
+    if (submission) {
+      const written = await this.allocate(id, submission);
+      // 压测 and production alike (docs/claim-capacity-design.md §3 第 0
+      // 期): how long its checks took and how long it waited for its share.
+      console.log("claim_timing", {
+        activityId: id,
+        checkMs: checkedAt - startedAt,
+        lineMs: Date.now() - checkedAt,
+        outcome:
+          typeof written === "string"
+            ? written
+            : "error" in written
+              ? "error"
+              : written.result,
+      });
+      if (written === "cancelled")
+        return Response.json(
+          { result: "cancelled" },
+          { headers: { "Cache-Control": "no-store" } },
+        );
+      if (typeof written === "object" && "error" in written)
+        return mutationError(written.error);
+      // Its share written: the answer is read after the turn.
+      return this.claimed(
+        id,
+        userId,
+        input,
+        written === "allocated"
+          ? await claimAnswer(this.env, submission)
+          : written,
+      );
+    }
     const outcome = await this.serialize(async (): Promise<ClaimTurn> => {
       try {
-        if (submission)
-          return {
-            result: await allocateClaimSubmission(this.env, submission),
-          };
         // Not checked outside (not open yet, a timed draw): all of it here.
         if (await claimDecided(this.env, id, userId)) return null;
         // Its time has come and the alarm is not in yet: opened now, so
@@ -1017,16 +1065,101 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     });
     if (outcome === null) return answer();
     if ("error" in outcome) return mutationError(outcome.error);
-    if ("response" in outcome) return outcome.response;
-    if (outcome.result !== "allocated")
-      return this.claimed(id, userId, input, outcome.result);
-    // Its share written: the answer is read after the turn.
-    if (!submission) throw new Error("A share was written with no submission");
-    return this.claimed(
-      id,
-      userId,
-      input,
-      await claimAnswer(this.env, submission),
+    return outcome.response;
+  }
+
+  /**
+   * A checked submission's share: written with up to CLAIM_BATCH others in
+   * one turn of the line (allocateClaimBatch, docs/claim-capacity-design.md
+   * §3 第 1 期). Its person's pages hear where it is (queued) as it joins
+   * and after each turn.
+   */
+  private allocate(id: string, submission: SubmissionRow) {
+    return new Promise<BatchAllocation | "cancelled">((settle) => {
+      this.allocations.push({ submission, settle });
+      this.tellPlace(this.allocations.length - 1);
+      this.takeAllocationTurn(id);
+    });
+  }
+
+  /** One turn of the line for the waiting shares, then the next if any. */
+  private takeAllocationTurn(id: string) {
+    if (this.allocationTurn) return;
+    this.allocationTurn = true;
+    void this.serialize(async () => {
+      this.allocationTurn = false;
+      const batch = this.allocations.splice(0, CLAIM_BATCH);
+      if (batch.length === 0) return;
+      const started = Date.now();
+      let answers: BatchAllocation[];
+      try {
+        answers = await allocateClaimBatch(
+          this.env,
+          batch.map((item) => item.submission),
+        );
+      } catch (error) {
+        answers = batch.map(() => ({ error }));
+      }
+      // A turn's length, smoothed: what the waiting are told to expect.
+      this.allocationMs = Math.round(
+        this.allocationMs * 0.7 + (Date.now() - started) * 0.3,
+      );
+      batch.forEach((item, index) =>
+        item.settle(answers[index] ?? { error: new Error("No answer") }),
+      );
+      this.allocations.forEach((_, index) => this.tellPlace(index));
+      if (this.allocations.length > 0) this.takeAllocationTurn(id);
+    });
+  }
+
+  /** Where a waiting share stands, to its person's pages. */
+  private tellPlace(index: number) {
+    const item = this.allocations[index];
+    if (!item) return;
+    this.tellQueued(item.submission.userId, index, {
+      seconds: Math.ceil(
+        ((Math.floor(index / CLAIM_BATCH) + 1) * this.allocationMs) / 1000,
+      ),
+      submissionId: item.submission.submissionId,
+    });
+  }
+
+  /**
+   * 取消排队: a submission still waiting for its share leaves the line,
+   * finished as cancelled; nothing is taken. One already in its turn, or
+   * not in the line, cannot be.
+   */
+  private async cancelWaiting(
+    _id: string,
+    userId: string,
+    submissionId: string,
+  ) {
+    const index = this.allocations.findIndex(
+      (item) =>
+        item.submission.userId === userId &&
+        item.submission.submissionId === submissionId,
+    );
+    const item = this.allocations[index];
+    if (!item)
+      return Response.json(
+        {
+          error: {
+            code: "NOT_WAITING",
+            message: "现在取消不了：这次领取已经在处理或已经有结果。",
+          },
+        },
+        { status: 409, headers: { "Cache-Control": "no-store" } },
+      );
+    this.allocations.splice(index, 1);
+    await cancelClaimSubmission(this.env, item.submission);
+    item.settle("cancelled");
+    this.allocations.forEach((_, place) => {
+      if (place >= index) this.tellPlace(place);
+    });
+    this.tellMine([userId]);
+    return Response.json(
+      { result: "cancelled" },
+      { headers: { "Cache-Control": "no-store" } },
     );
   }
 
@@ -1042,6 +1175,9 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     // pool with it, the whole 红包 when someone was paid or it ended.
     if (result.result === "claimed" || result.result === "registered")
       this.announce(id);
+    // Their other tabs, or a page reloaded while it waited, read it now.
+    if (result.result === "claimed" && input.participationMode !== "code")
+      this.tellMine([userId]);
     if (
       input.participationMode === "code" &&
       (result.result === "claimed" ||
@@ -1288,6 +1424,27 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     if (fetching && request.method === "POST")
       return this.judgeFetch(fetching[1] ?? "", request);
 
+    // 取消排队: outside the line, which it leaves.
+    const leaving =
+      /^\/internal\/activities\/([a-f0-9-]{36})\/claim\/cancel$/i.exec(
+        url.pathname,
+      );
+    if (leaving && request.method === "POST") {
+      const id = leaving[1] ?? "";
+      if (!this.ctx.id.equals(this.env.ACTIVITY_DO.idFromName(id)))
+        return Response.json(
+          { error: { code: "INVALID_OBJECT", message: "红包标识不匹配" } },
+          { status: 400 },
+        );
+      const { userId, submissionId } = (await request
+        .json()
+        .catch(() => ({}))) as { userId?: unknown; submissionId?: unknown };
+      if (typeof userId !== "string" || typeof submissionId !== "string")
+        return mutationError(
+          new ActivityError(400, "INVALID_ACTIVITY", "取消请求无效"),
+        );
+      return this.cancelWaiting(id, userId, submissionId).catch(mutationError);
+    }
     const isCreation = url.pathname === "/internal/activities/create";
     const isGlobalRedemption =
       url.pathname === "/internal/redemptions/submit" ||
@@ -1340,19 +1497,19 @@ export class ActivityDO extends DurableObject<ApiBindings> {
           unknown
         >;
         const parsed = claimActivitySchema.safeParse(input);
-        if (parsed.success && typeof userId === "string")
-          return (
-            parsed.data.participationMode === "code"
-              ? this.claimCode(id, userId, parsed.data, humanVerified === true)
-              : this.claimInLine(
-                  id,
-                  userId,
-                  parsed.data,
-                  humanVerified === true,
-                )
-          )
-            .catch(mutationError)
-            .finally(done);
+        if (!parsed.success || typeof userId !== "string") {
+          done();
+          return mutationError(
+            new ActivityError(400, "INVALID_ACTIVITY", "领取请求无效"),
+          );
+        }
+        return (
+          parsed.data.participationMode === "code"
+            ? this.claimCode(id, userId, parsed.data, humanVerified === true)
+            : this.claimInLine(id, userId, parsed.data, humanVerified === true)
+        )
+          .catch(mutationError)
+          .finally(done);
       }
       return this.serialize(async () => {
         try {
@@ -1524,30 +1681,6 @@ export class ActivityDO extends DurableObject<ApiBindings> {
                 headers: { "Cache-Control": "no-store" },
               },
             );
-          }
-          if (operation === "claim") {
-            const parsed = claimActivitySchema.safeParse(input);
-            if (!parsed.success || typeof userId !== "string")
-              throw new ActivityError(400, "INVALID_ACTIVITY", "领取请求无效");
-            // Its time has come and the alarm is not in yet: opened now,
-            // so the first to try is not told it is not open (§4).
-            const due = await findActivity(this.env, id);
-            if (
-              due?.openedAt === null &&
-              due.scheduledOpenAt !== null &&
-              due.scheduledOpenAt <= Date.now()
-            )
-              await this.runSchedule(id);
-            const result = await claimActivity(
-              this.env,
-              id,
-              userId,
-              parsed.data,
-              undefined,
-              humanVerified === true,
-              this.claimHooks(id),
-            );
-            return this.claimed(id, userId, parsed.data, result);
           }
           // 站长's 停用 of a 代码判定红包 (judge/stop.ts); the route checked who.
           if (operation === "stop") {

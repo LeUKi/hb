@@ -210,11 +210,23 @@ export function useActivityLive(
           return;
         }
         if (message?.type === "mine") {
+          // Their claim has its answer (or left the line): no longer waiting.
+          setQueued((current) => (current?.id === id ? null : current));
           readOwn(client, id, userId, false);
           return;
         }
         if (message?.type === "queued") {
-          setQueued({ id, ahead: message.ahead, at: Date.now() });
+          setQueued({
+            id,
+            ahead: message.ahead,
+            at: Date.now(),
+            ...(message.seconds !== undefined
+              ? { seconds: message.seconds }
+              : {}),
+            ...(message.submissionId
+              ? { submissionId: message.submissionId }
+              : {}),
+          });
           return;
         }
         if (typeof message?.seq === "number") {

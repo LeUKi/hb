@@ -430,6 +430,7 @@ export const redemptionSubmissions = sqliteTable(
         "solved",
         "registered",
         "already_registered",
+        "cancelled",
       ],
     }).notNull(),
     purpose: text("purpose", { enum: ["claim", "solve", "register"] })

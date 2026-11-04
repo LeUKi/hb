@@ -35,6 +35,8 @@ export function sealOf({
   retry,
   cooling,
   drawStep,
+  queue = null,
+  waiting = false,
 }: {
   activity: HongbaoActivity;
   view: PublicView;
@@ -51,6 +53,13 @@ export function sealOf({
   /** 冷却 after an attempt (a 红包 without 口令 waits it out on the seal). */
   cooling: boolean;
   drawStep: DrawStep;
+  /**
+   * 排队 (docs/claim-capacity-design.md §3 第 1 期): how many are before
+   * their direct or 口令 claim, and about how many seconds, as pushed.
+   */
+  queue?: { ahead: number; seconds?: number } | null;
+  /** Their claim waits for its share, known from a reloaded page. */
+  waiting?: boolean;
 }) {
   const phase: HongbaoPhase = mine ? "open" : view.ended ? "ended" : "closed";
   const isDraw = activity.mode === "timed_draw";
@@ -105,7 +114,13 @@ export function sealOf({
             : spinning
               ? code
                 ? "正在判定…"
-                : "正在确认…"
+                : queue && queue.ahead > 0
+                  ? `排队中，前面还有 ${queue.ahead} 人${
+                      queue.seconds ? `，大约 ${queue.seconds} 秒` : ""
+                    }`
+                  : waiting
+                    ? "领取中，马上就好"
+                    : "正在确认…"
               : gate === "login"
                 ? `登录后${verb}`
                 : retry

@@ -204,13 +204,24 @@ export async function getCurrentParticipationForActivity(
   activity: ActivityRow,
   userId: string,
 ): Promise<ActivityParticipationResponse> {
-  const [claim, registration, standing] = await Promise.all([
+  const [claim, registration, standing, waiting] = await Promise.all([
     findUserClaim(env, activity.id, userId),
     findRegistration(env, activity.id, userId),
     // Protocol 5: their own part (docs/multi-prize-design.md §4.1).
     activity.participationMode === "code"
       ? ownStanding(env, activity.id, userId)
       : null,
+    // A direct or 口令 claim checked and waiting for its share
+    // (docs/claim-capacity-design.md §3 第 1 期): the page shows 领取中.
+    activity.participationMode === "code"
+      ? null
+      : env.DB.prepare(
+          `SELECT submission_id FROM redemption_submissions
+            WHERE activity_id = ? AND user_id = ? AND purpose = 'claim' AND outcome = 'pending'
+            ORDER BY created_at DESC LIMIT 1`,
+        )
+          .bind(activity.id, userId)
+          .first<string>("submission_id"),
   ]);
   const claimDetails = claim
     ? await claimDetailsBatch(env, [{ claim, activity }])
@@ -235,6 +246,7 @@ export async function getCurrentParticipationForActivity(
       ? (registrationDetails.get(registration.id) ?? activityNotFound())
       : null,
     ...(standing ? { standing } : {}),
+    ...(waiting && !claim ? { waiting: { submissionId: waiting } } : {}),
   };
 }
 

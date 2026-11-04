@@ -645,6 +645,10 @@ function Page({
     cooldown: false,
     announcement: seal.announcement,
     press,
+    // 取消排队 is the site's own for now (docs/claim-capacity-design.md §3).
+    leaveQueue: null,
+    leaving: false,
+    leaveError: null,
     message: null,
   };
   const siteUrl = siteLink(activity.id);

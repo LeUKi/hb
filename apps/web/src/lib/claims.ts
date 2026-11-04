@@ -338,3 +338,36 @@ export function useClaimReward(userId: string, csrfToken: string) {
     },
   });
 }
+
+/**
+ * 取消排队 (docs/claim-capacity-design.md §3 第 1 期): their claim still
+ * waiting for its share leaves the line. Mounted outside the typed client
+ * (api: activities/cancel-routes.ts), so a plain request. Null when done,
+ * else what to say.
+ */
+export async function leaveClaimQueue(
+  activityId: string,
+  submissionId: string,
+  csrfToken: string,
+): Promise<string | null> {
+  try {
+    const response = await fetch(
+      `/api/activities/${encodeURIComponent(activityId)}/claim/cancel`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": csrfToken,
+        },
+        body: JSON.stringify({ submissionId }),
+      },
+    );
+    if (response.ok) return null;
+    const body = (await response.json().catch(() => ({}))) as {
+      error?: { message?: string };
+    };
+    return body.error?.message ?? "取消没有完成，请再试一次。";
+  } catch {
+    return "取消没有完成：网络出了问题，请再试一次。";
+  }
+}

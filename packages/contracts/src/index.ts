@@ -629,6 +629,9 @@ export function emptyActivityInput(): LdcActivityInput {
   };
 }
 
+/** 取消排队: the claim still waiting, by its submission. */
+export const cancelClaimSchema = z.strictObject({ submissionId: z.uuid() });
+
 export const createActivitySchema = z.strictObject({
   requestId: z.uuid(),
   activity: historicalActivityInputSchema,
@@ -939,11 +942,15 @@ export type PublicActivity = {
 export type ActivityLiveMessage =
   | { type: "mine" }
   /**
-   * 代码判定, to the one who sent it (docs/programmable-hongbao-design.md
-   * §3 一批一起写): how many are judged before their submission, once, as
-   * it joins the queue; the page counts down by 已判定 N 次.
+   * To the one who sent it, while their claim waits. 代码判定
+   * (docs/programmable-hongbao-design.md §3 一批一起写): how many are judged
+   * before their submission, once, as it joins the queue; the page counts
+   * down by 已判定 N 次. A direct or 口令 claim
+   * (docs/claim-capacity-design.md §3 第 1 期): how many are before it and
+   * about how many seconds that is, as it joins and after each turn; its
+   * submission, to leave the line by (取消排队).
    */
-  | { type: "queued"; ahead: number }
+  | { type: "queued"; ahead: number; seconds?: number; submissionId?: string }
   | ((
       | { type: "activity"; activity: PublicActivity }
       | { type: "viewers"; count: number }
@@ -1174,7 +1181,11 @@ export type ClaimResult = (
       result: "registered" | "already_registered";
       registration: RegistrationDetail;
     }
-  | { result: "incorrect" | "draft" | "ended" | "archived" }
+  /**
+   * Nothing taken. cancelled: 取消排队 (docs/claim-capacity-design.md §3
+   * 第 1 期), it left the line before its share was written.
+   */
+  | { result: "incorrect" | "draft" | "ended" | "archived" | "cancelled" }
   /** 代码判定 said no; its reply, if any. */
   | { result: "rejected"; message?: string }
   /**
@@ -1207,6 +1218,12 @@ export type RegistrationDetail = {
 export type ActivityParticipationResponse = {
   claim: ClaimDetail | null;
   registration: RegistrationDetail | null;
+  /**
+   * A direct or 口令 claim of theirs checked and waiting for its share
+   * (docs/claim-capacity-design.md §3 第 1 期): a page opened or reloaded
+   * meanwhile shows 领取中 and can leave the line.
+   */
+  waiting?: { submissionId: string };
   /**
    * 代码判定, protocol 5 (docs/multi-prize-design.md §3.4, §4.1): their own
    * part once judged — 待结算, whether settled, and what only they see.

@@ -45,6 +45,7 @@ import {
 import { haptic, hapticForTone } from "../../lib/haptics";
 import { askHumanCheck, endHumanCheck } from "../../lib/human-check";
 import { myJudgmentsKey } from "../../lib/judge";
+import { liveQueuedAtom } from "../../lib/live-state";
 import { maintenanceAtom } from "../../lib/maintenance";
 import { closeOverlay, openOverlay, switchOverlay } from "../../lib/overlay";
 import { pageStanding } from "../../lib/page-standing";
@@ -777,6 +778,10 @@ export function useOmniboxController() {
           case "already_claimed":
             say({ tone: "neutral", text: "你已领过这个红包。" });
             return;
+          // 取消排队 (docs/claim-capacity-design.md §3 第 1 期).
+          case "cancelled":
+            say({ tone: "neutral", text: "已取消排队，这次没有领取。" });
+            return;
           case "already_registered":
             say({
               tone: "neutral",
@@ -909,6 +914,11 @@ export function useOmniboxController() {
         say({ tone: "warning", text: error.message });
       } finally {
         store.set(pendingAtom, false);
+        // Its answer is in, whatever it was: no longer waiting in line.
+        if (!code)
+          store.set(liveQueuedAtom, (queued) =>
+            queued?.id === activityId ? null : queued,
+          );
         if (code) {
           if (!judged) dropJudging(input.submissionId);
           if (!judged && !stale() && store.get(editDraftAtom) === "")

@@ -3,7 +3,7 @@ import type {
   ClaimResult,
   ParticipationMode,
 } from "@hb/contracts";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { claimStatements } from "../balance/hongbao";
 import { createDb } from "../db/client";
 import {
@@ -39,6 +39,7 @@ import {
   type ActivityExecutionPolicy,
   permitsRealActivity,
 } from "./execution-policy";
+import { activityStatusCaseSql } from "./history-query";
 import { requireHumanCheck } from "./human-check";
 import { databaseNow, refreshActivityLifecycle } from "./lifecycle";
 import { assertParticipationMode, participationRequest } from "./participation";
@@ -387,7 +388,7 @@ export async function prepareClaimSubmission(
         throw new ActivityError(
           409,
           "REAL_LDC_CLAIMS_PAUSED",
-          "新领取暂时关闭，请保留原提交稍后重试。",
+          KEPT_WHILE_PAUSED,
         );
       await assertAttemptAllowed(env, userId, "activity", continuation);
       throw error;
@@ -632,6 +633,185 @@ export async function completeClaimSubmission(
   return allocated === "allocated" ? claimAnswer(env, admitted) : allocated;
 }
 
+/** At most this many shares are written in one turn of a 红包's line. */
+export const CLAIM_BATCH = 20;
+
+/** A share written in a batch: its answer is read after (claimAnswer). */
+export type BatchAllocation = ClaimResult | "allocated" | { error: unknown };
+
+/**
+ * 一批一起写 for direct and 口令 claims (docs/claim-capacity-design.md §3
+ * 第 1 期): the pending submissions waiting in a 红包's line, their shares
+ * written in one D1 batch. What they share is read once (the 红包, the
+ * switches, the next shares), what is each one's own at the same time (its
+ * submission, whether this person has a share, its payment). Each keeps its
+ * own guards, as written alone; one that fails rolls the batch back, and
+ * then each is written alone (allocateClaimSubmission), in order. One that
+ * is decided already (finished, a share already), a second of one person,
+ * or one past the shares left goes alone too. Answers in the given order.
+ */
+export async function allocateClaimBatch(
+  env: ApiBindings,
+  admitted: SubmissionRow[],
+): Promise<BatchAllocation[]> {
+  const alone = async (submission: SubmissionRow): Promise<BatchAllocation> => {
+    try {
+      return await allocateClaimSubmission(env, submission);
+    } catch (error) {
+      return { error };
+    }
+  };
+  const answers: (BatchAllocation | undefined)[] = admitted.map(
+    () => undefined,
+  );
+  const each = async (indexes: number[]) => {
+    for (const index of indexes)
+      answers[index] = await alone(admitted[index] as SubmissionRow);
+  };
+  const activityId = admitted[0]?.activityId;
+  const activity =
+    admitted.length > 1 && activityId
+      ? await findActivity(env, activityId)
+      : null;
+  if (
+    !activity ||
+    activityStatus(activity) !== "active" ||
+    activity.participationMode === "code" ||
+    admitted.some((submission) => submission.activityId !== activity.id) ||
+    (activity.rewardType === "ldc" &&
+      activity.paymentMode === "simulation" &&
+      !simulatesPayments(env))
+  ) {
+    await each(admitted.map((_, index) => index));
+    return answers as BatchAllocation[];
+  }
+  const testPermission = stageBalanceHongbao(env, activity.funding);
+  const pickedAtRandom =
+    activity.allocation === "random" && activity.randomVersion === null;
+  const [current, claimed, controls, available] = await Promise.all([
+    createDb(env.DB)
+      .select()
+      .from(redemptionSubmissions)
+      .where(
+        inArray(
+          redemptionSubmissions.id,
+          admitted.map((submission) => submission.id),
+        ),
+      )
+      .all(),
+    env.DB.prepare(
+      `SELECT user_id FROM claims WHERE activity_id = ? AND user_id IN (${admitted.map(() => "?").join(",")})`,
+    )
+      .bind(activity.id, ...admitted.map((submission) => submission.userId))
+      .all<{ user_id: string }>(),
+    !testPermission && activity.paymentMode === "real"
+      ? readPlatformControls(env)
+      : null,
+    env.DB.prepare(`SELECT inventory.id, inventory.amount_minor FROM reward_inventory inventory
+      WHERE inventory.activity_id = ? AND inventory.kind = 'ldc' AND NOT EXISTS (SELECT 1 FROM claims WHERE claims.activity_id = inventory.activity_id AND claims.inventory_id = inventory.id)
+      ORDER BY inventory.position${pickedAtRandom ? "" : " LIMIT ?"}`)
+      .bind(activity.id, ...(pickedAtRandom ? [] : [admitted.length]))
+      .all<{ id: string; amount_minor: number | null }>(),
+  ]);
+  const realActivityPermitted =
+    testPermission ||
+    (activity.paymentMode === "real" &&
+      controls !== null &&
+      allowsRealClaim(env, controls));
+  if (activity.paymentMode === "real" && !realActivityPermitted) {
+    await each(admitted.map((_, index) => index));
+    return answers as BatchAllocation[];
+  }
+  const byId = new Map(current.map((row) => [row.id, row]));
+  const taken = new Set(claimed.results.map((row) => row.user_id));
+  const shares = [...available.results];
+  if (pickedAtRandom)
+    // An old 拼手气 draws among all left: shuffle, then take in order.
+    for (let index = shares.length - 1; index > 0; index -= 1) {
+      const other = randomIndex(index + 1);
+      [shares[index], shares[other]] = [
+        shares[other] as (typeof shares)[number],
+        shares[index] as (typeof shares)[number],
+      ];
+    }
+  const batched: { index: number; submission: SubmissionRow }[] = [];
+  const later: number[] = [];
+  const people = new Set<string>();
+  admitted.forEach((given, index) => {
+    const submission = byId.get(given.id);
+    if (
+      submission?.outcome !== "pending" ||
+      submission.purpose !== "claim" ||
+      taken.has(submission.userId) ||
+      people.has(submission.userId) ||
+      batched.length >= shares.length
+    )
+      later.push(index);
+    else {
+      people.add(submission.userId);
+      batched.push({ index, submission });
+    }
+  });
+  if (batched.length < 2) {
+    await each(
+      [...batched.map((item) => item.index), ...later].sort((a, b) => a - b),
+    );
+    return answers as BatchAllocation[];
+  }
+  // Claims written together may share their claimed_at; the 名单 orders
+  // ties by id, so the ids rise in line order, as the shares do.
+  const claimIds = batched.map(() => crypto.randomUUID()).sort();
+  try {
+    const writes = await Promise.all(
+      batched.map(async ({ submission }, order) => {
+        const reward = shares[order] as (typeof shares)[number];
+        const claimId = claimIds[order] as string;
+        const way = await shareStatements(env, activity, {
+          claimId,
+          taskId: crypto.randomUUID(),
+          userId: submission.userId,
+          inventoryId: reward.id,
+          amountMinor: reward.amount_minor,
+        });
+        return [
+          ...allocationStatements(env, activity, submission, {
+            claimId,
+            reward,
+            coded: false,
+            realActivityPermitted,
+            testPermission,
+          }),
+          ...way.statements,
+        ];
+      }),
+    );
+    await env.DB.batch(writes.flat());
+    for (const { index } of batched) answers[index] = "allocated";
+  } catch {
+    // One of them could not go along: each alone, in order, as before.
+    later.push(...batched.map((item) => item.index));
+  }
+  await each(later.sort((a, b) => a - b));
+  return answers as BatchAllocation[];
+}
+
+/**
+ * 取消排队: a checked submission still waiting for its share is finished as
+ * cancelled, so nothing (resumePendingActivityClaims included) takes one
+ * for it later.
+ */
+export async function cancelClaimSubmission(
+  env: ApiBindings,
+  submission: SubmissionRow,
+) {
+  await env.DB.prepare(
+    `UPDATE redemption_submissions SET outcome = 'cancelled', finished_at = ${databaseNow}
+      WHERE id = ? AND purpose = 'claim' AND outcome = 'pending'`,
+  )
+    .bind(submission.id)
+    .run();
+}
+
 /**
  * A submission's answer once allocateClaimSubmission is through: read only,
  * so it needs no turn in the 红包's line. Still pending (its tries ran out):
@@ -646,6 +826,93 @@ export async function claimAnswer(env: ApiBindings, admitted: SubmissionRow) {
   if (final && final.outcome !== "pending")
     return resultOfSubmission(env, final);
   throw new ActivityError(503, "ACTIVITY_BUSY", "领取繁忙，请使用原提交重试");
+}
+
+/**
+ * Refused at its share while new claims are paused: its submission is kept,
+ * checked and pending, and finished when claims reopen
+ * (resumePendingActivityClaims), so the answer says so.
+ */
+const KEPT_WHILE_PAUSED =
+  "新领取暂时关闭。你这次领取已经记下，恢复后会自动补完，结果在红包记录里看得到。";
+
+/**
+ * One share's writes, with its own guards (the 红包 still takes it, this
+ * person has none, the submission is pending and checked): alone
+ * (allocateClaimSubmission) or with others in one batch (allocateClaimBatch),
+ * the same. Its payment or 🐟额 move is added by shareStatements.
+ */
+function allocationStatements(
+  env: ApiBindings,
+  activity: ActivityRow,
+  submission: SubmissionRow,
+  share: {
+    claimId: string;
+    reward: { id: string; amount_minor: number | null };
+    coded: boolean;
+    realActivityPermitted: boolean;
+    testPermission: boolean;
+  },
+) {
+  const { claimId, reward, coded, realActivityPermitted, testPermission } =
+    share;
+  return [
+    env.DB.prepare(`UPDATE activities SET version = CASE WHEN deleted_at IS NULL AND opened_at IS NOT NULL AND ended_at IS NULL AND archived_at IS NULL
+          AND deadline > ${databaseNow} AND claimed_count < total_count
+          AND reward_type = 'ldc' AND EXISTS(SELECT 1 FROM users WHERE id=? AND active=1) AND (funding = 'balance' OR merchant_id IS NOT NULL) AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
+          AND NOT EXISTS (SELECT 1 FROM claims WHERE activity_id = ? AND user_id = ?)
+          AND EXISTS (SELECT 1 FROM redemption_submissions s WHERE s.id = ? AND s.activity_id=activities.id
+            AND s.user_id=? AND s.purpose = 'claim' AND s.outcome = 'pending'
+            AND s.participation_mode=activities.participation_mode AND s.validated_at IS NOT NULL
+            AND ((s.participation_mode='password' AND s.matched_password_id IS NOT NULL)
+              OR (s.participation_mode='direct' AND s.matched_password_id IS NULL)
+              OR (s.participation_mode='code' AND s.matched_password_id IS NULL
+                AND EXISTS (SELECT 1 FROM code_judgments j WHERE j.submission_row_id = s.id AND j.ok = 1))))
+          THEN version ELSE NULL END WHERE id = ?`).bind(
+      submission.userId,
+      Number(simulatesPayments(env)),
+      Number(realActivityPermitted),
+      Number(testPermission),
+      activity.id,
+      submission.userId,
+      submission.id,
+      submission.userId,
+      activity.id,
+    ),
+    ...(coded
+      ? [
+          env.DB.prepare(`INSERT INTO reward_inventory (id, activity_id, position, kind, ciphertext, amount_minor, created_at)
+              SELECT ?, id, claimed_count, 'ldc', NULL, ?, ${databaseNow} FROM activities WHERE id = ?`).bind(
+            reward.id,
+            reward.amount_minor,
+            activity.id,
+          ),
+        ]
+      : []),
+    env.DB.prepare(
+      `INSERT INTO claims (id, activity_id, user_id, inventory_id, password_id, claimed_at) VALUES (?, ?, ?, ?, ?, ${databaseNow})`,
+    ).bind(
+      claimId,
+      activity.id,
+      submission.userId,
+      reward.id,
+      submission.matchedPasswordId,
+    ),
+    env.DB.prepare(`UPDATE activities SET
+          ended_at = CASE WHEN claimed_count + 1 = total_count THEN (SELECT claimed_at FROM claims WHERE id = ?) ELSE ended_at END,
+          end_reason = CASE WHEN claimed_count + 1 = total_count THEN 'exhausted' ELSE end_reason END,
+          version = version + CASE WHEN claimed_count + 1 = total_count THEN 1 ELSE 0 END,
+          claimed_count = claimed_count + 1, updated_at = ${databaseNow} WHERE id = ?`).bind(
+      claimId,
+      activity.id,
+    ),
+    env.DB.prepare(
+      `UPDATE redemption_submissions SET outcome = 'claimed', claim_id = ?, finished_at = ${databaseNow} WHERE id = ? AND purpose = 'claim' AND outcome = 'pending'`,
+    ).bind(claimId, submission.id),
+    env.DB.prepare(
+      "UPDATE attempt_events SET claim_id = ? WHERE submission_row_id = ? AND matched = 1",
+    ).bind(claimId, submission.id),
+  ];
 }
 
 /**
@@ -750,67 +1017,17 @@ export async function allocateClaimSubmission(
         env.APP_ENV === "production" && env.LDC_NETWORK_MODE === "live"
           ? "REAL_LDC_CLAIMS_PAUSED"
           : "REAL_LDC_NOT_ENABLED",
-        "真实 LDC 新领取暂时关闭，已领取奖励仍可从记录查看。",
+        KEPT_WHILE_PAUSED,
       );
     const claimId = crypto.randomUUID();
     const taskId = crypto.randomUUID();
-    const statements = [
-      env.DB.prepare(`UPDATE activities SET version = CASE WHEN deleted_at IS NULL AND opened_at IS NOT NULL AND ended_at IS NULL AND archived_at IS NULL
-          AND deadline > ${databaseNow} AND claimed_count < total_count
-          AND reward_type = 'ldc' AND EXISTS(SELECT 1 FROM users WHERE id=? AND active=1) AND (funding = 'balance' OR merchant_id IS NOT NULL) AND ((payment_mode = 'simulation' AND ?=1) OR (payment_mode = 'real' AND ? = 1 AND (?=1 OR EXISTS(SELECT 1 FROM platform_controls WHERE id='global' AND allow_real_claim=1))))
-          AND NOT EXISTS (SELECT 1 FROM claims WHERE activity_id = ? AND user_id = ?)
-          AND EXISTS (SELECT 1 FROM redemption_submissions s WHERE s.id = ? AND s.activity_id=activities.id
-            AND s.user_id=? AND s.purpose = 'claim' AND s.outcome = 'pending'
-            AND s.participation_mode=activities.participation_mode AND s.validated_at IS NOT NULL
-            AND ((s.participation_mode='password' AND s.matched_password_id IS NOT NULL)
-              OR (s.participation_mode='direct' AND s.matched_password_id IS NULL)
-              OR (s.participation_mode='code' AND s.matched_password_id IS NULL
-                AND EXISTS (SELECT 1 FROM code_judgments j WHERE j.submission_row_id = s.id AND j.ok = 1))))
-          THEN version ELSE NULL END WHERE id = ?`).bind(
-        submission.userId,
-        Number(simulatesPayments(env)),
-        Number(realActivityPermitted),
-        Number(testPermission),
-        activity.id,
-        submission.userId,
-        submission.id,
-        submission.userId,
-        activity.id,
-      ),
-      ...(coded
-        ? [
-            env.DB.prepare(`INSERT INTO reward_inventory (id, activity_id, position, kind, ciphertext, amount_minor, created_at)
-              SELECT ?, id, claimed_count, 'ldc', NULL, ?, ${databaseNow} FROM activities WHERE id = ?`).bind(
-              reward.id,
-              reward.amount_minor,
-              activity.id,
-            ),
-          ]
-        : []),
-      env.DB.prepare(
-        `INSERT INTO claims (id, activity_id, user_id, inventory_id, password_id, claimed_at) VALUES (?, ?, ?, ?, ?, ${databaseNow})`,
-      ).bind(
-        claimId,
-        activity.id,
-        submission.userId,
-        reward.id,
-        submission.matchedPasswordId,
-      ),
-      env.DB.prepare(`UPDATE activities SET
-          ended_at = CASE WHEN claimed_count + 1 = total_count THEN (SELECT claimed_at FROM claims WHERE id = ?) ELSE ended_at END,
-          end_reason = CASE WHEN claimed_count + 1 = total_count THEN 'exhausted' ELSE end_reason END,
-          version = version + CASE WHEN claimed_count + 1 = total_count THEN 1 ELSE 0 END,
-          claimed_count = claimed_count + 1, updated_at = ${databaseNow} WHERE id = ?`).bind(
-        claimId,
-        activity.id,
-      ),
-      env.DB.prepare(
-        `UPDATE redemption_submissions SET outcome = 'claimed', claim_id = ?, finished_at = ${databaseNow} WHERE id = ? AND purpose = 'claim' AND outcome = 'pending'`,
-      ).bind(claimId, submission.id),
-      env.DB.prepare(
-        "UPDATE attempt_events SET claim_id = ? WHERE submission_row_id = ? AND matched = 1",
-      ).bind(claimId, submission.id),
-    ];
+    const statements = allocationStatements(env, activity, submission, {
+      claimId,
+      reward,
+      coded,
+      realActivityPermitted,
+      testPermission,
+    });
     const way = await shareStatements(env, activity, {
       claimId,
       taskId,
@@ -886,8 +1103,7 @@ export async function claimDecided(
       AND a.participation_mode IN ('direct', 'password') AND a.draw_state IS NULL
       AND COALESCE(json_extract(a.config, '$.money.mode'), '') != 'timed_draw'
       AND (EXISTS(SELECT 1 FROM claims c WHERE c.activity_id = a.id AND c.user_id = ?)
-        OR a.ended_at IS NOT NULL OR a.archived_at IS NOT NULL
-        OR a.claimed_count >= a.total_count OR a.deadline <= ${databaseNow})`)
+        OR ${activityStatusCaseSql(Date.now(), "a")} != 'active')`)
     .bind(activityId, userId)
     .first<{ decided: number }>();
   return row !== null;
@@ -909,8 +1125,13 @@ export async function admitActivityClaim(
   humanVerified: boolean,
 ) {
   if (input.participationMode === "code") return null;
-  await refreshActivityLifecycle(env, activityId);
-  const activity = await findActivity(env, activityId);
+  let activity = await findActivity(env, activityId);
+  // Only what has ended, or is past its deadline, has a lifecycle to bring
+  // up to date; for one running each claim's refresh wrote nothing.
+  if (activity && activityStatus(activity) !== "active") {
+    await refreshActivityLifecycle(env, activityId);
+    activity = await findActivity(env, activityId);
+  }
   if (!activity || activity.openedAt === null) return null;
   const previous = await findSubmission(env, userId, input.submissionId);
   if (

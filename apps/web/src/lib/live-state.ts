@@ -31,6 +31,9 @@ export const liveQueuedAtom = atom<{
   id: string;
   ahead: number;
   at: number;
+  /** A direct or 口令 claim: about how long, and its submission. */
+  seconds?: number;
+  submissionId?: string;
 } | null>(null);
 
 /**

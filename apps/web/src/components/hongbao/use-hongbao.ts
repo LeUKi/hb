@@ -1,10 +1,12 @@
 import type { MyStanding } from "@hb/contracts";
 import { publicScopeAllows } from "@hb/contracts";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useEffect, useRef, useState } from "react";
 import { useAttemptCooldown } from "../../lib/attempt-cooldown";
 import { scopeNoticeAtom } from "../../lib/claim-scope";
+import { leaveClaimQueue } from "../../lib/claims";
 import { haptic } from "../../lib/haptics";
 import type {
   HongbaoActivity,
@@ -13,13 +15,15 @@ import type {
   PublicView,
   Roster,
 } from "../../lib/hongbao";
+import { liveQueuedAtom } from "../../lib/live-state";
 import { useReducedMotionPref } from "../../lib/motion";
 import { switchOverlay } from "../../lib/overlay";
+import { participationKey } from "../../lib/participation-cache";
 import {
   redemptionIntentAtom,
   rewardAnimationAtom,
 } from "../../lib/redemption-intent";
-import { useSessionUser } from "../../lib/session";
+import { useIdentity, useSessionUser } from "../../lib/session";
 import { loadTurnstile } from "../../lib/turnstile";
 import {
   messageAtom,
@@ -46,6 +50,11 @@ export type HongbaoData = {
   standing?: MyStanding | null;
   /** The viewer sent it: they see every 口令 and cannot take part. */
   author: boolean;
+  /**
+   * A claim of theirs checked and waiting for its share, known from their
+   * participation (a page reloaded meanwhile): 领取中, 取消排队.
+   */
+  waiting?: { submissionId: string } | null;
 };
 
 /**
@@ -78,9 +87,20 @@ export function useHongbao(data: HongbaoData) {
     animation.token !== animationAtMount.current;
   // A claim from the command box waits for the box to fly back first.
   const openDelay = mode === "expanded" ? 0.5 : 0.15;
+  // 排队 (docs/claim-capacity-design.md §3 第 1 期): where their direct or
+  // 口令 claim waits, pushed (queued), or known from their participation.
+  const pushedQueue = useAtomValue(liveQueuedAtom);
+  const setQueued = useSetAtom(liveQueuedAtom);
+  const queue =
+    activity.participation !== "code" && pushedQueue?.id === activity.id
+      ? pushedQueue
+      : null;
+  const waiting = !mine ? (data.waiting ?? null) : null;
   // Only a claim spins the seal; verifying another 口令 does not.
   const spinning =
     claiming ||
+    Boolean(waiting) ||
+    Boolean(queue) ||
     (pending &&
       mode === "expanded" &&
       scope?.id === activity.id &&
@@ -118,8 +138,50 @@ export function useHongbao(data: HongbaoData) {
     retry,
     cooling,
     drawStep,
+    queue: spinning && queue ? queue : null,
+    waiting: Boolean(waiting),
   });
   const reveal = useDrawMoments(mine, drawStep);
+
+  // A 口令 claim that has to wait: the box steps aside, so its place in
+  // line and 取消排队 show on the page.
+  const waitingAhead = queue ? queue.ahead : 0;
+  useEffect(() => {
+    if (waitingAhead > 0 && mode === "expanded" && scope?.id === activity.id)
+      controller.collapse();
+  }, [waitingAhead, mode, scope?.id, activity.id, controller]);
+
+  // 取消排队: their waiting claim leaves the line; nothing is taken.
+  const identity = useIdentity();
+  const queryClient = useQueryClient();
+  const leavingId =
+    spinning && !mine ? (queue?.submissionId ?? waiting?.submissionId) : null;
+  const [leaveState, setLeaveState] = useState<{
+    busy: boolean;
+    error: string | null;
+  }>({ busy: false, error: null });
+  const leaveQueue =
+    leavingId && identity.csrfToken
+      ? async () => {
+          if (leaveState.busy || !identity.csrfToken) return;
+          setLeaveState({ busy: true, error: null });
+          const error = await leaveClaimQueue(
+            activity.id,
+            leavingId,
+            identity.csrfToken,
+          );
+          setLeaveState({ busy: false, error });
+          if (error) return;
+          setQueued((current) =>
+            current?.id === activity.id ? null : current,
+          );
+          if (user)
+            void queryClient.invalidateQueries({
+              queryKey: participationKey(user.id, activity.id),
+              exact: true,
+            });
+        }
+      : null;
 
   // 领取前人机验证: its script is fetched ahead, so the dialog opens ready.
   const humanCheckAhead =
@@ -238,6 +300,10 @@ export function useHongbao(data: HongbaoData) {
     cooldown,
     announcement,
     press,
+    /** 取消排队, while their claim waits for its share; null otherwise. */
+    leaveQueue,
+    leaving: leaveState.busy,
+    leaveError: leavingId ? leaveState.error : null,
     /** Results of a direct claim are shown on the page, not in the box. */
     // Another 红包's answer stays there (Back, a link: still docked).
     message:

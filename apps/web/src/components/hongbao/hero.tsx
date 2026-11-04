@@ -18,6 +18,7 @@ import { useCooldownSeconds } from "../omnibox/cooldown";
 import { omniboxElements } from "../omnibox/elements";
 import { MORPH_MS } from "../shell/layout-morph";
 import { useWindowInfo, type WindowInfo } from "../shell/window-info";
+import { Button } from "../ui/button";
 import { ShortcutKbd } from "../ui/kbd";
 import { MorphLabel, RollingNumber, RollingText } from "../ui/morph-label";
 import { Reveal } from "../ui/reveal";
@@ -108,6 +109,28 @@ function ActionHint({
           )}
         </MorphLabel>
       </p>
+      {/* 排队 (docs/claim-capacity-design.md §3 第 1 期): their claim waits
+          for its share. They may close the page; they may leave the line. */}
+      <Reveal show={Boolean(hongbao.leaveQueue)}>
+        <div className="grid justify-items-center gap-1.5" data-hb-part="queue">
+          <p className="text-sm text-ink-2">
+            可以关掉页面，领到后在红包记录里看得到。
+          </p>
+          <Button
+            size="sm"
+            variant="quiet"
+            aria-disabled={hongbao.leaving || undefined}
+            onClick={() => void hongbao.leaveQueue?.()}
+          >
+            {hongbao.leaving ? "正在取消…" : "取消排队"}
+          </Button>
+          <Reveal show={Boolean(hongbao.leaveError)}>
+            <p role="alert" className="text-sm text-danger">
+              {hongbao.leaveError}
+            </p>
+          </Reveal>
+        </div>
+      </Reveal>
       {/* 代码判定, protocol 5 (docs/multi-prize-design.md §4.1): what only
           they see, and their 待结算 until it is settled. */}
       <Reveal show={Boolean(standing && !standing.settled)}>
