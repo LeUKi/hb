@@ -97,6 +97,14 @@ import { TipScreen, TipsHome } from "./tips";
 const SITE = __HB_ORIGIN__;
 
 /**
+ * Past its time, a timed draft is read this often until it opens or goes
+ * back to a draft (scheduled-opening §5: up to 10 minutes while 红包站 is
+ * paused). 红包站's page asks every second; here each read goes through the
+ * 社区, and the push that it opened comes first anyway.
+ */
+const DUE_READ_MS = 2_000;
+
+/**
  * A 红包's link on 红包站 to copy: likely pasted into a post here, so as
  * 分享 writes links into posts, no emoji in it (forumHref; a community iOS
  * client crashed on them). 红包站 reads either form.
@@ -389,6 +397,34 @@ function Page({
       Math.max(0, readAt.current + 1000 - Date.now()),
     );
   }, [read]);
+
+  // 定时开放 (scheduled-opening §4), as 红包站's page: read again right at
+  // its time, should the push that it opened be missed; then every
+  // DUE_READ_MS until it has opened.
+  const opensAt =
+    data?.activity.status === "draft" && data.activity.scheduledOpenAt
+      ? Date.parse(data.activity.scheduledOpenAt)
+      : null;
+  useEffect(() => {
+    if (opensAt === null) return;
+    let poll: ReturnType<typeof setInterval> | undefined;
+    const due = () => {
+      poll = setInterval(() => void read(), DUE_READ_MS);
+    };
+    const left = opensAt - Date.now();
+    const timer =
+      left > 0
+        ? setTimeout(() => {
+            void read();
+            due();
+          }, left + 50)
+        : undefined;
+    if (left <= 0) due();
+    return () => {
+      clearTimeout(timer);
+      clearInterval(poll);
+    };
+  }, [opensAt, read]);
 
   // 重新发送 and the like, on 红包站: the result card copies this link.
   const SiteLink = useMemo(

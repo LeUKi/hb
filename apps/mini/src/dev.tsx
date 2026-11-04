@@ -2,7 +2,8 @@
 // own preview does not provide, answering for the sample 红包 in
 // dev-fixtures.ts (`?hb=password`, `direct`, `fish`, `draw`, `code`,
 // `human`, `ended`, `stranger`, `taken`, `scheduled`, `self`, `preview`, `long`;
-// none: no 红包; `?guest`: not signed in; `&title=`, `&note=`, `&after=`, `&pay=`), people's pictures, and a bar to switch what the forum would — light or dark,
+// none: no 红包; `?guest`: not signed in; `&title=`, `&note=`, `&after=`, `&pay=`,
+// `&opens=`, `&late=`), people's pictures, and a bar to switch what the forum would — light or dark,
 // reduced motion. Never in app.js.
 import type { MiniClaimInput, MiniLiveMessage } from "@hb/contracts";
 import { caseNames, caseOf, rosterPage } from "./dev-fixtures";
@@ -40,6 +41,35 @@ if (sample) {
         };
       return result;
     };
+}
+// `&opens=<s>` (the `scheduled` sample): it opens that many seconds from
+// now, `&late=<s>` that much later still (红包站 paused); this stand-in's
+// live channel does not say so, so only the page's own reads see it.
+const opens = query.get("opens");
+const opensAt = opens === null ? null : Date.now() + Number(opens) * 1000;
+const openedAt = (opensAt ?? 0) + Number(query.get("late") ?? 0) * 1000;
+function readNow() {
+  if (!sample) return null;
+  const { read } = sample;
+  if (opensAt === null || read.activity.status !== "draft") return read;
+  if (Date.now() < openedAt)
+    return {
+      ...read,
+      activity: {
+        ...read.activity,
+        scheduledOpenAt: new Date(opensAt).toISOString(),
+      },
+    };
+  const { scheduledOpenAt: _, ...activity } = read.activity;
+  return {
+    ...read,
+    activity: {
+      ...activity,
+      status: "active" as const,
+      openedAt: new Date(openedAt).toISOString(),
+      deadlineAt: new Date(openedAt + 3_600_000).toISOString(),
+    },
+  };
 }
 // The forum's default light and dark backgrounds and text.
 const forum = {
@@ -332,7 +362,7 @@ const sdk: MiniSdk = {
           },
         };
       if (endpoint === "hongbao")
-        return { status: 200, headers: {}, body: sample.read };
+        return { status: 200, headers: {}, body: readNow() };
       if (endpoint === "roster")
         return {
           status: 200,
