@@ -838,6 +838,30 @@ export async function completeClaimSubmission(
   throw new ActivityError(503, "ACTIVITY_BUSY", "领取繁忙，请使用原提交重试");
 }
 
+/**
+ * A direct or 口令 claim whose answer is decided already: this person has a
+ * share, or the 红包 is over (ended, archived, all taken or past its
+ * deadline). Neither turns back, so the 红包's DO answers it without a
+ * turn in its line (durable-objects.ts claimInLine). One read; never a
+ * timed draw, a 代码判定红包 or one not open yet.
+ */
+export async function claimDecided(
+  env: ApiBindings,
+  activityId: string,
+  userId: string,
+) {
+  const row = await env.DB.prepare(`SELECT 1 AS decided FROM activities a
+    WHERE a.id = ? AND a.reward_type = 'ldc' AND a.deleted_at IS NULL AND a.opened_at IS NOT NULL
+      AND a.participation_mode IN ('direct', 'password') AND a.draw_state IS NULL
+      AND COALESCE(json_extract(a.config, '$.money.mode'), '') != 'timed_draw'
+      AND (EXISTS(SELECT 1 FROM claims c WHERE c.activity_id = a.id AND c.user_id = ?)
+        OR a.ended_at IS NOT NULL OR a.archived_at IS NOT NULL
+        OR a.claimed_count >= a.total_count OR a.deadline <= ${databaseNow})`)
+    .bind(activityId, userId)
+    .first<{ decided: number }>();
+  return row !== null;
+}
+
 export async function claimActivity(
   env: ApiBindings,
   activityId: string,

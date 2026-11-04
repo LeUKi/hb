@@ -18,6 +18,7 @@ import { eq } from "drizzle-orm";
 import { NETWORK_REASONS } from "../../../kit/runtime/index.mjs";
 import {
   claimActivity,
+  claimDecided,
   resumePendingActivityClaims,
 } from "./activities/claim-service";
 import { ActivityError, activityNotFound } from "./activities/errors";
@@ -246,6 +247,8 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   private judging: NetworkSession | null = null;
   /** Claims waiting their turn here, the one being judged among them. */
   private claimsWaiting = 0;
+  /** A direct or 口令 claimant's latest request in the line (claimInLine). */
+  private claimants = new Map<string, Promise<Response | null>>();
   /**
    * 一批一起写 (docs/programmable-hongbao-design.md §3): protocol 5
    * submissions let in and waiting, in order; each one's turn judges it
@@ -910,6 +913,75 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     };
   }
 
+  /**
+   * A direct or 口令 claim. Claims take their turns one at a time; one whose
+   * answer is decided already (claimDecided: they have a share, or the
+   * 红包 is over) is answered outside the line, when it comes or at its
+   * turn, and a person's next request as soon as their earlier one gave
+   * them a share. Such requests took a few seconds of the line each: on
+   * 2026-11-04 they were two thirds of it in two popular 红包, and people
+   * waited minutes.
+   */
+  private async claimInLine(
+    id: string,
+    userId: string,
+    input: ClaimActivityInput,
+    humanVerified: boolean,
+  ) {
+    const answer = async () =>
+      this.claimed(
+        id,
+        userId,
+        input,
+        await claimActivity(
+          this.env,
+          id,
+          userId,
+          input,
+          undefined,
+          humanVerified,
+          this.claimHooks(id),
+        ),
+      );
+    if (await claimDecided(this.env, id, userId)) return answer();
+    const earlier = this.claimants.get(userId);
+    const turn = this.serialize(async () => {
+      try {
+        if (await claimDecided(this.env, id, userId)) return null;
+        // Its time has come and the alarm is not in yet: opened now, so
+        // the first to try is not told it is not open (§4).
+        const due = await findActivity(this.env, id);
+        if (
+          due?.openedAt === null &&
+          due.scheduledOpenAt !== null &&
+          due.scheduledOpenAt <= Date.now()
+        )
+          await this.runSchedule(id);
+        return await answer();
+      } catch (error) {
+        return mutationError(error);
+      }
+    });
+    this.claimants.set(userId, turn);
+    const clear = () => {
+      if (this.claimants.get(userId) === turn) this.claimants.delete(userId);
+    };
+    void turn.then(clear, clear);
+    if (earlier) {
+      const first = await Promise.race([
+        turn.then((response) => ({ response })),
+        earlier.then(
+          () => null,
+          () => null,
+        ),
+      ]);
+      if (first) return first.response ?? answer();
+      // Its turn still comes, and is answered there in one read.
+      if (await claimDecided(this.env, id, userId)) return answer();
+    }
+    return (await turn) ?? answer();
+  }
+
   /** After a claim: who hears of it, a payment woken, the answer. */
   private async claimed(
     id: string,
@@ -1220,12 +1292,17 @@ export class ActivityDO extends DurableObject<ApiBindings> {
           unknown
         >;
         const parsed = claimActivitySchema.safeParse(input);
-        if (
-          parsed.success &&
-          parsed.data.participationMode === "code" &&
-          typeof userId === "string"
-        )
-          return this.claimCode(id, userId, parsed.data, humanVerified === true)
+        if (parsed.success && typeof userId === "string")
+          return (
+            parsed.data.participationMode === "code"
+              ? this.claimCode(id, userId, parsed.data, humanVerified === true)
+              : this.claimInLine(
+                  id,
+                  userId,
+                  parsed.data,
+                  humanVerified === true,
+                )
+          )
             .catch(mutationError)
             .finally(done);
       }

@@ -1,4 +1,4 @@
-import { env, evictDurableObject } from "cloudflare:test";
+import { env, evictDurableObject, runInDurableObject } from "cloudflare:test";
 import {
   type LdcActivityInput as ActivityInput,
   ARCHIVE_DELAY_MS,
@@ -29,6 +29,7 @@ import { createDb } from "../src/db/client";
 import { sessions, users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
 import { createMerchant } from "../src/payments/merchants";
+import { activityObject } from "../src/runtime/objects";
 import { decryptString, sha256Hex } from "../src/security/crypto";
 import { advanceAttemptCooldown } from "./advance-attempt-cooldown";
 import { resetMerchantHistory } from "./reset-merchant-history";
@@ -1262,4 +1263,77 @@ describe("lifecycle and public recipients", () => {
     expect(stillPublic.items).toHaveLength(20);
     expect(stillPublic).not.toHaveProperty("enabled");
   }, 20_000);
+});
+
+describe("the claim line (2026-11-04)", () => {
+  it("answers decided claims outside the line, and a person's next request once their first gave them a share", async () => {
+    const activity = await create({
+      money: { mode: "fixed", totalAmount: "2.00", count: 2 },
+    });
+    expect((await claim(activity.id, bob)).result).toBe("claimed");
+    const late = await actor("late");
+    const url = `https://activity.internal/internal/activities/${activity.id}/claim`;
+    await runInDurableObject(
+      activityObject(bindings, activity.id),
+      async (instance) => {
+        const object = instance as unknown as {
+          fetch(request: Request): Promise<Response>;
+          serialize(action: () => Promise<void>): Promise<void>;
+        };
+        const send = async (userId: string) =>
+          (await (
+            await object.fetch(
+              new Request(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  userId,
+                  submissionId: crypto.randomUUID(),
+                  password: "正确口令123",
+                }),
+              }),
+            )
+          ).json()) as ClaimResult & { error?: { message: string } };
+        // Hold the line: what joins it waits until released.
+        let release = () => {};
+        const held = object.serialize(
+          () =>
+            new Promise<void>((resolve) => {
+              release = resolve;
+            }),
+        );
+        // Bob has a share: answered while the line is held.
+        expect((await send(bob.id)).result).toBe("already_claimed");
+        // Alice waits for her turn, and so does her next request.
+        let answered = false;
+        const first = send(alice.id).then((result) => {
+          answered = true;
+          return result;
+        });
+        const second = send(alice.id);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        expect(answered).toBe(false);
+        release();
+        await held;
+        expect(await first).toMatchObject({ result: "claimed" });
+        expect(await second).toMatchObject({ result: "already_claimed" });
+        // All taken: answered while the line is held again.
+        let again = () => {};
+        const heldAgain = object.serialize(
+          () =>
+            new Promise<void>((resolve) => {
+              again = resolve;
+            }),
+        );
+        expect(await send(late.id)).toMatchObject({ result: "ended" });
+        again();
+        await heldAgain;
+      },
+    );
+    expect(await stats(activity.id)).toMatchObject({
+      claimed: 2,
+      claims: 2,
+      endReason: "exhausted",
+    });
+  });
 });
