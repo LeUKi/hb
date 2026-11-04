@@ -479,6 +479,14 @@ export function TipCardView({
   );
   const methods = () => {
     const checkout = viewer?.methods.checkout;
+    const reasons = {
+      no_merchant: "作者没开商户",
+      unverified: "暂时不能用",
+      offline: "这里不能付",
+    } as const;
+    const checkoutNote = checkout?.available
+      ? "要输密码"
+      : reasons[checkout?.reason ?? "offline"];
     if (viewer && !viewer.signedIn)
       return (
         <div className="flex min-w-0 flex-1 gap-2">
@@ -490,16 +498,11 @@ export function TipCardView({
               className="tip-option is-first h-11 flex-1 grid-flow-col gap-2"
             >
               <b className="text-sm font-semibold">去 Credit 站付</b>
-              <small className="text-[11px] opacity-80">要输密码</small>
+              <small className="text-[11px] opacity-80">{checkoutNote}</small>
             </button>
           </Squircle>
         </div>
       );
-    const reasons = {
-      no_merchant: "作者没开商户",
-      unverified: "暂时不能用",
-      offline: "这里不能付",
-    } as const;
     const items: ReactNode[] = [
       <Squircle key="checkout" radius={radius.choice}>
         <button
@@ -513,9 +516,7 @@ export function TipCardView({
         >
           <b className="text-sm font-semibold">Credit 站</b>
           <small className="max-w-full truncate text-[11px] opacity-80">
-            {checkout?.available
-              ? "要输密码"
-              : reasons[checkout?.reason ?? "offline"]}
+            {checkoutNote}
           </small>
         </button>
       </Squircle>,
