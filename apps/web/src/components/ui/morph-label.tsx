@@ -388,8 +388,9 @@ export function RollingNumber({ value }: { value: number | string }) {
     digit,
     place: `place-${text.length - 1 - index}`,
   }));
+  // One name for readers: digit by digit they hear "1 0" for 10.
   return (
-    <span className="inline-flex tabular-nums">
+    <span role="img" aria-label={text} className="inline-flex tabular-nums">
       <AnimatePresence initial={false}>
         {places.map(({ digit, place }) => (
           <motion.span
