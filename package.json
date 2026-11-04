@@ -41,6 +41,7 @@
     "release:migrations": "bun scripts/release.ts migrations",
     "deployment:probe": "bun scripts/deployment-probe.ts",
     "platform:controls": "bun scripts/platform-controls.ts",
+    "payment:checkpoint": "bun scripts/payment-backup.ts --checkpoint",
     "payment:backup:remote": "bun scripts/payment-backup.ts --remote-export",
     "payment:restore:staging": "bun scripts/payment-backup.ts --remote-rehearsal --env staging"
   },

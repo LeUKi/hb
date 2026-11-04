@@ -1,4 +1,6 @@
 // Backups remain private files. Remote restore is opt-in and restricted to staging.
+// A checkpoint only records the Time Travel bookmark: unlike an export, it does
+// not hold up the database's other requests, so releases take checkpoints.
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -159,10 +161,13 @@ export function rehearseSQLite(source: string, outputDirectory: string) {
   }
 }
 
+export type RemoteBackupMode = "checkpoint" | "export" | "rehearsal";
+
 export function remoteBackupPlan(
   environment: "staging" | "production",
-  rehearsal: boolean,
+  mode: RemoteBackupMode,
 ) {
+  const rehearsal = mode === "rehearsal";
   if (rehearsal && environment !== "staging")
     throw new Error("REMOTE_RESTORE_REHEARSAL_STAGING_ONLY");
   const api = readConfig(configPath(environment, "api"));
@@ -182,24 +187,74 @@ export function remoteBackupPlan(
   return {
     environment,
     database: api.d1_databases?.[0]?.database_name,
-    rehearsal,
-    steps: rehearsal
-      ? [
-          "Verify persistent controls closed and zero real payments",
-          "Read current Time Travel bookmark",
-          "Export SQL to private file and restore in isolated local SQLite",
-          "Write one synthetic probe marker",
-          "Restore staging D1 to captured bookmark",
-          "Verify marker removed, business identity counts and FK integrity",
-          "Keep real sends stopped; preserve prior/undo bookmarks",
-        ]
-      : [
-          "Read current Time Travel bookmark",
-          "Export remote SQL to private file",
-          "Restore SQL in isolated local SQLite and verify typed hashes/FK integrity",
-        ],
+    mode,
+    steps:
+      mode === "checkpoint"
+        ? [
+            "Read current Time Travel bookmark (no export: other requests are not held up)",
+            "Record it in a private file",
+          ]
+        : rehearsal
+          ? [
+              "Verify persistent controls closed and zero real payments",
+              "Read current Time Travel bookmark",
+              "Export SQL to private file and restore in isolated local SQLite",
+              "Write one synthetic probe marker",
+              "Restore staging D1 to captured bookmark",
+              "Verify marker removed, business identity counts and FK integrity",
+              "Keep real sends stopped; preserve prior/undo bookmarks",
+            ]
+          : [
+              "Read current Time Travel bookmark",
+              "Export remote SQL to private file (holds up the database's other requests while it runs)",
+              "Restore SQL in isolated local SQLite and verify typed hashes/FK integrity",
+            ],
     executedRemotely: false,
   };
+}
+
+function readBookmark(selected: ReturnType<typeof target>) {
+  const bookmark = JSON.parse(
+    runWrangler([
+      "d1",
+      "time-travel",
+      "info",
+      selected.database.database_name,
+      "--config",
+      selected.apiPath,
+      "--json",
+    ]),
+  ) as { bookmark: string };
+  if (!/^[a-fA-F0-9-]{20,150}$/.test(bookmark.bookmark))
+    throw new Error("TIME_TRAVEL_BOOKMARK_INVALID");
+  return bookmark.bookmark;
+}
+
+function remoteCheckpoint(
+  environment: "staging" | "production",
+  outputDirectory: string,
+) {
+  remoteBackupPlan(environment, "checkpoint");
+  const selected = target(environment);
+  mkdirSync(outputDirectory, { recursive: true, mode: 0o700 });
+  const takenAt = new Date().toISOString();
+  const bookmark = readBookmark(selected);
+  const record = {
+    formatVersion: 1,
+    environment,
+    database: selected.database.database_name,
+    bookmark,
+    takenAt,
+    note: "Time Travel keeps 30 days (Workers Paid). Restoring overwrites the database in place and returns a bookmark that undoes it.",
+  };
+  const output = join(
+    outputDirectory,
+    `checkpoint-${environment}-${takenAt.replaceAll(/[:.]/g, "-")}.json`,
+  );
+  writeFileSync(output, `${JSON.stringify(record, null, 2)}\n`, {
+    mode: 0o600,
+  });
+  console.log(JSON.stringify({ ...record, output }, null, 2));
 }
 
 async function remoteBackup(
@@ -207,7 +262,7 @@ async function remoteBackup(
   rehearsal: boolean,
   outputDirectory: string,
 ) {
-  remoteBackupPlan(environment, rehearsal);
+  remoteBackupPlan(environment, rehearsal ? "rehearsal" : "export");
   const selected = target(environment);
   if (rehearsal) {
     const controls = readD1(
@@ -247,19 +302,7 @@ async function remoteBackup(
   }
   mkdirSync(outputDirectory, { recursive: true, mode: 0o700 });
   const stamp = new Date().toISOString().replaceAll(/[:.]/g, "-");
-  const bookmark = JSON.parse(
-    runWrangler([
-      "d1",
-      "time-travel",
-      "info",
-      selected.database.database_name,
-      "--config",
-      selected.apiPath,
-      "--json",
-    ]),
-  ) as { bookmark: string };
-  if (!/^[a-fA-F0-9-]{20,150}$/.test(bookmark.bookmark))
-    throw new Error("TIME_TRAVEL_BOOKMARK_INVALID");
+  const bookmark = readBookmark(selected);
   const output = join(outputDirectory, `payment-${environment}-${stamp}.sql`);
   runWrangler([
     "d1",
@@ -309,7 +352,7 @@ async function remoteBackup(
           "--config",
           selected.apiPath,
           "--bookmark",
-          bookmark.bookmark,
+          bookmark,
           "--json",
         ]),
       ) as { bookmark: string; previous_bookmark: string };
@@ -380,7 +423,7 @@ async function remoteBackup(
       formatVersion: 2,
       environment,
       database: selected.database.database_name,
-      bookmark: bookmark.bookmark,
+      bookmark,
       output,
       backupSha256: sha256(output),
       localRestore: "passed",
@@ -405,6 +448,7 @@ async function main() {
     [
       "--dry-run",
       "--local-rehearsal",
+      "--checkpoint",
       "--remote-export",
       "--remote-rehearsal",
       "--execute",
@@ -413,15 +457,25 @@ async function main() {
   );
   if (args["--help"]) {
     console.log(
-      "Usage: bun scripts/payment-backup.ts --dry-run|--local-rehearsal | --remote-export|--remote-rehearsal --env staging|production [--execute]",
+      "Usage: bun scripts/payment-backup.ts --dry-run|--local-rehearsal | --checkpoint|--remote-export|--remote-rehearsal --env staging|production [--execute]",
     );
     return;
   }
-  const remote = Boolean(args["--remote-export"] || args["--remote-rehearsal"]);
+  const mode: RemoteBackupMode | undefined = args["--checkpoint"]
+    ? "checkpoint"
+    : args["--remote-export"]
+      ? "export"
+      : args["--remote-rehearsal"]
+        ? "rehearsal"
+        : undefined;
+  const remote = mode !== undefined;
   if (
-    ["--local-rehearsal", "--remote-export", "--remote-rehearsal"].filter(
-      (key) => args[key],
-    ).length > 1 ||
+    [
+      "--local-rehearsal",
+      "--checkpoint",
+      "--remote-export",
+      "--remote-rehearsal",
+    ].filter((key) => args[key]).length > 1 ||
     (remote && args["--state-dir"])
   )
     throw new Error("CONFLICTING_BACKUP_OPTIONS");
@@ -434,19 +488,10 @@ async function main() {
     const environment = environmentFrom(args["--env"] as string | undefined);
     if (environment === "local") throw new Error("REMOTE_ENVIRONMENT_REQUIRED");
     if (!args["--execute"])
-      console.log(
-        JSON.stringify(
-          remoteBackupPlan(environment, Boolean(args["--remote-rehearsal"])),
-          null,
-          2,
-        ),
-      );
-    else
-      await remoteBackup(
-        environment,
-        Boolean(args["--remote-rehearsal"]),
-        outputDirectory,
-      );
+      console.log(JSON.stringify(remoteBackupPlan(environment, mode), null, 2));
+    else if (mode === "checkpoint")
+      remoteCheckpoint(environment, outputDirectory);
+    else await remoteBackup(environment, mode === "rehearsal", outputDirectory);
     return;
   }
   if (args["--env"] && args["--env"] !== "local")

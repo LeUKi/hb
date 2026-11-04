@@ -395,11 +395,16 @@ describe("operations safety", () => {
   });
 
   it("plans remote backups without executing and prevents production restore rehearsal", () => {
-    expect(remoteBackupPlan("staging", true)).toMatchObject({
+    expect(remoteBackupPlan("staging", "rehearsal")).toMatchObject({
       environment: "staging",
       executedRemotely: false,
     });
-    expect(() => remoteBackupPlan("production", true)).toThrow("STAGING_ONLY");
+    expect(() => remoteBackupPlan("production", "rehearsal")).toThrow(
+      "STAGING_ONLY",
+    );
+    const checkpoint = remoteBackupPlan("production", "checkpoint");
+    expect(checkpoint).toMatchObject({ mode: "checkpoint" });
+    expect(checkpoint.steps.join(" ")).not.toMatch(/export SQL|Export remote/i);
   });
 
   it("encodes only a synthetic queue probe, never a payment wake", () => {
