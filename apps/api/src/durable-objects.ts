@@ -32,6 +32,8 @@ import {
   resultOfSubmission,
   resumePendingActivityClaims,
   type SubmissionRow,
+  VIA_HEADER,
+  VIA_WRITTEN_HEADER,
 } from "./activities/claim-service";
 import { ActivityError, activityNotFound } from "./activities/errors";
 import { HumanCheckRequiredError } from "./activities/human-check";
@@ -1051,7 +1053,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
             : "error" in written
               ? "error"
               : "written" in written
-                ? "claimed"
+                ? "allocated"
                 : written.result,
       });
       if (written === "cancelled")
@@ -1269,7 +1271,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       cooldown?: AttemptCooldown;
       /**
        * Its share written here for the 社区小程序, saying so (claims.via):
-       * its route need not mark it after (X-Hb-Via-Written).
+       * its route need not mark it after (VIA_WRITTEN_HEADER).
        */
       via?: "mini";
     } = {},
@@ -1316,7 +1318,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       {
         headers: {
           "Cache-Control": "no-store",
-          ...(written.via ? { "X-Hb-Via-Written": written.via } : {}),
+          ...(written.via ? { [VIA_WRITTEN_HEADER]: written.via } : {}),
         },
       },
     );
@@ -1603,8 +1605,10 @@ export class ActivityDO extends DurableObject<ApiBindings> {
             ),
           );
         }
-        const { userId, humanVerified, via, ...input } = (claimBody ??
-          {}) as Record<string, unknown>;
+        const { userId, humanVerified, ...input } = (claimBody ?? {}) as Record<
+          string,
+          unknown
+        >;
         const parsed = claimActivitySchema.safeParse(input);
         if (!parsed.success || typeof userId !== "string") {
           done();
@@ -1620,7 +1624,9 @@ export class ActivityDO extends DurableObject<ApiBindings> {
                 userId,
                 parsed.data,
                 humanVerified === true,
-                via === "mini" ? "mini" : undefined,
+                // A header, not the body, which an older instance's strict
+                // schema would refuse while a release rolls out.
+                request.headers.get(VIA_HEADER) === "mini" ? "mini" : undefined,
               )
         )
           .catch(mutationError)

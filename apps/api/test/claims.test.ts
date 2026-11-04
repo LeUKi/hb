@@ -11,6 +11,7 @@ import {
   type PublicRecipientList,
 } from "@hb/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getClaimDetail } from "../src/activities/claim-queries";
 import {
   allocateClaimBatch,
   attemptAssociatedData,
@@ -18,7 +19,6 @@ import {
   prepareClaimSubmission,
   resumePendingActivityClaims,
 } from "../src/activities/claim-service";
-import { getClaimDetail } from "../src/activities/claim-queries";
 import {
   refreshActivityLifecycle,
   sweepActivityLifecycle,
@@ -1457,12 +1457,14 @@ describe("the claim line (2026-11-04)", () => {
           object.fetch(
             new Request(url, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: {
+                "Content-Type": "application/json",
+                ...(index === 1 ? { "X-Hb-Via": "mini" } : {}),
+              },
               body: JSON.stringify({
                 userId: person.id,
                 submissionId: crypto.randomUUID(),
                 password: "正确口令123",
-                ...(index === 1 ? { via: "mini" } : {}),
               }),
             }),
           ),
@@ -1695,6 +1697,64 @@ describe("the claim line (2026-11-04)", () => {
     );
     expect(await cancelled.json()).toEqual({ result: "cancelled" });
     expect(await resumePendingActivityClaims(bindings, activity.id)).toBe(0);
+    expect(await stats(activity.id)).toMatchObject({ claimed: 1, claims: 1 });
+  });
+
+  it("answers a pending submission sent again once it is decided, without waiting in the line", async () => {
+    const activity = await create({
+      money: { mode: "fixed", totalAmount: "1.00", count: 1 },
+    });
+    // Checked, then left pending (a restart before its turn).
+    const submissionId = crypto.randomUUID();
+    const left = await prepareClaimSubmission(bindings, activity.id, alice.id, {
+      submissionId,
+      password: "正确口令123",
+    });
+    expect(left.outcome).toBe("pending");
+    // The only share goes to Bob meanwhile: the 红包 is over.
+    expect((await claim(activity.id, bob)).result).toBe("claimed");
+    const answer = await runInDurableObject(
+      activityObject(bindings, activity.id),
+      async (instance) => {
+        const object = instance as unknown as {
+          fetch(request: Request): Promise<Response>;
+          serialize(action: () => Promise<void>): Promise<void>;
+        };
+        let release = () => {};
+        const held = object.serialize(
+          () =>
+            new Promise<void>((resolve) => {
+              release = resolve;
+            }),
+        );
+        // Answered while the line is held: it does not wait in it.
+        const response = await object.fetch(
+          new Request(
+            `https://activity.internal/internal/activities/${activity.id}/claim`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                userId: alice.id,
+                submissionId,
+                password: "正确口令123",
+              }),
+            },
+          ),
+        );
+        release();
+        await held;
+        return (await response.json()) as ClaimResult;
+      },
+    );
+    expect(answer.result).toBe("ended");
+    expect(
+      await env.DB.prepare(
+        "SELECT outcome FROM redemption_submissions WHERE id = ?",
+      )
+        .bind(left.id)
+        .first("outcome"),
+    ).toBe("ended");
     expect(await stats(activity.id)).toMatchObject({ claimed: 1, claims: 1 });
   });
 

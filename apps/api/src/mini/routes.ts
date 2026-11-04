@@ -11,6 +11,7 @@ import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { z } from "zod";
 import { listPublicRecipients } from "../activities/claim-queries";
+import { VIA_HEADER, VIA_WRITTEN_HEADER } from "../activities/claim-service";
 import { ActivityError, activityNotFound } from "../activities/errors";
 import { humanCheckEnabled } from "../activities/human-check";
 import { LIVE_UNTIL_HEADER, LIVE_USER_HEADER } from "../activities/live";
@@ -290,7 +291,8 @@ miniRoutes.post(
       `https://activity.internal/internal/activities/${encodeURIComponent(id)}/claim`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        // Its share, written in the 红包's line, says so (claims.via).
+        headers: { "Content-Type": "application/json", [VIA_HEADER]: "mini" },
         body: JSON.stringify({
           userId: user.id,
           submissionId,
@@ -298,8 +300,6 @@ miniRoutes.post(
             ? { participationMode: "direct" }
             : { password }),
           humanVerified: false,
-          // Its share, written in the 红包's line, says so (claims.via).
-          via: "mini",
         }),
       },
     );
@@ -322,10 +322,10 @@ miniRoutes.post(
     const result = (await response.json()) as ClaimResult;
     // Taken here: the claim (or the sign-up a draw's prize comes from)
     // says so (claims.via, activity_registrations.via); one whose share was
-    // written in the line says so already (X-Hb-Via-Written).
+    // written in the line says so already.
     if (
       result.result === "claimed" &&
-      response.headers.get("X-Hb-Via-Written") !== "mini"
+      response.headers.get(VIA_WRITTEN_HEADER) !== "mini"
     )
       await c.env.DB.prepare(
         "UPDATE claims SET via='mini' WHERE id=? AND user_id=?",

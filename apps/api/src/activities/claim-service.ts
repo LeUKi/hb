@@ -559,20 +559,35 @@ async function finishWithoutAllocation(
   outcome: FinishedOutcome,
   claimId: string | null = null,
 ) {
-  await env.DB.prepare(
+  return resultOfSubmission(
+    env,
+    await finishPending(env, submission, outcome, claimId),
+  );
+}
+
+/**
+ * A pending submission finished with no share (a share already, over): its
+ * row as it ends, whatever finished it first.
+ */
+async function finishPending(
+  env: ApiBindings,
+  submission: SubmissionRow,
+  outcome: FinishedOutcome,
+  claimId: string | null = null,
+) {
+  const finished = await env.DB.prepare(
     `UPDATE redemption_submissions SET outcome = ?, claim_id = ?, finished_at = ${databaseNow}
       WHERE id = ? AND purpose = 'claim' AND outcome = 'pending'
-      AND EXISTS (SELECT 1 FROM activities WHERE activities.id = redemption_submissions.activity_id AND reward_type = 'ldc' AND deleted_at IS NULL)`,
+      AND EXISTS (SELECT 1 FROM activities WHERE activities.id = redemption_submissions.activity_id AND reward_type = 'ldc' AND deleted_at IS NULL)
+      RETURNING *`,
   )
     .bind(outcome, claimId, submission.id)
-    .run();
-  const current = await findSubmission(
-    env,
-    submission.userId,
-    submission.submissionId,
-  );
+    .first<Record<string, unknown>>();
+  const current =
+    tableRow(redemptionSubmissions, finished) ??
+    (await findSubmission(env, submission.userId, submission.submissionId));
   if (!current) throw new Error("Submission was not found");
-  return resultOfSubmission(env, current);
+  return current;
 }
 
 function randomIndex(length: number) {
@@ -752,6 +767,14 @@ export async function completeClaimSubmission(
   );
   return allocated === "allocated" ? claimAnswer(env, admitted) : allocated;
 }
+
+/**
+ * A claim from the 社区小程序 (mini/routes.ts) to its 红包's DO, which
+ * writes its share saying so (claims.via) and answers with
+ * VIA_WRITTEN_HEADER when it did; otherwise the route marks it after.
+ */
+export const VIA_HEADER = "X-Hb-Via";
+export const VIA_WRITTEN_HEADER = "X-Hb-Via-Written";
 
 /** At most this many shares are written in one turn of a 红包's line. */
 export const CLAIM_BATCH = 20;
@@ -1465,7 +1488,7 @@ export async function admitActivityClaim(
     (status === "ended" && activity.endedAt === null) ||
     (status === "archived" && activity.archivedAt === null);
   if (behind) await refreshActivityLifecycle(env, activityId);
-  return prepareClaimSubmission(
+  const submission = await prepareClaimSubmission(
     env,
     activityId,
     userId,
@@ -1474,6 +1497,19 @@ export async function admitActivityClaim(
     humanVerified,
     { request, context: behind ? undefined : context },
   );
+  // Sent again while still pending, and decided meanwhile (a share by
+  // another of theirs, the 红包 over): finished here, as its turn would,
+  // without waiting in the line for it.
+  const decided = context.claimId
+    ? "already_claimed"
+    : status !== "active"
+      ? status
+      : null;
+  return decided &&
+    submission.outcome === "pending" &&
+    submission.id === context.previous?.id
+    ? finishPending(env, submission, decided, context.claimId)
+    : submission;
 }
 
 export async function claimActivity(
