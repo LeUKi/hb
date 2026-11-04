@@ -1,0 +1,1004 @@
+<!doctype html>
+<!--
+  打赏卡（docs/tip-design.md）的原型：只为看简洁和标准两种样式、配色、尺寸和看客的几步，数据是编的。
+  社区的尺寸是 2026-11-05 在 linux.do 上量的：小程序嵌入框顶上有社区自己的标题栏 69px（写着小程序的名字，这里写“小程序”）；
+  个人页“关于我”宽 300px、最高 300px，超出就滚动；帖子正文宽 848px；手机按 360px。
+  圆角用 CSS 的 corner-shape: squircle（Chrome 139 起），别的浏览器退回普通圆角。
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>打赏卡原型</title>
+    <style>
+      :root {
+        --ink: #2a1519;
+        --ink-2: #745c61;
+        --ink-3: #9a7f85;
+        --fill: rgb(42 21 25 / 0.045);
+        --fill-2: rgb(42 21 25 / 0.08);
+        --line: rgb(42 21 25 / 0.08);
+        --line-strong: rgb(42 21 25 / 0.14);
+        --accent: #d3282f;
+        --button-top: #d4352e;
+        --button-bottom: #b51925;
+        --on-accent: #fff6ee;
+        --gold-ink: #6a4510;
+        --gold-soft: rgb(237 203 134 / 0.28);
+        --success: #1e8a57;
+        --success-soft: rgb(30 138 87 / 0.1);
+        font-family: -apple-system, "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+        color: var(--ink);
+        -webkit-font-smoothing: antialiased;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #efe7e7; }
+      button { font: inherit; color: inherit; cursor: pointer; }
+      .sq { corner-shape: squircle; }
+
+      /* ---------- 原型页自己的外框 ---------- */
+      .top {
+        position: sticky; top: 0; z-index: 20;
+        display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px;
+        padding: 12px 24px;
+        background: rgb(255 250 250 / 0.86);
+        backdrop-filter: blur(18px);
+        border-bottom: 1px solid var(--line);
+      }
+      .top h1 { margin: 0; font-size: 17px; }
+      .top .group { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); }
+      .seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--fill-2); border-radius: 12px; corner-shape: squircle; }
+      .seg button { border: 0; background: transparent; padding: 5px 11px; border-radius: 9px; corner-shape: squircle; font-size: 13px; color: var(--ink-2); }
+      .seg button[aria-pressed="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgb(42 21 25 / 0.12); font-weight: 600; }
+      .swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--line-strong); padding: 0; }
+      .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--ink); }
+      .check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); }
+      main { padding: 24px; display: grid; gap: 40px; max-width: 1640px; margin: 0 auto; }
+      section > h2 { margin: 0 0 4px; font-size: 20px; }
+      section > p.lead { margin: 0 0 18px; font-size: 14px; color: var(--ink-2); max-width: 70em; line-height: 1.6; }
+      .style-block { display: grid; gap: 10px; padding: 20px; background: rgb(255 255 255 / 0.6); border-radius: 26px; corner-shape: squircle; margin-bottom: 18px; }
+      .style-block > header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+      .style-block > header b { font-size: 16px; }
+      .style-block > header span { font-size: 13px; color: var(--ink-2); }
+      .places { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+      .place { display: grid; gap: 6px; }
+      .place > .cap { font-size: 12px; color: var(--ink-3); display: flex; justify-content: space-between; gap: 12px; }
+      .place > .cap b { color: var(--ink-2); font-weight: 600; }
+
+      /* ---------- 社区（深浅两种） ---------- */
+      .forum { --f-bg: #ffffff; --f-ink: #222222; --f-ink-2: #646464; --f-ink-3: #919191; --f-line: #e6e6e6; --f-link: #0a7cba; background: var(--f-bg); color: var(--f-ink); }
+      .forum[data-mode="dark"] { --f-bg: #222222; --f-ink: #ededed; --f-ink-2: #b3b3b3; --f-ink-3: #868686; --f-line: rgb(255 255 255 / 0.12); --f-link: #5fb4e8; }
+      .bio-box { width: 324px; padding: 12px; border-radius: 10px; }
+      .bio-box > .scroll { max-height: 300px; overflow: auto; padding-top: 16px; font-size: 16px; line-height: 1.4; }
+      .bio-box p { margin: 0 0 12px; }
+      .bio-box a { color: var(--f-link); text-decoration: none; }
+      .post { width: 848px; padding: 18px 20px 22px; font-size: 16px; line-height: 1.55; border-radius: 6px; }
+      .post p { margin: 0 0 14px; }
+      .phone { width: 360px; padding: 14px 8px 18px; font-size: 16px; line-height: 1.5; border-radius: 22px; border: 1px solid var(--line-strong); }
+      .phone p { margin: 0 8px 12px; }
+      .embed { width: 100%; border: 0; background: var(--f-bg); overflow: hidden; }
+      .embed-head { height: 69px; display: flex; align-items: center; gap: 10px; padding: 0 4px 12px; border-bottom: 1px solid var(--f-line); }
+      .embed-head .icon { width: 28px; height: 28px; border-radius: 50%; background: radial-gradient(circle at 70% 30%, #f8e6bc 0 4px, transparent 5px), #d3282f; flex: none; }
+      .embed-head .name { font-size: 17px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+      .embed-head .ctl { margin-left: auto; display: flex; gap: 14px; color: var(--f-ink-3); font-size: 15px; flex: none; }
+      .embed-body { padding: 0 0 8px; }
+      .measure { font-variant-numeric: tabular-nums; }
+
+      /* ---------- 打赏卡本身（小程序里画的部分） ---------- */
+      .tip {
+        --t-line: color-mix(in srgb, var(--t-accent) 22%, transparent);
+        position: relative; overflow: hidden;
+        height: var(--h);
+        display: grid; align-content: center; gap: 8px;
+        padding: 12px 14px;
+        background: var(--t-soft);
+        border: 1px solid var(--t-line);
+        border-radius: 22px; corner-shape: squircle;
+        color: var(--f-ink);
+        font-size: 14px; line-height: 1.4;
+      }
+      .tip.tall { align-content: start; padding-top: 14px; }
+      .tip > * { min-width: 0; }
+      .row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+      .grow { flex: 1; min-width: 0; }
+      .t1 { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.35; }
+      .t3 { line-height: 1.35; overflow: hidden; text-overflow: ellipsis; }
+      .t2 { color: var(--f-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .t3 { color: var(--f-ink-3); font-size: 12.5px; white-space: nowrap; }
+      .ava { flex: none; display: grid; place-items: center; border-radius: 50%; background: color-mix(in srgb, var(--t-accent) 18%, var(--f-bg)); color: var(--t-ink); font-weight: 700; }
+      .chips { display: flex; gap: 8px; align-items: center; min-width: 0; }
+      .chip {
+        flex: 1 1 0; min-width: 0; height: 38px; padding: 0 6px;
+        border: 1px solid var(--t-line); background: color-mix(in srgb, var(--f-bg) 70%, transparent);
+        border-radius: 13px; corner-shape: squircle;
+        color: var(--t-ink); font-weight: 650; font-size: 15px; font-variant-numeric: tabular-nums;
+        transition: background 0.15s;
+      }
+      .chip:hover { background: var(--t-soft-2); }
+      .chip { max-width: 112px; }
+      .chip.other { flex: none; padding: 0 11px; font-size: 13px; font-weight: 600; }
+      .unit { flex: none; font-size: 12.5px; color: var(--f-ink-3); }
+      .primary {
+        flex: none; height: 38px; padding: 0 16px; border: 0;
+        border-radius: 13px; corner-shape: squircle;
+        background: linear-gradient(var(--t-top), var(--t-bottom)); color: var(--t-on);
+        font-weight: 650; font-size: 14.5px; white-space: nowrap;
+        box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18), 0 2px 6px -2px color-mix(in srgb, var(--t-bottom) 60%, transparent);
+      }
+      .primary[disabled] { opacity: 0.4; cursor: default; }
+      .primary.wide { flex: 1; }
+      .ghost { flex: none; height: 38px; padding: 0 14px; border: 1px solid var(--t-line); background: transparent; border-radius: 13px; corner-shape: squircle; color: var(--f-ink-2); font-weight: 600; }
+      .back { flex: none; width: 28px; height: 28px; border: 0; background: transparent; color: var(--f-ink-2); font-size: 20px; line-height: 1; padding: 0; border-radius: 8px; }
+      .back:hover { background: var(--t-soft-2); }
+      .link-btn { border: 0; background: none; padding: 0; color: var(--t-ink); font-weight: 600; font-size: 13px; white-space: nowrap; }
+      .methods { display: flex; gap: 8px; }
+      .method {
+        flex: 1 1 0; min-width: 0; display: grid; gap: 1px; justify-items: center; align-content: center;
+        height: 46px; padding: 0 4px; text-align: center;
+        border: 1px solid var(--t-line); background: color-mix(in srgb, var(--f-bg) 70%, transparent);
+        border-radius: 13px; corner-shape: squircle;
+      }
+      .method:hover { background: var(--t-soft-2); }
+      .method b { font-size: 14px; font-weight: 650; color: var(--t-ink); white-space: nowrap; }
+      .method small { font-size: 11.5px; color: var(--f-ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+      .method.first { background: linear-gradient(var(--t-top), var(--t-bottom)); border-color: transparent; }
+      .method.first b, .method.first small { color: var(--t-on); }
+      .method.first small { opacity: 0.82; }
+      .method[disabled] { opacity: 0.5; cursor: default; background: transparent; }
+      .method[disabled] b { color: var(--f-ink-2); }
+      .field { flex: 1; min-width: 0; height: 38px; padding: 0 12px; border: 1px solid var(--t-line); background: var(--f-bg); color: var(--f-ink); border-radius: 13px; corner-shape: squircle; font: inherit; font-size: 15px; }
+      .field:focus { outline: 2px solid color-mix(in srgb, var(--t-accent) 45%, transparent); outline-offset: 0; }
+      .sheen { position: relative; overflow: hidden; height: 38px; border-radius: 13px; corner-shape: squircle; background: var(--t-soft-2); display: grid; place-items: center; color: var(--t-ink); font-weight: 600; font-size: 13.5px; }
+      .sheen::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 20%, rgb(255 255 255 / 0.45) 50%, transparent 80%); transform: translateX(-100%); animation: sweep 1.3s ease-in-out infinite; }
+      .forum[data-mode="dark"] .sheen::after { background: linear-gradient(100deg, transparent 20%, rgb(255 255 255 / 0.14) 50%, transparent 80%); }
+      @keyframes sweep { to { transform: translateX(100%); } }
+      .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--t-accent); margin-right: 6px; animation: pulse 1.2s ease-in-out infinite; vertical-align: 1px; }
+      @keyframes pulse { 50% { opacity: 0.25; } }
+      .done { display: flex; align-items: center; gap: 10px; }
+      .done .ok { flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(var(--t-top), var(--t-bottom)); color: var(--t-on); font-size: 18px; font-weight: 700; }
+      .note { font-size: 12.5px; color: var(--f-ink-3); line-height: 1.45; }
+      .warn { font-size: 13.5px; line-height: 1.45; }
+      .warn b { color: var(--t-ink); }
+      .stepper { display: inline-flex; align-items: center; gap: 2px; }
+      .stepper button { width: 28px; height: 28px; border-radius: 9px; corner-shape: squircle; border: 1px solid var(--t-line); background: color-mix(in srgb, var(--f-bg) 70%, transparent); color: var(--t-ink); font-size: 16px; line-height: 1; padding: 0; }
+      .stepper span { min-width: 22px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 650; }
+      .menu-row { display: flex; align-items: center; gap: 10px; height: 38px; }
+      .menu-row .emo { font-size: 20px; width: 26px; text-align: center; }
+      .menu-row .price { color: var(--f-ink-3); font-size: 13px; font-variant-numeric: tabular-nums; }
+      .bar { position: relative; height: 10px; border-radius: 6px; background: color-mix(in srgb, var(--t-accent) 14%, var(--f-bg)); overflow: hidden; }
+      .bar i { position: absolute; inset: 0 auto 0 0; border-radius: 6px; background: linear-gradient(90deg, var(--t-top), var(--t-bottom)); }
+      .tabs { display: inline-flex; gap: 2px; padding: 2px; border-radius: 10px; corner-shape: squircle; background: color-mix(in srgb, var(--t-accent) 10%, transparent); }
+      .tabs button { border: 0; background: transparent; padding: 3px 6px; white-space: nowrap; border-radius: 8px; corner-shape: squircle; font-size: 12.5px; color: var(--f-ink-2); }
+      .tabs button[aria-pressed="true"] { background: var(--f-bg); color: var(--f-ink); font-weight: 600; }
+      .wall { display: grid; gap: 2px; }
+      .wall-row { display: flex; align-items: center; gap: 8px; height: 34px; font-size: 13.5px; }
+      .wall-row .who { font-weight: 600; flex: none; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .wall-row .msg { flex: 1; min-width: 0; color: var(--f-ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .wall-row .amt { flex: none; font-weight: 650; font-variant-numeric: tabular-nums; padding: 2px 8px; border-radius: 8px; corner-shape: squircle; }
+      .amt.t1 { color: var(--f-ink-2); background: transparent; }
+      .amt.t2 { color: var(--t-ink); background: var(--t-soft-2); }
+      .amt.t3 { color: var(--t-on); background: linear-gradient(var(--t-top), var(--t-bottom)); }
+      .rank { flex: none; width: 18px; text-align: center; font-weight: 700; color: var(--f-ink-3); font-variant-numeric: tabular-nums; }
+      .fishy { font-size: 0.8em; vertical-align: 1px; }
+
+      /* ---------- 红包站里的页面（我的打赏、编辑） ---------- */
+      .site { background: linear-gradient(180deg, #fbf3f3, #f1e7e7); border-radius: 30px; corner-shape: squircle; box-shadow: 0 24px 60px rgb(42 21 25 / 0.16); overflow: hidden; }
+      .site-bar { height: 60px; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid var(--line); position: relative; }
+      .site-bar .addr { width: min(520px, 60%); height: 38px; border-radius: 13px; corner-shape: squircle; background: var(--fill-2); display: flex; align-items: center; padding: 0 14px; font: 14px ui-monospace, "SF Mono", Menlo, monospace; color: var(--ink); }
+      .site-bar .me { position: absolute; right: 16px; width: 34px; height: 34px; border-radius: 50%; background: #d8c3c6; display: grid; place-items: center; font-weight: 700; color: #5a3d42; }
+      .site-main { max-width: 1040px; margin: 0 auto; padding: 32px 24px 48px; display: grid; gap: 28px; }
+      .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
+      .page-head h3 { margin: 0; font-size: 24px; }
+      .page-head p { margin: 6px 0 0; color: var(--ink-2); font-size: 14px; }
+      .btn { height: 40px; padding: 0 18px; border: 0; border-radius: 14px; corner-shape: squircle; font-weight: 600; font-size: 15px; white-space: nowrap; }
+      .btn.red { background: linear-gradient(var(--button-top), var(--button-bottom)); color: var(--on-accent); }
+      .btn.soft { background: rgb(255 255 255 / 0.85); color: var(--ink); box-shadow: 0 0 0 1px var(--line-strong); }
+      .btn.small { height: 32px; padding: 0 12px; font-size: 13px; border-radius: 11px; }
+      .h4 { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+      .h4 h4 { margin: 0; font-size: 17px; }
+      .h4 span { font-size: 13px; color: var(--ink-2); }
+      .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+      .card { background: rgb(255 255 255 / 0.82); border-radius: 22px; corner-shape: squircle; padding: 14px; display: grid; gap: 10px; box-shadow: 0 0 0 1px var(--line); }
+      /* 预览放在最后：两种样式高矮不同，放前面会把名称和按钮顶得高低不齐。 */
+      .card { align-content: start; }
+      /* 卡片最窄 288，比格子宽；预览缩小一点放进去，不横着滚。 */
+      .card .thumb > .forum { zoom: 0.86; }
+      .card .thumb { border-radius: 14px; corner-shape: squircle; padding: 10px; background: #fff; box-shadow: 0 0 0 1px var(--line); }
+      .card .meta { display: grid; gap: 2px; font-size: 13px; color: var(--ink-2); }
+      .card .meta b { color: var(--ink); font-size: 15px; }
+      .card .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+      .tag { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 7px; corner-shape: squircle; font-size: 12px; background: var(--fill-2); color: var(--ink-2); }
+      .tag.off { background: transparent; box-shadow: 0 0 0 1px var(--line-strong); }
+      .stats { display: flex; gap: 10px; flex-wrap: wrap; }
+      .stat { flex: 1 1 150px; background: rgb(255 255 255 / 0.82); border-radius: 18px; corner-shape: squircle; padding: 12px 14px; box-shadow: 0 0 0 1px var(--line); }
+      .stat span { font-size: 12.5px; color: var(--ink-2); }
+      .stat b { display: block; font-size: 22px; font-variant-numeric: tabular-nums; margin-top: 2px; }
+      .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
+      .select { height: 34px; padding: 0 30px 0 12px; border-radius: 11px; corner-shape: squircle; border: 0; box-shadow: 0 0 0 1px var(--line-strong); background: rgb(255 255 255 / 0.85) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23745c61' fill='none' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 11px center; appearance: none; font: inherit; font-size: 13.5px; color: var(--ink); }
+      table { width: 100%; border-collapse: collapse; font-size: 14px; background: rgb(255 255 255 / 0.82); border-radius: 18px; corner-shape: squircle; overflow: hidden; box-shadow: 0 0 0 1px var(--line); }
+      th { text-align: left; font-weight: 600; font-size: 12.5px; color: var(--ink-2); padding: 10px 12px; border-bottom: 1px solid var(--line); }
+      td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+      tr:last-child td { border-bottom: 0; }
+      td.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+      th.num { text-align: right; }
+      .who { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+      .who i { width: 24px; height: 24px; border-radius: 50%; background: #e6d6d8; display: grid; place-items: center; font-style: normal; font-size: 12px; font-weight: 700; color: #5a3d42; }
+      .muted { color: var(--ink-3); }
+      .pill { display: inline-block; font-size: 12px; padding: 1px 7px; border-radius: 7px; corner-shape: squircle; background: var(--fill-2); color: var(--ink-2); white-space: nowrap; }
+      .pill.wait { background: var(--gold-soft); color: var(--gold-ink); }
+      .editor { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 24px; align-items: start; }
+      .form { display: grid; gap: 16px; }
+      .form label.l { display: block; font-size: 13px; font-weight: 600; color: var(--ink-2); margin-bottom: 6px; }
+      .input { width: 100%; height: 40px; padding: 0 12px; border: 0; box-shadow: 0 0 0 1px var(--line-strong); background: rgb(255 255 255 / 0.9); border-radius: 13px; corner-shape: squircle; font: inherit; font-size: 15px; }
+      .choice { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      .choice button { text-align: left; padding: 9px 10px; border: 0; border-radius: 14px; corner-shape: squircle; background: rgb(255 255 255 / 0.85); box-shadow: 0 0 0 1px var(--line-strong); }
+      .choice button b { display: block; font-size: 14px; }
+      .choice button small { font-size: 11.5px; color: var(--ink-3); }
+      .choice button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--accent); background: #fff; }
+      .amount-edit { display: flex; gap: 8px; flex-wrap: wrap; }
+      .amount-edit span { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 10px; border-radius: 11px; corner-shape: squircle; background: rgb(255 255 255 / 0.9); box-shadow: 0 0 0 1px var(--line-strong); font-variant-numeric: tabular-nums; font-weight: 600; }
+      .amount-edit span em { font-style: normal; color: var(--ink-3); font-weight: 400; }
+      .toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; }
+      .switch { width: 42px; height: 26px; border-radius: 13px; background: var(--success); position: relative; flex: none; }
+      .switch::after { content: ""; position: absolute; right: 3px; top: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; }
+      .code { font: 12.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace; background: rgb(255 255 255 / 0.9); box-shadow: 0 0 0 1px var(--line-strong); border-radius: 14px; corner-shape: squircle; padding: 10px 12px; white-space: pre-wrap; word-break: break-all; color: var(--ink-2); }
+      .preview { display: grid; gap: 12px; position: sticky; top: 80px; }
+      .flow-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+      .flow-step { display: grid; gap: 6px; }
+      .flow-step .cap { font-size: 12.5px; color: var(--ink-2); }
+      .flow-step .cap b { color: var(--ink); }
+    </style>
+    <style>
+      /* 第二版（2026-11-05）：卡片有最宽、最窄，居中；比最窄还窄时横向滚动。 */
+      .embed-body { overflow-x: auto; }
+      .tip { width: 100%; min-width: 288px; max-width: var(--max); margin: 0 auto; }
+      .head { display: grid; gap: 4px; }
+      .bar.thin { height: 4px; border-radius: 3px; }
+      .backlink { font-size: 13.5px; color: var(--ink-3); text-decoration: none; }
+      .backlink:hover { color: var(--ink); }
+      .page-head .stack { display: grid; gap: 4px; }
+      .mini-pages { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; margin-top: 20px; }
+      .mini-home { display: grid; gap: 10px; padding: 2px 0 8px; font-size: 14px; }
+      .mini-home .back { width: auto; padding: 0 6px; font-size: 14px; color: var(--f-ink-2); }
+      .mini-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--f-line); border-radius: 16px; corner-shape: squircle; }
+      .mini-item b { font-weight: 650; }
+      .mini-sec { font-size: 12.5px; color: var(--f-ink-3); margin-top: 4px; }
+      .pay-page { width: 520px; }
+      .pay-page .site-main { padding: 24px 28px 32px; gap: 18px; }
+      .status { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+      .status .dot { background: var(--gold-ink); }
+      .plus { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border-radius: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; }
+      .plus.off { background: var(--fill-2); color: var(--ink-3); }
+      .bubble { width: 300px; display: grid; gap: 8px; padding: 14px; margin-top: -14px; background: rgb(255 255 255 / 0.95); border-radius: 18px; box-shadow: 0 0 0 1px var(--line), 0 12px 32px rgb(42 21 25 / 0.14); font-size: 14px; }
+      .bubble dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
+      .bubble dt { font-weight: 500; }
+      .bubble dd { margin: 0; color: var(--ink-2); }
+      .bubble .sec { grid-column: span 2; font-size: 12px; color: var(--ink-3); font-weight: 400; }
+      .bubble .sec.gold { margin-top: 6px; color: var(--gold-ink); font-weight: 600; }
+      .standin { font-style: normal; color: var(--ink-3); letter-spacing: -1px; }
+    </style>
+    <style>
+      /* 第三版（2026-11-05）：简洁、标准两种样式；数额按钮是数字加小字 LDC，可以带一句说明。 */
+      .opts { display: flex; gap: 6px; min-width: 0; }
+      .opt {
+        flex: 1 1 0; min-width: 0; height: 44px; padding: 0 4px;
+        display: grid; align-content: center; justify-items: center; gap: 0;
+        border: 1px solid var(--t-line); background: color-mix(in srgb, var(--f-bg) 70%, transparent);
+        border-radius: 13px; corner-shape: squircle; color: var(--t-ink);
+      }
+      .opt:hover { background: var(--t-soft-2); }
+      .opt b { font-size: 15px; font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .opt b.word { font-size: 13.5px; }
+      .opt small { font-size: 11px; line-height: 1.2; color: var(--f-ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+      .opt[aria-pressed="true"] { background: var(--f-bg); border-color: var(--t-accent); box-shadow: inset 0 0 0 1px var(--t-accent); }
+      .opt.other { flex: 0 0 auto; padding: 0 10px; }
+      .top-area { height: var(--top); display: grid; align-content: center; gap: 8px; min-width: 0; }
+      .top-area > * { min-width: 0; }
+      .tip.has-list { align-content: start; }
+      .list-head { display: flex; align-items: center; gap: 8px; height: 24px; }
+      .list-head .title { font-size: 12.5px; font-weight: 600; color: var(--f-ink-2); flex: none; }
+      .list-head > *, .wall-row > * { min-width: 0; }
+      .list-head .tabs { flex: none; }
+      .tip, .top-area { grid-template-columns: minmax(0, 1fr); }
+      /* 第四版：每一步是一个 .stage，换步时新旧两个交叠着滑进滑出（motion）。 */
+      .stage { display: grid; align-content: center; gap: 8px; grid-template-columns: minmax(0, 1fr); min-width: 0; }
+      .stage > * { min-width: 0; }
+      .tip.small { align-content: stretch; }
+      .top-area { position: relative; display: grid; }
+      .wall { display: block; position: relative; }
+      .rows { display: grid; gap: 2px; grid-template-columns: minmax(0, 1fr); }
+      .rolling { display: inline-grid !important; overflow: hidden; vertical-align: bottom; }
+      .rolling > span { grid-area: 1 / 1; white-space: nowrap; }
+      .opt { transition: background 0.18s, border-color 0.18s, box-shadow 0.18s; }
+      .primary, .ghost, .method { transition: opacity 0.2s, background 0.18s; }
+      .tabs button { transition: background 0.18s, color 0.18s; }
+      /* 第五版：窄的时候省掉次要的字（容器查询，按卡片内容宽度）。 */
+      .tip { container: tip / inline-size; }
+      .v-narrow, .v-mid, .v-short { display: none; }
+      @container tip (max-width: 370px) {
+        .tip.small .v-long { display: none; }
+        .tip.small .v-mid { display: inline; }
+      }
+      @container tip (max-width: 290px) {
+        .tip.small .v-wide, .tip.small .v-mid { display: none; }
+        .tip.small .v-narrow, .tip.small .v-short { display: inline; }
+        .tip.big .v-long { display: none; }
+        .tip.big .v-mid { display: inline; }
+      }
+      .roomy { height: calc(var(--h) - 26px); display: grid; grid-template-rows: auto 1fr; gap: 6px; min-width: 0; }
+      .roomy-body { display: grid; align-content: center; gap: 10px; min-width: 0; padding-bottom: 28px; }
+      .roomy-body > * { min-width: 0; }
+      .roomy.center { grid-template-rows: 1fr; }
+      .big-amt { font-size: 30px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; color: var(--f-ink); }
+      .big-amt small { font-size: 14px; font-weight: 600; color: var(--f-ink-3); }
+      .roomy-body .big-amt + .t2 { margin-top: -8px; }
+      .done-roomy { display: grid; justify-items: center; align-content: center; gap: 6px; text-align: center; }
+      .done-roomy .ok { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(var(--t-top), var(--t-bottom)); color: var(--t-on); font-size: 26px; font-weight: 700; margin-bottom: 4px; }
+      .done-roomy .ghost { margin-top: 8px; }
+      @keyframes mine-glow { from { background: var(--t-soft-2); } to { background: transparent; } }
+      .wall-row.mine { animation: mine-glow 2.4s ease-out; border-radius: 10px; }
+      .wall-row.mine .who { color: var(--t-ink); }
+      .stage { width: 100%; }
+      .amt-stack { flex: none; display: grid; justify-items: center; line-height: 1.15; }
+      .amt-stack b { font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
+      .amt-stack small { font-size: 11px; color: var(--f-ink-3); }
+      .outside-page { width: 720px; padding: 26px 32px 30px; border-radius: 12px; font-size: 16px; line-height: 1.7; border: 1px solid var(--line-strong); }
+      .outside-page h3 { margin: 0 0 6px; font-size: 22px; }
+      .outside-page p { margin: 0 0 16px; color: var(--f-ink-2); }
+      .guest { height: var(--h); display: grid; place-content: center; justify-items: center; gap: 4px; text-align: center; border: 1px dashed var(--f-line); border-radius: 22px; corner-shape: squircle; padding: 0 16px; width: 100%; min-width: 288px; max-width: 460px; margin: 0 auto; }
+      .guest b { font-size: 14.5px; font-weight: 650; color: var(--f-ink); }
+      .guest span { font-size: 12.5px; color: var(--f-ink-3); }
+      .method.solo { flex: 1; grid-auto-flow: column; justify-content: center; gap: 8px; align-items: center; }
+      .feature-row { display: flex; gap: 8px; flex-wrap: wrap; }
+      .feature-row .tag { height: 24px; }
+    </style>
+  </head>
+  <body>
+    <div class="top">
+      <h1>打赏卡 · 原型</h1>
+      <div class="group">配色 <span id="swatches" style="display:flex;gap:6px"></span></div>
+      <div class="group">社区主题 <span class="seg" id="mode"><button data-mode="light" aria-pressed="true">浅色</button><button data-mode="dark">深色</button></span></div>
+      <div class="group"><label class="check"><input type="checkbox" id="blank" /> 一句话留空</label></div>
+      <div class="group">标准样式开了：
+        <label class="check"><input type="checkbox" id="goal" /> 目标</label>
+        <label class="check"><input type="checkbox" id="recent" /> 最近</label>
+        <label class="check"><input type="checkbox" id="top" /> 总榜</label>
+        <label class="check"><input type="checkbox" id="labels" /> 数额带说明</label>
+      </div>
+      <div class="group">
+        <label class="check"><input type="checkbox" id="fish" checked /> 看客能用🐟额（PLUS，可用不是 0）</label>
+        <label class="check"><input type="checkbox" id="hasMerchant" checked /> 看客有 LDC 商户</label>
+        <label class="check"><input type="checkbox" id="ownerMerchant" checked /> 作者有 LDC 商户</label>
+      </div>
+    </div>
+    <main>
+      <section id="styles">
+        <h2>一、样式：简洁和标准</h2>
+        <p class="lead">简洁只有一行：头像、一句话、“打赏”，点了才摆出数额，个人页这种窄地方用；没有目标、名单和留言。标准多一行平铺的数额，右上角的按钮写着选中的数额；目标、最近、总榜是开关，自由搭配（顶上勾着看）。一句话是作者自己写的，两种样式都显示；空着就写“打赏 lafish”。数额按钮是数字加小字 LDC，作者给它写了说明（比如“咖啡”）就写说明、小字是“5 LDC”。卡片有最宽、在宽的帖子里居中，最窄 288，再窄就横向滚动。每个框上写着嵌入代码该填的高度（社区的栏 69 + 卡片 + 8）。点卡片能走一遍，每一步都在卡片原地换。</p>
+        <div id="style-list"></div>
+      </section>
+      <section id="flow">
+        <h2>二、看客的几步（个人页那么窄的时候）</h2>
+        <p class="lead">标准样式上先选数额，按“打赏 10 LDC”，再选怎么付，点哪种就是哪种。Credit 站生成付款链接，复制到浏览器里付，能手动查单；“我的商户”和“🐟额”不用输密码，多一层确认。🐟额只有开通 PLUS、可用不是 0 的看客才有；看客没有 LDC 商户时“我的商户”不出现；作者没开 LDC 商户时 Credit 站变灰并写原因。11、12 是没登录的人看到的；13 起是标准样式开了名单时，后面的步骤用整张卡（名单跟着滑走）。</p>
+        <div class="flow-grid" id="flow-grid"></div>
+      </section>
+      <section id="owner">
+        <h2>三、我的打赏（红包站，头像菜单里的“我的打赏”）</h2>
+        <p class="lead">打赏卡在上面，收到的打赏是一张表，按打赏卡、付法、时间筛。下面是二级页面的样子：都有返回，网站上是标题上方的“‹ 上一级”，和别的二级页面一样；小程序里是左上角的“‹”。</p>
+        <div id="owner-page"></div>
+        <div class="mini-pages" id="mini-pages"></div>
+      </section>
+      <section id="outside">
+        <h2>五、社区外的网页</h2>
+        <p class="lead">个人网站、博客也能嵌：同一张卡，从红包站直接嵌（没有社区那条 69px 的栏），深浅跟着网页（theme=auto）。这里谁在看都不知道，只能用 Credit 站付：点了先在后台做一次 Cap 人机验证（一两秒，不用点，和“正在生成付款链接…”的扫光合在一起），再在新页面打开 Credit 站；卡片等着，也能手动查。</p>
+        <div id="outside-list"></div>
+      </section>
+      <section id="edit">
+        <h2>四、新建或编辑打赏卡（二级页面）</h2>
+        <p class="lead">左边填，右边预览；预览能切换放在哪，嵌入代码的高度跟着样式、开关和地方算好。选了简洁时，目标和名单变灰并写“标准样式才有”。</p>
+        <div id="editor"></div>
+      </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/motion@14.0.0/dist/motion.js"></script>
+    <script>
+      const PALETTES = {
+        lake: { name: "湖蓝", light: { accent: "#2f6fdb", top: "#4382ec", bottom: "#2459c4", ink: "#1f4fa8", soft: "rgb(47 111 219 / 0.07)", soft2: "rgb(47 111 219 / 0.14)", on: "#ffffff" }, dark: { accent: "#5b9bff", top: "#4e8ff7", bottom: "#2f6fdb", ink: "#a4c6ff", soft: "rgb(91 155 255 / 0.10)", soft2: "rgb(91 155 255 / 0.20)", on: "#ffffff" } },
+        coffee: { name: "咖啡", light: { accent: "#9a5b23", top: "#b0702f", bottom: "#8a4f1c", ink: "#7a4515", soft: "rgb(154 91 35 / 0.07)", soft2: "rgb(154 91 35 / 0.14)", on: "#fff8f0" }, dark: { accent: "#e0a066", top: "#c98a4f", bottom: "#a86c34", ink: "#f2c595", soft: "rgb(224 160 102 / 0.10)", soft2: "rgb(224 160 102 / 0.20)", on: "#fffaf3" } },
+        jade: { name: "青绿", light: { accent: "#0d8b7d", top: "#17a191", bottom: "#0b786c", ink: "#0a6a5f", soft: "rgb(13 139 125 / 0.07)", soft2: "rgb(13 139 125 / 0.14)", on: "#f3fffc" }, dark: { accent: "#3fd0bb", top: "#25b29e", bottom: "#118f7f", ink: "#93e6d8", soft: "rgb(63 208 187 / 0.10)", soft2: "rgb(63 208 187 / 0.20)", on: "#f3fffc" } },
+        grape: { name: "葡萄紫", light: { accent: "#7247c6", top: "#8459d8", bottom: "#6339b3", ink: "#5a34a0", soft: "rgb(114 71 198 / 0.07)", soft2: "rgb(114 71 198 / 0.14)", on: "#fbf8ff" }, dark: { accent: "#a98bff", top: "#8e6ef0", bottom: "#7150d4", ink: "#cdbcff", soft: "rgb(169 139 255 / 0.10)", soft2: "rgb(169 139 255 / 0.20)", on: "#fbf8ff" } },
+      };
+      const S = { palette: "lake", mode: "light", blank: false, goal: false, recent: false, top: false, labels: false, fish: true, hasMerchant: true, ownerMerchant: true };
+      const OWNER = { name: "lafish", initial: "L" };
+      const PROMPT = "觉得有用的话，请我喝杯咖啡";
+      const AMOUNTS = [1, 5, 10, 20];
+      const LABELS = ["", "咖啡", "奶茶", "一顿饭"];
+      const DEFAULT = 10;
+      const GOAL = { total: 300, done: 126 };
+      const RECENT = [
+        { who: "aiko", amt: 20, msg: "谢谢佬的分享，已经用上了", ago: "3 分钟前" },
+        { who: "游客", amt: 5, msg: "路过，支持一下", ago: "1 小时前" },
+        { who: "chen_x", amt: 10, msg: "期待下一篇", ago: "3 小时前" },
+        { who: "momo", amt: 5, msg: "一点心意", ago: "昨天" },
+      ];
+      const TOP = [
+        { who: "aiko", amt: 85 },
+        { who: "chen_x", amt: 40 },
+        { who: "xiaoyu", amt: 25 },
+        { who: "momo", amt: 15 },
+      ];
+      // 高度（含内边距 24 和边框 2）。标准样式上面一块固定 90，看客的每一步都在这一块里换；名单在它下面。
+      const TOP_AREA = 90;
+      const LIST_H = 8 + 24 + 8 + 4 * 34 + 3 * 2;
+      const STYLES = [
+        { id: "small", name: "简洁", note: "一行：头像、一句话、“打赏”。点了才摆出数额，后面每一步也只占一行。没有目标、名单和留言。", max: 460, h: () => 76 },
+        { id: "big", name: "标准", note: "多一行平铺的数额，按钮写着选中的数额。目标、最近、总榜自由搭配（顶上的勾）。", max: 500, h: () => TOP_AREA + 26 + (hasList() ? LIST_H : 0) },
+      ];
+      const hasList = () => S.recent || S.top;
+      // 个人页放得下：嵌入高不超过 193（“关于我”最高 300，上面留两段简介）。
+      const BIO_MAX = 193;
+      const cards = new Map();
+      let seq = 0;
+
+      const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+      const tierOf = (a) => (a >= 20 ? "t3" : a >= 10 ? "t2" : "t1");
+      const embedHeight = (style) => 69 + style.h() + 8;
+      const styleOf = (id) => STYLES.find((s) => s.id === id);
+
+      function paletteVars() {
+        const p = PALETTES[S.palette][S.mode];
+        return `--t-accent:${p.accent};--t-top:${p.top};--t-bottom:${p.bottom};--t-ink:${p.ink};--t-soft:${p.soft};--t-soft-2:${p.soft2};--t-on:${p.on};`;
+      }
+
+      function newCard(style, place, step = "idle", extra = {}) {
+        const id = `c${++seq}`;
+        cards.set(id, { style, place, step, amount: DEFAULT, picked: DEFAULT, msg: "", tab: S.recent ? "recent" : "top", method: null, copied: false, armed: false, guestWeb: false, ...extra });
+        return id;
+      }
+
+      const ava = (size) => `<span class="ava" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.45)}px">${OWNER.initial}</span>`;
+      const back = (act = "back") => `<button class="back" data-act="${act}" aria-label="返回">‹</button>`;
+      // 一句话是作者写的，两种样式一样；空着就写“打赏 <昵称>”。
+      const promptText = () => (S.blank ? `打赏 ${OWNER.name}` : PROMPT);
+      const bar = () => `<div class="bar thin grow"><i style="width:${(GOAL.done / GOAL.total) * 100}%"></i></div>`;
+
+      // 数额按钮：数字加小字 LDC；有说明时写说明，小字是“5 LDC”。
+      function optButton(v, i, { act, picked }) {
+        const label = S.labels ? LABELS[i] : "";
+        return `<button class="opt sq" data-act="${act}" data-v="${v}" ${picked === undefined ? "" : `aria-pressed="${picked === v}"`}>${label ? `<b class="word">${label}</b><small>${v} LDC</small>` : `<b>${v}</b><small>LDC</small>`}</button>`;
+      }
+      const otherButton = () => `<button class="opt other sq" data-act="other"><b class="word">其他</b><small>自己填</small></button>`;
+
+      function firstRow(c) {
+        const style = c.style;
+        const second = style === "big" && S.goal
+          ? `<div class="row" style="gap:6px;margin-top:4px">${bar()}<span class="t3" style="flex:none">${GOAL.done} / ${GOAL.total} LDC</span></div>`
+          : `<div class="t3">23 人打赏过</div>`;
+        const button = style === "big"
+          ? `<button class="primary sq" data-act="amount" data-v="${c.picked}">打赏 <span class="num">${c.picked}</span> LDC</button>`
+          : `<button class="primary sq" data-act="start">打赏</button>`;
+        return `<div class="row">${ava(style === "big" ? 36 : 40)}<div class="grow"><div class="t1">${promptText()}</div>${second}</div>${button}</div>`;
+      }
+
+      function listBlock(c) {
+        if (!hasList()) return "";
+        const tab = S.recent && S.top ? c.tab : S.recent ? "recent" : "top";
+        const head = S.recent && S.top
+          ? `<span class="tabs"><button data-act="tab" data-v="recent" aria-pressed="${tab === "recent"}">最近</button><button data-act="tab" data-v="top" aria-pressed="${tab === "top"}">总榜</button></span>`
+          : `<span class="title">${tab === "recent" ? "最近打赏" : "总榜"}</span>`;
+        return `<div class="list-head">${head}<span class="grow"></span><span class="t3">这张卡 · 23 人 · 236 LDC</span></div><div class="wall"><div class="rows">${rowsHtml(tab, c)}</div></div>`;
+      }
+
+      const recentRow = (r, mine = false) => `<div class="wall-row${mine ? " mine" : ""}"><span class="who">${esc(r.who)}</span><span class="msg">${esc(r.msg)}</span><span class="t3">${r.ago}</span><span class="amt ${tierOf(r.amt)} sq">${r.amt}</span></div>`;
+      // 刚打赏完回到卡片时，自己那一笔排在“最近”第一行，亮一下。
+      const rowsHtml = (tab, c) =>
+        tab === "recent"
+          ? (c?.mine ? [recentRow(c.mine, true), ...RECENT.slice(0, 3).map((r) => recentRow(r))] : RECENT.map((r) => recentRow(r))).join("")
+          : TOP.map((r, i) => `<div class="wall-row"><span class="rank">${i + 1}</span><span class="who" style="max-width:none">${esc(r.who)}</span><span class="msg"></span><span class="amt ${tierOf(r.amt)} sq">${r.amt}</span></div>`).join("");
+
+      const fmt = (v) => Number(v).toFixed(2);
+      const unitOf = (c) => (c.method === "fish" ? "🐟" : "LDC");
+      const payHead = (c, right = "") => `<div class="row">${back()}<span class="grow t2" style="color:var(--f-ink)"><b>${c.amount} LDC</b> 打赏给 @${OWNER.name}</span>${right}</div>`;
+
+      function methodButtons(c) {
+        if (c.guestWeb || c.outside)
+          return `<div class="methods grow"><button class="method first solo sq" data-act="method" data-m="checkout"><b>去 Credit 站付${c.outside ? " ↗" : ""}</b><small>要输密码</small></button></div>`;
+        const methods = [];
+        methods.push(S.ownerMerchant
+          ? `<button class="method first sq" data-act="method" data-m="checkout"><b>Credit 站</b><small>要输密码</small></button>`
+          : `<button class="method sq" disabled title="作者还没开 LDC 商户"><b>Credit 站</b><small>作者没开商户</small></button>`);
+        if (S.hasMerchant) methods.push(`<button class="method sq ${S.ownerMerchant ? "" : "first"}" data-act="method" data-m="merchant"><b>我的商户</b><small>不用输密码</small></button>`);
+        if (S.fish) methods.push(`<button class="method sq ${!S.ownerMerchant && !S.hasMerchant ? "first" : ""}" data-act="method" data-m="fish"><b>🐟额</b><small>可用 32.30</small></button>`);
+        return `<div class="methods grow">${methods.join("")}</div>`;
+      }
+
+      // 确认的话分长短几种，卡片窄时省掉次要的：先省商户名，再省“从哪发”，数额、对方和“不能撤回”一直在。
+      function confirmText(c) {
+        const fish = c.method === "fish";
+        return {
+          t1: `${fmt(c.amount)} ${unitOf(c)} 打赏给 @${OWNER.name}`,
+          t1Short: `${c.amount} ${unitOf(c)} 给 @${OWNER.name}`,
+          t3: fish ? "从你的🐟额转出，不能撤回" : "从你的商户「我的小店」发出，不能撤回",
+          t3Mid: fish ? "从你的🐟额转出，不能撤回" : "从你的商户发出，不能撤回",
+          t3Short: fish ? "转出去不能撤回" : "发出去不能撤回",
+        };
+      }
+      const two = (wide, narrow) => `<span class="v-wide">${wide}</span><span class="v-narrow">${narrow}</span>`;
+      const three = (long, mid, short) => `<span class="v-long">${long}</span><span class="v-mid">${mid}</span><span class="v-short">${short}</span>`;
+
+      function waitLine(c, short) {
+        if (c.checking) return `<span class="dot"></span>正在查…`;
+        if (c.missed) return short ? "还没查到付款" : "还没查到这笔付款，付完再查一下";
+        return `<span class="dot"></span>${short ? "等你付款…" : c.outside ? "等你在新页面付款…" : "等你在浏览器里付款…"}`;
+      }
+      function checkButton(c, short) {
+        const label = c.checking ? "正在查…" : c.cool ? `再查一下（<span class="num">${c.cool}</span>）` : c.missed ? "再查一下" : short ? "查一下" : "我付好了，查一下";
+        return `<button class="${short ? "ghost" : "primary wide"} sq" data-act="check" ${c.checking || c.cool ? "disabled" : ""}><span class="lbl">${label}</span></button>`;
+      }
+
+      // 留言只在这张卡开了“最近”时大家看得到，不然只有作者看得到；谢谢的那句跟着说。
+      const msgHint = () => (S.recent ? "选填，大家看得到" : "选填，只有作者看得到");
+      const thanks = (c) =>
+        c.style === "big" && S.recent ? (c.msg ? "谢谢！留言会出现在“最近”里" : "谢谢！会出现在“最近”里") : c.msg ? "谢谢！作者会看到你的留言" : "谢谢！";
+      const doneRow = (c) =>
+        `<div class="done"><span class="ok">✓</span><div class="grow"><div class="t1">已打赏 ${c.amount} ${unitOf(c)}</div><div class="t3">${thanks(c)}</div></div><button class="link-btn" data-act="reset">再打赏</button></div>`;
+
+      // 简洁样式只有一行高：每一步都排成一行。
+      function oneRowStep(c) {
+        switch (c.step) {
+          case "pick":
+            return `<div class="row">${back()}<div class="opts grow">${AMOUNTS.map((v, i) => optButton(v, i, { act: "amount" })).join("")}</div></div>`;
+          case "pay":
+            // 前面的数额有地方才放，太窄就省掉（上一步刚选过）。
+            return `<div class="row">${back()}<span class="amt-stack v-wide"><b>${c.amount}</b><small>LDC</small></span>${methodButtons(c)}</div>`;
+          case "making":
+            return `<div class="row">${back()}<div class="sheen grow sq">正在生成付款链接…</div></div>`;
+          case "link":
+            return c.copied
+              ? `<div class="row">${back()}<span class="grow t2">${waitLine(c, true)}</span>${checkButton(c, true)}<button class="ghost sq" data-act="copy">${c.outside ? "再打开" : "再复制"}</button></div>`
+              : `<div class="row">${back()}<button class="primary wide sq" data-act="copy">复制付款链接</button></div>`;
+          case "confirm": {
+            const t = confirmText(c);
+            return `<div class="row">${back("pay-back")}<div class="grow"><div class="t1">${two(t.t1, t.t1Short)}</div><div class="t3">${three(t.t3, t.t3Mid, t.t3Short)}</div></div><button class="primary sq" data-act="confirm" ${c.armed ? "" : "disabled"}>确认</button></div>`;
+          }
+          case "sending":
+            return `<div class="row">${back()}<div class="sheen grow sq">正在从你的商户发出…</div></div>`;
+          case "done":
+            return doneRow(c);
+        }
+      }
+
+      // 标准样式没开名单时只有两行高，每一步排成两行。
+      function stepBody(c) {
+        switch (c.step) {
+          case "other":
+            return `<div class="row">${back()}<span class="grow t1">其他数额</span><span class="t3">1–2000 LDC</span></div>
+              <div class="row"><input class="field" inputmode="decimal" placeholder="多少 LDC" data-input="amount" /><button class="primary sq" data-act="other-ok">下一步</button></div>`;
+          case "pay": {
+            const msg = c.msg ? `<button class="link-btn" data-act="msg" title="${esc(c.msg)}">留言 ✎</button>` : `<button class="link-btn" data-act="msg">＋留言</button>`;
+            return payHead(c, msg) + methodButtons(c);
+          }
+          case "msg":
+            return `<div class="row">${back("msg-back")}<span class="grow t1">留言</span><span class="t3">${msgHint()}</span></div>
+              <div class="row"><input class="field" maxlength="50" placeholder="最多 50 个字" value="${esc(c.msg)}" data-input="msg" /><button class="primary sq" data-act="msg-ok">好</button></div>`;
+          case "making":
+            return payHead(c) + `<div class="sheen sq">正在生成付款链接…</div>`;
+          case "link":
+            return c.copied
+              ? `<div class="row">${back()}<span class="grow t2" style="color:var(--f-ink)">${waitLine(c, false)}</span></div>
+              <div class="row"><button class="ghost sq" data-act="copy">${c.outside ? "再打开" : "再复制"}</button>${checkButton(c, false)}</div>`
+              : `<div class="row">${back()}<span class="grow t2" style="color:var(--f-ink)">付款链接已生成，几分钟内有效</span></div>
+              <div class="row"><button class="primary wide sq" data-act="copy">复制付款链接</button></div>`;
+          case "confirm": {
+            // 返回和别的步骤一样是左上角的“‹”。
+            const t = confirmText(c);
+            return `<div class="row">${back("pay-back")}<div class="grow"><div class="t1">${t.t1}</div><div class="t3">${three(t.t3, t.t3Mid, t.t3Mid)}</div></div></div><div class="row"><button class="primary wide sq" data-act="confirm" ${c.armed ? "" : "disabled"}>确认打赏</button></div>`;
+          }
+          case "sending":
+            return payHead(c) + `<div class="sheen sq">正在从你的商户发出…</div>`;
+          case "done":
+            return doneRow(c);
+        }
+      }
+
+      // 标准样式开了名单时，后面的步骤用整张卡：名单跟着滑走，地方大了，数额写大，留言直接填。
+      function roomyStep(c) {
+        const top = (act = "back") => `<div class="row">${back(act)}<span class="grow"></span></div>`;
+        const amount = (unit = "LDC") => `<div class="big-amt">${c.amount} <small>${unit}</small></div><div class="t2">打赏给 @${OWNER.name}</div>`;
+        const body = (() => {
+          switch (c.step) {
+            case "other":
+              return `<div class="t1">其他数额</div><div class="row"><input class="field" inputmode="decimal" placeholder="多少 LDC" data-input="amount" /><button class="primary sq" data-act="other-ok">下一步</button></div><div class="t3">1–2000 LDC</div>`;
+            case "pay":
+              return amount() + `<input class="field" maxlength="50" placeholder="留言（${msgHint()}）" value="${esc(c.msg)}" data-input="msg-inline" />` + methodButtons(c);
+            case "making":
+              return amount() + `<div class="sheen sq">正在生成付款链接…</div>`;
+            case "link":
+              return c.copied
+                ? amount() + `<div class="t2" style="color:var(--f-ink)">${waitLine(c, false)}</div><div class="row"><button class="ghost sq" data-act="copy">${c.outside ? "再打开" : "再复制"}</button>${checkButton(c, false)}</div><div class="note">付完这里会自己变；没变就按“查一下”。</div>`
+                : amount() + `<div class="row"><button class="primary wide sq" data-act="copy">复制付款链接</button></div><div class="note">复制的是 Credit 站的付款页，在浏览器里打开，输入安全密码付款。几分钟内有效，过期了回来重新生成。</div>`;
+            case "confirm": {
+              const t = confirmText(c);
+              return amount(unitOf(c)) + `<div class="t3">${t.t3}</div><div class="row"><button class="primary wide sq" data-act="confirm" ${c.armed ? "" : "disabled"}>确认打赏</button></div>`;
+            }
+            case "sending":
+              return amount() + `<div class="sheen sq">正在从你的商户发出…</div>`;
+            case "done":
+              return `<div class="done-roomy"><span class="ok">✓</span><div class="t1">已打赏 ${c.amount} ${unitOf(c)}</div><div class="t3">${thanks(c)}</div><button class="ghost sq" data-act="reset">再打赏</button></div>`;
+          }
+        })();
+        return c.step === "done" ? `<div class="roomy center">${body}</div>` : `<div class="roomy">${top(c.step === "confirm" ? "pay-back" : "back")}<div class="roomy-body">${body}</div></div>`;
+      }
+
+      function stageHtml(c) {
+        if (c.style === "small") return c.step === "idle" ? firstRow(c) : oneRowStep(c);
+        if (c.step === "idle")
+          return `<div class="top-area">${firstRow(c)}<div class="opts">${AMOUNTS.map((v, i) => optButton(v, i, { act: "pick", picked: c.picked })).join("")}${otherButton()}</div></div>${listBlock(c)}`;
+        return hasList() ? roomyStep(c) : stepBody(c);
+      }
+
+      function cardHtml(id) {
+        const c = cards.get(id);
+        const style = styleOf(c.style);
+        const h = style.h();
+        const stage = `<div class="stage">${stageHtml(c)}</div>`;
+        if (c.style === "small")
+          return `<div class="tip small" data-card="${id}" style="--h:${h}px;--max:${style.max}px;${paletteVars()}">${stage}</div>`;
+        return `<div class="tip big ${hasList() ? "has-list" : ""}" data-card="${id}" style="--h:${h}px;--top:${TOP_AREA}px;--max:${style.max}px;${paletteVars()}">${stage}</div>`;
+      }
+
+      const forumHead = () => `<div class="embed-head"><span class="icon"></span><span class="name">小程序</span><span class="ctl">ⓘ ⤴ ☆ ⚑</span></div>`;
+      const embedHtml = (id) => `<div class="embed">${forumHead()}<div class="embed-body">${cardHtml(id)}</div></div>`;
+
+      function placeHtml(styleId, place) {
+        const style = styleOf(styleId);
+        const id = newCard(styleId, place);
+        const h = embedHeight(style);
+        if (place === "bio")
+          return `<div class="place"><div class="cap"><b>个人页 · 关于我</b><span class="measure">嵌入高 ${h}</span></div>
+            <div class="forum bio-box" data-mode="${S.mode}"><div class="scroll"><p>关注革命本钱</p><p><a href="#">lafish 的红包站</a><br><a href="#">网盘互助公益解析站</a></p>${embedHtml(id)}</div></div></div>`;
+        if (place === "phone")
+          return `<div class="place"><div class="cap"><b>手机上的帖子</b><span class="measure">嵌入高 ${h}</span></div>
+            <div class="forum phone" data-mode="${S.mode}"><p>以上就是这次的整理，有问题楼下说。</p>${embedHtml(id)}</div></div>`;
+        return `<div class="place"><div class="cap"><b>帖子末尾</b><span class="measure">嵌入高 ${h}</span></div>
+          <div class="forum post" data-mode="${S.mode}"><p>以上就是这次的整理，有问题楼下说。觉得有帮助的话，下面可以打赏，留言我都会看。</p>${embedHtml(id)}</div></div>`;
+      }
+
+      function renderStyles() {
+        document.getElementById("style-list").innerHTML = STYLES.map((s) => {
+          const places = embedHeight(s) <= BIO_MAX ? ["bio", "phone", "post"] : ["phone", "post"];
+          return `<div class="style-block sq"><header><b>${s.name}</b><span>${s.note}</span></header><div class="places">${places.map((p) => placeHtml(s.id, p)).join("")}</div></div>`;
+        }).join("");
+      }
+
+      const FLOW = [
+        ["idle", "1 · 标准样式：选数额（默认选中 10）", {}],
+        ["pay", "2 · 按“打赏 10 LDC”：怎么付", {}],
+        ["msg", "3 · 点“＋留言”（选填）", { msg: "谢谢分享" }],
+        ["making", "4 · 选 Credit 站：生成链接", { method: "checkout" }],
+        ["link", "5 · 复制付款链接", { method: "checkout" }],
+        ["link", "6 · 复制以后等付款，能手动查", { method: "checkout", copied: true }],
+        ["link", "6′ · 查了还没付（5 秒后能再查）", { method: "checkout", copied: true, missed: true, cool: 4 }],
+        ["confirm", "7 · 选“我的商户”：确认", { method: "merchant", armed: true }],
+        ["sending", "8 · 从看客的商户发出", { method: "merchant" }],
+        ["confirm", "9 · 选“🐟额”：确认（只有 PLUS）", { method: "fish", armed: true }],
+        ["done", "10 · 打赏完成", { method: "checkout", msg: "谢谢分享" }],
+        ["pay", "11 · 网站上没登录：只有 Credit 站", { guestWeb: true }],
+      ];
+
+      function renderFlow() {
+        const steps = FLOW.map(([step, cap, extra]) => {
+          const id = newCard("big", "bio", step, { frozen: true, ...extra });
+          return `<div class="flow-step"><div class="cap"><b>${cap}</b></div><div class="forum" data-mode="${S.mode}" style="padding:10px;border-radius:14px;width:308px">${cardHtml(id)}</div></div>`;
+        });
+        // 标准样式开了名单：后面的步骤用整张卡（名单滑走）。
+        const saved = S.recent;
+        S.recent = true;
+        for (const [step, cap, extra] of [
+          ["pay", "13 · 开了名单：整张卡换成付法，留言直接填", {}],
+          ["link", "14 · 开了名单：等付款", { method: "checkout", copied: true }],
+          ["confirm", "15 · 开了名单：免密确认", { method: "merchant", armed: true }],
+          ["done", "16 · 开了名单：完成，回去后自己那笔在最近第一行", { method: "checkout", msg: "谢谢分享" }],
+        ]) {
+          const id = newCard("big", "phone", step, { frozen: true, ...extra });
+          steps.push(`<div class="flow-step"><div class="cap"><b>${cap}</b></div><div class="forum" data-mode="${S.mode}" style="padding:10px;border-radius:14px;width:308px">${cardHtml(id)}</div></div>`);
+        }
+        S.recent = saved;
+        steps.push(`<div class="flow-step"><div class="cap"><b>12 · 社区里没登录：什么都不显示</b></div><div class="forum" data-mode="${S.mode}" style="padding:10px;border-radius:14px;width:308px"><div class="guest sq" style="--h:${styleOf("big").h()}px"><b>登录社区后才能使用小程序</b><span>登录以后刷新这一页就能看到</span></div></div></div>`);
+        document.getElementById("flow-grid").innerHTML = steps.join("");
+      }
+
+      function thumb(styleId) {
+        const id = newCard(styleId, "bio", "idle", { frozen: true });
+        return `<div class="forum" data-mode="light" style="pointer-events:none">${cardHtml(id)}</div>`;
+      }
+
+      function renderOwner() {
+        const rows = [
+          ["11-05 14:32", "aiko", "20", "Credit 站", "图寻挑战", "谢谢佬的分享，已经用上了", ""],
+          ["11-05 13:10", "游客", "5", "Credit 站", "个人页", "路过，支持一下", ""],
+          ["11-05 11:47", "chen_x", "10", "我的商户", "图寻挑战", "期待下一篇", ""],
+          ["11-05 10:02", "momo", "5", "🐟额", "个人页", "一点心意", ""],
+          ["11-04 23:15", "xiaoyu", "50", "Credit 站", "主贴", "服务器续费加油", ""],
+          ["11-04 21:40", "yuki", "10", "Credit 站", "主贴", "", "wait"],
+          ["11-04 20:05", "aiko", "20", "我的商户", "个人页", "", ""],
+        ];
+        const list = [["个人页", "small", "简洁 · 湖蓝", "关联：我的个人页", "近 7 天 6 次 · 58 LDC", true], ["图寻挑战", "big", "标准 · 湖蓝 · 目标 300 LDC", "关联：帖子「图寻？不，这是寻图挑战！」", "近 7 天 9 次 · 126 LDC", true], ["主贴", "big", "标准 · 湖蓝 · 最近和总榜", "关联：帖子「hb.lafi.sh 红包站主贴」", "近 7 天 3 次 · 52 LDC", false]];
+        const saved = { recent: S.recent, top: S.top };
+        S.recent = false; S.top = false;
+        const tiles = list.map(([n, st, sty, tgt, stat, on]) => `
+                  <div class="card sq">
+                  <div class="meta"><b>${n} ${on ? "" : '<span class="tag off sq">已停用</span>'}</b><span>${sty}</span><span>${tgt}</span><span>${stat}</span></div>
+                  <div class="acts"><button class="btn soft small sq">复制嵌入代码</button><button class="btn soft small sq">编辑</button><button class="btn soft small sq">${on ? "停用" : "启用"}</button></div>
+                  <div class="thumb sq">${thumb(st)}</div></div>`).join("");
+        Object.assign(S, saved);
+        document.getElementById("owner-page").innerHTML = `
+          <div class="site"><div class="site-bar"><div class="addr">/tips</div><span class="me">L</span></div>
+          <div class="site-main">
+            <div class="page-head"><div><h3 style="display:flex;align-items:center;gap:8px">我的打赏 <span class="plus off sq">PLUS ▾</span></h3><p>别人通过你的打赏卡给你的 LDC 和 🐟。</p></div><button class="btn red sq">新建打赏卡</button></div>
+            <div class="bubble sq"><b>🐟额 PLUS</b><span class="muted">还没开通</span>
+              <dl><dt class="sec">你现在能</dt><dt>打赏卡</dt><dd>最多 3 张</dd><dt>收打赏</dt><dd>Credit 站、商户、🐟额都能收</dd>
+              <dt class="sec gold">开通后多出</dt><dt><i class="standin">▒▒</i></dt><dd><i class="standin">▒▒▒▒▒▒</i></dd><dt><i class="standin">▒▒▒▒</i></dt><dd><i class="standin">▒▒▒▒▒▒▒▒</i></dd><dt><i class="standin">▒▒</i></dt><dd><i class="standin">▒▒▒▒▒</i></dd></dl>
+              <p class="muted" style="margin:0;font-size:13px;border-top:1px solid var(--line);padding-top:8px">要已开通的人邀请才能开通。</p></div>
+            <div>
+              <div class="h4"><h4>打赏卡</h4><span>用了 3 张，最多 3 张</span></div>
+              <div class="cards">${tiles}</div>
+            </div>
+            <div>
+              <div class="h4"><h4>收到的打赏</h4><span class="seg"><button aria-pressed="true">收到的</button><button>我打赏的</button></span></div>
+              <div class="stats"><div class="stat sq"><span>近 7 天</span><b>18 次</b></div><div class="stat sq"><span>打赏的人</span><b>11 人</b></div><div class="stat sq"><span>合计</span><b>236 LDC</b></div></div>
+              <div class="filters"><span class="seg"><button>今天</button><button aria-pressed="true">近 7 天</button><button>全部</button></span>
+                <select class="select sq"><option>全部打赏卡</option><option>个人页</option><option>图寻挑战</option><option>主贴</option></select>
+                <select class="select sq"><option>全部付法</option><option>Credit 站</option><option>我的商户</option><option>🐟额</option></select></div>
+              <table class="sq"><thead><tr><th>时间</th><th>谁</th><th class="num">数额</th><th>付法</th><th>打赏卡</th><th>留言</th></tr></thead><tbody>
+                ${rows.map(([t, w, a, m, card, msg, flag]) => `<tr><td class="muted">${t}</td><td><span class="who"><i>${w === "游客" ? "游" : w[0].toUpperCase()}</i>${w}${w === "游客" ? ' <span class="pill sq" title="在红包站没登录，从网页付的">没登录</span>' : ""}</span></td><td class="num">${a} ${m === "🐟额" ? '<span class="fishy">🐟</span>' : "LDC"}</td><td>${m}${flag === "wait" ? ' <span class="pill wait sq">等付款</span>' : ""}</td><td>${card}</td><td class="muted">${msg ? esc(msg) : "—"}</td></tr>`).join("")}
+              </tbody></table>
+            </div>
+          </div></div>`;
+      }
+
+      function renderMiniPages() {
+        const detailId = newCard("big", "phone", "idle", { frozen: true });
+        document.getElementById("mini-pages").innerHTML = `
+          <div class="place"><div class="cap"><b>网站 · 付款链接页 /☕/&lt;卡号&gt;/🧾/…（二级）</b></div>
+            <div class="site pay-page"><div class="site-bar"><div class="addr">/☕/k7Q2mX/🧾/3f9a…</div><span class="me">A</span></div>
+            <div class="site-main"><div class="page-head"><div class="stack"><a class="backlink" href="#">‹ 打赏 lafish</a><h3>打赏 10 LDC</h3></div></div>
+              <div class="status"><span class="dot"></span>等你在 Credit 站付款</div>
+              <div style="display:flex;gap:10px"><button class="btn red sq">去 Credit 站确认 ↗</button><button class="btn soft sq">我付好了，查一下</button></div>
+              <p class="muted" style="margin:0;font-size:13px">10 分钟内有效。付完回到这里会自己变；没变就按“查一下”，每 5 秒能查一次。</p></div></div></div>
+          <div class="place"><div class="cap"><b>小程序首页（自己的打赏卡）</b></div>
+            <div class="forum phone" data-mode="${S.mode}"><div class="embed">${forumHead()}<div class="mini-home">
+              <div class="row"><span class="t1 grow">我的打赏</span><span class="t3">近 7 天 18 次 · 236 LDC</span></div>
+              ${[["个人页", "简洁", "6 次"], ["图寻挑战", "标准 · 目标", "9 次"], ["主贴", "标准 · 已停用", "3 次"]].map(([n, s, k]) => `<div class="mini-item sq"><div class="grow"><b>${n}</b><div class="t3">${s} · 近 7 天 ${k}</div></div><span class="t3">›</span></div>`).join("")}
+              <div class="mini-sec">新建、编辑到红包站的“我的打赏”里。</div></div></div></div></div>
+          <div class="place"><div class="cap"><b>小程序里点开一张卡（二级）</b></div>
+            <div class="forum phone" data-mode="${S.mode}"><div class="embed">${forumHead()}<div class="mini-home">
+              <div class="row"><button class="back" aria-label="返回我的打赏">‹ 我的打赏</button><span class="grow"></span></div>
+              <div class="row"><span class="t1 grow">图寻挑战</span><span class="t3">标准 · 目标 300 LDC</span></div>
+              ${cardHtml(detailId)}
+              <div class="row"><button class="primary wide sq" style="${paletteVars()}">复制嵌入代码</button></div>
+              <div class="mini-sec">这张卡收到的</div>
+              ${RECENT.slice(0, 3).map((r) => `<div class="wall-row" style="${paletteVars()}"><span class="who">${esc(r.who)}</span><span class="msg">${esc(r.msg)}</span><span class="t3">${r.ago}</span><span class="amt ${tierOf(r.amt)} sq">${r.amt}</span></div>`).join("")}
+            </div></div></div></div>`;
+      }
+
+      function renderEditor() {
+        const style = styleOf("big");
+        const h = embedHeight(style);
+        const id = newCard("big", "bio");
+        const toggle = (text, on = true) => `<div class="toggle"><span>${text}</span><span class="switch" ${on ? "" : 'style="background:var(--fill-2)"'}></span></div>`;
+        document.getElementById("editor").innerHTML = `
+          <div class="site"><div class="site-bar"><div class="addr">/tips/new</div><span class="me">L</span></div>
+          <div class="site-main"><div class="page-head"><div class="stack"><a class="backlink" href="#">‹ 我的打赏</a><h3>新建打赏卡</h3></div></div>
+          <div class="editor">
+            <div class="form">
+              <div><label class="l">名称（只有你看得到）</label><input class="input sq" value="图寻挑战" /></div>
+              <div><label class="l">样式</label><div class="choice" style="grid-template-columns:1fr 1fr">${STYLES.map((s, i) => `<button class="sq" aria-pressed="${s.id === "big"}"><b>${s.name}</b><small>${s.id === "small" ? "一行，个人页这种窄地方用" : "数额摆出来，能开目标和名单"}</small></button>`).join("")}</div></div>
+              <div><label class="l">配色</label><div style="display:flex;gap:8px">${Object.entries(PALETTES).map(([k, p], i) => `<button class="swatch" aria-pressed="${i === 0}" title="${p.name}" style="background:${p.light.accent}"></button>`).join("")}</div></div>
+              <div><label class="l">一句话（卡片上显示，最多 30 个字；空着就写“打赏 lafish”）</label><input class="input sq" placeholder="打赏 lafish" value="${S.blank ? "" : PROMPT}" /></div>
+              <div><label class="l">数额（LDC，最多 4 个；说明选填，比如“咖啡”）</label>
+                <div style="display:grid;gap:6px">${AMOUNTS.map((v, i) => `<div style="display:grid;grid-template-columns:96px 1fr 72px;gap:8px;align-items:center"><input class="input sq" value="${v}" /><input class="input sq" placeholder="说明（选填）" value="${S.labels ? LABELS[i] : ""}" /><span class="muted" style="font-size:13px">${v === DEFAULT ? "默认选中" : ""}</span></div>`).join("")}</div></div>
+              ${toggle("允许看客填其他数额（1–2000）")}
+              <div><label class="l">标准样式上显示</label><div style="display:grid;gap:10px">
+                ${toggle("目标：300 LDC（从开的那天算起）", S.goal)}
+                ${toggle("最近打赏（开了以后留言大家看得到，不开只有你看得到）", S.recent)}
+                ${toggle("总榜", S.top)}
+              </div></div>
+              <div><label class="l">关联（选填，方便你看打赏从哪来）</label><div class="choice"><button class="sq"><b>不关联</b></button><button class="sq"><b>我的个人页</b></button><button class="sq" aria-pressed="true"><b>社区帖子</b><small>贴帖子链接</small></button></div></div>
+              <div style="display:flex;gap:10px"><button class="btn red sq">保存</button><button class="btn soft sq">取消</button></div>
+            </div>
+            <div class="preview">
+              <div style="display:flex;justify-content:space-between;align-items:center"><span class="seg"><button aria-pressed="true">个人页</button><button>帖子</button><button>手机</button></span><span class="muted" style="font-size:13px">个人页的“关于我”最高 300</span></div>
+              <div class="forum" data-mode="light" style="padding:14px;border-radius:18px;width:328px">${embedHtml(id)}</div>
+              <div><label class="l" style="font-size:13px;font-weight:600;color:var(--ink-2)">社区里（贴进帖子或“关于我”）</label>
+              <div class="code sq">&lt;iframe src="https://linux.do/apps/01a19ba5-b9d2-766f-9fb9-b7eddc10e0c7?embed_mode=true&amp;tip=k7Q2mX" title="打赏 lafish" width="100%" height="${h}" frameborder="0" allow="clipboard-write"&gt;&lt;/iframe&gt;</div>
+              <label class="l" style="font-size:13px;font-weight:600;color:var(--ink-2);margin-top:10px">社区外的网页（只能用 Credit 站付）</label>
+              <div class="code sq">&lt;iframe src="https://hb.lafi.sh/☕/k7Q2mX?embed&amp;theme=auto" title="打赏 lafish" width="100%" height="${style.h() + 16}" frameborder="0"&gt;&lt;/iframe&gt;</div>
+              <div style="display:flex;gap:8px;margin-top:8px"><button class="btn soft small sq">复制嵌入代码</button><button class="btn soft small sq">复制打赏卡链接</button><span class="muted" style="font-size:12.5px;align-self:center">hb.lafi.sh/☕/k7Q2mX，社区外也能打开这张卡</span></div></div>
+            </div>
+          </div></div></div>`;
+      }
+
+      function renderOutside() {
+        const frames = ["small", "big"].map((st) => {
+          const id = newCard(st, "post", "idle", { outside: true });
+          const h = styleOf(st).h() + 16;
+          return `<div class="place"><div class="cap"><b>${styleOf(st).name} · 社区外的网页</b><span class="measure">嵌入高 ${h}</span></div>
+            <div class="forum outside-page" data-mode="${S.mode}"><h3>一个小工具的更新说明</h3><p>这次加了导出和夜间模式。觉得好用的话，可以在下面打赏。</p><div style="padding:8px 0">${cardHtml(id)}</div></div></div>`;
+        });
+        document.getElementById("outside-list").innerHTML = `<div class="places">${frames.join("")}</div>`;
+      }
+
+      function renderAll() {
+        cards.clear();
+        renderOutside();
+        renderStyles();
+        renderFlow();
+        renderOwner();
+        renderMiniPages();
+        renderEditor();
+      }
+
+      // 动画：红包站的 ease-snappy，和网站一样用 motion；系统要求减少动画时直接换。
+      const { animate } = Motion;
+      const EASE = [0.2, 0, 0, 1];
+      const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const ORDER = { idle: 0, pick: 1, other: 2, pay: 3, msg: 4, making: 5, link: 6, confirm: 6, sending: 7, done: 8 };
+
+      // 换一块内容：旧的原地钉住、往反方向滑出淡掉，新的同时从前进方向滑进来，中间不留空。
+      function swap(container, cls, html, dir) {
+        const olds = [...container.querySelectorAll(`:scope > .${cls}`)];
+        const old = olds.pop();
+        olds.forEach((e) => e.remove());
+        const next = document.createElement("div");
+        next.className = cls;
+        next.innerHTML = html;
+        if (!old || reduce) {
+          old?.remove();
+          container.append(next);
+          return;
+        }
+        Object.assign(old.style, { position: "absolute", left: `${old.offsetLeft}px`, top: `${old.offsetTop}px`, width: `${old.offsetWidth}px`, height: `${old.offsetHeight}px`, pointerEvents: "none", margin: 0 });
+        container.append(next);
+        const d = 16 * dir;
+        animate(old, { opacity: [1, 0], transform: ["translateX(0px)", `translateX(${-d}px)`] }, { duration: 0.18, ease: EASE }).then(() => old.remove());
+        animate(next, { opacity: [0, 1], transform: [`translateX(${d}px)`, "translateX(0px)"] }, { duration: 0.32, ease: EASE });
+      }
+
+      // 数字（或一小段字）滚过去：旧的往上走，新的从下面上来；按钮宽度跟着补间。
+      function roll(el, text, dir = 1) {
+        if (!el) return;
+        const old = el.textContent;
+        if (old === String(text)) return;
+        if (reduce) { el.textContent = text; return; }
+        const button = el.closest("button");
+        const tween = button && getComputedStyle(button).flexGrow === "0";
+        const w0 = button?.offsetWidth;
+        el.textContent = text;
+        const w1 = button?.offsetWidth;
+        el.innerHTML = `<span>${esc(old)}</span><span>${esc(text)}</span>`;
+        el.classList.add("rolling");
+        const [o, n] = el.children;
+        if (tween && w0 !== w1) {
+          button.style.width = `${w0}px`;
+          animate(button, { width: [`${w0}px`, `${w1}px`] }, { duration: 0.3, ease: EASE }).then(() => (button.style.width = ""));
+        }
+        animate(o, { opacity: [1, 0], transform: ["translateY(0%)", `translateY(${-dir * 80}%)`] }, { duration: 0.2, ease: EASE });
+        animate(n, { opacity: [0, 1], transform: [`translateY(${dir * 80}%)`, "translateY(0%)"] }, { duration: 0.3, ease: EASE }).then(() => {
+          if (el.lastElementChild === n) { el.classList.remove("rolling"); el.textContent = text; }
+        });
+      }
+
+      const containerOf = (id) => document.querySelector(`[data-card="${id}"]`);
+
+      function go(id, patch) {
+        const c = cards.get(id);
+        const before = { ...c };
+        Object.assign(c, patch);
+        const container = containerOf(id);
+        if (container) {
+          const check = container.querySelector(":scope > .stage:last-child [data-act=check]");
+          if (before.step !== c.step) {
+            const dir = Math.sign((ORDER[c.step] ?? 0) - (ORDER[before.step] ?? 0)) || 1;
+            swap(container, "stage", stageHtml(c), dir);
+          } else if (before.picked !== c.picked) {
+            container.querySelectorAll(".opt[data-act=pick]").forEach((b) => b.setAttribute("aria-pressed", String(Number(b.dataset.v) === c.picked)));
+            const button = container.querySelector("[data-act=amount]");
+            button.dataset.v = c.picked;
+            roll(button.querySelector(".num"), c.picked, c.picked > before.picked ? 1 : -1);
+          } else if (before.tab !== c.tab) {
+            const stage = container.querySelector(":scope > .stage:last-child");
+            stage.querySelectorAll("[data-act=tab]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === c.tab)));
+            swap(stage.querySelector(".wall"), "rows", rowsHtml(c.tab, c), c.tab === "top" ? 1 : -1);
+          } else if (check && before.cool && c.cool) {
+            roll(check.querySelector(".num"), c.cool, 1);
+          } else if (check && before.cool && !c.cool) {
+            check.disabled = false;
+            roll(check.querySelector(".lbl"), "再查一下", 1);
+          } else if (before.armed !== c.armed) {
+            container.querySelector(":scope > .stage:last-child [data-act=confirm]")?.toggleAttribute("disabled", !c.armed);
+          } else {
+            swap(container, "stage", stageHtml(c), 0);
+          }
+        }
+        if (c.step === "confirm" && !c.armed) setTimeout(() => c.step === "confirm" && go(id, { armed: true }), 500);
+      }
+
+      document.addEventListener("click", (e) => {
+        const el = e.target.closest("[data-act]");
+        if (!el) return;
+        const tip = el.closest("[data-card]");
+        if (!tip) return;
+        const id = tip.dataset.card;
+        const c = cards.get(id);
+        if (c.frozen) return;
+        const act = el.dataset.act;
+        if (act === "start") go(id, { step: "pick" });
+        else if (act === "pick") go(id, { picked: Number(el.dataset.v) });
+        else if (act === "amount") go(id, { step: "pay", amount: Number(el.dataset.v) });
+        else if (act === "other") go(id, { step: "other" });
+        else if (act === "other-ok") {
+          const v = Number(tip.querySelector('[data-input="amount"]').value || 0);
+          if (v >= 1 && v <= 2000) go(id, { step: "pay", amount: Math.round(v * 100) / 100 });
+        } else if (act === "back") go(id, { step: c.step === "pay" || c.step === "other" ? (c.style === "small" ? "pick" : "idle") : c.step === "pick" ? "idle" : "pay", copied: false, missed: false, cool: 0 });
+        else if (act === "msg") go(id, { step: "msg" });
+        else if (act === "msg-back") go(id, { step: "pay" });
+        else if (act === "msg-ok") go(id, { step: "pay", msg: tip.querySelector('[data-input="msg"]').value.trim() });
+        else if (act === "pay-back") go(id, { step: "pay", armed: false });
+        else if (act === "method") {
+          const m = el.dataset.m;
+          if (m === "checkout") {
+            go(id, { step: "making", method: m });
+            setTimeout(() => c.step === "making" && go(id, { step: "link", copied: Boolean(c.outside) }), c.outside ? 1600 : 900);
+          } else go(id, { step: "confirm", method: m, armed: false });
+        } else if (act === "copy") go(id, { copied: true });
+        else if (act === "check") {
+          // 原型里第一次查是“还没付”，第二次查到。
+          go(id, { checking: true });
+          setTimeout(() => {
+            if (c.step !== "link") return;
+            c.checks = (c.checks ?? 0) + 1;
+            if (c.checks >= 2) return go(id, { step: "done", checking: false, missed: false, cool: 0 });
+            go(id, { checking: false, missed: true, cool: 5 });
+            const tick = setInterval(() => {
+              if (c.step !== "link" || c.cool <= 1) { clearInterval(tick); if (c.step === "link") go(id, { cool: 0 }); return; }
+              go(id, { cool: c.cool - 1 });
+            }, 1000);
+          }, 800);
+        } else if (act === "confirm") {
+          if (c.method === "merchant") {
+            go(id, { step: "sending", armed: false });
+            setTimeout(() => c.step === "sending" && go(id, { step: "done" }), 1300);
+          } else go(id, { step: "done", armed: false });
+        } else if (act === "reset") go(id, { step: "idle", mine: { who: "你", amt: c.amount, msg: c.msg, ago: "刚刚" }, tab: "recent", msg: "", copied: false, checks: 0, missed: false });
+        else if (act === "tab") go(id, { tab: el.dataset.v });
+      });
+
+      // 整张卡上的留言框直接填，不另开一步。
+      document.addEventListener("input", (e) => {
+        if (e.target.dataset.input !== "msg-inline") return;
+        const c = cards.get(e.target.closest("[data-card]").dataset.card);
+        c.msg = e.target.value.trim();
+      });
+
+      document.getElementById("swatches").innerHTML = Object.entries(PALETTES).map(([k, p]) => `<button class="swatch" data-pal="${k}" title="${p.name}" aria-pressed="${k === S.palette}" style="background:${p.light.accent}"></button>`).join("");
+      document.getElementById("swatches").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-pal]");
+        if (!b) return;
+        S.palette = b.dataset.pal;
+        document.querySelectorAll("[data-pal]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+        renderAll();
+      });
+      document.getElementById("mode").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-mode]");
+        if (!b) return;
+        S.mode = b.dataset.mode;
+        document.querySelectorAll("#mode [data-mode]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+        renderAll();
+      });
+      for (const key of ["blank", "goal", "recent", "top", "labels", "fish", "hasMerchant", "ownerMerchant"])
+        document.getElementById(key).addEventListener("change", (e) => { S[key] = e.target.checked; renderAll(); });
+      renderAll();
+    </script>
+  </body>
+</html>
