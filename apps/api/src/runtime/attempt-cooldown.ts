@@ -28,18 +28,34 @@ export class AttemptCooldownError extends ActivityError {
   }
 }
 
+const cooldownOf = (row: AttemptCooldown): AttemptCooldown => ({
+  revision: row.revision,
+  serverTime: row.serverTime,
+  nextAllowedAt: row.nextAllowedAt,
+});
+
 export async function readAttemptCooldown(
   env: ApiBindings,
   userId: string,
 ): Promise<AttemptCooldown> {
-  const row = await env.DB.prepare(`SELECT COALESCE(c.revision, 0) AS revision,
-      COALESCE(c.next_allowed_at, 0) AS nextAllowedAt, ${databaseNow} AS serverTime
-    FROM (SELECT ? AS user_id) actor
-    LEFT JOIN account_attempt_cooldowns c ON c.user_id = actor.user_id`)
-    .bind(userId)
-    .first<AttemptCooldown>();
+  const row = await attemptStatement(env, userId).first<AttemptCooldown>();
   if (!row) throw new Error("Could not read password attempt cooldown");
-  return row;
+  return cooldownOf(row);
+}
+
+/** readAttemptCooldown for several people at once, by their ids. */
+export async function readAttemptCooldowns(
+  env: ApiBindings,
+  userIds: string[],
+): Promise<Map<string, AttemptCooldown>> {
+  const { results } = await env.DB.prepare(`SELECT people.value AS userId,
+      COALESCE(c.revision, 0) AS revision,
+      COALESCE(c.next_allowed_at, 0) AS nextAllowedAt, ${databaseNow} AS serverTime
+    FROM json_each(?) people
+    LEFT JOIN account_attempt_cooldowns c ON c.user_id = people.value`)
+    .bind(JSON.stringify([...new Set(userIds)]))
+    .all<AttemptCooldown & { userId: string }>();
+  return new Map(results.map((row) => [row.userId, cooldownOf(row)]));
 }
 
 export type ActivityAttempt = {
@@ -49,24 +65,34 @@ export type ActivityAttempt = {
   discoveryId?: string;
 };
 
-/** Read checks improve errors; the write below independently enforces every guard. */
-export async function assertAttemptAllowed(
+/**
+ * What an attempt's check reads (attemptStatement): the cooldown and, for
+ * a 口令 found from the start page (a continuation), that find.
+ */
+export type AttemptRow = AttemptCooldown & {
+  origin?: AttemptOrigin | null;
+  attemptId?: string | null;
+  discoveryId?: string | null;
+  passwordDigest?: string | null;
+  selectedActivityId?: string | null;
+  claimSubmissionId?: string | null;
+  candidate?: number;
+};
+
+/** The read behind assertAttemptAllowed, to be made alone or in a batch. */
+export function attemptStatement(
   env: ApiBindings,
   userId: string,
-  origin: AttemptOrigin,
   continuation?: ActivityAttempt,
-  options: { checkCooldown?: boolean } = {},
 ) {
-  if (!continuation) {
-    const cooldown = await readAttemptCooldown(env, userId);
-    if (
-      options.checkCooldown !== false &&
-      cooldown.nextAllowedAt > cooldown.serverTime
-    )
-      throw new AttemptCooldownError(cooldown, origin);
-    return;
-  }
-  const row = await env.DB.prepare(`SELECT COALESCE(c.revision, 0) AS revision,
+  if (!continuation)
+    return env.DB.prepare(`SELECT COALESCE(c.revision, 0) AS revision,
+      COALESCE(c.next_allowed_at, 0) AS nextAllowedAt, ${databaseNow} AS serverTime
+    FROM (SELECT ? AS user_id) actor
+    LEFT JOIN account_attempt_cooldowns c ON c.user_id = actor.user_id`).bind(
+      userId,
+    );
+  return env.DB.prepare(`SELECT COALESCE(c.revision, 0) AS revision,
       COALESCE(c.next_allowed_at, 0) AS nextAllowedAt, ${databaseNow} AS serverTime,
       c.origin, c.attempt_id AS attemptId, g.id AS discoveryId,
       g.password_digest AS passwordDigest, g.selected_activity_id AS selectedActivityId,
@@ -75,48 +101,65 @@ export async function assertAttemptAllowed(
     FROM (SELECT ? AS user_id) actor
     LEFT JOIN account_attempt_cooldowns c ON c.user_id = actor.user_id
     LEFT JOIN global_redemptions g ON g.user_id = actor.user_id
-      AND g.id = COALESCE(?, CASE WHEN c.origin = 'home' THEN c.attempt_id END)`)
-    .bind(continuation.activityId, userId, continuation.discoveryId ?? null)
-    .first<
-      AttemptCooldown & {
-        origin: AttemptOrigin | null;
-        attemptId: string | null;
-        discoveryId: string | null;
-        passwordDigest: string | null;
-        selectedActivityId: string | null;
-        claimSubmissionId: string | null;
-        candidate: number;
-      }
-    >();
-  if (!row) throw new Error("Could not read password attempt context");
-  const matches =
-    row.discoveryId !== null &&
-    row.passwordDigest === continuation.passwordDigest &&
-    row.candidate === 1;
-  const alreadyBound =
-    row.selectedActivityId === continuation.activityId &&
-    row.claimSubmissionId === continuation.submissionId;
-  if (
-    continuation.discoveryId &&
-    (!matches || (row.selectedActivityId !== null && !alreadyBound))
-  )
-    activityConflict("查找结果与目标红包、口令或提交标识不匹配");
-  if (
-    matches &&
-    row.origin === "home" &&
-    row.attemptId === row.discoveryId &&
-    (row.selectedActivityId === null || alreadyBound)
-  )
-    return;
-  if (options.checkCooldown !== false && row.nextAllowedAt > row.serverTime)
-    throw new AttemptCooldownError(
-      {
-        revision: row.revision,
-        serverTime: row.serverTime,
-        nextAllowedAt: row.nextAllowedAt,
-      },
-      origin,
+      AND g.id = COALESCE(?, CASE WHEN c.origin = 'home' THEN c.attempt_id END)`).bind(
+    continuation.activityId,
+    userId,
+    continuation.discoveryId ?? null,
+  );
+}
+
+/** Read checks improve errors; the write below independently enforces every guard. */
+export async function assertAttemptAllowed(
+  env: ApiBindings,
+  userId: string,
+  origin: AttemptOrigin,
+  continuation?: ActivityAttempt,
+  options: { checkCooldown?: boolean } = {},
+) {
+  checkAttempt(
+    await attemptStatement(env, userId, continuation).first<AttemptRow>(),
+    origin,
+    continuation,
+    options,
+  );
+}
+
+/** assertAttemptAllowed on what attemptStatement read. */
+export function checkAttempt(
+  row: AttemptRow | null | undefined,
+  origin: AttemptOrigin,
+  continuation?: ActivityAttempt,
+  options: { checkCooldown?: boolean } = {},
+) {
+  if (!row)
+    throw new Error(
+      continuation
+        ? "Could not read password attempt context"
+        : "Could not read password attempt cooldown",
     );
+  if (continuation) {
+    const matches =
+      row.discoveryId != null &&
+      row.passwordDigest === continuation.passwordDigest &&
+      row.candidate === 1;
+    const alreadyBound =
+      row.selectedActivityId === continuation.activityId &&
+      row.claimSubmissionId === continuation.submissionId;
+    if (
+      continuation.discoveryId &&
+      (!matches || (row.selectedActivityId != null && !alreadyBound))
+    )
+      activityConflict("查找结果与目标红包、口令或提交标识不匹配");
+    if (
+      matches &&
+      row.origin === "home" &&
+      row.attemptId === row.discoveryId &&
+      (row.selectedActivityId == null || alreadyBound)
+    )
+      return;
+  }
+  if (options.checkCooldown !== false && row.nextAllowedAt > row.serverTime)
+    throw new AttemptCooldownError(cooldownOf(row), origin);
 }
 
 /** Bind the latest home attempt in the same transaction as its child submission. */

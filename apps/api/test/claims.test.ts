@@ -18,6 +18,7 @@ import {
   prepareClaimSubmission,
   resumePendingActivityClaims,
 } from "../src/activities/claim-service";
+import { getClaimDetail } from "../src/activities/claim-queries";
 import {
   refreshActivityLifecycle,
   sweepActivityLifecycle,
@@ -1428,6 +1429,77 @@ describe("the claim line (2026-11-04)", () => {
       .bind(activity.id)
       .first<number>("n");
     expect(tasks).toBe(25);
+  }, 30_000);
+
+  it("answers a batch from one read for all, and a 社区小程序 claim's share says so", async () => {
+    const activity = await create({
+      money: { mode: "fixed", totalAmount: "3.00", count: 3 },
+    });
+    const people = await Promise.all(
+      ["batchread0", "batchread1", "batchread2"].map((name) => actor(name)),
+    );
+    const url = `https://activity.internal/internal/activities/${activity.id}/claim`;
+    const responses = await runInDurableObject(
+      activityObject(bindings, activity.id),
+      async (instance) => {
+        const object = instance as unknown as {
+          fetch(request: Request): Promise<Response>;
+          serialize(action: () => Promise<void>): Promise<void>;
+        };
+        let release = () => {};
+        const held = object.serialize(
+          () =>
+            new Promise<void>((resolve) => {
+              release = resolve;
+            }),
+        );
+        const sent = people.map((person, index) =>
+          object.fetch(
+            new Request(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                userId: person.id,
+                submissionId: crypto.randomUUID(),
+                password: "正确口令123",
+                ...(index === 1 ? { via: "mini" } : {}),
+              }),
+            }),
+          ),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        release();
+        await held;
+        return Promise.all(
+          sent.map(async (response) => {
+            const answer = await response;
+            return {
+              via: answer.headers.get("X-Hb-Via-Written"),
+              body: (await answer.json()) as ClaimResult & {
+                attemptCooldown?: { nextAllowedAt: number };
+              },
+            };
+          }),
+        );
+      },
+    );
+    for (const [index, { via, body }] of responses.entries()) {
+      expect(body.result).toBe("claimed");
+      if (body.result !== "claimed") continue;
+      const person = people[index] as Actor;
+      // The same answer as one read alone.
+      expect(body.claim).toEqual(
+        await getClaimDetail(bindings, body.claim.id, person.id),
+      );
+      expect(body.passwordMatched).toBe(true);
+      expect(body.attemptCooldown?.nextAllowedAt).toBeGreaterThan(0);
+      expect(via).toBe(index === 1 ? "mini" : null);
+      expect(
+        await env.DB.prepare("SELECT via FROM claims WHERE id = ?")
+          .bind(body.claim.id)
+          .first("via"),
+      ).toBe(index === 1 ? "mini" : null);
+    }
   }, 30_000);
 
   it("writes each alone when one of a batch cannot go along", async () => {

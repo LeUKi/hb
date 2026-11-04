@@ -14,10 +14,16 @@ import {
   scheduleActivitySchema,
   type UpdateActivityInput,
 } from "@hb/contracts";
-import { Hono, type MiddlewareHandler, type TypedResponse } from "hono";
+import {
+  type Context,
+  Hono,
+  type MiddlewareHandler,
+  type TypedResponse,
+} from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { validator } from "hono/validator";
 import {
+  type AuthenticatedSession,
   getOptionalSession,
   requireAuth,
   requireProtectedMutation,
@@ -53,7 +59,7 @@ import {
   listPublicRegistrations,
 } from "./registration-queries";
 import { getPublicActivity, listActivities } from "./service";
-import { findActivity } from "./storage";
+import { type ActivityRow, findActivity } from "./storage";
 
 function validated<T>(
   result:
@@ -182,6 +188,20 @@ async function requireLdcActivity(env: ApiContext["Bindings"], id: string) {
   const activity = await findActivity(env, id);
   if (!activity) activityNotFound();
   return activity;
+}
+
+/**
+ * A claim's session and 红包, read at the same time, one round trip fewer
+ * (docs/claim-capacity-design.md §4); signed out is still told so first.
+ */
+async function claimantAndActivity(
+  c: Context<ApiContext>,
+  id: string,
+): Promise<{ session: AuthenticatedSession; activity: ActivityRow }> {
+  const reading = requireLdcActivity(c.env, id);
+  reading.catch(() => {});
+  const session = await requireProtectedMutation(c);
+  return { session, activity: await reading };
 }
 
 async function requireOwnedLdcActivity(
@@ -474,9 +494,8 @@ export const activityRoutes = new Hono<ApiContext>()
       validated(claimActivitySchema.safeParse(value)),
     ),
     async (c) => {
-      const session = await requireProtectedMutation(c);
       const id = c.req.param("id");
-      const activity = await requireLdcActivity(c.env, id);
+      const { session, activity } = await claimantAndActivity(c, id);
       const { humanToken, ...input } = c.req.valid("json");
       // A token is checked here, not in the 红包's Durable Object, whose
       // writes wait for one another (human-check.ts).

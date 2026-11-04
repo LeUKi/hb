@@ -1,4 +1,5 @@
 import type {
+  AttemptCooldown,
   ClaimActivityInput,
   ClaimResult,
   ParticipationMode,
@@ -6,9 +7,11 @@ import type {
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { claimStatements } from "../balance/hongbao";
 import { createDb } from "../db/client";
+import { tableRow } from "../db/rows";
 import {
   activities,
   activityPasswords,
+  claims,
   redemptionSubmissions,
   users,
 } from "../db/schema";
@@ -20,20 +23,35 @@ import { claimPaymentParameterDigest } from "../payments/policy";
 import { assertUint64Decimal } from "../payments/real-protocol";
 import {
   type ActivityAttempt,
+  type AttemptRow,
   assertAttemptAllowed,
+  attemptStatement,
   attemptWriteStatements,
   bindDiscoveryStatement,
+  checkAttempt,
   discoveryBindingGuard,
+  readAttemptCooldowns,
 } from "../runtime/attempt-cooldown";
 import {
   allowsRealClaim,
+  controlsOf,
+  type PlatformControls,
+  platformControlsStatement,
   readPlatformControls,
   simulatesPayments,
   stageBalanceHongbao,
 } from "../runtime/controls";
 import { encryptString } from "../security/crypto";
-import { findUserClaim, getClaimDetail } from "./claim-queries";
-import { assertInScope } from "./claim-scope";
+import {
+  claimDetailsBatch,
+  findUserClaim,
+  getClaimDetail,
+} from "./claim-queries";
+import {
+  checkInScope,
+  type ScopeViewer,
+  scopeViewerStatement,
+} from "./claim-scope";
 import { ActivityError, activityConflict, activityNotFound } from "./errors";
 import {
   type ActivityExecutionPolicy,
@@ -47,6 +65,7 @@ import { activityStatus } from "./service";
 import { type ActivityRow, findActivity } from "./storage";
 
 export type SubmissionRow = typeof redemptionSubmissions.$inferSelect;
+type ClaimRequest = Awaited<ReturnType<typeof participationRequest>>;
 
 /** A terminal business outcome alone does not prove the input was checked. */
 export function submissionPasswordMatched(
@@ -108,20 +127,27 @@ async function registerFinished(
   outcome: FinishedOutcome,
   claimId: string | null = null,
   continuation?: ActivityAttempt,
+  /** What readClaimContext read of the attempt, if it did. */
+  attempt?: AttemptRow,
 ) {
-  await assertAttemptAllowed(env, userId, "activity", continuation, {
-    checkCooldown: false,
-  });
+  if (attempt)
+    checkAttempt(attempt, "activity", continuation, { checkCooldown: false });
+  else
+    await assertAttemptAllowed(env, userId, "activity", continuation, {
+      checkCooldown: false,
+    });
   const guard = discoveryBindingGuard(userId, continuation);
+  let written: SubmissionRow | undefined;
   try {
-    await env.DB.batch([
+    const results = await env.DB.batch<Record<string, unknown>>([
       ...(continuation
         ? [bindDiscoveryStatement(env, userId, continuation)]
         : []),
       env.DB.prepare(`INSERT INTO redemption_submissions
         (id, activity_id, user_id, submission_id, fingerprint, purpose, participation_mode, outcome, claim_id, created_at, finished_at)
         SELECT ?, ?, ?, ?, CASE WHEN ${guard.sql} THEN ? ELSE NULL END, 'claim', ?, ?, ?, ${databaseNow}, ${databaseNow}
-        WHERE EXISTS (SELECT 1 FROM activities WHERE id = ? AND participation_mode = ? AND reward_type = 'ldc' AND deleted_at IS NULL)`).bind(
+        WHERE EXISTS (SELECT 1 FROM activities WHERE id = ? AND participation_mode = ? AND reward_type = 'ldc' AND deleted_at IS NULL)
+        RETURNING *`).bind(
         crypto.randomUUID(),
         activityId,
         userId,
@@ -135,6 +161,7 @@ async function registerFinished(
         mode,
       ),
     ]);
+    written = tableRow(redemptionSubmissions, results.at(-1)?.results[0]);
   } catch (error) {
     const winner = await findSubmission(env, userId, submissionId);
     if (winner) return bindFingerprint(winner, fingerprint);
@@ -143,6 +170,7 @@ async function registerFinished(
     });
     throw error;
   }
+  if (written) return written;
   const row = await findSubmission(env, userId, submissionId);
   if (!row) {
     if (!(await findActivity(env, activityId))) activityNotFound();
@@ -158,10 +186,71 @@ export type Admitted = {
 };
 
 /**
+ * What a claim's checks read (admitClaim), in one D1 batch: the 红包, this
+ * submission if it came before, this person's share, the switches, their
+ * attempt interval (with a 口令 found from the start page, that find),
+ * what 领取范围 knows of them, and the 口令 typed. Read one after another
+ * they were a round trip each (docs/claim-capacity-design.md §4).
+ */
+export type ClaimContext = {
+  activity: ActivityRow | undefined;
+  previous: SubmissionRow | undefined;
+  /** This person's share of this 红包, if they have one. */
+  claimId: string | null;
+  controls: PlatformControls;
+  attempt: AttemptRow | undefined;
+  viewer: ScopeViewer | undefined;
+  password: typeof activityPasswords.$inferSelect | undefined;
+};
+
+export async function readClaimContext(
+  env: ApiBindings,
+  activityId: string,
+  userId: string,
+  submissionId: string,
+  request: {
+    passwordDigest: string | null;
+    continuation: ActivityAttempt | undefined;
+  },
+): Promise<ClaimContext> {
+  const [activity, previous, claim, controls, attempt, viewer, password] =
+    await env.DB.batch<Record<string, unknown>>([
+      env.DB.prepare(
+        "SELECT * FROM activities WHERE id = ? AND reward_type = 'ldc' AND deleted_at IS NULL",
+      ).bind(activityId),
+      env.DB.prepare(
+        "SELECT * FROM redemption_submissions WHERE user_id = ? AND submission_id = ?",
+      ).bind(userId, submissionId),
+      env.DB.prepare(
+        "SELECT id FROM claims WHERE activity_id = ? AND user_id = ?",
+      ).bind(activityId, userId),
+      platformControlsStatement(env),
+      attemptStatement(env, userId, request.continuation),
+      scopeViewerStatement(env, userId),
+      // No 口令 (a direct claim): matches none.
+      env.DB.prepare(
+        "SELECT * FROM activity_passwords WHERE activity_id = ? AND digest = ?",
+      ).bind(activityId, request.passwordDigest),
+    ]);
+  const first = (result: D1Result<Record<string, unknown>> | undefined) =>
+    result?.results[0];
+  const claimId = first(claim)?.id;
+  return {
+    activity: tableRow(activities, first(activity)),
+    previous: tableRow(redemptionSubmissions, first(previous)),
+    claimId: typeof claimId === "string" ? claimId : null,
+    controls: controlsOf(first(controls)),
+    attempt: first(attempt) as AttemptRow | undefined,
+    viewer: first(viewer) as ScopeViewer | undefined,
+    password: tableRow(activityPasswords, first(password)),
+  };
+}
+
+/**
  * Everything a claim is checked for before its 口令 (or its code) is: an
  * earlier answer to this submission, the 红包 and its state, the real-LDC
  * switches, 领取范围 and the attempt interval. `{ row }` when it is
- * decided already.
+ * decided already. On what readClaimContext read: given, or read here.
  */
 export async function admitClaim(
   env: ApiBindings,
@@ -172,19 +261,24 @@ export async function admitClaim(
   mode: ParticipationMode,
   continuation: ActivityAttempt | undefined,
   executionPolicy?: ActivityExecutionPolicy,
+  context?: ClaimContext,
 ): Promise<{ row: SubmissionRow } | Admitted> {
-  const previous = await findSubmission(env, userId, submissionId);
+  const read =
+    context ??
+    (await readClaimContext(env, activityId, userId, submissionId, {
+      passwordDigest: null,
+      continuation,
+    }));
+  const { activity, previous } = read;
   if (previous) {
     bindFingerprint(previous, fingerprint);
-    if (!(await findActivity(env, activityId))) activityNotFound();
+    if (!activity) activityNotFound();
     return { row: previous };
   }
-  const activity = await findActivity(env, activityId);
   // A draft answers 还没开放 to anyone with its link (05 §5), as to its sender.
   if (!activity) activityNotFound();
   assertParticipationMode(activity, mode);
-  const existingClaim = await findUserClaim(env, activityId, userId);
-  if (existingClaim)
+  if (read.claimId)
     return {
       row: await registerFinished(
         env,
@@ -194,8 +288,9 @@ export async function admitClaim(
         fingerprint,
         mode,
         "already_claimed",
-        existingClaim.id,
+        read.claimId,
         continuation,
+        read.attempt,
       ),
     };
   const status = activityStatus(activity);
@@ -211,6 +306,7 @@ export async function admitClaim(
         status,
         null,
         continuation,
+        read.attempt,
       ),
     };
   if (
@@ -229,8 +325,7 @@ export async function admitClaim(
     stageBalanceHongbao(env, activity.funding);
   const realActivityPermitted =
     testPermission ||
-    (activity.paymentMode === "real" &&
-      allowsRealClaim(env, await readPlatformControls(env)));
+    (activity.paymentMode === "real" && allowsRealClaim(env, read.controls));
   if (
     activity.rewardType === "ldc" &&
     activity.paymentMode === "real" &&
@@ -244,8 +339,8 @@ export async function admitClaim(
       "真实 LDC 新领取暂时关闭，已领取奖励仍可从记录查看。",
     );
   // 领取范围: someone outside never reaches the 口令 or its cooldown.
-  await assertInScope(env, activity, userId);
-  await assertAttemptAllowed(env, userId, "activity", continuation);
+  checkInScope(activity, read.viewer);
+  checkAttempt(read.attempt, "activity", continuation);
   return { activity, testPermission, realActivityPermitted };
 }
 
@@ -291,10 +386,24 @@ export async function prepareClaimSubmission(
   input: ClaimActivityInput,
   executionPolicy?: ActivityExecutionPolicy,
   humanVerified = false,
+  /** Its request and checks' reads, made already (admitActivityClaim). */
+  given?: { request: ClaimRequest; context: ClaimContext | undefined },
 ): Promise<SubmissionRow> {
-  const { mode, fingerprint, passwordDigest, continuation } =
-    await participationRequest(env, activityId, input, "claim");
+  const request =
+    given?.request ??
+    (await participationRequest(env, activityId, input, "claim"));
+  const { mode, fingerprint, passwordDigest, continuation } = request;
   for (let retry = 0; retry < 4; retry += 1) {
+    // After a write that lost, read again what it lost to.
+    const context =
+      (retry === 0 ? given?.context : undefined) ??
+      (await readClaimContext(
+        env,
+        activityId,
+        userId,
+        input.submissionId,
+        request,
+      ));
     const admission = await admitClaim(
       env,
       activityId,
@@ -304,22 +413,11 @@ export async function prepareClaimSubmission(
       mode,
       continuation,
       executionPolicy,
+      context,
     );
     if ("row" in admission) return admission.row;
     const { activity, testPermission } = admission;
-    const password =
-      passwordDigest === null
-        ? undefined
-        : await createDb(env.DB)
-            .select()
-            .from(activityPasswords)
-            .where(
-              and(
-                eq(activityPasswords.activityId, activityId),
-                eq(activityPasswords.digest, passwordDigest),
-              ),
-            )
-            .get();
+    const { password } = context;
     const rowId = crypto.randomUUID();
     // Every 口令红包 counts what is typed on its page (07 §7), encrypted.
     const ciphertext =
@@ -338,9 +436,14 @@ export async function prepareClaimSubmission(
       ...attemptWriteStatements(env, userId, "activity", rowId, continuation),
       // A failed precondition must roll back the submission AND the event together.
       claimGuardStatement(env, activity, mode, userId, admission),
+    ];
+    // The row as written comes back with it: no read after.
+    const inserted = statements.length;
+    statements.push(
       env.DB.prepare(`INSERT INTO redemption_submissions
         (id, activity_id, user_id, submission_id, fingerprint, purpose, participation_mode, outcome, matched_password_id, created_at, validated_at, finished_at)
-        VALUES (?, ?, ?, ?, ?, 'claim', ?, ?, ?, ${databaseNow}, ${databaseNow}, CASE WHEN ? = 'incorrect' THEN ${databaseNow} ELSE NULL END)`).bind(
+        VALUES (?, ?, ?, ?, ?, 'claim', ?, ?, ?, ${databaseNow}, ${databaseNow}, CASE WHEN ? = 'incorrect' THEN ${databaseNow} ELSE NULL END)
+        RETURNING *`).bind(
         rowId,
         activityId,
         userId,
@@ -351,7 +454,7 @@ export async function prepareClaimSubmission(
         password?.id ?? null,
         outcome,
       ),
-    ];
+    );
     if (ciphertext !== null)
       statements.push(
         env.DB.prepare(`INSERT INTO attempt_events
@@ -365,8 +468,10 @@ export async function prepareClaimSubmission(
         ),
       );
     try {
-      await env.DB.batch(statements);
-      const row = await findSubmission(env, userId, input.submissionId);
+      const results = await env.DB.batch<Record<string, unknown>>(statements);
+      const row =
+        tableRow(redemptionSubmissions, results[inserted]?.results[0]) ??
+        (await findSubmission(env, userId, input.submissionId));
       if (!row) throw new Error("Validation was not persisted");
       return row;
     } catch (error) {
@@ -485,11 +590,21 @@ export async function paymentRecipient(
   userId: string,
   mode: "simulation" | "real",
 ) {
-  const user = await createDb(env.DB)
-    .select({ externalId: users.externalId, username: users.username })
-    .from(users)
-    .where(eq(users.id, userId))
-    .get();
+  return recipientOf(
+    await createDb(env.DB)
+      .select({ externalId: users.externalId, username: users.username })
+      .from(users)
+      .where(eq(users.id, userId))
+      .get(),
+    mode,
+  );
+}
+
+/** paymentRecipient on the account read already. */
+function recipientOf(
+  user: { externalId: string; username: string } | null | undefined,
+  mode: "simulation" | "real",
+) {
   if (!user) activityNotFound();
   if (mode === "simulation")
     return { id: `simulation:${user.externalId}`, username: user.username };
@@ -530,6 +645,11 @@ export async function shareStatements(
     inventoryId: string;
     amountMinor: number | null;
   },
+  /** The claimant's account and the merchant, read already (a batch's). */
+  known?: {
+    user: { externalId: string; username: string } | null;
+    merchant: { client_id: string; version: number } | null;
+  },
 ) {
   let merchantVersion: number | null = null;
   const statements: D1PreparedStatement[] = [];
@@ -554,16 +674,16 @@ export async function shareStatements(
   ) {
     if (!activity.paymentMode)
       throw new Error("LDC activity has no payment mode");
-    const recipient = await paymentRecipient(
-      env,
-      share.userId,
-      activity.paymentMode,
-    );
-    const merchant = await env.DB.prepare(
-      "SELECT client_id,version FROM merchants WHERE id=? AND author_id=? AND mode=?",
-    )
-      .bind(activity.merchantId, activity.authorId, activity.paymentMode)
-      .first<{ client_id: string; version: number }>();
+    const recipient = known
+      ? recipientOf(known.user, activity.paymentMode)
+      : await paymentRecipient(env, share.userId, activity.paymentMode);
+    const merchant = known
+      ? known.merchant
+      : await env.DB.prepare(
+          "SELECT client_id,version FROM merchants WHERE id=? AND author_id=? AND mode=?",
+        )
+          .bind(activity.merchantId, activity.authorId, activity.paymentMode)
+          .first<{ client_id: string; version: number }>();
     if (!merchant || share.amountMinor === null || !activity.merchantId)
       throw new Error("LDC claim identity is incomplete");
     merchantVersion = merchant.version;
@@ -636,8 +756,16 @@ export async function completeClaimSubmission(
 /** At most this many shares are written in one turn of a 红包's line. */
 export const CLAIM_BATCH = 20;
 
-/** A share written in a batch: its answer is read after (claimAnswer). */
-export type BatchAllocation = ClaimResult | "allocated" | { error: unknown };
+/**
+ * What a batch made of each: its answer; its share written, with others
+ * (`written`, its claim: answered with them, claimAnswers) or alone
+ * ("allocated": its answer read after, claimAnswer); or the error.
+ */
+export type BatchAllocation =
+  | ClaimResult
+  | "allocated"
+  | { written: string }
+  | { error: unknown };
 
 /**
  * 一批一起写 for direct and 口令 claims (docs/claim-capacity-design.md §3
@@ -653,10 +781,19 @@ export type BatchAllocation = ClaimResult | "allocated" | { error: unknown };
 export async function allocateClaimBatch(
   env: ApiBindings,
   admitted: SubmissionRow[],
+  /** Sent from the 社区小程序: their claims say so (claims.via). */
+  mini: ReadonlySet<string> = new Set(),
 ): Promise<BatchAllocation[]> {
+  const viaOf = (submission: SubmissionRow) =>
+    mini.has(submission.id) ? ("mini" as const) : undefined;
   const alone = async (submission: SubmissionRow): Promise<BatchAllocation> => {
     try {
-      return await allocateClaimSubmission(env, submission);
+      return await allocateClaimSubmission(
+        env,
+        submission,
+        undefined,
+        viaOf(submission),
+      );
     } catch (error) {
       return { error };
     }
@@ -669,15 +806,60 @@ export async function allocateClaimBatch(
       answers[index] = await alone(admitted[index] as SubmissionRow);
   };
   const activityId = admitted[0]?.activityId;
-  const activity =
-    admitted.length > 1 && activityId
-      ? await findActivity(env, activityId)
-      : null;
+  if (
+    admitted.length < 2 ||
+    !activityId ||
+    admitted.some((submission) => submission.activityId !== activityId)
+  ) {
+    await each(admitted.map((_, index) => index));
+    return answers as BatchAllocation[];
+  }
+  const claimants = [
+    ...new Set(admitted.map((submission) => submission.userId)),
+  ];
+  const marks = (count: number) => Array(count).fill("?").join(",");
+  // The turn's reads in one round trip (docs/claim-capacity-design.md §4).
+  const [
+    activityRead,
+    submissionsRead,
+    claimedRead,
+    controlsRead,
+    availableRead,
+    usersRead,
+    merchantRead,
+  ] = await env.DB.batch<Record<string, unknown>>([
+    env.DB.prepare(
+      "SELECT * FROM activities WHERE id = ? AND reward_type = 'ldc' AND deleted_at IS NULL",
+    ).bind(activityId),
+    env.DB.prepare(
+      `SELECT * FROM redemption_submissions WHERE id IN (${marks(admitted.length)})`,
+    ).bind(...admitted.map((submission) => submission.id)),
+    env.DB.prepare(
+      `SELECT user_id FROM claims WHERE activity_id = ? AND user_id IN (${marks(claimants.length)})`,
+    ).bind(activityId, ...claimants),
+    platformControlsStatement(env),
+    // The next shares in order; an old 拼手气 (random, no queue) draws
+    // among all left.
+    env.DB.prepare(`SELECT inventory.id, inventory.amount_minor FROM reward_inventory inventory
+      WHERE inventory.activity_id = ? AND inventory.kind = 'ldc' AND NOT EXISTS (SELECT 1 FROM claims WHERE claims.activity_id = inventory.activity_id AND claims.inventory_id = inventory.id)
+      ORDER BY inventory.position
+      LIMIT CASE WHEN EXISTS (SELECT 1 FROM activities WHERE id = ? AND allocation = 'random' AND random_version IS NULL) THEN -1 ELSE ? END`).bind(
+      activityId,
+      activityId,
+      admitted.length,
+    ),
+    env.DB.prepare(
+      `SELECT id, external_id, username FROM users WHERE id IN (${marks(claimants.length)})`,
+    ).bind(...claimants),
+    env.DB.prepare(`SELECT m.client_id, m.version FROM activities a
+      JOIN merchants m ON m.id = a.merchant_id AND m.author_id = a.author_id AND m.mode = a.payment_mode
+      WHERE a.id = ?`).bind(activityId),
+  ]);
+  const activity = tableRow(activities, activityRead?.results[0]);
   if (
     !activity ||
     activityStatus(activity) !== "active" ||
     activity.participationMode === "code" ||
-    admitted.some((submission) => submission.activityId !== activity.id) ||
     (activity.rewardType === "ldc" &&
       activity.paymentMode === "simulation" &&
       !simulatesPayments(env))
@@ -688,43 +870,42 @@ export async function allocateClaimBatch(
   const testPermission = stageBalanceHongbao(env, activity.funding);
   const pickedAtRandom =
     activity.allocation === "random" && activity.randomVersion === null;
-  const [current, claimed, controls, available] = await Promise.all([
-    createDb(env.DB)
-      .select()
-      .from(redemptionSubmissions)
-      .where(
-        inArray(
-          redemptionSubmissions.id,
-          admitted.map((submission) => submission.id),
-        ),
-      )
-      .all(),
-    env.DB.prepare(
-      `SELECT user_id FROM claims WHERE activity_id = ? AND user_id IN (${admitted.map(() => "?").join(",")})`,
-    )
-      .bind(activity.id, ...admitted.map((submission) => submission.userId))
-      .all<{ user_id: string }>(),
-    !testPermission && activity.paymentMode === "real"
-      ? readPlatformControls(env)
-      : null,
-    env.DB.prepare(`SELECT inventory.id, inventory.amount_minor FROM reward_inventory inventory
-      WHERE inventory.activity_id = ? AND inventory.kind = 'ldc' AND NOT EXISTS (SELECT 1 FROM claims WHERE claims.activity_id = inventory.activity_id AND claims.inventory_id = inventory.id)
-      ORDER BY inventory.position${pickedAtRandom ? "" : " LIMIT ?"}`)
-      .bind(activity.id, ...(pickedAtRandom ? [] : [admitted.length]))
-      .all<{ id: string; amount_minor: number | null }>(),
-  ]);
+  const current = (submissionsRead?.results ?? []).flatMap((raw) => {
+    const row = tableRow(redemptionSubmissions, raw);
+    return row ? [row] : [];
+  });
+  const claimed = (claimedRead?.results ?? []) as { user_id: string }[];
+  const available = (availableRead?.results ?? []) as {
+    id: string;
+    amount_minor: number | null;
+  }[];
+  const accounts = new Map(
+    (
+      (usersRead?.results ?? []) as {
+        id: string;
+        external_id: string;
+        username: string;
+      }[]
+    ).map((user) => [
+      user.id,
+      { externalId: user.external_id, username: user.username },
+    ]),
+  );
+  const merchant =
+    (merchantRead?.results[0] as
+      | { client_id: string; version: number }
+      | undefined) ?? null;
   const realActivityPermitted =
     testPermission ||
     (activity.paymentMode === "real" &&
-      controls !== null &&
-      allowsRealClaim(env, controls));
+      allowsRealClaim(env, controlsOf(controlsRead?.results[0])));
   if (activity.paymentMode === "real" && !realActivityPermitted) {
     await each(admitted.map((_, index) => index));
     return answers as BatchAllocation[];
   }
   const byId = new Map(current.map((row) => [row.id, row]));
-  const taken = new Set(claimed.results.map((row) => row.user_id));
-  const shares = [...available.results];
+  const taken = new Set(claimed.map((row) => row.user_id));
+  const shares = [...available];
   if (pickedAtRandom)
     // An old 拼手气 draws among all left: shuffle, then take in order.
     for (let index = shares.length - 1; index > 0; index -= 1) {
@@ -767,13 +948,18 @@ export async function allocateClaimBatch(
     batched.map(async ({ submission }, order) => {
       const reward = shares[order] as (typeof shares)[number];
       const claimId = claimIds[order] as string;
-      const way = await shareStatements(env, activity, {
-        claimId,
-        taskId: crypto.randomUUID(),
-        userId: submission.userId,
-        inventoryId: reward.id,
-        amountMinor: reward.amount_minor,
-      });
+      const way = await shareStatements(
+        env,
+        activity,
+        {
+          claimId,
+          taskId: crypto.randomUUID(),
+          userId: submission.userId,
+          inventoryId: reward.id,
+          amountMinor: reward.amount_minor,
+        },
+        { user: accounts.get(submission.userId) ?? null, merchant },
+      );
       return [
         ...allocationStatements(env, activity, submission, {
           claimId,
@@ -782,13 +968,16 @@ export async function allocateClaimBatch(
           realActivityPermitted,
           testPermission,
           place: order,
+          via: viaOf(submission),
         }),
         ...way.statements,
       ];
     }),
   );
-  const together = batched.filter(
-    (_, order) => prepared[order]?.status === "fulfilled",
+  const together = batched.flatMap((item, order) =>
+    prepared[order]?.status === "fulfilled"
+      ? [{ ...item, claimId: claimIds[order] as string }]
+      : [],
   );
   later.push(
     ...batched
@@ -802,7 +991,8 @@ export async function allocateClaimBatch(
           one.status === "fulfilled" ? one.value : [],
         ),
       );
-    for (const { index } of together) answers[index] = "allocated";
+    for (const { index, claimId } of together)
+      answers[index] = { written: claimId };
   } catch {
     // One of them could not go along: each alone, in order, as before.
     later.push(...together.map((item) => item.index));
@@ -873,6 +1063,59 @@ export async function claimAnswer(env: ApiBindings, admitted: SubmissionRow) {
   throw new ActivityError(503, "ACTIVITY_BUSY", "领取繁忙，请使用原提交重试");
 }
 
+/** A claim's answer, with its person's attempt interval as of then. */
+export type ClaimAnswer = {
+  result: ClaimResult;
+  cooldown: AttemptCooldown | undefined;
+};
+
+/**
+ * The answers of shares written together (allocateClaimBatch's `written`),
+ * read once for all of them, after the turn and outside the line: their
+ * claims and payments, and each person's attempt interval. One by one they
+ * were five reads each (docs/claim-capacity-design.md §4). By submission.
+ */
+export async function claimAnswers(
+  env: ApiBindings,
+  written: { submission: SubmissionRow; claimId: string }[],
+) {
+  const [rows, cooldowns] = await Promise.all([
+    createDb(env.DB)
+      .select({ claim: claims, activity: activities })
+      .from(claims)
+      .innerJoin(activities, eq(activities.id, claims.activityId))
+      .where(
+        and(
+          inArray(
+            claims.id,
+            written.map((one) => one.claimId),
+          ),
+          eq(activities.rewardType, "ldc"),
+          isNull(activities.deletedAt),
+        ),
+      ),
+    readAttemptCooldowns(
+      env,
+      written.map((one) => one.submission.userId),
+    ),
+  ]);
+  const details = await claimDetailsBatch(env, rows);
+  const answers = new Map<string, ClaimAnswer>();
+  for (const { submission, claimId } of written) {
+    const claim = details.get(claimId);
+    if (claim)
+      answers.set(submission.id, {
+        result: {
+          result: "claimed",
+          passwordMatched: submissionPasswordMatched(submission),
+          claim,
+        },
+        cooldown: cooldowns.get(submission.userId),
+      });
+  }
+  return answers;
+}
+
 /**
  * Refused at its share while new claims are paused: its submission is kept,
  * checked and pending, and finished when claims reopen
@@ -902,6 +1145,8 @@ function allocationStatements(
      * so claims written together keep line order and one 手速王.
      */
     place?: number;
+    /** Taken in the 社区小程序 (claims.via), said by the claim itself. */
+    via?: "mini";
   },
 ) {
   const {
@@ -911,6 +1156,7 @@ function allocationStatements(
     realActivityPermitted,
     testPermission,
     place = 0,
+    via,
   } = share;
   return [
     env.DB.prepare(`UPDATE activities SET version = CASE WHEN deleted_at IS NULL AND opened_at IS NOT NULL AND ended_at IS NULL AND archived_at IS NULL
@@ -946,7 +1192,11 @@ function allocationStatements(
         ]
       : []),
     env.DB.prepare(
-      `INSERT INTO claims (id, activity_id, user_id, inventory_id, password_id, claimed_at) VALUES (?, ?, ?, ?, ?, ${databaseNow} + ?)`,
+      // After every claim of this 红包 before it, a batch's and one alone
+      // alike, even when turns come quicker than a batch's places
+      // (claims_activity_time_idx: one row read).
+      `INSERT INTO claims (id, activity_id, user_id, inventory_id, password_id, claimed_at, via)
+        VALUES (?, ?, ?, ?, ?, MAX(${databaseNow} + ?, COALESCE((SELECT MAX(claimed_at) FROM claims WHERE activity_id = ?), 0) + 1), ?)`,
     ).bind(
       claimId,
       activity.id,
@@ -954,6 +1204,8 @@ function allocationStatements(
       reward.id,
       submission.matchedPasswordId,
       place,
+      activity.id,
+      via ?? null,
     ),
     env.DB.prepare(`UPDATE activities SET
           ended_at = CASE WHEN claimed_count + 1 = total_count THEN (SELECT claimed_at FROM claims WHERE id = ?) ELSE ended_at END,
@@ -982,6 +1234,8 @@ export async function allocateClaimSubmission(
   env: ApiBindings,
   admitted: SubmissionRow,
   executionPolicy?: ActivityExecutionPolicy,
+  /** Taken in the 社区小程序 (claims.via). */
+  via?: "mini",
 ): Promise<ClaimResult | "allocated"> {
   let selectedInventoryId: string | null = null;
   for (let retry = 0; retry < 5; retry += 1) {
@@ -1084,6 +1338,7 @@ export async function allocateClaimSubmission(
       coded,
       realActivityPermitted,
       testPermission,
+      via,
     });
     const way = await shareStatements(env, activity, {
       claimId,
@@ -1168,11 +1423,13 @@ export async function claimDecided(
 
 /**
  * claimActivity's checks, which need not wait in the 红包's line: the
- * submission is checked and kept, pending or (decided there) finished, and
- * only its share is handed out in the line (completeClaimSubmission, as for
- * one an interruption left pending). Null for what goes the whole way in
- * the line: a 代码判定 claim, a 红包 not open yet (a timed opening opens
- * there) or a timed draw.
+ * submission is checked and kept, pending or (decided there: a share
+ * already, over, a wrong 口令, sent before) finished, and only its share
+ * is handed out in the line (completeClaimSubmission, as for one an
+ * interruption left pending). What it reads is read once, in one batch
+ * (readClaimContext). Null for what goes the whole way in the line: a
+ * 代码判定 claim, a 红包 not open yet (a timed opening opens there) or a
+ * timed draw.
  */
 export async function admitActivityClaim(
   env: ApiBindings,
@@ -1182,21 +1439,32 @@ export async function admitActivityClaim(
   humanVerified: boolean,
 ) {
   if (input.participationMode === "code") return null;
-  let activity = await findActivity(env, activityId);
-  // Only what has ended, or is past its deadline, has a lifecycle to bring
-  // up to date; for one running each claim's refresh wrote nothing.
-  if (activity && activityStatus(activity) !== "active") {
-    await refreshActivityLifecycle(env, activityId);
-    activity = await findActivity(env, activityId);
-  }
-  if (!activity || activity.openedAt === null) return null;
-  const previous = await findSubmission(env, userId, input.submissionId);
+  const request = await participationRequest(env, activityId, input, "claim");
+  const context = await readClaimContext(
+    env,
+    activityId,
+    userId,
+    input.submissionId,
+    request,
+  );
+  const { activity } = context;
   if (
-    previous?.purpose === "register" ||
+    !activity ||
+    activity.openedAt === null ||
+    activity.drawState !== null ||
+    context.previous?.purpose === "register" ||
     (activity.rewardType === "ldc" &&
       JSON.parse(activity.config).money?.mode === "timed_draw")
   )
     return null;
+  // Only a lifecycle behind its clock (past its deadline and not marked
+  // ended, or due to be archived) has anything to write: written first,
+  // and then read again. One running, or marked already, has none.
+  const status = activityStatus(activity);
+  const behind =
+    (status === "ended" && activity.endedAt === null) ||
+    (status === "archived" && activity.archivedAt === null);
+  if (behind) await refreshActivityLifecycle(env, activityId);
   return prepareClaimSubmission(
     env,
     activityId,
@@ -1204,6 +1472,7 @@ export async function admitActivityClaim(
     input,
     undefined,
     humanVerified,
+    { request, context: behind ? undefined : context },
   );
 }
 

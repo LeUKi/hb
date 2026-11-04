@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import {
   ACTIVITY_LIMITS,
+  type AttemptCooldown,
   type ClaimActivityInput,
   claimActivitySchema,
   createActivitySchema,
@@ -21,12 +22,14 @@ import {
   allocateClaimBatch,
   type BatchAllocation,
   CLAIM_BATCH,
+  type ClaimAnswer,
   cancelPendingClaims,
   claimActivity,
   claimAnswer,
+  claimAnswers,
   claimDecided,
-  completeClaimSubmission,
   pendingClaimsOf,
+  resultOfSubmission,
   resumePendingActivityClaims,
   type SubmissionRow,
 } from "./activities/claim-service";
@@ -256,6 +259,15 @@ function mutationError(error: unknown) {
  */
 type ClaimTurn = { response: Response } | { error: unknown } | null;
 
+/**
+ * How a waiting share ended: as its turn's batch made it (one written with
+ * others carries the answers read for them after the turn), or cancelled.
+ */
+type Allocated =
+  | BatchAllocation
+  | "cancelled"
+  | { written: string; answered: Promise<Map<string, ClaimAnswer> | null> };
+
 export class ActivityDO extends DurableObject<ApiBindings> {
   private mutationTail: Promise<void> = Promise.resolve();
   /** 代码判定联网: the judgment under way's requests (judge/session.ts). */
@@ -267,7 +279,9 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   /** Checked direct and 口令 submissions waiting for their shares (allocate). */
   private allocations: {
     submission: SubmissionRow;
-    settle: (written: BatchAllocation | "cancelled") => void;
+    settle: (written: Allocated) => void;
+    /** Sent from the 社区小程序: its claim says so (claims.via). */
+    via?: "mini";
   }[] = [];
   /** A turn for them is in the line already. */
   private allocationTurn = false;
@@ -962,9 +976,11 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     userId: string,
     input: ClaimActivityInput,
     humanVerified: boolean,
+    /** Sent from the 社区小程序 (mini/routes.ts): its claim says so. */
+    via?: "mini",
   ) {
     const before = this.claimants.get(userId) ?? Promise.resolve();
-    const run = () => this.claimOne(id, userId, input, humanVerified);
+    const run = () => this.claimOne(id, userId, input, humanVerified, via);
     const request = before.then(run, run);
     this.claimants.set(userId, request);
     const forget = () => {
@@ -976,8 +992,8 @@ export class ActivityDO extends DurableObject<ApiBindings> {
 
   /**
    * Claims take their turns in the line one at a time, and only for their
-   * share: one whose answer is decided already (claimDecided: they have a
-   * share, or the 红包 is over) is answered outside it, and its checks
+   * share: one whose answer is decided by its checks (a share already, the
+   * 红包 over, a wrong 口令) is answered outside it, and the checks
    * (admitActivityClaim) are made outside it too. On 2026-11-04 decided
    * requests were two thirds of the line in two popular 红包, a claim held
    * it about 3 s, of which 1 s was its share, and people waited minutes.
@@ -987,6 +1003,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     userId: string,
     input: ClaimActivityInput,
     humanVerified: boolean,
+    via?: "mini",
   ) {
     const answer = async () =>
       this.claimed(
@@ -1003,7 +1020,6 @@ export class ActivityDO extends DurableObject<ApiBindings> {
           this.claimHooks(id),
         ),
       );
-    if (await claimDecided(this.env, id, userId)) return answer();
     const startedAt = Date.now();
     const submission = await admitActivityClaim(
       this.env,
@@ -1013,16 +1029,16 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       humanVerified,
     );
     const checkedAt = Date.now();
-    // Decided by its checks (a wrong 口令, a share already, over): no turn.
+    // Decided by its checks: its row says how, with no turn.
     if (submission && submission.outcome !== "pending")
       return this.claimed(
         id,
         userId,
         input,
-        await completeClaimSubmission(this.env, submission),
+        await resultOfSubmission(this.env, submission),
       );
     if (submission) {
-      const written = await this.allocate(id, submission);
+      const written = await this.allocate(id, submission, via);
       // 压测 and production alike (docs/claim-capacity-design.md §3 第 0
       // 期): how long its checks took and how long it waited for its share.
       console.log("claim_timing", {
@@ -1034,20 +1050,35 @@ export class ActivityDO extends DurableObject<ApiBindings> {
             ? written
             : "error" in written
               ? "error"
-              : written.result,
+              : "written" in written
+                ? "claimed"
+                : written.result,
       });
       if (written === "cancelled")
         return this.claimed(id, userId, input, { result: "cancelled" });
       if (typeof written === "object" && "error" in written)
         return mutationError(written.error);
-      // Its share written: the answer is read after the turn.
+      // Written with others: answered from what was read for them all.
+      if (typeof written === "object" && "written" in written) {
+        const known =
+          "answered" in written
+            ? (await written.answered)?.get(submission.id)
+            : undefined;
+        if (known)
+          return this.claimed(id, userId, input, known.result, {
+            cooldown: known.cooldown,
+            via,
+          });
+      }
+      // Its share written ("allocated", alone): the answer is read after
+      // the turn. Otherwise its turn answered it (finished meanwhile).
+      const share = typeof written === "string" || "written" in written;
       return this.claimed(
         id,
         userId,
         input,
-        written === "allocated"
-          ? await claimAnswer(this.env, submission)
-          : written,
+        share ? await claimAnswer(this.env, submission) : written,
+        share ? { via } : {},
       );
     }
     const outcome = await this.serialize(async (): Promise<ClaimTurn> => {
@@ -1079,9 +1110,9 @@ export class ActivityDO extends DurableObject<ApiBindings> {
    * §3 第 1 期). Its person's pages hear where it is (queued) as it joins
    * and after each turn.
    */
-  private allocate(id: string, submission: SubmissionRow) {
-    return new Promise<BatchAllocation | "cancelled">((settle) => {
-      this.allocations.push({ submission, settle });
+  private allocate(id: string, submission: SubmissionRow, via?: "mini") {
+    return new Promise<Allocated>((settle) => {
+      this.allocations.push({ submission, settle, via });
       this.tellPlace(this.allocations.length - 1);
       this.takeAllocationTurn(id);
     });
@@ -1101,6 +1132,11 @@ export class ActivityDO extends DurableObject<ApiBindings> {
         answers = await allocateClaimBatch(
           this.env,
           batch.map((item) => item.submission),
+          new Set(
+            batch
+              .filter((item) => item.via === "mini")
+              .map((item) => item.submission.id),
+          ),
         );
       } catch (error) {
         answers = batch.map(() => ({ error }));
@@ -1109,13 +1145,32 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       this.allocationMs = Math.round(
         this.allocationMs * 0.7 + (Date.now() - started) * 0.3,
       );
-      batch.forEach((item, index) =>
-        item.settle(answers[index] ?? { error: new Error("No answer") }),
-      );
+      // Those written together are answered from one read for them all,
+      // made after the turn: the line goes on meanwhile. Failed, each
+      // reads its own (claimAnswer).
+      const written = batch.flatMap((item, index) => {
+        const made = answers[index];
+        return typeof made === "object" && "written" in made
+          ? [{ submission: item.submission, claimId: made.written }]
+          : [];
+      });
+      const answered =
+        written.length > 0
+          ? claimAnswers(this.env, written).catch(() => null)
+          : null;
+      batch.forEach((item, index) => {
+        const made = answers[index] ?? { error: new Error("No answer") };
+        item.settle(
+          answered && typeof made === "object" && "written" in made
+            ? { ...made, answered }
+            : made,
+        );
+      });
       // Their other tabs, and a page reloaded while it waited, read their
       // part now, whatever came of it.
       this.tellMine(batch.map((item) => item.submission.userId));
-      this.allocations.forEach((_, index) => this.tellPlace(index));
+      for (let index = 0; index < this.allocations.length; index += 1)
+        this.tellPlace(index);
       if (this.allocations.length > 0) this.takeAllocationTurn(id);
     });
   }
@@ -1178,7 +1233,8 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     }
     if (cancelled > 0) {
       for (const item of mine) item.settle("cancelled");
-      this.allocations.forEach((_, place) => this.tellPlace(place));
+      for (let place = 0; place < this.allocations.length; place += 1)
+        this.tellPlace(place);
       this.tellMine([userId]);
       return Response.json(
         { result: "cancelled" },
@@ -1208,6 +1264,15 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     userId: string,
     input: ClaimActivityInput,
     result: Awaited<ReturnType<typeof claimActivity>>,
+    written: {
+      /** Their attempt interval, read with the answer already. */
+      cooldown?: AttemptCooldown;
+      /**
+       * Its share written here for the 社区小程序, saying so (claims.via):
+       * its route need not mark it after (X-Hb-Via-Written).
+       */
+      via?: "mini";
+    } = {},
   ) {
     if ("registration" in result) await this.scheduleDraw(id);
     // Protocol 5's judgments go out with the count (announceJudged): the
@@ -1245,10 +1310,14 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     return Response.json(
       {
         ...result,
-        attemptCooldown: await readAttemptCooldown(this.env, userId),
+        attemptCooldown:
+          written.cooldown ?? (await readAttemptCooldown(this.env, userId)),
       },
       {
-        headers: { "Cache-Control": "no-store" },
+        headers: {
+          "Cache-Control": "no-store",
+          ...(written.via ? { "X-Hb-Via-Written": written.via } : {}),
+        },
       },
     );
   }
@@ -1534,10 +1603,8 @@ export class ActivityDO extends DurableObject<ApiBindings> {
             ),
           );
         }
-        const { userId, humanVerified, ...input } = (claimBody ?? {}) as Record<
-          string,
-          unknown
-        >;
+        const { userId, humanVerified, via, ...input } = (claimBody ??
+          {}) as Record<string, unknown>;
         const parsed = claimActivitySchema.safeParse(input);
         if (!parsed.success || typeof userId !== "string") {
           done();
@@ -1548,7 +1615,13 @@ export class ActivityDO extends DurableObject<ApiBindings> {
         return (
           parsed.data.participationMode === "code"
             ? this.claimCode(id, userId, parsed.data, humanVerified === true)
-            : this.claimInLine(id, userId, parsed.data, humanVerified === true)
+            : this.claimInLine(
+                id,
+                userId,
+                parsed.data,
+                humanVerified === true,
+                via === "mini" ? "mini" : undefined,
+              )
         )
           .catch(mutationError)
           .finally(done);

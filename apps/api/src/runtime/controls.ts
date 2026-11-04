@@ -10,16 +10,22 @@ export type PlatformControls = {
 export async function readPlatformControls(
   env: ApiBindings,
 ): Promise<PlatformControls> {
-  const row = await env.DB.prepare(
+  return controlsOf(await platformControlsStatement(env).first());
+}
+
+/** The read behind readPlatformControls, to be made alone or in a batch. */
+export function platformControlsStatement(env: ApiBindings) {
+  return env.DB.prepare(
     "SELECT version,allow_real_open,allow_real_claim,allow_real_send FROM platform_controls WHERE id='global'",
-  ).first<{
-    version: number;
-    allow_real_open: number;
-    allow_real_claim: number;
-    allow_real_send: number;
-  }>();
+  );
+}
+
+/** What platformControlsStatement read; none: every switch off. */
+export function controlsOf(
+  row: Record<string, unknown> | null | undefined,
+): PlatformControls {
   return {
-    version: row?.version ?? 0,
+    version: typeof row?.version === "number" ? row.version : 0,
     allowRealOpen: row?.allow_real_open === 1,
     allowRealClaim: row?.allow_real_claim === 1,
     allowRealSend: row?.allow_real_send === 1,

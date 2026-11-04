@@ -298,6 +298,8 @@ miniRoutes.post(
             ? { participationMode: "direct" }
             : { password }),
           humanVerified: false,
+          // Its share, written in the 红包's line, says so (claims.via).
+          via: "mini",
         }),
       },
     );
@@ -319,8 +321,12 @@ miniRoutes.post(
     }
     const result = (await response.json()) as ClaimResult;
     // Taken here: the claim (or the sign-up a draw's prize comes from)
-    // says so (claims.via, activity_registrations.via).
-    if (result.result === "claimed")
+    // says so (claims.via, activity_registrations.via); one whose share was
+    // written in the line says so already (X-Hb-Via-Written).
+    if (
+      result.result === "claimed" &&
+      response.headers.get("X-Hb-Via-Written") !== "mini"
+    )
       await c.env.DB.prepare(
         "UPDATE claims SET via='mini' WHERE id=? AND user_id=?",
       )

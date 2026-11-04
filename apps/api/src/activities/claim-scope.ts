@@ -80,24 +80,41 @@ export function scopeOf(row: ActivityRow) {
   );
 }
 
+/** What 领取范围 knows of someone (scopeViewerStatement). */
+export type ScopeViewer = {
+  external_id: string;
+  username: string;
+  trust_level: number | null;
+  profile_seen_at: number | null;
+};
+
+/** The read behind assertInScope, to be made alone or in a batch. */
+export function scopeViewerStatement(env: ApiBindings, userId: string) {
+  return env.DB.prepare(
+    "SELECT external_id, username, trust_level, profile_seen_at FROM users WHERE id = ?",
+  ).bind(userId);
+}
+
 /** Before the 口令, the attempt and its cooldown: someone outside is turned away. */
 export async function assertInScope(
   env: ApiBindings,
   row: ActivityRow,
   userId: string,
 ) {
+  if (!scopeOf(row)) return;
+  checkInScope(
+    row,
+    await scopeViewerStatement(env, userId).first<ScopeViewer>(),
+  );
+}
+
+/** assertInScope on what scopeViewerStatement read. */
+export function checkInScope(
+  row: ActivityRow,
+  viewer: ScopeViewer | null | undefined,
+) {
   const scope = scopeOf(row);
   if (!scope) return;
-  const viewer = await env.DB.prepare(
-    "SELECT external_id, username, trust_level, profile_seen_at FROM users WHERE id = ?",
-  )
-    .bind(userId)
-    .first<{
-      external_id: string;
-      username: string;
-      trust_level: number | null;
-      profile_seen_at: number | null;
-    }>();
   if (
     viewer &&
     scopeAllows(scope, {

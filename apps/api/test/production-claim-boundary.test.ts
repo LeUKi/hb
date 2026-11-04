@@ -95,8 +95,10 @@ it.each(["Correct123", "Wrong123"])(
     const { activity, recipient } = await fixture();
     const input = { submissionId: crypto.randomUUID(), password };
     const batch = env.DB.batch.bind(env.DB);
+    // The checks' read (one batch) goes through; paused before the write.
     const intercepted = vi
       .spyOn(env.DB, "batch")
+      .mockImplementationOnce(batch)
       .mockImplementationOnce(async (statements) => {
         await permission(false);
         return batch(statements);
@@ -104,7 +106,7 @@ it.each(["Correct123", "Wrong123"])(
     await expect(
       prepareClaimSubmission(runtime, activity.id, recipient, input),
     ).rejects.toMatchObject({ status: 409, code: "REAL_LDC_CLAIMS_PAUSED" });
-    expect(intercepted).toHaveBeenCalledTimes(1);
+    expect(intercepted).toHaveBeenCalledTimes(2);
     expect(await counts(activity.id)).toEqual({
       version: activity.version,
       allocated: 0,
