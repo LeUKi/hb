@@ -889,3 +889,92 @@ describe("社区小程序's live channel", () => {
     expect(own).toBeLessThanOrEqual(Date.now());
   });
 });
+
+// Last in the file: a 打赏卡 is never deleted, so its owner cannot be
+// cleared away before another test.
+describe("打赏 in the 社区", () => {
+  it("reads a card for whoever the forum names, and a first tip makes their account", async () => {
+    await env.DB.prepare(
+      "UPDATE balance_settings SET tip_enabled=1 WHERE id='global'",
+    ).run();
+    const { createCard } = await import("../src/tips/cards");
+    const owner = await person("880001");
+    const card = await createCard(bindings, owner, {
+      name: "个人页",
+      style: "simple",
+      palette: "lake",
+      prompt: "",
+      amounts: [{ amount: "5", label: "" }],
+      defaultIndex: 0,
+      allowOther: false,
+      goal: null,
+      showRecent: false,
+      showTop: false,
+      link: { kind: "profile" },
+    });
+    const get = async (path: string, sub: string, keys = ["id"]) =>
+      app.request(
+        `${origin}${path}`,
+        {
+          headers: {
+            Origin: forum,
+            Authorization: `Bearer ${await token(path.split("?")[0] ?? path, { claims: { sub, query_keys: keys } })}`,
+          },
+        },
+        bindings,
+      );
+    const read = await get(`/api/mini/tip?id=${card.code}`, "880002");
+    expect(read.status).toBe(200);
+    const view = (await read.json()) as {
+      card: { owner: { avatarUrl: string | null }; amounts: unknown[] };
+      viewer: {
+        signedIn: boolean;
+        capEndpoint: string | null;
+        methods: { checkout: { reason: string } };
+      };
+      lookOnly: boolean;
+    };
+    expect(view.viewer).toMatchObject({ signedIn: true, capEndpoint: null });
+    expect(view.viewer.methods.checkout.reason).toBe("offline");
+    expect(view.card.owner.avatarUrl).toBe(forumAvatar("880001"));
+
+    const jwt = await token("/api/mini/tip", {
+      claims: { sub: "880002", htm: "POST", channel: "sandbox" },
+    });
+    const tipped = await app.request(
+      `${origin}/api/mini/tip?id=${card.code}`,
+      {
+        method: "POST",
+        headers: {
+          Origin: forum,
+          Authorization: `Bearer ${jwt}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          requestId: crypto.randomUUID(),
+          cardVersion: card.version,
+          amount: "5",
+          method: "checkout",
+          forumUser: { username: "first_fan", name: "第一位" },
+        }),
+      },
+      bindings,
+    );
+    // This environment does not reach Credit 站; the account is made first.
+    expect(
+      ((await tipped.json()) as { error: { code: string } }).error.code,
+    ).toBe("TIP_OFFLINE");
+    const made = await env.DB.prepare(
+      "SELECT username FROM users WHERE external_id='880002'",
+    ).first<{ username: string }>();
+    expect(made?.username).toBe("first_fan");
+
+    const home = await get("/api/mini/tips-home", "880001", []);
+    const mine = (await home.json()) as {
+      known: boolean;
+      cards: { code: string }[];
+    };
+    expect(mine.known).toBe(true);
+    expect(mine.cards.map((item) => item.code)).toEqual([card.code]);
+  });
+});

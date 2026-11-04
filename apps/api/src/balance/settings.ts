@@ -19,12 +19,14 @@ type SettingsRow = {
   hongbao_enabled: number;
   transfer_enabled: number;
   page_enabled: number;
+  tip_enabled: number;
+  tip_password_free_enabled: number;
   updated_at: number;
 };
 
 const SELECT_SETTINGS = `SELECT version,topup_enabled,withdraw_enabled,topup_fee_percent,
   withdraw_fee_percent,withdraw_max_minor,hongbao_enabled,transfer_enabled,page_enabled,
-  updated_at
+  tip_enabled,tip_password_free_enabled,updated_at
   FROM balance_settings WHERE id='global'`;
 
 function settingsOf(row: SettingsRow): BalanceSettings {
@@ -38,6 +40,8 @@ function settingsOf(row: SettingsRow): BalanceSettings {
     hongbaoEnabled: row.hongbao_enabled === 1,
     transferEnabled: row.transfer_enabled === 1,
     pageEnabled: row.page_enabled === 1,
+    tipEnabled: row.tip_enabled === 1,
+    tipPasswordFreeEnabled: row.tip_password_free_enabled === 1,
     updatedAt: row.updated_at,
   };
 }
@@ -98,6 +102,8 @@ function snapshot(settings: Required<BalanceSettingsInput>) {
     hongbaoEnabled: settings.hongbaoEnabled,
     transferEnabled: settings.transferEnabled,
     pageEnabled: settings.pageEnabled,
+    tipEnabled: settings.tipEnabled,
+    tipPasswordFreeEnabled: settings.tipPasswordFreeEnabled,
   });
 }
 
@@ -113,6 +119,9 @@ export async function updateBalanceSettings(
     hongbaoEnabled: change.hongbaoEnabled ?? previous.hongbaoEnabled,
     transferEnabled: change.transferEnabled ?? previous.transferEnabled,
     pageEnabled: change.pageEnabled ?? previous.pageEnabled,
+    tipEnabled: change.tipEnabled ?? previous.tipEnabled,
+    tipPasswordFreeEnabled:
+      change.tipPasswordFreeEnabled ?? previous.tipPasswordFreeEnabled,
   };
   try {
     await env.DB.batch([
@@ -132,7 +141,7 @@ export async function updateBalanceSettings(
       env.DB.prepare(`UPDATE balance_settings SET version=version+1,
         topup_enabled=?,withdraw_enabled=?,topup_fee_percent=?,withdraw_fee_percent=?,
         withdraw_max_minor=?,hongbao_enabled=?,transfer_enabled=?,page_enabled=?,
-        updated_at=${databaseNow},updated_by_user_id=?
+        tip_enabled=?,tip_password_free_enabled=?,updated_at=${databaseNow},updated_by_user_id=?
         WHERE id='global' AND version=?`).bind(
         Number(next.topupEnabled),
         Number(next.withdrawEnabled),
@@ -142,6 +151,8 @@ export async function updateBalanceSettings(
         Number(next.hongbaoEnabled),
         Number(next.transferEnabled),
         Number(next.pageEnabled),
+        Number(next.tipEnabled),
+        Number(next.tipPasswordFreeEnabled),
         actorUserId,
         expectedVersion,
       ),

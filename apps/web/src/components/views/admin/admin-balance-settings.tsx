@@ -37,11 +37,14 @@ type Draft = {
   hongbaoEnabled?: boolean;
   transferEnabled?: boolean;
   pageEnabled?: boolean;
+  tipEnabled?: boolean;
+  tipPasswordFreeEnabled?: boolean;
 };
 
 /**
  * 🐟额's settings (docs/balance-design.md §7, §14, §16): the switches for
- * 转入, 转出, 🐟额红包, 转账 and 附带网页 (docs/attached-page-design.md),
+ * 转入, 转出, 🐟额红包, 转账, 附带网页 (docs/attached-page-design.md) and
+ * 打赏 with 免密打赏 (docs/tip-design.md),
  * the two rates and the cap on one 转出 (who may 转入 is by invitation).
  * Saved against the version read, like the attempt intervals. 代码判定红包's
  * are in 判定器 (07 §10).
@@ -74,6 +77,9 @@ export function BalanceSettingsSection({
     hongbaoEnabled: draft.hongbaoEnabled ?? shown.hongbaoEnabled,
     transferEnabled: draft.transferEnabled ?? shown.transferEnabled,
     pageEnabled: draft.pageEnabled ?? shown.pageEnabled,
+    tipEnabled: draft.tipEnabled ?? shown.tipEnabled,
+    tipPasswordFreeEnabled:
+      draft.tipPasswordFreeEnabled ?? shown.tipPasswordFreeEnabled,
   };
   const cap = capMinor(values.withdrawMax);
   const ok =
@@ -102,6 +108,8 @@ export function BalanceSettingsSection({
         hongbaoEnabled: values.hongbaoEnabled,
         transferEnabled: values.transferEnabled,
         pageEnabled: values.pageEnabled,
+        tipEnabled: values.tipEnabled,
+        tipPasswordFreeEnabled: values.tipPasswordFreeEnabled,
       });
       setBase(null);
       setDraft({});
@@ -163,6 +171,20 @@ export function BalanceSettingsSection({
             description="PLUS 发红包时可以附带一个网页，显示在红包页旁边。关闭后，已附带的网页也不显示。"
             checked={values.pageEnabled}
             onChange={(pageEnabled) => edit({ pageEnabled })}
+          />
+          <Switch
+            label="打赏"
+            description="开着时，大家能建打赏卡、通过打赏卡打赏。关掉后打赏卡都显示“打赏暂停”，不能新打赏；已经在等付款的照常查单。"
+            checked={values.tipEnabled}
+            onChange={(tipEnabled) => edit({ tipEnabled })}
+          />
+          <Switch
+            label="免密打赏"
+            description="开着时，看客能从自己的 LDC 商户直接打赏，开通🐟额 PLUS 的人还能用🐟额打赏，都不用输 Credit 站的密码。关掉后只能去 Credit 站付。"
+            checked={values.tipPasswordFreeEnabled}
+            onChange={(tipPasswordFreeEnabled) =>
+              edit({ tipPasswordFreeEnabled })
+            }
           />
           <div className="grid gap-4 @wide/window:grid-cols-3">
             <Field

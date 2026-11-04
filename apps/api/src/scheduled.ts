@@ -10,6 +10,7 @@ import { sweepPayments } from "./payments/scheduler";
 import { recoverCredentialChecks } from "./payments/verification";
 import { inMaintenanceMode } from "./runtime/maintenance-mode";
 import { maintenanceObject } from "./runtime/objects";
+import { sweepTips } from "./tips/service";
 
 export async function runScheduled(
   event: ScheduledController,
@@ -66,6 +67,8 @@ export async function runMaintenance(env: ApiBindings, scheduledAt: number) {
     { name: "judge_stats", run: () => refreshJudgeStats(env, scheduledAt) },
     // 密钥 let go once their 红包 is over (docs/judge-key-design.md §1).
     { name: "judge_keys", run: () => sweepKeys(env, scheduledAt) },
+    // 打赏's 兜底检查 (docs/tip-design.md §5): links still waiting.
+    { name: "tips", run: () => sweepTips(env) },
   ]);
 }
 

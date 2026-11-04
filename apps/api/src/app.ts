@@ -27,6 +27,7 @@ import {
   maintenanceResponse,
 } from "./runtime/maintenance-mode";
 import { stageLoadTestRoutes } from "./runtime/stage-load-test";
+import { tipRoutes } from "./tips/routes";
 
 export const app = new Hono<ApiContext>()
   // 社区小程序: the forum's CORS on every answer, 维护模式's too.
@@ -64,6 +65,7 @@ export const app = new Hono<ApiContext>()
   .route("/api", merchantRoutes)
   .route("/api", balanceRoutes)
   .route("/api", openRoutes)
+  .route("/api", tipRoutes)
   .notFound((c) =>
     c.json(
       {

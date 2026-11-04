@@ -145,6 +145,10 @@ export const balanceSettingsSchema = z.strictObject({
   transferEnabled: z.boolean().optional(),
   /** 附带网页 (docs/attached-page-design.md); left as it is when absent. */
   pageEnabled: z.boolean().optional(),
+  /** 打赏 (docs/tip-design.md); left as it is when absent. */
+  tipEnabled: z.boolean().optional(),
+  /** 免密打赏: from one's own 商户 or 🐟额; left as it is when absent. */
+  tipPasswordFreeEnabled: z.boolean().optional(),
 });
 export type BalanceSettingsInput = z.infer<typeof balanceSettingsSchema>;
 

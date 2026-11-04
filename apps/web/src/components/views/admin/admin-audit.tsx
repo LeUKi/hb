@@ -25,6 +25,8 @@ const balanceLabels: Record<
   hongbaoEnabled: ["🐟额红包", (value) => (value ? "开" : "关")],
   transferEnabled: ["转账", (value) => (value ? "开" : "关")],
   pageEnabled: ["附带网页", (value) => (value ? "开" : "关")],
+  tipEnabled: ["打赏", (value) => (value ? "开" : "关")],
+  tipPasswordFreeEnabled: ["免密打赏", (value) => (value ? "开" : "关")],
   topupFeePercent: ["流转费率", (value) => `${value}%`],
   withdrawFeePercent: ["转出费率", (value) => `${value}%`],
   withdrawMaxMinor: [

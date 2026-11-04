@@ -1,5 +1,6 @@
 import {
   type ClaimResult,
+  createTipSchema,
   FORUM_ORIGIN,
   type MiniHongbaoResponse,
   type MiniRosterPage,
@@ -24,6 +25,9 @@ import { findActivity } from "../activities/storage";
 import type { ApiBindings, ApiContext } from "../env";
 import { activityObject } from "../runtime/objects";
 import { decryptString, encryptString } from "../security/crypto";
+import { requireAppOrigin } from "../security/http";
+import { listOwnCards, publicCard, requireCard } from "../tips/cards";
+import { checkTipOnCard, createTip, listTips, viewerOf } from "../tips/service";
 import { withForumAvatars } from "./forum-avatars";
 import {
   lookOnly,
@@ -375,5 +379,148 @@ miniRoutes.get("/mini/live", async (c) => {
         [LIVE_UNTIL_HEADER]: String(until),
       },
     },
+  );
+});
+
+// 打赏 in the 社区 (docs/tip-design.md §5, §7): a card (`?id=<卡号>`), a tip
+// on it, “查一下”, and the app's home (one's own cards). Everyone here is
+// known by the 社区: no guests and no Cap; a first tip makes the account,
+// as a first claim does.
+
+const cardCodePattern = /^[2-9a-zA-Z]{6}$/;
+
+function cardCodeOf(c: Context<ApiContext>) {
+  const code = c.req.query("id") ?? "";
+  if (!cardCodePattern.test(code))
+    throw new ActivityError(400, "INVALID_ID", "打赏卡编号不对。");
+  return code;
+}
+
+async function tipperOf(env: ApiBindings, userId: string) {
+  const row = await env.DB.prepare("SELECT username FROM users WHERE id=?")
+    .bind(userId)
+    .first<{ username: string }>();
+  return { id: userId, username: row?.username ?? "" };
+}
+
+const tipInputSchema = createTipSchema.extend({
+  forumUser: claimInputSchema.shape.forumUser,
+});
+
+miniRoutes.get("/mini/tip", async (c) => {
+  const trust = await trustOf(c.env);
+  const identity = await identityOf(c, trust);
+  const card = await requireCard(c.env, cardCodeOf(c));
+  const user = await siteUserOf(c.env, identity);
+  const [view, viewer] = await Promise.all([
+    publicCard(c.env, card),
+    viewerOf(c.env, card, user ? await tipperOf(c.env, user.id) : null),
+  ]);
+  c.header("Cache-Control", "no-store");
+  return c.json(
+    await withForumAvatars(c.env, {
+      card: view,
+      // Known by the 社区 even before 红包站 has an account for them.
+      viewer: { ...viewer, signedIn: true, capEndpoint: null },
+      lookOnly: lookOnly(trust, identity),
+    }),
+  );
+});
+
+miniRoutes.post(
+  "/mini/tip",
+  bodyLimit({
+    maxSize: 4096,
+    onError: () => {
+      throw new ActivityError(413, "PAYLOAD_TOO_LARGE", "提交内容太长。");
+    },
+  }),
+  async (c) => {
+    const trust = await trustOf(c.env);
+    const identity = await identityOf(c, trust);
+    if (lookOnly(trust, identity))
+      throw new ActivityError(
+        403,
+        "LOOK_ONLY",
+        "沙箱里只能看，正式版上线后才能打赏。",
+      );
+    const parsed = tipInputSchema.safeParse(
+      await c.req.json().catch(() => null),
+    );
+    if (!parsed.success)
+      throw new ActivityError(
+        400,
+        "INVALID_TIP",
+        parsed.error.issues[0]?.message ?? "提交内容不对。",
+      );
+    const { forumUser, ...input } = parsed.data;
+    const card = await requireCard(c.env, cardCodeOf(c));
+    const user =
+      (await siteUserOf(c.env, identity)) ??
+      (await registerFromForum(c.env, identity, forumUser));
+    return c.json(
+      await withForumAvatars(
+        c.env,
+        await createTip(
+          c.env,
+          card,
+          await tipperOf(c.env, user.id),
+          input,
+          "mini",
+          requireAppOrigin(c.env),
+        ),
+      ),
+    );
+  },
+);
+
+// “查一下” and the card's own asking: `?id=<卡号>&tip=<编号>`.
+miniRoutes.post("/mini/tip-check", async (c) => {
+  const trust = await trustOf(c.env);
+  const identity = await identityOf(c, trust);
+  const card = await requireCard(c.env, cardCodeOf(c));
+  const tipId = c.req.query("tip") ?? "";
+  if (!idPattern.test(tipId))
+    throw new ActivityError(400, "INVALID_ID", "打赏编号不对。");
+  const user = await siteUserOf(c.env, identity);
+  return c.json(
+    await withForumAvatars(
+      c.env,
+      await checkTipOnCard(
+        c.env,
+        card.id,
+        tipId.toLowerCase(),
+        user?.id ?? null,
+      ),
+    ),
+  );
+});
+
+// The app's home (no `tip`): one's own cards and the last tips on them.
+miniRoutes.get("/mini/tips-home", async (c) => {
+  const trust = await trustOf(c.env);
+  const identity = await identityOf(c, trust);
+  const user = await siteUserOf(c.env, identity);
+  c.header("Cache-Control", "no-store");
+  if (!user)
+    return c.json({
+      known: false,
+      cards: [],
+      used: 0,
+      limit: 0,
+      enabled: false,
+      received: [],
+    });
+  const [mine, received] = await Promise.all([
+    listOwnCards(c.env, user.id),
+    listTips(c.env, user.id, "in", { range: "week" }, undefined),
+  ]);
+  return c.json(
+    await withForumAvatars(c.env, {
+      known: true,
+      ...mine,
+      received: received.tips.slice(0, 10),
+      week: received.stats,
+    }),
   );
 });

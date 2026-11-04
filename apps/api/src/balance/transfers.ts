@@ -369,12 +369,15 @@ export async function dryRunTransfer(
  * Makes a 转账. Returns it, and the payment to wake when it goes to a
  * Credit account (the caller flushes its outbox). The same request again
  * returns the first one; a different one under the same number is refused.
+ * `also` adds writes that stand or fall with it (a 打赏 from 🐟额 is a
+ * 转账 written together with its tip).
  */
 export async function makeTransfer(
   env: ApiBindings,
   senderId: string,
   input: TransferInput,
   origin: TransferOrigin,
+  also?: (transferId: string, now: number) => D1PreparedStatement[],
 ): Promise<{ row: TransferRow; taskId: string | null }> {
   const digest = await transferDigest(input);
   const previous = await findPrevious(env, senderId, origin);
@@ -488,6 +491,7 @@ export async function makeTransfer(
       ...entries,
       ...around.tail,
       ...keyUse,
+      ...(also?.(id, now) ?? []),
     ]);
   } catch (error) {
     // The same request, sent twice at once: the one that got in.

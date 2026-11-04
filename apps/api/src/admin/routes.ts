@@ -1241,6 +1241,11 @@ function balanceAuditValues(json: unknown): Record<string, boolean | number> {
     ...("pageEnabled" in value
       ? { pageEnabled: value.pageEnabled === true }
       : {}),
+    // 打赏 (0059): the same.
+    ...("tipEnabled" in value ? { tipEnabled: value.tipEnabled === true } : {}),
+    ...("tipPasswordFreeEnabled" in value
+      ? { tipPasswordFreeEnabled: value.tipPasswordFreeEnabled === true }
+      : {}),
     ...("allowlistEnabled" in value
       ? {
           allowlistEnabled: value.allowlistEnabled === true,

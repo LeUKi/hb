@@ -46,6 +46,7 @@ export * from "./rate-limits";
 export * from "./recipient-speed";
 export * from "./roadmap";
 export * from "./share-text";
+export * from "./tips";
 
 export const ACTIVITY_LIMITS = {
   titleCharacters: 100,

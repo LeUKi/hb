@@ -227,16 +227,46 @@ export async function passesHumanCheck(
  * passesHumanCheck for Cap: its siteverify, through the service binding.
  * The token must be unused and for this 红包 and action (its scope).
  */
-async function passesCap(
+function passesCap(
   env: ApiBindings,
   challenge: HumanCheckChallenge,
   token: string,
+): Promise<boolean> {
+  return verifyCapToken(
+    env,
+    token,
+    `${challenge.action}:${challenge.cData}`,
+    challenge.cData,
+  );
+}
+
+/**
+ * Where a page asks Cap for a challenge bound to `scope` (红包 claims and
+ * 打赏 links alike), or null when Cap is not set up here.
+ */
+export function capEndpoint(env: ApiBindings, scope: string) {
+  const cap = capKeys(env);
+  return cap
+    ? `${cap.origin}/${encodeURIComponent(cap.siteKey)}/scope/${scope}/`
+    : null;
+}
+
+/**
+ * Whether a Cap token is unused and was given for `scope`. When Cap itself
+ * cannot answer (or is not set up here) it passes and is logged: nobody
+ * making the request can bring that about.
+ */
+export async function verifyCapToken(
+  env: ApiBindings,
+  token: string,
+  scope: string,
+  logId: string,
 ): Promise<boolean> {
   const configured = capKeys(env);
   if (!configured) return true;
   const unavailable = (reason: string) => {
     console.error("human_check_unavailable", {
-      activityId: challenge.cData,
+      activityId: logId,
       method: "cap",
       reason,
     });
@@ -263,8 +293,5 @@ async function passesCap(
         : "network",
     );
   }
-  return (
-    outcome.success === true &&
-    outcome.scope === `${challenge.action}:${challenge.cData}`
-  );
+  return outcome.success === true && outcome.scope === scope;
 }

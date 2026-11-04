@@ -1190,6 +1190,16 @@ export const balanceSettings = sqliteTable(
     pageEnabled: integer("page_enabled", { mode: "boolean" })
       .notNull()
       .default(false),
+    /** 打赏卡 may be made and tipped through (docs/tip-design.md). */
+    tipEnabled: integer("tip_enabled", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    /** 免密打赏: from one's own 商户 or 🐟额, without Credit 站's password. */
+    tipPasswordFreeEnabled: integer("tip_password_free_enabled", {
+      mode: "boolean",
+    })
+      .notNull()
+      .default(false),
     updatedAt: integer("updated_at").notNull(),
     updatedByUserId: text("updated_by_user_id"),
   },
@@ -2730,4 +2740,151 @@ export const roadmapChanges = sqliteTable(
     createdAt: integer("created_at").notNull(),
   },
   (table) => [index("roadmap_changes_time_idx").on(table.createdAt)],
+);
+
+/**
+ * A 打赏卡 (docs/tip-design.md §2): what others tip its owner through, in
+ * the 社区, on its ☕ page or embedded outside. Never deleted (its tips keep
+ * pointing at it); stopped instead.
+ */
+export const tipCards = sqliteTable(
+  "tip_cards",
+  {
+    id: text("id").primaryKey(),
+    /** In its addresses: /☕/<code>, the mini app's `tip`. */
+    code: text("code").notNull(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => users.id),
+    /** Only its owner sees it. */
+    name: text("name").notNull(),
+    style: text("style", { enum: ["simple", "standard"] }).notNull(),
+    palette: text("palette", {
+      enum: ["lake", "coffee", "jade", "grape"],
+    }).notNull(),
+    /** Empty: the card reads “打赏 <昵称>”. */
+    prompt: text("prompt").notNull().default(""),
+    /** JSON: [{ amountMinor, label }], 1–4 of them. */
+    amounts: text("amounts").notNull(),
+    defaultIndex: integer("default_index").notNull().default(0),
+    allowOther: integer("allow_other", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    /** 目标 (标准 only): null is off; counted from goal_since. */
+    goalMinor: integer("goal_minor"),
+    goalSince: integer("goal_since"),
+    showRecent: integer("show_recent", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    showTop: integer("show_top", { mode: "boolean" }).notNull().default(false),
+    linkKind: text("link_kind", { enum: ["none", "profile", "topic"] })
+      .notNull()
+      .default("none"),
+    linkTopicId: text("link_topic_id"),
+    linkTitle: text("link_title"),
+    linkUrl: text("link_url"),
+    version: integer("version").notNull().default(1),
+    stoppedAt: integer("stopped_at"),
+    /** Stopped by the 站长, and why (the owner cannot start it again). */
+    stoppedByAdminId: text("stopped_by_admin_id"),
+    stopReason: text("stop_reason"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("tip_cards_code_unique").on(table.code),
+    index("tip_cards_owner_idx").on(table.ownerId, table.createdAt, table.id),
+    check(
+      "tip_cards_valid",
+      sql`length(${table.code}) BETWEEN 4 AND 16 AND ${table.defaultIndex} BETWEEN 0 AND 3
+        AND (${table.goalMinor} IS NULL) = (${table.goalSince} IS NULL)
+        AND (${table.goalMinor} IS NULL OR (${table.style} = 'standard' AND ${table.goalMinor} BETWEEN 100 AND 10000000))
+        AND (${table.linkKind} = 'topic') = (${table.linkTopicId} IS NOT NULL)
+        AND ${table.version} >= 1`,
+    ),
+  ],
+);
+
+/**
+ * One tip (docs/tip-design.md §5): through Credit 站 into the owner's 商户
+ * (an order this site makes and checks), from 🐟额 (a 转账, written with
+ * it), or from the tipper's own 商户. A guest's has no tipper.
+ */
+export const tips = sqliteTable(
+  "tips",
+  {
+    id: text("id").primaryKey(),
+    cardId: text("card_id")
+      .notNull()
+      .references(() => tipCards.id),
+    cardVersion: integer("card_version").notNull(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => users.id),
+    tipperId: text("tipper_id").references(() => users.id),
+    amountMinor: integer("amount_minor").notNull(),
+    method: text("method", {
+      enum: ["checkout", "merchant", "balance"],
+    }).notNull(),
+    message: text("message"),
+    messageHidden: integer("message_hidden", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    status: text("status", {
+      enum: ["pending", "done", "unpaid", "sending", "not_sent"],
+    }).notNull(),
+    notSentReason: text("not_sent_reason"),
+    via: text("via", { enum: ["web", "mini", "embed"] }).notNull(),
+    requestId: text("request_id").notNull(),
+    requestDigest: text("request_digest").notNull(),
+    /** Credit 站: the owner's 商户 as it was when the order was made. */
+    merchantId: text("merchant_id").references(() => merchants.id),
+    clientId: text("client_id"),
+    credentialVersion: integer("credential_version"),
+    businessNo: text("business_no"),
+    orderName: text("order_name"),
+    returnUrl: text("return_url"),
+    externalOrderId: text("external_order_id"),
+    flag: text("flag", { enum: ["mismatch", "reversed"] }),
+    submittedAt: integer("submitted_at"),
+    lastCheckedAt: integer("last_checked_at"),
+    lastCheckResult: text("last_check_result"),
+    /** Claimed before each real check, so one is asked at most every 5 s. */
+    checkClaimedAt: integer("check_claimed_at").notNull().default(0),
+    /** 🐟额: the 转账 written with it. */
+    transferId: text("transfer_id").references(() => balanceTransfers.id),
+    /** 我的商户: the payment from the tipper's 商户. */
+    paymentTaskId: text("payment_task_id"),
+    createdAt: integer("created_at").notNull(),
+    doneAt: integer("done_at"),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("tips_request_unique")
+      .on(table.tipperId, table.requestId)
+      .where(sql`${table.tipperId} IS NOT NULL`),
+    uniqueIndex("tips_guest_request_unique")
+      .on(table.requestId)
+      .where(sql`${table.tipperId} IS NULL`),
+    uniqueIndex("tips_business_no_unique")
+      .on(table.businessNo)
+      .where(sql`${table.businessNo} IS NOT NULL`),
+    uniqueIndex("tips_transfer_unique")
+      .on(table.transferId)
+      .where(sql`${table.transferId} IS NOT NULL`),
+    index("tips_card_done_idx").on(table.cardId, table.status, table.doneAt),
+    index("tips_owner_time_idx").on(table.ownerId, table.createdAt, table.id),
+    index("tips_tipper_time_idx").on(table.tipperId, table.createdAt, table.id),
+    index("tips_status_time_idx").on(table.status, table.createdAt),
+    check(
+      "tips_valid",
+      sql`${table.amountMinor} BETWEEN 100 AND 200000
+        AND (${table.tipperId} IS NULL OR ${table.tipperId} <> ${table.ownerId})
+        AND (${table.message} IS NULL OR length(${table.message}) BETWEEN 1 AND 50)
+        AND (${table.status} = 'done') = (${table.doneAt} IS NOT NULL)
+        AND (${table.method} <> 'checkout' OR (${table.businessNo} IS NOT NULL AND ${table.merchantId} IS NOT NULL AND ${table.status} IN ('pending','done','unpaid')))
+        AND (${table.method} <> 'balance' OR (${table.transferId} IS NOT NULL AND ${table.tipperId} IS NOT NULL AND ${table.status} = 'done'))
+        AND (${table.method} <> 'merchant' OR (${table.tipperId} IS NOT NULL AND ${table.status} IN ('sending','done','not_sent')))`,
+    ),
+  ],
 );
