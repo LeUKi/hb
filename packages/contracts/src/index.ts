@@ -214,10 +214,15 @@ const baseActivitySchema = z.strictObject({
   // Preserve the parsed shape of legacy creation requests for idempotency.
   participationMode: participationModeSchema.optional(),
   /**
-   * 领取前人机验证: claiming or signing up first passes Cloudflare Turnstile
-   * in a dialog. Optional (not defaulted) for the same reason as above.
+   * 领取前人机验证: claiming or signing up first passes a human check in a
+   * dialog. Optional (not defaulted) for the same reason as above.
    */
   humanCheck: z.boolean().optional(),
+  /**
+   * How (docs/cap-design.md §3): Cap, or Cloudflare Turnstile. Absent with
+   * humanCheck: Turnstile, as before there was a choice.
+   */
+  humanCheckMethod: z.enum(["cap", "turnstile"]).optional(),
   /**
    * 领取范围 (docs/claim-scope-design.md): who may claim or sign up, by
    * 信任等级 or by name. Absent: everyone. Fixed once opened.
@@ -900,8 +905,10 @@ export type PublicActivity = {
   openingBlockedReason?: LdcOpeningBlockedReason;
   draw?: DrawSummary;
   drawProof?: DrawProof;
-  /** Claiming or signing up first passes a human check (Turnstile). */
+  /** Claiming or signing up first passes a human check. */
   humanCheck?: true;
+  /** With humanCheck: which one. */
+  humanCheckMethod?: HumanCheckMethod;
   /** 领取范围: absent for everyone. */
   scope?: PublicClaimScope;
   /** 代码判定: the prompt, fingerprints, and the code once it is over. */
@@ -1051,13 +1058,20 @@ export type AccountPaymentDetail = {
   activity: { id: string; title: string; draw: boolean };
 };
 export type ActivityIssue = { path: string; message: string };
-/** What the Turnstile widget needs for a 红包 that asks for a human check. */
+/** 领取前人机验证's two ways (docs/cap-design.md). */
+export type HumanCheckMethod = "cap" | "turnstile";
+/** What the page needs for a 红包 that asks for a human check. */
 export type HumanCheckChallenge = {
+  /** Absent: Turnstile (what pages before Cap know). */
+  method?: "cap";
+  /** Turnstile's site key, or Cap's site. */
   siteKey: string;
   /** Turnstile `action`: what the token is for. */
   action: "claim" | "register";
   /** Turnstile `cData`: the 红包 it is for. */
   cData: string;
+  /** Cap: where to ask for a challenge, on this site (`/api/cap/<scope>/`). */
+  endpoint?: string;
 };
 export type ActivityError = {
   error: { code: string; message: string; issues?: ActivityIssue[] };
@@ -1076,7 +1090,7 @@ export const passwordSolveSchema = z.strictObject({
   participationMode: z.literal("password").optional(),
 });
 export type PasswordClaimInput = z.infer<typeof passwordSolveSchema>;
-/** A Turnstile token, sent once the 红包 asked for it (HUMAN_CHECK_REQUIRED). */
+/** A Turnstile or Cap token, sent once the 红包 asked for it (HUMAN_CHECK_REQUIRED). */
 const humanTokenSchema = z.string().min(1).max(2048).optional();
 /** 附带网页认人 (docs/page-identity-design.md §2): asking for a token. */
 export const pageIdentityRequestSchema = z

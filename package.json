@@ -12,13 +12,13 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "bun run contracts:build && bun run --filter @hb/web dev",
+    "dev": "bun run contracts:build && bun run --filter @hb/cap --filter @hb/web dev",
     "dev:full-app": "node scripts/full-app-local-experience.mjs",
     "build": "bun run contracts:build && bun run cf:typegen && bun run --filter @hb/api typecheck && bun run --filter @hb/api build && bun run --filter @hb/web build",
-    "typecheck": "bun run contracts:build && bun run cf:typegen && bun run --filter @hb/api typecheck && bun run --filter @hb/web typecheck && bun run --filter @hb/mini typecheck && tsc -p tsconfig.json",
+    "typecheck": "bun run contracts:build && bun run cf:typegen && bun run --filter @hb/api typecheck && bun run --filter @hb/web typecheck && bun run --filter @hb/mini typecheck && bun run --filter @hb/cap typecheck && tsc -p tsconfig.json",
     "lint": "biome check .",
     "format": "biome check --write .",
-    "test": "bun run contracts:build && bun run cf:typegen && bun run test:tooling && bun run --filter @hb/contracts test && bun run --filter @hb/api test",
+    "test": "bun run contracts:build && bun run cf:typegen && bun run test:tooling && bun run --filter @hb/contracts test && bun run --filter @hb/api test && bun run --filter @hb/cap test",
     "test:e2e": "playwright test",
     "test:e2e:full-app": "playwright test --config playwright.full-app.config.ts",
     "check": "bun run lint && bun run typecheck && bun run test && bun run build && bun run test:e2e && bun run test:e2e:full-app",

@@ -470,7 +470,7 @@ test.describe("发红包", () => {
     await expect(overflow).toBeVisible();
   });
 
-  test("更多设置：领取前人机验证写明代价，打开后摘要和保存的输入都带上", async ({
+  test("更多设置：领取前人机验证写明代价，默认 Cap，打开后摘要和保存的输入都带上", async ({
     page,
   }) => {
     await mockSession(page, viewer);
@@ -483,17 +483,29 @@ test.describe("发红包", () => {
     const toggle = sheet.getByRole("switch", { name: "领取前人机验证" });
     await expect(toggle).toHaveAttribute("aria-checked", "false");
     await expect(sheet).toContainText(
-      "领取前先通过 Cloudflare 人机验证，挡住抢红包脚本；部分网络或浏览器可能加载不出，这些人会领不了。开放后也能改。",
+      "领取前要先通过人机验证，挡住抢红包的脚本。开放后也能改。",
     );
+    const methods = sheet.getByRole("group", { name: "人机验证方式" });
+    await expect(methods).toBeHidden();
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-checked", "true");
+    // Cap unless chosen otherwise; each card says what it costs.
+    const capCard = methods.getByRole("button", { name: /^Cap/ });
+    await expect(capCard).toHaveAttribute("aria-pressed", "true");
+    await expect(methods).toContainText("中国大陆网络常加载不出");
+    await methods.getByRole("button", { name: /Cloudflare Turnstile/ }).click();
+    await expect(capCard).toHaveAttribute("aria-pressed", "false");
+    await capCard.click();
     await sheet.getByRole("button", { name: "完成" }).click();
     await expect(page.getByRole("button", { name: /更多设置/ })).toContainText(
-      "领取前人机验证",
+      "领取前人机验证（Cap）",
     );
     await page.getByRole("button", { name: "存草稿" }).first().click();
     await expectDraftSaved(page);
-    expect(sent[0]?.activity).toMatchObject({ humanCheck: true });
+    expect(sent[0]?.activity).toMatchObject({
+      humanCheck: true,
+      humanCheckMethod: "cap",
+    });
   });
 
   test("更多设置：附带网页的地址按规矩检查、整理，能选自动打开，存草稿时带上", async ({

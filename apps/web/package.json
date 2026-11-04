@@ -10,6 +10,7 @@
     "cf:typegen": "wrangler types worker-configuration.d.ts --env-interface CloudflareEnv"
   },
   "dependencies": {
+    "@cap.js/wasm": "0.0.8",
     "@codemirror/commands": "6.11.1",
     "@codemirror/lang-javascript": "6.2.5",
     "@codemirror/lang-json": "6.0.2",
@@ -24,6 +25,7 @@
     "@tanstack/react-form": "1.33.5",
     "@tanstack/react-query": "5.104.1",
     "@tanstack/react-router": "1.170.41",
+    "cap-widget": "0.1.58",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "dayjs": "1.11.23",
@@ -31,6 +33,7 @@
     "jotai": "3.0.1",
     "lucide-react": "1.51.0",
     "motion": "14.0.0",
+    "pako": "2.1.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-markdown": "10.1.0",

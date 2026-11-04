@@ -1,0 +1,36 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "hb-cap",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-03",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "CAP_SITES": "[{\"key\": \"hb-local\", \"name\": \"红包站（本地）\", \"secretHash\": \"bfa75521f678a45a0b56311a704efa306a4b38af14a1529f4abc1b7f0106c08d\", \"origins\": [\"http://127.0.0.1:5173\", \"http://localhost:5173\", \"http://127.0.0.1:4195\", \"http://127.0.0.1:4193\"], \"challengeCount\": 100, \"difficulty\": 4, \"instrumentation\": true}]",
+    "DO_LOCATION_HINT": "",
+    "CAP_MASTER_SECRET": "local-cap-master-secret-not-for-deploys"
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "CAP_STORE", "class_name": "CapStore" }]
+  },
+  "exports": {
+    "CapStore": { "type": "durable-object", "storage": "sqlite" }
+  },
+  "ratelimits": [
+    {
+      "name": "PUBLIC_LIMIT",
+      "namespace_id": "2001",
+      "simple": { "limit": 120, "period": 60 }
+    }
+  ],
+  "alias": {
+    "esbuild": "./src/absent.ts",
+    "javascript-obfuscator": "./src/absent.ts"
+  },
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "invocation_logs": false },
+    "traces": { "enabled": false }
+  }
+}

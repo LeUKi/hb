@@ -5,6 +5,7 @@ import { useRouter } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useEffect, useRef, useState } from "react";
 import { useAttemptCooldown } from "../../lib/attempt-cooldown";
+import { loadCap } from "../../lib/cap";
 import { scopeNoticeAtom } from "../../lib/claim-scope";
 import { leaveClaimQueue } from "../../lib/claims";
 import { haptic } from "../../lib/haptics";
@@ -198,9 +199,12 @@ export function useHongbao(data: HongbaoData) {
 
   // 领取前人机验证: its script is fetched ahead, so the dialog opens ready.
   const humanCheckAhead =
-    activity.humanCheck && phase === "closed" && !draft && !gate;
+    activity.humanCheck && phase === "closed" && !draft && !gate
+      ? (activity.humanCheckMethod ?? "turnstile")
+      : null;
   useEffect(() => {
-    if (humanCheckAhead) loadTurnstile().catch(() => {});
+    if (humanCheckAhead === "cap") loadCap().catch(() => {});
+    else if (humanCheckAhead) loadTurnstile().catch(() => {});
   }, [humanCheckAhead]);
 
   const press = () => {

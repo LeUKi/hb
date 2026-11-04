@@ -39,6 +39,17 @@ export default defineConfig({
           // Cloudflare's always-pass test key: it needs no secret (human-check.ts).
           TURNSTILE_SITE_KEY: "1x00000000000000000000AA",
           TURNSTILE_SECRET_KEY: "",
+          // Cap (docs/cap-design.md): tests answer for the service themselves.
+          CAP_ORIGIN: "https://cap.test",
+          CAP_SITE_KEY: "hb-test",
+          CAP_SECRET_KEY: "test-cap-secret",
+        },
+        serviceBindings: {
+          CAP: () =>
+            Response.json(
+              { success: false, error: "no_cap_in_tests" },
+              { status: 503 },
+            ),
         },
       },
     }),

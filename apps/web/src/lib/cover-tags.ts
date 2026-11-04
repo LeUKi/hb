@@ -105,7 +105,10 @@ export function coverTags(activity: HongbaoActivity) {
       ? [
           {
             text: "需人机验证",
-            hint: `这是红包作者的要求：${verb}前要先通过 Cloudflare 人机验证。中国大陆网络、广告拦截插件或部分隐私浏览器可能加载不出验证。`,
+            hint:
+              activity.humanCheckMethod === "cap"
+                ? `这是红包作者的要求：${verb}前要先通过人机验证（Cap）。浏览器会自己算一两秒，不用点选。`
+                : `这是红包作者的要求：${verb}前要先通过 Cloudflare 人机验证。中国大陆网络、广告拦截插件或部分隐私浏览器可能加载不出验证。`,
           },
         ]
       : []),

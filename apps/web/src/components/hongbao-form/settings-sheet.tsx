@@ -426,12 +426,37 @@ export function SettingsSheet({
             <Setting>
               <Switch
                 label="领取前人机验证"
-                description={`领取前先通过 Cloudflare 人机验证，挡住抢红包脚本；部分网络或浏览器可能加载不出，这些人会领不了。开放后也能改。${humanCheckSuggested ? "这个判定器建议打开。" : ""}`}
+                description={`领取前要先通过人机验证，挡住抢红包的脚本。开放后也能改。${humanCheckSuggested ? "这个判定器建议打开。" : ""}`}
                 checked={form.humanCheck}
                 onChange={(humanCheck) =>
                   update((current) => ({ ...current, humanCheck }))
                 }
               />
+              <Reveal show={form.humanCheck}>
+                <div className="pt-3">
+                  <ChoiceCards
+                    label="人机验证方式"
+                    value={form.humanCheckMethod}
+                    onChange={(humanCheckMethod) =>
+                      update((current) => ({ ...current, humanCheckMethod }))
+                    }
+                    options={[
+                      {
+                        value: "cap",
+                        title: "Cap",
+                        description:
+                          "浏览器自己算一两秒，不用点选，中国大陆也能用。",
+                      },
+                      {
+                        value: "turnstile",
+                        title: "Cloudflare Turnstile",
+                        description:
+                          "挡脚本更强；中国大陆网络常加载不出，这些人领不了。",
+                      },
+                    ]}
+                  />
+                </div>
+              </Reveal>
             </Setting>
             {notes.map((item, index) => {
               const text = form[item.key].trim();

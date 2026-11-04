@@ -489,3 +489,27 @@ describe("typed backup content verification", () => {
     expect(statSync(result.backup).mode & 0o777).toBe(0o600);
   });
 });
+
+describe("Cap secrets", () => {
+  it("writes only the site's secret hash into the Cap configuration", async () => {
+    const { withSecretHash } = await import("../cap-secrets");
+    const config = `{\n  "vars": {\n    "CAP_SITES": ${JSON.stringify(
+      JSON.stringify([
+        { key: "hb", secretHash: "0".repeat(64), origins: [] },
+        { key: "other", secretHash: "1".repeat(64), origins: [] },
+      ]),
+    )},\n    "DO_LOCATION_HINT": "apac"\n  }\n}\n`;
+    const updated = withSecretHash(config, "hb", "a".repeat(64));
+    const sites = JSON.parse(
+      JSON.parse(/"CAP_SITES": ("(?:[^"\\]|\\.)*")/.exec(updated)?.[1] ?? ""),
+    );
+    expect(sites).toEqual([
+      { key: "hb", secretHash: "a".repeat(64), origins: [] },
+      { key: "other", secretHash: "1".repeat(64), origins: [] },
+    ]);
+    expect(updated).toContain('"DO_LOCATION_HINT": "apac"');
+    expect(() => withSecretHash(config, "missing", "a".repeat(64))).toThrow(
+      "CAP_SITE_MISSING",
+    );
+  });
+});

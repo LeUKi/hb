@@ -38,6 +38,8 @@ const appPort = imageHttps
 const controlPort = localExperience.enabled
   ? localExperience.controlPort
   : 4194;
+// Cap (docs/cap-design.md), on its own origin as in production.
+const capPort = localExperience.enabled ? 4187 : 4188;
 const localStateRoot = join(root, ".wrangler", "full-app-local-experience");
 const wranglerRequire = createRequire(
   await realpath(join(root, "node_modules/wrangler/package.json")),
@@ -122,7 +124,26 @@ async function main() {
       entryPoints: [join(root, "apps/web/src/worker.ts")],
       outfile: join(temporary, "web.mjs"),
     }),
+    // Cap (docs/cap-design.md), as apps/cap/wrangler.jsonc bundles it, but
+    // with its WebAssembly inlined (no "workerd" condition): no wasm rules.
+    build({
+      ...bundling,
+      conditions: ["worker", "browser"],
+      external: ["cloudflare:workers", "node:*"],
+      alias: {
+        esbuild: join(root, "apps/cap/src/absent.ts"),
+        "javascript-obfuscator": join(root, "apps/cap/src/absent.ts"),
+      },
+      entryPoints: [join(root, "apps/cap/src/index.ts")],
+      outfile: join(temporary, "cap.mjs"),
+    }),
   ]);
+  const capConfig = await readFile(
+    join(root, "apps/cap/wrangler.jsonc"),
+    "utf8",
+  );
+  const capSites = /"CAP_SITES": ("(?:[^"\\]|\\.)*")/.exec(capConfig)?.[1];
+  if (!capSites) throw new Error("CAP_SITES_NOT_FOUND");
   if (localExperience.enabled) await mkdir(localStateRoot, { recursive: true });
   const upstream = createTestUpstream(Response, origin, {
     avatarUrl:
@@ -190,6 +211,10 @@ async function main() {
             // Cloudflare's always-pass test key; Siteverify is the upstream mock.
             TURNSTILE_SITE_KEY: "1x00000000000000000000AA",
             TURNSTILE_SECRET_KEY: "",
+            // The local Cap below (apps/cap/wrangler.jsonc's site).
+            CAP_ORIGIN: `http://127.0.0.1:${capPort}`,
+            CAP_SITE_KEY: "hb-local",
+            CAP_SECRET_KEY: "local-cap-site-secret-not-for-deploys",
             // 维护模式 and where Durable Objects go (docs/d1-apac-migration.md):
             // a run can show the site in maintenance with
             // HB_FULL_APP_MAINTENANCE_MODE=true, or try the renamed objects
@@ -199,6 +224,7 @@ async function main() {
             DO_LOCATION_HINT: process.env.HB_FULL_APP_DO_LOCATION_HINT ?? "",
             DO_NAME_PREFIX: process.env.HB_FULL_APP_DO_NAME_PREFIX ?? "",
           },
+          serviceBindings: { CAP: "hb-full-app-cap" },
           d1Databases: { DB: "hb-full-app-isolated" },
           // 代码判定红包's sandboxes (apps/api/src/judge/sandbox.ts).
           workerLoaders: { LOADER: {} },
@@ -215,6 +241,28 @@ async function main() {
             },
           },
           outboundService: upstream.fetch,
+        },
+        {
+          name: "hb-full-app-cap",
+          modules: true,
+          scriptPath: join(temporary, "cap.mjs"),
+          compatibilityDate: "2026-10-03",
+          compatibilityFlags: ["nodejs_compat"],
+          bindings: {
+            CAP_SITES: JSON.parse(capSites),
+            CAP_MASTER_SECRET: "local-cap-master-secret-not-for-deploys",
+            DO_LOCATION_HINT: "",
+          },
+          unsafeDirectSockets: [{ host: "127.0.0.1", port: capPort }],
+          durableObjects: {
+            CAP_STORE: { className: "CapStore", useSQLite: true },
+          },
+          ratelimits: {
+            PUBLIC_LIMIT: {
+              namespace_id: "2001",
+              simple: { limit: 60, period: 60 },
+            },
+          },
         },
       ],
     }),

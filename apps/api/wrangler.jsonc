@@ -58,6 +58,7 @@
       "simple": { "limit": 600, "period": 60 }
     }
   ],
+  "services": [{ "binding": "CAP", "service": "hb-cap" }],
   "triggers": {
     "crons": ["*/5 * * * *"]
   },

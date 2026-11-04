@@ -12,6 +12,8 @@
     "LDC_ACCEPTANCE_ID": "",
     "ADMIN_LINUX_DO_IDS": "332940",
     "TURNSTILE_SITE_KEY": "0x4AAAAAAFZAtU_ipLBom3lC",
+    "CAP_ORIGIN": "https://cap.lafi.sh",
+    "CAP_SITE_KEY": "hb",
     "LDC_STOP_NEW_OPENINGS": "false",
     "LDC_STOP_NEW_CLAIMS": "false",
     "LDC_STOP_SENDS": "false",
@@ -78,6 +80,7 @@
       "simple": { "limit": 600, "period": 60 }
     }
   ],
+  "services": [{ "binding": "CAP", "service": "hb-cap-production" }],
   "triggers": {
     "crons": ["*/5 * * * *"]
   },

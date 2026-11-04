@@ -6,6 +6,7 @@ import type {
   AuthorClaim,
   ClaimDetail,
   DrawProof,
+  HumanCheckMethod,
   LdcOpeningBlockedReason,
   ManagedActivity,
   PaymentView,
@@ -54,8 +55,10 @@ export type HongbaoActivity = {
   beforeInfo: string;
   /** 首页领取 off: its 口令 match only on its own page (07 §6). */
   pageOnly: boolean;
-  /** 领取前人机验证: claiming or signing up first passes Turnstile. */
+  /** 领取前人机验证: claiming or signing up first passes a human check. */
   humanCheck: boolean;
+  /** Which, with humanCheck (one from before the choice is Turnstile). */
+  humanCheckMethod?: HumanCheckMethod;
   /** 领取范围: who may (docs/claim-scope-design.md); absent for everyone. */
   scope?: PublicClaimScope;
   /** A 🐟额红包: what is taken goes into 🐟额 (balance-design §14). */
@@ -250,6 +253,9 @@ export function hongbaoOf(
     beforeInfo: activity.beforeInfo,
     pageOnly: activity.forceDedicated,
     humanCheck: activity.humanCheck === true,
+    ...(activity.humanCheck === true
+      ? { humanCheckMethod: activity.humanCheckMethod ?? "turnstile" }
+      : {}),
     ...(activity.scope ? { scope: activity.scope } : {}),
     fish: activity.funding === "balance",
     custom:

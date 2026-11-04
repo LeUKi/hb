@@ -121,7 +121,7 @@ import {
   historyStatusTotal,
   rewardFilterSql,
 } from "./history-query";
-import { humanCheckAvailable } from "./human-check";
+import { humanCheckAvailable, humanCheckMethodOf } from "./human-check";
 import {
   openingRandomVersion,
   publicDrawProof,
@@ -171,6 +171,8 @@ function storedConfig(input: ActivityInput): StoredConfig {
       normalizePageUrl(config.pageUrl ?? "") && config.pageAutoOpen
         ? true
         : undefined,
+    // Kept only with the check on; one without a method is Turnstile.
+    humanCheckMethod: humanCheckMethodOf(config) ?? undefined,
     // The roster is always public (redesign 06 §2): no switches are kept.
     showRecipientList: undefined,
     showRecipientUsername: undefined,
@@ -179,7 +181,7 @@ function storedConfig(input: ActivityInput): StoredConfig {
   };
 }
 
-/** Turned on where Turnstile has no keys: claims could not ask for it. */
+/** Turned on where the chosen check has no keys: claims could not ask for it. */
 function humanCheckUnavailable(): never {
   throw new ActivityError(
     400,
@@ -590,7 +592,12 @@ export function projectPublicActivity(
     ...(drawSummary(row, config.quantityVisibility !== "fuzzy")
       ? { draw: drawSummary(row, config.quantityVisibility !== "fuzzy") }
       : {}),
-    ...(config.humanCheck ? { humanCheck: true as const } : {}),
+    ...(humanCheckMethodOf(config)
+      ? {
+          humanCheck: true as const,
+          humanCheckMethod: humanCheckMethodOf(config) ?? undefined,
+        }
+      : {}),
     ...(config.scope ? { scope: publicScope(config.scope) } : {}),
     ...(row.endReason === "stopped" ? { stopped: true as const } : {}),
     // 附带网页: not once the 站长 stopped it; the switch is the reader's
@@ -752,7 +759,8 @@ export async function createActivity(
       "SIMULATION_NOT_AVAILABLE",
       "此环境不支持创建模拟红包。",
     );
-  if (input.activity.humanCheck && !humanCheckAvailable(env))
+  const humanCheck = humanCheckMethodOf(input.activity);
+  if (humanCheck && !humanCheckAvailable(env, humanCheck))
     humanCheckUnavailable();
   const id = crypto.randomUUID();
   const now = Date.now();
@@ -900,7 +908,12 @@ export async function updateActivity(
   if (fixed && row.joinSquare && !config.joinSquare)
     invalidActivity("加入红包广场后不能撤回");
   const oldConfig = configuration(row);
-  if (config.humanCheck && !oldConfig.humanCheck && !humanCheckAvailable(env))
+  const humanCheck = humanCheckMethodOf(config);
+  if (
+    humanCheck &&
+    humanCheck !== humanCheckMethodOf(oldConfig) &&
+    !humanCheckAvailable(env, humanCheck)
+  )
     humanCheckUnavailable();
   // 附带网页 is fixed from opening until it is over, and for good once the
   // 站长 stopped it (docs/attached-page-design.md §1).

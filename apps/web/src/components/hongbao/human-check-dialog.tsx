@@ -1,10 +1,22 @@
 import { useAtomValue } from "jotai";
 import { useEffect, useRef, useState } from "react";
+import { CapProblem, solveCap } from "../../lib/cap";
 import { type HumanCheckRequest, humanCheckAtom } from "../../lib/human-check";
 import { loadTurnstile } from "../../lib/turnstile";
 import { ConfirmDialog } from "../shell/confirm-dialog";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/kbd";
+
+/** What went wrong with Cap, said to the claimant (docs/cap-design.md §3). */
+function capProblemText(code: string) {
+  if (code === "instr_blocked")
+    return "这个浏览器没有通过人机验证的检测，可能是自动化工具或特殊的内置浏览器。换个浏览器再试。";
+  if (code === "wasm_load_failed" || code === "worker_spawn_failed")
+    return "这个浏览器运行不了人机验证，换个浏览器再试。";
+  if (code === "unreachable" || code === "network_error")
+    return "人机验证加载不出来，检查网络后点“重试”。";
+  return `人机验证没有通过（错误码 ${code}）。点“重试”；一直不过的话，换个浏览器再试。`;
+}
 
 /** What went wrong, said to the claimant; Turnstile's code kept for a report. */
 function problemText(code: string) {
@@ -78,6 +90,51 @@ function TurnstileWidget({
 }
 
 /**
+ * Cap: the browser works out its puzzles on its own, a second or two; the
+ * bar fills as it goes, the loading sheen sweeping it.
+ */
+function CapWidget({
+  request,
+  onProblem,
+}: {
+  request: HumanCheckRequest;
+  onProblem: (code: string) => void;
+}) {
+  const [progress, setProgress] = useState(0);
+  const latest = useRef({ request, onProblem });
+  latest.current = { request, onProblem };
+  const { challenge } = request;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    solveCap(challenge.endpoint ?? "", setProgress, controller.signal).then(
+      (token) => latest.current.request.resolve(token),
+      (error) => {
+        if (controller.signal.aborted) return;
+        latest.current.onProblem(
+          error instanceof CapProblem ? error.code : "unknown",
+        );
+      },
+    );
+    return () => controller.abort();
+  }, [challenge]);
+
+  return (
+    <div role="status" className="grid gap-2 py-2">
+      <div className="loading-sheen h-2 overflow-hidden rounded-full bg-fill">
+        <div
+          className="h-full rounded-full bg-accent transition-[width] duration-300 ease-out"
+          style={{ width: `${Math.max(4, progress)}%` }}
+        />
+      </div>
+      <p className="text-sm text-ink-3">
+        浏览器在后台算一小会儿题，不用操作，一两秒就好。
+      </p>
+    </div>
+  );
+}
+
+/**
  * 领取前人机验证: shown each time a 红包 asks (its sender turned it on).
  * It passes on its own and the claim goes on; closing it cancels the claim.
  */
@@ -110,7 +167,13 @@ export function HumanCheckDialog() {
       busy={passed}
       title="人机验证"
       text={`这是${who}的要求：${verb}这个红包需要先通过人机验证，通过后会自动${verb}。`}
-      error={problem && !passed ? problemText(problem) : null}
+      error={
+        problem && !passed
+          ? shown?.challenge.method === "cap"
+            ? capProblemText(problem)
+            : problemText(problem)
+          : null
+      }
       actions={
         passed ? null : (
           <>
@@ -136,7 +199,10 @@ export function HumanCheckDialog() {
         </p>
       )}
       {/* 重试 draws a fresh widget. Kept while the dialog fades out. */}
-      {shown && (
+      {shown && !problem && !passed && shown.challenge.method === "cap" && (
+        <CapWidget key={round} request={shown} onProblem={setProblem} />
+      )}
+      {shown && shown.challenge.method !== "cap" && (
         <TurnstileWidget key={round} request={shown} onProblem={setProblem} />
       )}
       {passed && (

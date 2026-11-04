@@ -10,6 +10,15 @@ type ApiEnvVars = {
   /** Turnstile (领取前人机验证): the public site key, and its secret. */
   TURNSTILE_SITE_KEY?: string;
   TURNSTILE_SECRET_KEY?: string;
+  /**
+   * Cap (docs/cap-design.md): where pages reach it, the service bound for
+   * siteverify, this site's key there and its secret. Without all four Cap
+   * cannot be chosen.
+   */
+  CAP_ORIGIN?: string;
+  CAP?: Fetcher;
+  CAP_SITE_KEY?: string;
+  CAP_SECRET_KEY?: string;
   ADMIN_LINUX_DO_IDS?: string;
   APP_ENV?: string;
   LDC_NETWORK_MODE?: string;

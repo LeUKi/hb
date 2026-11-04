@@ -387,3 +387,175 @@ describe("领取前人机验证", () => {
     );
   });
 });
+
+/** A stand-in Cap service: siteverify answers with `outcomes` in turn. */
+function capService(...outcomes: unknown[]) {
+  const asked: { url: string; body: string | null }[] = [];
+  const service = {
+    async fetch(url: string | URL | Request, init?: RequestInit) {
+      asked.push({ url: String(url), body: (init?.body as string) ?? null });
+      const outcome = outcomes[Math.min(asked.length, outcomes.length) - 1];
+      if (outcome instanceof Error) throw outcome;
+      if (outcome instanceof Response) return outcome;
+      return Response.json(outcome);
+    },
+  } as unknown as Fetcher;
+  return { asked, bindings: { ...bindings, CAP: service } as ApiBindings };
+}
+
+function postWith(
+  environment: ApiBindings,
+  path: string,
+  body: unknown,
+  headers: Record<string, string> = {},
+) {
+  return app.request(
+    `${origin}${path}`,
+    {
+      method: "POST",
+      headers: {
+        Cookie: alice.cookie,
+        Origin: origin,
+        "Content-Type": "application/json",
+        "X-CSRF-Token": alice.csrf,
+        ...headers,
+      },
+      body: typeof body === "string" ? body : JSON.stringify(body),
+    },
+    environment,
+  );
+}
+
+describe("领取前人机验证：Cap", () => {
+  it("asks for Cap at its own origin, and claims with a token for this 红包", async () => {
+    const activity = await save(input({ humanCheckMethod: "cap" }));
+    expect(await getPublicActivity(bindings, activity.id)).toMatchObject({
+      humanCheck: true,
+      humanCheckMethod: "cap",
+    });
+    const submissionId = crypto.randomUUID();
+    const asked = await claim(activity.id, {
+      submissionId,
+      participationMode: "direct",
+    });
+    expect(asked.status).toBe(403);
+    expect(((await asked.json()) as ActivityError).humanCheck).toEqual({
+      method: "cap",
+      siteKey: "hb-test",
+      action: "claim",
+      cData: activity.id,
+      endpoint: `https://cap.test/hb-test/scope/claim:${activity.id}/`,
+    });
+
+    const cap = capService(
+      { success: true, scope: `claim:${crypto.randomUUID()}` },
+      { success: false, error: "invalid_token" },
+      { success: true, scope: `claim:${activity.id}` },
+    );
+    const body = {
+      submissionId,
+      participationMode: "direct",
+      humanToken: "id:part",
+    };
+    for (const _ of [1, 2]) {
+      const refused = await postWith(
+        cap.bindings,
+        `/api/activities/${activity.id}/claim`,
+        body,
+      );
+      expect(((await refused.json()) as ActivityError).error.code).toBe(
+        "HUMAN_CHECK_REQUIRED",
+      );
+    }
+    const claimed = await postWith(
+      cap.bindings,
+      `/api/activities/${activity.id}/claim`,
+      body,
+    );
+    expect(((await claimed.json()) as ClaimResult).result).toBe("claimed");
+    expect(cap.asked[2]?.url).toBe("https://cap.internal/hb-test/siteverify");
+    expect(JSON.parse(cap.asked[2]?.body ?? "{}")).toEqual({
+      secret: "test-cap-secret",
+      response: "id:part",
+    });
+  });
+
+  it("lets the claim through when Cap itself cannot answer, and logs it", async () => {
+    const activity = await save(input({ humanCheckMethod: "cap" }));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const cap = capService(
+      new TypeError("unreachable"),
+      new Response("bad secret", { status: 403 }),
+    );
+    for (const reason of ["network", "http_403"]) {
+      const claimed = await postWith(
+        cap.bindings,
+        `/api/activities/${activity.id}/claim`,
+        {
+          submissionId: crypto.randomUUID(),
+          participationMode: "direct",
+          humanToken: "id:part",
+        },
+      );
+      const result = (await claimed.json()) as ClaimResult;
+      expect(["claimed", "already_claimed"]).toContain(result.result);
+      expect(logged).toHaveBeenCalledWith("human_check_unavailable", {
+        activityId: activity.id,
+        method: "cap",
+        reason,
+      });
+      await advanceAttemptCooldown(env.DB, alice.id);
+    }
+  });
+
+  it("keeps Turnstile for a check turned on before there was a choice", async () => {
+    const activity = await save(input());
+    expect(await getPublicActivity(bindings, activity.id)).toMatchObject({
+      humanCheckMethod: "turnstile",
+    });
+    await env.DB.prepare(
+      "UPDATE activities SET config=json_remove(config,'$.humanCheckMethod') WHERE id=?",
+    )
+      .bind(activity.id)
+      .run();
+    const asked = await claim(activity.id, {
+      submissionId: crypto.randomUUID(),
+      participationMode: "direct",
+    });
+    expect(((await asked.json()) as ActivityError).humanCheck).toEqual({
+      siteKey: testSiteKey,
+      action: "claim",
+      cData: activity.id,
+    });
+  });
+
+  it("turns Cap on only where Cap is bound, and switches either way after opening", async () => {
+    const bare: ApiBindings = { ...bindings, CAP_SECRET_KEY: "" };
+    for (const missing of [bare, { ...bindings, CAP_ORIGIN: "" }])
+      await expect(
+        save(input({ humanCheckMethod: "cap" }), missing),
+      ).rejects.toMatchObject({ code: "HUMAN_CHECK_UNAVAILABLE" });
+    const turnstile = await save(input());
+    await expect(
+      updateActivity(bare, turnstile.id, owner.id, {
+        version: turnstile.version,
+        activity: {
+          ...turnstile.config,
+          passwords: [],
+          humanCheckMethod: "cap",
+        },
+      }),
+    ).rejects.toMatchObject({ code: "HUMAN_CHECK_UNAVAILABLE" });
+    const cap = await updateActivity(bindings, turnstile.id, owner.id, {
+      version: turnstile.version,
+      activity: { ...turnstile.config, passwords: [], humanCheckMethod: "cap" },
+    });
+    expect(cap.config.humanCheckMethod).toBe("cap");
+    // Off keeps no method; on again without one is Turnstile.
+    const off = await updateActivity(bindings, cap.id, owner.id, {
+      version: cap.version,
+      activity: { ...cap.config, passwords: [], humanCheck: false },
+    });
+    expect(off.config.humanCheckMethod).toBeUndefined();
+  });
+});

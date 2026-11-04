@@ -610,7 +610,13 @@ export function HongbaoForm({
     form.pageOnly
       ? ["关闭首页领取"]
       : []),
-    ...(form.humanCheck ? ["领取前人机验证"] : []),
+    ...(form.humanCheck
+      ? [
+          form.humanCheckMethod === "cap"
+            ? "领取前人机验证（Cap）"
+            : "领取前人机验证（Turnstile）",
+        ]
+      : []),
   ].join(" · ");
   const body = (step: StepId) => {
     const locked = lockedStep(step);

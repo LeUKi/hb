@@ -12,6 +12,8 @@
     "LDC_ACCEPTANCE_ID": "",
     "ADMIN_LINUX_DO_IDS": "332940",
     "TURNSTILE_SITE_KEY": "1x00000000000000000000AA",
+    "CAP_ORIGIN": "https://staging.cap.lafi.sh",
+    "CAP_SITE_KEY": "hb-staging",
     "LDC_STOP_NEW_OPENINGS": "true",
     "LDC_STOP_NEW_CLAIMS": "true",
     "LDC_STOP_SENDS": "true",
@@ -79,6 +81,7 @@
       "simple": { "limit": 600, "period": 60 }
     }
   ],
+  "services": [{ "binding": "CAP", "service": "hb-cap-staging" }],
   "triggers": {
     "crons": ["*/5 * * * *"]
   },

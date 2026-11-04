@@ -157,7 +157,8 @@ async function mockHongbao(
    * two, each one solvable. `note`: the 说明, in place of the long list.
    */
   options: {
-    humanCheck?: boolean;
+    /** true: Turnstile, as 红包 from before the choice; "cap": Cap. */
+    humanCheck?: true | "cap";
     fish?: boolean;
     more?: string[];
     note?: string;
@@ -177,6 +178,9 @@ async function mockHongbao(
     activity: {
       ...publicActivity(),
       ...(options.humanCheck ? { humanCheck: true as const } : {}),
+      ...(options.humanCheck === "cap"
+        ? { humanCheckMethod: "cap" as const }
+        : {}),
       ...(options.fish ? { funding: "balance" as const } : {}),
       ...(options.note !== undefined ? { beforeInfo: options.note } : {}),
     },
@@ -301,11 +305,20 @@ async function mockHongbao(
               code: "HUMAN_CHECK_REQUIRED",
               message: "领取这个红包需要先通过人机验证。",
             },
-            humanCheck: {
-              siteKey: "1x00000000000000000000AA",
-              action: "claim",
-              cData: id,
-            },
+            humanCheck:
+              options.humanCheck === "cap"
+                ? {
+                    method: "cap",
+                    siteKey: "hb-local",
+                    action: "claim",
+                    cData: id,
+                    endpoint: `https://cap.example.test/hb-local/scope/claim:${id}/`,
+                  }
+                : {
+                    siteKey: "1x00000000000000000000AA",
+                    action: "claim",
+                    cData: id,
+                  },
           } satisfies ActivityError,
         });
       return route.fulfill({
@@ -1450,6 +1463,89 @@ test.describe("红包页", () => {
         language: "zh-cn",
       },
     ]);
+  });
+
+  test("领取前人机验证（Cap）：浏览器直连 Cap 算题，进度条走完自动领取，组件和 WASM 从本站加载", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    // Cap at its own origin: a small challenge the real widget solves, and
+    // its redeem answering as Cap would, both across origins (CORS).
+    const cap: string[] = [];
+    const cors = {
+      "Access-Control-Allow-Origin": "http://127.0.0.1:5173",
+      "Access-Control-Allow-Methods": "POST",
+      "Access-Control-Allow-Headers": "Content-Type",
+    };
+    await page.route(
+      `https://cap.example.test/hb-local/scope/claim:${id}/*`,
+      async (route, request) => {
+        if (request.method() === "OPTIONS")
+          return route.fulfill({ status: 204, headers: cors });
+        const step = new URL(request.url()).pathname.split("/").pop() ?? "";
+        cap.push(step);
+        if (step === "challenge")
+          return route.fulfill({
+            headers: cors,
+            json: {
+              challenge: { c: 3, s: 16, d: 2 },
+              token: "e2e-cap-challenge",
+              expires: Date.now() + 600_000,
+            },
+          });
+        const body = request.postDataJSON() as { solutions: number[] };
+        expect(body.solutions).toHaveLength(3);
+        return route.fulfill({
+          headers: cors,
+          json: {
+            success: true,
+            token: "e2e-cap-token",
+            expires: Date.now() + 300_000,
+          },
+        });
+      },
+    );
+    const elsewhere: string[] = [];
+    page.on("request", (request) => {
+      if (
+        !request.url().startsWith("http://127.0.0.1") &&
+        !request.url().startsWith("https://cap.example.test/")
+      )
+        elsewhere.push(request.url());
+    });
+    const state = await mockHongbao(page, { humanCheck: "cap" });
+    await openApp(page, path);
+    await expect(
+      page.getByRole("button", { name: "需人机验证" }),
+    ).toHaveAccessibleDescription(/人机验证（Cap）。浏览器会自己算一两秒/);
+    await page.getByRole("button", { name: "输入口令领取" }).click();
+    await omniboxInput(page).fill(passwordOf.mine);
+    await page.keyboard.press("Enter");
+    const dialog = page.getByRole("dialog", { name: "人机验证" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText(
+      "浏览器在后台算一小会儿题，不用操作，一两秒就好。",
+    );
+    await expect(
+      page.getByRole("status").filter({ hasText: "已领取 0.10 LDC。" }),
+    ).toHaveCount(1);
+    await expect(dialog).toBeHidden();
+    expect(cap).toEqual(["challenge", "redeem"]);
+    const [asked, passed] = state.claims as Array<{
+      submissionId: string;
+      humanToken?: string;
+    }>;
+    expect(asked?.humanToken).toBeUndefined();
+    expect(passed).toEqual({
+      submissionId: asked?.submissionId,
+      password: passwordOf.mine,
+      humanToken: "e2e-cap-token",
+    });
+    expect(
+      elsewhere.filter(
+        (url) => !url.startsWith("https://avatars.example.test"),
+      ),
+    ).toEqual([]);
   });
 
   test("我的结果：付款原因写成中文，不露出原因码", async ({ page }) => {

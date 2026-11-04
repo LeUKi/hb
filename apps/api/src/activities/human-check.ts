@@ -1,13 +1,14 @@
-import type { HumanCheckChallenge } from "@hb/contracts";
+import type { HumanCheckChallenge, HumanCheckMethod } from "@hb/contracts";
 import type { ApiBindings } from "../env";
 import { ActivityError } from "./errors";
 import type { ActivityRow } from "./storage";
 
 // 领取前人机验证: a 红包 whose author turned it on asks each claim or sign-up
-// for a Cloudflare Turnstile token first. The API route checks the token
-// with Siteverify before the 红包's Durable Object (whose writes queue one
-// by one) sees the request; the Durable Object, which knows when a claim
-// would really go ahead, asks for one (HUMAN_CHECK_REQUIRED) only then.
+// for a token first, from Cap (docs/cap-design.md) or Cloudflare Turnstile,
+// as the author chose. The API route checks the token before the 红包's
+// Durable Object (whose writes queue one by one) sees the request; the
+// Durable Object, which knows when a claim would really go ahead, asks for
+// one (HUMAN_CHECK_REQUIRED) only then.
 
 const SITEVERIFY_URL =
   "https://challenges.cloudflare.com/turnstile/v0/siteverify";
@@ -38,16 +39,41 @@ function keys(env: ApiBindings) {
   return siteKey && secret ? { siteKey, secret } : null;
 }
 
-/** Whether this environment can ask for a human check at all. */
-export function humanCheckAvailable(env: ApiBindings) {
-  return keys(env) !== null;
+/**
+ * Cap: where pages reach it, the service bound for siteverify (CAP), this
+ * site's key there, and its secret.
+ */
+export function capKeys(env: ApiBindings) {
+  const origin = env.CAP_ORIGIN?.trim().replace(/\/+$/, "") ?? "";
+  const siteKey = env.CAP_SITE_KEY?.trim() ?? "";
+  const secret = env.CAP_SECRET_KEY?.trim() ?? "";
+  return env.CAP && origin && siteKey && secret
+    ? { service: env.CAP, origin, siteKey, secret }
+    : null;
+}
+
+/** Whether this environment can ask for this kind of human check. */
+export function humanCheckAvailable(
+  env: ApiBindings,
+  method: HumanCheckMethod,
+) {
+  return (method === "cap" ? capKeys(env) : keys(env)) !== null;
+}
+
+/**
+ * The human check a stored configuration asks for, or null. One turned on
+ * before there was a choice is Turnstile.
+ */
+export function humanCheckMethodOf(config: {
+  humanCheck?: unknown;
+  humanCheckMethod?: unknown;
+}): HumanCheckMethod | null {
+  if (config.humanCheck !== true) return null;
+  return config.humanCheckMethod === "cap" ? "cap" : "turnstile";
 }
 
 export function humanCheckEnabled(activity: Pick<ActivityRow, "config">) {
-  return (
-    (JSON.parse(activity.config) as { humanCheck?: unknown }).humanCheck ===
-    true
-  );
+  return humanCheckMethodOf(JSON.parse(activity.config)) !== null;
 }
 
 function actionOf(activity: Pick<ActivityRow, "config">) {
@@ -65,17 +91,28 @@ export function humanCheckOf(
   env: ApiBindings,
   activity: Pick<ActivityRow, "id" | "config">,
 ): HumanCheckChallenge | null {
-  if (!humanCheckEnabled(activity)) return null;
-  const configured = keys(env);
+  const method = humanCheckMethodOf(JSON.parse(activity.config));
+  if (!method) return null;
+  const cap = method === "cap" ? capKeys(env) : null;
+  const configured = method === "cap" ? cap : keys(env);
   if (!configured) {
-    console.error("human_check_not_configured", { activityId: activity.id });
+    console.error("human_check_not_configured", {
+      activityId: activity.id,
+      method,
+    });
     return null;
   }
-  return {
-    siteKey: configured.siteKey,
-    action: actionOf(activity),
-    cData: activity.id,
-  };
+  const action = actionOf(activity);
+  return cap
+    ? {
+        method: "cap",
+        siteKey: cap.siteKey,
+        action,
+        cData: activity.id,
+        // The page asks Cap itself, its challenge bound to this 红包 and action.
+        endpoint: `${cap.origin}/${encodeURIComponent(cap.siteKey)}/scope/${action}:${activity.id}/`,
+      }
+    : { siteKey: configured.siteKey, action, cData: activity.id };
 }
 
 export class HumanCheckRequiredError extends ActivityError {
@@ -130,6 +167,7 @@ export async function passesHumanCheck(
   token: string,
   remoteIp: string | undefined,
 ): Promise<boolean> {
+  if (challenge.method === "cap") return passesCap(env, challenge, token);
   const configured = keys(env);
   if (!configured) return true;
   const unavailable = (reason: string) => {
@@ -182,5 +220,51 @@ export async function passesHumanCheck(
     outcome.hostname === host &&
     outcome.action === challenge.action &&
     outcome.cdata === challenge.cData
+  );
+}
+
+/**
+ * passesHumanCheck for Cap: its siteverify, through the service binding.
+ * The token must be unused and for this 红包 and action (its scope).
+ */
+async function passesCap(
+  env: ApiBindings,
+  challenge: HumanCheckChallenge,
+  token: string,
+): Promise<boolean> {
+  const configured = capKeys(env);
+  if (!configured) return true;
+  const unavailable = (reason: string) => {
+    console.error("human_check_unavailable", {
+      activityId: challenge.cData,
+      method: "cap",
+      reason,
+    });
+    return true;
+  };
+  let outcome: { success?: unknown; scope?: unknown };
+  try {
+    const response = await configured.service.fetch(
+      `https://cap.internal/${encodeURIComponent(configured.siteKey)}/siteverify`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ secret: configured.secret, response: token }),
+        signal: AbortSignal.timeout(SITEVERIFY_TIMEOUT_MS),
+      },
+    );
+    // A wrong secret (403) or site (404) is this side's fault.
+    if (!response.ok) return unavailable(`http_${response.status}`);
+    outcome = await response.json();
+  } catch (error) {
+    return unavailable(
+      error instanceof Error && error.name === "TimeoutError"
+        ? "timeout"
+        : "network",
+    );
+  }
+  return (
+    outcome.success === true &&
+    outcome.scope === `${challenge.action}:${challenge.cData}`
   );
 }

@@ -6,6 +6,7 @@ import {
   CLAIM_SCOPE_LIMITS,
   type ClaimScope,
   DEFAULT_DRAW_COUNTDOWN_SECONDS,
+  type HumanCheckMethod,
   JUDGE_LIMITS,
   JUDGE_NAME_LIMITS,
   type JudgeDeclarations,
@@ -123,8 +124,10 @@ export type FormState = {
   pageAutoOpen: boolean;
   listed: boolean;
   quantity: "exact" | "fuzzy";
-  /** 领取前人机验证: Turnstile in a dialog before each claim or sign-up. */
+  /** 领取前人机验证: a check in a dialog before each claim or sign-up. */
   humanCheck: boolean;
+  /** Which check (docs/cap-design.md); Cap unless chosen otherwise. */
+  humanCheckMethod: HumanCheckMethod;
   /** 领取范围 (docs/claim-scope-design.md): everyone, or by 等级 and/or by name. */
   scope: ScopeForm;
 };
@@ -252,6 +255,7 @@ export function emptyForm(now = Date.now()): FormState {
     pageAutoOpen: false,
     listed: false,
     humanCheck: false,
+    humanCheckMethod: "cap",
     quantity: "exact",
     scope: {
       limited: false,
@@ -773,6 +777,11 @@ export function formOf(activity: ManagedActivity, now = Date.now()): FormState {
     listed: config.joinSquare,
     quantity: config.quantityVisibility === "fuzzy" ? "fuzzy" : "exact",
     humanCheck: config.humanCheck === true,
+    // One turned on before there was a choice is Turnstile.
+    humanCheckMethod:
+      config.humanCheck === true
+        ? (config.humanCheckMethod ?? "turnstile")
+        : "cap",
     scope: config.scope
       ? {
           limited: true,
@@ -872,7 +881,9 @@ export function inputOf(form: FormState, merchantId: string): ActivityInput {
     afterEndInfo: form.afterEndInfo,
     participationMode: coded ? "code" : form.participation,
     // Left out when off, so older saved forms keep their shape (idempotency).
-    ...(form.humanCheck ? { humanCheck: true } : {}),
+    ...(form.humanCheck
+      ? { humanCheck: true, humanCheckMethod: form.humanCheckMethod }
+      : {}),
     ...(normalizePageUrl(form.page)
       ? {
           pageUrl: normalizePageUrl(form.page) ?? "",
@@ -992,6 +1003,7 @@ export function openedInputOf(
     afterClaimInfo: form.afterClaimInfo,
     afterEndInfo: form.afterEndInfo,
     humanCheck: form.humanCheck,
+    ...(form.humanCheck ? { humanCheckMethod: form.humanCheckMethod } : {}),
     // Its 密钥 may still change (judge-key §3).
     ...(activity.config.judge && "keys" in keysTyped(form)
       ? { judge: { ...activity.config.judge, ...keysTyped(form) } }
@@ -1019,6 +1031,10 @@ export function sameInput(saved: ActivityInput, sent: ActivityInput) {
       merchantId: input.merchantId,
       funding: input.funding ?? "merchant",
       humanCheck: input.humanCheck === true,
+      humanCheckMethod:
+        input.humanCheck === true
+          ? (input.humanCheckMethod ?? "turnstile")
+          : null,
       pageUrl: input.pageUrl ?? "",
       pageAutoOpen: input.pageUrl ? input.pageAutoOpen === true : false,
       // What a save sends of its code (its versions come back with it).

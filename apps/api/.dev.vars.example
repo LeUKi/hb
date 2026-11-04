@@ -16,6 +16,13 @@ ENCRYPTION_KEY_VERSION="v1"
 TURNSTILE_SITE_KEY=1x00000000000000000000AA
 TURNSTILE_SECRET_KEY=
 
+# Cap (docs/cap-design.md): where pages reach it, this site's key at the Cap
+# service bound as CAP, and its secret. These are the local Cap's
+# (apps/cap/wrangler.jsonc, `bun run dev` runs it on 8788).
+CAP_ORIGIN=http://127.0.0.1:8788
+CAP_SITE_KEY=hb-local
+CAP_SECRET_KEY=local-cap-site-secret-not-for-deploys
+
 # Only while D1 moves (docs/d1-apac-migration.md): "true" stops every write,
 # a location hint places new Durable Objects, a prefix renames long-lived ones.
 MAINTENANCE_MODE=false
