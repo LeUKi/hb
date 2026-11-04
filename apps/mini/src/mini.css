@@ -66,29 +66,8 @@ html[data-hold-scroll] {
    theme), and text, lines and glass are plain white at some opacity, so the
    frame does not show as a patch on any dark theme; the 红包 alone keeps its
    red, its gold and its lacquer. */
-:root[data-mode="dark"] {
-  color-scheme: dark;
-  --mini-page: #222222;
-  --color-white: color-mix(in srgb, var(--mini-page), #fff 10%);
-  --color-ink: #ededed;
-  --color-ink-2: #b3b3b3;
-  --color-ink-3: #868686;
-  --color-fill: rgb(255 255 255 / 0.06);
-  --color-fill-2: rgb(255 255 255 / 0.1);
-  --color-line: rgb(255 255 255 / 0.1);
-  --color-line-strong: rgb(255 255 255 / 0.18);
-  --color-accent: #ec4a4e;
-  --color-accent-ink: #ff8a86;
-  --color-accent-soft: rgb(236 74 78 / 0.18);
-  --color-gold-ink: #f1cf86;
-  --color-gold-soft: rgb(237 203 134 / 0.14);
-  --color-success: #4ccb8c;
-  --color-success-soft: rgb(76 203 140 / 0.14);
-  --color-warning: #f0a83a;
-  --color-warning-soft: rgb(240 168 58 / 0.14);
-  --color-danger: #ff6b80;
-  --color-danger-soft: rgb(255 107 128 / 0.14);
-}
+/* The dark tokens themselves are in the site's styles.css (embeds outside
+   the 社区 use them too). */
 :root[data-mode="dark"] .btn-secondary {
   --btn-top: rgb(255 255 255 / 0.08);
   --btn-bottom: rgb(255 255 255 / 0.08);

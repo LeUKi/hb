@@ -116,6 +116,7 @@ const everyone = [
   { name: "收", text: "领🐟额红包、收别人的转账" },
   { name: "发红包", text: "用🐟额发红包" },
   { name: "转出", text: "转回自己的 Credit 账户" },
+  { name: "打赏卡", text: "最多 3 张" },
 ];
 
 /** 10 月 19 日, in Beijing. */

@@ -530,6 +530,8 @@ export async function ownerCardView(
   return {
     ...rest,
     name: row.name,
+    showRecent: row.show_recent === 1,
+    showTop: row.show_top === 1,
     link: linkOf(row),
     createdAt: row.created_at,
     updatedAt: row.updated_at,

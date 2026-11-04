@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   CircleHelp,
+  Coffee,
   Fish,
   FolderCode,
   HardHat,
@@ -38,6 +39,7 @@ export type CommandPath =
   | "/new"
   | "/history"
   | "/balance"
+  | "/tips"
   | "/square"
   | "/rank"
   | "/me"
@@ -52,6 +54,7 @@ export type CommandId =
   | "new"
   | "history"
   | "balance"
+  | "tips"
   | "square"
   | "rank"
   | "me"
@@ -157,6 +160,24 @@ export const commands: Command[] = [
       "zr",
       "zhuanchu",
       "zc",
+    ],
+  },
+  {
+    id: "tips",
+    path: "/tips",
+    name: "tips",
+    title: "我的打赏",
+    icon: Coffee,
+    requires: "standard",
+    visibleTo: (role) => role !== "guest",
+    keys: [
+      "tips",
+      "我的打赏",
+      "打赏",
+      "打赏卡",
+      "dashang",
+      "ds",
+      "wodedashang",
     ],
   },
   {

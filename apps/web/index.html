@@ -12,6 +12,15 @@
     <meta name="description" content="__BRAND_DESCRIPTION__" />
     <title>__BRAND_TITLE__</title>
     <!--brand-icon-->
+    <script>
+      // A 打赏卡 embedded in another page (/☕/<卡号>?embed, docs/tip-design.md
+      // §7): no loader and no desktop, only the card on that page's background.
+      if (
+        /^\/(?:%E2%98%95|\u2615)\/[^/]+\/?$/i.test(location.pathname) &&
+        new URLSearchParams(location.search).has("embed")
+      )
+        document.documentElement.dataset.embed = "tip";
+    </script>
     <style>
       /* Boot loader: painted before any JS or app CSS arrives. Colours mirror
          the 夜灯 tokens: the gradients below are the resting state of the
@@ -206,6 +215,15 @@
       #boot[data-motion="reduce"] .boot-center {
         transition: none;
       }
+      /* A 打赏卡 embedded in another page: the card alone. */
+      html[data-embed] #boot {
+        display: none;
+      }
+      html[data-embed],
+      html[data-embed] body {
+        overflow: auto;
+        background: transparent;
+      }
     </style>
   </head>
   <body>
@@ -242,6 +260,11 @@
         const boot = document.getElementById("boot");
         const appRoot = document.getElementById("root");
         if (!boot || !appRoot) return;
+        if (document.documentElement.dataset.embed) {
+          boot.remove();
+          appRoot.removeAttribute("inert");
+          return;
+        }
         // figma-squircle's getSvgPath (the engine of @squircle-js/react) for
         // equal corners, smoothing 0.8 as in lib/squircle-path.ts.
         const smoothing = 0.8;

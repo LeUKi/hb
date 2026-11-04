@@ -15,6 +15,9 @@ export function plusFeatures(deploys: number, owner = false): PlusFeature[] {
     { name: "转账", text: "转给别人的🐟额或 Credit 账户" },
     { name: "开放接口", text: "接入网站或程序" },
     { name: "代码判定红包", text: `每天能部署 ${deploys} 次` },
+    // 打赏 (docs/tip-design.md §2): more cards, and tipping from 🐟额.
+    { name: "打赏卡", text: "最多 30 张" },
+    { name: "🐟额打赏", text: "用🐟额打赏别人，不用输密码" },
     { name: "邀请", text: "请别人也开通" },
   ];
 }

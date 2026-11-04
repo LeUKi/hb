@@ -2350,6 +2350,10 @@
   pointer-events: none;
   user-select: none;
 }
+/* A 打赏卡 embedded in another page shows nothing but the card. */
+html[data-embed] .build-stamp {
+  display: none;
+}
 
 @keyframes hb-nudge-up {
   50% {
@@ -2421,4 +2425,239 @@
   to {
     background-position: -120% 0;
   }
+}
+
+/* 打赏卡 (docs/tip-design.md §4, mock docs/mocks/tips.html): its palette
+   (never 红包's red and gold), light and in the 社区's dark; the card keeps
+   its height whatever step it shows, and drops words when narrow. */
+.tip-card {
+  --t-accent: #2f6fdb;
+  --t-top: #4382ec;
+  --t-bottom: #2459c4;
+  --t-ink: #1f4fa8;
+  --t-soft: rgb(47 111 219 / 0.07);
+  --t-soft-2: rgb(47 111 219 / 0.14);
+  --t-on: #ffffff;
+  --t-line: color-mix(in srgb, var(--t-accent) 22%, transparent);
+  container: tip / inline-size;
+  position: relative;
+  width: 100%;
+  min-width: 288px;
+  margin-inline: auto;
+  overflow: hidden;
+  background: var(--t-soft);
+  border: 1px solid var(--t-line);
+  color: var(--color-ink);
+}
+.tip-card[data-palette="coffee"] {
+  --t-accent: #9a5b23;
+  --t-top: #b0702f;
+  --t-bottom: #8a4f1c;
+  --t-ink: #7a4515;
+  --t-soft: rgb(154 91 35 / 0.07);
+  --t-soft-2: rgb(154 91 35 / 0.14);
+  --t-on: #fff8f0;
+}
+.tip-card[data-palette="jade"] {
+  --t-accent: #0d8b7d;
+  --t-top: #17a191;
+  --t-bottom: #0b786c;
+  --t-ink: #0a6a5f;
+  --t-soft: rgb(13 139 125 / 0.07);
+  --t-soft-2: rgb(13 139 125 / 0.14);
+  --t-on: #f3fffc;
+}
+.tip-card[data-palette="grape"] {
+  --t-accent: #7247c6;
+  --t-top: #8459d8;
+  --t-bottom: #6339b3;
+  --t-ink: #5a34a0;
+  --t-soft: rgb(114 71 198 / 0.07);
+  --t-soft-2: rgb(114 71 198 / 0.14);
+  --t-on: #fbf8ff;
+}
+:root[data-mode="dark"] .tip-card {
+  --t-accent: #5b9bff;
+  --t-top: #4e8ff7;
+  --t-bottom: #2f6fdb;
+  --t-ink: #a4c6ff;
+  --t-soft: rgb(91 155 255 / 0.1);
+  --t-soft-2: rgb(91 155 255 / 0.2);
+}
+:root[data-mode="dark"] .tip-card[data-palette="coffee"] {
+  --t-accent: #e0a066;
+  --t-top: #c98a4f;
+  --t-bottom: #a86c34;
+  --t-ink: #f2c595;
+  --t-soft: rgb(224 160 102 / 0.1);
+  --t-soft-2: rgb(224 160 102 / 0.2);
+}
+:root[data-mode="dark"] .tip-card[data-palette="jade"] {
+  --t-accent: #3fd0bb;
+  --t-top: #25b29e;
+  --t-bottom: #118f7f;
+  --t-ink: #93e6d8;
+  --t-soft: rgb(63 208 187 / 0.1);
+  --t-soft-2: rgb(63 208 187 / 0.2);
+}
+:root[data-mode="dark"] .tip-card[data-palette="grape"] {
+  --t-accent: #a98bff;
+  --t-top: #8e6ef0;
+  --t-bottom: #7150d4;
+  --t-ink: #cdbcff;
+  --t-soft: rgb(169 139 255 / 0.1);
+  --t-soft-2: rgb(169 139 255 / 0.2);
+}
+.tip-card .btn-primary {
+  color: var(--t-on);
+  --btn-top: var(--t-top);
+  --btn-bottom: var(--t-bottom);
+  --btn-drop: 0 6px 12px -8px
+    color-mix(in srgb, var(--t-bottom) 70%, transparent);
+}
+.tip-card .btn-primary:is(:disabled, [data-disabled]) {
+  color: var(--t-on);
+  --btn-top: var(--t-top);
+  --btn-bottom: var(--t-bottom);
+  opacity: 0.45;
+}
+.tip-card .btn-secondary {
+  --btn-line: var(--t-line);
+}
+/* A choice on the card: two lines (the amount, then “LDC”). */
+.tip-option {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  min-width: 0;
+  padding-inline: 4px;
+  color: var(--t-ink);
+  background: color-mix(in srgb, var(--color-white) 70%, transparent);
+  box-shadow: inset 0 0 0 1px var(--t-line);
+  transition:
+    background 0.18s var(--ease-snappy),
+    box-shadow 0.18s var(--ease-snappy);
+}
+.tip-option:hover:not(:disabled) {
+  background: var(--t-soft-2);
+}
+.tip-option[aria-pressed="true"] {
+  background: var(--color-white);
+  box-shadow: inset 0 0 0 2px var(--t-accent);
+}
+.tip-option.is-first {
+  color: var(--t-on);
+  background: linear-gradient(180deg, var(--t-top), var(--t-bottom));
+  box-shadow: none;
+}
+.tip-option:disabled {
+  opacity: 0.5;
+  background: transparent;
+}
+.tip-bar {
+  position: relative;
+  height: 4px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--t-accent) 14%, var(--color-white));
+}
+.tip-bar > i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--t-top), var(--t-bottom));
+}
+.tip-amount-tier-2 {
+  color: var(--t-ink);
+  background: var(--t-soft-2);
+}
+.tip-amount-tier-3 {
+  color: var(--t-on);
+  background: linear-gradient(180deg, var(--t-top), var(--t-bottom));
+}
+.tip-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--t-accent);
+  vertical-align: 1px;
+  animation: tip-pulse 1.2s ease-in-out infinite;
+}
+@keyframes tip-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+@keyframes tip-mine {
+  from {
+    background: var(--t-soft-2);
+  }
+}
+.tip-mine {
+  animation: tip-mine 2.4s ease-out;
+}
+/* Narrow cards say less: the 商户's name, then where it comes from, go
+   first; the amount, who gets it and 不能撤回 stay. */
+.tip-v-narrow,
+.tip-v-mid,
+.tip-v-short {
+  display: none;
+}
+@container tip (max-width: 370px) {
+  .tip-card[data-style="simple"] .tip-v-long {
+    display: none;
+  }
+  .tip-card[data-style="simple"] .tip-v-mid {
+    display: inline;
+  }
+}
+@container tip (max-width: 290px) {
+  .tip-card[data-style="simple"] :is(.tip-v-wide, .tip-v-mid) {
+    display: none;
+  }
+  .tip-card[data-style="simple"] :is(.tip-v-narrow, .tip-v-short) {
+    display: inline;
+  }
+  .tip-card[data-style="standard"] .tip-v-long {
+    display: none;
+  }
+  .tip-card[data-style="standard"] .tip-v-mid {
+    display: inline;
+  }
+}
+[data-motion="reduce"] :is(.tip-dot, .tip-mine) {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.tip-dot, .tip-mine) {
+    animation: none;
+  }
+}
+
+/* 深色 (docs/mini-app-design.md §4): the 社区 asks for it, and so may a page
+   outside it that embeds a 打赏卡 (?theme=dark). The site itself has none. */
+:root[data-mode="dark"] {
+  color-scheme: dark;
+  --mini-page: #222222;
+  --color-white: color-mix(in srgb, var(--mini-page), #fff 10%);
+  --color-ink: #ededed;
+  --color-ink-2: #b3b3b3;
+  --color-ink-3: #868686;
+  --color-fill: rgb(255 255 255 / 0.06);
+  --color-fill-2: rgb(255 255 255 / 0.1);
+  --color-line: rgb(255 255 255 / 0.1);
+  --color-line-strong: rgb(255 255 255 / 0.18);
+  --color-accent: #ec4a4e;
+  --color-accent-ink: #ff8a86;
+  --color-accent-soft: rgb(236 74 78 / 0.18);
+  --color-gold-ink: #f1cf86;
+  --color-gold-soft: rgb(237 203 134 / 0.14);
+  --color-success: #4ccb8c;
+  --color-success-soft: rgb(76 203 140 / 0.14);
+  --color-warning: #f0a83a;
+  --color-warning-soft: rgb(240 168 58 / 0.14);
+  --color-danger: #ff6b80;
+  --color-danger-soft: rgb(255 107 128 / 0.14);
 }

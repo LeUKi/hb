@@ -139,6 +139,23 @@ const historyRoute = createRoute({
   path: "/history",
   staticData: { chrome: "docked", command: "history" },
 });
+// 我的打赏 (docs/tip-design.md §7): one's 打赏卡 and the tips on them.
+const tipsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tips",
+  staticData: { chrome: "docked", command: "tips" },
+});
+// A 打赏卡's own page, and a tip's, where Credit 站 sends its payer back.
+const tipCardRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/☕/$code",
+  staticData: { chrome: "docked" },
+});
+const tipReceiptRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/☕/$code/🧾/$tipId",
+  staticData: { chrome: "docked", subpage: "打赏详情" },
+});
 const balanceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/balance",
@@ -213,6 +230,8 @@ const balanceCheckoutRoute = subRoute(
   "付款详情",
 );
 const judgeRoute = subRoute("/judges/$judgeId", "judges", "判定器");
+const tipNewRoute = subRoute("/tips/new", "tips", "新建打赏卡");
+const tipEditRoute = subRoute("/tips/$code", "tips", "编辑打赏卡");
 // 写一个判定器 (judge-square §15.4); ?from=<编号> is 复制一份来改.
 const judgeNewRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -342,6 +361,11 @@ const routeTree = rootRoute.addChildren([
   balanceTopupRoute,
   balanceWithdrawalRoute,
   balanceCheckoutRoute,
+  tipsRoute,
+  tipNewRoute,
+  tipEditRoute,
+  tipCardRoute,
+  tipReceiptRoute,
   adminRoute,
   adminActivitiesRoute,
   adminUsersRoute,

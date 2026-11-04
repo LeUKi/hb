@@ -20,6 +20,7 @@ import {
   requireProtectedMutation,
 } from "../auth/session";
 import type { ApiContext } from "../env";
+import { plusOf } from "../balance/plus";
 import { requireAppOrigin } from "../security/http";
 import {
   createCard,
@@ -65,7 +66,12 @@ export const tipRoutes = new Hono<ApiContext>()
   // 我的打赏: one's cards, how many one may keep on.
   .get("/me/tips", async (c) => {
     const session = await requireAuth(c);
-    return c.json(await listOwnCards(c.env, session.user.id));
+    const [mine, plus] = await Promise.all([
+      listOwnCards(c.env, session.user.id),
+      plusOf(c.env, session.user.id),
+    ]);
+    // The title's PLUS tag, as on the 🐟额 page.
+    return c.json({ ...mine, plus });
   })
   .post(
     "/me/tips/cards",
@@ -107,7 +113,7 @@ export const tipRoutes = new Hono<ApiContext>()
     });
   })
   // 收到的 / 我打赏的, filtered by card, method and time.
-  .get("/me/tips/:side{in|out}", async (c) => {
+  .get("/me/tips/list/:side", async (c) => {
     const session = await requireAuth(c);
     const method = tipMethodSchema.safeParse(c.req.query("method"));
     const range = tipRangeSchema.safeParse(c.req.query("range") ?? "week");

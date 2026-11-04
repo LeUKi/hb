@@ -35,6 +35,7 @@ import { useWindowInfo } from "./window-info";
 const cardCommands: CommandId[] = [
   "history",
   "balance",
+  "tips",
   "merchant",
   "payments",
   "admin",

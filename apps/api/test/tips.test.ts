@@ -540,14 +540,14 @@ describe("打赏 at Credit 站", () => {
     });
     expect(shown.card.top[0]).toMatchObject({ rank: 1, amountMinor: 500 });
 
-    const received = (await call("GET", "/me/tips/in?range=all", owner))
+    const received = (await call("GET", "/me/tips/list/in?range=all", owner))
       .json as {
       tips: { direction: string; counterpart: { username: string } }[];
       stats: { count: number; people: number; amountMinor: number };
     };
     expect(received.stats).toEqual({ count: 1, people: 1, amountMinor: 500 });
     expect(received.tips[0]?.counterpart.username).toBe(fan.username);
-    const given = (await call("GET", "/me/tips/out?range=all", fan)).json as {
+    const given = (await call("GET", "/me/tips/list/out?range=all", fan)).json as {
       tips: { direction: string; card: { name: string | null } }[];
     };
     expect(given.tips[0]).toMatchObject({

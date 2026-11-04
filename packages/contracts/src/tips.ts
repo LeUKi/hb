@@ -207,6 +207,9 @@ export type TipCardView = { card: PublicTipCard; viewer: TipViewer };
 /** A card in 我的打赏, as its owner sees it. */
 export type TipCard = Omit<PublicTipCard, "owner" | "recent" | "top"> & {
   name: string;
+  /** 标准's lists, switched on or not. */
+  showRecent: boolean;
+  showTop: boolean;
   link: TipLink;
   createdAt: number;
   updatedAt: number;
@@ -266,3 +269,6 @@ export type TipList = {
 
 export const tipRangeSchema = z.enum(["today", "week", "all"]);
 export type TipRange = z.infer<typeof tipRangeSchema>;
+
+/** The 社区's own bar above a mini app embedded in a post: 69px (2026-11-05). */
+export const FORUM_EMBED_BAR = 69;

@@ -48,6 +48,9 @@ import { SenderView } from "../views/sender-view";
 import { SquareView } from "../views/square-view";
 import { StartView } from "../views/start-view";
 import { StatusView } from "../views/status-view";
+import { TipEditView } from "../views/tip-edit-view";
+import { TipCardPageView, TipReceiptView } from "../views/tip-page-view";
+import { TipsView } from "../views/tips-view";
 import { WindowClip } from "./window-clip";
 
 type Leaf = ReturnType<typeof useLeaf>;
@@ -62,6 +65,7 @@ const commandPages: Record<
   rank: <RankView />,
   history: <HistoryView />,
   balance: <BalanceView />,
+  tips: <TipsView />,
   me: <MeView />,
   merchant: <MerchantView />,
   payments: <PaymentsView />,
@@ -123,6 +127,21 @@ function renderView(leaf: NonNullable<Leaf>): ReactNode {
         <MessageView title="红包地址不对" text="请检查链接是否完整。" />
       );
     }
+    case "/☕/$code":
+      return <TipCardPageView code={params.code ?? ""} />;
+    case "/☕/$code/🧾/$tipId":
+      return (
+        <TipReceiptView code={params.code ?? ""} id={params.tipId ?? ""} />
+      );
+    case "/tips/new":
+      return <CommandPageView id="tips" page={<TipEditView />} />;
+    case "/tips/$code":
+      return (
+        <CommandPageView
+          id="tips"
+          page={<TipEditView code={params.code ?? ""} />}
+        />
+      );
     case "/invite/$token":
       return <InviteView token={params.token ?? ""} />;
     case "/🔑/$resultId":
