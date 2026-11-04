@@ -18,7 +18,9 @@ import { eq } from "drizzle-orm";
 import { NETWORK_REASONS } from "../../../kit/runtime/index.mjs";
 import {
   admitActivityClaim,
+  allocateClaimSubmission,
   claimActivity,
+  claimAnswer,
   claimDecided,
   completeClaimSubmission,
   resumePendingActivityClaims,
@@ -248,7 +250,7 @@ function mutationError(error: unknown) {
  * that went the whole way in the line, its error, or decided (null).
  */
 type ClaimTurn =
-  | { result: Awaited<ReturnType<typeof completeClaimSubmission>> }
+  | { result: Awaited<ReturnType<typeof allocateClaimSubmission>> }
   | { response: Response }
   | { error: unknown }
   | null;
@@ -995,7 +997,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       try {
         if (submission)
           return {
-            result: await completeClaimSubmission(this.env, submission),
+            result: await allocateClaimSubmission(this.env, submission),
           };
         // Not checked outside (not open yet, a timed draw): all of it here.
         if (await claimDecided(this.env, id, userId)) return null;
@@ -1016,7 +1018,16 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     if (outcome === null) return answer();
     if ("error" in outcome) return mutationError(outcome.error);
     if ("response" in outcome) return outcome.response;
-    return this.claimed(id, userId, input, outcome.result);
+    if (outcome.result !== "allocated")
+      return this.claimed(id, userId, input, outcome.result);
+    // Its share written: the answer is read after the turn.
+    if (!submission) throw new Error("A share was written with no submission");
+    return this.claimed(
+      id,
+      userId,
+      input,
+      await claimAnswer(this.env, submission),
+    );
   }
 
   /** After a claim: who hears of it, a payment woken, the answer. */

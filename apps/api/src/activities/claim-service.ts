@@ -624,6 +624,41 @@ export async function completeClaimSubmission(
   admitted: SubmissionRow,
   executionPolicy?: ActivityExecutionPolicy,
 ): Promise<ClaimResult> {
+  const allocated = await allocateClaimSubmission(
+    env,
+    admitted,
+    executionPolicy,
+  );
+  return allocated === "allocated" ? claimAnswer(env, admitted) : allocated;
+}
+
+/**
+ * A submission's answer once allocateClaimSubmission is through: read only,
+ * so it needs no turn in the 红包's line. Still pending (its tries ran out):
+ * to be sent again as it was.
+ */
+export async function claimAnswer(env: ApiBindings, admitted: SubmissionRow) {
+  const final = await findSubmission(
+    env,
+    admitted.userId,
+    admitted.submissionId,
+  );
+  if (final && final.outcome !== "pending")
+    return resultOfSubmission(env, final);
+  throw new ActivityError(503, "ACTIVITY_BUSY", "领取繁忙，请使用原提交重试");
+}
+
+/**
+ * completeClaimSubmission's share, without its answer: "allocated" when its
+ * answer is to be read (claimAnswer), outside the 红包's line
+ * (durable-objects.ts claimOne); the answer itself when one finished it
+ * otherwise (a share already, over, finished before).
+ */
+export async function allocateClaimSubmission(
+  env: ApiBindings,
+  admitted: SubmissionRow,
+  executionPolicy?: ActivityExecutionPolicy,
+): Promise<ClaimResult | "allocated"> {
   let selectedInventoryId: string | null = null;
   for (let retry = 0; retry < 5; retry += 1) {
     const submission = await findSubmission(
@@ -665,6 +700,11 @@ export async function completeClaimSubmission(
       );
     // 代码判定: the share is made now, as its judgment paid (judge/claims.ts).
     const coded = activity.participationMode === "code";
+    // Only an old 拼手气 draws among all shares left; a v2 queue hands out
+    // its shares in order (开奖证明): the k-th claim takes the k-th, so one
+    // row is read, not every share left.
+    const pickedAtRandom =
+      activity.allocation === "random" && activity.randomVersion === null;
     const paid = coded
       ? await env.DB.prepare(
           "SELECT paid_minor FROM code_judgments WHERE submission_row_id = ? AND ok = 1",
@@ -678,16 +718,13 @@ export async function completeClaimSubmission(
       ? { results: [{ id: crypto.randomUUID(), amount_minor: paid }] }
       : await env.DB.prepare(`SELECT inventory.id, inventory.amount_minor FROM reward_inventory inventory
       WHERE inventory.activity_id = ? AND inventory.kind = 'ldc' AND NOT EXISTS (SELECT 1 FROM claims WHERE claims.activity_id = inventory.activity_id AND claims.inventory_id = inventory.id)
-      ORDER BY inventory.position`)
+      ORDER BY inventory.position${pickedAtRandom ? "" : " LIMIT 1"}`)
           .bind(activity.id)
           .all<{ id: string; amount_minor: number | null }>();
     const reward =
       available.results.find((item) => item.id === selectedInventoryId) ??
       available.results[
-        // A v2 queue hands out its shares in order (开奖证明): the k-th claim takes the k-th.
-        activity.allocation === "random" && activity.randomVersion === null
-          ? randomIndex(available.results.length || 1)
-          : 0
+        pickedAtRandom ? randomIndex(available.results.length || 1) : 0
       ];
     if (!reward)
       throw new ActivityError(
@@ -827,15 +864,9 @@ export async function completeClaimSubmission(
       if (taken) continue;
       throw error;
     }
+    return "allocated";
   }
-  const final = await findSubmission(
-    env,
-    admitted.userId,
-    admitted.submissionId,
-  );
-  if (final && final.outcome !== "pending")
-    return resultOfSubmission(env, final);
-  throw new ActivityError(503, "ACTIVITY_BUSY", "领取繁忙，请使用原提交重试");
+  return "allocated";
 }
 
 /**
