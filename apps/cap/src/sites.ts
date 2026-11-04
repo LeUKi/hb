@@ -18,7 +18,7 @@ export type Site = {
   instrumentation: boolean;
 };
 
-const SITE_KEY = /^[a-z0-9-]{3,64}$/;
+const SITE_KEY = /^[a-z0-9-]{2,64}$/;
 const HEX_SHA256 = /^[0-9a-f]{64}$/;
 
 function invalid(reason: string): never {

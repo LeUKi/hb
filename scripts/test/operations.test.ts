@@ -513,3 +513,26 @@ describe("Cap secrets", () => {
     );
   });
 });
+
+describe("Cap configurations", () => {
+  it("each environment's site list reads, with the site the API names", async () => {
+    const { parseSites } = await import("../../apps/cap/src/sites");
+    const { repositoryRoot } = await import("../lib/environments");
+    for (const [cap, api] of [
+      ["apps/cap/wrangler.jsonc", "apps/api/.dev.vars.example"],
+      ["apps/cap/wrangler.staging.jsonc", "apps/api/wrangler.staging.jsonc"],
+      [
+        "apps/cap/wrangler.production.jsonc",
+        "apps/api/wrangler.production.jsonc",
+      ],
+    ] as const) {
+      const config = readFileSync(join(repositoryRoot, cap), "utf8");
+      const raw = /"CAP_SITES":\s*("(?:[^"\\]|\\.)*")/.exec(config)?.[1];
+      const sites = parseSites(JSON.parse(raw ?? '""'));
+      const siteKey = /CAP_SITE_KEY"?[=:]\s*"?([a-z0-9-]+)/.exec(
+        readFileSync(join(repositoryRoot, api), "utf8"),
+      )?.[1];
+      expect(siteKey && sites.get(siteKey)?.key).toBe(siteKey);
+    }
+  });
+});

@@ -8,7 +8,7 @@
   "preview_urls": false,
   "routes": [{ "pattern": "cap.lafi.sh", "custom_domain": true }],
   "vars": {
-    "CAP_SITES": "[{\"key\": \"hb\", \"name\": \"红包站\", \"secretHash\": \"0000000000000000000000000000000000000000000000000000000000000000\", \"origins\": [\"https://hb.lafi.sh\"], \"challengeCount\": 100, \"difficulty\": 4, \"instrumentation\": true}]",
+    "CAP_SITES": "[{\"key\":\"hb\",\"name\":\"红包站\",\"secretHash\":\"81345faf30b2df58070213982881c89c2d59ff9e881799e3412a56a32e752c08\",\"origins\":[\"https://hb.lafi.sh\"],\"challengeCount\":100,\"difficulty\":4,\"instrumentation\":true}]",
     "DO_LOCATION_HINT": "apac"
   },
   "durable_objects": {
