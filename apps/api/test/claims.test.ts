@@ -1280,20 +1280,25 @@ describe("the claim line (2026-11-04)", () => {
           fetch(request: Request): Promise<Response>;
           serialize(action: () => Promise<void>): Promise<void>;
         };
-        const send = async (userId: string) =>
-          (await (
-            await object.fetch(
-              new Request(url, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  userId,
-                  submissionId: crypto.randomUUID(),
-                  password: "正确口令123",
-                }),
+        const send = async (userId: string, password = "正确口令123") => {
+          const response = await object.fetch(
+            new Request(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                userId,
+                submissionId: crypto.randomUUID(),
+                password,
               }),
-            )
-          ).json()) as ClaimResult & { error?: { message: string } };
+            }),
+          );
+          return {
+            status: response.status,
+            ...((await response.json()) as ClaimResult & {
+              error?: { code: string };
+            }),
+          };
+        };
         // Hold the line: what joins it waits until released.
         let release = () => {};
         const held = object.serialize(
@@ -1304,6 +1309,17 @@ describe("the claim line (2026-11-04)", () => {
         );
         // Bob has a share: answered while the line is held.
         expect((await send(bob.id)).result).toBe("already_claimed");
+        // Checks are made outside the line: a wrong 口令 is answered while
+        // it is held, and that person's next attempt still waits its turn
+        // of the attempt interval.
+        const wrong = await send(late.id, "错误口令123");
+        expect(wrong).toMatchObject({ status: 200, result: "incorrect" });
+        const [again1, again2] = await Promise.all([
+          send(late.id, "错误口令456"),
+          send(late.id, "错误口令789"),
+        ]);
+        expect(again1.status).toBe(429);
+        expect(again2.status).toBe(429);
         // Alice waits for her turn, and so does her next request.
         let answered = false;
         const first = send(alice.id).then((result) => {

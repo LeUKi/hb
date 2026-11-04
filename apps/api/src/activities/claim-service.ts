@@ -862,6 +862,42 @@ export async function claimDecided(
   return row !== null;
 }
 
+/**
+ * claimActivity's checks, which need not wait in the 红包's line: the
+ * submission is checked and kept, pending or (decided there) finished, and
+ * only its share is handed out in the line (completeClaimSubmission, as for
+ * one an interruption left pending). Null for what goes the whole way in
+ * the line: a 代码判定 claim, a 红包 not open yet (a timed opening opens
+ * there) or a timed draw.
+ */
+export async function admitActivityClaim(
+  env: ApiBindings,
+  activityId: string,
+  userId: string,
+  input: ClaimActivityInput,
+  humanVerified: boolean,
+) {
+  if (input.participationMode === "code") return null;
+  await refreshActivityLifecycle(env, activityId);
+  const activity = await findActivity(env, activityId);
+  if (!activity || activity.openedAt === null) return null;
+  const previous = await findSubmission(env, userId, input.submissionId);
+  if (
+    previous?.purpose === "register" ||
+    (activity.rewardType === "ldc" &&
+      JSON.parse(activity.config).money?.mode === "timed_draw")
+  )
+    return null;
+  return prepareClaimSubmission(
+    env,
+    activityId,
+    userId,
+    input,
+    undefined,
+    humanVerified,
+  );
+}
+
 export async function claimActivity(
   env: ApiBindings,
   activityId: string,
