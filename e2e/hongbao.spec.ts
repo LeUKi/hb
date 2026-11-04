@@ -403,36 +403,63 @@ test.describe("红包页", () => {
     await expect(result.getByText("待发放")).toHaveCount(0);
   });
 
-  test("名单入口：真实头像和上面的数字同一次读取，名单随即跟上", async ({
+  test("名单入口：真实头像和上面的数字同一次读取；名单只在弹窗开着时跟上", async ({
     page,
   }) => {
     await mockSession(page, null);
     const state = await mockHongbao(page);
+    state.activity.quantity = {
+      mode: "exact",
+      total: 4,
+      claimed: 1,
+      remaining: 3,
+    };
     await openApp(page, path);
     const entry = page.locator("#roster-entry");
     await expect(entry.locator("img")).toHaveAttribute(
       "src",
       avatarOf("早到的人"),
     );
+    // The faces come with the public read: the 名单 waits for its 弹窗.
+    expect(state.reads.recipients).toBe(0);
     await entry.click();
     const roster = page.getByRole("dialog", { name: /领取名单/ });
     await expect(roster.getByText("早到的人")).toBeVisible();
     // Someone else claims. The next read (every 5 s) shows the new count and
-    // face, and the open 名单 follows at once, not on its own 15 s round.
+    // face, and the open 名单 follows within 10 s of its last read.
     state.recipients.push(recipient("后来的人", 2));
     state.activity.quantity = {
       mode: "exact",
-      total: 3,
+      total: 4,
       claimed: 2,
-      remaining: 1,
+      remaining: 2,
     };
-    await expect(roster.getByText("后来的人")).toBeVisible({ timeout: 9000 });
+    await expect(roster.getByText("后来的人")).toBeVisible({ timeout: 16_000 });
     await page.keyboard.press("Escape");
     await expect(entry.locator("img").first()).toHaveAttribute(
       "src",
       avatarOf("后来的人"),
     );
-    await expect(page.getByText("2 / 3 份", { exact: true })).toBeVisible();
+    await expect(page.getByText("2 / 4 份", { exact: true })).toBeVisible();
+    // Closed, a new face reads nothing of it; opened again, it is read once.
+    const closed = state.reads.recipients;
+    state.recipients.push(recipient("又来的人", 3));
+    state.activity.quantity = {
+      mode: "exact",
+      total: 4,
+      claimed: 3,
+      remaining: 1,
+    };
+    await expect(entry.locator("img").first()).toHaveAttribute(
+      "src",
+      avatarOf("又来的人"),
+      { timeout: 9000 },
+    );
+    await page.waitForTimeout(1_000);
+    expect(state.reads.recipients).toBe(closed);
+    await entry.click();
+    await expect(roster.getByText("又来的人")).toBeVisible();
+    expect(state.reads.recipients).toBe(closed + 1);
   });
 
   test("登录后：连着时什么都不轮询，推送一到就更新，付款变了只读自己那份", async ({
@@ -467,7 +494,8 @@ test.describe("红包页", () => {
     await page.waitForTimeout(16_000);
     expect(state.reads).toEqual(atConnect);
     // Someone else claims: the 红包's DO pushes its public read, and the
-    // 名单 follows the new face.
+    // 名单入口 shows the new face. The 名单 itself (its 弹窗 shut) is not
+    // read again: every open page doing so on every claim overloaded D1.
     state.recipients.push(recipient("后来的人", 8));
     state.activity = {
       ...state.activity,
@@ -485,6 +513,8 @@ test.describe("红包页", () => {
     );
     expect(state.reads.public).toBe(atConnect.public);
     expect(state.reads.participation).toBe(atConnect.participation);
+    await page.waitForTimeout(1_000);
+    expect(state.reads.recipients).toBe(atConnect.recipients);
     // The payment goes through: `mine`, and only the viewer's part is read.
     if (state.claim)
       state.claim.payment = {
@@ -498,6 +528,42 @@ test.describe("红包页", () => {
     expect(state.reads.participation).toBe(beforeMine.participation + 1);
     expect(state.reads.public).toBe(beforeMine.public);
     expect(state.reads.passwords).toBe(beforeMine.passwords);
+  });
+
+  test("结束时：自己那行在名单里的人把名单读一次，我的结果换上最后的头衔", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    const state = await mockHongbao(page);
+    state.claimMine();
+    const sockets: WebSocketRoute[] = [];
+    await page.routeWebSocket(/\/api\/activities\/[^/]+\/live$/, (ws) => {
+      sockets.push(ws);
+      ws.onMessage((message) => {
+        if (message === "ping") ws.send("pong");
+      });
+    });
+    await openApp(page, path);
+    const main = page.locator("main");
+    await expect.poll(() => sockets.length).toBe(1);
+    // Took part: the 名单 is read once, for their own row's titles.
+    await expect.poll(() => state.reads.recipients).toBeGreaterThan(0);
+    await page.waitForTimeout(1_000);
+    const before = state.reads.recipients;
+    await expect(main.getByText("手气王")).toHaveCount(0);
+    // Over, and the viewer turned out to have the most: read once more,
+    // within 10 s (not every page at the same moment).
+    state.recipients = state.recipients.map((item) =>
+      item.username === viewer.username
+        ? { ...item, title: "highest" as const }
+        : item,
+    );
+    state.activity = { ...state.activity, status: "ended" };
+    sockets[0]?.send(
+      JSON.stringify({ type: "activity", activity: publicRead(state) }),
+    );
+    await expect(main.getByText("手气王")).toBeVisible({ timeout: 12_000 });
+    expect(state.reads.recipients).toBe(before + 1);
   });
 
   test("推送带序号（multi-prize §4.3）：接着的号不重读，跳了号就把红包整份读一次", async ({

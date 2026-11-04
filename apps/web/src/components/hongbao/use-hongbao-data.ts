@@ -2,14 +2,17 @@ import type {
   ActivityParticipationResponse,
   PublicActivity,
 } from "@hb/contracts";
+import { useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityRequestError,
   useManagedActivity,
   usePublicActivity,
 } from "../../lib/activities";
 import { useActivityPasswords } from "../../lib/activity-passwords";
+import { useCurrentActivityId } from "../../lib/activity-route";
 import { useCurrentParticipation } from "../../lib/claims";
 import {
   hongbaoOf,
@@ -58,6 +61,136 @@ function drawing(activity: PublicActivity | undefined) {
   return Date.now() < at + 30_000;
 }
 
+/** An open 名单弹窗 reads its lists again at most this often. */
+const ROSTER_FOLLOW_MS = 10_000;
+/** At the end, the pages that read it again do so within this, not at once. */
+const ROSTER_END_SPREAD_MS = 10_000;
+
+/** The 名单弹窗 is open for this 红包 (its page's, or a list row's). */
+function useRosterOpen(id: string) {
+  const pageId = useCurrentActivityId();
+  const panel = useLocation({
+    select: (location) =>
+      location.state.panel === "roster"
+        ? (location.state.panelFor ?? "")
+        : null,
+  });
+  return panel !== null && (panel || pageId) === id;
+}
+
+type FollowedList = {
+  dataUpdatedAt: number;
+  isFetching: boolean;
+  refetch: (options?: { cancelRefetch?: boolean }) => Promise<unknown>;
+};
+
+/**
+ * The 名单 after a change pushed or polled (someone new among the 名单入口's
+ * faces, a draw that moved on, the end): stale, read when its 弹窗 opens.
+ * Read again at once only for the sender; in an open 弹窗 at most once per
+ * ROSTER_FOLLOW_MS; at the end or a draw's result, by a page whose own row
+ * it shows (its 手气王 / 手气亡 on 我的结果), within ROSTER_END_SPREAD_MS.
+ * Every open page reading it on every claim overloaded D1, and the claims
+ * waited behind it (2026-11-04).
+ */
+function useRosterFollow(
+  id: string,
+  activity: PublicActivity | undefined,
+  {
+    claims,
+    registrations,
+    author,
+    open,
+    shown,
+  }: {
+    claims: FollowedList | null;
+    registrations: FollowedList | null;
+    author: boolean;
+    open: boolean;
+    shown: boolean;
+  },
+) {
+  const client = useQueryClient();
+  const stage = activity
+    ? `${activity.status}|${activity.draw?.state ?? ""}`
+    : null;
+  const signature =
+    activity && stage !== null
+      ? `${stage}|${(activity.rosterPreview ?? [])
+          .map((person) => person.id)
+          .join(",")}`
+      : null;
+  const seen = useRef({ signature, stage });
+  // Since when the lists are behind, and (the end) when to read them.
+  const [behind, setBehind] = useState<{
+    since: number;
+    endAt: number | null;
+  } | null>(null);
+  useEffect(() => {
+    if (signature === null) return;
+    const before = seen.current;
+    seen.current = { signature, stage };
+    if (before.signature === null || before.signature === signature) return;
+    void client.invalidateQueries({
+      queryKey: ["activity-roster", id],
+      refetchType: "none",
+    });
+    const now = Date.now();
+    setBehind((current) => ({
+      since: now,
+      endAt:
+        current?.endAt ??
+        (before.stage !== stage
+          ? now + Math.random() * ROSTER_END_SPREAD_MS
+          : null),
+    }));
+  }, [client, id, signature, stage]);
+
+  const lastRead = Math.max(
+    claims?.dataUpdatedAt ?? 0,
+    registrations?.dataUpdatedAt ?? 0,
+  );
+  const fetching = Boolean(claims?.isFetching || registrations?.isFetching);
+  const refetchClaims = claims?.refetch;
+  const refetchRegistrations = registrations?.refetch;
+  useEffect(() => {
+    if (!behind || fetching || (!refetchClaims && !refetchRegistrations))
+      return;
+    // Read since (the 弹窗 opening reads a stale list): nothing to follow.
+    if (behind.endAt === null && lastRead > behind.since) {
+      setBehind(null);
+      return;
+    }
+    const at = author
+      ? 0
+      : open
+        ? lastRead + ROSTER_FOLLOW_MS
+        : behind.endAt !== null && shown
+          ? behind.endAt
+          : null;
+    if (at === null) return;
+    const timer = window.setTimeout(
+      () => {
+        setBehind(null);
+        // The page and its 弹窗 ask together: one read.
+        void refetchClaims?.({ cancelRefetch: false });
+        void refetchRegistrations?.({ cancelRefetch: false });
+      },
+      Math.max(0, at - Date.now()),
+    );
+    return () => window.clearTimeout(timer);
+  }, [
+    behind,
+    fetching,
+    lastRead,
+    author,
+    open,
+    shown,
+    refetchClaims,
+    refetchRegistrations,
+  ]);
+}
+
 /**
  * One 红包's data for its page and its dialogs (名单, 说明): the public read,
  * the sender's own read, the viewer's claim or sign-up, their 口令 and the
@@ -66,7 +199,8 @@ function drawing(activity: PublicActivity | undefined) {
  * While the live channel is open (lib/live.ts) nothing here polls: the
  * public read arrives pushed, and the rest is read again when a push says
  * it moved. Without it (guests, or turned away) the running 红包 polls.
- * Once it is over nothing does, but a payment still on its way.
+ * Once it is over nothing does, but a payment still on its way. The 名单
+ * is read only where it shows (useRosterFollow).
  */
 /** 自领: the 口令 the sender took their own share (or place) with. */
 function usedBySender(
@@ -151,21 +285,26 @@ export function useHongbaoPageData(id: string) {
   );
   const draw = activity?.reward?.mode === "timed_draw";
   const viewer = user?.username ?? null;
+  // The 名单 is read where it shows: its 弹窗, the sender's own (each
+  // payment), and the 手气王 / 手气亡 on 我的结果 of whoever took part.
+  // The 名单入口's faces come with the public read.
+  const rosterOpen = useRosterOpen(id);
+  const tookPart = Boolean(
+    participationQuery.data?.claim || participationQuery.data?.registration,
+  );
   const claimsEnabled = Boolean(
-    activity &&
+    (author || rosterOpen || tookPart) &&
+      activity &&
       activity.status !== "draft" &&
       (!draw || activity.draw?.state === "completed"),
   );
   const registrationsEnabled = Boolean(
-    activity && activity.status !== "draft" && draw,
+    (author || rosterOpen) && activity && activity.status !== "draft" && draw,
   );
+  // Unpushed, the sender's 名单 shows each payment until it is through;
+  // an open 弹窗 follows the public read (useRosterFollow).
   const listPoll = (paymentsOpen: boolean) =>
-    live
-      ? false
-      : // The sender's 名单 shows each payment until it is through.
-        running || (author && paymentsOpen)
-        ? LIST_POLL_MS
-        : false;
+    !live && author && (running || paymentsOpen) ? LIST_POLL_MS : false;
   const claims = useRosterList(id, "claims", {
     enabled: claimsEnabled,
     viewer,
@@ -178,33 +317,14 @@ export function useHongbaoPageData(id: string) {
     author: author ? userId : null,
     poll: listPoll,
   });
-  // The lists follow the numbers above them: a read that shows someone new
-  // (the 名单入口's faces changed), a draw that moved on or the end (the
-  // 手气王 / 手气亡) reads them again at once.
-  const rosterSignature = activity
-    ? `${activity.status}|${activity.draw?.state ?? ""}|${(
-        activity.rosterPreview ?? []
-      )
-        .map((person) => person.id)
-        .join(",")}`
-    : null;
-  const seenSignature = useRef(rosterSignature);
-  const refetchClaims = claims.query.refetch;
-  const refetchRegistrations = registrations.query.refetch;
-  useEffect(() => {
-    if (rosterSignature === null) return;
-    const before = seenSignature.current;
-    seenSignature.current = rosterSignature;
-    if (before === null || before === rosterSignature) return;
-    if (claimsEnabled) void refetchClaims();
-    if (registrationsEnabled) void refetchRegistrations();
-  }, [
-    rosterSignature,
-    claimsEnabled,
-    registrationsEnabled,
-    refetchClaims,
-    refetchRegistrations,
-  ]);
+  useRosterFollow(id, activity, {
+    claims: claimsEnabled ? claims.query : null,
+    registrations: registrationsEnabled ? registrations.query : null,
+    author,
+    open: rosterOpen,
+    // Their own row is in what was read: its titles may change at the end.
+    shown: claims.rows.some((row) => row.you),
+  });
   // At the end every 口令 shows: read them once more.
   const seenSettled = useRef(settled);
   const refetchPasswords = passwordsQuery.refetch;
