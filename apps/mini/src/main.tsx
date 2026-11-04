@@ -1,4 +1,4 @@
-import { MINI_APP_HONGBAO_PARAM } from "@hb/contracts";
+import { MINI_APP_HONGBAO_PARAM, MINI_APP_TIP_PARAM } from "@hb/contracts";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { App, createMiniRouter } from "./app";
@@ -70,20 +70,17 @@ async function start() {
   });
   try {
     await sdk.ready;
-    const [id, theme] = await Promise.all([
+    const [launch, theme] = await Promise.all([
       sdk.permissions.has("launch.read")
-        ? sdk.launch
-            .getParameters()
-            .then(
-              (launch) =>
-                launch.query[MINI_APP_HONGBAO_PARAM]?.[0]?.trim() || null,
-            )
-            .catch(() => null)
+        ? sdk.launch.getParameters().catch(() => null)
         : null,
       sdk.permissions.has("theme.read")
         ? sdk.theme.get().catch(systemTheme)
         : systemTheme(),
     ]);
+    const id = launch?.query[MINI_APP_HONGBAO_PARAM]?.[0]?.trim() || null;
+    // 打赏 (docs/tip-design.md §7): `?tip=<卡号>` names a 打赏卡.
+    const tip = launch?.query[MINI_APP_TIP_PARAM]?.[0]?.trim() || null;
     // The site's parts read a router: one page in memory, loaded before
     // the first render so that render has it.
     const router = createMiniRouter();
@@ -106,6 +103,7 @@ async function start() {
         <App
           sdk={sdk}
           id={id}
+          tip={tip}
           mode={next.mode}
           reduced={next.reducedMotion}
           router={router}

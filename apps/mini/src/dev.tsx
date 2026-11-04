@@ -101,6 +101,175 @@ function liveSocket(): MiniSocket {
   };
 }
 
+/** The sample 打赏卡 (`?tip=`): 简洁, 标准, or 标准 with its lists. */
+const tipKind = query.get("tip");
+let tipChecks = 0;
+function tipCard() {
+  const list = tipKind === "list";
+  return {
+    code: "demo23",
+    version: 1,
+    active: true,
+    owner: {
+      username: "lafish",
+      displayName: "lafish",
+      avatarUrl: picture(332940),
+    },
+    style: tipKind === "simple" ? ("simple" as const) : ("standard" as const),
+    palette: "lake" as const,
+    prompt: "觉得有用的话，请我喝杯咖啡",
+    amounts: [1, 5, 10, 20].map((n) => ({ amountMinor: n * 100, label: "" })),
+    defaultIndex: 2,
+    allowOther: true,
+    goal:
+      tipKind === "standard"
+        ? { amountMinor: 30000, reachedMinor: 12600 }
+        : null,
+    tipperCount: 23,
+    recent: list
+      ? [
+          {
+            id: "r1",
+            person: { username: "aiko", displayName: "aiko", avatarUrl: null },
+            amountMinor: 2000,
+            method: "checkout" as const,
+            message: "谢谢佬的分享，已经用上了",
+            messageHidden: false,
+            at: Date.now() - 180_000,
+          },
+          {
+            id: "r2",
+            person: null,
+            amountMinor: 500,
+            method: "checkout" as const,
+            message: "路过，支持一下",
+            messageHidden: false,
+            at: Date.now() - 3_600_000,
+          },
+          {
+            id: "r3",
+            person: {
+              username: "chen_x",
+              displayName: "chen_x",
+              avatarUrl: null,
+            },
+            amountMinor: 1000,
+            method: "balance" as const,
+            message: "期待下一篇",
+            messageHidden: false,
+            at: Date.now() - 10_800_000,
+          },
+        ]
+      : null,
+    top: list
+      ? [
+          {
+            rank: 1,
+            person: { username: "aiko", displayName: "aiko", avatarUrl: null },
+            amountMinor: 8500,
+          },
+          {
+            rank: 2,
+            person: {
+              username: "chen_x",
+              displayName: "chen_x",
+              avatarUrl: null,
+            },
+            amountMinor: 4000,
+          },
+        ]
+      : null,
+  };
+}
+function tipOf(
+  status: "pending" | "done",
+  method: "checkout" | "balance",
+  amountMinor: number,
+) {
+  return {
+    id: "tip-demo",
+    card: { code: "demo23", name: null },
+    direction: "out" as const,
+    counterpart: { username: "lafish", displayName: "lafish", avatarUrl: null },
+    amountMinor,
+    method,
+    message: null,
+    messageHidden: false,
+    status,
+    notSentReason: null,
+    via: "mini" as const,
+    createdAt: Date.now(),
+    doneAt: status === "done" ? Date.now() : null,
+  };
+}
+function tipRequest(endpoint: string, options?: { json?: unknown }) {
+  if (endpoint === "tip")
+    return {
+      card: tipCard(),
+      viewer: {
+        signedIn: true,
+        own: false,
+        methods: {
+          checkout: { available: true, reason: null },
+          merchant: null,
+          balance: { availableMinor: 3230 },
+        },
+        passwordFree: true,
+        paused: false,
+        capEndpoint: null,
+      },
+      lookOnly: false,
+    };
+  if (endpoint === "tipCreate") {
+    const input = options?.json as {
+      method: "checkout" | "balance";
+      amount: string;
+    };
+    const minor = Math.round(Number(input.amount) * 100);
+    return input.method === "balance"
+      ? { tip: tipOf("done", "balance", minor), payUrl: null }
+      : {
+          tip: tipOf("pending", "checkout", minor),
+          payUrl: "https://credit.linux.do/paying?order_no=demo",
+        };
+  }
+  if (endpoint === "tipCheck") {
+    tipChecks += 1;
+    return {
+      tip: tipOf(tipChecks >= 2 ? "done" : "pending", "checkout", 1000),
+      payUrl: null,
+    };
+  }
+  if (endpoint === "tipsHome") {
+    const card = tipCard();
+    const { owner: _owner, recent: _recent, top: _top, ...rest } = card;
+    return {
+      known: true,
+      cards: [
+        {
+          ...rest,
+          name: "个人页",
+          showRecent: false,
+          showTop: false,
+          link: { kind: "profile" },
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          stoppedAt: null,
+          stoppedByAdmin: false,
+          stopReason: null,
+          week: { count: 6, amountMinor: 5800 },
+        },
+      ],
+      used: 1,
+      limit: 3,
+      enabled: true,
+      received: [],
+      week: { count: 6, people: 4, amountMinor: 5800 },
+    };
+  }
+  return null;
+}
+
 const sdk: MiniSdk = {
   ready: Promise.resolve(),
   permissions: { has: () => true },
@@ -151,6 +320,9 @@ const sdk: MiniSdk = {
     request: async (endpoint, options) => {
       if (guest) throw denied();
       await wait(endpoint === "claim" ? 900 : 500);
+      // 打赏 (`?tip=simple|standard|list`): a sample card and its tips.
+      const tipAnswer = tipRequest(endpoint, options);
+      if (tipAnswer) return { status: 200, headers: {}, body: tipAnswer };
       if (!sample)
         return {
           status: 404,

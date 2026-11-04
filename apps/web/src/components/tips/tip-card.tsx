@@ -6,7 +6,12 @@ import type {
   TipResult,
   TipViewer,
 } from "@hb/contracts";
-import { TIP_LIMITS } from "@hb/contracts";
+import {
+  FORUM_EMBED_BAR,
+  FORUM_MINI_APP_ID,
+  TIP_LIMITS,
+  type TipCard,
+} from "@hb/contracts";
 import { AnimatePresence, motion } from "motion/react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { cn } from "../../lib/cn";
@@ -44,6 +49,43 @@ export function tipCardHeight(
   return card.recent || card.top
     ? TIP_CARD_HEIGHT.list
     : TIP_CARD_HEIGHT.standard;
+}
+
+/** A card's preview: as anyone sees it, with no one tipping yet. */
+export function previewOf(
+  card: Pick<
+    TipCard,
+    | "code"
+    | "version"
+    | "active"
+    | "style"
+    | "palette"
+    | "prompt"
+    | "amounts"
+    | "defaultIndex"
+    | "allowOther"
+    | "goal"
+    | "tipperCount"
+  > & { showRecent?: boolean; showTop?: boolean },
+  owner: { username: string; displayName: string; avatarUrl: string | null },
+  withLists = true,
+) {
+  const standard = card.style === "standard";
+  return {
+    ...card,
+    owner,
+    recent: withLists && standard && card.showRecent ? [] : null,
+    top: withLists && standard && card.showTop ? [] : null,
+  };
+}
+
+/** The 社区's embed code for a card: its bar above the card, and a margin. */
+export function tipForumEmbed(
+  code: string,
+  ownerName: string,
+  cardHeight: number,
+) {
+  return `<iframe src="https://linux.do/apps/${FORUM_MINI_APP_ID}?embed_mode=true&tip=${code}" title="打赏 ${ownerName}" width="100%" height="${FORUM_EMBED_BAR + cardHeight + 8}" frameborder="0" allow="clipboard-write"></iframe>`;
 }
 
 /** “5”, “2.50”: whole LDC without cents. */
@@ -272,7 +314,8 @@ export function TipCardView({
     if (actions.deliver === "copy") {
       const copied = (await actions.copy?.(payUrl)) ?? false;
       if (!copied) {
-        setProblem("没有复制上，请再按一次。");
+        // Not copied (the 社区 asks first): the link itself, to select.
+        setProblem(payUrl);
         return;
       }
     }
@@ -691,7 +734,7 @@ export function TipCardView({
           <div className="flex min-w-0 items-center gap-2">
             {back("pay")}
             {problem ? (
-              <span className="min-w-0 flex-1 truncate text-xs text-ink-3">
+              <span className="min-w-0 flex-1 truncate text-xs text-ink-3 select-all">
                 {problem}
               </span>
             ) : null}
@@ -825,7 +868,12 @@ export function TipCardView({
           <>
             <div className="flex min-w-0 items-center gap-2">
               {back("pay")}
-              <span className="min-w-0 flex-1 truncate text-sm">
+              <span
+                className={cn(
+                  "min-w-0 flex-1 truncate text-sm",
+                  problem && "text-ink-2 select-all",
+                )}
+              >
                 {problem ?? "付款链接已生成，几分钟内有效"}
               </span>
             </div>
@@ -965,7 +1013,12 @@ export function TipCardView({
         <>
           {amountBlock}
           <div className="flex">{deliverButton(true)}</div>
-          <div className="text-xs text-ink-3">
+          <div
+            className={cn(
+              "text-xs text-ink-3",
+              problem && "break-all select-all",
+            )}
+          >
             {problem ??
               (actions?.deliver === "open"
                 ? "在新页面里输入 Credit 站的安全密码付款。链接几分钟内有效，过期了回来重新生成。"

@@ -1,10 +1,16 @@
 import type {
   ClaimResult,
+  CreateTipInput,
   MiniClaimInput,
   MiniHongbaoResponse,
   MiniLiveMessage,
   MiniRosterKind,
   MiniRosterPage,
+  Tip,
+  TipCard,
+  TipCardView,
+  TipList,
+  TipResult,
 } from "@hb/contracts";
 import { useEffect, useRef } from "react";
 import type { MiniSdk, MiniSocket } from "./sdk";
@@ -144,3 +150,35 @@ export function useLive(
     };
   }, [sdk, id, on]);
 }
+
+// 打赏 (docs/tip-design.md §5, §7): a card, a tip on it, “查一下”, and the
+// app's home (one's own cards).
+
+export type MiniTipView = TipCardView & { lookOnly: boolean };
+
+export type MiniTipsHome = {
+  known: boolean;
+  cards: TipCard[];
+  used: number;
+  limit: number;
+  enabled: boolean;
+  received: Tip[];
+  week?: TipList["stats"];
+};
+
+export const readTip = (sdk: MiniSdk, code: string) =>
+  call<MiniTipView>(sdk, "tip", { query: { id: code } });
+
+export const createTip = (
+  sdk: MiniSdk,
+  code: string,
+  input: CreateTipInput & {
+    forumUser?: { username: string; name: string };
+  },
+) => call<TipResult>(sdk, "tipCreate", { query: { id: code }, json: input });
+
+export const checkTip = (sdk: MiniSdk, code: string, tip: string) =>
+  call<TipResult>(sdk, "tipCheck", { query: { id: code, tip } });
+
+export const readTipsHome = (sdk: MiniSdk) =>
+  call<MiniTipsHome>(sdk, "tipsHome", {});

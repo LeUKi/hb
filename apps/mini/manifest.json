@@ -2,7 +2,7 @@
   "format": 1,
   "id": "01a19ba5-b9d2-766f-9fb9-b7eddc10e0c7",
   "name": "红包",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "entry": "index.html",
   "script": "app.js",
   "style": "app.css",
@@ -32,6 +32,30 @@
       "url": "https://staging.hb.lafi.sh/api/mini/roster",
       "method": "GET",
       "query": ["id", "kind", "cursor"],
+      "auth": "platform"
+    },
+    "tip": {
+      "url": "https://staging.hb.lafi.sh/api/mini/tip",
+      "method": "GET",
+      "query": ["id"],
+      "auth": "platform"
+    },
+    "tipCreate": {
+      "url": "https://staging.hb.lafi.sh/api/mini/tip-create",
+      "method": "POST",
+      "query": ["id"],
+      "auth": "platform"
+    },
+    "tipCheck": {
+      "url": "https://staging.hb.lafi.sh/api/mini/tip-check",
+      "method": "POST",
+      "query": ["id", "tip"],
+      "auth": "platform"
+    },
+    "tipsHome": {
+      "url": "https://staging.hb.lafi.sh/api/mini/tips-home",
+      "method": "GET",
+      "query": [],
       "auth": "platform"
     }
   },

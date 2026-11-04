@@ -14,6 +14,8 @@ export const FORUM_MINI_APP_ID = "01a19ba5-b9d2-766f-9fb9-b7eddc10e0c7";
 export const FORUM_ORIGIN = "https://linux.do";
 /** The launch parameter that names the 红包. */
 export const MINI_APP_HONGBAO_PARAM = "hb";
+/** The launch parameter that names a 打赏卡 (docs/tip-design.md §7). */
+export const MINI_APP_TIP_PARAM = "tip";
 
 /** What decides how tall a 红包 is in a post. */
 export type MiniEmbedShape = {

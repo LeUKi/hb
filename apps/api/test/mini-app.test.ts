@@ -938,11 +938,11 @@ describe("打赏 in the 社区", () => {
     expect(view.viewer.methods.checkout.reason).toBe("offline");
     expect(view.card.owner.avatarUrl).toBe(forumAvatar("880001"));
 
-    const jwt = await token("/api/mini/tip", {
+    const jwt = await token("/api/mini/tip-create", {
       claims: { sub: "880002", htm: "POST", channel: "sandbox" },
     });
     const tipped = await app.request(
-      `${origin}/api/mini/tip?id=${card.code}`,
+      `${origin}/api/mini/tip-create?id=${card.code}`,
       {
         method: "POST",
         headers: {

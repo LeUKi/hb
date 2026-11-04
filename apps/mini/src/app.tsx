@@ -84,6 +84,7 @@ import { askSelfClaim } from "../../web/src/lib/self-claim";
 import { claimHongbao, HongbaoError, readHongbao, useLive } from "./api";
 import { forumAvatars } from "./avatars";
 import type { MiniSdk } from "./sdk";
+import { TipScreen, TipsHome } from "./tips";
 
 // 社区小程序 (docs/mini-app-design.md §7): the 红包 page of 红包站, its own
 // parts — the cover that folds small once taken part, its head, numbers and
@@ -794,6 +795,8 @@ type Props = {
   sdk: MiniSdk;
   /** The 红包 the forum link names (`?hb=`), if any. */
   id: string | null;
+  /** The 打赏卡 it names (`?tip=`), if any. */
+  tip: string | null;
   reduced: boolean;
 };
 const PropsContext = createContext<Props | null>(null);
@@ -801,10 +804,14 @@ const PropsContext = createContext<Props | null>(null);
 function Root() {
   const props = useContext(PropsContext);
   if (!props) return null;
+  if (props.tip) return <TipScreen sdk={props.sdk} code={props.tip} />;
   return props.id ? (
     <Page sdk={props.sdk} id={props.id} reduced={props.reduced} />
   ) : (
-    <NoHongbao />
+    // The app's own page: one's 打赏卡, and how to open a 红包.
+    <TipsHome sdk={props.sdk}>
+      <NoHongbao />
+    </TipsHome>
   );
 }
 
@@ -857,6 +864,7 @@ function postSizes(info: WindowInfo) {
 export function App({
   sdk,
   id,
+  tip,
   mode,
   reduced,
   router,
@@ -865,7 +873,10 @@ export function App({
   router: ReturnType<typeof createMiniRouter>;
 }) {
   const info = useFrameInfo();
-  const props = useMemo(() => ({ sdk, id, reduced }), [sdk, id, reduced]);
+  const props = useMemo(
+    () => ({ sdk, id, tip, reduced }),
+    [sdk, id, tip, reduced],
+  );
   const [avatars] = useState(() => forumAvatars(sdk));
   // The 名单's lists (lib/roster.ts), read through the forum.
   const [queryClient] = useState(

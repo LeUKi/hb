@@ -428,7 +428,7 @@ miniRoutes.get("/mini/tip", async (c) => {
 });
 
 miniRoutes.post(
-  "/mini/tip",
+  "/mini/tip-create",
   bodyLimit({
     maxSize: 4096,
     onError: () => {

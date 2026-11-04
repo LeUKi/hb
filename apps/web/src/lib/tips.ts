@@ -23,7 +23,12 @@ import {
 import { useMemo } from "react";
 import { api } from "../api";
 import type { PlusInfo } from "../components/balance/plus";
-import type { TipCardActions } from "../components/tips/tip-card";
+import {
+  type TipCardActions,
+  tipForumEmbed,
+} from "../components/tips/tip-card";
+
+export { previewOf } from "../components/tips/tip-card";
 import { readResponse } from "./activities";
 import { solveCap } from "./cap";
 import { useIdentity } from "./session";
@@ -239,34 +244,6 @@ export function useTipReceipt(code: string, id: string) {
   });
 }
 
-/** A card's preview: as anyone sees it, with no one tipping yet. */
-export function previewOf(
-  card: Pick<
-    TipCard,
-    | "code"
-    | "version"
-    | "active"
-    | "style"
-    | "palette"
-    | "prompt"
-    | "amounts"
-    | "defaultIndex"
-    | "allowOther"
-    | "goal"
-    | "tipperCount"
-  > & { showRecent?: boolean; showTop?: boolean },
-  owner: { username: string; displayName: string; avatarUrl: string | null },
-  withLists = true,
-) {
-  const standard = card.style === "standard";
-  return {
-    ...card,
-    owner,
-    recent: withLists && standard && card.showRecent ? [] : null,
-    top: withLists && standard && card.showTop ? [] : null,
-  };
-}
-
 /** Where a card is put: the 社区 (in a post or 关于我) or a page outside it. */
 export function tipEmbedCode(
   code: string,
@@ -274,8 +251,7 @@ export function tipEmbedCode(
   cardHeight: number,
   place: "forum" | "outside",
 ) {
-  if (place === "forum")
-    return `<iframe src="https://linux.do/apps/${FORUM_MINI_APP_ID}?embed_mode=true&tip=${code}" title="打赏 ${ownerName}" width="100%" height="${FORUM_EMBED_BAR + cardHeight + 8}" frameborder="0" allow="clipboard-write"></iframe>`;
+  if (place === "forum") return tipForumEmbed(code, ownerName, cardHeight);
   return `<iframe src="${window.location.origin}/☕/${code}?embed&theme=auto" title="打赏 ${ownerName}" width="100%" height="${cardHeight + 16}" frameborder="0"></iframe>`;
 }
 
