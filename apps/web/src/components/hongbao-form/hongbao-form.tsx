@@ -352,6 +352,15 @@ export function HongbaoForm({
         }`
       : undefined;
   const lockedStep = (step: StepId) => fixed && step !== "title";
+  // A 口令红包 timed or still running takes more 口令 after the ones it has
+  // (business-spec 开放后修改).
+  const keptPasswords =
+    fixed &&
+    form.mode !== "code" &&
+    baseline.participation === "password" &&
+    (scheduled || activity?.status === "active")
+      ? baseline.passwords.length
+      : undefined;
 
   /**
    * Show a problem where it can be fixed: its field, or for one kept in
@@ -659,6 +668,7 @@ export function HongbaoForm({
             deadline={deadline}
             timingError={groupError(["timing"])}
             scopeError={groupError(["scope"])}
+            kept={keptPasswords}
           />
         );
       case "title":
@@ -853,7 +863,11 @@ export function HongbaoForm({
                     afterOpen={editing && index - 1 === currentIndex}
                     grow={mounted.current}
                     collapsible={editing}
-                    locked={lockedStep(step.id)}
+                    // Taking more 口令, the step is not shut.
+                    locked={
+                      lockedStep(step.id) &&
+                      !(step.id === "claim" && keptPasswords !== undefined)
+                    }
                     problems={problems}
                     headingRef={open ? heading : undefined}
                     onToggle={() => {
@@ -875,10 +889,10 @@ export function HongbaoForm({
                               {scheduleAt !== null
                                 ? form.mode === "code"
                                   ? "定时以后奖励、判定器和时间就不能再改，要改先取消定时。"
-                                  : "定时以后奖励、参与方式、口令和时间就不能再改，要改先取消定时。"
+                                  : "定时以后奖励、参与方式和时间就不能再改，口令只能添加，要改先取消定时。"
                                 : form.mode === "code"
                                   ? "开放后奖励、判定器和时间都不能再改。"
-                                  : "开放后奖励、参与方式、口令和时间都不能再改。"}
+                                  : "开放后奖励、参与方式和时间都不能再改，口令只能添加。"}
                             </span>
                           )}
                           <div className="flex shrink-0 gap-2">

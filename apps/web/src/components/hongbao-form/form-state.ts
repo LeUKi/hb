@@ -955,7 +955,8 @@ function keysTyped(form: FormState) {
  * An opened 红包's input with this form's edits: after opening only its
  * words, the post link, 加入广场, how quantities show and 领取前人机验证
  * may change, and its 附带网页 once it is over (attached-page §1) unless
- * the 站长 stopped it, so everything else is sent back as it was saved.
+ * the 站长 stopped it, and a 口令红包 still running takes more 口令 after
+ * its own, so everything else is sent back as it was saved.
  */
 export function openedInputOf(
   activity: ManagedActivity,
@@ -963,8 +964,20 @@ export function openedInputOf(
 ): ActivityInput {
   const over = activity.status === "ended" || activity.status === "archived";
   const page = normalizePageUrl(form.page);
+  const kept = activity.config.passwords;
   return {
     ...activity.config,
+    ...(activity.participationMode === "password" && !over
+      ? {
+          passwords: [
+            ...kept,
+            ...form.passwords
+              .slice(kept.length)
+              .map((item) => item.trim())
+              .filter(Boolean),
+          ],
+        }
+      : {}),
     ...(over && !activity.pageStopped
       ? {
           pageUrl: page ?? "",

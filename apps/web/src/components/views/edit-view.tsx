@@ -195,6 +195,8 @@ function EditPage({
   const draft = activity.status === "draft";
   const { view } = sentRecordOf(activity, activity.author);
   const scheduled = draft && Boolean(activity.scheduledOpenAt);
+  // A 口令红包 takes more 口令 while timed or running (business-spec 开放后修改).
+  const passwords = activity.participationMode === "password";
   const status = statusOf(view, {
     draft,
     archived: activity.status === "archived",
@@ -219,10 +221,16 @@ function EditPage({
             <HoverNote
               note={
                 scheduled
-                  ? "和开放后一样，只能改标题、说明这些文字；要改别的，先取消定时。"
+                  ? `和开放后一样，只能改标题、说明这些文字${
+                      passwords ? "，口令只能添加" : ""
+                    }；要改别的，先取消定时。`
                   : draft
                     ? "开放前什么都能改；拿到链接的人能看到，还不能领。"
-                    : "开放后还能改标题、关联帖子、加入红包广场、说明、数量展示和领取前人机验证。"
+                    : `开放后还能改标题、关联帖子、加入红包广场、说明、数量展示和领取前人机验证${
+                        passwords && activity.status === "active"
+                          ? "，还能添加口令"
+                          : ""
+                      }。`
               }
             >
               <StatusChip tone={status.tone} dot>

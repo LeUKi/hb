@@ -453,6 +453,7 @@ async function managed(
       ...(judgeRow ? { judge: await readJudgeInput(env, judgeRow) } : {}),
     }),
     openingBlockedReason: await openingBlockedReason(env, snapshot.row),
+    ...(snapshot.added.length > 0 ? { addedPasswords: snapshot.added } : {}),
     ...(snapshot.row.pageStoppedAt !== null
       ? { pageStopped: true as const }
       : {}),
@@ -937,6 +938,7 @@ export async function updateActivity(
     invalidActivity(`最多 ${ACTIVITY_LIMITS.passwords} 条有效口令`);
   const deadline = row.deadline;
 
+  let added: string[] = [];
   if (fixed) {
     const oldContent = await readPrivateContent(env, id);
     if (
@@ -950,13 +952,22 @@ export async function updateActivity(
         "开放后不能修改奖励类型、付款商户、奖励内容、顺序或分配方式",
       );
     }
+    // 口令 are only added, after the others, while it runs (business-spec
+    // 开放后修改): claims, sign-ups and solves hold the ones it has.
     if (
-      input.activity.passwords.length !== oldContent.passwords.length ||
+      input.activity.passwords.length < oldContent.passwords.length ||
       oldContent.passwords.some(
         (password, index) => input.activity.passwords[index] !== password,
       )
     )
-      invalidActivity("开放后不能修改口令");
+      invalidActivity("已有的口令不能修改、删除或调换顺序，只能添加");
+    added = input.activity.passwords.slice(oldContent.passwords.length);
+    if (added.length > 0) {
+      if (row.participationMode !== "password")
+        invalidActivity("这个红包不用口令");
+      if (row.openedAt !== null && activityStatus(row) !== "active")
+        invalidActivity("红包已经结束，不能再添加口令");
+    }
     if (row.participationMode === "code") {
       const judgeRow = await findJudgeRow(env, id);
       if (
@@ -984,6 +995,18 @@ export async function updateActivity(
           input.activity.passwords,
           old.passwords,
           now,
+        )
+      : [];
+  // Added to an opened one: new rows after the others, which stay as they are.
+  const firstPosition =
+    Math.max(-1, ...old.passwords.map((password) => password.position)) + 1;
+  const additions =
+    row.openedAt !== null && added.length > 0
+      ? (await preparePasswords(env, id, added, [], now)).map(
+          (password, index) => ({
+            ...password,
+            position: firstPosition + index,
+          }),
         )
       : [];
   const preserveLdcInventory =
@@ -1028,6 +1051,16 @@ export async function updateActivity(
       id,
     ),
   ];
+  // Only into a 红包 still running as it is written: past its deadline, the
+  // cron may not have ended it yet.
+  if (additions.length > 0)
+    statements.push(
+      env.DB.prepare(`SELECT json(CASE WHEN EXISTS (
+        SELECT 1 FROM activities WHERE id = ? AND ended_at IS NULL AND archived_at IS NULL
+          AND claimed_count < total_count AND deadline > ${databaseNow}
+      ) THEN '{}' ELSE '' END) AS activity_running_guard`).bind(id),
+      insertPasswordRows(env.DB, additions),
+    );
   // Opened, its code is fixed; its 密钥 may still change (judge-key §3).
   if (row.openedAt !== null && coded && input.activity.judge?.keys) {
     const judgeRow = await findJudgeRow(env, id);
@@ -1077,6 +1110,8 @@ export async function updateActivity(
   } catch (error) {
     const current = await ownedActivity(env, id, authorId);
     if (current.version !== input.version) activityConflict();
+    if (additions.length > 0 && activityStatus(current) !== "active")
+      invalidActivity("红包已经结束，不能再添加口令");
     throw error;
   }
   return getManagedActivity(env, id, authorId);

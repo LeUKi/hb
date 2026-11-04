@@ -111,9 +111,16 @@ export async function privateSnapshot(env: ApiBindings, activityId: string) {
     .get();
   if (!row) activityNotFound();
   const { passwords } = await privateRows(env, activityId);
+  const content = await decryptRows(env, activityId, passwords);
+  const openedAt = row.openedAt;
   return {
     row,
-    content: await decryptRows(env, activityId, passwords),
+    content,
+    /** 口令 added once it opened, the last ones (business-spec 开放后修改). */
+    added: content.passwords.filter(
+      (_, index) =>
+        openedAt !== null && (passwords[index]?.createdAt ?? 0) > openedAt,
+    ),
   };
 }
 

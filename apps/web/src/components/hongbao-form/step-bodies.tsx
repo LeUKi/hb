@@ -254,6 +254,7 @@ export function ClaimStep({
   deadline,
   timingError,
   scopeError,
+  kept,
 }: {
   form: FormState;
   update: Update;
@@ -266,6 +267,8 @@ export function ClaimStep({
   timingError?: string;
   /** The first problem with 领取范围 (set in 更多设置). */
   scopeError?: string;
+  /** Locked but running or timed: the 口令 it has, more added after them. */
+  kept?: number;
 }) {
   const draw = form.mode === "timed_draw";
   const time =
@@ -310,13 +313,14 @@ export function ClaimStep({
           update={update}
           errorOf={errorOf}
           locked={locked}
+          kept={kept}
         />
       </Reveal>
       {locked ? (
         <>
           <p className="px-1 text-sm text-ink-2">{time}</p>
           <p className="px-1 text-sm text-ink-2">{scopeLine(form)}</p>
-          <LockedNote />
+          <LockedNote addsPasswords={kept !== undefined} />
         </>
       ) : (
         <>

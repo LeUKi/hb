@@ -124,6 +124,7 @@ export function PasswordSection({
                   }`}
                 >
                   {labels[password.label]}
+                  {password.added && " · 开放后添加"}
                 </span>
               </span>
               {!ended && (

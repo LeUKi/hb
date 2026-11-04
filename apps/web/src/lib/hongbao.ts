@@ -448,7 +448,8 @@ export type PasswordLabel =
   | "own";
 
 export type PasswordView = {
-  known: { text: string; label: PasswordLabel }[];
+  /** added: put in after the 红包 opened (business-spec 开放后修改). */
+  known: { text: string; label: PasswordLabel; added?: boolean }[];
   hidden: number;
   /** 验证其他口令: took part, 口令 红包, still running, something left. */
   canVerify: boolean;
@@ -466,6 +467,8 @@ export function passwordViewOf(
   sender?: {
     passwords: string[];
     used?: { text: string; label: "claimed" | "registered" } | null;
+    /** Those added after it opened. */
+    added?: string[];
   } | null,
 ): PasswordView {
   if (sender)
@@ -473,6 +476,7 @@ export function passwordViewOf(
       known: sender.passwords.map((text) => ({
         text,
         label: sender.used?.text === text ? sender.used.label : "own",
+        added: sender.added?.includes(text),
       })),
       hidden: 0,
       canVerify: false,
@@ -488,6 +492,7 @@ export function passwordViewOf(
           : item.isSolved
             ? "solved"
             : "public",
+      added: item.addedAfterOpening,
     })),
     hidden: passwords.hiddenCount,
     canVerify: passwords.canSolve && passwords.hiddenCount > 0,

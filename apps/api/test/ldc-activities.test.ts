@@ -331,7 +331,8 @@ describe("LDC activity allocation and durable payment responsibility", () => {
           activity: {
             ...initial,
             beforeInfo: "新说明",
-            passwords: [...initial.passwords, "second123"],
+            // Only added to once open: never changed.
+            passwords: ["second123"],
           },
         })
       ).status,

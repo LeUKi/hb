@@ -847,6 +847,8 @@ export type ActivitySummary = {
 export type ManagedActivity = ActivitySummary & {
   author: ActivityAuthor;
   config: ActivityInput;
+  /** 口令 added after it opened: the last ones of config.passwords. */
+  addedPasswords?: string[];
   /** 附带网页 the 站长 stopped: no longer shown on the 红包 page. */
   pageStopped?: true;
   openingBlockedReason?: LdcOpeningBlockedReason;
@@ -1108,6 +1110,8 @@ export type ActivityPasswords = {
     isClaimPassword: boolean;
     isSolved: boolean;
     isRegistrationPassword?: boolean;
+    /** Added after the 红包 opened (business-spec 开放后修改). */
+    addedAfterOpening?: true;
   }[];
   hiddenCount: number;
   canSolve: boolean;

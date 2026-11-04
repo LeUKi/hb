@@ -45,7 +45,8 @@ export async function getActivityPasswords(
     env.DB.prepare(`SELECT p.id, p.ciphertext,
         CASE WHEN c.password_id = p.id THEN 1 ELSE 0 END AS isClaimPassword,
         CASE WHEN r.password_id = p.id THEN 1 ELSE 0 END AS isRegistrationPassword,
-        CASE WHEN ${solved} THEN 1 ELSE 0 END AS isSolved
+        CASE WHEN ${solved} THEN 1 ELSE 0 END AS isSolved,
+        CASE WHEN p.created_at > a.opened_at THEN 1 ELSE 0 END AS addedLater
       FROM activity_passwords p JOIN activities a ON a.id = p.activity_id
       LEFT JOIN claims c ON c.activity_id = a.id AND c.user_id = ?
       LEFT JOIN activity_registrations r ON r.activity_id = a.id AND r.user_id = ?
@@ -88,6 +89,7 @@ export async function getActivityPasswords(
     isClaimPassword: number;
     isRegistrationPassword: number;
     isSolved: number;
+    addedLater: number;
   }[];
   return {
     passwords: await Promise.all(
@@ -102,6 +104,7 @@ export async function getActivityPasswords(
         ...(state.timed === 1
           ? { isRegistrationPassword: row.isRegistrationPassword === 1 }
           : {}),
+        ...(row.addedLater === 1 ? { addedAfterOpening: true as const } : {}),
       })),
     ),
     hiddenCount: Math.max(0, state.total - rows.length),

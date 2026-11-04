@@ -3,6 +3,7 @@ import {
   ACTIVITY_LIMITS,
   type LdcActivityInput as ActivityInput,
   type ActivityList,
+  type ActivityPasswords,
   ARCHIVE_DELAY_MS,
   activityInputSchema,
   DEFAULT_DURATION_MS,
@@ -1616,7 +1617,8 @@ describe("LDC activity management", () => {
       { allocation: "random" as const },
       { money: { mode: "fixed" as const, totalAmount: "3.00", count: 3 } },
       { passwords: ["replacement123"] },
-      { passwords: [...activity.config.passwords, "newPass123"] },
+      { passwords: activity.config.passwords.slice(1) },
+      { passwords: [...activity.config.passwords].reverse() },
       { forceDedicated: true, joinSquare: true },
       {
         deadline: {
@@ -1674,6 +1676,79 @@ describe("LDC activity management", () => {
       afterEndInfo: "updated after end",
       quantityVisibility: "fuzzy",
     });
+  });
+
+  it("adds 口令 to a running 红包 after the others, and marks them once public", async () => {
+    const activity = await open(await create());
+    const edit = (version: number, passwords: string[]) =>
+      request(`/api/me/activities/${activity.id}`, owner, "PATCH", {
+        version,
+        activity: { ...activity.config, passwords },
+      });
+    const response = await edit(activity.version, [
+      ...activity.config.passwords,
+      "后加的口令123",
+    ]);
+    expect(response.status).toBe(200);
+    const added = ((await response.json()) as { activity: ManagedActivity })
+      .activity;
+    expect(added.config.passwords).toEqual([
+      ...activity.config.passwords,
+      "后加的口令123",
+    ]);
+    expect(added.addedPasswords).toEqual(["后加的口令123"]);
+    // It finds the 红包 at once.
+    const discovery = await request(
+      "/api/redemptions/discover",
+      other,
+      "POST",
+      { submissionId: crypto.randomUUID(), password: "后加的口令123" },
+    );
+    expect(
+      ((await discovery.json()) as GlobalRedemptionResult).items.map(
+        (item) => item.id,
+      ),
+    ).toEqual([activity.id]);
+    // The ones it has stay as they are.
+    const removed = await edit(added.version, added.config.passwords.slice(1));
+    expect(removed.status).toBe(400);
+    expect(await removed.json()).toEqual({
+      error: {
+        code: "INVALID_ACTIVITY",
+        message: "已有的口令不能修改、删除或调换顺序，只能添加",
+      },
+    });
+    // Past its deadline, even before the cron ends it, nothing is added.
+    await env.DB.prepare("UPDATE activities SET deadline=? WHERE id=?")
+      .bind(Date.now() - 1000, activity.id)
+      .run();
+    const late = await edit(added.version, [
+      ...added.config.passwords,
+      "太晚的口令123",
+    ]);
+    expect(late.status).toBe(400);
+    expect(await late.json()).toEqual({
+      error: {
+        code: "INVALID_ACTIVITY",
+        message: "红包已经结束，不能再添加口令",
+      },
+    });
+    // Ended, everyone sees every 口令, the added one marked.
+    const passwords = await request(
+      `/api/activities/${activity.id}/passwords`,
+      other,
+    );
+    expect(
+      ((await passwords.json()) as ActivityPasswords).passwords.map(
+        ({ text, addedAfterOpening }) => ({ text, addedAfterOpening }),
+      ),
+    ).toEqual([
+      ...activity.config.passwords.map((text) => ({
+        text,
+        addedAfterOpening: undefined,
+      })),
+      { text: "后加的口令123", addedAfterOpening: true },
+    ]);
   });
 
   it("projects the supported quantity modes without exposing private text, passwords or unearned information to the author", async () => {

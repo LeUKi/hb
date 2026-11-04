@@ -158,12 +158,29 @@ describe("定时开放: timing a draft", () => {
     });
     expect(retitled.title).toBe("周五晚上");
     expect(retitled.scheduledOpenAt).toBe(timed.scheduledOpenAt);
+    // Its 口令 are only added to, as an opened one's are.
+    await expect(
+      updateActivity(bindings, saved.id, author.id, {
+        version: retitled.version,
+        activity: input({ title: "周五晚上", passwords: ["换掉的口令2026"] }),
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    const added = await updateActivity(bindings, saved.id, author.id, {
+      version: retitled.version,
+      activity: input({
+        title: "周五晚上",
+        passwords: ["定时口令2026", "后加的口令2026"],
+      }),
+    });
+    expect(added.config.passwords).toEqual(["定时口令2026", "后加的口令2026"]);
+    // Not opened yet: nothing to mark as added after.
+    expect(added.addedPasswords).toBeUndefined();
     await rejects(
-      deleteActivity(bindings, author.id, saved.id, retitled.version),
+      deleteActivity(bindings, author.id, saved.id, added.version),
       "ACTIVITY_SCHEDULED",
     );
     const back = await scheduleActivity(bindings, saved.id, author.id, {
-      version: retitled.version,
+      version: added.version,
       at: null,
     });
     expect(back.scheduledOpenAt).toBeUndefined();

@@ -76,12 +76,18 @@ export function LockNote({ children }: { children: ReactNode }) {
 /** What locked the form's steps: opening, or a 定时开放 (scheduled-opening §2). */
 export const LockedBy = createContext<"opened" | "scheduled">("opened");
 
-/** “开放后不能修改” on a locked step; “定时以后不能修改” when timed. */
-export function LockedNote() {
+/**
+ * “开放后不能修改” on a locked step; “定时以后不能修改” when timed. A running
+ * 口令红包 can still take more 口令 (business-spec 开放后修改).
+ */
+export function LockedNote({ addsPasswords }: { addsPasswords?: boolean }) {
   const by = useContext(LockedBy);
+  const when = by === "scheduled" ? "定时以后" : "开放后";
   return (
     <LockNote>
-      {by === "scheduled" ? "定时以后不能修改。" : "开放后不能修改。"}
+      {addsPasswords
+        ? `${when}只能添加口令，别的不能修改。`
+        : `${when}不能修改。`}
     </LockNote>
   );
 }
@@ -703,12 +709,22 @@ export function PasswordList({
   update,
   errorOf,
   locked,
+  kept,
 }: {
   form: FormState;
   update: Update;
   errorOf: ErrorOf;
   locked: boolean;
+  /**
+   * Locked, but still running or timed: the 口令 it has (the first ones)
+   * stay as they are, and more can be added after them.
+   */
+  kept?: number;
 }) {
+  const by = useContext(LockedBy);
+  // Rows that cannot change, and whether rows can be added.
+  const fixedRows = locked ? (kept ?? form.passwords.length) : 0;
+  const adding = !locked || kept !== undefined;
   const setAt = (index: number, value: string) =>
     update((current) => ({
       ...current,
@@ -791,7 +807,7 @@ export function PasswordList({
                   // A sentence pasted with its punctuation still fits; 优化
                   // takes the punctuation out.
                   maxLength={64}
-                  disabled={locked}
+                  disabled={index < fixedRows}
                   invalid={Boolean(error)}
                   autoComplete="off"
                   spellCheck={false}
@@ -816,7 +832,7 @@ export function PasswordList({
                 />
                 {/* Named as in the command box (一键优化 → 优化); it grows in
                     beside the 口令 and folds away once the 口令 is clean. */}
-                <RevealInline show={!locked && fixable}>
+                <RevealInline show={index >= fixedRows && fixable}>
                   <Button
                     size="sm"
                     variant="quiet"
@@ -832,7 +848,9 @@ export function PasswordList({
                     优化
                   </Button>
                 </RevealInline>
-                <RevealInline show={!locked && form.passwords.length > 1}>
+                <RevealInline
+                  show={index >= fixedRows && form.passwords.length > 1}
+                >
                   <Button
                     size="icon"
                     variant="ghost"
@@ -876,7 +894,7 @@ export function PasswordList({
         </p>
       </Reveal>
       {/* Locked: the step's own 开放后不能修改 covers the 口令 too. */}
-      {!locked && (
+      {adding && (
         <div className="flex flex-wrap items-center gap-3">
           <RevealInline show={form.passwords.length < LIMITS.passwords}>
             <Button
@@ -894,8 +912,13 @@ export function PasswordList({
             </Button>
           </RevealInline>
           <span className="text-xs text-ink-3">
-            6–32
-            个字：汉字、英文字母或数字，区分大小写。几个口令共用同一个红包，每人只能领一次。粘贴多行会拆成多个口令。
+            {locked
+              ? `6–32 个字：汉字、英文字母或数字，区分大小写。保存后马上能用，之前输过这个口令的人要再输一次。${
+                  by === "opened"
+                    ? "红包结束、口令公开时，会标出哪些是开放后添加的。"
+                    : ""
+                }`
+              : "6–32 个字：汉字、英文字母或数字，区分大小写。几个口令共用同一个红包，每人只能领一次。粘贴多行会拆成多个口令。"}
           </span>
         </div>
       )}

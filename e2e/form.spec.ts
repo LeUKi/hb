@@ -923,7 +923,7 @@ test.describe("发红包", () => {
     // Not timed: no line; the way in is 保存并开放's arrow.
     await expect(line).toHaveCount(0);
     await expect(
-      page.getByText("开放后奖励、参与方式、口令和时间都不能再改。"),
+      page.getByText("开放后奖励、参与方式和时间都不能再改，口令只能添加。"),
     ).toBeVisible();
     const arrow = page.getByRole("button", { name: "更多开放方式" }).first();
     await arrow.click();
@@ -989,7 +989,7 @@ test.describe("发红包", () => {
     await expect(line).toHaveText("开放：明天 20:00改");
     await expect(
       page.getByText(
-        "定时以后奖励、参与方式、口令和时间就不能再改，要改先取消定时。",
+        "定时以后奖励、参与方式和时间就不能再改，口令只能添加，要改先取消定时。",
       ),
     ).toBeVisible();
     // 改 opens it again, with 不定时了.
@@ -1076,7 +1076,7 @@ test.describe("发红包", () => {
     await expect(
       shown(
         page,
-        "和开放后一样，只能改标题、说明这些文字；要改别的，先取消定时。",
+        "和开放后一样，只能改标题、说明这些文字，口令只能添加；要改别的，先取消定时。",
       ),
     ).toBeVisible();
     // The money and the rules: as once it is open.
@@ -1192,6 +1192,94 @@ test.describe("发红包", () => {
       pageUrl: "https://example.com/b",
       pageAutoOpen: false,
     });
+  });
+
+  test("口令红包开放后：已有的口令只读，还能再加，存下的输入加在后面；结束后不能再加", async ({
+    page,
+  }) => {
+    await mockSession(page, { ...viewer, balance: true });
+    await mockMerchants(page, [], {
+      enabled: true,
+      available: true,
+      availableMinor: 1000,
+    });
+    let status: ManagedActivity["status"] = "active";
+    const input = {
+      ...emptyActivityInput(),
+      title: "进行中的口令红包",
+      funding: "balance" as const,
+      merchantId: "",
+      passwords: ["表单口令2026"],
+      money: { mode: "fixed" as const, totalAmount: "0.30", count: 3 },
+    };
+    const base = managed(input);
+    const saved: Record<string, unknown>[] = [];
+    await page.route(`**/api/me/activities/${createdId}`, (route) => {
+      const request = route.request();
+      if (request.method() !== "GET")
+        saved.push(request.postDataJSON().activity);
+      return route.fulfill({
+        json: {
+          activity: { ...base, status, version: 3, openedAt: base.createdAt },
+        },
+      });
+    });
+    await page.route(`**/api/activities/${createdId}`, (route) =>
+      route.fulfill({
+        json: {
+          activity: {
+            id: createdId,
+            title: input.title,
+            rewardType: "ldc",
+            participationMode: "password",
+            status,
+            author: base.author,
+            forceDedicated: false,
+            topicUrl: null,
+            openedAt: base.createdAt,
+            deadlineAt: null,
+            quantity: { mode: "exact", total: 3, claimed: 0, remaining: 3 },
+            beforeInfo: "",
+          },
+        },
+      }),
+    );
+    await openApp(page, `/🧧/${encodeActivityEmoji(createdId)}/📝`);
+    // Not shut like the money's step: it opens, the 口令 it has read-only.
+    const step = page.getByRole("button", { name: /^第 3 步/ });
+    await expect(step).not.toHaveAccessibleName(/开放后不能修改/);
+    await step.click();
+    await expect(page.getByLabel("口令 1", { exact: true })).toHaveValue(
+      "表单口令2026",
+    );
+    await expect(page.getByLabel("口令 1", { exact: true })).not.toBeEditable();
+    await expect(page.getByRole("button", { name: "删除口令 1" })).toHaveCount(
+      0,
+    );
+    await expect(
+      page.getByText("开放后只能添加口令，别的不能修改。"),
+    ).toBeVisible();
+    await expect(
+      page.getByText(
+        "6–32 个字：汉字、英文字母或数字，区分大小写。保存后马上能用，之前输过这个口令的人要再输一次。红包结束、口令公开时，会标出哪些是开放后添加的。",
+      ),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "再加一个" }).click();
+    await page.getByLabel("口令 2", { exact: true }).fill("后加的口令2026");
+    await expect(
+      page.getByRole("button", { name: "删除口令 2" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "保存修改" }).click();
+    await expect.poll(() => saved.length).toBe(1);
+    expect(saved[0]).toMatchObject({
+      passwords: ["表单口令2026", "后加的口令2026"],
+    });
+
+    status = "ended";
+    await page.reload();
+    await page.getByRole("button", { name: /^第 3 步/ }).click();
+    await expect(page.getByText("开放后不能修改。").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "再加一个" })).toHaveCount(0);
   });
 
   test("从哪发：没有商户、有🐟额就默认🐟额，商户那张变灰并给入口，超过可用当场说，存下的输入不带商户", async ({

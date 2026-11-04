@@ -702,7 +702,7 @@ describe("timed LDC registration and draw lifecycle", () => {
       result: "incorrect",
       passwordMatched: false,
     });
-    // Model a legacy appended password without reopening the newly locked API.
+    // A 口令 added while it runs, as the edit API adds one.
     const [later] = await preparePasswords(
       bindings,
       activity.id,

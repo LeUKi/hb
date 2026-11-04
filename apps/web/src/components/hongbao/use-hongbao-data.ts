@@ -233,6 +233,7 @@ export function useHongbaoPageData(id: string) {
           ? {
               passwords: managed.config.passwords,
               used: usedBySender(participationQuery.data),
+              added: managed.addedPasswords,
             }
           : null,
       ),
