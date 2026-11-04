@@ -12,6 +12,9 @@
 // --people   claimants (500)
 // --seconds  over how long they come (60)
 // --shares   the 红包's shares (as many as people)
+// --funding  fish: a 🐟额红包 (default); merchant: a simulated merchant's,
+//            the way production's 商户直发 goes (Stage's
+//            STAGE_SIMULATED_PAYMENTS, apps/api/src/runtime/controls.ts)
 // --out      a JSON file for every claim's record
 import { writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
@@ -22,6 +25,7 @@ const { values } = parseArgs({
     people: { type: "string", default: "500" },
     seconds: { type: "string", default: "60" },
     shares: { type: "string" },
+    funding: { type: "string", default: "fish" },
     out: { type: "string" },
   },
 });
@@ -33,6 +37,9 @@ const key = process.env.STAGE_LOAD_TEST_KEY;
 if (!key) throw new Error("STAGE_LOAD_TEST_KEY is not set");
 if (!(people >= 1 && people <= 998 && seconds > 0 && shares >= 1))
   throw new Error("--people 1–998, --seconds > 0, --shares ≥ 1");
+const merchant = values.funding === "merchant";
+if (!merchant && values.funding !== "fish")
+  throw new Error("--funding fish or merchant");
 const run = `r${Date.now().toString(36)}`;
 
 type Account = { id: string; username: string; session: string; csrf: string };
@@ -79,11 +86,27 @@ const [author, actor, ...claimants] = accounts as [
 ];
 // Each share at least 0.01, and some over for 拼手气.
 const total = Math.max(shares * 0.02, 1).toFixed(2);
-await stage("fish", {
-  actorId: actor.id,
-  userId: author.id,
-  amount: (Number(total) + 1).toFixed(2),
-});
+const merchantId = merchant
+  ? (
+      (await (
+        await as(author, "POST", "/api/me/merchants", {
+          requestId: crypto.randomUUID(),
+          mode: "simulation",
+          label: `压测 ${run}`,
+          clientId: `loadtest_${run}`,
+          secret: "simulated-only",
+        })
+      ).json()) as { merchant?: { id: string }; id?: string }
+    ).merchant?.id
+  : undefined;
+if (merchant && !merchantId) throw new Error("no simulated merchant");
+if (!merchant)
+  await stage("fish", {
+    actorId: actor.id,
+    userId: author.id,
+    amount: (Number(total) + 1).toFixed(2),
+  });
+
 const created = await as(author, "POST", "/api/activities", {
   requestId: crypto.randomUUID(),
   activity: {
@@ -99,10 +122,16 @@ const created = await as(author, "POST", "/api/activities", {
     afterClaimInfo: "",
     afterEndInfo: "",
     rewardType: "ldc",
-    funding: "balance",
-    merchantId: "",
+    ...(merchant
+      ? { funding: "merchant", merchantId }
+      : { funding: "balance", merchantId: "" }),
     participationMode: "direct",
-    money: { mode: "random", totalAmount: total, count: shares },
+    money: {
+      mode: "random",
+      totalAmount: total,
+      count: shares,
+      algorithm: "double_mean_v1",
+    },
   },
 });
 if (!created.ok)
@@ -121,7 +150,7 @@ const opened = await as(
 if (!opened.ok)
   throw new Error(`open: ${opened.status} ${await opened.text()}`);
 console.log(
-  `红包 ${activity.id}: ${shares} 份, ${total} 🐟; ${people} 人, ${seconds} 秒内`,
+  `红包 ${activity.id}: ${shares} 份, ${total} ${merchant ? "LDC (模拟商户)" : "🐟"}; ${people} 人, ${seconds} 秒内`,
 );
 
 type Record = {
@@ -186,6 +215,7 @@ const read = (await (
 
 const summary = {
   run,
+  funding: merchant ? "merchant" : "fish",
   activityId: activity.id,
   people,
   seconds,

@@ -43,6 +43,8 @@ type ApiEnvVars = {
    * staging; anywhere else its routes answer 404.
    */
   STAGE_LOAD_TEST_KEY?: string;
+  /** "true" on Stage for the load test's simulated merchants (runtime/controls.ts). */
+  STAGE_SIMULATED_PAYMENTS?: string;
 };
 
 export type ApiBindings = Omit<CloudflareEnv, keyof ApiEnvVars> & ApiEnvVars;

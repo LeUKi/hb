@@ -12,7 +12,7 @@ import { z } from "zod";
 import { ActivityError } from "../activities/errors";
 import { requireAuth, requireProtectedMutation } from "../auth/session";
 import type { ApiContext } from "../env";
-import { isLocalSimulation } from "../runtime/controls";
+import { simulatesPayments } from "../runtime/controls";
 import { merchantObject } from "../runtime/objects";
 import { accountPaymentDetail, listAccountPayments } from "./account-queries";
 import { readMerchantImpact, readMerchantUsage } from "./configuration";
@@ -202,7 +202,7 @@ export const merchantRoutes = new Hono<ApiContext>()
     ),
     async (c) => {
       const session = await requireProtectedMutation(c);
-      if (!isLocalSimulation(c.env))
+      if (!simulatesPayments(c.env))
         throw new ActivityError(404, "NOT_FOUND", "未找到此功能");
       const id = c.req.param("id");
       const row = await ownedMerchant(c.env, id, session.user.id);

@@ -4,6 +4,7 @@ import { app } from "../src/app";
 import { createDb } from "../src/db/client";
 import { users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
+import { simulatesPayments } from "../src/runtime/controls";
 
 const origin = "https://hb.example.com";
 const key = "stage-load-test-key-for-tests";
@@ -104,5 +105,18 @@ describe("Stage load-test accounts", () => {
       stage,
     );
     expect(((await after.json()) as { user: unknown }).user).toBeNull();
+  });
+});
+
+describe("simulated payments", () => {
+  it("are local, or Stage's when switched on there, and never production's", () => {
+    const at = (APP_ENV: string, STAGE_SIMULATED_PAYMENTS?: string) =>
+      simulatesPayments({ ...env, APP_ENV, STAGE_SIMULATED_PAYMENTS });
+    expect(at("local")).toBe(true);
+    expect(at("staging")).toBe(false);
+    expect(at("staging", "true")).toBe(true);
+    expect(at("staging", "yes")).toBe(false);
+    expect(at("production", "true")).toBe(false);
+    expect(at("", "true")).toBe(false);
   });
 });

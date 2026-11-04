@@ -11,8 +11,8 @@ import {
 } from "../runtime/attempt-cooldown";
 import {
   allowsRealClaim,
-  isLocalSimulation,
   readPlatformControls,
+  simulatesPayments,
 } from "../runtime/controls";
 import { encryptString } from "../security/crypto";
 import { assertInScope } from "./claim-scope";
@@ -127,7 +127,7 @@ export async function registerForDraw(
       if (!saved) throw new Error("Registration outcome was not saved");
       return result(env, saved);
     }
-    if (activity.paymentMode === "simulation" && !isLocalSimulation(env))
+    if (activity.paymentMode === "simulation" && !simulatesPayments(env))
       throw new ActivityError(
         400,
         "SIMULATION_NOT_AVAILABLE",
@@ -190,7 +190,7 @@ export async function registerForDraw(
       THEN version ELSE NULL END WHERE id=?`).bind(
         activity.version,
         mode,
-        Number(isLocalSimulation(env)),
+        Number(simulatesPayments(env)),
         Number(realPermitted),
         Number(testPermission),
         userId,

@@ -3,8 +3,8 @@ import type { merchants } from "../db/schema";
 import type { ApiBindings } from "../env";
 import {
   allowsRealOpening,
-  isLocalSimulation,
   readPlatformControls,
+  simulatesPayments,
 } from "../runtime/controls";
 import { credentialVerificationView } from "./verification";
 
@@ -22,7 +22,7 @@ export async function publicationEligibility(
   });
   if (merchant.usageStatus !== "current") return result("MERCHANT_LEGACY");
   if (merchant.mode === "simulation")
-    return result(isLocalSimulation(env) ? null : "REAL_LDC_NOT_ENABLED");
+    return result(simulatesPayments(env) ? null : "REAL_LDC_NOT_ENABLED");
   if (!allowsRealOpening(env, await readPlatformControls(env)))
     return result("REAL_LDC_NOT_ENABLED");
   const check =

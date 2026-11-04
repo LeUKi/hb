@@ -11,12 +11,14 @@ import {
 import { ActivityError } from "../activities/errors";
 import { databaseNow } from "../activities/lifecycle";
 import type { ApiBindings } from "../env";
-import { isLocalSimulation } from "../runtime/controls";
 import { readBalanceSettings } from "./settings";
 
-/** Its payment mode follows the environment's, as a merchant's would. */
+/**
+ * Its payment mode follows the environment's, as a merchant's would; only
+ * locally simulated (Stage's simulated merchants leave 🐟额红包 as they were).
+ */
 export function balancePaymentMode(env: ApiBindings) {
-  return isLocalSimulation(env) ? ("simulation" as const) : ("real" as const);
+  return env.APP_ENV === "local" ? ("simulation" as const) : ("real" as const);
 }
 
 /** What is 可用 in this person's 🐟额 now (0 without an account). */

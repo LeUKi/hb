@@ -12,8 +12,8 @@ import { merchants, simulationControls } from "../db/schema";
 import type { ApiBindings } from "../env";
 import {
   allowsRealSending,
-  isLocalSimulation,
   readPlatformControls,
+  simulatesPayments,
 } from "../runtime/controls";
 import { digestPassword, encryptString } from "../security/crypto";
 import {
@@ -113,8 +113,8 @@ export async function merchantView(
     ...base,
     mode: "simulation",
     capabilities: {
-      canExecutePayments: isLocalSimulation(env),
-      canSimulate: isLocalSimulation(env),
+      canExecutePayments: simulatesPayments(env),
+      canSimulate: simulatesPayments(env),
     },
     scenario: control?.scenario ?? "normal",
   };
@@ -181,7 +181,7 @@ export async function listMerchants(
   return {
     currentMerchantId: current?.id ?? null,
     canCreate: !current,
-    canSimulate: isLocalSimulation(env),
+    canSimulate: simulatesPayments(env),
     items: await Promise.all(items.map((row) => merchantView(env, row))),
     nextCursor: rows.length > 20 && last ? encodeTimeCursor(last) : null,
   };
@@ -241,7 +241,7 @@ export async function createMerchant(
   };
   const old = await checkPrevious();
   if (old) return old;
-  if (mode === "simulation" && !isLocalSimulation(env))
+  if (mode === "simulation" && !simulatesPayments(env))
     throw new ActivityError(
       400,
       "SIMULATION_NOT_AVAILABLE",

@@ -5,8 +5,8 @@ import { merchants, paymentTasks } from "../db/schema";
 import type { ApiBindings } from "../env";
 import {
   allowsRealSending,
-  isLocalSimulation,
   readPlatformControls,
+  simulatesPayments,
 } from "../runtime/controls";
 import { merchantObject } from "../runtime/objects";
 import {
@@ -63,7 +63,7 @@ async function runnableTaskSql(env: ApiBindings) {
   const policy = runtimeRealPolicy(env);
   const conditions: string[] = [];
   const values: string[] = [];
-  if (isLocalSimulation(env)) conditions.push("p.mode='simulation'");
+  if (simulatesPayments(env)) conditions.push("p.mode='simulation'");
   if (
     env.APP_ENV === "production" &&
     (policy.networkMode === "live" || policy.networkMode === "verify")
@@ -177,7 +177,7 @@ export async function runMerchantCycle(
       throw new Error("Unsupported payment channel");
     return runRealMerchantCycle(env, merchantId, adapter);
   }
-  if (!isLocalSimulation(env)) return { processed: false, nextRunAt: null };
+  if (!simulatesPayments(env)) return { processed: false, nextRunAt: null };
   if (merchant.leaseUntil && merchant.leaseUntil > now)
     return { processed: false, nextRunAt: merchant.leaseUntil };
   if (merchant.activeTaskId && merchant.leaseToken) {
@@ -462,7 +462,7 @@ export async function runMerchantCycle(
 export async function wakePayment(env: ApiBindings, taskId: string) {
   let task = await loadTask(env, taskId);
   if (!task) return;
-  if (task.mode === "simulation" && !isLocalSimulation(env)) return;
+  if (task.mode === "simulation" && !simulatesPayments(env)) return;
   if (task.status === "confirmed") {
     const probe = await env.DB.prepare(
       "SELECT task_id FROM payment_duplicate_probes WHERE task_id=? AND (status IN ('pending','sending','reconciling') OR (status='awaiting_evidence' AND protocol_verified_at IS NULL))",

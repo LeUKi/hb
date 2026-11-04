@@ -86,8 +86,8 @@ import {
 } from "../payments/verification";
 import {
   allowsRealOpening,
-  isLocalSimulation,
   readPlatformControls,
+  simulatesPayments,
   stageBalanceHongbao,
 } from "../runtime/controls";
 import { digestPassword } from "../security/crypto";
@@ -746,7 +746,7 @@ export async function createActivity(
       "MERCHANT_LEGACY",
       publicationMessages.MERCHANT_LEGACY,
     );
-  if (merchant?.mode === "simulation" && !isLocalSimulation(env))
+  if (merchant?.mode === "simulation" && !simulatesPayments(env))
     throw new ActivityError(
       400,
       "SIMULATION_NOT_AVAILABLE",
@@ -882,7 +882,7 @@ export async function updateActivity(
   if (
     row.openedAt === null &&
     merchant?.mode === "simulation" &&
-    !isLocalSimulation(env)
+    !simulatesPayments(env)
   )
     throw new ActivityError(
       400,

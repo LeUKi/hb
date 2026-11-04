@@ -27,8 +27,8 @@ import {
 } from "../runtime/attempt-cooldown";
 import {
   allowsRealClaim,
-  isLocalSimulation,
   readPlatformControls,
+  simulatesPayments,
   stageBalanceHongbao,
 } from "../runtime/controls";
 import { encryptString } from "../security/crypto";
@@ -215,7 +215,7 @@ export async function admitClaim(
   if (
     activity.rewardType === "ldc" &&
     activity.paymentMode === "simulation" &&
-    !isLocalSimulation(env)
+    !simulatesPayments(env)
   )
     throw new ActivityError(
       400,
@@ -272,7 +272,7 @@ export function claimGuardStatement(
     activity.version,
     mode,
     userId,
-    Number(isLocalSimulation(env)),
+    Number(simulatesPayments(env)),
     Number(admitted.realActivityPermitted),
     Number(admitted.testPermission),
     activity.id,
@@ -691,7 +691,7 @@ export async function allocateClaimSubmission(
     if (
       activity.rewardType === "ldc" &&
       activity.paymentMode === "simulation" &&
-      !isLocalSimulation(env)
+      !simulatesPayments(env)
     )
       throw new ActivityError(
         400,
@@ -768,7 +768,7 @@ export async function allocateClaimSubmission(
                 AND EXISTS (SELECT 1 FROM code_judgments j WHERE j.submission_row_id = s.id AND j.ok = 1))))
           THEN version ELSE NULL END WHERE id = ?`).bind(
         submission.userId,
-        Number(isLocalSimulation(env)),
+        Number(simulatesPayments(env)),
         Number(realActivityPermitted),
         Number(testPermission),
         activity.id,

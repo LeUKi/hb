@@ -27,8 +27,17 @@ export async function readPlatformControls(
 }
 
 // Missing environment values never grant public simulation or live payment access.
-export function isLocalSimulation(env: ApiBindings) {
-  return env.APP_ENV === "local";
+/**
+ * Simulated merchants and payments (payments/simulation.ts, all inside
+ * this site): locally, and on Stage when STAGE_SIMULATED_PAYMENTS is
+ * "true", for its load test (docs/claim-capacity-design.md §3 第 0 期).
+ * Never in production.
+ */
+export function simulatesPayments(env: ApiBindings) {
+  return (
+    env.APP_ENV === "local" ||
+    (env.APP_ENV === "staging" && env.STAGE_SIMULATED_PAYMENTS === "true")
+  );
 }
 
 function live(env: ApiBindings) {
