@@ -38,6 +38,11 @@ type ApiEnvVars = {
   MINI_APP_ISSUER?: string;
   MINI_APP_CHANNEL?: string;
   MINI_APP_PUBLIC_KEY?: string;
+  /**
+   * 压测 (runtime/stage-load-test.ts): set on Stage only, with APP_ENV
+   * staging; anywhere else its routes answer 404.
+   */
+  STAGE_LOAD_TEST_KEY?: string;
 };
 
 export type ApiBindings = Omit<CloudflareEnv, keyof ApiEnvVars> & ApiEnvVars;

@@ -25,6 +25,7 @@ import {
   inMaintenanceMode,
   maintenanceResponse,
 } from "./runtime/maintenance-mode";
+import { stageLoadTestRoutes } from "./runtime/stage-load-test";
 
 export const app = new Hono<ApiContext>()
   // 社区小程序: the forum's CORS on every answer, 维护模式's too.
@@ -141,3 +142,5 @@ export type AppType = typeof app;
 (app as unknown as Hono<ApiContext>).route("/api", hongbaoInfoRoutes);
 // 社区小程序 (docs/mini-app-design.md §7), the same way.
 (app as unknown as Hono<ApiContext>).route("/api", miniRoutes);
+// 压测 accounts (docs/claim-capacity-design.md §3), on Stage only: 404 elsewhere.
+(app as unknown as Hono<ApiContext>).route("/api", stageLoadTestRoutes);
