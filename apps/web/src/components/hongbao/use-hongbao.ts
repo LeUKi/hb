@@ -95,7 +95,8 @@ export function useHongbao(data: HongbaoData) {
     activity.participation !== "code" && pushedQueue?.id === activity.id
       ? pushedQueue
       : null;
-  const waiting = !mine ? (data.waiting ?? null) : null;
+  // Over, or theirs already: nothing waits any more.
+  const waiting = !mine && !view.ended ? (data.waiting ?? null) : null;
   // Only a claim spins the seal; verifying another 口令 does not.
   const spinning =
     claiming ||
@@ -147,30 +148,42 @@ export function useHongbao(data: HongbaoData) {
   // line and 取消排队 show on the page.
   const waitingAhead = queue ? queue.ahead : 0;
   useEffect(() => {
-    if (waitingAhead > 0 && mode === "expanded" && scope?.id === activity.id)
+    if (
+      waitingAhead > 0 &&
+      mode === "expanded" &&
+      scope?.id === activity.id &&
+      scope.purpose === "claim"
+    )
       controller.collapse();
-  }, [waitingAhead, mode, scope?.id, activity.id, controller]);
+  }, [waitingAhead, mode, scope?.id, scope?.purpose, activity.id, controller]);
 
   // 取消排队: their waiting claim leaves the line; nothing is taken.
   const identity = useIdentity();
   const queryClient = useQueryClient();
+  // Only while someone is before it, or a reloaded page waits: a claim
+  // written in its next turn is not worth leaving.
   const leavingId =
-    spinning && !mine ? (queue?.submissionId ?? waiting?.submissionId) : null;
+    spinning && !mine && !view.ended
+      ? ((queue && queue.ahead > 0 ? queue.submissionId : undefined) ??
+        waiting?.submissionId ??
+        null)
+      : null;
   const [leaveState, setLeaveState] = useState<{
     busy: boolean;
     error: string | null;
-  }>({ busy: false, error: null });
+    for: string | null;
+  }>({ busy: false, error: null, for: null });
   const leaveQueue =
     leavingId && identity.csrfToken
       ? async () => {
           if (leaveState.busy || !identity.csrfToken) return;
-          setLeaveState({ busy: true, error: null });
+          setLeaveState({ busy: true, error: null, for: leavingId });
           const error = await leaveClaimQueue(
             activity.id,
             leavingId,
             identity.csrfToken,
           );
-          setLeaveState({ busy: false, error });
+          setLeaveState({ busy: false, error, for: leavingId });
           if (error) return;
           setQueued((current) =>
             current?.id === activity.id ? null : current,
@@ -303,7 +316,9 @@ export function useHongbao(data: HongbaoData) {
     /** 取消排队, while their claim waits for its share; null otherwise. */
     leaveQueue,
     leaving: leaveState.busy,
-    leaveError: leavingId ? leaveState.error : null,
+    // An error is about the claim it was for, not a later one.
+    leaveError:
+      leavingId && leaveState.for === leavingId ? leaveState.error : null,
     /** Results of a direct claim are shown on the page, not in the box. */
     // Another 红包's answer stays there (Back, a link: still docked).
     message:

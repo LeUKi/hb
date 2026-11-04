@@ -241,7 +241,17 @@ export async function createMerchant(
   };
   const old = await checkPrevious();
   if (old) return old;
-  if (mode === "simulation" && !simulatesPayments(env))
+  if (
+    mode === "simulation" &&
+    (!simulatesPayments(env) ||
+      // On Stage only the load test's own accounts (runtime/stage-load-test.ts).
+      (env.APP_ENV === "staging" &&
+        !(await env.DB.prepare(
+          "SELECT 1 FROM users WHERE id = ? AND external_id LIKE 'loadtest:%'",
+        )
+          .bind(authorId)
+          .first())))
+  )
     throw new ActivityError(
       400,
       "SIMULATION_NOT_AVAILABLE",

@@ -30,8 +30,9 @@ export async function readPlatformControls(
 /**
  * Simulated merchants and payments (payments/simulation.ts, all inside
  * this site): locally, and on Stage when STAGE_SIMULATED_PAYMENTS is
- * "true", for its load test (docs/claim-capacity-design.md §3 第 0 期).
- * Never in production.
+ * "true", for its load test (docs/claim-capacity-design.md §3 第 0 期),
+ * where only the load test's accounts may make a simulated merchant
+ * (payments/merchants.ts). Never in production.
  */
 export function simulatesPayments(env: ApiBindings) {
   return (
@@ -48,7 +49,8 @@ function live(env: ApiBindings) {
  * Stage's 🐟额红包 open and are claimed (2026-11-02, the user, to try the
  * forum's mini app for real; docs/mini-app-design.md §7): 🐟额 is this
  * site's own ledger and never reaches Credit, so nothing real moves. Every
- * LDC 红包 on Stage stays shut, as everything does but production.
+ * real LDC 红包 on Stage stays shut, as everything does but production;
+ * the load test's simulated ones (simulatesPayments) pay nobody.
  */
 export function stageBalanceHongbao(
   env: ApiBindings,

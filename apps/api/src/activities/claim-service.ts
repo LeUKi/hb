@@ -388,7 +388,7 @@ export async function prepareClaimSubmission(
         throw new ActivityError(
           409,
           "REAL_LDC_CLAIMS_PAUSED",
-          KEPT_WHILE_PAUSED,
+          "新领取暂时关闭，请保留原提交稍后重试。",
         );
       await assertAttemptAllowed(env, userId, "activity", continuation);
       throw error;
@@ -761,55 +761,100 @@ export async function allocateClaimBatch(
   // Claims written together may share their claimed_at; the 名单 orders
   // ties by id, so the ids rise in line order, as the shares do.
   const claimIds = batched.map(() => crypto.randomUUID()).sort();
-  try {
-    const writes = await Promise.all(
-      batched.map(async ({ submission }, order) => {
-        const reward = shares[order] as (typeof shares)[number];
-        const claimId = claimIds[order] as string;
-        const way = await shareStatements(env, activity, {
+  // Each one's writes; one that cannot be made (its recipient, say) is
+  // written alone after, and the rest go on together.
+  const prepared = await Promise.allSettled(
+    batched.map(async ({ submission }, order) => {
+      const reward = shares[order] as (typeof shares)[number];
+      const claimId = claimIds[order] as string;
+      const way = await shareStatements(env, activity, {
+        claimId,
+        taskId: crypto.randomUUID(),
+        userId: submission.userId,
+        inventoryId: reward.id,
+        amountMinor: reward.amount_minor,
+      });
+      return [
+        ...allocationStatements(env, activity, submission, {
           claimId,
-          taskId: crypto.randomUUID(),
-          userId: submission.userId,
-          inventoryId: reward.id,
-          amountMinor: reward.amount_minor,
-        });
-        return [
-          ...allocationStatements(env, activity, submission, {
-            claimId,
-            reward,
-            coded: false,
-            realActivityPermitted,
-            testPermission,
-          }),
-          ...way.statements,
-        ];
-      }),
-    );
-    await env.DB.batch(writes.flat());
-    for (const { index } of batched) answers[index] = "allocated";
+          reward,
+          coded: false,
+          realActivityPermitted,
+          testPermission,
+          place: order,
+        }),
+        ...way.statements,
+      ];
+    }),
+  );
+  const together = batched.filter(
+    (_, order) => prepared[order]?.status === "fulfilled",
+  );
+  later.push(
+    ...batched
+      .filter((_, order) => prepared[order]?.status !== "fulfilled")
+      .map((item) => item.index),
+  );
+  try {
+    if (together.length > 0)
+      await env.DB.batch(
+        prepared.flatMap((one) =>
+          one.status === "fulfilled" ? one.value : [],
+        ),
+      );
+    for (const { index } of together) answers[index] = "allocated";
   } catch {
     // One of them could not go along: each alone, in order, as before.
-    later.push(...batched.map((item) => item.index));
+    later.push(...together.map((item) => item.index));
   }
   await each(later.sort((a, b) => a - b));
   return answers as BatchAllocation[];
 }
 
-/**
- * 取消排队: a checked submission still waiting for its share is finished as
- * cancelled, so nothing (resumePendingActivityClaims included) takes one
- * for it later.
- */
-export async function cancelClaimSubmission(
+/** A person's direct or 口令 claims of this 红包 checked and still pending. */
+export async function pendingClaimsOf(
   env: ApiBindings,
-  submission: SubmissionRow,
+  activityId: string,
+  userId: string,
 ) {
-  await env.DB.prepare(
+  return createDb(env.DB)
+    .select()
+    .from(redemptionSubmissions)
+    .where(
+      and(
+        eq(redemptionSubmissions.activityId, activityId),
+        eq(redemptionSubmissions.userId, userId),
+        eq(redemptionSubmissions.purpose, "claim"),
+        eq(redemptionSubmissions.outcome, "pending"),
+        inArray(redemptionSubmissions.participationMode, [
+          "direct",
+          "password",
+        ]),
+      ),
+    )
+    .orderBy(redemptionSubmissions.createdAt)
+    .all();
+}
+
+/**
+ * 取消排队: this person's direct or 口令 claims of this 红包 still waiting
+ * for their shares (pending) are finished as cancelled, so nothing
+ * (resumePendingActivityClaims included) takes one for them later. How
+ * many: none when each was finished meanwhile (its share written).
+ */
+export async function cancelPendingClaims(
+  env: ApiBindings,
+  activityId: string,
+  userId: string,
+) {
+  const result = await env.DB.prepare(
     `UPDATE redemption_submissions SET outcome = 'cancelled', finished_at = ${databaseNow}
-      WHERE id = ? AND purpose = 'claim' AND outcome = 'pending'`,
+      WHERE activity_id = ? AND user_id = ? AND purpose = 'claim' AND outcome = 'pending'
+        AND participation_mode IN ('direct', 'password')`,
   )
-    .bind(submission.id)
+    .bind(activityId, userId)
     .run();
+  return result.meta.changes;
 }
 
 /**
@@ -852,10 +897,21 @@ function allocationStatements(
     coded: boolean;
     realActivityPermitted: boolean;
     testPermission: boolean;
+    /**
+     * Its place in a batch: claimed this many ms after the batch's moment,
+     * so claims written together keep line order and one 手速王.
+     */
+    place?: number;
   },
 ) {
-  const { claimId, reward, coded, realActivityPermitted, testPermission } =
-    share;
+  const {
+    claimId,
+    reward,
+    coded,
+    realActivityPermitted,
+    testPermission,
+    place = 0,
+  } = share;
   return [
     env.DB.prepare(`UPDATE activities SET version = CASE WHEN deleted_at IS NULL AND opened_at IS NOT NULL AND ended_at IS NULL AND archived_at IS NULL
           AND deadline > ${databaseNow} AND claimed_count < total_count
@@ -890,13 +946,14 @@ function allocationStatements(
         ]
       : []),
     env.DB.prepare(
-      `INSERT INTO claims (id, activity_id, user_id, inventory_id, password_id, claimed_at) VALUES (?, ?, ?, ?, ?, ${databaseNow})`,
+      `INSERT INTO claims (id, activity_id, user_id, inventory_id, password_id, claimed_at) VALUES (?, ?, ?, ?, ?, ${databaseNow} + ?)`,
     ).bind(
       claimId,
       activity.id,
       submission.userId,
       reward.id,
       submission.matchedPasswordId,
+      place,
     ),
     env.DB.prepare(`UPDATE activities SET
           ended_at = CASE WHEN claimed_count + 1 = total_count THEN (SELECT claimed_at FROM claims WHERE id = ?) ELSE ended_at END,
@@ -1057,7 +1114,7 @@ export async function allocateClaimSubmission(
         throw new ActivityError(
           409,
           "REAL_LDC_CLAIMS_PAUSED",
-          "新领取暂时关闭，请保留原提交稍后重试。",
+          KEPT_WHILE_PAUSED,
         );
       if (
         activityStatus(latest) !== "active" ||
@@ -1206,6 +1263,10 @@ export async function claimActivity(
 export async function resumePendingActivityClaims(
   env: ApiBindings,
   activityId: string,
+  /** Submissions waiting in the 红包's line, whose turn writes them. */
+  waiting: ReadonlySet<string> = new Set(),
+  /** Told of each person whose claim it finished (their pages read it). */
+  finished: (userId: string) => void = () => {},
 ) {
   const pending = await createDb(env.DB)
     .select({ submission: redemptionSubmissions })
@@ -1223,8 +1284,10 @@ export async function resumePendingActivityClaims(
     .orderBy(redemptionSubmissions.createdAt, redemptionSubmissions.id)
     .limit(50);
   for (const { submission } of pending) {
+    if (waiting.has(submission.id)) continue;
     try {
       await completeClaimSubmission(env, submission);
+      finished(submission.userId);
     } catch (error) {
       console.error("claim_recovery_error", {
         errorName: error instanceof Error ? error.name : typeof error,

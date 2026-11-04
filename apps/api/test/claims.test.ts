@@ -22,6 +22,7 @@ import {
   refreshActivityLifecycle,
   sweepActivityLifecycle,
 } from "../src/activities/lifecycle";
+import { LIVE_USER_HEADER } from "../src/activities/live";
 import {
   insertPasswordRows,
   preparePasswords,
@@ -1548,5 +1549,104 @@ describe("the claim line (2026-11-04)", () => {
         )
       ).status,
     ).toBe(401);
+  });
+
+  it("answers a cancel with the share a recovery wrote meanwhile, and cancels one a restart left behind", async () => {
+    const activity = await create({
+      money: { mode: "fixed", totalAmount: "2.00", count: 2 },
+    });
+    const base = `https://activity.internal/internal/activities/${activity.id}`;
+    await runInDurableObject(
+      activityObject(bindings, activity.id),
+      async (instance) => {
+        const object = instance as unknown as {
+          fetch(request: Request): Promise<Response>;
+          serialize(action: () => Promise<void>): Promise<void>;
+        };
+        let release = () => {};
+        const held = object.serialize(
+          () =>
+            new Promise<void>((resolve) => {
+              release = resolve;
+            }),
+        );
+        const waiting = object
+          .fetch(
+            new Request(`${base}/claim`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                userId: alice.id,
+                submissionId: crypto.randomUUID(),
+                password: "正确口令123",
+              }),
+            }),
+          )
+          .then((response) => response.json() as Promise<ClaimResult>);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        // A recovery outside the line writes its share meanwhile.
+        expect(await resumePendingActivityClaims(bindings, activity.id)).toBe(
+          1,
+        );
+        const cancel = object.fetch(
+          new Request(`${base}/claim/cancel`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId: alice.id,
+              submissionId: crypto.randomUUID(),
+            }),
+          }),
+        );
+        release();
+        await held;
+        expect((await cancel).status).toBe(409);
+        expect((await waiting).result).toBe("claimed");
+      },
+    );
+    // Bob's claim left pending by a restart: not in any line, cancelled.
+    const left = await prepareClaimSubmission(bindings, activity.id, bob.id, {
+      submissionId: crypto.randomUUID(),
+      password: "正确口令123",
+    });
+    expect(left.outcome).toBe("pending");
+    const cancelled = await activityObject(bindings, activity.id).fetch(
+      `${base}/claim/cancel`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: bob.id,
+          submissionId: left.submissionId,
+        }),
+      },
+    );
+    expect(await cancelled.json()).toEqual({ result: "cancelled" });
+    expect(await resumePendingActivityClaims(bindings, activity.id)).toBe(0);
+    expect(await stats(activity.id)).toMatchObject({ claimed: 1, claims: 1 });
+  });
+
+  it("puts a claim left pending back in line when its person's page connects", async () => {
+    const activity = await create({
+      money: { mode: "fixed", totalAmount: "2.00", count: 2 },
+    });
+    // Checked, then left (a restart before its turn): pending, in no line.
+    const left = await prepareClaimSubmission(bindings, activity.id, alice.id, {
+      submissionId: crypto.randomUUID(),
+      password: "正确口令123",
+    });
+    expect(left.outcome).toBe("pending");
+    const live = await activityObject(bindings, activity.id).fetch(
+      `https://activity.internal/internal/activities/${activity.id}/live`,
+      { headers: { Upgrade: "websocket", [LIVE_USER_HEADER]: alice.id } },
+    );
+    expect(live.status).toBe(101);
+    live.webSocket?.accept();
+    for (let tries = 0; tries < 50; tries += 1) {
+      if ((await stats(activity.id)).claims === 1) break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    expect(await stats(activity.id)).toMatchObject({ claimed: 1, claims: 1 });
+    live.webSocket?.close();
   });
 });

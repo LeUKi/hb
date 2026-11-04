@@ -4,6 +4,7 @@
 // pass what TypeScript can instantiate (TS2589); the web calls it with fetch.
 import { cancelClaimSchema } from "@hb/contracts";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { requireProtectedMutation } from "../auth/session";
 import type { ApiContext } from "../env";
 import { activityObject } from "../runtime/objects";
@@ -12,6 +13,12 @@ import { findActivity } from "./storage";
 
 export const claimCancelRoutes = new Hono<ApiContext>().post(
   "/activities/:id/claim/cancel",
+  bodyLimit({
+    maxSize: 1024,
+    onError: () => {
+      throw new ActivityError(400, "INVALID_ACTIVITY", "取消请求无效");
+    },
+  }),
   async (c) => {
     const session = await requireProtectedMutation(c);
     const parsed = cancelClaimSchema.safeParse(

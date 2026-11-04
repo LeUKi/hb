@@ -21,11 +21,12 @@ import {
   allocateClaimBatch,
   type BatchAllocation,
   CLAIM_BATCH,
-  cancelClaimSubmission,
+  cancelPendingClaims,
   claimActivity,
   claimAnswer,
   claimDecided,
   completeClaimSubmission,
+  pendingClaimsOf,
   resumePendingActivityClaims,
   type SubmissionRow,
 } from "./activities/claim-service";
@@ -409,10 +410,14 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     const people = livePeople(this.ctx.getWebSockets(LIVE_TAG));
     server.send(liveViewers(people, seq));
     // Its share still waiting (a page reloaded meanwhile): where it is.
+    // One left pending outside the line (a restart, an error midway) goes
+    // back in line; its person hears of it as any other (mine).
     const waiting = this.allocations.findIndex(
       (item) => item.submission.userId === userId,
     );
     if (waiting >= 0) this.tellPlace(waiting);
+    else if (activity.status === "active")
+      await this.adoptLeftClaims(id, userId);
     if (people !== this.viewersSent) this.announceViewers();
     if (!activity.draw && activity.status === "active" && activity.deadlineAt)
       await this.watchDeadline(id, Date.parse(activity.deadlineAt));
@@ -910,12 +915,15 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     waiting?: Parameters<typeof liveQueued>[1],
   ) {
     const message = liveQueued(ahead, waiting);
-    for (const socket of this.ctx.getWebSockets(liveUserTag(userId)))
+    for (const socket of this.ctx.getWebSockets(liveUserTag(userId))) {
+      // The 社区小程序 does not read these (docs/mini-app-design.md §7).
+      if (liveUntil(socket) !== undefined) continue;
       try {
         socket.send(message);
       } catch {
         // Already closing: nothing to tell it.
       }
+    }
   }
 
   /**
@@ -1029,10 +1037,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
               : written.result,
       });
       if (written === "cancelled")
-        return Response.json(
-          { result: "cancelled" },
-          { headers: { "Cache-Control": "no-store" } },
-        );
+        return this.claimed(id, userId, input, { result: "cancelled" });
       if (typeof written === "object" && "error" in written)
         return mutationError(written.error);
       // Its share written: the answer is read after the turn.
@@ -1107,9 +1112,32 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       batch.forEach((item, index) =>
         item.settle(answers[index] ?? { error: new Error("No answer") }),
       );
+      // Their other tabs, and a page reloaded while it waited, read their
+      // part now, whatever came of it.
+      this.tellMine(batch.map((item) => item.submission.userId));
       this.allocations.forEach((_, index) => this.tellPlace(index));
       if (this.allocations.length > 0) this.takeAllocationTurn(id);
     });
+  }
+
+  /**
+   * A person's direct or 口令 claims left pending outside this instance's
+   * line (a restart, an error after their check): back in line, with no one
+   * waiting on the answer but their pages (mine after the turn).
+   */
+  private async adoptLeftClaims(id: string, userId: string) {
+    const inLine = this.inLine();
+    for (const submission of await pendingClaimsOf(this.env, id, userId)) {
+      if (inLine.has(submission.id)) continue;
+      this.allocations.push({ submission, settle: () => {} });
+      this.tellPlace(this.allocations.length - 1);
+      this.takeAllocationTurn(id);
+    }
+  }
+
+  /** Submissions waiting here for their shares: their turn writes them. */
+  private inLine() {
+    return new Set(this.allocations.map((item) => item.submission.id));
   }
 
   /** Where a waiting share stands, to its person's pages. */
@@ -1125,41 +1153,52 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   }
 
   /**
-   * 取消排队: a submission still waiting for its share leaves the line,
-   * finished as cancelled; nothing is taken. One already in its turn, or
-   * not in the line, cannot be.
+   * 取消排队: this person's claims of this 红包 still waiting for their
+   * shares are finished as cancelled; nothing is taken. Outside the line,
+   * so it does not wait behind the turns it would leave: theirs leave this
+   * instance's line first, then every pending one of theirs is finished in
+   * D1, one a restart left behind too. A recovery skips what is in the line
+   * (inLine), and one written meanwhile is not pending, so the write tells
+   * which: none finished, their answers stand.
    */
-  private async cancelWaiting(
-    _id: string,
-    userId: string,
-    submissionId: string,
-  ) {
-    const index = this.allocations.findIndex(
-      (item) =>
-        item.submission.userId === userId &&
-        item.submission.submissionId === submissionId,
+  private async cancelWaiting(id: string, userId: string) {
+    const mine = this.allocations.filter(
+      (item) => item.submission.userId === userId,
     );
-    const item = this.allocations[index];
-    if (!item)
+    this.allocations = this.allocations.filter(
+      (item) => item.submission.userId !== userId,
+    );
+    let cancelled: number;
+    try {
+      cancelled = await cancelPendingClaims(this.env, id, userId);
+    } catch (error) {
+      // Not written: they keep their turn, ahead of those after them.
+      this.allocations = [...mine, ...this.allocations];
+      throw error;
+    }
+    if (cancelled > 0) {
+      for (const item of mine) item.settle("cancelled");
+      this.allocations.forEach((_, place) => this.tellPlace(place));
+      this.tellMine([userId]);
       return Response.json(
-        {
-          error: {
-            code: "NOT_WAITING",
-            message: "现在取消不了：这次领取已经在处理或已经有结果。",
-          },
-        },
-        { status: 409, headers: { "Cache-Control": "no-store" } },
+        { result: "cancelled" },
+        { headers: { "Cache-Control": "no-store" } },
       );
-    this.allocations.splice(index, 1);
-    await cancelClaimSubmission(this.env, item.submission);
-    item.settle("cancelled");
-    this.allocations.forEach((_, place) => {
-      if (place >= index) this.tellPlace(place);
-    });
-    this.tellMine([userId]);
+    }
+    for (const item of mine)
+      try {
+        item.settle(await claimAnswer(this.env, item.submission));
+      } catch (error) {
+        item.settle({ error });
+      }
     return Response.json(
-      { result: "cancelled" },
-      { headers: { "Cache-Control": "no-store" } },
+      {
+        error: {
+          code: "NOT_WAITING",
+          message: "现在取消不了：这次领取已经有结果。",
+        },
+      },
+      { status: 409, headers: { "Cache-Control": "no-store" } },
     );
   }
 
@@ -1175,9 +1214,6 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     // pool with it, the whole 红包 when someone was paid or it ended.
     if (result.result === "claimed" || result.result === "registered")
       this.announce(id);
-    // Their other tabs, or a page reloaded while it waited, read it now.
-    if (result.result === "claimed" && input.participationMode !== "code")
-      this.tellMine([userId]);
     if (
       input.participationMode === "code" &&
       (result.result === "claimed" ||
@@ -1359,7 +1395,12 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       }
       try {
         await refreshActivityLifecycle(this.env, id);
-        await resumePendingActivityClaims(this.env, id);
+        await resumePendingActivityClaims(
+          this.env,
+          id,
+          this.inLine(),
+          (userId) => this.tellMine([userId]),
+        );
         await flushPaymentOutbox(this.env);
       } catch {
         console.error("activity_draw_recovery_failed", { activityId: id });
@@ -1443,7 +1484,8 @@ export class ActivityDO extends DurableObject<ApiBindings> {
         return mutationError(
           new ActivityError(400, "INVALID_ACTIVITY", "取消请求无效"),
         );
-      return this.cancelWaiting(id, userId, submissionId).catch(mutationError);
+      void submissionId;
+      return this.cancelWaiting(id, userId).catch(mutationError);
     }
     const isCreation = url.pathname === "/internal/activities/create";
     const isGlobalRedemption =
@@ -1517,7 +1559,12 @@ export class ActivityDO extends DurableObject<ApiBindings> {
             const activity = await findActivity(this.env, id);
             if (!activity) activityNotFound();
             await refreshActivityLifecycle(this.env, id);
-            await resumePendingActivityClaims(this.env, id);
+            await resumePendingActivityClaims(
+              this.env,
+              id,
+              this.inLine(),
+              (userId) => this.tellMine([userId]),
+            );
             await this.scheduleDraw(id);
             // Asked by every poll of a draw: pushed only if it moved it.
             if (
@@ -1687,7 +1734,12 @@ export class ActivityDO extends DurableObject<ApiBindings> {
             if (typeof input.adminId !== "string")
               throw new ActivityError(400, "INVALID_ACTIVITY", "停用请求无效");
             await stopCodeActivity(this.env, id, input.adminId);
-            await resumePendingActivityClaims(this.env, id);
+            await resumePendingActivityClaims(
+              this.env,
+              id,
+              this.inLine(),
+              (userId) => this.tellMine([userId]),
+            );
             this.announce(id);
             return Response.json(
               { status: "stopped" },

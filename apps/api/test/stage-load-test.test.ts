@@ -4,6 +4,7 @@ import { app } from "../src/app";
 import { createDb } from "../src/db/client";
 import { users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
+import { createMerchant } from "../src/payments/merchants";
 import { simulatesPayments } from "../src/runtime/controls";
 
 const origin = "https://hb.example.com";
@@ -118,5 +119,41 @@ describe("simulated payments", () => {
     expect(at("staging", "yes")).toBe(false);
     expect(at("production", "true")).toBe(false);
     expect(at("", "true")).toBe(false);
+  });
+});
+
+describe("Stage's simulated merchants", () => {
+  it("are the load test's accounts' only", async () => {
+    const simulated: ApiBindings = {
+      ...stage,
+      STAGE_SIMULATED_PAYMENTS: "true",
+    };
+    const now = new Date();
+    const person = async (externalId: string) => {
+      const id = crypto.randomUUID();
+      await createDb(env.DB).insert(users).values({
+        id,
+        externalId,
+        username: externalId,
+        displayName: externalId,
+        createdAt: now,
+        updatedAt: now,
+      });
+      return id;
+    };
+    const input = () => ({
+      requestId: crypto.randomUUID(),
+      mode: "simulation" as const,
+      label: "模拟",
+      clientId: `sim_${crypto.randomUUID().replaceAll("-", "")}`,
+      secret: "simulated-only",
+    });
+    await expect(
+      createMerchant(simulated, await person("123456"), input()),
+    ).rejects.toMatchObject({ code: "SIMULATION_NOT_AVAILABLE" });
+    const tester = await person("loadtest:unit:merchant");
+    expect((await createMerchant(simulated, tester, input())).mode).toBe(
+      "simulation",
+    );
   });
 });
