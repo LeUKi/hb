@@ -2,7 +2,7 @@
   "format": 1,
   "id": "01a19ba5-b9d2-766f-9fb9-b7eddc10e0c7",
   "name": "红包",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "entry": "index.html",
   "script": "app.js",
   "style": "app.css",
