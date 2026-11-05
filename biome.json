@@ -11,6 +11,12 @@
     {
       "includes": ["apps/web/src/lib/verify-draw.mjs"],
       "formatter": { "lineWidth": 120 }
+    },
+    {
+      "includes": ["docs/mocks/**"],
+      "linter": {
+        "rules": { "style": { "noDescendingSpecificity": "off" } }
+      }
     }
   ]
 }
