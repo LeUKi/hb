@@ -8,12 +8,12 @@ import type {
   TipCardView,
   TipList,
   TipMethod,
+  TipPaletteOption,
   TipRange,
   TipReceipt,
   TipResult,
   UpdateTipCardInput,
 } from "@hb/contracts";
-import { FORUM_EMBED_BAR, FORUM_MINI_APP_ID } from "@hb/contracts";
 import {
   useInfiniteQuery,
   useMutation,
@@ -29,6 +29,7 @@ import {
 } from "../components/tips/tip-card";
 
 export { previewOf } from "../components/tips/tip-card";
+
 import { readResponse } from "./activities";
 import { solveCap } from "./cap";
 import { useIdentity } from "./session";
@@ -39,6 +40,8 @@ export type MyTips = {
   limit: number;
   enabled: boolean;
   plus: PlusInfo;
+  /** The palettes to choose, the default first (served: tip-design §12). */
+  palettes: TipPaletteOption[];
 };
 
 export const tipKeys = {

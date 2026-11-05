@@ -40,9 +40,29 @@ export const TIP_LIMITS = {
 export const tipStyleSchema = z.enum(["simple", "standard"]);
 export type TipStyle = z.infer<typeof tipStyleSchema>;
 
-/** 湖蓝 (default), 咖啡, 青绿, 葡萄紫: never 红包's red and gold. */
-export const tipPaletteSchema = z.enum(["lake", "coffee", "jade", "grape"]);
+/**
+ * A palette's id, kept on a card. 红包站 holds the palettes and serves each
+ * card's colours with it (docs/tip-design.md §12), so a new one needs no
+ * new web or mini app build; it checks the id against them.
+ */
+export const tipPaletteSchema = z
+  .string()
+  .regex(/^[a-z][a-z0-9-]{0,23}$/, "配色不对");
 export type TipPalette = z.infer<typeof tipPaletteSchema>;
+
+/**
+ * One mode's colours, each #rrggbb: the card's tint (its soft fills, lines
+ * and bars come from it), its words in colour, and its buttons, whose words
+ * are white. Never 红包's red and gold.
+ */
+export type TipColors = { accent: string; ink: string; button: string };
+export type TipPaletteColors = { light: TipColors; dark: TipColors };
+/** A palette to choose, as the card form lists them. */
+export type TipPaletteOption = {
+  id: TipPalette;
+  name: string;
+  colors: TipPaletteColors;
+};
 
 /** Credit 站 (the owner's 商户), 我的商户 (the tipper's), 🐟额. */
 export const tipMethodSchema = z.enum(["checkout", "merchant", "balance"]);
@@ -177,6 +197,8 @@ export type PublicTipCard = {
   owner: TipPerson;
   style: TipStyle;
   palette: TipPalette;
+  /** Its palette's colours (the default's, should it be gone). */
+  colors: TipPaletteColors;
   prompt: string;
   amounts: TipAmount[];
   defaultIndex: number;

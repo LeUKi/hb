@@ -18,6 +18,7 @@ import {
 import type { ApiBindings } from "../src/env";
 import { epaySignature } from "../src/payments/real-protocol";
 import { encryptString, sha256Hex } from "../src/security/crypto";
+import { TIP_PALETTES } from "../src/tips/palettes";
 import { sweepTips } from "../src/tips/service";
 
 const origin = "https://hb.example.com";
@@ -474,6 +475,87 @@ describe("打赏卡", () => {
     };
     expect(asOwner.viewer.own).toBe(true);
   });
+
+  it("are served with their palette's colours; the form gets the palettes and may only pick one", async () => {
+    const { owner } = await open();
+    const card = await newCard(owner, { palette: "jade" });
+    const read = (await call("GET", `/tip/${card.code}`)).json as {
+      card: { palette: string; colors: unknown };
+    };
+    const jade = TIP_PALETTES.find((item) => item.id === "jade");
+    expect(read.card.palette).toBe("jade");
+    expect(read.card.colors).toEqual(jade?.colors);
+    const mine = (await call("GET", "/me/tips", owner)).json as {
+      palettes: { id: string }[];
+      cards: { colors: unknown }[];
+    };
+    expect(mine.palettes.map((item) => item.id)).toEqual(
+      TIP_PALETTES.map((item) => item.id),
+    );
+    expect(mine.cards[0]?.colors).toEqual(jade?.colors);
+    const unknown = await call(
+      "POST",
+      "/me/tips/cards",
+      owner,
+      cardInput({ palette: "black" }),
+    );
+    expect(unknown.status).toBe(400);
+    expect((unknown.json as { error: { code: string } }).error.code).toBe(
+      "TIP_PALETTE_INVALID",
+    );
+    // A palette no longer served: the card shows the default's colours.
+    await env.DB.prepare("UPDATE tip_cards SET palette='gone' WHERE code=?")
+      .bind(card.code)
+      .run();
+    const gone = (await call("GET", `/tip/${card.code}`)).json as {
+      card: { colors: unknown };
+    };
+    expect(gone.card.colors).toEqual(TIP_PALETTES[0]?.colors);
+  });
+
+  it("have palettes that read: words 4.5:1 on the tint, white on buttons 4.5:1, the tint 3:1", () => {
+    const rgb = (hex: string) =>
+      [1, 3, 5].map((at) => Number.parseInt(hex.slice(at, at + 2), 16));
+    const luminance = (color: number[]) => {
+      const [r = 0, g = 0, b = 0] = color.map((value) => {
+        const s = value / 255;
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const contrast = (a: number[], b: number[]) => {
+      const [high = 0, low = 0] = [luminance(a), luminance(b)].sort(
+        (x, y) => y - x,
+      );
+      return (high + 0.05) / (low + 0.05);
+    };
+    // styles.css: the card's fill is the tint at 7% on white, at 10% on the
+    // 社区's dark (#222222).
+    const over = (ground: number[], tint: number[], share: number) =>
+      ground.map((value, at) => value * (1 - share) + (tint[at] ?? 0) * share);
+    const white = [255, 255, 255];
+    const grounds = { light: white, dark: rgb("#222222") };
+    const shares = { light: 0.07, dark: 0.1 };
+    for (const palette of TIP_PALETTES)
+      for (const mode of ["light", "dark"] as const) {
+        const colors = palette.colors[mode];
+        for (const value of Object.values(colors))
+          expect(value, `${palette.id} ${mode}`).toMatch(/^#[0-9a-f]{6}$/);
+        const fill = over(grounds[mode], rgb(colors.accent), shares[mode]);
+        const label = `${palette.id} ${mode}`;
+        expect(contrast(rgb(colors.ink), fill), label).toBeGreaterThanOrEqual(
+          4.5,
+        );
+        expect(
+          contrast(white, rgb(colors.button)),
+          label,
+        ).toBeGreaterThanOrEqual(4.5);
+        expect(
+          contrast(rgb(colors.accent), grounds[mode]),
+          label,
+        ).toBeGreaterThanOrEqual(3);
+      }
+  });
 });
 
 describe("打赏 at Credit 站", () => {
@@ -547,7 +629,8 @@ describe("打赏 at Credit 站", () => {
     };
     expect(received.stats).toEqual({ count: 1, people: 1, amountMinor: 500 });
     expect(received.tips[0]?.counterpart.username).toBe(fan.username);
-    const given = (await call("GET", "/me/tips/list/out?range=all", fan)).json as {
+    const given = (await call("GET", "/me/tips/list/out?range=all", fan))
+      .json as {
       tips: { direction: string; card: { name: string | null } }[];
     };
     expect(given.tips[0]).toMatchObject({

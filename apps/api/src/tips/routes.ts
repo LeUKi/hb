@@ -19,8 +19,8 @@ import {
   requireAuth,
   requireProtectedMutation,
 } from "../auth/session";
-import type { ApiContext } from "../env";
 import { plusOf } from "../balance/plus";
+import type { ApiContext } from "../env";
 import { requireAppOrigin } from "../security/http";
 import {
   createCard,
@@ -33,6 +33,7 @@ import {
   tipError,
   updateCard,
 } from "./cards";
+import { TIP_PALETTES } from "./palettes";
 import {
   checkTipOnCard,
   createTip,
@@ -70,8 +71,8 @@ export const tipRoutes = new Hono<ApiContext>()
       listOwnCards(c.env, session.user.id),
       plusOf(c.env, session.user.id),
     ]);
-    // The title's PLUS tag, as on the 🐟额 page.
-    return c.json({ ...mine, plus });
+    // The title's PLUS tag, as on the 🐟额 page; the palettes to choose.
+    return c.json({ ...mine, plus, palettes: TIP_PALETTES });
   })
   .post(
     "/me/tips/cards",

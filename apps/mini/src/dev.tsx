@@ -160,7 +160,12 @@ function tipCard() {
       avatarUrl: picture(332940),
     },
     style: tipKind === "simple" ? ("simple" as const) : ("standard" as const),
-    palette: "lake" as const,
+    palette: "coffee",
+    // As 红包站 serves 咖啡, the default (apps/api/src/tips/palettes.ts).
+    colors: {
+      light: { accent: "#9a5b23", ink: "#7a4515", button: "#9a5b23" },
+      dark: { accent: "#e0a066", ink: "#f2c595", button: "#9a5b23" },
+    },
     prompt: "觉得有用的话，请我喝杯咖啡",
     amounts: [1, 5, 10, 20].map((n) => ({ amountMinor: n * 100, label: "" })),
     defaultIndex: 2,

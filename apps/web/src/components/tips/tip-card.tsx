@@ -3,6 +3,7 @@ import type {
   PublicTipCard,
   Tip,
   TipMethod,
+  TipPaletteColors,
   TipResult,
   TipViewer,
 } from "@hb/contracts";
@@ -13,7 +14,13 @@ import {
   type TipCard,
 } from "@hb/contracts";
 import { AnimatePresence, motion } from "motion/react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { cn } from "../../lib/cn";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { Avatar } from "../ui/avatar";
@@ -60,6 +67,7 @@ export function previewOf(
     | "active"
     | "style"
     | "palette"
+    | "colors"
     | "prompt"
     | "amounts"
     | "defaultIndex"
@@ -77,6 +85,21 @@ export function previewOf(
     recent: withLists && standard && card.showRecent ? [] : null,
     top: withLists && standard && card.showTop ? [] : null,
   };
+}
+
+/**
+ * A card's colours as styles.css takes them (`.tip-card`): served with the
+ * card (tip-design §12); its other tints are worked out from these there.
+ */
+export function paletteStyle(colors: TipPaletteColors) {
+  return {
+    "--tp-accent": colors.light.accent,
+    "--tp-ink": colors.light.ink,
+    "--tp-button": colors.light.button,
+    "--tp-dark-accent": colors.dark.accent,
+    "--tp-dark-ink": colors.dark.ink,
+    "--tp-dark-button": colors.dark.button,
+  } as CSSProperties;
 }
 
 /** The 社区's embed code for a card: its bar above the card, and a margin. */
@@ -1067,9 +1090,12 @@ export function TipCardView({
         // A preview looks as it will, and takes nothing.
         inert={!live || undefined}
         className={cn("tip-card px-3.5 py-3", className)}
-        data-palette={card.palette}
         data-style={card.style}
-        style={{ height, maxWidth: MAX_WIDTH[card.style] }}
+        style={{
+          ...paletteStyle(card.colors),
+          height,
+          maxWidth: MAX_WIDTH[card.style],
+        }}
       >
         <div className="relative" style={{ height: inner }}>
           <AnimatePresence initial={false} custom={direction}>

@@ -2429,14 +2429,18 @@ html[data-embed] .build-stamp {
 
 /* 打赏卡 (docs/tip-design.md §4, mock docs/mocks/tips.html): its palette
    (never 红包's red and gold), light and in the 社区's dark; the card keeps
-   its height whatever step it shows, and drops words when narrow. */
+   its height whatever step it shows, and drops words when narrow. The
+   palette's three colours per mode come with the card (--tp-*, set by
+   paletteStyle; tip-design §12): the rest is worked out here. 咖啡, the
+   default, when none came. */
 .tip-card {
-  --t-accent: #2f6fdb;
-  --t-top: #4382ec;
-  --t-bottom: #2459c4;
-  --t-ink: #1f4fa8;
-  --t-soft: rgb(47 111 219 / 0.07);
-  --t-soft-2: rgb(47 111 219 / 0.14);
+  --t-accent: var(--tp-accent, #9a5b23);
+  --t-ink: var(--tp-ink, #7a4515);
+  --t-button: var(--tp-button, #9a5b23);
+  --t-soft: color-mix(in srgb, var(--t-accent) 7%, transparent);
+  --t-soft-2: color-mix(in srgb, var(--t-accent) 14%, transparent);
+  --t-top: color-mix(in srgb, var(--t-button), white 10%);
+  --t-bottom: color-mix(in srgb, var(--t-button), black 10%);
   --t-on: #ffffff;
   --t-line: color-mix(in srgb, var(--t-accent) 22%, transparent);
   container: tip / inline-size;
@@ -2449,64 +2453,12 @@ html[data-embed] .build-stamp {
   border: 1px solid var(--t-line);
   color: var(--color-ink);
 }
-.tip-card[data-palette="coffee"] {
-  --t-accent: #9a5b23;
-  --t-top: #b0702f;
-  --t-bottom: #8a4f1c;
-  --t-ink: #7a4515;
-  --t-soft: rgb(154 91 35 / 0.07);
-  --t-soft-2: rgb(154 91 35 / 0.14);
-  --t-on: #fff8f0;
-}
-.tip-card[data-palette="jade"] {
-  --t-accent: #0d8b7d;
-  --t-top: #17a191;
-  --t-bottom: #0b786c;
-  --t-ink: #0a6a5f;
-  --t-soft: rgb(13 139 125 / 0.07);
-  --t-soft-2: rgb(13 139 125 / 0.14);
-  --t-on: #f3fffc;
-}
-.tip-card[data-palette="grape"] {
-  --t-accent: #7247c6;
-  --t-top: #8459d8;
-  --t-bottom: #6339b3;
-  --t-ink: #5a34a0;
-  --t-soft: rgb(114 71 198 / 0.07);
-  --t-soft-2: rgb(114 71 198 / 0.14);
-  --t-on: #fbf8ff;
-}
 :root[data-mode="dark"] .tip-card {
-  --t-accent: #5b9bff;
-  --t-top: #4e8ff7;
-  --t-bottom: #2f6fdb;
-  --t-ink: #a4c6ff;
-  --t-soft: rgb(91 155 255 / 0.1);
-  --t-soft-2: rgb(91 155 255 / 0.2);
-}
-:root[data-mode="dark"] .tip-card[data-palette="coffee"] {
-  --t-accent: #e0a066;
-  --t-top: #c98a4f;
-  --t-bottom: #a86c34;
-  --t-ink: #f2c595;
-  --t-soft: rgb(224 160 102 / 0.1);
-  --t-soft-2: rgb(224 160 102 / 0.2);
-}
-:root[data-mode="dark"] .tip-card[data-palette="jade"] {
-  --t-accent: #3fd0bb;
-  --t-top: #25b29e;
-  --t-bottom: #118f7f;
-  --t-ink: #93e6d8;
-  --t-soft: rgb(63 208 187 / 0.1);
-  --t-soft-2: rgb(63 208 187 / 0.2);
-}
-:root[data-mode="dark"] .tip-card[data-palette="grape"] {
-  --t-accent: #a98bff;
-  --t-top: #8e6ef0;
-  --t-bottom: #7150d4;
-  --t-ink: #cdbcff;
-  --t-soft: rgb(169 139 255 / 0.1);
-  --t-soft-2: rgb(169 139 255 / 0.2);
+  --t-accent: var(--tp-dark-accent, #e0a066);
+  --t-ink: var(--tp-dark-ink, #f2c595);
+  --t-button: var(--tp-dark-button, #9a5b23);
+  --t-soft: color-mix(in srgb, var(--t-accent) 10%, transparent);
+  --t-soft-2: color-mix(in srgb, var(--t-accent) 20%, transparent);
 }
 .tip-card .btn-primary {
   color: var(--t-on);

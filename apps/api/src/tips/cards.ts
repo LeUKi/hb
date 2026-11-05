@@ -18,6 +18,7 @@ import { ActivityError } from "../activities/errors";
 import { readBalanceSettings } from "../balance/settings";
 import { transferAccess } from "../balance/transfers";
 import type { ApiBindings } from "../env";
+import { knownPalette, paletteColors } from "./palettes";
 
 export type CardRow = {
   id: string;
@@ -25,7 +26,7 @@ export type CardRow = {
   owner_id: string;
   name: string;
   style: "simple" | "standard";
-  palette: "lake" | "coffee" | "jade" | "grape";
+  palette: string;
   prompt: string;
   amounts: string;
   default_index: number;
@@ -94,6 +95,8 @@ export async function cardLimitFor(env: ApiBindings, userId: string) {
 
 /** What a card's form says, checked and turned into its columns. */
 function columnsOf(input: TipCardInput) {
+  if (!knownPalette(input.palette))
+    tipError(400, "TIP_PALETTE_INVALID", "没有这个配色，请换一个。");
   const amounts = input.amounts.map((item) => {
     const amountMinor = amountToMinor(item.amount);
     if (
@@ -178,7 +181,7 @@ export async function readCard(env: ApiBindings, code: string) {
 
 export async function requireCard(env: ApiBindings, code: string) {
   const card = await readCard(env, code);
-  if (!card || card.owner_active !== 1)
+  if (card?.owner_active !== 1)
     tipError(404, "TIP_CARD_NOT_FOUND", "没有找到这张打赏卡");
   return card;
 }
@@ -493,6 +496,7 @@ export async function publicCard(
     },
     style: row.style,
     palette: row.palette,
+    colors: paletteColors(row.palette),
     prompt: row.prompt,
     amounts: amountsOf(row),
     defaultIndex: row.default_index,

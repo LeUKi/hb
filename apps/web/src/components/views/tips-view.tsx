@@ -1,4 +1,10 @@
-import type { Tip, TipCard, TipMethod, TipRange } from "@hb/contracts";
+import type {
+  Tip,
+  TipCard,
+  TipMethod,
+  TipPaletteOption,
+  TipRange,
+} from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { cn } from "../../lib/cn";
@@ -23,12 +29,6 @@ import { StatusChip } from "../ui/status-chip";
 // 我的打赏 (/tips, docs/tip-design.md §7): one's 打赏卡, then one table of
 // tips, received or given, filtered by card, method and time.
 
-const paletteName = {
-  lake: "湖蓝",
-  coffee: "咖啡",
-  jade: "青绿",
-  grape: "葡萄紫",
-} as const;
 const methodName: Record<TipMethod, string> = {
   checkout: "Credit 站",
   merchant: "我的商户",
@@ -66,9 +66,13 @@ export function CopyTextButton({
   );
 }
 
-function cardSummary(card: TipCard) {
+/** Its style and palette (named as 红包站 serves them), what it shows. */
+function cardSummary(card: TipCard, palettes: TipPaletteOption[]) {
+  const palette = palettes.find((item) => item.id === card.palette);
   const parts = [
-    `${card.style === "simple" ? "简洁" : "标准"} · ${paletteName[card.palette]}`,
+    [card.style === "simple" ? "简洁" : "标准", palette?.name]
+      .filter(Boolean)
+      .join(" · "),
   ];
   if (card.goal) parts.push(`目标 ${ldc(card.goal.amountMinor)} LDC`);
   if (card.showRecent && card.showTop) parts.push("最近和总榜");
@@ -165,7 +169,7 @@ function MyTips({ user }: { user: SessionUser }) {
                           </StatusChip>
                         )}
                       </div>
-                      <span>{cardSummary(card)}</span>
+                      <span>{cardSummary(card, data.palettes)}</span>
                       <span>{linkText(card)}</span>
                       <span>
                         近 7 天 {card.week.count} 次 ·{" "}

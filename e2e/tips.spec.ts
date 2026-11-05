@@ -12,6 +12,11 @@ import { csrfToken, mockSession, openApp, viewer } from "./support/app";
 // who only gets Credit 站, and 我的打赏 with the PLUS tag and its cards.
 
 const owner = { username: "lafish", displayName: "lafish", avatarUrl: null };
+// 咖啡, as 红包站 serves it (apps/api/src/tips/palettes.ts).
+const coffee = {
+  light: { accent: "#9a5b23", ink: "#7a4515", button: "#9a5b23" },
+  dark: { accent: "#e0a066", ink: "#f2c595", button: "#9a5b23" },
+};
 
 function card(extra: Partial<PublicTipCard> = {}): PublicTipCard {
   return {
@@ -20,7 +25,8 @@ function card(extra: Partial<PublicTipCard> = {}): PublicTipCard {
     active: true,
     owner,
     style: "standard",
-    palette: "lake",
+    palette: "coffee",
+    colors: coffee,
     prompt: "觉得有用的话，请我喝杯咖啡",
     amounts: [1, 5, 10, 20].map((n) => ({ amountMinor: n * 100, label: "" })),
     defaultIndex: 2,
@@ -235,6 +241,7 @@ test.describe("打赏", () => {
             features: null,
             featureCount: 7,
           },
+          palettes: [{ id: "coffee", name: "咖啡", colors: coffee }],
         },
       }),
     );
@@ -250,6 +257,7 @@ test.describe("打赏", () => {
     await openApp(page, "/tips");
     await expect(page.getByRole("heading", { name: /我的打赏/ })).toBeVisible();
     await expect(page.getByText("用了 1 张，最多 3 张")).toBeVisible();
+    await expect(page.getByText(/标准 · 咖啡/)).toBeVisible();
     await expect(page.getByText("开通🐟额 PLUS 能有")).toHaveCount(0);
     const panel = page
       .locator("li, section")
@@ -268,5 +276,49 @@ test.describe("打赏", () => {
         : 0;
     });
     expect(order).toBeTruthy();
+  });
+
+  test("新建打赏卡：配色是红包站给的，第一套是默认，选了预览就换色", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    const sea = {
+      light: { accent: "#1d6f8a", ink: "#11536a", button: "#1a6680" },
+      dark: { accent: "#5cc4e6", ink: "#a6e2f4", button: "#1a6680" },
+    };
+    await page.route("**/api/me/tips", (route) =>
+      route.fulfill({
+        json: {
+          cards: [],
+          used: 0,
+          limit: 3,
+          enabled: true,
+          plus: {
+            plus: false,
+            owner: false,
+            invitedBy: null,
+            since: null,
+            features: null,
+            featureCount: 7,
+          },
+          palettes: [
+            { id: "coffee", name: "咖啡", colors: coffee },
+            { id: "sea", name: "海盐", colors: sea },
+          ],
+        },
+      }),
+    );
+    await openApp(page, "/tips/new");
+    const accent = () =>
+      tipCard(page).evaluate((card) =>
+        (card as HTMLElement).style.getPropertyValue("--tp-accent"),
+      );
+    await expect(page.getByRole("button", { name: "咖啡" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect.poll(accent).toBe(coffee.light.accent);
+    await page.getByRole("button", { name: "海盐" }).click();
+    await expect.poll(accent).toBe(sea.light.accent);
   });
 });

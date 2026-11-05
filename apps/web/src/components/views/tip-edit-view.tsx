@@ -3,6 +3,7 @@ import {
   type TipCard,
   type TipCardInput,
   type TipPalette,
+  type TipPaletteOption,
   type TipStyle,
 } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
@@ -31,13 +32,6 @@ import { CopyTextButton } from "./tips-view";
 // the form on the left, the card as it will look on the right, where it
 // goes and its embed codes, their heights worked out.
 
-const palettes: { value: TipPalette; name: string; color: string }[] = [
-  { value: "lake", name: "湖蓝", color: "#2f6fdb" },
-  { value: "coffee", name: "咖啡", color: "#9a5b23" },
-  { value: "jade", name: "青绿", color: "#0d8b7d" },
-  { value: "grape", name: "葡萄紫", color: "#7247c6" },
-];
-
 type Form = {
   name: string;
   style: TipStyle;
@@ -54,10 +48,10 @@ type Form = {
   topicUrl: string;
 };
 
-const blank: Form = {
+/** A new card's form; its palette is the first 红包站 serves. */
+const blank: Omit<Form, "palette"> = {
   name: "",
   style: "standard",
-  palette: "lake",
   prompt: "觉得有用的话，请我喝杯咖啡",
   amounts: [
     { id: "a1", amount: "1", label: "" },
@@ -75,11 +69,14 @@ const blank: Form = {
   topicUrl: "",
 };
 
-function formOf(card: TipCard): Form {
+/** A palette no longer served shows as the default, to choose again. */
+function formOf(card: TipCard, palettes: TipPaletteOption[]): Form {
   return {
     name: card.name,
     style: card.style,
-    palette: card.palette,
+    palette: palettes.some((item) => item.id === card.palette)
+      ? card.palette
+      : firstPalette(palettes).id,
     prompt: card.prompt,
     amounts: card.amounts.map((item, index) => ({
       id: `a${index}`,
@@ -96,6 +93,9 @@ function formOf(card: TipCard): Form {
     topicUrl: card.link.kind === "topic" ? card.link.url : "",
   };
 }
+
+const firstPalette = (palettes: TipPaletteOption[]) =>
+  palettes[0] as TipPaletteOption;
 
 const minorOf = (value: string) =>
   /^\d{1,7}(\.\d{1,2})?$/.test(value.trim())
@@ -178,7 +178,12 @@ function Editor({ user, code }: { user: SessionUser; code?: string }) {
   return (
     <PageLoad load={queryLoad(query)}>
       {query.data && (!code || card) && (
-        <EditorForm user={user} card={card} enabled={query.data.enabled} />
+        <EditorForm
+          user={user}
+          card={card}
+          enabled={query.data.enabled}
+          palettes={query.data.palettes}
+        />
       )}
     </PageLoad>
   );
@@ -188,14 +193,20 @@ function EditorForm({
   user,
   card,
   enabled,
+  palettes,
 }: {
   user: SessionUser;
   card?: TipCard;
   enabled: boolean;
+  palettes: TipPaletteOption[];
 }) {
   const navigate = useNavigate();
   const actions = useTipCardActions(user.id);
-  const [form, setForm] = useState<Form>(() => (card ? formOf(card) : blank));
+  const [form, setForm] = useState<Form>(() =>
+    card
+      ? formOf(card, palettes)
+      : { ...blank, palette: firstPalette(palettes).id },
+  );
   const [place, setPlace] = useState<"bio" | "post" | "phone">("bio");
   const [error, setError] = useState<string | null>(null);
   const ids = { name: useId(), prompt: useId(), goal: useId(), topic: useId() };
@@ -216,6 +227,10 @@ function EditorForm({
       active: true,
       style: form.style,
       palette: form.palette,
+      colors: (
+        palettes.find((item) => item.id === form.palette) ??
+        firstPalette(palettes)
+      ).colors,
       prompt: form.prompt.trim(),
       amounts: form.amounts.map((item) => ({
         amountMinor: minorOf(item.amount) ?? 100,
@@ -301,18 +316,18 @@ function EditorForm({
             <div className="flex gap-2">
               {palettes.map((item) => (
                 <button
-                  key={item.value}
+                  key={item.id}
                   type="button"
                   title={item.name}
                   aria-label={item.name}
-                  aria-pressed={form.palette === item.value}
-                  onClick={() => edit({ palette: item.value })}
+                  aria-pressed={form.palette === item.id}
+                  onClick={() => edit({ palette: item.id })}
                   className={cn(
                     "size-8 rounded-full border-2 border-white shadow-[0_0_0_1px_var(--color-line-strong)]",
-                    form.palette === item.value &&
+                    form.palette === item.id &&
                       "shadow-[0_0_0_2px_var(--color-ink)]",
                   )}
-                  style={{ background: item.color }}
+                  style={{ background: item.colors.light.accent }}
                 />
               ))}
             </div>
