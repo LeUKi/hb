@@ -24,6 +24,7 @@ import {
 import { credentialReason, merchantPause } from "../../lib/payment-display";
 import { clockLabel } from "../../lib/roster-time";
 import { type SessionUser, useIdentity } from "../../lib/session";
+import { useMyTips } from "../../lib/tips";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { LazyListEnd, useQueryLazyList } from "../page/lazy-list";
 import {
@@ -555,6 +556,34 @@ function LegacyRow({
 }
 
 /**
+ * 打赏卡 (docs/tip-design.md): tips at Credit 站 come into this 商户 too, so
+ * one who has cards hears what changing or removing it does to them.
+ */
+function TipCardsNote({ user }: { user: SessionUser }) {
+  const query = useMyTips(user.id);
+  const { leaveTo } = useOmniboxController();
+  const count = query.data?.cards.filter((card) => card.active).length ?? 0;
+  return (
+    <Reveal show={count > 0}>
+      <PageSection
+        title="打赏卡"
+        action={
+          <MoreLink href="/tips" onGo={() => void leaveTo({ to: "/tips" })}>
+            我的打赏
+          </MoreLink>
+        }
+      >
+        <Panel className="p-5 text-sm text-ink-2">
+          你有 {count} 张打赏卡在用，别人在 Credit
+          站打赏你的钱也进这个商户。换了商户，之后的打赏进新的商户；删掉商户，就只有开通🐟额
+          PLUS 的人能用🐟额打赏你。
+        </Panel>
+      </PageSection>
+    </Reveal>
+  );
+}
+
+/**
  * 收到的付款 (docs/balance-design.md §16, 对方的收银台): what others paid
  * into this person's LDC 商户 through 转账, once Credit 站 said paid. Shown
  * only when there are some.
@@ -837,6 +866,7 @@ function Merchants({
           )}
         </Swap>
         <ReceivedPayments user={user} />
+        <TipCardsNote user={user} />
         <Reveal show={legacy.length > 0}>
           <LegacyList items={legacy} user={user} />
         </Reveal>

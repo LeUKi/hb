@@ -362,12 +362,63 @@ export async function adminStopCard(
   const card = await readCard(env, code);
   if (!card) tipError(404, "TIP_CARD_NOT_FOUND", "没有找到这张打赏卡");
   const now = Date.now();
+  // Its own time even when its owner had stopped it: the 管理记录 says when.
   await env.DB.prepare(
-    `UPDATE tip_cards SET stopped_at=COALESCE(stopped_at,?),stopped_by_admin_id=?,stop_reason=?,
+    `UPDATE tip_cards SET stopped_at=?,stopped_by_admin_id=?,stop_reason=?,
       version=version+1,updated_at=? WHERE id=?`,
   )
     .bind(now, adminId, reason, now, card.id)
     .run();
+}
+
+/** 网站管理 · 用户: a person's 打赏卡 and their tips, given and received. */
+export async function adminTipsOf(env: ApiBindings, userId: string) {
+  const [cards, totals] = await env.DB.batch([
+    env.DB.prepare(
+      `SELECT code,name,style,stopped_at,stopped_by_admin_id,stop_reason,created_at,
+        (SELECT COUNT(*) FROM tips t WHERE t.card_id=c.id AND t.status='done') AS tips
+      FROM tip_cards c WHERE owner_id=? ORDER BY created_at,id`,
+    ).bind(userId),
+    env.DB.prepare(
+      `SELECT
+        (SELECT COUNT(*) FROM tips WHERE owner_id=?1 AND status='done') AS received,
+        (SELECT COALESCE(SUM(amount_minor),0) FROM tips WHERE owner_id=?1 AND status='done') AS receivedMinor,
+        (SELECT COUNT(*) FROM tips WHERE tipper_id=?1 AND status='done') AS given`,
+    ).bind(userId),
+  ]);
+  const total = (totals?.results[0] ?? {}) as {
+    received?: number;
+    receivedMinor?: number;
+    given?: number;
+  };
+  return {
+    cards: (
+      (cards?.results ?? []) as {
+        code: string;
+        name: string;
+        style: "simple" | "standard";
+        stopped_at: number | null;
+        stopped_by_admin_id: string | null;
+        stop_reason: string | null;
+        created_at: number;
+        tips: number;
+      }[]
+    ).map((row) => ({
+      code: row.code,
+      name: row.name,
+      style: row.style,
+      active: row.stopped_at === null,
+      stoppedByAdmin: row.stopped_by_admin_id !== null,
+      stopReason: row.stop_reason,
+      createdAt: row.created_at,
+      tips: row.tips,
+    })),
+    received: {
+      count: total.received ?? 0,
+      amountMinor: total.receivedMinor ?? 0,
+    },
+    given: total.given ?? 0,
+  };
 }
 
 function linkOf(row: CardRow): TipLink {

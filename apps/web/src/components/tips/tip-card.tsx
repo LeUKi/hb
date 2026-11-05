@@ -7,12 +7,7 @@ import type {
   TipResult,
   TipViewer,
 } from "@hb/contracts";
-import {
-  FORUM_EMBED_BAR,
-  FORUM_MINI_APP_ID,
-  TIP_LIMITS,
-  type TipCard,
-} from "@hb/contracts";
+import { TIP_LIMITS, type TipCard } from "@hb/contracts";
 import { AnimatePresence, motion } from "motion/react";
 import {
   type CSSProperties,
@@ -27,6 +22,7 @@ import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
 import { RollingNumber } from "../ui/morph-label";
 import { radius, Squircle } from "../ui/squircle";
+import { tipCardHeight } from "./embed";
 
 // 打赏卡 (docs/tip-design.md §4, §5; mock docs/mocks/tips.html): one card,
 // the same on 红包站's ☕ page, in the 社区's mini app and embedded outside.
@@ -44,19 +40,8 @@ export type TipCardActions = {
   capToken?: () => Promise<string>;
 };
 
-/** Heights (with padding and border): every step fits inside them. */
-export const TIP_CARD_HEIGHT = { simple: 76, standard: 116, list: 298 };
 const LIST_ROWS = TIP_LIMITS.cardListRows;
 const MAX_WIDTH = { simple: 460, standard: 500 };
-
-export function tipCardHeight(
-  card: Pick<PublicTipCard, "style" | "recent" | "top">,
-) {
-  if (card.style === "simple") return TIP_CARD_HEIGHT.simple;
-  return card.recent || card.top
-    ? TIP_CARD_HEIGHT.list
-    : TIP_CARD_HEIGHT.standard;
-}
 
 /** A card's preview: as anyone sees it, with no one tipping yet. */
 export function previewOf(
@@ -100,15 +85,6 @@ export function paletteStyle(colors: TipPaletteColors) {
     "--tp-dark-ink": colors.dark.ink,
     "--tp-dark-button": colors.dark.button,
   } as CSSProperties;
-}
-
-/** The 社区's embed code for a card: its bar above the card, and a margin. */
-export function tipForumEmbed(
-  code: string,
-  ownerName: string,
-  cardHeight: number,
-) {
-  return `<iframe src="https://linux.do/apps/${FORUM_MINI_APP_ID}?embed_mode=true&tip=${code}" title="打赏 ${ownerName}" width="100%" height="${FORUM_EMBED_BAR + cardHeight + 8}" frameborder="0" allow="clipboard-write"></iframe>`;
 }
 
 /** “5”, “2.50”: whole LDC without cents. */
@@ -208,14 +184,28 @@ export function TipCardView({
   };
 
   const live = viewer !== null && actions !== undefined;
+  // Nothing this viewer could pay with: say so on the card, not a row of
+  // greyed choices behind 打赏 (a guest when its owner has no LDC 商户).
+  const ways = viewer?.methods;
+  const nothingToPay =
+    ways !== undefined &&
+    !ways.checkout.available &&
+    !ways.balance &&
+    !ways.merchant;
+  // Its owner goes through every step as others would, and is stopped only
+  // at the last, so what the card offers (no way to pay, say) shows to the
+  // one who can fix it (the user, 2026-11-05).
+  const own = Boolean(live && viewer.own);
   const blocked = !live
     ? null
     : !card.active
       ? "这张打赏卡已停用"
       : viewer.paused
         ? "打赏暂停"
-        : viewer.own
-          ? "这是你自己的打赏卡"
+        : !own && nothingToPay
+          ? viewer.methods.checkout.reason === "offline"
+            ? "这里暂时不能打赏"
+            : "作者还没开通收款，暂时不能打赏"
           : null;
 
   useEffect(() => {
@@ -291,6 +281,19 @@ export function TipCardView({
   async function make(chosen: TipMethod) {
     if (!actions) return;
     setMethod(chosen);
+    // Its owner, at the last step: what others would do here, and no more.
+    if (own)
+      return fail(
+        new Error(
+          `这是你自己的打赏卡，不能打赏自己。别人到这一步会${
+            chosen === "checkout"
+              ? "去 Credit 站付款"
+              : chosen === "balance"
+                ? "从🐟额转给你"
+                : "从他的商户付给你"
+          }。`,
+        ),
+      );
     try {
       const capToken =
         chosen === "checkout" && viewer?.capEndpoint && actions.capToken
@@ -401,7 +404,7 @@ export function TipCardView({
         <div className="truncate text-[15px] font-semibold leading-snug">
           {prompt}
         </div>
-        {!simple && card.goal ? (
+        {!simple && card.goal && !blocked ? (
           <div className="mt-1 flex items-center gap-1.5">
             <div className="tip-bar flex-1">
               <i
@@ -417,9 +420,11 @@ export function TipCardView({
         ) : (
           <div className="truncate text-xs text-ink-3">
             {blocked ??
-              (card.tipperCount
-                ? `${card.tipperCount} 人打赏过`
-                : "还没有人打赏")}
+              (own
+                ? "你自己的打赏卡：点开看别人看到的样子"
+                : card.tipperCount
+                  ? `${card.tipperCount} 人打赏过`
+                  : "还没有人打赏")}
           </div>
         )}
       </div>
@@ -502,11 +507,17 @@ export function TipCardView({
   );
   const methods = () => {
     const checkout = viewer?.methods.checkout;
-    const reasons = {
-      no_merchant: "作者没开商户",
-      unverified: "暂时不能用",
-      offline: "这里不能付",
-    } as const;
+    const reasons = own
+      ? {
+          no_merchant: "你还没配置商户",
+          unverified: "商户密钥没通过",
+          offline: "这里不能付",
+        }
+      : {
+          no_merchant: "作者没开商户",
+          unverified: "暂时不能用",
+          offline: "这里不能付",
+        };
     const checkoutNote = checkout?.available
       ? "要输密码"
       : reasons[checkout?.reason ?? "offline"];

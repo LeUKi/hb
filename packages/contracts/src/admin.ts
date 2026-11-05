@@ -90,6 +90,8 @@ export const adminAuditTypeSchema = z.enum([
   "judge_square",
   /** 施工中's moves by the 站长 (docs/roadmap-design.md §4). */
   "roadmap",
+  /** 站长 stopped a 打赏卡 (docs/tip-design.md §12). */
+  "tip_stop",
 ]);
 export type AdminAuditType = z.infer<typeof adminAuditTypeSchema>;
 
@@ -187,7 +189,35 @@ export type AdminUserDetail = AdminUserListItem & {
   };
   /** As /me adds them: 大家领到的 of this person's 红包, and what they got. */
   amounts: { sent: string; received: string };
+  /** 打赏 (docs/tip-design.md): their cards, tips received and given (done). */
+  tips: {
+    cards: AdminTipCard[];
+    received: { count: number; amountMinor: number };
+    given: number;
+  };
 };
+
+/** One 打赏卡 in 网站管理, with how many tips it took. */
+export type AdminTipCard = {
+  code: string;
+  name: string;
+  style: "simple" | "standard";
+  active: boolean;
+  /** Stopped by the 站长 (its owner cannot start it again), and why. */
+  stoppedByAdmin: boolean;
+  stopReason: string | null;
+  createdAt: number;
+  tips: number;
+};
+
+/** The 站长 stops a 打赏卡: why, as its owner will read it. */
+export const adminStopTipCardSchema = z.strictObject({
+  reason: z
+    .string()
+    .trim()
+    .min(1, "写一下停用的原因")
+    .max(100, "原因最多 100 个字"),
+});
 
 export type AdminUserSummary = AdminUserListItem & {
   provider?: string;
@@ -344,6 +374,8 @@ export type AdminAuditEntry = {
   after: Record<string, boolean | number>;
   /** code_stop, page_stop: the 红包 stopped. */
   activity?: { id: string; title: string };
+  /** tip_stop: the 打赏卡 stopped (its name), and why. */
+  tipCard?: { code: string; name: string; reason: string | null };
   /** judge_square: what was done to which 判定器 (its name then). */
   judge?: {
     id: string;

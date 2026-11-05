@@ -39,6 +39,7 @@ import {
   createTip,
   listTips,
   receiptOf,
+  receivingOf,
   setMessageHidden,
   viewerOf,
 } from "./service";
@@ -67,12 +68,14 @@ export const tipRoutes = new Hono<ApiContext>()
   // 我的打赏: one's cards, how many one may keep on.
   .get("/me/tips", async (c) => {
     const session = await requireAuth(c);
-    const [mine, plus] = await Promise.all([
+    const [mine, plus, receiving] = await Promise.all([
       listOwnCards(c.env, session.user.id),
       plusOf(c.env, session.user.id),
+      receivingOf(c.env, session.user.id),
     ]);
-    // The title's PLUS tag, as on the 🐟额 page; the palettes to choose.
-    return c.json({ ...mine, plus, palettes: TIP_PALETTES });
+    // The title's PLUS tag, as on the 🐟额 page; the palettes to choose;
+    // whether tips can come in at Credit 站 (the form warns if not).
+    return c.json({ ...mine, plus, palettes: TIP_PALETTES, receiving });
   })
   .post(
     "/me/tips/cards",

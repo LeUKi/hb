@@ -24,6 +24,7 @@ import {
   adminPaymentStatusSchema,
   adminPaymentsQuerySchema,
   adminRewardTypeSchema,
+  adminStopTipCardSchema,
   adminUsersQuerySchema,
   decodeActivityEmoji,
   formatAmount,
@@ -60,6 +61,7 @@ import {
   allowsRealSending,
   readPlatformControls,
 } from "../runtime/controls";
+import { adminStopCard, adminTipsOf } from "../tips/cards";
 import { isAdministrator } from "./authorization";
 import {
   ADMIN_DIAGNOSTIC_THRESHOLDS,
@@ -900,7 +902,7 @@ async function userDetail(
   env: ApiBindings,
   id: string,
 ): Promise<{ user: AdminUserDetail }> {
-  const [[user, counts], amounts] = await Promise.all([
+  const [[user, counts], amounts, tips] = await Promise.all([
     env.DB.batch([
       env.DB.prepare(`SELECT ${USER_COLUMNS} ${USER_JOINS} WHERE u.id=?`).bind(
         id,
@@ -916,6 +918,7 @@ async function userDetail(
       )) AS paymentTasks`).bind(id, id, id, id, id, id),
     ]),
     accountHistorySummary(env, id),
+    adminTipsOf(env, id),
   ]);
   const row = user?.results[0] as Record<string, unknown> | undefined;
   if (!row)
@@ -932,6 +935,7 @@ async function userDetail(
         paymentTasks: asInt(count?.paymentTasks),
       },
       amounts: { sent: amounts.sentAmount, received: amounts.receivedAmount },
+      tips,
     },
   };
 }
@@ -1394,6 +1398,23 @@ async function audit(
         },
       }),
     },
+    // 站长停用打赏卡 (docs/tip-design.md §12): kept on the card's row.
+    {
+      type: "tip_stop" as const,
+      columns: "c.code,c.name,c.stop_reason",
+      table: `(SELECT id, stopped_by_admin_id AS actor_user_id, stopped_at AS created_at,
+        0 AS previous_version, 0 AS next_version, code, name, stop_reason
+        FROM tip_cards WHERE stopped_by_admin_id IS NOT NULL)`,
+      values: (row: Record<string, unknown>) => ({
+        before: {},
+        after: {},
+        tipCard: {
+          code: String(row.code),
+          name: String(row.name),
+          reason: row.stop_reason == null ? null : String(row.stop_reason),
+        },
+      }),
+    },
     // 停用附带网页 (docs/attached-page-design.md): kept on the 红包's row.
     {
       type: "page_stop" as const,
@@ -1500,6 +1521,32 @@ export const adminRoutes = new Hono<ApiContext>()
     c.json(await activityDetail(c.env, c.req.param("id"))),
   )
   // 停用附带网页 (docs/attached-page-design.md §1): for good.
+  // 站长 stops a 打赏卡 (docs/tip-design.md §12): its owner sees why and
+  // cannot start it again.
+  .post(
+    "/admin/tip-cards/:code/stop",
+    validator("json", (value) => {
+      const parsed = adminStopTipCardSchema.safeParse(value);
+      if (!parsed.success)
+        throw new ActivityError(
+          400,
+          "INVALID_STOP_REASON",
+          parsed.error.issues[0]?.message ?? "写一下停用的原因",
+        );
+      return parsed.data;
+    }),
+    async (c) => {
+      const session = await requireAdmin(c);
+      assertCsrf(c, session);
+      await adminStopCard(
+        c.env,
+        session.user.id,
+        c.req.param("code"),
+        c.req.valid("json").reason,
+      );
+      return c.json({ stopped: true as const });
+    },
+  )
   .post("/admin/activities/:id/stop-page", async (c) => {
     const session = await requireAdmin(c);
     assertCsrf(c, session);

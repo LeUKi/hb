@@ -497,15 +497,74 @@ test.describe("账号资料", () => {
         } satisfies MerchantList,
       }),
     );
+    // 打赏 (docs/tip-design.md): a card in use, its week, and why tips
+    // cannot come in at Credit 站 yet.
+    await page.route("**/api/me/tips", (route) =>
+      route.fulfill({
+        json: {
+          cards: [
+            {
+              code: "k7Q2mX",
+              version: 1,
+              active: true,
+              style: "standard",
+              palette: "coffee",
+              colors: {
+                light: { accent: "#9a5b23", ink: "#7a4515", button: "#9a5b23" },
+                dark: { accent: "#e0a066", ink: "#f2c595", button: "#9a5b23" },
+              },
+              prompt: "",
+              amounts: [{ amountMinor: 500, label: "" }],
+              defaultIndex: 0,
+              allowOther: false,
+              goal: null,
+              tipperCount: 4,
+              name: "个人页",
+              showRecent: false,
+              showTop: false,
+              link: { kind: "profile" },
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              stoppedAt: null,
+              stoppedByAdmin: false,
+              stopReason: null,
+              week: { count: 6, amountMinor: 5800 },
+            },
+          ],
+          used: 1,
+          limit: 3,
+          enabled: true,
+          plus: {
+            plus: false,
+            owner: false,
+            invitedBy: null,
+            since: null,
+            features: null,
+            featureCount: 7,
+          },
+          palettes: [],
+          receiving: { available: false, reason: "unverified" },
+        },
+      }),
+    );
     await openApp(page, "/me");
     await expect(page.getByText(viewer.id)).toBeVisible();
     // The often used first, 资料 after them (2026-10-28).
     await expect(page.locator("main h2")).toHaveText([
       "红包",
+      "打赏",
       "LDC 商户",
       "排行榜",
       "资料",
     ]);
+    const tips = page.getByRole("region", { name: "打赏" });
+    await expect(tips).toContainText("1 张在用");
+    await expect(tips).toContainText("6 次 · 58 LDC");
+    await expect(tips).toContainText("LDC 商户的密钥还没通过检查");
+    await expect(tips.getByRole("link", { name: /我的打赏/ })).toHaveAttribute(
+      "href",
+      "/tips",
+    );
     const shop = page.getByRole("region", { name: "LDC 商户" });
     await expect(shop).toContainText("我的商户");
     await expect(shop).toContainText("凭证检查通过");

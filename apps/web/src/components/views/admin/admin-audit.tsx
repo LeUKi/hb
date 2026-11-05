@@ -58,6 +58,7 @@ const kinds = {
   judge_settings: "判定器设置",
   judge_square: "判定器广场",
   roadmap: "施工",
+  tip_stop: "停用打赏卡",
 } as const;
 
 /** 施工中 (roadmap-design §4): the 站长's move, in the tab's words. */
@@ -80,6 +81,10 @@ function changesOf(entry: AdminAuditEntry) {
     return [`停用代码判定红包「${entry.activity?.title ?? ""}」`];
   if (entry.type === "page_stop")
     return [`停用红包「${entry.activity?.title ?? ""}」的附带网页`];
+  if (entry.type === "tip_stop")
+    return [
+      `停用打赏卡「${entry.tipCard?.name ?? ""}」：${entry.tipCard?.reason ?? ""}`,
+    ];
   // 判定器广场 (judge-square §15.4): what the 站长 did, to which.
   if (entry.type === "judge_square" && entry.judge) {
     const { name, action, reason, n } = entry.judge;
@@ -230,6 +235,7 @@ export function AdminAudit() {
                       {/* A 停用 changes a 红包, not a numbered setting. */}
                       {entry.type !== "code_stop" &&
                         entry.type !== "page_stop" &&
+                        entry.type !== "tip_stop" &&
                         entry.type !== "judge_square" &&
                         entry.type !== "roadmap" && (
                           <p className="text-xs text-ink-3">

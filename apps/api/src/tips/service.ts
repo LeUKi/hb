@@ -118,15 +118,7 @@ export async function viewerOf(
 ): Promise<TipViewer> {
   const settings = await readBalanceSettings(env);
   const own = viewer?.id === card.owner_id;
-  let checkout: TipViewer["methods"]["checkout"];
-  if (!reachesCredit(env)) checkout = { available: false, reason: "offline" };
-  else {
-    const { block } = await checkoutMerchant(env, card.owner_id);
-    checkout =
-      block === null
-        ? { available: true, reason: null }
-        : { available: false, reason: block };
-  }
+  const checkout = await receivingOf(env, card.owner_id);
   const passwordFree = settings.tipPasswordFreeEnabled;
   let balance: TipViewer["methods"]["balance"] = null;
   if (
@@ -735,6 +727,22 @@ export async function listTips(
     stats,
     cursor: results.length > PAGE && last ? encodeTipCursor(last) : null,
   };
+}
+
+/**
+ * Whether a card's owner can take tips at Credit 站 (their own LDC 商户,
+ * its key checked), and why not: what the card shows tippers, and what
+ * 我的打赏 and the card form warn its owner of.
+ */
+export async function receivingOf(
+  env: ApiBindings,
+  ownerId: string,
+): Promise<TipViewer["methods"]["checkout"]> {
+  if (!reachesCredit(env)) return { available: false, reason: "offline" };
+  const { block } = await checkoutMerchant(env, ownerId);
+  return block === null
+    ? { available: true, reason: null }
+    : { available: false, reason: block };
 }
 
 /** How many of a card's last tips the mini app's card page shows. */

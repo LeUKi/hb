@@ -513,6 +513,89 @@ describe("打赏卡", () => {
     expect(gone.card.colors).toEqual(TIP_PALETTES[0]?.colors);
   });
 
+  it("tell their owner whether tips can come in at Credit 站", async () => {
+    const { owner, credit } = await open();
+    await newCard(owner);
+    const before = (await call("GET", "/me/tips", owner)).json as {
+      receiving: { available: boolean; reason: string | null };
+    };
+    // No LDC 商户 of their own: only 🐟额 (from PLUS) can come in.
+    expect(before.receiving).toEqual({
+      available: false,
+      reason: "no_merchant",
+    });
+    await merchantFor(owner, credit);
+    const after = (await call("GET", "/me/tips", owner)).json as {
+      receiving: { available: boolean };
+    };
+    expect(after.receiving.available).toBe(true);
+  });
+
+  it("are stopped by the 站长 with why: the owner cannot start them again, and 管理记录 says so", async () => {
+    const { admin, owner, fan } = await open();
+    const card = await newCard(owner, { name: "被停用的卡" });
+    await fund(admin, fan, "20.00");
+    expect(
+      (await tip(card, fan, { method: "balance", amount: "5" })).status,
+    ).toBe(200);
+    // Without why: refused.
+    const bare = await call(
+      "POST",
+      `/admin/tip-cards/${card.code}/stop`,
+      admin,
+      { reason: " " },
+    );
+    expect(bare.status).toBe(400);
+    // Not the 站长: refused.
+    expect(
+      (
+        await call("POST", `/admin/tip-cards/${card.code}/stop`, owner, {
+          reason: "x",
+        })
+      ).status,
+    ).toBe(403);
+    const stopped = await call(
+      "POST",
+      `/admin/tip-cards/${card.code}/stop`,
+      admin,
+      { reason: "冒充别人收款" },
+    );
+    expect(stopped.status).toBe(200);
+    const mine = (await call("GET", "/me/tips", owner)).json as {
+      cards: { active: boolean; stoppedByAdmin: boolean; stopReason: string }[];
+    };
+    expect(mine.cards[0]).toMatchObject({
+      active: false,
+      stoppedByAdmin: true,
+      stopReason: "冒充别人收款",
+    });
+    expect(
+      (await call("POST", `/me/tips/cards/${card.code}/start`, owner, {}))
+        .status,
+    ).not.toBe(200);
+    const detail = (await call("GET", `/admin/users/${owner.id}`, admin))
+      .json as {
+      user: {
+        tips: {
+          cards: { code: string; active: boolean; tips: number }[];
+          received: { count: number; amountMinor: number };
+        };
+      };
+    };
+    expect(detail.user.tips.cards).toMatchObject([
+      { code: card.code, active: false, tips: 1 },
+    ]);
+    expect(detail.user.tips.received).toEqual({ count: 1, amountMinor: 500 });
+    const audit = (await call("GET", "/admin/audit?type=tip_stop", admin))
+      .json as {
+      items: { type: string; tipCard: { name: string; reason: string } }[];
+    };
+    expect(audit.items[0]).toMatchObject({
+      type: "tip_stop",
+      tipCard: { name: "被停用的卡", reason: "冒充别人收款" },
+    });
+  });
+
   it("have palettes that read: words 4.5:1 on the tint, white on buttons 4.5:1, the tint 3:1", () => {
     const rgb = (hex: string) =>
       [1, 3, 5].map((at) => Number.parseInt(hex.slice(at, at + 2), 16));

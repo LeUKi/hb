@@ -1,4 +1,4 @@
-import { useLocation, useRouter } from "@tanstack/react-router";
+import { useLocation, useNavigate, useRouter } from "@tanstack/react-router";
 import { useAtom } from "jotai";
 import {
   AlertTriangle,
@@ -23,6 +23,7 @@ import {
   useSessionUser,
 } from "../../lib/session";
 import { authErrorAtom } from "../../lib/store";
+import { useMyTips } from "../../lib/tips";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import {
   Callout,
@@ -35,9 +36,10 @@ import {
 } from "../page/page";
 import { PageLoad, queriesLoad } from "../page/page-state";
 import { useSignOut } from "../shell/identity-check";
+import { ldc } from "../tips/tip-card";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
-import { MoreLink } from "../ui/button-link";
+import { ButtonLink, MoreLink } from "../ui/button-link";
 import { CopyButton } from "../ui/copy-button";
 import { Switch } from "../ui/field";
 import { Fish } from "../ui/fish";
@@ -218,6 +220,8 @@ function Me({ user }: { user: SessionUser }) {
 
         {user.balance && <MeBalance user={user} />}
 
+        <MeTips user={user} />
+
         <MeMerchant user={user} />
 
         {/* Its own read: the page does not wait for it, and without it
@@ -348,6 +352,80 @@ function MeMerchant({ user }: { user: SessionUser }) {
                 {pause.title}
               </p>
             )}
+          </Panel>
+        </PageSection>
+      )}
+    </Reveal>
+  );
+}
+
+/**
+ * 打赏 (docs/tip-design.md): one's cards in use and the last 7 days' tips,
+ * the way to 我的打赏, and its warning when tips cannot come in at Credit
+ * 站. With no card: how to make one. Away while 打赏 is off and none made.
+ */
+function MeTips({ user }: { user: SessionUser }) {
+  const { leaveTo } = useOmniboxController();
+  const navigate = useNavigate();
+  const query = useMyTips(user.id);
+  const data = query.data;
+  const active = data?.cards.filter((card) => card.active) ?? [];
+  const week = active.reduce(
+    (sum, card) => ({
+      count: sum.count + card.week.count,
+      amountMinor: sum.amountMinor + card.week.amountMinor,
+    }),
+    { count: 0, amountMinor: 0 },
+  );
+  const shown = Boolean(data && (data.enabled || data.cards.length > 0));
+  return (
+    <Reveal show={shown}>
+      {data && (
+        <PageSection
+          title="打赏"
+          id="me-tips"
+          action={
+            <MoreLink href="/tips" onGo={() => void leaveTo({ to: "/tips" })}>
+              我的打赏
+            </MoreLink>
+          }
+        >
+          <Panel className="grid gap-3 p-5">
+            {data.cards.length === 0 ? (
+              <div className="grid gap-2 text-sm text-ink-2">
+                <p>
+                  还没有打赏卡。建一张，贴到社区的帖子末尾或个人页的“关于我”里，别人点一下就能打赏你。
+                </p>
+                <ButtonLink
+                  href="/tips/new"
+                  onGo={() => void navigate({ to: "/tips/new" })}
+                  variant="secondary"
+                  size="xs"
+                  className="justify-self-start"
+                >
+                  新建打赏卡
+                </ButtonLink>
+              </div>
+            ) : (
+              <Facts
+                items={[
+                  { label: "打赏卡", value: `${active.length} 张在用` },
+                  {
+                    label: "近 7 天收到",
+                    value: `${week.count} 次 · ${ldc(week.amountMinor)} LDC`,
+                  },
+                ]}
+              />
+            )}
+            {!data.receiving.available &&
+              data.receiving.reason !== "offline" && (
+                <p className="text-sm text-warning">
+                  {data.receiving.reason === "unverified"
+                    ? "LDC 商户的密钥还没通过检查"
+                    : "还没有配置 LDC 商户"}
+                  ：现在只有开通🐟额 PLUS 的人能打赏你。
+                </p>
+              )}
           </Panel>
         </PageSection>
       )}

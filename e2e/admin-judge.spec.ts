@@ -449,6 +449,7 @@ test.describe("网站管理 · 判定器", () => {
           paymentTasks: 0,
         },
         amounts: { sent: "0.20", received: "0.00" },
+        tips: { cards: [], received: { count: 0, amountMinor: 0 }, given: 0 },
       } satisfies AdminUserDetail,
     }));
     const activities = await answer(page, "activities", () =>

@@ -229,6 +229,34 @@ export function useStopCode(csrfToken: string) {
   });
 }
 
+/**
+ * 站长停用打赏卡 (docs/tip-design.md §12): with why, which its owner reads;
+ * they cannot start it again.
+ */
+export function useStopTipCard(csrfToken: string) {
+  const identity = useAdminIdentity();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ code, reason }: { code: string; reason: string }) => {
+      await readResponse<{ stopped: true }>(
+        await fetch(`/api/admin/tip-cards/${encodeURIComponent(code)}/stop`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-Token": csrfToken,
+          },
+          body: JSON.stringify({ reason }),
+          cache: "no-store",
+        }),
+      );
+      for (const rest of [["users"], ["user"], ["audit"]])
+        void queryClient.invalidateQueries({
+          queryKey: adminKey(identity, ...rest),
+        });
+    },
+  });
+}
+
 /** 停用附带网页 (docs/attached-page-design.md §1): for good. */
 export function useStopPage(csrfToken: string) {
   const identity = useAdminIdentity();

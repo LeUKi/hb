@@ -8,6 +8,7 @@ import type {
   TipCardView,
   TipList,
   TipMethod,
+  TipMethods,
   TipPaletteOption,
   TipRange,
   TipReceipt,
@@ -23,10 +24,8 @@ import {
 import { useMemo } from "react";
 import { api } from "../api";
 import type { PlusInfo } from "../components/balance/plus";
-import {
-  type TipCardActions,
-  tipForumEmbed,
-} from "../components/tips/tip-card";
+import { tipForumEmbed } from "../components/tips/embed";
+import type { TipCardActions } from "../components/tips/tip-card";
 
 export { previewOf } from "../components/tips/tip-card";
 
@@ -42,6 +41,8 @@ export type MyTips = {
   plus: PlusInfo;
   /** The palettes to choose, the default first (served: tip-design §12). */
   palettes: TipPaletteOption[];
+  /** Whether tips can come in at Credit 站 (one's own LDC 商户), and why not. */
+  receiving: TipMethods["checkout"];
 };
 
 export const tipKeys = {

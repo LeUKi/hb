@@ -2,6 +2,7 @@ import type {
   Tip,
   TipCard,
   TipMethod,
+  TipMethods,
   TipPaletteOption,
   TipRange,
 } from "@hb/contracts";
@@ -19,9 +20,11 @@ import {
 import { PlusTag } from "../balance/plus";
 import { Callout, Page, PageHeader, PageSection, Panel } from "../page/page";
 import { PageLoad, queryLoad } from "../page/page-state";
-import { ldc, TipCardView, tipCardHeight } from "../tips/tip-card";
+import { tipCardHeight } from "../tips/embed";
+import { ldc, TipCardView } from "../tips/tip-card";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
+import { ButtonLink } from "../ui/button-link";
 import { Segmented } from "../ui/segmented";
 import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
@@ -63,6 +66,49 @@ export function CopyTextButton({
     <Button size="xs" onClick={copy}>
       {state === "done" ? "已复制" : state === "failed" ? "没复制上" : label}
     </Button>
+  );
+}
+
+/**
+ * Tips cannot come in at Credit 站: no LDC 商户 of one's own, or its key not
+ * checked. The cards still take 🐟额 from 🐟额 PLUS; everyone else, guests
+ * among them, cannot tip until it is set up. Creating cards is not held
+ * back for it (the user, 2026-11-05): this says so wherever cards are made.
+ */
+export function ReceivingNotice({
+  receiving,
+}: {
+  receiving: TipMethods["checkout"];
+}) {
+  const navigate = useNavigate();
+  // `offline`: an environment that never reaches Credit 站 (Stage).
+  if (receiving.available || receiving.reason === "offline") return null;
+  return (
+    <Callout
+      tone="warning"
+      title={
+        receiving.reason === "unverified"
+          ? "LDC 商户的密钥还没通过检查"
+          : "还没有配置 LDC 商户"
+      }
+    >
+      <p>
+        现在只有开通🐟额 PLUS 的人能用🐟额打赏你，其他人和没登录的人都打赏不了。
+        {receiving.reason === "unverified"
+          ? "密钥检查通过后"
+          : "配好商户、密钥检查通过后"}
+        ，大家都能在 Credit 站打赏你，钱进你的商户。
+      </p>
+      <ButtonLink
+        href="/merchant"
+        onGo={() => void navigate({ to: "/merchant" })}
+        variant="secondary"
+        size="xs"
+        className="mt-2"
+      >
+        去配置商户
+      </ButtonLink>
+    </Callout>
   );
 }
 
@@ -139,6 +185,7 @@ function MyTips({ user }: { user: SessionUser }) {
               打赏卡都显示“打赏暂停”，不能新打赏，也不能新建打赏卡。
             </Callout>
           )}
+          <ReceivingNotice receiving={data.receiving} />
           <PageSection
             title="打赏卡"
             action={
@@ -154,7 +201,9 @@ function MyTips({ user }: { user: SessionUser }) {
                 </p>
               </Panel>
             ) : (
-              <div className="grid gap-3 @wide/window:grid-cols-2">
+              // Two columns only where each has room for a card at its
+              // narrowest (288 + the panel's 32): no sideways scroll.
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,20rem),1fr))] gap-3">
                 {data.cards.map((card) => (
                   <Panel
                     key={card.code}

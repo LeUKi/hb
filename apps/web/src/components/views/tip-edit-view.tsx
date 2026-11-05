@@ -2,6 +2,7 @@ import {
   TIP_LIMITS,
   type TipCard,
   type TipCardInput,
+  type TipMethods,
   type TipPalette,
   type TipPaletteOption,
   type TipStyle,
@@ -20,13 +21,14 @@ import {
 } from "../../lib/tips";
 import { Callout, Page, PageHeader, Panel } from "../page/page";
 import { PageLoad, queryLoad } from "../page/page-state";
-import { ldc, TipCardView, tipCardHeight } from "../tips/tip-card";
+import { tipCardHeight } from "../tips/embed";
+import { ldc, TipCardView } from "../tips/tip-card";
 import { Button } from "../ui/button";
 import { ChoiceCards, Field, Switch, TextInput } from "../ui/field";
 import { Segmented } from "../ui/segmented";
 import { radius, Squircle } from "../ui/squircle";
 import { MessageView } from "./message-view";
-import { CopyTextButton } from "./tips-view";
+import { CopyTextButton, ReceivingNotice } from "./tips-view";
 
 // 新建打赏卡 / 编辑打赏卡 (/tips/new, /tips/<卡号>; docs/tip-design.md §2):
 // the form on the left, the card as it will look on the right, where it
@@ -183,6 +185,7 @@ function Editor({ user, code }: { user: SessionUser; code?: string }) {
           card={card}
           enabled={query.data.enabled}
           palettes={query.data.palettes}
+          receiving={query.data.receiving}
         />
       )}
     </PageLoad>
@@ -194,11 +197,13 @@ function EditorForm({
   card,
   enabled,
   palettes,
+  receiving,
 }: {
   user: SessionUser;
   card?: TipCard;
   enabled: boolean;
   palettes: TipPaletteOption[];
+  receiving: TipMethods["checkout"];
 }) {
   const navigate = useNavigate();
   const actions = useTipCardActions(user.id);
@@ -282,6 +287,7 @@ function EditorForm({
           现在不能新建；已有的打赏卡还能改。
         </Callout>
       )}
+      <ReceivingNotice receiving={receiving} />
       <div className="grid items-start gap-6 @wide/window:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
         <Panel className="grid gap-5 p-5">
           <Field label="名称" hint="只有你看得到" htmlFor={ids.name}>

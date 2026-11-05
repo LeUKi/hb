@@ -1,5 +1,6 @@
 import {
   ADMIN_USER_LEVELS,
+  type AdminTipCard,
   type AdminUserDetail,
   type AdminUserFish,
   type AdminUserLevel,
@@ -12,19 +13,22 @@ import {
 import { useNavigate } from "@tanstack/react-router";
 import { SlidersHorizontal, X } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
-import { useAdminList, useAdminUser } from "../../../lib/admin";
+import { useAdminList, useAdminUser, useStopTipCard } from "../../../lib/admin";
 import { cn } from "../../../lib/cn";
 import { clockLabel, fullTime } from "../../../lib/roster-time";
+import { useIdentity } from "../../../lib/session";
 import type { AdminSearch } from "../../../router";
 import { PlusMark } from "../../balance/plus";
 import { useQueryLazyList } from "../../page/lazy-list";
 import { EmptyNote } from "../../page/page";
 import { Bone, PageLoad, resultOf } from "../../page/page-state";
+import { ConfirmDialog } from "../../shell/confirm-dialog";
 import { WindowDialog } from "../../shell/window-dialog";
+import { ldc } from "../../tips/tip-card";
 import { Avatar } from "../../ui/avatar";
 import { Button } from "../../ui/button";
 import { CopyButton } from "../../ui/copy-button";
-import { Field, Segmented, ToggleCards } from "../../ui/field";
+import { Field, Segmented, TextInput, ToggleCards } from "../../ui/field";
 import { Fish } from "../../ui/fish";
 import { MorphLabel } from "../../ui/morph-label";
 import { RevealInline } from "../../ui/reveal";
@@ -318,6 +322,13 @@ function Detail({ user }: { user: AdminUserListItem }) {
             label: "商户",
             value: later((detail) => `${detail.counts.merchants} 个`),
           },
+          {
+            label: "打赏",
+            value: later(
+              (detail) =>
+                `收到 ${detail.tips.received.count} 次 · ${ldc(detail.tips.received.amountMinor)} LDC；打赏别人 ${detail.tips.given} 次`,
+            ),
+          },
         ]}
       />
       <DetailRetry query={query} />
@@ -350,7 +361,113 @@ function Detail({ user }: { user: AdminUserListItem }) {
           </Button>
         )}
       </div>
+      <UserTipCards cards={read?.tips.cards ?? []} />
       <UserBalance userId={user.id} />
+    </>
+  );
+}
+
+const styleName = { simple: "简洁", standard: "标准" } as const;
+
+/** Their 打赏卡: each with how many tips, and 停用 for the ones in use. */
+function UserTipCards({ cards }: { cards: AdminTipCard[] }) {
+  if (cards.length === 0) return null;
+  return (
+    <div className="grid gap-2">
+      <h3 className="text-sm font-medium text-ink">打赏卡</h3>
+      <ul className="grid gap-1.5">
+        {cards.map((card) => (
+          <li
+            key={card.code}
+            className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"
+          >
+            <span className="min-w-0 flex-1">
+              <span className="font-medium text-ink">{card.name}</span>
+              <span className="ml-2 text-ink-3">
+                {styleName[card.style]} · {card.tips} 次打赏 ·{" "}
+                <span className="font-mono">/☕/{card.code}</span>
+              </span>
+              {card.stoppedByAdmin && (
+                <span className="block text-xs text-danger">
+                  站长停用：{card.stopReason}
+                </span>
+              )}
+            </span>
+            {card.active ? (
+              <StopTipCard card={card} />
+            ) : (
+              !card.stoppedByAdmin && <StatusChip>已停用</StatusChip>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** 停用 with why: the owner reads it and cannot start the card again. */
+function StopTipCard({ card }: { card: AdminTipCard }) {
+  const identity = useIdentity();
+  const stop = useStopTipCard(identity.csrfToken ?? "");
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const busy = stop.isPending;
+  const close = () => {
+    if (busy) return;
+    setOpen(false);
+    setError(null);
+  };
+  return (
+    <>
+      <Button size="xs" variant="danger" onClick={() => setOpen(true)}>
+        停用
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onClose={close}
+        busy={busy}
+        title={`停用打赏卡「${card.name}」？`}
+        text="停用后这张卡不能再打赏，卡的主人看得到原因，也不能自己再启用。"
+        error={error}
+        actions={
+          <>
+            <Button aria-disabled={busy || undefined} onClick={close}>
+              取消
+            </Button>
+            <Button
+              variant="danger"
+              aria-disabled={busy || !reason.trim() || undefined}
+              onClick={() => {
+                if (busy || !reason.trim()) return;
+                setError(null);
+                stop.mutate(
+                  { code: card.code, reason: reason.trim() },
+                  {
+                    onSuccess: () => setOpen(false),
+                    onError: (failure) =>
+                      setError(
+                        failure instanceof Error
+                          ? failure.message
+                          : "停用没有完成，请再试一次。",
+                      ),
+                  },
+                );
+              }}
+            >
+              {busy ? "正在停用…" : error ? "再试一次" : "停用"}
+            </Button>
+          </>
+        }
+      >
+        <Field label="原因" hint="卡的主人看得到，最多 100 个字">
+          <TextInput
+            value={reason}
+            maxLength={100}
+            onChange={(event) => setReason(event.target.value)}
+          />
+        </Field>
+      </ConfirmDialog>
     </>
   );
 }

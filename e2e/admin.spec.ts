@@ -12,6 +12,7 @@ import type {
   MerchantPaymentDetail,
 } from "../packages/contracts/src";
 import {
+  csrfToken,
   type MockUser,
   mockSession,
   openApp,
@@ -539,8 +540,40 @@ test.describe("网站管理", () => {
           paymentTasks: 2,
         },
         amounts: { sent: "0.00", received: "1.50" },
+        tips: {
+          cards: [
+            {
+              code: "k7Q2mX",
+              name: "个人页",
+              style: "standard",
+              active: true,
+              stoppedByAdmin: false,
+              stopReason: null,
+              createdAt: Date.now(),
+              tips: 2,
+            },
+            {
+              code: "p3Rt8z",
+              name: "旧帖子",
+              style: "simple",
+              active: false,
+              stoppedByAdmin: true,
+              stopReason: "冒充别人收款",
+              createdAt: Date.now(),
+              tips: 0,
+            },
+          ],
+          received: { count: 2, amountMinor: 1500 },
+          given: 1,
+        },
       } satisfies AdminUserDetail,
     }));
+    const stops: unknown[] = [];
+    await page.route("**/api/admin/tip-cards/*/stop", (route) => {
+      stops.push(route.request().postDataJSON());
+      expect(route.request().headers()["x-csrf-token"]).toBe(csrfToken);
+      return route.fulfill({ json: { stopped: true } });
+    });
     const payments = await answer(page, "payments", () => list([payment()]));
     // 停用 in the address is the API's disabled.
     await openApp(page, "/admin/users?status=inactive");
@@ -553,6 +586,17 @@ test.describe("网站管理", () => {
     await expect(pane.getByText("停用（LINUX DO 账号已停用）")).toBeVisible();
     await expect(pane.getByText("领取 3 次 · 报名 1 次")).toBeVisible();
     await expect(pane.getByText("2 笔")).toBeVisible();
+    // 打赏: its numbers, its cards, and 停用 with why.
+    await expect(
+      pane.getByText("收到 2 次 · 15 LDC；打赏别人 1 次"),
+    ).toBeVisible();
+    await expect(pane.getByText("站长停用：冒充别人收款")).toBeVisible();
+    await pane.getByRole("button", { name: "停用", exact: true }).click();
+    const dialog = page.getByRole("alertdialog").or(page.getByRole("dialog"));
+    await expect(dialog.getByText("停用打赏卡「个人页」？")).toBeVisible();
+    await dialog.getByRole("textbox").fill("刷单");
+    await dialog.getByRole("button", { name: "停用", exact: true }).click();
+    await expect.poll(() => stops).toEqual([{ reason: "刷单" }]);
     await expect(
       pane.getByRole("button", { name: "查看发出的红包" }),
     ).toHaveCount(0);

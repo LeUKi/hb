@@ -242,6 +242,7 @@ test.describe("打赏", () => {
             featureCount: 7,
           },
           palettes: [{ id: "coffee", name: "咖啡", colors: coffee }],
+          receiving: { available: true, reason: null },
         },
       }),
     );
@@ -305,10 +306,16 @@ test.describe("打赏", () => {
             { id: "coffee", name: "咖啡", colors: coffee },
             { id: "sea", name: "海盐", colors: sea },
           ],
+          receiving: { available: false, reason: "no_merchant" },
         },
       }),
     );
     await openApp(page, "/tips/new");
+    // No LDC 商户: creating is not held back, but it says what that means.
+    await expect(page.getByText("还没有配置 LDC 商户")).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "去配置商户" }),
+    ).toHaveAttribute("href", "/merchant");
     const accent = () =>
       tipCard(page).evaluate((card) =>
         (card as HTMLElement).style.getPropertyValue("--tp-accent"),
@@ -320,5 +327,61 @@ test.describe("打赏", () => {
     await expect.poll(accent).toBe(coffee.light.accent);
     await page.getByRole("button", { name: "海盐" }).click();
     await expect.poll(accent).toBe(sea.light.accent);
+  });
+
+  test("作者看自己的卡：能一路点到最后一步，看到别人能用哪些付法，最后一步才拦下", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    await mockCard(page, {
+      card: card(),
+      viewer: signedInViewer({
+        own: true,
+        methods: {
+          checkout: { available: true, reason: null },
+          merchant: null,
+          balance: null,
+        },
+      }),
+    });
+    let posted = 0;
+    await page.route("**/api/tip/k7Q2mX", (route) => {
+      if (route.request().method() === "POST") posted += 1;
+      return route.fallback();
+    });
+    await openApp(page, "/☕/k7Q2mX");
+    await expect(tipCard(page)).toContainText(
+      "你自己的打赏卡：点开看别人看到的样子",
+    );
+    await tipCard(page)
+      .getByRole("button", { name: /打赏 10 LDC/ })
+      .click();
+    await tipCard(page)
+      .getByRole("button", { name: /Credit 站/ })
+      .click();
+    await expect(tipCard(page)).toContainText(
+      "这是你自己的打赏卡，不能打赏自己。别人到这一步会去 Credit 站付款。",
+    );
+    expect(posted).toBe(0);
+  });
+
+  test("作者没开通收款：别人看卡就写着暂时不能打赏，作者自己点进去看到原因", async ({
+    page,
+  }) => {
+    await mockSession(page, null);
+    const nothing = {
+      checkout: { available: false, reason: "no_merchant" as const },
+      merchant: null,
+      balance: null,
+    };
+    await mockCard(page, {
+      card: card(),
+      viewer: signedInViewer({ signedIn: false, methods: nothing }),
+    });
+    await openApp(page, "/☕/k7Q2mX");
+    await expect(tipCard(page)).toContainText("作者还没开通收款，暂时不能打赏");
+    await expect(
+      tipCard(page).getByRole("button", { name: /打赏 10 LDC/ }),
+    ).toBeDisabled();
   });
 });

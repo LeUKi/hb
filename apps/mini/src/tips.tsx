@@ -1,12 +1,11 @@
 import type { Tip, TipCard } from "@hb/contracts";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { tipCardHeight, tipForumEmbed } from "@/components/tips/embed";
 import {
   ldc,
   previewOf,
   type TipCardActions,
   TipCardView,
-  tipCardHeight,
-  tipForumEmbed,
 } from "@/components/tips/tip-card";
 import { Button } from "@/components/ui/button";
 import {
@@ -118,8 +117,11 @@ export function TipScreen({ sdk, code }: { sdk: MiniSdk; code: string }) {
         <div className="loading-sheen mx-auto h-[76px] max-w-[460px] rounded-[22px] bg-fill" />
       </div>
     );
+  // 6 at the sides: a card at its narrowest (288) fills the 300 of 关于我
+  // without scrolling; 8 above and below, as 红包站's embed code allows
+  // for (tipForumEmbed, 2026-11-05).
   return (
-    <div className="overflow-x-auto p-2">
+    <div className="overflow-x-auto px-1.5 py-2">
       <TipCardView
         card={view.card}
         viewer={view.viewer}
