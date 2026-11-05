@@ -73,15 +73,12 @@ async function copy(sdk: MiniSdk, text: string) {
 
 /**
  * The 社区 shows at least 320 under its bar (FORUM_FRAME_MIN), however
- * short the card: whatever is shown sits in the middle of that, as the
- * embed code allows for (2026-11-05).
+ * short the card: the page fills that, so no strip of the 社区's own
+ * colour shows under it; whatever is shown sits at the top, the room
+ * under it left empty (the user, 2026-11-05: centred looked odd).
  */
 function InFrame({ children }: { children: ReactNode }) {
-  return (
-    <div className="grid content-center" style={{ minHeight: FORUM_FRAME_MIN }}>
-      {children}
-    </div>
-  );
+  return <div style={{ minHeight: FORUM_FRAME_MIN }}>{children}</div>;
 }
 
 /** A 打赏卡 embedded in a post or in 关于我. */

@@ -29,7 +29,7 @@ const FORUM_CARD_ROOM = 20;
 /**
  * The 社区's embed code for a card: its bar above the card and its room,
  * and never less than what the 社区 shows at least (every card is shorter:
- * 389 for all three, the card in the middle; 2026-11-05).
+ * 389 for all three, the card at the top; 2026-11-05).
  */
 export function tipForumEmbed(
   code: string,
