@@ -771,25 +771,28 @@ describe("社区小程序's live channel", () => {
   it("closes sockets when their tokens end, by the object's alarm", async () => {
     const activity = await running();
     const now = Math.floor(Date.now() / 1000);
-    const ending = { iat: now - 1, nbf: now - 1, exp: now + 2 };
+    // 4 s: the alarm (a second early) is still ahead when it is read, on a
+    // slow runner too (2 s left it to fire first, and be set again; CI run
+    // 41985116092).
+    const ending = { iat: now - 1, nbf: now - 1, exp: now + 4 };
     const first = await connect(activity.id, ending);
     const second = await connect(activity.id, ending);
     // No timer holds the object awake: its alarm wakes it a second early.
     const { alarm, own } = await alarmOf(activity.id);
-    expect(alarm).toBe((now + 2) * 1000 - 1000);
+    expect(alarm).toBe((now + 4) * 1000 - 1000);
     expect(own).toBeGreaterThan(Date.now() + 60_000);
     await vi.waitFor(
       () => {
         expect(first.closed).toEqual([4000]);
         expect(second.closed).toEqual([4000]);
       },
-      { timeout: 5000 },
+      { timeout: 7000 },
     );
     // Then only the 红包's own deadline is waited for.
     await vi.waitFor(async () =>
       expect(await alarmOf(activity.id)).toEqual({ alarm: own, own }),
     );
-  });
+  }, 15_000);
 
   it("moves the alarm on as the app renews its socket, so it never wakes for one", async () => {
     const activity = await running();
