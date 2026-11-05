@@ -97,12 +97,11 @@ import { TipScreen, TipsHome } from "./tips";
 const SITE = __HB_ORIGIN__;
 
 /**
- * Past its time, a timed draft is read this often until it opens or goes
- * back to a draft (scheduled-opening §5: up to 10 minutes while 红包站 is
- * paused). 红包站's page asks every second; here each read goes through the
- * 社区, and the push that it opened comes first anyway.
+ * A timed draft with no live connection up is read at its time and again
+ * this much later, should its object's clock run late (scheduled-opening
+ * §4). With one up, the push that it opened brings it: no reads at all.
  */
-const DUE_READ_MS = 2_000;
+const OPENING_RECHECK_MS = 3_000;
 
 /**
  * A 红包's link on 红包站 to copy: likely pasted into a post here, so as
@@ -398,34 +397,6 @@ function Page({
     );
   }, [read]);
 
-  // 定时开放 (scheduled-opening §4), as 红包站's page: read again right at
-  // its time, should the push that it opened be missed; then every
-  // DUE_READ_MS until it has opened.
-  const opensAt =
-    data?.activity.status === "draft" && data.activity.scheduledOpenAt
-      ? Date.parse(data.activity.scheduledOpenAt)
-      : null;
-  useEffect(() => {
-    if (opensAt === null) return;
-    let poll: ReturnType<typeof setInterval> | undefined;
-    const due = () => {
-      poll = setInterval(() => void read(), DUE_READ_MS);
-    };
-    const left = opensAt - Date.now();
-    const timer =
-      left > 0
-        ? setTimeout(() => {
-            void read();
-            due();
-          }, left + 50)
-        : undefined;
-    if (left <= 0) due();
-    return () => {
-      clearTimeout(timer);
-      clearInterval(poll);
-    };
-  }, [opensAt, read]);
-
   // 重新发送 and the like, on 红包站: the result card copies this link.
   const SiteLink = useMemo(
     () =>
@@ -470,10 +441,10 @@ function Page({
     void queryClient.invalidateQueries({ queryKey: ["activity-roster", id] });
   }, [counts, id, queryClient]);
 
-  useLive(
+  const live = useLive(
     sdk,
     id,
-    // Running, or over with their payment still on its way.
+    // Running, timed to open, or over with their payment still on its way.
     Boolean(
       activity &&
         activity.participation !== "code" &&
@@ -508,6 +479,27 @@ function Page({
     },
     reread,
   );
+
+  // 定时开放 (scheduled-opening §4): the push says it opened. Only with no
+  // connection up at its time is it read, then and a little after; past
+  // that, a connection that cannot come up reads it as it retries.
+  const opensAt =
+    data?.activity.status === "draft" && data.activity.scheduledOpenAt
+      ? Date.parse(data.activity.scheduledOpenAt)
+      : null;
+  useEffect(() => {
+    if (opensAt === null) return;
+    const left = opensAt - Date.now();
+    if (left <= 0) return;
+    const timers = [left + 50, left + OPENING_RECHECK_MS].map((wait) =>
+      setTimeout(() => {
+        if (!live.current) void read();
+      }, wait),
+    );
+    return () => {
+      for (const timer of timers) clearTimeout(timer);
+    };
+  }, [opensAt, live, read]);
 
   if (!activity && guest) return <SignInFirst />;
   if (!activity)

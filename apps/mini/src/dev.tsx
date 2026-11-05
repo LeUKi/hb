@@ -3,7 +3,7 @@
 // dev-fixtures.ts (`?hb=password`, `direct`, `fish`, `draw`, `code`,
 // `human`, `ended`, `stranger`, `taken`, `scheduled`, `self`, `preview`, `long`;
 // none: no 红包; `?guest`: not signed in; `&title=`, `&note=`, `&after=`, `&pay=`,
-// `&opens=`, `&late=`), people's pictures, and a bar to switch what the forum would — light or dark,
+// `&opens=`, `&late=`, `&nolive`), people's pictures, and a bar to switch what the forum would — light or dark,
 // reduced motion. Never in app.js.
 import type { MiniClaimInput, MiniLiveMessage } from "@hb/contracts";
 import { caseNames, caseOf, rosterPage } from "./dev-fixtures";
@@ -43,8 +43,9 @@ if (sample) {
     };
 }
 // `&opens=<s>` (the `scheduled` sample): it opens that many seconds from
-// now, `&late=<s>` that much later still (红包站 paused); this stand-in's
-// live channel does not say so, so only the page's own reads see it.
+// now, `&late=<s>` that much later still (红包站 paused), and the live
+// channel says so then; with `&nolive` there is none, so only the page's
+// own reads see it.
 const opens = query.get("opens");
 const opensAt = opens === null ? null : Date.now() + Number(opens) * 1000;
 const openedAt = (opensAt ?? 0) + Number(query.get("late") ?? 0) * 1000;
@@ -118,10 +119,23 @@ function liveSocket(): MiniSocket {
     send({ type: "viewers", count: Math.max(2, viewers), seq });
   }, 4000);
   queueMicrotask(() => send({ type: "viewers", count: viewers, seq }));
+  // `&opens=`: its opening pushed as it happens, as the 红包's object does.
+  const opening =
+    opensAt === null
+      ? undefined
+      : window.setTimeout(
+          () => {
+            const read = readNow();
+            seq += 1;
+            if (read) send({ type: "activity", activity: read.activity, seq });
+          },
+          Math.max(0, openedAt - Date.now()),
+        );
   return {
     ready: Promise.resolve(),
     close: async () => {
       window.clearInterval(timer);
+      window.clearTimeout(opening);
       return null;
     },
     on: ((event: string, listener: (value: unknown) => void) => {
@@ -361,8 +375,12 @@ const sdk: MiniSdk = {
             error: { code: "ACTIVITY_NOT_FOUND", message: "未找到红包" },
           },
         };
-      if (endpoint === "hongbao")
+      if (endpoint === "hongbao") {
+        // How often the page reads it (`__hbReads`), for the timed sample.
+        const counted = globalThis as { __hbReads?: number };
+        counted.__hbReads = (counted.__hbReads ?? 0) + 1;
         return { status: 200, headers: {}, body: readNow() };
+      }
       if (endpoint === "roster")
         return {
           status: 200,
@@ -397,7 +415,8 @@ const sdk: MiniSdk = {
   },
   webSocket: {
     connect: async () => {
-      if (guest) throw denied();
+      // `&nolive`: the 社区 gives no connection (too many, say).
+      if (guest || query.has("nolive")) throw denied();
       return liveSocket();
     },
   },

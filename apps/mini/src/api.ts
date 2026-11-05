@@ -90,6 +90,7 @@ const RENEW_MS = 270_000;
  * so the next opens a little before and the old one closes once it is up
  * (the forum allows two); a lost one comes back after a pause. One that
  * cannot connect (over since, say) asks for a fresh read (`onLost`).
+ * Gives whether a connection is up now.
  */
 export function useLive(
   sdk: MiniSdk,
@@ -102,6 +103,7 @@ export function useLive(
   listener.current = onMessage;
   const lost = useRef(onLost);
   lost.current = onLost;
+  const up = useRef(false);
   useEffect(() => {
     if (!on) return;
     let stopped = false;
@@ -128,12 +130,14 @@ export function useLive(
       failures = 0;
       const previous = current;
       current = socket;
+      up.current = true;
       socket.on("message", (value) =>
         listener.current(value as MiniLiveMessage),
       );
       socket.on("close", () => {
         if (stopped || current !== socket) return;
         current = null;
+        up.current = false;
         clearTimeout(renew);
         retry = setTimeout(open, 1_000);
       });
@@ -144,11 +148,13 @@ export function useLive(
     void open();
     return () => {
       stopped = true;
+      up.current = false;
       clearTimeout(renew);
       clearTimeout(retry);
       void current?.close().catch(() => {});
     };
   }, [sdk, id, on]);
+  return up;
 }
 
 // 打赏 (docs/tip-design.md §5, §7): a card, a tip on it, “查一下”, and the
