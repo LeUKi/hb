@@ -476,15 +476,20 @@ export const claimJoins = `FROM claims c JOIN activities a ON a.id=c.activity_id
 /** 自领 (docs/self-claim-design.md) counts in neither sum, nor the 排行榜. */
 export const othersOnly = "c.user_id!=a.author_id";
 
+/**
+ * 我的 / 历史's numbers. Each count starts from this person's own rows (by
+ * their user indexes): one over every 红包 on the site, each probed for
+ * them, grew with the site and ran on every open page (2026-11-05).
+ */
 export async function accountHistorySummary(
   env: ApiBindings,
   userId: string,
 ): Promise<AccountHistorySummary> {
   const result = await env.DB.prepare(`SELECT
     (SELECT COUNT(*) FROM activities WHERE author_id=? AND reward_type='ldc' AND deleted_at IS NULL) AS initiatedCount,
-    (SELECT COUNT(*) FROM activities a WHERE a.reward_type='ldc' AND a.deleted_at IS NULL AND (
-      EXISTS(SELECT 1 FROM claims c WHERE c.activity_id=a.id AND c.user_id=?)
-      OR EXISTS(SELECT 1 FROM activity_registrations r WHERE r.activity_id=a.id AND r.user_id=?)
+    (SELECT COUNT(*) FROM activities a WHERE a.reward_type='ldc' AND a.deleted_at IS NULL AND a.id IN (
+      SELECT activity_id FROM claims WHERE user_id=?
+      UNION SELECT activity_id FROM activity_registrations WHERE user_id=?
     )) AS participatedCount,
     (SELECT COALESCE(SUM(${claimAmount}),0) ${claimJoins}
       WHERE a.author_id=? AND a.reward_type='ldc' AND a.deleted_at IS NULL AND ${othersOnly}) AS sentMinor,

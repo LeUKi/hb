@@ -129,7 +129,10 @@ export const LIVE_MINI_EARLY_MS = 1_000;
 
 /**
  * The read a mini app's socket hears: the public read without what does
- * not move while it runs, under the forum's limit; past it, `changed`.
+ * not move while it runs, under the forum's limit; past it, `changed`,
+ * and every mini app reads it whole. Its sender and 领取范围 (up to 100
+ * named people) are left out too: the app keeps its own, with the 社区's
+ * pictures, and a long 领取范围 turned every push into a read by all.
  */
 export function liveMiniMessage(activity: PublicActivity, seq: number) {
   const {
@@ -139,6 +142,8 @@ export function liveMiniMessage(activity: PublicActivity, seq: number) {
     judge: _judge,
     page: _page,
     drawProof: _proof,
+    author: _author,
+    scope: _scope,
     ...light
   } = activity;
   const message = JSON.stringify({

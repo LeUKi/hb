@@ -44,6 +44,8 @@ const RETRY_FIRST_MS = 1_000;
 const RETRY_LAST_MS = 30_000;
 /** A connection that lasted this long starts the next wait over. */
 const SETTLED_MS = 30_000;
+/** After a reconnect, one's own part is read within this, not all at once. */
+const RECONNECT_READ_SPREAD_MS = 3_000;
 /** The channel's own ends: the 红包 is over, push only, another tab took over. */
 const FINAL_CODES = new Set([1000, 1008, 4001]);
 
@@ -149,6 +151,7 @@ export function useActivityLive(
     let retry: number | undefined;
     let heartbeat: number | undefined;
     let pongWait: number | undefined;
+    let ownRead: number | undefined;
     const settle = () => {
       window.clearInterval(heartbeat);
       window.clearTimeout(pongWait);
@@ -190,8 +193,14 @@ export function useActivityLive(
         since = Date.now();
         setLive(id);
         // A reconnect may have missed a `mine`; the first connection, one
-        // sent while the page read its own part.
-        readOwn(client, id, userId, opens === 0);
+        // sent while the page read its own part. A deploy reconnects every
+        // page at once: theirs are spread over RECONNECT_READ_SPREAD_MS.
+        if (opens === 0) readOwn(client, id, userId, true);
+        else
+          ownRead = window.setTimeout(
+            () => readOwn(client, id, userId, false),
+            Math.random() * RECONNECT_READ_SPREAD_MS,
+          );
         opens += 1;
         heartbeat = window.setInterval(
           () => expectPong(ws, PONG_WAIT_MS),
@@ -230,10 +239,12 @@ export function useActivityLive(
           return;
         }
         if (typeof message?.seq === "number") {
-          // Missed one: the 红包 and its 动态 whole again; what comes in
-          // this message is current either way.
+          // Missed one: its 动态 whole again, and the 红包 too unless this
+          // message is its whole read (as a new connection's first is:
+          // after a deploy every page here would read it again at once).
           if (seq !== null && message.seq > seq + 1) {
-            void client.invalidateQueries({ queryKey: key, exact: true });
+            if (message.type !== "activity")
+              void client.invalidateQueries({ queryKey: key, exact: true });
             void client.invalidateQueries({
               queryKey: ["activity-announcements", id],
             });
@@ -345,6 +356,7 @@ export function useActivityLive(
     connect();
     return () => {
       stopped = true;
+      window.clearTimeout(ownRead);
       window.removeEventListener("online", reconnectNow);
       window.removeEventListener("pagehide", onPageHide);
       window.removeEventListener("pageshow", onPageShow);

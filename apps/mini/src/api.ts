@@ -84,6 +84,8 @@ export const readRoster = (
 
 /** The forum closes a connection at 300 s: the next one opens before. */
 const RENEW_MS = 270_000;
+/** Closed by the 红包's object for good: ended, push only, replaced. */
+const FINAL_CODES = new Set([1000, 1008, 4001]);
 
 /**
  * The 红包's live channel while `on`: each connection lives at most 300 s,
@@ -134,12 +136,18 @@ export function useLive(
       socket.on("message", (value) =>
         listener.current(value as MiniLiveMessage),
       );
-      socket.on("close", () => {
+      socket.on("close", ({ code }) => {
         if (stopped || current !== socket) return;
         current = null;
         up.current = false;
         clearTimeout(renew);
-        retry = setTimeout(open, 1_000);
+        // Its own ends, as 红包站's page (lib/live.ts FINAL_CODES): over,
+        // push only, or another of theirs took its place. Read it once and
+        // stay off; coming back would close another (an endless ring).
+        if (FINAL_CODES.has(code)) return lost.current();
+        // Anything else (a deploy): back, spread over a few seconds so not
+        // every page in the 社区 comes at once.
+        retry = setTimeout(open, 1_000 + Math.random() * 2_000);
       });
       if (previous) void previous.close().catch(() => {});
       clearTimeout(renew);

@@ -41,6 +41,9 @@ export const claimKeys = {
   detail: claimDetailKey,
 };
 
+/** A draw's registrants read their result within this, not all at once. */
+const DRAW_READ_SPREAD_MS = 3_000;
+
 export function useCurrentParticipation(
   userId: string,
   activityId: string,
@@ -66,6 +69,8 @@ export function useCurrentParticipation(
     ),
     drawState,
     request: null as { full: boolean; scope: string } | null,
+    /** Read because its draw moved: what is written, no refresh. */
+    drawRead: false,
   });
   if (refresh.current.scope !== scope)
     refresh.current = {
@@ -77,6 +82,7 @@ export function useCurrentParticipation(
       ),
       drawState,
       request: null,
+      drawRead: false,
     };
   const query = useQuery<ParticipationCache>({
     queryKey: key,
@@ -90,11 +96,13 @@ export function useCurrentParticipation(
         state.fullReadRequested ||
         client.getQueryData<ParticipationCache>(key)?.readSessionScope !==
           requestScope ||
-        !canSkipDrawRefresh(
-          client.getQueryData<ParticipationCache>(key),
-          drawState,
-        );
+        (!state.drawRead &&
+          !canSkipDrawRefresh(
+            client.getQueryData<ParticipationCache>(key),
+            drawState,
+          ));
       state.fullReadRequested = false;
+      state.drawRead = false;
       const request = { full, scope: requestScope };
       state.request = request;
       try {
@@ -176,18 +184,31 @@ export function useCurrentParticipation(
     userId,
     activityId,
   ]);
+  // A draw moved on (closed, drawn): only a registration's own result
+  // changed. Its registrant reads what is written, with no refresh of the
+  // 红包's object, which draws by its own alarm, spread over a few seconds.
+  // Every signed-in viewer refreshing it at once queued hundreds of
+  // operations in its line just as it drew (2026-11-05).
+  const registered = Boolean(query.data?.registration);
+  const queryRefetch = query.refetch;
   useEffect(() => {
     const previous = refresh.current.drawState;
     refresh.current.drawState = drawState;
     // The first public response must not repeat the parallel participation GET.
     if (
-      enabled &&
-      previous !== undefined &&
-      drawState !== undefined &&
-      previous !== drawState
+      !enabled ||
+      !registered ||
+      previous === undefined ||
+      drawState === undefined ||
+      previous === drawState
     )
-      void refetch();
-  }, [enabled, drawState, refetch]);
+      return;
+    const timer = window.setTimeout(() => {
+      refresh.current.drawRead = true;
+      void queryRefetch({ cancelRefetch: false });
+    }, Math.random() * DRAW_READ_SPREAD_MS);
+    return () => window.clearTimeout(timer);
+  }, [enabled, registered, drawState, queryRefetch]);
   return {
     ...query,
     data: query.data?.readSessionScope === identity ? query.data : undefined,

@@ -7,7 +7,11 @@ import { PanelDialog } from "../shell/panel-dialog";
 import { DrawProofDialog, DrawProofLine } from "./draw-proof";
 import { RosterPanel } from "./roster-panel";
 import type { HongbaoData } from "./use-hongbao";
-import { type HongbaoPageData, useHongbaoPageData } from "./use-hongbao-data";
+import {
+  type HongbaoPageData,
+  ROSTER_FOLLOW_MS,
+  useHongbaoPageData,
+} from "./use-hongbao-data";
 
 function RosterBody({
   activityId,
@@ -46,13 +50,30 @@ function RosterContent({
     activity.judge?.judged ?? 0,
     pushed?.id === activity.id ? pushed.count : 0,
   );
+  // Read again at most once per ROSTER_FOLLOW_MS, after the last read, as
+  // the 名单 itself: judgments come many a second, and every open 弹窗
+  // reading on each was the 2026-11-04 storm again.
   const refetchChallengers = challengers.refetch;
   const [seenJudged, setSeenJudged] = useState(judged);
+  const [behind, setBehind] = useState(false);
   useEffect(() => {
     if (!code || judged === seenJudged) return;
     setSeenJudged(judged);
-    void refetchChallengers();
-  }, [code, judged, seenJudged, refetchChallengers]);
+    setBehind(true);
+  }, [code, judged, seenJudged]);
+  const lastRead = challengers.dataUpdatedAt;
+  const reading = challengers.isFetching;
+  useEffect(() => {
+    if (!behind || reading) return;
+    const timer = window.setTimeout(
+      () => {
+        setBehind(false);
+        void refetchChallengers({ cancelRefetch: false });
+      },
+      Math.max(0, lastRead + ROSTER_FOLLOW_MS - Date.now()),
+    );
+    return () => window.clearTimeout(timer);
+  }, [behind, reading, lastRead, refetchChallengers]);
   const [proofOpen, setProofOpen] = useState(false);
   // 开奖证明: a draw's round, or a 拼手气's sealed queue.
   const proof = view.drawProof;

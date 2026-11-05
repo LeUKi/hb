@@ -155,6 +155,11 @@ export const activityKeys = {
     ["activity-public", id, userId] as const,
 };
 
+/**
+ * 我的 / 历史's numbers: they move with one's own claims and 红包, whose
+ * reads mark them stale (participation-cache.ts, below); read again then
+ * and back on the page, not every 15 s as the lists are.
+ */
 export function useHistorySummary(userId: string) {
   const query = useQuery({
     queryKey: ["history-private", userId, "summary"],
@@ -163,7 +168,7 @@ export function useHistorySummary(userId: string) {
         await fetch("/api/me/history-summary", { signal, cache: "no-store" }),
       ),
     retry: false,
-    ...historyListRefreshOptions,
+    refetchOnWindowFocus: false,
   });
   useMountedPageFocusRefresh(query.refetch);
   return query;

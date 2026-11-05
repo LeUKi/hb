@@ -1416,10 +1416,11 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     if (outcome.kind === "retry" || outcome.kind === "early")
       return this.syncAlarm(outcome.at);
     await this.ctx.storage.delete("scheduledOpenId");
-    if (outcome.kind === "opened") {
-      await this.scheduleDraw(id);
+    if (outcome.kind === "opened") await this.scheduleDraw(id);
+    // Opened, or back to a draft (scheduled-opening §5): pages waiting on
+    // its time hear either from here, and do not poll for it.
+    if (outcome.kind === "opened" || outcome.kind === "failed")
       this.announce(id);
-    }
   }
 
   /**

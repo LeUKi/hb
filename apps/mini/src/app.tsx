@@ -103,6 +103,9 @@ const SITE = __HB_ORIGIN__;
  */
 const OPENING_RECHECK_MS = 3_000;
 
+/** An open 名单 reads its lists again at most this often (红包站's too). */
+const ROSTER_FOLLOW_MS = 10_000;
+
 /**
  * A 红包's link on 红包站 to copy: likely pasted into a post here, so as
  * 分享 writes links into posts, no emoji in it (forumHref; a community iOS
@@ -415,18 +418,24 @@ function Page({
   // (use-hongbao-data.ts): a draw's winners once drawn, its sign-ups.
   const draw = data?.activity.reward?.mode === "timed_draw";
   const listed = rosterOpen && data?.activity.status !== "draft";
+  const claimsShown =
+    Boolean(listed) && (!draw || data?.activity.draw?.state === "completed");
+  const registrationsShown = Boolean(listed) && draw;
   const claimsList = useRosterList(id, "claims", {
-    enabled:
-      Boolean(listed) && (!draw || data?.activity.draw?.state === "completed"),
+    enabled: claimsShown,
     viewer: forumName,
     poll: () => false,
   });
   const registrationsList = useRosterList(id, "registrations", {
-    enabled: Boolean(listed) && draw,
+    enabled: registrationsShown,
     viewer: forumName,
     poll: () => false,
   });
-  // While it is open the lists follow the numbers above them.
+  // The numbers above the lists moved: they are behind, read when the
+  // 名单 opens; while it is open, again at most once per ROSTER_FOLLOW_MS
+  // after the last read, as 红包站's (use-hongbao-data.ts). Every open 名单
+  // reading on each claim was 2026-11-04's storm, and here each read also
+  // spends the 社区's calls a claim needs (2026-11-05).
   const counts = data
     ? JSON.stringify([
         data.activity.quantity,
@@ -435,20 +444,65 @@ function Page({
       ])
     : "";
   const seenCounts = useRef(counts);
+  const [rosterBehind, setRosterBehind] = useState(false);
   useEffect(() => {
     if (counts === seenCounts.current) return;
     seenCounts.current = counts;
-    void queryClient.invalidateQueries({ queryKey: ["activity-roster", id] });
+    void queryClient.invalidateQueries({
+      queryKey: ["activity-roster", id],
+      refetchType: "none",
+    });
+    setRosterBehind(true);
   }, [counts, id, queryClient]);
+  const rosterRead = Math.max(
+    claimsList.query.dataUpdatedAt,
+    registrationsList.query.dataUpdatedAt,
+  );
+  const rosterReading =
+    claimsList.query.isFetching || registrationsList.query.isFetching;
+  const refetchClaims = claimsList.query.refetch;
+  const refetchRegistrations = registrationsList.query.refetch;
+  useEffect(() => {
+    if (!rosterBehind || !listed || rosterReading) return;
+    const timer = setTimeout(
+      () => {
+        setRosterBehind(false);
+        if (claimsShown) void refetchClaims({ cancelRefetch: false });
+        if (registrationsShown)
+          void refetchRegistrations({ cancelRefetch: false });
+      },
+      Math.max(0, rosterRead + ROSTER_FOLLOW_MS - Date.now()),
+    );
+    return () => clearTimeout(timer);
+  }, [
+    rosterBehind,
+    listed,
+    rosterReading,
+    rosterRead,
+    claimsShown,
+    registrationsShown,
+    refetchClaims,
+    refetchRegistrations,
+  ]);
 
+  // Over for the live channel (api activities/live.ts liveEnded): a draw
+  // once its result is out, not when it closes, or its viewers never hear
+  // who won (2026-11-05).
+  const drawState = data?.activity.draw?.state;
+  const over = data?.activity.draw
+    ? drawState === "completed" || drawState === "empty"
+    : view.ended;
   const live = useLive(
     sdk,
     id,
-    // Running, timed to open, or over with their payment still on its way.
+    // Running, timed to open, or over with their payment still on its way;
+    // a plain draft has no channel (its object answers 410).
     Boolean(
       activity &&
         activity.participation !== "code" &&
-        (!view.ended || paying(mine?.payment)),
+        (data?.activity.status === "draft"
+          ? data.activity.scheduledOpenAt !== undefined
+          : !over || paying(mine?.payment)),
     ),
     (live: MiniLiveMessage) => {
       if (live.type === "mine") return reread();

@@ -173,8 +173,9 @@ export type MiniClaimInput = {
 /**
  * What a 红包's live channel sends a mini app's socket, each under
  * MINI_LIVE_LIMIT bytes: its public read without the parts that do not
- * move while it runs (or `changed` when even that is too long: read it
- * again), how many people watch, and that their own part moved.
+ * move while it runs, its sender and 领取范围 (the app keeps the read's),
+ * or `changed` when even that is too long (read it again); how many
+ * people watch, and that their own part moved.
  */
 export type MiniLiveActivity = Omit<
   PublicActivity,
@@ -184,6 +185,8 @@ export type MiniLiveActivity = Omit<
   | "judge"
   | "page"
   | "drawProof"
+  | "author"
+  | "scope"
 >;
 export type MiniLiveMessage =
   | { type: "activity"; activity: MiniLiveActivity; seq: number }
