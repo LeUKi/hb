@@ -1,5 +1,6 @@
 import {
   FORUM_EMBED_BAR,
+  FORUM_FRAME_MIN,
   FORUM_MINI_APP_ID,
   type PublicTipCard,
 } from "@hb/contracts";
@@ -25,11 +26,15 @@ export function tipCardHeight(
  */
 const FORUM_CARD_ROOM = 20;
 
-/** The 社区's embed code for a card: its bar above the card, and its room. */
+/**
+ * The 社区's embed code for a card: its bar above the card and its room,
+ * and never less than the 社区's own least frame (a 简洁 or 标准 card is
+ * shorter: 309 for both, the card in the middle; 2026-11-05).
+ */
 export function tipForumEmbed(
   code: string,
   ownerName: string,
   cardHeight: number,
 ) {
-  return `<iframe src="https://linux.do/apps/${FORUM_MINI_APP_ID}?embed_mode=true&tip=${code}" title="打赏 ${ownerName}" width="100%" height="${FORUM_EMBED_BAR + cardHeight + FORUM_CARD_ROOM}" frameborder="0" allow="clipboard-write"></iframe>`;
+  return `<iframe src="https://linux.do/apps/${FORUM_MINI_APP_ID}?embed_mode=true&tip=${code}" title="打赏 ${ownerName}" width="100%" height="${FORUM_EMBED_BAR + Math.max(FORUM_FRAME_MIN, cardHeight + FORUM_CARD_ROOM)}" frameborder="0" allow="clipboard-write"></iframe>`;
 }

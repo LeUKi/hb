@@ -1,6 +1,12 @@
-import type { Tip, TipCard } from "@hb/contracts";
+import { FORUM_FRAME_MIN, type Tip, type TipCard } from "@hb/contracts";
 import { RotateCcw } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { tipCardHeight, tipForumEmbed } from "@/components/tips/embed";
 import {
   ldc,
@@ -65,6 +71,19 @@ async function copy(sdk: MiniSdk, text: string) {
   }
 }
 
+/**
+ * The 社区 makes the frame at least 240 tall (FORUM_FRAME_MIN), however
+ * short the card: whatever is shown sits in the middle of that, as the
+ * embed code allows for (2026-11-05).
+ */
+function InFrame({ children }: { children: ReactNode }) {
+  return (
+    <div className="grid content-center" style={{ minHeight: FORUM_FRAME_MIN }}>
+      {children}
+    </div>
+  );
+}
+
 /** A 打赏卡 embedded in a post or in 关于我. */
 export function TipScreen({ sdk, code }: { sdk: MiniSdk; code: string }) {
   const [guest, setGuest] = useState<boolean | null>(null);
@@ -121,35 +140,43 @@ export function TipScreen({ sdk, code }: { sdk: MiniSdk; code: string }) {
   );
   if (guest)
     return (
-      <div className="p-2">
-        <SignInForTips />
-      </div>
+      <InFrame>
+        <div className="p-2">
+          <SignInForTips />
+        </div>
+      </InFrame>
     );
   if (problem)
     return (
-      <Problem
-        text={problem.text}
-        retry={problem.gone ? undefined : () => void load()}
-      />
+      <InFrame>
+        <Problem
+          text={problem.text}
+          retry={problem.gone ? undefined : () => void load()}
+        />
+      </InFrame>
     );
   if (!view)
     return (
-      <div className="p-2">
-        <div className="loading-sheen mx-auto h-[76px] max-w-[460px] rounded-[22px] bg-fill" />
-      </div>
+      <InFrame>
+        <div className="p-2">
+          <div className="loading-sheen mx-auto h-[76px] max-w-[460px] rounded-[22px] bg-fill" />
+        </div>
+      </InFrame>
     );
   // 6 at the sides: a card at its narrowest (288) fills the 300 of 关于我
   // without scrolling; 8 above and below, as 红包站's embed code allows
   // for (tipForumEmbed, 2026-11-05).
   return (
-    <div className="overflow-x-auto px-1.5 py-2">
-      <TipCardView
-        card={view.card}
-        viewer={view.viewer}
-        actions={actions}
-        onChanged={() => void load()}
-      />
-    </div>
+    <InFrame>
+      <div className="overflow-x-auto px-1.5 py-2">
+        <TipCardView
+          card={view.card}
+          viewer={view.viewer}
+          actions={actions}
+          onChanged={() => void load()}
+        />
+      </div>
+    </InFrame>
   );
 }
 
