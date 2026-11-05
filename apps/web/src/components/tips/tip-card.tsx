@@ -466,13 +466,13 @@ export function TipCardView({
       >
         <b
           className={cn(
-            "max-w-full truncate font-semibold leading-tight tabular-nums",
+            "max-w-full truncate font-semibold tabular-nums",
             label ? "text-[13.5px]" : "text-[15px]",
           )}
         >
           {label || ldc(minor)}
         </b>
-        <small className="text-[11px] leading-tight text-ink-3">
+        <small className="text-[11px] text-ink-3">
           {label ? `${ldc(minor)} LDC` : "LDC"}
         </small>
       </button>
@@ -486,8 +486,8 @@ export function TipCardView({
         onClick={() => go("other", 1)}
         className="tip-option h-11 shrink-0 px-2.5"
       >
-        <b className="text-[13.5px] font-semibold leading-tight">其他</b>
-        <small className="text-[11px] leading-tight text-ink-3">自己填</small>
+        <b className="text-[13.5px] font-semibold">其他</b>
+        <small className="text-[11px] text-ink-3">自己填</small>
       </button>
     </Squircle>
   ) : null;
