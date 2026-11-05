@@ -46,8 +46,21 @@ const DRAWING_POLL_MS = 1_000;
  * at its time. Hundreds of guests may wait hours on a timed 红包.
  */
 const TIMED_POLL_MS = 15_000;
-/** Off the live channel, a timed draft is read at its time and this later. */
-const OPENING_RECHECK_MS = 3_000;
+/**
+ * Off the live channel, a timed draft past its time is read this often for
+ * DUE_POLL_FOR_MS (it opens then, or a little late), then every
+ * TIMED_POLL_MS: once every second until it opened, up to ten minutes
+ * while 红包站 was paused, was hundreds of reads a second (2026-11-05).
+ */
+const DUE_POLL_MS = 1_000;
+const DUE_POLL_FOR_MS = 30_000;
+
+/** A timed draft just past its time: it should open any moment. */
+function dueNow(activity: PublicActivity | undefined) {
+  const at = opensBy(activity);
+  const now = Date.now();
+  return at !== null && now >= at && now < at + DUE_POLL_FOR_MS;
+}
 
 /** When a timed draft opens (scheduled-opening §4); null otherwise. */
 function opensBy(activity: PublicActivity | undefined) {
@@ -245,7 +258,9 @@ export function useHongbaoPageData(id: string) {
           opensBy(activity) !== null
           ? live
             ? false
-            : TIMED_POLL_MS
+            : dueNow(activity)
+              ? DUE_POLL_MS
+              : TIMED_POLL_MS
           : // Being drawn (开奖证明): each step is pushed (closed, its random
             // number, drawn); off the live channel, read every second.
             !live && drawing(activity)
@@ -258,22 +273,17 @@ export function useHongbaoPageData(id: string) {
   const activity = publicQuery.data?.activity;
   const settled = publicSettled(activity);
   // 定时开放 (scheduled-opening §4): a page on the live channel hears it
-  // open, or go back to a draft, pushed. One off it (a guest) reads it at
-  // its time and OPENING_RECHECK_MS later, should its clock run late; then
-  // every TIMED_POLL_MS. Hundreds of pages watch a timed 红包: none of them
-  // polls it every second (2026-11-05).
+  // open, or go back to a draft, pushed, and reads nothing. One off it (a
+  // guest) reads it right at its time; past it, DUE_POLL_MS for a while
+  // (above). Hundreds of pages watch a timed 红包 (2026-11-05).
   const opensAt = opensBy(activity);
   const refetchPublic = publicQuery.refetch;
   useEffect(() => {
     if (opensAt === null || live) return;
     const left = opensAt - Date.now();
     if (left <= 0) return;
-    const timers = [left + 50, left + OPENING_RECHECK_MS].map((wait) =>
-      setTimeout(() => void refetchPublic(), wait),
-    );
-    return () => {
-      for (const timer of timers) clearTimeout(timer);
-    };
+    const timer = setTimeout(() => void refetchPublic(), left + 50);
+    return () => clearTimeout(timer);
   }, [opensAt, live, refetchPublic]);
   // A draw on the live channel: its steps come pushed. Should its result
   // not have come by DRAW_RECHECK_MS past its round, it is read once (the
