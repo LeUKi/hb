@@ -56,16 +56,23 @@ function opensBy(activity: PublicActivity | undefined) {
     : null;
 }
 
-/** A draw in its seconds between closing and its result: read every second until 30 s past its round. */
-function drawing(activity: PublicActivity | undefined) {
-  if (activity?.draw?.state !== "settling") return false;
+/** When a draw being drawn should have its result: its round, or its deadline. */
+function drawDueAt(activity: PublicActivity | undefined) {
+  if (activity?.draw?.state !== "settling") return null;
   const proof = activity.drawProof;
-  const at =
-    proof?.kind === "draw"
-      ? Date.parse(proof.roundAt)
-      : Date.parse(activity.deadlineAt ?? "");
-  return Date.now() < at + 30_000;
+  return proof?.kind === "draw"
+    ? Date.parse(proof.roundAt)
+    : Date.parse(activity.deadlineAt ?? "");
 }
+
+/** A draw in its seconds between closing and its result: off the live channel, read every second until 30 s past its round. */
+function drawing(activity: PublicActivity | undefined) {
+  const at = drawDueAt(activity);
+  return at !== null && Date.now() < at + 30_000;
+}
+
+/** On the live channel, a draw not yet pushed drawn is read this past its round. */
+const DRAW_RECHECK_MS = 3_000;
 
 /** An open 名单弹窗 reads its lists again at most this often. */
 export const ROSTER_FOLLOW_MS = 10_000;
@@ -239,8 +246,9 @@ export function useHongbaoPageData(id: string) {
           ? live
             ? false
             : TIMED_POLL_MS
-          : // Being drawn (开奖证明): each step as it comes, pushed or not.
-            drawing(activity)
+          : // Being drawn (开奖证明): each step is pushed (closed, its random
+            // number, drawn); off the live channel, read every second.
+            !live && drawing(activity)
             ? DRAWING_POLL_MS
             : // Past the deadline the push should say so; until it has, ask.
               live && !pastDeadline(activity)
@@ -267,6 +275,18 @@ export function useHongbaoPageData(id: string) {
       for (const timer of timers) clearTimeout(timer);
     };
   }, [opensAt, live, refetchPublic]);
+  // A draw on the live channel: its steps come pushed. Should its result
+  // not have come by DRAW_RECHECK_MS past its round, it is read once (the
+  // user, 2026-11-05: no longer every second, hundreds of pages at once).
+  const drawDue = drawDueAt(activity);
+  useEffect(() => {
+    if (drawDue === null || !live) return;
+    const timer = setTimeout(
+      () => void refetchPublic(),
+      Math.max(0, drawDue + DRAW_RECHECK_MS - Date.now()),
+    );
+    return () => clearTimeout(timer);
+  }, [drawDue, live, refetchPublic]);
   // Only the clock ends a 红包 at its deadline: the page turns over then.
   useBefore(
     activity && !activity.draw && activity.deadlineAt && !settled

@@ -66,7 +66,11 @@ import {
   tellPaymentWatchers,
 } from "./activities/live";
 import { solveActivityPassword } from "./activities/password-service";
-import { drawRetryAt } from "./activities/random-proof";
+import {
+  drawRandomness,
+  drawRetryAt,
+  RANDOM_VERSION,
+} from "./activities/random-proof";
 import {
   openScheduled,
   precheckScheduled,
@@ -1466,6 +1470,15 @@ export class ActivityDO extends DurableObject<ApiBindings> {
         return;
       }
       try {
+        // 开奖过程 (draw-proof-design): its random number, once its round is
+        // out, told before the draw goes on to its payments, so pages show
+        // 已取到随机数 from the push (they no longer read every second).
+        if (
+          activity.drawState === "settling" &&
+          activity.randomVersion === RANDOM_VERSION &&
+          (await drawRandomness(this.env, id))
+        )
+          this.announce(id);
         await refreshActivityLifecycle(this.env, id);
         await resumePendingActivityClaims(
           this.env,
