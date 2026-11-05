@@ -93,6 +93,8 @@ const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
 const guest = query.has("guest");
 const denied = () =>
   Object.assign(new Error("Permission denied"), { code: "PERMISSION_DENIED" });
+/** `?timeout=N`: the first N reads time out, as the SDK's do (`TIMEOUT`). */
+let timeouts = Number(query.get("timeout") ?? 0);
 
 /**
  * A member's picture, as the 社区 lends it (a Blob address): a tile in a
@@ -401,6 +403,10 @@ const sdk: MiniSdk = {
     request: async (endpoint, options) => {
       if (guest) throw denied();
       await wait(endpoint === "claim" ? 900 : 500);
+      if (timeouts > 0 && endpoint !== "claim") {
+        timeouts -= 1;
+        throw Object.assign(new Error("Timed out"), { code: "TIMEOUT" });
+      }
       // 打赏 (`?tip=simple|standard|list`): a sample card and its tips.
       const tipAnswer = tipRequest(endpoint, options);
       if (tipAnswer) return { status: 200, headers: {}, body: tipAnswer };

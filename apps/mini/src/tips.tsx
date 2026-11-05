@@ -1,4 +1,5 @@
 import type { Tip, TipCard } from "@hb/contracts";
+import { RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { tipCardHeight, tipForumEmbed } from "@/components/tips/embed";
 import {
@@ -37,11 +38,21 @@ function SignInForTips() {
   );
 }
 
-function Problem({ text }: { text: string }) {
+/**
+ * Not read: why, and 再试一次 unless trying again cannot help. Card-sized,
+ * so it fits a 简洁 card's embed (2026-11-05: a timeout left only words).
+ */
+function Problem({ text, retry }: { text: string; retry?: () => void }) {
   return (
-    <p className="mx-auto max-w-[460px] px-4 py-6 text-center text-sm text-ink-2">
-      {text}
-    </p>
+    <div className="mx-auto grid min-h-[76px] max-w-[460px] content-center justify-items-center gap-1.5 px-4 py-2 text-center">
+      <p className="text-sm text-ink-2">{text}</p>
+      {retry && (
+        <Button variant="secondary" size="sm" onClick={retry}>
+          <RotateCcw aria-hidden="true" />
+          再试一次
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -58,20 +69,24 @@ async function copy(sdk: MiniSdk, text: string) {
 export function TipScreen({ sdk, code }: { sdk: MiniSdk; code: string }) {
   const [guest, setGuest] = useState<boolean | null>(null);
   const [view, setView] = useState<MiniTipView | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
-  const load = useCallback(
-    () =>
-      readTip(sdk, code).then(setView, (error: unknown) =>
-        setProblem(
-          error instanceof HongbaoError && error.status === 404
-            ? "这张打赏卡不在了。"
-            : error instanceof Error
-              ? error.message
-              : "打赏卡没有读出来。",
-        ),
-      ),
-    [sdk, code],
-  );
+  const [problem, setProblem] = useState<{
+    text: string;
+    gone: boolean;
+  } | null>(null);
+  const load = useCallback(() => {
+    setProblem(null);
+    return readTip(sdk, code).then(setView, (error: unknown) => {
+      const gone = error instanceof HongbaoError && error.status === 404;
+      setProblem({
+        text: gone
+          ? "这张打赏卡不在了。"
+          : error instanceof Error
+            ? error.message
+            : "打赏卡没有读出来。",
+        gone,
+      });
+    });
+  }, [sdk, code]);
   useEffect(() => {
     void sdk.user.getCurrent().then(
       (user) => {
@@ -110,7 +125,13 @@ export function TipScreen({ sdk, code }: { sdk: MiniSdk; code: string }) {
         <SignInForTips />
       </div>
     );
-  if (problem) return <Problem text={problem} />;
+  if (problem)
+    return (
+      <Problem
+        text={problem.text}
+        retry={problem.gone ? undefined : () => void load()}
+      />
+    );
   if (!view)
     return (
       <div className="p-2">
@@ -152,24 +173,28 @@ export function TipsHome({
   const [problem, setProblem] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [guest, setGuest] = useState(false);
+  const load = useCallback(() => {
+    setProblem(null);
+    return readTipsHome(sdk).then(setHome, (error: unknown) =>
+      setProblem(error instanceof Error ? error.message : "没有读出来。"),
+    );
+  }, [sdk]);
   useEffect(() => {
     void sdk.user.getCurrent().then(
       (user) => {
         // Not signed in to the 社区: no cards to show, only the 红包 note.
         if (!user) return setGuest(true);
-        void readTipsHome(sdk).then(setHome, (error: unknown) =>
-          setProblem(error instanceof Error ? error.message : "没有读出来。"),
-        );
+        void load();
       },
       () => setGuest(true),
     );
-  }, [sdk]);
+  }, [sdk, load]);
   if (guest) return <>{guestView}</>;
   const card = home?.cards.find((item) => item.code === open) ?? null;
   return (
     <div className="mx-auto grid max-w-[36rem] gap-3 px-4 pt-6 pb-4">
       {problem ? (
-        <Problem text={problem} />
+        <Problem text={problem} retry={() => void load()} />
       ) : !home ? (
         <div className="loading-sheen h-40 rounded-[22px] bg-fill" />
       ) : card ? (
