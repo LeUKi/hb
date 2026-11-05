@@ -313,6 +313,47 @@ export async function merchantPaymentDetail(
   };
 }
 
+/** Unknown this long after its first send: nothing automatic is left to try. */
+export const STUCK_PAYMENT_MS = 3 * 3_600_000;
+
+/**
+ * Payments the 站长 should look at: their outcome unknown for over
+ * STUCK_PAYMENT_MS, past the same-业务号 resends (recovery.ts). The 站长's
+ * avatar shows it; two such sat nine hours unseen (2026-11-05).
+ */
+export async function stuckPaymentCount(env: ApiBindings) {
+  const row = await env.DB.prepare(
+    `SELECT COUNT(*) AS count FROM payment_tasks
+    WHERE status IN ('pending','sending','reconciling','waiting','attention')
+      AND unknown_outcome=1 AND first_send_at IS NOT NULL AND first_send_at<?`,
+  )
+    .bind(Date.now() - STUCK_PAYMENT_MS)
+    .first<{ count: number }>();
+  return row?.count ?? 0;
+}
+
+/**
+ * A payment's latest send and what the upstream said to it, for 网站管理:
+ * its 处理记录 shows only the latest 20, mostly queries, and a send refused
+ * in unknown words would drop out of sight while its queries go on.
+ */
+export async function latestSendOf(env: ApiBindings, taskId: string) {
+  const attempt = await env.DB.prepare(
+    `SELECT id,operation,purpose,diagnostic_ciphertext,recipient_username,outcome,reason,credential_version,started_at,finished_at,http_status,client_id,identity_correction_version,no_order_evidence
+    FROM payment_attempts WHERE task_id=? AND operation='send' ORDER BY started_at DESC,id DESC LIMIT 1`,
+  )
+    .bind(taskId)
+    .first<AttemptSqlRow>();
+  if (!attempt) return null;
+  return {
+    at: attempt.started_at,
+    outcome: attempt.outcome,
+    reason: attempt.reason,
+    httpStatus: attempt.http_status,
+    message: await diagnosticSummary(env, taskId, attempt),
+  };
+}
+
 async function diagnosticSummary(
   env: ApiBindings,
   taskId: string,

@@ -7,6 +7,7 @@ import { transferAccess } from "../balance/transfers";
 import { createDb } from "../db/client";
 import { oauthAttempts, users } from "../db/schema";
 import type { ApiBindings, ApiContext } from "../env";
+import { stuckPaymentCount } from "../payments/queries";
 import {
   decryptString,
   encryptString,
@@ -73,9 +74,10 @@ export const authRoutes = new Hono<ApiContext>()
     }
     if (isFirstPartySessionRead(c)) await setImageSessionCookie(c, session);
 
-    const [access, transfer] = await Promise.all([
+    const [access, transfer, stuck] = await Promise.all([
       balanceAccessFor(c.env, session.user.id, session.user.isAdmin),
       transferAccess(c.env, session.user.id),
+      session.user.isAdmin ? stuckPaymentCount(c.env) : 0,
     ]);
     return c.json({
       user: {
@@ -84,6 +86,8 @@ export const authRoutes = new Hono<ApiContext>()
         balance: access.entry,
         /** 🐟额 PLUS: its tag and gold fish on that entry (balance-design §13). */
         balancePlus: transfer.allowed,
+        /** The 站长's: payments stuck past every automatic try (0 for others). */
+        stuckPayments: stuck,
       },
       csrfToken: session.csrfToken,
       attemptCooldown: session.attemptCooldown,

@@ -63,6 +63,35 @@ function backoff(count: number, operation: Operation = "query") {
   return Math.ceil(base * (0.8 + ((random[0] ?? 0) / 2 ** 32) * 0.4));
 }
 
+/**
+ * Credit's 分发 answered 400 in words this site does not know
+ * (real-protocol.ts): it refuses inside its one transaction, so no order was
+ * made, and a resend under the same 业务号 cannot pay twice (its orders are
+ * unique by client and 业务号). Such a payment is sent again this long after
+ * each refusal, once a query finds no order; past the last it waits for the
+ * 站长, who is told (2026-11-05: two such refusals each held their merchant
+ * for nine hours, 141 claims behind one).
+ */
+const UNKNOWN_REFUSAL_RETRY_MS = [5 * 60_000, 30 * 60_000, 2 * 3_600_000];
+
+/**
+ * When a payment whose last send was such a refusal may be sent again; null
+ * when its last send was something else, or it was tried enough.
+ */
+async function unknownRefusalRetryAt(env: ApiBindings, taskId: string) {
+  const row = await env.DB.prepare(
+    `SELECT COUNT(*) AS refusals,MAX(finished_at) AS last,
+      (SELECT outcome='unknown' AND reason='http' AND http_status=400 FROM payment_attempts
+        WHERE task_id=?1 AND operation='send' ORDER BY started_at DESC,id DESC LIMIT 1) AS latest
+    FROM payment_attempts WHERE task_id=?1 AND operation='send' AND outcome='unknown' AND reason='http' AND http_status=400`,
+  )
+    .bind(taskId)
+    .first<{ refusals: number; last: number | null; latest: number | null }>();
+  if (!row?.latest || row.last === null) return null;
+  const wait = UNKNOWN_REFUSAL_RETRY_MS[row.refusals - 1];
+  return wait === undefined ? null : row.last + wait;
+}
+
 function queryWait(task: PaymentTaskRow, count: number, now: number) {
   return now - task.createdAt >= 86_400_000 ? 1_800_000 : backoff(count);
 }
@@ -861,6 +890,16 @@ async function finishAttempt(
           sendBlock = null;
           nextSend = now + backoff(sendBackoff, "send");
         }
+      } else if (
+        sendBlock === "http" &&
+        result.kind === "not_found" &&
+        isOrdinaryPayment(task)
+      ) {
+        // Refused in unknown words, and still no order: the same 业务号
+        // again, at its time (UNKNOWN_REFUSAL_RETRY_MS).
+        const at = await unknownRefusalRetryAt(env, task.id);
+        if (at !== null && at <= now) sendBlock = null;
+        else if (at !== null) nextQuery = Math.min(nextQuery, at);
       }
       if (
         (await permitsRecoverySend(env, task, now)) &&

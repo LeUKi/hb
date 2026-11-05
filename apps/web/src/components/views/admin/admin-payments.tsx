@@ -74,6 +74,13 @@ const modeOf = (value: string | undefined): ModeFilter =>
 const anomalyOf = (value: string | undefined) =>
   anomalies.find((item) => item.key === value)?.key;
 
+/** What became of a send, in 上次发送. */
+const sendOutcome: Record<string, string> = {
+  succeeded: "成功",
+  rejected: "被拒绝",
+  unknown: "结果未知",
+};
+
 /** The LINUX DO ID a payment goes to (a simulated one carries a prefix). */
 const linuxDoId = (recipientId: string) =>
   recipientId.replace(/^simulation:/, "");
@@ -250,6 +257,28 @@ function DetailBody({
           {
             label: "发送 / 查单",
             value: `${payment.attemptCount} 次 / ${payment.reconciliationCount} 次`,
+          },
+          {
+            // However far back: 处理记录 keeps only the latest 20.
+            label: "上次发送",
+            value: payment.lastSend ? (
+              <span className="grid">
+                <span>
+                  {clockSeconds(payment.lastSend.at)} ·{" "}
+                  {sendOutcome[payment.lastSend.outcome] ??
+                    payment.lastSend.outcome}
+                  {payment.lastSend.httpStatus !== null &&
+                    ` · HTTP ${payment.lastSend.httpStatus}`}
+                </span>
+                {payment.lastSend.message && (
+                  <span className="text-ink-2">
+                    对方说：{payment.lastSend.message}
+                  </span>
+                )}
+              </span>
+            ) : (
+              "还没发过"
+            ),
           },
           { label: "创建", value: clockSeconds(payment.createdAt) },
           {

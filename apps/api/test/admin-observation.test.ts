@@ -543,6 +543,11 @@ describe("administrator observation APIs", () => {
     expect(body.payment.attempts).toMatchObject([
       { operation: "send", outcome: "unknown", httpStatus: 500 },
     ]);
+    // Its latest send, however far back the 处理记录 has gone.
+    expect(body.payment.lastSend).toMatchObject({
+      outcome: "unknown",
+      httpStatus: 500,
+    });
     const text = JSON.stringify(body);
     expect(text).not.toContain("SECRET-DIAGNOSTIC-CIPHERTEXT");
     expect(text).not.toContain("attempt-token");
@@ -554,6 +559,17 @@ describe("administrator observation APIs", () => {
     expect(after.map((result) => result.results)).toEqual(
       before.map((result) => result.results),
     );
+  });
+
+  it("gives the session a count of stuck payments (recovery tests count them)", async () => {
+    const { admin, member } = await seedAdminObservation();
+    for (const account of [admin, member]) {
+      const body = (await (await request("/api/session", account)).json()) as {
+        user: { stuckPayments: number };
+      };
+      // Its unknown payment was never sent: not stuck in this sense.
+      expect(body.user.stuckPayments).toBe(0);
+    }
   });
 
   it("reports overview thresholds with separate undelivered totals and no queue backlog claim", async () => {

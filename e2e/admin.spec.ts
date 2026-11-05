@@ -268,6 +268,13 @@ function paymentDetail(): AdminPaymentDetailResponse {
       confirmedAt: null,
       attempts: [],
       nextAttemptsCursor: null,
+      lastSend: {
+        at: item.createdAt,
+        outcome: "unknown",
+        reason: "http",
+        httpStatus: 400,
+        message: "数据库忙，请稍后再试",
+      },
     },
   };
 }
@@ -651,6 +658,22 @@ test.describe("网站管理", () => {
     await expect(
       pane.getByText("商户凭证失效，等待红包作者更新。 · HTTP 400"),
     ).toBeVisible();
+    // 上次发送, however far back, and what the upstream said to it.
+    await expect(pane.getByText(/结果未知 · HTTP 400/)).toBeVisible();
+    await expect(pane.getByText("对方说：数据库忙，请稍后再试")).toBeVisible();
+  });
+
+  test("站长：付款卡住超过三小时，头像上有红点，用户卡片里网站管理写几笔要处理", async ({
+    page,
+  }) => {
+    await mockSession(page, { ...admin, stuckPayments: 2 });
+    await openApp(page, "/");
+    const avatar = page.getByRole("button", {
+      name: /打开用户卡片，有 2 笔付款要处理/,
+    });
+    await expect(avatar).toBeVisible();
+    await avatar.click();
+    await expect(page.getByText("2 笔付款要处理")).toBeVisible();
   });
 
   test("网站设置：别人先存了，改过的那一项保留，其余跟着新版本", async ({

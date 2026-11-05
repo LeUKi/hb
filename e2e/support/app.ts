@@ -14,6 +14,8 @@ export type MockUser = {
   balance?: boolean;
   /** 🐟额 PLUS: 转入 and 转账 (an invite, or the 站长). */
   balancePlus?: boolean;
+  /** The 站长's: payments stuck past every automatic try. */
+  stuckPayments?: number;
   /** 信任等级 as of the last sign-in (领取范围); null: not read yet. */
   trustLevel?: number | null;
   /** When that level was read (ms). */

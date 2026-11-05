@@ -310,6 +310,14 @@ export type AdminPaymentDetail = AdminPaymentListItem & {
   confirmedAt: number | null;
   attempts: AdminPaymentAttempt[];
   nextAttemptsCursor: string | null;
+  /** Its latest send and what the upstream said, however far back. */
+  lastSend: {
+    at: number;
+    outcome: string;
+    reason: string | null;
+    httpStatus: number | null;
+    message: string | null;
+  } | null;
 };
 
 export type AdminPaymentSummary = AdminPaymentListItem;

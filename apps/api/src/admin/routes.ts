@@ -53,7 +53,7 @@ import { createDb } from "../db/client";
 import { activities } from "../db/schema";
 import type { ApiBindings, ApiContext } from "../env";
 import { withPoolLeft } from "../judge/ledger";
-import { merchantPaymentDetail } from "../payments/queries";
+import { latestSendOf, merchantPaymentDetail } from "../payments/queries";
 import {
   allowsRealClaim,
   allowsRealOpening,
@@ -1169,6 +1169,7 @@ async function paymentDetail(
   // steps and the latest 20 requests, read the same way. A row that view
   // cannot read (an inconsistent source, say) still shows its own fields.
   // A 🐟额 转出 has no sender's view: its own record is in 🐟额.
+  const lastSend = await latestSendOf(env, base.id);
   const view =
     base.source === "withdrawal"
       ? null
@@ -1214,6 +1215,7 @@ async function paymentDetail(
       confirmedAt: row.confirmed_at === null ? null : asInt(row.confirmed_at),
       attempts: page(attemptItems),
       nextAttemptsCursor: nextCursor(attemptItems),
+      lastSend,
     },
   };
 }

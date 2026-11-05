@@ -21,7 +21,10 @@ import {
   realQueryDecision,
   realSendDecision,
 } from "../src/payments/policy";
-import { merchantPaymentDetail } from "../src/payments/queries";
+import {
+  merchantPaymentDetail,
+  stuckPaymentCount,
+} from "../src/payments/queries";
 import {
   runMerchantCycle,
   sweepPayments,
@@ -498,6 +501,57 @@ describe("ordinary real claim payments", () => {
           .all()
       ).results,
     ).toHaveLength(0);
+  });
+
+  it("sends a 400 in unknown words again under the same 业务号 after 5 min, 30 min and 2 h, then waits", async () => {
+    const f = await fixture(),
+      a = adapter(
+        { kind: "not_found" },
+        { kind: "unknown", reason: "http", httpStatus: 400 },
+      );
+    await cycle(f, a);
+    expect(a.send).toHaveBeenCalledTimes(1);
+    expect(await stuckPaymentCount(f.bindings)).toBe(0);
+    const original = await task(f);
+    const first = now;
+    const sentAt = [first];
+    for (let n = 0; n < 400 && now - first < 6 * 3_600_000; n++) {
+      await due(f);
+      const before = vi.mocked(a.send).mock.calls.length;
+      await cycle(f, a);
+      if (vi.mocked(a.send).mock.calls.length > before) sentAt.push(now);
+    }
+    // Three more sends, each at its time after a query found no order.
+    expect(a.send).toHaveBeenCalledTimes(4);
+    const gaps = sentAt.slice(1).map((at, index) => at - (sentAt[index] ?? 0));
+    expect(gaps[0]).toBeGreaterThanOrEqual(5 * 60_000);
+    expect(gaps[1]).toBeGreaterThanOrEqual(30 * 60_000);
+    expect(gaps[2]).toBeGreaterThanOrEqual(2 * 3_600_000);
+    for (const [snapshot] of vi.mocked(a.send).mock.calls)
+      expect(snapshot).toMatchObject({ businessNo: original.businessNo });
+    expect(await task(f)).toMatchObject({
+      status: "reconciling",
+      unknownOutcome: true,
+      sendBlockReason: "http",
+      firstSendAt: original.firstSendAt,
+    });
+    // Past every try and three hours on: the 站长's avatar says so.
+    expect(await stuckPaymentCount(f.bindings)).toBe(1);
+  });
+
+  it("does not send again after other answers it cannot read", async () => {
+    const f = await fixture(),
+      a = adapter(
+        { kind: "not_found" },
+        { kind: "unknown", reason: "http", httpStatus: 403 },
+      );
+    await cycle(f, a);
+    for (let n = 0; n < 60; n++) {
+      await due(f);
+      await cycle(f, a);
+    }
+    expect(a.send).toHaveBeenCalledTimes(1);
+    expect((await task(f)).sendBlockReason).toBe("http");
   });
 
   it("concurrent and repeated wakes cannot consume first send twice", async () => {
