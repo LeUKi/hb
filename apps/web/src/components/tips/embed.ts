@@ -28,8 +28,8 @@ const FORUM_CARD_ROOM = 20;
 
 /**
  * The 社区's embed code for a card: its bar above the card and its room,
- * and never less than the 社区's own least frame (a 简洁 or 标准 card is
- * shorter: 309 for both, the card in the middle; 2026-11-05).
+ * and never less than what the 社区 shows at least (every card is shorter:
+ * 389 for all three, the card in the middle; 2026-11-05).
  */
 export function tipForumEmbed(
   code: string,

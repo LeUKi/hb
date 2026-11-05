@@ -72,7 +72,7 @@ async function copy(sdk: MiniSdk, text: string) {
 }
 
 /**
- * The 社区 makes the frame at least 240 tall (FORUM_FRAME_MIN), however
+ * The 社区 shows at least 320 under its bar (FORUM_FRAME_MIN), however
  * short the card: whatever is shown sits in the middle of that, as the
  * embed code allows for (2026-11-05).
  */

@@ -295,7 +295,8 @@ export type TipRange = z.infer<typeof tipRangeSchema>;
 /** The 社区's own bar above a mini app embedded in a post: 69px (2026-11-05). */
 export const FORUM_EMBED_BAR = 69;
 /**
- * The least the 社区 makes a mini app's frame, however short its page: it
- * sets max(240, min(1600, height)) (seen in its code, 2026-11-05).
+ * The least the 社区 shows under its bar, however short the page: the
+ * frame is max(240, min(1600, height)) and the box around it is at least
+ * 20em, 320 at its usual 16px (seen in its code and pages, 2026-11-05).
  */
-export const FORUM_FRAME_MIN = 240;
+export const FORUM_FRAME_MIN = 320;

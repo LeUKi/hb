@@ -11,14 +11,14 @@ import {
 // 打赏卡 in a 社区 post (docs/tip-design.md §7): the iframe holds the 社区's
 // bar, the card and the mini app's padding around it (8 above, 8 below),
 // or the post shows a scrollbar (2026-11-05: every embed was 8 short) —
-// and the 社区 never makes the frame under its bar less than 240.
+// and the 社区 never shows less than 320 under its bar (20em).
 describe("打赏卡's 社区 embed code", () => {
-  it("is 309 for 简洁 and 标准, 387 with lists", () => {
+  it("is 389 for all three", () => {
     const heightOf = (card: number) =>
       /height="(\d+)"/.exec(tipForumEmbed("k7Q2mX", "lafish", card))?.[1];
-    expect(heightOf(TIP_CARD_HEIGHT.simple)).toBe("309");
-    expect(heightOf(TIP_CARD_HEIGHT.standard)).toBe("309");
-    expect(heightOf(TIP_CARD_HEIGHT.list)).toBe("387");
+    expect(heightOf(TIP_CARD_HEIGHT.simple)).toBe("389");
+    expect(heightOf(TIP_CARD_HEIGHT.standard)).toBe("389");
+    expect(heightOf(TIP_CARD_HEIGHT.list)).toBe("389");
   });
   it.each(Object.values(TIP_CARD_HEIGHT))(
     "leaves room for a card %ipx tall",
