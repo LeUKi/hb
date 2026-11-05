@@ -862,6 +862,27 @@ function NoHongbao() {
 }
 
 /**
+ * The home under one's 打赏卡: how to open a 红包 here, small, as one part
+ * of the page, then 红包站's mark and address at its foot.
+ */
+function HongbaoHowTo() {
+  return (
+    <>
+      <div className="mt-3 grid gap-1 rounded-[18px] bg-fill px-4 py-3 text-sm">
+        <b className="font-semibold text-ink">红包</b>
+        <p className="text-ink-2">
+          从红包站分享的小程序链接打开：在红包页点「分享」，选「社区小程序」，复制小程序代码贴进帖子，大家在帖子里就能领。
+        </p>
+      </div>
+      <p className="mt-6 flex items-center justify-center gap-2 text-sm font-medium text-ink-2 select-text">
+        <BrandMark size={22} />
+        {new URL(SITE).host}
+      </p>
+    </>
+  );
+}
+
+/**
  * Someone not signed in to the 社区, as a post's reader may be: the 社区
  * lets the app reach nothing for them (no network, no copying).
  */
@@ -891,8 +912,8 @@ function Root() {
     <Page sdk={props.sdk} id={props.id} reduced={props.reduced} />
   ) : (
     // The app's own page: one's 打赏卡, and how to open a 红包.
-    <TipsHome sdk={props.sdk}>
-      <NoHongbao />
+    <TipsHome sdk={props.sdk} guest={<NoHongbao />}>
+      <HongbaoHowTo />
     </TipsHome>
   );
 }

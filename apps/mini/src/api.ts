@@ -91,8 +91,8 @@ const FINAL_CODES = new Set([1000, 1008, 4001]);
  * The 红包's live channel while `on`: each connection lives at most 300 s,
  * so the next opens a little before and the old one closes once it is up
  * (the forum allows two); a lost one comes back after a pause. One that
- * cannot connect (over since, say) asks for a fresh read (`onLost`).
- * Gives whether a connection is up now.
+ * cannot connect (over since, say) asks for a fresh read (`onLost`). None
+ * while the page is hidden. Gives whether a connection is up now.
  */
 export function useLive(
   sdk: MiniSdk,
@@ -113,8 +113,11 @@ export function useLive(
     let renew: ReturnType<typeof setTimeout> | undefined;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let failures = 0;
+    // A page out of sight (another tab, the app in the background) keeps no
+    // connection: each renewal costs its 红包 a read, and wakes it.
+    const away = () => document.visibilityState === "hidden";
     const open = async () => {
-      if (stopped) return;
+      if (stopped || away()) return;
       let socket: MiniSocket;
       try {
         socket = await sdk.webSocket.connect("live", { query: { id } });
@@ -153,9 +156,28 @@ export function useLive(
       clearTimeout(renew);
       renew = setTimeout(open, RENEW_MS);
     };
+    // Back in sight: connected again (its first message is the 红包 as it
+    // is now), and one's own part read, should a `mine` have gone by.
+    const onVisibility = () => {
+      if (stopped) return;
+      if (away()) {
+        clearTimeout(renew);
+        clearTimeout(retry);
+        const left = current;
+        current = null;
+        up.current = false;
+        void left?.close().catch(() => {});
+      } else if (!current) {
+        failures = 0;
+        lost.current();
+        void open();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
     void open();
     return () => {
       stopped = true;
+      document.removeEventListener("visibilitychange", onVisibility);
       up.current = false;
       clearTimeout(renew);
       clearTimeout(retry);
@@ -176,7 +198,8 @@ export type MiniTipsHome = {
   used: number;
   limit: number;
   enabled: boolean;
-  received: Tip[];
+  /** Each card's last tips (by its code), for its page. */
+  recent: Record<string, Tip[]>;
   week?: TipList["stats"];
 };
 

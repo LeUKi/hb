@@ -132,12 +132,18 @@ export function TipScreen({ sdk, code }: { sdk: MiniSdk; code: string }) {
 
 const styleName = { simple: "简洁", standard: "标准" } as const;
 
-/** The app's home: one's own cards, and the last tips on them. */
+/**
+ * The app's home: one's own cards, each opening to its last tips; under
+ * them, `children` (how to open a 红包). Not signed in to the 社区: only
+ * `guest`.
+ */
 export function TipsHome({
   sdk,
+  guest: guestView,
   children,
 }: {
   sdk: MiniSdk;
+  guest: React.ReactNode;
   children?: React.ReactNode;
 }) {
   const [home, setHome] = useState<MiniTipsHome | null>(null);
@@ -156,7 +162,7 @@ export function TipsHome({
       () => setGuest(true),
     );
   }, [sdk]);
-  if (guest) return <>{children}</>;
+  if (guest) return <>{guestView}</>;
   const card = home?.cards.find((item) => item.code === open) ?? null;
   return (
     <div className="mx-auto grid max-w-[36rem] gap-3 px-4 pt-6 pb-4">
@@ -168,7 +174,7 @@ export function TipsHome({
         <CardDetail
           sdk={sdk}
           card={card}
-          received={home.received}
+          recent={home.recent[card.code] ?? []}
           onBack={() => setOpen(null)}
         />
       ) : (
@@ -259,12 +265,13 @@ function CopyButton({
 function CardDetail({
   sdk,
   card,
-  received,
+  recent,
   onBack,
 }: {
   sdk: MiniSdk;
   card: TipCard;
-  received: Tip[];
+  /** Its last tips, newest first (红包站 sends a few). */
+  recent: Tip[];
   onBack: () => void;
 }) {
   const [owner, setOwner] = useState({
@@ -283,9 +290,6 @@ function CardDetail({
     });
   }, [sdk]);
   const preview = previewOf(card, owner);
-  const rows = received
-    .filter((tip) => tip.card.code === card.code)
-    .slice(0, 5);
   return (
     <div className="grid gap-3">
       <button
@@ -314,12 +318,17 @@ function CardDetail({
         )}
         label="复制嵌入代码"
       />
-      <span className="text-xs text-ink-3">这张卡收到的</span>
-      {rows.length === 0 ? (
-        <p className="text-sm text-ink-3">近 7 天还没有。</p>
+      <div className="flex items-baseline justify-between gap-3 text-xs text-ink-3">
+        <span>最近收到的</span>
+        <span>
+          近 7 天 {card.week.count} 次 · {ldc(card.week.amountMinor)} LDC
+        </span>
+      </div>
+      {recent.length === 0 ? (
+        <p className="text-sm text-ink-3">还没有人打赏过这张卡。</p>
       ) : (
         <ul className="grid gap-1">
-          {rows.map((tip) => (
+          {recent.map((tip) => (
             <li key={tip.id} className="flex items-center gap-2 text-sm">
               <span className="max-w-[35%] shrink-0 truncate font-semibold">
                 {tip.counterpart?.displayName ?? "游客"}

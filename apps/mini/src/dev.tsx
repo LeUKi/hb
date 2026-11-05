@@ -312,7 +312,39 @@ function tipRequest(endpoint: string, options?: { json?: unknown }) {
       used: 1,
       limit: 3,
       enabled: true,
-      received: [],
+      // Its last tips, for its page: two people and a guest.
+      recent: {
+        [card.code]: [
+          {
+            ...tipOf("done", "balance", 1000),
+            id: "tip-1",
+            direction: "in" as const,
+            counterpart: {
+              username: "alice",
+              displayName: "alice",
+              avatarUrl: picture(1),
+            },
+            message: "整理得很清楚，谢谢",
+          },
+          {
+            ...tipOf("done", "checkout", 500),
+            id: "tip-2",
+            direction: "in" as const,
+            counterpart: null,
+          },
+          {
+            ...tipOf("done", "checkout", 2000),
+            id: "tip-3",
+            direction: "in" as const,
+            counterpart: {
+              username: "chen_x",
+              displayName: "chen_x",
+              avatarUrl: picture(2),
+            },
+            message: "下次还来",
+          },
+        ],
+      },
       week: { count: 6, people: 4, amountMinor: 5800 },
     };
   }

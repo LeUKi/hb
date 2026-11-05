@@ -27,7 +27,13 @@ import { activityObject } from "../runtime/objects";
 import { decryptString, encryptString } from "../security/crypto";
 import { requireAppOrigin } from "../security/http";
 import { listOwnCards, publicCard, requireCard } from "../tips/cards";
-import { checkTipOnCard, createTip, listTips, viewerOf } from "../tips/service";
+import {
+  checkTipOnCard,
+  createTip,
+  listTips,
+  recentTipsByCard,
+  viewerOf,
+} from "../tips/service";
 import { withForumAvatars } from "./forum-avatars";
 import {
   lookOnly,
@@ -509,18 +515,24 @@ miniRoutes.get("/mini/tips-home", async (c) => {
       used: 0,
       limit: 0,
       enabled: false,
-      received: [],
+      recent: {},
     });
-  const [mine, received] = await Promise.all([
+  const [mine, week] = await Promise.all([
     listOwnCards(c.env, user.id),
     listTips(c.env, user.id, "in", { range: "week" }, undefined),
   ]);
+  // Each card's own last tips, for its page (not a few of all the cards').
+  const recent = await recentTipsByCard(
+    c.env,
+    user.id,
+    mine.cards.map((card) => card.code),
+  );
   return c.json(
     await withForumAvatars(c.env, {
       known: true,
       ...mine,
-      received: received.tips.slice(0, 10),
-      week: received.stats,
+      recent,
+      week: week.stats,
     }),
   );
 });

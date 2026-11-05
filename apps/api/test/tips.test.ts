@@ -19,7 +19,7 @@ import type { ApiBindings } from "../src/env";
 import { epaySignature } from "../src/payments/real-protocol";
 import { encryptString, sha256Hex } from "../src/security/crypto";
 import { TIP_PALETTES } from "../src/tips/palettes";
-import { sweepTips } from "../src/tips/service";
+import { recentTipsByCard, sweepTips } from "../src/tips/service";
 
 const origin = "https://hb.example.com";
 let CLIENT_ID = "hb_tip_platform_0";
@@ -760,6 +760,14 @@ describe("打赏 from 🐟额", () => {
       .bind((made.json as TipJson).tip.id)
       .first<{ remark: string; destination: string }>();
     expect(transfer).toEqual({ remark: "打赏", destination: "balance" });
+    // The mini app's card page: this card's own last tips, the newest first.
+    const other = await newCard(owner, { name: "帖子" });
+    const recent = await recentTipsByCard(env, owner.id, [
+      card.code,
+      other.code,
+    ]);
+    expect(recent[card.code]?.map((item) => item.message)).toEqual(["支持"]);
+    expect(recent[other.code]).toEqual([]);
 
     const stranger = await actor("stranger");
     expect(code(await tip(card, stranger, { method: "balance" })).code).toBe(

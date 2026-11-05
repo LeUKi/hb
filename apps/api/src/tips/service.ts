@@ -737,6 +737,37 @@ export async function listTips(
   };
 }
 
+/** How many of a card's last tips the mini app's card page shows. */
+export const CARD_RECENT_TIPS = 5;
+
+/**
+ * The mini app's home (docs/tip-design.md §7): each of one's cards with its
+ * last tips (done), by its own index, all in one round trip.
+ */
+export async function recentTipsByCard(
+  env: ApiBindings,
+  ownerId: string,
+  codes: string[],
+): Promise<Record<string, Tip[]>> {
+  if (!codes.length) return {};
+  const results = await env.DB.batch(
+    codes.map((code) =>
+      env.DB.prepare(
+        `${WITH_PEOPLE} WHERE c.code=?1 AND t.owner_id=?2 AND t.status='done'
+        ORDER BY t.done_at DESC,t.id DESC LIMIT ?3`,
+      ).bind(code, ownerId, CARD_RECENT_TIPS),
+    ),
+  );
+  return Object.fromEntries(
+    codes.map((code, index) => [
+      code,
+      ((results[index]?.results ?? []) as TipWithPeople[]).map((row) =>
+        tipView(row, ownerId),
+      ),
+    ]),
+  );
+}
+
 /** The owner hides a 留言 on their card (the amount still counts), or shows it again. */
 export async function setMessageHidden(
   env: ApiBindings,

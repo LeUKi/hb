@@ -973,8 +973,11 @@ describe("打赏 in the 社区", () => {
     const mine = (await home.json()) as {
       known: boolean;
       cards: { code: string }[];
+      recent: Record<string, unknown[]>;
     };
     expect(mine.known).toBe(true);
     expect(mine.cards.map((item) => item.code)).toEqual([card.code]);
+    // Each card's own last tips, for its page: none done here yet.
+    expect(mine.recent).toEqual({ [card.code]: [] });
   });
 });
