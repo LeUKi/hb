@@ -46,8 +46,7 @@ export const SANDBOX_MODULES = Object.freeze([
   "verdict.mjs",
 ]);
 export const TIMEOUT_MS = 1000;
-/** On the site a judgment has 50 ms of CPU: slower than that here may time out there. */
-export const SLOW_MS = 50;
+export { SLOW_MS } from "./words.mjs";
 
 const runtimeDir = new URL("../../runtime/", import.meta.url);
 const host = readFileSync(new URL("./host.mjs", import.meta.url), "utf8");

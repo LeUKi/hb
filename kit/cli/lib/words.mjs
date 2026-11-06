@@ -1,6 +1,12 @@
 // How the commands say things: amounts, failures, console output.
 import { formatAmount } from "../../runtime/index.mjs";
-import { SLOW_MS } from "./sandbox.mjs";
+
+/**
+ * On the site a judgment has 50 ms of CPU: slower than that here may time
+ * out there. Here, not in sandbox.mjs: sandbox imports signer, which
+ * imports this, so taking it from sandbox ran before it was set.
+ */
+export const SLOW_MS = 50;
 
 /** 2000 → "20.00", as the site shows amounts. */
 export const yuan = (amount) => formatAmount(amount);

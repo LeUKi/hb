@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   cpSync,
@@ -185,6 +186,17 @@ export function judge() { return { ok: false }; }`);
 });
 
 describe("npm test", () => {
+  // As a developer runs it: a new process loading cli/test.mjs first. In
+  // here the modules were already loaded in another order, so an import
+  // cycle (words ↔ sandbox, 2026-11-02 to 11-06) broke only the real one.
+  it("starts as a developer starts it, in a process of its own", () => {
+    const out = execFileSync(process.execPath, ["cli/test.mjs"], {
+      cwd: kitDir,
+      encoding: "utf8",
+    });
+    expect(out.trim().split("\n").at(-1)).toMatch(/^测试 (\d+) \/ \1 通过$/);
+  }, 20_000);
+
   it("passes on the templates, a multi-step test included", async () => {
     const { exitCode, lines } = await run(testCommand, { dir: kitDir });
     expect(lines.at(-1)).toMatch(/^测试 (\d+) \/ \1 通过$/);
