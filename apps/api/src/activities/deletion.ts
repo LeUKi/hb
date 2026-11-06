@@ -2,6 +2,8 @@ import { and, eq } from "drizzle-orm";
 import { createDb } from "../db/client";
 import { activities } from "../db/schema";
 import type { ApiBindings } from "../env";
+import { dropKeysStatement } from "../judge/keys";
+import { dropJudgeStatement } from "../judge/storage";
 import {
   ActivityError,
   activityConflict,
@@ -65,7 +67,10 @@ export async function deleteActivity(
             AND (outcome != 'draft' OR matched_password_id IS NOT NULL OR claim_id IS NOT NULL OR validated_at IS NOT NULL))
           THEN version + 1 ELSE NULL END,
         deleted_at = ${databaseNow}, updated_at = ${databaseNow},
-        title = '', config = '{}', topic_id = NULL, post_number = 1, join_square = 0, total_count = 0
+        title = '', config = '{}', topic_id = NULL, post_number = 1, total_count = 0,
+        -- A 代码判定红包 is always listed (the 0047 guard holds it to 1, deleted
+        -- or not); the square never shows deleted rows either way.
+        join_square = CASE WHEN participation_mode = 'code' THEN 1 ELSE 0 END
         WHERE id = ?`).bind(authorId, version, id),
       env.DB.prepare(
         "DELETE FROM activity_passwords WHERE activity_id = ?",
@@ -73,6 +78,9 @@ export async function deleteActivity(
       env.DB.prepare("DELETE FROM reward_inventory WHERE activity_id = ?").bind(
         id,
       ),
+      // A 代码判定红包's code, tests, params and 密钥 go with it.
+      dropJudgeStatement(env, id),
+      dropKeysStatement(env, id),
     ]);
   } catch (error) {
     const current = await read();

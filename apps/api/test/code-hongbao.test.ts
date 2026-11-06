@@ -1,6 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { seedCommitment } from "../../../kit/runtime/index.mjs";
+import { deleteActivity } from "../src/activities/deletion";
 import {
   createActivity,
   getManagedActivity,
@@ -401,6 +402,43 @@ describe("代码判定红包: sending one", () => {
       openActivity(bindings, third.id, author.id, third.version),
       "CODE_HONGBAO_DAILY_LIMIT",
     );
+  });
+
+  it("deletes a draft of one, its code and 密钥 with it (2026-11-07)", async () => {
+    await check(author);
+    const saved = await draft();
+    await env.DB.prepare(
+      "INSERT INTO activity_keys (activity_id, names, ciphertext, updated_at) VALUES (?, '[\"token\"]', 'c', ?)",
+    )
+      .bind(saved.id, Date.now())
+      .run();
+    const deleted = await deleteActivity(
+      bindings,
+      author.id,
+      saved.id,
+      saved.version,
+    );
+    expect(deleted).toMatchObject({ id: saved.id, deleted: true });
+    // Still listed as every 代码判定红包 is; the square never shows it.
+    const row = await env.DB.prepare(
+      `SELECT join_square, title, config,
+        (SELECT COUNT(*) FROM activity_code WHERE activity_id = a.id) AS code,
+        (SELECT COUNT(*) FROM activity_keys WHERE activity_id = a.id) AS keys
+        FROM activities a WHERE id = ?`,
+    )
+      .bind(saved.id)
+      .first();
+    expect(row).toEqual({
+      join_square: 1,
+      title: "",
+      config: "{}",
+      code: 0,
+      keys: 0,
+    });
+    // Asked again with the version it had: the same answer.
+    await expect(
+      deleteActivity(bindings, author.id, saved.id, saved.version),
+    ).resolves.toMatchObject({ deleted: true });
   });
 
   it("holds its rules in the database too", async () => {
