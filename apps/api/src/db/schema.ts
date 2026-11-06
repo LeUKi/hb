@@ -2508,7 +2508,7 @@ export const judgeTries = sqliteTable(
 
 /**
  * 判定器设置 (redesign/07 §10): 代码判定红包's switch, openings and deploys a
- * person may make a day, and the 判定器 a month; one versioned row, written
+ * person may make a day (more for 🐟额 PLUS), and the 判定器 a month; one versioned row, written
  * as 🐟额's settings are.
  */
 export const judgeSettings = sqliteTable(
@@ -2518,6 +2518,8 @@ export const judgeSettings = sqliteTable(
     version: integer("version").notNull(),
     enabled: integer("enabled", { mode: "boolean" }).notNull().default(false),
     dailyOpenLimit: integer("daily_open_limit").notNull().default(3),
+    /** 🐟额 PLUS and the 站长 open this many a day (2026-11-07). */
+    dailyOpenLimitPlus: integer("daily_open_limit_plus").notNull().default(30),
     dailyDeployLimit: integer("daily_deploy_limit").notNull().default(2),
     /** 🐟额 PLUS and the 站长 deploy this many a day (2026-10-28). */
     dailyDeployLimitPlus: integer("daily_deploy_limit_plus")
@@ -2538,6 +2540,7 @@ export const judgeSettings = sqliteTable(
       sql`typeof(${table.version}) = 'integer' AND ${table.version} >= 1
         AND ${table.enabled} IN (0, 1) AND ${table.networkEnabled} IN (0, 1)
         AND typeof(${table.dailyOpenLimit}) = 'integer' AND ${table.dailyOpenLimit} BETWEEN 1 AND 1000
+        AND typeof(${table.dailyOpenLimitPlus}) = 'integer' AND ${table.dailyOpenLimitPlus} BETWEEN 1 AND 1000
         AND typeof(${table.dailyDeployLimit}) = 'integer' AND ${table.dailyDeployLimit} BETWEEN 1 AND 1000
         AND typeof(${table.dailyDeployLimitPlus}) = 'integer' AND ${table.dailyDeployLimitPlus} BETWEEN 1 AND 1000
         AND typeof(${table.monthlyLimit}) = 'integer' AND ${table.monthlyLimit} BETWEEN 1 AND 1000000`,

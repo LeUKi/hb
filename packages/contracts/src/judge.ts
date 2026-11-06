@@ -843,14 +843,15 @@ export type JudgeRecordFacts = {
 /**
  * 判定器设置 (redesign/07 §10, docs/programmable-hongbao-design.md §1, §5,
  * §7): 代码判定红包's switch, 每人每天最多开放几个, 每人每天部署几次 (new
- * versions only; another number for 🐟额 PLUS and the 站长) and 每月判定器上限
- * (份).
+ * versions only), each with another number for 🐟额 PLUS and the 站长, and
+ * 每月判定器上限 (份).
  */
 export const judgeSettingsSchema = z.strictObject({
   enabled: z.boolean(),
   /** 代码判定联网 (§9.7): off, code that exports network neither deploys nor opens. */
   networkEnabled: z.boolean(),
   dailyOpenLimit: z.number().int().min(1).max(1000),
+  dailyOpenLimitPlus: z.number().int().min(1).max(1000),
   dailyDeployLimit: z.number().int().min(1).max(1000),
   dailyDeployLimitPlus: z.number().int().min(1).max(1000),
   monthlyLimit: z.number().int().min(1).max(1_000_000),

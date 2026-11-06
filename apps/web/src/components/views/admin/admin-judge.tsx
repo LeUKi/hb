@@ -393,6 +393,7 @@ const sameValues = (settings: JudgeSettings, next: JudgeSettingsInput) =>
   settings.enabled === next.enabled &&
   settings.networkEnabled === next.networkEnabled &&
   settings.dailyOpenLimit === next.dailyOpenLimit &&
+  settings.dailyOpenLimitPlus === next.dailyOpenLimitPlus &&
   settings.dailyDeployLimit === next.dailyDeployLimit &&
   settings.dailyDeployLimitPlus === next.dailyDeployLimitPlus &&
   settings.monthlyLimit === next.monthlyLimit;
@@ -411,14 +412,15 @@ type Draft = {
   enabled?: boolean;
   networkEnabled?: boolean;
   open?: string;
+  openPlus?: string;
   deploy?: string;
   deployPlus?: string;
   monthly?: string;
 };
 
 /**
- * 设置: 代码判定红包's switch, 每人每天最多开放几个, 每人每天部署几次 (and
- * PLUS's) and 每月判定器上限, saved and undone as 网站设置's groups are: against the
+ * 设置: 代码判定红包's switch, 每人每天最多开放几个, 每人每天部署几次 (each
+ * with PLUS's) and 每月判定器上限, saved and undone as 网站设置's groups are: against the
  * version typing started from, so a save made elsewhere meanwhile comes back
  * as a conflict, keeping what was typed.
  */
@@ -434,12 +436,14 @@ function SettingsForm({ data }: { data: JudgeSettingsResponse }) {
     enabled: draft.enabled ?? shown.enabled,
     networkEnabled: draft.networkEnabled ?? shown.networkEnabled,
     open: draft.open ?? String(shown.dailyOpenLimit),
+    openPlus: draft.openPlus ?? String(shown.dailyOpenLimitPlus),
     deploy: draft.deploy ?? String(shown.dailyDeployLimit),
     deployPlus: draft.deployPlus ?? String(shown.dailyDeployLimitPlus),
     monthly: draft.monthly ?? String(shown.monthlyLimit),
   };
   const counts = {
     open: countOf(values.open, 1000),
+    openPlus: countOf(values.openPlus, 1000),
     deploy: countOf(values.deploy, 1000),
     deployPlus: countOf(values.deployPlus, 1000),
     monthly: countOf(values.monthly, 1_000_000),
@@ -458,6 +462,7 @@ function SettingsForm({ data }: { data: JudgeSettingsResponse }) {
   const saveRef = useRef<HTMLButtonElement>(null);
   const ids = {
     open: useId(),
+    openPlus: useId(),
     deploy: useId(),
     deployPlus: useId(),
     monthly: useId(),
@@ -480,6 +485,7 @@ function SettingsForm({ data }: { data: JudgeSettingsResponse }) {
   }, [done]);
   const ok =
     counts.open !== null &&
+    counts.openPlus !== null &&
     counts.deploy !== null &&
     counts.deployPlus !== null &&
     counts.monthly !== null;
@@ -487,6 +493,7 @@ function SettingsForm({ data }: { data: JudgeSettingsResponse }) {
     enabled: values.enabled,
     networkEnabled: values.networkEnabled,
     dailyOpenLimit: counts.open ?? shown.dailyOpenLimit,
+    dailyOpenLimitPlus: counts.openPlus ?? shown.dailyOpenLimitPlus,
     dailyDeployLimit: counts.deploy ?? shown.dailyDeployLimit,
     dailyDeployLimitPlus: counts.deployPlus ?? shown.dailyDeployLimitPlus,
     monthlyLimit: counts.monthly ?? shown.monthlyLimit,
@@ -595,6 +602,22 @@ function SettingsForm({ data }: { data: JudgeSettingsResponse }) {
                 value={values.open}
                 invalid={counts.open === null}
                 onChange={(event) => edit({ open: event.target.value })}
+              />
+            </Field>
+            <Field
+              label="开通 PLUS 的人每天最多开放"
+              htmlFor={ids.openPlus}
+              hint="开通🐟额 PLUS 的人和站长用这个数"
+              error={counts.openPlus === null ? "请填 1–1000 的整数" : null}
+              live
+            >
+              <TextInput
+                id={ids.openPlus}
+                inputMode="numeric"
+                suffix="个"
+                value={values.openPlus}
+                invalid={counts.openPlus === null}
+                onChange={(event) => edit({ openPlus: event.target.value })}
               />
             </Field>
             <Field

@@ -4,7 +4,7 @@
 import type { ApiBindings } from "../env";
 import { readJudgeSettings } from "../judge/settings";
 import { memberOf } from "./invites";
-import { plusFeatures } from "./plus-features";
+import { plusFeatures, plusJudgeLimits } from "./plus-features";
 import { transferAccess } from "./transfers";
 
 /**
@@ -23,9 +23,7 @@ export async function plusOf(env: ApiBindings, userId: string) {
     owner: access.owner,
     invitedBy: member?.invitedBy ?? null,
     since: member?.since ?? null,
-    features: plus
-      ? plusFeatures(judge.dailyDeployLimitPlus, access.owner)
-      : null,
-    featureCount: plusFeatures(0).length,
+    features: plus ? plusFeatures(plusJudgeLimits(judge), access.owner) : null,
+    featureCount: plusFeatures(plusJudgeLimits(judge)).length,
   };
 }

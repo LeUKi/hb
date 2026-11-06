@@ -9,6 +9,7 @@ import {
   updateActivity,
 } from "../src/activities/service";
 import { readAccount } from "../src/balance/ledger";
+import { CODE_OPENING_ALLOWED, codeOpeningDay } from "../src/judge/opening";
 import { findJudgeRow, readSeed } from "../src/judge/storage";
 import { sha256Hex } from "../src/security/crypto";
 import {
@@ -354,15 +355,50 @@ describe("代码判定红包: sending one", () => {
     ).rejects.toThrow(/immutable_activity_code/);
   });
 
-  it("opens as many a day as 判定器设置 says", async () => {
-    await judgeSettings({ daily_open_limit: 1 });
+  it("opens as many a day as 判定器设置 says, more for PLUS (2026-11-07)", async () => {
+    await judgeSettings({ daily_open_limit: 1, daily_open_limit_plus: 2 });
+    const stranger = await actor();
+    await give(admin, stranger, "2.00");
     await check(author);
+    await check(stranger);
+    const draftOf = (user: Actor) =>
+      createActivity(bindings, user.id, {
+        requestId: crypto.randomUUID(),
+        activity: coded(),
+      });
+    // The opening write holds the same number (judge/opening.ts).
+    const allowed = async (id: string) =>
+      (
+        await env.DB.prepare(
+          `SELECT ${CODE_OPENING_ALLOWED} AS ok FROM activities WHERE id = ?`,
+        )
+          .bind(codeOpeningDay(), id)
+          .first<{ ok: number }>()
+      )?.ok;
+
+    // Not PLUS: one a day.
+    const theirs = await draftOf(stranger);
+    await openActivity(bindings, theirs.id, stranger.id, theirs.version);
+    const theirSecond = await draftOf(stranger);
+    expect(theirSecond.openingBlockedReason).toBe("CODE_HONGBAO_DAILY_LIMIT");
+    expect(await allowed(theirSecond.id)).toBe(0);
+    await rejects(
+      openActivity(bindings, theirSecond.id, stranger.id, theirSecond.version),
+      "CODE_HONGBAO_DAILY_LIMIT",
+    );
+
+    // PLUS: two.
     const first = await draft();
     await openActivity(bindings, first.id, author.id, first.version);
     const second = await draft();
-    expect(second.openingBlockedReason).toBe("CODE_HONGBAO_DAILY_LIMIT");
+    expect(second.openingBlockedReason).toBeUndefined();
+    expect(await allowed(second.id)).toBe(1);
+    await openActivity(bindings, second.id, author.id, second.version);
+    const third = await draft();
+    expect(third.openingBlockedReason).toBe("CODE_HONGBAO_DAILY_LIMIT");
+    expect(await allowed(third.id)).toBe(0);
     await rejects(
-      openActivity(bindings, second.id, author.id, second.version),
+      openActivity(bindings, third.id, author.id, third.version),
       "CODE_HONGBAO_DAILY_LIMIT",
     );
   });

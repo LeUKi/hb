@@ -1,7 +1,7 @@
 // Opening a 代码判定红包 (docs/programmable-hongbao-design.md §1, §5): the
-// switch is on, its sender's openings today are not used up
-// and this very code, deployed, passed these very tests. The SQL below
-// holds the same inside the opening write.
+// switch is on, its sender's openings today (more for 🐟额 PLUS) are not
+// used up and this very code, deployed, passed these very tests. The SQL
+// below holds the same inside the opening write.
 import {
   type JudgeDeclarations,
   type JudgeParams,
@@ -129,21 +129,25 @@ export async function codeOpeningBlocked(
   // runs as it opens (service.ts), not on every read.
   if ("problems" in (await openingParams(env, row.authorId, judge)).read)
     return "JUDGE_PARAMS_INVALID";
-  if ((await openedToday(env, row.authorId)) >= access.settings.dailyOpenLimit)
+  if ((await openedToday(env, row.authorId)) >= access.openLimit)
     return "CODE_HONGBAO_DAILY_LIMIT";
   return undefined;
 }
 
 /**
  * Inside the opening UPDATE's CASE: one `?`, the start of today (北京时间).
- * Other kinds of 红包 pass.
+ * Other kinds of 红包 pass. 🐟额 PLUS and the 站长 (balance/transfers.ts
+ * transferAccess; the author's being active the UPDATE holds) open
+ * daily_open_limit_plus a day.
  */
 export const CODE_OPENING_ALLOWED = `(participation_mode != 'code' OR (
   EXISTS(SELECT 1 FROM judge_settings WHERE id='global' AND enabled=1)
   AND (NOT EXISTS(SELECT 1 FROM activity_code c WHERE c.activity_id=activities.id AND c.network IS NOT NULL)
     OR EXISTS(SELECT 1 FROM judge_settings WHERE id='global' AND network_enabled=1))
   AND (SELECT COUNT(*) FROM activities o WHERE o.author_id=activities.author_id AND o.participation_mode='code'
-    AND o.opened_at>=?) < (SELECT daily_open_limit FROM judge_settings WHERE id='global')))`;
+    AND o.opened_at>=?) < (SELECT CASE WHEN EXISTS(SELECT 1 FROM balance_members b WHERE b.user_id=activities.author_id)
+      OR EXISTS(SELECT 1 FROM merchants p WHERE p.kind='platform' AND p.usage_status='current' AND p.author_id=activities.author_id)
+      THEN daily_open_limit_plus ELSE daily_open_limit END FROM judge_settings WHERE id='global')))`;
 
 export const codeOpeningDay = () => startOfBeijingDay();
 

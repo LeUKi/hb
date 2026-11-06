@@ -1269,6 +1269,10 @@ function judgeAuditValues(json: unknown): Record<string, boolean | number> {
   return {
     enabled: value.enabled === true,
     dailyOpenLimit: Number(value.dailyOpenLimit ?? 0),
+    // One number for everyone, PLUS too, before 2026-11-07.
+    dailyOpenLimitPlus: Number(
+      value.dailyOpenLimitPlus ?? value.dailyOpenLimit ?? 0,
+    ),
     dailyDeployLimit: Number(value.dailyDeployLimit ?? 0),
     // One number for everyone, PLUS too, before 2026-10-28.
     dailyDeployLimitPlus: Number(

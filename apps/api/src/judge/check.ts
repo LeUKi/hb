@@ -59,7 +59,8 @@ const RUN_LEASE_MS = 8 * 60_000;
 
 /**
  * 代码判定红包 for anyone signed in while its switch is on (§1, 2026-10-28):
- * 🐟额 PLUS and the 站长 only deploy more a day (§5 次数).
+ * 🐟额 PLUS and the 站长 only deploy (§5 次数) and open (§1, 2026-11-07)
+ * more a day.
  */
 export async function codeHongbaoAccess(env: ApiBindings, userId: string) {
   const [settings, access] = await Promise.all([
@@ -71,6 +72,9 @@ export async function codeHongbaoAccess(env: ApiBindings, userId: string) {
     deployLimit: access.allowed
       ? settings.dailyDeployLimitPlus
       : settings.dailyDeployLimit,
+    openLimit: access.allowed
+      ? settings.dailyOpenLimitPlus
+      : settings.dailyOpenLimit,
     settings,
   };
 }

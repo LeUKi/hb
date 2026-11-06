@@ -421,6 +421,13 @@
       "when": 1793818592777,
       "tag": "0059_tips",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "6",
+      "when": 1793984898963,
+      "tag": "0060_plus_open_limit",
+      "breakpoints": true
     }
   ]
 }

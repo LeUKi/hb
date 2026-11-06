@@ -15,6 +15,7 @@ type SettingsRow = {
   version: number;
   enabled: number;
   daily_open_limit: number;
+  daily_open_limit_plus: number;
   daily_deploy_limit: number;
   daily_deploy_limit_plus: number;
   monthly_limit: number;
@@ -26,7 +27,7 @@ export async function readJudgeSettings(
   env: ApiBindings,
 ): Promise<JudgeSettings> {
   const row = await env.DB.prepare(
-    `SELECT version,enabled,daily_open_limit,daily_deploy_limit,daily_deploy_limit_plus,monthly_limit,network_enabled,updated_at
+    `SELECT version,enabled,daily_open_limit,daily_open_limit_plus,daily_deploy_limit,daily_deploy_limit_plus,monthly_limit,network_enabled,updated_at
     FROM judge_settings WHERE id='global'`,
   ).first<SettingsRow>();
   if (!row) throw new Error("Missing judge settings");
@@ -34,6 +35,7 @@ export async function readJudgeSettings(
     version: row.version,
     enabled: row.enabled === 1,
     dailyOpenLimit: row.daily_open_limit,
+    dailyOpenLimitPlus: row.daily_open_limit_plus,
     dailyDeployLimit: row.daily_deploy_limit,
     dailyDeployLimitPlus: row.daily_deploy_limit_plus,
     monthlyLimit: row.monthly_limit,
@@ -46,6 +48,7 @@ function snapshot(settings: JudgeSettingsInput) {
   return JSON.stringify({
     enabled: settings.enabled,
     dailyOpenLimit: settings.dailyOpenLimit,
+    dailyOpenLimitPlus: settings.dailyOpenLimitPlus,
     dailyDeployLimit: settings.dailyDeployLimit,
     dailyDeployLimitPlus: settings.dailyDeployLimitPlus,
     monthlyLimit: settings.monthlyLimit,
@@ -76,11 +79,12 @@ export async function updateJudgeSettings(
         expectedVersion,
       ),
       env.DB.prepare(`UPDATE judge_settings SET version=version+1,
-        enabled=?,daily_open_limit=?,daily_deploy_limit=?,daily_deploy_limit_plus=?,monthly_limit=?,network_enabled=?,
+        enabled=?,daily_open_limit=?,daily_open_limit_plus=?,daily_deploy_limit=?,daily_deploy_limit_plus=?,monthly_limit=?,network_enabled=?,
         updated_at=${databaseNow},updated_by_user_id=?
         WHERE id='global' AND version=?`).bind(
         Number(next.enabled),
         next.dailyOpenLimit,
+        next.dailyOpenLimitPlus,
         next.dailyDeployLimit,
         next.dailyDeployLimitPlus,
         next.monthlyLimit,
@@ -116,12 +120,14 @@ export async function recentJudgeSettingChanges(
     }
   >();
   // Changes from before 联网 had a switch: it was off. From before PLUS
-  // had its own 部署 number, the one number was everyone's, PLUS's too.
+  // had its own 部署 or 开放 number, the one number was everyone's, PLUS's
+  // too.
   const read = (text: string) => {
     const value = JSON.parse(text) as Partial<JudgeSettingsInput>;
     return {
       networkEnabled: false,
       ...value,
+      dailyOpenLimitPlus: value.dailyOpenLimitPlus ?? value.dailyOpenLimit,
       dailyDeployLimitPlus:
         value.dailyDeployLimitPlus ?? value.dailyDeployLimit,
     } as JudgeSettingsInput;

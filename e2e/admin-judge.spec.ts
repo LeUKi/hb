@@ -197,6 +197,7 @@ async function mockSettings(page: Page) {
     enabled: true,
     networkEnabled: false,
     dailyOpenLimit: 3,
+    dailyOpenLimitPlus: 30,
     dailyDeployLimit: 10,
     dailyDeployLimitPlus: 10,
     monthlyLimit: 1000,
@@ -531,13 +532,16 @@ test.describe("网站管理 · 判定器", () => {
     await expect(
       page.getByText("只算部署新版本；重新跑测试、换回部署过的版本不算"),
     ).toBeVisible();
-    // PLUS deploys its own number (2026-10-28).
+    // PLUS deploys (2026-10-28) and opens (2026-11-07) its own number.
     await expect(
       page.getByRole("textbox", { name: "开通 PLUS 的人每天部署" }),
     ).toHaveValue("10");
     await expect(
+      page.getByRole("textbox", { name: "开通 PLUS 的人每天最多开放" }),
+    ).toHaveValue("30");
+    await expect(
       page.getByText("开通🐟额 PLUS 的人和站长用这个数"),
-    ).toBeVisible();
+    ).toHaveCount(2);
     await expect(
       page.getByText("到了上限，新版本暂时不能部署；已经开放的红包照常领取"),
     ).toBeVisible();
@@ -567,6 +571,7 @@ test.describe("网站管理 · 判定器", () => {
       enabled: true,
       networkEnabled: false,
       dailyOpenLimit: 3,
+      dailyOpenLimitPlus: 30,
       dailyDeployLimit: 20,
       dailyDeployLimitPlus: 10,
       monthlyLimit: 2000,

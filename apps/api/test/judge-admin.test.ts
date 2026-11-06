@@ -94,9 +94,20 @@ describe("网站管理 · 判定器: 设置", () => {
       recentChanges: JudgeSettingChange[];
     }>("GET", "/admin/judge/settings", admin);
     expect(read.status).toBe(200);
+    // By version: the migrations' changes may share a millisecond.
+    const migrated = [...read.body.recentChanges].sort(
+      (a, b) => b.nextVersion - a.nextVersion,
+    );
+    // Migration 0060 (2026-11-07): PLUS opens 30 a day, written down as
+    // a change; changes from before it read the one number as PLUS's too.
+    expect(migrated[0]).toMatchObject({
+      actorUserId: "migration",
+      previous: { dailyOpenLimit: 3, dailyOpenLimitPlus: 3 },
+      next: { dailyOpenLimit: 3, dailyOpenLimitPlus: 30 },
+    });
     // Migration 0047 (2026-10-28): the one number became PLUS's, and
     // everyone else's 2, written down as a change.
-    expect(read.body.recentChanges[0]).toMatchObject({
+    expect(migrated[1]).toMatchObject({
       actorUserId: "migration",
       previous: { dailyDeployLimit: 10, dailyDeployLimitPlus: 10 },
       next: { dailyDeployLimit: 2, dailyDeployLimitPlus: 10 },
@@ -105,6 +116,7 @@ describe("网站管理 · 判定器: 设置", () => {
     expect(before).toMatchObject({
       enabled: true,
       dailyOpenLimit: 3,
+      dailyOpenLimitPlus: 30,
       dailyDeployLimit: 10,
       dailyDeployLimitPlus: 10,
       monthlyLimit: 1000,
@@ -119,6 +131,7 @@ describe("网站管理 · 判定器: 设置", () => {
       expectedVersion: before.version,
       enabled: true,
       dailyOpenLimit: 3,
+      dailyOpenLimitPlus: 40,
       dailyDeployLimit: 10,
       dailyDeployLimitPlus: 12,
       monthlyLimit: 2000,
@@ -171,7 +184,11 @@ describe("网站管理 · 判定器: 设置", () => {
       actorUserId: admin.id,
       previousVersion: before.version,
       nextVersion: before.version + 1,
-      next: { monthlyLimit: 2000, dailyDeployLimitPlus: 12 },
+      next: {
+        monthlyLimit: 2000,
+        dailyDeployLimitPlus: 12,
+        dailyOpenLimitPlus: 40,
+      },
     });
 
     const audit = await call<AdminCursorList<AdminAuditEntry>>(
@@ -187,11 +204,16 @@ describe("网站管理 · 判定器: 设置", () => {
       before: {
         enabled: true,
         dailyOpenLimit: 3,
+        dailyOpenLimitPlus: 30,
         dailyDeployLimit: 10,
         dailyDeployLimitPlus: 10,
         monthlyLimit: 1000,
       },
-      after: { monthlyLimit: 2000, dailyDeployLimitPlus: 12 },
+      after: {
+        monthlyLimit: 2000,
+        dailyDeployLimitPlus: 12,
+        dailyOpenLimitPlus: 40,
+      },
     });
 
     // 🐟额's settings no longer carry them.
@@ -209,6 +231,7 @@ describe("网站管理 · 判定器: 设置", () => {
       "daily_deploy_limit = 1001",
       "daily_deploy_limit_plus = 0",
       "daily_open_limit = 0",
+      "daily_open_limit_plus = 1001",
       "enabled = 2",
     ])
       await expect(
