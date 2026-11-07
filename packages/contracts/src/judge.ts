@@ -969,4 +969,12 @@ export type HongbaoInfo =
        */
       openedAt: string;
       deadlineAt: string | null;
+      /**
+       * Its 领取范围 (2026-11-07), null for everyone: 信任等级 that may
+       * claim and the people named, by their names now. Someone out of it is
+       * refused before any judgment, so a game's own server turns them away
+       * at the door (the page token's level and username), or the points
+       * they win only fill the pool's ledger in its own books.
+       */
+      scope: { levels?: number[]; users?: { username: string }[] } | null;
     };

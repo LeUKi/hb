@@ -290,7 +290,8 @@ hongbao.params.server; // https://a.workers.dev/，共用的网页拿它决定�
   "pool": "100.00",
   "unclaimed": "87.50",
   "openedAt": "2026-11-02T02:30:00.123Z",
-  "deadlineAt": "2026-11-03T02:30:00.123Z"
+  "deadlineAt": "2026-11-03T02:30:00.123Z",
+  "scope": { "levels": [2, 3, 4], "users": [{ "username": "someone" }] }
 }
 ```
 
@@ -300,6 +301,7 @@ hongbao.params.server; // https://a.workers.dev/，共用的网页拿它决定�
 - `params`：现在公开的参数，同 SDK 的 `hongbao.params`：普通参数；`revealAtEnd` 的结束以后才有；密钥永远没有；不是代码判定时是 `{}`。
 - `unit`：`LDC`，🐟额红包是 `🐟`；`pool`：总奖池；`unclaimed`：奖池还剩（第五版起：总奖池减去已经结算的和大家的待结算），第五版以前是 `null`。金额同 SDK，写成 `"100.00"`。
 - `openedAt`、`deadlineAt`：开放和截止时间，ISO 8601，精确到毫秒，和判定器拿到的 `submission.hongbao.openedAt`、`endsAt` 是同一个时刻；没有截止时间时 `deadlineAt` 是 `null`。（13.7）
+- `scope`：领取范围，没有时是 `null`；`levels` 是信任等级，`users` 是指定的人，按现在的用户名，只有名字（头像、显示名是红包页的）。范围以外的人提交了也不判，所以自己记分的后端在认人时就要拦下（令牌的 `level`、`username`），不然他们挖走的分占着奖池却领不了（2026-11-07 加：生产上一个只给 Lv1 的矿洞夺宝，74 个人把奖池挖完，只有 1 个是 Lv1）。
 - 草稿：`{ "id": "…", "status": "draft" }`，参数还会改，不答。没有这个红包（或删掉了）：404。
 
 参数不放进令牌：整份参数最大 16 KB，签进令牌放在请求头里能到 20 多 KB，超过 Node 默认的请求头上限（16 KB）和 nginx 的每行上限（8 KB），有的后端会直接拒；草稿的参数还会变。参数开放时就锁住了，后端按红包编号缓存到结束就行；`status`、`paused` 几十秒读一次。

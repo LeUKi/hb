@@ -1748,6 +1748,7 @@ describe("附带网页", () => {
         unclaimed: "30.00",
         openedAt: "2026-10-24T03:00:00.000Z",
         deadlineAt: "2026-10-25T04:00:00.000Z",
+        scope: null,
       });
       expect(
         (

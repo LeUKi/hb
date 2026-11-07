@@ -100,6 +100,8 @@ export function localInfo({
     unclaimed: yuan(unclaimed),
     openedAt: new Date(hongbao.openedAt).toISOString(),
     deadlineAt: new Date(hongbao.endsAt).toISOString(),
+    // 模拟器不分领取范围：谁都能领
+    scope: null,
   };
 }
 

@@ -229,6 +229,24 @@ describe("判定器's params as it opens", () => {
       unclaimed: "1.00",
       openedAt: shown.openedAt,
       deadlineAt: shown.deadlineAt,
+      scope: null,
+    });
+    // Its 领取范围 (2026-11-07): the levels and the people by their names
+    // now, so a game's own server turns away those who could never claim.
+    await env.DB.prepare(
+      "UPDATE activities SET config = json_set(config, '$.scope', json(?)) WHERE id = ?",
+    )
+      .bind(
+        JSON.stringify({
+          levels: { min: 1, max: 2 },
+          users: [{ username: "Someone", linuxDoId: null }],
+        }),
+        opened.id,
+      )
+      .run();
+    expect((await read(opened.id)).body.scope).toEqual({
+      levels: [1, 2],
+      users: [{ username: "Someone" }],
     });
     // To the millisecond, as its judge is given them.
     expect(Date.parse(String(running.body.openedAt))).toBe(

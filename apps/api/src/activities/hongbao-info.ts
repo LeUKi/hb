@@ -15,8 +15,9 @@ import { Hono } from "hono";
 import type { ApiBindings, ApiContext } from "../env";
 import { ledgerPool } from "../judge/ledger";
 import { backendJudge } from "../judge/public";
+import { publicScopeWithPeople } from "./claim-scope";
 import { activityNotFound } from "./errors";
-import { activityStatus } from "./service";
+import { activityStatus, configuration } from "./service";
 import { findActivity } from "./storage";
 
 export async function hongbaoInfo(
@@ -28,12 +29,14 @@ export async function hongbaoInfo(
   const status = activityStatus(row);
   if (status === "draft") return { id: row.id, status };
   const coded = row.participationMode === "code";
-  const [sender, code, left] = await Promise.all([
+  const config = configuration(row);
+  const [sender, code, left, scope] = await Promise.all([
     env.DB.prepare("SELECT external_id AS id FROM users WHERE id = ?")
       .bind(row.authorId)
       .first<{ id: string }>(),
     coded ? backendJudge(env, row) : null,
     coded ? ledgerPool(env, row.id) : null,
+    publicScopeWithPeople(env, config.scope),
   ]);
   return {
     id: row.id,
@@ -46,13 +49,20 @@ export async function hongbaoInfo(
     // A game's own server budgets with these, and binds what it signs to
     // this 红包 by openedAt, which its judge is given too (§13.7).
     unit: row.funding === "balance" ? "🐟" : "LDC",
-    pool: formatAmount(
-      ldcTotalMinor(JSON.parse(row.config) as LdcActivityInput),
-    ),
+    pool: formatAmount(ldcTotalMinor(config as LdcActivityInput)),
     unclaimed: left === null ? null : formatSignedAmount(left),
     openedAt: new Date(row.openedAt ?? 0).toISOString(),
     deadlineAt:
       row.deadline === null ? null : new Date(row.deadline).toISOString(),
+    // The people by name only (their faces are the 红包 page's).
+    scope: scope
+      ? {
+          ...(scope.levels ? { levels: scope.levels } : {}),
+          ...(scope.users
+            ? { users: scope.users.map(({ username }) => ({ username })) }
+            : {}),
+        }
+      : null,
   };
 }
 

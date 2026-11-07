@@ -444,7 +444,8 @@ export async function claimsOf(request, kind) {
   "pool": "100.00",
   "unclaimed": "87.50",
   "openedAt": "2026-11-02T02:30:00.123Z",
-  "deadlineAt": "2026-11-03T02:30:00.123Z"
+  "deadlineAt": "2026-11-03T02:30:00.123Z",
+  "scope": { "levels": [2, 3, 4], "users": [{ "username": "someone" }] }
 }
 ```
 
@@ -454,6 +455,7 @@ export async function claimsOf(request, kind) {
 - `params`：现在公开的参数，同 `hongbao.params`：结束后公开的结束以后才有，密钥永远没有。
 - `unit`（`LDC`，🐟额红包是 `🐟`）、`pool`（总奖池）、`unclaimed`（奖池还剩，第五版以前的红包是 `null`），金额写成 `"100.00"`：后端要按奖池做预算时读这里，不信网页交来的。
 - `openedAt`、`deadlineAt`：开放和截止时间，ISO 8601，精确到毫秒（没有截止时间是 `null`）。`openedAt` 解析成毫秒，就是判定器拿到的 `submission.hongbao.openedAt`：后端签名、交给判定器核对的东西带上它，就绑在了这个红包上，拿到别的红包用不了。
+- `scope`：领取范围（2026-11-07 起有），没有范围（谁都能领）是 `null`：`levels` 是能领的信任等级，`users` 是指定的人（现在的用户名）；两样有一样对得上就能领。范围以外的人提交了也不判、领不到；后端要在认人时就拦下他们：令牌里的 `level` 在 `levels` 里，或者 `username`（不分大小写）在 `users` 里才行，不然积分、名额、奖池预算都被白白占掉。网页那边先看 `hb.me()`：`open` 是 `false`、`why` 是 `not_in_scope` 时直接告诉他，不让他开始玩。
 - 参数开放后就不变了，按红包编号缓存；`status`、`paused` 几十秒读一次就够。读不到时先用上次的；从没读到过就拒绝这一次，回一句“稍后再试”。
 - `status` 不是 `active` 或者 `paused` 时，别再做花钱的事（比如调 AI）：判定器这时不判，做了也白做。已经存下的结果照样能查。
 
