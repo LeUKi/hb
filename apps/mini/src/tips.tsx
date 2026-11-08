@@ -24,6 +24,7 @@ import {
   readTip,
   readTipsHome,
 } from "./api";
+import { OpenLink } from "./open-link";
 import type { MiniSdk } from "./sdk";
 
 // 打赏 in the 社区 (docs/tip-design.md §5, §7): a card (`?tip=<卡号>`), and
@@ -243,10 +244,10 @@ export function TipsHome({
               <p>
                 还没有打赏卡。到红包站的“我的打赏”里新建一张，复制嵌入代码贴进帖子末尾或个人页的“关于我”，别人点一下就能打赏你。
               </p>
-              <CopyButton
+              <OpenLink
                 sdk={sdk}
-                text={`${SITE}/tips`}
-                label="复制我的打赏的链接"
+                url={`${SITE}/tips`}
+                label="打开红包站的我的打赏"
               />
             </div>
           ) : (

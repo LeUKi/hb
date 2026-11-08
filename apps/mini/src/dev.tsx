@@ -469,6 +469,12 @@ const sdk: MiniSdk = {
       return null;
     },
   },
+  links: {
+    open: async (url) => {
+      window.open(url, "_blank", "noopener,noreferrer");
+      return null;
+    },
+  },
 };
 (globalThis as { miniApp?: MiniSdk }).miniApp = sdk;
 

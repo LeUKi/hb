@@ -80,6 +80,8 @@ export type MiniSdk = {
   };
   /** The forum asks the player first. */
   readonly clipboard: { writeText(text: string): Promise<null> };
+  /** A new tab, once the 社区 has shown where and the person said yes. */
+  readonly links: { open(url: string): Promise<null> };
 };
 
 export function getSdk(): MiniSdk | null {

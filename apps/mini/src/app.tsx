@@ -83,6 +83,7 @@ import { useRosterList } from "../../web/src/lib/roster";
 import { askSelfClaim } from "../../web/src/lib/self-claim";
 import { claimHongbao, HongbaoError, readHongbao, useLive } from "./api";
 import { forumAvatars } from "./avatars";
+import { OpenLink } from "./open-link";
 import type { MiniSdk } from "./sdk";
 import { TipScreen, TipsHome } from "./tips";
 
@@ -90,8 +91,8 @@ import { TipScreen, TipsHome } from "./tips";
 // parts — the cover that folds small once taken part, its head, numbers and
 // 我的结果, 「N 人在看」 — drawn with the forum's data. Only the way to take
 // part is the mini app's: the 口令 under the seal (红包站 has its command
-// box), and 复制链接 where the forum cannot (代码判定, a human check, a name
-// 红包站 cannot take). What leads off the page is left out (lib/embedded.ts).
+// box), and 在红包站打开 where the forum cannot (代码判定, a human check, a
+// name 红包站 cannot take). What leads off the page is left out (lib/embedded.ts).
 
 /** 红包站's origin, for its links (vite.config.ts). */
 const SITE = __HB_ORIGIN__;
@@ -153,50 +154,8 @@ const emptyRead = {
   beforeInfo: "",
 } satisfies MiniHongbaoResponse["activity"];
 
-/** 复制链接: the forum asks first; not copied, the link shows to select. */
-function CopyUrl({ sdk, url }: { sdk: MiniSdk; url: string }) {
-  const [state, setState] = useState<"idle" | "done" | "failed">("idle");
-  useEffect(() => {
-    if (state !== "done") return;
-    const timer = window.setTimeout(() => setState("idle"), 1200);
-    return () => window.clearTimeout(timer);
-  }, [state]);
-  return (
-    <>
-      {/* Not copied (the forum asks first): the link to select by hand. */}
-      {state === "failed" && (
-        <p className="text-sm break-all text-ink-2 select-all">{url}</p>
-      )}
-      <Button
-        variant="secondary"
-        size="sm"
-        className="justify-self-start"
-        onClick={() =>
-          void sdk.clipboard.writeText(url).then(
-            () => setState("done"),
-            () => setState("failed"),
-          )
-        }
-      >
-        {state === "done" ? (
-          <Check aria-hidden="true" />
-        ) : (
-          <Copy aria-hidden="true" />
-        )}
-        <MorphLabel fit={false}>
-          {state === "done"
-            ? "已复制"
-            : state === "failed"
-              ? "没能复制，请手动选中链接"
-              : "复制链接"}
-        </MorphLabel>
-      </Button>
-    </>
-  );
-}
-
-/** Why this is done on 红包站, and its link there to copy. */
-function CopyLink({
+/** Why this is done on 红包站, and its link there to open. */
+function OnSite({
   sdk,
   url,
   children,
@@ -209,7 +168,7 @@ function CopyLink({
     <Squircle radius={radius.card}>
       <div className="hb-note-card mt-2 grid w-full max-w-[36rem] gap-2.5 px-4 py-3 text-left">
         <p className="text-sm text-ink">{children}</p>
-        <CopyUrl sdk={sdk} url={url} />
+        <OpenLink sdk={sdk} url={url} />
       </div>
     </Squircle>
   );
@@ -400,11 +359,11 @@ function Page({
     );
   }, [read]);
 
-  // 重新发送 and the like, on 红包站: the result card copies this link.
+  // 重新发送 and the like, on 红包站: the result card opens this link.
   const SiteLink = useMemo(
     () =>
       function SiteLink() {
-        return <CopyUrl sdk={sdk} url={siteLink(id)} />;
+        return <OpenLink sdk={sdk} url={siteLink(id)} />;
       },
     [sdk, id],
   );
@@ -769,14 +728,14 @@ function Page({
       </Reveal>
       {message && <p className="text-sm text-danger">{message}</p>}
       {blocked && elsewhere && (
-        <CopyLink sdk={sdk} url={siteUrl}>
+        <OnSite sdk={sdk} url={siteUrl}>
           {elsewhere}
-        </CopyLink>
+        </OnSite>
       )}
       {blocked && !elsewhere && signIn !== null && (
-        <CopyLink sdk={sdk} url={siteUrl}>
+        <OnSite sdk={sdk} url={siteUrl}>
           {signIn}
-        </CopyLink>
+        </OnSite>
       )}
     </>
   );

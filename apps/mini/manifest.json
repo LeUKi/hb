@@ -12,6 +12,7 @@
     "theme.read",
     "launch.read",
     "clipboard.write",
+    "links.open",
     "network.request",
     "network.websocket"
   ],
