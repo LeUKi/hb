@@ -10,6 +10,7 @@ import {
   createWithdrawalSchema,
   inviteUsernameSchema,
   ownerAdjustmentSchema,
+  updateApiKeySchema,
 } from "@hb/contracts";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -30,6 +31,7 @@ import {
   createApiKey,
   listApiKeys,
   revokeOwnApiKey,
+  setApiKeyLimit,
 } from "./api-keys";
 import {
   checkCheckout,
@@ -470,7 +472,7 @@ export const balanceRoutes = new Hono<ApiContext>()
       transfer: await transferDetail(c.env, session.user.id, c.req.param("id")),
     });
   })
-  // 开放接口密钥: made, listed, opened and stopped here only.
+  // 开放接口密钥: made, listed, opened, limited and stopped here only.
   .get("/me/balance/api-keys", async (c) => {
     const session = await requireAuth(c);
     return c.json({
@@ -511,6 +513,31 @@ export const balanceRoutes = new Hono<ApiContext>()
       return c.json(
         await apiKeyDetail(c.env, session.user.id, c.req.param("id"), cursor),
       );
+    },
+  )
+  .patch(
+    "/me/balance/api-keys/:id",
+    body,
+    validator("json", (value) => {
+      const parsed = updateApiKeySchema.safeParse(value);
+      if (!parsed.success)
+        throw new ActivityError(
+          400,
+          "INVALID_API_KEY_INPUT",
+          parsed.error.issues[0]?.message ?? "请检查上限",
+        );
+      return parsed.data;
+    }),
+    async (c) => {
+      const session = await requireProtectedMutation(c);
+      return c.json({
+        key: await setApiKeyLimit(
+          c.env,
+          session.user.id,
+          c.req.param("id"),
+          c.req.valid("json"),
+        ),
+      });
     },
   )
   .post("/me/balance/api-keys/:id/revoke", async (c) => {

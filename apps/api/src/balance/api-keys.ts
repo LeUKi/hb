@@ -1,13 +1,15 @@
 // 开放接口密钥 (docs/balance-design.md §16): a 🐟额 PLUS member's keys for
 // the open API, ten in use at most. A key is shown once, as it is made; only
-// its digest is kept. Its owner stops it, or an admin with a reason; a stop
-// is final. What it sent is read from the 转账 it made.
+// its digest is kept. Its owner may change its daily limit while it works. Its
+// owner stops it, or an admin with a reason; a stop is final. What it sent is
+// read from the 转账 it made.
 import {
   amountToMinor,
   BALANCE_LIMITS,
   type BalanceApiKey,
   type BalanceApiKeyTotals,
   type CreateApiKeyInput,
+  type UpdateApiKeyInput,
 } from "@hb/contracts";
 import { ActivityError } from "../activities/errors";
 import type { ApiBindings } from "../env";
@@ -37,6 +39,9 @@ export type ApiKeyRow = {
 const TOKEN_PREFIX = "hbk_";
 
 const tokenDigest = (token: string) => sha256Hex(`balance-api-key:${token}`);
+
+const limitMinor = (dailyLimit: string | null) =>
+  dailyLimit === null ? null : amountToMinor(dailyLimit);
 
 function newToken() {
   const bytes = new Uint8Array(24);
@@ -116,8 +121,6 @@ export async function createApiKey(
   const token = newToken();
   const id = crypto.randomUUID();
   const now = Date.now();
-  const limit =
-    input.dailyLimit === null ? null : amountToMinor(input.dailyLimit);
   const result = await env.DB.prepare(
     `INSERT INTO balance_api_keys (id,user_id,name,token_hash,last_four,daily_limit_minor,created_at)
     SELECT ?,?,?,?,?,?,?
@@ -129,7 +132,7 @@ export async function createApiKey(
       input.name,
       await tokenDigest(token),
       token.slice(-4),
-      limit,
+      limitMinor(input.dailyLimit),
       now,
       userId,
       BALANCE_LIMITS.apiKeysMax,
@@ -158,6 +161,35 @@ export async function ownedApiKey(
     .first<ApiKeyRow>();
   if (!row) balanceError(404, "API_KEY_NOT_FOUND", "没有找到这个密钥");
   return row;
+}
+
+/**
+ * Its owner's change of its daily limit. The next 转账 counts against it (it
+ * is read as each is written); what it already sent today stays.
+ */
+export async function setApiKeyLimit(
+  env: ApiBindings,
+  userId: string,
+  id: string,
+  input: UpdateApiKeyInput,
+) {
+  await ownedApiKey(env, userId, id);
+  const result = await env.DB.prepare(
+    "UPDATE balance_api_keys SET daily_limit_minor=? WHERE id=? AND user_id=? AND revoked_at IS NULL",
+  )
+    .bind(limitMinor(input.dailyLimit), id, userId)
+    .run();
+  if (!result.meta.changes)
+    balanceError(
+      409,
+      "API_KEY_STOPPED",
+      "这个密钥已经停用，不能再改每日上限。",
+    );
+  console.info(
+    JSON.stringify({ event: "balance_api_key_limit_changed", keyId: id }),
+  );
+  const today = await usedToday(env, [id]);
+  return apiKeyView(await ownedApiKey(env, userId, id), today.get(id) ?? 0);
 }
 
 /** Its owner's stop: final. Stopping a stopped one changes nothing. */

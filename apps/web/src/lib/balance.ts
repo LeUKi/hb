@@ -14,6 +14,7 @@ import type {
   CreateTransferInput,
   CreateWithdrawalInput,
   OwnerAdjustmentInput,
+  UpdateApiKeyInput,
 } from "@hb/contracts";
 import {
   useInfiniteQuery,
@@ -703,5 +704,18 @@ export function useApiKeyActions(userId: string) {
       return result;
     },
   });
-  return { create, revoke };
+  const setLimit = useMutation({
+    mutationFn: async ({ id, ...json }: UpdateApiKeyInput & { id: string }) => {
+      const identity = session.captureIdentity() ?? "";
+      const result = await readResponse<{ key: BalanceApiKey }>(
+        await api.api.me.balance["api-keys"][":id"].$patch(
+          { param: { id }, json },
+          options,
+        ),
+      );
+      await refresh(identity);
+      return result;
+    },
+  });
+  return { create, revoke, setLimit };
 }

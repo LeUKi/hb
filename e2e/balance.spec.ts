@@ -958,6 +958,73 @@ test.describe("🐟额", () => {
     expect(made).toEqual([{ name: "我的小站", dailyLimit: "100" }]);
   });
 
+  test("开放接口密钥：详情写着每日上限，有效的能改，不高于今天已转的先说清楚", async ({
+    page,
+  }) => {
+    await mockSession(page, { ...viewer, balance: true, balancePlus: true });
+    await mockBalance(page);
+    const current: BalanceApiKey = {
+      id: "key-1",
+      name: "我的小站",
+      lastFour: "2345",
+      status: "active",
+      dailyLimitMinor: 10_000,
+      usedTodayMinor: 2_000,
+      createdAt: Date.now() - 86_400_000,
+      lastTransferAt: null,
+      lastTransferIp: null,
+      transferCount: 0,
+      transferTotalMinor: 0,
+      revokedAt: null,
+      revokeReason: null,
+    };
+    const changes: unknown[] = [];
+    await page.route("**/api/me/balance/api-keys", (route) =>
+      route.fulfill({ json: { items: [current], max: 10 } }),
+    );
+    await page.route("**/api/me/balance/api-keys/key-1*", (route) => {
+      if (route.request().method() === "PATCH") {
+        const input = route.request().postDataJSON() as { dailyLimit: string };
+        changes.push(input);
+        current.dailyLimitMinor = Number(input.dailyLimit) * 100;
+        return route.fulfill({ json: { key: current } });
+      }
+      const none = { count: 0, totalMinor: 0 };
+      return route.fulfill({
+        json: {
+          key: current,
+          totals: { today: none, week: none, all: none },
+          transfers: [],
+          nextCursor: null,
+        },
+      });
+    });
+    await openApp(page, "/balance");
+    await page.getByRole("button", { name: /我的小站/ }).click();
+    const detail = page.getByRole("dialog", { name: "密钥「我的小站」" });
+    await expect(detail.getByText("每日上限", { exact: true })).toBeVisible();
+    await expect(detail.getByText("100.00 🐟", { exact: true })).toBeVisible();
+
+    await detail.getByRole("button", { name: "修改每日上限" }).click();
+    const form = page.getByRole("dialog", { name: "修改每日上限" });
+    const box = form.getByLabel("每日上限");
+    const save = form.getByRole("button", { name: "保存" });
+    await expect(box).toHaveValue("100.00");
+    await expect(save).toHaveAttribute("aria-disabled", "true");
+    await box.fill("15");
+    await expect(
+      form.getByText(/保存后今天不能再用这个密钥转账/),
+    ).toBeVisible();
+    await box.fill("50");
+    await expect(form.getByText(/保存后今天不能再用这个密钥转账/)).toHaveCount(
+      0,
+    );
+    await save.click();
+    await expect(form).toHaveCount(0);
+    await expect(detail.getByText("50.00 🐟", { exact: true })).toBeVisible();
+    expect(changes).toEqual([{ dailyLimit: "50" }]);
+  });
+
   test("开放接口密钥：停用的收进二级弹窗，详情里的停用不用翻流水", async ({
     page,
   }) => {
@@ -1067,6 +1134,10 @@ test.describe("🐟额", () => {
     await expect(stoppedKey.getByRole("button", { name: "停用" })).toHaveCount(
       0,
     );
+    await expect(stoppedKey.getByText("不限", { exact: true })).toBeVisible();
+    await expect(
+      stoppedKey.getByRole("button", { name: "修改每日上限" }),
+    ).toHaveCount(0);
     await stoppedKey.getByRole("button", { name: "关闭" }).click();
     await expect(stoppedKey).toHaveCount(0);
     await stopped.getByRole("button", { name: "关闭" }).click();

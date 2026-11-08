@@ -716,6 +716,52 @@ describe("开放接口密钥", () => {
     ).toMatchObject({ error: { code: "TRANSFER_NOT_ALLOWED" } });
   });
 
+  it("its owner changes its daily limit, and the next transfer counts against the new one", async () => {
+    const { sender, friend } = await openTransfers();
+    const { key, token } = await newKey(sender, "网站", "5.00");
+    const path = `/me/balance/api-keys/${key.id}`;
+    const send = (no: string, amount: string) =>
+      open("POST", "/balance/transfers", token, {
+        outTransferNo: no,
+        ...to(friend),
+        amount,
+      });
+    expect((await send("a", "4.00")).status).toBe(200);
+    expect((await send("b", "2.00")).json).toMatchObject({
+      error: { code: "DAILY_LIMIT_EXCEEDED" },
+    });
+
+    const raised = await call("PATCH", path, sender, { dailyLimit: "10.00" });
+    expect(raised.json).toMatchObject({
+      key: { dailyLimitMinor: 1000, usedTodayMinor: 400 },
+    });
+    expect((await send("b", "2.00")).status).toBe(200);
+
+    // Below what it sent today: nothing more today, nothing undone.
+    await call("PATCH", path, sender, { dailyLimit: "1.00" });
+    expect((await send("c", "0.01")).json).toMatchObject({
+      error: { code: "DAILY_LIMIT_EXCEEDED" },
+    });
+
+    // Taken off.
+    expect(
+      (await call("PATCH", path, sender, { dailyLimit: null })).json,
+    ).toMatchObject({ key: { dailyLimitMinor: null, usedTodayMinor: 600 } });
+    expect((await send("c", "0.01")).status).toBe(200);
+
+    // Only its owner, only a real amount, only while it works.
+    expect(
+      (await call("PATCH", path, friend, { dailyLimit: "1.00" })).json,
+    ).toMatchObject({ error: { code: "API_KEY_NOT_FOUND" } });
+    expect(
+      (await call("PATCH", path, sender, { dailyLimit: "0" })).json,
+    ).toMatchObject({ error: { code: "INVALID_API_KEY_INPUT" } });
+    await call("POST", `${path}/revoke`, sender);
+    expect(
+      (await call("PATCH", path, sender, { dailyLimit: "1.00" })).json,
+    ).toMatchObject({ error: { code: "API_KEY_STOPPED" } });
+  });
+
   it("an admin stops someone's key with a reason they will read", async () => {
     const { admin, sender } = await openTransfers();
     const { key, token } = await newKey(sender);

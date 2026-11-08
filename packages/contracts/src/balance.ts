@@ -430,6 +430,10 @@ export const createApiKeySchema = z.strictObject({
 });
 export type CreateApiKeyInput = z.infer<typeof createApiKeySchema>;
 
+/** A key's daily limit changed by its owner; null takes it off. */
+export const updateApiKeySchema = createApiKeySchema.pick({ dailyLimit: true });
+export type UpdateApiKeyInput = z.infer<typeof updateApiKeySchema>;
+
 /** An admin's stop of someone's key: the reason they will read. */
 export const adminRevokeApiKeySchema = z.strictObject({
   reason: z.string().trim().min(1, "请填原因").max(200),

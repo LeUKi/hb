@@ -5,7 +5,7 @@ import {
 } from "@hb/contracts";
 import { Link } from "@tanstack/react-router";
 import { ChevronRight, KeyRound, X } from "lucide-react";
-import { useId, useRef, useState } from "react";
+import { type ReactNode, useId, useRef, useState } from "react";
 import { useApiKey, useApiKeyActions, useApiKeys } from "../../lib/balance";
 import { clockSeconds } from "../../lib/roster-time";
 import type { SessionUser } from "../../lib/session";
@@ -17,14 +17,15 @@ import { Button } from "../ui/button";
 import { CopyButton } from "../ui/copy-button";
 import { Field, TextInput } from "../ui/field";
 import { fishText } from "../ui/fish";
+import { MorphLabel } from "../ui/morph-label";
 import { ListItem, Reveal, Swap } from "../ui/reveal";
 import { radius, Squircle } from "../ui/squircle";
 import { StatusChip } from "../ui/status-chip";
 import { PlusBadge } from "./plus";
 import { TransferDetailDialog, TransferRow } from "./transfer";
 
-// 开放接口密钥 (docs/balance-design.md §16): made, listed, opened and
-// stopped here only. A key is shown once, as it is made.
+// 开放接口密钥 (docs/balance-design.md §16): made, listed, opened, limited
+// and stopped here only. A key is shown once, as it is made.
 
 const statusText = {
   active: "有效",
@@ -248,6 +249,57 @@ function typedMinor(value: string) {
   }
 }
 
+/** The 每日上限 box: empty is no limit; `amount` is what the server takes. */
+function typedLimit(value: string) {
+  const empty = value.trim() === "";
+  const minor = empty ? null : typedMinor(value);
+  return {
+    minor,
+    bad: !empty && (minor === null || minor <= 0),
+    amount: minor === null ? null : value.trim().replace(/\.$/, ""),
+  };
+}
+
+/** The 每日上限 box with its notes, for a new key and for changing one. */
+function DailyLimitField({
+  value,
+  onChange,
+  onEnter,
+  labelHidden,
+  children,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onEnter: () => void;
+  labelHidden?: boolean;
+  /** Another note under the box. */
+  children?: ReactNode;
+}) {
+  const id = useId();
+  return (
+    <Field label="每日上限" htmlFor={id} labelHidden={labelHidden}>
+      <TextInput
+        id={id}
+        inputMode="decimal"
+        suffix="🐟"
+        value={value}
+        placeholder="选填，不填就不限"
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") onEnter();
+        }}
+      />
+      <p className="text-xs text-ink-3">
+        按北京时间每天 0 点重新算，网页上的转账不算在里面。
+      </p>
+      <Reveal show={typedLimit(value).bad}>
+        <p className="text-xs text-danger">填一个大于 0 的数量</p>
+      </Reveal>
+      {children}
+    </Field>
+  );
+}
+
 /** 新建: a name and, if wanted, a daily limit; then the key, this once. */
 function NewKeyDialog({
   open,
@@ -258,7 +310,7 @@ function NewKeyDialog({
   onClose: () => void;
   user: SessionUser;
 }) {
-  const ids = { name: useId(), limit: useId() };
+  const nameId = useId();
   const [name, setName] = useState("");
   const [limit, setLimit] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -266,19 +318,16 @@ function NewKeyDialog({
   const { create } = useApiKeyActions(user.id);
   const trimmed = name.trim();
   const tooLong = Array.from(trimmed).length > BALANCE_LIMITS.apiKeyNameMax;
-  const limitMinor = limit.trim() === "" ? null : typedMinor(limit);
-  const limitBad =
-    limit.trim() !== "" && (limitMinor === null || limitMinor <= 0);
+  const dailyLimit = typedLimit(limit);
   const ready =
-    trimmed.length > 0 && !tooLong && !limitBad && !create.isPending;
+    trimmed.length > 0 && !tooLong && !dailyLimit.bad && !create.isPending;
   const submit = async () => {
     if (!ready) return;
     setError(null);
     try {
       const made = await create.mutateAsync({
         name: trimmed,
-        dailyLimit:
-          limitMinor === null ? null : limit.trim().replace(/\.$/, ""),
+        dailyLimit: dailyLimit.amount,
       });
       setToken(made.token);
     } catch (failure) {
@@ -344,9 +393,9 @@ function NewKeyDialog({
           </div>
         ) : (
           <div className="grid gap-4">
-            <Field label="名称" htmlFor={ids.name}>
+            <Field label="名称" htmlFor={nameId}>
               <TextInput
-                id={ids.name}
+                id={nameId}
                 value={name}
                 placeholder="比如网站名"
                 onChange={(event) => setName(event.target.value)}
@@ -357,28 +406,91 @@ function NewKeyDialog({
                 </p>
               </Reveal>
             </Field>
-            <Field label="每日上限" htmlFor={ids.limit}>
-              <TextInput
-                id={ids.limit}
-                inputMode="decimal"
-                suffix="🐟"
-                value={limit}
-                placeholder="选填，不填就不限"
-                onChange={(event) => setLimit(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") void submit();
-                }}
-              />
-              <p className="text-xs text-ink-3">
-                按北京时间每天 0 点重新算，网页上的转账不算在里面。
-              </p>
-              <Reveal show={limitBad}>
-                <p className="text-xs text-danger">填一个大于 0 的数量</p>
-              </Reveal>
-            </Field>
+            <DailyLimitField
+              value={limit}
+              onChange={setLimit}
+              onEnter={() => void submit()}
+            />
           </div>
         )}
       </Swap>
+    </ConfirmDialog>
+  );
+}
+
+/** 修改 the daily limit of a key in use, over the key's own window. */
+function KeyLimitDialog({
+  user,
+  apiKey,
+  open,
+  onClose,
+}: {
+  user: SessionUser;
+  apiKey: BalanceApiKey | undefined;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const { setLimit } = useApiKeyActions(user.id);
+  // Null until something is typed: the box starts at the limit as it is.
+  const [typed, setTyped] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const current = apiKey?.dailyLimitMinor ?? null;
+  const used = apiKey?.usedTodayMinor ?? 0;
+  const value = typed ?? (current === null ? "" : fishText(current));
+  const limit = typedLimit(value);
+  const changed = limit.minor !== current;
+  const ready = Boolean(apiKey) && changed && !limit.bad && !setLimit.isPending;
+  const submit = async () => {
+    if (!ready || !apiKey) return;
+    setError(null);
+    try {
+      await setLimit.mutateAsync({ id: apiKey.id, dailyLimit: limit.amount });
+      onClose();
+    } catch (failure) {
+      setError(
+        failure instanceof Error ? failure.message : "没有完成，请稍后再试。",
+      );
+    }
+  };
+  return (
+    <ConfirmDialog
+      open={open}
+      onClose={onClose}
+      onClosed={() => {
+        setTyped(null);
+        setError(null);
+      }}
+      busy={setLimit.isPending}
+      title="修改每日上限"
+      text="保存后马上生效，这个密钥的下一笔转账就按新的上限算。"
+      error={error}
+      actions={
+        <>
+          <Button onClick={onClose}>返回</Button>
+          <Button
+            variant="primary"
+            onClick={() => void submit()}
+            aria-disabled={!ready || undefined}
+            data-disabled={!ready || undefined}
+          >
+            {setLimit.isPending ? "正在保存…" : "保存"}
+          </Button>
+        </>
+      }
+    >
+      <DailyLimitField
+        labelHidden
+        value={value}
+        onChange={setTyped}
+        onEnter={() => void submit()}
+      >
+        <Reveal show={changed && limit.minor !== null && used >= limit.minor}>
+          <p className="text-xs text-warning">
+            今天已经转了 {fishText(used)}{" "}
+            🐟，保存后今天不能再用这个密钥转账，明天 0 点起按新的上限算。
+          </p>
+        </Reveal>
+      </DailyLimitField>
     </ConfirmDialog>
   );
 }
@@ -398,6 +510,7 @@ function KeyDialog({
   const query = useApiKey(user.id, kept.current);
   const { revoke } = useApiKeyActions(user.id);
   const [stopping, setStopping] = useState(false);
+  const [changingLimit, setChangingLimit] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [listing, setListing] = useState(false);
   const first = query.data?.pages[0];
@@ -425,18 +538,21 @@ function KeyDialog({
       onClosed={() => {
         kept.current = null;
         setStopping(false);
+        setChangingLimit(false);
         setListing(false);
         setError(null);
       }}
       title={key ? `密钥「${key.name}」` : "密钥"}
       text={
-        key
-          ? key.status === "admin_revoked"
-            ? `管理员停用：${key.revokeReason ?? ""}`
-            : key.status === "revoked"
-              ? "已停用，用它的网站和程序转不了了。"
-              : limitLine(key)
-          : "正在读取…"
+        <MorphLabel fit={false}>
+          {key
+            ? key.status === "admin_revoked"
+              ? `管理员停用：${key.revokeReason ?? ""}`
+              : key.status === "revoked"
+                ? "已停用，用它的网站和程序转不了了。"
+                : limitLine(key)
+            : "正在读取…"}
+        </MorphLabel>
       }
       actions={
         <>
@@ -452,6 +568,26 @@ function KeyDialog({
       {key && totals && (
         <div className="grid gap-4">
           <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
+            <dt className="text-ink-3">每日上限</dt>
+            <dd className="flex min-w-0 items-center gap-1.5 text-ink tabular-nums">
+              <MorphLabel fit={false}>
+                {key.dailyLimitMinor === null
+                  ? "不限"
+                  : `${fishText(key.dailyLimitMinor)} 🐟`}
+              </MorphLabel>
+              {key.status === "active" && (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  aria-haspopup="dialog"
+                  aria-label="修改每日上限"
+                  className="-my-1.5"
+                  onClick={() => setChangingLimit(true)}
+                >
+                  修改
+                </Button>
+              )}
+            </dd>
             {[
               ["今天", sum(totals.today)],
               ["近 7 天", sum(totals.week)],
@@ -495,6 +631,12 @@ function KeyDialog({
         user={user}
         id={listing ? kept.current : null}
         onClose={() => setListing(false)}
+      />
+      <KeyLimitDialog
+        user={user}
+        apiKey={key}
+        open={changingLimit}
+        onClose={() => setChangingLimit(false)}
       />
       <ConfirmDialog
         open={stopping}
