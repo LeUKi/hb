@@ -15,7 +15,7 @@ import { listPublicRecipients } from "../activities/claim-queries";
 import { VIA_HEADER, VIA_WRITTEN_HEADER } from "../activities/claim-service";
 import { ActivityError, activityNotFound } from "../activities/errors";
 import { humanCheckEnabled } from "../activities/human-check";
-import { LIVE_UNTIL_HEADER, LIVE_USER_HEADER } from "../activities/live";
+import { LIVE_MINI_HEADER, LIVE_USER_HEADER } from "../activities/live";
 import {
   getCurrentParticipationForActivity,
   listPublicRegistrations,
@@ -63,9 +63,6 @@ export const miniCors = cors({
   allowHeaders: ["Authorization", "Content-Type"],
   maxAge: 600,
 });
-
-/** The forum's limit on a connection: 300 s, or the token's end. */
-const LIVE_SECONDS = 300;
 
 const idPattern = /^[a-f0-9-]{36}$/i;
 
@@ -353,8 +350,8 @@ miniRoutes.post(
 );
 
 // The live channel, as a 红包 page's (activities/live.ts), for as long as
-// the forum lets a connection stay. Someone 红包站 does not know yet
-// watches as their LINUX DO id.
+// the app keeps it (the 社区 sets no time on it). Someone 红包站 does not
+// know yet watches as their LINUX DO id.
 miniRoutes.get("/mini/live", async (c) => {
   if (c.req.header("Upgrade")?.toLowerCase() !== "websocket")
     return c.json(
@@ -374,7 +371,6 @@ miniRoutes.get("/mini/live", async (c) => {
   const id = activityIdOf(c);
   if (!(await findActivity(c.env, id))) activityNotFound();
   const user = await siteUserOf(c.env, identity);
-  const until = Math.min(Date.now() + LIVE_SECONDS * 1000, identity.exp * 1000);
   // The DO's 101 goes back as it is: a rebuilt one would not upgrade.
   return activityObject(c.env, id).fetch(
     `https://activity.internal/internal/activities/${encodeURIComponent(id)}/live`,
@@ -382,7 +378,7 @@ miniRoutes.get("/mini/live", async (c) => {
       headers: {
         Upgrade: "websocket",
         [LIVE_USER_HEADER]: user?.id ?? `forum:${identity.sub}`,
-        [LIVE_UNTIL_HEADER]: String(until),
+        [LIVE_MINI_HEADER]: "1",
       },
     },
   );

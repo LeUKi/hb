@@ -42,12 +42,11 @@ import {
   LIVE_COALESCE_MS,
   LIVE_DEADLINE_MARGIN_MS,
   LIVE_JUDGED_MS,
-  LIVE_MINI_EARLY_MS,
+  LIVE_MINI_HEADER,
   LIVE_MINI_TAG,
   LIVE_PING,
   LIVE_PONG,
   LIVE_TAG,
-  LIVE_UNTIL_HEADER,
   LIVE_USER_HEADER,
   liveAnnounce,
   liveEnded,
@@ -166,25 +165,13 @@ async function readActivityJson(request: Request): Promise<unknown> {
 type LiveAttachment = {
   since?: number;
   userId?: string;
-  /** A mini app's socket: closed by then (ms; live.ts LIVE_MINI_TAG). */
-  until?: number;
-  /** A mini app's socket: its name in ActivityDO's index of them. */
-  key?: string;
 };
 
-function liveAttachment(socket: WebSocket): LiveAttachment {
-  return (socket.deserializeAttachment() as LiveAttachment | null) ?? {};
-}
-
-/** A mini app's socket, and until when it may stay. */
-function liveUntil(socket: WebSocket) {
-  return liveAttachment(socket).until;
-}
-
 /**
- * The 红包's own alarm time (a deadline, a draw, a timed opening, a retry),
- * kept apart from 社区小程序 sockets' times, which share the one alarm: 0
- * for none, missing before this was kept (an alarm then was the 红包's own).
+ * The 红包's own alarm time (a deadline, a draw, a timed opening, a retry):
+ * 0 for none, missing before this was kept (an alarm then was the 红包's
+ * own). Until 2026-11-08 社区小程序 sockets' closing times shared the one
+ * alarm; one set for them before then may still wake the object early.
  */
 const ACTIVITY_ALARM = "activityAlarm";
 
@@ -318,11 +305,6 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   private claimsSent: string | null = null;
   /** The deadline alarm this instance already set (one write per deadline). */
   private liveDeadline = 0;
-  /**
-   * 社区小程序's open sockets, by key: until when each may stay. Read from
-   * the sockets once a wake, then kept as they come and go.
-   */
-  private minis: Map<string, number> | null = null;
   /** The channel's number (live.ts), read back once after hibernating. */
   private liveSeq = 0;
   private liveSeqRead: Promise<void> | null = null;
@@ -360,13 +342,8 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket")
       return new Response("Expected a WebSocket", { status: 426 });
     const userId = request.headers.get(LIVE_USER_HEADER);
-    const untilHeader = request.headers.get(LIVE_UNTIL_HEADER);
-    const until = untilHeader === null ? undefined : Number(untilHeader);
-    if (
-      !userId ||
-      (until !== undefined && !Number.isSafeInteger(until)) ||
-      !this.ctx.id.equals(this.env.ACTIVITY_DO.idFromName(id))
-    )
+    const mini = request.headers.get(LIVE_MINI_HEADER) === "1";
+    if (!userId || !this.ctx.id.equals(this.env.ACTIVITY_DO.idFromName(id)))
       return Response.json(
         { error: { code: "INVALID_OBJECT", message: "红包标识不匹配" } },
         { status: 400 },
@@ -402,30 +379,22 @@ export class ActivityDO extends DurableObject<ApiBindings> {
           liveSince(socket) < liveSince(oldest) ? socket : oldest,
         )
         .close(4001, "replaced");
-    const expired = this.closeExpiredMinis();
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(
       server,
-      until === undefined
-        ? [LIVE_TAG, liveUserTag(userId)]
-        : [LIVE_TAG, liveUserTag(userId), LIVE_MINI_TAG],
+      mini
+        ? [LIVE_TAG, liveUserTag(userId), LIVE_MINI_TAG]
+        : [LIVE_TAG, liveUserTag(userId)],
     );
-    const key = until === undefined ? undefined : crypto.randomUUID();
     server.serializeAttachment({
       since: Date.now(),
       userId,
-      ...(until === undefined ? {} : { until, key }),
     } satisfies LiveAttachment);
-    if (key !== undefined && until !== undefined)
-      this.miniIndex().set(key, until);
-    if (expired || key !== undefined) await this.syncAlarm();
     // What changed between the page's own read and now, and who is here,
     // at the number the channel stands at.
     const seq = await this.liveSeqNow();
     server.send(
-      until === undefined
-        ? liveMessage(activity, seq)
-        : liveMiniMessage(activity, seq),
+      mini ? liveMiniMessage(activity, seq) : liveMessage(activity, seq),
     );
     const people = livePeople(this.ctx.getWebSockets(LIVE_TAG));
     server.send(liveViewers(people, seq));
@@ -617,7 +586,6 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     this.viewersTimer = setTimeout(async () => {
       this.viewersTimer = null;
       this.viewersPushedAt = Date.now();
-      if (this.closeExpiredMinis()) await this.syncAlarm();
       const sockets = this.ctx.getWebSockets(LIVE_TAG);
       const people = livePeople(sockets);
       if (people === this.viewersSent) return;
@@ -678,7 +646,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
           for (const socket of this.ctx.getWebSockets(LIVE_TAG)) {
             if (socket.readyState !== WebSocket.OPEN) continue;
             // A mini app shows 代码判定 elsewhere: none of this for it.
-            if (liveUntil(socket) !== undefined) continue;
+            if (this.isMini(socket)) continue;
             for (const message of messages)
               try {
                 socket.send(message);
@@ -693,68 +661,16 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     }, wait);
   }
 
-  /** 社区小程序's open sockets and their times (`minis`), read once a wake. */
-  private miniIndex() {
-    if (this.minis) return this.minis;
-    this.minis = new Map();
-    for (const socket of this.ctx.getWebSockets(LIVE_MINI_TAG)) {
-      if (socket.readyState !== WebSocket.OPEN) continue;
-      const attachment = liveAttachment(socket);
-      if (attachment.until === undefined) continue;
-      let key = attachment.key;
-      if (key === undefined) {
-        key = crypto.randomUUID();
-        socket.serializeAttachment({ ...attachment, key });
-      }
-      this.minis.set(key, attachment.until);
-    }
-    return this.minis;
+  /** A 社区小程序's socket (tagged so when it came). */
+  private isMini(socket: WebSocket) {
+    return this.ctx.getTags(socket).includes(LIVE_MINI_TAG);
   }
 
   /**
-   * 社区小程序: a mini app's socket lives until its `until` (the 社区's
-   * limit: 300 s, or its token's end); those due are closed, and the app
-   * has opened its next one by then. Whether any was.
-   */
-  private closeExpiredMinis() {
-    const minis = this.miniIndex();
-    const by = Date.now() + LIVE_MINI_EARLY_MS;
-    let due = false;
-    // Out of the index first, whether or not its socket is still here: a
-    // time left behind would set the alarm in the past again and again.
-    for (const [key, until] of minis)
-      if (until <= by) {
-        minis.delete(key);
-        due = true;
-      }
-    if (!due) return false;
-    for (const socket of this.ctx.getWebSockets(LIVE_MINI_TAG)) {
-      const { until } = liveAttachment(socket);
-      if (until === undefined || until > by) continue;
-      try {
-        socket.close(4000, "expired");
-      } catch {
-        // Already closing.
-      }
-    }
-    return true;
-  }
-
-  /** When the alarm wakes for the first 社区小程序 socket's time, if any. */
-  private firstMiniDue() {
-    let first: number | null = null;
-    for (const until of this.miniIndex().values())
-      if (first === null || until < first) first = until;
-    return first === null ? null : first - LIVE_MINI_EARLY_MS;
-  }
-
-  /**
-   * The object's one alarm, shared: the 红包's own (ACTIVITY_ALARM; `due`
-   * adds one, the earliest wins, as when it had the alarm to itself) and
-   * the first 社区小程序 socket's time. Written only when it moves.
+   * The object's alarm: the 红包's own (ACTIVITY_ALARM; `due` adds one, the
+   * earliest wins). Written only when it moves.
    */
   private async syncAlarm(due?: number) {
-    const mini = this.firstMiniDue();
     await this.ctx.storage.transaction(async (txn) => {
       const kept = await txn.get<number>(ACTIVITY_ALARM);
       // None kept yet: an alarm set before is the 红包's own.
@@ -766,20 +682,12 @@ export class ActivityDO extends DurableObject<ApiBindings> {
         own > 0 && inMaintenanceMode(this.env)
           ? Math.max(own, Date.now() + MAINTENANCE_ALARM_DELAY_MS)
           : own;
-      const next = at > 0 && (mini === null || at < mini) ? at : mini;
+      const next = at > 0 ? at : null;
       const current = await txn.getAlarm();
       if (next === null) {
         if (current !== null) await txn.deleteAlarm();
       } else if (next !== current) await txn.setAlarm(next);
     });
-  }
-
-  /** A mini app's socket gone: the alarm moves on to the next one's time. */
-  private async miniLeft(socket: WebSocket) {
-    const { until, key } = liveAttachment(socket);
-    if (until === undefined) return;
-    if (key !== undefined) this.miniIndex().delete(key);
-    await this.syncAlarm();
   }
 
   private async broadcast(id: string) {
@@ -792,7 +700,6 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       // The next change, or the page's slower polling, catches up.
       return;
     }
-    if (this.closeExpiredMinis()) await this.syncAlarm();
     const seq = await this.nextLiveSeq();
     const message = liveMessage(activity, seq);
     const mini =
@@ -801,7 +708,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
         : message;
     for (const socket of this.ctx.getWebSockets(LIVE_TAG)) {
       try {
-        socket.send(liveUntil(socket) === undefined ? message : mini);
+        socket.send(this.isMini(socket) ? mini : message);
       } catch {
         // Already closing: nothing to tell it.
       }
@@ -816,14 +723,12 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   }
 
   /** A viewer left (a closed tab, a lost line): the others hear the number. */
-  async webSocketClose(socket: WebSocket) {
+  async webSocketClose() {
     this.announceViewers();
-    await this.miniLeft(socket);
   }
 
-  async webSocketError(socket: WebSocket) {
+  async webSocketError() {
     this.announceViewers();
-    await this.miniLeft(socket);
   }
 
   /**
@@ -937,7 +842,7 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     const message = liveQueued(ahead, waiting);
     for (const socket of this.ctx.getWebSockets(liveUserTag(userId))) {
       // The 社区小程序 does not read these (docs/mini-app-design.md §7).
-      if (liveUntil(socket) !== undefined) continue;
+      if (this.isMini(socket)) continue;
       try {
         socket.send(message);
       } catch {
@@ -1428,18 +1333,15 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   }
 
   /**
-   * The one alarm (syncAlarm): 社区小程序 sockets due are closed; the 红包's
-   * own runs, as it always did on a wake, unless the alarm was set for a
-   * socket's time before it.
+   * The alarm (syncAlarm): the 红包's own runs, as it always did on a wake
+   * (each part waits for its own time itself), unless it has none. One set
+   * for a 社区小程序 socket's closing time before 2026-11-08 may still wake
+   * it early: the same, and the alarm goes back to the 红包's own.
    */
   async alarm() {
     const own = await this.ctx.storage.get<number>(ACTIVITY_ALARM);
-    const mini = this.firstMiniDue();
-    // Set before ACTIVITY_ALARM was kept, or nothing else is waited for:
-    // the 红包's own, as before.
-    const ownTurn =
-      own === undefined || mini === null || (own > 0 && own <= mini);
-    if (this.closeExpiredMinis()) this.announceViewers();
+    // Missing: set before ACTIVITY_ALARM was kept, so the 红包's own.
+    const ownTurn = own !== 0;
     // 维护模式: a deadline or draw comes back once it is over (syncAlarm).
     if (ownTurn && inMaintenanceMode(this.env)) {
       if (!own) await this.ctx.storage.put(ACTIVITY_ALARM, Date.now());

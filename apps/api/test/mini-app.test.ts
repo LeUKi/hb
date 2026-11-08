@@ -9,9 +9,11 @@ import {
   type LdcActivityInput,
   type MiniHongbaoResponse,
   type MiniLiveMessage,
+  type PublicActivity,
   type PublicRecipientList,
 } from "@hb/contracts";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { liveMiniMessage } from "../src/activities/live";
 import { createActivity, openActivity } from "../src/activities/service";
 import { app } from "../src/app";
 import { createDb } from "../src/db/client";
@@ -768,62 +770,60 @@ describe("社区小程序's live channel", () => {
     );
   });
 
-  it("closes sockets when their tokens end, by the object's alarm", async () => {
-    const activity = await running();
-    const now = Math.floor(Date.now() / 1000);
-    // 4 s: the alarm (a second early) is still ahead when it is read, on a
-    // slow runner too (2 s left it to fire first, and be set again; CI run
-    // 41985116092).
-    const ending = { iat: now - 1, nbf: now - 1, exp: now + 4 };
-    const first = await connect(activity.id, ending);
-    const second = await connect(activity.id, ending);
-    // No timer holds the object awake: its alarm wakes it a second early.
-    const { alarm, own } = await alarmOf(activity.id);
-    expect(alarm).toBe((now + 4) * 1000 - 1000);
-    expect(own).toBeGreaterThan(Date.now() + 60_000);
-    await vi.waitFor(
-      () => {
-        expect(first.closed).toEqual([4000]);
-        expect(second.closed).toEqual([4000]);
-      },
-      { timeout: 7000 },
-    );
-    // Then only the 红包's own deadline is waited for.
-    await vi.waitFor(async () =>
-      expect(await alarmOf(activity.id)).toEqual({ alarm: own, own }),
-    );
-  }, 15_000);
-
-  it("moves the alarm on as the app renews its socket, so it never wakes for one", async () => {
-    const activity = await running();
-    const old = await connect(activity.id);
-    const before = (await alarmOf(activity.id)).alarm ?? 0;
-    expect(before).toBeGreaterThan(Date.now() + 290_000);
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    await connect(activity.id);
-    // The new one's time is later: the alarm stays.
-    expect((await alarmOf(activity.id)).alarm).toBe(before);
-    old.socket.close(1000, "renewed");
-    await vi.waitFor(async () =>
-      expect((await alarmOf(activity.id)).alarm).toBeGreaterThan(before),
-    );
+  it("pushes the whole lighter read, however long (no 4 KiB cap since 2026-11-08)", () => {
+    const long = "长".repeat(3000);
+    const message = JSON.parse(
+      liveMiniMessage(
+        {
+          title: long,
+          beforeInfo: "说明",
+          author: { id: "a" },
+        } as unknown as PublicActivity,
+        7,
+      ),
+    ) as MiniLiveMessage;
+    expect(message.type).toBe("activity");
+    if (message.type !== "activity") return;
+    expect(message.seq).toBe(7);
+    expect(message.activity.title).toBe(long);
+    expect(message.activity).not.toHaveProperty("beforeInfo");
+    expect(message.activity).not.toHaveProperty("author");
   });
 
-  it("wakes for a socket's time without running the 红包's own, which still comes at its time", async () => {
+  it("keeps a socket past its token's end: the alarm waits for the 红包's own time alone", async () => {
+    const activity = await running();
+    const now = Math.floor(Date.now() / 1000);
+    const ending = { iat: now - 1, nbf: now - 1, exp: now + 1 };
+    const first = await connect(activity.id, ending);
+    const { alarm, own } = await alarmOf(activity.id);
+    expect(own).toBeGreaterThan(Date.now() + 60_000);
+    expect(alarm).toBe(own);
+    // The 社区 sets no time on a connection (2026-11-08): still open.
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    expect(first.closed).toEqual([]);
+    expect(first.socket.readyState).toBe(WebSocket.OPEN);
+  });
+
+  it("wakes for a socket's time left from before as for any, and goes back to the 红包's own", async () => {
     const activity = await running();
     await connect(activity.id);
     const set = await alarmOf(activity.id);
-    expect(set.alarm).toBeLessThan(set.own ?? 0);
-    expect(await wake(activity.id)).toBe(0);
-    expect(await alarmOf(activity.id)).toEqual(set);
-    // Its own time first: it runs, as on any wake before.
+    expect(set.alarm).toBe(set.own);
+    // An alarm set for a socket's closing time before 2026-11-08: the
+    // 红包's own runs and finds its deadline still ahead.
     await runInDurableObject(objectOf(activity.id), (_instance, state) =>
-      state.storage.put("activityAlarm", Date.now() - 1),
+      state.storage.setAlarm(Date.now() + 1_000),
     );
     expect(await wake(activity.id)).toBe(1);
+    expect(await alarmOf(activity.id)).toEqual(set);
+    // None of its own: nothing runs, and no alarm is left.
+    await runInDurableObject(objectOf(activity.id), (_instance, state) =>
+      state.storage.put("activityAlarm", 0),
+    );
+    expect(await wake(activity.id)).toBe(0);
   });
 
-  it("runs an alarm set before the 红包's own time was kept, after a socket came", async () => {
+  it("runs an alarm set before the 红包's own time was kept, a socket there or not", async () => {
     const activity = await running();
     const viewer = await connect(activity.id);
     const earlier = Date.now() + 60_000;
@@ -837,7 +837,7 @@ describe("社区小程序's live channel", () => {
     await connect(activity.id, { sub: "40" });
     expect(await alarmOf(activity.id)).toEqual({
       alarm: earlier,
-      own: earlier,
+      own: undefined,
     });
     await env.DB.prepare("UPDATE activities SET deadline=? WHERE id=?")
       .bind(Date.now() - 1000, activity.id)
@@ -853,30 +853,6 @@ describe("社区小程序's live channel", () => {
       )?.reason,
     ).toBe("expired");
     await vi.waitFor(() => expect(viewer.closed).toEqual([1000]));
-  });
-
-  it("lets go of a socket's time once it is due, even with its socket gone", async () => {
-    const activity = await running();
-    await connect(activity.id);
-    const { alarm, own } = await runInDurableObject(
-      objectOf(activity.id),
-      async (instance, state) => {
-        const object = instance as unknown as {
-          minis: Map<string, number>;
-          alarm(): Promise<void>;
-        };
-        // Closed and never heard of again.
-        object.minis.set("gone", Date.now() - 10);
-        await object.alarm();
-        expect(object.minis.has("gone")).toBe(false);
-        return {
-          alarm: await state.storage.getAlarm(),
-          own: await state.storage.get<number>("activityAlarm"),
-        };
-      },
-    );
-    expect(alarm).toBeGreaterThan(Date.now() + 290_000);
-    expect(alarm).toBeLessThan(own ?? 0);
   });
 
   it("keeps the 红包's own time due when it fails, for the runtime to try again", async () => {

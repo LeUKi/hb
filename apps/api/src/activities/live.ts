@@ -1,10 +1,9 @@
-import {
-  type ActivityLiveMessage,
-  type JudgeAnnouncement,
-  type JudgeView,
-  MINI_LIVE_LIMIT,
-  type MiniLiveMessage,
-  type PublicActivity,
+import type {
+  ActivityLiveMessage,
+  JudgeAnnouncement,
+  JudgeView,
+  MiniLiveMessage,
+  PublicActivity,
 } from "@hb/contracts";
 import type { ApiBindings } from "../env";
 import { activityObject } from "../runtime/objects";
@@ -115,24 +114,20 @@ export const liveAnnounce = (
 /**
  * 社区小程序 (docs/mini-app-design.md §7): a mini app's socket is on the
  * same channel (counted with the rest), tagged so it hears the lighter read
- * and none of 代码判定's messages, and closed at its `until` by the
- * object's alarm (a timer would keep the object from hibernating).
+ * and none of 代码判定's messages. It stays as long as the app keeps it:
+ * since 2026-11-08 the 社区 sets no time on a connection and does not end
+ * it with its token (before, 300 s, and the object's alarm closed it).
  */
 export const LIVE_MINI_TAG = "mini";
-/** The mini route's word for until when (ms) its socket may stay. */
-export const LIVE_UNTIL_HEADER = "X-HB-Live-Until";
-/**
- * The alarm may come late: it is set this much before a socket's `until`,
- * and closes those due within it. The app has renewed by 270 s.
- */
-export const LIVE_MINI_EARLY_MS = 1_000;
+/** The mini route's word that a socket is a mini app's. */
+export const LIVE_MINI_HEADER = "X-HB-Live-Mini";
 
 /**
  * The read a mini app's socket hears: the public read without what does
- * not move while it runs, under the forum's limit; past it, `changed`,
- * and every mini app reads it whole. Its sender and 领取范围 (up to 100
- * named people) are left out too: the app keeps its own, with the 社区's
- * pictures, and a long 领取范围 turned every push into a read by all.
+ * not move while it runs. Its sender and 领取范围 (up to 100 named people)
+ * are left out too: the app keeps its own, with the 社区's pictures. Whole
+ * every time: the 社区's 4 KiB cap on a message is gone (2026-11-08), and
+ * past it every mini app used to read the 红包 again at once.
  */
 export function liveMiniMessage(activity: PublicActivity, seq: number) {
   const {
@@ -146,14 +141,11 @@ export function liveMiniMessage(activity: PublicActivity, seq: number) {
     scope: _scope,
     ...light
   } = activity;
-  const message = JSON.stringify({
+  return JSON.stringify({
     type: "activity",
     activity: light,
     seq,
   } satisfies MiniLiveMessage);
-  return new TextEncoder().encode(message).length <= MINI_LIVE_LIMIT
-    ? message
-    : JSON.stringify({ type: "changed", seq } satisfies MiniLiveMessage);
 }
 
 /** What a refresh may have moved: pushed only when something did. */

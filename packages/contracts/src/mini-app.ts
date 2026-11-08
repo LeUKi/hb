@@ -171,11 +171,11 @@ export type MiniClaimInput = {
 };
 
 /**
- * What a 红包's live channel sends a mini app's socket, each under
- * MINI_LIVE_LIMIT bytes: its public read without the parts that do not
- * move while it runs, its sender and 领取范围 (the app keeps the read's),
- * or `changed` when even that is too long (read it again); how many
- * people watch, and that their own part moved.
+ * What a 红包's live channel sends a mini app's socket: its public read
+ * without the parts that do not move while it runs, its sender and 领取范围
+ * (the app keeps the read's); how many people watch, and that their own
+ * part moved. `changed` (read it again) was sent while the 社区 capped a
+ * message at 4 KiB (until 2026-11-08); the app still understands it.
  */
 export type MiniLiveActivity = Omit<
   PublicActivity,
@@ -193,6 +193,3 @@ export type MiniLiveMessage =
   | { type: "changed"; seq: number }
   | { type: "viewers"; count: number; seq: number }
   | { type: "mine" };
-
-/** The forum's limit on one WebSocket message. */
-export const MINI_LIVE_LIMIT = 4096;

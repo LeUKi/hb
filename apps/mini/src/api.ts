@@ -82,17 +82,16 @@ export const readRoster = (
     query: { id, kind, ...(cursor ? { cursor } : {}) },
   });
 
-/** The forum closes a connection at 300 s: the next one opens before. */
-const RENEW_MS = 270_000;
 /** Closed by the 红包's object for good: ended, push only, replaced. */
 const FINAL_CODES = new Set([1000, 1008, 4001]);
 
 /**
- * The 红包's live channel while `on`: each connection lives at most 300 s,
- * so the next opens a little before and the old one closes once it is up
- * (the forum allows two); a lost one comes back after a pause. One that
- * cannot connect (over since, say) asks for a fresh read (`onLost`). None
- * while the page is hidden. Gives whether a connection is up now.
+ * The 红包's live channel while `on`: one connection, kept as long as the
+ * page is in sight (the 社区 sets no time on it since 2026-11-08; before,
+ * a new one opened every 270 s, each a read for its 红包); a lost one comes
+ * back after a pause. One that cannot connect (over since, say) asks for a
+ * fresh read (`onLost`). None while the page is hidden. Gives whether a
+ * connection is up now.
  */
 export function useLive(
   sdk: MiniSdk,
@@ -110,11 +109,10 @@ export function useLive(
     if (!on) return;
     let stopped = false;
     let current: MiniSocket | null = null;
-    let renew: ReturnType<typeof setTimeout> | undefined;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let failures = 0;
     // A page out of sight (another tab, the app in the background) keeps no
-    // connection: each renewal costs its 红包 a read, and wakes it.
+    // connection: it would wake its 红包 for every change nobody sees.
     const away = () => document.visibilityState === "hidden";
     const open = async () => {
       if (stopped || away()) return;
@@ -143,7 +141,6 @@ export function useLive(
         if (stopped || current !== socket) return;
         current = null;
         up.current = false;
-        clearTimeout(renew);
         // Its own ends, as 红包站's page (lib/live.ts FINAL_CODES): over,
         // push only, or another of theirs took its place. Read it once and
         // stay off; coming back would close another (an endless ring).
@@ -153,15 +150,12 @@ export function useLive(
         retry = setTimeout(open, 1_000 + Math.random() * 2_000);
       });
       if (previous) void previous.close().catch(() => {});
-      clearTimeout(renew);
-      renew = setTimeout(open, RENEW_MS);
     };
     // Back in sight: connected again (its first message is the 红包 as it
     // is now), and one's own part read, should a `mine` have gone by.
     const onVisibility = () => {
       if (stopped) return;
       if (away()) {
-        clearTimeout(renew);
         clearTimeout(retry);
         const left = current;
         current = null;
@@ -179,7 +173,6 @@ export function useLive(
       stopped = true;
       document.removeEventListener("visibilitychange", onVisibility);
       up.current = false;
-      clearTimeout(renew);
       clearTimeout(retry);
       void current?.close().catch(() => {});
     };
