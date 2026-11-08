@@ -115,8 +115,15 @@ export function TipScreen({ sdk, code }: { sdk: MiniSdk; code: string }) {
   }, [sdk, load]);
   const actions = useMemo<TipCardActions>(
     () => ({
-      deliver: "copy",
-      copy: (url) => copy(sdk, url),
+      deliver: "open",
+      open: (url) =>
+        sdk.links.open(url).then(
+          () => "opened" as const,
+          (error: { code?: string } | undefined) =>
+            error?.code === "USER_CANCELLED"
+              ? ("cancelled" as const)
+              : ("failed" as const),
+        ),
       create: async (input) => {
         if (view?.lookOnly)
           throw new HongbaoError(

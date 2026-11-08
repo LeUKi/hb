@@ -33,9 +33,14 @@ import { tipCardHeight } from "./embed";
 export type TipCardActions = {
   create: (input: CreateTipInput) => Promise<TipResult>;
   check: (tipId: string) => Promise<TipResult>;
-  /** How a Credit 站 link reaches the viewer: copied (the 社区) or opened. */
+  /**
+   * How a Credit 站 link reaches the viewer: opened (in a new tab, or
+   * through `open` where the page cannot open one itself: the 社区 shows
+   * where it goes and asks first), or copied.
+   */
   deliver: "copy" | "open";
   copy?: (url: string) => Promise<boolean>;
+  open?: (url: string) => Promise<"opened" | "cancelled" | "failed">;
   /** A guest's Cap token for this card (viewer.capEndpoint). */
   capToken?: () => Promise<string>;
 };
@@ -341,6 +346,14 @@ export function TipCardView({
       const copied = (await actions.copy?.(payUrl)) ?? false;
       if (!copied) {
         // Not copied (the 社区 asks first): the link itself, to select.
+        setProblem(payUrl);
+        return;
+      }
+    } else if (actions.open) {
+      const opened = await actions.open(payUrl);
+      // Their own no: as before the press. Not opened: the link, to select.
+      if (opened === "cancelled") return;
+      if (opened === "failed") {
         setProblem(payUrl);
         return;
       }
@@ -650,7 +663,7 @@ export function TipCardView({
       className={wide ? "flex-1" : "shrink-0"}
       onClick={() => {
         // Opened inside the press, so no popup blocker stops it.
-        if (actions?.deliver === "open" && payUrl)
+        if (actions?.deliver === "open" && !actions.open && payUrl)
           window.open(payUrl, "_blank", "noopener");
         void deliver();
       }}
