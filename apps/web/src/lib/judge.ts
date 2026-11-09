@@ -49,6 +49,12 @@ export const KIT_URL = "https://github.com/LeUKi/hb/tree/main/kit";
 /** The kit's AGENTS.md as plain text: what an AI agent can read by URL. */
 export const KIT_AGENTS_URL =
   "https://raw.githubusercontent.com/LeUKi/hb/main/kit/AGENTS.md";
+/** The same on GitHub's page, for people: its sections have addresses. */
+export const KIT_AGENTS_PAGE_URL =
+  "https://github.com/LeUKi/hb/blob/main/kit/AGENTS.md";
+/** The SDK's types as plain text. */
+export const KIT_SDK_TYPES_URL =
+  "https://raw.githubusercontent.com/LeUKi/hb/main/kit/page/hb.d.ts";
 
 /** SHA-256 of the text as hex: judge.js's fingerprint, tests.json's digest. */
 export async function textDigest(text: string) {

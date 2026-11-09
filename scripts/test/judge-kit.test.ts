@@ -1956,9 +1956,46 @@ describe("开发文档的要点", () => {
     expect(skill).toContain("人机验证默认不开");
     expect(between(read("kit/AGENTS.md"))).toBe(skill);
     expect(between(read("kit/.cursor/rules/hongbao-judge.mdc"))).toBe(skill);
-    expect(read("apps/web/src/components/views/help-code-view.tsx")).toContain(
-      'from "../../../../../kit/.claude/skills/hongbao-judge/SKILL.md?raw"',
+    expect(read("apps/web/src/lib/kit-guide.ts")).toContain(
+      'from "../../../../kit/.claude/skills/hongbao-judge/SKILL.md?raw"',
     );
+  });
+
+  it("has 选做法 once: the same in the Skill and AGENTS.md, and every section it sends you to exists", () => {
+    const table = (text: string) => {
+      const start = text.indexOf("<!-- 选做法：");
+      const end = text.indexOf("<!-- 选做法到这里 -->");
+      if (start < 0 || end < 0) throw new Error("NO_APPROACHES");
+      return text.slice(start, end);
+    };
+    const agents = read("kit/AGENTS.md");
+    const skill = table(read("kit/.claude/skills/hongbao-judge/SKILL.md"));
+    expect(table(agents)).toBe(skill);
+    const rows = skill.split("\n").filter((line) => line.startsWith("|"));
+    expect(rows.length).toBeGreaterThan(2);
+    const headings = new Set(
+      [...agents.matchAll(/^#{2,3} (.+)$/gm)].map((match) => match[1]),
+    );
+    for (const row of rows.slice(2)) {
+      const cells = row.slice(1, -1).split("|");
+      expect(cells, row).toHaveLength(5);
+      const reading = cells[4] ?? "";
+      expect(reading, row).toMatch(/“[^”]+”|\[[^\]]+\]\(https:/);
+      for (const [, section] of reading.matchAll(/“([^”]+)”/g))
+        expect(headings, row).toContain(section);
+    }
+  });
+
+  it("says every SDK method in AGENTS.md's SDK section", () => {
+    const agents = read("kit/AGENTS.md");
+    const start = agents.indexOf("### SDK");
+    const section = agents.slice(start, agents.indexOf("\n## ", start));
+    const types = read("kit/page/hb.d.ts");
+    const methods = new Set(
+      [...types.matchAll(/^ {2}([a-zA-Z]+)\(/gm)].map((match) => match[1]),
+    );
+    expect(methods.size).toBeGreaterThan(8);
+    for (const method of methods) expect(section).toContain(`hb.${method}(`);
   });
 
   it("npm run check reminds of 人机验证 on, and of a page not opening by itself or its button not first", () => {

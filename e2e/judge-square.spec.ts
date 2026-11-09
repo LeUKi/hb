@@ -404,6 +404,7 @@ test.describe("判定器广场", () => {
     ).toBeVisible();
     // Where writing one is told, in new tabs (§16.1).
     for (const [name, href] of [
+      ["做一个玩法 ↗", "/help/start"],
       ["开发文档 ↗", "/help/code"],
       ["给 AI 的说明 ↗", "/help/code#ai"],
     ] as const) {

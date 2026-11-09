@@ -33,7 +33,7 @@ npm test
 - `page/index.html`、`page/hb.d.ts`：附带网页的模板（接好了红包站的 SDK）和 SDK 的类型。不需要网页就不用管它。
 - `tests.schema.json`、`simulate.schema.json`：两个 JSON 的格式，编辑器据此补全、标错。
 - `judge.d.ts`、`modules.d.ts`、`jsconfig.json`：类型。`tools` 和能用的 Node 模块，编辑器和 AI 都看得到。
-- `AGENTS.md`：完整的规则、最佳做法（带网页的玩法、认人、自有后端、热闹的玩法、上线前）和常见错误，给 AI 也给人看。开头的“要点”和 `.claude/skills/`、`.cursor/rules/` 里的是同一段：AI 一定会先读到它。
+- `AGENTS.md`：完整的规则、最佳做法（带网页的玩法、认人、自有后端、热闹的玩法、中大型游戏、上线前）和常见错误，给 AI 也给人看。开头的“要点”和 `.claude/skills/`、`.cursor/rules/` 里的是同一段：AI 一定会先读到它。
 - `runtime/`：沙箱里和代码一起跑的那部分，网站上用的是同一份。
 - `cli/`：五个命令。
 

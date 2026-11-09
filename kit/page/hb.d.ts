@@ -1,6 +1,6 @@
 // 红包站附带网页 SDK v1 的类型：网页里引用
 // <script src="https://hb.lafi.sh/sdk/v1.js"></script> 以后的全局 hb。
-// 说明见 https://hb.lafi.sh/help/page#sdk 和开发包的 AGENTS.md“附带网页”。
+// 说明见开发包的 AGENTS.md“SDK”。
 
 /** 红包的公开信息。 */
 export interface HbHongbao {

@@ -531,13 +531,13 @@ export function SettingsSheet({
                 action={
                   // In a new tab: the form stays as it is.
                   <a
-                    href="/help/page"
+                    href="/help/start"
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 text-sm text-accent-ink hover:underline"
                   >
                     <BookOpen className="size-4" aria-hidden="true" />
-                    接入说明 ↗
+                    怎么做 ↗
                   </a>
                 }
               >

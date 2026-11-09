@@ -315,6 +315,12 @@ const helpCodeRoute = createRoute({
   path: "/help/code",
   staticData: { chrome: "docked", command: "help", subpage: "代码判定红包" },
 });
+// 做一个玩法 (docs/kit-guide-design.md §8): where the docs for makers start.
+const helpStartRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/help/start",
+  staticData: { chrome: "docked", command: "help", subpage: "做一个玩法" },
+});
 // 附带网页's 接入说明 (docs/attached-page-design.md §3.1): a subpage too.
 const helpPageRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -377,6 +383,7 @@ const routeTree = rootRoute.addChildren([
   adminAuditRoute,
   helpRoute,
   helpApiRoute,
+  helpStartRoute,
   helpCodeRoute,
   helpPageRoute,
   statusRoute,

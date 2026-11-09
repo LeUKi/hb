@@ -4,7 +4,14 @@ import type {
   JudgeStats,
   SquareJudge,
 } from "@hb/contracts";
-import { BookOpen, Bot, Braces, FolderGit2, Globe } from "lucide-react";
+import {
+  BookOpen,
+  Bot,
+  Braces,
+  Compass,
+  FolderGit2,
+  Globe,
+} from "lucide-react";
 import { revealsAtEnd } from "../../../../../kit/runtime/params.mjs";
 import { cn } from "../../lib/cn";
 import { KIT_URL } from "../../lib/judge";
@@ -124,13 +131,14 @@ export function JudgeTags({ judge }: { judge: SquareJudge }) {
 }
 
 /**
- * 开发文档, 给 AI 的说明 and 本地开发包 (§16.1), where a 判定器 is
+ * 做一个玩法, 开发文档, 给 AI 的说明 and 本地开发包 (§16.1), where a 判定器 is
  * written: in a new tab, so what is half written stays.
  */
 export function JudgeHelpLinks({ className }: { className?: string }) {
   return (
     <div className={cn("flex flex-wrap gap-x-4 gap-y-1", className)}>
       {[
+        { href: "/help/start", icon: Compass, label: "做一个玩法" },
         { href: "/help/code", icon: BookOpen, label: "开发文档" },
         { href: "/help/code#ai", icon: Bot, label: "给 AI 的说明" },
         { href: KIT_URL, icon: FolderGit2, label: "本地开发包" },

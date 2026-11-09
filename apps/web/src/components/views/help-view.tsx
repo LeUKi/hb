@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Braces, ChevronRight, FolderCode, Globe } from "lucide-react";
+import { Braces, ChevronRight, Compass, FolderCode, Globe } from "lucide-react";
 import { RED_PACKET } from "../../lib/activity-route";
 import {
   commands,
@@ -161,6 +161,24 @@ export function HelpView() {
       {/* The docs for senders (07 §12): 代码判定's and 附带网页's, both
           everyone's (since 2026-10-28 and 2026-10-30). */}
       <Panel as="ul" className="grid gap-0.5 p-1.5">
+        {/* Where making a game starts (docs/kit-guide-design.md §8). */}
+        <li>
+          <Squircle radius={radius.row}>
+            <Link
+              to="/help/start"
+              className="flex min-h-12 items-center gap-3 px-3 py-2 transition-colors hover:bg-fill-2"
+            >
+              <Compass className="size-[18px] shrink-0 text-ink-2" />
+              <span className="min-w-0 flex-1 truncate text-ink">
+                做一个玩法
+              </span>
+              <ChevronRight
+                className="size-4 shrink-0 text-ink-3"
+                aria-hidden="true"
+              />
+            </Link>
+          </Squircle>
+        </li>
         <li>
           <Squircle radius={radius.row}>
             <Link

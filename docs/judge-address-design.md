@@ -255,6 +255,8 @@ hongbao.params.server; // https://a.workers.dev/，共用的网页拿它决定�
 
 要点第 1 条加“后端归谁、谁付钱”，第 8 条加判定器的请求看 `X-Hb-Token`（Skill、`AGENTS.md`、Cursor 规则三处一字不差，`/help/code` 取自 Skill）。
 
+2026-11-08 用户定，加一种做法：提交很频繁、计算量大、交互多的中大型游戏，判定器的调用频率和队列扛不住，统一放在自己的服务上，判定器只在领取时验服务签的凭证，不联网（矿洞夺宝 v3 的做法）。代价是两边奖池不实时同步、有人不领、游戏过程不能核对；写法和处理办法见 `kit/AGENTS.md` 的“中大型游戏”。
+
 ### 12.7 做的时候补的（2026-11-01）
 
 - **网关**：`judge/outgoing.ts` 一次查出这个红包的版本声明、`network`（带 `{ param }` 和 `{ url, token }` 的原样）、开放时公开的参数、发红包的人和有没有密钥，算出这次请求要加的密钥请求头和 `X-Hb-Token`。签名和网页的身份令牌共用 `signClaims`（`PAGE_IDENTITY_KEYS` 的第一把）；没配钥匙时不加令牌，请求照发。`iss` 取 `APP_ORIGIN` 加 `/judge`，没配时是 `https://hb.lafi.sh/judge`。

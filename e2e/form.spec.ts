@@ -551,12 +551,12 @@ test.describe("发红包", () => {
     const refused =
       "这个网站不允许被嵌入，红包页上会显示不出来，只能在新标签页打开。";
     await expect(field).toContainText(refused);
-    // 怎么让它能嵌入 and 接入说明: /help/page in a new tab (the form stays).
+    // 怎么让它能嵌入 and 怎么做: help in a new tab (the form stays).
     const how = field.getByRole("link", { name: "怎么让它能嵌入 ↗" });
     await expect(how).toHaveAttribute("href", "/help/page#embed");
     await expect(how).toHaveAttribute("target", "_blank");
-    const guide = field.getByRole("link", { name: "接入说明 ↗" });
-    await expect(guide).toHaveAttribute("href", "/help/page");
+    const guide = field.getByRole("link", { name: "怎么做 ↗" });
+    await expect(guide).toHaveAttribute("href", "/help/start");
     await expect(guide).toHaveAttribute("target", "_blank");
     expect(checked).toEqual([
       "https://puzzle.example.com/%E9%A2%98%E7%9B%AE?day=3",
@@ -653,6 +653,43 @@ test.describe("发红包", () => {
     // The anchors the form's links open at.
     for (const id of ["ai", "embed", "identity", "login", "sdk"])
       await expect(page.locator(`#${id}`)).toHaveCount(1);
+  });
+
+  test("做一个玩法：七种做法接着读哪里，一段给 AI 的说明，详细文档都能到", async ({
+    page,
+  }) => {
+    await mockSession(page, viewer);
+    await openApp(page, "/help");
+    await page.getByRole("link", { name: "做一个玩法" }).click();
+    await expect(page).toHaveURL(/\/help\/start$/);
+    await expect(
+      page.getByRole("heading", { name: "做一个玩法" }),
+    ).toBeVisible();
+    const list = page.locator("section", {
+      has: page.getByRole("heading", { name: "选一种做法" }),
+    });
+    await expect(list.getByRole("listitem")).toHaveCount(7);
+    await expect(
+      list.getByRole("link", { name: "附带网页 · 接入说明" }),
+    ).toHaveAttribute("href", "/help/page");
+    await expect(
+      list.getByRole("link", {
+        name: "中大型游戏：游戏放在自己的服务上 ↗",
+      }),
+    ).toHaveAttribute("href", /AGENTS\.md#中大型游戏游戏放在自己的服务上$/);
+    await expect(page.getByText(/人机验证默认不开/)).toBeVisible();
+    await expect(
+      page.getByText(/游戏放在自己的服务上，领取时验凭证：/),
+    ).toBeVisible();
+    await page
+      .locator("section", {
+        has: page.getByRole("heading", { name: "详细文档" }),
+      })
+      .getByRole("link", { name: "代码判定红包 · 开发文档" })
+      .click();
+    await expect(page).toHaveURL(/\/help\/code$/);
+    await page.getByRole("link", { name: /先看“做一个玩法”/ }).click();
+    await expect(page).toHaveURL(/\/help\/start$/);
   });
 
   test("更多设置：附带网页的开关关着时看不到这一项，存草稿不带", async ({

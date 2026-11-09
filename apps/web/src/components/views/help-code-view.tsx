@@ -1,10 +1,11 @@
 import { JUDGE_LIMITS } from "@hb/contracts";
 import type { ReactNode } from "react";
-import skill from "../../../../../kit/.claude/skills/hongbao-judge/SKILL.md?raw";
 import { KIT_AGENTS_URL, KIT_URL } from "../../lib/judge";
+import { approachLines, keyPoints } from "../../lib/kit-guide";
 import { Page, PageHeader, PageSection, Panel } from "../page/page";
 import { Code } from "../ui/code";
 import { Block, Fields } from "./help-api-view";
+import { StartLink } from "./help-start-view";
 
 // /help/code: 代码判定红包's code protocol, fifth version, in words
 // (docs/programmable-hongbao-design.md §4–5, docs/judge-page-design.md §2,
@@ -26,17 +27,6 @@ const MODULES = [
 ];
 
 /**
- * 要点 (docs/kit-guide-design.md §3): the lines between the Skill's two
- * marks, the same in kit/AGENTS.md and the Cursor rule (a test holds them).
- */
-const keyPoints = skill
-  .slice(
-    skill.indexOf("\n", skill.indexOf("<!-- 要点：")) + 1,
-    skill.indexOf("<!-- 要点到这里 -->"),
-  )
-  .trim();
-
-/**
  * For a chat AI, whole: where everything is, the key points, the protocol
  * in one go, then the sender's own game. This page is drawn in the browser, so an agent
  * that fetches it reads nothing: AGENTS.md is its text.
@@ -49,12 +39,15 @@ const aiPrompt = (
 - 本地开发包：${KIT_URL} ，用 npx degit LeUKi/hb/kit 我的红包 取到本地，里面有能跑通的模板、npm test 和 npm run check。
 - 开发包里写给 AI 的完整说明 AGENTS.md（纯文本，能直接读）：${KIT_AGENTS_URL}
 - 开发文档：${origin}/help/code （网页要用浏览器打开，直接抓取读不到内容）
-- 附带网页、认人和自有后端的做法：AGENTS.md 的“选做法”“带网页的玩法”“后端认人和读红包”“自有后端”“发红包的人自己部署的服务”“热闹的玩法”，接入说明 ${origin}/help/page
+- 附带网页、认人和自有后端的做法：AGENTS.md 的“选做法”“带网页的玩法”“后端认人和读红包”“自有后端”“发红包的人自己部署的服务”“热闹的玩法”“中大型游戏”，接入说明 ${origin}/help/page
 
 要点（先读）：
 ${keyPoints}
 
-选做法（能简单就简单）：规则写得成代码 → 只用判定器；要格子、按钮、动画 → 加附带网页；要用发红包的人的第三方账号（比如他的 AI 密钥）→ 联网加密钥参数；要后端、作者自己管 → network 写 { url, token: true }，后端验 X-Hb-Token；每个发红包的人要自己的数据、AI 账号或存储 → 地址参数（type: "url"）加 network 里的 { param }，服务由他部署，网页放在服务上。谁信谁：网页发来的请求验 hb.identity() 的令牌（iss ${origin}），判定器发来的请求验 X-Hb-Token（iss ${origin}/judge），两种同一把公钥 ${origin}/api/page-identity/keys，都带 hongbao、sender（发红包的人的数字 ID）和 judge（判定器编号，作者大家共用的后端要核对是自己的判定器）；后端要玩法参数和红包状态，读红包信息 ${origin}/api/hongbao/<红包编号>（参数开放后不变，可以缓存），别用本站别的接口；昵称、hb.ready() 里的参数、X-Hb-Hongbao 和网页交来的分数都可能是伪造的；钱只由判定器算，后端的结果要判定器联网核对。
+选做法（能简单就简单）：
+${approachLines}
+
+谁信谁：网页发来的请求验 hb.identity() 的令牌（iss ${origin}），判定器发来的请求验 X-Hb-Token（iss ${origin}/judge），两种同一把公钥 ${origin}/api/page-identity/keys，都带 hongbao、sender（发红包的人的数字 ID）和 judge（判定器编号，作者大家共用的后端要核对是自己的判定器）；后端要玩法参数和红包状态，读红包信息 ${origin}/api/hongbao/<红包编号>（参数开放后不变，可以缓存），别用本站别的接口；昵称、hb.ready() 里的参数、X-Hb-Hongbao 和网页交来的分数都可能是伪造的；钱只由判定器发，后端的结果要判定器核对（联网问它，或者验它签的凭证）。
 
 规则：
 - judge.js 是一个 ES 模块，导出函数 judge(submission, tools)，可以是 async。每次有人在红包页提交一行输入，平台调用它一次，按它的返回给这个人加钱、减钱，决定什么时候结算。
@@ -233,6 +226,7 @@ export function HelpCodeView() {
     <Page>
       <PageHeader
         title="代码判定红包 · 开发文档"
+        actions={<StartLink />}
         description="写一段代码，决定谁领多少。登录就能发；代码在本站的沙箱里跑，开放时公布指纹，结束后公开代码。"
       />
       <PageSection
