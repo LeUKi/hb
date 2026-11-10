@@ -73,6 +73,7 @@ import { detectScheme, type EntryScheme } from "../../lib/scheme";
 import { askSelfClaim } from "../../lib/self-claim";
 import { sessionUserOf, useSessionUser } from "../../lib/session";
 import { verifyNoticeAtom } from "../../lib/store";
+import { sdkUnitOf } from "../../lib/units";
 import { useBefore } from "../../lib/use-before";
 import { phoneLikeNow } from "../shell/window-info";
 import { omniboxElements } from "./elements";
@@ -1034,11 +1035,12 @@ export function useOmniboxController() {
                 queryKey: sessionQueryKey,
               });
             const reply = result.claim.judge?.message;
+            const money = sdkUnitOf(result.claim.activity);
             return {
               judged: true,
               claimed: true,
-              amount: result.claim.amount,
-              unit: balance ? "🐟" : "LDC",
+              amount: money.amount(result.claim.amount),
+              unit: money.unit,
               ...(reply ? { reply } : {}),
             };
           }
@@ -1057,18 +1059,22 @@ export function useOmniboxController() {
               void queryClient.invalidateQueries({
                 queryKey: sessionQueryKey,
               });
+            // 三方积分 (third-party-points §10): amounts in its decimals.
+            const money = sdkUnitOf(claim?.activity ?? activity ?? {});
             const said = {
               ...(result.message ? { reply: result.message } : {}),
-              added: result.moved.added,
-              pending: result.settled ? "0.00" : result.moved.pending,
+              added: money.amount(result.moved.added),
+              pending: money.amount(
+                result.settled ? "0.00" : result.moved.pending,
+              ),
               settled: Boolean(result.settled),
             };
             return claim
               ? {
                   judged: true,
                   claimed: true,
-                  amount: claim.amount,
-                  unit: balance ? "🐟" : "LDC",
+                  amount: money.amount(claim.amount),
+                  unit: money.unit,
                   ...said,
                 }
               : { judged: true, claimed: false, ...said };

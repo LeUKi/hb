@@ -75,6 +75,6 @@ export const publicationMessages = {
   POINTS_HONGBAO_PAUSED: "三方积分红包暂时关闭，草稿已保存。",
   POINTS_NOT_ONLINE: "这种三方积分现在没有上线，草稿已保存。",
   POINTS_KEY_NEEDED: "还没填你在发行方的密钥，草稿已保存。",
-  JUDGE_PROTOCOL_TOO_OLD_FOR_POINTS:
-    "三方积分红包要用第六版及以后的判定器，草稿已保存。",
+  JUDGE_NOT_FOR_POINTS:
+    "三方积分红包要用声明了支持三方积分（meta.points）的判定器，草稿已保存。",
 } as const;

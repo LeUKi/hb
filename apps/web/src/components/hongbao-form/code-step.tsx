@@ -43,7 +43,8 @@ import { counter, type ErrorOf, QuietLine, type Update } from "./fields";
 import { type FormState, withJudgeDefaults } from "./form-state";
 import { FilePicker, fromClipboard, JudgeCard } from "./judge-card";
 import { JudgeEntries, LoadingJudge, PickedJudge } from "./judge-picker";
-import { ParamsFields, paramsFor } from "./params-fields";
+import { ParamsFields, ParamsUnitContext, paramsFor } from "./params-fields";
+import { useFormUnit } from "./points-funding";
 import { testCount } from "./steps";
 import { TryJudge } from "./try-judge";
 import type { useBorrowJudge } from "./use-borrow-judge";
@@ -860,6 +861,7 @@ export function CodeStep({
     done: (firstParam: string | null) => void;
   };
 }) {
+  const formUnit = useFormUnit(form);
   const navigate = useNavigate();
   const set = (key: "prompt") => (value: string) =>
     update((current) => ({
@@ -1141,38 +1143,42 @@ export function CodeStep({
       <Reveal show={picked} className="min-w-0">
         <div className="flex min-w-0 flex-col gap-5">
           <Reveal show={params.length > 0} className="min-w-0">
-            <ParamsFields
-              params={params}
-              values={form.judge.params}
-              errorOf={paramErrorOf}
-              locked={locked}
-              network={borrowed ? borrowed.network : judge.network}
-              ownId={sessionUser?.linuxDoId}
-              keys={{
-                filled: form.judge.keysFilled,
-                typed: form.judge.keys,
-                onType: (key, value) =>
-                  update((current) => {
-                    const { [key]: _left, ...rest } = current.judge.keys;
-                    return {
-                      ...current,
-                      judge: {
-                        ...current.judge,
-                        keys: value === null ? rest : { ...rest, [key]: value },
-                      },
-                    };
-                  }),
-              }}
-              onChange={(key, value) =>
-                update((current) => ({
-                  ...current,
-                  judge: {
-                    ...current.judge,
-                    params: { ...current.judge.params, [key]: value },
-                  },
-                }))
-              }
-            />
+            {/* 三方积分: money params in its 最小单位 (third-party-points §10). */}
+            <ParamsUnitContext.Provider value={formUnit}>
+              <ParamsFields
+                params={params}
+                values={form.judge.params}
+                errorOf={paramErrorOf}
+                locked={locked}
+                network={borrowed ? borrowed.network : judge.network}
+                ownId={sessionUser?.linuxDoId}
+                keys={{
+                  filled: form.judge.keysFilled,
+                  typed: form.judge.keys,
+                  onType: (key, value) =>
+                    update((current) => {
+                      const { [key]: _left, ...rest } = current.judge.keys;
+                      return {
+                        ...current,
+                        judge: {
+                          ...current.judge,
+                          keys:
+                            value === null ? rest : { ...rest, [key]: value },
+                        },
+                      };
+                    }),
+                }}
+                onChange={(key, value) =>
+                  update((current) => ({
+                    ...current,
+                    judge: {
+                      ...current.judge,
+                      params: { ...current.judge.params, [key]: value },
+                    },
+                  }))
+                }
+              />
+            </ParamsUnitContext.Provider>
           </Reveal>
           <Field
             label="领取时的提示"

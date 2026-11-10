@@ -7,6 +7,7 @@
 // batch, the database's guards checking each as it would on its own. One
 // that cannot go along (the 红包 ended in it, a write refused) is judged on
 // its own after (claims.ts).
+
 import {
   type ClaimActivityInput,
   type ClaimResult,
@@ -31,6 +32,11 @@ import { refreshActivityLifecycle } from "../activities/lifecycle";
 import { activityStatus } from "../activities/service";
 import { findActivity } from "../activities/storage";
 import type { ApiBindings } from "../env";
+import {
+  judgeUnitOf,
+  readingFromJudge,
+  submissionForJudge,
+} from "../points/judge";
 import { assertAttemptAllowed } from "../runtime/attempt-cooldown";
 import {
   FAILURES_TO_PAUSE,
@@ -212,6 +218,9 @@ export async function judgeBatch(
     judgedParams(env, row),
   ]);
 
+  // 三方积分 (docs/third-party-points-design.md §10): the code counts in
+  // 最小单位; LDC and 🐟 in 分 as before (step 1).
+  const unit = judgeUnitOf(activity);
   // What each judgment leaves for the next.
   let judge = { ...row };
   let state = shared as Json;
@@ -379,7 +388,7 @@ export async function judgeBatch(
       outcome = await runJudge(env, {
         code,
         fingerprint: judge.fingerprint,
-        submission,
+        submission: submissionForJudge(submission, unit),
         seeds: {
           submission: submissionSeed(activityId, secret, linuxDoId, attempt),
           user: userSeed(activityId, secret, linuxDoId),
@@ -430,7 +439,13 @@ export async function judgeBatch(
       }
       continue;
     }
-    const read = readVerdict(outcome.verdict, share, judge.protocol);
+    const answered = readVerdict(
+      outcome.verdict,
+      submissionForJudge(submission, unit).share,
+      judge.protocol,
+    );
+    const read =
+      "add" in answered ? readingFromJudge(answered, unit) : answered;
     let invalid: string | null = null;
     let named: { userId: string; externalId: string; pending: number }[] = [];
     if ("error" in read) invalid = read.error.detail;

@@ -1325,6 +1325,18 @@ export async function openActivity(
     coded && judgeRow
       ? await openingParams(env, row.authorId, judgeRow)
       : undefined;
+  // 三方积分 (docs/third-party-points-design.md §10): only a 判定器 that
+  // counts in 最小单位 (meta.points) pays one.
+  if (
+    coded &&
+    row.funding === "points" &&
+    opening?.declarations?.meta?.points !== true
+  )
+    throw new ActivityError(
+      409,
+      "JUDGE_NOT_FOR_POINTS",
+      publicationMessages.JUDGE_NOT_FOR_POINTS,
+    );
   if (coded && judgeRow) {
     const rejected = await paramsRejected(
       env,

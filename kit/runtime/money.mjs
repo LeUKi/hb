@@ -25,6 +25,26 @@ export function settle(asked, share) {
   return Math.min(share.max, Math.max(share.min, asked));
 }
 
+/**
+ * An amount in a 三方积分's 最小单位 (docs/third-party-points-design.md
+ * §10): `step` as hongbao.step says it ("1", "0.5", "100"); the amount is so
+ * many steps, written with the step's decimals. Without a step, or "0.01",
+ * it is 分 as ever: formatAmount.
+ */
+export function formatUnits(amount, step) {
+  if (!step || step === "0.01") return formatAmount(amount);
+  if (!Number.isSafeInteger(amount))
+    throw new TypeError("format 要一个整数（多少个最小单位）");
+  const [whole, fraction = ""] = String(step).split(".");
+  const stepMinor = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+  const minor = amount * stepMinor;
+  const decimals = stepMinor % 100 === 0 ? 0 : stepMinor % 10 === 0 ? 1 : 2;
+  const text = formatAmount(minor);
+  return decimals === 2
+    ? text
+    : text.slice(0, text.length - (2 - decimals) - (decimals === 0 ? 1 : 0));
+}
+
 /** 2000 → "20.00". */
 export function formatAmount(amount) {
   if (!Number.isSafeInteger(amount))

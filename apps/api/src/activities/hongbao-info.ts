@@ -4,9 +4,9 @@
 // kept as it is, so no server reads the site's own pages' data. Anyone's to
 // read, as the 红包 page is; a draft says only that it is one (its params
 // may still change).
+
 import {
-  formatAmount,
-  formatSignedAmount,
+  formatUnitAmount,
   type HongbaoInfo,
   type LdcActivityInput,
   ldcTotalMinor,
@@ -15,6 +15,7 @@ import { Hono } from "hono";
 import type { ApiBindings, ApiContext } from "../env";
 import { ledgerPool } from "../judge/ledger";
 import { backendJudge } from "../judge/public";
+import { judgeUnitOf, stepText } from "../points/judge";
 import { publicScopeWithPeople } from "./claim-scope";
 import { activityNotFound } from "./errors";
 import { activityStatus, configuration } from "./service";
@@ -30,6 +31,8 @@ export async function hongbaoInfo(
   if (status === "draft") return { id: row.id, status };
   const coded = row.participationMode === "code";
   const config = configuration(row);
+  const unit = judgeUnitOf(row);
+  const pool = ldcTotalMinor(config as LdcActivityInput);
   const [sender, code, left, scope] = await Promise.all([
     env.DB.prepare("SELECT external_id AS id FROM users WHERE id = ?")
       .bind(row.authorId)
@@ -48,9 +51,17 @@ export async function hongbaoInfo(
     params: code?.params ?? {},
     // A game's own server budgets with these, and binds what it signs to
     // this 红包 by openedAt, which its judge is given too (§13.7).
-    unit: row.funding === "balance" ? "🐟" : "LDC",
-    pool: formatAmount(ldcTotalMinor(config as LdcActivityInput)),
-    unclaimed: left === null ? null : formatSignedAmount(left),
+    // 三方积分 (docs/third-party-points-design.md §10): its unit, 最小单位
+    // and system; the integers in steps, as its judge counts.
+    unit: unit.unit,
+    step: stepText(unit.step),
+    points: unit.points,
+    pool: formatUnitAmount(pool, unit.step),
+    unclaimed: left === null ? null : formatUnitAmount(left, unit.step),
+    units: {
+      pool: pool / unit.step,
+      unclaimed: left === null ? null : Math.trunc(left / unit.step),
+    },
     openedAt: new Date(row.openedAt ?? 0).toISOString(),
     deadlineAt:
       row.deadline === null ? null : new Date(row.deadline).toISOString(),

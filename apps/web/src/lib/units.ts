@@ -10,6 +10,7 @@ import {
   amountToMinor,
   formatDisplayAmount,
   formatFullAmount,
+  formatUnitAmount,
   LDC_UNIT,
 } from "@hb/contracts";
 import { atom } from "jotai";
@@ -82,3 +83,29 @@ export function fullAmountText(
  * (my judgments in their dialog), set by the 红包's view.
  */
 export const activeUnitAtom = atom<AmountUnit>(LDC_UNIT);
+
+/**
+ * What 附带网页's SDK says of a 红包's money (docs/third-party-points-design.md
+ * §10): its unit ("LDC", "🐟", a 三方积分's), its 最小单位 as text, its
+ * system, and its amounts exact in the unit's decimals (never shortened).
+ */
+export function sdkUnitOf(activity: {
+  funding?: ActivityFunding | null;
+  points?: ActivityPoints | null;
+}) {
+  const points =
+    activity.funding === "points" && activity.points ? activity.points : null;
+  const step = points?.step ?? 1;
+  return {
+    unit: points ? points.unit : activity.funding === "balance" ? "🐟" : "LDC",
+    step: formatUnitAmount(step, step),
+    points: points
+      ? { name: points.name, unit: points.unit, host: points.host }
+      : null,
+    /** An API amount ("22.00") as the SDK writes it ("22"). */
+    amount: (value: string) => {
+      const minor = minorOf(value);
+      return minor === null ? value : formatUnitAmount(minor, step);
+    },
+  };
+}

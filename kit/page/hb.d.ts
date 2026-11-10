@@ -14,7 +14,12 @@ export interface HbHongbao {
   status: "draft" | "active" | "ended";
   /** 判定器用 end 结束了它 */
   endedByCode: boolean;
-  unit: "LDC" | "🐟";
+  /** "LDC"、"🐟"，或三方积分的单位（以前只有前两种） */
+  unit: string;
+  /** 最小单位，比如 "0.01"（LDC 和🐟）、"1"；下面的金额都按它的小数位写 */
+  step: string;
+  /** 三方积分红包：积分的名称、单位和发行方的域名；别的红包是 null */
+  points: { name: string; unit: string; host: string } | null;
   /** 红包没公开份数时是 null；代码判定红包没有份数，也是 null */
   shares: { total: number; claimed: number; remaining: number } | null;
   /** 奖池总额，比如 "10.00"；没有时 null */
@@ -110,7 +115,7 @@ export type HbSubmitResult =
       claimed: true;
       /** 领到多少，比如 "0.30" */
       amount: string;
-      unit: "LDC" | "🐟";
+      unit: string;
       /** 判定器的回复，没有就不带 */
       reply?: string;
     } & Partial<HbMoved>)
@@ -171,7 +176,7 @@ export type HbMe =
       /** 领到的；没领到时 null */
       claim: {
         amount: string;
-        unit: "LDC" | "🐟";
+        unit: string;
         /** paid 已到账，paying 正在付，failed 没发出，none 不付款（发红包的人自己领的） */
         payment: "paid" | "paying" | "failed" | "none";
       } | null;

@@ -53,6 +53,15 @@ export interface Submission {
     remainingCount: number;
     openedAt: number;
     endsAt: number;
+    /** 红包的单位："LDC"、"🐟"，或三方积分的单位 */
+    unit?: string;
+    /**
+     * 最小单位，比如 "0.01"（LDC 和🐟）、"1"、"100"。meta.points 为 true 时，
+     * 上面的金额都是多少个最小单位
+     */
+    step?: string;
+    /** 三方积分红包：积分的名称、单位和发行方的域名；别的红包是 null */
+    points?: { name: string; unit: string; host: string } | null;
   };
   /** 兼容旧代码：min 是 1，max 是 hongbao.unclaimed，last 一律 false */
   share: { min: number; max: number; last: boolean };
@@ -180,7 +189,10 @@ export interface Tools {
     even(n?: number): number;
     /** 拼手气：double 是微信同款（二倍均值），bounded 是支付宝同款（均值上下 50%），用 random */
     lucky(kind?: "double" | "bounded", n?: number): number;
-    /** 2000 → "20.00" */
+    /**
+     * 2000 → "20.00"；三方积分红包按最小单位：最小单位是 "1" 时 2000 → "2000"，
+     * "0.5" 时 → "1000.0"
+     */
     format(amount: number): string;
   };
   code: {
@@ -402,6 +414,13 @@ export interface Meta {
    * path 选填，接在地址后面。
    */
   page?: string | (ParamRef & { path?: string });
+  /**
+   * 写 true：这个判定器能用在三方积分红包上（docs/third-party-points-design.md
+   * 第 10 节）。这时所有金额（hongbao 的数、add、待结算、金额参数）都是“多少个
+   * 最小单位”，hongbao.step 是最小单位；LDC 和🐟的最小单位是 0.01，就是分，
+   * 和不写一样。不写的判定器只能用在 LDC 和🐟红包上。
+   */
+  points?: true;
 }
 
 /** check() 说的一个问题：哪个参数、错在哪（最多 100 个字）。 */

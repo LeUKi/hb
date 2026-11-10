@@ -1,10 +1,14 @@
 import {
+  type AmountUnit,
   amountToMinor,
+  formatUnitAmount,
   type JudgeNetworkEntry,
   type JudgeParam,
+  LDC_UNIT,
+  parseUnitAmount,
 } from "@hb/contracts";
 import { Plus, X } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { createContext, type ReactNode, useContext, useState } from "react";
 import { readAddress } from "../../../../../kit/runtime/network.mjs";
 import { cn } from "../../lib/cn";
 import { addressLabel, ParamTags } from "../judges/judge-bits";
@@ -44,10 +48,30 @@ function moneyOf(text: string): number | string {
   }
 }
 
-/** A value shown in its box: amounts in LDC. */
-function shown(value: unknown, type: "text" | "integer" | "money") {
+/**
+ * The unit a 红包's money params are in (docs/third-party-points-design.md
+ * §10): LDC's 分, or for a 三方积分红包 whole 最小单位 — what a judge that
+ * declares meta.points counts. The form gives it; elsewhere it is LDC.
+ */
+export const ParamsUnitContext = createContext<AmountUnit>(LDC_UNIT);
+
+/** A 三方积分 box: whole steps of its 最小单位, or the text. */
+function unitsOf(text: string, unit: AmountUnit): number | string {
+  const minor = parseUnitAmount(text, unit.step);
+  return minor === null ? text : minor / unit.step;
+}
+
+/** A value shown in its box: amounts in LDC, or the 红包's unit. */
+function shown(
+  value: unknown,
+  type: "text" | "integer" | "money",
+  unit: AmountUnit = LDC_UNIT,
+) {
   if (value === undefined || value === null) return "";
-  if (type === "money" && typeof value === "number") return ldc(value);
+  if (type === "money" && typeof value === "number")
+    return unit.step === 1
+      ? ldc(value)
+      : formatUnitAmount(value * unit.step, unit.step);
   return String(value);
 }
 
@@ -72,13 +96,16 @@ function NumberInput({
   invalid: boolean;
   label?: string;
 }) {
-  const [text, setText] = useState(() => shown(value, type));
+  const unit = useContext(ParamsUnitContext);
+  const money = (typed: string) =>
+    unit.step === 1 ? moneyOf(typed) : unitsOf(typed, unit);
+  const [text, setText] = useState(() => shown(value, type, unit));
   // Changed from outside (another version's defaults): show that.
   const read =
     text.trim() === ""
       ? null
       : type === "money"
-        ? moneyOf(text)
+        ? money(text)
         : integerOf(text);
   const outside =
     (value ?? null) !== read && !(value === undefined && read === null);
@@ -86,12 +113,12 @@ function NumberInput({
     <TextInput
       id={id}
       inputMode={type === "money" ? "decimal" : "numeric"}
-      value={outside ? shown(value, type) : text}
+      value={outside ? shown(value, type, unit) : text}
       disabled={disabled}
       invalid={invalid}
       aria-label={label}
       autoComplete="off"
-      suffix={type === "money" ? "LDC" : undefined}
+      suffix={type === "money" ? unit.unit : undefined}
       onChange={(event) => {
         const next = event.target.value;
         setText(next);
@@ -99,7 +126,7 @@ function NumberInput({
           next.trim() === ""
             ? null
             : type === "money"
-              ? moneyOf(next)
+              ? money(next)
               : integerOf(next),
         );
       }}

@@ -136,7 +136,8 @@ export type PageSubmitResult =
       judged: true;
       claimed: true;
       amount: string;
-      unit: "LDC" | "🐟";
+      /** "LDC", "🐟", or a 三方积分's unit. */
+      unit: string;
       reply?: string;
     } & Partial<PageMoved>)
   | ({ judged: true; claimed: false; reply?: string } & Partial<PageMoved>)

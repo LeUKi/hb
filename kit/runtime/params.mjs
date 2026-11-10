@@ -1147,10 +1147,16 @@ export function pageOf(meta, values, { local = false } = {}) {
 export function readMeta(value) {
   if (value === undefined || value === null) return { meta: null };
   if (!isObject(value))
-    return { problems: ["meta 要是 { name, description, page }"] };
-  const extra = unknownField(value, ["name", "description", "page"], "meta 里");
+    return { problems: ["meta 要是 { name, description, page, points }"] };
+  const extra = unknownField(
+    value,
+    ["name", "description", "page", "points"],
+    "meta 里",
+  );
   if (extra)
-    return { problems: [`${extra}：只能写 name、description 和 page`] };
+    return {
+      problems: [`${extra}：只能写 name、description、page 和 points`],
+    };
   const problems = [];
   const name = textProblem(value.name, META_LIMITS.name, "meta.name");
   if (name) problems.push(name);
@@ -1168,9 +1174,13 @@ export function readMeta(value) {
       : pageProblem(value.page);
     if (page) problems.push(`meta.page：${page}`);
   }
+  // 三方积分 (docs/third-party-points-design.md §10): true, or not written.
+  if (value.points !== undefined && value.points !== true)
+    problems.push("meta.points 要是 true，或者不写");
   if (problems.length > 0) return { problems };
   return {
     meta: {
+      ...(value.points === true ? { points: true } : {}),
       name: value.name.trim(),
       ...(value.description !== undefined
         ? { description: value.description.trim() }

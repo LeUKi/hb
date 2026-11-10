@@ -225,8 +225,12 @@ describe("判定器's params as it opens", () => {
       // Its money and times (§13.7), as the 红包 page shows them: a 🐟额红包,
       // nobody judged yet, so all of it still unclaimed.
       unit: "🐟",
+      // 三方积分 (third-party-points §10): LDC's and 🐟's step is 0.01.
+      step: "0.01",
+      points: null,
       pool: "1.00",
       unclaimed: "1.00",
+      units: { pool: 100, unclaimed: 100 },
       openedAt: shown.openedAt,
       deadlineAt: shown.deadlineAt,
       scope: null,

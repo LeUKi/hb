@@ -2,6 +2,7 @@
 // switch is on, its sender's openings today (more for 🐟额 PLUS) are not
 // used up and this very code, deployed, passed these very tests. The SQL
 // below holds the same inside the opening write.
+
 import {
   type JudgeDeclarations,
   type JudgeParams,
@@ -21,6 +22,7 @@ import { databaseNow } from "../activities/lifecycle";
 import type { ActivityRow } from "../activities/storage";
 import { startOfBeijingDay } from "../balance/day";
 import type { ApiBindings } from "../env";
+import { hongbaoForJudge, judgeUnitOf } from "../points/judge";
 import { encryptString } from "../security/crypto";
 import {
   codeHongbaoAccess,
@@ -202,15 +204,24 @@ export async function openingSetup(
     {
       params: input.params,
       // Protocol 5 has no shares: the compatible n and 0.01 (§3.5).
-      hongbao: {
-        title: activity.title,
-        total: ldcTotalMinor(input.config),
-        count:
-          protocol >= LEDGER_PROTOCOL
-            ? defaultCount(ldcTotalMinor(input.config))
-            : activity.totalCount,
-        minEach: protocol >= LEDGER_PROTOCOL ? 1 : judge.minEachMinor,
-      },
+      hongbao:
+        protocol >= LEDGER_PROTOCOL
+          ? // A 三方积分红包's in its 最小单位 (points/judge.ts).
+            hongbaoForJudge(
+              {
+                title: activity.title,
+                total: ldcTotalMinor(input.config),
+                count: defaultCount(ldcTotalMinor(input.config)),
+                minEach: 1,
+              },
+              judgeUnitOf(activity),
+            )
+          : {
+              title: activity.title,
+              total: ldcTotalMinor(input.config),
+              count: activity.totalCount,
+              minEach: judge.minEachMinor,
+            },
       now,
       seed: setupSeed(activity.id, input.secret),
     },

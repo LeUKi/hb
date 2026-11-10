@@ -26,6 +26,7 @@ import {
   participationKey,
 } from "../../lib/participation-cache";
 import { useSessionUser } from "../../lib/session";
+import { sdkUnitOf } from "../../lib/units";
 import { useJudgeBoard } from "../hongbao/judge-board";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 
@@ -37,6 +38,7 @@ import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 /** What the SDK says of a 红包 (hongbao). */
 function hongbaoOf(activity: PublicActivity, judged: number | null) {
   const quantity = activity.quantity;
+  const money = sdkUnitOf(activity);
   return {
     id: activity.id,
     title: activity.title,
@@ -44,7 +46,11 @@ function hongbaoOf(activity: PublicActivity, judged: number | null) {
     code: activity.participationMode === "code",
     status: activity.status === "archived" ? "ended" : activity.status,
     endedByCode: activity.judge?.endedByCode === true,
-    unit: activity.funding === "balance" ? "🐟" : "LDC",
+    unit: money.unit,
+    // 三方积分 (docs/third-party-points-design.md §10): its 最小单位 and
+    // system; amounts in its decimals.
+    step: money.step,
+    points: money.points,
     shares:
       quantity.mode === "exact"
         ? {
@@ -53,9 +59,11 @@ function hongbaoOf(activity: PublicActivity, judged: number | null) {
             remaining: quantity.remaining,
           }
         : null,
-    pool: activity.reward?.totalAmount ?? null,
+    pool: activity.reward?.totalAmount
+      ? money.amount(activity.reward.totalAmount)
+      : null,
     // Protocol 5: 奖池还剩 (multi-prize §4.4).
-    unclaimed: quantity.mode === "pool" ? quantity.left : null,
+    unclaimed: quantity.mode === "pool" ? money.amount(quantity.left) : null,
     deadlineAt: activity.draw?.deadlineAt ?? activity.deadlineAt,
     judged,
     // Its params everyone sees now, 结束后公开 ones once over; never a 密钥
@@ -89,7 +97,8 @@ function meOf(
     ? pageStanding(activity, user, participation)
     : null;
   const claim = participation?.claim;
-  const unit = activity?.funding === "balance" ? "🐟" : "LDC";
+  const money = sdkUnitOf(activity ?? {});
+  const unit = money.unit;
   const status = claim?.payment?.status;
   return {
     signedIn: true as const,
@@ -99,7 +108,7 @@ function meOf(
     cooldownUntil,
     claim: claim?.amount
       ? {
-          amount: claim.amount,
+          amount: money.amount(claim.amount),
           unit,
           // 自领 is never paid; a 🐟额红包's is in the 🐟额 at once.
           payment: claim.self
@@ -113,7 +122,10 @@ function meOf(
       : null,
     registered: Boolean(participation?.registration),
     // Protocol 5 (multi-prize §4.4): 待结算 once judged, and settled or not.
-    pending: participation?.standing?.pending ?? null,
+    pending:
+      participation?.standing?.pending != null
+        ? money.amount(participation.standing.pending)
+        : null,
     settled: participation?.standing?.settled === true,
   };
 }

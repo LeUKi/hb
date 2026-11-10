@@ -1,5 +1,7 @@
 import type { JudgeParam, PublicJudge } from "@hb/contracts";
+import { type AmountUnit, LDC_UNIT } from "@hb/contracts";
 import { Link, useRouter } from "@tanstack/react-router";
+import { useAtomValue } from "jotai";
 import { Braces, Check, ChevronRight, Copy, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
@@ -10,6 +12,7 @@ import { haptic } from "../../lib/haptics";
 import { textDigest } from "../../lib/judge";
 import { switchOverlay } from "../../lib/overlay";
 import { useIdentity } from "../../lib/session";
+import { activeUnitAtom, amountText } from "../../lib/units";
 import { PanelDialog } from "../shell/panel-dialog";
 import { Avatar } from "../ui/avatar";
 import { Button } from "../ui/button";
@@ -56,11 +59,15 @@ function Fact({
 }
 
 /** A param's value as the page says it (§14.4): amounts in LDC, lists by count. */
-function valueText(param: JudgeParam, value: unknown) {
+function valueText(
+  param: JudgeParam,
+  value: unknown,
+  unit: AmountUnit = LDC_UNIT,
+) {
   if (value === null || value === undefined) return "未填";
   switch (param.type) {
     case "money":
-      return typeof value === "number" ? `${ldc(value)} LDC` : String(value);
+      return typeof value === "number" ? moneyText(value, unit) : String(value);
     case "switch":
       return value === true ? "开" : "关";
     case "choice":
@@ -77,7 +84,21 @@ function valueText(param: JudgeParam, value: unknown) {
 }
 
 /** A list's or a table's entries, one line each. */
-function entryText(param: JudgeParam, entry: unknown) {
+/**
+ * A money param as written: 分 in LDC, or whole 最小单位 of a 三方积分
+ * (docs/third-party-points-design.md §10).
+ */
+function moneyText(value: number, unit: AmountUnit) {
+  return unit.step === 1
+    ? `${ldc(value)} LDC`
+    : amountText(value * unit.step, unit);
+}
+
+function entryText(
+  param: JudgeParam,
+  entry: unknown,
+  unit: AmountUnit = LDC_UNIT,
+) {
   if (param.type !== "table" || entry === null || typeof entry !== "object")
     return String(entry);
   const row = entry as Record<string, unknown>;
@@ -86,7 +107,7 @@ function entryText(param: JudgeParam, entry: unknown) {
       const cell = row[column.key];
       return `${column.label}：${
         column.type === "money" && typeof cell === "number"
-          ? `${ldc(cell)} LDC`
+          ? moneyText(cell, unit)
           : (cell ?? "")
       }`;
     })
@@ -106,6 +127,7 @@ function ParamsFact({
   /** 密钥 (docs/judge-key-design.md §4): that there are, never what. */
   keys: NonNullable<PublicJudge["keys"]>;
 }) {
+  const unit = useAtomValue(activeUnitAtom);
   return (
     <div className="grid gap-1">
       <span className="text-xs text-ink-3">参数</span>
@@ -117,20 +139,20 @@ function ParamsFact({
             <li key={param.key}>
               <details>
                 <summary className="cursor-pointer">
-                  {param.label}：{valueText(param, value)}
+                  {param.label}：{valueText(param, value, unit)}
                 </summary>
                 <ul className="mt-1 grid gap-0.5 pl-4 text-ink-2">
                   {value.map((entry, index) => (
                     // Entries are whatever was filled: their place is them.
                     // biome-ignore lint/suspicious/noArrayIndexKey: see above
-                    <li key={index}>{entryText(param, entry)}</li>
+                    <li key={index}>{entryText(param, entry, unit)}</li>
                   ))}
                 </ul>
               </details>
             </li>
           ) : (
             <li key={param.key} className="break-all">
-              {param.label}：{valueText(param, value)}
+              {param.label}：{valueText(param, value, unit)}
             </li>
           ),
         )}

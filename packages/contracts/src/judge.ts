@@ -959,9 +959,19 @@ export type HongbaoInfo =
        * whole pool, as "100.00"; and from protocol 5 奖池还剩 (the pool
        * less what was paid and everyone's 待结算), null before it.
        */
-      unit: "LDC" | "🐟";
+      /** "LDC", "🐟", or a 三方积分's unit (docs/third-party-points-design.md §10). */
+      unit: string;
+      /** 最小单位: "0.01" for LDC and 🐟; the amounts have its decimals. */
+      step: string;
+      /** A 三方积分红包's system; null for LDC and 🐟. */
+      points: { name: string; unit: string; host: string } | null;
       pool: string;
       unclaimed: string | null;
+      /**
+       * pool and unclaimed as whole numbers of 最小单位, as a judge that
+       * declares meta.points counts them (分 for LDC and 🐟).
+       */
+      units: { pool: number; unclaimed: number | null };
       /**
        * When it opened and when it ends (null: no deadline), ISO 8601 to the
        * millisecond: the judge's submission.hongbao.openedAt and endsAt,

@@ -3,6 +3,7 @@
 // sealed — the params everyone sees published, the secret ones' 参数封存值
 // with them, their salt kept encrypted — handed to every judgment, and the
 // secret ones and the salt published once it is over.
+
 import type {
   JudgeDeclarations,
   JudgeParam,
@@ -20,6 +21,7 @@ import {
 import { ActivityError } from "../activities/errors";
 import type { ActivityRow } from "../activities/storage";
 import type { ApiBindings } from "../env";
+import { hongbaoForJudge, judgeUnitOf } from "../points/judge";
 import { decryptString, encryptString } from "../security/crypto";
 import { checkParamsInJudge } from "./sandbox";
 import { type JudgeRow, judgeData, readCode, readParams } from "./storage";
@@ -109,13 +111,17 @@ export async function paramsRejected(
     { code, fingerprint: judge.fingerprint, fresh: 0 },
     {
       params: read.values,
-      // Protocol 5 has no shares: the compatible n and 0.01 (§3.5).
-      hongbao: {
-        title: activity.title,
-        total: ldcTotalMinor(config),
-        count: defaultCount(ldcTotalMinor(config)),
-        minEach: 1,
-      },
+      // Protocol 5 has no shares: the compatible n and 0.01 (§3.5); a
+      // 三方积分红包's in its 最小单位 (points/judge.ts).
+      hongbao: hongbaoForJudge(
+        {
+          title: activity.title,
+          total: ldcTotalMinor(config),
+          count: defaultCount(ldcTotalMinor(config)),
+          minEach: 1,
+        },
+        judgeUnitOf(activity),
+      ),
     },
   );
   if ("failure" in outcome) return `判定器检查参数时出错：${outcome.detail}`;

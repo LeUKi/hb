@@ -1,7 +1,7 @@
 // judge()'s second argument: what is particular to 红包, nothing Node or
 // the Web standards already give (docs/programmable-hongbao-design.md §4.5).
 import { personalCode, sameCode, timeWindow, totp } from "./codes.mjs";
-import { evenOf, formatAmount, luckyOf } from "./money.mjs";
+import { evenOf, formatUnits, luckyOf } from "./money.mjs";
 import { createRandom } from "./random.mjs";
 import { normalizeText } from "./text.mjs";
 import { timeParts } from "./time.mjs";
@@ -23,7 +23,8 @@ export function createTools(submission, seeds) {
       even: (n) => evenOf(hongbao, claims.length, n),
       lucky: (kind = "double", n) =>
         luckyOf(kind, hongbao, claims.length, n, random.fill),
-      format: (amount) => formatAmount(amount),
+      // 三方积分: in its 最小单位, as hongbao.step says (money.mjs).
+      format: (amount) => formatUnits(amount, hongbao.step),
     }),
     code: Object.freeze({
       personal: (key, parts, length) => personalCode(key, parts, length),

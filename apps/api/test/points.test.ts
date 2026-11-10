@@ -30,6 +30,13 @@ import {
 } from "../src/points/systems";
 import { sha256Hex } from "../src/security/crypto";
 import { advanceAttemptCooldown } from "./advance-attempt-cooldown";
+import {
+  check,
+  actor as codeActor,
+  coded,
+  plus as codePlus,
+  judgeSettings,
+} from "./code-fixtures";
 
 // 三方积分 (docs/third-party-points-design.md): an issuer's points paid per
 // claim through its three endpoints, with no queued waits.
@@ -495,5 +502,95 @@ describe("三方积分红包", () => {
       .run();
     await sweepPointsPayments(bindings);
     expect((await payout(claimed.claim.id))?.status).toBe("failed");
+  });
+});
+
+describe("代码判定的三方积分红包 (§10)", () => {
+  const GAME = `export const meta = { name: "星星游戏", points: true };
+export function judge(s, tools) {
+  const [verb, arg] = s.input.split(" ");
+  if (verb === "add") return { add: Number(arg) };
+  if (verb === "cash") return { settle: true };
+  if (verb === "show")
+    return { message: [s.hongbao.total, s.hongbao.unclaimed, s.hongbao.step, s.hongbao.unit, s.player.pending, tools.money.format(s.player.pending)].join("/") };
+  return {};
+}`;
+  const TESTS = JSON.stringify({
+    tests: [{ name: "加", input: "add 3", expect: { pending: 3 } }],
+  });
+
+  async function codedSender() {
+    const sender = await codeActor();
+    await codePlus(sender);
+    await judgeSettings({ enabled: 1 });
+    issuer.open(sender.externalId, "coder", 100_00, "coder-key");
+    await saveKey(bindings, sender.id, systemId, "coder-key");
+    return sender;
+  }
+
+  function input(code: string, judgeId: string): ActivityInput {
+    return {
+      ...coded({ totalAmount: "10" }, { code, tests: TESTS, judgeId }),
+      funding: "points",
+      merchantId: "",
+      pointsSystemId: systemId,
+    };
+  }
+
+  it("counts in 最小单位 for a judge that declares meta.points, and pays in 分", async () => {
+    await online();
+    const sender = await codedSender();
+    const deployed = (await check(sender, GAME, TESTS, { name: "星星游戏" }))
+      .body.check;
+    expect(deployed).toMatchObject({ passed: true });
+    const saved = await createActivity(bindings, sender.id, {
+      requestId: crypto.randomUUID(),
+      activity: input(GAME, deployed.judge?.id ?? ""),
+    });
+    const hongbao = await openActivity(
+      bindings,
+      saved.id,
+      sender.id,
+      saved.version,
+    );
+    const player = await codeActor();
+    issuer.open(player.externalId, "player", 0);
+    const play = async (text: string) => {
+      const result = await claimActivity(bindings, hongbao.id, player.id, {
+        submissionId: crypto.randomUUID(),
+        participationMode: "code",
+        input: text,
+      });
+      await advanceAttemptCooldown(env.DB, player.id);
+      return result as Record<string, unknown>;
+    };
+    // 3 steps of 1 星星 = 300 分.
+    expect(await play("add 3")).toMatchObject({
+      moved: { added: "3.00", pending: "3.00" },
+    });
+    expect((await play("show")).message).toBe("10/7/1/星星/3/3");
+    const cashed = (await play("cash")) as {
+      settled: { claim: ClaimDetail };
+    };
+    const id = cashed.settled.claim.payment?.id ?? "";
+    expect(id).toMatch(/^pp_/);
+    expect(await run(id)).toBe("confirmed");
+    expect(issuer.accounts.get(player.externalId)?.available).toBe(300);
+  });
+
+  it("refuses a judge that does not declare meta.points", async () => {
+    await online();
+    const sender = await codedSender();
+    const plain = GAME.replace(", points: true", "");
+    const deployed = (await check(sender, plain, TESTS, { name: "普通游戏" }))
+      .body.check;
+    expect(deployed).toMatchObject({ passed: true });
+    const saved = await createActivity(bindings, sender.id, {
+      requestId: crypto.randomUUID(),
+      activity: input(plain, deployed.judge?.id ?? ""),
+    });
+    await expect(
+      openActivity(bindings, saved.id, sender.id, saved.version),
+    ).rejects.toMatchObject({ code: "JUDGE_NOT_FOR_POINTS" });
   });
 });
