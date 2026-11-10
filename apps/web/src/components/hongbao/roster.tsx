@@ -202,18 +202,32 @@ function Row({
                     </span>
                   )
                 )}
-                {detail?.payment && (
-                  <button
-                    type="button"
-                    onClick={() => onPayment?.(detail.payment?.id ?? "")}
-                    className={`inline-flex shrink-0 items-center gap-1 underline-offset-2 hover:underline ${paymentText[paymentTone(detail.payment.state)]}`}
+                {/* A 三方积分 payout (pp_…) has no 付款详情 page here:
+                    its state only (third-party-points §15 no. 8). */}
+                {detail?.payment && detail.payment.id.startsWith("pp_") ? (
+                  <span
+                    className={`inline-flex shrink-0 items-center gap-1 ${paymentText[paymentTone(detail.payment.state)]}`}
                   >
                     <span
                       aria-hidden="true"
                       className="size-1.5 rounded-full bg-current"
                     />
                     {PAYMENT_LABELS[detail.payment.state]}
-                  </button>
+                  </span>
+                ) : (
+                  detail?.payment && (
+                    <button
+                      type="button"
+                      onClick={() => onPayment?.(detail.payment?.id ?? "")}
+                      className={`inline-flex shrink-0 items-center gap-1 underline-offset-2 hover:underline ${paymentText[paymentTone(detail.payment.state)]}`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="size-1.5 rounded-full bg-current"
+                      />
+                      {PAYMENT_LABELS[detail.payment.state]}
+                    </button>
+                  )
                 )}
               </span>
             )}

@@ -31,13 +31,14 @@ const labelOf = (page: SenderPage, activity: HongbaoActivity) =>
 /**
  * A draft has only 编辑; every 口令红包 and 代码判定红包 has 尝试统计
  * (07 §7); a 🐟额红包 pays nothing out, so it has no 付款记录
- * (balance-design §14).
+ * (balance-design §14), nor has a 三方积分红包, whose payouts are the
+ * issuer's (docs/third-party-points-design.md §15 no. 8).
  */
 export function senderPagesOf(activity: HongbaoActivity): SenderPage[] {
   if (activity.draft) return ["edit"];
   const pages: SenderPage[] =
     activity.participation !== "direct" ? ["edit", "stats"] : ["edit"];
-  return activity.fish ? pages : [...pages, "payments"];
+  return activity.fish || activity.points ? pages : [...pages, "payments"];
 }
 
 /**

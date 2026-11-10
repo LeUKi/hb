@@ -251,3 +251,23 @@
 12. 示例发行方的演示页任何人都能开户、发密钥，只用于测试，积分是假的。
 13. 长数字缩写从 100 万开始，LDC 也一样；不到 100 万照写，但现在都带千位分隔（以前是 12345.67，现在是 12,345.67）。
 
+
+## 16 发布清单（要用户点头）
+
+Stage 已经上了（build 1794328823，迁移 0062）。上生产按这个顺序：
+
+1. **推送**：`main` 推到 GitHub，等 CI（lint、typecheck、test、build）过。
+2. **备份**：发布前跑一次 `payment:checkpoint`（见发布备份的规矩）。
+3. **构建、校验**：`bun scripts/release.ts build --env production`，再 `verify --env production`。
+4. **迁移 0062**：`bun scripts/release.ts migrations --env production --execute`。只加表、给 `activities` 加两列、换两个触发器，不重建表，一次很快。
+5. **部署**：`bun scripts/release.ts deploy --env production --execute`；看 `version.json`（加个查询参数，绕开缓存）和两个 Worker 的 `wrangler deployments list`。
+6. **开关**：三方积分红包默认关着。站长在 网站管理 · 三方积分 打开以前，谁也建不了、开不了这种红包；打开前可以先在 Stage 用示例发行方走一遍（第 14 节第 6 步）。
+7. **第一位发行方**：请那位用整数积分的用户接入：配置、自检、提交，站长审核通过后上线。
+
+Stage 上走一遍完整流程（要站长账号登录 `https://staging.hb.lafi.sh`）：
+
+1. 网站管理 · 三方积分：打开开关。
+2. 打开 `https://hb-points-demo.lafish.workers.dev`，用自己的 LINUX DO 数字 ID 开户，拿到一把密钥；再给第二个账号开户。
+3. /points → 接入一种：接口地址 `https://hb-points-demo.lafish.workers.dev/hb`，最小单位 1；保存，用刚才的密钥和自己的 ID 跑自检，11 步应全过；提交审核，站长通过。
+4. 发红包，从哪发选三方积分，填密钥（可以再开一把），开放；用第二个账号领，结果卡应显示已存进那边的账户；演示页再开户一次可以看到余额。
+5. 用一个没开户的账号领，应看到“找不到收款人”和倒计时；去演示页开户后点“重新发送”，应到账。

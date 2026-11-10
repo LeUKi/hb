@@ -26,6 +26,8 @@ export function plusFeatures(
       : { name: "转入", text: "把 Credit 的 LDC 转进🐟额" },
     { name: "转账", text: "转给别人的🐟额或 Credit 账户" },
     { name: "开放接口", text: "接入网站或程序" },
+    // 三方积分 (docs/third-party-points-design.md §1): /points.
+    { name: "三方积分", text: "把你网站的积分接进来发红包" },
     {
       name: "代码判定红包",
       text: `每天能开放 ${judge.opens} 个、部署 ${judge.deploys} 次`,

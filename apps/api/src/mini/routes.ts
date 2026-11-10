@@ -206,6 +206,14 @@ miniRoutes.get("/mini/hongbao", async (c) => {
     findActivity(c.env, id),
   ]);
   if (!row) activityNotFound();
+  // 三方积分 (docs/third-party-points-design.md §1): not in the mini app
+  // in its first phase; it says where to go instead.
+  if (row.funding === "points")
+    throw new ActivityError(
+      409,
+      "POINTS_NOT_IN_MINI",
+      "这个红包发的是三方积分，社区里还打不开，请到红包站领取。",
+    );
   const participation = user
     ? await getCurrentParticipationForActivity(c.env, row, user.id)
     : null;

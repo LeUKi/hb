@@ -1037,13 +1037,13 @@ describe("🐟额 PLUS", () => {
         features: expect.arrayContaining([
           { name: "开放接口", text: "接入网站或程序" },
         ]),
-        featureCount: 7,
+        featureCount: 8,
       },
     });
     const theirs = await call("GET", "/me/balance", friend);
     expect(theirs.json).toMatchObject({
       access: { transfer: false },
-      plus: { plus: false, features: null, featureCount: 7 },
+      plus: { plus: false, features: null, featureCount: 8 },
     });
     expect(JSON.stringify(theirs.json)).not.toContain("接入网站或程序");
     // The 站长: their own first line.
