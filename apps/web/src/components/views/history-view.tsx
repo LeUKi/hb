@@ -15,6 +15,7 @@ import {
 } from "../../lib/records";
 import { clockLabel, openingLabel } from "../../lib/roster-time";
 import { type SessionUser, useSessionUser } from "../../lib/session";
+import { shownAmount } from "../../lib/units";
 import { quantityLine, statusOf } from "../hongbao/hongbao-card";
 import { SenderLinks } from "../hongbao/sender-links";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
@@ -156,8 +157,10 @@ function JoinedRow({ item }: { item: JoinedRecord }) {
           <span className="grid shrink-0 justify-items-end gap-1">
             {outcome.amount ? (
               <span className="text-base font-semibold text-success tabular-nums">
-                +{outcome.amount}
-                <span className="ml-0.5 text-xs font-medium">LDC</span>
+                +{shownAmount(outcome.amount, item.unit).text}
+                <span className="ml-0.5 text-xs font-medium">
+                  {item.unit.unit}
+                </span>
                 {item.fish && <FishMark />}
               </span>
             ) : (

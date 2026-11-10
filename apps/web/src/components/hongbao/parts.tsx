@@ -1,3 +1,4 @@
+import { formatDisplayAmount } from "@hb/contracts";
 import {
   AnimatePresence,
   animate,
@@ -84,21 +85,32 @@ export function Seal({
   );
 }
 
-/** An amount that counts up from zero when `play` turns on. */
+/**
+ * An amount that counts up from zero when `play` turns on, in whole steps
+ * of its unit's 最小单位 (三方积分; 0.01 for LDC), shown as amounts are.
+ */
 export function CountUp({
   value,
   play,
   delay,
   prefix = "",
+  step = 1,
 }: {
   value: string;
   play: boolean;
   delay: number;
   prefix?: string;
+  /** 最小单位 in 分. */
+  step?: number;
 }) {
   const target = Number(value);
   const shown = useMotionValue(play ? 0 : target);
-  const text = useTransform(shown, (latest) => prefix + latest.toFixed(2));
+  const text = useTransform(
+    shown,
+    (latest) =>
+      prefix +
+      formatDisplayAmount(Math.round((latest * 100) / step) * step, step).text,
+  );
   useEffect(() => {
     if (!play) {
       shown.jump(target);

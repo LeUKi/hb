@@ -232,8 +232,9 @@ export function useSubmit({
     const retrying = retries(open);
     setNotice(null);
     const paying = activity?.config.merchantId || merchant?.id;
-    // A 🐟额红包 has no merchant: 🐟额 is checked when it opens.
-    if (!retrying && !opened && form.funding !== "balance") {
+    // A 🐟额红包 has no merchant: 🐟额 is checked when it opens; nor has
+    // a 三方积分红包, whose key and 额度 are checked by the server.
+    if (!retrying && !opened && form.funding === "merchant") {
       if (!merchant || !paying) {
         notify({
           tone: "danger",

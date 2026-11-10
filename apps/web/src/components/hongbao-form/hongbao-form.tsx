@@ -19,6 +19,7 @@ import { scrollBehavior } from "../../lib/motion";
 import { closeOverlay, openOverlay } from "../../lib/overlay";
 import { clockLabel } from "../../lib/roster-time";
 import type { SessionUser } from "../../lib/session";
+import { shownAmount } from "../../lib/units";
 import { LeaveGuard } from "../shell/leave-guard";
 import { useWindowInfo } from "../shell/window-info";
 import { Button } from "../ui/button";
@@ -43,7 +44,6 @@ import {
   type FormState,
   formOf,
   issuesOf,
-  ldc,
   modeLabels,
   plan,
   type RewardMode,
@@ -53,6 +53,7 @@ import {
   withMode,
 } from "./form-state";
 import { declaredParams, judgeIssuesOf, triedHongbao } from "./judge-issues";
+import { useFormUnit } from "./points-funding";
 import { ScheduleDialog, ScheduleLine } from "./schedule-fields";
 import { scopeLine } from "./scope-fields";
 import { groupsOf, SettingsSheet } from "./settings-sheet";
@@ -290,7 +291,11 @@ export function HongbaoForm({
     checkedParams?.key === checkKey ? checkedParams.problems : [],
   );
 
-  const issues = [...issuesOf(withDefaultTitle(form)), ...judgeIssues];
+  const formUnit = useFormUnit(form);
+  const issues = [
+    ...issuesOf(withDefaultTitle(form), undefined, formUnit),
+    ...judgeIssues,
+  ];
   // A step's problems show once it was checked (下一步, or a save).
   const [checked, setChecked] = useState<ReadonlySet<StepId>>(() => new Set());
   const check = (ids: StepId[]) =>
@@ -775,8 +780,10 @@ export function HongbaoForm({
     ) : (
       <span className="grid min-w-0">
         <span className="text-base font-semibold text-ink tabular-nums">
-          {ldc(planned.total)}
-          <span className="ml-1 text-xs font-medium text-ink-3">LDC</span>
+          {shownAmount(planned.total, formUnit).text}
+          <span className="ml-1 text-xs font-medium text-ink-3">
+            {formUnit.unit}
+          </span>
         </span>
         <span className="truncate text-xs text-ink-3">
           {modeLabels[form.mode]}
@@ -863,6 +870,7 @@ export function HongbaoForm({
                             ? "判定器"
                             : judge.name
                           : undefined,
+                      formUnit,
                     )}
                     open={open}
                     current={!editing && open}

@@ -1,4 +1,9 @@
-import { levelPhrase, type PublicClaimScope, scopeTag } from "@hb/contracts";
+import {
+  levelPhrase,
+  type PublicClaimScope,
+  pointsTagHint,
+  scopeTag,
+} from "@hb/contracts";
 import { glossary } from "./glossary";
 import type { HongbaoActivity } from "./hongbao";
 import { splitNames, splitRules } from "./hongbao-text";
@@ -93,6 +98,17 @@ export function coverTags(activity: HongbaoActivity) {
           {
             text: "🐟额",
             hint: "领到的 LDC 先存进🐟额，随时可以转出到你的 Credit 账户。",
+          },
+        ]
+      : []),
+    // 三方积分 (docs/third-party-points-design.md §9): split in two, its
+    // hint says whose points they are; the tag opens its 详情页.
+    ...(activity.points
+      ? [
+          {
+            text: `三方｜${activity.points.name}`,
+            hint: pointsTagHint(activity.points.host),
+            points: activity.points,
           },
         ]
       : []),

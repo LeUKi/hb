@@ -1,6 +1,7 @@
 import {
   ACTIVITY_LIMITS,
   type ActivityInput,
+  type AmountUnit,
   amountToMinor,
   boundedMeanLimits,
   CLAIM_SCOPE_LIMITS,
@@ -14,6 +15,7 @@ import {
   type JudgeNetworkEntry,
   type JudgeSource,
   type JudgeVersions,
+  LDC_UNIT,
   type LdcMoney,
   type ManagedActivity,
   normalizePageUrl,
@@ -27,6 +29,7 @@ import { readAddress } from "../../../../../kit/runtime/network.mjs";
 import { pageOf } from "../../../../../kit/runtime/params.mjs";
 import { durationOfSeconds } from "../../lib/hongbao";
 import { inspectPassword } from "../../lib/password-rules";
+import { amountText } from "../../lib/units";
 import { noVersions } from "./judge-versions";
 
 // The 发红包 flow (/new) and the sender's 📝 编辑: one state shape, its
@@ -403,11 +406,14 @@ export function randomRange(
   total: number,
   shares: number,
   algorithm: Algorithm,
+  /** 三方积分's 最小单位 in 分: split as so many steps (§2). */
+  step = 1,
 ): [number, number] | null {
   if (shares === 1) return [total, total];
   if (algorithm !== "bounded_mean") return null;
-  const { min, max } = boundedMeanLimits(total, shares);
-  return [min, max];
+  if (total % step !== 0 || total / step < shares) return null;
+  const { min, max } = boundedMeanLimits(total / step, shares);
+  return [min * step, max * step];
 }
 
 // ── Title ─────────────────────────────────────────────────────────────
@@ -479,10 +485,22 @@ function passwordProblem({
   return `现在有 ${length} 个字，最多 ${ACTIVITY_LIMITS.passwordMaxCharacters} 个字`;
 }
 
-export function issuesOf(form: FormState, now = Date.now()): Issue[] {
+export function issuesOf(
+  form: FormState,
+  now = Date.now(),
+  /** LDC, or the chosen 三方积分's (docs/third-party-points-design.md §2). */
+  money: AmountUnit = LDC_UNIT,
+): Issue[] {
   const issues: Issue[] = [];
   const add = (field: string, message: string) =>
     issues.push({ field, message });
+  const step = money.step;
+  const least = amountText(step, money);
+  // Whole steps of the 最小单位: nothing to say for LDC (step 1).
+  const offStep = (value: number | null) =>
+    value !== null && step > 1 && value % step !== 0;
+  if (form.funding === "points" && !form.pointsSystemId)
+    add("hb-points", "请选择一种三方积分");
   const title = form.title.trim();
   if (!title) add("hb-title", "请填写红包标题");
   else if (Array.from(title).length > LIMITS.title)
@@ -493,6 +511,8 @@ export function issuesOf(form: FormState, now = Date.now()): Issue[] {
     case "fixed":
       if (cents(form.fixed.unit) === null)
         add("hb-fixed-unit", "每份金额要大于 0，最多两位小数");
+      else if (offStep(cents(form.fixed.unit)))
+        add("hb-fixed-unit", `每份要是 ${least} 的整数倍`);
       if (count(form.fixed.count) === null)
         add(
           "hb-fixed-count",
@@ -507,8 +527,10 @@ export function issuesOf(form: FormState, now = Date.now()): Issue[] {
           "hb-random-count",
           `份数要在 1 到 ${LIMITS.shares.toLocaleString("en")} 之间`,
         );
-      else if (total !== null && shares !== null && total < shares)
-        add("hb-random-total", "总额不够分：每份至少 0.01 LDC");
+      else if (offStep(total))
+        add("hb-random-total", `总额要是 ${least} 的整数倍`);
+      else if (total !== null && shares !== null && total < shares * step)
+        add("hb-random-total", `总额不够分：每份至少 ${least}`);
       break;
     case "custom": {
       const lines = customLines(form);
@@ -517,11 +539,14 @@ export function issuesOf(form: FormState, now = Date.now()): Issue[] {
         add("hb-custom-lines", `最多 ${LIMITS.shares.toLocaleString("en")} 份`);
       else {
         const bad = lines.findIndex((line) => cents(line) === null);
+        const odd = lines.findIndex((line) => offStep(cents(line)));
         if (bad >= 0)
           add(
             "hb-custom-lines",
             `第 ${bad + 1} 行不是有效金额（大于 0，最多两位小数）`,
           );
+        else if (odd >= 0)
+          add("hb-custom-lines", `第 ${odd + 1} 行要是 ${least} 的整数倍`);
       }
       break;
     }
@@ -533,13 +558,17 @@ export function issuesOf(form: FormState, now = Date.now()): Issue[] {
           "hb-draw-winners",
           `获奖名额要在 1 到 ${LIMITS.shares.toLocaleString("en")} 之间`,
         );
-      else if (total !== null && shares !== null && total < shares)
-        add("hb-draw-pool", "奖池不够分：每个名额至少 0.01 LDC");
+      else if (offStep(total))
+        add("hb-draw-pool", `奖池要是 ${least} 的整数倍`);
+      else if (total !== null && shares !== null && total < shares * step)
+        add("hb-draw-pool", `奖池不够分：每个名额至少 ${least}`);
       if (form.draw.limit.trim() && !positiveInteger(form.draw.limit))
         add("hb-draw-limit", "报名上限要是正整数，或者留空不限");
       break;
     case "code": {
       if (total === null) add("hb-code-total", "总奖池要大于 0，最多两位小数");
+      else if (offStep(total))
+        add("hb-code-total", `总奖池要是 ${least} 的整数倍`);
       if (
         Array.from(form.judge.prompt.trim()).length >
         JUDGE_LIMITS.promptCharacters

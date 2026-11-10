@@ -798,6 +798,12 @@ export type ActivityProofData =
         /** Null while the roster is open. */
         closedAt: string | null;
         money: TimedDrawMoney;
+        /**
+         * 三方积分 (docs/third-party-points-design.md §2): the unit and its
+         * 最小单位 in 分 the amounts were split by; absent, LDC and 1.
+         */
+        unit?: string;
+        step?: number;
       };
       drand: {
         chainHash: string;
@@ -832,6 +838,9 @@ export type ActivityProofData =
         openedAt: string;
         endedAt: string | null;
         money: Extract<LdcMoney, { mode: "random" | "custom" }>;
+        /** 三方积分: as for a draw; absent, LDC and 1. */
+        unit?: string;
+        step?: number;
       };
       commitment: string;
       /** Null until the 红包 is over. */

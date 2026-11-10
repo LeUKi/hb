@@ -1,8 +1,9 @@
+import { type AmountUnit, LDC_UNIT } from "@hb/contracts";
+import { amountText } from "../../lib/units";
 import {
   defaultTitle,
   type FormState,
   type Issue,
-  ldc,
   modeLabels,
   plan,
   timingLine,
@@ -128,6 +129,8 @@ export function summaryOf(
   deadline?: string,
   /** 代码判定: which 判定器 the code is (判定器 第 3 版, 新代码), once known. */
   judgeName?: string,
+  /** LDC, or the chosen 三方积分's. */
+  money: AmountUnit = LDC_UNIT,
 ) {
   switch (step) {
     case "mode":
@@ -135,18 +138,24 @@ export function summaryOf(
     case "amount": {
       const { total, shares, unit } = plan(form);
       if (total === null || shares === null) return "还没填";
-      const from = form.funding === "balance" ? " · 从🐟额发" : "";
+      const from =
+        form.funding === "balance"
+          ? " · 从🐟额发"
+          : form.funding === "points"
+            ? " · 三方积分"
+            : "";
+      const shown = (value: number) => amountText(value, money);
       switch (form.mode) {
         case "fixed":
-          return `每份 ${ldc(unit ?? 0)} LDC · ${shares} 份${from}`;
+          return `每份 ${shown(unit ?? 0)} · ${shares} 份${from}`;
         case "custom":
-          return `总额 ${ldc(total)} LDC · ${shares} 份${from}`;
+          return `总额 ${shown(total)} · ${shares} 份${from}`;
         case "timed_draw":
-          return `奖池 ${ldc(total)} LDC · ${shares} 个名额${from}`;
+          return `奖池 ${shown(total)} · ${shares} 个名额${from}`;
         case "code":
-          return `总奖池 ${ldc(total)} LDC · ${shares} 份${from}`;
+          return `总奖池 ${shown(total)} · ${shares} 份${from}`;
         default:
-          return `总额 ${ldc(total)} LDC · ${shares} 份${from}`;
+          return `总额 ${shown(total)} · ${shares} 份${from}`;
       }
     }
     case "claim": {

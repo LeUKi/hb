@@ -475,8 +475,12 @@ export const claimAmount = `COALESCE(p.amount_minor, i.amount_minor, 0)`;
 export const claimJoins = `FROM claims c JOIN activities a ON a.id=c.activity_id
       LEFT JOIN payment_tasks p ON p.claim_id=c.id AND p.source='claim'
       LEFT JOIN reward_inventory i ON i.activity_id=c.activity_id AND i.id=c.inventory_id AND i.kind='ldc'`;
-/** 自领 (docs/self-claim-design.md) counts in neither sum, nor the 排行榜. */
-export const othersOnly = "c.user_id!=a.author_id";
+/**
+ * 自领 (docs/self-claim-design.md) counts in neither sum, nor the 排行榜;
+ * nor does 三方积分 (docs/third-party-points-design.md §1): other sites'
+ * points are no LDC.
+ */
+export const othersOnly = "c.user_id!=a.author_id AND a.funding<>'points'";
 
 /**
  * 我的 / 历史's numbers. Each count starts from this person's own rows (by

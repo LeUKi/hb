@@ -9,6 +9,7 @@ import {
 } from "../../lib/hongbao";
 import { openingLabel } from "../../lib/roster-time";
 import { sealGlyphs } from "../../lib/seal";
+import { amountText } from "../../lib/units";
 import type { useDrawStep } from "./clock";
 
 // What the seal says and shows and the line under it, worked out from the
@@ -149,9 +150,9 @@ export function sealOf({
   const announcement = !mine
     ? ""
     : mine.kind === "claimed"
-      ? `已领取 ${mine.amount} LDC${activity.fish ? "，存进了🐟额" : ""}。`
+      ? `已领取 ${amountText(mine.amount, activity.unit)}${activity.fish ? "，存进了🐟额" : ""}。`
       : mine.outcome === "won"
-        ? `已中奖，${mine.amount} LDC${activity.fish ? "，存进了🐟额" : ""}。`
+        ? `已中奖，${amountText(mine.amount ?? "", activity.unit)}${activity.fish ? "，存进了🐟额" : ""}。`
         : mine.outcome === "lost"
           ? "本次未中奖。"
           : "已报名，等待开奖。";

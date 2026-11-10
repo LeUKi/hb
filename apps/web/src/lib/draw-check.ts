@@ -114,6 +114,7 @@ export function resultMatches(data: DrawData) {
     seed,
     registered: data.roster.entries.length,
     money: data.activity.money,
+    step: data.activity.step ?? 1,
   });
   return (
     same(plan.picked, data.result.picked) &&
@@ -135,6 +136,7 @@ export function queueMatches(data: QueueData) {
     queueAmountsV2({
       seed: queueSeed(data.activity.id, data.secret),
       money: data.activity.money,
+      step: data.activity.step ?? 1,
     }),
     data.queue.map((item) => item.amountMinor),
   );

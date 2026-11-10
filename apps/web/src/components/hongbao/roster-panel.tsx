@@ -9,6 +9,7 @@ import {
 import type { useChallengers } from "../../lib/judge";
 import type { useRosterList } from "../../lib/roster";
 import { clockLabel } from "../../lib/roster-time";
+import { amountText } from "../../lib/units";
 import { useQueryLazyList } from "../page/lazy-list";
 import { readFailed } from "../page/page-state";
 import { Avatar } from "../ui/avatar";
@@ -41,7 +42,7 @@ function metaLine(activity: HongbaoActivity, view: PublicView) {
     else parts.push(`报名 ${draw.registered} 人`, `抽 ${activity.shares} 人`);
   } else if (quantity.kind === "pool") {
     parts.push(
-      `奖池还剩 ${quantity.left} LDC${quantity.share ? `（${quantity.share}）` : ""}`,
+      `奖池还剩 ${amountText(quantity.left, activity.unit)}${quantity.share ? `（${quantity.share}）` : ""}`,
     );
   } else if (quantity.kind === "fuzzy") {
     parts.push(
@@ -53,7 +54,7 @@ function metaLine(activity: HongbaoActivity, view: PublicView) {
     parts.push(`已领 ${quantity.taken} / ${quantity.total} 份`);
   }
   if (!(activity.mode === "fixed" && quantity.kind === "fuzzy"))
-    parts.push(`${activity.totalAmount} LDC`);
+    parts.push(amountText(activity.totalAmount, activity.unit));
   parts.push(`${clockLabel(view.openedAt)} 开放`);
   return parts.join(" · ");
 }
@@ -254,7 +255,7 @@ export function RosterPanel({
           />
         </div>
       )}
-      {!challenging && <RosterHeader kind={kind} />}
+      {!challenging && <RosterHeader kind={kind} unit={activity.unit.unit} />}
       {/* The list's own scroller: its end row is watched in it. */}
       <div className="view-scroll relative min-h-0 flex-1 overflow-y-auto overscroll-contain">
         {/* Bars until the first batch is in (not 还没有人领取), and each
@@ -277,6 +278,7 @@ export function RosterPanel({
               rows={rows}
               list={list}
               kind={kind}
+              unit={activity.unit}
               openedAt={view.openedAt}
               done={total === null || fuzzy ? "已全部加载" : `共 ${total} 人`}
               detailOf={data.author ? detailOf : undefined}

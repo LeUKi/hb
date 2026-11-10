@@ -47,8 +47,13 @@ function int(min, max, take) {
 }
 const small = (a, b) => (a < b ? a : b);
 const large = (a, b) => (a > b ? a : b);
-// 二倍均值，或初始均值上下 50%（每份都留够后面的）。
+// 二倍均值，或初始均值上下 50%（每份都留够后面的）。三方积分按最小单位
+// 拆：总数先换成“多少个最小单位”，拆完再乘回去；LDC 的最小单位是 1 分。
+const step = BigInt(data.activity?.step ?? 1);
 function amounts(algorithm, total, count, take) {
+  return units(algorithm, total / step, count, take).map((n) => n * Number(step));
+}
+function units(algorithm, total, count, take) {
   const twice = 2n * BigInt(count);
   const [lower, upper] = [large(total / twice, 1n), (3n * total + twice - 1n) / twice];
   const out = [];

@@ -5,7 +5,9 @@ import type {
   DrawSummary,
   PublicQuantity,
 } from "@hb/contracts";
+import { type AmountUnit, LDC_UNIT } from "@hb/contracts";
 import { clockLabel } from "./roster-time";
+import { amountText } from "./units";
 
 // How every list names a 红包: its rule in one line, its status tag and the
 // viewer's own part in it (05 §1, 07 §1).
@@ -35,14 +37,22 @@ export function splitOf(algorithm: string | undefined): Split | undefined {
   return undefined;
 }
 
-/** The rule in one line: "拼手气 · 30.00 LDC 奖池", "固定均分 · 0.50 LDC / 份". */
-export function rewardSummaryOf(reward: ActivityRewardSummary | undefined) {
-  if (!reward) return "LDC 红包";
+/**
+ * The rule in one line: "拼手气 · 30.00 LDC 奖池", "固定均分 · 0.50 LDC / 份";
+ * a 三方积分红包's in its own unit.
+ */
+export function rewardSummaryOf(
+  reward: ActivityRewardSummary | undefined,
+  unit: AmountUnit = LDC_UNIT,
+) {
+  if (!reward) return `${unit.unit} 红包`;
   if (reward.mode === "fixed")
     return reward.unitAmount
-      ? `固定均分 · ${reward.unitAmount} LDC / 份`
+      ? `固定均分 · ${amountText(reward.unitAmount, unit)} / 份`
       : "固定均分";
-  const pool = reward.totalAmount ? ` · ${reward.totalAmount} LDC 奖池` : "";
+  const pool = reward.totalAmount
+    ? ` · ${amountText(reward.totalAmount, unit)} 奖池`
+    : "";
   if (reward.mode === "random") return `拼手气${pool}`;
   if (reward.mode === "custom") return `自定义金额${pool}`;
   if (reward.mode === "code") return `代码判定${pool}`;

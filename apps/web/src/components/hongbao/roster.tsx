@@ -1,5 +1,7 @@
 import {
+  type AmountUnit,
   type JudgeChallenger,
+  LDC_UNIT,
   PAYMENT_LABELS,
   type PaymentState,
 } from "@hb/contracts";
@@ -9,6 +11,7 @@ import { useEffect, useState } from "react";
 import type { RosterRow } from "../../lib/hongbao";
 import { paymentTone } from "../../lib/hongbao-text";
 import { agoLabel, fullTime, sinceOpen } from "../../lib/roster-time";
+import { shownAmount } from "../../lib/units";
 import { type LazyList, LazyListEnd } from "../page/lazy-list";
 import { Bone } from "../page/page-state";
 import { Avatar } from "../ui/avatar";
@@ -48,7 +51,14 @@ const who: Record<RosterKind, string> = {
 };
 
 /** The column labels, kept apart from the rows so the list can scroll. */
-export function RosterHeader({ kind }: { kind: RosterKind }) {
+export function RosterHeader({
+  kind,
+  unit = "LDC",
+}: {
+  kind: RosterKind;
+  /** The 红包's unit: LDC, or its 三方积分's. */
+  unit?: string;
+}) {
   return (
     <div
       aria-hidden="true"
@@ -58,7 +68,7 @@ export function RosterHeader({ kind }: { kind: RosterKind }) {
       <span />
       <span>{who[kind]}</span>
       {kind !== "winners" && <span className="text-right">用时</span>}
-      {kind !== "registrations" && <span className="text-right">LDC</span>}
+      {kind !== "registrations" && <span className="text-right">{unit}</span>}
     </div>
   );
 }
@@ -86,6 +96,7 @@ const pulledIn = {
 function Row({
   row,
   kind,
+  unit,
   openedAt,
   detail,
   passwordsShown,
@@ -93,6 +104,7 @@ function Row({
 }: {
   row: RosterRow;
   kind: RosterKind;
+  unit: AmountUnit;
   openedAt: number;
   detail?: RowDetail | null;
   passwordsShown: boolean;
@@ -214,8 +226,8 @@ function Row({
           )}
           {kind !== "registrations" && (
             <span className="text-right font-mono text-sm font-medium text-ink tabular-nums">
-              {row.amount}
-              <span className="sr-only"> LDC</span>
+              {row.amount ? shownAmount(row.amount, unit).text : row.amount}
+              <span className="sr-only"> {unit.unit}</span>
             </span>
           )}
         </div>
@@ -229,6 +241,7 @@ export function RosterList({
   rows,
   list,
   kind,
+  unit = LDC_UNIT,
   openedAt,
   done,
   detailOf,
@@ -238,6 +251,8 @@ export function RosterList({
   rows: RosterRow[];
   list: LazyList;
   kind: RosterKind;
+  /** The 红包's unit: LDC, or its 三方积分's. */
+  unit?: AmountUnit;
   openedAt: number;
   /** What the end says once everything is in. */
   done: string;
@@ -269,6 +284,7 @@ export function RosterList({
               key={row.id}
               row={row}
               kind={kind}
+              unit={unit}
               openedAt={openedAt}
               detail={detailOf?.(row)}
               passwordsShown={passwordsShown}

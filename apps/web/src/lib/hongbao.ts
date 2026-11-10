@@ -2,6 +2,8 @@ import type {
   ActivityInput,
   ActivityParticipationResponse,
   ActivityPasswords,
+  ActivityPoints,
+  AmountUnit,
   AttachedPage,
   AuthorClaim,
   ClaimDetail,
@@ -16,6 +18,7 @@ import type {
 } from "@hb/contracts";
 import { rewardSummaryOf, type Split, splitOf } from "./hongbao-text";
 import type { RosterTitle } from "./titles";
+import { unitOf } from "./units";
 
 // What a 红包 page shows, by the tiers the API serves (05 §数据分级): the
 // public activity, the roster (always public), what opens at the end, and
@@ -63,6 +66,13 @@ export type HongbaoActivity = {
   scope?: PublicClaimScope;
   /** A 🐟额红包: what is taken goes into 🐟额 (balance-design §14). */
   fish: boolean;
+  /**
+   * 三方积分红包 (docs/third-party-points-design.md): its system as the
+   * 红包 keeps it, and why it stopped by itself.
+   */
+  points?: ActivityPoints;
+  /** What its amounts are in: LDC, or its 三方积分's unit and 最小单位. */
+  unit: AmountUnit;
   /** 自定义金额's order, known to the sender only. */
   custom?: { allocation: "sequential" | "random" };
   /**
@@ -249,7 +259,7 @@ export function hongbaoOf(
       reward?.count ??
       (activity.quantity.mode === "exact" ? activity.quantity.total : 0),
     split: splitOf(reward?.algorithm),
-    rewardSummary: rewardSummaryOf(reward),
+    rewardSummary: rewardSummaryOf(reward, unitOf(activity)),
     beforeInfo: activity.beforeInfo,
     pageOnly: activity.forceDedicated,
     humanCheck: activity.humanCheck === true,
@@ -258,6 +268,8 @@ export function hongbaoOf(
       : {}),
     ...(activity.scope ? { scope: activity.scope } : {}),
     fish: activity.funding === "balance",
+    ...(activity.points ? { points: activity.points } : {}),
+    unit: unitOf(activity),
     custom:
       config && config.money.mode === "custom"
         ? { allocation: config.allocation }

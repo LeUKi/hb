@@ -19,6 +19,7 @@ import {
 import { redemptionIntentAtom } from "../../lib/redemption-intent";
 import { useIdentity } from "../../lib/session";
 import { resultCountsAtom } from "../../lib/store";
+import { unitOf } from "../../lib/units";
 import { LazyListEnd, useQueryLazyList } from "../page/lazy-list";
 import { Page, PageHeader, Panel } from "../page/page";
 import { PageLoad, PageSkeleton, queryLoad } from "../page/page-state";
@@ -294,7 +295,8 @@ function ResultRow({
               {card.title}
             </span>
             <span className="truncate text-sm text-ink-2">
-              {card.author.displayName} · {rewardSummaryOf(card.reward)}
+              {card.author.displayName} ·{" "}
+              {rewardSummaryOf(card.reward, unitOf(card))}
             </span>
             {deadline && (
               <span className="truncate text-xs text-ink-3">{deadline}</span>

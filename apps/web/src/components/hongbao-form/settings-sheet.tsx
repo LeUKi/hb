@@ -24,6 +24,7 @@ import {
   randomRange,
 } from "./form-state";
 import { NoteEditor } from "./note-editor";
+import { useFormUnit } from "./points-funding";
 import { ScopeFields } from "./scope-fields";
 import type { SettingsGroup } from "./steps";
 
@@ -63,8 +64,8 @@ export function groupsOf(form: FormState, opened: boolean): SettingsGroup[] {
       groups.push("password");
   }
   groups.push("notes", "public");
-  // 🐟额红包 have no merchant to show (balance-design §14).
-  if (form.funding !== "balance") groups.push("payment");
+  // 🐟额红包 and 三方积分红包 have no merchant to show (balance-design §14).
+  if (form.funding === "merchant") groups.push("payment");
   return groups;
 }
 
@@ -205,9 +206,10 @@ export function SettingsSheet({
   const squareRequired =
     coded || (form.participation === "password" && form.pageOnly);
   const { total, shares } = plan(form);
+  const money = useFormUnit(form);
   const range = (algorithm: FormState["random"]["algorithm"]) =>
     total !== null && shares !== null && total >= shares
-      ? randomRange(total, shares, algorithm)
+      ? randomRange(total, shares, algorithm, money.step)
       : null;
   const note = notes.find((item) => item.key === editing) ?? null;
   // Closing, the text dialog keeps showing what it showed as it fades.
@@ -272,6 +274,7 @@ export function SettingsSheet({
                   value={form.random.algorithm}
                   range={range(form.random.algorithm)}
                   shares={shares}
+                  money={money}
                   onChange={(algorithm) =>
                     update((current) => ({
                       ...current,
@@ -315,6 +318,7 @@ export function SettingsSheet({
                     value={form.draw.algorithm}
                     range={range(form.draw.algorithm)}
                     shares={shares}
+                    money={money}
                     pool
                     onChange={(algorithm) =>
                       update((current) => ({

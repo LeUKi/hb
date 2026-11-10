@@ -1,8 +1,11 @@
-import { type RefObject, useRef } from "react";
+import { LDC_UNIT } from "@hb/contracts";
+import { useSetAtom } from "jotai";
+import { type RefObject, useEffect, useRef } from "react";
 import { useCoverLook } from "../../lib/activity-facts";
 import { cn } from "../../lib/cn";
 import type { HongbaoActivity } from "../../lib/hongbao";
 import { useActivityLive } from "../../lib/live";
+import { activeUnitAtom } from "../../lib/units";
 import { AuthorTools } from "../hongbao/author-tools";
 import { CodeEntry } from "../hongbao/code-section";
 import { InfoNote } from "../hongbao/details";
@@ -105,6 +108,12 @@ function HongbaoPage({
 }) {
   const activity: HongbaoActivity = data.activity;
   const hongbao = useHongbao(data);
+  // What is drawn outside this tree (my judgments' dialog) reads its unit.
+  const setUnit = useSetAtom(activeUnitAtom);
+  useEffect(() => {
+    setUnit(activity.unit);
+    return () => setUnit(LDC_UNIT);
+  }, [activity.unit, setUnit]);
   const info = useWindowInfo();
   const sizes = hongbaoSizes(info);
   const { view, passwords, phase, fresh, reveal, reduced } = hongbao;

@@ -1,4 +1,10 @@
-import { amountToMinor, DRAND_QUICKNET, formatAmount } from "@hb/contracts";
+import {
+  type AmountUnit,
+  amountToMinor,
+  DRAND_QUICKNET,
+  formatAmount,
+  LDC_UNIT,
+} from "@hb/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Copy, Download } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
@@ -21,6 +27,7 @@ import {
 import { haptic } from "../../lib/haptics";
 import { splitOf } from "../../lib/hongbao-text";
 import { clockSeconds } from "../../lib/roster-time";
+import { amountText, shownAmount } from "../../lib/units";
 import verifyScript from "../../lib/verify-draw.mjs?raw";
 import { roundText } from "../hongbao/clock";
 import {
@@ -281,6 +288,7 @@ function VerifySection({
 function DrawPage({ data }: { data: DrawData }) {
   const [all, setAll] = useState(false);
   const { activity, drand, roster, result, stage } = data;
+  const unit = proofUnit(activity);
   const { money } = activity;
   const open = stage === "registering";
   const registered = roster.entries.length;
@@ -299,8 +307,8 @@ function DrawPage({ data }: { data: DrawData }) {
         title={activity.title}
         description={
           open
-            ? `${activity.author.displayName}的红包 · ${clockSeconds(Date.parse(activity.deadlineAt))} 截止 · 已报名 ${registered} 人 · 抽 ${money.count} 人 · 奖池 ${money.totalAmount} LDC`
-            : `${activity.author.displayName}的红包 · ${clockSeconds(Date.parse(activity.closedAt ?? activity.deadlineAt))} 截止 · 报名 ${registered} 人 · 抽 ${winners} 人 · 奖池 ${money.totalAmount} LDC`
+            ? `${activity.author.displayName}的红包 · ${clockSeconds(Date.parse(activity.deadlineAt))} 截止 · 已报名 ${registered} 人 · 抽 ${money.count} 人 · 奖池 ${amountText(money.totalAmount, unit)}`
+            : `${activity.author.displayName}的红包 · ${clockSeconds(Date.parse(activity.closedAt ?? activity.deadlineAt))} 截止 · 报名 ${registered} 人 · 抽 ${winners} 人 · 奖池 ${amountText(money.totalAmount, unit)}`
         }
         next={
           stage === "registering"
@@ -521,8 +529,9 @@ function DrawPage({ data }: { data: DrawData }) {
                         label: "生成的金额",
                         value: (
                           <span className="tabular-nums">
-                            {result.amounts.map(formatAmount).join("、") ||
-                              "无"}
+                            {result.amounts
+                              .map((minor) => shownAmount(minor, unit).text)
+                              .join("、") || "无"}
                           </span>
                         ),
                       },
@@ -532,12 +541,12 @@ function DrawPage({ data }: { data: DrawData }) {
             />
             {result && result.winners.length > 0 && (
               <Table
-                head={["#", "中奖的人", "LDC"]}
+                head={["#", "中奖的人", unit.unit]}
                 widths="2.25rem minmax(0,1fr) 4.5rem"
                 rows={result.winners.map((winner) => [
                   winner.ordinal,
                   people.get(winner.ordinal) ?? "",
-                  formatAmount(winner.amountMinor),
+                  shownAmount(winner.amountMinor, unit).text,
                 ])}
               />
             )}
@@ -571,6 +580,7 @@ function DrawPage({ data }: { data: DrawData }) {
 
 function QueuePage({ data }: { data: QueueData }) {
   const { activity } = data;
+  const unit = proofUnit(activity);
   const { money } = activity;
   const random = money.mode === "random";
   const count = random ? money.count : money.amounts.length;
@@ -589,7 +599,7 @@ function QueuePage({ data }: { data: QueueData }) {
         id={activity.id}
         eyebrow="🎲 发放数据"
         title={activity.title}
-        description={`${activity.author.displayName}的红包 · ${clockSeconds(Date.parse(activity.openedAt))} 开放 · ${split} · ${count} 份 · 总额 ${total} LDC`}
+        description={`${activity.author.displayName}的红包 · ${clockSeconds(Date.parse(activity.openedAt))} 开放 · ${split} · ${count} 份 · 总额 ${amountText(total, unit)}`}
         next={
           data.stage === "running"
             ? "还在发放。结束后公开种子和没领的份额，就能核对整个队列。"
@@ -664,11 +674,11 @@ function QueuePage({ data }: { data: QueueData }) {
         <div className="grid gap-3">
           {data.queue.length > 0 ? (
             <Table
-              head={["位置", "LDC", "领到的人", "领取时间"]}
+              head={["位置", unit.unit, "领到的人", "领取时间"]}
               widths="2.75rem 4.5rem minmax(0,1fr) 5.5rem"
               rows={data.queue.map((item) => [
                 item.position + 1,
-                formatAmount(item.amountMinor),
+                shownAmount(item.amountMinor, unit).text,
                 item.claim?.user.displayName ?? (
                   <span key="none" className="text-ink-3">
                     没人领
@@ -739,4 +749,11 @@ export function DrawDataView({ id }: { id: string }) {
       ) : null}
     </PageLoad>
   );
+}
+
+/** The unit a proof's amounts are in (三方积分's, or LDC). */
+function proofUnit(activity: { unit?: string; step?: number }): AmountUnit {
+  return activity.unit
+    ? { unit: activity.unit, step: activity.step ?? 1 }
+    : LDC_UNIT;
 }

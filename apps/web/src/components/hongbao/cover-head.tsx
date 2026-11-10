@@ -1,6 +1,7 @@
+import { useNavigate } from "@tanstack/react-router";
 import { ArrowUpRight, Braces, Globe } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "../../lib/cn";
 import { coverTags } from "../../lib/cover-tags";
 import { useEmbedded } from "../../lib/embedded";
@@ -27,17 +28,35 @@ const chipClass = "hb-chip-red inline-flex h-7 items-center px-2.5 text-xs";
 function CoverChip({
   children,
   hint,
+  rich,
+  link,
+  split,
   code = false,
 }: {
   children: string;
   hint?: string;
+  rich?: ReactNode;
+  link?: { label: string; open: () => void };
+  /** 三方｜星星: two parts with a rule between (third-party-points §9). */
+  split?: [string, string];
   code?: boolean;
 }) {
-  const className = cn(chipClass, code && "hb-chip-code gap-1");
+  const className = cn(
+    chipClass,
+    (code || split) && "gap-1",
+    code && "hb-chip-code",
+  );
   const label = code ? (
     <>
       <Braces className="size-3.5" aria-hidden="true" />
       {children}
+    </>
+  ) : split ? (
+    <>
+      <span>{split[0]}</span>
+      <span aria-hidden="true" className="h-3 w-px bg-current opacity-40" />
+      <span className="sr-only">｜</span>
+      <span>{split[1]}</span>
     </>
   ) : (
     children
@@ -47,6 +66,8 @@ function CoverChip({
       {hint ? (
         <TagHint
           hint={hint}
+          rich={rich}
+          link={link}
           className={cn(
             className,
             "hb-chip-link focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-cream)] focus-visible:outline-none",
@@ -105,6 +126,9 @@ export function CoverHead({
   const page = useAttachedPageOpener();
   const { compact } = useWindowInfo();
   const embedded = useEmbedded();
+  const navigate = useNavigate();
+  // 三方积分's 详情页 (docs/third-party-points-design.md §9).
+  const openPoints = (id: string) => void navigate({ href: `/points/${id}` });
   // The big cover's name line and title keep clear of 分享 (and 附带网页
   // under it) over the cover's right edge, on both sides to stay centred:
   // a long name ran under 分享. The small cover's padding already does.
@@ -298,15 +322,42 @@ export function CoverHead({
             className="relative flex w-full flex-wrap justify-center gap-2"
             {...motions.fade}
           >
-            {coverTags(activity).map((tag) => (
-              <CoverChip
-                key={tag.text}
-                hint={tag.hint}
-                code={"code" in tag && tag.code === true}
-              >
-                {tag.text}
-              </CoverChip>
-            ))}
+            {coverTags(activity).map((tag) =>
+              "points" in tag && tag.points ? (
+                <CoverChip
+                  key={tag.text}
+                  hint={tag.hint}
+                  split={["三方", tag.points.name]}
+                  rich={
+                    <>
+                      来自{" "}
+                      <strong className="font-semibold text-ink">
+                        {tag.points.host}
+                      </strong>{" "}
+                      的积分，领到后存进你在这个网站的账户。
+                    </>
+                  }
+                  link={
+                    embedded
+                      ? undefined
+                      : {
+                          label: "查看详情 ›",
+                          open: () => openPoints(tag.points.id),
+                        }
+                  }
+                >
+                  {tag.text}
+                </CoverChip>
+              ) : (
+                <CoverChip
+                  key={tag.text}
+                  hint={tag.hint}
+                  code={"code" in tag && tag.code === true}
+                >
+                  {tag.text}
+                </CoverChip>
+              ),
+            )}
             {activity.draft && (
               <CoverChip
                 hint={

@@ -1,4 +1,5 @@
 import {
+  type ActivityPoints,
   PAYMENT_LABELS,
   type PaymentState,
   type PaymentView,
@@ -13,8 +14,10 @@ import { SiteLinkContext, useEmbedded } from "../../lib/embedded";
 import type { HongbaoActivity, Mine } from "../../lib/hongbao";
 import { paymentTone } from "../../lib/hongbao-text";
 import { paymentReason, quotaResumeWords } from "../../lib/payment-display";
+import { pointsFailureWords, usePointsDetail } from "../../lib/points";
 import { clockLabel, clockSeconds } from "../../lib/roster-time";
 import { useIdentity } from "../../lib/session";
+import { amountText } from "../../lib/units";
 import { useBefore } from "../../lib/use-before";
 import { Callout } from "../page/page";
 import { WindowDialog } from "../shell/window-dialog";
@@ -238,6 +241,130 @@ function NoCreditAccountHere({
   );
 }
 
+/**
+ * 三方积分 (docs/third-party-points-design.md §9): no account at the
+ * issuer. The issuer's own words, the five minutes, and one 重新发送.
+ */
+function NoPointsAccount({
+  activityId,
+  claimId,
+  payment,
+  amount,
+  points,
+  onResent,
+}: {
+  activityId: string;
+  claimId: string;
+  payment: PaymentView;
+  amount: string;
+  points: ActivityPoints;
+  onResent: () => void;
+}) {
+  const identity = useIdentity();
+  const detail = usePointsDetail(points.id);
+  const until = payment.resendUntil ? Date.parse(payment.resendUntil) : 0;
+  const open = useBefore(until);
+  const resend = useResendPayment(
+    identity.user?.id ?? "",
+    identity.csrfToken ?? "",
+    activityId,
+  );
+  const words = detail.data?.system.noRecipient;
+  const unit = { unit: points.unit, step: points.step };
+  if (!open || !identity.user || !identity.csrfToken)
+    return (
+      <Callout
+        icon={UserRoundX}
+        title="这笔没能发出"
+        className="w-full text-left"
+      >
+        {points.host} 找不到你的账户。被拒后 5
+        分钟内可以重新发送一次，现在已经不能再发，这笔不再补发。
+      </Callout>
+    );
+  const error = resend.error
+    ? resend.error instanceof ActivityRequestError
+      ? resend.error.message
+      : "重新发送没有完成，请稍后再试。"
+    : null;
+  return (
+    <Callout
+      tone="warning"
+      icon={UserRoundX}
+      title={`你在 ${points.host} 还没有账户`}
+      className="w-full text-left"
+    >
+      <p>
+        这笔 {amountText(amount, unit)}{" "}
+        暂时发不出去。先在那边开好账户，再回来点“重新发送”：只能重新发送一次。
+      </p>
+      {words ? (
+        <NoteMarkdown className="mt-2 text-sm">{words}</NoteMarkdown>
+      ) : null}
+      <div className="mt-2.5 flex flex-wrap items-center gap-2">
+        <Button
+          variant="primary"
+          size="sm"
+          aria-disabled={resend.isPending || undefined}
+          onClick={() => {
+            if (resend.isPending) return;
+            resend.mutate(claimId, { onSuccess: onResent });
+          }}
+        >
+          {resend.isPending ? "正在重新发送…" : "重新发送"}
+        </Button>
+      </div>
+      <p className="mt-2 text-xs">
+        还剩 <ResendCountdown to={until} /> 可以重新发送，过时不再补发。
+      </p>
+      {error && (
+        <p role="alert" className="mt-1 text-danger">
+          {error}
+        </p>
+      )}
+    </Callout>
+  );
+}
+
+/** A 三方积分 payout's line under its status (§9): where it went, or why not. */
+function PointsPaymentNote({
+  payment,
+  points,
+  resending,
+}: {
+  payment: PaymentView;
+  points: ActivityPoints;
+  resending: boolean;
+}) {
+  const detail = usePointsDetail(points.id);
+  const system = { ...points, notAllowed: detail.data?.system.notAllowed };
+  if (payment.status === "confirmed")
+    return (
+      <div className="grid gap-0.5 text-sm text-ink-2">
+        <p>
+          已存进你在 {points.host} 的账户
+          {payment.confirmedAt
+            ? `（${clockSeconds(Date.parse(payment.confirmedAt))}）`
+            : ""}
+          。
+        </p>
+        {detail.data?.system.arrival ? (
+          <p>{detail.data.system.arrival}</p>
+        ) : null}
+      </div>
+    );
+  const text = resending
+    ? "正在重新发送，稍等十几秒。"
+    : payment.status === "failed"
+      ? pointsFailureWords(payment.reason, system)
+      : payment.status === "attention"
+        ? pointsFailureWords("unknown", system)
+        : payment.status === "reconciling"
+          ? `${points.host} 刚才没有回复，稍后会再试。`
+          : `正在发到你在 ${points.host} 的账户。`;
+  return text ? <p className="text-sm text-ink-2">{text}</p> : null;
+}
+
 /** 报名 that is waiting or being drawn: the ticket's times and one rule. */
 function TicketNote({
   mine,
@@ -413,10 +540,16 @@ export function MyResult({
       {amount ? (
         <p className="flex items-baseline gap-2 text-success">
           <span className="hb-result-amount text-[clamp(2.75rem,12cqw,4.5rem)] leading-none font-semibold tracking-tight">
-            <CountUp value={amount} play={play} delay={delay} prefix="+" />
+            <CountUp
+              value={amount}
+              play={play}
+              delay={delay}
+              prefix="+"
+              step={activity.unit.step}
+            />
           </span>
           <span className="text-xl font-medium">
-            LDC
+            {activity.unit.unit}
             {activity.fish && <FishMark explained />}
           </span>
         </p>
@@ -482,11 +615,32 @@ export function MyResult({
         <p className="text-sm text-ink-2">
           {activity.fish
             ? "这份已退回你的🐟额。"
-            : "这份没有发出去，钱还在付款的商户账户里。"}
+            : activity.points
+              ? `这份没有发出去，还在你在 ${activity.points.host} 的账户里。`
+              : "这份没有发出去，钱还在付款的商户账户里。"}
         </p>
       ) : /* A 🐟额红包's share is in 🐟额 already: nothing to follow (under
           1 🐟 it goes to Credit all at once, balance-design §5). */
-      amount && activity.fish ? null : amount && payment ? (
+      amount && activity.fish ? null : amount && payment && activity.points ? (
+        payment.status === "attention" &&
+        payment.reason === "recipient" &&
+        mine.claimId ? (
+          <NoPointsAccount
+            activityId={activity.id}
+            claimId={mine.claimId}
+            payment={payment}
+            amount={amount}
+            points={activity.points}
+            onResent={() => setResent(true)}
+          />
+        ) : (
+          <PointsPaymentNote
+            payment={payment}
+            points={activity.points}
+            resending={resent && payment.status !== "confirmed"}
+          />
+        )
+      ) : amount && payment ? (
         // 重新发送 needs this site's session: the mini app leads here.
         heldForAccount(payment) && embedded ? (
           <NoCreditAccountHere payment={payment} amount={amount} />

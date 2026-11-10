@@ -24,6 +24,7 @@ import type {
   SquareJudgeList,
   UpdateJudgeInput,
 } from "@hb/contracts";
+import { type AmountUnit, LDC_UNIT } from "@hb/contracts";
 import {
   keepPreviousData,
   type QueryClient,
@@ -39,6 +40,7 @@ import { useAccountSession } from "./auth";
 import { balanceKeys } from "./balance";
 import { useMerchantIdentity } from "./merchants";
 import { useIdentity } from "./session";
+import { amountText, shownAmount } from "./units";
 
 // 代码判定红包 (docs/programmable-hongbao-design.md) on the web: 部署 and
 // which code and tests a run was for, a claimant's 我的提交, its sender's
@@ -499,15 +501,21 @@ export function moveLabel(
   /** Settled with money: how much. */
   amount: string | undefined,
   full = false,
+  /** The 红包's unit: LDC, or its 三方积分's. */
+  unit: AmountUnit = LDC_UNIT,
 ) {
-  if (moved.settled) return amount ? `结算 ${amount} LDC` : "结算，没有领到";
+  if (moved.settled)
+    return amount ? `结算 ${amountText(amount, unit)}` : "结算，没有领到";
   const added = Number(moved.added);
+  const pending = shownAmount(moved.pending, unit).text;
   if (added === 0)
-    return Number(moved.pending) > 0 ? `待结算 ${moved.pending} LDC` : "没加钱";
-  const change = `${added > 0 ? "+" : "−"}${moved.added.replace("-", "")}`;
+    return Number(moved.pending) > 0
+      ? `待结算 ${pending} ${unit.unit}`
+      : "没加钱";
+  const change = `${added > 0 ? "+" : "−"}${shownAmount(moved.added.replace("-", ""), unit).text}`;
   return full
-    ? `${change} · 待结算 ${moved.pending} LDC`
-    : `${change} → ${moved.pending}`;
+    ? `${change} · 待结算 ${pending} ${unit.unit}`
+    : `${change} → ${pending}`;
 }
 
 /** 我的记录: the viewer's own; a private read, gone at sign-out. */

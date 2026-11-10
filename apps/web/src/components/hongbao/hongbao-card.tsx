@@ -5,6 +5,7 @@ import type { HongbaoActivity } from "../../lib/hongbao";
 import { endLabels, type PublicView } from "../../lib/hongbao";
 import { clockLabel, openingLabel } from "../../lib/roster-time";
 import { sealGlyphs } from "../../lib/seal";
+import { amountText } from "../../lib/units";
 import { Avatar } from "../ui/avatar";
 import { EmojiText } from "../ui/emoji-text";
 import { LinuxDoMark } from "../ui/linux-do-mark";
@@ -16,10 +17,10 @@ import { coverCells } from "./cover-cells";
 export function quantityLine(activity: HongbaoActivity, view: PublicView) {
   // Protocol 5: "奖池还剩 17.92 LDC（30%）".
   if (view.quantity.kind === "pool")
-    return `奖池还剩 ${view.quantity.left} LDC${view.quantity.share ? `（${view.quantity.share}）` : ""}`;
+    return `奖池还剩 ${amountText(view.quantity.left, activity.unit)}${view.quantity.share ? `（${view.quantity.share}）` : ""}`;
   const cell = coverCells(activity, view)[1];
   // "已领 3 / 10 份", but "余量有限": a space only before a number.
-  return `${cell.label}${/^\d/.test(cell.value) ? " " : ""}${cell.value}`;
+  return `${cell.label}${/^\d/.test(cell.value) ? " " : ""}${cell.value}${cell.unit ? ` ${cell.unit}` : ""}`;
 }
 
 /**
@@ -152,6 +153,11 @@ export function HongbaoCard({
               <StatusChip tone="neutral">{scopeTag(activity.scope)}</StatusChip>
             )}
             {activity.fish && <StatusChip tone="neutral">🐟额</StatusChip>}
+            {activity.points && (
+              <StatusChip tone="neutral">
+                三方｜{activity.points.name}
+              </StatusChip>
+            )}
             {/* Its 口令 only on its own page: this card is the way in. */}
             {activity.pageOnly && activity.mode !== "code" && (
               <StatusChip tone="neutral">关闭首页领取</StatusChip>

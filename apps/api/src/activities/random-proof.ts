@@ -445,6 +445,7 @@ export async function activityProofData(
             ? null
             : new Date(row.drawClosedAt).toISOString(),
         money,
+        ...proofUnitOf(row),
       },
       drand: {
         chainHash: DRAND_QUICKNET.chainHash,
@@ -501,6 +502,7 @@ export async function activityProofData(
       openedAt: new Date(row.openedAt).toISOString(),
       endedAt: ended === null ? null : new Date(ended).toISOString(),
       money,
+      ...proofUnitOf(row),
     },
     commitment: proof.commitment,
     secret,
@@ -516,4 +518,16 @@ export async function activityProofData(
           : null,
     })),
   };
+}
+
+/**
+ * 三方积分 (docs/third-party-points-design.md §2): the unit and the 最小单位
+ * its amounts were split by, kept with the 红包; nothing for LDC and 🐟.
+ */
+function proofUnitOf(row: { funding: string; config: string }) {
+  if (row.funding !== "points") return {};
+  const points = (
+    JSON.parse(row.config) as { points?: { unit: string; step: number } }
+  ).points;
+  return points ? { unit: points.unit, step: points.step } : {};
 }

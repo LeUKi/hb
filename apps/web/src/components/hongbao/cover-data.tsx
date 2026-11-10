@@ -54,20 +54,30 @@ function Steps({ filled }: { filled: number }) {
 }
 
 /**
- * A value, its unit (LDC) set smaller after the figure so a big pool fits
- * its cell; a figure of five digits or more before the point a step smaller
- * still.
+ * A value, its unit (LDC, or a 三方积分's) set smaller after the figure so
+ * a big pool fits its cell; a figure of five characters or more before the
+ * point a step smaller still. A shortened one (1.2亿) says itself in full
+ * in its hint and to screen readers.
  */
-function Amount({ value }: { value: string }) {
-  const unit = / LDC$/.exec(value);
+function Amount({
+  value,
+  unit,
+  full,
+}: {
+  value: string;
+  unit?: string;
+  full?: string;
+}) {
   if (!unit) return <RollingText text={value} />;
-  const figure = value.slice(0, unit.index);
-  const digits = figure.split(".")[0]?.length ?? 0;
+  const digits = value.split(".")[0]?.length ?? 0;
   return (
-    <span className={cn(digits >= 5 && "hb-data-value-long")}>
-      <RollingText text={figure} />
+    <span
+      className={cn(digits >= 5 && "hb-data-value-long")}
+      {...(full ? { title: full, "aria-label": full } : {})}
+    >
+      <RollingText text={value} />
       {/* The space inside: read and found as “1000.00 LDC”. */}
-      <span className="hb-data-unit"> LDC</span>
+      <span className="hb-data-unit"> {unit}</span>
     </span>
   );
 }
@@ -111,7 +121,7 @@ function DataCell({
         {cell.until !== undefined ? (
           <Countdown to={cell.until} />
         ) : (
-          <Amount value={cell.value} />
+          <Amount value={cell.value} unit={cell.unit} full={cell.full} />
         )}
       </motion.dd>
       <AnimatePresence mode="popLayout" initial={false}>

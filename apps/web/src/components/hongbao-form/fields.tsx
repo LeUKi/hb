@@ -1,9 +1,10 @@
-import { ACTIVITY_LIMITS } from "@hb/contracts";
+import { ACTIVITY_LIMITS, type AmountUnit, LDC_UNIT } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import {
   AlertTriangle,
   Braces,
   ChevronRight,
+  Coins,
   Equal,
   KeyRound,
   ListOrdered,
@@ -25,6 +26,7 @@ import { useCurrentMerchant, useMerchant } from "../../lib/merchants";
 import { scrollBehavior } from "../../lib/motion";
 import { inspectPassword, optimizePassword } from "../../lib/password-rules";
 import { useSessionUser } from "../../lib/session";
+import { amountText, shownAmount } from "../../lib/units";
 import { useOmniboxController } from "../omnibox/use-omnibox-controller";
 import { Callout } from "../page/page";
 import { Button } from "../ui/button";
@@ -51,6 +53,7 @@ import {
   type TimeUnit,
   unitLabels,
 } from "./form-state";
+import { PointsPicker, useFormUnit, useOnlineSystems } from "./points-funding";
 
 /**
  * Credit's smallest daily limit, 800 LDC in cents (its lowest pay level): a
@@ -225,10 +228,13 @@ export function AmountFields({
   locked: boolean;
 }) {
   const { total, shares, unit } = plan(form);
+  // LDC, or the chosen 三方积分's unit and 最小单位 (§2).
+  const money = useFormUnit(form);
+  const whole = money.step % 100 === 0;
   const amountProps = (field: string) => ({
     id: field,
-    inputMode: "decimal" as const,
-    suffix: "LDC",
+    inputMode: whole ? ("numeric" as const) : ("decimal" as const),
+    suffix: money.unit,
     invalid: Boolean(errorOf(field)),
     disabled: locked,
     autoComplete: "off",
@@ -401,9 +407,9 @@ export function AmountFields({
                 ? "总奖池"
                 : "总额"}{" "}
             <span className="text-base font-semibold text-ink tabular-nums">
-              {ldc(total)}
+              {shownAmount(total, money).text}
             </span>{" "}
-            LDC
+            {money.unit}
           </span>
         ) : (
           <span>
@@ -421,28 +427,29 @@ export function AmountFields({
             : shares !== null
               ? `${shares} ${form.mode === "timed_draw" ? "个名额" : "份"}`
               : "份数未填"}
-          {unit !== null && ` · 每份 ${ldc(unit)} LDC`}
+          {unit !== null && ` · 每份 ${amountText(unit, money)}`}
         </span>
       </p>
       <div className="-mt-3 flex flex-col gap-1">
         {form.mode === "code" ? (
           <p className="text-xs text-ink-3">
-            金额最多两位小数。每个人赢多少、什么时候结算由判定器定；红包结束时，还没结算的人按各自的待结算发，剩下的
+            {stepRule(money)}
+            每个人赢多少、什么时候结算由判定器定；红包结束时，还没结算的人按各自的待结算发，剩下的
             {form.funding === "balance" ? "退回你的🐟额" : "不再发"}。
-            {fundingNote(form)}
+            {fundingNote(form, money)}
           </p>
         ) : (
           <p className="text-xs text-ink-3">
-            最多 1,000 份，每份至少 0.01
-            LDC，金额最多两位小数。填的是每份发出的金额。
-            {fundingNote(form)}
+            最多 1,000 份，每份至少 {amountText(money.step, money)}，
+            {stepRule(money)}填的是每份发出的金额。
+            {fundingNote(form, money)}
           </p>
         )}
         {/* Opens as the total passes 800 LDC, and closes under it; 🐟额
             does not go through Credit at all. */}
         <Reveal
           show={
-            form.funding !== "balance" &&
+            form.funding === "merchant" &&
             total !== null &&
             total > DAILY_LIMIT_FLOOR
           }
@@ -458,10 +465,18 @@ export function AmountFields({
 }
 
 /** Where a share goes once taken, by 从哪发. */
-const fundingNote = (form: FormState) =>
+const fundingNote = (form: FormState, money: AmountUnit) =>
   form.funding === "balance"
     ? "领到的直接存进领取者的🐟额。"
-    : "领取者到账时，Credit 站会按你在 Credit 站的等级扣分发费（4%–15%）。";
+    : form.funding === "points"
+      ? `领到的${money.unit}直接进领取者在发行方的账户，从你在那边的账户扣。`
+      : "领取者到账时，Credit 站会按你在 Credit 站的等级扣分发费（4%–15%）。";
+
+/** How amounts are written in this unit (§2). */
+const stepRule = (money: AmountUnit) =>
+  money.step === 1
+    ? "金额最多两位小数。"
+    : `金额只能是 ${amountText(money.step, money)}的整数倍。`;
 
 /** 微信同款 or 支付宝同款, and what that gives with the amounts filled in. */
 /**
@@ -484,6 +499,9 @@ export function FundingChoice({
   const { leaveTo } = useOmniboxController();
   const { merchant, loaded } = useCurrentMerchant(user?.id ?? "");
   const funding = useBalanceFunding(user?.id ?? "", !locked);
+  // 三方积分 (docs/third-party-points-design.md §8): on, and one online.
+  const points = useOnlineSystems(!locked);
+  const pointsOffered = points.enabled && points.items.length > 0;
   const available = funding.data?.availableMinor ?? 0;
   const fishReady = funding.data?.available === true;
   const rejected = merchant?.credentialVerification.status === "rejected";
@@ -496,7 +514,11 @@ export function FundingChoice({
   );
   if (locked) return null;
   // No 🐟额 to choose: only a merchant's trouble, where the money is set.
-  if (form.funding !== "balance" && !(funding.data?.enabled && user?.balance))
+  if (
+    form.funding === "merchant" &&
+    !(funding.data?.enabled && user?.balance) &&
+    !pointsOffered
+  )
     return noMerchant || rejected ? (
       <p className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-sm text-warning">
         <span className="min-w-0">
@@ -513,8 +535,17 @@ export function FundingChoice({
         label="从哪发"
         value={form.funding}
         onChange={(value) =>
-          update((current) => ({ ...current, funding: value }))
+          update((current) => ({
+            ...current,
+            funding: value,
+            // The only one online: chosen with 三方积分 itself.
+            pointsSystemId:
+              value === "points" && !current.pointsSystemId
+                ? (points.items[0]?.id ?? "")
+                : current.pointsSystemId,
+          }))
         }
+        columns={pointsOffered ? 1 : 2}
         options={[
           {
             value: "merchant",
@@ -538,8 +569,29 @@ export function FundingChoice({
             icon: Wallet,
             disabled: !fishReady,
           },
+          ...(pointsOffered || form.funding === "points"
+            ? [
+                {
+                  value: "points" as const,
+                  title: "三方积分",
+                  description:
+                    points.items.length === 1
+                      ? `${points.items[0]?.name}：从你在 ${points.items[0]?.host} 的账户发，领到的进领取者在那边的账户`
+                      : "别的网站的积分：从你在那边的账户发，领到的进领取者在那边的账户",
+                  icon: Coins,
+                },
+              ]
+            : []),
         ]}
       />
+      {form.funding === "points" && (
+        <PointsPicker
+          form={form}
+          onPick={(id) =>
+            update((current) => ({ ...current, pointsSystemId: id }))
+          }
+        />
+      )}
       {(merchantLink || !fishReady) && (
         <div className="flex flex-wrap gap-x-3 px-1">
           {merchantLink}
@@ -575,6 +627,7 @@ export function AlgorithmCards({
   onChange,
   range,
   shares,
+  money = LDC_UNIT,
   pool = false,
 }: {
   label: string;
@@ -582,6 +635,8 @@ export function AlgorithmCards({
   onChange: (value: Algorithm) => void;
   range: [number, number] | null;
   shares: number | null;
+  /** LDC, or the chosen 三方积分's. */
+  money?: AmountUnit;
   /** A timed draw's prizes add up to its 奖池, not a 总额. */
   pool?: boolean;
 }) {
@@ -596,10 +651,10 @@ export function AlgorithmCards({
       {range && (
         <p className="text-xs text-ink-3">
           {shares === 1
-            ? `只有一份：就是全部 ${ldc(range[0])} LDC。`
+            ? `只有一份：就是全部 ${amountText(range[0], money)}。`
             : range[0] === range[1]
-              ? `按现在的金额，每份都是 ${ldc(range[0])} LDC。`
-              : `按现在的金额，每份 ${ldc(range[0])}–${ldc(range[1])} LDC，加起来正好是${pool ? "奖池" : "总额"}。`}
+              ? `按现在的金额，每份都是 ${amountText(range[0], money)}。`
+              : `按现在的金额，每份 ${shownAmount(range[0], money).text}–${amountText(range[1], money)}，加起来正好是${pool ? "奖池" : "总额"}。`}
         </p>
       )}
     </div>

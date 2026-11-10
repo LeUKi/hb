@@ -1,3 +1,4 @@
+import { pointsPrivacyLine } from "@hb/contracts";
 import { AnimatePresence, motion, type Transition } from "motion/react";
 import {
   type CSSProperties,
@@ -14,6 +15,7 @@ import { haptic } from "../../lib/haptics";
 import type { HongbaoActivity } from "../../lib/hongbao";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { isApple } from "../../lib/platform";
+import { amountText } from "../../lib/units";
 import { useCooldownSeconds } from "../omnibox/cooldown";
 import { omniboxElements } from "../omnibox/elements";
 import { MORPH_MS } from "../shell/layout-morph";
@@ -109,6 +111,13 @@ function ActionHint({
           )}
         </MorphLabel>
       </p>
+      {/* 三方积分 (docs/third-party-points-design.md §9): who learns their
+          name when they take part, said before they do. */}
+      {activity.points && !activity.draft && phase === "closed" && (
+        <p className="text-xs text-ink-3">
+          {pointsPrivacyLine(activity.points.host)}
+        </p>
+      )}
       {/* 排队 (docs/claim-capacity-design.md §3 第 1 期): their claim waits
           for its share. They may close the page; they may leave the line. */}
       <Reveal show={Boolean(hongbao.leaveQueue)}>
@@ -146,8 +155,10 @@ function ActionHint({
             </Reveal>
             {/* Its figure rolls as each judgment moves it. */}
             <p className="text-sm text-ink-2">
-              <RollingText text={`待结算 ${standing.pending} LDC`} /> ·
-              判定器结算或红包结束时发
+              <RollingText
+                text={`待结算 ${amountText(standing.pending, activity.unit)}`}
+              />{" "}
+              · 判定器结算或红包结束时发
             </p>
           </div>
         )}

@@ -1,3 +1,4 @@
+import type { ActivityPoints } from "@hb/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom } from "jotai";
 import {
@@ -12,6 +13,7 @@ import { useEffect, useState } from "react";
 import { activityCode, senderPagePath } from "../../lib/activity-route";
 import type { HongbaoActivity } from "../../lib/hongbao";
 import { judgeRecordsUrl, useCodeFailures } from "../../lib/judge";
+import { usePointsDetail } from "../../lib/points";
 import { clockLabel, openingLabel } from "../../lib/roster-time";
 import { useIdentity, useSessionUser } from "../../lib/session";
 import { savedDraftAtom } from "../../lib/store";
@@ -54,6 +56,41 @@ function CodeFailures({ activity }: { activity: HongbaoActivity }) {
         ))}
       </ul>
     </Panel>
+  );
+}
+
+/**
+ * 三方积分 (docs/third-party-points-design.md §5 §8): it ended by itself,
+ * and why, in the issuer's words when they wrote some; the way to the key.
+ */
+function PointsStopNotice({ points }: { points: ActivityPoints }) {
+  const navigate = useNavigate();
+  const detail = usePointsDetail(points.id);
+  const copy = detail.data?.system;
+  const words =
+    points.stop === "insufficient"
+      ? copy?.insufficient ||
+        `你在 ${points.host} 的额度不够了，没发出的不再发。`
+      : points.stop === "key_invalid"
+        ? copy?.keyInvalid ||
+          `${points.host} 说你的密钥失效了，没发出的不再发。`
+        : points.stop === "key_removed"
+          ? "你删掉了这种积分的密钥，没发出的不再发。"
+          : `${points.name}已经下架，没发出的不再发。`;
+  return (
+    <Callout tone="danger" icon={AlertTriangle} title="红包已经提前结束">
+      <span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <span>{words}</span>
+        {points.stop !== "retired" && (
+          <MoreLink
+            href={`/points/${points.id}`}
+            onGo={() => void navigate({ href: `/points/${points.id}` })}
+          >
+            看我的密钥
+          </MoreLink>
+        )}
+      </span>
+    </Callout>
   );
 }
 
@@ -145,6 +182,7 @@ export function AuthorTools({
           。已退回草稿，可以重新定时，或者直接开放。
         </Callout>
       )}
+      {activity.points?.stop && <PointsStopNotice points={activity.points} />}
       {draft && scheduled === undefined && (
         <Callout
           tone="warning"

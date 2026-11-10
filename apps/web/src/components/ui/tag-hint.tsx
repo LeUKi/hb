@@ -11,6 +11,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { cn } from "../../lib/cn";
 import { ease, useReducedMotionPref } from "../../lib/motion";
 import { radius, Squircle, SquirclePlate } from "./squircle";
 
@@ -27,12 +28,21 @@ const HOVER_DELAY = 150;
  */
 export function TagHint({
   hint,
+  rich,
+  link,
   children,
   width = MAX_WIDTH,
   ref,
   ...rest
 }: {
   hint: string;
+  /** The bubble's words with what stands out (bold); `hint` stays the description. */
+  rich?: ReactNode;
+  /**
+   * A page that says more (三方积分's 详情页): a mouse's click and a key's
+   * Enter open it; a tap shows the bubble, which has a button to it.
+   */
+  link?: { label: string; open: () => void };
   children: ReactNode;
   /** How wide the bubble may grow (a longer explanation takes more). */
   width?: number;
@@ -80,6 +90,17 @@ export function TagHint({
         }}
         onBlur={() => setOpen(false)}
         onClick={() => {
+          // With a page to open: a mouse or a key opens it; a tap shows
+          // the bubble and its button.
+          if (
+            link &&
+            pointer.current !== "touch" &&
+            pointer.current !== "pen"
+          ) {
+            pointer.current = "";
+            link.open();
+            return;
+          }
           // A mouse already has it on hover; a tap or a key toggles it.
           if (pointer.current === "mouse") return;
           setOpen((value) => !value);
@@ -94,7 +115,8 @@ export function TagHint({
       <HintBubble
         open={open}
         anchor={trigger}
-        hint={hint}
+        hint={rich ?? hint}
+        link={link}
         width={width}
         onClose={() => setOpen(false)}
       />
@@ -106,12 +128,14 @@ function HintBubble({
   open,
   anchor,
   hint,
+  link,
   width,
   onClose,
 }: {
   open: boolean;
   anchor: RefObject<HTMLButtonElement | null>;
-  hint: string;
+  hint: ReactNode;
+  link?: { label: string; open: () => void };
   width: number;
   onClose: () => void;
 }) {
@@ -171,7 +195,9 @@ function HintBubble({
     const outside = (event: PointerEvent) => {
       if (
         !(
-          event.target instanceof Node && anchor.current?.contains(event.target)
+          event.target instanceof Node &&
+          (anchor.current?.contains(event.target) ||
+            bubble.current?.contains(event.target))
         )
       )
         close();
@@ -202,7 +228,10 @@ function HintBubble({
           key="hint"
           ref={bubble}
           aria-hidden="true"
-          className="pointer-events-none absolute z-[60] w-max"
+          className={cn(
+            "absolute z-[60] w-max",
+            link ? "pointer-events-auto" : "pointer-events-none",
+          )}
           style={{
             left: left ?? place.x,
             top: place.y,
@@ -222,9 +251,22 @@ function HintBubble({
         >
           <SquirclePlate className="pop-plate" radius={radius.row} />
           <Squircle radius={radius.row}>
-            <p className="glass-pop relative px-3 py-2 text-[13px] leading-5 text-pretty whitespace-pre-line text-ink-2">
-              {hint}
-            </p>
+            <div className="glass-pop relative px-3 py-2 text-[13px] leading-5 text-pretty whitespace-pre-line text-ink-2">
+              <p>{hint}</p>
+              {link && (
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  className="mt-1 font-medium text-ink underline-offset-2 hover:underline"
+                  onClick={() => {
+                    onClose();
+                    link.open();
+                  }}
+                >
+                  {link.label}
+                </button>
+              )}
+            </div>
           </Squircle>
         </motion.div>
       )}

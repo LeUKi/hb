@@ -4,6 +4,7 @@ import type {
   ActivityList,
   ActivityStatusCounts,
   ActivitySummary,
+  AmountUnit,
   DiscoveryCard,
   DiscoveryList,
   Participation,
@@ -26,6 +27,7 @@ import {
   publicViewOf,
 } from "./hongbao";
 import { type ChipTone, mineOf } from "./hongbao-text";
+import { unitOf } from "./units";
 
 // The lists of 红包 outside a 红包 page — the 红包广场 and the account's own
 // 红包记录 — as the pages draw them: production's list rows mapped onto the
@@ -122,6 +124,8 @@ export type JoinedRecord = {
   payment: PaymentState | null;
   /** A 🐟额红包's: what was taken is in 🐟额 (在🐟额), no payment. */
   fish: boolean;
+  /** Its amounts' unit: LDC, or its 三方积分's. */
+  unit: AmountUnit;
   /** 自领: the sender's own share, unpaid (docs/self-claim-design.md). */
   self: boolean;
   /** 代码判定红包: its code judged the claim (代码判定领取). */
@@ -140,6 +144,7 @@ export function joinedRecordOf(item: Participation): JoinedRecord {
       activity.author?.displayName || activity.author?.username || "红包作者",
     password: record.sourcePassword ?? null,
     fish: activity.funding === "balance",
+    unit: unitOf(activity),
     code: activity.participationMode === "code",
     ended: activity.status !== "active",
   };

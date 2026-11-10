@@ -1,4 +1,9 @@
-import type { JudgeFetchAnswer, JudgeNote, MyJudgment } from "@hb/contracts";
+import type {
+  AmountUnit,
+  JudgeFetchAnswer,
+  JudgeNote,
+  MyJudgment,
+} from "@hb/contracts";
 import { useRouter } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
@@ -11,6 +16,7 @@ import { liveJudgedAtom, liveQueuedAtom } from "../../lib/live-state";
 import { switchOverlay } from "../../lib/overlay";
 import { clockSeconds } from "../../lib/roster-time";
 import { useSessionUser } from "../../lib/session";
+import { activeUnitAtom, amountText, unitOf } from "../../lib/units";
 import { judgingAtom } from "../omnibox/state";
 import { LazyListEnd, useQueryLazyList } from "../page/lazy-list";
 import { PanelDialog } from "../shell/panel-dialog";
@@ -100,9 +106,10 @@ function FetchAnswers({ answers }: { answers: JudgeFetchAnswer[] }) {
  * prize-design.md §4.1) — “+0.50 · 待结算 1.20 LDC”, in a list “+0.50 →
  * 1.20”, or what it settled with — or else 领到 or 没领到.
  */
-function resultOf(item: MyJudgment, short = false) {
-  if (!item.moved) return item.amount ? `领到 ${item.amount} LDC` : "没领到";
-  return moveLabel(item.moved, item.amount, !short);
+function resultOf(item: MyJudgment, unit: AmountUnit, short = false) {
+  if (!item.moved)
+    return item.amount ? `领到 ${amountText(item.amount, unit)}` : "没领到";
+  return moveLabel(item.moved, item.amount, !short, unit);
 }
 
 /** 第 N 次, or (protocol 5) whose judgment it was that moved them. */
@@ -126,7 +133,8 @@ export function JudgmentRow({
 }) {
   const won = Boolean(item.amount);
   const label = `${whoseOf(item)} · ${clockSeconds(Date.parse(item.at))}`;
-  const result = pending ? "正在判定…" : resultOf(item, !latest);
+  const unit = useAtomValue(activeUnitAtom);
+  const result = pending ? "正在判定…" : resultOf(item, unit, !latest);
   return (
     <ListItem className="flex flex-col gap-1.5">
       <Squircle radius={12}>
@@ -183,8 +191,8 @@ const hostsOf = (network: string[]) =>
   [...new Set(network.map((address) => new URL(address).hostname))].join("、");
 
 /** What a screen reader hears of a judgment as it comes in. */
-const spoken = (item: MyJudgment) =>
-  `${whoseOf(item)}：${resultOf(item)}${
+const spoken = (item: MyJudgment, unit: AmountUnit) =>
+  `${whoseOf(item)}：${resultOf(item, unit)}${
     item.message ? `。判定器的回复：${item.message}` : ""
   }`;
 
@@ -345,6 +353,7 @@ export function JudgmentRecord({ activityId }: { activityId: string }) {
     pageCount: query.data?.pages.length ?? 0,
   });
   const activity = useHongbaoPageData(activityId).data?.activity;
+  const unit = unitOf(activity ?? {});
   const network = activity?.judge?.network;
   const total = query.data?.pages[0]?.total ?? 0;
   const items = query.data?.pages.flatMap((batch) => batch.items) ?? [];
@@ -370,9 +379,9 @@ export function JudgmentRecord({ activityId }: { activityId: string }) {
             {pending
               ? "正在判定…"
               : ours?.answer && rows[0]
-                ? spoken(rows[0])
+                ? spoken(rows[0], unit)
                 : latest
-                  ? spoken(latest)
+                  ? spoken(latest, unit)
                   : ""}
           </p>
           <h3 className="px-2.5 text-xs font-medium text-ink-3">

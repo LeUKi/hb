@@ -364,16 +364,18 @@ function Detail({ row }: { row: Row }) {
             value:
               row.summary.funding === "balance"
                 ? "从🐟额发，没有付款"
-                : later(({ payments }) =>
-                    [
-                      `${payments.total} 笔`,
-                      `未确认 ${payments.pending}`,
-                      `异常待处理 ${payments.attention}`,
-                      ...(payments.unknown
-                        ? [`结果未知 ${payments.unknown}`]
-                        : []),
-                    ].join(" · "),
-                  ),
+                : row.summary.funding === "points"
+                  ? `从三方积分「${row.summary.points?.name ?? ""}」发，见三方积分后台`
+                  : later(({ payments }) =>
+                      [
+                        `${payments.total} 笔`,
+                        `未确认 ${payments.pending}`,
+                        `异常待处理 ${payments.attention}`,
+                        ...(payments.unknown
+                          ? [`结果未知 ${payments.unknown}`]
+                          : []),
+                      ].join(" · "),
+                    ),
           },
           {
             label: "开放",

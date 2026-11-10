@@ -1,7 +1,8 @@
-import { amountToMinor, formatAmount } from "@hb/contracts";
+import { amountToMinor } from "@hb/contracts";
 import type { HongbaoActivity } from "../../lib/hongbao";
 import { endLabels, fuzzyLabels, type PublicView } from "../../lib/hongbao";
 import { clockLabel } from "../../lib/roster-time";
+import { amountText, fullAmountText, shownAmount } from "../../lib/units";
 
 /**
  * One cell of 公开数据: a label, a value and one line under it — a note, a
@@ -12,6 +13,12 @@ import { clockLabel } from "../../lib/roster-time";
 export type CoverCell = {
   label: string;
   value: string;
+  /**
+   * An amount's unit, set smaller after the figure; with it, the figure in
+   * full for the hint and screen readers when it was shortened.
+   */
+  unit?: string;
+  full?: string;
   note?: string;
   /** The end of the note that only wide windows have room for. */
   noteWide?: string;
@@ -32,7 +39,17 @@ function averageNote(activity: HongbaoActivity) {
   const total = amountToMinor(activity.totalAmount);
   const exact = total % activity.shares === 0;
   const each = Math.round(total / activity.shares);
-  return `平均${exact ? "" : "约"} ${formatAmount(each)} LDC`;
+  return `平均${exact ? "" : "约"} ${amountText(each, activity.unit)}`;
+}
+
+/** A cell's amount in the 红包's unit: the figure, its unit, and in full. */
+function amountCell(activity: HongbaoActivity, value: string) {
+  const shown = shownAmount(value, activity.unit);
+  return {
+    value: shown.text,
+    unit: activity.unit.unit,
+    ...(shown.short ? { full: fullAmountText(value, activity.unit) } : {}),
+  };
 }
 
 /**
@@ -46,19 +63,19 @@ function poolCell(activity: HongbaoActivity, view: PublicView): CoverCell {
   if (activity.mode === "code")
     return {
       label: "奖池",
-      value: `${activity.totalAmount} LDC`,
+      ...amountCell(activity, activity.totalAmount),
       note:
         activity.minEach && view.quantity.kind !== "pool"
-          ? `每份至少 ${activity.minEach} LDC`
+          ? `每份至少 ${amountText(activity.minEach, activity.unit)}`
           : undefined,
     };
   if (activity.mode === "fixed")
     return fuzzy
-      ? { label: "每份", value: `${activity.unitAmount} LDC` }
+      ? { label: "每份", ...amountCell(activity, activity.unitAmount ?? "") }
       : {
           label: "总额",
-          value: `${activity.totalAmount} LDC`,
-          note: `每份 ${activity.unitAmount} LDC`,
+          ...amountCell(activity, activity.totalAmount),
+          note: `每份 ${amountText(activity.unitAmount ?? "", activity.unit)}`,
         };
   const note =
     activity.mode === "custom" && activity.custom
@@ -72,12 +89,16 @@ function poolCell(activity: HongbaoActivity, view: PublicView): CoverCell {
         : fuzzy
           ? undefined
           : averageNote(activity);
-  return { label: "奖池", value: `${activity.totalAmount} LDC`, note };
+  return { label: "奖池", ...amountCell(activity, activity.totalAmount), note };
 }
 
 const fuzzySteps = { plenty: 4, limited: 2, low: 1, empty: 0 } as const;
 
-function quantityCell(view: PublicView, judged?: number): CoverCell {
+function quantityCell(
+  activity: HongbaoActivity,
+  view: PublicView,
+  judged?: number,
+): CoverCell {
   const { draw, quantity } = view;
   if (draw) {
     if (draw.registered === null)
@@ -101,7 +122,7 @@ function quantityCell(view: PublicView, judged?: number): CoverCell {
   if (quantity.kind === "pool")
     return {
       label: quantity.share ? `奖池还剩 ${quantity.share}` : "奖池还剩",
-      value: `${quantity.left} LDC`,
+      ...amountCell(activity, quantity.left),
       ...(judged !== undefined ? { judged } : {}),
     };
   // 代码判定: how often its code judged says more than a bar (05 §4).
@@ -193,6 +214,7 @@ export function coverCells(
   return [
     poolCell(activity, view),
     quantityCell(
+      activity,
       view,
       activity.judge ? (judged ?? activity.judge.judged) : undefined,
     ),
