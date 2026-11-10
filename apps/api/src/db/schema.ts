@@ -45,7 +45,15 @@ export const users = sqliteTable(
       table.provider,
       table.externalId,
     ),
-    index("users_username_idx").on(table.username),
+    // By name, as written (the 社区小程序's pictures) or in any case (转账,
+    // 邀请, 领取范围): the name leads, so the planner takes these over
+    // (provider, external_id), whose provider=? alone reads every user
+    // (2026-11-10: six of every ten rows D1 read).
+    index("users_username_idx").on(table.username, table.provider),
+    index("users_lower_username_idx").on(
+      sql`lower(${table.username})`,
+      table.provider,
+    ),
     index("users_created_idx").on(
       sql`${table.createdAt} DESC`,
       sql`${table.id} DESC`,

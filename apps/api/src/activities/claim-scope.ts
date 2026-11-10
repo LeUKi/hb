@@ -26,11 +26,16 @@ async function people(
   linuxDoIds: string[],
 ) {
   if (usernames.length === 0 && linuxDoIds.length === 0) return [];
+  // Two halves, each by its own index: as one OR, SQLite read every user.
+  // Someone found both ways comes back twice, which the callers' maps take.
   return (
     await env.DB.prepare(`SELECT external_id, username, display_name, avatar_url FROM users
-      WHERE provider = 'linux_do' AND active = 1 AND (
-        lower(username) IN (SELECT lower(value) FROM json_each(?))
-        OR external_id IN (SELECT value FROM json_each(?)))`)
+      WHERE provider = 'linux_do' AND active = 1
+        AND lower(username) IN (SELECT lower(value) FROM json_each(?))
+      UNION ALL
+      SELECT external_id, username, display_name, avatar_url FROM users
+      WHERE provider = 'linux_do' AND active = 1
+        AND external_id IN (SELECT value FROM json_each(?))`)
       .bind(JSON.stringify(usernames), JSON.stringify(linuxDoIds))
       .all<Person>()
   ).results;

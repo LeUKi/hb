@@ -241,3 +241,10 @@
 - 付款任务和🐟额流水的两个写入触发器（`payment_tasks_insert_consistency`、`balance_entries_lock_guard`）也只按 id 连库存，每次写入约 4,000 行、一天几百次；改触发器要迁移，和同一天的“不到 1 🐟 全部转出”一起在 0042 里改成按 (activity_id, id)。
 - 🐟额的一致性检查（网站管理 · 🐟额概览，`balance/admin.ts`）：核对每个🐟额红包的锁定时，对每个锁定把全部🐟额流水扫三遍（流水没有按锁定的索引），一次检查读约 33 万行，随红包数乘流水数增长。改成先把流水按锁定汇总一遍，再逐个比对，核对的内容不变；测试的同一批数据从 430 行降到 180 行，并保留“锁定对不上能数出来”的测试（`balance-consistency.test.ts`）。Durable Object 本月约 7,600 次“错误”仍然都是连接断开。
 
+
+2026-11-10 复查：近三天生产库读了约 7,000 万行，其中约 4,400 万行（六成多）来自按用户名找人：社区小程序给名单换社区头像（`mini/forum-avatars.ts`）、社区里第一次领取时的同名检查（`mini/routes.ts`）、领取范围的指定的人（`activities/claim-scope.ts`）、按名字找人（`users/find.ts`，转账、邀请都用）和邀请记录里的名字写法（`balance/invites.ts`）。这些查询都带着 `provider='linux_do'`，SQLite 于是选了 `(provider, external_id)` 唯一索引、只用上 `provider=?`，而所有用户都是 linux_do，每找一次就把全部用户读一遍（约 5,700 行）；原来的 `users_username_idx` 没用上。查询计划里是 `SEARCH … (provider=?)` 而不是 `SCAN`，上面那条测试拦不住。
+- 迁移 0061：索引改成名字在前，`(username, provider)` 和 `(lower(username), provider)`。
+- 领取范围按名字或按 LINUX DO ID 找人，原来是一条 OR，SQLite 两个索引都用不上；拆成 `UNION ALL` 两半，同一个人两边都找到时出现两次，调用处按名字、按 ID 建的表不受影响。
+- 邀请记录的相关子查询 `lower(t.username)=i.invitee_username`：列的文本亲和性让 SQLite 用不上 `lower(username)` 索引，写成 `+i.invitee_username`。
+- 测试（`presentation-queries.test.ts`）走一遍这些查找，查询计划里读 users 时只靠 `provider=?` 或整表扫描都算失败。
+- 暂不改：每 5 分钟的付款恢复查询和 `unknown_outcome=1` 的计数也把 `payment_tasks` 整表读一遍（每次约 6,800 行，三天约 770 万行），条件里有多个 OR，留到以后。

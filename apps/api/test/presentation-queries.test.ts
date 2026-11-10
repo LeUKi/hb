@@ -19,6 +19,10 @@ import {
 } from "@hb/contracts";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  publicScopeWithPeople,
+  resolveScope,
+} from "../src/activities/claim-scope";
 import { claimActivity } from "../src/activities/claim-service";
 import { refreshTimedDraw } from "../src/activities/draw-service";
 import {
@@ -28,11 +32,14 @@ import {
 import { registerForDraw } from "../src/activities/registration-service";
 import { createActivity, openActivity } from "../src/activities/service";
 import { app } from "../src/app";
+import { listAdminInvites, listMyInvites } from "../src/balance/invites";
 import { createDb } from "../src/db/client";
 import { activities, sessions, users } from "../src/db/schema";
 import type { ApiBindings } from "../src/env";
+import { withForumAvatars } from "../src/mini/forum-avatars";
 import { createMerchant } from "../src/payments/merchants";
 import { sha256Hex } from "../src/security/crypto";
+import { findUserByUsername } from "../src/users/find";
 import { advanceAttemptCooldown } from "./advance-attempt-cooldown";
 import { resetMerchantHistory } from "./reset-merchant-history";
 
@@ -1486,6 +1493,56 @@ describe("D1 reads that would grow with the data (06 §12)", () => {
       }
     }
     expect(scans).toEqual([]);
+  }, 60_000);
+
+  it("finds people by name through the name's own index, not every user", async () => {
+    // With provider='linux_do' beside the name, SQLite took (provider,
+    // external_id) for provider=? alone and read every user per lookup
+    // (2026-11-10: six of every ten rows the production database read).
+    const [first, second] = (await Promise.all(
+      Array.from({ length: 2 }, actor),
+    )) as [Actor, Actor];
+    const name = `member_${first.id}`;
+    const scope = {
+      users: [
+        { username: name, linuxDoId: null },
+        { username: "renamed_since", linuxDoId: second.id },
+      ],
+    };
+    const statements = await statementsDuring(async () => {
+      await withForumAvatars(bindings, [
+        { username: name, avatarUrl: null },
+        { username: `member_${second.id}`, avatarUrl: null },
+      ]);
+      await findUserByUsername(bindings, name.toUpperCase());
+      await resolveScope(bindings, scope);
+      await publicScopeWithPeople(bindings, scope);
+      await listMyInvites(bindings, owner.id);
+      await listAdminInvites(bindings, null);
+    });
+    const everyone: string[] = [];
+    for (const { sql, params } of statements) {
+      if (!/^\s*select/i.test(sql) || !/\busers\b/.test(sql)) continue;
+      const names = new Set(["users"]);
+      for (const [, alias] of sql.matchAll(/\busers\s+(?:AS\s+)?(\w+)/gi))
+        if (alias && !/^(where|on|left|join|order|union)$/i.test(alias))
+          names.add(alias);
+      const plan = await env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`)
+        .bind(...params)
+        .all<{ detail: string }>();
+      for (const { detail } of plan.results) {
+        const [, how, table] = /^(SCAN|SEARCH) (\w+)/.exec(detail) ?? [];
+        if (
+          table &&
+          names.has(table) &&
+          (how === "SCAN" || detail.endsWith("(provider=?)"))
+        )
+          everyone.push(
+            `${detail} in ${sql.replace(/\s+/g, " ").slice(0, 90)}`,
+          );
+      }
+    }
+    expect(everyone).toEqual([]);
   }, 60_000);
 
   it("finds 红包 due for the lifecycle sweep without reading every submission", async () => {

@@ -118,11 +118,13 @@ function linkView(row: InviteRow & Record<string, unknown>): BalanceInviteLink {
   };
 }
 
+// `+i.invitee_username`: without the +, the column's text affinity keeps
+// SQLite off the lower(username) index and it reads every user per row.
 const INVITE_WITH_USERS = `SELECT i.*,
     a.username AS accepted_username,a.display_name AS accepted_display_name,a.avatar_url AS accepted_avatar_url,
     s.username AS inviter_username,s.display_name AS inviter_display_name,s.avatar_url AS inviter_avatar_url,
     b.username AS stopped_username,b.display_name AS stopped_display_name,b.avatar_url AS stopped_avatar_url,
-    (SELECT t.username FROM users t WHERE t.provider='linux_do' AND lower(t.username)=i.invitee_username
+    (SELECT t.username FROM users t WHERE t.provider='linux_do' AND lower(t.username)=+i.invitee_username
       ORDER BY t.last_login_at DESC LIMIT 1) AS invitee_spelling
   FROM balance_invites i
   LEFT JOIN users a ON a.id=i.accepted_user_id
