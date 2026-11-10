@@ -248,3 +248,11 @@
 - 邀请记录的相关子查询 `lower(t.username)=i.invitee_username`：列的文本亲和性让 SQLite 用不上 `lower(username)` 索引，写成 `+i.invitee_username`。
 - 测试（`presentation-queries.test.ts`）走一遍这些查找，查询计划里读 users 时只靠 `provider=?` 或整表扫描都算失败。
 - 暂不改：每 5 分钟的付款恢复查询和 `unknown_outcome=1` 的计数也把 `payment_tasks` 整表读一遍（每次约 6,800 行，三天约 770 万行），条件里有多个 OR，留到以后。
+
+## 13 DO 一直醒着（2026-11-10 调查）
+
+11-03 修好小程序计时器以后（64bc6f2），红包的 DO 仍不时被“钉”醒：11-04、11-05、11-06、11-08 至少 5 次，每次 76–169 分钟，CPU 几乎为 0，请求很少，挂着 2–18 个实时连接，都在热门红包前后。按分钟看，开始和结束都很突然，结束那一分钟 CPU 为 0。DO 自己的调用记录（`durableObjectsInvocationsAdaptiveGroups`，按 `type`、`status` 分，带 `max { wallTime }`）显示，每次都正好被一串首尾相接的长 `http` 调用盖满：一次结束的那一分钟下一次开始，最后一次的结束就是对象恢复休眠的时间（相差 30 秒以内），状态都是成功。观众的实时连接在调用记录里同样是长 `http` 调用，但热闹的时候对象照样能休眠，所以是每次都有的某一条连接或请求被运行时当成没处理完。按 Cloudflare 的文档，计时器和出站请求最多让对象多醒 15 分钟，排除；我们的计时器最长 20 秒且都会清掉；“w”（11-08）的 192 次领取提交都在 1 秒内结束；DO 没有流式响应。能对上付款的两个红包，被钉住前各有 2 笔付款“收款人不存在”在等重新发送，红包结束后只有这些人和发红包的人的连接会被接受，但这只是相关。花费不到 DO 时长额度的 1%。
+
+为了下次能看出是哪一种，ActivityDO 记日志（`object` 是对象 ID，和 Cloudflare 分析里的对象对得上；`viewer` 是用户 ID 的前 8 位）：
+- 每个请求计时：超过 60 秒还没回答记 `activity_request_slow`（路径、方法、是否连接升级），结束时再记 `activity_request_slow_done`（耗时、状态）。调用方放弃的请求可能永远不结束，所以先记一条。
+- 实时连接：接入 `activity_live_open`（红包、是否已结束、是不是发红包的人、连接数），这边关掉 `activity_live_close`（代码、原因：replaced、ended、push only），页面关掉 `activity_live_closed`，出错 `activity_live_error`，都带连接存在了多久。

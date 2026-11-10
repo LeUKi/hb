@@ -282,6 +282,47 @@ describe("a running 红包's live channel", () => {
     );
   });
 
+  it("logs each socket's coming and going by the object's id (06 §13)", async () => {
+    const log = vi.spyOn(console, "log");
+    const activity = await running(3);
+    const viewer = await actor();
+    const sockets: Awaited<ReturnType<typeof connect>>[] = [];
+    for (let index = 0; index < 5; index++)
+      sockets.push(await connect(activity.id, viewer));
+    await vi.waitFor(() => expect(sockets[0]?.closed).toEqual([4001]));
+    sockets[1]?.socket.close(1000, "tab closed");
+    const object = env.ACTIVITY_DO.idFromName(activity.id).toString();
+    const events = () =>
+      log.mock.calls.filter(
+        ([event, fields]) =>
+          typeof event === "string" &&
+          event.startsWith("activity_live_") &&
+          (fields as { object?: string }).object === object,
+      );
+    // Closed from this side: its own line, and the close the page answers.
+    // Closed by the page: the latter only.
+    const closedCodes = () =>
+      events()
+        .filter(([event]) => event === "activity_live_closed")
+        .map(([, fields]) => (fields as { code: number }).code);
+    await vi.waitFor(() => expect(closedCodes()).toContain(1000));
+    expect(closedCodes()).toContain(4001);
+    const viewerKey = viewer.id.slice(0, 8);
+    expect(
+      events().find(([event]) => event === "activity_live_open")?.[1],
+    ).toMatchObject({
+      activityId: activity.id,
+      viewer: viewerKey,
+      mini: false,
+      ended: false,
+      sender: false,
+    });
+    expect(
+      events().find(([event]) => event === "activity_live_close")?.[1],
+    ).toMatchObject({ viewer: viewerKey, code: 4001, reason: "replaced" });
+    log.mockRestore();
+  });
+
   it("keeps a claimant's line past the end until their payment is through, saying when it moves", async () => {
     await upstream("daily_limit");
     const activity = await running(1);

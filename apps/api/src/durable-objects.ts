@@ -195,6 +195,17 @@ function livePeople(sockets: WebSocket[]) {
   return people.size;
 }
 
+/**
+ * A request to an ActivityDO still unanswered after this long is logged,
+ * and again when it ends (docs/redesign/06-production.md §13): since
+ * 2026-11-04 objects have stayed awake for one to three hours at no CPU,
+ * each time for exactly a chain of long calls of one kind not yet known.
+ */
+const SLOW_REQUEST_MS = 60_000;
+
+/** A viewer as the logs name them: enough to follow one, not who. */
+const viewerKey = (userId: string | undefined) => userId?.slice(0, 8) ?? null;
+
 /** At most this many waiting on one 红包 (§3); more are asked to try later. */
 const CODE_QUEUE = 200;
 
@@ -374,11 +385,13 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       );
     const mine = this.ctx.getWebSockets(liveUserTag(userId));
     if (mine.length >= MAX_LIVE_PER_USER)
-      mine
-        .reduce((oldest, socket) =>
+      this.closeLive(
+        mine.reduce((oldest, socket) =>
           liveSince(socket) < liveSince(oldest) ? socket : oldest,
-        )
-        .close(4001, "replaced");
+        ),
+        4001,
+        "replaced",
+      );
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(
       server,
@@ -390,6 +403,12 @@ export class ActivityDO extends DurableObject<ApiBindings> {
       since: Date.now(),
       userId,
     } satisfies LiveAttachment);
+    this.logLive("activity_live_open", server, {
+      activityId: id,
+      ended: liveEnded(activity),
+      sender: userId === activity.author.id,
+      sockets: this.ctx.getWebSockets(LIVE_TAG).length,
+    });
     // What changed between the page's own read and now, and who is here,
     // at the number the channel stands at.
     const seq = await this.liveSeqNow();
@@ -497,12 +516,37 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     for (const socket of sockets) {
       const viewer = liveViewer(socket);
       if (viewer && waiting.has(viewer)) continue;
-      try {
-        socket.close(1000, "ended");
-      } catch {
-        // Already closing.
-      }
+      this.closeLive(socket, 1000, "ended");
     }
+  }
+
+  /** A live socket let go from this side, logged (§13). */
+  private closeLive(socket: WebSocket, code: number, reason: string) {
+    this.logLive("activity_live_close", socket, { code, reason });
+    try {
+      socket.close(code, reason);
+    } catch {
+      // Already closing.
+    }
+  }
+
+  /**
+   * A live socket's comings and goings, by this object's id as Cloudflare's
+   * analytics name it (§13).
+   */
+  private logLive(
+    event: string,
+    socket: WebSocket,
+    fields: Record<string, unknown>,
+  ) {
+    const since = liveSince(socket);
+    console.log(event, {
+      object: this.ctx.id.toString(),
+      viewer: viewerKey(liveViewer(socket)),
+      mini: this.ctx.getTags(socket).includes(LIVE_MINI_TAG),
+      ageS: since > 0 ? Math.round((Date.now() - since) / 1000) : null,
+      ...fields,
+    });
   }
 
   /** A payment of this 红包 moved (live.ts tellPaymentWatchers). */
@@ -719,15 +763,22 @@ export class ActivityDO extends DurableObject<ApiBindings> {
   /** Push only: a ping (answered by the runtime) is all a viewer sends. */
   async webSocketMessage(socket: WebSocket, message: string | ArrayBuffer) {
     if (message === LIVE_PING) socket.send(LIVE_PONG);
-    else socket.close(1008, "push only");
+    else this.closeLive(socket, 1008, "push only");
   }
 
   /** A viewer left (a closed tab, a lost line): the others hear the number. */
-  async webSocketClose() {
+  async webSocketClose(
+    socket: WebSocket,
+    code: number,
+    _: string,
+    clean: boolean,
+  ) {
+    this.logLive("activity_live_closed", socket, { code, clean });
     this.announceViewers();
   }
 
-  async webSocketError() {
+  async webSocketError(socket: WebSocket) {
+    this.logLive("activity_live_error", socket, {});
     this.announceViewers();
   }
 
@@ -1400,7 +1451,38 @@ export class ActivityDO extends DurableObject<ApiBindings> {
     });
   }
 
+  /**
+   * Every request, timed: one still unanswered after SLOW_REQUEST_MS is
+   * logged then, and again when it ends (§13). A request its caller gave
+   * up on may never end here, hence the first.
+   */
   async fetch(request: Request) {
+    const started = Date.now();
+    const call = {
+      object: this.ctx.id.toString(),
+      method: request.method,
+      path: new URL(request.url).pathname,
+      upgrade: request.headers.get("Upgrade")?.toLowerCase() === "websocket",
+      viewer: viewerKey(request.headers.get(LIVE_USER_HEADER) ?? undefined),
+    };
+    const slow = setTimeout(
+      () => console.warn("activity_request_slow", call),
+      SLOW_REQUEST_MS,
+    );
+    let status: number | null = null;
+    try {
+      const response = await this.answer(request);
+      status = response.status;
+      return response;
+    } finally {
+      clearTimeout(slow);
+      const ms = Date.now() - started;
+      if (ms >= SLOW_REQUEST_MS)
+        console.warn("activity_request_slow_done", { ...call, ms, status });
+    }
+  }
+
+  private async answer(request: Request) {
     const url = new URL(request.url);
 
     if (url.pathname === "/internal/health") {
