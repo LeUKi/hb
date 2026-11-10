@@ -281,7 +281,7 @@ export function AmountFields({
           [
             "hb-random-total",
             "总额",
-            "30.00",
+            whole ? "30" : "30.00",
             form.random.total,
             (current, total) => ({
               ...current,
@@ -304,7 +304,7 @@ export function AmountFields({
           [
             "hb-draw-pool",
             "奖池",
-            "20.00",
+            whole ? "20" : "20.00",
             form.draw.pool,
             (current, pool) => ({
               ...current,
@@ -327,7 +327,7 @@ export function AmountFields({
           [
             "hb-fixed-unit",
             "每份金额",
-            "0.88",
+            whole ? "8" : "0.88",
             form.fixed.unit,
             (current, unit) => ({
               ...current,
@@ -360,7 +360,7 @@ export function AmountFields({
           <TextInput
             {...amountProps("hb-code-total")}
             className="@wide/window:w-[calc(50%-0.5rem)]"
-            placeholder="100.00"
+            placeholder={whole ? "100" : "100.00"}
             value={form.judge.total}
             onChange={(event) => {
               const total = event.target.value;
@@ -384,7 +384,7 @@ export function AmountFields({
             id="hb-custom-lines"
             rows={5}
             className="font-mono"
-            placeholder={"8.88\n6.66\n5.20"}
+            placeholder={whole ? "8\n6\n5" : "8.88\n6.66\n5.20"}
             value={form.custom.lines}
             disabled={locked}
             invalid={Boolean(errorOf("hb-custom-lines"))}

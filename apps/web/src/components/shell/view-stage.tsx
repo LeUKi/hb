@@ -17,6 +17,7 @@ import { AdminArea } from "../views/admin/admin-frame";
 import { AdminJudge } from "../views/admin/admin-judge";
 import { AdminOverview } from "../views/admin/admin-overview";
 import { AdminPayments } from "../views/admin/admin-payments";
+import { AdminPoints } from "../views/admin/admin-points";
 import { AdminRoadmap } from "../views/admin/admin-roadmap";
 import { AdminSettings } from "../views/admin/admin-settings";
 import { AdminUsers } from "../views/admin/admin-users";
@@ -42,6 +43,9 @@ import { CommandPageView, MessageView } from "../views/message-view";
 import { NewView } from "../views/new-view";
 import { PaymentView } from "../views/payment-view";
 import { PaymentsView } from "../views/payments-view";
+import { PointsDetailView } from "../views/points-detail-view";
+import { PointsEditView } from "../views/points-edit-view";
+import { PointsView } from "../views/points-view";
 import { RankView } from "../views/rank-view";
 import { ResultsView } from "../views/results-view";
 import { RoadmapView } from "../views/roadmap-view";
@@ -67,6 +71,7 @@ const commandPages: Record<
   history: <HistoryView />,
   balance: <BalanceView />,
   tips: <TipsView />,
+  points: <PointsView />,
   me: <MeView />,
   merchant: <MerchantView />,
   payments: <PaymentsView />,
@@ -90,6 +95,7 @@ const adminPages: Record<string, (search: AdminSearch) => ReactNode> = {
   "/admin/roadmap": () => <AdminRoadmap />,
   "/admin/settings": () => <AdminSettings />,
   "/admin/audit": () => <AdminAudit />,
+  "/admin/points": () => <AdminPoints />,
 };
 
 function useLeaf() {
@@ -134,6 +140,17 @@ function renderView(leaf: NonNullable<Leaf>): ReactNode {
       return (
         <TipReceiptView code={params.code ?? ""} id={params.tipId ?? ""} />
       );
+    case "/points/new":
+      return <CommandPageView id="points" page={<PointsEditView />} />;
+    case "/points/$id/edit":
+      return (
+        <CommandPageView
+          id="points"
+          page={<PointsEditView id={params.id ?? ""} />}
+        />
+      );
+    case "/points/$id":
+      return <PointsDetailView id={params.id ?? ""} />;
     case "/tips/new":
       return <CommandPageView id="tips" page={<TipEditView />} />;
     case "/tips/$code":

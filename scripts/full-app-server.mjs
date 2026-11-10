@@ -146,6 +146,12 @@ async function main() {
   if (!capSites) throw new Error("CAP_SITES_NOT_FOUND");
   if (localExperience.enabled) await mkdir(localStateRoot, { recursive: true });
   const upstream = createTestUpstream(Response, origin, {
+    // 三方积分: HB_FULL_APP_POINTS_ISSUER=http://127.0.0.1:8790 lets the
+    // issuer at https://stars.points.test/hb be the local demo issuer
+    // (examples/points-issuer).
+    pointsIssuers: process.env.HB_FULL_APP_POINTS_ISSUER
+      ? { "stars.points.test": process.env.HB_FULL_APP_POINTS_ISSUER }
+      : undefined,
     avatarUrl:
       localExperience.enabled || imageHttps
         ? (role) => localAvatarUrl(origin, role)

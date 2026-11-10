@@ -83,6 +83,13 @@ const tabs: {
     refreshable: true,
   },
   {
+    to: "/admin/points",
+    label: "三方积分",
+    description:
+      "接入的三方积分：审核、暂停、下架，今天的调用，结果不明和异常的发放，文案改动。页面不自动刷新。",
+    refreshable: true,
+  },
+  {
     to: "/admin/roadmap",
     label: "施工",
     description:

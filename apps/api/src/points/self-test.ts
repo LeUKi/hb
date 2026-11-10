@@ -238,7 +238,7 @@ async function runSteps(
   if (
     !add({
       n: 4,
-      title: `给测试收款人发 ${formatStep(step)}（1 个最小单位），要回 ok`,
+      title: `给测试收款人发 ${formatStep(step)} ${row.unit}（1 个最小单位），要回 ok`,
       ok: paid,
       sent: sentTransfer(fourth.sent),
       got: shown(fourth.call),
@@ -293,7 +293,7 @@ async function runSteps(
       n: 7,
       title: selfPay
         ? "再查额度：转给自己，额度要不变"
-        : `再查额度：要正好少 ${formatStep(step)}`,
+        : `再查额度：要正好少 ${formatStep(step)} ${row.unit}`,
       ok: seventh.kind === "ok" && seventh.available === expected,
       sent: `POST /balance（密钥 ${masked}）{}`,
       got: shown(seventh.call),

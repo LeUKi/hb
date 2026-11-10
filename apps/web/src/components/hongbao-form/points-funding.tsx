@@ -162,6 +162,9 @@ export function KeyDialog({
         className="grid gap-3 px-5 pb-5"
         onSubmit={(event) => {
           event.preventDefault();
+          // A portal's events still bubble up React's tree: not into the
+          // 红包 form this dialog was opened from.
+          event.stopPropagation();
           if (save.isPending || !key.trim()) return;
           save.mutate(key.trim(), {
             onSuccess: () => {

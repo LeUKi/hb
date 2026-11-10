@@ -1,0 +1,19 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  // 示例发行方（docs/third-party-points-design.md 第 3 节）：Stage 和本地
+  // 测试用的“对方”。部署：npx wrangler deploy -c examples/points-issuer/wrangler.jsonc
+  "name": "hb-points-demo",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-03",
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "STEP": "100",
+    "POINTS_NAME": "星星",
+    "OPENING_GRANT": "1000000"
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "LEDGER", "class_name": "Ledger" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Ledger"] }]
+}

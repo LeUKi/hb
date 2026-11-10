@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   CircleHelp,
   Coffee,
+  Coins,
   Fish,
   FolderCode,
   HardHat,
@@ -40,6 +41,7 @@ export type CommandPath =
   | "/history"
   | "/balance"
   | "/tips"
+  | "/points"
   | "/square"
   | "/rank"
   | "/me"
@@ -55,6 +57,7 @@ export type CommandId =
   | "history"
   | "balance"
   | "tips"
+  | "points"
   | "square"
   | "rank"
   | "me"
@@ -178,6 +181,27 @@ export const commands: Command[] = [
       "dashang",
       "ds",
       "wodedashang",
+    ],
+  },
+  // 三方积分 (docs/third-party-points-design.md §1): the systems one
+  // registered, and a way to register one (PLUS).
+  {
+    id: "points",
+    path: "/points",
+    name: "points",
+    title: "三方积分",
+    icon: Coins,
+    requires: "standard",
+    visibleTo: (role) => role !== "guest",
+    keys: [
+      "points",
+      "三方积分",
+      "积分",
+      "接入积分",
+      "sanfangjifen",
+      "sfjf",
+      "jifen",
+      "jf",
     ],
   },
   {

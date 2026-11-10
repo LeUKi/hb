@@ -145,6 +145,11 @@ const tipsRoute = createRoute({
   path: "/tips",
   staticData: { chrome: "docked", command: "tips" },
 });
+const pointsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/points",
+  staticData: { chrome: "docked", command: "points" },
+});
 // A 打赏卡's own page, and a tip's, where Credit 站 sends its payer back.
 const tipCardRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -230,6 +235,15 @@ const balanceCheckoutRoute = subRoute(
   "付款详情",
 );
 const judgeRoute = subRoute("/judges/$judgeId", "judges", "判定器");
+// 三方积分 (docs/third-party-points-design.md): one's systems and their
+// 配置页; a system's 详情页 is anyone's (a 红包's tag leads there).
+const pointsNewRoute = subRoute("/points/new", "points", "接入三方积分");
+const pointsEditRoute = subRoute("/points/$id/edit", "points", "配置三方积分");
+const pointsDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/points/$id",
+  staticData: { chrome: "docked", subpage: "三方积分" },
+});
 const tipNewRoute = subRoute("/tips/new", "tips", "新建打赏卡");
 const tipEditRoute = subRoute("/tips/$code", "tips", "编辑打赏卡");
 // 写一个判定器 (judge-square §15.4); ?from=<编号> is 复制一份来改.
@@ -298,6 +312,7 @@ const adminJudgeRoute = adminRoute2("/admin/judge", "判定器");
 const adminRoadmapRoute = adminRoute2("/admin/roadmap", "施工");
 const adminSettingsRoute = adminRoute2("/admin/settings", "网站设置");
 const adminAuditRoute = adminRoute2("/admin/audit", "操作记录");
+const adminPointsRoute = adminRoute2("/admin/points", "三方积分");
 const helpRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/help",
@@ -368,6 +383,10 @@ const routeTree = rootRoute.addChildren([
   balanceWithdrawalRoute,
   balanceCheckoutRoute,
   tipsRoute,
+  pointsRoute,
+  pointsNewRoute,
+  pointsEditRoute,
+  pointsDetailRoute,
   tipNewRoute,
   tipEditRoute,
   tipCardRoute,
@@ -381,6 +400,7 @@ const routeTree = rootRoute.addChildren([
   adminRoadmapRoute,
   adminSettingsRoute,
   adminAuditRoute,
+  adminPointsRoute,
   helpRoute,
   helpApiRoute,
   helpStartRoute,

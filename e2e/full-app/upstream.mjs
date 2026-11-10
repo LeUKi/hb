@@ -170,6 +170,19 @@ export function createTestUpstream(Response, origin, options = {}) {
     },
     async fetch(request) {
       const url = new URL(request.url);
+      // 三方积分 (docs/third-party-points-design.md): a local issuer, such
+      // as examples/points-issuer under wrangler dev, answers for its host.
+      const issuer = options.pointsIssuers?.[url.host];
+      if (issuer)
+        return fetch(`${issuer}${url.pathname}${url.search}`, {
+          method: request.method,
+          headers: request.headers,
+          body:
+            request.method === "GET" || request.method === "HEAD"
+              ? undefined
+              : await request.arrayBuffer(),
+          redirect: "manual",
+        });
       // Turnstile Siteverify, as it answers Cloudflare's test secrets: the
       // always-pass one accepts any token, the always-fail one none.
       if (
