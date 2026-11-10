@@ -227,7 +227,7 @@ export class Ledger implements DurableObject {
 <title>示例发行方</title>
 <style>body{font:15px/1.6 system-ui;max-width:36rem;margin:2rem auto;padding:0 1rem}input,button{font:inherit;padding:.4rem .6rem}pre{background:#f4f4f4;padding:.75rem;white-space:pre-wrap;word-break:break-all}</style>
 <h1>示例发行方 · ${name}</h1>
-<p>红包站三方积分协议第一版的最小实现，只用来测试。接口地址填 <code>${"${location.origin}"}/hb</code>；最小单位 ${Number(step) / 100}。</p>
+<p>红包站三方积分协议第一版的最小实现，只用来测试。接口地址填 <code>本页地址/hb</code>；最小单位 ${Number(step) / 100}。</p>
 <form id="f"><p><input name="id" placeholder="LINUX DO 数字 ID" required> <input name="username" placeholder="用户名" required> <button>开户并发一把密钥</button></p></form>
 <pre id="out">开户会给 ${Number(this.env.OPENING_GRANT ?? "1000000") / 100} ${name}。同一个 ID 再点一次，发一把新的密钥，账户不变。</pre>
 <script>

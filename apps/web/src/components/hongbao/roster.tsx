@@ -204,7 +204,7 @@ function Row({
                 )}
                 {/* A 三方积分 payout (pp_…) has no 付款详情 page here:
                     its state only (third-party-points §15 no. 8). */}
-                {detail?.payment && detail.payment.id.startsWith("pp_") ? (
+                {detail?.payment?.id.startsWith("pp_") ? (
                   <span
                     className={`inline-flex shrink-0 items-center gap-1 ${paymentText[paymentTone(detail.payment.state)]}`}
                   >

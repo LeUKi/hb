@@ -116,10 +116,10 @@ describe("附带网页: a 判定器's meta.page", () => {
       problems: ["meta.page：只能用 https:// 开头的地址"],
     });
     expect(readMeta({ name: "猜数字", url: "https://example.com" })).toEqual({
-      problems: ["meta 里不认识 url：只能写 name、description 和 page"],
+      problems: ["meta 里不认识 url：只能写 name、description、page 和 points"],
     });
     expect(readMeta("猜数字")).toEqual({
-      problems: ["meta 要是 { name, description, page }"],
+      problems: ["meta 要是 { name, description, page, points }"],
     });
   });
 });
