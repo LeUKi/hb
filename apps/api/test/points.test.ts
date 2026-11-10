@@ -336,6 +336,39 @@ describe("三方积分红包", () => {
     expect(own.claim.payment).toBeUndefined();
   });
 
+  it("is claimed and paid where real LDC claims are off (Stage, or the 站长's pause)", async () => {
+    // Outside local, a 三方积分红包 keeps payment_mode 'real'; Credit's
+    // switches are not its gate (its own are the site switch and the
+    // system's state).
+    const staged: ApiBindings = { ...bindings, APP_ENV: "staging" };
+    await online();
+    const saved = await createActivity(staged, sender.id, {
+      requestId: crypto.randomUUID(),
+      activity: points({ mode: "fixed", totalAmount: "30", count: 3 }),
+    });
+    const hongbao = await openActivity(
+      staged,
+      saved.id,
+      sender.id,
+      saved.version,
+    );
+    const mode = await env.DB.prepare(
+      "SELECT payment_mode FROM activities WHERE id=?",
+    )
+      .bind(hongbao.id)
+      .first<string>("payment_mode");
+    expect(mode).toBe("real");
+    const first = await actor();
+    issuer.open(first.externalId, first.username, 0);
+    const claimed = (await claimActivity(staged, hongbao.id, first.id, {
+      submissionId: crypto.randomUUID(),
+      password: "StarPassword",
+    })) as { result: string; claim: ClaimDetail };
+    expect(claimed.result).toBe("claimed");
+    expect(await run(claimed.claim.payment?.id ?? "")).toBe("confirmed");
+    expect(issuer.accounts.get(first.externalId)?.available).toBe(1000);
+  });
+
   it("refuses money that is not whole 最小单位, and an opening 额度 cannot cover", async () => {
     await online();
     await expect(

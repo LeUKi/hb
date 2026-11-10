@@ -505,6 +505,7 @@ export async function prepareClaimSubmission(
         continue;
       if (
         current.paymentMode === "real" &&
+        current.funding !== "points" &&
         !testPermission &&
         !allowsRealClaim(env, await readPlatformControls(env))
       )
@@ -961,8 +962,10 @@ export async function allocateClaimBatch(
     (merchantRead?.results[0] as
       | { client_id: string; version: number }
       | undefined) ?? null;
+  // 三方积分 pays through its issuer, not Credit: its own gate.
   const realActivityPermitted =
     testPermission ||
+    activity.funding === "points" ||
     (activity.paymentMode === "real" &&
       allowsRealClaim(env, controlsOf(controlsRead?.results[0])));
   if (activity.paymentMode === "real" && !realActivityPermitted) {
@@ -1386,6 +1389,7 @@ export async function allocateClaimSubmission(
       stageBalanceHongbao(env, activity.funding);
     const realActivityPermitted =
       testPermission ||
+      activity.funding === "points" ||
       (activity.paymentMode === "real" &&
         allowsRealClaim(env, await readPlatformControls(env)));
     if (
@@ -1433,6 +1437,7 @@ export async function allocateClaimSubmission(
       if (!latest) activityNotFound();
       if (
         latest.paymentMode === "real" &&
+        latest.funding !== "points" &&
         !testPermission &&
         !allowsRealClaim(env, await readPlatformControls(env))
       )

@@ -414,6 +414,7 @@ export async function settleEnded(env: ApiBindings, activityId: string) {
     }
     if (
       activity.paymentMode === "real" &&
+      activity.funding !== "points" &&
       page.results.some((person) => person.pending > 0) &&
       !allowsRealClaim(env, await readPlatformControls(env))
     )
