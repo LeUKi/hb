@@ -100,8 +100,16 @@ function IdentityButton({ compact }: { compact: boolean }) {
         {compact ? <CircleUserRound className="size-5" /> : "登录"}
       </button>
     );
-  // The 站长's: payments stuck past every automatic try (网站管理 says which).
+  // The 站长's: payments stuck past every automatic try, and 三方积分 to look
+  // at (网站管理 says which).
   const stuck = user.isAdmin ? user.stuckPayments : 0;
+  const points = user.isAdmin ? user.pointsAttention : 0;
+  const waiting = [
+    stuck > 0 ? `有 ${stuck} 笔付款要处理` : "",
+    points > 0 ? `三方积分有 ${points} 项要看` : "",
+  ]
+    .filter(Boolean)
+    .join("，");
   return (
     <button
       id="identity-button"
@@ -110,7 +118,7 @@ function IdentityButton({ compact }: { compact: boolean }) {
         haptic("light");
         openAccount();
       }}
-      aria-label={`${user.displayName}，打开用户卡片${stuck > 0 ? `，有 ${stuck} 笔付款要处理` : ""}`}
+      aria-label={`${user.displayName}，打开用户卡片${waiting ? `，${waiting}` : ""}`}
       title={user.displayName}
       className="relative grid size-10 place-items-center rounded-full transition-transform active:translate-y-px"
     >
@@ -119,7 +127,7 @@ function IdentityButton({ compact }: { compact: boolean }) {
         src={user.avatarUrl}
         size={compact ? 34 : 36}
       />
-      {stuck > 0 && (
+      {waiting && (
         <span
           aria-hidden="true"
           className="absolute top-0.5 right-0.5 size-2.5 rounded-full bg-danger ring-2 ring-white"

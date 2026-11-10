@@ -720,6 +720,19 @@ test.describe("网站管理", () => {
     await expect(page.getByText("2 笔付款要处理")).toBeVisible();
   });
 
+  test("站长：三方积分有要看的（待审核、改过的文案、结果不明），头像上有红点，网站管理写几项", async ({
+    page,
+  }) => {
+    await mockSession(page, { ...admin, pointsAttention: 3 });
+    await openApp(page, "/");
+    const avatar = page.getByRole("button", {
+      name: /打开用户卡片，三方积分有 3 项要看/,
+    });
+    await expect(avatar).toBeVisible();
+    await avatar.click();
+    await expect(page.getByText("三方积分 3 项要看")).toBeVisible();
+  });
+
   test("网站设置：别人先存了，改过的那一项保留，其余跟着新版本", async ({
     page,
   }) => {

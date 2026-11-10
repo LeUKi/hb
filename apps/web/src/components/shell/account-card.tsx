@@ -202,9 +202,12 @@ function AccountContent({ onDone }: { onDone: () => void }) {
             const Icon = command.icon;
             // 🐟额 PLUS: a gold fish and its tag (balance-design §13).
             const plus = command.id === "balance" && user.balancePlus;
-            // 网站管理: payments stuck past every automatic try.
-            const stuck =
-              command.id === "admin" && user.isAdmin ? user.stuckPayments : 0;
+            // 网站管理: payments stuck past every automatic try, and
+            // 三方积分 to look at (under review, words changed, payouts
+            // with no known result).
+            const admin = command.id === "admin" && user.isAdmin;
+            const stuck = admin ? user.stuckPayments : 0;
+            const points = admin ? user.pointsAttention : 0;
             return (
               <li key={command.id}>
                 <Squircle radius={radius.row}>
@@ -222,9 +225,15 @@ function AccountContent({ onDone }: { onDone: () => void }) {
                       <span className="truncate">{command.title}</span>
                       {plus && <PlusMark />}
                     </span>
-                    {stuck > 0 ? (
+                    {stuck > 0 || points > 0 ? (
+                      // Both at once: one count, so the title keeps its room
+                      // (网站管理 says which).
                       <span className="shrink-0 rounded-full bg-danger-soft px-2 py-0.5 text-xs font-medium text-danger">
-                        {stuck} 笔付款要处理
+                        {stuck > 0 && points > 0
+                          ? `${stuck + points} 项要处理`
+                          : stuck > 0
+                            ? `${stuck} 笔付款要处理`
+                            : `三方积分 ${points} 项要看`}
                       </span>
                     ) : (
                       <span className="font-mono text-xs text-ink-3">

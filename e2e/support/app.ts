@@ -16,6 +16,8 @@ export type MockUser = {
   balancePlus?: boolean;
   /** The 站长's: payments stuck past every automatic try. */
   stuckPayments?: number;
+  /** The 站长's: 三方积分 to look at (review, words changed, no known result). */
+  pointsAttention?: number;
   /** 信任等级 as of the last sign-in (领取范围); null: not read yet. */
   trustLevel?: number | null;
   /** When that level was read (ms). */
